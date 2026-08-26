@@ -1,0 +1,19 @@
+[package]
+name = "zenith-float-macro"
+version = "0.0.1"
+edition = "2021"
+
+
+description = "Macros for multiple precision floating point numbers library zenith-float."
+categories = ["algorithms", "data-structures", "science"]
+keywords = ["ExactNum", "numeric", "mathematics", "bignum"]
+
+
+[lib]
+proc-macro = true
+
+[dependencies]
+quote = { version = "1", default-features = false }
+syn = { version = "1", default-features = false, features = ["parsing", "proc-macro", "full", "extra-traits", "printing"] }
+zenith-float-num = { version = "0.0.1", path = "../zenith-float-num", default-features = false }
+proc-macro2 = { version = "1", default-features = false }

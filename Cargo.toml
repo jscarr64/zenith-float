@@ -1,0 +1,32 @@
+[package]
+name = "zenith-float"
+version = "0.0.1"
+edition = "2021"
+description = "Multiple precision floating-point numbers library."
+
+
+[dependencies]
+zenith-float-num = { version = "0.0.1", path = "zenith-float-num", default-features = false }
+zenith-float-macro = { version = "0.0.1", path = "zenith-float-macro" }
+
+[features]
+default = ["std", "random", "serde"]
+std = ["zenith-float-num/std"]
+random = ["zenith-float-num/random"]
+serde = ["zenith-float-num/serde"]
+mpfr-tests = ["zenith-float-num/mpfr-tests"]
+
+[dev-dependencies]
+trybuild = "1.0"
+rusty-hook = "0.11.2"
+
+[workspace]
+members = [
+    "zenith-float-num",
+    "zenith-float-macro",
+]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
