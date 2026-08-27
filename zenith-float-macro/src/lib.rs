@@ -1,3 +1,6 @@
+//! `expr!` procedural macro for zenith-float.
+//!
+//! Depend on the `zenith-float` crate and use `zenith_float::expr`. This crate is not a direct dependency for applications.
 
 #![allow(missing_docs)]
 #![deny(clippy::suspicious)]

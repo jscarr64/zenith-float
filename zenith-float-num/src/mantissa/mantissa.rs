@@ -1085,7 +1085,7 @@ impl Mantissa {
         }
     }
 
-    #[cfg(feature = "random")]
+    #[cfg(any(test, feature = "random"))]
     /// Returns randomized mantissa with at least p bits of length.
     pub fn random_normal(p: usize) -> Result<Self, Error> {
         let mut m = Self::reserve_new(Self::bit_len_to_word_len(p))?;

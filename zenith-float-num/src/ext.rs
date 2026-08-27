@@ -441,6 +441,28 @@ impl ExactNum {
         }
     }
 
+    /// Compute the power of `self` to the signed integer `n` with precision `p`. The result is rounded using the rounding mode `rm`.
+    /// Precision is rounded upwards to the word size.
+    /// Negative `n` is a reciprocal of the corresponding positive power.
+    /// The function returns NaN if the precision `p` is incorrect, or Inf if `self` is zero and `n` is negative.
+    pub fn powsi(&self, n: isize, p: usize, rm: RoundingMode) -> Self {
+        match &self.inner {
+            Flavor::Value(v1) => Self::result_to_ext(v1.powsi(n, p, rm), false, true),
+            Flavor::Inf(s1) => {
+                if n == 0 {
+                    Self::from_u8(1, p)
+                } else if n < 0 {
+                    Self::new(p)
+                } else if s1.is_negative() && (n & 1 == 1) {
+                    INF_NEG
+                } else {
+                    INF_POS
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
     /// Computes the logarithm base `n` of a number with precision `p`. The result is rounded using the rounding mode `rm`.
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
@@ -980,6 +1002,8 @@ impl ExactNum {
     /// The result is rounded using the rounding mode `rm`.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    /// For values at the extreme of the exponent range the remainder of the
+    /// internal division is not folded into the result (at most a 1-ulp-class difference from `1/x`).
     pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.reciprocal(p, rm), false, v.is_positive()),
@@ -2329,6 +2353,11 @@ mod tests {
 
         let p = DEFAULT_P;
         let rm = RoundingMode::ToEven;
+        let two = ExactNum::from_u8(2, p);
+        let eighth = two.powsi(-3, p, rm);
+        let expected = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(8, p), p, rm);
+        assert_eq!(eighth.cmp(&expected), Some(0));
+        assert_eq!(two.powsi(3, p, rm).cmp(&ExactNum::from_u8(8, p)), Some(0));
         assert!(
             ExactNum::from_i8(-123, p) == ExactNum::parse("-1.23e+2", Radix::Dec, p, rm, &mut cc)
         );

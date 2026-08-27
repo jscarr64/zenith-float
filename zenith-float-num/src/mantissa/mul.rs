@@ -90,10 +90,10 @@ impl Mantissa {
         }
     }
 
-    // short multiplication
-    #[allow(dead_code)] // TODO: can it be faster than mul_unbalanced by more than 90% ?
+    // Alternate short multiply. Not on the production hot path; covered by unit tests.
+    #[allow(dead_code)]
     pub(super) fn mul_short(m1: &[Word], m2: &[Word], m3: &mut [Word]) -> Result<(), Error> {
-        debug_assert!(m1.len() == m2.len()); // TODO: consider relaxing this
+        debug_assert!(m1.len() == m2.len());
         let n = m1.len();
         Self::mul_short_step(m1, m2, m3, n)
     }

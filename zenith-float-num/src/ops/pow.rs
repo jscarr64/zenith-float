@@ -193,7 +193,6 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     ///  - DivisionByZero: `self` is zero and `n` is negative.
-    #[allow(dead_code)] // TODO: consider making public
     pub fn powsi(&self, n: isize, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         if n >= 0 {
             self.powi_internal(n as usize, p, rm, true)
@@ -300,7 +299,7 @@ impl ExactNumNumber {
 
                 x.set_precision(p_x, RoundingMode::FromZero)?;
 
-                // TODO: consider windowing and precomputed values.
+                // Binary exponentiation (no sliding window).
                 let mut bp = bit_pos;
                 let mut j = i;
                 while bp > 0 {

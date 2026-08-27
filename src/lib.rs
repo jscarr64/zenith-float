@@ -1,4 +1,5 @@
-//! zeneth-float is a library that implements arbitrary precision floating point numbers.
+//! zenith-float implements arbitrary-precision software floating-point numbers.
+//! All arithmetic uses integer limbs. The library does not use hardware `f32` or `f64` for calculations.
 //!
 //! ## Introduction
 //!
@@ -42,10 +43,11 @@
 //! Constants such as pi or the Euler number have arbitrary precision and are evaluated lazily and then cached in the constants cache.
 //! Some functions expect constants cache as parameter.
 //!
-//! **Correctness**
+//! **Rounding**
 //!
-//! Results of all arithmetic operations, mathematical functions, radix conversion, and constant values are correctly rounded
-//! (a correctly rounded number is a number that is identical to a number computed to infinite precision and then rounded, reflecting no information loss during rounding).
+//! `ExactNum` methods that take a rounding mode other than `RoundingMode::None` round to the requested precision.
+//! `RoundingMode::None` skips that step and may keep extra bits.
+//! `expr!` raises working precision to compensate cancellation; it does not itself perform correct rounding.
 //!
 //! ## Examples
 //!
@@ -134,7 +136,7 @@
 //!
 //! ``` toml
 //! [dependencies]
-//! zenith-float = { version = "0.9.2", default-features = false }
+//! zenith-float = { version = "0.1.0", default-features = false }
 //! ```
 //!
 

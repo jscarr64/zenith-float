@@ -50,7 +50,6 @@ pub fn sqrt_int(a: u32) -> u32 {
 }
 
 /// n-root integer approximation.
-#[allow(dead_code)]
 #[inline]
 pub fn nroot_int(a: u64, n: usize) -> u64 {
     if a == 0 {

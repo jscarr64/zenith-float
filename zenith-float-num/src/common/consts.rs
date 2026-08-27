@@ -47,10 +47,10 @@ lazy_static! {
     pub(crate) static ref FOURTY: ExactNumNumber = ExactNumNumber::from_word(40, DEFAULT_P).expect("Constant FOURTY initialization.");
 
     /// 120
-    pub(crate) static ref C120: ExactNumNumber = ExactNumNumber::from_word(120, DEFAULT_P).expect("Constant C24 initialization.");
+    pub(crate) static ref C120: ExactNumNumber = ExactNumNumber::from_word(120, DEFAULT_P).expect("Constant C120 initialization.");
 }
 
-// TODO: Consider using in std environment everywhere Consts are needed.
+// Thread-local Consts cache used by decimal conversion under std.
 #[cfg(feature = "std")]
 thread_local! {
     pub static TENPOWERS: RefCell<Consts> = RefCell::new(Consts::new().expect("Failed to initialize thread-local constants cache"));

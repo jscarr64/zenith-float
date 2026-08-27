@@ -369,9 +369,8 @@ impl Mantissa {
         }
     }
 
-    // short division
-    // prepreq: m1.len() = 2*m2.len()
-    #[allow(dead_code)] // TODO: consider performance improvement
+    // Alternate short division. Not on the production hot path; covered by unit tests.
+    #[allow(dead_code)]
     fn div_short(m1: &[Word], m2: &[Word]) -> Result<WordBuf, Error> {
         debug_assert!(m1.len() == 2 * m2.len());
         debug_assert!(m2[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
@@ -393,7 +392,6 @@ impl Mantissa {
             // a2 = a0 + r1*2^(2*k) - q1*b0*2^k
             let mut tmp_buf = WordBuf::new(m1.len() + 1)?;
 
-            // TODO: consider using mul_short when it gets faster than mul_unbalanced
             tmp_buf[..k].fill(0);
             tmp_buf[k + q1.len() + b0.len()..].fill(0);
             Self::mul_unbalanced(&q1, &b0, &mut tmp_buf[k..])?;
@@ -490,7 +488,6 @@ mod tests {
             d1[s1.len()] = 0;
             //println!("{:?}\n{:?}\n", &s2[s1.len()..], &d1[s1.len()..s2.len()]);
             assert!(s2[s1.len()..] == d1[s1.len()..s2.len()]);
-            // TODO: also worth checking if remainder less than divizor
         }
     }
 

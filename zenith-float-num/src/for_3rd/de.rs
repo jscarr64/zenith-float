@@ -3,7 +3,6 @@
 use core::fmt::Formatter;
 use core::str::FromStr;
 
-use crate::num::ExactNumNumber;
 use crate::ExactNum;
 use serde::de::Error;
 use serde::de::Visitor;
@@ -21,14 +20,15 @@ impl<'de> Visitor<'de> for ExactNumVisitor {
     type Value = ExactNum;
 
     fn expecting(&self, formatter: &mut Formatter) -> core::fmt::Result {
-        write!(formatter, "except `String`, `Number`, `Bytes`")
+        write!(formatter, "a decimal string or an integer")
     }
 
     fn visit_u64<E: Error>(self, v: u64) -> Result<Self::Value, E> {
-        match ExactNumNumber::from_usize(v as usize) {
-            Ok(o) => Ok(o.into()),
-            Err(e) => Err(Error::custom(format!("{e:?}"))),
-        }
+        Ok(ExactNum::from(v))
+    }
+
+    fn visit_i64<E: Error>(self, v: i64) -> Result<Self::Value, E> {
+        Ok(ExactNum::from(v))
     }
 
     fn visit_str<E: Error>(self, v: &str) -> Result<Self::Value, E> {
@@ -41,13 +41,6 @@ impl<'de> Visitor<'de> for ExactNumVisitor {
     fn visit_string<E: Error>(self, v: String) -> Result<Self::Value, E> {
         self.visit_str(&v)
     }
-
-    // lossless conversion
-    // (&[Word], usize, Sign, Exponent)
-    // (s * len, s    , 1   , 1       )
-    // fn visit_bytes<E: Error>(self, _: &[u8]) -> Result<Self::Value, E> {
-    //     todo!()
-    // }
 }
 
 

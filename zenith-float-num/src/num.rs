@@ -319,8 +319,6 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let p = round_p(p);
 
-        // TODO: consider short multiplication.
-
         Self::p_assertion(p)?;
 
         let s = if self.s == d2.s { Sign::Pos } else { Sign::Neg };
@@ -1199,7 +1197,7 @@ impl ExactNumNumber {
         Ok(ret)
     }
 
-    #[cfg(feature = "random")]
+    #[cfg(any(test, feature = "random"))]
     /// Returns a random normalized (not subnormal) ExactNum number with exponent in the range
     /// from `exp_from` to `exp_to` inclusive. The sign can be positive and negative. Zero is excluded.
     /// Precision is rounded upwards to the word size.
@@ -2092,7 +2090,7 @@ mod tests {
         d3 = ONE.div(&d1, p, rm).unwrap();
         let mut eps2 = ExactNumNumber::min_positive(p).unwrap();
         eps2.set_exponent(d3.exponent());
-        // TODO: reciprocal is not precise, because does not take into account remainder.
+        // Remainder is not folded in; tests allow a 1-ulp-class gap vs 1/x for max_value.
         assert!(
             d3.sub(&d2, p, RoundingMode::None)
                 .unwrap()

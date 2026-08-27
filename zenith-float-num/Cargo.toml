@@ -1,13 +1,19 @@
 [package]
 name = "zenith-float-num"
-version = "0.0.1"
-edition = "2021"
-
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Software big-float kernel for zenith-float."
+readme = "../README.md"
+keywords = ["arbitrary-precision", "bigfloat", "numeric", "no-std"]
+categories = ["mathematics", "no-std", "science"]
 
 [dev-dependencies]
 rand = "0.8.5"
 serde_json = "1.0.89"
-zenith-float-macro = { version = "0.0.1", path = "../zenith-float-macro" }
+zenith-float-macro = { version = "0.1.0", path = "../zenith-float-macro" }
 
 [target.'cfg(all(target_arch = "x86_64", target_os = "linux"))'.dev-dependencies]
 rug = { version = "~1.20.0", features = ["float", "rand"] }
@@ -19,10 +25,8 @@ rand = { version = "0.8.5", optional = true }
 lazy_static = { version = "1.4.0", default-features = false, features = [] }
 itertools = { version = "0.10.3", default-features = false, features = [] }
 
-
-
 [features]
-default = ["std", "random", "serde"]
+default = ["std"]
 std = []
 random = ["dep:rand"]
 serde = ["dep:serde"]
