@@ -5,9 +5,9 @@ use std::ops::Add;
 
 use crate::mpfr::common::{
     assert_float_close, conv_to_mpfr, get_last_zero, get_near_one, get_oned_sides, get_oned_zeroed,
-    get_periodic, get_random_rnd_pair, test_astro_op_no_cc,
+    get_periodic, get_random_rnd_pair, test_zf_op_no_cc,
 };
-use crate::mpfr::common::{get_prec_rng, test_astro_op};
+use crate::mpfr::common::{get_prec_rng, test_zf_op};
 use zenith_float_num::{
     ExactNum, Consts, Exponent, Word, EXPONENT_BIT_SIZE, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
 };
@@ -121,7 +121,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 //println!("rm {:?}", rm);
                 //println!("\n--{:?}\n{:?}", n, n1);
                 //println!("\n--{:?}\n{:?}", f, f1);
-                test_astro_op_no_cc!(
+                test_zf_op_no_cc!(
                     true,
                     n,
                     n1,
@@ -135,7 +135,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                     (n, n1, p, rm, "add"),
                     cc
                 );
-                test_astro_op_no_cc!(
+                test_zf_op_no_cc!(
                     true,
                     n,
                     n1,
@@ -149,7 +149,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                     (n, n1, p, rm, "sub"),
                     cc
                 );
-                test_astro_op_no_cc!(
+                test_zf_op_no_cc!(
                     true,
                     n,
                     n1,
@@ -163,7 +163,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                     (n, n1, p, rm, "mul"),
                     cc
                 );
-                test_astro_op_no_cc!(
+                test_zf_op_no_cc!(
                     true,
                     n,
                     n1,
@@ -178,7 +178,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                     cc
                 );
 
-                test_astro_op!(
+                test_zf_op!(
                     true,
                     n,
                     n1,
@@ -215,11 +215,11 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 assert_float_close(n3, f3, p, &format!("{:?}", (n, n1, "rem")), true, &mut cc);
             }
 
-            test_astro_op_no_cc!(true, n, sqrt, f, sqrt, p, rm, rnd, (n, p, rm, "sqrt"), cc);
-            test_astro_op_no_cc!(true, n, cbrt, f, cbrt, p, rm, rnd, (n, p, rm, "cbrt"), cc);
-            test_astro_op!(true, n, ln, f, log, p, rm, rnd, (n, p, rm, "ln"), cc);
-            test_astro_op!(true, n, log2, f, log2, p, rm, rnd, (n, p, rm, "log2"), cc);
-            test_astro_op!(
+            test_zf_op_no_cc!(true, n, sqrt, f, sqrt, p, rm, rnd, (n, p, rm, "sqrt"), cc);
+            test_zf_op_no_cc!(true, n, cbrt, f, cbrt, p, rm, rnd, (n, p, rm, "cbrt"), cc);
+            test_zf_op!(true, n, ln, f, log, p, rm, rnd, (n, p, rm, "ln"), cc);
+            test_zf_op!(true, n, log2, f, log2, p, rm, rnd, (n, p, rm, "log2"), cc);
+            test_zf_op!(
                 true,
                 n,
                 log10,
@@ -231,7 +231,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 (n, p, rm, "log10"),
                 cc
             );
-            test_astro_op!(
+            test_zf_op!(
                 true,
                 n,
                 asinh,
@@ -243,7 +243,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 (n, p, rm, "asinh"),
                 cc
             );
-            test_astro_op!(true, n, atan, f, atan, p, rm, rnd, (n, p, rm, "atan"), cc);
+            test_zf_op!(true, n, atan, f, atan, p, rm, rnd, (n, p, rm, "atan"), cc);
 
             let mut n_trig = n.clone();
             let f_trig = if n.exponent().unwrap() > 128 {
@@ -253,7 +253,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 f.clone()
             };
 
-            test_astro_op!(
+            test_zf_op!(
                 true,
                 n_trig,
                 sin,
@@ -265,7 +265,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 (n, p, rm, "sin"),
                 cc
             );
-            test_astro_op!(
+            test_zf_op!(
                 true,
                 n_trig,
                 cos,
@@ -277,7 +277,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 (n, p, rm, "cos"),
                 cc
             );
-            test_astro_op!(
+            test_zf_op!(
                 true,
                 n_trig,
                 tan,
@@ -290,12 +290,12 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 cc
             );
 
-            test_astro_op!(true, n, exp, f, exp, p, rm, rnd, (n, p, rm, "exp"), cc);
-            test_astro_op!(true, n, sinh, f, sinh, p, rm, rnd, (n, p, rm, "sinh"), cc);
-            test_astro_op!(true, n, cosh, f, cosh, p, rm, rnd, (n, p, rm, "cosh"), cc);
-            test_astro_op!(true, n, tanh, f, tanh, p, rm, rnd, (n, p, rm, "tanh"), cc);
+            test_zf_op!(true, n, exp, f, exp, p, rm, rnd, (n, p, rm, "exp"), cc);
+            test_zf_op!(true, n, sinh, f, sinh, p, rm, rnd, (n, p, rm, "sinh"), cc);
+            test_zf_op!(true, n, cosh, f, cosh, p, rm, rnd, (n, p, rm, "cosh"), cc);
+            test_zf_op!(true, n, tanh, f, tanh, p, rm, rnd, (n, p, rm, "tanh"), cc);
 
-            test_astro_op!(
+            test_zf_op!(
                 true,
                 n,
                 acosh,
@@ -308,9 +308,9 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 cc
             );
 
-            test_astro_op!(true, n, acos, f, acos, p, rm, rnd, (n, p, rm, "acos"), cc);
-            test_astro_op!(true, n, asin, f, asin, p, rm, rnd, (n, p, rm, "asin"), cc);
-            test_astro_op!(
+            test_zf_op!(true, n, acos, f, acos, p, rm, rnd, (n, p, rm, "acos"), cc);
+            test_zf_op!(true, n, asin, f, asin, p, rm, rnd, (n, p, rm, "asin"), cc);
+            test_zf_op!(
                 true,
                 n,
                 atanh,
@@ -373,10 +373,10 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
 
         let f = conv_to_mpfr(p1, &n, &mut cc);
 
-        test_astro_op!(true, n, sin, f, sin, p, rm, rnd, (&n, p, rm, "sin"), cc);
+        test_zf_op!(true, n, sin, f, sin, p, rm, rnd, (&n, p, rm, "sin"), cc);
 
-        test_astro_op!(true, n, cos, f, cos, p, rm, rnd, (&n, p, rm, "cos"), cc);
+        test_zf_op!(true, n, cos, f, cos, p, rm, rnd, (&n, p, rm, "cos"), cc);
 
-        test_astro_op!(true, n, tan, f, tan, p, rm, rnd, (n, p, rm, "tan"), cc);
+        test_zf_op!(true, n, tan, f, tan, p, rm, rnd, (n, p, rm, "tan"), cc);
     }
 }

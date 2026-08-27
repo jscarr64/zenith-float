@@ -1,7 +1,7 @@
 //! This test suite performs comparison of mpfr constants and zenith-float constants at bit level.
 
 use crate::mpfr::common::get_prec_rng;
-use crate::mpfr::common::test_astro_const;
+use crate::mpfr::common::test_zf_const;
 use crate::mpfr::common::{assert_float_close, get_random_rnd_pair};
 use zenith_float_num::RoundingMode;
 use zenith_float_num::{ExactNum, Consts, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
@@ -62,8 +62,8 @@ fn mpfr_compare_const() {
             let (rm, rnd) = get_random_rnd_pair();
 
             // pi, ln(2)
-            test_astro_const!(pi, const_pi, p, rm, rnd, (p, rm, "const pi"), cc);
-            test_astro_const!(ln_2, const_log2, p, rm, rnd, (p, rm, "const ln(2)"), cc);
+            test_zf_const!(pi, const_pi, p, rm, rnd, (p, rm, "const pi"), cc);
+            test_zf_const!(ln_2, const_log2, p, rm, rnd, (p, rm, "const ln(2)"), cc);
 
             // e
             let n1 = cc.e(p, rm);
@@ -134,8 +134,8 @@ fn mpfr_compare_const() {
     }
 
     // pi, ln(2)
-    test_astro_const!(pi, const_pi, p, rm, rnd, (p, rm, "const pi"), cc);
-    test_astro_const!(ln_2, const_log2, p, rm, rnd, (p, rm, "const ln(2)"), cc);
+    test_zf_const!(pi, const_pi, p, rm, rnd, (p, rm, "const pi"), cc);
+    test_zf_const!(ln_2, const_log2, p, rm, rnd, (p, rm, "const ln(2)"), cc);
 
     // e
     let n1 = cc.e(p, rm);

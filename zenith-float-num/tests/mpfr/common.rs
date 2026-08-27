@@ -8,9 +8,9 @@ use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rand::random;
 use rug::Float;
 
-macro_rules! test_astro_op {
-    ($eq:literal, $n1:ident, $n2:ident, $astro_op:ident, $f1:ident, $f2:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
-        let n3 = ExactNum::$astro_op(&($n1), &($n2), $p, $rm, &mut $cc);
+macro_rules! test_zf_op {
+    ($eq:literal, $n1:ident, $n2:ident, $zf_op:ident, $f1:ident, $f2:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
+        let n3 = ExactNum::$zf_op(&($n1), &($n2), $p, $rm, &mut $cc);
 
         let mut f3 = Float::with_val($p as u32, 1);
 
@@ -22,8 +22,8 @@ macro_rules! test_astro_op {
 
         assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc);
     };
-    ($eq:literal, $n1:ident, $astro_op:ident, $f1:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
-        let n3 = ExactNum::$astro_op(&($n1), $p, $rm, &mut $cc);
+    ($eq:literal, $n1:ident, $zf_op:ident, $f1:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
+        let n3 = ExactNum::$zf_op(&($n1), $p, $rm, &mut $cc);
 
         let mut f3 = Float::with_val($p as u32, 1);
 
@@ -34,8 +34,8 @@ macro_rules! test_astro_op {
 
         assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc);
     };
-    ($eq:literal, $n1:ident, $astro_op:ident, $f1:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
-        let n3 = ExactNum::$astro_op(&($n1), $p, $rm, &mut $cc);
+    ($eq:literal, $n1:ident, $zf_op:ident, $f1:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
+        let n3 = ExactNum::$zf_op(&($n1), $p, $rm, &mut $cc);
 
         let mut f3 = Float::with_val($p as u32, 1);
 
@@ -48,9 +48,9 @@ macro_rules! test_astro_op {
     };
 }
 
-macro_rules! test_astro_op_no_cc {
-    ($eq:literal, $n1:ident, $n2:ident, $astro_op:ident, $f1:ident, $f2:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
-        let n3 = ExactNum::$astro_op(&($n1), &($n2), $p, $rm);
+macro_rules! test_zf_op_no_cc {
+    ($eq:literal, $n1:ident, $n2:ident, $zf_op:ident, $f1:ident, $f2:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
+        let n3 = ExactNum::$zf_op(&($n1), &($n2), $p, $rm);
 
         let mut f3 = Float::with_val($p as u32, 1);
 
@@ -62,8 +62,8 @@ macro_rules! test_astro_op_no_cc {
 
         assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc);
     };
-    ($eq:literal, $n1:ident, $astro_op:ident, $f1:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
-        let n3 = ExactNum::$astro_op(&($n1), $p, $rm);
+    ($eq:literal, $n1:ident, $zf_op:ident, $f1:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
+        let n3 = ExactNum::$zf_op(&($n1), $p, $rm);
 
         let mut f3 = Float::with_val($p as u32, 1);
 
@@ -77,9 +77,9 @@ macro_rules! test_astro_op_no_cc {
 }
 
 // test constant value match
-macro_rules! test_astro_const {
-    ($astro_const:ident, $mpfr_const:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
-        let n1: ExactNum = $cc.$astro_const($p, $rm);
+macro_rules! test_zf_const {
+    ($zf_const:ident, $mpfr_const:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
+        let n1: ExactNum = $cc.$zf_const($p, $rm);
 
         let mut f1 = Float::with_val($p as u32, 1);
 
@@ -91,9 +91,9 @@ macro_rules! test_astro_const {
     };
 }
 
-pub(crate) use test_astro_const;
-pub(crate) use test_astro_op;
-pub(crate) use test_astro_op_no_cc;
+pub(crate) use test_zf_const;
+pub(crate) use test_zf_op;
+pub(crate) use test_zf_op_no_cc;
 
 pub const fn get_prec_rng() -> usize {
     #[cfg(not(debug_assertions))]

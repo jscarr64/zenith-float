@@ -153,7 +153,7 @@ extern crate alloc;
 /// 1. Code simplification. Macro simplifies code and improves its readability by allowing to specify simple and concise expression
 ///    and process input arguments transparently.
 ///
-/// 2. Error compensation. Macro compensates error caused by [catastrophic cancellation](https://en.wikipedia.org/wiki/Catastrophic_cancellation)
+/// 2. Error compensation. Macro compensates error caused by catastrophic cancellation
 ///    and some other situations where precision can be lost by automatically increasing the working precision internally.
 ///
 /// The macro does not take care of correct rounding, because the completion of the rounding algorithm in finite time depends on the macro's input.

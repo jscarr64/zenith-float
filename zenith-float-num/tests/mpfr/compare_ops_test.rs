@@ -4,8 +4,8 @@
 use std::ops::Add;
 
 use crate::mpfr::common::get_prec_rng;
-use crate::mpfr::common::test_astro_op;
-use crate::mpfr::common::test_astro_op_no_cc;
+use crate::mpfr::common::test_zf_op;
+use crate::mpfr::common::test_zf_op_no_cc;
 use crate::mpfr::common::{assert_float_close, get_float_pair, get_random_rnd_pair};
 use zenith_float_num::Word;
 use zenith_float_num::EXPONENT_BIT_SIZE;
@@ -113,7 +113,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
         // println!("{:b}\n{}", n1, f1.to_string_radix(2, None));
         // println!("\n{:b}\n{}", n2, f2.to_string_radix(2, None));
 
-        test_astro_op_no_cc!(
+        test_zf_op_no_cc!(
             true,
             n1,
             n2,
@@ -127,7 +127,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, &n2, p, rm, "add"),
             cc
         );
-        test_astro_op_no_cc!(
+        test_zf_op_no_cc!(
             true,
             n1,
             n2,
@@ -161,7 +161,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
         // println!("{:b}\n{}", n1, f1.to_string_radix(2, None));
         // println!("\n{:b}\n{}", n2, f2.to_string_radix(2, None));
 
-        test_astro_op_no_cc!(
+        test_zf_op_no_cc!(
             true,
             n1,
             n2,
@@ -175,7 +175,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, &n2, p, rm, "mul"),
             cc
         );
-        test_astro_op_no_cc!(
+        test_zf_op_no_cc!(
             true,
             n1,
             n2,
@@ -309,7 +309,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
         // println!("{:?}", b);
         // println!("{:?}", n1);
 
-        test_astro_op!(
+        test_zf_op!(
             true,
             b,
             n1,
@@ -339,9 +339,9 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
         //println!("{:?}", n1);
 
-        test_astro_op!(true, n1, sin, f1, sin, p, rm, rnd, (&n1, p, rm, "sin"), cc);
-        test_astro_op!(true, n1, cos, f1, cos, p, rm, rnd, (&n1, p, rm, "cos"), cc);
-        test_astro_op!(true, n1, tan, f1, tan, p, rm, rnd, (&n1, p, rm, "tan"), cc);
+        test_zf_op!(true, n1, sin, f1, sin, p, rm, rnd, (&n1, p, rm, "sin"), cc);
+        test_zf_op!(true, n1, cos, f1, cos, p, rm, rnd, (&n1, p, rm, "cos"), cc);
+        test_zf_op!(true, n1, tan, f1, tan, p, rm, rnd, (&n1, p, rm, "tan"), cc);
     }
 
     // n1 = -inf..log2(emax)+1: sinh, cosh, tanh, exp
@@ -358,8 +358,8 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
         //println!("{:?}", n1);
 
-        test_astro_op!(true, n1, exp, f1, exp, p, rm, rnd, (&n1, p, rm, "exp"), cc);
-        test_astro_op!(
+        test_zf_op!(true, n1, exp, f1, exp, p, rm, rnd, (&n1, p, rm, "exp"), cc);
+        test_zf_op!(
             true,
             n1,
             sinh,
@@ -371,7 +371,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "sinh"),
             cc
         );
-        test_astro_op!(
+        test_zf_op!(
             true,
             n1,
             cosh,
@@ -383,7 +383,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "cosh"),
             cc
         );
-        test_astro_op!(
+        test_zf_op!(
             true,
             n1,
             tanh,
@@ -410,7 +410,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
         //println!("{:?}", n1);
 
-        test_astro_op!(
+        test_zf_op!(
             true,
             n1,
             acosh,
@@ -437,7 +437,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
         //println!("{:?}\n{:?}", n1, f1.to_string_radix(2, None));
 
-        test_astro_op!(
+        test_zf_op!(
             true,
             n1,
             acos,
@@ -449,7 +449,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "acos"),
             cc
         );
-        test_astro_op!(
+        test_zf_op!(
             true,
             n1,
             asin,
@@ -461,7 +461,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "asin"),
             cc
         );
-        test_astro_op!(
+        test_zf_op!(
             true,
             n1,
             atanh,
@@ -489,7 +489,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
         // println!("{:b}", n1);
         // println!("{}", f1.to_string_radix(2, None));
 
-        test_astro_op_no_cc!(
+        test_zf_op_no_cc!(
             true,
             n1,
             sqrt,
@@ -501,7 +501,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "sqrt"),
             cc
         );
-        test_astro_op_no_cc!(
+        test_zf_op_no_cc!(
             true,
             n1,
             cbrt,
@@ -513,8 +513,8 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "cbrt"),
             cc
         );
-        test_astro_op!(true, n1, ln, f1, log, p, rm, rnd, (&n1, p, rm, "ln"), cc);
-        test_astro_op!(
+        test_zf_op!(true, n1, ln, f1, log, p, rm, rnd, (&n1, p, rm, "ln"), cc);
+        test_zf_op!(
             true,
             n1,
             log2,
@@ -526,7 +526,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "log2"),
             cc
         );
-        test_astro_op!(
+        test_zf_op!(
             true,
             n1,
             log10,
@@ -538,7 +538,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "log10"),
             cc
         );
-        test_astro_op!(
+        test_zf_op!(
             true,
             n1,
             asinh,
@@ -550,7 +550,7 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "asinh"),
             cc
         );
-        test_astro_op!(
+        test_zf_op!(
             true,
             n1,
             atan,

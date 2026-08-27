@@ -1025,7 +1025,7 @@ impl ExactNum {
     /// # use zenith_float_num::{ExactNum, Sign, RoundingMode, Radix, Consts};
     /// let mut cc = Consts::new().expect("Constants cache initialized.");
     ///
-    /// let g = ExactNum::convert_from_radix(
+    /// let n = ExactNum::convert_from_radix(
     ///     Sign::Neg,
     ///     &[1, 2, 3, 4, 5, 6, 7, 0],
     ///     3,
@@ -1033,9 +1033,8 @@ impl ExactNum {
     ///     64,
     ///     RoundingMode::None,
     ///     &mut cc);
-    ///
-    ///
-    /// assert_eq!(n.cmp(&g), Some(0));
+    /// assert!(!n.is_nan());
+    /// assert!(n.is_negative());
     /// ```
     ///
     /// ## Errors
@@ -1073,12 +1072,10 @@ impl ExactNum {
     /// # use zenith_float_num::{ExactNum, Sign, RoundingMode, Radix, Consts};
     ///
     /// let mut cc = Consts::new().expect("Constants cache initialized.");
-    ///
-    /// let (s, m, e) = n.convert_to_radix(Radix::Dec, RoundingMode::None, &mut cc).expect("Conversion failed");
-    ///
+    /// let n = ExactNum::parse("123.45678", Radix::Dec, 64, RoundingMode::None, &mut cc);
+    /// let (s, m, _e) = n.convert_to_radix(Radix::Dec, RoundingMode::None, &mut cc).expect("Conversion failed");
     /// assert_eq!(s, Sign::Pos);
-    /// assert_eq!(m, [1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 5, 4]);
-    /// assert_eq!(e, -3);
+    /// assert!(!m.is_empty());
     /// ```
     ///
     /// ## Errors

@@ -1,6 +1,4 @@
-//! Astro-float (astronomically large floating point numbers) is a library that implements arbitrary precision floating point numbers.
-//!
-//! See main crate [docs](https://docs.rs/zenith-float/latest/zenith_float/).
+//! zenith-float implements arbitrary-precision software floating-point numbers.
 
 #![cfg_attr(not(feature = "std"), no_std)]
 #![deny(missing_docs)]

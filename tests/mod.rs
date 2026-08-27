@@ -2,8 +2,8 @@
 
 use zenith_float_macro::expr;
 use zenith_float_num::{
-    ctx::Context, ExactNum, Consts, Radix, RoundingMode, Sign, WORD_BIT_SIZE, WORD_MAX,
-    WORD_SIGNIFICANT_BIT,
+    ctx::Context, ExactNum, Consts, EXPONENT_MAX, EXPONENT_MIN, Radix, RoundingMode, Sign,
+    WORD_BIT_SIZE, WORD_MAX, WORD_SIGNIFICANT_BIT,
 };
 
 #[test]
@@ -108,7 +108,9 @@ fn macro_run_err_test() {
     let rm = RoundingMode::ToEven;
     let mut cc = Consts::new().unwrap();
 
-    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), -10000, 10000);
+    // Extra-precision cases below produce exponents far outside ±10k; Inf would
+    // mask the compensation the test is actually checking.
+    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), EXPONENT_MIN, EXPONENT_MAX);
 
     let two = ExactNum::from(2);
     let ten = ExactNum::from(10);

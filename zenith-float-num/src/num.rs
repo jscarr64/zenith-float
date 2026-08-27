@@ -28,7 +28,8 @@ impl ExactNumNumber {
       
     #[inline]
     pub(crate) fn is_subnormal(&self) -> bool {
-        self.e <= crate::EXPONENT_MIN // The engine only cares if the exponent hit the absolute floor
+        // Leading bit unset (and not zero): same as the public ExactNum docs.
+        !self.is_zero() && self.m.bit_len() < self.m.max_bit_len()
     }
 
     pub(crate) fn as_raw_parts(&self) -> (&[Word], usize, Sign, Exponent, bool) {
