@@ -12,6 +12,7 @@ mod cos;
 mod cosh;
 mod log;
 mod pow;
+mod recip;
 mod series;
 mod sin;
 mod sinh;

@@ -25,7 +25,6 @@ pub(crate) struct ExactNumNumber {
 }
 
 impl ExactNumNumber {
-      
     #[inline]
     pub(crate) fn is_subnormal(&self) -> bool {
         // Leading bit unset (and not zero): same as the public ExactNum docs.
@@ -710,7 +709,7 @@ impl ExactNumNumber {
     /// Make `self` subnormal
     pub(crate) fn subnormalize(&mut self, e: isize, rm: RoundingMode) {
         debug_assert_eq!(self.exponent(), EXPONENT_MIN);
-        
+
         if self.is_zero() {
             return;
         }
@@ -756,7 +755,7 @@ impl ExactNumNumber {
             self.inexact |= true;
         }
     }
-    
+
     /// Compares `self` to `d2`.
     /// Returns positive if `self` is greater than `d2`, negative if `self` is smaller than `d2`, 0 otherwise.
     pub fn cmp(&self, d2: &Self) -> SignedWord {
@@ -813,7 +812,7 @@ impl ExactNumNumber {
 
     /// Conversion rounds `self` to zero.
     #[cfg(test)]
-    
+
     /// Constructs a number from the raw parts:
     ///
     ///  - `m` is the mantissa.
@@ -1326,18 +1325,6 @@ impl ExactNumNumber {
         self.m.set_length(p)?;
 
         Ok(true)
-    }
-
-    /// Computes the reciprocal of a number with precision `p`. The result is rounded using the rounding mode `rm`.
-    /// Precision is rounded upwards to the word size.
-    ///
-    /// ## Errors
-    ///
-    ///  - DivisionByZero: `self` is zero.
-    ///  - ExponentOverflow: the resulting exponent becomes greater than the maximum allowed value for the exponent.
-    ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        ONE.div(self, p, rm)
     }
 
     /// Sets the sign of `self`.
@@ -2088,17 +2075,7 @@ mod tests {
         d1 = ExactNumNumber::max_value(p1).unwrap();
         d2 = d1.reciprocal(p, rm).unwrap();
         d3 = ONE.div(&d1, p, rm).unwrap();
-        let mut eps2 = ExactNumNumber::min_positive(p).unwrap();
-        eps2.set_exponent(d3.exponent());
-        // Remainder is not folded in; tests allow a 1-ulp-class gap vs 1/x for max_value.
-        assert!(
-            d3.sub(&d2, p, RoundingMode::None)
-                .unwrap()
-                .abs()
-                .unwrap()
-                .cmp(&eps2)
-                <= 0
-        );
+        assert!(d2.cmp(&d3) == 0);
 
         // variable precision
         d1 = ExactNumNumber::from_i8(3, WORD_BIT_SIZE * 2).unwrap();
@@ -2270,8 +2247,6 @@ mod tests {
         assert!(d1.sign() == Sign::Neg);
         assert!(d1.is_negative());
         assert!(d1.exponent() == 1);
-
-        
 
         assert!(
             ExactNumNumber::min_positive(p)
@@ -2575,7 +2550,6 @@ mod tests {
         assert_eq!(d1.sign(), Sign::Pos);
     }
 
-    
     #[test]
     fn test_rounding() {
         // trailing bits
