@@ -259,7 +259,7 @@ pub fn root_estimate(m: &[Word], n: usize) -> Result<WordBuf, Error> {
 pub fn root_estimate(m: &[Word], n: usize) -> Result<WordBuf, Error> {
     let mut buf = WordBuf::new(m.len() / n + 1)?;
 
-    if buf.len() > 0 {
+    if !buf.is_empty() {
         buf.fill(0);
 
         let nbits = log2_floor(*m.last().unwrap() as usize);

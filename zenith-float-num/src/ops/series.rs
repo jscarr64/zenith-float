@@ -3,7 +3,6 @@
 use crate::common::util::calc_add_cost;
 use crate::common::util::calc_mul_cost;
 use crate::common::util::log2_floor;
-use crate::common::util::nroot_int;
 use crate::common::util::sqrt_int;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
@@ -350,103 +349,4 @@ fn series_horner<T: PolycoeffGen>(
     acc = acc.mul(&x_first, p, RoundingMode::None)?;
 
     add.add(&acc, p, RoundingMode::None)
-}
-
-// Is it possbile to make it more effective than series_rect?
-// compute series using n dimensions
-// p is the result precision
-// niter is the estimated number of iterations
-// x_first is the first power of x in the series
-// x_step is a multiplication factor for each step
-// polycoeff_gen is a generator of polynomial coefficients for the series
-// rm is the rounding mode.
-#[allow(dead_code)]
-fn ndim_series<T: PolycoeffGen>(
-    n: usize,
-    niter: usize,
-    add: ExactNumNumber,
-    x_factor: ExactNumNumber,
-    x_step: ExactNumNumber,
-    polycoeff_gen: &mut T,
-) -> Result<ExactNumNumber, Error> {
-    debug_assert!((2..=8).contains(&n));
-
-    let p = add
-        .mantissa_max_bit_len()
-        .max(x_factor.mantissa_max_bit_len())
-        .max(x_step.mantissa_max_bit_len());
-
-    let mut acc = ExactNumNumber::new(p)?;
-
-    // build cache
-    let mut cache = Vec::<ExactNumNumber>::new();
-    let cache_dim_sz = nroot_int(niter as u64, n) as usize - 1;
-    let cache_dim_sz = cache_dim_sz.min(MAX_CACHE / (n - 1));
-    let mut x_pow = x_step.clone()?;
-
-    for _ in 0..n - 1 {
-        let cache_step = x_pow.clone()?;
-
-        for _ in 0..cache_dim_sz {
-            cache.push(x_pow.clone()?);
-            x_pow = x_pow.mul(&cache_step, p, RoundingMode::None)?;
-        }
-    }
-
-    // run computation
-    let poly_val = compute_cube(
-        acc.mantissa_max_bit_len(),
-        n - 1,
-        &cache,
-        cache_dim_sz,
-        polycoeff_gen,
-    )?;
-    acc = acc.add(&poly_val, p, RoundingMode::None)?;
-    let mut terminal_pow = x_pow.clone()?;
-
-    for _ in 1..cache_dim_sz {
-        let poly_val = compute_cube(
-            acc.mantissa_max_bit_len(),
-            n - 1,
-            &cache,
-            cache_dim_sz,
-            polycoeff_gen,
-        )?;
-        let part = poly_val.mul(&terminal_pow, p, RoundingMode::None)?;
-        acc = acc.add(&part, p, RoundingMode::None)?;
-        terminal_pow = terminal_pow.mul(&x_pow, p, RoundingMode::None)?;
-    }
-
-    acc = acc.mul(&x_factor, p, RoundingMode::None)?;
-    terminal_pow = terminal_pow.mul(&x_factor, p, RoundingMode::None)?;
-    acc = acc.add(&add, p, RoundingMode::None)?;
-
-    series_linear(acc, terminal_pow, x_step, polycoeff_gen)
-}
-
-#[allow(dead_code)]
-fn compute_cube<T: PolycoeffGen>(
-    p: usize,
-    n: usize,
-    cache: &[ExactNumNumber],
-    cache_dim_sz: usize,
-    polycoeff_gen: &mut T,
-) -> Result<ExactNumNumber, Error> {
-    if n > 1 {
-        let mut acc = ExactNumNumber::new(p)?;
-        // no need to multityply the returned coefficient of the first cube by 1.
-        let poly_val = compute_cube(p, n - 1, cache, cache_dim_sz, polycoeff_gen)?;
-        acc = acc.add(&poly_val, p, RoundingMode::None)?;
-
-        // the remaining require multiplication
-        for x_pow in &cache[cache_dim_sz * (n - 1)..cache_dim_sz * n] {
-            let poly_val = compute_cube(p, n - 1, cache, cache_dim_sz, polycoeff_gen)?;
-            let add = x_pow.mul(&poly_val, p, RoundingMode::None)?;
-            acc = acc.add(&add, p, RoundingMode::None)?;
-        }
-
-        Ok(acc)
-    } else {
-        compute_row(p, &cache[..cache_dim_sz], polycoeff_gen)
-    }
 }

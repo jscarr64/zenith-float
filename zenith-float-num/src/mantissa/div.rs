@@ -368,65 +368,6 @@ impl Mantissa {
             Ok((buf1, r))
         }
     }
-
-    // Alternate short division. Not on the production hot path; covered by unit tests.
-    #[allow(dead_code)]
-    fn div_short(m1: &[Word], m2: &[Word]) -> Result<WordBuf, Error> {
-        debug_assert!(m1.len() == 2 * m2.len());
-        debug_assert!(m2[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
-        if m2.len() <= 20 {
-            let (q1, _r1) = Self::div_basic(m1, m2)?;
-            Ok(q1)
-        } else {
-            let m2l = (m2.len() + 1) / 2;
-            let k = m2.len() - m2l;
-
-            let a1 = SliceWithSign::new(&m1[2 * k..], 1); // m1 div 2^(2*k)
-            let a0 = SliceWithSign::new(&m1[..2 * k], 1); // m1 mod 2^(2*k)
-
-            let b1 = SliceWithSign::new(&m2[k..], 1); // m2 div 2^k
-            let b0 = SliceWithSign::new(&m2[..k], 1); // m2 mod 2^k
-
-            let (mut q1, mut r1) = Self::div_basic(&a1, &b1)?;
-
-            // a2 = a0 + r1*2^(2*k) - q1*b0*2^k
-            let mut tmp_buf = WordBuf::new(m1.len() + 1)?;
-
-            tmp_buf[..k].fill(0);
-            tmp_buf[k + q1.len() + b0.len()..].fill(0);
-            Self::mul_unbalanced(&q1, &b0, &mut tmp_buf[k..])?;
-
-            let mut bqk = SliceWithSign::new_mut(&mut tmp_buf, -1);
-            bqk.add_assign(&a0);
-
-            r1.try_extend((r1.len() + k * 2) * WORD_BIT_SIZE)?;
-            let r1 = SliceWithSign::new(&r1, 1);
-            bqk.add_assign(&r1);
-
-            if bqk.sign() < 0 {
-                let mut q1 = SliceWithSign::new_mut(&mut q1, -1);
-                let mut bk = WordBuf::new(m2.len() + k)?;
-                bk[..k].fill(0);
-                bk[k..].copy_from_slice(m2);
-                let b = SliceWithSign::new(&bk, 1);
-                Self::div_correction(&mut bqk, &mut q1, b);
-            }
-
-            let a21 = SliceWithSign::new(&tmp_buf[m2l..], 1); // a2 div 2^m2l
-            let b21 = SliceWithSign::new(&m2[m2l..], 1); // m1 div 2^m2l
-            let q0 = Self::div_short(&a21[..b21.len() * 2], &b21)?;
-            let q0 = SliceWithSign::new(&q0, 1);
-
-            let mut full_q_buf = WordBuf::new(m2.len() + 1)?;
-            full_q_buf[..k].fill(0);
-            full_q_buf[q1.len() + k..].fill(0);
-            full_q_buf[k..q1.len() + k].copy_from_slice(&q1);
-            let mut full_q = SliceWithSign::new_mut(&mut full_q_buf, 1);
-            full_q.add_assign(&q0);
-
-            Ok(full_q_buf)
-        }
-    }
 }
 
 #[cfg(test)]
@@ -448,8 +389,6 @@ mod tests {
             let s1 = random_normalized_slice(1, MAX_BUF);
             let s2 = random_normalized_slice(s1.len(), MAX_BUF);
 
-            //println!("let s1 = {:?};\nlet s2 = {:?};", s1, s2);
-
             let (q, r) = Mantissa::div_unbalanced(&s2, &s1).unwrap();
 
             buf[..s1.len()].copy_from_slice(&s1);
@@ -459,35 +398,7 @@ mod tests {
             let d3 = SliceWithSign::new(&r, 1);
             d1.mul_assign(&d2, &mut wb);
             d1.add_assign(&d3);
-            //println!("{:?}\n{:?}\n", s2, &d1[..s2.len()]);
             assert!(s2 == d1[..s2.len()]);
-        }
-    }
-
-    #[test]
-    fn test_div_short() {
-        const MAX_BUF: usize = 100;
-        let mut wb = [0; MAX_BUF * 3 + 1];
-        let mut buf = [0; MAX_BUF * 3 + 1];
-
-        for _ in 0..1000 {
-            let s1 = random_normalized_slice(MAX_BUF, MAX_BUF);
-            let mut s2 = random_normalized_slice(s1.len() * 2, s1.len() * 2);
-            s2[..s1.len()].fill(0);
-
-            //println!("s1{:?}\ns2{:?}", s1, &s2[s1.len()..]);
-
-            let q = Mantissa::div_short(&s2, &s1).unwrap();
-
-            buf[..s1.len()].copy_from_slice(&s1);
-            buf[s1.len()..].fill(0);
-            let mut d1 = SliceWithSign::new_mut(&mut buf, 1);
-            let d2 = SliceWithSign::new(&q, 1);
-            d1.mul_assign(&d2, &mut wb);
-            s2[s1.len()] = 0; // q can be grater than floor(s2/s1) by at most 2*log2(n)
-            d1[s1.len()] = 0;
-            //println!("{:?}\n{:?}\n", &s2[s1.len()..], &d1[s1.len()..s2.len()]);
-            assert!(s2[s1.len()..] == d1[s1.len()..s2.len()]);
         }
     }
 
@@ -521,39 +432,6 @@ mod tests {
             }
             let time = start_time.elapsed();
             println!("div_unbalanced {}", time.as_millis());
-        }
-    }
-
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn test_div_short_perf() {
-        for _ in 0..5 {
-            let sz1 = 1000;
-            let sz2 = 500;
-            let f = random_normalized_slice(sz1, sz1);
-            let mut n = vec![];
-            let l = 1000;
-            for _ in 0..l {
-                let v = random_normalized_slice(sz2, sz2);
-                n.push(v);
-            }
-
-            // basic
-            let start_time = std::time::Instant::now();
-            for ni in &n {
-                let _ = Mantissa::div_basic(&f, ni).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("div_basic {}", time.as_millis());
-
-            // unbalanced
-            let start_time = std::time::Instant::now();
-            for ni in &n {
-                let _ = Mantissa::div_short(&f, ni).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("div_short {}", time.as_millis());
         }
     }
 

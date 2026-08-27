@@ -880,8 +880,8 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    ///  - InvalidArgument: size of `m` is larger than isize::MAX / 2 + EXPONENT_MIN or
-    /// when `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
+    ///  - InvalidArgument: size of `m` is larger than isize::MAX / 2 + EXPONENT_MIN, or
+    ///    when `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
     pub fn from_words(m: &[Word], s: Sign, mut e: Exponent) -> Result<Self, Error> {
         let p = m.len() * WORD_BIT_SIZE;
         Self::p_assertion(p)?;

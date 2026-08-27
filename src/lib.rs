@@ -51,8 +51,7 @@
 //!
 //! ## Examples
 //!
-//! The example below computes value of Pi with precision 1024 rounded to the nearest even number using `expr!` macro.
-//! Macro simplifies syntax and takes care of the error.
+//! The example below computes Pi with precision 1024, rounding to even, using `expr!`.
 //!
 //! ```
 //! use zenith_float::Consts;

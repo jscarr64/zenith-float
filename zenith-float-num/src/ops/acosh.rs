@@ -104,11 +104,6 @@ mod tests {
     fn test_acosh() {
         let mut cc = Consts::new().unwrap();
         let rm = RoundingMode::ToEven;
-        /* let n1 = ExactNumNumber::from_words(&[144, 9223372036854775808], Sign::Pos, 1).unwrap();
-        let n2 = n1.acosh(128, RoundingMode::Down, &mut cc).unwrap();
-        println!("{:?}", n2);
-        //println!("{:?}", n2.format(crate::Radix::Bin, rm).unwrap());
-        return; */
 
         // near 1
         let p = 448;

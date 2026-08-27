@@ -607,13 +607,6 @@ mod test {
     fn test_power() {
         let mut cc = Consts::new().unwrap();
 
-        /*         let n1 =
-            ExactNumNumber::from_words(&[18446744073709551615], Sign::Neg, 2147483647).unwrap();
-        let n2 = ExactNumNumber::from_words(&[1, 18446744073709551615], Sign::Pos, 128).unwrap();
-        let ret = n1.pow(&n2, 128, RoundingMode::Up, &mut cc).unwrap();
-        println!("{:?}", ret);
-        return; */
-
         // near 1
         let p = 320;
         let d1 = ExactNumNumber::parse(

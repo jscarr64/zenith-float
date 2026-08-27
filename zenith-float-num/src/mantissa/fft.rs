@@ -26,7 +26,7 @@ impl Mantissa {
         j = ((j >> 4) & 0x0F0F0F0F0F0F0F0F) | ((j & 0x0F0F0F0F0F0F0F0F) << 4);
         j = ((j >> 8) & 0x00FF00FF00FF00FF) | ((j & 0x00FF00FF00FF00FF) << 8);
         j = ((j >> 16) & 0x0000FFFF0000FFFF) | ((j & 0x0000FFFF0000FFFF) << 16);
-        j = (j >> 32) | (j << 32);
+        j = j.rotate_left(32);
 
         j >>= core::mem::size_of::<u64>() * 8 - k;
 
@@ -75,34 +75,6 @@ impl Mantissa {
 
         Self::fft_normalize(a, n1, modulus);
         Self::fft_normalize(b, n1, modulus);
-    }
-
-    // diagnostic with plain fft
-    #[allow(dead_code)]
-    fn fft3(
-        parts: &mut [SliceWithSign],
-        dst: &mut [SliceWithSign],
-        w: usize,
-        k1: usize,
-        rev: bool,
-    ) {
-        let mut b = WordBuf::new(parts[0].len() + k1).unwrap();
-
-        for (i, dst_i) in dst.iter_mut().enumerate() {
-            for (j, part_j) in parts.iter().enumerate() {
-                let mut ww = (i * j) % k1;
-                if rev {
-                    ww = k1 - ww;
-                }
-
-                b.fill(0);
-                let mut bb = SliceWithSign::new_mut(&mut b, part_j.sign());
-                bb.copy_from(part_j);
-                bb.shift_left(w * ww);
-
-                dst_i.add_assign(&bb);
-            }
-        }
     }
 
     #[allow(clippy::too_many_arguments)]

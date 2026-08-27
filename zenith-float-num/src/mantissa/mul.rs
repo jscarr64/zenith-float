@@ -89,61 +89,12 @@ impl Mantissa {
             Self::mul_slices(sm, lg, m3)
         }
     }
-
-    // Alternate short multiply. Not on the production hot path; covered by unit tests.
-    #[allow(dead_code)]
-    pub(super) fn mul_short(m1: &[Word], m2: &[Word], m3: &mut [Word]) -> Result<(), Error> {
-        debug_assert!(m1.len() == m2.len());
-        let n = m1.len();
-        Self::mul_short_step(m1, m2, m3, n)
-    }
-
-    // short multiplication
-    fn mul_short_step(m1: &[Word], m2: &[Word], m3: &mut [Word], n: usize) -> Result<(), Error> {
-        if n <= 10 {
-            Self::mul_unbalanced(m1, m2, m3)?;
-
-            let mut c1 = SliceWithSign::new_mut(m3, 1);
-            c1.shift_right(n * WORD_BIT_SIZE);
-        } else {
-            let k = n * 775 / 1000;
-            let l = n - k;
-
-            let a1 = SliceWithSign::new(&m1[l..], 1); // m1 div 2^l
-            let a2 = SliceWithSign::new(&m1[..l], 1); // m1 mod 2^l
-            let a3 = SliceWithSign::new(&m1[k..], 1); // m1 div 2^k
-
-            let b1 = SliceWithSign::new(&m2[l..], 1); // m2 div 2^l
-            let b2 = SliceWithSign::new(&m2[..l], 1); // m2 mod 2^l
-            let b3 = SliceWithSign::new(&m2[k..], 1); // m2 div 2^k
-
-            Self::mul_unbalanced(&a1, &b1, m3)?;
-
-            let mut c1 = SliceWithSign::new_mut(m3, 1);
-            c1.shift_right((k - l) * WORD_BIT_SIZE);
-
-            let mut tmp_buf = WordBuf::new(a2.len() + b3.len() + a3.len() + b2.len())?;
-            let (buf1, buf2) = tmp_buf.split_at_mut(a2.len() + b3.len());
-
-            Self::mul_short_step(&a2, &b3, buf1, l)?;
-            let c2 = SliceWithSign::new(buf1, 1);
-
-            Self::mul_short_step(&a3, &b2, buf2, l)?;
-            let c3 = SliceWithSign::new(buf2, 1);
-
-            c1.add_assign(&c2);
-            c1.add_assign(&c3);
-        }
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use crate::defs::WORD_MAX;
     use rand::random;
 
     #[cfg(not(feature = "std"))]
@@ -161,71 +112,6 @@ mod tests {
             Mantissa::mul_unbalanced(&f, &v, &mut ret1).unwrap();
             Mantissa::mul_slices(&f, &v, &mut ret2).unwrap();
             assert!(ret1[..] == ret2[..]);
-        }
-    }
-
-    #[ignore]
-    #[test]
-    fn test_mul_short() {
-        let s1 = [1, 2, 3, 4];
-        let s2 = [1, 2, 3, 4];
-        let mut s3 = [0, 0, 0, 0, 0, 0, 0, 0];
-
-        Mantissa::mul_short(&s1, &s2, &mut s3).unwrap();
-
-        assert!(s3 == [25, 24, 16, 0, 0, 0, 0, 0]);
-
-        let s1 = [
-            1496867450, 1417658947, 3271802710, 2677751033, 3237139020, 3064555062, 1548441171,
-            778455770, 2436515277, 483318499,
-        ];
-        let s2 = [
-            3225363533, 3760565749, 1879799765, 4055875449, 305072033, 1248705486, 102752588,
-            2971455321, 1010393078, 2764359410,
-        ];
-
-        let mut ret = WordBuf::new(20).unwrap();
-        Mantissa::mul_short(&s1, &s2, &mut ret).unwrap();
-
-        let mut s3 = WordBuf::new(20).unwrap();
-        Mantissa::mul_unbalanced(&s1, &s2, &mut s3).unwrap();
-
-        ret[0] &= WORD_MAX << 10; // 10 = ceil(log2(3*(p-1)))
-        s3[10] &= WORD_MAX << 10;
-        assert!(ret[..10] == s3[10..]);
-    }
-
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn test_mul_short_perf() {
-        for _ in 0..5 {
-            let sz1 = 1000;
-            let sz2 = 1000;
-            let f = random_slice(sz1, sz1);
-            let mut ret = WordBuf::new(sz1 + sz2).unwrap();
-            let mut n = vec![];
-            let l = 1000;
-            for _ in 0..l {
-                let v = random_slice(sz2, sz2);
-                n.push(v);
-            }
-
-            // basic
-            let start_time = std::time::Instant::now();
-            for ni in &n {
-                Mantissa::mul_unbalanced(&f, ni, &mut ret).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("mul_slices {}", time.as_millis());
-
-            // short
-            let start_time = std::time::Instant::now();
-            for ni in &n {
-                Mantissa::mul_short(&f, ni, &mut ret).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("mul_short {}", time.as_millis());
         }
     }
 
