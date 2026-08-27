@@ -75,9 +75,14 @@ impl ExactNumNumber {
         // One more full-precision step mops up rounding from the last double.
         x = Self::reciprocal_newton_step(&a, &two, x, p)?;
 
+        // Exact dyadics (powers of two) leave a zero residual; marking those
+        // inexact makes try_set_precision loop forever (all sticky bits zero).
+        let ax = a.mul(&x, p, rm)?;
+        let one = Self::from_word(1, p)?;
+        let exact = ax.cmp(&one) == 0;
+
         x.set_sign(self.sign());
-        // Extra working bits are an approximation; correct-rounding retry needs this.
-        x.set_inexact(true);
+        x.set_inexact(!exact);
         Ok(x)
     }
 
@@ -144,6 +149,15 @@ mod tests {
                 .cmp(&ONE.div(&t, p, rm).unwrap()),
             0
         );
+
+        // Exact dyadic reciprocals must not NaN / error under ToEven.
+        for v in [1i8, 2, 4, 8, 16, 32] {
+            let x = ExactNumNumber::from_i8(v, p).unwrap();
+            let r = x.reciprocal(p, rm).unwrap();
+            let d = ONE.div(&x, p, rm).unwrap();
+            assert_eq!(r.cmp(&d), 0, "1/{v}");
+            assert!(!r.inexact(), "1/{v} should be exact");
+        }
 
         let z = ExactNumNumber::new(p).unwrap();
         assert!(matches!(z.reciprocal(p, rm), Err(Error::DivisionByZero)));
