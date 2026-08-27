@@ -2,7 +2,7 @@
 
 use zenith_float_macro::expr;
 use zenith_float_num::{
-    ctx::Context, ExactNum, Consts, EXPONENT_MAX, EXPONENT_MIN, Radix, RoundingMode, Sign,
+    ctx::Context, Consts, ExactNum, Radix, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN,
     WORD_BIT_SIZE, WORD_MAX, WORD_SIGNIFICANT_BIT,
 };
 
@@ -69,7 +69,7 @@ fn macro_run_basic_tests() {
     debug_assert_eq!(res, x.tan(p, rm, &mut cc));
 
     let x = ExactNum::from(1);
-    
+
     let res: ExactNum = expr!(asin(x), &mut ctx);
     debug_assert_eq!(res, x.asin(p, rm, &mut cc));
 
@@ -80,7 +80,7 @@ fn macro_run_basic_tests() {
     debug_assert_eq!(res, x.atan(p, rm, &mut cc));
 
     let x = ExactNum::from(2);
-    
+
     let res: ExactNum = expr!(sinh(x), &mut ctx);
     debug_assert_eq!(res, x.sinh(p, rm, &mut cc));
 
@@ -97,9 +97,24 @@ fn macro_run_basic_tests() {
     debug_assert_eq!(res, x.acosh(p, rm, &mut cc));
 
     let x = ExactNum::from(1);
-    
+
     let res: ExactNum = expr!(atanh(x), &mut ctx);
     debug_assert_eq!(res, x.atanh(p, rm, &mut cc));
+
+    let y = ExactNum::from(3);
+    let x = ExactNum::from(4);
+    let res: ExactNum = expr!(hypot(x, y), &mut ctx);
+    debug_assert_eq!(res, x.hypot(&y, p, rm));
+
+    let res: ExactNum = expr!(atan2(y, x), &mut ctx);
+    debug_assert_eq!(res, y.atan2(&x, p, rm, &mut cc));
+
+    let x = ExactNum::from(1);
+    let res: ExactNum = expr!(log1p(x), &mut ctx);
+    debug_assert_eq!(res, x.log1p(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(expm1(x), &mut ctx);
+    debug_assert_eq!(res, x.expm1(p, rm, &mut cc));
 }
 
 #[test]

@@ -6,6 +6,8 @@ All arithmetic runs on integer limbs. The library does not use hardware `f32` or
 
 The library can work without `std` if a memory allocator is available.
 
+Besides the usual `+ − × ÷` and the elementary functions (`sqrt`, `exp`, `ln`, trig, hyperbolic), the public API includes `hypot`, `atan2`, `log1p`, and `expm1`.
+
 License: MIT OR Apache-2.0.
 
 ## Crate layout

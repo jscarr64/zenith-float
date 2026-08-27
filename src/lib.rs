@@ -189,7 +189,9 @@ extern crate alloc;
 ///  - `log2(x)`: logarithm base 2 of `x`.
 ///  - `log10(x)`: logarithm base 10 of `x`.
 ///  - `log(x, b)`: logarithm with base `b` of `x`.
+///  - `log1p(x)`: `ln(1 + x)`.
 ///  - `exp(x)`: `e` to the power of `x`.
+///  - `expm1(x)`: `e^x - 1`.
 ///  - `pow(b, x)`: `b` to the power of `x`.
 ///  - `sin(x)`: sine of `x`.
 ///  - `cos(x)`: cosine of `x`.
@@ -197,6 +199,8 @@ extern crate alloc;
 ///  - `asin(x)`: arcsine of `x`.
 ///  - `acos(x)`: arccosine of `x`.
 ///  - `atan(x)`: arctangent of `x`.
+///  - `atan2(y, x)`: quadrant-aware arctangent of `y / x`.
+///  - `hypot(x, y)`: `sqrt(x² + y²)`.
 ///  - `sinh(x)`: hyperbolic sine of `x`.
 ///  - `cosh(x)`: hyperbolic cosine of `x`.
 ///  - `tanh(x)`: hyperbolic tangent of `x`.

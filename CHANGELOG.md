@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Newton reciprocal at three words and up.
+- `hypot`, `atan2`, `log1p`, and `expm1` on `ExactNum` and in `expr!`.
+
 ## 0.1.0
 
 First public release.

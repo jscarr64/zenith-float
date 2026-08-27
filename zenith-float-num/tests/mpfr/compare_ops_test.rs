@@ -563,4 +563,87 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             cc
         );
     }
+
+    // hypot, atan2
+    for _ in 0..run_cnt {
+        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p2 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+
+        let (rm, rnd) = get_random_rnd_pair();
+        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / ediv, EXPONENT_MAX / ediv, &mut cc);
+        let (n2, f2) = get_float_pair(p2, EXPONENT_MIN / ediv, EXPONENT_MAX / ediv, &mut cc);
+
+        test_zf_op_no_cc!(
+            true,
+            n1,
+            n2,
+            hypot,
+            f1,
+            f2,
+            hypot,
+            p,
+            rm,
+            rnd,
+            (&n1, &n2, p, rm, "hypot"),
+            cc
+        );
+        test_zf_op!(
+            true,
+            n1,
+            n2,
+            atan2,
+            f1,
+            f2,
+            atan2,
+            p,
+            rm,
+            rnd,
+            (&n1, &n2, p, rm, "atan2"),
+            cc
+        );
+    }
+
+    // log1p: argument > -1
+    for _ in 0..run_cnt {
+        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let (rm, rnd) = get_random_rnd_pair();
+        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / 4, -1, &mut cc);
+
+        test_zf_op!(
+            true,
+            n1,
+            log1p,
+            f1,
+            log1p,
+            p,
+            rm,
+            rnd,
+            (&n1, p, rm, "log1p"),
+            cc
+        );
+    }
+
+    // expm1
+    for _ in 0..run_cnt {
+        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let (rm, rnd) = get_random_rnd_pair();
+        let (n1, f1) = get_float_pair(p1, -64, 8, &mut cc);
+
+        test_zf_op!(
+            true,
+            n1,
+            expm1,
+            f1,
+            expm1,
+            p,
+            rm,
+            rnd,
+            (&n1, p, rm, "expm1"),
+            cc
+        );
+    }
 }

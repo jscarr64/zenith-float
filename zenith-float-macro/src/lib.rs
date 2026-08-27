@@ -7,7 +7,6 @@
 
 mod util;
 
-use zenith_float_num::{Consts, EXPONENT_BIT_SIZE};
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::{
@@ -15,6 +14,7 @@ use syn::{
     ExprParen, ExprPath, ExprUnary, Lit, Token, UnOp,
 };
 use util::{check_arg_num, str_to_exact_num_expr};
+use zenith_float_num::{Consts, EXPONENT_BIT_SIZE};
 
 // Speculative error estimation.
 // This error is added upfront, before actual error is known.
@@ -131,6 +131,29 @@ fn one_arg_fun(
     Ok(ret)
 }
 
+fn two_arg_fun(
+    fun: TokenStream,
+    expr: &ExprCall,
+    initial_err: usize,
+    err: &mut Vec<usize>,
+    cc: &mut Consts,
+    use_cc: bool,
+) -> Result<TokenStream, Error> {
+    check_arg_num(2, expr)?;
+
+    let arg1 = traverse_expr(&expr.args[0], err, cc)?;
+    let arg2 = traverse_expr(&expr.args[1], err, cc)?;
+    err.push(initial_err);
+
+    let ret = if use_cc {
+        quote!(#fun(&(#arg1), &(#arg2), p_wrk, zenith_float::RoundingMode::None, cc))
+    } else {
+        quote!(#fun(&(#arg1), &(#arg2), p_wrk, zenith_float::RoundingMode::None))
+    };
+
+    Ok(ret)
+}
+
 fn one_arg_fun_errcheck(
     fun: TokenStream,
     expr: &ExprCall,
@@ -221,7 +244,7 @@ fn traverse_call(
     err: &mut Vec<usize>,
     cc: &mut Consts,
 ) -> Result<TokenStream, Error> {
-    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"ln\", \"log2\", \"log10\", \"log\", \"exp\", \"pow\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\" are allowed.";
+    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"expm1\", \"pow\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\" are allowed.";
 
     if let Expr::Path(fun) = expr.func.as_ref() {
         if let Some(fname) = fun.path.get_ident() {
@@ -234,8 +257,22 @@ fn traverse_call(
                     cc,
                     false,
                 ),
-                "sqrt" => one_arg_fun(quote!(zenith_float::ExactNum::sqrt), expr, 1, err, cc, false),
-                "cbrt" => one_arg_fun(quote!(zenith_float::ExactNum::cbrt), expr, 1, err, cc, false),
+                "sqrt" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::sqrt),
+                    expr,
+                    1,
+                    err,
+                    cc,
+                    false,
+                ),
+                "cbrt" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::cbrt),
+                    expr,
+                    1,
+                    err,
+                    cc,
+                    false,
+                ),
                 "ln" => one_arg_fun_errcheck(
                     quote!(zenith_float::ExactNum::ln),
                     expr,
@@ -268,8 +305,24 @@ fn traverse_call(
                     quote!(zenith_float::macro_util::ErrAlgo::Log2(&arg2, &arg1, emin)),
                     cc,
                 ),
+                "log1p" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::log1p),
+                    expr,
+                    SPEC_ADD_ERR,
+                    err,
+                    cc,
+                    true,
+                ),
                 "exp" => one_arg_fun(
                     quote!(zenith_float::ExactNum::exp),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "expm1" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::expm1),
                     expr,
                     EXPONENT_BIT_SIZE + 1,
                     err,
@@ -325,6 +378,22 @@ fn traverse_call(
                     cc,
                 ),
                 "atan" => one_arg_fun(quote!(zenith_float::ExactNum::atan), expr, 2, err, cc, true),
+                "atan2" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::atan2),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "hypot" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::hypot),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    false,
+                ),
                 "sinh" => one_arg_fun(
                     quote!(zenith_float::ExactNum::sinh),
                     expr,
@@ -342,9 +411,14 @@ fn traverse_call(
                     true,
                 ),
                 "tanh" => one_arg_fun(quote!(zenith_float::ExactNum::tanh), expr, 2, err, cc, true),
-                "asinh" => {
-                    one_arg_fun(quote!(zenith_float::ExactNum::asinh), expr, 2, err, cc, true)
-                }
+                "asinh" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::asinh),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
                 "acosh" => one_arg_fun_errcheck(
                     quote!(zenith_float::ExactNum::acosh),
                     expr,

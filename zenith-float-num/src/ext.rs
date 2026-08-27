@@ -767,6 +767,108 @@ impl ExactNum {
         }
     }
 
+    /// Computes `atan2(self, x)` with precision `p` (quadrant-aware arctangent of `self / x`).
+    /// The result is rounded using the rounding mode `rm`.
+    /// This function requires constants cache `cc`.
+    /// Precision is rounded upwards to the word size.
+    pub fn atan2(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if self.is_nan() {
+            return self.clone();
+        }
+        if x.is_nan() {
+            return x.clone();
+        }
+
+        match (&self.inner, &x.inner) {
+            (Flavor::Inf(sy), Flavor::Inf(sx)) => {
+                let mut q = cc.pi(p, rm);
+                q = q.div(&ExactNum::from_word(4, p), p, rm);
+                if sx.is_negative() {
+                    let three = ExactNum::from_word(3, p);
+                    q = three.mul(&q, p, rm);
+                }
+                if sy.is_negative() {
+                    q.neg()
+                } else {
+                    q
+                }
+            }
+            (Flavor::Inf(sy), Flavor::Value(_)) => {
+                Self::result_to_ext(Self::half_pi(*sy, p, rm, cc), false, true)
+            }
+            (Flavor::Value(y), Flavor::Inf(sx)) => {
+                if sx.is_positive() {
+                    Self::result_to_ext(ExactNumNumber::new2(p, y.sign(), y.inexact()), false, true)
+                } else {
+                    let mut pi = cc.pi(p, rm);
+                    pi.set_sign(y.sign());
+                    pi
+                }
+            }
+            (Flavor::Value(y), Flavor::Value(xv)) => {
+                Self::result_to_ext(y.atan2(xv, p, rm, cc), false, false)
+            }
+            _ => NAN,
+        }
+    }
+
+    /// Computes `sqrt(self² + other²)` with precision `p`.
+    /// The result is rounded using the rounding mode `rm`.
+    /// Precision is rounded upwards to the word size.
+    /// `hypot(±Inf, y)` and `hypot(x, ±Inf)` are `+Inf`, including when the other argument is NaN.
+    pub fn hypot(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
+        if self.is_inf() || other.is_inf() {
+            return INF_POS;
+        }
+        if self.is_nan() {
+            return self.clone();
+        }
+        if other.is_nan() {
+            return other.clone();
+        }
+        match (&self.inner, &other.inner) {
+            (Flavor::Value(a), Flavor::Value(b)) => {
+                Self::result_to_ext(a.hypot(b, p, rm), false, true)
+            }
+            _ => NAN,
+        }
+    }
+
+    /// Computes `ln(1 + self)` with precision `p`.
+    /// The result is rounded using the rounding mode `rm`.
+    /// This function requires constants cache `cc`.
+    /// Returns `-Inf` for `self == -1`, and NaN if `self < -1`.
+    pub fn log1p(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.log1p(p, rm, cc), false, false),
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    INF_POS
+                } else {
+                    NAN
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
+    /// Computes `exp(self) - 1` with precision `p`.
+    /// The result is rounded using the rounding mode `rm`.
+    /// This function requires constants cache `cc`.
+    pub fn expm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.expm1(p, rm, cc), false, true),
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    INF_POS
+                } else {
+                    ExactNum::from_i8(-1, p)
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
     /// Computes the hyperbolic tangent of a number with precision `p`. The result is rounded using the rounding mode `rm`.
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
@@ -1002,8 +1104,6 @@ impl ExactNum {
     /// The result is rounded using the rounding mode `rm`.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
-    /// For values at the extreme of the exponent range the remainder of the
-    /// internal division is not folded into the result (at most a 1-ulp-class difference from `1/x`).
     pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.reciprocal(p, rm), false, v.is_positive()),
@@ -1681,9 +1781,9 @@ mod tests {
     use crate::defs::DEFAULT_P;
     use crate::ext::ONE;
     use crate::ext::TWO;
-    use crate::ExactNum;
     use crate::Consts;
     use crate::Error;
+    use crate::ExactNum;
     use crate::Radix;
     use crate::Sign;
     use crate::Word;
