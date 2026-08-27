@@ -12,55 +12,12 @@ use crate::{
     RoundingMode, Sign,
 };
 
-use super::series::{series_cost_optimize, series_run, ArgReductionEstimator, PolycoeffGen};
+#[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
 
-// Polynomial coefficient generator.
-struct SinhPolycoeffGen {
-    one_full_p: ExactNumNumber,
-    inc: ExactNumNumber,
-    fct: ExactNumNumber,
-    iter_cost: usize,
-}
-
-impl SinhPolycoeffGen {
-    fn new(p: usize) -> Result<Self, Error> {
-        let inc = ExactNumNumber::from_word(1, 1)?;
-        let fct = ExactNumNumber::from_word(1, p)?;
-        let one_full_p = ExactNumNumber::from_word(1, p)?;
-
-        let iter_cost =
-            (calc_mul_cost(p) + calc_add_cost(p) + calc_add_cost(inc.mantissa_max_bit_len())) * 2;
-
-        Ok(SinhPolycoeffGen {
-            one_full_p,
-            inc,
-            fct,
-            iter_cost,
-        })
-    }
-}
-
-impl PolycoeffGen for SinhPolycoeffGen {
-    fn next(&mut self, rm: RoundingMode) -> Result<&ExactNumNumber, Error> {
-        let p_inc = self.inc.mantissa_max_bit_len();
-        let p_one = self.one_full_p.mantissa_max_bit_len();
-
-        self.inc = self.inc.add(&ONE, p_inc, rm)?;
-        let inv_inc = self.one_full_p.div(&self.inc, p_one, rm)?;
-        self.fct = self.fct.mul(&inv_inc, p_one, rm)?;
-
-        self.inc = self.inc.add(&ONE, p_inc, rm)?;
-        let inv_inc = self.one_full_p.div(&self.inc, p_one, rm)?;
-        self.fct = self.fct.mul(&inv_inc, p_one, rm)?;
-
-        Ok(&self.fct)
-    }
-
-    #[inline]
-    fn iter_cost(&self) -> usize {
-        self.iter_cost
-    }
-}
+use super::series::{
+    series_cost_optimize, series_run, ArgReductionEstimator, FactPolycoeffGen,
+};
 
 struct SinhArgReductionEstimator {}
 
@@ -298,22 +255,7 @@ impl ExactNumNumber {
                 };
 
                 x.set_precision(p_x, RoundingMode::FromZero)?;
-
-                // Binary exponentiation (no sliding window).
-                let mut bp = bit_pos;
-                let mut j = i;
-                while bp > 0 {
-                    bp -= 1;
-
-                    x = x.mul(&x, p_x, RoundingMode::FromZero)?;
-
-                    if j & WORD_SIGNIFICANT_BIT as usize != 0 {
-                        x = x.mul(arg, p_x, RoundingMode::FromZero)?;
-                    }
-
-                    j <<= 1;
-                }
-
+                x = Self::powi_sqr_mul(arg, x, bit_pos, i, p_x)?;
                 Ok(x)
             }()
             .map_err(|e| -> Error {
@@ -347,6 +289,68 @@ impl ExactNumNumber {
         }
     }
 
+    fn powi_sqr_mul(
+        arg: &Self,
+        mut x: Self,
+        mut bp: usize,
+        mut j: usize,
+        p_x: usize,
+    ) -> Result<Self, Error> {
+        const W: usize = 4;
+        let rm = RoundingMode::FromZero;
+        if bp < 8 {
+            while bp > 0 {
+                bp -= 1;
+                x = x.mul(&x, p_x, rm)?;
+                if j & WORD_SIGNIFICANT_BIT as usize != 0 {
+                    x = x.mul(arg, p_x, rm)?;
+                }
+                j <<= 1;
+            }
+            return Ok(x);
+        }
+
+        let a2 = arg.mul(arg, p_x, rm)?;
+        let mut odd: Vec<Self> = Vec::with_capacity(8);
+        odd.push(arg.clone()?);
+        let mut cur = arg.clone()?;
+        for _ in 1..8 {
+            cur = cur.mul(&a2, p_x, rm)?;
+            odd.push(cur.clone()?);
+        }
+
+        while bp > 0 {
+            if j & WORD_SIGNIFICANT_BIT as usize == 0 {
+                x = x.mul(&x, p_x, rm)?;
+                bp -= 1;
+                j <<= 1;
+                continue;
+            }
+            let take = bp.min(W);
+            let mut tmp = j;
+            let mut w = 0usize;
+            for _ in 0..take {
+                w <<= 1;
+                if tmp & WORD_SIGNIFICANT_BIT as usize != 0 {
+                    w |= 1;
+                }
+                tmp <<= 1;
+            }
+            let mut used = take;
+            while used > 1 && w & 1 == 0 {
+                w >>= 1;
+                used -= 1;
+            }
+            for _ in 0..used {
+                x = x.mul(&x, p_x, rm)?;
+                bp -= 1;
+                j <<= 1;
+            }
+            x = x.mul(&odd[(w - 1) / 2], p_x, rm)?;
+        }
+        Ok(x)
+    }
+
     // e^self for |self| < 1.
     fn expf(self) -> Result<Self, Error> {
         debug_assert!(!self.is_zero());
@@ -366,7 +370,7 @@ impl ExactNumNumber {
     pub fn sinh_series(mut self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         // sinh:  x + x^3/3! + x^5/5! + x^7/7! + ...
 
-        let mut polycoeff_gen = SinhPolycoeffGen::new(p)?;
+        let mut polycoeff_gen = FactPolycoeffGen::for_sinh(p)?;
         let (reduction_times, niter, e_eff) = series_cost_optimize::<SinhArgReductionEstimator>(
             p,
             &polycoeff_gen,
@@ -810,8 +814,8 @@ mod test {
         for p in 1..100 {
             let p = p*64;
             let n = 3;
-            let mut pcg1 = SinhPolycoeffGen::new(p).unwrap();
-            let mut pcg2 = SinhPolycoeffGen::new(p + 8*n).unwrap();
+            let mut pcg1 = FactPolycoeffGen::for_sinh(p).unwrap();
+            let mut pcg2 = FactPolycoeffGen::for_sinh(p + 8*n).unwrap();
             for _ in 0..n {
                 let c1 = pcg1.next(RoundingMode::None).unwrap();
                 let c2 = pcg2.next(RoundingMode::None).unwrap();

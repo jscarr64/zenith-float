@@ -16,69 +16,9 @@ use crate::ops::consts::Consts;
 use crate::ops::series::series_cost_optimize;
 use crate::ops::series::series_run;
 use crate::ops::series::ArgReductionEstimator;
-use crate::ops::series::PolycoeffGen;
+use crate::ops::series::FactPolycoeffGen;
 use crate::ops::util::compute_small_exp;
 use crate::Exponent;
-use crate::Sign;
-
-// Polynomial coefficient generator.
-struct CosPolycoeffGen {
-    one_full_p: ExactNumNumber,
-    inc: ExactNumNumber,
-    fct: ExactNumNumber,
-    sign: i8,
-    iter_cost: usize,
-}
-
-impl CosPolycoeffGen {
-    fn new(p: usize) -> Result<Self, Error> {
-        let inc = ExactNumNumber::new(1)?;
-        let fct = ExactNumNumber::from_word(1, p)?;
-        let one_full_p = ExactNumNumber::from_word(1, p)?;
-
-        let iter_cost =
-            (calc_mul_cost(p) + calc_add_cost(p) + calc_add_cost(inc.mantissa_max_bit_len())) * 2;
-
-        let sign = 1;
-
-        Ok(CosPolycoeffGen {
-            one_full_p,
-            inc,
-            fct,
-            sign,
-            iter_cost,
-        })
-    }
-}
-
-impl PolycoeffGen for CosPolycoeffGen {
-    fn next(&mut self, rm: RoundingMode) -> Result<&ExactNumNumber, Error> {
-        let p_inc = self.inc.mantissa_max_bit_len();
-        let p_one = self.one_full_p.mantissa_max_bit_len();
-
-        self.inc = self.inc.add(&ONE, p_inc, rm)?;
-        let inv_inc = self.one_full_p.div(&self.inc, p_one, rm)?;
-        self.fct = self.fct.mul(&inv_inc, p_one, rm)?;
-
-        self.inc = self.inc.add(&ONE, p_inc, rm)?;
-        let inv_inc = self.one_full_p.div(&self.inc, p_one, rm)?;
-        self.fct = self.fct.mul(&inv_inc, p_one, rm)?;
-
-        self.sign *= -1;
-        if self.sign > 0 {
-            self.fct.set_sign(Sign::Pos);
-        } else {
-            self.fct.set_sign(Sign::Neg);
-        }
-
-        Ok(&self.fct)
-    }
-
-    #[inline]
-    fn iter_cost(&self) -> usize {
-        self.iter_cost
-    }
-}
 
 struct CosArgReductionEstimator {}
 
@@ -153,7 +93,7 @@ impl ExactNumNumber {
         // cos:  1 - x^2/2! + x^4/4! - x^6/6! + ...
 
         let p = self.mantissa_max_bit_len();
-        let mut polycoeff_gen = CosPolycoeffGen::new(p)?;
+        let mut polycoeff_gen = FactPolycoeffGen::for_cos(p)?;
         let (reduction_times, niter, e_eff) = series_cost_optimize::<CosArgReductionEstimator>(
             p,
             &polycoeff_gen,
@@ -304,8 +244,8 @@ mod tests {
         for p in 1..100 {
             let p = p * 64;
             let n = 3;
-            let mut pcg1 = CosPolycoeffGen::new(p).unwrap();
-            let mut pcg2 = CosPolycoeffGen::new(p + 8*n).unwrap();
+            let mut pcg1 = FactPolycoeffGen::for_cos(p).unwrap();
+            let mut pcg2 = FactPolycoeffGen::for_cos(p + 8*n).unwrap();
             for _ in 0..n {
                 let c1 = pcg1.next(RoundingMode::None).unwrap();
                 let c2 = pcg2.next(RoundingMode::None).unwrap();

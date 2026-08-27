@@ -6,7 +6,9 @@ use crate::common::util::log2_floor;
 use crate::common::util::sqrt_int;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
+use crate::common::consts::ONE;
 use crate::num::ExactNumNumber;
+use crate::Sign;
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -29,6 +31,81 @@ pub(crate) trait PolycoeffGen {
     /// Returns true if coefficient is divizor.
     fn is_div(&self) -> bool {
         false
+    }
+}
+
+/// Shared 1/(k(k+1)) factorial step used by sin, cos, and sinh series.
+pub(crate) struct FactPolycoeffGen {
+    one_full_p: ExactNumNumber,
+    inc: ExactNumNumber,
+    fct: ExactNumNumber,
+    sign: i8,
+    flip_sign: bool,
+    iter_cost: usize,
+}
+
+impl FactPolycoeffGen {
+    pub(crate) fn for_sin(p: usize) -> Result<Self, Error> {
+        Self::new(p, true, true)
+    }
+
+    pub(crate) fn for_cos(p: usize) -> Result<Self, Error> {
+        Self::new(p, false, true)
+    }
+
+    pub(crate) fn for_sinh(p: usize) -> Result<Self, Error> {
+        Self::new(p, true, false)
+    }
+
+    fn new(p: usize, start_from_one: bool, flip_sign: bool) -> Result<Self, Error> {
+        let inc = if start_from_one {
+            ExactNumNumber::from_word(1, 1)?
+        } else {
+            ExactNumNumber::new(1)?
+        };
+        let fct = ExactNumNumber::from_word(1, p)?;
+        let one_full_p = ExactNumNumber::from_word(1, p)?;
+        let iter_cost =
+            (calc_mul_cost(p) + calc_add_cost(p) + calc_add_cost(inc.mantissa_max_bit_len())) * 2;
+        Ok(Self {
+            one_full_p,
+            inc,
+            fct,
+            sign: 1,
+            flip_sign,
+            iter_cost,
+        })
+    }
+}
+
+impl PolycoeffGen for FactPolycoeffGen {
+    fn next(&mut self, rm: RoundingMode) -> Result<&ExactNumNumber, Error> {
+        let p_inc = self.inc.mantissa_max_bit_len();
+        let p_one = self.one_full_p.mantissa_max_bit_len();
+
+        self.inc = self.inc.add(&ONE, p_inc, rm)?;
+        let inv_inc = self.one_full_p.div(&self.inc, p_one, rm)?;
+        self.fct = self.fct.mul(&inv_inc, p_one, rm)?;
+
+        self.inc = self.inc.add(&ONE, p_inc, rm)?;
+        let inv_inc = self.one_full_p.div(&self.inc, p_one, rm)?;
+        self.fct = self.fct.mul(&inv_inc, p_one, rm)?;
+
+        if self.flip_sign {
+            self.sign *= -1;
+            if self.sign > 0 {
+                self.fct.set_sign(Sign::Pos);
+            } else {
+                self.fct.set_sign(Sign::Neg);
+            }
+        }
+
+        Ok(&self.fct)
+    }
+
+    #[inline]
+    fn iter_cost(&self) -> usize {
+        self.iter_cost
     }
 }
 

@@ -1,7 +1,6 @@
 //! Sine.
 
 use crate::common::consts::FOUR;
-use crate::common::consts::ONE;
 use crate::common::consts::THREE;
 use crate::common::consts::TRIG_EXP_THRES;
 use crate::common::util::bump_prec_retry;
@@ -15,69 +14,10 @@ use crate::ops::consts::Consts;
 use crate::ops::series::series_cost_optimize;
 use crate::ops::series::series_run;
 use crate::ops::series::ArgReductionEstimator;
-use crate::ops::series::PolycoeffGen;
+use crate::ops::series::FactPolycoeffGen;
 use crate::ops::util::compute_small_exp;
 use crate::Sign;
 use crate::WORD_BIT_SIZE;
-
-// Polynomial coefficient generator.
-struct SinPolycoeffGen {
-    one_full_p: ExactNumNumber,
-    inc: ExactNumNumber,
-    fct: ExactNumNumber,
-    sign: i8,
-    iter_cost: usize,
-}
-
-impl SinPolycoeffGen {
-    fn new(p: usize) -> Result<Self, Error> {
-        let inc = ExactNumNumber::from_word(1, 1)?;
-        let fct = ExactNumNumber::from_word(1, p)?;
-        let one_full_p = ExactNumNumber::from_word(1, p)?;
-
-        let iter_cost =
-            (calc_mul_cost(p) + calc_add_cost(p) + calc_add_cost(inc.mantissa_max_bit_len())) * 2;
-
-        let sign = 1;
-
-        Ok(SinPolycoeffGen {
-            one_full_p,
-            inc,
-            fct,
-            sign,
-            iter_cost,
-        })
-    }
-}
-
-impl PolycoeffGen for SinPolycoeffGen {
-    fn next(&mut self, rm: RoundingMode) -> Result<&ExactNumNumber, Error> {
-        let p_inc = self.inc.mantissa_max_bit_len();
-        let p_one = self.one_full_p.mantissa_max_bit_len();
-
-        self.inc = self.inc.add(&ONE, p_inc, rm)?;
-        let inv_inc = self.one_full_p.div(&self.inc, p_one, rm)?;
-        self.fct = self.fct.mul(&inv_inc, p_one, rm)?;
-
-        self.inc = self.inc.add(&ONE, p_inc, rm)?;
-        let inv_inc = self.one_full_p.div(&self.inc, p_one, rm)?;
-        self.fct = self.fct.mul(&inv_inc, p_one, rm)?;
-
-        self.sign *= -1;
-        if self.sign > 0 {
-            self.fct.set_sign(Sign::Pos);
-        } else {
-            self.fct.set_sign(Sign::Neg);
-        }
-
-        Ok(&self.fct)
-    }
-
-    #[inline]
-    fn iter_cost(&self) -> usize {
-        self.iter_cost
-    }
-}
 
 struct SinArgReductionEstimator {}
 
@@ -153,7 +93,7 @@ impl ExactNumNumber {
 
         let p = self.mantissa_max_bit_len();
 
-        let mut polycoeff_gen = SinPolycoeffGen::new(p)?;
+        let mut polycoeff_gen = FactPolycoeffGen::for_sin(p)?;
         let (reduction_times, niter, e_eff) = series_cost_optimize::<SinArgReductionEstimator>(
             p,
             &polycoeff_gen,
