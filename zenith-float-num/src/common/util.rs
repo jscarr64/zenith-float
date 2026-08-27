@@ -51,6 +51,7 @@ pub fn sqrt_int(a: u32) -> u32 {
 
 /// n-root integer approximation.
 #[inline]
+#[allow(dead_code)]
 pub fn nroot_int(a: u64, n: usize) -> u64 {
     if a == 0 {
         return 0;
@@ -78,6 +79,7 @@ pub fn nroot_int(a: u64, n: usize) -> u64 {
 }
 
 #[inline]
+#[allow(dead_code)]
 fn nroot_step(x: i128, n: i128, a: i128) -> i128 {
     let mut xx = a;
     for _ in 0..n - 1 {
@@ -453,7 +455,14 @@ pub(crate) fn random_subnormal(p: usize) -> ExactNumNumber {
 #[cfg(test)]
 #[inline]
 pub fn rand_p() -> usize {
-    rand::random::<usize>() % 1000 + crate::defs::DEFAULT_P
+    #[cfg(debug_assertions)]
+    {
+        rand::random::<usize>() % 192 + crate::defs::DEFAULT_P
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        rand::random::<usize>() % 1000 + crate::defs::DEFAULT_P
+    }
 }
 
 // test add_carry and sub_borrow performance.

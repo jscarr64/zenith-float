@@ -16,7 +16,6 @@ use crate::ops::series::series_run;
 use crate::ops::series::ArgReductionEstimator;
 use crate::ops::series::FactPolycoeffGen;
 use crate::ops::util::compute_small_exp;
-use crate::Sign;
 use crate::WORD_BIT_SIZE;
 
 struct SinArgReductionEstimator {}

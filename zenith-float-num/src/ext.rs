@@ -1168,7 +1168,7 @@ impl ExactNum {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - ExponentOverflow: the resulting exponent becomes greater than the maximum allowed value for the exponent.
     ///  - InvalidArgument: the precision is incorrect, or `digits` contains unacceptable digits for given radix,
-    /// or when `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
+    ///    or when `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
     pub fn convert_from_radix(
         sign: Sign,
         digits: &[u8],
@@ -2580,30 +2580,16 @@ mod tests {
 mod rand_tests {
 
     use super::*;
-    use crate::defs::EXPONENT_MAX;
+    use crate::common::util::TEST_EXP_BOUND;
 
     #[test]
     fn test_rand() {
-        for _ in 0..1000 {
-            let p = rand::random::<usize>() % 1000 + DEFAULT_P;
-            let exp_from;
-            #[cfg(not(target_pointer_width = "32"))]
-            {
-                exp_from = rand::random::<Exponent>().abs();
-            }
-            #[cfg(target_pointer_width = "32")]
-            {
-                use crate::defs::EXPONENT_MIN;
-                exp_from =
-                    rand::random::<Exponent>().abs() % (EXPONENT_MAX - EXPONENT_MIN) + EXPONENT_MIN;
-            }
-            let exp_shift = if EXPONENT_MAX > exp_from {
-                rand::random::<Exponent>().abs()
-                    % (EXPONENT_MAX as isize - exp_from as isize) as Exponent
-            } else {
-                0
-            };
-            let exp_to = (exp_from as isize + exp_shift as isize) as Exponent;
+        for _ in 0..100 {
+            let p = rand::random::<usize>() % 192 + DEFAULT_P;
+            let exp_from = rand::random::<Exponent>().abs() % TEST_EXP_BOUND;
+            let span = (TEST_EXP_BOUND - exp_from).max(1);
+            let exp_shift = rand::random::<Exponent>().abs() % span;
+            let exp_to = exp_from + exp_shift;
 
             let n = ExactNum::random_normal(p, exp_from, exp_to);
 

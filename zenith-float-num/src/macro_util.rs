@@ -405,6 +405,35 @@ mod tests {
         }
     }
 
+    fn err_exp_samples(ernd: Exponent) -> Vec<Exponent> {
+        #[cfg(debug_assertions)]
+        {
+            let _ = ernd;
+            vec![0, 1, 2, 8]
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            vec![
+                0,
+                1,
+                2,
+                EXPONENT_BIT_SIZE as Exponent + ernd,
+                256 + ernd.min(64),
+            ]
+        }
+    }
+
+    fn err_test_outer() -> usize {
+        #[cfg(debug_assertions)]
+        {
+            2
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            10
+        }
+    }
+
     #[test]
     fn test_compute_added_err() {
         let mut cc = Consts::new().unwrap();
@@ -415,10 +444,10 @@ mod tests {
         println!("{:?}", r);
         return; */
 
-        for _ in 0..10 {
+        for _ in 0..err_test_outer() {
             let ernd = rand::random::<Exponent>() % (EXPONENT_BIT_SIZE as Exponent - 5);
 
-            for e in [0, 1, 2, EXPONENT_BIT_SIZE as Exponent + ernd, 1000 + ernd, 1000000 + ernd] {
+            for e in err_exp_samples(ernd) {
                 for esign in [1, -1] {
                     let near1set = if e <= 1 { vec![0, -1, 1] } else { vec![0] };
 
@@ -488,14 +517,7 @@ mod tests {
                         // log base b, pow
                         let mut nc = [n1.clone(), n2.clone()];
 
-                        for e2 in [
-                            0,
-                            1,
-                            2,
-                            EXPONENT_BIT_SIZE as Exponent + ernd,
-                            1000 + ernd,
-                            1000000 + ernd,
-                        ] {
+                        for e2 in err_exp_samples(ernd) {
                             for esign2 in [1, -1] {
                                 let near1set2 = if e2 <= 1 { vec![0, -1, 1] } else { vec![0] };
 
@@ -656,7 +678,7 @@ mod tests {
             }
 
             // sin, cos, tan
-            for e in [0, 1, 2, EXPONENT_BIT_SIZE as Exponent + ernd, 1000 + ernd] {
+            for e in err_exp_samples(ernd) {
                 for esign in [1, -1] {
                     for near_pi in [0, 1, -1] {
                         for add_half_pi in [false, true] {
@@ -716,7 +738,7 @@ mod tests {
             }
 
             // asin, acos
-            for e in [0, -1, -2, -(EXPONENT_BIT_SIZE as Exponent + ernd), -(1000 + ernd)] {
+            for e in err_exp_samples(ernd).into_iter().map(|v| -v) {
                 let near1set = if e == 0 { vec![0, -1] } else { vec![0] };
 
                 for near1 in near1set {

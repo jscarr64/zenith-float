@@ -3,6 +3,7 @@
 //! Depend on the `zenith-float` crate and use `zenith_float::expr`. This crate is not a direct dependency for applications.
 
 #![allow(missing_docs)]
+#![deny(unused)]
 #![deny(clippy::suspicious)]
 
 mod util;

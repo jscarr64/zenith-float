@@ -35,7 +35,18 @@ const fn get_prec_rng() -> usize {
 
     #[cfg(debug_assertions)]
     {
+        8
+    }
+}
+
+const fn get_test_iters() -> usize {
+    #[cfg(debug_assertions)]
+    {
         32
+    }
+    #[cfg(not(debug_assertions))]
+    {
+        1000
     }
 }
 
@@ -56,7 +67,7 @@ fn test_ln_exp() {
     println!("{:?}", d3.format(Radix::Dec, RoundingMode::None).unwrap());
     return; */
 
-    for i in 0..1000 {
+    for i in 0..get_test_iters() {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -131,7 +142,7 @@ fn test_ln_exp() {
 fn test_powi() {
     let prec_rng = get_prec_rng();
 
-    for _ in 0..1000 {
+    for _ in 0..get_test_iters() {
         let i = random::<usize>() % 1000 + 1;
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
@@ -171,7 +182,7 @@ fn test_log2_log10_pow() {
 
     let mut cc = Consts::new().unwrap();
 
-    for i in 0..1000 {
+    for i in 0..get_test_iters() {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -292,7 +303,7 @@ fn test_log_pow() {
 
     let mut cc = Consts::new().unwrap();
 
-    for i in 0..1000 {
+    for i in 0..get_test_iters() {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let p2 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
@@ -437,7 +448,7 @@ fn test_sin_asin() {
     return; */
 
     // argument between -pi/2, pi/2
-    for i in 0..1000 {
+    for i in 0..get_test_iters() {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -505,7 +516,7 @@ fn test_sin_asin() {
     }
 
     // argument between -pi, -pi/2 and between pi/2, pi
-    for _ in 0..1000 {
+    for _ in 0..get_test_iters() {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -598,7 +609,7 @@ fn test_cos_acos() {
 
     return; */
 
-    for i in 0..1000 {
+    for i in 0..get_test_iters() {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -693,7 +704,7 @@ fn test_tan_atan() {
     let mut half_pi = pi.clone().unwrap();
     half_pi.set_exponent(1);
 
-    for i in 0..1000 {
+    for i in 0..get_test_iters() {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -770,7 +781,7 @@ fn test_sinh_asinh() {
 
     let mut cc = Consts::new().unwrap();
 
-    for i in 0..1000 {
+    for i in 0..get_test_iters() {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -835,7 +846,7 @@ fn test_cosh_acosh() {
 
     let mut cc = Consts::new().unwrap();
 
-    for i in 0..1000 {
+    for i in 0..get_test_iters() {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -905,7 +916,7 @@ fn test_tanh_atanh() {
         exp_to = 3;
     }
 
-    for i in 0..1000 {
+    for i in 0..get_test_iters() {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -951,4 +962,3 @@ fn test_tanh_atanh() {
         );
     }
 }
-

@@ -1,7 +1,6 @@
 //! Mantissa of a number.
 
 use crate::common::buf::WordBuf;
-use crate::common::int::SliceWithSign;
 use crate::common::util::add_carry;
 use crate::common::util::find_one_from;
 use crate::common::util::shift_slice_left;

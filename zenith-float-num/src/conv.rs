@@ -40,7 +40,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - ExponentOverflow: the resulting exponent becomes greater than the maximum allowed value for the exponent.
     ///  - InvalidArgument: the precision is incorrect, or `digits` contains unacceptable digits for given radix,
-    /// or when `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
+    ///    or when `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
     pub fn convert_from_radix(
         sign: Sign,
         digits: &[u8],

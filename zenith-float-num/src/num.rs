@@ -810,9 +810,6 @@ impl ExactNumNumber {
         Ok(ret)
     }
 
-    /// Conversion rounds `self` to zero.
-    #[cfg(test)]
-
     /// Constructs a number from the raw parts:
     ///
     ///  - `m` is the mantissa.
@@ -825,10 +822,11 @@ impl ExactNumNumber {
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - InvalidArgument: `n` is larger than the number of bits in `m`;
-    /// `n` is smaller than the number of bits in `m`, but `m` does not represent corresponding subnormal number mantissa;
-    /// `n` is smaller than the number of bits in `m`, but `e` is not the minimum possible exponent;
-    /// `n` or the size of `m` is too large (larger than isize::MAX / 2 + EXPONENT_MIN);
-    /// `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
+    ///    `n` is smaller than the number of bits in `m`, but `m` does not represent corresponding subnormal number mantissa;
+    ///    `n` is smaller than the number of bits in `m`, but `e` is not the minimum possible exponent;
+    ///    `n` or the size of `m` is too large (larger than isize::MAX / 2 + EXPONENT_MIN);
+    ///    `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
+    #[cfg(test)]
     pub fn from_raw_parts(
         m: &[Word],
         n: usize,
