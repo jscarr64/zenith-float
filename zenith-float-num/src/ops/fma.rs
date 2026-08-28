@@ -49,6 +49,11 @@ impl ExactNumNumber {
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
     }
+
+    /// Alias of [`Self::fma`].
+    pub fn mul_add(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.fma(b, c, p, rm)
+    }
 }
 
 #[cfg(test)]

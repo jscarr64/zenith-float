@@ -6,7 +6,7 @@ use std::ops::Add;
 use crate::mpfr::common::get_prec_rng;
 use crate::mpfr::common::test_zf_op;
 use crate::mpfr::common::test_zf_op_no_cc;
-use crate::mpfr::common::{assert_float_close, conv_to_mpfr, get_float_pair, get_random_rnd_pair, reset_test_rng, test_random, test_zf_rem_pi};
+use crate::mpfr::common::{assert_float_close, conv_to_mpfr, get_float_pair, get_random_rnd_pair, reset_test_rng, test_random, test_zf_fma, test_zf_rem_pi};
 use zenith_float_num::Word;
 use zenith_float_num::EXPONENT_BIT_SIZE;
 use zenith_float_num::{ExactNum, Consts, Exponent, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
@@ -165,22 +165,6 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, &n2, p, rm, "mul"),
             cc
         );
-
-        // TODO: tighten to bit-exact (eq=true) once round_mantissa tie-breaking is proven at all precisions.
-        // test_zf_fma!(
-        //     false,
-        //     n1,
-        //     n2,
-        //     nc,
-        //     f1,
-        //     f2,
-        //     fc,
-        //     p,
-        //     rm,
-        //     rnd,
-        //     (&n1, &n2, &nc, p, rm, "fma"),
-        //     cc
-        // );
 
         test_zf_op_no_cc!(
             true,
@@ -641,6 +625,56 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             rm,
             rnd,
             (&n1, p, rm, "expm1"),
+            cc
+        );
+    }
+
+    // Paired APIs (short sample — sin/cos and sinh/cosh oracles already cover the math)
+    for _ in 0..run_cnt.min(16) {
+        let p = (test_random::<usize>() % 4 + 2) * WORD_BIT_SIZE;
+        let (rm, rnd) = get_random_rnd_pair();
+        let (n1, f1) = get_float_pair(p, -8, 8, &mut cc);
+        let (ns, ncs) = ExactNum::sin_cos(&n1, p, rm, &mut cc);
+        if !ns.is_nan() && !ncs.is_nan() {
+            let mut fs = Float::with_val(p as u32, 1);
+            let mut fc = Float::with_val(p as u32, 1);
+            unsafe { mpfr::sin_cos(fs.as_raw_mut(), fc.as_raw_mut(), f1.as_raw(), rnd) };
+            assert_float_close(ns, fs, p, &format!("{:?}", (&n1, p, rm, "sin_cos.sin")), false, &mut cc);
+            assert_float_close(ncs, fc, p, &format!("{:?}", (&n1, p, rm, "sin_cos.cos")), false, &mut cc);
+        }
+        let (nsh, nch) = ExactNum::sinh_cosh(&n1, p, rm, &mut cc);
+        if !nsh.is_nan() && !nch.is_nan() && !nsh.is_inf() && !nch.is_inf() {
+            let mut fsh = Float::with_val(p as u32, 1);
+            let mut fch = Float::with_val(p as u32, 1);
+            unsafe { mpfr::sinh_cosh(fsh.as_raw_mut(), fch.as_raw_mut(), f1.as_raw(), rnd) };
+            assert_float_close(nsh, fsh, p, &format!("{:?}", (&n1, p, rm, "sinh_cosh.sinh")), false, &mut cc);
+            assert_float_close(nch, fch, p, &format!("{:?}", (&n1, p, rm, "sinh_cosh.cosh")), false, &mut cc);
+        }
+    }
+
+    // fma: modest exponents so the unrounded product stays in range
+    for _ in 0..run_cnt.min(16) {
+        let p = (test_random::<usize>() % 6 + 2) * WORD_BIT_SIZE;
+        let (rm, rnd) = get_random_rnd_pair();
+        let bound = (p as Exponent) * 2;
+        let (n1, f1) = get_float_pair(p, -bound, bound, &mut cc);
+        let (n2, f2) = get_float_pair(p, -bound, bound, &mut cc);
+        let (nc, fc) = get_float_pair(p, -bound, bound, &mut cc);
+        if n1.is_subnormal() || n2.is_subnormal() || nc.is_subnormal() {
+            continue;
+        }
+        test_zf_fma!(
+            false,
+            n1,
+            n2,
+            nc,
+            f1,
+            f2,
+            fc,
+            p,
+            rm,
+            rnd,
+            (&n1, &n2, &nc, p, rm, "fma"),
             cc
         );
     }

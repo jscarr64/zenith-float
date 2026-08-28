@@ -14,11 +14,11 @@
 #![allow(clippy::collapsible_else_if)]
 #![allow(clippy::collapsible_if)]
 
-#[cfg(not(feature = "std"))]
 extern crate alloc;
 
 mod common;
 mod conv;
+mod complex;
 pub mod ctx;
 mod defs;
 mod ext;
@@ -42,6 +42,7 @@ pub use crate::defs::RoundingMode;
 pub use crate::defs::Sign;
 pub use crate::defs::Word;
 pub use crate::ext::ExactNum;
+pub use crate::complex::ExactComplex;
 pub use crate::ext::FromExt;
 pub use crate::radix_float::RadixFloat;
 pub use crate::ext::INF_NEG;

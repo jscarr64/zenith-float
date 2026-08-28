@@ -146,6 +146,9 @@ fn macro_run_basic_tests() {
     let res: ExactNum = expr!(fma(x, y, z), &mut ctx);
     debug_assert_eq!(res, x.fma(&y, &z, p, rm));
 
+    let res: ExactNum = expr!(mul_add(x, y, z), &mut ctx);
+    debug_assert_eq!(res, x.mul_add(&y, &z, p, rm));
+
     let res: ExactNum = expr!(root(x, 5), &mut ctx);
     debug_assert_eq!(res, x.nth_root(5, p, rm));
 
@@ -158,6 +161,15 @@ fn macro_run_basic_tests() {
 
     let res: ExactNum = expr!(expm1(x), &mut ctx);
     debug_assert_eq!(res, x.expm1(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(erf(x), &mut ctx);
+    debug_assert_eq!(res, x.erf(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(gamma(x), &mut ctx);
+    debug_assert_eq!(res, x.gamma(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(bessel_j(x, 0), &mut ctx);
+    debug_assert_eq!(res, x.bessel_j(0, p, rm, &mut cc));
 }
 
 #[test]

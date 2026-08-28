@@ -241,6 +241,25 @@ impl ExactNum {
         }
     }
 
+    /// Alias of [`Self::fma`].
+    pub fn mul_add(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
+        if self.is_nan() {
+            return self.clone();
+        }
+        if b.is_nan() {
+            return b.clone();
+        }
+        if c.is_nan() {
+            return c.clone();
+        }
+        match (&self.inner, &b.inner, &c.inner) {
+            (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(cv)) => {
+                Self::result_to_ext(a.mul_add(bv, cv, p, rm), false, true)
+            }
+            _ => self.fma(b, c, p, rm),
+        }
+    }
+
     fn mul_op(&self, d2: &Self, p: usize, rm: RoundingMode, full_prec: bool) -> Self {
         match &self.inner {
             Flavor::Value(v1) => {
@@ -1587,6 +1606,20 @@ impl ExactNum {
         p,
         usize
     );
+    /// Computes `(sin(self), cos(self))` with precision `p` using a shared argument reduction.
+    pub fn sin_cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> (Self, Self) {
+        match &self.inner {
+            Flavor::Value(v) => match v.sin_cos(p, rm, cc) {
+                Ok((s, c)) => (
+                    Self::result_to_ext(Ok(s), false, true),
+                    Self::result_to_ext(Ok(c), false, true),
+                ),
+                Err(e) => (Self::nan(Some(e)), Self::nan(Some(e))),
+            },
+            Flavor::Inf(_) => (NAN, NAN),
+            Flavor::NaN(err) => (Self::nan(*err), Self::nan(*err)),
+        }
+    }
     gen_wrapper_arg_rm_cc!(
         "Computes the tangent of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
@@ -1668,6 +1701,50 @@ impl ExactNum {
                 }
             }
             Flavor::NaN(err) => (Self::nan(*err), Self::nan(*err)),
+        }
+    }
+    gen_wrapper_arg_rm_cc!(
+        "Error function `erf(self)` with precision `p`.",
+        erf,
+        Self,
+        { ExactNum::from_u8(1, p) },
+        { ExactNum::from_i8(-1, p) },
+        p,
+        usize
+    );
+    gen_wrapper_arg_rm_cc!(
+        "Complementary error function `erfc(self) = 1 - erf(self)` with precision `p`.",
+        erfc,
+        Self,
+        { Self::new(p) },
+        { ExactNum::from_u8(2, p) },
+        p,
+        usize
+    );
+    gen_wrapper_arg_rm_cc!(
+        "Gamma function `Γ(self)` with precision `p`. Poles at non-positive integers yield NaN (or +Inf at 0).",
+        gamma,
+        Self,
+        { INF_POS },
+        { NAN },
+        p,
+        usize
+    );
+    gen_wrapper_arg_rm_cc!(
+        "`ln Γ(self)` for positive `self` with precision `p`.",
+        ln_gamma,
+        Self,
+        { INF_POS },
+        { NAN },
+        p,
+        usize
+    );
+    /// Bessel function of the first kind `J_n(self)` for integer order `n`.
+    pub fn bessel_j(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.bessel_j(n, p, rm, cc), v.is_zero(), true),
+            Flavor::Inf(_) => NAN,
+            Flavor::NaN(err) => Self::nan(*err),
         }
     }
     gen_wrapper_arg_rm_cc!(

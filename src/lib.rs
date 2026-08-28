@@ -208,6 +208,10 @@ extern crate alloc;
 ///  - `atan2(y, x)`: quadrant-aware arctangent of `y / x`.
 ///  - `hypot(x, y)`: `sqrt(x² + y²)`.
 ///  - `fma(x, y, z)`: `x * y + z` with a single final rounding.
+///  - `mul_add(x, y, z)`: alias of `fma`.
+///  - `erf(x)`, `erfc(x)`: error function and complement.
+///  - `gamma(x)`, `ln_gamma(x)`: gamma and log-gamma.
+///  - `bessel_j(x, n)`: Bessel J of integer order `n`.
 ///  - `sinh(x)`: hyperbolic sine of `x`.
 ///  - `cosh(x)`: hyperbolic cosine of `x`.
 ///  - `tanh(x)`: hyperbolic tangent of `x`.

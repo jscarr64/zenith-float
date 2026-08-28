@@ -95,6 +95,23 @@ macro_rules! test_zf_op_no_cc {
     };
 }
 
+macro_rules! test_zf_fma {
+    ($eq:literal, $n1:ident, $n2:ident, $nc:ident, $f1:ident, $f2:ident, $fc:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
+        let n4 = ExactNum::fma(&($n1), &($n2), &($nc), $p, $rm);
+        let mut f4 = Float::with_val($p as u32, 1);
+        unsafe {
+            mpfr::fma(
+                f4.as_raw_mut(),
+                ($f1).as_raw(),
+                ($f2).as_raw(),
+                ($fc).as_raw(),
+                $rnd,
+            )
+        };
+        assert_float_close(n4, f4, $p, &format!("{:?}", $op_info), $eq, &mut $cc);
+    };
+}
+
 macro_rules! test_zf_rem_pi {
     ($n1:ident, $f1:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
         let mut n3 = ExactNum::rem_pi(&($n1), $p, $rm, &mut $cc);
@@ -147,6 +164,7 @@ macro_rules! test_zf_const {
 }
 
 pub(crate) use test_zf_const;
+pub(crate) use test_zf_fma;
 pub(crate) use test_zf_op;
 pub(crate) use test_zf_op_no_cc;
 pub(crate) use test_zf_rem_pi;

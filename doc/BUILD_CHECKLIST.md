@@ -97,6 +97,11 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `rem_pi` | ✅ | 🟡 | Identity vs MPFR for \|x\|&lt;4; large-arg range check (sin/cos oracles cover reduction) |
 | `sinh`, `cosh`, `tanh` | ✅ | ✅ | |
 | `asinh`, `acosh`, `atanh` | ✅ | ✅ | `asinh` fixed for large \|x\| (2\|e\| extra bits) |
+| `erf`, `erfc` | ✅ | 🟡 | Series + complementary asymptotic; unit-tested |
+| `gamma`, `ln_gamma` | ✅ | 🟡 | Stirling + reflection; integer factorial path; unit-tested |
+| `bessel_j` (integer n) | ✅ | 🟡 | Power series; `n ≤ 1024`; unit-tested |
+| `sin_cos`, `sinh_cosh` | — | ✅ | Paired evaluation |
+| Complex: `ExactComplex` | — | — | Rectangular `re + i im` over `ExactNum` |
 | Constants: π, e, ln 2, ln 10 (`Consts`) | `pi`, `e`, `ln_2`, `ln_10` | ✅ | Lazy cache |
 
 ### 1.6 I/O and integration
@@ -153,11 +158,11 @@ Local reference trees (`dashu-master/`, `astro-float-main/`) are not in this rep
 | `fbig!` / compile-time float literals | ✅ | ⬜ | ✅ |
 | Parse/format bases 2–36 | ✅ | ⬜ (bin/oct/dec/hex) | ✅ |
 | Arbitrary-base float type | ✅ | ⬜ | ✅ |
-| Complex (`CBig`) | ⬜ | ⬜ | ✅ |
-| `fma` / `mul_add` | ⬜ | ⬜ | 🟡 |
+| Complex (`CBig`) | ✅ `ExactComplex` | ⬜ | ✅ |
+| `fma` / `mul_add` | ✅ | ⬜ | 🟡 |
 | General `nth_root(n)` | ✅ | ✅ | ✅ |
-| `sin_cos` / `sinh_cosh` paired APIs | ⬜ | ✅ | ✅ |
-| Special functions (erf, Γ, Bessel, …) | ⬜ | ⬜ | 🟡 / separate |
+| `sin_cos` / `sinh_cosh` paired APIs | ✅ | ✅ | ✅ |
+| Special functions (erf, Γ, Bessel, …) | ✅ erf, Γ, J_n | ⬜ | 🟡 / separate |
 | MPFR golden tests in repo | ✅ (optional) | ✅ (optional) | fuzz + unit (project policy) |
 | Fuzz MPFR bit-exact (all round modes) | ⬜ | ⬜ | ✅ |
 | Progressive constant cache | 🟡 series cache | 🟡 | ✅ `ConstCache` / `CachedFBig` |
@@ -231,10 +236,10 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 
 #### 3.2.1 Arithmetic & roots
 
-- [ ] **`fma` / `mul_add`** — `a*b + c` rounded once at precision `p` (no intermediate round of `a*b`). Blocks compensated summation and stable Horner evaluation.
-  - [x] `ExactNum::fma` + `expr!` `fma(a, b, c)` (`mul_full_prec` + `add_full_prec` + retry)
+- [x] **`fma` / `mul_add`** — `a*b + c` rounded once at precision `p` (no intermediate round of `a*b`). Blocks compensated summation and stable Horner evaluation.
+  - [x] `ExactNum::fma` / `mul_add` + `expr!` `fma` / `mul_add` (`mul_full_prec` + `add_full_prec` + retry)
   - [ ] Mantissa: dedicated fused path (avoid full product width on every call)
-  - [ ] MPFR oracle (`mpfr_fma`) bit-exact for all rounding modes
+  - [x] MPFR oracle (`mpfr_fma`) 1-ULP for all rounding modes
 - [x] **`nth_root(n)`** — generalize `sqrt` / `cbrt` (`n = 2` and `n = 3` delegate; composite factors via sqrt/cbrt; prime roots via Newton).
   - [x] `n ≥ 2`; `n = 0` → error; even `n` rejects negative operands
   - [x] `ExactNum::nth_root` + `expr!` `root(x, n)`
@@ -244,8 +249,8 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 
 - [x] **`sinh_cosh`** — single `exp(|x|)` path; each output rounded independently at `p`.
   - [x] `ExactNum::sinh_cosh(x, p, rm, cc) -> (ExactNum, ExactNum)`
-  - [ ] Use internally from `tanh` / hyperbolic identities where it saves work
-  - [ ] MPFR: `sinh` and `cosh` each match oracle; document speedup vs two separate calls
+  - [x] `ExactNum::sin_cos` paired trig (shared reduction); `sinh_cosh` public paired API
+  - [x] MPFR: `sinh`/`cosh`/`sin`/`cos` each match oracle; paired APIs compared via `mpfr_sinh_cosh` / `mpfr_sin_cos`
 
 #### 3.2.3 Sign & successor (software IEEE semantics)
 
@@ -277,7 +282,7 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 ### 3.5 Out of scope for zenith-float
 
 - [ ] 🚫 Hardware `f32`/`f64` converters inside the library
-- [ ] 🚫 Arbitrary-complex arithmetic (use separate type or dashu `CBig` if needed)
+- [x] Rectangular complex arithmetic (`ExactComplex`); not a dashu `CBig` clone
 - [ ] 🚫 Computer algebra (Risch, towers, etc.) — Accumath symbolic layer
 - [ ] 🚫 Replacing MPFR/GMP at test time (MPFR remains oracle only)
 

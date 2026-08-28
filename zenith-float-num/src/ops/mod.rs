@@ -12,6 +12,8 @@ pub mod consts;
 mod nroot;
 mod sign;
 mod sinh_cosh;
+mod special;
+mod sin_cos;
 mod cos;
 mod cosh;
 mod expm1;
