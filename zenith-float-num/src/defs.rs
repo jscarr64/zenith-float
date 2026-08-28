@@ -167,6 +167,7 @@ impl From<TryReserveError> for Error {
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 pub struct Radix(u8);
 
+#[allow(non_upper_case_globals)]
 impl Radix {
     /// Binary (base 2).
     pub const Bin: Radix = Radix(2);
