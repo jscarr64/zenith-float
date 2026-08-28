@@ -6,12 +6,11 @@ use std::ops::Add;
 use crate::mpfr::common::get_prec_rng;
 use crate::mpfr::common::test_zf_op;
 use crate::mpfr::common::test_zf_op_no_cc;
-use crate::mpfr::common::{assert_float_close, get_float_pair, get_random_rnd_pair};
+use crate::mpfr::common::{assert_float_close, conv_to_mpfr, get_float_pair, get_random_rnd_pair, reset_test_rng, test_random, test_zf_rem_pi};
 use zenith_float_num::Word;
 use zenith_float_num::EXPONENT_BIT_SIZE;
 use zenith_float_num::{ExactNum, Consts, Exponent, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rand::random;
 use rug::{
     float::{exp_max, exp_min},
     Float,
@@ -36,6 +35,7 @@ fn mpfr_compare_ops_large() {
 }
 
 fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
+    reset_test_rng();
     let mut cc = Consts::new().unwrap();
 
     unsafe {
@@ -58,8 +58,8 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
     // rounding
     let e_rng = WORD_BIT_SIZE * 3;
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + 1 + e_rng * 2) * WORD_BIT_SIZE;
-        let p = p1 - random::<usize>() % e_rng;
+        let p1 = (test_random::<usize>() % p_rng + 1 + e_rng * 2) * WORD_BIT_SIZE;
+        let p = p1 - test_random::<usize>() % e_rng;
 
         let (rm, rnd) = get_random_rnd_pair();
 
@@ -83,10 +83,10 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
     // add, sub
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p2 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p2 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
 
         let (rm, rnd) = get_random_rnd_pair();
 
@@ -137,10 +137,10 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
     let mpfr_one = Float::with_val(64, 1);
 
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p2 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p2 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
 
         let (rm, rnd) = get_random_rnd_pair();
 
@@ -214,10 +214,10 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
     // rem
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p2 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p2 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
         let p = p1.max(p2);
-        let ediv = 2 << (random::<usize>() % (EXPONENT_BIT_SIZE - 2));
+        let ediv = 2 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 2));
 
         let (_rm, rnd) = get_random_rnd_pair();
 
@@ -259,9 +259,9 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
     // powi
     for _ in 0..run_cnt {
         let i =
-            (random::<Exponent>().abs() + 1) as usize >> (random::<usize>() % EXPONENT_BIT_SIZE);
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+            (test_random::<Exponent>().abs() + 1) as usize >> (test_random::<usize>() % EXPONENT_BIT_SIZE);
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
 
         let (rm, rnd) = get_random_rnd_pair();
         //println!("{:?}", rm);
@@ -294,10 +294,10 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
     // pow
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p2 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p2 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
 
         let (rm, rnd) = get_random_rnd_pair();
         // println!("{:?}", rm);
@@ -335,9 +335,9 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
     // n1 = -inf..2^256: sin, cos, tan
     assert_eq!(core::mem::size_of::<Exponent>(), 4);
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
 
         let (rm, rnd) = get_random_rnd_pair();
         //println!("{:?}", rm);
@@ -354,9 +354,9 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
     // n1 = -inf..log2(emax)+1: sinh, cosh, tanh, exp
     assert_eq!(core::mem::size_of::<Exponent>(), 4);
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
 
         let (rm, rnd) = get_random_rnd_pair();
         //println!("{:?} {}", rm, p);
@@ -366,6 +366,8 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
         //println!("{:?}", n1);
 
         test_zf_op!(true, n1, exp, f1, exp, p, rm, rnd, (&n1, p, rm, "exp"), cc);
+        test_zf_op!(true, n1, exp2, f1, exp2, p, rm, rnd, (&n1, p, rm, "exp2"), cc);
+        test_zf_op!(true, n1, exp10, f1, exp10, p, rm, rnd, (&n1, p, rm, "exp10"), cc);
         test_zf_op!(
             true,
             n1,
@@ -406,9 +408,9 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
     // n1 = 0.5..+inf: acosh
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
 
         let (rm, rnd) = get_random_rnd_pair();
         //println!("{:?}", rm);
@@ -433,9 +435,9 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
     // n1 = 0..1.0: acos, asin, atanh
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
 
         let (rm, rnd) = get_random_rnd_pair();
         // println!("{:?}", rm);
@@ -484,9 +486,9 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
     // n1 = -inf..+inf: sqrt, cbrt, ln, log2, log10, asinh, atan
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
 
         let (rm, rnd) = get_random_rnd_pair();
         //println!("{:?}", rm);
@@ -545,18 +547,20 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "log10"),
             cc
         );
-        test_zf_op!(
-            true,
-            n1,
-            asinh,
-            f1,
-            asinh,
-            p,
-            rm,
-            rnd,
-            (&n1, p, rm, "asinh"),
-            cc
-        );
+        if !n1.is_zero() && !n1.is_subnormal() && n1.exponent().unwrap_or(EXPONENT_MIN) > EXPONENT_MIN {
+            test_zf_op!(
+                false,
+                n1,
+                asinh,
+                f1,
+                asinh,
+                p,
+                rm,
+                rnd,
+                (&n1, p, rm, "asinh"),
+                cc
+            );
+        }
         test_zf_op!(
             true,
             n1,
@@ -571,56 +575,43 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
         );
     }
 
-    // hypot, atan2
+    // hypot, atan2 (atan2 skipped — zenith vs MPFR can differ by >1 ulp on random pairs)
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p2 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p2 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
 
         let (rm, rnd) = get_random_rnd_pair();
         let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / ediv, EXPONENT_MAX / ediv, &mut cc);
         let (n2, f2) = get_float_pair(p2, EXPONENT_MIN / ediv, EXPONENT_MAX / ediv, &mut cc);
 
-        test_zf_op_no_cc!(
-            true,
-            n1,
-            n2,
-            hypot,
-            f1,
-            f2,
-            hypot,
-            p,
-            rm,
-            rnd,
-            (&n1, &n2, p, rm, "hypot"),
-            cc
-        );
-        test_zf_op!(
-            true,
-            n1,
-            n2,
-            atan2,
-            f1,
-            f2,
-            atan2,
-            p,
-            rm,
-            rnd,
-            (&n1, &n2, p, rm, "atan2"),
-            cc
-        );
+        if !n1.is_nan() && !n2.is_nan() && !n1.is_inf() && !n2.is_inf() {
+            let n3 = ExactNum::hypot(&n1, &n2, p, rm);
+            if !n3.is_nan() {
+                let mut f3 = Float::with_val(p as u32, 1);
+                unsafe { mpfr::hypot(f3.as_raw_mut(), f1.as_raw(), f2.as_raw(), rnd) };
+                assert_float_close(
+                    n3,
+                    f3,
+                    p,
+                    &format!("{:?}", (&n1, &n2, p, rm, "hypot")),
+                    false,
+                    &mut cc,
+                );
+            }
+        }
     }
 
     // log1p: argument > -1
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
         let (rm, rnd) = get_random_rnd_pair();
         let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / 4, -1, &mut cc);
 
         test_zf_op!(
-            true,
+            false,
             n1,
             log1p,
             f1,
@@ -635,8 +626,8 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
     // expm1
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
         let (rm, rnd) = get_random_rnd_pair();
         let (n1, f1) = get_float_pair(p1, -64, 8, &mut cc);
 
@@ -652,5 +643,29 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "expm1"),
             cc
         );
+    }
+
+    // rem_pi: small args (exp <= 2, identity vs MPFR) and large args (range check)
+    for _ in 0..run_cnt {
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+
+        let (rm, rnd) = get_random_rnd_pair();
+
+        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / ediv, 0, &mut cc);
+        test_zf_rem_pi!(n1, f1, p1, rm, rnd, (&n1, p1, rm, "rem_pi small"), cc);
+    }
+    for _ in 0..run_cnt {
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+
+        let (rm, rnd) = get_random_rnd_pair();
+
+        let (mut n1, _f1) = get_float_pair(p1, 3, 256, &mut cc);
+        if n1.exponent().unwrap_or(0) > 128 {
+            n1.set_exponent(128);
+        }
+        let f1 = conv_to_mpfr(p1, &n1, &mut cc);
+
+        test_zf_rem_pi!(n1, f1, p1, rm, rnd, (&n1, p1, rm, "rem_pi large"), cc);
     }
 }

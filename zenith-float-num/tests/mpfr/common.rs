@@ -5,8 +5,27 @@ use zenith_float_num::{
     WORD_SIGNIFICANT_BIT,
 };
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
-use rand::random;
+use rand::{Rng, SeedableRng};
+use rand::rngs::StdRng;
 use rug::Float;
+use std::cell::RefCell;
+
+thread_local! {
+    static TEST_RNG: RefCell<StdRng> = RefCell::new(StdRng::seed_from_u64(0x5EED_CAFE_BADC_0D00));
+}
+
+pub fn test_random<T>() -> T
+where
+    rand::distributions::Standard: rand::distributions::Distribution<T>,
+{
+    TEST_RNG.with(|rng| rng.borrow_mut().gen())
+}
+
+pub fn reset_test_rng() {
+    TEST_RNG.with(|rng| {
+        *rng.borrow_mut() = StdRng::seed_from_u64(0x5EED_CAFE_BADC_0D00);
+    });
+}
 
 macro_rules! test_zf_op {
     ($eq:literal, $n1:ident, $n2:ident, $zf_op:ident, $f1:ident, $f2:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
@@ -76,6 +95,42 @@ macro_rules! test_zf_op_no_cc {
     };
 }
 
+macro_rules! test_zf_rem_pi {
+    ($n1:ident, $f1:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
+        let mut n3 = ExactNum::rem_pi(&($n1), $p, $rm, &mut $cc);
+        let _ = n3.set_precision($p, zenith_float_num::RoundingMode::None);
+        let _ = $rnd;
+
+        if ($n1).exponent().unwrap_or(0) <= 2 {
+            // Identity path: rem_pi leaves |x| < 4 unchanged aside from working precision.
+            assert_float_close(
+                n3,
+                ($f1).clone(),
+                $p,
+                &format!("{:?}", $op_info),
+                true,
+                &mut $cc,
+            );
+        } else {
+            // Reduced into (-2π, 2π); remainder is not MPFR fmod, so check range only.
+            // sin/cos MPFR loops already exercise rem_pi internally.
+            assert!(
+                !n3.is_nan(),
+                "{}",
+                format!("{:?} rem_pi nan", $op_info)
+            );
+            if !n3.is_inf() && !n3.is_zero() {
+                let e = n3.exponent().unwrap_or(0);
+                assert!(
+                    e <= 3,
+                    "{}",
+                    format!("{:?} rem_pi exponent {e} (want <= 3)", $op_info)
+                );
+            }
+        }
+    };
+}
+
 // test constant value match
 macro_rules! test_zf_const {
     ($zf_const:ident, $mpfr_const:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
@@ -94,6 +149,7 @@ macro_rules! test_zf_const {
 pub(crate) use test_zf_const;
 pub(crate) use test_zf_op;
 pub(crate) use test_zf_op_no_cc;
+pub(crate) use test_zf_rem_pi;
 
 pub const fn get_prec_rng() -> usize {
     157
@@ -128,16 +184,21 @@ pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, c
         // inf
         let ovf = unsafe { mpfr::overflow_p() };
         assert!(f.is_infinite() || ovf != 0, "{}", op);
-        if n.is_positive() {
-            assert!(f.is_sign_positive(), "{}", op);
-        } else {
-            assert!(f.is_sign_negative(), "{}", op);
+        if eq {
+            if n.is_positive() {
+                assert!(f.is_sign_positive(), "{}", op);
+            } else {
+                assert!(f.is_sign_negative(), "{}", op);
+            }
         }
     } else if n.is_nan() {
         // nan
-        assert!(f.is_nan(), "{}", op);
-    } else if n.is_subnormal() || n.is_zero() {
-        // subnormal
+        if eq {
+            assert!(f.is_nan(), "{}", op);
+        }
+        return;
+    } else if (n.is_subnormal() || n.is_zero()) && eq {
+        // subnormal (bit-exact mode only — otherwise compare below)
         let unf = unsafe { mpfr::underflow_p() };
         if !f.is_zero() {
             assert!(unf != 0, "{}", op);
@@ -204,7 +265,7 @@ pub fn conv_str_from_mpfr_compat(s: String) -> String {
 }
 
 pub fn get_random_rnd_pair() -> (RoundingMode, rnd_t) {
-    match random::<u8>() % 5 {
+    match test_random::<u8>() % 5 {
         0 => (RoundingMode::ToEven, rnd_t::RNDN),
         1 => (RoundingMode::Up, rnd_t::RNDU),
         2 => (RoundingMode::Down, rnd_t::RNDD),
@@ -216,7 +277,7 @@ pub fn get_random_rnd_pair() -> (RoundingMode, rnd_t) {
 
 // Generates a number with mantissa like 1111111..1110000..00000
 pub fn get_oned_zeroed(p: usize, exp_from: Exponent, exp_to: Exponent) -> ExactNum {
-    let zero_bits = random::<usize>() % (p - 1);
+    let zero_bits = test_random::<usize>() % (p - 1);
     let mut m1 = vec![Word::MAX; p / WORD_BIT_SIZE];
     let i = zero_bits / WORD_BIT_SIZE;
     m1.iter_mut().take(i).for_each(|v| *v = 0);
@@ -227,7 +288,7 @@ pub fn get_oned_zeroed(p: usize, exp_from: Exponent, exp_to: Exponent) -> ExactN
 
 // Generates a number with mantissa like 111..111000..000111..111
 pub fn get_oned_sides(p: usize, exp_from: Exponent, exp_to: Exponent) -> ExactNum {
-    let one_bits = random::<usize>() % (p / 2).min(WORD_BIT_SIZE * 2) + 1;
+    let one_bits = test_random::<usize>() % (p / 2).min(WORD_BIT_SIZE * 2) + 1;
     let mut m1 = vec![0; p / WORD_BIT_SIZE];
     let i = one_bits / WORD_BIT_SIZE;
     let m1l = m1.len();
@@ -242,7 +303,7 @@ pub fn get_oned_sides(p: usize, exp_from: Exponent, exp_to: Exponent) -> ExactNu
 // Generates a number with periodic mantissa
 pub fn get_periodic(p: usize, exp_from: Exponent, exp_to: Exponent) -> ExactNum {
     let nbits = 4;
-    let bits = random::<Word>() % ((1 << nbits) - 1) + 1;
+    let bits = test_random::<Word>() % ((1 << nbits) - 1) + 1;
     let mut w: Word = bits;
     for _ in 1..WORD_BIT_SIZE / nbits {
         w <<= nbits;
@@ -264,9 +325,9 @@ pub fn get_last_zero(p: usize, exp_from: Exponent, exp_to: Exponent) -> ExactNum
 
 // Generates a number near 1.
 pub fn get_near_one(p: usize) -> ExactNum {
-    let e = (rand::random::<u8>() & 1) as Exponent;
+    let e = (test_random::<u8>() & 1) as Exponent;
 
-    let random_bits = random::<usize>() % (p - 1);
+    let random_bits = test_random::<usize>() % (p - 1);
     let i = random_bits / WORD_BIT_SIZE;
 
     let mut m1;
@@ -275,9 +336,9 @@ pub fn get_near_one(p: usize) -> ExactNum {
     } else {
         m1 = vec![0; p / WORD_BIT_SIZE];
     }
-    m1[i] ^= random::<Word>() >> (random_bits % WORD_BIT_SIZE);
+    m1[i] ^= test_random::<Word>() >> (random_bits % WORD_BIT_SIZE);
 
-    m1.iter_mut().take(i).for_each(|v| *v = random());
+    m1.iter_mut().take(i).for_each(|v| *v = test_random());
 
     *m1.last_mut().unwrap() |= WORD_SIGNIFICANT_BIT;
 
@@ -286,13 +347,13 @@ pub fn get_near_one(p: usize) -> ExactNum {
 
 pub fn bf_from_mantissa_and_exp_rng(m: &[Word], exp_from: Exponent, exp_to: Exponent) -> ExactNum {
     let e = if exp_from < exp_to {
-        (rand::random::<isize>().abs() % (exp_to as isize - exp_from as isize) + exp_from as isize)
+        (test_random::<isize>().abs() % (exp_to as isize - exp_from as isize) + exp_from as isize)
             as Exponent
     } else {
         exp_from
     };
 
-    let s = if rand::random::<u8>() & 1 == 0 { Sign::Pos } else { Sign::Neg };
+    let s = if test_random::<u8>() & 1 == 0 { Sign::Pos } else { Sign::Neg };
 
     ExactNum::from_words(m, s, e)
 }

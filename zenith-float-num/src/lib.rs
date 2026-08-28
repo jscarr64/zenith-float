@@ -57,6 +57,8 @@ pub use crate::defs::WORD_BIT_SIZE;
 pub use crate::defs::WORD_MAX;
 pub use crate::defs::WORD_SIGNIFICANT_BIT;
 
+pub use crate::common::util::MAX_PREC_RETRY;
+
 #[cfg(test)]
 mod tests {
 

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- MPFR compare coverage for `exp2`, `exp10`, and `rem_pi`; release gate on Linux x86_64 in `scripts/ci.sh`.
+- `doc/PRECISION.md` — bounds on internal working precision vs exponent (`MAX_PREC_RETRY`, `expr!`, transcendentals).
+- Structured radix 2–36 parse/format round-trip stress test (`tests/radix_roundtrip.rs`).
 - Native `+`, `-`, `*`, `/` operators on `ExactNum` (default precision, round-to-even).
 - `exact!` / `fbig!` compile-time decimal float literals.
 - Parse/format for radices 2–36 (`Radix::try_new`); `_e` exponent separator for bases > 10.

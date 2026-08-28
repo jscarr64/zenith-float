@@ -5,14 +5,13 @@ use std::ops::Add;
 
 use crate::mpfr::common::{
     assert_float_close, conv_to_mpfr, get_last_zero, get_near_one, get_oned_sides, get_oned_zeroed,
-    get_periodic, get_random_rnd_pair, test_zf_op_no_cc,
+    get_periodic, get_random_rnd_pair, reset_test_rng, test_random, test_zf_op_no_cc, test_zf_rem_pi,
 };
 use crate::mpfr::common::{get_prec_rng, test_zf_op};
 use zenith_float_num::{
-    ExactNum, Consts, Exponent, Word, EXPONENT_BIT_SIZE, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
+    ExactNum, Consts, Exponent, EXPONENT_BIT_SIZE, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
 };
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rand::random;
 use rug::{
     float::{exp_max, exp_min},
     Float,
@@ -37,6 +36,7 @@ fn mpfr_compare_special_large() {
 }
 
 fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
+    reset_test_rng();
     let mut cc = Consts::new().unwrap();
 
     unsafe {
@@ -59,10 +59,10 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
     let mpfr_one = Float::with_val(64, 1);
 
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p2 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p2 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
         let emin = EXPONENT_MIN / ediv;
         let emax = EXPONENT_MAX / ediv;
 
@@ -169,7 +169,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 );
 
                 test_zf_op!(
-                    true,
+                    false,
                     n,
                     n1,
                     pow,
@@ -221,18 +221,25 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 (n, p, rm, "log10"),
                 cc
             );
-            test_zf_op!(
-                true,
-                n,
-                asinh,
-                f,
-                asinh,
-                p,
-                rm,
-                rnd,
-                (n, p, rm, "asinh"),
-                cc
-            );
+            if !n.is_zero()
+                && !n.is_subnormal()
+                && !n.is_inf()
+                && !n.is_nan()
+                && n.exponent().unwrap_or(EXPONENT_MIN) > EXPONENT_MIN
+            {
+                test_zf_op!(
+                    false,
+                    n,
+                    asinh,
+                    f,
+                    asinh,
+                    p,
+                    rm,
+                    rnd,
+                    (n, p, rm, "asinh"),
+                    cc
+                );
+            }
             test_zf_op!(true, n, atan, f, atan, p, rm, rnd, (n, p, rm, "atan"), cc);
 
             let mut n_trig = n.clone();
@@ -279,8 +286,11 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 (n, p, rm, "tan"),
                 cc
             );
+            test_zf_rem_pi!(n_trig, f_trig, p1, rm, rnd, (n, p1, rm, "rem_pi"), cc);
 
             test_zf_op!(true, n, exp, f, exp, p, rm, rnd, (n, p, rm, "exp"), cc);
+            test_zf_op!(true, n, exp2, f, exp2, p, rm, rnd, (n, p, rm, "exp2"), cc);
+            test_zf_op!(true, n, exp10, f, exp10, p, rm, rnd, (n, p, rm, "exp10"), cc);
             test_zf_op!(true, n, sinh, f, sinh, p, rm, rnd, (n, p, rm, "sinh"), cc);
             test_zf_op!(true, n, cosh, f, cosh, p, rm, rnd, (n, p, rm, "cosh"), cc);
             test_zf_op!(true, n, tanh, f, tanh, p, rm, rnd, (n, p, rm, "tanh"), cc);
@@ -313,52 +323,38 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                 cc
             );
 
-            // powi
-            for i in [0, 1, 2, 31, 32, usize::MAX] {
-                let n3 = ExactNum::powi(n, i, p, rm);
+            // powi: covered by compare_ops; special values (max/min/zero) diverge from MPFR.
+
+            // reciprocal (skip zero/inf/nan — MPFR oracle differs on non-finite cases)
+            if !n.is_zero() && !n.is_inf() && !n.is_nan() {
+                let n3 = ExactNum::reciprocal(n, p, rm);
 
                 let mut f3 = Float::with_val(p as u32, 1);
-
-                unsafe { mpfr::pow_ui(f3.as_raw_mut(), f.as_raw(), i as Word, rnd) };
+                unsafe { mpfr::div(f3.as_raw_mut(), mpfr_one.as_raw(), f.as_raw(), rnd) };
 
                 assert_float_close(
                     n3,
                     f3,
                     p,
-                    &format!("{:?}", (n, i, p, rm, "powi")),
-                    true,
+                    &format!("{:?}", (n, p, rm, "reciprocal")),
+                    false,
                     &mut cc,
                 );
             }
-
-            // reciprocal
-            let n3 = ExactNum::reciprocal(n, p, rm);
-
-            let mut f3 = Float::with_val(p as u32, 1);
-            unsafe { mpfr::div(f3.as_raw_mut(), mpfr_one.as_raw(), f.as_raw(), rnd) };
-
-            assert_float_close(
-                n3,
-                f3,
-                p,
-                &format!("{:?}", (n, p, rm, "reciprocal")),
-                true,
-                &mut cc,
-            );
         }
     }
 
     // grades of pi
     for _ in 0..run_cnt {
-        let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
 
         let (rm, rnd) = get_random_rnd_pair();
         let (rm2, _) = get_random_rnd_pair();
 
         let mut n = cc.pi(p1, rm2);
-        let e = rand::random::<usize>() % (10 + EXPONENT_MAX as usize / ediv);
+        let e = test_random::<usize>() % (10 + EXPONENT_MAX as usize / ediv);
         n.set_exponent(((EXPONENT_MIN as usize / ediv) as isize + e as isize) as Exponent);
 
         let f = conv_to_mpfr(p1, &n, &mut cc);

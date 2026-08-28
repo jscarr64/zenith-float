@@ -1,14 +1,20 @@
 //! Auxiliary items.
 
+use crate::common::consts::TRIG_EXP_THRES;
+use crate::common::util::round_p;
 use crate::{num::ExactNumNumber, Consts, Error, RoundingMode};
 
 impl ExactNumNumber {
     /// Reduce `self` to the interval `(-2π, 2π)` for trigonometric evaluation.
     ///
-    /// The `p` argument is reserved for API uniformity with other transcendentals; reduction
-    /// uses the precision required by the magnitude of `self`.
-    pub fn rem_pi(&self, _p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        self.clone()?.reduce_trig_arg(cc, rm)
+    /// Uses the same working precision as `sin`/`cos`/`tan` before modular reduction.
+    pub fn rem_pi(&self, p: usize, _rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        let p = round_p(p);
+        let add_p = (3 - TRIG_EXP_THRES) as usize;
+        let p_x = p.max(self.mantissa_max_bit_len()).saturating_add(add_p);
+        let mut x = self.clone()?;
+        x.set_precision(p_x, RoundingMode::None)?;
+        x.reduce_trig_arg(cc, RoundingMode::None)
     }
 
     /// Reduce `self` to interval (-2*pi; 2*pi)

@@ -10,7 +10,14 @@ if rg 'f32|f64' --glob '*.rs' --glob '*.md' --glob 'CHANGELOG*' . --glob '!doc/B
 fi
 
 cargo test --workspace
+cargo test -p zenith-float-num --features random --test radix_roundtrip
 cargo test -p zenith-float-num --lib --release
 cargo test -p zenith-float-num --lib --no-default-features --features std
 cargo test --workspace --features random,serde
+
+# MPFR bit-oracle gate (Linux x86_64 only; release, single-threaded).
+if [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]]; then
+  cargo test -p zenith-float-num --features mpfr-tests --release -- --test-threads=1
+fi
+
 echo "zenith-float ci ok"

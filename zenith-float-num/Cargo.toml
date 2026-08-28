@@ -28,6 +28,10 @@ harness = false
 name = "composite"
 harness = false
 
+[[test]]
+name = "radix_roundtrip"
+required-features = ["random"]
+
 [target.'cfg(all(target_arch = "x86_64", target_os = "linux"))'.dev-dependencies]
 rug = { version = "~1.20.0", features = ["float", "rand"] }
 gmp-mpfr-sys = { version = "~1.6.0", features = [] }
@@ -44,4 +48,4 @@ std = []
 random = ["dep:rand"]
 serde = ["dep:serde"]
 # Optional MPFR golden tests (slow; enable with --features mpfr-tests).
-mpfr-tests = []
+mpfr-tests = ["random"]

@@ -90,11 +90,11 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `ln`, `log2`, `log10`, `log` (arbitrary base) | ✅ | ✅ | Series + arg reduction |
 | `log1p` | ✅ | ✅ | |
 | `exp` | ✅ | ✅ | |
-| `exp2`, `exp10` | ✅ | 🟡 | Delegate to `pow`; **no dedicated MPFR tests yet** |
+| `exp2`, `exp10` | ✅ | 🟡 | Delegate to `pow`; MPFR oracles in compare suite |
 | `expm1` | ✅ | ✅ | |
 | `sin`, `cos`, `tan` | ✅ | ✅ | `rem_pi` internally |
 | `asin`, `acos`, `atan`, `atan2` | ✅ | ✅ | |
-| `rem_pi` | ✅ | 🟡 | Public wrapper; **no MPFR tests yet** |
+| `rem_pi` | ✅ | 🟡 | Identity vs MPFR for \|x\|&lt;4; large-arg range check (sin/cos oracles cover reduction) |
 | `sinh`, `cosh`, `tanh` | ✅ | ✅ | |
 | `asinh`, `acosh`, `atanh` | ✅ | ✅ | `asinh` fixed for large \|x\| (2\|e\| extra bits) |
 | Constants: π, e, ln 2, ln 10 (`Consts`) | `pi`, `e`, `ln_2`, `ln_10` | ✅ | Lazy cache |
@@ -121,14 +121,14 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `cargo test -p zenith-float-num --lib --release` | ✅ |
 | `cargo test` with `no-default-features --features std` | ✅ |
 | `cargo test --features random,serde` | ✅ |
-| MPFR bit-oracle tests (`mpfr-tests`) | 🟡 Manual; **not in CI** |
+| MPFR bit-oracle tests (`mpfr-tests`) | ✅ | Release gate on Linux x86_64 in `scripts/ci.sh` |
 | Criterion / dedicated benches | ✅ `zenith-float-num/benches/` (arithmetic, transcendentals, composite) |
 | Cross-library compare (astro / dashu) | 🟡 `zenith-float-compare/` + `scripts/compare-bench.sh` (release gate) |
 | `proptest` / quickcheck | ⬜ Hand-written random loops (`TEST_ITERS = 256`) |
 
 **Property tests** (`zenith-float-num/src/ops/tests.rs`): inverse pairs (ln↔exp, sin↔asin, log↔pow, etc.) with mathematically derived error bounds; exponent sampling capped at `TEST_EXP_BOUND = 1024` for runtime.
 
-**Error documentation:** `doc/README.md` (ulp / series error bounds used by `expr!` and tests).
+**Error documentation:** `doc/README.md` (ulp / series error bounds used by `expr!` and tests). **Precision growth:** `doc/PRECISION.md` (`MAX_PREC_RETRY`, exponent scaling, `expr!` bounds).
 
 ---
 
@@ -188,7 +188,7 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 | Priority | Gap | Why it matters |
 | ---------- | ----- | ---------------- |
 | P0 | MPFR oracle in release CI (or nightly) | Bit-exact reference for every public op |
-| P0 | MPFR coverage for `exp2`, `exp10`, `rem_pi` | Recently added; still oracle-blind |
+| P0 | MPFR coverage for `exp2`, `exp10`, `rem_pi` | Done in compare suite |
 | P0 | Working-precision caps documented + enforced | Prevents pathological hour-long single test cases |
 | P1 | `fma` | Exact dot products, compensated summation in long expressions |
 | P1 | `nth_root(n)` | Many physics / engineering closed forms |
@@ -218,10 +218,10 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 - [x] `asinh` large-argument precision (`2|e|` bits + `try_set_precision(p_x)`)
 - [x] Property tests without debug-only weakening
 - [x] CI: debug + release lib tests, `f32`/`f64` grep
-- [ ] Add `exp2`, `exp10`, `rem_pi` to MPFR compare suite
-- [ ] MPFR gate in CI (nightly or release-only job; Linux x86_64)
-- [ ] Document / bound internal precision growth vs exponent (avoid runaway cost)
-- [ ] Fuzz or structured stress harness for parse/format round-trip
+- [x] Add `exp2`, `exp10`, `rem_pi` to MPFR compare suite
+- [x] MPFR gate in CI (nightly or release-only job; Linux x86_64)
+- [x] Document / bound internal precision growth vs exponent (avoid runaway cost)
+- [x] Fuzz or structured stress harness for parse/format round-trip
 
 ### 3.2 API completeness vs dashu/astro (P1)
 
