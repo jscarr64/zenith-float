@@ -225,14 +225,33 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 
 ### 3.2 API completeness vs dashu/astro (P1)
 
-- [ ] `fma` (`mul_add`) with correct rounding
-- [ ] `nth_root(n)` for n ≥ 2 (generalize `sqrt` / `cbrt`)
-- [ ] `sinh_cosh` paired evaluation (single exp path)
-- [ ] Fuzz harness: MPFR bit-exact under all rounding modes (dashu-style)
-- [ ] `copysign`, `next_after` (software, integer-based)
-- [ ] `frexp` / `ldexp` / `scalb` / `logb` / `ilogb`
-- [ ] `LowerHex` + scientific `Display` options
-- [ ] Additional constants in `Consts` (configurable list)
+**Definition of done (each item):** public `ExactNum` method, `expr!` leaf when the op is macro-expressible, MPFR bit-oracle under every `RoundingMode`, and §2.1 matrix updated to ✅.
+
+**Order:** implement top-to-bottom; later items may call earlier ones.
+
+#### 3.2.1 Arithmetic & roots
+
+- [ ] **`fma` / `mul_add`** — `a*b + c` rounded once at precision `p` (no intermediate round of `a*b`). Blocks compensated summation and stable Horner evaluation.
+  - [ ] Mantissa: full-width product + add with guard bits (or exact-product fast path)
+  - [ ] `ExactNum::fma` + `expr!` `fma(a, b, c)`
+  - [ ] MPFR oracle (`mpfr_fma`) for all rounding modes
+- [ ] **`nth_root(n)`** — generalize `sqrt` / `cbrt` (`n = 2` and `n = 3` delegate to existing code).
+  - [ ] `n ≥ 2`; `n = 0` → error; even `n` rejects negative operands
+  - [ ] `ExactNum::nth_root` + `expr!` surface (syntax TBD: `root(x, n)` or method chain)
+  - [ ] MPFR oracle for `n ∈ {2, 3, 4, 5, 7, 10}` at multiple precisions
+
+#### 3.2.2 Transcendentals (paired evaluation)
+
+- [ ] **`sinh_cosh`** — single `exp(|x|)` path; each output rounded independently at `p`.
+  - [ ] `ExactNum::sinh_cosh(x, p, rm, cc) -> (ExactNum, ExactNum)`
+  - [ ] Use internally from `tanh` / hyperbolic identities where it saves work
+  - [ ] MPFR: `sinh` and `cosh` each match oracle; document speedup vs two separate calls
+
+#### 3.2.3 Sign & successor (software IEEE semantics)
+
+- [ ] **`copysign`**, **`next_after`** — integer-limb sign and total-order successor; no hardware floats.
+  - [ ] `copysign(magnitude, sign)`; `next_after(x, toward)` with explicit direction
+  - [ ] MPFR oracle; edge cases: ±0, subnormals, `EXPONENT_MIN` / `EXPONENT_MAX`
 
 ### 3.3 Testing & performance (P1)
 
@@ -240,6 +259,7 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 - [x] TSV baseline file + `scripts/bench-compare.sh` (no JSON)
 - [x] Cross-library compare harness (`zenith-float-compare`, bigfloat-bench workloads)
 - [ ] Capture `doc/compare-results.tsv` at release and document vs astro 0.9.6 / dashu 0.6.0
+- [ ] Fuzz harness: MPFR bit-exact under all rounding modes (dashu-style; complements property tests in `ops/tests.rs`)
 - [ ] Optional: nightly bench regression gate in CI
 - [ ] Track CI wall time budget (target: full gate &lt; 10 min debug, &lt; 30 min with MPFR)
 - [ ] Seed-controlled random tests for reproducible failures
@@ -260,6 +280,15 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 - [ ] 🚫 Arbitrary-complex arithmetic (use separate type or dashu `CBig` if needed)
 - [ ] 🚫 Computer algebra (Risch, towers, etc.) — Accumath symbolic layer
 - [ ] 🚫 Replacing MPFR/GMP at test time (MPFR remains oracle only)
+
+### 3.6 API polish (P2 — post-Accumath v1)
+
+Does not block first production release; aligns with §2.3 P2 items.
+
+- [ ] `frexp` / `ldexp` / `scalb` / `logb` / `ilogb` — IEEE-style decomposition without hardware floats
+- [ ] `LowerHex` + scientific `Display` options (`LowerExp` / `UpperExp` formatting)
+- [ ] Additional `Consts` beyond π, e, ln 2, ln 10 (φ, √2, γ, …; configurable list)
+- [ ] `expr!` correct-rounding semantics documented per op (Accumath macro contract)
 
 ---
 
