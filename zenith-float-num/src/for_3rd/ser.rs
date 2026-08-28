@@ -1,7 +1,9 @@
-//! Serialization of ExactNum.
-//! Serialization to a string uses decimal radix.
+//! Serialization of [`ExactNum`] and [`ExactComplex`].
+//! Numbers are written as decimal strings (`Display`).
 
+use crate::ExactComplex;
 use crate::ExactNum;
+use serde::ser::SerializeStruct;
 use serde::{Serialize, Serializer};
 
 impl Serialize for ExactNum {
@@ -10,4 +12,11 @@ impl Serialize for ExactNum {
     }
 }
 
-
+impl Serialize for ExactComplex {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut st = serializer.serialize_struct("ExactComplex", 2)?;
+        st.serialize_field("re", self.re())?;
+        st.serialize_field("im", self.im())?;
+        st.end()
+    }
+}

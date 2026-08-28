@@ -112,7 +112,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `convert_from_radix` / `convert_to_radix` | ✅ |
 | `Display`, `Binary`, `Octal`, `UpperHex` (`std`) | ✅ |
 | `FromStr` (decimal, `std`) | ✅ |
-| `serde` (decimal string / integer, feature) | 🟡 |
+| `serde` (decimal string / integer, feature; requires `std`) | ✅ |
 | `random_normal` (feature `random`) | ✅ |
 | `expr!` compile tests (`trybuild`) | ✅ |
 | `expr!` cancellation / precision tests (root `tests/`) | ✅ |

@@ -21,6 +21,7 @@
 - `SharedConsts` — mutex-wrapped constant cache for parallel batch evaluation (`std`).
 - MPFR oracles for `erf`/`erfc`, `gamma`/`ln_gamma`, `bessel_j`, extra constants, and `ExactComplex` add.
 - `expr!` constants `sqrt2`, `phi`, `euler_gamma`.
+- `serde`: JSON round-trip for `ExactNum` (decimal string / integer, Inf/NaN) and `ExactComplex`; feature implies `std`.
 - Structured radix 2–36 parse/format round-trip stress test (`tests/radix_roundtrip.rs`).
 - Native `+`, `-`, `*`, `/` operators on `ExactNum` (default precision, round-to-even).
 - `exact!` / `fbig!` compile-time decimal float literals.

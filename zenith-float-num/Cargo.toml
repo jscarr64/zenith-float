@@ -46,6 +46,6 @@ itertools = { version = "0.10.3", default-features = false, features = [] }
 default = ["std"]
 std = []
 random = ["dep:rand"]
-serde = ["dep:serde"]
+serde = ["dep:serde", "std"]
 # Optional MPFR golden tests (slow; enable with --features mpfr-tests).
 mpfr-tests = ["random"]

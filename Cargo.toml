@@ -36,7 +36,7 @@ zenith-float-macro = { path = "zenith-float-macro", version = "0.1.0" }
 default = ["std"]
 std = ["zenith-float-num/std"]
 random = ["zenith-float-num/random"]
-serde = ["zenith-float-num/serde"]
+serde = ["std", "zenith-float-num/serde"]
 # Optional MPFR golden tests (Linux x86_64; enable with --features mpfr-tests).
 mpfr-tests = ["zenith-float-num/mpfr-tests"]
 
