@@ -212,6 +212,8 @@ extern crate alloc;
 ///  - `erf(x)`, `erfc(x)`: error function and complement.
 ///  - `gamma(x)`, `ln_gamma(x)`: gamma and log-gamma.
 ///  - `bessel_j(x, n)`: Bessel J of integer order `n`.
+///  - `ldexp(x, n)`, `scalb(x, n)`: `x · 2^n` (`n` is an integer literal or expression).
+///  - `logb(x)`: `floor(log2(|x|))` as a float.
 ///  - `sinh(x)`: hyperbolic sine of `x`.
 ///  - `cosh(x)`: hyperbolic cosine of `x`.
 ///  - `tanh(x)`: hyperbolic tangent of `x`.

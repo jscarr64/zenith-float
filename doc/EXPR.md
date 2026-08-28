@@ -27,6 +27,8 @@ This is the Accumath numeric contract: leaves are treated as exact; the printed 
 | `hypot` `fma` / `mul_add` | `hypot` / `fma` | `fma` is a single round of `a*b+c` (full product when magnitudes overlap) |
 | `sinh` `cosh` `tanh` `asinh` `acosh` `atanh` | hyperbolic | Paired `sinh_cosh` is the `ExactNum` method; expr uses `sinh`/`cosh` |
 | `erf` `erfc` `gamma` `ln_gamma` `bessel_j` | specials | Same pipeline; MPFR 1-ULP oracles on bounded domains |
+| `ldexp(x, n)` `scalb(x, n)` `logb(x)` | IEEE split | Integer `n`; `frexp`/`ilogb` are methods (tuple / `Option`) |
+| `pi` `e` `ln_2` `ln_10` `sqrt2` `phi` `euler_gamma` | `Consts` | Cached at extra bits, then final `set_precision` |
 
 Integer literals and `exact!` / `fbig!` strings enter as exact `ExactNum` values.
 

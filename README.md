@@ -6,7 +6,7 @@ All arithmetic runs on integer limbs. The library does not use hardware floating
 
 The library can work without `std` if a memory allocator is available.
 
-Besides the usual `+ − × ÷` and the elementary functions (`sqrt`, `exp`, `exp2`, `exp10`, `ln`, trig, hyperbolic), the public API includes `hypot`, `atan2`, `log1p`, `expm1`, and `rem_pi`.
+Besides the usual `+ − × ÷` and the elementary functions (`sqrt`, `exp`, `exp2`, `exp10`, `ln`, trig, hyperbolic), the public API includes `hypot`, `atan2`, `log1p`, `expm1`, `rem_pi`, specials (`erf`, `gamma`, `bessel_j`), IEEE split (`frexp`, `ldexp`, `logb`), extra constants (√2, φ, γ), and `SharedConsts` for sharing a constant cache across threads.
 
 License: MIT OR Apache-2.0.
 
@@ -20,6 +20,7 @@ License: MIT OR Apache-2.0.
 
 - [Build checklist](doc/BUILD_CHECKLIST.md) — what is implemented, tested, and still required (including vs astro-float / dashu-float).
 - [Error bounds](doc/README.md) — ulp and series error theory used by `expr!` and property tests.
+- [`expr!` rounding contract](doc/EXPR.md) — per-op working precision and final `set_precision`.
 
 ## Features
 

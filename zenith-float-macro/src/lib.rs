@@ -192,6 +192,33 @@ fn root_fun(
     )))
 }
 
+fn ldexp_fun(
+    expr: &ExprCall,
+    initial_err: usize,
+    err: &mut Vec<usize>,
+    cc: &mut Consts,
+    scalb: bool,
+) -> Result<TokenStream, Error> {
+    check_arg_num(2, expr)?;
+
+    let arg = traverse_expr(&expr.args[0], err, cc)?;
+    let n = &expr.args[1];
+    err.push(initial_err);
+
+    let fun = if scalb {
+        quote!(zenith_float::ExactNum::scalb)
+    } else {
+        quote!(zenith_float::ExactNum::ldexp)
+    };
+
+    Ok(quote!(#fun(
+        &(#arg),
+        #n as zenith_float::Exponent,
+        p_wrk,
+        zenith_float::RoundingMode::None
+    )))
+}
+
 fn bessel_j_fun(
     expr: &ExprCall,
     initial_err: usize,
@@ -303,7 +330,7 @@ fn traverse_call(
     err: &mut Vec<usize>,
     cc: &mut Consts,
 ) -> Result<TokenStream, Error> {
-    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"rem_pi\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"bessel_j\" are allowed.";
+    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"rem_pi\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"bessel_j\", \"ldexp\", \"scalb\", \"logb\" are allowed.";
 
     if let Expr::Path(fun) = expr.func.as_ref() {
         if let Some(fname) = fun.path.get_ident() {
@@ -538,6 +565,16 @@ fn traverse_call(
                 "gamma" => one_arg_fun(quote!(zenith_float::ExactNum::gamma), expr, EXPONENT_BIT_SIZE + 1, err, cc, true),
                 "ln_gamma" => one_arg_fun(quote!(zenith_float::ExactNum::ln_gamma), expr, EXPONENT_BIT_SIZE + 1, err, cc, true),
                 "bessel_j" => bessel_j_fun(expr, 2, err, cc),
+                "ldexp" => ldexp_fun(expr, 2, err, cc, false),
+                "scalb" => ldexp_fun(expr, 2, err, cc, true),
+                "logb" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::logb),
+                    expr,
+                    1,
+                    err,
+                    cc,
+                    false,
+                ),
                 _ => return Err(Error::new(expr.span(), errmes)),
             }?;
 

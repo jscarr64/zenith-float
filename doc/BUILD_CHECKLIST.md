@@ -110,7 +110,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | ------ | -------- |
 | Parse/format: binary, octal, decimal, hexadecimal | ✅ |
 | `convert_from_radix` / `convert_to_radix` | ✅ |
-| `Display`, `Binary`, `Octal`, `UpperHex` (`std`) | ✅ |
+| `Display`, `LowerExp`, `UpperExp`, `Binary`, `Octal`, `UpperHex`, `LowerHex` (`std`) | ✅ |
 | `FromStr` (decimal, `std`) | ✅ |
 | `serde` (decimal string / integer, feature; requires `std`) | ✅ |
 | `random_normal` (feature `random`) | ✅ |
@@ -201,11 +201,11 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 | P1 | Fuzz MPFR differential (all rounding modes) | Done: `tests/mpfr/fuzz_round_modes.rs` |
 | P1 | Benchmark regression tracking in CI (optional nightly) | Done: `CI_BENCH=1 ./scripts/ci.sh` → `scripts/bench-compare.sh` |
 | P1 | Release compare vs astro-float / dashu-float | Done: `doc/compare-results.tsv` (astro 132-bit); `./scripts/compare-bench.sh --dashu` optional |
-| P1 | `expr!` correct-rounding semantics documented per op | Done: `doc/EXPR.md` |
-| P2 | Extra constants (φ, √2, γ, …) | Done: `ConstCache` √2, φ, `euler_gamma` (γ) |
-| P2 | `LowerExp` / `UpperExp` formatting | Done: `{:e}` / `{:E}` plus `LowerHex` |
-| P2 | `frexp` / `ldexp` / `scalb` / `logb` | Done: `ExactNum::{frexp,ldexp,scalb,logb,ilogb}` |
-| P3 | Special functions (erf, Gamma, …) | Done: `erf`/`erfc`, `gamma`/`ln_gamma`, integer-order `bessel_j` |
+| P1 | `expr!` correct-rounding semantics documented per op | Done: `doc/EXPR.md` (all leaves, including constants and `ldexp`/`logb`) |
+| P2 | Extra constants (φ, √2, γ) | Done: `ConstCache` √2, φ, `euler_gamma`; `expr!` `sqrt2`/`phi`/`euler_gamma` |
+| P2 | `LowerExp` / `UpperExp` formatting | Done: `{:e}` / `{:E}` plus `LowerHex` (`std`) |
+| P2 | `frexp` / `ldexp` / `scalb` / `logb` | Done: methods + `expr!` `ldexp`/`scalb`/`logb` (`frexp`/`ilogb` are methods) |
+| P3 | Special functions (erf, Gamma, Bessel J_n) | Done: `erf`/`erfc`, `gamma`/`ln_gamma`, integer-order `bessel_j`; MPFR 1-ULP |
 | P3 | Parallel evaluation / thread-safe shared `Consts` | Done: `SharedConsts` (`std`, mutex around `Consts`) |
 
 ---

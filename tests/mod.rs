@@ -193,6 +193,15 @@ fn macro_run_basic_tests() {
 
     let res: ExactNum = expr!(bessel_j(x, 0), &mut ctx);
     debug_assert_eq!(res, x.bessel_j(0, p, rm, &mut cc));
+
+    let res: ExactNum = expr!(ldexp(x, 3), &mut ctx);
+    debug_assert_eq!(res, x.ldexp(3, p, rm));
+
+    let res: ExactNum = expr!(scalb(x, -1), &mut ctx);
+    debug_assert_eq!(res, x.scalb(-1, p, rm));
+
+    let res: ExactNum = expr!(logb(x), &mut ctx);
+    debug_assert_eq!(res, x.logb(p, rm));
 }
 
 #[test]
