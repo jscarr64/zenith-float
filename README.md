@@ -16,6 +16,11 @@ License: MIT OR Apache-2.0.
 - `zenith-float-num` — numeric kernel (you normally depend on `zenith-float` only).
 - `zenith-float-macro` — the `expr!` procedural macro.
 
+## Documentation
+
+- [Build checklist](doc/BUILD_CHECKLIST.md) — what is implemented, tested, and still required (including vs astro-float / dashu-float).
+- [Error bounds](doc/README.md) — ulp and series error theory used by `expr!` and property tests.
+
 ## Features
 
 | Feature | Default | Purpose |
