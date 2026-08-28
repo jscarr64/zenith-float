@@ -15,6 +15,9 @@
 - `fma` skips the full-width product when `|a*b|` and `c` differ by more than `p + 2` words.
 - MPFR fuzz covers `nth_root` for n=4,5 at 1-ULP (`mpfr_rootn_ui`).
 - Optional nightly bench gate: `CI_BENCH=1 ./scripts/ci.sh`.
+- `Consts::euler_gamma` (Euler–Mascheroni γ) on the progressive constant cache.
+- `ExactNum::{frexp, ldexp, scalb, logb, ilogb}` — IEEE-style exponent split without hardware floats.
+- `LowerExp` / `UpperExp` (`{:e}` / `{:E}`) and `LowerHex` formatting.
 - Structured radix 2–36 parse/format round-trip stress test (`tests/radix_roundtrip.rs`).
 - Native `+`, `-`, `*`, `/` operators on `ExactNum` (default precision, round-to-even).
 - `exact!` / `fbig!` compile-time decimal float literals.

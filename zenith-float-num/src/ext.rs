@@ -1309,6 +1309,47 @@ impl ExactNum {
             true
         }
     }
+
+    /// Split `self = m · 2^e` with `m` in `[0.5, 1)` (zeros return `(0, 0)`; Inf/NaN return `(self, 0)`).
+    pub fn frexp(&self) -> (Self, Exponent) {
+        match &self.inner {
+            Flavor::Value(v) => match v.frexp() {
+                Ok((m, e)) => (m.into(), e),
+                Err(err) => (Self::nan(Some(err)), 0),
+            },
+            Flavor::Inf(_) | Flavor::NaN(_) => (self.clone(), 0),
+        }
+    }
+
+    /// `self · 2^n`. Alias of [`Self::scalb`].
+    pub fn ldexp(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.ldexp(n, p, rm), v.is_zero(), true),
+            Flavor::Inf(_) | Flavor::NaN(_) => self.clone(),
+        }
+    }
+
+    /// `self · 2^n` (IEEE `scalbn`).
+    pub fn scalb(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        self.ldexp(n, p, rm)
+    }
+
+    /// `floor(log2(|self|))` as a float. Zero becomes `-Inf`; Inf/NaN unchanged in kind.
+    pub fn logb(&self, p: usize, rm: RoundingMode) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.logb(p, rm), v.is_zero(), true),
+            Flavor::Inf(_) => INF_POS,
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
+    /// Integer `floor(log2(|self|))`. `None` for zero, Inf, or NaN.
+    pub fn ilogb(&self) -> Option<Exponent> {
+        match &self.inner {
+            Flavor::Value(v) => v.ilogb().ok(),
+            _ => None,
+        }
+    }
 }
 
 impl Clone for ExactNum {
@@ -1985,7 +2026,35 @@ impl_format_rdx!(Octal, Radix::Oct);
 #[cfg(feature = "std")]
 impl_format_rdx!(Display, Radix::Dec);
 #[cfg(feature = "std")]
+impl_format_rdx!(core::fmt::LowerExp, Radix::Dec);
+#[cfg(feature = "std")]
 impl_format_rdx!(UpperHex, Radix::Hex);
+#[cfg(feature = "std")]
+impl core::fmt::UpperExp for ExactNum {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+        crate::common::consts::TENPOWERS.with(|tp| {
+            let cc = &mut tp.borrow_mut();
+            let mut s = String::new();
+            self.write_str(&mut s, Radix::Dec, RoundingMode::ToEven, cc)?;
+            f.write_str(&s.replace('e', "E"))
+        })
+    }
+}
+#[cfg(feature = "std")]
+impl core::fmt::LowerHex for ExactNum {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+        crate::common::consts::TENPOWERS.with(|tp| {
+            let cc = &mut tp.borrow_mut();
+            let mut s = String::new();
+            self.write_str(&mut s, Radix::Hex, RoundingMode::ToEven, cc)?;
+            if matches!(s.as_str(), "Inf" | "-Inf" | "NaN" | "Err") {
+                f.write_str(&s)
+            } else {
+                f.write_str(&s.to_ascii_lowercase())
+            }
+        })
+    }
+}
 
 macro_rules! impl_exact_binop {
     ($trait:ident, $method:ident, $op:ident) => {
@@ -2695,6 +2764,11 @@ mod tests {
 
         let d1str = format!("{}", d1);
         assert_eq!(&d1str, "1.23456789012345678901234567890123456789e-2");
+        assert_eq!(format!("{:e}", d1), d1str);
+        assert_eq!(
+            format!("{:E}", d1),
+            "1.23456789012345678901234567890123456789E-2"
+        );
         let mut d2 = ExactNum::from_str(&d1str).unwrap();
         d2.set_precision(DEFAULT_P, RoundingMode::ToEven).unwrap();
         assert_eq!(d2, d1);

@@ -202,9 +202,9 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 | P1 | Benchmark regression tracking in CI (optional nightly) | Done: `CI_BENCH=1 ./scripts/ci.sh` → `scripts/bench-compare.sh` |
 | P1 | Release compare vs astro-float / dashu-float | Done: `doc/compare-results.tsv` (astro 132-bit); `./scripts/compare-bench.sh --dashu` optional |
 | P1 | `expr!` correct-rounding semantics documented per op | Done: `doc/EXPR.md` |
-| P2 | Extra constants (φ, √2, γ, …) | Fewer series cold-starts |
-| P2 | `LowerExp` / `UpperExp` formatting | Debug / log output at scale |
-| P2 | `frexp` / `ldexp` / `scalb` / `logb` | IEEE-style interoperability without hardware floats |
+| P2 | Extra constants (φ, √2, γ, …) | Done: `ConstCache` √2, φ, `euler_gamma` (γ) |
+| P2 | `LowerExp` / `UpperExp` formatting | Done: `{:e}` / `{:E}` plus `LowerHex` |
+| P2 | `frexp` / `ldexp` / `scalb` / `logb` | Done: `ExactNum::{frexp,ldexp,scalb,logb,ilogb}` |
 | P3 | Special functions (erf, Gamma, …) | Only where symbolic engine cannot stay exact |
 | P3 | Parallel evaluation / thread-safe shared `Consts` | Batch numeric evaluation |
 
@@ -290,9 +290,9 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 
 Does not block first production release; aligns with §2.3 P2 items.
 
-- [ ] `frexp` / `ldexp` / `scalb` / `logb` / `ilogb` — IEEE-style decomposition without hardware floats
-- [ ] `LowerHex` + scientific `Display` options (`LowerExp` / `UpperExp` formatting)
-- [ ] Additional `Consts` beyond π, e, ln 2, ln 10 (φ, √2, γ, …; configurable list)
+- [x] `frexp` / `ldexp` / `scalb` / `logb` / `ilogb` — IEEE-style decomposition without hardware floats
+- [x] `LowerHex` + scientific `Display` options (`LowerExp` / `UpperExp` formatting)
+- [x] Additional `Consts` beyond π, e, ln 2, ln 10 (φ, √2, γ)
 - [x] `expr!` correct-rounding semantics documented per op (Accumath macro contract) (`doc/EXPR.md`)
 
 ---
@@ -335,3 +335,4 @@ Already implemented but not in a crates.io release:
 - CI hardening and `asinh` precision fix (2026-08-27)
 - `ConstCache` / `CachedFBig`, `Ball` / `ziv_round`, stack-inlined `WordBuf`, MPFR all-round-mode fuzz
 - Bench history: `doc/bench-baselines.tsv`, `doc/compare-results.tsv` (astro 0.9.x vs zenith at 132 bits)
+- `euler_gamma`, `frexp`/`ldexp`/`scalb`/`logb`/`ilogb`, `LowerExp`/`UpperExp`/`LowerHex`
