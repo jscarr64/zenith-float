@@ -76,6 +76,11 @@ impl Ln10Cache {
         })
     }
 
+    /// Bits currently stored in the series cache.
+    pub(crate) fn cached_bit_len(&self) -> usize {
+        self.val.mantissa_max_bit_len()
+    }
+
     fn calc_ln10(p: &ExactNumNumber, q: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
         // 18 * (1 + p / q) / 11
         let prec = p.mantissa_max_bit_len().max(q.mantissa_max_bit_len());

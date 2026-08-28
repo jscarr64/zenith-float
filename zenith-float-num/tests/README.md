@@ -8,7 +8,7 @@ These tests are off by default. They require Linux x86_64 and the `rug` / `gmp-m
 cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1
 ```
 
-`scripts/ci.sh` runs them in **release** on Linux x86_64 automatically.
+`scripts/ci.sh` runs them in **release** on Linux x86_64 automatically. That gate includes `fuzz_round_modes` (add / mul / sqrt vs MPFR for every IEEE rounding mode).
 
 ## Radix round-trip stress
 

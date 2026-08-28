@@ -1,10 +1,13 @@
 //! Transcendental function benchmarks with fixed, domain-valid operands.
 
-mod common;
+mod shared;
+mod parse_util;
+mod trans_common;
 
-use common::{
-    cycle_batch, init_cc, parse_list, sink, EXP_FIXTURES, LN_FIXTURES, PRECISIONS,
-    TRIG_FIXTURES, TRANSCENDENTAL_BATCH,
+use parse_util::{cycle_batch, parse_list};
+use shared::{init_cc, sink, PRECISIONS};
+use trans_common::{
+    EXP_FIXTURES, LN_FIXTURES, TRIG_FIXTURES, TRANSCENDENTAL_BATCH,
 };
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use zenith_float_num::{Consts, ExactNum, RoundingMode};

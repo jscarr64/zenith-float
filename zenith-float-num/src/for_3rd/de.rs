@@ -43,5 +43,18 @@ impl<'de> Visitor<'de> for ExactNumVisitor {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use crate::ExactNum;
+
+    #[test]
+    fn serde_json_roundtrip() {
+        let n = ExactNum::from(42u32);
+        let s = serde_json::to_string(&n).expect("serialize");
+        let m: ExactNum = serde_json::from_str(&s).expect("deserialize");
+        assert_eq!(n.cmp(&m), Some(0));
+    }
+}
+
 
 

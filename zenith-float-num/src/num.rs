@@ -1363,6 +1363,12 @@ impl ExactNumNumber {
         &self.m
     }
 
+    /// True when the mantissa is stored without a heap allocation.
+    #[inline]
+    pub fn is_inline(&self) -> bool {
+        self.m.is_inline()
+    }
+
     /// Constructs ExactNumNumber with precision `p` from a signed integer value `i`.
     /// Precision is rounded upwards to the word size.
     ///

@@ -84,8 +84,6 @@ impl ExactNumNumber {
             let mut v = Self::min_positive(p)?;
             if !upward {
                 v.set_sign(Sign::Neg);
-            } else if t.is_negative() {
-                v.set_sign(Sign::Neg);
             }
             return Ok(v);
         }

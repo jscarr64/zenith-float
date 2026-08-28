@@ -7,7 +7,11 @@
 - Special functions: `erf` / `erfc`, `gamma` / `ln_gamma`, integer-order `bessel_j`; `expr!` leaves.
 - MPFR compare coverage for `fma`, paired `sin_cos` / `sinh_cosh`.
 - MPFR compare coverage for `exp2`, `exp10`, and `rem_pi`; release gate on Linux x86_64 in `scripts/ci.sh`.
-- `doc/PRECISION.md` — bounds on internal working precision vs exponent (`MAX_PREC_RETRY`, `expr!`, transcendentals).
+- MPFR fuzz: `add` / `mul` / `sqrt` bit-exact under all five IEEE rounding modes (`tests/mpfr/fuzz_round_modes.rs`).
+- Progressive `ConstCache` (`cache_info`, √2, φ) and `CachedFBig` extra-precision wrapper.
+- Public `Ball` enclosures and `ziv_round` correct-rounding retry helper.
+- Stack-inlined mantissas (`INLINE_WORDS` = 2 limbs) before heap promotion.
+- `doc/PRECISION.md` — bounds on internal working precision vs exponent (`MAX_PREC_RETRY`, `expr!`, transcendentals, Ziv/Ball, TSV bench history).
 - Structured radix 2–36 parse/format round-trip stress test (`tests/radix_roundtrip.rs`).
 - Native `+`, `-`, `*`, `/` operators on `ExactNum` (default precision, round-to-even).
 - `exact!` / `fbig!` compile-time decimal float literals.

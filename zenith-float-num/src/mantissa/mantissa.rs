@@ -1072,6 +1072,12 @@ impl Mantissa {
         &self.m
     }
 
+    /// True when the digit buffer is stored without a heap allocation.
+    #[inline]
+    pub fn is_inline(&self) -> bool {
+        self.m.is_inline()
+    }
+
     pub fn digits_mut(&mut self) -> &mut [Word] {
         &mut self.m
     }

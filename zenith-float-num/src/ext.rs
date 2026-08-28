@@ -766,7 +766,7 @@ impl ExactNum {
         Ok(ret)
     }
 
-    /// Wraps `self` in a [`RadixFloat`] tagged with `radix` for parse/format.
+    /// Wraps `self` in a [`crate::RadixFloat`] tagged with `radix` for parse/format.
     pub fn with_radix(self, radix: Radix) -> crate::radix_float::RadixFloat {
         crate::radix_float::RadixFloat::with_radix(self, radix)
     }
@@ -1130,6 +1130,15 @@ impl ExactNum {
             Some(v.mantissa_max_bit_len())
         } else {
             None
+        }
+    }
+
+    /// True when a finite value stores its mantissa on the stack (at most [`crate::INLINE_WORDS`] limbs).
+    /// Inf and NaN return `false`.
+    pub fn is_inline(&self) -> bool {
+        match &self.inner {
+            Flavor::Value(v) => v.is_inline(),
+            Flavor::Inf(_) | Flavor::NaN(_) => false,
         }
     }
 
@@ -2544,6 +2553,7 @@ mod tests {
         };
 
         assert!(d1.mantissa_digits() == Some(words));
+        assert!(d1.is_inline());
         assert!(d1.mantissa_max_bit_len() == Some(DEFAULT_P));
         assert!(d1.precision() == Some(DEFAULT_P));
         assert!(d1.sign() == Some(Sign::Pos));

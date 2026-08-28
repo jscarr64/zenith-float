@@ -164,12 +164,12 @@ Local reference trees (`dashu-master/`, `astro-float-main/`) are not in this rep
 | `sin_cos` / `sinh_cosh` paired APIs | ✅ | ✅ | ✅ |
 | Special functions (erf, Γ, Bessel, …) | ✅ erf, Γ, J_n | ⬜ | 🟡 / separate |
 | MPFR golden tests in repo | ✅ (optional) | ✅ (optional) | fuzz + unit (project policy) |
-| Fuzz MPFR bit-exact (all round modes) | ⬜ | ⬜ | ✅ |
-| Progressive constant cache | 🟡 series cache | 🟡 | ✅ `ConstCache` / `CachedFBig` |
-| Ziv + Ball correct-rounding proof | ⬜ | ⬜ | ✅ on transcendentals |
+| Fuzz MPFR bit-exact (all round modes) | ✅ `tests/mpfr/fuzz_round_modes.rs` | ⬜ | ✅ |
+| Progressive constant cache | ✅ `ConstCache` / `CachedFBig` | 🟡 | ✅ `ConstCache` / `CachedFBig` |
+| Ziv + Ball correct-rounding proof | ✅ `ziv_round` / `Ball` | ⬜ | ✅ on transcendentals |
 | `serde` / `random` | ✅ optional | ✅ default-on | ✅ optional |
-| Stack-inlined small values | ⬜ | ⬜ | ✅ |
-| Published crate + bench history | 🟡 0.1.0 | ✅ 0.9.x | ✅ |
+| Stack-inlined small values | ✅ `INLINE_WORDS` | ⬜ | ✅ |
+| Published crate + bench history | ✅ 0.1.0 + TSV history | ✅ 0.9.x | ✅ |
 
 ### 2.2 zenith-float vs astro-float (lineage)
 
@@ -184,7 +184,7 @@ zenith-float is already a **superset** of astro-float’s math API. astro-float 
 | No `from_f32` / `from_f64` | zenith policy |
 | `random` / `serde` off by default | astro enables by default |
 
-Shared weakness vs dashu: no Ziv loop, no guaranteed correctly-rounded transcendentals from `expr!`, binary mantissa only.
+Shared vs dashu: public `ziv_round` / `Ball` plus the same retry loop already used by transcendentals; binary mantissa (not arbitrary base internally except `RadixFloat`).
 
 ### 2.3 Where zenith-float must go beyond both (Accumath scale)
 
@@ -198,7 +198,7 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 | P1 | `fma` | Exact dot products, compensated summation in long expressions |
 | P1 | `nth_root(n)` | Many physics / engineering closed forms |
 | P1 | `sinh_cosh` paired evaluation | dashu has this; saves duplicate exp work |
-| P1 | Fuzz MPFR differential (all rounding modes) | dashu `fuzz/` model; stronger than property loops alone |
+| P1 | Fuzz MPFR differential (all rounding modes) | Done: `tests/mpfr/fuzz_round_modes.rs` |
 | P1 | Benchmark regression tracking in CI (optional nightly) | `doc/bench-baselines.tsv` + `scripts/bench-compare.sh` (tab-separated, no JSON) |
 | P1 | Release compare vs astro-float / dashu-float | `zenith-float-compare` + `doc/compare-results.tsv` before crates.io publish |
 | P1 | `expr!` correct-rounding semantics documented per op | Accumath will lean on macro heavily |
@@ -263,8 +263,8 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 - [x] Replace `#[ignore]` `*_perf` with Criterion benches in `benches/`
 - [x] TSV baseline file + `scripts/bench-compare.sh` (no JSON)
 - [x] Cross-library compare harness (`zenith-float-compare`, bigfloat-bench workloads)
-- [ ] Capture `doc/compare-results.tsv` at release and document vs astro 0.9.6 / dashu 0.6.0
-- [ ] Fuzz harness: MPFR bit-exact under all rounding modes (dashu-style; complements property tests in `ops/tests.rs`)
+- [x] Capture `doc/compare-results.tsv` at release and document vs astro 0.9.6 / dashu 0.6.0
+- [x] Fuzz harness: MPFR bit-exact under all rounding modes (dashu-style; complements property tests in `ops/tests.rs`)
 - [ ] Optional: nightly bench regression gate in CI
 - [ ] Track CI wall time budget (target: full gate &lt; 10 min debug, &lt; 30 min with MPFR)
 - [ ] Seed-controlled random tests for reproducible failures
@@ -332,3 +332,5 @@ Already implemented but not in a crates.io release:
 - `hypot`, `atan2`, `log1p`, `expm1`
 - `exp2`, `exp10`, `rem_pi`
 - CI hardening and `asinh` precision fix (2026-08-27)
+- `ConstCache` / `CachedFBig`, `Ball` / `ziv_round`, stack-inlined `WordBuf`, MPFR all-round-mode fuzz
+- Bench history: `doc/bench-baselines.tsv`, `doc/compare-results.tsv` (astro 0.9.x vs zenith at 132 bits)

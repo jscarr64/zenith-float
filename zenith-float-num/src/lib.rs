@@ -28,6 +28,7 @@ mod ops;
 mod parser;
 mod radix_float;
 mod strop;
+mod ball;
 
 #[cfg(feature = "std")]
 mod for_3rd;
@@ -49,6 +50,12 @@ pub use crate::ext::INF_NEG;
 pub use crate::ext::INF_POS;
 pub use crate::ext::NAN;
 pub use crate::ops::consts::Consts;
+pub use crate::ops::consts::ConstCache;
+pub use crate::ops::consts::ConstCacheInfo;
+pub use crate::ops::consts::CachedFBig;
+pub use crate::ball::Ball;
+pub use crate::ball::ziv_round;
+pub use crate::common::buf::INLINE_WORDS;
 
 pub use crate::defs::EXPONENT_BIT_SIZE;
 pub use crate::defs::EXPONENT_MAX;

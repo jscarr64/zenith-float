@@ -674,7 +674,7 @@ pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 /// Compile-time decimal float literal.
 ///
-/// Parses a string literal at compile time and expands to an exact [`ExactNum`].
+/// Parses a string literal at compile time and expands to an exact `ExactNum`.
 /// Use via the `zenith-float` crate: `use zenith_float::exact`.
 #[proc_macro]
 pub fn exact(input: proc_macro::TokenStream) -> proc_macro::TokenStream {

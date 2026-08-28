@@ -108,6 +108,11 @@ impl PiCache {
         })
     }
 
+    /// Bits currently stored in the series cache.
+    pub(crate) fn cached_bit_len(&self) -> usize {
+        self.val.mantissa_max_bit_len()
+    }
+
     /// Return value of PI with precision `k`.
     pub(crate) fn for_prec(&mut self, k: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
         let mut p_inc = WORD_BIT_SIZE;

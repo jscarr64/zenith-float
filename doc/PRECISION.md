@@ -12,6 +12,30 @@ Transcendental and decimal conversion paths use a working precision `p_wrk` that
 
 At 64-bit limbs this caps extra work at roughly `256 * 64 = 16 384` bits above `p` per operation.
 
+Public helpers:
+
+- **`ziv_round(p, rm, compute)`** — same loop as the kernel: call `compute(p_wrk)`, then `try_set_precision(p, rm, p_wrk)` until the rounding is unique.
+- **`Ball { mid, rad }`** — first-order interval arithmetic (`add` / `mul`) plus a rounding ulp, for proving a midpoint is the unique correctly rounded value.
+
+## Stack inlining
+
+Mantissa buffers of at most **`INLINE_WORDS` (2)** limbs (`128` bits at 64-bit `Word`) live on the stack. Larger precisions promote to the heap.
+
+## Constant cache
+
+`Consts` (`ConstCache`) keeps series state for π, e, ln 2, and ln 10 and extends it when more bits are requested. √2 and φ use a `CachedFBig`-style extra cache (`cache_info()` reports bit lengths).
+
+## Benchmark history
+
+Tab-separated logs (no JSON):
+
+| File | Source |
+| ------ | -------- |
+| `doc/bench-baselines.tsv` | Criterion ids from `scripts/bench.sh` / `scripts/bench-compare.sh` |
+| `doc/compare-results.tsv` | `scripts/compare-bench.sh` vs astro-float (132-bit core ops) |
+
+Re-run `./scripts/compare-bench.sh --quick` before a crates.io publish to refresh the compare table. Dashu is optional (`--dashu`).
+
 ## `expr!` macro
 
 The `expr!` macro (see `zenith-float-macro`) uses:

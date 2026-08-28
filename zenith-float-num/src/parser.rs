@@ -87,7 +87,7 @@ pub fn parse(s: &str, rdx: Radix) -> Result<ParserState<'_>, Error> {
             parse_inf(&mut parser_state);
         } else if c == 'n' {
             parse_nan(&mut parser_state);
-        } else if c == '.' || c.to_digit(rdx.value() as u32).is_some() {
+        } else if c == '.' || c.is_digit(rdx.value() as u32) {
             parse_num(&mut parser_state, rdx)?;
         } else {
             parser_state.nan = true;
@@ -210,7 +210,7 @@ fn parse_digits(
 }
 
 fn is_radix_digit(c: char, rdx: Radix) -> bool {
-    c.to_digit(rdx.value() as u32).is_some()
+    c.is_digit(rdx.value() as u32)
 }
 
 fn parse_exp(parser_state: &mut ParserState, rdx: Radix) {

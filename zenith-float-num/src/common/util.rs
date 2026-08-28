@@ -49,45 +49,6 @@ pub fn sqrt_int(a: u32) -> u32 {
     x as u32
 }
 
-/// n-root integer approximation.
-#[inline]
-#[allow(dead_code)]
-pub fn nroot_int(a: u64, n: usize) -> u64 {
-    if a == 0 {
-        return 0;
-    }
-
-    let a = a as i128;
-    let mut x = a;
-    let mut bl = 0;
-
-    while x > 0 {
-        x >>= 1;
-        bl += 1;
-    }
-    let mut x = a >> if bl > n { bl / n - 1 } else { 0 };
-
-    let n = n as i128;
-    loop {
-        let y = nroot_step(x, n, a);
-        if y >= x {
-            break;
-        }
-        x = y;
-    }
-    x as u64
-}
-
-#[inline]
-#[allow(dead_code)]
-fn nroot_step(x: i128, n: i128, a: i128) -> i128 {
-    let mut xx = a;
-    for _ in 0..n - 1 {
-        xx /= x;
-    }
-    ((n - 1) * x + xx) / n
-}
-
 // cost of multiplication of two numbers with precision p.
 pub fn calc_mul_cost(p: usize) -> usize {
     if p < 70 {

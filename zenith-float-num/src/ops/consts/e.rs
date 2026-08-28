@@ -73,6 +73,11 @@ impl ECache {
         })
     }
 
+    /// Bits currently stored in the series cache.
+    pub(crate) fn cached_bit_len(&self) -> usize {
+        self.val.mantissa_max_bit_len()
+    }
+
     fn b_factor(x: usize) -> usize {
         // If we compute n elements of the series 1 + 1/1! + 1/2! + ...
         // then 1/(n!) is greater than the remaining terms: sum(1/(k!)), k = n+1 .. +inf
