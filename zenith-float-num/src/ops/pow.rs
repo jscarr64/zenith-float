@@ -1,6 +1,6 @@
 //! Exponentiation.
 
-use crate::common::consts::{FOUR, THREE};
+use crate::common::consts::{FOUR, TEN, THREE, TWO};
 use crate::common::util::{bump_prec_retry, calc_add_cost, calc_mul_cost, round_p};
 use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
@@ -15,9 +15,7 @@ use crate::{
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use super::series::{
-    series_cost_optimize, series_run, ArgReductionEstimator, FactPolycoeffGen,
-};
+use super::series::{series_cost_optimize, series_run, ArgReductionEstimator, FactPolycoeffGen};
 
 struct SinhArgReductionEstimator {}
 
@@ -100,6 +98,28 @@ impl ExactNumNumber {
 
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
+    }
+
+    /// Computes `2` to the power of `self` with precision `p`. The result is rounded using `rm`.
+    ///
+    /// ## Errors
+    ///
+    ///  - ExponentOverflow: the result is too large or too small.
+    ///  - MemoryAllocation: failed to allocate memory.
+    ///  - InvalidArgument: the precision is incorrect.
+    pub fn exp2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        TWO.clone()?.pow(self, p, rm, cc)
+    }
+
+    /// Computes `10` to the power of `self` with precision `p`. The result is rounded using `rm`.
+    ///
+    /// ## Errors
+    ///
+    ///  - ExponentOverflow: the result is too large or too small.
+    ///  - MemoryAllocation: failed to allocate memory.
+    ///  - InvalidArgument: the precision is incorrect.
+    pub fn exp10(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        TEN.clone()?.pow(self, p, rm, cc)
     }
 
     // exp for positive argument
@@ -785,6 +805,22 @@ mod test {
         let d2 = ONE.div(&TWO, p, rm).unwrap();
 
         assert!(d1.cmp(&d2) == 0);
+    }
+
+    #[test]
+    fn test_exp2_exp10() {
+        let mut cc = Consts::new().unwrap();
+        let p = 320;
+        let rm = RoundingMode::ToEven;
+
+        let x = ExactNumNumber::from_word(3, p).unwrap();
+        let d2 = x.exp2(p, rm, &mut cc).unwrap();
+        let d2_ref = TWO.pow(&x, p, rm, &mut cc).unwrap();
+        assert_eq!(d2.cmp(&d2_ref), 0);
+
+        let d10 = x.exp10(p, rm, &mut cc).unwrap();
+        let d10_ref = TEN.pow(&x, p, rm, &mut cc).unwrap();
+        assert_eq!(d10.cmp(&d10_ref), 0);
     }
 
     #[ignore]

@@ -1,12 +1,12 @@
 //! Power series computation appliance.
 
+use crate::common::consts::ONE;
 use crate::common::util::calc_add_cost;
 use crate::common::util::calc_mul_cost;
 use crate::common::util::log2_floor;
 use crate::common::util::sqrt_int;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
-use crate::common::consts::ONE;
 use crate::num::ExactNumNumber;
 use crate::Sign;
 

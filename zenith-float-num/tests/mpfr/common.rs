@@ -96,15 +96,7 @@ pub(crate) use test_zf_op;
 pub(crate) use test_zf_op_no_cc;
 
 pub const fn get_prec_rng() -> usize {
-    #[cfg(not(debug_assertions))]
-    {
-        157
-    }
-
-    #[cfg(debug_assertions)]
-    {
-        32
-    }
+    157
 }
 
 pub fn get_float_pair(

@@ -1,15 +1,15 @@
 //! Utility functions.
 
-use zenith_float_num::ExactNum;
-use zenith_float_num::Consts;
-use zenith_float_num::Radix;
-use zenith_float_num::RoundingMode;
 use proc_macro2::Span;
 use proc_macro2::TokenStream;
 use quote::quote;
 use syn::spanned::Spanned;
 use syn::Error;
 use syn::ExprCall;
+use zenith_float_num::Consts;
+use zenith_float_num::ExactNum;
+use zenith_float_num::Radix;
+use zenith_float_num::RoundingMode;
 
 pub fn str_to_exact_num_expr(s: &str, span: Span, cc: &mut Consts) -> Result<TokenStream, Error> {
     let f = ExactNum::parse(s, Radix::Dec, usize::MAX, RoundingMode::ToEven, cc);

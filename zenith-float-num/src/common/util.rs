@@ -137,14 +137,7 @@ pub const TEST_EXP_BOUND: crate::Exponent = 1024;
 
 #[cfg(test)]
 pub fn test_loop_count(full: usize) -> usize {
-    #[cfg(debug_assertions)]
-    {
-        full.min(40)
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        full.min(200)
-    }
+    full.min(200)
 }
 
 // Estimate of sqrt op cost.
@@ -455,14 +448,7 @@ pub(crate) fn random_subnormal(p: usize) -> ExactNumNumber {
 #[cfg(test)]
 #[inline]
 pub fn rand_p() -> usize {
-    #[cfg(debug_assertions)]
-    {
-        rand::random::<usize>() % 192 + crate::defs::DEFAULT_P
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        rand::random::<usize>() % 1000 + crate::defs::DEFAULT_P
-    }
+    rand::random::<usize>() % 1000 + crate::defs::DEFAULT_P
 }
 
 // test add_carry and sub_borrow performance.

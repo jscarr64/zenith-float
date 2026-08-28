@@ -1,5 +1,5 @@
 //! zenith-float implements arbitrary-precision software floating-point numbers.
-//! All arithmetic uses integer limbs. The library does not use hardware `f32` or `f64` for calculations.
+//! All arithmetic uses integer limbs. The library does not use hardware floating-point for calculations.
 //!
 //! ## Introduction
 //!
@@ -194,8 +194,11 @@ extern crate alloc;
 ///  - `log(x, b)`: logarithm with base `b` of `x`.
 ///  - `log1p(x)`: `ln(1 + x)`.
 ///  - `exp(x)`: `e` to the power of `x`.
+///  - `exp2(x)`: `2` to the power of `x`.
+///  - `exp10(x)`: `10` to the power of `x`.
 ///  - `expm1(x)`: `e^x - 1`.
 ///  - `pow(b, x)`: `b` to the power of `x`.
+///  - `rem_pi(x)`: reduce `x` modulo `2π` into `(-2π, 2π)`.
 ///  - `sin(x)`: sine of `x`.
 ///  - `cos(x)`: cosine of `x`.
 ///  - `tan(x)`: tangent of `x`.

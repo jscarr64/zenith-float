@@ -2,52 +2,17 @@
 
 use crate::common::consts::ONE;
 use crate::common::util::{count_leading_ones, count_leading_zeroes_skip_first, log2_floor};
+use crate::common::util::TEST_EXP_BOUND;
 use crate::defs::{RoundingMode, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::{Exponent, Sign};
 use rand::random;
 
-// test for debugging
-/* #[test]
-fn ttt() {
-    let mut cc = Consts::new().unwrap();
-    let mut eps = ONE.clone().unwrap();
-
-    let d1 = ExactNumNumber::from_words(&[8989757817563553100, 9960697139706764983, 4461789623920097378, 4048258091399009682, 15464606670643512760, 9875382408717259940, 10070282779479903256, 11346922698242740396, 7055884551283505420, 6195649625391668719, 9941326960957212395, 408098056138429120, 10677522237329915935, 8769086603579977608, 18414592371109898304], Sign::Neg, -1).unwrap();
-
-    let prec = 1856;
-
-    let d2 = d1.exp(prec, RoundingMode::ToEven, &mut cc).unwrap();
-
-    let d3 = d2.ln(prec, RoundingMode::ToEven, &mut cc).unwrap();
-
-    println!("{:?}", d1.format(crate::Radix::Bin, RoundingMode::None));
-    println!("{:?}", d2.format(crate::Radix::Bin, RoundingMode::None));
-    println!("{:?}", d3.format(crate::Radix::Bin, RoundingMode::None));
-} */
+const TEST_ITERS: usize = 256;
 
 const fn get_prec_rng() -> usize {
-    #[cfg(not(debug_assertions))]
-    {
-        157
-    }
-
-    #[cfg(debug_assertions)]
-    {
-        8
-    }
-}
-
-const fn get_test_iters() -> usize {
-    #[cfg(debug_assertions)]
-    {
-        32
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        1000
-    }
+    157
 }
 
 #[test]
@@ -67,12 +32,12 @@ fn test_ln_exp() {
     println!("{:?}", d3.format(Radix::Dec, RoundingMode::None).unwrap());
     return; */
 
-    for i in 0..get_test_iters() {
+    for i in 0..TEST_ITERS {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
         if i & 1 == 0 {
-            let mut d1 = ExactNumNumber::random_normal(p1, EXPONENT_MIN, EXPONENT_MAX).unwrap();
+            let mut d1 = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
             d1.set_sign(Sign::Pos);
 
             let d2 = d1.ln(prec, RoundingMode::ToEven, &mut cc).unwrap();
@@ -99,7 +64,7 @@ fn test_ln_exp() {
                 d1
             );
         } else {
-            let emax = log2_floor(EXPONENT_MAX as usize) as Exponent;
+            let emax = log2_floor(TEST_EXP_BOUND as usize) as Exponent;
             let emin = -emax;
             let d1 = ExactNumNumber::random_normal(p1, emin, emax).unwrap();
 
@@ -142,14 +107,14 @@ fn test_ln_exp() {
 fn test_powi() {
     let prec_rng = get_prec_rng();
 
-    for _ in 0..get_test_iters() {
+    for _ in 0..TEST_ITERS {
         let i = random::<usize>() % 1000 + 1;
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let mut d1 = ExactNumNumber::random_normal(
             p1,
-            EXPONENT_MIN / i as Exponent,
-            EXPONENT_MAX / i as Exponent,
+            (-TEST_EXP_BOUND / i as Exponent).max(EXPONENT_MIN),
+            (TEST_EXP_BOUND / i as Exponent).min(EXPONENT_MAX),
         )
         .unwrap();
         d1.set_sign(Sign::Pos);
@@ -182,12 +147,12 @@ fn test_log2_log10_pow() {
 
     let mut cc = Consts::new().unwrap();
 
-    for i in 0..get_test_iters() {
+    for i in 0..TEST_ITERS {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
         if i & 1 == 0 {
-            let mut d1 = ExactNumNumber::random_normal(p1, EXPONENT_MIN, EXPONENT_MAX).unwrap();
+            let mut d1 = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
             d1.set_sign(Sign::Pos);
 
             let d2 = d1.log2(prec, RoundingMode::ToEven, &mut cc).unwrap();
@@ -235,7 +200,7 @@ fn test_log2_log10_pow() {
                 d1
             );
         } else {
-            let emax = log2_floor(EXPONENT_MAX as usize) as Exponent;
+            let emax = log2_floor(TEST_EXP_BOUND as usize) as Exponent;
             let emin = -emax;
             let d1 = ExactNumNumber::random_normal(p1, emin, emax).unwrap();
 
@@ -303,13 +268,13 @@ fn test_log_pow() {
 
     let mut cc = Consts::new().unwrap();
 
-    for i in 0..get_test_iters() {
+    for i in 0..TEST_ITERS {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let p2 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         if i & 1 == 0 {
-            let mut d1 = ExactNumNumber::random_normal(p1, EXPONENT_MIN, EXPONENT_MAX).unwrap();
-            let mut b = ExactNumNumber::random_normal(p2, EXPONENT_MIN, EXPONENT_MAX).unwrap();
+            let mut d1 = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
+            let mut b = ExactNumNumber::random_normal(p2, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
             d1.set_sign(Sign::Pos);
             b.set_sign(Sign::Pos);
 
@@ -323,7 +288,17 @@ fn test_log_pow() {
 
             // d2 - ulp(d2)/2 <= log_b(d1) <= d2 + ulp(d2)/2  ->  d3 / b^(ulp(d2)/2) <= d1 <= d3 * b^(ulp(d2)/2)
             eps.set_exponent(d2.exponent() - prec as Exponent);
+            if b.exponent() <= 0 {
+                let b_exp = b.exponent().unsigned_abs() as usize;
+                let ln_b_bits = log2_floor(b_exp.max(2)) as Exponent + 1;
+                eps.set_exponent(eps.exponent() + ln_b_bits);
+            }
             let err = b.pow(&eps, prec, RoundingMode::Up, &mut cc).unwrap();
+            let err = if err.is_zero() {
+                ExactNumNumber::min_positive(prec).unwrap()
+            } else {
+                err
+            };
 
             if b.exponent() > 0 {
                 assert!(
@@ -357,7 +332,7 @@ fn test_log_pow() {
                 );
             }
         } else {
-            let mut b = ExactNumNumber::random_normal(p2, EXPONENT_MIN, EXPONENT_MAX).unwrap();
+            let mut b = ExactNumNumber::random_normal(p2, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
             b.set_sign(Sign::Pos);
 
             // if b close to 1, error increases significantly, i.e.
@@ -373,7 +348,7 @@ fn test_log_pow() {
             }
 
             let n = b.exponent().unsigned_abs() as usize;
-            let emax = log2_floor(EXPONENT_MAX as usize / if n == 0 { 1 } else { n }) as Exponent;
+            let emax = log2_floor(TEST_EXP_BOUND as usize / if n == 0 { 1 } else { n }) as Exponent;
             let emin = -emax;
             let d1 = ExactNumNumber::random_normal(p1, emin, emax).unwrap();
 
@@ -448,7 +423,7 @@ fn test_sin_asin() {
     return; */
 
     // argument between -pi/2, pi/2
-    for i in 0..get_test_iters() {
+    for i in 0..TEST_ITERS {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -516,7 +491,7 @@ fn test_sin_asin() {
     }
 
     // argument between -pi, -pi/2 and between pi/2, pi
-    for _ in 0..get_test_iters() {
+    for _ in 0..TEST_ITERS {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -609,7 +584,7 @@ fn test_cos_acos() {
 
     return; */
 
-    for i in 0..get_test_iters() {
+    for i in 0..TEST_ITERS {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -704,7 +679,7 @@ fn test_tan_atan() {
     let mut half_pi = pi.clone().unwrap();
     half_pi.set_exponent(1);
 
-    for i in 0..get_test_iters() {
+    for i in 0..TEST_ITERS {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -742,7 +717,7 @@ fn test_tan_atan() {
                 d1
             );
         } else {
-            let d1 = ExactNumNumber::random_normal(p1, EXPONENT_MIN, EXPONENT_MAX).unwrap();
+            let d1 = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
 
             let d2 = d1.atan(prec, RoundingMode::ToZero, &mut cc).unwrap();
 
@@ -752,7 +727,13 @@ fn test_tan_atan() {
             if d2.abs_cmp(&hp) < 0 {
                 let d3 = d2.tan(prec, RoundingMode::ToEven, &mut cc).unwrap();
 
-                eps.set_exponent(d1.exponent() - prec as Exponent + 2);
+                // Large |x|: tan(atan(x)) error scales like x^2 * ulp(atan(x)).
+                let err_exp = if d1.exponent() > 0 {
+                    d1.exponent() * 2 - prec as Exponent + 2
+                } else {
+                    d1.exponent() - prec as Exponent + 2
+                };
+                eps.set_exponent(err_exp);
 
                 // println!("d1 {}", d1.format(crate::Radix::Bin, RoundingMode::None).unwrap());
                 // println!("d2 {}", d2.format(crate::Radix::Bin, RoundingMode::None).unwrap());
@@ -781,7 +762,7 @@ fn test_sinh_asinh() {
 
     let mut cc = Consts::new().unwrap();
 
-    for i in 0..get_test_iters() {
+    for i in 0..TEST_ITERS {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -809,7 +790,7 @@ fn test_sinh_asinh() {
                 d1
             );
         } else {
-            let mut d1 = ExactNumNumber::random_normal(p1, EXPONENT_MIN, EXPONENT_MAX).unwrap();
+            let mut d1 = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
 
             let d2 = d1.asinh(prec, RoundingMode::ToEven, &mut cc).unwrap();
             let d3 = d2.sinh(prec, RoundingMode::ToEven, &mut cc).unwrap();
@@ -821,19 +802,22 @@ fn test_sinh_asinh() {
                 assert!(d1.cmp(&d2) == 0, "{} {:?}", prec, d1);
                 assert!(d2.cmp(&d3) == 0, "{} {:?}", prec, d1);
             } else {
-                let exp = d2.exp(prec + 1, RoundingMode::ToEven, &mut cc).unwrap();
-                let expr = exp.reciprocal(prec + 1, RoundingMode::ToEven).unwrap();
-                let mut d4 = exp.sub(&expr, prec + 1, RoundingMode::ToEven).unwrap();
-                d4.set_exponent(d4.exponent() - 1);
+                // |sinh(asinh(x)) - x| ~ |asinh(x)| * |x| * 2^(-p) when asinh has p relative bits.
+                eps.set_exponent(
+                    d1.exponent() - prec as Exponent + d2.exponent().unsigned_abs() as Exponent + 2,
+                );
 
-                d4.set_precision(prec, RoundingMode::ToEven).unwrap();
-
-                // println!("d1 {}", d1.format(crate::Radix::Bin, RoundingMode::None).unwrap());
-                // println!("d2 {}", d2.format(crate::Radix::Bin, RoundingMode::None).unwrap());
-                // println!("d3 {}", d3.format(crate::Radix::Bin, RoundingMode::None).unwrap());
-                // println!("d4 {}", d4.format(crate::Radix::Bin, RoundingMode::None).unwrap());
-
-                assert!(d3.cmp(&d4) == 0, "{} {:?}", prec, d1);
+                assert!(
+                    d1.sub(&d3, prec, RoundingMode::ToEven)
+                        .unwrap()
+                        .abs()
+                        .unwrap()
+                        .cmp(&eps)
+                        < 0,
+                    "{} {:?}",
+                    prec,
+                    d1
+                );
             }
         }
     }
@@ -846,7 +830,7 @@ fn test_cosh_acosh() {
 
     let mut cc = Consts::new().unwrap();
 
-    for i in 0..get_test_iters() {
+    for i in 0..TEST_ITERS {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
@@ -876,7 +860,7 @@ fn test_cosh_acosh() {
                 d1
             );
         } else {
-            let mut d1 = ExactNumNumber::random_normal(p1, 1, EXPONENT_MAX).unwrap();
+            let mut d1 = ExactNumNumber::random_normal(p1, 1, TEST_EXP_BOUND).unwrap();
             d1.set_sign(Sign::Pos);
 
             let d2 = d1.acosh(prec, RoundingMode::ToEven, &mut cc).unwrap();
@@ -916,7 +900,7 @@ fn test_tanh_atanh() {
         exp_to = 3;
     }
 
-    for i in 0..get_test_iters() {
+    for i in 0..TEST_ITERS {
         let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 

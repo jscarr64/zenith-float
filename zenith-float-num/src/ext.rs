@@ -1438,6 +1438,38 @@ impl ExactNum {
         p,
         usize
     );
+    gen_wrapper_arg_rm_cc!(
+        "Computes `2` to the power of `self` with precision `p`. The result is rounded using the rounding mode `rm`.
+        This function requires constants cache `cc` for computing the result.
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        exp2,
+        Self,
+        { INF_POS },
+        { Self::new(p) },
+        p,
+        usize
+    );
+    gen_wrapper_arg_rm_cc!(
+        "Computes `10` to the power of `self` with precision `p`. The result is rounded using the rounding mode `rm`.
+        This function requires constants cache `cc` for computing the result.
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        exp10,
+        Self,
+        { INF_POS },
+        { Self::new(p) },
+        p,
+        usize
+    );
+    gen_wrapper_arg_rm_cc!(
+        "Reduces `self` modulo `2π` into the interval `(-2π, 2π)` using precision `p` and rounding mode `rm`.
+        This function requires constants cache `cc` for computing the result.",
+        rem_pi,
+        Self,
+        { NAN },
+        { NAN },
+        p,
+        usize
+    );
 
     gen_wrapper_arg_rm_cc!(
         "Computes the sine of a number with precision `p`. The result is rounded using the rounding mode `rm`.

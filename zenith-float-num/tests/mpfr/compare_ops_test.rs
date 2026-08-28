@@ -30,17 +30,7 @@ fn mpfr_compare_ops() {
 fn mpfr_compare_ops_large() {
     let run_cnt_large = 5;
     let p_rng_large = 1;
-    let p_min_large;
-
-    #[cfg(not(debug_assertions))]
-    {
-        p_min_large = 1563;
-    }
-
-    #[cfg(debug_assertions)]
-    {
-        p_min_large = 156;
-    }
+    let p_min_large = 1563;
 
     run_compare_ops(run_cnt_large, p_rng_large, p_min_large);
 }

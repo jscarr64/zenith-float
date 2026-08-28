@@ -31,17 +31,7 @@ fn mpfr_compare_special() {
 fn mpfr_compare_special_large() {
     let run_cnt_large = 3;
     let p_rng_large = 1;
-    let p_min_large;
-
-    #[cfg(not(debug_assertions))]
-    {
-        p_min_large = 1563;
-    }
-
-    #[cfg(debug_assertions)]
-    {
-        p_min_large = 156;
-    }
+    let p_min_large = 1563;
 
     run_compare_special(run_cnt_large, p_rng_large, p_min_large);
 }

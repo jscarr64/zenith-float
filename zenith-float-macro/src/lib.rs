@@ -245,7 +245,7 @@ fn traverse_call(
     err: &mut Vec<usize>,
     cc: &mut Consts,
 ) -> Result<TokenStream, Error> {
-    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"expm1\", \"pow\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\" are allowed.";
+    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"rem_pi\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\" are allowed.";
 
     if let Expr::Path(fun) = expr.func.as_ref() {
         if let Some(fname) = fun.path.get_ident() {
@@ -322,6 +322,22 @@ fn traverse_call(
                     cc,
                     true,
                 ),
+                "exp2" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::exp2),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "exp10" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::exp10),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
                 "expm1" => one_arg_fun(
                     quote!(zenith_float::ExactNum::expm1),
                     expr,
@@ -337,6 +353,14 @@ fn traverse_call(
                     err,
                     quote!(zenith_float::macro_util::ErrAlgo::Pow(&arg1, &arg2, emin)),
                     cc,
+                ),
+                "rem_pi" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::rem_pi),
+                    expr,
+                    SPEC_ADD_ERR,
+                    err,
+                    cc,
+                    true,
                 ),
                 "sin" => trig_fun(
                     quote!(zenith_float::ExactNum::sin),

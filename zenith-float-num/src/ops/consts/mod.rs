@@ -11,8 +11,8 @@ use crate::ops::consts::e::ECache;
 use crate::ops::consts::ln10::Ln10Cache;
 use crate::ops::consts::ln2::Ln2Cache;
 use crate::ops::consts::pi::PiCache;
-use crate::ExactNum;
 use crate::Error;
+use crate::ExactNum;
 use crate::RoundingMode;
 
 #[cfg(not(feature = "std"))]

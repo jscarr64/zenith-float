@@ -50,7 +50,7 @@ impl ExactNumNumber {
 
                 if self.exponent() == EXPONENT_MAX {
                     // ln(2 * |x|) = ln(2) + ln(|x|)
-                    p_x += 2;
+                    p_x = round_p(p_x + 2);
 
                     let lnx = x.ln(p_x, RoundingMode::None, cc)?;
 
@@ -68,7 +68,13 @@ impl ExactNumNumber {
                 }
             } else {
                 // ln(|x| + sqrt(x*x + 1)) * signum(x)
-                p_x += self.exponent().unsigned_abs() as usize + 5;
+                // x*x+1 needs 2*|e| extra bits when |x| > 1; near-zero uses |e| for x² underflow.
+                let extra = if self.exponent() > 0 {
+                    2 * self.exponent() as usize + 5
+                } else {
+                    self.exponent().unsigned_abs() as usize + 5
+                };
+                p_x = round_p(p_x + extra);
 
                 let xx = x.mul(&x, p_x, RoundingMode::None)?;
 
@@ -81,7 +87,7 @@ impl ExactNumNumber {
                 d3.ln(p_x, RoundingMode::None, cc)?
             };
 
-            if ret.try_set_precision(p, rm, p_wrk)? {
+            if ret.try_set_precision(p, rm, p_x)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
                 break ret;
             }

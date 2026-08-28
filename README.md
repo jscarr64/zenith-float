@@ -2,11 +2,11 @@
 
 Arbitrary-precision software floating-point numbers in Rust.
 
-All arithmetic runs on integer limbs. The library does not use hardware `f32` or `f64` for calculations. Construct numbers from integers or from binary, octal, decimal, or hexadecimal strings.
+All arithmetic runs on integer limbs. The library does not use hardware floating-point registers for calculations. Construct numbers from integers or from binary, octal, decimal, or hexadecimal strings.
 
 The library can work without `std` if a memory allocator is available.
 
-Besides the usual `+ − × ÷` and the elementary functions (`sqrt`, `exp`, `ln`, trig, hyperbolic), the public API includes `hypot`, `atan2`, `log1p`, and `expm1`.
+Besides the usual `+ − × ÷` and the elementary functions (`sqrt`, `exp`, `exp2`, `exp10`, `ln`, trig, hyperbolic), the public API includes `hypot`, `atan2`, `log1p`, `expm1`, and `rem_pi`.
 
 License: MIT OR Apache-2.0.
 
@@ -38,7 +38,7 @@ zenith-float = { version = "0.1.0", default-features = false }
 - `RoundingMode::None` skips that final rounding and may keep extra bits.
 - `expr!` raises working precision to compensate cancellation. It does **not** itself perform correct rounding; the completion of a rounding loop in finite time depends on the expression.
 - Overflow of the configured exponent range becomes `±Inf`. Allocation and invalid arguments become `NaN`; `ExactNum::err()` returns the associated `Error`.
-- Subnormals, `NaN`, and infinities are software values, not hardware IEEE-754 registers.
+- Subnormals, `NaN`, and infinities are software values, not hardware floating-point registers.
 
 ## Example
 

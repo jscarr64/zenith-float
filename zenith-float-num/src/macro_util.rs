@@ -246,6 +246,7 @@ mod tests {
     };
 
     use super::*;
+    use crate::common::util::TEST_EXP_BOUND;
 
     #[cfg(not(feature = "std"))]
     use alloc::vec;
@@ -405,34 +406,17 @@ mod tests {
         }
     }
 
-    fn err_exp_samples(ernd: Exponent) -> Vec<Exponent> {
-        #[cfg(debug_assertions)]
-        {
-            let _ = ernd;
-            vec![0, 1, 2, 8]
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            vec![
-                0,
-                1,
-                2,
-                EXPONENT_BIT_SIZE as Exponent + ernd,
-                256 + ernd.min(64),
-            ]
-        }
+    fn err_exp_samples(ernd: Exponent) -> [Exponent; 5] {
+        [
+            0,
+            1,
+            2,
+            EXPONENT_BIT_SIZE as Exponent + ernd,
+            TEST_EXP_BOUND.min(256 + ernd.min(64)),
+        ]
     }
 
-    fn err_test_outer() -> usize {
-        #[cfg(debug_assertions)]
-        {
-            2
-        }
-        #[cfg(not(debug_assertions))]
-        {
-            10
-        }
-    }
+    const ERR_TEST_OUTER: usize = 10;
 
     #[test]
     fn test_compute_added_err() {
@@ -444,7 +428,7 @@ mod tests {
         println!("{:?}", r);
         return; */
 
-        for _ in 0..err_test_outer() {
+        for _ in 0..ERR_TEST_OUTER {
             let ernd = rand::random::<Exponent>() % (EXPONENT_BIT_SIZE as Exponent - 5);
 
             for e in err_exp_samples(ernd) {

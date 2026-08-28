@@ -3,6 +3,14 @@
 use crate::{num::ExactNumNumber, Consts, Error, RoundingMode};
 
 impl ExactNumNumber {
+    /// Reduce `self` to the interval `(-2π, 2π)` for trigonometric evaluation.
+    ///
+    /// The `p` argument is reserved for API uniformity with other transcendentals; reduction
+    /// uses the precision required by the magnitude of `self`.
+    pub fn rem_pi(&self, _p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        self.clone()?.reduce_trig_arg(cc, rm)
+    }
+
     /// Reduce `self` to interval (-2*pi; 2*pi)
     pub(crate) fn reduce_trig_arg(self, cc: &mut Consts, rm: RoundingMode) -> Result<Self, Error> {
         if self.exponent() > 2 {

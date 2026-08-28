@@ -790,7 +790,7 @@ mod tests {
         let mut cc = Consts::new().unwrap();
 
         /*
-        Decimal I/O uses software big-float conversion only (no f32/f64).
+        Decimal I/O uses software big-float conversion only (no hardware floats).
         */
 
         #[cfg(target_pointer_width = "32")]
