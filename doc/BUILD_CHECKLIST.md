@@ -232,9 +232,9 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 #### 3.2.1 Arithmetic & roots
 
 - [ ] **`fma` / `mul_add`** — `a*b + c` rounded once at precision `p` (no intermediate round of `a*b`). Blocks compensated summation and stable Horner evaluation.
-  - [ ] Mantissa: full-width product + add with guard bits (or exact-product fast path)
-  - [ ] `ExactNum::fma` + `expr!` `fma(a, b, c)`
-  - [ ] MPFR oracle (`mpfr_fma`) for all rounding modes
+  - [x] `ExactNum::fma` + `expr!` `fma(a, b, c)` (`mul_full_prec` + `add_full_prec` + retry)
+  - [ ] Mantissa: dedicated fused path (avoid full product width on every call)
+  - [ ] MPFR oracle (`mpfr_fma`) bit-exact for all rounding modes
 - [ ] **`nth_root(n)`** — generalize `sqrt` / `cbrt` (`n = 2` and `n = 3` delegate to existing code).
   - [ ] `n ≥ 2`; `n = 0` → error; even `n` rejects negative operands
   - [ ] `ExactNum::nth_root` + `expr!` surface (syntax TBD: `root(x, n)` or method chain)

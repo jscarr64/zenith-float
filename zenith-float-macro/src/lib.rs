@@ -155,6 +155,23 @@ fn two_arg_fun(
     Ok(ret)
 }
 
+fn three_arg_fun(
+    fun: TokenStream,
+    expr: &ExprCall,
+    initial_err: usize,
+    err: &mut Vec<usize>,
+    cc: &mut Consts,
+) -> Result<TokenStream, Error> {
+    check_arg_num(3, expr)?;
+
+    let arg1 = traverse_expr(&expr.args[0], err, cc)?;
+    let arg2 = traverse_expr(&expr.args[1], err, cc)?;
+    let arg3 = traverse_expr(&expr.args[2], err, cc)?;
+    err.push(initial_err);
+
+    Ok(quote!(#fun(&(#arg1), &(#arg2), &(#arg3), p_wrk, zenith_float::RoundingMode::None)))
+}
+
 fn one_arg_fun_errcheck(
     fun: TokenStream,
     expr: &ExprCall,
@@ -245,7 +262,7 @@ fn traverse_call(
     err: &mut Vec<usize>,
     cc: &mut Consts,
 ) -> Result<TokenStream, Error> {
-    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"rem_pi\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\" are allowed.";
+    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"rem_pi\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"fma\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\" are allowed.";
 
     if let Expr::Path(fun) = expr.func.as_ref() {
         if let Some(fname) = fun.path.get_ident() {
@@ -418,6 +435,13 @@ fn traverse_call(
                     err,
                     cc,
                     false,
+                ),
+                "fma" => three_arg_fun(
+                    quote!(zenith_float::ExactNum::fma),
+                    expr,
+                    2,
+                    err,
+                    cc,
                 ),
                 "sinh" => one_arg_fun(
                     quote!(zenith_float::ExactNum::sinh),

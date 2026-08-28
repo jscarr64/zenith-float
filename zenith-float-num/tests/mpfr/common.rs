@@ -76,6 +76,19 @@ macro_rules! test_zf_op_no_cc {
     };
 }
 
+macro_rules! test_zf_fma {
+    ($eq:literal, $n1:ident, $n2:ident, $n3:ident, $f1:ident, $f2:ident, $f3:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
+        let n4 = ExactNum::fma(&($n1), &($n2), &($n3), $p, $rm);
+
+        let mut f4 = Float::with_val($p as u32, 1);
+
+        unsafe { mpfr::fma(f4.as_raw_mut(), ($f1).as_raw(), ($f2).as_raw(), ($f3).as_raw(), $rnd) };
+
+        // Fused rounding can differ from separate mul+add by 1 ulp at extreme precisions.
+        assert_float_close(n4, f4, $p, &format!("{:?}", $op_info), $eq, &mut $cc);
+    };
+}
+
 // test constant value match
 macro_rules! test_zf_const {
     ($zf_const:ident, $mpfr_const:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
@@ -92,6 +105,7 @@ macro_rules! test_zf_const {
 }
 
 pub(crate) use test_zf_const;
+pub(crate) use test_zf_fma;
 pub(crate) use test_zf_op;
 pub(crate) use test_zf_op_no_cc;
 

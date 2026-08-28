@@ -12,6 +12,7 @@ pub mod consts;
 mod cos;
 mod cosh;
 mod expm1;
+mod fma;
 mod hypot;
 mod log;
 mod log1p;

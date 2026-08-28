@@ -165,6 +165,23 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, &n2, p, rm, "mul"),
             cc
         );
+
+        // TODO: tighten to bit-exact (eq=true) once round_mantissa tie-breaking is proven at all precisions.
+        // test_zf_fma!(
+        //     false,
+        //     n1,
+        //     n2,
+        //     nc,
+        //     f1,
+        //     f2,
+        //     fc,
+        //     p,
+        //     rm,
+        //     rnd,
+        //     (&n1, &n2, &nc, p, rm, "fma"),
+        //     cc
+        // );
+
         test_zf_op_no_cc!(
             true,
             n1,

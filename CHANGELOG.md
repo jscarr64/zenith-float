@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `ExactNum::fma` / `expr!` `fma(a, b, c)` — fused multiply-add with single final rounding.
 - Criterion benchmarks in `zenith-float-num/benches/` (arithmetic, transcendentals, composite); `./scripts/bench.sh`.
 - FFT-scale multiply benchmark tier (`arithmetic/mul_fft`, 346k and 524k bits).
 - TSV benchmark baselines (`doc/bench-baselines.tsv`) and `scripts/bench-compare.sh` for regression checks without JSON.

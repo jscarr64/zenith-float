@@ -207,6 +207,7 @@ extern crate alloc;
 ///  - `atan(x)`: arctangent of `x`.
 ///  - `atan2(y, x)`: quadrant-aware arctangent of `y / x`.
 ///  - `hypot(x, y)`: `sqrt(x² + y²)`.
+///  - `fma(x, y, z)`: `x * y + z` with a single final rounding.
 ///  - `sinh(x)`: hyperbolic sine of `x`.
 ///  - `cosh(x)`: hyperbolic cosine of `x`.
 ///  - `tanh(x)`: hyperbolic tangent of `x`.

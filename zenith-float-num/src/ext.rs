@@ -217,6 +217,30 @@ impl ExactNum {
         self.mul_op(d2, 0, RoundingMode::None, true)
     }
 
+    /// Computes `self * b + c` with precision `p`, rounded once with `rm`.
+    ///
+    /// Unlike `mul` followed by `add`, the product is not rounded to `p` before the addition.
+    pub fn fma(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
+        if self.is_nan() {
+            return self.clone();
+        }
+        if b.is_nan() {
+            return b.clone();
+        }
+        if c.is_nan() {
+            return c.clone();
+        }
+        match (&self.inner, &b.inner, &c.inner) {
+            (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(cv)) => {
+                Self::result_to_ext(a.fma(bv, cv, p, rm), false, true)
+            }
+            _ => {
+                let prod = self.mul(b, p, RoundingMode::None);
+                prod.add(c, p, rm)
+            }
+        }
+    }
+
     fn mul_op(&self, d2: &Self, p: usize, rm: RoundingMode, full_prec: bool) -> Self {
         match &self.inner {
             Flavor::Value(v1) => {
