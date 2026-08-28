@@ -70,9 +70,7 @@ pub use crate::defs::WORD_SIGNIFICANT_BIT;
 pub use crate::common::util::MAX_PREC_RETRY;
 
 #[cfg(feature = "random")]
-pub use crate::common::test_rng::{
-    random as seeded_random, random_seed, reseed_random, DEFAULT_RANDOM_SEED,
-};
+pub use crate::common::test_rng::{random_seed, reseed_random, seeded_random, DEFAULT_RANDOM_SEED};
 
 #[cfg(test)]
 mod tests {

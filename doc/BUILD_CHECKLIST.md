@@ -1,13 +1,13 @@
 # zenith-float build checklist
 
-Living document for what is **implemented**, **tested**, and **still required** before zenith-float can serve as the numeric kernel for Accumath (~675K equations and formulas).
+Living document for what is **implemented**, **tested**, and **required** for zenith-float as a public software big-float crate. Application engines (formula corpora, expression ABIs, host hardware-float purge) live in those applications, not here.
 
 **Last updated:** 2026-08-28  
 **Crate version:** 0.1.0 (+ unreleased changelog items)  
 **Reference versions (crates.io):** astro-float 0.9.6, dashu-float 0.6.0  
 **Policy:** No hardware floating-point in calculations or identifiers (`f32`/`f64` forbidden in source and docs; enforced in `scripts/ci.sh`).
 
-**Design goal:** As **broad** an API as practical (match or exceed astro-float / dashu-float coverage where Accumath needs it), but **always software limbs** — no machine floating-point registers, literals, or converters inside the library. Callers that need IEEE interchange do conversion outside zenith-float.
+**Design goal:** As **broad** an API as practical (match or exceed astro-float / dashu-float coverage), but **always software limbs** — no machine floating-point registers, literals, or converters inside the library. Callers that need IEEE interchange do conversion outside zenith-float.
 
 ---
 
@@ -18,7 +18,7 @@ Living document for what is **implemented**, **tested**, and **still required** 
 | ✅ | Built, in public API, and covered by default CI |
 | 🟡 | Built but partial coverage, manual gate, or known limitations |
 | ⬜ | Not implemented or not production-ready |
-| 🚫 | Explicitly out of scope (Accumath / caller responsibility) |
+| 🚫 | Explicitly out of scope (caller / host application) |
 
 ### Verify locally
 
@@ -122,16 +122,16 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | Gate | Status |
 | ------ | -------- |
 | Forbid `f32`/`f64` identifiers in `.rs` / `.md` / `CHANGELOG` | ✅ |
-| `cargo test --workspace` (debug) | ✅ ~60 lib tests pass |
+| `cargo test --workspace` (debug) | ✅ (~60 lib tests pass) |
 | `cargo test -p zenith-float-num --lib --release` | ✅ |
 | `cargo test` with `no-default-features --features std` | ✅ |
 | `cargo test --features random,serde` | ✅ |
-| MPFR bit-oracle tests (`mpfr-tests`) | ✅ | Release gate on Linux x86_64 in `scripts/ci.sh` |
-| CI wall-time budgets | ✅ | Debug &lt; 10 min, MPFR &lt; 30 min (`CI_DEBUG_SECS` / `CI_MPFR_SECS`) |
-| Seeded random tests | ✅ | Default seed `0x5EED_CAFE_BADC_0D00`; `ZENITH_TEST_SEED` to replay |
-| Criterion / dedicated benches | ✅ `zenith-float-num/benches/` (arithmetic, transcendentals, composite) |
-| Cross-library compare (astro / dashu) | 🟡 `zenith-float-compare/` + `scripts/compare-bench.sh` (release gate) |
-| `proptest` / quickcheck | ⬜ Hand-written random loops (`TEST_ITERS = 256`) |
+| MPFR bit-oracle tests (`mpfr-tests`) | ✅ (release gate on Linux x86_64 in `scripts/ci.sh`) |
+| CI wall-time budgets | ✅ (debug &lt; 10 min, MPFR &lt; 30 min; `CI_DEBUG_SECS` / `CI_MPFR_SECS`) |
+| Seeded random tests | ✅ (default seed `0x5EED_CAFE_BADC_0D00`; `ZENITH_TEST_SEED` to replay) |
+| Criterion / dedicated benches | ✅ (`zenith-float-num/benches/`: arithmetic, transcendentals, composite) |
+| Cross-library compare (astro / dashu) | 🟡 (`zenith-float-compare/` + `scripts/compare-bench.sh`, release gate) |
+| `proptest` / quickcheck | ⬜ (hand-written random loops, `TEST_ITERS = 256`) |
 
 **Property tests** (`zenith-float-num/src/ops/tests.rs`): inverse pairs (ln↔exp, sin↔asin, log↔pow, etc.) with mathematically derived error bounds; exponent sampling capped at `TEST_EXP_BOUND = 1024` for runtime.
 
@@ -143,7 +143,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 
 zenith-float is an **evolution of the astro-float design** (`BigFloat` → `ExactNum`, same `Context` / `expr!` / `Consts` / MPFR harness). [astro-float 0.9.6](https://docs.rs/astro-float) is the direct ancestor. [dashu-float 0.6.0](https://docs.rs/dashu-float) is a **different architecture**: arbitrary base, native operators, Ziv-certified transcendentals, optional complex (`CBig`).
 
-Local reference trees (`dashu-master/`, `astro-float-main/`) are not in this repo; compare via crates.io sources or Accumath `target/` build fingerprints.
+Local reference trees (`dashu-master/`, `astro-float-main/`) are not in this repo; compare via crates.io sources.
 
 ### 2.1 Feature matrix (high level)
 
@@ -188,9 +188,9 @@ zenith-float is already a **superset** of astro-float’s math API. astro-float 
 
 Shared vs dashu: public `ziv_round` / `Ball` plus the same retry loop already used by transcendentals; binary mantissa (not arbitrary base internally except `RadixFloat`).
 
-### 2.3 Where zenith-float must go beyond both (Accumath scale)
+### 2.3 Where zenith-float must go beyond both
 
-For **675K diverse formulas**, correctness and operability matter more than matching every dashu feature on day one.
+Correctness and operability at mixed-precision, many-op expressions matter more than matching every dashu feature on day one.
 
 | Priority | Status | Gap | Why it matters |
 | ---------- | :------: | ----- | ---------------- |
@@ -270,45 +270,45 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 - [x] Optional: nightly bench regression gate in CI (`CI_BENCH=1` runs `scripts/bench-compare.sh`)
 - [x] Track CI wall time budget (target: full gate &lt; 10 min debug, &lt; 30 min with MPFR) — `scripts/ci.sh` (`CI_DEBUG_SECS` / `CI_MPFR_SECS`; `CI_SKIP_TIME_BUDGET=1` to skip)
 - [x] Seed-controlled random tests for reproducible failures — `ZENITH_TEST_SEED` / `reseed_random`; panic hook prints the seed
-- [ ] Accumath-driven regression corpus (golden files from real formula subsets)
 - [x] Memory high-water tests for large precisions (OOM → clean `NaN`, not hang)
 
-### 3.4 Accumath integration (P1–P2)
+### 3.4 Application integration (not this crate)
 
-- [ ] Stable ABI surface for engine (`ExactNum` eval from `CanonicalExpr`)
+zenith-float ships `ExactNum`, `expr!`, `Context`, and `SharedConsts`. Host engines own formula corpora, expression ABIs, and any purge of hardware floats in *their* trees.
+
 - [x] Batch evaluator with shared `Consts` / `Context` reuse (`SharedConsts` for threads; `Context` still owns one `Consts`)
-- [ ] Precision policy per formula class (exact vs numeric terminal)
-- [ ] Wire 675K-formula smoke + deep regression in Accumath CI (separate repo)
-- [ ] Purge `f64` / `libm` from Accumath numeric path (🚫 not this crate)
+- [ ] 🚫 Stable ABI for a host expression IR (application crate)
+- [ ] 🚫 Precision policy per formula class (application)
+- [ ] 🚫 Host CI over large formula corpora (application)
+- [ ] 🚫 Purge hardware floats from a host numeric path (application)
 
 ### 3.5 Out of scope for zenith-float
 
 - [ ] 🚫 Hardware `f32`/`f64` converters inside the library
 - [x] Rectangular complex arithmetic (`ExactComplex`); not a dashu `CBig` clone
-- [ ] 🚫 Computer algebra (Risch, towers, etc.) — Accumath symbolic layer
+- [ ] 🚫 Computer algebra (Risch, towers, etc.) — host symbolic layer
 - [ ] 🚫 Replacing MPFR/GMP at test time (MPFR remains oracle only)
 
-### 3.6 API polish (P2 — post-Accumath v1)
+### 3.6 API polish (P2)
 
-Does not block first production release; aligns with §2.3 P2 items.
+Does not block a public 0.1.x; aligns with §2.3 P2 items.
 
 - [x] `frexp` / `ldexp` / `scalb` / `logb` / `ilogb` — IEEE-style decomposition without hardware floats
 - [x] `LowerHex` + scientific `Display` options (`LowerExp` / `UpperExp` formatting)
 - [x] Additional `Consts` beyond π, e, ln 2, ln 10 (φ, √2, γ)
-- [x] `expr!` correct-rounding semantics documented per op (Accumath macro contract) (`doc/EXPR.md`)
+- [x] `expr!` correct-rounding semantics documented per op (`doc/EXPR.md`)
 
 ---
 
 ## 4. Release readiness gates
 
-Before calling a version **production-ready for Accumath numeric evaluation**:
+Before calling a version **production-ready** as a public crate:
 
 1. **All P0 items checked** (including MPFR for every exported transcendental).
 2. **`./scripts/ci.sh` green** on Linux x86_64, debug + release.
 3. **MPFR suite green** on same platform (`--features mpfr-tests`).
 4. **No known hang** in property tests at `TEST_EXP_BOUND` and `TEST_ITERS = 256`.
 5. **CHANGELOG + README** match public API (no stale checklist).
-6. **Accumath subset**: at least one real formula corpus (1K–10K expressions) evaluated end-to-end through `expr!` or `ExactNum` without `f64`.
 
 ---
 
@@ -339,3 +339,4 @@ Already implemented but not in a crates.io release:
 - Bench history: `doc/bench-baselines.tsv`, `doc/compare-results.tsv` (astro 0.9.x vs zenith at 132 bits)
 - `euler_gamma`, `frexp`/`ldexp`/`scalb`/`logb`/`ilogb`, `LowerExp`/`UpperExp`/`LowerHex`
 - Seeded test RNG (`ZENITH_TEST_SEED` / `reseed_random`), CI wall-time budgets, OOM → `NaN` tests
+- Host-engine work (formula corpora, expression ABI) is 🚫 out of scope for this crate

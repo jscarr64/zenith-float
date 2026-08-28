@@ -69,14 +69,12 @@ fn install_panic_hook() {
     }
 }
 
-fn use_seeded() -> bool {
-    ensure_init();
-    cfg!(test) || SEEDED.load(Ordering::Relaxed)
-}
-
 /// Seed currently used by the deterministic generator.
 pub fn random_seed() -> u64 {
     ensure_init();
+    // Keep `random` live in every cfg that compiles this module (lib, tests, rust-analyzer).
+    let _keep: fn() -> u32 = random;
+    let _ = _keep;
     SEED.load(Ordering::Relaxed)
 }
 
@@ -89,17 +87,12 @@ pub fn reseed_random(seed: u64) {
     install_panic_hook();
 }
 
-/// Draw a random value from the crate RNG used by tests and `random_normal`.
-///
-/// Feature `random` re-exports this as `seeded_random`.
-/// After [`reseed_random`], or when `ZENITH_TEST_SEED` is set, the stream is deterministic.
-/// Unit tests default to [`DEFAULT_RANDOM_SEED`]. Replay with
-/// `ZENITH_TEST_SEED=<n> cargo test <name> -- --test-threads=1`.
-pub fn random<T>() -> T
+fn draw<T>() -> T
 where
     rand::distributions::Standard: rand::distributions::Distribution<T>,
 {
-    if use_seeded() {
+    ensure_init();
+    if cfg!(test) || SEEDED.load(Ordering::Relaxed) {
         let epoch = EPOCH.load(Ordering::Relaxed);
         let seed = SEED.load(Ordering::Relaxed);
         RNG.with(|cell| {
@@ -112,4 +105,32 @@ where
     } else {
         rand::random()
     }
+}
+
+/// Draw a random value from the crate RNG used by tests and `random_normal`.
+///
+/// After [`reseed_random`], or when `ZENITH_TEST_SEED` is set, the stream is deterministic.
+/// Unit tests default to [`DEFAULT_RANDOM_SEED`]. Replay with
+/// `ZENITH_TEST_SEED=<n> cargo test <name> -- --test-threads=1`.
+pub(crate) fn random<T>() -> T
+where
+    rand::distributions::Standard: rand::distributions::Distribution<T>,
+{
+    draw()
+}
+
+/// Public name for [`random`] when the `random` feature is enabled.
+#[cfg(feature = "random")]
+pub fn seeded_random<T>() -> T
+where
+    rand::distributions::Standard: rand::distributions::Distribution<T>,
+{
+    random()
+}
+
+#[cfg(test)]
+#[test]
+fn test_rng_draws() {
+    let _ = random::<u32>();
+    let _ = random::<u64>();
 }
