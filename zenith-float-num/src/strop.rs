@@ -15,8 +15,8 @@ use {std::fmt::Write, std::vec::Vec};
 use {alloc::string::String, alloc::vec::Vec, core::fmt::Write};
 
 const DIGIT_CHARS: [char; 36] = [
-    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
-    'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
+    'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 ];
 
 fn format_uint_radix(val: usize, rdx: Radix, out: &mut String) -> Result<(), Error> {
@@ -135,7 +135,7 @@ impl ExactNumNumber {
 #[cfg(test)]
 mod tests {
 
-    use rand::random;
+    use crate::common::test_rng::random;
 
     use crate::{
         common::util::random_subnormal, common::util::test_loop_count, common::util::MAX_DEC_SCALE,
@@ -155,8 +155,7 @@ mod tests {
             let p = p1.min(p2);
 
             let n = if i & 1 == 0 {
-                ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND)
-                    .unwrap()
+                ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap()
             } else {
                 random_subnormal(p1)
             };

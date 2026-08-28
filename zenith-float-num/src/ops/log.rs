@@ -555,7 +555,7 @@ mod tests {
         // random subnormal arg
         let mut eps = ONE.clone().unwrap();
         for _ in 0..1000 {
-            let prec = (rand::random::<usize>() % 3 + 3) * WORD_BIT_SIZE;
+            let prec = (crate::common::test_rng::random::<usize>() % 3 + 3) * WORD_BIT_SIZE;
 
             let mut d1 = random_subnormal(prec);
             d1.set_sign(Sign::Pos);

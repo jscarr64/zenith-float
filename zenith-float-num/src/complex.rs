@@ -93,7 +93,10 @@ impl ExactComplex {
             p,
             RoundingMode::None,
         );
-        Self::new(ac.add(&bd, p, rm).div(&den, p, rm), bc.sub(&ad, p, rm).div(&den, p, rm))
+        Self::new(
+            ac.add(&bd, p, rm).div(&den, p, rm),
+            bc.sub(&ad, p, rm).div(&den, p, rm),
+        )
     }
 
     /// `e^self` using `exp(re) (cos(im) + i sin(im))`.

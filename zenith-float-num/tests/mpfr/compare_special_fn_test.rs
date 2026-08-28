@@ -10,9 +10,7 @@ use rug::{
     float::{exp_max, exp_min},
     Float,
 };
-use zenith_float_num::{
-    Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
-};
+use zenith_float_num::{Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
 #[test]
 fn mpfr_compare_special_fns() {

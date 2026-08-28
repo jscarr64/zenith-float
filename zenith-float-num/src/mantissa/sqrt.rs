@@ -156,7 +156,10 @@ impl Mantissa {
         }
     }
 
-    fn sqrt_rem_split(m: &[Word], l: usize) -> (SliceWithSign<'_>, SliceWithSign<'_>, SliceWithSign<'_>) {
+    fn sqrt_rem_split(
+        m: &[Word],
+        l: usize,
+    ) -> (SliceWithSign<'_>, SliceWithSign<'_>, SliceWithSign<'_>) {
         let (m, m2) = m.split_at(2 * l);
         let (m0, m1) = m.split_at(l);
 
@@ -174,7 +177,7 @@ mod tests {
     use crate::defs::{WORD_MAX, WORD_SIGNIFICANT_BIT};
 
     use super::*;
-    use rand::random;
+    use crate::common::test_rng::random;
 
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;

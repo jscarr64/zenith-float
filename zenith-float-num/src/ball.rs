@@ -47,10 +47,11 @@ impl Ball {
     /// Sum of two balls: midpoint add at precision `p`, radius `r1+r2` plus a rounding ulp.
     pub fn add(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
         let mid = self.mid.add(&other.mid, p, rm);
-        let rad = self
-            .rad
-            .add(&other.rad, p, RoundingMode::Up)
-            .add(&Self::rounding_ulp(&mid, p), p, RoundingMode::Up);
+        let rad = self.rad.add(&other.rad, p, RoundingMode::Up).add(
+            &Self::rounding_ulp(&mid, p),
+            p,
+            RoundingMode::Up,
+        );
         Ball { mid, rad }
     }
 

@@ -120,7 +120,7 @@ mod tests {
     };
 
     use super::*;
-    use rand::random;
+    use crate::common::test_rng::random;
 
     macro_rules! assert_sqrt {
         ($s1:expr, $qb:expr, $rb:expr, $MAX_BUF:ident, $op:literal) => {

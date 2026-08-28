@@ -6,15 +6,18 @@ use std::ops::Add;
 use crate::mpfr::common::get_prec_rng;
 use crate::mpfr::common::test_zf_op;
 use crate::mpfr::common::test_zf_op_no_cc;
-use crate::mpfr::common::{assert_float_close, conv_to_mpfr, get_float_pair, get_random_rnd_pair, reset_test_rng, test_random, test_zf_fma, test_zf_rem_pi};
-use zenith_float_num::Word;
-use zenith_float_num::EXPONENT_BIT_SIZE;
-use zenith_float_num::{ExactNum, Consts, Exponent, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
+use crate::mpfr::common::{
+    assert_float_close, conv_to_mpfr, get_float_pair, get_random_rnd_pair, reset_test_rng,
+    test_random, test_zf_fma, test_zf_rem_pi,
+};
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
 use rug::{
     float::{exp_max, exp_min},
     Float,
 };
+use zenith_float_num::Word;
+use zenith_float_num::EXPONENT_BIT_SIZE;
+use zenith_float_num::{Consts, ExactNum, Exponent, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
 #[test]
 fn mpfr_compare_ops() {
@@ -242,8 +245,8 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
     // powi
     for _ in 0..run_cnt {
-        let i =
-            (test_random::<Exponent>().abs() + 1) as usize >> (test_random::<usize>() % EXPONENT_BIT_SIZE);
+        let i = (test_random::<Exponent>().abs() + 1) as usize
+            >> (test_random::<usize>() % EXPONENT_BIT_SIZE);
         let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
         let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
 
@@ -350,8 +353,30 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
         //println!("{:?}", n1);
 
         test_zf_op!(true, n1, exp, f1, exp, p, rm, rnd, (&n1, p, rm, "exp"), cc);
-        test_zf_op!(true, n1, exp2, f1, exp2, p, rm, rnd, (&n1, p, rm, "exp2"), cc);
-        test_zf_op!(true, n1, exp10, f1, exp10, p, rm, rnd, (&n1, p, rm, "exp10"), cc);
+        test_zf_op!(
+            true,
+            n1,
+            exp2,
+            f1,
+            exp2,
+            p,
+            rm,
+            rnd,
+            (&n1, p, rm, "exp2"),
+            cc
+        );
+        test_zf_op!(
+            true,
+            n1,
+            exp10,
+            f1,
+            exp10,
+            p,
+            rm,
+            rnd,
+            (&n1, p, rm, "exp10"),
+            cc
+        );
         test_zf_op!(
             true,
             n1,
@@ -531,7 +556,10 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             (&n1, p, rm, "log10"),
             cc
         );
-        if !n1.is_zero() && !n1.is_subnormal() && n1.exponent().unwrap_or(EXPONENT_MIN) > EXPONENT_MIN {
+        if !n1.is_zero()
+            && !n1.is_subnormal()
+            && n1.exponent().unwrap_or(EXPONENT_MIN) > EXPONENT_MIN
+        {
             test_zf_op!(
                 false,
                 n1,
@@ -639,16 +667,44 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
             let mut fs = Float::with_val(p as u32, 1);
             let mut fc = Float::with_val(p as u32, 1);
             unsafe { mpfr::sin_cos(fs.as_raw_mut(), fc.as_raw_mut(), f1.as_raw(), rnd) };
-            assert_float_close(ns, fs, p, &format!("{:?}", (&n1, p, rm, "sin_cos.sin")), false, &mut cc);
-            assert_float_close(ncs, fc, p, &format!("{:?}", (&n1, p, rm, "sin_cos.cos")), false, &mut cc);
+            assert_float_close(
+                ns,
+                fs,
+                p,
+                &format!("{:?}", (&n1, p, rm, "sin_cos.sin")),
+                false,
+                &mut cc,
+            );
+            assert_float_close(
+                ncs,
+                fc,
+                p,
+                &format!("{:?}", (&n1, p, rm, "sin_cos.cos")),
+                false,
+                &mut cc,
+            );
         }
         let (nsh, nch) = ExactNum::sinh_cosh(&n1, p, rm, &mut cc);
         if !nsh.is_nan() && !nch.is_nan() && !nsh.is_inf() && !nch.is_inf() {
             let mut fsh = Float::with_val(p as u32, 1);
             let mut fch = Float::with_val(p as u32, 1);
             unsafe { mpfr::sinh_cosh(fsh.as_raw_mut(), fch.as_raw_mut(), f1.as_raw(), rnd) };
-            assert_float_close(nsh, fsh, p, &format!("{:?}", (&n1, p, rm, "sinh_cosh.sinh")), false, &mut cc);
-            assert_float_close(nch, fch, p, &format!("{:?}", (&n1, p, rm, "sinh_cosh.cosh")), false, &mut cc);
+            assert_float_close(
+                nsh,
+                fsh,
+                p,
+                &format!("{:?}", (&n1, p, rm, "sinh_cosh.sinh")),
+                false,
+                &mut cc,
+            );
+            assert_float_close(
+                nch,
+                fch,
+                p,
+                &format!("{:?}", (&n1, p, rm, "sinh_cosh.cosh")),
+                false,
+                &mut cc,
+            );
         }
     }
 

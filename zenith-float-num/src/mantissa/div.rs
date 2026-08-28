@@ -374,8 +374,8 @@ impl Mantissa {
 mod tests {
 
     use super::*;
+    use crate::common::test_rng::random;
     use crate::defs::WORD_SIGNIFICANT_BIT;
-    use rand::random;
 
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;

@@ -77,7 +77,9 @@ From this directory:
 bash scripts/ci.sh
 ```
 
-That runs the default workspace tests, `std`-only tests, and tests with `random` and `serde` enabled. MPFR goldens are not part of that script:
+Debug tests must finish in 10 minutes and the MPFR gate in 30 minutes (`CI_DEBUG_SECS` / `CI_MPFR_SECS`). Replay a random failure with `ZENITH_TEST_SEED=<seed> cargo test <name> -- --test-threads=1` (the seed is printed on panic).
+
+That runs the default workspace tests, `std`-only tests, and tests with `random` and `serde` enabled. On Linux x86_64 the script also runs MPFR goldens in release:
 
 ```bash
 cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1

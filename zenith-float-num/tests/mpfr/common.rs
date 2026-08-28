@@ -1,14 +1,14 @@
 //! Components used in MPFR integration tests
 
-use zenith_float_num::{
-    ExactNum, Consts, Exponent, Radix, RoundingMode, Sign, Word, WORD_BIT_SIZE,
-    WORD_SIGNIFICANT_BIT,
-};
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
-use rand::{Rng, SeedableRng};
 use rand::rngs::StdRng;
+use rand::{Rng, SeedableRng};
 use rug::Float;
 use std::cell::RefCell;
+use zenith_float_num::{
+    Consts, ExactNum, Exponent, Radix, RoundingMode, Sign, Word, WORD_BIT_SIZE,
+    WORD_SIGNIFICANT_BIT,
+};
 
 thread_local! {
     static TEST_RNG: RefCell<StdRng> = RefCell::new(StdRng::seed_from_u64(0x5EED_CAFE_BADC_0D00));
@@ -25,6 +25,7 @@ pub fn reset_test_rng() {
     TEST_RNG.with(|rng| {
         *rng.borrow_mut() = StdRng::seed_from_u64(0x5EED_CAFE_BADC_0D00);
     });
+    zenith_float_num::reseed_random(zenith_float_num::DEFAULT_RANDOM_SEED);
 }
 
 macro_rules! test_zf_op {

@@ -39,11 +39,7 @@ impl ExactNumNumber {
         }
 
         if self.is_zero() {
-            let sign = if n % 2 == 0 {
-                Sign::Pos
-            } else {
-                self.sign()
-            };
+            let sign = if n % 2 == 0 { Sign::Pos } else { self.sign() };
             return Self::new2(p, sign, self.inexact());
         }
 
@@ -90,9 +86,11 @@ impl ExactNumNumber {
 
         let ln = abs_self.ln(p_wrk + 12, RoundingMode::None, &mut cc)?;
         let inv_n = n_num.reciprocal(p_wrk + 12, RoundingMode::None)?;
-        let mut x = ln
-            .mul(&inv_n, p_wrk + 12, RoundingMode::None)?
-            .exp(p_wrk + 12, RoundingMode::None, &mut cc)?;
+        let mut x = ln.mul(&inv_n, p_wrk + 12, RoundingMode::None)?.exp(
+            p_wrk + 12,
+            RoundingMode::None,
+            &mut cc,
+        )?;
 
         loop {
             let p_x = p_wrk + 12;

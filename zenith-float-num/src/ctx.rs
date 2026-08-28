@@ -1,8 +1,8 @@
 //! Context is used in expressions returning `ExactNum`.
 
-use crate::ExactNum;
 use crate::Consts;
 use crate::Error;
+use crate::ExactNum;
 use crate::Exponent;
 use crate::RoundingMode;
 use crate::EXPONENT_MAX;

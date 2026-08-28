@@ -93,15 +93,13 @@ impl ExactNumNumber {
 
                 let xe = ex.reciprocal(p_x, RoundingMode::None)?;
 
-                let mut sinh = ex
-                    .sub(&xe, p_x, RoundingMode::None)
-                    .map_err(|e| -> Error {
-                        if let Error::ExponentOverflow(_) = e {
-                            Error::ExponentOverflow(self.sign())
-                        } else {
-                            e
-                        }
-                    })?;
+                let mut sinh = ex.sub(&xe, p_x, RoundingMode::None).map_err(|e| -> Error {
+                    if let Error::ExponentOverflow(_) = e {
+                        Error::ExponentOverflow(self.sign())
+                    } else {
+                        e
+                    }
+                })?;
                 sinh.div_by_2(RoundingMode::None);
 
                 let mut cosh = ex.add(&xe, p_x, RoundingMode::None)?;

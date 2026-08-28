@@ -216,7 +216,7 @@ mod tests {
 
     use core::ops::Deref;
 
-    use rand::random;
+    use crate::common::test_rng::random;
 
     use crate::{common::util::log2_ceil, Word, WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT};
 

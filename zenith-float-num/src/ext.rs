@@ -2200,22 +2200,22 @@ mod tests {
         assert!(d1.sign().is_none());
 
         for _ in 0..1000 {
-            let i = rand::random::<i64>();
+            let i = crate::common::test_rng::random::<i64>();
             let d1 = ExactNum::from_i64(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
             assert!(d1.cmp(&n1) == Some(0));
 
-            let i = rand::random::<u64>();
+            let i = crate::common::test_rng::random::<u64>();
             let d1 = ExactNum::from_u64(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
             assert!(d1.cmp(&n1) == Some(0));
 
-            let i = rand::random::<i128>();
+            let i = crate::common::test_rng::random::<i128>();
             let d1 = ExactNum::from_i128(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
             assert!(d1.cmp(&n1) == Some(0));
 
-            let i = rand::random::<u128>();
+            let i = crate::common::test_rng::random::<u128>();
             let d1 = ExactNum::from_u128(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
             assert!(d1.cmp(&n1) == Some(0));
@@ -2928,6 +2928,26 @@ mod tests {
         assert!(INF_NEG == INF_NEG);
         assert!(INF_POS == INF_POS);
     }
+
+    #[test]
+    fn test_oom_and_large_precision() {
+        let oom = ExactNum::nan(Some(Error::MemoryAllocation));
+        assert!(oom.is_nan());
+        assert_eq!(oom.err(), Some(Error::MemoryAllocation));
+
+        let n = ExactNum::new(usize::MAX);
+        assert!(n.is_nan());
+        assert_eq!(n.err(), Some(Error::InvalidArgument));
+
+        let p = 128 * WORD_BIT_SIZE;
+        let a = ExactNum::from_word(3, p);
+        let b = ExactNum::from_word(5, p);
+        let s = a.add(&b, p, RoundingMode::ToEven);
+        let m = a.mul(&b, p, RoundingMode::ToEven);
+        assert!(!s.is_nan(), "large-prec add hung or failed");
+        assert!(!m.is_nan(), "large-prec mul hung or failed");
+        assert_eq!(s.cmp(&ExactNum::from_word(8, p)), Some(0));
+    }
 }
 
 #[cfg(feature = "random")]
@@ -2940,10 +2960,10 @@ mod rand_tests {
     #[test]
     fn test_rand() {
         for _ in 0..100 {
-            let p = rand::random::<usize>() % 192 + DEFAULT_P;
-            let exp_from = rand::random::<Exponent>().abs() % TEST_EXP_BOUND;
+            let p = crate::common::test_rng::random::<usize>() % 192 + DEFAULT_P;
+            let exp_from = crate::common::test_rng::random::<Exponent>().abs() % TEST_EXP_BOUND;
             let span = (TEST_EXP_BOUND - exp_from).max(1);
-            let exp_shift = rand::random::<Exponent>().abs() % span;
+            let exp_shift = crate::common::test_rng::random::<Exponent>().abs() % span;
             let exp_to = exp_from + exp_shift;
 
             let n = ExactNum::random_normal(p, exp_from, exp_to);

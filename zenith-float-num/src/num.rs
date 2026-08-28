@@ -1215,12 +1215,17 @@ impl ExactNumNumber {
 
         let m = Mantissa::random_normal(p)?;
         let e = if exp_from < exp_to {
-            (rand::random::<isize>().abs() % (exp_to as isize - exp_from as isize)
+            (crate::common::test_rng::random::<isize>().abs()
+                % (exp_to as isize - exp_from as isize)
                 + exp_from as isize) as Exponent
         } else {
             exp_from
         };
-        let s = if rand::random::<u8>() & 1 == 0 { Sign::Pos } else { Sign::Neg };
+        let s = if crate::common::test_rng::random::<u8>() & 1 == 0 {
+            Sign::Pos
+        } else {
+            Sign::Neg
+        };
         Ok(ExactNumNumber {
             e,
             s,
@@ -1503,7 +1508,7 @@ mod tests {
     use crate::{common::util::random_subnormal, defs::WORD_MAX, Consts};
 
     use super::*;
-    use rand::random;
+    use crate::common::test_rng::random;
 
     #[cfg(not(feature = "std"))]
     use alloc::format;
@@ -1528,11 +1533,11 @@ mod tests {
         for _ in 0..1000 {
             let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
 
-            let i1: i8 = rand::random::<i8>();
-            let i2: i16 = rand::random::<i16>();
-            let i3: i32 = rand::random::<i32>();
-            let i4: i64 = rand::random::<i64>();
-            let i5: i128 = rand::random::<i128>();
+            let i1: i8 = crate::common::test_rng::random::<i8>();
+            let i2: i16 = crate::common::test_rng::random::<i16>();
+            let i3: i32 = crate::common::test_rng::random::<i32>();
+            let i4: i64 = crate::common::test_rng::random::<i64>();
+            let i5: i128 = crate::common::test_rng::random::<i128>();
 
             let n1 = ExactNumNumber::from_i8(i1, p).unwrap();
             let n2 = ExactNumNumber::from_i16(i2, p).unwrap();

@@ -3,7 +3,7 @@
 use crate::{
     common::util::{count_leading_ones, count_leading_zeroes_skip_first},
     defs::DEFAULT_P,
-    ExactNum, Consts, Exponent, RoundingMode, Sign, EXPONENT_BIT_SIZE, INF_NEG, INF_POS,
+    Consts, ExactNum, Exponent, RoundingMode, Sign, EXPONENT_BIT_SIZE, INF_NEG, INF_POS,
 };
 
 /// Computes error for ExactNum values near 1. This function is for internal use by macro `expr`.
@@ -300,7 +300,11 @@ mod tests {
     }
 
     fn gen_pair(m1: Mantissa, mut e: Exponent) -> (ExactNum, ExactNum) {
-        let s = if rand::random::<i8>() & 1 == 0 { Sign::Pos } else { Sign::Neg };
+        let s = if crate::common::test_rng::random::<i8>() & 1 == 0 {
+            Sign::Pos
+        } else {
+            Sign::Neg
+        };
 
         let mut m2 = m1.clone().unwrap();
 
@@ -321,7 +325,7 @@ mod tests {
         let mut m1 = Mantissa::random_normal(p).unwrap();
 
         if near1 != 0 {
-            let mut bits = rand::random::<usize>() % (p - 1) + 1;
+            let mut bits = crate::common::test_rng::random::<usize>() % (p - 1) + 1;
             let mut iter = m1.digits_mut().iter_mut().rev();
 
             while bits >= WORD_BIT_SIZE {
@@ -357,7 +361,7 @@ mod tests {
         let mut m1 = Mantissa::random_normal(p).unwrap();
 
         if near_pi != 0 {
-            let bits = rand::random::<usize>() % (p - 1) + 1;
+            let bits = crate::common::test_rng::random::<usize>() % (p - 1) + 1;
 
             let pirm = if near_pi < 0 { RoundingMode::ToZero } else { RoundingMode::FromZero };
 
@@ -429,7 +433,8 @@ mod tests {
         return; */
 
         for _ in 0..ERR_TEST_OUTER {
-            let ernd = rand::random::<Exponent>() % (EXPONENT_BIT_SIZE as Exponent - 5);
+            let ernd =
+                crate::common::test_rng::random::<Exponent>() % (EXPONENT_BIT_SIZE as Exponent - 5);
 
             for e in err_exp_samples(ernd) {
                 for esign in [1, -1] {
@@ -437,7 +442,8 @@ mod tests {
 
                     for near1 in near1set {
                         let e = e * esign;
-                        let p = (rand::random::<usize>() % 10 + 1) * WORD_BIT_SIZE;
+                        let p =
+                            (crate::common::test_rng::random::<usize>() % 10 + 1) * WORD_BIT_SIZE;
 
                         let (n1, n2) = gen_num_pair(p, e, near1);
 
@@ -667,7 +673,8 @@ mod tests {
                     for near_pi in [0, 1, -1] {
                         for add_half_pi in [false, true] {
                             let e = e * esign;
-                            let p = (rand::random::<usize>() % 10 + 1) * WORD_BIT_SIZE;
+                            let p = (crate::common::test_rng::random::<usize>() % 10 + 1)
+                                * WORD_BIT_SIZE;
 
                             let (n1, n2) = gen_num_pair_trig(p, e, near_pi, &mut cc, add_half_pi);
 
@@ -726,7 +733,7 @@ mod tests {
                 let near1set = if e == 0 { vec![0, -1] } else { vec![0] };
 
                 for near1 in near1set {
-                    let p = (rand::random::<usize>() % 10 + 1) * WORD_BIT_SIZE;
+                    let p = (crate::common::test_rng::random::<usize>() % 10 + 1) * WORD_BIT_SIZE;
 
                     let (n1, n2) = gen_num_pair(p, e, near1);
 

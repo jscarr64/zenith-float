@@ -80,10 +80,7 @@ struct ExtraCache {
 
 impl ExtraCache {
     fn new() -> Self {
-        ExtraCache {
-            bits: 0,
-            val: None,
-        }
+        ExtraCache { bits: 0, val: None }
     }
 
     fn cached_bit_len(&self) -> usize {
@@ -100,9 +97,7 @@ impl ExtraCache {
         F: FnMut(usize) -> Result<ExactNumNumber, Error>,
     {
         let p = round_p(k);
-        let p_wrk = p
-            .checked_add(WORD_BIT_SIZE)
-            .ok_or(Error::InvalidArgument)?;
+        let p_wrk = p.checked_add(WORD_BIT_SIZE).ok_or(Error::InvalidArgument)?;
         if self.bits >= p {
             if let Some(v) = &self.val {
                 let mut ret = v.clone()?;

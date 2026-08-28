@@ -888,13 +888,13 @@ mod tests {
 
     use super::*;
     use crate::common::consts::ONE;
+    use crate::common::test_rng::random;
     use crate::common::util::random_subnormal;
     use crate::common::util::test_loop_count;
     use crate::common::util::MAX_DEC_SCALE;
     use crate::common::util::TEST_EXP_BOUND;
     use crate::defs::{Sign, EXPONENT_MAX, EXPONENT_MIN};
     use crate::WORD_SIGNIFICANT_BIT;
-    use rand::random;
 
     #[cfg(not(feature = "std"))]
     use alloc::vec;
@@ -1048,9 +1048,7 @@ mod tests {
             let p2 = (random::<usize>() % p_rng + 1) * WORD_BIT_SIZE;
             let p = p1.min(p2);
 
-            let mut n =
-                ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND)
-                    .unwrap();
+            let mut n = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
             let rdx = random_radix();
 
             let (s1, m1, e1) = n
@@ -1100,9 +1098,7 @@ mod tests {
 
             let mut n = random_subnormal(p1);
             let rdx = random_radix();
-            if rdx == Radix::Dec
-                && n.exponent().unsigned_abs() as usize > MAX_DEC_SCALE
-            {
+            if rdx == Radix::Dec && n.exponent().unsigned_abs() as usize > MAX_DEC_SCALE {
                 continue;
             }
 

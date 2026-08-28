@@ -1,13 +1,13 @@
 //! tests
 
 use crate::common::consts::ONE;
-use crate::common::util::{count_leading_ones, count_leading_zeroes_skip_first, log2_floor};
+use crate::common::test_rng::random;
 use crate::common::util::TEST_EXP_BOUND;
+use crate::common::util::{count_leading_ones, count_leading_zeroes_skip_first, log2_floor};
 use crate::defs::{RoundingMode, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::{Exponent, Sign};
-use rand::random;
 
 const TEST_ITERS: usize = 256;
 
@@ -33,11 +33,12 @@ fn test_ln_exp() {
     return; */
 
     for i in 0..TEST_ITERS {
-        let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
         if i & 1 == 0 {
-            let mut d1 = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
+            let mut d1 =
+                ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
             d1.set_sign(Sign::Pos);
 
             let d2 = d1.ln(prec, RoundingMode::ToEven, &mut cc).unwrap();
@@ -109,8 +110,8 @@ fn test_powi() {
 
     for _ in 0..TEST_ITERS {
         let i = random::<usize>() % 1000 + 1;
-        let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let mut d1 = ExactNumNumber::random_normal(
             p1,
             -TEST_EXP_BOUND / i as Exponent,
@@ -148,11 +149,12 @@ fn test_log2_log10_pow() {
     let mut cc = Consts::new().unwrap();
 
     for i in 0..TEST_ITERS {
-        let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
         if i & 1 == 0 {
-            let mut d1 = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
+            let mut d1 =
+                ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
             d1.set_sign(Sign::Pos);
 
             let d2 = d1.log2(prec, RoundingMode::ToEven, &mut cc).unwrap();
@@ -269,11 +271,12 @@ fn test_log_pow() {
     let mut cc = Consts::new().unwrap();
 
     for i in 0..TEST_ITERS {
-        let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let p2 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p2 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         if i & 1 == 0 {
-            let mut d1 = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
+            let mut d1 =
+                ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
             let mut b = ExactNumNumber::random_normal(p2, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
             d1.set_sign(Sign::Pos);
             b.set_sign(Sign::Pos);
@@ -294,11 +297,7 @@ fn test_log_pow() {
                 eps.set_exponent(eps.exponent() + ln_b_bits);
             }
             let err = b.pow(&eps, prec, RoundingMode::Up, &mut cc).unwrap();
-            let err = if err.is_zero() {
-                ExactNumNumber::min_positive(prec).unwrap()
-            } else {
-                err
-            };
+            let err = if err.is_zero() { ExactNumNumber::min_positive(prec).unwrap() } else { err };
 
             if b.exponent() > 0 {
                 assert!(
@@ -424,8 +423,8 @@ fn test_sin_asin() {
 
     // argument between -pi/2, pi/2
     for i in 0..TEST_ITERS {
-        let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
         if i & 1 == 0 {
             let mut d1 = ExactNumNumber::random_normal(p1, -100, 2).unwrap();
@@ -492,8 +491,8 @@ fn test_sin_asin() {
 
     // argument between -pi, -pi/2 and between pi/2, pi
     for _ in 0..TEST_ITERS {
-        let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
         let mut d1 = ExactNumNumber::random_normal(p1, -100, 2).unwrap();
 
@@ -585,8 +584,8 @@ fn test_cos_acos() {
     return; */
 
     for i in 0..TEST_ITERS {
-        let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
         if i & 1 == 0 {
             let mut d1 = ExactNumNumber::random_normal(p1, -(prec as Exponent), 3).unwrap();
@@ -680,8 +679,8 @@ fn test_tan_atan() {
     half_pi.set_exponent(1);
 
     for i in 0..TEST_ITERS {
-        let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
         if i & 1 == 0 {
             let mut d1 = ExactNumNumber::random_normal(p1, -100, 2).unwrap();
@@ -763,8 +762,8 @@ fn test_sinh_asinh() {
     let mut cc = Consts::new().unwrap();
 
     for i in 0..TEST_ITERS {
-        let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
         if i & 1 == 0 {
             let d1 = ExactNumNumber::random_normal(p1, -100, 10).unwrap();
@@ -790,7 +789,8 @@ fn test_sinh_asinh() {
                 d1
             );
         } else {
-            let mut d1 = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
+            let mut d1 =
+                ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
 
             let d2 = d1.asinh(prec, RoundingMode::ToEven, &mut cc).unwrap();
             let d3 = d2.sinh(prec, RoundingMode::ToEven, &mut cc).unwrap();
@@ -831,8 +831,8 @@ fn test_cosh_acosh() {
     let mut cc = Consts::new().unwrap();
 
     for i in 0..TEST_ITERS {
-        let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
         if i & 1 == 0 {
             let d1 = ExactNumNumber::random_normal(p1, -100, 10).unwrap();
@@ -901,8 +901,8 @@ fn test_tanh_atanh() {
     }
 
     for i in 0..TEST_ITERS {
-        let p1 = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
+        let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
 
         let (d1, d3) = if i & 1 == 0 {
             let d1 = ExactNumNumber::random_normal(p1, -100, exp_to).unwrap();

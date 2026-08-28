@@ -119,8 +119,7 @@ mod tests {
         let from_neg: ExactNum = serde_json::from_str("-7").expect("neg int");
         assert_eq!(from_neg.cmp(&ExactNum::from(-7i32)), Some(0));
 
-        let from_str: ExactNum =
-            serde_json::from_str("\"1.25e+0\"").expect("decimal string");
+        let from_str: ExactNum = serde_json::from_str("\"1.25e+0\"").expect("decimal string");
         assert!(!from_str.is_nan());
         assert!(from_str.is_positive());
     }

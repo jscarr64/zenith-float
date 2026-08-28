@@ -113,7 +113,7 @@ pub fn add_carry(a: Word, b: Word, c: Word, r: &mut Word) -> Word {
     #[cfg(target_arch = "x86_64")]
     {
         // platform-specific operation
-        core::arch::x86_64::_addcarry_u64(c as u8, a, b, r) as Word 
+        core::arch::x86_64::_addcarry_u64(c as u8, a, b, r) as Word
     }
 
     #[cfg(target_arch = "x86")]
@@ -144,13 +144,13 @@ pub fn sub_borrow(a: Word, b: Word, c: Word, r: &mut Word) -> Word {
     #[cfg(target_arch = "x86_64")]
     {
         // platform-specific operation
-        core::arch::x86_64::_subborrow_u64(c as u8, a, b, r) as Word 
+        core::arch::x86_64::_subborrow_u64(c as u8, a, b, r) as Word
     }
 
     #[cfg(target_arch = "x86")]
     {
         // platform-specific operation
-        core::arch::x86::_subborrow_u32(c as u8, a, b, r) as Word 
+        core::arch::x86::_subborrow_u32(c as u8, a, b, r) as Word
     }
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "x86")))]
@@ -384,16 +384,16 @@ pub fn find_one_from(slice: &[Word], start_pos: usize) -> Option<usize> {
 #[cfg(test)]
 pub(crate) fn random_subnormal(p: usize) -> ExactNumNumber {
     let p = round_p(if p < 3 * WORD_BIT_SIZE { 3 * WORD_BIT_SIZE } else { p });
-    let n = p - rand::random::<usize>() % (2 * WORD_BIT_SIZE) - 1;
+    let n = p - crate::common::test_rng::random::<usize>() % (2 * WORD_BIT_SIZE) - 1;
     let mut m = Vec::with_capacity(p / WORD_BIT_SIZE);
 
     for _ in 0..n / WORD_BIT_SIZE {
-        m.push(rand::random::<Word>());
+        m.push(crate::common::test_rng::random::<Word>());
     }
 
     if n % WORD_BIT_SIZE > 0 {
-        let w =
-            (rand::random::<Word>() | WORD_SIGNIFICANT_BIT) >> (WORD_BIT_SIZE - n % WORD_BIT_SIZE);
+        let w = (crate::common::test_rng::random::<Word>() | WORD_SIGNIFICANT_BIT)
+            >> (WORD_BIT_SIZE - n % WORD_BIT_SIZE);
         m.push(w);
     } else {
         *m.last_mut().unwrap() |= WORD_SIGNIFICANT_BIT;
@@ -401,7 +401,11 @@ pub(crate) fn random_subnormal(p: usize) -> ExactNumNumber {
 
     m.resize(p / WORD_BIT_SIZE, 0);
 
-    let s = if rand::random::<u8>() & 1 == 0 { Sign::Pos } else { Sign::Neg };
+    let s = if crate::common::test_rng::random::<u8>() & 1 == 0 {
+        Sign::Pos
+    } else {
+        Sign::Neg
+    };
 
     ExactNumNumber::from_raw_parts(&m, n, s, EXPONENT_MIN, false).unwrap()
 }
@@ -409,7 +413,7 @@ pub(crate) fn random_subnormal(p: usize) -> ExactNumNumber {
 #[cfg(test)]
 #[inline]
 pub fn rand_p() -> usize {
-    rand::random::<usize>() % 1000 + crate::defs::DEFAULT_P
+    crate::common::test_rng::random::<usize>() % 1000 + crate::defs::DEFAULT_P
 }
 
 // test add_carry and sub_borrow performance.
@@ -420,7 +424,7 @@ fn test_carry() {
         for _ in 0..100000 {
             let mut t = vec![];
             for _ in 0..1024 {
-                t.push(rand::random::<Word>());
+                t.push(crate::common::test_rng::random::<Word>());
             }
             v.push(t);
         }
@@ -428,7 +432,7 @@ fn test_carry() {
         let start_time = std::time::Instant::now();
 
         for slice in v.iter_mut() {
-            shift_slice_right(slice, rand::random::<usize>() % 1000);
+            shift_slice_right(slice, crate::common::test_rng::random::<usize>() % 1000);
         }
 
         let time = start_time.elapsed();
@@ -438,7 +442,7 @@ fn test_carry() {
         for _ in 0..100000 {
             let mut t = vec![];
             for _ in 0..1024 {
-                t.push(rand::random::<Word>());
+                t.push(crate::common::test_rng::random::<Word>());
             }
             v.push(t);
         }
@@ -446,7 +450,7 @@ fn test_carry() {
         let start_time = std::time::Instant::now();
 
         for slice in v.iter_mut() {
-            shift_slice_left(slice, rand::random::<usize>() % 1000);
+            shift_slice_left(slice, crate::common::test_rng::random::<usize>() % 1000);
         }
 
         let time = start_time.elapsed();

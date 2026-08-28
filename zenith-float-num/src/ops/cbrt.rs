@@ -83,7 +83,7 @@ mod tests {
         let mut eps = ONE.clone().unwrap();
 
         for _ in 0..1000 {
-            let prec = (rand::random::<usize>() % 5 + 1) * WORD_BIT_SIZE;
+            let prec = (crate::common::test_rng::random::<usize>() % 5 + 1) * WORD_BIT_SIZE;
             let d1 = ExactNumNumber::random_normal(prec, EXPONENT_MIN, EXPONENT_MAX).unwrap();
             let d2 = d1.cbrt(prec, RoundingMode::ToEven).unwrap();
             let d3 = d2

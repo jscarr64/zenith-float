@@ -5,16 +5,17 @@ use std::ops::Add;
 
 use crate::mpfr::common::{
     assert_float_close, conv_to_mpfr, get_last_zero, get_near_one, get_oned_sides, get_oned_zeroed,
-    get_periodic, get_random_rnd_pair, reset_test_rng, test_random, test_zf_op_no_cc, test_zf_rem_pi,
+    get_periodic, get_random_rnd_pair, reset_test_rng, test_random, test_zf_op_no_cc,
+    test_zf_rem_pi,
 };
 use crate::mpfr::common::{get_prec_rng, test_zf_op};
-use zenith_float_num::{
-    ExactNum, Consts, Exponent, EXPONENT_BIT_SIZE, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
-};
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
 use rug::{
     float::{exp_max, exp_min},
     Float,
+};
+use zenith_float_num::{
+    Consts, ExactNum, Exponent, EXPONENT_BIT_SIZE, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
 };
 
 #[test]
@@ -290,7 +291,18 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
 
             test_zf_op!(true, n, exp, f, exp, p, rm, rnd, (n, p, rm, "exp"), cc);
             test_zf_op!(true, n, exp2, f, exp2, p, rm, rnd, (n, p, rm, "exp2"), cc);
-            test_zf_op!(true, n, exp10, f, exp10, p, rm, rnd, (n, p, rm, "exp10"), cc);
+            test_zf_op!(
+                true,
+                n,
+                exp10,
+                f,
+                exp10,
+                p,
+                rm,
+                rnd,
+                (n, p, rm, "exp10"),
+                cc
+            );
             test_zf_op!(true, n, sinh, f, sinh, p, rm, rnd, (n, p, rm, "sinh"), cc);
             test_zf_op!(true, n, cosh, f, cosh, p, rm, rnd, (n, p, rm, "cosh"), cc);
             test_zf_op!(true, n, tanh, f, tanh, p, rm, rnd, (n, p, rm, "tanh"), cc);

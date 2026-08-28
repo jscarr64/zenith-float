@@ -16,9 +16,10 @@
 
 extern crate alloc;
 
+mod ball;
 mod common;
-mod conv;
 mod complex;
+mod conv;
 pub mod ctx;
 mod defs;
 mod ext;
@@ -28,7 +29,6 @@ mod ops;
 mod parser;
 mod radix_float;
 mod strop;
-mod ball;
 
 #[cfg(feature = "std")]
 mod for_3rd;
@@ -36,6 +36,10 @@ mod for_3rd;
 #[doc(hidden)]
 pub mod macro_util;
 
+pub use crate::ball::ziv_round;
+pub use crate::ball::Ball;
+pub use crate::common::buf::INLINE_WORDS;
+pub use crate::complex::ExactComplex;
 pub use crate::defs::Error;
 pub use crate::defs::Exponent;
 pub use crate::defs::Radix;
@@ -43,21 +47,17 @@ pub use crate::defs::RoundingMode;
 pub use crate::defs::Sign;
 pub use crate::defs::Word;
 pub use crate::ext::ExactNum;
-pub use crate::complex::ExactComplex;
 pub use crate::ext::FromExt;
-pub use crate::radix_float::RadixFloat;
 pub use crate::ext::INF_NEG;
 pub use crate::ext::INF_POS;
 pub use crate::ext::NAN;
-pub use crate::ops::consts::Consts;
+pub use crate::ops::consts::CachedFBig;
 pub use crate::ops::consts::ConstCache;
 pub use crate::ops::consts::ConstCacheInfo;
-pub use crate::ops::consts::CachedFBig;
+pub use crate::ops::consts::Consts;
 #[cfg(feature = "std")]
 pub use crate::ops::consts::SharedConsts;
-pub use crate::ball::Ball;
-pub use crate::ball::ziv_round;
-pub use crate::common::buf::INLINE_WORDS;
+pub use crate::radix_float::RadixFloat;
 
 pub use crate::defs::EXPONENT_BIT_SIZE;
 pub use crate::defs::EXPONENT_MAX;
@@ -69,13 +69,18 @@ pub use crate::defs::WORD_SIGNIFICANT_BIT;
 
 pub use crate::common::util::MAX_PREC_RETRY;
 
+#[cfg(feature = "random")]
+pub use crate::common::test_rng::{
+    random as seeded_random, random_seed, reseed_random, DEFAULT_RANDOM_SEED,
+};
+
 #[cfg(test)]
 mod tests {
 
     #[test]
     fn test_bigfloat() {
-        use crate::ExactNum;
         use crate::Consts;
+        use crate::ExactNum;
         use crate::RoundingMode;
 
         // Precision with some space for error.

@@ -7,8 +7,8 @@ use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::Sign;
-use crate::WORD_BIT_SIZE;
 use crate::Word;
+use crate::WORD_BIT_SIZE;
 
 use alloc::vec::Vec;
 
@@ -263,9 +263,10 @@ impl ExactNumNumber {
             let b = bernoulli_even(k, p)?;
             let two_k = Self::from_word((2 * k) as Word, p)?;
             let two_k_m1 = Self::from_word((2 * k - 1) as Word, p)?;
-            let den = two_k
-                .mul(&two_k_m1, p, RoundingMode::None)?
-                .mul(&zpow, p, RoundingMode::None)?;
+            let den =
+                two_k
+                    .mul(&two_k_m1, p, RoundingMode::None)?
+                    .mul(&zpow, p, RoundingMode::None)?;
             let term = b.div(&den, p, RoundingMode::None)?;
             s = s.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || (term.exponent() as isize) + (p as isize) < 0 {

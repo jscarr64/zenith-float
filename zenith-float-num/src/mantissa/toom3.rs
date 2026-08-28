@@ -8,7 +8,10 @@ use crate::defs::Word;
 use crate::mantissa::Mantissa;
 
 impl Mantissa {
-    fn toom3_get_splits(m: &[Word], l: usize) -> (SliceWithSign<'_>, SliceWithSign<'_>, SliceWithSign<'_>) {
+    fn toom3_get_splits(
+        m: &[Word],
+        l: usize,
+    ) -> (SliceWithSign<'_>, SliceWithSign<'_>, SliceWithSign<'_>) {
         let b11 = l.min(m.len());
         let b12 = l.min(m.len() - b11) + b11;
         let b13 = l.min(m.len() - b12) + b12;
@@ -175,9 +178,9 @@ impl Mantissa {
 mod tests {
 
     use super::*;
+    use crate::common::test_rng::random;
     use crate::defs::DoubleWord;
     use crate::defs::WORD_BIT_SIZE;
-    use rand::random;
 
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;

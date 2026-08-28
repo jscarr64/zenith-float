@@ -29,10 +29,7 @@ pub struct WordBuf {
 
 #[derive(Debug)]
 enum Storage {
-    Inline {
-        data: [Word; INLINE_WORDS],
-        len: u8,
-    },
+    Inline { data: [Word; INLINE_WORDS], len: u8 },
     Heap(Vec<Word>),
 }
 
@@ -260,5 +257,11 @@ mod tests {
         assert!(!b.is_inline());
         assert_eq!(b.len(), 8);
         assert_eq!(b[0], 7);
+    }
+
+    #[test]
+    fn huge_reserve_returns_memory_error() {
+        let words = (isize::MAX as usize) / core::mem::size_of::<Word>() + 1;
+        assert!(matches!(WordBuf::new(words), Err(Error::MemoryAllocation)));
     }
 }

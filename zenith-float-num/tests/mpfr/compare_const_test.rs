@@ -2,22 +2,22 @@
 
 use crate::mpfr::common::get_prec_rng;
 use crate::mpfr::common::test_zf_const;
-use crate::mpfr::common::{assert_float_close, get_random_rnd_pair};
-use zenith_float_num::RoundingMode;
-use zenith_float_num::{ExactNum, Consts, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
+use crate::mpfr::common::{assert_float_close, get_random_rnd_pair, reset_test_rng, test_random};
 use gmp_mpfr_sys::{
     gmp::exp_t,
     mpfr::{self, rnd_t},
 };
-use rand::random;
 use rug::{
     float::{exp_max, exp_min},
     Float,
 };
+use zenith_float_num::RoundingMode;
+use zenith_float_num::{Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
 // constants computation
 #[test]
 fn mpfr_compare_const() {
+    reset_test_rng();
     let repeat_cnt = 100;
     let run_cnt = 500;
 
@@ -57,7 +57,7 @@ fn mpfr_compare_const() {
         let mut cc = Consts::new().unwrap();
 
         for _ in 0..run_cnt {
-            let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
+            let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
 
             let (rm, rnd) = get_random_rnd_pair();
 

@@ -1,8 +1,8 @@
 //! Structured stress tests for parse/format round-trip across radices 2–36.
 
-use rand::random;
 use zenith_float_num::{
-    Consts, ExactNum, Exponent, Radix, RoundingMode, Sign, WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT,
+    seeded_random as random, Consts, ExactNum, Exponent, Radix, RoundingMode, Sign,
+    DEFAULT_RANDOM_SEED, WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT,
 };
 
 const LOOPS_PER_BASE: usize = 24;
@@ -16,6 +16,7 @@ fn roundtrip_exact(rdx: Radix, n: &ExactNum, p: usize, rm: RoundingMode, cc: &mu
 
 #[test]
 fn radix_roundtrip_commensurable() {
+    zenith_float_num::reseed_random(DEFAULT_RANDOM_SEED);
     let mut cc = Consts::new().unwrap();
 
     for rdx in [Radix::Bin, Radix::Oct, Radix::Hex] {

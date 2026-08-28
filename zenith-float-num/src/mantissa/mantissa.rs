@@ -990,7 +990,6 @@ impl Mantissa {
                     } else {
                         *v = 0;
                     }
-                    
                 }
                 self.m[self_len - 1] = WORD_SIGNIFICANT_BIT;
                 return true;
@@ -1050,13 +1049,13 @@ impl Mantissa {
     pub fn random_normal(p: usize) -> Result<Self, Error> {
         let mut m = Self::reserve_new(Self::bit_len_to_word_len(p))?;
         for v in m.iter_mut() {
-            *v = rand::random::<Word>();
+            *v = crate::common::test_rng::random::<Word>();
         }
         let mut ret = Mantissa { m, n: 0 };
         if !ret.is_all_zero() {
             Self::maximize(&mut ret.m);
             ret.n = WORD_BIT_SIZE * ret.m.len();
-            ret.m[0] ^= rand::random::<Word>() >> 1;
+            ret.m[0] ^= crate::common::test_rng::random::<Word>() >> 1;
         }
         Ok(ret)
     }

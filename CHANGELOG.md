@@ -31,6 +31,10 @@
 - `ExactNum::nth_root` / `expr!` `root(x, n)` — general n-th root (`sqrt`/`cbrt` delegation, composite factors, Newton for primes).
 - `ExactNum::sinh_cosh` — paired hyperbolic evaluation with a single `exp(|x|)` path.
 - `ExactNum::copysign`, `ExactNum::next_after` — software IEEE sign and successor.
+- MPFR bit-oracle for `copysign` at high precision (`compare_copysign_test`); sign is applied before rounding so directed modes match MPFR.
+- Seeded test RNG (`reseed_random`, `ZENITH_TEST_SEED`; panic hook prints the seed).
+- `scripts/ci.sh` enforces debug / MPFR wall-time budgets (10 min / 30 min).
+- Allocation failure at huge precision returns `NaN` (`Error::MemoryAllocation`), with a large-precision add/mul smoke test.
 - `ExactNum::fma` / `expr!` `fma(a, b, c)` — fused multiply-add with single final rounding.
 - Criterion benchmarks in `zenith-float-num/benches/` (arithmetic, transcendentals, composite); `./scripts/bench.sh`.
 - FFT-scale multiply benchmark tier (`arithmetic/mul_fft`, 346k and 524k bits).

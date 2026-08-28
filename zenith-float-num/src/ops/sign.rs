@@ -1,7 +1,7 @@
 //! Sign manipulation and successor operations.
 
 use crate::common::util::{round_p, sub_borrow};
-use crate::defs::{Error, Word, WORD_SIGNIFICANT_BIT, WORD_MAX};
+use crate::defs::{Error, Word, WORD_MAX, WORD_SIGNIFICANT_BIT};
 use crate::num::ExactNumNumber;
 use crate::{RoundingMode, Sign};
 
@@ -38,9 +38,7 @@ impl ExactNumNumber {
         let p = round_p(p);
         Self::p_assertion(p)?;
 
-        let mut ret = self.abs()?;
-        ret.set_precision(p, rm)?;
-
+        let mut ret = self.clone()?;
         if sign.is_negative() {
             ret.set_sign(Sign::Neg);
         } else if sign.is_zero() {
@@ -48,6 +46,7 @@ impl ExactNumNumber {
         } else {
             ret.set_sign(Sign::Pos);
         }
+        ret.set_precision(p, rm)?;
 
         ret.set_inexact(ret.inexact() | self.inexact() | sign.inexact());
         Ok(ret)
@@ -59,12 +58,7 @@ impl ExactNumNumber {
     ///
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
-    pub fn next_after(
-        &self,
-        toward: &Self,
-        p: usize,
-        _rm: RoundingMode,
-    ) -> Result<Self, Error> {
+    pub fn next_after(&self, toward: &Self, p: usize, _rm: RoundingMode) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
 
@@ -153,20 +147,10 @@ mod tests {
 
         let zero = ExactNumNumber::new(p).unwrap();
         let min_pos = ExactNumNumber::min_positive(p).unwrap();
-        assert!(
-            zero.next_after(&two, p, rm)
-                .unwrap()
-                .cmp(&min_pos)
-                == 0
-        );
+        assert!(zero.next_after(&two, p, rm).unwrap().cmp(&min_pos) == 0);
 
         let neg_min = min_pos.neg().unwrap();
-        assert!(
-            zero.next_after(&neg_min, p, rm)
-                .unwrap()
-                .cmp(&neg_min)
-                == 0
-        );
+        assert!(zero.next_after(&neg_min, p, rm).unwrap().cmp(&neg_min) == 0);
 
         assert!(one.next_after(&one, p, rm).unwrap().cmp(&one) == 0);
     }

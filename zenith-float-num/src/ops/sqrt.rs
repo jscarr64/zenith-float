@@ -153,7 +153,7 @@ mod tests {
         let mut eps = ONE.clone().unwrap();
 
         for _ in 0..1000 {
-            let prec = (rand::random::<usize>() % 32 + 1) * WORD_BIT_SIZE;
+            let prec = (crate::common::test_rng::random::<usize>() % 32 + 1) * WORD_BIT_SIZE;
 
             let mut d1 = ExactNumNumber::random_normal(prec, EXPONENT_MIN, EXPONENT_MAX).unwrap();
             if d1.is_negative() {

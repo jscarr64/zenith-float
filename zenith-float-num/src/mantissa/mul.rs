@@ -95,7 +95,7 @@ impl Mantissa {
 mod tests {
 
     use super::*;
-    use rand::random;
+    use crate::common::test_rng::random;
 
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;

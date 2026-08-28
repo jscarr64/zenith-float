@@ -127,6 +127,8 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `cargo test` with `no-default-features --features std` | ✅ |
 | `cargo test --features random,serde` | ✅ |
 | MPFR bit-oracle tests (`mpfr-tests`) | ✅ | Release gate on Linux x86_64 in `scripts/ci.sh` |
+| CI wall-time budgets | ✅ | Debug &lt; 10 min, MPFR &lt; 30 min (`CI_DEBUG_SECS` / `CI_MPFR_SECS`) |
+| Seeded random tests | ✅ | Default seed `0x5EED_CAFE_BADC_0D00`; `ZENITH_TEST_SEED` to replay |
 | Criterion / dedicated benches | ✅ `zenith-float-num/benches/` (arithmetic, transcendentals, composite) |
 | Cross-library compare (astro / dashu) | 🟡 `zenith-float-compare/` + `scripts/compare-bench.sh` (release gate) |
 | `proptest` / quickcheck | ⬜ Hand-written random loops (`TEST_ITERS = 256`) |
@@ -190,23 +192,23 @@ Shared vs dashu: public `ziv_round` / `Ball` plus the same retry loop already us
 
 For **675K diverse formulas**, correctness and operability matter more than matching every dashu feature on day one.
 
-| Priority | Gap | Why it matters |
-| ---------- | ----- | ---------------- |
-| P0 | MPFR oracle in release CI (or nightly) | Done: `scripts/ci.sh` runs `--features mpfr-tests --release` on Linux x86_64 |
-| P0 | MPFR coverage for `exp2`, `exp10`, `rem_pi` | Done in `compare_ops` / `compare_special` (`rem_pi`: identity for \|x\| small; sin/cos vs MPFR for large) |
-| P0 | Working-precision caps documented + enforced | Done: `MAX_PREC_RETRY` / `bump_prec_retry` + `doc/PRECISION.md` |
-| P1 | `fma` | Done: `ExactNum::fma` / `mul_add` + `expr!`; full-width product; skip when exponents are disjoint |
-| P1 | `nth_root(n)` | Done: `ExactNum::nth_root` + `expr!` `root`; MPFR 1-ULP for n=4,5 in fuzz harness |
-| P1 | `sinh_cosh` paired evaluation | Done: `ExactNum::sinh_cosh` + MPFR paired compare |
-| P1 | Fuzz MPFR differential (all rounding modes) | Done: `tests/mpfr/fuzz_round_modes.rs` |
-| P1 | Benchmark regression tracking in CI (optional nightly) | Done: `CI_BENCH=1 ./scripts/ci.sh` → `scripts/bench-compare.sh` |
-| P1 | Release compare vs astro-float / dashu-float | Done: `doc/compare-results.tsv` (astro 132-bit); `./scripts/compare-bench.sh --dashu` optional |
-| P1 | `expr!` correct-rounding semantics documented per op | Done: `doc/EXPR.md` (all leaves, including constants and `ldexp`/`logb`) |
-| P2 | Extra constants (φ, √2, γ) | Done: `ConstCache` √2, φ, `euler_gamma`; `expr!` `sqrt2`/`phi`/`euler_gamma` |
-| P2 | `LowerExp` / `UpperExp` formatting | Done: `{:e}` / `{:E}` plus `LowerHex` (`std`) |
-| P2 | `frexp` / `ldexp` / `scalb` / `logb` | Done: methods + `expr!` `ldexp`/`scalb`/`logb` (`frexp`/`ilogb` are methods) |
-| P3 | Special functions (erf, Gamma, Bessel J_n) | Done: `erf`/`erfc`, `gamma`/`ln_gamma`, integer-order `bessel_j`; MPFR 1-ULP |
-| P3 | Parallel evaluation / thread-safe shared `Consts` | Done: `SharedConsts` (`std`, mutex around `Consts`) |
+| Priority | Status | Gap | Why it matters |
+| ---------- | :------: | ----- | ---------------- |
+| P0 | ✅ | MPFR oracle in release CI (or nightly) | `scripts/ci.sh` runs `--features mpfr-tests --release` on Linux x86_64 |
+| P0 | ✅ | MPFR coverage for `exp2`, `exp10`, `rem_pi` | `compare_ops` / `compare_special` (`rem_pi`: identity for \|x\| small; sin/cos vs MPFR for large) |
+| P0 | ✅ | Working-precision caps documented + enforced | `MAX_PREC_RETRY` / `bump_prec_retry` + `doc/PRECISION.md` |
+| P1 | ✅ | `fma` | `ExactNum::fma` / `mul_add` + `expr!`; full-width product; skip when exponents are disjoint |
+| P1 | ✅ | `nth_root(n)` | `ExactNum::nth_root` + `expr!` `root`; MPFR 1-ULP for n=4,5 in fuzz harness |
+| P1 | ✅ | `sinh_cosh` paired evaluation | `ExactNum::sinh_cosh` + MPFR paired compare |
+| P1 | ✅ | Fuzz MPFR differential (all rounding modes) | `tests/mpfr/fuzz_round_modes.rs` |
+| P1 | 🟡 | Benchmark regression tracking in CI (optional nightly) | Opt-in: `CI_BENCH=1 ./scripts/ci.sh` → `scripts/bench-compare.sh` |
+| P1 | 🟡 | Release compare vs astro-float / dashu-float | `doc/compare-results.tsv` (astro 132-bit); `./scripts/compare-bench.sh --dashu` optional; not default CI |
+| P1 | ✅ | `expr!` correct-rounding semantics documented per op | `doc/EXPR.md` (all leaves, including constants and `ldexp`/`logb`) |
+| P2 | ✅ | Extra constants (φ, √2, γ) | `ConstCache` √2, φ, `euler_gamma`; `expr!` `sqrt2`/`phi`/`euler_gamma` |
+| P2 | ✅ | `LowerExp` / `UpperExp` formatting | `{:e}` / `{:E}` plus `LowerHex` (`std`) |
+| P2 | ✅ | `frexp` / `ldexp` / `scalb` / `logb` | Methods + `expr!` `ldexp`/`scalb`/`logb` (`frexp`/`ilogb` are methods) |
+| P3 | ✅ | Special functions (erf, Gamma, Bessel J_n) | `erf`/`erfc`, `gamma`/`ln_gamma`, integer-order `bessel_j`; MPFR 1-ULP |
+| P3 | ✅ | Parallel evaluation / thread-safe shared `Consts` | `SharedConsts` (`std`, mutex around `Consts`) |
 
 ---
 
@@ -256,7 +258,7 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 
 - [x] **`copysign`**, **`next_after`** — integer-limb sign and total-order successor; no hardware floats.
   - [x] `copysign(magnitude, sign)`; `next_after(x, toward)` with explicit direction
-  - [ ] MPFR oracle for `copysign` at extreme precision (unit-tested)
+  - [x] MPFR oracle for `copysign` at extreme precision (`tests/mpfr/compare_copysign_test.rs`)
 
 ### 3.3 Testing & performance (P1)
 
@@ -266,10 +268,10 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 - [x] Capture `doc/compare-results.tsv` at release and document vs astro 0.9.6 / dashu 0.6.0
 - [x] Fuzz harness: MPFR bit-exact under all rounding modes (dashu-style; complements property tests in `ops/tests.rs`)
 - [x] Optional: nightly bench regression gate in CI (`CI_BENCH=1` runs `scripts/bench-compare.sh`)
-- [ ] Track CI wall time budget (target: full gate &lt; 10 min debug, &lt; 30 min with MPFR)
-- [ ] Seed-controlled random tests for reproducible failures
+- [x] Track CI wall time budget (target: full gate &lt; 10 min debug, &lt; 30 min with MPFR) — `scripts/ci.sh` (`CI_DEBUG_SECS` / `CI_MPFR_SECS`; `CI_SKIP_TIME_BUDGET=1` to skip)
+- [x] Seed-controlled random tests for reproducible failures — `ZENITH_TEST_SEED` / `reseed_random`; panic hook prints the seed
 - [ ] Accumath-driven regression corpus (golden files from real formula subsets)
-- [ ] Memory high-water tests for large precisions (OOM → clean `NaN`, not hang)
+- [x] Memory high-water tests for large precisions (OOM → clean `NaN`, not hang)
 
 ### 3.4 Accumath integration (P1–P2)
 
@@ -336,3 +338,4 @@ Already implemented but not in a crates.io release:
 - `ConstCache` / `CachedFBig`, `Ball` / `ziv_round`, stack-inlined `WordBuf`, MPFR all-round-mode fuzz
 - Bench history: `doc/bench-baselines.tsv`, `doc/compare-results.tsv` (astro 0.9.x vs zenith at 132 bits)
 - `euler_gamma`, `frexp`/`ldexp`/`scalb`/`logb`/`ilogb`, `LowerExp`/`UpperExp`/`LowerHex`
+- Seeded test RNG (`ZENITH_TEST_SEED` / `reseed_random`), CI wall-time budgets, OOM → `NaN` tests
