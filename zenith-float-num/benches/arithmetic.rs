@@ -1,12 +1,10 @@
 //! Arithmetic benchmarks: add, mul, div, reciprocal, remainder, sqrt.
 
 mod shared;
-mod parse_util;
 mod common;
 
 use common::{pair_fixtures, parse_fixtures, ARITH_BATCH, FFT_MUL_BATCH, FFT_MUL_PRECISIONS};
-use parse_util::cycle_batch;
-use shared::{init_cc, sink, PRECISIONS};
+use shared::{cycle_batch, init_cc, sink, PRECISIONS};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use zenith_float_num::{ExactNum, RoundingMode};
 

@@ -1,6 +1,6 @@
 //! Arithmetic-only fixtures (compiled only from `arithmetic.rs`).
 
-use super::parse_util::parse_list;
+use super::shared::parse_list;
 use zenith_float_num::{Consts, ExactNum};
 
 /// Batch size for cheap arithmetic kernels (add / mul / div / rem).

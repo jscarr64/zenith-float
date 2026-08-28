@@ -1,11 +1,9 @@
 //! Transcendental function benchmarks with fixed, domain-valid operands.
 
 mod shared;
-mod parse_util;
 mod trans_common;
 
-use parse_util::{cycle_batch, parse_list};
-use shared::{init_cc, sink, PRECISIONS};
+use shared::{cycle_batch, init_cc, parse_list, sink, PRECISIONS};
 use trans_common::{
     EXP_FIXTURES, LN_FIXTURES, TRIG_FIXTURES, TRANSCENDENTAL_BATCH,
 };

@@ -1,8 +1,8 @@
 //! Composite formula benchmarks — end-to-end workloads resembling Accumath evaluation.
 
-mod shared;
+mod bench_core;
 
-use shared::{init_cc, sink, PRECISIONS};
+use bench_core::{init_cc, sink, PRECISIONS};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use zenith_float_num::{Consts, ExactNum, RoundingMode};
 
