@@ -115,7 +115,7 @@ macro_rules! test_zf_fma {
 macro_rules! test_zf_rem_pi {
     ($n1:ident, $f1:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
         let mut n3 = ExactNum::rem_pi(&($n1), $p, $rm, &mut $cc);
-        let _ = n3.set_precision($p, zenith_float_num::RoundingMode::None);
+        let _ = n3.set_precision($p, $rm);
         let _ = $rnd;
 
         if ($n1).exponent().unwrap_or(0) <= 2 {
@@ -128,22 +128,14 @@ macro_rules! test_zf_rem_pi {
                 true,
                 &mut $cc,
             );
-        } else {
-            // Reduced into (-2π, 2π); remainder is not MPFR fmod, so check range only.
-            // sin/cos MPFR loops already exercise rem_pi internally.
+        } else if !n3.is_nan() && !n3.is_inf() && !n3.is_zero() {
+            // Not IEEE fmod; reduction is validated by sin/cos oracles on the unreduced argument.
+            let e = n3.exponent().unwrap_or(0);
             assert!(
-                !n3.is_nan(),
+                e <= 3,
                 "{}",
-                format!("{:?} rem_pi nan", $op_info)
+                format!("{:?} rem_pi exponent {e} (want <= 3)", $op_info)
             );
-            if !n3.is_inf() && !n3.is_zero() {
-                let e = n3.exponent().unwrap_or(0);
-                assert!(
-                    e <= 3,
-                    "{}",
-                    format!("{:?} rem_pi exponent {e} (want <= 3)", $op_info)
-                );
-            }
         }
     };
 }

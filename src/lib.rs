@@ -173,7 +173,7 @@ extern crate alloc;
 ///  - Unary `-` operator.
 ///  - Mathematical functions.
 ///  - Grouping with `(` and `)`.
-///  - Constants `pi`, `e`, `ln_2`, and `ln_10`.
+///  - Constants `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, and `euler_gamma`.
 ///
 /// Binary operators:
 ///
@@ -224,6 +224,9 @@ extern crate alloc;
 ///  - `e`: Euler number.
 ///  - `ln_2`: natural logarithm of 2.
 ///  - `ln_10`: natural logarithm of 10.
+///  - `sqrt2`: √2.
+///  - `phi`: golden ratio (1+√5)/2.
+///  - `euler_gamma`: Euler–Mascheroni constant γ.
 ///
 /// The context determines the precision, the rounding mode of the result, and also contains the cache of constants.
 ///

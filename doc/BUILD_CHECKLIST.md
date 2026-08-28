@@ -90,19 +90,19 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `ln`, `log2`, `log10`, `log` (arbitrary base) | ✅ | ✅ | Series + arg reduction |
 | `log1p` | ✅ | ✅ | |
 | `exp` | ✅ | ✅ | |
-| `exp2`, `exp10` | ✅ | 🟡 | Delegate to `pow`; MPFR oracles in compare suite |
+| `exp2`, `exp10` | ✅ | ✅ | Delegate to `pow`; bit-oracle in compare suite |
 | `expm1` | ✅ | ✅ | |
 | `sin`, `cos`, `tan` | ✅ | ✅ | `rem_pi` internally |
 | `asin`, `acos`, `atan`, `atan2` | ✅ | ✅ | |
-| `rem_pi` | ✅ | 🟡 | Identity vs MPFR for \|x\|&lt;4; large-arg range check (sin/cos oracles cover reduction) |
+| `rem_pi` | ✅ | ✅ | Identity for \|x\|&lt;4; large args stay in `(-2π, 2π)`; sin/cos oracles cover reduction |
 | `sinh`, `cosh`, `tanh` | ✅ | ✅ | |
 | `asinh`, `acosh`, `atanh` | ✅ | ✅ | `asinh` fixed for large \|x\| (2\|e\| extra bits) |
-| `erf`, `erfc` | ✅ | 🟡 | Series + complementary asymptotic; unit-tested |
-| `gamma`, `ln_gamma` | ✅ | 🟡 | Stirling + reflection; integer factorial path; unit-tested |
-| `bessel_j` (integer n) | ✅ | 🟡 | Power series; `n ≤ 1024`; unit-tested |
-| `sin_cos`, `sinh_cosh` | — | ✅ | Paired evaluation |
-| Complex: `ExactComplex` | — | — | Rectangular `re + i im` over `ExactNum` |
-| Constants: π, e, ln 2, ln 10 (`Consts`) | `pi`, `e`, `ln_2`, `ln_10` | ✅ | Lazy cache |
+| `erf`, `erfc` | ✅ | ✅ | Series + complementary asymptotic; MPFR 1-ULP on \|x\|≲4 |
+| `gamma`, `ln_gamma` | ✅ | ✅ | Stirling + reflection; factorial integers; MPFR 1-ULP |
+| `bessel_j` (integer n) | ✅ | ✅ | Power series; `n ≤ 1024`; MPFR `jn` for n=0,1,2 |
+| `sin_cos`, `sinh_cosh` | ✅ | ✅ | Tuple methods; `expr!` uses `sin`/`cos` and `sinh`/`cosh` |
+| Complex: `ExactComplex` | — | ✅ | Rectangular `re + i im`; MPFR add (expr is real-valued) |
+| Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |
 
 ### 1.6 I/O and integration
 
@@ -193,7 +193,7 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 | Priority | Gap | Why it matters |
 | ---------- | ----- | ---------------- |
 | P0 | MPFR oracle in release CI (or nightly) | Done: `scripts/ci.sh` runs `--features mpfr-tests --release` on Linux x86_64 |
-| P0 | MPFR coverage for `exp2`, `exp10`, `rem_pi` | Done in `compare_ops` / `compare_special` (`rem_pi`: identity for \|x\| small; range check for large) |
+| P0 | MPFR coverage for `exp2`, `exp10`, `rem_pi` | Done in `compare_ops` / `compare_special` (`rem_pi`: identity for \|x\| small; sin/cos vs MPFR for large) |
 | P0 | Working-precision caps documented + enforced | Done: `MAX_PREC_RETRY` / `bump_prec_retry` + `doc/PRECISION.md` |
 | P1 | `fma` | Done: `ExactNum::fma` / `mul_add` + `expr!`; full-width product; skip when exponents are disjoint |
 | P1 | `nth_root(n)` | Done: `ExactNum::nth_root` + `expr!` `root`; MPFR 1-ULP for n=4,5 in fuzz harness |
@@ -205,8 +205,8 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 | P2 | Extra constants (φ, √2, γ, …) | Done: `ConstCache` √2, φ, `euler_gamma` (γ) |
 | P2 | `LowerExp` / `UpperExp` formatting | Done: `{:e}` / `{:E}` plus `LowerHex` |
 | P2 | `frexp` / `ldexp` / `scalb` / `logb` | Done: `ExactNum::{frexp,ldexp,scalb,logb,ilogb}` |
-| P3 | Special functions (erf, Gamma, …) | Only where symbolic engine cannot stay exact |
-| P3 | Parallel evaluation / thread-safe shared `Consts` | Batch numeric evaluation |
+| P3 | Special functions (erf, Gamma, …) | Done: `erf`/`erfc`, `gamma`/`ln_gamma`, integer-order `bessel_j` |
+| P3 | Parallel evaluation / thread-safe shared `Consts` | Done: `SharedConsts` (`std`, mutex around `Consts`) |
 
 ---
 
@@ -274,7 +274,7 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 ### 3.4 Accumath integration (P1–P2)
 
 - [ ] Stable ABI surface for engine (`ExactNum` eval from `CanonicalExpr`)
-- [ ] Batch evaluator with shared `Consts` / `Context` reuse
+- [x] Batch evaluator with shared `Consts` / `Context` reuse (`SharedConsts` for threads; `Context` still owns one `Consts`)
 - [ ] Precision policy per formula class (exact vs numeric terminal)
 - [ ] Wire 675K-formula smoke + deep regression in Accumath CI (separate repo)
 - [ ] Purge `f64` / `libm` from Accumath numeric path (🚫 not this crate)

@@ -92,6 +92,15 @@ fn macro_run_basic_tests() {
     let res: ExactNum = expr!(exp(x), &mut ctx);
     debug_assert_eq!(res, x.exp(p, rm, &mut cc));
 
+    let res: ExactNum = expr!(exp2(x), &mut ctx);
+    debug_assert_eq!(res, x.exp2(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(exp10(x), &mut ctx);
+    debug_assert_eq!(res, x.exp10(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(rem_pi(x), &mut ctx);
+    debug_assert_eq!(res, x.rem_pi(p, rm, &mut cc));
+
     let res: ExactNum = expr!(pow(x, y), &mut ctx);
     debug_assert_eq!(res, x.pow(&y, p, rm, &mut cc));
 
@@ -100,6 +109,10 @@ fn macro_run_basic_tests() {
 
     let res: ExactNum = expr!(cos(x), &mut ctx);
     debug_assert_eq!(res, x.cos(p, rm, &mut cc));
+
+    let (ps, pc) = x.sin_cos(p, rm, &mut cc);
+    debug_assert_eq!(ps, x.sin(p, rm, &mut cc));
+    debug_assert_eq!(pc, x.cos(p, rm, &mut cc));
 
     let res: ExactNum = expr!(tan(x), &mut ctx);
     debug_assert_eq!(res, x.tan(p, rm, &mut cc));
@@ -122,6 +135,10 @@ fn macro_run_basic_tests() {
 
     let res: ExactNum = expr!(cosh(x), &mut ctx);
     debug_assert_eq!(res, x.cosh(p, rm, &mut cc));
+
+    let (psh, pch) = x.sinh_cosh(p, rm, &mut cc);
+    debug_assert_eq!(psh, x.sinh(p, rm, &mut cc));
+    debug_assert_eq!(pch, x.cosh(p, rm, &mut cc));
 
     let res: ExactNum = expr!(tanh(x), &mut ctx);
     debug_assert_eq!(res, x.tanh(p, rm, &mut cc));
@@ -165,8 +182,14 @@ fn macro_run_basic_tests() {
     let res: ExactNum = expr!(erf(x), &mut ctx);
     debug_assert_eq!(res, x.erf(p, rm, &mut cc));
 
+    let res: ExactNum = expr!(erfc(x), &mut ctx);
+    debug_assert_eq!(res, x.erfc(p, rm, &mut cc));
+
     let res: ExactNum = expr!(gamma(x), &mut ctx);
     debug_assert_eq!(res, x.gamma(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(ln_gamma(x), &mut ctx);
+    debug_assert_eq!(res, x.ln_gamma(p, rm, &mut cc));
 
     let res: ExactNum = expr!(bessel_j(x, 0), &mut ctx);
     debug_assert_eq!(res, x.bessel_j(0, p, rm, &mut cc));
@@ -220,6 +243,15 @@ fn macro_run_err_test() {
 
     let x = expr!(ln_10, &mut ctx);
     assert_eq!(x, ctx.const_ln10());
+
+    let x = expr!(sqrt2, &mut ctx);
+    assert_eq!(x, ctx.const_sqrt2());
+
+    let x = expr!(phi, &mut ctx);
+    assert_eq!(x, ctx.const_phi());
+
+    let x = expr!(euler_gamma, &mut ctx);
+    assert_eq!(x, ctx.const_euler_gamma());
 
     // ln
     for x in [

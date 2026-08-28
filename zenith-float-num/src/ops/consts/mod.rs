@@ -307,7 +307,7 @@ impl Consts {
     fn euler_gamma_num(&mut self, p: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
         let p_round = round_p(p);
         let p_wrk = p_round
-            .checked_add(WORD_BIT_SIZE)
+            .checked_add(8 * WORD_BIT_SIZE)
             .ok_or(Error::InvalidArgument)?;
         if self.euler.cached_bit_len() < p_round {
             let ln2 = self.ln_2_num(p_wrk, RoundingMode::None)?;
@@ -323,6 +323,36 @@ impl Consts {
             Ok(v) => v.into(),
             Err(e) => ExactNum::nan(Some(e)),
         }
+    }
+}
+
+/// Thread-safe [`Consts`] for batch evaluation across threads (`std` only).
+/// Callers still take `&mut Consts` inside [`SharedConsts::with`]; the mutex serializes cache fills.
+#[cfg(feature = "std")]
+#[derive(Debug)]
+pub struct SharedConsts {
+    inner: std::sync::Mutex<Consts>,
+}
+
+#[cfg(feature = "std")]
+impl SharedConsts {
+    /// Allocate an empty progressive constant cache protected by a mutex.
+    pub fn new() -> Result<Self, Error> {
+        Ok(SharedConsts {
+            inner: std::sync::Mutex::new(Consts::new()?),
+        })
+    }
+
+    /// Run `f` with exclusive access to the cache. Recovers from a poisoned mutex by taking the inner value.
+    pub fn with<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut Consts) -> R,
+    {
+        let mut g = match self.inner.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        f(&mut g)
     }
 }
 
@@ -386,5 +416,25 @@ mod tests {
         );
         let d = g.sub(&known, p, RoundingMode::None);
         assert!(d.is_zero() || d.exponent().unwrap() < -((p as i32) / 4));
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn shared_consts_parallel_pi() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let cc = Arc::new(SharedConsts::new().expect("constants"));
+        let mut hs = Vec::new();
+        for _ in 0..4 {
+            let cc = Arc::clone(&cc);
+            hs.push(thread::spawn(move || {
+                cc.with(|c| c.pi(128, RoundingMode::ToEven))
+            }));
+        }
+        let vals: Vec<_> = hs.into_iter().map(|h| h.join().unwrap()).collect();
+        for v in &vals[1..] {
+            assert_eq!(vals[0].cmp(v), Some(0));
+        }
     }
 }

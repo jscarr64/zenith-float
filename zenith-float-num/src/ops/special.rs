@@ -377,9 +377,9 @@ fn bernoulli_even(k: usize, p: usize) -> Result<ExactNumNumber, Error> {
     a[0].clone()
 }
 
-/// Euler–Mascheroni constant via `H_{n-1} - ln n + 1/(2n) + Σ B_{2k}/(2k n^{2k})` with `n = 64`.
+/// Euler–Mascheroni constant via `H_{n-1} - ln n + 1/(2n) + Σ B_{2k}/(2k n^{2k})` with `n = 128`.
 pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
-    const N: usize = 64;
+    const N: usize = 128;
     let mut h = ExactNumNumber::from_word(1, p)?;
     for i in 2..N {
         let t = ExactNumNumber::from_word(1, p)?.div(
@@ -389,8 +389,7 @@ pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNu
         )?;
         h = h.add(&t, p, RoundingMode::None)?;
     }
-    let six = ExactNumNumber::from_word(6, p)?;
-    let ln_n = six.mul(ln2, p, RoundingMode::None)?;
+    let ln_n = ExactNumNumber::from_word(7, p)?.mul(ln2, p, RoundingMode::None)?;
     let mut g = h.sub(&ln_n, p, RoundingMode::None)?;
     let n = ExactNumNumber::from_word(N as Word, p)?;
     let two_n = n.add(&n, p, RoundingMode::None)?;
@@ -398,7 +397,7 @@ pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNu
     g = g.add(&half_n, p, RoundingMode::None)?;
 
     let mut npow = n.mul(&n, p, RoundingMode::None)?;
-    for k in 1..=24 {
+    for k in 1..=40 {
         let b = bernoulli_even(k, p)?;
         let two_k = ExactNumNumber::from_word((2 * k) as Word, p)?;
         let den = two_k.mul(&npow, p, RoundingMode::None)?;

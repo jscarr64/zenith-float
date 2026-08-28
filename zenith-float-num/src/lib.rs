@@ -53,6 +53,8 @@ pub use crate::ops::consts::Consts;
 pub use crate::ops::consts::ConstCache;
 pub use crate::ops::consts::ConstCacheInfo;
 pub use crate::ops::consts::CachedFBig;
+#[cfg(feature = "std")]
+pub use crate::ops::consts::SharedConsts;
 pub use crate::ball::Ball;
 pub use crate::ball::ziv_round;
 pub use crate::common::buf::INLINE_WORDS;

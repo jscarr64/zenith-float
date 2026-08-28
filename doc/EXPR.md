@@ -22,11 +22,11 @@ This is the Accumath numeric contract: leaves are treated as exact; the printed 
 | `sqrt` / `cbrt` / `root(x, n)` | `sqrt` / `cbrt` / `nth_root` | Kernel Ziv/`try_set_precision` to `p_wrk`, then final `set_precision` |
 | `ln` `log2` `log10` `log` `log1p` | corresponding `ExactNum` methods | Need `Consts`; extra bits for argument reduction |
 | `exp` `exp2` `exp10` `expm1` `pow` | `exp` / `pow` | Same |
-| `rem_pi(x)` | `rem_pi` | Reduction into `(-2π, 2π)`, not MPFR `fmod` |
+| `rem_pi(x)` | `rem_pi` | Reduction into `(-2π, 2π)`; identity + range; trig oracles on unreduced `x` |
 | `sin` `cos` `tan` `asin` `acos` `atan` `atan2` | trig | `rem_pi` / series; cost grows with `\|e\|` |
 | `hypot` `fma` / `mul_add` | `hypot` / `fma` | `fma` is a single round of `a*b+c` (full product when magnitudes overlap) |
-| `sinh` `cosh` `tanh` `asinh` `acosh` `atanh` | hyperbolic | Paired `sinh_cosh` is not a macro leaf; call the method |
-| `erf` `erfc` `gamma` `ln_gamma` `bessel_j` | specials | Same pipeline; MPFR oracles are unit/compare coverage, not the full 1000-iter loop for Γ |
+| `sinh` `cosh` `tanh` `asinh` `acosh` `atanh` | hyperbolic | Paired `sinh_cosh` is the `ExactNum` method; expr uses `sinh`/`cosh` |
+| `erf` `erfc` `gamma` `ln_gamma` `bessel_j` | specials | Same pipeline; MPFR 1-ULP oracles on bounded domains |
 
 Integer literals and `exact!` / `fbig!` strings enter as exact `ExactNum` values.
 

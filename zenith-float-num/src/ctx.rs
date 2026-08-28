@@ -107,6 +107,21 @@ impl Context {
         self.cc.ln_10(self.p, self.rm)
     }
 
+    /// Returns √2.
+    pub fn const_sqrt2(&mut self) -> ExactNum {
+        self.cc.sqrt2(self.p, self.rm)
+    }
+
+    /// Returns the golden ratio φ.
+    pub fn const_phi(&mut self) -> ExactNum {
+        self.cc.phi(self.p, self.rm)
+    }
+
+    /// Returns the Euler–Mascheroni constant γ.
+    pub fn const_euler_gamma(&mut self) -> ExactNum {
+        self.cc.euler_gamma(self.p, self.rm)
+    }
+
     /// Returns the minimum exponent.
     pub fn emin(&self) -> Exponent {
         self.emin
@@ -176,6 +191,27 @@ pub trait Contextable {
 
     /// Returns the value of the natural logarithm of 10.
     fn const_ln10(&mut self) -> ExactNum;
+
+    /// √2 at the context precision.
+    fn const_sqrt2(&mut self) -> ExactNum {
+        let p = self.precision();
+        let rm = self.rounding_mode();
+        self.consts().sqrt2(p, rm)
+    }
+
+    /// Golden ratio φ at the context precision.
+    fn const_phi(&mut self) -> ExactNum {
+        let p = self.precision();
+        let rm = self.rounding_mode();
+        self.consts().phi(p, rm)
+    }
+
+    /// Euler–Mascheroni constant γ at the context precision.
+    fn const_euler_gamma(&mut self) -> ExactNum {
+        let p = self.precision();
+        let rm = self.rounding_mode();
+        self.consts().euler_gamma(p, rm)
+    }
 
     /// Returns the minimum exponent.
     fn emin(&self) -> Exponent;
@@ -295,6 +331,18 @@ impl Contextable for Context {
 
     fn const_ln10(&mut self) -> ExactNum {
         Context::const_ln10(self)
+    }
+
+    fn const_sqrt2(&mut self) -> ExactNum {
+        Context::const_sqrt2(self)
+    }
+
+    fn const_phi(&mut self) -> ExactNum {
+        Context::const_phi(self)
+    }
+
+    fn const_euler_gamma(&mut self) -> ExactNum {
+        Context::const_euler_gamma(self)
     }
 
     fn emin(&self) -> Exponent {

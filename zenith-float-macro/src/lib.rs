@@ -586,6 +586,12 @@ fn traverse_path(expr: &ExprPath) -> Result<TokenStream, Error> {
         quote!({ cc.ln_2(p_wrk, zenith_float::RoundingMode::None) })
     } else if expr.path.is_ident("ln_10") {
         quote!({ cc.ln_10(p_wrk, zenith_float::RoundingMode::None) })
+    } else if expr.path.is_ident("sqrt2") {
+        quote!({ cc.sqrt2(p_wrk, zenith_float::RoundingMode::None) })
+    } else if expr.path.is_ident("phi") {
+        quote!({ cc.phi(p_wrk, zenith_float::RoundingMode::None) })
+    } else if expr.path.is_ident("euler_gamma") {
+        quote!({ cc.euler_gamma(p_wrk, zenith_float::RoundingMode::None) })
     } else {
         quote!({
             let mut arg = zenith_float::ExactNum::from_ext((#expr).clone(), p_wrk, zenith_float::RoundingMode::ToEven, cc);
