@@ -14,19 +14,20 @@ Living document for what is **implemented**, **tested**, and **still required** 
 ## How to use this checklist
 
 | Symbol | Meaning |
-|--------|---------|
+| -------- | --------- |
 | ✅ | Built, in public API, and covered by default CI |
 | 🟡 | Built but partial coverage, manual gate, or known limitations |
 | ⬜ | Not implemented or not production-ready |
 | 🚫 | Explicitly out of scope (Accumath / caller responsibility) |
 
-**Verify locally**
+### Verify locally
 
 ```bash
 ./scripts/ci.sh
 cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Linux x86_64 + rug
 ./scripts/bench.sh                                                          # Criterion (--quick)
 ./scripts/bench-compare.sh                                                  # compare to doc/bench-baselines.tsv
+./scripts/compare-bench.sh --quick                                          # zenith vs astro (release compare)
 ```
 
 ---
@@ -36,7 +37,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 ### 1.1 Crates
 
 | Crate | Role | Status |
-|-------|------|--------|
+| ------- | ------ | -------- |
 | `zenith-float` | Public facade, docs, re-exports | ✅ |
 | `zenith-float-num` | Limb arithmetic, transcendentals, I/O | ✅ |
 | `zenith-float-macro` | `expr!` proc-macro | ✅ |
@@ -44,7 +45,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 ### 1.2 Core numeric model
 
 | Item | Status | Notes |
-|------|--------|-------|
+| ------ | -------- | ------- |
 | Limb mantissa (`Word` = 64-bit on 64-bit targets) | ✅ | Word-aligned precision |
 | Configurable exponent range (`EXPONENT_MIN` / `EXPONENT_MAX`) | ✅ | Reduced on 32-bit |
 | Seven rounding modes | ✅ | `None`, `Up`, `Down`, `ToZero`, `FromZero`, `ToEven`, `ToOdd` |
@@ -56,7 +57,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 ### 1.3 Arithmetic (mantissa layer)
 
 | Operation | Algorithm | Unit tests | MPFR oracle |
-|-----------|-----------|------------|-------------|
+| ----------- | ----------- | ------------ | ------------- |
 | Add / sub | Limb carry/borrow | ✅ | ✅ |
 | Mul | Schoolbook → Toom-2 → Toom-3 → FFT | ✅ | ✅ |
 | Div | Knuth-style | ✅ | ✅ |
@@ -69,7 +70,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 ### 1.4 Public `ExactNum` API — arithmetic & utility
 
 | API | `expr!` | Status |
-|-----|---------|--------|
+| ----- | --------- | -------- |
 | `add`, `sub`, `mul`, `div` (+ `_full_prec`) | `+ − * /` | ✅ |
 | `rem` | `%` | ✅ |
 | `reciprocal` | `recip` | ✅ |
@@ -85,7 +86,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 ### 1.5 Transcendentals & constants
 
 | API | `expr!` | MPFR | Notes |
-|-----|---------|------|-------|
+| ----- | --------- | ------ | ------- |
 | `ln`, `log2`, `log10`, `log` (arbitrary base) | ✅ | ✅ | Series + arg reduction |
 | `log1p` | ✅ | ✅ | |
 | `exp` | ✅ | ✅ | |
@@ -101,7 +102,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 ### 1.6 I/O and integration
 
 | Item | Status |
-|------|--------|
+| ------ | -------- |
 | Parse/format: binary, octal, decimal, hexadecimal | ✅ |
 | `convert_from_radix` / `convert_to_radix` | ✅ |
 | `Display`, `Binary`, `Octal`, `UpperHex` (`std`) | ✅ |
@@ -114,7 +115,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 ### 1.7 Test & CI inventory (default `scripts/ci.sh`)
 
 | Gate | Status |
-|------|--------|
+| ------ | -------- |
 | Forbid `f32`/`f64` identifiers in `.rs` / `.md` / `CHANGELOG` | ✅ |
 | `cargo test --workspace` (debug) | ✅ ~60 lib tests pass |
 | `cargo test -p zenith-float-num --lib --release` | ✅ |
@@ -122,6 +123,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `cargo test --features random,serde` | ✅ |
 | MPFR bit-oracle tests (`mpfr-tests`) | 🟡 Manual; **not in CI** |
 | Criterion / dedicated benches | ✅ `zenith-float-num/benches/` (arithmetic, transcendentals, composite) |
+| Cross-library compare (astro / dashu) | 🟡 `zenith-float-compare/` + `scripts/compare-bench.sh` (release gate) |
 | `proptest` / quickcheck | ⬜ Hand-written random loops (`TEST_ITERS = 256`) |
 
 **Property tests** (`zenith-float-num/src/ops/tests.rs`): inverse pairs (ln↔exp, sin↔asin, log↔pow, etc.) with mathematically derived error bounds; exponent sampling capped at `TEST_EXP_BOUND = 1024` for runtime.
@@ -139,7 +141,7 @@ Local reference trees (`dashu-master/`, `astro-float-main/`) are not in this rep
 ### 2.1 Feature matrix (high level)
 
 | Capability | zenith-float | astro-float 0.9.6 | dashu-float 0.6.0 |
-|------------|:------------:|:-----------------:|:-----------------:|
+| ------------ | :------------: | :-----------------: | :-----------------: |
 | Pure Rust kernel (no MPFR in lib) | ✅ | ✅ | ✅ |
 | `no_std` + allocator | ✅ | ✅ | ✅ |
 | `expr!` + `Context` | ✅ | ✅ | 🟡 (macros elsewhere) |
@@ -169,7 +171,7 @@ Local reference trees (`dashu-master/`, `astro-float-main/`) are not in this rep
 zenith-float is already a **superset** of astro-float’s math API. astro-float does **not** exceed zenith on transcendentals.
 
 | zenith has; astro 0.9.6 lacks | Notes |
-|------------------------------|-------|
+| ------------------------------ | ------- |
 | `exp2`, `exp10` | zenith delegates to `pow` |
 | `log1p`, `expm1` | |
 | `atan2`, `hypot` | |
@@ -184,7 +186,7 @@ Shared weakness vs dashu: no Ziv loop, no guaranteed correctly-rounded transcend
 For **675K diverse formulas**, correctness and operability matter more than matching every dashu feature on day one.
 
 | Priority | Gap | Why it matters |
-|----------|-----|----------------|
+| ---------- | ----- | ---------------- |
 | P0 | MPFR oracle in release CI (or nightly) | Bit-exact reference for every public op |
 | P0 | MPFR coverage for `exp2`, `exp10`, `rem_pi` | Recently added; still oracle-blind |
 | P0 | Working-precision caps documented + enforced | Prevents pathological hour-long single test cases |
@@ -193,6 +195,7 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 | P1 | `sinh_cosh` paired evaluation | dashu has this; saves duplicate exp work |
 | P1 | Fuzz MPFR differential (all rounding modes) | dashu `fuzz/` model; stronger than property loops alone |
 | P1 | Benchmark regression tracking in CI (optional nightly) | `doc/bench-baselines.tsv` + `scripts/bench-compare.sh` (tab-separated, no JSON) |
+| P1 | Release compare vs astro-float / dashu-float | `zenith-float-compare` + `doc/compare-results.tsv` before crates.io publish |
 | P1 | `expr!` correct-rounding semantics documented per op | Accumath will lean on macro heavily |
 | P2 | Extra constants (φ, √2, γ, …) | Fewer series cold-starts |
 | P2 | `LowerExp` / `UpperExp` formatting | Debug / log output at scale |
@@ -235,6 +238,8 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 
 - [x] Replace `#[ignore]` `*_perf` with Criterion benches in `benches/`
 - [x] TSV baseline file + `scripts/bench-compare.sh` (no JSON)
+- [x] Cross-library compare harness (`zenith-float-compare`, bigfloat-bench workloads)
+- [ ] Capture `doc/compare-results.tsv` at release and document vs astro 0.9.6 / dashu 0.6.0
 - [ ] Optional: nightly bench regression gate in CI
 - [ ] Track CI wall time budget (target: full gate &lt; 10 min debug, &lt; 30 min with MPFR)
 - [ ] Seed-controlled random tests for reproducible failures
@@ -274,7 +279,7 @@ Before calling a version **production-ready for Accumath numeric evaluation**:
 ## 5. Related files
 
 | Path | Purpose |
-|------|---------|
+| ------ | --------- |
 | `scripts/ci.sh` | Default public CI |
 | `zenith-float-num/tests/README.md` | MPFR test instructions |
 | `zenith-float-num/src/ops/tests.rs` | Random inverse property tests |

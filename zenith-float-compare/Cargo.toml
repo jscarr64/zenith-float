@@ -1,0 +1,29 @@
+[package]
+name = "zenith-float-compare"
+version = "0.1.0"
+edition = "2021"
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Cross-library big-float comparison benchmarks (zenith vs astro vs dashu)."
+publish = false
+
+[[bin]]
+name = "zenith-float-compare"
+path = "src/main.rs"
+
+[features]
+default = ["astro"]
+astro = ["dep:astro-float"]
+dashu = ["dep:dashu-float", "dep:dashu-int"]
+
+[package.metadata.rust-analyzer]
+cargo.allFeatures = true
+
+[dependencies]
+zenith-float = { path = "..", features = ["std", "random"] }
+clap = { version = "4", features = ["derive"] }
+rand = "0.8.5"
+astro-float = { version = "0.9.6", optional = true, features = ["std", "random"] }
+dashu-float = { version = "0.6.0", optional = true }
+dashu-int = { version = "0.6.0", optional = true }

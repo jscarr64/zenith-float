@@ -3,7 +3,7 @@
 use crate::common::consts::ONE;
 use crate::common::util::{count_leading_ones, count_leading_zeroes_skip_first, log2_floor};
 use crate::common::util::TEST_EXP_BOUND;
-use crate::defs::{RoundingMode, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
+use crate::defs::{RoundingMode, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::{Exponent, Sign};
@@ -113,8 +113,8 @@ fn test_powi() {
         let prec = (rand::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let mut d1 = ExactNumNumber::random_normal(
             p1,
-            (-TEST_EXP_BOUND / i as Exponent).max(EXPONENT_MIN),
-            (TEST_EXP_BOUND / i as Exponent).min(EXPONENT_MAX),
+            -TEST_EXP_BOUND / i as Exponent,
+            TEST_EXP_BOUND / i as Exponent,
         )
         .unwrap();
         d1.set_sign(Sign::Pos);

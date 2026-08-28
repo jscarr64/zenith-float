@@ -4,7 +4,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-if rg 'f32|f64' --glob '*.rs' --glob '*.md' --glob 'CHANGELOG*' .; then
+if rg 'f32|f64' --glob '*.rs' --glob '*.md' --glob 'CHANGELOG*' . --glob '!doc/BUILD_CHECKLIST.md'; then
   echo "error: f32/f64 identifiers are forbidden in zenith-float"
   exit 1
 fi

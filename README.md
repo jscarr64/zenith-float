@@ -94,3 +94,11 @@ cargo bench -p zenith-float-num --bench arithmetic -- mul_fft   # FFT-scale mul 
 ```
 
 Regression baselines live in `doc/bench-baselines.tsv` (tab-separated). `REGRESSION_PCT` defaults to 15.
+
+Cross-library comparison (bigfloat-bench compatible workloads, TSV output):
+
+```bash
+./scripts/compare-bench.sh --quick    # zenith vs astro @ 132 bits, core tasks → doc/compare-results.tsv
+./scripts/compare-bench.sh --full       # 132 / 1000 / 10000 bits, full task matrix
+./scripts/compare-bench.sh --dashu    # include dashu-float (FBig)
+```
