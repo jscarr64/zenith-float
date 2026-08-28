@@ -4,6 +4,7 @@
 
 - Criterion benchmarks in `zenith-float-num/benches/` (arithmetic, transcendentals, composite); `./scripts/bench.sh`.
 - FFT-scale multiply benchmark tier (`arithmetic/mul_fft`, 346k and 524k bits).
+- TSV benchmark baselines (`doc/bench-baselines.tsv`) and `scripts/bench-compare.sh` for regression checks without JSON.
 - Newton reciprocal at three words and up.
 - `hypot`, `atan2`, `log1p`, and `expm1` on `ExactNum` and in `expr!`.
 - `exp2`, `exp10`, and public `rem_pi` on `ExactNum` and in `expr!`.

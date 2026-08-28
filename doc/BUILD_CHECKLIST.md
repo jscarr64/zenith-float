@@ -26,6 +26,7 @@ Living document for what is **implemented**, **tested**, and **still required** 
 ./scripts/ci.sh
 cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Linux x86_64 + rug
 ./scripts/bench.sh                                                          # Criterion (--quick)
+./scripts/bench-compare.sh                                                  # compare to doc/bench-baselines.tsv
 ```
 
 ---
@@ -191,7 +192,7 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 | P1 | `nth_root(n)` | Many physics / engineering closed forms |
 | P1 | `sinh_cosh` paired evaluation | dashu has this; saves duplicate exp work |
 | P1 | Fuzz MPFR differential (all rounding modes) | dashu `fuzz/` model; stronger than property loops alone |
-| P1 | Benchmark regression tracking in CI (optional nightly) | Criterion benches exist; not yet gated in `scripts/ci.sh` |
+| P1 | Benchmark regression tracking in CI (optional nightly) | `doc/bench-baselines.tsv` + `scripts/bench-compare.sh` (tab-separated, no JSON) |
 | P1 | `expr!` correct-rounding semantics documented per op | Accumath will lean on macro heavily |
 | P2 | Extra constants (φ, √2, γ, …) | Fewer series cold-starts |
 | P2 | `LowerExp` / `UpperExp` formatting | Debug / log output at scale |
@@ -233,7 +234,8 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 ### 3.3 Testing & performance (P1)
 
 - [x] Replace `#[ignore]` `*_perf` with Criterion benches in `benches/`
-- [ ] Optional: nightly Criterion regression gate in CI
+- [x] TSV baseline file + `scripts/bench-compare.sh` (no JSON)
+- [ ] Optional: nightly bench regression gate in CI
 - [ ] Track CI wall time budget (target: full gate &lt; 10 min debug, &lt; 30 min with MPFR)
 - [ ] Seed-controlled random tests for reproducible failures
 - [ ] Accumath-driven regression corpus (golden files from real formula subsets)

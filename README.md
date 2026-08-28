@@ -87,6 +87,10 @@ Benchmarks (Criterion, release profile, deterministic fixtures):
 ```bash
 ./scripts/bench.sh              # quick smoke
 ./scripts/bench.sh --full       # full samples + HTML report under target/criterion/
+./scripts/bench-compare.sh      # run benches, compare to doc/bench-baselines.tsv
+./scripts/bench-compare.sh --update   # refresh the TSV baseline after intentional changes
 cargo bench -p zenith-float-num --bench transcendentals -- ln/1024
 cargo bench -p zenith-float-num --bench arithmetic -- mul_fft   # FFT-scale mul (slow)
 ```
+
+Regression baselines live in `doc/bench-baselines.tsv` (tab-separated). `REGRESSION_PCT` defaults to 15.
