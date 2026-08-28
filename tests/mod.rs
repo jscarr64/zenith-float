@@ -110,6 +110,9 @@ fn macro_run_basic_tests() {
     let res: ExactNum = expr!(fma(x, y, z), &mut ctx);
     debug_assert_eq!(res, x.fma(&y, &z, p, rm));
 
+    let res: ExactNum = expr!(root(x, 5), &mut ctx);
+    debug_assert_eq!(res, x.nth_root(5, p, rm));
+
     let res: ExactNum = expr!(atan2(y, x), &mut ctx);
     debug_assert_eq!(res, y.atan2(&x, p, rm, &mut cc));
 

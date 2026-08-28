@@ -1366,6 +1366,48 @@ impl ExactNum {
         { INF_POS },
         { INF_POS },
     );
+    /// Returns a value with the magnitude of `self` and the sign of `sign`.
+    pub fn copysign(&self, sign: &Self, p: usize, rm: RoundingMode) -> Self {
+        if self.is_nan() {
+            return self.clone();
+        }
+        let sign_num = match &sign.inner {
+            Flavor::Value(v) => v.clone(),
+            Flavor::Inf(s) => ExactNumNumber::from_i8(s.to_int(), p),
+            Flavor::NaN(_) => ExactNumNumber::new(p),
+        };
+        let sign_num = match sign_num {
+            Ok(v) => v,
+            Err(e) => return Self::nan(Some(e)),
+        };
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.copysign(&sign_num, p, rm), false, true),
+            Flavor::Inf(_) => {
+                if sign.is_negative() || (sign.is_zero() && sign_num.is_negative()) {
+                    INF_NEG
+                } else {
+                    INF_POS
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+    /// Returns the next representable value from `self` toward `toward` at precision `p`.
+    pub fn next_after(&self, toward: &Self, p: usize, rm: RoundingMode) -> Self {
+        if self.is_nan() {
+            return self.clone();
+        }
+        if toward.is_nan() {
+            return toward.clone();
+        }
+        match (&self.inner, &toward.inner) {
+            (Flavor::Value(v), Flavor::Value(t)) => {
+                Self::result_to_ext(v.next_after(t, p, rm), false, true)
+            }
+            (Flavor::Inf(_), _) | (_, Flavor::Inf(_)) => self.clone(),
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+        }
+    }
     gen_wrapper_arg!("Returns the integer part of `self`.", int, Self, { NAN }, {
         NAN
     },);
@@ -1418,6 +1460,29 @@ impl ExactNum {
         p,
         usize
     );
+    /// Computes the `n`-th root of `self` with precision `p`. `n = 2` and `n = 3` delegate to [`sqrt`](Self::sqrt) and [`cbrt`](Self::cbrt).
+    pub fn nth_root(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        if n == 0 {
+            return Self::nan(Some(Error::InvalidArgument));
+        }
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.nth_root(n, p, rm), v.is_zero(), true),
+            Flavor::Inf(s) => {
+                if n % 2 == 0 {
+                    if s.is_negative() {
+                        NAN
+                    } else {
+                        INF_POS
+                    }
+                } else if s.is_negative() {
+                    INF_NEG
+                } else {
+                    INF_POS
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
     gen_wrapper_log!(
         "Computes the natural logarithm of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
@@ -1573,6 +1638,33 @@ impl ExactNum {
         p,
         usize
     );
+    /// Computes `(sinh(self), cosh(self))` with precision `p` using a single `exp(|x|)` evaluation.
+    pub fn sinh_cosh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> (Self, Self) {
+        match &self.inner {
+            Flavor::Value(v) => match v.sinh_cosh(p, rm, cc) {
+                Ok((s, c)) => (
+                    Self::result_to_ext(Ok(s), false, true),
+                    Self::result_to_ext(Ok(c), false, true),
+                ),
+                Err(Error::ExponentOverflow(s)) => {
+                    if s.is_positive() {
+                        (INF_POS, INF_POS)
+                    } else {
+                        (INF_NEG, INF_POS)
+                    }
+                }
+                Err(e) => (Self::nan(Some(e)), Self::nan(Some(e))),
+            },
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    (INF_POS, INF_POS)
+                } else {
+                    (INF_NEG, INF_POS)
+                }
+            }
+            Flavor::NaN(err) => (Self::nan(*err), Self::nan(*err)),
+        }
+    }
     gen_wrapper_arg_rm_cc!(
         "Computes the hyperbolic arcsine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.

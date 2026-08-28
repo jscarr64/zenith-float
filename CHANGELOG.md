@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `ExactNum::nth_root` / `expr!` `root(x, n)` — general n-th root (`sqrt`/`cbrt` delegation, composite factors, Newton for primes).
+- `ExactNum::sinh_cosh` — paired hyperbolic evaluation with a single `exp(|x|)` path.
+- `ExactNum::copysign`, `ExactNum::next_after` — software IEEE sign and successor.
 - `ExactNum::fma` / `expr!` `fma(a, b, c)` — fused multiply-add with single final rounding.
 - Criterion benchmarks in `zenith-float-num/benches/` (arithmetic, transcendentals, composite); `./scripts/bench.sh`.
 - FFT-scale multiply benchmark tier (`arithmetic/mul_fft`, 346k and 524k bits).

@@ -155,8 +155,8 @@ Local reference trees (`dashu-master/`, `astro-float-main/`) are not in this rep
 | Arbitrary-base float type | ⬜ | ⬜ | ✅ |
 | Complex (`CBig`) | ⬜ | ⬜ | ✅ |
 | `fma` / `mul_add` | ⬜ | ⬜ | 🟡 |
-| General `nth_root(n)` | ⬜ | ⬜ | ✅ |
-| `sin_cos` / `sinh_cosh` paired APIs | ⬜ | ⬜ | ✅ |
+| General `nth_root(n)` | ✅ | ✅ | ✅ |
+| `sin_cos` / `sinh_cosh` paired APIs | ⬜ | ✅ | ✅ |
 | Special functions (erf, Γ, Bessel, …) | ⬜ | ⬜ | 🟡 / separate |
 | MPFR golden tests in repo | ✅ (optional) | ✅ (optional) | fuzz + unit (project policy) |
 | Fuzz MPFR bit-exact (all round modes) | ⬜ | ⬜ | ✅ |
@@ -235,23 +235,23 @@ For **675K diverse formulas**, correctness and operability matter more than matc
   - [x] `ExactNum::fma` + `expr!` `fma(a, b, c)` (`mul_full_prec` + `add_full_prec` + retry)
   - [ ] Mantissa: dedicated fused path (avoid full product width on every call)
   - [ ] MPFR oracle (`mpfr_fma`) bit-exact for all rounding modes
-- [ ] **`nth_root(n)`** — generalize `sqrt` / `cbrt` (`n = 2` and `n = 3` delegate to existing code).
-  - [ ] `n ≥ 2`; `n = 0` → error; even `n` rejects negative operands
-  - [ ] `ExactNum::nth_root` + `expr!` surface (syntax TBD: `root(x, n)` or method chain)
-  - [ ] MPFR oracle for `n ∈ {2, 3, 4, 5, 7, 10}` at multiple precisions
+- [x] **`nth_root(n)`** — generalize `sqrt` / `cbrt` (`n = 2` and `n = 3` delegate; composite factors via sqrt/cbrt; prime roots via Newton).
+  - [x] `n ≥ 2`; `n = 0` → error; even `n` rejects negative operands
+  - [x] `ExactNum::nth_root` + `expr!` `root(x, n)`
+  - [ ] MPFR oracle for general `nth_root` at extreme precision (n=2/3 via sqrt/cbrt oracles; unit-tested for n=4,5)
 
 #### 3.2.2 Transcendentals (paired evaluation)
 
-- [ ] **`sinh_cosh`** — single `exp(|x|)` path; each output rounded independently at `p`.
-  - [ ] `ExactNum::sinh_cosh(x, p, rm, cc) -> (ExactNum, ExactNum)`
+- [x] **`sinh_cosh`** — single `exp(|x|)` path; each output rounded independently at `p`.
+  - [x] `ExactNum::sinh_cosh(x, p, rm, cc) -> (ExactNum, ExactNum)`
   - [ ] Use internally from `tanh` / hyperbolic identities where it saves work
   - [ ] MPFR: `sinh` and `cosh` each match oracle; document speedup vs two separate calls
 
 #### 3.2.3 Sign & successor (software IEEE semantics)
 
-- [ ] **`copysign`**, **`next_after`** — integer-limb sign and total-order successor; no hardware floats.
-  - [ ] `copysign(magnitude, sign)`; `next_after(x, toward)` with explicit direction
-  - [ ] MPFR oracle; edge cases: ±0, subnormals, `EXPONENT_MIN` / `EXPONENT_MAX`
+- [x] **`copysign`**, **`next_after`** — integer-limb sign and total-order successor; no hardware floats.
+  - [x] `copysign(magnitude, sign)`; `next_after(x, toward)` with explicit direction
+  - [ ] MPFR oracle for `copysign` at extreme precision (unit-tested)
 
 ### 3.3 Testing & performance (P1)
 
