@@ -11,7 +11,10 @@
 - Progressive `ConstCache` (`cache_info`, √2, φ) and `CachedFBig` extra-precision wrapper.
 - Public `Ball` enclosures and `ziv_round` correct-rounding retry helper.
 - Stack-inlined mantissas (`INLINE_WORDS` = 2 limbs) before heap promotion.
-- `doc/PRECISION.md` — bounds on internal working precision vs exponent (`MAX_PREC_RETRY`, `expr!`, transcendentals, Ziv/Ball, TSV bench history).
+- `doc/EXPR.md` — `expr!` per-op rounding contract (working precision, cancellation slots, final `set_precision`).
+- `fma` skips the full-width product when `|a*b|` and `c` differ by more than `p + 2` words.
+- MPFR fuzz covers `nth_root` for n=4,5 at 1-ULP (`mpfr_rootn_ui`).
+- Optional nightly bench gate: `CI_BENCH=1 ./scripts/ci.sh`.
 - Structured radix 2–36 parse/format round-trip stress test (`tests/radix_roundtrip.rs`).
 - Native `+`, `-`, `*`, `/` operators on `ExactNum` (default precision, round-to-even).
 - `exact!` / `fbig!` compile-time decimal float literals.

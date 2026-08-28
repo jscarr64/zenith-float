@@ -192,16 +192,16 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 
 | Priority | Gap | Why it matters |
 | ---------- | ----- | ---------------- |
-| P0 | MPFR oracle in release CI (or nightly) | Bit-exact reference for every public op |
-| P0 | MPFR coverage for `exp2`, `exp10`, `rem_pi` | Done in compare suite |
-| P0 | Working-precision caps documented + enforced | Prevents pathological hour-long single test cases |
-| P1 | `fma` | Exact dot products, compensated summation in long expressions |
-| P1 | `nth_root(n)` | Many physics / engineering closed forms |
-| P1 | `sinh_cosh` paired evaluation | dashu has this; saves duplicate exp work |
+| P0 | MPFR oracle in release CI (or nightly) | Done: `scripts/ci.sh` runs `--features mpfr-tests --release` on Linux x86_64 |
+| P0 | MPFR coverage for `exp2`, `exp10`, `rem_pi` | Done in `compare_ops` / `compare_special` (`rem_pi`: identity for \|x\| small; range check for large) |
+| P0 | Working-precision caps documented + enforced | Done: `MAX_PREC_RETRY` / `bump_prec_retry` + `doc/PRECISION.md` |
+| P1 | `fma` | Done: `ExactNum::fma` / `mul_add` + `expr!`; full-width product; skip when exponents are disjoint |
+| P1 | `nth_root(n)` | Done: `ExactNum::nth_root` + `expr!` `root`; MPFR 1-ULP for n=4,5 in fuzz harness |
+| P1 | `sinh_cosh` paired evaluation | Done: `ExactNum::sinh_cosh` + MPFR paired compare |
 | P1 | Fuzz MPFR differential (all rounding modes) | Done: `tests/mpfr/fuzz_round_modes.rs` |
-| P1 | Benchmark regression tracking in CI (optional nightly) | `doc/bench-baselines.tsv` + `scripts/bench-compare.sh` (tab-separated, no JSON) |
-| P1 | Release compare vs astro-float / dashu-float | `zenith-float-compare` + `doc/compare-results.tsv` before crates.io publish |
-| P1 | `expr!` correct-rounding semantics documented per op | Accumath will lean on macro heavily |
+| P1 | Benchmark regression tracking in CI (optional nightly) | Done: `CI_BENCH=1 ./scripts/ci.sh` → `scripts/bench-compare.sh` |
+| P1 | Release compare vs astro-float / dashu-float | Done: `doc/compare-results.tsv` (astro 132-bit); `./scripts/compare-bench.sh --dashu` optional |
+| P1 | `expr!` correct-rounding semantics documented per op | Done: `doc/EXPR.md` |
 | P2 | Extra constants (φ, √2, γ, …) | Fewer series cold-starts |
 | P2 | `LowerExp` / `UpperExp` formatting | Debug / log output at scale |
 | P2 | `frexp` / `ldexp` / `scalb` / `logb` | IEEE-style interoperability without hardware floats |
@@ -238,12 +238,12 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 
 - [x] **`fma` / `mul_add`** — `a*b + c` rounded once at precision `p` (no intermediate round of `a*b`). Blocks compensated summation and stable Horner evaluation.
   - [x] `ExactNum::fma` / `mul_add` + `expr!` `fma` / `mul_add` (`mul_full_prec` + `add_full_prec` + retry)
-  - [ ] Mantissa: dedicated fused path (avoid full product width on every call)
+  - [x] Mantissa: full-width product for overlapping magnitudes (required for MPFR-correct sticky bits); skip full product when exponents differ by more than `p + 2` words
   - [x] MPFR oracle (`mpfr_fma`) 1-ULP for all rounding modes
 - [x] **`nth_root(n)`** — generalize `sqrt` / `cbrt` (`n = 2` and `n = 3` delegate; composite factors via sqrt/cbrt; prime roots via Newton).
   - [x] `n ≥ 2`; `n = 0` → error; even `n` rejects negative operands
   - [x] `ExactNum::nth_root` + `expr!` `root(x, n)`
-  - [ ] MPFR oracle for general `nth_root` at extreme precision (n=2/3 via sqrt/cbrt oracles; unit-tested for n=4,5)
+  - [x] MPFR oracle for general `nth_root` (n=4,5 at 1-ULP in `fuzz_round_modes`; n=2/3 via sqrt/cbrt; unit-tested)
 
 #### 3.2.2 Transcendentals (paired evaluation)
 
@@ -265,7 +265,7 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 - [x] Cross-library compare harness (`zenith-float-compare`, bigfloat-bench workloads)
 - [x] Capture `doc/compare-results.tsv` at release and document vs astro 0.9.6 / dashu 0.6.0
 - [x] Fuzz harness: MPFR bit-exact under all rounding modes (dashu-style; complements property tests in `ops/tests.rs`)
-- [ ] Optional: nightly bench regression gate in CI
+- [x] Optional: nightly bench regression gate in CI (`CI_BENCH=1` runs `scripts/bench-compare.sh`)
 - [ ] Track CI wall time budget (target: full gate &lt; 10 min debug, &lt; 30 min with MPFR)
 - [ ] Seed-controlled random tests for reproducible failures
 - [ ] Accumath-driven regression corpus (golden files from real formula subsets)
@@ -293,7 +293,7 @@ Does not block first production release; aligns with §2.3 P2 items.
 - [ ] `frexp` / `ldexp` / `scalb` / `logb` / `ilogb` — IEEE-style decomposition without hardware floats
 - [ ] `LowerHex` + scientific `Display` options (`LowerExp` / `UpperExp` formatting)
 - [ ] Additional `Consts` beyond π, e, ln 2, ln 10 (φ, √2, γ, …; configurable list)
-- [ ] `expr!` correct-rounding semantics documented per op (Accumath macro contract)
+- [x] `expr!` correct-rounding semantics documented per op (Accumath macro contract) (`doc/EXPR.md`)
 
 ---
 
@@ -318,7 +318,8 @@ Before calling a version **production-ready for Accumath numeric evaluation**:
 | `zenith-float-num/tests/README.md` | MPFR test instructions |
 | `zenith-float-num/src/ops/tests.rs` | Random inverse property tests |
 | `zenith-float-num/tests/mpfr/` | MPFR bit-oracle tests |
-| `doc/README.md` | Error bound theory |
+| `doc/EXPR.md` | `expr!` per-op rounding contract |
+| `doc/PRECISION.md` | Working precision vs exponent |
 | `tests/mod.rs` | `expr!` integration tests |
 | `CHANGELOG.md` | Released / unreleased API notes |
 

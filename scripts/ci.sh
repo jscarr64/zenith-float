@@ -20,4 +20,9 @@ if [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]]; then
   cargo test -p zenith-float-num --features mpfr-tests --release -- --test-threads=1
 fi
 
+# Optional nightly: Criterion vs doc/bench-baselines.tsv (slow).
+if [[ "${CI_BENCH:-}" == 1 ]]; then
+  bash "$root/scripts/bench-compare.sh"
+fi
+
 echo "zenith-float ci ok"

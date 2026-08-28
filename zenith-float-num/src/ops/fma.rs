@@ -29,10 +29,30 @@ impl ExactNumNumber {
             return self.mul(b, p, rm);
         }
 
+        // When |a*b| and c are separated by more than p plus two words, the
+        // smaller term cannot change the rounded p-bit result. Skip the
+        // full-width product in that case (Horner / dot-product tails).
+        let e_prod = (self.exponent() as i64).saturating_add(b.exponent() as i64);
+        let e_c = c.exponent() as i64;
+        let sep = e_prod.abs_diff(e_c);
+        if sep > (p as u64).saturating_add((2 * WORD_BIT_SIZE) as u64) {
+            if e_prod > e_c {
+                return self.mul(b, p, rm);
+            }
+            let mut ret = c.clone()?;
+            ret.set_precision(p, rm)?;
+            ret.set_inexact(true);
+            return Ok(ret);
+        }
+
         let inexact = self.inexact() | b.inexact() | c.inexact();
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p + p_inc;
 
+        // Exact product + add, then a single round to `p` (IEEE FMA). A
+        // truncated product would drop sticky bits and fail the MPFR oracle.
+        // Exact product + add, then a single round to `p` (IEEE FMA). A
+        // truncated product would drop sticky bits and fail the MPFR oracle.
         let prod = self.mul_full_prec(b)?;
         let mut sum = prod.add_full_prec(c)?;
 
@@ -69,5 +89,19 @@ mod tests {
         let b = ExactNumNumber::new(p).unwrap();
         let c = ExactNumNumber::from_i8(3, p).unwrap();
         assert_eq!(a.fma(&b, &c, p, rm).unwrap().cmp(&c), 0);
+    }
+
+    #[test]
+    fn test_fma_disjoint_exponents_skips_full_product() {
+        let rm = RoundingMode::ToEven;
+        let p = WORD_BIT_SIZE * 2;
+        let a = ExactNumNumber::from_i8(3, p).unwrap();
+        let b = ExactNumNumber::from_i8(5, p).unwrap();
+        let mut c = ExactNumNumber::from_i8(1, p).unwrap();
+        c.set_exponent(c.exponent() + 10_000);
+        let got = a.fma(&b, &c, p, rm).unwrap();
+        let mut want = c.clone().unwrap();
+        want.set_precision(p, rm).unwrap();
+        assert_eq!(got.cmp(&want), 0);
     }
 }

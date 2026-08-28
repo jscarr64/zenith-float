@@ -82,6 +82,25 @@ fn fuzz_mpfr_bit_exact_all_round_modes() {
                 );
             }
         }
+        if !n1.is_negative() && !n1.is_zero() && i < 8 {
+            for n in [4usize, 5] {
+                for (rm, rnd) in ROUNDS {
+                    let n3 = ExactNum::nth_root(&n1, n, p, rm);
+                    let mut f3 = Float::with_val(p as u32, 1);
+                    unsafe {
+                        mpfr::rootn_ui(f3.as_raw_mut(), f1.as_raw(), n as u64, rnd);
+                    }
+                    assert_float_close(
+                        n3,
+                        f3,
+                        p,
+                        &format!("{:?}", (i, n, &n1, p, rm, "fuzz nth_root")),
+                        false,
+                        &mut cc,
+                    );
+                }
+            }
+        }
         let _ = (f1, f2, i);
     }
 }
