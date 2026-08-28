@@ -149,10 +149,10 @@ Local reference trees (`dashu-master/`, `astro-float-main/`) are not in this rep
 | Elementary transcendentals (core set) | ✅ | ✅ | ✅ |
 | `hypot`, `atan2`, `log1p`, `expm1` | ✅ | ⬜ not in astro | ✅ |
 | `exp2`, `exp10`, `rem_pi` | ✅ | ⬜ not in astro | 🟡 partial |
-| Native `+ − × ÷` operators | ⬜ | ⬜ | ✅ |
-| `fbig!` / compile-time float literals | ⬜ | ⬜ | ✅ |
-| Parse/format bases 2–36 | ⬜ (bin/oct/dec/hex) | ⬜ (bin/oct/dec/hex) | ✅ |
-| Arbitrary-base float type | ⬜ | ⬜ | ✅ |
+| Native `+ − × ÷` operators | ✅ | ⬜ | ✅ |
+| `fbig!` / compile-time float literals | ✅ | ⬜ | ✅ |
+| Parse/format bases 2–36 | ✅ | ⬜ (bin/oct/dec/hex) | ✅ |
+| Arbitrary-base float type | ✅ | ⬜ | ✅ |
 | Complex (`CBig`) | ⬜ | ⬜ | ✅ |
 | `fma` / `mul_add` | ⬜ | ⬜ | 🟡 |
 | General `nth_root(n)` | ✅ | ✅ | ✅ |

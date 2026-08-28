@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Native `+`, `-`, `*`, `/` operators on `ExactNum` (default precision, round-to-even).
+- `exact!` / `fbig!` compile-time decimal float literals.
+- Parse/format for radices 2–36 (`Radix::try_new`); `_e` exponent separator for bases > 10.
+- `RadixFloat` wrapper and `ExactNum::with_radix` for radix-tagged I/O.
 - `ExactNum::nth_root` / `expr!` `root(x, n)` — general n-th root (`sqrt`/`cbrt` delegation, composite factors, Newton for primes).
 - `ExactNum::sinh_cosh` — paired hyperbolic evaluation with a single `exp(|x|)` path.
 - `ExactNum::copysign`, `ExactNum::next_after` — software IEEE sign and successor.

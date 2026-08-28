@@ -64,11 +64,13 @@ impl ExactNumNumber {
             return Err(Error::InvalidArgument);
         }
 
-        match rdx {
-            Radix::Bin => Self::conv_from_binary(sign, digits, e, p, rm),
-            Radix::Oct => Self::conv_from_commensurable(sign, digits, e, 3, p, rm),
-            Radix::Dec => Self::conv_from_dec(sign, digits, e, p, rm, cc),
-            Radix::Hex => Self::conv_from_commensurable(sign, digits, e, 4, p, rm),
+        match rdx.value() {
+            2 => Self::conv_from_binary(sign, digits, e, p, rm),
+            10 => Self::conv_from_dec(sign, digits, e, p, rm, cc),
+            b if b.is_power_of_two() => {
+                Self::conv_from_commensurable(sign, digits, e, b.trailing_zeros() as usize, p, rm)
+            }
+            b => Self::conv_from_general(sign, digits, e, b, p, rm),
         }
     }
 
@@ -273,6 +275,58 @@ impl ExactNumNumber {
         }
     }
 
+    fn conv_from_general(
+        sign: Sign,
+        digits: &[u8],
+        e: Exponent,
+        base: u8,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Self, Error> {
+        if digits.is_empty() {
+            return Self::new(if p < usize::MAX { p } else { DEFAULT_P });
+        }
+
+        for &d in digits {
+            if d >= base {
+                return Err(Error::InvalidArgument);
+            }
+        }
+
+        let p = if p < usize::MAX {
+            round_p(p)
+        } else {
+            let p = round_p((digits.len() as u64 * 3321928095 / 1000000000) as usize + 1);
+            Self::p_assertion(p)?;
+            p
+        };
+
+        let p_wrk = p + WORD_BIT_SIZE;
+        let b = Self::from_usize(base as usize)?;
+
+        let mut acc = Self::new(p_wrk)?;
+        for &d in digits {
+            acc = acc.mul(&b, p_wrk, RoundingMode::None)?;
+            if d > 0 {
+                let dv = Self::from_usize(d as usize)?;
+                acc = acc.add(&dv, p_wrk, RoundingMode::None)?;
+            }
+        }
+
+        let exp_adj = e as isize - digits.len() as isize;
+        if exp_adj > 0 {
+            let pwr = b.powi(exp_adj as usize, p_wrk, RoundingMode::None)?;
+            acc = acc.mul(&pwr, p_wrk, RoundingMode::None)?;
+        } else if exp_adj < 0 {
+            let pwr = b.powi((-exp_adj) as usize, p_wrk, RoundingMode::None)?;
+            acc = acc.div(&pwr, p_wrk, RoundingMode::None)?;
+        }
+
+        acc.set_sign(sign);
+        acc.set_precision(p, rm)?;
+        Ok(acc)
+    }
+
     fn conv_from_dec(
         sign: Sign,
         digits: &[u8],
@@ -388,11 +442,11 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<(Sign, Vec<u8>, Exponent), Error> {
-        match rdx {
-            Radix::Bin => self.conv_to_binary(),
-            Radix::Oct => self.conv_to_commensurable(3),
-            Radix::Dec => self.conv_to_dec(rm, cc),
-            Radix::Hex => self.conv_to_commensurable(4),
+        match rdx.value() {
+            2 => self.conv_to_binary(),
+            10 => self.conv_to_dec(rm, cc),
+            b if b.is_power_of_two() => self.conv_to_commensurable(b.trailing_zeros() as usize),
+            b => self.conv_to_general(b, rm, cc),
         }
     }
 
@@ -743,6 +797,66 @@ impl ExactNumNumber {
         ret.resize(ret.len() - cnt, 0);
 
         Ok((self.sign(), ret, e))
+    }
+
+    fn conv_to_general(
+        &self,
+        base: u8,
+        _rm: RoundingMode,
+        _cc: &mut Consts,
+    ) -> Result<(Sign, Vec<u8>, Exponent), Error> {
+        if self.is_zero() {
+            let mut zero = Vec::new();
+            zero.try_reserve_exact(1)?;
+            zero.push(0);
+            return Ok((self.sign(), zero, 0));
+        }
+
+        let p = self.mantissa_max_bit_len() + WORD_BIT_SIZE * 2;
+        let b = Self::from_usize(base as usize)?;
+        let one = Self::from_usize(1)?;
+        let mut x = self.clone()?;
+        x.set_precision(p, RoundingMode::None)?;
+
+        let mut e: Exponent = 0;
+        while x.cmp(&one) >= 0 {
+            x = x.div(&b, p, RoundingMode::None)?;
+            e = e.saturating_add(1);
+        }
+
+        let mut digits = Vec::new();
+        let max_digits = p * 2;
+        digits.try_reserve_exact(max_digits)?;
+
+        for _ in 0..max_digits {
+            x = x.mul(&b, p, RoundingMode::None)?;
+            let iv = x.int()?;
+            let mut digit = 0u8;
+            for d in 1..base {
+                let dv = Self::from_usize(d as usize)?;
+                if dv.cmp(&iv) > 0 {
+                    break;
+                }
+                digit = d;
+            }
+            digits.push(digit);
+            if digit > 0 {
+                let sub = Self::from_usize(digit as usize)?;
+                x = x.sub(&sub, p, RoundingMode::None)?;
+            }
+            if x.is_zero() {
+                break;
+            }
+        }
+
+        while digits.last() == Some(&0) {
+            digits.pop();
+        }
+        if digits.is_empty() {
+            digits.push(0);
+        }
+
+        Ok((self.sign(), digits, e))
     }
 
     fn conv_to_binary(&self) -> Result<(Sign, Vec<u8>, Exponent), Error> {
@@ -1124,7 +1238,7 @@ mod tests {
                 )
                 .unwrap()
                 .is_zero());
-                let m1 = [1, rdx as u8, 0];
+                let m1 = [1, rdx.value(), 0];
                 assert!(
                     ExactNumNumber::convert_from_radix(
                         s1,
@@ -1138,7 +1252,7 @@ mod tests {
                     .unwrap_err()
                         == Error::InvalidArgument
                 );
-                let m1 = [1, rdx as u8 - 1, 0];
+                let m1 = [1, rdx.value() - 1, 0];
                 assert!(ExactNumNumber::convert_from_radix(
                     s1,
                     &m1,

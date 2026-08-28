@@ -1,10 +1,46 @@
 // Additional tests of the library.
 
+use zenith_float::{exact, fbig, RadixFloat};
 use zenith_float_macro::expr;
 use zenith_float_num::{
     ctx::Context, Consts, ExactNum, Radix, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN,
     WORD_BIT_SIZE, WORD_MAX, WORD_SIGNIFICANT_BIT,
 };
+
+#[test]
+fn native_operators() {
+    let a = ExactNum::from(6);
+    let b = ExactNum::from(2);
+    assert_eq!((&a + &b).cmp(&ExactNum::from(8)), Some(0));
+    assert_eq!((&a - &b).cmp(&ExactNum::from(4)), Some(0));
+    assert_eq!((&a * &b).cmp(&ExactNum::from(12)), Some(0));
+    assert_eq!((&a / &b).cmp(&ExactNum::from(3)), Some(0));
+}
+
+#[test]
+fn compile_time_literals() {
+    let a = exact!("2.5");
+    let b = fbig!("2.5");
+    assert_eq!(a.cmp(&b), Some(0));
+}
+
+#[test]
+fn radix_base12_roundtrip() {
+    let mut cc = Consts::new().unwrap();
+    let rdx = Radix::try_new(12).unwrap();
+    let p = 192;
+    let rm = RoundingMode::ToEven;
+    let n = ExactNum::parse("10.A", rdx, p, rm, &mut cc);
+    let s = n.format(rdx, rm, &mut cc).unwrap();
+    let g = ExactNum::parse(&s, rdx, p, rm, &mut cc);
+    assert_eq!(n.cmp(&g), Some(0));
+
+    let rf = n.clone().with_radix(rdx);
+    assert_eq!(rf.radix(), rdx);
+    let s2 = rf.format(rm, &mut cc).unwrap();
+    let g2 = RadixFloat::parse(&s2, rdx, p, rm, &mut cc).unwrap();
+    assert_eq!(n.cmp(g2.value()), Some(0));
+}
 
 #[test]
 fn macro_compile_tests() {

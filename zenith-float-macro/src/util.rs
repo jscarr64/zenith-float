@@ -11,6 +11,35 @@ use zenith_float_num::ExactNum;
 use zenith_float_num::Radix;
 use zenith_float_num::RoundingMode;
 
+pub fn str_to_exact_num_literal(s: &str, span: Span) -> Result<TokenStream, Error> {
+    let mut cc = Consts::new().map_err(|e| Error::new(span, format!("{e}")))?;
+    let f = ExactNum::parse(s, Radix::Dec, usize::MAX, RoundingMode::ToEven, &mut cc);
+    if let Some(err) = f.err() {
+        return Err(Error::new(
+            span,
+            format!("failed to parse ExactNum from {s}: {err}"),
+        ));
+    }
+
+    if f.inexact() {
+        return Err(Error::new(
+            span,
+            format!("literal {s} is inexact at compile time"),
+        ));
+    }
+
+    if let Some((m, n, sign, e, inexact)) = f.as_raw_parts() {
+        let stoken = if sign.is_positive() {
+            quote!(zenith_float::Sign::Pos)
+        } else {
+            quote!(zenith_float::Sign::Neg)
+        };
+        Ok(quote!(zenith_float::ExactNum::from_raw_parts(&[#(#m),*], #n, #stoken, #e, #inexact)))
+    } else {
+        Ok(quote!(zenith_float::ExactNum::nan()))
+    }
+}
+
 pub fn str_to_exact_num_expr(s: &str, span: Span, cc: &mut Consts) -> Result<TokenStream, Error> {
     let f = ExactNum::parse(s, Radix::Dec, usize::MAX, RoundingMode::ToEven, cc);
     if let Some(err) = f.err() {

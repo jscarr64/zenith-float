@@ -261,6 +261,19 @@ extern crate alloc;
 /// // Compute an expression using a temporary context.
 /// let ret = expr!(x + y / z, (p, rm, &mut cc, emin, emax));
 /// ```
-pub use zenith_float_macro::expr;
+///
+/// ## Compile-time literals
+///
+/// [`exact`] and [`fbig`] parse a string literal at compile time into an exact [`ExactNum`]:
+///
+/// ```
+/// use zenith_float::{exact, fbig, ExactNum, RoundingMode};
+///
+/// let a = exact!("3.25");
+/// let b = fbig!("3.25");
+/// assert_eq!(a.cmp(&b), Some(0));
+/// assert_eq!(a.cmp(&ExactNum::from_word(13, 64).div(&ExactNum::from_word(4, 64), 64, RoundingMode::ToEven)), Some(0));
+/// ```
+pub use zenith_float_macro::{exact, expr, fbig};
 
 pub use zenith_float_num::*;

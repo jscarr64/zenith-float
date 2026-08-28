@@ -83,22 +83,15 @@ pub fn parse(s: &str, rdx: Radix) -> Result<ParserState<'_>, Error> {
     }
 
     if let Some(c) = ch {
-        match (c, rdx) {
-            ('i', _) => {
-                parse_inf(&mut parser_state);
-            }
-            ('n', _) => {
-                parse_nan(&mut parser_state);
-            }
-            ('.' | '0' | '1', Radix::Bin) => parse_num(&mut parser_state, rdx)?,
-            ('.' | '0'..='7', Radix::Oct) => parse_num(&mut parser_state, rdx)?,
-            ('.' | '0'..='9', Radix::Dec) => parse_num(&mut parser_state, rdx)?,
-            ('.' | '0'..='9' | 'a'..='f', Radix::Hex) => parse_num(&mut parser_state, rdx)?,
-            _ => {
-                // Unrecognized input remains explicitly NaN or can be handled as invalid
-                parser_state.nan = true;
-            }
-        };
+        if c == 'i' {
+            parse_inf(&mut parser_state);
+        } else if c == 'n' {
+            parse_nan(&mut parser_state);
+        } else if c == '.' || c.to_digit(rdx.value() as u32).is_some() {
+            parse_num(&mut parser_state, rdx)?;
+        } else {
+            parser_state.nan = true;
+        }
     } else {
         parser_state.nan = true;
     }
@@ -131,7 +124,7 @@ fn parse_num(parser_state: &mut ParserState, rdx: Radix) -> Result<(), Error> {
     let (frac_len, _) = parse_digits(parser_state, false, false, rdx)?;
     if frac_len > 0 || int_len > 0 {
         parser_state.nan = false;
-        if rdx == Radix::Hex {
+        if rdx.uses_underscore_exponent() {
             if Some('_') == parser_state.cur_char() {
                 parser_state.next_char();
                 if Some('e') == parser_state.cur_char() {
@@ -177,7 +170,7 @@ fn parse_digits(
     if skip_zeroes {
         // skip leading zeroes
         while let Some(c) = ch {
-            if is_radix_digit(c, rdx) && c.to_digit(rdx as u32).unwrap() == 0 {
+            if is_radix_digit(c, rdx) && c.to_digit(rdx.value() as u32).unwrap() == 0 {
                 // call to unwrap() is unreachable, because c is surely a digit.
                 skip_cnt += 1;
                 if !int {
@@ -199,7 +192,7 @@ fn parse_digits(
             if is_radix_digit(c, rdx) {
                 parser_state
                     .mantissa_bytes
-                    .push(c.to_digit(rdx as u32).unwrap() as u8); // call to unwrap() is unreachable, because c is surely a digit.
+                    .push(c.to_digit(rdx.value() as u32).unwrap() as u8); // call to unwrap() is unreachable, because c is surely a digit.
                 len += 1;
             } else {
                 break;
@@ -217,19 +210,7 @@ fn parse_digits(
 }
 
 fn is_radix_digit(c: char, rdx: Radix) -> bool {
-    matches!(
-        (rdx, c),
-        (Radix::Bin, '0' | '1')
-            | (Radix::Oct, '0'..='7')
-            | (
-                Radix::Dec,
-                '0'..='9'
-            )
-            | (
-                Radix::Hex,
-                '0'..='9' | 'a'..='f'
-            )
-    )
+    c.to_digit(rdx.value() as u32).is_some()
 }
 
 fn parse_exp(parser_state: &mut ParserState, rdx: Radix) {
@@ -253,8 +234,8 @@ fn parse_exp(parser_state: &mut ParserState, rdx: Radix) {
             if parser_state.e > e_thres {
                 break;
             }
-            parser_state.e = parser_state.e.saturating_mul(rdx as isize);
-            let digit = c.to_digit(rdx as u32).unwrap(); // call to unwrap() is unreachable, because c is surely a digit.
+            parser_state.e = parser_state.e.saturating_mul(rdx.value() as isize);
+            let digit = c.to_digit(rdx.value() as u32).unwrap(); // call to unwrap() is unreachable, because c is surely a digit.
             parser_state.e = parser_state.e.saturating_add(digit as isize);
         } else {
             break;

@@ -163,20 +163,70 @@ impl From<TryReserveError> for Error {
     }
 }
 
-/// Radix.
-#[derive(PartialEq, Eq, Copy, Clone, Debug)]
-pub enum Radix {
-    /// Binary.
-    Bin = 2,
+/// Radix for parse/format (bases 2 through 36).
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
+pub struct Radix(u8);
 
-    /// Octal.
-    Oct = 8,
+impl Radix {
+    /// Binary (base 2).
+    pub const Bin: Radix = Radix(2);
+    /// Octal (base 8).
+    pub const Oct: Radix = Radix(8);
+    /// Decimal (base 10).
+    pub const Dec: Radix = Radix(10);
+    /// Hexadecimal (base 16).
+    pub const Hex: Radix = Radix(16);
 
-    /// Decimal.
-    Dec = 10,
+    /// Creates a radix in the inclusive range 2..=36.
+    ///
+    /// ## Errors
+    ///
+    ///  - InvalidArgument: `base` is outside 2..=36.
+    pub fn try_new(base: u8) -> Result<Self, Error> {
+        if (2..=36).contains(&base) {
+            Ok(Radix(base))
+        } else {
+            Err(Error::InvalidArgument)
+        }
+    }
 
-    /// Hexadecimal.
-    Hex = 16,
+    /// Returns the numeric base.
+    pub const fn value(self) -> u8 {
+        self.0
+    }
+
+    /// Returns `log2(base)` when the base is a power of two.
+    pub const fn commensurable_shift(self) -> Option<usize> {
+        let b = self.0;
+        if b.is_power_of_two() {
+            Some(b.trailing_zeros() as usize)
+        } else {
+            None
+        }
+    }
+
+    /// Whether the scientific exponent must use `_e` (digit `e` appears in mantissa digits).
+    pub const fn uses_underscore_exponent(self) -> bool {
+        self.0 > 10
+    }
+
+    /// Approximate bits per digit (for buffer sizing).
+    pub fn bits_per_digit(self) -> usize {
+        match self.0 {
+            2 => 1,
+            8 => 3,
+            10 => 3,
+            16 => 4,
+            b if b.is_power_of_two() => b.trailing_zeros() as usize,
+            _ => 4,
+        }
+    }
+}
+
+impl From<Radix> for u8 {
+    fn from(r: Radix) -> u8 {
+        r.0
+    }
 }
 
 /// Rounding modes.

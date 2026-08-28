@@ -9,13 +9,35 @@ use crate::Exponent;
 use crate::Sign;
 
 #[cfg(feature = "std")]
-use std::fmt::Write;
+use {std::fmt::Write, std::vec::Vec};
 
 #[cfg(not(feature = "std"))]
-use {alloc::string::String, core::fmt::Write};
+use {alloc::string::String, alloc::vec::Vec, core::fmt::Write};
 
-const DIGIT_CHARS: [char; 16] =
-    ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
+const DIGIT_CHARS: [char; 36] = [
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+    'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+];
+
+fn format_uint_radix(val: usize, rdx: Radix, out: &mut String) -> Result<(), Error> {
+    let base = rdx.value() as usize;
+    if val == 0 {
+        out.push('0');
+        return Ok(());
+    }
+    let mut v = val;
+    let mut digits = Vec::new();
+    digits.try_reserve_exact(32)?;
+    while v > 0 {
+        digits.push((v % base) as u8);
+        v /= base;
+    }
+    digits.reverse();
+    for d in digits {
+        out.push(DIGIT_CHARS[d as usize]);
+    }
+    Ok(())
+}
 
 impl ExactNumNumber {
     /// Parses the number from the string `s` using radix `rdx`, precision `p`, and rounding mode `rm`.
@@ -61,12 +83,7 @@ impl ExactNumNumber {
         let mut mstr = String::new();
         let mstr_sz = 8
             + (self.mantissa_max_bit_len() + core::mem::size_of::<Exponent>() * 8)
-                / match rdx {
-                    Radix::Bin => 1,
-                    Radix::Oct => 3,
-                    Radix::Dec => 3,
-                    Radix::Hex => 4,
-                };
+                / rdx.bits_per_digit();
 
         mstr.try_reserve_exact(mstr_sz)?;
 
@@ -90,7 +107,7 @@ impl ExactNumNumber {
             iter.map(|&d| DIGIT_CHARS[d as usize])
                 .for_each(|v| mstr.push(v));
 
-            if rdx == Radix::Hex {
+            if rdx.uses_underscore_exponent() {
                 let _ = write!(mstr, "_");
             }
 
@@ -101,19 +118,13 @@ impl ExactNumNumber {
                     (e as isize - 1).unsigned_abs()
                 };
 
-                let _ = match rdx {
-                    Radix::Bin => write!(mstr, "e-{:b}", val),
-                    Radix::Oct => write!(mstr, "e-{:o}", val),
-                    Radix::Dec => write!(mstr, "e-{}", val),
-                    Radix::Hex => write!(mstr, "e-{:x}", val),
-                };
+                mstr.push('e');
+                mstr.push('-');
+                format_uint_radix(val, rdx, &mut mstr)?;
             } else {
-                let _ = match rdx {
-                    Radix::Bin => write!(mstr, "e+{:b}", e as isize - 1),
-                    Radix::Oct => write!(mstr, "e+{:o}", e as isize - 1),
-                    Radix::Dec => write!(mstr, "e+{}", e as isize - 1),
-                    Radix::Hex => write!(mstr, "e+{:x}", e as isize - 1),
-                };
+                mstr.push('e');
+                mstr.push('+');
+                format_uint_radix((e as isize - 1) as usize, rdx, &mut mstr)?;
             };
         }
 

@@ -14,7 +14,7 @@ use syn::{
     parse::Parse, spanned::Spanned, BinOp, Error, Expr, ExprBinary, ExprCall, ExprGroup, ExprLit,
     ExprParen, ExprPath, ExprUnary, Lit, Token, UnOp,
 };
-use util::{check_arg_num, str_to_exact_num_expr};
+use util::{check_arg_num, str_to_exact_num_expr, str_to_exact_num_literal};
 use zenith_float_num::{Consts, EXPONENT_BIT_SIZE};
 
 // Speculative error estimation.
@@ -637,4 +637,22 @@ pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     });
 
     ret.into()
+}
+
+/// Compile-time decimal float literal.
+///
+/// Parses a string literal at compile time and expands to an exact [`ExactNum`].
+/// Use via the `zenith-float` crate: `use zenith_float::exact`.
+#[proc_macro]
+pub fn exact(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let lit = syn::parse_macro_input!(input as syn::LitStr);
+    str_to_exact_num_literal(&lit.value(), lit.span())
+        .unwrap_or_else(|e| e.to_compile_error())
+        .into()
+}
+
+/// Alias for [`exact`], matching dashu-float naming.
+#[proc_macro]
+pub fn fbig(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    exact(input)
 }

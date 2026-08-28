@@ -26,6 +26,7 @@ mod mantissa;
 mod num;
 mod ops;
 mod parser;
+mod radix_float;
 mod strop;
 
 #[cfg(feature = "std")]
@@ -42,6 +43,7 @@ pub use crate::defs::Sign;
 pub use crate::defs::Word;
 pub use crate::ext::ExactNum;
 pub use crate::ext::FromExt;
+pub use crate::radix_float::RadixFloat;
 pub use crate::ext::INF_NEG;
 pub use crate::ext::INF_POS;
 pub use crate::ext::NAN;

@@ -747,6 +747,11 @@ impl ExactNum {
         Ok(ret)
     }
 
+    /// Wraps `self` in a [`RadixFloat`] tagged with `radix` for parse/format.
+    pub fn with_radix(self, radix: Radix) -> crate::radix_float::RadixFloat {
+        crate::radix_float::RadixFloat::with_radix(self, radix)
+    }
+
     /// Returns a random normalized (not subnormal) ExactNum number with exponent in the range
     /// from `exp_from` to `exp_to` inclusive. The sign can be positive and negative. Zero is excluded.
     /// Precision is rounded upwards to the word size.
@@ -1895,6 +1900,47 @@ impl_format_rdx!(Octal, Radix::Oct);
 impl_format_rdx!(Display, Radix::Dec);
 #[cfg(feature = "std")]
 impl_format_rdx!(UpperHex, Radix::Hex);
+
+macro_rules! impl_exact_binop {
+    ($trait:ident, $method:ident, $op:ident) => {
+        impl core::ops::$trait<&ExactNum> for &ExactNum {
+            type Output = ExactNum;
+
+            fn $method(self, rhs: &ExactNum) -> ExactNum {
+                ExactNum::$op(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+            }
+        }
+
+        impl core::ops::$trait<ExactNum> for &ExactNum {
+            type Output = ExactNum;
+
+            fn $method(self, rhs: ExactNum) -> ExactNum {
+                ExactNum::$op(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+            }
+        }
+
+        impl core::ops::$trait<&ExactNum> for ExactNum {
+            type Output = ExactNum;
+
+            fn $method(self, rhs: &ExactNum) -> ExactNum {
+                ExactNum::$op(&self, rhs, DEFAULT_P, RoundingMode::ToEven)
+            }
+        }
+
+        impl core::ops::$trait<ExactNum> for ExactNum {
+            type Output = ExactNum;
+
+            fn $method(self, rhs: ExactNum) -> ExactNum {
+                ExactNum::$op(&self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+            }
+        }
+    };
+}
+
+impl_exact_binop!(Add, add, add);
+impl_exact_binop!(Sub, sub, sub);
+impl_exact_binop!(Mul, mul, mul);
+impl_exact_binop!(Div, div, div);
 
 /// A trait for conversion with additional arguments.
 pub trait FromExt<T> {
