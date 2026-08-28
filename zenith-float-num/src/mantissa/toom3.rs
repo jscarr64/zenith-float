@@ -182,39 +182,6 @@ mod tests {
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
 
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn toom3_perf() {
-        for _ in 0..5 {
-            let sz = 220;
-            let f = random_slice(sz, sz);
-            let mut n = vec![];
-            let mut ret = vec![];
-            ret.resize(sz + f.len(), 0);
-            let l = 10000;
-
-            for _ in 0..l {
-                let v = random_slice(sz, sz);
-                n.push(v);
-            }
-
-            let start_time = std::time::Instant::now();
-            for ni in &n {
-                Mantissa::toom3(ni, &f, &mut ret).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("toom3 {}", time.as_millis());
-
-            let start_time = std::time::Instant::now();
-            for ni in &n {
-                Mantissa::mul_unbalanced(ni, &f, &mut ret).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("mul  {}", time.as_millis());
-        }
-    }
-
     #[test]
     fn test_toom3() {
         // d1*d2

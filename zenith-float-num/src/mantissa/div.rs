@@ -402,39 +402,6 @@ mod tests {
         }
     }
 
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn test_div_perf() {
-        for _ in 0..5 {
-            let sz1 = 16384;
-            let sz2 = 800;
-            let f = random_normalized_slice(sz1, sz1);
-            let mut n = vec![];
-            let l = 10;
-            for _ in 0..l {
-                let v = random_normalized_slice(sz2, sz2);
-                n.push(v);
-            }
-
-            // basic
-            let start_time = std::time::Instant::now();
-            for ni in &n {
-                let _ = Mantissa::div_basic(&f, ni).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("div_basic {}", time.as_millis());
-
-            // unbalanced
-            let start_time = std::time::Instant::now();
-            for ni in &n {
-                let _ = Mantissa::div_unbalanced(&f, ni).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("div_unbalanced {}", time.as_millis());
-        }
-    }
-
     fn random_normalized_slice(min_len: usize, max_len: usize) -> Vec<Word> {
         let mut s1 = Vec::new();
         let l = if max_len > min_len {

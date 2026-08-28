@@ -134,26 +134,4 @@ mod tests {
         let n1 = random_subnormal(p);
         assert!(n1.acos(p, rm, &mut cc).unwrap().cmp(&half_pi) == 0);
     }
-
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn arccosine_perf() {
-        let mut cc = Consts::new().unwrap();
-        let p = 133;
-
-        let mut n = vec![];
-        for _ in 0..10000 {
-            n.push(ExactNumNumber::random_normal(p, -5, 5).unwrap());
-        }
-
-        for _ in 0..5 {
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                let _f = ni.acos(p, RoundingMode::ToEven, &mut cc).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("{}", time.as_millis());
-        }
-    }
 }

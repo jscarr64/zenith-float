@@ -234,38 +234,6 @@ mod tests {
         }
     }
 
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn toom2_perf() {
-        for _ in 0..5 {
-            let sz = 34;
-            let f = random_slice(sz, sz);
-            let mut n = vec![];
-            let mut ret = vec![];
-            ret.resize(sz + f.len(), 0);
-            let l = 100000;
-            for _ in 0..l {
-                let v = random_slice(sz, sz);
-                n.push(v);
-            }
-
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                Mantissa::toom2(ni, &f, &mut ret).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("toom2 {}", time.as_millis());
-
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                mul(ni, &f, &mut ret);
-            }
-            let time = start_time.elapsed();
-            println!("mul  {}", time.as_millis());
-        }
-    }
-
     fn random_slice(min_len: usize, max_len: usize) -> Vec<Word> {
         let mut s1 = Vec::new();
         let l = if max_len > min_len {

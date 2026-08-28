@@ -164,25 +164,4 @@ mod tests {
         assert!(zero.tanh(p, rm, &mut cc).unwrap().is_zero());
         assert!(n1.tanh(p, rm, &mut cc).unwrap().cmp(&n1) == 0);
     }
-
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn tanh_perf() {
-        let p = 160;
-        let mut cc = Consts::new().unwrap();
-        let mut n = vec![];
-        for _ in 0..10000 {
-            n.push(ExactNumNumber::random_normal(p, 0, 5).unwrap());
-        }
-
-        for _ in 0..5 {
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                let _f = ni.tanh(p, RoundingMode::ToEven, &mut cc).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("{}", time.as_millis());
-        }
-    }
 }

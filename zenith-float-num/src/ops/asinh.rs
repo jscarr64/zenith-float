@@ -192,25 +192,4 @@ mod tests {
         let n1 = random_subnormal(p);
         assert!(n1.asinh(p, rm, &mut cc).unwrap().cmp(&n1) == 0);
     }
-
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn asinh_perf() {
-        let mut cc = Consts::new().unwrap();
-        let mut n = vec![];
-        let p = 160;
-        for _ in 0..10000 {
-            n.push(ExactNumNumber::random_normal(p, 0, 5).unwrap());
-        }
-
-        for _ in 0..5 {
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                let _f = ni.asinh(p, RoundingMode::ToEven, &mut cc).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("{}", time.as_millis());
-        }
-    }
 }

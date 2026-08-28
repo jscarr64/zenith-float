@@ -81,3 +81,12 @@ That runs the default workspace tests, `std`-only tests, and tests with `random`
 ```bash
 cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1
 ```
+
+Benchmarks (Criterion, release profile, deterministic fixtures):
+
+```bash
+./scripts/bench.sh              # quick smoke
+./scripts/bench.sh --full       # full samples + HTML report under target/criterion/
+cargo bench -p zenith-float-num --bench transcendentals -- ln/1024
+cargo bench -p zenith-float-num --bench arithmetic -- mul_fft   # FFT-scale mul (slow)
+```

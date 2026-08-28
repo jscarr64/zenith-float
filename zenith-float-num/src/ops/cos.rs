@@ -216,27 +216,6 @@ mod tests {
         assert!(d4.cos(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
     }
 
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn cosine_perf() {
-        let p = 640;
-        let mut cc = Consts::new().unwrap();
-        let mut n = vec![];
-        for _ in 0..10000 {
-            n.push(ExactNumNumber::random_normal(p, -5, 5).unwrap());
-        }
-
-        for _ in 0..5 {
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                let _f = ni.cos(p, RoundingMode::ToEven, &mut cc).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("{}", time.as_millis());
-        }
-    }
-
     /* test the polynimial generator error
     #[test]
     fn poly_cos() {

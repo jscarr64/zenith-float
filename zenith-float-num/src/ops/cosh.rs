@@ -118,25 +118,4 @@ mod tests {
         assert!(zero.cosh(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
         assert!(d4.cosh(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
     }
-
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn cosh_perf() {
-        let p = 320;
-        let mut cc = Consts::new().unwrap();
-        let mut n = vec![];
-        for _ in 0..10000 {
-            n.push(ExactNumNumber::random_normal(p, -20, 20).unwrap());
-        }
-
-        for _ in 0..5 {
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                let _f = ni.cosh(p, RoundingMode::ToEven, &mut cc).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("{}", time.as_millis());
-        }
-    }
 }

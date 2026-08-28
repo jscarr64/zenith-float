@@ -588,41 +588,6 @@ mod tests {
         }
     }
 
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn fft_mul_perf() {
-        for _ in 0..5 {
-            let sz = 5400;
-
-            let f = random_slice(sz, sz);
-
-            let mut ret1 = WordBuf::new(sz + sz).unwrap();
-            let mut ret2 = WordBuf::new(sz + sz).unwrap();
-
-            let mut n = vec![];
-            let l = 100;
-            for _ in 0..l {
-                let v = random_slice(sz, sz);
-                n.push(v);
-            }
-
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                Mantissa::fft_mul(ni, &f, &mut ret1).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("fft_mul {}", time.as_millis());
-
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                Mantissa::mul_unbalanced(ni, &f, &mut ret2).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("mul_unbalanced  {}", time.as_millis());
-        }
-    }
-
     fn random_slice(min_len: usize, max_len: usize) -> Vec<Word> {
         let mut s1 = Vec::new();
         let l = if max_len > min_len {

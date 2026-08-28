@@ -823,26 +823,6 @@ mod test {
         assert_eq!(d10.cmp(&d10_ref), 0);
     }
 
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn sinh_perf() {
-        let p = 32000;
-        let mut n = vec![];
-        for _ in 0..100 {
-            n.push(ExactNumNumber::random_normal(p, -0, -0).unwrap());
-        }
-
-        for _ in 0..5 {
-            let start_time = std::time::Instant::now();
-            for ni in n.drain(..) {
-                let _f = ni.sinh_series(p, RoundingMode::ToEven).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("{}", time.as_millis());
-        }
-    }
-
     /* test the polynimial generator error
     #[test]
     fn poly_sinh() {

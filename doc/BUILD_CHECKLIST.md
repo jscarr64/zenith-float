@@ -25,6 +25,7 @@ Living document for what is **implemented**, **tested**, and **still required** 
 ```bash
 ./scripts/ci.sh
 cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Linux x86_64 + rug
+./scripts/bench.sh                                                          # Criterion (--quick)
 ```
 
 ---
@@ -119,7 +120,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `cargo test` with `no-default-features --features std` | ✅ |
 | `cargo test --features random,serde` | ✅ |
 | MPFR bit-oracle tests (`mpfr-tests`) | 🟡 Manual; **not in CI** |
-| Criterion / dedicated benches | ⬜ 26 `#[ignore]` `*_perf` smoke tests only |
+| Criterion / dedicated benches | ✅ `zenith-float-num/benches/` (arithmetic, transcendentals, composite) |
 | `proptest` / quickcheck | ⬜ Hand-written random loops (`TEST_ITERS = 256`) |
 
 **Property tests** (`zenith-float-num/src/ops/tests.rs`): inverse pairs (ln↔exp, sin↔asin, log↔pow, etc.) with mathematically derived error bounds; exponent sampling capped at `TEST_EXP_BOUND = 1024` for runtime.
@@ -190,7 +191,7 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 | P1 | `nth_root(n)` | Many physics / engineering closed forms |
 | P1 | `sinh_cosh` paired evaluation | dashu has this; saves duplicate exp work |
 | P1 | Fuzz MPFR differential (all rounding modes) | dashu `fuzz/` model; stronger than property loops alone |
-| P1 | Real benchmarks (Criterion + public numbers) | astro has [bigfloat-bench](https://github.com/stencillogic/bigfloat-bench); zenith has only `#[ignore]` perf tests |
+| P1 | Benchmark regression tracking in CI (optional nightly) | Criterion benches exist; not yet gated in `scripts/ci.sh` |
 | P1 | `expr!` correct-rounding semantics documented per op | Accumath will lean on macro heavily |
 | P2 | Extra constants (φ, √2, γ, …) | Fewer series cold-starts |
 | P2 | `LowerExp` / `UpperExp` formatting | Debug / log output at scale |
@@ -231,7 +232,8 @@ For **675K diverse formulas**, correctness and operability matter more than matc
 
 ### 3.3 Testing & performance (P1)
 
-- [ ] Replace `#[ignore]` `*_perf` with Criterion benches in `benches/`
+- [x] Replace `#[ignore]` `*_perf` with Criterion benches in `benches/`
+- [ ] Optional: nightly Criterion regression gate in CI
 - [ ] Track CI wall time budget (target: full gate &lt; 10 min debug, &lt; 30 min with MPFR)
 - [ ] Seed-controlled random tests for reproducible failures
 - [ ] Accumath-driven regression corpus (golden files from real formula subsets)

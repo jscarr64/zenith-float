@@ -157,25 +157,4 @@ mod tests {
 
         assert!(ONE.acosh(p, rm, &mut cc).unwrap().is_zero());
     }
-
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn acosh_perf() {
-        let mut cc = Consts::new().unwrap();
-        let mut n = vec![];
-        let p = 160;
-        for _ in 0..10000 {
-            n.push(ExactNumNumber::random_normal(p, 0, 5).unwrap());
-        }
-
-        for _ in 0..5 {
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                let _f = ni.acosh(p, RoundingMode::ToEven, &mut cc).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("{}", time.as_millis());
-        }
-    }
 }

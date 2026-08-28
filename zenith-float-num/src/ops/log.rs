@@ -803,27 +803,4 @@ mod tests {
             .unwrap();
         assert!(d1.cmp(&refn) == 0);
     }
-
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn ln_perf() {
-        let mut cc = Consts::new().unwrap();
-        let mut n = vec![];
-        let p = 133;
-        for _ in 0..10000 {
-            let mut nn = ExactNumNumber::random_normal(p, -100, 100).unwrap();
-            nn.set_sign(Sign::Pos);
-            n.push(nn);
-        }
-
-        for _ in 0..5 {
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                let _f = ni.ln(p, RoundingMode::ToEven, &mut cc).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("{}", time.as_millis());
-        }
-    }
 }

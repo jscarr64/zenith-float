@@ -68,9 +68,6 @@ mod tests {
         Consts, Exponent,
     };
 
-    #[cfg(feature = "std")]
-    use crate::Sign;
-
     #[test]
     fn test_cbrt() {
         /* let n1 = ExactNumNumber::from_words(
@@ -238,28 +235,6 @@ mod tests {
                     .cmp(&eps)
                     <= 0
             );
-        }
-    }
-
-    #[ignore]
-    #[test]
-    #[cfg(feature = "std")]
-    fn cbrt_perf() {
-        let mut n = vec![];
-        let p = 132;
-        for _ in 0..100000 {
-            let mut n0 = ExactNumNumber::random_normal(p, -0, 0).unwrap();
-            n0.set_sign(Sign::Pos);
-            n.push(n0);
-        }
-
-        for _ in 0..5 {
-            let start_time = std::time::Instant::now();
-            for ni in n.iter() {
-                let _f = ni.cbrt(p, RoundingMode::ToEven).unwrap();
-            }
-            let time = start_time.elapsed();
-            println!("{}", time.as_millis());
         }
     }
 }
