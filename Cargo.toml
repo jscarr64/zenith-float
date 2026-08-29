@@ -6,9 +6,6 @@ members = [
 ]
 resolver = "2"
 
-[workspace.metadata.rust-analyzer]
-cargo.allFeatures = true
-
 [workspace.package]
 version = "0.1.0"
 edition = "2021"

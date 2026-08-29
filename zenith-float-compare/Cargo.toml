@@ -17,9 +17,6 @@ default = ["astro"]
 astro = ["dep:astro-float"]
 dashu = ["dep:dashu-float", "dep:dashu-int"]
 
-[package.metadata.rust-analyzer]
-cargo.allFeatures = true
-
 [dependencies]
 zenith-float = { path = "..", features = ["std", "random"] }
 clap = { version = "4", features = ["derive"] }

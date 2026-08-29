@@ -1089,7 +1089,6 @@ dependencies = [
  "rug",
  "serde",
  "serde_json",
- "zenith-float-macro",
 ]
 
 [[package]]
