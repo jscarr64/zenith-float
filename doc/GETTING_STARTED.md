@@ -34,7 +34,7 @@ let c = a.add(&b, p, rm); // 3.5
 let x = exact!("1.25");
 ```
 
-`from_u32` is one of `from_u8` / `from_u16` / `from_u32` / `from_u64` / `from_u128` (and the signed `from_i*` counterparts). Compile-time decimals: `exact!("…")` or the alias `fbig!("…")`. You can also write `zenith_float::exact!("1.25")` without importing the macro.
+`parse` returns `ExactNum`, not `Result`. A failed parse is `NaN`; `ExactNum::err()` recovers the `Error`. `from_u32` is one of `from_u8` / `from_u16` / `from_u32` / `from_u64` / `from_u128` (and the signed `from_i*` counterparts). Compile-time decimals: `exact!("…")` or the alias `fbig!("…")`. You can also write `zenith_float::exact!("1.25")` without importing the macro.
 
 Infinities and NaN are software values: `INF_POS`, `INF_NEG`, `NAN`. Errors (overflow, division by zero, bad arguments, allocation) become NaN; `ExactNum::err()` recovers the `Error`.
 
@@ -71,19 +71,26 @@ The previous mode is restored when the closure returns.
 
 ## 4. Format output
 
-With `std`:
+`y` below is an owned `ExactNum` after `expr!` returns, so the `&mut ctx` borrow from the macro has ended. `format` takes `&self` and `&mut Consts`; `ctx.consts()` is that cache. `format` returns `Result<String, Error>` (unlike `parse`).
 
 ```rust
-#[cfg(feature = "std")]
-println!("{}", y);           // decimal Display
-#[cfg(feature = "std")]
-println!("{:e}", y);         // scientific
-```
+use zenith_float::{expr, Consts, RoundingMode};
+use zenith_float::ctx::Context;
 
-Any radix 2–36:
+let mut ctx = Context::new(
+    256,
+    RoundingMode::ToEven,
+    Consts::new().expect("constants cache"),
+    -10_000,
+    10_000,
+);
+let y = expr!(sin(pi / 6), &mut ctx);
 
-```rust
-let s = y.format(zenith_float::Radix::Hex, RoundingMode::ToEven, ctx.consts())
+println!("{}", y);
+println!("{:e}", y);
+
+let s = y
+    .format(zenith_float::Radix::Hex, RoundingMode::ToEven, ctx.consts())
     .expect("format");
 ```
 
@@ -94,8 +101,16 @@ Use `ExactNum` methods when you need paired results (`sin_cos`, `sinh_cosh`), IE
 For **complex** expressions use `cexpr!` (documented with `expr!` in [LIBRARY.md](LIBRARY.md) §17). Same extra-precision loop; cancellation on both parts; imaginary unit `I`. `expr!` stays real-valued.
 
 ```rust
-use zenith_float::cexpr;
+use zenith_float::{cexpr, Consts, RoundingMode};
+use zenith_float::ctx::Context;
 
+let mut ctx = Context::new(
+    256,
+    RoundingMode::ToEven,
+    Consts::new().expect("constants cache"),
+    -10_000,
+    10_000,
+);
 let z = cexpr!(I * I, &mut ctx); // −1 + 0i
 ```
 

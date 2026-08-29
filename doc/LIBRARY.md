@@ -277,7 +277,7 @@ All take `(p, rm, cc)` except `hypot` (no cache).
 
 | API | Notes |
 | --- | --- |
-| `parse(s, rdx, p, rm, cc)` | binary / octal / decimal / hex / any 2–36 |
+| `parse(s, rdx, p, rm, cc)` | returns `ExactNum` (not `Result`); Inf / NaN / `err()` on failure |
 | `format(rdx, rm, cc)` | `Result<String, Error>`; Inf / −Inf / NaN / Err strings |
 | `with_radix(self, radix)` | wrap as `RadixFloat` |
 | `convert_from_radix(sign, digits, e, rdx, p, rm, cc)` | digit bytes, scientific exponent in that radix |
@@ -390,7 +390,7 @@ Cartesian `re + i·im` as two `ExactNum`s.
 | `asin` / `acos` / `atan` / `asinh` / `acosh` / `atanh` | principal branches |
 | `Add` `Sub` `Mul` `Div` | 128-bit `ToEven` like reals |
 
-No `expr!` for complexes. Serde: struct `{ "re", "im" }` of decimal strings.
+No `expr!` for complexes — use `cexpr!`. Serde: struct `{ "re", "im" }` of decimal strings.
 
 ---
 
