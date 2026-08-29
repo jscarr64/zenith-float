@@ -1,5 +1,6 @@
 //! ExactNum including finite numbers, NaN, and `Inf`.
 
+use crate::common::util::log2_ceil;
 use crate::defs::SignedWord;
 use crate::defs::DEFAULT_P;
 use crate::num::ExactNumNumber;
@@ -10,6 +11,7 @@ use crate::Radix;
 use crate::RoundingMode;
 use crate::Sign;
 use crate::Word;
+use crate::WORD_BIT_SIZE;
 use core::num::FpCategory;
 use lazy_static::lazy_static;
 
@@ -239,6 +241,141 @@ impl ExactNum {
                 prod.add(c, p, rm)
             }
         }
+    }
+
+    /// Knuth–Dekker two-sum: `(hi, lo)` with `hi` rounded to `p` bits and
+    /// `hi + lo` equal to the exact sum of finite operands (via [`add_full_prec`](Self::add_full_prec)).
+    ///
+    /// Inf / NaN: `hi` is `self.add(b, p, rm)`; `lo` is zero (or NaN if `hi` is NaN).
+    /// Reconstruct with `hi.add(&lo, p, rm)` (not `add_full_prec`, which uses internal precision 0).
+    pub fn two_sum(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
+        if self.is_nan() {
+            return (self.clone(), Self::nan(self.err()));
+        }
+        if b.is_nan() {
+            return (b.clone(), Self::nan(b.err()));
+        }
+        if self.is_inf() || b.is_inf() {
+            return (self.add(b, p, rm), Self::new(p));
+        }
+        let exact = self.add_full_prec(b);
+        let mut hi = exact.clone();
+        if let Err(err) = hi.set_precision(p, rm) {
+            return (Self::nan(Some(err)), Self::nan(Some(err)));
+        }
+        let lo = exact.sub_full_prec(&hi);
+        (hi, Self::normalize_eft_lo(lo, p))
+    }
+
+    fn normalize_eft_lo(lo: Self, p: usize) -> Self {
+        if lo.is_nan() {
+            return lo;
+        }
+        if lo.is_zero() {
+            let mut z = Self::new(p);
+            z.set_inexact(lo.inexact());
+            return z;
+        }
+        lo
+    }
+
+    /// Two-product: `(hi, lo)` with `hi` rounded to `p` bits and `hi + lo` equal to the
+    /// exact product of finite operands (via [`mul_full_prec`](Self::mul_full_prec)).
+    pub fn two_product(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
+        if self.is_nan() {
+            return (self.clone(), Self::nan(self.err()));
+        }
+        if b.is_nan() {
+            return (b.clone(), Self::nan(b.err()));
+        }
+        if self.is_inf() || b.is_inf() {
+            return (self.mul(b, p, rm), Self::new(p));
+        }
+        let exact = self.mul_full_prec(b);
+        let mut hi = exact.clone();
+        if let Err(err) = hi.set_precision(p, rm) {
+            return (Self::nan(Some(err)), Self::nan(Some(err)));
+        }
+        let lo = exact.sub_full_prec(&hi);
+        (hi, Self::normalize_eft_lo(lo, p))
+    }
+
+    /// Sum `xs` at extra working precision and round once to `p` bits.
+    pub fn fused_sum(xs: &[Self], p: usize, rm: RoundingMode) -> Self {
+        if xs.is_empty() {
+            return Self::new(p);
+        }
+        let extra = log2_ceil(xs.len().max(1)).saturating_add(2);
+        let p_wrk = match p
+            .checked_add(WORD_BIT_SIZE)
+            .and_then(|v| v.checked_add(extra))
+        {
+            Some(v) => v,
+            None => return Self::nan(Some(Error::InvalidArgument)),
+        };
+        let mut acc = Self::new(p_wrk);
+        for x in xs {
+            acc = acc.add(x, p_wrk, RoundingMode::None);
+        }
+        if let Err(err) = acc.set_precision(p, rm) {
+            return Self::nan(Some(err));
+        }
+        acc
+    }
+
+    /// Dot product of equal-length slices: extra-precision `∑ xs[i]*ys[i]`, then one round to `p`.
+    /// Length mismatch yields NaN (`InvalidArgument`).
+    pub fn fused_dot(xs: &[Self], ys: &[Self], p: usize, rm: RoundingMode) -> Self {
+        if xs.len() != ys.len() {
+            return Self::nan(Some(Error::InvalidArgument));
+        }
+        if xs.is_empty() {
+            return Self::new(p);
+        }
+        let extra = log2_ceil(xs.len().max(1)).saturating_add(2);
+        let p_wrk = match p
+            .checked_add(WORD_BIT_SIZE)
+            .and_then(|v| v.checked_add(extra))
+        {
+            Some(v) => v,
+            None => return Self::nan(Some(Error::InvalidArgument)),
+        };
+        let mut acc = Self::new(p_wrk);
+        for (x, y) in xs.iter().zip(ys.iter()) {
+            let prod = x.mul(y, p_wrk, RoundingMode::None);
+            acc = acc.add(&prod, p_wrk, RoundingMode::None);
+        }
+        if let Err(err) = acc.set_precision(p, rm) {
+            return Self::nan(Some(err));
+        }
+        acc
+    }
+
+    /// Horner evaluation `a₀ + x(a₁ + x(a₂ + …))` with fused multiply-add at extra working precision,
+    /// then one round to `p`. Empty `coeffs` yields zero.
+    pub fn polyval(coeffs: &[Self], x: &Self, p: usize, rm: RoundingMode) -> Self {
+        if coeffs.is_empty() {
+            return Self::new(p);
+        }
+        let extra = log2_ceil(coeffs.len().max(1)).saturating_add(2);
+        let p_wrk = match p
+            .checked_add(WORD_BIT_SIZE)
+            .and_then(|v| v.checked_add(extra))
+        {
+            Some(v) => v,
+            None => return Self::nan(Some(Error::InvalidArgument)),
+        };
+        let mut acc = coeffs[coeffs.len() - 1].clone();
+        if let Err(err) = acc.set_precision(p_wrk, RoundingMode::None) {
+            return Self::nan(Some(err));
+        }
+        for a in coeffs.iter().rev().skip(1) {
+            acc = acc.fma(x, a, p_wrk, RoundingMode::None);
+        }
+        if let Err(err) = acc.set_precision(p, rm) {
+            return Self::nan(Some(err));
+        }
+        acc
     }
 
     /// Alias of [`Self::fma`].
@@ -2947,6 +3084,38 @@ mod tests {
         assert!(!s.is_nan(), "large-prec add hung or failed");
         assert!(!m.is_nan(), "large-prec mul hung or failed");
         assert_eq!(s.cmp(&ExactNum::from_word(8, p)), Some(0));
+    }
+
+    #[test]
+    fn test_two_sum_fused_polyval() {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let one = ExactNum::from_u8(1, p);
+        let two = ExactNum::from_u8(2, p);
+        let three = ExactNum::from_u8(3, p);
+
+        let (hi, lo) = one.two_sum(&two, p, rm);
+        let rec = hi.add(&lo, p, rm);
+        assert_eq!(rec.cmp(&ExactNum::from_u8(3, p)), Some(0));
+
+        let (ph, pl) = two.two_product(&three, p, rm);
+        let pr = ph.add(&pl, p, rm);
+        assert_eq!(pr.cmp(&ExactNum::from_u8(6, p)), Some(0));
+
+        let sum = ExactNum::fused_sum(&[one.clone(), two.clone(), three.clone()], p, rm);
+        assert_eq!(sum.cmp(&ExactNum::from_u8(6, p)), Some(0));
+
+        let dot = ExactNum::fused_dot(
+            &[one.clone(), two.clone()],
+            &[three.clone(), one.clone()],
+            p,
+            rm,
+        );
+        assert_eq!(dot.cmp(&ExactNum::from_u8(5, p)), Some(0));
+
+        // 1 + 2x + 3x² at x = 2 → 17
+        let pv = ExactNum::polyval(&[one, two, three], &ExactNum::from_u8(2, p), p, rm);
+        assert_eq!(pv.cmp(&ExactNum::from_u8(17, p)), Some(0));
     }
 }
 

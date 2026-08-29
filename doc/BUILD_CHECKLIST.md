@@ -2,7 +2,7 @@
 
 Living document for what is **implemented**, **tested**, and **required** for zenith-float as a public software big-float crate. Application engines (formula corpora, expression ABIs, host hardware-float purge) live in those applications, not here.
 
-**Last updated:** 2026-08-28  
+**Last updated:** 2026-08-29  
 **Crate version:** 0.1.0 (+ unreleased changelog items)  
 **Reference versions (crates.io):** astro-float 0.9.6, dashu-float 0.6.0  
 **Policy:** No hardware floating-point in calculations or identifiers (`f32`/`f64` forbidden in source and docs; enforced in `scripts/ci.sh`).
@@ -101,7 +101,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `gamma`, `ln_gamma` | ✅ | ✅ | Stirling + reflection; factorial integers; MPFR 1-ULP |
 | `bessel_j` (integer n) | ✅ | ✅ | Power series; `n ≤ 1024`; MPFR `jn` for n=0,1,2 |
 | `sin_cos`, `sinh_cosh` | ✅ | ✅ | Tuple methods; `expr!` uses `sin`/`cos` and `sinh`/`cosh` |
-| Complex: `ExactComplex` | — | ✅ | Rectangular `re + i im`; MPFR add (expr is real-valued) |
+| Complex: `ExactComplex` | — | ✅ | Rectangular; elementary + inverse set (principal branches); MPFR add (expr is real-valued) |
 | Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |
 
 ### 1.6 I/O and integration
@@ -297,6 +297,18 @@ Does not block a public 0.1.x; aligns with §2.3 P2 items.
 - [x] `LowerHex` + scientific `Display` options (`LowerExp` / `UpperExp` formatting)
 - [x] Additional `Consts` beyond π, e, ln 2, ln 10 (φ, √2, γ)
 - [x] `expr!` correct-rounding semantics documented per op (`doc/EXPR.md`)
+- [x] Getting-started narrative (`doc/GETTING_STARTED.md`)
+- [x] `Context::with_rounding_mode` scoped combinator
+- [x] `two_sum` / `two_product`, `fused_sum` / `fused_dot`, Horner `polyval`
+- [x] `ExactComplex` elementary set: `tan`, `sinh`/`cosh`/`tanh`, `sqrt`, `pow`, inverse trig and inverse hyperbolic (principal branches)
+
+### 3.7 Load-bearing exclusions (not a backlog)
+
+See `doc/Additions_to_existing_29-082026.md`. Macros are part of this crate (`expr!`, `cexpr!`, `exact!`, `fbig!`); do not refuse work because Accumath avoids macros.
+
+- [ ] 🚫 Hardware IEEE converters inside the library — CI and §3.5; packing bits belongs in a caller or a separate crate (`frexp` / `ilogb`)
+- [x] Complex expressions — `cexpr!` (cancellation on both parts; imaginary unit `I`)
+- [ ] 🚫 Bessel Y_n / I_n / K_n / non-integer order — not an extension of integer `J_n`; own numerics and MPFR harness
 
 ---
 
@@ -320,6 +332,8 @@ Before calling a version **production-ready** as a public crate:
 | `zenith-float-num/tests/README.md` | MPFR test instructions |
 | `zenith-float-num/src/ops/tests.rs` | Random inverse property tests |
 | `zenith-float-num/tests/mpfr/` | MPFR bit-oracle tests |
+| `doc/GETTING_STARTED.md` | First-use narrative |
+| `doc/LIBRARY.md` | Public API inventory |
 | `doc/EXPR.md` | `expr!` per-op rounding contract |
 | `doc/PRECISION.md` | Working precision vs exponent |
 | `tests/mod.rs` | `expr!` integration tests |
@@ -339,4 +353,4 @@ Already implemented but not in a crates.io release:
 - Bench history: `doc/bench-baselines.tsv`, `doc/compare-results.tsv` (astro 0.9.x vs zenith at 132 bits)
 - `euler_gamma`, `frexp`/`ldexp`/`scalb`/`logb`/`ilogb`, `LowerExp`/`UpperExp`/`LowerHex`
 - Seeded test RNG (`ZENITH_TEST_SEED` / `reseed_random`), CI wall-time budgets, OOM → `NaN` tests
-- Host-engine work (formula corpora, expression ABI) is 🚫 out of scope for this crate
+- [x] Getting-started narrative (`doc/GETTING_STARTED.md`); review of extra APIs (`doc/Additions_to_existing_29-082026.md`)

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `cexpr!` — complex expressions with the same working-precision loop as `expr!`; cancellation on both parts; imaginary unit `I`.
+- Getting-started guide (`doc/GETTING_STARTED.md`).
+- `Context::with_rounding_mode`.
+- `ExactNum::{two_sum, two_product, fused_sum, fused_dot, polyval}`.
+- `ExactComplex`: `tan`, `sinh`, `cosh`, `tanh`, `sqrt`, `pow`, `asin`, `acos`, `atan`, `asinh`, `acosh`, `atanh`.
 - `ExactComplex` rectangular complex type (`+ − × ÷`, `exp`, `ln`, `sin`, `cos`, `abs`, `arg`).
 - `ExactNum::sin_cos`; `mul_add` alias of `fma`.
 - Special functions: `erf` / `erfc`, `gamma` / `ln_gamma`, integer-order `bessel_j`; `expr!` leaves.

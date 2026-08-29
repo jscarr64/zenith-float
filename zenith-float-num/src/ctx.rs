@@ -132,6 +132,19 @@ impl Context {
         self.emax
     }
 
+    /// Runs `f` with rounding mode `rm`, then restores the previous mode.
+    /// If `f` panics, the previous mode is not restored.
+    pub fn with_rounding_mode<F, R>(&mut self, rm: RoundingMode, f: F) -> R
+    where
+        F: FnOnce(&mut Self) -> R,
+    {
+        let old = self.rm;
+        self.rm = rm;
+        let out = f(self);
+        self.rm = old;
+        out
+    }
+
     /// Clones `self` and returns the cloned context.
     ///
     /// # Errors
@@ -351,5 +364,26 @@ impl Contextable for Context {
 
     fn emax(&self) -> Exponent {
         Context::emax(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Consts;
+    use crate::RoundingMode;
+
+    #[test]
+    fn with_rounding_mode_restores() {
+        let mut ctx = Context::new(
+            128,
+            RoundingMode::ToEven,
+            Consts::new().unwrap(),
+            -1000,
+            1000,
+        );
+        let inner = ctx.with_rounding_mode(RoundingMode::Down, |c| c.rounding_mode());
+        assert_eq!(inner, RoundingMode::Down);
+        assert_eq!(ctx.rounding_mode(), RoundingMode::ToEven);
     }
 }

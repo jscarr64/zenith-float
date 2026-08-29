@@ -285,6 +285,13 @@ extern crate alloc;
 /// assert_eq!(a.cmp(&b), Some(0));
 /// assert_eq!(a.cmp(&ExactNum::from_word(13, 64).div(&ExactNum::from_word(4, 64), 64, RoundingMode::ToEven)), Some(0));
 /// ```
-pub use zenith_float_macro::{exact, expr, fbig};
+///
+/// ## Complex expressions
+///
+/// [`cexpr`] is the same working-precision loop as [`expr`], for [`ExactComplex`].
+/// Cancellation is measured on both the real and imaginary parts.
+/// The imaginary unit in the expression is `I` (so `i` remains a variable name).
+/// Use `cexpr!` when the expression is complex; `expr!` stays real-valued.
+pub use zenith_float_macro::{cexpr, exact, expr, fbig};
 
 pub use zenith_float_num::*;

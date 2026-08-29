@@ -236,6 +236,54 @@ pub fn check_exponent_range(n: ExactNum, emin: Exponent, emax: Exponent) -> Exac
     }
 }
 
+/// Applies [`check_exponent_range`] to both parts of a complex value.
+#[inline]
+pub fn check_complex_exponent_range(
+    z: crate::ExactComplex,
+    emin: Exponent,
+    emax: Exponent,
+) -> crate::ExactComplex {
+    crate::ExactComplex::new(
+        check_exponent_range(z.re().clone(), emin, emax),
+        check_exponent_range(z.im().clone(), emin, emax),
+    )
+}
+
+fn part_cancel(a: &ExactNum, b: &ExactNum, r: &ExactNum, is_add: bool) -> Option<usize> {
+    let (Some(e1), Some(e2), Some(e3)) = (a.exponent(), b.exponent(), r.exponent()) else {
+        return None;
+    };
+    let (Some(s1), Some(s2)) = (a.sign(), b.sign()) else {
+        return None;
+    };
+    let opp = if is_add { s1 != s2 } else { s1 == s2 };
+    if (e1 as isize - e2 as isize).abs() <= 1 && opp {
+        Some((e1.max(e2) as isize - e3 as isize).unsigned_abs() + 1)
+    } else {
+        None
+    }
+}
+
+/// Extra working bits when a complex add/sub cancelled in the real or imaginary part.
+#[inline]
+pub fn complex_cancel_bits(
+    arg1: &crate::ExactComplex,
+    arg2: &crate::ExactComplex,
+    ret: &crate::ExactComplex,
+    is_add: bool,
+) -> Option<usize> {
+    if !arg1.inexact() && !arg2.inexact() {
+        return None;
+    }
+    let a = part_cancel(arg1.re(), arg2.re(), ret.re(), is_add);
+    let b = part_cancel(arg1.im(), arg2.im(), ret.im(), is_add);
+    match (a, b) {
+        (Some(x), Some(y)) => Some(x.max(y)),
+        (Some(x), None) | (None, Some(x)) => Some(x),
+        (None, None) => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
 

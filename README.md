@@ -6,18 +6,19 @@ All arithmetic runs on integer limbs. The library does not use hardware floating
 
 The library can work without `std` if a memory allocator is available.
 
-Besides the usual `+ − × ÷` and the elementary functions (`sqrt`, `exp`, `exp2`, `exp10`, `ln`, trig, hyperbolic), the public API includes `hypot`, `atan2`, `log1p`, `expm1`, `rem_pi`, specials (`erf`, `gamma`, `bessel_j`), IEEE split (`frexp`, `ldexp`, `logb`), extra constants (√2, φ, γ), and `SharedConsts` for sharing a constant cache across threads.
+Besides the usual `+ − × ÷` and the elementary functions (`sqrt`, `exp`, `exp2`, `exp10`, `ln`, trig, hyperbolic), the public API includes `hypot`, `atan2`, `log1p`, `expm1`, `rem_pi`, specials (`erf`, `gamma`, `bessel_j`), IEEE split (`frexp`, `ldexp`, `logb`), extra constants (√2, φ, γ), `cexpr!` for complex expressions, and `SharedConsts` for sharing a constant cache across threads.
 
 License: MIT OR Apache-2.0.
 
 ## Crate layout
 
-- `zenith-float` — public crate: `ExactNum`, `expr!`, constants, rounding.
+- `zenith-float` — public crate: `ExactNum`, `expr!`, `cexpr!`, constants, rounding.
 - `zenith-float-num` — numeric kernel (you normally depend on `zenith-float` only).
-- `zenith-float-macro` — the `expr!` procedural macro.
+- `zenith-float-macro` — `expr!` / `cexpr!` procedural macros.
 
 ## Documentation
 
+- [Getting started](doc/GETTING_STARTED.md) — construct `ExactNum`, `Consts`, `expr!`, format, scoped rounding.
 - [Library inventory](doc/LIBRARY.md) — complete public API: types, every `ExactNum` / `ExactComplex` method, macros, constants, features, rounding, I/O.
 - [Build checklist](doc/BUILD_CHECKLIST.md) — what is implemented, tested, and still required (including vs astro-float / dashu-float).
 - [Error bounds](doc/README.md) — ulp and series error theory used by `expr!` and property tests.

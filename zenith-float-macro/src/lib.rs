@@ -6,6 +6,7 @@
 #![deny(unused)]
 #![deny(clippy::suspicious)]
 
+mod cplx;
 mod util;
 
 use proc_macro2::TokenStream;
@@ -20,11 +21,11 @@ use zenith_float_num::{Consts, EXPONENT_BIT_SIZE};
 // Speculative error estimation.
 // This error is added upfront, before actual error is known.
 // It helps to avoid additional recalculations due to changing error estimation.
-const SPEC_ADD_ERR: usize = 32;
+pub(crate) const SPEC_ADD_ERR: usize = 32;
 
-struct MacroInput {
-    expr: Expr,
-    ctx: Expr,
+pub(crate) struct MacroInput {
+    pub(crate) expr: Expr,
+    pub(crate) ctx: Expr,
 }
 
 impl Parse for MacroInput {
@@ -505,20 +506,10 @@ fn traverse_call(
                     cc,
                     false,
                 ),
-                "fma" => three_arg_fun(
-                    quote!(zenith_float::ExactNum::fma),
-                    expr,
-                    2,
-                    err,
-                    cc,
-                ),
-                "mul_add" => three_arg_fun(
-                    quote!(zenith_float::ExactNum::mul_add),
-                    expr,
-                    2,
-                    err,
-                    cc,
-                ),
+                "fma" => three_arg_fun(quote!(zenith_float::ExactNum::fma), expr, 2, err, cc),
+                "mul_add" => {
+                    three_arg_fun(quote!(zenith_float::ExactNum::mul_add), expr, 2, err, cc)
+                }
                 "sinh" => one_arg_fun(
                     quote!(zenith_float::ExactNum::sinh),
                     expr,
@@ -562,8 +553,22 @@ fn traverse_call(
                 ),
                 "erf" => one_arg_fun(quote!(zenith_float::ExactNum::erf), expr, 2, err, cc, true),
                 "erfc" => one_arg_fun(quote!(zenith_float::ExactNum::erfc), expr, 2, err, cc, true),
-                "gamma" => one_arg_fun(quote!(zenith_float::ExactNum::gamma), expr, EXPONENT_BIT_SIZE + 1, err, cc, true),
-                "ln_gamma" => one_arg_fun(quote!(zenith_float::ExactNum::ln_gamma), expr, EXPONENT_BIT_SIZE + 1, err, cc, true),
+                "gamma" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::gamma),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "ln_gamma" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::ln_gamma),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
                 "bessel_j" => bessel_j_fun(expr, 2, err, cc),
                 "ldexp" => ldexp_fun(expr, 2, err, cc, false),
                 "scalb" => ldexp_fun(expr, 2, err, cc, true),
@@ -713,6 +718,13 @@ pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     });
 
     ret.into()
+}
+
+/// Complex `expr!`: same context and working-precision loop, `ExactComplex` leaves, cancellation on both parts.
+#[proc_macro]
+#[allow(missing_docs)]
+pub fn cexpr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    cplx::cexpr(input)
 }
 
 /// Compile-time decimal float literal.

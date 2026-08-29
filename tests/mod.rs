@@ -25,6 +25,27 @@ fn compile_time_literals() {
 }
 
 #[test]
+fn cexpr_i_squared() {
+    use zenith_float::{cexpr, ExactComplex};
+
+    let mut ctx = Context::new(
+        256,
+        RoundingMode::ToEven,
+        Consts::new().unwrap(),
+        -10000,
+        10000,
+    );
+    let z = cexpr!(I * I, &mut ctx);
+    assert_eq!(z.re().cmp(&ExactNum::from_i8(-1, 256)), Some(0));
+    assert!(z.im().is_zero());
+
+    let z0 = ExactComplex::zero(256);
+    let s = cexpr!(sin(z0), &mut ctx);
+    assert!(s.re().is_zero() || s.re().exponent().unwrap_or(0) < -40);
+    assert!(s.im().is_zero() || s.im().exponent().unwrap_or(0) < -40);
+}
+
+#[test]
 fn radix_base12_roundtrip() {
     let mut cc = Consts::new().unwrap();
     let rdx = Radix::try_new(12).unwrap();

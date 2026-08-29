@@ -2,7 +2,7 @@
 
 This is a complete inventory of what the **`zenith-float` crate** exposes as a software math library. Arithmetic uses integer limbs only. Hardware IEEE binary interchange formats are not part of this crate; convert to those formats in the caller if needed.
 
-Related docs: [error bounds](README.md), [`expr!` rounding](EXPR.md), [build checklist](BUILD_CHECKLIST.md).
+Related docs: [getting started](GETTING_STARTED.md), [error bounds](README.md), [`expr!` rounding](EXPR.md), [build checklist](BUILD_CHECKLIST.md).
 
 License: MIT OR Apache-2.0.
 
@@ -12,7 +12,7 @@ License: MIT OR Apache-2.0.
 
 | Crate | Role |
 | --- | --- |
-| **`zenith-float`** | Public package. Re-exports the numeric kernel and the macros `expr!`, `exact!`, `fbig!`. |
+| **`zenith-float`** | Public package. Re-exports the numeric kernel and the macros `expr!`, `cexpr!`, `exact!`, `fbig!`. |
 | **`zenith-float-num`** | Numeric kernel. Applications should depend on `zenith-float`, not this crate. |
 | **`zenith-float-macro`** | Procedural macros. Not a direct application dependency. |
 | **`zenith-float-compare`** | Workspace comparison benches against other float crates. Not part of the public math API. |
@@ -160,6 +160,9 @@ Unless noted, results round with `(p, rm)`.
 | `add` / `sub` / `mul` / `div` | four operations |
 | `add_full_prec` / `sub_full_prec` / `mul_full_prec` | no precision reduction (exact product/sum of finite values when it fits) |
 | `fma` / `mul_add` | fused `a*b+c` with one final round; `mul_add` is an alias of `fma` |
+| `two_sum` / `two_product` | `(hi, lo)` with `hi` rounded to `p`; exact sum/product of finite operands is `hi + lo` |
+| `fused_sum` / `fused_dot` | extra-precision accumulation, one final round |
+| `polyval` | Horner scheme via `fma` |
 | `rem` | remainder (`self` rem `d2`); no `p`/`rm` |
 | `reciprocal` | `1/self` |
 | `neg` | copy with inverted sign (also `Neg` / `inv_sign` in place) |
@@ -308,7 +311,17 @@ For radices where `e` is a digit, the exponent is written with `_e`.
 
 **Named constants in the expression:** `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma`.
 
-**Not in `expr!`:** `frexp`, `ilogb`, `sin_cos`, `sinh_cosh`, `int`/`fract`/`ceil`/`floor`/`round`, `min`/`max`/`clamp`, `cmp`, `copysign`, `next_after`, `powi`/`powsi`, `abs`/`signum`, parse/format, raw parts, `nth_root` under the name `nth_root` (use `root`).
+### `cexpr!(expression, context)`
+
+Same context and extra-precision loop as `expr!`, producing `ExactComplex`. Cancellation is measured on **both** real and imaginary parts. Imaginary unit: `I` (so `i` can still be a variable).
+
+**Operators:** `+`, `-`, `*`, `/` (no `%`).
+
+**Leaves:** `recip`, `sqrt`, `ln`, `exp`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`.
+
+Literals and real constants are lifted as `x + 0i`. Variables may be `ExactComplex` or anything `FromExt` can turn into a real (then wrapped).
+
+**Not in `expr!`:** `frexp`, `ilogb`, `sin_cos`, `sinh_cosh`, `int`/`fract`/`ceil`/`floor`/`round`, `min`/`max`/`clamp`, `cmp`, `copysign`, `next_after`, `powi`/`powsi`, `abs`/`signum`, parse/format, raw parts, `nth_root` under the name `nth_root` (use `root`). Complex values use `cexpr!`, not `expr!`.
 
 ### `exact!("…")` and `fbig!("…")`
 
@@ -345,6 +358,7 @@ Compile-time parse of a **string literal** into an exact `ExactNum` (same expans
 | --- | --- |
 | `new(p, rm, cc, emin, emax)` | |
 | `to_raw_parts` | `(p, rm, Consts, emin, emax)` |
+| `with_rounding_mode` | run a closure with a temporary rounding mode, then restore |
 | `set_precision` / `set_rounding_mode` / `set_consts` / `set_emin` / `set_emax` | |
 | `precision` / `rounding_mode` / `consts` / `emin` / `emax` | |
 | `const_pi` / `const_e` / `const_ln2` / `const_ln10` / `const_sqrt2` / `const_phi` / `const_euler_gamma` | at context `p`/`rm` |
@@ -368,7 +382,10 @@ Cartesian `re + i·im` as two `ExactNum`s.
 | `abs(p, rm)` | modulus (`hypot`) |
 | `arg(p, rm, cc)` | argument (`atan2`) |
 | `add` / `sub` / `mul` / `div` | with `(p, rm)` |
-| `exp` / `ln` / `sin` / `cos` | with `(p, rm, cc)` |
+| `exp` / `ln` / `sin` / `cos` / `tan` | with `(p, rm, cc)` |
+| `sinh` / `cosh` / `tanh` | |
+| `sqrt` / `pow` | principal branch |
+| `asin` / `acos` / `atan` / `asinh` / `acosh` / `atanh` | principal branches |
 | `Add` `Sub` `Mul` `Div` | 128-bit `ToEven` like reals |
 
 No `expr!` for complexes. Serde: struct `{ "re", "im" }` of decimal strings.
@@ -449,9 +466,11 @@ MPFR/`rug` appear only in **tests** (`mpfr-tests`), not as the evaluation engine
 
 ## 27. What is not in this crate
 
-- Hardware binary32/binary64 types or arithmetic
+These are load-bearing product choices, not a backlog:
+
+- Hardware binary interchange types or converters (including a feature-gated module). Callers or a separate crate pack bits from `frexp` / `ilogb`.
+- Bessel Y_n, I_n, K_n, and non-integer order. Integer `J_n` is the series that is in this crate; the rest is a different special-functions project (stability, cost, MPFR harness).
 - Symbolic CAS, formula rewriting, or host-application IR
-- Complex `expr!`
 - Remainder as a Rust `%` operator on `ExactNum`
 - `Hash` / total order including NaN
 - Assigning operators (`+=` …)
