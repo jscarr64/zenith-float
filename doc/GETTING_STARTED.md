@@ -1,6 +1,6 @@
 # Getting started with zenith-float
 
-This is a short path from a new crate dependency to a computed, formatted result. For the full public surface, see [LIBRARY.md](LIBRARY.md). For how `expr!` rounds, see [EXPR.md](EXPR.md).
+This is a short path from a new crate dependency to a computed, formatted result. For a longer explanation (precision, rounding, recipes, mistakes), see [HELP.md](HELP.md). For every public name, see [LIBRARY.md](LIBRARY.md). For how `expr!` rounds, see [EXPR.md](EXPR.md).
 
 All arithmetic is software integer limbs. There are no hardware binary interchange types in this crate.
 
@@ -47,11 +47,11 @@ use zenith_float::{expr, Consts, RoundingMode};
 use zenith_float::ctx::Context;
 
 let mut ctx = Context::new(
-        256,
-        RoundingMode::ToEven,
-        Consts::new().expect("constants cache"),
-        -10_000,
-        10_000,
+    256,
+    RoundingMode::ToEven,
+    Consts::new().expect("constants cache"),
+    -10_000,
+    10_000,
 );
 
 let y = expr!(sin(pi / 6), &mut ctx);
@@ -78,11 +78,11 @@ use zenith_float::{expr, Consts, RoundingMode};
 use zenith_float::ctx::Context;
 
 let mut ctx = Context::new(
-        256,
-        RoundingMode::ToEven,
-        Consts::new().expect("constants cache"),
-        -10_000,
-        10_000,
+    256,
+    RoundingMode::ToEven,
+    Consts::new().expect("constants cache"),
+    -10_000,
+    10_000,
 );
 let y = expr!(sin(pi / 6), &mut ctx);
 
@@ -124,11 +124,11 @@ use zenith_float::{cexpr, Consts, RoundingMode};
 use zenith_float::ctx::Context;
 
 let mut ctx = Context::new(
-        256,
-        RoundingMode::ToEven,
-        Consts::new().expect("constants cache"),
-        -10_000,
-        10_000,
+    256,
+    RoundingMode::ToEven,
+    Consts::new().expect("constants cache"),
+    -10_000,
+    10_000,
 );
 let z = cexpr!(I * I, &mut ctx); // −1 + 0i
 ```
@@ -139,8 +139,8 @@ Hardware binary interchange (plotting, FFI) is not in this crate. A small downst
 
 | Doc | Audience |
 | --- | --- |
+| [HELP.md](HELP.md) | Longer tutorial, recipes, FAQ |
 | [LIBRARY.md](LIBRARY.md) | Every public type and method |
 | [EXPR.md](EXPR.md) | Per-op working precision in `expr!` |
 | [PRECISION.md](PRECISION.md) | Retry budget vs exponent |
-| [BUILD_CHECKLIST.md](BUILD_CHECKLIST.md) | Implemented vs out of scope |
 | [README.md](README.md) | Error-bound theory (contributors) |

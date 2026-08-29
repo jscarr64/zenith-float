@@ -1,5 +1,7 @@
 # zenith-float build checklist
 
+**Maintainer-only.** Not included in the crates.io package. User-facing docs are [GETTING_STARTED.md](GETTING_STARTED.md), [HELP.md](HELP.md), and [LIBRARY.md](LIBRARY.md).
+
 Living document for what is **implemented**, **tested**, and **required** for zenith-float as a public software big-float crate. Application engines (formula corpora, expression ABIs, host hardware-float purge) live in those applications, not here.
 
 **Last updated:** 2026-08-29  
@@ -333,6 +335,7 @@ Before calling a version **production-ready** as a public crate:
 | `zenith-float-num/src/ops/tests.rs` | Random inverse property tests |
 | `zenith-float-num/tests/mpfr/` | MPFR bit-oracle tests |
 | `doc/GETTING_STARTED.md` | First-use narrative |
+| `doc/HELP.md` | User tutorial (ships with the crate) |
 | `doc/LIBRARY.md` | Public API inventory |
 | `doc/EXPR.md` | `expr!` per-op rounding contract |
 | `doc/PRECISION.md` | Working precision vs exponent |

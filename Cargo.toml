@@ -25,6 +25,11 @@ license.workspace = true
 repository.workspace = true
 description = "Arbitrary-precision software floating-point arithmetic on integer limbs."
 readme = "README.md"
+exclude = [
+    "doc/BUILD_CHECKLIST.md",
+    "doc/Additions_to_existing_29-082026.md",
+    "doc/zenith-float.code-workspace",
+]
 keywords = ["arbitrary-precision", "bigfloat", "numeric", "no-std"]
 categories = ["mathematics", "no-std", "science"]
 

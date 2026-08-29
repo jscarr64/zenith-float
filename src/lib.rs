@@ -1,6 +1,8 @@
 //! zenith-float implements arbitrary-precision software floating-point numbers.
 //! All arithmetic uses integer limbs. The library does not use hardware floating-point for calculations.
 //!
+//! Repository guides: `doc/GETTING_STARTED.md` (short path) and `doc/HELP.md` (longer tutorial).
+//!
 //! ## Introduction
 //!
 //! **Numbers**

@@ -2,7 +2,7 @@
 
 This is a complete inventory of what the **`zenith-float` crate** exposes as a software math library. Arithmetic uses integer limbs only. Hardware IEEE binary interchange formats are not part of this crate; convert to those formats in the caller if needed.
 
-Related docs: [getting started](GETTING_STARTED.md), [error bounds](README.md), [`expr!` rounding](EXPR.md), [build checklist](BUILD_CHECKLIST.md).
+Related docs: [getting started](GETTING_STARTED.md), [help](HELP.md), [error bounds](README.md), [`expr!` rounding](EXPR.md).
 
 License: MIT OR Apache-2.0.
 

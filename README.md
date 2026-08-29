@@ -19,8 +19,8 @@ License: MIT OR Apache-2.0.
 ## Documentation
 
 - [Getting started](doc/GETTING_STARTED.md) — construct `ExactNum`, `Consts`, `expr!`, format, scoped rounding.
+- [Help](doc/HELP.md) — longer tutorial: precision, rounding, recipes, mistakes, what is not in the crate.
 - [Library inventory](doc/LIBRARY.md) — complete public API: types, every `ExactNum` / `ExactComplex` method, macros, constants, features, rounding, I/O.
-- [Build checklist](doc/BUILD_CHECKLIST.md) — what is implemented, tested, and still required (including vs astro-float / dashu-float).
 - [Error bounds](doc/README.md) — ulp and series error theory used by `expr!` and property tests.
 - [`expr!` rounding contract](doc/EXPR.md) — per-op working precision and final `set_precision`.
 

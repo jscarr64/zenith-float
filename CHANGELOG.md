@@ -3,7 +3,8 @@
 ## Unreleased
 
 - `cexpr!` — complex expressions with the same working-precision loop as `expr!`; cancellation on both parts; imaginary unit `I`.
-- Getting-started guide (`doc/GETTING_STARTED.md`).
+- Getting-started guide (`doc/GETTING_STARTED.md`) and help tutorial (`doc/HELP.md`).
+- Maintainer build checklist is not packaged on crates.io.
 - `Context::with_rounding_mode`.
 - `ExactNum::{two_sum, two_product, fused_sum, fused_dot, polyval}`.
 - `ExactComplex`: `tan`, `sinh`, `cosh`, `tanh`, `sqrt`, `pow`, `asin`, `acos`, `atan`, `asinh`, `acosh`, `atanh`.
