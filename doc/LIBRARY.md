@@ -126,8 +126,8 @@ Not re-exported: internal `Mantissa`, `WordBuf`, series helpers, `DEFAULT_P`.
 | `new` | `new(p: usize)` — zero at precision `p` |
 | `nan` | `nan(err: Option<Error>)` |
 | `from_word` | `from_word(d: Word, p)` |
-| `from_i8` … `from_i128` | signed integers + precision |
-| `from_u8` … `from_u128` | unsigned integers + precision |
+| `from_i8`, `from_i16`, `from_i32`, `from_i64`, `from_i128` | signed integers + precision |
+| `from_u8`, `from_u16`, `from_u32`, `from_u64`, `from_u128` | unsigned integers + precision |
 | `From` | `i8`/`u8`/`i16`/`u16`/`i32`/`u32`/`i64`/`u64`/`i128`/`u128` at default 128-bit precision |
 | `Default` | `new` at default 128-bit precision |
 | `from_raw_parts` | mantissa slice, used length, sign, exponent, inexact flag |
@@ -293,6 +293,8 @@ For radices where `e` is a digit, the exponent is written with `_e`.
 ---
 
 ## 17. Macros
+
+Public macros (crate root): `expr!`, `cexpr!`, `exact!`, `fbig!`. Import them like any other item, e.g. `use zenith_float::{expr, cexpr, exact};`, or call them as `zenith_float::exact!("1.25")`.
 
 ### `expr!(expression, context)`
 
@@ -469,6 +471,7 @@ MPFR/`rug` appear only in **tests** (`mpfr-tests`), not as the evaluation engine
 These are load-bearing product choices, not a backlog:
 
 - Hardware binary interchange types or converters (including a feature-gated module). Callers or a separate crate pack bits from `frexp` / `ilogb`.
+- Using `expr!` for complex values (that macro is real-valued). Complex expressions are `cexpr!`.
 - Bessel Y_n, I_n, K_n, and non-integer order. Integer `J_n` is the series that is in this crate; the rest is a different special-functions project (stability, cost, MPFR harness).
 - Symbolic CAS, formula rewriting, or host-application IR
 - Remainder as a Rust `%` operator on `ExactNum`

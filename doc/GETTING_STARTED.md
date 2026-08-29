@@ -22,7 +22,7 @@ zenith-float = { version = "0.1.0", default-features = false }
 Precision is a bit count, rounded up to the word size (64 bits on 64-bit targets). Rounding is explicit on almost every operation.
 
 ```rust
-use zenith_float::{Consts, ExactNum, RoundingMode};
+use zenith_float::{exact, Consts, ExactNum, RoundingMode};
 
 let p = 256;
 let rm = RoundingMode::ToEven;
@@ -31,15 +31,10 @@ let mut cc = Consts::new().expect("constants cache");
 let a = ExactNum::from_u32(3, p);
 let b = ExactNum::parse("0.5", zenith_float::Radix::Dec, p, rm, &mut cc);
 let c = a.add(&b, p, rm); // 3.5
-```
-
-Compile-time decimals:
-
-```rust
-use zenith_float::exact;
-
 let x = exact!("1.25");
 ```
+
+`from_u32` is one of `from_u8` / `from_u16` / `from_u32` / `from_u64` / `from_u128` (and the signed `from_i*` counterparts). Compile-time decimals: `exact!("…")` or the alias `fbig!("…")`. You can also write `zenith_float::exact!("1.25")` without importing the macro.
 
 Infinities and NaN are software values: `INF_POS`, `INF_NEG`, `NAN`. Errors (overflow, division by zero, bad arguments, allocation) become NaN; `ExactNum::err()` recovers the `Error`.
 
@@ -96,7 +91,13 @@ let s = y.format(zenith_float::Radix::Hex, RoundingMode::ToEven, ctx.consts())
 
 Use `ExactNum` methods when you need paired results (`sin_cos`, `sinh_cosh`), IEEE-style split (`frexp`, `ilogb`), or compensated primitives (`two_sum`, `two_product`, `fused_sum`, `fused_dot`, `polyval`).
 
-For **complex** expressions use `cexpr!` (same working-precision loop as `expr!`, cancellation on both parts). The imaginary unit in the expression is `I`. `expr!` stays real-valued. This crate already ships macros (`expr!`, `cexpr!`, `exact!`, `fbig!`); the “no macros” rule is Accumath, not zenith-float.
+For **complex** expressions use `cexpr!` (documented with `expr!` in [LIBRARY.md](LIBRARY.md) §17). Same extra-precision loop; cancellation on both parts; imaginary unit `I`. `expr!` stays real-valued.
+
+```rust
+use zenith_float::cexpr;
+
+let z = cexpr!(I * I, &mut ctx); // −1 + 0i
+```
 
 Hardware binary interchange (plotting, FFI) is not in this crate. A small downstream crate can call `frexp` / `ilogb` and pack bits.
 

@@ -101,7 +101,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `gamma`, `ln_gamma` | ✅ | ✅ | Stirling + reflection; factorial integers; MPFR 1-ULP |
 | `bessel_j` (integer n) | ✅ | ✅ | Power series; `n ≤ 1024`; MPFR `jn` for n=0,1,2 |
 | `sin_cos`, `sinh_cosh` | ✅ | ✅ | Tuple methods; `expr!` uses `sin`/`cos` and `sinh`/`cosh` |
-| Complex: `ExactComplex` | — | ✅ | Rectangular; elementary + inverse set (principal branches); MPFR add (expr is real-valued) |
+| Complex: `ExactComplex` | `cexpr!` | ✅ | Rectangular; elementary + inverse set; `cexpr!` (imaginary unit `I`); MPFR add |
 | Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |
 
 ### 1.6 I/O and integration
@@ -114,7 +114,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `FromStr` (decimal, `std`) | ✅ |
 | `serde` (decimal string / integer, feature; requires `std`) | ✅ |
 | `random_normal` (feature `random`) | ✅ |
-| `expr!` compile tests (`trybuild`) | ✅ |
+| `expr!` / `cexpr!` compile and run tests (`trybuild` + `tests/mod.rs`) | ✅ |
 | `expr!` cancellation / precision tests (root `tests/`) | ✅ |
 
 ### 1.7 Test & CI inventory (default `scripts/ci.sh`)
