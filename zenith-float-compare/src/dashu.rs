@@ -77,11 +77,8 @@ impl BenchFloat for DashuFloat {
             } else {
                 Sign::Negative
             };
-            let exp = (if exp_range != 0 {
-                random::<i32>().abs() % exp_range
-            } else {
-                0
-            }) - words as i32 * 64
+            let exp = (if exp_range != 0 { random::<i32>().abs() % exp_range } else { 0 })
+                - words as i32 * 64
                 + exp_from;
             let exp = exp as isize * 3_321_928_095 / 1_000_000_000;
             let m = UBig::from_words(&mantissa);
@@ -102,9 +99,7 @@ impl BenchFloat for DashuFloat {
             "cbrt" => task_for_one_arg(values, |_a, b| Self::new(b.inner().cbrt())),
             "ln" => task_for_one_arg(values, |_a, b| Self::new(FBin::ln(b.inner()))),
             "exp" => task_for_one_arg(values, |_a, b| Self::new(FBin::exp(b.inner()))),
-            "pow" => task_for_two_args(values, |a, b| {
-                Self::new(FBin::powf(a.inner(), b.inner()))
-            }),
+            "pow" => task_for_two_args(values, |a, b| Self::new(FBin::powf(a.inner(), b.inner()))),
             "sin" => task_for_one_arg(values, |_a, b| Self::new(FBin::sin(b.inner()))),
             "asin" => task_for_one_arg(values, |_a, b| Self::new(FBin::asin(b.inner()))),
             "cos" => task_for_one_arg(values, |_a, b| Self::new(FBin::cos(b.inner()))),

@@ -60,8 +60,20 @@ fn bench_pythagorean(c: &mut Criterion) {
     for &p in &[128, 1024, 4096, 32768] {
         group.bench_with_input(BenchmarkId::from_parameter(p), &p, |b, &p| {
             let mut cc = init_cc();
-            let x = ExactNum::parse("3.141592653589793", zenith_float_num::Radix::Dec, p, rm, &mut cc);
-            let y = ExactNum::parse("2.718281828459045", zenith_float_num::Radix::Dec, p, rm, &mut cc);
+            let x = ExactNum::parse(
+                "3.141592653589793",
+                zenith_float_num::Radix::Dec,
+                p,
+                rm,
+                &mut cc,
+            );
+            let y = ExactNum::parse(
+                "2.718281828459045",
+                zenith_float_num::Radix::Dec,
+                p,
+                rm,
+                &mut cc,
+            );
             b.iter(|| {
                 sink(x.hypot(&y, p, rm));
             });

@@ -264,24 +264,25 @@ fn part_cancel(a: &ExactNum, b: &ExactNum, r: &ExactNum, is_add: bool) -> Option
     }
 }
 
-/// Extra working bits when a complex add/sub cancelled in the real or imaginary part.
+/// Extra working bits from cancellation in the **real** and **imaginary** parts,
+/// independently. Either side may be `None` when that part did not cancel.
+///
+/// `cexpr!` stores these in two `errs[]` slots so a large imaginary cancellation
+/// cannot hide a smaller real one (or the reverse).
 #[inline]
 pub fn complex_cancel_bits(
     arg1: &crate::ExactComplex,
     arg2: &crate::ExactComplex,
     ret: &crate::ExactComplex,
     is_add: bool,
-) -> Option<usize> {
+) -> (Option<usize>, Option<usize>) {
     if !arg1.inexact() && !arg2.inexact() {
-        return None;
+        return (None, None);
     }
-    let a = part_cancel(arg1.re(), arg2.re(), ret.re(), is_add);
-    let b = part_cancel(arg1.im(), arg2.im(), ret.im(), is_add);
-    match (a, b) {
-        (Some(x), Some(y)) => Some(x.max(y)),
-        (Some(x), None) | (None, Some(x)) => Some(x),
-        (None, None) => None,
-    }
+    (
+        part_cancel(arg1.re(), arg2.re(), ret.re(), is_add),
+        part_cancel(arg1.im(), arg2.im(), ret.im(), is_add),
+    )
 }
 
 #[cfg(test)]
@@ -807,5 +808,46 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_complex_cancel_independent_parts() {
+        let p = 256;
+        let rm = RoundingMode::None;
+        let one = ExactNum::from_u8(1, p);
+        let two = ExactNum::from_u8(2, p);
+        let tiny = one.ldexp(-80, p, rm);
+        let mut near_m1 = ExactNum::from_i8(-1, p).add(&tiny, p, rm);
+        let mut re_pos = one.clone();
+        re_pos.set_inexact(true);
+        near_m1.set_inexact(true);
+        let mut im = two.clone();
+        im.set_inexact(true);
+
+        let a = crate::ExactComplex::new(re_pos, im.clone());
+        let b = crate::ExactComplex::new(near_m1, im);
+        let ret = a.add(&b, p, rm);
+        let (re_err, im_err) = complex_cancel_bits(&a, &b, &ret, true);
+        assert!(re_err.is_some(), "real part should report cancellation");
+        assert!(
+            im_err.is_none(),
+            "imaginary part should not share the real slot"
+        );
+
+        let mut im_pos = two.clone();
+        let mut im_neg = ExactNum::from_i8(-2, p).add(&tiny, p, rm);
+        im_pos.set_inexact(true);
+        im_neg.set_inexact(true);
+        let mut re = one.clone();
+        re.set_inexact(true);
+        let c = crate::ExactComplex::new(re.clone(), im_pos);
+        let d = crate::ExactComplex::new(re, im_neg);
+        let ret2 = c.add(&d, p, rm);
+        let (re_err2, im_err2) = complex_cancel_bits(&c, &d, &ret2, true);
+        assert!(re_err2.is_none(), "real part should stay independent");
+        assert!(
+            im_err2.is_some(),
+            "imaginary part should report cancellation"
+        );
     }
 }

@@ -25,6 +25,8 @@ fn traverse_binary(
     let ts = match expr.op {
         BinOp::Add(_) => {
             err.push(2);
+            err.push(2);
+            let im_id = errs_id + 1;
             quote!({
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
@@ -34,19 +36,31 @@ fn traverse_binary(
                     p_wrk,
                     zenith_float::RoundingMode::None,
                 );
-                if let Some(newerr) =
-                    zenith_float::macro_util::complex_cancel_bits(&arg1, &arg2, &ret, true)
-                {
+                let (re_err, im_err) =
+                    zenith_float::macro_util::complex_cancel_bits(&arg1, &arg2, &ret, true);
+                let mut retry = false;
+                if let Some(newerr) = re_err {
                     if errs[#errs_id] < newerr {
                         errs[#errs_id] = newerr;
-                        continue;
+                        retry = true;
                     }
+                }
+                if let Some(newerr) = im_err {
+                    if errs[#im_id] < newerr {
+                        errs[#im_id] = newerr;
+                        retry = true;
+                    }
+                }
+                if retry {
+                    continue;
                 }
                 ret
             })
         }
         BinOp::Sub(_) => {
             err.push(2);
+            err.push(2);
+            let im_id = errs_id + 1;
             quote!({
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
@@ -56,13 +70,23 @@ fn traverse_binary(
                     p_wrk,
                     zenith_float::RoundingMode::None,
                 );
-                if let Some(newerr) =
-                    zenith_float::macro_util::complex_cancel_bits(&arg1, &arg2, &ret, false)
-                {
+                let (re_err, im_err) =
+                    zenith_float::macro_util::complex_cancel_bits(&arg1, &arg2, &ret, false);
+                let mut retry = false;
+                if let Some(newerr) = re_err {
                     if errs[#errs_id] < newerr {
                         errs[#errs_id] = newerr;
-                        continue;
+                        retry = true;
                     }
+                }
+                if let Some(newerr) = im_err {
+                    if errs[#im_id] < newerr {
+                        errs[#im_id] = newerr;
+                        retry = true;
+                    }
+                }
+                if retry {
+                    continue;
                 }
                 ret
             })
@@ -113,6 +137,46 @@ fn one_arg(
     })
 }
 
+fn one_arg_real(
+    fun: TokenStream,
+    expr: &ExprCall,
+    initial_err: usize,
+    err: &mut Vec<usize>,
+    cc: &mut Consts,
+    use_cc: bool,
+) -> Result<TokenStream, Error> {
+    check_arg_num(1, expr)?;
+    let arg = traverse_expr(&expr.args[0], err, cc)?;
+    err.push(initial_err);
+    let call = if use_cc {
+        quote!(#fun(&(#arg), p_wrk, zenith_float::RoundingMode::None, cc))
+    } else {
+        quote!(#fun(&(#arg), p_wrk, zenith_float::RoundingMode::None))
+    };
+    Ok(quote!(zenith_float::ExactComplex::from_real(#call, p_wrk)))
+}
+
+fn three_arg(
+    fun: TokenStream,
+    expr: &ExprCall,
+    initial_err: usize,
+    err: &mut Vec<usize>,
+    cc: &mut Consts,
+) -> Result<TokenStream, Error> {
+    check_arg_num(3, expr)?;
+    let arg1 = traverse_expr(&expr.args[0], err, cc)?;
+    let arg2 = traverse_expr(&expr.args[1], err, cc)?;
+    let arg3 = traverse_expr(&expr.args[2], err, cc)?;
+    err.push(initial_err);
+    Ok(quote!(#fun(
+        &(#arg1),
+        &(#arg2),
+        &(#arg3),
+        p_wrk,
+        zenith_float::RoundingMode::None
+    )))
+}
+
 fn two_arg(
     fun: TokenStream,
     expr: &ExprCall,
@@ -137,7 +201,7 @@ fn traverse_call(
     err: &mut Vec<usize>,
     cc: &mut Consts,
 ) -> Result<TokenStream, Error> {
-    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"ln\", \"exp\", \"pow\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\" are allowed in cexpr!.";
+    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"abs\", \"arg\", \"conj\", \"ldexp\", \"scalb\", \"logb\" are allowed in cexpr!.";
     let Expr::Path(fun) = expr.func.as_ref() else {
         return Err(Error::new(expr.span(), errmes));
     };
@@ -161,8 +225,61 @@ fn traverse_call(
             cc,
             true,
         ),
+        "cbrt" => one_arg(
+            quote!(zenith_float::ExactComplex::cbrt),
+            expr,
+            1,
+            err,
+            cc,
+            true,
+        ),
+        "root" => {
+            check_arg_num(2, expr)?;
+            let arg = traverse_expr(&expr.args[0], err, cc)?;
+            let n = &expr.args[1];
+            err.push(1);
+            Ok(quote!(zenith_float::ExactComplex::nth_root(
+                &(#arg),
+                #n as usize,
+                p_wrk,
+                zenith_float::RoundingMode::None,
+                cc
+            )))
+        }
         "ln" => one_arg(
             quote!(zenith_float::ExactComplex::ln),
+            expr,
+            SPEC_ADD_ERR,
+            err,
+            cc,
+            true,
+        ),
+        "log2" => one_arg(
+            quote!(zenith_float::ExactComplex::log2),
+            expr,
+            SPEC_ADD_ERR,
+            err,
+            cc,
+            true,
+        ),
+        "log10" => one_arg(
+            quote!(zenith_float::ExactComplex::log10),
+            expr,
+            SPEC_ADD_ERR,
+            err,
+            cc,
+            true,
+        ),
+        "log" => two_arg(
+            quote!(zenith_float::ExactComplex::log),
+            expr,
+            SPEC_ADD_ERR,
+            err,
+            cc,
+            true,
+        ),
+        "log1p" => one_arg(
+            quote!(zenith_float::ExactComplex::log1p),
             expr,
             SPEC_ADD_ERR,
             err,
@@ -177,6 +294,30 @@ fn traverse_call(
             cc,
             true,
         ),
+        "exp2" => one_arg(
+            quote!(zenith_float::ExactComplex::exp2),
+            expr,
+            zenith_float_num::EXPONENT_BIT_SIZE + 1,
+            err,
+            cc,
+            true,
+        ),
+        "exp10" => one_arg(
+            quote!(zenith_float::ExactComplex::exp10),
+            expr,
+            zenith_float_num::EXPONENT_BIT_SIZE + 1,
+            err,
+            cc,
+            true,
+        ),
+        "expm1" => one_arg(
+            quote!(zenith_float::ExactComplex::expm1),
+            expr,
+            zenith_float_num::EXPONENT_BIT_SIZE + 1,
+            err,
+            cc,
+            true,
+        ),
         "pow" => two_arg(
             quote!(zenith_float::ExactComplex::pow),
             expr,
@@ -184,6 +325,22 @@ fn traverse_call(
             err,
             cc,
             true,
+        ),
+        "hypot" => two_arg(
+            quote!(zenith_float::ExactComplex::hypot),
+            expr,
+            1,
+            err,
+            cc,
+            true,
+        ),
+        "fma" => three_arg(quote!(zenith_float::ExactComplex::fma), expr, 2, err, cc),
+        "mul_add" => three_arg(
+            quote!(zenith_float::ExactComplex::mul_add),
+            expr,
+            2,
+            err,
+            cc,
         ),
         "sin" => one_arg(
             quote!(zenith_float::ExactComplex::sin),
@@ -280,6 +437,53 @@ fn traverse_call(
             err,
             cc,
             true,
+        ),
+        "abs" => one_arg_real(
+            quote!(zenith_float::ExactComplex::abs),
+            expr,
+            1,
+            err,
+            cc,
+            false,
+        ),
+        "arg" => one_arg_real(
+            quote!(zenith_float::ExactComplex::arg),
+            expr,
+            SPEC_ADD_ERR,
+            err,
+            cc,
+            true,
+        ),
+        "conj" => {
+            check_arg_num(1, expr)?;
+            let arg = traverse_expr(&expr.args[0], err, cc)?;
+            err.push(0);
+            Ok(quote!(zenith_float::ExactComplex::conj(&(#arg))))
+        }
+        "ldexp" | "scalb" => {
+            check_arg_num(2, expr)?;
+            let arg = traverse_expr(&expr.args[0], err, cc)?;
+            let n = &expr.args[1];
+            err.push(1);
+            let fun = if fname == "scalb" {
+                quote!(zenith_float::ExactComplex::scalb)
+            } else {
+                quote!(zenith_float::ExactComplex::ldexp)
+            };
+            Ok(quote!(#fun(
+                &(#arg),
+                #n as zenith_float::Exponent,
+                p_wrk,
+                zenith_float::RoundingMode::None
+            )))
+        }
+        "logb" => one_arg_real(
+            quote!(zenith_float::ExactComplex::logb),
+            expr,
+            1,
+            err,
+            cc,
+            false,
         ),
         _ => Err(Error::new(expr.span(), errmes)),
     }

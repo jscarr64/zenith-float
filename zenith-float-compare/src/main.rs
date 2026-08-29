@@ -56,13 +56,39 @@ fn main() {
             let (batch, exp_from, exp_to, sign_positive) = workload(task);
             for lib in &args.libraries {
                 let best_us = match lib.as_str() {
-                    "zenith" => bench_lib::<zenith::ZenithFloat>(precision, task, batch, exp_from, exp_to, sign_positive, args.runs),
+                    "zenith" => bench_lib::<zenith::ZenithFloat>(
+                        precision,
+                        task,
+                        batch,
+                        exp_from,
+                        exp_to,
+                        sign_positive,
+                        args.runs,
+                    ),
                     #[cfg(feature = "astro")]
-                    "astro" | "astro-float" => bench_lib::<astro::AstroFloat>(precision, task, batch, exp_from, exp_to, sign_positive, args.runs),
+                    "astro" | "astro-float" => bench_lib::<astro::AstroFloat>(
+                        precision,
+                        task,
+                        batch,
+                        exp_from,
+                        exp_to,
+                        sign_positive,
+                        args.runs,
+                    ),
                     #[cfg(feature = "dashu")]
-                    "dashu" | "dashu-float" => bench_lib::<dashu::DashuFloat>(precision, task, batch, exp_from, exp_to, sign_positive, args.runs),
+                    "dashu" | "dashu-float" => bench_lib::<dashu::DashuFloat>(
+                        precision,
+                        task,
+                        batch,
+                        exp_from,
+                        exp_to,
+                        sign_positive,
+                        args.runs,
+                    ),
                     other => {
-                        eprintln!("error: unknown library {other:?} (enable features: astro, dashu)");
+                        eprintln!(
+                            "error: unknown library {other:?} (enable features: astro, dashu)"
+                        );
                         std::process::exit(1);
                     }
                 };

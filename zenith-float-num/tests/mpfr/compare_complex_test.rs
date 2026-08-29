@@ -46,5 +46,21 @@ fn mpfr_compare_complex() {
         }
         assert_float_close(s.re().clone(), fre, p, "cplx add re", true, &mut cc);
         assert_float_close(s.im().clone(), fim, p, "cplx add im", true, &mut cc);
+
+        let pr = a.mul(&b, p, rm);
+        let mut fac = Float::with_val(p as u32, 1);
+        let mut fbd = Float::with_val(p as u32, 1);
+        let mut fad = Float::with_val(p as u32, 1);
+        let mut fbc = Float::with_val(p as u32, 1);
+        unsafe {
+            mpfr::mul(fac.as_raw_mut(), far.as_raw(), fbr.as_raw(), rnd);
+            mpfr::mul(fbd.as_raw_mut(), fai.as_raw(), fbi.as_raw(), rnd);
+            mpfr::mul(fad.as_raw_mut(), far.as_raw(), fbi.as_raw(), rnd);
+            mpfr::mul(fbc.as_raw_mut(), fai.as_raw(), fbr.as_raw(), rnd);
+            mpfr::sub(fre.as_raw_mut(), fac.as_raw(), fbd.as_raw(), rnd);
+            mpfr::add(fim.as_raw_mut(), fad.as_raw(), fbc.as_raw(), rnd);
+        }
+        assert_float_close(pr.re().clone(), fre, p, "cplx mul re", true, &mut cc);
+        assert_float_close(pr.im().clone(), fim, p, "cplx mul im", true, &mut cc);
     }
 }

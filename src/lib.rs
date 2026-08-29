@@ -293,6 +293,9 @@ extern crate alloc;
 /// [`cexpr`] is the same working-precision loop as [`expr`], for [`ExactComplex`].
 /// Cancellation is measured on both the real and imaginary parts.
 /// The imaginary unit in the expression is `I` (so `i` remains a variable name).
+/// Leaves include roots, logs/exps, elementary and inverse functions, `hypot`/`fma`,
+/// `abs`/`arg`/`conj`, and `ldexp`/`scalb`/`logb`. Cancellation is tracked per part.
+/// There is no `atan2` or `rem_pi` in `cexpr!`.
 /// Use `cexpr!` when the expression is complex; `expr!` stays real-valued.
 pub use zenith_float_macro::{cexpr, exact, expr, fbig};
 

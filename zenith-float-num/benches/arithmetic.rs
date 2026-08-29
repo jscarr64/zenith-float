@@ -1,11 +1,11 @@
 //! Arithmetic benchmarks: add, mul, div, reciprocal, remainder, sqrt.
 
-mod shared;
 mod common;
+mod shared;
 
 use common::{pair_fixtures, parse_fixtures, ARITH_BATCH, FFT_MUL_BATCH, FFT_MUL_PRECISIONS};
-use shared::{cycle_batch, init_cc, sink, PRECISIONS};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use shared::{cycle_batch, init_cc, sink, PRECISIONS};
 use zenith_float_num::{ExactNum, RoundingMode};
 
 fn bench_add(c: &mut Criterion) {

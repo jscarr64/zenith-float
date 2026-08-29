@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- `cexpr!` — complex expressions with the same working-precision loop as `expr!`; cancellation on both parts; imaginary unit `I`.
+- `cexpr!` — per-part `errs[]` for real vs imaginary cancellation; principal branch cuts documented; leaves match the complex-capable `expr!` set (`cbrt`/`root`, logs/exps, `hypot`/`fma`, `abs`/`arg`/`conj`, `ldexp`/`scalb`/`logb`). No `atan2` or `rem_pi` (complex trig uses `x+iy` identities).
+- `ExactComplex::{log2, log10, log, log1p, exp2, exp10, expm1, ldexp, scalb, logb, cbrt, nth_root, hypot, fma, mul_add}`.
 - Getting-started guide (`doc/GETTING_STARTED.md`) and help tutorial (`doc/HELP.md`).
 - Maintainer build checklist is not packaged on crates.io.
 - `Context::with_rounding_mode`.

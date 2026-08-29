@@ -3,11 +3,9 @@
 mod shared;
 mod trans_common;
 
-use shared::{cycle_batch, init_cc, parse_list, sink, PRECISIONS};
-use trans_common::{
-    EXP_FIXTURES, LN_FIXTURES, TRIG_FIXTURES, TRANSCENDENTAL_BATCH,
-};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use shared::{cycle_batch, init_cc, parse_list, sink, PRECISIONS};
+use trans_common::{EXP_FIXTURES, LN_FIXTURES, TRANSCENDENTAL_BATCH, TRIG_FIXTURES};
 use zenith_float_num::{Consts, ExactNum, RoundingMode};
 
 fn bench_ln(c: &mut Criterion) {

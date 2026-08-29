@@ -3,6 +3,7 @@
 use crate::defs::DEFAULT_P;
 use crate::Consts;
 use crate::ExactNum;
+use crate::Exponent;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
 
@@ -87,6 +88,9 @@ impl ExactComplex {
     }
 
     /// Argument `atan2(im, re)` at precision `p`.
+    ///
+    /// Branch: same as real `atan2`; values lie in (−π, π]. The cut of `ln` / `sqrt` /
+    /// `pow` is the non-positive real axis, approached from above as +π and from below as −π.
     pub fn arg(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
         self.im.atan2(&self.re, p, rm, cc)
     }
@@ -135,12 +139,17 @@ impl ExactComplex {
     }
 
     /// Principal logarithm `ln|z| + i Arg(z)`.
+    ///
+    /// Branch cut: (−∞, 0] on the real axis. `ln(−1)` is `iπ` (argument +π).
     pub fn ln(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mag = self.abs(p, RoundingMode::None);
         Self::new(mag.ln(p, rm, cc), self.arg(p, rm, cc))
     }
 
     /// `sin(self)` via `sin(re)cosh(im) + i cos(re)sinh(im)`.
+    ///
+    /// The complex value is **not** passed to `rem_pi`. Only the real (resp. imaginary)
+    /// *component* uses real `sin_cos` / `sinh_cosh`.
     pub fn sin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let (sn, cs) = self.re.sin_cos(p, RoundingMode::None, cc);
         let (sh, ch) = self.im.sinh_cosh(p, RoundingMode::None, cc);
@@ -219,6 +228,8 @@ impl ExactComplex {
     }
 
     /// Principal square root: `√r (cos(θ/2) + i sin(θ/2))`.
+    ///
+    /// Branch cut: (−∞, 0]. Real part of the result is ≥ 0. `sqrt(−1)` is `+i`.
     pub fn sqrt(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let r = self.abs(p_x, RoundingMode::None);
@@ -233,7 +244,147 @@ impl ExactComplex {
         .finish(p, rm)
     }
 
+    /// `log2(self) = ln(self) / ln 2` (principal branch).
+    pub fn log2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let p_x = Self::work_p(p);
+        let ln = self.ln(p_x, RoundingMode::None, cc);
+        let base = Self::from_real(cc.ln_2(p_x, RoundingMode::None), p_x);
+        ln.div(&base, p_x, RoundingMode::None).finish(p, rm)
+    }
+
+    /// `log10(self) = ln(self) / ln 10` (principal branch).
+    pub fn log10(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let p_x = Self::work_p(p);
+        let ln = self.ln(p_x, RoundingMode::None, cc);
+        let base = Self::from_real(cc.ln_10(p_x, RoundingMode::None), p_x);
+        ln.div(&base, p_x, RoundingMode::None).finish(p, rm)
+    }
+
+    /// `log_base(self) = ln(self) / ln(base)` (principal branch).
+    pub fn log(&self, base: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let p_x = Self::work_p(p);
+        let ln = self.ln(p_x, RoundingMode::None, cc);
+        let lnb = base.ln(p_x, RoundingMode::None, cc);
+        ln.div(&lnb, p_x, RoundingMode::None).finish(p, rm)
+    }
+
+    /// `ln(1 + self)` (principal branch).
+    pub fn log1p(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let p_x = Self::work_p(p);
+        Self::one(p_x)
+            .add(self, p_x, RoundingMode::None)
+            .ln(p_x, RoundingMode::None, cc)
+            .finish(p, rm)
+    }
+
+    /// `exp2(self) = exp(self · ln 2)`.
+    pub fn exp2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let p_x = Self::work_p(p);
+        let ln2 = Self::from_real(cc.ln_2(p_x, RoundingMode::None), p_x);
+        self.mul(&ln2, p_x, RoundingMode::None)
+            .exp(p_x, RoundingMode::None, cc)
+            .finish(p, rm)
+    }
+
+    /// `exp10(self) = exp(self · ln 10)`.
+    pub fn exp10(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let p_x = Self::work_p(p);
+        let ln10 = Self::from_real(cc.ln_10(p_x, RoundingMode::None), p_x);
+        self.mul(&ln10, p_x, RoundingMode::None)
+            .exp(p_x, RoundingMode::None, cc)
+            .finish(p, rm)
+    }
+
+    /// `exp(self) − 1`.
+    pub fn expm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let p_x = Self::work_p(p);
+        self.exp(p_x, RoundingMode::None, cc)
+            .sub(&Self::one(p_x), p_x, RoundingMode::None)
+            .finish(p, rm)
+    }
+
+    /// Scale both parts by `2^n` (`ldexp` on re and im).
+    pub fn ldexp(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        self.ldexp_parts(n, p, rm)
+    }
+
+    /// Same as [`ldexp`](Self::ldexp).
+    pub fn scalb(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        self.ldexp(n, p, rm)
+    }
+
+    /// `logb(|z|)` as a real (`x + 0i`).
+    pub fn logb(&self, p: usize, rm: RoundingMode) -> ExactNum {
+        self.abs(p, rm).logb(p, rm)
+    }
+
+    /// Principal `n`-th root via `exp(ln(z) / n)`. Inherits the `ln` branch cut.
+    pub fn nth_root(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if n == 0 {
+            return Self::new(
+                ExactNum::nan(Some(crate::Error::InvalidArgument)),
+                ExactNum::nan(Some(crate::Error::InvalidArgument)),
+            );
+        }
+        if n == 1 {
+            let mut z = self.clone();
+            if let Err(e) = z.set_precision(p, rm) {
+                return Self::new(ExactNum::nan(Some(e)), ExactNum::nan(Some(e)));
+            }
+            return z;
+        }
+        if n == 2 {
+            return self.sqrt(p, rm, cc);
+        }
+        let p_x = Self::work_p(p);
+        let ln = self.ln(p_x, RoundingMode::None, cc);
+        let ninv = Self::from_real(
+            ExactNum::from_u32(1, p_x).div(
+                &ExactNum::from_u32(n as u32, p_x),
+                p_x,
+                RoundingMode::None,
+            ),
+            p_x,
+        );
+        ln.mul(&ninv, p_x, RoundingMode::None)
+            .exp(p_x, RoundingMode::None, cc)
+            .finish(p, rm)
+    }
+
+    /// Principal cube root. Same branch as [`nth_root`](Self::nth_root) with `n = 3`.
+    pub fn cbrt(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.nth_root(3, p, rm, cc)
+    }
+
+    /// Principal `sqrt(self² + other²)` (analytic continuation of real `hypot`).
+    pub fn hypot(&self, other: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let p_x = Self::work_p(p);
+        self.mul(self, p_x, RoundingMode::None)
+            .add(
+                &other.mul(other, p_x, RoundingMode::None),
+                p_x,
+                RoundingMode::None,
+            )
+            .sqrt(p_x, RoundingMode::None, cc)
+            .finish(p, rm)
+    }
+
+    /// `self * b + c` at extra working precision, then one round (not a fused complex hardware op).
+    pub fn fma(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
+        let p_x = Self::work_p(p);
+        self.mul(b, p_x, RoundingMode::None)
+            .add(c, p_x, RoundingMode::None)
+            .finish(p, rm)
+    }
+
+    /// Alias of [`fma`](Self::fma).
+    pub fn mul_add(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
+        self.fma(b, c, p, rm)
+    }
+
     /// `self^rhs` as `exp(rhs * ln(self))` (principal branch).
+    ///
+    /// Inherits the `ln` cut on `self`: non-positive real base uses Arg = ±π.
     pub fn pow(&self, rhs: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
@@ -421,7 +572,7 @@ mod tests {
         let e = z.exp(p, rm, &mut cc);
         let back = e.ln(p, rm, &mut cc);
         let d = back.re().sub(z.re(), p, RoundingMode::None).abs();
-        assert!(d.exponent().unwrap_or(0) < -((p as i32) / 4));
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 4));
 
         let z0 = ExactComplex::zero(p);
         let t = z0.tan(p, rm, &mut cc);
@@ -429,6 +580,35 @@ mod tests {
         assert!(t.im().is_zero() || t.im().exponent().unwrap_or(0) < -((p as i32) / 4));
         let sh = z0.sinh(p, rm, &mut cc);
         assert!(sh.re().is_zero() || sh.re().exponent().unwrap_or(0) < -((p as i32) / 4));
+
+        let two = ExactComplex::from_real(ExactNum::from_u8(2, p), p);
+        let four = ExactComplex::from_real(ExactNum::from_u8(4, p), p);
+        let lg = four.log2(p, rm, &mut cc);
+        let d = lg.re().sub(two.re(), p, RoundingMode::None).abs();
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 8));
+        assert!(lg.im().is_zero() || lg.im().exponent().unwrap_or(0) < -((p as i32) / 4));
+        let e2 = two.exp2(p, rm, &mut cc);
+        let d2 = e2.re().sub(four.re(), p, RoundingMode::None).abs();
+        assert!(d2.is_zero() || d2.exponent().unwrap_or(0) < -((p as i32) / 8));
+    }
+
+    #[test]
+    fn test_complex_branch_cuts() {
+        let p = 256;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let m1 = ExactComplex::from_real(ExactNum::from_i8(-1, p), p);
+
+        let s = m1.sqrt(p, rm, &mut cc);
+        assert!(s.re().is_zero() || s.re().exponent().unwrap_or(0) < -((p as i32) / 4));
+        assert_eq!(s.im().cmp(&ExactNum::from_u8(1, p)), Some(0));
+
+        let l = m1.ln(p, rm, &mut cc);
+        assert!(l.re().is_zero() || l.re().exponent().unwrap_or(0) < -((p as i32) / 4));
+        let pi = cc.pi(p, rm);
+        let d = l.im().abs().sub(&pi, p, RoundingMode::None).abs();
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 8));
+        assert!(l.im().is_positive());
     }
 
     #[test]

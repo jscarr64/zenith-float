@@ -32,6 +32,16 @@ This is the Accumath numeric contract: leaves are treated as exact; the printed 
 
 Integer literals and `exact!` / `fbig!` strings enter as exact `ExactNum` values.
 
+## `cexpr!`
+
+Same pipeline on `ExactComplex`: working precision, **two** `errs[]` slots per add/sub (real and imaginary independently — `complex_cancel_bits` returns a pair), one final `set_precision` on re and im, then `check_complex_exponent_range`.
+
+Complex `sin`/`cos`/`tan` use the `x+iy` identities. They do **not** call `rem_pi` on the complex value.
+
+Full leaf list, branch cuts, and explicit exclusions: [LIBRARY.md](LIBRARY.md) §17.
+
+Do not use `e` as a variable name (`e` is Euler’s number). Imaginary unit is `I`. No `atan2` or `rem_pi` in `cexpr!`.
+
 ## What `expr!` does **not** guarantee
 
 - Bit-identity with MPFR for every leaf (trig/log use the same kernel as `ExactNum`, which is 1-ULP oracles for the compare suite, not a proof for composite trees).

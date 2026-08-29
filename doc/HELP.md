@@ -278,7 +278,7 @@ let mut ctx = Context::new(
 let z = cexpr!(I * I, &mut ctx); // −1 + 0i
 ```
 
-`cexpr!` has no `%`. Leaves include `recip`, `sqrt`, `ln`, `exp`, `pow`, `sin`/`cos`/`tan`, inverse trig, and hyperbolic functions. Methods on `ExactComplex` cover modulus (`abs`), argument (`arg`), conjugate, and the same elementary set with explicit `p` / `rm` / cache.
+`cexpr!` has no `%`, no `atan2`, and no `rem_pi`. Leaves include roots (`sqrt`, `cbrt`, `root`), logs, exps, `pow`, circular and hyperbolic functions and inverses, `hypot` / `fma` / `mul_add`, `abs` / `arg` / `conj`, and `ldexp` / `scalb` / `logb`. Real-only specials (`erf`, `gamma`, `bessel_j`) stay in `expr!`. Principal branch cuts: `ln` and `sqrt` on the non-positive real axis (`ln(−1) = iπ`, `sqrt(−1) = +i`). Add/sub cancellation is tracked **separately** on the real and imaginary parts. See [LIBRARY.md](LIBRARY.md) §17.
 
 ---
 

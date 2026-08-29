@@ -1,6 +1,6 @@
 // Additional tests of the library.
 
-use zenith_float::{exact, fbig, RadixFloat};
+use zenith_float::{cexpr, exact, fbig, ExactComplex, RadixFloat};
 use zenith_float_macro::expr;
 use zenith_float_num::{
     ctx::Context, Consts, ExactNum, Radix, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN,
@@ -24,10 +24,32 @@ fn compile_time_literals() {
     assert_eq!(a.cmp(&b), Some(0));
 }
 
+fn cplx_eq(name: &str, a: &ExactComplex, b: &ExactComplex) {
+    if a.is_nan() && b.is_nan() {
+        return;
+    }
+    assert_eq!(
+        a.re().cmp(b.re()),
+        Some(0),
+        "{name} re {:?} vs {:?}",
+        a.re(),
+        b.re()
+    );
+    assert_eq!(
+        a.im().cmp(b.im()),
+        Some(0),
+        "{name} im {:?} vs {:?}",
+        a.im(),
+        b.im()
+    );
+}
+
+fn tiny_part(x: &ExactNum, p: usize) -> bool {
+    x.is_zero() || x.exponent().unwrap_or(0) < -((p as i32) / 4)
+}
+
 #[test]
 fn cexpr_i_squared() {
-    use zenith_float::{cexpr, ExactComplex};
-
     let mut ctx = Context::new(
         256,
         RoundingMode::ToEven,
@@ -43,6 +65,236 @@ fn cexpr_i_squared() {
     let s = cexpr!(sin(z0), &mut ctx);
     assert!(s.re().is_zero() || s.re().exponent().unwrap_or(0) < -40);
     assert!(s.im().is_zero() || s.im().exponent().unwrap_or(0) < -40);
+}
+
+#[test]
+fn macro_run_cexpr_tests() {
+    let p = 320;
+    let rm = RoundingMode::None;
+    let mut cc = Consts::new().unwrap();
+    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), -1000000, 1000000);
+
+    let x = ExactComplex::from_real(ExactNum::from(2), p);
+    let y = ExactComplex::from_real(ExactNum::from(5), p);
+    let i = ExactComplex::i(p);
+    let z0 = ExactComplex::zero(p);
+    let z1 = ExactComplex::one(p);
+
+    cplx_eq(
+        "neg1",
+        &cexpr!(-1, &mut ctx),
+        &ExactComplex::from_real(ExactNum::from(-1), p),
+    );
+    cplx_eq(
+        "add",
+        &cexpr!(2 + 3, &mut ctx),
+        &ExactComplex::from_real(ExactNum::from(5), p),
+    );
+    cplx_eq(
+        "sub",
+        &cexpr!(3 - 4, &mut ctx),
+        &ExactComplex::from_real(ExactNum::from(-1), p),
+    );
+    cplx_eq(
+        "mul",
+        &cexpr!(4 * 5, &mut ctx),
+        &ExactComplex::from_real(ExactNum::from(20), p),
+    );
+    cplx_eq(
+        "div",
+        &cexpr!(5 / 6, &mut ctx),
+        &ExactComplex::from_real(ExactNum::from(5), p).div(
+            &ExactComplex::from_real(ExactNum::from(6), p),
+            p,
+            rm,
+        ),
+    );
+    cplx_eq("i2", &cexpr!(I * I, &mut ctx), &i.mul(&i, p, rm));
+
+    cplx_eq("recip", &cexpr!(recip(x), &mut ctx), &x.reciprocal(p, rm));
+    cplx_eq("sqrt", &cexpr!(sqrt(x), &mut ctx), &x.sqrt(p, rm, &mut cc));
+    cplx_eq("ln", &cexpr!(ln(x), &mut ctx), &x.ln(p, rm, &mut cc));
+    cplx_eq("log2", &cexpr!(log2(x), &mut ctx), &x.log2(p, rm, &mut cc));
+    cplx_eq(
+        "log10",
+        &cexpr!(log10(x), &mut ctx),
+        &x.log10(p, rm, &mut cc),
+    );
+    cplx_eq(
+        "log",
+        &cexpr!(log(x, y), &mut ctx),
+        &x.log(&y, p, rm, &mut cc),
+    );
+    cplx_eq(
+        "log1p",
+        &cexpr!(log1p(z1), &mut ctx),
+        &z1.log1p(p, rm, &mut cc),
+    );
+    cplx_eq("exp", &cexpr!(exp(x), &mut ctx), &x.exp(p, rm, &mut cc));
+    cplx_eq("exp2", &cexpr!(exp2(x), &mut ctx), &x.exp2(p, rm, &mut cc));
+    cplx_eq(
+        "exp10",
+        &cexpr!(exp10(x), &mut ctx),
+        &x.exp10(p, rm, &mut cc),
+    );
+    cplx_eq(
+        "expm1",
+        &cexpr!(expm1(x), &mut ctx),
+        &x.expm1(p, rm, &mut cc),
+    );
+    cplx_eq(
+        "pow",
+        &cexpr!(pow(x, y), &mut ctx),
+        &x.pow(&y, p, rm, &mut cc),
+    );
+
+    cplx_eq("sin", &cexpr!(sin(x), &mut ctx), &x.sin(p, rm, &mut cc));
+    cplx_eq("cos", &cexpr!(cos(x), &mut ctx), &x.cos(p, rm, &mut cc));
+    cplx_eq("tan0", &cexpr!(tan(z0), &mut ctx), &z0.tan(p, rm, &mut cc));
+    let u = ExactComplex::from_real(ExactNum::from(1), p);
+    let half = ExactComplex::from_real(ExactNum::from(1).div(&ExactNum::from(2), p, rm), p);
+    cplx_eq("asin", &cexpr!(asin(u), &mut ctx), &u.asin(p, rm, &mut cc));
+    cplx_eq("acos", &cexpr!(acos(u), &mut ctx), &u.acos(p, rm, &mut cc));
+    cplx_eq("atan", &cexpr!(atan(u), &mut ctx), &u.atan(p, rm, &mut cc));
+    cplx_eq("sinh", &cexpr!(sinh(x), &mut ctx), &x.sinh(p, rm, &mut cc));
+    cplx_eq("cosh", &cexpr!(cosh(x), &mut ctx), &x.cosh(p, rm, &mut cc));
+    cplx_eq("tanh", &cexpr!(tanh(x), &mut ctx), &x.tanh(p, rm, &mut cc));
+    cplx_eq(
+        "asinh",
+        &cexpr!(asinh(x), &mut ctx),
+        &x.asinh(p, rm, &mut cc),
+    );
+    cplx_eq(
+        "acosh",
+        &cexpr!(acosh(x), &mut ctx),
+        &x.acosh(p, rm, &mut cc),
+    );
+    cplx_eq(
+        "atanh",
+        &cexpr!(atanh(half), &mut ctx),
+        &half.atanh(p, rm, &mut cc),
+    );
+
+    let a = ExactComplex::new(ExactNum::from_u8(3, p), ExactNum::from_u8(4, p));
+    let mag = cexpr!(abs(a), &mut ctx);
+    assert_eq!(mag.re().cmp(&a.abs(p, rm)), Some(0));
+    assert!(tiny_part(mag.im(), p));
+    let th = cexpr!(arg(a), &mut ctx);
+    assert_eq!(th.re().cmp(&a.arg(p, rm, &mut cc)), Some(0));
+    assert!(tiny_part(th.im(), p));
+    cplx_eq("conj", &cexpr!(conj(a), &mut ctx), &a.conj());
+    cplx_eq("ldexp", &cexpr!(ldexp(x, 3), &mut ctx), &x.ldexp(3, p, rm));
+    cplx_eq("scalb", &cexpr!(scalb(x, 3), &mut ctx), &x.scalb(3, p, rm));
+    cplx_eq("cbrt", &cexpr!(cbrt(x), &mut ctx), &x.cbrt(p, rm, &mut cc));
+    cplx_eq(
+        "root",
+        &cexpr!(root(x, 3), &mut ctx),
+        &x.nth_root(3, p, rm, &mut cc),
+    );
+    cplx_eq(
+        "hypot",
+        &cexpr!(hypot(x, y), &mut ctx),
+        &x.hypot(&y, p, rm, &mut cc),
+    );
+    cplx_eq(
+        "fma",
+        &cexpr!(fma(x, y, z1), &mut ctx),
+        &x.fma(&y, &z1, p, rm),
+    );
+    let lb = cexpr!(logb(x), &mut ctx);
+    assert_eq!(lb.re().cmp(&x.logb(p, rm)), Some(0));
+    assert!(tiny_part(lb.im(), p));
+
+    let m1 = ExactComplex::from_real(ExactNum::from_i8(-1, p), p);
+    let sqm = cexpr!(sqrt(m1), &mut ctx);
+    assert!(tiny_part(sqm.re(), p));
+    assert!(sqm.im().is_positive());
+    let lnm = cexpr!(ln(m1), &mut ctx);
+    assert!(tiny_part(lnm.re(), p));
+    assert!(lnm.im().is_positive());
+
+    cplx_eq(
+        "pi",
+        &cexpr!(pi, &mut ctx),
+        &ExactComplex::from_real(ctx.const_pi(), p),
+    );
+    cplx_eq(
+        "e",
+        &cexpr!(e, &mut ctx),
+        &ExactComplex::from_real(ctx.const_e(), p),
+    );
+    cplx_eq(
+        "ln2",
+        &cexpr!(ln_2, &mut ctx),
+        &ExactComplex::from_real(ctx.const_ln2(), p),
+    );
+    cplx_eq(
+        "ln10",
+        &cexpr!(ln_10, &mut ctx),
+        &ExactComplex::from_real(ctx.const_ln10(), p),
+    );
+    cplx_eq(
+        "sqrt2",
+        &cexpr!(sqrt2, &mut ctx),
+        &ExactComplex::from_real(ctx.const_sqrt2(), p),
+    );
+    cplx_eq(
+        "phi",
+        &cexpr!(phi, &mut ctx),
+        &ExactComplex::from_real(ctx.const_phi(), p),
+    );
+    cplx_eq(
+        "gamma",
+        &cexpr!(euler_gamma, &mut ctx),
+        &ExactComplex::from_real(ctx.const_euler_gamma(), p),
+    );
+
+    let back = cexpr!(ln(exp(x)), &mut ctx);
+    let d = back.re().sub(x.re(), p, RoundingMode::None).abs();
+    assert!(d.exponent().unwrap_or(0) < -((p as i32) / 8));
+    assert!(tiny_part(back.im(), p));
+
+    let two = ExactComplex::from_real(ExactNum::from(2), p);
+    cplx_eq(
+        "exp2lit",
+        &cexpr!(exp2(2), &mut ctx),
+        &two.exp2(p, rm, &mut cc),
+    );
+
+    let mut tight = Context::new(p, RoundingMode::ToEven, Consts::new().unwrap(), -10, 10);
+    let huge = cexpr!(exp(40), &mut tight);
+    assert!(huge.re().is_inf() || huge.im().is_inf() || huge.is_nan() || huge.re().is_zero());
+}
+
+#[test]
+fn cexpr_cancellation_matches_high_prec() {
+    let p = 192;
+    let rm = RoundingMode::ToEven;
+    let mut cc = Consts::new().unwrap();
+    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), EXPONENT_MIN, EXPONENT_MAX);
+
+    let x = ExactNum::parse(
+        "0.00000000000000000000000000000000000001",
+        Radix::Dec,
+        p,
+        RoundingMode::None,
+        &mut cc,
+    );
+    let y = ExactNum::parse(
+        "1.57079632679489661923132169163975144209",
+        Radix::Dec,
+        p,
+        RoundingMode::None,
+        &mut cc,
+    );
+    let zx = ExactComplex::from_real(x.clone(), p);
+    let zy = ExactComplex::from_real(y.clone(), p);
+
+    let z = cexpr!(cos(zx) - sin(zy), &mut ctx);
+    let cx = zx.cos(p + 256, RoundingMode::None, &mut cc);
+    let sy = zy.sin(p + 256, RoundingMode::None, &mut cc);
+    let r = cx.sub(&sy, p, rm);
+    cplx_eq("cancel", &z, &r);
 }
 
 #[test]
@@ -67,6 +319,7 @@ fn radix_base12_roundtrip() {
 fn macro_compile_tests() {
     let t = trybuild::TestCases::new();
     t.pass("./tests/tests/expr.rs");
+    t.pass("./tests/tests/cexpr.rs");
 }
 
 #[test]

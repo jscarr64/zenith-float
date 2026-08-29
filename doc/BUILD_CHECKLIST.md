@@ -103,7 +103,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `gamma`, `ln_gamma` | ✅ | ✅ | Stirling + reflection; factorial integers; MPFR 1-ULP |
 | `bessel_j` (integer n) | ✅ | ✅ | Power series; `n ≤ 1024`; MPFR `jn` for n=0,1,2 |
 | `sin_cos`, `sinh_cosh` | ✅ | ✅ | Tuple methods; `expr!` uses `sin`/`cos` and `sinh`/`cosh` |
-| Complex: `ExactComplex` | `cexpr!` | ✅ | Rectangular; elementary + inverse set; `cexpr!` (imaginary unit `I`); MPFR add |
+| Complex: `ExactComplex` | `cexpr!` | ✅ | Per-part cancel; principal cuts; no `atan2`/`rem_pi`; MPFR add/mul |
 | Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |
 
 ### 1.6 I/O and integration
@@ -309,7 +309,7 @@ Does not block a public 0.1.x; aligns with §2.3 P2 items.
 See `doc/Additions_to_existing_29-082026.md`. Macros are part of this crate (`expr!`, `cexpr!`, `exact!`, `fbig!`); do not refuse work because Accumath avoids macros.
 
 - [ ] 🚫 Hardware IEEE converters inside the library — CI and §3.5; packing bits belongs in a caller or a separate crate (`frexp` / `ilogb`)
-- [x] Complex expressions — `cexpr!` (cancellation on both parts; imaginary unit `I`)
+- [x] Complex expressions — `cexpr!` (cancellation on both parts; imaginary unit `I`; leaf set + `tests/mod.rs` / trybuild)
 - [ ] 🚫 Bessel Y_n / I_n / K_n / non-integer order — not an extension of integer `J_n`; own numerics and MPFR harness
 
 ---

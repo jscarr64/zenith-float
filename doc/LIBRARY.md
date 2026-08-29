@@ -113,7 +113,7 @@ From `zenith_float` / `zenith_float_num`:
 - `NAN`, `INF_POS`, `INF_NEG`
 - Feature `random`: `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED`
 
-Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` expansion (`check_exponent_range`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.
+Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` / `cexpr!` expansion (`check_exponent_range`, `check_complex_exponent_range`, `complex_cancel_bits`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.
 
 Not re-exported: internal `Mantissa`, `WordBuf`, series helpers, `DEFAULT_P`.
 
@@ -315,13 +315,43 @@ Public macros (crate root): `expr!`, `cexpr!`, `exact!`, `fbig!`. Import them li
 
 ### `cexpr!(expression, context)`
 
-Same context and extra-precision loop as `expr!`, producing `ExactComplex`. Cancellation is measured on **both** real and imaginary parts. Imaginary unit: `I` (so `i` can still be a variable).
+Same **context** as `expr!` (`Context` or the two tuples above). Same extra-precision loop: working precision starts at `p + WORD_BIT_SIZE`, internals use `RoundingMode::None`, the root is rounded once with `(p, rm)`, then each part is clamped with `check_complex_exponent_range`.
 
-**Operators:** `+`, `-`, `*`, `/` (no `%`).
+**`I`:** expands to `ExactComplex::i(p_wrk)` (`0 + 1i`). Lowercase `i` remains a variable. Do not name a variable `e` (`e` is Euler’s number, lifted as `e + 0i`).
 
-**Leaves:** `recip`, `sqrt`, `ln`, `exp`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`.
+**Cancellation:** add/sub use **two** `errs[]` slots, one for the real part and one for the imaginary part (`complex_cancel_bits` returns `(Option<usize>, Option<usize>)`). A subtraction can lose bits on both parts at different rates; a shared max would underestimate working precision. `p_wrk` is `p_rnd + sum(errs)`.
 
-Literals and real constants are lifted as `x + 0i`. Variables may be `ExactComplex` or anything `FromExt` can turn into a real (then wrapped).
+**Operators:** `+`, `-`, `*`, `/`. No `%`.
+
+**Function leaves (complete list):**
+
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`.
+
+**Named constants:** `I`, `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` (reals except `I` are `x + 0i`).
+
+**Reals lifted as `x + 0i`:** `abs`, `arg`, `logb`, literals, and the real constants. `ldexp` / `scalb` scale **both** parts by `2^n`. `hypot(z, w)` is principal `sqrt(z² + w²)`. `fma` / `mul_add` are extra-precision `a*b+c`, then one round. `root(z, n)` is `nth_root` (integer `n`).
+
+**Branch cuts (principal values, observable):**
+
+| Family | Cut / range |
+| --- | --- |
+| `arg` | `atan2(im, re)`, values in (−π, π] |
+| `ln`, `log2`, `log10`, `log`, `log1p` | cut on (−∞, 0]; `ln(−1) = iπ` |
+| `sqrt`, `cbrt`, `root` | cut on (−∞, 0]; `Re(sqrt) ≥ 0`; `sqrt(−1) = +i` |
+| `pow` | `exp(w · ln(z))`, so the `ln` cut on the **base** |
+| `asin` / `acos` / `atan` / `asinh` / `acosh` / `atanh` | principal branches of the usual identities |
+
+**Trig / hyperbolic:** `sin(x+iy) = sin(x)cosh(y) + i cos(x)sinh(y)` (and the matching identities). The **complex** argument is never passed to `rem_pi`. Only a real component uses real `sin_cos` / `sinh_cosh` (those may reduce that real).
+
+**Explicitly not in `cexpr!`:**
+
+| Leaf | Why |
+| --- | --- |
+| `%` / `rem_pi` | remainder and π-reduction are real; complex trig uses the identities above |
+| `atan2` | no standard two-complex analogue; use `arg` for `atan2(im, re)` |
+| `erf` / `erfc` / `gamma` / `ln_gamma` / `bessel_j` | no complex kernel in this crate |
+
+Literals and real constants are lifted as `x + 0i`. Variables may be `ExactComplex` or anything `FromExt` can wrap as a real.
 
 **Not in `expr!`:** `frexp`, `ilogb`, `sin_cos`, `sinh_cosh`, `int`/`fract`/`ceil`/`floor`/`round`, `min`/`max`/`clamp`, `cmp`, `copysign`, `next_after`, `powi`/`powsi`, `abs`/`signum`, parse/format, raw parts, `nth_root` under the name `nth_root` (use `root`). Complex values use `cexpr!`, not `expr!`.
 
@@ -388,6 +418,13 @@ Cartesian `re + i·im` as two `ExactNum`s.
 | `sinh` / `cosh` / `tanh` | |
 | `sqrt` / `pow` | principal branch |
 | `asin` / `acos` / `atan` / `asinh` / `acosh` / `atanh` | principal branches |
+| `log2` / `log10` / `log` / `log1p` | principal; `log2`/`log10`/`log` via `ln` ratios |
+| `exp2` / `exp10` / `expm1` | via `exp` |
+| `ldexp` / `scalb` | scale both parts by `2^n` |
+| `cbrt` / `nth_root` | principal; `exp(ln / n)` |
+| `hypot` | principal `sqrt(z² + w²)` |
+| `fma` / `mul_add` | extra-precision `a*b+c` |
+| `logb` | `logb(\|z\|)` as a real |
 | `Add` `Sub` `Mul` `Div` | 128-bit `ToEven` like reals |
 
 No `expr!` for complexes — use `cexpr!`. Serde: struct `{ "re", "im" }` of decimal strings.
