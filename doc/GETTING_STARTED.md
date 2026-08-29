@@ -47,11 +47,11 @@ use zenith_float::{expr, Consts, RoundingMode};
 use zenith_float::ctx::Context;
 
 let mut ctx = Context::new(
-    256,
-    RoundingMode::ToEven,
-    Consts::new().expect("constants cache"),
-    -10_000,
-    10_000,
+        256,
+        RoundingMode::ToEven,
+        Consts::new().expect("constants cache"),
+        -10_000,
+        10_000,
 );
 
 let y = expr!(sin(pi / 6), &mut ctx);
@@ -78,11 +78,11 @@ use zenith_float::{expr, Consts, RoundingMode};
 use zenith_float::ctx::Context;
 
 let mut ctx = Context::new(
-    256,
-    RoundingMode::ToEven,
-    Consts::new().expect("constants cache"),
-    -10_000,
-    10_000,
+        256,
+        RoundingMode::ToEven,
+        Consts::new().expect("constants cache"),
+        -10_000,
+        10_000,
 );
 let y = expr!(sin(pi / 6), &mut ctx);
 
@@ -98,7 +98,7 @@ let s = y
 
 Use `ExactNum` methods when you need paired results (`sin_cos`, `sinh_cosh`), IEEE-style split (`frexp`, `ilogb`), or compensated primitives (`two_sum`, `two_product`, `fused_sum`, `fused_dot`, `polyval`).
 
-`fused_sum` / `fused_dot` add (or multiply-then-add) at extra working precision and round **once**. `polyval` is Horner: coefficients `a0, a1, a2, …` meaning `a0 + x(a1 + x(a2 + …))`. `two_sum` / `two_product` split an exact limb sum or product into a `p`-bit high part and a remainder; reconstruct with `hi.add(&lo, p, rm)`.
+`fused_sum` / `fused_dot` add (or multiply-then-add) at extra working precision and round **once**. `polyval` is Horner with **lowest degree first**: `coeffs[0]` is `a0` in `a0 + a1 x + a2 x² + …`. `two_sum` / `two_product` compute the exact limb sum or product, then round that value to `p` bits with `rm` to get `hi`; `lo` is the remainder. Reconstruct with `hi.add(&lo, p, rm)` (not a hardware-float Dekker two-sum, which has no `p`/`rm`).
 
 ```rust
 use zenith_float::{ExactNum, RoundingMode};
@@ -110,10 +110,10 @@ let two = ExactNum::from_u32(2, p);
 let three = ExactNum::from_u32(3, p);
 
 let six = ExactNum::fused_sum(&[one.clone(), two.clone(), three.clone()], p, rm);
+// polyval: [a0, a1, a2] = 1 + 2x + 3x²; at x = 2 that is 17
 let seventeen = ExactNum::polyval(&[one.clone(), two.clone(), three.clone()], &two, p, rm);
-// 1 + 2x + 3x² at x = 2
 
-let (hi, lo) = one.two_sum(&two, p, rm);
+let (hi, lo) = one.two_sum(&two, p, rm); // hi is 1+2 rounded to p bits
 let three_again = hi.add(&lo, p, rm);
 ```
 
@@ -124,11 +124,11 @@ use zenith_float::{cexpr, Consts, RoundingMode};
 use zenith_float::ctx::Context;
 
 let mut ctx = Context::new(
-    256,
-    RoundingMode::ToEven,
-    Consts::new().expect("constants cache"),
-    -10_000,
-    10_000,
+        256,
+        RoundingMode::ToEven,
+        Consts::new().expect("constants cache"),
+        -10_000,
+        10_000,
 );
 let z = cexpr!(I * I, &mut ctx); // −1 + 0i
 ```

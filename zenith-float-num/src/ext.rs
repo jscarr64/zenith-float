@@ -243,8 +243,10 @@ impl ExactNum {
         }
     }
 
-    /// Knuth–Dekker two-sum: `(hi, lo)` with `hi` rounded to `p` bits and
+    /// Knuth–Dekker two-sum: `(hi, lo)` with `hi` rounded to `p` bits using `rm` and
     /// `hi + lo` equal to the exact sum of finite operands (via [`add_full_prec`](Self::add_full_prec)).
+    /// Unlike a hardware-float Dekker two-sum, this takes `(p, rm)` because the high part is an
+    /// `ExactNum` at a chosen precision, not an implicit machine word.
     ///
     /// Inf / NaN: `hi` is `self.add(b, p, rm)`; `lo` is zero (or NaN if `hi` is NaN).
     /// Reconstruct with `hi.add(&lo, p, rm)` (not `add_full_prec`, which uses internal precision 0).
@@ -279,7 +281,7 @@ impl ExactNum {
         lo
     }
 
-    /// Two-product: `(hi, lo)` with `hi` rounded to `p` bits and `hi + lo` equal to the
+    /// Two-product: `(hi, lo)` with `hi` rounded to `p` bits using `rm` and `hi + lo` equal to the
     /// exact product of finite operands (via [`mul_full_prec`](Self::mul_full_prec)).
     pub fn two_product(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
         if self.is_nan() {
@@ -352,7 +354,8 @@ impl ExactNum {
     }
 
     /// Horner evaluation `a₀ + x(a₁ + x(a₂ + …))` with fused multiply-add at extra working precision,
-    /// then one round to `p`. Empty `coeffs` yields zero.
+    /// then one round to `p`. `coeffs[0]` is the constant term (lowest degree first).
+    /// Empty `coeffs` yields zero.
     pub fn polyval(coeffs: &[Self], x: &Self, p: usize, rm: RoundingMode) -> Self {
         if coeffs.is_empty() {
             return Self::new(p);

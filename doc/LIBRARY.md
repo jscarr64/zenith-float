@@ -160,9 +160,9 @@ Unless noted, results round with `(p, rm)`.
 | `add` / `sub` / `mul` / `div` | four operations |
 | `add_full_prec` / `sub_full_prec` / `mul_full_prec` | no precision reduction (exact product/sum of finite values when it fits) |
 | `fma` / `mul_add` | fused `a*b+c` with one final round; `mul_add` is an alias of `fma` |
-| `two_sum` / `two_product` | `(hi, lo)` with `hi` rounded to `p`; exact sum/product of finite operands is `hi + lo` |
+| `two_sum` / `two_product` | `(hi, lo)`; `p`/`rm` round **hi** only; finite `hi + lo` equals the exact limb sum/product |
 | `fused_sum` / `fused_dot` | extra-precision accumulation, one final round |
-| `polyval` | Horner scheme via `fma` |
+| `polyval` | Horner; `coeffs[0]` is the constant term (lowest degree first) |
 | `rem` | remainder (`self` rem `d2`); no `p`/`rm` |
 | `reciprocal` | `1/self` |
 | `neg` | copy with inverted sign (also `Neg` / `inv_sign` in place) |
