@@ -316,7 +316,7 @@ See `doc/Additions_to_existing_29-082026.md`. Macros are part of this crate (`ex
 
 - [ ] 🚫 Hardware IEEE converters inside the library — CI and §3.5; packing bits belongs in a caller or a separate crate (`frexp` / `ilogb`)
 - [x] Complex expressions — `cexpr!` (cancellation on both parts; imaginary unit `I`; leaf set + `tests/mod.rs` / trybuild)
-- [ ] 🚫 Bessel Y_n / I_n / K_n / non-integer order — not an extension of integer `J_n`; own numerics and MPFR harness
+- [x] Bessel \(Y_ν\), \(I_ν\), \(K_ν\), non-integer \(J_ν\) — own numerics (`bessel_y` / `bessel_i` / `bessel_k` / `bessel_j_nu`); MPFR `jn` oracle on integer order
 
 ---
 

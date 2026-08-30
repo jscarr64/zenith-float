@@ -83,6 +83,7 @@ Methods that take a mode other than `None` round to the requested precision. `ex
 | `ExponentOverflow(Sign)` | `±Inf` |
 | `DivisionByZero` | `NaN` |
 | `InvalidArgument` | `NaN` |
+| `PrecisionRetryExhausted` | `NaN` — Ziv/`MAX_PREC_RETRY` budget, not a domain error |
 | `MemoryAllocation` | `NaN` |
 
 `ExactNum::err()` returns the associated error on `NaN`. `Error` implements `Display`; with `std` it implements `std::error::Error`. `From<TryReserveError>` → `MemoryAllocation`.
@@ -269,18 +270,19 @@ All take `(p, rm, cc)` except `hypot` (no cache).
 | `erf` / `erfc` | `erfc = 1 − erf` | yes |
 | `gamma` | poles at non-positive integers → NaN; +Inf at 0 | yes |
 | `ln_gamma` | log-gamma for positive `self` | yes |
-| `digamma` | \(\psi(z)\) for \(z>0\) | yes |
+| `digamma` | \(\psi(z)\); reflection for \(z<0\); poles at non-positive integers | yes |
 | `gammainc(s, x)` | lower \(\gamma(s,x)\); \(s>0\), \(x\ge 0\) | `gammainc(s, x)` |
-| `ei` | `self > 0`; otherwise NaN | yes |
+| `gammainc_upper(s, x)` | upper \(\Gamma(s,x)\) | `gammainc_upper(s, x)` |
+| `ei` | Cauchy PV for \(x<0\); \(x=0\) is a pole | yes |
 | `si` | odd; all real | yes |
 | `ci` | `self > 0`; otherwise NaN | yes |
-| `li` | `self > 1`; `Ei(ln self)` | yes |
+| `li` | `self > 0`, `self ≠ 1`; `Ei(ln self)` | yes |
 | `fresnel_s` / `fresnel_c` | odd; series or auxiliary \(f,g\) | yes |
-| `bessel_j(n, p, rm, cc)` | `J_n(self)`, integer order `n`; orders **> 1024** → NaN (`InvalidArgument`) | `bessel_j(x, n)` |
-| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | Real order; \(K\): \(x>0\), \(\lvertν\rvert\le 32\) | yes |
-| `elliptic_k` / `elliptic_e_complete` / `elliptic_f` / `elliptic_e` / `elliptic_pi_complete` / `elliptic_pi` | Carlson; \(m=k^2\), \(x=\sin\varphi\) | `elliptic_k`, `elliptic_e`, `elliptic_f`, `elliptic_e_inc`, `elliptic_pi`, `elliptic_pi_inc` |
-| `legendre_p` / `assoc_legendre_p` | Integer \(n\le 48\); Condon–Shortley | `legendre_p(x, n)`, `legendre_p_assoc(x, n, m)` |
-| `hypergeom_2f1` | Series / Gauss / Pfaff; \(z\le -1\) and non-terminating \(z>1\) → NaN | `hypergeom_2f1(a,b,c,z)` |
+| `bessel_j(n, p, rm, cc)` | `J_n(self)`, integer order; Miller for large \(n\) | `bessel_j(x, n)` |
+| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | Real order; \(K\): \(x>0\) | yes |
+| `elliptic_k` / `elliptic_e_complete` / `elliptic_f` / `elliptic_e` / `elliptic_pi_complete` / `elliptic_pi` | Carlson; \(m=k^2\), \(x=\sin\varphi\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\) | `elliptic_k`, `elliptic_e`, `elliptic_f`, `elliptic_e_inc`, `elliptic_pi`, `elliptic_pi_inc` |
+| `legendre_p` / `assoc_legendre_p` | Integer \(n\); \(p+O(n)\) recurrence; Condon–Shortley | `legendre_p(x, n)`, `legendre_p_assoc(x, n, m)` |
+| `hypergeom_2f1` | Series / Gauss / Pfaff; real \(z\le -1\) when defined; non-real \(z>1\) → NaN | `hypergeom_2f1(a,b,c,z)` |
 | `betainc` | Regularized \(I_x(a,b)\) | `betainc(a,b,x)` |
 
 ---
@@ -454,7 +456,7 @@ No `expr!` for complexes — use `cexpr!`. Serde: struct `{ "re", "im" }` of dec
 | `add` / `mul` | interval arithmetic with an extra rounding ulp in the radius |
 | `contains(x, p)` | `x` in `[mid−rad, mid+rad]`; NaN/Inf never contained |
 
-**`ziv_round(p, rm, compute)`:** call `compute(working_p)` and `try_set_precision` until the rounding is unique or `MAX_PREC_RETRY` is exhausted (then NaN / `InvalidArgument`).
+**`ziv_round(p, rm, compute)`:** call `compute(working_p)` and `try_set_precision` until the rounding is unique or `MAX_PREC_RETRY` is exhausted (then NaN / `PrecisionRetryExhausted`).
 
 ---
 
@@ -521,7 +523,6 @@ These are load-bearing product choices, not a backlog:
 
 - Hardware binary interchange types or converters (including a feature-gated module). Callers or a separate crate pack bits from `frexp` / `ilogb`.
 - Using `expr!` for complex values (that macro is real-valued). Complex expressions are `cexpr!`.
-- Bessel Y_n, I_n, K_n, and non-integer order. Integer `J_n` is the series that is in this crate; the rest is a different special-functions project (stability, cost, MPFR harness).
 - Symbolic CAS, formula rewriting, or host-application IR
 - Remainder as a Rust `%` operator on `ExactNum`
 - `Hash` / total order including NaN

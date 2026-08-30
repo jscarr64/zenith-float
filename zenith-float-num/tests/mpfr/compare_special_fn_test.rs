@@ -95,6 +95,71 @@ fn mpfr_compare_special_fns() {
         }
     }
 
+    // High integer order at modest |x|
+    for n_ord in [20i64, 40] {
+        let (n1, f1) = get_float_pair(p, -1, 1, &mut cc);
+        if n1.is_nan() || n1.is_inf() {
+            continue;
+        }
+        let (rm, rnd) = get_random_rnd_pair();
+        let j = n1.bessel_j(n_ord as usize, p, rm, &mut cc);
+        let mut fj = Float::with_val(p as u32, 1);
+        unsafe {
+            mpfr::jn(fj.as_raw_mut(), n_ord, f1.as_raw(), rnd);
+        }
+        assert_float_close(j, fj, p, &format!("bessel_j n={n_ord}"), false, &mut cc);
+    }
+
+    // Ei (MPFR eint) on x > 0 and Cauchy PV for x < 0
+    for emin_emax in [(0, 2), (-2, 1)] {
+        for _ in 0..8 {
+            let (n1, f1) = get_float_pair(p, emin_emax.0, emin_emax.1, &mut cc);
+            if n1.is_nan() || n1.is_inf() || n1.is_zero() {
+                continue;
+            }
+            let (rm, rnd) = get_random_rnd_pair();
+            let e = n1.ei(p, rm, &mut cc);
+            let mut fe = Float::with_val(p as u32, 1);
+            unsafe {
+                mpfr::eint(fe.as_raw_mut(), f1.as_raw(), rnd);
+            }
+            assert_float_close(e, fe, p, "ei", false, &mut cc);
+        }
+    }
+
+    // Y_0, Y_1 (MPFR yn) on 0 < x < 4
+    for n_ord in [0i64, 1] {
+        for _ in 0..8 {
+            let (n1, f1) = get_float_pair(p, -1, 2, &mut cc);
+            if n1.is_nan() || n1.is_inf() || !n1.is_positive() {
+                continue;
+            }
+            let nu = ExactNum::from(n_ord as i32);
+            let (rm, rnd) = get_random_rnd_pair();
+            let y = n1.bessel_y(&nu, p, rm, &mut cc);
+            let mut fy = Float::with_val(p as u32, 1);
+            unsafe {
+                mpfr::yn(fy.as_raw_mut(), n_ord, f1.as_raw(), rnd);
+            }
+            assert_float_close(y, fy, p, &format!("bessel_y n={n_ord}"), false, &mut cc);
+        }
+    }
+
+    // digamma on z > 0
+    for _ in 0..8 {
+        let (n1, f1) = get_float_pair(p, 0, 2, &mut cc);
+        if n1.is_nan() || n1.is_inf() || !n1.is_positive() {
+            continue;
+        }
+        let (rm, rnd) = get_random_rnd_pair();
+        let d = n1.digamma(p, rm, &mut cc);
+        let mut fd = Float::with_val(p as u32, 1);
+        unsafe {
+            mpfr::digamma(fd.as_raw_mut(), f1.as_raw(), rnd);
+        }
+        assert_float_close(d, fd, p, "digamma", false, &mut cc);
+    }
+
     let _ = test_random::<u8>();
 }
 

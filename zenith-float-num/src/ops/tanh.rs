@@ -68,6 +68,7 @@ impl ExactNumNumber {
                     }
                     Error::DivisionByZero => Err(Error::DivisionByZero),
                     Error::InvalidArgument => Err(Error::InvalidArgument),
+                    Error::PrecisionRetryExhausted => Err(Error::PrecisionRetryExhausted),
                     Error::MemoryAllocation => Err(Error::MemoryAllocation),
                 },
             }?;

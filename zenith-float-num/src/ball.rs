@@ -96,7 +96,7 @@ where
             return v;
         }
         if bump_prec_retry(&mut p_wrk, &mut p_inc, p).is_err() {
-            return ExactNum::nan(Some(Error::InvalidArgument));
+            return ExactNum::nan(Some(Error::PrecisionRetryExhausted));
         }
     }
 }

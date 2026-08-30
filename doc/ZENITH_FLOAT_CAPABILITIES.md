@@ -73,7 +73,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `ToEven` | Nearest, ties to even (recommended default) |
 | `ToOdd` | Nearest, ties to odd |
 
-Use `RoundingMode::None` for intermediate steps; round once at the end with `set_precision`. This is the Accumath contract and the practical rule for any multi-step computation.
+Use `RoundingMode::None` for intermediate steps; round once at the end with `set_precision`. That is the practical rule for any multi-step computation.
 
 ---
 
@@ -84,6 +84,7 @@ Use `RoundingMode::None` for intermediate steps; round once at the end with `set
 | `ExponentOverflow(Sign)` | `±Inf` |
 | `DivisionByZero` | `NaN` |
 | `InvalidArgument` | `NaN` |
+| `PrecisionRetryExhausted` | `NaN` — Ziv budget, not a domain error |
 | `MemoryAllocation` | `NaN` |
 
 `ExactNum::err()` returns `Option<Error>` on `NaN`. `Error` implements `Display`; with `std` it implements `std::error::Error`. `From<TryReserveError>` converts to `MemoryAllocation`.
@@ -199,20 +200,21 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `erf` / `erfc` | yes | MPFR 1-ULP on `\|x\| ≲ 4` |
 | `gamma` | yes | Poles at non-positive integers → NaN |
 | `ln_gamma` | yes | Positive `self` only |
-| `digamma` | yes | \(z>0\); recurrence + Bernoulli |
+| `digamma` | yes | Reflection for \(z<0\); poles at non-positive integers → NaN |
 | `gammainc` | `gammainc(s, x)` | Lower \(\gamma(s,x)\); \(s>0\), \(x\ge 0\) |
-| `ei` | yes | `self > 0`; series, or \(e^x/x\) factorial asymptotic when \(\lvert x\rvert\gtrsim 0.7p\) |
+| `gammainc_upper` | `gammainc_upper(s, x)` | Upper \(\Gamma(s,x)=\Gamma(s)-\gamma(s,x)\) |
+| `ei` | yes | Cauchy PV for \(x<0\); \(x=0\) is a pole |
 | `si` | yes | Odd; series or auxiliary \(f,g\). \(+\infty\to\pi/2\) |
 | `ci` | yes | `self > 0`; series or auxiliary \(f,g\). \(+\infty\to 0\) |
-| `li` | yes | `self > 1`; `Ei(ln self)` |
+| `li` | yes | `self > 0`, `self ≠ 1`; `Ei(ln self)` |
 | `fresnel_s` / `fresnel_c` | yes | Odd; series or auxiliary \(f,g\). \(\pm\infty\to\pm 1/2\) |
-| `bessel_j(n, p, rm, cc)` | `bessel_j(x, n)` | Integer order `n`; `n > 1024` → NaN |
-| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | `bessel_j_nu(x, ν)` etc. | Real order. \(K\): \(x>0\), \(\lvertν\rvert\le 32\) |
-| `elliptic_k` / `elliptic_e_complete` | `elliptic_k` / `elliptic_e` | Complete; \(m=k^2\); \(K\) for \(m<1\), \(E\) for \(m\le 1\) |
+| `bessel_j(n, p, rm, cc)` | `bessel_j(x, n)` | Integer order; Miller recurrence for large \(n\); \(J_n(0)=\delta_{n0}\) |
+| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | `bessel_j_nu(x, ν)` etc. | Real order. \(K\): \(x>0\) |
+| `elliptic_k` / `elliptic_e_complete` | `elliptic_k` / `elliptic_e` | Complete; \(m=k^2\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\); \(E\) for \(m\le 1\) |
 | `elliptic_f` / `elliptic_e` | `elliptic_f` / `elliptic_e_inc` | Incomplete; \(x=\sin\varphi\), \(\lvert x\rvert\le 1\) |
 | `elliptic_pi_complete` / `elliptic_pi` | `elliptic_pi` / `elliptic_pi_inc` | \(n<1\), \(m<1\) complete |
-| `legendre_p` / `assoc_legendre_p` | `legendre_p(x, n)` / `legendre_p_assoc(x, n, m)` | Integer \(n\le 48\); Condon–Shortley |
-| `hypergeom_2f1` | `hypergeom_2f1(a,b,c,z)` | Series / Gauss / Pfaff; no invented \(z>1\) |
+| `legendre_p` / `assoc_legendre_p` | `legendre_p(x, n)` / `legendre_p_assoc(x, n, m)` | Integer \(n\); recurrence at \(p+O(n)\) bits; Condon–Shortley |
+| `hypergeom_2f1` | `hypergeom_2f1(a,b,c,z)` | Series / Gauss / Pfaff; real continuation for \(z\le -1\) when defined; non-real \(z>1\) → NaN |
 | `betainc` | `betainc(a,b,x)` | Regularized \(I_x(a,b)\); \(a>0\), \(b>0\), \(x\in[0,1]\) |
 
 ---
@@ -231,7 +233,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `gammainc_upper`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `ldexp`, `scalb`, `logb`.
 
 **Named constants in the expression:** `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma`.
 
@@ -386,7 +388,7 @@ Radix 2–36. For bases > 10 the exponent uses `_e` so `e` can be a digit.
 
 | Item | Notes |
 | --- | --- |
-| `ziv_round(p, rm, compute)` | Call `compute(p_wrk)`, then `try_set_precision` until uniquely rounded or `MAX_PREC_RETRY` exhausted (→ NaN / `InvalidArgument`) |
+| `ziv_round(p, rm, compute)` | Call `compute(p_wrk)`, then `try_set_precision` until uniquely rounded or `MAX_PREC_RETRY` exhausted (→ NaN / `PrecisionRetryExhausted`) |
 | `Ball { mid, rad }` | First-order interval arithmetic; `add` / `mul` with rounding ulp in radius; `contains(x, p)` |
 | `MAX_PREC_RETRY = 256` | Extra word-sized budget per operation; caps at `256 × WORD_BIT_SIZE` bits above `p` |
 

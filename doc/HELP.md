@@ -219,7 +219,7 @@ With `std`, `SharedConsts` wraps the cache in a mutex for threads. Each `Context
 Allowed: variables, integer/string literals, unary minus, `+ − * / %`, function calls, parentheses.
 
 **Functions (real `expr!`):**  
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `gammainc_upper`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `ldexp`, `scalb`, `logb`.
 
 **Not in `expr!` (use methods):** `frexp`, `ilogb`, `sin_cos`, `sinh_cosh`, `ceil` / `floor` / `round`, `min` / `max`, `copysign`, `next_after`, `polyval`, `two_sum`, and friends.
 
@@ -288,7 +288,6 @@ These are **choices**, not missing tickets:
 
 - Convert to hardware IEEE binary interchange types (even behind a feature flag). Pack bits in your app or a tiny helper crate.  
 - Treat `expr!` as complex (use `cexpr!`).  
-- Bessel Y_n / I_n / K_n or non-integer order.  
 - Computer algebra (rewrite formulas, Risch, expression IR).  
 - Decide “how many bits this physics formula needs.” You choose `p` and `rm`.  
 - Total order / `Hash` that includes NaN.  

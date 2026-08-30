@@ -82,6 +82,7 @@ impl ExactNumNumber {
                         }
                         Error::DivisionByZero => Err(Error::DivisionByZero),
                         Error::InvalidArgument => Err(Error::InvalidArgument),
+                        Error::PrecisionRetryExhausted => Err(Error::PrecisionRetryExhausted),
                         Error::MemoryAllocation => Err(Error::MemoryAllocation),
                     },
                 }?;
@@ -565,6 +566,7 @@ impl ExactNumNumber {
                         }
                         Error::DivisionByZero => Err(Error::DivisionByZero),
                         Error::InvalidArgument => Err(Error::InvalidArgument),
+                        Error::PrecisionRetryExhausted => Err(Error::PrecisionRetryExhausted),
                         Error::MemoryAllocation => Err(Error::MemoryAllocation),
                     },
                 }?;
@@ -589,6 +591,7 @@ impl ExactNumNumber {
                             }
                             Error::DivisionByZero => Err(Error::DivisionByZero),
                             Error::InvalidArgument => Err(Error::InvalidArgument),
+                            Error::PrecisionRetryExhausted => Err(Error::PrecisionRetryExhausted),
                             Error::MemoryAllocation => Err(Error::MemoryAllocation),
                         },
                     }?;
@@ -614,6 +617,7 @@ impl ExactNumNumber {
                 Error::ExponentOverflow(_) => Err(Error::ExponentOverflow(ret_sign)),
                 Error::DivisionByZero => Err(Error::DivisionByZero),
                 Error::InvalidArgument => Err(Error::InvalidArgument),
+                Error::PrecisionRetryExhausted => Err(Error::PrecisionRetryExhausted),
                 Error::MemoryAllocation => Err(Error::MemoryAllocation),
             },
         }

@@ -24,6 +24,7 @@ description = "Arbitrary-precision software floating-point arithmetic on integer
 readme = "README.md"
 exclude = [
     "doc/BUILD_CHECKLIST.md",
+    "doc/ZENITH_FLOAT_TODO.md",
     "doc/Additions_to_existing_29-082026.md",
     "doc/zenith-float.code-workspace",
 ]

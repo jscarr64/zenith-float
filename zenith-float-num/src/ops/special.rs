@@ -221,7 +221,9 @@ impl ExactNumNumber {
             for n in 1u32..=64 {
                 let w = Self::from_word(n as Word, p)?;
                 if self.cmp(&w) == 0 {
-                    return factorial((n - 1) as usize, p);
+                    let mut f = factorial((n - 1) as usize, p)?;
+                    f.set_inexact(false);
+                    return Ok(f);
                 }
             }
         }
@@ -278,11 +280,12 @@ impl ExactNumNumber {
         Ok(s)
     }
 
-    /// Digamma \(\psi(\mathrm{self})=\Gamma'/\Gamma\) for `self > 0`.
+    /// Digamma \(\psi(\mathrm{self})=\Gamma'/\Gamma\). Poles at non-positive integers.
+    /// For \(z<0\) uses \(\psi(z)=\psi(1-z)-\pi\cot(\pi z)\).
     pub fn digamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
-        if !self.is_positive() {
+        if !self.is_positive() && self.fract()?.is_zero() {
             return Err(Error::InvalidArgument);
         }
         let mut p_inc = WORD_BIT_SIZE;
@@ -299,6 +302,26 @@ impl ExactNumNumber {
     }
 
     fn digamma_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let one = Self::from_word(1, p)?;
+        let mut z = self.clone()?;
+        z.set_inexact(false);
+        if !z.is_positive() {
+            // ψ(z) = ψ(1−z) − π cot(πz)
+            let omz = one.sub(&z, p, RoundingMode::None)?;
+            let psi = omz.digamma_positive(p, cc)?;
+            let pi = cc.pi_num(p, RoundingMode::None)?;
+            let piz = pi.mul(&z, p, RoundingMode::None)?;
+            let cot = piz.cos(p, RoundingMode::None, cc)?.div(
+                &piz.sin(p, RoundingMode::None, cc)?,
+                p,
+                RoundingMode::None,
+            )?;
+            return psi.sub(&pi.mul(&cot, p, RoundingMode::None)?, p, RoundingMode::None);
+        }
+        z.digamma_positive(p, cc)
+    }
+
+    fn digamma_positive(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         let one = Self::from_word(1, p)?;
         let mut z = self.clone()?;
         z.set_inexact(false);
@@ -375,6 +398,37 @@ impl ExactNumNumber {
         }
     }
 
+    /// Upper incomplete gamma \(\Gamma(s=\mathrm{self}, x)=\Gamma(s)-\gamma(s,x)\).
+    pub fn gammainc_upper(
+        &self,
+        x: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if !self.is_positive() || x.is_negative() {
+            return Err(Error::InvalidArgument);
+        }
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p
+            .max(self.mantissa_max_bit_len())
+            .max(x.mantissa_max_bit_len())
+            + p_inc;
+        loop {
+            let p_x = p_wrk + WORD_BIT_SIZE * 2;
+            let g = self.gamma_at(p_x, cc)?;
+            let lo = self.gammainc_at(x, p_x, cc)?;
+            let mut ret = g.sub(&lo, p_x, RoundingMode::None)?;
+            if ret.try_set_precision(p, rm, p_wrk)? {
+                ret.set_inexact(ret.inexact() | self.inexact() | x.inexact());
+                return Ok(ret);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
     fn gammainc_at(&self, x: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // e^{-x} x^s underflows → γ(s,x) = Γ(s).
         if (x.exponent() as isize).saturating_mul(2) > p as isize + 8 {
@@ -402,11 +456,11 @@ impl ExactNumNumber {
         pre.mul(&sum, p, RoundingMode::None)
     }
 
-    /// Exponential integral `Ei(self)` for `self > 0`.
+    /// Exponential integral `Ei(self)` (Cauchy PV for `self < 0`). `self = 0` is a pole.
     pub fn ei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
-        if !self.is_positive() {
+        if self.is_zero() {
             return Err(Error::InvalidArgument);
         }
         let mut p_inc = WORD_BIT_SIZE;
@@ -433,7 +487,7 @@ impl ExactNumNumber {
     fn ei_series(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // γ + ln x + Σ_{n=1}^∞ x^n / (n n!)
         let g = cc.euler_gamma_num(p, RoundingMode::None)?;
-        let lnx = self.ln(p, RoundingMode::None, cc)?;
+        let lnx = self.abs()?.ln(p, RoundingMode::None, cc)?;
         let mut term = self.clone()?;
         let mut sum = term.clone()?;
         for n in 2..=series_n_max(p, self.exponent()) {
@@ -662,12 +716,12 @@ impl ExactNumNumber {
         xmin >= ((p as i32) * 2) / 3
     }
 
-    /// Logarithmic integral `li(self) = Ei(ln self)` for `self > 1`.
+    /// Logarithmic integral `li(self) = Ei(ln self)` for `self > 0`, `self ≠ 1`.
     pub fn li(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
         let one = Self::from_word(1, p)?;
-        if self.cmp(&one) <= 0 {
+        if !self.is_positive() || self.cmp(&one) == 0 {
             return Err(Error::InvalidArgument);
         }
         let mut p_inc = WORD_BIT_SIZE;
@@ -895,16 +949,27 @@ impl ExactNumNumber {
         let p = round_p(p);
         Self::p_assertion(p)?;
 
-        if n > 1024 {
-            return Err(Error::InvalidArgument);
+        if self.is_zero() {
+            let mut z = if n == 0 {
+                Self::from_word(1, p)?
+            } else {
+                Self::new2(p, Sign::Pos, false)?
+            };
+            z.set_inexact(self.inexact());
+            return Ok(z);
         }
 
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        let extra = extra_bits_for_degree(n as u32);
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc + extra;
 
         loop {
-            let p_x = p_wrk + WORD_BIT_SIZE;
-            let mut ret = self.bessel_j_series(n, p_x)?;
+            let p_x = p_wrk + WORD_BIT_SIZE + extra;
+            let mut ret = if n > 48 {
+                self.bessel_j_miller(n, p_x)?
+            } else {
+                self.bessel_j_series(n, p_x)?
+            };
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
                 return Ok(ret);
@@ -945,6 +1010,51 @@ impl ExactNumNumber {
         Ok(sum)
     }
 
+    /// Miller backward recurrence. Normalize with \(J_0+2\sum_{k\ge 1}J_{2k}=1\).
+    fn bessel_j_miller(&self, n: usize, p: usize) -> Result<Self, Error> {
+        if self.is_zero() {
+            return if n == 0 {
+                Self::from_word(1, p)
+            } else {
+                Self::new2(p, Sign::Pos, false)
+            };
+        }
+        let extra = (p / 2).saturating_add(8).max(16);
+        let nstart = n.saturating_add(extra);
+        let two = Self::from_word(2, p)?;
+        let mut jp1 = Self::from_word(0, p)?;
+        let mut jp = Self::from_word(1, p)?;
+        let mut jn = Self::from_word(0, p)?;
+        let mut even_sum = Self::from_word(0, p)?;
+        let mut j0 = Self::from_word(0, p)?;
+        for m in (1..=nstart).rev() {
+            let two_m = Self::from_word((2 * m) as Word, p)?;
+            let jm1 = two_m
+                .div(self, p, RoundingMode::None)?
+                .mul(&jp, p, RoundingMode::None)?
+                .sub(&jp1, p, RoundingMode::None)?;
+            if m == n {
+                jn = jp.clone()?;
+            }
+            if m == 1 {
+                j0 = jm1.clone()?;
+            }
+            if m % 2 == 0 {
+                even_sum = even_sum.add(&jp, p, RoundingMode::None)?;
+            }
+            jp1 = jp;
+            jp = jm1;
+        }
+        if n == 0 {
+            jn = j0.clone()?;
+        }
+        let scale = j0.add(&two.mul(&even_sum, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        if scale.is_zero() {
+            return Err(Error::InvalidArgument);
+        }
+        jn.div(&scale, p, RoundingMode::None)
+    }
+
     /// \(J_\nu(\mathrm{self})\) for real order `nu`. Negative `self` only for integer `nu`.
     pub fn bessel_j_nu(
         &self,
@@ -957,9 +1067,6 @@ impl ExactNumNumber {
         Self::p_assertion(p)?;
         if let Some(n) = as_i32_exact(nu, p)? {
             let an = n.unsigned_abs() as usize;
-            if an > 1024 {
-                return Err(Error::InvalidArgument);
-            }
             let j = self.bessel_j(an, p, rm, cc)?;
             if n >= 0 || n % 2 == 0 {
                 Ok(j)
@@ -1005,9 +1112,6 @@ impl ExactNumNumber {
     fn bessel_y_at(&self, nu: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         if let Some(n) = as_i32_exact(nu, p)? {
             let an = n.unsigned_abs();
-            if an > 1024 {
-                return Err(Error::InvalidArgument);
-            }
             let y = self.bessel_y_int(an, p, cc)?;
             if n >= 0 || n % 2 == 0 {
                 Ok(y)
@@ -1068,7 +1172,7 @@ impl ExactNumNumber {
         }
     }
 
-    /// \(K_\nu(\mathrm{self})\) for `self > 0`. \(K_{-ν}=K_ν\). Cap \(\lvertν\rvert\le 32\).
+    /// \(K_\nu(\mathrm{self})\) for `self > 0`. \(K_{-ν}=K_ν\).
     pub fn bessel_k(
         &self,
         nu: &Self,
@@ -1101,16 +1205,13 @@ impl ExactNumNumber {
         let mut nu = nu.clone()?;
         nu.set_sign(Sign::Pos);
         if let Some(n) = half_integer_n(&nu, p)? {
-            if n > 32 {
-                return Err(Error::InvalidArgument);
-            }
             return self.k_half_integer(n, p, cc);
         }
         if self.exponent() >= 5 {
             return self.k_asymptotic(&nu, p, cc);
         }
         if let Some(n) = as_i32_exact(&nu, p)? {
-            if n < 0 || n as u32 > 32 {
+            if n < 0 {
                 return Err(Error::InvalidArgument);
             }
             return self.k_integer(n as u32, p, cc);
@@ -1361,9 +1462,6 @@ impl ExactNumNumber {
 
     fn k_real(&self, nu: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         let n_floor = floor_nonneg_u32(nu, p)?;
-        if n_floor > 32 {
-            return Err(Error::InvalidArgument);
-        }
         let f = nu.sub(&Self::from_word(n_floor as Word, p)?, p, RoundingMode::None)?;
         if f.is_zero() {
             return self.k_integer(n_floor, p, cc);
@@ -1440,12 +1538,32 @@ impl ExactNumNumber {
         pref.mul(&sum, p, RoundingMode::None)
     }
 
-    /// Complete elliptic \(K(m)\), \(m<1\). Parameter \(m=k^2\).
+    /// Complete elliptic \(K(m)\). Parameter \(m=k^2\). \(m=1\) is \(+\infty\);
+    /// \(m>1\) uses \(K(m)=m^{-1/2}K(1/m)\).
     pub fn elliptic_k(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
-        if self.cmp(&Self::from_word(1, p)?) >= 0 {
-            return Err(Error::InvalidArgument);
+        let one = Self::from_word(1, p)?;
+        if self.cmp(&one) == 0 {
+            return Err(Error::ExponentOverflow(Sign::Pos));
+        }
+        if self.cmp(&one) > 0 {
+            if self.is_negative() {
+                return Err(Error::InvalidArgument);
+            }
+            let mut p_inc = WORD_BIT_SIZE;
+            let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+            loop {
+                let p_x = p_wrk + WORD_BIT_SIZE * 2;
+                let inv = one.div(self, p_x, RoundingMode::None)?;
+                let k = inv.elliptic_k_at(p_x, cc)?;
+                let mut ret = k.div(&self.sqrt(p_x, RoundingMode::None)?, p_x, RoundingMode::None)?;
+                if ret.try_set_precision(p, rm, p_wrk)? {
+                    ret.set_inexact(ret.inexact() | self.inexact());
+                    return Ok(ret);
+                }
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            }
         }
         if self.is_zero() {
             let mut hp = cc.pi_num(p, rm)?;
@@ -1791,17 +1909,30 @@ impl ExactNumNumber {
         }
     }
 
-    /// Legendre \(P_n(\mathrm{self})\) for integer \(n\le\) [`LEGENDRE_N_MAX`].
+    /// Legendre \(P_n(\mathrm{self})\) for integer \(n\). Recurrence at \(p+O(n)\) bits.
     pub fn legendre_p(&self, n: u32, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
-        if n > LEGENDRE_N_MAX {
-            return Err(Error::InvalidArgument);
+        let one = Self::from_word(1, p)?;
+        if self.cmp(&one) == 0 {
+            let mut r = one;
+            r.set_inexact(self.inexact());
+            return Ok(r);
         }
+        if self.cmp(&one.neg()?) == 0 {
+            let mut r = if n % 2 == 0 {
+                one
+            } else {
+                one.neg()?
+            };
+            r.set_inexact(self.inexact());
+            return Ok(r);
+        }
+        let extra = extra_bits_for_degree(n);
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc + extra;
         loop {
-            let p_x = p_wrk + WORD_BIT_SIZE;
+            let p_x = p_wrk + WORD_BIT_SIZE + extra;
             let mut ret = self.legendre_p_at(n, p_x)?;
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
@@ -1838,7 +1969,7 @@ impl ExactNumNumber {
     }
 
     /// Associated \(P_n^m(\mathrm{self})\) with Condon–Shortley phase \((-1)^m\).
-    /// \(n\le\) [`LEGENDRE_N_MAX`]; \(\lvert m\rvert\le n\); \(\lvert x\rvert\le 1\) when \(m\ne 0\).
+    /// \(\lvert m\rvert\le n\); \(\lvert x\rvert\le 1\) when \(m\ne 0\).
     pub fn assoc_legendre_p(
         &self,
         n: u32,
@@ -1848,9 +1979,6 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
-        if n > LEGENDRE_N_MAX {
-            return Err(Error::InvalidArgument);
-        }
         let am = m.unsigned_abs();
         if am > n {
             return Err(Error::InvalidArgument);
@@ -1858,10 +1986,11 @@ impl ExactNumNumber {
         if m != 0 && self.abs()?.cmp(&Self::from_word(1, p)?) > 0 {
             return Err(Error::InvalidArgument);
         }
+        let extra = extra_bits_for_degree(n);
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc + extra;
         loop {
-            let p_x = p_wrk + WORD_BIT_SIZE;
+            let p_x = p_wrk + WORD_BIT_SIZE + extra;
             let mut ret = self.assoc_legendre_p_at(n, m, p_x)?;
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
@@ -1931,7 +2060,8 @@ impl ExactNumNumber {
 
     /// Gaussian \({}_2F_1(a=\mathrm{self},b;c;z)\).
     /// Series for \(\lvert z\rvert<1\) or terminating \(a\) or \(b\); Gauss at \(z=1\)
-    /// when \(c-a-b>0\); Pfaff on \(z\in(1/2,1)\). \(z\le -1\) and non-terminating \(z>1\) fail.
+    /// when \(c-a-b>0\); Pfaff on \(z\in(1/2,1)\); real continuation for \(z\le -1\).
+    /// Non-terminating \(z>1\) (typically not real) is `InvalidArgument`.
     pub fn hypergeom_2f1(
         &self,
         b: &Self,
@@ -1988,7 +2118,7 @@ impl ExactNumNumber {
             return Err(Error::InvalidArgument);
         }
         if z.cmp(&one.neg()?) <= 0 {
-            return Err(Error::InvalidArgument);
+            return hypergeom_z_le_neg_one(self, b, c, z, p, cc);
         }
         let half = one_half(p)?;
         if z.cmp(&half) > 0 && z.cmp(&one) < 0 {
@@ -2084,9 +2214,6 @@ impl ExactNumNumber {
             .mul(&f, p, RoundingMode::None)
     }
 }
-
-/// Cap on Legendre degree \(n\) / \(\ell\).
-pub const LEGENDRE_N_MAX: u32 = 48;
 
 const CARLSON_DUPE_MAX: u32 = 128;
 const HYPERGEOM_TERM_MAX: u32 = 10_000;
@@ -2619,6 +2746,74 @@ fn rj_series(
     )
 }
 
+fn extra_bits_for_degree(n: u32) -> usize {
+    round_p(n as usize)
+}
+
+/// Analytic continuation of \({}_2F_1\) for real \(z\le -1\) when the value is real.
+fn hypergeom_z_le_neg_one(
+    a: &ExactNumNumber,
+    b: &ExactNumNumber,
+    c: &ExactNumNumber,
+    z: &ExactNumNumber,
+    p: usize,
+    cc: &mut Consts,
+) -> Result<ExactNumNumber, Error> {
+    let one = ExactNumNumber::from_word(1, p)?;
+    let two = ExactNumNumber::from_word(2, p)?;
+    // 2F1(1,1;2;z) = −ln(1−z)/z for z ≠ 0, 1−z > 0.
+    if a.cmp(&one) == 0 && b.cmp(&one) == 0 && c.cmp(&two) == 0 {
+        let omz = one.sub(z, p, RoundingMode::None)?;
+        if !omz.is_positive() {
+            return Err(Error::InvalidArgument);
+        }
+        return omz
+            .ln(p, RoundingMode::None, cc)?
+            .neg()?
+            .div(z, p, RoundingMode::None);
+    }
+    if z.cmp(&one.neg()?) == 0 {
+        return hypergeom_series(a, b, c, z, p);
+    }
+    // 15.3.7: 1/z ∈ (−1, 0) when z < −1; (−z)^{−a} is real.
+    let inv = one.div(z, p, RoundingMode::None)?;
+    if inv.abs()?.cmp(&one) >= 0 {
+        return Err(Error::InvalidArgument);
+    }
+    let mz = z.neg()?;
+    let t1 = hypergeom_15_3_7_term(a, b, c, &mz, &inv, p, cc)?;
+    let t2 = hypergeom_15_3_7_term(b, a, c, &mz, &inv, p, cc)?;
+    t1.add(&t2, p, RoundingMode::None)
+}
+
+fn hypergeom_15_3_7_term(
+    a: &ExactNumNumber,
+    b: &ExactNumNumber,
+    c: &ExactNumNumber,
+    mz: &ExactNumNumber,
+    inv: &ExactNumNumber,
+    p: usize,
+    cc: &mut Consts,
+) -> Result<ExactNumNumber, Error> {
+    let one = ExactNumNumber::from_word(1, p)?;
+    let bma = b.sub(a, p, RoundingMode::None)?;
+    let cma = c.sub(a, p, RoundingMode::None)?;
+    let gc = c.gamma_at(p, cc)?;
+    let gbma = bma.gamma_at(p, cc)?;
+    let gb = b.gamma_at(p, cc)?;
+    let gcma = cma.gamma_at(p, cc)?;
+    let pref = gc
+        .mul(&gbma, p, RoundingMode::None)?
+        .div(&gb.mul(&gcma, p, RoundingMode::None)?, p, RoundingMode::None)?;
+    let mut na = a.clone()?;
+    na.set_sign(if a.is_positive() { Sign::Neg } else { Sign::Pos });
+    let pow = mz.pow(&na, p, RoundingMode::None, cc)?;
+    let ac1 = a.sub(c, p, RoundingMode::None)?.add(&one, p, RoundingMode::None)?;
+    let ab1 = a.sub(b, p, RoundingMode::None)?.add(&one, p, RoundingMode::None)?;
+    let f = a.hypergeom_2f1_at(&ac1, &ab1, inv, p, cc)?;
+    pref.mul(&pow, p, RoundingMode::None)?.mul(&f, p, RoundingMode::None)
+}
+
 pub(crate) fn series_n_max(p: usize, exp: i32) -> usize {
     let mag = if exp <= 0 {
         0
@@ -2631,22 +2826,22 @@ pub(crate) fn series_n_max(p: usize, exp: i32) -> usize {
 }
 
 fn as_i32_exact(x: &ExactNumNumber, p: usize) -> Result<Option<i32>, Error> {
+    let _ = p;
     if x.is_zero() {
         return Ok(Some(0));
     }
     if !x.fract()?.is_zero() {
         return Ok(None);
     }
-    for n in 1i32..=1024 {
-        let w = ExactNumNumber::from_word(n as Word, p)?;
-        if x.cmp(&w) == 0 {
-            return Ok(Some(n));
-        }
-        if x.cmp(&w.neg()?) == 0 {
-            return Ok(Some(-n));
-        }
+    let u = match x.abs()?.int_as_usize() {
+        Ok(v) => v,
+        Err(_) => return Ok(None),
+    };
+    if u > i32::MAX as usize {
+        return Ok(None);
     }
-    Ok(None)
+    let n = u as i32;
+    Ok(Some(if x.is_negative() { -n } else { n }))
 }
 
 fn harmonic_u(n: usize, p: usize) -> Result<ExactNumNumber, Error> {
@@ -2675,15 +2870,18 @@ fn half_integer_n(nu: &ExactNumNumber, p: usize) -> Result<Option<u32>, Error> {
 }
 
 fn floor_nonneg_u32(x: &ExactNumNumber, p: usize) -> Result<u32, Error> {
-    let mut n = 0u32;
-    while n <= 32 {
-        let nxt = ExactNumNumber::from_word((n + 1) as Word, p)?;
-        if x.cmp(&nxt) < 0 {
-            return Ok(n);
-        }
-        n += 1;
+    let _ = p;
+    if x.is_negative() {
+        return Err(Error::InvalidArgument);
     }
-    Err(Error::InvalidArgument)
+    if x.is_zero() {
+        return Ok(0);
+    }
+    let u = x.int_as_usize()?;
+    if u > u32::MAX as usize {
+        return Err(Error::ExponentOverflow(Sign::Pos));
+    }
+    Ok(u as u32)
 }
 
 fn two_times(x: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Error> {
@@ -2824,7 +3022,7 @@ mod tests {
 
         assert!(one.ei(p, rm, &mut cc).is_ok());
         assert!(zero.ei(p, rm, &mut cc).is_err());
-        assert!(one.neg().unwrap().ei(p, rm, &mut cc).is_err());
+        assert!(one.neg().unwrap().ei(p, rm, &mut cc).is_ok());
 
         let s0 = zero.si(p, rm, &mut cc).unwrap();
         assert!(s0.is_zero());
@@ -2957,8 +3155,19 @@ mod tests {
         let two = ExactNumNumber::from_word(2, p).unwrap();
         let zero = ExactNumNumber::new(p).unwrap();
         let g = cc.euler_gamma_num(p, RoundingMode::None).unwrap();
+        let half = one_half(p).unwrap();
 
         assert!(zero.digamma(p, rm, &mut cc).is_err());
+        let neg_half = half.neg().unwrap();
+        let psi_nh = neg_half.digamma(p, rm, &mut cc).unwrap();
+        // ψ(1/2) = −γ − 2 ln 2; ψ(−1/2) = ψ(1/2) − π cot(−π/2) wait: 1−(−1/2)=3/2
+        // ψ(−1/2) = ψ(3/2) − π cot(−π/2). cot(−π/2)=0, ψ(3/2)=ψ(1/2)+2
+        let three_half = ExactNumNumber::from_word(3, p)
+            .unwrap()
+            .div(&two, p, RoundingMode::None)
+            .unwrap();
+        let psi_32 = three_half.digamma(p, rm, &mut cc).unwrap();
+        bits_agree(&psi_nh, &psi_32, p, 40, "psi(-1/2)=psi(3/2)");
         let psi1 = one.digamma(p, rm, &mut cc).unwrap();
         let r1 = psi1.add(&g, p, RoundingMode::None).unwrap().abs().unwrap();
         assert!(r1.is_zero() || r1.exponent() < -80, "psi(1)+γ");
@@ -2973,7 +3182,6 @@ mod tests {
             .unwrap();
         assert!(r2.is_zero() || r2.exponent() < -80, "psi(2)+γ-1");
 
-        let half = one_half(p).unwrap();
         let psih = half.digamma(p, rm, &mut cc).unwrap();
         let ln2 = cc.ln_2_num(p, RoundingMode::None).unwrap();
         let two_ln2 = two.mul(&ln2, p, RoundingMode::None).unwrap();
@@ -2990,6 +3198,8 @@ mod tests {
         let en = one.neg().unwrap().exp(p, rm, &mut cc).unwrap();
         let want = one.sub(&en, p, RoundingMode::None).unwrap();
         bits_agree(&g11, &want, p, 80, "γ(1,1)");
+        let gu = one.gammainc_upper(&one, p, rm, &mut cc).unwrap();
+        bits_agree(&gu, &en, p, 80, "Γ(1,1)=e^{-1}");
         assert!(one.gammainc(&one.neg().unwrap(), p, rm, &mut cc).is_err());
     }
 
@@ -3040,6 +3250,26 @@ mod tests {
             .add(&i1.mul(&k0, p, RoundingMode::None).unwrap(), p, RoundingMode::None)
             .unwrap();
         bits_agree(&w, &one, p, 40, "Wronskian at 1");
+
+        let j2000 = zero.bessel_j(2000, p, rm, &mut cc).unwrap();
+        assert!(j2000.is_zero(), "J_2000(0)=0");
+        let k50 = one
+            .bessel_k(&ExactNumNumber::from_word(50, p).unwrap(), p, rm, &mut cc)
+            .unwrap();
+        let k49 = one
+            .bessel_k(&ExactNumNumber::from_word(49, p).unwrap(), p, rm, &mut cc)
+            .unwrap();
+        let k51 = one
+            .bessel_k(&ExactNumNumber::from_word(51, p).unwrap(), p, rm, &mut cc)
+            .unwrap();
+        // K_{ν+1} = (2ν/x) K_ν + K_{ν−1}
+        let rec = ExactNumNumber::from_word(100, p)
+            .unwrap()
+            .mul(&k50, p, RoundingMode::None)
+            .unwrap()
+            .add(&k49, p, RoundingMode::None)
+            .unwrap();
+        bits_agree(&k51, &rec, p, 20, "K recurrence at 50");
     }
 
     #[test]
@@ -3063,14 +3293,20 @@ mod tests {
         bits_agree(&e0, &half_pi, p, 80, "E(0)");
         let e1 = one.elliptic_e_complete(p, rm, &mut cc).unwrap();
         bits_agree(&e1, &one, p, 80, "E(1)");
-        assert!(one.elliptic_k(p, rm, &mut cc).is_err());
-        assert!(two.elliptic_k(p, rm, &mut cc).is_err());
+        assert!(matches!(
+            one.elliptic_k(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
 
         let k_half = half.elliptic_k(p, rm, &mut cc).unwrap();
         let q = ExactNumNumber::from_word(1, p)
             .unwrap()
             .div(&four, p, RoundingMode::None)
             .unwrap();
+        let k4 = four.elliptic_k(p, rm, &mut cc).unwrap();
+        let kq = q.elliptic_k(p, rm, &mut cc).unwrap();
+        let want4 = kq.div(&two, p, RoundingMode::None).unwrap();
+        bits_agree(&k4, &want4, p, 40, "K(4)=K(1/4)/2");
         let g14 = q.gamma(p, rm, &mut cc).unwrap();
         let want_k = g14
             .mul(&g14, p, RoundingMode::None)
@@ -3173,7 +3409,27 @@ mod tests {
         }
         let p2 = zero.legendre_p(2, p, rm).unwrap();
         bits_agree(&p2, &half.neg().unwrap(), p, 80, "P_2(0)");
-        assert!(zero.legendre_p(LEGENDRE_N_MAX + 1, p, rm).is_err());
+        let p100 = one.legendre_p(100, p, rm).unwrap();
+        bits_agree(&p100, &one, p, 80, "P_100(1)");
+        let p128 = one.neg().unwrap().legendre_p(128, p, rm).unwrap();
+        bits_agree(&p128, &one, p, 80, "P_128(-1)");
+        let xh = half.clone().unwrap();
+        let pn = xh.legendre_p(128, p, rm).unwrap();
+        let pn1 = xh.legendre_p(127, p, rm).unwrap();
+        let pn2 = xh.legendre_p(126, p, rm).unwrap();
+        // (n+1) P_{n+1} = (2n+1) x P_n − n P_{n−1}  at n=127
+        let n = ExactNumNumber::from_word(127, p).unwrap();
+        let np1 = ExactNumNumber::from_word(128, p).unwrap();
+        let two_n1 = ExactNumNumber::from_word(255, p).unwrap();
+        let lhs = np1.mul(&pn, p, RoundingMode::None).unwrap();
+        let rhs = two_n1
+            .mul(&xh, p, RoundingMode::None)
+            .unwrap()
+            .mul(&pn1, p, RoundingMode::None)
+            .unwrap()
+            .sub(&n.mul(&pn2, p, RoundingMode::None).unwrap(), p, RoundingMode::None)
+            .unwrap();
+        bits_agree(&lhs, &rhs, p, 20, "Bonnet n=127");
 
         let p11 = half.assoc_legendre_p(1, 1, p, rm).unwrap();
         let want = one
@@ -3198,6 +3454,14 @@ mod tests {
 
         let fg = nm2.hypergeom_2f1(&one, &three, &one, p, rm, &mut cc).unwrap();
         bits_agree(&fg, &half, p, 80, "2F1(-2,1;3;1)");
+
+        let fm1 = one
+            .hypergeom_2f1(&one, &two, &one.neg().unwrap(), p, rm, &mut cc)
+            .unwrap();
+        bits_agree(&fm1, &ln2, p, 40, "2F1(1,1;2;-1)=ln2");
+        let fterm2 = nm2.hypergeom_2f1(&one, &three, &two, p, rm, &mut cc).unwrap();
+        let third = one.div(&three, p, RoundingMode::None).unwrap();
+        bits_agree(&fterm2, &third, p, 80, "2F1(-2,1;3;2)=1/3");
 
         assert!(one.hypergeom_2f1(&one, &three, &two, p, rm, &mut cc).is_err());
 

@@ -119,6 +119,9 @@ pub enum Error {
     /// Invalid argument.
     InvalidArgument,
 
+    /// Correct-rounding retries exhausted (`MAX_PREC_RETRY`). Not a domain error.
+    PrecisionRetryExhausted,
+
     /// Memory allocation error.
     MemoryAllocation,
 }
@@ -142,6 +145,7 @@ impl Display for Error {
             }
             Error::DivisionByZero => "division by zero",
             Error::InvalidArgument => "invalid argument",
+            Error::PrecisionRetryExhausted => "precision retry exhausted",
             Error::MemoryAllocation => "memory allocation failure",
         };
         f.write_str(repr)

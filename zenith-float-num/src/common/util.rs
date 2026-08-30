@@ -86,7 +86,7 @@ pub fn prec_retry_exhausted(p_wrk: usize, p: usize) -> bool {
 #[inline]
 pub fn bump_prec_retry(p_wrk: &mut usize, p_inc: &mut usize, p: usize) -> Result<(), Error> {
     if prec_retry_exhausted(*p_wrk, p) {
-        return Err(Error::InvalidArgument);
+        return Err(Error::PrecisionRetryExhausted);
     }
     *p_wrk += *p_inc;
     *p_inc = round_p(*p_wrk / 5);

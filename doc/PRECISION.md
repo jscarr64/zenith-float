@@ -8,7 +8,7 @@ Transcendental and decimal conversion paths use a working precision `p_wrk` that
 
 - **`MAX_PREC_RETRY`** (`zenith_float_num::MAX_PREC_RETRY`, default `256`): maximum number of word-sized retry steps beyond `p`.
 - **`prec_retry_exhausted(p_wrk, p)`** returns true when `p_wrk > p + WORD_BIT_SIZE * MAX_PREC_RETRY`.
-- **`bump_prec_retry`** increases `p_wrk` or returns `Error::InvalidArgument` instead of looping without bound.
+- **`bump_prec_retry`** increases `p_wrk` or returns `Error::PrecisionRetryExhausted` instead of looping without bound. That is not a domain error.
 
 At 64-bit limbs this caps extra work at roughly `256 * 64 = 16 384` bits above `p` per operation.
 
@@ -71,6 +71,6 @@ Property tests in `ops/tests.rs` cap random exponents at **`TEST_EXP_BOUND = 102
 1. Prefer **`RoundingMode::None`** for intermediate steps; round once at the end with `set_precision` / `round`.
 2. Set **`Context` exponent limits** to the smallest interval that contains real results.
 3. For huge arguments to trig functions, expect cost to grow with **`rem_pi`** precision (capped at `65536` extra bits for π).
-4. If `Error::InvalidArgument` appears after many retries, increase `p` or reduce exponent spread; the library has hit the **`MAX_PREC_RETRY`** guard.
+4. If `Error::PrecisionRetryExhausted` appears after many retries, increase `p` or reduce exponent spread; the library has hit the **`MAX_PREC_RETRY`** guard (`p + WORD_BIT_SIZE * 256` extra bits). Domain failures stay `InvalidArgument`.
 
 See also `doc/README.md` for ulp error bounds used by `expr!` cancellation heuristics.

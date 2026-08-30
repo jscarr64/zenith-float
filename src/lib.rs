@@ -214,6 +214,7 @@ extern crate alloc;
 ///  - `erf(x)`, `erfc(x)`: error function and complement.
 ///  - `gamma(x)`, `ln_gamma(x)`, `digamma(x)`: gamma, log-gamma, and digamma.
 ///  - `gammainc(s, x)`: lower incomplete gamma \(\gamma(s,x)\).
+///  - `gammainc_upper(s, x)`: upper incomplete gamma \(\Gamma(s,x)\).
 ///  - `ei(x)`, `si(x)`, `ci(x)`, `li(x)`: exponential / sine / cosine / logarithmic integrals.
 ///  - `fresnel_s(x)`, `fresnel_c(x)`: Fresnel integrals.
 ///  - `bessel_j(x, n)`: Bessel J of integer order `n`.

@@ -1108,6 +1108,9 @@ impl ExactNum {
                 }
                 Error::MemoryAllocation => Self::nan(Some(Error::MemoryAllocation)),
                 Error::InvalidArgument => Self::nan(Some(Error::InvalidArgument)),
+                Error::PrecisionRetryExhausted => {
+                    Self::nan(Some(Error::PrecisionRetryExhausted))
+                }
             },
             Ok(v) => ExactNum {
                 inner: Flavor::Value(v),
@@ -1930,7 +1933,7 @@ impl ExactNum {
         usize
     );
     gen_wrapper_arg_rm_cc!(
-        "Digamma `ψ(self)` for `self > 0`. Poles and non-positive args yield NaN.",
+        "Digamma `ψ(self)`. Poles at non-positive integers. Reflection for z < 0.",
         digamma,
         Self,
         { INF_POS },
@@ -1955,12 +1958,29 @@ impl ExactNum {
             (Flavor::Inf(_), _) => NAN,
         }
     }
+    /// Upper incomplete gamma `Γ(self, x)` for `self > 0`, `x ≥ 0`.
+    pub fn gammainc_upper(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &x.inner) {
+            (Flavor::Value(s), Flavor::Value(xv)) => {
+                Self::result_to_ext(s.gammainc_upper(xv, p, rm, cc), xv.is_zero(), true)
+            }
+            (Flavor::Value(_), Flavor::Inf(sx)) => {
+                if sx.is_positive() {
+                    Self::new(p)
+                } else {
+                    NAN
+                }
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            (Flavor::Inf(_), _) => NAN,
+        }
+    }
     gen_wrapper_arg_rm_cc!(
-        "Exponential integral `Ei(self)` for `self > 0`.",
+        "Exponential integral `Ei(self)` (principal value for `self < 0`). `0` is a pole.",
         ei,
         Self,
         { INF_POS },
-        { NAN },
+        { Self::new(p) },
         p,
         usize
     );
@@ -1982,7 +2002,7 @@ impl ExactNum {
         usize
     );
     gen_wrapper_arg_rm_cc!(
-        "Logarithmic integral `li(self) = Ei(ln self)` for `self > 1`.",
+        "Logarithmic integral `li(self) = Ei(ln self)` for `self > 0`, `self ≠ 1`.",
         li,
         Self,
         { INF_POS },
@@ -2060,12 +2080,12 @@ impl ExactNum {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_i)
     }
 
-    /// \(K_ν(\mathrm{self})\) for `self > 0`. Cap \(\lvertν\rvert\le 32\).
+    /// \(K_ν(\mathrm{self})\) for `self > 0`. \(K_{-ν}=K_ν\).
     pub fn bessel_k(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_k)
     }
     gen_wrapper_arg_rm_cc!(
-        "Complete elliptic `K(self)` for `self < 1`. Parameter `m = k²`.",
+        "Complete elliptic `K(self)`. Parameter `m = k²`. `m = 1` is `+∞`; `m > 1` uses the reciprocal-modulus transform.",
         elliptic_k,
         Self,
         { NAN },
@@ -2131,7 +2151,7 @@ impl ExactNum {
             _ => NAN,
         }
     }
-    /// Legendre \(P_n(\mathrm{self})\) for integer `n` (`n ≤ 48`).
+    /// Legendre \(P_n(\mathrm{self})\) for integer `n`.
     pub fn legendre_p(&self, n: u32, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.legendre_p(n, p, rm), false, true),

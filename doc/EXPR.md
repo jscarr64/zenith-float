@@ -2,7 +2,7 @@
 
 `expr!` evaluates a tree of `ExactNum` operations at extra working precision, then rounds **once** to the context precision `p` with the context rounding mode `rm`.
 
-This is the Accumath numeric contract: leaves are treated as exact; the printed result is `set_precision(p, rm)` of the last value, after exponent-window clamping.
+Leaves are treated as exact; the printed result is `set_precision(p, rm)` of the last value, after exponent-window clamping.
 
 ## Pipeline
 
@@ -26,7 +26,7 @@ This is the Accumath numeric contract: leaves are treated as exact; the printed 
 | `sin` `cos` `tan` `asin` `acos` `atan` `atan2` | trig | `rem_pi` / series; cost grows with `\|e\|` |
 | `hypot` `fma` / `mul_add` | `hypot` / `fma` | `fma` is a single round of `a*b+c` (full product when magnitudes overlap) |
 | `sinh` `cosh` `tanh` `asinh` `acosh` `atanh` | hyperbolic | Paired `sinh_cosh` is the `ExactNum` method; expr uses `sinh`/`cosh` |
-| `erf` `erfc` `gamma` `ln_gamma` `digamma` `gammainc` `ei` `si` `ci` `li` `fresnel_s` `fresnel_c` `bessel_j` `bessel_j_nu` `bessel_y` `bessel_i` `bessel_k` `elliptic_k` `elliptic_e` `elliptic_e_inc` `elliptic_f` `elliptic_pi` `elliptic_pi_inc` `legendre_p` `legendre_p_assoc` `hypergeom_2f1` `betainc` | specials | Same pipeline; MPFR 1-ULP oracles on bounded domains where MPFR has the function |
+| `erf` `erfc` `gamma` `ln_gamma` `digamma` `gammainc` `gammainc_upper` `ei` `si` `ci` `li` `fresnel_s` `fresnel_c` `bessel_j` `bessel_j_nu` `bessel_y` `bessel_i` `bessel_k` `elliptic_k` `elliptic_e` `elliptic_e_inc` `elliptic_f` `elliptic_pi` `elliptic_pi_inc` `legendre_p` `legendre_p_assoc` `hypergeom_2f1` `betainc` | specials | Same pipeline; MPFR 1-ULP oracles on bounded domains where MPFR has the function |
 | `ldexp(x, n)` `scalb(x, n)` `logb(x)` | IEEE split | Integer `n`; `frexp`/`ilogb` are methods (tuple / `Option`) |
 | `pi` `e` `ln_2` `ln_10` `sqrt2` `phi` `euler_gamma` | `Consts` | Cached at extra bits, then final `set_precision` |
 
@@ -50,4 +50,4 @@ Do not use `e` as a variable name (`e` is Euler’s number). Imaginary unit is `
 
 ## Practical rule
 
-For Accumath terminals: put the formula in `expr!`, use a `Context` whose `p` is the output precision, `rm` is the required mode (usually `ToEven`), and `emin`/`emax` bound the formula class.
+Put the formula in `expr!`. Use a `Context` whose `p` is the output precision, `rm` is the required mode (usually `ToEven`), and `emin`/`emax` bound the formula class.
