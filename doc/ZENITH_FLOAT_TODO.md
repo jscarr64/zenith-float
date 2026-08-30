@@ -27,12 +27,12 @@ Rules for every item:
 | `Error::PrecisionRetryExhausted` | 2026-08-29 | Split from `InvalidArgument` |
 | `Ieee32` / `Ieee64` | 2026-08-29 | Software binary32/binary64; bits golds for add/mul/div/sqrt/FMA |
 | `Ieee32Array` / `Ieee64Array` / `ExactNumArray` | 2026-08-29 | 1-D elementwise, `dot`, specials via `ExactNum` |
+| 2-D arrays + software matmul | 2026-08-30 | Row-major `from_shape` / `get2` / `matmul`; 1-D is shape `(1, n)` |
 
 ---
 
 ## Cross-cutting leftovers
 
-- 2-D arrays and software matmul
 - More array ufuncs (remaining `ExactNum` specials)
 - Integer SIMD for IEEE arrays (still not an FPU)
 - MPFR has `eint`, `jn`, `yn`, `digamma` — oracles in `compare_special_fn_test.rs`. No MPFR `si` / `ci` / `li` / Fresnel; those stay identity/series golds

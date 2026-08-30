@@ -128,10 +128,10 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | Type | Notes |
 | --- | --- |
 | `Ieee32` / `Ieee64` | add/sub/mul/div/sqrt/`mul_add`, classify, `next_up`/`next_down`/`next_after`, `frexp`, `from_i32`, `to_exact` / `from_exact` |
-| `Ieee32Array` / `Ieee64Array` | 1-D dense bits; elementwise `+ − × ÷`, scalar broadcast, `sum`, `dot`, `sqrt`; specials via widen-to-`ExactNum` (`exp`, `ln`, `sin`, `cos`, `tan`, `erf`, `erfc`, `gamma`, `ei`, `si`) |
-| `ExactNumArray` | 1-D `ExactNum` at a shared `p`; same elementwise ops and `sin`/`exp`/`ln`/`erf` |
+| `Ieee32Array` / `Ieee64Array` | Row-major dense bits (1-D is shape `(1, n)`); elementwise `+ − × ÷` (matching shape), scalar broadcast, `sum`, `dot`, `sqrt`, software `matmul`; specials via widen-to-`ExactNum` (`exp`, `ln`, `sin`, `cos`, `tan`, `erf`, `erfc`, `gamma`, `ei`, `si`) |
+| `ExactNumArray` | Row-major `ExactNum` at a shared `p`; same elementwise ops, `sin`/`exp`/`ln`/`erf`, software `matmul` |
 
-These arrays are not NumPy-fast. `expr!` stays scalar.
+These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `ExactNum` mul-then-add per term). No BLAS. `expr!` stays scalar.
 
 ---
 

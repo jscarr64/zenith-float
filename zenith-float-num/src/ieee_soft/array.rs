@@ -1,4 +1,5 @@
-//! Dense 1-D arrays of software IEEE values and `ExactNum`.
+//! Dense row-major arrays of software IEEE values and `ExactNum`.
+//! A 1-D vector is stored as shape `(1, n)`.
 
 use super::{Ieee32, Ieee64};
 use crate::defs::RoundingMode;
@@ -6,52 +7,109 @@ use crate::Consts;
 use crate::ExactNum;
 use alloc::vec::Vec;
 
-/// Contiguous binary32 lanes (`u32` bits).
+/// Contiguous binary32 lanes (`u32` bits), row-major.
 #[derive(Clone, Debug)]
 pub struct Ieee32Array {
     bits: Vec<u32>,
+    rows: usize,
+    cols: usize,
 }
 
-/// Contiguous binary64 lanes (`u64` bits).
+/// Contiguous binary64 lanes (`u64` bits), row-major.
 #[derive(Clone, Debug)]
 pub struct Ieee64Array {
     bits: Vec<u64>,
+    rows: usize,
+    cols: usize,
 }
 
-/// Batch of `ExactNum` values at a shared precision `p`.
+/// Batch of `ExactNum` values at a shared precision `p`, row-major.
 #[derive(Clone, Debug)]
 pub struct ExactNumArray {
     p: usize,
     vals: Vec<ExactNum>,
+    rows: usize,
+    cols: usize,
 }
 
 macro_rules! impl_ieee_array {
     ($arr:ident, $scalar:ident, $bits:ty) => {
         impl $arr {
-            /// Empty array.
+            /// Empty 0×0 array.
             pub fn new() -> Self {
-                Self { bits: Vec::new() }
+                Self {
+                    bits: Vec::new(),
+                    rows: 0,
+                    cols: 0,
+                }
             }
 
-            /// `n` copies of `fill`.
+            /// Row vector: `n` copies of `fill` (shape `(1, n)`).
             pub fn filled(n: usize, fill: $scalar) -> Self {
                 Self {
                     bits: alloc::vec![fill.to_bits(); n],
+                    rows: 1,
+                    cols: n,
                 }
             }
 
-            /// From a slice of IEEE bit patterns.
+            /// `rows×cols` filled with `fill`.
+            pub fn filled_2d(rows: usize, cols: usize, fill: $scalar) -> Option<Self> {
+                let n = rows.checked_mul(cols)?;
+                Some(Self {
+                    bits: alloc::vec![fill.to_bits(); n],
+                    rows,
+                    cols,
+                })
+            }
+
+            /// From a slice of IEEE bit patterns as a row vector.
             pub fn from_bits(bits: &[$bits]) -> Self {
                 Self {
                     bits: bits.to_vec(),
+                    rows: 1,
+                    cols: bits.len(),
                 }
             }
 
-            /// From scalars.
+            /// Row-major `rows×cols`. Length must be `rows*cols`.
+            pub fn from_shape(rows: usize, cols: usize, vals: &[$scalar]) -> Option<Self> {
+                let n = rows.checked_mul(cols)?;
+                if n != vals.len() {
+                    return None;
+                }
+                Some(Self {
+                    bits: vals.iter().map(|v| v.to_bits()).collect(),
+                    rows,
+                    cols,
+                })
+            }
+
+            /// From scalars as a row vector (shape `(1, n)`).
             pub fn from_values(vals: &[$scalar]) -> Self {
                 Self {
                     bits: vals.iter().map(|v| v.to_bits()).collect(),
+                    rows: 1,
+                    cols: vals.len(),
                 }
+            }
+
+            /// `(rows, cols)`.
+            pub fn shape(&self) -> (usize, usize) {
+                (self.rows, self.cols)
+            }
+
+            /// Reinterpret the same buffer as `rows×cols` when the product matches.
+            pub fn reshape(&self, rows: usize, cols: usize) -> Option<Self> {
+                let n = rows.checked_mul(cols)?;
+                if n != self.bits.len() {
+                    return None;
+                }
+                Some(Self {
+                    bits: self.bits.clone(),
+                    rows,
+                    cols,
+                })
             }
 
             /// Number of lanes.
@@ -69,12 +127,20 @@ macro_rules! impl_ieee_array {
                 &self.bits
             }
 
-            /// Lane `i`, or `None` if out of range.
+            /// Lane `i` in storage order, or `None` if out of range.
             pub fn get(&self, i: usize) -> Option<$scalar> {
                 self.bits.get(i).copied().map($scalar::from_bits)
             }
 
-            /// Elementwise add. Lengths must match.
+            /// Entry `(i, j)`, or `None` if out of range.
+            pub fn get2(&self, i: usize, j: usize) -> Option<$scalar> {
+                if i >= self.rows || j >= self.cols {
+                    return None;
+                }
+                self.get(i * self.cols + j)
+            }
+
+            /// Elementwise add. Shapes must match.
             pub fn add(&self, rhs: &Self) -> Option<Self> {
                 self.zip_op(rhs, $scalar::add)
             }
@@ -130,8 +196,35 @@ macro_rules! impl_ieee_array {
                 Some(acc)
             }
 
+            /// Software matmul: `(m×k)(k×n) → (m×n)`. Sequential IEEE mul-then-add per term.
+            pub fn matmul(&self, rhs: &Self) -> Option<Self> {
+                if self.cols != rhs.rows {
+                    return None;
+                }
+                let m = self.rows;
+                let k = self.cols;
+                let n = rhs.cols;
+                let mut bits = alloc::vec![$scalar::ZERO.to_bits(); m.checked_mul(n)?];
+                for i in 0..m {
+                    for j in 0..n {
+                        let mut acc = $scalar::ZERO;
+                        for t in 0..k {
+                            let a = $scalar::from_bits(self.bits[i * k + t]);
+                            let b = $scalar::from_bits(rhs.bits[t * n + j]);
+                            acc = acc.add(a.mul(b));
+                        }
+                        bits[i * n + j] = acc.to_bits();
+                    }
+                }
+                Some(Self {
+                    bits,
+                    rows: m,
+                    cols: n,
+                })
+            }
+
             fn zip_op(&self, rhs: &Self, op: fn($scalar, $scalar) -> $scalar) -> Option<Self> {
-                if self.len() != rhs.len() {
+                if self.rows != rhs.rows || self.cols != rhs.cols {
                     return None;
                 }
                 Some(Self {
@@ -141,6 +234,8 @@ macro_rules! impl_ieee_array {
                         .zip(rhs.bits.iter())
                         .map(|(a, b)| op($scalar::from_bits(*a), $scalar::from_bits(*b)).to_bits())
                         .collect(),
+                    rows: self.rows,
+                    cols: self.cols,
                 })
             }
 
@@ -151,6 +246,8 @@ macro_rules! impl_ieee_array {
                         .iter()
                         .map(|&b| op($scalar::from_bits(b)).to_bits())
                         .collect(),
+                    rows: self.rows,
+                    cols: self.cols,
                 }
             }
 
@@ -168,6 +265,8 @@ macro_rules! impl_ieee_array {
                             $scalar::from_exact(&op(&x)).to_bits()
                         })
                         .collect(),
+                    rows: self.rows,
+                    cols: self.cols,
                 }
             }
         }
@@ -234,25 +333,42 @@ ieee_array_specials!(Ieee32Array, Ieee32, 64);
 ieee_array_specials!(Ieee64Array, Ieee64, 128);
 
 impl ExactNumArray {
-    /// Empty array at precision `p`.
+    /// Empty 0×0 array at precision `p`.
     pub fn new(p: usize) -> Self {
         Self {
             p,
             vals: Vec::new(),
+            rows: 0,
+            cols: 0,
         }
     }
 
-    /// `n` copies of `fill` (rounded to `p`).
+    /// Row vector: `n` copies of `fill` (rounded to `p`).
     pub fn filled(p: usize, n: usize, fill: &ExactNum) -> Self {
         let mut v = fill.clone();
         let _ = v.set_precision(p, RoundingMode::ToEven);
         Self {
             p,
             vals: alloc::vec![v; n],
+            rows: 1,
+            cols: n,
         }
     }
 
-    /// From values; each is rounded to `p`.
+    /// `rows×cols` filled with `fill` (rounded to `p`).
+    pub fn filled_2d(p: usize, rows: usize, cols: usize, fill: &ExactNum) -> Option<Self> {
+        let n = rows.checked_mul(cols)?;
+        let mut v = fill.clone();
+        let _ = v.set_precision(p, RoundingMode::ToEven);
+        Some(Self {
+            p,
+            vals: alloc::vec![v; n],
+            rows,
+            cols,
+        })
+    }
+
+    /// From values as a row vector; each is rounded to `p`.
     pub fn from_values(p: usize, vals: &[ExactNum]) -> Self {
         Self {
             p,
@@ -264,12 +380,54 @@ impl ExactNumArray {
                     y
                 })
                 .collect(),
+            rows: 1,
+            cols: vals.len(),
         }
+    }
+
+    /// Row-major `rows×cols`. Length must be `rows*cols`.
+    pub fn from_shape(p: usize, rows: usize, cols: usize, vals: &[ExactNum]) -> Option<Self> {
+        let n = rows.checked_mul(cols)?;
+        if n != vals.len() {
+            return None;
+        }
+        Some(Self {
+            p,
+            vals: vals
+                .iter()
+                .map(|x| {
+                    let mut y = x.clone();
+                    let _ = y.set_precision(p, RoundingMode::ToEven);
+                    y
+                })
+                .collect(),
+            rows,
+            cols,
+        })
     }
 
     /// Shared precision.
     pub fn precision(&self) -> usize {
         self.p
+    }
+
+    /// `(rows, cols)`.
+    pub fn shape(&self) -> (usize, usize) {
+        (self.rows, self.cols)
+    }
+
+    /// Reinterpret the same buffer as `rows×cols` when the product matches.
+    pub fn reshape(&self, rows: usize, cols: usize) -> Option<Self> {
+        let n = rows.checked_mul(cols)?;
+        if n != self.vals.len() {
+            return None;
+        }
+        Some(Self {
+            p: self.p,
+            vals: self.vals.clone(),
+            rows,
+            cols,
+        })
     }
 
     /// Number of lanes.
@@ -282,12 +440,20 @@ impl ExactNumArray {
         self.vals.is_empty()
     }
 
-    /// Lane `i`.
+    /// Lane `i` in storage order.
     pub fn get(&self, i: usize) -> Option<&ExactNum> {
         self.vals.get(i)
     }
 
-    /// All values.
+    /// Entry `(i, j)`, or `None` if out of range.
+    pub fn get2(&self, i: usize, j: usize) -> Option<&ExactNum> {
+        if i >= self.rows || j >= self.cols {
+            return None;
+        }
+        self.get(i * self.cols + j)
+    }
+
+    /// All values in row-major order.
     pub fn as_slice(&self) -> &[ExactNum] {
         &self.vals
     }
@@ -306,6 +472,8 @@ impl ExactNumArray {
                 .iter()
                 .map(|x| x.add(s, self.p, RoundingMode::ToEven))
                 .collect(),
+            rows: self.rows,
+            cols: self.cols,
         }
     }
 
@@ -328,6 +496,8 @@ impl ExactNumArray {
                 .iter()
                 .map(|x| x.mul(s, self.p, RoundingMode::ToEven))
                 .collect(),
+            rows: self.rows,
+            cols: self.cols,
         }
     }
 
@@ -345,6 +515,8 @@ impl ExactNumArray {
                 .iter()
                 .map(|x| x.sqrt(self.p, RoundingMode::ToEven))
                 .collect(),
+            rows: self.rows,
+            cols: self.cols,
         }
     }
 
@@ -370,6 +542,37 @@ impl ExactNumArray {
         Some(acc)
     }
 
+    /// Software matmul: `(m×k)(k×n) → (m×n)`. Sequential mul-then-add at `p`.
+    pub fn matmul(&self, rhs: &Self) -> Option<Self> {
+        if self.cols != rhs.rows {
+            return None;
+        }
+        let m = self.rows;
+        let k = self.cols;
+        let n = rhs.cols;
+        let mut vals = Vec::with_capacity(m.checked_mul(n)?);
+        for i in 0..m {
+            for j in 0..n {
+                let mut acc = ExactNum::from_u8(0, self.p);
+                for t in 0..k {
+                    let prod = self.vals[i * k + t].mul(
+                        &rhs.vals[t * n + j],
+                        self.p,
+                        RoundingMode::ToEven,
+                    );
+                    acc = acc.add(&prod, self.p, RoundingMode::ToEven);
+                }
+                vals.push(acc);
+            }
+        }
+        Some(Self {
+            p: self.p,
+            vals,
+            rows: m,
+            cols: n,
+        })
+    }
+
     /// Elementwise `sin`.
     pub fn sin(&self, cc: &mut Consts) -> Self {
         self.map_unary(|x| x.sin(self.p, RoundingMode::ToEven, cc))
@@ -391,7 +594,7 @@ impl ExactNumArray {
     }
 
     fn zip(&self, rhs: &Self, op: impl Fn(&ExactNum, &ExactNum) -> ExactNum) -> Option<Self> {
-        if self.len() != rhs.len() {
+        if self.rows != rhs.rows || self.cols != rhs.cols {
             return None;
         }
         Some(Self {
@@ -402,6 +605,8 @@ impl ExactNumArray {
                 .zip(rhs.vals.iter())
                 .map(|(a, b)| op(a, b))
                 .collect(),
+            rows: self.rows,
+            cols: self.cols,
         })
     }
 
@@ -409,6 +614,8 @@ impl ExactNumArray {
         Self {
             p: self.p,
             vals: self.vals.iter().map(|x| op(x)).collect(),
+            rows: self.rows,
+            cols: self.cols,
         }
     }
 }
@@ -463,5 +670,95 @@ mod tests {
         assert_eq!(s.get(0).unwrap().cmp(&ExactNum::from_u8(3, p)), Some(0));
         let d = a.dot(&b).unwrap();
         assert_eq!(d.cmp(&ExactNum::from_u8(4, p)), Some(0));
+    }
+
+    #[test]
+    fn bin64_matmul_2x2() {
+        let a = Ieee64Array::from_shape(
+            2,
+            2,
+            &[
+                Ieee64::from_i32(1),
+                Ieee64::from_i32(2),
+                Ieee64::from_i32(3),
+                Ieee64::from_i32(4),
+            ],
+        )
+        .unwrap();
+        let b = Ieee64Array::from_shape(
+            2,
+            2,
+            &[
+                Ieee64::from_i32(5),
+                Ieee64::from_i32(6),
+                Ieee64::from_i32(7),
+                Ieee64::from_i32(8),
+            ],
+        )
+        .unwrap();
+        let c = a.matmul(&b).unwrap();
+        assert_eq!(c.shape(), (2, 2));
+        assert_eq!(c.get2(0, 0).unwrap().to_bits(), Ieee64::from_i32(19).to_bits());
+        assert_eq!(c.get2(0, 1).unwrap().to_bits(), Ieee64::from_i32(22).to_bits());
+        assert_eq!(c.get2(1, 0).unwrap().to_bits(), Ieee64::from_i32(43).to_bits());
+        assert_eq!(c.get2(1, 1).unwrap().to_bits(), Ieee64::from_i32(50).to_bits());
+    }
+
+    #[test]
+    fn bin64_matmul_identity() {
+        let i2 = Ieee64Array::from_shape(
+            2,
+            2,
+            &[
+                Ieee64::from_i32(1),
+                Ieee64::ZERO,
+                Ieee64::ZERO,
+                Ieee64::from_i32(1),
+            ],
+        )
+        .unwrap();
+        let a = Ieee64Array::from_shape(
+            2,
+            2,
+            &[
+                Ieee64::from_i32(1),
+                Ieee64::from_i32(2),
+                Ieee64::from_i32(3),
+                Ieee64::from_i32(4),
+            ],
+        )
+        .unwrap();
+        let c = i2.matmul(&a).unwrap();
+        assert_eq!(c.get2(0, 0).unwrap().to_bits(), Ieee64::from_i32(1).to_bits());
+        assert_eq!(c.get2(0, 1).unwrap().to_bits(), Ieee64::from_i32(2).to_bits());
+        assert_eq!(c.get2(1, 0).unwrap().to_bits(), Ieee64::from_i32(3).to_bits());
+        assert_eq!(c.get2(1, 1).unwrap().to_bits(), Ieee64::from_i32(4).to_bits());
+    }
+
+    #[test]
+    fn bin64_matmul_shape_mismatch() {
+        let a = Ieee64Array::from_shape(2, 2, &[Ieee64::from_i32(1); 4]).unwrap();
+        let b = Ieee64Array::from_shape(3, 1, &[Ieee64::from_i32(1); 3]).unwrap();
+        assert!(a.matmul(&b).is_none());
+        assert!(Ieee64Array::from_shape(2, 2, &[Ieee64::from_i32(1)]).is_none());
+        let row = Ieee64Array::from_values(&[Ieee64::from_i32(1); 4]);
+        assert_eq!(row.shape(), (1, 4));
+        let sq = row.reshape(2, 2).unwrap();
+        assert_eq!(sq.shape(), (2, 2));
+        assert!(row.add(&sq).is_none());
+    }
+
+    #[test]
+    fn exact_matmul_2x2() {
+        let p = 64;
+        let n = |k: u8| ExactNum::from_u8(k, p);
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(3), n(4)]).unwrap();
+        let b = ExactNumArray::from_shape(p, 2, 2, &[n(5), n(6), n(7), n(8)]).unwrap();
+        let c = a.matmul(&b).unwrap();
+        assert_eq!(c.shape(), (2, 2));
+        assert_eq!(c.get2(0, 0).unwrap().cmp(&n(19)), Some(0));
+        assert_eq!(c.get2(0, 1).unwrap().cmp(&n(22)), Some(0));
+        assert_eq!(c.get2(1, 0).unwrap().cmp(&n(43)), Some(0));
+        assert_eq!(c.get2(1, 1).unwrap().cmp(&n(50)), Some(0));
     }
 }

@@ -224,9 +224,9 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | Item | Status | Notes |
 | --- | --- | --- |
 | `Ieee32` / `Ieee64` | ✅ | Integer IEEE-754 binary32/binary64; `from_bits` / `to_bits`; add/mul/div/sqrt/FMA |
-| `Ieee32Array` / `Ieee64Array` | ✅ | 1-D elementwise, `sum`/`dot`; specials via `ExactNum` |
-| `ExactNumArray` | ✅ | Shared `p`; 1-D elementwise |
-| 2-D / matmul / BLAS | ⬜ | Not started |
+| `Ieee32Array` / `Ieee64Array` | ✅ | Row-major; elementwise, `sum`/`dot`, software `matmul`; specials via `ExactNum` |
+| `ExactNumArray` | ✅ | Shared `p`; row-major elementwise + software `matmul` |
+| BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
 
@@ -450,7 +450,7 @@ These are design decisions, not a backlog:
 | Pure Rust kernel (no MPFR in lib) | ✅ | ✅ | ✅ |
 | `no_std` + allocator | ✅ | ✅ | ✅ |
 | Hardware IEEE arithmetic | 🚫 forbidden | converters | API-edge literals |
-| Software `Ieee32` / `Ieee64` + 1-D arrays | ✅ | ⬜ | ⬜ |
+| Software `Ieee32` / `Ieee64` + arrays / matmul | ✅ | ⬜ | ⬜ |
 | `expr!` / `cexpr!` + `Context` | ✅ both | ✅ real only | 🟡 macros elsewhere |
 | `hypot`, `atan2`, `log1p`, `expm1` | ✅ | ⬜ | ✅ |
 | `exp2`, `exp10`, `rem_pi` | ✅ | ⬜ | 🟡 partial |
