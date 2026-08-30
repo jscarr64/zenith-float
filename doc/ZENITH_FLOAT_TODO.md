@@ -30,13 +30,13 @@ Rules for every item:
 | 2-D arrays + software matmul | 2026-08-30 | Row-major `from_shape` / `get2` / `matmul`; 1-D is shape `(1, n)` |
 | Array ufuncs of `ExactNum` specials | 2026-08-30 | IEEE + `ExactNum` arrays; extra args are shared scalars |
 | Integer SIMD for IEEE add/mul | 2026-08-30 | `u32`/`u64` lanes; SSE2 / NEON; not an FPU |
+| Certified interval `sin` / `exp` | 2026-08-30 | `Ball::exp` uses \(\lvert e^m\rvert(e^r-1)\); `Ball::sin` uses \(\lvert\sin'\rvert\le 1\); containment golds |
 
 ---
 
 ## Cross-cutting leftovers
 
 - MPFR has `eint`, `jn`, `yn`, `digamma` — oracles in `compare_special_fn_test.rs`. No MPFR `si` / `ci` / `li` / Fresnel; those stay identity/series golds
-- Certified interval `sin`/`exp` (`Ball` is `add`/`mul` only)
-- Complex specials (permanent: no complex kernel)
+- Complex specials on `ExactComplex` (software limbs only; same no-hardware rule as the real kernel). Elementary `+ − × ÷`, `exp`/`ln`, trig/hyperbolic, principal `sqrt`/`pow`/inverses are already there. Still missing: `erf`/`erfc`, `gamma`/`ln_gamma`/`digamma`, `ei`/`si`/`ci`/`li`, Fresnel, Bessel, elliptic, `_2F1`, etc. Principal branches, cuts pinned by golds. Do not wrap the real series on \(\lvert z\rvert\) and call it complex. `cexpr!` leaves when the method exists. This crate is a standalone numeric library; Accumath is a consumer, not a product limiter.
 
 Hung searches and invented closed forms stay `NaN` / `InvalidArgument`.

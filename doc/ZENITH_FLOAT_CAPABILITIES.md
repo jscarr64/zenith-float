@@ -295,7 +295,7 @@ The previous mode is restored when the closure returns.
 | --- | --- |
 | `%` / `rem_pi` | Remainder and π-reduction are real-valued |
 | `atan2` | No standard two-complex analogue; use `arg` |
-| `erf` / `erfc` / `gamma` / `ln_gamma` / `ei` / `si` / `ci` / `li` / `fresnel_*` / `bessel_j` | No complex kernel in this crate |
+| `erf` / `erfc` / `gamma` / `ln_gamma` / `ei` / `si` / `ci` / `li` / `fresnel_*` / `bessel_*` | Not yet — real kernel only; backlog on `ExactComplex` (software limbs) |
 
 ---
 
@@ -375,6 +375,7 @@ Cartesian `re + i·im` as two `ExactNum` values.
 | `fma` / `mul_add` | Extra-precision `a*b+c` |
 | `logb` | `logb(\|z\|)` as a real |
 | `Add` `Sub` `Mul` `Div` | 128-bit `ToEven` like reals |
+| Specials (`erf`, `gamma`, Bessel, …) | ⬜ backlog — software `ExactComplex`, principal branches; not a permanent out |
 
 No `expr!` for complex — use `cexpr!`. Serde: struct `{ "re", "im" }` of decimal strings.
 
@@ -403,7 +404,7 @@ Radix 2–36. For bases > 10 the exponent uses `_e` so `e` can be a digit.
 | Item | Notes |
 | --- | --- |
 | `ziv_round(p, rm, compute)` | Call `compute(p_wrk)`, then `try_set_precision` until uniquely rounded or `MAX_PREC_RETRY` exhausted (→ NaN / `PrecisionRetryExhausted`) |
-| `Ball { mid, rad }` | First-order interval arithmetic; `add` / `mul` with rounding ulp in radius; `contains(x, p)` |
+| `Ball { mid, rad }` | First-order interval arithmetic; `add` / `mul` / `exp` / `sin` with rounding ulp in radius; `contains(x, p)` |
 | `MAX_PREC_RETRY = 256` | Extra word-sized budget per operation; caps at `256 × WORD_BIT_SIZE` bits above `p` |
 
 ---
@@ -438,7 +439,6 @@ These are design decisions, not a backlog:
 - `+=` / `-=` / `*=` / `/=` assigning operators
 - `Hash` or total `Ord` that includes NaN
 - `%` operator trait — use `rem` method or `expr!` `%`
-- Complex `erf`, `erfc`, `gamma`, `ln_gamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j` — no complex kernel
 - Symbolic CAS, formula rewriting, or expression IR — this crate is numeric only
 - MPFR as a runtime engine — it is an oracle in `mpfr-tests` only
 
@@ -460,7 +460,8 @@ These are design decisions, not a backlog:
 | `two_sum` / `two_product` / `fused_sum` / `fused_dot` / `polyval` | ✅ | ⬜ | ⬜ |
 | `fbig!` / compile-time float literals | ✅ | ⬜ | ✅ |
 | Parse/format bases 2–36 | ✅ | ⬜ (bin/oct/dec/hex) | ✅ |
-| Complex (`ExactComplex` + `cexpr!`) | ✅ | ⬜ | ✅ `CBig` |
+| Complex (`ExactComplex` + `cexpr!`) | ✅ elementary | ⬜ | ✅ `CBig` |
+| Complex specials (`erf`, `Γ`, Bessel, …) | ⬜ backlog | ⬜ | ⬜ |
 | General `nth_root(n)` | ✅ | ✅ | ✅ |
 | `sin_cos` / `sinh_cosh` paired | ✅ | ✅ | ✅ |
 | Special functions (`erf`, `Γ`, `J_n`) | ✅ | ⬜ | 🟡 / separate |

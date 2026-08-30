@@ -3,6 +3,7 @@
 use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
 use crate::defs::WORD_BIT_SIZE;
+use crate::Consts;
 use crate::Error;
 use crate::ExactNum;
 use crate::RoundingMode;
@@ -68,6 +69,29 @@ impl Ball {
         Ball { mid, rad }
     }
 
+    /// Exponential of a ball. `exp` is increasing; the radius uses
+    /// \(\lvert\exp(m)\rvert(e^{r}-1)\) plus a rounding ulp (same `Up` convention as `add`/`mul`).
+    pub fn exp(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let mid = self.mid.exp(p, rm, cc);
+        let em1 = self.rad.expm1(p, RoundingMode::Up, cc);
+        let rad = mid.abs().mul(&em1, p, RoundingMode::Up).add(
+            &Self::rounding_ulp(&mid, p),
+            p,
+            RoundingMode::Up,
+        );
+        Ball { mid, rad }
+    }
+
+    /// Sine of a ball. \(\lvert\sin'\rvert\le 1\), so the image radius is at most `rad`
+    /// plus a rounding ulp.
+    pub fn sin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let mid = self.mid.sin(p, rm, cc);
+        let rad = self
+            .rad
+            .add(&Self::rounding_ulp(&mid, p), p, RoundingMode::Up);
+        Ball { mid, rad }
+    }
+
     /// True when `x` lies in `[mid − rad, mid + rad]` (NaN / Inf never contained).
     pub fn contains(&self, x: &ExactNum, p: usize) -> bool {
         if x.is_nan() || self.mid.is_nan() || self.rad.is_nan() {
@@ -127,5 +151,53 @@ mod tests {
         let via_ziv = ziv_round(p, rm, |pw| two.sqrt(pw, RoundingMode::None));
         let direct = two.sqrt(p, rm);
         assert_eq!(via_ziv.cmp(&direct), Some(0));
+    }
+
+    #[test]
+    fn ball_exp_contains_one_and_two() {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let two = ExactNum::from_u8(2, p);
+        let rad = two.powsi(-20, p, rm);
+        let z = Ball::new(ExactNum::from_u8(0, p), rad.clone());
+        let ez = z.exp(p, rm, &mut cc);
+        assert!(ez.contains(&ExactNum::from_u8(1, p), p));
+
+        let ln2 = cc.ln_2(p, rm);
+        let bln = Ball::new(ln2, rad);
+        let e2 = bln.exp(p, rm, &mut cc);
+        assert!(e2.contains(&two, p));
+    }
+
+    #[test]
+    fn ball_sin_contains_zero_at_origin_and_pi() {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let two = ExactNum::from_u8(2, p);
+        let rad = two.powsi(-20, p, rm);
+        let z = Ball::new(ExactNum::from_u8(0, p), rad.clone());
+        let sz = z.sin(p, rm, &mut cc);
+        assert!(sz.contains(&ExactNum::from_u8(0, p), p));
+
+        let pi = cc.pi(p, rm);
+        let bpi = Ball::new(pi, rad);
+        let sp = bpi.sin(p, rm, &mut cc);
+        assert!(sp.contains(&ExactNum::from_u8(0, p), p));
+    }
+
+    #[test]
+    fn ball_exp_sin_contain_scalar_at_a_point() {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let x = ExactNum::from_u8(1, p);
+        let rad = ExactNum::from_u8(2, p).powsi(-12, p, rm);
+        let b = Ball::new(x.clone(), rad);
+        let hi = x.exp(256, rm, &mut cc);
+        assert!(b.exp(p, rm, &mut cc).contains(&hi, p));
+        let hs = x.sin(256, rm, &mut cc);
+        assert!(b.sin(p, rm, &mut cc).contains(&hs, p));
     }
 }

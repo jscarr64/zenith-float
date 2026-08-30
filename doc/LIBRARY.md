@@ -378,7 +378,7 @@ Same **context** as `expr!` (`Context` or the two tuples above). Same extra-prec
 | --- | --- |
 | `%` / `rem_pi` | remainder and π-reduction are real; complex trig uses the identities above |
 | `atan2` | no standard two-complex analogue; use `arg` for `atan2(im, re)` |
-| `erf` / `erfc` / `gamma` / `ln_gamma` / `bessel_j` | no complex kernel in this crate |
+| `erf` / `erfc` / `gamma` / `ln_gamma` / `bessel_*` | not yet — real kernel only; backlog on `ExactComplex` (software limbs) |
 
 Literals and real constants are lifted as `x + 0i`. Variables may be `ExactComplex` or anything `FromExt` can wrap as a real.
 
@@ -455,6 +455,7 @@ Cartesian `re + i·im` as two `ExactNum`s.
 | `fma` / `mul_add` | extra-precision `a*b+c` |
 | `logb` | `logb(\|z\|)` as a real |
 | `Add` `Sub` `Mul` `Div` | 128-bit `ToEven` like reals |
+| Specials (`erf`, `gamma`, Bessel, …) | not yet; backlog (software limbs, principal branches) |
 
 No `expr!` for complexes — use `cexpr!`. Serde: struct `{ "re", "im" }` of decimal strings.
 
@@ -469,6 +470,7 @@ No `expr!` for complexes — use `cexpr!`. Serde: struct `{ "re", "im" }` of dec
 | `new(mid, rad)` | |
 | `mid` / `rad` | |
 | `add` / `mul` | interval arithmetic with an extra rounding ulp in the radius |
+| `exp` / `sin` | enclosure via \(\lvert e^m\rvert(e^r-1)\) and \(\lvert\sin'\rvert\le 1\), plus a rounding ulp |
 | `contains(x, p)` | `x` in `[mid−rad, mid+rad]`; NaN/Inf never contained |
 
 **`ziv_round(p, rm, compute)`:** call `compute(working_p)` and `try_set_precision` until the rounding is unique or `MAX_PREC_RETRY` is exhausted (then NaN / `PrecisionRetryExhausted`).
