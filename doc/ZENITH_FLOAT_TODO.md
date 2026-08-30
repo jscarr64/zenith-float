@@ -1,169 +1,109 @@
 # zenith-float — Special Functions To-Do
 
-This document lists the special functions that need to be added to `zenith-float` to support Accumath's build plan. Every item here blocks one or more Accumath capabilities. Nothing ships on either side until the dependency chain is complete.
+What Accumath already golds on SoftFloat that this crate must own. Walk top to bottom. Do not mark a row done without a gold on the implementation Accumath will call.
 
-All implementations follow the same rules as existing specials (`erf`, `gamma`, `bessel_j`, `besseli`):
+Rules for every item:
 
 - Software limb arithmetic only — no hardware float in any calculation
-- Series or AGM with working precision `p_wrk = p + WORD_BIT_SIZE`; `MAX_PREC_RETRY` bounds retries
-- MPFR oracle golds (`mpfr-tests` feature) on bounded domains
-- Per-op precision at caller-chosen bits (not global `SOFT_PREC`) — this is the same fix needed for unary specials generally
-- `expr!` leaf entry where applicable
-- Derivative identity golded alongside the function
+- Series / AGM / CF with working precision `p_wrk = p + WORD_BIT_SIZE`; `MAX_PREC_RETRY` bounds retries
+- Per-op precision at caller-chosen bits (not global `SOFT_PREC`)
+- `expr!` leaf where the arity fits
+- Domain guards → `NaN` (`InvalidArgument`); do not invent values outside the stated domain
+- MPFR oracle under `mpfr-tests` where MPFR has the function
+- Accumath `eval.gold` / specials identities must pass after SoftFloat is pointed here
 
 ---
 
-## Priority 1 — Integral result specials
+## Done
 
-These unblock Accumath item 2 (named non-elementary integration results) and items 5–6 (Laplace / Fourier numeric eval). **Done 2026-08-29:** `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c` on `ExactNum` with `expr!` leaves. SoftFloat calls them. Domain: `Ei`/`Ci` require `x>0`; `li` requires `x>1`. Large `|x|` uses the full factorial / auxiliary \(f,g\) expansions (not a one-term remainder). Golds: Accumath `eval.gold` (`si_zero`, `li(e)/Ei(1)`, Fresnel zeros), specials series identities, and two-precision large-argument checks. MPFR oracles for these leaves are still a follow-up.
-
-| Function | Definition | Notes |
+| Function(s) | Date | Notes |
 | --- | --- | --- |
-| `Si(x)` — sine integral | `∫₀ˣ sin(t)/t dt` | Series for small `\|x\|`; asymptotic for large; `Si(-x) = -Si(x)` |
-| `Ci(x)` — cosine integral | `γ + ln x + ∫₀ˣ (cos t - 1)/t dt` | `x > 0` only; `Ci(x)` for `x ≤ 0` is `NaN` |
-| `li(x)` — logarithmic integral | `PV ∫₀ˣ dt/ln t` | `x > 0`, `x ≠ 1`; relation to `Ei`: `li(x) = Ei(ln x)` |
-| `fresnel_s(x)` | `∫₀ˣ sin(πt²/2) dt` | Series for small `\|x\|`; auxiliary functions `f`, `g` for large |
-| `fresnel_c(x)` | `∫₀ˣ cos(πt²/2) dt` | Same auxiliary function strategy as `fresnel_s` |
-
-**Golds required for each:**
-- Value at a known point vs MPFR oracle
-- Derivative identity (e.g. `D(Si)(x) = sin(x)/x`)
-- Asymptotic behavior gold (large `\|x\|`)
-- `NaN` / domain guard gold
-
-**`expr!` leaves:** `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`
+| `erf`, `erfc`, `gamma`, `ln_gamma`, integer `J_n` (`n≤1024`), `Consts::euler_gamma` | 2026-08-29 | SoftFloat wired |
+| `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c` | 2026-08-29 | Full \(f,g\) / factorial large-\(x\). MPFR oracles still open |
+| `digamma`, `gammainc`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k` | 2026-08-29 | SoftFloat wired |
+| complete + incomplete elliptic \(K,E,\Pi\) (Carlson, \(m=k^2\), \(x=\sin\varphi\)) | 2026-08-29 | SoftFloat wired |
+| `legendre_p`, `assoc_legendre_p` | 2026-08-29 | Cap 48; Condon–Shortley. \(Y_l^m\) stays Accumath-composed |
+| `hypergeom_2f1`, `betainc` | 2026-08-29 | Same domain as Accumath; regularized \(I_x\) |
 
 ---
 
-## Priority 2 — Modified Bessel second kind
+## 1. Digamma and incomplete gamma
 
-Unblocks Accumath item 8. `J_ν`, `Y_ν`, `I_ν` already exist; `K_ν` does not.
+Unblocks Accumath \(\psi\) and \(\gamma(s,x)\) golds, and later regularized \(P/Q\).
 
-| Function | Definition | Notes |
-| --- | --- | --- |
-| `K_ν(x)` — modified Bessel second kind | `(π/2)(I_{-ν} - I_ν)/sin(νπ)` for non-integer ν; limit for integer ν | `x > 0` only; `K_{-n} = K_n` for integer `n`; exponential decay for large `x` |
+| Function | Definition | Domain | Status |
+| --- | --- | --- | --- |
+| `digamma(z)` — \(\psi(z)=\Gamma'(z)/\Gamma(z)\) | Recurrence to large \(z\), then \(\ln z-1/(2z)-\sum B_{2n}/(2n z^{2n})\) | \(z>0\); poles / non-positive → `NaN` | ✅ 2026-08-29 |
+| `gammainc(s, x)` — lower \(\gamma(s,x)=\int_0^x t^{s-1}e^{-t}\,dt\) | Series \(x^s e^{-x}\sum x^k/(s)_{k+1}\); \(\Gamma(s)\) when \(e^{-x}\) underflows | \(s>0\), \(x\ge 0\) | ✅ 2026-08-29 |
 
-**Algorithm:** For integer `n`, use the recurrence `K_{n+1} = (2n/x)K_n + K_{n-1}` starting from `K_0` and `K_1` computed by series. For large `x`, use the asymptotic expansion `K_ν(x) ~ √(π/2x) e^{-x} Σ`. For half-integer orders, use the closed form via `sinh`/`cosh`.
+**Golds:** \(\psi(1)=-\gamma\), \(\psi(2)=-\gamma+1\), \(\psi(1/2)=-\gamma-2\ln 2\); \(\gamma(s,0)=0\); \(\gamma(1,1)=1-e^{-1}\).
 
-**Golds required:**
-- `K_0(1)` vs MPFR oracle
-- `K_1(1)` vs MPFR oracle
-- `K_{1/2}(x) = √(π/2x) e^{-x}` — closed form gold
-- `K_{-n} = K_n` symmetry gold
-- `D(K_0) = -K_1` derivative identity gold
-- `x ≤ 0` → `NaN` guard gold
-
-**`expr!` leaf:** `bessel_k`
+**`expr!` leaves:** `digamma`, `gammainc`
 
 ---
 
-## Priority 3 — Elliptic integrals
+## 2. Full Bessel family
 
-Unblocks Accumath item 1. Nothing exists today — `elliptic_f` / `elliptic_e` appear only as unevaluated derivative skeletons.
+CAPABILITIES §23 / Additions “will not add Y/I/K” is a **backlog, not a permanent reject**. Accumath already ships these.
 
-| Function | Definition | Notes |
+| Function | Notes | Status |
 | --- | --- | --- |
-| `K(k)` — complete elliptic first kind | `∫₀^{π/2} dθ/√(1-k²sin²θ)` | AGM algorithm; `\|k\| < 1`; `k = ±1` → `+∞` |
-| `E(k)` — complete elliptic second kind | `∫₀^{π/2} √(1-k²sin²θ) dθ` | AGM-based; `\|k\| ≤ 1`; `E(0) = π/2`; `E(1) = 1` |
-| `Π(n,k)` — complete elliptic third kind | `∫₀^{π/2} dθ/((1-n sin²θ)√(1-k²sin²θ))` | More complex AGM variant; `n < 1`, `\|k\| < 1` |
-| `F(φ,k)` — incomplete elliptic first kind | `∫₀^φ dθ/√(1-k²sin²θ)` | `F(π/2, k) = K(k)` |
-| `E(φ,k)` — incomplete elliptic second kind | `∫₀^φ √(1-k²sin²θ) dθ` | `E(π/2, k) = E(k)` |
-| `Π(n,φ,k)` — incomplete elliptic third kind | `∫₀^φ dθ/((1-n sin²θ)√(1-k²sin²θ))` | `Π(n,π/2,k) = Π(n,k)` |
+| non-integer `J_ν` | Integer path exists (`n≤1024`). Series in \((x/2)^{ν}\) / \(\Gamma(ν+1)\) | ✅ 2026-08-29 |
+| `Y_ν` | Log + second series; half-integer closed forms Accumath already golds | ✅ 2026-08-29 |
+| `I_ν` | \(I_{-n}=I_n\); series | ✅ 2026-08-29 |
+| `K_ν` | \(x>0\); \(K_{-ν}=K_ν\); Accumath cap \(\lvertν\rvert\le 32\) | ✅ 2026-08-29 |
 
-**Algorithm:** AGM (arithmetic-geometric mean) for complete forms. Descending Landen transformation for incomplete forms. Both converge quadratically in the number of AGM steps — well-suited to arbitrary precision.
+**Golds:** \(J_0(0)=1\); \(J_{1/2}(\pi/2)\); \(Y_{1/2}\) closed forms; \(I_0(0)=1\); \(K_{1/2}(1)=\sqrt{\pi/2}\,e^{-1}\); Wronskian \(I_0 K_1+I_1 K_0=1\) at \(x=1\); \(x\le 0\) → `NaN` for \(K\).
 
-**Golds required:**
-- `K(0) = π/2` — exact gold
-- `K(1/√2)` vs MPFR oracle
-- `E(0) = π/2`, `E(1) = 1` — exact golds
-- `F(π/4, 1/√2)` vs MPFR oracle
-- Legendre relation `E(k)K'(k) + E'(k)K(k) - K(k)K'(k) = π/2` — identity gold
-- `k ≥ 1` → `NaN` guard for `K` and incomplete forms
-- Derivative identities: `dK/dk`, `dE/dk` in terms of `K` and `E`
+**`expr!` leaves:** `bessel_j` (already; extend order), `bessel_y`, `bessel_i`, `bessel_k`
+
+---
+
+## 3. Elliptic integrals
+
+Accumath uses Carlson \(R_F,R_C,R_D,R_J\) with parameter \(m=k^2\) and incomplete \(x=\sin\varphi\). Pick **one** convention and gold it; SoftFloat must match.
+
+| Function | Accumath name | Status |
+| --- | --- | --- |
+| complete \(K,E,\Pi\) | `elliptic_k`, `elliptic_e_complete`, `elliptic_pi_complete` | ✅ 2026-08-29 |
+| incomplete \(F,E,\Pi\) | `elliptic_f`, `elliptic_e`, `elliptic_pi` | ✅ 2026-08-29 |
+
+**Golds:** \(K(0)=E(0)=\pi/2\); \(E(1)=1\); complete = incomplete at \(\varphi=\pi/2\); existing `eval.gold` elliptic rows.
 
 **`expr!` leaves:** `elliptic_k`, `elliptic_e`, `elliptic_pi`, `elliptic_f`, `elliptic_e_inc`, `elliptic_pi_inc`
 
 ---
 
-## Priority 4 — Legendre polynomials and associated functions
+## 4. Legendre
 
-Unblocks Accumath items 9 and 10 (spherical harmonics depends on associated Legendre).
-
-| Function | Definition | Notes |
+| Function | Notes | Status |
 | --- | --- | --- |
-| `P_n(x)` — Legendre polynomial | Three-term recurrence `(n+1)P_{n+1} = (2n+1)xP_n - nP_{n-1}` | `n ≥ 0` integer; `\|x\| ≤ 1` for orthogonality; exact for integer `x` via recurrence |
-| `P_n^m(x)` — associated Legendre | `P_n^m(x) = (-1)^m(1-x²)^{m/2} d^m/dx^m P_n(x)` | `0 ≤ m ≤ n`; Condon-Shortley phase `(-1)^m` included; `m > n` → 0 |
+| `P_n(x)` | Three-term recurrence; named cap (Accumath `LEGENDRE_N_MAX=48`) | ✅ 2026-08-29 |
+| `P_n^m(x)` | Condon–Shortley \((-1)^m\); \(m>n\to\) `NaN` | ✅ 2026-08-29 |
 
-**Algorithm:** Three-term recurrence for `P_n`; forward recurrence in `m` for `P_n^m` starting from `P_m^m` and `P_{m+1}^m`.
-
-**Named cap:** `LEGENDRE_N_MAX` — maximum degree `n`; return `NaN` above this. Set to a value where the recurrence remains numerically stable at the working precision.
-
-**Golds required:**
-- `P_0(x) = 1`, `P_1(x) = x`, `P_2(x) = (3x²-1)/2` — exact golds
-- `P_5(0.5)` vs MPFR oracle
-- `P_2^1(x) = -3x√(1-x²)` — exact gold
-- Orthogonality: `∫₋₁¹ P_m P_n dx = 2/(2n+1) δ_{mn}` — numeric gold at 256 bits
-- `D(P_n) = nP_{n-1} + xD(P_{n-1})` — derivative identity gold
-- `m > n` → 0 gold
-- `n > LEGENDRE_N_MAX` → `NaN` gold
+Spherical \(Y_l^m\) may stay Accumath-composed once \(P_n^m\) is here.
 
 **`expr!` leaves:** `legendre_p`, `legendre_p_assoc`
 
 ---
 
-## Priority 5 — Gauss hypergeometric function
+## 5. Gaussian \({}_2F_1\) and incomplete beta
 
-Unblocks Accumath item 11. This is the most complex item; series convergence is not guaranteed for all `(a,b,c,z)`.
-
-| Function | Definition | Notes |
+| Function | Domain | Status |
 | --- | --- | --- |
-| `₂F₁(a,b;c;z)` | `Σ_{n=0}^∞ (a)_n(b)_n/(c)_n · z^n/n!` | `(x)_n` is the Pochhammer symbol; `c` not a non-positive integer; `\|z\| < 1` for series |
+| `hypergeom_2f1(a,b,c,z)` | Series / Gauss / Pfaff as Accumath; no invented \(z>1\) | ✅ 2026-08-29 |
+| `betainc(a,b,x)` | Regularized \(I_x(a,b)\) via \({}_2F_1\); \(a>0\), \(b>0\), \(x\in[0,1]\) | ✅ 2026-08-29 |
 
-**Algorithm:**
-- Series for `\|z\| < 1` with convergence cap `HYPERGEOM_SERIES_MAX_TERMS`
-- Euler transformation `₂F₁(a,b;c;z) = (1-z)^{c-a-b} ₂F₁(c-a,c-b;c;z)` to extend to `\|z\| < 1` from the other side
-- Pfaff transformation `₂F₁(a,b;c;z) = (1-z)^{-a} ₂F₁(a,c-b;c;z/(z-1))` for `Re(z) < 1/2`
-- Kummer transformation for `z = 1` when `Re(c-a-b) > 0`
-- `Ok(None)` / `NaN` when no transformation brings `z` into the convergence region within the cap
+**Golds:** \({}_2F_1(\cdot;0)=1\); terminating / Gauss / \(\ln 2\) identities already in Accumath.
 
-**Named caps:** `HYPERGEOM_SERIES_MAX_TERMS` — maximum series terms before abandoning; `HYPERGEOM_TRANSFORM_MAX` — maximum transformation attempts.
-
-**Golds required:**
-- `₂F₁(1,1;2;z) = -ln(1-z)/z` — exact identity gold
-- `₂F₁(1/2,1/2;1;k²) = (2/π)K(k)` — connection to elliptic `K` gold
-- `₂F₁(a,b;c;0) = 1` — exact gold
-- `₂F₁(a,b;c;1) = Γ(c)Γ(c-a-b)/(Γ(c-a)Γ(c-b))` when convergent — Gauss evaluation gold
-- `c` a non-positive integer → `NaN` gold
-- `\|z\| ≥ 1` with no applicable transformation → `NaN` / `Unsupported` gold
-
-**`expr!` leaf:** `hypergeom_2f1`
+**`expr!` leaves:** `hypergeom_2f1`; `betainc` if implemented here
 
 ---
 
-## Summary table
+## Cross-cutting leftovers
 
-| Function(s) | Priority | Blocks Accumath | Status |
-| --- | --- | --- | --- |
-| `Ei`, `Si`, `Ci`, `li`, `fresnel_s`, `fresnel_c` | 1 | Items 2, 5, 6 | ✅ 2026-08-29 |
-| `K_ν` modified Bessel second kind | 2 | Item 8 | ⬜ Not implemented |
-| `K(k)`, `E(k)`, `Π(n,k)` complete elliptic | 3 | Item 1 | ⬜ Not implemented |
-| `F(φ,k)`, `E(φ,k)`, `Π(n,φ,k)` incomplete elliptic | 3 | Item 1 | ⬜ Not implemented |
-| `P_n(x)` Legendre | 4 | Items 9, 10 | ⬜ Not implemented |
-| `P_n^m(x)` associated Legendre | 4 | Items 9, 10 | ⬜ Not implemented |
-| `₂F₁(a,b;c;z)` hypergeometric | 5 | Item 11 | ⬜ Not implemented |
+- MPFR 1-ULP oracles for `ei` / `si` / `ci` / `li` / Fresnel
+- `scripts/ci_full.sh` green before marking a row done
+- `LIBRARY.md` §15, `EXPR.md`, `ZENITH_FLOAT_CAPABILITIES.md` §12, this file
 
----
-
-## Cross-cutting requirements for all new specials
-
-These apply to every item above without exception:
-
-- No hardware float in implementation or tests
-- Per-op precision at caller-chosen bits — not global `SOFT_PREC`
-- `expr!` leaf added and documented in `EXPR.md` table
-- `LIBRARY.md` §12 updated with the new method
-- MPFR oracle gold in `mpfr-tests` feature
-- Derivative identity golded
-- Domain guard golded (`NaN` for out-of-domain input)
-- `ZENITH_FLOAT_CAPABILITIES.md` §12 updated
-- `scripts/ci_full.sh` green before marking done
+Hung searches and invented closed forms stay `NaN` / `InvalidArgument`.

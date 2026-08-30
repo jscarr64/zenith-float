@@ -465,8 +465,43 @@ fn macro_run_basic_tests() {
     let res: ExactNum = expr!(ln_gamma(x), &mut ctx);
     debug_assert_eq!(res, x.ln_gamma(p, rm, &mut cc));
 
+    let res: ExactNum = expr!(digamma(x), &mut ctx);
+    debug_assert_eq!(res, x.digamma(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(gammainc(x, x), &mut ctx);
+    debug_assert_eq!(res, x.gammainc(&x, p, rm, &mut cc));
+
     let res: ExactNum = expr!(bessel_j(x, 0), &mut ctx);
     debug_assert_eq!(res, x.bessel_j(0, p, rm, &mut cc));
+
+    let nu0 = ExactNum::from(0);
+    let res: ExactNum = expr!(bessel_j_nu(x, nu0), &mut ctx);
+    debug_assert_eq!(res, x.bessel_j_nu(&nu0, p, rm, &mut cc));
+    let res: ExactNum = expr!(bessel_i(x, nu0), &mut ctx);
+    debug_assert_eq!(res, x.bessel_i(&nu0, p, rm, &mut cc));
+
+    let mh = ExactNum::from(1).div(&ExactNum::from(2), p, rm);
+    let res: ExactNum = expr!(elliptic_k(mh), &mut ctx);
+    debug_assert_eq!(res, mh.elliptic_k(p, rm, &mut cc));
+    let res: ExactNum = expr!(elliptic_e(mh), &mut ctx);
+    debug_assert_eq!(res, mh.elliptic_e_complete(p, rm, &mut cc));
+    let res: ExactNum = expr!(elliptic_f(mh, mh), &mut ctx);
+    debug_assert_eq!(res, mh.elliptic_f(&mh, p, rm, &mut cc));
+    let res: ExactNum = expr!(elliptic_e_inc(mh, mh), &mut ctx);
+    debug_assert_eq!(res, mh.elliptic_e(&mh, p, rm, &mut cc));
+    let res: ExactNum = expr!(elliptic_pi(mh, mh), &mut ctx);
+    debug_assert_eq!(res, mh.elliptic_pi_complete(&mh, p, rm, &mut cc));
+    let res: ExactNum = expr!(elliptic_pi_inc(mh, mh, mh), &mut ctx);
+    debug_assert_eq!(res, mh.elliptic_pi(&mh, &mh, p, rm, &mut cc));
+
+    let res: ExactNum = expr!(legendre_p(x, 2), &mut ctx);
+    debug_assert_eq!(res, x.legendre_p(2, p, rm));
+    let res: ExactNum = expr!(legendre_p_assoc(mh, 1, 1), &mut ctx);
+    debug_assert_eq!(res, mh.assoc_legendre_p(1, 1, p, rm));
+    let res: ExactNum = expr!(hypergeom_2f1(mh, mh, x, mh), &mut ctx);
+    debug_assert_eq!(res, mh.hypergeom_2f1(&mh, &x, &mh, p, rm, &mut cc));
+    let res: ExactNum = expr!(betainc(x, x, mh), &mut ctx);
+    debug_assert_eq!(res, x.betainc(&x, &mh, p, rm, &mut cc));
 
     let res: ExactNum = expr!(ei(x), &mut ctx);
     debug_assert_eq!(res, x.ei(p, rm, &mut cc));

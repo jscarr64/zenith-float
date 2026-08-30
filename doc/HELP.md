@@ -219,13 +219,13 @@ With `std`, `SharedConsts` wraps the cache in a mutex for threads. Each `Context
 Allowed: variables, integer/string literals, unary minus, `+ − * / %`, function calls, parentheses.
 
 **Functions (real `expr!`):**  
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `bessel_j`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `ldexp`, `scalb`, `logb`.
 
 **Not in `expr!` (use methods):** `frexp`, `ilogb`, `sin_cos`, `sinh_cosh`, `ceil` / `floor` / `round`, `min` / `max`, `copysign`, `next_after`, `polyval`, `two_sum`, and friends.
 
 **`%` in `expr!`** is remainder (`rem`). There is no Rust `%=` and no `%` **operator** on `ExactNum` values outside the macro.
 
-Integer Bessel **J_n** is in the crate. Other Bessel families (Y, I, K, non-integer order) are **not**.
+Bessel \(J,Y,I,K\) (real order), elliptic \(K,E,\Pi\), Legendre \(P_n/P_n^m\), \({}_2F_1\), and regularized incomplete beta are in the crate.
 
 ---
 

@@ -269,12 +269,19 @@ All take `(p, rm, cc)` except `hypot` (no cache).
 | `erf` / `erfc` | `erfc = 1 − erf` | yes |
 | `gamma` | poles at non-positive integers → NaN; +Inf at 0 | yes |
 | `ln_gamma` | log-gamma for positive `self` | yes |
+| `digamma` | \(\psi(z)\) for \(z>0\) | yes |
+| `gammainc(s, x)` | lower \(\gamma(s,x)\); \(s>0\), \(x\ge 0\) | `gammainc(s, x)` |
 | `ei` | `self > 0`; otherwise NaN | yes |
 | `si` | odd; all real | yes |
 | `ci` | `self > 0`; otherwise NaN | yes |
 | `li` | `self > 1`; `Ei(ln self)` | yes |
 | `fresnel_s` / `fresnel_c` | odd; series or auxiliary \(f,g\) | yes |
 | `bessel_j(n, p, rm, cc)` | `J_n(self)`, integer order `n`; orders **> 1024** → NaN (`InvalidArgument`) | `bessel_j(x, n)` |
+| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | Real order; \(K\): \(x>0\), \(\lvertν\rvert\le 32\) | yes |
+| `elliptic_k` / `elliptic_e_complete` / `elliptic_f` / `elliptic_e` / `elliptic_pi_complete` / `elliptic_pi` | Carlson; \(m=k^2\), \(x=\sin\varphi\) | `elliptic_k`, `elliptic_e`, `elliptic_f`, `elliptic_e_inc`, `elliptic_pi`, `elliptic_pi_inc` |
+| `legendre_p` / `assoc_legendre_p` | Integer \(n\le 48\); Condon–Shortley | `legendre_p(x, n)`, `legendre_p_assoc(x, n, m)` |
+| `hypergeom_2f1` | Series / Gauss / Pfaff; \(z\le -1\) and non-terminating \(z>1\) → NaN | `hypergeom_2f1(a,b,c,z)` |
+| `betainc` | Regularized \(I_x(a,b)\) | `betainc(a,b,x)` |
 
 ---
 
@@ -314,7 +321,7 @@ Public macros (crate root): `expr!`, `cexpr!`, `exact!`, `fbig!`. Import them li
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `ldexp`, `scalb`, `logb`.
 
 **Named constants in the expression:** `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma`.
 

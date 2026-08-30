@@ -101,7 +101,12 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `asinh`, `acosh`, `atanh` | ✅ | ✅ | `asinh` fixed for large \|x\| (2\|e\| extra bits) |
 | `erf`, `erfc` | ✅ | ✅ | Series + complementary asymptotic; MPFR 1-ULP on \|x\|≲4 |
 | `gamma`, `ln_gamma` | ✅ | ✅ | Stirling + reflection; factorial integers; MPFR 1-ULP |
+| `digamma`, `gammainc` | ✅ | ✅ | Recurrence + Bernoulli; lower series; Accumath ψ / γ(s,x) golds |
 | `bessel_j` (integer n) | ✅ | ✅ | Power series; `n ≤ 1024`; MPFR `jn` for n=0,1,2 |
+| `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k` | ✅ | ✅ | Real order; \(K\): \(x>0\), \(\lvertν\rvert\le 32\) |
+| `elliptic_k` / `e` / `f` / `pi` | ✅ | ✅ | Carlson; \(m=k^2\), \(x=\sin\varphi\); Accumath identities |
+| `legendre_p`, `assoc_legendre_p` | ✅ | ✅ | \(n\le 48\); Condon–Shortley |
+| `hypergeom_2f1`, `betainc` | ✅ | ✅ | Series / Gauss / Pfaff; regularized \(I_x\) |
 | `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c` | ✅ | ✅ | Series + full \(f,g\) / factorial asymptotic; Accumath eval golds; MPFR oracles still open |
 | `sin_cos`, `sinh_cosh` | ✅ | ✅ | Tuple methods; `expr!` uses `sin`/`cos` and `sinh`/`cosh` |
 | Complex: `ExactComplex` | `cexpr!` | ✅ | Per-part cancel; principal cuts; no `atan2`/`rem_pi`; MPFR add/mul |

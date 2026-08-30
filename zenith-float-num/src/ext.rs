@@ -1930,6 +1930,32 @@ impl ExactNum {
         usize
     );
     gen_wrapper_arg_rm_cc!(
+        "Digamma `ψ(self)` for `self > 0`. Poles and non-positive args yield NaN.",
+        digamma,
+        Self,
+        { INF_POS },
+        { NAN },
+        p,
+        usize
+    );
+    /// Lower incomplete gamma `γ(self, x)` for `self > 0`, `x ≥ 0`.
+    pub fn gammainc(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &x.inner) {
+            (Flavor::Value(s), Flavor::Value(xv)) => {
+                Self::result_to_ext(s.gammainc(xv, p, rm, cc), xv.is_zero(), true)
+            }
+            (Flavor::Value(s), Flavor::Inf(sx)) => {
+                if sx.is_positive() {
+                    Self::result_to_ext(s.gamma(p, rm, cc), false, true)
+                } else {
+                    NAN
+                }
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            (Flavor::Inf(_), _) => NAN,
+        }
+    }
+    gen_wrapper_arg_rm_cc!(
         "Exponential integral `Ei(self)` for `self > 0`.",
         ei,
         Self,
@@ -1999,6 +2025,159 @@ impl ExactNum {
             Flavor::Value(v) => Self::result_to_ext(v.bessel_j(n, p, rm, cc), v.is_zero(), true),
             Flavor::Inf(_) => NAN,
             Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
+    fn bessel_nu_ext(
+        &self,
+        nu: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+        f: fn(&ExactNumNumber, &ExactNumNumber, usize, RoundingMode, &mut Consts) -> Result<ExactNumNumber, Error>,
+    ) -> Self {
+        match (&self.inner, &nu.inner) {
+            (Flavor::Value(x), Flavor::Value(n)) => {
+                Self::result_to_ext(f(x, n, p, rm, cc), x.is_zero(), true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+
+    /// \(J_ν(\mathrm{self})\) for real order `nu`.
+    pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_j_nu)
+    }
+
+    /// \(Y_ν(\mathrm{self})\) for `self > 0`.
+    pub fn bessel_y(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_y)
+    }
+
+    /// \(I_ν(\mathrm{self})\).
+    pub fn bessel_i(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_i)
+    }
+
+    /// \(K_ν(\mathrm{self})\) for `self > 0`. Cap \(\lvertν\rvert\le 32\).
+    pub fn bessel_k(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_k)
+    }
+    gen_wrapper_arg_rm_cc!(
+        "Complete elliptic `K(self)` for `self < 1`. Parameter `m = k²`.",
+        elliptic_k,
+        Self,
+        { NAN },
+        { NAN },
+        p,
+        usize
+    );
+    gen_wrapper_arg_rm_cc!(
+        "Complete elliptic `E(self)` for `self ≤ 1`. `E(1) = 1`.",
+        elliptic_e_complete,
+        Self,
+        { NAN },
+        { NAN },
+        p,
+        usize
+    );
+    /// Incomplete `F(self | m)` for `|self| ≤ 1`. `self = sin φ`, `m = k²`.
+    pub fn elliptic_f(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(x), Flavor::Value(mv)) => {
+                Self::result_to_ext(x.elliptic_f(mv, p, rm, cc), x.is_zero(), true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// Incomplete `E(self | m)` for `|self| ≤ 1`.
+    pub fn elliptic_e(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(x), Flavor::Value(mv)) => {
+                Self::result_to_ext(x.elliptic_e(mv, p, rm, cc), x.is_zero(), true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// Complete `Π(self, m)` for `self < 1`, `m < 1`.
+    pub fn elliptic_pi_complete(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(n), Flavor::Value(mv)) => {
+                Self::result_to_ext(n.elliptic_pi_complete(mv, p, rm, cc), false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// Incomplete `Π(self; x | m)`.
+    pub fn elliptic_pi(
+        &self,
+        x: &Self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        match (&self.inner, &x.inner, &m.inner) {
+            (Flavor::Value(n), Flavor::Value(xv), Flavor::Value(mv)) => {
+                Self::result_to_ext(n.elliptic_pi(xv, mv, p, rm, cc), xv.is_zero(), true)
+            }
+            (Flavor::NaN(err), _, _) | (_, Flavor::NaN(err), _) | (_, _, Flavor::NaN(err)) => {
+                Self::nan(*err)
+            }
+            _ => NAN,
+        }
+    }
+    /// Legendre \(P_n(\mathrm{self})\) for integer `n` (`n ≤ 48`).
+    pub fn legendre_p(&self, n: u32, p: usize, rm: RoundingMode) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.legendre_p(n, p, rm), false, true),
+            Flavor::Inf(_) => NAN,
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+    /// Associated \(P_n^m(\mathrm{self})\) (Condon–Shortley).
+    pub fn assoc_legendre_p(&self, n: u32, m: i32, p: usize, rm: RoundingMode) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.assoc_legendre_p(n, m, p, rm), false, true),
+            Flavor::Inf(_) => NAN,
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+    /// Gaussian \({}_2F_1(\mathrm{self}, b; c; z)\).
+    pub fn hypergeom_2f1(
+        &self,
+        b: &Self,
+        c: &Self,
+        z: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        match (&self.inner, &b.inner, &c.inner, &z.inner) {
+            (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(cv), Flavor::Value(zv)) => {
+                Self::result_to_ext(a.hypergeom_2f1(bv, cv, zv, p, rm, cc), zv.is_zero(), true)
+            }
+            (Flavor::NaN(err), _, _, _)
+            | (_, Flavor::NaN(err), _, _)
+            | (_, _, Flavor::NaN(err), _)
+            | (_, _, _, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// Regularized incomplete beta \(I_x(a=\mathrm{self}, b)\).
+    pub fn betainc(&self, b: &Self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &b.inner, &x.inner) {
+            (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(xv)) => {
+                Self::result_to_ext(a.betainc(bv, xv, p, rm, cc), xv.is_zero(), true)
+            }
+            (Flavor::NaN(err), _, _) | (_, Flavor::NaN(err), _) | (_, _, Flavor::NaN(err)) => {
+                Self::nan(*err)
+            }
+            _ => NAN,
         }
     }
     gen_wrapper_arg_rm_cc!(

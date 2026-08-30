@@ -40,9 +40,9 @@ Restores the previous mode when the closure returns. Panic leaves the temporary 
 
 Not blocked by macros. `cexpr!` uses the same extra-precision loop and measures cancellation on both parts.
 
-### 4. Bessel Y_n, I_n, K_n, fractional order — **will not add here**
+### 4. Bessel Y_n, I_n, K_n, fractional order — **backlog**
 
-Integer `J_n` is a factorial power series (`n ≤ 1024`). `Y_n` is a different numerical project (log + second series; recurrence is ill-conditioned in the wrong direction), with its own MPFR harness and cost model. Half-shipping it would undercut the rest of the library. Not a wrapper around `bessel_j`.
+Integer `J_n` is a factorial power series (`n ≤ 1024`). \(Y_\nu\), \(I_\nu\), \(K_\nu\) and non-integer \(J_\nu\) are required before Accumath can drop its second kernel. Tracked in `ZENITH_FLOAT_TODO.md` §2. Not a wrapper around integer `bessel_j`.
 
 ### 8. In-tree hardware IEEE conversion — **will not add**
 

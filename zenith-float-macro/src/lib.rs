@@ -162,6 +162,7 @@ fn three_arg_fun(
     initial_err: usize,
     err: &mut Vec<usize>,
     cc: &mut Consts,
+    use_cc: bool,
 ) -> Result<TokenStream, Error> {
     check_arg_num(3, expr)?;
 
@@ -170,7 +171,12 @@ fn three_arg_fun(
     let arg3 = traverse_expr(&expr.args[2], err, cc)?;
     err.push(initial_err);
 
-    Ok(quote!(#fun(&(#arg1), &(#arg2), &(#arg3), p_wrk, zenith_float::RoundingMode::None)))
+    let ret = if use_cc {
+        quote!(#fun(&(#arg1), &(#arg2), &(#arg3), p_wrk, zenith_float::RoundingMode::None, cc))
+    } else {
+        quote!(#fun(&(#arg1), &(#arg2), &(#arg3), p_wrk, zenith_float::RoundingMode::None))
+    };
+    Ok(ret)
 }
 
 fn root_fun(
@@ -238,6 +244,68 @@ fn bessel_j_fun(
         p_wrk,
         zenith_float::RoundingMode::None,
         cc
+    )))
+}
+
+fn four_arg_fun(
+    fun: TokenStream,
+    expr: &ExprCall,
+    initial_err: usize,
+    err: &mut Vec<usize>,
+    cc: &mut Consts,
+) -> Result<TokenStream, Error> {
+    check_arg_num(4, expr)?;
+    let arg1 = traverse_expr(&expr.args[0], err, cc)?;
+    let arg2 = traverse_expr(&expr.args[1], err, cc)?;
+    let arg3 = traverse_expr(&expr.args[2], err, cc)?;
+    let arg4 = traverse_expr(&expr.args[3], err, cc)?;
+    err.push(initial_err);
+    Ok(quote!(#fun(
+        &(#arg1),
+        &(#arg2),
+        &(#arg3),
+        &(#arg4),
+        p_wrk,
+        zenith_float::RoundingMode::None,
+        cc
+    )))
+}
+
+fn legendre_p_fun(
+    expr: &ExprCall,
+    initial_err: usize,
+    err: &mut Vec<usize>,
+    cc: &mut Consts,
+) -> Result<TokenStream, Error> {
+    check_arg_num(2, expr)?;
+    let arg = traverse_expr(&expr.args[0], err, cc)?;
+    let n = &expr.args[1];
+    err.push(initial_err);
+    Ok(quote!(zenith_float::ExactNum::legendre_p(
+        &(#arg),
+        #n as u32,
+        p_wrk,
+        zenith_float::RoundingMode::None
+    )))
+}
+
+fn legendre_p_assoc_fun(
+    expr: &ExprCall,
+    initial_err: usize,
+    err: &mut Vec<usize>,
+    cc: &mut Consts,
+) -> Result<TokenStream, Error> {
+    check_arg_num(3, expr)?;
+    let arg = traverse_expr(&expr.args[0], err, cc)?;
+    let n = &expr.args[1];
+    let m = &expr.args[2];
+    err.push(initial_err);
+    Ok(quote!(zenith_float::ExactNum::assoc_legendre_p(
+        &(#arg),
+        #n as u32,
+        #m as i32,
+        p_wrk,
+        zenith_float::RoundingMode::None
     )))
 }
 
@@ -331,7 +399,7 @@ fn traverse_call(
     err: &mut Vec<usize>,
     cc: &mut Consts,
 ) -> Result<TokenStream, Error> {
-    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"rem_pi\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"ei\", \"si\", \"ci\", \"li\", \"fresnel_s\", \"fresnel_c\", \"bessel_j\", \"ldexp\", \"scalb\", \"logb\" are allowed.";
+    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"rem_pi\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"digamma\", \"gammainc\", \"ei\", \"si\", \"ci\", \"li\", \"fresnel_s\", \"fresnel_c\", \"bessel_j\", \"bessel_j_nu\", \"bessel_y\", \"bessel_i\", \"bessel_k\", \"elliptic_k\", \"elliptic_e\", \"elliptic_e_inc\", \"elliptic_f\", \"elliptic_pi\", \"elliptic_pi_inc\", \"legendre_p\", \"legendre_p_assoc\", \"hypergeom_2f1\", \"betainc\", \"ldexp\", \"scalb\", \"logb\" are allowed.";
 
     if let Expr::Path(fun) = expr.func.as_ref() {
         if let Some(fname) = fun.path.get_ident() {
@@ -506,9 +574,9 @@ fn traverse_call(
                     cc,
                     false,
                 ),
-                "fma" => three_arg_fun(quote!(zenith_float::ExactNum::fma), expr, 2, err, cc),
+                "fma" => three_arg_fun(quote!(zenith_float::ExactNum::fma), expr, 2, err, cc, false),
                 "mul_add" => {
-                    three_arg_fun(quote!(zenith_float::ExactNum::mul_add), expr, 2, err, cc)
+                    three_arg_fun(quote!(zenith_float::ExactNum::mul_add), expr, 2, err, cc, false)
                 }
                 "sinh" => one_arg_fun(
                     quote!(zenith_float::ExactNum::sinh),
@@ -569,6 +637,22 @@ fn traverse_call(
                     cc,
                     true,
                 ),
+                "digamma" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::digamma),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "gammainc" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::gammainc),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
                 "ei" => one_arg_fun(quote!(zenith_float::ExactNum::ei), expr, 2, err, cc, true),
                 "si" => one_arg_fun(quote!(zenith_float::ExactNum::si), expr, 2, err, cc, true),
                 "ci" => one_arg_fun(quote!(zenith_float::ExactNum::ci), expr, 2, err, cc, true),
@@ -590,6 +674,103 @@ fn traverse_call(
                     true,
                 ),
                 "bessel_j" => bessel_j_fun(expr, 2, err, cc),
+                "bessel_j_nu" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::bessel_j_nu),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "bessel_y" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::bessel_y),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "bessel_i" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::bessel_i),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "bessel_k" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::bessel_k),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "elliptic_k" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::elliptic_k),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "elliptic_e" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::elliptic_e_complete),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "elliptic_e_inc" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::elliptic_e),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "elliptic_f" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::elliptic_f),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "elliptic_pi" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::elliptic_pi_complete),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "elliptic_pi_inc" => three_arg_fun(
+                    quote!(zenith_float::ExactNum::elliptic_pi),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "legendre_p" => legendre_p_fun(expr, 2, err, cc),
+                "legendre_p_assoc" => legendre_p_assoc_fun(expr, 2, err, cc),
+                "hypergeom_2f1" => four_arg_fun(
+                    quote!(zenith_float::ExactNum::hypergeom_2f1),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                ),
+                "betainc" => three_arg_fun(
+                    quote!(zenith_float::ExactNum::betainc),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
                 "ldexp" => ldexp_fun(expr, 2, err, cc, false),
                 "scalb" => ldexp_fun(expr, 2, err, cc, true),
                 "logb" => one_arg_fun(

@@ -212,10 +212,16 @@ extern crate alloc;
 ///  - `fma(x, y, z)`: `x * y + z` with a single final rounding.
 ///  - `mul_add(x, y, z)`: alias of `fma`.
 ///  - `erf(x)`, `erfc(x)`: error function and complement.
-///  - `gamma(x)`, `ln_gamma(x)`: gamma and log-gamma.
+///  - `gamma(x)`, `ln_gamma(x)`, `digamma(x)`: gamma, log-gamma, and digamma.
+///  - `gammainc(s, x)`: lower incomplete gamma \(\gamma(s,x)\).
 ///  - `ei(x)`, `si(x)`, `ci(x)`, `li(x)`: exponential / sine / cosine / logarithmic integrals.
 ///  - `fresnel_s(x)`, `fresnel_c(x)`: Fresnel integrals.
 ///  - `bessel_j(x, n)`: Bessel J of integer order `n`.
+///  - `bessel_j_nu(x, nu)`, `bessel_y(x, nu)`, `bessel_i(x, nu)`, `bessel_k(x, nu)`: real-order Bessel.
+///  - `elliptic_k(m)`, `elliptic_e(m)`, `elliptic_f(x, m)`, `elliptic_e_inc(x, m)`, `elliptic_pi(n, m)`, `elliptic_pi_inc(n, x, m)`: elliptic integrals (\(m=k^2\), \(x=\sin\varphi\)).
+///  - `legendre_p(x, n)`, `legendre_p_assoc(x, n, m)`: Legendre / associated (Condon–Shortley).
+///  - `hypergeom_2f1(a, b, c, z)`: Gaussian \({}_2F_1\).
+///  - `betainc(a, b, x)`: regularized incomplete beta \(I_x(a,b)\).
 ///  - `ldexp(x, n)`, `scalb(x, n)`: `x · 2^n` (`n` is an integer literal or expression).
 ///  - `logb(x)`: `floor(log2(|x|))` as a float.
 ///  - `sinh(x)`: hyperbolic sine of `x`.

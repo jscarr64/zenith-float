@@ -199,14 +199,21 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `erf` / `erfc` | yes | MPFR 1-ULP on `\|x\| ≲ 4` |
 | `gamma` | yes | Poles at non-positive integers → NaN |
 | `ln_gamma` | yes | Positive `self` only |
+| `digamma` | yes | \(z>0\); recurrence + Bernoulli |
+| `gammainc` | `gammainc(s, x)` | Lower \(\gamma(s,x)\); \(s>0\), \(x\ge 0\) |
 | `ei` | yes | `self > 0`; series, or \(e^x/x\) factorial asymptotic when \(\lvert x\rvert\gtrsim 0.7p\) |
 | `si` | yes | Odd; series or auxiliary \(f,g\). \(+\infty\to\pi/2\) |
 | `ci` | yes | `self > 0`; series or auxiliary \(f,g\). \(+\infty\to 0\) |
 | `li` | yes | `self > 1`; `Ei(ln self)` |
 | `fresnel_s` / `fresnel_c` | yes | Odd; series or auxiliary \(f,g\). \(\pm\infty\to\pm 1/2\) |
 | `bessel_j(n, p, rm, cc)` | `bessel_j(x, n)` | Integer order `n`; `n > 1024` → NaN |
-
-Bessel Y, I, K and non-integer order are **not in this crate**.
+| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | `bessel_j_nu(x, ν)` etc. | Real order. \(K\): \(x>0\), \(\lvertν\rvert\le 32\) |
+| `elliptic_k` / `elliptic_e_complete` | `elliptic_k` / `elliptic_e` | Complete; \(m=k^2\); \(K\) for \(m<1\), \(E\) for \(m\le 1\) |
+| `elliptic_f` / `elliptic_e` | `elliptic_f` / `elliptic_e_inc` | Incomplete; \(x=\sin\varphi\), \(\lvert x\rvert\le 1\) |
+| `elliptic_pi_complete` / `elliptic_pi` | `elliptic_pi` / `elliptic_pi_inc` | \(n<1\), \(m<1\) complete |
+| `legendre_p` / `assoc_legendre_p` | `legendre_p(x, n)` / `legendre_p_assoc(x, n, m)` | Integer \(n\le 48\); Condon–Shortley |
+| `hypergeom_2f1` | `hypergeom_2f1(a,b,c,z)` | Series / Gauss / Pfaff; no invented \(z>1\) |
+| `betainc` | `betainc(a,b,x)` | Regularized \(I_x(a,b)\); \(a>0\), \(b>0\), \(x\in[0,1]\) |
 
 ---
 
@@ -224,7 +231,7 @@ Bessel Y, I, K and non-integer order are **not in this crate**.
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `ldexp`, `scalb`, `logb`.
 
 **Named constants in the expression:** `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma`.
 
@@ -416,7 +423,6 @@ These are design decisions, not a backlog:
 - `Hash` or total `Ord` that includes NaN
 - `%` operator trait — use `rem` method or `expr!` `%`
 - Complex `erf`, `erfc`, `gamma`, `ln_gamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j` — no complex kernel
-- Bessel Y, I, K or non-integer order — different numeric project
 - Symbolic CAS, formula rewriting, or expression IR — this crate is numeric only
 - MPFR as a runtime engine — it is an oracle in `mpfr-tests` only
 
