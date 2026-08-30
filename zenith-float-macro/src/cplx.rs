@@ -201,7 +201,7 @@ fn traverse_call(
     err: &mut Vec<usize>,
     cc: &mut Consts,
 ) -> Result<TokenStream, Error> {
-    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"abs\", \"arg\", \"conj\", \"ldexp\", \"scalb\", \"logb\" are allowed in cexpr!.";
+    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"abs\", \"arg\", \"conj\", \"ldexp\", \"scalb\", \"logb\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"digamma\" are allowed in cexpr!.";
     let Expr::Path(fun) = expr.func.as_ref() else {
         return Err(Error::new(expr.span(), errmes));
     };
@@ -484,6 +484,46 @@ fn traverse_call(
             err,
             cc,
             false,
+        ),
+        "erf" => one_arg(
+            quote!(zenith_float::ExactComplex::erf),
+            expr,
+            2,
+            err,
+            cc,
+            true,
+        ),
+        "erfc" => one_arg(
+            quote!(zenith_float::ExactComplex::erfc),
+            expr,
+            2,
+            err,
+            cc,
+            true,
+        ),
+        "gamma" => one_arg(
+            quote!(zenith_float::ExactComplex::gamma),
+            expr,
+            zenith_float_num::EXPONENT_BIT_SIZE + 1,
+            err,
+            cc,
+            true,
+        ),
+        "ln_gamma" => one_arg(
+            quote!(zenith_float::ExactComplex::ln_gamma),
+            expr,
+            zenith_float_num::EXPONENT_BIT_SIZE + 1,
+            err,
+            cc,
+            true,
+        ),
+        "digamma" => one_arg(
+            quote!(zenith_float::ExactComplex::digamma),
+            expr,
+            zenith_float_num::EXPONENT_BIT_SIZE + 1,
+            err,
+            cc,
+            true,
         ),
         _ => Err(Error::new(expr.span(), errmes)),
     }

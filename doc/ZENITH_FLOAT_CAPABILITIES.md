@@ -273,7 +273,7 @@ The previous mode is restored when the closure returns.
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`.
 
 **Named constants:** `I`, `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` (reals lifted as `x + 0i`).
 
@@ -295,7 +295,7 @@ The previous mode is restored when the closure returns.
 | --- | --- |
 | `%` / `rem_pi` | Remainder and π-reduction are real-valued |
 | `atan2` | No standard two-complex analogue; use `arg` |
-| `erf` / `erfc` / `gamma` / `ln_gamma` / `ei` / `si` / `ci` / `li` / `fresnel_*` / `bessel_*` | Not yet — real kernel only; backlog on `ExactComplex` (software limbs) |
+| `ei` / `si` / `ci` / `li` / `fresnel_*` / `bessel_*` | Not yet — real kernel only; backlog on `ExactComplex` (software limbs) |
 
 ---
 
@@ -375,7 +375,9 @@ Cartesian `re + i·im` as two `ExactNum` values.
 | `fma` / `mul_add` | Extra-precision `a*b+c` |
 | `logb` | `logb(\|z\|)` as a real |
 | `Add` `Sub` `Mul` `Div` | 128-bit `ToEven` like reals |
-| Specials (`erf`, `gamma`, Bessel, …) | ⬜ backlog — software `ExactComplex`, principal branches; not a permanent out |
+| `erf` / `erfc` | ✅ Faddeeva \(w(z)\); entire |
+| `gamma` / `ln_gamma` / `digamma` | ✅ Stirling + reflection; \(\ln\Gamma\) cut on \((-\infty,0]\); poles → NaN |
+| Other specials (Bessel, elliptic, …) | ⬜ backlog — software `ExactComplex`, principal branches |
 
 No `expr!` for complex — use `cexpr!`. Serde: struct `{ "re", "im" }` of decimal strings.
 
@@ -461,7 +463,7 @@ These are design decisions, not a backlog:
 | `fbig!` / compile-time float literals | ✅ | ⬜ | ✅ |
 | Parse/format bases 2–36 | ✅ | ⬜ (bin/oct/dec/hex) | ✅ |
 | Complex (`ExactComplex` + `cexpr!`) | ✅ elementary | ⬜ | ✅ `CBig` |
-| Complex specials (`erf`, `Γ`, Bessel, …) | ⬜ backlog | ⬜ | ⬜ |
+| Complex specials (`erf`, `Γ`, `ψ`) | ✅ | ⬜ | ⬜ |
 | General `nth_root(n)` | ✅ | ✅ | ✅ |
 | `sin_cos` / `sinh_cosh` paired | ✅ | ✅ | ✅ |
 | Special functions (`erf`, `Γ`, `J_n`) | ✅ | ⬜ | 🟡 / separate |

@@ -248,6 +248,27 @@ fn macro_run_cexpr_tests() {
         &cexpr!(euler_gamma, &mut ctx),
         &ExactComplex::from_real(ctx.const_euler_gamma(), p),
     );
+    cplx_eq("cerf0", &cexpr!(erf(z0), &mut ctx), &z0.erf(p, rm, &mut cc));
+    cplx_eq(
+        "cerfc0",
+        &cexpr!(erfc(z0), &mut ctx),
+        &z0.erfc(p, rm, &mut cc),
+    );
+    cplx_eq(
+        "cgamma1",
+        &cexpr!(gamma(z1), &mut ctx),
+        &z1.gamma(p, rm, &mut cc),
+    );
+    cplx_eq(
+        "clngamma1",
+        &cexpr!(ln_gamma(z1), &mut ctx),
+        &z1.ln_gamma(p, rm, &mut cc),
+    );
+    cplx_eq(
+        "cdigamma1",
+        &cexpr!(digamma(z1), &mut ctx),
+        &z1.digamma(p, rm, &mut cc),
+    );
 
     let back = cexpr!(ln(exp(x)), &mut ctx);
     let d = back.re().sub(x.re(), p, RoundingMode::None).abs();

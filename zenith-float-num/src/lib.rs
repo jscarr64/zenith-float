@@ -19,6 +19,7 @@ extern crate alloc;
 mod ball;
 mod common;
 mod complex;
+mod complex_special;
 mod conv;
 pub mod ctx;
 mod defs;
