@@ -25,11 +25,16 @@ Rules for every item:
 | `legendre_p`, `assoc_legendre_p` | 2026-08-29 | \(p+O(n)\) recurrence; no \(n\) hang-gate |
 | `hypergeom_2f1`, `betainc` | 2026-08-29 | Real continuation for \(z\le -1\) when defined |
 | `Error::PrecisionRetryExhausted` | 2026-08-29 | Split from `InvalidArgument` |
+| `Ieee32` / `Ieee64` | 2026-08-29 | Software binary32/binary64; bits golds for add/mul/div/sqrt/FMA |
+| `Ieee32Array` / `Ieee64Array` / `ExactNumArray` | 2026-08-29 | 1-D elementwise, `dot`, specials via `ExactNum` |
 
 ---
 
 ## Cross-cutting leftovers
 
+- 2-D arrays and software matmul
+- More array ufuncs (remaining `ExactNum` specials)
+- Integer SIMD for IEEE arrays (still not an FPU)
 - MPFR has `eint`, `jn`, `yn`, `digamma` — oracles in `compare_special_fn_test.rs`. No MPFR `si` / `ci` / `li` / Fresnel; those stay identity/series golds
 - Certified interval `sin`/`exp` (`Ball` is `add`/`mul` only)
 - Complex specials (permanent: no complex kernel)

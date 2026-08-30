@@ -27,8 +27,9 @@ run_budget() {
 }
 
 debug_slew() {
-  if rg 'f32|f64' --glob '*.rs' --glob '*.md' --glob 'CHANGELOG*' . --glob '!doc/BUILD_CHECKLIST.md'; then
-    echo "error: f32/f64 identifiers are forbidden in zenith-float"
+  # Hardware IEEE type names stay out of Rust sources. Docs use binary32 / Ieee32.
+  if rg 'f32|f64' --glob '*.rs' .; then
+    echo "error: hardware IEEE type tokens are forbidden in zenith-float Rust sources"
     exit 1
   fi
 

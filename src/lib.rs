@@ -1,4 +1,5 @@
-//! zenith-float implements arbitrary-precision software floating-point numbers.
+//! zenith-float implements arbitrary-precision software floating-point numbers
+//! (`ExactNum`) and software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`).
 //! All arithmetic uses integer limbs. The library does not use hardware floating-point for calculations.
 //!
 //! Repository guides: `doc/GETTING_STARTED.md` (short path) and `doc/HELP.md` (longer tutorial).

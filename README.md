@@ -1,8 +1,8 @@
 # zenith-float
 
-Arbitrary-precision software floating-point numbers in Rust.
+Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays.
 
-All arithmetic runs on integer limbs. The library does not use hardware floating-point registers for calculations. Construct numbers from integers or from binary, octal, decimal, or hexadecimal strings.
+All arithmetic runs on integer limbs. The library does not use hardware floating-point registers for calculations. Construct `ExactNum` from integers or from binary, octal, decimal, or hexadecimal strings; construct IEEE widths from integer bit patterns (`from_bits`).
 
 The library can work without `std` if a memory allocator is available.
 
@@ -12,7 +12,7 @@ License: MIT OR Apache-2.0.
 
 ## Crate layout
 
-- `zenith-float` — public crate: `ExactNum`, `expr!`, `cexpr!`, constants, rounding.
+- `zenith-float` — public crate: `ExactNum`, `Ieee32`/`Ieee64`, arrays, `expr!`, `cexpr!`, constants, rounding.
 - `zenith-float-num` — numeric kernel (you normally depend on `zenith-float` only).
 - `zenith-float-macro` — `expr!` / `cexpr!` procedural macros.
 

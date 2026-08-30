@@ -23,7 +23,7 @@ You do not need to be a numerical analyst to use this crate. You do need to be w
 
 A pocket calculator stores a **fixed** number of digits. If you ask it for π, it gives you something like 3.14159265 and **stops**. Multiply that by a huge number and the error grows with it.
 
-**zenith-float** still stores a finite number of digits, but **you** pick how many (as **bits**, not decimal places). The arithmetic is ordinary integer arithmetic on those bits. The CPU’s hardware “binary interchange” types are **not** used for math in this crate. That is a product rule: callers who need those formats pack bits themselves (often from `frexp` / `ilogb`).
+**zenith-float** still stores a finite number of digits, but **you** pick how many (as **bits**, not decimal places). The arithmetic is ordinary integer arithmetic on those bits. The CPU’s hardware floating-point unit is **not** used. IEEE binary32/binary64 are software types `Ieee32` / `Ieee64` (`from_bits` / `to_bits`). Arbitrary precision is `ExactNum`.
 
 Think of an `ExactNum` as a signed scientific-notation number in **base 2**:
 
@@ -286,7 +286,7 @@ let z = cexpr!(I * I, &mut ctx); // −1 + 0i
 
 These are **choices**, not missing tickets:
 
-- Convert to hardware IEEE binary interchange types (even behind a feature flag). Pack bits in your app or a tiny helper crate.  
+- Use hardware floating-point arithmetic. IEEE widths are `Ieee32` / `Ieee64` (`from_bits` / `to_bits`).  
 - Treat `expr!` as complex (use `cexpr!`).  
 - Computer algebra (rewrite formulas, Risch, expression IR).  
 - Decide “how many bits this physics formula needs.” You choose `p` and `rm`.  
@@ -303,7 +303,7 @@ These are **choices**, not missing tickets:
 5. **Huge `emin`/`emax` “just in case.”** Tight bounds keep working precision honest.  
 6. **New `Consts` every call.** Reuse the cache.  
 7. **Expecting `expr!` to be bit-identical to MPFR** for a whole tree. Leaves are tested; composite expressions use a cancellation heuristic.  
-8. **Expecting this crate to emit hardware binary formats.** Pack bits in your own code (`frexp` / `ilogb` help).
+8. **Expecting hardware IEEE types.** Use `Ieee32::from_bits` / `Ieee64::to_bits`, or pack from `ExactNum` via `frexp` / `ilogb`.
 
 ---
 

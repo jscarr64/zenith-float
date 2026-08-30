@@ -103,6 +103,7 @@ Methods that take a mode other than `None` round to the requested precision. `ex
 From `zenith_float` / `zenith_float_num`:
 
 - `ExactNum`, `ExactComplex`
+- `Ieee32`, `Ieee64`, `Ieee32Array`, `Ieee64Array`, `ExactNumArray`
 - `Consts`, `ConstCache` (alias of `Consts`), `ConstCacheInfo`, `CachedFBig`, `SharedConsts` (`std` only)
 - `Context` (module `zenith_float::ctx`), trait `Contextable`
 - `Ball`, `ziv_round`
@@ -117,6 +118,20 @@ From `zenith_float` / `zenith_float_num`:
 Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` / `cexpr!` expansion (`check_exponent_range`, `check_complex_exponent_range`, `complex_cancel_bits`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.
 
 Not re-exported: internal `Mantissa`, `WordBuf`, series helpers, `DEFAULT_P`.
+
+---
+
+## 7b. Software IEEE widths and arrays
+
+Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32 / binary64 as `u32` / `u64` (`from_bits` / `to_bits`). Arithmetic is integer, to-nearest ties-to-even.
+
+| Type | Notes |
+| --- | --- |
+| `Ieee32` / `Ieee64` | add/sub/mul/div/sqrt/`mul_add`, classify, `next_up`/`next_down`/`next_after`, `frexp`, `from_i32`, `to_exact` / `from_exact` |
+| `Ieee32Array` / `Ieee64Array` | 1-D dense bits; elementwise `+ − × ÷`, scalar broadcast, `sum`, `dot`, `sqrt`; specials via widen-to-`ExactNum` (`exp`, `ln`, `sin`, `cos`, `tan`, `erf`, `erfc`, `gamma`, `ei`, `si`) |
+| `ExactNumArray` | 1-D `ExactNum` at a shared `p`; same elementwise ops and `sin`/`exp`/`ln`/`erf` |
+
+These arrays are not NumPy-fast. `expr!` stays scalar.
 
 ---
 

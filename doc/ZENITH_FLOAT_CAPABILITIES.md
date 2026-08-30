@@ -24,7 +24,7 @@ A row marked ✅ is backed by a unit test or MPFR oracle gold. A row marked 🟡
 
 ## 1. What this crate is
 
-`zenith-float` is an arbitrary-precision software floating-point library. Every calculation uses integer limbs. Hardware IEEE binary interchange types (`f32`, `f64`) are not used in any calculation inside this crate. Callers who need hardware float pack bits from `frexp` / `ilogb`.
+`zenith-float` is an arbitrary-precision software floating-point library. Every calculation uses integer limbs. Hardware floating-point arithmetic is not used. IEEE widths are software types `Ieee32` / `Ieee64` (`u32` / `u64` bits, `from_bits` / `to_bits`). Arbitrary precision is `ExactNum`.
 
 Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an implementation detail.
 
@@ -216,6 +216,19 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `legendre_p` / `assoc_legendre_p` | `legendre_p(x, n)` / `legendre_p_assoc(x, n, m)` | Integer \(n\); recurrence at \(p+O(n)\) bits; Condon–Shortley |
 | `hypergeom_2f1` | `hypergeom_2f1(a,b,c,z)` | Series / Gauss / Pfaff; real continuation for \(z\le -1\) when defined; non-real \(z>1\) → NaN |
 | `betainc` | `betainc(a,b,x)` | Regularized \(I_x(a,b)\); \(a>0\), \(b>0\), \(x\in[0,1]\) |
+
+---
+
+## 12b. Software IEEE and arrays
+
+| Item | Status | Notes |
+| --- | --- | --- |
+| `Ieee32` / `Ieee64` | ✅ | Integer IEEE-754 binary32/binary64; `from_bits` / `to_bits`; add/mul/div/sqrt/FMA |
+| `Ieee32Array` / `Ieee64Array` | ✅ | 1-D elementwise, `sum`/`dot`; specials via `ExactNum` |
+| `ExactNumArray` | ✅ | Shared `p`; 1-D elementwise |
+| 2-D / matmul / BLAS | ⬜ | Not started |
+
+Hardware IEEE arithmetic stays forbidden.
 
 ---
 
@@ -419,8 +432,8 @@ Unit tests default to the deterministic seed. Without reseeding, production code
 
 These are design decisions, not a backlog:
 
-- Hardware `f32` / `f64` types or arithmetic in any form
-- `from_f32` / `from_f64` / `as f64` converters — pack bits from `frexp` / `ilogb` in your own code
+- Hardware floating-point arithmetic, `libm`, or compiler float codegen
+- Rust hardware IEEE type tokens in kernel sources; convert at the boundary with `Ieee32::from_bits` / `Ieee64::from_bits` (or pack from `frexp` / `ilogb` on `ExactNum`)
 - `+=` / `-=` / `*=` / `/=` assigning operators
 - `Hash` or total `Ord` that includes NaN
 - `%` operator trait — use `rem` method or `expr!` `%`
@@ -436,7 +449,8 @@ These are design decisions, not a backlog:
 | --- | :---: | :---: | :---: |
 | Pure Rust kernel (no MPFR in lib) | ✅ | ✅ | ✅ |
 | `no_std` + allocator | ✅ | ✅ | ✅ |
-| Hardware `f32`/`f64` in library | 🚫 forbidden | `from_f32`/`from_f64` | API-edge literals |
+| Hardware IEEE arithmetic | 🚫 forbidden | converters | API-edge literals |
+| Software `Ieee32` / `Ieee64` + 1-D arrays | ✅ | ⬜ | ⬜ |
 | `expr!` / `cexpr!` + `Context` | ✅ both | ✅ real only | 🟡 macros elsewhere |
 | `hypot`, `atan2`, `log1p`, `expm1` | ✅ | ⬜ | ✅ |
 | `exp2`, `exp10`, `rem_pi` | ✅ | ⬜ | 🟡 partial |

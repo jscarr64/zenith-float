@@ -7,9 +7,9 @@ Living document for what is **implemented**, **tested**, and **required** for ze
 **Last updated:** 2026-08-29  
 **Crate version:** 0.1.0 (+ unreleased changelog items)  
 **Reference versions (crates.io):** astro-float 0.9.6, dashu-float 0.6.0  
-**Policy:** No hardware floating-point in calculations or identifiers (`f32`/`f64` forbidden in source and docs; enforced in `scripts/ci.sh`).
+**Policy:** No hardware floating-point in calculations. Rust hardware IEEE type tokens are forbidden in `.rs` (`scripts/ci.sh`). Software `Ieee32`/`Ieee64` store binary32/binary64 as integer bits.
 
-**Design goal:** As **broad** an API as practical (match or exceed astro-float / dashu-float coverage), but **always software limbs** — no machine floating-point registers, literals, or converters inside the library. Callers that need IEEE interchange do conversion outside zenith-float.
+**Design goal:** As **broad** an API as practical (match or exceed astro-float / dashu-float coverage), but **always software limbs** — no machine floating-point registers or `libm`. IEEE interchange is `from_bits` / `to_bits` on `Ieee32`/`Ieee64`.
 
 ---
 
