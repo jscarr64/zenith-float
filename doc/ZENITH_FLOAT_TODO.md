@@ -15,7 +15,7 @@ All implementations follow the same rules as existing specials (`erf`, `gamma`, 
 
 ## Priority 1 — Integral result specials
 
-These unblock Accumath item 2 (named non-elementary integration results) and items 5–6 (Laplace / Fourier numeric eval). `Ei` already exists; the rest do not.
+These unblock Accumath item 2 (named non-elementary integration results) and items 5–6 (Laplace / Fourier numeric eval). **Done 2026-08-29:** `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c` on `ExactNum` with `expr!` leaves. SoftFloat calls them. Domain: `Ei`/`Ci` require `x>0`; `li` requires `x>1`. Large `|x|` uses the full factorial / auxiliary \(f,g\) expansions (not a one-term remainder). Golds: Accumath `eval.gold` (`si_zero`, `li(e)/Ei(1)`, Fresnel zeros), specials series identities, and two-precision large-argument checks. MPFR oracles for these leaves are still a follow-up.
 
 | Function | Definition | Notes |
 | --- | --- | --- |
@@ -144,7 +144,7 @@ Unblocks Accumath item 11. This is the most complex item; series convergence is 
 
 | Function(s) | Priority | Blocks Accumath | Status |
 | --- | --- | --- | --- |
-| `Si`, `Ci`, `li`, `fresnel_s`, `fresnel_c` | 1 | Items 2, 5, 6 | ⬜ Not implemented |
+| `Ei`, `Si`, `Ci`, `li`, `fresnel_s`, `fresnel_c` | 1 | Items 2, 5, 6 | ✅ 2026-08-29 |
 | `K_ν` modified Bessel second kind | 2 | Item 8 | ⬜ Not implemented |
 | `K(k)`, `E(k)`, `Π(n,k)` complete elliptic | 3 | Item 1 | ⬜ Not implemented |
 | `F(φ,k)`, `E(φ,k)`, `Π(n,φ,k)` incomplete elliptic | 3 | Item 1 | ⬜ Not implemented |

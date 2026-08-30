@@ -102,6 +102,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `erf`, `erfc` | ✅ | ✅ | Series + complementary asymptotic; MPFR 1-ULP on \|x\|≲4 |
 | `gamma`, `ln_gamma` | ✅ | ✅ | Stirling + reflection; factorial integers; MPFR 1-ULP |
 | `bessel_j` (integer n) | ✅ | ✅ | Power series; `n ≤ 1024`; MPFR `jn` for n=0,1,2 |
+| `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c` | ✅ | ✅ | Series + full \(f,g\) / factorial asymptotic; Accumath eval golds; MPFR oracles still open |
 | `sin_cos`, `sinh_cosh` | ✅ | ✅ | Tuple methods; `expr!` uses `sin`/`cos` and `sinh`/`cosh` |
 | Complex: `ExactComplex` | `cexpr!` | ✅ | Per-part cancel; principal cuts; no `atan2`/`rem_pi`; MPFR add/mul |
 | Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |

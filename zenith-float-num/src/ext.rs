@@ -1929,6 +1929,70 @@ impl ExactNum {
         p,
         usize
     );
+    gen_wrapper_arg_rm_cc!(
+        "Exponential integral `Ei(self)` for `self > 0`.",
+        ei,
+        Self,
+        { INF_POS },
+        { NAN },
+        p,
+        usize
+    );
+    /// Sine integral `Si(self)`. `+∞ → π/2`, `−∞ → −π/2`.
+    pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.si(p, rm, cc), v.is_zero(), true),
+            Flavor::Inf(s) => Self::result_to_ext(Self::half_pi(*s, p, rm, cc), false, true),
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+    gen_wrapper_arg_rm_cc!(
+        "Cosine integral `Ci(self)` for `self > 0`.",
+        ci,
+        Self,
+        { Self::new(p) },
+        { NAN },
+        p,
+        usize
+    );
+    gen_wrapper_arg_rm_cc!(
+        "Logarithmic integral `li(self) = Ei(ln self)` for `self > 1`.",
+        li,
+        Self,
+        { INF_POS },
+        { NAN },
+        p,
+        usize
+    );
+    /// Fresnel sine integral `S(self)`. `±∞ → ±1/2`.
+    pub fn fresnel_s(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.fresnel_sc_ext(true, p, rm, cc)
+    }
+
+    /// Fresnel cosine integral `C(self)`. `±∞ → ±1/2`.
+    pub fn fresnel_c(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.fresnel_sc_ext(false, p, rm, cc)
+    }
+
+    fn fresnel_sc_ext(&self, sine: bool, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => {
+                let inner = if sine {
+                    v.fresnel_s(p, rm, cc)
+                } else {
+                    v.fresnel_c(p, rm, cc)
+                };
+                Self::result_to_ext(inner, v.is_zero(), true)
+            }
+            Flavor::Inf(s) => {
+                let mut half = ExactNum::from_u8(1, p);
+                half.set_exponent(0);
+                half.set_sign(*s);
+                half
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
     /// Bessel function of the first kind `J_n(self)` for integer order `n`.
     pub fn bessel_j(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {

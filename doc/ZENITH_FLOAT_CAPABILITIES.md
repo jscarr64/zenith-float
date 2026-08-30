@@ -199,6 +199,11 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `erf` / `erfc` | yes | MPFR 1-ULP on `\|x\| ≲ 4` |
 | `gamma` | yes | Poles at non-positive integers → NaN |
 | `ln_gamma` | yes | Positive `self` only |
+| `ei` | yes | `self > 0`; series, or \(e^x/x\) factorial asymptotic when \(\lvert x\rvert\gtrsim 0.7p\) |
+| `si` | yes | Odd; series or auxiliary \(f,g\). \(+\infty\to\pi/2\) |
+| `ci` | yes | `self > 0`; series or auxiliary \(f,g\). \(+\infty\to 0\) |
+| `li` | yes | `self > 1`; `Ei(ln self)` |
+| `fresnel_s` / `fresnel_c` | yes | Odd; series or auxiliary \(f,g\). \(\pm\infty\to\pm 1/2\) |
 | `bessel_j(n, p, rm, cc)` | `bessel_j(x, n)` | Integer order `n`; `n > 1024` → NaN |
 
 Bessel Y, I, K and non-integer order are **not in this crate**.
@@ -219,7 +224,7 @@ Bessel Y, I, K and non-integer order are **not in this crate**.
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `bessel_j`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `ldexp`, `scalb`, `logb`.
 
 **Named constants in the expression:** `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma`.
 
@@ -267,7 +272,7 @@ The previous mode is restored when the closure returns.
 | --- | --- |
 | `%` / `rem_pi` | Remainder and π-reduction are real-valued |
 | `atan2` | No standard two-complex analogue; use `arg` |
-| `erf` / `erfc` / `gamma` / `ln_gamma` / `bessel_j` | No complex kernel in this crate |
+| `erf` / `erfc` / `gamma` / `ln_gamma` / `ei` / `si` / `ci` / `li` / `fresnel_*` / `bessel_j` | No complex kernel in this crate |
 
 ---
 
@@ -410,7 +415,7 @@ These are design decisions, not a backlog:
 - `+=` / `-=` / `*=` / `/=` assigning operators
 - `Hash` or total `Ord` that includes NaN
 - `%` operator trait — use `rem` method or `expr!` `%`
-- Complex `erf`, `erfc`, `gamma`, `ln_gamma`, `bessel_j` — no complex kernel
+- Complex `erf`, `erfc`, `gamma`, `ln_gamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j` — no complex kernel
 - Bessel Y, I, K or non-integer order — different numeric project
 - Symbolic CAS, formula rewriting, or expression IR — this crate is numeric only
 - MPFR as a runtime engine — it is an oracle in `mpfr-tests` only

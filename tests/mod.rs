@@ -468,6 +468,25 @@ fn macro_run_basic_tests() {
     let res: ExactNum = expr!(bessel_j(x, 0), &mut ctx);
     debug_assert_eq!(res, x.bessel_j(0, p, rm, &mut cc));
 
+    let res: ExactNum = expr!(ei(x), &mut ctx);
+    debug_assert_eq!(res, x.ei(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(si(x), &mut ctx);
+    debug_assert_eq!(res, x.si(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(ci(x), &mut ctx);
+    debug_assert_eq!(res, x.ci(p, rm, &mut cc));
+
+    let ee = ExactNum::from(1).exp(p, rm, &mut cc);
+    let res: ExactNum = expr!(li(ee), &mut ctx);
+    debug_assert_eq!(res, ee.li(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(fresnel_s(x), &mut ctx);
+    debug_assert_eq!(res, x.fresnel_s(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(fresnel_c(x), &mut ctx);
+    debug_assert_eq!(res, x.fresnel_c(p, rm, &mut cc));
+
     let res: ExactNum = expr!(ldexp(x, 3), &mut ctx);
     debug_assert_eq!(res, x.ldexp(3, p, rm));
 

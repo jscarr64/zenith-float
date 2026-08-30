@@ -269,6 +269,11 @@ All take `(p, rm, cc)` except `hypot` (no cache).
 | `erf` / `erfc` | `erfc = 1 − erf` | yes |
 | `gamma` | poles at non-positive integers → NaN; +Inf at 0 | yes |
 | `ln_gamma` | log-gamma for positive `self` | yes |
+| `ei` | `self > 0`; otherwise NaN | yes |
+| `si` | odd; all real | yes |
+| `ci` | `self > 0`; otherwise NaN | yes |
+| `li` | `self > 1`; `Ei(ln self)` | yes |
+| `fresnel_s` / `fresnel_c` | odd; series or auxiliary \(f,g\) | yes |
 | `bessel_j(n, p, rm, cc)` | `J_n(self)`, integer order `n`; orders **> 1024** → NaN (`InvalidArgument`) | `bessel_j(x, n)` |
 
 ---
@@ -309,7 +314,7 @@ Public macros (crate root): `expr!`, `cexpr!`, `exact!`, `fbig!`. Import them li
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `bessel_j`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `ldexp`, `scalb`, `logb`.
 
 **Named constants in the expression:** `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma`.
 

@@ -213,6 +213,8 @@ extern crate alloc;
 ///  - `mul_add(x, y, z)`: alias of `fma`.
 ///  - `erf(x)`, `erfc(x)`: error function and complement.
 ///  - `gamma(x)`, `ln_gamma(x)`: gamma and log-gamma.
+///  - `ei(x)`, `si(x)`, `ci(x)`, `li(x)`: exponential / sine / cosine / logarithmic integrals.
+///  - `fresnel_s(x)`, `fresnel_c(x)`: Fresnel integrals.
 ///  - `bessel_j(x, n)`: Bessel J of integer order `n`.
 ///  - `ldexp(x, n)`, `scalb(x, n)`: `x · 2^n` (`n` is an integer literal or expression).
 ///  - `logb(x)`: `floor(log2(|x|))` as a float.

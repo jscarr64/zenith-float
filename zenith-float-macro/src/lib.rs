@@ -331,7 +331,7 @@ fn traverse_call(
     err: &mut Vec<usize>,
     cc: &mut Consts,
 ) -> Result<TokenStream, Error> {
-    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"rem_pi\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"bessel_j\", \"ldexp\", \"scalb\", \"logb\" are allowed.";
+    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"rem_pi\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"ei\", \"si\", \"ci\", \"li\", \"fresnel_s\", \"fresnel_c\", \"bessel_j\", \"ldexp\", \"scalb\", \"logb\" are allowed.";
 
     if let Expr::Path(fun) = expr.func.as_ref() {
         if let Some(fname) = fun.path.get_ident() {
@@ -565,6 +565,26 @@ fn traverse_call(
                     quote!(zenith_float::ExactNum::ln_gamma),
                     expr,
                     EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "ei" => one_arg_fun(quote!(zenith_float::ExactNum::ei), expr, 2, err, cc, true),
+                "si" => one_arg_fun(quote!(zenith_float::ExactNum::si), expr, 2, err, cc, true),
+                "ci" => one_arg_fun(quote!(zenith_float::ExactNum::ci), expr, 2, err, cc, true),
+                "li" => one_arg_fun(quote!(zenith_float::ExactNum::li), expr, 2, err, cc, true),
+                "fresnel_s" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::fresnel_s),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    true,
+                ),
+                "fresnel_c" => one_arg_fun(
+                    quote!(zenith_float::ExactNum::fresnel_c),
+                    expr,
+                    2,
                     err,
                     cc,
                     true,

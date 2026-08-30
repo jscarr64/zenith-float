@@ -299,7 +299,11 @@ impl Consts {
         }
     }
 
-    fn euler_gamma_num(&mut self, p: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
+    pub(crate) fn euler_gamma_num(
+        &mut self,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<ExactNumNumber, Error> {
         let p_round = round_p(p);
         let p_wrk = p_round
             .checked_add(8 * WORD_BIT_SIZE)

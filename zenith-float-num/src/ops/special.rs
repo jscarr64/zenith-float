@@ -1,4 +1,4 @@
-//! Error function, gamma, and Bessel J_n (integer order).
+//! Error function, gamma, integral specials, and Bessel J_n (integer order).
 
 use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
@@ -278,6 +278,487 @@ impl ExactNumNumber {
         Ok(s)
     }
 
+    /// Exponential integral `Ei(self)` for `self > 0`.
+    pub fn ei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if !self.is_positive() {
+            return Err(Error::InvalidArgument);
+        }
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        loop {
+            let p_x = p_wrk + WORD_BIT_SIZE;
+            let mut ret = self.ei_at(p_x, cc)?;
+            if ret.try_set_precision(p, rm, p_wrk)? {
+                ret.set_inexact(ret.inexact() | self.inexact());
+                return Ok(ret);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    fn ei_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        if self.expint_use_asymptotic(p) {
+            self.ei_asymptotic(p, cc)
+        } else {
+            self.ei_series(p, cc)
+        }
+    }
+
+    fn ei_series(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        // γ + ln x + Σ_{n=1}^∞ x^n / (n n!)
+        let g = cc.euler_gamma_num(p, RoundingMode::None)?;
+        let lnx = self.ln(p, RoundingMode::None, cc)?;
+        let mut term = self.clone()?;
+        let mut sum = term.clone()?;
+        for n in 2..=series_n_max(p, self.exponent()) {
+            let nw = Self::from_word(n as Word, p)?;
+            term = term.mul(self, p, RoundingMode::None)?;
+            term = term.div(&nw, p, RoundingMode::None)?;
+            let piece = term.div(&nw, p, RoundingMode::None)?;
+            sum = sum.add(&piece, p, RoundingMode::None)?;
+            if piece.is_zero() || (piece.exponent() as isize) + (p as isize) < 0 {
+                break;
+            }
+        }
+        g.add(&lnx, p, RoundingMode::None)?
+            .add(&sum, p, RoundingMode::None)
+    }
+
+    fn ei_asymptotic(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        // e^x / x · Σ_{k=0} k! / x^k (stop when terms grow)
+        let ex = self.exp(p, RoundingMode::None, cc)?;
+        let pre = ex.div(self, p, RoundingMode::None)?;
+        let mut term = Self::from_word(1, p)?;
+        let mut s = term.clone()?;
+        let mut prev_e = i32::MAX;
+        for k in 1..=(p + 8) {
+            term = term.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
+            term = term.div(self, p, RoundingMode::None)?;
+            let e = term.exponent();
+            if e > prev_e {
+                break;
+            }
+            prev_e = e;
+            s = s.add(&term, p, RoundingMode::None)?;
+            if term.is_zero() || (e as isize) + (p as isize) < 0 {
+                break;
+            }
+        }
+        pre.mul(&s, p, RoundingMode::None)
+    }
+
+    /// Sine integral `Si(self)` for all real `self`.
+    pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if self.is_zero() {
+            return Self::new2(p, self.sign(), self.inexact());
+        }
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        loop {
+            let p_x = p_wrk + WORD_BIT_SIZE;
+            let mut ret = self.si_at(p_x, cc)?;
+            if ret.try_set_precision(p, rm, p_wrk)? {
+                ret.set_inexact(ret.inexact() | self.inexact());
+                return Ok(ret);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    fn si_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let mut x = self.clone()?;
+        x.set_inexact(false);
+        let neg = x.is_negative();
+        x.set_sign(Sign::Pos);
+        let ret = if x.expint_use_asymptotic(p) {
+            x.si_asymptotic(p, cc)?
+        } else {
+            x.si_series(p)?
+        };
+        if neg {
+            ret.neg()
+        } else {
+            Ok(ret)
+        }
+    }
+
+    fn si_series(&self, p: usize) -> Result<Self, Error> {
+        let x2 = self.mul(self, p, RoundingMode::None)?;
+        let mut t = self.clone()?;
+        let mut sum = t.clone()?;
+        for n in 1..=series_n_max(p, self.exponent()) {
+            let two_n = Self::from_word((2 * n) as Word, p)?;
+            let two_n_1 = Self::from_word((2 * n + 1) as Word, p)?;
+            t = t.mul(&x2, p, RoundingMode::None)?;
+            t = t.div(&two_n, p, RoundingMode::None)?;
+            t = t.div(&two_n_1, p, RoundingMode::None)?;
+            let mut piece = t.div(&two_n_1, p, RoundingMode::None)?;
+            if n % 2 == 1 {
+                piece.set_sign(Sign::Neg);
+            }
+            sum = sum.add(&piece, p, RoundingMode::None)?;
+            if piece.is_zero() || (piece.exponent() as isize) + (p as isize) < 0 {
+                break;
+            }
+        }
+        Ok(sum)
+    }
+
+    fn si_asymptotic(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        // π/2 − f(x) cos x − g(x) sin x
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let mut half_pi = pi.clone()?;
+        half_pi.div_by_2(RoundingMode::None);
+        let (f, g) = self.si_ci_aux_fg(p)?;
+        let c = self.cos(p, RoundingMode::None, cc)?;
+        let s = self.sin(p, RoundingMode::None, cc)?;
+        let fc = f.mul(&c, p, RoundingMode::None)?;
+        let gs = g.mul(&s, p, RoundingMode::None)?;
+        half_pi
+            .sub(&fc, p, RoundingMode::None)?
+            .sub(&gs, p, RoundingMode::None)
+    }
+
+    /// Cosine integral `Ci(self)` for `self > 0`.
+    pub fn ci(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if !self.is_positive() {
+            return Err(Error::InvalidArgument);
+        }
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        loop {
+            let p_x = p_wrk + WORD_BIT_SIZE;
+            let mut ret = self.ci_at(p_x, cc)?;
+            if ret.try_set_precision(p, rm, p_wrk)? {
+                ret.set_inexact(ret.inexact() | self.inexact());
+                return Ok(ret);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    fn ci_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        if self.expint_use_asymptotic(p) {
+            self.ci_asymptotic(p, cc)
+        } else {
+            self.ci_series(p, cc)
+        }
+    }
+
+    fn ci_series(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        // γ + ln x + Σ_{n=1}^∞ (−1)^n x^{2n} / (2n (2n)!)
+        let g = cc.euler_gamma_num(p, RoundingMode::None)?;
+        let lnx = self.ln(p, RoundingMode::None, cc)?;
+        let x2 = self.mul(self, p, RoundingMode::None)?;
+        let two = Self::from_word(2, p)?;
+        let mut u = x2.div(&two, p, RoundingMode::None)?;
+        u.set_sign(Sign::Neg);
+        let mut sum = u.div(&two, p, RoundingMode::None)?;
+        for n in 2..=series_n_max(p, self.exponent()) {
+            let a = Self::from_word((2 * n - 1) as Word, p)?;
+            let b = Self::from_word((2 * n) as Word, p)?;
+            u = u.mul(&x2, p, RoundingMode::None)?;
+            u = u.div(&a, p, RoundingMode::None)?;
+            u = u.div(&b, p, RoundingMode::None)?;
+            u = u.neg()?;
+            let piece = u.div(&b, p, RoundingMode::None)?;
+            sum = sum.add(&piece, p, RoundingMode::None)?;
+            if piece.is_zero() || (piece.exponent() as isize) + (p as isize) < 0 {
+                break;
+            }
+        }
+        g.add(&lnx, p, RoundingMode::None)?
+            .add(&sum, p, RoundingMode::None)
+    }
+
+    fn ci_asymptotic(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        // f(x) sin x − g(x) cos x
+        let (f, g) = self.si_ci_aux_fg(p)?;
+        let s = self.sin(p, RoundingMode::None, cc)?;
+        let c = self.cos(p, RoundingMode::None, cc)?;
+        let fs = f.mul(&s, p, RoundingMode::None)?;
+        let gc = g.mul(&c, p, RoundingMode::None)?;
+        fs.sub(&gc, p, RoundingMode::None)
+    }
+
+    /// Auxiliary `f,g` for `Si`/`Ci`: `f ∼ Σ (−1)^k (2k)! / x^{2k+1}`, `g ∼ Σ (−1)^k (2k+1)! / x^{2k+2}`.
+    fn si_ci_aux_fg(&self, p: usize) -> Result<(Self, Self), Error> {
+        let one = Self::from_word(1, p)?;
+        let invx = one.div(self, p, RoundingMode::None)?;
+        let invx2 = invx.mul(&invx, p, RoundingMode::None)?;
+        let mut f_term = invx;
+        let mut g_term = invx2.clone()?;
+        let mut f = f_term.clone()?;
+        let mut g = g_term.clone()?;
+        let mut prev_e = f_term.exponent();
+        for k in 0..=(p + 8) {
+            let a = Self::from_word((2 * k + 1) as Word, p)?;
+            let b = Self::from_word((2 * k + 2) as Word, p)?;
+            let c = Self::from_word((2 * k + 3) as Word, p)?;
+            f_term = f_term
+                .mul(&a, p, RoundingMode::None)?
+                .mul(&b, p, RoundingMode::None)?
+                .mul(&invx2, p, RoundingMode::None)?
+                .neg()?;
+            g_term = g_term
+                .mul(&b, p, RoundingMode::None)?
+                .mul(&c, p, RoundingMode::None)?
+                .mul(&invx2, p, RoundingMode::None)?
+                .neg()?;
+            let e = f_term.exponent();
+            if e > prev_e {
+                break;
+            }
+            prev_e = e;
+            f = f.add(&f_term, p, RoundingMode::None)?;
+            g = g.add(&g_term, p, RoundingMode::None)?;
+            if f_term.is_zero() || (e as isize) + (p as isize) < 0 {
+                break;
+            }
+        }
+        Ok((f, g))
+    }
+
+    /// Asymptotic `e^{-|x|}` remainder is below `2^{-p}` when `|x| ≳ 0.7 p`.
+    fn expint_use_asymptotic(&self, p: usize) -> bool {
+        let e = self.exponent();
+        if e <= 6 {
+            return false;
+        }
+        if e >= 20 {
+            return true;
+        }
+        let xmin = 1i32 << (e - 1);
+        xmin >= ((p as i32) * 2) / 3
+    }
+
+    /// Logarithmic integral `li(self) = Ei(ln self)` for `self > 1`.
+    pub fn li(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        let one = Self::from_word(1, p)?;
+        if self.cmp(&one) <= 0 {
+            return Err(Error::InvalidArgument);
+        }
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        loop {
+            let p_x = p_wrk + WORD_BIT_SIZE;
+            let lnx = self.ln(p_x, RoundingMode::None, cc)?;
+            let mut ret = lnx.ei(p_x, RoundingMode::None, cc)?;
+            if ret.try_set_precision(p, rm, p_wrk)? {
+                ret.set_inexact(ret.inexact() | self.inexact());
+                return Ok(ret);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    /// Fresnel sine integral `S(self)`.
+    pub fn fresnel_s(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        self.fresnel_sc(true, p, rm, cc)
+    }
+
+    /// Fresnel cosine integral `C(self)`.
+    pub fn fresnel_c(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        self.fresnel_sc(false, p, rm, cc)
+    }
+
+    fn fresnel_sc(
+        &self,
+        sine: bool,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if self.is_zero() {
+            return Self::new2(p, self.sign(), self.inexact());
+        }
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        loop {
+            let p_x = p_wrk + WORD_BIT_SIZE;
+            let mut ret = self.fresnel_sc_at(sine, p_x, cc)?;
+            if ret.try_set_precision(p, rm, p_wrk)? {
+                ret.set_inexact(ret.inexact() | self.inexact());
+                return Ok(ret);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    fn fresnel_sc_at(&self, sine: bool, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let mut x = self.clone()?;
+        x.set_inexact(false);
+        let neg = x.is_negative();
+        x.set_sign(Sign::Pos);
+        let ret = if x.fresnel_use_asymptotic(p) {
+            x.fresnel_sc_asymptotic(sine, p, cc)?
+        } else {
+            x.fresnel_sc_series(sine, p, cc)?
+        };
+        if neg {
+            ret.neg()
+        } else {
+            Ok(ret)
+        }
+    }
+
+    fn fresnel_use_asymptotic(&self, p: usize) -> bool {
+        let e = self.exponent();
+        if e <= 3 {
+            return false;
+        }
+        if e >= 8 {
+            return true;
+        }
+        let xmin = 1i64 << (e - 1);
+        xmin * xmin * 3 > p as i64
+    }
+
+    fn fresnel_sc_asymptotic(&self, sine: bool, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        // S = 1/2 − f cos(πx²/2) − g sin(πx²/2)
+        // C = 1/2 + f sin(πx²/2) − g cos(πx²/2)
+        let (f, g) = self.fresnel_aux_fg(p, cc)?;
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let two = Self::from_word(2, p)?;
+        let pi2 = pi.div(&two, p, RoundingMode::None)?;
+        let x2 = self.mul(self, p, RoundingMode::None)?;
+        let arg = pi2.mul(&x2, p, RoundingMode::None)?;
+        let s = arg.sin(p, RoundingMode::None, cc)?;
+        let c = arg.cos(p, RoundingMode::None, cc)?;
+        let half = one_half(p)?;
+        let fc = f.mul(&c, p, RoundingMode::None)?;
+        let gs = g.mul(&s, p, RoundingMode::None)?;
+        if sine {
+            half.sub(&fc, p, RoundingMode::None)?
+                .sub(&gs, p, RoundingMode::None)
+        } else {
+            let fs = f.mul(&s, p, RoundingMode::None)?;
+            let gc = g.mul(&c, p, RoundingMode::None)?;
+            half.add(&fs, p, RoundingMode::None)?
+                .sub(&gc, p, RoundingMode::None)
+        }
+    }
+
+    fn fresnel_aux_fg(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self), Error> {
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let pix = pi.mul(self, p, RoundingMode::None)?;
+        let one = Self::from_word(1, p)?;
+        let inv_pix = one.div(&pix, p, RoundingMode::None)?;
+        let pix2 = pix.mul(self, p, RoundingMode::None)?;
+        let v = one.div(&pix2, p, RoundingMode::None)?;
+        let v2 = v.mul(&v, p, RoundingMode::None)?;
+        let mut f_term = Self::from_word(1, p)?;
+        let mut g_term = v;
+        let mut f_sum = f_term.clone()?;
+        let mut g_sum = g_term.clone()?;
+        let mut prev_e = f_term.exponent();
+        for n in 0..=(p + 8) {
+            let a = Self::from_word((4 * n + 1) as Word, p)?;
+            let b = Self::from_word((4 * n + 3) as Word, p)?;
+            let c = Self::from_word((4 * n + 5) as Word, p)?;
+            f_term = f_term
+                .mul(&a, p, RoundingMode::None)?
+                .mul(&b, p, RoundingMode::None)?
+                .mul(&v2, p, RoundingMode::None)?
+                .neg()?;
+            g_term = g_term
+                .mul(&b, p, RoundingMode::None)?
+                .mul(&c, p, RoundingMode::None)?
+                .mul(&v2, p, RoundingMode::None)?
+                .neg()?;
+            let e = f_term.exponent();
+            if e > prev_e {
+                break;
+            }
+            prev_e = e;
+            f_sum = f_sum.add(&f_term, p, RoundingMode::None)?;
+            g_sum = g_sum.add(&g_term, p, RoundingMode::None)?;
+            if f_term.is_zero() || (e as isize) + (p as isize) < 0 {
+                break;
+            }
+        }
+        Ok((
+            inv_pix.mul(&f_sum, p, RoundingMode::None)?,
+            inv_pix.mul(&g_sum, p, RoundingMode::None)?,
+        ))
+    }
+
+    fn fresnel_sc_series(&self, sine: bool, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let two = Self::from_word(2, p)?;
+        let pi2 = pi.div(&two, p, RoundingMode::None)?;
+        let x2 = self.mul(self, p, RoundingMode::None)?;
+        let x4 = x2.mul(&x2, p, RoundingMode::None)?;
+        let mut pow_x = if sine {
+            self.mul(&x2, p, RoundingMode::None)?
+        } else {
+            self.clone()?
+        };
+        let mut fact = Self::from_word(1, p)?;
+        let mut pi2_pow = if sine {
+            pi2.clone()?
+        } else {
+            Self::from_word(1, p)?
+        };
+        let mut sign_pos = true;
+        let mut sum = Self::from_word(1, p)?;
+        sum.set_sign(Sign::Pos);
+        let mut first = true;
+        for n in 0..=series_n_max(p, self.exponent()) {
+            let den_i = if sine { 4 * n + 3 } else { 4 * n + 1 };
+            let den = Self::from_word(den_i as Word, p)?;
+            let mut piece = pi2_pow.mul(&pow_x, p, RoundingMode::None)?;
+            piece = piece.div(&fact, p, RoundingMode::None)?;
+            piece = piece.div(&den, p, RoundingMode::None)?;
+            if !sign_pos {
+                piece.set_sign(Sign::Neg);
+            }
+            if first {
+                sum = piece.clone()?;
+                first = false;
+            } else {
+                sum = sum.add(&piece, p, RoundingMode::None)?;
+            }
+            if piece.is_zero() || (piece.exponent() as isize) + (p as isize) < 0 {
+                break;
+            }
+            let np1 = n + 1;
+            if sine {
+                fact = fact
+                    .mul(&Self::from_word((2 * np1) as Word, p)?, p, RoundingMode::None)?
+                    .mul(
+                        &Self::from_word((2 * np1 + 1) as Word, p)?,
+                        p,
+                        RoundingMode::None,
+                    )?;
+            } else if np1 >= 1 {
+                fact = fact
+                    .mul(
+                        &Self::from_word((2 * np1 - 1) as Word, p)?,
+                        p,
+                        RoundingMode::None,
+                    )?
+                    .mul(&Self::from_word((2 * np1) as Word, p)?, p, RoundingMode::None)?;
+            }
+            pi2_pow = pi2_pow
+                .mul(&pi2, p, RoundingMode::None)?
+                .mul(&pi2, p, RoundingMode::None)?;
+            pow_x = pow_x.mul(&x4, p, RoundingMode::None)?;
+            sign_pos = !sign_pos;
+        }
+        Ok(sum)
+    }
+
     /// Bessel function of the first kind `J_n(self)` for integer order `n`.
     pub fn bessel_j(
         &self,
@@ -339,6 +820,17 @@ impl ExactNumNumber {
         }
         Ok(sum)
     }
+}
+
+fn series_n_max(p: usize, exp: i32) -> usize {
+    let mag = if exp <= 0 {
+        0
+    } else if exp >= 16 {
+        p
+    } else {
+        1usize << (exp as usize).min(12)
+    };
+    p.saturating_add(32).saturating_add(mag)
 }
 
 fn one_half(p: usize) -> Result<ExactNumNumber, Error> {
@@ -445,5 +937,157 @@ mod tests {
         let e = x.erf(p, rm, &mut cc).unwrap();
         let en = x.neg().unwrap().erf(p, rm, &mut cc).unwrap();
         assert!(e.cmp(&en.neg().unwrap()) == 0);
+    }
+
+    fn bits_agree(a: &ExactNumNumber, b: &ExactNumNumber, _p: usize, min_bits: i32, label: &str) {
+        let d = a
+            .sub(b, p, RoundingMode::None)
+            .unwrap()
+            .abs()
+            .unwrap();
+        if d.is_zero() {
+            return;
+        }
+        let rel = d.exponent() - a.exponent();
+        assert!(
+            rel < -min_bits,
+            "{label}: relative exponent {rel} (a.exp={}, b.exp={})",
+            a.exponent(),
+            b.exponent()
+        );
+    }
+
+    #[test]
+    fn test_ei_si_li_fresnel() {
+        let p = 256;
+        let mut cc = Consts::new().unwrap();
+        let rm = RoundingMode::ToEven;
+        let one = ExactNumNumber::from_word(1, p).unwrap();
+        let zero = ExactNumNumber::new(p).unwrap();
+
+        assert!(one.ei(p, rm, &mut cc).is_ok());
+        assert!(zero.ei(p, rm, &mut cc).is_err());
+        assert!(one.neg().unwrap().ei(p, rm, &mut cc).is_err());
+
+        let s0 = zero.si(p, rm, &mut cc).unwrap();
+        assert!(s0.is_zero());
+        let s1 = one.si(p, rm, &mut cc).unwrap();
+        let sn = one.neg().unwrap().si(p, rm, &mut cc).unwrap();
+        assert!(s1.cmp(&sn.neg().unwrap()) == 0);
+
+        let e = ExactNumNumber::from_word(1, p)
+            .unwrap()
+            .exp(p, rm, &mut cc)
+            .unwrap();
+        let li_e = e.li(p, rm, &mut cc).unwrap();
+        let ei1 = one.ei(p, rm, &mut cc).unwrap();
+        bits_agree(&li_e, &ei1, p, (p as i32) / 4, "li(e)=Ei(1)");
+
+        assert!(one.li(p, rm, &mut cc).is_err());
+        assert!(zero.ci(p, rm, &mut cc).is_err());
+        assert!(one.ci(p, rm, &mut cc).is_ok());
+
+        assert!(zero.fresnel_s(p, rm, &mut cc).unwrap().is_zero());
+        assert!(zero.fresnel_c(p, rm, &mut cc).unwrap().is_zero());
+        let fs = one.fresnel_s(p, rm, &mut cc).unwrap();
+        let fns = one.neg().unwrap().fresnel_s(p, rm, &mut cc).unwrap();
+        assert!(fs.cmp(&fns.neg().unwrap()) == 0);
+
+        let forty = ExactNumNumber::from_word(40, p).unwrap();
+        bits_agree(
+            &forty.si(p, rm, &mut cc).unwrap(),
+            &forty.si(128, rm, &mut cc).unwrap(),
+            p,
+            80,
+            "Si(40)",
+        );
+        bits_agree(
+            &forty.ci(p, rm, &mut cc).unwrap(),
+            &forty.ci(128, rm, &mut cc).unwrap(),
+            p,
+            80,
+            "Ci(40)",
+        );
+
+        let three_hundred = ExactNumNumber::from_word(300, p).unwrap();
+        let si300 = three_hundred.si(p, rm, &mut cc).unwrap();
+        let mut half_pi = cc.pi_num(p, RoundingMode::None).unwrap();
+        half_pi.div_by_2(RoundingMode::None);
+        let gap = half_pi
+            .sub(&si300, p, RoundingMode::None)
+            .unwrap()
+            .abs()
+            .unwrap();
+        assert!(gap.exponent() < -6, "Si(300) within O(1/x) of π/2");
+        bits_agree(
+            &si300,
+            &three_hundred.si(128, rm, &mut cc).unwrap(),
+            p,
+            80,
+            "Si(300)",
+        );
+
+        let sixty_four = ExactNumNumber::from_word(64, p).unwrap();
+        bits_agree(
+            &sixty_four.si(p, rm, &mut cc).unwrap(),
+            &sixty_four.si(64, rm, &mut cc).unwrap(),
+            p,
+            40,
+            "Si(64) series vs f,g",
+        );
+        bits_agree(
+            &sixty_four.ci(p, rm, &mut cc).unwrap(),
+            &sixty_four.ci(64, rm, &mut cc).unwrap(),
+            p,
+            40,
+            "Ci(64) series vs f,g",
+        );
+        let eight = ExactNumNumber::from_word(8, p).unwrap();
+        bits_agree(
+            &eight.fresnel_s(p, rm, &mut cc).unwrap(),
+            &eight.fresnel_s(64, rm, &mut cc).unwrap(),
+            p,
+            40,
+            "S(8) series vs f,g",
+        );
+        bits_agree(
+            &three_hundred.ei(p, rm, &mut cc).unwrap(),
+            &three_hundred.ei(128, rm, &mut cc).unwrap(),
+            p,
+            80,
+            "Ei(300)",
+        );
+
+        let twenty = ExactNumNumber::from_word(20, p).unwrap();
+        let fs20 = twenty.fresnel_s(p, rm, &mut cc).unwrap();
+        let fc20 = twenty.fresnel_c(p, rm, &mut cc).unwrap();
+        let half = one_half(p).unwrap();
+        let ds = half.sub(&fs20, p, RoundingMode::None).unwrap().abs().unwrap();
+        let dc = half.sub(&fc20, p, RoundingMode::None).unwrap().abs().unwrap();
+        assert!(ds.exponent() < -4, "S(20) near 1/2");
+        assert!(dc.exponent() < -4, "C(20) near 1/2");
+        bits_agree(
+            &fs20,
+            &twenty.fresnel_s(128, rm, &mut cc).unwrap(),
+            p,
+            80,
+            "S(20)",
+        );
+
+        let half_ext = crate::ExactNum::from_u8(1, p).div(&crate::ExactNum::from_u8(2, p), p, rm);
+        let inf_si = crate::INF_POS.si(p, rm, &mut cc);
+        let hp = cc.pi(p, rm).div(&crate::ExactNum::from_u8(2, p), p, rm);
+        let d = inf_si.sub(&hp, p, rm).abs();
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 4));
+        let d = crate::INF_POS
+            .fresnel_s(p, rm, &mut cc)
+            .sub(&half_ext, p, rm)
+            .abs();
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 4));
+        let d = crate::INF_POS
+            .fresnel_c(p, rm, &mut cc)
+            .sub(&half_ext, p, rm)
+            .abs();
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 4));
     }
 }
