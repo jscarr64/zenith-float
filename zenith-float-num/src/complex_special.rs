@@ -31,28 +31,28 @@ const DIGAMMA_STIRLING_MIN_ABS_EXP: i32 = 8;
 /// \(1\ldots n-1\) instead of Stirling.
 const GAMMA_FACTORIAL_MAX: u32 = 64;
 
-fn nan_pair(e: Error) -> ExactComplex {
+pub(crate) fn nan_pair(e: Error) -> ExactComplex {
     ExactComplex::new(ExactNum::nan(Some(e)), ExactNum::nan(Some(e)))
 }
 
-fn neg_c(z: &ExactComplex) -> ExactComplex {
+pub(crate) fn neg_c(z: &ExactComplex) -> ExactComplex {
     ExactComplex::new(z.re().neg(), z.im().neg())
 }
 
-fn two_c(p: usize) -> ExactComplex {
+pub(crate) fn two_c(p: usize) -> ExactComplex {
     ExactComplex::from_real(ExactNum::from_u8(2, p), p)
 }
 
-fn half_c(p: usize) -> ExactComplex {
+pub(crate) fn half_c(p: usize) -> ExactComplex {
     let h = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None);
     ExactComplex::from_real(h, p)
 }
 
-fn pi_c(p: usize, cc: &mut Consts) -> ExactComplex {
+pub(crate) fn pi_c(p: usize, cc: &mut Consts) -> ExactComplex {
     ExactComplex::from_real(cc.pi(p, RoundingMode::None), p)
 }
 
-fn term_negligible(t: &ExactComplex, p: usize) -> bool {
+pub(crate) fn term_negligible(t: &ExactComplex, p: usize) -> bool {
     let m = t.abs(p, RoundingMode::None);
     m.is_zero() || m.exponent().is_some_and(|e| (e as isize) + (p as isize) < 0)
 }
@@ -97,11 +97,11 @@ fn abs_needs_shift(z: &ExactComplex, p: usize, min_exp: i32) -> bool {
     }
 }
 
-fn series_term_cap(p: usize) -> usize {
+pub(crate) fn series_term_cap(p: usize) -> usize {
     p.saturating_add(WORD_BIT_SIZE)
 }
 
-fn ziv_complex<F>(p: usize, rm: RoundingMode, mut compute: F) -> ExactComplex
+pub(crate) fn ziv_complex<F>(p: usize, rm: RoundingMode, mut compute: F) -> ExactComplex
 where
     F: FnMut(usize) -> ExactComplex,
 {

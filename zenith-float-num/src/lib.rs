@@ -20,6 +20,8 @@ mod ball;
 mod common;
 mod complex;
 mod complex_special;
+mod complex_ei;
+mod complex_bessel;
 mod conv;
 pub mod ctx;
 mod defs;

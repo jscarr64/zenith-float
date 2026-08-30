@@ -354,7 +354,7 @@ Same **context** as `expr!` (`Context` or the two tuples above). Same extra-prec
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`.
 
 **Named constants:** `I`, `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` (reals except `I` are `x + 0i`).
 
@@ -369,6 +369,11 @@ Same **context** as `expr!` (`Context` or the two tuples above). Same extra-prec
 | `sqrt`, `cbrt`, `root` | cut on (−∞, 0]; `Re(sqrt) ≥ 0`; `sqrt(−1) = +i` |
 | `pow` | `exp(w · ln(z))`, so the `ln` cut on the **base** |
 | `asin` / `acos` / `atan` / `asinh` / `acosh` / `atanh` | principal branches of the usual identities |
+| `ei` / `si` / `ci` | `Ei` cut on (−∞, 0]; `Si`/`Ci` via `Ei(±iz)`; `Ci(0)` → NaN |
+| `li` | `Ei(ln z)`; cut on (−∞, 1]; pole at 1 → NaN |
+| `fresnel_s` / `fresnel_c` | via `erf`; entire |
+| `bessel_j_nu` / `bessel_i` | entire for integer ν; cut on (−∞, 0] otherwise; \(z=0\) non-integer ν → NaN |
+| `bessel_y` / `bessel_k` | cut on (−∞, 0]; \(z=0\) → NaN |
 
 **Trig / hyperbolic:** `sin(x+iy) = sin(x)cosh(y) + i cos(x)sinh(y)` (and the matching identities). The **complex** argument is never passed to `rem_pi`. Only a real component uses real `sin_cos` / `sinh_cosh` (those may reduce that real).
 
@@ -378,7 +383,6 @@ Same **context** as `expr!` (`Context` or the two tuples above). Same extra-prec
 | --- | --- |
 | `%` / `rem_pi` | remainder and π-reduction are real; complex trig uses the identities above |
 | `atan2` | no standard two-complex analogue; use `arg` for `atan2(im, re)` |
-| `ei` / `si` / `ci` / `li` / `fresnel_*` / `bessel_*` | not yet — real kernel only; backlog on `ExactComplex` (software limbs) |
 
 Literals and real constants are lifted as `x + 0i`. Variables may be `ExactComplex` or anything `FromExt` can wrap as a real.
 
@@ -457,7 +461,10 @@ Cartesian `re + i·im` as two `ExactNum`s.
 | `Add` `Sub` `Mul` `Div` | 128-bit `ToEven` like reals |
 | `erf` / `erfc` | Faddeeva \(w(z)\); entire; NaN in → NaN out |
 | `gamma` / `ln_gamma` / `digamma` | Stirling + reflection; \(\ln\Gamma\) cut on \((-\infty,0]\); poles → NaN |
-| Other specials (Bessel, elliptic, …) | not yet; backlog (software limbs, principal branches) |
+| `ei` / `si` / `ci` / `li` | series or asymptotic `Ei`; `Si`/`Ci` via `Ei(±iz)`; `li=Ei(ln z)` |
+| `fresnel_s` / `fresnel_c` | via `erf`; entire |
+| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | series or Hankel; \(I_ν=i^{-ν}J_ν(iz)\); \(K_ν=(\pi/2)i^{ν+1}H_ν^{(1)}(iz)\) |
+| Other specials (elliptic, `_2F1`, …) | not yet; backlog (software limbs, principal branches) |
 
 No `expr!` for complexes — use `cexpr!`. Serde: struct `{ "re", "im" }` of decimal strings.
 

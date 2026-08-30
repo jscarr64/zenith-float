@@ -609,6 +609,12 @@ mod tests {
         let d = l.im().abs().sub(&pi, p, RoundingMode::None).abs();
         assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 8));
         assert!(l.im().is_positive());
+
+        let below = ExactComplex::new(ExactNum::from_i8(-1, p), ExactNum::new(p).neg());
+        let lb = below.ln(p, rm, &mut cc);
+        let db = lb.im().abs().sub(&pi, p, RoundingMode::None).abs();
+        assert!(db.is_zero() || db.exponent().unwrap_or(0) < -((p as i32) / 8));
+        assert!(lb.im().is_negative());
     }
 
     #[test]

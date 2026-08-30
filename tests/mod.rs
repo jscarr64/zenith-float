@@ -269,6 +269,39 @@ fn macro_run_cexpr_tests() {
         &cexpr!(digamma(z1), &mut ctx),
         &z1.digamma(p, rm, &mut cc),
     );
+    cplx_eq("cei1", &cexpr!(ei(z1), &mut ctx), &z1.ei(p, rm, &mut cc));
+    cplx_eq("csi0", &cexpr!(si(z0), &mut ctx), &z0.si(p, rm, &mut cc));
+    cplx_eq("cci1", &cexpr!(ci(z1), &mut ctx), &z1.ci(p, rm, &mut cc));
+    cplx_eq("cli2", &cexpr!(li(x), &mut ctx), &x.li(p, rm, &mut cc));
+    cplx_eq(
+        "cfs0",
+        &cexpr!(fresnel_s(z0), &mut ctx),
+        &z0.fresnel_s(p, rm, &mut cc),
+    );
+    cplx_eq(
+        "cfc0",
+        &cexpr!(fresnel_c(z0), &mut ctx),
+        &z0.fresnel_c(p, rm, &mut cc),
+    );
+    cplx_eq(
+        "cj0",
+        &cexpr!(bessel_j_nu(z1, z0), &mut ctx),
+        &z1.bessel_j_nu(&z0, p, rm, &mut cc),
+    );
+    cplx_eq(
+        "cy0",
+        &cexpr!(bessel_y(z1, z0), &mut ctx),
+        &z1.bessel_y(&z0, p, rm, &mut cc),
+    );
+    cplx_eq(
+        "ci0",
+        &cexpr!(bessel_i(z1, z0), &mut ctx),
+        &z1.bessel_i(&z0, p, rm, &mut cc),
+    );
+    let ck = cexpr!(bessel_k(z1, z0), &mut ctx);
+    let k0 = z1.bessel_k(&z0, p, rm, &mut cc);
+    assert_eq!(ck.re().cmp(k0.re()), Some(0), "ck0 re");
+    assert!(tiny_part(ck.im(), p) && tiny_part(k0.im(), p));
 
     let back = cexpr!(ln(exp(x)), &mut ctx);
     let d = back.re().sub(x.re(), p, RoundingMode::None).abs();

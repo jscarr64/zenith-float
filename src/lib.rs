@@ -304,7 +304,8 @@ extern crate alloc;
 /// Cancellation is measured on both the real and imaginary parts.
 /// The imaginary unit in the expression is `I` (so `i` remains a variable name).
 /// Leaves include roots, logs/exps, elementary and inverse functions, `hypot`/`fma`,
-/// `abs`/`arg`/`conj`, `ldexp`/`scalb`/`logb`, and `erf`/`erfc`/`gamma`/`ln_gamma`/`digamma`.
+/// `abs`/`arg`/`conj`, `ldexp`/`scalb`/`logb`, `erf`/`erfc`/`gamma`/`ln_gamma`/`digamma`,
+/// `ei`/`si`/`ci`/`li`/`fresnel_s`/`fresnel_c`, and `bessel_j_nu`/`bessel_y`/`bessel_i`/`bessel_k`.
 /// Cancellation is tracked per part.
 /// There is no `atan2` or `rem_pi` in `cexpr!`.
 /// Use `cexpr!` when the expression is complex; `expr!` stays real-valued.

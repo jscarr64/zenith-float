@@ -33,12 +33,14 @@ Rules for every item:
 | Certified interval `sin` / `exp` | 2026-08-30 | `Ball::exp` uses \(\lvert e^m\rvert(e^r-1)\); `Ball::sin` uses \(\lvert\sin'\rvert\le 1\); containment golds |
 | Complex `erf` / `erfc` (Faddeeva) | 2026-08-30 | `ExactComplex`; Poppe–Wijers series for small L1, asymptotic for large \(\lvert z\rvert\); entire |
 | Complex `gamma` / `ln_gamma` / `digamma` | 2026-08-30 | Stirling + reflection; \(\ln\Gamma\) cut on \((-\infty,0]\); poles → NaN |
+| Complex `ei` / `si` / `ci` / `li` / Fresnel | 2026-08-30 | `ExactComplex`; series or asymptotic `Ei`; `Si`/`Ci` via `Ei(±iz)`; `li=Ei(ln z)`; Fresnel via `erf` |
+| Complex Bessel \(J_ν,Y_ν,I_ν,K_ν\) | 2026-08-30 | series or Hankel; \(I_ν=i^{-ν}J_ν(iz)\); \(K_ν=(\pi/2)i^{ν+1}H_ν^{(1)}(iz)\) |
 
 ---
 
 ## Cross-cutting leftovers
 
 - MPFR has `eint`, `jn`, `yn`, `digamma` — oracles in `compare_special_fn_test.rs`. No MPFR `si` / `ci` / `li` / Fresnel; those stay identity/series golds
-- Remaining complex specials on `ExactComplex`: `ei`/`si`/`ci`/`li`, Fresnel, Bessel, elliptic, `_2F1`, … Software limbs only; principal branches; golds on the object. Do not wrap the real series on \(\lvert z\rvert\). `cexpr!` leaves when the method exists.
+- Remaining complex specials on `ExactComplex`: elliptic, `_2F1`, … Software limbs only; principal branches; golds on the object. Do not wrap the real series on \(\lvert z\rvert\). `cexpr!` leaves when the method exists.
 
 Hung searches and invented closed forms stay `NaN` / `InvalidArgument`.

@@ -68,12 +68,9 @@ impl ExactNumNumber {
                     if x.is_positive() {
                         a
                     } else {
+                        // `signed_pi` already carries `y`'s sign: Q2 is `atan + π`, Q3 is `atan − π`.
                         let pi = Self::signed_pi(y.sign(), p_x, RoundingMode::None, cc, false)?;
-                        if y.is_positive() {
-                            a.add(&pi, p_x, RoundingMode::None)?
-                        } else {
-                            a.sub(&pi, p_x, RoundingMode::None)?
-                        }
+                        a.add(&pi, p_x, RoundingMode::None)?
                     }
                 }
             };
@@ -147,6 +144,13 @@ mod tests {
         let mut eps = ONE.clone().unwrap();
         eps.set_exponent(a2.exponent() - p as crate::Exponent + 4);
         assert!(a2.sub(&three_q, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
+
+        let ny = y.neg().unwrap();
+        let a3 = ny.atan2(&nx, p, rm, &mut cc).unwrap();
+        let three_q_neg = three_q.neg().unwrap();
+        eps.set_exponent(a3.exponent() - p as crate::Exponent + 4);
+        assert!(a3.sub(&three_q_neg, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
+        assert!(a3.is_negative());
 
         for _ in 0..30 {
             let yy = ExactNumNumber::random_normal(p, -8, 8).unwrap();

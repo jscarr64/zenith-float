@@ -273,7 +273,7 @@ The previous mode is restored when the closure returns.
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`.
 
 **Named constants:** `I`, `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` (reals lifted as `x + 0i`).
 
@@ -286,6 +286,11 @@ The previous mode is restored when the closure returns.
 | `sqrt`, `cbrt`, `root` | Cut on `(−∞, 0]`; `Re(sqrt) ≥ 0`; `sqrt(−1) = +i` |
 | `pow` | `exp(w · ln(z))`; `ln` cut on the base |
 | `asin` / `acos` / `atan` / `asinh` / `acosh` / `atanh` | Principal branches |
+| `ei` / `si` / `ci` | `Ei` cut on (−∞, 0]; `Si`/`Ci` via `Ei(±iz)`; `Ci(0)` → NaN |
+| `li` | `Ei(ln z)`; cut on (−∞, 1]; pole at 1 → NaN |
+| `fresnel_s` / `fresnel_c` | via `erf`; entire |
+| `bessel_j_nu` / `bessel_i` | entire for integer ν; cut on (−∞, 0] otherwise |
+| `bessel_y` / `bessel_k` | cut on (−∞, 0]; \(z=0\) → NaN |
 
 **Trig identity:** `sin(x + iy) = sin(x)cosh(y) + i·cos(x)sinh(y)`. The complex argument is never passed through `rem_pi`.
 
@@ -295,7 +300,6 @@ The previous mode is restored when the closure returns.
 | --- | --- |
 | `%` / `rem_pi` | Remainder and π-reduction are real-valued |
 | `atan2` | No standard two-complex analogue; use `arg` |
-| `ei` / `si` / `ci` / `li` / `fresnel_*` / `bessel_*` | Not yet — real kernel only; backlog on `ExactComplex` (software limbs) |
 
 ---
 
@@ -377,7 +381,10 @@ Cartesian `re + i·im` as two `ExactNum` values.
 | `Add` `Sub` `Mul` `Div` | 128-bit `ToEven` like reals |
 | `erf` / `erfc` | ✅ Faddeeva \(w(z)\); entire |
 | `gamma` / `ln_gamma` / `digamma` | ✅ Stirling + reflection; \(\ln\Gamma\) cut on \((-\infty,0]\); poles → NaN |
-| Other specials (Bessel, elliptic, …) | ⬜ backlog — software `ExactComplex`, principal branches |
+| `ei` / `si` / `ci` / `li` | ✅ series or asymptotic `Ei`; `Si`/`Ci` via `Ei(±iz)`; `li=Ei(ln z)` |
+| `fresnel_s` / `fresnel_c` | ✅ via `erf`; entire |
+| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | ✅ series or Hankel; \(I_ν=i^{-ν}J_ν(iz)\); \(K_ν=(\pi/2)i^{ν+1}H_ν^{(1)}(iz)\) |
+| Other specials (elliptic, `_2F1`, …) | ⬜ backlog — software `ExactComplex`, principal branches |
 
 No `expr!` for complex — use `cexpr!`. Serde: struct `{ "re", "im" }` of decimal strings.
 
@@ -463,7 +470,7 @@ These are design decisions, not a backlog:
 | `fbig!` / compile-time float literals | ✅ | ⬜ | ✅ |
 | Parse/format bases 2–36 | ✅ | ⬜ (bin/oct/dec/hex) | ✅ |
 | Complex (`ExactComplex` + `cexpr!`) | ✅ elementary | ⬜ | ✅ `CBig` |
-| Complex specials (`erf`, `Γ`, `ψ`) | ✅ | ⬜ | ⬜ |
+| Complex specials (`erf`, `Γ`, `ψ`, `Ei`, Bessel) | ✅ | ⬜ | ⬜ |
 | General `nth_root(n)` | ✅ | ✅ | ✅ |
 | `sin_cos` / `sinh_cosh` paired | ✅ | ✅ | ✅ |
 | Special functions (`erf`, `Γ`, `J_n`) | ✅ | ⬜ | 🟡 / separate |
