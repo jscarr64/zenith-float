@@ -4,6 +4,7 @@
 mod arith;
 mod array;
 mod convert;
+mod simd;
 
 use crate::defs::Error;
 use crate::RoundingMode;

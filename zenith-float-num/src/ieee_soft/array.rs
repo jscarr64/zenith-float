@@ -1,11 +1,35 @@
 //! Dense row-major arrays of software IEEE values and `ExactNum`.
 //! A 1-D vector is stored as shape `(1, n)`.
 
+use super::simd::{add_u32_lanes, add_u64_lanes, mul_u32_lanes, mul_u64_lanes};
 use super::{Ieee32, Ieee64};
 use crate::defs::RoundingMode;
 use crate::Consts;
 use crate::ExactNum;
 use alloc::vec::Vec;
+
+trait LaneBits: Copy {
+    fn add_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
+    fn mul_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
+}
+
+impl LaneBits for u32 {
+    fn add_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+        add_u32_lanes(a, b)
+    }
+    fn mul_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+        mul_u32_lanes(a, b)
+    }
+}
+
+impl LaneBits for u64 {
+    fn add_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+        add_u64_lanes(a, b)
+    }
+    fn mul_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+        mul_u64_lanes(a, b)
+    }
+}
 
 /// Contiguous binary32 lanes (`u32` bits), row-major.
 #[derive(Clone, Debug)]
@@ -140,9 +164,17 @@ macro_rules! impl_ieee_array {
                 self.get(i * self.cols + j)
             }
 
-            /// Elementwise add. Shapes must match.
+            /// Elementwise add. Shapes must match. Uses integer SIMD when the
+            /// architecture provides it (still the software IEEE kernel).
             pub fn add(&self, rhs: &Self) -> Option<Self> {
-                self.zip_op(rhs, $scalar::add)
+                if self.rows != rhs.rows || self.cols != rhs.cols {
+                    return None;
+                }
+                Some(Self {
+                    bits: <$bits>::add_lanes(&self.bits, &rhs.bits),
+                    rows: self.rows,
+                    cols: self.cols,
+                })
             }
 
             /// Add a scalar to every lane.
@@ -155,9 +187,17 @@ macro_rules! impl_ieee_array {
                 self.zip_op(rhs, $scalar::sub)
             }
 
-            /// Elementwise mul.
+            /// Elementwise mul. Shapes must match. Integer SIMD significand
+            /// products on the all-normal path.
             pub fn mul(&self, rhs: &Self) -> Option<Self> {
-                self.zip_op(rhs, $scalar::mul)
+                if self.rows != rhs.rows || self.cols != rhs.cols {
+                    return None;
+                }
+                Some(Self {
+                    bits: <$bits>::mul_lanes(&self.bits, &rhs.bits),
+                    rows: self.rows,
+                    cols: self.cols,
+                })
             }
 
             /// Multiply every lane by a scalar.
@@ -282,48 +322,186 @@ macro_rules! impl_ieee_array {
 impl_ieee_array!(Ieee32Array, Ieee32, u32);
 impl_ieee_array!(Ieee64Array, Ieee64, u64);
 
+macro_rules! ieee_unary_exact {
+    ($p:expr, $($name:ident),+ $(,)?) => {
+        $(
+            #[doc = concat!("Elementwise `", stringify!($name), "` via `ExactNum`.")]
+            pub fn $name(&self, cc: &mut Consts) -> Self {
+                self.map_exact($p, |x| x.$name($p, RoundingMode::ToEven, cc))
+            }
+        )+
+    };
+}
+
 macro_rules! ieee_array_specials {
-    ($arr:ident, $_scalar:ident, $p:expr) => {
+    ($arr:ident, $scalar:ident, $p:expr) => {
         impl $arr {
-            /// Elementwise `exp` via `ExactNum`.
-            pub fn exp(&self, cc: &mut Consts) -> Self {
-                self.map_exact($p, |x| x.exp($p, RoundingMode::ToEven, cc))
+            ieee_unary_exact!(
+                $p,
+                exp,
+                exp2,
+                exp10,
+                expm1,
+                ln,
+                log2,
+                log10,
+                log1p,
+                sin,
+                cos,
+                tan,
+                asin,
+                acos,
+                atan,
+                sinh,
+                cosh,
+                tanh,
+                asinh,
+                acosh,
+                atanh,
+                erf,
+                erfc,
+                gamma,
+                ln_gamma,
+                digamma,
+                ei,
+                si,
+                ci,
+                li,
+                fresnel_s,
+                fresnel_c,
+                elliptic_k,
+                rem_pi,
+            );
+
+            /// Elementwise complete `E(m)` via `ExactNum`.
+            pub fn elliptic_e_complete(&self, cc: &mut Consts) -> Self {
+                self.map_exact($p, |x| x.elliptic_e_complete($p, RoundingMode::ToEven, cc))
             }
-            /// Elementwise `ln` via `ExactNum`.
-            pub fn ln(&self, cc: &mut Consts) -> Self {
-                self.map_exact($p, |x| x.ln($p, RoundingMode::ToEven, cc))
+
+            /// Elementwise `cbrt` via `ExactNum`.
+            pub fn cbrt(&self) -> Self {
+                self.map_exact($p, |x| x.cbrt($p, RoundingMode::ToEven))
             }
-            /// Elementwise `sin` via `ExactNum`.
-            pub fn sin(&self, cc: &mut Consts) -> Self {
-                self.map_exact($p, |x| x.sin($p, RoundingMode::ToEven, cc))
+
+            /// Elementwise `atan2(self, x)` via `ExactNum`.
+            pub fn atan2(&self, x: $scalar, cc: &mut Consts) -> Self {
+                let xe = x.to_exact($p);
+                self.map_exact($p, |y| y.atan2(&xe, $p, RoundingMode::ToEven, cc))
             }
-            /// Elementwise `cos` via `ExactNum`.
-            pub fn cos(&self, cc: &mut Consts) -> Self {
-                self.map_exact($p, |x| x.cos($p, RoundingMode::ToEven, cc))
+
+            /// Elementwise `hypot(self, other)` via `ExactNum`.
+            pub fn hypot(&self, other: $scalar) -> Self {
+                let oe = other.to_exact($p);
+                self.map_exact($p, |x| x.hypot(&oe, $p, RoundingMode::ToEven))
             }
-            /// Elementwise `tan` via `ExactNum`.
-            pub fn tan(&self, cc: &mut Consts) -> Self {
-                self.map_exact($p, |x| x.tan($p, RoundingMode::ToEven, cc))
+
+            /// Elementwise `pow(self, n)` via `ExactNum`.
+            pub fn pow(&self, n: $scalar, cc: &mut Consts) -> Self {
+                let ne = n.to_exact($p);
+                self.map_exact($p, |x| x.pow(&ne, $p, RoundingMode::ToEven, cc))
             }
-            /// Elementwise `erf` via `ExactNum`.
-            pub fn erf(&self, cc: &mut Consts) -> Self {
-                self.map_exact($p, |x| x.erf($p, RoundingMode::ToEven, cc))
+
+            /// Elementwise `log(self, base)` via `ExactNum`.
+            pub fn log(&self, base: $scalar, cc: &mut Consts) -> Self {
+                let be = base.to_exact($p);
+                self.map_exact($p, |x| x.log(&be, $p, RoundingMode::ToEven, cc))
             }
-            /// Elementwise `erfc` via `ExactNum`.
-            pub fn erfc(&self, cc: &mut Consts) -> Self {
-                self.map_exact($p, |x| x.erfc($p, RoundingMode::ToEven, cc))
+
+            /// Elementwise `γ(self, x)` via `ExactNum`.
+            pub fn gammainc(&self, x: $scalar, cc: &mut Consts) -> Self {
+                let xe = x.to_exact($p);
+                self.map_exact($p, |s| s.gammainc(&xe, $p, RoundingMode::ToEven, cc))
             }
-            /// Elementwise `gamma` via `ExactNum`.
-            pub fn gamma(&self, cc: &mut Consts) -> Self {
-                self.map_exact($p, |x| x.gamma($p, RoundingMode::ToEven, cc))
+
+            /// Elementwise `Γ(self, x)` via `ExactNum`.
+            pub fn gammainc_upper(&self, x: $scalar, cc: &mut Consts) -> Self {
+                let xe = x.to_exact($p);
+                self.map_exact($p, |s| s.gammainc_upper(&xe, $p, RoundingMode::ToEven, cc))
             }
-            /// Elementwise `ei` via `ExactNum`.
-            pub fn ei(&self, cc: &mut Consts) -> Self {
-                self.map_exact($p, |x| x.ei($p, RoundingMode::ToEven, cc))
+
+            /// Elementwise integer-order `J_n(self)`.
+            pub fn bessel_j(&self, n: usize, cc: &mut Consts) -> Self {
+                self.map_exact($p, |x| x.bessel_j(n, $p, RoundingMode::ToEven, cc))
             }
-            /// Elementwise `si` via `ExactNum`.
-            pub fn si(&self, cc: &mut Consts) -> Self {
-                self.map_exact($p, |x| x.si($p, RoundingMode::ToEven, cc))
+
+            /// Elementwise `J_ν(self)` for a shared real order.
+            pub fn bessel_j_nu(&self, nu: $scalar, cc: &mut Consts) -> Self {
+                let n = nu.to_exact($p);
+                self.map_exact($p, |x| x.bessel_j_nu(&n, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `Y_ν(self)`.
+            pub fn bessel_y(&self, nu: $scalar, cc: &mut Consts) -> Self {
+                let n = nu.to_exact($p);
+                self.map_exact($p, |x| x.bessel_y(&n, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `I_ν(self)`.
+            pub fn bessel_i(&self, nu: $scalar, cc: &mut Consts) -> Self {
+                let n = nu.to_exact($p);
+                self.map_exact($p, |x| x.bessel_i(&n, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `K_ν(self)`.
+            pub fn bessel_k(&self, nu: $scalar, cc: &mut Consts) -> Self {
+                let n = nu.to_exact($p);
+                self.map_exact($p, |x| x.bessel_k(&n, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `P_n(self)`.
+            pub fn legendre_p(&self, n: u32) -> Self {
+                self.map_exact($p, |x| x.legendre_p(n, $p, RoundingMode::ToEven))
+            }
+
+            /// Elementwise `P_n^m(self)`.
+            pub fn assoc_legendre_p(&self, n: u32, m: i32) -> Self {
+                self.map_exact($p, |x| x.assoc_legendre_p(n, m, $p, RoundingMode::ToEven))
+            }
+
+            /// Elementwise `F(self | m)`.
+            pub fn elliptic_f(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.elliptic_f(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise incomplete `E(self | m)`.
+            pub fn elliptic_e(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.elliptic_e(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise complete `Π(n, m)` with `self = n`.
+            pub fn elliptic_pi_complete(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |n| n.elliptic_pi_complete(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `Π(self; x | m)`.
+            pub fn elliptic_pi(&self, x: $scalar, m: $scalar, cc: &mut Consts) -> Self {
+                let xe = x.to_exact($p);
+                let me = m.to_exact($p);
+                self.map_exact($p, |n| n.elliptic_pi(&xe, &me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `{}_2F_1(self, b; c; z)`.
+            pub fn hypergeom_2f1(
+                &self,
+                b: $scalar,
+                c: $scalar,
+                z: $scalar,
+                cc: &mut Consts,
+            ) -> Self {
+                let be = b.to_exact($p);
+                let ce = c.to_exact($p);
+                let ze = z.to_exact($p);
+                self.map_exact($p, |a| a.hypergeom_2f1(&be, &ce, &ze, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `I_x(self, b)`.
+            pub fn betainc(&self, b: $scalar, x: $scalar, cc: &mut Consts) -> Self {
+                let be = b.to_exact($p);
+                let xe = x.to_exact($p);
+                self.map_exact($p, |a| a.betainc(&be, &xe, $p, RoundingMode::ToEven, cc))
             }
         }
     };
@@ -331,6 +509,17 @@ macro_rules! ieee_array_specials {
 
 ieee_array_specials!(Ieee32Array, Ieee32, 64);
 ieee_array_specials!(Ieee64Array, Ieee64, 128);
+
+macro_rules! exact_arr_p_rm_cc {
+    ($($name:ident),+ $(,)?) => {
+        $(
+            #[doc = concat!("Elementwise [`ExactNum::", stringify!($name), "`]. `cc` is the constants cache, not a global.")]
+            pub fn $name(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+                self.map_at(p, |x| x.$name(p, rm, cc))
+            }
+        )+
+    };
+}
 
 impl ExactNumArray {
     /// Empty 0×0 array at precision `p`.
@@ -506,20 +695,6 @@ impl ExactNumArray {
         self.zip(rhs, |a, b| a.div(b, self.p, RoundingMode::ToEven))
     }
 
-    /// Elementwise sqrt.
-    pub fn sqrt(&self) -> Self {
-        Self {
-            p: self.p,
-            vals: self
-                .vals
-                .iter()
-                .map(|x| x.sqrt(self.p, RoundingMode::ToEven))
-                .collect(),
-            rows: self.rows,
-            cols: self.cols,
-        }
-    }
-
     /// Sequential sum at `p`.
     pub fn sum(&self) -> ExactNum {
         let mut acc = ExactNum::from_u8(0, self.p);
@@ -573,24 +748,238 @@ impl ExactNumArray {
         })
     }
 
-    /// Elementwise `sin`.
-    pub fn sin(&self, cc: &mut Consts) -> Self {
-        self.map_unary(|x| x.sin(self.p, RoundingMode::ToEven, cc))
+    /// Elementwise integer part.
+    pub fn int(&self) -> Self {
+        self.map_at(self.p, |x| x.int())
+    }
+    /// Elementwise fractional part.
+    pub fn fract(&self) -> Self {
+        self.map_at(self.p, |x| x.fract())
+    }
+    /// Elementwise `ceil`.
+    pub fn ceil(&self) -> Self {
+        self.map_at(self.p, |x| x.ceil())
+    }
+    /// Elementwise `floor`.
+    pub fn floor(&self) -> Self {
+        self.map_at(self.p, |x| x.floor())
+    }
+    /// Elementwise `round` with `n` binary fractional bits.
+    pub fn round(&self, n: usize, rm: RoundingMode) -> Self {
+        self.map_at(self.p, |x| x.round(n, rm))
+    }
+    /// Elementwise absolute value.
+    pub fn abs(&self) -> Self {
+        self.map_at(self.p, |x| x.abs())
+    }
+    /// Elementwise negation.
+    pub fn neg(&self) -> Self {
+        self.map_at(self.p, |x| x.neg())
+    }
+    /// Elementwise reciprocal.
+    pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Self {
+        self.map_at(p, |x| x.reciprocal(p, rm))
+    }
+    /// Elementwise `nth_root`.
+    pub fn nth_root(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        self.map_at(p, |x| x.nth_root(n, p, rm))
+    }
+    /// Elementwise `powi`.
+    pub fn powi(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        self.map_at(p, |x| x.powi(n, p, rm))
+    }
+    /// Elementwise `powsi`.
+    pub fn powsi(&self, n: isize, p: usize, rm: RoundingMode) -> Self {
+        self.map_at(p, |x| x.powsi(n, p, rm))
     }
 
-    /// Elementwise `exp`.
-    pub fn exp(&self, cc: &mut Consts) -> Self {
-        self.map_unary(|x| x.exp(self.p, RoundingMode::ToEven, cc))
+    exact_arr_p_rm_cc!(
+        sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, asinh, acosh, atanh, exp, exp2, exp10,
+        expm1, ln, log2, log10, log1p, erf, erfc, gamma, ln_gamma, digamma, ei, si, ci, li,
+        fresnel_s, fresnel_c, elliptic_k, elliptic_e_complete, rem_pi,
+    );
+
+    /// Elementwise `(sin, cos)` with a shared argument reduction.
+    pub fn sin_cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> (Self, Self) {
+        let mut s = Vec::with_capacity(self.vals.len());
+        let mut c = Vec::with_capacity(self.vals.len());
+        for x in &self.vals {
+            let (sv, cv) = x.sin_cos(p, rm, cc);
+            s.push(sv);
+            c.push(cv);
+        }
+        (
+            Self {
+                p,
+                vals: s,
+                rows: self.rows,
+                cols: self.cols,
+            },
+            Self {
+                p,
+                vals: c,
+                rows: self.rows,
+                cols: self.cols,
+            },
+        )
     }
 
-    /// Elementwise `ln`.
-    pub fn ln(&self, cc: &mut Consts) -> Self {
-        self.map_unary(|x| x.ln(self.p, RoundingMode::ToEven, cc))
+    /// Elementwise `(sinh, cosh)` with a shared evaluation.
+    pub fn sinh_cosh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> (Self, Self) {
+        let mut s = Vec::with_capacity(self.vals.len());
+        let mut c = Vec::with_capacity(self.vals.len());
+        for x in &self.vals {
+            let (sv, cv) = x.sinh_cosh(p, rm, cc);
+            s.push(sv);
+            c.push(cv);
+        }
+        (
+            Self {
+                p,
+                vals: s,
+                rows: self.rows,
+                cols: self.cols,
+            },
+            Self {
+                p,
+                vals: c,
+                rows: self.rows,
+                cols: self.cols,
+            },
+        )
     }
 
-    /// Elementwise `erf`.
-    pub fn erf(&self, cc: &mut Consts) -> Self {
-        self.map_unary(|x| x.erf(self.p, RoundingMode::ToEven, cc))
+    /// Elementwise `sqrt`.
+    pub fn sqrt(&self, p: usize, rm: RoundingMode) -> Self {
+        self.map_at(p, |x| x.sqrt(p, rm))
+    }
+
+    /// Elementwise `cbrt`.
+    pub fn cbrt(&self, p: usize, rm: RoundingMode) -> Self {
+        self.map_at(p, |x| x.cbrt(p, rm))
+    }
+
+    /// Elementwise `P_n(self)`.
+    pub fn legendre_p(&self, n: u32, p: usize, rm: RoundingMode) -> Self {
+        self.map_at(p, |x| x.legendre_p(n, p, rm))
+    }
+
+    /// Elementwise `P_n^m(self)`.
+    pub fn assoc_legendre_p(&self, n: u32, m: i32, p: usize, rm: RoundingMode) -> Self {
+        self.map_at(p, |x| x.assoc_legendre_p(n, m, p, rm))
+    }
+
+    /// Elementwise `hypot(self, other)`.
+    pub fn hypot(&self, other: &ExactNum, p: usize, rm: RoundingMode) -> Self {
+        self.map_at(p, |x| x.hypot(other, p, rm))
+    }
+
+    /// Elementwise `atan2(self, x)`. `cc` is the constants cache, not a global.
+    pub fn atan2(&self, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |y| y.atan2(x, p, rm, cc))
+    }
+
+    /// Elementwise `pow(self, n)`.
+    pub fn pow(&self, n: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.pow(n, p, rm, cc))
+    }
+
+    /// Elementwise `log(self, base)`.
+    pub fn log(&self, base: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.log(base, p, rm, cc))
+    }
+
+    /// Elementwise `γ(self, x)`.
+    pub fn gammainc(&self, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |s| s.gammainc(x, p, rm, cc))
+    }
+
+    /// Elementwise `Γ(self, x)`.
+    pub fn gammainc_upper(&self, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |s| s.gammainc_upper(x, p, rm, cc))
+    }
+
+    /// Elementwise integer-order `J_n(self)`.
+    pub fn bessel_j(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.bessel_j(n, p, rm, cc))
+    }
+
+    /// Elementwise `J_ν(self)`.
+    pub fn bessel_j_nu(&self, nu: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.bessel_j_nu(nu, p, rm, cc))
+    }
+
+    /// Elementwise `Y_ν(self)`.
+    pub fn bessel_y(&self, nu: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.bessel_y(nu, p, rm, cc))
+    }
+
+    /// Elementwise `I_ν(self)`.
+    pub fn bessel_i(&self, nu: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.bessel_i(nu, p, rm, cc))
+    }
+
+    /// Elementwise `K_ν(self)`.
+    pub fn bessel_k(&self, nu: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.bessel_k(nu, p, rm, cc))
+    }
+
+    /// Elementwise `F(self | m)`.
+    pub fn elliptic_f(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.elliptic_f(m, p, rm, cc))
+    }
+
+    /// Elementwise incomplete `E(self | m)`.
+    pub fn elliptic_e(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.elliptic_e(m, p, rm, cc))
+    }
+
+    /// Elementwise complete `Π(n, m)` with `self = n`.
+    pub fn elliptic_pi_complete(
+        &self,
+        m: &ExactNum,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        self.map_at(p, |n| n.elliptic_pi_complete(m, p, rm, cc))
+    }
+
+    /// Elementwise `Π(self; x | m)`.
+    pub fn elliptic_pi(
+        &self,
+        x: &ExactNum,
+        m: &ExactNum,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        self.map_at(p, |n| n.elliptic_pi(x, m, p, rm, cc))
+    }
+
+    /// Elementwise `{}_2F_1(self, b; c; z)`.
+    pub fn hypergeom_2f1(
+        &self,
+        b: &ExactNum,
+        c: &ExactNum,
+        z: &ExactNum,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        self.map_at(p, |a| a.hypergeom_2f1(b, c, z, p, rm, cc))
+    }
+
+    /// Elementwise `I_x(self, b)`.
+    pub fn betainc(
+        &self,
+        b: &ExactNum,
+        x: &ExactNum,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        self.map_at(p, |a| a.betainc(b, x, p, rm, cc))
     }
 
     fn zip(&self, rhs: &Self, op: impl Fn(&ExactNum, &ExactNum) -> ExactNum) -> Option<Self> {
@@ -610,9 +999,9 @@ impl ExactNumArray {
         })
     }
 
-    fn map_unary(&self, mut op: impl FnMut(&ExactNum) -> ExactNum) -> Self {
+    fn map_at(&self, p: usize, mut op: impl FnMut(&ExactNum) -> ExactNum) -> Self {
         Self {
-            p: self.p,
+            p,
             vals: self.vals.iter().map(|x| op(x)).collect(),
             rows: self.rows,
             cols: self.cols,
@@ -760,5 +1149,60 @@ mod tests {
         assert_eq!(c.get2(0, 1).unwrap().cmp(&n(22)), Some(0));
         assert_eq!(c.get2(1, 0).unwrap().cmp(&n(43)), Some(0));
         assert_eq!(c.get2(1, 1).unwrap().cmp(&n(50)), Some(0));
+    }
+
+    #[test]
+    fn bin32_simd_add_mul_golds() {
+        let one = Ieee32::from_i32(1);
+        let two = Ieee32::from_i32(2);
+        let four = Ieee32::from_i32(4);
+        let a = Ieee32Array::from_values(&[one, two, one, two, one]);
+        let b = Ieee32Array::from_values(&[one, two, two, one, one]);
+        let s = a.add(&b).unwrap();
+        assert_eq!(s.get(0).unwrap().to_bits(), two.to_bits());
+        assert_eq!(s.get(1).unwrap().to_bits(), four.to_bits());
+        assert_eq!(s.get(4).unwrap().to_bits(), two.to_bits());
+        let half = Ieee32::from_bits(0x3F00_0000);
+        let t = Ieee32Array::filled(4, two);
+        let h = Ieee32Array::filled(4, half);
+        let p = t.mul(&h).unwrap();
+        assert_eq!(p.get(0).unwrap().to_bits(), one.to_bits());
+        assert_eq!(p.get(3).unwrap().to_bits(), one.to_bits());
+    }
+
+    #[test]
+    fn array_ufunc_identities() {
+        let mut cc = Consts::new().unwrap();
+        let z32 = Ieee32Array::from_values(&[Ieee32::ZERO]);
+        assert!(z32.asin(&mut cc).get(0).unwrap().is_zero());
+        assert!(z32.expm1(&mut cc).get(0).unwrap().is_zero());
+        assert!(z32.log1p(&mut cc).get(0).unwrap().is_zero());
+        assert_eq!(
+            z32.bessel_j(0, &mut cc).get(0).unwrap().to_bits(),
+            Ieee32::from_i32(1).to_bits()
+        );
+        let one64 = Ieee64Array::from_values(&[Ieee64::from_i32(1)]);
+        assert!(one64.ln_gamma(&mut cc).get(0).unwrap().is_zero());
+        let p = 64;
+        let rm = RoundingMode::ToEven;
+        let z = ExactNumArray::from_values(p, &[ExactNum::from_u8(0, p)]);
+        assert!(z.sinh(p, rm, &mut cc).get(0).unwrap().is_zero());
+        let one = ExactNumArray::from_values(p, &[ExactNum::from_u8(1, p)]);
+        assert_eq!(
+            one.ln_gamma(p, rm, &mut cc)
+                .get(0)
+                .unwrap()
+                .cmp(&ExactNum::from_u8(0, p)),
+            Some(0)
+        );
+        let x = ExactNumArray::from_values(p, &[ExactNum::from_u8(3, p)]);
+        assert_eq!(
+            x.legendre_p(0, p, rm).get(0).unwrap().cmp(&ExactNum::from_u8(1, p)),
+            Some(0)
+        );
+        assert_eq!(
+            x.floor().get(0).unwrap().cmp(&ExactNum::from_u8(3, p)),
+            Some(0)
+        );
     }
 }

@@ -160,7 +160,7 @@ pub(super) fn canonical_nan(a: Unp, b: Option<Unp>, f: Format) -> u64 {
 
 const GRS: u32 = 3;
 
-fn round_rne(mut sig: u128, mut exp: i32, mut extra_sticky: bool, f: Format) -> (i32, u128) {
+pub(super) fn round_rne(mut sig: u128, mut exp: i32, mut extra_sticky: bool, f: Format) -> (i32, u128) {
     let target = f.frac + GRS;
     while sig >= (1u128 << (target + 1)) {
         extra_sticky |= (sig & 1) != 0;
@@ -297,7 +297,7 @@ fn pack_mag(sign: bool, scale_exp: i32, mag: u128, mut sticky: bool, f: Format) 
     pack_finite(sign, exp, core, f)
 }
 
-fn normalize_mul(sign: bool, exp_sum: i32, prod: u128, f: Format) -> u64 {
+pub(super) fn normalize_mul(sign: bool, exp_sum: i32, prod: u128, f: Format) -> u64 {
     let scale = exp_sum - f.bias - 2 * f.frac as i32;
     pack_mag(sign, scale, prod, false, f)
 }
