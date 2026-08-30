@@ -272,6 +272,8 @@ fn macro_run_cexpr_tests() {
     cplx_eq("cei1", &cexpr!(ei(z1), &mut ctx), &z1.ei(p, rm, &mut cc));
     cplx_eq("csi0", &cexpr!(si(z0), &mut ctx), &z0.si(p, rm, &mut cc));
     cplx_eq("cci1", &cexpr!(ci(z1), &mut ctx), &z1.ci(p, rm, &mut cc));
+    cplx_eq("cai0", &cexpr!(ai(z0), &mut ctx), &z0.ai(p, rm, &mut cc));
+    cplx_eq("cbi0", &cexpr!(bi(z0), &mut ctx), &z0.bi(p, rm, &mut cc));
     cplx_eq("cli2", &cexpr!(li(x), &mut ctx), &x.li(p, rm, &mut cc));
     cplx_eq(
         "cfs0",
@@ -575,6 +577,12 @@ fn macro_run_basic_tests() {
 
     let res: ExactNum = expr!(fresnel_c(x), &mut ctx);
     debug_assert_eq!(res, x.fresnel_c(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(ai(x), &mut ctx);
+    debug_assert_eq!(res, x.ai(p, rm, &mut cc));
+
+    let res: ExactNum = expr!(bi(x), &mut ctx);
+    debug_assert_eq!(res, x.bi(p, rm, &mut cc));
 
     let res: ExactNum = expr!(ldexp(x, 3), &mut ctx);
     debug_assert_eq!(res, x.ldexp(3, p, rm));

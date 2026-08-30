@@ -1,5 +1,6 @@
 //! High-level operations on the numbers.
 
+mod airy;
 mod acos;
 mod acosh;
 mod asin;

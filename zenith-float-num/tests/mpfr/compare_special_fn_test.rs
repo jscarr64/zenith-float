@@ -160,6 +160,31 @@ fn mpfr_compare_special_fns() {
         assert_float_close(d, fd, p, "digamma", false, &mut cc);
     }
 
+    // Airy Ai at x = 1 (plan §4.3) and a few modest abscissae.
+    {
+        let one = ExactNum::from_u8(1, p);
+        let f1 = conv_to_mpfr(p, &one, &mut cc);
+        let a = one.ai(p, rm, &mut cc);
+        let mut fa = Float::with_val(p as u32, 1);
+        unsafe {
+            mpfr::ai(fa.as_raw_mut(), f1.as_raw(), rnd);
+        }
+        assert_float_close(a, fa, p, "ai(1)", false, &mut cc);
+    }
+    for _ in 0..8 {
+        let (n1, f1) = get_float_pair(p, -2, 3, &mut cc);
+        if n1.is_nan() || n1.is_inf() {
+            continue;
+        }
+        let (rm, rnd) = get_random_rnd_pair();
+        let a = n1.ai(p, rm, &mut cc);
+        let mut fa = Float::with_val(p as u32, 1);
+        unsafe {
+            mpfr::ai(fa.as_raw_mut(), f1.as_raw(), rnd);
+        }
+        assert_float_close(a, fa, p, "ai", false, &mut cc);
+    }
+
     let _ = test_random::<u8>();
 }
 

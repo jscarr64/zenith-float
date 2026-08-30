@@ -44,8 +44,8 @@ fn mpfr_compare_complex() {
             mpfr::add(fre.as_raw_mut(), far.as_raw(), fbr.as_raw(), rnd);
             mpfr::add(fim.as_raw_mut(), fai.as_raw(), fbi.as_raw(), rnd);
         }
-        assert_float_close(s.re().clone(), fre, p, "cplx add re", true, &mut cc);
-        assert_float_close(s.im().clone(), fim, p, "cplx add im", true, &mut cc);
+        assert_float_close(s.re().clone(), fre.clone(), p, "cplx add re", true, &mut cc);
+        assert_float_close(s.im().clone(), fim.clone(), p, "cplx add im", true, &mut cc);
 
         let pr = a.mul(&b, p, rm);
         let mut fac = Float::with_val(p as u32, 1);

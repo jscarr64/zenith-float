@@ -35,6 +35,7 @@ Rules for every item:
 | Complex `gamma` / `ln_gamma` / `digamma` | 2026-08-30 | Stirling + reflection; \(\ln\Gamma\) cut on \((-\infty,0]\); poles → NaN |
 | Complex `ei` / `si` / `ci` / `li` / Fresnel | 2026-08-30 | `ExactComplex`; series or asymptotic `Ei`; `Si`/`Ci` via `Ei(±iz)`; `li=Ei(ln z)`; Fresnel via `erf` |
 | Complex Bessel \(J_ν,Y_ν,I_ν,K_ν\) | 2026-08-30 | series or Hankel; \(I_ν=i^{-ν}J_ν(iz)\); \(K_ν=(\pi/2)i^{ν+1}H_ν^{(1)}(iz)\) |
+| Airy \(\mathrm{Ai},\mathrm{Bi}\) (real + complex) | 2026-08-30 | series / asymptotic / \(\omega\)-connection; `ai_prime`/`bi_prime` on real; MPFR `ai` |
 
 ---
 

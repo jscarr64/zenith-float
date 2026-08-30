@@ -201,7 +201,7 @@ fn traverse_call(
     err: &mut Vec<usize>,
     cc: &mut Consts,
 ) -> Result<TokenStream, Error> {
-    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"abs\", \"arg\", \"conj\", \"ldexp\", \"scalb\", \"logb\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"digamma\", \"ei\", \"si\", \"ci\", \"li\", \"fresnel_s\", \"fresnel_c\", \"bessel_j_nu\", \"bessel_y\", \"bessel_i\", \"bessel_k\" are allowed in cexpr!.";
+    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"abs\", \"arg\", \"conj\", \"ldexp\", \"scalb\", \"logb\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"digamma\", \"ei\", \"si\", \"ci\", \"li\", \"fresnel_s\", \"fresnel_c\", \"ai\", \"bi\", \"bessel_j_nu\", \"bessel_y\", \"bessel_i\", \"bessel_k\" are allowed in cexpr!.";
     let Expr::Path(fun) = expr.func.as_ref() else {
         return Err(Error::new(expr.span(), errmes));
     };
@@ -567,6 +567,22 @@ fn traverse_call(
         ),
         "fresnel_c" => one_arg(
             quote!(zenith_float::ExactComplex::fresnel_c),
+            expr,
+            2,
+            err,
+            cc,
+            true,
+        ),
+        "ai" => one_arg(
+            quote!(zenith_float::ExactComplex::ai),
+            expr,
+            2,
+            err,
+            cc,
+            true,
+        ),
+        "bi" => one_arg(
+            quote!(zenith_float::ExactComplex::bi),
             expr,
             2,
             err,

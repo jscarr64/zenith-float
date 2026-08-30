@@ -2039,6 +2039,67 @@ impl ExactNum {
             Flavor::NaN(err) => Self::nan(*err),
         }
     }
+
+    /// Airy \(\mathrm{Ai}(\mathrm{self})\). \(+\infty\to 0\); \(-\infty\) has no limit → NaN.
+    pub fn ai(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.ai(p, rm, cc), v.is_zero(), true),
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    Self::new(p)
+                } else {
+                    NAN
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
+    /// Airy \(\mathrm{Bi}(\mathrm{self})\). \(+\infty\to+\infty\); \(-\infty\) has no limit → NaN.
+    pub fn bi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.bi(p, rm, cc), v.is_zero(), true),
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    INF_POS
+                } else {
+                    NAN
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
+    /// \(\mathrm{Ai}'(\mathrm{self})\). \(+\infty\to 0\); \(-\infty\) → NaN.
+    pub fn ai_prime(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.ai_prime(p, rm, cc), v.is_zero(), true),
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    Self::new(p)
+                } else {
+                    NAN
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
+    /// \(\mathrm{Bi}'(\mathrm{self})\). \(+\infty\to+\infty\); \(-\infty\) → NaN.
+    pub fn bi_prime(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext(v.bi_prime(p, rm, cc), v.is_zero(), true),
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    INF_POS
+                } else {
+                    NAN
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
     /// Bessel function of the first kind `J_n(self)` for integer order `n`.
     pub fn bessel_j(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {

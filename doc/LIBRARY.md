@@ -293,6 +293,7 @@ All take `(p, rm, cc)` except `hypot` (no cache).
 | `ci` | `self > 0`; otherwise NaN | yes |
 | `li` | `self > 0`, `self ≠ 1`; `Ei(ln self)` | yes |
 | `fresnel_s` / `fresnel_c` | odd; series or auxiliary \(f,g\) | yes |
+| `ai` / `bi` / `ai_prime` / `bi_prime` | Airy; series for \(\lvert x\rvert<\texttt{AIRY\_SERIES\_THRESHOLD}\); asymptotic otherwise | `ai`, `bi` |
 | `bessel_j(n, p, rm, cc)` | `J_n(self)`, integer order; Miller for large \(n\) | `bessel_j(x, n)` |
 | `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | Real order; \(K\): \(x>0\) | yes |
 | `elliptic_k` / `elliptic_e_complete` / `elliptic_f` / `elliptic_e` / `elliptic_pi_complete` / `elliptic_pi` | Carlson; \(m=k^2\), \(x=\sin\varphi\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\) | `elliptic_k`, `elliptic_e`, `elliptic_f`, `elliptic_e_inc`, `elliptic_pi`, `elliptic_pi_inc` |
@@ -338,7 +339,7 @@ Public macros (crate root): `expr!`, `cexpr!`, `exact!`, `fbig!`. Import them li
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `ai`, `bi`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `ldexp`, `scalb`, `logb`.
 
 **Named constants in the expression:** `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma`.
 
@@ -354,7 +355,7 @@ Same **context** as `expr!` (`Context` or the two tuples above). Same extra-prec
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `ai`, `bi`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`.
 
 **Named constants:** `I`, `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` (reals except `I` are `x + 0i`).
 
@@ -463,6 +464,7 @@ Cartesian `re + i·im` as two `ExactNum`s.
 | `gamma` / `ln_gamma` / `digamma` | Stirling + reflection; \(\ln\Gamma\) cut on \((-\infty,0]\); poles → NaN |
 | `ei` / `si` / `ci` / `li` | series or asymptotic `Ei`; `Si`/`Ci` via `Ei(±iz)`; `li=Ei(ln z)` |
 | `fresnel_s` / `fresnel_c` | via `erf`; entire |
+| `ai` / `bi` | series for small \(\lvert z\rvert\); asymptotic or \(\omega\)-connection for large \(\lvert z\rvert\) |
 | `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | series or Hankel; \(I_ν=i^{-ν}J_ν(iz)\); \(K_ν=(\pi/2)i^{ν+1}H_ν^{(1)}(iz)\) |
 | Other specials (elliptic, `_2F1`, …) | not yet; backlog (software limbs, principal branches) |
 

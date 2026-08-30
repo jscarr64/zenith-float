@@ -369,6 +369,8 @@ macro_rules! ieee_array_specials {
                 li,
                 fresnel_s,
                 fresnel_c,
+                ai,
+                bi,
                 elliptic_k,
                 rem_pi,
             );
@@ -796,7 +798,7 @@ impl ExactNumArray {
     exact_arr_p_rm_cc!(
         sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, asinh, acosh, atanh, exp, exp2, exp10,
         expm1, ln, log2, log10, log1p, erf, erfc, gamma, ln_gamma, digamma, ei, si, ci, li,
-        fresnel_s, fresnel_c, elliptic_k, elliptic_e_complete, rem_pi,
+        fresnel_s, fresnel_c, ai, bi, elliptic_k, elliptic_e_complete, rem_pi,
     );
 
     /// Elementwise `(sin, cos)` with a shared argument reduction.
