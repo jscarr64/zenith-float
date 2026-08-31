@@ -1,4 +1,4 @@
-//! Discrete cosine / sine transforms and real-input FFT wrappers.
+//! Discrete cosine / sine transforms, real-input FFT wrappers, and windows.
 
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
@@ -7,8 +7,9 @@ use crate::ExactNumArray;
 use crate::RoundingMode;
 use alloc::vec::Vec;
 
-/// Maximum real length for [`dct`] / [`idct`] / [`dst`] / [`idst`].
-/// Those transforms use a `2N`-point FFT, so this is half of `FFT_MAX_POINTS`.
+/// Maximum real length for [`dct`] / [`idct`] / [`dst`] / [`idst`] and the
+/// window generators. Transforms use a `2N`-point FFT, so this is half of
+/// `FFT_MAX_POINTS`.
 pub const DSP_MAX_POINTS: usize = 2048;
 
 fn work_p(p: usize) -> usize {
@@ -238,6 +239,173 @@ pub fn fft_real(
     signal.fft(p, rm, cc)
 }
 
+fn window_len_ok(n: usize) -> bool {
+    n > 0 && n <= DSP_MAX_POINTS
+}
+
+fn frac(num: u32, den: u32, p: usize, rm: RoundingMode) -> ExactNum {
+    ExactNum::from_u32(num, p).div(&ExactNum::from_u32(den, p), p, rm)
+}
+
+/// Symmetric cosine argument `2π k / (n−1)`. `n ≥ 2`.
+fn two_pi_k_over_nm1(k: usize, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
+    let two = ExactNum::from_u8(2, p);
+    two.mul(&cc.pi(p, rm), p, rm)
+        .mul(&ExactNum::from_u32(k as u32, p), p, rm)
+        .div(&ExactNum::from_u32((n - 1) as u32, p), p, rm)
+}
+
+fn ones_row(n: usize, p: usize, rm: RoundingMode) -> Option<ExactNumArray> {
+    if !window_len_ok(n) {
+        return None;
+    }
+    let mut one = ExactNum::from_u8(1, p);
+    let _ = one.set_precision(p, rm);
+    Some(ExactNumArray::filled(p, n, &one))
+}
+
+/// Symmetric Hann: `½(1 − cos(2πk/(n−1)))`. `n = 1` is `[1]`.
+///
+/// The plan wrote `2πk/N` (periodic). The locked gold `hann_window(4) =
+/// [0, 3/4, 3/4, 0]` is the symmetric form.
+pub fn hann_window(n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Option<ExactNumArray> {
+    if n == 1 {
+        return ones_row(n, p, rm);
+    }
+    if !window_len_ok(n) {
+        return None;
+    }
+    let wrk = work_p(p);
+    let none = RoundingMode::None;
+    let half = frac(1, 2, wrk, none);
+    let one = ExactNum::from_u8(1, wrk);
+    let mut vals = Vec::with_capacity(n);
+    for k in 0..n {
+        let c = two_pi_k_over_nm1(k, n, wrk, none, cc).cos(wrk, none, cc);
+        let w = half.mul(&one.sub(&c, wrk, none), wrk, none);
+        if !finite(&w) {
+            return None;
+        }
+        vals.push(w);
+    }
+    to_row(p, rm, &vals)
+}
+
+/// Symmetric Hamming: `0.54 − 0.46 cos(2πk/(n−1))`. Endpoints are `0.08`.
+pub fn hamming_window(
+    n: usize,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    if n == 1 {
+        return ones_row(n, p, rm);
+    }
+    if !window_len_ok(n) {
+        return None;
+    }
+    let wrk = work_p(p);
+    let none = RoundingMode::None;
+    let a0 = frac(27, 50, wrk, none);
+    let a1 = frac(23, 50, wrk, none);
+    let mut vals = Vec::with_capacity(n);
+    for k in 0..n {
+        let c = two_pi_k_over_nm1(k, n, wrk, none, cc).cos(wrk, none, cc);
+        let w = a0.sub(&a1.mul(&c, wrk, none), wrk, none);
+        if !finite(&w) {
+            return None;
+        }
+        vals.push(w);
+    }
+    to_row(p, rm, &vals)
+}
+
+/// Symmetric Blackman: `0.42 − 0.5 cos(θ) + 0.08 cos(2θ)`, `θ = 2πk/(n−1)`.
+pub fn blackman_window(
+    n: usize,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    if n == 1 {
+        return ones_row(n, p, rm);
+    }
+    if !window_len_ok(n) {
+        return None;
+    }
+    let wrk = work_p(p);
+    let none = RoundingMode::None;
+    let a0 = frac(21, 50, wrk, none);
+    let a1 = frac(1, 2, wrk, none);
+    let a2 = frac(2, 25, wrk, none);
+    let two = ExactNum::from_u8(2, wrk);
+    let mut vals = Vec::with_capacity(n);
+    for k in 0..n {
+        let th = two_pi_k_over_nm1(k, n, wrk, none, cc);
+        let c1 = th.cos(wrk, none, cc);
+        let c2 = th.mul(&two, wrk, none).cos(wrk, none, cc);
+        let w = a0
+            .sub(&a1.mul(&c1, wrk, none), wrk, none)
+            .add(&a2.mul(&c2, wrk, none), wrk, none);
+        if !finite(&w) {
+            return None;
+        }
+        vals.push(w);
+    }
+    to_row(p, rm, &vals)
+}
+
+/// Kaiser–Bessel: `I_0(β √(1−t_k²)) / I_0(β)` with `t_k = (k−(n−1)/2)/((n−1)/2)`.
+///
+/// `beta = 0` is the rectangular window. `beta < 0` or non-finite is `None`.
+pub fn kaiser_window(
+    n: usize,
+    beta: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    if !window_len_ok(n) || !finite(beta) || beta.is_negative() {
+        return None;
+    }
+    if n == 1 || beta.is_zero() {
+        return ones_row(n, p, rm);
+    }
+    let wrk = work_p(p);
+    let none = RoundingMode::None;
+    let b = copy_p(beta, wrk, none);
+    let nu0 = ExactNum::from_u8(0, wrk);
+    let i0b = b.bessel_i(&nu0, wrk, none, cc);
+    if !finite(&i0b) || i0b.is_zero() {
+        return None;
+    }
+    let two = ExactNum::from_u8(2, wrk);
+    let mid = ExactNum::from_u32((n - 1) as u32, wrk).div(&two, wrk, none);
+    let one = ExactNum::from_u8(1, wrk);
+    let mut vals = Vec::with_capacity(n);
+    for k in 0..n {
+        let t = ExactNum::from_u32(k as u32, wrk)
+            .sub(&mid, wrk, none)
+            .div(&mid, wrk, none);
+        let rad = one.sub(&t.mul(&t, wrk, none), wrk, none);
+        if rad.is_negative() {
+            return None;
+        }
+        let arg = b.mul(&rad.sqrt(wrk, none), wrk, none);
+        let w = arg.bessel_i(&nu0, wrk, none, cc).div(&i0b, wrk, none);
+        if !finite(&w) {
+            return None;
+        }
+        vals.push(w);
+    }
+    to_row(p, rm, &vals)
+}
+
+/// Rectangular window: `n` ones.
+pub fn rectangular_window(n: usize, p: usize, rm: RoundingMode) -> Option<ExactNumArray> {
+    ones_row(n, p, rm)
+}
+
 /// Inverse of [`fft_real`]: [`ExactNumArray::ifft`] then the real row.
 ///
 /// Input must be a `(2, n)` spectrum. Imaginary residuals are dropped.
@@ -362,5 +530,52 @@ mod tests {
         )
         .is_none());
         assert!(fft_real(&cspec, p, rm, &mut cc).is_none());
+    }
+
+    fn window_sum_pos(w: &ExactNumArray, p: usize) -> bool {
+        let mut s = ExactNum::from_u8(0, p);
+        for i in 0..w.len() {
+            s = s.add(w.get(i).unwrap(), p, RoundingMode::ToEven);
+        }
+        s.is_positive() && !s.is_zero()
+    }
+
+    #[test]
+    fn dsp_windows() {
+        let (p, rm) = gold_p();
+        let mut cc = Consts::new().expect("consts");
+        let zero = ExactNum::from_u8(0, p);
+        let three_fourths = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(4, p), p, rm);
+        let eight_hundredths = ExactNum::from_u8(2, p).div(&ExactNum::from_u8(25, p), p, rm);
+
+        let hann = hann_window(4, p, rm, &mut cc).expect("hann");
+        assert_eq!(hann.len(), 4);
+        assert!(near(hann.get(0).unwrap(), &zero, p));
+        assert!(near(hann.get(1).unwrap(), &three_fourths, p));
+        assert!(near(hann.get(2).unwrap(), &three_fourths, p));
+        assert!(near(hann.get(3).unwrap(), &zero, p));
+
+        let hamm = hamming_window(4, p, rm, &mut cc).expect("hamming");
+        assert!(near(hamm.get(0).unwrap(), &eight_hundredths, p));
+        assert!(near(hamm.get(3).unwrap(), &eight_hundredths, p));
+        assert!(!near(hamm.get(0).unwrap(), &zero, p));
+
+        let rect = rectangular_window(8, p, rm).expect("rect");
+        let k0 = kaiser_window(8, &zero, p, rm, &mut cc).expect("kaiser0");
+        assert_eq!(k0.len(), 8);
+        for j in 0..8 {
+            assert!(near(k0.get(j).unwrap(), rect.get(j).unwrap(), p));
+        }
+
+        let blk = blackman_window(8, p, rm, &mut cc).expect("blackman");
+        assert!(window_sum_pos(&hann, p));
+        assert!(window_sum_pos(&hamm, p));
+        assert!(window_sum_pos(&blk, p));
+        assert!(window_sum_pos(&rect, p));
+        assert!(window_sum_pos(&k0, p));
+
+        assert!(hann_window(0, p, rm, &mut cc).is_none());
+        assert!(rectangular_window(0, p, rm).is_none());
+        assert!(kaiser_window(4, &ExactNum::from_i64(-1, p), p, rm, &mut cc).is_none());
     }
 }

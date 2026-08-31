@@ -108,6 +108,7 @@ From `zenith_float` / `zenith_float_num`:
 - `bisect`, `newton`, `brent`, `illinois`, `root_default_tol`
 - `rk4`, `rk45_adaptive`, `euler`, `ode_min_step`
 - `dct`, `idct`, `dst`, `idst`, `fft_real`, `ifft_real`
+- `hann_window`, `hamming_window`, `blackman_window`, `kaiser_window`, `rectangular_window`
 - `Ieee32`, `Ieee64`, `Ieee32Array`, `Ieee64Array`, `ExactNumArray`
 - `Consts`, `ConstCache` (alias of `Consts`), `ConstCacheInfo`, `CachedFBig`, `SharedConsts` (`std` only)
 - `Context` (module `zenith_float::ctx`), trait `Contextable`
@@ -144,7 +145,7 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | Quadrature | `gauss_legendre(f,a,b,n,…)`; `tanh_sinh(f,a,b,…)`; `gauss_laguerre(f,n,…)`; `gauss_hermite(f,n,…)`. `n ≤ QUADRATURE_MAX_NODES`. Tanh–sinh uses `h=2π/(p ln 2)` and up to `TANH_SINH_LEVELS_MAX` halvings. |
 | Root finding | `bisect`/`newton`/`brent`/`illinois` on `ExactNum`. Opposite signs required for bracket methods (`None` otherwise). `ROOT_MAX_ITER=256`; `root_default_tol` is `2^{ROOT_DEFAULT_TOL}`. |
 | ODE | `rk4`/`rk45_adaptive`/`euler` return `(t, y)` row `ExactNumArray`s. Dormand–Prince 5(4) with `atol`/`rtol`; `h_min=2^{ODE_MIN_STEP}`; cap `ODE_MAX_STEPS`. |
-| DSP | Type-II `dct`/`dst` via a `2N` FFT; type-III inverses scaled so the round-trip is the identity. `fft_real`/`ifft_real` wrap the radix-2 DFT. Real length a power of two ≤ `DSP_MAX_POINTS`. |
+| DSP | Type-II `dct`/`dst` via a `2N` FFT; type-III inverses scaled so the round-trip is the identity. `fft_real`/`ifft_real` wrap the radix-2 DFT. Symmetric Hann / Hamming / Blackman / Kaiser / rectangular windows. Real length a power of two ≤ `DSP_MAX_POINTS` for transforms; windows allow any `n` in `1..=DSP_MAX_POINTS`. |
 
 These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `ExactNum` mul-then-add per term). No BLAS. Integer SIMD is not an FPU; a SIMD bit pattern that differs from the scalar kernel is a bug. `expr!` stays scalar.
 

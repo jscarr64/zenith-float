@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Window functions: symmetric Hann / Hamming / Blackman, Kaiser (`I_0`), rectangular. Golds: `hann(4)=[0,3/4,3/4,0]`; Hamming endpoints `0.08`; Kaiser `β=0` is rectangular.
 - Discrete transforms: `dct`/`idct` (type II / III), `dst`/`idst`, `fft_real`/`ifft_real`. Golds: `idct(dct(x))=x`; constant DCT is DC only; cosine energy at bins `k` and `N-k`; Parseval. `DSP_MAX_POINTS=2048`.
 - ODE solvers: `rk4`, `rk45_adaptive` (Dormand–Prince 5(4)), `euler`. Golds: `y'=-y` RK4 1000-step error `<10^{-12}`; RK45 meets `atol=10^{-12}`; Euler 1000 vs 2000 is `O(h)`.
 - Root finding: `bisect`, `newton`, `brent`, `illinois`. Golds: `bisect(sin,[3,4])=π`; `newton(x²−2)=√2`; Brent fewer iterations than bisection; `bisect(sin,[0,1])=None`.

@@ -259,6 +259,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | Root finding | ✅ | `bisect`/`newton`/`brent`/`illinois`; `bisect(sin,[3,4])=π`; `newton(x²−2)=√2`; Brent fewer iters than bisection; no sign change → `None` |
 | ODE solvers | ✅ | `rk4` / `rk45_adaptive` (Dormand–Prince 5(4)) / `euler`; `y'=-y` RK4 1000-step error `<10^{-12}`; RK45 `atol=10^{-12}`; Euler error shrinks when `h` halves |
 | Discrete transforms | ✅ | `dct`/`idct` (type II / III); `dst`/`idst`; `fft_real`/`ifft_real`; `idct(dct(x))=x`; constant → DC only; cosine energy at `k` and `N-k`; Parseval |
+| Window functions | ✅ | Symmetric Hann / Hamming / Blackman; Kaiser `I_0`; rectangular. `hann(4)=[0,3/4,3/4,0]`; Hamming ends `0.08`; Kaiser `β=0` is ones |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
@@ -525,14 +526,14 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§15.2 window functions**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§16.1 modular arithmetic**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §15.2 | Window functions (Hann / Hamming / Blackman / Kaiser) |
+| §16.1 | Modular arithmetic on `ExactInt` |
 | §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
-| §16–§17, §18.2–§19, §20.2 | Crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| §16.2–§17, §18.2–§19, §20.2 | Hash, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
 ---
 
@@ -540,7 +541,7 @@ Not a second product. First open implementation slice is **§15.2 window functio
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 

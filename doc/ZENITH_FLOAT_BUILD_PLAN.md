@@ -70,9 +70,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 14.2 root finding | ✅ | `bisect(sin,[3,4])=π`; `newton(x²−2)=√2`; `brent` fewer iters than bisection; `bisect(sin,[0,1])=None` |
 | 14.3 ODE | ✅ | RK4 `y'=-y` 1000 steps error `<10^{-12}`; RK45 meets `atol=10^{-12}`; Euler 1000 vs 2000 is `O(h)`. Plan 50 decimals / `1e-50` need more steps than `ODE_MAX_STEPS` |
 | 15.1 discrete transforms | ✅ | `idct(dct(x))=x`; DCT of a constant is DC only; `fft_real` cosine bins `k` and `N-k`; Parseval |
-| 15.2–17, 18.2–18.3, 19–20 | ⬜ | Windows, DSP filters, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 15.2 window functions | ✅ | `hann(4)=[0,3/4,3/4,0]` (symmetric `N−1`); Hamming endpoints `0.08`; Kaiser `β=0` is rectangular; all sums `>0` |
+| 16–17, 18.2–18.3, 19–20 | ⬜ | Crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§15.2 window functions**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§16.1 modular arithmetic**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -832,6 +833,8 @@ Golds:
 ---
 
 ### 15.2 Window functions
+
+**Status:** done 2026-08-30 — symmetric cosine windows (`2πk/(N−1)`); the plan's `2πk/N` does not match `hann(4)=[0,3/4,3/4,0]`. Kaiser via `I_0`.
 
 **Prompt:**
 Implement windowing functions as `ExactNumArray` generators:
