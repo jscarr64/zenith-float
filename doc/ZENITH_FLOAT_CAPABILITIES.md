@@ -59,6 +59,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `SVD_ITER_MAX` | `64` — QR sweeps per singular value in `svd_decomp`; then `None` |
 | `EIGEN_ITER_MAX` | `64` — QR sweeps per eigenvalue in `eigen_decomp`; then `None` |
 | `FFT_MAX_POINTS` | `4096` — max length of `fft` / `ifft`; longer → `None` |
+| `POLY_COMPANION_CLOSED_DEG` | `2` — `ExactNumPoly::roots_real` closed-form companion eigenvalues; higher degree → `None` |
 
 **Special values:** `+Inf`, `−Inf`, `NaN` (with optional `Error`), subnormals at `EXPONENT_MIN`. Public sentinels: `INF_POS`, `INF_NEG`, `NAN`.
 
@@ -242,6 +243,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `fft` / `ifft` | ✅ | Radix-2 Cooley–Tukey; `(1,n)`/`(n,1)` real or `(2,n)` complex; unnormalized DFT; `ifft` divides by `n`; `FFT_MAX_POINTS=4096` |
 | `ExactRational` | ✅ | `num/den` reduced; `den>0`; `from_i64` / `new`; add/sub/mul/div; `to_exact_num`; `1/3+1/6=1/2`; `2/4=1/2`; `(-3)/(-4)=3/4`; 256-bit `1/3` |
 | `ExactInt` | ✅ | Little-endian `Word` limbs; `from_i64`/`u64`/`i128`/`u128`; add/sub/mul; `div_rem`; `gcd`; `pow`; `20!`; `2^100`; `gcd(48,18)=6` |
+| `ExactNumPoly` | ✅ | Dense univariate, low-to-high coeffs; `eval`/`add`/`sub`/`mul`/`div_rem`/`gcd`/`compose`/`derivative`/`integral`; `roots_real` through degree `POLY_COMPANION_CLOSED_DEG=2`; `(x²−1)÷(x−1)=(x+1,0)`; `gcd=x−1`; compose; `∂(x³)=3x²`; `±√2` |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
@@ -508,14 +510,14 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§13.1 dense polynomial arithmetic**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§13.2 Chebyshev approximation**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §13.1 | Dense polynomial arithmetic |
+| §13.2 | Chebyshev approximation |
 | §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
-| §13–§17, §18.2–§19, §20.2 | Poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| §13.3–§17, §18.2–§19, §20.2 | Ortho polys, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
 ---
 
@@ -523,7 +525,7 @@ Not a second product. First open implementation slice is **§13.1 dense polynomi
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 

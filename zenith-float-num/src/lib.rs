@@ -36,6 +36,7 @@ mod mantissa;
 mod num;
 mod ops;
 mod parser;
+mod poly;
 mod radix_float;
 #[cfg(any(test, feature = "random"))]
 mod random_dist;
@@ -73,6 +74,8 @@ pub use crate::ops::consts::ConstCacheInfo;
 pub use crate::ops::consts::Consts;
 #[cfg(feature = "std")]
 pub use crate::ops::consts::SharedConsts;
+pub use crate::poly::ExactNumPoly;
+pub use crate::poly::POLY_COMPANION_CLOSED_DEG;
 pub use crate::radix_float::RadixFloat;
 #[cfg(any(test, feature = "random"))]
 pub use crate::random_dist::RandomDist;
