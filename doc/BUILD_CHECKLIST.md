@@ -389,6 +389,7 @@ Already implemented but not in a crates.io release:
 - Serde `@p=` strings; `IEEE_SIMD_LANE_WIDTH`; `LayoutError` → `MemoryAllocation`
 - Integer SIMD add/sub/mul/div/sqrt/fma; 1000-element `Ieee64Array` bit-identical gold
 - `lazy_static` `spin_no_std`; thumb `no_std` build in `scripts/ci.sh`
+- `expr!` `erf+erfc=1` at 256 bits; `J_0²+Y_0²` working prec; `cexpr!(erf(z))` `p_wrk`
 - Binary 16-byte BE inline + heap `u32` limbs; `u32::MAX+1=2^{32}` at `p=64`
 - CSV 100×3 bit round-trip; missing cell `NAN`; HDF5 leftover (own subset, not C)
 - `GETTING_STARTED.md` sections for IEEE, arrays, specials, rationals, `cexpr!`, `Ball`

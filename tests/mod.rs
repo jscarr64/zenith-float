@@ -1234,3 +1234,54 @@ fn macro_run_misc_test() {
     let z = expr!(ln(5 * (1 / 5)), &mut ctx);
     assert!(z.is_zero());
 }
+
+#[test]
+fn expr_erf_plus_erfc_is_one_at_256() {
+    let p = 256;
+    let rm = RoundingMode::ToEven;
+    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), -100000, 100000);
+    let one = ExactNum::from_u8(1, p);
+    let x = ExactNum::from_u8(1, p);
+    let res: ExactNum = expr!(erf(x) + erfc(x), &mut ctx);
+    assert_eq!(res.cmp(&one), Some(0));
+    assert!(res.err().is_none());
+}
+
+#[test]
+fn expr_bessel_j0_y0_sq_working_prec() {
+    let p = 256;
+    let rm = RoundingMode::ToEven;
+    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), -100000, 100000);
+    let mut cc = Consts::new().unwrap();
+    let x = ExactNum::from_u8(1, p);
+    let nu0 = ExactNum::from_u8(0, p);
+    let got: ExactNum = expr!(
+        bessel_j(x, 0) * bessel_j(x, 0) + bessel_y(x, nu0) * bessel_y(x, nu0),
+        &mut ctx
+    );
+    let p_wrk = p + WORD_BIT_SIZE + 16;
+    let j = x.bessel_j(0, p_wrk, RoundingMode::None, &mut cc);
+    let y = x.bessel_y(&nu0, p_wrk, RoundingMode::None, &mut cc);
+    let mut expect = j
+        .mul(&j, p_wrk, RoundingMode::None)
+        .add(&y.mul(&y, p_wrk, RoundingMode::None), p_wrk, RoundingMode::None);
+    expect.set_precision(p, rm).unwrap();
+    assert_eq!(got.cmp(&expect), Some(0));
+    assert!(got.err().is_none());
+}
+
+#[test]
+fn cexpr_erf_uses_p_wrk() {
+    let p = 256;
+    let rm = RoundingMode::ToEven;
+    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), -100000, 100000);
+    let mut cc = Consts::new().unwrap();
+    let z = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+    let got = cexpr!(erf(z), &mut ctx);
+    let p_wrk = p + WORD_BIT_SIZE + 2;
+    let mut expect = z.erf(p_wrk, RoundingMode::None, &mut cc);
+    expect.set_precision(p, rm).unwrap();
+    cplx_eq("cexpr erf p_wrk", &got, &expect);
+    assert!(got.re().err().is_none());
+    assert!(got.im().err().is_none());
+}

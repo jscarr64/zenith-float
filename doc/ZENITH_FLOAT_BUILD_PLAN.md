@@ -59,7 +59,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 9.2 ExactInt | ✅ | limb `ExactInt`; `20!`; `gcd(48,18)=6`; `2^100`; `17÷5=(3,2)` |
 | 9.3 parse_exact / format_exact | ✅ | `ExactRational::parse_exact("0.1")` is `1/10`; `0.5` dyadic bits; `0.125` round-trip; `1.5e3=1500` |
 | 10.1 Per-op precision | ✅ | specials take `(p,rm,cc)`; no `SOFT_PREC` in the kernel |
-| 10.2 expr! / cexpr! `p_wrk` | 🟡 | leaves use `p_wrk`; not every listed composite gold is locked |
+| 10.2 expr! / cexpr! `p_wrk` | ✅ | leaves use `p_wrk`; `erf+erfc=1` at 256; `J_0²+Y_0²` vs working prec; `cexpr!(erf(z))` Faddeeva at `p_wrk` |
 | 10.3 `ziv_round_vec` | ✅ | `hypot(3,4)=5`; `atan2(1,1)=π/4` at 256 bits; `MAX_PREC_RETRY` |
 | 12.1 Distribution kernels | ✅ | `normal_pdf`/`cdf`; `gamma_pdf`; `poisson_pmf`; \(\chi^2_2\) at \(2\ln 20\) is \(19/20\) |
 | 12.2 RNG | ✅ | `random_uniform`; `random_gaussian` (Box–Muller); `random_exponential`; `random_fill`; seed replay |
@@ -529,6 +529,8 @@ Golds:
 ---
 
 ### 10.2 Precision propagation through `expr!`
+
+**Status:** done 2026-08-31 — leaves already used `p_wrk`. Locked: `expr!(erf(x)+erfc(x))` at 256 bits is `1`; `J_0(1)²+Y_0(1)²` matches working-precision evaluation then dest round; `cexpr!(erf(1+i))` matches Faddeeva at `p_wrk` then dest round.
 
 **Prompt:**
 Extend `expr!` and `cexpr!` to propagate precision through special function leaves correctly. Currently the context precision `p` may not be correctly passed to all leaf functions.
