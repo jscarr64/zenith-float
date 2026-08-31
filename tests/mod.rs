@@ -305,6 +305,38 @@ fn macro_run_cexpr_tests() {
     assert_eq!(ck.re().cmp(k0.re()), Some(0), "ck0 re");
     assert!(tiny_part(ck.im(), p) && tiny_part(k0.im(), p));
 
+    let mh = ExactComplex::from_real(
+        ExactNum::from(1).div(&ExactNum::from(2), p, rm),
+        p,
+    );
+    cplx_eq(
+        "cellk",
+        &cexpr!(elliptic_k(mh), &mut ctx),
+        &mh.elliptic_k(p, rm, &mut cc),
+    );
+    cplx_eq(
+        "celle",
+        &cexpr!(elliptic_e(z0), &mut ctx),
+        &z0.elliptic_e_complete(p, rm, &mut cc),
+    );
+    let cf = cexpr!(elliptic_f(mh, z0), &mut ctx);
+    let f0 = mh.elliptic_f(&z0, p, rm, &mut cc);
+    assert_eq!(cf.re().cmp(f0.re()), Some(0), "cellf re");
+    assert!(tiny_part(cf.im(), p) && tiny_part(f0.im(), p));
+    let cei = cexpr!(elliptic_e_inc(mh, z0), &mut ctx);
+    let ei0 = mh.elliptic_e(&z0, p, rm, &mut cc);
+    assert_eq!(cei.re().cmp(ei0.re()), Some(0), "cellei re");
+    assert!(tiny_part(cei.im(), p) && tiny_part(ei0.im(), p));
+    cplx_eq(
+        "cellpi",
+        &cexpr!(elliptic_pi(z0, mh), &mut ctx),
+        &z0.elliptic_pi_complete(&mh, p, rm, &mut cc),
+    );
+    let cpi = cexpr!(elliptic_pi_inc(z0, mh, z0), &mut ctx);
+    let pi0 = z0.elliptic_pi(&mh, &z0, p, rm, &mut cc);
+    assert_eq!(cpi.re().cmp(pi0.re()), Some(0), "cellpii re");
+    assert!(tiny_part(cpi.im(), p) && tiny_part(pi0.im(), p));
+
     let back = cexpr!(ln(exp(x)), &mut ctx);
     let d = back.re().sub(x.re(), p, RoundingMode::None).abs();
     assert!(d.exponent().unwrap_or(0) < -((p as i32) / 8));

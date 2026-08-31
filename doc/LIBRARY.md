@@ -355,7 +355,7 @@ Same **context** as `expr!` (`Context` or the two tuples above). Same extra-prec
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `ai`, `bi`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `ai`, `bi`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`.
 
 **Named constants:** `I`, `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` (reals except `I` are `x + 0i`).
 
@@ -375,6 +375,8 @@ Same **context** as `expr!` (`Context` or the two tuples above). Same extra-prec
 | `fresnel_s` / `fresnel_c` | via `erf`; entire |
 | `bessel_j_nu` / `bessel_i` | entire for integer ν; cut on (−∞, 0] otherwise; \(z=0\) non-integer ν → NaN |
 | `bessel_y` / `bessel_k` | cut on (−∞, 0]; \(z=0\) → NaN |
+| `elliptic_k` | cut on \([1,+\infty)\) in \(m\); \(K(1)=+\infty\); \(K(2+\varepsilon i)\) and \(K(2-\varepsilon i)\) are conjugates |
+| incomplete \(F,E,\Pi\) | Carlson cuts when \(1-x^2\), \(1-mx^2\), or \(1-nx^2\) lies on \((-\infty,0]\) |
 
 **Trig / hyperbolic:** `sin(x+iy) = sin(x)cosh(y) + i cos(x)sinh(y)` (and the matching identities). The **complex** argument is never passed to `rem_pi`. Only a real component uses real `sin_cos` / `sinh_cosh` (those may reduce that real).
 
@@ -466,7 +468,8 @@ Cartesian `re + i·im` as two `ExactNum`s.
 | `fresnel_s` / `fresnel_c` | via `erf`; entire |
 | `ai` / `bi` | series for small \(\lvert z\rvert\); asymptotic or \(\omega\)-connection for large \(\lvert z\rvert\) |
 | `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | series or Hankel; \(I_ν=i^{-ν}J_ν(iz)\); \(K_ν=(\pi/2)i^{ν+1}H_ν^{(1)}(iz)\) |
-| Other specials (elliptic, `_2F1`, …) | not yet; backlog (software limbs, principal branches) |
+| `elliptic_k` / `elliptic_e_complete` / `elliptic_f` / `elliptic_e` / `elliptic_pi_complete` / `elliptic_pi` | Carlson in \(\mathbb{C}\); \(m=k^2\), \(x=\sin\varphi\); \(K(1)=+\infty\); \(K\) cut on \([1,+\infty)\) |
+| Other specials (`_2F1`, …) | not yet; backlog (software limbs, principal branches) |
 
 No `expr!` for complexes — use `cexpr!`. Serde: struct `{ "re", "im" }` of decimal strings.
 

@@ -109,7 +109,8 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `hypergeom_2f1`, `betainc` | ✅ | ✅ | Series / Gauss / Pfaff; regularized \(I_x\) |
 | `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c` | ✅ | ✅ | Series + full \(f,g\) / factorial asymptotic; Accumath eval golds; MPFR oracles still open |
 | `sin_cos`, `sinh_cosh` | ✅ | ✅ | Tuple methods; `expr!` uses `sin`/`cos` and `sinh`/`cosh` |
-| Complex: `ExactComplex` | `cexpr!` | ✅ | Per-part cancel; principal cuts; no `atan2`/`rem_pi`; MPFR add/mul |
+| Complex: `ExactComplex` | `cexpr!` | ✅ | Per-part cancel; principal cuts; no `atan2`/`rem_pi`; MPFR add/mul; elliptic Carlson golds |
+| Complex elliptic \(K,E,\Pi\) | `elliptic_k` … `elliptic_pi_inc` | ✅ | Carlson in \(\mathbb{C}\); \(K(1)=+\infty\); Legendre + cut golds |
 | Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |
 
 ### 1.6 I/O and integration

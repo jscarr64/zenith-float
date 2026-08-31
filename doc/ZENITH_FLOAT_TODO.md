@@ -36,12 +36,13 @@ Rules for every item:
 | Complex `ei` / `si` / `ci` / `li` / Fresnel | 2026-08-30 | `ExactComplex`; series or asymptotic `Ei`; `Si`/`Ci` via `Ei(±iz)`; `li=Ei(ln z)`; Fresnel via `erf` |
 | Complex Bessel \(J_ν,Y_ν,I_ν,K_ν\) | 2026-08-30 | series or Hankel; \(I_ν=i^{-ν}J_ν(iz)\); \(K_ν=(\pi/2)i^{ν+1}H_ν^{(1)}(iz)\) |
 | Airy \(\mathrm{Ai},\mathrm{Bi}\) (real + complex) | 2026-08-30 | series / asymptotic / \(\omega\)-connection; `ai_prime`/`bi_prime` on real; MPFR `ai` |
+| Complex elliptic \(K,E,\Pi\) (complete + incomplete) | 2026-08-30 | Carlson \(R_F,R_C,R_D,R_J\) in \(\mathbb{C}\); \(m=k^2\), \(x=\sin\varphi\); \(K(1)=+\infty\); cut of \(K\) on \([1,+\infty)\) |
 
 ---
 
 ## Cross-cutting leftovers
 
-- MPFR has `eint`, `jn`, `yn`, `digamma` — oracles in `compare_special_fn_test.rs`. No MPFR `si` / `ci` / `li` / Fresnel; those stay identity/series golds
-- Remaining complex specials on `ExactComplex`: elliptic, `_2F1`, … Software limbs only; principal branches; golds on the object. Do not wrap the real series on \(\lvert z\rvert\). `cexpr!` leaves when the method exists.
+- MPFR has `eint`, `jn`, `yn`, `digamma` — oracles in `compare_special_fn_test.rs`. No MPFR `si` / `ci` / `li` / Fresnel / complex elliptic; those stay identity/series golds
+- Remaining complex specials on `ExactComplex`: `_2F1`, … Software limbs only; principal branches; golds on the object. Do not wrap the real series on \(\lvert z\rvert\). `cexpr!` leaves when the method exists.
 
 Hung searches and invented closed forms stay `NaN` / `InvalidArgument`.

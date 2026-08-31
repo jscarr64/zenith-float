@@ -177,6 +177,28 @@ fn three_arg(
     )))
 }
 
+fn three_arg_cc(
+    fun: TokenStream,
+    expr: &ExprCall,
+    initial_err: usize,
+    err: &mut Vec<usize>,
+    cc: &mut Consts,
+) -> Result<TokenStream, Error> {
+    check_arg_num(3, expr)?;
+    let arg1 = traverse_expr(&expr.args[0], err, cc)?;
+    let arg2 = traverse_expr(&expr.args[1], err, cc)?;
+    let arg3 = traverse_expr(&expr.args[2], err, cc)?;
+    err.push(initial_err);
+    Ok(quote!(#fun(
+        &(#arg1),
+        &(#arg2),
+        &(#arg3),
+        p_wrk,
+        zenith_float::RoundingMode::None,
+        cc
+    )))
+}
+
 fn two_arg(
     fun: TokenStream,
     expr: &ExprCall,
@@ -201,7 +223,7 @@ fn traverse_call(
     err: &mut Vec<usize>,
     cc: &mut Consts,
 ) -> Result<TokenStream, Error> {
-    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"abs\", \"arg\", \"conj\", \"ldexp\", \"scalb\", \"logb\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"digamma\", \"ei\", \"si\", \"ci\", \"li\", \"fresnel_s\", \"fresnel_c\", \"ai\", \"bi\", \"bessel_j_nu\", \"bessel_y\", \"bessel_i\", \"bessel_k\" are allowed in cexpr!.";
+    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"abs\", \"arg\", \"conj\", \"ldexp\", \"scalb\", \"logb\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"digamma\", \"ei\", \"si\", \"ci\", \"li\", \"fresnel_s\", \"fresnel_c\", \"ai\", \"bi\", \"bessel_j_nu\", \"bessel_y\", \"bessel_i\", \"bessel_k\", \"elliptic_k\", \"elliptic_e\", \"elliptic_e_inc\", \"elliptic_f\", \"elliptic_pi\", \"elliptic_pi_inc\" are allowed in cexpr!.";
     let Expr::Path(fun) = expr.func.as_ref() else {
         return Err(Error::new(expr.span(), errmes));
     };
@@ -620,6 +642,53 @@ fn traverse_call(
             err,
             cc,
             true,
+        ),
+        "elliptic_k" => one_arg(
+            quote!(zenith_float::ExactComplex::elliptic_k),
+            expr,
+            2,
+            err,
+            cc,
+            true,
+        ),
+        "elliptic_e" => one_arg(
+            quote!(zenith_float::ExactComplex::elliptic_e_complete),
+            expr,
+            2,
+            err,
+            cc,
+            true,
+        ),
+        "elliptic_f" => two_arg(
+            quote!(zenith_float::ExactComplex::elliptic_f),
+            expr,
+            2,
+            err,
+            cc,
+            true,
+        ),
+        "elliptic_e_inc" => two_arg(
+            quote!(zenith_float::ExactComplex::elliptic_e),
+            expr,
+            2,
+            err,
+            cc,
+            true,
+        ),
+        "elliptic_pi" => two_arg(
+            quote!(zenith_float::ExactComplex::elliptic_pi_complete),
+            expr,
+            2,
+            err,
+            cc,
+            true,
+        ),
+        "elliptic_pi_inc" => three_arg_cc(
+            quote!(zenith_float::ExactComplex::elliptic_pi),
+            expr,
+            2,
+            err,
+            cc,
         ),
         _ => Err(Error::new(expr.span(), errmes)),
     }
