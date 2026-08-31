@@ -1,7 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 — 2026-08-31
 
+First crates.io release.
+
+- HDF5 array I/O (feature `hdf5`): crates.io `hdf5-rust` 1.0, no `libhdf5`. `Ieee64Array` / `Ieee32Array` / `ExactNumArray` `to_hdf5` / `from_hdf5`. Golds: 100×3 binary64 bits; 50×50 `ExactNum` at 256 bits; 1-D 1000 binary32 bits; nested `results/data`; append 10×3→20×3; wrong dataset name `Err`. CSV unchanged.
 - Pre-publish gate: `scripts/zenith_prepublish.sh` (12 checks) and `scripts/ci_full.sh`. dashu 0.6.0 has no `euler_gamma` and no scoped rounding closure. `LIBRARY.md` `expr!` leaves include `gammainc_upper`, `ai`, `bi`.
 - Hex limb CI: `golds/hex/reference.txt` (35 rows) bit-identical on i686 musl, wasm32-wasip1, and aarch64 musl vs x86_64 `to_bytes()`.
 - Integer SIMD for software IEEE arrays: add/sub/mul/div/sqrt/fma (`IEEE_SIMD_LANE_WIDTH=4`). Gold: 1000-element `Ieee64Array` bit-identical to the scalar kernel and to `ExactNum` rounded to binary64.

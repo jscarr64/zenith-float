@@ -29,6 +29,8 @@ mod complex_hypergeom;
 mod complex_special;
 mod conv;
 mod csvfmt;
+#[cfg(feature = "hdf5")]
+mod hdf5fmt;
 pub mod ctx;
 mod defs;
 mod dist;
@@ -166,6 +168,8 @@ pub use crate::defs::WORD_SIGNIFICANT_BIT;
 pub use crate::common::util::MAX_PREC_RETRY;
 pub use crate::csvfmt::CSV_MAX_COLS;
 pub use crate::csvfmt::CSV_MAX_ROWS;
+#[cfg(feature = "hdf5")]
+pub use hdf5_rust::{HDF5DType, HDF5Error, Hdf5File};
 
 #[cfg(feature = "random")]
 pub use crate::common::test_rng::{random_seed, reseed_random, seeded_random, DEFAULT_RANDOM_SEED};

@@ -7,7 +7,7 @@ Living document for what is **implemented**, **tested**, and **required** for ze
 **Trio:** walk list [`ZENITH_FLOAT_BUILD_PLAN.md`](ZENITH_FLOAT_BUILD_PLAN.md) · inventory [`ZENITH_FLOAT_CAPABILITIES.md`](ZENITH_FLOAT_CAPABILITIES.md) · this checklist (CI / crates / API). Citation: [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md). There is no TODO file.
 
 **Last updated:** 2026-08-31  
-**Crate version:** 0.1.0 (+ unreleased changelog items)  
+**Crate version:** 1.0.0  
 **Reference versions (crates.io):** astro-float 0.9.6, dashu-float 0.6.0  
 **Policy:** No hardware floating-point in calculations. Rust hardware IEEE type tokens are forbidden in `.rs` (`scripts/ci.sh`). Software `Ieee32`/`Ieee64` store binary32/binary64 as integer bits.
 
@@ -105,10 +105,10 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `asinh`, `acosh`, `atanh` | ✅ | ✅ | `asinh` fixed for large \|x\| (2\|e\| extra bits) |
 | `erf`, `erfc` | ✅ | ✅ | Series + complementary asymptotic; MPFR 1-ULP on \|x\|≲4 |
 | `gamma`, `ln_gamma` | ✅ | ✅ | Stirling + reflection; factorial integers; MPFR 1-ULP |
-| `digamma`, `gammainc` | ✅ | ✅ | Recurrence + Bernoulli; lower series; Accumath ψ / γ(s,x) golds |
+| `digamma`, `gammainc` | ✅ | ✅ | Recurrence + Bernoulli; lower series; ψ / γ(s,x) identity golds |
 | `bessel_j` (integer n) | ✅ | ✅ | Power series; `n ≤ 1024`; MPFR `jn` for n=0,1,2 |
 | `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k` | ✅ | ✅ | Real order; \(K\): \(x>0\), \(\lvertν\rvert\le 32\) |
-| `elliptic_k` / `e` / `f` / `pi` | ✅ | ✅ | Carlson; \(m=k^2\), \(x=\sin\varphi\); Accumath identities |
+| `elliptic_k` / `e` / `f` / `pi` | ✅ | ✅ | Carlson; \(m=k^2\), \(x=\sin\varphi\); identity golds |
 | `legendre_p`, `assoc_legendre_p` | ✅ | ✅ | \(n\le 48\); Condon–Shortley |
 | `hypergeom_2f1`, `betainc` | ✅ | ✅ | Series / Gauss / Pfaff; regularized \(I_x\) |
 | `normal_pdf` / `cdf`, `gamma_pdf`, `poisson_pmf`, `chi_squared_cdf` | ✅ | ✅ | \(1/\sqrt{2\pi}\); \(1/2\); \(e^{-1}\); \(\chi^2_2(2\ln 20)=19/20\) |
@@ -144,7 +144,8 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `FromStr` (decimal, `std`) | ✅ |
 | `serde` (`@p=` strings, IEEE bits, arrays / `Ball` / rationals; feature; requires `std`) | ✅ |
 | Binary `to_bytes` / `from_bytes` / 16-byte inline BE | ✅ |
-| CSV `to_csv` / `from_csv` (pure Rust; no `libhdf5`) | ✅ |
+| CSV `to_csv` / `from_csv` (pure Rust) | ✅ |
+| HDF5 `to_hdf5` / `from_hdf5` (feature `hdf5`, crates.io `hdf5-rust`; no `libhdf5`) | ✅ |
 | `random_normal` (feature `random`) | ✅ |
 | `expr!` / `cexpr!` compile and run tests (`trybuild` + `tests/mod.rs`) | ✅ |
 | `expr!` cancellation / precision tests (root `tests/`) | ✅ |
@@ -166,6 +167,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | Criterion / dedicated benches | ✅ (`zenith-float-num/benches/`: arithmetic, transcendentals, composite, specials, linalg) |
 | Pre-publish 12-check | ✅ (`scripts/zenith_prepublish.sh` / `scripts/ci_full.sh`) |
 | Hex limb CI (arm / wasm / 32-bit) | ✅ (`scripts/ci_hex_*.sh`; `golds/hex/reference.txt`) |
+| HDF5 feature golds | ✅ (`cargo test -p zenith-float-num --features hdf5 --lib`) |
 | `proptest` / quickcheck | ✅ (`PROPTEST_CASES = 1000` in `tests/proptest_props.rs`; `TEST_ITERS = 256` loops remain) |
 
 **Property tests** (`zenith-float-num/src/ops/tests.rs`): inverse pairs (ln↔exp, sin↔asin, log↔pow, etc.) with mathematically derived error bounds; exponent sampling capped at `TEST_EXP_BOUND = 1024` for runtime.
@@ -206,7 +208,7 @@ Local reference trees (`dashu-master/`, `astro-float-main/`) are not in this rep
 | Ziv + Ball correct-rounding proof | ✅ `ziv_round` / `ziv_round_vec` / `Ball` / `ComplexBall` | ⬜ | ✅ real Lip + complex disk golds; vec hypot / atan2 |
 | `serde` / `random` | ✅ optional | ✅ default-on | ✅ optional |
 | Stack-inlined small values | ✅ `INLINE_WORDS` | ⬜ | ✅ |
-| Published crate + bench history | ✅ 0.1.0 + TSV history | ✅ 0.9.x | ✅ |
+| Published crate + bench history | ✅ 1.0.0 + TSV history | ✅ 0.9.x | ✅ |
 
 ### 2.2 zenith-float vs astro-float (lineage)
 
@@ -339,7 +341,7 @@ Does not block a public 0.1.x; aligns with §2.3 P2 items.
 
 ### 3.7 Load-bearing exclusions (not a backlog)
 
-See `doc/Additions_to_existing_29-082026.md`. Macros are part of this crate (`expr!`, `cexpr!`, `exact!`, `fbig!`); do not refuse work because Accumath avoids macros.
+See `doc/Additions_to_existing_29-082026.md`. Macros are part of this crate (`expr!`, `cexpr!`, `exact!`, `fbig!`).
 
 - [ ] 🚫 Hardware IEEE converters inside the library — CI and §3.5; packing bits belongs in a caller or a separate crate (`frexp` / `ilogb`)
 - [x] Complex expressions — `cexpr!` (cancellation on both parts; imaginary unit `I`; leaf set + `tests/mod.rs` / trybuild)
@@ -379,9 +381,9 @@ Before calling a version **production-ready** as a public crate:
 
 ---
 
-## 6. Changelog sync (unreleased)
+## 6. Changelog sync (1.0.0)
 
-Already implemented but not in a crates.io release:
+Shipped in the crates.io 1.0.0 release:
 
 - Newton reciprocal at three words and up
 - `hypot`, `atan2`, `log1p`, `expm1`
@@ -400,7 +402,7 @@ Already implemented but not in a crates.io release:
 - `scripts/zenith_prepublish.sh` / `ci_full.sh` (12 checks); dashu §24 verified
 - Hex limb CI: 35-row `golds/hex/reference.txt` identical on i686 musl, wasm32-wasip1, aarch64 musl
 - Binary 16-byte BE inline + heap `u32` limbs; `u32::MAX+1=2^{32}` at `p=64`
-- CSV 100×3 bit round-trip; missing cell `NAN`; HDF5 leftover (own subset, not C)
+- CSV 100×3 bit round-trip; missing cell `NAN`; HDF5 via `hdf5-rust` (100×3 bits, 50×50 exact at 256 bits, 1-D 1000 binary32, nested group, append, wrong name `Err`)
 - `GETTING_STARTED.md` sections for IEEE, arrays, specials, rationals, `cexpr!`, `Ball`
 - `HELP.md` user-guide rewrite (recipes, mistakes, FAQ)
 - `mpfr-tests`: GMP rationals, real-axis complex specials, `gamma_inc`, identity leftovers

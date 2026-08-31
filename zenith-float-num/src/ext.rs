@@ -2285,7 +2285,7 @@ impl ExactNum {
 
 - Algorithm: Carlson `R_F` duplication; cap `CARLSON_DUPE_MAX = 128`.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: no (Accumath `K` identities).",
+- MPFR oracle: no (identity golds; GNU MPFR has no Carlson `K`).",
         elliptic_k,
         Self,
         { NAN },
@@ -2391,7 +2391,7 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: three-term recurrence at `p + O(n)` bits. Cap via caller (`LEGENDRE_N_MAX` on Accumath).
+    /// - Algorithm: three-term recurrence at `p + O(n)` bits. Cap `ORTHOPOLY_N_MAX`.
     /// - Bound: working-precision recurrence (not a Ziv leaf).
     /// - MPFR oracle: no.
     pub fn legendre_p(&self, n: u32, p: usize, rm: RoundingMode) -> Self {

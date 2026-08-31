@@ -32,8 +32,14 @@ debug_slew() {
     echo "error: hardware IEEE type tokens are forbidden in zenith-float Rust sources"
     exit 1
   fi
+  if rg -n -i 'accumath' --glob '!scripts/ci.sh' .; then
+    echo "error: this public crate must not mention that name"
+    exit 1
+  fi
 
   cargo test --workspace
+  cargo test -p zenith-float-num --features hdf5 --lib
+  cargo test -p zenith-float --features hdf5 --lib
   cargo test -p zenith-float-num --features random --test radix_roundtrip
   cargo test -p zenith-float-num --lib --release
   cargo test -p zenith-float-num --lib --no-default-features --features std

@@ -107,7 +107,7 @@ fn bench_reciprocal(c: &mut Criterion) {
 fn bench_recip_mul_vs_div(c: &mut Criterion) {
     let mut group = c.benchmark_group("arithmetic/recip_mul_vs_div");
     let rm = RoundingMode::ToEven;
-    // Division at very high precision is a common Accumath hot path.
+    // Division at very high precision is a common hot path.
     let p = 14400;
 
     let mut cc = init_cc();

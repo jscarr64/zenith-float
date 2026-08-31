@@ -453,6 +453,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
+name = "hdf5-rust"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3558ff3b4b3dadf94ec99a34f1f72db786361fd23329b0074adadef9aa25cc9"
+
+[[package]]
 name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1272,7 +1278,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "zenith-float"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "trybuild",
  "zenith-float-macro",
@@ -1281,7 +1287,7 @@ dependencies = [
 
 [[package]]
 name = "zenith-float-compare"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "astro-float",
  "clap",
@@ -1293,7 +1299,7 @@ dependencies = [
 
 [[package]]
 name = "zenith-float-macro"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1303,10 +1309,11 @@ dependencies = [
 
 [[package]]
 name = "zenith-float-num"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "criterion",
  "gmp-mpfr-sys",
+ "hdf5-rust",
  "itertools",
  "lazy_static",
  "proptest",

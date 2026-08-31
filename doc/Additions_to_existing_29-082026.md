@@ -1,6 +1,6 @@
 # Review of API/docs recommendations (2026-08-29)
 
-The original note started at item **2** (item **1** was not in the pasted file). Items **2, 5, 6, 7, 9, 10** are in the crate. **Complex expressions use `cexpr!`** — this crate has macros; the Accumath “no macros” rule does not apply here. Items **4** and **8** remain load-bearing exclusions.
+The original note started at item **2** (item **1** was not in the pasted file). Items **2, 5, 6, 7, 9, 10** are in the crate. **Complex expressions use `cexpr!`** — this crate has macros. Items **4** and **8** remain load-bearing exclusions.
 
 ## Implemented (original 2, 5, 6, 7, 9, 10, and complex macros)
 
@@ -42,7 +42,7 @@ Not blocked by macros. `cexpr!` uses the same extra-precision loop and measures 
 
 ### 4. Bessel Y_n, I_n, K_n, fractional order — **backlog**
 
-Integer `J_n` is a factorial power series (`n ≤ 1024`). \(Y_\nu\), \(I_\nu\), \(K_\nu\) and non-integer \(J_\nu\) are required before Accumath can drop its second kernel. Tracked in `ZENITH_FLOAT_BUILD_PLAN.md` / `ZENITH_FLOAT_CAPABILITIES.md`. Not a wrapper around integer `bessel_j`.
+Integer `J_n` is a factorial power series (`n ≤ 1024`). \(Y_\nu\), \(I_\nu\), \(K_\nu\) and non-integer \(J_\nu\) are in the crate. Tracked in `ZENITH_FLOAT_BUILD_PLAN.md` / `ZENITH_FLOAT_CAPABILITIES.md`. Not a wrapper around integer `bessel_j`.
 
 ### 8. In-tree hardware IEEE conversion — **will not add**
 

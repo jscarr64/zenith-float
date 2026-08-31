@@ -4,7 +4,7 @@ use std::hint::black_box;
 
 use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode};
 
-/// Precision tiers: interactive, high-precision scientific, heavy Accumath-style,
+/// Precision tiers: interactive, high-precision scientific, heavy evaluation,
 /// and a tier large enough to exercise Toom-3 multiplication (512 mantissa words).
 pub const PRECISIONS: &[usize] = &[128, 1024, 4096, 32768];
 

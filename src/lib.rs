@@ -138,7 +138,7 @@
 //!
 //! ``` toml
 //! [dependencies]
-//! zenith-float = { version = "0.1.0", default-features = false }
+//! zenith-float = { version = "1.0.0", default-features = false }
 //! ```
 //!
 

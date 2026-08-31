@@ -1,4 +1,4 @@
-//! Composite formula benchmarks — end-to-end workloads resembling Accumath evaluation.
+//! Composite formula benchmarks — end-to-end workloads resembling application evaluation.
 
 mod bench_core;
 
@@ -109,7 +109,7 @@ fn bench_trig_identity(c: &mut Criterion) {
     group.finish();
 }
 
-/// Decimal format of computed values — typical I/O path for Accumath results.
+/// Decimal format of computed values — typical I/O path for formatted results.
 fn bench_decimal_format(c: &mut Criterion) {
     let mut group = c.benchmark_group("composite/decimal_format");
     let rm = RoundingMode::ToEven;

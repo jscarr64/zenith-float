@@ -8,13 +8,13 @@ All arithmetic is software integer limbs. There are no hardware binary interchan
 
 ```toml
 [dependencies]
-zenith-float = "0.1.0"
+zenith-float = "1.0"
 ```
 
 `std` is on by default (formatting and `FromStr`). For `no_std` plus an allocator:
 
 ```toml
-zenith-float = { version = "0.1.0", default-features = false }
+zenith-float = { version = "1.0", default-features = false }
 ```
 
 ## 2. Construct numbers
@@ -178,7 +178,7 @@ let v = u.matmul(&u).unwrap();
 assert_eq!(v.get2(0, 0).unwrap().to_bits(), Ieee64::from_i32(2).to_bits());
 ```
 
-CSV and the 16-byte binary record are in [LIBRARY.md](LIBRARY.md) §7b. Decompositions (`lu_decomp`, `svd_decomp`) return `None` if singular or a workspace reserve fails.
+CSV, HDF5 (feature `hdf5`), and the 16-byte binary record are in [LIBRARY.md](LIBRARY.md) §7b. Decompositions (`lu_decomp`, `svd_decomp`) return `None` if singular or a workspace reserve fails.
 
 ## 8. Specials at caller-chosen `(p, rm, cc)`
 

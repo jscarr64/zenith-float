@@ -7,11 +7,12 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Jeffrey S Carr <jeff@mcgeeresources.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://origin.cursor.com/jscarr/zenith-float"
+repository = "https://github.com/jscarr64/zenith-float"
+homepage = "https://github.com/jscarr64/zenith-float"
 
 [package]
 name = "zenith-float"
@@ -20,9 +21,16 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
 description = "Arbitrary-precision software floating-point arithmetic on integer limbs."
 readme = "README.md"
+documentation = "https://docs.rs/zenith-float"
 exclude = [
+    "zenith-float-num",
+    "zenith-float-macro",
+    "zenith-float-compare",
+    "scripts",
+    "golds",
     "doc/BUILD_CHECKLIST.md",
     "doc/ZENITH_FLOAT_BUILD_PLAN.md",
     "doc/Additions_to_existing_29-082026.md",
@@ -32,14 +40,15 @@ keywords = ["arbitrary-precision", "bigfloat", "numeric", "no-std"]
 categories = ["mathematics", "no-std", "science"]
 
 [dependencies]
-zenith-float-num = { path = "zenith-float-num", version = "0.1.0", default-features = false }
-zenith-float-macro = { path = "zenith-float-macro", version = "0.1.0" }
+zenith-float-num = { path = "zenith-float-num", version = "1.0.0", default-features = false }
+zenith-float-macro = { path = "zenith-float-macro", version = "1.0.0" }
 
 [features]
 default = ["std"]
 std = ["zenith-float-num/std"]
 random = ["zenith-float-num/random"]
 serde = ["std", "zenith-float-num/serde"]
+hdf5 = ["std", "zenith-float-num/hdf5"]
 # Optional MPFR golden tests (Linux x86_64; enable with --features mpfr-tests).
 mpfr-tests = ["zenith-float-num/mpfr-tests"]
 

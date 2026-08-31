@@ -2,7 +2,7 @@
 
 Every item on this list must be implemented, golded, and passing CI before zenith-float is complete. No item is optional. No item is deferred. Build in the order listed — each section's dependencies are satisfied by the sections above it.
 
-**Living docs (same trio as Accumath — there is no TODO file):**
+**Living docs (walk list, capabilities, this file — there is no TODO file):**
 
 | Document | Role |
 | --- | --- |
@@ -76,7 +76,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 17.1 serde | ✅ | `ExactRational` `1/3` round-trip with `@p=`; `ExactNumArray` keeps `p`; Ieee64 bits; shape mismatch `Err` |
 | 17.2 binary format | ✅ | 16-byte BE inline; heap `u32` limbs; NaN flag `0x0A`; array shape; invalid → `Err`; `u32::MAX+1=2^{32}` at `p=64` |
 | 17.3 CSV | ✅ | 100×3 `Ieee64Array` bit round-trip; empty cell → `NAN`; extra column `Err`; `CSV_MAX_ROWS` / `CSV_MAX_COLS` |
-| 17.3 HDF5 leftover | ⬜ | No `libhdf5`. Own contiguous subset later, not a general HDF5 crate |
+| 17.3 HDF5 | ✅ | Feature `hdf5` → crates.io `hdf5-rust` 1.0. 100×3 `Ieee64Array` bits; 50×50 `ExactNumArray` at 256 bits; 1-D `Ieee32Array` length 1000; nested `results/data`; append 10×3→20×3; wrong name `Err` |
 | 18.2 GETTING_STARTED | ✅ | Ieee32/64, arrays, `(p,rm,cc)`, ExactRational/ExactInt, `cexpr!` cuts, `Ball` |
 | 18.3 HELP.md | ✅ | Precision model, rounding, Consts, expr vs methods, cuts, arrays, IEEE, 30 recipes, 20 mistakes, 40 FAQ |
 | 19.1 MPFR oracles | ✅ | GMP rationals; real-axis complex specials; `gamma_inc`; identity golds where GNU MPFR/MPC have no function |
@@ -85,7 +85,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 19.4 Pre-publish | ✅ | `scripts/zenith_prepublish.sh` 12/12; `ci_full.sh`; dashu §24 verified (no γ, no scoped rounding closure) |
 | 20.2 hex CI | ✅ | `ci_hex_{arm,wasm,32bit}.sh`; 35 rows vs `golds/hex/reference.txt`; `to_bytes` identical across word size and arch |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. The walk list is complete except **§17.3 HDF5** (deferred: own contiguous subset, not `libhdf5`).
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. The walk list is complete.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -647,7 +647,7 @@ Golds:
 **Status:** done 2026-08-30 — `dist.rs`; `normal_pdf(0,0,1)=1/\sqrt{2\pi}`; `normal_cdf=1/2`; `gamma_pdf(1,1,1)=\mathrm{poisson\_pmf}(0,1)=e^{-1}`; \(\chi^2_2(2\ln 20)=19/20\).
 
 **Prompt:**
-Implement the following distribution PDF/CDF kernels at arbitrary precision in zenith-float. These are the numeric primitives that Accumath's symbolic layer calls for numeric evaluation.
+Implement the following distribution PDF/CDF kernels at arbitrary precision in zenith-float.
 
 - `normal_pdf(x, mu, sigma, p, rm, cc)` — `exp(-(x-mu)²/(2sigma²)) / (sigma·sqrt(2π))`
 - `normal_cdf(x, mu, sigma, p, rm, cc)` — `(1 + erf((x-mu)/(sigma·sqrt(2))))/2`; uses existing `erf`
@@ -881,8 +881,6 @@ Implement modular arithmetic on `ExactInt` (from §9.2):
 - `miller_rabin(n, witnesses)` — primality test; deterministic for `n < 3·10^{18}`
 - `pollard_rho(n)` — Brent's variant; `None` if `n` is prime; cap `POLLARD_RHO_ITER_MAX`
 
-These are the number-theoretic primitives that the Accumath number theory layer calls.
-
 Golds:
 - `mod_pow(2, 100, 1000000007)` matches known value
 - `mod_inv(3, 7) = 5`
@@ -958,7 +956,7 @@ Golds:
 
 ### 17.3 HDF5 and CSV I/O for arrays
 
-**Status:** partial 2026-08-30 — pure-Rust CSV done. HDF5 is leftover: do not link `libhdf5`. A zenith-owned contiguous subset (superblock + one dataset of §17.2 records or binary64 bits) is the only path if we need `.h5` later. A general HDF5 library is out of scope.
+**Status:** done 2026-08-31 — CSV (pure Rust) and HDF5 (feature `hdf5`, crates.io `hdf5-rust` 1.0). No `libhdf5`. CSV is unchanged.
 
 **Prompt:**
 Implement I/O for `ExactNumArray` and `Ieee64Array`:
@@ -975,6 +973,8 @@ Golds:
 - HDF5 round-trip: write `ExactNumArray`, read back at same precision, values match
 - Missing value in CSV → `NaN` at that position
 - Wrong dataset name in HDF5 → `Err`
+
+**Delivered:** `Ieee32Array` `to_hdf5` / `from_hdf5` as well (1-D length-1000 gold). Opaque `ExactNum` cells are `u32` BE length + `to_bytes`, padded. Nested `results/data` and `append_hdf5` 10×3→20×3. HDF5 errors map to `Error::InvalidArgument`.
 
 ---
 

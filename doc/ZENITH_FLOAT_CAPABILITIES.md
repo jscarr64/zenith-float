@@ -1,6 +1,6 @@
 # zenith-float Capability Reference
 
-**Version:** 0.1.0  
+**Version:** 1.0.0  
 **Date:** 2026-08-31  
 **License:** MIT OR Apache-2.0  
 **Status:** Public crate  
@@ -39,6 +39,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `std` | yes | `Display`, `LowerExp`, `UpperExp`, `Binary`, `Octal`, `UpperHex`, `LowerHex`, `FromStr`, `std::error::Error` for `Error`, `SharedConsts`, serde when `serde` is also on |
 | `random` | no | `ExactNum::random_normal`, `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED` |
 | `serde` | no | `Serialize` / `Deserialize` for `ExactNum` / `ExactComplex` / `ExactRational` / `ExactInt` / arrays / `Ball`; decimal strings carry `@p=`; implies `std` |
+| `hdf5` | no | `to_hdf5` / `from_hdf5` on `Ieee64Array` / `Ieee32Array` / `ExactNumArray` via crates.io `hdf5-rust` 1.0. Implies `std`. No `libhdf5`. |
 | `mpfr-tests` | no | Optional MPFR bit-oracle tests; Linux x86_64 + `rug` only; not a runtime dependency |
 
 `no_std` is supported when a global allocator is available (`default-features = false`). Formatting traits require `std`.
@@ -275,7 +276,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | Hash / HMAC | ✅ | `sha256`/`sha512`/`hmac_sha256`/`constant_time_eq`; empty and `abc` FIPS vectors; RFC 4231 HMAC TC1 |
 | Binary interchange | ✅ | `to_inline_bytes` / `write_bytes` / `to_bytes` / `from_bytes`; 16-byte BE inline; heap `u32` limbs; array shape; invalid → `Err` |
 | CSV | ✅ | `Ieee64Array` / `ExactNumArray` `to_csv` / `from_csv`; cells are binary64 bit integers or `Display@p=`; empty → `NAN` |
-| HDF5 | ⬜ | Leftover. No C `libhdf5`. Own contiguous subset only, if ever |
+| HDF5 | ✅ | Feature `hdf5`: `to_hdf5` / `from_hdf5` via `hdf5-rust`. 100×3 `Ieee64Array` bits; 50×50 `ExactNumArray` at 256 bits; 1-D `Ieee32Array` length 1000; nested `results/data`; append 10×3→20×3; wrong name `Err`. No `libhdf5` |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
@@ -547,11 +548,11 @@ dashu-float 0.6.0: `consts.rs` is an empty stub (no γ). `FBig::with_rounding::<
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. The walk list is complete except **§17.3 HDF5** (deferred).
+The walk list is complete. HDF5 is feature `hdf5` (crates.io `hdf5-rust`), not `libhdf5`.
 
 | Plan | Item |
 | --- | --- |
-| §17.3 leftover | HDF5: own contiguous subset, not `libhdf5` / not a general crate |
+| — | No remaining walk-list leftovers |
 
 ---
 
@@ -559,7 +560,7 @@ Not a second product. The walk list is complete except **§17.3 HDF5** (deferred
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-31 | Hex limb CI (`arm`/`wasm`/`32bit`); pre-publish 12-check; dashu §24 verified. Prior: SIMD IEEE div/sqrt/fma; thumb `no_std`; `expr!`/`cexpr!` composite golds; §19.3 benches; complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange; CSV. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 1.0.0 | 2026-08-31 | First crates.io release. HDF5 via crates.io `hdf5-rust` 1.0 (`to_hdf5` / `from_hdf5`). Hex limb CI (`arm`/`wasm`/`32bit`); pre-publish 12-check; dashu §24 verified. Prior: SIMD IEEE div/sqrt/fma; thumb `no_std`; `expr!`/`cexpr!` composite golds; §19.3 benches; complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange; CSV. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 
