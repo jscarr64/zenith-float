@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Binary interchange: 16-byte big-endian inline record (`to_inline_bytes` / `write_inline_bytes`); heap `u32` limbs for wider mantissas; `ExactNumArray` packed records. Golds: finite / Inf / NaN flag / `p=256` heap / array shape / invalid `Err`; `u32::MAX+1=2^{32}` at `p=64`.
 - Serde (`serde` feature): `ExactNum` / `ExactComplex` / `ExactRational` / `ExactInt` / arrays / `Ball`. Decimal strings carry `@p=`. IEEE arrays serialize integer bit patterns. Shape mismatch is `Err`.
 - `IEEE_SIMD_LANE_WIDTH=4` public constant. `From<LayoutError>` → `MemoryAllocation`. LU/QR/SVD workspace `try_reserve_exact` returns `None` instead of aborting on reserve failure.
 - SHA-256 / SHA-512 / HMAC-SHA-256 / `constant_time_eq`. Golds: FIPS empty and `abc`; RFC 4231 HMAC TC1.

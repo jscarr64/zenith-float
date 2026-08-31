@@ -52,7 +52,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 4.4 / 11.4 eigen | ✅ | `eigen_decomp`; \(Av=\lambda v\); \(V\Lambda V^T=A\); \(\begin{pmatrix}2&1\\1&2\end{pmatrix}\to(3,1)\); non-symmetric `None` |
 | 4.5 / 11.5 FFT | ✅ | `fft` / `ifft`; impulse `[1,0,0,0]→[1,1,1,1]`; cosine bins; IFFT; Parseval; `FFT_MAX_POINTS=4096` |
 | 5.1 / 18.1 Precision doc comments | ✅ | `# Precision` on `ExactNum` / `ExactComplex` specials (algorithm, thresholds, ULP/Ziv, MPFR) |
-| 6.1 no_std / thumb | 🟡 | allocator `no_std` compiles; no `thumbv7em-none-eabihf` CI gold |
+| 6.1 no_std / thumb | 🟡 | host `no_std` compiles; `thumbv7em-none-eabi` fails on `lazy_static`/`std`; host `u32::MAX+1=2^{32}` at `p=64` |
 | 7.1 / 20.1 Reproducibility.md | ✅ | `doc/REPRODUCIBILITY.md`; unit tests lock values (no `golds/` tree) |
 | 8 | — | skipped by plan |
 | 9.1 ExactRational | ✅ | `ExactRational`; `1/3+1/6=1/2`; `2/4=1/2`; sign; 256-bit `1/3` |
@@ -74,9 +74,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 16.1 modular ExactInt | ✅ | `mod_pow(2,100,10^9+7)=976371285`; `mod_inv(3,7)=5`; Miller–Rabin on `2^{31}−1`; Pollard–Brent `8051=83×97` |
 | 16.2 hash functions | ✅ | `sha256("")` / `sha256("abc")` FIPS vectors; HMAC-SHA-256 RFC 4231 TC1; `constant_time_eq` independent of first-difference index |
 | 17.1 serde | ✅ | `ExactRational` `1/3` round-trip with `@p=`; `ExactNumArray` keeps `p`; Ieee64 bits; shape mismatch `Err` |
-| 17.2–17.3, 18.2–18.3, 19–20 | ⬜ | Binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 17.2 binary format | ✅ | 16-byte BE inline; heap `u32` limbs; NaN flag `0x0A`; array shape; invalid → `Err`; `u32::MAX+1=2^{32}` at `p=64` |
+| 17.3, 18.2–18.3, 19–20 | ⬜ | HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§17.2 binary format**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§17.3 HDF5 and CSV I/O**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -391,7 +392,7 @@ This is documentation only — no code changes. The doc comments go on the `Exac
 
 ### 6.1 no_std compliance audit and fix
 
-**Status:** partial 2026-08-30 — allocator `no_std` compiles; `From<LayoutError>` / `From<TryReserveError>` → `MemoryAllocation`; LU/QR/SVD return `None` on reserve failure. No `thumbv7em-none-eabihf` CI gold.
+**Status:** partial 2026-08-30 — allocator `no_std` compiles on the host; `From<LayoutError>` / `From<TryReserveError>` → `MemoryAllocation`; LU/QR/SVD return `None` on reserve failure. `thumbv7em-none-eabi` build fails: `lazy_static` still needs `std`. Host gold: `u32::MAX+1` at `p=64` is `2^{32}`.
 
 **Prompt:**
 Audit every item in zenith-float for `no_std` compatibility. For each item that currently requires `std` beyond formatting traits: either provide an allocator-only alternative or document explicitly in the doc comment that the `std` feature is required and why.
@@ -926,6 +927,8 @@ Golds:
 ---
 
 ### 17.2 Binary format
+
+**Status:** done 2026-08-30 — 16-byte big-endian inline record (`2 × u32` mantissa). Heap records use the same `u32` unit. `write_inline_bytes` / `write_bytes` take a caller slice. Version byte `BINARY_FORMAT_VERSION=1`.
 
 **Prompt:**
 Implement a compact binary format for `ExactNum` and `ExactNumArray` that is more efficient than JSON for large arrays:

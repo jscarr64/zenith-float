@@ -70,6 +70,11 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `ODE_MIN_STEP` | `−256` — minimum RK45 step exponent (`h_min = 2^{ODE_MIN_STEP}`) |
 | `DSP_MAX_POINTS` | `2048` — max real length for `dct`/`idct`/`dst`/`idst` (`2N`-point FFT) |
 | `IEEE_SIMD_LANE_WIDTH` | `4` — `u32` lanes per integer SIMD vector; binary64 uses 2 `u64` lanes |
+| `BINARY_INLINE_LEN` | `16` — stack record: flags, version, `n_sig`, inexact, `i32` exponent BE, two `u32` limbs BE |
+| `BINARY_INLINE_MANT_BITS` | `64` — max mantissa bits for [`ExactNum::to_inline_bytes`]; wider → `MemoryAllocation` |
+| `BINARY_FORMAT_VERSION` | `1` — first version byte of every record |
+| `BINARY_MAX_U32` | `65536` — max `u32` limbs in a heap record |
+| `BINARY_MAX_ELEMS` | `1048576` — max array elements in `from_bytes` |
 | `POLLARD_RHO_ITER_MAX` | `1048576` — `f` evaluations per `c` in Brent Pollard ρ |
 
 **Special values:** `+Inf`, `−Inf`, `NaN` (with optional `Error`), subnormals at `EXPONENT_MIN`. Public sentinels: `INF_POS`, `INF_NEG`, `NAN`.
@@ -264,6 +269,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | Window functions | ✅ | Symmetric Hann / Hamming / Blackman; Kaiser `I_0`; rectangular. `hann(4)=[0,3/4,3/4,0]`; Hamming ends `0.08`; Kaiser `β=0` is ones |
 | Modular `ExactInt` | ✅ | `mod_pow`/`mod_inv`/`miller_rabin`/`pollard_rho`; `2^{100} ≡ 976371285 (mod 10^9+7)`; `3^{-1}≡5 (mod 7)`; `2^{31}−1` prime; `8051=83×97` |
 | Hash / HMAC | ✅ | `sha256`/`sha512`/`hmac_sha256`/`constant_time_eq`; empty and `abc` FIPS vectors; RFC 4231 HMAC TC1 |
+| Binary interchange | ✅ | `to_inline_bytes` / `write_bytes` / `to_bytes` / `from_bytes`; 16-byte BE inline; heap `u32` limbs; array shape; invalid → `Err` |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
@@ -535,14 +541,14 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§17.2 binary format**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§17.3 HDF5 and CSV I/O**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §17.2 | `ExactNum` / `ExactNumArray` binary `to_bytes` / `from_bytes` |
+| §17.3 | HDF5 / CSV array I/O |
 | §2.4 leftover | SIMD div/sqrt/fma |
-| §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
-| §17.3, §18.2–§19, §20.2 | HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| §6.1 leftover | `thumbv7em-none-eabi` / `eabihf` CI; `lazy_static` still needs `std` |
+| §18.2–§19, §20.2 | HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
 ---
 
@@ -550,7 +556,7 @@ Not a second product. First open implementation slice is **§17.2 binary format*
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 

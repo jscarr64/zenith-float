@@ -141,6 +141,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `Display`, `LowerExp`, `UpperExp`, `Binary`, `Octal`, `UpperHex`, `LowerHex` (`std`) | ✅ |
 | `FromStr` (decimal, `std`) | ✅ |
 | `serde` (`@p=` strings, IEEE bits, arrays / `Ball` / rationals; feature; requires `std`) | ✅ |
+| Binary `to_bytes` / `from_bytes` / 16-byte inline BE | ✅ |
 | `random_normal` (feature `random`) | ✅ |
 | `expr!` / `cexpr!` compile and run tests (`trybuild` + `tests/mod.rs`) | ✅ |
 | `expr!` cancellation / precision tests (root `tests/`) | ✅ |
@@ -384,3 +385,4 @@ Already implemented but not in a crates.io release:
 - Seeded test RNG (`ZENITH_TEST_SEED` / `reseed_random`), CI wall-time budgets, OOM → `NaN` tests
 - [x] Getting-started narrative (`doc/GETTING_STARTED.md`); review of extra APIs (`doc/Additions_to_existing_29-082026.md`)
 - Serde `@p=` strings; `IEEE_SIMD_LANE_WIDTH`; `LayoutError` → `MemoryAllocation`
+- Binary 16-byte BE inline + heap `u32` limbs; `u32::MAX+1=2^{32}` at `p=64`

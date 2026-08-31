@@ -121,7 +121,7 @@ From `zenith_float` / `zenith_float_num`:
 - Word/exponent constants listed in §3
 - `MAX_PREC_RETRY`, `INLINE_WORDS`
 - `NAN`, `INF_POS`, `INF_NEG`
-- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `ODE_MAX_STEPS`, `ODE_MIN_STEP`, `DSP_MAX_POINTS`, `IEEE_SIMD_LANE_WIDTH`, `POLLARD_RHO_ITER_MAX`
+- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `ODE_MAX_STEPS`, `ODE_MIN_STEP`, `DSP_MAX_POINTS`, `IEEE_SIMD_LANE_WIDTH`, `POLLARD_RHO_ITER_MAX`, `BINARY_INLINE_LEN`, `BINARY_INLINE_MANT_BITS`, `BINARY_FORMAT_VERSION`, `BINARY_MAX_U32`, `BINARY_MAX_ELEMS`
 - Feature `random`: `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED`, `RandomDist`
 
 Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` / `cexpr!` expansion (`check_exponent_range`, `check_complex_exponent_range`, `complex_cancel_bits`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.
@@ -150,6 +150,7 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | DSP | Type-II `dct`/`dst` via a `2N` FFT; type-III inverses scaled so the round-trip is the identity. `fft_real`/`ifft_real` wrap the radix-2 DFT. Symmetric Hann / Hamming / Blackman / Kaiser / rectangular windows. Real length a power of two ≤ `DSP_MAX_POINTS` for transforms; windows allow any `n` in `1..=DSP_MAX_POINTS`. |
 | Modular `ExactInt` | `mod_pow` / `mod_inv` / `miller_rabin` / Brent `pollard_rho`. Zero modulus and non-units are `None`. Cap `POLLARD_RHO_ITER_MAX`. |
 | Hash | FIPS 180-4 `sha256`/`sha512`; HMAC-SHA-256; `constant_time_eq` always scans both slices. |
+| Binary I/O | `ExactNum` / `ExactNumArray`: `to_bytes` / `from_bytes` / `write_bytes`. Inline 16-byte big-endian record when the mantissa is ≤ `BINARY_INLINE_MANT_BITS` (`to_inline_bytes` / `write_inline_bytes` / `InlineBinaryBuffer`). Wider values use a heap record of `u32` limbs. Invalid input is `Err`, not a panic. |
 
 These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `ExactNum` mul-then-add per term). No BLAS. Integer SIMD is not an FPU; a SIMD bit pattern that differs from the scalar kernel is a bug. `expr!` stays scalar.
 
@@ -560,7 +561,13 @@ Used by `expr!` to lift variables and literals.
 
 ---
 
-## 24. Serde (`serde` feature)
+## 24. Binary interchange
+
+Network byte order. Inline record is 16 bytes: flag, version, `n_sig`, inexact, `i32` exponent, two `u32` limbs (least-significant first, matching kernel word order). Specials use flags `0x02`–`0x0A`. Mantissas wider than 64 bits use flag `0x10`/`0x11` plus `u32` limbs. Arrays use flag `0x20` and a shape/`p` header.
+
+---
+
+## 25. Serde (`serde` feature)
 
 - **`ExactNum`:** `"<Display>@p=<bits>"`. JSON integers use `DEFAULT_P`. Rehydration parses at the stored bit count.
 - **`ExactComplex`:** `re` / `im` encoded as above.
@@ -572,7 +579,7 @@ Used by `expr!` to lift variables and literals.
 
 ---
 
-## 25. Random (`random` feature)
+## 26. Random (`random` feature)
 
 | Item | |
 | --- | --- |
@@ -589,7 +596,7 @@ Unit tests default to the deterministic seed. Without reseeding, non-test `rando
 
 ---
 
-## 26. Implementation notes (not extra public functions)
+## 27. Implementation notes (not extra public functions)
 
 The kernel uses integer add/mul (schoolbook, Karatsuba/Toom, FFT at large sizes), Newton division, series and argument reduction for elementary/special functions, and a progressive constant cache. None of those algorithms are separate public types.
 
@@ -597,7 +604,7 @@ MPFR/`rug` appear only in **tests** (`mpfr-tests`), not as the evaluation engine
 
 ---
 
-## 27. What is not in this crate
+## 28. What is not in this crate
 
 These are load-bearing product choices, not a backlog:
 

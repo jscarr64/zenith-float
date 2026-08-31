@@ -1,7 +1,6 @@
 //! Modular exponentiation, inverses, Miller–Rabin, and Pollard–Brent on [`ExactInt`].
 
 use crate::ExactInt;
-use alloc::vec::Vec;
 use core::cmp::Ordering;
 
 /// Maximum `f` evaluations in one [`pollard_rho`] run before `None`.

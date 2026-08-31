@@ -5,6 +5,7 @@ use super::simd::{add_u32_lanes, add_u64_lanes, mul_u32_lanes, mul_u64_lanes};
 use super::{Ieee32, Ieee64};
 use crate::defs::RoundingMode;
 use crate::Consts;
+use crate::Error;
 use crate::ExactNum;
 use alloc::vec::Vec;
 
@@ -607,6 +608,24 @@ impl ExactNumArray {
             vals.push(v);
         }
         Some(Self {
+            p,
+            vals,
+            rows,
+            cols,
+        })
+    }
+
+    pub(crate) fn from_parts(
+        p: usize,
+        rows: usize,
+        cols: usize,
+        vals: Vec<ExactNum>,
+    ) -> Result<Self, Error> {
+        let n = rows.checked_mul(cols).ok_or(Error::InvalidArgument)?;
+        if n != vals.len() {
+            return Err(Error::InvalidArgument);
+        }
+        Ok(Self {
             p,
             vals,
             rows,
