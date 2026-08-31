@@ -6,7 +6,7 @@ Living document for what is **implemented**, **tested**, and **required** for ze
 
 **Trio:** walk list [`ZENITH_FLOAT_BUILD_PLAN.md`](ZENITH_FLOAT_BUILD_PLAN.md) · inventory [`ZENITH_FLOAT_CAPABILITIES.md`](ZENITH_FLOAT_CAPABILITIES.md) · this checklist (CI / crates / API). Citation: [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md). There is no TODO file.
 
-**Last updated:** 2026-08-30  
+**Last updated:** 2026-08-31  
 **Crate version:** 0.1.0 (+ unreleased changelog items)  
 **Reference versions (crates.io):** astro-float 0.9.6, dashu-float 0.6.0  
 **Policy:** No hardware floating-point in calculations. Rust hardware IEEE type tokens are forbidden in `.rs` (`scripts/ci.sh`). Software `Ieee32`/`Ieee64` store binary32/binary64 as integer bits.
@@ -386,6 +386,7 @@ Already implemented but not in a crates.io release:
 - Seeded test RNG (`ZENITH_TEST_SEED` / `reseed_random`), CI wall-time budgets, OOM → `NaN` tests
 - [x] Getting-started narrative (`doc/GETTING_STARTED.md`); review of extra APIs (`doc/Additions_to_existing_29-082026.md`)
 - Serde `@p=` strings; `IEEE_SIMD_LANE_WIDTH`; `LayoutError` → `MemoryAllocation`
+- Integer SIMD add/sub/mul/div/sqrt/fma; 1000-element `Ieee64Array` bit-identical gold
 - Binary 16-byte BE inline + heap `u32` limbs; `u32::MAX+1=2^{32}` at `p=64`
 - CSV 100×3 bit round-trip; missing cell `NAN`; HDF5 leftover (own subset, not C)
 - `GETTING_STARTED.md` sections for IEEE, arrays, specials, rationals, `cexpr!`, `Ball`

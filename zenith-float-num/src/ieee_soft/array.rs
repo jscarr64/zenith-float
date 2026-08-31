@@ -1,7 +1,10 @@
 //! Dense row-major arrays of software IEEE values and `ExactNum`.
 //! A 1-D vector is stored as shape `(1, n)`.
 
-use super::simd::{add_u32_lanes, add_u64_lanes, mul_u32_lanes, mul_u64_lanes};
+use super::simd::{
+    add_u32_lanes, add_u64_lanes, div_u32_lanes, div_u64_lanes, fma_u32_lanes, fma_u64_lanes,
+    mul_u32_lanes, mul_u64_lanes, sqrt_u32_lanes, sqrt_u64_lanes, sub_u32_lanes, sub_u64_lanes,
+};
 use super::{Ieee32, Ieee64};
 use crate::defs::RoundingMode;
 use crate::Consts;
@@ -24,6 +27,10 @@ const SVD_CONV_GUARD_BITS: i32 = 4;
 trait LaneBits: Copy {
     fn add_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
     fn mul_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
+    fn sub_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
+    fn div_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
+    fn sqrt_lanes(a: &[Self]) -> Vec<Self>;
+    fn fma_lanes(a: &[Self], b: &[Self], c: &[Self]) -> Vec<Self>;
 }
 
 impl LaneBits for u32 {
@@ -33,6 +40,18 @@ impl LaneBits for u32 {
     fn mul_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
         mul_u32_lanes(a, b)
     }
+    fn sub_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+        sub_u32_lanes(a, b)
+    }
+    fn div_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+        div_u32_lanes(a, b)
+    }
+    fn sqrt_lanes(a: &[Self]) -> Vec<Self> {
+        sqrt_u32_lanes(a)
+    }
+    fn fma_lanes(a: &[Self], b: &[Self], c: &[Self]) -> Vec<Self> {
+        fma_u32_lanes(a, b, c)
+    }
 }
 
 impl LaneBits for u64 {
@@ -41,6 +60,18 @@ impl LaneBits for u64 {
     }
     fn mul_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
         mul_u64_lanes(a, b)
+    }
+    fn sub_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+        sub_u64_lanes(a, b)
+    }
+    fn div_lanes(a: &[Self], b: &[Self]) -> Vec<Self> {
+        div_u64_lanes(a, b)
+    }
+    fn sqrt_lanes(a: &[Self]) -> Vec<Self> {
+        sqrt_u64_lanes(a)
+    }
+    fn fma_lanes(a: &[Self], b: &[Self], c: &[Self]) -> Vec<Self> {
+        fma_u64_lanes(a, b, c)
     }
 }
 
@@ -195,9 +226,17 @@ macro_rules! impl_ieee_array {
                 self.map(|x| x.add(s))
             }
 
-            /// Elementwise sub.
+            /// Elementwise sub. Shapes must match. Integer SIMD via sign-bit
+            /// flip then add.
             pub fn sub(&self, rhs: &Self) -> Option<Self> {
-                self.zip_op(rhs, $scalar::sub)
+                if self.rows != rhs.rows || self.cols != rhs.cols {
+                    return None;
+                }
+                Some(Self {
+                    bits: <$bits>::sub_lanes(&self.bits, &rhs.bits),
+                    rows: self.rows,
+                    cols: self.cols,
+                })
             }
 
             /// Elementwise mul. Shapes must match. Integer SIMD significand
@@ -218,14 +257,43 @@ macro_rules! impl_ieee_array {
                 self.map(|x| x.mul(s))
             }
 
-            /// Elementwise div.
+            /// Elementwise div. Shapes must match. Integer SIMD unpack on the
+            /// all-normal path; significand quotient is integer `/` per lane.
             pub fn div(&self, rhs: &Self) -> Option<Self> {
-                self.zip_op(rhs, $scalar::div)
+                if self.rows != rhs.rows || self.cols != rhs.cols {
+                    return None;
+                }
+                Some(Self {
+                    bits: <$bits>::div_lanes(&self.bits, &rhs.bits),
+                    rows: self.rows,
+                    cols: self.cols,
+                })
             }
 
-            /// Elementwise sqrt.
+            /// Elementwise sqrt. Integer SIMD unpack on non-negative normals.
             pub fn sqrt(&self) -> Self {
-                self.map($scalar::sqrt)
+                Self {
+                    bits: <$bits>::sqrt_lanes(&self.bits),
+                    rows: self.rows,
+                    cols: self.cols,
+                }
+            }
+
+            /// Elementwise fused multiply-add \(a\cdot b + c\). Shapes must match.
+            /// Integer SIMD significand products on the all-normal path.
+            pub fn fma(&self, b: &Self, c: &Self) -> Option<Self> {
+                if self.rows != b.rows
+                    || self.cols != b.cols
+                    || self.rows != c.rows
+                    || self.cols != c.cols
+                {
+                    return None;
+                }
+                Some(Self {
+                    bits: <$bits>::fma_lanes(&self.bits, &b.bits, &c.bits),
+                    rows: self.rows,
+                    cols: self.cols,
+                })
             }
 
             /// Sequential IEEE sum (one rounding per add).
@@ -273,22 +341,6 @@ macro_rules! impl_ieee_array {
                     bits,
                     rows: m,
                     cols: n,
-                })
-            }
-
-            fn zip_op(&self, rhs: &Self, op: fn($scalar, $scalar) -> $scalar) -> Option<Self> {
-                if self.rows != rhs.rows || self.cols != rhs.cols {
-                    return None;
-                }
-                Some(Self {
-                    bits: self
-                        .bits
-                        .iter()
-                        .zip(rhs.bits.iter())
-                        .map(|(a, b)| op($scalar::from_bits(*a), $scalar::from_bits(*b)).to_bits())
-                        .collect(),
-                    rows: self.rows,
-                    cols: self.cols,
                 })
             }
 
@@ -2243,6 +2295,62 @@ mod tests {
         let p = t.mul(&h).unwrap();
         assert_eq!(p.get(0).unwrap().to_bits(), one.to_bits());
         assert_eq!(p.get(3).unwrap().to_bits(), one.to_bits());
+    }
+
+    #[test]
+    fn ieee64_simd_1000_add_mul_div_sqrt() {
+        const N: usize = 1000;
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let vals: Vec<Ieee64> = (1..=N as i32).map(Ieee64::from_i32).collect();
+        let ones: Vec<Ieee64> = (0..N).map(|_| Ieee64::from_i32(1)).collect();
+        let twos: Vec<Ieee64> = (0..N).map(|_| Ieee64::from_i32(2)).collect();
+        let a = Ieee64Array::from_values(&vals);
+        let one = Ieee64Array::from_values(&ones);
+        let two = Ieee64Array::from_values(&twos);
+        let add = a.add(&one).unwrap();
+        let mul = a.mul(&two).unwrap();
+        let div = a.div(&a).unwrap();
+        let squares = a.mul(&a).unwrap();
+        let sq = squares.sqrt();
+        let sub = a.sub(&one).unwrap();
+        let fma = a.fma(&one, &one).unwrap();
+        assert_eq!(add.len(), N);
+        for i in 0..N {
+            let ai = a.get(i).unwrap();
+            let oi = one.get(i).unwrap();
+            let ti = two.get(i).unwrap();
+            assert_eq!(add.get(i).unwrap().to_bits(), ai.add(oi).to_bits());
+            assert_eq!(mul.get(i).unwrap().to_bits(), ai.mul(ti).to_bits());
+            assert_eq!(div.get(i).unwrap().to_bits(), ai.div(ai).to_bits());
+            assert_eq!(
+                sq.get(i).unwrap().to_bits(),
+                ai.mul(ai).sqrt().to_bits()
+            );
+            assert_eq!(sub.get(i).unwrap().to_bits(), ai.sub(oi).to_bits());
+            assert_eq!(
+                fma.get(i).unwrap().to_bits(),
+                ai.mul_add(oi, oi).to_bits()
+            );
+            let xa = ai.to_exact(p);
+            let x1 = oi.to_exact(p);
+            let x2 = ti.to_exact(p);
+            assert_eq!(
+                add.get(i).unwrap().to_bits(),
+                Ieee64::from_exact(&xa.add(&x1, p, rm)).to_bits()
+            );
+            assert_eq!(
+                mul.get(i).unwrap().to_bits(),
+                Ieee64::from_exact(&xa.mul(&x2, p, rm)).to_bits()
+            );
+            assert_eq!(
+                div.get(i).unwrap().to_bits(),
+                Ieee64::from_exact(&xa.div(&xa, p, rm)).to_bits()
+            );
+            let sqe = xa.mul(&xa, p, rm).sqrt(p, rm);
+            assert_eq!(sq.get(i).unwrap().to_bits(), Ieee64::from_exact(&sqe).to_bits());
+        }
+        assert!(a.fma(&one, &Ieee64Array::from_values(&vals[..10])).is_none());
     }
 
     #[test]

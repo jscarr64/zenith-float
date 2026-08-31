@@ -1,7 +1,7 @@
 # zenith-float Capability Reference
 
 **Version:** 0.1.0  
-**Date:** 2026-08-30  
+**Date:** 2026-08-31  
 **License:** MIT OR Apache-2.0  
 **Status:** Public crate  
 
@@ -253,9 +253,9 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | Item | Status | Notes |
 | --- | --- | --- |
 | `Ieee32` / `Ieee64` | ✅ | Integer IEEE-754 binary32/binary64; `from_bits` / `to_bits`; add/mul/div/sqrt/FMA |
-| `Ieee32Array` / `Ieee64Array` | ✅ | Row-major; elementwise, `sum`/`dot`, software `matmul`; integer SIMD add/mul; specials via `ExactNum` |
+| `Ieee32Array` / `Ieee64Array` | ✅ | Row-major; elementwise, `sum`/`dot`, software `matmul`; integer SIMD add/sub/mul/div/sqrt/fma; specials via `ExactNum` |
 | `ExactNumArray` | ✅ | Shared `p`; row-major elementwise, software `matmul`, `lu_decomp`, `qr_decomp`, `svd_decomp`, `eigen_decomp`, `fft`/`ifft`; `ExactNum` specials; `(2×3)` `sin` matches scalar; shape mismatch → `None` |
-| Integer SIMD (IEEE add/mul) | 🟡 | `u32`/`u64` lanes; SSE2/NEON; `IEEE_SIMD_LANE_WIDTH=4`; bit-identical to scalar kernel; not an FPU. Leftover: SIMD div/sqrt/fma |
+| Integer SIMD (IEEE) | ✅ | `u32`/`u64` lanes; SSE2/NEON; `IEEE_SIMD_LANE_WIDTH=4`; add/sub/mul/div/sqrt/fma bit-identical to scalar kernel; 1000-element `Ieee64Array` gold; not an FPU |
 | `lu_decomp` / `qr_decomp` | ✅ | Partial-pivot LU; modified Gram–Schmidt QR; singular or failed workspace reserve → `None`; rank-deficient QR → zero \(R_{kk}\) |
 | `svd_decomp` | ✅ | Golub–Reinsch; \((U,\Sigma,V^T)\); \(\sigma\) descending; `SVD_ITER_MAX=64` sweeps/value → `None`; empty/NaN/Inf → `None` |
 | `eigen_decomp` | ✅ | Symmetric QR; \((\Lambda,V)\) with \(\lambda\) descending; `EIGEN_ITER_MAX=64`; non-symmetric / empty / non-finite → `None` |
@@ -546,15 +546,16 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§19.3 Benchmark suite**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice after remaining partials is **§19.3 Benchmark suite**. Partial rows (thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
 | §19.3 | bench specials / matmul / FFT / LU |
 | §17.3 leftover | HDF5: own contiguous subset, not `libhdf5` / not a general crate |
-| §2.4 leftover | SIMD div/sqrt/fma |
 | §6.1 leftover | `thumbv7em-none-eabi` / `eabihf` CI; `lazy_static` still needs `std` |
-| §20.1–§20.2 | prepublish, hex CI |
+| §10.2 leftover | lock listed `expr!`/`cexpr!` composite golds |
+| §19.4 | `scripts/zenith_prepublish.sh` |
+| §20.2 | hex limb CI (`arm` / `wasm` / `32bit`) |
 
 ---
 
@@ -562,7 +563,7 @@ Not a second product. First open implementation slice is **§19.3 Benchmark suit
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange; CSV. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-31 | SIMD IEEE div/sqrt/fma; 1000-element `Ieee64Array` gold. Prior: complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange; CSV. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 

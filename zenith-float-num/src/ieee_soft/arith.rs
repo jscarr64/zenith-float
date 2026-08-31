@@ -160,7 +160,12 @@ pub(super) fn canonical_nan(a: Unp, b: Option<Unp>, f: Format) -> u64 {
 
 const GRS: u32 = 3;
 
-pub(super) fn round_rne(mut sig: u128, mut exp: i32, mut extra_sticky: bool, f: Format) -> (i32, u128) {
+pub(super) fn round_rne(
+    mut sig: u128,
+    mut exp: i32,
+    mut extra_sticky: bool,
+    f: Format,
+) -> (i32, u128) {
     let target = f.frac + GRS;
     while sig >= (1u128 << (target + 1)) {
         extra_sticky |= (sig & 1) != 0;
@@ -273,7 +278,7 @@ pub(super) fn mul_bits(a: u64, b: u64, f: Format) -> u64 {
 }
 
 /// Pack `± mag * 2^{scale_exp}` as an IEEE value.
-fn pack_mag(sign: bool, scale_exp: i32, mag: u128, mut sticky: bool, f: Format) -> u64 {
+pub(super) fn pack_mag(sign: bool, scale_exp: i32, mag: u128, mut sticky: bool, f: Format) -> u64 {
     if mag == 0 {
         return if sign { f.sign_mask() } else { 0 };
     }
@@ -287,11 +292,7 @@ fn pack_mag(sign: bool, scale_exp: i32, mag: u128, mut sticky: bool, f: Format) 
     } else {
         mag << (take - hi - 1)
     };
-    let sh = if hi + 1 > take {
-        (hi + 1 - take) as i32
-    } else {
-        -((take - hi - 1) as i32)
-    };
+    let sh = if hi + 1 > take { (hi + 1 - take) as i32 } else { -((take - hi - 1) as i32) };
     let stored = scale_exp + sh + GRS as i32 + f.bias + f.frac as i32;
     let (exp, core) = round_rne(aligned, stored, sticky, f);
     pack_finite(sign, exp, core, f)
@@ -337,7 +338,7 @@ pub(super) fn div_bits(a: u64, b: u64, f: Format) -> u64 {
     }
 }
 
-fn isqrt(n: u128) -> u128 {
+pub(super) fn isqrt(n: u128) -> u128 {
     if n < 2 {
         return n;
     }
@@ -404,7 +405,7 @@ pub(super) fn fma_bits(a: u64, b: u64, c: u64, f: Format) -> u64 {
     fma_add(psign, pe, prod, uc, f)
 }
 
-fn fma_add(psign: bool, pe: i32, prod: u128, uc: Unp, f: Format) -> u64 {
+pub(super) fn fma_add(psign: bool, pe: i32, prod: u128, uc: Unp, f: Format) -> u64 {
     if prod == 0 {
         return pack_finite(uc.sign, uc.exp, uc.sig as u128, f);
     }

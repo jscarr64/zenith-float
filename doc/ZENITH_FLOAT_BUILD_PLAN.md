@@ -30,7 +30,7 @@ After every slice: update all three. Do not keep a fourth inventory.
 
 ---
 
-## Status vs tree (2026-08-30)
+## Status vs tree (2026-08-31)
 
 Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡 = present but short of the prompt. ⬜ = not on the object. Section 11 duplicates Section 4.
 
@@ -43,7 +43,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 2.1 ExactNumArray elementary ufuncs | ✅ | `(2×3)` `sin`; shape mismatch → `None`; `signum` |
 | 2.2 ExactNumArray specials | ✅ | `bessel_j_nu(1/2)` matches scalar; NaN propagates |
 | 2.3 Ieee32/64 array ufuncs | ✅ | via `ExactNum`; `bin64_array_exp_sin` |
-| 2.4 Integer SIMD | 🟡 | add/mul lanes; `IEEE_SIMD_LANE_WIDTH=4`; no SIMD div/sqrt/fma |
+| 2.4 Integer SIMD | ✅ | add/sub/mul/div/sqrt/fma lanes; `IEEE_SIMD_LANE_WIDTH=4`; 1000-element `Ieee64Array` bit-identical to scalar + ExactNum |
 | 3.1 Ball transcendentals | ✅ | `sin`/`cos`/`exp`/`ln`/`sqrt`/`erf`/`J0`/`J1` |
 | 3.2 ComplexBall | ✅ | disk add/mul/exp/ln/sin/cos |
 | 4.1 / 11.1 LU | ✅ | `lu_decomp`; \(PA=LU\); singular → `None` |
@@ -253,7 +253,7 @@ Golds: `Ieee64Array::sin` matches `ExactNum::sin` rounded to binary64 for a repr
 
 ### 2.4 Integer SIMD for IEEE arrays
 
-**Status:** partial 2026-08-30 — integer-lane add/mul (SSE2/NEON); `IEEE_SIMD_LANE_WIDTH=4`; no SIMD div/sqrt/fma.
+**Status:** done 2026-08-31 — integer-lane add/sub/mul/div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH=4`; 1000-element `Ieee64Array` gold bit-identical to scalar and to `ExactNum` rounded to binary64.
 
 **Prompt:**
 Add SIMD-accelerated paths for `Ieee32Array` and `Ieee64Array` elementwise `add`, `sub`, `mul`, `div`, `sqrt`, and `fma` using integer SIMD lanes (`u32x8` / `u64x4` or equivalent via `std::simd` or `packed_simd2`). The arithmetic is software IEEE — integer lanes carrying bit patterns, arithmetic implemented in software, no hardware FPU instructions. The scalar and SIMD paths must produce bit-identical results.

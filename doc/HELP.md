@@ -137,7 +137,7 @@ Domain errors (`sqrt` of a negative *real*, `gamma` at a non-positive integer, â
 - `matmul` is a sequential triple loop. Not BLAS. Not SIMD-float.
 - `lu_decomp` / `svd_decomp` return `None` if singular, empty, non-finite, not converged, or a workspace `try_reserve_exact` fails (no abort).
 
-`Ieee32Array` / `Ieee64Array` store integer bit patterns. Add/mul use integer SIMD lanes and must match the scalar kernel bit-for-bit.
+`Ieee32Array` / `Ieee64Array` store integer bit patterns. Add/sub/mul/div/sqrt/fma use integer SIMD lanes and must match the scalar kernel bit-for-bit.
 
 ---
 
@@ -525,7 +525,7 @@ assert!(x.err().is_none());
 
 **MPFR at runtime?** Never. `mpfr-tests` is an optional oracle, Linux x86_64 only.
 
-**Integer SIMD leftover?** Add/mul exist. Div/sqrt/fma SIMD do not.
+**Integer SIMD leftover?** Closed. Add/sub/mul/div/sqrt/fma are integer-lane SIMD and bit-identical to the scalar kernel.
 
 **Where is the method list?** [LIBRARY.md](LIBRARY.md).
 
