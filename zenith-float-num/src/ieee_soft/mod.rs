@@ -17,6 +17,7 @@ use core::cmp::Ordering;
 use core::num::FpCategory;
 
 pub use array::{ExactNumArray, Ieee32Array, Ieee64Array};
+pub use simd::IEEE_SIMD_LANE_WIDTH;
 
 /// Software IEEE-754 binary32 (24-bit significand, 8-bit exponent). Stored as `u32` bits.
 #[derive(Clone, Copy, Debug)]
@@ -345,7 +346,9 @@ mod tests {
         assert_eq!((two * half).to_bits(), ONE32);
         assert_eq!((one / Ieee32::from_i32(3)).to_bits(), THIRD32);
         assert_eq!((three - one).to_bits(), TWO32);
-        assert!(Ieee32::from_bits(0).add(Ieee32::from_bits(0x8000_0000)).is_zero());
+        assert!(Ieee32::from_bits(0)
+            .add(Ieee32::from_bits(0x8000_0000))
+            .is_zero());
         assert_eq!(Ieee32::from_i32(1).to_bits(), ONE32);
         assert_eq!(Ieee32::from_i32(-1).to_bits(), 0xBF80_0000);
         assert_eq!(one.sqrt().to_bits(), ONE32);

@@ -1,5 +1,6 @@
 //! Definitions.
 
+use core::alloc::LayoutError;
 use core::fmt::Display;
 
 #[cfg(feature = "std")]
@@ -163,6 +164,12 @@ impl PartialEq for Error {
 
 impl From<TryReserveError> for Error {
     fn from(_: TryReserveError) -> Self {
+        Error::MemoryAllocation
+    }
+}
+
+impl From<LayoutError> for Error {
+    fn from(_: LayoutError) -> Self {
         Error::MemoryAllocation
     }
 }

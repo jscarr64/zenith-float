@@ -1048,7 +1048,7 @@ impl ExactNumArray {
     /// original row `P[i]`, and `P·A = L·U` at `(p, rm)`.
     ///
     /// `L` is unit lower (`n×n`). `U` is upper (`n×m`). A zero pivot
-    /// (singular) returns `None`.
+    /// (singular) or a failed heap reserve (`MemoryAllocation`) returns `None`.
     pub fn lu_decomp(&self, p: usize, rm: RoundingMode) -> Option<(Self, Self, Vec<usize>)> {
         let n = self.rows;
         let m = self.cols;
@@ -1056,12 +1056,15 @@ impl ExactNumArray {
             return None;
         }
         let kmax = n.min(m);
-        let mut a = self.vals.clone();
+        let mut a = try_clone_vals(&self.vals)?;
         for v in &mut a {
             let _ = v.set_precision(p, rm);
         }
-        let mut perm: Vec<usize> = (0..n).collect();
-        let mut lvals = alloc::vec![ExactNum::from_u8(0, p); n.checked_mul(n)?];
+        let mut perm = try_alloc_vec(n, 0usize)?;
+        for (i, slot) in perm.iter_mut().enumerate() {
+            *slot = i;
+        }
+        let mut lvals = try_alloc_vec(n.checked_mul(n)?, ExactNum::from_u8(0, p))?;
         for i in 0..n {
             lvals[i * n + i] = ExactNum::from_u8(1, p);
         }
@@ -1144,8 +1147,8 @@ impl ExactNumArray {
             return None;
         }
         let k = m.min(n);
-        let mut q = alloc::vec![ExactNum::from_u8(0, p); m.checked_mul(k)?];
-        let mut r = alloc::vec![ExactNum::from_u8(0, p); k.checked_mul(n)?];
+        let mut q = try_alloc_vec(m.checked_mul(k)?, ExactNum::from_u8(0, p))?;
+        let mut r = try_alloc_vec(k.checked_mul(n)?, ExactNum::from_u8(0, p))?;
         let a = |row: usize, col: usize| -> ExactNum {
             let mut v = self.vals[row * n + col].clone();
             let _ = v.set_precision(p, rm);
@@ -1201,8 +1204,8 @@ impl ExactNumArray {
     /// Returns `(U, Σ, V^T)` with `U` `m×k` (orthonormal columns), `Σ` `k×k`
     /// diagonal (non-negative, descending), `V^T` `k×n` (orthonormal rows),
     /// `k = min(m, n)`, so that `U · Σ · V^T = A` at working precision.
-    /// Empty input, a NaN/Inf entry, or failure to converge within
-    /// `SVD_ITER_MAX` sweeps per singular value returns `None`.
+    /// Empty input, a NaN/Inf entry, a failed heap reserve, or failure to
+    /// converge within `SVD_ITER_MAX` sweeps per singular value returns `None`.
     pub fn svd_decomp(&self, p: usize, rm: RoundingMode) -> Option<(Self, Self, Self)> {
         let m = self.rows;
         let n = self.cols;
@@ -1293,6 +1296,20 @@ impl ExactNumArray {
     }
 }
 
+fn try_alloc_vec<T: Clone>(n: usize, fill: T) -> Option<Vec<T>> {
+    let mut v = Vec::new();
+    v.try_reserve_exact(n).ok()?;
+    v.resize(n, fill);
+    Some(v)
+}
+
+fn try_clone_vals(src: &[ExactNum]) -> Option<Vec<ExactNum>> {
+    let mut v = Vec::new();
+    v.try_reserve_exact(src.len()).ok()?;
+    v.extend(src.iter().cloned());
+    Some(v)
+}
+
 fn svd_zero(p: usize) -> ExactNum {
     ExactNum::from_u8(0, p)
 }
@@ -1308,7 +1325,7 @@ fn svd_copy_prec(x: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
 }
 
 fn svd_identity(n: usize, p: usize) -> Option<Vec<ExactNum>> {
-    let mut v = alloc::vec![svd_zero(p); n.checked_mul(n)?];
+    let mut v = try_alloc_vec(n.checked_mul(n)?, svd_zero(p))?;
     for i in 0..n {
         v[i * n + i] = svd_one(p);
     }
@@ -1721,7 +1738,7 @@ fn svd_decomp_tall(
     }
 
     let k = n;
-    let mut sigma = alloc::vec![svd_zero(p); k.checked_mul(k)?];
+    let mut sigma = try_alloc_vec(k.checked_mul(k)?, svd_zero(p))?;
     for i in 0..k {
         sigma[i * k + i] = d[i].clone();
     }

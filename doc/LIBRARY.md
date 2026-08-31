@@ -27,7 +27,7 @@ License: MIT OR Apache-2.0.
 | --- | --- | --- |
 | `std` | yes | `Display` / radix format traits, `FromStr`, `std::error::Error` for `Error`, `SharedConsts`, serde when `serde` is on. |
 | `random` | no | `random_uniform` / `random_gaussian` / `random_exponential` / `random_fill`; existing `random_normal(p, exp_from, exp_to)` mantissa draw; `seeded_random`, `reseed_random`. |
-| `serde` | no | `Serialize` / `Deserialize` for `ExactNum` and `ExactComplex`. Implies `std`. |
+| `serde` | no | `Serialize` / `Deserialize` for `ExactNum` / `ExactComplex` / `ExactRational` / `ExactInt` / arrays / `Ball`. Decimal strings carry `@p=`. Implies `std`. |
 | `mpfr-tests` | no | Optional MPFR comparison tests in the kernel crate (Linux x86_64, `rug`). Not a runtime math engine. |
 
 ---
@@ -86,7 +86,7 @@ Methods that take a mode other than `None` round to the requested precision. `ex
 | `PrecisionRetryExhausted` | `NaN` — Ziv/`MAX_PREC_RETRY` budget, not a domain error |
 | `MemoryAllocation` | `NaN` |
 
-`ExactNum::err()` returns the associated error on `NaN`. `Error` implements `Display`; with `std` it implements `std::error::Error`. `From<TryReserveError>` → `MemoryAllocation`.
+`ExactNum::err()` returns the associated error on `NaN`. `Error` implements `Display`; with `std` it implements `std::error::Error`. `From<TryReserveError>` and `From<LayoutError>` → `MemoryAllocation`.
 
 ---
 
@@ -121,7 +121,7 @@ From `zenith_float` / `zenith_float_num`:
 - Word/exponent constants listed in §3
 - `MAX_PREC_RETRY`, `INLINE_WORDS`
 - `NAN`, `INF_POS`, `INF_NEG`
-- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `ODE_MAX_STEPS`, `ODE_MIN_STEP`, `DSP_MAX_POINTS`, `POLLARD_RHO_ITER_MAX`
+- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `ODE_MAX_STEPS`, `ODE_MIN_STEP`, `DSP_MAX_POINTS`, `IEEE_SIMD_LANE_WIDTH`, `POLLARD_RHO_ITER_MAX`
 - Feature `random`: `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED`, `RandomDist`
 
 Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` / `cexpr!` expansion (`check_exponent_range`, `check_complex_exponent_range`, `complex_cancel_bits`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.
@@ -138,7 +138,7 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | --- | --- |
 | `Ieee32` / `Ieee64` | add/sub/mul/div/sqrt/`mul_add`, classify, `next_up`/`next_down`/`next_after`, `frexp`, `from_i32`, `to_exact` / `from_exact` |
 | `Ieee32Array` / `Ieee64Array` | Row-major dense bits (1-D is shape `(1, n)`); elementwise `+ − × ÷` (matching shape), scalar broadcast, `sum`, `dot`, `sqrt`, software `matmul`; add/mul use integer SIMD (`u32`/`u64` lanes, SSE2/NEON) and are **bit-identical** to the scalar integer kernel; specials via widen-to-`ExactNum` (named methods; `cc` is an argument, not a global) |
-| `ExactNumArray` | Row-major `ExactNum` at a stored default `p`. Named elementwise methods match the scalar (`int`/`floor`/…, roots, logs, circular/hyperbolic, §15 specials). Methods that take `p`/`rm`/`cc` on `ExactNum` take the same arguments here — including `Consts` when the `expr!` leaf needs a cache. Software `matmul`. `lu_decomp(p, rm)` → `(L, U, P)` or `None` if singular. `qr_decomp(p, rm)` → `(Q, R)`; rank-deficient → zero \(R_{kk}\). `svd_decomp(p, rm)` → `(U, Σ, V^T)` (thin, \(\sigma\) descending) or `None` if empty, non-finite, or not converged in `SVD_ITER_MAX` sweeps per value. `eigen_decomp(p, rm)` → `(Λ, V)` for real symmetric \(A\) (\(\lambda\) descending) or `None` if non-square, non-symmetric, empty, non-finite, or not converged in `EIGEN_ITER_MAX` sweeps per value. `fft`/`ifft(p, rm, cc)` — radix-2 Cooley–Tukey; `(1,n)` or `(n,1)` real, `(2,n)` complex; unnormalized forward; `ifft` divides by `n`; `n` a power of two ≤ `FFT_MAX_POINTS`. `random_fill(shape, dist, p, rm, cc)` (`random` feature / tests) samples `RandomDist::Uniform` / `Normal` / `Exponential`. |
+| `ExactNumArray` | Row-major `ExactNum` at a stored default `p`. Named elementwise methods match the scalar (`int`/`floor`/…, roots, logs, circular/hyperbolic, §15 specials). Methods that take `p`/`rm`/`cc` on `ExactNum` take the same arguments here — including `Consts` when the `expr!` leaf needs a cache. Software `matmul`. `lu_decomp(p, rm)` → `(L, U, P)` or `None` if singular or a workspace reserve fails. `qr_decomp(p, rm)` → `(Q, R)` or `None` on failed reserve; rank-deficient → zero \(R_{kk}\). `svd_decomp(p, rm)` → `(U, Σ, V^T)` (thin, \(\sigma\) descending) or `None` if empty, non-finite, failed reserve, or not converged in `SVD_ITER_MAX` sweeps per value. `eigen_decomp(p, rm)` → `(Λ, V)` for real symmetric \(A\) (\(\lambda\) descending) or `None` if non-square, non-symmetric, empty, non-finite, or not converged in `EIGEN_ITER_MAX` sweeps per value. `fft`/`ifft(p, rm, cc)` — radix-2 Cooley–Tukey; `(1,n)` or `(n,1)` real, `(2,n)` complex; unnormalized forward; `ifft` divides by `n`; `n` a power of two ≤ `FFT_MAX_POINTS`. `random_fill(shape, dist, p, rm, cc)` (`random` feature / tests) samples `RandomDist::Uniform` / `Normal` / `Exponential`. |
 | `ExactRational` | Exact `num/den` with integer-valued `ExactNum` parts, reduced to lowest terms (`den > 0`). `new` / `from_i64` / `from_ints`; `add`/`sub`/`mul`/`div`; `to_exact_num(p, rm)`; `is_integer`; `floor`/`ceil`/`round`; `partial_cmp` by cross-multiply; `parse_exact` / `format_exact`. Zero `den` is `NaN`. Not a float. `0.1` is `1/10`. |
 | `ExactInt` | Signed limb integer (little-endian `Word`s). `from_i64`/`from_u64`/`from_i128`/`from_u128`; `add`/`sub`/`mul`; `div_rem` (truncated, zero divisor `None`); `gcd`; `pow`; `to_exact_num` / `from_exact_num`; `bit_length`. Not a truncated `ExactNum`. |
 | `ExactNumPoly` | Dense univariate, coefficients lowest degree first. `from_coeffs` / `from_i64_coeffs`; `eval` (Horner/`polyval`); `add`/`sub`/`mul`; `div_rem` (zero divisor `None`); `gcd` (Euclidean, integer content, monic); `compose`; `derivative`; `integral` (constant 0); `companion_matrix`; `roots_real` through `POLY_COMPANION_CLOSED_DEG=2`. |
@@ -562,8 +562,13 @@ Used by `expr!` to lift variables and literals.
 
 ## 24. Serde (`serde` feature)
 
-- **`ExactNum`:** serialize as a **decimal string** (`Display`). Deserialize from that string, or from JSON integers (`i64`/`u64`/`i128`/`u128`).
-- **`ExactComplex`:** serialize struct with fields `re` and `im`; deserialize the same map.
+- **`ExactNum`:** `"<Display>@p=<bits>"`. JSON integers use `DEFAULT_P`. Rehydration parses at the stored bit count.
+- **`ExactComplex`:** `re` / `im` encoded as above.
+- **`ExactRational`:** `num` / `den` encoded strings.
+- **`ExactInt`:** signed decimal.
+- **`ExactNumArray`:** `shape`, `data`, `p`, `rm`. Shape product must equal `data.len()`.
+- **`Ieee32Array` / `Ieee64Array`:** integer IEEE bit patterns (not hardware JSON floats).
+- **`Ball`:** `mid` / `rad` encoded strings.
 
 ---
 

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Serde (`serde` feature): `ExactNum` / `ExactComplex` / `ExactRational` / `ExactInt` / arrays / `Ball`. Decimal strings carry `@p=`. IEEE arrays serialize integer bit patterns. Shape mismatch is `Err`.
+- `IEEE_SIMD_LANE_WIDTH=4` public constant. `From<LayoutError>` → `MemoryAllocation`. LU/QR/SVD workspace `try_reserve_exact` returns `None` instead of aborting on reserve failure.
 - SHA-256 / SHA-512 / HMAC-SHA-256 / `constant_time_eq`. Golds: FIPS empty and `abc`; RFC 4231 HMAC TC1.
 - Modular `ExactInt`: `mod_pow`, `mod_inv`, `miller_rabin`, `pollard_rho` (Brent). Golds: `2^{100} ≡ 976371285 (mod 10^9+7)`; `mod_inv(3,7)=5`; Miller–Rabin on `2^{31}−1`; `8051=83×97`.
 - Window functions: symmetric Hann / Hamming / Blackman, Kaiser (`I_0`), rectangular. Golds: `hann(4)=[0,3/4,3/4,0]`; Hamming endpoints `0.08`; Kaiser `β=0` is rectangular.

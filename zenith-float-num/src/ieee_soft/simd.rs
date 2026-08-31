@@ -1,6 +1,11 @@
 //! Integer SIMD for software IEEE arrays. Lanes are `u32` / `u64` bit patterns.
 //! Hardware IEEE arithmetic is not used.
 
+/// Number of `u32` lanes in one integer SIMD vector (128-bit register).
+/// Binary64 uses `IEEE_SIMD_LANE_WIDTH / 2` `u64` lanes. Scalar fallback
+/// uses the same width so wrappers can size buffers without `cfg`.
+pub const IEEE_SIMD_LANE_WIDTH: usize = 4;
+
 use super::arith::{
     add_bits, mul_bits, normalize_mul, pack_finite, round_rne, unpack, Class, Format, BIN32, BIN64,
 };
@@ -41,9 +46,7 @@ impl U32x4 {
     fn wrapping_add(self, o: Self) -> Self {
         #[cfg(target_arch = "x86_64")]
         unsafe {
-            use core::arch::x86_64::{
-                __m128i, _mm_add_epi32, _mm_loadu_si128, _mm_storeu_si128,
-            };
+            use core::arch::x86_64::{__m128i, _mm_add_epi32, _mm_loadu_si128, _mm_storeu_si128};
             let a = _mm_loadu_si128(self.0.as_ptr() as *const __m128i);
             let b = _mm_loadu_si128(o.0.as_ptr() as *const __m128i);
             let s = _mm_add_epi32(a, b);
@@ -163,12 +166,7 @@ pub fn add_bin32_x4(a: Bin32x4, b: Bin32x4) -> Bin32x4 {
     ]
 }
 
-fn debug_assert_bit_eq32(
-    got: &Bin32x4,
-    a: Bin32x4,
-    b: Bin32x4,
-    op: fn(u64, u64, Format) -> u64,
-) {
+fn debug_assert_bit_eq32(got: &Bin32x4, a: Bin32x4, b: Bin32x4, op: fn(u64, u64, Format) -> u64) {
     for i in 0..4 {
         debug_assert_eq!(
             got[i],
@@ -211,9 +209,7 @@ pub fn mul_bin32_x4(a: Bin32x4, b: Bin32x4) -> Bin32x4 {
 fn add_u64x2_integer(a: [u64; 2], b: [u64; 2]) -> [u64; 2] {
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        use core::arch::x86_64::{
-            __m128i, _mm_add_epi64, _mm_loadu_si128, _mm_storeu_si128,
-        };
+        use core::arch::x86_64::{__m128i, _mm_add_epi64, _mm_loadu_si128, _mm_storeu_si128};
         let va = _mm_loadu_si128(a.as_ptr() as *const __m128i);
         let vb = _mm_loadu_si128(b.as_ptr() as *const __m128i);
         let s = _mm_add_epi64(va, vb);
@@ -248,10 +244,7 @@ pub fn add_bin64_x2(a: Bin64x2, b: Bin64x2) -> Bin64x2 {
         let sum = add_u64x2_integer(sa, sb);
         let (e0, c0) = round_rne(sum[0] as u128, ua0.exp, false, BIN64);
         let (e1, c1) = round_rne(sum[1] as u128, ua1.exp, false, BIN64);
-        let out = [
-            pack_finite(ua0.sign, e0, c0, BIN64),
-            pack_finite(ua1.sign, e1, c1, BIN64),
-        ];
+        let out = [pack_finite(ua0.sign, e0, c0, BIN64), pack_finite(ua1.sign, e1, c1, BIN64)];
         debug_assert_eq!(out[0], add_bits(a[0], b[0], BIN64));
         debug_assert_eq!(out[1], add_bits(a[1], b[1], BIN64));
         return out;
@@ -320,7 +313,12 @@ fn mul_u64_integer(a: u64, b: u64) -> u128 {
     }
 }
 
-fn map_pairs_u32(a: &[u32], b: &[u32], chunk: fn(Bin32x4, Bin32x4) -> Bin32x4, tail: fn(u64, u64, Format) -> u64) -> alloc::vec::Vec<u32> {
+fn map_pairs_u32(
+    a: &[u32],
+    b: &[u32],
+    chunk: fn(Bin32x4, Bin32x4) -> Bin32x4,
+    tail: fn(u64, u64, Format) -> u64,
+) -> alloc::vec::Vec<u32> {
     debug_assert_eq!(a.len(), b.len());
     let mut out = alloc::vec::Vec::with_capacity(a.len());
     let mut i = 0;
@@ -337,7 +335,12 @@ fn map_pairs_u32(a: &[u32], b: &[u32], chunk: fn(Bin32x4, Bin32x4) -> Bin32x4, t
     out
 }
 
-fn map_pairs_u64(a: &[u64], b: &[u64], chunk: fn(Bin64x2, Bin64x2) -> Bin64x2, tail: fn(u64, u64, Format) -> u64) -> alloc::vec::Vec<u64> {
+fn map_pairs_u64(
+    a: &[u64],
+    b: &[u64],
+    chunk: fn(Bin64x2, Bin64x2) -> Bin64x2,
+    tail: fn(u64, u64, Format) -> u64,
+) -> alloc::vec::Vec<u64> {
     debug_assert_eq!(a.len(), b.len());
     let mut out = alloc::vec::Vec::with_capacity(a.len());
     let mut i = 0;
@@ -388,6 +391,7 @@ mod tests {
         for i in 0..4 {
             assert_eq!(got[i], add_bits(a[i] as u64, b[i] as u64, BIN32) as u32);
         }
+        assert_eq!(IEEE_SIMD_LANE_WIDTH, 4);
         assert_eq!(got[0], Ieee32::from_i32(2).to_bits());
         assert_eq!(got[1], Ieee32::from_i32(4).to_bits());
     }
@@ -435,19 +439,23 @@ mod tests {
         ];
         for (i, &ai) in samples.iter().enumerate() {
             for (j, &bj) in samples.iter().enumerate() {
-                let a = [ai, samples[(i + 1) % samples.len()], samples[(i + 2) % samples.len()], samples[(i + 3) % samples.len()]];
-                let b = [bj, samples[(j + 1) % samples.len()], samples[(j + 2) % samples.len()], samples[(j + 3) % samples.len()]];
+                let a = [
+                    ai,
+                    samples[(i + 1) % samples.len()],
+                    samples[(i + 2) % samples.len()],
+                    samples[(i + 3) % samples.len()],
+                ];
+                let b = [
+                    bj,
+                    samples[(j + 1) % samples.len()],
+                    samples[(j + 2) % samples.len()],
+                    samples[(j + 3) % samples.len()],
+                ];
                 let add = add_bin32_x4(a, b);
                 let mul = mul_bin32_x4(a, b);
                 for k in 0..4 {
-                    assert_eq!(
-                        add[k],
-                        add_bits(a[k] as u64, b[k] as u64, BIN32) as u32
-                    );
-                    assert_eq!(
-                        mul[k],
-                        mul_bits(a[k] as u64, b[k] as u64, BIN32) as u32
-                    );
+                    assert_eq!(add[k], add_bits(a[k] as u64, b[k] as u64, BIN32) as u32);
+                    assert_eq!(mul[k], mul_bits(a[k] as u64, b[k] as u64, BIN32) as u32);
                 }
             }
         }

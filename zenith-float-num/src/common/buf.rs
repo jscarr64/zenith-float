@@ -263,5 +263,7 @@ mod tests {
     fn huge_reserve_returns_memory_error() {
         let words = (isize::MAX as usize) / core::mem::size_of::<Word>() + 1;
         assert!(matches!(WordBuf::new(words), Err(Error::MemoryAllocation)));
+        let layout_err = core::alloc::Layout::from_size_align(usize::MAX, 3).unwrap_err();
+        assert_eq!(Error::from(layout_err), Error::MemoryAllocation);
     }
 }

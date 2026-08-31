@@ -43,7 +43,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 2.1 ExactNumArray elementary ufuncs | ✅ | `(2×3)` `sin`; shape mismatch → `None`; `signum` |
 | 2.2 ExactNumArray specials | ✅ | `bessel_j_nu(1/2)` matches scalar; NaN propagates |
 | 2.3 Ieee32/64 array ufuncs | ✅ | via `ExactNum`; `bin64_array_exp_sin` |
-| 2.4 Integer SIMD | 🟡 | add/mul lanes only; no named `IEEE_SIMD_LANE_WIDTH`; no SIMD div/sqrt/fma |
+| 2.4 Integer SIMD | 🟡 | add/mul lanes; `IEEE_SIMD_LANE_WIDTH=4`; no SIMD div/sqrt/fma |
 | 3.1 Ball transcendentals | ✅ | `sin`/`cos`/`exp`/`ln`/`sqrt`/`erf`/`J0`/`J1` |
 | 3.2 ComplexBall | ✅ | disk add/mul/exp/ln/sin/cos |
 | 4.1 / 11.1 LU | ✅ | `lu_decomp`; \(PA=LU\); singular → `None` |
@@ -73,9 +73,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 15.2 window functions | ✅ | `hann(4)=[0,3/4,3/4,0]` (symmetric `N−1`); Hamming endpoints `0.08`; Kaiser `β=0` is rectangular; all sums `>0` |
 | 16.1 modular ExactInt | ✅ | `mod_pow(2,100,10^9+7)=976371285`; `mod_inv(3,7)=5`; Miller–Rabin on `2^{31}−1`; Pollard–Brent `8051=83×97` |
 | 16.2 hash functions | ✅ | `sha256("")` / `sha256("abc")` FIPS vectors; HMAC-SHA-256 RFC 4231 TC1; `constant_time_eq` independent of first-difference index |
-| 17, 18.2–18.3, 19–20 | ⬜ | Serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 17.1 serde | ✅ | `ExactRational` `1/3` round-trip with `@p=`; `ExactNumArray` keeps `p`; Ieee64 bits; shape mismatch `Err` |
+| 17.2–17.3, 18.2–18.3, 19–20 | ⬜ | Binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§17.1 serde for all types**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§17.2 binary format**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -245,7 +246,7 @@ Golds: `Ieee64Array::sin` matches `ExactNum::sin` rounded to binary64 for a repr
 
 ### 2.4 Integer SIMD for IEEE arrays
 
-**Status:** partial 2026-08-30 — integer-lane add/mul (SSE2/NEON); no named `IEEE_SIMD_LANE_WIDTH`; no SIMD div/sqrt/fma.
+**Status:** partial 2026-08-30 — integer-lane add/mul (SSE2/NEON); `IEEE_SIMD_LANE_WIDTH=4`; no SIMD div/sqrt/fma.
 
 **Prompt:**
 Add SIMD-accelerated paths for `Ieee32Array` and `Ieee64Array` elementwise `add`, `sub`, `mul`, `div`, `sqrt`, and `fma` using integer SIMD lanes (`u32x8` / `u64x4` or equivalent via `std::simd` or `packed_simd2`). The arithmetic is software IEEE — integer lanes carrying bit patterns, arithmetic implemented in software, no hardware FPU instructions. The scalar and SIMD paths must produce bit-identical results.
@@ -389,6 +390,8 @@ This is documentation only — no code changes. The doc comments go on the `Exac
 ## Section 6 — no_std certified builds
 
 ### 6.1 no_std compliance audit and fix
+
+**Status:** partial 2026-08-30 — allocator `no_std` compiles; `From<LayoutError>` / `From<TryReserveError>` → `MemoryAllocation`; LU/QR/SVD return `None` on reserve failure. No `thumbv7em-none-eabihf` CI gold.
 
 **Prompt:**
 Audit every item in zenith-float for `no_std` compatibility. For each item that currently requires `std` beyond formatting traits: either provide an allocator-only alternative or document explicitly in the doc comment that the `std` feature is required and why.
@@ -901,6 +904,8 @@ Golds:
 ## Section 17 — Serialization and interchange
 
 ### 17.1 Serde support for all types
+
+**Status:** done 2026-08-30 — feature `serde`. Decimal strings carry `@p=`. IEEE arrays serialize integer bit patterns (not hardware `f32`/`f64`). Shape mismatch is `Err`.
 
 **Prompt:**
 Extend serde support (already present for `ExactNum` and `ExactComplex`) to all new types:

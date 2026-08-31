@@ -395,6 +395,49 @@ impl ExactInt {
         acc
     }
 
+    /// Decimal string of `self` (sign plus digits, no exponent).
+    pub fn to_dec_string(&self) -> alloc::string::String {
+        if self.is_zero() {
+            return alloc::string::String::from("0");
+        }
+        let ten = Self::from_u64(10);
+        let mut n = if self.is_negative() { self.neg() } else { self.clone() };
+        let mut digits = alloc::vec::Vec::new();
+        while !n.is_zero() {
+            let (q, r) = n.div_rem(&ten).unwrap_or((Self::zero(), Self::zero()));
+            digits.push(b'0' + (r.low_word() as u8));
+            n = q;
+        }
+        if self.is_negative() {
+            digits.push(b'-');
+        }
+        digits.reverse();
+        alloc::string::String::from_utf8(digits)
+            .unwrap_or_else(|_| alloc::string::String::from("0"))
+    }
+
+    /// Parse a decimal integer string (`-?[0-9]+`). Empty or non-digits is `None`.
+    pub fn from_dec_string(s: &str) -> Option<Self> {
+        let s = s.trim();
+        if s.is_empty() {
+            return None;
+        }
+        let (neg, digits) = if let Some(rest) = s.strip_prefix('-') {
+            (true, rest)
+        } else {
+            (false, s.strip_prefix('+').unwrap_or(s))
+        };
+        if digits.is_empty() || !digits.bytes().all(|c| c.is_ascii_digit()) {
+            return None;
+        }
+        let ten = Self::from_u64(10);
+        let mut acc = Self::zero();
+        for b in digits.bytes() {
+            acc = acc.mul(&ten).add(&Self::from_u64((b - b'0') as u64));
+        }
+        Some(if neg { acc.neg() } else { acc })
+    }
+
     /// Truncate a finite `ExactNum` toward zero. `None` if Inf or NaN.
     pub fn from_exact_num(x: &ExactNum) -> Option<Self> {
         if x.is_nan() || x.is_inf() {

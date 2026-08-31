@@ -38,7 +38,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | --- | --- | --- |
 | `std` | yes | `Display`, `LowerExp`, `UpperExp`, `Binary`, `Octal`, `UpperHex`, `LowerHex`, `FromStr`, `std::error::Error` for `Error`, `SharedConsts`, serde when `serde` is also on |
 | `random` | no | `ExactNum::random_normal`, `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED` |
-| `serde` | no | `Serialize` / `Deserialize` for `ExactNum` and `ExactComplex`; implies `std` |
+| `serde` | no | `Serialize` / `Deserialize` for `ExactNum` / `ExactComplex` / `ExactRational` / `ExactInt` / arrays / `Ball`; decimal strings carry `@p=`; implies `std` |
 | `mpfr-tests` | no | Optional MPFR bit-oracle tests; Linux x86_64 + `rug` only; not a runtime dependency |
 
 `no_std` is supported when a global allocator is available (`default-features = false`). Formatting traits require `std`.
@@ -69,6 +69,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `ODE_MAX_STEPS` | `65536` — accepted-step cap for RK4 / RK45 / Euler |
 | `ODE_MIN_STEP` | `−256` — minimum RK45 step exponent (`h_min = 2^{ODE_MIN_STEP}`) |
 | `DSP_MAX_POINTS` | `2048` — max real length for `dct`/`idct`/`dst`/`idst` (`2N`-point FFT) |
+| `IEEE_SIMD_LANE_WIDTH` | `4` — `u32` lanes per integer SIMD vector; binary64 uses 2 `u64` lanes |
 | `POLLARD_RHO_ITER_MAX` | `1048576` — `f` evaluations per `c` in Brent Pollard ρ |
 
 **Special values:** `+Inf`, `−Inf`, `NaN` (with optional `Error`), subnormals at `EXPONENT_MIN`. Public sentinels: `INF_POS`, `INF_NEG`, `NAN`.
@@ -103,9 +104,9 @@ Use `RoundingMode::None` for intermediate steps; round once at the end with `set
 | `PrecisionRetryExhausted` | `NaN` — Ziv budget, not a domain error |
 | `MemoryAllocation` | `NaN` |
 
-`ExactNum::err()` returns `Option<Error>` on `NaN`. `Error` implements `Display`; with `std` it implements `std::error::Error`. `From<TryReserveError>` converts to `MemoryAllocation`.
+`ExactNum::err()` returns `Option<Error>` on `NaN`. `Error` implements `Display`; with `std` it implements `std::error::Error`. `From<TryReserveError>` and `From<LayoutError>` convert to `MemoryAllocation`.
 
-No operation panics on a numeric domain error. Panics are possible only on allocation failure when the allocator itself panics.
+No operation panics on a numeric domain error. `lu_decomp` / `qr_decomp` / `svd_decomp` return `None` when a workspace `try_reserve_exact` fails. Panics are possible only when the allocator itself panics.
 
 ---
 
@@ -246,8 +247,8 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `Ieee32` / `Ieee64` | ✅ | Integer IEEE-754 binary32/binary64; `from_bits` / `to_bits`; add/mul/div/sqrt/FMA |
 | `Ieee32Array` / `Ieee64Array` | ✅ | Row-major; elementwise, `sum`/`dot`, software `matmul`; integer SIMD add/mul; specials via `ExactNum` |
 | `ExactNumArray` | ✅ | Shared `p`; row-major elementwise, software `matmul`, `lu_decomp`, `qr_decomp`, `svd_decomp`, `eigen_decomp`, `fft`/`ifft`; `ExactNum` specials; `(2×3)` `sin` matches scalar; shape mismatch → `None` |
-| Integer SIMD (IEEE add/mul) | 🟡 | `u32`/`u64` lanes; SSE2/NEON; bit-identical to scalar kernel; not an FPU. Plan §2.4 leftover: SIMD div/sqrt/fma + named `IEEE_SIMD_LANE_WIDTH` |
-| `lu_decomp` / `qr_decomp` | ✅ | Partial-pivot LU; modified Gram–Schmidt QR; singular LU → `None`; rank-deficient QR → zero \(R_{kk}\) |
+| Integer SIMD (IEEE add/mul) | 🟡 | `u32`/`u64` lanes; SSE2/NEON; `IEEE_SIMD_LANE_WIDTH=4`; bit-identical to scalar kernel; not an FPU. Leftover: SIMD div/sqrt/fma |
+| `lu_decomp` / `qr_decomp` | ✅ | Partial-pivot LU; modified Gram–Schmidt QR; singular or failed workspace reserve → `None`; rank-deficient QR → zero \(R_{kk}\) |
 | `svd_decomp` | ✅ | Golub–Reinsch; \((U,\Sigma,V^T)\); \(\sigma\) descending; `SVD_ITER_MAX=64` sweeps/value → `None`; empty/NaN/Inf → `None` |
 | `eigen_decomp` | ✅ | Symmetric QR; \((\Lambda,V)\) with \(\lambda\) descending; `EIGEN_ITER_MAX=64`; non-symmetric / empty / non-finite → `None` |
 | `fft` / `ifft` | ✅ | Radix-2 Cooley–Tukey; `(1,n)`/`(n,1)` real or `(2,n)` complex; unnormalized DFT; `ifft` divides by `n`; `FFT_MAX_POINTS=4096` |
@@ -463,8 +464,13 @@ Radix 2–36. For bases > 10 the exponent uses `_e` so `e` can be a digit.
 
 ## 21. Serde (`serde` feature)
 
-- **`ExactNum`:** serializes as a decimal string (`Display`); deserializes from that string or JSON integers (`i64` / `u64` / `i128` / `u128`)
-- **`ExactComplex`:** struct with fields `re` and `im`
+- **`ExactNum`:** decimal string `"<Display>@p=<bits>"`; JSON integers use `DEFAULT_P`. Rehydration parses at the stored bit count so limbs match across targets
+- **`ExactComplex`:** struct with fields `re` and `im` (each encoded as above)
+- **`ExactRational`:** `{"num": "...@p=", "den": "...@p="}`
+- **`ExactInt`:** signed decimal string
+- **`ExactNumArray`:** `{"shape", "data", "p", "rm"}`; shape product must equal `data.len()`
+- **`Ieee32Array` / `Ieee64Array`:** `{"shape", "data"}` where `data` is integer IEEE bit patterns (not hardware `f32`/`f64` JSON numbers)
+- **`Ball`:** `{"mid", "rad"}` encoded strings
 
 ---
 
@@ -529,14 +535,14 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§17.1 serde for all types**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§17.2 binary format**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §17.1 | Serde for `ExactRational` / `ExactInt` / arrays / `Ball` |
-| §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
+| §17.2 | `ExactNum` / `ExactNumArray` binary `to_bytes` / `from_bytes` |
+| §2.4 leftover | SIMD div/sqrt/fma |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
-| §17.2–§17.3, §18.2–§19, §20.2 | Binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| §17.3, §18.2–§19, §20.2 | HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
 ---
 
@@ -544,7 +550,7 @@ Not a second product. First open implementation slice is **§17.1 serde for all 
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 
