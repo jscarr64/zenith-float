@@ -5,6 +5,7 @@ use crate::common::util::round_p;
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
 use crate::Error;
+use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
 
@@ -233,6 +234,142 @@ impl Ball {
     }
 }
 
+/// Disk enclosure in \(\mathbb{C}\): center `mid`, radius `rad`.
+#[derive(Clone, Debug)]
+pub struct ComplexBall {
+    mid: ExactComplex,
+    rad: ExactNum,
+}
+
+impl ComplexBall {
+    /// Disk `mid` with radius `rad` (taken in absolute value).
+    pub fn new(mid: ExactComplex, rad: ExactNum) -> Self {
+        ComplexBall {
+            mid,
+            rad: rad.abs(),
+        }
+    }
+
+    /// Center.
+    pub fn mid(&self) -> &ExactComplex {
+        &self.mid
+    }
+
+    /// Non-negative radius.
+    pub fn rad(&self) -> &ExactNum {
+        &self.rad
+    }
+
+    fn slack(mid: &ExactComplex, p: usize) -> ExactNum {
+        let u_re = Ball::rounding_ulp(mid.re(), p);
+        let u_im = Ball::rounding_ulp(mid.im(), p);
+        let u = if matches!(u_re.cmp(&u_im), Some(c) if c >= 0) { u_re } else { u_im };
+        u.mul(
+            &ExactNum::from_u8(BALL_TRANSCENDENTAL_ERROR_TERMS as u8, p),
+            p,
+            RoundingMode::Up,
+        )
+    }
+
+    fn nan_disk() -> Self {
+        let n = ExactNum::nan(Some(Error::InvalidArgument));
+        ComplexBall {
+            mid: ExactComplex::new(n.clone(), n.clone()),
+            rad: n,
+        }
+    }
+
+    /// Sum of two disks: radii add, plus rounding slack.
+    pub fn add(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
+        let mid = self.mid.add(&other.mid, p, rm);
+        let rad = self.rad.add(&other.rad, p, RoundingMode::Up).add(
+            &Self::slack(&mid, p),
+            p,
+            RoundingMode::Up,
+        );
+        ComplexBall { mid, rad }
+    }
+
+    /// Product of two disks: \(\lvert m_1\rvert r_2+\lvert m_2\rvert r_1+r_1 r_2\) plus slack.
+    pub fn mul(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
+        let mid = self.mid.mul(&other.mid, p, rm);
+        let a = self
+            .mid
+            .abs(p, RoundingMode::Up)
+            .mul(&other.rad, p, RoundingMode::Up);
+        let b = other
+            .mid
+            .abs(p, RoundingMode::Up)
+            .mul(&self.rad, p, RoundingMode::Up);
+        let c = self.rad.mul(&other.rad, p, RoundingMode::Up);
+        let rad = a
+            .add(&b, p, RoundingMode::Up)
+            .add(&c, p, RoundingMode::Up)
+            .add(&Self::slack(&mid, p), p, RoundingMode::Up);
+        ComplexBall { mid, rad }
+    }
+
+    /// Exponential. Lipschitz \(\lvert e^z\rvert\le \exp(\mathrm{Re}\,m+r)\).
+    pub fn exp(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let mid = self.mid.exp(p, rm, cc);
+        let re_hi = self.mid.re().add(&self.rad, p, RoundingMode::Up);
+        let lip = re_hi.exp(p, RoundingMode::Up, cc);
+        let rad =
+            lip.mul(&self.rad, p, RoundingMode::Up)
+                .add(&Self::slack(&mid, p), p, RoundingMode::Up);
+        ComplexBall { mid, rad }
+    }
+
+    /// Principal logarithm. Domain: the disk must exclude \(0\).
+    /// Lipschitz \(1/(\lvert m\rvert-r)\).
+    pub fn ln(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let am = self.mid.abs(p, RoundingMode::Down);
+        if matches!(am.cmp(&self.rad), Some(c) if c <= 0) || am.is_zero() || self.rad.is_nan() {
+            return Self::nan_disk();
+        }
+        let mid = self.mid.ln(p, rm, cc);
+        let den = am.sub(&self.rad, p, RoundingMode::Down);
+        let lip = ExactNum::from_u8(1, p).div(&den, p, RoundingMode::Up);
+        let rad =
+            lip.mul(&self.rad, p, RoundingMode::Up)
+                .add(&Self::slack(&mid, p), p, RoundingMode::Up);
+        ComplexBall { mid, rad }
+    }
+
+    /// Sine. \(\lvert\cos(z)\rvert\le\cosh(\lvert\mathrm{Im}\,m\rvert+r)\).
+    pub fn sin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let mid = self.mid.sin(p, rm, cc);
+        let im_hi = self.mid.im().abs().add(&self.rad, p, RoundingMode::Up);
+        let lip = im_hi.sinh_cosh(p, RoundingMode::Up, cc).1;
+        let rad =
+            lip.mul(&self.rad, p, RoundingMode::Up)
+                .add(&Self::slack(&mid, p), p, RoundingMode::Up);
+        ComplexBall { mid, rad }
+    }
+
+    /// Cosine. Same Lipschitz bound as `sin`.
+    pub fn cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let mid = self.mid.cos(p, rm, cc);
+        let im_hi = self.mid.im().abs().add(&self.rad, p, RoundingMode::Up);
+        let lip = im_hi.sinh_cosh(p, RoundingMode::Up, cc).1;
+        let rad =
+            lip.mul(&self.rad, p, RoundingMode::Up)
+                .add(&Self::slack(&mid, p), p, RoundingMode::Up);
+        ComplexBall { mid, rad }
+    }
+
+    /// True when \(\lvert z-\mathrm{mid}\rvert\le\mathrm{rad}\).
+    pub fn contains(&self, z: &ExactComplex, p: usize) -> bool {
+        if z.is_nan() || self.mid.is_nan() || self.rad.is_nan() {
+            return false;
+        }
+        let d = z
+            .sub(&self.mid, p, RoundingMode::None)
+            .abs(p, RoundingMode::Up);
+        matches!(d.cmp(&self.rad), Some(c) if c <= 0)
+    }
+}
+
 /// Evaluate `compute` at increasing working precision until the result rounds uniquely
 /// to `p` bits (`try_set_precision`). Same retry budget as the transcendental kernel
 /// ([`crate::MAX_PREC_RETRY`]).
@@ -369,5 +506,29 @@ mod tests {
         let composed = be.sin(p, rm, &mut cc).exp(p, rm, &mut cc);
         let true_c = one.sin(256, rm, &mut cc).exp(256, rm, &mut cc);
         assert!(composed.contains(&true_c, p));
+    }
+
+    #[test]
+    fn complex_ball_exp_and_pythagoras() {
+        let p = 256;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let mid = ExactComplex::new(
+            ExactNum::from_u8(3, p).div(&ExactNum::from_u8(10, p), p, rm),
+            ExactNum::from_u8(2, p).div(&ExactNum::from_u8(10, p), p, rm),
+        );
+        let rad = ExactNum::from_u8(1, p);
+        let unit = ComplexBall::new(ExactComplex::zero(p), rad);
+        let e_mid = mid.exp(p, rm, &mut cc);
+        assert!(unit.exp(p, rm, &mut cc).contains(&e_mid, p));
+
+        let small = ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
+        let d = ComplexBall::new(mid.clone(), small);
+        let s = d.sin(p, rm, &mut cc);
+        let c = d.cos(p, rm, &mut cc);
+        let ss = s.mul(&s, p, rm);
+        let cc2 = c.mul(&c, p, rm);
+        let py = ss.add(&cc2, p, rm);
+        assert!(py.contains(&ExactComplex::one(p), p));
     }
 }

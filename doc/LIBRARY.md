@@ -106,7 +106,7 @@ From `zenith_float` / `zenith_float_num`:
 - `Ieee32`, `Ieee64`, `Ieee32Array`, `Ieee64Array`, `ExactNumArray`
 - `Consts`, `ConstCache` (alias of `Consts`), `ConstCacheInfo`, `CachedFBig`, `SharedConsts` (`std` only)
 - `Context` (module `zenith_float::ctx`), trait `Contextable`
-- `Ball`, `ziv_round`
+- `Ball`, `ComplexBall`, `ziv_round`
 - `RadixFloat`
 - `FromExt`
 - `RoundingMode`, `Radix`, `Sign`, `Error`, `Exponent`, `Word`
@@ -486,8 +486,17 @@ No `expr!` for complexes — use `cexpr!`. Serde: struct `{ "re", "im" }` of dec
 | `new(mid, rad)` | |
 | `mid` / `rad` | |
 | `add` / `mul` | interval arithmetic with an extra rounding ulp in the radius |
-| `exp` / `sin` | enclosure via \(\lvert e^m\rvert(e^r-1)\) and \(\lvert\sin'\rvert\le 1\), plus a rounding ulp |
+| `exp` / `sin` / `cos` / `ln` / `sqrt` / `erf` / `bessel_j0` / `bessel_j1` | Lipschitz (or \(\lvert e^m\rvert(e^r-1)\)) plus `BALL_TRANSCENDENTAL_ERROR_TERMS` ulps |
 | `contains(x, p)` | `x` in `[mid−rad, mid+rad]`; NaN/Inf never contained |
+
+**`ComplexBall`:** disk `mid` (an `ExactComplex`) with radius `rad`.
+
+| Method | |
+| --- | --- |
+| `new(mid, rad)` / `mid` / `rad` | |
+| `add` / `mul` | disk arithmetic plus `BALL_TRANSCENDENTAL_ERROR_TERMS` slack |
+| `exp` / `ln` / `sin` / `cos` | Lipschitz on the disk; `ln` requires the disk to exclude \(0\) |
+| `contains(z, p)` | \(\lvert z-\mathrm{mid}\rvert\le\mathrm{rad}\) |
 
 **`ziv_round(p, rm, compute)`:** call `compute(working_p)` and `try_set_precision` until the rounding is unique or `MAX_PREC_RETRY` is exhausted (then NaN / `PrecisionRetryExhausted`).
 

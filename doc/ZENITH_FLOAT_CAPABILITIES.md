@@ -418,6 +418,7 @@ Radix 2–36. For bases > 10 the exponent uses `_e` so `e` can be a digit.
 | --- | --- |
 | `ziv_round(p, rm, compute)` | Call `compute(p_wrk)`, then `try_set_precision` until uniquely rounded or `MAX_PREC_RETRY` exhausted (→ NaN / `PrecisionRetryExhausted`) |
 | `Ball { mid, rad }` | Certified `add` / `mul` / `exp` / `sin` / `cos` / `ln` / `sqrt` / `erf` / `bessel_j0` / `bessel_j1`; Lipschitz + `BALL_TRANSCENDENTAL_ERROR_TERMS` ulps; `contains(x, p)` |
+| `ComplexBall { mid, rad }` | Disk in \(\mathbb{C}\); `add`/`mul`/`exp`/`ln`/`sin`/`cos`; unit-disk `exp` and \(\sin^2+\cos^2=1\) golds |
 | `MAX_PREC_RETRY = 256` | Extra word-sized budget per operation; caps at `256 × WORD_BIT_SIZE` bits above `p` |
 
 ---

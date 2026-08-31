@@ -45,6 +45,7 @@ pub mod macro_util;
 
 pub use crate::ball::ziv_round;
 pub use crate::ball::Ball;
+pub use crate::ball::ComplexBall;
 pub use crate::common::buf::INLINE_WORDS;
 pub use crate::complex::ExactComplex;
 pub use crate::defs::Error;
