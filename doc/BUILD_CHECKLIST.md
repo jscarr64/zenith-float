@@ -128,6 +128,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | Discrete transforms | — | ✅ | `idct(dct(x))=x`; constant DCT is DC; `fft_real` cosine bins; Parseval |
 | Window functions | — | ✅ | `hann(4)=[0,3/4,3/4,0]`; Hamming ends `0.08`; Kaiser `β=0` is ones |
 | Modular `ExactInt` | — | ✅ | `mod_pow(2,100,10^9+7)`; `mod_inv(3,7)=5`; Miller–Rabin `2^{31}−1`; `8051=83×97` |
+| Hash / HMAC | — | ✅ | `sha256("")` / `sha256("abc")`; HMAC RFC 4231 TC1; constant-time eq |
 | `parse_exact` / `format_exact` | — | ✅ | Rational `0.1=1/10`; dyadic `ExactNum` `0.5`/`0.125`; `1.5e3=1500` |
 | Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |
 

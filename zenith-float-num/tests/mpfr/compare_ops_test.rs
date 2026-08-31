@@ -49,14 +49,6 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
     assert_eq!(EXPONENT_MIN, exp_min());
     assert_eq!(EXPONENT_MAX, exp_max());
 
-    /*     let s = "11111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111";
-    let n1 = ExactNum::parse(s, Radix::Bin, 192, RoundingMode::None);
-
-    let s = "11100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
-    let n2 = ExactNum::parse(s, Radix::Bin, 128, RoundingMode::None);
-
-    println!("{:?}", n1.div(&n2, 960, RoundingMode::ToEven));
-    return; */
 
     // rounding
     let e_rng = WORD_BIT_SIZE * 3;

@@ -110,6 +110,7 @@ From `zenith_float` / `zenith_float_num`:
 - `dct`, `idct`, `dst`, `idst`, `fft_real`, `ifft_real`
 - `hann_window`, `hamming_window`, `blackman_window`, `kaiser_window`, `rectangular_window`
 - `mod_pow`, `mod_inv`, `miller_rabin`, `pollard_rho`
+- `sha256`, `sha512`, `hmac_sha256`, `constant_time_eq`
 - `Ieee32`, `Ieee64`, `Ieee32Array`, `Ieee64Array`, `ExactNumArray`
 - `Consts`, `ConstCache` (alias of `Consts`), `ConstCacheInfo`, `CachedFBig`, `SharedConsts` (`std` only)
 - `Context` (module `zenith_float::ctx`), trait `Contextable`
@@ -148,6 +149,7 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | ODE | `rk4`/`rk45_adaptive`/`euler` return `(t, y)` row `ExactNumArray`s. Dormand–Prince 5(4) with `atol`/`rtol`; `h_min=2^{ODE_MIN_STEP}`; cap `ODE_MAX_STEPS`. |
 | DSP | Type-II `dct`/`dst` via a `2N` FFT; type-III inverses scaled so the round-trip is the identity. `fft_real`/`ifft_real` wrap the radix-2 DFT. Symmetric Hann / Hamming / Blackman / Kaiser / rectangular windows. Real length a power of two ≤ `DSP_MAX_POINTS` for transforms; windows allow any `n` in `1..=DSP_MAX_POINTS`. |
 | Modular `ExactInt` | `mod_pow` / `mod_inv` / `miller_rabin` / Brent `pollard_rho`. Zero modulus and non-units are `None`. Cap `POLLARD_RHO_ITER_MAX`. |
+| Hash | FIPS 180-4 `sha256`/`sha512`; HMAC-SHA-256; `constant_time_eq` always scans both slices. |
 
 These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `ExactNum` mul-then-add per term). No BLAS. Integer SIMD is not an FPU; a SIMD bit pattern that differs from the scalar kernel is a bug. `expr!` stays scalar.
 

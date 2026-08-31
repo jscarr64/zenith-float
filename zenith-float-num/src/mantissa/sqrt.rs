@@ -253,13 +253,6 @@ mod tests {
     fn test_sqrt_rem() {
         const MAX_BUF: usize = 100;
 
-        /* let s1 = &[0, 0, 0, 0, 0, 0, 0, 1649495861915690046, 0, 0, 0, 9223372036854775808];
-
-        let (qb, rb) = Mantissa::sqrt_rem(s1).unwrap();
-
-        assert_sqrt!(s1, &qb, &rb, MAX_BUF, "zeroes between");
-        return; */
-
         let s1: &[Word] = &[WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX];
         let s2: &[Word] = &[WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX];
         let s3: &[Word] = &[WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX];

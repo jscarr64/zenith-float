@@ -826,27 +826,4 @@ mod test {
         let d10_ref = TEN.pow(&x, p, rm, &mut cc).unwrap();
         assert_eq!(d10.cmp(&d10_ref), 0);
     }
-
-    /* test the polynimial generator error
-    #[test]
-    fn poly_sinh() {
-        let mut e = 0;
-        for p in 1..100 {
-            let p = p*64;
-            let n = 3;
-            let mut pcg1 = FactPolycoeffGen::for_sinh(p).unwrap();
-            let mut pcg2 = FactPolycoeffGen::for_sinh(p + 8*n).unwrap();
-            for _ in 0..n {
-                let c1 = pcg1.next(RoundingMode::None).unwrap();
-                let c2 = pcg2.next(RoundingMode::None).unwrap();
-
-                let d = c1.sub_full_prec(c2).unwrap();
-
-                if e < p - (c1.exponent() - d.exponent()) as usize {
-                    e = p - (c1.exponent() - d.exponent()) as usize;
-                }
-            }
-        }
-        println!("{:?}", e);
-    } */
 }

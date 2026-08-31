@@ -386,7 +386,6 @@ impl Mantissa {
         let (parts1_buf, rest) = buf.split_at_mut(k1 * part_len);
         let (parts2_buf, rest) = rest.split_at_mut(k1 * part_len);
         let (parts3_buf, rest) = rest.split_at_mut(k1 * part_len);
-        //let (thres_buf, rest) = rest.split_at_mut(2*part_len);
         let (modulus_buf, rest) = rest.split_at_mut(part_len);
         let (tmp_buf, tmp_buf2) = rest.split_at_mut(part_len * 3);
 
@@ -401,8 +400,6 @@ impl Mantissa {
         modulus_buf[0] = 1;
         modulus_buf[n1 / WORD_BIT_SIZE] = 1;
         let modulus = SliceWithSign::new_mut(modulus_buf, 1);
-
-        //let mut thres = SliceWithSign::new_mut(thres_buf, 1);
 
         for (j, (part1, part2)) in parts1.iter_mut().zip(parts2.iter_mut()).enumerate() {
             Self::fft_mul_mod(part1, t * j, n1, &modulus, tmp_buf);
@@ -433,14 +430,6 @@ impl Mantissa {
             while part3.sign() < 0 && !part3.is_zero() {
                 part3.add_assign(&modulus);
             }
-
-            /*             thres[m*2 / WORD_BIT_SIZE] = 0;
-            thres[m*2 / WORD_BIT_SIZE + 1] = 0;
-            thres[0] = (j + 1) as Word;
-            thres.shift_left(m*2);
-            if part3.cmp(&thres) >= 0 {
-                part3.sub_assign(&modulus);
-            } */
 
             let jm = j * m;
             let idx = jm / WORD_BIT_SIZE;

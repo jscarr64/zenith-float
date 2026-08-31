@@ -66,12 +66,6 @@ mod tests {
     fn test_sqrt() {
         let mut cc = Consts::new().unwrap();
 
-        /* let n1 = ExactNumNumber::from_words(
-            &[18446744073709551614, 18446744073709551615],
-            Sign::Pos, 0).unwrap();
-        let n2 = n1.sqrt(384, RoundingMode::ToEven).unwrap();
-        println!("{:?}", n2.format(crate::Radix::Bin, RoundingMode::None).unwrap()); */
-
         // near 1
         let p = 320;
         let d1 = ExactNumNumber::parse(

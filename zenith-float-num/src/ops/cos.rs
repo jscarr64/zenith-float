@@ -215,29 +215,4 @@ mod tests {
         assert!(zero.cos(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
         assert!(d4.cos(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
     }
-
-    /* test the polynimial generator error
-    #[test]
-    fn poly_cos() {
-        let mut e = 0;
-        for p in 1..100 {
-            let p = p * 64;
-            let n = 3;
-            let mut pcg1 = FactPolycoeffGen::for_cos(p).unwrap();
-            let mut pcg2 = FactPolycoeffGen::for_cos(p + 8*n).unwrap();
-            for _ in 0..n {
-                let c1 = pcg1.next(RoundingMode::None).unwrap();
-                let c2 = pcg2.next(RoundingMode::None).unwrap();
-
-                let d = c1.sub_full_prec(c2).unwrap();
-
-                if !d.is_zero() {
-                    if e < p - (c1.exponent() - d.exponent()) as usize {
-                        e = p - (c1.exponent() - d.exponent()) as usize;
-                    }
-                }
-            }
-        }
-        println!("{:?}", e);
-    } */
 }

@@ -36,7 +36,6 @@ impl ExactNumNumber {
         (m_slice, n, self.s, self.e, self.inexact)
     }
 
-    // ... pub fn new(p: usize) ...
     // Check the precision so it does not cause arithmetic overflows anywhere.
     pub(super) fn p_assertion(p: usize) -> Result<(), Error> {
         if p >= (isize::MAX / 2 + EXPONENT_MIN as isize) as usize {

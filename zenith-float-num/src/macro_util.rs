@@ -476,11 +476,6 @@ mod tests {
         let mut cc = Consts::new().unwrap();
         let emin = EXPONENT_MIN;
 
-        /* let n = ExactNum::from_words(&[16302899892790296137], Sign::Pos, -2);
-        let r = n.reciprocal(64, RoundingMode::None);
-        println!("{:?}", r);
-        return; */
-
         for _ in 0..ERR_TEST_OUTER {
             let ernd =
                 crate::common::test_rng::random::<Exponent>() % (EXPONENT_BIT_SIZE as Exponent - 5);

@@ -72,9 +72,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 15.1 discrete transforms | ✅ | `idct(dct(x))=x`; DCT of a constant is DC only; `fft_real` cosine bins `k` and `N-k`; Parseval |
 | 15.2 window functions | ✅ | `hann(4)=[0,3/4,3/4,0]` (symmetric `N−1`); Hamming endpoints `0.08`; Kaiser `β=0` is rectangular; all sums `>0` |
 | 16.1 modular ExactInt | ✅ | `mod_pow(2,100,10^9+7)=976371285`; `mod_inv(3,7)=5`; Miller–Rabin on `2^{31}−1`; Pollard–Brent `8051=83×97` |
-| 16.2–17, 18.2–18.3, 19–20 | ⬜ | Hash, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 16.2 hash functions | ✅ | `sha256("")` / `sha256("abc")` FIPS vectors; HMAC-SHA-256 RFC 4231 TC1; `constant_time_eq` independent of first-difference index |
+| 17, 18.2–18.3, 19–20 | ⬜ | Serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§16.2 hash functions**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§17.1 serde for all types**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -877,6 +878,8 @@ Golds:
 ---
 
 ### 16.2 Hash functions
+
+**Status:** done 2026-08-30 — `hash.rs`; FIPS 180-4 SHA-256/512; HMAC-SHA-256; constant-time compare. No external crates.
 
 **Prompt:**
 Implement cryptographic hash functions operating on byte arrays, needed for license key validation and signed package verification:

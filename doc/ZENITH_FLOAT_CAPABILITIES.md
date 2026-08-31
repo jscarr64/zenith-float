@@ -262,6 +262,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | Discrete transforms | ✅ | `dct`/`idct` (type II / III); `dst`/`idst`; `fft_real`/`ifft_real`; `idct(dct(x))=x`; constant → DC only; cosine energy at `k` and `N-k`; Parseval |
 | Window functions | ✅ | Symmetric Hann / Hamming / Blackman; Kaiser `I_0`; rectangular. `hann(4)=[0,3/4,3/4,0]`; Hamming ends `0.08`; Kaiser `β=0` is ones |
 | Modular `ExactInt` | ✅ | `mod_pow`/`mod_inv`/`miller_rabin`/`pollard_rho`; `2^{100} ≡ 976371285 (mod 10^9+7)`; `3^{-1}≡5 (mod 7)`; `2^{31}−1` prime; `8051=83×97` |
+| Hash / HMAC | ✅ | `sha256`/`sha512`/`hmac_sha256`/`constant_time_eq`; empty and `abc` FIPS vectors; RFC 4231 HMAC TC1 |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
@@ -528,14 +529,14 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§16.2 hash functions**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§17.1 serde for all types**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §16.2 | SHA-256 / SHA-512 / HMAC / constant-time eq |
+| §17.1 | Serde for `ExactRational` / `ExactInt` / arrays / `Ball` |
 | §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
-| §17, §18.2–§19, §20.2 | Serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| §17.2–§17.3, §18.2–§19, §20.2 | Binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
 ---
 
@@ -543,7 +544,7 @@ Not a second product. First open implementation slice is **§16.2 hash functions
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 

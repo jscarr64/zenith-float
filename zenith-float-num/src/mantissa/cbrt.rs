@@ -153,15 +153,6 @@ mod tests {
     fn test_cbrt_rem() {
         const MAX_BUF: usize = 100;
 
-        /* let s1 = &[1, 1, 1, WORD_SIGNIFICANT_BIT];
-
-        let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1)).unwrap();
-
-        println!("\n{:?}\n{:?}", qb, rb);
-
-        assert_sqrt!(s1, &qb, &rb, MAX_BUF, "zeroes between");
-        return; */
-
         for s1 in [
             &[WORD_MAX] as &[Word],
             &[WORD_MAX, WORD_MAX],

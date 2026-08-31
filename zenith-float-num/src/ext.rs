@@ -2505,14 +2505,6 @@ macro_rules! impl_int_conv {
                 Self::result_to_ext(ExactNumNumber::$from_s(i, p), false, true)
             }
         }
-
-        //#[cfg(feature = "std")]
-        //impl From<$s> for ExactNum {
-        //    fn from(i: $s) -> Self {
-        //        let p = GCTX.with(|x| x.borrow().precision);
-        //        ExactNum::$from_s(i, p)
-        //    }
-        //}
     };
 }
 
