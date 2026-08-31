@@ -119,7 +119,7 @@ pub fn add_carry(a: Word, b: Word, c: Word, r: &mut Word) -> Word {
     #[cfg(target_arch = "x86")]
     {
         // platform-specific operation
-        unsafe { core::arch::x86::_addcarry_u32(c as u8, a, b, r) as Word }
+        core::arch::x86::_addcarry_u32(c as u8, a, b, r) as Word
     }
 
     #[cfg(not(any(target_arch = "x86_64", target_arch = "x86")))]

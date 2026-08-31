@@ -14,7 +14,7 @@ A finite `ExactNum` or `ExactComplex` value is determined by:
 
 There is no platform-dependent numeric path. Arithmetic is software integer limbs. Hardware binary interchange types are not used. Software `Ieee32` / `Ieee64` are also integer-bit kernels (`from_bits` / `to_bits`); they are not the hardware FPU.
 
-The same inputs at the same commit produce the same limbs on every host that can build the crate. Cross-width (`WORD_BIT_SIZE = 32` vs `64`) and hex-limb CI across architectures are walk-list leftovers (§20.2), not a claim of this document.
+The same inputs at the same commit produce the same limbs on every host that can build the crate. Cross-width (`WORD_BIT_SIZE = 32` vs `64`) and hex-limb CI (`scripts/ci_hex_arm.sh`, `ci_hex_wasm.sh`, `ci_hex_32bit.sh`) lock `to_bytes()` hex in `golds/hex/reference.txt`.
 
 ## How to replay
 
@@ -40,7 +40,7 @@ ZENITH_TEST_SEED=<printed value> cargo test <name> -- --test-threads=1
 
 ## Where the locked values live
 
-Expected values are locked in the crate’s unit tests (`zenith-float-num` lib tests and `tests/`). They are exact comparisons or working-precision reconstructions, not tolerances. This crate does not ship a separate `golds/` tree; Accumath’s `golds/` files are that engine’s corpus.
+Expected values are locked in the crate’s unit tests (`zenith-float-num` lib tests and `tests/`) and in `golds/hex/reference.txt` (canonical `to_bytes()` hex, not a tolerance). Accumath’s `golds/` files are that engine’s corpus.
 
 ## Citation
 

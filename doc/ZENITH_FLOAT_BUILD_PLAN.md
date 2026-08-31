@@ -83,9 +83,9 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 19.2 proptest | ✅ | `PROPTEST_CASES=1000`: add commutes; directed round-then-coarser; `erf` odd; 2×2 integer matmul assoc; rational `(a+b)-b=a` |
 | 19.3 Benchmark suite | ✅ | specials 64–1024; matmul 10/100/1000; FFT 256/1024/4096; LU 50/200; dashu in `compare-bench.sh --quick`; baselines TSV |
 | 19.4 Pre-publish | ✅ | `scripts/zenith_prepublish.sh` 12/12; `ci_full.sh`; dashu §24 verified (no γ, no scoped rounding closure) |
-| 20.2 hex CI | ⬜ | `ci_hex_*.sh` and `golds/hex/` do not exist |
+| 20.2 hex CI | ✅ | `ci_hex_{arm,wasm,32bit}.sh`; 35 rows vs `golds/hex/reference.txt`; `to_bytes` identical across word size and arch |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§20.2 Platform verification CI**. HDF5 is deferred.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. The walk list is complete except **§17.3 HDF5** (deferred: own contiguous subset, not `libhdf5`).
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -1149,6 +1149,8 @@ Write `doc/REPRODUCIBILITY.md` with the following content:
 ---
 
 ### 20.2 Platform verification CI
+
+**Status:** done 2026-08-31 — `golds/hex/reference.txt` (35 rows). `ci_hex_32bit.sh` (`i686` musl, `WORD_BIT_SIZE=32`), `ci_hex_wasm.sh` (`wasm32-wasip1` + wasmtime), `ci_hex_arm.sh` (`aarch64` musl + qemu-user). Bytes match `to_bytes()` on x86_64.
 
 **Prompt:**
 Extend CI to verify bit-identical results across platforms:

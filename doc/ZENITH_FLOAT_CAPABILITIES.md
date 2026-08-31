@@ -547,11 +547,10 @@ dashu-float 0.6.0: `consts.rs` is an empty stub (no γ). `FBig::with_rounding::<
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§20.2 Platform verification CI**.
+Not a second product. The walk list is complete except **§17.3 HDF5** (deferred).
 
 | Plan | Item |
 | --- | --- |
-| §20.2 | hex limb CI (`arm` / `wasm` / `32bit`) |
 | §17.3 leftover | HDF5: own contiguous subset, not `libhdf5` / not a general crate |
 
 ---
@@ -560,7 +559,7 @@ Not a second product. First open implementation slice is **§20.2 Platform verif
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-31 | Pre-publish 12-check (`zenith_prepublish.sh` / `ci_full.sh`); dashu §24 verified. Prior: SIMD IEEE div/sqrt/fma; thumb `no_std`; `expr!`/`cexpr!` composite golds; §19.3 benches; complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange; CSV. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-31 | Hex limb CI (`arm`/`wasm`/`32bit`); pre-publish 12-check; dashu §24 verified. Prior: SIMD IEEE div/sqrt/fma; thumb `no_std`; `expr!`/`cexpr!` composite golds; §19.3 benches; complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange; CSV. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 
