@@ -55,7 +55,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 6.1 no_std / thumb | 🟡 | allocator `no_std` compiles; no `thumbv7em-none-eabihf` CI gold |
 | 7.1 / 20.1 Reproducibility.md | ✅ | `doc/REPRODUCIBILITY.md`; unit tests lock values (no `golds/` tree) |
 | 8 | — | skipped by plan |
-| 9.1 ExactRational | ⬜ | |
+| 9.1 ExactRational | ✅ | `ExactRational`; `1/3+1/6=1/2`; `2/4=1/2`; sign; 256-bit `1/3` |
 | 9.2 ExactInt | ⬜ | |
 | 9.3 parse_exact / format_exact | ⬜ | scientific parse exists; exact-min-prec APIs do not |
 | 10.1 Per-op precision | ✅ | specials take `(p,rm,cc)`; no `SOFT_PREC` in the kernel |
@@ -63,7 +63,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 10.3 `ziv_round_vec` | ⬜ | |
 | 12–17, 18.2–18.3, 19–20 | ⬜ | distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§9.1 ExactRational**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§9.2 ExactInt**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -418,6 +418,8 @@ This document is for researchers who need to cite numerical results in papers.
 ## Section 9 — Number representation completeness
 
 ### 9.1 Rational arithmetic (`ExactRational`)
+
+**Status:** done 2026-08-30 — `rational.rs`; reduce via integer GCD; `from_i64` / `new`; add/sub/mul/div; `to_exact_num`; sign on the numerator.
 
 **Prompt:**
 Implement `ExactRational { num: ExactNum, den: ExactNum }` as an exact rational type where both numerator and denominator are `ExactNum` values. This is distinct from `ExactNum` which is a floating-point type — `ExactRational` is exact.

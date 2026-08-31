@@ -35,6 +35,7 @@ mod num;
 mod ops;
 mod parser;
 mod radix_float;
+mod rational;
 mod strop;
 
 #[cfg(feature = "std")]
@@ -67,6 +68,7 @@ pub use crate::ops::consts::Consts;
 #[cfg(feature = "std")]
 pub use crate::ops::consts::SharedConsts;
 pub use crate::radix_float::RadixFloat;
+pub use crate::rational::ExactRational;
 
 pub use crate::defs::EXPONENT_BIT_SIZE;
 pub use crate::defs::EXPONENT_MAX;

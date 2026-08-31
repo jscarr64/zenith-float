@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `ExactRational` — exact `num/den` with integer GCD reduction; `1/3+1/6=1/2`; `2/4=1/2`; sign onto the numerator; 256-bit `1/3`.
 - `doc/REPRODUCIBILITY.md` — what determines a result, how to replay tests, citation line.
 - `# Precision` rustdoc on `ExactNum` and `ExactComplex` specials (algorithm, thresholds, Ziv / ULP, MPFR oracle).
 - `ExactNumArray::fft` / `ifft` — radix-2 Cooley–Tukey; impulse / cosine / Parseval golds; `FFT_MAX_POINTS=4096`.
