@@ -1072,6 +1072,86 @@ impl ExactNumArray {
         ))
     }
 
+    /// Row–column transpose.
+    pub fn transpose(&self) -> Self {
+        let mut vals = Vec::with_capacity(self.vals.len());
+        for j in 0..self.cols {
+            for i in 0..self.rows {
+                vals.push(self.vals[i * self.cols + j].clone());
+            }
+        }
+        Self {
+            p: self.p,
+            vals,
+            rows: self.cols,
+            cols: self.rows,
+        }
+    }
+
+    /// Modified Gram–Schmidt QR at `(p, rm)`.
+    ///
+    /// Returns `(Q, R)` with `Q` `m×k` having orthonormal columns, `R` `k×n`
+    /// upper triangular, `k = min(m, n)`. A rank-deficient column is a zero
+    /// column of `Q` and a zero diagonal entry of `R` — not a panic.
+    pub fn qr_decomp(&self, p: usize, rm: RoundingMode) -> Option<(Self, Self)> {
+        let m = self.rows;
+        let n = self.cols;
+        if m == 0 || n == 0 {
+            return None;
+        }
+        let k = m.min(n);
+        let mut q = alloc::vec![ExactNum::from_u8(0, p); m.checked_mul(k)?];
+        let mut r = alloc::vec![ExactNum::from_u8(0, p); k.checked_mul(n)?];
+        let a = |row: usize, col: usize| -> ExactNum {
+            let mut v = self.vals[row * n + col].clone();
+            let _ = v.set_precision(p, rm);
+            v
+        };
+        for j in 0..n {
+            let mut v: Vec<ExactNum> = (0..m).map(|i| a(i, j)).collect();
+            let jlim = j.min(k);
+            for i in 0..jlim {
+                let mut dot = ExactNum::from_u8(0, p);
+                for t in 0..m {
+                    let qi = q[t * k + i].clone();
+                    dot = dot.add(&qi.mul(&v[t], p, rm), p, rm);
+                }
+                r[i * n + j] = dot.clone();
+                for t in 0..m {
+                    let qi = q[t * k + i].clone();
+                    v[t] = v[t].sub(&dot.mul(&qi, p, rm), p, rm);
+                }
+            }
+            if j < k {
+                let mut nrm = ExactNum::from_u8(0, p);
+                for t in 0..m {
+                    nrm = nrm.add(&v[t].mul(&v[t], p, rm), p, rm);
+                }
+                nrm = nrm.sqrt(p, rm);
+                r[j * n + j] = nrm.clone();
+                if !nrm.is_zero() {
+                    for t in 0..m {
+                        q[t * k + j] = v[t].div(&nrm, p, rm);
+                    }
+                }
+            }
+        }
+        Some((
+            Self {
+                p,
+                vals: q,
+                rows: m,
+                cols: k,
+            },
+            Self {
+                p,
+                vals: r,
+                rows: k,
+                cols: n,
+            },
+        ))
+    }
+
     fn zip(&self, rhs: &Self, op: impl Fn(&ExactNum, &ExactNum) -> ExactNum) -> Option<Self> {
         if self.rows != rhs.rows || self.cols != rhs.cols {
             return None;
@@ -1387,5 +1467,50 @@ mod tests {
         }
         let sing = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(2), n(4)]).unwrap();
         assert!(sing.lu_decomp(p, rm).is_none());
+    }
+
+    fn near_num(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
+        let d = a.sub(b, p, RoundingMode::None).abs();
+        d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - 40)
+    }
+
+    #[test]
+    fn exact_qr_recon_orthog_rankdef() {
+        let p = 256;
+        let rm = RoundingMode::ToEven;
+        let n = |k: u8| ExactNum::from_u8(k, p);
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(4), n(3)]).unwrap();
+        let (q, r) = a.qr_decomp(p, rm).expect("QR");
+        let qr = q.matmul(&r).expect("Q*R");
+        for i in 0..2 {
+            for j in 0..2 {
+                assert!(
+                    near_num(qr.get2(i, j).unwrap(), a.get2(i, j).unwrap(), p),
+                    "QR=A at {i},{j}"
+                );
+            }
+        }
+        let qtq = q.transpose().matmul(&q).expect("Q^T Q");
+        let one = n(1);
+        let zero = n(0);
+        assert!(near_num(qtq.get2(0, 0).unwrap(), &one, p));
+        assert!(near_num(qtq.get2(1, 1).unwrap(), &one, p));
+        assert!(near_num(qtq.get2(0, 1).unwrap(), &zero, p));
+        assert!(near_num(qtq.get2(1, 0).unwrap(), &zero, p));
+
+        let def = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(2), n(4)]).unwrap();
+        let (qd, rd) = def.qr_decomp(p, rm).expect("rank-def QR");
+        let _ = qd;
+        assert!(rd.get2(1, 1).unwrap().is_zero() || near_num(rd.get2(1, 1).unwrap(), &zero, p));
+        let recon = qd.matmul(&rd).expect("Qd Rd");
+        for i in 0..2 {
+            for j in 0..2 {
+                assert!(near_num(
+                    recon.get2(i, j).unwrap(),
+                    def.get2(i, j).unwrap(),
+                    p
+                ));
+            }
+        }
     }
 }

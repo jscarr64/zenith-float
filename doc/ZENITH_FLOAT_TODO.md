@@ -41,12 +41,13 @@ Rules for every item:
 | Array ufunc golds + `Ball` transcendentals | 2026-08-30 | `(2×3)` `sin`; `bessel_j_nu(1/2)`; `Ball` `cos`/`ln`/`sqrt`/`erf`/`J_0`/`J_1` |
 | `ComplexBall` | 2026-08-30 | Disk `add`/`mul`/`exp`/`ln`/`sin`/`cos`; unit-disk `exp`; Pythagorean enclosure |
 | `ExactNumArray::lu_decomp` | 2026-08-30 | Partial pivot; `[[2,1],[4,3]]` \(PA=LU\); singular `[[1,2],[2,4]]` → `None` |
+| `ExactNumArray::qr_decomp` | 2026-08-30 | Modified Gram–Schmidt; \(QR=A\); \(Q^\top Q=I\); rank-deficient zero \(R_{kk}\) |
 
 ---
 
 ## Cross-cutting leftovers
 
 - MPFR has `eint`, `jn`, `yn`, `digamma` — oracles in `compare_special_fn_test.rs`. No MPFR `si` / `ci` / `li` / Fresnel / complex elliptic / complex `_2F1`; those stay identity/series golds
-- Walk `doc/ZENITH_FLOAT_BUILD_PLAN.md` from §4.2 (QR). Software limbs only; golds on the object.
+- Source of truth is the **Status vs tree** table in `doc/ZENITH_FLOAT_BUILD_PLAN.md`. First open implementation slice: §4.3 SVD.
 
 Hung searches and invented closed forms stay `NaN` / `InvalidArgument`.

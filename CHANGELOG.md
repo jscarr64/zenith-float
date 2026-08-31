@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `ExactNumArray::qr_decomp` — modified Gram–Schmidt; \(QR=A\), \(Q^\top Q=I\); rank-deficient zero diagonal.
 - `ExactNumArray::lu_decomp` — partial pivoting; \(PA=LU\) gold; singular → `None`.
 - `ComplexBall` disk enclosures: `add`/`mul`/`exp`/`ln`/`sin`/`cos`. Unit-disk `exp` and \(\sin^2+\cos^2=1\) golds.
 - `Ball::{cos,ln,sqrt,erf,bessel_j0,bessel_j1}` certified enclosures (`BALL_TRANSCENDENTAL_ERROR_TERMS`). `ExactNumArray` `(2×3)` `sin` and `bessel_j_nu` golds; `signum` ufunc.
