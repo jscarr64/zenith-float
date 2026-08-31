@@ -1108,9 +1108,7 @@ impl ExactNum {
                 }
                 Error::MemoryAllocation => Self::nan(Some(Error::MemoryAllocation)),
                 Error::InvalidArgument => Self::nan(Some(Error::InvalidArgument)),
-                Error::PrecisionRetryExhausted => {
-                    Self::nan(Some(Error::PrecisionRetryExhausted))
-                }
+                Error::PrecisionRetryExhausted => Self::nan(Some(Error::PrecisionRetryExhausted)),
             },
             Ok(v) => ExactNum {
                 inner: Flavor::Value(v),
@@ -1897,7 +1895,14 @@ impl ExactNum {
         }
     }
     gen_wrapper_arg_rm_cc!(
-        "Error function `erf(self)` with precision `p`.",
+        "Error function `erf(self)` with precision `p`.
+
+# Precision
+
+- Algorithm: Taylor series when `|x|.exponent() ≤ 2`; complementary asymptotic otherwise. Saturates to `±1` when `2|e| > p+4`.
+- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on `|x| ≲ 4`.
+- Thresholds: exponent cut `≤ 2` (not a named constant).
+- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`.",
         erf,
         Self,
         { ExactNum::from_u8(1, p) },
@@ -1906,7 +1911,13 @@ impl ExactNum {
         usize
     );
     gen_wrapper_arg_rm_cc!(
-        "Complementary error function `erfc(self) = 1 - erf(self)` with precision `p`.",
+        "Complementary error function `erfc(self) = 1 - erf(self)` with precision `p`.
+
+# Precision
+
+- Algorithm: `1 - erf` at extra working precision (same series / asymptotic as `erf`).
+- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on `|x| ≲ 4`.
+- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`.",
         erfc,
         Self,
         { Self::new(p) },
@@ -1915,7 +1926,13 @@ impl ExactNum {
         usize
     );
     gen_wrapper_arg_rm_cc!(
-        "Gamma function `Γ(self)` with precision `p`. Poles at non-positive integers yield NaN (or +Inf at 0).",
+        "Gamma function `Γ(self)` with precision `p`. Poles at non-positive integers yield NaN (or +Inf at 0).
+
+# Precision
+
+- Algorithm: Stirling series for `ln Γ` then `exp`; reflection across the negative axis. Integer factorials for small positive integers.
+- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on the oracle domain.
+- MPFR oracle: yes, under `mpfr-tests`.",
         gamma,
         Self,
         { INF_POS },
@@ -1924,7 +1941,13 @@ impl ExactNum {
         usize
     );
     gen_wrapper_arg_rm_cc!(
-        "`ln Γ(self)` for positive `self` with precision `p`.",
+        "`ln Γ(self)` for positive `self` with precision `p`.
+
+# Precision
+
+- Algorithm: Stirling series (Bernoulli) at working precision `p + WORD_BIT_SIZE`.
+- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on the oracle domain.
+- MPFR oracle: yes, under `mpfr-tests`.",
         ln_gamma,
         Self,
         { INF_POS },
@@ -1933,7 +1956,13 @@ impl ExactNum {
         usize
     );
     gen_wrapper_arg_rm_cc!(
-        "Digamma `ψ(self)`. Poles at non-positive integers. Reflection for z < 0.",
+        "Digamma `ψ(self)`. Poles at non-positive integers. Reflection for z < 0.
+
+# Precision
+
+- Algorithm: recurrence to a large argument, then Bernoulli series; reflection for `z < 0`.
+- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). Accumath `ψ` identities are the gold; MPFR `digamma` is not an oracle here.
+- MPFR oracle: no.",
         digamma,
         Self,
         { INF_POS },
@@ -1942,6 +1971,12 @@ impl ExactNum {
         usize
     );
     /// Lower incomplete gamma `γ(self, x)` for `self > 0`, `x ≥ 0`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: power series in `x` at working precision; `+∞` in `x` returns `Γ(self)`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no (Accumath `γ(s,x)` golds).
     pub fn gammainc(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &x.inner) {
             (Flavor::Value(s), Flavor::Value(xv)) => {
@@ -1959,6 +1994,12 @@ impl ExactNum {
         }
     }
     /// Upper incomplete gamma `Γ(self, x)` for `self > 0`, `x ≥ 0`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: `Γ(self) - γ(self, x)` at working precision; `+∞` in `x` returns 0.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn gammainc_upper(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &x.inner) {
             (Flavor::Value(s), Flavor::Value(xv)) => {
@@ -1976,7 +2017,13 @@ impl ExactNum {
         }
     }
     gen_wrapper_arg_rm_cc!(
-        "Exponential integral `Ei(self)` (principal value for `self < 0`). `0` is a pole.",
+        "Exponential integral `Ei(self)` (principal value for `self < 0`). `0` is a pole.
+
+# Precision
+
+- Algorithm: power series for moderate `|x|`; factorial asymptotic when `|x|` is large (`exponent() > 6` and `|x| ≳ 0.7 p`).
+- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+- MPFR oracle: open (Accumath `Ei` golds).",
         ei,
         Self,
         { INF_POS },
@@ -1985,6 +2032,12 @@ impl ExactNum {
         usize
     );
     /// Sine integral `Si(self)`. `+∞ → π/2`, `−∞ → −π/2`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: series, or auxiliary `f,g` asymptotic on the same cut as `Ei`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: open.
     pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.si(p, rm, cc), v.is_zero(), true),
@@ -1993,7 +2046,13 @@ impl ExactNum {
         }
     }
     gen_wrapper_arg_rm_cc!(
-        "Cosine integral `Ci(self)` for `self > 0`.",
+        "Cosine integral `Ci(self)` for `self > 0`.
+
+# Precision
+
+- Algorithm: series, or auxiliary `f,g` asymptotic (same `|x|` cut as `Ei`). Near-zero is a pole.
+- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+- MPFR oracle: open.",
         ci,
         Self,
         { Self::new(p) },
@@ -2002,7 +2061,13 @@ impl ExactNum {
         usize
     );
     gen_wrapper_arg_rm_cc!(
-        "Logarithmic integral `li(self) = Ei(ln self)` for `self > 0`, `self ≠ 1`.",
+        "Logarithmic integral `li(self) = Ei(ln self)` for `self > 0`, `self ≠ 1`.
+
+# Precision
+
+- Algorithm: `Ei(ln self)` at extra working precision (inherits `Ei` series / asymptotic).
+- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+- MPFR oracle: open.",
         li,
         Self,
         { INF_POS },
@@ -2011,11 +2076,23 @@ impl ExactNum {
         usize
     );
     /// Fresnel sine integral `S(self)`. `±∞ → ±1/2`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: series, or auxiliary `f,g` when `|x|.exponent() ≥ 8` (or `3 x² > p`).
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: open.
     pub fn fresnel_s(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.fresnel_sc_ext(true, p, rm, cc)
     }
 
     /// Fresnel cosine integral `C(self)`. `±∞ → ±1/2`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: same series / auxiliary `f,g` split as [`Self::fresnel_s`].
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: open.
     pub fn fresnel_c(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.fresnel_sc_ext(false, p, rm, cc)
     }
@@ -2023,11 +2100,7 @@ impl ExactNum {
     fn fresnel_sc_ext(&self, sine: bool, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => {
-                let inner = if sine {
-                    v.fresnel_s(p, rm, cc)
-                } else {
-                    v.fresnel_c(p, rm, cc)
-                };
+                let inner = if sine { v.fresnel_s(p, rm, cc) } else { v.fresnel_c(p, rm, cc) };
                 Self::result_to_ext(inner, v.is_zero(), true)
             }
             Flavor::Inf(s) => {
@@ -2041,6 +2114,12 @@ impl ExactNum {
     }
 
     /// Airy \(\mathrm{Ai}(\mathrm{self})\). \(+\infty\to 0\); \(-\infty\) has no limit → NaN.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: power series for `|x| < AIRY_SERIES_THRESHOLD` (`8`); asymptotic otherwise.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no (identity / ODE golds).
     pub fn ai(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.ai(p, rm, cc), v.is_zero(), true),
@@ -2056,6 +2135,12 @@ impl ExactNum {
     }
 
     /// Airy \(\mathrm{Bi}(\mathrm{self})\). \(+\infty\to+\infty\); \(-\infty\) has no limit → NaN.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: same `AIRY_SERIES_THRESHOLD = 8` split as [`Self::ai`].
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn bi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bi(p, rm, cc), v.is_zero(), true),
@@ -2071,6 +2156,12 @@ impl ExactNum {
     }
 
     /// \(\mathrm{Ai}'(\mathrm{self})\). \(+\infty\to 0\); \(-\infty\) → NaN.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: differentiated series / asymptotic; `AIRY_SERIES_THRESHOLD = 8`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn ai_prime(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.ai_prime(p, rm, cc), v.is_zero(), true),
@@ -2086,6 +2177,12 @@ impl ExactNum {
     }
 
     /// \(\mathrm{Bi}'(\mathrm{self})\). \(+\infty\to+\infty\); \(-\infty\) → NaN.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: differentiated series / asymptotic; `AIRY_SERIES_THRESHOLD = 8`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn bi_prime(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bi_prime(p, rm, cc), v.is_zero(), true),
@@ -2101,6 +2198,12 @@ impl ExactNum {
     }
 
     /// Bessel function of the first kind `J_n(self)` for integer order `n`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: power series; Miller recurrence for large `n` (`n ≤ 1024`).
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR `jn` for `n = 0,1,2`.
+    /// - MPFR oracle: yes, `n = 0,1,2` under `mpfr-tests`.
     pub fn bessel_j(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bessel_j(n, p, rm, cc), v.is_zero(), true),
@@ -2115,7 +2218,13 @@ impl ExactNum {
         p: usize,
         rm: RoundingMode,
         cc: &mut Consts,
-        f: fn(&ExactNumNumber, &ExactNumNumber, usize, RoundingMode, &mut Consts) -> Result<ExactNumNumber, Error>,
+        f: fn(
+            &ExactNumNumber,
+            &ExactNumNumber,
+            usize,
+            RoundingMode,
+            &mut Consts,
+        ) -> Result<ExactNumNumber, Error>,
     ) -> Self {
         match (&self.inner, &nu.inner) {
             (Flavor::Value(x), Flavor::Value(n)) => {
@@ -2127,26 +2236,56 @@ impl ExactNum {
     }
 
     /// \(J_ν(\mathrm{self})\) for real order `nu`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: series in `x`; integer `ν` delegates to [`Self::bessel_j`].
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no (identity golds).
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_j_nu)
     }
 
     /// \(Y_ν(\mathrm{self})\) for `self > 0`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Wronskian / series from \(J_ν\); cut on \((-\infty, 0]\).
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn bessel_y(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_y)
     }
 
     /// \(I_ν(\mathrm{self})\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: series; \(I_ν(z) = i^{-ν} J_ν(iz)\) for the complex path.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn bessel_i(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_i)
     }
 
     /// \(K_ν(\mathrm{self})\) for `self > 0`. \(K_{-ν}=K_ν\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: series / Temme; large-`|x|` asymptotic `k_asymptotic`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn bessel_k(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_k)
     }
     gen_wrapper_arg_rm_cc!(
-        "Complete elliptic `K(self)`. Parameter `m = k²`. `m = 1` is `+∞`; `m > 1` uses the reciprocal-modulus transform.",
+        "Complete elliptic `K(self)`. Parameter `m = k²`. `m = 1` is `+∞`; `m > 1` uses the reciprocal-modulus transform.
+
+# Precision
+
+- Algorithm: Carlson `R_F` duplication; cap `CARLSON_DUPE_MAX = 128`.
+- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+- MPFR oracle: no (Accumath `K` identities).",
         elliptic_k,
         Self,
         { NAN },
@@ -2155,7 +2294,13 @@ impl ExactNum {
         usize
     );
     gen_wrapper_arg_rm_cc!(
-        "Complete elliptic `E(self)` for `self ≤ 1`. `E(1) = 1`.",
+        "Complete elliptic `E(self)` for `self ≤ 1`. `E(1) = 1`.
+
+# Precision
+
+- Algorithm: Carlson `R_F` / `R_D`; `CARLSON_DUPE_MAX = 128`.
+- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+- MPFR oracle: no.",
         elliptic_e_complete,
         Self,
         { NAN },
@@ -2164,6 +2309,12 @@ impl ExactNum {
         usize
     );
     /// Incomplete `F(self | m)` for `|self| ≤ 1`. `self = sin φ`, `m = k²`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Carlson `R_F`; `CARLSON_DUPE_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn elliptic_f(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(x), Flavor::Value(mv)) => {
@@ -2174,6 +2325,12 @@ impl ExactNum {
         }
     }
     /// Incomplete `E(self | m)` for `|self| ≤ 1`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Carlson `R_F` / `R_D`; `CARLSON_DUPE_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn elliptic_e(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(x), Flavor::Value(mv)) => {
@@ -2184,7 +2341,19 @@ impl ExactNum {
         }
     }
     /// Complete `Π(self, m)` for `self < 1`, `m < 1`.
-    pub fn elliptic_pi_complete(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Carlson `R_J`; `CARLSON_DUPE_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
+    pub fn elliptic_pi_complete(
+        &self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(n), Flavor::Value(mv)) => {
                 Self::result_to_ext(n.elliptic_pi_complete(mv, p, rm, cc), false, true)
@@ -2194,6 +2363,12 @@ impl ExactNum {
         }
     }
     /// Incomplete `Π(self; x | m)`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Carlson `R_J`; `CARLSON_DUPE_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn elliptic_pi(
         &self,
         x: &Self,
@@ -2213,6 +2388,12 @@ impl ExactNum {
         }
     }
     /// Legendre \(P_n(\mathrm{self})\) for integer `n`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: three-term recurrence at `p + O(n)` bits. Cap via caller (`LEGENDRE_N_MAX` on Accumath).
+    /// - Bound: working-precision recurrence (not a Ziv leaf).
+    /// - MPFR oracle: no.
     pub fn legendre_p(&self, n: u32, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.legendre_p(n, p, rm), false, true),
@@ -2221,6 +2402,12 @@ impl ExactNum {
         }
     }
     /// Associated \(P_n^m(\mathrm{self})\) (Condon–Shortley).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: recurrence from \(P_n\); Condon–Shortley phase.
+    /// - Bound: working-precision recurrence (not a Ziv leaf).
+    /// - MPFR oracle: no.
     pub fn assoc_legendre_p(&self, n: u32, m: i32, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.assoc_legendre_p(n, m, p, rm), false, true),
@@ -2229,6 +2416,12 @@ impl ExactNum {
         }
     }
     /// Gaussian \({}_2F_1(\mathrm{self}, b; c; z)\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: series for `|z| < 1`; Gauss at `z = 1`; Pfaff / continuation. Cap `HYPERGEOM_TERM_MAX = 10_000`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`) when the series converges.
+    /// - MPFR oracle: no.
     pub fn hypergeom_2f1(
         &self,
         b: &Self,
@@ -2250,6 +2443,12 @@ impl ExactNum {
         }
     }
     /// Regularized incomplete beta \(I_x(a=\mathrm{self}, b)\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: series / continued fraction in `x ∈ [0, 1]` for `a > 0`, `b > 0`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn betainc(&self, b: &Self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &b.inner, &x.inner) {
             (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(xv)) => {

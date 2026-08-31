@@ -359,6 +359,12 @@ impl ExactComplex {
     /// Euler / \(1-z\) and \(1/z\) linear transforms otherwise. Kummer at \(z=1\)
     /// when \(\mathrm{Re}(c-a-b)>0\). Cut on \([1,+\infty)\) in \(z\) (principal
     /// value from above). Non-positive integer \(c\) (uncanceled) → NaN.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: series / Euler / Pfaff / Kummer. Caps `HYPERGEOM_SERIES_MAX_TERMS = 10_000`, `HYPERGEOM_TRANSFORM_MAX = 8`.
+    /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn hypergeom_2f1(
         &self,
         b: &Self,

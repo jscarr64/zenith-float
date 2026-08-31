@@ -148,7 +148,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 
 **Property tests** (`zenith-float-num/src/ops/tests.rs`): inverse pairs (ln↔exp, sin↔asin, log↔pow, etc.) with mathematically derived error bounds; exponent sampling capped at `TEST_EXP_BOUND = 1024` for runtime.
 
-**Error documentation:** `doc/README.md` (ulp / series error bounds used by `expr!` and tests). **Precision growth:** `doc/PRECISION.md` (`MAX_PREC_RETRY`, exponent scaling, `expr!` bounds).
+**Error documentation:** `doc/README.md` (ulp / series error bounds used by `expr!` and tests). **Precision growth:** `doc/PRECISION.md` (`MAX_PREC_RETRY`, exponent scaling, `expr!` bounds). **Per-function `# Precision`:** rustdoc on `ExactNum` / `ExactComplex` specials (algorithm, thresholds, Ziv/ULP, MPFR).
 
 ---
 

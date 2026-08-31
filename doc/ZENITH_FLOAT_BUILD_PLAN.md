@@ -51,7 +51,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 4.3 / 11.3 SVD | ✅ | `svd_decomp`; \(U\Sigma V^T=A\); \(U^\top U=V^\top V=I\); \(\operatorname{diag}(3,2)\); wide \(\sigma=(2,1)\) |
 | 4.4 / 11.4 eigen | ✅ | `eigen_decomp`; \(Av=\lambda v\); \(V\Lambda V^T=A\); \(\begin{pmatrix}2&1\\1&2\end{pmatrix}\to(3,1)\); non-symmetric `None` |
 | 4.5 / 11.5 FFT | ✅ | `fft` / `ifft`; impulse `[1,0,0,0]→[1,1,1,1]`; cosine bins; IFFT; Parseval; `FFT_MAX_POINTS=4096` |
-| 5.1 / 18.1 Precision doc comments | ⬜ | |
+| 5.1 / 18.1 Precision doc comments | ✅ | `# Precision` on `ExactNum` / `ExactComplex` specials (algorithm, thresholds, ULP/Ziv, MPFR) |
 | 6.1 no_std / thumb | 🟡 | allocator `no_std` compiles; no `thumbv7em-none-eabihf` CI gold |
 | 7.1 / 20.1 Reproducibility.md | ⬜ | |
 | 8 | — | skipped by plan |
@@ -63,7 +63,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 10.3 `ziv_round_vec` | ⬜ | |
 | 12–17, 18.2–18.3, 19–20 | ⬜ | distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§5.1 Precision doc comments**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§7.1 REPRODUCIBILITY.md** (§6.1 leftover is thumb CI).
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -360,6 +360,8 @@ Golds:
 ## Section 5 — Precision documentation per function
 
 ### 5.1 Error bound documentation
+
+**Status:** done 2026-08-30 — `# Precision` on `ExactNum` and `ExactComplex` specials.
 
 **Prompt:**
 For every special function in §12 of `LIBRARY.md` and `ZENITH_FLOAT_CAPABILITIES.md`, add a doc comment section "Precision" that states:
@@ -913,6 +915,8 @@ Golds:
 ## Section 18 — Documentation completeness
 
 ### 18.1 Per-function precision documentation
+
+**Status:** done 2026-08-30 — same `# Precision` comments as §5.1. Do not write twice.
 
 **Prompt:**
 For every special function in zenith-float add a `# Precision` section to the doc comment stating:

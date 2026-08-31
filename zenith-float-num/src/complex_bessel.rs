@@ -54,7 +54,8 @@ fn integer_nu(nu: &ExactComplex, p: usize) -> Option<i32> {
 fn harmonic(k: usize, p: usize) -> ExactNum {
     let mut h = ExactNum::new(p);
     for i in 1..=k {
-        let t = ExactNum::from_u8(1, p).div(&ExactNum::from_u32(i as u32, p), p, RoundingMode::None);
+        let t =
+            ExactNum::from_u8(1, p).div(&ExactNum::from_u32(i as u32, p), p, RoundingMode::None);
         h = h.add(&t, p, RoundingMode::None);
     }
     h
@@ -71,6 +72,12 @@ fn eight_c(p: usize) -> ExactComplex {
 impl ExactComplex {
     /// \(J_\nu(z)\). Entire for integer \(\nu\); cut on \((-\infty,0]\) otherwise.
     /// \(z=0\) with non-integer \(\nu\) → NaN.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: series for `|z| < BESSEL_SERIES_THRESHOLD` (`16`); Hankel otherwise. Integer `|n| ≤ BESSEL_INTEGER_MAX` (`64`).
+    /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
@@ -80,6 +87,12 @@ impl ExactComplex {
     }
 
     /// \(Y_\nu(z)\). Cut on \((-\infty,0]\); \(z=0\) → NaN.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: from \(J_ν\); `BESSEL_SERIES_THRESHOLD = 16`.
+    /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn bessel_y(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
@@ -92,6 +105,12 @@ impl ExactComplex {
     }
 
     /// \(I_\nu(z)=i^{-\nu}J_\nu(iz)\). Same cut rules as \(J_\nu\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: via [`Self::bessel_j_nu`]; `BESSEL_SERIES_THRESHOLD = 16`.
+    /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn bessel_i(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
@@ -101,6 +120,12 @@ impl ExactComplex {
     }
 
     /// \(K_\nu(z)=(\pi/2)\,i^{\nu+1}H_\nu^{(1)}(iz)\). Cut on \((-\infty,0]\); \(z=0\) → NaN.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Hankel of \(iz\); `BESSEL_SERIES_THRESHOLD = 16`.
+    /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn bessel_k(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
@@ -149,9 +174,10 @@ impl ExactComplex {
         let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);
         let j = iz.bessel_j_at(nu, work_p, dest_p, cc);
         let ln_i = ExactComplex::i(work_p).ln(work_p, RoundingMode::None, cc);
-        let scale = neg_c(nu)
-            .mul(&ln_i, work_p, RoundingMode::None)
-            .exp(work_p, RoundingMode::None, cc);
+        let scale =
+            neg_c(nu)
+                .mul(&ln_i, work_p, RoundingMode::None)
+                .exp(work_p, RoundingMode::None, cc);
         scale.mul(&j, work_p, RoundingMode::None)
     }
 
@@ -166,9 +192,10 @@ impl ExactComplex {
         );
         let ln_i = ExactComplex::i(work_p).ln(work_p, RoundingMode::None, cc);
         let nu_p1 = nu.add(&ExactComplex::one(work_p), work_p, RoundingMode::None);
-        let i_pow = nu_p1
-            .mul(&ln_i, work_p, RoundingMode::None)
-            .exp(work_p, RoundingMode::None, cc);
+        let i_pow =
+            nu_p1
+                .mul(&ln_i, work_p, RoundingMode::None)
+                .exp(work_p, RoundingMode::None, cc);
         let half_pi = pi_c(work_p, cc).mul(&half_c(work_p), work_p, RoundingMode::None);
         half_pi
             .mul(&i_pow, work_p, RoundingMode::None)
@@ -178,15 +205,17 @@ impl ExactComplex {
     fn bessel_j_series(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
         let half = self.mul(&half_c(p), p, RoundingMode::None);
         let pow = half.pow(nu, p, RoundingMode::None, cc);
-        let g = nu
-            .add(&ExactComplex::one(p), p, RoundingMode::None)
-            .gamma(p, RoundingMode::None, cc);
+        let g =
+            nu.add(&ExactComplex::one(p), p, RoundingMode::None)
+                .gamma(p, RoundingMode::None, cc);
         let mut term = pow.div(&g, p, RoundingMode::None);
         let mut sum = term.clone();
         let hh = half.mul(&half, p, RoundingMode::None);
         for k in 1..=series_term_cap(p) {
             let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p);
-            let den = kk.add(nu, p, RoundingMode::None).mul(&kk, p, RoundingMode::None);
+            let den = kk
+                .add(nu, p, RoundingMode::None)
+                .mul(&kk, p, RoundingMode::None);
             term = term
                 .mul(&hh, p, RoundingMode::None)
                 .div(&den, p, RoundingMode::None);
@@ -252,13 +281,21 @@ impl ExactComplex {
         let half = self.mul(&half_c(work_p), work_p, RoundingMode::None);
         let j0 = self.bessel_j_at(&ExactComplex::zero(work_p), work_p, dest_p, cc);
         let g = ExactComplex::from_real(cc.euler_gamma(work_p, RoundingMode::None), work_p);
-        let prefix = g.add(&half.ln(work_p, RoundingMode::None, cc), work_p, RoundingMode::None);
+        let prefix = g.add(
+            &half.ln(work_p, RoundingMode::None, cc),
+            work_p,
+            RoundingMode::None,
+        );
         let z2 = half.mul(&half, work_p, RoundingMode::None);
         let mut fact = ExactNum::from_u8(1, work_p);
         let mut zk = ExactComplex::one(work_p);
         let mut sum = ExactComplex::zero(work_p);
         for m in 1..=series_term_cap(work_p) {
-            fact = fact.mul(&ExactNum::from_u32(m as u32, work_p), work_p, RoundingMode::None);
+            fact = fact.mul(
+                &ExactNum::from_u32(m as u32, work_p),
+                work_p,
+                RoundingMode::None,
+            );
             zk = zk.mul(&z2, work_p, RoundingMode::None);
             let h = harmonic(m as usize, work_p);
             let den = fact.mul(&fact, work_p, RoundingMode::None);
@@ -273,7 +310,9 @@ impl ExactComplex {
             }
         }
         two_pi.mul(
-            &prefix.mul(&j0, work_p, RoundingMode::None).add(&sum, work_p, RoundingMode::None),
+            &prefix
+                .mul(&j0, work_p, RoundingMode::None)
+                .add(&sum, work_p, RoundingMode::None),
             work_p,
             RoundingMode::None,
         )
@@ -285,7 +324,11 @@ impl ExactComplex {
         let half = self.mul(&half_c(work_p), work_p, RoundingMode::None);
         let j1 = self.bessel_j_at(&nu1, work_p, dest_p, cc);
         let g = ExactComplex::from_real(cc.euler_gamma(work_p, RoundingMode::None), work_p);
-        let prefix = g.add(&half.ln(work_p, RoundingMode::None, cc), work_p, RoundingMode::None);
+        let prefix = g.add(
+            &half.ln(work_p, RoundingMode::None, cc),
+            work_p,
+            RoundingMode::None,
+        );
         let z2 = half.mul(&half, work_p, RoundingMode::None);
         let mut kfact = ExactNum::from_u8(1, work_p);
         let mut kp1fact = ExactNum::from_u8(1, work_p);
@@ -314,7 +357,11 @@ impl ExactComplex {
                 break;
             }
             let kp = k + 1;
-            kfact = kfact.mul(&ExactNum::from_u32(kp as u32, work_p), work_p, RoundingMode::None);
+            kfact = kfact.mul(
+                &ExactNum::from_u32(kp as u32, work_p),
+                work_p,
+                RoundingMode::None,
+            );
             kp1fact = kp1fact.mul(
                 &ExactNum::from_u32((kp + 1) as u32, work_p),
                 work_p,
@@ -344,17 +391,25 @@ impl ExactComplex {
     }
 
     fn hankel_chi_omega(&self, nu: &Self, p: usize, cc: &mut Consts) -> (Self, Self) {
-        let two_nu_1 = two_c(p)
-            .mul(nu, p, RoundingMode::None)
-            .add(&ExactComplex::one(p), p, RoundingMode::None);
-        let chi = self.sub(
-            &two_nu_1
-                .mul(&pi_c(p, cc), p, RoundingMode::None)
-                .div(&four_c(p), p, RoundingMode::None),
+        let two_nu_1 = two_c(p).mul(nu, p, RoundingMode::None).add(
+            &ExactComplex::one(p),
             p,
             RoundingMode::None,
         );
-        let two_over = two_c(p).div(&pi_c(p, cc).mul(self, p, RoundingMode::None), p, RoundingMode::None);
+        let chi = self.sub(
+            &two_nu_1.mul(&pi_c(p, cc), p, RoundingMode::None).div(
+                &four_c(p),
+                p,
+                RoundingMode::None,
+            ),
+            p,
+            RoundingMode::None,
+        );
+        let two_over = two_c(p).div(
+            &pi_c(p, cc).mul(self, p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        );
         let omega = two_over.sqrt(p, RoundingMode::None, cc);
         (chi, omega)
     }
@@ -383,11 +438,7 @@ impl ExactComplex {
                 let signed = if (k / 2) % 2 == 1 { neg_c(&term) } else { term.clone() };
                 psum = psum.add(&signed, p, RoundingMode::None);
             } else {
-                let signed = if ((k - 1) / 2) % 2 == 1 {
-                    neg_c(&term)
-                } else {
-                    term.clone()
-                };
+                let signed = if ((k - 1) / 2) % 2 == 1 { neg_c(&term) } else { term.clone() };
                 qsum = qsum.add(&signed, p, RoundingMode::None);
             }
             if term_negligible(&term, p) {
@@ -406,8 +457,11 @@ impl ExactComplex {
             (s, c)
         };
         omega.mul(
-            &pp.mul(&cs, p, RoundingMode::None)
-                .sub(&qq.mul(&sn, p, RoundingMode::None), p, RoundingMode::None),
+            &pp.mul(&cs, p, RoundingMode::None).sub(
+                &qq.mul(&sn, p, RoundingMode::None),
+                p,
+                RoundingMode::None,
+            ),
             p,
             RoundingMode::None,
         )
@@ -419,8 +473,11 @@ impl ExactComplex {
         let s = chi.sin(p, RoundingMode::None, cc);
         let c = chi.cos(p, RoundingMode::None, cc);
         omega.mul(
-            &pp.mul(&s, p, RoundingMode::None)
-                .add(&qq.mul(&c, p, RoundingMode::None), p, RoundingMode::None),
+            &pp.mul(&s, p, RoundingMode::None).add(
+                &qq.mul(&c, p, RoundingMode::None),
+                p,
+                RoundingMode::None,
+            ),
             p,
             RoundingMode::None,
         )
@@ -478,9 +535,7 @@ mod tests {
         let yn1 = z.bessel_y(&nu1, p, rm, &mut cc);
         let jn1 = z.bessel_j_nu(&nu1, p, rm, &mut cc);
         let yn = z.bessel_y(&nu0, p, rm, &mut cc);
-        let lhs = jn
-            .mul(&yn1, p, rm)
-            .sub(&jn1.mul(&yn, p, rm), p, rm);
+        let lhs = jn.mul(&yn1, p, rm).sub(&jn1.mul(&yn, p, rm), p, rm);
         let rhs = neg_c(&two_c(p)).div(&pi_c(p, &mut cc).mul(&z, p, rm), p, rm);
         assert!(cnear_bits(&lhs, &rhs, p, 8));
 
@@ -497,19 +552,18 @@ mod tests {
         let iz = ExactComplex::i(p).mul(&z, p, rm);
         let j_iz = iz.bessel_j_nu(&nu0, p, rm, &mut cc);
         let ln_i = ExactComplex::i(p).ln(p, rm, &mut cc);
-        let scale = neg_c(&nu0)
-            .mul(&ln_i, p, rm)
-            .exp(p, rm, &mut cc);
+        let scale = neg_c(&nu0).mul(&ln_i, p, rm).exp(p, rm, &mut cc);
         let via_j = scale.mul(&j_iz, p, rm);
         let i_z = z.bessel_i(&nu0, p, rm, &mut cc);
         assert!(cnear(&i_z, &via_j, p));
 
         let h = ExactNum::from_u8(2, p).powsi(-((p as isize) / 8), p, rm);
         let hc = ExactComplex::from_real(h, p);
-        let num = z
-            .add(&hc, p, rm)
-            .bessel_j_nu(&nu0, p, rm, &mut cc)
-            .sub(&z.sub(&hc, p, rm).bessel_j_nu(&nu0, p, rm, &mut cc), p, rm);
+        let num = z.add(&hc, p, rm).bessel_j_nu(&nu0, p, rm, &mut cc).sub(
+            &z.sub(&hc, p, rm).bessel_j_nu(&nu0, p, rm, &mut cc),
+            p,
+            rm,
+        );
         let deriv = num.div(&hc.mul(&two_c(p), p, rm), p, rm);
         let expect = neg_c(&z.bessel_j_nu(&nu1, p, rm, &mut cc));
         assert!(cnear_bits(&deriv, &expect, p, 8));

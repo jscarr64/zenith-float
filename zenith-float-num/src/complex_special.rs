@@ -164,6 +164,12 @@ fn factorial_um1(n: u32, p: usize) -> ExactComplex {
 
 impl ExactComplex {
     /// Error function \(\mathrm{erf}(z)=1-\mathrm{erfc}(z)\). Entire; NaN in → NaN out.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Faddeeva `w(z)` series for `|z|` below `FADDEEVA_SERIES_L1 = 8`; continued fraction otherwise.
+    /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn erf(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -174,6 +180,12 @@ impl ExactComplex {
 
     /// Complementary error function via Faddeeva: \(\mathrm{erfc}(z)=e^{-z^2}w(iz)\).
     /// Entire; NaN in → NaN out.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: same Faddeeva path as [`Self::erf`].
+    /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn erfc(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -183,6 +195,12 @@ impl ExactComplex {
     }
 
     /// Gamma \(\Gamma(z)\). Poles at non-positive integers → NaN.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Stirling (`GAMMA_STIRLING_TERMS = 64`) plus reflection; factorial for small integers (`GAMMA_FACTORIAL_MAX = 64`).
+    /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn gamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -195,6 +213,12 @@ impl ExactComplex {
 
     /// Principal \(\ln\Gamma(z)\). Cut on \((-\infty,0]\); poles → NaN.
     /// Equals \(\ln(\Gamma(z))\) with the principal logarithm.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Stirling (`GAMMA_STIRLING_TERMS = 64`) plus reflection.
+    /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn ln_gamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -206,6 +230,12 @@ impl ExactComplex {
     }
 
     /// Digamma \(\psi(z)=\Gamma'/\Gamma\). Poles at non-positive integers → NaN.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: recurrence plus Bernoulli; reflection for \(\operatorname{Re} z < 0\).
+    /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn digamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());

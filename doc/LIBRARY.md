@@ -280,6 +280,8 @@ All take `(p, rm, cc)` except `hypot` (no cache).
 
 ## 15. `ExactNum` — special functions
 
+Each method’s rustdoc has a **`# Precision`** section (algorithm, region, named thresholds, ULP / Ziv, MPFR oracle).
+
 | Method | Notes | `expr!` |
 | --- | --- | --- |
 | `erf` / `erfc` | `erfc = 1 − erf` | yes |

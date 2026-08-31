@@ -415,6 +415,12 @@ fn rj_series(
 
 impl ExactComplex {
     /// Complete elliptic \(K(m)\), \(m=k^2\). Cut on \([1,+\infty)\). \(m=1\) is \(+\infty\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Carlson `R_F` in ℂ; `CARLSON_DUPE_MAX = 128`.
+    /// - Bound: identities evaluated outside Ziv (nested Ziv would exhaust `MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn elliptic_k(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -438,6 +444,12 @@ impl ExactComplex {
     }
 
     /// Complete elliptic \(E(m)\). \(E(1)=1\). Cut of \(K\) inherited through \(1-m\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Carlson `R_F` / `R_D`; `CARLSON_DUPE_MAX = 128`.
+    /// - Bound: same as [`Self::elliptic_k`].
+    /// - MPFR oracle: no.
     pub fn elliptic_e_complete(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -464,6 +476,11 @@ impl ExactComplex {
     }
 
     /// Incomplete \(F(x|m)\), \(x=\sin\varphi\), \(m=k^2\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Carlson `R_F`; `CARLSON_DUPE_MAX = 128`.
+    /// - MPFR oracle: no.
     ///
     /// Carlson \(R_F(1-x^2,1-mx^2,1)\). Cuts when \(1-x^2\) or \(1-mx^2\) lies on
     /// \((-\infty,0]\) (principal square-root cut). \(F(x,0)=\arcsin x\).
@@ -494,6 +511,11 @@ impl ExactComplex {
     }
 
     /// Incomplete \(E(x|m)\). Same \(x,m\) convention as [`Self::elliptic_f`].
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Carlson `R_F` / `R_D`; `CARLSON_DUPE_MAX = 128`.
+    /// - MPFR oracle: no.
     /// Cuts as for \(F\). \(E(x,0)=\arcsin x\); \(E(x,1)=x\).
     pub fn elliptic_e(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || m.is_nan() {
@@ -531,6 +553,11 @@ impl ExactComplex {
     }
 
     /// Complete \(\Pi(n,m)\). `self` is \(n\). \(\Pi(0,m)=K(m)\). Pole at \(n=1\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Carlson `R_J`; `CARLSON_DUPE_MAX = 128`.
+    /// - MPFR oracle: no.
     pub fn elliptic_pi_complete(
         &self,
         m: &Self,
@@ -563,6 +590,11 @@ impl ExactComplex {
     }
 
     /// Incomplete \(\Pi(n;x|m)\). `self` is \(n\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Carlson `R_J`; `CARLSON_DUPE_MAX = 128`.
+    /// - MPFR oracle: no.
     ///
     /// Cuts when \(1-x^2\), \(1-mx^2\), or \(1-nx^2\) meets the Carlson cut
     /// \((-\infty,0]\). \(\Pi(0;x|m)=F(x|m)\).

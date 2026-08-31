@@ -202,7 +202,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 
 | Method | `expr!` leaf | Notes |
 | --- | --- | --- |
-| `erf` / `erfc` | yes | MPFR 1-ULP on `\|x\| ≲ 4` |
+| `erf` / `erfc` | yes | MPFR 1-ULP on `\|x\| ≲ 4`. Rustdoc `# Precision` on every row in this table |
 | `gamma` | yes | Poles at non-positive integers → NaN |
 | `ln_gamma` | yes | Positive `self` only |
 | `digamma` | yes | Reflection for \(z<0\); poles at non-positive integers → NaN |
@@ -501,14 +501,13 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§5.1 Precision doc comments**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§7.1 REPRODUCIBILITY.md**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §5.1 / §18.1 | Per-function `# Precision` doc comments |
+| §7.1 / §20.1 | `REPRODUCIBILITY.md` |
 | §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
-| §7.1 / §20.1 | `REPRODUCIBILITY.md` |
 | §9 | `ExactRational`, `ExactInt`, `parse_exact` / `format_exact` |
 | §10.3 | `ziv_round_vec` |
 | §12–§17, §18.2–§19, §20.2 | Distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
