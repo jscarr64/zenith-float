@@ -82,10 +82,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 19.1 MPFR oracles | ✅ | GMP rationals; real-axis complex specials; `gamma_inc`; identity golds where GNU MPFR/MPC have no function |
 | 19.2 proptest | ✅ | `PROPTEST_CASES=1000`: add commutes; directed round-then-coarser; `erf` odd; 2×2 integer matmul assoc; rational `(a+b)-b=a` |
 | 19.3 Benchmark suite | ✅ | specials 64–1024; matmul 10/100/1000; FFT 256/1024/4096; LU 50/200; dashu in `compare-bench.sh --quick`; baselines TSV |
-| 19.4 Pre-publish | ⬜ | `scripts/zenith_prepublish.sh` does not exist |
+| 19.4 Pre-publish | ✅ | `scripts/zenith_prepublish.sh` 12/12; `ci_full.sh`; dashu §24 verified (no γ, no scoped rounding closure) |
 | 20.2 hex CI | ⬜ | `ci_hex_*.sh` and `golds/hex/` do not exist |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§19.4 Pre-publish checklist**. HDF5 is deferred.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§20.2 Platform verification CI**. HDF5 is deferred.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -1106,6 +1106,8 @@ Golds:
 ---
 
 ### 19.4 Pre-publish checklist
+
+**Status:** done 2026-08-31 — `scripts/zenith_prepublish.sh` exits 0 on all 12 checks. `scripts/ci_full.sh` is the same gate. dashu 0.6.0 has no `euler_gamma` (`consts.rs` stub) and no scoped `with_rounding_mode` (`FBig::with_rounding::<R>()` is a type change).
 
 **Prompt:**
 Create `scripts/zenith_prepublish.sh` that runs and fails loudly on any error:

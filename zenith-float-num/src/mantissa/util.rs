@@ -204,7 +204,7 @@ pub fn root_estimate(m: &[Word], n: usize) -> Result<WordBuf, Error> {
     if !buf.is_empty() {
         buf.fill(0);
 
-        let nbits = log2_floor(*m.last().unwrap() as usize);
+        let nbits = log2_floor(*m.last().unwrap() as usize); // m nonempty (root of a mantissa)
 
         *buf.last_mut().unwrap() = 1 << (nbits / n + 1); // buf.len() > 0
     }

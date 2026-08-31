@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Pre-publish gate: `scripts/zenith_prepublish.sh` (12 checks) and `scripts/ci_full.sh`. dashu 0.6.0 has no `euler_gamma` and no scoped rounding closure. `LIBRARY.md` `expr!` leaves include `gammainc_upper`, `ai`, `bi`.
 - Integer SIMD for software IEEE arrays: add/sub/mul/div/sqrt/fma (`IEEE_SIMD_LANE_WIDTH=4`). Gold: 1000-element `Ieee64Array` bit-identical to the scalar kernel and to `ExactNum` rounded to binary64.
 - `lazy_static` uses `spin_no_std` so `thumbv7em-none-eabihf` builds with `default-features = false`.
 - Locked `expr!`/`cexpr!` composite golds: `erf+erfc=1` at 256 bits; `J_0²+Y_0²` at working precision; complex `erf` at `p_wrk`.

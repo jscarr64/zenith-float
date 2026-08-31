@@ -90,8 +90,7 @@ impl Mantissa {
     ) {
         if k1 == 2 {
             let (a, b) = parts.split_at_mut(s);
-            Self::fft_butterfly(a.first_mut().unwrap(), b.first_mut().unwrap(), n1, modulus);
-        // a and b are supposed to have non-zero length.
+            Self::fft_butterfly(a.first_mut().unwrap(), b.first_mut().unwrap(), n1, modulus); // a, b nonempty
         } else {
             let k2 = k1 / 2;
             let kk = k - 1;
@@ -103,11 +102,11 @@ impl Mantissa {
             let mut chunks = parts.chunks_mut(s2);
 
             for j in 0..k2 {
-                let chunk = chunks.next().unwrap();
+                let chunk = chunks.next().unwrap(); // k2 chunks of s2
                 let (a, b) = chunk.split_at_mut(s);
 
-                let a = a.first_mut().unwrap();
-                let b = b.first_mut().unwrap();
+                let a = a.first_mut().unwrap(); // s > 0
+                let b = b.first_mut().unwrap(); // s > 0
 
                 let w_shift = Self::fft_w_shift(j, kk) * w;
 
@@ -192,7 +191,7 @@ impl Mantissa {
                     break;
                 }
 
-                let part = parts_iter.next().unwrap();
+                let part = parts_iter.next().unwrap(); // parts sized for this decompose
 
                 part[chunk_sz..].fill(0);
                 part[..chunk_sz].copy_from_slice(&d[idx..idx + chunk_sz]);
@@ -204,7 +203,7 @@ impl Mantissa {
             }
 
             if idx < d.len() {
-                let part = parts_iter.next().unwrap();
+                let part = parts_iter.next().unwrap(); // parts sized for this decompose
 
                 part[d.len() - idx..].fill(0);
                 part[..d.len() - idx].copy_from_slice(&d[idx..]);

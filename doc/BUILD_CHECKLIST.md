@@ -28,10 +28,11 @@ Living document for what is **implemented**, **tested**, and **required** for ze
 
 ```bash
 ./scripts/ci.sh
+./scripts/zenith_prepublish.sh                                              # 12-check pre-publish / `ci_full.sh`
 cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Linux x86_64 + rug
 ./scripts/bench.sh                                                          # Criterion (--quick)
 ./scripts/bench-compare.sh                                                  # compare to doc/bench-baselines.tsv
-./scripts/compare-bench.sh --quick                                          # zenith vs astro (release compare)
+./scripts/compare-bench.sh --quick                                          # zenith vs astro vs dashu (release compare)
 ```
 
 ---
@@ -162,6 +163,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | Seeded random tests | ✅ (default seed `0x5EED_CAFE_BADC_0D00`; `ZENITH_TEST_SEED` to replay) |
 | Cross-library compare (astro / dashu) | ✅ (`zenith-float-compare/` + `scripts/compare-bench.sh --quick`, zenith/astro/dashu at 132 bits) |
 | Criterion / dedicated benches | ✅ (`zenith-float-num/benches/`: arithmetic, transcendentals, composite, specials, linalg) |
+| Pre-publish 12-check | ✅ (`scripts/zenith_prepublish.sh` / `scripts/ci_full.sh`) |
 | `proptest` / quickcheck | ✅ (`PROPTEST_CASES = 1000` in `tests/proptest_props.rs`; `TEST_ITERS = 256` loops remain) |
 
 **Property tests** (`zenith-float-num/src/ops/tests.rs`): inverse pairs (ln↔exp, sin↔asin, log↔pow, etc.) with mathematically derived error bounds; exponent sampling capped at `TEST_EXP_BOUND = 1024` for runtime.
@@ -360,6 +362,7 @@ Before calling a version **production-ready** as a public crate:
 | Path | Purpose |
 | ------ | --------- |
 | `scripts/ci.sh` | Default public CI |
+| `scripts/zenith_prepublish.sh` / `scripts/ci_full.sh` | 12-check pre-publish gate |
 | `zenith-float-num/tests/README.md` | MPFR test instructions |
 | `zenith-float-num/src/ops/tests.rs` | Random inverse property tests |
 | `zenith-float-num/tests/mpfr/` | MPFR bit-oracle tests |
@@ -391,6 +394,7 @@ Already implemented but not in a crates.io release:
 - `lazy_static` `spin_no_std`; thumb `no_std` build in `scripts/ci.sh`
 - `expr!` `erf+erfc=1` at 256 bits; `J_0²+Y_0²` working prec; `cexpr!(erf(z))` `p_wrk`
 - Criterion specials + linalg; dashu in `compare-bench.sh --quick`; `bench-baselines.tsv` refreshed
+- `scripts/zenith_prepublish.sh` / `ci_full.sh` (12 checks); dashu §24 verified
 - Binary 16-byte BE inline + heap `u32` limbs; `u32::MAX+1=2^{32}` at `p=64`
 - CSV 100×3 bit round-trip; missing cell `NAN`; HDF5 leftover (own subset, not C)
 - `GETTING_STARTED.md` sections for IEEE, arrays, specials, rationals, `cexpr!`, `Ball`

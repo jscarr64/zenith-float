@@ -183,7 +183,7 @@ fn parse_digits(
         }
     }
 
-    if ch.is_some() && is_radix_digit(ch.unwrap(), rdx) {
+    if ch.is_some() && is_radix_digit(ch.unwrap(), rdx) { // is_some()
         parser_state
             .mantissa_bytes
             .try_reserve_exact(parser_state.s_len)?;

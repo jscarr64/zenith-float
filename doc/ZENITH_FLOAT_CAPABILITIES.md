@@ -233,6 +233,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `ci` | yes | `self > 0`; series or auxiliary \(f,g\). \(+\infty\to 0\) |
 | `li` | yes | `self > 0`, `self ≠ 1`; `Ei(ln self)` |
 | `fresnel_s` / `fresnel_c` | yes | Odd; series or auxiliary \(f,g\). \(\pm\infty\to\pm 1/2\) |
+| `ai` / `bi` / `ai_prime` / `bi_prime` | `ai`, `bi` | Series for \(\lvert x\rvert<\texttt{AIRY\_SERIES\_THRESHOLD}\); asymptotic otherwise. `ai_prime`/`bi_prime` are methods only |
 | `bessel_j(n, p, rm, cc)` | `bessel_j(x, n)` | Integer order; Miller recurrence for large \(n\); \(J_n(0)=\delta_{n0}\) |
 | `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | `bessel_j_nu(x, ν)` etc. | Real order. \(K\): \(x>0\) |
 | `elliptic_k` / `elliptic_e_complete` | `elliptic_k` / `elliptic_e` | Complete; \(m=k^2\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\); \(E\) for \(m\le 1\) |
@@ -295,7 +296,7 @@ Hardware IEEE arithmetic stays forbidden.
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `gammainc_upper`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `normal_pdf`, `normal_cdf`, `gamma_pdf`, `beta_pdf`, `poisson_pmf`, `binomial_pmf`, `chi_squared_cdf`, `student_t_pdf`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `gammainc_upper`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `ai`, `bi`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `normal_pdf`, `normal_cdf`, `gamma_pdf`, `beta_pdf`, `poisson_pmf`, `binomial_pmf`, `chi_squared_cdf`, `student_t_pdf`, `ldexp`, `scalb`, `logb`.
 
 **Named constants in the expression:** `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma`.
 
@@ -534,25 +535,24 @@ These are design decisions, not a backlog:
 | General `nth_root(n)` | ✅ | ✅ | ✅ |
 | `sin_cos` / `sinh_cosh` paired | ✅ | ✅ | ✅ |
 | Special functions (`erf`, `Γ`, `J_n`) | ✅ | ⬜ | 🟡 / separate |
-| `euler_gamma` constant | ✅ | ⬜ | <!-- verify --> |
-| `with_rounding_mode` scoped closure | ✅ | ⬜ | <!-- verify --> |
+| `euler_gamma` constant | ✅ | ⬜ | ⬜ |
+| `with_rounding_mode` scoped closure | ✅ | ⬜ | ⬜ |
 | Ziv + `Ball` correct-rounding proof | ✅ | ⬜ | ✅ |
 | Stack-inlined small values | ✅ `INLINE_WORDS = 2` | ⬜ | ✅ |
 | MPFR bit-oracle tests (optional) | ✅ | ✅ | fuzz + unit |
 
-<!-- Verify the dashu-float rows marked with comments before publishing. The astro-float rows were current at 0.9.6; re-check at publish time. -->
+dashu-float 0.6.0: `consts.rs` is an empty stub (no γ). `FBig::with_rounding::<R>()` changes the rounding type parameter; it is not a scoped `Context` closure. astro-float rows are for 0.9.6.
 
 ---
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§19.4 Pre-publish checklist**.
+Not a second product. First open implementation slice is **§20.2 Platform verification CI**.
 
 | Plan | Item |
 | --- | --- |
-| §19.4 | `scripts/zenith_prepublish.sh` |
-| §17.3 leftover | HDF5: own contiguous subset, not `libhdf5` / not a general crate |
 | §20.2 | hex limb CI (`arm` / `wasm` / `32bit`) |
+| §17.3 leftover | HDF5: own contiguous subset, not `libhdf5` / not a general crate |
 
 ---
 
@@ -560,7 +560,7 @@ Not a second product. First open implementation slice is **§19.4 Pre-publish ch
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-31 | SIMD IEEE div/sqrt/fma; thumb `no_std`; `expr!`/`cexpr!` composite golds; §19.3 benches. Prior: complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange; CSV. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-31 | Pre-publish 12-check (`zenith_prepublish.sh` / `ci_full.sh`); dashu §24 verified. Prior: SIMD IEEE div/sqrt/fma; thumb `no_std`; `expr!`/`cexpr!` composite golds; §19.3 benches; complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange; CSV. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 

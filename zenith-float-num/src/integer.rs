@@ -271,7 +271,7 @@ impl ExactInt {
             return (Vec::new(), a.to_vec());
         }
         let bits = (a.len() - 1) * WORD_BIT_SIZE
-            + (WORD_BIT_SIZE - a.last().unwrap().leading_zeros() as usize);
+            + (WORD_BIT_SIZE - a.last().unwrap().leading_zeros() as usize); // a >= b, b nonempty
         let mut rem: Vec<Word> = Vec::new();
         let mut quot = vec![0; a.len()];
         for i in (0..bits).rev() {

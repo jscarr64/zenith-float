@@ -512,7 +512,7 @@ impl ExactNumNumber {
             }
 
             let (m_slice, _m_bits, _s, e, inexact) = x.as_raw_parts();
-            let mut m = Mantissa::from_raw_parts(m_slice, _m_bits).unwrap();
+            let mut m = Mantissa::from_raw_parts(m_slice, _m_bits)?;
 
             let shift = (e as i64).saturating_sub(p_wrk as i64).max(0) as usize;
             if shift > 0 {
