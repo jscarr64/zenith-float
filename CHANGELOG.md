@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Orthogonal polynomials: `hermite_he`/`hermite_h`, `laguerre`/`gen_laguerre`, `chebyshev_t`/`chebyshev_u`, `gegenbauer`. Golds: `He_4(0)=3`, `L_3(0)=1`, `T_5(cos(π/5))=-1`, `C_2^{(1)}=4x²−1=U_2`, `2C_2^{(1/2)}=3x²−1`, `T_6=2xT_5−T_4`. `ORTHOPOLY_N_MAX=256`.
 - Chebyshev interpolation: `chebyshev_coeffs` / `chebyshev_eval` / `clenshaw` / `chebyshev_error_bound`. `exp` on `[-1,1]` with 20 terms error `< 10^{-15}`; Clenshaw of `[1,2,3]` at `1/2` is `1/2`; `CHEBYSHEV_MAX_DEGREE=256`.
 - `ExactNumPoly` — dense univariate (low-to-high coeffs); `div_rem(x²−1, x−1)=(x+1, 0)`; `gcd=x−1`; `compose(x², x+1)=x²+2x+1`; `∂(x³)=3x²`; `roots_real(x²−2)=±√2` (companion closed form through `POLY_COMPANION_CLOSED_DEG=2`).
 - RNG: `random_uniform`, `random_gaussian` (Box–Muller), `random_exponential`, `ExactNumArray::random_fill` / `RandomDist`. Existing `random_normal(p, exp_from, exp_to)` is unchanged.

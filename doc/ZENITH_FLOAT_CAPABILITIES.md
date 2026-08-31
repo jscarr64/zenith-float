@@ -61,6 +61,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `FFT_MAX_POINTS` | `4096` — max length of `fft` / `ifft`; longer → `None` |
 | `POLY_COMPANION_CLOSED_DEG` | `2` — `ExactNumPoly::roots_real` closed-form companion eigenvalues; higher degree → `None` |
 | `CHEBYSHEV_MAX_DEGREE` | `256` — max coefficient count for `chebyshev_coeffs`; larger `n` → `None` |
+| `ORTHOPOLY_N_MAX` | `256` — max degree for Hermite / Laguerre / Chebyshev T,U / Gegenbauer; larger `n` → `NaN` |
 
 **Special values:** `+Inf`, `−Inf`, `NaN` (with optional `Error`), subnormals at `EXPONENT_MIN`. Public sentinels: `INF_POS`, `INF_NEG`, `NAN`.
 
@@ -246,6 +247,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `ExactInt` | ✅ | Little-endian `Word` limbs; `from_i64`/`u64`/`i128`/`u128`; add/sub/mul; `div_rem`; `gcd`; `pow`; `20!`; `2^100`; `gcd(48,18)=6` |
 | `ExactNumPoly` | ✅ | Dense univariate, low-to-high coeffs; `eval`/`add`/`sub`/`mul`/`div_rem`/`gcd`/`compose`/`derivative`/`integral`; `roots_real` through degree `POLY_COMPANION_CLOSED_DEG=2`; `(x²−1)÷(x−1)=(x+1,0)`; `gcd=x−1`; compose; `∂(x³)=3x²`; `±√2` |
 | Chebyshev approx | ✅ | `chebyshev_coeffs`/`chebyshev_eval`/`clenshaw`/`chebyshev_error_bound`; Gauss nodes; `exp` on `[-1,1]` 20 terms `<10^{-15}`; Clenshaw `[1,2,3](1/2)=1/2` |
+| Orthogonal polys | ✅ | `hermite_he`/`hermite_h`/`laguerre`/`gen_laguerre`/`chebyshev_t`/`chebyshev_u`/`gegenbauer`; `He_4(0)=3`; `L_3(0)=1`; `T_5(\cos(\pi/5))=-1`; `C_2^{(1)}=4x^2-1` |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
@@ -512,14 +514,14 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§13.3 orthogonal polynomials**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§14.1 numerical quadrature**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §13.3 | Orthogonal polynomials |
+| §14.1 | Numerical quadrature |
 | §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
-| §14–§17, §18.2–§19, §20.2 | Quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| §14.2–§17, §18.2–§19, §20.2 | Roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
 ---
 
@@ -527,7 +529,7 @@ Not a second product. First open implementation slice is **§13.3 orthogonal pol
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 

@@ -65,9 +65,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 12.2 RNG | ✅ | `random_uniform`; `random_gaussian` (Box–Muller); `random_exponential`; `random_fill`; seed replay |
 | 13.1 ExactNumPoly | ✅ | dense univariate; `div_rem(x²−1, x−1)=(x+1, 0)`; `gcd=x−1`; compose; `∂(x³)=3x²`; `roots_real(x²−2)=±√2` |
 | 13.2 Chebyshev | ✅ | `chebyshev_coeffs`/`eval`/`clenshaw`; `exp` on `[-1,1]` 20 terms error `<10^{-15}`; Clenshaw `[1,2,3]` at `1/2` is `1/2` |
-| 13.3–17, 18.2–18.3, 19–20 | ⬜ | ortho polys, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 13.3 orthogonal polys | ✅ | `He_4(0)=3`; `L_3(0)=1`; `T_5(cos(π/5))=-1`; `C_2^{(1)}=U_2=4x²−1`; `2C_2^{(1/2)}=3x²−1`; `T_6=2xT_5−T_4` |
+| 14–17, 18.2–18.3, 19–20 | ⬜ | quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§13.3 orthogonal polynomials**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§14.1 numerical quadrature**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -715,6 +716,8 @@ Golds:
 ---
 
 ### 13.3 Orthogonal polynomials
+
+**Status:** done 2026-08-30 — `orthopoly.rs`; `ORTHOPOLY_N_MAX=256`. Standard `C_n^{(λ)}` (`C_2^{(1)}=4x²−1`; `2C_2^{(1/2)}=3x²−1` is twice Legendre \(P_2\)).
 
 **Prompt:**
 Implement the following orthogonal polynomial families as `ExactNum` computations:

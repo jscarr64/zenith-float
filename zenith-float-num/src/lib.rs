@@ -36,6 +36,7 @@ mod integer;
 mod mantissa;
 mod num;
 mod ops;
+mod orthopoly;
 mod parser;
 mod poly;
 mod radix_float;
@@ -80,6 +81,7 @@ pub use crate::ops::consts::ConstCacheInfo;
 pub use crate::ops::consts::Consts;
 #[cfg(feature = "std")]
 pub use crate::ops::consts::SharedConsts;
+pub use crate::orthopoly::ORTHOPOLY_N_MAX;
 pub use crate::poly::ExactNumPoly;
 pub use crate::poly::POLY_COMPANION_CLOSED_DEG;
 pub use crate::radix_float::RadixFloat;
