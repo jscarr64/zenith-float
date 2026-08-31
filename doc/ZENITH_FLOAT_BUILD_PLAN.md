@@ -78,9 +78,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 17.3 CSV | ✅ | 100×3 `Ieee64Array` bit round-trip; empty cell → `NAN`; extra column `Err`; `CSV_MAX_ROWS` / `CSV_MAX_COLS` |
 | 17.3 HDF5 leftover | ⬜ | No `libhdf5`. Own contiguous subset later, not a general HDF5 crate |
 | 18.2 GETTING_STARTED | ✅ | Ieee32/64, arrays, `(p,rm,cc)`, ExactRational/ExactInt, `cexpr!` cuts, `Ball` |
-| 18.3, 19–20 | ⬜ | HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 18.3 HELP.md | ✅ | Precision model, rounding, Consts, expr vs methods, cuts, arrays, IEEE, 30 recipes, 20 mistakes, 40 FAQ |
+| 19–20 | ⬜ | MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§18.3 HELP.md rewrite**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§19.1 MPFR oracle extension**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -1013,6 +1014,8 @@ Each new section follows the pattern of the existing sections: prose explanation
 ---
 
 ### 18.3 `HELP.md` complete rewrite
+
+**Status:** done 2026-08-30 — user guide: precision, rounding, Consts, macros vs methods, cuts, specials, arrays, IEEE, 30 recipes, 20 mistakes, FAQ.
 
 **Prompt:**
 Rewrite `doc/HELP.md` as a comprehensive user guide — not a reference (that is `LIBRARY.md`) and not a tutorial (that is `GETTING_STARTED.md`) but an explanation of why the API looks the way it does, with recipes for common tasks and a complete FAQ.

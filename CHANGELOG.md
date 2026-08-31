@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `HELP.md` rewritten as the user guide: precision model, rounding, `Consts`, macros vs methods, 30 recipes, mistakes, FAQ.
 - `GETTING_STARTED.md` covers software IEEE, arrays, `(p, rm, cc)` specials, `ExactRational`/`ExactInt`, `cexpr!` cuts, and `Ball`.
 - CSV for `Ieee64Array` / `ExactNumArray`: bit-pattern cells (empty → `NAN`); `Display@p=` for exact arrays. Golds: 100×3 bit round-trip; missing cell is `NAN`; extra column `Err`.
 - Binary interchange: 16-byte big-endian inline record (`to_inline_bytes` / `write_inline_bytes`); heap `u32` limbs for wider mantissas; `ExactNumArray` packed records. Golds: finite / Inf / NaN flag / `p=256` heap / array shape / invalid `Err`; `u32::MAX+1=2^{32}` at `p=64`.
