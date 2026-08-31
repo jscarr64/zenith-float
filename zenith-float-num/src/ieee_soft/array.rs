@@ -582,6 +582,38 @@ impl ExactNumArray {
         })
     }
 
+    /// Fill `shape` from `dist` at `(p, rm)`. `None` if the shape product overflows.
+    #[cfg(any(test, feature = "random"))]
+    pub fn random_fill(
+        shape: (usize, usize),
+        dist: &crate::RandomDist,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Option<Self> {
+        let (rows, cols) = shape;
+        let n = rows.checked_mul(cols)?;
+        let mut vals = Vec::with_capacity(n);
+        for _ in 0..n {
+            let v = match dist {
+                crate::RandomDist::Uniform(a, b) => ExactNum::random_uniform(a, b, p, rm),
+                crate::RandomDist::Normal(mu, sigma) => {
+                    ExactNum::random_gaussian(mu, sigma, p, rm, cc)
+                }
+                crate::RandomDist::Exponential(lambda) => {
+                    ExactNum::random_exponential(lambda, p, rm, cc)
+                }
+            };
+            vals.push(v);
+        }
+        Some(Self {
+            p,
+            vals,
+            rows,
+            cols,
+        })
+    }
+
     /// Shared precision.
     pub fn precision(&self) -> usize {
         self.p
@@ -1291,7 +1323,11 @@ fn svd_norm(xs: &[ExactNum], p: usize, rm: RoundingMode) -> ExactNum {
     n
 }
 
-fn svd_householder(x: &[ExactNum], p: usize, rm: RoundingMode) -> Option<(Vec<ExactNum>, ExactNum)> {
+fn svd_householder(
+    x: &[ExactNum],
+    p: usize,
+    rm: RoundingMode,
+) -> Option<(Vec<ExactNum>, ExactNum)> {
     if x.is_empty() {
         return None;
     }
@@ -1300,11 +1336,7 @@ fn svd_householder(x: &[ExactNum], p: usize, rm: RoundingMode) -> Option<(Vec<Ex
         return None;
     }
     let mut v = x.to_vec();
-    let signed = if v[0].is_negative() {
-        norm.neg()
-    } else {
-        norm
-    };
+    let signed = if v[0].is_negative() { norm.neg() } else { norm };
     v[0] = v[0].add(&signed, p, rm);
     let mut vtv = svd_zero(p);
     for vi in &v {
@@ -1368,7 +1400,12 @@ fn svd_apply_house_right(
     }
 }
 
-fn svd_rotg(a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode) -> (ExactNum, ExactNum, ExactNum) {
+fn svd_rotg(
+    a: &ExactNum,
+    b: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+) -> (ExactNum, ExactNum, ExactNum) {
     let r = a.hypot(b, p, rm);
     if r.is_zero() {
         return (svd_one(p), svd_zero(p), r);
@@ -1453,11 +1490,7 @@ fn svd_qr_sweep(
     rm: RoundingMode,
 ) {
     let last = q_blk - 1;
-    let e_prev = if last >= p_blk + 2 {
-        e[last - 2].clone()
-    } else {
-        svd_zero(p)
-    };
+    let e_prev = if last >= p_blk + 2 { e[last - 2].clone() } else { svd_zero(p) };
     let shift = svd_wilkinson_shift(&d[last - 1], &d[last], &e_prev, &e[last - 1], p, rm);
     let mut f = d[p_blk]
         .add(&d[last], p, rm)
@@ -1577,11 +1610,7 @@ fn svd_decomp_tall(
 ) -> Option<(ExactNumArray, ExactNumArray, ExactNumArray)> {
     let m = a0.rows;
     let n = a0.cols;
-    let mut a: Vec<ExactNum> = a0
-        .vals
-        .iter()
-        .map(|x| svd_copy_prec(x, p, rm))
-        .collect();
+    let mut a: Vec<ExactNum> = a0.vals.iter().map(|x| svd_copy_prec(x, p, rm)).collect();
     let mut u = svd_identity(m, p)?;
     let mut v = svd_identity(n, p)?;
 
@@ -1638,16 +1667,8 @@ fn svd_decomp_tall(
 
         let mut did_split = false;
         for i in p_blk..q {
-            let el = if i > p_blk {
-                e[i - 1].clone()
-            } else {
-                svd_zero(p)
-            };
-            let er = if i + 1 < q {
-                e[i].clone()
-            } else {
-                svd_zero(p)
-            };
+            let el = if i > p_blk { e[i - 1].clone() } else { svd_zero(p) };
+            let er = if i + 1 < q { e[i].clone() } else { svd_zero(p) };
             if svd_negligible(&d[i], &el, &er, p, rm) {
                 d[i] = svd_zero(p);
                 if i == q - 1 && i > p_blk {
@@ -1716,7 +1737,13 @@ fn svd_decomp_tall(
     ))
 }
 
-fn eigen_wilkinson(a: &ExactNum, b: &ExactNum, c: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
+fn eigen_wilkinson(
+    a: &ExactNum,
+    b: &ExactNum,
+    c: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+) -> ExactNum {
     let half = svd_one(p).div(&ExactNum::from_u8(2, p), p, rm);
     let delta = a.sub(c, p, rm).mul(&half, p, rm);
     if delta.is_zero() && b.is_zero() {
@@ -1785,11 +1812,7 @@ fn eigen_decomp_sym(
     rm: RoundingMode,
 ) -> Option<(ExactNumArray, ExactNumArray)> {
     let n = a0.rows;
-    let mut a: Vec<ExactNum> = a0
-        .vals
-        .iter()
-        .map(|x| svd_copy_prec(x, p, rm))
-        .collect();
+    let mut a: Vec<ExactNum> = a0.vals.iter().map(|x| svd_copy_prec(x, p, rm)).collect();
     let mut q = svd_identity(n, p)?;
     for k in 0..n.saturating_sub(2) {
         let x: Vec<ExactNum> = ((k + 1)..n).map(|i| a[i * n + k].clone()).collect();
@@ -1886,9 +1909,16 @@ fn fft_bitrev(mut i: usize, logn: u32) -> usize {
     r
 }
 
-fn fft_split(a: &ExactNumArray, p: usize, rm: RoundingMode) -> Option<(usize, Vec<ExactNum>, Vec<ExactNum>)> {
+fn fft_split(
+    a: &ExactNumArray,
+    p: usize,
+    rm: RoundingMode,
+) -> Option<(usize, Vec<ExactNum>, Vec<ExactNum>)> {
     let (rows, cols) = a.shape();
-    let pack = |n: usize, re: Vec<ExactNum>, im: Vec<ExactNum>| -> Option<(usize, Vec<ExactNum>, Vec<ExactNum>)> {
+    let pack = |n: usize,
+                re: Vec<ExactNum>,
+                im: Vec<ExactNum>|
+     -> Option<(usize, Vec<ExactNum>, Vec<ExactNum>)> {
         if n == 0 || !n.is_power_of_two() || n > FFT_MAX_POINTS {
             return None;
         }
@@ -2375,9 +2405,13 @@ mod tests {
             assert!(near_num(g.get2(0, 1).unwrap(), &zero, p), "{name}[0,1]");
             assert!(near_num(g.get2(1, 0).unwrap(), &zero, p), "{name}[1,0]");
         }
-        assert!(ExactNumArray::from_shape(p, 0, 0, &[]).unwrap().svd_decomp(p, rm).is_none());
+        assert!(ExactNumArray::from_shape(p, 0, 0, &[])
+            .unwrap()
+            .svd_decomp(p, rm)
+            .is_none());
 
-        let wide = ExactNumArray::from_shape(p, 2, 3, &[n(1), n(0), n(0), n(0), n(2), n(0)]).unwrap();
+        let wide =
+            ExactNumArray::from_shape(p, 2, 3, &[n(1), n(0), n(0), n(0), n(2), n(0)]).unwrap();
         let (uw, sw, vtw) = wide.svd_decomp(p, rm).expect("wide SVD");
         assert_eq!(sw.get2(0, 0).unwrap().cmp(&n(2)), Some(0));
         assert_eq!(sw.get2(1, 1).unwrap().cmp(&n(1)), Some(0));
@@ -2441,11 +2475,7 @@ mod tests {
         let vlvt = vl.matmul(&v.transpose()).expect("V Λ V^T");
         for i in 0..2 {
             for j in 0..2 {
-                assert!(near_num(
-                    vlvt.get2(i, j).unwrap(),
-                    a.get2(i, j).unwrap(),
-                    p
-                ));
+                assert!(near_num(vlvt.get2(i, j).unwrap(), a.get2(i, j).unwrap(), p));
             }
         }
         let nosym = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(0), n(1)]).unwrap();
@@ -2468,7 +2498,11 @@ mod tests {
         let vl3 = v3.matmul(&eigen_diag(&w3, p)).expect("V3 Λ");
         for i in 0..3 {
             for j in 0..3 {
-                assert!(near_num(av3.get2(i, j).unwrap(), vl3.get2(i, j).unwrap(), p));
+                assert!(near_num(
+                    av3.get2(i, j).unwrap(),
+                    vl3.get2(i, j).unwrap(),
+                    p
+                ));
             }
         }
     }
@@ -2512,7 +2546,11 @@ mod tests {
 
         let back = cspec.ifft(p, rm, &mut cc).expect("IFFT");
         for j in 0..8 {
-            assert!(near_num(back.get2(0, j).unwrap(), cosine.get(j).unwrap(), p));
+            assert!(near_num(
+                back.get2(0, j).unwrap(),
+                cosine.get(j).unwrap(),
+                p
+            ));
             assert!(near_num(back.get2(1, j).unwrap(), &zero, p));
         }
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- RNG: `random_uniform`, `random_gaussian` (Box–Muller), `random_exponential`, `ExactNumArray::random_fill` / `RandomDist`. Existing `random_normal(p, exp_from, exp_to)` is unchanged.
 - Distribution kernels: `normal_pdf`/`cdf`, `gamma_pdf`, `beta_pdf`, `poisson_pmf`, `binomial_pmf`, `chi_squared_cdf`, `student_t_pdf`. Golds: \(1/\sqrt{2\pi}\), \(1/2\), \(e^{-1}\), \(\chi^2_2(2\ln 20)=19/20\).
 - `ziv_round_vec` — same Ziv loop on a slice; `hypot(3,4)=5`; `atan2(1,1)=π/4` at 256 bits.
 - `parse_exact` / `format_exact` — `0.1` is exact `1/10`; dyadic `0.5` / `0.125`; `parse("1.5e3")=1500`.

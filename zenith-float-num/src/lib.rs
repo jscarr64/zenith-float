@@ -37,6 +37,8 @@ mod num;
 mod ops;
 mod parser;
 mod radix_float;
+#[cfg(any(test, feature = "random"))]
+mod random_dist;
 mod rational;
 mod strop;
 
@@ -72,6 +74,8 @@ pub use crate::ops::consts::Consts;
 #[cfg(feature = "std")]
 pub use crate::ops::consts::SharedConsts;
 pub use crate::radix_float::RadixFloat;
+#[cfg(any(test, feature = "random"))]
+pub use crate::random_dist::RandomDist;
 pub use crate::rational::ExactRational;
 
 pub use crate::defs::EXPONENT_BIT_SIZE;

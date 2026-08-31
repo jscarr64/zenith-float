@@ -110,6 +110,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `legendre_p`, `assoc_legendre_p` | ✅ | ✅ | \(n\le 48\); Condon–Shortley |
 | `hypergeom_2f1`, `betainc` | ✅ | ✅ | Series / Gauss / Pfaff; regularized \(I_x\) |
 | `normal_pdf` / `cdf`, `gamma_pdf`, `poisson_pmf`, `chi_squared_cdf` | ✅ | ✅ | \(1/\sqrt{2\pi}\); \(1/2\); \(e^{-1}\); \(\chi^2_2(2\ln 20)=19/20\) |
+| `random_uniform` / `random_gaussian` / `random_fill` | — | ✅ | Seed replay; Exp(1) mean of 10000 within 0.05; `(100,100)` fill |
 | `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c` | ✅ | ✅ | Series + full \(f,g\) / factorial asymptotic; Accumath eval golds; MPFR oracles still open |
 | `sin_cos`, `sinh_cosh` | ✅ | ✅ | Tuple methods; `expr!` uses `sin`/`cos` and `sinh`/`cosh` |
 | Complex: `ExactComplex` | `cexpr!` | ✅ | Per-part cancel; principal cuts; no `atan2`/`rem_pi`; MPFR add/mul; elliptic Carlson golds |

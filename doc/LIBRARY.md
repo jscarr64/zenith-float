@@ -26,7 +26,7 @@ License: MIT OR Apache-2.0.
 | Feature | Default | What it enables |
 | --- | --- | --- |
 | `std` | yes | `Display` / radix format traits, `FromStr`, `std::error::Error` for `Error`, `SharedConsts`, serde when `serde` is on. |
-| `random` | no | `ExactNum::random_normal`, `seeded_random`, `random_seed`, `reseed_random`, `DEFAULT_RANDOM_SEED`. |
+| `random` | no | `random_uniform` / `random_gaussian` / `random_exponential` / `random_fill`; existing `random_normal(p, exp_from, exp_to)` mantissa draw; `seeded_random`, `reseed_random`. |
 | `serde` | no | `Serialize` / `Deserialize` for `ExactNum` and `ExactComplex`. Implies `std`. |
 | `mpfr-tests` | no | Optional MPFR comparison tests in the kernel crate (Linux x86_64, `rug`). Not a runtime math engine. |
 
@@ -113,7 +113,7 @@ From `zenith_float` / `zenith_float_num`:
 - Word/exponent constants listed in §3
 - `MAX_PREC_RETRY`, `INLINE_WORDS`
 - `NAN`, `INF_POS`, `INF_NEG`
-- Feature `random`: `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED`
+- Feature `random`: `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED`, `RandomDist`
 
 Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` / `cexpr!` expansion (`check_exponent_range`, `check_complex_exponent_range`, `complex_cancel_bits`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.
 
@@ -129,7 +129,7 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | --- | --- |
 | `Ieee32` / `Ieee64` | add/sub/mul/div/sqrt/`mul_add`, classify, `next_up`/`next_down`/`next_after`, `frexp`, `from_i32`, `to_exact` / `from_exact` |
 | `Ieee32Array` / `Ieee64Array` | Row-major dense bits (1-D is shape `(1, n)`); elementwise `+ − × ÷` (matching shape), scalar broadcast, `sum`, `dot`, `sqrt`, software `matmul`; add/mul use integer SIMD (`u32`/`u64` lanes, SSE2/NEON) and are **bit-identical** to the scalar integer kernel; specials via widen-to-`ExactNum` (named methods; `cc` is an argument, not a global) |
-| `ExactNumArray` | Row-major `ExactNum` at a stored default `p`. Named elementwise methods match the scalar (`int`/`floor`/…, roots, logs, circular/hyperbolic, §15 specials). Methods that take `p`/`rm`/`cc` on `ExactNum` take the same arguments here — including `Consts` when the `expr!` leaf needs a cache. Software `matmul`. `lu_decomp(p, rm)` → `(L, U, P)` or `None` if singular. `qr_decomp(p, rm)` → `(Q, R)`; rank-deficient → zero \(R_{kk}\). `svd_decomp(p, rm)` → `(U, Σ, V^T)` (thin, \(\sigma\) descending) or `None` if empty, non-finite, or not converged in `SVD_ITER_MAX` sweeps per value. `eigen_decomp(p, rm)` → `(Λ, V)` for real symmetric \(A\) (\(\lambda\) descending) or `None` if non-square, non-symmetric, empty, non-finite, or not converged in `EIGEN_ITER_MAX` sweeps per value. `fft`/`ifft(p, rm, cc)` — radix-2 Cooley–Tukey; `(1,n)` or `(n,1)` real, `(2,n)` complex; unnormalized forward; `ifft` divides by `n`; `n` a power of two ≤ `FFT_MAX_POINTS`. |
+| `ExactNumArray` | Row-major `ExactNum` at a stored default `p`. Named elementwise methods match the scalar (`int`/`floor`/…, roots, logs, circular/hyperbolic, §15 specials). Methods that take `p`/`rm`/`cc` on `ExactNum` take the same arguments here — including `Consts` when the `expr!` leaf needs a cache. Software `matmul`. `lu_decomp(p, rm)` → `(L, U, P)` or `None` if singular. `qr_decomp(p, rm)` → `(Q, R)`; rank-deficient → zero \(R_{kk}\). `svd_decomp(p, rm)` → `(U, Σ, V^T)` (thin, \(\sigma\) descending) or `None` if empty, non-finite, or not converged in `SVD_ITER_MAX` sweeps per value. `eigen_decomp(p, rm)` → `(Λ, V)` for real symmetric \(A\) (\(\lambda\) descending) or `None` if non-square, non-symmetric, empty, non-finite, or not converged in `EIGEN_ITER_MAX` sweeps per value. `fft`/`ifft(p, rm, cc)` — radix-2 Cooley–Tukey; `(1,n)` or `(n,1)` real, `(2,n)` complex; unnormalized forward; `ifft` divides by `n`; `n` a power of two ≤ `FFT_MAX_POINTS`. `random_fill(shape, dist, p, rm, cc)` (`random` feature / tests) samples `RandomDist::Uniform` / `Normal` / `Exponential`. |
 | `ExactRational` | Exact `num/den` with integer-valued `ExactNum` parts, reduced to lowest terms (`den > 0`). `new` / `from_i64` / `from_ints`; `add`/`sub`/`mul`/`div`; `to_exact_num(p, rm)`; `is_integer`; `floor`/`ceil`/`round`; `partial_cmp` by cross-multiply; `parse_exact` / `format_exact`. Zero `den` is `NaN`. Not a float. `0.1` is `1/10`. |
 | `ExactInt` | Signed limb integer (little-endian `Word`s). `from_i64`/`from_u64`/`from_i128`/`from_u128`; `add`/`sub`/`mul`; `div_rem` (truncated, zero divisor `None`); `gcd`; `pow`; `to_exact_num` / `from_exact_num`; `bit_length`. Not a truncated `ExactNum`. |
 
@@ -152,7 +152,8 @@ These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `
 | `from_words` | mantissa slice, sign, exponent |
 | `max_value` / `min_value` | largest / most-negative finite at precision `p` |
 | `min_positive` / `min_positive_normal` | smallest positive (incl. subnormal) / smallest normal |
-| `random_normal` | feature `random`: random finite with exponent in `[exp_from, exp_to]` |
+| `random_normal` | feature `random`: random finite with exponent in `[exp_from, exp_to]` (not a Gaussian) |
+| `random_uniform` / `random_gaussian` / `random_exponential` | feature `random` / tests: `[a,b]`; Box–Muller \(N(\mu,\sigma^2)\); Exp(\(\lambda\)) |
 | `is_inf_pos` / `is_inf_neg` / `is_inf` | infinities |
 | `is_nan` | |
 | `is_int` | integer-valued finite |
@@ -554,9 +555,11 @@ Used by `expr!` to lift variables and literals.
 | --- | --- |
 | `DEFAULT_RANDOM_SEED` | `0x5EED_CAFE_BADC_0D00` |
 | `random_seed()` | current seed |
-| `reseed_random(seed)` | |
+| `reseed_random(seed)` | identical sequences after the same seed |
 | `seeded_random::<T>()` | draw from the crate RNG |
-| `ExactNum::random_normal` | |
+| `ExactNum::random_normal` | random normalized mantissa in an exponent range (testing) |
+| `ExactNum::random_uniform` / `random_gaussian` / `random_exponential` | `[a,b]`; Box–Muller; inverse-CDF exponential |
+| `RandomDist` / `ExactNumArray::random_fill` | `Uniform` / `Normal` / `Exponential` |
 | `ZENITH_TEST_SEED` | env override for tests / replay |
 
 Unit tests default to the deterministic seed. Without reseeding, non-test `random` feature uses OS entropy.

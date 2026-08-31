@@ -62,9 +62,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 10.2 expr! / cexpr! `p_wrk` | 🟡 | leaves use `p_wrk`; not every listed composite gold is locked |
 | 10.3 `ziv_round_vec` | ✅ | `hypot(3,4)=5`; `atan2(1,1)=π/4` at 256 bits; `MAX_PREC_RETRY` |
 | 12.1 Distribution kernels | ✅ | `normal_pdf`/`cdf`; `gamma_pdf`; `poisson_pmf`; \(\chi^2_2\) at \(2\ln 20\) is \(19/20\) |
-| 12.2–17, 18.2–18.3, 19–20 | ⬜ | RNG, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 12.2 RNG | ✅ | `random_uniform`; `random_gaussian` (Box–Muller); `random_exponential`; `random_fill`; seed replay |
+| 13–17, 18.2–18.3, 19–20 | ⬜ | poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§12.2 random number generation**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§13.1 dense polynomial arithmetic**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -643,6 +644,8 @@ Golds:
 ---
 
 ### 12.2 Random number generation at arbitrary precision
+
+**Status:** done 2026-08-30 — `random_uniform`; `random_gaussian` (Box–Muller; name avoids the existing mantissa `random_normal`); `random_exponential`; `ExactNumArray::random_fill`; `reseed_random` replay.
 
 **Prompt:**
 Extend the existing `random` feature to support:
