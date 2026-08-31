@@ -53,7 +53,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 4.5 / 11.5 FFT | ✅ | `fft` / `ifft`; impulse `[1,0,0,0]→[1,1,1,1]`; cosine bins; IFFT; Parseval; `FFT_MAX_POINTS=4096` |
 | 5.1 / 18.1 Precision doc comments | ✅ | `# Precision` on `ExactNum` / `ExactComplex` specials (algorithm, thresholds, ULP/Ziv, MPFR) |
 | 6.1 no_std / thumb | 🟡 | allocator `no_std` compiles; no `thumbv7em-none-eabihf` CI gold |
-| 7.1 / 20.1 Reproducibility.md | ⬜ | |
+| 7.1 / 20.1 Reproducibility.md | ✅ | `doc/REPRODUCIBILITY.md`; unit tests lock values (no `golds/` tree) |
 | 8 | — | skipped by plan |
 | 9.1 ExactRational | ⬜ | |
 | 9.2 ExactInt | ⬜ | |
@@ -63,7 +63,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 10.3 `ziv_round_vec` | ⬜ | |
 | 12–17, 18.2–18.3, 19–20 | ⬜ | distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§7.1 REPRODUCIBILITY.md** (§6.1 leftover is thumb CI).
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§9.1 ExactRational**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -395,6 +395,8 @@ Golds: `cargo build --no-default-features --target thumbv7em-none-eabihf` succee
 ## Section 7 — Reproducibility story
 
 ### 7.1 Reproducibility documentation
+
+**Status:** done 2026-08-30 — `doc/REPRODUCIBILITY.md`. Locked values are unit tests, not a `golds/` tree.
 
 **Prompt:**
 Add a `doc/REPRODUCIBILITY.md` to zenith-float with the following content:
@@ -1054,6 +1056,8 @@ Script exits 0 only when all 12 checks pass.
 ## Section 20 — Reproducibility and citation support
 
 ### 20.1 Reproducibility documentation
+
+**Status:** done 2026-08-30 — same file as §7.1. Do not write twice.
 
 **Prompt:**
 Write `doc/REPRODUCIBILITY.md` with the following content:

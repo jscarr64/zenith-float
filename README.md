@@ -23,6 +23,7 @@ License: MIT OR Apache-2.0.
 - [Library inventory](doc/LIBRARY.md) — complete public API: types, every `ExactNum` / `ExactComplex` method, macros, constants, features, rounding, I/O.
 - [Error bounds](doc/README.md) — ulp and series error theory used by `expr!` and property tests.
 - [`expr!` rounding contract](doc/EXPR.md) — per-op working precision and final `set_precision`.
+- [Reproducibility](doc/REPRODUCIBILITY.md) — what determines a result; how to replay; citation line.
 
 ## Features
 

@@ -501,14 +501,13 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§7.1 REPRODUCIBILITY.md**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§9.1 ExactRational**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §7.1 / §20.1 | `REPRODUCIBILITY.md` |
+| §9 | `ExactRational`, `ExactInt`, `parse_exact` / `format_exact` |
 | §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
-| §9 | `ExactRational`, `ExactInt`, `parse_exact` / `format_exact` |
 | §10.3 | `ziv_round_vec` |
 | §12–§17, §18.2–§19, §20.2 | Distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
@@ -533,4 +532,5 @@ Not a second product. First open implementation slice is **§7.1 REPRODUCIBILITY
 | Full method inventory | `doc/LIBRARY.md` | Every public type and method |
 | `expr!` rounding contract | `doc/EXPR.md` | Per-op working precision; what `expr!` guarantees and does not |
 | Precision and retry budget | `doc/PRECISION.md` | `MAX_PREC_RETRY`; exponent scaling; `expr!` bounds |
+| Reproducibility and citation | `doc/REPRODUCIBILITY.md` | What determines a result; how to replay; citation line |
 | Error-bound theory | `doc/README.md` | ULP / series error bounds used by `expr!`; contributors |

@@ -4,7 +4,7 @@
 
 Living document for what is **implemented**, **tested**, and **required** for zenith-float as a public software big-float crate. Application engines (formula corpora, expression ABIs, host hardware-float purge) live in those applications, not here.
 
-**Trio:** walk list [`ZENITH_FLOAT_BUILD_PLAN.md`](ZENITH_FLOAT_BUILD_PLAN.md) · inventory [`ZENITH_FLOAT_CAPABILITIES.md`](ZENITH_FLOAT_CAPABILITIES.md) · this checklist (CI / crates / API). There is no TODO file.
+**Trio:** walk list [`ZENITH_FLOAT_BUILD_PLAN.md`](ZENITH_FLOAT_BUILD_PLAN.md) · inventory [`ZENITH_FLOAT_CAPABILITIES.md`](ZENITH_FLOAT_CAPABILITIES.md) · this checklist (CI / crates / API). Citation: [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md). There is no TODO file.
 
 **Last updated:** 2026-08-30  
 **Crate version:** 0.1.0 (+ unreleased changelog items)  

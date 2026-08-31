@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `doc/REPRODUCIBILITY.md` — what determines a result, how to replay tests, citation line.
 - `# Precision` rustdoc on `ExactNum` and `ExactComplex` specials (algorithm, thresholds, Ziv / ULP, MPFR oracle).
 - `ExactNumArray::fft` / `ifft` — radix-2 Cooley–Tukey; impulse / cosine / Parseval golds; `FFT_MAX_POINTS=4096`.
 - `ExactNumArray::eigen_decomp` — symmetric QR; \(Av=\lambda v\), \(V\Lambda V^T=A\); \(\begin{pmatrix}2&1\\1&2\end{pmatrix}\to(3,1)\); `EIGEN_ITER_MAX=64`.
