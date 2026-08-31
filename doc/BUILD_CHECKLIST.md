@@ -178,7 +178,7 @@ Local reference trees (`dashu-master/`, `astro-float-main/`) are not in this rep
 | MPFR golden tests in repo | ✅ (optional) | ✅ (optional) | fuzz + unit (project policy) |
 | Fuzz MPFR bit-exact (all round modes) | ✅ `tests/mpfr/fuzz_round_modes.rs` | ⬜ | ✅ |
 | Progressive constant cache | ✅ `ConstCache` / `CachedFBig` | 🟡 | ✅ `ConstCache` / `CachedFBig` |
-| Ziv + Ball correct-rounding proof | ✅ `ziv_round` / `Ball` | ⬜ | ✅ on transcendentals |
+| Ziv + Ball correct-rounding proof | ✅ `ziv_round` / `Ball` | ⬜ | ✅ `sin`/`cos`/`exp`/`ln`/`sqrt`/`erf`/`J_0`/`J_1` |
 | `serde` / `random` | ✅ optional | ✅ default-on | ✅ optional |
 | Stack-inlined small values | ✅ `INLINE_WORDS` | ⬜ | ✅ |
 | Published crate + bench history | ✅ 0.1.0 + TSV history | ✅ 0.9.x | ✅ |

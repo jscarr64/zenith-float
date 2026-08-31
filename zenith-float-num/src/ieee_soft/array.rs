@@ -337,42 +337,9 @@ macro_rules! ieee_array_specials {
     ($arr:ident, $scalar:ident, $p:expr) => {
         impl $arr {
             ieee_unary_exact!(
-                $p,
-                exp,
-                exp2,
-                exp10,
-                expm1,
-                ln,
-                log2,
-                log10,
-                log1p,
-                sin,
-                cos,
-                tan,
-                asin,
-                acos,
-                atan,
-                sinh,
-                cosh,
-                tanh,
-                asinh,
-                acosh,
-                atanh,
-                erf,
-                erfc,
-                gamma,
-                ln_gamma,
-                digamma,
-                ei,
-                si,
-                ci,
-                li,
-                fresnel_s,
-                fresnel_c,
-                ai,
-                bi,
-                elliptic_k,
-                rem_pi,
+                $p, exp, exp2, exp10, expm1, ln, log2, log10, log1p, sin, cos, tan, asin, acos,
+                atan, sinh, cosh, tanh, asinh, acosh, atanh, erf, erfc, gamma, ln_gamma, digamma,
+                ei, si, ci, li, fresnel_s, fresnel_c, ai, bi, elliptic_k, rem_pi,
             );
 
             /// Elementwise complete `E(m)` via `ExactNum`.
@@ -475,14 +442,18 @@ macro_rules! ieee_array_specials {
             /// Elementwise complete `Π(n, m)` with `self = n`.
             pub fn elliptic_pi_complete(&self, m: $scalar, cc: &mut Consts) -> Self {
                 let me = m.to_exact($p);
-                self.map_exact($p, |n| n.elliptic_pi_complete(&me, $p, RoundingMode::ToEven, cc))
+                self.map_exact($p, |n| {
+                    n.elliptic_pi_complete(&me, $p, RoundingMode::ToEven, cc)
+                })
             }
 
             /// Elementwise `Π(self; x | m)`.
             pub fn elliptic_pi(&self, x: $scalar, m: $scalar, cc: &mut Consts) -> Self {
                 let xe = x.to_exact($p);
                 let me = m.to_exact($p);
-                self.map_exact($p, |n| n.elliptic_pi(&xe, &me, $p, RoundingMode::ToEven, cc))
+                self.map_exact($p, |n| {
+                    n.elliptic_pi(&xe, &me, $p, RoundingMode::ToEven, cc)
+                })
             }
 
             /// Elementwise `{}_2F_1(self, b; c; z)`.
@@ -496,7 +467,9 @@ macro_rules! ieee_array_specials {
                 let be = b.to_exact($p);
                 let ce = c.to_exact($p);
                 let ze = z.to_exact($p);
-                self.map_exact($p, |a| a.hypergeom_2f1(&be, &ce, &ze, $p, RoundingMode::ToEven, cc))
+                self.map_exact($p, |a| {
+                    a.hypergeom_2f1(&be, &ce, &ze, $p, RoundingMode::ToEven, cc)
+                })
             }
 
             /// Elementwise `I_x(self, b)`.
@@ -774,6 +747,10 @@ impl ExactNumArray {
     pub fn abs(&self) -> Self {
         self.map_at(self.p, |x| x.abs())
     }
+    /// Elementwise signum.
+    pub fn signum(&self) -> Self {
+        self.map_at(self.p, |x| x.signum())
+    }
     /// Elementwise negation.
     pub fn neg(&self) -> Self {
         self.map_at(self.p, |x| x.neg())
@@ -796,9 +773,42 @@ impl ExactNumArray {
     }
 
     exact_arr_p_rm_cc!(
-        sin, cos, tan, asin, acos, atan, sinh, cosh, tanh, asinh, acosh, atanh, exp, exp2, exp10,
-        expm1, ln, log2, log10, log1p, erf, erfc, gamma, ln_gamma, digamma, ei, si, ci, li,
-        fresnel_s, fresnel_c, ai, bi, elliptic_k, elliptic_e_complete, rem_pi,
+        sin,
+        cos,
+        tan,
+        asin,
+        acos,
+        atan,
+        sinh,
+        cosh,
+        tanh,
+        asinh,
+        acosh,
+        atanh,
+        exp,
+        exp2,
+        exp10,
+        expm1,
+        ln,
+        log2,
+        log10,
+        log1p,
+        erf,
+        erfc,
+        gamma,
+        ln_gamma,
+        digamma,
+        ei,
+        si,
+        ci,
+        li,
+        fresnel_s,
+        fresnel_c,
+        ai,
+        bi,
+        elliptic_k,
+        elliptic_e_complete,
+        rem_pi,
     );
 
     /// Elementwise `(sin, cos)` with a shared argument reduction.
@@ -897,7 +907,13 @@ impl ExactNumArray {
     }
 
     /// Elementwise `Γ(self, x)`.
-    pub fn gammainc_upper(&self, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+    pub fn gammainc_upper(
+        &self,
+        x: &ExactNum,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
         self.map_at(p, |s| s.gammainc_upper(x, p, rm, cc))
     }
 
@@ -1089,10 +1105,22 @@ mod tests {
         .unwrap();
         let c = a.matmul(&b).unwrap();
         assert_eq!(c.shape(), (2, 2));
-        assert_eq!(c.get2(0, 0).unwrap().to_bits(), Ieee64::from_i32(19).to_bits());
-        assert_eq!(c.get2(0, 1).unwrap().to_bits(), Ieee64::from_i32(22).to_bits());
-        assert_eq!(c.get2(1, 0).unwrap().to_bits(), Ieee64::from_i32(43).to_bits());
-        assert_eq!(c.get2(1, 1).unwrap().to_bits(), Ieee64::from_i32(50).to_bits());
+        assert_eq!(
+            c.get2(0, 0).unwrap().to_bits(),
+            Ieee64::from_i32(19).to_bits()
+        );
+        assert_eq!(
+            c.get2(0, 1).unwrap().to_bits(),
+            Ieee64::from_i32(22).to_bits()
+        );
+        assert_eq!(
+            c.get2(1, 0).unwrap().to_bits(),
+            Ieee64::from_i32(43).to_bits()
+        );
+        assert_eq!(
+            c.get2(1, 1).unwrap().to_bits(),
+            Ieee64::from_i32(50).to_bits()
+        );
     }
 
     #[test]
@@ -1100,12 +1128,7 @@ mod tests {
         let i2 = Ieee64Array::from_shape(
             2,
             2,
-            &[
-                Ieee64::from_i32(1),
-                Ieee64::ZERO,
-                Ieee64::ZERO,
-                Ieee64::from_i32(1),
-            ],
+            &[Ieee64::from_i32(1), Ieee64::ZERO, Ieee64::ZERO, Ieee64::from_i32(1)],
         )
         .unwrap();
         let a = Ieee64Array::from_shape(
@@ -1120,10 +1143,22 @@ mod tests {
         )
         .unwrap();
         let c = i2.matmul(&a).unwrap();
-        assert_eq!(c.get2(0, 0).unwrap().to_bits(), Ieee64::from_i32(1).to_bits());
-        assert_eq!(c.get2(0, 1).unwrap().to_bits(), Ieee64::from_i32(2).to_bits());
-        assert_eq!(c.get2(1, 0).unwrap().to_bits(), Ieee64::from_i32(3).to_bits());
-        assert_eq!(c.get2(1, 1).unwrap().to_bits(), Ieee64::from_i32(4).to_bits());
+        assert_eq!(
+            c.get2(0, 0).unwrap().to_bits(),
+            Ieee64::from_i32(1).to_bits()
+        );
+        assert_eq!(
+            c.get2(0, 1).unwrap().to_bits(),
+            Ieee64::from_i32(2).to_bits()
+        );
+        assert_eq!(
+            c.get2(1, 0).unwrap().to_bits(),
+            Ieee64::from_i32(3).to_bits()
+        );
+        assert_eq!(
+            c.get2(1, 1).unwrap().to_bits(),
+            Ieee64::from_i32(4).to_bits()
+        );
     }
 
     #[test]
@@ -1199,12 +1234,52 @@ mod tests {
         );
         let x = ExactNumArray::from_values(p, &[ExactNum::from_u8(3, p)]);
         assert_eq!(
-            x.legendre_p(0, p, rm).get(0).unwrap().cmp(&ExactNum::from_u8(1, p)),
+            x.legendre_p(0, p, rm)
+                .get(0)
+                .unwrap()
+                .cmp(&ExactNum::from_u8(1, p)),
             Some(0)
         );
         assert_eq!(
             x.floor().get(0).unwrap().cmp(&ExactNum::from_u8(3, p)),
             Some(0)
         );
+    }
+
+    #[test]
+    fn exact_array_sin_2x3_matches_scalar() {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let n = |k: u8| ExactNum::from_u8(k, p);
+        let vals = [n(1), n(2), n(3), n(4), n(5), n(6)];
+        let a = ExactNumArray::from_shape(p, 2, 3, &vals).unwrap();
+        let s = a.sin(p, rm, &mut cc);
+        assert_eq!(s.shape(), (2, 3));
+        for i in 0..2 {
+            for j in 0..3 {
+                let want = vals[i * 3 + j].sin(p, rm, &mut cc);
+                assert_eq!(s.get2(i, j).unwrap().cmp(&want), Some(0));
+            }
+        }
+        let row = ExactNumArray::from_values(p, &[n(1), n(2)]);
+        assert!(a.add(&row).is_none());
+    }
+
+    #[test]
+    fn exact_array_bessel_j_nu_matches_scalar() {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
+        let xs = [ExactNum::from_u8(1, p), ExactNum::from_u8(2, p), ExactNum::from_u8(3, p)];
+        let a = ExactNumArray::from_values(p, &xs);
+        let out = a.bessel_j_nu(&half, p, rm, &mut cc);
+        for (i, x) in xs.iter().enumerate() {
+            let want = x.bessel_j_nu(&half, p, rm, &mut cc);
+            assert_eq!(out.get(i).unwrap().cmp(&want), Some(0));
+        }
+        let nan_in = ExactNumArray::from_values(p, &[ExactNum::nan(None)]);
+        assert!(nan_in.sin(p, rm, &mut cc).get(0).unwrap().is_nan());
     }
 }

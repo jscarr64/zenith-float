@@ -225,7 +225,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | --- | --- | --- |
 | `Ieee32` / `Ieee64` | ✅ | Integer IEEE-754 binary32/binary64; `from_bits` / `to_bits`; add/mul/div/sqrt/FMA |
 | `Ieee32Array` / `Ieee64Array` | ✅ | Row-major; elementwise, `sum`/`dot`, software `matmul`; integer SIMD add/mul; specials via `ExactNum` |
-| `ExactNumArray` | ✅ | Shared `p`; row-major elementwise, software `matmul`, `ExactNum` specials |
+| `ExactNumArray` | ✅ | Shared `p`; row-major elementwise, software `matmul`, `ExactNum` specials; `(2×3)` `sin` matches scalar; shape mismatch → `None` |
 | Integer SIMD (IEEE add/mul) | ✅ | `u32`/`u64` lanes; SSE2/NEON; bit-identical to scalar kernel; not an FPU |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
@@ -417,7 +417,7 @@ Radix 2–36. For bases > 10 the exponent uses `_e` so `e` can be a digit.
 | Item | Notes |
 | --- | --- |
 | `ziv_round(p, rm, compute)` | Call `compute(p_wrk)`, then `try_set_precision` until uniquely rounded or `MAX_PREC_RETRY` exhausted (→ NaN / `PrecisionRetryExhausted`) |
-| `Ball { mid, rad }` | First-order interval arithmetic; `add` / `mul` / `exp` / `sin` with rounding ulp in radius; `contains(x, p)` |
+| `Ball { mid, rad }` | Certified `add` / `mul` / `exp` / `sin` / `cos` / `ln` / `sqrt` / `erf` / `bessel_j0` / `bessel_j1`; Lipschitz + `BALL_TRANSCENDENTAL_ERROR_TERMS` ulps; `contains(x, p)` |
 | `MAX_PREC_RETRY = 256` | Extra word-sized budget per operation; caps at `256 × WORD_BIT_SIZE` bits above `p` |
 
 ---
