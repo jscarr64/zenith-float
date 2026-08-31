@@ -44,6 +44,7 @@ mod radix_float;
 #[cfg(any(test, feature = "random"))]
 mod random_dist;
 mod rational;
+mod roots;
 mod strop;
 
 #[cfg(feature = "std")]
@@ -95,6 +96,13 @@ pub use crate::radix_float::RadixFloat;
 #[cfg(any(test, feature = "random"))]
 pub use crate::random_dist::RandomDist;
 pub use crate::rational::ExactRational;
+pub use crate::roots::bisect;
+pub use crate::roots::brent;
+pub use crate::roots::illinois;
+pub use crate::roots::newton;
+pub use crate::roots::root_default_tol;
+pub use crate::roots::ROOT_DEFAULT_TOL;
+pub use crate::roots::ROOT_MAX_ITER;
 
 pub use crate::defs::EXPONENT_BIT_SIZE;
 pub use crate::defs::EXPONENT_MAX;

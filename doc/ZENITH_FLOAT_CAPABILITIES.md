@@ -64,6 +64,8 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `ORTHOPOLY_N_MAX` | `256` — max degree for Hermite / Laguerre / Chebyshev T,U / Gegenbauer; larger `n` → `NaN` |
 | `QUADRATURE_MAX_NODES` | `64` — max Gauss nodes; larger `n` → `None` |
 | `TANH_SINH_LEVELS_MAX` | `8` — max tanh–sinh step halvings after `h = 2π/(p ln 2)` |
+| `ROOT_MAX_ITER` | `256` — cap on bisection / Newton / Brent / Illinois steps |
+| `ROOT_DEFAULT_TOL` | `−256` — default absolute tolerance exponent (`2^{ROOT_DEFAULT_TOL}`) |
 
 **Special values:** `+Inf`, `−Inf`, `NaN` (with optional `Error`), subnormals at `EXPONENT_MIN`. Public sentinels: `INF_POS`, `INF_NEG`, `NAN`.
 
@@ -251,6 +253,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | Chebyshev approx | ✅ | `chebyshev_coeffs`/`chebyshev_eval`/`clenshaw`/`chebyshev_error_bound`; Gauss nodes; `exp` on `[-1,1]` 20 terms `<10^{-15}`; Clenshaw `[1,2,3](1/2)=1/2` |
 | Orthogonal polys | ✅ | `hermite_he`/`hermite_h`/`laguerre`/`gen_laguerre`/`chebyshev_t`/`chebyshev_u`/`gegenbauer`; `He_4(0)=3`; `L_3(0)=1`; `T_5(\cos(\pi/5))=-1`; `C_2^{(1)}=4x^2-1` |
 | Quadrature | ✅ | `gauss_legendre`/`tanh_sinh`/`gauss_laguerre`/`gauss_hermite`; \(x^2\) on \([-1,1]\) is \(2/3\); 20-point \(x^{38}\) is \(2/39\); \(1/\sqrt{1-x^2}=\pi\); Laguerre \(x^2=2\) |
+| Root finding | ✅ | `bisect`/`newton`/`brent`/`illinois`; `bisect(sin,[3,4])=π`; `newton(x²−2)=√2`; Brent fewer iters than bisection; no sign change → `None` |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
@@ -517,14 +520,14 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§14.2 root finding**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§14.3 ODE solvers**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §14.2 | Root finding |
+| §14.3 | ODE solvers |
 | §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
-| §14.3–§17, §18.2–§19, §20.2 | ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| §15–§17, §18.2–§19, §20.2 | DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
 ---
 
@@ -532,7 +535,7 @@ Not a second product. First open implementation slice is **§14.2 root finding**
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 

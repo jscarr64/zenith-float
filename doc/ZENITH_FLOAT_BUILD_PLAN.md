@@ -67,9 +67,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 13.2 Chebyshev | ✅ | `chebyshev_coeffs`/`eval`/`clenshaw`; `exp` on `[-1,1]` 20 terms error `<10^{-15}`; Clenshaw `[1,2,3]` at `1/2` is `1/2` |
 | 13.3 orthogonal polys | ✅ | `He_4(0)=3`; `L_3(0)=1`; `T_5(cos(π/5))=-1`; `C_2^{(1)}=U_2=4x²−1`; `2C_2^{(1/2)}=3x²−1`; `T_6=2xT_5−T_4` |
 | 14.1 quadrature | ✅ | GL `x²` on `[-1,1]` is `2/3`; 20-point `x^{38}` is `2/39`; tanh–sinh `1/√(1-x²)=π`; Laguerre `x²` is `2`; Hermite `1` is `√π` |
-| 14.2–17, 18.2–18.3, 19–20 | ⬜ | roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 14.2 root finding | ✅ | `bisect(sin,[3,4])=π`; `newton(x²−2)=√2`; `brent` fewer iters than bisection; `bisect(sin,[0,1])=None` |
+| 14.3–17, 18.2–18.3, 19–20 | ⬜ | ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§14.2 root finding**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§14.3 ODE solvers**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -766,6 +767,8 @@ Golds:
 ---
 
 ### 14.2 Root finding at arbitrary precision
+
+**Status:** done 2026-08-30 — `roots.rs`; `ROOT_MAX_ITER=256`; `ROOT_DEFAULT_TOL=-256`.
 
 **Prompt:**
 Implement root finding algorithms at arbitrary precision:
