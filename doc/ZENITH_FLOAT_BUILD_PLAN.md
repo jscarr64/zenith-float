@@ -57,13 +57,13 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 8 | — | skipped by plan |
 | 9.1 ExactRational | ✅ | `ExactRational`; `1/3+1/6=1/2`; `2/4=1/2`; sign; 256-bit `1/3` |
 | 9.2 ExactInt | ✅ | limb `ExactInt`; `20!`; `gcd(48,18)=6`; `2^100`; `17÷5=(3,2)` |
-| 9.3 parse_exact / format_exact | ⬜ | scientific parse exists; exact-min-prec APIs do not |
+| 9.3 parse_exact / format_exact | ✅ | `ExactRational::parse_exact("0.1")` is `1/10`; `0.5` dyadic bits; `0.125` round-trip; `1.5e3=1500` |
 | 10.1 Per-op precision | ✅ | specials take `(p,rm,cc)`; no `SOFT_PREC` in the kernel |
 | 10.2 expr! / cexpr! `p_wrk` | 🟡 | leaves use `p_wrk`; not every listed composite gold is locked |
 | 10.3 `ziv_round_vec` | ⬜ | |
 | 12–17, 18.2–18.3, 19–20 | ⬜ | distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§9.3 parse_exact / format_exact**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§10.3 ziv_round_vec**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -466,6 +466,8 @@ Golds:
 ---
 
 ### 9.3 Decimal string I/O at full precision
+
+**Status:** done 2026-08-30 — `ExactRational::parse_exact` / `format_exact`; `ExactNum::parse_exact` (dyadic only); scientific `1.5e3=1500` on existing `parse`.
 
 **Prompt:**
 Extend `ExactNum::parse` and `ExactNum::format` to handle:

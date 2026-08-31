@@ -410,6 +410,7 @@ No `expr!` for complex — use `cexpr!`. Serde: struct `{ "re", "im" }` of decim
 | API | Notes |
 | --- | --- |
 | `parse(s, rdx, p, rm, cc)` | Returns `ExactNum` (not `Result`); failure → NaN; `err()` recovers the `Error` |
+| `parse_exact` / `format_exact` | `ExactRational::parse_exact("0.1")` is `1/10`; `ExactNum::parse_exact` is dyadic-only; `format_exact(Dec, 1/8)="0.125"` |
 | `format(rdx, rm, cc)` | `Result<String, Error>` |
 | `convert_from_radix` / `convert_to_radix` | Low-level digit-byte API |
 | `FromStr` (`std`) | Decimal, `ToEven`, unbounded precision |
@@ -502,11 +503,11 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§9.3 parse_exact / format_exact**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§10.3 ziv_round_vec**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §9.3 | `parse_exact` / `format_exact` |
+| §10.3 | `ziv_round_vec` |
 | §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
 | §10.3 | `ziv_round_vec` |
@@ -518,7 +519,7 @@ Not a second product. First open implementation slice is **§9.3 parse_exact / f
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 

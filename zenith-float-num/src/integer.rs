@@ -341,6 +341,42 @@ impl ExactInt {
         acc
     }
 
+    /// True if the value is `+1`.
+    pub(crate) fn is_one(&self) -> bool {
+        self.sign == Sign::Pos && self.limbs.len() == 1 && self.limbs[0] == 1
+    }
+
+    /// Least-significant limb, or `0`.
+    pub(crate) fn low_word(&self) -> Word {
+        self.limbs.first().copied().unwrap_or(0)
+    }
+
+    /// Little-endian limbs with the given sign.
+    pub(crate) fn from_le_words(sign: Sign, words: &[Word]) -> Self {
+        Self::from_limbs(sign, words.to_vec())
+    }
+
+    /// `self << bits`.
+    pub(crate) fn shl(&self, bits: usize) -> Self {
+        if self.is_zero() || bits == 0 {
+            return self.clone();
+        }
+        let woff = bits / WORD_BIT_SIZE;
+        let boff = bits % WORD_BIT_SIZE;
+        let mut out = vec![0; self.limbs.len() + woff + 1];
+        if boff == 0 {
+            out[woff..woff + self.limbs.len()].copy_from_slice(&self.limbs);
+        } else {
+            let mut c = 0;
+            for (i, &w) in self.limbs.iter().enumerate() {
+                out[woff + i] = (w << boff) | c;
+                c = w >> (WORD_BIT_SIZE - boff);
+            }
+            out[woff + self.limbs.len()] = c;
+        }
+        Self::from_limbs(self.sign, out)
+    }
+
     /// Convert to an `ExactNum` at `(p, rm)`.
     pub fn to_exact_num(&self, p: usize, rm: RoundingMode) -> ExactNum {
         if self.is_zero() {

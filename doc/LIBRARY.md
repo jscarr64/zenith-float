@@ -130,7 +130,7 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | `Ieee32` / `Ieee64` | add/sub/mul/div/sqrt/`mul_add`, classify, `next_up`/`next_down`/`next_after`, `frexp`, `from_i32`, `to_exact` / `from_exact` |
 | `Ieee32Array` / `Ieee64Array` | Row-major dense bits (1-D is shape `(1, n)`); elementwise `+ − × ÷` (matching shape), scalar broadcast, `sum`, `dot`, `sqrt`, software `matmul`; add/mul use integer SIMD (`u32`/`u64` lanes, SSE2/NEON) and are **bit-identical** to the scalar integer kernel; specials via widen-to-`ExactNum` (named methods; `cc` is an argument, not a global) |
 | `ExactNumArray` | Row-major `ExactNum` at a stored default `p`. Named elementwise methods match the scalar (`int`/`floor`/…, roots, logs, circular/hyperbolic, §15 specials). Methods that take `p`/`rm`/`cc` on `ExactNum` take the same arguments here — including `Consts` when the `expr!` leaf needs a cache. Software `matmul`. `lu_decomp(p, rm)` → `(L, U, P)` or `None` if singular. `qr_decomp(p, rm)` → `(Q, R)`; rank-deficient → zero \(R_{kk}\). `svd_decomp(p, rm)` → `(U, Σ, V^T)` (thin, \(\sigma\) descending) or `None` if empty, non-finite, or not converged in `SVD_ITER_MAX` sweeps per value. `eigen_decomp(p, rm)` → `(Λ, V)` for real symmetric \(A\) (\(\lambda\) descending) or `None` if non-square, non-symmetric, empty, non-finite, or not converged in `EIGEN_ITER_MAX` sweeps per value. `fft`/`ifft(p, rm, cc)` — radix-2 Cooley–Tukey; `(1,n)` or `(n,1)` real, `(2,n)` complex; unnormalized forward; `ifft` divides by `n`; `n` a power of two ≤ `FFT_MAX_POINTS`. |
-| `ExactRational` | Exact `num/den` with integer-valued `ExactNum` parts, reduced to lowest terms (`den > 0`). `new` / `from_i64`; `add`/`sub`/`mul`/`div`; `to_exact_num(p, rm)`; `is_integer`; `floor`/`ceil`/`round`; `partial_cmp` by cross-multiply. Zero `den` is `NaN`. Not a float. |
+| `ExactRational` | Exact `num/den` with integer-valued `ExactNum` parts, reduced to lowest terms (`den > 0`). `new` / `from_i64` / `from_ints`; `add`/`sub`/`mul`/`div`; `to_exact_num(p, rm)`; `is_integer`; `floor`/`ceil`/`round`; `partial_cmp` by cross-multiply; `parse_exact` / `format_exact`. Zero `den` is `NaN`. Not a float. `0.1` is `1/10`. |
 | `ExactInt` | Signed limb integer (little-endian `Word`s). `from_i64`/`from_u64`/`from_i128`/`from_u128`; `add`/`sub`/`mul`; `div_rem` (truncated, zero divisor `None`); `gcd`; `pow`; `to_exact_num` / `from_exact_num`; `bit_length`. Not a truncated `ExactNum`. |
 
 These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `ExactNum` mul-then-add per term). No BLAS. Integer SIMD is not an FPU; a SIMD bit pattern that differs from the scalar kernel is a bug. `expr!` stays scalar.
@@ -311,7 +311,9 @@ Each method’s rustdoc has a **`# Precision`** section (algorithm, region, name
 
 | API | Notes |
 | --- | --- |
-| `parse(s, rdx, p, rm, cc)` | returns `ExactNum` (not `Result`); Inf / NaN / `err()` on failure |
+| `parse(s, rdx, p, rm, cc)` | returns `ExactNum` (not `Result`); Inf / NaN / `err()` on failure; scientific `1.5e3` |
+| `parse_exact(s)` | dyadic decimals only (`0.5`, `0.125`); `0.1` is `None` — use `ExactRational::parse_exact` |
+| `format_exact(rdx)` | min digits for a terminating expansion; `None` if the radix cannot represent `self` exactly |
 | `format(rdx, rm, cc)` | `Result<String, Error>`; Inf / −Inf / NaN / Err strings |
 | `with_radix(self, radix)` | wrap as `RadixFloat` |
 | `convert_from_radix(sign, digits, e, rdx, p, rm, cc)` | digit bytes, scientific exponent in that radix |
