@@ -40,12 +40,13 @@ Rules for every item:
 | Complex \({}_2F_1\) | 2026-08-30 | Series / Euler / Pfaff / Kummer; cut on \([1,+\infty)\); `c` non-positive integer → NaN |
 | Array ufunc golds + `Ball` transcendentals | 2026-08-30 | `(2×3)` `sin`; `bessel_j_nu(1/2)`; `Ball` `cos`/`ln`/`sqrt`/`erf`/`J_0`/`J_1` |
 | `ComplexBall` | 2026-08-30 | Disk `add`/`mul`/`exp`/`ln`/`sin`/`cos`; unit-disk `exp`; Pythagorean enclosure |
+| `ExactNumArray::lu_decomp` | 2026-08-30 | Partial pivot; `[[2,1],[4,3]]` \(PA=LU\); singular `[[1,2],[2,4]]` → `None` |
 
 ---
 
 ## Cross-cutting leftovers
 
 - MPFR has `eint`, `jn`, `yn`, `digamma` — oracles in `compare_special_fn_test.rs`. No MPFR `si` / `ci` / `li` / Fresnel / complex elliptic / complex `_2F1`; those stay identity/series golds
-- Walk `doc/ZENITH_FLOAT_BUILD_PLAN.md` from §4.1 (LU on `ExactNumArray`). Software limbs only; golds on the object.
+- Walk `doc/ZENITH_FLOAT_BUILD_PLAN.md` from §4.2 (QR). Software limbs only; golds on the object.
 
 Hung searches and invented closed forms stay `NaN` / `InvalidArgument`.

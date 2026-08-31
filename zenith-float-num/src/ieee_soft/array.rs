@@ -1000,6 +1000,78 @@ impl ExactNumArray {
         self.map_at(p, |a| a.betainc(b, x, p, rm, cc))
     }
 
+    /// LU with partial pivoting: `(L, U, P)` such that row `i` of `P·A` is
+    /// original row `P[i]`, and `P·A = L·U` at `(p, rm)`.
+    ///
+    /// `L` is unit lower (`n×n`). `U` is upper (`n×m`). A zero pivot
+    /// (singular) returns `None`.
+    pub fn lu_decomp(&self, p: usize, rm: RoundingMode) -> Option<(Self, Self, Vec<usize>)> {
+        let n = self.rows;
+        let m = self.cols;
+        if n == 0 || m == 0 {
+            return None;
+        }
+        let kmax = n.min(m);
+        let mut a = self.vals.clone();
+        for v in &mut a {
+            let _ = v.set_precision(p, rm);
+        }
+        let mut perm: Vec<usize> = (0..n).collect();
+        let mut lvals = alloc::vec![ExactNum::from_u8(0, p); n.checked_mul(n)?];
+        for i in 0..n {
+            lvals[i * n + i] = ExactNum::from_u8(1, p);
+        }
+        let ix = |r: usize, c: usize| r * m + c;
+        for k in 0..kmax {
+            let mut piv = k;
+            let mut best = a[ix(k, k)].abs();
+            for r in (k + 1)..n {
+                let t = a[ix(r, k)].abs();
+                if matches!(t.cmp(&best), Some(c) if c > 0) {
+                    best = t;
+                    piv = r;
+                }
+            }
+            if a[ix(piv, k)].is_zero() {
+                return None;
+            }
+            if piv != k {
+                for c in 0..m {
+                    a.swap(ix(k, c), ix(piv, c));
+                }
+                for c in 0..k {
+                    lvals.swap(k * n + c, piv * n + c);
+                }
+                perm.swap(k, piv);
+            }
+            let akk = a[ix(k, k)].clone();
+            for i in (k + 1)..n {
+                let lik = a[ix(i, k)].div(&akk, p, rm);
+                lvals[i * n + k] = lik.clone();
+                a[ix(i, k)] = ExactNum::from_u8(0, p);
+                for j in (k + 1)..m {
+                    let t = lik.mul(&a[ix(k, j)], p, rm);
+                    a[ix(i, j)] = a[ix(i, j)].sub(&t, p, rm);
+                }
+            }
+        }
+        Some((
+            Self {
+                p,
+                vals: lvals,
+                rows: n,
+                cols: n,
+            },
+            Self {
+                p,
+                vals: a,
+                rows: n,
+                cols: m,
+            },
+            perm,
+        ))
+    }
+
     fn zip(&self, rhs: &Self, op: impl Fn(&ExactNum, &ExactNum) -> ExactNum) -> Option<Self> {
         if self.rows != rhs.rows || self.cols != rhs.cols {
             return None;
@@ -1281,5 +1353,39 @@ mod tests {
         }
         let nan_in = ExactNumArray::from_values(p, &[ExactNum::nan(None)]);
         assert!(nan_in.sin(p, rm, &mut cc).get(0).unwrap().is_nan());
+    }
+
+    fn perm_rows(a: &ExactNumArray, perm: &[usize]) -> ExactNumArray {
+        let (n, m) = a.shape();
+        let mut vals = Vec::with_capacity(n * m);
+        for &r in perm {
+            for c in 0..m {
+                vals.push(a.get2(r, c).unwrap().clone());
+            }
+        }
+        ExactNumArray::from_shape(a.precision(), n, m, &vals).unwrap()
+    }
+
+    #[test]
+    fn exact_lu_2x2_and_singular() {
+        let p = 256;
+        let rm = RoundingMode::ToEven;
+        let n = |k: u8| ExactNum::from_u8(k, p);
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(4), n(3)]).unwrap();
+        let (l, u, perm) = a.lu_decomp(p, rm).expect("LU");
+        let pa = perm_rows(&a, &perm);
+        let lu = l.matmul(&u).expect("L*U");
+        assert_eq!(lu.shape(), (2, 2));
+        for i in 0..2 {
+            for j in 0..2 {
+                assert_eq!(
+                    lu.get2(i, j).unwrap().cmp(pa.get2(i, j).unwrap()),
+                    Some(0),
+                    "PA=LU at {i},{j}"
+                );
+            }
+        }
+        let sing = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(2), n(4)]).unwrap();
+        assert!(sing.lu_decomp(p, rm).is_none());
     }
 }

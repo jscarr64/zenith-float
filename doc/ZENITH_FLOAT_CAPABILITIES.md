@@ -225,7 +225,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | --- | --- | --- |
 | `Ieee32` / `Ieee64` | ✅ | Integer IEEE-754 binary32/binary64; `from_bits` / `to_bits`; add/mul/div/sqrt/FMA |
 | `Ieee32Array` / `Ieee64Array` | ✅ | Row-major; elementwise, `sum`/`dot`, software `matmul`; integer SIMD add/mul; specials via `ExactNum` |
-| `ExactNumArray` | ✅ | Shared `p`; row-major elementwise, software `matmul`, `ExactNum` specials; `(2×3)` `sin` matches scalar; shape mismatch → `None` |
+| `ExactNumArray` | ✅ | Shared `p`; row-major elementwise, software `matmul`, `lu_decomp`; `ExactNum` specials; `(2×3)` `sin` matches scalar; shape mismatch → `None` |
 | Integer SIMD (IEEE add/mul) | ✅ | `u32`/`u64` lanes; SSE2/NEON; bit-identical to scalar kernel; not an FPU |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
