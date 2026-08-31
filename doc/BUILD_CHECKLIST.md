@@ -388,3 +388,4 @@ Already implemented but not in a crates.io release:
 - Serde `@p=` strings; `IEEE_SIMD_LANE_WIDTH`; `LayoutError` → `MemoryAllocation`
 - Binary 16-byte BE inline + heap `u32` limbs; `u32::MAX+1=2^{32}` at `p=64`
 - CSV 100×3 bit round-trip; missing cell `NAN`; HDF5 leftover (own subset, not C)
+- `GETTING_STARTED.md` sections for IEEE, arrays, specials, rationals, `cexpr!`, `Ball`

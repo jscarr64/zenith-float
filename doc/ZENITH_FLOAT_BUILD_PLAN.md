@@ -77,9 +77,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 17.2 binary format | ✅ | 16-byte BE inline; heap `u32` limbs; NaN flag `0x0A`; array shape; invalid → `Err`; `u32::MAX+1=2^{32}` at `p=64` |
 | 17.3 CSV | ✅ | 100×3 `Ieee64Array` bit round-trip; empty cell → `NAN`; extra column `Err`; `CSV_MAX_ROWS` / `CSV_MAX_COLS` |
 | 17.3 HDF5 leftover | ⬜ | No `libhdf5`. Own contiguous subset later, not a general HDF5 crate |
-| 18.2–18.3, 19–20 | ⬜ | HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 18.2 GETTING_STARTED | ✅ | Ieee32/64, arrays, `(p,rm,cc)`, ExactRational/ExactInt, `cexpr!` cuts, `Ball` |
+| 18.3, 19–20 | ⬜ | HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§18.2 HELP.md rewrite** (HDF5 is a leftover, not the next ⬜).
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§18.3 HELP.md rewrite**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -995,6 +996,8 @@ Golds (documentation audit):
 ---
 
 ### 18.2 `GETTING_STARTED.md` update
+
+**Status:** done 2026-08-30 — sections 6–11: software IEEE, arrays, `(p, rm, cc)`, `ExactRational`/`ExactInt`, `cexpr!` cuts, `Ball`.
 
 **Prompt:**
 Update `doc/GETTING_STARTED.md` to cover all new capabilities added since the original version:

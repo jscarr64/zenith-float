@@ -545,14 +545,15 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§18.2 HELP.md rewrite**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§18.3 HELP.md rewrite**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
+| §18.3 | HELP.md rewrite (recipes, mistakes, FAQ) |
 | §17.3 leftover | HDF5: own contiguous subset, not `libhdf5` / not a general crate |
 | §2.4 leftover | SIMD div/sqrt/fma |
 | §6.1 leftover | `thumbv7em-none-eabi` / `eabihf` CI; `lazy_static` still needs `std` |
-| §18.2–§19, §20.2 | HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| §19–§20.2 | MPFR extend, proptest, prepublish, hex CI |
 
 ---
 
