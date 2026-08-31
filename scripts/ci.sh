@@ -38,6 +38,9 @@ debug_slew() {
   cargo test -p zenith-float-num --lib --release
   cargo test -p zenith-float-num --lib --no-default-features --features std
   cargo test --workspace --features random,serde
+  cargo build -p zenith-float-num --no-default-features
+  cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf
+  cargo build --no-default-features --target thumbv7em-none-eabihf
 }
 
 mpfr_slew() {

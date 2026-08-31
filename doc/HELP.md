@@ -501,7 +501,7 @@ assert!(x.err().is_none());
 
 **Is HDF5 supported?** No C `libhdf5`. A tiny owned subset is leftover. Use CSV or `to_bytes`.
 
-**`no_std`?** Allocator required. Formatting traits and `SharedConsts` need `std`. Thumb CI is leftover (`lazy_static` still wants `std`).
+**`no_std`?** Allocator required. Formatting traits and `SharedConsts` need `std`. Thumb (`thumbv7em-none-eabihf`) compiles with `default-features = false`.
 
 **Can I plot?** Not in this crate. Format a string or pack bits in another crate.
 

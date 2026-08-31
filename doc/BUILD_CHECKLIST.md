@@ -55,7 +55,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | Seven rounding modes | ✅ | `None`, `Up`, `Down`, `ToZero`, `FromZero`, `ToEven`, `ToOdd` |
 | `±Inf`, `NaN`, subnormals | ✅ | Software values; errors map to `NaN` at API boundary |
 | `inexact` flag + correct-rounding retry loops | ✅ | `try_set_precision` / `bump_prec_retry` |
-| `no_std` + global allocator | ✅ | Feature `std` optional |
+| `no_std` + global allocator | ✅ | Feature `std` optional; `lazy_static` `spin_no_std`; `thumbv7em-none-eabihf` kernel + public crate |
 | No hardware float in kernel | ✅ | `#![deny(clippy::float_arithmetic)]` + CI grep |
 
 ### 1.3 Arithmetic (mantissa layer)
@@ -156,6 +156,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `cargo test -p zenith-float-num --lib --release` | ✅ |
 | `cargo test` with `no-default-features --features std` | ✅ |
 | `cargo test --features random,serde` | ✅ |
+| `no_std` host + `thumbv7em-none-eabihf` | ✅ (`scripts/ci.sh`; kernel and public crate) |
 | MPFR bit-oracle tests (`mpfr-tests`) | ✅ (release gate on Linux x86_64 in `scripts/ci.sh`) |
 | CI wall-time budgets | ✅ (debug &lt; 10 min, MPFR &lt; 30 min; `CI_DEBUG_SECS` / `CI_MPFR_SECS`) |
 | Seeded random tests | ✅ (default seed `0x5EED_CAFE_BADC_0D00`; `ZENITH_TEST_SEED` to replay) |
@@ -387,6 +388,7 @@ Already implemented but not in a crates.io release:
 - [x] Getting-started narrative (`doc/GETTING_STARTED.md`); review of extra APIs (`doc/Additions_to_existing_29-082026.md`)
 - Serde `@p=` strings; `IEEE_SIMD_LANE_WIDTH`; `LayoutError` → `MemoryAllocation`
 - Integer SIMD add/sub/mul/div/sqrt/fma; 1000-element `Ieee64Array` bit-identical gold
+- `lazy_static` `spin_no_std`; thumb `no_std` build in `scripts/ci.sh`
 - Binary 16-byte BE inline + heap `u32` limbs; `u32::MAX+1=2^{32}` at `p=64`
 - CSV 100×3 bit round-trip; missing cell `NAN`; HDF5 leftover (own subset, not C)
 - `GETTING_STARTED.md` sections for IEEE, arrays, specials, rationals, `cexpr!`, `Ball`

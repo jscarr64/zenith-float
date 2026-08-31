@@ -39,7 +39,7 @@ gmp-mpfr-sys = { version = "~1.6.0", features = [] }
 [dependencies]
 serde = { version = "1.0.147", optional = true }
 rand = { version = "0.8.5", optional = true }
-lazy_static = { version = "1.4.0", default-features = false, features = [] }
+lazy_static = { version = "1.4.0", default-features = false, features = ["spin_no_std"] }
 itertools = { version = "0.10.3", default-features = false, features = [] }
 
 [features]

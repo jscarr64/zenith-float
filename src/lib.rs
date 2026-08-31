@@ -150,9 +150,6 @@
 #![allow(clippy::manual_is_multiple_of)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
-#[cfg(not(feature = "std"))]
-extern crate alloc;
-
 /// Computes an expression with the specified precision and rounding mode.
 ///
 /// Macro takes into account 2 aspects.

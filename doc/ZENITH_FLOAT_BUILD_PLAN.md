@@ -52,7 +52,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 4.4 / 11.4 eigen | ✅ | `eigen_decomp`; \(Av=\lambda v\); \(V\Lambda V^T=A\); \(\begin{pmatrix}2&1\\1&2\end{pmatrix}\to(3,1)\); non-symmetric `None` |
 | 4.5 / 11.5 FFT | ✅ | `fft` / `ifft`; impulse `[1,0,0,0]→[1,1,1,1]`; cosine bins; IFFT; Parseval; `FFT_MAX_POINTS=4096` |
 | 5.1 / 18.1 Precision doc comments | ✅ | `# Precision` on `ExactNum` / `ExactComplex` specials (algorithm, thresholds, ULP/Ziv, MPFR) |
-| 6.1 no_std / thumb | 🟡 | host `no_std` compiles; `thumbv7em-none-eabi` fails on `lazy_static`/`std`; host `u32::MAX+1=2^{32}` at `p=64` |
+| 6.1 no_std / thumb | ✅ | `lazy_static` `spin_no_std`; host and `thumbv7em-none-eabihf`/`eabi` kernel build; public crate too; `u32::MAX+1=2^{32}` at `p=64` |
 | 7.1 / 20.1 Reproducibility.md | ✅ | `doc/REPRODUCIBILITY.md`; unit tests lock values (no `golds/` tree) |
 | 8 | — | skipped by plan |
 | 9.1 ExactRational | ✅ | `ExactRational`; `1/3+1/6=1/2`; `2/4=1/2`; sign; 256-bit `1/3` |
@@ -398,7 +398,7 @@ This is documentation only — no code changes. The doc comments go on the `Exac
 
 ### 6.1 no_std compliance audit and fix
 
-**Status:** partial 2026-08-30 — allocator `no_std` compiles on the host; `From<LayoutError>` / `From<TryReserveError>` → `MemoryAllocation`; LU/QR/SVD return `None` on reserve failure. `thumbv7em-none-eabi` build fails: `lazy_static` still needs `std`. Host gold: `u32::MAX+1` at `p=64` is `2^{32}`.
+**Status:** done 2026-08-31 — `lazy_static` uses `spin_no_std`. `cargo build --no-default-features --target thumbv7em-none-eabihf` succeeds for the kernel and the public crate. Host gold: `u32::MAX+1` at `p=64` is `2^{32}`.
 
 **Prompt:**
 Audit every item in zenith-float for `no_std` compatibility. For each item that currently requires `std` beyond formatting traits: either provide an allocator-only alternative or document explicitly in the doc comment that the `std` feature is required and why.
