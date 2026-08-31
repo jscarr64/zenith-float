@@ -344,6 +344,11 @@ fn macro_run_cexpr_tests() {
 
     let two = ExactComplex::from_real(ExactNum::from(2), p);
     cplx_eq(
+        "c2f1",
+        &cexpr!(hypergeom_2f1(z1, z1, two, mh), &mut ctx),
+        &z1.hypergeom_2f1(&z1, &two, &mh, p, rm, &mut cc),
+    );
+    cplx_eq(
         "exp2lit",
         &cexpr!(exp2(2), &mut ctx),
         &two.exp2(p, rm, &mut cc),

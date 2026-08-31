@@ -278,7 +278,7 @@ let mut ctx = Context::new(
 let z = cexpr!(I * I, &mut ctx); // −1 + 0i
 ```
 
-`cexpr!` has no `%`, no `atan2`, and no `rem_pi`. Leaves include roots (`sqrt`, `cbrt`, `root`), logs, exps, `pow`, circular and hyperbolic functions and inverses, `hypot` / `fma` / `mul_add`, `abs` / `arg` / `conj`, `ldexp` / `scalb` / `logb`, `erf` / `erfc` / `gamma` / `ln_gamma` / `digamma`, `ei` / `si` / `ci` / `li` / Fresnel, `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k`, and elliptic `elliptic_k` / `elliptic_e` / `elliptic_f` / `elliptic_e_inc` / `elliptic_pi` / `elliptic_pi_inc`. Principal branch cuts: `ln` and `sqrt` on the non-positive real axis (`ln(−1) = iπ`, `sqrt(−1) = +i`); \(K(m)\) on \([1,+\infty)\). Add/sub cancellation is tracked **separately** on the real and imaginary parts. See [LIBRARY.md](LIBRARY.md) §17.
+`cexpr!` has no `%`, no `atan2`, and no `rem_pi`. Leaves include roots (`sqrt`, `cbrt`, `root`), logs, exps, `pow`, circular and hyperbolic functions and inverses, `hypot` / `fma` / `mul_add`, `abs` / `arg` / `conj`, `ldexp` / `scalb` / `logb`, `erf` / `erfc` / `gamma` / `ln_gamma` / `digamma`, `ei` / `si` / `ci` / `li` / Fresnel, `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k`, elliptic `elliptic_k` / `elliptic_e` / `elliptic_f` / `elliptic_e_inc` / `elliptic_pi` / `elliptic_pi_inc`, and `hypergeom_2f1`. Principal branch cuts: `ln` and `sqrt` on the non-positive real axis (`ln(−1) = iπ`, `sqrt(−1) = +i`); \(K(m)\) and \({}_2F_1(\ldots;z)\) on \([1,+\infty)\). Add/sub cancellation is tracked **separately** on the real and imaginary parts. See [LIBRARY.md](LIBRARY.md) §17.
 
 ---
 

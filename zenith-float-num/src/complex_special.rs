@@ -54,14 +54,13 @@ pub(crate) fn pi_c(p: usize, cc: &mut Consts) -> ExactComplex {
 
 pub(crate) fn term_negligible(t: &ExactComplex, p: usize) -> bool {
     let m = t.abs(p, RoundingMode::None);
-    m.is_zero() || m.exponent().is_some_and(|e| (e as isize) + (p as isize) < 0)
+    m.is_zero()
+        || m.exponent()
+            .is_some_and(|e| (e as isize) + (p as isize) < 0)
 }
 
 fn l1_below_series_bound(z: &ExactComplex, p: usize) -> bool {
-    let s = z
-        .re()
-        .abs()
-        .add(&z.im().abs(), p, RoundingMode::None);
+    let s = z.re().abs().add(&z.im().abs(), p, RoundingMode::None);
     let bound = ExactNum::from_u32(FADDEEVA_SERIES_L1, p);
     matches!(s.cmp(&bound), Some(c) if c < 0)
 }
@@ -86,7 +85,7 @@ fn im_negative_or_neg_real(z: &ExactComplex) -> bool {
     z.im().is_negative() || (z.im().is_zero() && z.re().is_negative())
 }
 
-fn is_nonpos_integer(z: &ExactComplex) -> bool {
+pub(crate) fn is_nonpos_integer(z: &ExactComplex) -> bool {
     z.im().is_zero() && z.re().is_int() && (z.re().is_zero() || z.re().is_negative())
 }
 
@@ -316,11 +315,7 @@ impl ExactComplex {
             upow = upow.mul(&u2, p, RoundingMode::None);
             let two_n_1 = ExactNum::from_u32((2 * n + 1) as u32, p);
             let den = nfact.mul(&two_n_1, p, RoundingMode::None);
-            let mut t = upow.div(
-                &ExactComplex::from_real(den, p),
-                p,
-                RoundingMode::None,
-            );
+            let mut t = upow.div(&ExactComplex::from_real(den, p), p, RoundingMode::None);
             if n % 2 == 1 {
                 t = neg_c(&t);
             }
@@ -345,7 +340,10 @@ impl ExactComplex {
                 .mul(&odd, p, RoundingMode::None)
                 .div(&two_z2, p, RoundingMode::None);
             s = s.add(&term, p, RoundingMode::None);
-            let e = term.abs(p, RoundingMode::None).exponent().unwrap_or(i32::MIN);
+            let e = term
+                .abs(p, RoundingMode::None)
+                .exponent()
+                .unwrap_or(i32::MIN);
             if term_negligible(&term, p) {
                 break;
             }
@@ -354,14 +352,15 @@ impl ExactComplex {
             }
             prev_e = e;
         }
-        let sqrt_pi = ExactComplex::from_real(cc.pi(p, RoundingMode::None).sqrt(p, RoundingMode::None), p);
+        let sqrt_pi =
+            ExactComplex::from_real(cc.pi(p, RoundingMode::None).sqrt(p, RoundingMode::None), p);
         let den = z.mul(&sqrt_pi, p, RoundingMode::None);
         ExactComplex::i(p)
             .div(&den, p, RoundingMode::None)
             .mul(&s, p, RoundingMode::None)
     }
 
-    fn gamma_at(&self, p: usize, cc: &mut Consts) -> Self {
+    pub(crate) fn gamma_at(&self, p: usize, cc: &mut Consts) -> Self {
         if let Some(n) = self.small_pos_int(p) {
             return factorial_um1(n, p);
         }
@@ -408,7 +407,9 @@ impl ExactComplex {
         }
         if !re_positive(self) && !self.re().is_zero() {
             let piz = pi_c(p, cc).mul(self, p, RoundingMode::None);
-            let ln_sin = piz.sin(p, RoundingMode::None, cc).ln(p, RoundingMode::None, cc);
+            let ln_sin = piz
+                .sin(p, RoundingMode::None, cc)
+                .ln(p, RoundingMode::None, cc);
             let omz = ExactComplex::one(p).sub(self, p, RoundingMode::None);
             return pi_c(p, cc)
                 .ln(p, RoundingMode::None, cc)
@@ -453,7 +454,10 @@ impl ExactComplex {
             let den = ExactComplex::from_real(den_r, p).mul(&zpow, p, RoundingMode::None);
             let term = ExactComplex::from_real(b.clone(), p).div(&den, p, RoundingMode::None);
             s = s.add(&term, p, RoundingMode::None);
-            let e = term.abs(p, RoundingMode::None).exponent().unwrap_or(i32::MIN);
+            let e = term
+                .abs(p, RoundingMode::None)
+                .exponent()
+                .unwrap_or(i32::MIN);
             if term_negligible(&term, p) {
                 break;
             }
@@ -461,7 +465,9 @@ impl ExactComplex {
                 break;
             }
             prev_e = e;
-            zpow = zpow.mul(self, p, RoundingMode::None).mul(self, p, RoundingMode::None);
+            zpow = zpow
+                .mul(self, p, RoundingMode::None)
+                .mul(self, p, RoundingMode::None);
         }
         s
     }
@@ -477,7 +483,11 @@ impl ExactComplex {
                 p,
                 RoundingMode::None,
             );
-            return psi.sub(&pi_c(p, cc).mul(&cot, p, RoundingMode::None), p, RoundingMode::None);
+            return psi.sub(
+                &pi_c(p, cc).mul(&cot, p, RoundingMode::None),
+                p,
+                RoundingMode::None,
+            );
         }
         self.digamma_positive(p, cc)
     }
@@ -510,7 +520,10 @@ impl ExactComplex {
             let den = two_k.mul(&zp, p, RoundingMode::None);
             let term = ExactComplex::from_real(b.clone(), p).div(&den, p, RoundingMode::None);
             s = s.sub(&term, p, RoundingMode::None);
-            let e = term.abs(p, RoundingMode::None).exponent().unwrap_or(i32::MIN);
+            let e = term
+                .abs(p, RoundingMode::None)
+                .exponent()
+                .unwrap_or(i32::MIN);
             if term_negligible(&term, p) {
                 break;
             }
@@ -560,10 +573,17 @@ mod tests {
         for n in 1..=series_term_cap(p) {
             nfact = nfact.mul(&ExactNum::from_u32(n as u32, p), p, RoundingMode::None);
             xpow = xpow.mul(&x2, p, RoundingMode::None);
-            let den = nfact.mul(&ExactNum::from_u32((2 * n + 1) as u32, p), p, RoundingMode::None);
+            let den = nfact.mul(
+                &ExactNum::from_u32((2 * n + 1) as u32, p),
+                p,
+                RoundingMode::None,
+            );
             let t = xpow.div(&den, p, RoundingMode::None);
             sum = sum.add(&t, p, RoundingMode::None);
-            if t.is_zero() || t.exponent().is_some_and(|e| (e as isize) + (p as isize) < 0) {
+            if t.is_zero()
+                || t.exponent()
+                    .is_some_and(|e| (e as isize) + (p as isize) < 0)
+            {
                 break;
             }
         }
@@ -611,11 +631,7 @@ mod tests {
         let deriv = num.div(&two_h, p, rm);
         let z2 = z.mul(&z, p, rm);
         let expm = neg_c(&z2).exp(p, rm, &mut cc);
-        let two_over = ExactNum::from_u8(2, p).div(
-            &cc.pi(p, rm).sqrt(p, rm),
-            p,
-            rm,
-        );
+        let two_over = ExactNum::from_u8(2, p).div(&cc.pi(p, rm).sqrt(p, rm), p, rm);
         let expect = ExactComplex::from_real(two_over, p).mul(&expm, p, rm);
         assert!(cnear_bits(&deriv, &expect, p, 8));
 
@@ -685,7 +701,9 @@ mod tests {
         assert!(tiny(psi1.im(), p));
 
         let zp1 = z.add(&one, p, rm);
-        let dpsi = zp1.digamma(p, rm, &mut cc).sub(&z.digamma(p, rm, &mut cc), p, rm);
+        let dpsi = zp1
+            .digamma(p, rm, &mut cc)
+            .sub(&z.digamma(p, rm, &mut cc), p, rm);
         let rec = one.div(&z, p, rm);
         assert!(cnear(&dpsi, &rec, p));
 
@@ -698,10 +716,11 @@ mod tests {
 
         let h = ExactNum::from_u8(2, p).powsi(-((p as isize) / 8), p, rm);
         let hc = ExactComplex::from_real(h, p);
-        let num = z
-            .add(&hc, p, rm)
-            .ln_gamma(p, rm, &mut cc)
-            .sub(&z.sub(&hc, p, rm).ln_gamma(p, rm, &mut cc), p, rm);
+        let num = z.add(&hc, p, rm).ln_gamma(p, rm, &mut cc).sub(
+            &z.sub(&hc, p, rm).ln_gamma(p, rm, &mut cc),
+            p,
+            rm,
+        );
         let deriv = num.div(&hc.mul(&two_c(p), p, rm), p, rm);
         let psi = z.digamma(p, rm, &mut cc);
         assert!(cnear_bits(&deriv, &psi, p, 8));

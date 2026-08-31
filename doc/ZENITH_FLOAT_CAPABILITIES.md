@@ -273,7 +273,7 @@ The previous mode is restored when the closure returns.
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `arg`, `conj`, `ldexp`, `scalb`, `logb`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `hypergeom_2f1`.
 
 **Named constants:** `I`, `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` (reals lifted as `x + 0i`).
 
@@ -292,6 +292,7 @@ The previous mode is restored when the closure returns.
 | `bessel_j_nu` / `bessel_i` | entire for integer ν; cut on (−∞, 0] otherwise |
 | `bessel_y` / `bessel_k` | cut on (−∞, 0]; \(z=0\) → NaN |
 | `elliptic_k` | cut on \([1,+\infty)\); \(K(1)=+\infty\) |
+| `hypergeom_2f1` | cut on \([1,+\infty)\) in \(z\) |
 | incomplete \(F,E,\Pi\) | Carlson cuts on \(1-x^2\), \(1-mx^2\), \(1-nx^2\) along \((-\infty,0]\) |
 
 **Trig identity:** `sin(x + iy) = sin(x)cosh(y) + i·cos(x)sinh(y)`. The complex argument is never passed through `rem_pi`.
@@ -387,7 +388,7 @@ Cartesian `re + i·im` as two `ExactNum` values.
 | `fresnel_s` / `fresnel_c` | ✅ via `erf`; entire |
 | `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | ✅ series or Hankel; \(I_ν=i^{-ν}J_ν(iz)\); \(K_ν=(\pi/2)i^{ν+1}H_ν^{(1)}(iz)\) |
 | `elliptic_k` / `elliptic_e_complete` / `elliptic_f` / `elliptic_e` / `elliptic_pi_*` | ✅ Carlson in \(\mathbb{C}\); \(K(0)=E(0)=\pi/2\); \(K(1)=+\infty\); Legendre and cut golds |
-| Other specials (`_2F1`, …) | ⬜ backlog — software `ExactComplex`, principal branches |
+| `hypergeom_2f1` | ✅ Series / Euler / Pfaff / Kummer; \(2\ln 2\), \(2K/\pi\), Euler identity, \(c=0\) NaN, cut golds |
 
 No `expr!` for complex — use `cexpr!`. Serde: struct `{ "re", "im" }` of decimal strings.
 

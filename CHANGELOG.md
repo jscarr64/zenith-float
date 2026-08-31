@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `ExactComplex::hypergeom_2f1` — series / Euler / Pfaff / Kummer in \(\mathbb{C}\). `cexpr!` leaf `hypergeom_2f1`. Cut on \([1,+\infty)\); non-positive integer \(c\) → NaN.
 - `ExactComplex` elliptic \(K,E,\Pi\) (complete and incomplete) via Carlson \(R_F,R_C,R_D,R_J\) in \(\mathbb{C}\). `cexpr!` leaves `elliptic_k` / `elliptic_e` / `elliptic_f` / `elliptic_e_inc` / `elliptic_pi` / `elliptic_pi_inc`. \(K(1)=+\infty\); cut of \(K\) on \([1,+\infty)\).
 - `cexpr!` — per-part `errs[]` for real vs imaginary cancellation; principal branch cuts documented; leaves match the complex-capable `expr!` set (`cbrt`/`root`, logs/exps, `hypot`/`fma`, `abs`/`arg`/`conj`, `ldexp`/`scalb`/`logb`). No `atan2` or `rem_pi` (complex trig uses `x+iy` identities).
 - `ExactComplex::{log2, log10, log, log1p, exp2, exp10, expm1, ldexp, scalb, logb, cbrt, nth_root, hypot, fma, mul_add}`.

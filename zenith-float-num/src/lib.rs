@@ -23,6 +23,7 @@ mod complex_airy;
 mod complex_bessel;
 mod complex_ei;
 mod complex_elliptic;
+mod complex_hypergeom;
 mod complex_special;
 mod conv;
 pub mod ctx;
