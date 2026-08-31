@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Chebyshev interpolation: `chebyshev_coeffs` / `chebyshev_eval` / `clenshaw` / `chebyshev_error_bound`. `exp` on `[-1,1]` with 20 terms error `< 10^{-15}`; Clenshaw of `[1,2,3]` at `1/2` is `1/2`; `CHEBYSHEV_MAX_DEGREE=256`.
 - `ExactNumPoly` — dense univariate (low-to-high coeffs); `div_rem(x²−1, x−1)=(x+1, 0)`; `gcd=x−1`; `compose(x², x+1)=x²+2x+1`; `∂(x³)=3x²`; `roots_real(x²−2)=±√2` (companion closed form through `POLY_COMPANION_CLOSED_DEG=2`).
 - RNG: `random_uniform`, `random_gaussian` (Box–Muller), `random_exponential`, `ExactNumArray::random_fill` / `RandomDist`. Existing `random_normal(p, exp_from, exp_to)` is unchanged.
 - Distribution kernels: `normal_pdf`/`cdf`, `gamma_pdf`, `beta_pdf`, `poisson_pmf`, `binomial_pmf`, `chi_squared_cdf`, `student_t_pdf`. Golds: \(1/\sqrt{2\pi}\), \(1/2\), \(e^{-1}\), \(\chi^2_2(2\ln 20)=19/20\).

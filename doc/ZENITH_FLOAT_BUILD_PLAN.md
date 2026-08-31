@@ -64,9 +64,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 12.1 Distribution kernels | ✅ | `normal_pdf`/`cdf`; `gamma_pdf`; `poisson_pmf`; \(\chi^2_2\) at \(2\ln 20\) is \(19/20\) |
 | 12.2 RNG | ✅ | `random_uniform`; `random_gaussian` (Box–Muller); `random_exponential`; `random_fill`; seed replay |
 | 13.1 ExactNumPoly | ✅ | dense univariate; `div_rem(x²−1, x−1)=(x+1, 0)`; `gcd=x−1`; compose; `∂(x³)=3x²`; `roots_real(x²−2)=±√2` |
-| 13.2–17, 18.2–18.3, 19–20 | ⬜ | Chebyshev, ortho polys, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 13.2 Chebyshev | ✅ | `chebyshev_coeffs`/`eval`/`clenshaw`; `exp` on `[-1,1]` 20 terms error `<10^{-15}`; Clenshaw `[1,2,3]` at `1/2` is `1/2` |
+| 13.3–17, 18.2–18.3, 19–20 | ⬜ | ortho polys, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§13.2 Chebyshev approximation**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§13.3 orthogonal polynomials**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -694,6 +695,8 @@ Golds:
 ---
 
 ### 13.2 Chebyshev approximation
+
+**Status:** done 2026-08-30 — `chebyshev.rs`; `CHEBYSHEV_MAX_DEGREE=256`.
 
 **Prompt:**
 Implement Chebyshev polynomial approximation:

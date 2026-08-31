@@ -103,6 +103,7 @@ Methods that take a mode other than `None` round to the requested precision. `ex
 From `zenith_float` / `zenith_float_num`:
 
 - `ExactNum`, `ExactComplex`, `ExactRational`, `ExactInt`, `ExactNumPoly`
+- `chebyshev_coeffs`, `chebyshev_eval`, `chebyshev_error_bound`, `clenshaw`
 - `Ieee32`, `Ieee64`, `Ieee32Array`, `Ieee64Array`, `ExactNumArray`
 - `Consts`, `ConstCache` (alias of `Consts`), `ConstCacheInfo`, `CachedFBig`, `SharedConsts` (`std` only)
 - `Context` (module `zenith_float::ctx`), trait `Contextable`
@@ -113,7 +114,7 @@ From `zenith_float` / `zenith_float_num`:
 - Word/exponent constants listed in §3
 - `MAX_PREC_RETRY`, `INLINE_WORDS`
 - `NAN`, `INF_POS`, `INF_NEG`
-- `POLY_COMPANION_CLOSED_DEG`
+- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`
 - Feature `random`: `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED`, `RandomDist`
 
 Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` / `cexpr!` expansion (`check_exponent_range`, `check_complex_exponent_range`, `complex_cancel_bits`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.
@@ -134,6 +135,7 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | `ExactRational` | Exact `num/den` with integer-valued `ExactNum` parts, reduced to lowest terms (`den > 0`). `new` / `from_i64` / `from_ints`; `add`/`sub`/`mul`/`div`; `to_exact_num(p, rm)`; `is_integer`; `floor`/`ceil`/`round`; `partial_cmp` by cross-multiply; `parse_exact` / `format_exact`. Zero `den` is `NaN`. Not a float. `0.1` is `1/10`. |
 | `ExactInt` | Signed limb integer (little-endian `Word`s). `from_i64`/`from_u64`/`from_i128`/`from_u128`; `add`/`sub`/`mul`; `div_rem` (truncated, zero divisor `None`); `gcd`; `pow`; `to_exact_num` / `from_exact_num`; `bit_length`. Not a truncated `ExactNum`. |
 | `ExactNumPoly` | Dense univariate, coefficients lowest degree first. `from_coeffs` / `from_i64_coeffs`; `eval` (Horner/`polyval`); `add`/`sub`/`mul`; `div_rem` (zero divisor `None`); `gcd` (Euclidean, integer content, monic); `compose`; `derivative`; `integral` (constant 0); `companion_matrix`; `roots_real` through `POLY_COMPANION_CLOSED_DEG=2`. |
+| Chebyshev | `chebyshev_coeffs(f, n, a, b, p, rm, cc)` interpolates at `n` Chebyshev–Gauss nodes (`n ≤ CHEBYSHEV_MAX_DEGREE`). `chebyshev_eval` maps `[a,b]` then `clenshaw`. `chebyshev_error_bound` is the ℓ¹ tail `Σ_{k≥1}|c_k|`. |
 
 These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `ExactNum` mul-then-add per term). No BLAS. Integer SIMD is not an FPU; a SIMD bit pattern that differs from the scalar kernel is a bug. `expr!` stays scalar.
 

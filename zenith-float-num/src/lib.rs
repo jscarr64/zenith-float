@@ -17,6 +17,7 @@
 extern crate alloc;
 
 mod ball;
+mod chebyshev;
 mod common;
 mod complex;
 mod complex_airy;
@@ -53,6 +54,11 @@ pub use crate::ball::ziv_round;
 pub use crate::ball::ziv_round_vec;
 pub use crate::ball::Ball;
 pub use crate::ball::ComplexBall;
+pub use crate::chebyshev::chebyshev_coeffs;
+pub use crate::chebyshev::chebyshev_error_bound;
+pub use crate::chebyshev::chebyshev_eval;
+pub use crate::chebyshev::clenshaw;
+pub use crate::chebyshev::CHEBYSHEV_MAX_DEGREE;
 pub use crate::common::buf::INLINE_WORDS;
 pub use crate::complex::ExactComplex;
 pub use crate::defs::Error;
