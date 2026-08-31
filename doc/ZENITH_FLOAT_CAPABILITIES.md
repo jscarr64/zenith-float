@@ -77,6 +77,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `BINARY_MAX_ELEMS` | `1048576` — max array elements in `from_bytes` |
 | `CSV_MAX_ROWS` | `1048576` — max data rows in `from_csv_str` |
 | `CSV_MAX_COLS` | `4096` — max columns in one CSV row |
+| `PROPTEST_CASES` | `1000` — cases per property in `tests/proptest_props.rs` |
 | `POLLARD_RHO_ITER_MAX` | `1048576` — `f` evaluations per `c` in Brent Pollard ρ |
 
 **Special values:** `+Inf`, `−Inf`, `NaN` (with optional `Error`), subnormals at `EXPONENT_MIN`. Public sentinels: `INF_POS`, `INF_NEG`, `NAN`.
@@ -545,15 +546,15 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§19.2 Property-based testing with `proptest`**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§19.3 Benchmark suite**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §19.2 | `proptest` commutativity / rounding / `erf` odd / matmul / rational |
+| §19.3 | bench specials / matmul / FFT / LU |
 | §17.3 leftover | HDF5: own contiguous subset, not `libhdf5` / not a general crate |
 | §2.4 leftover | SIMD div/sqrt/fma |
 | §6.1 leftover | `thumbv7em-none-eabi` / `eabihf` CI; `lazy_static` still needs `std` |
-| §19.3–§20.2 | bench, prepublish, hex CI |
+| §20.1–§20.2 | prepublish, hex CI |
 
 ---
 

@@ -64,6 +64,9 @@ pub const WORD_BASE: DoubleWord = WORD_MAX as DoubleWord + 1;
 /// Size of a word in bits.
 pub const WORD_BIT_SIZE: usize = core::mem::size_of::<Word>() * 8;
 
+/// Cases per `proptest` property under `cargo test` (no `mpfr-tests` required).
+pub const PROPTEST_CASES: u32 = 1000;
+
 /// Word with the most significant bit set.
 pub const WORD_SIGNIFICANT_BIT: Word = WORD_MAX << (WORD_BIT_SIZE - 1);
 

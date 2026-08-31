@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `proptest` (`PROPTEST_CASES=1000`): add commutes; directed round-then-coarser; `erf` odd; small-integer 2×2 matmul associativity; `ExactRational` `(a+b)-b=a`.
 - `mpfr-tests`: GMP oracle for `ExactRational`; real-axis complex `erf`/`Γ`/`Ai`/`J_n` vs MPFR; `mpfr_gamma_inc`; identity golds where GNU MPFR/MPC have no function. GNU MPC 1.3 has no `erf`/`gamma`/Bessel and is not used.
 - `HELP.md` rewritten as the user guide: precision model, rounding, `Consts`, macros vs methods, 30 recipes, mistakes, FAQ.
 - `GETTING_STARTED.md` covers software IEEE, arrays, `(p, rm, cc)` specials, `ExactRational`/`ExactInt`, `cexpr!` cuts, and `Ball`.

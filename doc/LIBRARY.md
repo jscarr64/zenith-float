@@ -121,7 +121,7 @@ From `zenith_float` / `zenith_float_num`:
 - Word/exponent constants listed in §3
 - `MAX_PREC_RETRY`, `INLINE_WORDS`
 - `NAN`, `INF_POS`, `INF_NEG`
-- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `ODE_MAX_STEPS`, `ODE_MIN_STEP`, `DSP_MAX_POINTS`, `IEEE_SIMD_LANE_WIDTH`, `POLLARD_RHO_ITER_MAX`, `BINARY_INLINE_LEN`, `BINARY_INLINE_MANT_BITS`, `BINARY_FORMAT_VERSION`, `BINARY_MAX_U32`, `BINARY_MAX_ELEMS`, `CSV_MAX_ROWS`, `CSV_MAX_COLS`
+- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `ODE_MAX_STEPS`, `ODE_MIN_STEP`, `DSP_MAX_POINTS`, `IEEE_SIMD_LANE_WIDTH`, `POLLARD_RHO_ITER_MAX`, `BINARY_INLINE_LEN`, `BINARY_INLINE_MANT_BITS`, `BINARY_FORMAT_VERSION`, `BINARY_MAX_U32`, `BINARY_MAX_ELEMS`, `CSV_MAX_ROWS`, `CSV_MAX_COLS`, `PROPTEST_CASES`
 - Feature `random`: `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED`, `RandomDist`
 
 Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` / `cexpr!` expansion (`check_exponent_range`, `check_complex_exponent_range`, `complex_cancel_bits`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.

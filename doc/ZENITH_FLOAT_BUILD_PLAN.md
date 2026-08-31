@@ -80,9 +80,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 18.2 GETTING_STARTED | ✅ | Ieee32/64, arrays, `(p,rm,cc)`, ExactRational/ExactInt, `cexpr!` cuts, `Ball` |
 | 18.3 HELP.md | ✅ | Precision model, rounding, Consts, expr vs methods, cuts, arrays, IEEE, 30 recipes, 20 mistakes, 40 FAQ |
 | 19.1 MPFR oracles | ✅ | GMP rationals; real-axis complex specials; `gamma_inc`; identity golds where GNU MPFR/MPC have no function |
-| 19.2–20 | ⬜ | proptest, bench, prepublish, hex CI |
+| 19.2 proptest | ✅ | `PROPTEST_CASES=1000`: add commutes; directed round-then-coarser; `erf` odd; 2×2 integer matmul assoc; rational `(a+b)-b=a` |
+| 19.3–20 | ⬜ | bench, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§19.2 Property-based testing with `proptest`**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§19.3 Benchmark suite**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -1059,6 +1060,8 @@ Golds:
 ---
 
 ### 19.2 Property-based testing with `proptest`
+
+**Status:** done 2026-08-30 — `PROPTEST_CASES = 1000` in `tests/proptest_props.rs`. `ToEven` excluded from round-then-coarser (double rounding). Matmul associativity uses small integer 2×2 so products stay exact.
 
 **Prompt:**
 Add `proptest` integration for key properties that should hold for all inputs:

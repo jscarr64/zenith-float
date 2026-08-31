@@ -154,6 +154,7 @@ pub use crate::roots::root_default_tol;
 pub use crate::roots::ROOT_DEFAULT_TOL;
 pub use crate::roots::ROOT_MAX_ITER;
 
+pub use crate::defs::PROPTEST_CASES;
 pub use crate::defs::EXPONENT_BIT_SIZE;
 pub use crate::defs::EXPONENT_MAX;
 pub use crate::defs::EXPONENT_MIN;

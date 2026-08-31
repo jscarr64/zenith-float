@@ -161,7 +161,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | Seeded random tests | ✅ (default seed `0x5EED_CAFE_BADC_0D00`; `ZENITH_TEST_SEED` to replay) |
 | Criterion / dedicated benches | ✅ (`zenith-float-num/benches/`: arithmetic, transcendentals, composite) |
 | Cross-library compare (astro / dashu) | 🟡 (`zenith-float-compare/` + `scripts/compare-bench.sh`, release gate) |
-| `proptest` / quickcheck | ⬜ (hand-written random loops, `TEST_ITERS = 256`) |
+| `proptest` / quickcheck | ✅ (`PROPTEST_CASES = 1000` in `tests/proptest_props.rs`; `TEST_ITERS = 256` loops remain) |
 
 **Property tests** (`zenith-float-num/src/ops/tests.rs`): inverse pairs (ln↔exp, sin↔asin, log↔pow, etc.) with mathematically derived error bounds; exponent sampling capped at `TEST_EXP_BOUND = 1024` for runtime.
 
@@ -391,3 +391,4 @@ Already implemented but not in a crates.io release:
 - `GETTING_STARTED.md` sections for IEEE, arrays, specials, rationals, `cexpr!`, `Ball`
 - `HELP.md` user-guide rewrite (recipes, mistakes, FAQ)
 - `mpfr-tests`: GMP rationals, real-axis complex specials, `gamma_inc`, identity leftovers
+- `proptest` (`PROPTEST_CASES=1000`) without `mpfr-tests`
