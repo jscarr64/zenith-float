@@ -56,6 +56,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `EXPONENT_MIN` | `i32::MIN` on 64-bit; `i32::MIN / 4` on 32-bit |
 | Default operator precision | 128 bits, `ToEven` — used by `+` `−` `×` `÷` operator traits only |
 | `MAX_PREC_RETRY` | `256` — extra word-sized retry steps beyond `p` for correct-rounding loops |
+| `SVD_ITER_MAX` | `64` — QR sweeps per singular value in `svd_decomp`; then `None` |
 
 **Special values:** `+Inf`, `−Inf`, `NaN` (with optional `Error`), subnormals at `EXPONENT_MIN`. Public sentinels: `INF_POS`, `INF_NEG`, `NAN`.
 
@@ -227,10 +228,11 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | --- | --- | --- |
 | `Ieee32` / `Ieee64` | ✅ | Integer IEEE-754 binary32/binary64; `from_bits` / `to_bits`; add/mul/div/sqrt/FMA |
 | `Ieee32Array` / `Ieee64Array` | ✅ | Row-major; elementwise, `sum`/`dot`, software `matmul`; integer SIMD add/mul; specials via `ExactNum` |
-| `ExactNumArray` | ✅ | Shared `p`; row-major elementwise, software `matmul`, `lu_decomp`, `qr_decomp`; `ExactNum` specials; `(2×3)` `sin` matches scalar; shape mismatch → `None` |
+| `ExactNumArray` | ✅ | Shared `p`; row-major elementwise, software `matmul`, `lu_decomp`, `qr_decomp`, `svd_decomp`; `ExactNum` specials; `(2×3)` `sin` matches scalar; shape mismatch → `None` |
 | Integer SIMD (IEEE add/mul) | 🟡 | `u32`/`u64` lanes; SSE2/NEON; bit-identical to scalar kernel; not an FPU. Plan §2.4 leftover: SIMD div/sqrt/fma + named `IEEE_SIMD_LANE_WIDTH` |
 | `lu_decomp` / `qr_decomp` | ✅ | Partial-pivot LU; modified Gram–Schmidt QR; singular LU → `None`; rank-deficient QR → zero \(R_{kk}\) |
-| SVD / eigen / FFT | ⬜ | Build plan §4.3–§4.5 |
+| `svd_decomp` | ✅ | Golub–Reinsch; \((U,\Sigma,V^T)\); \(\sigma\) descending; `SVD_ITER_MAX=64` sweeps/value → `None`; empty/NaN/Inf → `None` |
+| Eigen / FFT | ⬜ | Build plan §4.4–§4.5 |
 | `ExactRational` / `ExactInt` | ⬜ | Build plan §9.1–§9.2 |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
@@ -496,11 +498,11 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§4.3 SVD**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§4.4 eigenvalue decomposition**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §4.3–§4.5 | SVD, symmetric eigen, radix-2 FFT |
+| §4.4–§4.5 | Symmetric eigen, radix-2 FFT |
 | §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
 | §5.1 / §18.1 | Per-function `# Precision` doc comments |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
@@ -515,7 +517,7 @@ Not a second product. First open implementation slice is **§4.3 SVD**. Partial 
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 

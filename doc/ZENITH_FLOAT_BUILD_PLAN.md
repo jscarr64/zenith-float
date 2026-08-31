@@ -48,7 +48,8 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 3.2 ComplexBall | ✅ | disk add/mul/exp/ln/sin/cos |
 | 4.1 / 11.1 LU | ✅ | `lu_decomp`; \(PA=LU\); singular → `None` |
 | 4.2 / 11.2 QR | ✅ | `qr_decomp` modified Gram–Schmidt; \(QR=A\); \(Q^\top Q=I\); rank-deficient zero diagonal |
-| 4.3–4.5 / 11.3–11.5 SVD, eigen, FFT | ⬜ | |
+| 4.3 / 11.3 SVD | ✅ | `svd_decomp`; \(U\Sigma V^T=A\); \(U^\top U=V^\top V=I\); \(\operatorname{diag}(3,2)\); wide \(\sigma=(2,1)\) |
+| 4.4–4.5 / 11.4–11.5 eigen, FFT | ⬜ | |
 | 5.1 / 18.1 Precision doc comments | ⬜ | |
 | 6.1 no_std / thumb | 🟡 | allocator `no_std` compiles; no `thumbv7em-none-eabihf` CI gold |
 | 7.1 / 20.1 Reproducibility.md | ⬜ | |
@@ -61,7 +62,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 10.3 `ziv_round_vec` | ⬜ | |
 | 12–17, 18.2–18.3, 19–20 | ⬜ | distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§4.3 SVD**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§4.4 eigenvalue decomposition**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -308,6 +309,8 @@ Golds:
 
 ### 4.3 SVD (Golub-Reinsch)
 
+**Status:** done 2026-08-30 — `svd_decomp`; \(U\Sigma V^T=A\); \(U^\top U=V^\top V=I\); \(\operatorname{diag}(3,2)\to\sigma=(3,2)\). Cap `SVD_ITER_MAX=64` sweeps per value.
+
 **Prompt:**
 Implement SVD on `ExactNumArray` via the Golub-Reinsch bidiagonalization algorithm at explicit precision `(p, rm)`. Return `(U, Σ, V^T)`. Singular values in descending order. Software limbs only — no LAPACK, no hardware float.
 
@@ -552,6 +555,8 @@ Golds:
 ---
 
 ### 11.3 SVD
+
+**Status:** done 2026-08-30 — same method as §4.3 (`svd_decomp`). Do not implement twice.
 
 **Prompt:**
 Implement SVD via Golub-Reinsch bidiagonalization on `ExactNumArray` at explicit `(p, rm)`. Return `(U, Σ, V^T)`. Singular values in descending order. Cap `SVD_ITER_MAX` named constant. `None` if not converged.

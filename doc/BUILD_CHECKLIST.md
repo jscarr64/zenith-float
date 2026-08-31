@@ -114,8 +114,8 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | Complex: `ExactComplex` | `cexpr!` | ✅ | Per-part cancel; principal cuts; no `atan2`/`rem_pi`; MPFR add/mul; elliptic Carlson golds |
 | Complex elliptic \(K,E,\Pi\) | `elliptic_k` … `elliptic_pi_inc` | ✅ | Carlson in \(\mathbb{C}\); \(K(1)=+\infty\); Legendre + cut golds |
 | Complex \({}_2F_1\) | `hypergeom_2f1` | ✅ | Series / Euler / Pfaff / Kummer; cut on \([1,+\infty)\) |
-| `ExactNumArray` LU / QR | `lu_decomp` / `qr_decomp` | ✅ | Partial pivot; modified Gram–Schmidt |
-| SVD / eigen / FFT | — | ⬜ | Build plan §4.3–§4.5 (next: SVD) |
+| `ExactNumArray` LU / QR / SVD | `lu_decomp` / `qr_decomp` / `svd_decomp` | ✅ | Partial pivot; MGS; Golub–Reinsch (`SVD_ITER_MAX=64`) |
+| Eigen / FFT | — | ⬜ | Build plan §4.4–§4.5 (next: eigen) |
 | Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |
 
 ### 1.6 I/O and integration
