@@ -42,7 +42,7 @@ Not blocked by macros. `cexpr!` uses the same extra-precision loop and measures 
 
 ### 4. Bessel Y_n, I_n, K_n, fractional order — **backlog**
 
-Integer `J_n` is a factorial power series (`n ≤ 1024`). \(Y_\nu\), \(I_\nu\), \(K_\nu\) and non-integer \(J_\nu\) are required before Accumath can drop its second kernel. Tracked in `ZENITH_FLOAT_TODO.md` §2. Not a wrapper around integer `bessel_j`.
+Integer `J_n` is a factorial power series (`n ≤ 1024`). \(Y_\nu\), \(I_\nu\), \(K_\nu\) and non-integer \(J_\nu\) are required before Accumath can drop its second kernel. Tracked in `ZENITH_FLOAT_BUILD_PLAN.md` / `ZENITH_FLOAT_CAPABILITIES.md`. Not a wrapper around integer `bessel_j`.
 
 ### 8. In-tree hardware IEEE conversion — **will not add**
 

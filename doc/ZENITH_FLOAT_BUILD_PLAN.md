@@ -2,6 +2,16 @@
 
 Every item on this list must be implemented, golded, and passing CI before zenith-float is complete. No item is optional. No item is deferred. Build in the order listed — each section's dependencies are satisfied by the sections above it.
 
+**Living docs (same trio as Accumath — there is no TODO file):**
+
+| Document | Role |
+| --- | --- |
+| This file | Walk list. Status table at the top. Flip a row when a gold lands. |
+| [`ZENITH_FLOAT_CAPABILITIES.md`](ZENITH_FLOAT_CAPABILITIES.md) | What the crate can do. Must match the object. |
+| [`BUILD_CHECKLIST.md`](BUILD_CHECKLIST.md) | Maintainer: what is in CI, crates, and the public API today. |
+
+After every slice: update all three. Do not keep a fourth inventory.
+
 ## Rules for every item
 
 - Software limb arithmetic only — no hardware floating-point arithmetic, `libm`, or compiler float codegen
@@ -51,7 +61,9 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 10.3 `ziv_round_vec` | ⬜ | |
 | 12–17, 18.2–18.3, 19–20 | ⬜ | distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later section while an earlier ⬜ remains.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§4.3 SVD**.
+
+When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
 ---
 
@@ -60,6 +72,8 @@ Walk this table top to bottom. Do not start a later section while an earlier ⬜
 Elementary `+−×÷`, `exp`/`ln`, trig/hyperbolic, principal `sqrt`/`pow`/inverses already exist. The items below complete the complex special function set. Do not wrap the real series on `|z|` and call it complex — use proper complex algorithms throughout.
 
 ### 1.1 Complex `Ei` / `Si` / `Ci` / `li` / Fresnel
+
+**Status:** done 2026-08-30 — `complex_ei.rs`; `cexpr!` leaves; cut / identity golds.
 
 **What:** `ExactComplex::ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`
 
@@ -90,6 +104,8 @@ Named constants: `EI_SERIES_THRESHOLD`. No magic numbers. `scripts/ci_full.sh` g
 
 ### 1.2 Complex Bessel `J_ν` / `Y_ν` / `I_ν` / `K_ν`
 
+**Status:** done 2026-08-30 — `complex_bessel.rs`; Wronskian / cut golds.
+
 **What:** `ExactComplex::bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`
 
 **Prompt:**
@@ -119,6 +135,8 @@ Named constants: `BESSEL_SERIES_THRESHOLD`. No magic numbers.
 
 ### 1.3 Complex elliptic integrals
 
+**Status:** done 2026-08-30 — `complex_elliptic.rs`; Legendre + cut golds.
+
 **What:** `ExactComplex::elliptic_k`, `elliptic_e_complete`, `elliptic_f`, `elliptic_e`, `elliptic_pi_complete`, `elliptic_pi`
 
 **Prompt:**
@@ -140,6 +158,8 @@ Golds:
 ---
 
 ### 1.4 Complex `₂F₁`
+
+**Status:** done 2026-08-30 — `complex_hypergeom.rs`; `2ln2`, `2K/π`, Euler, `c=0`, cut.
 
 **What:** `ExactComplex::hypergeom_2f1(a, b, c, z, p, rm, cc)` where all parameters are `ExactComplex`
 
@@ -172,6 +192,8 @@ Every scalar `ExactNum` special available elementwise on `ExactNumArray`, `Ieee3
 
 ### 2.1 ExactNumArray ufuncs — elementary
 
+**Status:** done 2026-08-30 — `(2×3)` `sin`; shape mismatch → `None`; `signum`.
+
 **Prompt:**
 Add elementwise methods to `ExactNumArray` for every elementary transcendental already on `ExactNum`: `sqrt`, `cbrt`, `ln`, `log2`, `log10`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `abs`, `signum`, `ceil`, `floor`, `int`, `fract`.
 
@@ -182,6 +204,8 @@ Golds: elementwise `sin` on a `(2×3)` array matches applying `sin` to each elem
 ---
 
 ### 2.2 ExactNumArray ufuncs — specials
+
+**Status:** done 2026-08-30 — `bessel_j_nu(1/2)` matches scalar; NaN propagates.
 
 **Prompt:**
 Add elementwise methods to `ExactNumArray` for every special function on `ExactNum`: `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `gammainc_upper`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e_complete`, `elliptic_f`, `elliptic_e`, `elliptic_pi_complete`, `elliptic_pi`, `legendre_p`, `assoc_legendre_p`, `hypergeom_2f1`, `betainc`.
@@ -194,6 +218,8 @@ Golds: elementwise `bessel_j_nu(0.5)` on a 1D array matches scalar results. Doma
 
 ### 2.3 Ieee32Array / Ieee64Array ufuncs
 
+**Status:** done 2026-08-30 — via `ExactNum`; `bin64_array_exp_sin`.
+
 **Prompt:**
 Add elementwise special function methods to `Ieee32Array` and `Ieee64Array` via conversion through `ExactNum` at a working precision sufficient to round correctly to binary32/binary64. The conversion path: `Ieee64::to_exact(p_wrk)` → apply `ExactNum` special → round back to `Ieee64`. No hardware float at any point.
 
@@ -204,6 +230,8 @@ Golds: `Ieee64Array::sin` matches `ExactNum::sin` rounded to binary64 for a repr
 ---
 
 ### 2.4 Integer SIMD for IEEE arrays
+
+**Status:** partial 2026-08-30 — integer-lane add/mul (SSE2/NEON); no named `IEEE_SIMD_LANE_WIDTH`; no SIMD div/sqrt/fma.
 
 **Prompt:**
 Add SIMD-accelerated paths for `Ieee32Array` and `Ieee64Array` elementwise `add`, `sub`, `mul`, `div`, `sqrt`, and `fma` using integer SIMD lanes (`u32x8` / `u64x4` or equivalent via `std::simd` or `packed_simd2`). The arithmetic is software IEEE — integer lanes carrying bit patterns, arithmetic implemented in software, no hardware FPU instructions. The scalar and SIMD paths must produce bit-identical results.
@@ -217,6 +245,8 @@ Golds: SIMD `add`/`mul`/`div`/`sqrt` on a 1000-element `Ieee64Array` produces bi
 ## Section 3 — Certified interval arithmetic
 
 ### 3.1 Ball arithmetic for transcendentals
+
+**Status:** done 2026-08-30 — `sin`/`cos`/`exp`/`ln`/`sqrt`/`erf`/`J0`/`J1`.
 
 **Prompt:**
 Extend `Ball { mid, rad }` to support certified enclosures for: `sin`, `cos`, `exp`, `ln`, `sqrt`, `erf`, `bessel_j(0, ...)`, `bessel_j(1, ...)`.
@@ -235,6 +265,8 @@ Golds:
 
 ### 3.2 Certified interval for complex functions
 
+**Status:** done 2026-08-30 — `ComplexBall` disk add/mul/exp/ln/sin/cos.
+
 **Prompt:**
 Extend `Ball` to `ComplexBall { mid: ExactComplex, rad: ExactNum }` (a disk in ℂ). Implement `add`, `mul`, `exp`, `ln`, `sin`, `cos` with certified enclosures on `ComplexBall`. The radius grows by the Lipschitz constant of the operation on the disk.
 
@@ -248,6 +280,8 @@ Golds:
 
 ### 4.1 LU decomposition
 
+**Status:** done 2026-08-30 — `lu_decomp`; \(PA=LU\); singular → `None`.
+
 **Prompt:**
 Implement LU decomposition with partial pivoting on `ExactNumArray` (2D, square or rectangular). Return `(L, U, P)` where `P` is a permutation vector. Use exact `ExactNum` arithmetic with explicit `(p, rm)` at each step. A singular matrix returns `None` for the `U` factor — do not invent a result.
 
@@ -259,6 +293,8 @@ Golds:
 ---
 
 ### 4.2 QR decomposition (Gram-Schmidt)
+
+**Status:** done 2026-08-30 — `qr_decomp`; \(QR=A\); \(Q^\top Q=I\); rank-deficient zero diagonal.
 
 **Prompt:**
 Implement QR decomposition via modified Gram-Schmidt on `ExactNumArray`. Return `(Q, R)` where `Q` is orthogonal and `R` is upper triangular, all at explicit precision `(p, rm)`. Rank-deficient input: zero column in `R` at the deficient position, not a panic.
@@ -435,6 +471,8 @@ Golds:
 
 ### 10.1 Per-operation precision tracking
 
+**Status:** done 2026-08-30 — specials take `(p, rm, cc)`; no `SOFT_PREC` in the kernel.
+
 **Prompt:**
 Implement per-operation precision at caller-chosen bits for ALL unary special functions — not global `SOFT_PREC`. This is the near-term item that has been open since the beginning.
 
@@ -485,6 +523,8 @@ Golds:
 ---
 
 ## Section 11 — Matrix and linear algebra
+
+Duplicate of Section 4. Do not implement twice. Status is §4.1–§4.5.
 
 ### 11.1 LU decomposition for `ExactNumArray`
 

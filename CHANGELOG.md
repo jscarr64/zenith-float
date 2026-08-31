@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Living docs are the build plan, capabilities, and build checklist only. `ZENITH_FLOAT_TODO.md` is retired.
 - `ExactNumArray::qr_decomp` — modified Gram–Schmidt; \(QR=A\), \(Q^\top Q=I\); rank-deficient zero diagonal.
 - `ExactNumArray::lu_decomp` — partial pivoting; \(PA=LU\) gold; singular → `None`.
 - `ComplexBall` disk enclosures: `add`/`mul`/`exp`/`ln`/`sin`/`cos`. Unit-disk `exp` and \(\sin^2+\cos^2=1\) golds.

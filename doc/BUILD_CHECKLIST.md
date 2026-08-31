@@ -4,7 +4,9 @@
 
 Living document for what is **implemented**, **tested**, and **required** for zenith-float as a public software big-float crate. Application engines (formula corpora, expression ABIs, host hardware-float purge) live in those applications, not here.
 
-**Last updated:** 2026-08-29  
+**Trio:** walk list [`ZENITH_FLOAT_BUILD_PLAN.md`](ZENITH_FLOAT_BUILD_PLAN.md) · inventory [`ZENITH_FLOAT_CAPABILITIES.md`](ZENITH_FLOAT_CAPABILITIES.md) · this checklist (CI / crates / API). There is no TODO file.
+
+**Last updated:** 2026-08-30  
 **Crate version:** 0.1.0 (+ unreleased changelog items)  
 **Reference versions (crates.io):** astro-float 0.9.6, dashu-float 0.6.0  
 **Policy:** No hardware floating-point in calculations. Rust hardware IEEE type tokens are forbidden in `.rs` (`scripts/ci.sh`). Software `Ieee32`/`Ieee64` store binary32/binary64 as integer bits.
@@ -112,6 +114,8 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | Complex: `ExactComplex` | `cexpr!` | ✅ | Per-part cancel; principal cuts; no `atan2`/`rem_pi`; MPFR add/mul; elliptic Carlson golds |
 | Complex elliptic \(K,E,\Pi\) | `elliptic_k` … `elliptic_pi_inc` | ✅ | Carlson in \(\mathbb{C}\); \(K(1)=+\infty\); Legendre + cut golds |
 | Complex \({}_2F_1\) | `hypergeom_2f1` | ✅ | Series / Euler / Pfaff / Kummer; cut on \([1,+\infty)\) |
+| `ExactNumArray` LU / QR | `lu_decomp` / `qr_decomp` | ✅ | Partial pivot; modified Gram–Schmidt |
+| SVD / eigen / FFT | — | ⬜ | Build plan §4.3–§4.5 (next: SVD) |
 | Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |
 
 ### 1.6 I/O and integration

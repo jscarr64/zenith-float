@@ -1,11 +1,13 @@
 # zenith-float Capability Reference
 
-**Version:** <!-- e.g. 0.1.0 -->  
-**Date:** <!-- release date -->  
+**Version:** 0.1.0  
+**Date:** 2026-08-30  
 **License:** MIT OR Apache-2.0  
 **Status:** Public crate  
 
 This document states exactly what `zenith-float` provides, what it does not provide, and what the named constants and caps mean in practice. It is not a tutorial. For a working example, see `doc/GETTING_STARTED.md`. For full method signatures, see `doc/LIBRARY.md`. For `expr!` rounding contracts, see `doc/EXPR.md`.
+
+Engineering walk list: [`ZENITH_FLOAT_BUILD_PLAN.md`](ZENITH_FLOAT_BUILD_PLAN.md) (status table at the top). Maintainer CI inventory: [`BUILD_CHECKLIST.md`](BUILD_CHECKLIST.md). There is no TODO file — keep these three current after every slice.
 
 A row marked ✅ is backed by a unit test or MPFR oracle gold. A row marked 🟡 has a named bound or condition; read the notes. Every `NaN` return has an associated `Error`; no operation silently discards a failure.
 
@@ -226,7 +228,10 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `Ieee32` / `Ieee64` | ✅ | Integer IEEE-754 binary32/binary64; `from_bits` / `to_bits`; add/mul/div/sqrt/FMA |
 | `Ieee32Array` / `Ieee64Array` | ✅ | Row-major; elementwise, `sum`/`dot`, software `matmul`; integer SIMD add/mul; specials via `ExactNum` |
 | `ExactNumArray` | ✅ | Shared `p`; row-major elementwise, software `matmul`, `lu_decomp`, `qr_decomp`; `ExactNum` specials; `(2×3)` `sin` matches scalar; shape mismatch → `None` |
-| Integer SIMD (IEEE add/mul) | ✅ | `u32`/`u64` lanes; SSE2/NEON; bit-identical to scalar kernel; not an FPU |
+| Integer SIMD (IEEE add/mul) | 🟡 | `u32`/`u64` lanes; SSE2/NEON; bit-identical to scalar kernel; not an FPU. Plan §2.4 leftover: SIMD div/sqrt/fma + named `IEEE_SIMD_LANE_WIDTH` |
+| `lu_decomp` / `qr_decomp` | ✅ | Partial-pivot LU; modified Gram–Schmidt QR; singular LU → `None`; rank-deficient QR → zero \(R_{kk}\) |
+| SVD / eigen / FFT | ⬜ | Build plan §4.3–§4.5 |
+| `ExactRational` / `ExactInt` | ⬜ | Build plan §9.1–§9.2 |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
@@ -475,7 +480,7 @@ These are design decisions, not a backlog:
 | `fbig!` / compile-time float literals | ✅ | ⬜ | ✅ |
 | Parse/format bases 2–36 | ✅ | ⬜ (bin/oct/dec/hex) | ✅ |
 | Complex (`ExactComplex` + `cexpr!`) | ✅ elementary | ⬜ | ✅ `CBig` |
-| Complex specials (`erf`, `Γ`, `ψ`, `Ei`, Bessel) | ✅ | ⬜ | ⬜ |
+| Complex specials (`erf`, `Γ`, `ψ`, `Ei`, Bessel, elliptic, `_2F1`) | ✅ | ⬜ | ⬜ |
 | General `nth_root(n)` | ✅ | ✅ | ✅ |
 | `sin_cos` / `sinh_cosh` paired | ✅ | ✅ | ✅ |
 | Special functions (`erf`, `Γ`, `J_n`) | ✅ | ⬜ | 🟡 / separate |
@@ -489,18 +494,37 @@ These are design decisions, not a backlog:
 
 ---
 
-## 25. Version history of this document
+## 25. Leftovers (this crate — walk the build plan)
 
-| Version | Date | Changes |
-| --- | --- | --- |
-| 0.1.0 | <!-- date --> | Initial release |
+Not a second product. First open implementation slice is **§4.3 SVD**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+
+| Plan | Item |
+| --- | --- |
+| §4.3–§4.5 | SVD, symmetric eigen, radix-2 FFT |
+| §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
+| §5.1 / §18.1 | Per-function `# Precision` doc comments |
+| §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
+| §7.1 / §20.1 | `REPRODUCIBILITY.md` |
+| §9 | `ExactRational`, `ExactInt`, `parse_exact` / `format_exact` |
+| §10.3 | `ziv_round_vec` |
+| §12–§17, §18.2–§19, §20.2 | Distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
 ---
 
-## 26. Related documents
+## 26. Version history of this document
+
+| Version | Date | Changes |
+| --- | --- | --- |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+
+---
+
+## 27. Related documents
 
 | Document | Location | Audience |
 | --- | --- | --- |
+| Build plan (walk list + status) | `doc/ZENITH_FLOAT_BUILD_PLAN.md` | Maintainers; next slice |
+| Build checklist | `doc/BUILD_CHECKLIST.md` | Maintainers; CI and crate inventory |
 | Getting started | `doc/GETTING_STARTED.md` | New users; first working example |
 | Help | `doc/HELP.md` | Why the API looks this way; recipes; common mistakes |
 | Full method inventory | `doc/LIBRARY.md` | Every public type and method |
