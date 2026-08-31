@@ -7,14 +7,14 @@
 #   ./scripts/bench-compare.sh --check FILE # compare an existing log to baseline
 #
 # Environment:
-#   REGRESSION_PCT   allowed slowdown in wall time (default 15)
+#   REGRESSION_PCT   allowed slowdown in wall time (default 10)
 #   REGRESSION_FILE  baseline path (default doc/bench-baselines.tsv)
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
 baseline="${REGRESSION_FILE:-doc/bench-baselines.tsv}"
-regression_pct="${REGRESSION_PCT:-15}"
+regression_pct="${REGRESSION_PCT:-10}"
 tmp_log="$(mktemp)"
 tmp_tsv="$(mktemp)"
 trap 'rm -f "$tmp_log" "$tmp_tsv"' EXIT
@@ -88,6 +88,7 @@ parse_bench_log() {
 run_benches() {
   cargo bench -p zenith-float-num \
     --bench arithmetic --bench transcendentals --bench composite \
+    --bench specials --bench linalg \
     -- --quick 2>&1
 }
 

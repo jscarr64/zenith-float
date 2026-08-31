@@ -81,9 +81,11 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 18.3 HELP.md | ✅ | Precision model, rounding, Consts, expr vs methods, cuts, arrays, IEEE, 30 recipes, 20 mistakes, 40 FAQ |
 | 19.1 MPFR oracles | ✅ | GMP rationals; real-axis complex specials; `gamma_inc`; identity golds where GNU MPFR/MPC have no function |
 | 19.2 proptest | ✅ | `PROPTEST_CASES=1000`: add commutes; directed round-then-coarser; `erf` odd; 2×2 integer matmul assoc; rational `(a+b)-b=a` |
-| 19.3–20 | ⬜ | bench, prepublish, hex CI |
+| 19.3 Benchmark suite | ✅ | specials 64–1024; matmul 10/100/1000; FFT 256/1024/4096; LU 50/200; dashu in `compare-bench.sh --quick`; baselines TSV |
+| 19.4 Pre-publish | ⬜ | `scripts/zenith_prepublish.sh` does not exist |
+| 20.2 hex CI | ⬜ | `ci_hex_*.sh` and `golds/hex/` do not exist |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§19.3 Benchmark suite**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§19.4 Pre-publish checklist**. HDF5 is deferred.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -1083,6 +1085,8 @@ Golds:
 ---
 
 ### 19.3 Benchmark suite
+
+**Status:** done 2026-08-31 — specials erf/gamma/J₀ at 64–1024 bits; ExactNum matmul 10×10 and 100×100; software IEEE 1000×1000; FFT 256/1024/4096; LU 50×50 and 200×200. `compare-bench.sh --quick` includes dashu (~40 s). Baselines in `doc/bench-baselines.tsv`; compare TSV has zenith/astro/dashu.
 
 **Prompt:**
 Extend `scripts/bench.sh` to cover all new capabilities:

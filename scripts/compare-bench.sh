@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Cross-library comparison (bigfloat-bench compatible workloads, TSV output).
 #
-# Quick release check (132-bit, core ops):
+# Quick release check (132-bit, core ops, zenith / astro / dashu):
 #   ./scripts/compare-bench.sh --quick
 #
 # Full matrix (132 / 1000 / 10000 bits, all tasks):
@@ -13,8 +13,8 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
 out="${COMPARE_OUT:-doc/compare-results.tsv}"
-libs=(--lib zenith --lib astro)
-features=(--features zenith-float-compare/astro)
+libs=(--lib zenith --lib astro --lib dashu)
+features=(--features zenith-float-compare/astro,zenith-float-compare/dashu)
 precisions=(--precision 132)
 tasks=(
   --task add --task sub --task mul --task div
@@ -29,11 +29,6 @@ if [[ "${1:-}" == "--full" ]]; then
     --task sin --task asin --task cos --task acos --task tan --task atan
     --task sinh --task asinh --task cosh --task acosh --task tanh --task atanh
   )
-fi
-
-if [[ "${1:-}" == "--dashu" ]]; then
-  libs+=(--lib dashu)
-  features=(--features "zenith-float-compare/astro,zenith-float-compare/dashu")
 fi
 
 {

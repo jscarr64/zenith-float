@@ -160,8 +160,8 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | MPFR bit-oracle tests (`mpfr-tests`) | ✅ (release gate on Linux x86_64 in `scripts/ci.sh`) |
 | CI wall-time budgets | ✅ (debug &lt; 10 min, MPFR &lt; 30 min; `CI_DEBUG_SECS` / `CI_MPFR_SECS`) |
 | Seeded random tests | ✅ (default seed `0x5EED_CAFE_BADC_0D00`; `ZENITH_TEST_SEED` to replay) |
-| Criterion / dedicated benches | ✅ (`zenith-float-num/benches/`: arithmetic, transcendentals, composite) |
-| Cross-library compare (astro / dashu) | 🟡 (`zenith-float-compare/` + `scripts/compare-bench.sh`, release gate) |
+| Cross-library compare (astro / dashu) | ✅ (`zenith-float-compare/` + `scripts/compare-bench.sh --quick`, zenith/astro/dashu at 132 bits) |
+| Criterion / dedicated benches | ✅ (`zenith-float-num/benches/`: arithmetic, transcendentals, composite, specials, linalg) |
 | `proptest` / quickcheck | ✅ (`PROPTEST_CASES = 1000` in `tests/proptest_props.rs`; `TEST_ITERS = 256` loops remain) |
 
 **Property tests** (`zenith-float-num/src/ops/tests.rs`): inverse pairs (ln↔exp, sin↔asin, log↔pow, etc.) with mathematically derived error bounds; exponent sampling capped at `TEST_EXP_BOUND = 1024` for runtime.
@@ -390,6 +390,7 @@ Already implemented but not in a crates.io release:
 - Integer SIMD add/sub/mul/div/sqrt/fma; 1000-element `Ieee64Array` bit-identical gold
 - `lazy_static` `spin_no_std`; thumb `no_std` build in `scripts/ci.sh`
 - `expr!` `erf+erfc=1` at 256 bits; `J_0²+Y_0²` working prec; `cexpr!(erf(z))` `p_wrk`
+- Criterion specials + linalg; dashu in `compare-bench.sh --quick`; `bench-baselines.tsv` refreshed
 - Binary 16-byte BE inline + heap `u32` limbs; `u32::MAX+1=2^{32}` at `p=64`
 - CSV 100×3 bit round-trip; missing cell `NAN`; HDF5 leftover (own subset, not C)
 - `GETTING_STARTED.md` sections for IEEE, arrays, specials, rationals, `cexpr!`, `Ball`

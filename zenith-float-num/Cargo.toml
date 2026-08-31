@@ -28,6 +28,14 @@ harness = false
 name = "composite"
 harness = false
 
+[[bench]]
+name = "specials"
+harness = false
+
+[[bench]]
+name = "linalg"
+harness = false
+
 [[test]]
 name = "radix_roundtrip"
 required-features = ["random"]

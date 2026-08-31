@@ -5,6 +5,7 @@
 - Integer SIMD for software IEEE arrays: add/sub/mul/div/sqrt/fma (`IEEE_SIMD_LANE_WIDTH=4`). Gold: 1000-element `Ieee64Array` bit-identical to the scalar kernel and to `ExactNum` rounded to binary64.
 - `lazy_static` uses `spin_no_std` so `thumbv7em-none-eabihf` builds with `default-features = false`.
 - Locked `expr!`/`cexpr!` composite golds: `erf+erfc=1` at 256 bits; `J_0²+Y_0²` at working precision; complex `erf` at `p_wrk`.
+- Criterion specials (64–1024 bits) and linalg (matmul/FFT/LU). `compare-bench.sh --quick` includes dashu. Baselines refreshed.
 - `ExactComplex::mul` rounds each of the four real products at `(p, rm)` before the add/sub, matching the MPFR componentwise gold. `RoundingMode::None` series paths are unchanged.
 - `proptest` (`PROPTEST_CASES=1000`): add commutes; directed round-then-coarser; `erf` odd; small-integer 2×2 matmul associativity; `ExactRational` `(a+b)-b=a`.
 - `mpfr-tests`: GMP oracle for `ExactRational`; real-axis complex `erf`/`Γ`/`Ai`/`J_n` vs MPFR; `mpfr_gamma_inc`; identity golds where GNU MPFR/MPC have no function. GNU MPC 1.3 has no `erf`/`gamma`/Bessel and is not used.
