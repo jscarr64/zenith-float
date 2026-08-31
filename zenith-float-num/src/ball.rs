@@ -393,6 +393,37 @@ where
     }
 }
 
+/// Same Ziv loop as [`ziv_round`], with every input lifted to `p_wrk` before `compute`.
+///
+/// `MAX_PREC_RETRY` still bounds the number of bumps via [`bump_prec_retry`].
+pub fn ziv_round_vec<F>(p: usize, rm: RoundingMode, inputs: &[ExactNum], mut compute: F) -> ExactNum
+where
+    F: FnMut(usize, &[ExactNum]) -> ExactNum,
+{
+    let mut p_inc = WORD_BIT_SIZE;
+    let mut p_wrk = match round_p(p).checked_add(p_inc) {
+        Some(v) => v,
+        None => return ExactNum::nan(Some(Error::InvalidArgument)),
+    };
+    loop {
+        let mut xs = alloc::vec::Vec::with_capacity(inputs.len());
+        for x in inputs {
+            let mut y = x.clone();
+            if y.set_precision(p_wrk, RoundingMode::None).is_err() {
+                y = x.clone();
+            }
+            xs.push(y);
+        }
+        let mut v = compute(p_wrk, &xs);
+        if v.try_set_precision(p, rm, p_wrk) {
+            return v;
+        }
+        if bump_prec_retry(&mut p_wrk, &mut p_inc, p).is_err() {
+            return ExactNum::nan(Some(Error::PrecisionRetryExhausted));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -409,6 +440,28 @@ mod tests {
         let sum = ba.add(&bb, p, rm);
         let true_sum = a.add(&b, p, rm);
         assert!(sum.contains(&true_sum, p));
+    }
+
+    #[test]
+    fn ziv_round_vec_hypot_atan2() {
+        let rm = RoundingMode::ToEven;
+        for p in [64usize, 128, 256] {
+            let a = ExactNum::from_u8(3, p);
+            let b = ExactNum::from_u8(4, p);
+            let got = ziv_round_vec(p, rm, &[a, b], |pw, xs| {
+                xs[0].hypot(&xs[1], pw, RoundingMode::None)
+            });
+            assert_eq!(got.cmp(&ExactNum::from_u8(5, p)), Some(0));
+        }
+
+        let p = 256;
+        let mut cc = Consts::new().unwrap();
+        let one = ExactNum::from_u8(1, p);
+        let got = ziv_round_vec(p, rm, &[one.clone(), one], |pw, xs| {
+            xs[0].atan2(&xs[1], pw, RoundingMode::None, &mut cc)
+        });
+        let quarter = cc.pi(p, rm).div(&ExactNum::from_u8(4, p), p, rm);
+        assert_eq!(got.cmp(&quarter), Some(0));
     }
 
     #[test]

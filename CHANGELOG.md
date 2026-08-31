@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `ziv_round_vec` — same Ziv loop on a slice; `hypot(3,4)=5`; `atan2(1,1)=π/4` at 256 bits.
 - `parse_exact` / `format_exact` — `0.1` is exact `1/10`; dyadic `0.5` / `0.125`; `parse("1.5e3")=1500`.
 - `ExactInt` — limb integer; `20!`, `gcd(48,18)=6`, `2^100`, `div_rem(17,5)=(3,2)`.
 - `ExactRational` — exact `num/den` with integer GCD reduction; `1/3+1/6=1/2`; `2/4=1/2`; sign onto the numerator; 256-bit `1/3`.

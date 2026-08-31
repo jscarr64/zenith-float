@@ -46,6 +46,7 @@ mod for_3rd;
 pub mod macro_util;
 
 pub use crate::ball::ziv_round;
+pub use crate::ball::ziv_round_vec;
 pub use crate::ball::Ball;
 pub use crate::ball::ComplexBall;
 pub use crate::common::buf::INLINE_WORDS;

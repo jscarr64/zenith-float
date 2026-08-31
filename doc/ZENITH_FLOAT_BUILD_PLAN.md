@@ -60,10 +60,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 9.3 parse_exact / format_exact | ✅ | `ExactRational::parse_exact("0.1")` is `1/10`; `0.5` dyadic bits; `0.125` round-trip; `1.5e3=1500` |
 | 10.1 Per-op precision | ✅ | specials take `(p,rm,cc)`; no `SOFT_PREC` in the kernel |
 | 10.2 expr! / cexpr! `p_wrk` | 🟡 | leaves use `p_wrk`; not every listed composite gold is locked |
-| 10.3 `ziv_round_vec` | ⬜ | |
+| 10.3 `ziv_round_vec` | ✅ | `hypot(3,4)=5`; `atan2(1,1)=π/4` at 256 bits; `MAX_PREC_RETRY` |
 | 12–17, 18.2–18.3, 19–20 | ⬜ | distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§10.3 ziv_round_vec**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§12.1 statistical distribution kernels**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -525,6 +525,8 @@ Golds:
 ---
 
 ### 10.3 `ziv_round` extension for vector operations
+
+**Status:** done 2026-08-30 — `ziv_round_vec`; `hypot(3,4)=5` at 64/128/256; `atan2(1,1)=π/4` at 256 bits; same `MAX_PREC_RETRY` bump as `ziv_round`.
 
 **Prompt:**
 Extend `ziv_round` to support vectorized correct-rounding: given a function `f: &[ExactNum] -> ExactNum`, find the precision `p_wrk` such that the result rounds uniquely to `p` bits.

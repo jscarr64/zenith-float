@@ -106,7 +106,7 @@ From `zenith_float` / `zenith_float_num`:
 - `Ieee32`, `Ieee64`, `Ieee32Array`, `Ieee64Array`, `ExactNumArray`
 - `Consts`, `ConstCache` (alias of `Consts`), `ConstCacheInfo`, `CachedFBig`, `SharedConsts` (`std` only)
 - `Context` (module `zenith_float::ctx`), trait `Contextable`
-- `Ball`, `ComplexBall`, `ziv_round`
+- `Ball`, `ComplexBall`, `ziv_round`, `ziv_round_vec`
 - `RadixFloat`
 - `FromExt`
 - `RoundingMode`, `Radix`, `Sign`, `Error`, `Exponent`, `Word`
@@ -505,6 +505,8 @@ No `expr!` for complexes — use `cexpr!`. Serde: struct `{ "re", "im" }` of dec
 | `contains(z, p)` | \(\lvert z-\mathrm{mid}\rvert\le\mathrm{rad}\) |
 
 **`ziv_round(p, rm, compute)`:** call `compute(working_p)` and `try_set_precision` until the rounding is unique or `MAX_PREC_RETRY` is exhausted (then NaN / `PrecisionRetryExhausted`).
+
+**`ziv_round_vec(p, rm, inputs, compute)`:** lift each input to `p_wrk`, then the same loop. `compute(p_wrk, &[ExactNum])`. Golds: `hypot(3,4)=5`; `atan2(1,1)=π/4` at 256 bits.
 
 ---
 

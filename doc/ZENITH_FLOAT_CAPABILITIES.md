@@ -429,6 +429,7 @@ Radix 2–36. For bases > 10 the exponent uses `_e` so `e` can be a digit.
 | Item | Notes |
 | --- | --- |
 | `ziv_round(p, rm, compute)` | Call `compute(p_wrk)`, then `try_set_precision` until uniquely rounded or `MAX_PREC_RETRY` exhausted (→ NaN / `PrecisionRetryExhausted`) |
+| `ziv_round_vec(p, rm, inputs, compute)` | Same loop; inputs lifted to `p_wrk`; `hypot(3,4)=5`; `atan2(1,1)=π/4` at 256 bits |
 | `Ball { mid, rad }` | Certified `add` / `mul` / `exp` / `sin` / `cos` / `ln` / `sqrt` / `erf` / `bessel_j0` / `bessel_j1`; Lipschitz + `BALL_TRANSCENDENTAL_ERROR_TERMS` ulps; `contains(x, p)` |
 | `ComplexBall { mid, rad }` | Disk in \(\mathbb{C}\); `add`/`mul`/`exp`/`ln`/`sin`/`cos`; unit-disk `exp` and \(\sin^2+\cos^2=1\) golds |
 | `MAX_PREC_RETRY = 256` | Extra word-sized budget per operation; caps at `256 × WORD_BIT_SIZE` bits above `p` |
@@ -503,14 +504,13 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§10.3 ziv_round_vec**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§12.1 statistical distribution kernels**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §10.3 | `ziv_round_vec` |
+| §12.1 | Statistical distribution kernels |
 | §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
-| §10.3 | `ziv_round_vec` |
 | §12–§17, §18.2–§19, §20.2 | Distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
 ---
@@ -519,7 +519,7 @@ Not a second product. First open implementation slice is **§10.3 ziv_round_vec*
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 
