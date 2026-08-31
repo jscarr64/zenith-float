@@ -14,6 +14,8 @@ const SVD_ITER_MAX: u32 = 64;
 /// QR sweeps allowed per eigenvalue before [`ExactNumArray::eigen_decomp`]
 /// returns `None`.
 const EIGEN_ITER_MAX: u32 = 64;
+/// Maximum length of [`ExactNumArray::fft`] / [`ExactNumArray::ifft`].
+const FFT_MAX_POINTS: usize = 4096;
 /// Bits of working precision reserved when a superdiagonal is compared to
 /// its neighboring diagonals.
 const SVD_CONV_GUARD_BITS: i32 = 4;
@@ -1216,6 +1218,22 @@ impl ExactNumArray {
         eigen_decomp_sym(self, p, rm)
     }
 
+    /// Radix-2 Cooley–Tukey DFT at `(p, rm, cc)`.
+    ///
+    /// A `(1, n)` or `(n, 1)` array is real. A `(2, n)` array is complex
+    /// (row 0 real, row 1 imaginary). `n` must be a power of two and at most
+    /// `FFT_MAX_POINTS`. Returns a `(2, n)` spectrum (unnormalized).
+    /// Empty, non-finite, or a bad shape returns `None`.
+    pub fn fft(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Option<Self> {
+        fft_dit(self, false, p, rm, cc)
+    }
+
+    /// Inverse radix-2 DFT at `(p, rm, cc)`. Same layout as [`Self::fft`].
+    /// The result is divided by `n` (unitary inverse of the unnormalized DFT).
+    pub fn ifft(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Option<Self> {
+        fft_dit(self, true, p, rm, cc)
+    }
+
     fn zip(&self, rhs: &Self, op: impl Fn(&ExactNum, &ExactNum) -> ExactNum) -> Option<Self> {
         if self.rows != rhs.rows || self.cols != rhs.cols {
             return None;
@@ -1855,6 +1873,122 @@ fn eigen_decomp_sym(
     ))
 }
 
+fn fft_from_len(n: usize, p: usize) -> ExactNum {
+    ExactNum::from_word(n as crate::defs::Word, p)
+}
+
+fn fft_bitrev(mut i: usize, logn: u32) -> usize {
+    let mut r = 0usize;
+    for _ in 0..logn {
+        r = (r << 1) | (i & 1);
+        i >>= 1;
+    }
+    r
+}
+
+fn fft_split(a: &ExactNumArray, p: usize, rm: RoundingMode) -> Option<(usize, Vec<ExactNum>, Vec<ExactNum>)> {
+    let (rows, cols) = a.shape();
+    let pack = |n: usize, re: Vec<ExactNum>, im: Vec<ExactNum>| -> Option<(usize, Vec<ExactNum>, Vec<ExactNum>)> {
+        if n == 0 || !n.is_power_of_two() || n > FFT_MAX_POINTS {
+            return None;
+        }
+        Some((n, re, im))
+    };
+    if rows == 2 && cols > 0 {
+        let mut re = Vec::with_capacity(cols);
+        let mut im = Vec::with_capacity(cols);
+        for j in 0..cols {
+            let r = svd_copy_prec(&a.vals[j], p, rm);
+            let i = svd_copy_prec(&a.vals[cols + j], p, rm);
+            if r.is_nan() || r.is_inf() || i.is_nan() || i.is_inf() {
+                return None;
+            }
+            re.push(r);
+            im.push(i);
+        }
+        pack(cols, re, im)
+    } else if (rows == 1 && cols > 0) || (cols == 1 && rows > 0) {
+        let n = a.vals.len();
+        let mut re = Vec::with_capacity(n);
+        for v in &a.vals {
+            let r = svd_copy_prec(v, p, rm);
+            if r.is_nan() || r.is_inf() {
+                return None;
+            }
+            re.push(r);
+        }
+        pack(n, re, alloc::vec![svd_zero(p); n])
+    } else {
+        None
+    }
+}
+
+fn fft_dit(
+    a: &ExactNumArray,
+    inverse: bool,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    let (n, mut re, mut im) = fft_split(a, p, rm)?;
+    let logn = n.trailing_zeros();
+    for i in 0..n {
+        let j = fft_bitrev(i, logn);
+        if j > i {
+            re.swap(i, j);
+            im.swap(i, j);
+        }
+    }
+    let two_pi = ExactNum::from_u8(2, p).mul(&cc.pi(p, rm), p, rm);
+    let mut m = 2usize;
+    while m <= n {
+        let ang = two_pi.div(&fft_from_len(m, p), p, rm);
+        let (sn, cs) = ang.sin_cos(p, rm, cc);
+        let wm_re = cs;
+        let wm_im = if inverse { sn } else { sn.neg() };
+        let half = m / 2;
+        let mut k = 0usize;
+        while k < n {
+            let mut w_re = svd_one(p);
+            let mut w_im = svd_zero(p);
+            for j in 0..half {
+                let t = k + j + half;
+                let u = k + j;
+                let tr = w_re.mul(&re[t], p, rm).sub(&w_im.mul(&im[t], p, rm), p, rm);
+                let ti = w_re.mul(&im[t], p, rm).add(&w_im.mul(&re[t], p, rm), p, rm);
+                let ur = re[u].clone();
+                let ui = im[u].clone();
+                re[u] = ur.add(&tr, p, rm);
+                im[u] = ui.add(&ti, p, rm);
+                re[t] = ur.sub(&tr, p, rm);
+                im[t] = ui.sub(&ti, p, rm);
+                let nr = w_re.mul(&wm_re, p, rm).sub(&w_im.mul(&wm_im, p, rm), p, rm);
+                let ni = w_re.mul(&wm_im, p, rm).add(&w_im.mul(&wm_re, p, rm), p, rm);
+                w_re = nr;
+                w_im = ni;
+            }
+            k += m;
+        }
+        m *= 2;
+    }
+    if inverse {
+        let inv_n = svd_one(p).div(&fft_from_len(n, p), p, rm);
+        for i in 0..n {
+            re[i] = re[i].mul(&inv_n, p, rm);
+            im[i] = im[i].mul(&inv_n, p, rm);
+        }
+    }
+    let mut vals = Vec::with_capacity(n.checked_mul(2)?);
+    vals.extend(re);
+    vals.extend(im);
+    Some(ExactNumArray {
+        p,
+        vals,
+        rows: 2,
+        cols: n,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2337,5 +2471,66 @@ mod tests {
                 assert!(near_num(av3.get2(i, j).unwrap(), vl3.get2(i, j).unwrap(), p));
             }
         }
+    }
+
+    #[test]
+    fn exact_fft_impulse_cosine_parseval() {
+        let p = 256;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let n = |k: u8| ExactNum::from_u8(k, p);
+        let impulse = ExactNumArray::from_values(p, &[n(1), n(0), n(0), n(0)]);
+        let spec = impulse.fft(p, rm, &mut cc).expect("FFT impulse");
+        assert_eq!(spec.shape(), (2, 4));
+        for j in 0..4 {
+            assert!(near_num(spec.get2(0, j).unwrap(), &n(1), p), "re[{j}]");
+            assert!(near_num(spec.get2(1, j).unwrap(), &n(0), p), "im[{j}]");
+        }
+
+        let n8 = ExactNum::from_u8(8, p);
+        let two_pi = n(2).mul(&cc.pi(p, rm), p, rm);
+        let mut cos_vals = Vec::with_capacity(8);
+        for k in 0..8u8 {
+            let kn = ExactNum::from_u8(k, p);
+            let ang = two_pi.mul(&kn, p, rm).div(&n8, p, rm);
+            cos_vals.push(ang.cos(p, rm, &mut cc));
+        }
+        let cosine = ExactNumArray::from_values(p, &cos_vals);
+        let cspec = cosine.fft(p, rm, &mut cc).expect("FFT cos");
+        let four = n(4);
+        let zero = n(0);
+        for j in 0..8 {
+            let re = cspec.get2(0, j).unwrap();
+            let im = cspec.get2(1, j).unwrap();
+            if j == 1 || j == 7 {
+                assert!(near_num(re, &four, p), "cos bin {j} re");
+            } else {
+                assert!(near_num(re, &zero, p), "cos bin {j} re");
+            }
+            assert!(near_num(im, &zero, p), "cos bin {j} im");
+        }
+
+        let back = cspec.ifft(p, rm, &mut cc).expect("IFFT");
+        for j in 0..8 {
+            assert!(near_num(back.get2(0, j).unwrap(), cosine.get(j).unwrap(), p));
+            assert!(near_num(back.get2(1, j).unwrap(), &zero, p));
+        }
+
+        let mut e_t = ExactNum::from_u8(0, p);
+        let mut e_f = ExactNum::from_u8(0, p);
+        for j in 0..8 {
+            let x = cosine.get(j).unwrap();
+            e_t = e_t.add(&x.mul(x, p, rm), p, rm);
+            let xr = cspec.get2(0, j).unwrap();
+            let xi = cspec.get2(1, j).unwrap();
+            e_f = e_f
+                .add(&xr.mul(xr, p, rm), p, rm)
+                .add(&xi.mul(xi, p, rm), p, rm);
+        }
+        let parseval = e_f.div(&n8, p, rm);
+        assert!(near_num(&parseval, &e_t, p));
+        assert!(ExactNumArray::from_values(p, &[n(1), n(2), n(3)])
+            .fft(p, rm, &mut cc)
+            .is_none());
     }
 }

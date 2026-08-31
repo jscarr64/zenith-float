@@ -50,7 +50,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 4.2 / 11.2 QR | ✅ | `qr_decomp` modified Gram–Schmidt; \(QR=A\); \(Q^\top Q=I\); rank-deficient zero diagonal |
 | 4.3 / 11.3 SVD | ✅ | `svd_decomp`; \(U\Sigma V^T=A\); \(U^\top U=V^\top V=I\); \(\operatorname{diag}(3,2)\); wide \(\sigma=(2,1)\) |
 | 4.4 / 11.4 eigen | ✅ | `eigen_decomp`; \(Av=\lambda v\); \(V\Lambda V^T=A\); \(\begin{pmatrix}2&1\\1&2\end{pmatrix}\to(3,1)\); non-symmetric `None` |
-| 4.5 / 11.5 FFT | ⬜ | |
+| 4.5 / 11.5 FFT | ✅ | `fft` / `ifft`; impulse `[1,0,0,0]→[1,1,1,1]`; cosine bins; IFFT; Parseval; `FFT_MAX_POINTS=4096` |
 | 5.1 / 18.1 Precision doc comments | ⬜ | |
 | 6.1 no_std / thumb | 🟡 | allocator `no_std` compiles; no `thumbv7em-none-eabihf` CI gold |
 | 7.1 / 20.1 Reproducibility.md | ⬜ | |
@@ -63,7 +63,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 10.3 `ziv_round_vec` | ⬜ | |
 | 12–17, 18.2–18.3, 19–20 | ⬜ | distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§4.5 multiprecision FFT**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§5.1 Precision doc comments**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -342,6 +342,8 @@ Golds:
 
 ### 4.5 Multiprecision FFT
 
+**Status:** done 2026-08-30 — `fft` / `ifft`; impulse, cosine bins, IFFT round-trip, Parseval. Cap `FFT_MAX_POINTS=4096`.
+
 **Prompt:**
 Implement a radix-2 Cooley-Tukey FFT on `ExactNumArray` (complex, length must be a power of 2) at explicit precision `(p, rm, cc)`. Twiddle factors computed from `ExactNum::sin_cos` at working precision. Software limbs only.
 
@@ -586,6 +588,8 @@ Golds:
 ---
 
 ### 11.5 Multiprecision FFT
+
+**Status:** done 2026-08-30 — same methods as §4.5 (`fft` / `ifft`). Do not implement twice.
 
 **Prompt:**
 Implement radix-2 Cooley-Tukey FFT on complex `ExactNumArray` (length power of 2) at explicit `(p, rm, cc)`. Twiddle factors from `ExactNum::sin_cos`. Cap `FFT_MAX_POINTS`.
