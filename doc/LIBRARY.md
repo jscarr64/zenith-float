@@ -121,7 +121,7 @@ From `zenith_float` / `zenith_float_num`:
 - Word/exponent constants listed in §3
 - `MAX_PREC_RETRY`, `INLINE_WORDS`
 - `NAN`, `INF_POS`, `INF_NEG`
-- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `ODE_MAX_STEPS`, `ODE_MIN_STEP`, `DSP_MAX_POINTS`, `IEEE_SIMD_LANE_WIDTH`, `POLLARD_RHO_ITER_MAX`, `BINARY_INLINE_LEN`, `BINARY_INLINE_MANT_BITS`, `BINARY_FORMAT_VERSION`, `BINARY_MAX_U32`, `BINARY_MAX_ELEMS`
+- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `ODE_MAX_STEPS`, `ODE_MIN_STEP`, `DSP_MAX_POINTS`, `IEEE_SIMD_LANE_WIDTH`, `POLLARD_RHO_ITER_MAX`, `BINARY_INLINE_LEN`, `BINARY_INLINE_MANT_BITS`, `BINARY_FORMAT_VERSION`, `BINARY_MAX_U32`, `BINARY_MAX_ELEMS`, `CSV_MAX_ROWS`, `CSV_MAX_COLS`
 - Feature `random`: `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED`, `RandomDist`
 
 Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` / `cexpr!` expansion (`check_exponent_range`, `check_complex_exponent_range`, `complex_cancel_bits`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.
@@ -151,6 +151,7 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | Modular `ExactInt` | `mod_pow` / `mod_inv` / `miller_rabin` / Brent `pollard_rho`. Zero modulus and non-units are `None`. Cap `POLLARD_RHO_ITER_MAX`. |
 | Hash | FIPS 180-4 `sha256`/`sha512`; HMAC-SHA-256; `constant_time_eq` always scans both slices. |
 | Binary I/O | `ExactNum` / `ExactNumArray`: `to_bytes` / `from_bytes` / `write_bytes`. Inline 16-byte big-endian record when the mantissa is ≤ `BINARY_INLINE_MANT_BITS` (`to_inline_bytes` / `write_inline_bytes` / `InlineBinaryBuffer`). Wider values use a heap record of `u32` limbs. Invalid input is `Err`, not a panic. |
+| CSV | `Ieee64Array` cells are unsigned binary64 bit patterns (empty / `nan` → `NAN`). `ExactNumArray` cells are `Display@p=` (`std`). `to_csv` / `from_csv` take a path; `to_csv_string` / `from_csv_str` are in-memory. Caps: `CSV_MAX_ROWS`, `CSV_MAX_COLS`. |
 
 These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `ExactNum` mul-then-add per term). No BLAS. Integer SIMD is not an FPU; a SIMD bit pattern that differs from the scalar kernel is a bug. `expr!` stays scalar.
 

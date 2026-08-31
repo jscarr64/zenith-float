@@ -75,6 +75,8 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `BINARY_FORMAT_VERSION` | `1` — first version byte of every record |
 | `BINARY_MAX_U32` | `65536` — max `u32` limbs in a heap record |
 | `BINARY_MAX_ELEMS` | `1048576` — max array elements in `from_bytes` |
+| `CSV_MAX_ROWS` | `1048576` — max data rows in `from_csv_str` |
+| `CSV_MAX_COLS` | `4096` — max columns in one CSV row |
 | `POLLARD_RHO_ITER_MAX` | `1048576` — `f` evaluations per `c` in Brent Pollard ρ |
 
 **Special values:** `+Inf`, `−Inf`, `NaN` (with optional `Error`), subnormals at `EXPONENT_MIN`. Public sentinels: `INF_POS`, `INF_NEG`, `NAN`.
@@ -270,6 +272,8 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | Modular `ExactInt` | ✅ | `mod_pow`/`mod_inv`/`miller_rabin`/`pollard_rho`; `2^{100} ≡ 976371285 (mod 10^9+7)`; `3^{-1}≡5 (mod 7)`; `2^{31}−1` prime; `8051=83×97` |
 | Hash / HMAC | ✅ | `sha256`/`sha512`/`hmac_sha256`/`constant_time_eq`; empty and `abc` FIPS vectors; RFC 4231 HMAC TC1 |
 | Binary interchange | ✅ | `to_inline_bytes` / `write_bytes` / `to_bytes` / `from_bytes`; 16-byte BE inline; heap `u32` limbs; array shape; invalid → `Err` |
+| CSV | ✅ | `Ieee64Array` / `ExactNumArray` `to_csv` / `from_csv`; cells are binary64 bit integers or `Display@p=`; empty → `NAN` |
+| HDF5 | ⬜ | Leftover. No C `libhdf5`. Own contiguous subset only, if ever |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
@@ -541,11 +545,11 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§17.3 HDF5 and CSV I/O**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§18.2 HELP.md rewrite**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §17.3 | HDF5 / CSV array I/O |
+| §17.3 leftover | HDF5: own contiguous subset, not `libhdf5` / not a general crate |
 | §2.4 leftover | SIMD div/sqrt/fma |
 | §6.1 leftover | `thumbv7em-none-eabi` / `eabihf` CI; `lazy_static` still needs `std` |
 | §18.2–§19, §20.2 | HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
@@ -556,7 +560,7 @@ Not a second product. First open implementation slice is **§17.3 HDF5 and CSV I
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange; CSV. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 

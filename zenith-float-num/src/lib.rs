@@ -28,6 +28,7 @@ mod complex_elliptic;
 mod complex_hypergeom;
 mod complex_special;
 mod conv;
+mod csvfmt;
 pub mod ctx;
 mod defs;
 mod dist;
@@ -162,6 +163,8 @@ pub use crate::defs::WORD_MAX;
 pub use crate::defs::WORD_SIGNIFICANT_BIT;
 
 pub use crate::common::util::MAX_PREC_RETRY;
+pub use crate::csvfmt::CSV_MAX_COLS;
+pub use crate::csvfmt::CSV_MAX_ROWS;
 
 #[cfg(feature = "random")]
 pub use crate::common::test_rng::{random_seed, reseed_random, seeded_random, DEFAULT_RANDOM_SEED};

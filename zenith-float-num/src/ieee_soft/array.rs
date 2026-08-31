@@ -498,6 +498,16 @@ macro_rules! ieee_array_specials {
 ieee_array_specials!(Ieee32Array, Ieee32, 64);
 ieee_array_specials!(Ieee64Array, Ieee64, 128);
 
+impl Ieee64Array {
+    pub(crate) fn from_parts(rows: usize, cols: usize, bits: Vec<u64>) -> Result<Self, Error> {
+        let n = rows.checked_mul(cols).ok_or(Error::InvalidArgument)?;
+        if n != bits.len() {
+            return Err(Error::InvalidArgument);
+        }
+        Ok(Self { bits, rows, cols })
+    }
+}
+
 macro_rules! exact_arr_p_rm_cc {
     ($($name:ident),+ $(,)?) => {
         $(

@@ -75,9 +75,11 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 16.2 hash functions | ✅ | `sha256("")` / `sha256("abc")` FIPS vectors; HMAC-SHA-256 RFC 4231 TC1; `constant_time_eq` independent of first-difference index |
 | 17.1 serde | ✅ | `ExactRational` `1/3` round-trip with `@p=`; `ExactNumArray` keeps `p`; Ieee64 bits; shape mismatch `Err` |
 | 17.2 binary format | ✅ | 16-byte BE inline; heap `u32` limbs; NaN flag `0x0A`; array shape; invalid → `Err`; `u32::MAX+1=2^{32}` at `p=64` |
-| 17.3, 18.2–18.3, 19–20 | ⬜ | HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 17.3 CSV | ✅ | 100×3 `Ieee64Array` bit round-trip; empty cell → `NAN`; extra column `Err`; `CSV_MAX_ROWS` / `CSV_MAX_COLS` |
+| 17.3 HDF5 leftover | ⬜ | No `libhdf5`. Own contiguous subset later, not a general HDF5 crate |
+| 18.2–18.3, 19–20 | ⬜ | HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§17.3 HDF5 and CSV I/O**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§18.2 HELP.md rewrite** (HDF5 is a leftover, not the next ⬜).
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -947,6 +949,8 @@ Golds:
 ---
 
 ### 17.3 HDF5 and CSV I/O for arrays
+
+**Status:** partial 2026-08-30 — pure-Rust CSV done. HDF5 is leftover: do not link `libhdf5`. A zenith-owned contiguous subset (superblock + one dataset of §17.2 records or binary64 bits) is the only path if we need `.h5` later. A general HDF5 library is out of scope.
 
 **Prompt:**
 Implement I/O for `ExactNumArray` and `Ieee64Array`:
