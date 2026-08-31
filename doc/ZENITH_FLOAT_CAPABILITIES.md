@@ -69,6 +69,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `ODE_MAX_STEPS` | `65536` — accepted-step cap for RK4 / RK45 / Euler |
 | `ODE_MIN_STEP` | `−256` — minimum RK45 step exponent (`h_min = 2^{ODE_MIN_STEP}`) |
 | `DSP_MAX_POINTS` | `2048` — max real length for `dct`/`idct`/`dst`/`idst` (`2N`-point FFT) |
+| `POLLARD_RHO_ITER_MAX` | `1048576` — `f` evaluations per `c` in Brent Pollard ρ |
 
 **Special values:** `+Inf`, `−Inf`, `NaN` (with optional `Error`), subnormals at `EXPONENT_MIN`. Public sentinels: `INF_POS`, `INF_NEG`, `NAN`.
 
@@ -260,6 +261,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | ODE solvers | ✅ | `rk4` / `rk45_adaptive` (Dormand–Prince 5(4)) / `euler`; `y'=-y` RK4 1000-step error `<10^{-12}`; RK45 `atol=10^{-12}`; Euler error shrinks when `h` halves |
 | Discrete transforms | ✅ | `dct`/`idct` (type II / III); `dst`/`idst`; `fft_real`/`ifft_real`; `idct(dct(x))=x`; constant → DC only; cosine energy at `k` and `N-k`; Parseval |
 | Window functions | ✅ | Symmetric Hann / Hamming / Blackman; Kaiser `I_0`; rectangular. `hann(4)=[0,3/4,3/4,0]`; Hamming ends `0.08`; Kaiser `β=0` is ones |
+| Modular `ExactInt` | ✅ | `mod_pow`/`mod_inv`/`miller_rabin`/`pollard_rho`; `2^{100} ≡ 976371285 (mod 10^9+7)`; `3^{-1}≡5 (mod 7)`; `2^{31}−1` prime; `8051=83×97` |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
@@ -526,14 +528,14 @@ These are design decisions, not a backlog:
 
 ## 25. Leftovers (this crate — walk the build plan)
 
-Not a second product. First open implementation slice is **§16.1 modular arithmetic**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
+Not a second product. First open implementation slice is **§16.2 hash functions**. Partial rows (SIMD div/sqrt/fma, thumb CI, `expr!` composite golds) stay 🟡 until their golds land.
 
 | Plan | Item |
 | --- | --- |
-| §16.1 | Modular arithmetic on `ExactInt` |
+| §16.2 | SHA-256 / SHA-512 / HMAC / constant-time eq |
 | §2.4 leftover | SIMD div/sqrt/fma; `IEEE_SIMD_LANE_WIDTH` |
 | §6.1 leftover | `thumbv7em-none-eabihf` CI gold |
-| §16.2–§17, §18.2–§19, §20.2 | Hash, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| §17, §18.2–§19, §20.2 | Serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
 ---
 
@@ -541,7 +543,7 @@ Not a second product. First open implementation slice is **§16.1 modular arithm
 
 | Version | Date | Changes |
 | --- | --- | --- |
-| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
+| 0.1.0 | 2026-08-30 | Living inventory. Complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---
 
