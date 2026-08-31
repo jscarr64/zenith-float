@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Quadrature: `gauss_legendre`, `tanh_sinh`, `gauss_laguerre`, `gauss_hermite`. Golds: \(x^2\) on \([-1,1]\) is \(2/3\); 20-point \(x^{38}\) is \(2/39\); \(1/\sqrt{1-x^2}=\pi\); Laguerre \(x^2=\Gamma(3)=2\); Hermite \(1=\sqrt{\pi}\).
 - Orthogonal polynomials: `hermite_he`/`hermite_h`, `laguerre`/`gen_laguerre`, `chebyshev_t`/`chebyshev_u`, `gegenbauer`. Golds: `He_4(0)=3`, `L_3(0)=1`, `T_5(cos(π/5))=-1`, `C_2^{(1)}=4x²−1=U_2`, `2C_2^{(1/2)}=3x²−1`, `T_6=2xT_5−T_4`. `ORTHOPOLY_N_MAX=256`.
 - Chebyshev interpolation: `chebyshev_coeffs` / `chebyshev_eval` / `clenshaw` / `chebyshev_error_bound`. `exp` on `[-1,1]` with 20 terms error `< 10^{-15}`; Clenshaw of `[1,2,3]` at `1/2` is `1/2`; `CHEBYSHEV_MAX_DEGREE=256`.
 - `ExactNumPoly` — dense univariate (low-to-high coeffs); `div_rem(x²−1, x−1)=(x+1, 0)`; `gcd=x−1`; `compose(x², x+1)=x²+2x+1`; `∂(x³)=3x²`; `roots_real(x²−2)=±√2` (companion closed form through `POLY_COMPANION_CLOSED_DEG=2`).

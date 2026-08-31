@@ -122,6 +122,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `ExactNumPoly` | — | ✅ | Dense univariate; `(x²−1)÷(x−1)=(x+1,0)`; `gcd=x−1`; compose; `∂(x³)=3x²`; `±√2` |
 | Chebyshev | — | ✅ | `chebyshev_coeffs`/`eval`/`clenshaw`; `exp` 20 terms `<10^{-15}`; Clenshaw `[1,2,3](½)=½` |
 | Orthogonal polys | — | ✅ | `He_4(0)=3`; `L_3(0)=1`; `T_5(cos(π/5))=-1`; `C_2^{(1)}=4x²−1`; `T_6=2xT_5−T_4` |
+| Quadrature | — | ✅ | GL \(x^2\to 2/3\); 20-pt \(x^{38}\to 2/39\); tanh–sinh \(1/\sqrt{1-x^2}=\pi\); Laguerre \(x^2=2\) |
 | `parse_exact` / `format_exact` | — | ✅ | Rational `0.1=1/10`; dyadic `ExactNum` `0.5`/`0.125`; `1.5e3=1500` |
 | Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |
 

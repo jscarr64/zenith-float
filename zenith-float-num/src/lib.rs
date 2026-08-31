@@ -39,6 +39,7 @@ mod ops;
 mod orthopoly;
 mod parser;
 mod poly;
+mod quadrature;
 mod radix_float;
 #[cfg(any(test, feature = "random"))]
 mod random_dist;
@@ -84,6 +85,12 @@ pub use crate::ops::consts::SharedConsts;
 pub use crate::orthopoly::ORTHOPOLY_N_MAX;
 pub use crate::poly::ExactNumPoly;
 pub use crate::poly::POLY_COMPANION_CLOSED_DEG;
+pub use crate::quadrature::gauss_hermite;
+pub use crate::quadrature::gauss_laguerre;
+pub use crate::quadrature::gauss_legendre;
+pub use crate::quadrature::tanh_sinh;
+pub use crate::quadrature::QUADRATURE_MAX_NODES;
+pub use crate::quadrature::TANH_SINH_LEVELS_MAX;
 pub use crate::radix_float::RadixFloat;
 #[cfg(any(test, feature = "random"))]
 pub use crate::random_dist::RandomDist;
