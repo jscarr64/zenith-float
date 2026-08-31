@@ -125,6 +125,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | Quadrature | — | ✅ | GL \(x^2\to 2/3\); 20-pt \(x^{38}\to 2/39\); tanh–sinh \(1/\sqrt{1-x^2}=\pi\); Laguerre \(x^2=2\) |
 | Root finding | — | ✅ | `bisect(sin,[3,4])=π`; `newton(x²−2)=√2`; Brent fewer iters; no sign change `None` |
 | ODE solvers | — | ✅ | RK4 `y'=-y` error `<10^{-12}`; RK45 `atol=10^{-12}`; Euler `O(h)` |
+| Discrete transforms | — | ✅ | `idct(dct(x))=x`; constant DCT is DC; `fft_real` cosine bins; Parseval |
 | `parse_exact` / `format_exact` | — | ✅ | Rational `0.1=1/10`; dyadic `ExactNum` `0.5`/`0.125`; `1.5e3=1500` |
 | Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |
 

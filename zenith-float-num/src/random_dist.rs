@@ -9,9 +9,6 @@ use crate::RoundingMode;
 use crate::Word;
 use crate::NAN;
 
-/// Named sample count for the exponential-mean gold.
-const RANDOM_EXP_MEAN_SAMPLES: usize = 10_000;
-
 fn dist_nan() -> ExactNum {
     ExactNum::nan(Some(Error::InvalidArgument))
 }
@@ -122,6 +119,9 @@ mod tests {
     use super::*;
     use crate::common::test_rng::reseed_random;
     use crate::ExactNumArray;
+
+    /// Named sample count for the exponential-mean gold.
+    const RANDOM_EXP_MEAN_SAMPLES: usize = 10_000;
 
     #[test]
     fn random_dist_plan_golds() {
