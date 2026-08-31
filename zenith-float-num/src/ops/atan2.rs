@@ -149,7 +149,14 @@ mod tests {
         let a3 = ny.atan2(&nx, p, rm, &mut cc).unwrap();
         let three_q_neg = three_q.neg().unwrap();
         eps.set_exponent(a3.exponent() - p as crate::Exponent + 4);
-        assert!(a3.sub(&three_q_neg, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
+        assert!(
+            a3.sub(&three_q_neg, p, rm)
+                .unwrap()
+                .abs()
+                .unwrap()
+                .cmp(&eps)
+                < 0
+        );
         assert!(a3.is_negative());
 
         for _ in 0..30 {

@@ -44,11 +44,7 @@ pub(super) fn from_exact(x: &ExactNum, f: Format) -> u64 {
         return pack_inf(x.is_negative(), f);
     }
     if x.is_zero() {
-        return if x.is_negative() {
-            f.sign_mask()
-        } else {
-            0
-        };
+        return if x.is_negative() { f.sign_mask() } else { 0 };
     }
     let words = match x.mantissa_digits() {
         Some(w) if !w.is_empty() => w,
@@ -56,11 +52,7 @@ pub(super) fn from_exact(x: &ExactNum, f: Format) -> u64 {
     };
     let (top, sticky) = top64_sticky(words);
     if top == 0 {
-        return if x.is_negative() {
-            f.sign_mask()
-        } else {
-            0
-        };
+        return if x.is_negative() { f.sign_mask() } else { 0 };
     }
     let lz = top.leading_zeros();
     let aligned = top << lz;
@@ -94,11 +86,7 @@ fn top64_sticky(words: &[Word]) -> (u64, bool) {
             break;
         }
     }
-    let top = if got >= 64 {
-        (acc >> (got - 64)) as u64
-    } else {
-        acc as u64
-    };
+    let top = if got >= 64 { (acc >> (got - 64)) as u64 } else { acc as u64 };
     let take = (64u32).div_ceil(WORD_BIT_SIZE as u32) as usize;
     let sticky = words
         .iter()
@@ -107,4 +95,3 @@ fn top64_sticky(words: &[Word]) -> (u64, bool) {
         .any(|&w| w != 0);
     (top, sticky)
 }
-

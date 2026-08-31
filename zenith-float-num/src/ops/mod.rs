@@ -1,8 +1,8 @@
 //! High-level operations on the numbers.
 
-mod airy;
 mod acos;
 mod acosh;
+mod airy;
 mod asin;
 mod asinh;
 mod atan;

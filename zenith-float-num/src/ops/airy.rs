@@ -106,15 +106,21 @@ impl ExactNumNumber {
             let k3 = Self::from_word((3 * k) as Word, p)?;
             let k3m1 = Self::from_word((3 * k - 1) as Word, p)?;
             let k3p1 = Self::from_word((3 * k + 1) as Word, p)?;
-            tf = tf
-                .mul(&x3, p, RoundingMode::None)?
-                .div(&k3.mul(&k3m1, p, RoundingMode::None)?, p, RoundingMode::None)?;
+            tf = tf.mul(&x3, p, RoundingMode::None)?.div(
+                &k3.mul(&k3m1, p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?;
             f = f.add(&tf, p, RoundingMode::None)?;
-            let dtf = tf.mul(&k3, p, RoundingMode::None)?.div(self, p, RoundingMode::None)?;
+            let dtf = tf
+                .mul(&k3, p, RoundingMode::None)?
+                .div(self, p, RoundingMode::None)?;
             fp = fp.add(&dtf, p, RoundingMode::None)?;
-            tg = tg
-                .mul(&x3, p, RoundingMode::None)?
-                .div(&k3p1.mul(&k3, p, RoundingMode::None)?, p, RoundingMode::None)?;
+            tg = tg.mul(&x3, p, RoundingMode::None)?.div(
+                &k3p1.mul(&k3, p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?;
             g = g.add(&tg, p, RoundingMode::None)?;
             let dtg = tg
                 .mul(&k3p1, p, RoundingMode::None)?
@@ -142,17 +148,19 @@ impl ExactNumNumber {
             .mul(&pi_m12, p, RoundingMode::None)?
             .mul(&x_m14, p, RoundingMode::None)?
             .mul(&exp_m, p, RoundingMode::None)?;
-        let pre_bi = pi_m12
-            .mul(&x_m14, p, RoundingMode::None)?
-            .mul(&exp_p, p, RoundingMode::None)?;
+        let pre_bi =
+            pi_m12
+                .mul(&x_m14, p, RoundingMode::None)?
+                .mul(&exp_p, p, RoundingMode::None)?;
         let pre_aip = half
             .mul(&pi_m12, p, RoundingMode::None)?
             .mul(&x14, p, RoundingMode::None)?
             .mul(&exp_m, p, RoundingMode::None)?
             .neg()?;
-        let pre_bip = pi_m12
-            .mul(&x14, p, RoundingMode::None)?
-            .mul(&exp_p, p, RoundingMode::None)?;
+        let pre_bip =
+            pi_m12
+                .mul(&x14, p, RoundingMode::None)?
+                .mul(&exp_p, p, RoundingMode::None)?;
         Ok((
             pre_ai.mul(&su, p, RoundingMode::None)?,
             pre_bi.mul(&tu, p, RoundingMode::None)?,
@@ -176,31 +184,43 @@ impl ExactNumNumber {
         let amp_p = pi_m12.mul(&z14, p, RoundingMode::None)?;
         // Ai(-z) ~ π^{-1/2} z^{-1/4} (sin χ P − cos χ Q)
         let ai = amp.mul(
-            &s.mul(&p_even, p, RoundingMode::None)?
-                .sub(&c.mul(&q_odd, p, RoundingMode::None)?, p, RoundingMode::None)?,
+            &s.mul(&p_even, p, RoundingMode::None)?.sub(
+                &c.mul(&q_odd, p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?,
             p,
             RoundingMode::None,
         )?;
         // Bi(-z) ~ π^{-1/2} z^{-1/4} (cos χ P + sin χ Q)
         let bi = amp.mul(
-            &c.mul(&p_even, p, RoundingMode::None)?
-                .add(&s.mul(&q_odd, p, RoundingMode::None)?, p, RoundingMode::None)?,
+            &c.mul(&p_even, p, RoundingMode::None)?.add(
+                &s.mul(&q_odd, p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?,
             p,
             RoundingMode::None,
         )?;
         // Ai'(-z) ~ −π^{-1/2} z^{1/4} (cos χ R + sin χ S)
         let aip = amp_p
             .mul(
-                &c.mul(&r_even, p, RoundingMode::None)?
-                    .add(&s.mul(&s_odd, p, RoundingMode::None)?, p, RoundingMode::None)?,
+                &c.mul(&r_even, p, RoundingMode::None)?.add(
+                    &s.mul(&s_odd, p, RoundingMode::None)?,
+                    p,
+                    RoundingMode::None,
+                )?,
                 p,
                 RoundingMode::None,
             )?
             .neg()?;
         // Bi'(-z) ~ π^{-1/2} z^{1/4} (sin χ R − cos χ S)
         let bip = amp_p.mul(
-            &s.mul(&r_even, p, RoundingMode::None)?
-                .sub(&c.mul(&s_odd, p, RoundingMode::None)?, p, RoundingMode::None)?,
+            &s.mul(&r_even, p, RoundingMode::None)?.sub(
+                &c.mul(&s_odd, p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?,
             p,
             RoundingMode::None,
         )?;
@@ -208,11 +228,7 @@ impl ExactNumNumber {
     }
 
     /// \(\xi=(2/3)x^{3/2}\), \(x^{1/4}\), \(x^{-1/4}\), \(\pi^{-1/2}\) for \(x>0\).
-    fn airy_xi_scales(
-        &self,
-        p: usize,
-        cc: &mut Consts,
-    ) -> Result<(Self, Self, Self, Self), Error> {
+    fn airy_xi_scales(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self, Self, Self), Error> {
         let two = Self::from_word(2, p)?;
         let three = Self::from_word(3, p)?;
         let sx = self.sqrt(p, RoundingMode::None)?;
@@ -277,15 +293,31 @@ fn combine_fg(
     fp: &ExactNumNumber,
     gp: &ExactNumNumber,
     p: usize,
-) -> Result<(ExactNumNumber, ExactNumNumber, ExactNumNumber, ExactNumNumber), Error> {
+) -> Result<
+    (
+        ExactNumNumber,
+        ExactNumNumber,
+        ExactNumNumber,
+        ExactNumNumber,
+    ),
+    Error,
+> {
     let c1f = c1.mul(f, p, RoundingMode::None)?;
     let c2g = c2.mul(g, p, RoundingMode::None)?;
     let c1fp = c1.mul(fp, p, RoundingMode::None)?;
     let c2gp = c2.mul(gp, p, RoundingMode::None)?;
     let ai = c1f.sub(&c2g, p, RoundingMode::None)?;
-    let bi = sqrt3.mul(&c1f.add(&c2g, p, RoundingMode::None)?, p, RoundingMode::None)?;
+    let bi = sqrt3.mul(
+        &c1f.add(&c2g, p, RoundingMode::None)?,
+        p,
+        RoundingMode::None,
+    )?;
     let aip = c1fp.sub(&c2gp, p, RoundingMode::None)?;
-    let bip = sqrt3.mul(&c1fp.add(&c2gp, p, RoundingMode::None)?, p, RoundingMode::None)?;
+    let bip = sqrt3.mul(
+        &c1fp.add(&c2gp, p, RoundingMode::None)?,
+        p,
+        RoundingMode::None,
+    )?;
     Ok((ai, bi, aip, bip))
 }
 
@@ -303,18 +335,19 @@ fn airy_uv_sums(
     let mut xi_pow = xi.clone()?;
     let cap = p.saturating_add(8);
     for k in 1..=cap {
-        let num = ExactNumNumber::from_word((6 * k - 5) as Word, p)?
-            .mul(
-                &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
-                p,
-                RoundingMode::None,
-            )?;
+        let num = ExactNumNumber::from_word((6 * k - 5) as Word, p)?.mul(
+            &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
+            p,
+            RoundingMode::None,
+        )?;
         let den = ExactNumNumber::from_word(72, p)?.mul(
             &ExactNumNumber::from_word(k as Word, p)?,
             p,
             RoundingMode::None,
         )?;
-        u = u.mul(&num, p, RoundingMode::None)?.div(&den, p, RoundingMode::None)?;
+        u = u
+            .mul(&num, p, RoundingMode::None)?
+            .div(&den, p, RoundingMode::None)?;
         let mut tu = u.div(&xi_pow, p, RoundingMode::None)?;
         let vfac = ExactNumNumber::from_word((6 * k + 1) as Word, p)?.div(
             &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
@@ -355,18 +388,19 @@ fn airy_pq_sums(
     let mut zpow = ExactNumNumber::from_word(1, p)?;
     let cap = p.saturating_add(8);
     for k in 1..=cap {
-        let num = ExactNumNumber::from_word((6 * k - 5) as Word, p)?
-            .mul(
-                &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
-                p,
-                RoundingMode::None,
-            )?;
+        let num = ExactNumNumber::from_word((6 * k - 5) as Word, p)?.mul(
+            &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
+            p,
+            RoundingMode::None,
+        )?;
         let den = ExactNumNumber::from_word(72, p)?.mul(
             &ExactNumNumber::from_word(k as Word, p)?,
             p,
             RoundingMode::None,
         )?;
-        u = u.mul(&num, p, RoundingMode::None)?.div(&den, p, RoundingMode::None)?;
+        u = u
+            .mul(&num, p, RoundingMode::None)?
+            .div(&den, p, RoundingMode::None)?;
         zpow = zpow.mul(zeta, p, RoundingMode::None)?;
         let mut t = u.div(&zpow, p, RoundingMode::None)?;
         if use_v {
@@ -460,7 +494,11 @@ mod tests {
         let wr = ai
             .mul(&bip, p, RoundingMode::None)
             .unwrap()
-            .sub(&aip.mul(&bi, p, RoundingMode::None).unwrap(), p, RoundingMode::None)
+            .sub(
+                &aip.mul(&bi, p, RoundingMode::None).unwrap(),
+                p,
+                RoundingMode::None,
+            )
             .unwrap();
         let pi = cc.pi_num(p, RoundingMode::None).unwrap();
         let wr_want = ExactNumNumber::from_word(1, p)
@@ -477,7 +515,11 @@ mod tests {
             let bip = xm.bi_prime(p, rm, &mut cc).unwrap();
             ai.mul(&bip, p, RoundingMode::None)
                 .unwrap()
-                .sub(&aip.mul(&bi, p, RoundingMode::None).unwrap(), p, RoundingMode::None)
+                .sub(
+                    &aip.mul(&bi, p, RoundingMode::None).unwrap(),
+                    p,
+                    RoundingMode::None,
+                )
                 .unwrap()
         };
         bits_agree(&wrn, &wr_want, p, 40, "Wronskian at x=-1");
@@ -497,8 +539,12 @@ mod tests {
             .sub(&xm.ai_prime(p, rm, &mut cc).unwrap(), p, RoundingMode::None)
             .unwrap()
             .div(
-                &h.mul(&ExactNumNumber::from_word(2, p).unwrap(), p, RoundingMode::None)
-                    .unwrap(),
+                &h.mul(
+                    &ExactNumNumber::from_word(2, p).unwrap(),
+                    p,
+                    RoundingMode::None,
+                )
+                .unwrap(),
                 p,
                 RoundingMode::None,
             )
