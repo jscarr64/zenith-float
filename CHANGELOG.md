@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- ODE solvers: `rk4`, `rk45_adaptive` (Dormand–Prince 5(4)), `euler`. Golds: `y'=-y` RK4 1000-step error `<10^{-12}`; RK45 meets `atol=10^{-12}`; Euler 1000 vs 2000 is `O(h)`.
 - Root finding: `bisect`, `newton`, `brent`, `illinois`. Golds: `bisect(sin,[3,4])=π`; `newton(x²−2)=√2`; Brent fewer iterations than bisection; `bisect(sin,[0,1])=None`.
 - Quadrature: `gauss_legendre`, `tanh_sinh`, `gauss_laguerre`, `gauss_hermite`. Golds: \(x^2\) on \([-1,1]\) is \(2/3\); 20-point \(x^{38}\) is \(2/39\); \(1/\sqrt{1-x^2}=\pi\); Laguerre \(x^2=\Gamma(3)=2\); Hermite \(1=\sqrt{\pi}\).
 - Orthogonal polynomials: `hermite_he`/`hermite_h`, `laguerre`/`gen_laguerre`, `chebyshev_t`/`chebyshev_u`, `gegenbauer`. Golds: `He_4(0)=3`, `L_3(0)=1`, `T_5(cos(π/5))=-1`, `C_2^{(1)}=4x²−1=U_2`, `2C_2^{(1/2)}=3x²−1`, `T_6=2xT_5−T_4`. `ORTHOPOLY_N_MAX=256`.

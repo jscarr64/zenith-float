@@ -68,9 +68,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 13.3 orthogonal polys | ✅ | `He_4(0)=3`; `L_3(0)=1`; `T_5(cos(π/5))=-1`; `C_2^{(1)}=U_2=4x²−1`; `2C_2^{(1/2)}=3x²−1`; `T_6=2xT_5−T_4` |
 | 14.1 quadrature | ✅ | GL `x²` on `[-1,1]` is `2/3`; 20-point `x^{38}` is `2/39`; tanh–sinh `1/√(1-x²)=π`; Laguerre `x²` is `2`; Hermite `1` is `√π` |
 | 14.2 root finding | ✅ | `bisect(sin,[3,4])=π`; `newton(x²−2)=√2`; `brent` fewer iters than bisection; `bisect(sin,[0,1])=None` |
-| 14.3–17, 18.2–18.3, 19–20 | ⬜ | ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
+| 14.3 ODE | ✅ | RK4 `y'=-y` 1000 steps error `<10^{-12}`; RK45 meets `atol=10^{-12}`; Euler 1000 vs 2000 is `O(h)`. Plan 50 decimals / `1e-50` need more steps than `ODE_MAX_STEPS` |
+| 15–17, 18.2–18.3, 19–20 | ⬜ | DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§14.3 ODE solvers**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§15.1 discrete transforms**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -788,6 +789,8 @@ Golds:
 ---
 
 ### 14.3 ODE solvers at arbitrary precision
+
+**Status:** done 2026-08-30 — `ode.rs`; `ODE_MAX_STEPS=65536`; `ODE_MIN_STEP=-256`. RK4 1000-step global error is `O(h^4)≈10^{-12}`, not 50 decimals. Adaptive `atol=10^{-50}` on `[0,1]` needs ~10¹² steps.
 
 **Prompt:**
 Implement ODE solvers at arbitrary precision for `ExactNum`:

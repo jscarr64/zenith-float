@@ -106,6 +106,7 @@ From `zenith_float` / `zenith_float_num`:
 - `chebyshev_coeffs`, `chebyshev_eval`, `chebyshev_error_bound`, `clenshaw`
 - `gauss_legendre`, `tanh_sinh`, `gauss_laguerre`, `gauss_hermite`
 - `bisect`, `newton`, `brent`, `illinois`, `root_default_tol`
+- `rk4`, `rk45_adaptive`, `euler`, `ode_min_step`
 - `Ieee32`, `Ieee64`, `Ieee32Array`, `Ieee64Array`, `ExactNumArray`
 - `Consts`, `ConstCache` (alias of `Consts`), `ConstCacheInfo`, `CachedFBig`, `SharedConsts` (`std` only)
 - `Context` (module `zenith_float::ctx`), trait `Contextable`
@@ -116,7 +117,7 @@ From `zenith_float` / `zenith_float_num`:
 - Word/exponent constants listed in §3
 - `MAX_PREC_RETRY`, `INLINE_WORDS`
 - `NAN`, `INF_POS`, `INF_NEG`
-- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`
+- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `ODE_MAX_STEPS`, `ODE_MIN_STEP`
 - Feature `random`: `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED`, `RandomDist`
 
 Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` / `cexpr!` expansion (`check_exponent_range`, `check_complex_exponent_range`, `complex_cancel_bits`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.
@@ -141,6 +142,7 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | Orthogonal polys | `ExactNum::{hermite_he,hermite_h,laguerre,gen_laguerre,chebyshev_t,chebyshev_u,gegenbauer}(n, …)` via three-term recurrences. `n ≤ ORTHOPOLY_N_MAX`. Standard Gegenbauer `C_n^{(λ)}` (`C_n^{(1/2)}=P_n`, `C_n^{(1)}=U_n`). |
 | Quadrature | `gauss_legendre(f,a,b,n,…)`; `tanh_sinh(f,a,b,…)`; `gauss_laguerre(f,n,…)`; `gauss_hermite(f,n,…)`. `n ≤ QUADRATURE_MAX_NODES`. Tanh–sinh uses `h=2π/(p ln 2)` and up to `TANH_SINH_LEVELS_MAX` halvings. |
 | Root finding | `bisect`/`newton`/`brent`/`illinois` on `ExactNum`. Opposite signs required for bracket methods (`None` otherwise). `ROOT_MAX_ITER=256`; `root_default_tol` is `2^{ROOT_DEFAULT_TOL}`. |
+| ODE | `rk4`/`rk45_adaptive`/`euler` return `(t, y)` row `ExactNumArray`s. Dormand–Prince 5(4) with `atol`/`rtol`; `h_min=2^{ODE_MIN_STEP}`; cap `ODE_MAX_STEPS`. |
 
 These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `ExactNum` mul-then-add per term). No BLAS. Integer SIMD is not an FPU; a SIMD bit pattern that differs from the scalar kernel is a bug. `expr!` stays scalar.
 
