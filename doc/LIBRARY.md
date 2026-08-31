@@ -28,7 +28,7 @@ License: MIT OR Apache-2.0.
 | `std` | yes | `Display` / radix format traits, `FromStr`, `std::error::Error` for `Error`, `SharedConsts`, serde when `serde` is on. |
 | `random` | no | `random_uniform` / `random_gaussian` / `random_exponential` / `random_fill`; existing `random_normal(p, exp_from, exp_to)` mantissa draw; `seeded_random`, `reseed_random`. |
 | `serde` | no | `Serialize` / `Deserialize` for `ExactNum` / `ExactComplex` / `ExactRational` / `ExactInt` / arrays / `Ball`. Decimal strings carry `@p=`. Implies `std`. |
-| `mpfr-tests` | no | Optional MPFR comparison tests in the kernel crate (Linux x86_64, `rug`). Not a runtime math engine. |
+| `mpfr-tests` | no | Optional MPFR / GMP comparison tests in the kernel crate (Linux x86_64, `rug`). Not a runtime math engine. |
 
 ---
 

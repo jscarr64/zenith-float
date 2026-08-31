@@ -32,7 +32,7 @@ name = "radix_roundtrip"
 required-features = ["random"]
 
 [target.'cfg(all(target_arch = "x86_64", target_os = "linux"))'.dev-dependencies]
-rug = { version = "~1.20.0", features = ["float", "rand"] }
+rug = { version = "~1.20.0", features = ["float", "rand", "integer", "rational"] }
 gmp-mpfr-sys = { version = "~1.6.0", features = [] }
 
 [dependencies]

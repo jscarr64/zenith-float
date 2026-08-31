@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `mpfr-tests`: GMP oracle for `ExactRational`; real-axis complex `erf`/`Γ`/`Ai`/`J_n` vs MPFR; `mpfr_gamma_inc`; identity golds where GNU MPFR/MPC have no function. GNU MPC 1.3 has no `erf`/`gamma`/Bessel and is not used.
 - `HELP.md` rewritten as the user guide: precision model, rounding, `Consts`, macros vs methods, 30 recipes, mistakes, FAQ.
 - `GETTING_STARTED.md` covers software IEEE, arrays, `(p, rm, cc)` specials, `ExactRational`/`ExactInt`, `cexpr!` cuts, and `Ball`.
 - CSV for `Ieee64Array` / `ExactNumArray`: bit-pattern cells (empty → `NAN`); `Display@p=` for exact arrays. Golds: 100×3 bit round-trip; missing cell is `NAN`; extra column `Err`.

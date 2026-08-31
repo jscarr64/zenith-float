@@ -1902,7 +1902,7 @@ impl ExactNum {
 - Algorithm: Taylor series when `|x|.exponent() ≤ 2`; complementary asymptotic otherwise. Saturates to `±1` when `2|e| > p+4`.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on `|x| ≲ 4`.
 - Thresholds: exponent cut `≤ 2` (not a named constant).
-- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`.",
+- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`. Complex `erf` on the real axis uses the same oracle; GNU MPC has no `mpc_erf`.",
         erf,
         Self,
         { ExactNum::from_u8(1, p) },
@@ -1961,8 +1961,8 @@ impl ExactNum {
 # Precision
 
 - Algorithm: recurrence to a large argument, then Bernoulli series; reflection for `z < 0`.
-- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). Accumath `ψ` identities are the gold; MPFR `digamma` is not an oracle here.
-- MPFR oracle: no.",
+- Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR `digamma` on `z > 0`.
+- MPFR oracle: yes, `z > 0` under `mpfr-tests`.",
         digamma,
         Self,
         { INF_POS },
@@ -1976,7 +1976,7 @@ impl ExactNum {
     ///
     /// - Algorithm: power series in `x` at working precision; `+∞` in `x` returns `Γ(self)`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-    /// - MPFR oracle: no (Accumath `γ(s,x)` golds).
+    /// - MPFR oracle: identity `γ(s,x)=Γ(s)−Γ(s,x)`; upper uses `mpfr_gamma_inc`.
     pub fn gammainc(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &x.inner) {
             (Flavor::Value(s), Flavor::Value(xv)) => {
@@ -1999,7 +1999,7 @@ impl ExactNum {
     ///
     /// - Algorithm: `Γ(self) - γ(self, x)` at working precision; `+∞` in `x` returns 0.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-    /// - MPFR oracle: no.
+    /// - MPFR oracle: yes, `mpfr_gamma_inc` under `mpfr-tests`.
     pub fn gammainc_upper(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &x.inner) {
             (Flavor::Value(s), Flavor::Value(xv)) => {
@@ -2023,7 +2023,7 @@ impl ExactNum {
 
 - Algorithm: power series for moderate `|x|`; factorial asymptotic when `|x|` is large (`exponent() > 6` and `|x| ≳ 0.7 p`).
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: open (Accumath `Ei` golds).",
+- MPFR oracle: yes, `mpfr_eint` under `mpfr-tests`.",
         ei,
         Self,
         { INF_POS },
@@ -2037,7 +2037,7 @@ impl ExactNum {
     ///
     /// - Algorithm: series, or auxiliary `f,g` asymptotic on the same cut as `Ei`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-    /// - MPFR oracle: open.
+    /// - MPFR oracle: no (`Si` odd, `Si(0)=0`, `Si(+∞)=π/2`).
     pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.si(p, rm, cc), v.is_zero(), true),
@@ -2052,7 +2052,7 @@ impl ExactNum {
 
 - Algorithm: series, or auxiliary `f,g` asymptotic (same `|x|` cut as `Ei`). Near-zero is a pole.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: open.",
+- MPFR oracle: no (identity / series golds; GNU MPFR has no `Si`/`Ci`).",
         ci,
         Self,
         { Self::new(p) },
@@ -2067,7 +2067,7 @@ impl ExactNum {
 
 - Algorithm: `Ei(ln self)` at extra working precision (inherits `Ei` series / asymptotic).
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: open.",
+- MPFR oracle: no (`li(e)=Ei(1)` identity).",
         li,
         Self,
         { INF_POS },
@@ -2081,7 +2081,7 @@ impl ExactNum {
     ///
     /// - Algorithm: series, or auxiliary `f,g` when `|x|.exponent() ≥ 8` (or `3 x² > p`).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-    /// - MPFR oracle: open.
+    /// - MPFR oracle: no (`S` odd, `S(0)=0`, `S(+∞)=1/2`).
     pub fn fresnel_s(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.fresnel_sc_ext(true, p, rm, cc)
     }
@@ -2092,7 +2092,7 @@ impl ExactNum {
     ///
     /// - Algorithm: same series / auxiliary `f,g` split as [`Self::fresnel_s`].
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-    /// - MPFR oracle: open.
+    /// - MPFR oracle: no (same identities as [`Self::fresnel_s`]).
     pub fn fresnel_c(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.fresnel_sc_ext(false, p, rm, cc)
     }
@@ -2119,7 +2119,7 @@ impl ExactNum {
     ///
     /// - Algorithm: power series for `|x| < AIRY_SERIES_THRESHOLD` (`8`); asymptotic otherwise.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-    /// - MPFR oracle: no (identity / ODE golds).
+    /// - MPFR oracle: yes, `mpfr_ai` under `mpfr-tests`.
     pub fn ai(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.ai(p, rm, cc), v.is_zero(), true),
@@ -2140,7 +2140,7 @@ impl ExactNum {
     ///
     /// - Algorithm: same `AIRY_SERIES_THRESHOLD = 8` split as [`Self::ai`].
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-    /// - MPFR oracle: no.
+    /// - MPFR oracle: no (`Ai Bi' − Ai' Bi = 1/π`; GNU MPFR has no `Bi`).
     pub fn bi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bi(p, rm, cc), v.is_zero(), true),
@@ -2252,7 +2252,7 @@ impl ExactNum {
     ///
     /// - Algorithm: Wronskian / series from \(J_ν\); cut on \((-\infty, 0]\).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-    /// - MPFR oracle: no.
+    /// - MPFR oracle: yes, `mpfr_yn` for `n = 0,1` under `mpfr-tests`.
     pub fn bessel_y(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_y)
     }

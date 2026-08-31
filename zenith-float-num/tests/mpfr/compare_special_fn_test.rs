@@ -185,6 +185,42 @@ fn mpfr_compare_special_fns() {
         assert_float_close(a, fa, p, "ai", false, &mut cc);
     }
 
+    // Upper incomplete Γ(s,x) vs MPFR gamma_inc. Lower γ is Γ(s)−Γ(s,x) (identity).
+    for _ in 0..8 {
+        let (s, fs) = get_float_pair(p, 0, 2, &mut cc);
+        let (x, fx) = get_float_pair(p, 0, 2, &mut cc);
+        if s.is_nan() || x.is_nan() || s.is_inf() || x.is_inf() || !s.is_positive() || x.is_negative()
+        {
+            continue;
+        }
+        let (rm, rnd) = get_random_rnd_pair();
+        let g = s.gammainc_upper(&x, p, rm, &mut cc);
+        let mut fg = Float::with_val(p as u32, 1);
+        unsafe {
+            mpfr::gamma_inc(fg.as_raw_mut(), fs.as_raw(), fx.as_raw(), rnd);
+        }
+        assert_float_close(g, fg, p, "gammainc_upper", false, &mut cc);
+    }
+
+    // Bi has no mpfr_bi. Wronskian at x=1 is the identity gold.
+    {
+        let one = ExactNum::from_u8(1, p);
+        let ai = one.ai(p, rm, &mut cc);
+        let bi = one.bi(p, rm, &mut cc);
+        let aip = one.ai_prime(p, rm, &mut cc);
+        let bip = one.bi_prime(p, rm, &mut cc);
+        let wr = ai.mul(&bip, p, rm).sub(&aip.mul(&bi, p, rm), p, rm);
+        let want = ExactNum::from_u8(1, p).div(&cc.pi(p, rm), p, rm);
+        assert_float_close(
+            wr,
+            conv_to_mpfr(p, &want, &mut cc),
+            p,
+            "airy wronskian",
+            false,
+            &mut cc,
+        );
+    }
+
     let _ = test_random::<u8>();
 }
 

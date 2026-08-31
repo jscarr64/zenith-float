@@ -79,9 +79,10 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 17.3 HDF5 leftover | ⬜ | No `libhdf5`. Own contiguous subset later, not a general HDF5 crate |
 | 18.2 GETTING_STARTED | ✅ | Ieee32/64, arrays, `(p,rm,cc)`, ExactRational/ExactInt, `cexpr!` cuts, `Ball` |
 | 18.3 HELP.md | ✅ | Precision model, rounding, Consts, expr vs methods, cuts, arrays, IEEE, 30 recipes, 20 mistakes, 40 FAQ |
-| 19–20 | ⬜ | MPFR extend, proptest, prepublish, hex CI |
+| 19.1 MPFR oracles | ✅ | GMP rationals; real-axis complex specials; `gamma_inc`; identity golds where GNU MPFR/MPC have no function |
+| 19.2–20 | ⬜ | proptest, bench, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§19.1 MPFR oracle extension**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§19.2 Property-based testing with `proptest`**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -1038,6 +1039,8 @@ Structure:
 ## Section 19 — CI and quality infrastructure
 
 ### 19.1 MPFR oracle extension
+
+**Status:** done 2026-08-30 — GMP `ExactRational`; real-axis complex `erf`/`Γ`/`Ai`/`J_n`; `mpfr_gamma_inc`; identities for Si/Ci/li/Fresnel/Bi/`₂F₁`/elliptic. GNU MPC 1.3 has no `erf`/`gamma`/Bessel (no ARB); not linked.
 
 **Prompt:**
 Extend the `mpfr-tests` feature to cover all new special functions:

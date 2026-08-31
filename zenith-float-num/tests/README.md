@@ -1,6 +1,13 @@
 ## Integration tests
 
-The `mpfr` directory compares zenith-float arithmetic and elementary functions with MPFR at the bit level.
+The `mpfr` directory compares zenith-float arithmetic and specials with MPFR and GMP. GNU MPC 1.3 has no `erf`, `gamma`, Airy, or Bessel — those use a real-axis MPFR restriction or an identity gold. Do not add ARB or link MPC for a function it does not have.
+
+| Function | Oracle |
+| --- | --- |
+| `ExactNum` arith / elem / `erf` / `Γ` / `ψ` / `Ai` / `Ei` / `J_n` / `Y_n` / `Γ(s,x)` | MPFR |
+| Complex `erf` `Γ` `Ai` `J_n` on the real axis | MPFR |
+| `ExactRational` `+ − × ÷` | GMP `mpq` |
+| `Si` `Ci` `li` Fresnel `Bi` `_2F1` elliptic `K` `I_ν` `K_ν` | identity (no MPFR function) |
 
 These tests are off by default. They require Linux x86_64 and the `rug` / `gmp-mpfr-sys` stack:
 
