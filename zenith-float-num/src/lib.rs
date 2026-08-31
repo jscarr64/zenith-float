@@ -28,6 +28,7 @@ mod complex_special;
 mod conv;
 pub mod ctx;
 mod defs;
+mod dist;
 mod ext;
 mod ieee_soft;
 mod integer;

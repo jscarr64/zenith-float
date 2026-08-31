@@ -399,7 +399,7 @@ fn traverse_call(
     err: &mut Vec<usize>,
     cc: &mut Consts,
 ) -> Result<TokenStream, Error> {
-    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"rem_pi\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"digamma\", \"gammainc\", \"gammainc_upper\", \"ei\", \"si\", \"ci\", \"li\", \"fresnel_s\", \"fresnel_c\", \"ai\", \"bi\", \"bessel_j\", \"bessel_j_nu\", \"bessel_y\", \"bessel_i\", \"bessel_k\", \"elliptic_k\", \"elliptic_e\", \"elliptic_e_inc\", \"elliptic_f\", \"elliptic_pi\", \"elliptic_pi_inc\", \"legendre_p\", \"legendre_p_assoc\", \"hypergeom_2f1\", \"betainc\", \"ldexp\", \"scalb\", \"logb\" are allowed.";
+    let errmes = "unexpected function name. Only \"recip\", \"sqrt\", \"cbrt\", \"root\", \"ln\", \"log2\", \"log10\", \"log\", \"log1p\", \"exp\", \"exp2\", \"exp10\", \"expm1\", \"pow\", \"rem_pi\", \"sin\", \"cos\", \"tan\", \"asin\", \"acos\", \"atan\", \"atan2\", \"hypot\", \"fma\", \"mul_add\", \"sinh\", \"cosh\", \"tanh\", \"asinh\", \"acosh\", \"atanh\", \"erf\", \"erfc\", \"gamma\", \"ln_gamma\", \"digamma\", \"gammainc\", \"gammainc_upper\", \"ei\", \"si\", \"ci\", \"li\", \"fresnel_s\", \"fresnel_c\", \"ai\", \"bi\", \"bessel_j\", \"bessel_j_nu\", \"bessel_y\", \"bessel_i\", \"bessel_k\", \"elliptic_k\", \"elliptic_e\", \"elliptic_e_inc\", \"elliptic_f\", \"elliptic_pi\", \"elliptic_pi_inc\", \"legendre_p\", \"legendre_p_assoc\", \"hypergeom_2f1\", \"betainc\", \"normal_pdf\", \"normal_cdf\", \"gamma_pdf\", \"beta_pdf\", \"poisson_pmf\", \"binomial_pmf\", \"chi_squared_cdf\", \"student_t_pdf\", \"ldexp\", \"scalb\", \"logb\" are allowed.";
 
     if let Expr::Path(fun) = expr.func.as_ref() {
         if let Some(fname) = fun.path.get_ident() {
@@ -574,10 +574,17 @@ fn traverse_call(
                     cc,
                     false,
                 ),
-                "fma" => three_arg_fun(quote!(zenith_float::ExactNum::fma), expr, 2, err, cc, false),
-                "mul_add" => {
-                    three_arg_fun(quote!(zenith_float::ExactNum::mul_add), expr, 2, err, cc, false)
+                "fma" => {
+                    three_arg_fun(quote!(zenith_float::ExactNum::fma), expr, 2, err, cc, false)
                 }
+                "mul_add" => three_arg_fun(
+                    quote!(zenith_float::ExactNum::mul_add),
+                    expr,
+                    2,
+                    err,
+                    cc,
+                    false,
+                ),
                 "sinh" => one_arg_fun(
                     quote!(zenith_float::ExactNum::sinh),
                     expr,
@@ -775,6 +782,70 @@ fn traverse_call(
                 ),
                 "betainc" => three_arg_fun(
                     quote!(zenith_float::ExactNum::betainc),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "normal_pdf" => three_arg_fun(
+                    quote!(zenith_float::ExactNum::normal_pdf),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "normal_cdf" => three_arg_fun(
+                    quote!(zenith_float::ExactNum::normal_cdf),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "gamma_pdf" => three_arg_fun(
+                    quote!(zenith_float::ExactNum::gamma_pdf),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "beta_pdf" => three_arg_fun(
+                    quote!(zenith_float::ExactNum::beta_pdf),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "poisson_pmf" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::poisson_pmf),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "binomial_pmf" => three_arg_fun(
+                    quote!(zenith_float::ExactNum::binomial_pmf),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "chi_squared_cdf" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::chi_squared_cdf),
+                    expr,
+                    EXPONENT_BIT_SIZE + 1,
+                    err,
+                    cc,
+                    true,
+                ),
+                "student_t_pdf" => two_arg_fun(
+                    quote!(zenith_float::ExactNum::student_t_pdf),
                     expr,
                     EXPONENT_BIT_SIZE + 1,
                     err,

@@ -304,6 +304,10 @@ Each method’s rustdoc has a **`# Precision`** section (algorithm, region, name
 | `legendre_p` / `assoc_legendre_p` | Integer \(n\); \(p+O(n)\) recurrence; Condon–Shortley | `legendre_p(x, n)`, `legendre_p_assoc(x, n, m)` |
 | `hypergeom_2f1` | Series / Gauss / Pfaff; real \(z\le -1\) when defined; non-real \(z>1\) → NaN | `hypergeom_2f1(a,b,c,z)` |
 | `betainc` | Regularized \(I_x(a,b)\) | `betainc(a,b,x)` |
+| `normal_pdf` / `normal_cdf` | \(\sigma>0\); CDF via `erf` | `normal_pdf(x,μ,σ)` |
+| `gamma_pdf` / `beta_pdf` | Scale \(\beta\); \(B\) via \(\Gamma\) | yes |
+| `poisson_pmf` / `binomial_pmf` | Non-negative integer \(k\) | yes |
+| `chi_squared_cdf` / `student_t_pdf` | Regularized \(\gamma(k/2,x/2)/\Gamma(k/2)\); \(t\) via \(\Gamma\) | yes |
 
 ---
 
@@ -345,7 +349,7 @@ Public macros (crate root): `expr!`, `cexpr!`, `exact!`, `fbig!`. Import them li
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `ai`, `bi`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `ai`, `bi`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `normal_pdf`, `normal_cdf`, `gamma_pdf`, `beta_pdf`, `poisson_pmf`, `binomial_pmf`, `chi_squared_cdf`, `student_t_pdf`, `ldexp`, `scalb`, `logb`.
 
 **Named constants in the expression:** `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma`.
 

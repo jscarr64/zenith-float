@@ -595,6 +595,11 @@ fn macro_run_basic_tests() {
     debug_assert_eq!(res, mh.hypergeom_2f1(&mh, &x, &mh, p, rm, &mut cc));
     let res: ExactNum = expr!(betainc(x, x, mh), &mut ctx);
     debug_assert_eq!(res, x.betainc(&x, &mh, p, rm, &mut cc));
+    let res: ExactNum = expr!(normal_pdf(x, x, x), &mut ctx);
+    debug_assert_eq!(res, x.normal_pdf(&x, &x, p, rm, &mut cc));
+    let z0 = ExactNum::from(0);
+    let res: ExactNum = expr!(poisson_pmf(z0, x), &mut ctx);
+    debug_assert_eq!(res, z0.poisson_pmf(&x, p, rm, &mut cc));
 
     let res: ExactNum = expr!(ei(x), &mut ctx);
     debug_assert_eq!(res, x.ei(p, rm, &mut cc));

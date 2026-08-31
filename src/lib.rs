@@ -224,6 +224,10 @@ extern crate alloc;
 ///  - `legendre_p(x, n)`, `legendre_p_assoc(x, n, m)`: Legendre / associated (Condon–Shortley).
 ///  - `hypergeom_2f1(a, b, c, z)`: Gaussian \({}_2F_1\).
 ///  - `betainc(a, b, x)`: regularized incomplete beta \(I_x(a,b)\).
+///  - `normal_pdf(x, mu, sigma)`, `normal_cdf(x, mu, sigma)`: normal density and CDF.
+///  - `gamma_pdf(x, alpha, beta)`, `beta_pdf(x, alpha, beta)`: gamma (scale \(\beta\)) and beta densities.
+///  - `poisson_pmf(k, lambda)`, `binomial_pmf(k, n, prob)`: discrete PMFs.
+///  - `chi_squared_cdf(x, k)`, `student_t_pdf(x, nu)`: chi-squared CDF and Student-\(t\) density.
 ///  - `ldexp(x, n)`, `scalb(x, n)`: `x · 2^n` (`n` is an integer literal or expression).
 ///  - `logb(x)`: `floor(log2(|x|))` as a float.
 ///  - `sinh(x)`: hyperbolic sine of `x`.
