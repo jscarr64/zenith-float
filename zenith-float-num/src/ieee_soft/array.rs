@@ -11,6 +11,9 @@ use alloc::vec::Vec;
 /// QR sweeps allowed per singular value before [`ExactNumArray::svd_decomp`]
 /// returns `None`.
 const SVD_ITER_MAX: u32 = 64;
+/// QR sweeps allowed per eigenvalue before [`ExactNumArray::eigen_decomp`]
+/// returns `None`.
+const EIGEN_ITER_MAX: u32 = 64;
 /// Bits of working precision reserved when a superdiagonal is compared to
 /// its neighboring diagonals.
 const SVD_CONV_GUARD_BITS: i32 = 4;
@@ -1184,6 +1187,35 @@ impl ExactNumArray {
         svd_decomp_tall(self, p, rm)
     }
 
+    /// Symmetric QR eigendecomposition at `(p, rm)`.
+    ///
+    /// Returns `(Λ, V)` where `Λ` is a `1×n` row of eigenvalues (descending)
+    /// and `V` is `n×n` with orthonormal columns, so `A V = V diag(Λ)` and
+    /// `V diag(Λ) V^T = A` at working precision.
+    /// Non-square, non-symmetric, empty, non-finite, or failure to converge
+    /// within `EIGEN_ITER_MAX` sweeps per value returns `None`.
+    pub fn eigen_decomp(&self, p: usize, rm: RoundingMode) -> Option<(Self, Self)> {
+        let n = self.rows;
+        if n == 0 || n != self.cols {
+            return None;
+        }
+        for v in &self.vals {
+            if v.is_nan() || v.is_inf() {
+                return None;
+            }
+        }
+        for i in 0..n {
+            for j in 0..i {
+                let aij = svd_copy_prec(&self.vals[i * n + j], p, rm);
+                let aji = svd_copy_prec(&self.vals[j * n + i], p, rm);
+                if aij.cmp(&aji) != Some(0) {
+                    return None;
+                }
+            }
+        }
+        eigen_decomp_sym(self, p, rm)
+    }
+
     fn zip(&self, rhs: &Self, op: impl Fn(&ExactNum, &ExactNum) -> ExactNum) -> Option<Self> {
         if self.rows != rhs.rows || self.cols != rhs.cols {
             return None;
@@ -1666,6 +1698,163 @@ fn svd_decomp_tall(
     ))
 }
 
+fn eigen_wilkinson(a: &ExactNum, b: &ExactNum, c: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
+    let half = svd_one(p).div(&ExactNum::from_u8(2, p), p, rm);
+    let delta = a.sub(c, p, rm).mul(&half, p, rm);
+    if delta.is_zero() && b.is_zero() {
+        return c.clone();
+    }
+    let h = delta.hypot(b, p, rm);
+    let signed = if delta.is_negative() { h.neg() } else { h };
+    let denom = delta.add(&signed, p, rm);
+    if denom.is_zero() {
+        return c.sub(&b.abs(), p, rm);
+    }
+    c.sub(&b.mul(b, p, rm).div(&denom, p, rm), p, rm)
+}
+
+fn eigen_qr_sweep(
+    d: &mut [ExactNum],
+    e: &mut [ExactNum],
+    q: &mut [ExactNum],
+    n: usize,
+    p_blk: usize,
+    q_blk: usize,
+    p: usize,
+    rm: RoundingMode,
+) {
+    let last = q_blk - 1;
+    let mu = eigen_wilkinson(&d[last - 1], &e[last - 1], &d[last], p, rm);
+    let mut f = d[p_blk].sub(&mu, p, rm);
+    let mut g = e[p_blk].clone();
+    let two = ExactNum::from_u8(2, p);
+    for k in p_blk..last {
+        let (cs, sn, r) = svd_rotg(&f, &g, p, rm);
+        if k > p_blk {
+            e[k - 1] = r;
+        }
+        let d0 = d[k].clone();
+        let ee = e[k].clone();
+        let d1 = d[k + 1].clone();
+        let c2 = cs.mul(&cs, p, rm);
+        let s2 = sn.mul(&sn, p, rm);
+        let cs2 = cs.mul(&sn, p, rm);
+        let two_cse = two.mul(&cs2.mul(&ee, p, rm), p, rm);
+        d[k] = c2
+            .mul(&d0, p, rm)
+            .add(&two_cse, p, rm)
+            .add(&s2.mul(&d1, p, rm), p, rm);
+        d[k + 1] = s2
+            .mul(&d0, p, rm)
+            .sub(&two_cse, p, rm)
+            .add(&c2.mul(&d1, p, rm), p, rm);
+        e[k] = cs2
+            .mul(&d1.sub(&d0, p, rm), p, rm)
+            .add(&c2.sub(&s2, p, rm).mul(&ee, p, rm), p, rm);
+        svd_apply_givens_cols(q, n, n, k, k + 1, &cs, &sn, p, rm);
+        if k + 1 < last {
+            let ek1 = e[k + 1].clone();
+            f = e[k].clone();
+            g = sn.mul(&ek1, p, rm);
+            e[k + 1] = cs.mul(&ek1, p, rm);
+        }
+    }
+}
+
+fn eigen_decomp_sym(
+    a0: &ExactNumArray,
+    p: usize,
+    rm: RoundingMode,
+) -> Option<(ExactNumArray, ExactNumArray)> {
+    let n = a0.rows;
+    let mut a: Vec<ExactNum> = a0
+        .vals
+        .iter()
+        .map(|x| svd_copy_prec(x, p, rm))
+        .collect();
+    let mut q = svd_identity(n, p)?;
+    for k in 0..n.saturating_sub(2) {
+        let x: Vec<ExactNum> = ((k + 1)..n).map(|i| a[i * n + k].clone()).collect();
+        if let Some((hv, beta)) = svd_householder(&x, p, rm) {
+            svd_apply_house_left(&mut a, n, k + 1, k, &hv, &beta, p, rm);
+            svd_apply_house_right(&mut a, n, n, 0, k + 1, &hv, &beta, p, rm);
+            svd_apply_house_right(&mut q, n, n, 0, k + 1, &hv, &beta, p, rm);
+        }
+    }
+    let mut d: Vec<ExactNum> = (0..n).map(|i| a[i * n + i].clone()).collect();
+    let mut e: Vec<ExactNum> = if n >= 2 {
+        (0..n - 1).map(|i| a[i * n + i + 1].clone()).collect()
+    } else {
+        Vec::new()
+    };
+
+    let max_sweeps = EIGEN_ITER_MAX.saturating_mul(n.max(1) as u32);
+    let mut sweeps = 0u32;
+    loop {
+        if n == 1 {
+            break;
+        }
+        for i in 0..n - 1 {
+            if svd_negligible(&e[i], &d[i], &d[i + 1], p, rm) {
+                e[i] = svd_zero(p);
+            }
+        }
+        if e.iter().all(|x| x.is_zero()) {
+            break;
+        }
+        if sweeps >= max_sweeps {
+            return None;
+        }
+        let mut q_blk = n;
+        while q_blk > 1 && e[q_blk - 2].is_zero() {
+            q_blk -= 1;
+        }
+        let mut p_blk = q_blk - 1;
+        while p_blk > 0 && !e[p_blk - 1].is_zero() {
+            p_blk -= 1;
+        }
+        if q_blk - p_blk < 2 {
+            break;
+        }
+        for di in d.iter().chain(e.iter()) {
+            if di.is_nan() || di.is_inf() {
+                return None;
+            }
+        }
+        eigen_qr_sweep(&mut d, &mut e, &mut q, n, p_blk, q_blk, p, rm);
+        sweeps += 1;
+    }
+
+    for i in 0..n {
+        let mut best = i;
+        for j in (i + 1)..n {
+            if matches!(d[j].cmp(&d[best]), Some(c) if c > 0) {
+                best = j;
+            }
+        }
+        if best != i {
+            d.swap(i, best);
+            for r in 0..n {
+                q.swap(r * n + i, r * n + best);
+            }
+        }
+    }
+    Some((
+        ExactNumArray {
+            p,
+            vals: d,
+            rows: 1,
+            cols: n,
+        },
+        ExactNumArray {
+            p,
+            vals: q,
+            rows: n,
+            cols: n,
+        },
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2067,6 +2256,85 @@ mod tests {
                     wide.get2(i, j).unwrap(),
                     p
                 ));
+            }
+        }
+    }
+
+    fn eigen_diag(evals: &ExactNumArray, p: usize) -> ExactNumArray {
+        let n = evals.cols;
+        let mut vals = Vec::with_capacity(n * n);
+        let z = ExactNum::from_u8(0, p);
+        for i in 0..n {
+            for j in 0..n {
+                if i == j {
+                    vals.push(evals.get(i).unwrap().clone());
+                } else {
+                    vals.push(z.clone());
+                }
+            }
+        }
+        ExactNumArray::from_shape(p, n, n, &vals).unwrap()
+    }
+
+    #[test]
+    fn exact_eigen_sym_2x2() {
+        let p = 256;
+        let rm = RoundingMode::ToEven;
+        let n = |k: u8| ExactNum::from_u8(k, p);
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(1), n(2)]).unwrap();
+        let (evals, v) = a.eigen_decomp(p, rm).expect("eigen");
+        assert_eq!(evals.shape(), (1, 2));
+        assert!(near_num(evals.get(0).unwrap(), &n(3), p));
+        assert!(near_num(evals.get(1).unwrap(), &n(1), p));
+        let vtv = v.transpose().matmul(&v).expect("V^T V");
+        let one = n(1);
+        let zero = n(0);
+        assert!(near_num(vtv.get2(0, 0).unwrap(), &one, p));
+        assert!(near_num(vtv.get2(1, 1).unwrap(), &one, p));
+        assert!(near_num(vtv.get2(0, 1).unwrap(), &zero, p));
+        assert!(near_num(vtv.get2(1, 0).unwrap(), &zero, p));
+        let av = a.matmul(&v).expect("A V");
+        let lam = eigen_diag(&evals, p);
+        let vl = v.matmul(&lam).expect("V Λ");
+        for i in 0..2 {
+            for j in 0..2 {
+                assert!(
+                    near_num(av.get2(i, j).unwrap(), vl.get2(i, j).unwrap(), p),
+                    "Av=λv at {i},{j}"
+                );
+            }
+        }
+        let vlvt = vl.matmul(&v.transpose()).expect("V Λ V^T");
+        for i in 0..2 {
+            for j in 0..2 {
+                assert!(near_num(
+                    vlvt.get2(i, j).unwrap(),
+                    a.get2(i, j).unwrap(),
+                    p
+                ));
+            }
+        }
+        let nosym = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(0), n(1)]).unwrap();
+        assert!(nosym.eigen_decomp(p, rm).is_none());
+
+        let a3 = ExactNumArray::from_shape(
+            p,
+            3,
+            3,
+            &[n(2), n(1), n(0), n(1), n(2), n(1), n(0), n(1), n(2)],
+        )
+        .unwrap();
+        let (w3, v3) = a3.eigen_decomp(p, rm).expect("eigen 3");
+        let s2 = n(2).sqrt(p, rm);
+        let want = [n(2).add(&s2, p, rm), n(2), n(2).sub(&s2, p, rm)];
+        for (i, wi) in want.iter().enumerate() {
+            assert!(near_num(w3.get(i).unwrap(), wi, p), "λ[{i}]");
+        }
+        let av3 = a3.matmul(&v3).expect("A3 V");
+        let vl3 = v3.matmul(&eigen_diag(&w3, p)).expect("V3 Λ");
+        for i in 0..3 {
+            for j in 0..3 {
+                assert!(near_num(av3.get2(i, j).unwrap(), vl3.get2(i, j).unwrap(), p));
             }
         }
     }

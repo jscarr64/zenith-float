@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `ExactNumArray::eigen_decomp` — symmetric QR; \(Av=\lambda v\), \(V\Lambda V^T=A\); \(\begin{pmatrix}2&1\\1&2\end{pmatrix}\to(3,1)\); `EIGEN_ITER_MAX=64`.
 - `ExactNumArray::svd_decomp` — Golub–Reinsch; \(U\Sigma V^T=A\), \(U^\top U=V^\top V=I\); \(\operatorname{diag}(3,2)\to\sigma=(3,2)\); `SVD_ITER_MAX=64`.
 - Living docs are the build plan, capabilities, and build checklist only. `ZENITH_FLOAT_TODO.md` is retired.
 - `ExactNumArray::qr_decomp` — modified Gram–Schmidt; \(QR=A\), \(Q^\top Q=I\); rank-deficient zero diagonal.

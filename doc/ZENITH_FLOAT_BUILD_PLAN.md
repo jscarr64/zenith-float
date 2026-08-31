@@ -49,7 +49,8 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 4.1 / 11.1 LU | ✅ | `lu_decomp`; \(PA=LU\); singular → `None` |
 | 4.2 / 11.2 QR | ✅ | `qr_decomp` modified Gram–Schmidt; \(QR=A\); \(Q^\top Q=I\); rank-deficient zero diagonal |
 | 4.3 / 11.3 SVD | ✅ | `svd_decomp`; \(U\Sigma V^T=A\); \(U^\top U=V^\top V=I\); \(\operatorname{diag}(3,2)\); wide \(\sigma=(2,1)\) |
-| 4.4–4.5 / 11.4–11.5 eigen, FFT | ⬜ | |
+| 4.4 / 11.4 eigen | ✅ | `eigen_decomp`; \(Av=\lambda v\); \(V\Lambda V^T=A\); \(\begin{pmatrix}2&1\\1&2\end{pmatrix}\to(3,1)\); non-symmetric `None` |
+| 4.5 / 11.5 FFT | ⬜ | |
 | 5.1 / 18.1 Precision doc comments | ⬜ | |
 | 6.1 no_std / thumb | 🟡 | allocator `no_std` compiles; no `thumbv7em-none-eabihf` CI gold |
 | 7.1 / 20.1 Reproducibility.md | ⬜ | |
@@ -62,7 +63,7 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 10.3 `ziv_round_vec` | ⬜ | |
 | 12–17, 18.2–18.3, 19–20 | ⬜ | distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§4.4 eigenvalue decomposition**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§4.5 multiprecision FFT**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -325,6 +326,8 @@ Golds:
 
 ### 4.4 Eigenvalue decomposition
 
+**Status:** done 2026-08-30 — `eigen_decomp`; \(Av=\lambda v\); \(V\Lambda V^T=A\); \(\lambda=(3,1)\); non-symmetric `None`. Cap `EIGEN_ITER_MAX=64`.
+
 **Prompt:**
 Implement eigenvalue decomposition for real symmetric matrices via the symmetric QR algorithm (tridiagonalization + QR iteration) at explicit precision `(p, rm)`. Return `(eigenvalues, eigenvectors)` as `(ExactNumArray, ExactNumArray)`. Non-symmetric input returns `None` — do not attempt a general eigendecomposition here.
 
@@ -569,6 +572,8 @@ Golds:
 ---
 
 ### 11.4 Eigenvalue decomposition
+
+**Status:** done 2026-08-30 — same method as §4.4 (`eigen_decomp`). Do not implement twice.
 
 **Prompt:**
 Implement eigenvalue decomposition for real symmetric matrices via symmetric QR algorithm at explicit `(p, rm)`. Return `(eigenvalues, eigenvectors)`. Non-symmetric → `None`. Cap `EIGEN_ITER_MAX`.
