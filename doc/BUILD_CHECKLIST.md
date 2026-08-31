@@ -116,6 +116,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | Complex \({}_2F_1\) | `hypergeom_2f1` | ✅ | Series / Euler / Pfaff / Kummer; cut on \([1,+\infty)\) |
 | `ExactNumArray` LU / QR / SVD / eigen / FFT | `lu_decomp` / `qr_decomp` / `svd_decomp` / `eigen_decomp` / `fft`/`ifft` | ✅ | Symmetric QR; radix-2 DFT (`FFT_MAX_POINTS=4096`) |
 | `ExactRational` | — | ✅ | Reduced `num/den`; `from_i64` / `new`; add/sub/mul/div; `to_exact_num`; integer floor/ceil/round |
+| `ExactInt` | — | ✅ | Limb integer; `20!`; `gcd(48,18)=6`; `2^100`; `div_rem(17,5)=(3,2)` |
 | Constants: π, e, ln 2, ln 10, √2, φ, γ (`Consts`) | `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma` | ✅ | Progressive cache |
 
 ### 1.6 I/O and integration

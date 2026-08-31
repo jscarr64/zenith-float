@@ -56,14 +56,14 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 7.1 / 20.1 Reproducibility.md | ✅ | `doc/REPRODUCIBILITY.md`; unit tests lock values (no `golds/` tree) |
 | 8 | — | skipped by plan |
 | 9.1 ExactRational | ✅ | `ExactRational`; `1/3+1/6=1/2`; `2/4=1/2`; sign; 256-bit `1/3` |
-| 9.2 ExactInt | ⬜ | |
+| 9.2 ExactInt | ✅ | limb `ExactInt`; `20!`; `gcd(48,18)=6`; `2^100`; `17÷5=(3,2)` |
 | 9.3 parse_exact / format_exact | ⬜ | scientific parse exists; exact-min-prec APIs do not |
 | 10.1 Per-op precision | ✅ | specials take `(p,rm,cc)`; no `SOFT_PREC` in the kernel |
 | 10.2 expr! / cexpr! `p_wrk` | 🟡 | leaves use `p_wrk`; not every listed composite gold is locked |
 | 10.3 `ziv_round_vec` | ⬜ | |
 | 12–17, 18.2–18.3, 19–20 | ⬜ | distributions, poly, quadrature, roots, ODE, DSP, crypto, serde-all, binary I/O, HDF5, HELP rewrite, MPFR extend, proptest, prepublish, hex CI |
 
-Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§9.2 ExactInt**.
+Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. Next implementation slice: **§9.3 parse_exact / format_exact**.
 
 When a row flips, add `**Status:** done YYYY-MM-DD` under that section heading and update CAPABILITIES + BUILD_CHECKLIST in the same session.
 
@@ -441,6 +441,8 @@ Golds:
 ---
 
 ### 9.2 Arbitrary-precision integer (`ExactInt`)
+
+**Status:** done 2026-08-30 — `integer.rs`; little-endian `Word` limbs; `20!`, `gcd(48,18)=6`, `2^100`, `div_rem(17,5)=(3,2)`.
 
 **Prompt:**
 Implement `ExactInt` — an arbitrary-precision signed integer using the existing limb infrastructure. This is not `ExactNum` truncated — it is a proper big-integer type.
