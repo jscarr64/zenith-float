@@ -586,6 +586,16 @@ fn macro_run_basic_tests() {
     debug_assert_eq!(res, mh.elliptic_pi_complete(&mh, p, rm, &mut cc));
     let res: ExactNum = expr!(elliptic_pi_inc(mh, mh, mh), &mut ctx);
     debug_assert_eq!(res, mh.elliptic_pi(&mh, &mh, p, rm, &mut cc));
+    let res: ExactNum = expr!(jacobi_sn(mh, mh), &mut ctx);
+    debug_assert_eq!(res, mh.jacobi_sn(&mh, p, rm, &mut cc));
+    let res: ExactNum = expr!(jacobi_cn(mh, mh), &mut ctx);
+    debug_assert_eq!(res, mh.jacobi_cn(&mh, p, rm, &mut cc));
+    let res: ExactNum = expr!(jacobi_dn(mh, mh), &mut ctx);
+    debug_assert_eq!(res, mh.jacobi_dn(&mh, p, rm, &mut cc));
+    let res: ExactNum = expr!(jacobi_am(mh, mh), &mut ctx);
+    debug_assert_eq!(res, mh.jacobi_am(&mh, p, rm, &mut cc));
+    let res: ExactNum = expr!(jacobi_cd(mh, mh), &mut ctx);
+    debug_assert_eq!(res, mh.jacobi_cd(&mh, p, rm, &mut cc));
 
     let res: ExactNum = expr!(legendre_p(x, 2), &mut ctx);
     debug_assert_eq!(res, x.legendre_p(2, p, rm));

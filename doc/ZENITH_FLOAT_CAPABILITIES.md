@@ -1,7 +1,7 @@
 # zenith-float Capability Reference
 
-**Version:** 1.0.0  
-**Date:** 2026-08-31  
+**Version:** 1.0.1  
+**Date:** 2026-09-03  
 **License:** MIT OR Apache-2.0  
 **Status:** Public crate  
 
@@ -63,6 +63,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `POLY_COMPANION_CLOSED_DEG` | `2` — `ExactNumPoly::roots_real` closed-form companion eigenvalues; higher degree → `None` |
 | `CHEBYSHEV_MAX_DEGREE` | `256` — max coefficient count for `chebyshev_coeffs`; larger `n` → `None` |
 | `ORTHOPOLY_N_MAX` | `256` — max degree for Hermite / Laguerre / Chebyshev T,U / Gegenbauer; larger `n` → `NaN` |
+| `JACOBI_AGM_MAX` | `128` — AGM / Landen steps for `jacobi_am` / `sn` / `cn` / `dn` / `cd` |
 | `QUADRATURE_MAX_NODES` | `64` — max Gauss nodes; larger `n` → `None` |
 | `TANH_SINH_LEVELS_MAX` | `8` — max tanh–sinh step halvings after `h = 2π/(p ln 2)` |
 | `ROOT_MAX_ITER` | `256` — cap on bisection / Newton / Brent / Illinois steps |
@@ -240,6 +241,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `elliptic_k` / `elliptic_e_complete` | `elliptic_k` / `elliptic_e` | Complete; \(m=k^2\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\); \(E\) for \(m\le 1\) |
 | `elliptic_f` / `elliptic_e` | `elliptic_f` / `elliptic_e_inc` | Incomplete; \(x=\sin\varphi\), \(\lvert x\rvert\le 1\) |
 | `elliptic_pi_complete` / `elliptic_pi` | `elliptic_pi` / `elliptic_pi_inc` | \(n<1\), \(m<1\) complete |
+| `jacobi_am` / `sn` / `cn` / `dn` and the nine quotients `cd` `ns` `nc` `nd` `sc` `sd` `cs` `ds` `dc` | yes | Real \(m=k^2\in[0,1]\); \(m=0\) trig; \(m=1\) hyperbolic; AGM otherwise. Period reduction uses \(K\) only when \(\lvert u\rvert\ge\pi\) (avoids nested Ziv). Zero denominator → NaN. Inverse of `sn` is `elliptic_f`. Golds: `sn(0)=0`; `sn(u\|0)=\sin u`; `sn(u\|1)=\tanh u`; `sn^2+cn^2=1`; `dn^2+m\,sn^2=1`; `sn(K/2)`; `sn(u+4K)=sn(u)`; \(\partial_u sn=cn\,dn\); `ns·sn=1`; `F(sn(u\|m)\|m)=u` |
 | `legendre_p` / `assoc_legendre_p` | `legendre_p(x, n)` / `legendre_p_assoc(x, n, m)` | Integer \(n\); recurrence at \(p+O(n)\) bits; Condon–Shortley |
 | `hypergeom_2f1` | `hypergeom_2f1(a,b,c,z)` | Series / Gauss / Pfaff; real continuation for \(z\le -1\) when defined; non-real \(z>1\) → NaN |
 | `betainc` | `betainc(a,b,x)` | Regularized \(I_x(a,b)\); \(a>0\), \(b>0\), \(x\in[0,1]\) |
@@ -297,7 +299,7 @@ Hardware IEEE arithmetic stays forbidden.
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `gammainc_upper`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `ai`, `bi`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `normal_pdf`, `normal_cdf`, `gamma_pdf`, `beta_pdf`, `poisson_pmf`, `binomial_pmf`, `chi_squared_cdf`, `student_t_pdf`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `gammainc_upper`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `ai`, `bi`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `jacobi_am`, `jacobi_sn`, `jacobi_cn`, `jacobi_dn`, `jacobi_cd`, `jacobi_ns`, `jacobi_nc`, `jacobi_nd`, `jacobi_sc`, `jacobi_sd`, `jacobi_cs`, `jacobi_ds`, `jacobi_dc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `normal_pdf`, `normal_cdf`, `gamma_pdf`, `beta_pdf`, `poisson_pmf`, `binomial_pmf`, `chi_squared_cdf`, `student_t_pdf`, `ldexp`, `scalb`, `logb`.
 
 **Named constants in the expression:** `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma`.
 
@@ -560,6 +562,7 @@ The walk list is complete. HDF5 is feature `hdf5` (crates.io `hdf5-rust`), not `
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| 1.0.1 | 2026-09-03 | Jacobi `am`/`sn`/`cn`/`dn` + nine quotients; `expr!` leaves; array wrappers; `JACOBI_AGM_MAX=128`; hex `jacobi_sn_1_half`; identity / period / derivative / `F(sn)=u` golds |
 | 1.0.0 | 2026-08-31 | First crates.io release. HDF5 via crates.io `hdf5-rust` 1.0 (`to_hdf5` / `from_hdf5`). Hex limb CI (`arm`/`wasm`/`32bit`); pre-publish 12-check; dashu §24 verified. Prior: SIMD IEEE div/sqrt/fma; thumb `no_std`; `expr!`/`cexpr!` composite golds; §19.3 benches; complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange; CSV. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
 
 ---

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.1 — 2026-09-03
+
+Jacobi elliptic functions on the real line.
+
+- `ExactNum` Jacobi family: `am`, `sn`, `cn`, `dn`, and the nine quotients `cd` `ns` `nc` `nd` `sc` `sd` `cs` `ds` `dc`. Parameter \(m=k^2\in[0,1]\). \(m=0\) is trigonometric; \(m=1\) is hyperbolic; otherwise AGM / descending Landen. Cap `JACOBI_AGM_MAX = 128`. Domain errors are `NaN`.
+- Period reduction by \(4K(m)\) runs only when \(\lvert u\rvert\ge\pi\) and uses a single Carlson \(K\) pass (no nested Ziv). `RoundingMode::None` at 512 bits is golded.
+- `expr!` leaves for every Jacobi method above.
+- Elementwise wrappers on `ExactNumArray` and software IEEE arrays for the full Jacobi set (including quotients).
+- Hex limb gold `jacobi_sn_1_half` at 64 bits.
+- Golds: zeros at \(u=0\); \(m=0\) vs sin/cos; \(m=1\) vs tanh/sech; Pythagorean identities; `sn(K/2)`; `sn(u+4K)=sn(u)`; \(\partial_u sn=cn\,dn\); `ns·sn=1`; `F(sn(u|m)|m)=u`.
+
 ## 1.0.0 — 2026-08-31
 
 First crates.io release.

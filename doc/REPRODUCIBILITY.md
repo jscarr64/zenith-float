@@ -46,6 +46,6 @@ Expected values are locked in the crate’s unit tests (`zenith-float-num` lib t
 
 Use the crate version from `Cargo.toml` and the git commit you ran:
 
-> Computed with zenith-float 1.0.0 (commit `{hash}`), reproducible by running `cargo test` at that commit.
+> Computed with zenith-float 1.0.1 (commit `{hash}`), reproducible by running `cargo test` at that commit.
 
 Replace `{hash}` with `git rev-parse HEAD` of the tree you used. If you enabled `mpfr-tests`, say so.

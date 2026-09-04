@@ -430,6 +430,23 @@ let x = ExactNum::parse("1.25", Radix::Dec, 128, RoundingMode::ToEven, &mut cc);
 assert!(x.err().is_none());
 ```
 
+### 32. Jacobi `sn` / `cn` and the inverse `F`
+
+Parameter \(m=k^2\in[0,1]\). The inverse of `sn` is incomplete `elliptic_f` (`x = sin φ`), not a second named leaf.
+
+```rust
+use zenith_float::{Consts, ExactNum, RoundingMode};
+let p = 256;
+let rm = RoundingMode::ToEven;
+let mut cc = Consts::new().unwrap();
+let one = ExactNum::from_u8(1, p);
+let half = one.div(&ExactNum::from_u8(2, p), p, rm);
+let sn = one.jacobi_sn(&half, p, rm, &mut cc);
+let cn = one.jacobi_cn(&half, p, rm, &mut cc);
+let s2c2 = sn.mul(&sn, p, rm).add(&cn.mul(&cn, p, rm), p, rm);
+let back = sn.elliptic_f(&half, p, rm, &mut cc);
+```
+
 ---
 
 ## Common mistakes
@@ -454,6 +471,7 @@ assert!(x.err().is_none());
 18. **`to_inline_bytes` on a 256-bit number.** The 16-byte record holds 64 mantissa bits. Wider values use `to_bytes` (heap record).
 19. **A new `ExactNumArray` cell precision vs the array `p`.** `from_shape` rounds every entry to the array `p`.
 20. **Linking `libhdf5`.** Not in this crate. Feature `hdf5` uses crates.io `hdf5-rust`. CSV and the binary record remain.
+21. **A named `jacobi_arcsn`.** Inverse of `sn` is `elliptic_f` (`x = sin φ`). `m>1` on Jacobi is `NaN`; complete `K` already does the reciprocal-modulus transform.
 
 ---
 
@@ -480,6 +498,8 @@ assert!(x.err().is_none());
 **Why is `cexpr!` a different macro?** Real and complex cancellation, cuts, and leaf sets are not the same.
 
 **Why no `atan2` in `cexpr!`?** No honest complex `atan2` leaf in this crate. Use `arg` or real methods on parts.
+
+**Where is `jacobi_arcsn`?** It is `elliptic_f`. `F(sn(u|m)|m)=u` for `|u|<K(m)`. Complex Jacobi is not in this crate.
 
 **What is a principal cut?** A chosen jump of a multi-valued function. Ours are listed above and in LIBRARY §17.
 

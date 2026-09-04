@@ -16,6 +16,8 @@ mod expm1;
 mod fma;
 mod hypot;
 mod ieee;
+mod jacobi;
+pub use jacobi::JACOBI_AGM_MAX;
 mod log;
 mod log1p;
 mod nroot;

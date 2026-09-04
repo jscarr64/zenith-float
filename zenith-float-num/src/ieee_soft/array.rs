@@ -504,6 +504,84 @@ macro_rules! ieee_array_specials {
                 self.map_exact($p, |x| x.elliptic_e(&me, $p, RoundingMode::ToEven, cc))
             }
 
+            /// Elementwise `sn(self | m)`.
+            pub fn jacobi_sn(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_sn(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `cn(self | m)`.
+            pub fn jacobi_cn(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_cn(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `dn(self | m)`.
+            pub fn jacobi_dn(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_dn(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `am(self | m)`.
+            pub fn jacobi_am(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_am(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `cd(self | m)`.
+            pub fn jacobi_cd(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_cd(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `ns(self | m)`.
+            pub fn jacobi_ns(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_ns(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `nc(self | m)`.
+            pub fn jacobi_nc(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_nc(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `nd(self | m)`.
+            pub fn jacobi_nd(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_nd(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `sc(self | m)`.
+            pub fn jacobi_sc(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_sc(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `sd(self | m)`.
+            pub fn jacobi_sd(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_sd(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `cs(self | m)`.
+            pub fn jacobi_cs(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_cs(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `ds(self | m)`.
+            pub fn jacobi_ds(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_ds(&me, $p, RoundingMode::ToEven, cc))
+            }
+
+            /// Elementwise `dc(self | m)`.
+            pub fn jacobi_dc(&self, m: $scalar, cc: &mut Consts) -> Self {
+                let me = m.to_exact($p);
+                self.map_exact($p, |x| x.jacobi_dc(&me, $p, RoundingMode::ToEven, cc))
+            }
+
             /// Elementwise complete `Π(n, m)` with `self = n`.
             pub fn elliptic_pi_complete(&self, m: $scalar, cc: &mut Consts) -> Self {
                 let me = m.to_exact($p);
@@ -1070,6 +1148,71 @@ impl ExactNumArray {
     /// Elementwise `F(self | m)`.
     pub fn elliptic_f(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.map_at(p, |x| x.elliptic_f(m, p, rm, cc))
+    }
+
+    /// Elementwise `sn(self | m)`.
+    pub fn jacobi_sn(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_sn(m, p, rm, cc))
+    }
+
+    /// Elementwise `cn(self | m)`.
+    pub fn jacobi_cn(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_cn(m, p, rm, cc))
+    }
+
+    /// Elementwise `dn(self | m)`.
+    pub fn jacobi_dn(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_dn(m, p, rm, cc))
+    }
+
+    /// Elementwise `am(self | m)`.
+    pub fn jacobi_am(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_am(m, p, rm, cc))
+    }
+
+    /// Elementwise `cd(self | m)`.
+    pub fn jacobi_cd(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_cd(m, p, rm, cc))
+    }
+
+    /// Elementwise `ns(self | m)`.
+    pub fn jacobi_ns(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_ns(m, p, rm, cc))
+    }
+
+    /// Elementwise `nc(self | m)`.
+    pub fn jacobi_nc(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_nc(m, p, rm, cc))
+    }
+
+    /// Elementwise `nd(self | m)`.
+    pub fn jacobi_nd(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_nd(m, p, rm, cc))
+    }
+
+    /// Elementwise `sc(self | m)`.
+    pub fn jacobi_sc(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_sc(m, p, rm, cc))
+    }
+
+    /// Elementwise `sd(self | m)`.
+    pub fn jacobi_sd(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_sd(m, p, rm, cc))
+    }
+
+    /// Elementwise `cs(self | m)`.
+    pub fn jacobi_cs(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_cs(m, p, rm, cc))
+    }
+
+    /// Elementwise `ds(self | m)`.
+    pub fn jacobi_ds(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_ds(m, p, rm, cc))
+    }
+
+    /// Elementwise `dc(self | m)`.
+    pub fn jacobi_dc(&self, m: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        self.map_at(p, |x| x.jacobi_dc(m, p, rm, cc))
     }
 
     /// Elementwise incomplete `E(self | m)`.
@@ -2427,6 +2570,30 @@ mod tests {
         }
         let nan_in = ExactNumArray::from_values(p, &[ExactNum::nan(None)]);
         assert!(nan_in.sin(p, rm, &mut cc).get(0).unwrap().is_nan());
+    }
+
+    #[test]
+    fn exact_array_jacobi_sn_matches_scalar() {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
+        let xs = [
+            ExactNum::from_u8(0, p),
+            ExactNum::from_u8(1, p),
+            ExactNum::from_u8(2, p),
+        ];
+        let a = ExactNumArray::from_values(p, &xs);
+        let out = a.jacobi_sn(&half, p, rm, &mut cc);
+        let out_ns = a.jacobi_ns(&half, p, rm, &mut cc);
+        for (i, x) in xs.iter().enumerate() {
+            let want = x.jacobi_sn(&half, p, rm, &mut cc);
+            assert_eq!(out.get(i).unwrap().cmp(&want), Some(0));
+            if !x.is_zero() {
+                let want_ns = x.jacobi_ns(&half, p, rm, &mut cc);
+                assert_eq!(out_ns.get(i).unwrap().cmp(&want_ns), Some(0));
+            }
+        }
     }
 
     fn perm_rows(a: &ExactNumArray, perm: &[usize]) -> ExactNumArray {

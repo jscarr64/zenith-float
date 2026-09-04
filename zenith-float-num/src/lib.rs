@@ -132,6 +132,7 @@ pub use crate::ode::ODE_MIN_STEP;
 pub use crate::ops::consts::CachedFBig;
 pub use crate::ops::consts::ConstCache;
 pub use crate::ops::consts::ConstCacheInfo;
+pub use crate::ops::JACOBI_AGM_MAX;
 pub use crate::ops::consts::Consts;
 #[cfg(feature = "std")]
 pub use crate::ops::consts::SharedConsts;

@@ -194,7 +194,7 @@ let x = ExactNum::from_u8(1, p);
 let y = x.sin(p, rm, &mut cc); // sin(1)
 ```
 
-Reuse `cc` in a loop. A new cache on every call recomputes π. Domain errors become `NaN`; `y.err()` is the `Error`. The same `(p, rm, cc)` arguments appear on `ExactNumArray` elementwise specials. See [HELP.md](HELP.md) and `# Precision` on each method.
+Reuse `cc` in a loop. A new cache on every call recomputes π. Domain errors become `NaN`; `y.err()` is the `Error`. The same `(p, rm, cc)` arguments appear on `ExactNumArray` elementwise specials. Jacobi `sn`/`cn`/`dn` take parameter \(m=k^2\in[0,1]\); the inverse of `sn` is `elliptic_f`. See [HELP.md](HELP.md) recipe 32 and `# Precision` on each method.
 
 ## 9. `ExactRational` and `ExactInt`
 

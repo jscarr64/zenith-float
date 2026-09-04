@@ -30,7 +30,7 @@ After every slice: update all three. Do not keep a fourth inventory.
 
 ---
 
-## Status vs tree (2026-08-31)
+## Status vs tree (2026-09-03)
 
 Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡 = present but short of the prompt. ⬜ = not on the object. Section 11 duplicates Section 4.
 
@@ -78,12 +78,13 @@ Compared to `zenith-float-num` / macros / docs. ✅ = method + object gold. 🟡
 | 17.3 CSV | ✅ | 100×3 `Ieee64Array` bit round-trip; empty cell → `NAN`; extra column `Err`; `CSV_MAX_ROWS` / `CSV_MAX_COLS` |
 | 17.3 HDF5 | ✅ | Feature `hdf5` → crates.io `hdf5-rust` 1.0. 100×3 `Ieee64Array` bits; 50×50 `ExactNumArray` at 256 bits; 1-D `Ieee32Array` length 1000; nested `results/data`; append 10×3→20×3; wrong name `Err` |
 | 18.2 GETTING_STARTED | ✅ | Ieee32/64, arrays, `(p,rm,cc)`, ExactRational/ExactInt, `cexpr!` cuts, `Ball` |
-| 18.3 HELP.md | ✅ | Precision model, rounding, Consts, expr vs methods, cuts, arrays, IEEE, 30 recipes, 20 mistakes, 40 FAQ |
+| 18.3 HELP.md | ✅ | Precision model, rounding, Consts, expr vs methods, cuts, arrays, IEEE, 32 recipes, 21 mistakes, FAQ |
 | 19.1 MPFR oracles | ✅ | GMP rationals; real-axis complex specials; `gamma_inc`; identity golds where GNU MPFR/MPC have no function |
 | 19.2 proptest | ✅ | `PROPTEST_CASES=1000`: add commutes; directed round-then-coarser; `erf` odd; 2×2 integer matmul assoc; rational `(a+b)-b=a` |
 | 19.3 Benchmark suite | ✅ | specials 64–1024; matmul 10/100/1000; FFT 256/1024/4096; LU 50/200; dashu in `compare-bench.sh --quick`; baselines TSV |
 | 19.4 Pre-publish | ✅ | `scripts/zenith_prepublish.sh` 12/12; `ci_full.sh`; dashu §24 verified (no γ, no scoped rounding closure) |
-| 20.2 hex CI | ✅ | `ci_hex_{arm,wasm,32bit}.sh`; 35 rows vs `golds/hex/reference.txt`; `to_bytes` identical across word size and arch |
+| 20.2 hex CI | ✅ | `ci_hex_{arm,wasm,32bit}.sh`; 36 rows vs `golds/hex/reference.txt`; `to_bytes` identical across word size and arch |
+| 21.1 Jacobi elliptic | ✅ | `am`/`sn`/`cn`/`dn` + nine quotients; \(m\in[0,1]\); no nested Ziv on \(K\); `sn(0)=0`; `sn(u\|0)=\sin u`; `sn(u\|1)=\tanh u`; identities; `sn(u+4K)=sn(u)`; \(\partial_u sn=cn\,dn\); `ns·sn=1`; `F(sn)=u`; hex `jacobi_sn_1_half` |
 
 Walk this table top to bottom. Do not start a later ⬜ while an earlier ⬜ remains. The walk list is complete.
 
@@ -1150,7 +1151,7 @@ Write `doc/REPRODUCIBILITY.md` with the following content:
 
 ### 20.2 Platform verification CI
 
-**Status:** done 2026-08-31 — `golds/hex/reference.txt` (35 rows). `ci_hex_32bit.sh` (`i686` musl, `WORD_BIT_SIZE=32`), `ci_hex_wasm.sh` (`wasm32-wasip1` + wasmtime), `ci_hex_arm.sh` (`aarch64` musl + qemu-user). Bytes match `to_bytes()` on x86_64.
+**Status:** done 2026-08-31 — `golds/hex/reference.txt` (36 rows; Jacobi `sn` added 2026-09-03). `ci_hex_32bit.sh` (`i686` musl, `WORD_BIT_SIZE=32`), `ci_hex_wasm.sh` (`wasm32-wasip1` + wasmtime), `ci_hex_arm.sh` (`aarch64` musl + qemu-user). Bytes match `to_bytes()` on x86_64.
 
 **Prompt:**
 Extend CI to verify bit-identical results across platforms:
@@ -1163,4 +1164,33 @@ Each script: compile for target, run the hex gold suite, compare output byte-for
 Golds:
 - All three platform scripts exit 0 on the existing gold suite
 - New special function hex golds added to `golds/hex/` for at least one representative value per new function
+
+---
+
+## Section 21 — Jacobi elliptic functions
+
+### 21.1 Real `am`, `sn`, `cn`, `dn`, `cd`
+
+**Status:** done 2026-09-03 — `ops/jacobi.rs`; full 12-function set + `am`; `expr!` leaves; `ExactNum` / array wrappers; `JACOBI_AGM_MAX = 128`. Period reduction skips \(K\) when \(\lvert u\rvert<\pi\) and otherwise uses `elliptic_k_at` (no nested Ziv).
+
+**What:** `ExactNum::jacobi_am`, `jacobi_sn`, `jacobi_cn`, `jacobi_dn`, `jacobi_cd`
+
+Parameter \(m=k^2\). Domain: real \(m\in[0,1]\). \(m<0\) or \(m>1\) is `InvalidArgument` / `NaN`. \(m=0\) is trigonometric; \(m=1\) is hyperbolic. Otherwise reduce \(u\) modulo \(4K(m)\) and evaluate the AGM amplitude.
+
+`expr!` leaves: `jacobi_am` / `sn` / `cn` / `dn` / `cd` / `ns` / `nc` / `nd` / `sc` / `sd` / `cs` / `ds` / `dc`. Inverse of `sn` is `elliptic_f` (no named `jacobi_arcsn`).
+
+**Golds:**
+- `sn(0|m)=0`, `cn(0|m)=1`, `dn(0|m)=1`, `am(0|m)=0`
+- `sn(u|0)=\sin u`, `cn(u|0)=\cos u`, `dn(u|0)=1`
+- `sn(u|1)=\tanh u`, `cn(u|1)=\mathrm{sech}\,u`, `dn(u|1)=\mathrm{sech}\,u`
+- `sn^2+cn^2=1`, `dn^2+m\,sn^2=1`
+- `sn(K(1/2)/2 | 1/2)` closed form
+- `sn(u+4K)=sn(u)`
+- finite difference \(\partial_u sn = cn\cdot dn\)
+- `cd = cn/dn`
+- `F(sn(u|m)|m)=u` for `|u|<K(m)` (inverse is `elliptic_f`)
+- `m<0` and `m>1` are `Err` / `NaN`
+- `ExactNumArray::jacobi_sn` / `jacobi_ns` match the scalar leaves
+
+Complex Jacobi is not in this slice.
 

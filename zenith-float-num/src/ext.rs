@@ -2387,6 +2387,167 @@ impl ExactNum {
             _ => NAN,
         }
     }
+    /// Jacobi amplitude `am(self | m)`. Parameter `m = k² ∈ [0, 1]`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM / descending Landen; cap `JACOBI_AGM_MAX = 128`. \(m=0\) is trig; \(m=1\) is hyperbolic.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no (identity golds; GNU MPFR has no Jacobi `sn`).
+    pub fn jacobi_am(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_am(mv, p, rm, cc), u.is_zero(), true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `sn(self | m)`. Parameter `m = k² ∈ [0, 1]`.
+    /// The inverse on `(-K, K)` is [`Self::elliptic_f`]: `F(sn(u|m)|m) = u`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
+    pub fn jacobi_sn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_sn(mv, p, rm, cc), u.is_zero(), true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `cn(self | m)`. Parameter `m = k² ∈ [0, 1]`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
+    pub fn jacobi_cn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_cn(mv, p, rm, cc), u.is_zero(), true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `dn(self | m)`. Parameter `m = k² ∈ [0, 1]`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
+    pub fn jacobi_dn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_dn(mv, p, rm, cc), false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `cd(self | m) = cn / dn`. Parameter `m = k² ∈ [0, 1]`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
+    pub fn jacobi_cd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_cd(mv, p, rm, cc), false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `ns(self | m) = 1/sn`.
+    pub fn jacobi_ns(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_ns(mv, p, rm, cc), false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `nc(self | m) = 1/cn`.
+    pub fn jacobi_nc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_nc(mv, p, rm, cc), false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `nd(self | m) = 1/dn`.
+    pub fn jacobi_nd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_nd(mv, p, rm, cc), false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `sc(self | m) = sn/cn`.
+    pub fn jacobi_sc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_sc(mv, p, rm, cc), false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `sd(self | m) = sn/dn`.
+    pub fn jacobi_sd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_sd(mv, p, rm, cc), false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `cs(self | m) = cn/sn`.
+    pub fn jacobi_cs(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_cs(mv, p, rm, cc), false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `ds(self | m) = dn/sn`.
+    pub fn jacobi_ds(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_ds(mv, p, rm, cc), false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
+    /// `dc(self | m) = dn/cn`.
+    pub fn jacobi_dc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(u), Flavor::Value(mv)) => {
+                Self::result_to_ext(u.jacobi_dc(mv, p, rm, cc), false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => NAN,
+        }
+    }
     /// Legendre \(P_n(\mathrm{self})\) for integer `n`.
     ///
     /// # Precision
@@ -3634,6 +3795,30 @@ mod tests {
         // 1 + 2x + 3x² at x = 2 → 17
         let pv = ExactNum::polyval(&[one, two, three], &ExactNum::from_u8(2, p), p, rm);
         assert_eq!(pv.cmp(&ExactNum::from_u8(17, p)), Some(0));
+    }
+
+    #[test]
+    fn test_jacobi_sn_public() {
+        let p = 256;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let one = ExactNum::from_u8(1, p);
+        let zero = ExactNum::from_u8(0, p);
+        let half = one.div(&ExactNum::from_u8(2, p), p, rm);
+        let sn0 = zero.jacobi_sn(&half, p, rm, &mut cc);
+        assert!(sn0.is_zero(), "sn(0)");
+        let cn0 = zero.jacobi_cn(&half, p, rm, &mut cc);
+        assert_eq!(cn0.cmp(&one), Some(0), "cn(0)");
+        let sn_m0 = one.jacobi_sn(&zero, p, rm, &mut cc);
+        let sin1 = one.sin(p, rm, &mut cc);
+        let d = sn_m0.sub(&sin1, p, rm).abs();
+        assert!(
+            d.is_zero() || d.exponent().unwrap() < -80,
+            "sn(1|0)=sin 1"
+        );
+        assert!(one
+            .jacobi_sn(&ExactNum::from_i8(2, p), p, rm, &mut cc)
+            .is_nan());
     }
 }
 

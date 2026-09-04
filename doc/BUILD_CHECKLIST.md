@@ -6,8 +6,8 @@ Living document for what is **implemented**, **tested**, and **required** for ze
 
 **Trio:** walk list [`ZENITH_FLOAT_BUILD_PLAN.md`](ZENITH_FLOAT_BUILD_PLAN.md) · inventory [`ZENITH_FLOAT_CAPABILITIES.md`](ZENITH_FLOAT_CAPABILITIES.md) · this checklist (CI / crates / API). Citation: [`REPRODUCIBILITY.md`](REPRODUCIBILITY.md). There is no TODO file.
 
-**Last updated:** 2026-08-31  
-**Crate version:** 1.0.0  
+**Last updated:** 2026-09-03  
+**Crate version:** 1.0.1  
 **Reference versions (crates.io):** astro-float 0.9.6, dashu-float 0.6.0  
 **Policy:** No hardware floating-point in calculations. Rust hardware IEEE type tokens are forbidden in `.rs` (`scripts/ci.sh`). Software `Ieee32`/`Ieee64` store binary32/binary64 as integer bits.
 
@@ -109,6 +109,7 @@ cargo test -p zenith-float-num --features mpfr-tests -- --test-threads=1   # Lin
 | `bessel_j` (integer n) | ✅ | ✅ | Power series; `n ≤ 1024`; MPFR `jn` for n=0,1,2 |
 | `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k` | ✅ | ✅ | Real order; \(K\): \(x>0\), \(\lvertν\rvert\le 32\) |
 | `elliptic_k` / `e` / `f` / `pi` | ✅ | ✅ | Carlson; \(m=k^2\), \(x=\sin\varphi\); identity golds |
+| `jacobi_am` / `sn` / `cn` / `dn` + quotients | ✅ | ✅ | AGM; \(m\in[0,1]\); no nested Ziv; identity + period + `ns·sn=1` + `F(sn)=u`; arrays include quotients |
 | `legendre_p`, `assoc_legendre_p` | ✅ | ✅ | \(n\le 48\); Condon–Shortley |
 | `hypergeom_2f1`, `betainc` | ✅ | ✅ | Series / Gauss / Pfaff; regularized \(I_x\) |
 | `normal_pdf` / `cdf`, `gamma_pdf`, `poisson_pmf`, `chi_squared_cdf` | ✅ | ✅ | \(1/\sqrt{2\pi}\); \(1/2\); \(e^{-1}\); \(\chi^2_2(2\ln 20)=19/20\) |
@@ -400,7 +401,7 @@ Shipped in the crates.io 1.0.0 release:
 - `expr!` `erf+erfc=1` at 256 bits; `J_0²+Y_0²` working prec; `cexpr!(erf(z))` `p_wrk`
 - Criterion specials + linalg; dashu in `compare-bench.sh --quick`; `bench-baselines.tsv` refreshed
 - `scripts/zenith_prepublish.sh` / `ci_full.sh` (12 checks); dashu §24 verified
-- Hex limb CI: 35-row `golds/hex/reference.txt` identical on i686 musl, wasm32-wasip1, aarch64 musl
+- Hex limb CI: 36-row `golds/hex/reference.txt` identical on i686 musl, wasm32-wasip1, aarch64 musl
 - Binary 16-byte BE inline + heap `u32` limbs; `u32::MAX+1=2^{32}` at `p=64`
 - CSV 100×3 bit round-trip; missing cell `NAN`; HDF5 via `hdf5-rust` (100×3 bits, 50×50 exact at 256 bits, 1-D 1000 binary32, nested group, append, wrong name `Err`)
 - `GETTING_STARTED.md` sections for IEEE, arrays, specials, rationals, `cexpr!`, `Ball`

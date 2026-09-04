@@ -1626,7 +1626,7 @@ impl ExactNumNumber {
         }
     }
 
-    fn elliptic_k_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+    pub(crate) fn elliptic_k_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         let zero = Self::from_word(0, p)?;
         let one = Self::from_word(1, p)?;
         let om = one.sub(self, p, RoundingMode::None)?;

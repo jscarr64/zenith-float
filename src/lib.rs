@@ -138,7 +138,7 @@
 //!
 //! ``` toml
 //! [dependencies]
-//! zenith-float = { version = "1.0.0", default-features = false }
+//! zenith-float = { version = "1.0.1", default-features = false }
 //! ```
 //!
 
@@ -218,6 +218,7 @@
 ///  - `bessel_j(x, n)`: Bessel J of integer order `n`.
 ///  - `bessel_j_nu(x, nu)`, `bessel_y(x, nu)`, `bessel_i(x, nu)`, `bessel_k(x, nu)`: real-order Bessel.
 ///  - `elliptic_k(m)`, `elliptic_e(m)`, `elliptic_f(x, m)`, `elliptic_e_inc(x, m)`, `elliptic_pi(n, m)`, `elliptic_pi_inc(n, x, m)`: elliptic integrals (\(m=k^2\), \(x=\sin\varphi\)).
+///  - `jacobi_am(u, m)`, `jacobi_sn(u, m)`, `jacobi_cn(u, m)`, `jacobi_dn(u, m)`, `jacobi_cd(u, m)`, `jacobi_ns`, `jacobi_nc`, `jacobi_nd`, `jacobi_sc`, `jacobi_sd`, `jacobi_cs`, `jacobi_ds`, `jacobi_dc`: Jacobi elliptic functions (\(m=k^2\in[0,1]\)).
 ///  - `legendre_p(x, n)`, `legendre_p_assoc(x, n, m)`: Legendre / associated (Condon–Shortley).
 ///  - `hypergeom_2f1(a, b, c, z)`: Gaussian \({}_2F_1\).
 ///  - `betainc(a, b, x)`: regularized incomplete beta \(I_x(a,b)\).
