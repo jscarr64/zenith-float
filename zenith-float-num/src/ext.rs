@@ -2469,6 +2469,12 @@ impl ExactNum {
         }
     }
     /// `ns(self | m) = 1/sn`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn jacobi_ns(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2479,6 +2485,12 @@ impl ExactNum {
         }
     }
     /// `nc(self | m) = 1/cn`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn jacobi_nc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2489,6 +2501,12 @@ impl ExactNum {
         }
     }
     /// `nd(self | m) = 1/dn`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn jacobi_nd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2499,6 +2517,12 @@ impl ExactNum {
         }
     }
     /// `sc(self | m) = sn/cn`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn jacobi_sc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2509,6 +2533,12 @@ impl ExactNum {
         }
     }
     /// `sd(self | m) = sn/dn`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn jacobi_sd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2519,6 +2549,12 @@ impl ExactNum {
         }
     }
     /// `cs(self | m) = cn/sn`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn jacobi_cs(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2529,6 +2565,12 @@ impl ExactNum {
         }
     }
     /// `ds(self | m) = dn/sn`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn jacobi_ds(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2539,6 +2581,12 @@ impl ExactNum {
         }
     }
     /// `dc(self | m) = dn/cn`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
     pub fn jacobi_dc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {

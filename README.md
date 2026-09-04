@@ -1,6 +1,6 @@
 # zenith-float
 
-Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.1**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
+Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.2**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
 
 All arithmetic runs on integer limbs. The library does not use hardware floating-point registers for calculations. Construct `ExactNum` from integers or from binary, octal, decimal, or hexadecimal strings; construct IEEE widths from integer bit patterns (`from_bits`).
 
@@ -18,12 +18,15 @@ License: MIT OR Apache-2.0. See [CONTRIBUTING.md](CONTRIBUTING.md) if you want t
 
 ## Documentation
 
-- [Getting started](doc/GETTING_STARTED.md) — construct `ExactNum`, `Consts`, `expr!`, format, scoped rounding.
-- [Help](doc/HELP.md) — longer tutorial: precision, rounding, recipes, mistakes, what is not in the crate.
-- [Library inventory](doc/LIBRARY.md) — complete public API: types, every `ExactNum` / `ExactComplex` method, macros, constants, features, rounding, I/O.
-- [Error bounds](doc/README.md) — ulp and series error theory used by `expr!` and property tests.
-- [`expr!` rounding contract](doc/EXPR.md) — per-op working precision and final `set_precision`.
-- [Reproducibility](doc/REPRODUCIBILITY.md) — what determines a result; how to replay; citation line.
+- [Capabilities](doc/ZENITH_FLOAT_CAPABILITIES.md) — what the crate does and does not do
+- [Getting started](doc/GETTING_STARTED.md)
+- [Help](doc/HELP.md) — recipes, mistakes, FAQ
+- [Library](doc/LIBRARY.md) — public API
+- [`expr!` rounding](doc/EXPR.md)
+- [Precision](doc/PRECISION.md)
+- [Reproducibility](doc/REPRODUCIBILITY.md)
+- [Contributing](CONTRIBUTING.md)
+- rustdoc: <https://docs.rs/zenith-float>
 
 ## Features
 
@@ -32,7 +35,6 @@ License: MIT OR Apache-2.0. See [CONTRIBUTING.md](CONTRIBUTING.md) if you want t
 | `std` | yes | Formatting, `FromStr`, serde (when enabled) |
 | `random` | no | `ExactNum::random_normal` for tests and fuzzing |
 | `serde` | no | Serialize/deserialize as a decimal string or integer (`std` required) |
-| `hdf5` | no | `to_hdf5` / `from_hdf5` via crates.io [`hdf5-rust`](https://crates.io/crates/hdf5-rust) (`std` required; no `libhdf5`) |
 | `mpfr-tests` | no | Optional MPFR comparison tests (Linux x86_64, needs `rug`) |
 
 `std` is on by default (formatting and `FromStr`):

@@ -48,7 +48,7 @@ step "scripts/check_precision_docs.sh"
 bash "$root/scripts/check_precision_docs.sh"
 ok "precision rustdoc"
 
-step "CAPABILITIES version/date match Cargo.toml"
+step "CAPABILITIES version matches Cargo.toml"
 python3 "$root/scripts/prepublish_lib.py" version
 ok "version"
 
@@ -56,9 +56,9 @@ step "scripts/check_leaves.sh"
 bash "$root/scripts/check_leaves.sh"
 ok "expr!/cexpr! leaves"
 
-step "no <!-- verify --> in CAPABILITIES §24"
+step "no <!-- verify --> in doc/"
 python3 "$root/scripts/prepublish_lib.py" verify
-ok "comparison table verified"
+ok "no verify markers"
 
 step "proptest PROPTEST_CASES=1000"
 python3 - <<'PY'

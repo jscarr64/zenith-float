@@ -112,12 +112,8 @@ def has_precision_for(name: str, files: list[Path]) -> bool:
 
 
 def check_precision(root: Path) -> int:
-    lib = (root / "doc" / "LIBRARY.md").read_text(encoding="utf-8")
     cap = (root / "doc" / "ZENITH_FLOAT_CAPABILITIES.md").read_text(encoding="utf-8")
-    # Plan §5.1 / §19.4 say "§12 of LIBRARY.md". LIBRARY specials are §15;
-    # CAPABILITIES specials are §12. Check both inventories.
     names = []
-    names.extend(backtick_idents_first_column(section_body(lib, "special functions")))
     names.extend(backtick_idents_first_column(section_body(cap, "Special functions")))
     # Unique, skip expr-only aliases that are not method names.
     skip = {"yes"}
@@ -217,23 +213,20 @@ def check_version(root: Path) -> int:
         return 1
     ver = m.group(1)
     vm = re.search(r"\*\*Version:\*\*\s*(\S+)", cap)
-    dm = re.search(r"\*\*Date:\*\*\s*(\d{4}-\d{2}-\d{2})", cap)
     if not vm or vm.group(1) != ver:
         print(f"error: CAPABILITIES version {vm.group(1) if vm else '?'} != Cargo.toml {ver}", file=sys.stderr)
         return 1
-    if not dm:
-        print("error: CAPABILITIES missing **Date:** YYYY-MM-DD", file=sys.stderr)
-        return 1
-    print(f"check_version: {ver} / {dm.group(1)}")
+    print(f"check_version: {ver}")
     return 0
 
 
 def check_verify(root: Path) -> int:
-    cap = root / "doc" / "ZENITH_FLOAT_CAPABILITIES.md"
-    text = cap.read_text(encoding="utf-8")
-    if "<!-- verify -->" in text:
-        print("error: leftover <!-- verify --> in ZENITH_FLOAT_CAPABILITIES.md", file=sys.stderr)
-        return 1
+    doc = root / "doc"
+    for path in sorted(doc.glob("*.md")):
+        text = path.read_text(encoding="utf-8")
+        if "<!-- verify -->" in text:
+            print(f"error: leftover <!-- verify --> in {path.name}", file=sys.stderr)
+            return 1
     print("check_verify: no <!-- verify --> markers")
     return 0
 

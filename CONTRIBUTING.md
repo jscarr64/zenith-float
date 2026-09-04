@@ -9,7 +9,6 @@ Depend on **`zenith-float`**, not `zenith-float-num`. The kernel crate is an imp
 - Integer-limb arithmetic only. Hardware IEEE arithmetic is not used in calculations.
 - IEEE widths are software types `Ieee32` / `Ieee64` (`from_bits` / `to_bits`). There is no `From` of a hardware float.
 - Incomplete paths return `NaN` with a named `Error`, or `None`. They must not panic and must not invent values.
-- Feature `hdf5` uses crates.io `hdf5-rust`. There is no `libhdf5`.
 
 ## Before you write code
 
@@ -22,7 +21,7 @@ bash scripts/ci.sh
 bash scripts/ci_full.sh
 ```
 
-`scripts/ci.sh` is the default gate (workspace tests, `hdf5`, `no_std` / thumb, MPFR on Linux x86_64). `scripts/ci_full.sh` is the 12-check pre-publish gate.
+`scripts/ci.sh` is the default gate (workspace tests, `no_std` / thumb, MPFR on Linux x86_64). `scripts/ci_full.sh` is the 12-check pre-publish gate.
 
 MPFR golds need Linux x86_64 and `rug` (`--features mpfr-tests`). Replay a random failure with `ZENITH_TEST_SEED=<seed> cargo test <name> -- --test-threads=1`.
 
@@ -34,7 +33,7 @@ A gold is an expected **bit pattern**, **named constant**, **identity**, or **MP
 
 - Keep the diff to the problem. Do not reformat unrelated files.
 - Do not add hardware IEEE types (`f32` / `f64`) in `.rs` sources.
-- Do not add `libhdf5`, CAS, or a second float kernel.
+- Do not add CAS, a second float kernel, or a file-format crate.
 - Public failures stay named (`Error::…` or `None`), not string-only.
 - Run `bash scripts/ci.sh` before you push.
 
@@ -44,7 +43,7 @@ By submitting a change you agree it is licensed under **MIT OR Apache-2.0**, the
 
 - Hardware floating-point arithmetic or `From` of a hardware float
 - Computer algebra, formula rewriting, or an expression IR
-- Linking `libhdf5` or wrapping another HDF5 C library
+- HDF5 or any other file-format library inside this crate (CSV and the binary record already here are enough)
 - BLAS / blocked matmul
 - A total `Ord` / `Hash` that includes NaN
 

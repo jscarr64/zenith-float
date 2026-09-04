@@ -402,7 +402,7 @@ impl ExactNumNumber {
 
         // Argument reduction gives error 2^(-p+5) per step, and 2^(-p+3) once.
         // First terms of the series give 2^(-p+5).
-        // The error of the remaining terms of the series is compensated (see doc/README.md).
+        // The error of the remaining terms of the series is compensated.
         let add_prec = reduction_times as isize * 5 + 8 - e_eff as isize;
         let p_arg = p + if add_prec > 0 { add_prec as usize } else { 0 };
         self.set_precision(p_arg, rm)?;

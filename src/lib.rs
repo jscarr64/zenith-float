@@ -3,6 +3,7 @@
 //! All arithmetic uses integer limbs. The library does not use hardware floating-point for calculations.
 //!
 //! Repository guides: `doc/GETTING_STARTED.md` (short path) and `doc/HELP.md` (longer tutorial).
+//! Inventory: `doc/ZENITH_FLOAT_CAPABILITIES.md`. Patches: `CONTRIBUTING.md`.
 //!
 //! ## Introduction
 //!
@@ -249,7 +250,7 @@
 /// Also, the macro uses minimum and maximum exponent values from the context to limit possible exponent range of the result and to set the limit of precision required for error compensation.
 /// It is recommended to set the smallest exponent range to increase the performance of computations (the internal precision may be as large as the exponent of a number).
 ///
-/// Per-operation rounding (what is rounded when, and what is not guaranteed) is documented in `doc/EXPR.md`.
+/// Per-operation rounding is documented in `doc/EXPR.md`.
 ///
 /// A tuple `(usize, RoundingMode, &mut Consts)`, or `(usize, RoundingMode, &mut Consts, Exponent, Exponent)` can be used as a temporary context (see examples below).
 ///

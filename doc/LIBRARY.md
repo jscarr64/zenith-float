@@ -28,7 +28,6 @@ License: MIT OR Apache-2.0.
 | `std` | yes | `Display` / radix format traits, `FromStr`, `std::error::Error` for `Error`, `SharedConsts`, serde when `serde` is on. |
 | `random` | no | `random_uniform` / `random_gaussian` / `random_exponential` / `random_fill`; existing `random_normal(p, exp_from, exp_to)` mantissa draw; `seeded_random`, `reseed_random`. |
 | `serde` | no | `Serialize` / `Deserialize` for `ExactNum` / `ExactComplex` / `ExactRational` / `ExactInt` / arrays / `Ball`. Decimal strings carry `@p=`. Implies `std`. |
-| `hdf5` | no | `to_hdf5` / `from_hdf5` on IEEE and `ExactNum` arrays via crates.io `hdf5-rust`. Implies `std`. No `libhdf5`. |
 | `mpfr-tests` | no | Optional MPFR / GMP comparison tests in the kernel crate (Linux x86_64, `rug`). Not a runtime math engine. |
 
 ---
@@ -153,7 +152,6 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | Hash | FIPS 180-4 `sha256`/`sha512`; HMAC-SHA-256; `constant_time_eq` always scans both slices. |
 | Binary I/O | `ExactNum` / `ExactNumArray`: `to_bytes` / `from_bytes` / `write_bytes`. Inline 16-byte big-endian record when the mantissa is ≤ `BINARY_INLINE_MANT_BITS` (`to_inline_bytes` / `write_inline_bytes` / `InlineBinaryBuffer`). Wider values use a heap record of `u32` limbs. Invalid input is `Err`, not a panic. |
 | CSV | `Ieee64Array` cells are unsigned binary64 bit patterns (empty / `nan` → `NAN`). `ExactNumArray` cells are `Display@p=` (`std`). `to_csv` / `from_csv` take a path; `to_csv_string` / `from_csv_str` are in-memory. Caps: `CSV_MAX_ROWS`, `CSV_MAX_COLS`. |
-| HDF5 | Feature `hdf5`: `Ieee64Array` / `Ieee32Array` / `ExactNumArray` `to_hdf5` / `from_hdf5` (`path`, `dataset`). Native binary64 / binary32 bit lanes; `ExactNum` cells are opaque (`u32` BE length + `to_bytes`, padded). `Ieee64Array::append_hdf5` grows the first axis. `write_hdf5` / `read_hdf5` take an open `Hdf5File`. Re-exports `Hdf5File`, `HDF5DType`, `HDF5Error`. Wrong dataset name is `Err`. CSV is unchanged. |
 
 These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `ExactNum` mul-then-add per term). No BLAS. Integer SIMD is not an FPU; a SIMD bit pattern that differs from the scalar kernel is a bug. `expr!` stays scalar.
 

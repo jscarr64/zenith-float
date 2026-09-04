@@ -38,8 +38,6 @@ debug_slew() {
   fi
 
   cargo test --workspace
-  cargo test -p zenith-float-num --features hdf5 --lib
-  cargo test -p zenith-float --features hdf5 --lib
   cargo test -p zenith-float-num --features random --test radix_roundtrip
   cargo test -p zenith-float-num --lib --release
   cargo test -p zenith-float-num --lib --no-default-features --features std

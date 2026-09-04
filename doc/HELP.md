@@ -340,31 +340,21 @@ let a = Ieee64Array::from_csv_str("1,,3\n").unwrap();
 assert_eq!(a.get(1).unwrap().to_bits(), Ieee64::NAN.to_bits());
 ```
 
-### 22. HDF5 array round-trip (feature `hdf5`)
-
-```rust
-use zenith_float::{Ieee64, Ieee64Array};
-let a = Ieee64Array::from_values(&[Ieee64::from_i32(1), Ieee64::from_i32(2)]);
-a.to_hdf5("out.h5", "data").unwrap();
-let b = Ieee64Array::from_hdf5("out.h5", "data").unwrap();
-assert_eq!(a.as_bits(), b.as_bits());
-```
-
-### 23. SHA-256 of the empty slice
+### 22. SHA-256 of the empty slice
 
 ```rust
 use zenith_float::sha256;
 let h = sha256(b"");
 ```
 
-### 24. Modular inverse `3⁻¹ ≡ 5 (mod 7)`
+### 23. Modular inverse `3⁻¹ ≡ 5 (mod 7)`
 
 ```rust
 use zenith_float::{mod_inv, ExactInt};
 assert_eq!(mod_inv(&ExactInt::from_i64(3), &ExactInt::from_i64(7)).unwrap(), ExactInt::from_i64(5));
 ```
 
-### 25. `erf` at caller `p`
+### 24. `erf` at caller `p`
 
 ```rust
 use zenith_float::{Consts, ExactNum, RoundingMode};
@@ -372,7 +362,7 @@ let mut cc = Consts::new().unwrap();
 let y = ExactNum::from_u8(1, 256).erf(256, RoundingMode::ToEven, &mut cc);
 ```
 
-### 26. `RoundingMode::None` then one `set_precision`
+### 25. `RoundingMode::None` then one `set_precision`
 
 ```rust
 let mut acc = ExactNum::from_u8(0, 256);
@@ -380,27 +370,27 @@ acc = acc.add(&ExactNum::from_u8(1, 256), 256, RoundingMode::None);
 acc.set_precision(128, RoundingMode::ToEven).unwrap();
 ```
 
-### 27. Hex format after `expr!`
+### 26. Hex format after `expr!`
 
 ```rust
 let s = y.format(zenith_float::Radix::Hex, RoundingMode::ToEven, ctx.consts()).unwrap();
 ```
 
-### 28. `2^10` as `ExactInt`
+### 27. `2^10` as `ExactInt`
 
 ```rust
 use zenith_float::ExactInt;
 assert_eq!(ExactInt::from_i64(2).pow(10), ExactInt::from_i64(1024));
 ```
 
-### 29. FFT of an impulse
+### 28. FFT of an impulse
 
 ```rust
 // ExactNumArray::fft: real row (1, n), n a power of two ≤ FFT_MAX_POINTS.
 // Impulse [1,0,0,0] → [1,1,1,1] (unnormalized). See LIBRARY.md.
 ```
 
-### 30. Newton for `x² − 2 = 0`
+### 29. Newton for `x² − 2 = 0`
 
 ```rust
 use zenith_float::{newton, root_default_tol, Consts, ExactNum, RoundingMode};
@@ -421,7 +411,7 @@ let root = newton(
 );
 ```
 
-### 31. Parse a decimal string (NaN on failure)
+### 30. Parse a decimal string (NaN on failure)
 
 ```rust
 use zenith_float::{Consts, ExactNum, Radix, RoundingMode};
@@ -430,7 +420,7 @@ let x = ExactNum::parse("1.25", Radix::Dec, 128, RoundingMode::ToEven, &mut cc);
 assert!(x.err().is_none());
 ```
 
-### 32. Jacobi `sn` / `cn` and the inverse `F`
+### 31. Jacobi `sn` / `cn` and the inverse `F`
 
 Parameter \(m=k^2\in[0,1]\). The inverse of `sn` is incomplete `elliptic_f` (`x = sin φ`), not a second named leaf.
 
@@ -470,7 +460,7 @@ let back = sn.elliptic_f(&half, p, rm, &mut cc);
 17. **Cloning `Context` without expecting `Result`.** Copying the constants cache can fail allocation.
 18. **`to_inline_bytes` on a 256-bit number.** The 16-byte record holds 64 mantissa bits. Wider values use `to_bytes` (heap record).
 19. **A new `ExactNumArray` cell precision vs the array `p`.** `from_shape` rounds every entry to the array `p`.
-20. **Linking `libhdf5`.** Not in this crate. Feature `hdf5` uses crates.io `hdf5-rust`. CSV and the binary record remain.
+20. **Expecting HDF5 I/O.** This crate does not read or write that format. CSV and the 16-byte binary record remain.
 21. **A named `jacobi_arcsn`.** Inverse of `sn` is `elliptic_f` (`x = sin φ`). `m>1` on Jacobi is `NaN`; complete `K` already does the reciprocal-modulus transform.
 
 ---
@@ -523,13 +513,13 @@ let back = sn.elliptic_f(&half, p, rm, &mut cc);
 
 **What does `lu_decomp` return on OOM?** `None` (failed `try_reserve_exact`).
 
-**How do I serialize?** `serde` feature: strings carry `@p=`. IEEE arrays serialize **bits**. Or `to_bytes` / `to_inline_bytes`. Or CSV. Or `to_hdf5` (feature `hdf5`).
+**How do I serialize?** `serde` feature: strings carry `@p=`. IEEE arrays serialize **bits**. Or `to_bytes` / `to_inline_bytes`. Or CSV.
 
 **Why `@p=` in JSON?** So a 256-bit value does not come back at 128 bits on another target.
 
 **CSV `1` is not the number one?** For `Ieee64Array`, `1` is bit pattern 1 (a subnormal), not `1.0`.
 
-**Is HDF5 supported?** Feature `hdf5` on `zenith-float` (crates.io `hdf5-rust` 1.0). No C `libhdf5`. `Ieee64Array` / `Ieee32Array` / `ExactNumArray` have `to_hdf5` / `from_hdf5`. CSV and `to_bytes` remain.
+**Is HDF5 supported?** No. This crate does not read or write that format. CSV and `to_bytes` remain.
 
 **`no_std`?** Allocator required. Formatting traits and `SharedConsts` need `std`. Thumb (`thumbv7em-none-eabihf`) compiles with `default-features = false`.
 
@@ -572,7 +562,7 @@ These are choices, not missing tickets:
 - Symbolic CAS, formula rewriting, or an expression IR
 - Choosing `p` for a physics formula
 - Total order / `Hash` that includes NaN
-- A C HDF5 dependency
+- HDF5 or any other file-format crate (CSV and the binary record already here are enough)
 
 ---
 

@@ -178,7 +178,7 @@ let v = u.matmul(&u).unwrap();
 assert_eq!(v.get2(0, 0).unwrap().to_bits(), Ieee64::from_i32(2).to_bits());
 ```
 
-CSV, HDF5 (feature `hdf5`), and the 16-byte binary record are in [LIBRARY.md](LIBRARY.md) §7b. Decompositions (`lu_decomp`, `svd_decomp`) return `None` if singular or a workspace reserve fails.
+CSV and the 16-byte binary record are in [LIBRARY.md](LIBRARY.md) §7b. Decompositions (`lu_decomp`, `svd_decomp`) return `None` if singular or a workspace reserve fails.
 
 ## 8. Specials at caller-chosen `(p, rm, cc)`
 

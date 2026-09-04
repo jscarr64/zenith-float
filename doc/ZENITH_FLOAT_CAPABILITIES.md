@@ -1,13 +1,11 @@
 # zenith-float Capability Reference
 
-**Version:** 1.0.1  
-**Date:** 2026-09-03  
+**Version:** 1.0.2  
+**Date:** 2026-09-04  
 **License:** MIT OR Apache-2.0  
 **Status:** Public crate  
 
-This document states exactly what `zenith-float` provides, what it does not provide, and what the named constants and caps mean in practice. It is not a tutorial. For a working example, see `doc/GETTING_STARTED.md`. For full method signatures, see `doc/LIBRARY.md`. For `expr!` rounding contracts, see `doc/EXPR.md`.
-
-Engineering walk list: [`ZENITH_FLOAT_BUILD_PLAN.md`](ZENITH_FLOAT_BUILD_PLAN.md) (status table at the top). Maintainer CI inventory: [`BUILD_CHECKLIST.md`](BUILD_CHECKLIST.md). There is no TODO file — keep these three current after every slice.
+This document states exactly what `zenith-float` provides, what it does not provide, and what the named constants and caps mean in practice. Signatures are rustdoc. Patches: `CONTRIBUTING.md`.
 
 A row marked ✅ is backed by a unit test or MPFR oracle gold. A row marked 🟡 has a named bound or condition; read the notes. Every `NaN` return has an associated `Error`; no operation silently discards a failure.
 
@@ -39,7 +37,6 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `std` | yes | `Display`, `LowerExp`, `UpperExp`, `Binary`, `Octal`, `UpperHex`, `LowerHex`, `FromStr`, `std::error::Error` for `Error`, `SharedConsts`, serde when `serde` is also on |
 | `random` | no | `ExactNum::random_normal`, `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED` |
 | `serde` | no | `Serialize` / `Deserialize` for `ExactNum` / `ExactComplex` / `ExactRational` / `ExactInt` / arrays / `Ball`; decimal strings carry `@p=`; implies `std` |
-| `hdf5` | no | `to_hdf5` / `from_hdf5` on `Ieee64Array` / `Ieee32Array` / `ExactNumArray` via crates.io `hdf5-rust` 1.0. Implies `std`. No `libhdf5`. |
 | `mpfr-tests` | no | Optional MPFR bit-oracle tests; Linux x86_64 + `rug` only; not a runtime dependency |
 
 `no_std` is supported when a global allocator is available (`default-features = false`). Formatting traits require `std`.
@@ -241,7 +238,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `elliptic_k` / `elliptic_e_complete` | `elliptic_k` / `elliptic_e` | Complete; \(m=k^2\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\); \(E\) for \(m\le 1\) |
 | `elliptic_f` / `elliptic_e` | `elliptic_f` / `elliptic_e_inc` | Incomplete; \(x=\sin\varphi\), \(\lvert x\rvert\le 1\) |
 | `elliptic_pi_complete` / `elliptic_pi` | `elliptic_pi` / `elliptic_pi_inc` | \(n<1\), \(m<1\) complete |
-| `jacobi_am` / `sn` / `cn` / `dn` and the nine quotients `cd` `ns` `nc` `nd` `sc` `sd` `cs` `ds` `dc` | yes | Real \(m=k^2\in[0,1]\); \(m=0\) trig; \(m=1\) hyperbolic; AGM otherwise. Period reduction uses \(K\) only when \(\lvert u\rvert\ge\pi\) (avoids nested Ziv). Zero denominator → NaN. Inverse of `sn` is `elliptic_f`. Golds: `sn(0)=0`; `sn(u\|0)=\sin u`; `sn(u\|1)=\tanh u`; `sn^2+cn^2=1`; `dn^2+m\,sn^2=1`; `sn(K/2)`; `sn(u+4K)=sn(u)`; \(\partial_u sn=cn\,dn\); `ns·sn=1`; `F(sn(u\|m)\|m)=u` |
+| `jacobi_am` / `jacobi_sn` / `jacobi_cn` / `jacobi_dn` / `jacobi_cd` / `jacobi_ns` / `jacobi_nc` / `jacobi_nd` / `jacobi_sc` / `jacobi_sd` / `jacobi_cs` / `jacobi_ds` / `jacobi_dc` | yes | Real \(m=k^2\in[0,1]\); \(m=0\) trig; \(m=1\) hyperbolic; AGM otherwise. Period reduction uses \(K\) only when \(\lvert u\rvert\ge\pi\) (avoids nested Ziv). Zero denominator → NaN. Inverse of `jacobi_sn` is `elliptic_f`. Golds: `sn(0)=0`; `sn(u\|0)=\sin u`; `sn(u\|1)=\tanh u`; `sn^2+cn^2=1`; `dn^2+m\,sn^2=1`; `sn(K/2)`; `sn(u+4K)=sn(u)`; \(\partial_u sn=cn\,dn\); `ns·sn=1`; `F(sn(u\|m)\|m)=u` |
 | `legendre_p` / `assoc_legendre_p` | `legendre_p(x, n)` / `legendre_p_assoc(x, n, m)` | Integer \(n\); recurrence at \(p+O(n)\) bits; Condon–Shortley |
 | `hypergeom_2f1` | `hypergeom_2f1(a,b,c,z)` | Series / Gauss / Pfaff; real continuation for \(z\le -1\) when defined; non-real \(z>1\) → NaN |
 | `betainc` | `betainc(a,b,x)` | Regularized \(I_x(a,b)\); \(a>0\), \(b>0\), \(x\in[0,1]\) |
@@ -278,7 +275,6 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | Hash / HMAC | ✅ | `sha256`/`sha512`/`hmac_sha256`/`constant_time_eq`; empty and `abc` FIPS vectors; RFC 4231 HMAC TC1 |
 | Binary interchange | ✅ | `to_inline_bytes` / `write_bytes` / `to_bytes` / `from_bytes`; 16-byte BE inline; heap `u32` limbs; array shape; invalid → `Err` |
 | CSV | ✅ | `Ieee64Array` / `ExactNumArray` `to_csv` / `from_csv`; cells are binary64 bit integers or `Display@p=`; empty → `NAN` |
-| HDF5 | ✅ | Feature `hdf5`: `to_hdf5` / `from_hdf5` via `hdf5-rust`. 100×3 `Ieee64Array` bits; 50×50 `ExactNumArray` at 256 bits; 1-D `Ieee32Array` length 1000; nested `results/data`; append 10×3→20×3; wrong name `Err`. No `libhdf5` |
 | BLAS / blocked / FFT matmul | ⬜ | Not this crate |
 
 Hardware IEEE arithmetic stays forbidden.
@@ -548,35 +544,10 @@ dashu-float 0.6.0: `consts.rs` is an empty stub (no γ). `FBig::with_rounding::<
 
 ---
 
-## 25. Leftovers (this crate — walk the build plan)
-
-The walk list is complete. HDF5 is feature `hdf5` (crates.io `hdf5-rust`), not `libhdf5`.
-
-| Plan | Item |
-| --- | --- |
-| — | No remaining walk-list leftovers |
-
----
-
-## 26. Version history of this document
+## 25. Version history of this document
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| 1.0.2 | 2026-09-04 | Numeric crate only. No file-format I/O. Maintainer walk-list files removed. |
 | 1.0.1 | 2026-09-03 | Jacobi `am`/`sn`/`cn`/`dn` + nine quotients; `expr!` leaves; array wrappers; `JACOBI_AGM_MAX=128`; hex `jacobi_sn_1_half`; identity / period / derivative / `F(sn)=u` golds |
-| 1.0.0 | 2026-08-31 | First crates.io release. HDF5 via crates.io `hdf5-rust` 1.0 (`to_hdf5` / `from_hdf5`). Hex limb CI (`arm`/`wasm`/`32bit`); pre-publish 12-check; dashu §24 verified. Prior: SIMD IEEE div/sqrt/fma; thumb `no_std`; `expr!`/`cexpr!` composite golds; §19.3 benches; complex specials through `_2F1`; arrays; `Ball`/`ComplexBall`; LU/QR/SVD; FFT; Precision rustdoc; REPRO; `ExactRational`; `ExactInt`; `parse_exact`/`format_exact`; `ziv_round_vec`; distribution kernels; RNG; `ExactNumPoly`; Chebyshev; orthogonal polynomials; quadrature; root finding; ODE solvers; DCT/DST/`fft_real`; windows; modular `ExactInt`; SHA-2 / HMAC; serde `@p=` + IEEE bits; 16-byte BE binary interchange; CSV. TODO file retired; walk `ZENITH_FLOAT_BUILD_PLAN.md` |
-
----
-
-## 27. Related documents
-
-| Document | Location | Audience |
-| --- | --- | --- |
-| Build plan (walk list + status) | `doc/ZENITH_FLOAT_BUILD_PLAN.md` | Maintainers; next slice |
-| Build checklist | `doc/BUILD_CHECKLIST.md` | Maintainers; CI and crate inventory |
-| Getting started | `doc/GETTING_STARTED.md` | New users; first working example |
-| Help | `doc/HELP.md` | Why the API looks this way; recipes; common mistakes |
-| Full method inventory | `doc/LIBRARY.md` | Every public type and method |
-| `expr!` rounding contract | `doc/EXPR.md` | Per-op working precision; what `expr!` guarantees and does not |
-| Precision and retry budget | `doc/PRECISION.md` | `MAX_PREC_RETRY`; exponent scaling; `expr!` bounds |
-| Reproducibility and citation | `doc/REPRODUCIBILITY.md` | What determines a result; how to replay; citation line |
-| Error-bound theory | `doc/README.md` | ULP / series error bounds used by `expr!`; contributors |
+| 1.0.0 | 2026-08-31 | First crates.io release. |

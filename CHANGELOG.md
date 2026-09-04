@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.2 — 2026-09-04
+
+This crate is a numeric library. CSV and the 16-byte binary record remain.
+
+- Removed HDF5 I/O and the `hdf5` Cargo feature. This crate does not read or write that file format.
+- Build sheets, checklists, and walk lists are gone. Capabilities, contributing, getting started, help, library, and the other user guides stay.
+
 ## 1.0.1 — 2026-09-03
 
 Jacobi elliptic functions on the real line.
