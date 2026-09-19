@@ -7,7 +7,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 authors = ["Jeffrey S Carr <jscarr1964@gmail.com>"]
 license = "MIT OR Apache-2.0"
@@ -38,8 +38,8 @@ keywords = ["arbitrary-precision", "bigfloat", "numeric", "no-std"]
 categories = ["mathematics", "no-std", "science"]
 
 [dependencies]
-zenith-float-num = { path = "zenith-float-num", version = "1.0.2", default-features = false }
-zenith-float-macro = { path = "zenith-float-macro", version = "1.0.2" }
+zenith-float-num = { path = "zenith-float-num", version = "1.0.3", default-features = false }
+zenith-float-macro = { path = "zenith-float-macro", version = "1.0.3" }
 
 [features]
 default = ["std"]
