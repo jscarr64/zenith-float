@@ -1272,7 +1272,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "zenith-float"
-version = "1.0.2"
+version = "1.0.4"
 dependencies = [
  "trybuild",
  "zenith-float-macro",
@@ -1281,7 +1281,7 @@ dependencies = [
 
 [[package]]
 name = "zenith-float-compare"
-version = "1.0.2"
+version = "1.0.4"
 dependencies = [
  "astro-float",
  "clap",
@@ -1293,7 +1293,7 @@ dependencies = [
 
 [[package]]
 name = "zenith-float-macro"
-version = "1.0.2"
+version = "1.0.4"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1303,7 +1303,7 @@ dependencies = [
 
 [[package]]
 name = "zenith-float-num"
-version = "1.0.2"
+version = "1.0.4"
 dependencies = [
  "criterion",
  "gmp-mpfr-sys",

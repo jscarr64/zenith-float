@@ -297,7 +297,7 @@ impl ExactComplex {
                 RoundingMode::None,
             );
             zk = zk.mul(&z2, work_p, RoundingMode::None);
-            let h = harmonic(m as usize, work_p);
+            let h = harmonic(m, work_p);
             let den = fact.mul(&fact, work_p, RoundingMode::None);
             let mut term = ExactComplex::from_real(h.div(&den, work_p, RoundingMode::None), work_p)
                 .mul(&zk, work_p, RoundingMode::None);
@@ -335,7 +335,7 @@ impl ExactComplex {
         let mut zk = ExactComplex::one(work_p);
         let mut sum = ExactComplex::zero(work_p);
         for k in 0..=series_term_cap(work_p) {
-            let hk = harmonic(k as usize, work_p);
+            let hk = harmonic(k, work_p);
             let rec = ExactNum::from_u8(1, work_p).div(
                 &ExactNum::from_u32((k + 1) as u32, work_p),
                 work_p,

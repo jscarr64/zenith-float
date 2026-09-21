@@ -130,10 +130,10 @@ pub use crate::ode::ODE_MIN_STEP;
 pub use crate::ops::consts::CachedFBig;
 pub use crate::ops::consts::ConstCache;
 pub use crate::ops::consts::ConstCacheInfo;
-pub use crate::ops::JACOBI_AGM_MAX;
 pub use crate::ops::consts::Consts;
 #[cfg(feature = "std")]
 pub use crate::ops::consts::SharedConsts;
+pub use crate::ops::JACOBI_AGM_MAX;
 pub use crate::orthopoly::ORTHOPOLY_N_MAX;
 pub use crate::poly::ExactNumPoly;
 pub use crate::poly::POLY_COMPANION_CLOSED_DEG;
@@ -155,10 +155,10 @@ pub use crate::roots::root_default_tol;
 pub use crate::roots::ROOT_DEFAULT_TOL;
 pub use crate::roots::ROOT_MAX_ITER;
 
-pub use crate::defs::PROPTEST_CASES;
 pub use crate::defs::EXPONENT_BIT_SIZE;
 pub use crate::defs::EXPONENT_MAX;
 pub use crate::defs::EXPONENT_MIN;
+pub use crate::defs::PROPTEST_CASES;
 pub use crate::defs::WORD_BASE;
 pub use crate::defs::WORD_BIT_SIZE;
 pub use crate::defs::WORD_MAX;

@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.4 — 2026-09-20
+
+Clippy debt clear under `cargo clippy --workspace --all-targets -- -D warnings`. SoftFloat IEEE inherent ops renamed to `soft_*` where they collided with `std::ops`; needless range loops / doc list / `?` tidy; workspace `clippy.toml` thresholds for SoftFloat kernels.
+
 ## 1.0.3 — 2026-09-19
 
 Coordinated patch with latex-rust, hdf5-rust, and redb-view (pure-Rust FOSS family adjacent to Accumath; Accumath itself stays proprietary).

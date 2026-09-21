@@ -129,13 +129,13 @@ pub fn idct(
     for ni in 0..n {
         let n_half = ExactNum::from_u32(ni as u32, wrk).add(&half, wrk, none);
         let mut acc = x[0].mul(&inv_n, wrk, none);
-        for k in 1..n {
+        for (k, xk) in x.iter().enumerate().take(n).skip(1) {
             let ang = pi
                 .mul(&ExactNum::from_u32(k as u32, wrk), wrk, none)
                 .mul(&n_half, wrk, none)
                 .div(&nn, wrk, none);
             let c = ang.cos(wrk, none, cc);
-            acc = acc.add(&x[k].mul(&c, wrk, none).mul(&two_n, wrk, none), wrk, none);
+            acc = acc.add(&xk.mul(&c, wrk, none).mul(&two_n, wrk, none), wrk, none);
         }
         if !finite(&acc) {
             return None;
@@ -210,13 +210,13 @@ pub fn idst(
     for ni in 0..n {
         let n_half = ExactNum::from_u32(ni as u32, wrk).add(&half, wrk, none);
         let mut acc = if ni % 2 == 0 { last.clone() } else { last.neg() };
-        for k in 0..n - 1 {
+        for (k, xk) in x.iter().enumerate().take(n - 1) {
             let ang = pi
                 .mul(&ExactNum::from_u32((k + 1) as u32, wrk), wrk, none)
                 .mul(&n_half, wrk, none)
                 .div(&nn, wrk, none);
             let s = ang.sin(wrk, none, cc);
-            acc = acc.add(&x[k].mul(&s, wrk, none), wrk, none);
+            acc = acc.add(&xk.mul(&s, wrk, none), wrk, none);
         }
         acc = acc.mul(&two_n, wrk, none);
         if !finite(&acc) {

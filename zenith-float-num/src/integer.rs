@@ -140,7 +140,7 @@ impl ExactInt {
     }
 
     /// Compare as signed integers.
-    pub fn cmp(&self, other: &Self) -> Ordering {
+    pub fn soft_cmp(&self, other: &Self) -> Ordering {
         if self.is_zero() && other.is_zero() {
             return Ordering::Equal;
         }
@@ -156,10 +156,10 @@ impl ExactInt {
         let n = a.len().max(b.len());
         let mut out = vec![0; n + 1];
         let mut c = 0;
-        for i in 0..n {
+        for (i, out_i) in out.iter_mut().enumerate().take(n) {
             let x = a.get(i).copied().unwrap_or(0);
             let y = b.get(i).copied().unwrap_or(0);
-            c = add_carry(x, y, c, &mut out[i]);
+            c = add_carry(x, y, c, out_i);
         }
         out[n] = c;
         out
@@ -504,7 +504,7 @@ fn shift_le_low_word(m: &[Word], shift: isize) -> Word {
 
 impl PartialEq for ExactInt {
     fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
+        self.soft_cmp(other) == Ordering::Equal
     }
 }
 

@@ -225,9 +225,7 @@ impl ExactNumPoly {
             if c.is_nan() || c.is_inf() || !c.fract().is_zero() {
                 return None;
             }
-            let Some(i) = ExactInt::from_exact_num(c) else {
-                return None;
-            };
+            let i = ExactInt::from_exact_num(c)?;
             g = Some(match g {
                 None => i,
                 Some(prev) => prev.gcd(&i),
@@ -301,7 +299,7 @@ impl ExactNumPoly {
         let mut acc = Self::from_coeffs(p, rm, &[self.leading()]);
         for c in self.coeffs.iter().rev().skip(1) {
             acc = acc.mul(g, p, rm);
-            acc = acc.add(&Self::from_coeffs(p, rm, &[c.clone()]), p, rm);
+            acc = acc.add(&Self::from_coeffs(p, rm, core::slice::from_ref(c)), p, rm);
         }
         acc
     }

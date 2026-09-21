@@ -53,7 +53,7 @@ impl U32x4 {
             let s = _mm_add_epi32(a, b);
             let mut out = [0u32; 4];
             _mm_storeu_si128(out.as_mut_ptr() as *mut __m128i, s);
-            return Self(out);
+            Self(out)
         }
         #[cfg(target_arch = "aarch64")]
         unsafe {
@@ -114,12 +114,12 @@ fn mul_u32x4_integer(a: [u32; 4], b: [u32; 4]) -> [u64; 4] {
         let vb = _mm_loadu_si128(b.as_ptr() as *const __m128i);
         let p_even = _mm_mul_epu32(va, vb);
         let p_odd = _mm_mul_epu32(_mm_srli_si128(va, 4), _mm_srli_si128(vb, 4));
-        return [
+        [
             _mm_cvtsi128_si64(p_even) as u64,
             _mm_cvtsi128_si64(p_odd) as u64,
             _mm_cvtsi128_si64(_mm_srli_si128(p_even, 8)) as u64,
             _mm_cvtsi128_si64(_mm_srli_si128(p_odd, 8)) as u64,
-        ];
+        ]
     }
     #[cfg(not(target_arch = "x86_64"))]
     {
@@ -151,9 +151,12 @@ pub fn add_bin32_x4(a: Bin32x4, b: Bin32x4) -> Bin32x4 {
             let sb3 = U32x4([sb.0[0] << 3, sb.0[1] << 3, sb.0[2] << 3, sb.0[3] << 3]);
             let sum = sa3.wrapping_add(sb3);
             let mut out = [0u32; 4];
-            for i in 0..4 {
-                let (exp, core) = round_rne(sum.0[i] as u128, exp_a.0[i] as i32, false, BIN32);
-                out[i] = pack_finite(sign_a.0[i] != 0, exp, core, BIN32) as u32;
+            for (out_i, ((&sum_i, &exp_i), &sign_i)) in out
+                .iter_mut()
+                .zip(sum.0.iter().zip(exp_a.0.iter()).zip(sign_a.0.iter()))
+            {
+                let (exp, core) = round_rne(sum_i as u128, exp_i as i32, false, BIN32);
+                *out_i = pack_finite(sign_i != 0, exp, core, BIN32) as u32;
             }
             debug_assert_bit_eq32(&out, a, b, add_bits);
             return out;
@@ -216,7 +219,7 @@ fn add_u64x2_integer(a: [u64; 2], b: [u64; 2]) -> [u64; 2] {
         let s = _mm_add_epi64(va, vb);
         let mut out = [0u64; 2];
         _mm_storeu_si128(out.as_mut_ptr() as *mut __m128i, s);
-        return out;
+        out
     }
     #[cfg(not(target_arch = "x86_64"))]
     {
@@ -306,7 +309,7 @@ fn mul_u64_integer(a: u64, b: u64) -> u128 {
         let m1 = _mm_cvtsi128_si64(p1) as u128;
         let m2 = _mm_cvtsi128_si64(p2) as u128;
         let hi = _mm_cvtsi128_si64(p3) as u128;
-        return lo + ((m1 + m2) << 32) + (hi << 64);
+        lo + ((m1 + m2) << 32) + (hi << 64)
     }
     #[cfg(not(target_arch = "x86_64"))]
     {
@@ -429,10 +432,8 @@ pub fn div_bin64_x2(a: Bin64x2, b: Bin64x2) -> Bin64x2 {
     if let (Some(a0), Some(b0)) = (normal_sig64(a[0]), normal_sig64(b[0])) {
         if let (Some(a1), Some(b1)) = (normal_sig64(a[1]), normal_sig64(b[1])) {
             let extra = BIN64.frac + 4;
-            let out = [
-                div_normal_lane(a0, b0, extra, BIN64),
-                div_normal_lane(a1, b1, extra, BIN64),
-            ];
+            let out =
+                [div_normal_lane(a0, b0, extra, BIN64), div_normal_lane(a1, b1, extra, BIN64)];
             debug_assert_eq!(out[0], div_bits(a[0], b[0], BIN64));
             debug_assert_eq!(out[1], div_bits(a[1], b[1], BIN64));
             return out;
@@ -578,10 +579,7 @@ pub fn fma_bin64_x2(a: Bin64x2, b: Bin64x2, c: Bin64x2) -> Bin64x2 {
             }
         }
     }
-    [
-        fma_bits(a[0], b[0], c[0], BIN64),
-        fma_bits(a[1], b[1], c[1], BIN64),
-    ]
+    [fma_bits(a[0], b[0], c[0], BIN64), fma_bits(a[1], b[1], c[1], BIN64)]
 }
 
 fn debug_assert_fma32(got: &Bin32x4, a: Bin32x4, b: Bin32x4, c: Bin32x4) {
@@ -594,7 +592,11 @@ fn debug_assert_fma32(got: &Bin32x4, a: Bin32x4, b: Bin32x4, c: Bin32x4) {
     }
 }
 
-fn map_unary_u32(a: &[u32], chunk: fn(Bin32x4) -> Bin32x4, tail: fn(u64, Format) -> u64) -> alloc::vec::Vec<u32> {
+fn map_unary_u32(
+    a: &[u32],
+    chunk: fn(Bin32x4) -> Bin32x4,
+    tail: fn(u64, Format) -> u64,
+) -> alloc::vec::Vec<u32> {
     let mut out = alloc::vec::Vec::with_capacity(a.len());
     let mut i = 0;
     while i + 4 <= a.len() {
@@ -608,7 +610,11 @@ fn map_unary_u32(a: &[u32], chunk: fn(Bin32x4) -> Bin32x4, tail: fn(u64, Format)
     out
 }
 
-fn map_unary_u64(a: &[u64], chunk: fn(Bin64x2) -> Bin64x2, tail: fn(u64, Format) -> u64) -> alloc::vec::Vec<u64> {
+fn map_unary_u64(
+    a: &[u64],
+    chunk: fn(Bin64x2) -> Bin64x2,
+    tail: fn(u64, Format) -> u64,
+) -> alloc::vec::Vec<u64> {
     let mut out = alloc::vec::Vec::with_capacity(a.len());
     let mut i = 0;
     while i + 2 <= a.len() {
@@ -659,11 +665,7 @@ fn map_triples_u64(
     let mut out = alloc::vec::Vec::with_capacity(a.len());
     let mut i = 0;
     while i + 2 <= a.len() {
-        let r = chunk(
-            [a[i], a[i + 1]],
-            [b[i], b[i + 1]],
-            [c[i], c[i + 1]],
-        );
+        let r = chunk([a[i], a[i + 1]], [b[i], b[i + 1]], [c[i], c[i + 1]]);
         out.extend_from_slice(&r);
         i += 2;
     }

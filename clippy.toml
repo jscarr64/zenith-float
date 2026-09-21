@@ -1,0 +1,10 @@
+# Clippy for zenith-float SoftFloat kernels.
+#
+# too-many-arguments-threshold: numeric kernels (ODE, SVD householders, roots,
+# Airy, hypergeom) carry 8–13 matrices/coeff/state params. Grouping into structs
+# would obscure the math and churn the public API for no correctness gain.
+# Same rationale as Accumath workspace.
+
+too-many-arguments-threshold = 13
+max-fn-params-bools = 8
+type-complexity-threshold = 300

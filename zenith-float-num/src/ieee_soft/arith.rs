@@ -556,7 +556,7 @@ pub(super) fn from_i32_bits(n: i32, f: Format) -> u64 {
         return 0;
     }
     let sign = n < 0;
-    let mut mag = (n as i64).unsigned_abs() as u64;
+    let mut mag = (n as i64).unsigned_abs();
     let lz = mag.leading_zeros();
     let msb = 63 - lz;
     let exp = msb as i32 + f.bias;

@@ -3860,10 +3860,7 @@ mod tests {
         let sn_m0 = one.jacobi_sn(&zero, p, rm, &mut cc);
         let sin1 = one.sin(p, rm, &mut cc);
         let d = sn_m0.sub(&sin1, p, rm).abs();
-        assert!(
-            d.is_zero() || d.exponent().unwrap() < -80,
-            "sn(1|0)=sin 1"
-        );
+        assert!(d.is_zero() || d.exponent().unwrap() < -80, "sn(1|0)=sin 1");
         assert!(one
             .jacobi_sn(&ExactNum::from_i8(2, p), p, rm, &mut cc)
             .is_nan());

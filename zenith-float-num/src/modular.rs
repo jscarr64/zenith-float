@@ -108,7 +108,7 @@ pub fn mod_inv(a: &ExactInt, modulus: &ExactInt) -> Option<ExactInt> {
 /// Jaeschke set; this function only uses the callers' bases.
 pub fn miller_rabin(n: &ExactInt, witnesses: &[ExactInt]) -> bool {
     let n = abs_int(n);
-    if n.cmp(&two()) == Ordering::Less {
+    if n.soft_cmp(&two()) == Ordering::Less {
         return false;
     }
     if n == two() || n == ExactInt::from_u64(3) {
@@ -226,7 +226,7 @@ fn brent_once(n: &ExactInt, c: &ExactInt, max_f: usize) -> Option<ExactInt> {
 /// Brent Pollard ρ. A proper factor of `|n|`, or `None` if prime / cap hit.
 pub fn pollard_rho(n: &ExactInt) -> Option<ExactInt> {
     let n = abs_int(n);
-    if n.cmp(&two()) != Ordering::Greater {
+    if n.soft_cmp(&two()) != Ordering::Greater {
         return None;
     }
     if is_even(&n) {

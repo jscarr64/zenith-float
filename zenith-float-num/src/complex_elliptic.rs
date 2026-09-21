@@ -516,6 +516,7 @@ impl ExactComplex {
     ///
     /// - Algorithm: Carlson `R_F` / `R_D`; `CARLSON_DUPE_MAX = 128`.
     /// - MPFR oracle: no.
+    ///
     /// Cuts as for \(F\). \(E(x,0)=\arcsin x\); \(E(x,1)=x\).
     pub fn elliptic_e(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || m.is_nan() {

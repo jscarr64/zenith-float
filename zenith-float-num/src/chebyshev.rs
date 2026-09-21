@@ -117,10 +117,10 @@ where
     let mut coeffs = Vec::with_capacity(n);
     for j in 0..n {
         let mut s = ExactNum::new(wrk);
-        for k in 0..n {
+        for (k, fxk) in fx.iter().enumerate().take(n) {
             let w = node_cos_j(j, k, n, wrk, RoundingMode::None, cc);
             s = s.add(
-                &fx[k].mul(&w, wrk, RoundingMode::None),
+                &fxk.mul(&w, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             );

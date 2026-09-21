@@ -90,7 +90,8 @@ impl Mantissa {
     ) {
         if k1 == 2 {
             let (a, b) = parts.split_at_mut(s);
-            Self::fft_butterfly(a.first_mut().unwrap(), b.first_mut().unwrap(), n1, modulus); // a, b nonempty
+            Self::fft_butterfly(a.first_mut().unwrap(), b.first_mut().unwrap(), n1, modulus);
+        // a, b nonempty
         } else {
             let k2 = k1 / 2;
             let kk = k - 1;

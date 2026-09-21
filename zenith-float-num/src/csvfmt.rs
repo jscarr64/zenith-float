@@ -198,7 +198,7 @@ fn row_width(line: &str) -> Result<usize, Error> {
     Ok(n)
 }
 
-fn split_row<'a>(line: &'a str, cols: usize) -> Result<Vec<&'a str>, Error> {
+fn split_row(line: &str, cols: usize) -> Result<Vec<&str>, Error> {
     let mut fields: Vec<&str> = line.split(',').collect();
     if fields.len() > cols {
         return Err(Error::InvalidArgument);

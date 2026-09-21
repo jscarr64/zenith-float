@@ -223,7 +223,7 @@ macro_rules! impl_ieee_array {
 
             /// Add a scalar to every lane.
             pub fn add_scalar(&self, s: $scalar) -> Self {
-                self.map(|x| x.add(s))
+                self.map(|x| x.soft_add(s))
             }
 
             /// Elementwise sub. Shapes must match. Integer SIMD via sign-bit
@@ -254,7 +254,7 @@ macro_rules! impl_ieee_array {
 
             /// Multiply every lane by a scalar.
             pub fn mul_scalar(&self, s: $scalar) -> Self {
-                self.map(|x| x.mul(s))
+                self.map(|x| x.soft_mul(s))
             }
 
             /// Elementwise div. Shapes must match. Integer SIMD unpack on the
@@ -300,7 +300,7 @@ macro_rules! impl_ieee_array {
             pub fn sum(&self) -> $scalar {
                 let mut acc = $scalar::ZERO;
                 for &b in &self.bits {
-                    acc = acc.add($scalar::from_bits(b));
+                    acc = acc.soft_add($scalar::from_bits(b));
                 }
                 acc
             }
@@ -312,7 +312,7 @@ macro_rules! impl_ieee_array {
                 }
                 let mut acc = $scalar::ZERO;
                 for (a, b) in self.bits.iter().zip(rhs.bits.iter()) {
-                    acc = acc.add($scalar::from_bits(*a).mul($scalar::from_bits(*b)));
+                    acc = acc.soft_add($scalar::from_bits(*a).soft_mul($scalar::from_bits(*b)));
                 }
                 Some(acc)
             }
@@ -332,7 +332,7 @@ macro_rules! impl_ieee_array {
                         for t in 0..k {
                             let a = $scalar::from_bits(self.bits[i * k + t]);
                             let b = $scalar::from_bits(rhs.bits[t * n + j]);
-                            acc = acc.add(a.mul(b));
+                            acc = acc.soft_add(a.soft_mul(b));
                         }
                         bits[i * n + j] = acc.to_bits();
                     }
@@ -1395,8 +1395,8 @@ impl ExactNumArray {
             }
             if j < k {
                 let mut nrm = ExactNum::from_u8(0, p);
-                for t in 0..m {
-                    nrm = nrm.add(&v[t].mul(&v[t], p, rm), p, rm);
+                for vt in v.iter().take(m) {
+                    nrm = nrm.add(&vt.mul(vt, p, rm), p, rm);
                 }
                 nrm = nrm.sqrt(p, rm);
                 r[j * n + j] = nrm.clone();
@@ -1510,10 +1510,10 @@ impl ExactNumArray {
         })
     }
 
-    fn map_at(&self, p: usize, mut op: impl FnMut(&ExactNum) -> ExactNum) -> Self {
+    fn map_at(&self, p: usize, op: impl FnMut(&ExactNum) -> ExactNum) -> Self {
         Self {
             p,
-            vals: self.vals.iter().map(|x| op(x)).collect(),
+            vals: self.vals.iter().map(op).collect(),
             rows: self.rows,
             cols: self.cols,
         }
@@ -1607,8 +1607,8 @@ fn svd_apply_house_left(
             s = s.add(&v[i].mul(&a[(row0 + i) * cols + j], p, rm), p, rm);
         }
         s = s.mul(beta, p, rm);
-        for i in 0..vlen {
-            let t = s.mul(&v[i], p, rm);
+        for (i, vi) in v.iter().enumerate().take(vlen) {
+            let t = s.mul(vi, p, rm);
             let idx = (row0 + i) * cols + j;
             a[idx] = a[idx].sub(&t, p, rm);
         }
@@ -1633,8 +1633,8 @@ fn svd_apply_house_right(
             s = s.add(&a[i * cols + col0 + t].mul(&v[t], p, rm), p, rm);
         }
         s = s.mul(beta, p, rm);
-        for t in 0..vlen {
-            let tt = s.mul(&v[t], p, rm);
+        for (t, vt) in v.iter().enumerate().take(vlen) {
+            let tt = s.mul(vt, p, rm);
             let idx = i * cols + col0 + t;
             a[idx] = a[idx].sub(&tt, p, rm);
         }
@@ -1934,9 +1934,9 @@ fn svd_decomp_tall(
         sweeps += 1;
     }
 
-    for i in 0..n {
-        if d[i].is_negative() {
-            d[i] = d[i].neg();
+    for (i, di) in d.iter_mut().enumerate().take(n) {
+        if di.is_negative() {
+            *di = di.neg();
             for r in 0..m {
                 let idx = r * m + i;
                 u[idx] = u[idx].neg();
@@ -2463,18 +2463,12 @@ mod tests {
             let ai = a.get(i).unwrap();
             let oi = one.get(i).unwrap();
             let ti = two.get(i).unwrap();
-            assert_eq!(add.get(i).unwrap().to_bits(), ai.add(oi).to_bits());
-            assert_eq!(mul.get(i).unwrap().to_bits(), ai.mul(ti).to_bits());
-            assert_eq!(div.get(i).unwrap().to_bits(), ai.div(ai).to_bits());
-            assert_eq!(
-                sq.get(i).unwrap().to_bits(),
-                ai.mul(ai).sqrt().to_bits()
-            );
-            assert_eq!(sub.get(i).unwrap().to_bits(), ai.sub(oi).to_bits());
-            assert_eq!(
-                fma.get(i).unwrap().to_bits(),
-                ai.mul_add(oi, oi).to_bits()
-            );
+            assert_eq!(add.get(i).unwrap().to_bits(), ai.soft_add(oi).to_bits());
+            assert_eq!(mul.get(i).unwrap().to_bits(), ai.soft_mul(ti).to_bits());
+            assert_eq!(div.get(i).unwrap().to_bits(), ai.soft_div(ai).to_bits());
+            assert_eq!(sq.get(i).unwrap().to_bits(), ai.soft_mul(ai).sqrt().to_bits());
+            assert_eq!(sub.get(i).unwrap().to_bits(), ai.soft_sub(oi).to_bits());
+            assert_eq!(fma.get(i).unwrap().to_bits(), ai.mul_add(oi, oi).to_bits());
             let xa = ai.to_exact(p);
             let x1 = oi.to_exact(p);
             let x2 = ti.to_exact(p);
@@ -2491,9 +2485,14 @@ mod tests {
                 Ieee64::from_exact(&xa.div(&xa, p, rm)).to_bits()
             );
             let sqe = xa.mul(&xa, p, rm).sqrt(p, rm);
-            assert_eq!(sq.get(i).unwrap().to_bits(), Ieee64::from_exact(&sqe).to_bits());
+            assert_eq!(
+                sq.get(i).unwrap().to_bits(),
+                Ieee64::from_exact(&sqe).to_bits()
+            );
         }
-        assert!(a.fma(&one, &Ieee64Array::from_values(&vals[..10])).is_none());
+        assert!(a
+            .fma(&one, &Ieee64Array::from_values(&vals[..10]))
+            .is_none());
     }
 
     #[test]
@@ -2578,11 +2577,7 @@ mod tests {
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new().unwrap();
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
-        let xs = [
-            ExactNum::from_u8(0, p),
-            ExactNum::from_u8(1, p),
-            ExactNum::from_u8(2, p),
-        ];
+        let xs = [ExactNum::from_u8(0, p), ExactNum::from_u8(1, p), ExactNum::from_u8(2, p)];
         let a = ExactNumArray::from_values(p, &xs);
         let out = a.jacobi_sn(&half, p, rm, &mut cc);
         let out_ns = a.jacobi_ns(&half, p, rm, &mut cc);

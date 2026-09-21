@@ -105,22 +105,22 @@ macro_rules! impl_ieee {
             }
 
             /// IEEE add (to-nearest, ties to even).
-            pub fn add(self, rhs: Self) -> Self {
+            pub fn soft_add(self, rhs: Self) -> Self {
                 Self($from_u64(add_bits(self.raw(), rhs.raw(), $fmt)))
             }
 
             /// IEEE sub.
-            pub fn sub(self, rhs: Self) -> Self {
+            pub fn soft_sub(self, rhs: Self) -> Self {
                 Self($from_u64(sub_bits(self.raw(), rhs.raw(), $fmt)))
             }
 
             /// IEEE mul.
-            pub fn mul(self, rhs: Self) -> Self {
+            pub fn soft_mul(self, rhs: Self) -> Self {
                 Self($from_u64(mul_bits(self.raw(), rhs.raw(), $fmt)))
             }
 
             /// IEEE div. \(x/0\) is \(\pm\infty\); \(0/0\) is NaN.
-            pub fn div(self, rhs: Self) -> Self {
+            pub fn soft_div(self, rhs: Self) -> Self {
                 Self($from_u64(div_bits(self.raw(), rhs.raw(), $fmt)))
             }
 
@@ -156,7 +156,7 @@ macro_rules! impl_ieee {
             }
 
             /// Negate (flip the sign bit).
-            pub fn neg(self) -> Self {
+            pub fn soft_neg(self) -> Self {
                 Self($from_u64(self.raw() ^ $fmt.sign_mask()))
             }
 
@@ -184,7 +184,7 @@ macro_rules! impl_ieee {
             }
 
             /// Compare; `None` if either is NaN. \(+0 = -0\).
-            pub fn cmp(self, other: Self) -> Option<Ordering> {
+            pub fn soft_cmp(self, other: Self) -> Option<Ordering> {
                 cmp_bits(self.raw(), other.raw(), $fmt).map(|d| {
                     if d < 0 {
                         Ordering::Less
@@ -199,38 +199,38 @@ macro_rules! impl_ieee {
 
         impl PartialEq for $ty {
             fn eq(&self, other: &Self) -> bool {
-                self.cmp(*other) == Some(Ordering::Equal)
+                self.soft_cmp(*other) == Some(Ordering::Equal)
             }
         }
 
         impl core::ops::Add for $ty {
             type Output = Self;
             fn add(self, rhs: Self) -> Self {
-                $ty::add(self, rhs)
+                $ty::soft_add(self, rhs)
             }
         }
         impl core::ops::Sub for $ty {
             type Output = Self;
             fn sub(self, rhs: Self) -> Self {
-                $ty::sub(self, rhs)
+                $ty::soft_sub(self, rhs)
             }
         }
         impl core::ops::Mul for $ty {
             type Output = Self;
             fn mul(self, rhs: Self) -> Self {
-                $ty::mul(self, rhs)
+                $ty::soft_mul(self, rhs)
             }
         }
         impl core::ops::Div for $ty {
             type Output = Self;
             fn div(self, rhs: Self) -> Self {
-                $ty::div(self, rhs)
+                $ty::soft_div(self, rhs)
             }
         }
         impl core::ops::Neg for $ty {
             type Output = Self;
             fn neg(self) -> Self {
-                $ty::neg(self)
+                $ty::soft_neg(self)
             }
         }
     };
@@ -347,7 +347,7 @@ mod tests {
         assert_eq!((one / Ieee32::from_i32(3)).to_bits(), THIRD32);
         assert_eq!((three - one).to_bits(), TWO32);
         assert!(Ieee32::from_bits(0)
-            .add(Ieee32::from_bits(0x8000_0000))
+            .soft_add(Ieee32::from_bits(0x8000_0000))
             .is_zero());
         assert_eq!(Ieee32::from_i32(1).to_bits(), ONE32);
         assert_eq!(Ieee32::from_i32(-1).to_bits(), 0xBF80_0000);
@@ -386,8 +386,8 @@ mod tests {
         assert!(tiny.is_subnormal());
         assert_eq!((tiny + tiny).to_bits(), 2);
         assert_eq!(one.mul_add(two, one).to_bits(), THREE64);
-        assert_eq!(one.neg().to_bits(), MONE64);
-        assert_eq!(Ieee64::ZERO.cmp(Ieee64::NEG_ZERO), Some(Ordering::Equal));
+        assert_eq!(one.soft_neg().to_bits(), MONE64);
+        assert_eq!(Ieee64::ZERO.soft_cmp(Ieee64::NEG_ZERO), Some(Ordering::Equal));
         assert_eq!(one.next_up().next_down().to_bits(), ONE64);
         let (m, e) = two.frexp();
         assert_eq!(e, 2);
