@@ -17,5 +17,5 @@ proc-macro = true
 [dependencies]
 quote = { version = "1", default-features = false }
 syn = { version = "1", default-features = false, features = ["parsing", "proc-macro", "full", "extra-traits", "printing"] }
-zenith-float-num = { version = "1.0.3", path = "../zenith-float-num", default-features = false }
+zenith-float-num = { version = "1.0.4", path = "../zenith-float-num", default-features = false }
 proc-macro2 = { version = "1", default-features = false }
