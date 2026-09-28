@@ -10,8 +10,8 @@ use crate::Sign;
 use crate::Word;
 use crate::WORD_BIT_SIZE;
 
-/// \(|x|\) below this uses the Taylor pair \((f,g)\); at or above, the asymptotic.
-const AIRY_SERIES_THRESHOLD: Word = 8;
+/// Term cap for the Taylor pair \((f,g)\) (only used while \(\xi<0.35\,p\)).
+const AIRY_SERIES_MAX: usize = 1 << 16;
 
 impl ExactNumNumber {
     /// Airy \(\mathrm{Ai}(\mathrm{self})\) at precision `p`.
@@ -78,10 +78,18 @@ impl ExactNumNumber {
             let bip0 = sqrt3.mul(&c2, p, RoundingMode::None)?;
             return Ok((c1, bi0, aip0, bip0));
         }
-        let thr = Self::from_word(AIRY_SERIES_THRESHOLD, p)?;
-        if self.abs_cmp(&thr) < 0 {
-            let (f, g, fp, gp) = self.airy_fg_series(p)?;
-            return combine_fg(&c1, &c2, &sqrt3, &f, &g, &fp, &gp, p);
+        // The asymptotic expansions stop at a smallest term of about e^{-2ξ}, ξ = (2/3)|x|^{3/2};
+        // use them only once that is below 2^-p. Otherwise sum the Taylor pair, whose terms
+        // reach about e^{ξ} while Ai can be as small as e^{-ξ}: carry 2ξ·log₂e extra bits.
+        let mut ax = self.clone()?;
+        ax.set_sign(Sign::Pos);
+        let xi = ax.airy_xi_scales(p, cc)?.0;
+        let xi_bits = if xi.exponent() >= 24 { None } else { Some(xi.int_as_usize()?) };
+        if let Some(xi_n) = xi_bits.filter(|&n| n < (p + 16) * 7 / 20) {
+            let pw = p + round_p(3 * (xi_n + 1)) + WORD_BIT_SIZE;
+            let (c1, c2, sqrt3) = airy_cs(pw, cc)?;
+            let (f, g, fp, gp) = self.airy_fg_series(pw)?;
+            return combine_fg(&c1, &c2, &sqrt3, &f, &g, &fp, &gp, pw);
         }
         if self.is_positive() {
             self.airy_asymp_pos(p, cc)
@@ -101,8 +109,7 @@ impl ExactNumNumber {
         let mut tg = self.clone()?;
         let mut g = self.clone()?;
         let mut gp = one;
-        let cap = p.saturating_add(WORD_BIT_SIZE);
-        for k in 1..=cap {
+        for k in 1..=AIRY_SERIES_MAX {
             let k3 = Self::from_word((3 * k) as Word, p)?;
             let k3m1 = Self::from_word((3 * k - 1) as Word, p)?;
             let k3p1 = Self::from_word((3 * k + 1) as Word, p)?;
@@ -349,15 +356,18 @@ fn airy_uv_sums(
             .mul(&num, p, RoundingMode::None)?
             .div(&den, p, RoundingMode::None)?;
         let mut tu = u.div(&xi_pow, p, RoundingMode::None)?;
-        let vfac = ExactNumNumber::from_word((6 * k + 1) as Word, p)?.div(
-            &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
-            p,
-            RoundingMode::None,
-        )?;
+        // v_k = −(6k+1)/(6k−1) · u_k (DLMF 9.7.2).
+        let vfac = ExactNumNumber::from_word((6 * k + 1) as Word, p)?
+            .div(
+                &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
+                p,
+                RoundingMode::None,
+            )?
+            .neg()?;
         let mut tv = tu.mul(&vfac, p, RoundingMode::None)?;
         if alt && k % 2 == 1 {
-            tu.set_sign(Sign::Neg);
-            tv.set_sign(Sign::Neg);
+            tu = tu.neg()?;
+            tv = tv.neg()?;
         }
         if tu.abs_cmp(&prev_u) > 0 {
             break;
@@ -404,17 +414,20 @@ fn airy_pq_sums(
         zpow = zpow.mul(zeta, p, RoundingMode::None)?;
         let mut t = u.div(&zpow, p, RoundingMode::None)?;
         if use_v {
-            let vfac = ExactNumNumber::from_word((6 * k + 1) as Word, p)?.div(
-                &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
-                p,
-                RoundingMode::None,
-            )?;
+            // v_k = −(6k+1)/(6k−1) · u_k (DLMF 9.7.2).
+            let vfac = ExactNumNumber::from_word((6 * k + 1) as Word, p)?
+                .div(
+                    &ExactNumNumber::from_word((6 * k - 1) as Word, p)?,
+                    p,
+                    RoundingMode::None,
+                )?
+                .neg()?;
             t = t.mul(&vfac, p, RoundingMode::None)?;
         }
         // (−1)^{⌊k/2⌋} on u_k ζ^{-k} for both P (even k) and Q (odd k).
         let sign_neg = (k / 2) % 2 == 1;
         if sign_neg {
-            t.set_sign(Sign::Neg);
+            t = t.neg()?;
         }
         if t.abs_cmp(&prev) > 0 {
             break;

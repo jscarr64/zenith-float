@@ -1,5 +1,123 @@
 # Changelog
 
+## 1.0.5 — 2026-09-27
+
+Bug-fix release: special-function accuracy. No public API changes (no new public items, no signature changes); results that were wrong now match mpmath to working precision. Every fixed case below is covered by a test with a 50-digit (or 2p+64-bit) mpmath reference.
+
+### `hypergeom_2f1` (real)
+
+- **What was wrong.** For \(1/2<z<1\) the Pfaff transform maps to \(\lvert w\rvert>1\), and the divergent series was summed there and silently truncated at the term cap. Example: \({}_2F_1(1,1;2;0.7)\) returned `6.06e175` (true `1.71996…` = \(-\ln(0.3)/0.7\)). Near \(z=-1\) the series was truncated too. For \(z\le-1\) the A&S 15.3.7 path returned NaN whenever \(b-a\) is an integer (e.g. \({}_2F_1(0.5,1.5;2;-3)\)). The series stop was absolute, not relative.
+- **What changed.** New dispatch:
+  - poles in \(c\) → NaN;
+  - terminating (polynomial) series;
+  - Gauss at \(z=1\) when \(c-a-b>0\);
+  - \(z>1\) → NaN;
+  - Pfaff for \(z<-1/2\);
+  - direct series for \(\lvert z\rvert\le1/2\);
+  - \(z\to1-z\) connection for \(1/2<z<1\) (DLMF 15.8.4), with the A&S 15.3.10–15.3.11 logarithmic case for integer \(c-a-b\).
+
+  Each path measures cancellation and re-evaluates with that many guard bits. The series returns an error at its term cap instead of truncating.
+
+### `betainc`
+
+- **What was wrong.** The integer-\(b\) polynomial and the series were used at large \(a,b\), where they cancel catastrophically. Examples: \(I_{0.7}(30.5,2.25)\) returned `2.68e240` (true `3.0312…e-4`), \(I_{0.3}(1000,1000)\) returned `1.47e124`, and \(I_{0.5}(5000,5000)\) returned `1.8e2284`.
+- **What changed.** A continued fraction (DLMF 8.17.22, modified Lentz), with the symmetry \(x>(a+1)/(a+b+2)\) applied. The polynomial is used only when its measured loss is ≤ 64 bits. \(I_{1/2}(a,a)=1/2\) is returned exactly.
+
+### Other real special functions
+
+- **`erf` / `erfc` / `normal_cdf`.** For every \(\lvert x\rvert\ge4\) (binary exponent ≥ 3), 1.0.2–1.0.4 summed the divergent asymptotic series past its smallest term, so the tail was garbage at every precision. At 256 bits: `erfc(4.2)` = `1.98e349` (true `2.855e-9`), `erfc(10)` = `4.99e17` (true `2.088e-45`), `erfc(12.5)` = `7.69e-56` (true `6.232e-70`, 1.2e14 times too large), `erf(4)` = `-4.40e366`, `erf(-4.2)` = `1.98e349`, `normal_cdf(-6)` = `1.53e433`. At 128 bits `erf(4)` = `-1.22e199` and `erfc(10)` = `1.3e-18`. 1.0.2 and 1.0.4 give identical wrong values (the code did not change between them). Now the asymptotic series is used only when \(x^2\ge0.7p+4\), where its smallest term is below \(2^{-p}\), and it stops at its smallest term. Otherwise the Maclaurin series runs with \(1.5x^2\) guard bits, and `erfc` for \(x>0\) carries another \(1.5x^2\) bits for the cancellation in \(1-\operatorname{erf}\). `normal_cdf` uses `erfc(-(x-μ)/(σ√2))/2`, so the lower tail keeps full relative accuracy (`normal_cdf(-40)` was garbage). A sweep of 561 points (x from −30 to 30, step 0.1 on \(3.5\le\lvert x\rvert\le30\)) for `erf`, `erfc` and `normal_cdf` at 64, 128, 192, 256, 512 and 1024 bits is within 2 bits of mpmath everywhere. 1.0.4 misses at 619 of these points at 128 bits.
+- **`gamma` / `digamma`.** The Stirling start was fixed, which capped accuracy at about 274 bits (Γ) and 530 bits (ψ) at any precision. The shift is now precision-dependent. `gamma(11.5)` at 1024 bits had 276 correct bits.
+- **Bernoulli numbers (`gamma`, `ln_gamma`, `digamma`, real and complex).** The Stirling coefficients came from the Akiyama–Tanigawa recurrence in floating point, which cancels catastrophically. With 64-bit limbs the Ziv loop usually hid this. With 32-bit limbs (`thumbv7em-none-eabihf`, i686) Γ at an internal 192 bits had about 101 correct bits, so `bessel_i(2.25, 1.5)` at 128 bits returned only 101 correct bits. The \(B_{2k}\) are now built from exact tangent numbers (Brent–Harvey) with one rounding each. They are computed once per evaluation instead of once per term (the old cost was cubic in the number of terms).
+- **`ln_gamma`.** `ln_gamma(1e20)` and `ln_gamma(1e300)` returned `inf`; large arguments now use Stirling directly.
+- **Euler–Mascheroni γ.** The constant (used by `ei`, `ci`, `li`, `bessel_y`, `bessel_k`, `digamma`) was correct to only about 383 bits at any precision. It is now computed with Brent–McMillan.
+- **`ei`.** Series cancellation for \(x<0\) was unguarded: `ei(-50)` had 115 of 128 bits and `ei(-200)` was garbage. Guard bits are now sized from the measured loss.
+- **`fresnel_s` / `fresnel_c`.** Series cancellation was unguarded (`fresnel_s(10)` had 36 bits, `fresnel_c(12)` was garbage), and the asymptotic switch now depends on precision.
+- **`ai` / `bi` / `ai_prime` / `bi_prime`.**
+  - The derivative asymptotic coefficients had the wrong sign/form, so `ai_prime(8)` and `bi_prime(-30)` had 7 correct bits.
+  - The series/asymptotic switch now depends on precision: `ai(12)` had 85 bits, and `ai(-30)` had 320 bits at p=512.
+- **Real Bessel.**
+  - `bessel_j_nu` / `bessel_y` / the integer series had no cancellation guard, so J/Y at \(x=200\) were garbage. They now carry \(1.5\lvert x\rvert\) guard bits. For \(\lvert x\rvert\gtrsim10^4\) they return `InvalidArgument` rather than garbage (no large-argument Hankel expansion yet).
+  - `bessel_k` used its asymptotic series below the precision where it converges (`bessel_k(20, 0)` had 62 bits).
+  - Series stops are now relative: `bessel_j_nu(1e-10, 10.5)` had 276 of 512 bits.
+- **Series stopping rule.** The absolute stopping rule was replaced by a relative one in `gammainc`, `si`, Fresnel and the Bessel series.
+- **`elliptic_f(±1 | 1)`** returned `NaN(InvalidArgument)` even though \(\lvert x\rvert\le1\) is the documented domain. It now returns \(\pm\infty\), consistent with `elliptic_k(1)` = \(+\infty\).
+- **Carlson \(R_C\), `elliptic_pi`, `elliptic_pi_complete`.** The \(x\approx y\) shortcut used an absolute threshold of \(2^{-(p/3+16)}\), which limited Π to about 340 bits at p=512. The threshold is now relative. The duplication cap scales with precision (`max(128, p/4+64)`), for real and complex.
+- **Exactly representable results.** Ziv's loop could not certify these and returned `PrecisionRetryExhausted`: `log(100, 10)`, `log(2, 4)`, `log(0.25, 2)`, `nth_root(1e10, 5)`, `jacobi_cd(u, 1)`, `jacobi_dc(u, 1)`. They are now detected and returned exactly.
+
+### Complex (`ExactComplex`)
+
+- **`erf` / `erfc` / `fresnel_s` / `fresnel_c`.** The power series had no cancellation guard. At 512 bits, `erf(-15-5i)` was wrong from the 45th digit (true value is \(-1+4.4\times10^{-89}+2.3\times10^{-89}i\)) and `fresnel_s(-15-5i)` had 200 bits. The series now carries \(1.5\lvert u\rvert^2\) guard bits.
+- **`ci`.** Wrong overall sign/branch: `ci(0.5+0.5i)` and `ci(-2+i)` had 0 correct bits. It is now principal and matches mpmath.
+- **`si(i)`.** Returned NaN.
+- **`ei`.** The \(i\pi\,\mathrm{sgn}(\operatorname{Im} z)\) term was missing from the asymptotic path, and the switch point was fixed rather than precision-dependent (`ei(20+20i)` had 22 bits).
+- **`acosh` / `atanh` on their cuts.** `acosh(-2+0i)` had a negative real part and `acosh(-1+0i)` returned \(-i\pi\). `atanh(±1+0i)` was NaN; it is now \(\pm\infty+0i\).
+- **`ai` / `bi`.**
+  - The phases in the `bi` connection formula were swapped: `bi(0.001+10i)` had 0 bits.
+  - `bi` on the Stokes line used only the dominant asymptotic series (`bi(20+20i)` had 110 bits).
+  - The switch point now depends on precision (`ai(0.001+10i)` had 63 bits).
+- **`bessel_*`.**
+  - The Hankel P/Q sums ran past their smallest term, giving garbage at moderate \(\lvert z\rvert\).
+  - `bessel_i` / `bessel_k` used the wrong rotation for \(\operatorname{Re} z<0\): `bessel_i(-2+i, 2+0.5i)` and `bessel_k(-2+i, 0)` were wrong. They now use DLMF 10.27.6 / 10.27.8.
+  - The series now has cancellation guards.
+  - `bessel_j_nu` / `bessel_y` with \(\operatorname{Re} z<0\) in the Hankel regime (\(\lvert z\rvert\gtrsim 0.35(p+112)\)) summed the large-argument expansion outside its sector \(\lvert\arg z\rvert<\pi\): `bessel_j_nu(-20000, 0)`, `bessel_j_nu(-500+i, 1)` and `bessel_y(-300+40i, 2.5)` had 0 correct bits (1.0.4 too). They now continue from \(-z\) (DLMF 10.11.1–10.11.2).
+  - `bessel_i` / `bessel_k` at real \(z>0\) with real non-integer \(\nu\) never converged: the imaginary part is exactly 0 but was computed as a rounding residue that Ziv's loop cannot certify. 1.0.4 returned `PrecisionRetryExhausted` after about 3 s for `bessel_i(2, 0.5)`; the first 1.0.5 candidate took about 5 minutes and returned NaN. The imaginary part is now an exact 0 there.
+  - `bessel_k` on its cut \((-\infty,0)\) with \(\operatorname{Im} z=0\) returned the value from below; it now returns the value from above, like `bessel_i`, `bessel_j_nu` and mpmath.
+- **`gamma` / `ln_gamma` / `digamma`.** Precision was capped at about 275 bits. `ln_gamma` now returns the documented principal \(\ln(\Gamma(z))\): `ln_gamma(3-4i)` returned a different branch.
+- **`hypergeom_2f1`.**
+  - The documented 10 000-term cap was actually \(p+96\), and the series stop was absolute. `2F1(0.5,0.5;1;0.999999)` had 1 correct bit.
+  - All-real arguments with \(z<1\) now use the real algorithm.
+  - Integer \(m=c-a-b\) with \(z\) near 1 (\(\lvert 1-z\rvert\le 1/2\), or \(\lvert 1-z\rvert<1\) with \(\lvert z\rvert\ge1\)) returned NaN: the direct series converges too slowly there (or not at all for \(\lvert z\rvert\ge1\)) and the generic \(1-z\) transform has \(\Gamma(\pm m)\) poles. Such arguments now use the logarithmic connection (DLMF 15.8.10, A&S 15.3.10–15.3.11) for \(m\ge0\), after Euler's transformation \((1-z)^m F(c-a,c-b;c;z)\) for \(m<0\); cancellation is measured and the evaluation repeated with more bits. Example: \({}_2F_1(0.3+0.2i,\,0.7;\,2+0.2i;\,1.2+0.3i)\).
+  - \(c-a-b\) within \(\delta\) of an integer (the generic \(1-z\) transform loses about \(\log_2(1/\delta)\) bits) now carries that many guard bits; \(z\) close to 1 inside the unit disc with non-integer \(c-a-b\) uses the transform instead of a slowly converging series.
+  - A grid of 504 cases (9 \((a,b)\) pairs, \(m\in\{-3,\ldots,3\}\) plus near-integer \(c\), 9 values of \(z\) around 1 including \(\lvert z\rvert>1\)) agrees with mpmath to within 2 bits at 64, 128, 256 and 512 bits.
+
+### `no_std`: built and tested
+
+- The library already built without `std`. Now the reference tests also run without it.
+- `nostd-tests/` is a `#![no_std]` crate (core + alloc only; not published; excluded from the workspace and the package) with 77 mpmath reference cases covering:
+  - elementary functions, erf/erfc (including the tail), Γ/lnΓ/ψ at 128–320 bits, 2F1, betainc, Ei/Si/Ci, Fresnel, Airy, Bessel, elliptic, Jacobi, `normal_cdf`;
+  - complex Γ/erf/Ci/Ai/J/I/2F1 (including the integer-\(c-a-b\) log case near \(z=1\), \(J\) with \(\operatorname{Re} z<0\) and \(I\) on the real axis);
+  - quadrature, Brent and RK45.
+- Two runners:
+  - `nostd-host`: a `#![no_std]`/`#![no_main]` x86_64 Linux binary linking only libc;
+  - `nostd-qemu`: bare-metal `thumbv7em-none-eabihf` (Cortex-M4F, 32-bit limbs) under `qemu-system-arm -machine mps2-an386` with semihosting.
+- `scripts/ci_nostd.sh` builds `zenith-float` and `zenith-float-num` with `--no-default-features --target thumbv7em-none-eabihf` and runs both runners. Each passes 77/77.
+- There is no separate `alloc` feature; an allocator is always required.
+
+### Comparison, and the numeric methods that depend on it
+
+- **`ExactNum::cmp` / `ExactNum::abs_cmp` return exactly `-1`, `0` or `1`.** The documented contract (positive / negative / zero) is unchanged.
+  - For finite values with equal exponents, 1.0.4 returned the raw mantissa word difference: `3.cmp(2)` was `Some(2^62)`.
+  - The crate's own numeric routines test `cmp(..) == Some(-1)` / `== Some(1)`, so in 1.0.4:
+    - `gauss_legendre`, `tanh_sinh`, `bisect`, `illinois`, `brent`, `rk4`, `euler`, `rk45_adaptive`, `chebyshev_coeffs` and `chebyshev_eval` rejected (`None` / NaN) any interval whose endpoints share a binary exponent, e.g. `[2, 3]`;
+    - `rk45_adaptive` with a non-zero `rtol` never accepted a step and returned `None`;
+    - several convergence tests misfired.
+- **`ExactNum::abs_cmp` compared signed values** for finite operands, contradicting its documentation: `(-2).abs_cmp(1)` was negative. It now compares magnitudes.
+- **`brent` rewritten** as Brent's classic zero finder (bracket `[b, c]`, inverse quadratic / secant with a bisection fallback). The old loop had no bisection safeguard: it stalled like regula falsi and returned `None` with `root_default_tol` at 128 bits.
+- **Resolution stop in `bisect` / `illinois` / `brent`.** When `tol` is below the working resolution (e.g. `root_default_tol` = \(2^{-256}\) at \(p<256\)), they now return the bracketed root instead of `None` after `ROOT_MAX_ITER`.
+
+### Tests
+
+- `ops::special` unit tests:
+  - `test_hypergeom_2f1_mpmath`: 41 values across \(z\in[-10,1]\), including the log case, \(z=1\) and near-1 points, plus 4 error cases;
+  - `test_betainc_mpmath`: 17 values;
+  - `test_gamma_digamma_high_precision`: 1024 bits.
+- New integration test `tests/special_audit_mpmath.rs`: 61 regression points (real and complex, 128/512/1024 bits). Each must agree with mpmath to within 2 ulp; 53 of them fail on 1.0.4.
+- Reference generators: `refs/` in the maintainer workspace (mpmath 1.4.1, 50 digits or 2p+64 bits).
+- New integration test `tests/numeric_methods_regress.rs`: 5 tests covering `cmp` normalization, `[2, 3]` intervals for quadrature, roots, ODE and Chebyshev, `rk45_adaptive` with `rtol`, and `brent` / `bisect` / `illinois` with `root_default_tol` at 128 bits. All 5 fail on 1.0.4.
+- New integration test `tests/erf_tail_mpmath.rs`: 221 `erf` / `erfc` / `normal_cdf` cases with 50-digit mpmath references. They cover x in [3.5, 30] and negative x at 64/128/256 bits, `erfc` at 1024 bits, and the `normal_cdf` lower tail. A second test checks erf odd symmetry and erfc reflection. On 1.0.4, 109 of the 221 cases fail, and so does the symmetry test.
+- New integration test `tests/edge_values.rs`: `elliptic_f(±1 | 1)` = ±∞.
+- `no_std` harness `nostd-tests/` (77 cases) and `scripts/ci_nostd.sh` (see above).
+- New integration test `tests/c2f1_log_mpmath.rs`: 54 complex \({}_2F_1\) cases near \(z=1\) with integer \(c-a-b\in\{-3,\ldots,3\}\) and near-integer \(c-a-b\), at 128 and 256 bits, each to \(p-4\) bits. The first 1.0.5 candidate returned NaN for 34 of them.
+- New integration test `tests/complex_bessel_mpmath.rs`: 218 cases (J/Y with \(\operatorname{Re} z<0\) in the Hankel regime, I/K on the positive real axis with real non-integer \(\nu\), K on its cut), at 128 and 256 bits, each to \(p-4\) bits norm-wise.
+- 32-bit targets (i686): two tests assumed 64-bit limbs; the library was correct. `ext::test_ext` asserted that a 128-bit value is stored inline, which holds only with 64-bit limbs (4 limbs > `INLINE_WORDS` = 2 on 32-bit); the assertion is now per limb width. The `add_commutes` property test built values at \(p=32\) (one 32-bit word), below the documented \(p\ge64\) minimum of `from_i64`, and got `NaN(InvalidArgument)`; it now uses \(p\) in multiples of 64 bits. `cargo test -p zenith-float-num --target i686-unknown-linux-musl` now passes.
+- `cargo fmt --all` applied (1.0.4 was not `fmt --check` clean). Two clippy lints in the MPFR differential tests (`--all-features`) were fixed.
+
+### Known issues (fix planned)
+
+- **Complex `bessel_k` is slow for non-integer \(\nu\) at high precision when \(\lvert z\rvert\) is just inside the series regime** (\(\lvert z\rvert<0.35(p+112)\)). `bessel_k(150-20i, 2+0.5i)` at 512 bits takes about 74 s (13 ms at 256 bits, where the Hankel expansion applies); the result is correct. The series regime carries about \(3\lvert z\rvert\) guard bits for the \(J\pm iY\) cancellation, and non-integer \(\nu\) needs both \(J_{\pm\nu}\). Workaround: use a lower precision, or integer/real \(\nu\) where possible (`bessel_k(150-20i, 2)` at 512 bits: 0.9 s), or allow for the run time.
+- **Real `bessel_j_nu` / `bessel_y` return `NaN(InvalidArgument)` for \(\lvert x\rvert\gtrsim10^4\)**: the real kernel has no large-argument (Hankel) expansion. Workaround: the complex functions handle this range: `ExactComplex::bessel_j_nu` / `bessel_y` at \(x+0i\), \(x>0\), are accurate (checked against mpmath at \(x=2\cdot10^4\) at 128 and 256 bits and \(x=10^6\) at 128 bits); take the real part. For \(x<0\) use \(J_n(-x)=(-1)^nJ_n(x)\) (integer order), or evaluate below \(10^4\).
+- **Complex Bessel on the negative real axis** (\(\operatorname{Im} z=0\), \(\operatorname{Re} z<0\)) with real \(\nu\): a part that is exactly zero or tiny next to the other part is not resolved. `bessel_i` / `bessel_k` with half-integer \(\nu\) (real part exactly 0) return `PrecisionRetryExhausted` for large \(\lvert z\rvert\) and can take minutes for small \(\lvert z\rvert\) (`bessel_i(-2, 0.5)` at 128 bits: about 5 minutes, then NaN); `bessel_j_nu(-2, 0.5)` returns a real part of about \(10^{-136}\) instead of 0, and `bessel_k(-500, 0)` a real part of \(-5\cdot10^{119}\) instead of \(K_0(500)\approx 4\cdot10^{-219}\) (both within \(2^{-p}\) of the modulus). Off the axis and on the positive axis results are correct. Workaround: evaluate at \(-z\) and apply DLMF 10.11.1 / 10.34.1 (e.g. \(I_\nu(-x+0i)=e^{i\nu\pi}I_\nu(x)\)), or use the real functions.
+
 ## 1.0.4 — 2026-09-20
 
 Clippy debt clear under `cargo clippy --workspace --all-targets -- -D warnings`. SoftFloat IEEE inherent ops renamed to `soft_*` where they collided with `std::ops`; needless range loops / doc list / `?` tidy; workspace `clippy.toml` thresholds for SoftFloat kernels.

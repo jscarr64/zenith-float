@@ -189,7 +189,12 @@ fn mpfr_compare_special_fns() {
     for _ in 0..8 {
         let (s, fs) = get_float_pair(p, 0, 2, &mut cc);
         let (x, fx) = get_float_pair(p, 0, 2, &mut cc);
-        if s.is_nan() || x.is_nan() || s.is_inf() || x.is_inf() || !s.is_positive() || x.is_negative()
+        if s.is_nan()
+            || x.is_nan()
+            || s.is_inf()
+            || x.is_inf()
+            || !s.is_positive()
+            || x.is_negative()
         {
             continue;
         }

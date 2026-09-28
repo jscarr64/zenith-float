@@ -126,6 +126,12 @@ Each public special has a `# Precision` rustdoc: algorithm (series, AGM, Carlson
 
 Domain errors (`sqrt` of a negative *real*, `gamma` at a non-positive integer, …) are `NaN` + `InvalidArgument`.
 
+**Known issues in 1.0.5 (fix planned; details in `CHANGELOG.md`).**
+
+- Complex `bessel_k` with non-integer ν at high precision, when |z| is just inside the series regime (|z| < 0.35(p+112)), is slow: `bessel_k(150−20i, 2+0.5i)` at 512 bits takes about 74 s (13 ms at 256 bits). The result is correct. Workaround: lower `p`, integer ν where possible (0.9 s for ν = 2), or allow for the run time.
+- Real `bessel_j_nu` / `bessel_y` return `NaN` + `InvalidArgument` for |x| ≳ 10⁴ (no large-argument expansion in the real kernel). Workaround: `ExactComplex::bessel_j_nu` / `bessel_y` at `x + 0i` with x > 0 are accurate there; take the real part. For x < 0 and integer n use `J_n(−x) = (−1)ⁿ J_n(x)`.
+- Complex Bessel exactly on the negative real axis with real ν: a part that is exactly zero, or tiny next to the other part, is not resolved. `bessel_i` / `bessel_k` with half-integer ν there return `PrecisionRetryExhausted` or take minutes (`bessel_i(−2, 0.5)`); other parts can carry noise at 2⁻ᵖ of the modulus. Workaround: evaluate at −z and apply DLMF 10.11.1 / 10.34.1 (e.g. `I_ν(−x + 0i) = e^{iνπ} I_ν(x)`), or use the real functions.
+
 ---
 
 ## Arrays
@@ -521,7 +527,7 @@ let back = sn.elliptic_f(&half, p, rm, &mut cc);
 
 **Is HDF5 supported?** No. This crate does not read or write that format. CSV and `to_bytes` remain.
 
-**`no_std`?** Allocator required. Formatting traits and `SharedConsts` need `std`. Thumb (`thumbv7em-none-eabihf`) compiles with `default-features = false`.
+**`no_std`?** Allocator required. Formatting traits and `SharedConsts` need `std`. Thumb (`thumbv7em-none-eabihf`) compiles with `default-features = false`, and `scripts/ci_nostd.sh` runs the mpmath reference cases there under QEMU and in a libc-only host binary.
 
 **Can I plot?** Not in this crate. Format a string or pack bits in another crate.
 

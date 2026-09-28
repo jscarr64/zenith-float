@@ -2466,7 +2466,10 @@ mod tests {
             assert_eq!(add.get(i).unwrap().to_bits(), ai.soft_add(oi).to_bits());
             assert_eq!(mul.get(i).unwrap().to_bits(), ai.soft_mul(ti).to_bits());
             assert_eq!(div.get(i).unwrap().to_bits(), ai.soft_div(ai).to_bits());
-            assert_eq!(sq.get(i).unwrap().to_bits(), ai.soft_mul(ai).sqrt().to_bits());
+            assert_eq!(
+                sq.get(i).unwrap().to_bits(),
+                ai.soft_mul(ai).sqrt().to_bits()
+            );
             assert_eq!(sub.get(i).unwrap().to_bits(), ai.soft_sub(oi).to_bits());
             assert_eq!(fma.get(i).unwrap().to_bits(), ai.mul_add(oi, oi).to_bits());
             let xa = ai.to_exact(p);

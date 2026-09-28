@@ -48,7 +48,6 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
     assert_eq!(EXPONENT_MIN, exp_min());
     assert_eq!(EXPONENT_MAX, exp_max());
 
-
     let mpfr_one = Float::with_val(64, 1);
 
     for _ in 0..run_cnt {

@@ -65,7 +65,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     emit("ai_0", &n(0, p).ai(p, rm, &mut cc))?;
     emit("bi_0", &n(0, p).bi(p, rm, &mut cc))?;
     emit("bessel_j_0_1", &one.bessel_j(0, p, rm, &mut cc))?;
-    emit("bessel_j_nu_half_1", &one.bessel_j_nu(&half, p, rm, &mut cc))?;
+    emit(
+        "bessel_j_nu_half_1",
+        &one.bessel_j_nu(&half, p, rm, &mut cc),
+    )?;
     emit("bessel_y_0_1", &one.bessel_y(&n(0, p), p, rm, &mut cc))?;
     emit("bessel_i_0_1", &one.bessel_i(&n(0, p), p, rm, &mut cc))?;
     emit("bessel_k_0_1", &one.bessel_k(&n(0, p), p, rm, &mut cc))?;
@@ -84,7 +87,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "hypergeom_2f1_gauss",
         &one.hypergeom_2f1(&one, &two, &half, p, rm, &mut cc),
     )?;
-    emit("betainc_1_1_half", &one.betainc(&one, &half, p, rm, &mut cc))?;
+    emit(
+        "betainc_1_1_half",
+        &one.betainc(&one, &half, p, rm, &mut cc),
+    )?;
     emit(
         "normal_pdf_0_0_1",
         &n(0, p).normal_pdf(&n(0, p), &one, p, rm, &mut cc),

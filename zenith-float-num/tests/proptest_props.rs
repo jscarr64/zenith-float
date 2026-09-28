@@ -14,11 +14,7 @@ fn eq(a: &ExactNum, b: &ExactNum) -> bool {
 }
 
 fn array_eq(a: &ExactNumArray, b: &ExactNumArray) -> bool {
-    a.shape() == b.shape()
-        && a.as_slice()
-            .iter()
-            .zip(b.as_slice())
-            .all(|(x, y)| eq(x, y))
+    a.shape() == b.shape() && a.as_slice().iter().zip(b.as_slice()).all(|(x, y)| eq(x, y))
 }
 
 fn rat_eq(a: &ExactRational, b: &ExactRational) -> bool {
@@ -30,7 +26,9 @@ proptest! {
 
     #[test]
     fn add_commutes(n1 in -10_000i64..10_000, n2 in -10_000i64..10_000, w in 1usize..4) {
-        let p = w * WORD_BIT_SIZE;
+        // `from_i64` needs p >= 64 (documented: smaller precisions give NaN(InvalidArgument)),
+        // so step in 64-bit units rather than words (a 32-bit word would give p = 32 at w = 1).
+        let p = w * 64;
         let rm = RoundingMode::ToEven;
         let a = ExactNum::from_i64(n1, p);
         let b = ExactNum::from_i64(n2, p);

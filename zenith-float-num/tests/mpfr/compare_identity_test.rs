@@ -41,15 +41,33 @@ fn mpfr_identity_no_oracle_specials() {
     bits_agree(&s1, &sn.neg(), p, (p as i32) / 4, "Si odd");
     assert!(zero.si(p, rm, &mut cc).is_zero());
     let hp = cc.pi(p, rm).div(&two, p, rm);
-    bits_agree(&zenith_float_num::INF_POS.si(p, rm, &mut cc), &hp, p, (p as i32) / 4, "Si(+∞)");
+    bits_agree(
+        &zenith_float_num::INF_POS.si(p, rm, &mut cc),
+        &hp,
+        p,
+        (p as i32) / 4,
+        "Si(+∞)",
+    );
 
     let e = one.exp(p, rm, &mut cc);
-    bits_agree(&e.li(p, rm, &mut cc), &one.ei(p, rm, &mut cc), p, (p as i32) / 4, "li(e)=Ei(1)");
+    bits_agree(
+        &e.li(p, rm, &mut cc),
+        &one.ei(p, rm, &mut cc),
+        p,
+        (p as i32) / 4,
+        "li(e)=Ei(1)",
+    );
 
     assert!(zero.fresnel_s(p, rm, &mut cc).is_zero());
     assert!(zero.fresnel_c(p, rm, &mut cc).is_zero());
     let fs = one.fresnel_s(p, rm, &mut cc);
-    bits_agree(&fs, &one.neg().fresnel_s(p, rm, &mut cc).neg(), p, (p as i32) / 4, "S odd");
+    bits_agree(
+        &fs,
+        &one.neg().fresnel_s(p, rm, &mut cc).neg(),
+        p,
+        (p as i32) / 4,
+        "S odd",
+    );
     bits_agree(
         &zenith_float_num::INF_POS.fresnel_s(p, rm, &mut cc),
         &half,
@@ -59,9 +77,7 @@ fn mpfr_identity_no_oracle_specials() {
     );
 
     let k_half = one.bessel_k(&half, p, rm, &mut cc);
-    let want_k = hp
-        .sqrt(p, rm)
-        .mul(&one.neg().exp(p, rm, &mut cc), p, rm);
+    let want_k = hp.sqrt(p, rm).mul(&one.neg().exp(p, rm, &mut cc), p, rm);
     bits_agree(&k_half, &want_k, p, (p as i32) / 4, "K_{1/2}(1)");
 
     let ai = one.ai(p, rm, &mut cc);
@@ -71,7 +87,13 @@ fn mpfr_identity_no_oracle_specials() {
     let wr = ai.mul(&bip, p, rm).sub(&aip.mul(&bi, p, rm), p, rm);
     bits_agree(&wr, &one.div(&cc.pi(p, rm), p, rm), p, 40, "Airy Wronskian");
 
-    bits_agree(&zero.elliptic_k(p, rm, &mut cc), &hp, p, (p as i32) / 4, "K(0)=π/2");
+    bits_agree(
+        &zero.elliptic_k(p, rm, &mut cc),
+        &hp,
+        p,
+        (p as i32) / 4,
+        "K(0)=π/2",
+    );
 
     let a = ExactNum::from_u8(2, p);
     let b = ExactNum::from_u8(3, p);
@@ -87,7 +109,7 @@ fn mpfr_identity_no_oracle_specials() {
     let z = ExactComplex::new(one.clone(), one);
     let ez = z.erf(p, rm, &mut cc);
     let em = ExactComplex::new(z.re().neg(), z.im().neg()).erf(p, rm, &mut cc);
-    assert!(tiny(&ez.re().add(&em.re(), p, rm), p) && tiny(&ez.im().add(&em.im(), p, rm), p));
+    assert!(tiny(&ez.re().add(em.re(), p, rm), p) && tiny(&ez.im().add(em.im(), p, rm), p));
     let erfc_z = z.erfc(p, rm, &mut cc);
     let one_c = ExactComplex::one(p);
     let id = one_c.sub(&ez, p, rm);
@@ -99,5 +121,8 @@ fn mpfr_identity_no_oracle_specials() {
     let five = ExactComplex::from_real(ExactNum::from_u8(5, p), p);
     let g5 = five.gamma(p, rm, &mut cc);
     let tf = ExactNum::from_u8(24, p);
-    assert!(tiny(&g5.re().sub(&tf, p, rm), p) && tiny(g5.im(), p), "Γ(5)=24");
+    assert!(
+        tiny(&g5.re().sub(&tf, p, rm), p) && tiny(g5.im(), p),
+        "Γ(5)=24"
+    );
 }

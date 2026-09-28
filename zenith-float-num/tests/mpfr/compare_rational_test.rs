@@ -56,10 +56,7 @@ fn mpfr_compare_exact_rational_gmp() {
         &ExactRational::from_i64(1, 3).add(&ExactRational::from_i64(1, 6)),
         &Rational::from((1, 2)),
     );
-    assert_same(
-        &ExactRational::from_i64(2, 4),
-        &Rational::from((1, 2)),
-    );
+    assert_same(&ExactRational::from_i64(2, 4), &Rational::from((1, 2)));
 
     for _ in 0..48 {
         let n1 = i32_nz();

@@ -305,10 +305,7 @@ fn macro_run_cexpr_tests() {
     assert_eq!(ck.re().cmp(k0.re()), Some(0), "ck0 re");
     assert!(tiny_part(ck.im(), p) && tiny_part(k0.im(), p));
 
-    let mh = ExactComplex::from_real(
-        ExactNum::from(1).div(&ExactNum::from(2), p, rm),
-        p,
-    );
+    let mh = ExactComplex::from_real(ExactNum::from(1).div(&ExactNum::from(2), p, rm), p);
     cplx_eq(
         "cellk",
         &cexpr!(elliptic_k(mh), &mut ctx),
@@ -1272,9 +1269,11 @@ fn expr_bessel_j0_y0_sq_working_prec() {
     let p_wrk = p + WORD_BIT_SIZE + 16;
     let j = x.bessel_j(0, p_wrk, RoundingMode::None, &mut cc);
     let y = x.bessel_y(&nu0, p_wrk, RoundingMode::None, &mut cc);
-    let mut expect = j
-        .mul(&j, p_wrk, RoundingMode::None)
-        .add(&y.mul(&y, p_wrk, RoundingMode::None), p_wrk, RoundingMode::None);
+    let mut expect = j.mul(&j, p_wrk, RoundingMode::None).add(
+        &y.mul(&y, p_wrk, RoundingMode::None),
+        p_wrk,
+        RoundingMode::None,
+    );
     expect.set_precision(p, rm).unwrap();
     assert_eq!(got.cmp(&expect), Some(0));
     assert!(got.err().is_none());

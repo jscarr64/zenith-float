@@ -49,7 +49,6 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
     assert_eq!(EXPONENT_MIN, exp_min());
     assert_eq!(EXPONENT_MAX, exp_max());
 
-
     // rounding
     let e_rng = WORD_BIT_SIZE * 3;
     for _ in 0..run_cnt {

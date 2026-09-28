@@ -20,12 +20,25 @@ const FADDEEVA_SERIES_L1: u32 = 8;
 /// Bernoulli terms kept in the Stirling series for \(\ln\Gamma\) and \(\psi\).
 const GAMMA_STIRLING_TERMS: usize = 64;
 
-/// Raise \(z\) by integers until \(\mathrm{exponent}(\lvert z\rvert)\) is at least this
-/// (\(\lvert z\rvert\ge 2^{k}\)) so Stirling terms decay.
+/// Minimum shift target: raise \(z\) by integers until \(\mathrm{exponent}(\lvert z\rvert)\)
+/// is at least this (\(\lvert z\rvert\ge 2^{k-1}\)) so Stirling terms decay. The actual target
+/// grows with the precision (see [`gamma_shift_exp`]): with a fixed target of 6 the 64-term series
+/// capped \(\Gamma\) / \(\ln\Gamma\) at about 275 correct bits whatever `p` was.
 const GAMMA_STIRLING_MIN_ABS_EXP: i32 = 6;
 
-/// Same shift target for digamma (real kernel uses exponent \(< 8\)).
+/// Same minimum shift target for digamma (real kernel uses exponent \(< 8\)).
 const DIGAMMA_STIRLING_MIN_ABS_EXP: i32 = 8;
+
+/// Shift target so the last kept Stirling term, \(\approx 2^{364}/\lvert z\rvert^{127}\), is below
+/// \(2^{-(p+8)}\) (same bound as the real kernel).
+fn gamma_shift_exp(p: usize) -> i32 {
+    crate::ops::special::stirling_min_exponent(p, 372, 127, GAMMA_STIRLING_MIN_ABS_EXP)
+}
+
+/// Digamma analogue of [`gamma_shift_exp`].
+fn digamma_shift_exp(p: usize) -> i32 {
+    crate::ops::special::stirling_min_exponent(p, 379, 128, DIGAMMA_STIRLING_MIN_ABS_EXP)
+}
 
 /// Positive integers \(n\) for which \(\Gamma(n)=(n-1)!\) is evaluated by multiplying
 /// \(1\ldots n-1\) instead of Stirling.
@@ -50,6 +63,19 @@ pub(crate) fn half_c(p: usize) -> ExactComplex {
 
 pub(crate) fn pi_c(p: usize, cc: &mut Consts) -> ExactComplex {
     ExactComplex::from_real(cc.pi(p, RoundingMode::None), p)
+}
+
+/// Guard bits for [`ExactComplex::erf_power_series`]: `1.5·2^e + 16` with \(\lvert u\rvert^2<2^e\).
+fn erf_series_guard_bits(u: &ExactComplex) -> usize {
+    let a2 = u.re().mul(u.re(), 64, RoundingMode::None).add(
+        &u.im().mul(u.im(), 64, RoundingMode::None),
+        64,
+        RoundingMode::None,
+    );
+    match a2.exponent() {
+        Some(e) if e > 0 && !a2.is_zero() => (3usize << (e as u32).min(40)) / 2 + 16,
+        _ => 16,
+    }
 }
 
 pub(crate) fn term_negligible(t: &ExactComplex, p: usize) -> bool {
@@ -129,27 +155,13 @@ where
     }
 }
 
-/// Even Bernoulli numbers \(B_2,\ldots,B_{2k_{\max}}\) via one Akiyama–Tanigawa pass.
+/// Even Bernoulli numbers \(B_2,\ldots,B_{2k_{\max}}\) (exact tangent numbers, one rounding each;
+/// see `ops::special::even_bernoulli`).
 fn even_bernoulli_numbers(kmax: usize, p: usize) -> Vec<ExactNum> {
-    let m = 2 * kmax;
-    let mut a: Vec<ExactNum> = Vec::new();
-    for i in 0..=m {
-        let num = ExactNum::from_u8(1, p);
-        let den = ExactNum::from_u32((i + 1) as u32, p);
-        a.push(num.div(&den, p, RoundingMode::None));
+    match crate::ops::special::even_bernoulli(kmax, p) {
+        Ok(v) => v.into_iter().map(ExactNum::from).collect(),
+        Err(e) => (0..kmax).map(|_| ExactNum::nan(Some(e))).collect(),
     }
-    let mut evens = Vec::new();
-    for j in 1..=m {
-        for i in 0..=(m - j) {
-            let diff = a[i].sub(&a[i + 1], p, RoundingMode::None);
-            let fac = ExactNum::from_u32((i + 1) as u32, p);
-            a[i] = fac.mul(&diff, p, RoundingMode::None);
-        }
-        if j % 2 == 0 {
-            evens.push(a[0].clone());
-        }
-    }
-    evens
 }
 
 fn factorial_um1(n: u32, p: usize) -> ExactComplex {
@@ -211,8 +223,9 @@ impl ExactComplex {
         ziv_complex(round_p(p), rm, |pw| self.gamma_at(pw, cc))
     }
 
-    /// Principal \(\ln\Gamma(z)\). Cut on \((-\infty,0]\); poles → NaN.
-    /// Equals \(\ln(\Gamma(z))\) with the principal logarithm.
+    /// Principal \(\ln(\Gamma(z))\): the principal logarithm of \(\Gamma(z)\), imaginary part in
+    /// \((-\pi,\pi]\). (This differs from the analytic `loggamma` of mpmath by \(2\pi i k\).)
+    /// Poles → NaN.
     ///
     /// # Precision
     ///
@@ -226,7 +239,31 @@ impl ExactComplex {
         if is_nonpos_integer(self) {
             return nan_pair(Error::InvalidArgument);
         }
-        ziv_complex(round_p(p), rm, |pw| self.ln_gamma_at(pw, cc))
+        ziv_complex(round_p(p), rm, |pw| {
+            // The shifted Stirling sum yields the analytic continuation (mpmath `loggamma`), whose
+            // imaginary part can leave (−π, π]; reduce it to the documented principal
+            // ln(Γ(z)): subtract 2π·floor((Im + π)/(2π)).
+            let v = self.ln_gamma_at(pw, cc);
+            let im = v.im();
+            if im.is_nan() {
+                return v;
+            }
+            let pi = cc.pi(pw, RoundingMode::None);
+            let two_pi = pi.ldexp(1, pw, RoundingMode::None);
+            let k = im
+                .add(&pi, pw, RoundingMode::None)
+                .div(&two_pi, pw, RoundingMode::None)
+                .floor();
+            if k.is_zero() {
+                return v;
+            }
+            let im = im.sub(
+                &k.mul(&two_pi, pw, RoundingMode::None),
+                pw,
+                RoundingMode::None,
+            );
+            ExactComplex::new(v.re().clone(), im)
+        })
     }
 
     /// Digamma \(\psi(z)=\Gamma'/\Gamma\). Poles at non-positive integers → NaN.
@@ -332,7 +369,11 @@ impl ExactComplex {
     }
 
     /// Entire power series \(\mathrm{erf}(u)=\frac{2}{\sqrt\pi}\sum(-1)^n u^{2n+1}/(n!(2n+1))\).
-    fn erf_power_series(u: &Self, p: usize, cc: &mut Consts) -> Self {
+    ///
+    /// Terms reach \(\approx e^{\lvert u\rvert^2}\) while the sum can be \(O(1)\), so the series
+    /// runs with `1.5·bound(|u|²) + 16` guard bits (\(\log_2 e<1.5\)).
+    fn erf_power_series(u: &Self, dest_p: usize, cc: &mut Consts) -> Self {
+        let p = dest_p + erf_series_guard_bits(u);
         let pi = cc.pi(p, RoundingMode::None);
         let sqrt_pi = pi.sqrt(p, RoundingMode::None);
         let scale = ExactNum::from_u8(2, p).div(&sqrt_pi, p, RoundingMode::None);
@@ -354,7 +395,7 @@ impl ExactComplex {
                 break;
             }
         }
-        ExactComplex::from_real(scale, p).mul(&sum, p, RoundingMode::None)
+        ExactComplex::from_real(scale, p).mul(&sum, dest_p, RoundingMode::None)
     }
 
     /// \(w(z)\sim i/(z\sqrt\pi)\sum(2m-1)!!/(2z^2)^m\) for \(\mathrm{Im}\,z\ge 0\).
@@ -422,7 +463,7 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut acc = ExactComplex::one(p);
-        while abs_needs_shift(&z, p, GAMMA_STIRLING_MIN_ABS_EXP) {
+        while abs_needs_shift(&z, p, gamma_shift_exp(p)) {
             acc = acc.mul(&z, p, RoundingMode::None);
             z = z.add(&one, p, RoundingMode::None);
         }
@@ -453,7 +494,7 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut ln_acc = ExactComplex::zero(p);
-        while abs_needs_shift(&z, p, GAMMA_STIRLING_MIN_ABS_EXP) {
+        while abs_needs_shift(&z, p, gamma_shift_exp(p)) {
             ln_acc = ln_acc.add(&z.ln(p, RoundingMode::None, cc), p, RoundingMode::None);
             z = z.add(&one, p, RoundingMode::None);
         }
@@ -502,7 +543,7 @@ impl ExactComplex {
         s
     }
 
-    fn digamma_at(&self, p: usize, cc: &mut Consts) -> Self {
+    pub(crate) fn digamma_at(&self, p: usize, cc: &mut Consts) -> Self {
         if !re_positive(self) && !self.re().is_zero() {
             let one = ExactComplex::one(p);
             let omz = one.sub(self, p, RoundingMode::None);
@@ -526,7 +567,7 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut acc = ExactComplex::zero(p);
-        while abs_needs_shift(&z, p, DIGAMMA_STIRLING_MIN_ABS_EXP) {
+        while abs_needs_shift(&z, p, digamma_shift_exp(p)) {
             let rec = one.div(&z, p, RoundingMode::None);
             acc = acc.sub(&rec, p, RoundingMode::None);
             z = z.add(&one, p, RoundingMode::None);

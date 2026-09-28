@@ -71,6 +71,28 @@ impl ExactNumNumber {
         Ok(x)
     }
 
+    /// Returns `cand` rounded to `p` bits if its `n`-th power equals `abs_self` exactly.
+    fn nth_root_exact_candidate(
+        abs_self: &Self,
+        cand: &Self,
+        n: usize,
+        p: usize,
+    ) -> Result<Option<Self>, Error> {
+        let mut r = cand.clone()?;
+        r.set_precision(p, RoundingMode::ToEven)?;
+        let bits = r
+            .mantissa_max_bit_len()
+            .saturating_mul(n)
+            .saturating_add(WORD_BIT_SIZE);
+        let pw = r.powi(n, bits, RoundingMode::None)?;
+        if pw.cmp(abs_self) == 0 {
+            r.set_inexact(abs_self.inexact());
+            Ok(Some(r))
+        } else {
+            Ok(None)
+        }
+    }
+
     fn nth_root_newton(
         abs_self: &Self,
         n: usize,
@@ -106,9 +128,15 @@ impl ExactNumNumber {
             let mut x_new = scaled.add(&quot, p_x, RoundingMode::None)?;
             x_new = x_new.div(&n_num, p_x, RoundingMode::None)?;
 
+            let cand = x_new.clone()?;
             if x_new.try_set_precision(p, rm, p_wrk)? {
                 x_new.set_inexact(x_new.inexact() | abs_self.inexact());
                 break Ok(x_new);
+            }
+            // An exact root (e.g. 1e10^(1/5) = 100) can never be certified by the rounding test;
+            // check the nearest p-bit candidate by exact powering instead.
+            if let Some(r) = Self::nth_root_exact_candidate(abs_self, &cand, n, p)? {
+                break Ok(r);
             }
 
             x = x_new;

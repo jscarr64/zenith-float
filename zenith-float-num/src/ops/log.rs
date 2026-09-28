@@ -387,15 +387,15 @@ impl ExactNumNumber {
                 ret.set_inexact(ret.inexact() | self.inexact() | n.inexact());
                 return Ok(ret);
             } else {
-                // check if the result is exact
-                let pwr = y.pow(
-                    &ret2,
-                    p_x.max(self.mantissa_max_bit_len()),
-                    RoundingMode::None,
-                    cc,
-                )?;
+                // Check whether the result is exact. The candidate must be the nearest p-bit
+                // value (e.g. exactly 2 for log(100, 10)); the raw working value is only close
+                // to it, so its power never compares equal. A representable exact result is a
+                // dyadic rational a / 2^j, and n^(a / 2^j) = self iff n^|a| = self^(±2^j), which
+                // is checked with exact integer powers.
+                ret2.set_precision(p, RoundingMode::ToEven)?;
+                let exact = log_is_exact_dyadic(self, &y, &ret2)?;
 
-                if pwr.cmp(self) == 0 {
+                if exact {
                     ret2.set_inexact(ret2.inexact() | self.inexact() | n.inexact());
                     ret2.set_precision(p, rm)?;
                     return Ok(ret2);
@@ -404,6 +404,52 @@ impl ExactNumNumber {
 
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
+    }
+}
+
+/// Largest numerator / denominator tried by the exact-result check of [`ExactNumNumber::log`].
+const LOG_EXACT_MAX: usize = 4096;
+
+/// Returns true when `base^r == x` exactly, for a candidate `r = a / 2^j` with small `a`, `j`.
+fn log_is_exact_dyadic(
+    x: &ExactNumNumber,
+    base: &ExactNumNumber,
+    r: &ExactNumNumber,
+) -> Result<bool, Error> {
+    if r.is_zero() {
+        return Ok(false);
+    }
+    let mut t = r.abs()?;
+    let mut den = 1usize;
+    while !t.is_int() {
+        den *= 2;
+        if den > 64 {
+            return Ok(false);
+        }
+        t.set_exponent(t.exponent() + 1);
+    }
+    if t.exponent() > 13 {
+        return Ok(false);
+    }
+    let a = t.int_as_usize()?;
+    if a == 0 || a > LOG_EXACT_MAX {
+        return Ok(false);
+    }
+    let lhs_bits = base
+        .mantissa_max_bit_len()
+        .saturating_mul(a)
+        .saturating_add(WORD_BIT_SIZE);
+    let rhs_bits = x
+        .mantissa_max_bit_len()
+        .saturating_mul(den)
+        .saturating_add(WORD_BIT_SIZE);
+    let lhs = base.powi(a, lhs_bits, RoundingMode::None)?;
+    let rhs = x.powi(den, rhs_bits, RoundingMode::None)?;
+    if r.is_negative() {
+        let prod = lhs.mul(&rhs, lhs_bits + rhs_bits, RoundingMode::None)?;
+        Ok(prod.cmp(&ExactNumNumber::from_word(1, WORD_BIT_SIZE)?) == 0)
+    } else {
+        Ok(lhs.cmp(&rhs) == 0)
     }
 }
 

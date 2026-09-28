@@ -14,7 +14,6 @@ use crate::Error;
 use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
-use crate::WORD_BIT_SIZE;
 
 /// Series term cap (named; same order as the real kernel).
 const HYPERGEOM_SERIES_MAX_TERMS: u32 = 10_000;
@@ -115,10 +114,14 @@ fn hypergeom_series(
     let mut term = ExactComplex::one(p);
     let mut sum = ExactComplex::one(p);
     let tiny = ExactNum::from_u8(1, p).ldexp(-((p as i32) - 8), p, rm());
-    let n_max = (p.saturating_add(WORD_BIT_SIZE).saturating_add(32))
-        .min(HYPERGEOM_SERIES_MAX_TERMS as usize);
-    for n in 0..n_max {
-        if n > 0 && term_negligible(&term, p) {
+    // Stop when the term is below 2^-p relative to the sum, past the largest parameter (so the
+    // terms are decreasing). Hitting the cap means the series has not converged: NaN rather than
+    // a silently truncated value.
+    let big = max_abs_param(&[a, b, c], p);
+    let mut converged = false;
+    for n in 0..HYPERGEOM_SERIES_MAX_TERMS as usize {
+        if n > 0 && (n as u64) > big && term_small_rel(&term, &sum, p) {
+            converged = true;
             break;
         }
         let nn = ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p);
@@ -137,7 +140,34 @@ fn hypergeom_series(
             return sum;
         }
     }
+    if !converged {
+        return nan_pair(Error::InvalidArgument);
+    }
     sum
+}
+
+/// Upper bound on `max(|a|, |b|, |c|)` as an integer (saturating).
+fn max_abs_param(v: &[&ExactComplex], p: usize) -> u64 {
+    v.iter()
+        .map(|z| match z.abs(p.min(128), rm()).exponent() {
+            Some(e) if e > 0 => 1u64 << (e as u32).min(62),
+            _ => 1,
+        })
+        .max()
+        .unwrap_or(1)
+}
+
+/// `|t| < 2^-p |s|` (or `t = 0`).
+fn term_small_rel(t: &ExactComplex, s: &ExactComplex, p: usize) -> bool {
+    let at = t.abs(64, rm());
+    if at.is_zero() {
+        return true;
+    }
+    let as_ = s.abs(64, rm());
+    match (at.exponent(), as_.exponent()) {
+        (Some(et), Some(es)) => (et as i64) + (p as i64) < es as i64,
+        _ => term_negligible(t, p),
+    }
 }
 
 /// Kummer: \({}_2F_1(a,b;c;1)=\Gamma(c)\Gamma(c-a-b)/(\Gamma(c-a)\Gamma(c-b))\)
@@ -249,6 +279,221 @@ fn transform_1mz(
     t1.add(&t2, p, rm())
 }
 
+/// `1/Γ(z)`, exactly zero at the poles.
+fn rgamma_c(z: &ExactComplex, p: usize, cc: &mut Consts) -> ExactComplex {
+    if is_nonpos_integer(z) {
+        return ExactComplex::zero(p);
+    }
+    ExactComplex::one(p).div(&z.gamma_at(p, cc), p, rm())
+}
+
+/// `z^n` for `n ≥ 0` by repeated multiplication (no branch cut).
+fn powi_c(z: &ExactComplex, n: u32, p: usize) -> ExactComplex {
+    let mut acc = ExactComplex::one(p);
+    for _ in 0..n {
+        acc = acc.mul(z, p, rm());
+    }
+    acc
+}
+
+/// Binary exponent of `|z|` (`i32::MIN` for zero / non-finite).
+fn cexp(z: &ExactComplex) -> i32 {
+    match z.abs(64, rm()).exponent() {
+        Some(e) if !z.is_nan() => e,
+        _ => i32::MIN,
+    }
+}
+
+/// Integer \(m=c-a-b\) (real, \(\lvert m\rvert\le 10\,000\)), if it is one.
+fn int_cab(a: &ExactComplex, b: &ExactComplex, c: &ExactComplex, p: usize) -> Option<i32> {
+    let cab = c.sub(a, p, rm()).sub(b, p, rm());
+    as_i32_real_int(&cab, p)
+}
+
+/// Degenerate \(1-z\) connection, \(c=a+b+m\) with integer \(m\ge 0\) and \(\lvert 1-z\rvert<1\)
+/// (A&S 15.3.10–15.3.11, DLMF 15.8.10). With \(w=1-z\):
+///
+/// \[F=\frac{\Gamma(m)\Gamma(c)}{\Gamma(a+m)\Gamma(b+m)}\sum_{n<m}\frac{(a)_n(b)_n}{n!(1-m)_n}w^n
+///   -(-w)^m\frac{\Gamma(c)}{\Gamma(a)\Gamma(b)}\sum_{n\ge0}\frac{(a+m)_n(b+m)_n}{n!(n+m)!}w^n
+///   \bigl[\ln w-\psi(n+1)-\psi(n+m+1)+\psi(a+m+n)+\psi(b+m+n)\bigr].\]
+///
+/// Returns the value and the largest binary exponent among the summed parts (for the loss
+/// estimate). `None` if the series does not converge within the term cap.
+fn log_case_sum(
+    a: &ExactComplex,
+    b: &ExactComplex,
+    c: &ExactComplex,
+    z: &ExactComplex,
+    m: u32,
+    p: usize,
+    cc: &mut Consts,
+) -> Option<(ExactComplex, i32)> {
+    let one = ExactComplex::one(p);
+    let w = one.sub(z, p, rm());
+    let re = |v: u32| ExactComplex::from_real(ExactNum::from_u32(v, p), p);
+    let mf = re(m);
+    let gc = c.gamma_at(p, cc);
+    let mut max_e = i32::MIN;
+    let mut total = ExactComplex::zero(p);
+    if m >= 1 {
+        // Finite part. (1-m)_n ≠ 0 for n < m; Γ(a+m) = Γ(c-b), Γ(b+m) = Γ(c-a).
+        let pref = factorial_c(m - 1, p)
+            .mul(&gc, p, rm())
+            .mul(&rgamma_c(&a.add(&mf, p, rm()), p, cc), p, rm())
+            .mul(&rgamma_c(&b.add(&mf, p, rm()), p, cc), p, rm());
+        let mut t = ExactComplex::one(p);
+        let mut s = ExactComplex::one(p);
+        let one_m = ExactComplex::from_real(ExactNum::from_i64(1 - m as i64, p), p);
+        for n in 0..m - 1 {
+            let nn = re(n);
+            let num = a.add(&nn, p, rm()).mul(&b.add(&nn, p, rm()), p, rm());
+            let den = re(n + 1).mul(&one_m.add(&nn, p, rm()), p, rm());
+            t = t.mul(&num, p, rm()).div(&den, p, rm()).mul(&w, p, rm());
+            max_e = max_e.max(cexp(&t.mul(&pref, p, rm())));
+            s = s.add(&t, p, rm());
+        }
+        let part = pref.mul(&s, p, rm());
+        max_e = max_e.max(cexp(&pref));
+        total = part;
+    }
+    // Logarithmic part; skipped when 1/(Γ(a)Γ(b)) = 0.
+    let rg = rgamma_c(a, p, cc).mul(&rgamma_c(b, p, cc), p, rm());
+    if is_c_zero(&rg) {
+        return Some((total, max_e));
+    }
+    let mut pref2 = powi_c(&neg_c(&w), m, p).mul(&gc, p, rm()).mul(&rg, p, rm());
+    pref2 = neg_c(&pref2);
+    let am = a.add(&mf, p, rm());
+    let bm = b.add(&mf, p, rm());
+    let lnw = w.ln(p, rm(), cc);
+    let mut psi_n1 = one.digamma_at(p, cc);
+    let mut psi_nm1 = re(m + 1).digamma_at(p, cc);
+    let mut psi_a = am.digamma_at(p, cc);
+    let mut psi_b = bm.digamma_at(p, cc);
+    let mut coef = ExactComplex::one(p).div(&factorial_c(m, p), p, rm());
+    let mut wn = ExactComplex::one(p);
+    let mut sum = ExactComplex::zero(p);
+    let big = max_abs_param(&[a, b, c], p);
+    let mut converged = false;
+    for n in 0..HYPERGEOM_SERIES_MAX_TERMS {
+        let bracket = lnw
+            .sub(&psi_n1, p, rm())
+            .sub(&psi_nm1, p, rm())
+            .add(&psi_a, p, rm())
+            .add(&psi_b, p, rm());
+        let term = coef.mul(&wn, p, rm()).mul(&bracket, p, rm());
+        sum = sum.add(&term, p, rm());
+        max_e = max_e.max(cexp(&term.mul(&pref2, p, rm())));
+        if (n as u64) > big && n > 0 && term_small_rel(&term, &sum, p) {
+            converged = true;
+            break;
+        }
+        // Advance n → n+1.
+        let nn = re(n);
+        let a_n = am.add(&nn, p, rm());
+        let b_n = bm.add(&nn, p, rm());
+        coef = coef.mul(&a_n.mul(&b_n, p, rm()), p, rm()).div(
+            &re(n + 1).mul(&re(n + m + 1), p, rm()),
+            p,
+            rm(),
+        );
+        wn = wn.mul(&w, p, rm());
+        psi_n1 = psi_n1.add(&one.div(&re(n + 1), p, rm()), p, rm());
+        psi_nm1 = psi_nm1.add(&one.div(&re(n + m + 1), p, rm()), p, rm());
+        psi_a = psi_a.add(&one.div(&a_n, p, rm()), p, rm());
+        psi_b = psi_b.add(&one.div(&b_n, p, rm()), p, rm());
+    }
+    if !converged {
+        return None;
+    }
+    let v = total.add(&pref2.mul(&sum, p, rm()), p, rm());
+    Some((v, max_e))
+}
+
+fn factorial_c(n: u32, p: usize) -> ExactComplex {
+    let mut acc = ExactNum::from_u8(1, p);
+    for k in 2..=n {
+        acc = acc.mul(&ExactNum::from_u32(k, p), p, rm());
+    }
+    ExactComplex::from_real(acc, p)
+}
+
+/// \(1-z\) transform for integer \(m=c-a-b\), \(\lvert 1-z\rvert<1\). Negative \(m\) goes through
+/// Euler's transformation \(F(a,b;c;z)=(1-z)^{m}F(c-a,c-b;c;z)\) (then \(c-a'-b'=-m>0\)).
+/// Cancellation between the parts is measured and the sum re-evaluated with that many extra bits.
+fn transform_1mz_log(
+    a: &ExactComplex,
+    b: &ExactComplex,
+    c: &ExactComplex,
+    z: &ExactComplex,
+    m: i32,
+    p: usize,
+    cc: &mut Consts,
+    left: u32,
+) -> ExactComplex {
+    if m < 0 {
+        let one = ExactComplex::one(p);
+        let w = one.sub(z, p, rm());
+        let wm = one.div(&powi_c(&w, m.unsigned_abs(), p), p, rm());
+        let f = hypergeom_at(&c.sub(a, p, rm()), &c.sub(b, p, rm()), c, z, p, cc, left);
+        return wm.mul(&f, p, rm());
+    }
+    let m = m as u32;
+    let mut pw = p + 32;
+    for _ in 0..3 {
+        let Some((v, max_e)) = log_case_sum(a, b, c, z, m, pw, cc) else {
+            return nan_pair(Error::InvalidArgument);
+        };
+        let ve = cexp(&v);
+        if ve == i32::MIN {
+            return v;
+        }
+        let lost = max_e.saturating_sub(ve).max(0) as usize;
+        if lost + 16 <= pw - p {
+            return v;
+        }
+        pw = p + lost + 48;
+    }
+    nan_pair(Error::PrecisionRetryExhausted)
+}
+
+/// Bits lost to cancellation in the generic \(1-z\) transform: \(\Gamma(\pm(c-a-b))\) grow like
+/// \(1/\delta\), \(\delta\) = distance of \(c-a-b\) to the nearest integer, and the two terms cancel
+/// to \(O(1)\). Returns \(\lceil\log_2(1/\delta)\rceil\) (0 when \(\delta\ge 1/2\)).
+fn near_int_loss(a: &ExactComplex, b: &ExactComplex, c: &ExactComplex, p: usize) -> usize {
+    let cab = c.sub(a, p, rm()).sub(b, p, rm());
+    let e = |x: &ExactNum| -> i64 {
+        if x.is_zero() {
+            i64::MIN / 2
+        } else {
+            x.exponent().map_or(0, i64::from)
+        }
+    };
+    let f = cab.re().fract().abs();
+    let g = ExactNum::from_u8(1, p).sub(&f, p, rm());
+    let re_e = e(&f).min(e(&g));
+    let dist_e = re_e.max(e(cab.im()));
+    usize::try_from(-dist_e).unwrap_or(0)
+}
+
+/// Generic \(1-z\) transform with guard bits for \(c-a-b\) close to an integer.
+fn transform_1mz_guarded(
+    a: &ExactComplex,
+    b: &ExactComplex,
+    c: &ExactComplex,
+    z: &ExactComplex,
+    p: usize,
+    cc: &mut Consts,
+    left: u32,
+) -> ExactComplex {
+    let loss = near_int_loss(a, b, c, p);
+    if loss > 8 * p + 1024 {
+        return nan_pair(Error::PrecisionRetryExhausted);
+    }
+    let pw = round_p(p + loss + 32);
+    transform_1mz(a, b, c, z, pw, cc, left)
+}
+
 /// A&S 15.3.7: argument \(1/z\). Degenerate when \(a=b\).
 fn transform_inv(
     a: &ExactComplex,
@@ -323,6 +568,27 @@ fn hypergeom_at(
     if terminating_neg_int(a, p) || terminating_neg_int(b, p) {
         return hypergeom_series(a, b, c, z, p);
     }
+    // Integer c − a − b near z = 1: the direct series converges too slowly (or not at all for
+    // |z| ≥ 1) and the generic 1 − z transform is singular, so use the logarithmic connection.
+    if let Some(m) = int_cab(a, b, c, p) {
+        let omz = ExactComplex::one(p).sub(z, p, rm());
+        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm());
+        let near = matches!(omz.abs(p, rm()).cmp(&half), Some(o) if o <= 0);
+        if left > 0 && (near || (abs_lt_one(&omz, p) && !abs_lt_one(z, p))) {
+            return transform_1mz_log(a, b, c, z, m, p, cc, left - 1);
+        }
+    } else if left > 0 {
+        // Non-integer c − a − b with z close to 1 inside the unit disc: the series would need
+        // ≈ p / log2(1/|z|) terms, so use the 1 − z transform (guarded for near-integer c − a − b).
+        let omz = ExactComplex::one(p).sub(z, p, rm());
+        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm());
+        let nine_tenths = ExactNum::from_u8(9, p).div(&ExactNum::from_u8(10, p), p, rm());
+        let near = matches!(omz.abs(p, rm()).cmp(&half), Some(o) if o <= 0);
+        let slow = matches!(z.abs(p, rm()).cmp(&nine_tenths), Some(o) if o > 0);
+        if near && slow && abs_lt_one(z, p) {
+            return transform_1mz_guarded(a, b, c, z, p, cc, left - 1);
+        }
+    }
     if abs_lt_one(z, p) {
         return hypergeom_series(a, b, c, z, p);
     }
@@ -337,7 +603,7 @@ fn hypergeom_at(
         return pfaff(a, b, c, z, p, cc, next);
     }
     if abs_lt_one(&omz, p) && !is_nonpos_integer(&c.sub(a, p, rm()).sub(b, p, rm())) {
-        return transform_1mz(a, b, c, z, p, cc, next);
+        return transform_1mz_guarded(a, b, c, z, p, cc, next);
     }
     let inv = one.div(z, p, rm());
     if abs_lt_one(&inv, p) && !c_eq(a, b) {
@@ -355,14 +621,23 @@ fn hypergeom_at(
 impl ExactComplex {
     /// Gaussian \({}_2F_1(a=\mathrm{self},b;c;z)\) in \(\mathbb{C}\).
     ///
-    /// Series when \(\lvert z\rvert<1\); Pfaff when \(\mathrm{Re}(z)<1/2\);
+    /// All-real arguments with \(z<1\) use the real [`ExactNum::hypergeom_2f1`].
+    /// Otherwise: series when \(\lvert z\rvert<1\) (converged to \(2^{-p}\) relative, NaN if not
+    /// converged within the term cap); Pfaff when \(\mathrm{Re}(z)<1/2\);
     /// Euler / \(1-z\) and \(1/z\) linear transforms otherwise. Kummer at \(z=1\)
     /// when \(\mathrm{Re}(c-a-b)>0\). Cut on \([1,+\infty)\) in \(z\) (principal
     /// value from above). Non-positive integer \(c\) (uncanceled) → NaN.
     ///
+    /// Integer \(m=c-a-b\) with \(z\) near 1 (\(\lvert 1-z\rvert\le 1/2\), or
+    /// \(\lvert 1-z\rvert<1\) with \(\lvert z\rvert\ge 1\)): logarithmic \(1-z\) connection
+    /// (DLMF 15.8.10, A&S 15.3.10–15.3.11) for \(m\ge 0\), Euler's transformation
+    /// \((1-z)^m F(c-a,c-b;c;z)\) first for \(m<0\). Near-integer \(c-a-b\) uses the generic
+    /// \(1-z\) transform with \(\log_2(1/\delta)\) guard bits (\(\delta\) = distance to the
+    /// nearest integer).
+    ///
     /// # Precision
     ///
-    /// - Algorithm: series / Euler / Pfaff / Kummer. Caps `HYPERGEOM_SERIES_MAX_TERMS = 10_000`, `HYPERGEOM_TRANSFORM_MAX = 8`.
+    /// - Algorithm: series / Euler / Pfaff / Kummer / logarithmic \(1-z\) connection. Caps `HYPERGEOM_SERIES_MAX_TERMS = 10_000`, `HYPERGEOM_TRANSFORM_MAX = 8`.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn hypergeom_2f1(
@@ -385,6 +660,21 @@ impl ExactComplex {
         }
         if pole_c(c, self, b, dest) {
             return nan_pair(Error::InvalidArgument);
+        }
+        // All-real arguments with z < 1: the real kernel handles |z| → 1 (including the
+        // logarithmic integer-(c − a − b) case) and certifies its rounding.
+        if self.im().is_zero()
+            && b.im().is_zero()
+            && c.im().is_zero()
+            && z.im().is_zero()
+            && matches!(z.re().cmp(&ExactNum::from_u8(1, dest)), Some(o) if o < 0)
+        {
+            let r = self
+                .re()
+                .hypergeom_2f1(b.re(), c.re(), z.re(), dest, rm, cc);
+            if !r.is_nan() {
+                return ExactComplex::new(r, ExactNum::new(dest));
+            }
         }
         ziv_complex(dest, rm, |pw| {
             hypergeom_at(self, b, c, z, pw, cc, HYPERGEOM_TRANSFORM_MAX)

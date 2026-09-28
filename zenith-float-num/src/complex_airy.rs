@@ -22,6 +22,38 @@ use crate::RoundingMode;
 /// \(\lvert z\rvert\) below this uses the Taylor pair \((f,g)\).
 const AIRY_SERIES_THRESHOLD: u32 = 8;
 
+/// `|ξ| = (2/3)|z|^{3/2}` to 64 bits.
+fn xi_abs(z: &ExactComplex) -> ExactNum {
+    let a = z.abs(64, RoundingMode::None);
+    let two_thirds =
+        ExactNum::from_u8(2, 64).div(&ExactNum::from_u8(3, 64), 64, RoundingMode::None);
+    a.mul(&a.sqrt(64, RoundingMode::None), 64, RoundingMode::None)
+        .mul(&two_thirds, 64, RoundingMode::None)
+}
+
+/// The asymptotic expansions' smallest term is about \(e^{-2\lvert\xi\rvert}\) (2.885|ξ| bits),
+/// so they are used only when \(\lvert\xi\rvert \ge 0.35(p+112)\) (covering the Ziv guard bits).
+/// Below that (and always for `|z| < AIRY_SERIES_THRESHOLD`) the Taylor pair is used with
+/// [`airy_series_guard`] extra bits. (The fixed switch at |z| = 8 gave about 64 correct bits at
+/// z = 0.001 + 10i.)
+fn use_airy_series(z: &ExactComplex, dest_p: usize) -> bool {
+    if abs_below(z, AIRY_SERIES_THRESHOLD, dest_p) {
+        return true;
+    }
+    let t = dest_p.saturating_add(112).saturating_mul(35) / 100;
+    let t = ExactNum::from_u32(t.min(u32::MAX as usize) as u32, 64);
+    matches!(xi_abs(z).cmp(&t), Some(c) if c < 0)
+}
+
+/// Taylor terms reach \(\approx e^{\lvert\xi\rvert}\) while Ai can be \(\approx e^{-\lvert\xi\rvert}\):
+/// `3·2^e + 16` guard bits with `|ξ| < 2^e`.
+fn airy_series_guard(z: &ExactComplex) -> usize {
+    match xi_abs(z).exponent() {
+        Some(e) if e > 0 => (3usize << (e as u32).min(40)) + 16,
+        _ => 16,
+    }
+}
+
 fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
     let a = z.abs(p, RoundingMode::None);
     let b = ExactNum::from_u32(bound, p);
@@ -92,7 +124,8 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: series for `|z| < AIRY_SERIES_THRESHOLD` (`8`); asymptotic otherwise.
+    /// - Algorithm: Taylor pair (extra precision for cancellation) unless `|ξ| = (2/3)|z|^{3/2} ≥ 0.35(p+112)`;
+    ///   asymptotic expansion (with the connection formula outside `|arg z| ≤ 2π/3`) otherwise.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn ai(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -107,7 +140,7 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: same `AIRY_SERIES_THRESHOLD = 8` as [`Self::ai`].
+    /// - Algorithm: same series / asymptotic switch as [`Self::ai`].
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn bi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -122,8 +155,8 @@ impl ExactComplex {
         if self.im().is_zero() {
             return ExactComplex::from_real(self.re().ai(work_p, RoundingMode::None, cc), work_p);
         }
-        if abs_below(self, AIRY_SERIES_THRESHOLD, dest_p) {
-            return self.airy_series_ai(work_p, cc);
+        if use_airy_series(self, dest_p) {
+            return self.airy_series_ai(work_p + airy_series_guard(self), cc);
         }
         let sector = two_pi_over_three(work_p, cc);
         if arg_abs_le(self, &sector, work_p, cc) {
@@ -152,12 +185,20 @@ impl ExactComplex {
         if self.im().is_zero() {
             return ExactComplex::from_real(self.re().bi(work_p, RoundingMode::None, cc), work_p);
         }
-        if abs_below(self, AIRY_SERIES_THRESHOLD, dest_p) {
-            return self.airy_series_bi(work_p, cc);
+        if use_airy_series(self, dest_p) {
+            return self.airy_series_bi(work_p + airy_series_guard(self), cc);
         }
+        // The e^{ξ} expansion omits the recessive e^{−ξ} part, which is 2^-(2.885 Re ξ) relative;
+        // near the Stokes lines ph z = ±π/3 that is far above 2^-p (111 bits at z = 20 + 20i).
+        // Use it only when Re ξ is large enough; otherwise use the connection formula.
         let sector = pi_over_three(work_p, cc);
         if arg_abs_le(self, &sector, work_p, cc) {
-            return self.airy_asymp_bi(work_p, cc);
+            let (xi, _) = self.airy_xi_z(64, cc);
+            let t = dest_p.saturating_add(112).saturating_mul(35) / 100;
+            let t = ExactNum::from_u32(t.min(u32::MAX as usize) as u32, 64);
+            if matches!(xi.re().cmp(&t), Some(c) if c >= 0) {
+                return self.airy_asymp_bi(work_p, cc);
+            }
         }
         let (w, w2) = omega_pair(work_p);
         let (ep, em) = exp_i_pi_6(work_p, cc);
@@ -167,8 +208,10 @@ impl ExactComplex {
         let a2 = self
             .mul(&w, work_p, RoundingMode::None)
             .ai_at(work_p, dest_p, cc, true);
-        ep.mul(&a1, work_p, RoundingMode::None).add(
-            &em.mul(&a2, work_p, RoundingMode::None),
+        // DLMF 9.2.10: Bi(z) = e^{−πi/6} Ai(z e^{−2πi/3}) + e^{πi/6} Ai(z e^{2πi/3}).
+        // (The phases were swapped before, giving wrong values for π/3 < |ph z| with |z| ≥ 8.)
+        em.mul(&a1, work_p, RoundingMode::None).add(
+            &ep.mul(&a2, work_p, RoundingMode::None),
             work_p,
             RoundingMode::None,
         )
@@ -183,7 +226,8 @@ impl ExactComplex {
         let mut f = one;
         let mut tg = self.clone();
         let mut g = self.clone();
-        let cap = series_term_cap(p);
+        // Terms peak near k ≈ |ξ|/2 and need ≈ e|ξ| more to fall below 2^-p.
+        let cap = series_term_cap(p).max(airy_series_guard(self));
         for k in 1..=cap {
             let k3 = ExactComplex::from_real(ExactNum::from_u32((3 * k) as u32, p), p);
             let k3m1 = ExactComplex::from_real(ExactNum::from_u32((3 * k - 1) as u32, p), p);

@@ -61,6 +61,12 @@ where
         let mid = a
             .add(&b, wrk, RoundingMode::None)
             .div(&two, wrk, RoundingMode::None);
+        if !strictly_inside(&mid, &a, &b) {
+            // The bracket is two adjacent working-precision values: `tol` is below resolution.
+            let mut out = mid;
+            let _ = out.set_precision(p, rm);
+            return Some((out, k));
+        }
         let fm = f(&mid, wrk, RoundingMode::None, cc);
         if !finite(&fm) {
             return None;
@@ -189,6 +195,12 @@ where
                 RoundingMode::None,
             )
             .div(&den, wrk, RoundingMode::None);
+        if finite(&c) && !strictly_inside(&c, &a, &b) {
+            // The secant point hit an endpoint: the bracket is at working resolution.
+            let mut out = c;
+            let _ = out.set_precision(p, rm);
+            return Some((out, k));
+        }
         let fc = f(&c, wrk, RoundingMode::None, cc);
         if !finite(&c) || !finite(&fc) {
             return None;
@@ -231,6 +243,19 @@ fn strictly_inside(x: &ExactNum, lo: &ExactNum, hi: &ExactNum) -> bool {
     x.cmp(lo) == Some(1) && x.cmp(hi) == Some(-1)
 }
 
+fn lt(x: &ExactNum, y: &ExactNum) -> bool {
+    matches!(x.cmp(y), Some(c) if c < 0)
+}
+
+fn same_sign(x: &ExactNum, y: &ExactNum) -> bool {
+    !x.is_zero() && !y.is_zero() && x.is_positive() == y.is_positive()
+}
+
+/// Brent's zero finder (R. P. Brent, *Algorithms for Minimization without Derivatives*, 1973,
+/// ch. 4): keeps a sign-changing bracket `[b, c]`, tries inverse quadratic / secant steps and
+/// falls back to bisection whenever they do not shrink the bracket fast enough. Stops when the
+/// half-bracket is at most `2·2^{-wrk}|b| + tol/2`, so it also terminates when `tol` is below
+/// the working resolution.
 fn brent_counted<F>(
     mut f: F,
     mut a: ExactNum,
@@ -247,96 +272,101 @@ where
         return None;
     }
     let wrk = work_p(p);
+    let none = RoundingMode::None;
+    let one = ExactNum::from_u8(1, wrk);
     let two = ExactNum::from_u8(2, wrk);
-    let mut fa = f(&a, wrk, RoundingMode::None, cc);
-    let mut fb = f(&b, wrk, RoundingMode::None, cc);
+    let three = ExactNum::from_u8(3, wrk);
+    let half_tol = tol.abs().div(&two, wrk, none);
+    let eps2 = one.ldexp(1 - wrk as i32, wrk, none);
+    let mut fa = f(&a, wrk, none, cc);
+    let mut fb = f(&b, wrk, none, cc);
     if !opposite_signs(&fa, &fb) {
         return None;
     }
     let mut c = a.clone();
     let mut fc = fa.clone();
+    let mut d = b.sub(&a, wrk, none);
+    let mut e = d.clone();
     for k in 1..=ROOT_MAX_ITER {
-        if below_tol(&b.sub(&a, wrk, RoundingMode::None).abs(), tol) || fb.is_zero() {
+        if same_sign(&fb, &fc) {
+            c = a.clone();
+            fc = fa.clone();
+            d = b.sub(&a, wrk, none);
+            e = d.clone();
+        }
+        if lt(&fc.abs(), &fb.abs()) {
+            a = b;
+            b = c;
+            c = a.clone();
+            fa = fb;
+            fb = fc;
+            fc = fa.clone();
+        }
+        let tol1 = eps2.mul(&b.abs(), wrk, none).add(&half_tol, wrk, none);
+        let m = c.sub(&b, wrk, none).div(&two, wrk, none);
+        if fb.is_zero() || !lt(&tol1, &m.abs()) {
             let mut out = b;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
         }
-        let den_ba = fb.sub(&fa, wrk, RoundingMode::None);
-        let mut s = if !den_ba.is_zero() {
-            a.mul(&fb, wrk, RoundingMode::None)
-                .sub(
-                    &b.mul(&fa, wrk, RoundingMode::None),
-                    wrk,
-                    RoundingMode::None,
-                )
-                .div(&den_ba, wrk, RoundingMode::None)
-        } else {
-            a.add(&b, wrk, RoundingMode::None)
-                .div(&two, wrk, RoundingMode::None)
-        };
-        if a.cmp(&c) != Some(0) && b.cmp(&c) != Some(0) {
-            let d1 = fa.sub(&fb, wrk, RoundingMode::None);
-            let d2 = fa.sub(&fc, wrk, RoundingMode::None);
-            let d3 = fb.sub(&fc, wrk, RoundingMode::None);
-            if !d1.is_zero() && !d2.is_zero() && !d3.is_zero() {
-                let t1 = a
-                    .mul(&fb, wrk, RoundingMode::None)
-                    .mul(&fc, wrk, RoundingMode::None)
-                    .div(
-                        &d1.mul(&d2, wrk, RoundingMode::None),
+        if !lt(&e.abs(), &tol1) && lt(&fb.abs(), &fa.abs()) {
+            // Secant (a == c) or inverse quadratic interpolation, as the correction p/q.
+            let s = fb.div(&fa, wrk, none);
+            let two_m = two.mul(&m, wrk, none);
+            let (mut pn, mut q) = if a.cmp(&c) == Some(0) {
+                (two_m.mul(&s, wrk, none), one.sub(&s, wrk, none))
+            } else {
+                let qa = fa.div(&fc, wrk, none);
+                let r = fb.div(&fc, wrk, none);
+                let inner = two_m
+                    .mul(&qa, wrk, none)
+                    .mul(&qa.sub(&r, wrk, none), wrk, none)
+                    .sub(
+                        &b.sub(&a, wrk, none).mul(&r.sub(&one, wrk, none), wrk, none),
                         wrk,
-                        RoundingMode::None,
+                        none,
                     );
-                let t2 = b
-                    .mul(&fa, wrk, RoundingMode::None)
-                    .mul(&fc, wrk, RoundingMode::None)
-                    .div(
-                        &fb.sub(&fa, wrk, RoundingMode::None)
-                            .mul(&d3, wrk, RoundingMode::None),
-                        wrk,
-                        RoundingMode::None,
-                    );
-                let t3 = c
-                    .mul(&fa, wrk, RoundingMode::None)
-                    .mul(&fb, wrk, RoundingMode::None)
-                    .div(
-                        &fc.sub(&fa, wrk, RoundingMode::None).mul(
-                            &fc.sub(&fb, wrk, RoundingMode::None),
-                            wrk,
-                            RoundingMode::None,
-                        ),
-                        wrk,
-                        RoundingMode::None,
-                    );
-                let iqi = t1
-                    .add(&t2, wrk, RoundingMode::None)
-                    .add(&t3, wrk, RoundingMode::None);
-                if strictly_inside(&iqi, &a, &b) {
-                    s = iqi;
-                }
+                let den = qa
+                    .sub(&one, wrk, none)
+                    .mul(&r.sub(&one, wrk, none), wrk, none)
+                    .mul(&s.sub(&one, wrk, none), wrk, none);
+                (s.mul(&inner, wrk, none), den)
+            };
+            if pn.is_positive() {
+                q = q.neg();
+            } else {
+                pn = pn.neg();
             }
-        }
-        if !strictly_inside(&s, &a, &b) {
-            s = a
-                .add(&b, wrk, RoundingMode::None)
-                .div(&two, wrk, RoundingMode::None);
-        }
-        let fs = f(&s, wrk, RoundingMode::None, cc);
-        if !finite(&fs) {
-            return None;
-        }
-        c = b.clone();
-        fc = fb.clone();
-        if opposite_signs(&fa, &fs) {
-            b = s;
-            fb = fs;
+            let lim1 = three.mul(&m, wrk, none).mul(&q, wrk, none).sub(
+                &tol1.mul(&q, wrk, none).abs(),
+                wrk,
+                none,
+            );
+            let lim2 = e.mul(&q, wrk, none).abs();
+            let lim = if lt(&lim1, &lim2) { lim1 } else { lim2 };
+            if lt(&two.mul(&pn, wrk, none), &lim) {
+                e = d;
+                d = pn.div(&q, wrk, none);
+            } else {
+                d = m.clone();
+                e = m.clone();
+            }
         } else {
-            a = s;
-            fa = fs;
+            d = m.clone();
+            e = m.clone();
         }
-        if a.cmp(&b) == Some(1) {
-            core::mem::swap(&mut a, &mut b);
-            core::mem::swap(&mut fa, &mut fb);
+        a = b.clone();
+        fa = fb.clone();
+        b = if lt(&tol1, &d.abs()) {
+            b.add(&d, wrk, none)
+        } else if m.is_positive() {
+            b.add(&tol1, wrk, none)
+        } else {
+            b.sub(&tol1, wrk, none)
+        };
+        fb = f(&b, wrk, none, cc);
+        if !finite(&fb) {
+            return None;
         }
     }
     None

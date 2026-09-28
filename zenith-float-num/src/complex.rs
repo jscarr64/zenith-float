@@ -453,8 +453,31 @@ impl ExactComplex {
     }
 
     /// Principal `acosh`: `ln(z + √(z−1)√(z+1))`.
+    ///
+    /// On the cut `z = x ± 0i`, `x < 1`, the result is `i·acos(x)` for `-1 ≤ x < 1` and
+    /// `acosh(-x) + iπ` for `x < -1`, conjugated when the zero imaginary part is negative
+    /// (C99 `cacosh` convention; the real part is never negative).
     pub fn acosh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
+        if self.im.is_zero() && !self.re.is_nan() && !self.re.is_inf() {
+            let one = ExactNum::from_word(1, p_x);
+            if matches!(self.re.cmp(&one), Some(c) if c < 0) {
+                let neg_one = one.neg();
+                let (re, im) = if matches!(self.re.cmp(&neg_one), Some(c) if c >= 0) {
+                    (
+                        ExactNum::new(p_x),
+                        self.re.acos(p_x, RoundingMode::None, cc),
+                    )
+                } else {
+                    (
+                        self.re.neg().acosh(p_x, RoundingMode::None, cc),
+                        cc.pi(p_x, RoundingMode::None),
+                    )
+                };
+                let im = if self.im.is_negative() { im.neg() } else { im };
+                return Self::new(re, im).finish(p, rm);
+            }
+        }
         let one = Self::one(p_x);
         let zm = self
             .sub(&one, p_x, RoundingMode::None)
@@ -472,8 +495,26 @@ impl ExactComplex {
     }
 
     /// Principal `atanh`: `(1/2) ln((1+z)/(1−z))`.
+    ///
+    /// `atanh(±1 + 0i) = ±∞ + 0i` (C99 `catanh`).
     pub fn atanh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
+        if self.im.is_zero() && !self.re.is_nan() {
+            let one_r = ExactNum::from_word(1, p_x);
+            let im0 = || {
+                let mut z = ExactNum::new(p);
+                if self.im.is_negative() {
+                    z = z.neg();
+                }
+                z
+            };
+            if self.re.cmp(&one_r) == Some(0) {
+                return Self::new(crate::ext::INF_POS, im0());
+            }
+            if self.re.cmp(&one_r.neg()) == Some(0) {
+                return Self::new(crate::ext::INF_NEG, im0());
+            }
+        }
         let one = Self::one(p_x);
         let num = one.add(self, p_x, RoundingMode::None);
         let den = one.sub(self, p_x, RoundingMode::None);

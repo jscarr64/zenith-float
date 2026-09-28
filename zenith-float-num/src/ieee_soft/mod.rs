@@ -387,7 +387,10 @@ mod tests {
         assert_eq!((tiny + tiny).to_bits(), 2);
         assert_eq!(one.mul_add(two, one).to_bits(), THREE64);
         assert_eq!(one.soft_neg().to_bits(), MONE64);
-        assert_eq!(Ieee64::ZERO.soft_cmp(Ieee64::NEG_ZERO), Some(Ordering::Equal));
+        assert_eq!(
+            Ieee64::ZERO.soft_cmp(Ieee64::NEG_ZERO),
+            Some(Ordering::Equal)
+        );
         assert_eq!(one.next_up().next_down().to_bits(), ONE64);
         let (m, e) = two.frexp();
         assert_eq!(e, 2);

@@ -4,10 +4,11 @@ members = [
     "zenith-float-macro",
     "zenith-float-compare",
 ]
+exclude = ["nostd-tests"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.4"
+version = "1.0.5"
 edition = "2021"
 authors = ["Jeffrey S Carr <jscarr1964@gmail.com>"]
 license = "MIT OR Apache-2.0"
@@ -31,6 +32,7 @@ exclude = [
     "zenith-float-compare",
     "scripts",
     "golds",
+    "nostd-tests",
     "doc/bench-baselines.tsv",
     "doc/compare-results.tsv",
 ]
@@ -38,8 +40,8 @@ keywords = ["arbitrary-precision", "bigfloat", "numeric", "no-std"]
 categories = ["mathematics", "no-std", "science"]
 
 [dependencies]
-zenith-float-num = { path = "zenith-float-num", version = "1.0.4", default-features = false }
-zenith-float-macro = { path = "zenith-float-macro", version = "1.0.4" }
+zenith-float-num = { path = "zenith-float-num", version = "1.0.5", default-features = false }
+zenith-float-macro = { path = "zenith-float-macro", version = "1.0.5" }
 
 [features]
 default = ["std"]

@@ -493,8 +493,14 @@ impl ExactNum {
 
     /// Compares `self` to `d2`.
     /// Returns positive if `self` > `d2`, negative if `self` < `d2`, zero if `self` == `d2`, None if `self` or `d2` is NaN.
+    /// The non-zero results are exactly `1` and `-1`.
     #[allow(clippy::should_implement_trait)]
     pub fn cmp(&self, d2: &ExactNum) -> Option<SignedWord> {
+        self.cmp_raw(d2).map(SignedWord::signum)
+    }
+
+    /// [`cmp`](Self::cmp) before normalization: equal exponents return the mantissa word difference.
+    fn cmp_raw(&self, d2: &ExactNum) -> Option<SignedWord> {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
                 Flavor::Value(v2) => Some(v1.cmp(v2)),
@@ -518,10 +524,15 @@ impl ExactNum {
 
     /// Compares the absolute value of `self` to the absolute value of `d2`.
     /// Returns positive if `|self|` is greater than `|d2|`, negative if `|self|` is smaller than `|d2|`, 0 if `|self|` equals to `|d2|`, None if `self` or `d2` is NaN.
+    /// The non-zero results are exactly `1` and `-1`.
     pub fn abs_cmp(&self, d2: &Self) -> Option<SignedWord> {
+        self.abs_cmp_raw(d2).map(SignedWord::signum)
+    }
+
+    fn abs_cmp_raw(&self, d2: &Self) -> Option<SignedWord> {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
-                Flavor::Value(v2) => Some(v1.cmp(v2)),
+                Flavor::Value(v2) => Some(v1.abs_cmp(v2)),
                 Flavor::Inf(_) => Some(-1),
                 Flavor::NaN(_) => None,
             },
@@ -2283,7 +2294,7 @@ impl ExactNum {
 
 # Precision
 
-- Algorithm: Carlson `R_F` duplication; cap `CARLSON_DUPE_MAX = 128`.
+- Algorithm: Carlson `R_F` duplication; cap `max(128, p/4 + 64)` steps.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
 - MPFR oracle: no (identity golds; GNU MPFR has no Carlson `K`).",
         elliptic_k,
@@ -2298,7 +2309,7 @@ impl ExactNum {
 
 # Precision
 
-- Algorithm: Carlson `R_F` / `R_D`; `CARLSON_DUPE_MAX = 128`.
+- Algorithm: Carlson `R_F` / `R_D`; cap `max(128, p/4 + 64)` steps.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
 - MPFR oracle: no.",
         elliptic_e_complete,
@@ -2309,15 +2320,21 @@ impl ExactNum {
         usize
     );
     /// Incomplete `F(self | m)` for `|self| ≤ 1`. `self = sin φ`, `m = k²`.
+    /// `F(±1 | 1) = ±∞` (the logarithmic singularity; consistent with `elliptic_k(1) = +∞`).
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_F`; `CARLSON_DUPE_MAX = 128`.
+    /// - Algorithm: Carlson `R_F`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn elliptic_f(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(x), Flavor::Value(mv)) => {
+                if let Ok(one) = ExactNumNumber::from_word(1, WORD_BIT_SIZE) {
+                    if mv.cmp(&one) == 0 && x.abs_cmp(&one) == 0 {
+                        return if x.is_negative() { INF_NEG } else { INF_POS };
+                    }
+                }
                 Self::result_to_ext(x.elliptic_f(mv, p, rm, cc), x.is_zero(), true)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
@@ -2328,7 +2345,7 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_F` / `R_D`; `CARLSON_DUPE_MAX = 128`.
+    /// - Algorithm: Carlson `R_F` / `R_D`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn elliptic_e(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -2344,7 +2361,7 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_J`; `CARLSON_DUPE_MAX = 128`.
+    /// - Algorithm: Carlson `R_J`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn elliptic_pi_complete(
@@ -2366,7 +2383,7 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_J`; `CARLSON_DUPE_MAX = 128`.
+    /// - Algorithm: Carlson `R_J`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn elliptic_pi(
@@ -2628,8 +2645,13 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: series for `|z| < 1`; Gauss at `z = 1`; Pfaff / continuation. Cap `HYPERGEOM_TERM_MAX = 10_000`.
-    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`) when the series converges.
+    /// - Domain: real `z ≤ 1` (`z = 1` needs `c − a − b > 0`); `z > 1` (branch cut) and non-positive
+    ///   integer `c` without an earlier terminating numerator parameter → NaN.
+    /// - Algorithm: terminating series (any `z`); series for `|z| ≤ 1/2`; Pfaff `z/(z−1)` for `z < −1/2`;
+    ///   `1 − z` connection (DLMF 15.8.4, logarithmic form A&S 15.3.10–11 when `c − a − b` is an
+    ///   integer) for `1/2 < z < 1`; Gauss at `z = 1`. Cancellation is measured and the evaluation
+    ///   repeated with more guard bits. Series cap `HYPERGEOM_TERM_MAX`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn hypergeom_2f1(
         &self,
@@ -3270,6 +3292,22 @@ mod tests {
         assert!(INF_NEG.abs_cmp(&NAN).is_none());
         assert!(NAN.abs_cmp(&INF_NEG).is_none());
         assert!(NAN.abs_cmp(&NAN).is_none());
+        // Finite values compare by magnitude, whatever their signs (1.0.4 compared signed values).
+        let two = ExactNum::from_u8(2, 64);
+        let neg_two = two.neg();
+        assert!(neg_two.abs_cmp(&ONE).unwrap() > 0);
+        assert!(ONE.abs_cmp(&neg_two).unwrap() < 0);
+        assert!(neg_two.abs_cmp(&two).unwrap() == 0);
+        assert!(ONE.neg().abs_cmp(&INF_POS).unwrap() < 0);
+        // Results are exactly -1/0/1 (1.0.4 returned the mantissa word difference, e.g.
+        // 3.cmp(2) = 2^62, so callers testing `== Some(1)` / `== Some(-1)` misfired).
+        let three = ExactNum::from_u8(3, 64);
+        assert_eq!(three.cmp(&two), Some(1));
+        assert_eq!(two.cmp(&three), Some(-1));
+        assert_eq!(three.abs_cmp(&neg_two), Some(1));
+        assert_eq!(neg_two.abs_cmp(&three), Some(-1));
+        assert_eq!(INF_POS.cmp(&INF_NEG), Some(1));
+        assert_eq!(INF_NEG.cmp(&INF_POS), Some(-1));
 
         assert!(ONE.is_positive());
         assert!(!ONE.is_negative());
@@ -3486,7 +3524,12 @@ mod tests {
         };
 
         assert!(d1.mantissa_digits() == Some(words));
+        // DEFAULT_P = 128 bits is 2 limbs on 64-bit (inline, INLINE_WORDS = 2) but 4 limbs on
+        // 32-bit (heap).
+        #[cfg(not(target_pointer_width = "32"))]
         assert!(d1.is_inline());
+        #[cfg(target_pointer_width = "32")]
+        assert!(!d1.is_inline());
         assert!(d1.mantissa_max_bit_len() == Some(DEFAULT_P));
         assert!(d1.precision() == Some(DEFAULT_P));
         assert!(d1.sign() == Some(Sign::Pos));

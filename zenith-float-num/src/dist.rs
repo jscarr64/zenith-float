@@ -72,9 +72,9 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: existing `erf` at `p + WORD_BIT_SIZE`.
+    /// - Algorithm: `erfc(−z)/2` (existing `erfc`) at `p + WORD_BIT_SIZE`.
     /// - Bound: working precision `p + WORD_BIT_SIZE`.
-    /// - MPFR oracle: no (composite of `erf`).
+    /// - MPFR oracle: no (composite of `erfc`).
     pub fn normal_cdf(
         &self,
         mu: &Self,
@@ -95,8 +95,9 @@ impl ExactNum {
         let z = self
             .sub(mu, pw, none)
             .div(&sigma.mul(&two.sqrt(pw, none), pw, none), pw, none);
-        let one = ExactNum::from_u8(1, pw);
-        one.add(&z.erf(pw, none, cc), pw, none).div(&two, p, rm)
+        // Φ = erfc(−z)/2 keeps full relative accuracy in the lower tail, where 1 + erf(z)
+        // would cancel.
+        z.neg().erfc(pw, none, cc).div(&two, p, rm)
     }
 
     /// Gamma density on the scale parameterization

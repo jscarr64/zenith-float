@@ -14,8 +14,9 @@ use crate::Error;
 use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
+use crate::WORD_BIT_SIZE;
 
-/// Use the power series for \(\mathrm{Ei}\) when \(\lvert z\rvert\) is below this.
+/// Use the power series for \(\mathrm{Ei}\) when \(\lvert z\rvert\) is below this, whatever the precision.
 const EI_SERIES_THRESHOLD: u32 = 16;
 
 fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
@@ -24,14 +25,33 @@ fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
     matches!(a.cmp(&b), Some(c) if c < 0)
 }
 
+/// The asymptotic series' smallest term is about \(e^{-\lvert z\rvert}\), i.e. \(1.44\lvert z\rvert\)
+/// bits, so it is used only when \(\lvert z\rvert \ge 0.7(p+96)+8\) (covering the Ziv guard
+/// bits). Below that the power series is used with extra precision for its cancellation.
 fn use_ei_series(z: &ExactComplex, dest_p: usize) -> bool {
     if abs_below(z, EI_SERIES_THRESHOLD, dest_p) {
         return true;
     }
-    let az = z.abs(dest_p, RoundingMode::None);
-    let az2 = az.mul(&az, dest_p, RoundingMode::None);
-    let thresh = ExactNum::from_u32(dest_p.min(u32::MAX as usize) as u32, dest_p);
-    matches!(az2.cmp(&thresh), Some(c) if c < 0)
+    let t = (dest_p.saturating_add(96).saturating_mul(7) / 10).saturating_add(8);
+    abs_below(z, t.min(u32::MAX as usize) as u32, dest_p)
+}
+
+/// Upper bound on the bits cancelled by the \(\mathrm{Ei}\) power series: its largest term is
+/// about \(e^{\lvert z\rvert}\) and the result about \(e^{\mathrm{Re}\,z}/\lvert z\rvert\).
+fn ei_series_loss_bits(z: &ExactComplex) -> usize {
+    let p = 64;
+    let az = z.abs(p, RoundingMode::None);
+    let d =
+        az.sub(z.re(), p, RoundingMode::None)
+            .add(&ExactNum::from_u32(1, p), p, RoundingMode::None);
+    match d.exponent() {
+        Some(e) if e > 0 => {
+            // d < 2^e and 1.4427 d < 1.5 * 2^e
+            let e = (e as u32).min(40);
+            (3usize << e) / 2 + 16
+        }
+        _ => 16,
+    }
 }
 
 impl ExactComplex {
@@ -39,7 +59,8 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: power series for `|z| < EI_SERIES_THRESHOLD` (`16`); asymptotic otherwise.
+    /// - Algorithm: power series (with extra precision for cancellation) for `|z| < max(16, 0.7(p+96)+8)`;
+    ///   asymptotic `e^z/z Σ k!/z^k + iπ·sgn(Im z)` otherwise.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn ei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -57,7 +78,7 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: via [`Self::ei`]; inherits `EI_SERIES_THRESHOLD = 16`.
+    /// - Algorithm: via [`Self::ei`].
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -65,14 +86,26 @@ impl ExactComplex {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
         let dest = round_p(p);
-        ziv_complex(dest, rm, |pw| self.si_at(pw, dest, cc))
+        // Si is odd with real Taylor coefficients: Si(iy) is purely imaginary and Si(x) is real.
+        // Pin the exactly-zero part so the Ziv test does not chase rounding noise.
+        let re_zero = self.re().is_zero();
+        let im_zero = self.im().is_zero();
+        ziv_complex(dest, rm, |pw| {
+            let v = self.si_at(pw, dest, cc);
+            match (re_zero, im_zero) {
+                (true, false) => ExactComplex::new(ExactNum::new(pw), v.im().clone()),
+                (false, true) => ExactComplex::new(v.re().clone(), ExactNum::new(pw)),
+                _ => v,
+            }
+        })
     }
 
-    /// Cosine integral \(\mathrm{Ci}(z)\). Pole at \(0\) → NaN. Inherits the \(\mathrm{Ei}\) cut.
+    /// Cosine integral \(\mathrm{Ci}(z)=\gamma+\ln z+\int_0^z(\cos t-1)/t\,dt\) (principal branch,
+    /// cut on \((-\infty,0]\), matching mpmath `ci`). Pole at \(0\) → NaN.
     ///
     /// # Precision
     ///
-    /// - Algorithm: via [`Self::ei`]; `EI_SERIES_THRESHOLD = 16`.
+    /// - Algorithm: via [`Self::ei`].
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn ci(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -134,9 +167,26 @@ impl ExactComplex {
 
     fn ei_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         if use_ei_series(self, dest_p) {
-            self.ei_series(work_p, cc)
+            let extra = ei_series_loss_bits(self);
+            self.ei_series(work_p.saturating_add(extra), cc)
         } else {
-            self.ei_asymptotic(work_p, cc)
+            // Ei(z) ~ e^z/z Σ k!/z^k + iπ·sgn(Im z) for the principal-Ln branch (the same branch
+            // as the series; on the cut Im z = 0, Re z < 0 the upper side, +iπ, is used).
+            let a = self.ei_asymptotic(work_p, cc);
+            let s = if self.im().is_positive() || (self.im().is_zero() && self.re().is_negative()) {
+                1
+            } else if self.im().is_negative() && !self.im().is_zero() {
+                -1
+            } else {
+                0
+            };
+            if s == 0 {
+                a
+            } else {
+                let pi = cc.pi(work_p, RoundingMode::None);
+                let pi = if s < 0 { pi.neg() } else { pi };
+                ExactComplex::new(a.re().clone(), a.im().add(&pi, work_p, RoundingMode::None))
+            }
         }
     }
 
@@ -146,7 +196,15 @@ impl ExactComplex {
         let lnz = self.ln(p, RoundingMode::None, cc);
         let mut term = self.clone();
         let mut sum = term.clone();
-        for n in 2..=series_term_cap(p) {
+        // Terms peak near n = |z|; allow e·|z| terms beyond the precision-based cap.
+        let az_bound = self
+            .abs(64, RoundingMode::None)
+            .exponent()
+            .map_or(
+                0usize,
+                |e| if e > 0 { 3usize << (e as u32).min(40) } else { 0 },
+            );
+        for n in 2..=series_term_cap(p).max(az_bound.saturating_add(WORD_BIT_SIZE)) {
             let nw = ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p);
             term = term
                 .mul(self, p, RoundingMode::None)
@@ -214,11 +272,28 @@ impl ExactComplex {
         let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);
         let e_plus = iz.ei_at(work_p, dest_p, cc);
         let e_minus = neg_c(&iz).ei_at(work_p, dest_p, cc);
-        neg_c(&e_plus.add(&e_minus, work_p, RoundingMode::None).div(
+        // (Ei(iz) + Ei(-iz)) / 2 = γ + (ln(iz) + ln(-iz)) / 2 + (entire part). The principal
+        // Ci(z) = γ + ln z + (entire part) (DLMF 6.2.11), so add i·(arg z − (arg(iz) + arg(−iz)) / 2),
+        // which is 0 for Re z > 0 and ±π for Re z < 0.
+        let half_sum = e_plus.add(&e_minus, work_p, RoundingMode::None).div(
             &two_c(work_p),
             work_p,
             RoundingMode::None,
-        ))
+        );
+        let arg_z = self.ln(work_p, RoundingMode::None, cc).im().clone();
+        let arg_p = iz.ln(work_p, RoundingMode::None, cc).im().clone();
+        let arg_m = neg_c(&iz).ln(work_p, RoundingMode::None, cc).im().clone();
+        let corr = arg_z.sub(
+            &arg_p
+                .add(&arg_m, work_p, RoundingMode::None)
+                .ldexp(-1, work_p, RoundingMode::None),
+            work_p,
+            RoundingMode::None,
+        );
+        ExactComplex::new(
+            half_sum.re().clone(),
+            half_sum.im().add(&corr, work_p, RoundingMode::None),
+        )
     }
 
     fn li_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {

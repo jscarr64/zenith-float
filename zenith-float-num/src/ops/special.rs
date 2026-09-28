@@ -3,6 +3,7 @@
 use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
 use crate::defs::Error;
+use crate::defs::Exponent;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
@@ -46,9 +47,7 @@ impl ExactNumNumber {
 
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE;
-            let one = Self::from_word(1, p_x)?;
-            let erf = self.erf_at(p_x, cc)?;
-            let mut ret = one.sub(&erf, p_x, RoundingMode::None)?;
+            let mut ret = self.erfc_at(p_x, cc)?;
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
                 return Ok(ret);
@@ -72,12 +71,14 @@ impl ExactNumNumber {
             return Ok(one);
         }
 
-        let ret = if x.exponent() <= 2 {
-            x.erf_series(p, cc)?
-        } else {
-            let erfc = x.erfc_asymptotic(p, cc)?;
-            let one = Self::from_word(1, p)?;
-            one.sub(&erfc, p, RoundingMode::None)?
+        let ret = match erf_x2_bits(&x, p)? {
+            None => {
+                let erfc = x.erfc_asymptotic(p, cc)?;
+                let one = Self::from_word(1, p)?;
+                one.sub(&erfc, p, RoundingMode::None)?
+            }
+            // The alternating series peaks near e^{x²}: carry x²·log₂e extra bits.
+            Some(guard) => x.erf_series(p + guard, cc)?,
         };
 
         if neg {
@@ -85,6 +86,24 @@ impl ExactNumNumber {
         } else {
             Ok(ret)
         }
+    }
+
+    fn erfc_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let mut x = self.clone()?;
+        x.set_inexact(false);
+        if x.is_positive() && !x.is_zero() {
+            match erf_x2_bits(&x, p)? {
+                None => return x.erfc_asymptotic(p, cc),
+                Some(guard) => {
+                    // erfc(x) ≈ e^{-x²}/(x√π): 1 − erf(x) cancels about x²·log₂e bits.
+                    let pw = p + guard;
+                    let one = Self::from_word(1, pw)?;
+                    return one.sub(&x.erf_at(pw, cc)?, pw, RoundingMode::None);
+                }
+            }
+        }
+        let one = Self::from_word(1, p)?;
+        one.sub(&x.erf_at(p, cc)?, p, RoundingMode::None)
     }
 
     fn erf_series(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -99,7 +118,8 @@ impl ExactNumNumber {
         let mut nfact = Self::from_word(1, p)?;
         let mut sum = xpow.clone()?;
 
-        for n in 1..=(p + 8) {
+        // Terms grow until n ≈ x², so only stop once past that point.
+        for n in 1..=ERF_SERIES_MAX {
             nfact = nfact.mul(&Self::from_word(n as Word, p)?, p, RoundingMode::None)?;
             xpow = xpow.mul(&x2, p, RoundingMode::None)?;
             let two_n_1 = Self::from_word((2 * n + 1) as Word, p)?;
@@ -109,14 +129,18 @@ impl ExactNumNumber {
                 t.set_sign(Sign::Neg);
             }
             sum = sum.add(&t, p, RoundingMode::None)?;
-            if t.is_zero() || (t.exponent() as isize) + (p as isize) < 0 {
-                break;
+            let past_peak = Self::from_word(n as Word, p)?.cmp(&x2) > 0;
+            if t.is_zero()
+                || (past_peak && (t.exponent() as isize) + (p as isize) < sum.exponent() as isize)
+            {
+                return scale.mul(&sum, p, RoundingMode::None);
             }
         }
-
-        scale.mul(&sum, p, RoundingMode::None)
+        Err(Error::InvalidArgument)
     }
 
+    /// Asymptotic `erfc`, only used once `x² ≥ p·ln 2` (see [`erf_x2_bits`]), where the
+    /// smallest term (≈ e^{-x²}) is already below `2^-p`.
     fn erfc_asymptotic(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // e^{-x^2} / (x √π) * ∑ (-1)^k (2k-1)!! / (2x^2)^k
         let x2 = self.mul(self, p, RoundingMode::None)?;
@@ -133,8 +157,12 @@ impl ExactNumNumber {
         let mut term = Self::from_word(1, p)?;
         for k in 1..=(p + 8) {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
-            term = term.mul(&odd, p, RoundingMode::None)?;
-            term = term.div(&two_x2, p, RoundingMode::None)?;
+            let ratio = odd.div(&two_x2, p, RoundingMode::None)?;
+            if ratio.cmp(&Self::from_word(1, p)?) >= 0 {
+                // Past the smallest term: the series starts to diverge.
+                break;
+            }
+            term = term.mul(&ratio, p, RoundingMode::None)?;
             term.set_sign(if k % 2 == 1 { Sign::Neg } else { Sign::Pos });
             s = s.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || (term.exponent() as isize) + (p as isize) < 0 {
@@ -187,8 +215,12 @@ impl ExactNumNumber {
 
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE * 2;
-            let g = self.gamma_at(p_x, cc)?;
-            let mut ret = g.ln(p_x, RoundingMode::None, cc)?;
+            // Large arguments go straight to Stirling: Γ itself would overflow.
+            let mut ret = if self.exponent() >= stirling_min_exponent(p_x, 372, 127, 6) {
+                self.ln_gamma_stirling(p_x, cc)?
+            } else {
+                self.gamma_at(p_x, cc)?.ln(p_x, RoundingMode::None, cc)?
+            };
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
                 return Ok(ret);
@@ -228,20 +260,25 @@ impl ExactNumNumber {
             }
         }
 
-        let one = Self::from_word(1, p)?;
+        // One extra word covers the shift product and exp() turning the absolute error of
+        // ln Γ into a relative one.
+        let pw = p + WORD_BIT_SIZE;
+        let one = Self::from_word(1, pw)?;
         let mut z = self.clone()?;
-        let mut acc = Self::from_word(1, p)?;
+        let mut acc = Self::from_word(1, pw)?;
         let mut shifts = 0usize;
 
-        // Raise argument until |z| >= 64 so Stirling terms decay quickly.
-        while z.exponent() < 6 && shifts < 512 {
-            acc = acc.mul(&z, p, RoundingMode::None)?;
-            z = z.add(&one, p, RoundingMode::None)?;
+        // Raise the argument until the last (64th) Stirling term, B₁₂₈/(128·127·z¹²⁷)
+        // ≈ 2^363.8 / z¹²⁷, is below 2^-(p+8).
+        let e_min = stirling_min_exponent(p, 372, 127, 6);
+        while z.exponent() < e_min && shifts < STIRLING_SHIFT_MAX {
+            acc = acc.mul(&z, pw, RoundingMode::None)?;
+            z = z.add(&one, pw, RoundingMode::None)?;
             shifts += 1;
         }
 
-        let lg = z.ln_gamma_stirling(p, cc)?;
-        let g = lg.exp(p, RoundingMode::None, cc)?;
+        let lg = z.ln_gamma_stirling(pw, cc)?;
+        let g = lg.exp(pw, RoundingMode::None, cc)?;
         g.div(&acc, p, RoundingMode::None)
     }
 
@@ -261,8 +298,9 @@ impl ExactNumNumber {
         s = s.add(&ln_two_pi, p, RoundingMode::None)?;
 
         let mut zpow = self.clone()?; // z^{1} for k=1 term z^{2k-1}
+        let bern = even_bernoulli(64, p)?;
         for k in 1..=64 {
-            let b = bernoulli_even(k, p)?;
+            let b = &bern[k - 1];
             let two_k = Self::from_word((2 * k) as Word, p)?;
             let two_k_m1 = Self::from_word((2 * k - 1) as Word, p)?;
             let den =
@@ -322,19 +360,23 @@ impl ExactNumNumber {
     }
 
     fn digamma_positive(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        let one = Self::from_word(1, p)?;
+        // One extra word absorbs the rounding of the shift sum.
+        let pw = p + WORD_BIT_SIZE;
+        let one = Self::from_word(1, pw)?;
         let mut z = self.clone()?;
         z.set_inexact(false);
-        let mut acc = Self::from_word(0, p)?;
+        let mut acc = Self::from_word(0, pw)?;
         let mut shifts = 0usize;
-        // Raise until |z| >= 128 so Bernoulli terms reach typical p.
-        while z.exponent() < 8 && shifts < 512 {
-            let rec = one.div(&z, p, RoundingMode::None)?;
-            acc = acc.sub(&rec, p, RoundingMode::None)?;
-            z = z.add(&one, p, RoundingMode::None)?;
+        // Raise until the last (64th) asymptotic term, B₁₂₈/(128·z¹²⁸) ≈ 2^370.8 / z¹²⁸,
+        // is below 2^-(p+8).
+        let e_min = stirling_min_exponent(p, 379, 128, 8);
+        while z.exponent() < e_min && shifts < STIRLING_SHIFT_MAX {
+            let rec = one.div(&z, pw, RoundingMode::None)?;
+            acc = acc.sub(&rec, pw, RoundingMode::None)?;
+            z = z.add(&one, pw, RoundingMode::None)?;
             shifts += 1;
         }
-        acc.add(&z.digamma_asymp(p, cc)?, p, RoundingMode::None)
+        acc.add(&z.digamma_asymp(pw, cc)?, p, RoundingMode::None)
     }
 
     fn digamma_asymp(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -347,9 +389,10 @@ impl ExactNumNumber {
         let z2 = self.mul(self, p, RoundingMode::None)?;
         let mut zp = Self::from_word(1, p)?;
         let mut prev_e = i32::MIN;
+        let bern = even_bernoulli(64, p)?;
         for k in 1..=64 {
             zp = zp.mul(&z2, p, RoundingMode::None)?;
-            let b = bernoulli_even(k, p)?;
+            let b = &bern[k - 1];
             let two_k = Self::from_word((2 * k) as Word, p)?;
             let den = two_k.mul(&zp, p, RoundingMode::None)?;
             let term = b.div(&den, p, RoundingMode::None)?;
@@ -449,7 +492,7 @@ impl ExactNumNumber {
             term = term.mul(x, p, RoundingMode::None)?;
             term = term.div(&poch, p, RoundingMode::None)?;
             sum = sum.add(&term, p, RoundingMode::None)?;
-            if term.is_zero() || (term.exponent() as isize) + (p as isize) < 0 {
+            if series_negligible(&term, &sum, p) {
                 break;
             }
         }
@@ -478,30 +521,58 @@ impl ExactNumNumber {
 
     fn ei_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         if self.expint_use_asymptotic(p) {
-            self.ei_asymptotic(p, cc)
-        } else {
-            self.ei_series(p, cc)
+            return self.ei_asymptotic(p, cc);
         }
+        // The series cancels: for x < 0 its terms reach e^{|x|} while Ei(x) ≈ e^{-|x|}/|x|, and
+        // near the root x₀ ≈ 0.3725 the parts γ + ln x and Σ cancel. Measure the loss and
+        // re-evaluate with enough guard bits.
+        let mut extra = if self.is_negative() && self.exponent() > 0 {
+            (3usize << (self.exponent() as u32).min(40)) + 16
+        } else {
+            16
+        };
+        for _ in 0..8 {
+            let (v, top) = self.ei_series(p + extra, cc)?;
+            let lost = if v.is_zero() {
+                usize::MAX
+            } else {
+                (top as isize - v.exponent() as isize).max(0) as usize
+            };
+            if lost.saturating_add(8) <= extra {
+                let mut v = v;
+                v.set_precision(p, RoundingMode::None)?;
+                return Ok(v);
+            }
+            if lost > HYPERGEOM_LOSS_MAX {
+                break;
+            }
+            extra = lost + 32;
+        }
+        Err(Error::InvalidArgument)
     }
 
-    fn ei_series(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        // γ + ln x + Σ_{n=1}^∞ x^n / (n n!)
+    /// `γ + ln|x| + Σ_{n≥1} x^n / (n n!)` and the largest exponent among the parts.
+    fn ei_series(&self, p: usize, cc: &mut Consts) -> Result<(Self, Exponent), Error> {
         let g = cc.euler_gamma_num(p, RoundingMode::None)?;
         let lnx = self.abs()?.ln(p, RoundingMode::None, cc)?;
         let mut term = self.clone()?;
         let mut sum = term.clone()?;
+        let mut top = max_exp(&[&g, &lnx, &sum]);
         for n in 2..=series_n_max(p, self.exponent()) {
             let nw = Self::from_word(n as Word, p)?;
             term = term.mul(self, p, RoundingMode::None)?;
             term = term.div(&nw, p, RoundingMode::None)?;
             let piece = term.div(&nw, p, RoundingMode::None)?;
             sum = sum.add(&piece, p, RoundingMode::None)?;
+            top = top.max(max_exp(&[&piece]));
             if piece.is_zero() || (piece.exponent() as isize) + (p as isize) < 0 {
                 break;
             }
         }
-        g.add(&lnx, p, RoundingMode::None)?
-            .add(&sum, p, RoundingMode::None)
+        let v = g
+            .add(&lnx, p, RoundingMode::None)?
+            .add(&sum, p, RoundingMode::None)?;
+        Ok((v, top))
     }
 
     fn ei_asymptotic(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -579,7 +650,7 @@ impl ExactNumNumber {
                 piece.set_sign(Sign::Neg);
             }
             sum = sum.add(&piece, p, RoundingMode::None)?;
-            if piece.is_zero() || (piece.exponent() as isize) + (p as isize) < 0 {
+            if series_negligible(&piece, &sum, p) {
                 break;
             }
         }
@@ -781,7 +852,14 @@ impl ExactNumNumber {
         let ret = if x.fresnel_use_asymptotic(p) {
             x.fresnel_sc_asymptotic(sine, p, cc)?
         } else {
-            x.fresnel_sc_series(sine, p, cc)?
+            // The series terms peak near e^{πx²/2} while the result is O(1): add
+            // log2(e)·πx²/2 ≈ 2.27x² guard bits (bounded via x² < 2^e).
+            let x2 = x.mul(&x, WORD_BIT_SIZE, RoundingMode::Up)?;
+            let e2 = x2.exponent();
+            let extra = if e2 > 0 { (5usize << (e2 as u32).min(40)) / 2 } else { 0 } + 32;
+            let mut r = x.fresnel_sc_series(sine, p + extra, cc)?;
+            r.set_precision(p, RoundingMode::None)?;
+            r
         };
         if neg {
             ret.neg()
@@ -798,8 +876,9 @@ impl ExactNumNumber {
         if e >= 8 {
             return true;
         }
+        // The asymptotic series' smallest term is about e^{-πx²/2}, i.e. 2.27x² bits.
         let xmin = 1i64 << (e - 1);
-        xmin * xmin * 3 > p as i64
+        xmin * xmin * 9 / 4 > p as i64 + 16
     }
 
     fn fresnel_sc_asymptotic(&self, sine: bool, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -899,7 +978,7 @@ impl ExactNumNumber {
             } else {
                 sum = sum.add(&piece, p, RoundingMode::None)?;
             }
-            if piece.is_zero() || (piece.exponent() as isize) + (p as isize) < 0 {
+            if series_negligible(&piece, &sum, p) {
                 break;
             }
             let np1 = n + 1;
@@ -959,9 +1038,12 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let extra = extra_bits_for_degree(n as u32);
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc + extra;
+        // The power series (and Miller's normalization sum) cancel: terms reach ≈ e^{|x|}
+        // while |J_n(x)| ≈ (π|x|/2)^{-1/2}.
+        let guard = bessel_cancel_bits(self, 3, 2)?;
 
         loop {
-            let p_x = p_wrk + WORD_BIT_SIZE + extra;
+            let p_x = p_wrk + WORD_BIT_SIZE + extra + guard;
             let mut ret = if n > 48 {
                 self.bessel_j_miller(n, p_x)?
             } else {
@@ -1000,7 +1082,7 @@ impl ExactNumNumber {
                 t.set_sign(if t.is_positive() { Sign::Neg } else { Sign::Pos });
             }
             sum = sum.add(&t, p, RoundingMode::None)?;
-            if t.is_zero() || (t.exponent() as isize) + (p as isize) < 0 {
+            if series_negligible(&t, &sum, p) {
                 break;
             }
         }
@@ -1095,8 +1177,9 @@ impl ExactNumNumber {
             .max(self.mantissa_max_bit_len())
             .max(nu.mantissa_max_bit_len())
             + p_inc;
+        let guard = bessel_cancel_bits(self, 3, 2)?;
         loop {
-            let p_x = p_wrk + WORD_BIT_SIZE;
+            let p_x = p_wrk + WORD_BIT_SIZE + guard;
             let mut ret = self.bessel_y_at(nu, p_x, cc)?;
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact() | nu.inexact());
@@ -1204,16 +1287,25 @@ impl ExactNumNumber {
         if let Some(n) = half_integer_n(&nu, p)? {
             return self.k_half_integer(n, p, cc);
         }
-        if self.exponent() >= 5 {
+        // The asymptotic series' smallest term is ≈ e^{-2x} (2.885x bits), so it is used only
+        // when that covers `p`. Below that the I-based formulas cancel: I ≈ e^{x}, K ≈ e^{-x},
+        // so 2.885x guard bits are added.
+        let two_x_bits = bessel_cancel_bits(self, 3, 1)?;
+        if two_x_bits >= p + 16 && self.exponent() >= 3 {
             return self.k_asymptotic(&nu, p, cc);
         }
-        if let Some(n) = as_i32_exact(&nu, p)? {
+        let pe = p + two_x_bits;
+        let v = if let Some(n) = as_i32_exact(&nu, pe)? {
             if n < 0 {
                 return Err(Error::InvalidArgument);
             }
-            return self.k_integer(n as u32, p, cc);
-        }
-        self.k_real(&nu, p, cc)
+            self.k_integer(n as u32, pe, cc)?
+        } else {
+            self.k_real(&nu, pe, cc)?
+        };
+        let mut v = v;
+        v.set_precision(p, RoundingMode::None)?;
+        Ok(v)
     }
 
     fn bessel_series(
@@ -1229,8 +1321,9 @@ impl ExactNumNumber {
             .max(self.mantissa_max_bit_len())
             .max(nu.mantissa_max_bit_len())
             + p_inc;
+        let guard = if alternating { bessel_cancel_bits(self, 3, 2)? } else { 0 };
         loop {
-            let p_x = p_wrk + WORD_BIT_SIZE;
+            let p_x = p_wrk + WORD_BIT_SIZE + guard;
             let mut ret = self.bessel_jn_series(nu, p_x, cc, alternating)?;
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact() | nu.inexact());
@@ -1268,7 +1361,7 @@ impl ExactNumNumber {
                 term = term.neg()?;
             }
             sum = sum.add(&term, p, RoundingMode::None)?;
-            if term.is_zero() || (term.exponent() as isize) + (p as isize) < 0 {
+            if series_negligible(&term, &sum, p) {
                 break;
             }
         }
@@ -1453,11 +1546,17 @@ impl ExactNumNumber {
         let z = half.mul(&half, p, RoundingMode::None)?;
         let mut fact = Self::from_word(1, p)?;
         let mut zk = Self::from_word(1, p)?;
-        let mut sum = one.digamma_at(p, cc)?;
+        let mut psi = one.digamma_at(p, cc)?;
+        let mut sum = psi.clone()?;
         for k in 1..=series_n_max(p, self.exponent()) {
             fact = fact.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
             zk = zk.mul(&z, p, RoundingMode::None)?;
-            let psi = Self::from_word((k + 1) as Word, p)?.digamma_at(p, cc)?;
+            // ψ(k+1) = ψ(k) + 1/k (a fresh digamma per term made K_n very slow).
+            psi = psi.add(
+                &Self::from_word(k as Word, p)?.reciprocal(p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?;
             let term = psi
                 .div(
                     &fact.mul(&fact, p, RoundingMode::None)?,
@@ -1538,7 +1637,8 @@ impl ExactNumNumber {
         let mut term = Self::from_word(1, p)?;
         let mut sum = Self::from_word(1, p)?;
         let mut prev_e = i32::MAX;
-        for k in 1..=40 {
+        // The smallest term is near k ≈ 2x; stop there or at 2^-p.
+        for k in 1..=(p + 64) {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
             let factor = four_nu2
                 .sub(
@@ -2121,10 +2221,19 @@ impl ExactNumNumber {
         Ok(pm1)
     }
 
-    /// Gaussian \({}_2F_1(a=\mathrm{self},b;c;z)\).
-    /// Series for \(\lvert z\rvert<1\) or terminating \(a\) or \(b\); Gauss at \(z=1\)
-    /// when \(c-a-b>0\); Pfaff on \(z\in(1/2,1)\); real continuation for \(z\le -1\).
-    /// Non-terminating \(z>1\) (typically not real) is `InvalidArgument`.
+    /// Gaussian \({}_2F_1(a=\mathrm{self},b;c;z)\) for real arguments.
+    ///
+    /// - Terminating (\(a\) or \(b\) a non-positive integer): the polynomial, for any \(z\).
+    /// - \(\lvert z\rvert\le 1/2\): the Gauss series.
+    /// - \(z\in(1/2,1)\): the \(1-z\) connection formula (DLMF 15.8.4); when \(c-a-b\) is an
+    ///   integer, its logarithmic limit (DLMF 15.8.10, A&S 15.3.10–15.3.12).
+    /// - \(z=1\): Gauss's sum when \(c-a-b>0\); `InvalidArgument` otherwise (divergent).
+    /// - \(z<-1/2\): Pfaff, \((1-z)^{-a}\,{}_2F_1(a,c-b;c;z/(z-1))\) with \(z/(z-1)\in(1/3,1)\).
+    ///
+    /// `InvalidArgument` for non-terminating \(z>1\) (not real in general), for an uncancelled
+    /// pole at a non-positive integer \(c\), and when a series would need more than
+    /// `HYPERGEOM_TERM_MAX` terms (very large parameters). Cancellation between the connection
+    /// terms is measured and the evaluation repeated with that many extra bits.
     pub fn hypergeom_2f1(
         &self,
         b: &Self,
@@ -2169,36 +2278,12 @@ impl ExactNumNumber {
         p: usize,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        if pole_c_before_term(c, self, b, p)? {
-            return Err(Error::InvalidArgument);
+        let (v, lost) = hyp2f1_real(self, b, c, z, p, cc)?;
+        if lost <= WORD_BIT_SIZE {
+            return Ok(v);
         }
-        if terminating_neg_int(self, p)? || terminating_neg_int(b, p)? {
-            return hypergeom_series(self, b, c, z, p);
-        }
-        let one = Self::from_word(1, p)?;
-        if z.cmp(&one) == 0 {
-            return gauss_z_one(self, b, c, p, cc);
-        }
-        if z.cmp(&one) > 0 {
-            return Err(Error::InvalidArgument);
-        }
-        if z.cmp(&one.neg()?) <= 0 {
-            return hypergeom_z_le_neg_one(self, b, c, z, p, cc);
-        }
-        let half = one_half(p)?;
-        if z.cmp(&half) > 0 && z.cmp(&one) < 0 {
-            let zm1 = z.sub(&one, p, RoundingMode::None)?;
-            let w = z.div(&zm1, p, RoundingMode::None)?;
-            let mut na = self.clone()?;
-            na.set_sign(if self.is_positive() { Sign::Neg } else { Sign::Pos });
-            let pref = one
-                .sub(z, p, RoundingMode::None)?
-                .pow(&na, p, RoundingMode::None, cc)?;
-            let cb = c.sub(b, p, RoundingMode::None)?;
-            let inner = hypergeom_series(self, &cb, c, &w, p)?;
-            return pref.mul(&inner, p, RoundingMode::None);
-        }
-        hypergeom_series(self, b, c, z, p)
+        let p_more = p + round_p(lost.min(HYPERGEOM_LOSS_MAX)) + WORD_BIT_SIZE;
+        Ok(hyp2f1_real(self, b, c, z, p_more, cc)?.0)
     }
 
     /// Regularized incomplete beta \(I_x(a=\mathrm{self},b)\) for \(a>0\), \(b>0\), \(x\in[0,1]\).
@@ -2225,6 +2310,12 @@ impl ExactNumNumber {
             let mut one = Self::from_word(1, p)?;
             one.set_inexact(self.inexact() | b.inexact() | x.inexact());
             return Ok(one);
+        }
+        if self.cmp(b) == 0 && x.cmp(&one_half(p)?) == 0 {
+            // I_{1/2}(a,a) = 1/2 exactly; the rounding test cannot certify an exact value.
+            let mut half = one_half(p)?;
+            half.set_inexact(self.inexact() | b.inexact() | x.inexact());
+            return Ok(half);
         }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
@@ -2262,7 +2353,6 @@ impl ExactNumNumber {
     }
 
     fn betainc_direct(&self, b: &Self, x: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        // I_x(a,b) = x^a / (a B(a,b)) · ₂F₁(a, 1−b; a+1; x)
         let one = Self::from_word(1, p)?;
         let ga = self.gamma_at(p, cc)?;
         let gb = b.gamma_at(p, cc)?;
@@ -2270,20 +2360,156 @@ impl ExactNumNumber {
         let beta = ga
             .mul(&gb, p, RoundingMode::None)?
             .div(&gab, p, RoundingMode::None)?;
-        let mut nb = b.clone()?;
-        nb.set_sign(if b.is_positive() { Sign::Neg } else { Sign::Pos });
-        let one_b = one.add(&nb, p, RoundingMode::None)?;
-        let ap1 = self.add(&one, p, RoundingMode::None)?;
-        let f = self.hypergeom_2f1_at(&one_b, &ap1, x, p, cc)?;
         let xa = x.pow(self, p, RoundingMode::None, cc)?;
-        xa.div(self, p, RoundingMode::None)?
+        let one_b = one.sub(b, p, RoundingMode::None)?;
+        if terminating_neg_int(&one_b, p)? {
+            // Integer b: I_x(a,b) = x^a / (a B(a,b)) · ₂F₁(a, 1−b; a+1; x), a polynomial in x
+            // (exact inputs give an exact result). Its terms alternate, so large b cancels;
+            // then the continued fraction below is used instead.
+            let ap1 = self.add(&one, p, RoundingMode::None)?;
+            let (f, lost) = hypergeom_series(self, &one_b, &ap1, x, p)?;
+            if lost <= WORD_BIT_SIZE {
+                return xa
+                    .div(self, p, RoundingMode::None)?
+                    .div(&beta, p, RoundingMode::None)?
+                    .mul(&f, p, RoundingMode::None);
+            }
+        }
+        // I_x(a,b) = x^a (1−x)^b / (a B(a,b)) · CF(a,b,x); the continued fraction converges
+        // quickly for x < (a+1)/(a+b+2), which `betainc_at` guarantees.
+        let omxb = one
+            .sub(x, p, RoundingMode::None)?
+            .pow(b, p, RoundingMode::None, cc)?;
+        let cf = betainc_cf(self, b, x, p)?;
+        xa.mul(&omxb, p, RoundingMode::None)?
+            .div(self, p, RoundingMode::None)?
             .div(&beta, p, RoundingMode::None)?
-            .mul(&f, p, RoundingMode::None)
+            .mul(&cf, p, RoundingMode::None)
     }
 }
 
+/// Continued fraction of the incomplete beta (DLMF 8.17.22, modified Lentz):
+/// `1/(1+ d₁/(1+ d₂/(1+ …)))` with
+/// `d₂ₘ₊₁ = −(a+m)(a+b+m)x / ((a+2m)(a+2m+1))`, `d₂ₘ = m(b−m)x / ((a+2m−1)(a+2m))`.
+fn betainc_cf(
+    a: &ExactNumNumber,
+    b: &ExactNumNumber,
+    x: &ExactNumNumber,
+    p: usize,
+) -> Result<ExactNumNumber, Error> {
+    let one = ExactNumNumber::from_word(1, p)?;
+    let tiny = one.ldexp(-(2 * p as i32), p, RoundingMode::None)?;
+    let floor_tiny = |v: ExactNumNumber| -> Result<ExactNumNumber, Error> {
+        if v.abs()?.cmp(&tiny) < 0 {
+            tiny.clone()
+        } else {
+            Ok(v)
+        }
+    };
+    let apb = a.add(b, p, RoundingMode::None)?;
+    let ap1 = a.add(&one, p, RoundingMode::None)?;
+    let mut c = one.clone()?;
+    let mut d = floor_tiny(
+        one.sub(
+            &apb.mul(x, p, RoundingMode::None)?
+                .div(&ap1, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?,
+    )?;
+    d = one.div(&d, p, RoundingMode::None)?;
+    let mut h = d.clone()?;
+    for m in 1..=BETAINC_CF_MAX {
+        let mw = ExactNumNumber::from_word(m as Word, p)?;
+        let m2 = ExactNumNumber::from_word(2 * m as Word, p)?;
+        let a_m2 = a.add(&m2, p, RoundingMode::None)?;
+        let even = mw
+            .mul(&b.sub(&mw, p, RoundingMode::None)?, p, RoundingMode::None)?
+            .mul(x, p, RoundingMode::None)?
+            .div(
+                &a_m2
+                    .sub(&one, p, RoundingMode::None)?
+                    .mul(&a_m2, p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?;
+        let odd = a
+            .add(&mw, p, RoundingMode::None)?
+            .mul(&apb.add(&mw, p, RoundingMode::None)?, p, RoundingMode::None)?
+            .mul(x, p, RoundingMode::None)?
+            .div(
+                &a_m2.mul(
+                    &a_m2.add(&one, p, RoundingMode::None)?,
+                    p,
+                    RoundingMode::None,
+                )?,
+                p,
+                RoundingMode::None,
+            )?
+            .neg()?;
+        let mut delta = one.clone()?;
+        for coef in [even, odd] {
+            d = floor_tiny(one.add(
+                &coef.mul(&d, p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?)?;
+            c = floor_tiny(one.add(
+                &coef.div(&c, p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?)?;
+            d = one.div(&d, p, RoundingMode::None)?;
+            delta = d.mul(&c, p, RoundingMode::None)?;
+            h = h.mul(&delta, p, RoundingMode::None)?;
+        }
+        // Stop one word short of p: rounding keeps |Δ−1| near 2^-p.
+        let step = delta.sub(&one, p, RoundingMode::None)?;
+        if step.is_zero() || (step.exponent() as isize) + ((p - WORD_BIT_SIZE) as isize) < 0 {
+            return Ok(h);
+        }
+    }
+    Err(Error::InvalidArgument)
+}
+
+const BETAINC_CF_MAX: u32 = 100_000;
+/// Term cap for the `erf` Maclaurin series (it only runs for `x² < 0.7·p`).
+const ERF_SERIES_MAX: usize = 1 << 20;
+
+/// `None` when `x² ≥ 0.7·p` (the asymptotic `erfc` reaches `2^-p` before diverging);
+/// otherwise the extra bits (`≈ x²·log₂e` plus a word) the series paths need.
+fn erf_x2_bits(x: &ExactNumNumber, p: usize) -> Result<Option<usize>, Error> {
+    if x.exponent() >= 16 {
+        return Ok(None);
+    }
+    let x2 = x.mul(x, p, RoundingMode::None)?.int_as_usize()?;
+    if x2 >= p * 7 / 10 + 4 {
+        return Ok(None);
+    }
+    Ok(Some(round_p((x2 + 1) * 3 / 2) + WORD_BIT_SIZE))
+}
+
+/// Upper bound on argument shifts before the Stirling / asymptotic series.
+const STIRLING_SHIFT_MAX: usize = 1 << 20;
+
+/// Smallest binary exponent `e` (so `z ≥ 2^(e-1)`) for which a 64-term Stirling-type tail
+/// `≈ 2^c / z^slope` (with `c` already including the 8 guard bits) is below `2^-p`;
+/// never below `floor`.
+pub(crate) fn stirling_min_exponent(p: usize, c: usize, slope: usize, floor: Exponent) -> Exponent {
+    let need = (p + c).div_ceil(slope) + 1;
+    Exponent::try_from(need).map_or(Exponent::MAX, |e| e.max(floor))
+}
+
 const CARLSON_DUPE_MAX: u32 = 128;
+
+/// Duplication-step cap: each step shrinks the spread 4×, and the series needs a spread of
+/// about 2^-(p/3+16), so high precisions need more than [`CARLSON_DUPE_MAX`] steps.
+fn carlson_dupe_cap(p: usize) -> u32 {
+    CARLSON_DUPE_MAX.max(u32::try_from(p / 4 + 64).unwrap_or(u32::MAX))
+}
 const HYPERGEOM_TERM_MAX: u32 = 10_000;
+/// Cap on the extra bits a 2F1 re-evaluation may add for measured cancellation.
+const HYPERGEOM_LOSS_MAX: usize = 4096;
 
 fn fact_ratio_down(a: u32, b: u32, p: usize) -> Result<ExactNumNumber, Error> {
     let mut acc = ExactNumNumber::from_word(1, p)?;
@@ -2325,22 +2551,80 @@ fn pole_c_before_term(
     })
 }
 
+/// A real 2F1 kernel value and the bits lost to cancellation while forming it.
+type Lossy = (ExactNumNumber, usize);
+
+/// Largest exponent among the non-zero values (`Exponent::MIN` when all are zero).
+fn max_exp(vals: &[&ExactNumNumber]) -> Exponent {
+    vals.iter()
+        .filter(|v| !v.is_zero())
+        .map(|v| v.exponent())
+        .max()
+        .unwrap_or(Exponent::MIN)
+}
+
+/// Bits of `v` lost when it was formed from parts as large as `2^mag`.
+fn lost_bits(mag: Exponent, v: &ExactNumNumber) -> usize {
+    if v.is_zero() || mag == Exponent::MIN {
+        return 0;
+    }
+    mag.saturating_sub(v.exponent()).max(0) as usize
+}
+
+/// `1/Γ(x)`, zero at the poles of Γ.
+fn rgamma(x: &ExactNumNumber, p: usize, cc: &mut Consts) -> Result<ExactNumNumber, Error> {
+    if terminating_neg_int(x, p)? {
+        return ExactNumNumber::new2(p, Sign::Pos, false);
+    }
+    ExactNumNumber::from_word(1, p)?.div(&x.gamma_at(p, cc)?, p, RoundingMode::None)
+}
+
+/// `max(|v|)` over `vals`.
+fn max_abs(vals: &[&ExactNumNumber]) -> Result<ExactNumNumber, Error> {
+    let mut m = vals[0].abs()?;
+    for v in &vals[1..] {
+        m = en_max(&m, &v.abs()?)?;
+    }
+    Ok(m)
+}
+
+/// Series tail test for terms `t_{n+1} = factor · t_n`: the term is below `2^-(p+4)` of the
+/// sum, `n` is past every parameter (so later factors stay near `|z| ≤ 1/2`), and the current
+/// ratio is below 7/8, which bounds the tail by 7 terms of this size.
+fn series_done(
+    term_exp: Exponent,
+    sum: &ExactNumNumber,
+    factor: &ExactNumNumber,
+    n: &ExactNumNumber,
+    max_par: &ExactNumNumber,
+    p: usize,
+) -> Result<bool, Error> {
+    if sum.is_zero() || n.cmp(max_par) <= 0 {
+        return Ok(false);
+    }
+    if (term_exp as isize) >= (sum.exponent() as isize) - (p as isize) - 4 {
+        return Ok(false);
+    }
+    let seven_eighths = ExactNumNumber::from_word(7, p)?.ldexp(-3, p, RoundingMode::None)?;
+    Ok(factor.abs()?.cmp(&seven_eighths) < 0)
+}
+
+/// Gauss series \(\sum (a)_n (b)_n / ((c)_n n!) z^n\). Callers keep \(\lvert z\rvert\le 1/2\)
+/// unless the series terminates.
 fn hypergeom_series(
     a: &ExactNumNumber,
     b: &ExactNumNumber,
     c: &ExactNumNumber,
     z: &ExactNumNumber,
     p: usize,
-) -> Result<ExactNumNumber, Error> {
+) -> Result<Lossy, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
     let mut term = ExactNumNumber::from_word(1, p)?;
     let mut sum = ExactNumNumber::from_word(1, p)?;
     let tiny = ExactNumNumber::from_word(1, p)?.ldexp(-((p as i32) - 8), p, RoundingMode::None)?;
-    let n_max = series_n_max(p, z.exponent()).min(HYPERGEOM_TERM_MAX as usize);
-    for n in 0..n_max {
-        if n > 0 && (term.is_zero() || (term.exponent() as isize) + (p as isize) < 0) {
-            break;
-        }
+    let max_par = max_abs(&[a, b, c])?;
+    let mut mag = one.exponent();
+    for n in 0..HYPERGEOM_TERM_MAX {
         let nn = ExactNumNumber::from_word(n as Word, p)?;
         let den = c.add(&nn, p, RoundingMode::None)?.mul(
             &one.add(&nn, p, RoundingMode::None)?,
@@ -2350,18 +2634,256 @@ fn hypergeom_series(
         if den.abs()?.cmp(&tiny) < 0 {
             return Err(Error::InvalidArgument);
         }
-        term = term
-            .mul(&a.add(&nn, p, RoundingMode::None)?, p, RoundingMode::None)?
+        let factor = a
+            .add(&nn, p, RoundingMode::None)?
             .mul(&b.add(&nn, p, RoundingMode::None)?, p, RoundingMode::None)?
-            .div(&den, p, RoundingMode::None)?
-            .mul(z, p, RoundingMode::None)?;
+            .mul(z, p, RoundingMode::None)?
+            .div(&den, p, RoundingMode::None)?;
+        term = term.mul(&factor, p, RoundingMode::None)?;
         sum = sum.add(&term, p, RoundingMode::None)?;
-        if terminating_after(a, n + 1, p)? || terminating_after(b, n + 1, p)? {
+        mag = mag.max(max_exp(&[&term]));
+        if terminating_after(a, n as usize + 1, p)? || terminating_after(b, n as usize + 1, p)? {
             sum.set_inexact(false);
-            return Ok(sum);
+            let lost = lost_bits(mag, &sum);
+            return Ok((sum, lost));
+        }
+        if series_done(max_exp(&[&term]), &sum, &factor, &nn, &max_par, p)? {
+            let lost = lost_bits(mag, &sum);
+            return Ok((sum, lost));
         }
     }
-    Ok(sum)
+    Err(Error::InvalidArgument)
+}
+
+/// Real \({}_2F_1\) dispatch; see [`ExactNumNumber::hypergeom_2f1`].
+fn hyp2f1_real(
+    a: &ExactNumNumber,
+    b: &ExactNumNumber,
+    c: &ExactNumNumber,
+    z: &ExactNumNumber,
+    p: usize,
+    cc: &mut Consts,
+) -> Result<Lossy, Error> {
+    if pole_c_before_term(c, a, b, p)? {
+        return Err(Error::InvalidArgument);
+    }
+    if terminating_neg_int(a, p)? || terminating_neg_int(b, p)? {
+        return hypergeom_series(a, b, c, z, p);
+    }
+    let one = ExactNumNumber::from_word(1, p)?;
+    let vs_one = z.cmp(&one);
+    if vs_one == 0 {
+        return Ok((gauss_z_one(a, b, c, p, cc)?, 0));
+    }
+    if vs_one > 0 {
+        return Err(Error::InvalidArgument);
+    }
+    let half = one_half(p)?;
+    if z.cmp(&half.neg()?) < 0 {
+        return hyp2f1_pfaff(a, b, c, z, p, cc);
+    }
+    if z.cmp(&half) <= 0 {
+        return hypergeom_series(a, b, c, z, p);
+    }
+    hyp2f1_one_minus_z(a, b, c, z, p, cc)
+}
+
+/// Pfaff (DLMF 15.8.1): \({}_2F_1(a,b;c;z)=(1-z)^{-a}{}_2F_1(a,c-b;c;z/(z-1))\) for
+/// \(z<-1/2\), so \(z/(z-1)\in(1/3,1)\). Uses the \(a\leftrightarrow b\) twin when that
+/// makes the new series terminate.
+fn hyp2f1_pfaff(
+    a: &ExactNumNumber,
+    b: &ExactNumNumber,
+    c: &ExactNumNumber,
+    z: &ExactNumNumber,
+    p: usize,
+    cc: &mut Consts,
+) -> Result<Lossy, Error> {
+    let one = ExactNumNumber::from_word(1, p)?;
+    let omz = one.sub(z, p, RoundingMode::None)?;
+    let w = z.div(&z.sub(&one, p, RoundingMode::None)?, p, RoundingMode::None)?;
+    let cb = c.sub(b, p, RoundingMode::None)?;
+    let ca = c.sub(a, p, RoundingMode::None)?;
+    let (s, t) = if !terminating_neg_int(&cb, p)? && terminating_neg_int(&ca, p)? {
+        (b, ca)
+    } else {
+        (a, cb)
+    };
+    let (f, lost) = hyp2f1_real(s, &t, c, &w, p, cc)?;
+    let pref = omz.pow(&s.neg()?, p, RoundingMode::None, cc)?;
+    Ok((pref.mul(&f, p, RoundingMode::None)?, lost))
+}
+
+/// \(1-z\) connection (DLMF 15.8.4) for \(z\in(1/2,1)\), non-terminating \(a,b\):
+/// \(\frac{\Gamma(c)\Gamma(m)}{\Gamma(c-a)\Gamma(c-b)}F(a,b;1-m;\zeta)
+/// +\zeta^{m}\frac{\Gamma(c)\Gamma(-m)}{\Gamma(a)\Gamma(b)}F(c-a,c-b;1+m;\zeta)\),
+/// \(m=c-a-b\), \(\zeta=1-z\). Integer \(m\) goes to the logarithmic form.
+fn hyp2f1_one_minus_z(
+    a: &ExactNumNumber,
+    b: &ExactNumNumber,
+    c: &ExactNumNumber,
+    z: &ExactNumNumber,
+    p: usize,
+    cc: &mut Consts,
+) -> Result<Lossy, Error> {
+    let one = ExactNumNumber::from_word(1, p)?;
+    let zeta = one.sub(z, p, RoundingMode::None)?;
+    let ca = c.sub(a, p, RoundingMode::None)?;
+    let cb = c.sub(b, p, RoundingMode::None)?;
+    let m = ca.sub(b, p, RoundingMode::None)?;
+    if let Some(mi) = as_i32_exact(&m, p)? {
+        if mi < 0 {
+            // Euler (DLMF 15.8.1): F(a,b;c;z) = ζ^m F(c−a,c−b;c;z), whose c−a−b is −m > 0.
+            let (f, lost) = hyp2f1_real(&ca, &cb, c, z, p, cc)?;
+            let pref = zeta.pow(&m, p, RoundingMode::None, cc)?;
+            return Ok((pref.mul(&f, p, RoundingMode::None)?, lost));
+        }
+        return hyp2f1_log_case(a, b, c, &zeta, mi as u32, p, cc);
+    }
+    let gc = c.gamma_at(p, cc)?;
+    let r1 = rgamma(&ca, p, cc)?.mul(&rgamma(&cb, p, cc)?, p, RoundingMode::None)?;
+    let (t1, l1) = if r1.is_zero() {
+        (r1, 0)
+    } else {
+        let (f, l) = hypergeom_series(a, b, &one.sub(&m, p, RoundingMode::None)?, &zeta, p)?;
+        let t = gc
+            .mul(&m.gamma_at(p, cc)?, p, RoundingMode::None)?
+            .mul(&r1, p, RoundingMode::None)?
+            .mul(&f, p, RoundingMode::None)?;
+        (t, l)
+    };
+    let r2 = rgamma(a, p, cc)?.mul(&rgamma(b, p, cc)?, p, RoundingMode::None)?;
+    let (t2, l2) = if r2.is_zero() {
+        (r2, 0)
+    } else {
+        let (f, l) = hypergeom_series(&ca, &cb, &one.add(&m, p, RoundingMode::None)?, &zeta, p)?;
+        let t = gc
+            .mul(&m.neg()?.gamma_at(p, cc)?, p, RoundingMode::None)?
+            .mul(&r2, p, RoundingMode::None)?
+            .mul(
+                &zeta.pow(&m, p, RoundingMode::None, cc)?,
+                p,
+                RoundingMode::None,
+            )?
+            .mul(&f, p, RoundingMode::None)?;
+        (t, l)
+    };
+    let v = t1.add(&t2, p, RoundingMode::None)?;
+    let lost = l1.max(l2).max(lost_bits(max_exp(&[&t1, &t2]), &v));
+    Ok((v, lost))
+}
+
+/// Logarithmic case of the \(1-z\) connection, integer \(m=c-a-b\ge 0\), \(\zeta=1-z\)
+/// (A&S 15.3.10–15.3.11, DLMF 15.8.10):
+/// \(F=\frac{\Gamma(m)\Gamma(c)}{\Gamma(a+m)\Gamma(b+m)}\sum_{n<m}\frac{(a)_n(b)_n}{n!(1-m)_n}\zeta^n
+/// -(-\zeta)^m\frac{\Gamma(c)}{\Gamma(a)\Gamma(b)}\sum_{n\ge0}\frac{(a+m)_n(b+m)_n}{n!(n+m)!}\zeta^n
+/// [\ln\zeta-\psi(n+1)-\psi(n+m+1)+\psi(a+m+n)+\psi(b+m+n)]\).
+fn hyp2f1_log_case(
+    a: &ExactNumNumber,
+    b: &ExactNumNumber,
+    c: &ExactNumNumber,
+    zeta: &ExactNumNumber,
+    m: u32,
+    p: usize,
+    cc: &mut Consts,
+) -> Result<Lossy, Error> {
+    if m > HYPERGEOM_TERM_MAX {
+        return Err(Error::InvalidArgument);
+    }
+    let one = ExactNumNumber::from_word(1, p)?;
+    let mw = ExactNumNumber::from_word(m as Word, p)?;
+    let am = a.add(&mw, p, RoundingMode::None)?;
+    let bm = b.add(&mw, p, RoundingMode::None)?;
+    let gc = c.gamma_at(p, cc)?;
+
+    let mut s1 = ExactNumNumber::new2(p, Sign::Pos, false)?;
+    let mut l1 = 0;
+    if m > 0 {
+        let mut t = one.clone()?;
+        let mut mag = Exponent::MIN;
+        for n in 0..m {
+            s1 = s1.add(&t, p, RoundingMode::None)?;
+            mag = mag.max(max_exp(&[&t]));
+            if n + 1 < m {
+                let nw = ExactNumNumber::from_word(n as Word, p)?;
+                let n1 = ExactNumNumber::from_word((n + 1) as Word, p)?;
+                let num = a
+                    .add(&nw, p, RoundingMode::None)?
+                    .mul(&b.add(&nw, p, RoundingMode::None)?, p, RoundingMode::None)?
+                    .mul(zeta, p, RoundingMode::None)?;
+                let den = n1.mul(&n1.sub(&mw, p, RoundingMode::None)?, p, RoundingMode::None)?;
+                t = t
+                    .mul(&num, p, RoundingMode::None)?
+                    .div(&den, p, RoundingMode::None)?;
+            }
+        }
+        l1 = lost_bits(mag, &s1);
+        let pref = mw
+            .gamma_at(p, cc)?
+            .mul(&gc, p, RoundingMode::None)?
+            .mul(&rgamma(&am, p, cc)?, p, RoundingMode::None)?
+            .mul(&rgamma(&bm, p, cc)?, p, RoundingMode::None)?;
+        s1 = pref.mul(&s1, p, RoundingMode::None)?;
+    }
+
+    let mut coef = zeta
+        .powi(m as usize, p, RoundingMode::None)?
+        .mul(&gc, p, RoundingMode::None)?
+        .mul(&rgamma(a, p, cc)?, p, RoundingMode::None)?
+        .mul(&rgamma(b, p, cc)?, p, RoundingMode::None)?;
+    if coef.is_zero() {
+        return Ok((s1, l1));
+    }
+    if m % 2 == 1 {
+        coef = coef.neg()?;
+    }
+
+    let ln_z = zeta.ln(p, RoundingMode::None, cc)?;
+    let mut psi_n1 = one.digamma_at(p, cc)?;
+    let mut psi_nm1 = mw.add(&one, p, RoundingMode::None)?.digamma_at(p, cc)?;
+    let mut psi_a = am.digamma_at(p, cc)?;
+    let mut psi_b = bm.digamma_at(p, cc)?;
+    let mut t = one.div(&factorial(m as usize, p)?, p, RoundingMode::None)?;
+    let mut s2 = ExactNumNumber::new2(p, Sign::Pos, false)?;
+    let max_par = max_abs(&[&am, &bm, &mw])?;
+    let mut mag = Exponent::MIN;
+    for n in 0..HYPERGEOM_TERM_MAX {
+        let br = ln_z
+            .sub(&psi_n1, p, RoundingMode::None)?
+            .sub(&psi_nm1, p, RoundingMode::None)?
+            .add(&psi_a, p, RoundingMode::None)?
+            .add(&psi_b, p, RoundingMode::None)?;
+        s2 = s2.add(&t.mul(&br, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        let part =
+            max_exp(&[&t]).saturating_add(max_exp(&[&ln_z, &psi_n1, &psi_nm1, &psi_a, &psi_b]));
+        mag = mag.max(part);
+        let nw = ExactNumNumber::from_word(n as Word, p)?;
+        let n1 = ExactNumNumber::from_word((n + 1) as Word, p)?;
+        let nm1 = ExactNumNumber::from_word((n + m + 1) as Word, p)?;
+        let an = am.add(&nw, p, RoundingMode::None)?;
+        let bn = bm.add(&nw, p, RoundingMode::None)?;
+        let factor = an
+            .mul(&bn, p, RoundingMode::None)?
+            .mul(zeta, p, RoundingMode::None)?
+            .div(&n1.mul(&nm1, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        if series_done(part, &s2, &factor, &nw, &max_par, p)? {
+            let l2 = lost_bits(mag, &s2);
+            let t2 = coef.mul(&s2, p, RoundingMode::None)?;
+            let v = s1.sub(&t2, p, RoundingMode::None)?;
+            let lost = l1.max(l2).max(lost_bits(max_exp(&[&s1, &t2]), &v));
+            return Ok((v, lost));
+        }
+        t = t.mul(&factor, p, RoundingMode::None)?;
+        psi_n1 = psi_n1.add(&one.div(&n1, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        psi_nm1 = psi_nm1.add(
+            &one.div(&nm1, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        psi_a = psi_a.add(&one.div(&an, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        psi_b = psi_b.add(&one.div(&bn, p, RoundingMode::None)?, p, RoundingMode::None)?;
+    }
+    Err(Error::InvalidArgument)
 }
 
 fn terminating_after(v: &ExactNumNumber, next_n: usize, p: usize) -> Result<bool, Error> {
@@ -2378,18 +2900,16 @@ fn gauss_z_one(
     let cab = c
         .sub(a, p, RoundingMode::None)?
         .sub(b, p, RoundingMode::None)?;
-    if !cab.is_positive() {
+    if !cab.is_positive() || cab.is_zero() {
         return Err(Error::InvalidArgument);
     }
     let gc = c.gamma_at(p, cc)?;
     let gcab = cab.gamma_at(p, cc)?;
-    let gca = c.sub(a, p, RoundingMode::None)?.gamma_at(p, cc)?;
-    let gcb = c.sub(b, p, RoundingMode::None)?.gamma_at(p, cc)?;
-    gc.mul(&gcab, p, RoundingMode::None)?.div(
-        &gca.mul(&gcb, p, RoundingMode::None)?,
-        p,
-        RoundingMode::None,
-    )
+    let rca = rgamma(&c.sub(a, p, RoundingMode::None)?, p, cc)?;
+    let rcb = rgamma(&c.sub(b, p, RoundingMode::None)?, p, cc)?;
+    gc.mul(&gcab, p, RoundingMode::None)?
+        .mul(&rca, p, RoundingMode::None)?
+        .mul(&rcb, p, RoundingMode::None)
 }
 
 fn tiny_spread(p: usize) -> Result<ExactNumNumber, Error> {
@@ -2438,11 +2958,13 @@ fn carlson_rc(
     if x.is_negative() || !y.is_positive() {
         return Err(Error::InvalidArgument);
     }
-    if x.sub(y, p, RoundingMode::None)?
-        .abs()?
-        .cmp(&tiny_spread(p)?)
-        < 0
-    {
+    // RC(x, x(1+t)) = x^{-1/2}(1 − t/3 + …): the shortcut 1/√x is only exact to 2^-p when
+    // |x − y| < 2^-(p+8)·max(x, y). (It used the absolute 2^-(p/3+16) before, which capped R_J —
+    // and so Π — at about 340 bits for p = 512; the atan/atanh forms below do not cancel.)
+    let rel = ExactNumNumber::from_word(1, p)?
+        .ldexp(-((p as i32) + 8), p, RoundingMode::None)?
+        .mul(&en_max(x, y)?, p, RoundingMode::None)?;
+    if x.sub(y, p, RoundingMode::None)?.abs()?.cmp(&rel) < 0 {
         return ExactNumNumber::from_word(1, p)?.div(
             &x.sqrt(p, RoundingMode::None)?,
             p,
@@ -2497,7 +3019,7 @@ fn carlson_rf(
     let mut x = x0.clone()?;
     let mut y = y0.clone()?;
     let mut z = z0.clone()?;
-    for _n in 0..CARLSON_DUPE_MAX {
+    for _n in 0..carlson_dupe_cap(p) {
         let an = x
             .add(&y, p, RoundingMode::None)?
             .add(&z, p, RoundingMode::None)?
@@ -2618,7 +3140,7 @@ fn carlson_rd(
     let mut z = z0.clone()?;
     let mut sum = ExactNumNumber::from_word(0, p)?;
     let mut fac = ExactNumNumber::from_word(1, p)?;
-    for _n in 0..CARLSON_DUPE_MAX {
+    for _n in 0..carlson_dupe_cap(p) {
         let an = x
             .add(&y, p, RoundingMode::None)?
             .add(
@@ -2769,7 +3291,7 @@ fn carlson_rj(
     let mut pv = p0.clone()?;
     let mut sum = ExactNumNumber::from_word(0, p)?;
     let mut fac = ExactNumNumber::from_word(1, p)?;
-    for _n in 0..CARLSON_DUPE_MAX {
+    for _n in 0..carlson_dupe_cap(p) {
         let an = x
             .add(&y, p, RoundingMode::None)?
             .add(&z, p, RoundingMode::None)?
@@ -2933,77 +3455,6 @@ fn extra_bits_for_degree(n: u32) -> usize {
     round_p(n as usize)
 }
 
-/// Analytic continuation of \({}_2F_1\) for real \(z\le -1\) when the value is real.
-fn hypergeom_z_le_neg_one(
-    a: &ExactNumNumber,
-    b: &ExactNumNumber,
-    c: &ExactNumNumber,
-    z: &ExactNumNumber,
-    p: usize,
-    cc: &mut Consts,
-) -> Result<ExactNumNumber, Error> {
-    let one = ExactNumNumber::from_word(1, p)?;
-    let two = ExactNumNumber::from_word(2, p)?;
-    // 2F1(1,1;2;z) = −ln(1−z)/z for z ≠ 0, 1−z > 0.
-    if a.cmp(&one) == 0 && b.cmp(&one) == 0 && c.cmp(&two) == 0 {
-        let omz = one.sub(z, p, RoundingMode::None)?;
-        if !omz.is_positive() {
-            return Err(Error::InvalidArgument);
-        }
-        return omz
-            .ln(p, RoundingMode::None, cc)?
-            .neg()?
-            .div(z, p, RoundingMode::None);
-    }
-    if z.cmp(&one.neg()?) == 0 {
-        return hypergeom_series(a, b, c, z, p);
-    }
-    // 15.3.7: 1/z ∈ (−1, 0) when z < −1; (−z)^{−a} is real.
-    let inv = one.div(z, p, RoundingMode::None)?;
-    if inv.abs()?.cmp(&one) >= 0 {
-        return Err(Error::InvalidArgument);
-    }
-    let mz = z.neg()?;
-    let t1 = hypergeom_15_3_7_term(a, b, c, &mz, &inv, p, cc)?;
-    let t2 = hypergeom_15_3_7_term(b, a, c, &mz, &inv, p, cc)?;
-    t1.add(&t2, p, RoundingMode::None)
-}
-
-fn hypergeom_15_3_7_term(
-    a: &ExactNumNumber,
-    b: &ExactNumNumber,
-    c: &ExactNumNumber,
-    mz: &ExactNumNumber,
-    inv: &ExactNumNumber,
-    p: usize,
-    cc: &mut Consts,
-) -> Result<ExactNumNumber, Error> {
-    let one = ExactNumNumber::from_word(1, p)?;
-    let bma = b.sub(a, p, RoundingMode::None)?;
-    let cma = c.sub(a, p, RoundingMode::None)?;
-    let gc = c.gamma_at(p, cc)?;
-    let gbma = bma.gamma_at(p, cc)?;
-    let gb = b.gamma_at(p, cc)?;
-    let gcma = cma.gamma_at(p, cc)?;
-    let pref = gc.mul(&gbma, p, RoundingMode::None)?.div(
-        &gb.mul(&gcma, p, RoundingMode::None)?,
-        p,
-        RoundingMode::None,
-    )?;
-    let mut na = a.clone()?;
-    na.set_sign(if a.is_positive() { Sign::Neg } else { Sign::Pos });
-    let pow = mz.pow(&na, p, RoundingMode::None, cc)?;
-    let ac1 = a
-        .sub(c, p, RoundingMode::None)?
-        .add(&one, p, RoundingMode::None)?;
-    let ab1 = a
-        .sub(b, p, RoundingMode::None)?
-        .add(&one, p, RoundingMode::None)?;
-    let f = a.hypergeom_2f1_at(&ac1, &ab1, inv, p, cc)?;
-    pref.mul(&pow, p, RoundingMode::None)?
-        .mul(&f, p, RoundingMode::None)
-}
-
 pub(crate) fn series_n_max(p: usize, exp: i32) -> usize {
     let mag = if exp <= 0 {
         0
@@ -3013,6 +3464,39 @@ pub(crate) fn series_n_max(p: usize, exp: i32) -> usize {
         1usize << (exp as usize).min(12)
     };
     p.saturating_add(32).saturating_add(mag)
+}
+
+/// `|t| < 2^-p |sum|` (or `t = 0`): relative stopping rule for series whose sum can be far
+/// below 1 (e.g. `J_ν(x) ≈ (x/2)^ν/Γ(ν+1)` for small `x`, `Si(x) ≈ x`). The absolute rule
+/// `|t| < 2^-p` used before truncated such sums early (J_10.5(1e-10) had 367 correct bits at p=512).
+fn series_negligible(t: &ExactNumNumber, sum: &ExactNumNumber, p: usize) -> bool {
+    if t.is_zero() {
+        return true;
+    }
+    let se = if sum.is_zero() { 0 } else { sum.exponent() as isize };
+    (t.exponent() as isize) + (p as isize) < se
+}
+
+/// Largest cancellation guard (bits) the Bessel power series will use. Beyond it (|x| ≳ 10⁴ for
+/// `J`/`Y`) a large-argument (Hankel) expansion would be needed; that is not implemented, so the
+/// functions return `InvalidArgument` instead of an inaccurate value.
+pub const BESSEL_GUARD_MAX: usize = 1 << 14;
+
+/// `⌈num/den · |x|⌉ + 16` guard bits for a series whose terms grow like `e^{c|x|}`
+/// (`num/den ≥ c·log2(e)`); 16 for `|x| < 1`.
+fn bessel_cancel_bits(x: &ExactNumNumber, num: usize, den: usize) -> Result<usize, Error> {
+    if x.is_zero() || x.exponent() <= 0 {
+        return Ok(16);
+    }
+    if x.exponent() > 30 {
+        return Err(Error::InvalidArgument);
+    }
+    let c = x.abs()?.ceil()?.int_as_usize()?;
+    let g = c.saturating_mul(num) / den + 16;
+    if g > BESSEL_GUARD_MAX {
+        return Err(Error::InvalidArgument);
+    }
+    Ok(g)
 }
 
 fn as_i32_exact(x: &ExactNumNumber, p: usize) -> Result<Option<i32>, Error> {
@@ -3097,57 +3581,102 @@ fn factorial(n: usize, p: usize) -> Result<ExactNumNumber, Error> {
 }
 
 /// Even Bernoulli number B_{2k} via Akiyama–Tanigawa.
-fn bernoulli_even(k: usize, p: usize) -> Result<ExactNumNumber, Error> {
-    let m = 2 * k;
-    let mut a: Vec<ExactNumNumber> = Vec::new();
-    for i in 0..=m {
-        let num = ExactNumNumber::from_word(1, p)?;
-        let den = ExactNumNumber::from_word((i + 1) as Word, p)?;
-        a.push(num.div(&den, p, RoundingMode::None)?);
+/// Even Bernoulli numbers \(B_2, B_4, \ldots, B_{2n}\), each rounded once to `p` bits.
+///
+/// Tangent numbers \(T_k\) are built exactly in integer arithmetic (Brent & Harvey,
+/// "Fast computation of Bernoulli, Tangent and Secant numbers", 2011, algorithm
+/// *TangentNumbers*), then \(B_{2k} = (-1)^{k-1}\,2k\,T_k / (2^{2k}(2^{2k}-1))\) with one
+/// division. (The previous Akiyama–Tanigawa recurrence in floating point cancelled badly: at
+/// 192–256 bits Γ lost 60–90 bits, more with 32-bit limbs.)
+pub(crate) fn even_bernoulli(n: usize, p: usize) -> Result<Vec<ExactNumNumber>, Error> {
+    if n == 0 {
+        return Ok(Vec::new());
     }
-    for j in 1..=m {
-        for i in 0..=(m - j) {
-            let diff = a[i].sub(&a[i + 1], p, RoundingMode::None)?;
-            let fac = ExactNumNumber::from_word((i + 1) as Word, p)?;
-            a[i] = fac.mul(&diff, p, RoundingMode::None)?;
+    // T_k < (2k)! < 2^{2k·log2(2k)}: this precision holds every integer exactly.
+    let log2 = usize::BITS as usize - (2 * n).leading_zeros() as usize;
+    let pi = round_p(2 * n * (log2 + 1) + 2 * WORD_BIT_SIZE);
+    let exact = RoundingMode::None;
+    let word = |v: usize| ExactNumNumber::from_word(v as Word, pi);
+    let mut t: Vec<ExactNumNumber> = Vec::with_capacity(n + 1);
+    t.push(ExactNumNumber::new(pi)?);
+    t.push(word(1)?);
+    for k in 2..=n {
+        let v = t[k - 1].mul(&word(k - 1)?, pi, exact)?;
+        t.push(v);
+    }
+    for k in 2..=n {
+        for j in k..=n {
+            let a = t[j - 1].mul(&word(j - k)?, pi, exact)?;
+            let b = t[j].mul(&word(j - k + 2)?, pi, exact)?;
+            t[j] = a.add(&b, pi, exact)?;
         }
     }
-    a[0].clone()
+    let one = word(1)?;
+    let mut out = Vec::with_capacity(n);
+    for (k, tk) in t.iter().enumerate().skip(1) {
+        let num = tk.mul(&word(2 * k)?, pi, exact)?;
+        let mut four_k = one.clone()?;
+        four_k.set_exponent(four_k.exponent() + 2 * k as Exponent);
+        let den = four_k.sub(&one, pi, exact)?;
+        let mut b = num.div(&den, p, RoundingMode::ToEven)?;
+        b.set_exponent(b.exponent() - 2 * k as Exponent);
+        if k % 2 == 0 {
+            b = b.neg()?;
+        }
+        out.push(b);
+    }
+    Ok(out)
 }
 
-/// Euler–Mascheroni constant via `H_{n-1} - ln n + 1/(2n) + Σ B_{2k}/(2k n^{2k})` with `n = 128`.
+/// Euler–Mascheroni constant γ to `p` bits (Brent–McMillan B1).
 pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
-    const N: usize = 128;
-    let mut h = ExactNumNumber::from_word(1, p)?;
-    for i in 2..N {
-        let t = ExactNumNumber::from_word(1, p)?.div(
-            &ExactNumNumber::from_word(i as Word, p)?,
-            p,
+    // Brent–McMillan (algorithm B1): with t_k = (n^k / k!)^2 and H_k the harmonic numbers,
+    // γ = A/B − ln n, A = Σ t_k H_k, B = Σ t_k, error < π e^{-4n}. n is a power of two so that
+    // ln n = j ln 2, and 4n log2(e) ≥ p + 16. All terms are positive, so there is no cancellation
+    // apart from the final subtraction (a few bits, covered by the guard bits).
+    // (The previous Euler–Maclaurin sum with N = 128 and 40 Bernoulli terms was capped at
+    // about 383 correct bits whatever `p` was.)
+    let pw = p + 32;
+    let mut j: u32 = 3;
+    while (1usize << j) * 577 < (pw + 16) * 100 {
+        j += 1;
+    }
+    let n = ExactNumNumber::from_word((1 as Word) << j, pw)?;
+    let mut t = ExactNumNumber::from_word(1, pw)?;
+    let mut h = ExactNumNumber::new(pw)?;
+    let mut a = ExactNumNumber::new(pw)?;
+    let mut b = ExactNumNumber::from_word(1, pw)?;
+    let n_min = 3usize << j; // terms decrease for k > n; the tail is negligible beyond ≈ 3.6 n
+    let mut k = 1usize;
+    loop {
+        let kw = ExactNumNumber::from_word(k as Word, pw)?;
+        t = t
+            .mul(&n, pw, RoundingMode::None)?
+            .div(&kw, pw, RoundingMode::None)?;
+        t = t
+            .mul(&n, pw, RoundingMode::None)?
+            .div(&kw, pw, RoundingMode::None)?;
+        h = h.add(
+            &ExactNumNumber::from_word(1, pw)?.div(&kw, pw, RoundingMode::None)?,
+            pw,
             RoundingMode::None,
         )?;
-        h = h.add(&t, p, RoundingMode::None)?;
-    }
-    let ln_n = ExactNumNumber::from_word(7, p)?.mul(ln2, p, RoundingMode::None)?;
-    let mut g = h.sub(&ln_n, p, RoundingMode::None)?;
-    let n = ExactNumNumber::from_word(N as Word, p)?;
-    let two_n = n.add(&n, p, RoundingMode::None)?;
-    let half_n = ExactNumNumber::from_word(1, p)?.div(&two_n, p, RoundingMode::None)?;
-    g = g.add(&half_n, p, RoundingMode::None)?;
-
-    let mut npow = n.mul(&n, p, RoundingMode::None)?;
-    for k in 1..=40 {
-        let b = bernoulli_even(k, p)?;
-        let two_k = ExactNumNumber::from_word((2 * k) as Word, p)?;
-        let den = two_k.mul(&npow, p, RoundingMode::None)?;
-        let term = b.div(&den, p, RoundingMode::None)?;
-        g = g.add(&term, p, RoundingMode::None)?;
-        if term.is_zero() || (term.exponent() as isize) + (p as isize) < 0 {
+        let th = t.mul(&h, pw, RoundingMode::None)?;
+        a = a.add(&th, pw, RoundingMode::None)?;
+        b = b.add(&t, pw, RoundingMode::None)?;
+        if k > n_min
+            && (th.is_zero() || (th.exponent() as isize) + (pw as isize) < a.exponent() as isize)
+        {
             break;
         }
-        npow = npow.mul(&n, p, RoundingMode::None)?;
-        npow = npow.mul(&n, p, RoundingMode::None)?;
+        k += 1;
+        if k > (1usize << j) * 16 {
+            return Err(Error::InvalidArgument);
+        }
     }
-    Ok(g)
+    let ln_n = ExactNumNumber::from_word(j as Word, pw)?.mul(ln2, pw, RoundingMode::None)?;
+    a.div(&b, pw, RoundingMode::None)?
+        .sub(&ln_n, pw, RoundingMode::None)
 }
 
 #[cfg(test)]
@@ -3601,6 +4130,481 @@ mod tests {
 
         assert!(one.elliptic_pi_complete(&half, p, rm, &mut cc).is_err());
         assert!(two.elliptic_f(&zero, p, rm, &mut cc).is_err());
+    }
+
+    // References: /workspace/zf/refs/gen_2f1_refs.py (mpmath 1.4.1, mp.dps = 50, each
+    // decimal input first rounded to the 128-bit value parsed here). Covers z in (1/2, 1) with
+    // non-integer and integer c-a-b (log cases, both signs), near-integer c-a-b, z near 1,
+    // |z| <= 1/2, negative z down to -1e6, terminating series, and z = 1.
+    #[test]
+    fn test_hypergeom_2f1_mpmath() {
+        let p = 128;
+        let mut cc = Consts::new().unwrap();
+        let rm = RoundingMode::ToEven;
+        let dec = |s: &str, cc: &mut Consts| {
+            ExactNumNumber::parse(s, crate::defs::Radix::Dec, p, rm, cc).unwrap()
+        };
+        let cases = [
+            (
+                "1",
+                "1",
+                "2",
+                "0.7",
+                "1.71996114903705141803249459680262643278951811",
+            ),
+            (
+                "0.5",
+                "0.5",
+                "1.5",
+                "0.7",
+                "1.1846587084327787287338142454272246065570138",
+            ),
+            (
+                "0.3",
+                "0.7",
+                "1.9",
+                "0.9",
+                "1.1786297224210022954609654913371386168786381",
+            ),
+            (
+                "1.5",
+                "2.5",
+                "2",
+                "0.8",
+                "22.1469514371671108416364442041104122572588905",
+            ),
+            (
+                "0.25",
+                "0.5",
+                "0.75",
+                "0.99",
+                "1.839926250774784062953575844257627101164147",
+            ),
+            (
+                "2.5",
+                "-1.5",
+                "0.5",
+                "0.8",
+                "-0.626099033699941114994568627244757345917984746",
+            ),
+            (
+                "0.5",
+                "0.5",
+                "2.5",
+                "0.75",
+                "1.10459978807807261686469275254738524409468875",
+            ),
+            (
+                "3",
+                "1.5",
+                "3",
+                "0.7",
+                "6.08580619450184570507744203112002371056816759",
+            ),
+            (
+                "5",
+                "7",
+                "13",
+                "0.9",
+                "81.5980783011695808602321348648454229291473389",
+            ),
+            (
+                "1",
+                "2",
+                "5",
+                "0.8",
+                "1.57356005363371137648526484362443864006988493",
+            ),
+            (
+                "2",
+                "3",
+                "1",
+                "0.6",
+                "85.937500000000000000000000000000000001102026",
+            ),
+            (
+                "1.5",
+                "2.5",
+                "1",
+                "0.95",
+                "13325.0437834819832041243868639672252078542763",
+            ),
+            (
+                "0.5",
+                "0.5",
+                "1.000000001",
+                "0.9",
+                "1.64126441320209173433786497074607887944555805",
+            ),
+            (
+                "0.1",
+                "0.2",
+                "0.3",
+                "0.9999",
+                "1.62806497725092035401785531448348646268340797",
+            ),
+            (
+                "-0.75",
+                "1.25",
+                "0.5",
+                "0.6",
+                "-0.324842102999361368979248665126531883694813935",
+            ),
+            (
+                "0.5",
+                "0.5",
+                "1",
+                "0.5000001",
+                "1.18034065295136224658707771685792578406603286",
+            ),
+            (
+                "1",
+                "1",
+                "2",
+                "0.99",
+                "4.6516870565536276444807908175441701162413267",
+            ),
+            (
+                "0.5",
+                "0.5",
+                "1",
+                "0.999999",
+                "5.2801571547718662756646199176225633673643885",
+            ),
+            (
+                "0.5",
+                "0.5",
+                "1",
+                "0.999999999999999999999999999999",
+                "22.8706103669194821708152195250935907947524458",
+            ),
+            (
+                "1.5",
+                "0.5",
+                "1.75",
+                "0.9999999",
+                "117.919774460116271662376787995205289131958635",
+            ),
+            (
+                "0.3",
+                "0.4",
+                "2.2",
+                "0.99999999",
+                "1.09006069218348579683600983399311026782044901",
+            ),
+            (
+                "1.5",
+                "2.5",
+                "3",
+                "0.5",
+                "2.33449175759488983444516920804357125900741473",
+            ),
+            (
+                "20",
+                "20",
+                "0.5",
+                "0.3",
+                "2.04754351497133932937461952694010408655766245e+13",
+            ),
+            (
+                "0.3",
+                "0.4",
+                "2",
+                "1e-30",
+                "1.00000000000000000000000000000006",
+            ),
+            (
+                "1",
+                "1",
+                "2",
+                "-0.5",
+                "0.810930216216328763956026230928698273143980847",
+            ),
+            (
+                "-2.5",
+                "3.25",
+                "0.125",
+                "-0.5",
+                "88.071831107804353538989414947295234489045681",
+            ),
+            (
+                "0.5",
+                "1",
+                "1.5",
+                "-0.9",
+                "0.800130255087768810416961486533550204101507955",
+            ),
+            (
+                "1",
+                "1",
+                "2",
+                "-1",
+                "0.693147180559945309417232121458176568075500134",
+            ),
+            (
+                "0.5",
+                "0.5",
+                "1",
+                "-1",
+                "0.834626841674073186281429732799046808993993013",
+            ),
+            (
+                "0.5",
+                "0.25",
+                "1.5",
+                "-3",
+                "0.866870889001128608899121186546323506610332879",
+            ),
+            (
+                "0.5",
+                "1.5",
+                "2",
+                "-3",
+                "0.570349449920576636067466296715804977195622434",
+            ),
+            (
+                "1",
+                "1",
+                "3",
+                "-7",
+                "0.393287034017905609225043710816172964645387887",
+            ),
+            (
+                "1.25",
+                "1.25",
+                "1.5",
+                "-2",
+                "0.314907247447028609342530404747985646146595563",
+            ),
+            (
+                "2",
+                "2",
+                "3",
+                "-100",
+                "0.000725004301388053870374859455362795851180156715",
+            ),
+            (
+                "0.5",
+                "0.75",
+                "1.25",
+                "-1000000",
+                "0.00214371790435314040885647402372034039486027383",
+            ),
+            (
+                "-3",
+                "2",
+                "1.5",
+                "0.9",
+                "-0.04502857142857142857142857142857142857165964",
+            ),
+            (
+                "-10",
+                "2.5",
+                "3.5",
+                "-5",
+                "14136956.2280906601811165009442031921504259639",
+            ),
+            ("-2", "1", "1", "3", "4.0"),
+            (
+                "2.5",
+                "-4",
+                "-6",
+                "0.95",
+                "5.77798943684895833333333333333333333332709832",
+            ),
+            (
+                "1.5",
+                "0.5",
+                "2.5",
+                "1",
+                "2.35619449019234492884698253745962716314787705",
+            ),
+            ("0.5", "-0.25", "0.5", "1", "0"),
+        ];
+        for (a, b, c, z, want) in cases {
+            let [av, bv, cv, zv] = [a, b, c, z].map(|s| dec(s, &mut cc));
+            let label = alloc::format!("2F1({a}, {b}; {c}; {z})");
+            let got = av
+                .hypergeom_2f1(&bv, &cv, &zv, p, rm, &mut cc)
+                .unwrap_or_else(|e| panic!("{label}: {e:?}"));
+            let want = dec(want, &mut cc);
+            if want.is_zero() {
+                assert!(got.is_zero(), "{label}: expected exact 0");
+            } else {
+                bits_agree(&got, &want, p, 120, &label);
+            }
+        }
+        let invalid = [
+            ("1", "1", "2", "1.5", "non-terminating z > 1"),
+            ("1", "1", "1.5", "1", "z = 1 with c-a-b < 0"),
+            ("1", "1", "2", "1", "z = 1 with c-a-b = 0"),
+            ("0.5", "0.5", "-2", "0.3", "pole at c = -2"),
+        ];
+        for (a, b, c, z, why) in invalid {
+            let [av, bv, cv, zv] = [a, b, c, z].map(|s| dec(s, &mut cc));
+            assert!(
+                av.hypergeom_2f1(&bv, &cv, &zv, p, rm, &mut cc).is_err(),
+                "{why}"
+            );
+        }
+    }
+
+    // References: /workspace/zf/refs/gen_2f1_refs.py (mpmath betainc(a, b, 0, x,
+    // regularized=True), mp.dps = 50, inputs rounded to 128 bits). I_0.7(30.5, 2.25) used to
+    // come back as 2.68e240 through the old 2F1 Pfaff branch.
+    #[test]
+    fn test_betainc_mpmath() {
+        let p = 128;
+        let mut cc = Consts::new().unwrap();
+        let rm = RoundingMode::ToEven;
+        let dec = |s: &str, cc: &mut Consts| {
+            ExactNumNumber::parse(s, crate::defs::Radix::Dec, p, rm, cc).unwrap()
+        };
+        let cases = [
+            (
+                "30.5",
+                "2.25",
+                "0.7",
+                "0.00030323093547038030663005371621383111406105688",
+            ),
+            (
+                "2.25",
+                "30.5",
+                "0.3",
+                "0.999696769064529619693369946283786168885938943",
+            ),
+            (
+                "2.5",
+                "1.5",
+                "0.3",
+                "0.0889437231706655993544962677753584934056995263",
+            ),
+            (
+                "0.5",
+                "0.5",
+                "0.001",
+                "0.0201350416333774909723443944048709219134992636",
+            ),
+            (
+                "0.5",
+                "0.5",
+                "1e-10",
+                "6.36619772378191672615472207370620472228663812e-6",
+            ),
+            (
+                "0.5",
+                "0.5",
+                "0.999",
+                "0.979864958366622509027655605595129078099969071",
+            ),
+            (
+                "10",
+                "30",
+                "0.05",
+                "1.6241391155028577143348453969451423955897253e-5",
+            ),
+            (
+                "5.5",
+                "0.75",
+                "0.6",
+                "0.0378173332267801158863537056009773691191750344",
+            ),
+            (
+                "100",
+                "100",
+                "0.45",
+                "0.0783879327122204842061564596521365858040127826",
+            ),
+            (
+                "50",
+                "50",
+                "0.2",
+                "1.32861996318603359425556163603788268483320429e-11",
+            ),
+            (
+                "50",
+                "50",
+                "0.8",
+                "0.999999999986713800368139664057444383639621173",
+            ),
+            (
+                "0.01",
+                "3.5",
+                "0.2",
+                "0.996055418033318043865926563058446081518333464",
+            ),
+            (
+                "1000.5",
+                "2.5",
+                "0.999",
+                "0.848660344684032250833214132642228229968976541",
+            ),
+            (
+                "0.1",
+                "10",
+                "0.9",
+                "0.999999999998564632108319054323590977126689725",
+            ),
+            (
+                "3.5",
+                "4",
+                "0.6",
+                "0.766962244469439316871787712000428856055679206",
+            ),
+            (
+                "2",
+                "5",
+                "0.95",
+                "0.999998203124999999999999999999999999999999895",
+            ),
+            ("0.001", "0.001", "0.5", "0.5"),
+        ];
+        for (a, b, x, want) in cases {
+            let [av, bv, xv] = [a, b, x].map(|s| dec(s, &mut cc));
+            let label = alloc::format!("I_{x}({a}, {b})");
+            let got = av
+                .betainc(&bv, &xv, p, rm, &mut cc)
+                .unwrap_or_else(|e| panic!("{label}: {e:?}"));
+            bits_agree(&got, &dec(want, &mut cc), p, 120, &label);
+        }
+    }
+
+    // References: /workspace/zf/refs/gen_gamma_refs.py (mpmath, mp.dps = 400). Before 1.0.5
+    // the Stirling series started at z >= 32 (gamma) / z >= 128 (digamma) with 64 terms, which
+    // capped gamma near 274 correct bits and digamma near 530 whatever the precision asked.
+    #[test]
+    fn test_gamma_digamma_high_precision() {
+        let p = 1024;
+        let mut cc = Consts::new().unwrap();
+        let rm = RoundingMode::ToEven;
+        let dec = |s: &str, cc: &mut Consts| {
+            ExactNumNumber::parse(s, crate::defs::Radix::Dec, p, rm, cc).unwrap()
+        };
+        let cases = [
+            ("0.3", "2.99156898768759062831251651590491779111280602492171511274411965095638876787632021799025995255765056542142562682614202237570044313685592565039738332500699651731492217445693233669501544707963377073843625467587119914446338609689724358296069475868570923910448073904676197524186031618193782973959519480201743913441846269484020926939138", "-3.50252422220013298896449450737198159953790828840450209566491975126416371903591035905203493019247296315255849330906099086131413050655055954527794120627288788834403942521473264272871185619845792144602545923064374445895433893233464772352890648958999888003674386339797798702859422961831709565727973413316725322338864624067819849202019"),
+            ("3.7", "4.1706517837966031653936029986179837279404455809898292945722466324606422685813692411505269066909944153872906767134758267882411321237339947614951553474226244444095217987337371855360796708629477024837169605083452577126872521433265350148023719876668471470669216309124355964013589712118318138521849706134504731375899736002728295617768", "1.16715353936151138587386396614504688117374878787689916455965074078023789550185395821468166859491773967994604749319569991382969422962925178688049288952435893289539968114159009249272573586281515296928168200307293681328111704651702375912858415352758641207254910912020702174151466809993841444669828620914213481044476105894875417630202"),
+            ("70.5", "1429158828303246846573838562651630902882496420796728590630912851373230265522054175373279959655886352.17790297183463623799296473556344225544418545904118072813016602611874981916619673887717371489733555185792563204257087407395041763541149993405568290470895024805331342693136816762678344437425087011896968236201817908802084497213971124", "4.248503745147059295990802672685553304359490704691494971797198001646067548177592356909609322645124920315927005996751096556357511162519211891173394099381260107244573276858072927243357078818288905238442575941336918427362361945654183685846907098161387913639662258560146323261645527801019331192688800792418372732602795783524642032161"),
+            ("-2.5", "-0.945308720482941881225689324448610764158693043265273135047364154588219351781883830066640350260557154888654305932950704355325948195053025388013383311788153103179753439281656065519960092282107107322097117535609580160093140808187455850942240101432124809912238386397286741500758280280483315416223644000483412484060657854653415164622928", "1.10315664064524318722569033366791109947350706200623255961953941279501169594961256451799294938208254206803225737571821271833512218066386271637715116575159120655171119126698645854837864662628806147732505042720246680802275486308815174019100773441769687963010702067494673598401202657231149432143243715766674712012979544692612931066196"),
+        ];
+        for (x, g, psi) in cases {
+            let xv = dec(x, &mut cc);
+            let got_g = xv.gamma(p, rm, &mut cc).unwrap();
+            bits_agree(
+                &got_g,
+                &dec(g, &mut cc),
+                p,
+                1016,
+                &alloc::format!("gamma({x})"),
+            );
+            let got_psi = xv.digamma(p, rm, &mut cc).unwrap();
+            bits_agree(
+                &got_psi,
+                &dec(psi, &mut cc),
+                p,
+                1016,
+                &alloc::format!("digamma({x})"),
+            );
+        }
     }
 
     #[test]

@@ -1,7 +1,7 @@
 # zenith-float Capability Reference
 
-**Version:** 1.0.2  
-**Date:** 2026-09-04  
+**Version:** 1.0.5  
+**Date:** 2026-09-27  
 **License:** MIT OR Apache-2.0  
 **Status:** Public crate  
 
@@ -40,6 +40,13 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `mpfr-tests` | no | Optional MPFR bit-oracle tests; Linux x86_64 + `rug` only; not a runtime dependency |
 
 `no_std` is supported when a global allocator is available (`default-features = false`). Formatting traits require `std`.
+
+`no_std` is **built and tested** (1.0.5). `scripts/ci_nostd.sh` builds `zenith-float` and `zenith-float-num` with `--no-default-features --target thumbv7em-none-eabihf`. It then runs the `nostd-tests` harness, a `#![no_std]` crate (core + alloc only) with 77 mpmath reference cases, in two ways:
+
+- as a `#![no_std]`/`#![no_main]` binary on x86_64 Linux that links only libc;
+- bare-metal on `thumbv7em-none-eabihf` (Cortex-M4F, 32-bit limbs) under `qemu-system-arm -machine mps2-an386` with semihosting.
+
+Both pass 77/77. There is no separate `alloc` feature: `alloc` is always required.
 
 ---
 
@@ -221,7 +228,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 
 | Method | `expr!` leaf | Notes |
 | --- | --- | --- |
-| `erf` / `erfc` | yes | MPFR 1-ULP on `\|x\| ≲ 4`. Rustdoc `# Precision` on every row in this table |
+| `erf` / `erfc` | yes | MPFR 1-ULP; mpmath sweep \(\lvert x\rvert\le30\) at 64–1024 bits (fixed in 1.0.5: 1.0.2–1.0.4 were wrong for \(\lvert x\rvert\ge4\)). Rustdoc `# Precision` on every row in this table |
 | `gamma` | yes | Poles at non-positive integers → NaN |
 | `ln_gamma` | yes | Positive `self` only |
 | `digamma` | yes | Reflection for \(z<0\); poles at non-positive integers → NaN |
@@ -234,15 +241,15 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `fresnel_s` / `fresnel_c` | yes | Odd; series or auxiliary \(f,g\). \(\pm\infty\to\pm 1/2\) |
 | `ai` / `bi` / `ai_prime` / `bi_prime` | `ai`, `bi` | Series for \(\lvert x\rvert<\texttt{AIRY\_SERIES\_THRESHOLD}\); asymptotic otherwise. `ai_prime`/`bi_prime` are methods only |
 | `bessel_j(n, p, rm, cc)` | `bessel_j(x, n)` | Integer order; Miller recurrence for large \(n\); \(J_n(0)=\delta_{n0}\) |
-| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | `bessel_j_nu(x, ν)` etc. | Real order. \(K\): \(x>0\) |
+| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | `bessel_j_nu(x, ν)` etc. | Real order. \(K\): \(x>0\). \(J\)/\(Y\): \(\lvert x\rvert\gtrsim 10^4\) → `InvalidArgument` (known issue, fix planned; the complex functions cover it) |
 | `elliptic_k` / `elliptic_e_complete` | `elliptic_k` / `elliptic_e` | Complete; \(m=k^2\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\); \(E\) for \(m\le 1\) |
 | `elliptic_f` / `elliptic_e` | `elliptic_f` / `elliptic_e_inc` | Incomplete; \(x=\sin\varphi\), \(\lvert x\rvert\le 1\) |
 | `elliptic_pi_complete` / `elliptic_pi` | `elliptic_pi` / `elliptic_pi_inc` | \(n<1\), \(m<1\) complete |
 | `jacobi_am` / `jacobi_sn` / `jacobi_cn` / `jacobi_dn` / `jacobi_cd` / `jacobi_ns` / `jacobi_nc` / `jacobi_nd` / `jacobi_sc` / `jacobi_sd` / `jacobi_cs` / `jacobi_ds` / `jacobi_dc` | yes | Real \(m=k^2\in[0,1]\); \(m=0\) trig; \(m=1\) hyperbolic; AGM otherwise. Period reduction uses \(K\) only when \(\lvert u\rvert\ge\pi\) (avoids nested Ziv). Zero denominator → NaN. Inverse of `jacobi_sn` is `elliptic_f`. Golds: `sn(0)=0`; `sn(u\|0)=\sin u`; `sn(u\|1)=\tanh u`; `sn^2+cn^2=1`; `dn^2+m\,sn^2=1`; `sn(K/2)`; `sn(u+4K)=sn(u)`; \(\partial_u sn=cn\,dn\); `ns·sn=1`; `F(sn(u\|m)\|m)=u` |
 | `legendre_p` / `assoc_legendre_p` | `legendre_p(x, n)` / `legendre_p_assoc(x, n, m)` | Integer \(n\); recurrence at \(p+O(n)\) bits; Condon–Shortley |
-| `hypergeom_2f1` | `hypergeom_2f1(a,b,c,z)` | Series / Gauss / Pfaff; real continuation for \(z\le -1\) when defined; non-real \(z>1\) → NaN |
-| `betainc` | `betainc(a,b,x)` | Regularized \(I_x(a,b)\); \(a>0\), \(b>0\), \(x\in[0,1]\) |
-| `normal_pdf` / `normal_cdf` | `normal_pdf(x,μ,σ)` | \(\varphi\); \(\Phi=(1+\mathrm{erf}(z/\sqrt{2}))/2\); \(\sigma>0\). \(\varphi(0,0,1)=1/\sqrt{2\pi}\); \(\Phi(0,0,1)=1/2\) |
+| `hypergeom_2f1` | `hypergeom_2f1(a,b,c,z)` | Series for \(\lvert z\rvert\le 1/2\); Pfaff for \(z<-1/2\); \(z\to 1-z\) connection (DLMF 15.8.4, log case A&S 15.3.10–11) for \(1/2<z<1\); Gauss at \(z=1\) when \(c-a-b>0\); \(z>1\) → NaN; cancellation measured and re-evaluated with guard bits |
+| `betainc` | `betainc(a,b,x)` | Regularized \(I_x(a,b)\); \(a>0\), \(b>0\), \(x\in[0,1]\); continued fraction (DLMF 8.17.22) |
+| `normal_pdf` / `normal_cdf` | `normal_pdf(x,μ,σ)` | \(\varphi\); \(\Phi=\operatorname{erfc}(-z/\sqrt{2})/2\) (full relative accuracy in the lower tail); \(\sigma>0\). \(\varphi(0,0,1)=1/\sqrt{2\pi}\); \(\Phi(0,0,1)=1/2\) |
 | `gamma_pdf` / `beta_pdf` | yes | Scale \(\beta\); \(B\) via \(\Gamma\). \(\mathrm{gamma\_pdf}(1,1,1)=e^{-1}\) |
 | `poisson_pmf` / `binomial_pmf` | yes | Non-negative integer \(k\); \(\mathrm{poisson}(0,1)=e^{-1}\) |
 | `chi_squared_cdf` / `student_t_pdf` | yes | Regularized lower gamma; \(t\) via \(\Gamma\). \(\chi^2_2(2\ln 20)=19/20\) |
@@ -338,7 +345,7 @@ The previous mode is restored when the closure returns.
 | `li` | `Ei(ln z)`; cut on (−∞, 1]; pole at 1 → NaN |
 | `fresnel_s` / `fresnel_c` | via `erf`; entire |
 | `bessel_j_nu` / `bessel_i` | entire for integer ν; cut on (−∞, 0] otherwise |
-| `bessel_y` / `bessel_k` | cut on (−∞, 0]; \(z=0\) → NaN |
+| `bessel_y` / `bessel_k` | cut on (−∞, 0] (value from above when Im z = 0); \(z=0\) → NaN |
 | `elliptic_k` | cut on \([1,+\infty)\); \(K(1)=+\infty\) |
 | `hypergeom_2f1` | cut on \([1,+\infty)\) in \(z\) |
 | incomplete \(F,E,\Pi\) | Carlson cuts on \(1-x^2\), \(1-mx^2\), \(1-nx^2\) along \((-\infty,0]\) |
@@ -548,6 +555,9 @@ dashu-float 0.6.0: `consts.rs` is an empty stub (no γ). `FBig::with_rounding::<
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| 1.0.5 | 2026-09-27 | Special-function accuracy fixes (`hypergeom_2f1`, `betainc`, `erf`/`erfc` for \(\lvert x\rvert\ge4\), Γ/ψ/lnΓ and exact Bernoulli numbers, Ei/Si/Ci/li, Fresnel, Airy, Bessel, Carlson, Euler γ, complex branches); `cmp` normalization; `no_std` built and tested (host libc-only and Cortex-M4F under QEMU); see CHANGELOG |
+| 1.0.4 | 2026-09-20 | Clippy debt clear; SoftFloat IEEE `soft_*` renames |
+| 1.0.3 | 2026-09-19 | Coordinated patch release |
 | 1.0.2 | 2026-09-04 | Numeric crate only. No file-format I/O. Maintainer walk-list files removed. |
 | 1.0.1 | 2026-09-03 | Jacobi `am`/`sn`/`cn`/`dn` + nine quotients; `expr!` leaves; array wrappers; `JACOBI_AGM_MAX=128`; hex `jacobi_sn_1_half`; identity / period / derivative / `F(sn)=u` golds |
 | 1.0.0 | 2026-08-31 | First crates.io release. |

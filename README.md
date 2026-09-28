@@ -1,6 +1,6 @@
 # zenith-float
 
-Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.2**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
+Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.5**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
 
 All arithmetic runs on integer limbs. The library does not use hardware floating-point registers for calculations. Construct `ExactNum` from integers or from binary, octal, decimal, or hexadecimal strings; construct IEEE widths from integer bit patterns (`from_bits`).
 
@@ -50,6 +50,16 @@ zenith-float = "1.0"
 [dependencies]
 zenith-float = { version = "1.0", default-features = false }
 ```
+
+`no_std` is tested: `scripts/ci_nostd.sh` runs the mpmath reference cases in a `#![no_std]` harness (`nostd-tests/`) on a libc-only Linux binary and bare-metal on `thumbv7em-none-eabihf` under QEMU.
+
+## Known issues (1.0.5, fix planned)
+
+- Complex `bessel_k` with non-integer ν is slow at high precision when |z| is just inside the series regime: `bessel_k(150−20i, 2+0.5i)` at 512 bits takes about 74 s; the result is correct. Workaround: lower precision (13 ms at 256 bits) or integer ν.
+- Real `bessel_j_nu` / `bessel_y` return `NaN(InvalidArgument)` for |x| ≳ 10⁴. Workaround: the complex `bessel_j_nu` / `bessel_y` at `x + 0i`, x > 0, are accurate there.
+- Complex Bessel exactly on the negative real axis with real ν does not resolve exactly-zero or tiny parts (`bessel_i(−2, 0.5)` takes minutes, then NaN). Workaround: evaluate at −z and apply the reflection formula (DLMF 10.11.1 / 10.34.1).
+
+See `CHANGELOG.md` and `doc/AUDIT.md` for details.
 
 ## Rounding
 

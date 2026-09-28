@@ -324,8 +324,8 @@ Each method’s rustdoc has a **`# Precision`** section (algorithm, region, name
 | `elliptic_k` / `elliptic_e_complete` / `elliptic_f` / `elliptic_e` / `elliptic_pi_complete` / `elliptic_pi` | Carlson; \(m=k^2\), \(x=\sin\varphi\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\) | `elliptic_k`, `elliptic_e`, `elliptic_f`, `elliptic_e_inc`, `elliptic_pi`, `elliptic_pi_inc` |
 | `jacobi_am` / `sn` / `cn` / `dn` / `cd` / `ns` / `nc` / `nd` / `sc` / `sd` / `cs` / `ds` / `dc` | Real \(m=k^2\in[0,1]\); AGM / Landen, cap `JACOBI_AGM_MAX`; \(m=0\) trig; \(m=1\) hyperbolic; inverse `sn` is `elliptic_f` | `jacobi_am` … `jacobi_dc` |
 | `legendre_p` / `assoc_legendre_p` | Integer \(n\); \(p+O(n)\) recurrence; Condon–Shortley | `legendre_p(x, n)`, `legendre_p_assoc(x, n, m)` |
-| `hypergeom_2f1` | Series / Gauss / Pfaff; real \(z\le -1\) when defined; non-real \(z>1\) → NaN | `hypergeom_2f1(a,b,c,z)` |
-| `betainc` | Regularized \(I_x(a,b)\) | `betainc(a,b,x)` |
+| `hypergeom_2f1` | Series for \(\lvert z\rvert\le 1/2\); Pfaff for \(z<-1/2\); \(z\to 1-z\) connection (DLMF 15.8.4, log case A&S 15.3.10–11) for \(1/2<z<1\); Gauss at \(z=1\) when \(c-a-b>0\); \(z>1\) → NaN; cancellation measured and re-evaluated with guard bits | `hypergeom_2f1(a,b,c,z)` |
+| `betainc` | Regularized \(I_x(a,b)\); continued fraction (DLMF 8.17.22, modified Lentz) with symmetry \(x>(a+1)/(a+b+2)\) | `betainc(a,b,x)` |
 | `normal_pdf` / `normal_cdf` | \(\sigma>0\); CDF via `erf` | `normal_pdf(x,μ,σ)` |
 | `gamma_pdf` / `beta_pdf` | Scale \(\beta\); \(B\) via \(\Gamma\) | yes |
 | `poisson_pmf` / `binomial_pmf` | Non-negative integer \(k\) | yes |
@@ -496,14 +496,14 @@ Cartesian `re + i·im` as two `ExactNum`s.
 | `logb` | `logb(\|z\|)` as a real |
 | `Add` `Sub` `Mul` `Div` | 128-bit `ToEven` like reals |
 | `erf` / `erfc` | Faddeeva \(w(z)\); entire; NaN in → NaN out |
-| `gamma` / `ln_gamma` / `digamma` | Stirling + reflection; \(\ln\Gamma\) cut on \((-\infty,0]\); poles → NaN |
+| `gamma` / `ln_gamma` / `digamma` | Stirling + reflection; `ln_gamma` is the principal \(\ln(\Gamma(z))\), imaginary part in \((-\pi,\pi]\); poles → NaN |
 | `ei` / `si` / `ci` / `li` | series or asymptotic `Ei`; `Si`/`Ci` via `Ei(±iz)`; `li=Ei(ln z)` |
 | `fresnel_s` / `fresnel_c` | via `erf`; entire |
 | `ai` / `bi` | series for small \(\lvert z\rvert\); asymptotic or \(\omega\)-connection for large \(\lvert z\rvert\) |
-| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | series or Hankel; \(I_ν=i^{-ν}J_ν(iz)\); \(K_ν=(\pi/2)i^{ν+1}H_ν^{(1)}(iz)\) |
+| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | guarded series, Hankel for large \(\lvert z\rvert\); \(I_ν=e^{\mp iπν/2}J_ν(\pm iz)\) chosen by the sign of \(\operatorname{Im} z\) (DLMF 10.27.6); \(K_ν\) via \(H_ν^{(1)}(iz)\) or \(H_ν^{(2)}(-iz)\) (DLMF 10.27.8), value from above on the cut; \(J_ν\)/\(Y_ν\) with \(\operatorname{Re} z<0\) in the Hankel regime continued from \(-z\) (DLMF 10.11.1–2); \(I_ν\)/\(K_ν\) real on \(z>0\) for real \(ν\) |
 | `elliptic_k` / `elliptic_e_complete` / `elliptic_f` / `elliptic_e` / `elliptic_pi_complete` / `elliptic_pi` | Carlson in \(\mathbb{C}\); \(m=k^2\), \(x=\sin\varphi\); \(K(1)=+\infty\); \(K\) cut on \([1,+\infty)\) |
-| `hypergeom_2f1` | Series / Euler / Pfaff / Kummer; cut on \([1,+\infty)\) in \(z\); non-positive integer \(c\) → NaN |
-| Other specials (`_2F1`, …) | not yet; backlog (software limbs, principal branches) |
+| `hypergeom_2f1` | Series / Euler / Pfaff / Kummer; all-real arguments with \(z<1\) use the real algorithm; cut on \([1,+\infty)\) in \(z\); non-positive integer \(c\) → NaN; integer \(c-a-b\) with \(z\) near 1: logarithmic \(1-z\) connection (DLMF 15.8.10); near-integer \(c-a-b\): guard bits |
+| Other specials | not yet; backlog (software limbs, principal branches) |
 
 No `expr!` for complexes — use `cexpr!`. Serde: struct `{ "re", "im" }` of decimal strings.
 

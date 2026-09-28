@@ -207,7 +207,6 @@ pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, c
         if eq {
             assert!(f.is_nan(), "{}", op);
         }
-        return;
     } else if (n.is_subnormal() || n.is_zero()) && eq {
         // subnormal (bit-exact mode only — otherwise compare below)
         let unf = unsafe { mpfr::underflow_p() };

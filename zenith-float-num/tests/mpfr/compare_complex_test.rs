@@ -128,7 +128,14 @@ fn mpfr_compare_complex_real_axis() {
             unsafe {
                 mpfr::jn(fj.as_raw_mut(), n_ord, f1.as_raw(), rnd);
             }
-            assert_float_close(j.re().clone(), fj, p, &format!("cplx J_{n_ord}|R"), false, &mut cc);
+            assert_float_close(
+                j.re().clone(),
+                fj,
+                p,
+                &format!("cplx J_{n_ord}|R"),
+                false,
+                &mut cc,
+            );
         }
     }
 }

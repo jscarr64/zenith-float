@@ -12,6 +12,22 @@ use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::WORD_BIT_SIZE;
 
+/// At `m = 1`, `cn = dn = sech u`, so `cd = dc = 1` exactly. Returning it directly avoids a
+/// Ziv loop that can never certify an exactly representable result.
+fn jacobi_ratio_m_one(m: &ExactNumNumber, p: usize) -> Result<Option<ExactNumNumber>, Error> {
+    let p = round_p(p);
+    ExactNumNumber::p_assertion(p)?;
+    jacobi_m_in_unit(m, p)?;
+    let one = ExactNumNumber::from_word(1, p)?;
+    if m.cmp(&one) == 0 {
+        let mut r = one;
+        r.set_inexact(m.inexact());
+        Ok(Some(r))
+    } else {
+        Ok(None)
+    }
+}
+
 /// AGM / descending Landen steps for `am`, `sn`, `cn`, `dn`.
 pub const JACOBI_AGM_MAX: u32 = 128;
 
@@ -68,6 +84,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
+        if let Some(one) = jacobi_ratio_m_one(m, p)? {
+            return Ok(one);
+        }
         self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(cn, dn, px))
     }
 
@@ -156,6 +175,9 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
+        if let Some(one) = jacobi_ratio_m_one(m, p)? {
+            return Ok(one);
+        }
         self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(dn, cn, px))
     }
 

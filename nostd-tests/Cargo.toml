@@ -1,0 +1,50 @@
+[package]
+name = "zenith-float-nostd-tests"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "no_std reference-value test harness for zenith-float-num (not published)."
+license = "MIT OR Apache-2.0"
+build = "build.rs"
+
+# Standalone workspace: its own panic=abort profiles do not touch the main workspace.
+[workspace]
+
+[lib]
+test = false
+doctest = false
+bench = false
+
+[dependencies]
+zenith-float-num = { path = "../zenith-float-num", default-features = false }
+cortex-m = { version = "0.7", features = ["critical-section-single-core"], optional = true }
+cortex-m-rt = { version = "0.7", optional = true }
+cortex-m-semihosting = { version = "0.5", optional = true }
+embedded-alloc = { version = "0.6", optional = true }
+
+[features]
+# Hosted Linux runner (libc only).
+host = []
+# Bare-metal Cortex-M4F runner for QEMU mps2-an386.
+qemu = ["dep:cortex-m", "dep:cortex-m-rt", "dep:cortex-m-semihosting", "dep:embedded-alloc"]
+
+[[bin]]
+name = "nostd-host"
+required-features = ["host"]
+test = false
+bench = false
+
+[[bin]]
+name = "nostd-qemu"
+required-features = ["qemu"]
+test = false
+bench = false
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+
+[profile.release]
+panic = "abort"
+opt-level = 3
+debug = false
