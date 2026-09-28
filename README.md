@@ -1,5 +1,15 @@
 # zenith-float
 
+> **Please upgrade to zenith-float 1.0.5.** Versions 1.0.0 through 1.0.4
+> return wrong values from `erf`, `erfc`, `normal_cdf`, `hypergeom_2f1`,
+> `betainc`, the gamma family, Bessel and several other special functions for
+> some inputs, with no error reported, and their quadrature, root-finding and
+> ODE routines return `None` for intervals such as `[2, 3]`. 1.0.5 fixes these
+> with no API changes:
+> `cargo update -p zenith-float -p zenith-float-num -p zenith-float-macro`.
+> Versions 1.0.0 through 1.0.4 have been yanked from crates.io.
+> Details: [1.0.5 release notes](https://github.com/jscarr64/zenith-float/releases/tag/v1.0.5).
+
 Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.5**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
 
 All arithmetic runs on integer limbs. The library does not use hardware floating-point registers for calculations. Construct `ExactNum` from integers or from binary, octal, decimal, or hexadecimal strings; construct IEEE widths from integer bit patterns (`from_bits`).
