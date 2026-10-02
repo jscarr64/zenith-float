@@ -36,6 +36,7 @@ mod dist;
 mod dsp;
 mod ext;
 mod hash;
+mod heun_fox;
 mod ieee_soft;
 mod integer;
 mod mantissa;

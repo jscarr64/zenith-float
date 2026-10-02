@@ -144,7 +144,7 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | `ExactNumPoly` | Dense univariate, coefficients lowest degree first. `from_coeffs` / `from_i64_coeffs`; `eval` (Horner/`polyval`); `add`/`sub`/`mul`; `div_rem` (zero divisor `None`); `gcd` (Euclidean, integer content, monic); `compose`; `derivative`; `integral` (constant 0); `companion_matrix`; `roots_real` through `POLY_COMPANION_CLOSED_DEG=2`. |
 | Chebyshev | `chebyshev_coeffs(f, n, a, b, p, rm, cc)` interpolates at `n` Chebyshev–Gauss nodes (`n ≤ CHEBYSHEV_MAX_DEGREE`). `chebyshev_eval` maps `[a,b]` then `clenshaw`. `chebyshev_error_bound` is the ℓ¹ tail `Σ_{k≥1}|c_k|`. |
 | Orthogonal polys | `ExactNum::{hermite_he,hermite_h,laguerre,gen_laguerre,chebyshev_t,chebyshev_u,gegenbauer,jacobi_p}(n, …)` via three-term recurrences. `n ≤ ORTHOPOLY_N_MAX`. Standard Gegenbauer `C_n^{(λ)}` (`C_n^{(1/2)}=P_n`, `C_n^{(1)}=U_n`). Jacobi `P_n^{(α,β)}`; `α=β=0` is Legendre. Inverse Jacobi `jacobi_arcsn`/`arccn`/`arcdn`. |
-| Catalog specials | Scorer `scorer_gi`/`scorer_hi`; Kelvin `kelvin_ber`/`bei`/`ker`/`kei` (+ `_nu`); Struve `struve_h`; Anger `anger_j`; Weber `weber_e`; Clausen `clausen_cl2`/`clausen_cl3`; Barnes `barnes_g`; `hurwitz_zeta` / `riemann_zeta` / `polygamma`; `hypergeom_0f1`/`1f1`/`pfq`; `lambert_w0`/`wm1`; `polylog`. |
+| Catalog specials | Scorer `scorer_gi`/`scorer_hi`; Kelvin `kelvin_ber`/`bei`/`ker`/`kei` (+ `_nu`); Struve `struve_h`; Anger `anger_j`; Weber `weber_e`; Clausen `clausen_cl2`/`clausen_cl3`; Barnes `barnes_g`; `hurwitz_zeta` / `riemann_zeta` / `polygamma`; `hypergeom_0f1`/`1f1`/`pfq`; `lambert_w0`/`wm1`; `polylog`; Meijer `meijer_g`; Fox `fox_h`; local Heun `heun_g`; confluent Heun `heun_c` (DLMF 31.12.1). |
 | Quadrature | `gauss_legendre(f,a,b,n,…)`; `tanh_sinh(f,a,b,…)`; `gauss_laguerre(f,n,…)`; `gauss_hermite(f,n,…)`. `n ≤ QUADRATURE_MAX_NODES`. Tanh–sinh uses `h=2π/(p ln 2)` and up to `TANH_SINH_LEVELS_MAX` halvings. |
 | Root finding | `bisect`/`newton`/`brent`/`illinois` on `ExactNum`. Opposite signs required for bracket methods (`None` otherwise). `ROOT_MAX_ITER=256`; `root_default_tol` is `2^{ROOT_DEFAULT_TOL}`. |
 | ODE | `rk4`/`rk45_adaptive`/`euler` return `(t, y)` row `ExactNumArray`s. Dormand–Prince 5(4) with `atol`/`rtol`; `h_min=2^{ODE_MIN_STEP}`; cap `ODE_MAX_STEPS`. |
@@ -331,6 +331,8 @@ Each method’s rustdoc has a **`# Precision`** section (algorithm, region, name
 | `gamma_pdf` / `beta_pdf` | Scale \(\beta\); \(B\) via \(\Gamma\) | yes |
 | `poisson_pmf` / `binomial_pmf` | Non-negative integer \(k\) | yes |
 | `chi_squared_cdf` / `student_t_pdf` | Regularized \(\gamma(k/2,x/2)/\Gamma(k/2)\); \(t\) via \(\Gamma\) | yes |
+| `meijer_g` / `fox_h` | Residue \(G^{m,n}_{p,q}\) (DLMF 16.17) + \({}_pF_q\); Fox \(H\) is \(G\) when \(A=B=1\), else Gauss lift of positive rational scales. Coincident poles → `NaN`. | no (too many args) |
+| `heun_g` / `heun_c` | Local Heun DLMF 31.3; confluent Heun DLMF 31.12.1 \(y(0)=1\). Series for \(\lvert z\rvert<1\) only. | no |
 
 ---
 
