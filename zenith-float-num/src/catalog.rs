@@ -1,6 +1,8 @@
 //! Additive catalog specials on [`ExactNum`]: Scorer, Kelvin, Struve, Anger–Weber,
 //! Clausen, Barnes \(G\), polygamma / Hurwitz, inverse Jacobi, \({}_pF_q\), Lambert \(W\),
 //! and the polylogarithm. SoftFloat only (integer limbs; no IEEE arithmetic).
+//!
+//! Meijer \(G\), Fox \(H\), and Heun live in `heun_fox`.
 
 use crate::defs::WORD_BIT_SIZE;
 use crate::quadrature::tanh_sinh;
@@ -11,24 +13,24 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use alloc::vec::Vec;
 
-fn work_p(p: usize) -> usize {
+pub(crate) fn work_p(p: usize) -> usize {
     p.saturating_add(WORD_BIT_SIZE.saturating_mul(2))
 }
 
-fn cat_nan() -> ExactNum {
+pub(crate) fn cat_nan() -> ExactNum {
     ExactNum::nan(Some(Error::InvalidArgument))
 }
 
-fn finite(x: &ExactNum) -> bool {
+pub(crate) fn finite(x: &ExactNum) -> bool {
     !x.is_nan() && !x.is_inf()
 }
 
-fn finish(mut y: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
+pub(crate) fn finish(mut y: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
     let _ = y.set_precision(p, rm);
     y
 }
 
-fn series_cap(p: usize) -> usize {
+pub(crate) fn series_cap(p: usize) -> usize {
     p.saturating_add(32).max(64)
 }
 
@@ -52,7 +54,7 @@ fn abs_lt(x: &ExactNum, bound: u32, p: usize) -> bool {
     matches!(a.cmp(&ExactNum::from_u32(bound, p)), Some(c) if c < 0)
 }
 
-fn small_int(x: &ExactNum, p: usize, lo: i32, hi: i32) -> Option<i32> {
+pub(crate) fn small_int(x: &ExactNum, p: usize, lo: i32, hi: i32) -> Option<i32> {
     if !x.is_int() {
         return None;
     }

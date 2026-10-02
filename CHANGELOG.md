@@ -39,6 +39,17 @@ New `ExactNum` methods, SoftFloat-only, with identity and mpmath golds:
 
 `expr!` leaves for the one- and two-argument catalog names (`scorer_gi`, `kelvin_ber`, `struve_h`, `clausen_cl2`, `barnes_g`, `lambert_w0`, …).
 
+### Meijer \(G\) / Fox \(H\) / Heun (additive, still 1.0.6)
+
+Leftovers after the catalog pack — Accumath still had local SoftFloat clones for these. No existing signature changed.
+
+- `ExactNum::meijer_g(an, ap, bm, bq)` — DLMF 16.17 residue + \({}_pF_q\). Type-1 or type-2 series by \((p,q,\lvert z\rvert)\). Coincident poles / numerator \(\Gamma\) poles → `NaN` (no logarithmic `hypercomb` limit). Negative \(z\) → `NaN` unless every used power is an integer.
+- `ExactNum::fox_h` — pairs \((a,A)\), \((b,B)\). \(A=B=1\) is Meijer \(G\); positive rational scales use the Gauss multiplication formula (mpmath `foxh`). Non-rational or large scales → `NaN`.
+- `ExactNum::heun_g(a,q,α,β,γ,δ)` — local Heun \(\mathrm{Hl}\), DLMF 31.3, \(\lvert z\rvert<1\).
+- `ExactNum::heun_c(α,γ,δ,ε,q)` — confluent Heun, \(y(0)=1\) Frobenius solution of DLMF 31.12.1, \(\lvert z\rvert<1\). Not Maple `HeunC(α,β,γ,δ,η,z)`.
+- Left out (no Accumath SoftFloat evidence, or no unique \(z=0\) series): Mathieu, Lamé, Appell \(F_{1..4}\), HeunB / HeunD / HeunT, complex \(G/H\)/Heun. `expr!` skipped (too many arguments, same as `hypergeom_pfq`).
+- Golds: mpmath `meijerg` / `foxh` at 50 digits (including \(J_{1/4}\), series-2 \(\lvert z\rvert>1\), rational Fox scale); HeunG vs mpmath \({}_2F_1\); HeunC vs mpmath \({}_1F_1\).
+
 ## 1.0.5 — 2026-09-27
 
 Bug-fix release: special-function accuracy. No public API changes (no new public items, no signature changes); results that were wrong now match mpmath to working precision. Every fixed case below is covered by a test with a 50-digit (or 2p+64-bit) mpmath reference.

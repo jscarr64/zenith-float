@@ -8,7 +8,7 @@
 > with no API changes:
 > `cargo update -p zenith-float -p zenith-float-num -p zenith-float-macro`.
 > Versions 1.0.0 through 1.0.4 have been yanked from crates.io.
-> Details: [1.0.5 release notes](https://github.com/jscarr64/zenith-float/releases/tag/v1.0.5). 1.0.6 is an additive SoftFloat pack: Jacobi \(P_n^{(\alpha,\beta)}\), real large-argument Bessel Hankel, complex Bessel cut/speed fixes, and catalog specials (Scorer, Kelvin, Struve, Anger–Weber, Clausen, Barnes \(G\), polygamma / Hurwitz, inverse Jacobi, \({}_pF_q\), Lambert \(W\)).
+> Details: [1.0.5 release notes](https://github.com/jscarr64/zenith-float/releases/tag/v1.0.5). 1.0.6 is an additive SoftFloat pack: Jacobi \(P_n^{(\alpha,\beta)}\), real large-argument Bessel Hankel, complex Bessel cut/speed fixes, catalog specials (Scorer, Kelvin, Struve, Anger–Weber, Clausen, Barnes \(G\), polygamma / Hurwitz, inverse Jacobi, \({}_pF_q\), Lambert \(W\)), plus Meijer \(G\), Fox \(H\), and local / confluent Heun.
 
 Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.6**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
 
@@ -65,7 +65,7 @@ zenith-float = { version = "1.0", default-features = false }
 
 ## Known issues
 
-The 1.0.5 complex-Bessel cut hang and the real large-\(|x|\) `InvalidArgument` are closed in 1.0.6. Complex `bessel_k` can still be slow for non-integer \(\nu\) when \(|z|\) is just inside the series regime (the Temme \({}_2F_0\) path covers the large-\(|z|\) cases). See `CHANGELOG.md`.
+The 1.0.5 complex-Bessel cut hang and the real large-\(|x|\) `InvalidArgument` are closed in 1.0.6. Complex `bessel_k` can still be slow for non-integer \(\nu\) when \(|z|\) is just inside the series regime (the Temme \({}_2F_0\) path covers the large-\(|z|\) cases). Meijer \(G\) returns `NaN` at coincident poles (no logarithmic residue). Local / confluent Heun are series for \(\lvert z\rvert<1\) only. See `CHANGELOG.md`.
 
 ## Rounding
 
