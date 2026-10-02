@@ -1024,7 +1024,6 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let _ = cc;
         let p = round_p(p);
         Self::p_assertion(p)?;
 
@@ -1033,6 +1032,11 @@ impl ExactNumNumber {
                 if n == 0 { Self::from_word(1, p)? } else { Self::new2(p, Sign::Pos, false)? };
             z.set_inexact(self.inexact());
             return Ok(z);
+        }
+
+        let nu_ord = from_usize_p(n, p)?;
+        if use_bessel_hankel_real(self, &nu_ord, p) {
+            return self.bessel_j_hankel_signed(n, p, rm, cc);
         }
 
         let mut p_inc = WORD_BIT_SIZE;
@@ -1154,6 +1158,8 @@ impl ExactNumNumber {
             }
         } else if !self.is_positive() {
             Err(Error::InvalidArgument)
+        } else if use_bessel_hankel_real(self, nu, p) {
+            self.bessel_jy_hankel(nu, p, rm, cc, true)
         } else {
             self.bessel_series(nu, p, rm, cc, true)
         }
@@ -1171,6 +1177,9 @@ impl ExactNumNumber {
         Self::p_assertion(p)?;
         if !self.is_positive() {
             return Err(Error::InvalidArgument);
+        }
+        if use_bessel_hankel_real(self, nu, p) {
+            return self.bessel_jy_hankel(nu, p, rm, cc, false);
         }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
@@ -1366,6 +1375,152 @@ impl ExactNumNumber {
             }
         }
         Ok(sum)
+    }
+
+    /// Large-|x| Hankel expansion of `J_n` on `|self|`, then `J_n(-x)=(-1)^n J_n(x)`.
+    fn bessel_j_hankel_signed(
+        &self,
+        n: usize,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let mut p_inc = WORD_BIT_SIZE;
+        let extra = extra_bits_for_degree(n.min(u32::MAX as usize) as u32);
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc + extra;
+        loop {
+            let p_x = p_wrk + WORD_BIT_SIZE + extra;
+            let nu = from_usize_p(n, p_x)?;
+            let ax = self.abs()?;
+            let mut ret = ax.bessel_hankel_j(&nu, p_x, cc)?;
+            if self.is_negative() && n % 2 == 1 {
+                ret = ret.neg()?;
+            }
+            if ret.try_set_precision(p, rm, p_wrk)? {
+                ret.set_inexact(ret.inexact() | self.inexact());
+                return Ok(ret);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    fn bessel_jy_hankel(
+        &self,
+        nu: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+        first_kind: bool,
+    ) -> Result<Self, Error> {
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p
+            .max(self.mantissa_max_bit_len())
+            .max(nu.mantissa_max_bit_len())
+            + p_inc;
+        loop {
+            let p_x = p_wrk + WORD_BIT_SIZE;
+            let mut ret = if first_kind {
+                self.bessel_hankel_j(nu, p_x, cc)?
+            } else {
+                self.bessel_hankel_y(nu, p_x, cc)?
+            };
+            if ret.try_set_precision(p, rm, p_wrk)? {
+                ret.set_inexact(ret.inexact() | self.inexact() | nu.inexact());
+                return Ok(ret);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    /// χ = x − (2ν+1)π/4 (DLMF 10.17.1).
+    fn bessel_hankel_chi(&self, nu: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let two = Self::from_word(2, p)?;
+        let four = Self::from_word(4, p)?;
+        let one = Self::from_word(1, p)?;
+        let two_nu_1 = two.mul(nu, p, RoundingMode::None)?.add(&one, p, RoundingMode::None)?;
+        let phase = two_nu_1
+            .mul(&pi, p, RoundingMode::None)?
+            .div(&four, p, RoundingMode::None)?;
+        self.sub(&phase, p, RoundingMode::None)
+    }
+
+    /// ω = √(2/(πx)).
+    fn bessel_hankel_omega(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let two = Self::from_word(2, p)?;
+        two.div(&pi.mul(self, p, RoundingMode::None)?, p, RoundingMode::None)?
+            .sqrt(p, RoundingMode::None)
+    }
+
+    /// Hankel amplitude series P, Q (DLMF 10.17.3–4), stopped at the smallest term.
+    fn bessel_hankel_pq(&self, nu: &Self, p: usize) -> Result<(Self, Self), Error> {
+        let two = Self::from_word(2, p)?;
+        let eight = Self::from_word(8, p)?;
+        let two_nu = two.mul(nu, p, RoundingMode::None)?;
+        let mu = two_nu.mul(&two_nu, p, RoundingMode::None)?;
+        let eight_x = eight.mul(self, p, RoundingMode::None)?;
+        let mut prod = Self::from_word(1, p)?;
+        let mut kf = Self::from_word(1, p)?;
+        let mut pz = Self::from_word(1, p)?;
+        let mut psum = Self::from_word(1, p)?;
+        let mut qsum = Self::from_word(0, p)?;
+        let mut prev_e = i32::MAX;
+        let k_max = (p + 64).min((Word::MAX as usize - 1) / 2);
+        for k in 1..=k_max {
+            let odd = Self::from_word((2 * k - 1) as Word, p)?;
+            let odd2 = odd.mul(&odd, p, RoundingMode::None)?;
+            prod = prod.mul(&mu.sub(&odd2, p, RoundingMode::None)?, p, RoundingMode::None)?;
+            kf = kf.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
+            pz = pz.mul(&eight_x, p, RoundingMode::None)?;
+            let term = prod.div(&kf.mul(&pz, p, RoundingMode::None)?, p, RoundingMode::None)?;
+            if k % 2 == 0 {
+                let signed = if (k / 2) % 2 == 1 { term.neg()? } else { term.clone()? };
+                psum = psum.add(&signed, p, RoundingMode::None)?;
+            } else {
+                let signed = if ((k - 1) / 2) % 2 == 1 { term.neg()? } else { term.clone()? };
+                qsum = qsum.add(&signed, p, RoundingMode::None)?;
+            }
+            let e = term.exponent();
+            if term.is_zero() || (e as isize) + (p as isize) < 0 {
+                break;
+            }
+            if k > 2 && e > prev_e {
+                break;
+            }
+            prev_e = e;
+        }
+        Ok((psum, qsum))
+    }
+
+    /// `J_ν(self)` for `self > 0` via the Hankel expansion (DLMF 10.17.5).
+    fn bessel_hankel_j(&self, nu: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let chi = self.bessel_hankel_chi(nu, p, cc)?;
+        let omega = self.bessel_hankel_omega(p, cc)?;
+        let (pp, qq) = self.bessel_hankel_pq(nu, p)?;
+        let c = chi.cos(p, RoundingMode::None, cc)?;
+        let s = chi.sin(p, RoundingMode::None, cc)?;
+        omega.mul(
+            &pp.mul(&c, p, RoundingMode::None)?
+                .sub(&qq.mul(&s, p, RoundingMode::None)?, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )
+    }
+
+    /// `Y_ν(self)` for `self > 0` via the Hankel expansion (DLMF 10.17.6).
+    fn bessel_hankel_y(&self, nu: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let chi = self.bessel_hankel_chi(nu, p, cc)?;
+        let omega = self.bessel_hankel_omega(p, cc)?;
+        let (pp, qq) = self.bessel_hankel_pq(nu, p)?;
+        let c = chi.cos(p, RoundingMode::None, cc)?;
+        let s = chi.sin(p, RoundingMode::None, cc)?;
+        omega.mul(
+            &pp.mul(&s, p, RoundingMode::None)?
+                .add(&qq.mul(&c, p, RoundingMode::None)?, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )
     }
 
     fn bessel_y_int(&self, n: u32, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -3477,10 +3632,65 @@ fn series_negligible(t: &ExactNumNumber, sum: &ExactNumNumber, p: usize) -> bool
     (t.exponent() as isize) + (p as isize) < se
 }
 
-/// Largest cancellation guard (bits) the Bessel power series will use. Beyond it (|x| ≳ 10⁴ for
-/// `J`/`Y`) a large-argument (Hankel) expansion would be needed; that is not implemented, so the
-/// functions return `InvalidArgument` instead of an inaccurate value.
+/// Largest cancellation guard (bits) the Bessel power series will use. For `J`/`Y` with
+/// `|x| ≳ 10⁴` the Hankel expansion is used instead when `|ν|² < 2|x|`. The series path still
+/// returns `InvalidArgument` if the guard would exceed this and Hankel is not valid.
 pub const BESSEL_GUARD_MAX: usize = 1 << 14;
+
+/// `|x| ≥ max(16, 0.35(dest_p+112))` — same switch as the complex Hankel path.
+fn hankel_mag_ok(x: &ExactNumNumber, dest_p: usize) -> bool {
+    if x.is_zero() || x.exponent() < 5 {
+        return false;
+    }
+    let t = dest_p.saturating_add(112).saturating_mul(35) / 100;
+    if x.exponent() > 30 {
+        return true;
+    }
+    match x.abs().and_then(|a| a.ceil()).and_then(|c| c.int_as_usize()) {
+        Ok(c) => c >= t.max(16),
+        Err(_) => true,
+    }
+}
+
+/// First Hankel term decreases when `|ν|² < 2|x|`.
+fn hankel_order_ok(x: &ExactNumNumber, nu: &ExactNumNumber) -> bool {
+    let p = WORD_BIT_SIZE;
+    let Ok(two) = ExactNumNumber::from_word(2, p) else {
+        return false;
+    };
+    let Ok(ax) = x.abs() else {
+        return false;
+    };
+    let Ok(an) = nu.abs() else {
+        return false;
+    };
+    let Ok(nu2) = an.mul(&an, p, RoundingMode::None) else {
+        return false;
+    };
+    let Ok(two_x) = two.mul(&ax, p, RoundingMode::None) else {
+        return false;
+    };
+    nu2.cmp(&two_x) < 0
+}
+
+fn use_bessel_hankel_real(x: &ExactNumNumber, nu: &ExactNumNumber, dest_p: usize) -> bool {
+    if x.is_zero() || !hankel_order_ok(x, nu) {
+        return false;
+    }
+    hankel_mag_ok(x, dest_p) || bessel_cancel_bits(x, 3, 2).is_err()
+}
+
+fn from_usize_p(n: usize, p: usize) -> Result<ExactNumNumber, Error> {
+    if n <= Word::MAX as usize {
+        return ExactNumNumber::from_word(n as Word, p);
+    }
+    let pw = p.max(128);
+    let mut v = ExactNumNumber::from_u128(n as u128, pw)?;
+    if pw != p {
+        v.set_precision(p, RoundingMode::None)?;
+    }
+    Ok(v)
+}
 
 /// `⌈num/den · |x|⌉ + 16` guard bits for a series whose terms grow like `e^{c|x|}`
 /// (`num/den ≥ c·log2(e)`); 16 for `|x| < 1`.
@@ -3995,6 +4205,28 @@ mod tests {
             .add(&k49, p, RoundingMode::None)
             .unwrap();
         bits_agree(&k51, &rec, p, 20, "K recurrence at 50");
+
+        // Large-|x| Hankel: J_0(20000) class used to be InvalidArgument.
+        let x20k = ExactNumNumber::from_word(20000, p).unwrap();
+        let j0_big = x20k.bessel_j(0, p, rm, &mut cc).unwrap();
+        let y0_big = x20k.bessel_y(&zero, p, rm, &mut cc).unwrap();
+        let j1_big = x20k.bessel_j(1, p, rm, &mut cc).unwrap();
+        let y1_big = x20k.bessel_y(&one, p, rm, &mut cc).unwrap();
+        let wr = j0_big
+            .mul(&y1_big, p, RoundingMode::None)
+            .unwrap()
+            .sub(
+                &j1_big.mul(&y0_big, p, RoundingMode::None).unwrap(),
+                p,
+                RoundingMode::None,
+            )
+            .unwrap();
+        let want_w = two
+            .div(&pi.mul(&x20k, p, RoundingMode::None).unwrap(), p, RoundingMode::None)
+            .unwrap()
+            .neg()
+            .unwrap();
+        bits_agree(&wr, &want_w, p, 40, "J/Y Wronskian at 20000");
     }
 
     #[test]

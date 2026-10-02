@@ -92,6 +92,65 @@ fn four_c(p: usize) -> ExactComplex {
     ExactComplex::from_real(ExactNum::from_u8(4, p), p)
 }
 
+fn cpx_tiny(z: &ExactComplex, p: usize) -> bool {
+    let a = z.abs(64, RoundingMode::None);
+    a.is_zero() || a.exponent().is_some_and(|e| (e as i64) + (p as i64) < 0)
+}
+
+fn term_near_one(delta: &ExactComplex, p: usize) -> bool {
+    let one = ExactComplex::one(p.max(64));
+    let d = delta.sub(&one, 64, RoundingMode::None);
+    cpx_tiny(&d, p)
+}
+
+/// Modified Lentz for \({}_2F_0(a,b;;w)=1+\alpha_1/(1+\alpha_2/(1+\cdots))\),
+/// \(\alpha_k=(a+k-1)(b+k-1)w/k\).
+fn hypergeom_2f0_lentz(
+    a: &ExactComplex,
+    b: &ExactComplex,
+    w: &ExactComplex,
+    work_p: usize,
+    dest_p: usize,
+) -> Option<ExactComplex> {
+    let one = ExactComplex::one(work_p);
+    let tiny = ExactComplex::from_real(
+        ExactNum::from_u8(2, work_p).powsi(-(work_p as isize), work_p, RoundingMode::None),
+        work_p,
+    );
+    let mut f = one.clone();
+    let mut c = f.clone();
+    let mut d = ExactComplex::zero(work_p);
+    let cap = series_term_cap(work_p).saturating_mul(4).max(64);
+    for k in 1..=cap {
+        let km1 = ExactComplex::from_real(ExactNum::from_u32((k - 1) as u32, work_p), work_p);
+        let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, work_p), work_p);
+        let ak = a
+            .add(&km1, work_p, RoundingMode::None)
+            .mul(
+                &b.add(&km1, work_p, RoundingMode::None),
+                work_p,
+                RoundingMode::None,
+            )
+            .mul(w, work_p, RoundingMode::None)
+            .div(&kk, work_p, RoundingMode::None);
+        d = one.add(&ak.mul(&d, work_p, RoundingMode::None), work_p, RoundingMode::None);
+        if cpx_tiny(&d, dest_p) {
+            d = tiny.clone();
+        }
+        c = one.add(&ak.div(&c, work_p, RoundingMode::None), work_p, RoundingMode::None);
+        if cpx_tiny(&c, dest_p) {
+            c = tiny.clone();
+        }
+        d = one.div(&d, work_p, RoundingMode::None);
+        let delta = c.mul(&d, work_p, RoundingMode::None);
+        f = f.mul(&delta, work_p, RoundingMode::None);
+        if term_near_one(&delta, dest_p) {
+            return Some(f);
+        }
+    }
+    None
+}
+
 fn eight_c(p: usize) -> ExactComplex {
     ExactComplex::from_real(ExactNum::from_u8(8, p), p)
 }
@@ -99,6 +158,54 @@ fn eight_c(p: usize) -> ExactComplex {
 /// `z > 0` real and `ν` real: every Bessel function is real there.
 fn real_positive_axis(z: &ExactComplex, nu: &ExactComplex) -> bool {
     z.im().is_zero() && nu.im().is_zero() && !z.re().is_zero() && !z.re().is_negative()
+}
+
+/// Cut \((-\infty,0)\): \(\operatorname{Im} z=0\), \(\operatorname{Re} z<0\), real \(\nu\).
+fn real_negative_axis(z: &ExactComplex, nu: &ExactComplex) -> bool {
+    z.im().is_zero() && nu.im().is_zero() && z.re().is_negative()
+}
+
+/// Exact integer in \([-64,64]\).
+fn real_small_int(x: &ExactNum, p: usize) -> Option<i32> {
+    if !x.is_int() {
+        return None;
+    }
+    for n in -BESSEL_INTEGER_MAX..=BESSEL_INTEGER_MAX {
+        if x.cmp(&ExactNum::from_i32(n, p)) == Some(0) {
+            return Some(n);
+        }
+    }
+    None
+}
+
+/// \(\cos(\nu\pi),\sin(\nu\pi)\) with exact zeros for integer / half-odd-integer \(\nu\).
+fn cos_sin_nu_pi(nu: &ExactNum, p: usize, cc: &mut Consts) -> (ExactNum, ExactNum) {
+    if let Some(n) = real_small_int(nu, p) {
+        let one = ExactNum::from_u8(1, p);
+        return if n % 2 == 0 {
+            (one, ExactNum::new(p))
+        } else {
+            (one.neg(), ExactNum::new(p))
+        };
+    }
+    let two = ExactNum::from_u8(2, p);
+    if let Some(t) = real_small_int(&two.mul(nu, p, RoundingMode::None), p) {
+        if t % 2 != 0 {
+            // ν = t/2 = n+1/2, n = (t-1)/2; sin(νπ)=(-1)^n, cos=0.
+            let n = (t - 1) / 2;
+            let s = ExactNum::from_u8(1, p);
+            return (
+                ExactNum::new(p),
+                if n % 2 == 0 { s } else { s.neg() },
+            );
+        }
+    }
+    let pi = cc.pi(p, RoundingMode::None);
+    let a = nu.mul(&pi, p, RoundingMode::None);
+    (
+        a.cos(p, RoundingMode::None, cc),
+        a.sin(p, RoundingMode::None, cc),
+    )
 }
 
 /// Keeps the real part and sets the imaginary part to an exact zero.
@@ -119,20 +226,17 @@ fn reflect_phase(nu: &ExactComplex, upper: bool, p: usize, cc: &mut Consts) -> E
 
 impl ExactComplex {
     /// \(J_\nu(z)\). Entire for integer \(\nu\); cut on \((-\infty,0]\) otherwise.
-    /// \(z=0\) with non-integer \(\nu\) → NaN.
-    ///
-    /// # Precision
-    ///
-    /// - Algorithm: power series (extra precision for cancellation) for `|z| < max(16, 0.35(p+112))`;
-    ///   Hankel expansion (stopped at its smallest term) otherwise, continued from \(-z\) when
-    ///   \(\mathrm{Re}\,z<0\) (DLMF 10.11.1). Integer `|n| ≤ BESSEL_INTEGER_MAX` (`64`).
-    /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
-    /// - MPFR oracle: no.
+    /// \(z=0\) with non-integer \(\nu\) → NaN. On the cut \(\operatorname{Im} z=0\),
+    /// \(\operatorname{Re} z<0\) with real \(\nu\), the principal value is formed from the
+    /// real kernels (\(J_\nu(-x+0i)=e^{i\nu\pi}J_\nu(x)\)) so algebraically zero parts stay zero.
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
         }
         let dest = round_p(p);
+        if real_negative_axis(self, nu) {
+            return ziv_complex(dest, rm, |pw| self.bessel_neg_real_j(nu, pw, cc));
+        }
         ziv_complex(dest, rm, |pw| self.bessel_j_at(nu, pw, dest, cc))
     }
 
@@ -152,6 +256,9 @@ impl ExactComplex {
             return nan_pair(Error::InvalidArgument);
         }
         let dest = round_p(p);
+        if real_negative_axis(self, nu) {
+            return ziv_complex(dest, rm, |pw| self.bessel_neg_real_y(nu, pw, cc));
+        }
         ziv_complex(dest, rm, |pw| self.bessel_y_at(nu, pw, dest, cc))
     }
 
@@ -174,16 +281,22 @@ impl ExactComplex {
                 real_part_only(self.bessel_i_at(nu, pw, dest, cc), pw)
             });
         }
+        if real_negative_axis(self, nu) {
+            return ziv_complex(dest, rm, |pw| self.bessel_neg_real_i(nu, pw, cc));
+        }
         ziv_complex(dest, rm, |pw| self.bessel_i_at(nu, pw, dest, cc))
     }
 
     /// \(K_\nu(z)=(\pi/2)\,i^{\nu+1}H_\nu^{(1)}(iz)\). Cut on \((-\infty,0]\) (value from above
     /// when \(\mathrm{Im}\,z=0\)); \(z=0\) → NaN. Real \(z>0\) with real \(\nu\) gives an exact
-    /// zero imaginary part (likewise [`Self::bessel_i`]).
+    /// zero imaginary part (likewise [`Self::bessel_i`]). On the cut with real \(\nu\),
+    /// \(K_\nu(-x+0i)=e^{-i\nu\pi}K_\nu(x)-i\pi I_\nu(x)\).
     ///
     /// # Precision
     ///
-    /// - Algorithm: \(H^{(1)}_\nu(iz)\) or \(H^{(2)}_\nu(-iz)\) by the sign of \(\mathrm{Im}\,z\) (DLMF 10.27.8).
+    /// - Algorithm: Temme \({}_2F_0\) (DLMF 10.32.10) when \(\mathrm{Re}\,z>0\) and \(|z|\) is
+    ///   past the series/Hankel switch; otherwise \(H^{(1)}_\nu(iz)\) or \(H^{(2)}_\nu(-iz)\)
+    ///   by the sign of \(\mathrm{Im}\,z\) (DLMF 10.27.8).
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn bessel_k(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -200,7 +313,60 @@ impl ExactComplex {
                 real_part_only(self.bessel_k_at(nu, pw, dest, cc), pw)
             });
         }
+        if real_negative_axis(self, nu) {
+            return ziv_complex(dest, rm, |pw| self.bessel_neg_real_k(nu, pw, cc));
+        }
         ziv_complex(dest, rm, |pw| self.bessel_k_at(nu, pw, dest, cc))
+    }
+
+    /// Principal value on \(x<0\): \(J_\nu(-x+0i)=e^{i\nu\pi}J_\nu(x)\).
+    fn bessel_neg_real_j(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
+        let x = self.re().abs();
+        let nure = nu.re();
+        let jx = x.bessel_j_nu(nure, p, RoundingMode::None, cc);
+        let (c, s) = cos_sin_nu_pi(nure, p, cc);
+        ExactComplex::new(c.mul(&jx, p, RoundingMode::None), s.mul(&jx, p, RoundingMode::None))
+    }
+
+    /// \(Y_\nu(-x+0i)=e^{-i\nu\pi}Y_\nu(x)+2i\cos(\nu\pi)J_\nu(x)\).
+    fn bessel_neg_real_y(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
+        let x = self.re().abs();
+        let nure = nu.re();
+        let jx = x.bessel_j_nu(nure, p, RoundingMode::None, cc);
+        let yx = x.bessel_y(nure, p, RoundingMode::None, cc);
+        let (c, s) = cos_sin_nu_pi(nure, p, cc);
+        let two = ExactNum::from_u8(2, p);
+        let re = c.mul(&yx, p, RoundingMode::None);
+        let im = two
+            .mul(&c, p, RoundingMode::None)
+            .mul(&jx, p, RoundingMode::None)
+            .sub(&s.mul(&yx, p, RoundingMode::None), p, RoundingMode::None);
+        ExactComplex::new(re, im)
+    }
+
+    /// \(I_\nu(-x+0i)=e^{i\nu\pi}I_\nu(x)\).
+    fn bessel_neg_real_i(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
+        let x = self.re().abs();
+        let nure = nu.re();
+        let ix = x.bessel_i(nure, p, RoundingMode::None, cc);
+        let (c, s) = cos_sin_nu_pi(nure, p, cc);
+        ExactComplex::new(c.mul(&ix, p, RoundingMode::None), s.mul(&ix, p, RoundingMode::None))
+    }
+
+    /// \(K_\nu(-x+0i)=e^{-i\nu\pi}K_\nu(x)-i\pi I_\nu(x)\).
+    fn bessel_neg_real_k(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
+        let x = self.re().abs();
+        let nure = nu.re();
+        let ix = x.bessel_i(nure, p, RoundingMode::None, cc);
+        let kx = x.bessel_k(nure, p, RoundingMode::None, cc);
+        let (c, s) = cos_sin_nu_pi(nure, p, cc);
+        let pi = cc.pi(p, RoundingMode::None);
+        let re = c.mul(&kx, p, RoundingMode::None);
+        let im = pi
+            .mul(&ix, p, RoundingMode::None)
+            .add(&s.mul(&kx, p, RoundingMode::None), p, RoundingMode::None)
+            .neg();
+        ExactComplex::new(re, im)
     }
 
     fn bessel_j_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -269,6 +435,9 @@ impl ExactComplex {
                 _ => nan_pair(Error::InvalidArgument),
             };
         }
+        if !self.re().is_negative() && !self.re().is_zero() {
+            return self.bessel_i_series(nu, work_p, dest_p, cc);
+        }
         // DLMF 10.27.6: I_ν(z) = e^{∓νπi/2} J_ν(z e^{±πi/2}), the upper sign for
         // −π < arg z ≤ π/2 and the lower for −π/2 < arg z ≤ π. Picking by the sign of Im z keeps
         // the rotated argument off the J cut (the old code used the upper sign everywhere, which
@@ -288,7 +457,35 @@ impl ExactComplex {
             .mul(&j, work_p, RoundingMode::None)
     }
 
+    /// \(I_\nu(z)=(z/2)^\nu/\Gamma(\nu+1)\,{}_0F_1(;\nu+1;z^2/4)\). Well-conditioned for \(\mathrm{Re}\,z>0\).
+    fn bessel_i_series(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+        let wp = work_p + series_guard_bits(self);
+        let half = self.mul(&half_c(wp), wp, RoundingMode::None);
+        let pow = half.pow(nu, wp, RoundingMode::None, cc);
+        let g = nu
+            .add(&ExactComplex::one(wp), wp, RoundingMode::None)
+            .gamma(wp, RoundingMode::None, cc);
+        let mut term = pow.div(&g, wp, RoundingMode::None);
+        let mut sum = term.clone();
+        let hh = half.mul(&half, wp, RoundingMode::None);
+        for k in 1..=series_term_cap(wp) {
+            let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, wp), wp);
+            let den = kk.add(nu, wp, RoundingMode::None).mul(&kk, wp, RoundingMode::None);
+            term = term.mul(&hh, wp, RoundingMode::None).div(&den, wp, RoundingMode::None);
+            sum = sum.add(&term, wp, RoundingMode::None);
+            if term_small_rel(&term, &sum, dest_p) {
+                break;
+            }
+        }
+        sum
+    }
+
     fn bessel_k_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+        if !self.re().is_negative() && !self.re().is_zero() && !use_bessel_series(self, dest_p) {
+            if let Some(k) = self.bessel_k_temme(nu, work_p, dest_p, cc) {
+                return k;
+            }
+        }
         // DLMF 10.27.8: K_ν(z) = (πi/2) e^{νπi/2} H⁽¹⁾_ν(iz) for −π < arg z ≤ π/2 and
         // K_ν(z) = −(πi/2) e^{−νπi/2} H⁽²⁾_ν(−iz) for −π/2 < arg z ≤ π; chosen by the sign of Im z.
         // In the series regime J and Y are ≈ e^{|z|} while K ≈ e^{−Re z}: add 3|z| guard bits.
@@ -325,6 +522,28 @@ impl ExactComplex {
         );
         let pre = if second { neg_c(&pre) } else { pre };
         pre.mul(&h, work_p, RoundingMode::None)
+    }
+
+    /// DLMF 10.32.10: \(K_\nu(z)=\sqrt{\pi/(2z)}\,e^{-z}\,{}_2F_0(\tfrac12+\nu,\tfrac12-\nu;;-1/(2z))\).
+    fn bessel_k_temme(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Option<Self> {
+        let two = two_c(work_p);
+        let half = half_c(work_p);
+        let w = neg_c(
+            &ExactComplex::one(work_p).div(
+                &two.mul(self, work_p, RoundingMode::None),
+                work_p,
+                RoundingMode::None,
+            ),
+        );
+        let a = half.add(nu, work_p, RoundingMode::None);
+        let b = half.sub(nu, work_p, RoundingMode::None);
+        let f = hypergeom_2f0_lentz(&a, &b, &w, work_p, dest_p)?;
+        let pi = pi_c(work_p, cc);
+        let omega = pi
+            .div(&two.mul(self, work_p, RoundingMode::None), work_p, RoundingMode::None)
+            .sqrt(work_p, RoundingMode::None, cc);
+        let ez = neg_c(self).exp(work_p, RoundingMode::None, cc);
+        Some(omega.mul(&ez, work_p, RoundingMode::None).mul(&f, work_p, RoundingMode::None))
     }
 
     fn bessel_j_series(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
@@ -742,5 +961,33 @@ mod tests {
         let jb = below.bessel_j_nu(&half, p, rm, &mut cc);
         assert!(!cnear(&ja, &jb, p));
         assert!(cnear_bits(&ja, &jb.conj(), p, 8) || !tiny(ja.im(), p) || !tiny(jb.im(), p));
+    }
+
+    #[test]
+    fn test_complex_bessel_negative_real_axis() {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let x = ExactNum::from_u8(2, p);
+        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
+        let zneg = ExactComplex::from_real(x.neg(), p);
+        let nu = ExactComplex::from_real(half.clone(), p);
+        let i = zneg.bessel_i(&nu, p, rm, &mut cc);
+        assert!(!i.is_nan());
+        assert!(tiny(i.re(), p), "I_{{1/2}}(-2) real part should be exact 0, got {:?}", i.re());
+        let ix = x.bessel_i(&half, p, rm, &mut cc);
+        assert!(near(i.im(), &ix, p));
+
+        let k = zneg.bessel_k(&ExactComplex::zero(p), p, rm, &mut cc);
+        let kx = x.bessel_k(&ExactNum::new(p), p, rm, &mut cc);
+        let ix0 = x.bessel_i(&ExactNum::new(p), p, rm, &mut cc);
+        let pi = cc.pi(p, rm);
+        assert!(near(k.re(), &kx, p));
+        assert!(near(k.im(), &pi.mul(&ix0, p, rm).neg(), p));
+
+        let j = zneg.bessel_j_nu(&nu, p, rm, &mut cc);
+        let jx = x.bessel_j_nu(&half, p, rm, &mut cc);
+        assert!(tiny(j.re(), p));
+        assert!(near(j.im(), &jx, p));
     }
 }

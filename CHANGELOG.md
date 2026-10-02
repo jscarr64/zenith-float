@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.0.6 — 2026-10-02
+
+Additive SoftFloat pack: Jacobi \(P_n^{(\alpha,\beta)}\), real large-\(|x|\) Bessel Hankel, complex Bessel cut/speed fixes, and the catalog specials Accumath was missing. No public signature was removed or changed — **1.0.6, not 2.0.0**. Jeff publishes crates.io — this tag is not published from the PR.
+
+### Version path
+
+Stayed on **1.0.6**. Every new entry is an added `ExactNum` / `ExactComplex` method (or a bugfix of an existing one). No existing signature changed, so a breaking 2.0.0 bump is not required.
+
+### `ExactNum::jacobi_p`
+
+- Jacobi \(P_n^{(\alpha,\beta)}(x)\) via the Bonnet three-term recurrence, same house style as `hermite_h` / `chebyshev_t` in `orthopoly.rs`. Cap `ORTHOPOLY_N_MAX`.
+- Golds: \(\alpha=\beta=0\) reduces to Legendre \(P_n\); \(P_2^{(1,1)}(1/2)=3/16\); \(P_n^{(\alpha,\beta)}(-x)=(-1)^n P_n^{(\beta,\alpha)}(x)\).
+- Independent mpmath 1.4.1 references for non-integer \((\alpha,\beta)\), including \(\alpha=1/3\), \(\beta=2/3\).
+
+### Real Bessel large \(|x|\)
+
+- `bessel_j` / `bessel_j_nu` / `bessel_y` use the Hankel expansion (DLMF 10.17, \(P,Q\) stopped at the smallest term) when \(|x|\ge\max(16,\,0.35(p+112))\) and \(|\nu|^2<2|x|\), and whenever the series cancellation guard would exceed `BESSEL_GUARD_MAX` under that order condition.
+- Closes the 1.0.5 known issue: real \(J_0(20000)\), \(Y_0(20000)\) and the rest of that class no longer return `NaN(InvalidArgument)`.
+- Negative \(x\) for integer order uses \(J_n(-x)=(-1)^n J_n(x)\). \(Y\) remains defined for \(x>0\).
+- Regression tests vs mpmath at 128 and 256 bits, plus a Wronskian gold at \(x=20000\).
+
+### Complex Bessel (negative real axis + \(K\) speed)
+
+- On the cut \(\operatorname{Im} z=0\), \(\operatorname{Re} z<0\) with real \(\nu\), \(J,Y,I,K\) are assembled from the real kernels (DLMF 10.11 / 10.34) so algebraically zero parts stay exact zeros. Closes the 1.0.5 hang / `PrecisionRetryExhausted` on e.g. `bessel_i(-2, 1/2)`.
+- \(I_\nu(z)\) for \(\mathrm{Re}\,z>0\) uses the well-conditioned \({}_0F_1\) series instead of a rotation through \(J\).
+- \(K_\nu(z)\) for \(\mathrm{Re}\,z>0\) past the series/Hankel switch uses Temme \({}_2F_0\) (DLMF 10.32.10, modified Lentz) instead of \(J\pm iY\) with \(3|z|\) guard bits. The Hankel / series path remains the fallback. High-precision non-integer \(K\) just inside the series regime can still be slow; the Temme path covers the large-\(|z|\) cases that were the 74 s class.
+
+### Catalog specials (additive)
+
+New `ExactNum` methods, SoftFloat-only, with identity and mpmath golds:
+
+- Scorer \(\mathrm{Gi},\mathrm{Hi}\) (`scorer_gi`, `scorer_hi`); \(\mathrm{Hi}=\mathrm{Bi}-\mathrm{Gi}\).
+- Kelvin \(\mathrm{ber},\mathrm{bei},\mathrm{ker},\mathrm{kei}\) (order 0 and `_nu`).
+- Struve \(\mathbf{H}_\nu\), Anger \(\mathbf{J}_\nu\), Weber \(\mathbf{E}_\nu\).
+- Clausen \(\mathrm{Cl}_2,\mathrm{Cl}_3\); Barnes \(G\); Hurwitz / Riemann \(\zeta\) (integer \(s\ge 2\)); polygamma \(\psi^{(n)}\).
+- Inverse Jacobi `jacobi_arcsn` / `arccn` / `arcdn`; \({}_0F_1\), \({}_1F_1\), \({}_pF_q\); Lambert \(W_0,W_{-1}\); \(\mathrm{Li}_n\) for \(|x|\le 1\).
+
+`expr!` leaves for the one- and two-argument catalog names (`scorer_gi`, `kelvin_ber`, `struve_h`, `clausen_cl2`, `barnes_g`, `lambert_w0`, …).
+
 ## 1.0.5 — 2026-09-27
 
 Bug-fix release: special-function accuracy. No public API changes (no new public items, no signature changes); results that were wrong now match mpmath to working precision. Every fixed case below is covered by a test with a 50-digit (or 2p+64-bit) mpmath reference.
@@ -114,9 +153,9 @@ Bug-fix release: special-function accuracy. No public API changes (no new public
 
 ### Known issues (fix planned)
 
-- **Complex `bessel_k` is slow for non-integer \(\nu\) at high precision when \(\lvert z\rvert\) is just inside the series regime** (\(\lvert z\rvert<0.35(p+112)\)). `bessel_k(150-20i, 2+0.5i)` at 512 bits takes about 74 s (13 ms at 256 bits, where the Hankel expansion applies); the result is correct. The series regime carries about \(3\lvert z\rvert\) guard bits for the \(J\pm iY\) cancellation, and non-integer \(\nu\) needs both \(J_{\pm\nu}\). Workaround: use a lower precision, or integer/real \(\nu\) where possible (`bessel_k(150-20i, 2)` at 512 bits: 0.9 s), or allow for the run time.
-- **Real `bessel_j_nu` / `bessel_y` return `NaN(InvalidArgument)` for \(\lvert x\rvert\gtrsim10^4\)**: the real kernel has no large-argument (Hankel) expansion. Workaround: the complex functions handle this range: `ExactComplex::bessel_j_nu` / `bessel_y` at \(x+0i\), \(x>0\), are accurate (checked against mpmath at \(x=2\cdot10^4\) at 128 and 256 bits and \(x=10^6\) at 128 bits); take the real part. For \(x<0\) use \(J_n(-x)=(-1)^nJ_n(x)\) (integer order), or evaluate below \(10^4\).
-- **Complex Bessel on the negative real axis** (\(\operatorname{Im} z=0\), \(\operatorname{Re} z<0\)) with real \(\nu\): a part that is exactly zero or tiny next to the other part is not resolved. `bessel_i` / `bessel_k` with half-integer \(\nu\) (real part exactly 0) return `PrecisionRetryExhausted` for large \(\lvert z\rvert\) and can take minutes for small \(\lvert z\rvert\) (`bessel_i(-2, 0.5)` at 128 bits: about 5 minutes, then NaN); `bessel_j_nu(-2, 0.5)` returns a real part of about \(10^{-136}\) instead of 0, and `bessel_k(-500, 0)` a real part of \(-5\cdot10^{119}\) instead of \(K_0(500)\approx 4\cdot10^{-219}\) (both within \(2^{-p}\) of the modulus). Off the axis and on the positive axis results are correct. Workaround: evaluate at \(-z\) and apply DLMF 10.11.1 / 10.34.1 (e.g. \(I_\nu(-x+0i)=e^{i\nu\pi}I_\nu(x)\)), or use the real functions.
+- **Complex `bessel_k` is slow for non-integer \(\nu\) at high precision when \(\lvert z\rvert\) is just inside the series regime** (\(\lvert z\rvert<0.35(p+112)\)). Still open; queued for 1.0.7.
+- **Real `bessel_j_nu` / `bessel_y` return `NaN(InvalidArgument)` for \(\lvert x\rvert\gtrsim10^4\)**: closed in 1.0.6 (real Hankel expansion).
+- **Complex Bessel on the negative real axis** (\(\operatorname{Im} z=0\), \(\operatorname{Re} z<0\)) with real \(\nu\): still open; queued for 1.0.7.
 
 ## 1.0.4 — 2026-09-20
 

@@ -18,6 +18,7 @@ extern crate alloc;
 
 mod ball;
 mod binfmt;
+mod catalog;
 mod chebyshev;
 mod common;
 mod complex;

@@ -2212,7 +2212,11 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: power series; Miller recurrence for large `n` (`n ≤ 1024`).
+    /// - Algorithm: power series; Miller recurrence for large `n` (`n ≤ 1024`);
+    ///   Hankel expansion (DLMF 10.17, stopped at its smallest term) when
+    ///   `|x| ≥ max(16, 0.35(p+112))` and `|n|² < 2|x|`, and whenever the series
+    ///   guard would exceed `BESSEL_GUARD_MAX` under that order condition.
+    ///   `J_n(-x)=(-1)^n J_n(x)`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR `jn` for `n = 0,1,2`.
     /// - MPFR oracle: yes, `n = 0,1,2` under `mpfr-tests`.
     pub fn bessel_j(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -2246,11 +2250,12 @@ impl ExactNum {
         }
     }
 
-    /// \(J_ν(\mathrm{self})\) for real order `nu`.
+    /// \(J_ν(\mathrm{self})\) for real order `nu`. Negative `self` only for integer `ν`.
     ///
     /// # Precision
     ///
-    /// - Algorithm: series in `x`; integer `ν` delegates to [`Self::bessel_j`].
+    /// - Algorithm: series in `x`; integer `ν` delegates to [`Self::bessel_j`];
+    ///   Hankel expansion (same switch as [`Self::bessel_j`]) for large `|x|`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (identity golds).
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -2261,7 +2266,8 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Wronskian / series from \(J_ν\); cut on \((-\infty, 0]\).
+    /// - Algorithm: Wronskian / series from \(J_ν\); Hankel expansion (DLMF 10.17)
+    ///   for large `x` (same switch as [`Self::bessel_j`]). Cut on \((-\infty, 0]\).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: yes, `mpfr_yn` for `n = 0,1` under `mpfr-tests`.
     pub fn bessel_y(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {

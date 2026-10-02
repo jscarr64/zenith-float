@@ -1,6 +1,6 @@
 # expr!
 
-> **Please upgrade to zenith-float 1.0.5.** Versions 1.0.0 through 1.0.4
+> **Please upgrade to zenith-float 1.0.6.** Versions 1.0.0 through 1.0.4
 > return wrong values from `erf`, `erfc`, `normal_cdf`, `hypergeom_2f1`,
 > `betainc`, the gamma family, Bessel and several other special functions for
 > some inputs, with no error reported, and their quadrature, root-finding and
