@@ -114,7 +114,11 @@ pub fn add_carry(a: Word, b: Word, c: Word, r: &mut Word) -> Word {
     {
         // platform-specific operation
         // SAFETY: `_addcarry_u64` writes the sum into `r` and returns the carry; `r` is a live `Word`.
-        unsafe { core::arch::x86_64::_addcarry_u64(c as u8, a, b, r) as Word }
+        // Safe since rustc 1.93; still unsafe on 1.85..=1.92. Keep `unsafe` so 1.85 (1.0.6 publish) builds.
+        #[allow(unused_unsafe)]
+        unsafe {
+            core::arch::x86_64::_addcarry_u64(c as u8, a, b, r) as Word
+        }
     }
 
     #[cfg(target_arch = "x86")]
@@ -146,7 +150,11 @@ pub fn sub_borrow(a: Word, b: Word, c: Word, r: &mut Word) -> Word {
     {
         // platform-specific operation
         // SAFETY: `_subborrow_u64` writes the difference into `r` and returns the borrow; `r` is a live `Word`.
-        unsafe { core::arch::x86_64::_subborrow_u64(c as u8, a, b, r) as Word }
+        // Safe since rustc 1.93; still unsafe on 1.85..=1.92. Keep `unsafe` so 1.85 (1.0.6 publish) builds.
+        #[allow(unused_unsafe)]
+        unsafe {
+            core::arch::x86_64::_subborrow_u64(c as u8, a, b, r) as Word
+        }
     }
 
     #[cfg(target_arch = "x86")]
