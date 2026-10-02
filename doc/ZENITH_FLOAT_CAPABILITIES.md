@@ -1,7 +1,7 @@
 # zenith-float Capability Reference
 
-**Version:** 1.0.5  
-**Date:** 2026-09-27  
+**Version:** 1.0.6  
+**Date:** 2026-10-02  
 **License:** MIT OR Apache-2.0  
 **Status:** Public crate  
 
@@ -66,7 +66,7 @@ Both pass 77/77. There is no separate `alloc` feature: `alloc` is always require
 | `FFT_MAX_POINTS` | `4096` — max length of `fft` / `ifft`; longer → `None` |
 | `POLY_COMPANION_CLOSED_DEG` | `2` — `ExactNumPoly::roots_real` closed-form companion eigenvalues; higher degree → `None` |
 | `CHEBYSHEV_MAX_DEGREE` | `256` — max coefficient count for `chebyshev_coeffs`; larger `n` → `None` |
-| `ORTHOPOLY_N_MAX` | `256` — max degree for Hermite / Laguerre / Chebyshev T,U / Gegenbauer; larger `n` → `NaN` |
+| `ORTHOPOLY_N_MAX` | `256` — max degree for Hermite / Laguerre / Chebyshev T,U / Gegenbauer / Jacobi \(P_n^{(\alpha,\beta)}\); larger `n` → `NaN` |
 | `JACOBI_AGM_MAX` | `128` — AGM / Landen steps for `jacobi_am` / `sn` / `cn` / `dn` / `cd` |
 | `QUADRATURE_MAX_NODES` | `64` — max Gauss nodes; larger `n` → `None` |
 | `TANH_SINH_LEVELS_MAX` | `8` — max tanh–sinh step halvings after `h = 2π/(p ln 2)` |
@@ -241,7 +241,10 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `fresnel_s` / `fresnel_c` | yes | Odd; series or auxiliary \(f,g\). \(\pm\infty\to\pm 1/2\) |
 | `ai` / `bi` / `ai_prime` / `bi_prime` | `ai`, `bi` | Series for \(\lvert x\rvert<\texttt{AIRY\_SERIES\_THRESHOLD}\); asymptotic otherwise. `ai_prime`/`bi_prime` are methods only |
 | `bessel_j(n, p, rm, cc)` | `bessel_j(x, n)` | Integer order; Miller recurrence for large \(n\); \(J_n(0)=\delta_{n0}\) |
-| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | `bessel_j_nu(x, ν)` etc. | Real order. \(K\): \(x>0\). \(J\)/\(Y\): \(\lvert x\rvert\gtrsim 10^4\) → `InvalidArgument` (known issue, fix planned; the complex functions cover it) |
+| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | `bessel_j_nu(x, ν)` etc. | Real order. \(K\): \(x>0\). \(J\)/\(Y\): series, or Hankel (DLMF 10.17) when \(\lvert x\rvert\ge\max(16,0.35(p+112))\) and \(\lvert\nu\rvert^2<2\lvert x\rvert\) (also when the series guard would exceed `BESSEL_GUARD_MAX`). \(Y\): \(x>0\). |
+| Scorer / Kelvin / Struve / Anger–Weber | `scorer_gi`, `kelvin_ber`, `struve_h(x,ν)`, … | SoftFloat catalog; Kelvin via complex \(J,K\); Anger integer order = Bessel \(J\) |
+| Clausen / Barnes \(G\) / ζ / polygamma | `clausen_cl2`, `barnes_g`, `riemann_zeta`, `hurwitz_zeta`, `polygamma` | \(\mathrm{Cl}_2=-\int\ln\lvert 2\sin(t/2)\rvert\); ζ integer \(s\ge 2\); \(\psi^{(0)}=\) digamma |
+| Inverse Jacobi / \(pFq\) / Lambert \(W\) / \(\mathrm{Li}_n\) | `jacobi_arcsn`, `hypergeom_1f1`, `lambert_w0`, `polylog` | `arcsn=F`; series \(pFq\); \(W_0\) on \([-1/e,\infty)\); \(\mathrm{Li}_n\) for \(\lvert x\rvert\le 1\) |
 | `elliptic_k` / `elliptic_e_complete` | `elliptic_k` / `elliptic_e` | Complete; \(m=k^2\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\); \(E\) for \(m\le 1\) |
 | `elliptic_f` / `elliptic_e` | `elliptic_f` / `elliptic_e_inc` | Incomplete; \(x=\sin\varphi\), \(\lvert x\rvert\le 1\) |
 | `elliptic_pi_complete` / `elliptic_pi` | `elliptic_pi` / `elliptic_pi_inc` | \(n<1\), \(m<1\) complete |
@@ -272,7 +275,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `ExactInt` | ✅ | Little-endian `Word` limbs; `from_i64`/`u64`/`i128`/`u128`; add/sub/mul; `div_rem`; `gcd`; `pow`; `20!`; `2^100`; `gcd(48,18)=6` |
 | `ExactNumPoly` | ✅ | Dense univariate, low-to-high coeffs; `eval`/`add`/`sub`/`mul`/`div_rem`/`gcd`/`compose`/`derivative`/`integral`; `roots_real` through degree `POLY_COMPANION_CLOSED_DEG=2`; `(x²−1)÷(x−1)=(x+1,0)`; `gcd=x−1`; compose; `∂(x³)=3x²`; `±√2` |
 | Chebyshev approx | ✅ | `chebyshev_coeffs`/`chebyshev_eval`/`clenshaw`/`chebyshev_error_bound`; Gauss nodes; `exp` on `[-1,1]` 20 terms `<10^{-15}`; Clenshaw `[1,2,3](1/2)=1/2` |
-| Orthogonal polys | ✅ | `hermite_he`/`hermite_h`/`laguerre`/`gen_laguerre`/`chebyshev_t`/`chebyshev_u`/`gegenbauer`; `He_4(0)=3`; `L_3(0)=1`; `T_5(\cos(\pi/5))=-1`; `C_2^{(1)}=4x^2-1` |
+| Orthogonal polys | ✅ | `hermite_he`/`hermite_h`/`laguerre`/`gen_laguerre`/`chebyshev_t`/`chebyshev_u`/`gegenbauer`/`jacobi_p`; `He_4(0)=3`; `L_3(0)=1`; `T_5(\cos(\pi/5))=-1`; `C_2^{(1)}=4x^2-1`; `P_n^{(0,0)}=P_n`; `P_2^{(1,1)}(1/2)=3/16` |
 | Quadrature | ✅ | `gauss_legendre`/`tanh_sinh`/`gauss_laguerre`/`gauss_hermite`; \(x^2\) on \([-1,1]\) is \(2/3\); 20-point \(x^{38}\) is \(2/39\); \(1/\sqrt{1-x^2}=\pi\); Laguerre \(x^2=2\) |
 | Root finding | ✅ | `bisect`/`newton`/`brent`/`illinois`; `bisect(sin,[3,4])=π`; `newton(x²−2)=√2`; Brent fewer iters than bisection; no sign change → `None` |
 | ODE solvers | ✅ | `rk4` / `rk45_adaptive` (Dormand–Prince 5(4)) / `euler`; `y'=-y` RK4 1000-step error `<10^{-12}`; RK45 `atol=10^{-12}`; Euler error shrinks when `h` halves |
@@ -302,7 +305,7 @@ Hardware IEEE arithmetic stays forbidden.
 
 **Function leaves (complete list):**
 
-`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `gammainc_upper`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `ai`, `bi`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `jacobi_am`, `jacobi_sn`, `jacobi_cn`, `jacobi_dn`, `jacobi_cd`, `jacobi_ns`, `jacobi_nc`, `jacobi_nd`, `jacobi_sc`, `jacobi_sd`, `jacobi_cs`, `jacobi_ds`, `jacobi_dc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `normal_pdf`, `normal_cdf`, `gamma_pdf`, `beta_pdf`, `poisson_pmf`, `binomial_pmf`, `chi_squared_cdf`, `student_t_pdf`, `ldexp`, `scalb`, `logb`.
+`recip`, `sqrt`, `cbrt`, `root`, `ln`, `log2`, `log10`, `log`, `log1p`, `exp`, `exp2`, `exp10`, `expm1`, `pow`, `rem_pi`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `hypot`, `fma`, `mul_add`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh`, `erf`, `erfc`, `gamma`, `ln_gamma`, `digamma`, `gammainc`, `gammainc_upper`, `ei`, `si`, `ci`, `li`, `fresnel_s`, `fresnel_c`, `ai`, `bi`, `bessel_j`, `bessel_j_nu`, `bessel_y`, `bessel_i`, `bessel_k`, `elliptic_k`, `elliptic_e`, `elliptic_e_inc`, `elliptic_f`, `elliptic_pi`, `elliptic_pi_inc`, `jacobi_am`, `jacobi_sn`, `jacobi_cn`, `jacobi_dn`, `jacobi_cd`, `jacobi_ns`, `jacobi_nc`, `jacobi_nd`, `jacobi_sc`, `jacobi_sd`, `jacobi_cs`, `jacobi_ds`, `jacobi_dc`, `legendre_p`, `legendre_p_assoc`, `hypergeom_2f1`, `betainc`, `normal_pdf`, `normal_cdf`, `gamma_pdf`, `beta_pdf`, `poisson_pmf`, `binomial_pmf`, `chi_squared_cdf`, `student_t_pdf`, `ldexp`, `scalb`, `logb`, `scorer_gi`, `scorer_hi`, `kelvin_ber`, `kelvin_bei`, `kelvin_ker`, `kelvin_kei`, `struve_h`, `anger_j`, `weber_e`, `clausen_cl2`, `clausen_cl3`, `barnes_g`, `riemann_zeta`, `hurwitz_zeta`, `lambert_w0`, `lambert_wm1`, `jacobi_arcsn`, `jacobi_arccn`, `jacobi_arcdn`.
 
 **Named constants in the expression:** `pi`, `e`, `ln_2`, `ln_10`, `sqrt2`, `phi`, `euler_gamma`.
 
@@ -344,7 +347,7 @@ The previous mode is restored when the closure returns.
 | `ei` / `si` / `ci` | `Ei` cut on (−∞, 0]; `Si`/`Ci` via `Ei(±iz)`; `Ci(0)` → NaN |
 | `li` | `Ei(ln z)`; cut on (−∞, 1]; pole at 1 → NaN |
 | `fresnel_s` / `fresnel_c` | via `erf`; entire |
-| `bessel_j_nu` / `bessel_i` | entire for integer ν; cut on (−∞, 0] otherwise |
+| `bessel_j_nu` / `bessel_i` | entire for integer ν; cut on (−∞, 0] otherwise; on the cut with real ν the principal value is built from the real kernels (exact zero parts) |
 | `bessel_y` / `bessel_k` | cut on (−∞, 0] (value from above when Im z = 0); \(z=0\) → NaN |
 | `elliptic_k` | cut on \([1,+\infty)\); \(K(1)=+\infty\) |
 | `hypergeom_2f1` | cut on \([1,+\infty)\) in \(z\) |
@@ -441,7 +444,7 @@ Cartesian `re + i·im` as two `ExactNum` values.
 | `gamma` / `ln_gamma` / `digamma` | ✅ Stirling + reflection; \(\ln\Gamma\) cut on \((-\infty,0]\); poles → NaN |
 | `ei` / `si` / `ci` / `li` | ✅ series or asymptotic `Ei`; `Si`/`Ci` via `Ei(±iz)`; `li=Ei(ln z)` |
 | `fresnel_s` / `fresnel_c` | ✅ via `erf`; entire |
-| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | ✅ series or Hankel; \(I_ν=i^{-ν}J_ν(iz)\); \(K_ν=(\pi/2)i^{ν+1}H_ν^{(1)}(iz)\) |
+| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | ✅ series or Hankel; cut assembled from real kernels; \(I\) series for \(\mathrm{Re}\,z>0\); Temme \({}_2F_0\) for large-\(\lvert z\rvert\) \(K\) |
 | `elliptic_k` / `elliptic_e_complete` / `elliptic_f` / `elliptic_e` / `elliptic_pi_*` | ✅ Carlson in \(\mathbb{C}\); \(K(0)=E(0)=\pi/2\); \(K(1)=+\infty\); Legendre and cut golds |
 | `hypergeom_2f1` | ✅ Series / Euler / Pfaff / Kummer; \(2\ln 2\), \(2K/\pi\), Euler identity, \(c=0\) NaN, cut golds |
 
@@ -555,6 +558,7 @@ dashu-float 0.6.0: `consts.rs` is an empty stub (no γ). `FBig::with_rounding::<
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| 1.0.6 | 2026-10-02 | Additive pack: `jacobi_p`; real large-\(\lvert x\rvert\) Hankel \(J/Y\); complex Bessel cut + Temme \(K\); Scorer / Kelvin / Struve / Anger–Weber / Clausen / Barnes \(G\) / polygamma / Hurwitz / inverse Jacobi / \(pFq\) / Lambert \(W\). No breaking signatures (not 2.0.0). |
 | 1.0.5 | 2026-09-27 | Special-function accuracy fixes (`hypergeom_2f1`, `betainc`, `erf`/`erfc` for \(\lvert x\rvert\ge4\), Γ/ψ/lnΓ and exact Bernoulli numbers, Ei/Si/Ci/li, Fresnel, Airy, Bessel, Carlson, Euler γ, complex branches); `cmp` normalization; `no_std` built and tested (host libc-only and Cortex-M4F under QEMU); see CHANGELOG |
 | 1.0.4 | 2026-09-20 | Clippy debt clear; SoftFloat IEEE `soft_*` renames |
 | 1.0.3 | 2026-09-19 | Coordinated patch release |

@@ -113,7 +113,8 @@ pub fn add_carry(a: Word, b: Word, c: Word, r: &mut Word) -> Word {
     #[cfg(target_arch = "x86_64")]
     {
         // platform-specific operation
-        core::arch::x86_64::_addcarry_u64(c as u8, a, b, r) as Word
+        // SAFETY: `_addcarry_u64` writes the sum into `r` and returns the carry; `r` is a live `Word`.
+        unsafe { core::arch::x86_64::_addcarry_u64(c as u8, a, b, r) as Word }
     }
 
     #[cfg(target_arch = "x86")]
@@ -144,7 +145,8 @@ pub fn sub_borrow(a: Word, b: Word, c: Word, r: &mut Word) -> Word {
     #[cfg(target_arch = "x86_64")]
     {
         // platform-specific operation
-        core::arch::x86_64::_subborrow_u64(c as u8, a, b, r) as Word
+        // SAFETY: `_subborrow_u64` writes the difference into `r` and returns the borrow; `r` is a live `Word`.
+        unsafe { core::arch::x86_64::_subborrow_u64(c as u8, a, b, r) as Word }
     }
 
     #[cfg(target_arch = "x86")]

@@ -268,6 +268,92 @@ impl ExactNum {
         }
         finish(cur, p, rm)
     }
+
+    /// Jacobi polynomial `P_n^{(α,β)}(self)`.
+    ///
+    /// `P_0 = 1`, `P_1 = ((α−β)+(α+β+2)x)/2`, and for `n ≥ 1`
+    /// `2(n+1)(n+α+β+1)(2n+α+β) P_{n+1}`
+    /// `= [(2n+α+β+1)(α²−β²)+(2n+α+β)(2n+α+β+1)(2n+α+β+2)x] P_n`
+    /// `− 2(n+α)(n+β)(2n+α+β+2) P_{n−1}`.
+    /// `α=β=0` is Legendre `P_n`. `n > ORTHOPOLY_N_MAX` or a non-finite
+    /// argument is `NaN`.
+    pub fn jacobi_p(&self, n: usize, alpha: &Self, beta: &Self, p: usize, rm: RoundingMode) -> Self {
+        if !n_ok(n) || !finite(self) || !finite(alpha) || !finite(beta) {
+            return op_nan();
+        }
+        let wrk = work_p(p);
+        let one = ExactNum::from_u8(1, wrk);
+        let two = ExactNum::from_u8(2, wrk);
+        if n == 0 {
+            return finish(one, p, rm);
+        }
+        let apb = alpha.add(beta, wrk, RoundingMode::None);
+        let amb = alpha.sub(beta, wrk, RoundingMode::None);
+        let p1 = amb
+            .add(
+                &apb.add(&two, wrk, RoundingMode::None)
+                    .mul(self, wrk, RoundingMode::None),
+                wrk,
+                RoundingMode::None,
+            )
+            .div(&two, wrk, RoundingMode::None);
+        if n == 1 {
+            return finish(p1, p, rm);
+        }
+        let mut prev = one.clone();
+        let mut cur = p1;
+        for k in 1..n {
+            let kf = ExactNum::from_u32(k as u32, wrk);
+            let k1 = ExactNum::from_u32((k + 1) as u32, wrk);
+            let two_k_apb = ExactNum::from_u32((2 * k) as u32, wrk).add(&apb, wrk, RoundingMode::None);
+            let two_k_apb_1 = two_k_apb.add(&one, wrk, RoundingMode::None);
+            let two_k_apb_2 = two_k_apb.add(&two, wrk, RoundingMode::None);
+            let a_den = two
+                .mul(&k1, wrk, RoundingMode::None)
+                .mul(
+                    &kf.add(&apb, wrk, RoundingMode::None)
+                        .add(&one, wrk, RoundingMode::None),
+                    wrk,
+                    RoundingMode::None,
+                )
+                .mul(&two_k_apb, wrk, RoundingMode::None);
+            let a2mb2 = alpha.mul(alpha, wrk, RoundingMode::None).sub(
+                &beta.mul(beta, wrk, RoundingMode::None),
+                wrk,
+                RoundingMode::None,
+            );
+            let b_num = two_k_apb_1.mul(&a2mb2, wrk, RoundingMode::None);
+            let c_num = two_k_apb
+                .mul(&two_k_apb_1, wrk, RoundingMode::None)
+                .mul(&two_k_apb_2, wrk, RoundingMode::None);
+            let d_num = two
+                .mul(
+                    &kf.add(alpha, wrk, RoundingMode::None),
+                    wrk,
+                    RoundingMode::None,
+                )
+                .mul(
+                    &kf.add(beta, wrk, RoundingMode::None),
+                    wrk,
+                    RoundingMode::None,
+                )
+                .mul(&two_k_apb_2, wrk, RoundingMode::None);
+            let lin = b_num.add(
+                &c_num.mul(self, wrk, RoundingMode::None),
+                wrk,
+                RoundingMode::None,
+            );
+            let num = lin.mul(&cur, wrk, RoundingMode::None).sub(
+                &d_num.mul(&prev, wrk, RoundingMode::None),
+                wrk,
+                RoundingMode::None,
+            );
+            let next = num.div(&a_den, wrk, RoundingMode::None);
+            prev = cur;
+            cur = next;
+        }
+        finish(cur, p, rm)
+    }
 }
 
 #[cfg(test)]
@@ -327,5 +413,50 @@ mod tests {
             zero.hermite_h(4, p, rm).cmp(&ExactNum::from_u8(12, p)),
             Some(0)
         );
+    }
+
+    fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
+        let d = a.sub(b, p, RoundingMode::None).abs();
+        if d.is_zero() {
+            return true;
+        }
+        let ae = a.exponent().unwrap_or(0);
+        d.exponent().is_some_and(|e| e - ae < -((p as i32) / 4))
+    }
+
+    #[test]
+    fn jacobi_p_legendre_and_identities() {
+        let (p, rm) = gold_p();
+        let zero = ExactNum::new(p);
+        let one = ExactNum::from_u8(1, p);
+        let two = ExactNum::from_u8(2, p);
+        let three = ExactNum::from_u8(3, p);
+        let half = one.div(&two, p, rm);
+        let three_tenths = three.div(&ExactNum::from_u8(10, p), p, rm);
+
+        // P_2^{(1,1)}(1/2) = (3/4)(5/4 − 1) = 3/16.
+        let p2 = half.jacobi_p(2, &one, &one, p, rm);
+        let want = three.div(&ExactNum::from_u8(16, p), p, rm);
+        assert_eq!(p2.cmp(&want), Some(0));
+
+        // α = β = 0 is Legendre P_n.
+        let j5 = three_tenths.jacobi_p(5, &zero, &zero, p, rm);
+        let l5 = three_tenths.legendre_p(5, p, rm);
+        assert!(near(&j5, &l5, p), "P_5^{{(0,0)}}(3/10) vs Legendre");
+
+        // P_n^{(α,β)}(−x) = (−1)^n P_n^{(β,α)}(x).
+        let alpha = half.clone();
+        let beta = one.div(&three, p, rm);
+        let x = three_tenths.clone();
+        let nx = x.neg();
+        let lhs = nx.jacobi_p(6, &alpha, &beta, p, rm);
+        let rhs = x.jacobi_p(6, &beta, &alpha, p, rm);
+        assert!(near(&lhs, &rhs, p), "even-n reflection");
+        let lhs7 = nx.jacobi_p(7, &alpha, &beta, p, rm);
+        let rhs7 = x.jacobi_p(7, &beta, &alpha, p, rm).neg();
+        assert!(near(&lhs7, &rhs7, p), "odd-n reflection");
+
+        assert!(zero.jacobi_p(ORTHOPOLY_N_MAX + 1, &zero, &zero, p, rm).is_nan());
+        assert_eq!(zero.jacobi_p(0, &one, &two, p, rm).cmp(&one), Some(0));
     }
 }
