@@ -1,6 +1,6 @@
 # zenith-float Capability Reference
 
-**Version:** 1.0.6  
+**Version:** 1.0.7  
 **Date:** 2026-10-02  
 **License:** MIT OR Apache-2.0  
 **Status:** Public crate  

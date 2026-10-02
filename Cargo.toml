@@ -8,7 +8,7 @@ exclude = ["nostd-tests"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.6"
+version = "1.0.7"
 edition = "2021"
 authors = ["Jeffrey S Carr <jscarr1964@gmail.com>"]
 license = "MIT OR Apache-2.0"
@@ -40,8 +40,8 @@ keywords = ["arbitrary-precision", "bigfloat", "numeric", "no-std"]
 categories = ["mathematics", "no-std", "science"]
 
 [dependencies]
-zenith-float-num = { path = "zenith-float-num", version = "1.0.6", default-features = false }
-zenith-float-macro = { path = "zenith-float-macro", version = "1.0.6" }
+zenith-float-num = { path = "zenith-float-num", version = "1.0.7", default-features = false }
+zenith-float-macro = { path = "zenith-float-macro", version = "1.0.7" }
 
 [features]
 default = ["std"]

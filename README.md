@@ -10,7 +10,7 @@
 > Versions 1.0.0 through 1.0.4 have been yanked from crates.io.
 > Details: [1.0.5 release notes](https://github.com/jscarr64/zenith-float/releases/tag/v1.0.5). 1.0.6 is an additive SoftFloat pack: Jacobi \(P_n^{(\alpha,\beta)}\), real large-argument Bessel Hankel, complex Bessel cut/speed fixes, catalog specials (Scorer, Kelvin, Struve, Anger–Weber, Clausen, Barnes \(G\), polygamma / Hurwitz, inverse Jacobi, \({}_pF_q\), Lambert \(W\)), plus Meijer \(G\), Fox \(H\), and local / confluent Heun.
 
-Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.6**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
+Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.7**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
 
 All arithmetic runs on integer limbs. The library does not use hardware floating-point registers for calculations. Construct `ExactNum` from integers or from binary, octal, decimal, or hexadecimal strings; construct IEEE widths from integer bit patterns (`from_bits`).
 
