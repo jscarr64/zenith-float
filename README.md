@@ -1,6 +1,6 @@
 # zenith-float
 
-> **Please upgrade to zenith-float 1.0.6.** Versions 1.0.0 through 1.0.4
+> **Please upgrade to zenith-float 1.0.8.** Versions 1.0.0 through 1.0.4
 > return wrong values from `erf`, `erfc`, `normal_cdf`, `hypergeom_2f1`,
 > `betainc`, the gamma family, Bessel and several other special functions for
 > some inputs, with no error reported, and their quadrature, root-finding and
@@ -8,9 +8,9 @@
 > with no API changes:
 > `cargo update -p zenith-float -p zenith-float-num -p zenith-float-macro`.
 > Versions 1.0.0 through 1.0.4 have been yanked from crates.io.
-> Details: [1.0.5 release notes](https://github.com/jscarr64/zenith-float/releases/tag/v1.0.5). 1.0.6 is an additive SoftFloat pack: Jacobi \(P_n^{(\alpha,\beta)}\), real large-argument Bessel Hankel, complex Bessel cut/speed fixes, catalog specials (Scorer, Kelvin, Struve, Anger–Weber, Clausen, Barnes \(G\), polygamma / Hurwitz, inverse Jacobi, \({}_pF_q\), Lambert \(W\)), plus Meijer \(G\), Fox \(H\), and local / confluent Heun.
+> Details: [1.0.5 release notes](https://github.com/jscarr64/zenith-float/releases/tag/v1.0.5). 1.0.6 is an additive SoftFloat pack: Jacobi \(P_n^{(\alpha,\beta)}\), real large-argument Bessel Hankel, complex Bessel cut/speed fixes, catalog specials (Scorer, Kelvin, Struve, Anger–Weber, Clausen, Barnes \(G\), polygamma / Hurwitz, inverse Jacobi, \({}_pF_q\), Lambert \(W\)), plus Meijer \(G\), Fox \(H\), and local / confluent Heun. 1.0.7 is a compile-only fix: the 1.85-required unsafe wrappers around `_addcarry_u64`/`_subborrow_u64` stay, and `unused_unsafe` is allowed so the crate builds on rustc 1.93+ (those intrinsics became safe in 1.93, not 1.87). No math change.
 
-Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.7**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
+Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.8**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
 
 All arithmetic runs on integer limbs. The library does not use hardware floating-point registers for calculations. Construct `ExactNum` from integers or from binary, octal, decimal, or hexadecimal strings; construct IEEE widths from integer bit patterns (`from_bits`).
 
