@@ -2,7 +2,7 @@
 
 ## 1.0.8 — 2026-10-03
 
-README upgrade target corrected to 1.0.7; no math.
+README upgrade target corrected to 1.0.8; no math.
 
 ## 1.0.7 — 2026-10-02
 
