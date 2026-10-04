@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.0.9 — 2026-10-04
+
+The complex \(I_\nu\) power-series guard is sized to cancellation, not \(1.5\lvert z\rvert+16\) (that blanket is what 1.0.6 through 1.0.8 shipped; 1.0.7 and 1.0.8 were not this fix). When every term is positive (real \(z>0\), real \(\nu>-1\)) the guard is a fixed 32-bit pad. Otherwise it is that pad plus an upper bound on \(\lceil(\lvert z\rvert-\mathrm{Re}\,z)/\ln 2\rceil\), raised again if the summed peak still exceeds the result. Real \(I_\nu\) for large \(\lvert x\rvert\) now runs past the peak at \(k\approx\lvert x\rvert/2\). Real \(K_\nu\) uses the asymptotic series when the \(2.885\lvert x\rvert\) guard would exceed `BESSEL_GUARD_MAX`, instead of returning `InvalidArgument`. Complex \(K\) on the positive real axis uses that real kernel past the series switch. Clippy `-D warnings` cleanups in the same tree (manual `find`, `clamp`, `from_ref`, single-iteration test loops) do not change numeric results. The 1.85 `unused_unsafe` allow on `_addcarry_u64` / `_subborrow_u64` stays.
+
 ## 1.0.8 — 2026-10-03
 
 README upgrade target corrected to 1.0.8; no math.

@@ -93,15 +93,7 @@ fn choose_series(an_n: usize, ap_n: usize, bm_n: usize, bq_n: usize, z: &ExactNu
     let qn = bm_n + bq_n;
     // Type 1 is {}_p F_{q-1}; type 2 is {}_q F_{p-1}. When p=q both are
     // disk series, so |z| picks the side (we do not continue {}_r F_{r-1}).
-    let mut s = if pn < qn {
-        1u8
-    } else if pn > qn {
-        2
-    } else if abs_gt_one(z, p) {
-        2
-    } else {
-        1
-    };
+    let mut s = if pn > qn || (pn == qn && abs_gt_one(z, p)) { 2u8 } else { 1 };
     if s == 1 && bm_n == 0 {
         s = 2;
     }
@@ -881,7 +873,7 @@ mod tests {
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
 
-        let g = z.meijer_g(&[], &[], &[zero.clone()], &[], p, rm, &mut cc);
+        let g = z.meijer_g(&[], &[], core::slice::from_ref(&zero), &[], p, rm, &mut cc);
         let e = z.neg().exp(p, rm, &mut cc);
         assert!(near(&g, &e, p), "G^{{1,0}}_{{0,1}}(1/2) = e^{{-1/2}}");
 
@@ -897,7 +889,15 @@ mod tests {
         assert!(near(&fox, &e, p), "H with A=B=1 is G");
 
         let a03 = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(10, p), p, rm);
-        let g11 = z.meijer_g(&[a03.clone()], &[], &[zero.clone()], &[], p, rm, &mut cc);
+        let g11 = z.meijer_g(
+            core::slice::from_ref(&a03),
+            &[],
+            core::slice::from_ref(&zero),
+            &[],
+            p,
+            rm,
+            &mut cc,
+        );
         let want = ExactNum::from_u8(1, p)
             .sub(&a03, p, rm)
             .gamma(p, rm, &mut cc)
