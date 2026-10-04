@@ -1298,8 +1298,14 @@ impl ExactNumNumber {
         }
         // The asymptotic series' smallest term is ≈ e^{-2x} (2.885x bits), so it is used only
         // when that covers `p`. Below that the I-based formulas cancel: I ≈ e^{x}, K ≈ e^{-x},
-        // so 2.885x guard bits are added.
-        let two_x_bits = bessel_cancel_bits(self, 3, 1)?;
+        // so 2.885x guard bits are added. `bessel_cancel_bits` returns InvalidArgument when that
+        // guard would exceed `BESSEL_GUARD_MAX` (or `|x|` has exponent > 30): `|x|` is then far
+        // past the asymptotic threshold, so use the asymptotic series instead of failing.
+        let two_x_bits = match bessel_cancel_bits(self, 3, 1) {
+            Ok(bits) => bits,
+            Err(Error::InvalidArgument) => return self.k_asymptotic(&nu, p, cc),
+            Err(e) => return Err(e),
+        };
         if two_x_bits >= p + 16 && self.exponent() >= 3 {
             return self.k_asymptotic(&nu, p, cc);
         }
@@ -1358,7 +1364,15 @@ impl ExactNumNumber {
             .div(&g0, p, RoundingMode::None)?;
         let mut sum = term.clone()?;
         let hh = half.mul(&half, p, RoundingMode::None)?;
-        for k in 1..=series_n_max(p, self.exponent()) {
+        // `series_n_max` is O(p) once the exponent is ≥ 16, which stops I_ν before the
+        // peak at k ≈ |x|/2 (I_1(20000) never reached k ≈ 10000). J/Y keep the old cap:
+        // past `BESSEL_GUARD_MAX` they take Hankel instead of this series.
+        let mut nmax = series_n_max(p, self.exponent());
+        if !alternating && self.exponent() > 0 {
+            let e = (self.exponent() as u32).min(20);
+            nmax = nmax.saturating_add(1usize << e).min(u32::MAX as usize);
+        }
+        for k in 1..=nmax {
             let kk = Self::from_word(k as Word, p)?;
             let den = kk
                 .add(nu, p, RoundingMode::None)?
@@ -1438,7 +1452,9 @@ impl ExactNumNumber {
         let two = Self::from_word(2, p)?;
         let four = Self::from_word(4, p)?;
         let one = Self::from_word(1, p)?;
-        let two_nu_1 = two.mul(nu, p, RoundingMode::None)?.add(&one, p, RoundingMode::None)?;
+        let two_nu_1 = two
+            .mul(nu, p, RoundingMode::None)?
+            .add(&one, p, RoundingMode::None)?;
         let phase = two_nu_1
             .mul(&pi, p, RoundingMode::None)?
             .div(&four, p, RoundingMode::None)?;
@@ -1470,7 +1486,11 @@ impl ExactNumNumber {
         for k in 1..=k_max {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
             let odd2 = odd.mul(&odd, p, RoundingMode::None)?;
-            prod = prod.mul(&mu.sub(&odd2, p, RoundingMode::None)?, p, RoundingMode::None)?;
+            prod = prod.mul(
+                &mu.sub(&odd2, p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?;
             kf = kf.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
             pz = pz.mul(&eight_x, p, RoundingMode::None)?;
             let term = prod.div(&kf.mul(&pz, p, RoundingMode::None)?, p, RoundingMode::None)?;
@@ -1501,8 +1521,11 @@ impl ExactNumNumber {
         let c = chi.cos(p, RoundingMode::None, cc)?;
         let s = chi.sin(p, RoundingMode::None, cc)?;
         omega.mul(
-            &pp.mul(&c, p, RoundingMode::None)?
-                .sub(&qq.mul(&s, p, RoundingMode::None)?, p, RoundingMode::None)?,
+            &pp.mul(&c, p, RoundingMode::None)?.sub(
+                &qq.mul(&s, p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?,
             p,
             RoundingMode::None,
         )
@@ -1516,8 +1539,11 @@ impl ExactNumNumber {
         let c = chi.cos(p, RoundingMode::None, cc)?;
         let s = chi.sin(p, RoundingMode::None, cc)?;
         omega.mul(
-            &pp.mul(&s, p, RoundingMode::None)?
-                .add(&qq.mul(&c, p, RoundingMode::None)?, p, RoundingMode::None)?,
+            &pp.mul(&s, p, RoundingMode::None)?.add(
+                &qq.mul(&c, p, RoundingMode::None)?,
+                p,
+                RoundingMode::None,
+            )?,
             p,
             RoundingMode::None,
         )
@@ -3646,7 +3672,11 @@ fn hankel_mag_ok(x: &ExactNumNumber, dest_p: usize) -> bool {
     if x.exponent() > 30 {
         return true;
     }
-    match x.abs().and_then(|a| a.ceil()).and_then(|c| c.int_as_usize()) {
+    match x
+        .abs()
+        .and_then(|a| a.ceil())
+        .and_then(|c| c.int_as_usize())
+    {
         Ok(c) => c >= t.max(16),
         Err(_) => true,
     }
@@ -4222,7 +4252,11 @@ mod tests {
             )
             .unwrap();
         let want_w = two
-            .div(&pi.mul(&x20k, p, RoundingMode::None).unwrap(), p, RoundingMode::None)
+            .div(
+                &pi.mul(&x20k, p, RoundingMode::None).unwrap(),
+                p,
+                RoundingMode::None,
+            )
             .unwrap()
             .neg()
             .unwrap();

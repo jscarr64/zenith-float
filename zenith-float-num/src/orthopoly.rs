@@ -277,7 +277,14 @@ impl ExactNum {
     /// `− 2(n+α)(n+β)(2n+α+β+2) P_{n−1}`.
     /// `α=β=0` is Legendre `P_n`. `n > ORTHOPOLY_N_MAX` or a non-finite
     /// argument is `NaN`.
-    pub fn jacobi_p(&self, n: usize, alpha: &Self, beta: &Self, p: usize, rm: RoundingMode) -> Self {
+    pub fn jacobi_p(
+        &self,
+        n: usize,
+        alpha: &Self,
+        beta: &Self,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Self {
         if !n_ok(n) || !finite(self) || !finite(alpha) || !finite(beta) {
             return op_nan();
         }
@@ -305,7 +312,8 @@ impl ExactNum {
         for k in 1..n {
             let kf = ExactNum::from_u32(k as u32, wrk);
             let k1 = ExactNum::from_u32((k + 1) as u32, wrk);
-            let two_k_apb = ExactNum::from_u32((2 * k) as u32, wrk).add(&apb, wrk, RoundingMode::None);
+            let two_k_apb =
+                ExactNum::from_u32((2 * k) as u32, wrk).add(&apb, wrk, RoundingMode::None);
             let two_k_apb_1 = two_k_apb.add(&one, wrk, RoundingMode::None);
             let two_k_apb_2 = two_k_apb.add(&two, wrk, RoundingMode::None);
             let a_den = two
@@ -323,9 +331,11 @@ impl ExactNum {
                 RoundingMode::None,
             );
             let b_num = two_k_apb_1.mul(&a2mb2, wrk, RoundingMode::None);
-            let c_num = two_k_apb
-                .mul(&two_k_apb_1, wrk, RoundingMode::None)
-                .mul(&two_k_apb_2, wrk, RoundingMode::None);
+            let c_num = two_k_apb.mul(&two_k_apb_1, wrk, RoundingMode::None).mul(
+                &two_k_apb_2,
+                wrk,
+                RoundingMode::None,
+            );
             let d_num = two
                 .mul(
                     &kf.add(alpha, wrk, RoundingMode::None),
@@ -456,7 +466,9 @@ mod tests {
         let rhs7 = x.jacobi_p(7, &beta, &alpha, p, rm).neg();
         assert!(near(&lhs7, &rhs7, p), "odd-n reflection");
 
-        assert!(zero.jacobi_p(ORTHOPOLY_N_MAX + 1, &zero, &zero, p, rm).is_nan());
+        assert!(zero
+            .jacobi_p(ORTHOPOLY_N_MAX + 1, &zero, &zero, p, rm)
+            .is_nan());
         assert_eq!(zero.jacobi_p(0, &one, &two, p, rm).cmp(&one), Some(0));
     }
 }

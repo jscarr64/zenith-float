@@ -59,10 +59,90 @@ fn abs_bound(z: &ExactComplex) -> usize {
     }
 }
 
-/// Guard bits for the power series, whose terms reach \(\approx e^{\lvert z\rvert}\) while the
-/// result can be \(O(1)\): `1.5·bound(|z|) + 16`.
+/// Guard bits for the alternating \(J\)/\(Y\) power series, whose terms reach
+/// \(\approx e^{\lvert z\rvert}\) while the result can be \(O(\lvert z\rvert^{-1/2})\):
+/// `1.5·bound(|z|) + 16`.
+///
+/// Not used for \(I_\nu\). That series does not cancel against itself on the positive-real
+/// axis; its guard is [`i_series_guard_bits`].
 fn series_guard_bits(z: &ExactComplex) -> usize {
     abs_bound(z).saturating_mul(3) / 2 + 16
+}
+
+/// Fixed pad when the \(I\) series does not cancel. The 1.0.6 plan's 16–32 bit range
+/// for a direct \({}_0F_1\) on \(\mathrm{Re}\,z>0\). 32 covers term-count rounding on
+/// top of that range; it is not `1.5·|z|`.
+const I_SERIES_PAD: usize = 32;
+
+/// Real \(z>0\) and real \(\nu>-1\): every factor of \((z/2)^{2k}/(k!(\nu+1)_k)\) is positive,
+/// so the running sum dominates each term.
+fn i_terms_all_positive(z: &ExactComplex, nu: &ExactComplex) -> bool {
+    if !z.im().is_zero() || !nu.im().is_zero() {
+        return false;
+    }
+    if z.re().is_zero() || !z.re().is_positive() {
+        return false;
+    }
+    let p = nu.re().precision().unwrap_or(64).max(64);
+    let minus_one = ExactNum::from_i8(-1, p);
+    matches!(nu.re().cmp(&minus_one), Some(c) if c > 0)
+}
+
+/// Upper bound on \(\lceil(|z|-\mathrm{Re}\,z)/\ln 2\rceil\).
+///
+/// A term of size \(e^{\lvert z\rvert}\) exceeds a result of size \(e^{\mathrm{Re}\,z}\) by that
+/// many bits. It is 0 for real positive \(z\). It is only a lower estimate near a zero of
+/// \(I_\nu\) (the sum can be arbitrarily smaller than \(e^{\mathrm{Re}\,z}\)); the series
+/// measures peak term versus the sum and raises the guard when this bound is short.
+///
+/// `diff < 2^e` and \(\log_2 e < 36744/25469\), so the value is strictly above the real quotient.
+fn i_series_exp_cancel_bits(z: &ExactComplex) -> usize {
+    let az = z.abs(64, RoundingMode::None);
+    let diff = az.sub(z.re(), 64, RoundingMode::None);
+    if diff.is_zero() || !diff.is_positive() {
+        return 0;
+    }
+    let Some(e) = diff.exponent() else {
+        return 0;
+    };
+    if e <= 0 {
+        return 2;
+    }
+    let e = (e as u32).min(40);
+    let bound = ((1u128 << e) * 36744) / 25469 + 1;
+    usize::try_from(bound).unwrap_or(usize::MAX / 4)
+}
+
+/// Guard for the \({}_0F_1\) series of \(I_\nu\) on \(\mathrm{Re}\,z>0\).
+///
+/// Where terms do not cancel (real \(z>0\), real \(\nu>-1\)), this is [`I_SERIES_PAD`]
+/// only. Where they can, it is that pad plus the \((|z|-\mathrm{Re}\,z)/\ln 2\) cancellation
+/// bound above — not a blanket `1.5·|z|` from "terms reach \(e^{\lvert z\rvert}\) while the
+/// result can be \(O(1)\)".
+fn i_series_guard_bits(z: &ExactComplex, nu: &ExactComplex) -> usize {
+    if i_terms_all_positive(z, nu) {
+        I_SERIES_PAD
+    } else {
+        i_series_exp_cancel_bits(z).saturating_add(I_SERIES_PAD)
+    }
+}
+
+/// Enough terms to pass the peak near \(k\approx\lvert z\rvert/2\) and the Gaussian tail.
+/// The cap must not track the guard: a `1.5·|z|` guard made this accidentally large, and a
+/// small guard must still be allowed to run \(O(|z|)\) terms.
+fn i_series_term_cap(z: &ExactComplex, dest_p: usize) -> usize {
+    series_term_cap(dest_p)
+        .saturating_add(abs_bound(z).saturating_mul(2))
+        .min(u32::MAX as usize)
+}
+
+fn term_mag_exp(t: &ExactComplex) -> Option<i32> {
+    let at = t.abs(64, RoundingMode::None);
+    if at.is_zero() {
+        None
+    } else {
+        at.exponent()
+    }
 }
 
 fn integer_nu(nu: &ExactComplex, p: usize) -> Option<i32> {
@@ -133,11 +213,19 @@ fn hypergeom_2f0_lentz(
             )
             .mul(w, work_p, RoundingMode::None)
             .div(&kk, work_p, RoundingMode::None);
-        d = one.add(&ak.mul(&d, work_p, RoundingMode::None), work_p, RoundingMode::None);
+        d = one.add(
+            &ak.mul(&d, work_p, RoundingMode::None),
+            work_p,
+            RoundingMode::None,
+        );
         if cpx_tiny(&d, dest_p) {
             d = tiny.clone();
         }
-        c = one.add(&ak.div(&c, work_p, RoundingMode::None), work_p, RoundingMode::None);
+        c = one.add(
+            &ak.div(&c, work_p, RoundingMode::None),
+            work_p,
+            RoundingMode::None,
+        );
         if cpx_tiny(&c, dest_p) {
             c = tiny.clone();
         }
@@ -170,23 +258,15 @@ fn real_small_int(x: &ExactNum, p: usize) -> Option<i32> {
     if !x.is_int() {
         return None;
     }
-    for n in -BESSEL_INTEGER_MAX..=BESSEL_INTEGER_MAX {
-        if x.cmp(&ExactNum::from_i32(n, p)) == Some(0) {
-            return Some(n);
-        }
-    }
-    None
+    (-BESSEL_INTEGER_MAX..=BESSEL_INTEGER_MAX)
+        .find(|&n| x.cmp(&ExactNum::from_i32(n, p)) == Some(0))
 }
 
 /// \(\cos(\nu\pi),\sin(\nu\pi)\) with exact zeros for integer / half-odd-integer \(\nu\).
 fn cos_sin_nu_pi(nu: &ExactNum, p: usize, cc: &mut Consts) -> (ExactNum, ExactNum) {
     if let Some(n) = real_small_int(nu, p) {
         let one = ExactNum::from_u8(1, p);
-        return if n % 2 == 0 {
-            (one, ExactNum::new(p))
-        } else {
-            (one.neg(), ExactNum::new(p))
-        };
+        return if n % 2 == 0 { (one, ExactNum::new(p)) } else { (one.neg(), ExactNum::new(p)) };
     }
     let two = ExactNum::from_u8(2, p);
     if let Some(t) = real_small_int(&two.mul(nu, p, RoundingMode::None), p) {
@@ -194,10 +274,7 @@ fn cos_sin_nu_pi(nu: &ExactNum, p: usize, cc: &mut Consts) -> (ExactNum, ExactNu
             // ν = t/2 = n+1/2, n = (t-1)/2; sin(νπ)=(-1)^n, cos=0.
             let n = (t - 1) / 2;
             let s = ExactNum::from_u8(1, p);
-            return (
-                ExactNum::new(p),
-                if n % 2 == 0 { s } else { s.neg() },
-            );
+            return (ExactNum::new(p), if n % 2 == 0 { s } else { s.neg() });
         }
     }
     let pi = cc.pi(p, RoundingMode::None);
@@ -309,7 +386,16 @@ impl ExactComplex {
         let dest = round_p(p);
         if real_positive_axis(self, nu) {
             // K_ν(x) is real for x > 0 and real ν (see `bessel_i`).
+            // Past the series/Hankel switch the real kernel (asymptotic, or the I-connection
+            // with a 2.885|x| guard) is used. Complex Temme 2F0 stays the fallback; its Lentz
+            // step compares δ−1 at 64 bits, which is not enough for a 128/256-bit result.
             return ziv_complex(dest, rm, |pw| {
+                if !use_bessel_series(self, dest) {
+                    let k = self.re().bessel_k(nu.re(), pw, RoundingMode::None, cc);
+                    if !k.is_nan() {
+                        return ExactComplex::from_real(k, pw);
+                    }
+                }
                 real_part_only(self.bessel_k_at(nu, pw, dest, cc), pw)
             });
         }
@@ -325,7 +411,10 @@ impl ExactComplex {
         let nure = nu.re();
         let jx = x.bessel_j_nu(nure, p, RoundingMode::None, cc);
         let (c, s) = cos_sin_nu_pi(nure, p, cc);
-        ExactComplex::new(c.mul(&jx, p, RoundingMode::None), s.mul(&jx, p, RoundingMode::None))
+        ExactComplex::new(
+            c.mul(&jx, p, RoundingMode::None),
+            s.mul(&jx, p, RoundingMode::None),
+        )
     }
 
     /// \(Y_\nu(-x+0i)=e^{-i\nu\pi}Y_\nu(x)+2i\cos(\nu\pi)J_\nu(x)\).
@@ -350,7 +439,10 @@ impl ExactComplex {
         let nure = nu.re();
         let ix = x.bessel_i(nure, p, RoundingMode::None, cc);
         let (c, s) = cos_sin_nu_pi(nure, p, cc);
-        ExactComplex::new(c.mul(&ix, p, RoundingMode::None), s.mul(&ix, p, RoundingMode::None))
+        ExactComplex::new(
+            c.mul(&ix, p, RoundingMode::None),
+            s.mul(&ix, p, RoundingMode::None),
+        )
     }
 
     /// \(K_\nu(-x+0i)=e^{-i\nu\pi}K_\nu(x)-i\pi I_\nu(x)\).
@@ -457,9 +549,57 @@ impl ExactComplex {
             .mul(&j, work_p, RoundingMode::None)
     }
 
-    /// \(I_\nu(z)=(z/2)^\nu/\Gamma(\nu+1)\,{}_0F_1(;\nu+1;z^2/4)\). Well-conditioned for \(\mathrm{Re}\,z>0\).
+    /// \(I_\nu(z)=(z/2)^\nu/\Gamma(\nu+1)\,{}_0F_1(;\nu+1;z^2/4)\) for \(\mathrm{Re}\,z>0\).
+    ///
+    /// The guard is [`i_series_guard_bits`] (a 32-bit pad when every term is positive,
+    /// otherwise pad plus cancellation). It is not [`series_guard_bits`]. If the summed
+    /// peak still exceeds the result by more than that guard — \(I_\nu\) near a zero, where
+    /// \((|z|-\mathrm{Re}\,z)/\ln 2\) is only a lower bound — the sum is repeated with the
+    /// measured peak-versus-result gap.
     fn bessel_i_series(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
-        let wp = work_p + series_guard_bits(self);
+        let positive = i_terms_all_positive(self, nu);
+        let mut guard = i_series_guard_bits(self, nu);
+        let cap = i_series_term_cap(self, dest_p);
+        if positive {
+            return self
+                .sum_bessel_i_series(nu, work_p.saturating_add(guard), dest_p, cap, cc)
+                .0;
+        }
+        let guard_limit = guard
+            .saturating_mul(4)
+            .saturating_add(work_p)
+            .saturating_add(64);
+        for _ in 0..5 {
+            let (sum, peak_exp, sum_exp) =
+                self.sum_bessel_i_series(nu, work_p.saturating_add(guard), dest_p, cap, cc);
+            if sum.is_nan() || guard >= guard_limit {
+                return sum;
+            }
+            let measured = match (peak_exp, sum_exp) {
+                (Some(pe), Some(se)) => (pe as i64 - se as i64 + 1).max(0) as usize,
+                (Some(_), None) => guard.saturating_add(work_p),
+                _ => 0,
+            };
+            let need = measured.saturating_add(I_SERIES_PAD);
+            if need <= guard {
+                return sum;
+            }
+            guard = need.min(guard_limit);
+        }
+        self.sum_bessel_i_series(nu, work_p.saturating_add(guard), dest_p, cap, cc)
+            .0
+    }
+
+    /// One pass of the \({}_0F_1\) series at working precision `wp`.
+    /// Returns the sum, the binary exponent of the largest term, and the exponent of the sum.
+    fn sum_bessel_i_series(
+        &self,
+        nu: &Self,
+        wp: usize,
+        dest_p: usize,
+        term_cap: usize,
+        cc: &mut Consts,
+    ) -> (Self, Option<i32>, Option<i32>) {
         let half = self.mul(&half_c(wp), wp, RoundingMode::None);
         let pow = half.pow(nu, wp, RoundingMode::None, cc);
         let g = nu
@@ -467,17 +607,26 @@ impl ExactComplex {
             .gamma(wp, RoundingMode::None, cc);
         let mut term = pow.div(&g, wp, RoundingMode::None);
         let mut sum = term.clone();
+        let mut peak_exp = term_mag_exp(&term);
         let hh = half.mul(&half, wp, RoundingMode::None);
-        for k in 1..=series_term_cap(wp) {
+        for k in 1..=term_cap {
             let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, wp), wp);
-            let den = kk.add(nu, wp, RoundingMode::None).mul(&kk, wp, RoundingMode::None);
-            term = term.mul(&hh, wp, RoundingMode::None).div(&den, wp, RoundingMode::None);
+            let den = kk
+                .add(nu, wp, RoundingMode::None)
+                .mul(&kk, wp, RoundingMode::None);
+            term = term
+                .mul(&hh, wp, RoundingMode::None)
+                .div(&den, wp, RoundingMode::None);
+            if let Some(e) = term_mag_exp(&term) {
+                peak_exp = Some(peak_exp.map_or(e, |p| p.max(e)));
+            }
             sum = sum.add(&term, wp, RoundingMode::None);
             if term_small_rel(&term, &sum, dest_p) {
                 break;
             }
         }
-        sum
+        let sum_exp = term_mag_exp(&sum);
+        (sum, peak_exp, sum_exp)
     }
 
     fn bessel_k_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -525,25 +674,37 @@ impl ExactComplex {
     }
 
     /// DLMF 10.32.10: \(K_\nu(z)=\sqrt{\pi/(2z)}\,e^{-z}\,{}_2F_0(\tfrac12+\nu,\tfrac12-\nu;;-1/(2z))\).
-    fn bessel_k_temme(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Option<Self> {
+    fn bessel_k_temme(
+        &self,
+        nu: &Self,
+        work_p: usize,
+        dest_p: usize,
+        cc: &mut Consts,
+    ) -> Option<Self> {
         let two = two_c(work_p);
         let half = half_c(work_p);
-        let w = neg_c(
-            &ExactComplex::one(work_p).div(
-                &two.mul(self, work_p, RoundingMode::None),
-                work_p,
-                RoundingMode::None,
-            ),
-        );
+        let w = neg_c(&ExactComplex::one(work_p).div(
+            &two.mul(self, work_p, RoundingMode::None),
+            work_p,
+            RoundingMode::None,
+        ));
         let a = half.add(nu, work_p, RoundingMode::None);
         let b = half.sub(nu, work_p, RoundingMode::None);
         let f = hypergeom_2f0_lentz(&a, &b, &w, work_p, dest_p)?;
         let pi = pi_c(work_p, cc);
         let omega = pi
-            .div(&two.mul(self, work_p, RoundingMode::None), work_p, RoundingMode::None)
+            .div(
+                &two.mul(self, work_p, RoundingMode::None),
+                work_p,
+                RoundingMode::None,
+            )
             .sqrt(work_p, RoundingMode::None, cc);
         let ez = neg_c(self).exp(work_p, RoundingMode::None, cc);
-        Some(omega.mul(&ez, work_p, RoundingMode::None).mul(&f, work_p, RoundingMode::None))
+        Some(
+            omega
+                .mul(&ez, work_p, RoundingMode::None)
+                .mul(&f, work_p, RoundingMode::None),
+        )
     }
 
     fn bessel_j_series(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
@@ -974,7 +1135,11 @@ mod tests {
         let nu = ExactComplex::from_real(half.clone(), p);
         let i = zneg.bessel_i(&nu, p, rm, &mut cc);
         assert!(!i.is_nan());
-        assert!(tiny(i.re(), p), "I_{{1/2}}(-2) real part should be exact 0, got {:?}", i.re());
+        assert!(
+            tiny(i.re(), p),
+            "I_{{1/2}}(-2) real part should be exact 0, got {:?}",
+            i.re()
+        );
         let ix = x.bessel_i(&half, p, rm, &mut cc);
         assert!(near(i.im(), &ix, p));
 
@@ -989,5 +1154,45 @@ mod tests {
         let jx = x.bessel_j_nu(&half, p, rm, &mut cc);
         assert!(tiny(j.re(), p));
         assert!(near(j.im(), &jx, p));
+    }
+
+    #[test]
+    fn i_series_guard_sized_to_cancellation() {
+        // Not an mpmath value. Locks the guard the series actually requests.
+        // Restoring `1.5·bound(|z|)+16` on the positive-real axis is about
+        // 49168 bits at |z|=20000 (`abs_bound` is 32768) and must fail here,
+        // not merely make `complex_bessel_mpmath` slow.
+        let p = 128;
+        let z = ExactComplex::from_real(ExactNum::from_u32(20000, p), p);
+        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None);
+        let nu = ExactComplex::from_real(half, p);
+        let g = i_series_guard_bits(&z, &nu);
+        assert_eq!(g, I_SERIES_PAD);
+        assert!(
+            (16..=32).contains(&g),
+            "positive-real I guard {g} left the 16–32 bit pad"
+        );
+        let blanket = series_guard_bits(&z);
+        assert!(
+            blanket > 10_000,
+            "test no longer distinguishes the old 1.5|z| guard ({blanket})"
+        );
+        assert!(g < blanket);
+
+        // ν = -11/4 is outside the all-positive shortcut. z is real, so
+        // (|z|−Re z)/ln 2 contributes 0 and the guard stays the pad.
+        // Same source as above: the guard formula, not mpmath.
+        let neg = ExactNum::from_i8(-11, p).div(&ExactNum::from_u8(4, p), p, RoundingMode::None);
+        let nu_neg = ExactComplex::from_real(neg, p);
+        assert_eq!(i_series_guard_bits(&z, &nu_neg), I_SERIES_PAD);
+
+        // Complex z: cancellation bound, not the blanket 1.5|z| rule.
+        // The expected width is `i_series_exp_cancel_bits` (a proven upper
+        // bound on (|z|−Re z)/ln 2), not an mpmath digit string.
+        let zc = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(20, p));
+        let cancel = i_series_exp_cancel_bits(&zc);
+        assert!(cancel > 0, "1+20i should cancel");
+        assert_eq!(i_series_guard_bits(&zc, &nu), cancel + I_SERIES_PAD);
+        assert!(cancel + I_SERIES_PAD < series_guard_bits(&z));
     }
 }
