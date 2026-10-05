@@ -9,6 +9,7 @@ use crate::complex_special::series_term_cap;
 use crate::complex_special::term_negligible;
 use crate::complex_special::two_c;
 use crate::complex_special::ziv_complex;
+use crate::ops::special::BESSEL_GUARD_MAX;
 use crate::Consts;
 use crate::Error;
 use crate::ExactComplex;
@@ -243,6 +244,69 @@ fn eight_c(p: usize) -> ExactComplex {
     ExactComplex::from_real(ExactNum::from_u8(8, p), p)
 }
 
+fn c_mag_exp(z: &ExactComplex) -> Option<i32> {
+    let a = z.abs(64, RoundingMode::None);
+    if a.is_zero() {
+        None
+    } else {
+        a.exponent()
+    }
+}
+
+/// Upper bound on \(2\mathrm{Re}(z)/\ln 2\), the bit cancellation in \(I_{-\nu}-I_\nu\).
+///
+/// \(\mathrm{Re}\,z<2^e\) and \(2/\ln 2<73488/25469\), so the bound is strictly above the quotient.
+fn re_pair_cancel_bits(z: &ExactComplex) -> usize {
+    let re = z.re();
+    if !re.is_positive() {
+        return 32;
+    }
+    let Some(e) = re.exponent() else {
+        return 32;
+    };
+    if e <= 0 {
+        return 32;
+    }
+    if e > 20 {
+        return BESSEL_GUARD_MAX;
+    }
+    let bound = ((1u128 << e) * 73488) / 25469 + 2;
+    usize::try_from(bound).unwrap_or(BESSEL_GUARD_MAX)
+}
+
+/// Extra bits when \(\sin(\nu\pi)\) is small (near an integer order).
+fn sin_nu_pi_loss(nu: &ExactComplex, cc: &mut Consts) -> Option<usize> {
+    let p = 192;
+    let mut n = nu.clone();
+    n.set_precision(p, RoundingMode::None).ok()?;
+    let s = n
+        .mul(&pi_c(p, cc), p, RoundingMode::None)
+        .sin(p, RoundingMode::None, cc);
+    if s.is_nan() {
+        return None;
+    }
+    let a = s.abs(64, RoundingMode::None);
+    if a.is_zero() {
+        return None;
+    }
+    let e = a.exponent()?;
+    if e < -4096 {
+        return None;
+    }
+    Some((8i64 - i64::from(e)).clamp(0, 4096) as usize)
+}
+
+fn i_diff_loss(ip: &ExactComplex, im: &ExactComplex, diff: &ExactComplex) -> usize {
+    let ei = c_mag_exp(ip).into_iter().chain(c_mag_exp(im)).max();
+    let Some(ei) = ei else {
+        return 0;
+    };
+    let Some(ed) = c_mag_exp(diff) else {
+        return BESSEL_GUARD_MAX;
+    };
+    (i64::from(ei) - i64::from(ed) + 8).max(0) as usize
+}
+
 /// `z > 0` real and `ν` real: every Bessel function is real there.
 fn real_positive_axis(z: &ExactComplex, nu: &ExactComplex) -> bool {
     z.im().is_zero() && nu.im().is_zero() && !z.re().is_zero() && !z.re().is_negative()
@@ -371,9 +435,12 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Temme \({}_2F_0\) (DLMF 10.32.10) when \(\mathrm{Re}\,z>0\) and \(|z|\) is
-    ///   past the series/Hankel switch; otherwise \(H^{(1)}_\nu(iz)\) or \(H^{(2)}_\nu(-iz)\)
-    ///   by the sign of \(\mathrm{Im}\,z\) (DLMF 10.27.8).
+    /// - Algorithm: for non-integer \(\nu\) and \(\mathrm{Re}\,z>0\) inside the series regime,
+    ///   DLMF 10.27.4, \(K_\nu=\pi(I_{-\nu}-I_\nu)/(2\sin\nu\pi)\), with the guard set by the
+    ///   \(e^{2\mathrm{Re}\,z}\) cancellation. Temme \({}_2F_0\) (DLMF 10.32.10) when
+    ///   \(\mathrm{Re}\,z>0\) and \(|z|\) is past the series/Hankel switch. Otherwise
+    ///   \(H^{(1)}_\nu(iz)\) or \(H^{(2)}_\nu(-iz)\) by the sign of \(\mathrm{Im}\,z\)
+    ///   (DLMF 10.27.8).
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     pub fn bessel_k(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -474,7 +541,7 @@ impl ExactComplex {
         } else if self.re().is_negative() && !self.re().is_zero() {
             // The Hankel expansion holds only for |arg z| < π; for Re z < 0 continue from −z
             // (DLMF 10.11.1): J_ν(z) = e^{±νπi} J_ν(−z), upper sign for Im z ≥ 0.
-            let upper = !(self.im().is_negative() && !self.im().is_zero());
+            let upper = !self.im().is_negative() || self.im().is_zero();
             let j = neg_c(self).bessel_hankel_j(nu, work_p, cc);
             reflect_phase(nu, upper, work_p, cc).mul(&j, work_p, RoundingMode::None)
         } else {
@@ -497,10 +564,10 @@ impl ExactComplex {
     /// \(m=\pm1\)): \(Y_\nu(z)=e^{\mp\nu\pi i}Y_\nu(-z)\pm2i\cos(\nu\pi)J_\nu(-z)\), upper sign for
     /// \(\mathrm{Im}\,z\ge0\).
     fn bessel_hankel_y_any(&self, nu: &Self, work_p: usize, cc: &mut Consts) -> Self {
-        if !(self.re().is_negative() && !self.re().is_zero()) {
+        if !self.re().is_negative() || self.re().is_zero() {
             return self.bessel_hankel_y(nu, work_p, cc);
         }
-        let upper = !(self.im().is_negative() && !self.im().is_zero());
+        let upper = !self.im().is_negative() || self.im().is_zero();
         let w = neg_c(self);
         let y = w.bessel_hankel_y(nu, work_p, cc);
         let j = w.bessel_hankel_j(nu, work_p, cc);
@@ -630,8 +697,14 @@ impl ExactComplex {
     }
 
     fn bessel_k_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
-        if !self.re().is_negative() && !self.re().is_zero() && !use_bessel_series(self, dest_p) {
-            if let Some(k) = self.bessel_k_temme(nu, work_p, dest_p, cc) {
+        if !self.re().is_negative() && !self.re().is_zero() {
+            if use_bessel_series(self, dest_p) {
+                // J±iY cancels ~3|z| bits here and builds both J_±ν. The I connection
+                // is a direct 0F1; only the final subtraction needs the e^{2 Re z} guard.
+                if let Some(k) = self.bessel_k_from_i(nu, work_p, cc) {
+                    return k;
+                }
+            } else if let Some(k) = self.bessel_k_temme(nu, work_p, dest_p, cc) {
                 return k;
             }
         }
@@ -641,7 +714,7 @@ impl ExactComplex {
         // In the Hankel regime H⁽¹,²⁾ are formed directly (no J ± iY cancellation).
         // Im z = 0 (either sign of zero) takes the second form, valid up to arg z = π: on the cut
         // (−∞, 0) that is the value from above, as for `bessel_i` / `bessel_j_nu`.
-        let second = !(self.im().is_negative() && !self.im().is_zero());
+        let second = !self.im().is_negative() || self.im().is_zero();
         let rot = if second { neg_c(&ExactComplex::i(work_p)) } else { ExactComplex::i(work_p) };
         let w = rot.mul(self, work_p, RoundingMode::None);
         let h = if use_bessel_series(&w, dest_p) {
@@ -705,6 +778,65 @@ impl ExactComplex {
                 .mul(&ez, work_p, RoundingMode::None)
                 .mul(&f, work_p, RoundingMode::None),
         )
+    }
+
+    /// DLMF 10.27.4. `None` for integer \(\nu\) (the \(Y\) recurrence is the stable form)
+    /// or when \(\sin(\nu\pi)\) is too small to guard.
+    fn bessel_k_from_i(&self, nu: &Self, work_p: usize, cc: &mut Consts) -> Option<Self> {
+        if integer_nu(nu, work_p).is_some() {
+            return None;
+        }
+        let sbits = sin_nu_pi_loss(nu, cc)?;
+        let mut guard = re_pair_cancel_bits(self)
+            .saturating_add(sbits)
+            .saturating_add(48);
+        if guard > BESSEL_GUARD_MAX {
+            return None;
+        }
+        for _ in 0..3 {
+            let acc = work_p.saturating_add(guard);
+            if acc > work_p.saturating_add(BESSEL_GUARD_MAX) {
+                return None;
+            }
+            let (k, loss) = self.k_i_diff(nu, acc, cc)?;
+            if loss.saturating_add(32) <= guard {
+                return Some(k);
+            }
+            guard = loss.saturating_add(64).max(guard.saturating_add(32));
+            if guard > BESSEL_GUARD_MAX {
+                return None;
+            }
+        }
+        None
+    }
+
+    fn k_i_diff(&self, nu: &Self, acc: usize, cc: &mut Consts) -> Option<(Self, usize)> {
+        let ip = self.bessel_i_series(nu, acc, acc, cc);
+        let im = self.bessel_i_series(&neg_c(nu), acc, acc, cc);
+        if ip.is_nan() || im.is_nan() {
+            return None;
+        }
+        let diff = im.sub(&ip, acc, RoundingMode::None);
+        if diff.is_nan() {
+            return None;
+        }
+        let loss = i_diff_loss(&ip, &im, &diff);
+        let pi = pi_c(acc, cc);
+        let s = nu
+            .mul(&pi, acc, RoundingMode::None)
+            .sin(acc, RoundingMode::None, cc);
+        if s.is_nan() || cpx_tiny(&s, acc.min(4096)) {
+            return None;
+        }
+        let k = pi
+            .div(&two_c(acc), acc, RoundingMode::None)
+            .mul(&diff, acc, RoundingMode::None)
+            .div(&s, acc, RoundingMode::None);
+        if k.is_nan() {
+            None
+        } else {
+            Some((k, loss))
+        }
     }
 
     fn bessel_j_series(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {

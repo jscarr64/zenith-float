@@ -1,6 +1,6 @@
 # zenith-float Capability Reference
 
-**Version:** 1.0.10  
+**Version:** 1.0.11  
 **Date:** 2026-10-05  
 **License:** MIT OR Apache-2.0  
 **Status:** Public crate  
@@ -245,7 +245,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | Scorer / Kelvin / Struve / Anger–Weber | `scorer_gi`, `kelvin_ber`, `struve_h(x,ν)`, … | SoftFloat catalog; Kelvin via complex \(J,K\); Anger integer order = Bessel \(J\) |
 | Clausen / Barnes \(G\) / ζ / polygamma | `clausen_cl2`, `barnes_g`, `riemann_zeta`, `hurwitz_zeta`, `polygamma` | \(\mathrm{Cl}_2=-\int\ln\lvert 2\sin(t/2)\rvert\); ζ integer \(s\ge 2\); \(\psi^{(0)}=\) digamma |
 | Inverse Jacobi / \(pFq\) / Lambert \(W\) / \(\mathrm{Li}_n\) | `jacobi_arcsn`, `hypergeom_1f1`, `lambert_w0`, `polylog` | `arcsn=F`; series \(pFq\); \(W_0\) on \([-1/e,\infty)\); \(\mathrm{Li}_n\) for \(\lvert x\rvert\le 1\) |
-| Meijer \(G\) / Fox \(H\) / Heun | `meijer_g`, `fox_h`, `heun_g`, `heun_c` | Residue \(G\) (DLMF 16.17); Fox \(H\) via \(G\) or Gauss lift of positive rational \(A,B\); local Heun DLMF 31.3 and confluent DLMF 31.12.1 for \(\lvert z\rvert<1\). Coincident \(G\) poles and \(\lvert z\rvert\ge 1\) Heun → `NaN`. Not `expr!` leaves. |
+| Meijer \(G\) / Fox \(H\) / Heun | `meijer_g`, `fox_h`, `heun_g`, `heun_c` | Residue \(G\) (DLMF 16.17); coincident poles use the hypercomb limit (two shifts must agree). Fox \(H\) via \(G\) or Gauss lift of positive rational \(A,B\). Local Heun DLMF 31.3 and confluent DLMF 31.12.1: series in the disk, Taylor continuation elsewhere on the real component that contains 0. A singular point on that segment is `NaN(InvalidArgument)`. Not `expr!` leaves. |
 | `elliptic_k` / `elliptic_e_complete` | `elliptic_k` / `elliptic_e` | Complete; \(m=k^2\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\); \(E\) for \(m\le 1\) |
 | `elliptic_f` / `elliptic_e` | `elliptic_f` / `elliptic_e_inc` | Incomplete; \(x=\sin\varphi\), \(\lvert x\rvert\le 1\) |
 | `elliptic_pi_complete` / `elliptic_pi` | `elliptic_pi` / `elliptic_pi_inc` | \(n<1\), \(m<1\) complete |
@@ -445,7 +445,7 @@ Cartesian `re + i·im` as two `ExactNum` values.
 | `gamma` / `ln_gamma` / `digamma` | ✅ Stirling + reflection; \(\ln\Gamma\) cut on \((-\infty,0]\); poles → NaN |
 | `ei` / `si` / `ci` / `li` | ✅ series or asymptotic `Ei`; `Si`/`Ci` via `Ei(±iz)`; `li=Ei(ln z)` |
 | `fresnel_s` / `fresnel_c` | ✅ via `erf`; entire |
-| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | ✅ series or Hankel; cut assembled from real kernels; \(I\) series for \(\mathrm{Re}\,z>0\); Temme \({}_2F_0\) for large-\(\lvert z\rvert\) \(K\) |
+| `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | ✅ series or Hankel; cut assembled from real kernels; \(I\) series for \(\mathrm{Re}\,z>0\); non-integer \(K\) in the series regime from \(I_{\pm\nu}\) (DLMF 10.27.4); Temme \({}_2F_0\) for large-\(\lvert z\rvert\) \(K\) |
 | `elliptic_k` / `elliptic_e_complete` / `elliptic_f` / `elliptic_e` / `elliptic_pi_*` | ✅ Carlson in \(\mathbb{C}\); \(K(0)=E(0)=\pi/2\); \(K(1)=+\infty\); Legendre and cut golds |
 | `hypergeom_2f1` | ✅ Series / Euler / Pfaff / Kummer; \(2\ln 2\), \(2K/\pi\), Euler identity, \(c=0\) NaN, cut golds |
 
@@ -559,6 +559,7 @@ dashu-float 0.6.0: `consts.rs` is an empty stub (no γ). `FBig::with_rounding::<
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| 1.0.11 | 2026-10-05 | Series-regime complex \(K\) via DLMF 10.27.4; Meijer \(G\) logarithmic coincident-pole limit; Heun continued past the unit disk up to the nearest real singular point. |
 | 1.0.6 | 2026-10-02 | Additive pack: `jacobi_p`; real large-\(\lvert x\rvert\) Hankel \(J/Y\); complex Bessel cut + Temme \(K\); Scorer / Kelvin / Struve / Anger–Weber / Clausen / Barnes \(G\) / polygamma / Hurwitz / inverse Jacobi / \(pFq\) / Lambert \(W\); Meijer \(G\), Fox \(H\), local / confluent Heun. No breaking signatures (not 2.0.0). |
 | 1.0.5 | 2026-09-27 | Special-function accuracy fixes (`hypergeom_2f1`, `betainc`, `erf`/`erfc` for \(\lvert x\rvert\ge4\), Γ/ψ/lnΓ and exact Bernoulli numbers, Ei/Si/Ci/li, Fresnel, Airy, Bessel, Carlson, Euler γ, complex branches); `cmp` normalization; `no_std` built and tested (host libc-only and Cortex-M4F under QEMU); see CHANGELOG |
 | 1.0.4 | 2026-09-20 | Clippy debt clear; SoftFloat IEEE `soft_*` renames |

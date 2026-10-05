@@ -331,8 +331,8 @@ Each method’s rustdoc has a **`# Precision`** section (algorithm, region, name
 | `gamma_pdf` / `beta_pdf` | Scale \(\beta\); \(B\) via \(\Gamma\) | yes |
 | `poisson_pmf` / `binomial_pmf` | Non-negative integer \(k\) | yes |
 | `chi_squared_cdf` / `student_t_pdf` | Regularized \(\gamma(k/2,x/2)/\Gamma(k/2)\); \(t\) via \(\Gamma\) | yes |
-| `meijer_g` / `fox_h` | Residue \(G^{m,n}_{p,q}\) (DLMF 16.17) + \({}_pF_q\); Fox \(H\) is \(G\) when \(A=B=1\), else Gauss lift of positive rational scales. Coincident poles → `NaN`. | no (too many args) |
-| `heun_g` / `heun_c` | Local Heun DLMF 31.3; confluent Heun DLMF 31.12.1 \(y(0)=1\). Series for \(\lvert z\rvert<1\) only. | no |
+| `meijer_g` / `fox_h` | Residue \(G^{m,n}_{p,q}\) (DLMF 16.17) + \({}_pF_q\); Fox \(H\) is \(G\) when \(A=B=1\), else Gauss lift of positive rational scales. Coincident poles use the hypercomb limit. | no (too many args) |
+| `heun_g` / `heun_c` | Local Heun DLMF 31.3; confluent Heun DLMF 31.12.1 \(y(0)=1\). Series in the disk; Taylor continuation on the real component containing 0. A singular point on the segment is `NaN(InvalidArgument)`. \({}_2F_1\) / \({}_1F_1\) reductions where they apply. | no |
 
 ---
 
