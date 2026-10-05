@@ -1,6 +1,6 @@
 //! Meijer G / Fox H / Heun vs mpmath 1.4.1 (50-digit golds) and independent reductions.
 
-use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode};
+use zenith_float_num::{Consts, Error, ExactNum, Radix, RoundingMode};
 
 const RM: RoundingMode = RoundingMode::ToEven;
 
@@ -396,5 +396,199 @@ fn heun_fox_mpmath() {
         &mut cc,
         &mut failures,
     );
+
+    // Coincident poles: mpmath hypercomb limit.
+    // G^{2,0}_{0,2}(z | b,b) = 2 z^b K_0(2 sqrt(z)) (DLMF 10.32 / mpmath meijerg).
+    check(
+        "G coincident b=b=1/4",
+        dec("0.3", p, &mut cc).meijer_g(
+            &[],
+            &[],
+            &[dec("0.25", p, &mut cc), dec("0.25", p, &mut cc)],
+            &[],
+            p,
+            RM,
+            &mut cc,
+        ),
+        "0.54460164910592069530120576951985037811141742446519",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+    check(
+        "G coincident b=b=0 = 2 K_0(2 sqrt(z))",
+        dec("0.7", p, &mut cc).meijer_g(
+            &[],
+            &[],
+            &[zero.clone(), zero.clone()],
+            &[],
+            p,
+            RM,
+            &mut cc,
+        ),
+        "0.3423725582018458667136234370716794089594588180976755",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+    // G^{1,2}_{2,2}(z | 1,1 ; 1 ; 0) = ln(1+z).
+    check(
+        "G coincident a=a=1 = ln(1+z)",
+        dec("0.4", p, &mut cc).meijer_g(
+            &[one.clone(), one.clone()],
+            &[],
+            core::slice::from_ref(&one),
+            core::slice::from_ref(&zero),
+            p,
+            RM,
+            &mut cc,
+        ),
+        "0.3364722366212129305045934102169920901114833753133435",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+
+    // HeunG outside the unit disk: mpmath hyp2f1 (reduction) and an mpmath
+    // ODE Taylor reference for a non-reducing accessory parameter.
+    check(
+        "HeunG 2F1 at z=-1.5",
+        dec("-1.5", p, &mut cc).heun_g(
+            &dec("2.5", p, &mut cc),
+            &dec("2.5", p, &mut cc).mul(&alpha, p, RM).mul(&beta, p, RM),
+            &alpha,
+            &beta,
+            &gamma,
+            &alpha.add(&beta, p, RM).sub(&gamma, p, RM).add(&one, p, RM),
+            p,
+            RM,
+            &mut cc,
+        ),
+        "0.9008322048823458189813101118412270140080889106837837",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+    check(
+        "HeunG Taylor z=-1.25 (mpmath ODE)",
+        dec("-1.25", p, &mut cc).heun_g(
+            &two,
+            &dec("0.3", p, &mut cc),
+            &dec("0.4", p, &mut cc),
+            &half,
+            &dec("0.8", p, &mut cc),
+            &dec("0.6", p, &mut cc),
+            p,
+            RM,
+            &mut cc,
+        ),
+        "0.84562175528983306754382744780795532444835851663657",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+    check(
+        "HeunG Taylor z=0.7 past |a|=0.4 (mpmath ODE)",
+        dec("0.7", p, &mut cc).heun_g(
+            &dec("-0.4", p, &mut cc),
+            &dec("0.2", p, &mut cc),
+            &dec("0.3", p, &mut cc),
+            &half,
+            &dec("1.2", p, &mut cc),
+            &dec("0.4", p, &mut cc),
+            p,
+            RM,
+            &mut cc,
+        ),
+        "0.77959470566349542474299828796292579085617893368762",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+    let blocked = dec("3", p, &mut cc).heun_g(
+        &two,
+        &dec("0.3", p, &mut cc),
+        &dec("0.4", p, &mut cc),
+        &half,
+        &dec("0.8", p, &mut cc),
+        &dec("0.6", p, &mut cc),
+        p,
+        RM,
+        &mut cc,
+    );
+    if !blocked.is_nan() || blocked.err() != Some(Error::InvalidArgument) {
+        failures.push(format!(
+            "HeunG across z=1 should be InvalidArgument, got {:?}",
+            blocked.err()
+        ));
+    }
+
+    check(
+        "HeunC 1F1 at z=-2.5",
+        dec("-2.5", p, &mut cc).heun_c(
+            &dec("0.4", p, &mut cc),
+            &dec("1.3", p, &mut cc),
+            &zero,
+            &one.neg(),
+            &dec("0.4", p, &mut cc),
+            p,
+            RM,
+            &mut cc,
+        ),
+        "1.591357994654126153494310459109807600954646374053431",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+    check(
+        "HeunC 1F1 at z=3 (entire)",
+        dec("3", p, &mut cc).heun_c(
+            &dec("0.4", p, &mut cc),
+            &dec("1.3", p, &mut cc),
+            &zero,
+            &one.neg(),
+            &dec("0.4", p, &mut cc),
+            p,
+            RM,
+            &mut cc,
+        ),
+        "-0.5884739366185304082827085726638101440206539313141711",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+    check(
+        "HeunC Taylor z=-1.7 (mpmath ODE)",
+        dec("-1.7", p, &mut cc).heun_c(
+            &dec("0.2", p, &mut cc),
+            &dec("1.4", p, &mut cc),
+            &dec("0.3", p, &mut cc),
+            &dec("0.5", p, &mut cc),
+            &dec("-0.15", p, &mut cc),
+            p,
+            RM,
+            &mut cc,
+        ),
+        "0.9341481430204479475272546008331905530336640664686952",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+    let blocked_c = dec("2", p, &mut cc).heun_c(
+        &dec("0.2", p, &mut cc),
+        &dec("1.4", p, &mut cc),
+        &dec("0.3", p, &mut cc),
+        &dec("0.5", p, &mut cc),
+        &dec("-0.15", p, &mut cc),
+        p,
+        RM,
+        &mut cc,
+    );
+    if !blocked_c.is_nan() || blocked_c.err() != Some(Error::InvalidArgument) {
+        failures.push(format!(
+            "HeunC at z=2 should be InvalidArgument, got {:?}",
+            blocked_c.err()
+        ));
+    }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

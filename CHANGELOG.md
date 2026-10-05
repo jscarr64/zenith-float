@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+## 1.0.11 — 2026-10-05
+
+Closes the three items that were still listed under Known issues at 1.0.10. No public signature was removed or changed.
+
+### Complex \(K_\nu\) in the series regime
+
+Non-integer \(K_\nu(z)\) with \(\operatorname{Re} z>0\) and \(\lvert z\rvert<0.35(p+112)\) is DLMF 10.27.4,
+
+\[
+K_\nu(z)=\frac{\pi}{2\sin(\nu\pi)}\bigl(I_{-\nu}(z)-I_\nu(z)\bigr),
+\]
+
+with the guard sized to \(e^{2\operatorname{Re} z}/\ln 2\) plus the loss in \(\sin(\nu\pi)\). The previous path built \(K\) from \(J\pm iY\), which cancels about \(3\lvert z\rvert\) bits and runs both \(Y\) series. Integer \(\nu\) still uses the \(Y\) recurrence. Temme \({}_2F_0\) is unchanged for large \(\lvert z\rvert\).
+
+### Meijer \(G\) at coincident poles
+
+A residue series whose numerator \(\Gamma\) hits a pole (integer spacing in the active \(b_1,\ldots,b_m\) or \(a_1,\ldots,a_n\)) takes the hypercomb limit: every parameter is shifted by a distinct \(O(2^{-\mathrm{hmag}})\) amount and the value is kept only when two step sizes agree. That is the finite part of a logarithmic (or higher) residue. A non-removable pole stays `NaN(InvalidArgument)`.
+
+Golds (mpmath `meijerg`, which is the same limit): \(G^{2,0}_{0,2}(z\mid b,b)=2z^b K_0(2\sqrt{z})\) and \(G^{1,2}_{2,2}(z\mid 1,1;1;0)=\ln(1+z)\).
+
+### Local and confluent Heun past the unit disk
+
+Inside the disk of convergence the Frobenius series is unchanged. Outside it, the value is the real-analytic continuation along the component of the cut plane that contains 0:
+
+- Local Heun: singular points \(1\) and \(a\). Taylor steps of \(z(z-1)(z-a)y''+\cdots=0\), each at most half the distance to \(\{0,1,a\}\).
+- Confluent Heun: singular point \(1\). The same stepping on \((-\infty,1)\). \(z\ge 1\) is `NaN(InvalidArgument)`.
+- \(q=a\alpha\beta\) and \(\delta=\alpha+\beta-\gamma+1\) reduces to \({}_2F_1(\alpha,\beta;\gamma;z)\).
+- \(\delta=0\), \(\varepsilon=-1\), \(q=\alpha\) reduces to \({}_1F_1(-\alpha;\gamma;z)\), entire.
+- Two consecutive series coefficients that are exact zeros are a polynomial, returned for every finite \(z\).
+- More than 8192 Taylor steps is `NaN(InvalidArgument)`.
+
+Biconfluent, double-confluent, and triconfluent Heun stay unimplemented: there is no separate public signature, and the \(z=0\) series is not the regular solution. That is not a leftover of the \(\lvert z\rvert<1\) limit.
+
+Golds: mpmath `hyp2f1` / `hyp1f1` for the reductions (including \(\lvert z\rvert>1\)), and an independent mpmath ODE Taylor reference for non-reducing accessories at \(z=-1.25\), \(z=0.7\) (local, past \(\lvert a\rvert\)), and \(z=-1.7\) (confluent).
+
 ## 1.0.10 — 2026-10-05
 
 ### Gauss–Kronrod (7, 15) and Wynn ε

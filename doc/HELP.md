@@ -126,7 +126,7 @@ Each public special has a `# Precision` rustdoc: algorithm (series, AGM, Carlson
 
 Domain errors (`sqrt` of a negative *real*, `gamma` at a non-positive integer, …) are `NaN` + `InvalidArgument`.
 
-**1.0.6 closed the complex-Bessel negative-axis hang and the real large-\(|x|\) `InvalidArgument`.** Complex `bessel_k` can still be slow for non-integer \(\nu\) just inside the series regime; the Temme \({}_2F_0\) path covers large \(|z|\). Meijer \(G\) is `NaN` at coincident poles; Heun series stop at \(\lvert z\rvert=1\). Details in `CHANGELOG.md`.
+**1.0.11 closed the three items that were still open at 1.0.10.** Non-integer complex \(K_\nu\) in the series regime uses DLMF 10.27.4. Meijer \(G\) at a coincident pole uses the hypercomb limit. Local and confluent Heun continue along the real interval that does not meet a singular point; crossing one is `NaN(InvalidArgument)`. Details in `CHANGELOG.md`.
 
 ---
 

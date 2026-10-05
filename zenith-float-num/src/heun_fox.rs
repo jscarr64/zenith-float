@@ -103,7 +103,14 @@ fn choose_series(an_n: usize, ap_n: usize, bm_n: usize, bq_n: usize, z: &ExactNu
     s
 }
 
-fn meijer_g_inner(
+enum GEval {
+    Val(ExactNum),
+    /// Removable coincident pole (logarithmic residue still to take).
+    Singular,
+    Bad,
+}
+
+fn meijer_g_series(
     z: &ExactNum,
     an: &[ExactNum],
     ap: &[ExactNum],
@@ -112,9 +119,9 @@ fn meijer_g_inner(
     r: &ExactNum,
     p: usize,
     cc: &mut Consts,
-) -> ExactNum {
+) -> GEval {
     if an.len() + ap.len() > PARAM_MAX || bm.len() + bq.len() > PARAM_MAX {
-        return cat_nan();
+        return GEval::Bad;
     }
     if !finite(z)
         || !finite(r)
@@ -124,10 +131,10 @@ fn meijer_g_inner(
         || !all_finite(bm)
         || !all_finite(bq)
     {
-        return cat_nan();
+        return GEval::Bad;
     }
     if an.is_empty() && bm.is_empty() {
-        return cat_nan();
+        return GEval::Bad;
     }
     let mut a = Vec::with_capacity(an.len() + ap.len());
     a.extend_from_slice(an);
@@ -143,7 +150,7 @@ fn meijer_g_inner(
     let one = ExactNum::from_u8(1, p);
     let r_is_one = r.cmp(&one) == Some(0);
     if !r_is_one && !z.is_positive() && !z.is_zero() {
-        return cat_nan();
+        return GEval::Bad;
     }
     let z_to_inv_r = if r_is_one {
         z.clone()
@@ -151,7 +158,7 @@ fn meijer_g_inner(
         pow_real(z, &one.div(r, p, RoundingMode::None), p, cc)
     };
     if !finite(&z_to_inv_r) {
-        return cat_nan();
+        return GEval::Bad;
     }
     let mut sum = ExactNum::new(p);
     if series == 1 {
@@ -182,7 +189,7 @@ fn meijer_g_inner(
                 );
             }
             let ratio = match gamma_ratio(&gn, &gd, p, cc) {
-                Err(()) => return cat_nan(),
+                Err(()) => return GEval::Singular,
                 Ok(None) => continue,
                 Ok(Some(v)) => v,
             };
@@ -204,12 +211,12 @@ fn meijer_g_inner(
             }
             let f = hz.hypergeom_pfq(&hn, &hd, p, RoundingMode::None, cc);
             if !finite(&f) {
-                return cat_nan();
+                return GEval::Singular;
             }
             let expn = if r_is_one { bh.clone() } else { bh.div(r, p, RoundingMode::None) };
             let zp = pow_real(z, &expn, p, cc);
             if !finite(&zp) {
-                return cat_nan();
+                return GEval::Bad;
             }
             sum = sum.add(
                 &ratio
@@ -222,7 +229,7 @@ fn meijer_g_inner(
     } else {
         let sign_odd = odd_i((qn as i32) - (m as i32) - (n as i32));
         let inv_z = if z_to_inv_r.is_zero() {
-            return cat_nan();
+            return GEval::Bad;
         } else {
             one.div(&z_to_inv_r, p, RoundingMode::None)
         };
@@ -252,7 +259,7 @@ fn meijer_g_inner(
                 );
             }
             let ratio = match gamma_ratio(&gn, &gd, p, cc) {
-                Err(()) => return cat_nan(),
+                Err(()) => return GEval::Singular,
                 Ok(None) => continue,
                 Ok(Some(v)) => v,
             };
@@ -274,7 +281,7 @@ fn meijer_g_inner(
             }
             let f = hz.hypergeom_pfq(&hn, &hd, p, RoundingMode::None, cc);
             if !finite(&f) {
-                return cat_nan();
+                return GEval::Singular;
             }
             let expn = if r_is_one {
                 ak.sub(&one, p, RoundingMode::None)
@@ -284,7 +291,7 @@ fn meijer_g_inner(
             };
             let zp = pow_real(z, &expn, p, cc);
             if !finite(&zp) {
-                return cat_nan();
+                return GEval::Bad;
             }
             sum = sum.add(
                 &ratio
@@ -295,7 +302,167 @@ fn meijer_g_inner(
             );
         }
     }
-    sum
+    GEval::Val(sum)
+}
+
+fn meijer_g_inner(
+    z: &ExactNum,
+    an: &[ExactNum],
+    ap: &[ExactNum],
+    bm: &[ExactNum],
+    bq: &[ExactNum],
+    r: &ExactNum,
+    p: usize,
+    cc: &mut Consts,
+) -> ExactNum {
+    match meijer_g_series(z, an, ap, bm, bq, r, p, cc) {
+        GEval::Val(v) => v,
+        GEval::Bad => cat_nan(),
+        GEval::Singular => meijer_log_limit(z, an, ap, bm, bq, r, p, cc),
+    }
+}
+
+fn max_int_cluster(xs: &[ExactNum], p: usize) -> usize {
+    let n = xs.len();
+    if n <= 1 {
+        return 1;
+    }
+    let mut seen = alloc::vec![false; n];
+    let mut best = 1usize;
+    for i in 0..n {
+        if seen[i] {
+            continue;
+        }
+        let mut stack = alloc::vec![i];
+        seen[i] = true;
+        let mut cnt = 0usize;
+        while let Some(u) = stack.pop() {
+            cnt += 1;
+            for v in 0..n {
+                if seen[v] {
+                    continue;
+                }
+                if xs[u].sub(&xs[v], p, RoundingMode::None).is_int() {
+                    seen[v] = true;
+                    stack.push(v);
+                }
+            }
+        }
+        best = best.max(cnt);
+    }
+    best
+}
+
+fn lift_num(x: &ExactNum, wp: usize) -> Option<ExactNum> {
+    let mut y = x.clone();
+    y.set_precision(wp, RoundingMode::None).ok()?;
+    if finite(&y) {
+        Some(y)
+    } else {
+        None
+    }
+}
+
+fn perturb_row(xs: &[ExactNum], h: &mut ExactNum, wp: usize, k: &mut u32) -> Option<Vec<ExactNum>> {
+    let mut row = Vec::with_capacity(xs.len());
+    for x in xs {
+        let y = lift_num(x, wp)?;
+        let shifted = y.add(h, wp, RoundingMode::None);
+        if !finite(&shifted) {
+            return None;
+        }
+        row.push(shifted);
+        *k = k.saturating_add(1);
+        let den = ExactNum::from_u32(*k + 1, wp);
+        let bump = h.div(&den, wp, RoundingMode::None);
+        *h = h.add(&bump, wp, RoundingMode::None);
+    }
+    Some(row)
+}
+
+fn values_agree(a: &ExactNum, b: &ExactNum, bits: usize) -> bool {
+    if !finite(a) || !finite(b) {
+        return false;
+    }
+    let wp = bits.saturating_mul(2).max(128);
+    let d = a.sub(b, wp, RoundingMode::None).abs();
+    if d.is_zero() {
+        return true;
+    }
+    let scale = if matches!(a.abs().cmp(&b.abs()), Some(c) if c > 0) {
+        a.abs()
+    } else {
+        b.abs()
+    };
+    let Some(de) = d.exponent() else {
+        return false;
+    };
+    let mag = if scale.is_zero() { 0 } else { scale.exponent().unwrap_or(0).max(0) };
+    i64::from(de) + (bits as i64) < i64::from(mag) + 8
+}
+
+/// Hypercomb limit: shift every parameter by a distinct \(O(2^{-\mathrm{hmag}})\)
+/// and raise the working precision by the pole order times `hmag`. Two step sizes
+/// must agree, which is the finite part of a logarithmic (or higher) residue.
+fn meijer_log_limit(
+    z: &ExactNum,
+    an: &[ExactNum],
+    ap: &[ExactNum],
+    bm: &[ExactNum],
+    bq: &[ExactNum],
+    r: &ExactNum,
+    p: usize,
+    cc: &mut Consts,
+) -> ExactNum {
+    let series = choose_series(an.len(), ap.len(), bm.len(), bq.len(), z, p);
+    let cluster = if series == 1 { max_int_cluster(bm, p) } else { max_int_cluster(an, p) };
+    let mult = cluster.max(2).saturating_sub(1).max(1);
+    let mut prev: Option<ExactNum> = None;
+    for attempt in 0..3u32 {
+        let hmag = p
+            .saturating_add(8)
+            .saturating_add((attempt as usize).saturating_mul(24));
+        let wp = p
+            .saturating_add(hmag.saturating_mul(mult))
+            .saturating_add(64);
+        if wp > 12_000 {
+            break;
+        }
+        let Ok(hmag_i) = i32::try_from(hmag) else {
+            break;
+        };
+        let h0 = ExactNum::from_u8(1, wp).ldexp(-hmag_i, wp, RoundingMode::None);
+        if !finite(&h0) {
+            continue;
+        }
+        let mut h = h0;
+        let mut k = 0u32;
+        let Some(an_p) = perturb_row(an, &mut h, wp, &mut k) else {
+            continue;
+        };
+        let Some(ap_p) = perturb_row(ap, &mut h, wp, &mut k) else {
+            continue;
+        };
+        let Some(bm_p) = perturb_row(bm, &mut h, wp, &mut k) else {
+            continue;
+        };
+        let Some(bq_p) = perturb_row(bq, &mut h, wp, &mut k) else {
+            continue;
+        };
+        let Some(z_p) = lift_num(z, wp) else { continue };
+        let Some(r_p) = lift_num(r, wp) else { continue };
+        let v = match meijer_g_series(&z_p, &an_p, &ap_p, &bm_p, &bq_p, &r_p, wp, cc) {
+            GEval::Val(v) if finite(&v) => v,
+            _ => continue,
+        };
+        if let Some(prev_v) = &prev {
+            if values_agree(prev_v, &v, p) {
+                return v;
+            }
+        }
+        prev = Some(v);
+    }
+    cat_nan()
 }
 
 fn gcd_i(mut a: i32, mut b: i32) -> i32 {
@@ -380,9 +547,12 @@ impl ExactNum {
     /// # Limitations
     ///
     /// - Real line only. \(\mathrm{self}<0\) is `NaN` unless every used power is an integer.
-    /// - Coincident poles (\(b_j-b_h\) a non-positive integer among the first \(m\)
-    ///   parameters, or a numerator \(\Gamma\) pole) return `NaN`. No logarithmic
-    ///   residue / `hypercomb` limit is taken.
+    ///   The logarithmic limit perturbs parameters, so a negative argument whose
+    ///   unperturbed powers were integers can still be `NaN`.
+    /// - Coincident poles (integer differences among the active \(b_1,\ldots,b_m\) or
+    ///   \(a_1,\ldots,a_n\), and cancelling numerator \(\Gamma\) poles) use the
+    ///   hypercomb limit: two parameter shifts must agree. A non-removable pole stays
+    ///   `NaN(InvalidArgument)`.
     /// - At most 8 parameters in \(a\) and in \(b\).
     pub fn meijer_g(
         &self,
@@ -416,7 +586,7 @@ impl ExactNum {
     ///
     /// - \(A_i,B_j\) must be positive rationals with small numerator/denominator
     ///   (denominators \(\le 16\), cleared scales \(\le 12\)). Otherwise `NaN`.
-    /// - Inherits Meijer coincident-pole `NaN` after the lift.
+    /// - Coincident poles after the lift use the same logarithmic limit as [`meijer_g`].
     /// - Real \(\mathrm{self}>0\) when a scale is not 1 (fractional \(z^{1/r}\)).
     pub fn fox_h(
         &self,
@@ -479,17 +649,24 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: DLMF 31.3 power series, stopped at a relative term of \(2^{-p}\)
-    ///   or `series_cap`. Extra word of working precision.
+    /// - Algorithm: DLMF 31.3 power series inside \(\lvert z\rvert<\min(1,\lvert a\rvert)\).
+    ///   Outside that disk, Taylor steps of the ODE along the real segment from a
+    ///   seed in the disk, each step half the distance to \(\{0,1,a\}\). Extra word
+    ///   of working precision.
     /// - Bound: working precision `p + 2 WORD_BIT_SIZE`; not Ziv-certified.
     ///
     /// # Limitations
     ///
-    /// - Converges for \(\lvert z\rvert<1\). \(\lvert z\rvert\ge 1\) is `NaN` (no
-    ///   connection formulas).
-    /// - \(a=0\) or \(\gamma\in\{0,-1,-2,\ldots\}\) (recurrence pole) is `NaN`.
+    /// - The value outside the disk is the real-analytic continuation along the
+    ///   component of \(\mathbb{R}\setminus\{1,a\}\) that contains \(0\). A singular
+    ///   point on the segment (including the endpoint) is `NaN(InvalidArgument)`.
     /// - When \(q=a\alpha\beta\) and \(\delta=\alpha+\beta-\gamma+1\), this is
-    ///   \({}_2F_1(\alpha,\beta;\gamma;z)\).
+    ///   \({}_2F_1(\alpha,\beta;\gamma;z)\) and uses that function's domain
+    ///   (including real \(z>1\) when the series terminates).
+    /// - Two consecutive power-series coefficients that are exact zeros make a
+    ///   polynomial, returned for every finite \(z\).
+    /// - More than 8192 Taylor steps is `NaN(InvalidArgument)`.
+    /// - \(a=0\) or \(\gamma\in\{0,-1,-2,\ldots\}\) (recurrence pole) is `NaN`.
     pub fn heun_g(
         &self,
         a: &Self,
@@ -502,7 +679,6 @@ impl ExactNum {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Self {
-        let _ = cc;
         if !finite(self)
             || !finite(a)
             || !finite(q)
@@ -513,17 +689,25 @@ impl ExactNum {
         {
             return cat_nan();
         }
-        let wrk = work_p(p);
-        if matches!(self.abs().cmp(&ExactNum::from_u8(1, wrk)), Some(c) if c >= 0) {
-            return cat_nan();
-        }
         if a.is_zero() || gamma_pole(gamma) {
             return cat_nan();
         }
         if self.is_zero() {
-            return finish(ExactNum::from_u8(1, wrk), p, rm);
+            return finish(ExactNum::from_u8(1, p), p, rm);
         }
+        if heun_g_is_2f1(a, q, alpha, beta, gamma, delta, p, rm) {
+            return alpha.hypergeom_2f1(beta, gamma, self, p, rm, cc);
+        }
+        let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
+        let rad = if matches!(a.abs().cmp(&one), Some(c) if c < 0) {
+            a.abs()
+        } else {
+            one.clone()
+        };
+        if matches!(self.abs().cmp(&rad), Some(c) if c >= 0) {
+            return heun_g_outside(self, a, q, alpha, beta, gamma, delta, p, rm);
+        }
         let eps = alpha
             .add(beta, wrk, RoundingMode::None)
             .sub(gamma, wrk, RoundingMode::None)
@@ -614,18 +798,22 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Frobenius series of DLMF 31.12.1 about \(z=0\), stopped at a
-    ///   relative term of \(2^{-p}\) or `series_cap`. Extra word of working precision.
+    /// - Algorithm: Frobenius series of DLMF 31.12.1 about \(z=0\) for \(\lvert z\rvert<1\).
+    ///   For real \(z<1\) outside that disk, Taylor steps along \((-\infty,1)\), each
+    ///   step half the distance to \(\{0,1\}\). Extra word of working precision.
     /// - Bound: working precision `p + 2 WORD_BIT_SIZE`; not Ziv-certified.
     ///
     /// # Limitations
     ///
-    /// - \(\lvert z\rvert<1\). \(\lvert z\rvert\ge 1\) is `NaN`.
+    /// - \(z\ge 1\) meets the branch point at \(1\) and is `NaN(InvalidArgument)`
+    ///   unless two consecutive series coefficients are exact zeros (a polynomial,
+    ///   returned for every finite \(z\)) or the \({}_1F_1\) reduction applies.
+    /// - More than 8192 Taylor steps is `NaN(InvalidArgument)`.
     /// - \(\gamma\in\{0,-1,-2,\ldots\}\) is `NaN`.
     /// - When \(\delta=0\), \(\varepsilon=-1\), \(q=\alpha\), this is
-    ///   \({}_1F_1(-\alpha;\gamma;z)\).
+    ///   \({}_1F_1(-\alpha;\gamma;z)\), entire, including \(\lvert z\rvert\ge 1\).
     /// - Biconfluent / double-confluent / triconfluent Heun (DLMF 31.12.2–4) are
-    ///   not implemented: Accumath has no public SoftFloat signature for them,
+    ///   not implemented: there is no public SoftFloat signature for them,
     ///   and the \(z=0\) series is not unique (triconfluent) or not regular
     ///   (double-confluent).
     pub fn heun_c(
@@ -639,7 +827,6 @@ impl ExactNum {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Self {
-        let _ = cc;
         if !finite(self)
             || !finite(alpha)
             || !finite(gamma)
@@ -649,15 +836,19 @@ impl ExactNum {
         {
             return cat_nan();
         }
-        let wrk = work_p(p);
-        if matches!(self.abs().cmp(&ExactNum::from_u8(1, wrk)), Some(c) if c >= 0) {
-            return cat_nan();
-        }
         if gamma_pole(gamma) {
             return cat_nan();
         }
         if self.is_zero() {
-            return finish(ExactNum::from_u8(1, wrk), p, rm);
+            return finish(ExactNum::from_u8(1, p), p, rm);
+        }
+        if heun_c_is_1f1(alpha, delta, eps, q, p) {
+            return self.hypergeom_1f1(&alpha.neg(), gamma, p, rm, cc);
+        }
+        let wrk = work_p(p);
+        let one = ExactNum::from_u8(1, wrk);
+        if matches!(self.abs().cmp(&one), Some(c) if c >= 0) {
+            return heun_c_outside(self, alpha, gamma, delta, eps, q, p, rm);
         }
         let mut b_prev = ExactNum::from_u8(1, wrk);
         let mut b = q.neg().div(gamma, wrk, RoundingMode::None);
@@ -716,6 +907,668 @@ impl ExactNum {
             b = b_next;
         }
         finish(sum, p, rm)
+    }
+}
+
+/// Taylor steps along one real segment. Each step is at most half the distance
+/// to the nearest point of `sings` (the local radius of the ODE).
+const HEUN_STEP_MAX: usize = 8192;
+
+struct OdePoly {
+    a0: ExactNum,
+    a1: ExactNum,
+    a2: ExactNum,
+    a3: ExactNum,
+    b0: ExactNum,
+    b1: ExactNum,
+    b2: ExactNum,
+    c0: ExactNum,
+    c1: ExactNum,
+}
+
+fn un(n: u32, p: usize) -> ExactNum {
+    ExactNum::from_u32(n, p)
+}
+
+fn rel_below(term: &ExactNum, peak: i32, bits: usize) -> bool {
+    if !finite(term) {
+        return false;
+    }
+    if term.is_zero() {
+        return true;
+    }
+    match term.abs().exponent() {
+        Some(e) => (e as i64) + (bits as i64) < i64::from(peak),
+        None => false,
+    }
+}
+
+fn bump_peak(peak: &mut i32, v: &ExactNum) {
+    if let Some(e) = v.abs().exponent() {
+        if e > *peak {
+            *peak = e;
+        }
+    }
+}
+
+fn segment_hits(z: &ExactNum, s: &ExactNum) -> bool {
+    if !finite(z) || !finite(s) || s.is_zero() || z.is_zero() {
+        return false;
+    }
+    if z.is_negative() != s.is_negative() {
+        return false;
+    }
+    matches!(s.abs().cmp(&z.abs()), Some(c) if c <= 0)
+}
+
+fn min_dist(z: &ExactNum, sings: &[ExactNum], p: usize) -> ExactNum {
+    let mut m = z.sub(&sings[0], p, RoundingMode::None).abs();
+    for s in &sings[1..] {
+        let d = z.sub(s, p, RoundingMode::None).abs();
+        if matches!(d.cmp(&m), Some(c) if c < 0) {
+            m = d;
+        }
+    }
+    m
+}
+
+fn horner(coefs: &[ExactNum], z: &ExactNum, p: usize) -> ExactNum {
+    let mut acc = ExactNum::new(p);
+    for c in coefs.iter().rev() {
+        acc = acc
+            .mul(z, p, RoundingMode::None)
+            .add(c, p, RoundingMode::None);
+    }
+    acc
+}
+
+fn heun_eps(
+    alpha: &ExactNum,
+    beta: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    p: usize,
+) -> ExactNum {
+    alpha
+        .add(beta, p, RoundingMode::None)
+        .sub(gamma, p, RoundingMode::None)
+        .sub(delta, p, RoundingMode::None)
+        .add(&ExactNum::from_u8(1, p), p, RoundingMode::None)
+}
+
+fn heun_g_is_2f1(
+    a: &ExactNum,
+    q: &ExactNum,
+    alpha: &ExactNum,
+    beta: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    p: usize,
+    _rm: RoundingMode,
+) -> bool {
+    let q_star = a
+        .mul(alpha, p, RoundingMode::None)
+        .mul(beta, p, RoundingMode::None);
+    let d_star = alpha
+        .add(beta, p, RoundingMode::None)
+        .sub(gamma, p, RoundingMode::None)
+        .add(&ExactNum::from_u8(1, p), p, RoundingMode::None);
+    values_agree(q, &q_star, p) && values_agree(delta, &d_star, p)
+}
+
+fn heun_c_is_1f1(
+    alpha: &ExactNum,
+    delta: &ExactNum,
+    eps: &ExactNum,
+    q: &ExactNum,
+    p: usize,
+) -> bool {
+    let zero = ExactNum::new(p);
+    let neg_one = ExactNum::from_u8(1, p).neg();
+    values_agree(delta, &zero, p) && values_agree(eps, &neg_one, p) && values_agree(q, alpha, p)
+}
+
+/// Power-series coefficients of local Heun about 0. `true` when two consecutive
+/// coefficients are exact zeros (a polynomial; later coefficients stay zero).
+fn heun_g_coefs(
+    a: &ExactNum,
+    q: &ExactNum,
+    alpha: &ExactNum,
+    beta: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    p: usize,
+) -> Option<(Vec<ExactNum>, bool)> {
+    let one = ExactNum::from_u8(1, p);
+    let eps = heun_eps(alpha, beta, gamma, delta, p);
+    let c1 = q.div(&a.mul(gamma, p, RoundingMode::None), p, RoundingMode::None);
+    if !finite(&c1) {
+        return None;
+    }
+    let mut coefs = Vec::new();
+    coefs.push(one.clone());
+    coefs.push(c1);
+    let mut c_prev = one.clone();
+    let mut c = coefs[1].clone();
+    let mut poly = false;
+    for j in 1..=series_cap(p) {
+        let jf = un(j as u32, p);
+        let jm1 = un((j - 1) as u32, p);
+        let jp1 = un((j + 1) as u32, p);
+        let pj = jm1.add(alpha, p, RoundingMode::None).mul(
+            &jm1.add(beta, p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        );
+        let qj = jf.mul(
+            &jm1.add(gamma, p, RoundingMode::None)
+                .mul(&one.add(a, p, RoundingMode::None), p, RoundingMode::None)
+                .add(&a.mul(delta, p, RoundingMode::None), p, RoundingMode::None)
+                .add(&eps, p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        );
+        let rj = a.mul(&jp1, p, RoundingMode::None).mul(
+            &jf.add(gamma, p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        );
+        if rj.is_zero() || !finite(&rj) {
+            return None;
+        }
+        let c_next = qj
+            .add(q, p, RoundingMode::None)
+            .mul(&c, p, RoundingMode::None)
+            .sub(
+                &pj.mul(&c_prev, p, RoundingMode::None),
+                p,
+                RoundingMode::None,
+            )
+            .div(&rj, p, RoundingMode::None);
+        if !finite(&c_next) {
+            return None;
+        }
+        if c.is_zero() && c_next.is_zero() {
+            poly = true;
+            break;
+        }
+        coefs.push(c_next.clone());
+        c_prev = c;
+        c = c_next;
+    }
+    Some((coefs, poly))
+}
+
+fn heun_c_coefs(
+    alpha: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    eps: &ExactNum,
+    q: &ExactNum,
+    p: usize,
+) -> Option<(Vec<ExactNum>, bool)> {
+    let b1 = q.neg().div(gamma, p, RoundingMode::None);
+    if !finite(&b1) {
+        return None;
+    }
+    let mut coefs = Vec::new();
+    coefs.push(ExactNum::from_u8(1, p));
+    coefs.push(b1);
+    let mut b_prev = coefs[0].clone();
+    let mut b = coefs[1].clone();
+    let mut poly = false;
+    for n in 1..=series_cap(p) {
+        let nf = un(n as u32, p);
+        let nm1 = un((n - 1) as u32, p);
+        let np1 = un((n + 1) as u32, p);
+        let left = np1.mul(&nf.add(gamma, p, RoundingMode::None), p, RoundingMode::None);
+        if left.is_zero() || !finite(&left) {
+            return None;
+        }
+        let coef_n = nf
+            .mul(
+                &nm1.add(gamma, p, RoundingMode::None)
+                    .add(delta, p, RoundingMode::None)
+                    .sub(eps, p, RoundingMode::None),
+                p,
+                RoundingMode::None,
+            )
+            .sub(q, p, RoundingMode::None);
+        let coef_nm1 = alpha.add(&eps.mul(&nm1, p, RoundingMode::None), p, RoundingMode::None);
+        let b_next = coef_n
+            .mul(&b, p, RoundingMode::None)
+            .add(
+                &coef_nm1.mul(&b_prev, p, RoundingMode::None),
+                p,
+                RoundingMode::None,
+            )
+            .div(&left, p, RoundingMode::None);
+        if !finite(&b_next) {
+            return None;
+        }
+        if b.is_zero() && b_next.is_zero() {
+            poly = true;
+            break;
+        }
+        coefs.push(b_next.clone());
+        b_prev = b;
+        b = b_next;
+    }
+    Some((coefs, poly))
+}
+
+fn eval_jet(
+    coefs: &[ExactNum],
+    z: &ExactNum,
+    p: usize,
+    bits: usize,
+) -> Option<(ExactNum, ExactNum)> {
+    if coefs.is_empty() || z.is_zero() || !finite(z) {
+        return None;
+    }
+    let mut zp = ExactNum::from_u8(1, p);
+    let mut y = ExactNum::new(p);
+    let mut yp = ExactNum::new(p);
+    let mut peak_y = i32::MIN;
+    let mut peak_d = i32::MIN;
+    let mut term_ok = false;
+    let mut deriv_ok = false;
+    for (n, c) in coefs.iter().enumerate() {
+        let term = c.mul(&zp, p, RoundingMode::None);
+        if !finite(&term) {
+            return None;
+        }
+        y = y.add(&term, p, RoundingMode::None);
+        bump_peak(&mut peak_y, &term);
+        bump_peak(&mut peak_y, &y);
+        term_ok = rel_below(&term, peak_y, bits);
+        if n == 0 {
+            deriv_ok = true;
+        } else {
+            let dterm =
+                un(n as u32, p).mul(&term.div(z, p, RoundingMode::None), p, RoundingMode::None);
+            if !finite(&dterm) {
+                return None;
+            }
+            yp = yp.add(&dterm, p, RoundingMode::None);
+            bump_peak(&mut peak_d, &dterm);
+            bump_peak(&mut peak_d, &yp);
+            deriv_ok = rel_below(&dterm, peak_d, bits);
+        }
+        zp = zp.mul(z, p, RoundingMode::None);
+    }
+    if term_ok && deriv_ok && finite(&y) && finite(&yp) {
+        Some((y, yp))
+    } else {
+        None
+    }
+}
+
+fn heun_g_ode(
+    z0: &ExactNum,
+    a: &ExactNum,
+    q: &ExactNum,
+    alpha: &ExactNum,
+    beta: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    p: usize,
+) -> Option<OdePoly> {
+    let one = ExactNum::from_u8(1, p);
+    let eps = heun_eps(alpha, beta, gamma, delta, p);
+    let zm1 = z0.sub(&one, p, RoundingMode::None);
+    let zma = z0.sub(a, p, RoundingMode::None);
+    let a0 = z0
+        .mul(&zm1, p, RoundingMode::None)
+        .mul(&zma, p, RoundingMode::None);
+    if a0.is_zero() || !finite(&a0) {
+        return None;
+    }
+    let three = ExactNum::from_u8(3, p);
+    let a2 = three
+        .mul(z0, p, RoundingMode::None)
+        .sub(&one, p, RoundingMode::None)
+        .sub(a, p, RoundingMode::None);
+    let a1 = z0
+        .mul(&zm1, p, RoundingMode::None)
+        .add(&z0.mul(&zma, p, RoundingMode::None), p, RoundingMode::None)
+        .add(&zm1.mul(&zma, p, RoundingMode::None), p, RoundingMode::None);
+    let b0 = gamma
+        .mul(&zm1.mul(&zma, p, RoundingMode::None), p, RoundingMode::None)
+        .add(
+            &delta.mul(&z0.mul(&zma, p, RoundingMode::None), p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        )
+        .add(
+            &eps.mul(&z0.mul(&zm1, p, RoundingMode::None), p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        );
+    let b1 = gamma
+        .mul(&zm1.add(&zma, p, RoundingMode::None), p, RoundingMode::None)
+        .add(
+            &delta.mul(&z0.add(&zma, p, RoundingMode::None), p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        )
+        .add(
+            &eps.mul(&z0.add(&zm1, p, RoundingMode::None), p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        );
+    let b2 = gamma
+        .add(delta, p, RoundingMode::None)
+        .add(&eps, p, RoundingMode::None);
+    let ab = alpha.mul(beta, p, RoundingMode::None);
+    Some(OdePoly {
+        a0,
+        a1,
+        a2,
+        a3: one,
+        b0,
+        b1,
+        b2,
+        c0: ab
+            .mul(z0, p, RoundingMode::None)
+            .sub(q, p, RoundingMode::None),
+        c1: ab,
+    })
+}
+
+fn heun_c_ode(
+    z0: &ExactNum,
+    alpha: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    eps: &ExactNum,
+    q: &ExactNum,
+    p: usize,
+) -> Option<OdePoly> {
+    let one = ExactNum::from_u8(1, p);
+    let zm1 = z0.sub(&one, p, RoundingMode::None);
+    let a0 = z0.mul(&zm1, p, RoundingMode::None);
+    if a0.is_zero() || !finite(&a0) {
+        return None;
+    }
+    let two = ExactNum::from_u8(2, p);
+    let a1 = two
+        .mul(z0, p, RoundingMode::None)
+        .sub(&one, p, RoundingMode::None);
+    let b0 = gamma
+        .mul(&zm1, p, RoundingMode::None)
+        .add(&delta.mul(z0, p, RoundingMode::None), p, RoundingMode::None)
+        .add(
+            &eps.mul(&z0.mul(&zm1, p, RoundingMode::None), p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        );
+    let b1 = gamma.add(delta, p, RoundingMode::None).add(
+        &eps.mul(&a1, p, RoundingMode::None),
+        p,
+        RoundingMode::None,
+    );
+    Some(OdePoly {
+        a0,
+        a1,
+        a2: one,
+        a3: ExactNum::new(p),
+        b0,
+        b1,
+        b2: eps.clone(),
+        c0: alpha
+            .mul(z0, p, RoundingMode::None)
+            .sub(q, p, RoundingMode::None),
+        c1: alpha.clone(),
+    })
+}
+
+fn taylor_step(
+    ode: &OdePoly,
+    y: &ExactNum,
+    yp: &ExactNum,
+    h: &ExactNum,
+    p: usize,
+    bits: usize,
+) -> Option<(ExactNum, ExactNum)> {
+    if h.is_zero() {
+        return Some((y.clone(), yp.clone()));
+    }
+    let mut c_km1 = ExactNum::new(p);
+    let mut c_k = y.clone();
+    let mut c_kp1 = yp.clone();
+    let mut hpow = h.clone();
+    let mut sum = y.add(&yp.mul(h, p, RoundingMode::None), p, RoundingMode::None);
+    let mut dsum = yp.clone();
+    let mut peak_y = i32::MIN;
+    let mut peak_d = i32::MIN;
+    bump_peak(&mut peak_y, &sum);
+    bump_peak(&mut peak_d, &dsum);
+    let cap = series_cap(p);
+    for k in 0..cap {
+        let ku = k as u32;
+        let kp1 = ku + 1;
+        let kp2 = ku + 2;
+        let left =
+            un(kp1, p)
+                .mul(&un(kp2, p), p, RoundingMode::None)
+                .mul(&ode.a0, p, RoundingMode::None);
+        if left.is_zero() || !finite(&left) {
+            return None;
+        }
+        let coef_kp1 = un(kp1, p).mul(
+            &un(ku, p)
+                .mul(&ode.a1, p, RoundingMode::None)
+                .add(&ode.b0, p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        );
+        let (coef_k, coef_km1) = if k == 0 {
+            (ode.c0.clone(), ExactNum::new(p))
+        } else {
+            let km1 = ku - 1;
+            let km2 = ku.saturating_sub(2);
+            let coef_k = un(ku, p)
+                .mul(&un(km1, p), p, RoundingMode::None)
+                .mul(&ode.a2, p, RoundingMode::None)
+                .add(
+                    &un(ku, p).mul(&ode.b1, p, RoundingMode::None),
+                    p,
+                    RoundingMode::None,
+                )
+                .add(&ode.c0, p, RoundingMode::None);
+            let coef_km1 = un(km1, p)
+                .mul(&un(km2, p), p, RoundingMode::None)
+                .mul(&ode.a3, p, RoundingMode::None)
+                .add(
+                    &un(km1, p).mul(&ode.b2, p, RoundingMode::None),
+                    p,
+                    RoundingMode::None,
+                )
+                .add(&ode.c1, p, RoundingMode::None);
+            (coef_k, coef_km1)
+        };
+        let rhs = coef_kp1
+            .mul(&c_kp1, p, RoundingMode::None)
+            .add(
+                &coef_k.mul(&c_k, p, RoundingMode::None),
+                p,
+                RoundingMode::None,
+            )
+            .add(
+                &coef_km1.mul(&c_km1, p, RoundingMode::None),
+                p,
+                RoundingMode::None,
+            );
+        let c_kp2 = rhs.neg().div(&left, p, RoundingMode::None);
+        if !finite(&c_kp2) {
+            return None;
+        }
+        let h_prev = hpow.clone();
+        hpow = hpow.mul(h, p, RoundingMode::None);
+        let term = c_kp2.mul(&hpow, p, RoundingMode::None);
+        let dterm = un(kp2, p).mul(
+            &c_kp2.mul(&h_prev, p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        );
+        if !finite(&term) || !finite(&dterm) {
+            return None;
+        }
+        sum = sum.add(&term, p, RoundingMode::None);
+        dsum = dsum.add(&dterm, p, RoundingMode::None);
+        bump_peak(&mut peak_y, &term);
+        bump_peak(&mut peak_y, &sum);
+        bump_peak(&mut peak_d, &dterm);
+        bump_peak(&mut peak_d, &dsum);
+        c_km1 = c_k;
+        c_k = c_kp1;
+        c_kp1 = c_kp2;
+        if rel_below(&term, peak_y, bits) && rel_below(&dterm, peak_d, bits) {
+            return Some((sum, dsum));
+        }
+    }
+    None
+}
+
+fn close_enough(rem: &ExactNum, target: &ExactNum, bits: usize) -> bool {
+    if rem.is_zero() {
+        return true;
+    }
+    let mut peak = 0i32;
+    bump_peak(&mut peak, target);
+    bump_peak(&mut peak, &ExactNum::from_u8(1, bits.max(64)));
+    rel_below(rem, peak, bits.saturating_add(16))
+}
+
+fn taylor_walk<F>(
+    mut zc: ExactNum,
+    mut y: ExactNum,
+    mut yp: ExactNum,
+    target: &ExactNum,
+    sings: &[ExactNum],
+    p: usize,
+    bits: usize,
+    mut ode_at: F,
+) -> Option<ExactNum>
+where
+    F: FnMut(&ExactNum) -> Option<OdePoly>,
+{
+    let acc = bits.saturating_add(32);
+    for _ in 0..HEUN_STEP_MAX {
+        let rem = target.sub(&zc, p, RoundingMode::None);
+        if close_enough(&rem, target, bits) {
+            return if finite(&y) { Some(y) } else { None };
+        }
+        let dist = min_dist(&zc, sings, p);
+        if dist.is_zero() || !finite(&dist) {
+            return None;
+        }
+        let step = dist.ldexp(-1, p, RoundingMode::None);
+        let h = if matches!(rem.abs().cmp(&step), Some(c) if c <= 0) {
+            rem
+        } else if rem.is_negative() {
+            step.neg()
+        } else {
+            step
+        };
+        if h.is_zero() {
+            return if finite(&y) { Some(y) } else { None };
+        }
+        let ode = ode_at(&zc)?;
+        let (yn, ypn) = taylor_step(&ode, &y, &yp, &h, p, acc)?;
+        let next = zc.add(&h, p, RoundingMode::None);
+        if next.cmp(&zc) == Some(0) {
+            return if finite(&yn) { Some(yn) } else { None };
+        }
+        zc = next;
+        y = yn;
+        yp = ypn;
+    }
+    None
+}
+
+fn disk_seed(z: &ExactNum, radius: &ExactNum, p: usize) -> ExactNum {
+    let half = radius.ldexp(-1, p, RoundingMode::None);
+    if z.is_negative() {
+        half.neg()
+    } else {
+        half
+    }
+}
+
+fn heun_g_outside(
+    z: &ExactNum,
+    a: &ExactNum,
+    q: &ExactNum,
+    alpha: &ExactNum,
+    beta: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+) -> ExactNum {
+    let wrk = work_p(p);
+    let Some((coefs, poly)) = heun_g_coefs(a, q, alpha, beta, gamma, delta, wrk) else {
+        return cat_nan();
+    };
+    if poly {
+        return finish(horner(&coefs, z, wrk), p, rm);
+    }
+    let one = ExactNum::from_u8(1, wrk);
+    if segment_hits(z, &one) || segment_hits(z, a) {
+        return cat_nan();
+    }
+    let rad = if matches!(a.abs().cmp(&one), Some(c) if c < 0) {
+        a.abs()
+    } else {
+        one.clone()
+    };
+    let seed = disk_seed(z, &rad, wrk);
+    let Some((y, yp)) = eval_jet(&coefs, &seed, wrk, p.saturating_add(32)) else {
+        return cat_nan();
+    };
+    let zero = ExactNum::new(wrk);
+    let sings = [zero, one, a.clone()];
+    match taylor_walk(seed, y, yp, z, &sings, wrk, p, |z0| {
+        heun_g_ode(z0, a, q, alpha, beta, gamma, delta, wrk)
+    }) {
+        Some(v) if finite(&v) => finish(v, p, rm),
+        _ => cat_nan(),
+    }
+}
+
+fn heun_c_outside(
+    z: &ExactNum,
+    alpha: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    eps: &ExactNum,
+    q: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+) -> ExactNum {
+    let wrk = work_p(p);
+    let Some((coefs, poly)) = heun_c_coefs(alpha, gamma, delta, eps, q, wrk) else {
+        return cat_nan();
+    };
+    if poly {
+        return finish(horner(&coefs, z, wrk), p, rm);
+    }
+    let one = ExactNum::from_u8(1, wrk);
+    if !z.is_negative() {
+        return cat_nan();
+    }
+    let seed = disk_seed(z, &one, wrk);
+    let Some((y, yp)) = eval_jet(&coefs, &seed, wrk, p.saturating_add(32)) else {
+        return cat_nan();
+    };
+    let sings = [ExactNum::new(wrk), one];
+    match taylor_walk(seed, y, yp, z, &sings, wrk, p, |z0| {
+        heun_c_ode(z0, alpha, gamma, delta, eps, q, wrk)
+    }) {
+        Some(v) if finite(&v) => finish(v, p, rm),
+        _ => cat_nan(),
     }
 }
 

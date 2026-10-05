@@ -295,3 +295,46 @@ fn complex_bessel_mpmath() {
         failures.join("\n")
     );
 }
+
+/// Non-integer \(K_\nu\) inside the series regime (\(|z| < 0.35(p+112)\)), where
+/// 1.0.10 built \(K\) from \(J\pm iY\). DLMF 10.27.4 uses \(I_{\pm\nu}\) instead.
+/// Golds: mpmath 1.4.1 `besselk`.
+#[test]
+fn complex_bessel_k_series_regime() {
+    let mut cc = Consts::new().unwrap();
+    let cases = [
+        (
+            128usize,
+            "12,4",
+            "0.5,0.25",
+            "-0.00000115328371866926139744423400921903704077388422638405",
+            "0.00000183412975361786551368727230634116909943846119566464",
+        ),
+        (
+            256,
+            "80,15",
+            "1.25,-0.5",
+            "-2.0702567851776862752338243399737119045965562173317838485349570630285564983116221e-36",
+            "-1.4364804432204116625604797429629915931147849190003390531860419923550787890514377e-36",
+        ),
+    ];
+    for (p, zs, nus, want_re, want_im) in cases {
+        let z = c(zs, p, &mut cc);
+        let nu = c(nus, p, &mut cc);
+        let got = z.bessel_k(&nu, p, RM, &mut cc);
+        assert!(!got.is_nan(), "K({zs}; {nus}) at {p} is NaN");
+        let wp = p + 64;
+        let wr = ExactNum::parse(want_re, Radix::Dec, wp, RM, &mut cc);
+        let wi = ExactNum::parse(want_im, Radix::Dec, wp, RM, &mut cc);
+        let scale = exp2(&wr).max(exp2(&wi));
+        let er = got.re().sub(&wr, wp, RoundingMode::None);
+        let ei = got.im().sub(&wi, wp, RoundingMode::None);
+        let err = exp2(&er).max(exp2(&ei));
+        let need = p as i32 - 4;
+        assert!(
+            err <= scale - need,
+            "K({zs}; {nus}) at {p}: {} bits, need {need}",
+            scale - err
+        );
+    }
+}

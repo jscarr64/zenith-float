@@ -1,6 +1,6 @@
 # zenith-float
 
-> **Please upgrade to zenith-float 1.0.10.** Versions 1.0.0 through 1.0.4
+> **Please upgrade to zenith-float 1.0.11.** Versions 1.0.0 through 1.0.4
 > return wrong values from `erf`, `erfc`, `normal_cdf`, `hypergeom_2f1`,
 > `betainc`, the gamma family, Bessel and several other special functions for
 > some inputs, with no error reported, and their quadrature, root-finding and
@@ -8,9 +8,9 @@
 > with no API changes:
 > `cargo update -p zenith-float -p zenith-float-num -p zenith-float-macro`.
 > Versions 1.0.0 through 1.0.4 have been yanked from crates.io.
-> Details: [1.0.5 release notes](https://github.com/jscarr64/zenith-float/releases/tag/v1.0.5). 1.0.6 is an additive SoftFloat pack: Jacobi \(P_n^{(\alpha,\beta)}\), real large-argument Bessel Hankel, complex Bessel cut/speed fixes, catalog specials (Scorer, Kelvin, Struve, Anger–Weber, Clausen, Barnes \(G\), polygamma / Hurwitz, inverse Jacobi, \({}_pF_q\), Lambert \(W\)), plus Meijer \(G\), Fox \(H\), and local / confluent Heun. 1.0.7 is a compile-only fix: the 1.85-required unsafe wrappers around `_addcarry_u64`/`_subborrow_u64` stay, and `unused_unsafe` is allowed so the crate builds on rustc 1.93+ (those intrinsics became safe in 1.93, not 1.87). No math change. 1.0.8 corrects the README upgrade target; no math. 1.0.9 sizes the Bessel \(I\) series guard to cancellation (a 32-bit pad when every term is positive) instead of \(1.5\lvert z\rvert+16\). 1.0.10 adds SoftFloat Gauss–Kronrod (7, 15) and Wynn ε quadrature. No public signature was removed or changed.
+> Details: [1.0.5 release notes](https://github.com/jscarr64/zenith-float/releases/tag/v1.0.5). 1.0.6 is an additive SoftFloat pack: Jacobi \(P_n^{(\alpha,\beta)}\), real large-argument Bessel Hankel, complex Bessel cut/speed fixes, catalog specials (Scorer, Kelvin, Struve, Anger–Weber, Clausen, Barnes \(G\), polygamma / Hurwitz, inverse Jacobi, \({}_pF_q\), Lambert \(W\)), plus Meijer \(G\), Fox \(H\), and local / confluent Heun. 1.0.7 is a compile-only fix: the 1.85-required unsafe wrappers around `_addcarry_u64`/`_subborrow_u64` stay, and `unused_unsafe` is allowed so the crate builds on rustc 1.93+ (those intrinsics became safe in 1.93, not 1.87). No math change. 1.0.8 corrects the README upgrade target; no math. 1.0.9 sizes the Bessel \(I\) series guard to cancellation (a 32-bit pad when every term is positive) instead of \(1.5\lvert z\rvert+16\). 1.0.10 adds SoftFloat Gauss–Kronrod (7, 15) and Wynn ε quadrature. 1.0.11 evaluates non-integer complex \(K_\nu\) in the series regime from \(I_{\pm\nu}\) (DLMF 10.27.4), takes the Meijer \(G\) logarithmic limit at coincident poles, and continues local and confluent Heun along the real interval that does not meet a singular point. No public signature was removed or changed.
 
-Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.10**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
+Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.11**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
 
 All arithmetic runs on integer limbs. The library does not use hardware floating-point registers for calculations. Construct `ExactNum` from integers or from binary, octal, decimal, or hexadecimal strings; construct IEEE widths from integer bit patterns (`from_bits`).
 
@@ -65,7 +65,7 @@ zenith-float = { version = "1.0", default-features = false }
 
 ## Known issues
 
-The 1.0.5 complex-Bessel cut hang and the real large-\(|x|\) `InvalidArgument` are closed in 1.0.6. Complex `bessel_k` can still be slow for non-integer \(\nu\) when \(|z|\) is just inside the series regime (the Temme \({}_2F_0\) path covers the large-\(|z|\) cases). Meijer \(G\) returns `NaN` at coincident poles (no logarithmic residue). Local / confluent Heun are series for \(\lvert z\rvert<1\) only. See `CHANGELOG.md`.
+None. The items open at 1.0.10 are closed in 1.0.11: non-integer complex `bessel_k` inside the series regime, Meijer \(G\) at coincident poles, and local / confluent Heun for \(\lvert z\rvert\ge 1\). A Heun argument whose real segment from 0 meets a singular point is `NaN(InvalidArgument)`; that is the domain of the real solution, recorded in the method rustdoc, not an open defect.
 
 ## Rounding
 
