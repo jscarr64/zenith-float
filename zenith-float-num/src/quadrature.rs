@@ -1,4 +1,20 @@
-//! Gauss and tanh–sinh quadrature on [`ExactNum`].
+//! Gauss, Gauss–Kronrod, and tanh–sinh quadrature on [`ExactNum`].
+//!
+//! [`kronrod_pair`], [`gauss_kronrod_interval`], [`integrate_adaptive_gk`],
+//! and [`wynn_epsilon`] are the (7, 15) rule: Laurie’s Jacobi–Kronrod
+//! recurrence, a `|K−G|` estimate, and Wynn’s ε table. The adaptive idea
+//! follows Piessens, de Doncker-Kapenga, Überhuber, and Kahaner, *QUADPACK*
+//! (Springer, 1983). The Fortran is not transcribed.
+
+pub use crate::gauss_kronrod::gauss_kronrod_interval;
+pub use crate::gauss_kronrod::integrate_adaptive_gk;
+pub use crate::gauss_kronrod::kronrod_pair;
+pub use crate::gauss_kronrod::wynn_epsilon;
+pub use crate::gauss_kronrod::GkResult;
+pub use crate::gauss_kronrod::QuadratureError;
+pub use crate::gauss_kronrod::GK_GAUSS_ORDER;
+pub use crate::gauss_kronrod::GK_KRONROD_ORDER;
+pub use crate::gauss_kronrod::GK_SUBINTERVAL_MAX;
 
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;

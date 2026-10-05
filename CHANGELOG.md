@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Gauss–Kronrod (7, 15) and Wynn ε
+
+SoftFloat quadrature for `∫_a^b f(x) dx` on a finite interval. No `f64` path.
+
+- `kronrod_pair` builds the (7, 15) nodes and both weight rows at `p + WORD_BIT_SIZE`. The recurrence is Laurie’s Jacobi–Kronrod matrix for the Legendre weight (*Math. Comp.* 66, 1997); weights are Golub–Welsch. Orders other than 7 return `None`.
+- `gauss_kronrod_interval` returns the Kronrod sum `K`, the embedded Gauss sum `G`, and `abs_err_est = |K − G|`.
+- `wynn_epsilon` is Wynn’s ε table on a sequence of partial sums.
+- `integrate_adaptive_gk(f, a, b, tol_rel, max_subintervals, p, rm, cc)` bisects the panel with the largest `|K − G|` and, when that raw sum is still slow, accepts a stable ε value. The absolute stop is `max(tol_rel * max(1, |estimate|), 2^(1−p))`. Failure is [`QuadratureError`], not a panic and not a quiet wrong number.
+
+The local error `|K − G|` and the ε acceleration for endpoint singularities are the QUADPACK design of Piessens, de Doncker-Kapenga, Überhuber, and Kahaner (*QUADPACK*, Springer, 1983; SLATEC’s port of that design is public domain). This tree recomputes the rule in SoftFloat `ExactNum`. It does not copy the ACM / SLATEC Fortran.
+
+Still unsupported: infinite intervals (`QAGI`), oscillatory weights (`QAWO` / `QAWF`), algebraic endpoint weights (`QAWS`), Cauchy principal values (`QAWC`), Kronrod pairs other than (7, 15), and the full `QAGS` heap. Not published to crates.io from this change.
+
 ## 1.0.9 — 2026-10-04
 
 The complex \(I_\nu\) power-series guard is sized to cancellation, not \(1.5\lvert z\rvert+16\) (that blanket is what 1.0.6 through 1.0.8 shipped; 1.0.7 and 1.0.8 were not this fix). When every term is positive (real \(z>0\), real \(\nu>-1\)) the guard is a fixed 32-bit pad. Otherwise it is that pad plus an upper bound on \(\lceil(\lvert z\rvert-\mathrm{Re}\,z)/\ln 2\rceil\), raised again if the summed peak still exceeds the result. Real \(I_\nu\) for large \(\lvert x\rvert\) now runs past the peak at \(k\approx\lvert x\rvert/2\). Real \(K_\nu\) uses the asymptotic series when the \(2.885\lvert x\rvert\) guard would exceed `BESSEL_GUARD_MAX`, instead of returning `InvalidArgument`. Complex \(K\) on the positive real axis uses that real kernel past the series switch. Clippy `-D warnings` cleanups in the same tree (manual `find`, `clamp`, `from_ref`, single-iteration test loops) do not change numeric results. The 1.85 `unused_unsafe` allow on `_addcarry_u64` / `_subborrow_u64` stays.
