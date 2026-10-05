@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 1.0.10 — 2026-10-05
+
 ### Gauss–Kronrod (7, 15) and Wynn ε
 
 SoftFloat quadrature for `∫_a^b f(x) dx` on a finite interval. No `f64` path.
@@ -13,7 +15,7 @@ SoftFloat quadrature for `∫_a^b f(x) dx` on a finite interval. No `f64` path.
 
 The local error `|K − G|` and the ε acceleration for endpoint singularities are the QUADPACK design of Piessens, de Doncker-Kapenga, Überhuber, and Kahaner (*QUADPACK*, Springer, 1983; SLATEC’s port of that design is public domain). This tree recomputes the rule in SoftFloat `ExactNum`. It does not copy the ACM / SLATEC Fortran.
 
-Still unsupported: infinite intervals (`QAGI`), oscillatory weights (`QAWO` / `QAWF`), algebraic endpoint weights (`QAWS`), Cauchy principal values (`QAWC`), Kronrod pairs other than (7, 15), and the full `QAGS` heap. Not published to crates.io from this change.
+Still unsupported: infinite intervals (`QAGI`), oscillatory weights (`QAWO` / `QAWF`), algebraic endpoint weights (`QAWS`), Cauchy principal values (`QAWC`), Kronrod pairs other than (7, 15), and the full `QAGS` heap.
 
 ## 1.0.9 — 2026-10-04
 
