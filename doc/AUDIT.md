@@ -273,6 +273,14 @@ Counts: fixed 45, verified 85
 
 ## Known issues (fix planned)
 
+**Status at 1.0.12.** The three items below were the open list at the end of the 1.0.5 audit. They are closed, and nothing in this section is an open defect:
+
+1. Complex `bessel_k` for non-integer \(\nu\) inside the series regime: closed in 1.0.11 (DLMF 10.27.4, \(I_{\pm\nu}\)). The 74 s point was the \(J\pm iY\) path.
+2. Real `bessel_j_nu` / `bessel_y` for \(\lvert x\rvert\gtrsim 10^4\): closed in 1.0.6 (Hankel expansion, `bessel_large_arg_mpmath`).
+3. Complex Bessel on the negative real axis: closed in 1.0.6 (real kernels and DLMF 10.11 / 10.34, so an algebraic zero stays zero).
+
+The paragraphs under this heading are the 1.0.5 write-up, kept so the audit still shows what was open then.
+
 1. **Complex `bessel_k` is slow for non-integer \(\nu\) at high precision when \(\lvert z\rvert\) is just inside the series regime** (\(\lvert z\rvert<0.35(p+112)\)). `bessel_k(150−20i, 2+0.5i)` takes about 74 s at 512 bits and 13 ms at 256 bits (Hankel regime there); the result is correct to 513 bits. 1.0.4 returned a wrong value quickly. Cause: the series path carries about \(3\lvert z\rvert\) guard bits for the \(J\pm iY\) cancellation and needs both \(J_{\pm\nu}\). Planned fix: a uniform asymptotic or recurrence path. Workaround: lower precision, integer \(\nu\) where possible (`bessel_k(150−20i, 2)` at 512 bits: 0.9 s), or allow for the run time.
 2. **Real `bessel_j_nu` / `bessel_y` return `InvalidArgument` for \(\lvert x\rvert\gtrsim10^4\)** (`BESSEL_GUARD_MAX`; no large-argument Hankel expansion in the real kernel). Planned fix: the real Hankel expansion. Workaround, verified: `ExactComplex::bessel_j_nu` / `bessel_y` at \(x+0i\) with \(x>0\) agree with mpmath to working precision at \(x=2\cdot10^4\) (J and Y, 128 and 256 bits) and \(x=10^6\) (J, 128 bits); take the real part. For \(x<0\) with integer order use \(J_n(-x)=(-1)^nJ_n(x)\), \(Y\) likewise via DLMF 10.11.2.
 3. **Complex Bessel exactly on the negative real axis with real \(\nu\)** (found in this round; present in 1.0.4). A part that is exactly zero, or tiny next to the other part, is not resolved. `bessel_i` / `bessel_k` with half-integer \(\nu\) return `PrecisionRetryExhausted` for large \(\lvert z\rvert\) and take minutes for small \(\lvert z\rvert\) (`bessel_i(−2, 0.5)` at 128 bits: about 5 minutes, then NaN). `bessel_j_nu(−2, 0.5)` returns a real part of about \(4\cdot10^{-136}\) instead of 0, and `bessel_k(−500, 0)` a real part of \(-5\cdot10^{119}\) instead of \(K_0(500)\approx4\cdot10^{-219}\); both are within \(2^{-p}\) of the modulus. Off the axis and on the positive real axis results are correct. Planned fix: evaluate on the axis through the reflection formulas with exact phases. Workaround: evaluate at \(-z\) and apply DLMF 10.11.1 / 10.34.1 (e.g. \(I_\nu(-x+0i)=e^{i\nu\pi}I_\nu(x)\)), or use the real functions.

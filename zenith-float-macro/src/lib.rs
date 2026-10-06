@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! `expr!` procedural macro for zenith-float.
 //!
 //! Depend on the `zenith-float` crate and use `zenith_float::expr`. This crate is not a direct dependency for applications.

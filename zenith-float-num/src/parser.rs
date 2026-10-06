@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! Parser parses numbers represented in scientific format.
 
 use crate::defs::Exponent;

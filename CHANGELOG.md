@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## 1.0.12 — 2026-10-06
+
+Attribution for code derived from [astro-float](https://github.com/stencillogic/astro-float) (MIT, Copyright (c) 2022 stencillogic; crates `astro-float` 0.9.6, `astro-float-num` 0.3.7, `astro-float-macro` 0.4.6, commit `c0d9a26`). `NOTICE` has the full MIT copyright and permission notice. Each derived file names that origin. Original work stays under Apache-2.0 and is also offered as MIT. The file list is `doc/PROVENANCE.md`.
+
+### Heun closed-form detection
+
+`heun_g_is_2f1` and `heun_c_is_1f1` no longer call `values_agree` (about eight bits of slack). Exact dyadic parameters are compared with full-precision arithmetic. Any other parameter must agree to one ulp of `p`, with the residual measured at precision `2p`. A near-miss such as \(q=-20+2^{-120}\) on the terminating \({}_2F_1(-10,1;1;1/2)\) stays on the general Heun series.
+
+Golds are mpmath 1.4.1 `hyp2f1` / `hyp1f1` for the exact reductions, and an mpmath power series for the near-misses. Those near-misses disagree with the closed form.
+
+### Known issues
+
+None are open.
+
+- Complex `bessel_k` for non-integer \(\nu\) inside the series regime: closed in 1.0.11 (DLMF 10.27.4).
+- Real `bessel_j_nu` / `bessel_y` for \(\lvert x\rvert\gtrsim 10^4\): closed in 1.0.6 (Hankel expansion).
+- Complex Bessel on the negative real axis: closed in 1.0.6 (reflection formulas).
+
+`doc/AUDIT.md` still describes those three as the 1.0.5 audit's open list. That text is the record of 1.0.5, not a list of current defects. A Heun argument whose real segment from 0 meets a singular point is `NaN(InvalidArgument)`, which is the documented domain.
+
 ## 1.0.11 — 2026-10-05
 
 Closes the three items that were still listed under Known issues at 1.0.10. No public signature was removed or changed.

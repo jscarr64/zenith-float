@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! Static constants.
 
 use crate::{defs::DEFAULT_P, num::ExactNumNumber, Exponent, WORD_BIT_SIZE};

@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! Components used in MPFR integration tests
 
 use gmp_mpfr_sys::mpfr::{self, rnd_t};

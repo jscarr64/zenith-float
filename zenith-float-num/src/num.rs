@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! ExactNumNumber definition and basic arithmetic, comparison, and number manipulation operations.
 
 use crate::common::consts::ONE;

@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! zenith-float implements arbitrary-precision software floating-point numbers
 //! (`ExactNum`) and software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`).
 //! All arithmetic uses integer limbs. The library does not use hardware floating-point for calculations.

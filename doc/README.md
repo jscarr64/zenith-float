@@ -1,3 +1,4 @@
+<!-- Derived from astro-float (https://github.com/stencillogic/astro-float), Copyright (c) 2022 stencillogic, MIT License. -->
 # Errors
 
 This document describes how error is estimated. Given an operation and arguments containing certain error the goal it to find error bound of the result of the operation. When the error of the result is known, operations can be applied sequentially to estimate error of a more complex construct.

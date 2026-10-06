@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! Auxiliary items.
 
 use crate::common::consts::TRIG_EXP_THRES;

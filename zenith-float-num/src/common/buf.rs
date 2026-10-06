@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! Buffer for holding mantissa digits.
 //!
 //! Lengths of at most [`INLINE_WORDS`] words are stored inline (no heap allocation).

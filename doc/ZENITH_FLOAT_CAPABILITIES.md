@@ -1,6 +1,6 @@
 # zenith-float Capability Reference
 
-**Version:** 1.0.11  
+**Version:** 1.0.12  
 **Date:** 2026-10-05  
 **License:** MIT OR Apache-2.0  
 **Status:** Public crate  
@@ -559,6 +559,7 @@ dashu-float 0.6.0: `consts.rs` is an empty stub (no γ). `FBig::with_rounding::<
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| 1.0.12 | 2026-10-06 | MIT notice for code derived from astro-float (`NOTICE`, file headers, `doc/PROVENANCE.md`). Heun \({}_2F_1\) / \({}_1F_1\) reduction requires an exact dyadic identity or one ulp of `p`, not about eight bits of slack. |
 | 1.0.11 | 2026-10-05 | Series-regime complex \(K\) via DLMF 10.27.4; Meijer \(G\) logarithmic coincident-pole limit; Heun continued past the unit disk up to the nearest real singular point. |
 | 1.0.6 | 2026-10-02 | Additive pack: `jacobi_p`; real large-\(\lvert x\rvert\) Hankel \(J/Y\); complex Bessel cut + Temme \(K\); Scorer / Kelvin / Struve / Anger–Weber / Clausen / Barnes \(G\) / polygamma / Hurwitz / inverse Jacobi / \(pFq\) / Lambert \(W\); Meijer \(G\), Fox \(H\), local / confluent Heun. No breaking signatures (not 2.0.0). |
 | 1.0.5 | 2026-09-27 | Special-function accuracy fixes (`hypergeom_2f1`, `betainc`, `erf`/`erfc` for \(\lvert x\rvert\ge4\), Γ/ψ/lnΓ and exact Bernoulli numbers, Ei/Si/Ci/li, Fresnel, Airy, Bessel, Carlson, Euler γ, complex branches); `cmp` normalization; `no_std` built and tested (host libc-only and Cortex-M4F under QEMU); see CHANGELOG |

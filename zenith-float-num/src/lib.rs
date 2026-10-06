@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! zenith-float implements arbitrary-precision software floating-point numbers.
 
 #![cfg_attr(not(feature = "std"), no_std)]

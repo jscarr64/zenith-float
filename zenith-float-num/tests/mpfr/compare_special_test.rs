@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! This test suite performs comparison of mpfr and zenith-float at bit level.
 //! It uses special cases of numbers, like zero, one, maximum possible value, a number with many trailing zeroes in mantissa, etc.
 
