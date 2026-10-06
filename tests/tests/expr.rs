@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 use zenith_float::ExactNum;
 use zenith_float::Consts;
 use zenith_float::RoundingMode;

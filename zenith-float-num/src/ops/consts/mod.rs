@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 mod e;
 mod ln10;
 mod ln2;

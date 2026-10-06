@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! ln(2)
 
 use crate::common::consts::ONE;

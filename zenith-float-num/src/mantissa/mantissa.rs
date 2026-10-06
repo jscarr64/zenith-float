@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! Mantissa of a number.
 
 use crate::common::buf::WordBuf;

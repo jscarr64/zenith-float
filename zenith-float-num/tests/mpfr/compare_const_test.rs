@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! This test suite performs comparison of mpfr constants and zenith-float constants at bit level.
 
 use crate::mpfr::common::get_prec_rng;

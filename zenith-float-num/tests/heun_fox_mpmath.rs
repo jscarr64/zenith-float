@@ -34,6 +34,34 @@ fn check(
     }
 }
 
+/// `series` is the general Heun value; `closed` is the Kummer / \({}_2F_1\)
+/// value the old `p-8` test would have returned.
+fn check_not_closed_form(
+    label: &str,
+    got: ExactNum,
+    series: &str,
+    closed: &str,
+    p: usize,
+    cc: &mut Consts,
+    failures: &mut Vec<String>,
+) {
+    let series_v = parse(series, 4 * p, cc);
+    let closed_v = parse(closed, 4 * p, cc);
+    let b_series = bits(&got, &series_v, p);
+    let b_closed = bits(&got, &closed_v, p);
+    if b_series < (p as i32) - 4 {
+        failures.push(format!(
+            "{label} series p={p}: {b_series} bits {:?}",
+            got.err()
+        ));
+    }
+    if b_series < b_closed + 4 {
+        failures.push(format!(
+            "{label} treated as closed form: series {b_series} bits, closed {b_closed} bits"
+        ));
+    }
+}
+
 fn dec(s: &str, p: usize, cc: &mut Consts) -> ExactNum {
     parse(s, p, cc)
 }
@@ -590,5 +618,58 @@ fn heun_fox_mpmath() {
             blocked_c.err()
         ));
     }
+
+    // Exact dyadic parameters: HeunG(-10,1;1;1/2) = (1/2)^10.
+    // mpmath 1.4.1 hyp2f1(-10, 1, 1, 1/2).
+    let z_half = one.div(&two, p, RM);
+    let m10 = ExactNum::from_i32(-10, p);
+    let m9 = ExactNum::from_i32(-9, p);
+    let m20 = ExactNum::from_i32(-20, p);
+    check(
+        "HeunG exact 2F1(-10,1;1;1/2)",
+        z_half.heun_g(&two, &m20, &m10, &one, &one, &m9, p, RM, &mut cc),
+        "0.0009765625",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+    // q = -20 + 2^{-120} is inside the old p-8 slack and outside one ulp.
+    // mpmath series of the general HeunG (not hyp2f1) at 80 decimals.
+    let q_near = m20.add(&one.ldexp(-120, p, RM), p, RM);
+    check_not_closed_form(
+        "HeunG near-miss q=-20+2^{-120}",
+        z_half.heun_g(&two, &q_near, &m10, &one, &one, &m9, p, RM, &mut cc),
+        "0.0009765625000000000000000000000000000081960427050093559462",
+        "0.0009765625",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+
+    // Exact dyadic HeunC: 1F1(-2; 3; 1/2) = 0.6875.
+    let al2 = ExactNum::from_i32(2, p);
+    let gam3 = ExactNum::from_i32(3, p);
+    check(
+        "HeunC exact 1F1(-2;3;1/2)",
+        z_half.heun_c(&al2, &gam3, &zero, &one.neg(), &al2, p, RM, &mut cc),
+        "0.6875",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+    // q = 10 + 2^{-119} still passed values_agree(..., p) (about p-8 bits).
+    // mpmath confluent series, not hyp1f1(-10; 3; 1/2).
+    let al10 = ExactNum::from_i32(10, p);
+    let q_c = al10.add(&one.ldexp(-119, p, RM), p, RM);
+    check_not_closed_form(
+        "HeunC near-miss q=10+2^{-119}",
+        z_half.heun_c(&al10, &gam3, &zero, &one.neg(), &q_c, p, RM, &mut cc),
+        "0.05432435599265874059710865266420821969265251848607852039",
+        "0.05432435599265874059710865266420821976377531933087488643",
+        p,
+        &mut cc,
+        &mut failures,
+    );
+
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

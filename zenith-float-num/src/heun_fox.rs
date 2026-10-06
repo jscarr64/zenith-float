@@ -660,9 +660,11 @@ impl ExactNum {
     /// - The value outside the disk is the real-analytic continuation along the
     ///   component of \(\mathbb{R}\setminus\{1,a\}\) that contains \(0\). A singular
     ///   point on the segment (including the endpoint) is `NaN(InvalidArgument)`.
-    /// - When \(q=a\alpha\beta\) and \(\delta=\alpha+\beta-\gamma+1\), this is
+    /// - When \(q=a\alpha\beta\) and \(\delta=\alpha+\beta-\gamma+1\) hold as exact
+    ///   dyadics, or the two sides agree to one ulp of `p`, this is
     ///   \({}_2F_1(\alpha,\beta;\gamma;z)\) and uses that function's domain
-    ///   (including real \(z>1\) when the series terminates).
+    ///   (including real \(z>1\) when the series terminates). A gap of several
+    ///   ulps stays on the general Heun path.
     /// - Two consecutive power-series coefficients that are exact zeros make a
     ///   polynomial, returned for every finite \(z\).
     /// - More than 8192 Taylor steps is `NaN(InvalidArgument)`.
@@ -810,8 +812,10 @@ impl ExactNum {
     ///   returned for every finite \(z\)) or the \({}_1F_1\) reduction applies.
     /// - More than 8192 Taylor steps is `NaN(InvalidArgument)`.
     /// - \(\gamma\in\{0,-1,-2,\ldots\}\) is `NaN`.
-    /// - When \(\delta=0\), \(\varepsilon=-1\), \(q=\alpha\), this is
-    ///   \({}_1F_1(-\alpha;\gamma;z)\), entire, including \(\lvert z\rvert\ge 1\).
+    /// - When \(\delta=0\), \(\varepsilon=-1\), \(q=\alpha\) hold as exact dyadics,
+    ///   or agree to one ulp of `p`, this is \({}_1F_1(-\alpha;\gamma;z)\),
+    ///   entire, including \(\lvert z\rvert\ge 1\). A gap of several ulps stays
+    ///   on the general confluent path.
     /// - Biconfluent / double-confluent / triconfluent Heun (DLMF 31.12.2–4) are
     ///   not implemented: there is no public SoftFloat signature for them,
     ///   and the \(z=0\) series is not unique (triconfluent) or not regular
@@ -996,6 +1000,39 @@ fn heun_eps(
         .add(&ExactNum::from_u8(1, p), p, RoundingMode::None)
 }
 
+fn params_exact(xs: &[&ExactNum]) -> bool {
+    xs.iter().all(|x| finite(x) && !x.inexact())
+}
+
+fn exactly_equal(a: &ExactNum, b: &ExactNum) -> bool {
+    finite(a) && finite(b) && matches!(a.cmp(b), Some(0))
+}
+
+/// Agreement to one ulp of `p`, measured at precision `2p`.
+///
+/// `values_agree` allows about eight bits (`mag + 8`). That slack treated a
+/// near-miss as the exact Kummer / \({}_2F_1\) reduction.
+fn agrees_tight(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
+    if !finite(a) || !finite(b) {
+        return false;
+    }
+    let tight = p.saturating_mul(2).max(64);
+    let d = a.sub(b, tight, RoundingMode::None).abs();
+    if d.is_zero() {
+        return true;
+    }
+    let scale = if matches!(a.abs().cmp(&b.abs()), Some(c) if c > 0) {
+        a.abs()
+    } else {
+        b.abs()
+    };
+    let Some(de) = d.exponent() else {
+        return false;
+    };
+    let mag = if scale.is_zero() { 0 } else { scale.exponent().unwrap_or(0) };
+    i64::from(de) + (p as i64) < i64::from(mag) + 1
+}
+
 fn heun_g_is_2f1(
     a: &ExactNum,
     q: &ExactNum,
@@ -1006,14 +1043,23 @@ fn heun_g_is_2f1(
     p: usize,
     _rm: RoundingMode,
 ) -> bool {
+    let one = ExactNum::from_u8(1, p);
+    if params_exact(&[a, q, alpha, beta, gamma, delta]) {
+        let q_star = a.mul_full_prec(alpha).mul_full_prec(beta);
+        let d_star = alpha
+            .add_full_prec(beta)
+            .sub_full_prec(gamma)
+            .add_full_prec(&one);
+        return exactly_equal(q, &q_star) && exactly_equal(delta, &d_star);
+    }
     let q_star = a
         .mul(alpha, p, RoundingMode::None)
         .mul(beta, p, RoundingMode::None);
     let d_star = alpha
         .add(beta, p, RoundingMode::None)
         .sub(gamma, p, RoundingMode::None)
-        .add(&ExactNum::from_u8(1, p), p, RoundingMode::None);
-    values_agree(q, &q_star, p) && values_agree(delta, &d_star, p)
+        .add(&one, p, RoundingMode::None);
+    agrees_tight(q, &q_star, p) && agrees_tight(delta, &d_star, p)
 }
 
 fn heun_c_is_1f1(
@@ -1025,7 +1071,10 @@ fn heun_c_is_1f1(
 ) -> bool {
     let zero = ExactNum::new(p);
     let neg_one = ExactNum::from_u8(1, p).neg();
-    values_agree(delta, &zero, p) && values_agree(eps, &neg_one, p) && values_agree(q, alpha, p)
+    if params_exact(&[alpha, delta, eps, q]) {
+        return delta.is_zero() && exactly_equal(eps, &neg_one) && exactly_equal(q, alpha);
+    }
+    agrees_tight(delta, &zero, p) && agrees_tight(eps, &neg_one, p) && agrees_tight(q, alpha, p)
 }
 
 /// Power-series coefficients of local Heun about 0. `true` when two consecutive

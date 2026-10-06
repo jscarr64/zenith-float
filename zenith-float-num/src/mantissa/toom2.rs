@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! Karatsuba multiplication.
 
 use crate::common::buf::WordBuf;

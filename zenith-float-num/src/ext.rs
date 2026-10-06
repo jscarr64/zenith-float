@@ -1,3 +1,5 @@
+// Derived from astro-float (https://github.com/stencillogic/astro-float),
+// Copyright (c) 2022 stencillogic, MIT License.
 //! ExactNum including finite numbers, NaN, and `Inf`.
 
 use crate::common::util::log2_ceil;
