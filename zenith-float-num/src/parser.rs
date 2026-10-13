@@ -22,6 +22,7 @@ pub struct ParserState<'a> {
     e: isize,
     inf: bool,
     nan: bool,
+    explicit_nan: bool,
 }
 
 impl<'a> ParserState<'a> {
@@ -35,6 +36,7 @@ impl<'a> ParserState<'a> {
             e: 0,
             inf: false,
             nan: true,
+            explicit_nan: false,
         }
     }
 
@@ -91,14 +93,23 @@ pub fn parse(s: &str, rdx: Radix) -> Result<ParserState<'_>, Error> {
             parse_nan(&mut parser_state);
         } else if c == '.' || c.is_digit(rdx.value() as u32) {
             parse_num(&mut parser_state, rdx)?;
-        } else {
-            parser_state.nan = true;
         }
-    } else {
-        parser_state.nan = true;
     }
 
-    Ok(parser_state)
+    if parser_state.cur_char().is_some() {
+        return Err(Error::InvalidArgument);
+    }
+    if parser_state.inf {
+        return Ok(parser_state);
+    }
+    if parser_state.explicit_nan {
+        parser_state.nan = true;
+        return Ok(parser_state);
+    }
+    if !parser_state.nan {
+        return Ok(parser_state);
+    }
+    Err(Error::InvalidArgument)
 }
 
 fn parse_inf(parser_state: &mut ParserState) {
@@ -107,6 +118,7 @@ fn parse_inf(parser_state: &mut ParserState) {
     if Some('n') == n && Some('f') == f {
         parser_state.inf = true;
         parser_state.nan = false;
+        parser_state.next_char();
     }
 }
 
@@ -114,7 +126,9 @@ fn parse_nan(parser_state: &mut ParserState) {
     let a = parser_state.next_char();
     let n = parser_state.next_char();
     if Some('n') == n && Some('a') == a {
+        parser_state.explicit_nan = true;
         parser_state.nan = true;
+        parser_state.next_char();
     }
 }
 
@@ -124,36 +138,29 @@ fn parse_num(parser_state: &mut ParserState, rdx: Radix) -> Result<(), Error> {
         parser_state.next_char();
     }
     let (frac_len, _) = parse_digits(parser_state, false, false, rdx)?;
-    if frac_len > 0 || int_len > 0 {
+    let zeros_only = int_len == 0 && frac_len == 0 && skip_cnt1 > 0;
+    if frac_len > 0 || int_len > 0 || zeros_only {
         parser_state.nan = false;
-        if rdx.uses_underscore_exponent() {
-            if Some('_') == parser_state.cur_char() {
-                parser_state.next_char();
-                if Some('e') == parser_state.cur_char() {
-                    parser_state.next_char();
-                    parse_exp(parser_state, rdx);
-                }
-            }
-        } else if Some('e') == parser_state.cur_char() {
-            parser_state.next_char();
-            parse_exp(parser_state, rdx);
-        }
-        if int_len != 0 {
-            parser_state.e = parser_state.e.saturating_add(int_len as isize);
-        }
-
-        if parser_state.e < EXPONENT_MIN as isize {
-            let mut zero = Vec::new();
-            zero.try_reserve_exact(1)?;
-            zero.push(0);
-            parser_state.mantissa_bytes = zero;
+        take_exponent(parser_state, rdx)?;
+        if zeros_only {
+            // `0e123` is zero. The exponent is consumed and does not make it infinite.
             parser_state.e = 0;
-        } else if parser_state.e > EXPONENT_MAX as isize {
-            parser_state.inf = true;
+            parser_state.inf = false;
+        } else {
+            if int_len != 0 {
+                parser_state.e = parser_state.e.saturating_add(int_len as isize);
+            }
+
+            if parser_state.e < EXPONENT_MIN as isize {
+                let mut zero = Vec::new();
+                zero.try_reserve_exact(1)?;
+                zero.push(0);
+                parser_state.mantissa_bytes = zero;
+                parser_state.e = 0;
+            } else if parser_state.e > EXPONENT_MAX as isize {
+                parser_state.inf = true;
+            }
         }
-    } else if skip_cnt1 > 0 {
-        // just zeroes
-        parser_state.nan = false;
     }
 
     Ok(())
@@ -216,9 +223,34 @@ fn is_radix_digit(c: char, rdx: Radix) -> bool {
     c.is_digit(rdx.value() as u32)
 }
 
-fn parse_exp(parser_state: &mut ParserState, rdx: Radix) {
+/// Consume a well-formed exponent, if the marker is present.
+/// A marker without at least one digit is an error. No marker leaves the exponent unchanged.
+fn take_exponent(parser_state: &mut ParserState, rdx: Radix) -> Result<(), Error> {
+    if rdx.uses_underscore_exponent() {
+        if Some('_') == parser_state.cur_char() {
+            parser_state.next_char();
+            if Some('e') == parser_state.cur_char() {
+                parser_state.next_char();
+                if !parse_exp(parser_state, rdx) {
+                    return Err(Error::InvalidArgument);
+                }
+            } else {
+                return Err(Error::InvalidArgument);
+            }
+        }
+    } else if Some('e') == parser_state.cur_char() {
+        parser_state.next_char();
+        if !parse_exp(parser_state, rdx) {
+            return Err(Error::InvalidArgument);
+        }
+    }
+    Ok(())
+}
+
+fn parse_exp(parser_state: &mut ParserState, rdx: Radix) -> bool {
     let mut neg = false;
     let mut ch = parser_state.cur_char();
+    let mut digits = 0usize;
     if let Some(c) = ch {
         match c {
             '+' => {
@@ -234,12 +266,14 @@ fn parse_exp(parser_state: &mut ParserState, rdx: Radix) {
     let e_thres = EXPONENT_MAX.unsigned_abs().max(EXPONENT_MIN.unsigned_abs()) as isize;
     while let Some(c) = ch {
         if is_radix_digit(c, rdx) {
-            if parser_state.e > e_thres {
-                break;
+            digits += 1;
+            if parser_state.e <= e_thres {
+                parser_state.e = parser_state.e.saturating_mul(rdx.value() as isize);
+                let Some(digit) = c.to_digit(rdx.value() as u32) else {
+                    break;
+                };
+                parser_state.e = parser_state.e.saturating_add(digit as isize);
             }
-            parser_state.e = parser_state.e.saturating_mul(rdx.value() as isize);
-            let digit = c.to_digit(rdx.value() as u32).unwrap(); // call to unwrap() is unreachable, because c is surely a digit.
-            parser_state.e = parser_state.e.saturating_add(digit as isize);
         } else {
             break;
         }
@@ -248,6 +282,7 @@ fn parse_exp(parser_state: &mut ParserState, rdx: Radix) {
     if neg {
         parser_state.e = -parser_state.e;
     }
+    digits > 0
 }
 
 #[cfg(test)]
@@ -279,8 +314,8 @@ mod tests {
         let signs = ["", "+", "-"];
         let expected_signs = [Sign::Pos, Sign::Pos, Sign::Neg];
 
-        let exponents = ["", "E", "e", "e123", "e+345", "e-678", "e901", "E+234", "E-567"];
-        let expected_exponents = [0, 0, 0, 123, 345, -678, 901, 234, -567];
+        let exponents = ["", "e123", "e+345", "e-678", "e901", "E+234", "E-567"];
+        let expected_exponents = [0, 123, 345, -678, 901, 234, -567];
 
         let infs = ["inf", "INF", "Inf"];
         let nans = ["nan", "NaN", "NAN"];
@@ -435,5 +470,17 @@ mod tests {
         let (m, _s, e) = ps.raw_parts();
         assert_eq!(m.iter().filter(|&&x| x != 0).count(), 0);
         assert!(e == 0);
+
+        for bad in [
+            "", ".", "1e", "1e+", "1E", "1.2e", "1.5foo", "0x10", "++1", "nanx", "infinity",
+            "1.2.3",
+        ] {
+            assert!(parse(bad, Radix::Dec).is_err(), "{bad}");
+        }
+        assert!(parse("1_e", Radix::Hex).is_err());
+        let ps = parse("nan", Radix::Dec).unwrap();
+        assert!(ps.is_nan());
+        let ps = parse("inf", Radix::Dec).unwrap();
+        assert!(ps.is_inf());
     }
 }

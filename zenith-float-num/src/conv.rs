@@ -84,7 +84,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
     ) -> Result<Self, Error> {
         if digits.is_empty() {
-            return Self::new(if p < usize::MAX { p } else { DEFAULT_P });
+            return Self::zero_with_sign(sign, if p < usize::MAX { p } else { DEFAULT_P });
         }
 
         Self::p_assertion(round_p(digits.len()))?;
@@ -286,7 +286,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
     ) -> Result<Self, Error> {
         if digits.is_empty() {
-            return Self::new(if p < usize::MAX { p } else { DEFAULT_P });
+            return Self::zero_with_sign(sign, if p < usize::MAX { p } else { DEFAULT_P });
         }
 
         for &d in digits {
@@ -341,7 +341,7 @@ impl ExactNumNumber {
         let leadzeroes = digits.iter().take_while(|&&x| x == 0).count();
 
         if digits.len() - leadzeroes == 0 {
-            return Self::new(if p < usize::MAX { p } else { DEFAULT_P });
+            return Self::zero_with_sign(sign, if p < usize::MAX { p } else { DEFAULT_P });
         }
 
         let k = log2_ceil(digits.len() - leadzeroes);
@@ -446,16 +446,32 @@ impl ExactNumNumber {
     ) -> Result<(Sign, Vec<u8>, Exponent), Error> {
         match rdx.value() {
             2 => self.conv_to_binary(),
-            10 => self.conv_to_dec(rm, cc),
+            10 => self.conv_to_dec(rm, cc, 0),
             b if b.is_power_of_two() => self.conv_to_commensurable(b.trailing_zeros() as usize),
             b => self.conv_to_general(b, rm, cc),
         }
+    }
+
+    fn zero_with_sign(sign: Sign, p: usize) -> Result<Self, Error> {
+        let mut z = Self::new(p)?;
+        z.set_sign(sign);
+        Ok(z)
+    }
+
+    pub(crate) fn convert_to_dec_extra(
+        &self,
+        rm: RoundingMode,
+        cc: &mut Consts,
+        extra_digits: usize,
+    ) -> Result<(Sign, Vec<u8>, Exponent), Error> {
+        self.conv_to_dec(rm, cc, extra_digits)
     }
 
     fn conv_to_dec(
         &self,
         rm: RoundingMode,
         cc: &mut Consts,
+        extra_digits: usize,
     ) -> Result<(Sign, Vec<u8>, Exponent), Error> {
         if self.precision() == 0 {
             return Ok((self.sign(), Vec::new(), 0));
@@ -463,7 +479,7 @@ impl ExactNumNumber {
 
         let p = self.mantissa_max_bit_len();
         let subn_e = p - self.precision();
-        let dec_len = (p as u64 * 301029996 / 1000000000) as usize + 1;
+        let dec_len = (p as u64 * 301029996 / 1000000000) as usize + 1 + extra_digits;
 
         let mut err = WORD_BIT_SIZE; // speculative
         let mut p_wrk = round_p((dec_len as u64 * 3321928095 / 1000000000) as usize + 1 + err);

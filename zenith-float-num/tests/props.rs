@@ -57,7 +57,7 @@ proptest! {
     #[test]
     fn zero_sum_sign(down in proptest::bool::ANY) {
         let rm = if down { RoundingMode::Down } else { RoundingMode::ToEven };
-        let mut pos = ExactNum::new(53);
+        let pos = ExactNum::new(53);
         let mut neg = ExactNum::new(53);
         neg.set_sign(Sign::Neg);
         let sum = pos.add(&neg, 53, rm);

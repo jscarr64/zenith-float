@@ -1,6 +1,34 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 (unreleased)
+
+Issues found in one program led us to a forensic audit of our other crates. This release lists every finding and its fix. The arithmetic, rounding, and parser items below are the first batch. Later sections will record the elementary, constant, and special-function fixes before 2.0.0 is published. Nothing here has been published.
+
+### Subnormal underflow
+
+`mul`, `div`, and `add` flushed a result below the minimum positive subnormal to zero whenever the rounding mode was not `Up`, `Down`, or `FromZero`. The discarded significand was ignored, so a value above half an ulp of the minimum positive, and a tie under `ToOdd`, became zero. `ToOdd` of half the minimum positive must be the minimum positive, because zero is even. Directed modes that round away from zero already kept that minimum; `ToEven` of an exact tie correctly stays zero.
+
+The flush now compares the residual with half an ulp and applies the same rounding rule as every other inexact result.
+
+### Signed zero
+
+`(+0) + (-0)` returned the sign of the second operand, so the sum was `-0` in every rounding mode. IEEE 754 addition of zeros with opposite signs is `+0`, except for `roundTowardNegative` (`Down`), which is `-0`. The same rule applies to exact cancellation: `1 + (-1)` and `5 - 5` are `+0` except under `Down`, where they are `-0`. `(-0) + (-0)` stays `-0` in every mode.
+
+### Invalid operations carry `InvalidArgument`
+
+`0 * Inf`, `Inf * 0`, `Inf - Inf`, `Inf + (-Inf)`, `Inf / Inf`, and remainder of an infinity were `NaN` with an empty error tag. Callers could not tell them from an uninitialized `NaN`. They are now `NaN(InvalidArgument)`. `0 / 0` was already tagged and is unchanged.
+
+### Parsing consumes the whole string
+
+`parse` used to accept a valid prefix and ignore the rest. `1.5foo` was `1.5`, `0x10` was `0`, `1.2.3` was `1.2`, and `infinity` was `Inf`. A bare exponent was the same class of bug: `1e`, `1e+`, `1e-`, and `1E` were read as `1` with an exponent of zero. Strings that were not numbers at all, including `""`, `"."`, `"nanx"`, and `++1`, came back as `NaN` with no error tag.
+
+`parse` now requires the entire string to be a finite number, `Inf`, or `NaN`. Anything else is `NaN(InvalidArgument)`. Well-formed `NaN` and `Inf` are unchanged, including their signs for infinities. This is a breaking change. Code that passed a longer buffer and relied on the prefix must slice the number out before calling `parse`. Code that used a bare `e` to mean exponent zero must write `e0` or omit the exponent. A `NaN` from untrusted text now has `err() == Some(InvalidArgument)` instead of `None`; check `is_nan()` if the tag does not matter.
+
+### Decimal round-trip
+
+`format` rounded the decimal digits with the same directed mode that `parse` would apply again. Under `Up` and `ToZero`, `parse(format(x))` moved one ulp. `0.1` at 53 bits printed `1.0000000000000000001e-1` with `Up` and parsed back to the next number up. `ToEven` was unaffected.
+
+`format` in base 10 now retries with extra digits. Those digits are rounded onto the side of the value that the same mode accepts, and the retry stops when `parse` at the same precision returns the same sign, exponent, and limbs. The spelling of a directed value can be longer than in 1.0.12. The value is the one `parse` produced.
 
 ## 1.0.12 — 2026-10-06
 

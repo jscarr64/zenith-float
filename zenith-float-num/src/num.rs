@@ -599,6 +599,16 @@ impl ExactNumNumber {
         let mut d3 = Self::new(0)?;
 
         // one of the args is zero
+        if self.m.is_zero() && d2.m.is_zero() {
+            let other = if op < 0 { d2.s.invert() } else { d2.s };
+            let negative =
+                if self.s == other { self.s == Sign::Neg } else { rm == RoundingMode::Down };
+            let mut ret = if op < 0 { d2.neg()? } else { d2.clone()? };
+            ret.set_precision(p, rm)?;
+            ret.set_sign(if negative { Sign::Neg } else { Sign::Pos });
+            return Ok(ret);
+        }
+
         if self.m.is_zero() {
             let mut ret = if op < 0 { d2.neg() } else { d2.clone() }?;
 
@@ -653,6 +663,9 @@ impl ExactNumNumber {
             } else {
                 let mut ret = Self::new(p)?;
                 ret.inexact = inexact;
+                if rm == RoundingMode::Down {
+                    ret.set_sign(Sign::Neg);
+                }
                 return Ok(ret);
             }
         } else {
@@ -741,19 +754,64 @@ impl ExactNumNumber {
                 self.m.shift_right(shift);
                 self.m.update_bit_len();
             }
-        } else if rm == RoundingMode::FromZero
-            || (is_positive && rm == RoundingMode::Up)
-            || (!is_positive && rm == RoundingMode::Down)
-        {
-            // non zero for directed rounding modes
-            self.m.set_zero();
-            self.m.digits_mut()[0] = 1;
-            self.m.set_bit_len(1);
-            self.inexact |= true;
         } else {
-            self.m.set_zero();
-            self.e = 0;
-            self.inexact |= true;
+            // Every significand bit sits strictly below the minimum positive.
+            // Compare the magnitude with half an ulp of that minimum.
+            let pbits = self.m.max_bit_len() as isize;
+            let below_half = e < EXPONENT_MIN as isize - pbits;
+            let class = if below_half { -1 } else { Self::mantissa_vs_half(&self.m) };
+            self.inexact = true;
+            if Self::flush_to_min(class, rm, is_positive) {
+                self.m.set_zero();
+                self.m.digits_mut()[0] = 1;
+                self.m.set_bit_len(1);
+            } else {
+                self.m.set_zero();
+                self.e = 0;
+            }
+        }
+    }
+
+    /// `-1` below half, `0` exact tie, `1` above half of the minimum positive.
+    fn mantissa_vs_half(m: &Mantissa) -> i8 {
+        let words = m.digits();
+        if words.is_empty() {
+            return -1;
+        }
+        let last = words.len() - 1;
+        let top = words[last];
+        if top > WORD_SIGNIFICANT_BIT {
+            return 1;
+        }
+        if top < WORD_SIGNIFICANT_BIT {
+            return -1;
+        }
+        for word in &words[..last] {
+            if *word != 0 {
+                return 1;
+            }
+        }
+        0
+    }
+
+    /// True when a value in `(0, min_positive)` rounds to `min_positive`.
+    fn flush_to_min(class: i8, rm: RoundingMode, is_positive: bool) -> bool {
+        let away = rm == RoundingMode::FromZero
+            || (is_positive && rm == RoundingMode::Up)
+            || (!is_positive && rm == RoundingMode::Down);
+        match class {
+            1 => {
+                !matches!(rm, RoundingMode::ToZero | RoundingMode::None)
+                    && (rm != RoundingMode::Down || !is_positive)
+                    && (rm != RoundingMode::Up || is_positive)
+            }
+            0 => match rm {
+                RoundingMode::ToOdd | RoundingMode::FromZero => true,
+                RoundingMode::Up => is_positive,
+                RoundingMode::Down => !is_positive,
+                _ => false,
+            },
+            _ => away,
         }
     }
 

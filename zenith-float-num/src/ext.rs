@@ -38,6 +38,10 @@ pub const INF_NEG: ExactNum = ExactNum {
     inner: Flavor::Inf(Sign::Neg),
 };
 
+fn invalid_op() -> ExactNum {
+    ExactNum::nan(Some(Error::InvalidArgument))
+}
+
 lazy_static! {
 
     /// 1
@@ -144,7 +148,7 @@ impl ExactNum {
                 },
                 Flavor::Inf(s2) => {
                     if *s1 != *s2 {
-                        NAN
+                        invalid_op()
                     } else {
                         ExactNum {
                             inner: Flavor::Inf(*s2),
@@ -194,7 +198,7 @@ impl ExactNum {
                 },
                 Flavor::Inf(s2) => {
                     if *s1 == *s2 {
-                        NAN
+                        invalid_op()
                     } else {
                         ExactNum {
                             inner: Flavor::Inf(*s1),
@@ -414,7 +418,7 @@ impl ExactNum {
                     Flavor::Inf(s2) => {
                         if v1.is_zero() {
                             // 0*inf
-                            NAN
+                            invalid_op()
                         } else {
                             let s = if v1.sign() == *s2 { Sign::Pos } else { Sign::Neg };
                             ExactNum {
@@ -430,7 +434,7 @@ impl ExactNum {
                     Flavor::Value(v2) => {
                         if v2.is_zero() {
                             // inf*0
-                            NAN
+                            invalid_op()
                         } else {
                             let s = if v2.sign() == *s1 { Sign::Pos } else { Sign::Neg };
                             ExactNum {
@@ -471,7 +475,7 @@ impl ExactNum {
                         INF_NEG
                     }
                 }
-                Flavor::Inf(_) => NAN,
+                Flavor::Inf(_) => invalid_op(),
                 Flavor::NaN(err) => Self::nan(*err),
             },
             Flavor::NaN(err) => Self::nan(*err),
@@ -488,7 +492,7 @@ impl ExactNum {
                 Flavor::Inf(_) => self.clone(),
                 Flavor::NaN(err) => Self::nan(*err),
             },
-            Flavor::Inf(_) => NAN,
+            Flavor::Inf(_) => invalid_op(),
             Flavor::NaN(err) => Self::nan(*err),
         }
     }
@@ -804,6 +808,8 @@ impl ExactNum {
 
     /// Parses a number from the string `s`.
     /// The function expects `s` to be a number in scientific format in radix `rdx`, or +-Inf, or NaN.
+    /// The whole string is consumed. Trailing characters, a bare exponent such as `1e` or `1e+`,
+    /// and any other malformed text produce `NaN(InvalidArgument)`.
     /// if `p` equals to usize::MAX then the precision of the resulting number is determined automatically from the input.
     ///
     /// ## Examples
@@ -2858,7 +2864,9 @@ impl Default for ExactNum {
 impl FromStr for ExactNum {
     type Err = Error;
 
-    /// Returns parsed number or NAN in case of error.
+    /// Returns the parsed number.
+    /// Malformed text is `Ok(NaN(InvalidArgument))`.
+    /// Other failures, such as exponent overflow, are `Err`.
     /// The implementation is not available in no_std environment.
     fn from_str(src: &str) -> Result<ExactNum, Self::Err> {
         let bf = crate::common::consts::TENPOWERS.with(|tp| {
@@ -2867,8 +2875,9 @@ impl FromStr for ExactNum {
         });
 
         if bf.is_nan() {
-            if let Some(err) = bf.err() {
-                return Err(err);
+            match bf.err() {
+                Some(Error::InvalidArgument) | None => {}
+                Some(err) => return Err(err),
             }
         }
 
@@ -3710,8 +3719,9 @@ mod tests {
         let d1str = format!("{}", NAN);
         assert_eq!(d1str, "NaN");
 
-        assert!(ExactNum::from_str("abc").is_ok());
-        assert!(ExactNum::from_str("abc").unwrap().is_nan());
+        let bad = ExactNum::from_str("abc").unwrap();
+        assert!(bad.is_nan());
+        assert_eq!(bad.err(), Some(Error::InvalidArgument));
     }
 
     #[test]

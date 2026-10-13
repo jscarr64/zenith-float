@@ -11,15 +11,33 @@ use crate::Exponent;
 use crate::Sign;
 
 #[cfg(feature = "std")]
-use {std::fmt::Write, std::vec::Vec};
+use std::vec::Vec;
 
 #[cfg(not(feature = "std"))]
-use {alloc::string::String, alloc::vec::Vec, core::fmt::Write};
+use {alloc::string::String, alloc::vec::Vec};
 
 const DIGIT_CHARS: [char; 36] = [
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I',
     'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
 ];
+
+/// Rounding mode for a decimal spelling that parses back to the same value under `rm`.
+fn decimal_digit_mode(rm: RoundingMode, positive: bool) -> RoundingMode {
+    if rm == RoundingMode::ToEven || rm == RoundingMode::ToOdd {
+        return rm;
+    }
+    let not_above = match rm {
+        RoundingMode::Up => true,
+        RoundingMode::Down => false,
+        RoundingMode::FromZero => positive,
+        _ => !positive,
+    };
+    if not_above == positive {
+        RoundingMode::ToZero
+    } else {
+        RoundingMode::FromZero
+    }
+}
 
 fn format_uint_radix(val: usize, rdx: Radix, out: &mut String) -> Result<(), Error> {
     let base = rdx.value() as usize;
@@ -80,8 +98,55 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - ExponentOverflow: the resulting exponent becomes greater than the maximum allowed value for the exponent.
     pub fn format(&self, rdx: Radix, rm: RoundingMode, cc: &mut Consts) -> Result<String, Error> {
-        let (s, m, e) = self.convert_to_radix(rdx, rm, cc)?;
+        if rdx != Radix::Dec {
+            let (s, m, e) = self.convert_to_radix(rdx, rm, cc)?;
+            return self.render(rdx, s, &m, e);
+        }
+        let mut extra = 0usize;
+        loop {
+            // The first spelling uses `rm`. A directed mode can sit on the side of
+            // the value that the same mode parses to a neighbor, so later attempts
+            // round the decimal the other way and add digits until it lands back.
+            let digit_rm = if extra == 0 { rm } else { decimal_digit_mode(rm, self.is_positive()) };
+            let (s, m, e) = self.convert_to_dec_extra(digit_rm, cc, extra)?;
+            let text = self.render(rdx, s, &m, e)?;
+            if self.decimal_round_trips(&text, rm, cc)? {
+                return Ok(text);
+            }
+            if extra >= 16 {
+                return Ok(text);
+            }
+            extra += 1;
+        }
+    }
 
+    fn decimal_round_trips(
+        &self,
+        text: &str,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<bool, Error> {
+        let ps = match crate::parser::parse(text, Radix::Dec) {
+            Ok(ps) => ps,
+            Err(_) => return Ok(false),
+        };
+        if ps.is_nan() || ps.is_inf() {
+            return Ok(false);
+        }
+        let (digits, sign, exp) = ps.raw_parts();
+        let back = Self::convert_from_radix(
+            sign,
+            digits,
+            exp,
+            Radix::Dec,
+            self.mantissa_max_bit_len(),
+            rm,
+            cc,
+        )?;
+        Ok(self.cmp(&back) == 0 && self.sign() == back.sign())
+    }
+
+    fn render(&self, rdx: Radix, s: Sign, m: &[u8], e: Exponent) -> Result<String, Error> {
         let mut mstr = String::new();
         let mstr_sz = 8
             + (self.mantissa_max_bit_len() + core::mem::size_of::<Exponent>() * 8)
@@ -101,16 +166,26 @@ impl ExactNumNumber {
             if self.is_subnormal() {
                 mstr.push('0');
             } else {
-                mstr.push(DIGIT_CHARS[*iter.next().unwrap() as usize]); // m is not empty as checked above, hence unwrap
+                let Some(lead) = iter.next() else {
+                    return Err(Error::InvalidArgument);
+                };
+                let Some(ch) = DIGIT_CHARS.get(*lead as usize).copied() else {
+                    return Err(Error::InvalidArgument);
+                };
+                mstr.push(ch);
             }
 
             mstr.push('.');
 
-            iter.map(|&d| DIGIT_CHARS[d as usize])
-                .for_each(|v| mstr.push(v));
+            for &d in iter {
+                let Some(ch) = DIGIT_CHARS.get(d as usize).copied() else {
+                    return Err(Error::InvalidArgument);
+                };
+                mstr.push(ch);
+            }
 
             if rdx.uses_underscore_exponent() {
-                let _ = write!(mstr, "_");
+                mstr.push('_');
             }
 
             if e < 1 {
