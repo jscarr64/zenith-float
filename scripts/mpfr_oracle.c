@@ -254,7 +254,187 @@ static int do_op(mpfr_t dst, const char *op, mpfr_t a, mpfr_t b, mpfr_t c, mpfr_
     if (strcmp(op, "fma") == 0) {
         return mpfr_fma(dst, a, b, c, rnd);
     }
+    if (strcmp(op, "exp2") == 0) {
+        return mpfr_exp2(dst, a, rnd);
+    }
+    if (strcmp(op, "exp10") == 0) {
+        return mpfr_exp10(dst, a, rnd);
+    }
+    if (strcmp(op, "pow") == 0) {
+        return mpfr_pow(dst, a, b, rnd);
+    }
+    if (strcmp(op, "sqrt2") == 0) {
+        return mpfr_sqrt_ui(dst, 2, rnd);
+    }
+    if (strcmp(op, "phi") == 0) {
+        int rc = mpfr_sqrt_ui(dst, 5, rnd);
+        if (rc < 0 && !mpfr_number_p(dst)) {
+            return rc;
+        }
+        mpfr_add_ui(dst, dst, 1, rnd);
+        mpfr_div_2ui(dst, dst, 1, rnd);
+        return 0;
+    }
     return -2;
+}
+
+/* Round an operand to the stored width before a transcendental, matching parse. */
+static void round_operand(mpfr_t x, int prec) {
+    if (prec < 2) {
+        prec = 2;
+    }
+    mpfr_prec_round(x, (mpfr_prec_t)prec, MPFR_RNDN);
+}
+
+static int set_step2_tok(mpfr_t x, const char *tok, int p, int prec) {
+    if (strcmp(tok, "+pow2") == 0 || strcmp(tok, "-pow2") == 0) {
+        mpfr_set_ui_2exp(x, 1, -(mpfr_exp_t)p, MPFR_RNDN);
+        if (tok[0] == '-') {
+            mpfr_neg(x, x, MPFR_RNDN);
+        }
+        return 1;
+    }
+    if (!set_tok(x, tok, prec)) {
+        return 0;
+    }
+    round_operand(x, prec);
+    return 1;
+}
+
+static void emit_component(mpfr_t v, int prec, const char *rm) {
+    if (mpfr_nan_p(v)) {
+        printf("nan + 0 0");
+        return;
+    }
+    if (mpfr_inf_p(v)) {
+        printf("inf %s 0 0", mpfr_signbit(v) ? "-" : "+");
+        return;
+    }
+    if (mpfr_zero_p(v)) {
+        printf("zero %s 0 0", mpfr_signbit(v) ? "-" : "+");
+        return;
+    }
+    mpz_t z;
+    mpz_init(z);
+    int sign = mpfr_signbit(v) ? -1 : 1;
+    mpfr_exp_t ez = mpfr_get_z_2exp(z, v);
+    if (mpz_sgn(z) < 0) {
+        mpz_neg(z, z);
+    }
+    /* emit_rounded prints a full line; build the same fields without a newline. */
+    int positive = sign >= 0;
+    long fl = (long)ez + (long)mpz_sizeinbase(z, 2) - 1;
+    mpz_t q, numer, denom, limit;
+    mpz_init(q);
+    mpz_init(numer);
+    mpz_init(denom);
+    mpz_init(limit);
+    if (fl > EMAX) {
+        printf("inf %s 0 0", sign < 0 ? "-" : "+");
+        goto done;
+    }
+    if (fl < EMIN) {
+        printf("zero %s 0 0", sign < 0 ? "-" : "+");
+        goto done;
+    }
+    {
+        long e = fl + 1;
+        long exp2 = (long)ez + (long)prec - e;
+        if (exp2 >= 0) {
+            mpz_mul_2exp(numer, z, (mp_bitcnt_t)exp2);
+            mpz_set_ui(denom, 1);
+        } else {
+            mpz_set(numer, z);
+            mpz_set_ui(denom, 1);
+            mpz_mul_2exp(denom, denom, (mp_bitcnt_t)(-exp2));
+        }
+        q_round(q, numer, denom, rm, positive);
+        mpz_set_ui(limit, 1);
+        mpz_mul_2exp(limit, limit, (mp_bitcnt_t)prec);
+        if (mpz_cmp(q, limit) >= 0) {
+            mpz_tdiv_q_2exp(q, q, 1);
+            e += 1;
+        }
+        if (mpz_sgn(q) == 0) {
+            printf("zero %s 0 0", sign < 0 ? "-" : "+");
+        } else {
+            printf("finite %s ", sign < 0 ? "-" : "+");
+            mpz_out_str(stdout, 10, q);
+            printf(" %ld", e - (long)prec);
+        }
+    }
+done:
+    mpz_clear(q);
+    mpz_clear(numer);
+    mpz_clear(denom);
+    mpz_clear(limit);
+    mpz_clear(z);
+}
+
+/* Principal asin on the real cut, and ln, rounded per component.
+   The inputs are already rounded to `prec` bits. The transcendental is
+   evaluated much wider than that, then each component is rounded once. */
+static int emit_complex(const char *op, mpfr_t re, mpfr_t im, int prec, const char *rm) {
+    mpfr_prec_t work = (mpfr_prec_t)prec * 4 + 512;
+    if (work < 8192) {
+        work = 8192;
+    }
+    mpfr_t wre, wim, out_re, out_im, t, u;
+    mpfr_init2(wre, work);
+    mpfr_init2(wim, work);
+    mpfr_init2(out_re, work);
+    mpfr_init2(out_im, work);
+    mpfr_init2(t, work);
+    mpfr_init2(u, work);
+    mpfr_set(wre, re, MPFR_RNDN);
+    mpfr_set(wim, im, MPFR_RNDN);
+    if (strcmp(op, "cln") == 0) {
+        mpfr_sqr(t, wre, MPFR_RNDN);
+        mpfr_sqr(u, wim, MPFR_RNDN);
+        mpfr_add(t, t, u, MPFR_RNDN);
+        mpfr_log(t, t, MPFR_RNDN);
+        mpfr_div_2ui(out_re, t, 1, MPFR_RNDN);
+        mpfr_atan2(out_im, wim, wre, MPFR_RNDN);
+    } else if (strcmp(op, "casin") == 0) {
+        int below = mpfr_signbit(wim) ? 1 : 0;
+        mpfr_abs(t, wre, MPFR_RNDN);
+        if (!(mpfr_cmp_ui(t, 1) > 0)) {
+            printf("err domain\n");
+            mpfr_clears(wre, wim, out_re, out_im, t, u, (mpfr_ptr)0);
+            return 0;
+        }
+        /* acosh(|x|) = ln(|x| + sqrt(x^2 - 1)). */
+        mpfr_sqr(u, t, MPFR_RNDN);
+        mpfr_sub_ui(u, u, 1, MPFR_RNDN);
+        mpfr_sqrt(u, u, MPFR_RNDN);
+        mpfr_add(u, t, u, MPFR_RNDN);
+        mpfr_log(u, u, MPFR_RNDN);
+        mpfr_const_pi(out_re, MPFR_RNDN);
+        mpfr_div_2ui(out_re, out_re, 1, MPFR_RNDN);
+        if (mpfr_signbit(wre)) {
+            mpfr_neg(out_re, out_re, MPFR_RNDN);
+        }
+        /* Above the cut matches mpmath: imag is -acosh for x>1 and +acosh for x<-1.
+           Below the cut is the conjugate. */
+        if (mpfr_signbit(wre)) {
+            mpfr_set(out_im, u, MPFR_RNDN);
+        } else {
+            mpfr_neg(out_im, u, MPFR_RNDN);
+        }
+        if (below) {
+            mpfr_neg(out_im, out_im, MPFR_RNDN);
+        }
+    } else {
+        mpfr_clears(wre, wim, out_re, out_im, t, u, (mpfr_ptr)0);
+        return -2;
+    }
+    printf("c ");
+    emit_component(out_re, prec, rm);
+    printf(" ");
+    emit_component(out_im, prec, rm);
+    printf("\n");
+    mpfr_clears(wre, wim, out_re, out_im, t, u, (mpfr_ptr)0);
+    return 0;
 }
 
 int main(void) {
@@ -288,12 +468,15 @@ int main(void) {
         mpfr_init2(b, wide);
         mpfr_init2(c, wide);
         mpfr_init2(exact, wide);
-        if (a_s[0] && !set_tok(a, a_s, prec)) {
+        int step2 = strcmp(op, "cln") == 0 || strcmp(op, "casin") == 0 || strcmp(op, "exp2") == 0 ||
+                    strcmp(op, "exp10") == 0 || strcmp(op, "pow") == 0;
+        if (!step2 && a_s[0] && !set_tok(a, a_s, prec)) {
             printf("err operand\n");
             mpfr_clears(a, b, c, exact, (mpfr_ptr)0);
             continue;
         }
-        if (b_s[0] && strcmp(op, "chop") != 0 && strcmp(op, "parse") != 0 && !set_tok(b, b_s, prec)) {
+        if (!step2 && b_s[0] && strcmp(op, "chop") != 0 && strcmp(op, "parse") != 0 &&
+            !set_tok(b, b_s, prec)) {
             printf("err operand\n");
             mpfr_clears(a, b, c, exact, (mpfr_ptr)0);
             continue;
@@ -305,6 +488,15 @@ int main(void) {
         }
 
         int rc = 0;
+        if (strcmp(op, "cln") == 0 || strcmp(op, "casin") == 0) {
+            if (!set_step2_tok(a, a_s, p, prec) || !set_step2_tok(b, b_s, p, prec)) {
+                printf("err operand\n");
+            } else if (emit_complex(op, a, b, prec, rm) == -2) {
+                printf("err op\n");
+            }
+            mpfr_clears(a, b, c, exact, (mpfr_ptr)0);
+            continue;
+        }
         if (strcmp(op, "parse") == 0) {
             rc = mpfr_set_str(exact, a_s, 10, MPFR_RNDN);
         } else if (strcmp(op, "chop") == 0) {
@@ -315,6 +507,18 @@ int main(void) {
             }
             mpfr_set_prec(exact, (mpfr_prec_t)sp);
             rc = mpfr_set_str(exact, a_s, 10, MPFR_RNDN);
+        } else if (strcmp(op, "exp2") == 0 || strcmp(op, "exp10") == 0 || strcmp(op, "pow") == 0) {
+            if (a_s[0] && !set_step2_tok(a, a_s, p, prec)) {
+                printf("err operand\n");
+                mpfr_clears(a, b, c, exact, (mpfr_ptr)0);
+                continue;
+            }
+            if (strcmp(op, "pow") == 0 && !set_step2_tok(b, b_s, p, prec)) {
+                printf("err operand\n");
+                mpfr_clears(a, b, c, exact, (mpfr_ptr)0);
+                continue;
+            }
+            rc = do_op(exact, op, a, b, c, MPFR_RNDN);
         } else {
             rc = do_op(exact, op, a, b, c, MPFR_RNDN);
         }

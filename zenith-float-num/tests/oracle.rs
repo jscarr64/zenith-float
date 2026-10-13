@@ -1,9 +1,10 @@
-//! Step-1 oracle harness.
+//! Oracle harness for the checked-in JSONL goldens.
 //!
-//! Checked-in JSONL rows were produced by `scripts/gen_oracle_goldens.py` and
-//! cross-checked with `scripts/mpfr_oracle.c`. `cargo test --test oracle` runs
-//! the fast tier. `ORACLE_TIER=deep` also runs the deep tier. Each row has two
-//! seconds; a panic or a timeout is a failure.
+//! Rows were produced by `scripts/gen_oracle_goldens.py` and cross-checked
+//! with `scripts/mpfr_oracle.c`. `cargo test --test oracle` runs the fast
+//! tier. `ORACLE_TIER=deep` also runs the deep tier. Each row has two seconds;
+//! a panic or a timeout is a failure. `ORACLE_FAILS` raises the number of
+//! mismatches printed (the default is 12).
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::mpsc;
@@ -11,7 +12,8 @@ use std::thread;
 use std::time::Duration;
 
 use zenith_float_num::{
-    Consts, Error, ExactNum, Exponent, Radix, RoundingMode, Sign, EXPONENT_MIN, INF_NEG, INF_POS,
+    Consts, Error, ExactComplex, ExactNum, Exponent, Radix, RoundingMode, Sign, EXPONENT_MIN,
+    INF_NEG, INF_POS,
 };
 
 const CASE_BUDGET: Duration = Duration::from_secs(2);
@@ -25,6 +27,10 @@ enum Canon {
     },
     Inf(String),
     Nan(Option<String>),
+    Complex {
+        re: Box<Canon>,
+        im: Box<Canon>,
+    },
 }
 
 fn tier_selected(tier: &str) -> bool {
@@ -89,6 +95,12 @@ fn canon_of(n: &ExactNum) -> Canon {
 
 fn expect_of(v: &serde_json::Value) -> Canon {
     let kind = v.get("k").and_then(|k| k.as_str()).unwrap_or("");
+    if kind == "c" {
+        return Canon::Complex {
+            re: Box::new(expect_of(v.get("re").unwrap_or(&serde_json::Value::Null))),
+            im: Box::new(expect_of(v.get("im").unwrap_or(&serde_json::Value::Null))),
+        };
+    }
     if kind == "nan" {
         let err = match v.get("err") {
             Some(serde_json::Value::Null) | None => None,
@@ -156,7 +168,35 @@ fn arg_value(tok: &str, p: usize, cc: &mut Consts) -> ExactNum {
             n.set_sign(Sign::Neg);
             n
         }
+        "+pow2" | "-pow2" => {
+            let mut n = ExactNum::from_u8(1, p).ldexp(-(p as Exponent), p, RoundingMode::ToEven);
+            if tok.starts_with('-') {
+                n.set_sign(Sign::Neg);
+            }
+            n
+        }
         other => ExactNum::parse(other, Radix::Dec, p, RoundingMode::ToEven, cc),
+    }
+}
+
+fn warm_consts(op: &str, warm_p: usize, cc: &mut Consts) -> Result<(), String> {
+    match op {
+        "sqrt2" => {
+            let _ = cc.sqrt2(warm_p, RoundingMode::ToEven);
+            Ok(())
+        }
+        "phi" => {
+            let _ = cc.phi(warm_p, RoundingMode::ToEven);
+            Ok(())
+        }
+        other => Err(format!("warm on {other}")),
+    }
+}
+
+fn complex_of(z: &ExactComplex) -> Canon {
+    Canon::Complex {
+        re: Box::new(canon_of(z.re())),
+        im: Box::new(canon_of(z.im())),
     }
 }
 
@@ -174,6 +214,9 @@ fn eval_row(row: &serde_json::Value) -> Result<Canon, String> {
         })
         .unwrap_or_default();
     let mut cc = Consts::new().map_err(|_| "constants".to_string())?;
+    if let Some(warm_p) = row.get("warm").and_then(|v| v.as_u64()) {
+        warm_consts(op, warm_p as usize, &mut cc)?;
+    }
     let got = match op {
         "parse" => ExactNum::parse(&args[0], Radix::Dec, p, rm, &mut cc),
         "chop" => {
@@ -212,6 +255,22 @@ fn eval_row(row: &serde_json::Value) -> Result<Canon, String> {
         }
         "sqrt" => arg_value(&args[0], p, &mut cc).sqrt(p, rm),
         "cbrt" => arg_value(&args[0], p, &mut cc).cbrt(p, rm),
+        "exp2" => arg_value(&args[0], p, &mut cc).exp2(p, rm, &mut cc),
+        "exp10" => arg_value(&args[0], p, &mut cc).exp10(p, rm, &mut cc),
+        "pow" => {
+            let base = arg_value(&args[0], p, &mut cc);
+            let exp = arg_value(args.get(1).map(String::as_str).unwrap_or("0"), p, &mut cc);
+            base.pow(&exp, p, rm, &mut cc)
+        }
+        "sqrt2" => cc.sqrt2(p, rm),
+        "phi" => cc.phi(p, rm),
+        "casin" | "cln" => {
+            let re = arg_value(&args[0], p, &mut cc);
+            let im = arg_value(args.get(1).map(String::as_str).unwrap_or("+0"), p, &mut cc);
+            let z = ExactComplex::new(re, im);
+            let w = if op == "casin" { z.asin(p, rm, &mut cc) } else { z.ln(p, rm, &mut cc) };
+            return Ok(complex_of(&w));
+        }
         other => return Err(format!("unknown op {other}")),
     };
     if row.get("roundtrip").and_then(|v| v.as_bool()) == Some(true)
@@ -238,7 +297,11 @@ fn run_file(name: &str) {
     let mut ran = 0usize;
     let mut failed = 0usize;
     let mut samples: Vec<String> = Vec::new();
-    for line in text.lines() {
+    let sample_cap = std::env::var("ORACLE_FAILS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(12usize);
+    for (idx, line) in text.lines().enumerate() {
         if line.is_empty() {
             continue;
         }
@@ -267,16 +330,19 @@ fn run_file(name: &str) {
                 if got == expect {
                     None
                 } else {
-                    Some(format!("{id}: got {got:?} expect {expect:?}"))
+                    Some(format!(
+                        "{name}:{} {id}: got {got:?} expect {expect:?}",
+                        idx + 1
+                    ))
                 }
             }
-            Ok(Ok(Err(err))) => Some(format!("{id}: {err}")),
-            Ok(Err(_)) => Some(format!("{id}: panic")),
-            Err(_) => Some(format!("{id}: timeout")),
+            Ok(Ok(Err(err))) => Some(format!("{name}:{} {id}: {err}", idx + 1)),
+            Ok(Err(_)) => Some(format!("{name}:{} {id}: panic", idx + 1)),
+            Err(_) => Some(format!("{name}:{} {id}: timeout", idx + 1)),
         };
         if let Some(msg) = outcome {
             failed += 1;
-            if samples.len() < 12 {
+            if samples.len() < sample_cap {
                 samples.push(msg);
             }
         }
@@ -308,4 +374,19 @@ fn edges() {
 #[test]
 fn parse() {
     run_file("parse");
+}
+
+#[test]
+fn elementary() {
+    run_file("elementary");
+}
+
+#[test]
+fn constants() {
+    run_file("constants");
+}
+
+#[test]
+fn complex() {
+    run_file("complex");
 }

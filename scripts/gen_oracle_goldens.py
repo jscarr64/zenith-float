@@ -4,6 +4,9 @@
 The integer rounding below is independent of the library. scripts/mpfr_oracle.c
 is the second oracle. A case is written only when the two agree, except for
 parser-contract rows (malformed input), which state the 2.0.0 error tag.
+Step-2 rows (elementary, constants, complex) use the same pair: integer
+powers and integer square roots on the Python side, MPFR on the C side.
+Complex rows use mpmath for the principal value and MPFR for the cross-check.
 
   python3 scripts/gen_oracle_goldens.py
   cc -O2 -o /tmp/mpfr_oracle scripts/mpfr_oracle.c -lmpfr -lgmp
@@ -656,6 +659,290 @@ def load_oracle(rows: list[dict]) -> list[str]:
     return out
 
 
+def isqrt(n: int) -> int:
+    if n <= 0:
+        return 0
+    x = 1 << ((n.bit_length() + 1) // 2)
+    while True:
+        y = (x + n // x) // 2
+        if y >= x:
+            return x
+        x = y
+
+
+def round_sqrt_int(n: int, p: int, rm: str) -> dict:
+    extra = round_p(p) + 64
+    q = isqrt(n << (2 * extra))
+    return round_rational("+", q, 1, -extra, p, rm)
+
+
+def round_phi(p: int, rm: str) -> dict:
+    extra = round_p(p) + 64
+    q = isqrt(5 << (2 * extra))
+    return round_rational("+", (1 << extra) + q, 1, -(extra + 1), p, rm)
+
+
+def input_tuple(tok: str, p: int) -> tuple:
+    if tok == "+pow2":
+        return ("f", "+", 1, 1, -p)
+    if tok == "-pow2":
+        return ("f", "-", 1, 1, -p)
+    if tok in ("+0", "0"):
+        return ("zero", "+")
+    if tok == "-0":
+        return ("zero", "-")
+    return value_key(finalize(parse_dec(tok), p, "ToEven"), p)
+
+
+def tuple_pow10(exp: int, p: int, rm: str) -> dict:
+    if exp >= 0:
+        return round_rational("+", 5**exp, 1, exp, p, rm)
+    return round_rational("+", 1, 5 ** (-exp), exp, p, rm)
+
+
+def tuple_exp2(exp: int, p: int, rm: str) -> dict:
+    return round_rational("+", 1, 1, exp, p, rm)
+
+
+def integer_exponent(v: tuple) -> int:
+    """Integer value of a normalized dyadic whose denominator is 1."""
+    if v[0] != "f" or v[3] != 1:
+        raise ValueError(v)
+    mant, ez = v[2], v[4]
+    if ez >= 0:
+        mag = mant << ez
+    else:
+        if mant & ((1 << (-ez)) - 1):
+            raise ValueError(f"not an integer {v}")
+        mag = mant >> (-ez)
+    return mag if v[1] == "+" else -mag
+
+
+def step2_expect(op: str, p: int, rm: str, args: list[str]) -> dict:
+    if op == "exp2":
+        return tuple_exp2(int(args[0]), p, rm)
+    if op == "exp10":
+        return tuple_pow10(int(args[0]), p, rm)
+    if op == "pow":
+        base = input_tuple(args[0], p)
+        exp = input_tuple(args[1], p)
+        if base[0] != "f" or base[3] != 1:
+            raise ValueError(f"pow oracle {args}")
+        k = integer_exponent(exp)
+        sign = "-" if k % 2 != 0 and base[1] == "-" else "+"
+        mant, ez = base[2], base[4]
+        if k >= 0:
+            return round_rational(sign, mant**k, 1, ez * k, p, rm)
+        return round_rational(sign, 1, mant ** (-k), ez * k, p, rm)
+    if op == "sqrt2":
+        return round_sqrt_int(2, p, rm)
+    if op == "phi":
+        return round_phi(p, rm)
+    if op in ("casin", "cln"):
+        return complex_expect(op, p, rm, args)
+    raise ValueError(op)
+
+
+def mpf_of(v: tuple):
+    import mpmath as mp
+
+    if v[0] == "zero":
+        z = mp.mpf(0)
+        if v[1] == "-":
+            z = -z
+        return z
+    if v[0] != "f":
+        raise ValueError(v)
+    sign = 1 if v[1] == "+" else -1
+    return sign * mp.mpf(v[2]) / mp.mpf(v[3]) * mp.power(2, v[4])
+
+
+def round_mpf(x, p: int, rm: str, sign_hint: str | None = None) -> dict:
+    import mpmath as mp
+
+    if x == 0:
+        sign = sign_hint or ("-" if mp.sign(x) < 0 else "+")
+        return zero(sign, round_p(p))
+    sign = "-" if x < 0 else "+"
+    bits = round_p(p) + 96
+    ax = abs(x)
+    m, e = mp.frexp(ax)
+    mant = int(mp.floor(m * mp.power(2, bits)))
+    return round_rational(sign, mant, 1, int(e) - bits, p, rm)
+
+
+def complex_expect(op: str, p: int, rm: str, args: list[str]) -> dict:
+    import mpmath as mp
+
+    mp.mp.dps = max(80, round_p(p) // 2 + 40)
+    re_v = input_tuple(args[0], p)
+    im_v = input_tuple(args[1], p)
+    re = mpf_of(re_v)
+    im = mpf_of(im_v)
+    below = args[1] in ("-0", "-pow2") or (im_v[0] != "zero" and im_v[1] == "-")
+    if op == "casin":
+        ax = abs(re)
+        if not (ax > 1 and im == 0):
+            raise ValueError(f"asin oracle is the real cut {args}")
+        w = mp.asin(re)
+        if below:
+            w = mp.conj(w)
+        return {"k": "c", "re": round_mpf(w.real, p, rm), "im": round_mpf(w.imag, p, rm)}
+    z = mp.mpc(re, im)
+    w = mp.log(z)
+    im_sign = "-" if below else "+"
+    return {
+        "k": "c",
+        "re": round_mpf(w.real, p, rm),
+        "im": round_mpf(w.imag, p, rm, im_sign if w.imag == 0 else None),
+    }
+
+
+def parse_component(parts: list[str], i: int) -> tuple[dict, int]:
+    kind = parts[i]
+    sign = parts[i + 1]
+    if kind == "nan":
+        return nan(), i + 4
+    if kind == "inf":
+        return inf(sign), i + 4
+    if kind == "zero":
+        return zero(sign, 0), i + 4
+    if kind != "finite":
+        raise ValueError(parts)
+    mant = int(parts[i + 2])
+    ez = int(parts[i + 3])
+    return {"k": "dy", "s": sign, "n": mant, "ez": ez}, i + 4
+
+
+def py_is_zero(st: dict) -> bool:
+    if st["k"] == "zero":
+        return True
+    if st["k"] != "f":
+        return False
+    return all(int(word, 16) == 0 for word in st["m"])
+
+
+def same_component(st: dict, p: int, got: dict) -> bool:
+    prec = round_p(p)
+    if got["k"] == "nan":
+        return st["k"] == "nan"
+    if got["k"] == "inf":
+        return st["k"] == "inf" and st["s"] == got["s"]
+    if got["k"] == "zero" or py_is_zero(st):
+        return got["k"] == "zero" and py_is_zero(st) and st["s"] == got["s"]
+    if got["k"] != "dy" or st["k"] != "f":
+        return False
+    if st["s"] != got["s"]:
+        return False
+    mant = 0
+    for i, word in enumerate(st["m"]):
+        mant |= int(word, 16) << (WORD * i)
+    return norm_dyadic(mant, 1, st["e"] - prec) == norm_dyadic(got["n"], 1, got["ez"])
+
+
+def same_step2(st: dict, p: int, c_line: str) -> bool:
+    if st.get("k") == "c":
+        parts = c_line.split()
+        if not parts or parts[0] != "c":
+            return False
+        re, nxt = parse_component(parts, 1)
+        im, _ = parse_component(parts, nxt)
+        # zero() above used prec 0; compare signs only for zeros via same_component's zero branch.
+        re_fix = st["re"]
+        im_fix = st["im"]
+        return same_component(re_fix, p, re) and same_component(im_fix, p, im)
+    return same(st, p, c_line)
+
+
+def build_step2() -> list[dict]:
+    rows: list[dict] = []
+
+    def add(tier: str, op: str, p: int, rm: str, args: list[str], **extra: object) -> None:
+        rows.append(
+            {
+                "tier": tier,
+                "op": op,
+                "p": p,
+                "rm": rm,
+                "args": args,
+                "id": f"{op}-{p}-{rm}-{len(rows)}",
+                **extra,
+            }
+        )
+
+    integers = [-1, 0, 1, 2, 20]
+    for p in FAST_P:
+        for rm in MODES:
+            for k in integers:
+                add("fast", "exp2", p, rm, [str(k)])
+                add("fast", "exp10", p, rm, [str(k)])
+            add("fast", "pow", p, rm, ["0.5", "-2"])
+    for p in (256, 1024):
+        for rm in MODES:
+            add("deep", "pow", p, rm, ["0.5", "-2"])
+    for rm in MODES:
+        add("fast", "sqrt2", 113, rm, [])
+        add("fast", "phi", 113, rm, [])
+        if rm in ("Up", "FromZero"):
+            add("fast", "sqrt2", 113, rm, [], warm=64)
+            add("fast", "phi", 113, rm, [], warm=64)
+    asin_args = [
+        ("2", "+0"),
+        ("2", "-0"),
+        ("-2", "+0"),
+        ("-2", "-0"),
+        ("1.1", "+0"),
+        ("1.1", "-0"),
+        ("-1.1", "+0"),
+        ("-1.1", "-0"),
+    ]
+    ln_args = [("-1", "1e-12"), ("-1", "-1e-12"), ("-1", "+pow2"), ("-1", "-pow2")]
+    for p in FAST_P:
+        for rm in MODES:
+            for re, im in asin_args:
+                add("fast", "casin", p, rm, [re, im])
+            for re, im in ln_args:
+                add("fast", "cln", p, rm, [re, im])
+    return rows
+
+
+def write_step2() -> None:
+    rows = build_step2()
+    c_lines = load_oracle(rows)
+    grouped: dict[str, list[dict]] = {"elementary": [], "constants": [], "complex": []}
+    for row, c_line in zip(rows, c_lines):
+        exp = step2_expect(row["op"], row["p"], row["rm"], row["args"])
+        if not same_step2(exp, row["p"], c_line):
+            raise SystemExit(
+                f"oracle disagree {row['id']} {row['op']} {row['args']} "
+                f"rm={row['rm']} p={row['p']}\n  python {exp}\n  mpfr   {c_line}"
+            )
+        item = {
+            "id": row["id"],
+            "tier": row["tier"],
+            "op": row["op"],
+            "p": row["p"],
+            "rm": row["rm"],
+            "args": row["args"],
+            "expect": exp,
+        }
+        if "warm" in row:
+            item["warm"] = row["warm"]
+        if row["op"] in ("exp2", "exp10", "pow"):
+            grouped["elementary"].append(item)
+        elif row["op"] in ("sqrt2", "phi"):
+            grouped["constants"].append(item)
+        else:
+            grouped["complex"].append(item)
+    OUT.mkdir(parents=True, exist_ok=True)
+    for name, items in grouped.items():
+        path = OUT / f"{name}.jsonl"
+        path.write_text("".join(json.dumps(it, separators=(",", ":")) + "\n" for it in items))
+        fast = sum(1 for it in items if it["tier"] == "fast")
+        deep = sum(1 for it in items if it["tier"] == "deep")
+        print(f"{name}.jsonl fast={fast} deep={deep}")
+
+
 def main() -> None:
     rows = build_cases()
     c_lines = load_oracle(rows)
@@ -710,6 +997,7 @@ def main() -> None:
         fast = sum(1 for it in items if it["tier"] == "fast")
         deep = sum(1 for it in items if it["tier"] == "deep")
         print(f"{name}.jsonl fast={fast} deep={deep}")
+    write_step2()
 
 
 if __name__ == "__main__":

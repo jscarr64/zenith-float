@@ -1,5 +1,5 @@
-//! Step-1 properties: signed zeros, strict parsing, and decimal round-trip.
-//! These sit beside the checked-in JSONL rows and do not replace them.
+//! Properties beside the checked-in JSONL rows: signed zeros, strict parsing,
+//! decimal round-trip, elementary symmetries, and constant-cache order.
 
 use proptest::prelude::*;
 use zenith_float_num::{Consts, Error, ExactNum, Radix, RoundingMode, Sign};
@@ -88,5 +88,67 @@ proptest! {
         let back = ExactNum::parse(&spelled, Radix::Dec, 53, rm, &mut consts);
         prop_assert_eq!(n.cmp(&back), Some(0));
         prop_assert_eq!(n.sign(), back.sign());
+    }
+}
+
+fn same_bits(a: &ExactNum, b: &ExactNum) -> bool {
+    a.sign() == b.sign()
+        && a.exponent() == b.exponent()
+        && a.mantissa_digits() == b.mantissa_digits()
+}
+
+#[test]
+fn elementary_symmetries() {
+    let mut consts = cc();
+    let p = 53;
+    let rm = RoundingMode::ToEven;
+    for text in ["0.5", "1", "1.25", "2"] {
+        let x = ExactNum::parse(text, Radix::Dec, p, rm, &mut consts);
+        let neg_x = x.neg();
+        let erf_x = x.erf(p, rm, &mut consts);
+        let erf_neg = neg_x.erf(p, rm, &mut consts);
+        assert!(
+            same_bits(&erf_x.neg(), &erf_neg),
+            "erf(-{text}) is not -erf({text})"
+        );
+        let cos_x = x.cos(p, rm, &mut consts);
+        let cos_neg = neg_x.cos(p, rm, &mut consts);
+        assert!(
+            same_bits(&cos_x, &cos_neg),
+            "cos(-{text}) is not cos({text})"
+        );
+        let sinh_x = x.sinh(p, rm, &mut consts);
+        let sinh_neg = neg_x.sinh(p, rm, &mut consts);
+        assert!(
+            same_bits(&sinh_x.neg(), &sinh_neg),
+            "sinh(-{text}) is not -sinh({text})"
+        );
+    }
+}
+
+#[test]
+fn sqrt2_and_phi_match_a_fresh_cache() {
+    let directed = [RoundingMode::Up, RoundingMode::FromZero];
+    for warm in [24usize, 53, 64, 256] {
+        for rm in directed {
+            let mut fresh = cc();
+            let mut warmed = cc();
+            let _ = warmed.sqrt2(warm, RoundingMode::ToEven);
+            let cached = warmed.sqrt2(113, rm);
+            let direct = fresh.sqrt2(113, rm);
+            assert!(
+                same_bits(&cached, &direct),
+                "sqrt2(113, {rm:?}) after {warm} differs from a fresh cache"
+            );
+            let mut fresh = cc();
+            let mut warmed = cc();
+            let _ = warmed.phi(warm, RoundingMode::ToEven);
+            let cached = warmed.phi(113, rm);
+            let direct = fresh.phi(113, rm);
+            assert!(
+                same_bits(&cached, &direct),
+                "phi(113, {rm:?}) after {warm} differs from a fresh cache"
+            );
+        }
     }
 }
