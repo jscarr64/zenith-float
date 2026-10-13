@@ -18,7 +18,11 @@ const CASE_BUDGET: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Debug, PartialEq)]
 enum Canon {
-    Finite { sign: String, exp: Exponent, limbs: Vec<String> },
+    Finite {
+        sign: String,
+        exp: Exponent,
+        limbs: Vec<String>,
+    },
     Inf(String),
     Nan(Option<String>),
 }
@@ -56,7 +60,7 @@ fn err_name(err: Option<Error>) -> Option<String> {
 }
 
 fn storage_words(p: usize) -> usize {
-    let rounded = if p == 0 { 0 } else { ((p + 63) / 64) * 64 };
+    let rounded = p.div_ceil(64) * 64;
     rounded / 64
 }
 
@@ -65,18 +69,10 @@ fn canon_of(n: &ExactNum) -> Canon {
         return Canon::Nan(err_name(n.err()));
     }
     if n.is_inf() {
-        let sign = if n.sign() == Some(Sign::Neg) {
-            "-"
-        } else {
-            "+"
-        };
+        let sign = if n.sign() == Some(Sign::Neg) { "-" } else { "+" };
         return Canon::Inf(sign.to_string());
     }
-    let sign = if n.sign() == Some(Sign::Neg) {
-        "-"
-    } else {
-        "+"
-    };
+    let sign = if n.sign() == Some(Sign::Neg) { "-" } else { "+" };
     let exp = n.exponent().unwrap_or(0);
     let limbs = n
         .mantissa_digits()
@@ -102,7 +98,12 @@ fn expect_of(v: &serde_json::Value) -> Canon {
         return Canon::Nan(err);
     }
     if kind == "inf" {
-        return Canon::Inf(v.get("s").and_then(|s| s.as_str()).unwrap_or("+").to_string());
+        return Canon::Inf(
+            v.get("s")
+                .and_then(|s| s.as_str())
+                .unwrap_or("+")
+                .to_string(),
+        );
     }
     let limbs = v
         .get("m")
@@ -114,7 +115,11 @@ fn expect_of(v: &serde_json::Value) -> Canon {
         })
         .unwrap_or_default();
     Canon::Finite {
-        sign: v.get("s").and_then(|s| s.as_str()).unwrap_or("+").to_string(),
+        sign: v
+            .get("s")
+            .and_then(|s| s.as_str())
+            .unwrap_or("+")
+            .to_string(),
         exp: v.get("e").and_then(|e| e.as_i64()).unwrap_or(0) as Exponent,
         limbs,
     }
@@ -172,7 +177,9 @@ fn eval_row(row: &serde_json::Value) -> Result<Canon, String> {
     let got = match op {
         "parse" => ExactNum::parse(&args[0], Radix::Dec, p, rm, &mut cc),
         "chop" => {
-            let src_p = args[1].parse::<usize>().map_err(|_| "src precision".to_string())?;
+            let src_p = args[1]
+                .parse::<usize>()
+                .map_err(|_| "src precision".to_string())?;
             let mut n = ExactNum::parse(&args[0], Radix::Dec, src_p, RoundingMode::ToEven, &mut cc);
             match n.set_precision(p, rm) {
                 Ok(()) => n,
@@ -207,7 +214,9 @@ fn eval_row(row: &serde_json::Value) -> Result<Canon, String> {
         "cbrt" => arg_value(&args[0], p, &mut cc).cbrt(p, rm),
         other => return Err(format!("unknown op {other}")),
     };
-    if row.get("roundtrip").and_then(|v| v.as_bool()) == Some(true) && !got.is_nan() && !got.is_inf()
+    if row.get("roundtrip").and_then(|v| v.as_bool()) == Some(true)
+        && !got.is_nan()
+        && !got.is_inf()
     {
         let text = got
             .format(Radix::Dec, rm, &mut cc)
