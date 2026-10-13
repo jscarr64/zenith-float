@@ -1,11 +1,20 @@
 //! Rectangular complex numbers over [`ExactNum`].
 
+use crate::common::util::round_p;
 use crate::defs::DEFAULT_P;
 use crate::Consts;
 use crate::ExactNum;
 use crate::Exponent;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
+
+fn abs_part(x: &ExactNum) -> ExactNum {
+    if x.is_negative() {
+        x.neg()
+    } else {
+        x.clone()
+    }
+}
 
 /// Complex value `re + i·im` with software-limb real and imaginary parts.
 #[derive(Debug, Clone)]
@@ -145,7 +154,45 @@ impl ExactComplex {
     /// Principal logarithm `ln|z| + i Arg(z)`.
     ///
     /// Branch cut: (−∞, 0] on the real axis. `ln(−1)` is `iπ` (argument +π).
+    /// `|z|` is `ln(max(|re|,|im|)) + ½ ln(1 + (min/max)²)`, so a point just off
+    /// the cut keeps the small real part.
     pub fn ln(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if self.re.is_nan()
+            || self.im.is_nan()
+            || self.re.is_inf()
+            || self.im.is_inf()
+            || (self.re.is_zero() && self.im.is_zero())
+        {
+            return self.ln_mod_arg(p, rm, cc);
+        }
+        let prec = round_p(p);
+        let work = prec.saturating_mul(2).saturating_add(256);
+        let re_abs = abs_part(&self.re);
+        let im_abs = abs_part(&self.im);
+        let (big, small) = match re_abs.abs_cmp(&im_abs) {
+            Some(ord) if ord >= 0 => (re_abs, im_abs),
+            Some(_) => (im_abs, re_abs),
+            None => {
+                return Self::new(
+                    ExactNum::nan(Some(crate::Error::InvalidArgument)),
+                    ExactNum::nan(Some(crate::Error::InvalidArgument)),
+                );
+            }
+        };
+        let ln_big = big.ln(work, RoundingMode::None, cc);
+        let ratio = small.div(&big, work, RoundingMode::None);
+        let corr = ratio
+            .mul(&ratio, work, RoundingMode::None)
+            .log1p(work, RoundingMode::None, cc)
+            .ldexp(-1, work, RoundingMode::None);
+        let mut real = ln_big.add(&corr, work, RoundingMode::None);
+        if let Err(err) = real.set_precision(prec, rm) {
+            return Self::new(ExactNum::nan(Some(err)), ExactNum::nan(Some(err)));
+        }
+        Self::new(real, self.arg(p, rm, cc))
+    }
+
+    fn ln_mod_arg(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mag = self.abs(p, RoundingMode::None);
         Self::new(mag.ln(p, rm, cc), self.arg(p, rm, cc))
     }
@@ -398,8 +445,12 @@ impl ExactComplex {
     }
 
     /// Principal `asin`: `-i ln(i z + √(1 − z²))`.
+    ///
+    /// On the real cut `|re| > 1`, an imaginary part of `+0` is the principal
+    /// value and an imaginary part of `-0` is its conjugate.
     pub fn asin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        let p_x = Self::work_p(p);
+        let prec = round_p(p);
+        let p_x = prec.saturating_add(WORD_BIT_SIZE);
         let z2 = self.mul(self, p_x, RoundingMode::None);
         let one = Self::one(p_x);
         let rad = one
@@ -408,11 +459,21 @@ impl ExactComplex {
         let iz = Self::i(p_x).mul(self, p_x, RoundingMode::None);
         let ln = iz
             .add(&rad, p_x, RoundingMode::None)
-            .ln(p_x, RoundingMode::None, cc);
-        Self::i(p_x)
-            .mul(&ln, p_x, RoundingMode::None)
-            .neg()
-            .finish(p, rm)
+            .ln_mod_arg(p_x, RoundingMode::None, cc);
+        let mut v = Self::i(p_x).mul(&ln, p_x, RoundingMode::None).neg();
+        if self.asin_below_cut() {
+            v = v.conj();
+        }
+        v.finish(prec, rm)
+    }
+
+    /// `|re| > 1` and the imaginary part is negative zero.
+    fn asin_below_cut(&self) -> bool {
+        if !(self.im.is_zero() && self.im.is_negative()) {
+            return false;
+        }
+        let one = ExactNum::from_u8(1, WORD_BIT_SIZE);
+        matches!(self.re.abs_cmp(&one), Some(ord) if ord > 0)
     }
 
     /// Principal `acos`: `π/2 − asin(z)`.

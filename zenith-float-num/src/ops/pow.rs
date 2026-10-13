@@ -312,6 +312,48 @@ impl ExactNumNumber {
         }
     }
 
+    /// Exact integer power by squaring, then a single rounding to `p`.
+    fn pow_exact_integer(
+        &self,
+        mag: usize,
+        negative_exponent: bool,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Self, Error> {
+        let p = round_p(p);
+        let mut square = self.clone()?;
+        square.set_sign(Sign::Pos);
+        let mut exp = mag;
+        let mut acc = ONE.clone()?;
+        while exp > 1 {
+            if exp & 1 == 1 {
+                acc = acc.mul_full_prec(&square)?;
+            }
+            square = square.mul_full_prec(&square)?;
+            exp >>= 1;
+        }
+        acc = acc.mul_full_prec(&square)?;
+        let odd = mag & 1 == 1;
+        let ret_sign = if odd { self.sign() } else { Sign::Pos };
+        let effective_rm = if ret_sign.is_negative() {
+            match rm {
+                RoundingMode::Up => RoundingMode::Down,
+                RoundingMode::Down => RoundingMode::Up,
+                other => other,
+            }
+        } else {
+            rm
+        };
+        let mut ret = if negative_exponent {
+            ONE.div(&acc, p, effective_rm)?
+        } else {
+            acc.set_precision(p, effective_rm)?;
+            acc
+        };
+        ret.set_sign(ret_sign);
+        Ok(ret)
+    }
+
     fn powi_sqr_mul(
         arg: &Self,
         mut x: Self,
@@ -522,6 +564,17 @@ impl ExactNumNumber {
                 let mut ret = ONE.div(self, p, rm)?;
                 ret.set_inexact(ret.inexact() || n.inexact());
                 return Ok(ret);
+            }
+        }
+
+        // An exact integer power is a product, then one rounding. The logarithm
+        // path cannot certify an exact dyadic under a directed mode.
+        if n.is_int() && !n.inexact() && !self.inexact() {
+            if let Ok(mag) = n.int_as_usize() {
+                let width = self.mantissa_max_bit_len().max(1);
+                if mag >= 2 && width.saturating_mul(mag) <= 1_048_576 {
+                    return self.pow_exact_integer(mag, n.is_negative(), p, rm);
+                }
             }
         }
 

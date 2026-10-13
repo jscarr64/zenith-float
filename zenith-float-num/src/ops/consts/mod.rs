@@ -100,7 +100,8 @@ impl ExtraCache {
     {
         let p = round_p(k);
         let p_wrk = p.checked_add(WORD_BIT_SIZE).ok_or(Error::InvalidArgument)?;
-        if self.bits >= p {
+        // A cached value with no bits below `p` cannot be re-rounded.
+        if self.bits >= p_wrk {
             if let Some(v) = &self.val {
                 let mut ret = v.clone()?;
                 ret.set_precision(p, rm)?;
@@ -310,7 +311,11 @@ impl Consts {
         let p_wrk = p_round
             .checked_add(8 * WORD_BIT_SIZE)
             .ok_or(Error::InvalidArgument)?;
-        if self.euler.cached_bit_len() < p_round {
+        // for_prec reuses the cache only when a guard word is still present.
+        let p_guard = p_round
+            .checked_add(WORD_BIT_SIZE)
+            .ok_or(Error::InvalidArgument)?;
+        if self.euler.cached_bit_len() < p_guard {
             let ln2 = self.ln_2_num(p_wrk, RoundingMode::None)?;
             let v = crate::ops::special::euler_mascheroni(p_wrk, &ln2)?;
             self.euler.install(v);

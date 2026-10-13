@@ -30,6 +30,28 @@ The flush now compares the residual with half an ulp and applies the same roundi
 
 `format` in base 10 now retries with extra digits. Those digits are rounded onto the side of the value that the same mode accepts, and the retry stops when `parse` at the same precision returns the same sign, exponent, and limbs. The spelling of a directed value can be longer than in 1.0.12. The value is the one `parse` produced.
 
+### Integer powers
+
+`exp2` and `exp10` of an exact integer, and `pow` with an exact integer exponent, went through `exp(n · ln x)`. When the power is an exact dyadic, a directed mode sees every discarded bit equal and the Ziv loop gives up. `exp2(2)`, `exp2(20)`, `exp10(2)`, and `exp10(20)` at 24, 53, and 113 bits returned `NaN(PrecisionRetryExhausted)` for `Up`, `Down`, `ToZero`, and `FromZero`. `None` returned the next number down. `ToEven` and `ToOdd` were already the exact power. `pow(0.5, -2)` is the same bug at every width, including 256 and 1024 bits: the value is the integer 4.
+
+An exact integer exponent whose magnitude fits in one word, and whose base is exact, is now exponentiated by squaring at full precision and rounded once. A negative exponent divides that product once. Inexact inputs still use the logarithm. `NaN(PrecisionRetryExhausted)` on these exact powers becomes the integer (or the correctly rounded integer, when `10^20` does not fit).
+
+### Constant cache
+
+`sqrt2` and `phi` at 113 bits under `Up` and `FromZero` were one ulp low when a coarser request had been cached first. A 24-, 53-, or 64-bit request is computed at 128 bits. The 113-bit request is also stored in 128 bits, so the cache was reused and `set_precision` did nothing. A fresh cache, or a cache filled at 256 bits, was already the higher neighbor.
+
+The cache is reused only when it still has a guard word below the new precision. Otherwise it is recomputed. `sqrt2(113, Up)` and `phi(113, Up)` after a narrower request now match a fresh cache, and the same holds for `FromZero`. Euler's constant is filled again when the saved value has no guard word left, so a later, wider request does not treat that cache as final.
+
+### Complex inverse sine on the cut
+
+`asin` of a real number with absolute value greater than 1 ignored the sign of a zero imaginary part. Both sides of the cut came back with the principal imaginary part: negative for `x > 1`, positive for `x < -1`. The value above the cut (`+0`) is unchanged and matches the principal value. The value below the cut (`-0`) is now the conjugate. The parts are rounded to the word-sized precision, same as the real elementary functions. A request for 24, 53, or 113 bits no longer stops at that many bits inside a wider word.
+
+### Complex logarithm near the cut
+
+`ln(z)` took the modulus at the destination precision and then the logarithm. For `z = -1 + 10^{-12} i`, `|z| - 1` is about `5·10^{-25}`. At 64 stored bits that difference is below one ulp of 1, so the real part was `+0`. The imaginary part, near `±π`, was already right. The same cancellation hides `2^{-p}` at 113 bits.
+
+The real part is now `ln(max(|re|, |im|)) + ½ ln(1 + (min/max)²)`, computed with extra precision and rounded once. A logarithm just off the cut keeps that small positive real part. The argument is unchanged.
+
 ## 1.0.12 — 2026-10-06
 
 Attribution for code derived from [astro-float](https://github.com/stencillogic/astro-float) (MIT, Copyright (c) 2022 stencillogic; crates `astro-float` 0.9.6, `astro-float-num` 0.3.7, `astro-float-macro` 0.4.6, commit `c0d9a26`). `NOTICE` has the full MIT copyright and permission notice. Each derived file names that origin. Original work stays under Apache-2.0 and is also offered as MIT. The file list is `doc/PROVENANCE.md`.
