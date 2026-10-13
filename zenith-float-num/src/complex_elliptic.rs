@@ -430,6 +430,8 @@ impl ExactComplex {
     /// - Algorithm: Carlson `R_F` in ℂ; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
     /// - Bound: identities evaluated outside Ziv (nested Ziv would exhaust `MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_k(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -459,6 +461,8 @@ impl ExactComplex {
     /// - Algorithm: Carlson `R_F` / `R_D`; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
     /// - Bound: same as [`Self::elliptic_k`].
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_e_complete(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -484,7 +488,8 @@ impl ExactComplex {
         rf.sub(&self.div(&three, p, rm()).mul(&rd, p, rm()), p, rm())
     }
 
-    /// Incomplete \(F(x|m)\), \(x=\sin\varphi\), \(m=k^2\).
+    /// Incomplete \(F(x|m)\). `self` is \(x=\sin\varphi\), not the amplitude
+    /// \(\varphi\). \(m=k^2\), not the modulus \(k\).
     ///
     /// # Precision
     ///
@@ -493,6 +498,8 @@ impl ExactComplex {
     ///
     /// Carlson \(R_F(1-x^2,1-mx^2,1)\). Cuts when \(1-x^2\) or \(1-mx^2\) lies on
     /// \((-\infty,0]\) (principal square-root cut). \(F(x,0)=\arcsin x\).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_f(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || m.is_nan() {
             return nan_pair(Error::InvalidArgument);
@@ -519,7 +526,8 @@ impl ExactComplex {
         self.mul(&rf, p, rm())
     }
 
-    /// Incomplete \(E(x|m)\). Same \(x,m\) convention as [`Self::elliptic_f`].
+    /// Incomplete \(E(x|m)\). Same convention as [`Self::elliptic_f`]:
+    /// `self` is \(x=\sin\varphi\), not \(\varphi\), and \(m=k^2\), not \(k\).
     ///
     /// # Precision
     ///
@@ -527,6 +535,8 @@ impl ExactComplex {
     /// - MPFR oracle: no.
     ///
     /// Cuts as for \(F\). \(E(x,0)=\arcsin x\); \(E(x,1)=x\).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_e(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || m.is_nan() {
             return nan_pair(Error::InvalidArgument);
@@ -568,6 +578,8 @@ impl ExactComplex {
     ///
     /// - Algorithm: Carlson `R_J`; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_pi_complete(
         &self,
         m: &Self,
@@ -599,7 +611,8 @@ impl ExactComplex {
         rf.add(&self.div(&three, p, rm()).mul(&rj, p, rm()), p, rm())
     }
 
-    /// Incomplete \(\Pi(n;x|m)\). `self` is \(n\).
+    /// Incomplete \(\Pi(n;x|m)\). `self` is the characteristic \(n\).
+    /// `x` is \(\sin\varphi\), not the amplitude \(\varphi\). \(m=k^2\), not \(k\).
     ///
     /// # Precision
     ///
@@ -608,6 +621,8 @@ impl ExactComplex {
     ///
     /// Cuts when \(1-x^2\), \(1-mx^2\), or \(1-nx^2\) meets the Carlson cut
     /// \((-\infty,0]\). \(\Pi(0;x|m)=F(x|m)\).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_pi(
         &self,
         x: &Self,

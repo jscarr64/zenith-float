@@ -2032,7 +2032,8 @@ impl ExactNumNumber {
         Ok(r)
     }
 
-    /// Incomplete \(E(x|m)\), \(|x|\le 1\).
+    /// Incomplete \(E(x|m)\), \(|x|\le 1\). \(x=\sin\varphi\), not the angle
+    /// \(\varphi\). \(m=k^2\), not the modulus \(k\).
     pub fn elliptic_e(
         &self,
         m: &Self,
@@ -2157,7 +2158,9 @@ impl ExactNumNumber {
         )
     }
 
-    /// Incomplete \(\Pi(n;x|m)\). `self` is \(n\).
+    /// Incomplete \(\Pi(n;x|m)\). `self` is the characteristic \(n\).
+    /// \(x=\sin\varphi\), not the angle \(\varphi\). \(m=k^2\), not the modulus \(k\).
+    /// \(|x|>1\) is `InvalidArgument`.
     pub fn elliptic_pi(
         &self,
         x: &Self,

@@ -34,6 +34,8 @@ impl Ball {
     }
 
     /// Non-negative radius.
+    ///
+    /// Accuracy: enclosure
     pub fn rad(&self) -> &ExactNum {
         &self.rad
     }
@@ -256,6 +258,8 @@ impl ComplexBall {
     }
 
     /// Non-negative radius.
+    ///
+    /// Accuracy: enclosure
     pub fn rad(&self) -> &ExactNum {
         &self.rad
     }

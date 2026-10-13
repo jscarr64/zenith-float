@@ -63,6 +63,8 @@ impl ExactComplex {
     ///   asymptotic `e^z/z Σ k!/z^k + iπ·sgn(Im z)` otherwise.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -81,6 +83,8 @@ impl ExactComplex {
     /// - Algorithm: via [`Self::ei`].
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -108,6 +112,8 @@ impl ExactComplex {
     /// - Algorithm: via [`Self::ei`].
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ci(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -126,6 +132,8 @@ impl ExactComplex {
     /// - Algorithm: [`Self::ei`] of `ln z`.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn li(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -143,6 +151,8 @@ impl ExactComplex {
     ///
     /// - Algorithm: via complex `erf`; Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fresnel_s(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -157,6 +167,8 @@ impl ExactComplex {
     ///
     /// - Algorithm: via complex `erf`; Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fresnel_c(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());

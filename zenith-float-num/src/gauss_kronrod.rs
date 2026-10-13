@@ -84,6 +84,8 @@ pub struct GkResult {
     /// Absolute error estimate. A single panel reports `|K − G|` after the
     /// factor `(b − a) / 2`. An accepted ε value reports the difference of
     /// the last two even-order ε entries.
+    ///
+    /// Accuracy: enclosure
     pub abs_err_est: ExactNum,
 }
 

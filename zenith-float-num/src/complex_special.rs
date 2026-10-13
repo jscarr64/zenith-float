@@ -182,6 +182,8 @@ impl ExactComplex {
     /// - Algorithm: Faddeeva `w(z)` series for `|z|` below `FADDEEVA_SERIES_L1 = 8`; continued fraction otherwise.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: real axis vs `mpfr_erf`. GNU MPC has no `mpc_erf`. Off-axis: `erf` odd, `erfc=1-erf`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn erf(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -198,6 +200,8 @@ impl ExactComplex {
     /// - Algorithm: same Faddeeva path as [`Self::erf`].
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: real axis vs `mpfr_erfc` (via `1-erf` identity). GNU MPC has no `mpc_erfc`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn erfc(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -213,6 +217,8 @@ impl ExactComplex {
     /// - Algorithm: Stirling (`GAMMA_STIRLING_TERMS = 64`) plus reflection; factorial for small integers (`GAMMA_FACTORIAL_MAX = 64`).
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: real axis vs `mpfr_gamma`. GNU MPC has no `mpc_gamma`. Integers: `Γ(n)=(n-1)!`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn gamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -232,6 +238,8 @@ impl ExactComplex {
     /// - Algorithm: Stirling (`GAMMA_STIRLING_TERMS = 64`) plus reflection.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ln_gamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -273,6 +281,8 @@ impl ExactComplex {
     /// - Algorithm: recurrence plus Bernoulli; reflection for \(\operatorname{Re} z < 0\).
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn digamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());

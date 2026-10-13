@@ -640,6 +640,8 @@ impl ExactComplex {
     /// - Algorithm: series / Euler / Pfaff / Kummer / logarithmic \(1-z\) connection. Caps `HYPERGEOM_SERIES_MAX_TERMS = 10_000`, `HYPERGEOM_TRANSFORM_MAX = 8`.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn hypergeom_2f1(
         &self,
         b: &Self,

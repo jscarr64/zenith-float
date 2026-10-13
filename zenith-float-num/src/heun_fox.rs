@@ -554,6 +554,8 @@ impl ExactNum {
     ///   hypercomb limit: two parameter shifts must agree. A non-removable pole stays
     ///   `NaN(InvalidArgument)`.
     /// - At most 8 parameters in \(a\) and in \(b\).
+    ///
+    /// Accuracy: unspecified
     pub fn meijer_g(
         &self,
         an: &[Self],
@@ -588,6 +590,8 @@ impl ExactNum {
     ///   (denominators \(\le 16\), cleared scales \(\le 12\)). Otherwise `NaN`.
     /// - Coincident poles after the lift use the same logarithmic limit as [`meijer_g`].
     /// - Real \(\mathrm{self}>0\) when a scale is not 1 (fractional \(z^{1/r}\)).
+    ///
+    /// Accuracy: unspecified
     pub fn fox_h(
         &self,
         an: &[(Self, Self)],
@@ -669,6 +673,8 @@ impl ExactNum {
     ///   polynomial, returned for every finite \(z\).
     /// - More than 8192 Taylor steps is `NaN(InvalidArgument)`.
     /// - \(a=0\) or \(\gamma\in\{0,-1,-2,\ldots\}\) (recurrence pole) is `NaN`.
+    ///
+    /// Accuracy: unspecified
     pub fn heun_g(
         &self,
         a: &Self,
@@ -820,6 +826,8 @@ impl ExactNum {
     ///   not implemented: there is no public SoftFloat signature for them,
     ///   and the \(z=0\) series is not unique (triconfluent) or not regular
     ///   (double-confluent).
+    ///
+    /// Accuracy: unspecified
     pub fn heun_c(
         &self,
         alpha: &Self,

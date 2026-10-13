@@ -118,6 +118,8 @@ impl ExactNum {
     /// Adds `d2` to `self` and returns the result of the operation with precision `p` rounded according to `rm`.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn add(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         self.add_op(d2, p, rm, false)
     }
@@ -125,6 +127,8 @@ impl ExactNum {
     /// Adds `d2` to `self` and returns the result of the operation.
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer addition.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn add_full_prec(&self, d2: &Self) -> Self {
         self.add_op(d2, 0, RoundingMode::None, true)
     }
@@ -164,6 +168,8 @@ impl ExactNum {
     /// Subtracts `d2` from `self` and returns the result of the operation with precision `p` rounded according to `rm`.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn sub(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         self.sub_op(d2, p, rm, false)
     }
@@ -171,6 +177,8 @@ impl ExactNum {
     /// Subtracts `d2` from `self` and returns the result of the operation.
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer subtraction.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn sub_full_prec(&self, d2: &Self) -> Self {
         self.sub_op(d2, 0, RoundingMode::None, true)
     }
@@ -214,6 +222,8 @@ impl ExactNum {
     /// Multiplies `d2` by `self` and returns the result of the operation with precision `p` rounded according to `rm`.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn mul(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         self.mul_op(d2, p, rm, false)
     }
@@ -221,6 +231,8 @@ impl ExactNum {
     /// Multiplies `d2` by `self` and returns the result of the operation.
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer multiplication.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn mul_full_prec(&self, d2: &Self) -> Self {
         self.mul_op(d2, 0, RoundingMode::None, true)
     }
@@ -228,6 +240,8 @@ impl ExactNum {
     /// Computes `self * b + c` with precision `p`, rounded once with `rm`.
     ///
     /// Unlike `mul` followed by `add`, the product is not rounded to `p` before the addition.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fma(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
             return self.clone();
@@ -256,6 +270,8 @@ impl ExactNum {
     ///
     /// Inf / NaN: `hi` is `self.add(b, p, rm)`; `lo` is zero (or NaN if `hi` is NaN).
     /// Reconstruct with `hi.add(&lo, p, rm)` (not `add_full_prec`, which uses internal precision 0).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn two_sum(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
         if self.is_nan() {
             return (self.clone(), Self::nan(self.err()));
@@ -289,6 +305,8 @@ impl ExactNum {
 
     /// Two-product: `(hi, lo)` with `hi` rounded to `p` bits using `rm` and `hi + lo` equal to the
     /// exact product of finite operands (via [`mul_full_prec`](Self::mul_full_prec)).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn two_product(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
         if self.is_nan() {
             return (self.clone(), Self::nan(self.err()));
@@ -309,6 +327,8 @@ impl ExactNum {
     }
 
     /// Sum `xs` at extra working precision and round once to `p` bits.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fused_sum(xs: &[Self], p: usize, rm: RoundingMode) -> Self {
         if xs.is_empty() {
             return Self::new(p);
@@ -333,6 +353,8 @@ impl ExactNum {
 
     /// Dot product of equal-length slices: extra-precision `∑ xs[i]*ys[i]`, then one round to `p`.
     /// Length mismatch yields NaN (`InvalidArgument`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fused_dot(xs: &[Self], ys: &[Self], p: usize, rm: RoundingMode) -> Self {
         if xs.len() != ys.len() {
             return Self::nan(Some(Error::InvalidArgument));
@@ -362,6 +384,8 @@ impl ExactNum {
     /// Horner evaluation `a₀ + x(a₁ + x(a₂ + …))` with fused multiply-add at extra working precision,
     /// then one round to `p`. `coeffs[0]` is the constant term (lowest degree first).
     /// Empty `coeffs` yields zero.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn polyval(coeffs: &[Self], x: &Self, p: usize, rm: RoundingMode) -> Self {
         if coeffs.is_empty() {
             return Self::new(p);
@@ -388,6 +412,8 @@ impl ExactNum {
     }
 
     /// Alias of [`Self::fma`].
+    ///
+    /// Accuracy: correctly-rounded
     pub fn mul_add(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
             return self.clone();
@@ -458,6 +484,8 @@ impl ExactNum {
     /// Divides `self` by `d2` and returns the result of the operation with precision `p` rounded according to `rm`.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn div(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
@@ -483,6 +511,8 @@ impl ExactNum {
     }
 
     /// Returns the remainder of division of `|self|` by `|d2|`. The sign of the result is set to the sign of `self`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn rem(&self, d2: &Self) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
@@ -564,6 +594,8 @@ impl ExactNum {
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn pow(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v1) => {
@@ -624,6 +656,8 @@ impl ExactNum {
     /// Compute the power of `self` to the integer `n` with precision `p`. The result is rounded using the rounding mode `rm`.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn powi(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v1) => Self::result_to_ext(v1.powi(n, p, rm), false, true),
@@ -645,6 +679,8 @@ impl ExactNum {
     /// Precision is rounded upwards to the word size.
     /// Negative `n` is a reciprocal of the corresponding positive power.
     /// The function returns NaN if the precision `p` is incorrect, or Inf if `self` is zero and `n` is negative.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn powsi(&self, n: isize, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v1) => Self::result_to_ext(v1.powsi(n, p, rm), false, true),
@@ -667,6 +703,8 @@ impl ExactNum {
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn log(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v1) => {
@@ -966,6 +1004,8 @@ impl ExactNum {
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn atan(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.atan(p, rm, cc), v.is_zero(), true),
@@ -978,6 +1018,8 @@ impl ExactNum {
     /// The result is rounded using the rounding mode `rm`.
     /// This function requires constants cache `cc`.
     /// Precision is rounded upwards to the word size.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn atan2(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return self.clone();
@@ -1023,6 +1065,8 @@ impl ExactNum {
     /// The result is rounded using the rounding mode `rm`.
     /// Precision is rounded upwards to the word size.
     /// `hypot(±Inf, y)` and `hypot(x, ±Inf)` are `+Inf`, including when the other argument is NaN.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn hypot(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_inf() || other.is_inf() {
             return INF_POS;
@@ -1045,6 +1089,8 @@ impl ExactNum {
     /// The result is rounded using the rounding mode `rm`.
     /// This function requires constants cache `cc`.
     /// Returns `-Inf` for `self == -1`, and NaN if `self < -1`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn log1p(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.log1p(p, rm, cc), false, false),
@@ -1062,6 +1108,8 @@ impl ExactNum {
     /// Computes `exp(self) - 1` with precision `p`.
     /// The result is rounded using the rounding mode `rm`.
     /// This function requires constants cache `cc`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn expm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.expm1(p, rm, cc), false, true),
@@ -1080,6 +1128,8 @@ impl ExactNum {
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn tanh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.tanh(p, rm, cc), v.is_zero(), true),
@@ -1192,6 +1242,8 @@ impl ExactNum {
     }
 
     /// Returns a copy of the number with the sign reversed.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn neg(&self) -> Self {
         let mut ret = self.clone();
         ret.inv_sign();
@@ -1309,6 +1361,8 @@ impl ExactNum {
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - InvalidArgument: the precision is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn set_precision(&mut self, p: usize, rm: RoundingMode) -> Result<(), Error> {
         if let Flavor::Value(v) = &mut self.inner {
             v.set_precision(p, rm)
@@ -1321,6 +1375,8 @@ impl ExactNum {
     /// The result is rounded using the rounding mode `rm`.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.reciprocal(p, rm), false, v.is_positive()),
@@ -1482,6 +1538,8 @@ impl ExactNum {
     }
 
     /// `self · 2^n`. Alias of [`Self::scalb`].
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ldexp(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.ldexp(n, p, rm), v.is_zero(), true),
@@ -1490,11 +1548,15 @@ impl ExactNum {
     }
 
     /// `self · 2^n` (IEEE `scalbn`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn scalb(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         self.ldexp(n, p, rm)
     }
 
     /// `floor(log2(|self|))` as a float. Zero becomes `-Inf`; Inf/NaN unchanged in kind.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn logb(&self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.logb(p, rm), v.is_zero(), true),
@@ -1594,13 +1656,16 @@ macro_rules! gen_wrapper_log {
 
 impl ExactNum {
     gen_wrapper_arg!(
-        "Returns the absolute value of `self`.",
+        "Returns the absolute value of `self`.
+Accuracy: correctly-rounded",
         abs,
         Self,
         { INF_POS },
         { INF_POS },
     );
     /// Returns a value with the magnitude of `self` and the sign of `sign`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn copysign(&self, sign: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
             return self.clone();
@@ -1627,6 +1692,8 @@ impl ExactNum {
         }
     }
     /// Returns the next representable value from `self` toward `toward` at precision `p`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn next_after(&self, toward: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
             return self.clone();
@@ -1642,31 +1709,40 @@ impl ExactNum {
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
         }
     }
-    gen_wrapper_arg!("Returns the integer part of `self`.", int, Self, { NAN }, {
-        NAN
-    },);
     gen_wrapper_arg!(
-        "Returns the fractional part of `self`.",
+        "Returns the integer part of `self`.
+Accuracy: correctly-rounded",
+        int,
+        Self,
+        { NAN },
+        { NAN },
+    );
+    gen_wrapper_arg!(
+        "Returns the fractional part of `self`.
+Accuracy: correctly-rounded",
         fract,
         Self,
         { NAN },
         { NAN },
     );
     gen_wrapper_arg!(
-        "Returns the smallest integer greater than or equal to `self`.",
+        "Returns the smallest integer greater than or equal to `self`.
+Accuracy: correctly-rounded",
         ceil,
         Self,
         { INF_POS },
         { INF_NEG },
     );
     gen_wrapper_arg!(
-        "Returns the largest integer less than or equal to `self`.",
+        "Returns the largest integer less than or equal to `self`.
+Accuracy: correctly-rounded",
         floor,
         Self,
         { INF_POS },
         { INF_NEG },
     );
-    gen_wrapper_arg_rm!("Returns the rounded number with `n` binary positions in the fractional part of the number using rounding mode `rm`.", 
+    gen_wrapper_arg_rm!("Returns the rounded number with `n` binary positions in the fractional part of the number using rounding mode `rm`.
+Accuracy: correctly-rounded", 
         round,
         Self,
         { INF_POS },
@@ -1676,7 +1752,8 @@ impl ExactNum {
     );
     gen_wrapper_arg_rm!(
         "Computes the square root of a number with precision `p`. The result is rounded using the rounding mode `rm`.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         sqrt,
         Self,
         { INF_POS },
@@ -1686,7 +1763,8 @@ impl ExactNum {
     );
     gen_wrapper_arg_rm!(
         "Computes the cube root of a number with precision `p`. The result is rounded using the rounding mode `rm`.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         cbrt,
         Self,
         { INF_POS },
@@ -1695,6 +1773,8 @@ impl ExactNum {
         usize
     );
     /// Computes the `n`-th root of `self` with precision `p`. `n = 2` and `n = 3` delegate to [`sqrt`](Self::sqrt) and [`cbrt`](Self::cbrt).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn nth_root(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if n == 0 {
             return Self::nan(Some(Error::InvalidArgument));
@@ -1720,7 +1800,8 @@ impl ExactNum {
     gen_wrapper_log!(
         "Computes the natural logarithm of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         ln,
         Self,
         { INF_POS },
@@ -1731,7 +1812,8 @@ impl ExactNum {
     gen_wrapper_log!(
         "Computes the logarithm base 2 of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         log2,
         Self,
         { INF_POS },
@@ -1742,7 +1824,8 @@ impl ExactNum {
     gen_wrapper_log!(
         "Computes the logarithm base 10 of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         log10,
         Self,
         { INF_POS },
@@ -1753,7 +1836,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes `e` to the power of `self` with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         exp,
         Self,
         { INF_POS },
@@ -1764,7 +1848,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes `2` to the power of `self` with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         exp2,
         Self,
         { INF_POS },
@@ -1775,7 +1860,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes `10` to the power of `self` with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         exp10,
         Self,
         { INF_POS },
@@ -1797,7 +1883,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the sine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         sin,
         Self,
         { NAN },
@@ -1808,7 +1895,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the cosine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         cos,
         Self,
         { NAN },
@@ -1817,6 +1905,8 @@ impl ExactNum {
         usize
     );
     /// Computes `(sin(self), cos(self))` with precision `p` using a shared argument reduction.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn sin_cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> (Self, Self) {
         match &self.inner {
             Flavor::Value(v) => match v.sin_cos(p, rm, cc) {
@@ -1833,7 +1923,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the tangent of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         tan,
         Self,
         { NAN },
@@ -1844,7 +1935,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the arcsine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.", 
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded", 
         asin,
         Self,
         {NAN},
@@ -1855,7 +1947,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the arccosine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         acos,
         Self,
         { NAN },
@@ -1867,7 +1960,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the hyperbolic sine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache cc for computing the result. 
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         sinh,
         Self,
         { INF_POS },
@@ -1878,7 +1972,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the hyperbolic cosine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache cc for computing the result. 
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         cosh,
         Self,
         { INF_POS },
@@ -1887,6 +1982,8 @@ impl ExactNum {
         usize
     );
     /// Computes `(sinh(self), cosh(self))` with precision `p` using a single `exp(|x|)` evaluation.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn sinh_cosh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> (Self, Self) {
         match &self.inner {
             Flavor::Value(v) => match v.sinh_cosh(p, rm, cc) {
@@ -1921,7 +2018,8 @@ impl ExactNum {
 - Algorithm: Taylor series when `|x|.exponent() ≤ 2`; complementary asymptotic otherwise. Saturates to `±1` when `2|e| > p+4`.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on `|x| ≲ 4`.
 - Thresholds: exponent cut `≤ 2` (not a named constant).
-- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`. Complex `erf` on the real axis uses the same oracle; GNU MPC has no `mpc_erf`.",
+- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`. Complex `erf` on the real axis uses the same oracle; GNU MPC has no `mpc_erf`.
+Accuracy: correctly-rounded",
         erf,
         Self,
         { ExactNum::from_u8(1, p) },
@@ -1936,7 +2034,8 @@ impl ExactNum {
 
 - Algorithm: `1 - erf` at extra working precision (same series / asymptotic as `erf`).
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on `|x| ≲ 4`.
-- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`.",
+- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`.
+Accuracy: correctly-rounded",
         erfc,
         Self,
         { Self::new(p) },
@@ -1951,7 +2050,8 @@ impl ExactNum {
 
 - Algorithm: Stirling series for `ln Γ` then `exp`; reflection across the negative axis. Integer factorials for small positive integers.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on the oracle domain.
-- MPFR oracle: yes, under `mpfr-tests`.",
+- MPFR oracle: yes, under `mpfr-tests`.
+Accuracy: correctly-rounded",
         gamma,
         Self,
         { INF_POS },
@@ -1966,7 +2066,8 @@ impl ExactNum {
 
 - Algorithm: Stirling series (Bernoulli) at working precision `p + WORD_BIT_SIZE`.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on the oracle domain.
-- MPFR oracle: yes, under `mpfr-tests`.",
+- MPFR oracle: yes, under `mpfr-tests`.
+Accuracy: correctly-rounded",
         ln_gamma,
         Self,
         { INF_POS },
@@ -1981,7 +2082,8 @@ impl ExactNum {
 
 - Algorithm: recurrence to a large argument, then Bernoulli series; reflection for `z < 0`.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR `digamma` on `z > 0`.
-- MPFR oracle: yes, `z > 0` under `mpfr-tests`.",
+- MPFR oracle: yes, `z > 0` under `mpfr-tests`.
+Accuracy: correctly-rounded",
         digamma,
         Self,
         { INF_POS },
@@ -1996,6 +2098,8 @@ impl ExactNum {
     /// - Algorithm: power series in `x` at working precision; `+∞` in `x` returns `Γ(self)`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: identity `γ(s,x)=Γ(s)−Γ(s,x)`; upper uses `mpfr_gamma_inc`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn gammainc(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &x.inner) {
             (Flavor::Value(s), Flavor::Value(xv)) => {
@@ -2019,6 +2123,8 @@ impl ExactNum {
     /// - Algorithm: `Γ(self) - γ(self, x)` at working precision; `+∞` in `x` returns 0.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: yes, `mpfr_gamma_inc` under `mpfr-tests`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn gammainc_upper(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &x.inner) {
             (Flavor::Value(s), Flavor::Value(xv)) => {
@@ -2042,7 +2148,8 @@ impl ExactNum {
 
 - Algorithm: power series for moderate `|x|`; factorial asymptotic when `|x|` is large (`exponent() > 6` and `|x| ≳ 0.7 p`).
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: yes, `mpfr_eint` under `mpfr-tests`.",
+- MPFR oracle: yes, `mpfr_eint` under `mpfr-tests`.
+Accuracy: correctly-rounded",
         ei,
         Self,
         { INF_POS },
@@ -2057,6 +2164,8 @@ impl ExactNum {
     /// - Algorithm: series, or auxiliary `f,g` asymptotic on the same cut as `Ei`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (`Si` odd, `Si(0)=0`, `Si(+∞)=π/2`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.si(p, rm, cc), v.is_zero(), true),
@@ -2071,7 +2180,8 @@ impl ExactNum {
 
 - Algorithm: series, or auxiliary `f,g` asymptotic (same `|x|` cut as `Ei`). Near-zero is a pole.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: no (identity / series golds; GNU MPFR has no `Si`/`Ci`).",
+- MPFR oracle: no (identity / series golds; GNU MPFR has no `Si`/`Ci`).
+Accuracy: correctly-rounded",
         ci,
         Self,
         { Self::new(p) },
@@ -2086,7 +2196,8 @@ impl ExactNum {
 
 - Algorithm: `Ei(ln self)` at extra working precision (inherits `Ei` series / asymptotic).
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: no (`li(e)=Ei(1)` identity).",
+- MPFR oracle: no (`li(e)=Ei(1)` identity).
+Accuracy: correctly-rounded",
         li,
         Self,
         { INF_POS },
@@ -2101,6 +2212,8 @@ impl ExactNum {
     /// - Algorithm: series, or auxiliary `f,g` when `|x|.exponent() ≥ 8` (or `3 x² > p`).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (`S` odd, `S(0)=0`, `S(+∞)=1/2`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fresnel_s(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.fresnel_sc_ext(true, p, rm, cc)
     }
@@ -2112,6 +2225,8 @@ impl ExactNum {
     /// - Algorithm: same series / auxiliary `f,g` split as [`Self::fresnel_s`].
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (same identities as [`Self::fresnel_s`]).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fresnel_c(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.fresnel_sc_ext(false, p, rm, cc)
     }
@@ -2139,6 +2254,8 @@ impl ExactNum {
     /// - Algorithm: power series for `|x| < AIRY_SERIES_THRESHOLD` (`8`); asymptotic otherwise.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: yes, `mpfr_ai` under `mpfr-tests`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ai(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.ai(p, rm, cc), v.is_zero(), true),
@@ -2160,6 +2277,8 @@ impl ExactNum {
     /// - Algorithm: same `AIRY_SERIES_THRESHOLD = 8` split as [`Self::ai`].
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (`Ai Bi' − Ai' Bi = 1/π`; GNU MPFR has no `Bi`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bi(p, rm, cc), v.is_zero(), true),
@@ -2181,6 +2300,8 @@ impl ExactNum {
     /// - Algorithm: differentiated series / asymptotic; `AIRY_SERIES_THRESHOLD = 8`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ai_prime(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.ai_prime(p, rm, cc), v.is_zero(), true),
@@ -2202,6 +2323,8 @@ impl ExactNum {
     /// - Algorithm: differentiated series / asymptotic; `AIRY_SERIES_THRESHOLD = 8`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bi_prime(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bi_prime(p, rm, cc), v.is_zero(), true),
@@ -2227,6 +2350,8 @@ impl ExactNum {
     ///   `J_n(-x)=(-1)^n J_n(x)`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR `jn` for `n = 0,1,2`.
     /// - MPFR oracle: yes, `n = 0,1,2` under `mpfr-tests`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_j(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bessel_j(n, p, rm, cc), v.is_zero(), true),
@@ -2266,6 +2391,8 @@ impl ExactNum {
     ///   Hankel expansion (same switch as [`Self::bessel_j`]) for large `|x|`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (identity golds).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_j_nu)
     }
@@ -2278,6 +2405,8 @@ impl ExactNum {
     ///   for large `x` (same switch as [`Self::bessel_j`]). Cut on \((-\infty, 0]\).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: yes, `mpfr_yn` for `n = 0,1` under `mpfr-tests`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_y(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_y)
     }
@@ -2289,6 +2418,8 @@ impl ExactNum {
     /// - Algorithm: series; \(I_ν(z) = i^{-ν} J_ν(iz)\) for the complex path.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_i(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_i)
     }
@@ -2300,6 +2431,8 @@ impl ExactNum {
     /// - Algorithm: series / Temme; large-`|x|` asymptotic `k_asymptotic`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_k(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_k)
     }
@@ -2310,7 +2443,8 @@ impl ExactNum {
 
 - Algorithm: Carlson `R_F` duplication; cap `max(128, p/4 + 64)` steps.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: no (identity golds; GNU MPFR has no Carlson `K`).",
+- MPFR oracle: no (identity golds; GNU MPFR has no Carlson `K`).
+Accuracy: correctly-rounded",
         elliptic_k,
         Self,
         { NAN },
@@ -2325,7 +2459,8 @@ impl ExactNum {
 
 - Algorithm: Carlson `R_F` / `R_D`; cap `max(128, p/4 + 64)` steps.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: no.",
+- MPFR oracle: no.
+Accuracy: correctly-rounded",
         elliptic_e_complete,
         Self,
         { NAN },
@@ -2333,7 +2468,16 @@ impl ExactNum {
         p,
         usize
     );
-    /// Incomplete `F(self | m)` for `|self| ≤ 1`. `self = sin φ`, `m = k²`.
+    /// Incomplete elliptic integral of the first kind, `F(φ|m)`, with
+    /// `self = sin φ` and `m = k²`.
+    ///
+    /// `self` is the sine of the amplitude, not the amplitude `φ`. An angle is
+    /// not accepted in this argument: `|self| > 1` is `NaN(InvalidArgument)`,
+    /// so a value past `π/2` (for example `2`) cannot be passed here.
+    /// `elliptic_f(sin φ, m)` is `F(φ|m)` for `φ` in `[-π/2, π/2]`, and the
+    /// function is odd in `self`. `elliptic_f(sin θ, m)` for `θ` outside that
+    /// range is `F(arcsin(sin θ)|m)`, which is not `F(θ|m)`.
+    /// `m` is the parameter `k²`, not the elliptic modulus `k`.
     /// `F(±1 | 1) = ±∞` (the logarithmic singularity; consistent with `elliptic_k(1) = +∞`).
     ///
     /// # Precision
@@ -2341,6 +2485,8 @@ impl ExactNum {
     /// - Algorithm: Carlson `R_F`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_f(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(x), Flavor::Value(mv)) => {
@@ -2355,13 +2501,21 @@ impl ExactNum {
             _ => NAN,
         }
     }
-    /// Incomplete `E(self | m)` for `|self| ≤ 1`.
+    /// Incomplete elliptic integral of the second kind, `E(φ|m)`, with
+    /// `self = sin φ` and `m = k²`.
+    ///
+    /// Same argument convention as [`Self::elliptic_f`]: `self` is `sin φ`,
+    /// not the amplitude `φ`, and `|self| > 1` is `NaN(InvalidArgument)`.
+    /// `m` is the parameter `k²`, not the modulus `k`. The function is odd in
+    /// `self`.
     ///
     /// # Precision
     ///
     /// - Algorithm: Carlson `R_F` / `R_D`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_e(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(x), Flavor::Value(mv)) => {
@@ -2378,6 +2532,8 @@ impl ExactNum {
     /// - Algorithm: Carlson `R_J`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_pi_complete(
         &self,
         m: &Self,
@@ -2393,13 +2549,21 @@ impl ExactNum {
             _ => NAN,
         }
     }
-    /// Incomplete `Π(self; x | m)`.
+    /// Incomplete elliptic integral of the third kind, `Π(n; φ|m)`, with
+    /// `self = n`, `x = sin φ`, and `m = k²`.
+    ///
+    /// `x` is the sine of the amplitude, not the amplitude `φ`, same as
+    /// [`Self::elliptic_f`]. `|x| > 1` is `NaN(InvalidArgument)`. `m` is the
+    /// parameter `k²`, not the modulus `k`. `self` is the characteristic `n`,
+    /// not an angle.
     ///
     /// # Precision
     ///
     /// - Algorithm: Carlson `R_J`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_pi(
         &self,
         x: &Self,
@@ -2425,6 +2589,8 @@ impl ExactNum {
     /// - Algorithm: AGM / descending Landen; cap `JACOBI_AGM_MAX = 128`. \(m=0\) is trig; \(m=1\) is hyperbolic.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (identity golds; GNU MPFR has no Jacobi `sn`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_am(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2442,6 +2608,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_sn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2458,6 +2626,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_cn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2474,6 +2644,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_dn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2490,6 +2662,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_cd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2506,6 +2680,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_ns(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2522,6 +2698,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_nc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2538,6 +2716,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_nd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2554,6 +2734,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_sc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2570,6 +2752,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_sd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2586,6 +2770,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_cs(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2602,6 +2788,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_ds(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2618,6 +2806,8 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_dc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
@@ -2634,6 +2824,8 @@ impl ExactNum {
     /// - Algorithm: three-term recurrence at `p + O(n)` bits. Cap `ORTHOPOLY_N_MAX`.
     /// - Bound: working-precision recurrence (not a Ziv leaf).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn legendre_p(&self, n: u32, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.legendre_p(n, p, rm), false, true),
@@ -2648,6 +2840,8 @@ impl ExactNum {
     /// - Algorithm: recurrence from \(P_n\); Condon–Shortley phase.
     /// - Bound: working-precision recurrence (not a Ziv leaf).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn assoc_legendre_p(&self, n: u32, m: i32, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.assoc_legendre_p(n, m, p, rm), false, true),
@@ -2667,6 +2861,8 @@ impl ExactNum {
     ///   repeated with more guard bits. Series cap `HYPERGEOM_TERM_MAX`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn hypergeom_2f1(
         &self,
         b: &Self,
@@ -2694,6 +2890,8 @@ impl ExactNum {
     /// - Algorithm: series / continued fraction in `x ∈ [0, 1]` for `a > 0`, `b > 0`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn betainc(&self, b: &Self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &b.inner, &x.inner) {
             (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(xv)) => {
@@ -2708,7 +2906,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the hyperbolic arcsine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         asinh,
         Self,
         { INF_POS },
@@ -2719,7 +2918,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the hyperbolic arccosine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         acosh,
         Self,
         { INF_POS },
@@ -2730,7 +2930,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the hyperbolic arctangent of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         atanh,
         Self,
         { NAN },

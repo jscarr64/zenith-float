@@ -370,6 +370,8 @@ impl ExactComplex {
     /// \(z=0\) with non-integer \(\nu\) → NaN. On the cut \(\operatorname{Im} z=0\),
     /// \(\operatorname{Re} z<0\) with real \(\nu\), the principal value is formed from the
     /// real kernels (\(J_\nu(-x+0i)=e^{i\nu\pi}J_\nu(x)\)) so algebraically zero parts stay zero.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
@@ -389,6 +391,8 @@ impl ExactComplex {
     ///   regime via DLMF 10.11.2).
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_y(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
@@ -410,6 +414,8 @@ impl ExactComplex {
     /// - Algorithm: via [`Self::bessel_j_nu`] of \(\pm iz\) (sign chosen by \(\mathrm{Im}\,z\), DLMF 10.27.6).
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_i(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
@@ -443,6 +449,8 @@ impl ExactComplex {
     ///   (DLMF 10.27.8).
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_k(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);

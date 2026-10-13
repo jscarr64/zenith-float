@@ -18,6 +18,7 @@
 
 extern crate alloc;
 
+mod accuracy;
 mod ball;
 mod binfmt;
 mod catalog;
@@ -64,6 +65,9 @@ mod for_3rd;
 #[doc(hidden)]
 pub mod macro_util;
 
+pub use crate::accuracy::accuracy_of;
+pub use crate::accuracy::Accuracy;
+pub use crate::accuracy::ACCURACY;
 pub use crate::ball::ziv_round;
 pub use crate::ball::ziv_round_vec;
 pub use crate::ball::Ball;

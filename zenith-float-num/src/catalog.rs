@@ -376,6 +376,8 @@ impl ExactNum {
     /// - Algorithm: Taylor (\(w''-zw=1/\pi\)) for `|x| < 8`; \(1/(\pi x)\) asymptotic for
     ///   large `+x`; \(\mathrm{Hi}_\mathrm{asymp}-\mathrm{Bi}/3\) for large `-x`.
     /// - Bound: extra word of working precision.
+    ///
+    /// Accuracy: unspecified
     pub fn scorer_gi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return if self.is_nan() { self.clone() } else { cat_nan() };
@@ -394,6 +396,8 @@ impl ExactNum {
     }
 
     /// Scorer \(\mathrm{Hi}(\mathrm{self})=\mathrm{Bi}(\mathrm{self})-\mathrm{Gi}(\mathrm{self})\).
+    ///
+    /// Accuracy: unspecified
     pub fn scorer_hi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return if self.is_nan() { self.clone() } else { cat_nan() };
@@ -410,6 +414,8 @@ impl ExactNum {
     }
 
     /// Kelvin \(\mathrm{ber}_\nu(\mathrm{self})=\mathrm{Re}\,J_\nu(x e^{3\pi i/4})\).
+    ///
+    /// Accuracy: unspecified
     pub fn kelvin_ber_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) {
             return cat_nan();
@@ -425,6 +431,8 @@ impl ExactNum {
     }
 
     /// Kelvin \(\mathrm{bei}_\nu(\mathrm{self})=\mathrm{Im}\,J_\nu(x e^{3\pi i/4})\).
+    ///
+    /// Accuracy: unspecified
     pub fn kelvin_bei_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) {
             return cat_nan();
@@ -440,6 +448,8 @@ impl ExactNum {
     }
 
     /// Kelvin \(\mathrm{ker}_\nu(\mathrm{self})=\mathrm{Re}\,e^{-\nu\pi i/2}K_\nu(x e^{\pi i/4})\).
+    ///
+    /// Accuracy: unspecified
     pub fn kelvin_ker_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) || self.is_zero() {
             return if self.is_zero() { crate::ext::INF_POS } else { cat_nan() };
@@ -461,6 +471,8 @@ impl ExactNum {
     }
 
     /// Kelvin \(\mathrm{kei}_\nu(\mathrm{self})=\mathrm{Im}\,e^{-\nu\pi i/2}K_\nu(x e^{\pi i/4})\).
+    ///
+    /// Accuracy: unspecified
     pub fn kelvin_kei_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) || self.is_zero() {
             return cat_nan();
@@ -482,21 +494,29 @@ impl ExactNum {
     }
 
     /// Order-0 Kelvin \(\mathrm{ber}(\mathrm{self})\).
+    ///
+    /// Accuracy: unspecified
     pub fn kelvin_ber(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.kelvin_ber_nu(&ExactNum::new(p), p, rm, cc)
     }
 
     /// Order-0 Kelvin \(\mathrm{bei}(\mathrm{self})\).
+    ///
+    /// Accuracy: unspecified
     pub fn kelvin_bei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.kelvin_bei_nu(&ExactNum::new(p), p, rm, cc)
     }
 
     /// Order-0 Kelvin \(\mathrm{ker}(\mathrm{self})\).
+    ///
+    /// Accuracy: unspecified
     pub fn kelvin_ker(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.kelvin_ker_nu(&ExactNum::new(p), p, rm, cc)
     }
 
     /// Order-0 Kelvin \(\mathrm{kei}(\mathrm{self})\).
+    ///
+    /// Accuracy: unspecified
     pub fn kelvin_kei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.kelvin_kei_nu(&ExactNum::new(p), p, rm, cc)
     }
@@ -506,6 +526,8 @@ impl ExactNum {
     /// # Precision
     ///
     /// - Algorithm: power series (DLMF 11.2.1). For large `|x|` uses \(Y_\nu+(2/\pi)\) particular.
+    ///
+    /// Accuracy: unspecified
     pub fn struve_h(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) {
             return cat_nan();
@@ -586,6 +608,8 @@ impl ExactNum {
     }
 
     /// Anger \(\mathbf{J}_\nu(\mathrm{self})\). Integer \(\nu\) reduces to Bessel \(J\).
+    ///
+    /// Accuracy: unspecified
     pub fn anger_j(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) {
             return cat_nan();
@@ -619,6 +643,8 @@ impl ExactNum {
     }
 
     /// Weber \(\mathbf{E}_\nu(\mathrm{self})\).
+    ///
+    /// Accuracy: unspecified
     pub fn weber_e(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) {
             return cat_nan();
@@ -648,6 +674,8 @@ impl ExactNum {
     }
 
     /// Clausen \(\mathrm{Cl}_2(\mathrm{self})=\sum_{k\ge1}\sin(k\theta)/k^2=-\int_0^\theta\ln\lvert 2\sin(t/2)\rvert\,dt\).
+    ///
+    /// Accuracy: unspecified
     pub fn clausen_cl2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return cat_nan();
@@ -692,6 +720,8 @@ impl ExactNum {
     }
 
     /// Clausen \(\mathrm{Cl}_3(\mathrm{self})=\sum_{k\ge1}\cos(k\theta)/k^3=\zeta(3)-\int_0^\theta\mathrm{Cl}_2(t)\,dt\).
+    ///
+    /// Accuracy: unspecified
     pub fn clausen_cl3(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return cat_nan();
@@ -724,6 +754,8 @@ impl ExactNum {
     }
 
     /// Hurwitz \(\zeta(s,a)\) for integer \(s\ge 2\) and \(a>0\). `self` is \(s\).
+    ///
+    /// Accuracy: unspecified
     pub fn hurwitz_zeta(&self, a: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(a) {
             return cat_nan();
@@ -758,6 +790,8 @@ impl ExactNum {
     }
 
     /// Riemann \(\zeta(s)\) for integer \(s\ge 2\). `self` is \(s\).
+    ///
+    /// Accuracy: unspecified
     pub fn riemann_zeta(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let wrk = work_p(p);
         if let Some(s) = small_int(self, wrk, 2, 64) {
@@ -769,6 +803,8 @@ impl ExactNum {
     }
 
     /// Polygamma \(\psi^{(n)}(\mathrm{self})\). \(n=0\) is digamma; \(n\ge1\) uses Hurwitz.
+    ///
+    /// Accuracy: unspecified
     pub fn polygamma(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return cat_nan();
@@ -792,6 +828,8 @@ impl ExactNum {
     }
 
     /// Barnes \(G(\mathrm{self})\). Entire; zeros at non-positive integers.
+    ///
+    /// Accuracy: unspecified
     pub fn barnes_g(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return cat_nan();
@@ -836,11 +874,15 @@ impl ExactNum {
     }
 
     /// Inverse Jacobi \(\mathrm{arcsn}(\mathrm{self}|m)=F(\mathrm{self}|m)\).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_arcsn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.elliptic_f(m, p, rm, cc)
     }
 
     /// Inverse Jacobi \(\mathrm{arccn}(x|m)=F(\sqrt{1-x^2}|m)\).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_arccn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(m) {
             return cat_nan();
@@ -858,6 +900,8 @@ impl ExactNum {
     }
 
     /// Inverse Jacobi \(\mathrm{arcdn}(x|m)=F(\sqrt{(1-x^2)/m}|m)\) for \(m>0\).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_arcdn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(m) || !m.is_positive() {
             return cat_nan();
@@ -876,11 +920,15 @@ impl ExactNum {
     }
 
     /// \({}_0F_1(;b;z)\) with `self = z`.
+    ///
+    /// Accuracy: unspecified
     pub fn hypergeom_0f1(&self, b: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.hypergeom_pfq(&[], core::slice::from_ref(b), p, rm, cc)
     }
 
     /// Kummer \({}_1F_1(a;b;z)\) with `self = z`.
+    ///
+    /// Accuracy: unspecified
     pub fn hypergeom_1f1(
         &self,
         a: &Self,
@@ -901,6 +949,8 @@ impl ExactNum {
     /// Generalized \({}_pF_q(a_1,\ldots,a_p;b_1,\ldots,b_q;z)\) with `self = z`.
     ///
     /// Direct series. Divergent when \(p>q+1\) unless \(z=0\). Poles in any \(b_j\in\{0,-1,\ldots\}\).
+    ///
+    /// Accuracy: unspecified
     pub fn hypergeom_pfq(
         &self,
         a: &[Self],
@@ -969,11 +1019,15 @@ impl ExactNum {
     }
 
     /// Principal Lambert \(W_0(\mathrm{self})\). Domain \([-1/e,\infty)\).
+    ///
+    /// Accuracy: unspecified
     pub fn lambert_w0(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.lambert_w_branch(false, p, rm, cc)
     }
 
     /// Lambert \(W_{-1}(\mathrm{self})\). Domain \([-1/e,0)\).
+    ///
+    /// Accuracy: unspecified
     pub fn lambert_wm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.lambert_w_branch(true, p, rm, cc)
     }
@@ -1066,6 +1120,8 @@ impl ExactNum {
     }
 
     /// Polylogarithm \(\mathrm{Li}_n(\mathrm{self})\) for integer \(n\ge 2\) and \(\lvert x\rvert\le 1\).
+    ///
+    /// Accuracy: unspecified
     pub fn polylog(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !(2..=64).contains(&n) {
             return cat_nan();

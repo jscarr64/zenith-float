@@ -128,6 +128,8 @@ impl ExactComplex {
     ///   asymptotic expansion (with the connection formula outside `|arg z| ≤ 2π/3`) otherwise.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ai(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
@@ -143,6 +145,8 @@ impl ExactComplex {
     /// - Algorithm: same series / asymptotic switch as [`Self::ai`].
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());

@@ -34,6 +34,8 @@ impl ExactNum {
     ///
     /// `He_0 = 1`, `He_1 = x`, `He_{n+1} = x He_n − n He_{n−1}`.
     /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn hermite_he(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
@@ -65,6 +67,8 @@ impl ExactNum {
     ///
     /// `H_0 = 1`, `H_1 = 2x`, `H_{n+1} = 2x H_n − 2n H_{n−1}`.
     /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn hermite_h(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
@@ -100,6 +104,8 @@ impl ExactNum {
     /// `L_0 = 1`, `L_1 = 1 − x`,
     /// `L_{n+1} = ((2n+1−x) L_n − n L_{n−1}) / (n+1)`.
     /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn laguerre(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         self.gen_laguerre(n, &ExactNum::new(p), p, rm)
     }
@@ -109,6 +115,8 @@ impl ExactNum {
     /// `L_0^{(α)} = 1`, `L_1^{(α)} = 1+α−x`,
     /// `L_{n+1}^{(α)} = (((2n+1+α−x) L_n − (n+α) L_{n−1}) / (n+1)`.
     /// `n > ORTHOPOLY_N_MAX` or a non-finite argument is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn gen_laguerre(&self, n: usize, alpha: &Self, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) || !finite(alpha) {
             return op_nan();
@@ -155,6 +163,8 @@ impl ExactNum {
     ///
     /// `T_0 = 1`, `T_1 = x`, `T_{n+1} = 2x T_n − T_{n−1}`.
     /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn chebyshev_t(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
@@ -185,6 +195,8 @@ impl ExactNum {
     ///
     /// `U_0 = 1`, `U_1 = 2x`, `U_{n+1} = 2x U_n − U_{n−1}`.
     /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn chebyshev_u(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
@@ -217,6 +229,8 @@ impl ExactNum {
     /// Standard `C_n^{(λ)}`: `C_2^{(1)} = 4x² − 1 = U_2`, and
     /// `C_n^{(1/2)} = P_n` (Legendre). `n > ORTHOPOLY_N_MAX` or a
     /// non-finite argument is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn gegenbauer(&self, n: usize, lambda: &Self, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) || !finite(lambda) {
             return op_nan();
@@ -277,6 +291,8 @@ impl ExactNum {
     /// `− 2(n+α)(n+β)(2n+α+β+2) P_{n−1}`.
     /// `α=β=0` is Legendre `P_n`. `n > ORTHOPOLY_N_MAX` or a non-finite
     /// argument is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn jacobi_p(
         &self,
         n: usize,

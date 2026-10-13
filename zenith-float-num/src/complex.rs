@@ -66,6 +66,8 @@ impl ExactComplex {
     }
 
     /// Rounds both parts to precision `p`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn set_precision(&mut self, p: usize, rm: RoundingMode) -> Result<(), crate::Error> {
         self.re.set_precision(p, rm)?;
         self.im.set_precision(p, rm)
@@ -77,6 +79,8 @@ impl ExactComplex {
     }
 
     /// `1 / self`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Self {
         Self::one(p).div(self, p, rm)
     }
@@ -92,6 +96,8 @@ impl ExactComplex {
     }
 
     /// Modulus `|z| = hypot(re, im)` at precision `p`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn abs(&self, p: usize, rm: RoundingMode) -> ExactNum {
         self.re.hypot(&self.im, p, rm)
     }
@@ -100,16 +106,22 @@ impl ExactComplex {
     ///
     /// Branch: same as real `atan2`; values lie in (−π, π]. The cut of `ln` / `sqrt` /
     /// `pow` is the non-positive real axis, approached from above as +π and from below as −π.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn arg(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
         self.im.atan2(&self.re, p, rm, cc)
     }
 
     /// `self + rhs` at precision `p`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn add(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         Self::new(self.re.add(&rhs.re, p, rm), self.im.add(&rhs.im, p, rm))
     }
 
     /// `self - rhs` at precision `p`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn sub(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         Self::new(self.re.sub(&rhs.re, p, rm), self.im.sub(&rhs.im, p, rm))
     }
@@ -119,6 +131,8 @@ impl ExactComplex {
     /// Each of `ac`, `bd`, `ad`, `bc` is rounded at `(p, rm)`, then `ac−bd` and
     /// `ad+bc` are rounded at `(p, rm)`. That matches the MPFR componentwise gold.
     /// Callers that pass [`RoundingMode::None`] still keep full products (series paths).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn mul(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         let ac = self.re.mul(&rhs.re, p, rm);
         let bd = self.im.mul(&rhs.im, p, rm);
@@ -128,6 +142,8 @@ impl ExactComplex {
     }
 
     /// `self / rhs` at precision `p`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn div(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         let ac = self.re.mul(&rhs.re, p, RoundingMode::None);
         let bd = self.im.mul(&rhs.im, p, RoundingMode::None);
@@ -145,6 +161,8 @@ impl ExactComplex {
     }
 
     /// `e^self` using `exp(re) (cos(im) + i sin(im))`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn exp(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let er = self.re.exp(p, RoundingMode::None, cc);
         let (s, c) = self.im.sin_cos(p, RoundingMode::None, cc);
@@ -156,6 +174,8 @@ impl ExactComplex {
     /// Branch cut: (−∞, 0] on the real axis. `ln(−1)` is `iπ` (argument +π).
     /// `|z|` is `ln(max(|re|,|im|)) + ½ ln(1 + (min/max)²)`, so a point just off
     /// the cut keeps the small real part.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ln(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.re.is_nan()
             || self.im.is_nan()
@@ -201,6 +221,8 @@ impl ExactComplex {
     ///
     /// The complex value is **not** passed to `rem_pi`. Only the real (resp. imaginary)
     /// *component* uses real `sin_cos` / `sinh_cosh`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn sin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let (sn, cs) = self.re.sin_cos(p, RoundingMode::None, cc);
         let (sh, ch) = self.im.sinh_cosh(p, RoundingMode::None, cc);
@@ -208,6 +230,8 @@ impl ExactComplex {
     }
 
     /// `cos(self)` via `cos(re)cosh(im) - i sin(re)sinh(im)`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let (sn, cs) = self.re.sin_cos(p, RoundingMode::None, cc);
         let (sh, ch) = self.im.sinh_cosh(p, RoundingMode::None, cc);
@@ -231,6 +255,8 @@ impl ExactComplex {
     }
 
     /// `tan(self) = sin(self) / cos(self)`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn tan(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         self.sin(p_x, RoundingMode::None, cc)
@@ -243,6 +269,8 @@ impl ExactComplex {
     }
 
     /// `sinh(self)` via `sinh(re)cos(im) + i cosh(re)sin(im)`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn sinh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let (sh, ch) = self.re.sinh_cosh(p_x, RoundingMode::None, cc);
@@ -255,6 +283,8 @@ impl ExactComplex {
     }
 
     /// `cosh(self)` via `cosh(re)cos(im) + i sinh(re)sin(im)`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn cosh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let (sh, ch) = self.re.sinh_cosh(p_x, RoundingMode::None, cc);
@@ -267,6 +297,8 @@ impl ExactComplex {
     }
 
     /// `tanh(self) = sinh(self) / cosh(self)`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn tanh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         self.sinh(p_x, RoundingMode::None, cc)
@@ -281,6 +313,8 @@ impl ExactComplex {
     /// Principal square root: `√r (cos(θ/2) + i sin(θ/2))`.
     ///
     /// Branch cut: (−∞, 0]. Real part of the result is ≥ 0. `sqrt(−1)` is `+i`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn sqrt(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let r = self.abs(p_x, RoundingMode::None);
@@ -296,6 +330,8 @@ impl ExactComplex {
     }
 
     /// `log2(self) = ln(self) / ln 2` (principal branch).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn log2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
@@ -304,6 +340,8 @@ impl ExactComplex {
     }
 
     /// `log10(self) = ln(self) / ln 10` (principal branch).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn log10(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
@@ -312,6 +350,8 @@ impl ExactComplex {
     }
 
     /// `log_base(self) = ln(self) / ln(base)` (principal branch).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn log(&self, base: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
@@ -320,6 +360,8 @@ impl ExactComplex {
     }
 
     /// `ln(1 + self)` (principal branch).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn log1p(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         Self::one(p_x)
@@ -329,6 +371,8 @@ impl ExactComplex {
     }
 
     /// `exp2(self) = exp(self · ln 2)`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn exp2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln2 = Self::from_real(cc.ln_2(p_x, RoundingMode::None), p_x);
@@ -338,6 +382,8 @@ impl ExactComplex {
     }
 
     /// `exp10(self) = exp(self · ln 10)`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn exp10(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln10 = Self::from_real(cc.ln_10(p_x, RoundingMode::None), p_x);
@@ -347,6 +393,8 @@ impl ExactComplex {
     }
 
     /// `exp(self) − 1`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn expm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         self.exp(p_x, RoundingMode::None, cc)
@@ -355,21 +403,29 @@ impl ExactComplex {
     }
 
     /// Scale both parts by `2^n` (`ldexp` on re and im).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ldexp(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         self.ldexp_parts(n, p, rm)
     }
 
     /// Same as [`ldexp`](Self::ldexp).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn scalb(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         self.ldexp(n, p, rm)
     }
 
     /// `logb(|z|)` as a real (`x + 0i`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn logb(&self, p: usize, rm: RoundingMode) -> ExactNum {
         self.abs(p, rm).logb(p, rm)
     }
 
     /// Principal `n`-th root via `exp(ln(z) / n)`. Inherits the `ln` branch cut.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn nth_root(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if n == 0 {
             return Self::new(
@@ -403,11 +459,15 @@ impl ExactComplex {
     }
 
     /// Principal cube root. Same branch as [`nth_root`](Self::nth_root) with `n = 3`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn cbrt(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.nth_root(3, p, rm, cc)
     }
 
     /// Principal `sqrt(self² + other²)` (analytic continuation of real `hypot`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn hypot(&self, other: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         self.mul(self, p_x, RoundingMode::None)
@@ -421,6 +481,8 @@ impl ExactComplex {
     }
 
     /// `self * b + c` at extra working precision, then one round (not a fused complex hardware op).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fma(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         let p_x = Self::work_p(p);
         self.mul(b, p_x, RoundingMode::None)
@@ -429,6 +491,8 @@ impl ExactComplex {
     }
 
     /// Alias of [`fma`](Self::fma).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn mul_add(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         self.fma(b, c, p, rm)
     }
@@ -436,6 +500,8 @@ impl ExactComplex {
     /// `self^rhs` as `exp(rhs * ln(self))` (principal branch).
     ///
     /// Inherits the `ln` cut on `self`: non-positive real base uses Arg = ±π.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn pow(&self, rhs: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
@@ -448,6 +514,8 @@ impl ExactComplex {
     ///
     /// On the real cut `|re| > 1`, an imaginary part of `+0` is the principal
     /// value and an imaginary part of `-0` is its conjugate.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn asin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let prec = round_p(p);
         let p_x = prec.saturating_add(WORD_BIT_SIZE);
@@ -477,6 +545,8 @@ impl ExactComplex {
     }
 
     /// Principal `acos`: `π/2 − asin(z)`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn acos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let half_pi = cc
@@ -489,6 +559,8 @@ impl ExactComplex {
     }
 
     /// Principal `atan`: `(i/2) ln((i+z)/(i−z))`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn atan(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let i = Self::i(p_x);
@@ -502,6 +574,8 @@ impl ExactComplex {
     }
 
     /// Principal `asinh`: `ln(z + √(z² + 1))`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn asinh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let z2 = self.mul(self, p_x, RoundingMode::None);
@@ -518,6 +592,8 @@ impl ExactComplex {
     /// On the cut `z = x ± 0i`, `x < 1`, the result is `i·acos(x)` for `-1 ≤ x < 1` and
     /// `acosh(-x) + iπ` for `x < -1`, conjugated when the zero imaginary part is negative
     /// (C99 `cacosh` convention; the real part is never negative).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn acosh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         if self.im.is_zero() && !self.re.is_nan() && !self.re.is_inf() {
@@ -558,6 +634,8 @@ impl ExactComplex {
     /// Principal `atanh`: `(1/2) ln((1+z)/(1−z))`.
     ///
     /// `atanh(±1 + 0i) = ±∞ + 0i` (C99 `catanh`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn atanh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         if self.im.is_zero() && !self.re.is_nan() {
