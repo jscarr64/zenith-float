@@ -108,7 +108,7 @@ fn inv_sqrt(x: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
 }
 
 fn covers(est: &ExactNum, truth: &ExactNum, err: &ExactNum) -> bool {
-    let width = 384usize;
+    let width = 1088usize;
     let gap = est.sub(truth, width, RoundingMode::None).abs();
     matches!(gap.cmp(err), Some(c) if c <= 0)
 }
@@ -126,7 +126,7 @@ fn ulps(est: &ExactNum, p: usize, extra_bits: i32) -> ExactNum {
 
 fn truth_of(row: &serde_json::Value, cc: &mut Consts) -> ExactNum {
     let text = row.get("true").and_then(|v| v.as_str()).unwrap_or("0");
-    parse_at(text, 384, RoundingMode::ToEven, cc)
+    parse_at(text, 1088, RoundingMode::ToEven, cc)
 }
 
 fn run_quad(row: &serde_json::Value) -> Result<(), String> {
