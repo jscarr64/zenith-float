@@ -680,7 +680,10 @@ fn run_file(name: &str) {
         let budget = row
             .get("budget_s")
             .and_then(|v| v.as_u64())
-            .map_or(Duration::from_secs(2), Duration::from_secs);
+            .map_or(Duration::from_secs(2), Duration::from_secs)
+            // Budgets are for optimised builds; an unoptimised build that shares the machine
+            // with the rest of the workspace tests runs several times slower.
+            .saturating_mul(if cfg!(debug_assertions) { 10 } else { 1 });
         let expect = expect_of(row.get("expect").unwrap_or(&serde_json::Value::Null));
         let (tx, rx) = mpsc::channel();
         let row_for_thread = row.clone();
