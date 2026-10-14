@@ -4,7 +4,12 @@
 > `parse` consume the whole string, tags invalid operations
 > `NaN(InvalidArgument)`, changes `GkResult::abs_err_est`, adds angle-form
 > elliptic functions, and removes every platform intrinsic and `unsafe` block
-> from the library. See [CHANGELOG.md](CHANGELOG.md) for each change and its
+> from the library. Arithmetic behaviour changes too: `add`, `sub`, `mul`, and
+> `div` round at exactly the requested bit precision, an overflow rounded toward
+> zero returns the largest finite value, `inexact()` describes the last operation
+> only (`inexact_accumulated()` keeps the old meaning), `from_raw_parts` validates
+> its parts, and the exponent range is `i32::MIN..=i32::MAX` on 32-bit targets too.
+> See [CHANGELOG.md](CHANGELOG.md) for each change and its
 > migration. 2.0.0 is not yet published; the current crates.io release is 1.0.12.
 
 Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Version **2.0.0**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
@@ -84,10 +89,13 @@ No other open issues. The items listed in the 1.0.5 audit (`doc/AUDIT.md`) were 
 
 ## Rounding
 
-- `ExactNum` methods that take a rounding mode other than `RoundingMode::None` round the result to the requested precision.
-- `RoundingMode::None` skips that final rounding and may keep extra bits.
+- `RoundingMode` has seven modes. `ToEven` and `ToOdd` round to nearest and break ties to the even or odd neighbour. `Up`, `Down`, `ToZero`, and `FromZero` are directed: toward +∞, toward −∞, toward zero, and away from zero, with no tie rule. `None` skips the final rounding.
+- `add`, `sub`, `mul`, and `div` round at exactly `p` bits, for any `p`; `ExactNum::add(&b, 24, RoundingMode::ToEven)` is a correctly rounded binary32-precision sum, subnormals included. The storage is still whole 64-bit words (32-bit on 32-bit targets), and the bits below `p` are zero.
+- The other operations (`sqrt`, `cbrt`, `hypot`, `fma`, `rem`, parsing, and the transcendental and special functions) round to `p` rounded up to a whole number of words. Call `set_precision(p, rm)` afterwards for exactly `p` bits; that is a second rounding.
+- `RoundingMode::None` skips that final rounding and keeps the storage precision, with possible extra bits.
+- `inexact()` is true when the last `add`, `sub`, `mul`, or `div` rounded. `inexact_accumulated()` is true when anything upstream rounded. Other functions report the accumulated flag through both.
 - `expr!` raises working precision to compensate cancellation. It does **not** itself perform correct rounding; the completion of a rounding loop in finite time depends on the expression.
-- Overflow of the configured exponent range becomes `±Inf`. Allocation and invalid arguments become `NaN`; `ExactNum::err()` returns the associated `Error`.
+- Overflow of the exponent range `i32::MIN..=i32::MAX` (the same on every target) becomes `±Inf`, except that `add`, `sub`, `mul`, `div`, `fma`, `pow`, `powi`, `hypot`, `reciprocal`, `ldexp`, `exp`, `exp2`, `exp10`, `sinh`, and `cosh` return `±max_value(p)` when the mode rounds toward zero for the result's sign (`ToZero`, `Down` for positive, `Up` for negative). Allocation and invalid arguments become `NaN`; `ExactNum::err()` returns the associated `Error`.
 - Subnormals, `NaN`, and infinities are software values, not hardware floating-point registers.
 
 ## Example

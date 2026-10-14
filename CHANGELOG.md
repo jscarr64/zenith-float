@@ -8,9 +8,20 @@ Problems in one program led to a forensic audit of the others. This 2.0.0 sectio
 
 `elliptic_f_phi`, `elliptic_e_phi`, and `elliptic_pi_phi` take the amplitude \(\varphi\). `elliptic_f`, `elliptic_e`, and `elliptic_pi` still take \(\sin\varphi\). Downstream callers passed the angle into the \(\sin\varphi\) slot: `elliptic_f(2, m)` is `NaN(InvalidArgument)`, not \(F(2\mid m)\). The angle form accepts any real \(\varphi\), reduces \(\varphi = r + k\pi\) with \(|r|\le\pi/2\) in extended precision, and adds \(2k\) times the complete integral. \(\varphi=\pm\pi/2\) is \(\pm K\), \(\pm E\), or \(\pm\Pi\). A parameter \(m>1\) whose path is not real, and a characteristic \(n=1\) at a pole, are `NaN(InvalidArgument)` rather than a silent wrong value.
 
+`ExactNum::inexact_accumulated()` keeps the old meaning of `inexact()`: true when this value or anything it was computed from was rounded. See "`inexact` is per operation".
+
 ### Changed
 
 The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). `rust-version` is `"1.99"` in every crate, and `rust-toolchain.toml` pins channel `1.99` with `clippy` and `rustfmt`. A crate that compiled on the previous compiler has to move to Rust 1.99 before it can depend on 2.0.0.
+
+Behaviour changes from the audit, each with its own section below:
+
+- `add`, `sub`, `mul`, and `div` round at exactly `p` bits instead of `p` rounded up to a word, and subnormal results are no longer rounded twice.
+- An exponent overflow under `ToZero`, under `Down` for a positive result, and under `Up` for a negative result returns `±max_value(p)` instead of `±Inf`.
+- `inexact()` on the result of `add`, `sub`, `mul`, or `div` describes that operation only. `inexact_accumulated()` is the old flag.
+- `from_raw_parts` validates its parts and returns `NaN(InvalidArgument)` for inconsistent ones.
+- `EXPONENT_MAX` and `EXPONENT_MIN` are `i32::MAX` and `i32::MIN` on 32-bit targets too.
+- The `RoundingMode` documentation describes `Up`, `Down`, `ToZero`, and `FromZero` as directed modes, not tie rules (documentation only).
 
 ### Subnormal underflow
 
@@ -154,6 +165,14 @@ The scope is limited to these four. `sqrt`, `cbrt`, `hypot`, `fma`, `rem`, parsi
 
 The test now runs `add`, `sub`, `mul`, and `div` bit for bit against `mpfr_reference` in all six rounding modes, `ToOdd` included (MPFR has no ties-to-odd mode; the reference emulates it with a toward-zero result at `p + 1` bits and the ternary value). It uses precisions of 64, 128, 192, 320, and 1024 bits. Half of the operands are runs of ones followed by zeros with random signs, which produces exact ties and carries out of the top word. `sqrt` and `nth_root` keep the five MPFR modes at every precision. Under the same broken `ToOdd`, the new test fails at the 13th case: a 128-bit `Mul`. Unaligned precisions and the subnormal range are covered by `fuzz_mpfr_exact_bit_precision`. `get_random_rnd_pair` still returns only the five MPFR modes, because its 44 callers pass the MPFR mode straight to MPFR; `ToOdd` is covered through `mpfr_reference` instead. No library change.
 
+### The exponent range is the same on 32-bit targets
+
+`EXPONENT_MAX` and `EXPONENT_MIN` were `i32::MAX / 4` and `i32::MIN / 4` on 32-bit pointers (`defs.rs` 49–58). The kernel computed exponents in `isize`, which is 32 bits there, and the quarter range was headroom against `e1 + e2 - shift` overflowing. The same value could therefore be finite on x86_64 and `Inf` on i686 or Cortex-M. That broke the claim that results are bit-identical on every platform, and the hex golds never reached the limits.
+
+Exponent arithmetic is now done in `i64` on every target, and both constants are `i32::MAX` and `i32::MIN` everywhere. Every `isize` in `src` became `i64`. Conversions from an exponent difference back to a count go through `common::util::abs_usize`, which saturates where `usize` is 32 bits. `p_assertion` also rejects `p >= usize::MAX / 4`, so precision arithmetic cannot wrap a 32-bit `usize`; the 64-bit limit is unchanged. The checks and clamps that existed only for 32-bit targets became vacuous and were removed. They were in `from_words`, `from_raw_parts`, `set_exponent`, `random_normal`, the radix conversion, and `ldexp`'s `exponent_in_range`, which took a `#[allow]`. `parser` tests use the same `e+7FFFFFFF` overflow input on both widths.
+
+This is a public change for 32-bit users. Values between `2^(i32::MAX/4)` and `2^i32::MAX` are now finite instead of overflowing, and they underflow at `2^i32::MIN` instead of `2^(i32::MIN/4)`. `doc/LIBRARY.md` and `doc/ZENITH_FLOAT_CAPABILITIES.md` are updated. `tests/exponent_range.rs` checks the constants, `max_value`, `min_positive`, and `min_positive_normal` at four precisions. It sweeps `ldexp` to three exponents at each limit and `mul`, `add`, `sub`, and `div` at the top and bottom of the range, including overflow and subnormal results, in six modes and both signs. It failed on `i686-unknown-linux-musl` before the change. With the change, it passes there in debug, with overflow checks on, together with the library unit tests and the property, edge, overflow, and `inexact` suites. `tests/oracle.rs` does not build for 32-bit words (it passes `u64` limbs), as before.
+
 ### Tests
 
 - `tests/oracle/goldens/quad.jsonl`: 12 `gk-eps` rows (deep tier) for the Wynn-ε Gauss–Kronrod path on endpoint singularities: 6 integrands (\(x^{-0.75}\), \(x^{-0.9}\), \(x^{-0.99}\), and \(\ln^k x/\sqrt{x}\) for \(k=1,2,3\)) × 256 and 512 bits. 18 `gk-inf` rows cover `integrate_adaptive_gk_infinite`. `abs_err_est` on those rows is checked against the oracle.
@@ -161,6 +180,7 @@ The test now runs `add`, `sub`, `mul`, and `div` bit for bit against `mpfr_refer
 - `carry_tests` in `common/util.rs`: `add_carry` and `sub_borrow` against a widening double-word reference (`u128` for 64-bit words, `u64` for 32-bit words), with carry-in 0 and 1 edges, random limbs, and 8-limb all-`WORD_MAX` chains.
 - `tests/oracle/goldens/ode.jsonl` and `balls.jsonl`: 24 ODE and 24 ball regression goldens, recorded before the quadrature change.
 - `scripts/ci_no_intrinsics.sh` uses `git grep -nE` and fails hard when `git` is missing or the search itself errors, so a broken search cannot pass as "no match".
+- Audit tests, each red before its fix: `tests/rounding_mode_docs.rs`, `tests/from_raw_parts_checks.rs`, `tests/overflow_modes.rs`, `tests/inexact_per_op.rs`, `tests/exponent_range.rs` (red on i686), and in `tests/mpfr/fuzz_round_modes.rs` `fuzz_mpfr_overflow_all_round_modes`, `fuzz_mpfr_exact_bit_precision`, and the widened `fuzz_mpfr_bit_exact_all_round_modes`.
 - `.github/workflows/arm-tests.yml`: a test-only ARM64 workflow (`ubuntu-24.04-arm`, Rust 1.99) that runs the workspace tests and the oracle test. It does not publish.
 
 ## 1.0.12 — 2026-10-06
