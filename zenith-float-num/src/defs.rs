@@ -252,16 +252,22 @@ pub enum RoundingMode {
     /// Skip rounding operation.
     None = 1,
 
-    /// Round half toward positive infinity.
+    /// Round toward positive infinity (directed rounding).
+    ///
+    /// Every inexact result moves to the next representable value at or above the exact one.
+    /// There is no tie case.
     Up = 2,
 
-    /// Round half toward negative infinity.
+    /// Round toward negative infinity (directed rounding).
+    ///
+    /// Every inexact result moves to the next representable value at or below the exact one.
+    /// There is no tie case.
     Down = 4,
 
-    /// Round half toward zero.
+    /// Round toward zero (truncation; directed rounding).
     ToZero = 8,
 
-    /// Round half away from zero.
+    /// Round away from zero (directed rounding).
     FromZero = 16,
 
     /// Round half to even.

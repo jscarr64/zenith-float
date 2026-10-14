@@ -112,6 +112,12 @@ The limb operations are now portable integer arithmetic: a widening sum for the 
 
 `scripts/ci_no_intrinsics.sh` rejects `std::arch`, `core::arch`, `asm!`, `global_asm!`, `target_feature`, `f32`, and `f64` in every Rust source, and rejects `unsafe` outside `scripts/no_intrinsics_allowlist.txt`. The allowlist is the `no_std` host and qemu harnesses, plus the optional MPFR test oracle. Those are not linked into the library. The library crates forbid `unsafe_code`. Callers do not see a signature change. A build that depended on the x86 intrinsic being the only implementation of a limb add now gets the same bits from the portable sum.
 
+### Directed rounding modes were documented as ties
+
+The rustdoc on `RoundingMode` called `Up` "round half toward positive infinity", `Down` "round half toward negative infinity", `ToZero` "round half toward zero", and `FromZero` "round half away from zero". Those words describe round-to-nearest with a tie rule. The kernel (`round_mantissa`) has always rounded these four modes in one direction: any discarded bit moves `Up` to the next value above, `Down` to the next value below, `FromZero` away from zero, and `ToZero` truncates. A caller who trusted the rustdoc expected a nearest result and got a directed one.
+
+The rustdoc now says directed rounding toward +∞, −∞, zero, or away from zero. `ToEven` and `ToOdd` are still round-half-to-even and round-half-to-odd. No value changes. `tests/rounding_mode_docs.rs` checks the wording and sweeps non-representable quotients over four precisions and both signs to show each mode lands on its side of the exact value.
+
 ### Tests
 
 - `tests/oracle/goldens/quad.jsonl`: 12 `gk-eps` rows (deep tier) for the Wynn-ε Gauss–Kronrod path on endpoint singularities: 6 integrands (\(x^{-0.75}\), \(x^{-0.9}\), \(x^{-0.99}\), and \(\ln^k x/\sqrt{x}\) for \(k=1,2,3\)) × 256 and 512 bits. 18 `gk-inf` rows cover `integrate_adaptive_gk_infinite`. `abs_err_est` on those rows is checked against the oracle.
