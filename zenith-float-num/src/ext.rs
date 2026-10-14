@@ -923,14 +923,15 @@ impl ExactNum {
     /// The function returns `max` if `self` is greater than `max`, `min` if `self` is less than `min`, and `self` otherwise.
     /// If either argument is NaN or `min` is greater than `max`, the function returns NaN.
     pub fn clamp(&self, min: &Self, max: &Self) -> Self {
-        if self.is_nan() || min.is_nan() || max.is_nan() || max.compare(min).unwrap() < 0 {
-            // call to unwrap() is unreacheable
+        if self.is_nan()
+            || min.is_nan()
+            || max.is_nan()
+            || matches!(max.compare(min), Some(c) if c < 0)
+        {
             NAN
-        } else if self.compare(min).unwrap() < 0 {
-            // call to unwrap() is unreacheable
+        } else if matches!(self.compare(min), Some(c) if c < 0) {
             min.clone()
-        } else if self.compare(max).unwrap() > 0 {
-            // call to unwrap() is unreacheable
+        } else if matches!(self.compare(max), Some(c) if c > 0) {
             max.clone()
         } else {
             self.clone()
@@ -942,8 +943,7 @@ impl ExactNum {
     pub fn max(&self, d1: &Self) -> Self {
         if self.is_nan() || d1.is_nan() {
             NAN
-        } else if self.compare(d1).unwrap() < 0 {
-            // call to unwrap() is unreacheable
+        } else if matches!(self.compare(d1), Some(c) if c < 0) {
             d1.clone()
         } else {
             self.clone()
@@ -955,8 +955,7 @@ impl ExactNum {
     pub fn min(&self, d1: &Self) -> Self {
         if self.is_nan() || d1.is_nan() {
             NAN
-        } else if self.compare(d1).unwrap() > 0 {
-            // call to unwrap() is unreacheable
+        } else if matches!(self.compare(d1), Some(c) if c > 0) {
             d1.clone()
         } else {
             self.clone()

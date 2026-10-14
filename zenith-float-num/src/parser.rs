@@ -179,8 +179,7 @@ fn parse_digits(
     if skip_zeroes {
         // skip leading zeroes
         while let Some(c) = ch {
-            if is_radix_digit(c, rdx) && c.to_digit(rdx.value() as u32).unwrap() == 0 {
-                // call to unwrap() is unreachable, because c is surely a digit.
+            if c.to_digit(rdx.value() as u32) == Some(0) {
                 skip_cnt += 1;
                 if !int {
                     len += 1; // for fractional part count length
@@ -192,17 +191,14 @@ fn parse_digits(
         }
     }
 
-    if ch.is_some() && is_radix_digit(ch.unwrap(), rdx) {
-        // is_some()
+    if ch.is_some_and(|c| is_radix_digit(c, rdx)) {
         parser_state
             .mantissa_bytes
             .try_reserve_exact(parser_state.s_len)?;
 
         while let Some(c) = ch {
-            if is_radix_digit(c, rdx) {
-                parser_state
-                    .mantissa_bytes
-                    .push(c.to_digit(rdx.value() as u32).unwrap() as u8); // call to unwrap() is unreachable, because c is surely a digit.
+            if let Some(digit) = c.to_digit(rdx.value() as u32) {
+                parser_state.mantissa_bytes.push(digit as u8);
                 len += 1;
             } else {
                 break;
