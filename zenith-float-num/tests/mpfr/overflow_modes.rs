@@ -146,7 +146,7 @@ type Mpun = fn(&mut Float, &Float, rnd_t) -> i32;
 
 #[test]
 fn overflow_by_mode_unary() {
-    let ops: [(&str, i32, i32, bool, Unop, Mpun); 6] = [
+    let ops: [(&str, i32, i32, bool, Unop, Mpun); 7] = [
         (
             "exp",
             32,
@@ -186,6 +186,14 @@ fn overflow_by_mode_unary() {
             true,
             |x, p, rm, cc| x.cosh(p, rm, cc),
             |r, a, rnd| unsafe { mpfr::cosh(r.as_raw_mut(), a.as_raw(), rnd) },
+        ),
+        (
+            "ei",
+            32,
+            33,
+            false,
+            |x, p, rm, cc| x.ei(p, rm, cc),
+            |r, a, rnd| unsafe { mpfr::eint(r.as_raw_mut(), a.as_raw(), rnd) },
         ),
         (
             "gamma",

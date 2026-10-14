@@ -2001,15 +2001,20 @@ macro_rules! gen_wrapper_word_rm_cc {
 }
 
 macro_rules! gen_wrapper_ovf_rm_cc {
-    // like gen_wrapper_arg_rm_cc, for functions whose only ExponentOverflow is a finite result
-    // past the range: the overflow follows the rounding mode
+    // like gen_wrapper_arg_rm_cc, for functions whose only ExponentOverflow away from zero is a
+    // finite result past the range: that overflow follows the rounding mode
     ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $p:ident, usize) => {
         #[doc=$comment]
         pub fn $fname(&self, $p: usize, rm: RoundingMode, cc: &mut Consts) -> $ret {
             match &self.inner {
                 Flavor::Value(v) => match Self::exact_operand(v) {
                     Ok((x, acc)) => Self::round_exact(acc, $p, rm, |q, r| {
-                        Self::result_to_ext_rm(x.$fname(q, r, cc), x.is_zero(), true, q, r)
+                        if x.is_zero() {
+                            // a pole at zero (Γ, Ei) is an exact infinity in every mode
+                            Self::result_to_ext(x.$fname(q, r, cc), true, true)
+                        } else {
+                            Self::result_to_ext_rm(x.$fname(q, r, cc), false, true, q, r)
+                        }
                     }),
                     Err(e) => Self::result_to_ext(Err(e), false, true),
                 },
@@ -2452,7 +2457,7 @@ Accuracy: correctly-rounded",
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Gamma function `Γ(self)` with precision `p`. Poles at non-positive integers yield NaN (or +Inf at 0).
 
 # Precision
@@ -2574,7 +2579,7 @@ Accuracy: correctly-rounded",
             (Flavor::Inf(_), _) => NAN,
         }
     }
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Exponential integral `Ei(self)` (principal value for `self < 0`). `0` is a pole.
 
 # Precision
