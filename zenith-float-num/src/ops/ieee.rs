@@ -1,7 +1,7 @@
 //! IEEE-style exponent decomposition without hardware floats.
 
 use crate::common::util::round_p;
-use crate::defs::Error;
+use crate::defs::{Error, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::{Exponent, RoundingMode, Sign};
 
@@ -39,7 +39,15 @@ impl ExactNumNumber {
                 if n >= 0 {
                     Err(Error::ExponentOverflow(self.sign()))
                 } else {
-                    Ok(Self::new2(p, self.sign(), true)?)
+                    // Below the range: scale by 2^EXPONENT_MIN in a multiplication, which
+                    // rounds onto the subnormal grid (or to zero / the least value) by mode.
+                    let s1 = e as i64 + n as i64 - EXPONENT_MIN as i64;
+                    let s1 = Exponent::try_from(s1).unwrap_or(EXPONENT_MIN);
+                    let mut a = self.clone()?;
+                    a.set_exponent(s1);
+                    let mut b = Self::from_word(1, WORD_BIT_SIZE)?;
+                    b.set_exponent(EXPONENT_MIN + 1);
+                    a.mul(&b, p, rm)
                 }
             }
         }

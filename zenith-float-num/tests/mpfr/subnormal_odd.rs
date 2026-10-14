@@ -19,6 +19,8 @@ fn conv_small(w: usize, x: &ExactNum, cc: &mut Consts) -> Float {
     f
 }
 
+type MpOp<'a> = Box<dyn Fn(&mut Float, rnd_t) -> i32 + 'a>;
+
 /// Reference for an operation whose exact value `f` computes at `wide` bits: `ToOdd`
 /// is `ToEven` except at an exact tie, where it takes the other neighbour.
 fn reference(
@@ -69,12 +71,12 @@ fn subnormal_band_every_mode() {
             let y = input(p, -(p as i32) - 2, -1, true);
             let z = input(p, lo + 1, lo + p as i32, true);
             // shifts that land exactly on and between subnormal grid points
-            let k = (i % 7) as i32 + 1;
+            let k = i % 7 + 1;
             let fx = conv_small(w, &x, &mut cc);
             let fy = conv_small(w, &y, &mut cc);
             let fz = conv_small(w, &z, &mut cc);
             for rm in MODES {
-                let cases: [(&str, ExactNum, Box<dyn Fn(&mut Float, rnd_t) -> i32>); 5] = [
+                let cases: [(&str, ExactNum, MpOp); 5] = [
                     (
                         "mul",
                         x.mul(&y, p, rm),
