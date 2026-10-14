@@ -28,6 +28,12 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "zenith-float-num" / "tests" / "oracle" / "goldens"
 MODES = ["ToEven", "ToOdd", "Up", "Down", "ToZero", "FromZero", "None"]
 FAST_P = [24, 53, 64, 113]
+# add, sub, mul, and div round at exactly p bits (2.0.0). Every other operation still rounds
+# at the word-aligned storage precision, so its rows are labelled with round_p(p).
+EXACT_OPS = {"add", "sub", "mul", "div", "chop"}
+# The constant-cache rows test a 113-bit request after a narrower one (the 2.0.0 cache fix),
+# so they keep the requested precision; their expectation is the 128-bit storage value.
+KEEP_REQUESTED_P = {"sqrt2", "phi"}
 DEEP_P = [128, 256, 1024]
 
 
@@ -139,10 +145,12 @@ def scale(n: int, d: int, exp2: int) -> tuple[int, int]:
     return n, d << sh
 
 
-def round_abs(sign: str, n: int, d: int, ez: int, prec: int, rm: str) -> dict:
-    """Round a positive magnitude that is below 2^EMIN onto the subnormal grid."""
+def round_abs(sign: str, n: int, d: int, ez: int, prec: int, rm: str, sig: int | None = None) -> dict:
+    """Round a positive magnitude that is below 2^EMIN onto the subnormal grid 2^(EMIN - sig)."""
     positive = sign == "+"
-    exp2 = ez - (EMIN - prec)
+    if sig is None:
+        sig = prec
+    exp2 = ez - (EMIN - sig)
     half = cmp_mul_pow2(n, exp2 + 1, d)
     if half < 0:
         away = rm == "FromZero" or (rm == "Up" and positive) or (rm == "Down" and not positive)
@@ -153,14 +161,14 @@ def round_abs(sign: str, n: int, d: int, ez: int, prec: int, rm: str) -> dict:
     if q <= 0:
         return zero(sign, prec)
     e = EMIN
-    if q >= (1 << prec):
-        if q > (1 << prec):
+    if q >= (1 << sig):
+        if q > (1 << sig):
             raise AssertionError("subnormal rounding passed 2^EMIN")
-        q = 1 << (prec - 1)
+        q = 1 << (sig - 1)
         e = EMIN + 1
         if e > EMAX:
-            return overflow(sign, prec, rm)
-    return {"k": "f", "s": sign, "e": e, "m": words_of(q, prec)}
+            return overflow(sign, prec, rm, sig)
+    return {"k": "f", "s": sign, "e": e, "m": words_of(q << (prec - sig), prec)}
 
 
 def round_rational(sign: str, n: int, d: int, ez: int, p: int, rm: str, sig_bits: int | None = None) -> dict:
@@ -177,7 +185,7 @@ def round_rational(sign: str, n: int, d: int, ez: int, p: int, rm: str, sig_bits
     if fl > EMAX:
         return overflow(sign, prec, rm, sig)
     if fl < EMIN:
-        return round_abs(sign, n, d, ez, prec, rm)
+        return round_abs(sign, n, d, ez, prec, rm, sig)
     e = fl + 1
     numer, denom = scale(n, d, ez + sig - e)
     positive = sign == "+"
@@ -188,7 +196,7 @@ def round_rational(sign: str, n: int, d: int, ez: int, p: int, rm: str, sig_bits
     if e > EMAX:
         return overflow(sign, prec, rm, sig)
     if mant == 0 or e < EMIN:
-        return round_abs(sign, n, d, ez, prec, rm)
+        return round_abs(sign, n, d, ez, prec, rm, sig)
     mant <<= prec - sig
     return {"k": "f", "s": sign, "e": e, "m": words_of(mant, prec)}
 
@@ -232,8 +240,8 @@ def parse_dec(text: str) -> tuple:
     return ("f", sign, num // g, den // g, ez)
 
 
-def token(tok: str, p: int) -> tuple:
-    prec = round_p(p)
+def token(tok: str, p: int, sig: int | None = None) -> tuple:
+    prec = round_p(p) if sig is None else sig
     if tok in ("+0", "0"):
         return ("zero", "+")
     if tok == "-0":
@@ -425,7 +433,7 @@ def rem_raw(a: tuple, b: tuple) -> tuple:
     return ("f", a[1], r, 1, 0)
 
 
-def finalize(v: tuple, p: int, rm: str) -> dict:
+def finalize(v: tuple, p: int, rm: str, sig: int | None = None) -> dict:
     prec = round_p(p)
     if v[0] == "nan":
         return nan()
@@ -437,7 +445,7 @@ def finalize(v: tuple, p: int, rm: str) -> dict:
         return zero("-" if rm == "Down" else "+", prec)
     if v[0] == "zerosum":
         return zero(zero_sign(v[1], v[2], rm), prec)
-    return round_rational(v[1], v[2], v[3], v[4], p, rm)
+    return round_rational(v[1], v[2], v[3], v[4], p, rm, sig_bits=sig)
 
 
 def expect_of(op: str, p: int, rm: str, args: list[str]) -> dict:
@@ -452,17 +460,18 @@ def expect_of(op: str, p: int, rm: str, args: list[str]) -> dict:
     if op == "chop":
         v = parse_dec(args[0])
         return round_rational(v[1], v[2], v[3], v[4], p, rm, sig_bits=p)
-    a = token(args[0], p)
-    b = token(args[1], p) if len(args) > 1 else None
-    c = token(args[2], p) if len(args) > 2 else None
+    sig = p if op in EXACT_OPS and p >= 2 else None
+    a = token(args[0], p, sig)
+    b = token(args[1], p, sig) if len(args) > 1 else None
+    c = token(args[2], p, sig) if len(args) > 2 else None
     if op == "add":
-        return finalize(add_raw(a, b), p, rm)
+        return finalize(add_raw(a, b), p, rm, sig)
     if op == "sub":
-        return finalize(add_raw(a, negate(b)), p, rm)
+        return finalize(add_raw(a, negate(b)), p, rm, sig)
     if op == "mul":
-        return finalize(mul_raw(a, b), p, rm)
+        return finalize(mul_raw(a, b), p, rm, sig)
     if op == "div":
-        return finalize(div_raw(a, b), p, rm)
+        return finalize(div_raw(a, b), p, rm, sig)
     if op == "rem":
         return finalize(rem_raw(a, b), p, rm)
     if op == "sqrt":
@@ -536,7 +545,15 @@ def c_request(op: str, p: int, rm: str, args: list[str]) -> str:
 def build_cases() -> list[dict]:
     rows: list[dict] = []
 
+    seen: set[tuple] = set()
+
     def add(tier: str, op: str, p: int, rm: str, args: list[str], **extra: object) -> None:
+        if op not in EXACT_OPS and op not in KEEP_REQUESTED_P:
+            p = round_p(p)
+        key = (tier, op, p, rm, tuple(args), tuple(sorted(extra)))
+        if key in seen:
+            return
+        seen.add(key)
         rows.append(
             {
                 "tier": tier,
@@ -884,7 +901,15 @@ def same_step2(st: dict, p: int, c_line: str) -> bool:
 def build_step2() -> list[dict]:
     rows: list[dict] = []
 
+    seen: set[tuple] = set()
+
     def add(tier: str, op: str, p: int, rm: str, args: list[str], **extra: object) -> None:
+        if op not in EXACT_OPS and op not in KEEP_REQUESTED_P:
+            p = round_p(p)
+        key = (tier, op, p, rm, tuple(args), tuple(sorted(extra)))
+        if key in seen:
+            return
+        seen.add(key)
         rows.append(
             {
                 "tier": tier,

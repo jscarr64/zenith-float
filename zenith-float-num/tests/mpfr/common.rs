@@ -8,8 +8,8 @@ use rand::{Rng, SeedableRng};
 use rug::Float;
 use std::cell::RefCell;
 use zenith_float_num::{
-    Consts, ExactNum, Exponent, Radix, RoundingMode, Sign, Word, WORD_BIT_SIZE,
-    WORD_SIGNIFICANT_BIT,
+    Consts, ExactNum, Exponent, Radix, RoundingMode, Sign, Word, EXPONENT_MAX, EXPONENT_MIN,
+    WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT,
 };
 
 thread_local! {
@@ -376,4 +376,102 @@ pub fn bf_from_mantissa_and_exp_rng(m: &[Word], exp_from: Exponent, exp_to: Expo
     let s = if test_random::<u8>() & 1 == 0 { Sign::Pos } else { Sign::Neg };
 
     ExactNum::from_words(m, s, e)
+}
+
+/// Binary operations with an exact-precision MPFR reference.
+#[derive(Copy, Clone, Debug)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+fn mpfr_binop(r: &mut Float, a: &Float, b: &Float, op: BinOp, rnd: rnd_t) -> i32 {
+    match op {
+        BinOp::Add => unsafe { mpfr::add(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
+        BinOp::Sub => unsafe { mpfr::sub(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
+        BinOp::Mul => unsafe { mpfr::mul(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
+        BinOp::Div => unsafe { mpfr::div(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
+    }
+}
+
+/// `a op b` correctly rounded at exactly `p` bits in the zenith format: `m * 2^e` with
+/// `0.5 <= m < 1`, `e` in `EXPONENT_MIN..=EXPONENT_MAX`, and subnormals on the fixed grid
+/// `2^(EXPONENT_MIN - p)`. MPFR emulates that grid with `emin = EXPONENT_MIN - p + 1` and
+/// `mpfr_subnormalize`. MPFR has no ties-to-odd mode: `ToOdd` rounds toward zero at `p + 1`
+/// bits and decides from the extra bit and the ternary value. That emulation is for results
+/// in the normal range only.
+pub fn mpfr_reference(a: &Float, b: &Float, op: BinOp, p: u32, rm: RoundingMode) -> Float {
+    let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+    unsafe {
+        mpfr::set_emax(EXPONENT_MAX as mpfr::exp_t);
+        mpfr::set_emin(EXPONENT_MIN as mpfr::exp_t - p as mpfr::exp_t + 1);
+    }
+    let rnd = match rm {
+        RoundingMode::ToEven => Some(rnd_t::RNDN),
+        RoundingMode::Up => Some(rnd_t::RNDU),
+        RoundingMode::Down => Some(rnd_t::RNDD),
+        RoundingMode::ToZero => Some(rnd_t::RNDZ),
+        RoundingMode::FromZero => Some(rnd_t::RNDA),
+        RoundingMode::ToOdd => None,
+        RoundingMode::None => panic!("no MPFR reference for {rm:?}"),
+    };
+    let out = if let Some(rnd) = rnd {
+        let mut r = Float::new(p);
+        let t = mpfr_binop(&mut r, a, b, op, rnd);
+        unsafe { mpfr::subnormalize(r.as_raw_mut(), t, rnd) };
+        r
+    } else {
+        let mut w = Float::new(p + 1);
+        let t = mpfr_binop(&mut w, a, b, op, rnd_t::RNDZ);
+        let mut lo = Float::new(p);
+        let mut hi = Float::new(p);
+        unsafe {
+            mpfr::set(lo.as_raw_mut(), w.as_raw(), rnd_t::RNDZ);
+            mpfr::set(hi.as_raw_mut(), w.as_raw(), rnd_t::RNDA);
+        }
+        let odd = |x: &Float, bits: u32| {
+            !x.is_zero() && unsafe { mpfr::min_prec(x.as_raw()) } as u32 == bits
+        };
+        if lo == hi {
+            lo
+        } else if t == 0 {
+            // w is the exact midpoint: the tie goes to the odd neighbour.
+            if odd(&lo, p) {
+                lo
+            } else {
+                hi
+            }
+        } else if odd(&w, p + 1) {
+            // the exact value lies above the midpoint
+            hi
+        } else {
+            lo
+        }
+    };
+    unsafe {
+        mpfr::set_emin(old_min);
+        mpfr::set_emax(old_max);
+    }
+    out
+}
+
+/// Bit-exact comparison of a zenith result with an MPFR value of the same precision,
+/// including Inf, the sign of zero, and subnormals.
+pub fn assert_exact_eq(n: &ExactNum, f: &Float, p: usize, op: &str, cc: &mut Consts) {
+    if f.is_infinite() {
+        assert!(n.is_inf(), "{op}: MPFR {f}, zenith {n:?}");
+        assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of Inf");
+        return;
+    }
+    assert!(!n.is_inf() && !n.is_nan(), "{op}: MPFR {f}, zenith {n:?}");
+    if f.is_zero() {
+        assert!(n.is_zero(), "{op}: MPFR {f}, zenith {n:?}");
+        assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of zero");
+        return;
+    }
+    let s = conv_str_from_mpfr_compat(f.to_string_radix(2, None));
+    let want = ExactNum::parse(&s, Radix::Bin, p, RoundingMode::None, cc);
+    assert_eq!(*n, want, "{op}: MPFR {f}");
 }

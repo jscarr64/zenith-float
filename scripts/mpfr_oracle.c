@@ -472,7 +472,10 @@ int main(void) {
             prec = 2;
         }
         int sig = prec;
-        if (strcmp(op, "chop") == 0 && p >= 2) {
+        /* add, sub, mul, div, and chop round at exactly p bits; operand tokens use that format. */
+        int exact_bits = strcmp(op, "chop") == 0 || strcmp(op, "add") == 0 ||
+                         strcmp(op, "sub") == 0 || strcmp(op, "mul") == 0 || strcmp(op, "div") == 0;
+        if (exact_bits && p >= 2) {
             sig = p;
         }
         mpfr_prec_t wide = (mpfr_prec_t)prec * 4 + 512;
@@ -487,13 +490,13 @@ int main(void) {
         mpfr_init2(exact, wide);
         int step2 = strcmp(op, "cln") == 0 || strcmp(op, "casin") == 0 || strcmp(op, "exp2") == 0 ||
                     strcmp(op, "exp10") == 0 || strcmp(op, "pow") == 0;
-        if (!step2 && a_s[0] && !set_tok(a, a_s, prec)) {
+        if (!step2 && a_s[0] && !set_tok(a, a_s, sig)) {
             printf("err operand\n");
             mpfr_clears(a, b, c, exact, (mpfr_ptr)0);
             continue;
         }
         if (!step2 && b_s[0] && strcmp(op, "chop") != 0 && strcmp(op, "parse") != 0 &&
-            !set_tok(b, b_s, prec)) {
+            !set_tok(b, b_s, sig)) {
             printf("err operand\n");
             mpfr_clears(a, b, c, exact, (mpfr_ptr)0);
             continue;
