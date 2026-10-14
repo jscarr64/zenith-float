@@ -2333,17 +2333,8 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn sin_cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> (Self, Self) {
-        match &self.inner {
-            Flavor::Value(v) => match v.sin_cos(p, rm, cc) {
-                Ok((s, c)) => (
-                    Self::result_to_ext(Ok(s), false, true),
-                    Self::result_to_ext(Ok(c), false, true),
-                ),
-                Err(e) => (Self::nan(Some(e)), Self::nan(Some(e))),
-            },
-            Flavor::Inf(_) => (NAN, NAN),
-            Flavor::NaN(err) => (Self::nan(*err), Self::nan(*err)),
-        }
+        // Each result goes through its own exact-p-bit rounding and per-operation flag.
+        (self.sin(p, rm, cc), self.cos(p, rm, cc))
     }
     gen_wrapper_arg_rm_cc!(
         "Computes the tangent of a number with precision `p`. The result is rounded using the rounding mode `rm`.
@@ -2410,30 +2401,9 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn sinh_cosh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> (Self, Self) {
-        match &self.inner {
-            Flavor::Value(v) => match v.sinh_cosh(p, rm, cc) {
-                Ok((s, c)) => (
-                    Self::result_to_ext(Ok(s), false, true),
-                    Self::result_to_ext(Ok(c), false, true),
-                ),
-                Err(Error::ExponentOverflow(s)) => {
-                    if s.is_positive() {
-                        (INF_POS, INF_POS)
-                    } else {
-                        (INF_NEG, INF_POS)
-                    }
-                }
-                Err(e) => (Self::nan(Some(e)), Self::nan(Some(e))),
-            },
-            Flavor::Inf(s) => {
-                if s.is_positive() {
-                    (INF_POS, INF_POS)
-                } else {
-                    (INF_NEG, INF_POS)
-                }
-            }
-            Flavor::NaN(err) => (Self::nan(*err), Self::nan(*err)),
-        }
+        // Each result goes through its own exact-p-bit rounding, per-operation flag and
+        // mode-aware overflow.
+        (self.sinh(p, rm, cc), self.cosh(p, rm, cc))
     }
     gen_wrapper_arg_rm_cc!(
         "Error function `erf(self)` with precision `p`.
