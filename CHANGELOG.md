@@ -8,6 +8,10 @@ Issues found in one program led us to a forensic audit of our other crates. This
 
 `elliptic_f_phi`, `elliptic_e_phi`, and `elliptic_pi_phi` take the amplitude \(\varphi\). `elliptic_f`, `elliptic_e`, and `elliptic_pi` still take \(\sin\varphi\). Downstream callers passed the angle into the \(\sin\varphi\) slot: `elliptic_f(2, m)` is `NaN(InvalidArgument)`, not \(F(2\mid m)\). The angle form accepts any real \(\varphi\), reduces \(\varphi = r + k\pi\) with \(|r|\le\pi/2\) in extended precision, and adds \(2k\) times the complete integral. \(\varphi=\pm\pi/2\) is \(\pm K\), \(\pm E\), or \(\pm\Pi\). A parameter \(m>1\) whose path is not real, and a characteristic \(n=1\) at a pole, are `NaN(InvalidArgument)` rather than a silent wrong value.
 
+### Changed
+
+The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking).
+
 ### Subnormal underflow
 
 `mul`, `div`, and `add` flushed a result below the minimum positive subnormal to zero whenever the rounding mode was not `Up`, `Down`, or `FromZero`. The discarded significand was ignored, so a value above half an ulp of the minimum positive, and a tie under `ToOdd`, became zero. `ToOdd` of half the minimum positive must be the minimum positive, because zero is even. Directed modes that round away from zero already kept that minimum; `ToEven` of an exact tie correctly stays zero.

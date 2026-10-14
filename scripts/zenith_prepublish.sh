@@ -4,6 +4,8 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+# shellcheck source=use_rust_1_99.sh
+source "$root/scripts/use_rust_1_99.sh"
 
 n=0
 ok() { echo "ok  [$n/12] $*"; }
@@ -30,6 +32,7 @@ cargo build -p zenith-float-num --no-default-features
 ok "no_std host"
 
 step "cargo build --no-default-features --target thumbv7em-none-eabihf"
+rustup target add --toolchain 1.99 thumbv7em-none-eabihf >/dev/null
 cargo build --no-default-features --target thumbv7em-none-eabihf
 cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf
 ok "thumbv7em-none-eabihf"

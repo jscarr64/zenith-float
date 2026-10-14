@@ -2,6 +2,7 @@
 name = "zenith-float-macro"
 version.workspace = true
 edition.workspace = true
+rust-version = "1.99"
 authors.workspace = true
 license.workspace = true
 repository.workspace = true

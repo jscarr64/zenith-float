@@ -3,8 +3,10 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+# shellcheck source=use_rust_1_99.sh
+source "$root/scripts/use_rust_1_99.sh"
 target=aarch64-unknown-linux-musl
-rustup target add "$target" >/dev/null
+rustup target add --toolchain 1.99 "$target" >/dev/null
 lld="$(rustc --print sysroot)/lib/rustlib/x86_64-unknown-linux-gnu/bin/rust-lld"
 export CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER="$lld"
 export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static"
