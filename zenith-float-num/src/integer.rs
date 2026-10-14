@@ -516,8 +516,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn div_rem_abs_empty_operands_no_panic() {
-        assert_eq!(ExactInt::div_rem_abs(&[], &[]), (Vec::new(), Vec::new()));
+    fn div_rem_with_zero_operands_no_panic() {
+        // Zero divisor is None; zero dividend is (0, 0); the limb kernel with an empty
+        // dividend and a non-empty divisor returns an empty quotient and remainder.
+        assert!(ExactInt::one().div_rem(&ExactInt::zero()).is_none());
+        let zero_quot = ExactInt::zero().div_rem(&ExactInt::one());
+        assert!(matches!(zero_quot, Some((q, r)) if q.is_zero() && r.is_zero()));
+        assert_eq!(ExactInt::div_rem_abs(&[], &[1]), (Vec::new(), Vec::new()));
     }
 
     #[test]
