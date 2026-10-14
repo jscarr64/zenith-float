@@ -229,6 +229,30 @@ def quad_rows():
                 note="epsilon-extrapolation GK",
             )
         )
+    # Rows the pre-fix GK (16141841~1) fails: its ε abs_err_est was below
+    # the true error. Red evidence: tests/gk_eps_probe.rs at that commit.
+    for p in (256, 512):
+        for name, make in EPS_CASES:
+            if name not in EPS_CHOSEN:
+                continue
+            rows.append(
+                row(
+                    id=f"gk-eps-{name}-{p}-ToEven",
+                    tier="deep",
+                    op="gk_adaptive",
+                    shape="epsilon",
+                    p=p,
+                    rm="ToEven",
+                    integrand=name,
+                    a="0",
+                    b="1",
+                    tol="1e-8",
+                    est_tol="1e-6",
+                    panels=32,
+                    true=eps_truth(make),
+                    note="epsilon-extrapolation GK, under-reported before step 4",
+                )
+            )
     return rows
 
 
