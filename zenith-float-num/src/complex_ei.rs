@@ -416,7 +416,7 @@ mod tests {
         assert!(tiny(fs0.re(), p) && tiny(fs0.im(), p));
         assert!(tiny(fc0.re(), p) && tiny(fc0.im(), p));
 
-        let h = ExactNum::from_u8(2, p).powsi(-((p as isize) / 8), p, rm);
+        let h = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
         let hc = ExactComplex::from_real(h, p);
         let num_ei =
             z.add(&hc, p, rm)

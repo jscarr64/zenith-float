@@ -560,9 +560,9 @@ mod tests {
     }
 
     /// Global RK4 error on `y'=-y` with `h=10^{-3}` is `O(h^4) ≈ 10^{-12}`.
-    const RK4_EXP_ERR_DIGITS: isize = 12;
+    const RK4_EXP_ERR_DIGITS: i64 = 12;
     /// Adaptive gold the step cap can actually meet (plan `1e-50` needs ~10¹² steps).
-    const RK45_ATOL_DIGITS: isize = 12;
+    const RK45_ATOL_DIGITS: i64 = 12;
     const EULER_OH_STEPS: usize = 1000;
 
     #[test]

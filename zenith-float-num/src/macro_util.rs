@@ -270,8 +270,8 @@ fn part_cancel(a: &ExactNum, b: &ExactNum, r: &ExactNum, is_add: bool) -> Option
         return None;
     };
     let opp = if is_add { s1 != s2 } else { s1 == s2 };
-    if (e1 as isize - e2 as isize).abs() <= 1 && opp {
-        Some((e1.max(e2) as isize - e3 as isize).unsigned_abs() + 1)
+    if (e1 as i64 - e2 as i64).abs() <= 1 && opp {
+        Some(crate::common::util::abs_usize(e1.max(e2) as i64 - e3 as i64) + 1)
     } else {
         None
     }

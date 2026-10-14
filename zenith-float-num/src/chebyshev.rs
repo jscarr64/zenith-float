@@ -247,7 +247,7 @@ mod tests {
     /// Plan gold: 20-term `exp` on `[-1, 1]`.
     const CHEBYSHEV_EXP_TERMS: usize = 20;
     /// Plan gold: error smaller than `10^{-15}`.
-    const CHEBYSHEV_EXP_ERR_DIGITS: isize = 15;
+    const CHEBYSHEV_EXP_ERR_DIGITS: i64 = 15;
 
     fn gold_p() -> (usize, RoundingMode) {
         (256, RoundingMode::ToEven)

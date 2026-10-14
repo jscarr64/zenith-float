@@ -117,7 +117,7 @@ pub trait ArgReductionEstimator {
     fn reduction_cost(n: usize, p: usize) -> u64;
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
-    fn reduction_effect(n: usize, m: isize) -> usize;
+    fn reduction_effect(n: usize, m: i64) -> usize;
 }
 
 /// Compute the number of reductions required for the best performance.
@@ -129,7 +129,7 @@ pub trait ArgReductionEstimator {
 pub(crate) fn series_cost_optimize<S: ArgReductionEstimator>(
     p: usize,
     polycoeff_gen: &impl PolycoeffGen,
-    m: isize,
+    m: i64,
     pwr_step: usize,
     ext: bool,
 ) -> (usize, usize, usize) {
@@ -141,8 +141,8 @@ pub(crate) fn series_cost_optimize<S: ArgReductionEstimator>(
         return (0, niter, m_eff);
     }
 
-    let mut reduction_times = if reduction_num_step as isize > m {
-        (reduction_num_step as isize - m) as usize
+    let mut reduction_times = if reduction_num_step as i64 > m {
+        (reduction_num_step as i64 - m) as usize
     } else {
         0
     };
@@ -347,8 +347,7 @@ fn series_linear<T: PolycoeffGen>(
 
         acc = acc.add(&part, p, RoundingMode::None)?;
 
-        if part.exponent() as isize <= acc.exponent() as isize - acc.mantissa_max_bit_len() as isize
-        {
+        if part.exponent() as i64 <= acc.exponent() as i64 - acc.mantissa_max_bit_len() as i64 {
             break;
         }
 
@@ -407,13 +406,13 @@ fn series_horner<T: PolycoeffGen>(
 
     // determine number of parts and cache plynomial coeffs.
     let mut cache = Vec::<ExactNumNumber>::new();
-    let mut x_p = -(x_first.exponent() as isize) - x_step.exponent() as isize;
+    let mut x_p = -(x_first.exponent() as i64) - x_step.exponent() as i64;
     let mut coef_p = 0;
 
-    while x_p + coef_p < p as isize - add.exponent() as isize {
+    while x_p + coef_p < p as i64 - add.exponent() as i64 {
         let coeff = polycoeff_gen.next(RoundingMode::None)?;
-        coef_p = -coeff.exponent() as isize;
-        x_p += -x_step.exponent() as isize;
+        coef_p = -coeff.exponent() as i64;
+        x_p += -x_step.exponent() as i64;
         cache.push(coeff.clone()?);
     }
 

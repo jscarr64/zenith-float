@@ -971,7 +971,7 @@ impl ExactNumArray {
         self.map_at(p, |x| x.powi(n, p, rm))
     }
     /// Elementwise `powsi`.
-    pub fn powsi(&self, n: isize, p: usize, rm: RoundingMode) -> Self {
+    pub fn powsi(&self, n: i64, p: usize, rm: RoundingMode) -> Self {
         self.map_at(p, |x| x.powsi(n, p, rm))
     }
 

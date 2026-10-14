@@ -46,7 +46,9 @@ impl ExactNumNumber {
 
     // Check the precision so it does not cause arithmetic overflows anywhere.
     pub(super) fn p_assertion(p: usize) -> Result<(), Error> {
-        if p >= (isize::MAX / 2 + EXPONENT_MIN as isize) as usize {
+        // Exponent arithmetic is done in i64; sizes in usize, which is 32 bits wide on some targets.
+        const P_LIMIT: u64 = (i64::MAX / 2 + EXPONENT_MIN as i64) as u64;
+        if p as u64 >= P_LIMIT || p >= usize::MAX / 4 {
             Err(Error::InvalidArgument)
         } else {
             Ok(())
@@ -388,11 +390,11 @@ impl ExactNumNumber {
 
         let e = e1 + e2 - e_shift;
 
-        if e > EXPONENT_MAX as isize {
+        if e > EXPONENT_MAX as i64 {
             return Err(Error::ExponentOverflow(s));
         }
 
-        if e < EXPONENT_MIN as isize {
+        if e < EXPONENT_MIN as i64 {
             let mut ret = ExactNumNumber {
                 m: m3,
                 s,
@@ -471,11 +473,11 @@ impl ExactNumNumber {
 
         let e = e1 - e2 + e_shift;
 
-        if e > EXPONENT_MAX as isize {
+        if e > EXPONENT_MAX as i64 {
             return Err(Error::ExponentOverflow(s));
         }
 
-        if e < EXPONENT_MIN as isize {
+        if e < EXPONENT_MIN as i64 {
             let mut ret = ExactNumNumber {
                 m: m3,
                 s,
@@ -519,27 +521,27 @@ impl ExactNumNumber {
         }
 
         // represent as mN * 2 ^ eNeff
-        let e1eff = self.e as isize - self.m.max_bit_len() as isize;
+        let e1eff = self.e as i64 - self.m.max_bit_len() as i64;
 
         let (e, m2_opt) = d2.normalize()?;
         let m2_normalized = m2_opt.as_ref().unwrap_or(&d2.m);
-        let e2eff = e - m2_normalized.max_bit_len() as isize;
+        let e2eff = e - m2_normalized.max_bit_len() as i64;
 
-        let finalize = |mut m3: Mantissa, mut e: isize| -> Result<ExactNumNumber, Error> {
+        let finalize = |mut m3: Mantissa, mut e: i64| -> Result<ExactNumNumber, Error> {
             let (m3, e) = if m3.bit_len() > 0 {
-                if e > EXPONENT_MAX as isize {
+                if e > EXPONENT_MAX as i64 {
                     return Err(Error::ExponentOverflow(self.s));
                 }
 
-                if e < EXPONENT_MIN as isize {
+                if e < EXPONENT_MIN as i64 {
                     // first, see if m3 is already subnormal, then shift accordingly
                     let mut excess = m3.max_bit_len() - m3.bit_len();
 
-                    if EXPONENT_MIN as isize - e > usize::MAX as isize {
+                    if EXPONENT_MIN as i64 - e > usize::MAX as i64 {
                         m3.set_zero();
                         e = 0;
                     } else {
-                        let shift = (EXPONENT_MIN as isize - e) as usize;
+                        let shift = (EXPONENT_MIN as i64 - e) as usize;
 
                         if excess < shift {
                             m3.extend_subnormal(shift)?;
@@ -550,7 +552,7 @@ impl ExactNumNumber {
                         m3.shift_left(shift);
                         m3.set_bit_len(m3.bit_len() + shift);
 
-                        e = EXPONENT_MIN as isize;
+                        e = EXPONENT_MIN as i64;
                     }
                 } else {
                     m3.normilize2();
@@ -587,12 +589,10 @@ impl ExactNumNumber {
 
             let m3 = m3.mul_mod(&powm, m2_normalized)?;
 
-            let e = e2eff + m3.bit_len() as isize;
+            let e = e2eff + m3.bit_len() as i64;
 
             finalize(m3, e)
-        } else if (self.m.bit_len() as isize + self.e as isize)
-            < (m2_normalized.bit_len() as isize + e)
-        {
+        } else if (self.m.bit_len() as i64 + self.e as i64) < (m2_normalized.bit_len() as i64 + e) {
             // self < d2, remainder = self
             self.clone()
         } else {
@@ -601,7 +601,7 @@ impl ExactNumNumber {
 
             let mut m2_normalized = if let Some(m2) = m2_opt { m2 } else { d2.m.clone()? };
 
-            let e2eff = e - m2_normalized.max_bit_len() as isize;
+            let e2eff = e - m2_normalized.max_bit_len() as i64;
             let ediff = (e2eff - e1eff) as usize;
 
             let m2l = m2_normalized.max_bit_len() + ediff;
@@ -615,15 +615,14 @@ impl ExactNumNumber {
                 self.m.rem(&m2_normalized)
             }?;
 
-            let e =
-                e1eff + m3.bit_len() as isize - m2_normalized.max_bit_len() as isize + m2l as isize;
+            let e = e1eff + m3.bit_len() as i64 - m2_normalized.max_bit_len() as i64 + m2l as i64;
 
             finalize(m3, e)
         }
     }
 
     // Return normilized mantissa and exponent with corresponding shift.
-    pub(super) fn normalize(&self) -> Result<(isize, Option<Mantissa>), Error> {
+    pub(super) fn normalize(&self) -> Result<(i64, Option<Mantissa>), Error> {
         if self.is_subnormal() {
             let mut mantissa = self.m.clone()?;
             let shift = mantissa.normilize2();
@@ -631,16 +630,16 @@ impl ExactNumNumber {
             #[cfg(not(target_pointer_width = "32"))]
             {
                 // checks for the case when usize is larger than exponent
-                debug_assert!((shift as isize) < (isize::MAX / 2 + EXPONENT_MIN as isize));
+                debug_assert!((shift as i64) < (i64::MAX / 2 + EXPONENT_MIN as i64));
 
-                if (self.e as isize) - shift as isize <= isize::MIN / 2 {
+                if (self.e as i64) - shift as i64 <= i64::MIN / 2 {
                     return Err(Error::ExponentOverflow(self.s));
                 }
             }
 
-            Ok((self.e as isize - shift as isize, Some(mantissa)))
+            Ok((self.e as i64 - shift as i64, Some(mantissa)))
         } else {
-            Ok((self.e as isize, None))
+            Ok((self.e as i64, None))
         }
     }
 
@@ -775,17 +774,17 @@ impl ExactNumNumber {
 
         #[cfg(not(target_pointer_width = "32"))]
         {
-            debug_assert!(shift <= isize::MAX / 2 && e >= isize::MIN / 2);
+            debug_assert!(shift <= i64::MAX / 2 && e >= i64::MIN / 2);
         }
         e -= shift;
 
-        if e > EXPONENT_MAX as isize {
+        if e > EXPONENT_MAX as i64 {
             return Err(Error::ExponentOverflow(d3.s));
         }
 
         d3.m = m3;
 
-        if e < EXPONENT_MIN as isize {
+        if e < EXPONENT_MIN as i64 {
             d3.e = EXPONENT_MIN;
             d3.subnormalize(e, rm);
         } else {
@@ -797,7 +796,7 @@ impl ExactNumNumber {
     }
 
     /// Make `self` subnormal
-    pub(crate) fn subnormalize(&mut self, e: isize, rm: RoundingMode) {
+    pub(crate) fn subnormalize(&mut self, e: i64, rm: RoundingMode) {
         debug_assert_eq!(self.exponent(), EXPONENT_MIN);
 
         if self.is_zero() {
@@ -806,10 +805,10 @@ impl ExactNumNumber {
 
         let is_positive = self.is_positive();
 
-        if (self.m.max_bit_len() as isize) + e > EXPONENT_MIN as isize {
+        if (self.m.max_bit_len() as i64) + e > EXPONENT_MIN as i64 {
             // subnormal
 
-            let mut shift = (EXPONENT_MIN as isize - e) as usize;
+            let mut shift = (EXPONENT_MIN as i64 - e) as usize;
 
             let rounded_before = self.op_inexact();
             let mut inexact = false;
@@ -835,8 +834,8 @@ impl ExactNumNumber {
         } else {
             // Every significand bit sits strictly below the minimum positive.
             // Compare the magnitude with half an ulp of that minimum.
-            let pbits = self.m.max_bit_len() as isize;
-            let below_half = e < EXPONENT_MIN as isize - pbits;
+            let pbits = self.m.max_bit_len() as i64;
+            let below_half = e < EXPONENT_MIN as i64 - pbits;
             let class = if below_half { -1 } else { Self::mantissa_vs_half(&self.m) };
             self.inexact = true;
             self.op_inexact = Some(true);
@@ -923,11 +922,11 @@ impl ExactNumNumber {
             return 1;
         }
 
-        let n1 = self.mantissa_max_bit_len() as isize - self.precision() as isize;
+        let n1 = self.mantissa_max_bit_len() as i64 - self.precision() as i64;
 
-        let n2 = d2.mantissa_max_bit_len() as isize - d2.precision() as isize;
+        let n2 = d2.mantissa_max_bit_len() as i64 - d2.precision() as i64;
 
-        let e: isize = self.e as isize - n1 - d2.e as isize + n2;
+        let e: i64 = self.e as i64 - n1 - d2.e as i64 + n2;
         if e > 0 {
             return 1;
         } else if e < 0 {
@@ -962,7 +961,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: `n` is larger than the number of bits in `m`;
     ///    `n` is smaller than the number of bits in `m`, but `m` does not represent corresponding subnormal number mantissa;
     ///    `n` is smaller than the number of bits in `m`, but `e` is not the minimum possible exponent;
-    ///    `n` or the size of `m` is too large (larger than isize::MAX / 2 + EXPONENT_MIN);
+    ///    `n` or the size of `m` is too large (larger than i64::MAX / 2 + EXPONENT_MIN);
     ///    `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
     pub fn from_raw_parts(
         m: &[Word],
@@ -973,11 +972,6 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let p = m.len() * WORD_BIT_SIZE;
         Self::p_assertion(p)?;
-
-        #[cfg(target_pointer_width = "32")]
-        if e < EXPONENT_MIN || e > EXPONENT_MAX {
-            return Err(Error::InvalidArgument);
-        }
 
         if n > p {
             Err(Error::InvalidArgument)
@@ -1026,16 +1020,11 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    ///  - InvalidArgument: size of `m` is larger than isize::MAX / 2 + EXPONENT_MIN, or
+    ///  - InvalidArgument: size of `m` is larger than i64::MAX / 2 + EXPONENT_MIN, or
     ///    when `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
     pub fn from_words(m: &[Word], s: Sign, mut e: Exponent) -> Result<Self, Error> {
         let p = m.len() * WORD_BIT_SIZE;
         Self::p_assertion(p)?;
-
-        #[cfg(target_pointer_width = "32")]
-        if e < EXPONENT_MIN || e > EXPONENT_MAX {
-            return Err(Error::InvalidArgument);
-        }
 
         let mut m = Mantissa::from_words(p, m)?;
         let bl = m.bit_len();
@@ -1044,8 +1033,8 @@ impl ExactNumNumber {
             e = 0;
         } else if bl < p {
             let mut shift = p - bl;
-            if (e as isize) < EXPONENT_MIN as isize + shift as isize {
-                shift = (e as isize - EXPONENT_MIN as isize) as usize;
+            if (e as i64) < EXPONENT_MIN as i64 + shift as i64 {
+                shift = (e as i64 - EXPONENT_MIN as i64) as usize;
                 e = EXPONENT_MIN;
             } else {
                 e -= shift as Exponent;
@@ -1130,12 +1119,12 @@ impl ExactNumNumber {
             if (self.e as usize) < self.m.max_bit_len() {
                 // remove integer part of mantissa & normalize at the same time
                 if let Some(shift) = self.m.find_one_from(self.e as usize) {
-                    let mut e = self.e as isize - shift as isize;
-                    if e < EXPONENT_MIN as isize {
-                        let shift1 = (self.e as isize - EXPONENT_MIN as isize) as usize;
+                    let mut e = self.e as i64 - shift as i64;
+                    if e < EXPONENT_MIN as i64 {
+                        let shift1 = (self.e as i64 - EXPONENT_MIN as i64) as usize;
                         ret.m.shift_left(shift1);
                         ret.m.mask_bits(shift - shift1, true);
-                        e = EXPONENT_MIN as isize;
+                        e = EXPONENT_MIN as i64;
                     } else {
                         ret.m.shift_left(shift);
                     }
@@ -1219,21 +1208,12 @@ impl ExactNumNumber {
     /// Note that if `self` is subnormal, the exponent may not change, but the mantissa will shift instead.
     /// `e` will be clamped to the range from EXPONENT_MIN to EXPONENT_MAX if it's outside of the range.
     pub fn set_exponent(&mut self, e: Exponent) {
-        #[cfg(target_pointer_width = "32")]
-        let e = if e < EXPONENT_MIN {
-            EXPONENT_MIN
-        } else if e > EXPONENT_MAX {
-            EXPONENT_MAX
-        } else {
-            e
-        };
-
         if !self.is_zero() {
             if self.is_subnormal() && e > EXPONENT_MIN {
-                let ediff = e as isize - EXPONENT_MIN as isize;
+                let ediff = e as i64 - EXPONENT_MIN as i64;
 
                 let n = self.mantissa_max_bit_len() - self.precision();
-                if n as isize >= ediff {
+                if n as i64 >= ediff {
                     self.m.shift_left(ediff as usize);
                     self.m.set_bit_len(self.m.bit_len() + ediff as usize);
                 } else {
@@ -1268,13 +1248,13 @@ impl ExactNumNumber {
     ///  - ExponentOverflow: rounding causes exponent overflow.
     ///  - InvalidArgument: `n` is too large.
     pub fn round(&self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
-        if n >= (isize::MAX / 2) as usize {
+        if n as u64 >= (i64::MAX / 2) as u64 {
             return Err(Error::InvalidArgument);
         }
 
         let mut ret = self.clone()?;
 
-        let e = self.mantissa_max_bit_len() as isize - self.e as isize;
+        let e = self.mantissa_max_bit_len() as i64 - self.e as i64;
 
         if e > 0 && e as usize > n && !self.is_zero() {
             let m = e as usize - n;
@@ -1300,8 +1280,8 @@ impl ExactNumNumber {
                     *ret.m.digits_mut().last_mut().unwrap() = WORD_SIGNIFICANT_BIT;
                     ret.m.set_bit_len(ret.mantissa_max_bit_len());
 
-                    let e = -(n as isize - 1);
-                    if e < EXPONENT_MIN as isize {
+                    let e = -(n as i64 - 1);
+                    if e < EXPONENT_MIN as i64 {
                         ret.e = EXPONENT_MIN;
                         ret.subnormalize(e, rm);
                     } else {
@@ -1358,16 +1338,10 @@ impl ExactNumNumber {
     pub fn random_normal(p: usize, exp_from: Exponent, exp_to: Exponent) -> Result<Self, Error> {
         Self::p_assertion(p)?;
 
-        #[cfg(target_pointer_width = "32")]
-        if exp_from < EXPONENT_MIN || exp_to > EXPONENT_MAX {
-            return Err(Error::InvalidArgument);
-        }
-
         let m = Mantissa::random_normal(p)?;
         let e = if exp_from < exp_to {
-            (crate::common::test_rng::random::<isize>().abs()
-                % (exp_to as isize - exp_from as isize)
-                + exp_from as isize) as Exponent
+            (crate::common::test_rng::random::<i64>().abs() % (exp_to as i64 - exp_from as i64)
+                + exp_from as i64) as Exponent
         } else {
             exp_from
         };
@@ -1652,7 +1626,7 @@ impl ExactNumNumber {
     pub(crate) fn div_by_2(&mut self, rm: RoundingMode) {
         let e = self.exponent();
         if e == EXPONENT_MIN {
-            self.subnormalize(e as isize - 1, rm);
+            self.subnormalize(e as i64 - 1, rm);
         } else {
             self.set_exponent(e - 1);
         }

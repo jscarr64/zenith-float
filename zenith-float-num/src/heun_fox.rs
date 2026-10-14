@@ -42,7 +42,7 @@ fn pow_real(z: &ExactNum, e: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     }
     if z.is_negative() {
         if let Some(n) = small_int(e, p, -64, 64) {
-            return z.powsi(n as isize, p, RoundingMode::None);
+            return z.powsi(n as i64, p, RoundingMode::None);
         }
         return cat_nan();
     }
@@ -524,9 +524,9 @@ fn all_unit_scales(xs: &[(ExactNum, ExactNum)], p: usize) -> bool {
 
 fn pow_i32(base: &ExactNum, n: i32, p: usize, _cc: &mut Consts) -> ExactNum {
     if n >= 0 {
-        base.powsi(n as isize, p, RoundingMode::None)
+        base.powsi(n as i64, p, RoundingMode::None)
     } else {
-        let y = base.powsi((-n) as isize, p, RoundingMode::None);
+        let y = base.powsi((-n) as i64, p, RoundingMode::None);
         ExactNum::from_u8(1, p).div(&y, p, RoundingMode::None)
     }
 }

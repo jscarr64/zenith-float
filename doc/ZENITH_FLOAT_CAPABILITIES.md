@@ -57,8 +57,8 @@ Both pass 77/77. There is no separate `alloc` feature: `alloc` is always require
 | `Word` | `u64` on 64-bit targets; `u32` on 32-bit |
 | `WORD_BIT_SIZE` | 64 or 32 accordingly |
 | `INLINE_WORDS` | `2` — mantissas of ≤ 128 bits live on the stack |
-| `EXPONENT_MAX` | `i32::MAX` on 64-bit; `i32::MAX / 4` on 32-bit |
-| `EXPONENT_MIN` | `i32::MIN` on 64-bit; `i32::MIN / 4` on 32-bit |
+| `EXPONENT_MAX` | `i32::MAX` on every target |
+| `EXPONENT_MIN` | `i32::MIN` on every target |
 | Default operator precision | 128 bits, `ToEven` — used by `+` `−` `×` `÷` operator traits only |
 | `MAX_PREC_RETRY` | `256` — extra word-sized retry steps beyond `p` for correct-rounding loops |
 | `SVD_ITER_MAX` | `64` — QR sweeps per singular value in `svd_decomp`; then `None` |

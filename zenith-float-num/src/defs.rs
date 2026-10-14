@@ -41,21 +41,11 @@ const _: [(); 1] = [(); (core::mem::size_of::<Word>() <= core::mem::size_of::<us
 /// An exponent.
 pub type Exponent = i32;
 
-/// Maximum exponent value.
-#[cfg(not(target_pointer_width = "32"))]
+/// Maximum exponent value. The same on every target.
 pub const EXPONENT_MAX: Exponent = Exponent::MAX;
 
-/// Maximum exponent value.
-#[cfg(target_pointer_width = "32")]
-pub const EXPONENT_MAX: Exponent = Exponent::MAX / 4;
-
-/// Minimum exponent value.
-#[cfg(not(target_pointer_width = "32"))]
+/// Minimum exponent value. The same on every target.
 pub const EXPONENT_MIN: Exponent = Exponent::MIN;
-
-/// Minimum exponent value.
-#[cfg(target_pointer_width = "32")]
-pub const EXPONENT_MIN: Exponent = Exponent::MIN / 4;
 
 /// Maximum value of a word.
 pub const WORD_MAX: Word = Word::MAX;

@@ -1,7 +1,7 @@
 //! IEEE-style exponent decomposition without hardware floats.
 
 use crate::common::util::round_p;
-use crate::defs::{Error, EXPONENT_MAX, EXPONENT_MIN};
+use crate::defs::Error;
 use crate::num::ExactNumNumber;
 use crate::{Exponent, RoundingMode, Sign};
 
@@ -28,7 +28,8 @@ impl ExactNumNumber {
         }
         let e = self.exponent();
         match e.checked_add(n) {
-            Some(sum) if Self::exponent_in_range(sum) => {
+            // The exponent range is all of `Exponent`, so `checked_add` is the range check.
+            Some(sum) => {
                 let mut ret = self.clone()?;
                 ret.set_exponent(sum);
                 ret.set_precision(p, rm)?;
@@ -42,14 +43,6 @@ impl ExactNumNumber {
                 }
             }
         }
-    }
-
-    #[cfg_attr(
-        not(target_pointer_width = "32"),
-        allow(clippy::absurd_extreme_comparisons)
-    )]
-    fn exponent_in_range(e: Exponent) -> bool {
-        (EXPONENT_MIN..=EXPONENT_MAX).contains(&e)
     }
 
     /// Binary `logb`: `floor(log2(|self|))` as an integer-valued float.

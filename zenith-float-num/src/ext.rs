@@ -713,7 +713,7 @@ impl ExactNum {
     /// The function returns NaN if the precision `p` is incorrect, or Inf if `self` is zero and `n` is negative.
     ///
     /// Accuracy: correctly-rounded
-    pub fn powsi(&self, n: isize, p: usize, rm: RoundingMode) -> Self {
+    pub fn powsi(&self, n: i64, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v1) => Self::result_to_ext_rm(v1.powsi(n, p, rm), false, true, p, rm),
             Flavor::Inf(s1) => {
@@ -1349,7 +1349,7 @@ impl ExactNum {
     /// - `n` is larger than the number of bits in `m`.
     /// - `n` is smaller than the number of bits in `m`, but `m` does not represent corresponding subnormal number mantissa.
     /// - `n` is smaller than the number of bits in `m`, but `e` is not the minimum possible exponent.
-    /// - `n` or the size of `m` is too large (larger than isize::MAX / 2 + EXPONENT_MIN).
+    /// - `n` or the size of `m` is too large (larger than i64::MAX / 2 + EXPONENT_MIN).
     /// - `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
     pub fn from_raw_parts(m: &[Word], n: usize, s: Sign, e: Exponent, inexact: bool) -> Self {
         Self::result_to_ext(

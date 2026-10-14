@@ -195,7 +195,7 @@ fn hypergeom_2f0_lentz(
 ) -> Option<ExactComplex> {
     let one = ExactComplex::one(work_p);
     let tiny = ExactComplex::from_real(
-        ExactNum::from_u8(2, work_p).powsi(-(work_p as isize), work_p, RoundingMode::None),
+        ExactNum::from_u8(2, work_p).powsi(-(work_p as i64), work_p, RoundingMode::None),
         work_p,
     );
     let mut f = one.clone();
@@ -1237,7 +1237,7 @@ mod tests {
         let i_z = z.bessel_i(&nu0, p, rm, &mut cc);
         assert!(cnear(&i_z, &via_j, p));
 
-        let h = ExactNum::from_u8(2, p).powsi(-((p as isize) / 8), p, rm);
+        let h = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
         let hc = ExactComplex::from_real(h, p);
         let num = z.add(&hc, p, rm).bessel_j_nu(&nu0, p, rm, &mut cc).sub(
             &z.sub(&hc, p, rm).bessel_j_nu(&nu0, p, rm, &mut cc),
@@ -1252,7 +1252,7 @@ mod tests {
         let z0 = ExactComplex::zero(p);
         assert!(z0.bessel_j_nu(&half, p, rm, &mut cc).is_nan());
 
-        let eps = ExactNum::from_u8(2, p).powsi(-((p as isize) / 8), p, rm);
+        let eps = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
         let above = ExactComplex::new(ExactNum::from_i8(-1, p), eps.clone());
         let below = ExactComplex::new(
             ExactNum::from_i8(-1, p),

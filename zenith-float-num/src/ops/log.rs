@@ -80,8 +80,8 @@ impl ArgReductionEstimator for LnArgReductionEstimator {
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
     #[inline]
-    fn reduction_effect(n: usize, m: isize) -> usize {
-        (m + n as isize) as usize
+    fn reduction_effect(n: usize, m: i64) -> usize {
+        (m + n as i64) as usize
     }
 }
 
@@ -107,8 +107,8 @@ impl ExactNumNumber {
         }
 
         let mut m = self.clone()?;
-        let e = m.normalize2() as isize;
-        let e = self.exponent() as isize - e;
+        let e = m.normalize2() as i64;
+        let e = self.exponent() as i64 - e;
 
         m.set_exponent(0);
 
@@ -142,7 +142,7 @@ impl ExactNumNumber {
             } else {
                 let p2 = cc.ln_2_num(p1.mantissa_max_bit_len(), RoundingMode::None)?;
 
-                let mut n = Self::from_usize(e.unsigned_abs())?;
+                let mut n = Self::from_usize(crate::common::util::abs_usize(e))?;
                 if e < 0 {
                     n.set_sign(Sign::Neg);
                 }
@@ -174,7 +174,7 @@ impl ExactNumNumber {
         // sqrt gives error not more than 2^(-p+1),
         // argument substitution for atanh gives 2^(-p+5),
         // e_eff compensates error of the series and gives 2^(-p+1).
-        let add_prec = 7 - e_eff as isize;
+        let add_prec = 7 - e_eff as i64;
         let p_arg = p + if add_prec > 0 { add_prec as usize } else { 5 };
         x.set_precision(p_arg, rm)?;
 
@@ -231,15 +231,15 @@ impl ExactNumNumber {
         }
 
         let mut m = self.clone()?;
-        let e = m.normalize2() as isize;
-        let e = self.exponent() as isize - e;
+        let e = m.normalize2() as i64;
+        let e = self.exponent() as i64 - e;
 
         m.set_exponent(0);
 
         let zeroes_cnt = count_leading_zeroes_skip_first(m.mantissa().digits());
         if zeroes_cnt == m.mantissa_max_bit_len() {
             // special case: x = 0.5
-            let mut ret = Self::from_usize((e - 1).unsigned_abs())?;
+            let mut ret = Self::from_usize(crate::common::util::abs_usize(e - 1))?;
 
             if e < 1 {
                 ret.set_sign(Sign::Neg);
@@ -275,7 +275,7 @@ impl ExactNumNumber {
 
             let p3 = p1.div(&p2, p_x, RoundingMode::None)?;
 
-            let mut n = Self::from_usize(e.unsigned_abs())?;
+            let mut n = Self::from_usize(crate::common::util::abs_usize(e))?;
             if e < 0 {
                 n.set_sign(Sign::Neg);
             }

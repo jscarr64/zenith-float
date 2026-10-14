@@ -241,7 +241,7 @@ impl Mantissa {
         is_positive: bool,
         full_prec: bool,
         inexact: &mut bool,
-    ) -> Result<(isize, Self), Error> {
+    ) -> Result<(i64, Self), Error> {
         // Input is expected to be normalized.
         debug_assert!(self.m[self.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
         debug_assert!(m2.m[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
@@ -306,7 +306,7 @@ impl Mantissa {
 
         debug_assert!(c == 0);
 
-        let mut shift = Self::maximize(&mut m3.m) as isize;
+        let mut shift = Self::maximize(&mut m3.m) as i64;
 
         if full_prec {
             m3.m.trunc_trailing_zeroes();
@@ -344,7 +344,7 @@ impl Mantissa {
         is_positive: bool,
         full_prec: bool,
         inexact: &mut bool,
-    ) -> Result<(isize, Self), Error> {
+    ) -> Result<(i64, Self), Error> {
         debug_assert!(self.m[self.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
         debug_assert!(m2.m[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
 
@@ -423,7 +423,7 @@ impl Mantissa {
             }
         };
 
-        let mut shift = -(c as isize);
+        let mut shift = -(c as i64);
 
         if full_prec {
             m3.m.trunc_trailing_zeroes();
@@ -459,7 +459,7 @@ impl Mantissa {
         is_positive: bool,
         full_prec: bool,
         inexact: &mut bool,
-    ) -> Result<(isize, Self), Error> {
+    ) -> Result<(i64, Self), Error> {
         debug_assert!(self.m[self.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
         debug_assert!(m2.m[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
 
@@ -467,7 +467,7 @@ impl Mantissa {
 
         Self::mul_unbalanced(&self.m, &m2.m, &mut m3)?;
 
-        let mut shift = Self::maximize(&mut m3) as isize;
+        let mut shift = Self::maximize(&mut m3) as i64;
 
         let mut m3 = Mantissa { m: m3, n: 0 };
 
@@ -508,12 +508,12 @@ impl Mantissa {
         rm: RoundingMode,
         is_positive: bool,
         inexact: &mut bool,
-    ) -> Result<(isize, Self), Error> {
+    ) -> Result<(i64, Self), Error> {
         let p = Self::bit_len_to_word_len(p);
 
         let k = (p + m2.len()).max(self.len()) + 1;
 
-        let mut e_shift = (m2.len() as isize - k as isize) * WORD_BIT_SIZE as isize;
+        let mut e_shift = (m2.len() as i64 - k as i64) * WORD_BIT_SIZE as i64;
 
         let mut m1 = Self::reserve_new(k)?;
         if k > self.len() {
@@ -526,7 +526,7 @@ impl Mantissa {
 
         let (q, r) = Self::div_unbalanced(&m1, &m2.m)?;
 
-        e_shift += q.len() as isize * WORD_BIT_SIZE as isize;
+        e_shift += q.len() as i64 * WORD_BIT_SIZE as i64;
 
         let mut m3 = Mantissa { m: q, n: 0 };
 
@@ -550,7 +550,7 @@ impl Mantissa {
             }
         }
 
-        e_shift -= Self::maximize(&mut m3.m) as isize;
+        e_shift -= Self::maximize(&mut m3.m) as i64;
 
         if m3.round_mantissa(
             (m3.len() - p) * WORD_BIT_SIZE,
@@ -1123,7 +1123,7 @@ impl Mantissa {
         is_positive: bool,
         inexact: &mut bool,
         odd_exp: bool,
-    ) -> Result<(isize, Self), Error> {
+    ) -> Result<(i64, Self), Error> {
         let p = Self::bit_len_to_word_len(p);
 
         let k = (p.max(self.len()) + 1) * 2;
@@ -1164,7 +1164,7 @@ impl Mantissa {
             }
         }
 
-        _ = Self::maximize(&mut m3.m) as isize;
+        _ = Self::maximize(&mut m3.m) as i64;
 
         if m3.round_mantissa(
             (m3.len() - p) * WORD_BIT_SIZE,
@@ -1190,14 +1190,14 @@ impl Mantissa {
         rm: RoundingMode,
         is_positive: bool,
         inexact: &mut bool,
-        add_exp: isize,
-    ) -> Result<(isize, Self), Error> {
+        add_exp: i64,
+    ) -> Result<(i64, Self), Error> {
         let p = Self::bit_len_to_word_len(p);
 
         let k = p.max(self.len()) + 1;
         let k3 = k * 3;
 
-        let mut e_shift = -((k * WORD_BIT_SIZE) as isize);
+        let mut e_shift = -((k * WORD_BIT_SIZE) as i64);
 
         let mut m1 = Self::reserve_new(k3)?;
 
@@ -1233,9 +1233,9 @@ impl Mantissa {
             }
         }
 
-        e_shift += (m3.len() * WORD_BIT_SIZE) as isize;
+        e_shift += (m3.len() * WORD_BIT_SIZE) as i64;
 
-        e_shift -= Self::maximize(&mut m3.m) as isize;
+        e_shift -= Self::maximize(&mut m3.m) as i64;
 
         if m3.round_mantissa(
             (m3.len() - p) * WORD_BIT_SIZE,

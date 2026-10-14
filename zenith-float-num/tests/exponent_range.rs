@@ -110,7 +110,7 @@ fn arithmetic_at_the_top_of_the_range() {
                     Some(EXPONENT_MAX - 1),
                     "{info} max/2"
                 );
-                assert_eq!(max.sub(&max, p, rm).is_zero(), true, "{info} max-max");
+                assert!(max.sub(&max, p, rm).is_zero(), "{info} max-max");
                 let toward_zero = rm == RoundingMode::ToZero
                     || (rm == RoundingMode::Down && !negative)
                     || (rm == RoundingMode::Up && negative);

@@ -45,7 +45,7 @@ impl ExactNumNumber {
         loop {
             let mut p_x = p_wrk;
 
-            let mut ret = if (self.exponent() as isize - 1) / 2 > p_x as isize + 2 {
+            let mut ret = if (self.exponent() as i64 - 1) / 2 > p_x as i64 + 2 {
                 // acosh(x) = ln(2*x)
                 if self.exponent() == EXPONENT_MAX {
                     // ln(2) + ln(x)

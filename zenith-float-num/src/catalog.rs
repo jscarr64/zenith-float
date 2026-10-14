@@ -147,7 +147,7 @@ fn hurwitz_em(s: u32, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     for k in 0..n_front {
         let t = a.add(&ExactNum::from_u32(k as u32, p), p, RoundingMode::None);
         let term = ExactNum::from_u8(1, p).div(
-            &t.powsi(s as isize, p, RoundingMode::None),
+            &t.powsi(s as i64, p, RoundingMode::None),
             p,
             RoundingMode::None,
         );
@@ -160,14 +160,14 @@ fn hurwitz_em(s: u32, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     );
     let sm1 = ExactNum::from_u32(s - 1, p);
     let tail_int = ExactNum::from_u8(1, p).div(
-        &n_a.powsi((s - 1) as isize, p, RoundingMode::None)
+        &n_a.powsi((s - 1) as i64, p, RoundingMode::None)
             .mul(&sm1, p, RoundingMode::None),
         p,
         RoundingMode::None,
     );
     let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None);
     let tail_half = half.div(
-        &n_a.powsi(s as isize, p, RoundingMode::None),
+        &n_a.powsi(s as i64, p, RoundingMode::None),
         p,
         RoundingMode::None,
     );
@@ -182,7 +182,7 @@ fn hurwitz_em(s: u32, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
             rising = rising.mul(&ExactNum::from_u32(s + i as u32, p), p, RoundingMode::None);
         }
         let fact = factorial_n(2 * j, p);
-        let pow = n_a.powsi((s + 2 * j as u32 - 1) as isize, p, RoundingMode::None);
+        let pow = n_a.powsi((s + 2 * j as u32 - 1) as i64, p, RoundingMode::None);
         let term = b2j.mul(&rising, p, RoundingMode::None).div(
             &fact.mul(&pow, p, RoundingMode::None),
             p,
@@ -203,7 +203,7 @@ fn deriv_ln_over_x2(x: &ExactNum, m: usize, p: usize, cc: &mut Consts) -> ExactN
             lnx.clone()
         } else {
             let mut t = factorial_n(k - 1, p).div(
-                &x.powsi(k as isize, p, RoundingMode::None),
+                &x.powsi(k as i64, p, RoundingMode::None),
                 p,
                 RoundingMode::None,
             );
@@ -214,7 +214,7 @@ fn deriv_ln_over_x2(x: &ExactNum, m: usize, p: usize, cc: &mut Consts) -> ExactN
         };
         let j = m - k;
         let mut v = factorial_n(j + 1, p).div(
-            &x.powsi((2 + j) as isize, p, RoundingMode::None),
+            &x.powsi((2 + j) as i64, p, RoundingMode::None),
             p,
             RoundingMode::None,
         );
@@ -939,7 +939,7 @@ impl ExactNum {
             }
             extra = extra.add(
                 &ExactNum::from_u8(1, wrk).div(
-                    &aa.powsi(s as isize, wrk, RoundingMode::None),
+                    &aa.powsi(s as i64, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                 ),
@@ -1333,7 +1333,7 @@ impl ExactNum {
         if self.cmp(&one.neg()) == Some(0) {
             let z = ExactNum::from_u32(n as u32, wrk).riemann_zeta(wrk, RoundingMode::None, cc);
             let two = ExactNum::from_u8(2, wrk);
-            let f = two.powsi(1 - (n as isize), wrk, RoundingMode::None).sub(
+            let f = two.powsi(1 - (n as i64), wrk, RoundingMode::None).sub(
                 &one,
                 wrk,
                 RoundingMode::None,
@@ -1343,7 +1343,7 @@ impl ExactNum {
         let mut xk = self.clone();
         let mut sum = ExactNum::new(wrk);
         for k in 1..=series_cap(wrk).saturating_mul(4) {
-            let den = ExactNum::from_u32(k as u32, wrk).powsi(n as isize, wrk, RoundingMode::None);
+            let den = ExactNum::from_u32(k as u32, wrk).powsi(n as i64, wrk, RoundingMode::None);
             let term = xk.div(&den, wrk, RoundingMode::None);
             sum = sum.add(&term, wrk, RoundingMode::None);
             if under_word(&term, p) {

@@ -61,11 +61,6 @@ impl ExactNumNumber {
             }
         }
 
-        #[cfg(target_pointer_width = "32")]
-        if e < EXPONENT_MIN || e > EXPONENT_MAX {
-            return Err(Error::InvalidArgument);
-        }
-
         match rdx.value() {
             2 => Self::conv_from_binary(sign, digits, e, p, rm),
             10 => Self::conv_from_dec(sign, digits, e, p, rm, cc),
@@ -167,7 +162,7 @@ impl ExactNumNumber {
             let mut v = *v;
 
             if v == 0 {
-                e_shift -= shift as isize;
+                e_shift -= shift as i64;
                 zeroes += 1;
             } else {
                 if v >= base {
@@ -196,9 +191,9 @@ impl ExactNumNumber {
             let mut m = Mantissa::new(msz)?;
 
             // exponent
-            let e = e as isize * shift as isize + e_shift;
+            let e = e as i64 * shift as i64 + e_shift;
 
-            if e > EXPONENT_MAX as isize {
+            if e > EXPONENT_MAX as i64 {
                 return Err(Error::ExponentOverflow(sign));
             }
 
@@ -237,7 +232,7 @@ impl ExactNumNumber {
 
             m.set_bit_len(m.max_bit_len());
 
-            let mut ret = if e < EXPONENT_MIN as isize {
+            let mut ret = if e < EXPONENT_MIN as i64 {
                 if p < usize::MAX {
                     let mut num = ExactNumNumber::from_raw_unchecked(m, sign, EXPONENT_MIN, false);
 
@@ -253,7 +248,7 @@ impl ExactNumNumber {
 
                     num
                 } else {
-                    let e_shift = (EXPONENT_MIN as isize - e) as usize;
+                    let e_shift = (EXPONENT_MIN as i64 - e) as usize;
                     let newbitlen = m.bit_len().saturating_add(e_shift);
 
                     Self::p_assertion(round_p(newbitlen))?;
@@ -315,7 +310,7 @@ impl ExactNumNumber {
             }
         }
 
-        let exp_adj = e as isize - digits.len() as isize;
+        let exp_adj = e as i64 - digits.len() as i64;
         if exp_adj > 0 {
             let pwr = b.powi(exp_adj as usize, p_wrk, RoundingMode::None)?;
             acc = acc.mul(&pwr, p_wrk, RoundingMode::None)?;
@@ -358,7 +353,7 @@ impl ExactNumNumber {
         let x = ExactNumNumber::from_raw_unchecked(m, sign, me, false);
 
         // exponent part
-        let n = e as isize - digits.len() as isize;
+        let n = e as i64 - digits.len() as i64;
 
         let p = if p < usize::MAX {
             p
@@ -374,8 +369,8 @@ impl ExactNumNumber {
 
         // error estimation
         let mut err = 0;
-        let npowmax = n.unsigned_abs() / TEN_PWR_MAX_FROM_DEC;
-        let tenpowrem = n.unsigned_abs() % TEN_PWR_MAX_FROM_DEC;
+        let npowmax = crate::common::util::abs_usize(n) / TEN_PWR_MAX_FROM_DEC;
+        let tenpowrem = crate::common::util::abs_usize(n) % TEN_PWR_MAX_FROM_DEC;
         if npowmax != 0 {
             err += 3 * npowmax;
         }
@@ -491,12 +486,12 @@ impl ExactNumNumber {
             x.set_inexact(false);
 
             let n_wrk = ((p_wrk as i64 - self.exponent() as i64 + subn_e as i64) * 301029996
-                / 1000000000) as isize
+                / 1000000000)
                 + 1;
 
             let mut err_acc = 0;
 
-            let mut pwr = n_wrk.unsigned_abs();
+            let mut pwr = crate::common::util::abs_usize(n_wrk);
             if pwr > TEN_PWR_MAX_TO_DEC {
                 let tp = TEN.powi(TEN_PWR_MAX_TO_DEC, p_wrk, RoundingMode::None)?;
                 err_acc += 1;
@@ -544,12 +539,12 @@ impl ExactNumNumber {
             let tenpowers = cc.tenpowers(k)?;
             let mut digits = m.conv_to_dec(1 << k, tenpowers, k.saturating_sub(1), true)?;
 
-            let mut e_out = digits.len() as isize - n_wrk;
+            let mut e_out = digits.len() as i64 - n_wrk;
 
             let mut e_subn = 0;
-            if e_out < EXPONENT_MIN as isize {
-                e_subn = (EXPONENT_MIN as isize - e_out) as usize;
-                e_out = EXPONENT_MIN as isize;
+            if e_out < EXPONENT_MIN as i64 {
+                e_subn = (EXPONENT_MIN as i64 - e_out) as usize;
+                e_out = EXPONENT_MIN as i64;
             }
 
             let mut e_out = e_out as Exponent;

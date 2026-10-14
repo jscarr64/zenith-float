@@ -19,7 +19,7 @@ pub struct ParserState<'a> {
     s_len: usize,
     sign: Sign,
     mantissa_bytes: Vec<u8>,
-    e: isize,
+    e: i64,
     inf: bool,
     nan: bool,
     explicit_nan: bool,
@@ -148,16 +148,16 @@ fn parse_num(parser_state: &mut ParserState, rdx: Radix) -> Result<(), Error> {
             parser_state.inf = false;
         } else {
             if int_len != 0 {
-                parser_state.e = parser_state.e.saturating_add(int_len as isize);
+                parser_state.e = parser_state.e.saturating_add(int_len as i64);
             }
 
-            if parser_state.e < EXPONENT_MIN as isize {
+            if parser_state.e < EXPONENT_MIN as i64 {
                 let mut zero = Vec::new();
                 zero.try_reserve_exact(1)?;
                 zero.push(0);
                 parser_state.mantissa_bytes = zero;
                 parser_state.e = 0;
-            } else if parser_state.e > EXPONENT_MAX as isize {
+            } else if parser_state.e > EXPONENT_MAX as i64 {
                 parser_state.inf = true;
             }
         }
@@ -263,16 +263,16 @@ fn parse_exp(parser_state: &mut ParserState, rdx: Radix) -> bool {
             _ => {}
         };
     }
-    let e_thres = EXPONENT_MAX.unsigned_abs().max(EXPONENT_MIN.unsigned_abs()) as isize;
+    let e_thres = EXPONENT_MAX.unsigned_abs().max(EXPONENT_MIN.unsigned_abs()) as i64;
     while let Some(c) = ch {
         if is_radix_digit(c, rdx) {
             digits += 1;
             if parser_state.e <= e_thres {
-                parser_state.e = parser_state.e.saturating_mul(rdx.value() as isize);
+                parser_state.e = parser_state.e.saturating_mul(rdx.value() as i64);
                 let Some(digit) = c.to_digit(rdx.value() as u32) else {
                     break;
                 };
-                parser_state.e = parser_state.e.saturating_add(digit as isize);
+                parser_state.e = parser_state.e.saturating_add(digit as i64);
             }
         } else {
             break;
@@ -390,28 +390,12 @@ mod tests {
         assert!(e == -0x1f7);
 
         // large exp
-        let numstr;
-        #[cfg(not(target_pointer_width = "32"))]
-        {
-            numstr = "abc.def09123e_e+7FFFFFFF";
-        }
-        #[cfg(target_pointer_width = "32")]
-        {
-            numstr = "abc.def09123e_e+1FFFFFFF";
-        }
+        let numstr = "abc.def09123e_e+7FFFFFFF";
         let ps = parse(numstr, Radix::Hex).unwrap();
         assert!(ps.is_inf());
         assert!(ps.sign().is_positive());
 
-        let numstr;
-        #[cfg(not(target_pointer_width = "32"))]
-        {
-            numstr = "-abc.def09123e_e+7FFFFFFF";
-        }
-        #[cfg(target_pointer_width = "32")]
-        {
-            numstr = "-abc.def09123e_e+1FFFFFFF";
-        }
+        let numstr = "-abc.def09123e_e+7FFFFFFF";
         let ps = parse(numstr, Radix::Hex).unwrap();
         assert!(ps.is_inf());
         assert!(!ps.is_nan());

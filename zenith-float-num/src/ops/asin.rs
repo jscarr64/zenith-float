@@ -49,7 +49,7 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len());
 
-        compute_small_exp!(self, self.exponent() as isize * 2 - 2, false, p_wrk, p, rm);
+        compute_small_exp!(self, self.exponent() as i64 * 2 - 2, false, p_wrk, p, rm);
 
         let mut additional_prec = 8;
         if self.exponent() == 0 {
