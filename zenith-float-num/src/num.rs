@@ -1653,6 +1653,11 @@ impl ExactNumNumber {
         Ok(c)
     }
 
+    /// Records whether the operation that produced `self` rounded it.
+    pub(crate) fn set_op_inexact(&mut self, op: bool) {
+        self.op_inexact = Some(op);
+    }
+
     /// Returns true if the operation that produced `self` rounded. Values whose producing
     /// operation does not record that report the accumulated flag, `inexact()`.
     #[inline]

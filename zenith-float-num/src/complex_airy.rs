@@ -131,6 +131,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn ai(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.ai_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::ai`] on operands without inexact history.
+    fn ai_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -148,6 +155,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn bi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.bi_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::bi`] on operands without inexact history.
+    fn bi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }

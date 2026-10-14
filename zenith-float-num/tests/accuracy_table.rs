@@ -115,6 +115,7 @@ const SKIP: &[&str] = &[
     "convert_from_radix",
     "convert_to_radix",
     "inexact",
+    "inexact_accumulated",
     "set_inexact",
     "try_set_precision",
     "frexp",

@@ -54,9 +54,29 @@ impl ExactComplex {
         Self::new(ExactNum::new(p), ExactNum::from_u8(1, p))
     }
 
-    /// True if either part is inexact.
+    /// True if this operation rounded either part. Operations on `ExactComplex` report the
+    /// operation alone, like [`ExactNum::inexact`]; see [`Self::inexact_accumulated`].
     pub fn inexact(&self) -> bool {
+        self.re.inexact() || self.im.inexact()
+    }
+
+    /// True if either part, or any value it was computed from, was rounded.
+    pub fn inexact_accumulated(&self) -> bool {
         self.re.inexact_accumulated() || self.im.inexact_accumulated()
+    }
+
+    /// Copy of `self` without inexact history: the operand of a per-operation flag.
+    pub(crate) fn exact_copy(&self) -> Self {
+        Self::new(self.re.exact_copy_ext(), self.im.exact_copy_ext())
+    }
+
+    /// Flags `r`, computed from clean operands: the operation rounded if any step rounded
+    /// either part; the accumulated flag adds the operands' history.
+    pub(crate) fn per_op(inputs: bool, mut r: Self) -> Self {
+        let op = r.re.inexact_accumulated() || r.im.inexact_accumulated();
+        r.re.finish_part(op, inputs);
+        r.im.finish_part(op, inputs);
+        r
     }
 
     /// Sets the inexact flag on both parts.
@@ -82,6 +102,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.reciprocal_word(p, rm))
+    }
+
+    /// Implementation of [`Self::reciprocal`] on operands without inexact history.
+    fn reciprocal_word(&self, p: usize, rm: RoundingMode) -> Self {
         Self::one(p).div(self, p, rm)
     }
 
@@ -92,6 +119,13 @@ impl ExactComplex {
 
     /// Complex conjugate.
     pub fn conj(&self) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.conj_word())
+    }
+
+    /// Implementation of [`Self::conj`] on operands without inexact history.
+    fn conj_word(&self) -> Self {
         Self::new(self.re.clone(), self.im.neg())
     }
 
@@ -116,6 +150,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn add(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy();
+        let rhs_c = rhs.exact_copy();
+        let inputs = self.inexact_accumulated() || rhs.inexact_accumulated();
+        Self::per_op(inputs, this.add_word(&rhs_c, p, rm))
+    }
+
+    /// Implementation of [`Self::add`] on operands without inexact history.
+    fn add_word(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         Self::new(self.re.add(&rhs.re, p, rm), self.im.add(&rhs.im, p, rm))
     }
 
@@ -123,6 +165,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn sub(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy();
+        let rhs_c = rhs.exact_copy();
+        let inputs = self.inexact_accumulated() || rhs.inexact_accumulated();
+        Self::per_op(inputs, this.sub_word(&rhs_c, p, rm))
+    }
+
+    /// Implementation of [`Self::sub`] on operands without inexact history.
+    fn sub_word(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         Self::new(self.re.sub(&rhs.re, p, rm), self.im.sub(&rhs.im, p, rm))
     }
 
@@ -134,6 +184,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn mul(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy();
+        let rhs_c = rhs.exact_copy();
+        let inputs = self.inexact_accumulated() || rhs.inexact_accumulated();
+        Self::per_op(inputs, this.mul_word(&rhs_c, p, rm))
+    }
+
+    /// Implementation of [`Self::mul`] on operands without inexact history.
+    fn mul_word(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         let ac = self.re.mul(&rhs.re, p, rm);
         let bd = self.im.mul(&rhs.im, p, rm);
         let ad = self.re.mul(&rhs.im, p, rm);
@@ -145,6 +203,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn div(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy();
+        let rhs_c = rhs.exact_copy();
+        let inputs = self.inexact_accumulated() || rhs.inexact_accumulated();
+        Self::per_op(inputs, this.div_word(&rhs_c, p, rm))
+    }
+
+    /// Implementation of [`Self::div`] on operands without inexact history.
+    fn div_word(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         let ac = self.re.mul(&rhs.re, p, RoundingMode::None);
         let bd = self.im.mul(&rhs.im, p, RoundingMode::None);
         let bc = self.im.mul(&rhs.re, p, RoundingMode::None);
@@ -164,6 +230,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn exp(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.exp_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::exp`] on operands without inexact history.
+    fn exp_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let er = self.re.exp(p, RoundingMode::None, cc);
         let (s, c) = self.im.sin_cos(p, RoundingMode::None, cc);
         Self::new(er.mul(&c, p, rm), er.mul(&s, p, rm))
@@ -177,6 +250,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn ln(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.ln_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::ln`] on operands without inexact history.
+    fn ln_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.re.is_nan()
             || self.im.is_nan()
             || self.re.is_inf()
@@ -224,6 +304,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn sin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.sin_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::sin`] on operands without inexact history.
+    fn sin_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let (sn, cs) = self.re.sin_cos(p, RoundingMode::None, cc);
         let (sh, ch) = self.im.sinh_cosh(p, RoundingMode::None, cc);
         Self::new(sn.mul(&ch, p, rm), cs.mul(&sh, p, rm))
@@ -233,9 +320,41 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.cos_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::cos`] on operands without inexact history.
+    fn cos_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let (sn, cs) = self.re.sin_cos(p, RoundingMode::None, cc);
         let (sh, ch) = self.im.sinh_cosh(p, RoundingMode::None, cc);
         Self::new(cs.mul(&ch, p, rm), sn.mul(&sh, p, rm).neg())
+    }
+
+    /// The square root when it is exact at `p_x` bits (`sqrt(3+4i) = 2+i`), found with the
+    /// algebraic form `t = sqrt((|z|+|re|)/2)`, `im / (2t)`; `None` when any step rounds.
+    fn sqrt_exact(&self, p_x: usize) -> Option<Self> {
+        let finite = |x: &ExactNum| !x.is_nan() && !x.is_inf();
+        if !finite(&self.re) || !finite(&self.im) || self.im.is_zero() {
+            return None;
+        }
+        let rm = RoundingMode::ToEven;
+        let exact = |x: &ExactNum| finite(x) && !x.inexact_accumulated();
+        let a = self.re.hypot(&self.im, p_x, rm);
+        let h = a.add(&self.re.abs(), p_x, rm).ldexp(-1, p_x, rm);
+        let t = h.sqrt(p_x, rm);
+        let u = self.im.abs().div(&t.ldexp(1, p_x, rm), p_x, rm);
+        if !(exact(&a) && exact(&h) && exact(&t) && exact(&u)) {
+            return None;
+        }
+        Some(if self.re.is_negative() {
+            let t = if self.im.is_negative() { t.neg() } else { t };
+            Self::new(u, t)
+        } else {
+            let u = if self.im.is_negative() { u.neg() } else { u };
+            Self::new(t, u)
+        })
     }
 
     fn finish(self, p: usize, rm: RoundingMode) -> Self {
@@ -258,6 +377,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn tan(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.tan_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::tan`] on operands without inexact history.
+    fn tan_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         self.sin(p_x, RoundingMode::None, cc)
             .div(
@@ -272,6 +398,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn sinh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.sinh_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::sinh`] on operands without inexact history.
+    fn sinh_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let (sh, ch) = self.re.sinh_cosh(p_x, RoundingMode::None, cc);
         let (sn, cs) = self.im.sin_cos(p_x, RoundingMode::None, cc);
@@ -286,6 +419,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn cosh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.cosh_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::cosh`] on operands without inexact history.
+    fn cosh_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let (sh, ch) = self.re.sinh_cosh(p_x, RoundingMode::None, cc);
         let (sn, cs) = self.im.sin_cos(p_x, RoundingMode::None, cc);
@@ -300,6 +440,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn tanh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.tanh_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::tanh`] on operands without inexact history.
+    fn tanh_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         self.sinh(p_x, RoundingMode::None, cc)
             .div(
@@ -316,7 +463,17 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn sqrt(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.sqrt_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::sqrt`] on operands without inexact history.
+    fn sqrt_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
+        if let Some(z) = self.sqrt_exact(p_x) {
+            return z.finish(p, rm);
+        }
         let r = self.abs(p_x, RoundingMode::None);
         let th = self.arg(p_x, RoundingMode::None, cc);
         let sr = r.sqrt(p_x, RoundingMode::None);
@@ -333,6 +490,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn log2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.log2_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::log2`] on operands without inexact history.
+    fn log2_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
         let base = Self::from_real(cc.ln_2(p_x, RoundingMode::None), p_x);
@@ -343,6 +507,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn log10(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.log10_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::log10`] on operands without inexact history.
+    fn log10_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
         let base = Self::from_real(cc.ln_10(p_x, RoundingMode::None), p_x);
@@ -353,6 +524,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn log(&self, base: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let base_c = base.exact_copy();
+        let inputs = self.inexact_accumulated() || base.inexact_accumulated();
+        Self::per_op(inputs, this.log_word(&base_c, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::log`] on operands without inexact history.
+    fn log_word(&self, base: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
         let lnb = base.ln(p_x, RoundingMode::None, cc);
@@ -363,6 +542,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn log1p(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.log1p_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::log1p`] on operands without inexact history.
+    fn log1p_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         Self::one(p_x)
             .add(self, p_x, RoundingMode::None)
@@ -374,6 +560,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn exp2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.exp2_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::exp2`] on operands without inexact history.
+    fn exp2_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln2 = Self::from_real(cc.ln_2(p_x, RoundingMode::None), p_x);
         self.mul(&ln2, p_x, RoundingMode::None)
@@ -385,6 +578,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn exp10(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.exp10_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::exp10`] on operands without inexact history.
+    fn exp10_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln10 = Self::from_real(cc.ln_10(p_x, RoundingMode::None), p_x);
         self.mul(&ln10, p_x, RoundingMode::None)
@@ -396,6 +596,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn expm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.expm1_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::expm1`] on operands without inexact history.
+    fn expm1_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         self.exp(p_x, RoundingMode::None, cc)
             .sub(&Self::one(p_x), p_x, RoundingMode::None)
@@ -406,6 +613,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn ldexp(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.ldexp_word(n, p, rm))
+    }
+
+    /// Implementation of [`Self::ldexp`] on operands without inexact history.
+    fn ldexp_word(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         self.ldexp_parts(n, p, rm)
     }
 
@@ -413,6 +627,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn scalb(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.scalb_word(n, p, rm))
+    }
+
+    /// Implementation of [`Self::scalb`] on operands without inexact history.
+    fn scalb_word(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         self.ldexp(n, p, rm)
     }
 
@@ -427,6 +648,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn nth_root(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.nth_root_word(n, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::nth_root`] on operands without inexact history.
+    fn nth_root_word(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if n == 0 {
             return Self::new(
                 ExactNum::nan(Some(crate::Error::InvalidArgument)),
@@ -462,6 +690,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn cbrt(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.cbrt_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::cbrt`] on operands without inexact history.
+    fn cbrt_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.nth_root(3, p, rm, cc)
     }
 
@@ -469,6 +704,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn hypot(&self, other: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let other_c = other.exact_copy();
+        let inputs = self.inexact_accumulated() || other.inexact_accumulated();
+        Self::per_op(inputs, this.hypot_word(&other_c, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::hypot`] on operands without inexact history.
+    fn hypot_word(&self, other: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         self.mul(self, p_x, RoundingMode::None)
             .add(
@@ -484,6 +727,16 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn fma(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy();
+        let b_c = b.exact_copy();
+        let c_c = c.exact_copy();
+        let inputs =
+            self.inexact_accumulated() || b.inexact_accumulated() || c.inexact_accumulated();
+        Self::per_op(inputs, this.fma_word(&b_c, &c_c, p, rm))
+    }
+
+    /// Implementation of [`Self::fma`] on operands without inexact history.
+    fn fma_word(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         let p_x = Self::work_p(p);
         self.mul(b, p_x, RoundingMode::None)
             .add(c, p_x, RoundingMode::None)
@@ -494,6 +747,16 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn mul_add(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy();
+        let b_c = b.exact_copy();
+        let c_c = c.exact_copy();
+        let inputs =
+            self.inexact_accumulated() || b.inexact_accumulated() || c.inexact_accumulated();
+        Self::per_op(inputs, this.mul_add_word(&b_c, &c_c, p, rm))
+    }
+
+    /// Implementation of [`Self::mul_add`] on operands without inexact history.
+    fn mul_add_word(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         self.fma(b, c, p, rm)
     }
 
@@ -503,6 +766,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn pow(&self, rhs: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let rhs_c = rhs.exact_copy();
+        let inputs = self.inexact_accumulated() || rhs.inexact_accumulated();
+        Self::per_op(inputs, this.pow_word(&rhs_c, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::pow`] on operands without inexact history.
+    fn pow_word(&self, rhs: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
         rhs.mul(&ln, p_x, RoundingMode::None)
@@ -517,6 +788,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn asin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.asin_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::asin`] on operands without inexact history.
+    fn asin_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let prec = round_p(p);
         let p_x = prec.saturating_add(WORD_BIT_SIZE);
         let z2 = self.mul(self, p_x, RoundingMode::None);
@@ -548,6 +826,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn acos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.acos_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::acos`] on operands without inexact history.
+    fn acos_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let half_pi = cc
             .pi(p_x, RoundingMode::None)
@@ -562,6 +847,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn atan(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.atan_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::atan`] on operands without inexact history.
+    fn atan_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let i = Self::i(p_x);
         let num = i.add(self, p_x, RoundingMode::None);
@@ -577,6 +869,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn asinh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.asinh_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::asinh`] on operands without inexact history.
+    fn asinh_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         let z2 = self.mul(self, p_x, RoundingMode::None);
         let rad =
@@ -595,6 +894,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn acosh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.acosh_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::acosh`] on operands without inexact history.
+    fn acosh_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         if self.im.is_zero() && !self.re.is_nan() && !self.re.is_inf() {
             let one = ExactNum::from_word(1, p_x);
@@ -637,6 +943,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn atanh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.atanh_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::atanh`] on operands without inexact history.
+    fn atanh_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         if self.im.is_zero() && !self.re.is_nan() {
             let one_r = ExactNum::from_word(1, p_x);

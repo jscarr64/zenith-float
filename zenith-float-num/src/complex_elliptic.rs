@@ -433,6 +433,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn elliptic_k(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.elliptic_k_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::elliptic_k`] on operands without inexact history.
+    fn elliptic_k_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -464,6 +471,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn elliptic_e_complete(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.elliptic_e_complete_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::elliptic_e_complete`] on operands without inexact history.
+    fn elliptic_e_complete_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -501,6 +515,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn elliptic_f(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let m_c = m.exact_copy();
+        let inputs = self.inexact_accumulated() || m.inexact_accumulated();
+        Self::per_op(inputs, this.elliptic_f_word(&m_c, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::elliptic_f`] on operands without inexact history.
+    fn elliptic_f_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || m.is_nan() {
             return nan_pair(Error::InvalidArgument);
         }
@@ -538,6 +560,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn elliptic_e(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let m_c = m.exact_copy();
+        let inputs = self.inexact_accumulated() || m.inexact_accumulated();
+        Self::per_op(inputs, this.elliptic_e_word(&m_c, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::elliptic_e`] on operands without inexact history.
+    fn elliptic_e_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || m.is_nan() {
             return nan_pair(Error::InvalidArgument);
         }

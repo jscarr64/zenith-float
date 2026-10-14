@@ -373,6 +373,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let nu_c = nu.exact_copy();
+        let inputs = self.inexact_accumulated() || nu.inexact_accumulated();
+        Self::per_op(inputs, this.bessel_j_nu_word(&nu_c, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::bessel_j_nu`] on operands without inexact history.
+    fn bessel_j_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
         }
@@ -394,6 +402,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_y(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let nu_c = nu.exact_copy();
+        let inputs = self.inexact_accumulated() || nu.inexact_accumulated();
+        Self::per_op(inputs, this.bessel_y_word(&nu_c, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::bessel_y`] on operands without inexact history.
+    fn bessel_y_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
         }
@@ -417,6 +433,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_i(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let nu_c = nu.exact_copy();
+        let inputs = self.inexact_accumulated() || nu.inexact_accumulated();
+        Self::per_op(inputs, this.bessel_i_word(&nu_c, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::bessel_i`] on operands without inexact history.
+    fn bessel_i_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
         }
@@ -452,6 +476,14 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_k(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let nu_c = nu.exact_copy();
+        let inputs = self.inexact_accumulated() || nu.inexact_accumulated();
+        Self::per_op(inputs, this.bessel_k_word(&nu_c, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::bessel_k`] on operands without inexact history.
+    fn bessel_k_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
         }

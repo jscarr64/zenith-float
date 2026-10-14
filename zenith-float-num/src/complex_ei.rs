@@ -66,6 +66,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn ei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.ei_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::ei`] on operands without inexact history.
+    fn ei_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -86,6 +93,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.si_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::si`] on operands without inexact history.
+    fn si_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -115,6 +129,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn ci(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.ci_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::ci`] on operands without inexact history.
+    fn ci_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -135,6 +156,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn li(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.li_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::li`] on operands without inexact history.
+    fn li_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -154,6 +182,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn fresnel_s(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.fresnel_s_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::fresnel_s`] on operands without inexact history.
+    fn fresnel_s_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -170,6 +205,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn fresnel_c(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.fresnel_c_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::fresnel_c`] on operands without inexact history.
+    fn fresnel_c_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }

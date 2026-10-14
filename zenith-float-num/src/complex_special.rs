@@ -183,6 +183,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn erf(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.erf_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::erf`] on operands without inexact history.
+    fn erf_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -201,6 +208,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn erfc(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.erfc_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::erfc`] on operands without inexact history.
+    fn erfc_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -218,6 +232,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn gamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.gamma_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::gamma`] on operands without inexact history.
+    fn gamma_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -239,6 +260,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn ln_gamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.ln_gamma_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::ln_gamma`] on operands without inexact history.
+    fn ln_gamma_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -282,6 +310,13 @@ impl ExactComplex {
     ///
     /// Accuracy: correctly-rounded
     pub fn digamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.digamma_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::digamma`] on operands without inexact history.
+    fn digamma_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }

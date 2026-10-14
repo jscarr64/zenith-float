@@ -1804,6 +1804,17 @@ impl ExactNum {
         }
     }
 
+    /// Sets the per-operation flag to `op` and adds `inputs` to the accumulated flag, which
+    /// otherwise stays this part's own. A zero part that this operation did not round keeps
+    /// no history, as with a real product by an exact zero (Ziv loops rely on it).
+    pub(crate) fn finish_part(&mut self, op: bool, inputs: bool) {
+        if let Flavor::Value(v) = &mut self.inner {
+            let inherit = inputs && !(v.is_zero() && !v.inexact());
+            v.finish_flags(inherit, true);
+            v.set_op_inexact(op);
+        }
+    }
+
     /// Marks `self` as inexact if `inexact` is true, or exact otherwise.
     /// The function has no effect if `self` is Inf or NaN.
     pub fn set_inexact(&mut self, inexact: bool) {
