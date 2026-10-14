@@ -35,28 +35,31 @@ impl Mantissa {
         buf1: &'a mut [Word],
         buf2: &'a mut [Word],
         buf3: &'a mut [Word],
-    ) -> (
-        SliceWithSign<'a>,
-        SliceWithSign<'a>,
-        SliceWithSign<'a>,
-        SliceWithSign<'a>,
-        SliceWithSign<'a>,
-    ) {
+    ) -> Result<
+        (
+            SliceWithSign<'a>,
+            SliceWithSign<'a>,
+            SliceWithSign<'a>,
+            SliceWithSign<'a>,
+            SliceWithSign<'a>,
+        ),
+        Error,
+    > {
         let (m0, m1, m2) = params;
 
         let mut p1 = SliceWithSign::new_mut(buf1, 1);
         let mut p2 = SliceWithSign::new_mut(buf2, 1);
         let mut p3 = SliceWithSign::new_mut(buf3, 1);
 
-        m0.add(&m2, x1);
-        x1.add(&m1, &mut p1);
-        x1.sub(&m1, &mut p2);
+        m0.add(&m2, x1)?;
+        x1.add(&m1, &mut p1)?;
+        x1.sub(&m1, &mut p2)?;
 
-        p2.add(&m2, &mut p3);
+        p2.add(&m2, &mut p3)?;
         p3.shift_left(1);
         p3.sub_assign(&m0);
 
-        (m0, p1, p2, p3, m2)
+        Ok((m0, p1, p2, p3, m2))
     }
 
     // Toom-3 multiplication.
@@ -104,9 +107,9 @@ impl Mantissa {
         let mut s3 = SliceWithSign::new_mut(s3buf, 1);
         let mut s4 = SliceWithSign::new_mut(&mut s4buf[..params0.2.len() + params1.2.len()], 1);
 
-        let (p0, p1, p2, p3, p4) = Self::toom3_factors(params0, &mut x1, p1buf, p2buf, p3buf);
+        let (p0, p1, p2, p3, p4) = Self::toom3_factors(params0, &mut x1, p1buf, p2buf, p3buf)?;
 
-        let (q0, q1, q2, q3, q4) = Self::toom3_factors(params1, &mut x1, q1buf, q2buf, q3buf);
+        let (q0, q1, q2, q3, q4) = Self::toom3_factors(params1, &mut x1, q1buf, q2buf, q3buf)?;
 
         debug_assert!(p1.len() + q1.len() == s1.len());
         debug_assert!(p2.len() + q2.len() == s2.len());
@@ -122,11 +125,11 @@ impl Mantissa {
         s2.set_sign(p2.sign() * q2.sign());
         s3.set_sign(p3.sign() * q3.sign());
 
-        s3.sub(&s1, &mut w3);
+        s3.sub(&s1, &mut w3)?;
         w3.div_by_word(3);
-        s1.sub(&s2, &mut w1);
+        s1.sub(&s2, &mut w1)?;
         w1.shift_right(1);
-        s2.sub(&s0, &mut w2);
+        s2.sub(&s0, &mut w2)?;
         w3.sub_assign(&w2);
         w3.set_sign(-w3.sign());
         shift_slice_left_copy(&s4, &mut x3, 2);

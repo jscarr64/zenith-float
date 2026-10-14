@@ -5,7 +5,7 @@
 use crate::common::util::add_carry;
 use crate::common::util::shift_slice_right;
 use crate::common::util::{shift_slice_left, sub_borrow};
-use crate::defs::{DoubleWord, SignedWord, Word, WORD_BASE, WORD_MAX};
+use crate::defs::{DoubleWord, Error, SignedWord, Word, WORD_BASE, WORD_MAX};
 use core::ops::Deref;
 use core::ops::DerefMut;
 use itertools::izip;
@@ -40,13 +40,13 @@ impl<'a> SliceWithSign<'a> {
     }
 
     #[inline]
-    pub fn add(&self, s2: &SliceWithSign<'_>, dst: &mut SliceWithSign<'_>) {
-        self.add_sub(s2, dst, 1);
+    pub fn add(&self, s2: &SliceWithSign<'_>, dst: &mut SliceWithSign<'_>) -> Result<(), Error> {
+        self.add_sub(s2, dst, 1)
     }
 
     #[inline]
-    pub fn sub(&self, s2: &SliceWithSign<'_>, dst: &mut SliceWithSign<'_>) {
-        self.add_sub(s2, dst, -1);
+    pub fn sub(&self, s2: &SliceWithSign<'_>, dst: &mut SliceWithSign<'_>) -> Result<(), Error> {
+        self.add_sub(s2, dst, -1)
     }
 
     #[inline]
@@ -59,7 +59,12 @@ impl<'a> SliceWithSign<'a> {
         self.add_sub_assign(s2, -1);
     }
 
-    fn add_sub(&self, s2: &SliceWithSign<'_>, dst: &mut SliceWithSign<'_>, op: i8) {
+    fn add_sub(
+        &self,
+        s2: &SliceWithSign<'_>,
+        dst: &mut SliceWithSign<'_>,
+        op: i8,
+    ) -> Result<(), Error> {
         if (self.sign != s2.sign && op > 0) || (op < 0 && self.sign == s2.sign) {
             // subtract
             let cmp = Self::abs_cmp(self, s2);
@@ -73,9 +78,10 @@ impl<'a> SliceWithSign<'a> {
             } else {
                 dst.fill(0);
             };
+            Ok(())
         } else {
             dst.sign = self.sign;
-            Self::abs_add(self, s2, dst);
+            Self::abs_add(self, s2, dst)
         }
     }
 
@@ -168,19 +174,24 @@ impl<'a> SliceWithSign<'a> {
         }
     }
 
-    pub fn copy_from(&mut self, s2: &SliceWithSign<'_>) {
-        match &mut self.m {
-            SliceWithSignType::Mut(m) => {
-                match &s2.m {
-                    SliceWithSignType::Mut(s) => m[..s.len()].copy_from_slice(s),
-                    SliceWithSignType::Immut(s) => m[..s.len()].copy_from_slice(s),
-                };
-            }
-            _ => panic!(),
-        }
+    /// Copies the words of `s2` into the front of `self`.
+    /// `Err(InvalidArgument)` if `self` is immutable or shorter than `s2`.
+    pub fn copy_from(&mut self, s2: &SliceWithSign<'_>) -> Result<(), Error> {
+        let SliceWithSignType::Mut(m) = &mut self.m else {
+            return Err(Error::InvalidArgument);
+        };
+        let src: &[Word] = match &s2.m {
+            SliceWithSignType::Mut(s) => s,
+            SliceWithSignType::Immut(s) => s,
+        };
+        let Some(dst) = m.get_mut(..src.len()) else {
+            return Err(Error::InvalidArgument);
+        };
+        dst.copy_from_slice(src);
+        Ok(())
     }
 
-    fn abs_add(s1: &[Word], s2: &[Word], dst: &mut [Word]) {
+    fn abs_add(s1: &[Word], s2: &[Word], dst: &mut [Word]) -> Result<(), Error> {
         let mut c = 0;
 
         let (iter1, mut iter2) = if s1.len() < s2.len() {
@@ -200,12 +211,16 @@ impl<'a> SliceWithSign<'a> {
         }
 
         if c > 0 {
-            *iter3.next().unwrap() = c as Word; // dst is supposed to be longer than s1 and s2 to process carry successfully.
+            let Some(carry_slot) = iter3.next() else {
+                return Err(Error::InvalidArgument); // dst must be longer than s1 and s2 to hold the carry
+            };
+            *carry_slot = c as Word;
         }
 
         for v in iter3 {
             *v = 0;
         }
+        Ok(())
     }
 
     fn abs_add_assign(s1: &mut [Word], s2: &[Word]) {
@@ -277,16 +292,16 @@ impl<'a> SliceWithSign<'a> {
     }
 
     // decrement absolute value by 1
-    pub fn decrement_abs(&mut self) {
+    pub fn decrement_abs(&mut self) -> Result<(), Error> {
         for v in self.iter_mut() {
             if *v == 0 {
                 *v = WORD_MAX;
             } else {
                 *v -= 1;
-                return;
+                return Ok(());
             }
         }
-        panic!("numeric overflow");
+        Err(Error::InvalidArgument) // |self| was zero: nothing to decrement
     }
 
     pub fn is_zero(&self) -> bool {
@@ -365,5 +380,54 @@ impl<'a> DerefMut for SliceWithSign<'a> {
             SliceWithSignType::Mut(m) => m,
             _ => panic!(),
         }
+    }
+}
+
+#[cfg(test)]
+mod failure_path_tests {
+    use super::*;
+
+    #[test]
+    fn add_without_room_for_carry_is_error_not_panic() {
+        let a = SliceWithSign::new(&[WORD_MAX, 1], 1);
+        let b = SliceWithSign::new(&[1, WORD_MAX], 1);
+        let mut buf = [0 as Word; 2];
+        let mut dst = SliceWithSign::new_mut(&mut buf, 1);
+        assert_eq!(a.add(&b, &mut dst), Err(Error::InvalidArgument));
+
+        let mut buf = [0 as Word; 3];
+        let mut dst = SliceWithSign::new_mut(&mut buf, 1);
+        assert_eq!(a.add(&b, &mut dst), Ok(()));
+        assert_eq!(*dst, [0, 1, 1]);
+    }
+
+    #[test]
+    fn copy_from_into_immutable_or_short_is_error_not_panic() {
+        let src_buf = [1 as Word, 2, 3];
+        let src = SliceWithSign::new(&src_buf, 1);
+        let target = [0 as Word; 3];
+        let mut immut = SliceWithSign::new(&target, 1);
+        assert_eq!(immut.copy_from(&src), Err(Error::InvalidArgument));
+
+        let mut short = [0 as Word; 2];
+        let mut dst = SliceWithSign::new_mut(&mut short, 1);
+        assert_eq!(dst.copy_from(&src), Err(Error::InvalidArgument));
+
+        let mut ok = [0 as Word; 4];
+        let mut dst = SliceWithSign::new_mut(&mut ok, 1);
+        assert_eq!(dst.copy_from(&src), Ok(()));
+        assert_eq!(*dst, [1, 2, 3, 0]);
+    }
+
+    #[test]
+    fn decrement_of_zero_is_error_not_panic() {
+        let mut zero = [0 as Word; 2];
+        let mut z = SliceWithSign::new_mut(&mut zero, 1);
+        assert_eq!(z.decrement_abs(), Err(Error::InvalidArgument));
+
+        let mut one_carry = [0 as Word, 1];
+        let mut v = SliceWithSign::new_mut(&mut one_carry, 1);
+        assert_eq!(v.decrement_abs(), Ok(()));
+        assert_eq!(*v, [WORD_MAX, 0]);
     }
 }

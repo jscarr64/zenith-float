@@ -153,7 +153,7 @@ impl Mantissa {
 
                 let w_shift = Self::fft_w_shift(j, kk) * w;
 
-                Self::fft_mul_mod(b, w_shift, n1, modulus, tmp_buf);
+                Self::fft_mul_mod(b, w_shift, n1, modulus, tmp_buf)?;
 
                 Self::fft_butterfly(a, b, n1, modulus);
             }
@@ -168,17 +168,27 @@ impl Mantissa {
         n1: usize,
         modulus: &SliceWithSign,
         tmp_buf: &mut [Word],
-    ) {
+    ) -> Result<(), Error> {
         if k1 == 2 {
-            let (a, b) = parts.split_at_mut(1);
-            Self::fft_butterfly(&mut a[0], &mut b[0], n1, modulus);
+            let Some((a, b)) = parts.split_at_mut_checked(1) else {
+                return Err(Error::InvalidArgument);
+            };
+            let (Some(a), Some(b)) = (a.first_mut(), b.first_mut()) else {
+                return Err(Error::InvalidArgument); // parts holds k1 = 2 entries
+            };
+            Self::fft_butterfly(a, b, n1, modulus);
         } else {
             let k2 = k1 / 2;
 
-            Self::fft_reverse(&mut parts[..k2], w * 2, k2, n1, modulus, tmp_buf);
-            Self::fft_reverse(&mut parts[k2..], w * 2, k2, n1, modulus, tmp_buf);
+            let Some((lo, hi)) = parts.split_at_mut_checked(k2) else {
+                return Err(Error::InvalidArgument); // parts holds k1 entries
+            };
+            Self::fft_reverse(lo, w * 2, k2, n1, modulus, tmp_buf)?;
+            Self::fft_reverse(hi, w * 2, k2, n1, modulus, tmp_buf)?;
 
-            let (p1, p2) = parts.split_at_mut(k2);
+            let Some((p1, p2)) = parts.split_at_mut_checked(k2) else {
+                return Err(Error::InvalidArgument);
+            };
             let mut iter = p1.iter_mut().zip(p2.iter_mut());
 
             if let Some((a, b)) = iter.next() {
@@ -187,12 +197,13 @@ impl Mantissa {
                 for (j, (a, b)) in iter.enumerate() {
                     let w_shift = w * (k1 - j - 1);
 
-                    Self::fft_mul_mod(b, w_shift, n1, modulus, tmp_buf);
+                    Self::fft_mul_mod(b, w_shift, n1, modulus, tmp_buf)?;
 
                     Self::fft_butterfly(a, b, n1, modulus);
                 }
             }
         }
+        Ok(())
     }
 
     fn fft_params(n: usize) -> (usize, usize, usize, usize, usize, usize) {
@@ -270,7 +281,7 @@ impl Mantissa {
         n: usize,
         tmp_buf: &'a mut [Word],
         s: i8,
-    ) -> SliceWithSign<'a> {
+    ) -> Result<SliceWithSign<'a>, Error> {
         let mut chunks = num.chunks(n / WORD_BIT_SIZE);
 
         if let Some(first_chunk) = chunks.next() {
@@ -278,7 +289,7 @@ impl Mantissa {
 
             let mut acc = SliceWithSign::new_mut(tmp_buf, s);
             let n0 = SliceWithSign::new(first_chunk, s);
-            acc.copy_from(&n0);
+            acc.copy_from(&n0)?;
 
             let mut sign = -s;
 
@@ -289,11 +300,11 @@ impl Mantissa {
                 sign = -sign;
             }
 
-            acc
+            Ok(acc)
         } else {
             tmp_buf.fill(0);
 
-            SliceWithSign::new_mut(tmp_buf, 1)
+            Ok(SliceWithSign::new_mut(tmp_buf, 1))
         }
     }
 
@@ -340,20 +351,20 @@ impl Mantissa {
         n: usize,
         modulus: &SliceWithSign,
         tmp_buf: &mut [Word],
-    ) {
+    ) -> Result<(), Error> {
         debug_assert!(n.is_multiple_of(WORD_BIT_SIZE));
 
         let (work_buf, ext_buf) = tmp_buf.split_at_mut(num.len());
 
         let mut acc = if j == 0 {
-            Self::fft_compute_chunks(num, n, work_buf, 1)
+            Self::fft_compute_chunks(num, n, work_buf, 1)?
         } else {
             let shift = j % n;
             let q = j / n;
 
             shift_slice_left_copy(num, ext_buf, shift);
 
-            let mut acc = Self::fft_compute_chunks(ext_buf, n, work_buf, 1);
+            let mut acc = Self::fft_compute_chunks(ext_buf, n, work_buf, 1)?;
 
             if q & 1 != 0 {
                 acc.set_sign(-acc.sign());
@@ -364,7 +375,7 @@ impl Mantissa {
 
         Self::fft_normalize(&mut acc, n, modulus);
 
-        num.copy_from(&acc);
+        num.copy_from(&acc)
     }
 
     // compute num / 2^j mod (2^n+1) inplace
@@ -376,7 +387,7 @@ impl Mantissa {
         n: usize,
         modulus: &SliceWithSign,
         tmp_buf: &mut [Word],
-    ) {
+    ) -> Result<(), Error> {
         debug_assert!(n.is_multiple_of(WORD_BIT_SIZE));
 
         let n2 = n * 2;
@@ -392,11 +403,11 @@ impl Mantissa {
 
         shift_slice_left_copy(num, ext_buf, shift);
 
-        let mut acc = Self::fft_compute_chunks(ext_buf, n, work_buf, s);
+        let mut acc = Self::fft_compute_chunks(ext_buf, n, work_buf, s)?;
 
         Self::fft_normalize(&mut acc, n, modulus);
 
-        num.copy_from(&acc);
+        num.copy_from(&acc)
     }
 
     fn fft_prepare_parts(
@@ -450,8 +461,8 @@ impl Mantissa {
         let modulus = SliceWithSign::new_mut(modulus_buf, 1);
 
         for (j, (part1, part2)) in parts1.iter_mut().zip(parts2.iter_mut()).enumerate() {
-            Self::fft_mul_mod(part1, t * j, n1, &modulus, tmp_buf);
-            Self::fft_mul_mod(part2, t * j, n1, &modulus, tmp_buf);
+            Self::fft_mul_mod(part1, t * j, n1, &modulus, tmp_buf)?;
+            Self::fft_mul_mod(part2, t * j, n1, &modulus, tmp_buf)?;
         }
 
         Self::fft_forward(
@@ -473,17 +484,17 @@ impl Mantissa {
             part3.set_sign(part1.sign() * part2.sign());
 
             let mut t0 = SliceWithSign::new_mut(tmp_buf2, part3.sign());
-            Self::fft_mul_mod(&mut t0, 0, n1, &modulus, tmp_buf);
+            Self::fft_mul_mod(&mut t0, 0, n1, &modulus, tmp_buf)?;
 
             part3.copy_from_slice(&tmp_buf2[..part_len]);
         }
 
-        Self::fft_reverse(&mut parts3, w, k1, n1, &modulus, tmp_buf);
+        Self::fft_reverse(&mut parts3, w, k1, n1, &modulus, tmp_buf)?;
 
         d3.fill(0);
 
         for (j, part3) in parts3.iter_mut().enumerate() {
-            Self::fft_div_mod(part3, k + t * j, n1, &modulus, tmp_buf);
+            Self::fft_div_mod(part3, k + t * j, n1, &modulus, tmp_buf)?;
 
             while part3.sign() < 0 && !part3.is_zero() {
                 part3.add_assign(&modulus);

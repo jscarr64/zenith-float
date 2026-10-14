@@ -197,11 +197,16 @@ impl Mantissa {
     }
 
     // recursive division correction
-    fn div_correction(a: &mut SliceWithSign, q: &mut SliceWithSign, step: SliceWithSign) {
+    fn div_correction(
+        a: &mut SliceWithSign,
+        q: &mut SliceWithSign,
+        step: SliceWithSign,
+    ) -> Result<(), Error> {
         while a.sign() < 0 && !a.is_zero() {
-            q.decrement_abs();
+            q.decrement_abs()?;
             a.add_assign(&step);
         }
+        Ok(())
     }
 
     // Recursive integer division divides m1 by m2, returns quotinent and remainder.
@@ -261,7 +266,7 @@ impl Mantissa {
                 tmpbuf[k + m2.len()..].fill(0);
                 tmpbuf[k..k + m2.len()].copy_from_slice(m2);
                 let b = SliceWithSign::new(&tmpbuf, 1);
-                Self::div_correction(&mut a3, &mut q1, b);
+                Self::div_correction(&mut a3, &mut q1, b)?;
             }
 
             let mut ub = a3.len();
@@ -293,7 +298,7 @@ impl Mantissa {
 
                 if a4.sign() < 0 {
                     // correction
-                    Self::div_correction(&mut a4, &mut q0, b);
+                    Self::div_correction(&mut a4, &mut q0, b)?;
                 }
 
                 // quot = q1 * 2^k + q0;
