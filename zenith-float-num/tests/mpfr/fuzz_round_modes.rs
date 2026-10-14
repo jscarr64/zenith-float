@@ -1,10 +1,12 @@
-//! Short MPFR differential: add / mul / sqrt under every IEEE rounding mode, and
+//! Short MPFR differential: add / sub / mul / div bit-exact in every mode including ToOdd,
+//! sqrt and nth_root under the five MPFR modes, exact-bit precision sweeps, and
 //! exponent overflow of add / sub / mul / div (max finite toward zero, Inf otherwise).
 
 use crate::mpfr::common::assert_exact_eq;
 use crate::mpfr::common::assert_float_close;
 use crate::mpfr::common::conv_to_mpfr;
 use crate::mpfr::common::get_float_pair;
+use crate::mpfr::common::get_oned_zeroed;
 use crate::mpfr::common::mpfr_reference;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::common::test_random;
@@ -25,6 +27,16 @@ const ROUNDS: [(RoundingMode, rnd_t); 5] = [
     (RoundingMode::ToZero, rnd_t::RNDZ),
 ];
 
+/// Every mode with a bit-exact reference, `ToOdd` included (emulated in `mpfr_reference`).
+const ALL_MODES: [RoundingMode; 6] = [
+    RoundingMode::ToEven,
+    RoundingMode::ToOdd,
+    RoundingMode::Up,
+    RoundingMode::Down,
+    RoundingMode::ToZero,
+    RoundingMode::FromZero,
+];
+
 #[test]
 fn fuzz_mpfr_bit_exact_all_round_modes() {
     reset_test_rng();
@@ -37,77 +49,82 @@ fn fuzz_mpfr_bit_exact_all_round_modes() {
     assert_eq!(EXPONENT_MIN, exp_min());
     assert_eq!(EXPONENT_MAX, exp_max());
 
-    let p = 2 * WORD_BIT_SIZE;
     let emin: Exponent = -64;
     let emax: Exponent = 64;
+    let ops = [BinOp::Add, BinOp::Sub, BinOp::Mul, BinOp::Div];
 
-    for i in 0..24 {
-        let (n1, f1) = get_float_pair(p, emin, emax, &mut cc);
-        let (n2, f2) = get_float_pair(p, emin, emax, &mut cc);
-        for (rm, rnd) in ROUNDS {
-            test_zf_op_no_cc!(
-                true,
-                n1,
-                n2,
-                add,
-                f1,
-                f2,
-                add,
-                p,
-                rm,
-                rnd,
-                (i, &n1, &n2, p, rm, "fuzz add"),
-                cc
-            );
-            test_zf_op_no_cc!(
-                true,
-                n1,
-                n2,
-                mul,
-                f1,
-                f2,
-                mul,
-                p,
-                rm,
-                rnd,
-                (i, &n1, &n2, p, rm, "fuzz mul"),
-                cc
-            );
-            if !n1.is_negative() {
+    for p in [64usize, 128, 192, 320, 1024] {
+        for i in 0..40 {
+            // Half of the operands have long runs of ones then zeros, so sums and
+            // differences land on exact ties and on carries out of the last word.
+            let (n1, f1, n2, f2) = if i % 2 == 0 {
+                let (n1, f1) = get_float_pair(p, emin, emax, &mut cc);
+                let (n2, f2) = get_float_pair(p, emin, emax, &mut cc);
+                (n1, f1, n2, f2)
+            } else {
+                let mut n1 = get_oned_zeroed(p, emin, emax);
+                let mut n2 = get_oned_zeroed(p, emin, emax);
+                if test_random::<bool>() {
+                    n1 = n1.neg();
+                }
+                if test_random::<bool>() {
+                    n2 = n2.neg();
+                }
+                let f1 = conv_to_mpfr(p, &n1, &mut cc);
+                let f2 = conv_to_mpfr(p, &n2, &mut cc);
+                (n1, f1, n2, f2)
+            };
+            for op in ops {
+                for rm in ALL_MODES {
+                    let n3 = match op {
+                        BinOp::Add => n1.add(&n2, p, rm),
+                        BinOp::Sub => n1.sub(&n2, p, rm),
+                        BinOp::Mul => n1.mul(&n2, p, rm),
+                        BinOp::Div => n1.div(&n2, p, rm),
+                    };
+                    let f3 = mpfr_reference(&f1, &f2, op, p as u32, rm);
+                    let info = format!("#{i} p={p} {op:?} {rm:?} {n1:?} {n2:?}");
+                    assert_exact_eq(&n3, &f3, p, &info, &mut cc);
+                }
+            }
+            for (rm, rnd) in ROUNDS {
+                let a = if n1.is_negative() { n1.neg() } else { n1.clone() };
+                let fa = Float::with_val(p as u32, f1.abs_ref());
                 test_zf_op_no_cc!(
                     true,
-                    n1,
+                    a,
                     sqrt,
-                    f1,
+                    fa,
                     sqrt,
                     p,
                     rm,
                     rnd,
-                    (i, &n1, p, rm, "fuzz sqrt"),
+                    (i, &a, p, rm, "fuzz sqrt"),
                     cc
                 );
             }
-        }
-        if !n1.is_negative() && !n1.is_zero() && i < 8 {
-            for n in [4usize, 5] {
-                for (rm, rnd) in ROUNDS {
-                    let n3 = ExactNum::nth_root(&n1, n, p, rm);
-                    let mut f3 = Float::with_val(p as u32, 1);
-                    unsafe {
-                        mpfr::rootn_ui(f3.as_raw_mut(), f1.as_raw(), n as u64, rnd);
+            if !n1.is_zero() && i < 8 {
+                let a = if n1.is_negative() { n1.neg() } else { n1.clone() };
+                let fa = Float::with_val(p as u32, f1.abs_ref());
+                for n in [4usize, 5] {
+                    for (rm, rnd) in ROUNDS {
+                        let n3 = ExactNum::nth_root(&a, n, p, rm);
+                        let mut f3 = Float::with_val(p as u32, 1);
+                        unsafe {
+                            mpfr::rootn_ui(f3.as_raw_mut(), fa.as_raw(), n as u64, rnd);
+                        }
+                        assert_float_close(
+                            n3,
+                            f3,
+                            p,
+                            &format!("{:?}", (i, n, &a, p, rm, "fuzz nth_root")),
+                            false,
+                            &mut cc,
+                        );
                     }
-                    assert_float_close(
-                        n3,
-                        f3,
-                        p,
-                        &format!("{:?}", (i, n, &n1, p, rm, "fuzz nth_root")),
-                        false,
-                        &mut cc,
-                    );
                 }
             }
         }
-        let _ = (f1, f2, i);
     }
 }
 
