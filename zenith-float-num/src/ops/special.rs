@@ -2246,6 +2246,155 @@ impl ExactNumNumber {
         }
     }
 
+    /// Bits of \(|\varphi|\) above 1. Range reduction keeps this many extra bits.
+    fn phi_mag_bits(phi: &Self) -> usize {
+        let e = phi.exponent();
+        if e <= 0 {
+            return 0;
+        }
+        match usize::try_from(e) {
+            Ok(bits) => bits,
+            Err(_) => usize::MAX / 4,
+        }
+    }
+
+    /// Directed rounding of an odd function: `Up` of \(-x\) is \(-`Down` of \(x\).
+    fn rm_for_magnitude(rm: RoundingMode, sg: Sign) -> RoundingMode {
+        if sg.is_positive() {
+            return rm;
+        }
+        match rm {
+            RoundingMode::Up => RoundingMode::Down,
+            RoundingMode::Down => RoundingMode::Up,
+            other => other,
+        }
+    }
+
+    fn apply_odd_sign(mut v: Self, sg: Sign) -> Result<Self, Error> {
+        if sg.is_negative() {
+            v = v.neg()?;
+        }
+        Ok(v)
+    }
+
+    /// `Some(sign)` when `self` equals \(\pm\pi/2\) through at least `p` bits.
+    fn exact_half_pi(&self, p: usize, cc: &mut Consts) -> Result<Option<Sign>, Error> {
+        let width = self.mantissa_max_bit_len();
+        if width < p {
+            return Ok(None);
+        }
+        let pi = cc.pi_num(width, RoundingMode::ToEven)?;
+        let mut half = pi;
+        half.div_by_2(RoundingMode::None);
+        if self.abs()?.cmp(&half) != 0 {
+            return Ok(None);
+        }
+        Ok(Some(self.sign()))
+    }
+
+    /// \((\sin r, k)\) for \(\varphi = r + k\pi\), \(|r|\le\pi/2\).
+    ///
+    /// `Ok(None)` means the working precision did not keep the remainder inside
+    /// that interval. The caller raises the precision and tries again.
+    fn reduced_sin(&self, p: usize, cc: &mut Consts) -> Result<Option<(Self, Self)>, Error> {
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let mut half = pi.clone()?;
+        half.div_by_2(RoundingMode::None);
+        let q = self.div(&pi, p, RoundingMode::None)?;
+        let k = q.round(0, RoundingMode::ToEven)?;
+        if !k.fract()?.is_zero() {
+            return Ok(None);
+        }
+        let r = self.sub(&k.mul(&pi, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        if r.abs()?.cmp(&half) > 0 {
+            return Ok(None);
+        }
+        let s = r.sin(p, RoundingMode::None, cc)?;
+        let one = Self::from_word(1, p)?;
+        if s.abs()?.cmp(&one) > 0 {
+            return Ok(None);
+        }
+        Ok(Some((s, k)))
+    }
+
+    fn add_turns(part: Self, k: &Self, complete: &Self, p: usize) -> Result<Self, Error> {
+        let two = Self::from_word(2, p)?;
+        let shift = two
+            .mul(k, p, RoundingMode::None)?
+            .mul(complete, p, RoundingMode::None)?;
+        part.add(&shift, p, RoundingMode::None)
+    }
+
+    fn complete_k_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        if self.is_zero() {
+            let mut half = cc.pi_num(p, RoundingMode::None)?;
+            half.div_by_2(RoundingMode::None);
+            return Ok(half);
+        }
+        self.elliptic_k_at(p, cc)
+    }
+
+    fn complete_e_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let one = Self::from_word(1, p)?;
+        if self.is_zero() {
+            let mut half = cc.pi_num(p, RoundingMode::None)?;
+            half.div_by_2(RoundingMode::None);
+            return Ok(half);
+        }
+        if self.cmp(&one) == 0 {
+            return Self::from_word(1, p);
+        }
+        self.elliptic_e_complete_at(p, cc)
+    }
+
+    fn half_turn_f(
+        phi: &Self,
+        m: &Self,
+        sg: Sign,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let one = Self::from_word(1, p)?;
+        if m.cmp(&one) > 0 {
+            return Err(Error::InvalidArgument);
+        }
+        if m.cmp(&one) == 0 {
+            return Err(Error::ExponentOverflow(sg));
+        }
+        let pos_rm = Self::rm_for_magnitude(rm, sg);
+        let v = m.elliptic_k(p, pos_rm, cc)?;
+        let mut v = Self::apply_odd_sign(v, sg)?;
+        v.set_inexact(v.inexact() | phi.inexact() | m.inexact());
+        Ok(v)
+    }
+
+    fn elliptic_f_from_reduced(
+        s: &Self,
+        k: &Self,
+        m: &Self,
+        phi_sign: Sign,
+        p: usize,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let one = Self::from_word(1, p)?;
+        if k.is_zero() {
+            if m.cmp(&one) == 0 && s.abs()?.cmp(&one) == 0 {
+                return Err(Error::ExponentOverflow(phi_sign));
+            }
+            return s.elliptic_f_at(m, p, cc);
+        }
+        if m.cmp(&one) > 0 {
+            return Err(Error::InvalidArgument);
+        }
+        if m.cmp(&one) == 0 {
+            return Err(Error::ExponentOverflow(phi_sign));
+        }
+        let part = s.elliptic_f_at(m, p, cc)?;
+        let complete = m.complete_k_at(p, cc)?;
+        Self::add_turns(part, k, &complete, p)
+    }
+
     /// \(F(\varphi|m)\) for an amplitude \(\varphi\). See [`ExactNum::elliptic_f_phi`].
     pub fn elliptic_f_phi(
         &self,
@@ -2254,8 +2403,71 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let _ = (self, m, p, rm, cc);
-        Err(Error::InvalidArgument)
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if self.is_zero() {
+            return Self::new2(p, Sign::Pos, self.inexact() | m.inexact());
+        }
+        if let Some(sg) = self.exact_half_pi(p, cc)? {
+            return Self::half_turn_f(self, m, sg, p, rm, cc);
+        }
+        let mag = Self::phi_mag_bits(self);
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = round_p(
+            p.max(self.mantissa_max_bit_len())
+                .max(m.mantissa_max_bit_len())
+                .saturating_add(mag)
+                .saturating_add(p_inc),
+        );
+        loop {
+            let p_x = p_wrk.saturating_add(WORD_BIT_SIZE.saturating_mul(2));
+            if let Some((s, k)) = self.reduced_sin(p_x, cc)? {
+                let mut ret = Self::elliptic_f_from_reduced(&s, &k, m, self.sign(), p_x, cc)?;
+                if ret.try_set_precision(p, rm, p_wrk)? {
+                    ret.set_inexact(ret.inexact() | self.inexact() | m.inexact());
+                    return Ok(ret);
+                }
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    fn half_turn_e(
+        phi: &Self,
+        m: &Self,
+        sg: Sign,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let one = Self::from_word(1, p)?;
+        if m.cmp(&one) > 0 {
+            return Err(Error::InvalidArgument);
+        }
+        let pos_rm = Self::rm_for_magnitude(rm, sg);
+        let v = m.elliptic_e_complete(p, pos_rm, cc)?;
+        let mut v = Self::apply_odd_sign(v, sg)?;
+        v.set_inexact(v.inexact() | phi.inexact() | m.inexact());
+        Ok(v)
+    }
+
+    fn elliptic_e_from_reduced(
+        s: &Self,
+        k: &Self,
+        m: &Self,
+        p: usize,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let one = Self::from_word(1, p)?;
+        if k.is_zero() {
+            return s.elliptic_e_at(m, p, cc);
+        }
+        if m.cmp(&one) > 0 {
+            return Err(Error::InvalidArgument);
+        }
+        let part = s.elliptic_e_at(m, p, cc)?;
+        let complete = m.complete_e_at(p, cc)?;
+        Self::add_turns(part, k, &complete, p)
     }
 
     /// \(E(\varphi|m)\) for an amplitude \(\varphi\). See [`ExactNum::elliptic_e_phi`].
@@ -2266,8 +2478,77 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let _ = (self, m, p, rm, cc);
-        Err(Error::InvalidArgument)
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if self.is_zero() {
+            return Self::new2(p, Sign::Pos, self.inexact() | m.inexact());
+        }
+        if let Some(sg) = self.exact_half_pi(p, cc)? {
+            return Self::half_turn_e(self, m, sg, p, rm, cc);
+        }
+        let mag = Self::phi_mag_bits(self);
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = round_p(
+            p.max(self.mantissa_max_bit_len())
+                .max(m.mantissa_max_bit_len())
+                .saturating_add(mag)
+                .saturating_add(p_inc),
+        );
+        loop {
+            let p_x = p_wrk.saturating_add(WORD_BIT_SIZE.saturating_mul(2));
+            if let Some((s, k)) = self.reduced_sin(p_x, cc)? {
+                let mut ret = Self::elliptic_e_from_reduced(&s, &k, m, p_x, cc)?;
+                if ret.try_set_precision(p, rm, p_wrk)? {
+                    ret.set_inexact(ret.inexact() | self.inexact() | m.inexact());
+                    return Ok(ret);
+                }
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    fn half_turn_pi(
+        n: &Self,
+        phi: &Self,
+        m: &Self,
+        sg: Sign,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let one = Self::from_word(1, p)?;
+        if m.cmp(&one) >= 0 || n.cmp(&one) >= 0 {
+            return Err(Error::InvalidArgument);
+        }
+        let pos_rm = Self::rm_for_magnitude(rm, sg);
+        let v = n.elliptic_pi_complete(m, p, pos_rm, cc)?;
+        let mut v = Self::apply_odd_sign(v, sg)?;
+        v.set_inexact(v.inexact() | n.inexact() | phi.inexact() | m.inexact());
+        Ok(v)
+    }
+
+    fn elliptic_pi_from_reduced(
+        n: &Self,
+        s: &Self,
+        k: &Self,
+        m: &Self,
+        p: usize,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let one = Self::from_word(1, p)?;
+        if k.is_zero() {
+            return n.elliptic_pi_at(s, m, p, cc);
+        }
+        if m.cmp(&one) >= 0 || n.cmp(&one) >= 0 {
+            return Err(Error::InvalidArgument);
+        }
+        let part = n.elliptic_pi_at(s, m, p, cc)?;
+        let complete = if n.is_zero() {
+            m.complete_k_at(p, cc)?
+        } else {
+            n.elliptic_pi_complete_at(m, p, cc)?
+        };
+        Self::add_turns(part, k, &complete, p)
     }
 
     /// \(\Pi(n;\varphi|m)\) for an amplitude \(\varphi\). `self` is \(n\).
@@ -2280,8 +2561,34 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let _ = (self, phi, m, p, rm, cc);
-        Err(Error::InvalidArgument)
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if phi.is_zero() {
+            return Self::new2(p, Sign::Pos, self.inexact() | phi.inexact() | m.inexact());
+        }
+        if let Some(sg) = phi.exact_half_pi(p, cc)? {
+            return Self::half_turn_pi(self, phi, m, sg, p, rm, cc);
+        }
+        let mag = Self::phi_mag_bits(phi);
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = round_p(
+            p.max(self.mantissa_max_bit_len())
+                .max(phi.mantissa_max_bit_len())
+                .max(m.mantissa_max_bit_len())
+                .saturating_add(mag)
+                .saturating_add(p_inc),
+        );
+        loop {
+            let p_x = p_wrk.saturating_add(WORD_BIT_SIZE.saturating_mul(2));
+            if let Some((s, k)) = phi.reduced_sin(p_x, cc)? {
+                let mut ret = Self::elliptic_pi_from_reduced(self, &s, &k, m, p_x, cc)?;
+                if ret.try_set_precision(p, rm, p_wrk)? {
+                    ret.set_inexact(ret.inexact() | self.inexact() | phi.inexact() | m.inexact());
+                    return Ok(ret);
+                }
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
     }
 
     /// Legendre \(P_n(\mathrm{self})\) for integer \(n\). Recurrence at \(p+O(n)\) bits.
