@@ -94,12 +94,16 @@ impl Mantissa {
         step: FftStep,
         modulus: &SliceWithSign,
         tmp_buf: &mut [Word],
-    ) {
+    ) -> Result<(), Error> {
         let FftStep { w, k1, k, s, n1 } = step;
         if k1 == 2 {
-            let (a, b) = parts.split_at_mut(s);
-            Self::fft_butterfly(a.first_mut().unwrap(), b.first_mut().unwrap(), n1, modulus);
-        // a, b nonempty
+            let Some((a, b)) = parts.split_at_mut_checked(s) else {
+                return Err(Error::InvalidArgument); // parts holds k1 = 2 strided entries
+            };
+            let (Some(a), Some(b)) = (a.first_mut(), b.first_mut()) else {
+                return Err(Error::InvalidArgument); // parts holds k1 = 2 strided entries
+            };
+            Self::fft_butterfly(a, b, n1, modulus);
         } else {
             let k2 = k1 / 2;
             let kk = k - 1;
@@ -116,9 +120,12 @@ impl Mantissa {
                 },
                 modulus,
                 tmp_buf,
-            );
+            )?;
+            let Some(rest) = parts.get_mut(s..) else {
+                return Err(Error::InvalidArgument); // parts holds k1 strided entries
+            };
             Self::fft_forward(
-                &mut parts[s..],
+                rest,
                 FftStep {
                     w: w * 2,
                     k1: k2,
@@ -128,16 +135,21 @@ impl Mantissa {
                 },
                 modulus,
                 tmp_buf,
-            );
+            )?;
 
             let mut chunks = parts.chunks_mut(s2);
 
             for j in 0..k2 {
-                let chunk = chunks.next().unwrap(); // k2 chunks of s2
-                let (a, b) = chunk.split_at_mut(s);
+                let Some(chunk) = chunks.next() else {
+                    return Err(Error::InvalidArgument); // parts holds k2 chunks of s2
+                };
+                let Some((a, b)) = chunk.split_at_mut_checked(s) else {
+                    return Err(Error::InvalidArgument); // chunks are s2 = 2 * s long
+                };
 
-                let a = a.first_mut().unwrap(); // s > 0
-                let b = b.first_mut().unwrap(); // s > 0
+                let (Some(a), Some(b)) = (a.first_mut(), b.first_mut()) else {
+                    return Err(Error::InvalidArgument); // s > 0
+                };
 
                 let w_shift = Self::fft_w_shift(j, kk) * w;
 
@@ -146,6 +158,7 @@ impl Mantissa {
                 Self::fft_butterfly(a, b, n1, modulus);
             }
         }
+        Ok(())
     }
 
     fn fft_reverse(
@@ -198,7 +211,7 @@ impl Mantissa {
     }
 
     // decompose in parts.len() = k1 parts, each of size m
-    fn fft_decompose(d: &[Word], m: usize, parts: &mut [SliceWithSign]) {
+    fn fft_decompose(d: &[Word], m: usize, parts: &mut [SliceWithSign]) -> Result<(), Error> {
         debug_assert!(!parts.is_empty());
 
         let mut parts_iter = parts.iter_mut();
@@ -222,7 +235,9 @@ impl Mantissa {
                     break;
                 }
 
-                let part = parts_iter.next().unwrap(); // parts sized for this decompose
+                let Some(part) = parts_iter.next() else {
+                    return Err(Error::InvalidArgument); // parts sized for this decompose
+                };
 
                 part[chunk_sz..].fill(0);
                 part[..chunk_sz].copy_from_slice(&d[idx..idx + chunk_sz]);
@@ -234,7 +249,9 @@ impl Mantissa {
             }
 
             if idx < d.len() {
-                let part = parts_iter.next().unwrap(); // parts sized for this decompose
+                let Some(part) = parts_iter.next() else {
+                    return Err(Error::InvalidArgument); // parts sized for this decompose
+                };
 
                 part[d.len() - idx..].fill(0);
                 part[..d.len() - idx].copy_from_slice(&d[idx..]);
@@ -245,6 +262,7 @@ impl Mantissa {
         for rest in parts_iter {
             rest.fill(0);
         }
+        Ok(())
     }
 
     fn fft_compute_chunks<'a>(
@@ -423,8 +441,8 @@ impl Mantissa {
         let mut parts2 = Self::fft_prepare_parts(parts2_buf, k1, part_len)?;
         let mut parts3 = Self::fft_prepare_parts(parts3_buf, k1, part_len)?;
 
-        Self::fft_decompose(d1, m, &mut parts1);
-        Self::fft_decompose(d2, m, &mut parts2);
+        Self::fft_decompose(d1, m, &mut parts1)?;
+        Self::fft_decompose(d2, m, &mut parts2)?;
 
         modulus_buf.fill(0);
         modulus_buf[0] = 1;
@@ -441,13 +459,13 @@ impl Mantissa {
             FftStep { w, k1, k, s: 1, n1 },
             &modulus,
             tmp_buf,
-        );
+        )?;
         Self::fft_forward(
             &mut parts2,
             FftStep { w, k1, k, s: 1, n1 },
             &modulus,
             tmp_buf,
-        );
+        )?;
 
         for (part1, part2, part3) in izip!(parts1.iter(), parts2.iter(), parts3.iter_mut()) {
             Self::mul_unbalanced(part1, part2, tmp_buf2)?;
@@ -503,6 +521,48 @@ mod tests {
 
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
+
+    #[test]
+    fn test_fft_size_mismatch_is_error_not_panic() {
+        let mut mbuf = [1 as Word, 0, 1];
+        let modulus = SliceWithSign::new_mut(&mut mbuf, 1);
+        let mut tmp = [0 as Word; 16];
+        // k1 = 2 needs two strided parts; none given.
+        let step = FftStep {
+            w: 1,
+            k1: 2,
+            k: 1,
+            s: 1,
+            n1: WORD_BIT_SIZE,
+        };
+        assert_eq!(
+            Mantissa::fft_forward(&mut [], step, &modulus, &mut tmp),
+            Err(Error::InvalidArgument)
+        );
+        // k1 = 4 recursion over too few parts.
+        let step = FftStep {
+            w: 1,
+            k1: 4,
+            k: 2,
+            s: 1,
+            n1: WORD_BIT_SIZE,
+        };
+        let mut b = [[0 as Word; 3]; 2];
+        let [b0, b1] = &mut b;
+        let mut parts = [SliceWithSign::new_mut(b0, 1), SliceWithSign::new_mut(b1, 1)];
+        assert_eq!(
+            Mantissa::fft_forward(&mut parts, step, &modulus, &mut tmp),
+            Err(Error::InvalidArgument)
+        );
+        // Unaligned decompose of 4 words into 1 part of 3 bits each.
+        let d = [WORD_MAX; 4];
+        let mut pb = [0 as Word; 4];
+        let mut parts = [SliceWithSign::new_mut(&mut pb, 1)];
+        assert_eq!(
+            Mantissa::fft_decompose(&d, 3, &mut parts),
+            Err(Error::InvalidArgument)
+        );
+    }
 
     #[test]
     fn test_fft_mul() {
