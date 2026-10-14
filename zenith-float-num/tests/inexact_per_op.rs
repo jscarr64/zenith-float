@@ -130,3 +130,24 @@ fn inexact_is_not_inherited_from_operands() {
         }
     }
 }
+
+#[test]
+fn accumulated_flag_still_inherits() {
+    for &p in &PRECS {
+        for &rm in &MODES {
+            let third = ExactNum::from_i8(1, p).div(&ExactNum::from_i8(3, p), p, rm);
+            let two = ExactNum::from_i8(2, p);
+            let doubled = third.mul(&two, p, rm);
+            assert!(!doubled.inexact(), "per-op p={p} rm={rm:?}");
+            assert!(doubled.inexact_accumulated(), "accumulated p={p} rm={rm:?}");
+            let back = doubled.sub(&third, p, rm);
+            assert!(!back.inexact(), "per-op sub p={p} rm={rm:?}");
+            assert!(
+                back.inexact_accumulated(),
+                "accumulated sub p={p} rm={rm:?}"
+            );
+            let exact = two.add(&two, p, rm);
+            assert!(!exact.inexact_accumulated(), "exact chain p={p} rm={rm:?}");
+        }
+    }
+}

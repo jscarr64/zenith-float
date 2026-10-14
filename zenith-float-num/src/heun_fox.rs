@@ -1009,7 +1009,7 @@ fn heun_eps(
 }
 
 fn params_exact(xs: &[&ExactNum]) -> bool {
-    xs.iter().all(|x| finite(x) && !x.inexact())
+    xs.iter().all(|x| finite(x) && !x.inexact_accumulated())
 }
 
 fn exactly_equal(a: &ExactNum, b: &ExactNum) -> bool {

@@ -56,7 +56,7 @@ impl ExactComplex {
 
     /// True if either part is inexact.
     pub fn inexact(&self) -> bool {
-        self.re.inexact() || self.im.inexact()
+        self.re.inexact_accumulated() || self.im.inexact_accumulated()
     }
 
     /// Sets the inexact flag on both parts.

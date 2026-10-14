@@ -29,8 +29,9 @@
 //! Before the result is returned to the user, the result is rounded according to the rounding mode and reduced to the expected precision.
 //!
 //!
-//! The result of an operation is marked as inexact if some of the bits were rounded when producing the result,
-//! or if any of the operation's arguments were marked as inexact. The information about exactness is used to achieve correct rounding.
+//! Each number carries two exactness flags. `inexact()` on the result of `add`, `sub`, `mul`, or `div` is true only if
+//! that operation rounded. `inexact_accumulated()` is also true if any value the result was computed from was inexact;
+//! the correct-rounding loops and the `expr!` macro use it. Other functions report the accumulated flag through `inexact()`.
 //!
 //!
 //! `ExactNum` can be parsed from a string and formatted into a string using binary, octal, decimal, or hexadecimal representation.

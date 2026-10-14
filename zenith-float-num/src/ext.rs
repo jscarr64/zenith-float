@@ -137,7 +137,7 @@ impl ExactNum {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
                 Flavor::Value(v2) => Self::result_to_ext_rm(
-                    if full_prec { v1.add_full_prec(v2) } else { v1.add(v2, p, rm) },
+                    if full_prec { v1.add_full_prec(v2) } else { v1.add_per_op(v2, p, rm) },
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
                     p,
@@ -189,7 +189,7 @@ impl ExactNum {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
                 Flavor::Value(v2) => Self::result_to_ext_rm(
-                    if full_prec { v1.sub_full_prec(v2) } else { v1.sub(v2, p, rm) },
+                    if full_prec { v1.sub_full_prec(v2) } else { v1.sub_per_op(v2, p, rm) },
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
                     p,
@@ -301,7 +301,7 @@ impl ExactNum {
         }
         if lo.is_zero() {
             let mut z = Self::new(p);
-            z.set_inexact(lo.inexact());
+            z.set_inexact(lo.inexact_accumulated());
             return z;
         }
         lo
@@ -441,7 +441,7 @@ impl ExactNum {
             Flavor::Value(v1) => {
                 match &d2.inner {
                     Flavor::Value(v2) => Self::result_to_ext_rm(
-                        if full_prec { v1.mul_full_prec(v2) } else { v1.mul(v2, p, rm) },
+                        if full_prec { v1.mul_full_prec(v2) } else { v1.mul_per_op(v2, p, rm) },
                         v1.is_zero(),
                         v1.sign() == v2.sign(),
                         p,
@@ -496,7 +496,7 @@ impl ExactNum {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
                 Flavor::Value(v2) => Self::result_to_ext_rm(
-                    v1.div(v2, p, rm),
+                    v1.div_per_op(v2, p, rm),
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
                     p,
@@ -1549,7 +1549,22 @@ impl ExactNum {
     }
 
     /// Returns true if `self` is inexact. The function returns false if `self` is Inf or NaN.
+    ///
+    /// For `add`, `sub`, `mul`, and `div` the flag is per operation: it is true only if that
+    /// operation rounded, whatever the operands' flags were. Other functions report
+    /// [`ExactNum::inexact_accumulated`].
     pub fn inexact(&self) -> bool {
+        if let Flavor::Value(v) = &self.inner {
+            v.op_inexact()
+        } else {
+            false
+        }
+    }
+
+    /// Returns true if `self`, or any value it was computed from, was rounded. The function
+    /// returns false if `self` is Inf or NaN. This accumulated flag is what the `expr!` macro
+    /// and the correct-rounding loops use to know whether a chain of operations is exact.
+    pub fn inexact_accumulated(&self) -> bool {
         if let Flavor::Value(v) = &self.inner {
             v.inexact()
         } else {

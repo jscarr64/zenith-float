@@ -132,6 +132,14 @@ Every exponent overflow came back as `±Inf`, whatever the rounding mode. `num.r
 
 The MPFR check now requires `Inf` exactly where MPFR is `Inf` and fails when MPFR is `Inf` and zenith is not. Both generators emit the mode-correct value, the goldens were regenerated (`edges.jsonl` gains nine overflow rows per precision and mode, both signs, for `add`, `sub`, `mul`, and `div`; `parse.jsonl` ids shift), and `tests/overflow_modes.rs` sweeps 14 overflowing operations over all seven modes and four precisions. `fuzz_mpfr_overflow_all_round_modes` does the same against MPFR at five precisions.
 
+### `inexact` is per operation
+
+`add`, `sub`, `mul`, and `div` started from `self.inexact || d2.inexact` (`num.rs` 337, 409, 633) and then added whatever this operation rounded. The flag on the result answered "was anything upstream rounded", not "did this operation round". `(1/3) * 2` is exact, and its `inexact()` was `true` because `1/3` had been rounded. A caller could not tell from the flag whether the operation it just performed was exact.
+
+`ExactNum::inexact()` on the result of `add`, `sub`, `mul`, or `div` is now true only when that operation rounded, including rounding onto the subnormal grid. The operands' flags are not inherited. This is a breaking change: code that read `inexact()` to learn whether a chain of operations was exact has to call the new `ExactNum::inexact_accumulated()`.
+
+The accumulated flag is still needed, so it is kept as that separate API. The correct-rounding loops decide whether a value needs a roundability check from it (`try_set_precision`), negative `powi` uses it to know whether repeated squaring was exact, and the `expr!`/`cexpr!` macros use it to know whether a cancellation can carry error. Each number now carries both flags; the kernel's own `add`/`sub`/`mul`/`div` still accumulate, the public wrappers also record the per-operation flag, and any in-place change (`set_precision`, `set_inexact`, subnormalization) drops back to the accumulated flag. Other functions (`sqrt`, the transcendentals, `ExactComplex`) report the accumulated flag through `inexact()`, as before. `set_inexact` sets both. The macros, `macro_util`, `ExactComplex::inexact`, and the Heun exactness test read `inexact_accumulated()`, so their behaviour is unchanged. `tests/inexact_per_op.rs` sweeps six modes, four precisions, and both signs over ten exact operations on an inexact operand, two rounding operations, and the accumulated chain.
+
 ### Tests
 
 - `tests/oracle/goldens/quad.jsonl`: 12 `gk-eps` rows (deep tier) for the Wynn-ε Gauss–Kronrod path on endpoint singularities: 6 integrands (\(x^{-0.75}\), \(x^{-0.9}\), \(x^{-0.99}\), and \(\ln^k x/\sqrt{x}\) for \(k=1,2,3\)) × 256 and 512 bits. 18 `gk-inf` rows cover `integrate_adaptive_gk_infinite`. `abs_err_est` on those rows is checked against the oracle.

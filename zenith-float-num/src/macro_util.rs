@@ -52,25 +52,36 @@ pub enum ErrAlgo<'a> {
 pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
     match algo {
         ErrAlgo::Log(arg, c, emin) => {
-            if arg.inexact() && arg.is_positive() {
+            if arg.inexact_accumulated() && arg.is_positive() {
                 c + compute_added_err_near_one(arg, emin)
             } else {
                 0
             }
         }
         ErrAlgo::Log2(base, arg, emin) => {
-            if (arg.inexact() || base.inexact()) && arg.is_positive() && base.is_positive() {
-                let y = if base.inexact() { compute_added_err_near_one(base, emin) } else { 0 };
-                let x = if arg.inexact() { compute_added_err_near_one(arg, emin) } else { 0 };
+            if (arg.inexact_accumulated() || base.inexact_accumulated())
+                && arg.is_positive()
+                && base.is_positive()
+            {
+                let y = if base.inexact_accumulated() {
+                    compute_added_err_near_one(base, emin)
+                } else {
+                    0
+                };
+                let x = if arg.inexact_accumulated() {
+                    compute_added_err_near_one(arg, emin)
+                } else {
+                    0
+                };
                 5 + x.max(y)
             } else {
                 0
             }
         }
         ErrAlgo::Pow(base, arg, emin) => {
-            if arg.inexact() || base.inexact() {
+            if arg.inexact_accumulated() || base.inexact_accumulated() {
                 if let Some(earg) = arg.exponent() {
-                    let v = if !base.inexact() || earg <= 0 {
+                    let v = if !base.inexact_accumulated() || earg <= 0 {
                         0
                     } else {
                         let n = compute_added_err_near_one(base, emin);
@@ -89,7 +100,7 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
             }
         }
         ErrAlgo::Trig(arg, p, fun, cc, emin) => {
-            if arg.inexact() {
+            if arg.inexact_accumulated() {
                 if let Some(e) = arg.exponent() {
                     let err = if e < 1 {
                         0
@@ -182,7 +193,7 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
             }
         }
         ErrAlgo::Asin(arg, emin) => {
-            if arg.inexact() && arg.exponent().unwrap_or(1) < 1 {
+            if arg.inexact_accumulated() && arg.exponent().unwrap_or(1) < 1 {
                 let n = compute_added_err_near_one(arg, emin);
                 2 + (n + 1) / 2
             } else {
@@ -190,7 +201,7 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
             }
         }
         ErrAlgo::Acos(arg, emin) => {
-            if arg.inexact() && arg.exponent().unwrap_or(1) < 1 {
+            if arg.inexact_accumulated() && arg.exponent().unwrap_or(1) < 1 {
                 let n = compute_added_err_near_one(arg, emin);
                 2 + if arg.is_positive() { n } else { n / 2 }
             } else {
@@ -198,14 +209,14 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
             }
         }
         ErrAlgo::Acosh(arg, emin) => {
-            if arg.inexact() && arg.is_positive() && arg.exponent().unwrap_or(0) >= 1 {
+            if arg.inexact_accumulated() && arg.is_positive() && arg.exponent().unwrap_or(0) >= 1 {
                 2 + compute_added_err_near_one(arg, emin)
             } else {
                 0
             }
         }
         ErrAlgo::Atanh(arg, emin) => {
-            if arg.inexact() && arg.exponent().unwrap_or(1) < 1 {
+            if arg.inexact_accumulated() && arg.exponent().unwrap_or(1) < 1 {
                 2 + compute_added_err_near_one(arg, emin)
             } else {
                 0

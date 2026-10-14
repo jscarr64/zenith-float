@@ -59,7 +59,7 @@ fn traverse_binary(
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
                 let ret = zenith_float::ExactNum::add(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::None);
-                if arg1.inexact() || arg2.inexact() {
+                if arg1.inexact_accumulated() || arg2.inexact_accumulated() {
                     if let (Some(e1), Some(e2), Some(e3)) = (arg1.exponent(), arg2.exponent(), ret.exponent()) {
                         if (e1 as isize - e2 as isize).abs() <= 1 && arg1.sign() != arg2.sign() {
                             let newerr = (e1.max(e2) as isize - e3 as isize).unsigned_abs() + 1;
@@ -79,7 +79,7 @@ fn traverse_binary(
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
                 let ret = zenith_float::ExactNum::sub(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::None);
-                if arg1.inexact() || arg2.inexact() {
+                if arg1.inexact_accumulated() || arg2.inexact_accumulated() {
                     if let (Some(e1), Some(e2), Some(e3)) = (arg1.exponent(), arg2.exponent(), ret.exponent()) {
                         if (e1 as isize - e2 as isize).abs() <= 1 && arg1.sign() == arg2.sign() {
                             let newerr = (e1.max(e2) as isize - e3 as isize).unsigned_abs() + 1;

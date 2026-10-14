@@ -23,7 +23,13 @@ pub(crate) struct ExactNumNumber {
     e: Exponent,
     s: Sign,
     m: Mantissa,
+    // Accumulated: set when this value or any value it was computed from was rounded.
+    // Kernel code (Ziv loops, `try_set_precision`, repeated squaring) relies on it.
     inexact: bool,
+    // Per operation: `Some(r)` when the operation that produced this value records whether
+    // it rounded (`add_per_op` and friends). `None` falls back to `inexact`. Any later
+    // in-place change of the value resets it.
+    op_inexact: Option<bool>,
 }
 
 impl ExactNumNumber {
@@ -60,6 +66,7 @@ impl ExactNumNumber {
             e: 0,
             s: Sign::Pos,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -77,6 +84,7 @@ impl ExactNumNumber {
             e: 0,
             s,
             inexact,
+            op_inexact: None,
         })
     }
 
@@ -95,6 +103,7 @@ impl ExactNumNumber {
             e: EXPONENT_MAX,
             s: Sign::Pos,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -111,6 +120,7 @@ impl ExactNumNumber {
             e: EXPONENT_MAX,
             s: Sign::Neg,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -130,6 +140,7 @@ impl ExactNumNumber {
             e: EXPONENT_MIN,
             s: Sign::Pos,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -149,6 +160,7 @@ impl ExactNumNumber {
             e: EXPONENT_MIN,
             s: Sign::Pos,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -174,6 +186,7 @@ impl ExactNumNumber {
                 e: (WORD_BIT_SIZE - shift) as Exponent,
                 s: Sign::Pos,
                 inexact: false,
+                op_inexact: None,
             })
         }
     }
@@ -207,6 +220,7 @@ impl ExactNumNumber {
                             e: (64 - shift) as Exponent,
                             s: Sign::Pos,
                             inexact: false,
+                            op_inexact: None,
                         })
                     }
                 } else {
@@ -215,6 +229,7 @@ impl ExactNumNumber {
                         e: (64 - shift) as Exponent,
                         s: Sign::Pos,
                         inexact: false,
+                        op_inexact: None,
                     })
                 }
             }
@@ -242,7 +257,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the precision is incorrect.
     #[inline]
     pub fn add(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        self.add_sub(d2, p, 1, rm, false)
+        self.add_sub(d2, p, 1, rm, false, false)
     }
 
     /// Subtracts `d2` from `self` and returns the result of the operation with precision `p` rounded according to `rm`.
@@ -255,7 +270,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the precision is incorrect.
     #[inline]
     pub fn sub(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        self.add_sub(d2, p, -1, rm, false)
+        self.add_sub(d2, p, -1, rm, false, false)
     }
 
     /// Adds `d2` to `self` and returns the result of the operation.
@@ -268,7 +283,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     #[inline]
     pub fn add_full_prec(&self, d2: &Self) -> Result<Self, Error> {
-        self.add_sub(d2, 0, 1, RoundingMode::None, true)
+        self.add_sub(d2, 0, 1, RoundingMode::None, true, false)
     }
 
     /// Subtracts `d2` from `self` and returns the result of the operation.
@@ -281,7 +296,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     #[inline]
     pub fn sub_full_prec(&self, d2: &Self) -> Result<Self, Error> {
-        self.add_sub(d2, 0, -1, RoundingMode::None, true)
+        self.add_sub(d2, 0, -1, RoundingMode::None, true, false)
     }
 
     /// Multiplies `d2` by `self` and returns the result of the operation with precision `p` rounded according to `rm`.
@@ -294,7 +309,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the precision is incorrect.
     #[inline]
     pub fn mul(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        self.mul_general_case(d2, p, rm, false)
+        self.mul_general_case(d2, p, rm, false, false)
     }
 
     /// Multiplies `d2` by `self` and returns the result of the operation.
@@ -307,7 +322,31 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     #[inline]
     pub fn mul_full_prec(&self, d2: &Self) -> Result<Self, Error> {
-        self.mul_general_case(d2, 0, RoundingMode::None, true)
+        self.mul_general_case(d2, 0, RoundingMode::None, true, false)
+    }
+
+    /// Adds like `add`. The result also records whether this addition rounded (`op_inexact`).
+    #[inline]
+    pub(crate) fn add_per_op(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.add_sub(d2, p, 1, rm, false, true)
+    }
+
+    /// Subtracts like `sub`. The result also records whether this subtraction rounded.
+    #[inline]
+    pub(crate) fn sub_per_op(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.add_sub(d2, p, -1, rm, false, true)
+    }
+
+    /// Multiplies like `mul`. The result also records whether this multiplication rounded.
+    #[inline]
+    pub(crate) fn mul_per_op(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.mul_general_case(d2, p, rm, false, true)
+    }
+
+    /// Divides like `div`. The result also records whether this division rounded.
+    #[inline]
+    pub(crate) fn div_per_op(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.div_general_case(d2, p, rm, true)
     }
 
     fn mul_general_case(
@@ -316,6 +355,7 @@ impl ExactNumNumber {
         p: usize,
         rm: RoundingMode,
         full_prec: bool,
+        per_op: bool,
     ) -> Result<Self, Error> {
         let p = round_p(p);
 
@@ -334,7 +374,8 @@ impl ExactNumNumber {
         let (e2, m2_opt) = d2.normalize()?;
         let m2_normalized = m2_opt.as_ref().unwrap_or(&d2.m);
 
-        let mut inexact = self.inexact || d2.inexact;
+        let inputs = self.inexact || d2.inexact;
+        let mut inexact = false;
 
         let (e_shift, m3) = m1_normalized.mul(
             m2_normalized,
@@ -357,18 +398,24 @@ impl ExactNumNumber {
                 s,
                 e: EXPONENT_MIN,
                 inexact,
+                op_inexact: None,
             };
 
             ret.subnormalize(e, rm);
+            ret.finish_flags(inputs, per_op);
 
             Ok(ret)
         } else {
-            Ok(ExactNumNumber {
+            let mut ret = ExactNumNumber {
                 m: m3,
                 s,
                 e: e as Exponent,
                 inexact,
-            })
+                op_inexact: None,
+            };
+            ret.finish_flags(inputs, per_op);
+
+            Ok(ret)
         }
     }
 
@@ -382,6 +429,16 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - InvalidArgument: both `self` and `d2` are zero or precision is incorrect.
     pub fn div(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.div_general_case(d2, p, rm, false)
+    }
+
+    fn div_general_case(
+        &self,
+        d2: &Self,
+        p: usize,
+        rm: RoundingMode,
+        per_op: bool,
+    ) -> Result<Self, Error> {
         if d2.m.is_zero() {
             return if self.is_zero() {
                 Err(Error::InvalidArgument)
@@ -406,7 +463,8 @@ impl ExactNumNumber {
         let (e2, m2_opt) = d2.normalize()?;
         let m2_normalized = m2_opt.as_ref().unwrap_or(&d2.m);
 
-        let mut inexact = self.inexact || d2.inexact;
+        let inputs = self.inexact || d2.inexact;
+        let mut inexact = false;
 
         let (e_shift, m3) =
             m1_normalized.div(m2_normalized, p, rm, s == Sign::Pos, &mut inexact)?;
@@ -423,18 +481,24 @@ impl ExactNumNumber {
                 s,
                 e: EXPONENT_MIN,
                 inexact,
+                op_inexact: None,
             };
 
             ret.subnormalize(e, rm);
+            ret.finish_flags(inputs, per_op);
 
             Ok(ret)
         } else {
-            Ok(ExactNumNumber {
+            let mut ret = ExactNumNumber {
                 m: m3,
                 s,
                 e: e as Exponent,
                 inexact,
-            })
+                op_inexact: None,
+            };
+            ret.finish_flags(inputs, per_op);
+
+            Ok(ret)
         }
     }
 
@@ -502,6 +566,7 @@ impl ExactNumNumber {
                 s: self.s,
                 e: e as Exponent,
                 inexact: self.inexact || d2.inexact,
+                op_inexact: None,
             };
 
             Ok(ret)
@@ -592,6 +657,7 @@ impl ExactNumNumber {
         op: i8,
         rm: RoundingMode,
         full_prec: bool,
+        per_op: bool,
     ) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
@@ -604,23 +670,30 @@ impl ExactNumNumber {
             let negative =
                 if self.s == other { self.s == Sign::Neg } else { rm == RoundingMode::Down };
             let mut ret = if op < 0 { d2.neg()? } else { d2.clone()? };
+            let inputs = ret.inexact;
+            ret.inexact = false;
             ret.set_precision(p, rm)?;
+            ret.finish_flags(inputs, per_op);
             ret.set_sign(if negative { Sign::Neg } else { Sign::Pos });
             return Ok(ret);
         }
 
         if self.m.is_zero() {
             let mut ret = if op < 0 { d2.neg() } else { d2.clone() }?;
-
+            let inputs = ret.inexact;
+            ret.inexact = false;
             ret.set_precision(p, rm)?;
+            ret.finish_flags(inputs, per_op);
 
             return Ok(ret);
         }
 
         if d2.m.is_zero() {
             let mut ret = self.clone()?;
-
+            let inputs = ret.inexact;
+            ret.inexact = false;
             ret.set_precision(p, rm)?;
+            ret.finish_flags(inputs, per_op);
 
             return Ok(ret);
         }
@@ -630,7 +703,8 @@ impl ExactNumNumber {
         let (e2, m2_opt) = d2.normalize()?;
         let m2 = m2_opt.as_ref().unwrap_or(&d2.m);
 
-        let mut inexact = self.inexact || d2.inexact;
+        let inputs = self.inexact || d2.inexact;
+        let mut inexact = false;
 
         let mut e;
         let (shift, m3) = if (self.s != d2.s && op >= 0) || (op < 0 && self.s == d2.s) {
@@ -663,6 +737,7 @@ impl ExactNumNumber {
             } else {
                 let mut ret = Self::new(p)?;
                 ret.inexact = inexact;
+                ret.finish_flags(inputs, per_op);
                 if rm == RoundingMode::Down {
                     ret.set_sign(Sign::Neg);
                 }
@@ -716,6 +791,7 @@ impl ExactNumNumber {
         } else {
             d3.e = e as Exponent;
         }
+        d3.finish_flags(inputs, per_op);
 
         Ok(d3)
     }
@@ -749,6 +825,7 @@ impl ExactNumNumber {
             }
 
             self.inexact |= inexact;
+            self.op_inexact = None;
 
             if shift > 0 {
                 self.m.shift_right(shift);
@@ -761,6 +838,7 @@ impl ExactNumNumber {
             let below_half = e < EXPONENT_MIN as isize - pbits;
             let class = if below_half { -1 } else { Self::mantissa_vs_half(&self.m) };
             self.inexact = true;
+            self.op_inexact = None;
             if Self::flush_to_min(class, rm, is_positive) {
                 self.m.set_zero();
                 self.m.digits_mut()[0] = 1;
@@ -917,13 +995,25 @@ impl ExactNumNumber {
                 e = 0;
             }
 
-            Ok(ExactNumNumber { e, s, m, inexact })
+            Ok(ExactNumNumber {
+                e,
+                s,
+                m,
+                inexact,
+                op_inexact: None,
+            })
         }
     }
 
     /// Build ExactNumNumber from raw parts unchecked.
     pub(super) fn from_raw_unchecked(m: Mantissa, s: Sign, e: Exponent, inexact: bool) -> Self {
-        ExactNumNumber { e, s, m, inexact }
+        ExactNumNumber {
+            e,
+            s,
+            m,
+            inexact,
+            op_inexact: None,
+        }
     }
 
     /// Constructs a number from the slice of words:
@@ -968,6 +1058,7 @@ impl ExactNumNumber {
             s,
             m,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -1289,6 +1380,7 @@ impl ExactNumNumber {
             s,
             m,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -1303,6 +1395,7 @@ impl ExactNumNumber {
             s: self.s,
             m: self.m.clone()?,
             inexact: self.inexact,
+            op_inexact: self.op_inexact,
         })
     }
 
@@ -1356,6 +1449,7 @@ impl ExactNumNumber {
             );
 
             self.inexact |= inexact;
+            self.op_inexact = None;
 
             if check_roundable && self.inexact {
                 return Ok(false);
@@ -1380,6 +1474,7 @@ impl ExactNumNumber {
                 }
             } else {
                 self.inexact |= true;
+                self.op_inexact = None;
             }
         }
 
@@ -1413,6 +1508,7 @@ impl ExactNumNumber {
             s,
             e,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -1482,6 +1578,7 @@ impl ExactNumNumber {
                 e: (SZ - shift) as Exponent,
                 s: Sign::Pos,
                 inexact: false,
+                op_inexact: None,
             })
         }
     }
@@ -1515,6 +1612,22 @@ impl ExactNumNumber {
     #[inline]
     pub fn set_inexact(&mut self, inexact: bool) {
         self.inexact = inexact;
+        self.op_inexact = None;
+    }
+
+    /// Returns true if the operation that produced `self` rounded. Values whose producing
+    /// operation does not record that report the accumulated flag, `inexact()`.
+    #[inline]
+    pub fn op_inexact(&self) -> bool {
+        self.op_inexact.unwrap_or(self.inexact)
+    }
+
+    // Splits the flag after an operation that started from `inexact = false`: `self.inexact`
+    // holds what this operation rounded; `inputs` is the operands' accumulated flag.
+    fn finish_flags(&mut self, inputs: bool, per_op: bool) {
+        let rounded = self.inexact;
+        self.inexact = rounded || inputs;
+        self.op_inexact = if per_op { Some(rounded) } else { None };
     }
 }
 
