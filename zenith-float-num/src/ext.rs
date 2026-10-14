@@ -136,10 +136,12 @@ impl ExactNum {
     fn add_op(&self, d2: &Self, p: usize, rm: RoundingMode, full_prec: bool) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
-                Flavor::Value(v2) => Self::result_to_ext(
+                Flavor::Value(v2) => Self::result_to_ext_rm(
                     if full_prec { v1.add_full_prec(v2) } else { v1.add(v2, p, rm) },
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
+                    p,
+                    rm,
                 ),
                 Flavor::Inf(s2) => ExactNum {
                     inner: Flavor::Inf(*s2),
@@ -186,10 +188,12 @@ impl ExactNum {
     fn sub_op(&self, d2: &Self, p: usize, rm: RoundingMode, full_prec: bool) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
-                Flavor::Value(v2) => Self::result_to_ext(
+                Flavor::Value(v2) => Self::result_to_ext_rm(
                     if full_prec { v1.sub_full_prec(v2) } else { v1.sub(v2, p, rm) },
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
+                    p,
+                    rm,
                 ),
                 Flavor::Inf(s2) => {
                     if s2.is_positive() {
@@ -254,7 +258,7 @@ impl ExactNum {
         }
         match (&self.inner, &b.inner, &c.inner) {
             (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(cv)) => {
-                Self::result_to_ext(a.fma(bv, cv, p, rm), false, true)
+                Self::result_to_ext_rm(a.fma(bv, cv, p, rm), false, true, p, rm)
             }
             _ => {
                 let prod = self.mul(b, p, RoundingMode::None);
@@ -426,7 +430,7 @@ impl ExactNum {
         }
         match (&self.inner, &b.inner, &c.inner) {
             (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(cv)) => {
-                Self::result_to_ext(a.mul_add(bv, cv, p, rm), false, true)
+                Self::result_to_ext_rm(a.mul_add(bv, cv, p, rm), false, true, p, rm)
             }
             _ => self.fma(b, c, p, rm),
         }
@@ -436,10 +440,12 @@ impl ExactNum {
         match &self.inner {
             Flavor::Value(v1) => {
                 match &d2.inner {
-                    Flavor::Value(v2) => Self::result_to_ext(
+                    Flavor::Value(v2) => Self::result_to_ext_rm(
                         if full_prec { v1.mul_full_prec(v2) } else { v1.mul(v2, p, rm) },
                         v1.is_zero(),
                         v1.sign() == v2.sign(),
+                        p,
+                        rm,
                     ),
                     Flavor::Inf(s2) => {
                         if v1.is_zero() {
@@ -489,9 +495,13 @@ impl ExactNum {
     pub fn div(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
-                Flavor::Value(v2) => {
-                    Self::result_to_ext(v1.div(v2, p, rm), v1.is_zero(), v1.sign() == v2.sign())
-                }
+                Flavor::Value(v2) => Self::result_to_ext_rm(
+                    v1.div(v2, p, rm),
+                    v1.is_zero(),
+                    v1.sign() == v2.sign(),
+                    p,
+                    rm,
+                ),
                 Flavor::Inf(_) => Self::new(v1.mantissa_max_bit_len()),
                 Flavor::NaN(err) => Self::nan(*err),
             },
@@ -600,10 +610,16 @@ impl ExactNum {
         match &self.inner {
             Flavor::Value(v1) => {
                 match &n.inner {
-                    Flavor::Value(v2) => Self::result_to_ext(
+                    // 0^(-n) is a pole (Inf in every mode); any other overflow follows `rm`.
+                    Flavor::Value(v2) if v1.is_zero() => {
+                        Self::result_to_ext(v1.pow(v2, p, rm, cc), true, v1.sign() == v2.sign())
+                    }
+                    Flavor::Value(v2) => Self::result_to_ext_rm(
                         v1.pow(v2, p, rm, cc),
-                        v1.is_zero(),
+                        false,
                         v1.sign() == v2.sign(),
+                        p,
+                        rm,
                     ),
                     Flavor::Inf(s2) => {
                         // v1^inf
@@ -660,7 +676,7 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn powi(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
-            Flavor::Value(v1) => Self::result_to_ext(v1.powi(n, p, rm), false, true),
+            Flavor::Value(v1) => Self::result_to_ext_rm(v1.powi(n, p, rm), false, true, p, rm),
             Flavor::Inf(s1) => {
                 // inf ^ v2
                 if n == 0 {
@@ -683,7 +699,7 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn powsi(&self, n: isize, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
-            Flavor::Value(v1) => Self::result_to_ext(v1.powsi(n, p, rm), false, true),
+            Flavor::Value(v1) => Self::result_to_ext_rm(v1.powsi(n, p, rm), false, true, p, rm),
             Flavor::Inf(s1) => {
                 if n == 0 {
                     Self::from_u8(1, p)
@@ -1079,7 +1095,7 @@ impl ExactNum {
         }
         match (&self.inner, &other.inner) {
             (Flavor::Value(a), Flavor::Value(b)) => {
-                Self::result_to_ext(a.hypot(b, p, rm), false, true)
+                Self::result_to_ext_rm(a.hypot(b, p, rm), false, true, p, rm)
             }
             _ => NAN,
         }
@@ -1182,6 +1198,44 @@ impl ExactNum {
             Ok(v) => ExactNum {
                 inner: Flavor::Value(v),
             },
+        }
+    }
+
+    /// Like `result_to_ext`, but an exponent overflow follows `rm` as in IEEE 754 and MPFR:
+    /// the largest finite value of precision `p` with the overflow sign when `rm` rounds toward
+    /// zero for that sign (`ToZero`, `Down` for a positive result, `Up` for a negative one),
+    /// otherwise Inf. The largest finite value is marked inexact.
+    fn result_to_ext_rm(
+        res: Result<ExactNumNumber, Error>,
+        is_dividend_zero: bool,
+        is_same_sign: bool,
+        p: usize,
+        rm: RoundingMode,
+    ) -> ExactNum {
+        match res {
+            Err(Error::ExponentOverflow(s)) => {
+                let toward_zero = matches!(
+                    (s.is_positive(), rm),
+                    (_, RoundingMode::ToZero)
+                        | (true, RoundingMode::Down)
+                        | (false, RoundingMode::Up)
+                );
+                if toward_zero {
+                    match ExactNumNumber::max_value(p) {
+                        Ok(mut m) => {
+                            m.set_sign(s);
+                            m.set_inexact(true);
+                            ExactNum {
+                                inner: Flavor::Value(m),
+                            }
+                        }
+                        Err(e) => Self::result_to_ext(Err(e), is_dividend_zero, is_same_sign),
+                    }
+                } else {
+                    Self::result_to_ext(res, is_dividend_zero, is_same_sign)
+                }
+            }
+            _ => Self::result_to_ext(res, is_dividend_zero, is_same_sign),
         }
     }
 
@@ -1378,7 +1432,9 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.reciprocal(p, rm), false, v.is_positive()),
+            Flavor::Value(v) => {
+                Self::result_to_ext_rm(v.reciprocal(p, rm), false, v.is_positive(), p, rm)
+            }
             Flavor::Inf(s) => {
                 let mut ret = Self::new(p);
                 ret.set_sign(*s);
@@ -1541,7 +1597,7 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn ldexp(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.ldexp(n, p, rm), v.is_zero(), true),
+            Flavor::Value(v) => Self::result_to_ext_rm(v.ldexp(n, p, rm), v.is_zero(), true, p, rm),
             Flavor::Inf(_) | Flavor::NaN(_) => self.clone(),
         }
     }
@@ -1627,6 +1683,23 @@ macro_rules! gen_wrapper_arg_rm_cc {
             match &self.inner {
                 Flavor::Value(v) => {
                     Self::result_to_ext(v.$fname($($arg,)* rm, cc), v.is_zero(), true)
+                },
+                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::NaN(err) => Self::nan(*err),
+            }
+        }
+    };
+}
+
+macro_rules! gen_wrapper_ovf_rm_cc {
+    // like gen_wrapper_arg_rm_cc, for functions whose only ExponentOverflow is a finite result
+    // past the range: the overflow follows the rounding mode
+    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $p:ident, usize) => {
+        #[doc=$comment]
+        pub fn $fname(&self, $p: usize, rm: RoundingMode, cc: &mut Consts) -> $ret {
+            match &self.inner {
+                Flavor::Value(v) => {
+                    Self::result_to_ext_rm(v.$fname($p, rm, cc), v.is_zero(), true, $p, rm)
                 },
                 Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
                 Flavor::NaN(err) => Self::nan(*err),
@@ -1832,7 +1905,7 @@ Accuracy: correctly-rounded",
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Computes `e` to the power of `self` with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
         Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
@@ -1844,7 +1917,7 @@ Accuracy: correctly-rounded",
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Computes `2` to the power of `self` with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
         Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
@@ -1856,7 +1929,7 @@ Accuracy: correctly-rounded",
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Computes `10` to the power of `self` with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
         Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
@@ -1956,7 +2029,7 @@ Accuracy: correctly-rounded",
         usize
     );
 
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Computes the hyperbolic sine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache cc for computing the result. 
         Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
@@ -1968,7 +2041,7 @@ Accuracy: correctly-rounded",
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Computes the hyperbolic cosine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache cc for computing the result. 
         Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.

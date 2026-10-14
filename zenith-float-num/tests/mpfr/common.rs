@@ -234,6 +234,14 @@ pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, c
         );
 
         let d = n.sub(&n2, 1, RoundingMode::None).abs();
+        assert!(
+            d.exponent().is_some(),
+            "{} zenith {:?}, MPFR {}, difference {:?}",
+            op,
+            n,
+            f,
+            d
+        );
 
         let e1 = n.exponent().unwrap() as isize
             - (n.mantissa_max_bit_len().unwrap() - n.precision().unwrap()) as isize;
