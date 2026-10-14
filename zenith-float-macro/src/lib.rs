@@ -1223,7 +1223,10 @@ pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let mut err = Vec::new();
 
-    let mut cc = Consts::new().expect("Failed to initialize constant cache.");
+    let mut cc = match crate::util::consts_or_compile_error(Consts::new()) {
+        Ok(cc) => cc,
+        Err(ts) => return ts.into(),
+    };
 
     let expr = traverse_expr(&expr, &mut err, &mut cc).unwrap_or_else(|e| e.to_compile_error());
 

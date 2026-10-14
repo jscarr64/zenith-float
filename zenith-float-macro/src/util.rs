@@ -76,3 +76,37 @@ pub fn check_arg_num(narg: usize, expr: &ExprCall) -> Result<(), Error> {
     }
     Ok(())
 }
+
+/// The constant cache for a macro expansion, or a `compile_error!` naming the failure.
+pub(crate) fn consts_or_compile_error(
+    r: Result<zenith_float_num::Consts, zenith_float_num::Error>,
+) -> Result<zenith_float_num::Consts, proc_macro2::TokenStream> {
+    r.map_err(|e| {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("zenith-float: failed to initialize the constant cache: {e:?}"),
+        )
+        .to_compile_error()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::consts_or_compile_error;
+
+    #[test]
+    fn consts_failure_is_compile_error_not_panic() {
+        let r = consts_or_compile_error(Err(zenith_float_num::Error::MemoryAllocation));
+        let ts = match r {
+            Ok(_) => String::new(),
+            Err(ts) => ts.to_string(),
+        };
+        assert!(ts.contains("compile_error"), "{ts}");
+        assert!(ts.contains("MemoryAllocation"), "{ts}");
+    }
+
+    #[test]
+    fn consts_success_passes_through() {
+        assert!(consts_or_compile_error(zenith_float_num::Consts::new()).is_ok());
+    }
+}
