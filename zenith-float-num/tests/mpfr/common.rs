@@ -403,6 +403,16 @@ fn mpfr_binop(r: &mut Float, a: &Float, b: &Float, op: BinOp, rnd: rnd_t) -> i32
 /// bits and decides from the extra bit and the ternary value. That emulation is for results
 /// in the normal range only.
 pub fn mpfr_reference(a: &Float, b: &Float, op: BinOp, p: u32, rm: RoundingMode) -> Float {
+    mpfr_reference_with(p, rm, |r, rnd| mpfr_binop(r, a, b, op, rnd)).0
+}
+
+/// Like [`mpfr_reference`] for any MPFR function: `f(result, rnd)` computes into `result`
+/// (whose precision is already set) and returns the MPFR ternary value. Returns the
+/// result and whether it is inexact.
+pub fn mpfr_reference_with<F>(p: u32, rm: RoundingMode, f: F) -> (Float, bool)
+where
+    F: Fn(&mut Float, rnd_t) -> i32,
+{
     let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
     unsafe {
         mpfr::set_emax(EXPONENT_MAX as mpfr::exp_t);
@@ -419,12 +429,13 @@ pub fn mpfr_reference(a: &Float, b: &Float, op: BinOp, p: u32, rm: RoundingMode)
     };
     let out = if let Some(rnd) = rnd {
         let mut r = Float::new(p);
-        let t = mpfr_binop(&mut r, a, b, op, rnd);
-        unsafe { mpfr::subnormalize(r.as_raw_mut(), t, rnd) };
-        r
+        let t = f(&mut r, rnd);
+        let t2 = unsafe { mpfr::subnormalize(r.as_raw_mut(), t, rnd) };
+        let inexact = t2 != 0 || t != 0;
+        (r, inexact)
     } else {
         let mut w = Float::new(p + 1);
-        let t = mpfr_binop(&mut w, a, b, op, rnd_t::RNDZ);
+        let t = f(&mut w, rnd_t::RNDZ);
         let mut lo = Float::new(p);
         let mut hi = Float::new(p);
         unsafe {
@@ -434,7 +445,7 @@ pub fn mpfr_reference(a: &Float, b: &Float, op: BinOp, p: u32, rm: RoundingMode)
         let odd = |x: &Float, bits: u32| {
             !x.is_zero() && unsafe { mpfr::min_prec(x.as_raw()) } as u32 == bits
         };
-        if lo == hi {
+        let v = if lo == hi {
             lo
         } else if t == 0 {
             // w is the exact midpoint: the tie goes to the odd neighbour.
@@ -448,7 +459,9 @@ pub fn mpfr_reference(a: &Float, b: &Float, op: BinOp, p: u32, rm: RoundingMode)
             hi
         } else {
             lo
-        }
+        };
+        let inexact = t != 0 || unsafe { mpfr::min_prec(w.as_raw()) } as u32 > p;
+        (v, inexact)
     };
     unsafe {
         mpfr::set_emin(old_min);
