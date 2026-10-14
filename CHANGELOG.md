@@ -17,11 +17,40 @@ The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). `rust-v
 Behaviour changes from the audit, each with its own section below:
 
 - `add`, `sub`, `mul`, and `div` round at exactly `p` bits instead of `p` rounded up to a word, and subnormal results are no longer rounded twice.
+- Every other rounded function also rounds at exactly `p` bits: roots, `hypot`, `fma`, `pow`, parsing, the exp/log, trigonometric and hyperbolic families, and every real special function. See "Exact-`p`-bit rounding beyond the basic operations".
 - An exponent overflow under `ToZero`, under `Down` for a positive result, and under `Up` for a negative result returns `±max_value(p)` instead of `±Inf`.
-- `inexact()` on the result of `add`, `sub`, `mul`, or `div` describes that operation only. `inexact_accumulated()` is the old flag.
+- `inexact()` describes the operation that produced the value, for every rounded function and for `ExactComplex`. `inexact_accumulated()` is the old flag; `ExactComplex::inexact_accumulated()` is new.
+- `ldexp` and `scalb` below the exponent range round onto the subnormal grid by mode instead of returning zero.
 - `from_raw_parts` validates its parts and returns `NaN(InvalidArgument)` for inconsistent ones.
 - `EXPONENT_MAX` and `EXPONENT_MIN` are `i32::MAX` and `i32::MIN` on 32-bit targets too.
 - The `RoundingMode` documentation describes `Up`, `Down`, `ToZero`, and `FromZero` as directed modes, not tie rules (documentation only).
+
+### Exact-`p`-bit rounding beyond the basic operations
+
+Only `add`, `sub`, `mul`, and `div` rounded at exactly `p` bits; every other function rounded at `p` rounded up to a word and then again at `p`, so its last bit could be wrong in any directed mode and at ties. All rounded functions now run toward zero with a guard word, round to odd, and then round once at `p` bits in the requested mode. An exact result (`sqrt(4)`, `exp(0)`, `log(1)`, `log10(1000)`, `hypot(3, 4)`, `9^0.5`, `nth_root(16, 4)`) is exact and reports `inexact() == false`. Fixes found on the way:
+
+- `hypot` never terminated on exact results (`PrecisionRetryExhausted` for `(3, 4)`); it now forms the sum of squares exactly and takes one rounded square root.
+- `fma` dropped a far-smaller addend, which gave wrong directed results and flags; an exact cancellation is `-0` under `Down`.
+- `nth_root` chained square and cube roots and rounded twice.
+- Parsing rounds the decimal value once at `p` bits.
+
+Results can differ from 1.x in the last bit. Code that compared bit patterns with 1.x output has to regenerate them.
+
+### Overflow follows the rounding mode in every function
+
+`gamma` and `Ei` returned `+Inf` on overflow in every mode. They now return `±max_value(p)` under `ToZero`, under `Down` for a positive result, and under `Up` for a negative result, like the other functions. Poles (`gamma(0)`, `Ei(0)`) stay infinite. `ToOdd` rounds to nearest, so it overflows to infinity like `ToEven`.
+
+### `ExactComplex::inexact` is per operation
+
+`ExactComplex::inexact()` was true when either part, or anything it was computed from, was rounded. It now reports whether this operation rounded either part, like `ExactNum::inexact()`; `inexact_accumulated()` keeps the old meaning. `sqrt` of a complex number with an exact root (`sqrt(3+4i) = 2+i`) is exact.
+
+### `ldexp` underflow
+
+`ldexp(x, n)` and `scalb` returned zero whenever the shifted exponent fell below `EXPONENT_MIN`, even when the result was a representable subnormal. They now round onto the subnormal grid in the requested mode.
+
+### 32-bit clippy
+
+`scripts/ci_hex_32bit.sh` runs clippy on `i686-unknown-linux-musl`. Two lints that only fire with 32-bit words were fixed (`modulo_one` in `binfmt.rs`, `needless_return` in `num.rs`).
 
 ### Subnormal underflow
 
