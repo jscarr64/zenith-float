@@ -5,6 +5,7 @@
 //! Depend on the `zenith-float` crate and use `zenith_float::expr`. This crate is not a direct dependency for applications.
 
 #![allow(missing_docs)]
+#![forbid(unsafe_code)]
 #![deny(unused)]
 #![deny(clippy::suspicious)]
 

@@ -155,7 +155,7 @@ fn gk_epsilon_beats_plain_gauss_on_invsqrt() {
 }
 
 #[test]
-fn gk_nonfinite_and_reversed_bounds_are_errors() {
+fn gk_nonfinite_and_reversed_endpoints_are_errors() {
     // A reversed interval and a NaN sample must not come back as a finite
     // integral. The typed error is the whole assertion.
     let mut cc = Consts::new().unwrap();

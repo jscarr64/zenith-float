@@ -88,13 +88,29 @@ Catalog and orthogonal-polynomial results were rounded to exactly `p` bits. A re
 
 `elliptic_f`, `elliptic_e`, and `elliptic_pi` already took the sine of the amplitude and the parameter \(m=k^2\). The rustdoc and the capabilities table now say that in those words. \(|x|>1\), including an angle such as 2 passed in place of \(\sin 2\), stays `NaN(InvalidArgument)`. The argument meaning did not change, and call sites outside this crate were not edited. Callers who passed the angle into that slot should call `elliptic_f_phi`, `elliptic_e_phi`, or `elliptic_pi_phi`.
 
-### Gauss–Kronrod error bound
+### Gauss–Kronrod error estimate
 
 `GkResult::abs_err_est` was documented as `|K − G|`, and as the difference of the last two even-order ε entries when that difference stopped the iteration. On a smooth integrand the two rules share the same rounded nodes, so they agree far more closely than either agrees with the integral. At 53 bits, \(\int_0^1 e^x\,dx\) was high by about \(8\cdot10^{-17}\) while the reported error was about \(10^{-19}\), roughly 700 times too small. The same bar missed \(\int_0^1 \sin x\,dx\). On \(\int_0^1 x^{-1/2}\,dx\) the ε difference was about \(10^{-56}\) while the integral was high by about \(5\cdot10^{-21}\). Gauss–Legendre, Gauss–Laguerre, and Gauss–Hermite used the same short working precision, so a low-degree polynomial could miss by many units of the stored word.
 
-The (7, 15) rule and those Gauss rules now run at two guard words above the destination width (that width rounded up to a multiple of 64, plus 128 bits). Tanh–sinh keeps its wider double-exponential guard when that is already more. `abs_err_est` is a bound on the true error of `estimate_kronrod`: at least `|K − G|` on one panel, or the sum of the local `|K − G|` when an ε value is accepted, plus one unit in the last place of the rounded estimate. The bound is rounded away from zero. It can be larger than `|K − G|`, and it can be larger than the tolerance that stopped the iteration. `estimate_kronrod` and `estimate_gauss` keep their meaning and still use the caller's rounding mode. The ε difference remains the stopping test for an extrapolated value; it is not the published bound.
+The (7, 15) rule and those Gauss rules now run at two guard words above the destination width (that width rounded up to a multiple of 64, plus 128 bits). Tanh–sinh keeps its wider double-exponential guard when that is already more. `abs_err_est` is a conservative error estimate, validated against oracles: at least `|K − G|` on one panel, or the sum of the local `|K − G|` when an ε value is accepted, plus one unit in the last place of the rounded estimate. The estimate is rounded away from zero. It can be larger than `|K − G|`, and it can be larger than the tolerance that stopped the iteration. `estimate_kronrod` and `estimate_gauss` keep their meaning and still use the caller's rounding mode. The ε difference remains the stopping test for an extrapolated value; it is not the published estimate.
 
 This is a breaking change. Code that read `abs_err_est` as `|K − G|` should subtract `estimate_kronrod` and `estimate_gauss`. Build the struct with `GkResult::new`. Do not rely on field order.
+
+### Elliptic shortcuts round once
+
+\(F(\varphi\mid 0)\) and \(E(\varphi\mid 0)\) are \(\varphi\). The angle-form path reduced \(\varphi\) through sine and arcsine at a working precision, then rounded again. `Up`, `Down`, `ToZero`, `FromZero`, and `None` failed the roundability test and returned `NaN` for \(\varphi=0.8\) at 256 and 512 bits. `ToEven` and `ToOdd` happened to land on the input. Those shortcuts now round the amplitude once, in the caller's mode. \(\varphi=0\) stays exact zero. \(\varphi=k\pi/2\) with \(m=0\), including \(\pm\pi/2\), \(\pi\), and \(3\pi/2\), is that same rounding. The sine-form \(m=0\) shortcut is one arcsine. \(\Pi(0;\varphi\mid m)\) calls \(F\) once. \(n=0\) on the sine form already called \(F\).
+
+### Infinite-range Gauss–Kronrod
+
+`integrate_adaptive_gk_infinite` maps a half-line or the whole line onto a finite interval and uses the same (7, 15) rule. `abs_err_est` on those rows is the same conservative error estimate, validated against oracles, and the estimate itself is checked against `est_tol`.
+
+### Platform intrinsics
+
+`add_carry` and `sub_borrow` in the limb kernel called `_addcarry_u64` and `_subborrow_u64` (and the 32-bit pair) through `core::arch`. That code came with `common/util.rs` from astro-float and still carried the MIT notice. On x86-64 the intrinsic was the live path for every addition, subtraction, and product of `ExactNum`. `shift_slice_left` and `shift_slice_right` walked those limbs through raw pointers. Decimal conversion used `Vec::set_len`. `ieee_soft` added and multiplied software binary32 and binary64 lanes with x86-64 and AArch64 integer SIMD (`_mm_add_epi32`, `_mm_add_epi64`, `_mm_mul_epu32`, `vaddq_u32`). None of those paths used `f32` or `f64`. There is no `asm!`, `global_asm!`, or `target_feature`.
+
+The limb operations are now portable integer arithmetic: a widening sum for the carry, a widening difference for the borrow, and index walks for the shifts. Decimal conversion fills the buffer with `resize`. The software IEEE lanes use `wrapping_add` and a widening multiply. For a carry or borrow of 0 or 1 the new limbs match the old intrinsics, including a chain of `WORD_MAX`. `ieee_soft` is not from astro-float; its public bit patterns are unchanged. The astro-float MIT notice on `common/util.rs` and `mantissa/conv.rs` stays.
+
+`scripts/ci_no_intrinsics.sh` rejects `std::arch`, `core::arch`, `asm!`, `global_asm!`, `target_feature`, `f32`, and `f64` in every Rust source, and rejects `unsafe` outside `scripts/no_intrinsics_allowlist.txt`. The allowlist is the `no_std` host and qemu harnesses, plus the optional MPFR test oracle. Those are not linked into the library. The library crates forbid `unsafe_code`. Callers do not see a signature change. A build that depended on the x86 intrinsic being the only implementation of a limb add now gets the same bits from the portable sum.
 
 ## 1.0.12 — 2026-10-06
 

@@ -3,6 +3,7 @@
 //! zenith-float implements arbitrary-precision software floating-point numbers.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(unused)]
 #![deny(clippy::suspicious)]
@@ -151,6 +152,7 @@ pub use crate::quadrature::gauss_kronrod_interval;
 pub use crate::quadrature::gauss_laguerre;
 pub use crate::quadrature::gauss_legendre;
 pub use crate::quadrature::integrate_adaptive_gk;
+pub use crate::quadrature::integrate_adaptive_gk_infinite;
 pub use crate::quadrature::kronrod_pair;
 pub use crate::quadrature::tanh_sinh;
 pub use crate::quadrature::wynn_epsilon;

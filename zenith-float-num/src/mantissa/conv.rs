@@ -50,10 +50,7 @@ impl Mantissa {
                 }
                 ret.reverse(); // happens just once
             } else {
-                unsafe {
-                    // for better performance
-                    ret.set_len(l);
-                }
+                ret.resize(l, 0);
                 for d in ret.iter_mut().rev() {
                     *d = (v % 10) as u8;
                     v /= 10;

@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Print canonical `to_bytes()` hex for one representative of each special.
 //!
 //! Output is independent of `WORD_BIT_SIZE` (binary interchange uses big-endian `u32` limbs).

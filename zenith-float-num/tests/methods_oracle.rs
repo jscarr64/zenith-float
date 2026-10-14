@@ -14,7 +14,7 @@
 
 use zenith_float_num::{
     euler, gauss_hermite, gauss_kronrod_interval, gauss_laguerre, gauss_legendre,
-    integrate_adaptive_gk, rk4, rk45_adaptive, tanh_sinh,
+    integrate_adaptive_gk, integrate_adaptive_gk_infinite, rk4, rk45_adaptive, tanh_sinh,
     wynn_epsilon, Ball, Consts, ExactNum, QuadratureError, Radix, RoundingMode,
 };
 
@@ -137,6 +137,24 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
             let tol = parse_at(row["tol"].as_str().unwrap_or("1e-6"), p, rm, &mut cc);
             let panels = row.get("panels").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
             let got = integrate_adaptive_gk(
+                |x, p, rm, cc| sample(integ, x, p, rm, cc),
+                &a,
+                &b,
+                &tol,
+                panels,
+                p,
+                rm,
+                &mut cc,
+            )
+            .map_err(|e| format!("{e:?}"))?;
+            (got.estimate_kronrod, got.abs_err_est)
+        }
+        "gk_infinite" => {
+            let a = parse_at(row["a"].as_str().unwrap_or("0"), p, rm, &mut cc);
+            let b = parse_at(row["b"].as_str().unwrap_or("inf"), p, rm, &mut cc);
+            let tol = parse_at(row["tol"].as_str().unwrap_or("1e-6"), p, rm, &mut cc);
+            let panels = row.get("panels").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
+            let got = integrate_adaptive_gk_infinite(
                 |x, p, rm, cc| sample(integ, x, p, rm, cc),
                 &a,
                 &b,

@@ -1981,6 +1981,14 @@ impl ExactNumNumber {
         if self.is_zero() {
             return Self::new2(p, Sign::Pos, self.inexact() | m.inexact());
         }
+        // F(x|0) = arcsin(x). One call rounds to (p, rm). asin at a wider
+        // width with RoundingMode::None, then a second rounding, moves a
+        // directed mode by an ulp or fails the roundability test.
+        if m.is_zero() {
+            let mut r = self.asin(p, rm, cc)?;
+            r.set_inexact(r.inexact() | self.inexact() | m.inexact());
+            return Ok(r);
+        }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
             .max(self.mantissa_max_bit_len())
@@ -2049,6 +2057,12 @@ impl ExactNumNumber {
         }
         if self.is_zero() {
             return Self::new2(p, Sign::Pos, self.inexact() | m.inexact());
+        }
+        // E(φ|0) = φ, so E(x|0) = arcsin(x). Round that once.
+        if m.is_zero() {
+            let mut r = self.asin(p, rm, cc)?;
+            r.set_inexact(r.inexact() | self.inexact() | m.inexact());
+            return Ok(r);
         }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
@@ -2246,6 +2260,19 @@ impl ExactNumNumber {
         }
     }
 
+    /// Round `v` once to `p` in `rm`. Identity shortcuts (`m = 0`, a zero
+    /// amplitude) use this so reduction cannot round a second time.
+    fn round_once(
+        mut v: Self,
+        p: usize,
+        rm: RoundingMode,
+        extra_inexact: bool,
+    ) -> Result<Self, Error> {
+        v.set_precision(p, rm)?;
+        v.set_inexact(v.inexact() | extra_inexact);
+        Ok(v)
+    }
+
     /// Bits of \(|\varphi|\) above 1. Range reduction keeps this many extra bits.
     fn phi_mag_bits(phi: &Self) -> usize {
         let e = phi.exponent();
@@ -2408,6 +2435,12 @@ impl ExactNumNumber {
         if self.is_zero() {
             return Self::new2(p, Sign::Pos, self.inexact() | m.inexact());
         }
+        // F(φ|0) = φ. Round the amplitude once. Reduction through sin and
+        // arcsin is a second rounding, and directed modes then fail the
+        // roundability test.
+        if m.is_zero() {
+            return Self::round_once(self.clone()?, p, rm, m.inexact());
+        }
         if let Some(sg) = self.exact_half_pi(p, cc)? {
             return Self::half_turn_f(self, m, sg, p, rm, cc);
         }
@@ -2482,6 +2515,10 @@ impl ExactNumNumber {
         Self::p_assertion(p)?;
         if self.is_zero() {
             return Self::new2(p, Sign::Pos, self.inexact() | m.inexact());
+        }
+        // E(φ|0) = φ. Same single rounding as `elliptic_f_phi`.
+        if m.is_zero() {
+            return Self::round_once(self.clone()?, p, rm, m.inexact());
         }
         if let Some(sg) = self.exact_half_pi(p, cc)? {
             return Self::half_turn_e(self, m, sg, p, rm, cc);
@@ -2563,6 +2600,11 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
+        // Π(0; φ|m) = F(φ|m). Delegate so n = 0 is not a second rounding of
+        // the Carlson value that F already rounds.
+        if self.is_zero() {
+            return phi.elliptic_f_phi(m, p, rm, cc);
+        }
         if phi.is_zero() {
             return Self::new2(p, Sign::Pos, self.inexact() | phi.inexact() | m.inexact());
         }

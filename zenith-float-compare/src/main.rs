@@ -1,5 +1,7 @@
 //! Cross-library comparison runner (bigfloat-bench compatible workloads, TSV output).
 
+#![forbid(unsafe_code)]
+
 mod astro;
 mod backend;
 #[cfg(feature = "dashu")]

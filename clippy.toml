@@ -18,12 +18,12 @@ disallowed-macros = [
     { path = "std::arch::global_asm", reason = "no global assembly in the numeric kernel" },
 ]
 disallowed-methods = [
-    { path = "core::arch::x86_64::_addcarry_u64", reason = "use overflowing add on Word" },
-    { path = "core::arch::x86_64::_subborrow_u64", reason = "use overflowing sub on Word" },
-    { path = "core::arch::x86::_addcarry_u32", reason = "use overflowing add on Word" },
-    { path = "core::arch::x86::_subborrow_u32", reason = "use overflowing sub on Word" },
-    { path = "core::arch::x86_64::_mm_add_epi32", reason = "use wrapping_add on u32 lanes" },
-    { path = "core::arch::x86_64::_mm_add_epi64", reason = "use wrapping_add on u64 lanes" },
-    { path = "core::arch::x86_64::_mm_mul_epu32", reason = "use a widening integer multiply" },
-    { path = "core::arch::aarch64::vaddq_u32", reason = "use wrapping_add on u32 lanes" },
+    { path = "core::arch::x86_64::_addcarry_u64", reason = "use overflowing add on Word", allow-invalid = true },
+    { path = "core::arch::x86_64::_subborrow_u64", reason = "use overflowing sub on Word", allow-invalid = true },
+    { path = "core::arch::x86::_addcarry_u32", reason = "use overflowing add on Word", allow-invalid = true },
+    { path = "core::arch::x86::_subborrow_u32", reason = "use overflowing sub on Word", allow-invalid = true },
+    { path = "core::arch::x86_64::_mm_add_epi32", reason = "use wrapping_add on u32 lanes", allow-invalid = true },
+    { path = "core::arch::x86_64::_mm_add_epi64", reason = "use wrapping_add on u64 lanes", allow-invalid = true },
+    { path = "core::arch::x86_64::_mm_mul_epu32", reason = "use a widening integer multiply", allow-invalid = true },
+    { path = "core::arch::aarch64::vaddq_u32", reason = "use wrapping_add on u32 lanes", allow-invalid = true },
 ]

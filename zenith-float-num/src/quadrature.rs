@@ -2,12 +2,14 @@
 //!
 //! [`kronrod_pair`], [`gauss_kronrod_interval`], [`integrate_adaptive_gk`],
 //! and [`wynn_epsilon`] are the (7, 15) rule: Laurie’s Jacobi–Kronrod
-//! recurrence, an error bound on the Kronrod value, and Wynn’s ε table. The adaptive idea
+//! recurrence, a conservative error estimate of the Kronrod value, validated
+//! against oracles, and Wynn’s ε table. The adaptive idea
 //! follows Piessens, de Doncker-Kapenga, Überhuber, and Kahaner, *QUADPACK*
 //! (Springer, 1983). The Fortran is not transcribed.
 
 pub use crate::gauss_kronrod::gauss_kronrod_interval;
 pub use crate::gauss_kronrod::integrate_adaptive_gk;
+pub use crate::gauss_kronrod::integrate_adaptive_gk_infinite;
 pub use crate::gauss_kronrod::kronrod_pair;
 pub use crate::gauss_kronrod::wynn_epsilon;
 pub use crate::gauss_kronrod::GkResult;
@@ -66,8 +68,8 @@ fn tiny(p: usize, extra: i32) -> ExactNum {
     ExactNum::from_u8(1, p).ldexp(e, p, RoundingMode::ToEven)
 }
 
-fn below(x: &ExactNum, bound: &ExactNum) -> bool {
-    x.is_zero() || x.cmp(bound) == Some(-1)
+fn below(x: &ExactNum, limit: &ExactNum) -> bool {
+    x.is_zero() || x.cmp(limit) == Some(-1)
 }
 
 fn factorial(n: usize, p: usize, rm: RoundingMode) -> ExactNum {

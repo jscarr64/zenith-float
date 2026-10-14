@@ -1,5 +1,5 @@
-//! Integer SIMD for software IEEE arrays. Lanes are `u32` / `u64` bit patterns.
-//! Hardware IEEE arithmetic is not used.
+//! Integer lanes for software IEEE arrays. Lanes are `u32` / `u64` bit patterns.
+//! Hardware IEEE arithmetic is not used, and neither are platform SIMD intrinsics.
 
 /// Number of `u32` lanes in one integer SIMD vector (128-bit register).
 /// Binary64 uses `IEEE_SIMD_LANE_WIDTH / 2` `u64` lanes. Scalar fallback
@@ -45,30 +45,7 @@ impl U32x4 {
     }
 
     fn wrapping_add(self, o: Self) -> Self {
-        #[cfg(target_arch = "x86_64")]
-        unsafe {
-            use core::arch::x86_64::{__m128i, _mm_add_epi32, _mm_loadu_si128, _mm_storeu_si128};
-            let a = _mm_loadu_si128(self.0.as_ptr() as *const __m128i);
-            let b = _mm_loadu_si128(o.0.as_ptr() as *const __m128i);
-            let s = _mm_add_epi32(a, b);
-            let mut out = [0u32; 4];
-            _mm_storeu_si128(out.as_mut_ptr() as *mut __m128i, s);
-            Self(out)
-        }
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            use core::arch::aarch64::{uint32x4_t, vaddq_u32, vld1q_u32, vst1q_u32};
-            let a = vld1q_u32(self.0.as_ptr());
-            let b = vld1q_u32(o.0.as_ptr());
-            let s: uint32x4_t = vaddq_u32(a, b);
-            let mut out = [0u32; 4];
-            vst1q_u32(out.as_mut_ptr(), s);
-            return Self(out);
-        }
-        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-        {
-            self.bop(o, u32::wrapping_add)
-        }
+        self.bop(o, u32::wrapping_add)
     }
 
     fn srli(self, n: u32) -> Self {
@@ -105,31 +82,12 @@ fn all_normal_bin32(bits: U32x4) -> bool {
 }
 
 fn mul_u32x4_integer(a: [u32; 4], b: [u32; 4]) -> [u64; 4] {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        use core::arch::x86_64::{
-            __m128i, _mm_cvtsi128_si64, _mm_loadu_si128, _mm_mul_epu32, _mm_srli_si128,
-        };
-        let va = _mm_loadu_si128(a.as_ptr() as *const __m128i);
-        let vb = _mm_loadu_si128(b.as_ptr() as *const __m128i);
-        let p_even = _mm_mul_epu32(va, vb);
-        let p_odd = _mm_mul_epu32(_mm_srli_si128(va, 4), _mm_srli_si128(vb, 4));
-        [
-            _mm_cvtsi128_si64(p_even) as u64,
-            _mm_cvtsi128_si64(p_odd) as u64,
-            _mm_cvtsi128_si64(_mm_srli_si128(p_even, 8)) as u64,
-            _mm_cvtsi128_si64(_mm_srli_si128(p_odd, 8)) as u64,
-        ]
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        [
-            a[0] as u64 * b[0] as u64,
-            a[1] as u64 * b[1] as u64,
-            a[2] as u64 * b[2] as u64,
-            a[3] as u64 * b[3] as u64,
-        ]
-    }
+    [
+        a[0] as u64 * b[0] as u64,
+        a[1] as u64 * b[1] as u64,
+        a[2] as u64 * b[2] as u64,
+        a[3] as u64 * b[3] as u64,
+    ]
 }
 
 /// Software IEEE add on four binary32 lanes. Integer SIMD on the equal-exp
@@ -211,20 +169,7 @@ pub fn mul_bin32_x4(a: Bin32x4, b: Bin32x4) -> Bin32x4 {
 }
 
 fn add_u64x2_integer(a: [u64; 2], b: [u64; 2]) -> [u64; 2] {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        use core::arch::x86_64::{__m128i, _mm_add_epi64, _mm_loadu_si128, _mm_storeu_si128};
-        let va = _mm_loadu_si128(a.as_ptr() as *const __m128i);
-        let vb = _mm_loadu_si128(b.as_ptr() as *const __m128i);
-        let s = _mm_add_epi64(va, vb);
-        let mut out = [0u64; 2];
-        _mm_storeu_si128(out.as_mut_ptr() as *mut __m128i, s);
-        out
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        [a[0].wrapping_add(b[0]), a[1].wrapping_add(b[1])]
-    }
+    [a[0].wrapping_add(b[0]), a[1].wrapping_add(b[1])]
 }
 
 /// Software IEEE add on two binary64 lanes. Integer SIMD on the equal-exp
@@ -293,28 +238,7 @@ fn normal_sig64(bits: u64) -> Option<Norm64> {
 }
 
 fn mul_u64_integer(a: u64, b: u64) -> u128 {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        use core::arch::x86_64::{_mm_cvtsi128_si64, _mm_mul_epu32, _mm_set_epi64x};
-        // 53-bit significands: split 32+21 and use integer `mul_epu32` on halves.
-        let alo = a as u32;
-        let ahi = (a >> 32) as u32;
-        let blo = b as u32;
-        let bhi = (b >> 32) as u32;
-        let p0 = _mm_mul_epu32(_mm_set_epi64x(0, alo as i64), _mm_set_epi64x(0, blo as i64));
-        let p1 = _mm_mul_epu32(_mm_set_epi64x(0, alo as i64), _mm_set_epi64x(0, bhi as i64));
-        let p2 = _mm_mul_epu32(_mm_set_epi64x(0, ahi as i64), _mm_set_epi64x(0, blo as i64));
-        let p3 = _mm_mul_epu32(_mm_set_epi64x(0, ahi as i64), _mm_set_epi64x(0, bhi as i64));
-        let lo = _mm_cvtsi128_si64(p0) as u128;
-        let m1 = _mm_cvtsi128_si64(p1) as u128;
-        let m2 = _mm_cvtsi128_si64(p2) as u128;
-        let hi = _mm_cvtsi128_si64(p3) as u128;
-        lo + ((m1 + m2) << 32) + (hi << 64)
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        a as u128 * b as u128
-    }
+    a as u128 * b as u128
 }
 
 fn map_pairs_u32(

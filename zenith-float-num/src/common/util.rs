@@ -3,7 +3,7 @@
 //! Auxiliary functions.
 
 use crate::{
-    defs::{Error, Word, WORD_BIT_SIZE, WORD_MAX, WORD_SIGNIFICANT_BIT},
+    defs::{DoubleWord, Error, Word, WORD_BIT_SIZE, WORD_MAX, WORD_SIGNIFICANT_BIT},
     RoundingMode,
 };
 
@@ -110,77 +110,27 @@ pub fn calc_sqrt_cost(p: usize, cost_mul: usize, cost_add: usize) -> usize {
     log3_estimate * (5 * cost_mul + 2 * cost_add) / 2
 }
 
+/// `a + b + c`. The low limb is written to `r`. The returned carry is the high limb.
+///
+/// Callers pass a carry of 0 or 1. For that input the result matches the old
+/// `_addcarry_u64` / `_addcarry_u32` result on every limb.
 #[inline(always)]
 pub fn add_carry(a: Word, b: Word, c: Word, r: &mut Word) -> Word {
-    #[cfg(target_arch = "x86_64")]
-    {
-        // platform-specific operation
-        // SAFETY: `_addcarry_u64` writes the sum into `r` and returns the carry; `r` is a live `Word`.
-        // Safe since rustc 1.93; still unsafe on 1.85..=1.92. Keep `unsafe` so 1.85 (1.0.6 publish) builds.
-        #[allow(unused_unsafe)]
-        unsafe {
-            core::arch::x86_64::_addcarry_u64(c as u8, a, b, r) as Word
-        }
-    }
-
-    #[cfg(target_arch = "x86")]
-    {
-        // platform-specific operation
-        core::arch::x86::_addcarry_u32(c as u8, a, b, r) as Word
-    }
-
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "x86")))]
-    {
-        use crate::defs::DoubleWord;
-        use crate::defs::WORD_BASE;
-
-        let mut s = c as DoubleWord + a as DoubleWord + b as DoubleWord;
-        if s >= WORD_BASE {
-            s -= WORD_BASE;
-            *r = s as Word;
-            1
-        } else {
-            *r = s as Word;
-            0
-        }
-    }
+    let sum = a as DoubleWord + b as DoubleWord + c as DoubleWord;
+    *r = sum as Word;
+    (sum >> WORD_BIT_SIZE) as Word
 }
 
+/// `a - b - c`. The low limb is written to `r`. The returned borrow is 0 or 1.
+///
+/// Callers pass a borrow of 0 or 1. For that input the result matches the old
+/// `_subborrow_u64` / `_subborrow_u32` result on every limb.
 #[inline(always)]
 pub fn sub_borrow(a: Word, b: Word, c: Word, r: &mut Word) -> Word {
-    #[cfg(target_arch = "x86_64")]
-    {
-        // platform-specific operation
-        // SAFETY: `_subborrow_u64` writes the difference into `r` and returns the borrow; `r` is a live `Word`.
-        // Safe since rustc 1.93; still unsafe on 1.85..=1.92. Keep `unsafe` so 1.85 (1.0.6 publish) builds.
-        #[allow(unused_unsafe)]
-        unsafe {
-            core::arch::x86_64::_subborrow_u64(c as u8, a, b, r) as Word
-        }
-    }
-
-    #[cfg(target_arch = "x86")]
-    {
-        // platform-specific operation
-        core::arch::x86::_subborrow_u32(c as u8, a, b, r) as Word
-    }
-
-    #[cfg(not(any(target_arch = "x86_64", target_arch = "x86")))]
-    {
-        use crate::defs::DoubleWord;
-        use crate::defs::WORD_BASE;
-
-        let v1 = a as DoubleWord;
-        let v2 = b as DoubleWord + c as DoubleWord;
-
-        if v1 < v2 {
-            *r = (v1 + WORD_BASE - v2) as Word;
-            1
-        } else {
-            *r = (v1 - v2) as Word;
-            0
-        }
-    }
+    let v1 = a as DoubleWord;
+    let v2 = b as DoubleWord + c as DoubleWord;
+    *r = v1.wrapping_sub(v2) as Word;
+    Word::from(v1 < v2)
 }
 
 // Shift m left by n digits.
@@ -190,25 +140,14 @@ pub fn shift_slice_left(m: &mut [Word], n: usize) {
     if idx >= m.len() {
         m.fill(0);
     } else if shift > 0 {
-        let l = m.len() - 1;
-        let end = m.as_mut_ptr();
-        unsafe {
-            let mut dst = end.add(l);
-            let mut src = end.add(l - idx);
-            loop {
-                if src > end {
-                    let mut d = *src << shift;
-                    src = src.sub(1);
-                    d |= *src >> (WORD_BIT_SIZE - shift);
-                    *dst = d;
-                    dst = dst.sub(1);
-                } else {
-                    break;
-                }
-            }
-            *dst = *src << shift;
+        let mut i = m.len() - 1;
+        while i > idx {
+            let src = i - idx;
+            m[i] = (m[src] << shift) | (m[src - 1] >> (WORD_BIT_SIZE - shift));
+            i -= 1;
         }
-        m[0..idx].fill(0);
+        m[idx] = m[0] << shift;
+        m[..idx].fill(0);
     } else if idx > 0 {
         let r = m.len() - idx;
         m.copy_within(0..r, idx);
@@ -256,25 +195,16 @@ pub fn shift_slice_right(m: &mut [Word], n: usize) {
     if idx >= m.len() {
         m.fill(0);
     } else if shift > 0 {
-        let l = m.len();
-        let mut dst = m.as_mut_ptr();
-        unsafe {
-            let end = dst.add(l - 1);
-            let mut src = dst.add(idx);
-            loop {
-                if src < end {
-                    let mut d = *src >> shift;
-                    src = src.add(1);
-                    d |= *src << (WORD_BIT_SIZE - shift);
-                    *dst = d;
-                    dst = dst.add(1);
-                } else {
-                    break;
-                }
-            }
-            *dst = *src >> shift;
+        let len = m.len();
+        let last = len - 1;
+        let mut i = 0;
+        while idx + i < last {
+            let src = idx + i;
+            m[i] = (m[src] >> shift) | (m[src + 1] << (WORD_BIT_SIZE - shift));
+            i += 1;
         }
-        m[l - idx..].fill(0);
+        m[i] = m[last] >> shift;
+        m[len - idx..].fill(0);
     } else if idx > 0 {
         let r = m.len() - idx;
         m.copy_within(idx.., 0);
@@ -426,4 +356,219 @@ pub(crate) fn random_subnormal(p: usize) -> ExactNumNumber {
 #[inline]
 pub fn rand_p() -> usize {
     crate::common::test_rng::random::<usize>() % 1000 + crate::defs::DEFAULT_P
+}
+
+#[cfg(test)]
+mod carry_tests {
+    use super::{add_carry, shift_slice_left, shift_slice_right, sub_borrow};
+    use crate::defs::{DoubleWord, Word, WORD_BIT_SIZE, WORD_MAX};
+
+    fn xorshift(state: &mut u64) -> u64 {
+        let mut x = *state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        if x == 0 {
+            x = 0x9E37_79B9_7F4A_7C15;
+        }
+        *state = x;
+        x
+    }
+
+    fn word_from(state: &mut u64) -> Word {
+        xorshift(state) as Word
+    }
+
+    /// Carry-flag form of the old add-with-carry intrinsic. The two flags are
+    /// added, so a carry of 2 survives when both additions overflow.
+    fn ref_add(a: Word, b: Word, c: Word) -> (Word, Word) {
+        let (s1, c1) = a.overflowing_add(b);
+        let (s2, c2) = s1.overflowing_add(c);
+        (Word::from(c1) + Word::from(c2), s2)
+    }
+
+    /// Borrow-flag form of the old subtract-with-borrow intrinsic.
+    fn ref_sub(a: Word, b: Word, c: Word) -> (Word, Word) {
+        let (d1, b1) = a.overflowing_sub(b);
+        let (d2, b2) = d1.overflowing_sub(c);
+        (Word::from(b1 || b2), d2)
+    }
+
+    fn check_add(a: Word, b: Word, c: Word) {
+        let mut got = WORD_MAX;
+        let carry = add_carry(a, b, c, &mut got);
+        let (want_c, want_r) = ref_add(a, b, c);
+        assert_eq!(got, want_r, "sum {a}+{b}+{c}");
+        assert_eq!(carry, want_c, "carry {a}+{b}+{c}");
+        let wide = a as DoubleWord + b as DoubleWord + c as DoubleWord;
+        let back = got as DoubleWord + ((carry as DoubleWord) << WORD_BIT_SIZE);
+        assert_eq!(back, wide, "wide sum {a}+{b}+{c}");
+    }
+
+    fn check_sub(a: Word, b: Word, c: Word) {
+        let mut got = 0;
+        let borrow = sub_borrow(a, b, c, &mut got);
+        let (want_b, want_r) = ref_sub(a, b, c);
+        assert_eq!(got, want_r, "diff {a}-{b}-{c}");
+        assert_eq!(borrow, want_b, "borrow {a}-{b}-{c}");
+    }
+
+    #[test]
+    fn carry_and_borrow_edges() {
+        let edges = [0, 1, 2, WORD_MAX - 1, WORD_MAX];
+        for &a in &edges {
+            for &b in &edges {
+                for &c in &edges {
+                    check_add(a, b, c);
+                    check_sub(a, b, c);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn carry_and_borrow_random_limbs() {
+        let mut state = 0xC0FF_EE00_D15E_A5E5_u64;
+        for _ in 0..4096 {
+            let a = word_from(&mut state);
+            let b = word_from(&mut state);
+            let full = word_from(&mut state);
+            check_add(a, b, full);
+            check_sub(a, b, full);
+            check_add(a, b, full & 1);
+            check_sub(a, b, full & 1);
+        }
+    }
+
+    fn chain_add(a: &[Word], b: &[Word]) -> (Vec<Word>, Word) {
+        let mut out = vec![0; a.len()];
+        let mut carry = 0;
+        for i in 0..a.len() {
+            carry = add_carry(a[i], b[i], carry, &mut out[i]);
+        }
+        (out, carry)
+    }
+
+    fn chain_add_ref(a: &[Word], b: &[Word]) -> (Vec<Word>, Word) {
+        let mut out = vec![0; a.len()];
+        let mut carry = 0;
+        for i in 0..a.len() {
+            let (next, limb) = ref_add(a[i], b[i], carry);
+            out[i] = limb;
+            carry = next;
+        }
+        (out, carry)
+    }
+
+    fn chain_sub(a: &[Word], b: &[Word]) -> (Vec<Word>, Word) {
+        let mut out = vec![0; a.len()];
+        let mut borrow = 0;
+        for i in 0..a.len() {
+            borrow = sub_borrow(a[i], b[i], borrow, &mut out[i]);
+        }
+        (out, borrow)
+    }
+
+    fn chain_sub_ref(a: &[Word], b: &[Word]) -> (Vec<Word>, Word) {
+        let mut out = vec![0; a.len()];
+        let mut borrow = 0;
+        for i in 0..a.len() {
+            let (next, limb) = ref_sub(a[i], b[i], borrow);
+            out[i] = limb;
+            borrow = next;
+        }
+        (out, borrow)
+    }
+
+    #[test]
+    fn carry_chains_on_max_zero_and_random() {
+        for len in 1..9 {
+            let max = vec![WORD_MAX; len];
+            let zero = vec![0; len];
+            assert_eq!(chain_add(&max, &max), chain_add_ref(&max, &max));
+            assert_eq!(chain_add(&max, &zero), chain_add_ref(&max, &zero));
+            assert_eq!(chain_sub(&zero, &max), chain_sub_ref(&zero, &max));
+            assert_eq!(chain_sub(&max, &max), chain_sub_ref(&max, &max));
+            let (sum, carry) = chain_add(&max, &max);
+            assert_eq!(sum[0], WORD_MAX - 1);
+            assert!(sum[1..].iter().all(|&w| w == WORD_MAX));
+            assert_eq!(carry, 1);
+            let (diff, borrow) = chain_sub(&zero, &max);
+            assert_eq!(diff[0], 1);
+            assert!(diff[1..].iter().all(|&w| w == 0));
+            assert_eq!(borrow, 1);
+        }
+
+        let mut state = 0x1234_5678_9ABC_DEF0_u64;
+        for len in [1usize, 2, 3, 8] {
+            for _ in 0..64 {
+                let mut a = Vec::new();
+                let mut b = Vec::new();
+                for _ in 0..len {
+                    a.push(word_from(&mut state));
+                    b.push(word_from(&mut state));
+                }
+                assert_eq!(chain_add(&a, &b), chain_add_ref(&a, &b));
+                assert_eq!(chain_sub(&a, &b), chain_sub_ref(&a, &b));
+            }
+        }
+    }
+
+    fn shl1(m: &mut [Word]) {
+        let mut carry = 0;
+        for w in m.iter_mut() {
+            let next = *w >> (WORD_BIT_SIZE - 1);
+            *w = (*w << 1) | carry;
+            carry = next;
+        }
+    }
+
+    fn shr1(m: &mut [Word]) {
+        let mut carry = 0;
+        for w in m.iter_mut().rev() {
+            let next = *w & 1;
+            *w = (*w >> 1) | (carry << (WORD_BIT_SIZE - 1));
+            carry = next;
+        }
+    }
+
+    fn check_shift(src: &[Word], n: usize) {
+        let mut got_l = src.to_vec();
+        let mut want_l = src.to_vec();
+        shift_slice_left(&mut got_l, n);
+        for _ in 0..n {
+            shl1(&mut want_l);
+        }
+        assert_eq!(got_l, want_l, "left {n} {src:?}");
+
+        let mut got_r = src.to_vec();
+        let mut want_r = src.to_vec();
+        shift_slice_right(&mut got_r, n);
+        for _ in 0..n {
+            shr1(&mut want_r);
+        }
+        assert_eq!(got_r, want_r, "right {n} {src:?}");
+    }
+
+    #[test]
+    fn shifts_match_one_bit_reference() {
+        let patterns: &[&[Word]] =
+            &[&[], &[0], &[1], &[WORD_MAX], &[1, 0], &[WORD_MAX, WORD_MAX], &[0, 1, WORD_MAX]];
+        let widths = [0, 1, WORD_BIT_SIZE - 1, WORD_BIT_SIZE, WORD_BIT_SIZE + 1, 3 * WORD_BIT_SIZE];
+        for src in patterns {
+            for n in widths {
+                check_shift(src, n);
+            }
+        }
+        let mut state = 0x0F1E_2D3C_4B5A_6978_u64;
+        for _ in 0..128 {
+            let len = (word_from(&mut state) as usize) % 6;
+            let mut src = Vec::new();
+            for _ in 0..len {
+                src.push(word_from(&mut state));
+            }
+            let n = (word_from(&mut state) as usize) % (8 * WORD_BIT_SIZE);
+            check_shift(&src, n);
+        }
+    }
 }

@@ -2,8 +2,9 @@
 //!
 //! The (7, 15) pair is the fixed rule QUADPACK uses inside `QAG` / `QAGS`:
 //! a 7-point Gauss–Legendre estimate embedded in a 15-point Kronrod estimate.
-//! The returned error is a bound on the true error of the Kronrod value, at
-//! least `|K − G|` plus one unit in the last place of the rounded estimate.
+//! The returned error is a conservative error estimate of the Kronrod value,
+//! validated against oracles: at least `|K − G|` plus one unit in the last
+//! place of the rounded estimate.
 //! Endpoint singularities are accelerated by
 //! Wynn’s ε-algorithm on the sequence of partial sums, the same device
 //! Piessens, de Doncker-Kapenga, Überhuber, and Kahaner describe for `QAGS`
@@ -19,9 +20,11 @@
 //! Everything is evaluated two words above the destination width (that width
 //! rounded up to a multiple of 64, plus 128 bits) and then rounded to `p`.
 //!
+//! Half-lines and the whole line use [`integrate_adaptive_gk_infinite`].
+//!
 //! # Not in this slice
 //!
-//! Infinite intervals (`QAGI`), oscillatory weights (`QAWO` / `QAWF`),
+//! Oscillatory weights (`QAWO` / `QAWF`),
 //! algebraic endpoint weights (`QAWS`), Cauchy principal values (`QAWC`),
 //! Kronrod pairs other than (7, 15), and the full `QAGS` heap with its
 //! four-way split and roundoff flags.
@@ -55,7 +58,7 @@ const GK_BISECT_STEPS: usize = 48;
 /// Why a Kronrod call stopped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuadratureError {
-    /// Non-finite bounds, an empty interval, a bad tolerance or precision,
+    /// Non-finite endpoints, an empty interval, a bad tolerance or precision,
     /// an unsupported setting, or a non-finite integrand sample.
     InvalidArgument,
     /// The panel budget or the ε table ran out before the tolerance was met,
@@ -84,14 +87,14 @@ pub struct GkResult {
     pub estimate_kronrod: ExactNum,
     /// Embedded Gauss sum `G` on the same nodes (not extrapolated).
     pub estimate_gauss: ExactNum,
-    /// A bound on the absolute error of `estimate_kronrod`.
+    /// A conservative error estimate for `estimate_kronrod`, validated against oracles.
     ///
-    /// On one panel the bound is at least `|K − G|` after the factor
+    /// On one panel the estimate is at least `|K − G|` after the factor
     /// `(b − a) / 2`. When an ε value is accepted, the stopping test is still
-    /// the difference of the last two even-order ε entries, but the bound is
+    /// the difference of the last two even-order ε entries, but the estimate is
     /// at least the sum of the local `|K − G|` on the panels that produced
     /// that value. One unit in the last place of the rounded estimate is
-    /// added, and the bound is rounded away from zero. It can be larger than
+    /// added, and the estimate is rounded away from zero. It can be larger than
     /// `|K − G|`, and it can be larger than the tolerance that stopped the
     /// iteration. Callers that want `|K − G|` itself should subtract
     /// `estimate_kronrod` and `estimate_gauss`.
@@ -103,7 +106,7 @@ pub struct GkResult {
 impl GkResult {
     /// A panel or an accepted adaptive value.
     ///
-    /// `abs_err_est` is a bound on the true error of `estimate_kronrod`.
+    /// `abs_err_est` is a conservative error estimate, validated against oracles.
     /// It is not recomputed from the two sums.
     pub fn new(
         estimate_kronrod: ExactNum,
@@ -155,7 +158,7 @@ fn result_ulp(x: &ExactNum, p: usize) -> ExactNum {
 }
 
 /// `|raw|` plus one destination ulp, rounded away from zero.
-fn bound_err(raw: &ExactNum, result: &ExactNum, p: usize, wrk: usize) -> ExactNum {
+fn err_estimate(raw: &ExactNum, result: &ExactNum, p: usize, wrk: usize) -> ExactNum {
     let ulp = result_ulp(result, p);
     let mut gap = raw.abs();
     let _ = gap.set_precision(wrk, RoundingMode::Up);
@@ -173,7 +176,7 @@ fn gk_result(
 ) -> GkResult {
     let estimate_kronrod = round_out(k, p, rm);
     let estimate_gauss = round_out(g, p, rm);
-    let abs_err_est = bound_err(raw_err, &estimate_kronrod, p, wrk);
+    let abs_err_est = err_estimate(raw_err, &estimate_kronrod, p, wrk);
     GkResult::new(estimate_kronrod, estimate_gauss, abs_err_est)
 }
 
@@ -186,8 +189,8 @@ fn tiny(p: usize, extra: i32) -> ExactNum {
     ExactNum::from_u8(1, p).ldexp(e, p, RoundingMode::ToEven)
 }
 
-fn leq(x: &ExactNum, bound: &ExactNum) -> bool {
-    matches!(x.cmp(bound), Some(-1) | Some(0))
+fn leq(x: &ExactNum, limit: &ExactNum) -> bool {
+    matches!(x.cmp(limit), Some(-1) | Some(0))
 }
 
 fn round_out(mut x: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
@@ -642,10 +645,10 @@ fn interval_ok(a: &ExactNum, b: &ExactNum) -> bool {
 ///
 /// `p` is the destination precision in bits. The rule and the weighted sum
 /// run two words above the destination width. `estimate_kronrod` and
-/// `estimate_gauss` are rounded with `rm`. `abs_err_est` is `|K − G|` plus
-/// one unit in the last place of the rounded Kronrod value, rounded away
-/// from zero. There is no tolerance argument: a single panel always returns
-/// if every sample is finite.
+/// `estimate_gauss` are rounded with `rm`. `abs_err_est` is a conservative
+/// error estimate, validated against oracles: `|K − G|` plus one unit in the
+/// last place of the rounded Kronrod value, rounded away from zero. There is
+/// no tolerance argument: a single panel always returns if every sample is finite.
 ///
 /// # Errors
 ///
@@ -795,9 +798,10 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 /// estimates meets the tolerance, or until two successive even-order ε
 /// values on the sequence of global Kronrod sums agree to the tolerance.
 /// The ε difference is only a stopping test. The returned `abs_err_est` is
-/// a bound: the sum of the local `|K − G|` when that test accepts, otherwise
-/// the sum that met the tolerance, plus one unit in the last place of the
-/// rounded estimate. This is the QUADPACK error idea (local `|K − G|`,
+/// a conservative error estimate, validated against oracles: the sum of the
+/// local `|K − G|` when that test accepts, otherwise the sum that met the
+/// tolerance, plus one unit in the last place of the rounded estimate. This
+/// is the QUADPACK error idea (local `|K − G|`,
 /// global ε) without the `QAGS` heap, four-way split, or roundoff flags.
 ///
 /// # Arguments
@@ -817,7 +821,7 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 ///
 /// # Errors
 ///
-/// [`QuadratureError::InvalidArgument`] if bounds are non-finite or not
+/// [`QuadratureError::InvalidArgument`] if endpoints are non-finite or not
 /// `a < b`, `tol_rel` is non-finite or negative, `p < 32`,
 /// `max_subintervals` is outside `1..=GK_SUBINTERVAL_MAX`, or any integrand
 /// sample is non-finite.
@@ -937,6 +941,174 @@ where
             err: e2,
         });
     }
+}
+
+/// Sample `f(x) * jac`. A non-finite image, or a product that overflows after
+/// `f` has underflowed, contributes zero.
+fn weighted_sample<F>(
+    f: &mut F,
+    x: ExactNum,
+    jac: ExactNum,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> ExactNum
+where
+    F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    if !finite(&x) || !finite(&jac) || jac.is_zero() {
+        return ExactNum::new(p);
+    }
+    let y = f(&x, p, rm, cc);
+    if !finite(&y) {
+        return y;
+    }
+    if y.is_zero() {
+        return ExactNum::new(p);
+    }
+    let z = y.mul(&jac, p, rm);
+    if finite(&z) {
+        z
+    } else {
+        ExactNum::new(p)
+    }
+}
+
+fn at_prec(mut x: ExactNum, p: usize) -> ExactNum {
+    let _ = x.set_precision(p, RoundingMode::None);
+    x
+}
+
+/// `x = end + sign * t/(1-t)` and `dx/dt = 1/(1-t)^2` for `t ∈ (0, 1)`.
+fn semi_infinite_sample<F>(
+    f: &mut F,
+    end: &ExactNum,
+    positive: bool,
+    t: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> ExactNum
+where
+    F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    let one = ExactNum::from_u8(1, p);
+    let den = one.sub(t, p, rm);
+    if !finite(&den) || !den.is_positive() {
+        return ExactNum::new(p);
+    }
+    let step = t.div(&den, p, rm);
+    if !finite(&step) {
+        return ExactNum::new(p);
+    }
+    let end = at_prec(end.clone(), p);
+    let x = if positive { end.add(&step, p, rm) } else { end.sub(&step, p, rm) };
+    let jac = one.div(&den.mul(&den, p, rm), p, rm);
+    weighted_sample(f, x, jac, p, rm, cc)
+}
+
+/// `x = t/(1-t^2)` and `dx/dt = (1+t^2)/(1-t^2)^2` for `t ∈ (-1, 1)`.
+fn whole_line_sample<F>(
+    f: &mut F,
+    t: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> ExactNum
+where
+    F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    let one = ExactNum::from_u8(1, p);
+    let t2 = t.mul(t, p, rm);
+    let den = one.sub(&t2, p, rm);
+    if !finite(&den) || den.is_zero() || den.is_negative() {
+        return ExactNum::new(p);
+    }
+    let x = t.div(&den, p, rm);
+    let num = one.add(&t2, p, rm);
+    let jac = num.div(&den.mul(&den, p, rm), p, rm);
+    weighted_sample(f, x, jac, p, rm, cc)
+}
+
+/// Adaptive (7, 15) integration of `f` on a half-line or the whole line.
+///
+/// The finite-interval rule is applied after a rational map. One infinite
+/// endpoint uses `x = c ± t/(1-t)` on `t ∈ (0, 1)`. Both infinite endpoints
+/// use `x = t/(1-t^2)` on `t ∈ (-1, 1)`. `abs_err_est` is the same
+/// conservative error estimate the finite rule returns, validated against
+/// oracles.
+///
+/// A mapped abscissa past the exponent range contributes zero. That is the
+/// tail of an integrand which has already underflowed. A divergent integrand
+/// still returns [`QuadratureError::NotConverged`] when the panel budget
+/// runs out.
+///
+/// # Errors
+///
+/// [`QuadratureError::InvalidArgument`] when neither endpoint is infinite,
+/// the endpoints are out of order, or the finite rule rejects the tolerance,
+/// precision, or a non-finite sample.
+pub fn integrate_adaptive_gk_infinite<F>(
+    mut f: F,
+    a: &ExactNum,
+    b: &ExactNum,
+    tol_rel: &ExactNum,
+    max_subintervals: usize,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Result<GkResult, QuadratureError>
+where
+    F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    let a_pos = a.is_inf_pos();
+    let a_neg = a.is_inf_neg();
+    let b_pos = b.is_inf_pos();
+    let b_neg = b.is_inf_neg();
+    if a_pos || b_neg {
+        return Err(QuadratureError::InvalidArgument);
+    }
+    let zero = ExactNum::new(p);
+    let one = ExactNum::from_u8(1, p);
+    if a_neg && b_pos {
+        return integrate_adaptive_gk(
+            |t, wp, wrm, cc| whole_line_sample(&mut f, t, wp, wrm, cc),
+            &one.neg(),
+            &one,
+            tol_rel,
+            max_subintervals,
+            p,
+            rm,
+            cc,
+        );
+    }
+    if b_pos && finite(a) {
+        let end = a.clone();
+        return integrate_adaptive_gk(
+            |t, wp, wrm, cc| semi_infinite_sample(&mut f, &end, true, t, wp, wrm, cc),
+            &zero,
+            &one,
+            tol_rel,
+            max_subintervals,
+            p,
+            rm,
+            cc,
+        );
+    }
+    if a_neg && finite(b) {
+        let end = b.clone();
+        return integrate_adaptive_gk(
+            |t, wp, wrm, cc| semi_infinite_sample(&mut f, &end, false, t, wp, wrm, cc),
+            &zero,
+            &one,
+            tol_rel,
+            max_subintervals,
+            p,
+            rm,
+            cc,
+        );
+    }
+    Err(QuadratureError::InvalidArgument)
 }
 
 #[cfg(test)]
@@ -1074,5 +1246,91 @@ mod tests {
             &mut cc,
         );
         assert_eq!(tight.unwrap_err(), QuadratureError::NotConverged);
+    }
+
+    #[test]
+    fn gk_infinite_exp_and_gaussian_cover_the_truth() {
+        let mut cc = Consts::new().expect("consts");
+        for (p, rm) in [
+            (53usize, RoundingMode::ToEven),
+            (53, RoundingMode::Up),
+            (128, RoundingMode::ToEven),
+        ] {
+            let tol = ExactNum::parse("1e-8", crate::Radix::Dec, p, rm, &mut cc);
+            let panels = 24;
+            let zero = ExactNum::from_u8(0, p);
+            let one = ExactNum::from_u8(1, p);
+            let pos = ExactNum::parse("inf", crate::Radix::Dec, p, rm, &mut cc);
+            let neg = ExactNum::parse("-inf", crate::Radix::Dec, p, rm, &mut cc);
+            let exp_tail = integrate_adaptive_gk_infinite(
+                |x, p, rm, cc| x.neg().exp(p, rm, cc),
+                &zero,
+                &pos,
+                &tol,
+                panels,
+                p,
+                rm,
+                &mut cc,
+            )
+            .expect("exp tail");
+            let want_one = ExactNum::from_u8(1, p);
+            let gap = exp_tail
+                .estimate_kronrod
+                .sub(&want_one, 2 * p, RoundingMode::None)
+                .abs();
+            assert!(
+                gap.cmp(&exp_tail.abs_err_est) != Some(1),
+                "p={p} exp gap {gap} est {} err {}",
+                exp_tail.estimate_kronrod,
+                exp_tail.abs_err_est
+            );
+            assert!(gap.cmp(&tol) != Some(1), "p={p} exp estimate {gap}");
+            let alg = integrate_adaptive_gk_infinite(
+                |x, p, rm, _cc| x.mul(x, p, rm).reciprocal(p, rm),
+                &one,
+                &pos,
+                &tol,
+                panels,
+                p,
+                rm,
+                &mut cc,
+            )
+            .expect("1/x^2");
+            let gap = alg
+                .estimate_kronrod
+                .sub(&want_one, 2 * p, RoundingMode::None)
+                .abs();
+            assert!(
+                gap.cmp(&alg.abs_err_est) != Some(1),
+                "p={p} invsq gap {gap} est {}",
+                alg.estimate_kronrod
+            );
+            let gauss = integrate_adaptive_gk_infinite(
+                |x, p, rm, cc| {
+                    let y = x.mul(x, p, rm);
+                    y.neg().exp(p, rm, cc)
+                },
+                &neg,
+                &pos,
+                &tol,
+                panels,
+                p,
+                rm,
+                &mut cc,
+            )
+            .expect("gaussian");
+            let pi = cc.pi(p, rm).sqrt(p, rm);
+            let gap = gauss
+                .estimate_kronrod
+                .sub(&pi, 2 * p, RoundingMode::None)
+                .abs();
+            assert!(
+                gap.cmp(&gauss.abs_err_est) != Some(1),
+                "p={p} gauss gap {gap} est {} err {}",
+                gauss.estimate_kronrod,
+                gauss.abs_err_est
+            );
+            assert!(gap.cmp(&tol) != Some(1), "p={p} gauss estimate {gap}");
+        }
     }
 }
