@@ -473,6 +473,10 @@ where
 /// Bit-exact comparison of a zenith result with an MPFR value of the same precision,
 /// including Inf, the sign of zero, and subnormals.
 pub fn assert_exact_eq(n: &ExactNum, f: &Float, p: usize, op: &str, cc: &mut Consts) {
+    if f.is_nan() {
+        assert!(n.is_nan(), "{op}: MPFR NaN, zenith {n:?}");
+        return;
+    }
     if f.is_infinite() {
         assert!(n.is_inf(), "{op}: MPFR {f}, zenith {n:?}");
         assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of Inf");

@@ -1645,6 +1645,14 @@ impl ExactNumNumber {
         self.op_inexact = None;
     }
 
+    /// A copy of `self` with both inexact flags cleared, so that a function evaluated on it
+    /// reports only its own rounding.
+    pub(crate) fn exact_copy(&self) -> Result<Self, Error> {
+        let mut c = self.clone()?;
+        c.set_inexact(false);
+        Ok(c)
+    }
+
     /// Returns true if the operation that produced `self` rounded. Values whose producing
     /// operation does not record that report the accumulated flag, `inexact()`.
     #[inline]
@@ -1654,7 +1662,7 @@ impl ExactNumNumber {
 
     // Splits the flag after an operation that started from `inexact = false`: `self.inexact`
     // holds what this operation rounded; `inputs` is the operands' accumulated flag.
-    fn finish_flags(&mut self, inputs: bool, per_op: bool) {
+    pub(crate) fn finish_flags(&mut self, inputs: bool, per_op: bool) {
         let rounded = self.inexact;
         self.inexact = rounded || inputs;
         self.op_inexact = if per_op { Some(rounded) } else { None };

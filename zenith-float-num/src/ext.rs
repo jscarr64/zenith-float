@@ -3,6 +3,7 @@
 //! ExactNum including finite numbers, NaN, and `Inf`.
 
 use crate::common::util::log2_ceil;
+use crate::common::util::round_p;
 use crate::defs::SignedWord;
 use crate::defs::DEFAULT_P;
 use crate::num::ExactNumNumber;
@@ -1184,6 +1185,66 @@ impl ExactNum {
         Ok(half_pi)
     }
 
+    /// Evaluates `f(precision, rounding)`, a function computed on operands whose inexact flags
+    /// were cleared, so that the result is rounded at exactly `p` bits and carries a
+    /// per-operation `inexact` flag; `inputs_inexact` is folded into the accumulated flag.
+    ///
+    /// Word-aligned precisions with a normal result call `f(p, rm)` directly. Otherwise `f`
+    /// runs toward zero with a guard word, and the result is rounded to odd and then to `p`
+    /// bits with `rm`, which is a single correct rounding. A rounded subnormal result at an
+    /// aligned precision takes the same path, so it is not rounded twice.
+    pub(crate) fn round_exact<F>(inputs_inexact: bool, p: usize, rm: RoundingMode, mut f: F) -> Self
+    where
+        F: FnMut(usize, RoundingMode) -> Self,
+    {
+        let direct = rm == RoundingMode::None || p == 0 || p >= usize::MAX / 4;
+        let mut r = if direct {
+            f(p, rm)
+        } else if p % WORD_BIT_SIZE == 0 {
+            let r = f(p, rm);
+            let subnormal_rounded = matches!(
+                &r.inner,
+                Flavor::Value(v) if v.exponent() == crate::EXPONENT_MIN && v.inexact()
+            );
+            if subnormal_rounded {
+                Self::round_odd_path(p, rm, &mut f)
+            } else {
+                r
+            }
+        } else {
+            Self::round_odd_path(p, rm, &mut f)
+        };
+        if let Flavor::Value(v) = &mut r.inner {
+            v.finish_flags(inputs_inexact, true);
+        }
+        r
+    }
+
+    fn round_odd_path<F>(p: usize, rm: RoundingMode, f: &mut F) -> Self
+    where
+        F: FnMut(usize, RoundingMode) -> Self,
+    {
+        let wide = f(round_p(p) + WORD_BIT_SIZE, RoundingMode::ToZero);
+        match wide.inner {
+            Flavor::Value(v) => {
+                if v.is_zero() && !v.inexact() {
+                    // Exact zero: its sign depends on the rounding mode.
+                    return f(p, rm);
+                }
+                let is_zero = v.is_zero();
+                Self::result_to_ext_rm(v.round_odd_to(p, rm), is_zero, true, p, rm)
+            }
+            // Inf and NaN do not depend on the precision; recompute for the mode's own value.
+            Flavor::Inf(_) | Flavor::NaN(_) => f(p, rm),
+        }
+    }
+
+    /// The operand of a function evaluated through [`Self::round_exact`]: a copy with both
+    /// flags cleared, and its accumulated flag.
+    fn exact_operand(v: &ExactNumNumber) -> Result<(ExactNumNumber, bool), Error> {
+        Ok((v.exact_copy()?, v.inexact()))
+    }
+
     fn result_to_ext(
         res: Result<ExactNumNumber, Error>,
         is_dividend_zero: bool,
@@ -1857,17 +1918,29 @@ Accuracy: correctly-rounded",
         n,
         usize
     );
-    gen_wrapper_arg_rm!(
-        "Computes the square root of a number with precision `p`. The result is rounded using the rounding mode `rm`.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
-Accuracy: correctly-rounded",
-        sqrt,
-        Self,
-        { INF_POS },
-        { NAN },
-        p,
-        usize
-    );
+    /// Computes the square root of a number with precision `p`. The result is rounded using
+    /// the rounding mode `rm` at exactly `p` bits; `inexact()` reports this operation only.
+    /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn sqrt(&self, p: usize, rm: RoundingMode) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => match Self::exact_operand(v) {
+                Ok((x, acc)) => Self::round_exact(acc, p, rm, |q, r| {
+                    Self::result_to_ext(x.sqrt(q, r), x.is_zero(), true)
+                }),
+                Err(e) => Self::result_to_ext(Err(e), false, true),
+            },
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    INF_POS
+                } else {
+                    NAN
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
     gen_wrapper_arg_rm!(
         "Computes the cube root of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.

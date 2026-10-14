@@ -27,7 +27,8 @@ pub fn input(p: usize, elo: Exponent, ehi: Exponent, signed: bool) -> ExactNum {
     let storage = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
     let mut n = ExactNum::random_normal(storage, elo, ehi);
     n.set_precision(p, RoundingMode::ToZero).unwrap();
-    if signed && test_random::<bool>() {
+    // random_normal picks the sign at random
+    if n.is_negative() != (signed && test_random::<bool>()) {
         n = n.neg();
     }
     n.set_inexact(true);
