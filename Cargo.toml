@@ -45,6 +45,12 @@ categories = ["mathematics", "no-std", "science"]
 zenith-float-num = { path = "zenith-float-num", version = "2.0.0", default-features = false }
 zenith-float-macro = { path = "zenith-float-macro", version = "2.0.0" }
 
+# hex_golds prints golds with std I/O; a --no-default-features build skips it.
+[[bin]]
+name = "hex_golds"
+path = "src/bin/hex_golds.rs"
+required-features = ["std"]
+
 [features]
 default = ["std"]
 std = ["zenith-float-num/std"]
