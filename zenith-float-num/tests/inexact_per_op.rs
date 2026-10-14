@@ -151,3 +151,54 @@ fn accumulated_flag_still_inherits() {
         }
     }
 }
+
+// ExactComplex: `inexact()` reports this operation, `inexact_accumulated()` the history
+// (2.0.0 audit, round 2: item c).
+
+fn cx(re: i8, im: i8, p: usize) -> zenith_float_num::ExactComplex {
+    let mut z =
+        zenith_float_num::ExactComplex::new(ExactNum::from_i8(re, p), ExactNum::from_i8(im, p));
+    // operands that were rounded earlier: the flag must not leak into this operation
+    z.set_inexact(true);
+    z
+}
+
+#[test]
+fn complex_inexact_is_per_operation() {
+    use zenith_float_num::{Consts, ExactComplex};
+    let mut cc = Consts::new().unwrap();
+    for &p in &[64usize, 128, 256] {
+        for &rm in &MODES {
+            let z34 = cx(3, 4, p);
+            let z12 = cx(1, 2, p);
+            let checks: [(&str, ExactComplex); 10] = [
+                ("add", z34.add(&z12, p, rm)),
+                ("sub", z34.sub(&z12, p, rm)),
+                ("mul", z34.mul(&z12, p, rm)),
+                ("div", cx(-5, 10, p).div(&z12, p, rm)),
+                ("sqrt", z34.sqrt(p, rm, &mut cc)),
+                ("exp(0)", cx(0, 0, p).exp(p, rm, &mut cc)),
+                ("ln(1)", cx(1, 0, p).ln(p, rm, &mut cc)),
+                ("conj", z34.conj()),
+                ("ldexp", z34.ldexp(3, p, rm)),
+                ("fma", z34.fma(&z12, &z12, p, rm)),
+            ];
+            for (what, r) in checks.iter() {
+                assert!(
+                    !r.inexact(),
+                    "{what} p={p} {rm:?}: exact result reported inexact {r:?}"
+                );
+            }
+            let abs = z34.abs(p, rm);
+            assert!(!abs.inexact(), "abs p={p} {rm:?}");
+            let r = cx(2, 0, p).sqrt(p, rm, &mut cc);
+            assert!(r.inexact(), "sqrt(2) p={p} {rm:?} must be inexact");
+            let r = z34.div(&cx(3, 0, p), p, rm);
+            assert!(r.inexact(), "(3+4i)/3 p={p} {rm:?} must be inexact");
+            assert!(
+                z34.add(&z12, p, rm).inexact_accumulated(),
+                "accumulated flag inherits"
+            );
+        }
+    }
+}
