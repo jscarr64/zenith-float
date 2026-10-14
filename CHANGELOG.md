@@ -26,6 +26,28 @@ Behaviour changes from the audit, each with its own section below:
 - `from_raw_parts` validates its parts and returns `NaN(InvalidArgument)` for inconsistent ones.
 - `EXPONENT_MAX` and `EXPONENT_MIN` are `i32::MAX` and `i32::MIN` on 32-bit targets too.
 - The `RoundingMode` documentation describes `Up`, `Down`, `ToZero`, and `FromZero` as directed modes, not tie rules (documentation only).
+- `ExactNum::cmp` is now `ExactNum::compare`, and `Context::clone` is now `Context::try_clone` (breaking). See "No lint exemptions".
+- `Radix` is an enum (`Bin`, `Oct`, `Dec`, `Hex`, `Other`); `Radix::Bin` and the others are written the same way (breaking only for code that relied on it being a struct).
+
+### No lint exemptions
+
+The library no longer contains any `#[allow]` or `#[expect]`. The underlying code was fixed instead:
+
+- Eight crate-level clippy exemptions are gone from `zenith-float-num` (`manual_div_ceil`, `manual_is_multiple_of`, `neg_cmp_op_on_partial_ord`, `len_zero`, `slow_vector_initialization`, `comparison_chain`, `collapsible_else_if`, `collapsible_if`), and the first two are gone from `zenith-float`. The code uses `div_ceil` and `is_multiple_of`, and nested `if`s are collapsed. The `PartialOrd` tests write `(a < b).not()` instead of `!(a < b)`.
+- `Radix` was a struct with associated constants `Bin`, `Oct`, `Dec`, and `Hex`, which needed `non_upper_case_globals`. It is now an enum with those four variants and `Other(OtherRadix)`. `Radix::try_new` returns the named variant for 2, 8, 10, and 16, so equal bases compare equal. `OtherRadix` has a private field, so only `try_new` can build one. Code that writes `Radix::Dec` or calls `try_new`, `value`, or `u8::from` is unchanged.
+- `ExactNum::cmp(&self, &ExactNum) -> Option<SignedWord>` had the name of `Ord::cmp` with a different signature, which needed `should_implement_trait`. It is now `ExactNum::compare`, with the same behaviour. Migration: replace `.cmp(` with `.compare(` on `ExactNum`. A deprecated `cmp` alias was not kept, because it would still need the exemption. The `<`, `>`, and `partial_cmp` operators are unchanged.
+- `Context::clone(&self) -> Result<Context, Error>` is now `Context::try_clone` (the fallible-clone name used by `std::fs::File::try_clone`), for the same reason. Migration: rename the call.
+- The internal `Mantissa::abs_add` and `abs_sub` take an `AddSubSpec`, and the internal FFT takes an `FftStep`, instead of eight arguments (`too_many_arguments`).
+- The internal `mantissa::mantissa` module is now `mantissa::base` (`module_inception`).
+- `zenith-float-macro` documents `expr!` and `cexpr!` and denies `missing_docs` instead of allowing it.
+
+### Build without default features
+
+`cargo build --no-default-features` failed because the `hex_golds` binary needs `std`. The binary now declares `required-features = ["std"]`, so a `no_std` build skips it (021fa87).
+
+### Special-function oracle under debug builds
+
+The per-row wall-clock budgets in the special-function oracle are for optimised builds. A debug build under load timed out `struve_h` at 53 bits in the prepublish run, though the whole file takes 1.6 s alone. Debug builds now get ten times the budget (6bcf901).
 
 ### Exact-`p`-bit rounding beyond the basic operations
 
