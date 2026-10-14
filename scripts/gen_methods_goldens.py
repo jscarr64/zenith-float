@@ -24,6 +24,33 @@ def row(**fields):
     return fields
 
 
+# ε-extrapolation candidates. Names match `sample()` in methods_oracle.rs.
+# Truth is evaluated at 600 digits and printed with 200.
+EPS_CASES = [
+    ("xpow_m0p9", lambda: 1 / (1 - mp.mpf("0.9"))),
+    ("log_invsqrt", lambda: mp.mpf(-4)),
+    ("xpow_m0p99", lambda: 1 / (1 - mp.mpf("0.99"))),
+    ("log2_invsqrt", lambda: mp.mpf(16)),
+    ("log3_invsqrt", lambda: mp.mpf(-96)),
+    ("xpow_m0p75", lambda: mp.mpf(4)),
+]
+
+# Must equal CHOSEN in zenith-float-num/tests/gk_eps_probe.rs.
+EPS_CHOSEN = [
+    "xpow_m0p9",
+    "log_invsqrt",
+    "xpow_m0p99",
+    "log2_invsqrt",
+    "log3_invsqrt",
+    "xpow_m0p75",
+]
+
+
+def eps_truth(make):
+    with mp.workdps(600):
+        return mp.nstr(make(), 200, strip_zeros=False)
+
+
 def quad_rows():
     e = mp.e
     pi = mp.pi
