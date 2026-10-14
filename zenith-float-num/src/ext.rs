@@ -598,12 +598,26 @@ impl ExactNum {
 
     /// Returns the remainder of division of `|self|` by `|d2|`. The sign of the result is set to the sign of `self`.
     ///
-    /// Accuracy: correctly-rounded
+    /// The remainder is always exact: its last bit is no finer than the finer of the two
+    /// operands' last bits and it is smaller than both, so it fits without rounding. It takes
+    /// no precision or rounding mode, and `inexact()` is false.
+    ///
+    /// Accuracy: exact
     pub fn rem(&self, d2: &Self) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
                 Flavor::Value(v2) => {
-                    Self::result_to_ext(v1.rem(v2), v1.is_zero(), v1.sign() == v2.sign())
+                    // The remainder is exact; its flag reports this operation, which never
+                    // rounds, and the accumulated flag keeps both operands' history.
+                    let inputs = v1.inexact() || v2.inexact();
+                    let r = match (v1.exact_copy(), v2.exact_copy()) {
+                        (Ok(a), Ok(b)) => a.rem(&b).map(|mut r| {
+                            r.finish_flags(inputs, true);
+                            r
+                        }),
+                        (Err(e), _) | (_, Err(e)) => Err(e),
+                    };
+                    Self::result_to_ext(r, v1.is_zero(), v1.sign() == v2.sign())
                 }
                 Flavor::Inf(_) => self.clone(),
                 Flavor::NaN(err) => Self::nan(*err),

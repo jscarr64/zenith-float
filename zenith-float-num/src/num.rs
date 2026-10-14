@@ -537,12 +537,9 @@ impl ExactNumNumber {
                     // first, see if m3 is already subnormal, then shift accordingly
                     let mut excess = m3.max_bit_len() - m3.bit_len();
 
-                    if EXPONENT_MIN as i64 - e > usize::MAX as i64 {
-                        m3.set_zero();
-                        e = 0;
-                    } else {
-                        let shift = (EXPONENT_MIN as i64 - e) as usize;
-
+                    // `usize::MAX as i64` is -1, so the old range check flushed every
+                    // subnormal remainder to zero; convert the shift instead.
+                    if let Ok(shift) = usize::try_from(EXPONENT_MIN as i64 - e) {
                         if excess < shift {
                             m3.extend_subnormal(shift)?;
                             excess = m3.max_bit_len() - m3.bit_len();
@@ -553,6 +550,9 @@ impl ExactNumNumber {
                         m3.set_bit_len(m3.bit_len() + shift);
 
                         e = EXPONENT_MIN as i64;
+                    } else {
+                        m3.set_zero();
+                        e = 0;
                     }
                 } else {
                     m3.normilize2();

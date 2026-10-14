@@ -9,6 +9,14 @@ use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MIN, WORD_BIT_SI
 
 /// `|x| mod |y|` with the sign of `x`, from the exact integer significands.
 fn oracle(fx: &Float, fy: &Float) -> Float {
+    // Lift both operands by the same power of two so that the integer exponents stay in
+    // i32 near the bottom of the range; the remainder scales with them.
+    const LIFT: i32 = 1 << 12;
+    let old = unsafe { gmp_mpfr_sys::mpfr::get_emin() };
+    unsafe { gmp_mpfr_sys::mpfr::set_emin(gmp_mpfr_sys::mpfr::get_emin_min()) };
+    let fx = Float::with_val(fx.prec(), fx) << LIFT;
+    let fy = Float::with_val(fy.prec(), fy) << LIFT;
+    unsafe { gmp_mpfr_sys::mpfr::set_emin(old) };
     let (mx, ex) = fx.to_integer_exp().unwrap();
     let (my, ey) = fy.to_integer_exp().unwrap();
     let e = ex.min(ey);
@@ -21,7 +29,7 @@ fn oracle(fx: &Float, fy: &Float) -> Float {
     let bits = r.significant_bits().max(1);
     let old = unsafe { gmp_mpfr_sys::mpfr::get_emin() };
     unsafe { gmp_mpfr_sys::mpfr::set_emin(gmp_mpfr_sys::mpfr::get_emin_min()) };
-    let f = Float::with_val(bits, r) << e;
+    let f = (Float::with_val(bits, r) << e) >> LIFT;
     unsafe { gmp_mpfr_sys::mpfr::set_emin(old) };
     f
 }
@@ -29,7 +37,10 @@ fn oracle(fx: &Float, fy: &Float) -> Float {
 /// `conv_to_mpfr` for values near the bottom of the range.
 fn conv(w: usize, x: &ExactNum, cc: &mut Consts) -> Float {
     let e = x.exponent().unwrap_or(0);
-    let s = x.ldexp(-e, w, RoundingMode::None);
+    // two steps: -EXPONENT_MIN does not fit in an Exponent
+    let s = x
+        .ldexp(-(e / 2), w, RoundingMode::None)
+        .ldexp(-(e - e / 2), w, RoundingMode::None);
     let f = conv_to_mpfr(w, &s, cc);
     let old = unsafe { gmp_mpfr_sys::mpfr::get_emin() };
     unsafe { gmp_mpfr_sys::mpfr::set_emin(gmp_mpfr_sys::mpfr::get_emin_min()) };
