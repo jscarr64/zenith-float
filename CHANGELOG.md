@@ -21,6 +21,8 @@ Behaviour changes from the audit, each with its own section below:
 - An exponent overflow under `ToZero`, under `Down` for a positive result, and under `Up` for a negative result returns `±max_value(p)` instead of `±Inf`.
 - `inexact()` describes the operation that produced the value, for every rounded function and for `ExactComplex`. `inexact_accumulated()` is the old flag; `ExactComplex::inexact_accumulated()` is new.
 - `ldexp` and `scalb` below the exponent range round onto the subnormal grid by mode instead of returning zero.
+- `sin_cos` and `sinh_cosh` round each result at exactly `p` bits with its own `inexact()`; `sinh_cosh` overflow follows the mode.
+- `rem` returns subnormal remainders instead of zero, and its `inexact()` is false: the remainder is always exact.
 - `from_raw_parts` validates its parts and returns `NaN(InvalidArgument)` for inconsistent ones.
 - `EXPONENT_MAX` and `EXPONENT_MIN` are `i32::MAX` and `i32::MIN` on 32-bit targets too.
 - The `RoundingMode` documentation describes `Up`, `Down`, `ToZero`, and `FromZero` as directed modes, not tie rules (documentation only).
@@ -51,6 +53,18 @@ Results can differ from 1.x in the last bit. Code that compared bit patterns wit
 ### 32-bit clippy
 
 `scripts/ci_hex_32bit.sh` runs clippy on `i686-unknown-linux-musl`. Two lints that only fire with 32-bit words were fixed (`modulo_one` in `binfmt.rs`, `needless_return` in `num.rs`).
+
+### `sin_cos` and `sinh_cosh`
+
+The pair functions still rounded at a word multiple, set both flags from the shared computation, and returned `±Inf` on `sinh_cosh` overflow in every mode. Each result now goes through the same exact-`p`-bit rounding as `sin`, `cos`, `sinh`, and `cosh`, with its own per-operation flag and mode-aware overflow. The two values are computed separately, so a call costs about as much as the two single functions.
+
+### `rem` is exact
+
+`rem` takes no precision or rounding mode because the remainder of two floating-point numbers always fits: it is smaller than both operands and its last bit is no finer than the finer operand's. A sweep against an exact big-integer remainder (all test precisions, operands far apart, close, and in the subnormal band) confirms it. The sweep found one bug: a remainder below `EXPONENT_MIN` was always flushed to zero, because the range check compared with `usize::MAX as i64`, which is `-1`. Subnormal remainders are now returned exactly. `inexact()` on a remainder is false; `inexact_accumulated()` keeps the operands' history.
+
+### Deterministic `test_compute_added_err`
+
+Under `--features random` the `random_dist` tests reseed the shared test generator from their own threads, which restarted the stream of `macro_util::test_compute_added_err` part-way through and made it fail at random. The test now pins its own stream (`test_rng::pin_thread_seed`, test builds only). This is a test-only change.
 
 ### Subnormal underflow
 
