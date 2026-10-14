@@ -359,6 +359,14 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn fused_sum(xs: &[Self], p: usize, rm: RoundingMode) -> Self {
+        let xs_c: Vec<Self> = xs.iter().map(|v| v.exact_copy_ext()).collect();
+        Self::round_exact(xs.iter().any(|v| v.inexact_accumulated()), p, rm, |q, r| {
+            Self::fused_sum_word(&xs_c, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::fused_sum`].
+    fn fused_sum_word(xs: &[Self], p: usize, rm: RoundingMode) -> Self {
         if xs.is_empty() {
             return Self::new(p);
         }
@@ -385,6 +393,19 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn fused_dot(xs: &[Self], ys: &[Self], p: usize, rm: RoundingMode) -> Self {
+        let xs_c: Vec<Self> = xs.iter().map(|v| v.exact_copy_ext()).collect();
+        let ys_c: Vec<Self> = ys.iter().map(|v| v.exact_copy_ext()).collect();
+        Self::round_exact(
+            xs.iter().any(|v| v.inexact_accumulated())
+                || ys.iter().any(|v| v.inexact_accumulated()),
+            p,
+            rm,
+            |q, r| Self::fused_dot_word(&xs_c, &ys_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::fused_dot`].
+    fn fused_dot_word(xs: &[Self], ys: &[Self], p: usize, rm: RoundingMode) -> Self {
         if xs.len() != ys.len() {
             return Self::nan(Some(Error::InvalidArgument));
         }
@@ -416,6 +437,18 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn polyval(coeffs: &[Self], x: &Self, p: usize, rm: RoundingMode) -> Self {
+        let x_c = x.exact_copy_ext();
+        let coeffs_c: Vec<Self> = coeffs.iter().map(|v| v.exact_copy_ext()).collect();
+        Self::round_exact(
+            x.inexact_accumulated() || coeffs.iter().any(|v| v.inexact_accumulated()),
+            p,
+            rm,
+            |q, r| Self::polyval_word(&coeffs_c, &x_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::polyval`].
+    fn polyval_word(coeffs: &[Self], x: &Self, p: usize, rm: RoundingMode) -> Self {
         if coeffs.is_empty() {
             return Self::new(p);
         }
@@ -1810,6 +1843,14 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn ldexp(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.ldexp_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::ldexp`].
+    fn ldexp_word(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext_rm(v.ldexp(n, p, rm), v.is_zero(), true, p, rm),
             Flavor::Inf(_) | Flavor::NaN(_) => self.clone(),
@@ -1820,6 +1861,14 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn scalb(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.scalb_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::scalb`].
+    fn scalb_word(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         self.ldexp(n, p, rm)
     }
 
@@ -1827,6 +1876,14 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn logb(&self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.logb_word(q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::logb`].
+    fn logb_word(&self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.logb(p, rm), v.is_zero(), true),
             Flavor::Inf(_) => INF_POS,
@@ -2453,6 +2510,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn gammainc(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let x_c = x.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || x.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.gammainc_word(&x_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::gammainc`].
+    fn gammainc_word(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &x.inner) {
             (Flavor::Value(s), Flavor::Value(xv)) => {
                 Self::result_to_ext(s.gammainc(xv, p, rm, cc), xv.is_zero(), true)
@@ -2478,6 +2547,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn gammainc_upper(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let x_c = x.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || x.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.gammainc_upper_word(&x_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::gammainc_upper`].
+    fn gammainc_upper_word(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &x.inner) {
             (Flavor::Value(s), Flavor::Value(xv)) => {
                 Self::result_to_ext(s.gammainc_upper(xv, p, rm, cc), xv.is_zero(), true)
@@ -2519,6 +2600,14 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.si_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::si`].
+    fn si_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.si(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => Self::result_to_ext(Self::half_pi(*s, p, rm, cc), false, true),
@@ -2567,6 +2656,14 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn fresnel_s(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.fresnel_s_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::fresnel_s`].
+    fn fresnel_s_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.fresnel_sc_ext(true, p, rm, cc)
     }
 
@@ -2580,6 +2677,14 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn fresnel_c(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.fresnel_c_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::fresnel_c`].
+    fn fresnel_c_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.fresnel_sc_ext(false, p, rm, cc)
     }
 
@@ -2609,6 +2714,14 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn ai(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.ai_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::ai`].
+    fn ai_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.ai(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
@@ -2632,6 +2745,14 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn bi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.bi_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::bi`].
+    fn bi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bi(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
@@ -2655,6 +2776,14 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn ai_prime(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.ai_prime_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::ai_prime`].
+    fn ai_prime_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.ai_prime(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
@@ -2678,6 +2807,14 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn bi_prime(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.bi_prime_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::bi_prime`].
+    fn bi_prime_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bi_prime(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
@@ -2705,6 +2842,14 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_j(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.bessel_j_word(n, q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::bessel_j`].
+    fn bessel_j_word(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bessel_j(n, p, rm, cc), v.is_zero(), true),
             Flavor::Inf(_) => NAN,
@@ -2746,6 +2891,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.bessel_j_nu_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::bessel_j_nu`].
+    fn bessel_j_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_j_nu)
     }
 
@@ -2760,6 +2917,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_y(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.bessel_y_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::bessel_y`].
+    fn bessel_y_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_y)
     }
 
@@ -2773,6 +2942,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_i(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.bessel_i_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::bessel_i`].
+    fn bessel_i_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_i)
     }
 
@@ -2786,6 +2967,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_k(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.bessel_k_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::bessel_k`].
+    fn bessel_k_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_k)
     }
     gen_wrapper_arg_rm_cc!(
@@ -2841,6 +3034,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn elliptic_f(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_f_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_f`].
+    fn elliptic_f_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(x), Flavor::Value(mv)) => {
                 if let Ok(one) = ExactNumNumber::from_word(1, WORD_BIT_SIZE) {
@@ -2871,6 +3076,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn elliptic_e(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_e_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_e`].
+    fn elliptic_e_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(x), Flavor::Value(mv)) => {
                 Self::result_to_ext(x.elliptic_e(mv, p, rm, cc), x.is_zero(), true)
@@ -2889,6 +3106,24 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn elliptic_pi_complete(
+        &self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_pi_complete_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_pi_complete`].
+    fn elliptic_pi_complete_word(
         &self,
         m: &Self,
         p: usize,
@@ -2920,6 +3155,26 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn elliptic_pi(
+        &self,
+        x: &Self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let x_c = x.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || x.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_pi_word(&x_c, &m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_pi`].
+    fn elliptic_pi_word(
         &self,
         x: &Self,
         m: &Self,
@@ -2963,6 +3218,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn elliptic_f_phi(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_f_phi_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_f_phi`].
+    fn elliptic_f_phi_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(phi), Flavor::Value(mv)) => {
                 Self::result_to_ext(phi.elliptic_f_phi(mv, p, rm, cc), phi.is_zero(), true)
@@ -2991,6 +3258,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn elliptic_e_phi(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_e_phi_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_e_phi`].
+    fn elliptic_e_phi_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(phi), Flavor::Value(mv)) => {
                 Self::result_to_ext(phi.elliptic_e_phi(mv, p, rm, cc), phi.is_zero(), true)
@@ -3030,6 +3309,26 @@ Accuracy: correctly-rounded",
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Self {
+        let this = self.exact_copy_ext();
+        let phi_c = phi.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || phi.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_pi_phi_word(&phi_c, &m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_pi_phi`].
+    fn elliptic_pi_phi_word(
+        &self,
+        phi: &Self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
         match (&self.inner, &phi.inner, &m.inner) {
             (Flavor::Value(n), Flavor::Value(ph), Flavor::Value(mv)) => {
                 Self::result_to_ext(n.elliptic_pi_phi(ph, mv, p, rm, cc), ph.is_zero(), true)
@@ -3050,6 +3349,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_am(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_am_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_am`].
+    fn jacobi_am_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_am(mv, p, rm, cc), u.is_zero(), true)
@@ -3069,6 +3380,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_sn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_sn_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_sn`].
+    fn jacobi_sn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_sn(mv, p, rm, cc), u.is_zero(), true)
@@ -3087,6 +3410,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_cn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_cn_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_cn`].
+    fn jacobi_cn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_cn(mv, p, rm, cc), u.is_zero(), true)
@@ -3105,6 +3440,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_dn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_dn_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_dn`].
+    fn jacobi_dn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_dn(mv, p, rm, cc), false, true)
@@ -3123,6 +3470,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_cd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_cd_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_cd`].
+    fn jacobi_cd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_cd(mv, p, rm, cc), false, true)
@@ -3141,6 +3500,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_ns(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_ns_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_ns`].
+    fn jacobi_ns_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_ns(mv, p, rm, cc), false, true)
@@ -3159,6 +3530,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_nc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_nc_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_nc`].
+    fn jacobi_nc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_nc(mv, p, rm, cc), false, true)
@@ -3177,6 +3560,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_nd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_nd_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_nd`].
+    fn jacobi_nd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_nd(mv, p, rm, cc), false, true)
@@ -3195,6 +3590,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_sc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_sc_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_sc`].
+    fn jacobi_sc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_sc(mv, p, rm, cc), false, true)
@@ -3213,6 +3620,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_sd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_sd_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_sd`].
+    fn jacobi_sd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_sd(mv, p, rm, cc), false, true)
@@ -3231,6 +3650,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_cs(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_cs_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_cs`].
+    fn jacobi_cs_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_cs(mv, p, rm, cc), false, true)
@@ -3249,6 +3680,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_ds(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_ds_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_ds`].
+    fn jacobi_ds_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_ds(mv, p, rm, cc), false, true)
@@ -3267,6 +3710,18 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_dc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_dc_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_dc`].
+    fn jacobi_dc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_dc(mv, p, rm, cc), false, true)
@@ -3285,6 +3740,14 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn legendre_p(&self, n: u32, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.legendre_p_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::legendre_p`].
+    fn legendre_p_word(&self, n: u32, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.legendre_p(n, p, rm), false, true),
             Flavor::Inf(_) => NAN,
@@ -3301,6 +3764,14 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn assoc_legendre_p(&self, n: u32, m: i32, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.assoc_legendre_p_word(n, m, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::assoc_legendre_p`].
+    fn assoc_legendre_p_word(&self, n: u32, m: i32, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.assoc_legendre_p(n, m, p, rm), false, true),
             Flavor::Inf(_) => NAN,
@@ -3330,6 +3801,31 @@ Accuracy: correctly-rounded",
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Self {
+        let this = self.exact_copy_ext();
+        let b_c = b.exact_copy_ext();
+        let c_c = c.exact_copy_ext();
+        let z_c = z.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated()
+                || b.inexact_accumulated()
+                || c.inexact_accumulated()
+                || z.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.hypergeom_2f1_word(&b_c, &c_c, &z_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::hypergeom_2f1`].
+    fn hypergeom_2f1_word(
+        &self,
+        b: &Self,
+        c: &Self,
+        z: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
         match (&self.inner, &b.inner, &c.inner, &z.inner) {
             (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(cv), Flavor::Value(zv)) => {
                 Self::result_to_ext(a.hypergeom_2f1(bv, cv, zv, p, rm, cc), zv.is_zero(), true)
@@ -3351,6 +3847,26 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn betainc(&self, b: &Self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let b_c = b.exact_copy_ext();
+        let x_c = x.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || b.inexact_accumulated() || x.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.betainc_word(&b_c, &x_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::betainc`].
+    fn betainc_word(
+        &self,
+        b: &Self,
+        x: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
         match (&self.inner, &b.inner, &x.inner) {
             (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(xv)) => {
                 Self::result_to_ext(a.betainc(bv, xv, p, rm, cc), xv.is_zero(), true)

@@ -583,6 +583,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn scorer_gi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.scorer_gi_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::scorer_gi`].
+    fn scorer_gi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return if self.is_nan() { self.clone() } else { cat_nan() };
         }
@@ -603,6 +611,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn scorer_hi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.scorer_hi_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::scorer_hi`].
+    fn scorer_hi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return if self.is_nan() { self.clone() } else { cat_nan() };
         }
@@ -621,6 +637,18 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn kelvin_ber_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.kelvin_ber_nu_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::kelvin_ber_nu`].
+    fn kelvin_ber_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) {
             return cat_nan();
         }
@@ -638,6 +666,18 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn kelvin_bei_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.kelvin_bei_nu_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::kelvin_bei_nu`].
+    fn kelvin_bei_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) {
             return cat_nan();
         }
@@ -655,6 +695,18 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn kelvin_ker_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.kelvin_ker_nu_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::kelvin_ker_nu`].
+    fn kelvin_ker_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) || self.is_zero() {
             return if self.is_zero() { crate::ext::INF_POS } else { cat_nan() };
         }
@@ -678,6 +730,18 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn kelvin_kei_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.kelvin_kei_nu_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::kelvin_kei_nu`].
+    fn kelvin_kei_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) || self.is_zero() {
             return cat_nan();
         }
@@ -701,6 +765,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn kelvin_ber(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.kelvin_ber_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::kelvin_ber`].
+    fn kelvin_ber_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.kelvin_ber_nu(&ExactNum::new(p), p, rm, cc)
     }
 
@@ -708,6 +780,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn kelvin_bei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.kelvin_bei_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::kelvin_bei`].
+    fn kelvin_bei_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.kelvin_bei_nu(&ExactNum::new(p), p, rm, cc)
     }
 
@@ -715,6 +795,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn kelvin_ker(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.kelvin_ker_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::kelvin_ker`].
+    fn kelvin_ker_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.kelvin_ker_nu(&ExactNum::new(p), p, rm, cc)
     }
 
@@ -722,6 +810,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn kelvin_kei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.kelvin_kei_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::kelvin_kei`].
+    fn kelvin_kei_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.kelvin_kei_nu(&ExactNum::new(p), p, rm, cc)
     }
 
@@ -733,6 +829,18 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn struve_h(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.struve_h_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::struve_h`].
+    fn struve_h_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) {
             return cat_nan();
         }
@@ -811,6 +919,18 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn anger_j(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.anger_j_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::anger_j`].
+    fn anger_j_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) {
             return cat_nan();
         }
@@ -846,6 +966,18 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn weber_e(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.weber_e_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::weber_e`].
+    fn weber_e_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(nu) {
             return cat_nan();
         }
@@ -880,6 +1012,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn clausen_cl2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.clausen_cl2_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::clausen_cl2`].
+    fn clausen_cl2_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return cat_nan();
         }
@@ -903,6 +1043,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn clausen_cl3(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.clausen_cl3_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::clausen_cl3`].
+    fn clausen_cl3_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return cat_nan();
         }
@@ -923,6 +1071,18 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn hurwitz_zeta(&self, a: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let a_c = a.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || a.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.hurwitz_zeta_word(&a_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::hurwitz_zeta`].
+    fn hurwitz_zeta_word(&self, a: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(a) {
             return cat_nan();
         }
@@ -962,6 +1122,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn riemann_zeta(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.riemann_zeta_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::riemann_zeta`].
+    fn riemann_zeta_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let wrk = work_p(p);
         if let Some(s) = small_int(self, wrk, -1, 64) {
             if s == 0 {
@@ -987,6 +1155,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn polygamma(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.polygamma_word(n, q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::polygamma`].
+    fn polygamma_word(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return cat_nan();
         }
@@ -1012,6 +1188,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn barnes_g(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.barnes_g_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::barnes_g`].
+    fn barnes_g_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) {
             return cat_nan();
         }
@@ -1077,6 +1261,18 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_arcsn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_arcsn_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_arcsn`].
+    fn jacobi_arcsn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.elliptic_f(m, p, rm, cc)
     }
 
@@ -1084,6 +1280,18 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_arccn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_arccn_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_arccn`].
+    fn jacobi_arccn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(m) {
             return cat_nan();
         }
@@ -1103,6 +1311,18 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn jacobi_arcdn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_arcdn_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_arcdn`].
+    fn jacobi_arcdn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !finite(m) || !m.is_positive() {
             return cat_nan();
         }
@@ -1123,6 +1343,18 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn hypergeom_0f1(&self, b: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let b_c = b.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || b.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.hypergeom_0f1_word(&b_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::hypergeom_0f1`].
+    fn hypergeom_0f1_word(&self, b: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.hypergeom_pfq(&[], core::slice::from_ref(b), p, rm, cc)
     }
 
@@ -1130,6 +1362,26 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn hypergeom_1f1(
+        &self,
+        a: &Self,
+        b: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let a_c = a.exact_copy_ext();
+        let b_c = b.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || a.inexact_accumulated() || b.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.hypergeom_1f1_word(&a_c, &b_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::hypergeom_1f1`].
+    fn hypergeom_1f1_word(
         &self,
         a: &Self,
         b: &Self,
@@ -1152,6 +1404,28 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn hypergeom_pfq(
+        &self,
+        a: &[Self],
+        b: &[Self],
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let a_c: Vec<Self> = a.iter().map(|v| v.exact_copy_ext()).collect();
+        let b_c: Vec<Self> = b.iter().map(|v| v.exact_copy_ext()).collect();
+        Self::round_exact(
+            self.inexact_accumulated()
+                || a.iter().any(|v| v.inexact_accumulated())
+                || b.iter().any(|v| v.inexact_accumulated()),
+            p,
+            rm,
+            |q, r| this.hypergeom_pfq_word(&a_c, &b_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::hypergeom_pfq`].
+    fn hypergeom_pfq_word(
         &self,
         a: &[Self],
         b: &[Self],
@@ -1218,6 +1492,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn lambert_w0(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.lambert_w0_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::lambert_w0`].
+    fn lambert_w0_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.lambert_w_branch(false, p, rm, cc)
     }
 
@@ -1225,6 +1507,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn lambert_wm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.lambert_wm1_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::lambert_wm1`].
+    fn lambert_wm1_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.lambert_w_branch(true, p, rm, cc)
     }
 
@@ -1319,6 +1609,14 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn polylog(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.polylog_word(n, q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::polylog`].
+    fn polylog_word(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !(2..=64).contains(&n) {
             return cat_nan();
         }

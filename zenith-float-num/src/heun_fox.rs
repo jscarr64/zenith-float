@@ -566,6 +566,34 @@ impl ExactNum {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Self {
+        let this = self.exact_copy_ext();
+        let an_c: Vec<Self> = an.iter().map(|v| v.exact_copy_ext()).collect();
+        let ap_c: Vec<Self> = ap.iter().map(|v| v.exact_copy_ext()).collect();
+        let bm_c: Vec<Self> = bm.iter().map(|v| v.exact_copy_ext()).collect();
+        let bq_c: Vec<Self> = bq.iter().map(|v| v.exact_copy_ext()).collect();
+        Self::round_exact(
+            self.inexact_accumulated()
+                || an.iter().any(|v| v.inexact_accumulated())
+                || ap.iter().any(|v| v.inexact_accumulated())
+                || bm.iter().any(|v| v.inexact_accumulated())
+                || bq.iter().any(|v| v.inexact_accumulated()),
+            p,
+            rm,
+            |q, r| this.meijer_g_word(&an_c, &ap_c, &bm_c, &bq_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::meijer_g`].
+    fn meijer_g_word(
+        &self,
+        an: &[Self],
+        ap: &[Self],
+        bm: &[Self],
+        bq: &[Self],
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
         finish(meijer_g_inner(self, an, ap, bm, bq, &one, wrk, cc), p, rm)
@@ -593,6 +621,54 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn fox_h(
+        &self,
+        an: &[(Self, Self)],
+        ap: &[(Self, Self)],
+        bm: &[(Self, Self)],
+        bq: &[(Self, Self)],
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let an_c: Vec<(Self, Self)> = an
+            .iter()
+            .map(|(u, v)| (u.exact_copy_ext(), v.exact_copy_ext()))
+            .collect();
+        let ap_c: Vec<(Self, Self)> = ap
+            .iter()
+            .map(|(u, v)| (u.exact_copy_ext(), v.exact_copy_ext()))
+            .collect();
+        let bm_c: Vec<(Self, Self)> = bm
+            .iter()
+            .map(|(u, v)| (u.exact_copy_ext(), v.exact_copy_ext()))
+            .collect();
+        let bq_c: Vec<(Self, Self)> = bq
+            .iter()
+            .map(|(u, v)| (u.exact_copy_ext(), v.exact_copy_ext()))
+            .collect();
+        Self::round_exact(
+            self.inexact_accumulated()
+                || an
+                    .iter()
+                    .any(|(u, v)| u.inexact_accumulated() || v.inexact_accumulated())
+                || ap
+                    .iter()
+                    .any(|(u, v)| u.inexact_accumulated() || v.inexact_accumulated())
+                || bm
+                    .iter()
+                    .any(|(u, v)| u.inexact_accumulated() || v.inexact_accumulated())
+                || bq
+                    .iter()
+                    .any(|(u, v)| u.inexact_accumulated() || v.inexact_accumulated()),
+            p,
+            rm,
+            |q, r| this.fox_h_word(&an_c, &ap_c, &bm_c, &bq_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::fox_h`].
+    fn fox_h_word(
         &self,
         an: &[(Self, Self)],
         ap: &[(Self, Self)],
@@ -676,6 +752,40 @@ impl ExactNum {
     ///
     /// Accuracy: unspecified
     pub fn heun_g(
+        &self,
+        a: &Self,
+        q: &Self,
+        alpha: &Self,
+        beta: &Self,
+        gamma: &Self,
+        delta: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let a_c = a.exact_copy_ext();
+        let q_c = q.exact_copy_ext();
+        let alpha_c = alpha.exact_copy_ext();
+        let beta_c = beta.exact_copy_ext();
+        let gamma_c = gamma.exact_copy_ext();
+        let delta_c = delta.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated()
+                || a.inexact_accumulated()
+                || q.inexact_accumulated()
+                || alpha.inexact_accumulated()
+                || beta.inexact_accumulated()
+                || gamma.inexact_accumulated()
+                || delta.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.heun_g_word(&a_c, &q_c, &alpha_c, &beta_c, &gamma_c, &delta_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::heun_g`].
+    fn heun_g_word(
         &self,
         a: &Self,
         q: &Self,

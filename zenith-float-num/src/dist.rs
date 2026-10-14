@@ -42,6 +42,26 @@ impl ExactNum {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Self {
+        let this = self.exact_copy_ext();
+        let mu_c = mu.exact_copy_ext();
+        let sigma_c = sigma.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || mu.inexact_accumulated() || sigma.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.normal_pdf_word(&mu_c, &sigma_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::normal_pdf`].
+    fn normal_pdf_word(
+        &self,
+        mu: &Self,
+        sigma: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
         if self.is_nan() || mu.is_nan() || sigma.is_nan() {
             return NAN;
         }
@@ -76,6 +96,26 @@ impl ExactNum {
     /// - Bound: working precision `p + WORD_BIT_SIZE`.
     /// - MPFR oracle: no (composite of `erfc`).
     pub fn normal_cdf(
+        &self,
+        mu: &Self,
+        sigma: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let mu_c = mu.exact_copy_ext();
+        let sigma_c = sigma.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || mu.inexact_accumulated() || sigma.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.normal_cdf_word(&mu_c, &sigma_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::normal_cdf`].
+    fn normal_cdf_word(
         &self,
         mu: &Self,
         sigma: &Self,

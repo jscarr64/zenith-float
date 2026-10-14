@@ -38,6 +38,14 @@ impl ExactNum {
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn hermite_he(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.hermite_he_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::hermite_he`].
+    fn hermite_he_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
         }
@@ -71,6 +79,14 @@ impl ExactNum {
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn hermite_h(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.hermite_h_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::hermite_h`].
+    fn hermite_h_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
         }
@@ -108,6 +124,14 @@ impl ExactNum {
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn laguerre(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.laguerre_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::laguerre`].
+    fn laguerre_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         self.gen_laguerre(n, &ExactNum::new(p), p, rm)
     }
 
@@ -119,6 +143,18 @@ impl ExactNum {
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn gen_laguerre(&self, n: usize, alpha: &Self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        let alpha_c = alpha.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || alpha.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.gen_laguerre_word(n, &alpha_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::gen_laguerre`].
+    fn gen_laguerre_word(&self, n: usize, alpha: &Self, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) || !finite(alpha) {
             return op_nan();
         }
@@ -167,6 +203,14 @@ impl ExactNum {
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn chebyshev_t(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.chebyshev_t_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::chebyshev_t`].
+    fn chebyshev_t_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
         }
@@ -199,6 +243,14 @@ impl ExactNum {
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn chebyshev_u(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.chebyshev_u_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::chebyshev_u`].
+    fn chebyshev_u_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
         }
@@ -233,6 +285,18 @@ impl ExactNum {
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn gegenbauer(&self, n: usize, lambda: &Self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        let lambda_c = lambda.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || lambda.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.gegenbauer_word(n, &lambda_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::gegenbauer`].
+    fn gegenbauer_word(&self, n: usize, lambda: &Self, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) || !finite(lambda) {
             return op_nan();
         }
@@ -295,6 +359,26 @@ impl ExactNum {
     ///
     /// Accuracy: working-precision, 32 bits
     pub fn jacobi_p(
+        &self,
+        n: usize,
+        alpha: &Self,
+        beta: &Self,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let alpha_c = alpha.exact_copy_ext();
+        let beta_c = beta.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || alpha.inexact_accumulated() || beta.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_p_word(n, &alpha_c, &beta_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_p`].
+    fn jacobi_p_word(
         &self,
         n: usize,
         alpha: &Self,
