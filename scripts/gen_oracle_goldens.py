@@ -737,7 +737,8 @@ def input_tuple(tok: str, p: int) -> tuple:
         return ("zero", "+")
     if tok == "-0":
         return ("zero", "-")
-    return value_key(finalize(parse_dec(tok), p, "ToEven"), p)
+    # ExactNum::parse rounds at exactly p bits (2.0.0).
+    return value_key(finalize(parse_dec(tok), p, "ToEven", p if p >= 2 else None), p)
 
 
 def tuple_pow10(exp: int, p: int, rm: str) -> dict:

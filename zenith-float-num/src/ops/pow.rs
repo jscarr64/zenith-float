@@ -583,6 +583,40 @@ impl ExactNumNumber {
             }
         }
 
+        // A half-integer power of a value with an exact square root is exact or one
+        // rounding of an exact product: 9^0.5 = 3, 4^(-1.5) = 1/8.
+        if rm != RoundingMode::None
+            && !n.inexact()
+            && !self.inexact()
+            && self.is_positive()
+            && !n.is_int()
+            && n.exponent() < 64
+        {
+            let mut twice = n.clone()?;
+            twice.set_exponent(n.exponent() + 1);
+            if twice.is_int() {
+                let w = self.mantissa_max_bit_len() + WORD_BIT_SIZE;
+                let root = self.sqrt(w, RoundingMode::ToZero)?;
+                if !root.inexact() {
+                    if let Ok(mag) = twice.int_as_usize() {
+                        if mag == 1 {
+                            return if n.is_negative() {
+                                ONE.div(&root, p, rm)
+                            } else {
+                                let mut ret = root;
+                                ret.set_precision(p, rm)?;
+                                Ok(ret)
+                            };
+                        }
+                        let width = root.mantissa_max_bit_len().max(1);
+                        if width.saturating_mul(mag) <= 1_048_576 {
+                            return root.pow_exact_integer(mag, n.is_negative(), p, rm);
+                        }
+                    }
+                }
+            }
+        }
+
         // actual pow : self^n = e^(n * ln(self))
 
         let p = round_p(p);

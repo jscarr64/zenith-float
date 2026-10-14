@@ -3,6 +3,7 @@
 use crate::common::util::{bump_prec_retry, round_p};
 use crate::defs::{Error, RoundingMode};
 use crate::num::ExactNumNumber;
+use crate::Exponent;
 use crate::WORD_BIT_SIZE;
 
 impl ExactNumNumber {
@@ -29,36 +30,44 @@ impl ExactNumNumber {
             return self.mul(b, p, rm);
         }
 
-        // When |a*b| and c are separated by more than p plus two words, the
-        // smaller term cannot change the rounded p-bit result. Skip the
-        // full-width product in that case (Horner / dot-product tails).
-        let e_prod = (self.exponent() as i64).saturating_add(b.exponent() as i64);
-        let e_c = c.exponent() as i64;
-        let sep = e_prod.abs_diff(e_c);
-        if sep > (p as u64).saturating_add((2 * WORD_BIT_SIZE) as u64) {
-            if e_prod > e_c {
-                return self.mul(b, p, rm);
-            }
-            let mut ret = c.clone()?;
-            ret.set_precision(p, rm)?;
-            ret.set_inexact(true);
-            return Ok(ret);
-        }
-
         let inexact = self.inexact() | b.inexact() | c.inexact();
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p + p_inc;
 
         // Exact product + add, then a single round to `p` (IEEE FMA). A
         // truncated product would drop sticky bits and fail the MPFR oracle.
-        // Exact product + add, then a single round to `p` (IEEE FMA). A
-        // truncated product would drop sticky bits and fail the MPFR oracle.
         let prod = self.mul_full_prec(b)?;
-        let mut sum = prod.add_full_prec(c)?;
+
+        // When one term lies entirely below the other's last bit by more than two words, only
+        // its sign can affect the rounding. Replace it by a same-signed stand-in just below
+        // that bit, so the full-width sum stays small (Horner / dot-product tails) and the
+        // rounding and the inexact flag stay correct in every mode.
+        // Exponents of the leading set bits: mantissas may carry leading zeros.
+        let e_prod =
+            prod.exponent() as i64 - (prod.mantissa_max_bit_len() as i64 - prod.precision() as i64);
+        let e_c = c.exponent() as i64 - (c.mantissa_max_bit_len() as i64 - c.precision() as i64);
+        let w_prod = prod.mantissa_max_bit_len() as i64;
+        let w_c = c.mantissa_max_bit_len() as i64;
+        let guard = 2 * WORD_BIT_SIZE as i64;
+        let mut sum = if e_prod - e_c > w_prod + guard {
+            let mut tiny = c.clone()?;
+            tiny.set_exponent((e_prod - w_prod - 2) as Exponent);
+            prod.add_full_prec(&tiny)?
+        } else if e_c - e_prod > w_c + guard {
+            let mut tiny = prod.clone()?;
+            tiny.set_exponent((e_c - w_c - 2) as Exponent);
+            tiny.add_full_prec(c)?
+        } else {
+            prod.add_full_prec(c)?
+        };
 
         loop {
             if sum.is_zero() {
+                // An exact cancellation is +0, or -0 when rounding down.
                 let mut ret = Self::new(p)?;
+                if rm == RoundingMode::Down {
+                    ret.set_sign(crate::Sign::Neg);
+                }
                 ret.set_inexact(inexact | sum.inexact());
                 return Ok(ret);
             }

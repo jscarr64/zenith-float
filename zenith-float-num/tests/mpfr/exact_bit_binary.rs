@@ -202,3 +202,28 @@ fn exact_bit_parse() {
         }
     }
 }
+
+#[test]
+fn exact_bit_hypot_wide_spread() {
+    reset_test_rng();
+    let mut cc = Consts::new().unwrap();
+    for p in [53usize, 128, 8512] {
+        for _ in 0..4 {
+            let x = input(p, -20, 20, true);
+            let y = input(p, -400_000, -300_000, true);
+            for (a, b) in [(&x, &y), (&y, &x)] {
+                let (fa, fb) = (
+                    conv_to_mpfr(storage(p), a, &mut cc),
+                    conv_to_mpfr(storage(p), b, &mut cc),
+                );
+                for rm in MODES {
+                    let got = a.hypot(b, p, rm);
+                    let info = format!("hypot spread p={p} {rm:?}");
+                    check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                        mpfr::hypot(r.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd)
+                    });
+                }
+            }
+        }
+    }
+}

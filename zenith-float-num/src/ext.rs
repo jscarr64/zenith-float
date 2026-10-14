@@ -259,6 +259,19 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn fma(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        let b_c = b.exact_copy_ext();
+        let c_c = c.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || b.inexact_accumulated() || c.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| x.fma_word(&b_c, &c_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::fma`].
+    fn fma_word(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
             return self.clone();
         }
@@ -431,6 +444,19 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn mul_add(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        let b_c = b.exact_copy_ext();
+        let c_c = c.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || b.inexact_accumulated() || c.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| x.mul_add_word(&b_c, &c_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::mul_add`].
+    fn mul_add_word(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
             return self.clone();
         }
@@ -624,6 +650,18 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn pow(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let x = self.exact_copy_ext();
+        let n_c = n.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || n.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| x.pow_word(&n_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::pow`].
+    fn pow_word(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v1) => {
                 match &n.inner {
@@ -692,6 +730,14 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn powi(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            x.powi_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::powi`].
+    fn powi_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v1) => Self::result_to_ext_rm(v1.powi(n, p, rm), false, true, p, rm),
             Flavor::Inf(s1) => {
@@ -715,6 +761,14 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn powsi(&self, n: i64, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            x.powsi_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::powsi`].
+    fn powsi_word(&self, n: i64, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v1) => Self::result_to_ext_rm(v1.powsi(n, p, rm), false, true, p, rm),
             Flavor::Inf(s1) => {
@@ -902,6 +956,11 @@ impl ExactNum {
     /// assert!(n.is_nan());
     /// ```
     pub fn parse(s: &str, rdx: Radix, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        Self::round_exact(false, p, rm, |q, r| Self::parse_word(s, rdx, q, r, cc))
+    }
+
+    /// Word-precision implementation of [`Self::parse`].
+    fn parse_word(s: &str, rdx: Radix, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match crate::parser::parse(s, rdx) {
             Ok(ps) => {
                 if ps.is_inf() {
@@ -1059,6 +1118,18 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn atan2(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let y_c = self.exact_copy_ext();
+        let x_c = x.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || x.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| y_c.atan2_word(&x_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::atan2`].
+    fn atan2_word(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return self.clone();
         }
@@ -1106,6 +1177,18 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn hypot(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        let other_c = other.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || other.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| x.hypot_word(&other_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::hypot`].
+    fn hypot_word(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_inf() || other.is_inf() {
             return INF_POS;
         }
@@ -1257,6 +1340,13 @@ impl ExactNum {
             // Inf and NaN do not depend on the precision; recompute for the mode's own value.
             Flavor::Inf(_) | Flavor::NaN(_) => f(p, rm),
         }
+    }
+
+    /// A copy of `self` with both inexact flags cleared, for [`Self::round_exact`].
+    pub(crate) fn exact_copy_ext(&self) -> Self {
+        let mut c = self.clone();
+        c.set_inexact(false);
+        c
     }
 
     /// The operand of a function evaluated through [`Self::round_exact`]: a copy with both
@@ -1532,6 +1622,14 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            x.reciprocal_word(q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::reciprocal`].
+    fn reciprocal_word(&self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => {
                 Self::result_to_ext_rm(v.reciprocal(p, rm), false, v.is_positive(), p, rm)
@@ -2022,6 +2120,14 @@ Accuracy: correctly-rounded",
     ///
     /// Accuracy: correctly-rounded
     pub fn nth_root(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            x.nth_root_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::nth_root`].
+    fn nth_root_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if n == 0 {
             return Self::nan(Some(Error::InvalidArgument));
         }
