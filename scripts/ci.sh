@@ -29,11 +29,8 @@ run_budget() {
 }
 
 debug_slew() {
-  # Hardware IEEE type names stay out of Rust sources. Docs use binary32 / Ieee32.
-  if rg 'f32|f64' --glob '*.rs' .; then
-    echo "error: hardware IEEE type tokens are forbidden in zenith-float Rust sources"
-    exit 1
-  fi
+  # Hardware float tokens, arch intrinsics, inline asm, and kernel unsafe.
+  bash "$root/scripts/ci_no_intrinsics.sh"
   # CHANGELOG.md states the 2.0.0 MSRV in the words the release note requires.
   if rg -n -i 'accumath' --glob '!scripts/ci.sh' --glob '!CHANGELOG.md' .; then
     echo "error: this public crate must not mention that name"

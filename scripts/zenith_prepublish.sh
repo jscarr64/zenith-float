@@ -41,10 +41,8 @@ step "scripts/compare-bench.sh --quick"
 bash "$root/scripts/compare-bench.sh" --quick
 ok "compare-bench --quick"
 
-step "kernel purity grep (no f32/f64 tokens in zenith-float-num/src)"
-if rg -n 'f32|f64' --glob '*.rs' zenith-float-num/src; then
-  fail "hardware IEEE type tokens in zenith-float-num/src"
-fi
+step "kernel purity grep (no f32/f64, no arch intrinsics, no kernel unsafe)"
+bash "$root/scripts/ci_no_intrinsics.sh"
 ok "purity"
 
 step "scripts/check_precision_docs.sh"
