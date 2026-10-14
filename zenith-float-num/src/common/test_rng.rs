@@ -23,6 +23,17 @@ thread_local! {
         0,
         StdRng::seed_from_u64(DEFAULT_RANDOM_SEED),
     ));
+    // Set by `pin_thread_seed`: this thread keeps its own stream across global reseeds.
+    static PINNED: core::cell::Cell<bool> = const { core::cell::Cell::new(false) };
+}
+
+/// Gives the calling thread its own deterministic stream from `seed`. Later
+/// `reseed_random` calls from other test threads no longer restart it.
+#[cfg(test)]
+pub(crate) fn pin_thread_seed(seed: u64) {
+    ensure_init();
+    PINNED.with(|p| p.set(true));
+    RNG.with(|cell| *cell.borrow_mut() = (0, StdRng::seed_from_u64(seed)));
 }
 
 fn env_seed() -> Option<u64> {
@@ -92,6 +103,9 @@ where
     rand::distributions::Standard: rand::distributions::Distribution<T>,
 {
     ensure_init();
+    if PINNED.with(|p| p.get()) {
+        return RNG.with(|cell| cell.borrow_mut().1.gen());
+    }
     if cfg!(test) || SEEDED.load(Ordering::Relaxed) {
         let epoch = EPOCH.load(Ordering::Relaxed);
         let seed = SEED.load(Ordering::Relaxed);

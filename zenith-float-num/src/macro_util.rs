@@ -486,6 +486,8 @@ mod tests {
 
     #[test]
     fn test_compute_added_err() {
+        // Own stream: random_dist tests reseed the shared generator in parallel.
+        crate::common::test_rng::pin_thread_seed(crate::common::test_rng::DEFAULT_RANDOM_SEED);
         let mut cc = Consts::new().unwrap();
         let emin = EXPONENT_MIN;
 
