@@ -1,5 +1,5 @@
 //! Overflow rounds by mode in every operation: `±max` under `ToZero`, under `Down` for a
-//! positive result, under `Up` for a negative result and under `ToOdd`; `±inf` otherwise
+//! positive result and under `Up` for a negative result; `±inf` otherwise
 //! (2.0.0 audit, round 2: item b).
 
 use crate::mpfr::common::conv_to_mpfr;
@@ -10,8 +10,9 @@ use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::Float;
 use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MAX, WORD_BIT_SIZE};
 
-/// Like `check`, but `ToOdd` is compared with the `ToZero` reference when that one
-/// overflowed to `±max` (the largest value is odd, so round-to-odd keeps it).
+/// Like `check`, except that `ToOdd` (round half to odd) is compared with the `ToEven`
+/// reference when that one overflowed: the common reference emulates `ToOdd` at `p + 1`
+/// bits, which cannot overflow.
 fn check_ovf(
     got: &ExactNum,
     p: usize,
@@ -21,16 +22,9 @@ fn check_ovf(
     f: impl Fn(&mut Float, rnd_t) -> i32,
 ) {
     if rm == RoundingMode::ToOdd {
-        let (rz, _) = mpfr_reference_with(p as u32, RoundingMode::ToZero, &f);
-        let ovf = unsafe {
-            mpfr::get_exp(rz.as_raw()) == EXPONENT_MAX as mpfr::exp_t && {
-                let mut a = rz.clone();
-                a.abs_mut();
-                mpfr::min_prec(a.as_raw()) as usize == p
-            }
-        };
-        if ovf {
-            check(got, p, RoundingMode::ToZero, info, cc, f);
+        let (rn, _) = mpfr_reference_with(p as u32, RoundingMode::ToEven, &f);
+        if rn.is_infinite() {
+            check(got, p, RoundingMode::ToEven, info, cc, f);
             return;
         }
     }
