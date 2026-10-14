@@ -73,8 +73,38 @@ fn sample(name: &str, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts)
         "exp_neg" => x.neg().exp(p, rm, cc),
         "gauss" => x.mul(x, p, rm).neg().exp(p, rm, cc),
         "invsq" => x.mul(x, p, rm).reciprocal(p, rm),
+        "xpow_m0p9" => nonzero(x, |x| power(x, "-0.9", p, rm, cc)),
+        "xpow_m0p99" => nonzero(x, |x| power(x, "-0.99", p, rm, cc)),
+        "xpow_m0p75" => nonzero(x, |x| power(x, "-0.75", p, rm, cc)),
+        "log_invsqrt" => nonzero(x, |x| x.ln(p, rm, cc).mul(&inv_sqrt(x, p, rm), p, rm)),
+        "log2_invsqrt" => nonzero(x, |x| {
+            let l = x.ln(p, rm, cc);
+            l.mul(&l, p, rm).mul(&inv_sqrt(x, p, rm), p, rm)
+        }),
+        "log3_invsqrt" => nonzero(x, |x| {
+            let l = x.ln(p, rm, cc);
+            let l2 = l.mul(&l, p, rm);
+            l2.mul(&l, p, rm).mul(&inv_sqrt(x, p, rm), p, rm)
+        }),
         _ => ExactNum::nan(None),
     }
+}
+
+fn nonzero(x: &ExactNum, f: impl FnOnce(&ExactNum) -> ExactNum) -> ExactNum {
+    if x.is_zero() {
+        ExactNum::nan(None)
+    } else {
+        f(x)
+    }
+}
+
+fn power(x: &ExactNum, s: &str, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
+    let s = ExactNum::parse(s, Radix::Dec, p + 128, RoundingMode::ToEven, cc);
+    x.pow(&s, p, rm, cc)
+}
+
+fn inv_sqrt(x: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
+    x.reciprocal(p, rm).sqrt(p, rm)
 }
 
 fn covers(est: &ExactNum, truth: &ExactNum, err: &ExactNum) -> bool {
