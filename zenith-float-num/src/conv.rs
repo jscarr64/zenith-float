@@ -102,14 +102,20 @@ impl ExactNumNumber {
             shift += 1;
 
             if shift == WORD_BIT_SIZE {
-                *dst.next().unwrap() = d; // mantissa has precision of digits.len()
+                let Some(w) = dst.next() else {
+                    return Err(Error::InvalidArgument); // mantissa has precision of digits.len()
+                };
+                *w = d;
                 shift = 0;
                 d = 0;
             }
         }
 
         if shift > 0 {
-            *dst.next().unwrap() = d; // mantissa has precision of digits.len()
+            let Some(w) = dst.next() else {
+                return Err(Error::InvalidArgument); // mantissa has precision of digits.len()
+            };
+            *w = d;
         }
 
         mantissa.update_bit_len();
@@ -691,7 +697,11 @@ impl ExactNumNumber {
                             c = true;
                         }
                     }
-                    _ => unreachable!(),
+                    RoundingMode::None
+                    | RoundingMode::Up
+                    | RoundingMode::Down
+                    | RoundingMode::ToZero
+                    | RoundingMode::FromZero => {}
                 };
             } else {
                 let (rem0, rem9) = get_rem(&digits[n..]);
@@ -721,7 +731,7 @@ impl ExactNumNumber {
                             c = true;
                         }
                     }
-                    _ => unreachable!(),
+                    RoundingMode::None | RoundingMode::ToEven | RoundingMode::ToOdd => {}
                 };
             }
 

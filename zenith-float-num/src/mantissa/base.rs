@@ -890,7 +890,11 @@ impl Mantissa {
                             c = true;
                         }
                     }
-                    _ => unreachable!(),
+                    RoundingMode::None
+                    | RoundingMode::Up
+                    | RoundingMode::Down
+                    | RoundingMode::ToZero
+                    | RoundingMode::FromZero => {}
                 };
 
                 if c {
@@ -982,7 +986,7 @@ impl Mantissa {
                             c = true;
                         }
                     }
-                    _ => unreachable!(),
+                    RoundingMode::None | RoundingMode::ToEven | RoundingMode::ToOdd => {}
                 };
             }
 
