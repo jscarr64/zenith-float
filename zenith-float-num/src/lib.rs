@@ -8,14 +8,6 @@
 #![deny(unused)]
 #![deny(clippy::suspicious)]
 #![deny(clippy::float_arithmetic)]
-#![allow(clippy::manual_div_ceil)]
-#![allow(clippy::manual_is_multiple_of)]
-#![allow(clippy::neg_cmp_op_on_partial_ord)]
-#![allow(clippy::len_zero)]
-#![allow(clippy::slow_vector_initialization)]
-#![allow(clippy::comparison_chain)]
-#![allow(clippy::collapsible_else_if)]
-#![allow(clippy::collapsible_if)]
 
 extern crate alloc;
 
@@ -97,6 +89,7 @@ pub use crate::common::buf::INLINE_WORDS;
 pub use crate::complex::ExactComplex;
 pub use crate::defs::Error;
 pub use crate::defs::Exponent;
+pub use crate::defs::OtherRadix;
 pub use crate::defs::Radix;
 pub use crate::defs::RoundingMode;
 pub use crate::defs::Sign;
@@ -225,7 +218,7 @@ mod tests {
         let pi_lib = cc.pi_num(1024, rm).unwrap().into();
 
         // Compare computed constant with library's constant
-        assert_eq!(pi.cmp(&pi_lib), Some(0));
+        assert_eq!(pi.compare(&pi_lib), Some(0));
 
         // Print using decimal radix.
         //println!("{}", pi);

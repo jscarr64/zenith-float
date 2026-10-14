@@ -170,41 +170,59 @@ impl From<LayoutError> for Error {
 }
 
 /// Radix for parse/format (bases 2 through 36).
+///
+/// The four common bases are named variants; every other base is [`Radix::Other`], built with
+/// [`Radix::try_new`]. `try_new(2)`, `try_new(8)`, `try_new(10)` and `try_new(16)` return the
+/// named variants, so equal bases always compare equal.
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
-pub struct Radix(u8);
-
-#[allow(non_upper_case_globals)]
-impl Radix {
+pub enum Radix {
     /// Binary (base 2).
-    pub const Bin: Radix = Radix(2);
+    Bin,
     /// Octal (base 8).
-    pub const Oct: Radix = Radix(8);
+    Oct,
     /// Decimal (base 10).
-    pub const Dec: Radix = Radix(10);
+    Dec,
     /// Hexadecimal (base 16).
-    pub const Hex: Radix = Radix(16);
+    Hex,
+    /// Any other base in 2..=36; only [`Radix::try_new`] can build one.
+    Other(OtherRadix),
+}
 
+/// A base in 2..=36 other than 2, 8, 10 and 16. Its field is private, so it is always valid.
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
+pub struct OtherRadix(u8);
+
+impl Radix {
     /// Creates a radix in the inclusive range 2..=36.
     ///
     /// ## Errors
     ///
     ///  - InvalidArgument: `base` is outside 2..=36.
     pub fn try_new(base: u8) -> Result<Self, Error> {
-        if (2..=36).contains(&base) {
-            Ok(Radix(base))
-        } else {
-            Err(Error::InvalidArgument)
+        match base {
+            2 => Ok(Radix::Bin),
+            8 => Ok(Radix::Oct),
+            10 => Ok(Radix::Dec),
+            16 => Ok(Radix::Hex),
+            3..=36 => Ok(Radix::Other(OtherRadix(base))),
+            _ => Err(Error::InvalidArgument),
         }
     }
 
     /// Returns the numeric base.
     pub const fn value(self) -> u8 {
-        self.0
+        match self {
+            Radix::Bin => 2,
+            Radix::Oct => 8,
+            Radix::Dec => 10,
+            Radix::Hex => 16,
+            Radix::Other(OtherRadix(b)) => b,
+        }
     }
 
     /// Returns `log2(base)` when the base is a power of two.
     pub const fn commensurable_shift(self) -> Option<usize> {
-        let b = self.0;
+        let b = self.value();
         if b.is_power_of_two() {
             Some(b.trailing_zeros() as usize)
         } else {
@@ -214,12 +232,12 @@ impl Radix {
 
     /// Whether the scientific exponent must use `_e` (digit `e` appears in mantissa digits).
     pub const fn uses_underscore_exponent(self) -> bool {
-        self.0 > 10
+        self.value() > 10
     }
 
     /// Approximate bits per digit (for buffer sizing).
     pub fn bits_per_digit(self) -> usize {
-        match self.0 {
+        match self.value() {
             2 => 1,
             8 => 3,
             10 => 3,
@@ -232,7 +250,7 @@ impl Radix {
 
 impl From<Radix> for u8 {
     fn from(r: Radix) -> u8 {
-        r.0
+        r.value()
     }
 }
 

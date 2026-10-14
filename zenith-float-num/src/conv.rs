@@ -123,18 +123,16 @@ impl ExactNumNumber {
         } else {
             let shift = mantissa.max_bit_len() - mantissa.bit_len();
 
-            if shift > 0 {
-                if e > EXPONENT_MIN {
-                    let e_shift = (e - EXPONENT_MIN) as usize;
+            if shift > 0 && e > EXPONENT_MIN {
+                let e_shift = (e - EXPONENT_MIN) as usize;
 
-                    if e_shift >= shift {
-                        mantissa.normilize2();
-                        e -= shift as Exponent;
-                    } else {
-                        mantissa.shift_left(e_shift);
-                        mantissa.set_bit_len(mantissa.bit_len() + e_shift);
-                        e = EXPONENT_MIN;
-                    }
+                if e_shift >= shift {
+                    mantissa.normilize2();
+                    e -= shift as Exponent;
+                } else {
+                    mantissa.shift_left(e_shift);
+                    mantissa.set_bit_len(mantissa.bit_len() + e_shift);
+                    e = EXPONENT_MIN;
                 }
             }
 
@@ -664,7 +662,7 @@ impl ExactNumNumber {
             let mut c = false;
 
             if rm == RoundingMode::ToEven || rm == RoundingMode::ToOdd {
-                let is_even = digits[n - 1] % 2 == 0;
+                let is_even = digits[n - 1].is_multiple_of(2);
                 let dn = digits[n];
 
                 let (rem0, rem9) = get_rem(&digits[n + 1..]);

@@ -339,7 +339,7 @@ pub(crate) fn random_subnormal(p: usize) -> ExactNumNumber {
         m.push(crate::common::test_rng::random::<Word>());
     }
 
-    if n % WORD_BIT_SIZE > 0 {
+    if !n.is_multiple_of(WORD_BIT_SIZE) {
         let w = (crate::common::test_rng::random::<Word>() | WORD_SIGNIFICANT_BIT)
             >> (WORD_BIT_SIZE - n % WORD_BIT_SIZE);
         m.push(w);

@@ -210,7 +210,7 @@ impl Ball {
         if self.mid.is_nan() || self.rad.is_nan() || !self.mid.is_positive() {
             return false;
         }
-        matches!(self.mid.cmp(&self.rad), Some(c) if c > 0)
+        matches!(self.mid.compare(&self.rad), Some(c) if c > 0)
             && !self.mid.sub(&self.rad, p, RoundingMode::Down).is_negative()
             && !self.mid.sub(&self.rad, p, RoundingMode::Down).is_zero()
     }
@@ -219,7 +219,7 @@ impl Ball {
         if self.mid.is_nan() || self.rad.is_nan() || self.mid.is_zero() {
             return false;
         }
-        matches!(self.mid.abs().cmp(&self.rad), Some(c) if c > 0)
+        matches!(self.mid.abs().compare(&self.rad), Some(c) if c > 0)
             && !self
                 .mid
                 .abs()
@@ -233,7 +233,7 @@ impl Ball {
             return false;
         }
         let d = self.mid.sub(x, p, RoundingMode::None).abs();
-        matches!(d.cmp(&self.rad), Some(c) if c <= 0)
+        matches!(d.compare(&self.rad), Some(c) if c <= 0)
     }
 }
 
@@ -268,7 +268,7 @@ impl ComplexBall {
     fn slack(mid: &ExactComplex, p: usize) -> ExactNum {
         let u_re = Ball::rounding_ulp(mid.re(), p);
         let u_im = Ball::rounding_ulp(mid.im(), p);
-        let u = if matches!(u_re.cmp(&u_im), Some(c) if c >= 0) { u_re } else { u_im };
+        let u = if matches!(u_re.compare(&u_im), Some(c) if c >= 0) { u_re } else { u_im };
         u.mul(
             &ExactNum::from_u8(BALL_TRANSCENDENTAL_ERROR_TERMS as u8, p),
             p,
@@ -329,7 +329,7 @@ impl ComplexBall {
     /// Lipschitz \(1/(\lvert m\rvert-r)\).
     pub fn ln(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let am = self.mid.abs(p, RoundingMode::Down);
-        if matches!(am.cmp(&self.rad), Some(c) if c <= 0) || am.is_zero() || self.rad.is_nan() {
+        if matches!(am.compare(&self.rad), Some(c) if c <= 0) || am.is_zero() || self.rad.is_nan() {
             return Self::nan_disk();
         }
         let mid = self.mid.ln(p, rm, cc);
@@ -371,7 +371,7 @@ impl ComplexBall {
         let d = z
             .sub(&self.mid, p, RoundingMode::None)
             .abs(p, RoundingMode::Up);
-        matches!(d.cmp(&self.rad), Some(c) if c <= 0)
+        matches!(d.compare(&self.rad), Some(c) if c <= 0)
     }
 }
 
@@ -456,7 +456,7 @@ mod tests {
             let got = ziv_round_vec(p, rm, &[a, b], |pw, xs| {
                 xs[0].hypot(&xs[1], pw, RoundingMode::None)
             });
-            assert_eq!(got.cmp(&ExactNum::from_u8(5, p)), Some(0));
+            assert_eq!(got.compare(&ExactNum::from_u8(5, p)), Some(0));
         }
 
         let p = 256;
@@ -466,7 +466,7 @@ mod tests {
             xs[0].atan2(&xs[1], pw, RoundingMode::None, &mut cc)
         });
         let quarter = cc.pi(p, rm).div(&ExactNum::from_u8(4, p), p, rm);
-        assert_eq!(got.cmp(&quarter), Some(0));
+        assert_eq!(got.compare(&quarter), Some(0));
     }
 
     #[test]
@@ -476,7 +476,7 @@ mod tests {
         let two = ExactNum::from(2);
         let via_ziv = ziv_round(p, rm, |pw| two.sqrt(pw, RoundingMode::None));
         let direct = two.sqrt(p, rm);
-        assert_eq!(via_ziv.cmp(&direct), Some(0));
+        assert_eq!(via_ziv.compare(&direct), Some(0));
     }
 
     #[test]

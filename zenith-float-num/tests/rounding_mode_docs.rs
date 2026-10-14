@@ -45,7 +45,7 @@ fn directed_modes_are_directed_not_half() {
 
                     // q_down < q_up strictly
                     assert!(
-                        q_down.cmp(&q_up).unwrap() < 0,
+                        q_down.compare(&q_up).unwrap() < 0,
                         "For p={}, n={}, d={} (sign={}), q_down should be less than q_up",
                         p,
                         n,
@@ -56,7 +56,7 @@ fn directed_modes_are_directed_not_half() {
                     // Check that results are on correct side of true quotient
                     let prod_up = q_up.mul(&b, 2 * p + 64, RoundingMode::None);
                     assert!(
-                        prod_up.cmp(&a).unwrap() > 0,
+                        prod_up.compare(&a).unwrap() > 0,
                         "For p={}, n={}, d={} (sign={}), q_up*d should be > n",
                         p,
                         n,
@@ -66,7 +66,7 @@ fn directed_modes_are_directed_not_half() {
 
                     let prod_down = q_down.mul(&b, 2 * p + 64, RoundingMode::None);
                     assert!(
-                        prod_down.cmp(&a).unwrap() < 0,
+                        prod_down.compare(&a).unwrap() < 0,
                         "For p={}, n={}, d={} (sign={}), q_down*d should be < n",
                         p,
                         n,
@@ -77,7 +77,7 @@ fn directed_modes_are_directed_not_half() {
                     // ToZero behavior
                     let expected_zero = if n > 0 { &q_down } else { &q_up };
                     assert_eq!(
-                        q_zero.cmp(expected_zero).unwrap(),
+                        q_zero.compare(expected_zero).unwrap(),
                         0,
                         "For p={}, n={}, d={} (sign={}), q_to_zero should equal {}",
                         p,
@@ -90,7 +90,7 @@ fn directed_modes_are_directed_not_half() {
                     // FromZero behavior
                     let expected_from = if n > 0 { &q_up } else { &q_down };
                     assert_eq!(
-                        q_from.cmp(expected_from).unwrap(),
+                        q_from.compare(expected_from).unwrap(),
                         0,
                         "For p={}, n={}, d={} (sign={}), q_from_zero should equal {}",
                         p,

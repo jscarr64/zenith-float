@@ -102,12 +102,12 @@ fn gk_eps_candidates() {
                         .estimate_kronrod
                         .sub(&truth, WIDTH, RoundingMode::None)
                         .abs();
-                    let covered = matches!(gap.cmp(&r.abs_err_est), Some(c) if c <= 0);
+                    let covered = matches!(gap.compare(&r.abs_err_est), Some(c) if c <= 0);
                     let one = ExactNum::from_u8(1, WIDTH);
                     let mag = truth.abs();
-                    let scale = if mag.cmp(&one) == Some(1) { mag } else { one };
+                    let scale = if mag.compare(&one) == Some(1) { mag } else { one };
                     let bar = rel.mul(&scale, WIDTH, RoundingMode::Up);
-                    let est_ok = matches!(gap.cmp(&bar), Some(c) if c <= 0);
+                    let est_ok = matches!(gap.compare(&bar), Some(c) if c <= 0);
                     println!(
                         "p={p} {name} est={} abs_err_est={} gap={} covered={covered} est_ok={est_ok}",
                         r.estimate_kronrod, r.abs_err_est, gap

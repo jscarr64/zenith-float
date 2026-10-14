@@ -39,14 +39,14 @@ impl ExactNumNumber {
         }
 
         if self.is_zero() {
-            let sign = if n % 2 == 0 { Sign::Pos } else { self.sign() };
+            let sign = if n.is_multiple_of(2) { Sign::Pos } else { self.sign() };
             return Self::new2(p, sign, self.inexact());
         }
 
         let mut sign = Sign::Pos;
         let mut x = self.clone()?;
         if self.is_negative() {
-            if n % 2 == 0 {
+            if n.is_multiple_of(2) {
                 return Err(Error::InvalidArgument);
             }
             sign = Sign::Neg;

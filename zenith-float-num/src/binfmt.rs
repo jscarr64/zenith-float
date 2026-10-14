@@ -575,7 +575,7 @@ mod tests {
             assert_eq!(buf.as_bytes()[1], BINARY_FORMAT_VERSION);
             let y = ExactNum::from_inline_bytes(buf.as_bytes()).unwrap();
             assert!(raw_eq(x, &y), "inline limbs");
-            assert_eq!(x.cmp(&y), Some(0));
+            assert_eq!(x.compare(&y), Some(0));
             let v = x.to_bytes().unwrap();
             assert_eq!(v.len(), BINARY_INLINE_LEN);
             let z = ExactNum::from_bytes(&v).unwrap();
@@ -619,7 +619,7 @@ mod tests {
         assert_eq!(v[0], BINARY_FLAG_HEAP_POS);
         let y = ExactNum::from_bytes(&v).unwrap();
         assert!(raw_eq(&x, &y));
-        assert_eq!(x.cmp(&y), Some(0));
+        assert_eq!(x.compare(&y), Some(0));
     }
 
     #[test]
@@ -633,7 +633,7 @@ mod tests {
         assert_eq!(b.shape(), (2, 2));
         assert_eq!(b.precision(), p);
         for i in 0..4 {
-            assert_eq!(a.get(i).unwrap().cmp(b.get(i).unwrap()), Some(0));
+            assert_eq!(a.get(i).unwrap().compare(b.get(i).unwrap()), Some(0));
             assert!(raw_eq(a.get(i).unwrap(), b.get(i).unwrap()));
         }
         let mut bad = v.clone();
@@ -674,7 +674,7 @@ mod tests {
         let b = ExactNum::from_u8(1, p);
         let s = a.add(&b, p, RoundingMode::ToEven);
         let expect = ExactNum::from_u64(1u64 << 32, p);
-        assert_eq!(s.cmp(&expect), Some(0));
+        assert_eq!(s.compare(&expect), Some(0));
         assert!(s.err().is_none());
         let buf = s.to_inline_bytes().unwrap();
         assert!(raw_eq(

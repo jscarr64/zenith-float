@@ -11,7 +11,7 @@ const TEST_EXP_BOUND: Exponent = 64;
 fn roundtrip_exact(rdx: Radix, n: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) {
     let s = n.format(rdx, rm, cc).expect("format");
     let g = ExactNum::parse(&s, rdx, p, rm, cc);
-    assert_eq!(n.cmp(&g), Some(0), "rdx={:?} s={s}", rdx.value());
+    assert_eq!(n.compare(&g), Some(0), "rdx={:?} s={s}", rdx.value());
 }
 
 /// A significand character is legal when it is `.` or a digit of `base`.

@@ -13,17 +13,17 @@ use zenith_float_num::{
 fn native_operators() {
     let a = ExactNum::from(6);
     let b = ExactNum::from(2);
-    assert_eq!((&a + &b).cmp(&ExactNum::from(8)), Some(0));
-    assert_eq!((&a - &b).cmp(&ExactNum::from(4)), Some(0));
-    assert_eq!((&a * &b).cmp(&ExactNum::from(12)), Some(0));
-    assert_eq!((&a / &b).cmp(&ExactNum::from(3)), Some(0));
+    assert_eq!((&a + &b).compare(&ExactNum::from(8)), Some(0));
+    assert_eq!((&a - &b).compare(&ExactNum::from(4)), Some(0));
+    assert_eq!((&a * &b).compare(&ExactNum::from(12)), Some(0));
+    assert_eq!((&a / &b).compare(&ExactNum::from(3)), Some(0));
 }
 
 #[test]
 fn compile_time_literals() {
     let a = exact!("2.5");
     let b = fbig!("2.5");
-    assert_eq!(a.cmp(&b), Some(0));
+    assert_eq!(a.compare(&b), Some(0));
 }
 
 fn cplx_eq(name: &str, a: &ExactComplex, b: &ExactComplex) {
@@ -31,14 +31,14 @@ fn cplx_eq(name: &str, a: &ExactComplex, b: &ExactComplex) {
         return;
     }
     assert_eq!(
-        a.re().cmp(b.re()),
+        a.re().compare(b.re()),
         Some(0),
         "{name} re {:?} vs {:?}",
         a.re(),
         b.re()
     );
     assert_eq!(
-        a.im().cmp(b.im()),
+        a.im().compare(b.im()),
         Some(0),
         "{name} im {:?} vs {:?}",
         a.im(),
@@ -60,7 +60,7 @@ fn cexpr_i_squared() {
         10000,
     );
     let z = cexpr!(I * I, &mut ctx);
-    assert_eq!(z.re().cmp(&ExactNum::from_i8(-1, 256)), Some(0));
+    assert_eq!(z.re().compare(&ExactNum::from_i8(-1, 256)), Some(0));
     assert!(z.im().is_zero());
 
     let z0 = ExactComplex::zero(256);
@@ -179,10 +179,10 @@ fn macro_run_cexpr_tests() {
 
     let a = ExactComplex::new(ExactNum::from_u8(3, p), ExactNum::from_u8(4, p));
     let mag = cexpr!(abs(a), &mut ctx);
-    assert_eq!(mag.re().cmp(&a.abs(p, rm)), Some(0));
+    assert_eq!(mag.re().compare(&a.abs(p, rm)), Some(0));
     assert!(tiny_part(mag.im(), p));
     let th = cexpr!(arg(a), &mut ctx);
-    assert_eq!(th.re().cmp(&a.arg(p, rm, &mut cc)), Some(0));
+    assert_eq!(th.re().compare(&a.arg(p, rm, &mut cc)), Some(0));
     assert!(tiny_part(th.im(), p));
     cplx_eq("conj", &cexpr!(conj(a), &mut ctx), &a.conj());
     cplx_eq("ldexp", &cexpr!(ldexp(x, 3), &mut ctx), &x.ldexp(3, p, rm));
@@ -204,7 +204,7 @@ fn macro_run_cexpr_tests() {
         &x.fma(&y, &z1, p, rm),
     );
     let lb = cexpr!(logb(x), &mut ctx);
-    assert_eq!(lb.re().cmp(&x.logb(p, rm)), Some(0));
+    assert_eq!(lb.re().compare(&x.logb(p, rm)), Some(0));
     assert!(tiny_part(lb.im(), p));
 
     let m1 = ExactComplex::from_real(ExactNum::from_i8(-1, p), p);
@@ -304,7 +304,7 @@ fn macro_run_cexpr_tests() {
     );
     let ck = cexpr!(bessel_k(z1, z0), &mut ctx);
     let k0 = z1.bessel_k(&z0, p, rm, &mut cc);
-    assert_eq!(ck.re().cmp(k0.re()), Some(0), "ck0 re");
+    assert_eq!(ck.re().compare(k0.re()), Some(0), "ck0 re");
     assert!(tiny_part(ck.im(), p) && tiny_part(k0.im(), p));
 
     let mh = ExactComplex::from_real(ExactNum::from(1).div(&ExactNum::from(2), p, rm), p);
@@ -320,11 +320,11 @@ fn macro_run_cexpr_tests() {
     );
     let cf = cexpr!(elliptic_f(mh, z0), &mut ctx);
     let f0 = mh.elliptic_f(&z0, p, rm, &mut cc);
-    assert_eq!(cf.re().cmp(f0.re()), Some(0), "cellf re");
+    assert_eq!(cf.re().compare(f0.re()), Some(0), "cellf re");
     assert!(tiny_part(cf.im(), p) && tiny_part(f0.im(), p));
     let cei = cexpr!(elliptic_e_inc(mh, z0), &mut ctx);
     let ei0 = mh.elliptic_e(&z0, p, rm, &mut cc);
-    assert_eq!(cei.re().cmp(ei0.re()), Some(0), "cellei re");
+    assert_eq!(cei.re().compare(ei0.re()), Some(0), "cellei re");
     assert!(tiny_part(cei.im(), p) && tiny_part(ei0.im(), p));
     cplx_eq(
         "cellpi",
@@ -333,7 +333,7 @@ fn macro_run_cexpr_tests() {
     );
     let cpi = cexpr!(elliptic_pi_inc(z0, mh, z0), &mut ctx);
     let pi0 = z0.elliptic_pi(&mh, &z0, p, rm, &mut cc);
-    assert_eq!(cpi.re().cmp(pi0.re()), Some(0), "cellpii re");
+    assert_eq!(cpi.re().compare(pi0.re()), Some(0), "cellpii re");
     assert!(tiny_part(cpi.im(), p) && tiny_part(pi0.im(), p));
 
     let back = cexpr!(ln(exp(x)), &mut ctx);
@@ -398,13 +398,13 @@ fn radix_base12_roundtrip() {
     let n = ExactNum::parse("10.A", rdx, p, rm, &mut cc);
     let s = n.format(rdx, rm, &mut cc).unwrap();
     let g = ExactNum::parse(&s, rdx, p, rm, &mut cc);
-    assert_eq!(n.cmp(&g), Some(0));
+    assert_eq!(n.compare(&g), Some(0));
 
     let rf = n.clone().with_radix(rdx);
     assert_eq!(rf.radix(), rdx);
     let s2 = rf.format(rm, &mut cc).unwrap();
     let g2 = RadixFloat::parse(&s2, rdx, p, rm, &mut cc).unwrap();
-    assert_eq!(n.cmp(g2.value()), Some(0));
+    assert_eq!(n.compare(g2.value()), Some(0));
 }
 
 #[test]
@@ -1252,7 +1252,7 @@ fn expr_erf_plus_erfc_is_one_at_256() {
     let one = ExactNum::from_u8(1, p);
     let x = ExactNum::from_u8(1, p);
     let res: ExactNum = expr!(erf(x) + erfc(x), &mut ctx);
-    assert_eq!(res.cmp(&one), Some(0));
+    assert_eq!(res.compare(&one), Some(0));
     assert!(res.err().is_none());
 }
 
@@ -1277,7 +1277,7 @@ fn expr_bessel_j0_y0_sq_working_prec() {
         RoundingMode::None,
     );
     expect.set_precision(p, rm).unwrap();
-    assert_eq!(got.cmp(&expect), Some(0));
+    assert_eq!(got.compare(&expect), Some(0));
     assert!(got.err().is_none());
 }
 

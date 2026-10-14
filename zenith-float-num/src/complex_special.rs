@@ -86,7 +86,7 @@ pub(crate) fn term_negligible(t: &ExactComplex, p: usize) -> bool {
 fn l1_below_series_bound(z: &ExactComplex, p: usize) -> bool {
     let s = z.re().abs().add(&z.im().abs(), p, RoundingMode::None);
     let bound = ExactNum::from_u32(FADDEEVA_SERIES_L1, p);
-    matches!(s.cmp(&bound), Some(c) if c < 0)
+    matches!(s.compare(&bound), Some(c) if c < 0)
 }
 
 /// Power series when inside the Poppe–Wijers L1 ball, or when \(\lvert z\rvert^2 < p\)
@@ -98,7 +98,7 @@ fn use_faddeeva_series(z: &ExactComplex, p: usize) -> bool {
     let az = z.abs(p, RoundingMode::None);
     let az2 = az.mul(&az, p, RoundingMode::None);
     let thresh = ExactNum::from_u32(p.min(u32::MAX as usize) as u32, p);
-    matches!(az2.cmp(&thresh), Some(c) if c < 0)
+    matches!(az2.compare(&thresh), Some(c) if c < 0)
 }
 
 fn re_positive(z: &ExactComplex) -> bool {
@@ -495,7 +495,7 @@ impl ExactComplex {
         }
         for n in 1u32..=GAMMA_FACTORIAL_MAX {
             let w = ExactNum::from_u32(n, p);
-            if self.re().cmp(&w) == Some(0) {
+            if self.re().compare(&w) == Some(0) {
                 return Some(n);
             }
         }

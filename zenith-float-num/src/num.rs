@@ -15,6 +15,7 @@ use crate::defs::EXPONENT_MAX;
 use crate::defs::EXPONENT_MIN;
 use crate::defs::WORD_BIT_SIZE;
 use crate::defs::WORD_SIGNIFICANT_BIT;
+use crate::mantissa::AddSubSpec;
 use crate::mantissa::Mantissa;
 
 /// A finite floating point number with mantissa of an arbitrary size, an exponent, and the sign.
@@ -714,11 +715,13 @@ impl ExactNumNumber {
                 e = e1;
                 m1.abs_sub(
                     m2,
-                    p,
-                    (e1 - e2) as usize,
-                    rm,
-                    d3.is_positive(),
-                    full_prec,
+                    AddSubSpec {
+                        p,
+                        m2_shift: (e1 - e2) as usize,
+                        rm,
+                        is_positive: d3.is_positive(),
+                        full_prec,
+                    },
                     &mut inexact,
                 )
             } else if cmp < 0 {
@@ -726,11 +729,13 @@ impl ExactNumNumber {
                 e = e2;
                 m2.abs_sub(
                     m1,
-                    p,
-                    (e2 - e1) as usize,
-                    rm,
-                    d3.is_positive(),
-                    full_prec,
+                    AddSubSpec {
+                        p,
+                        m2_shift: (e2 - e1) as usize,
+                        rm,
+                        is_positive: d3.is_positive(),
+                        full_prec,
+                    },
                     &mut inexact,
                 )
             } else {
@@ -749,22 +754,26 @@ impl ExactNumNumber {
                 e = e1;
                 m1.abs_add(
                     m2,
-                    p,
-                    (e1 - e2) as usize,
-                    rm,
-                    d3.is_positive(),
-                    full_prec,
+                    AddSubSpec {
+                        p,
+                        m2_shift: (e1 - e2) as usize,
+                        rm,
+                        is_positive: d3.is_positive(),
+                        full_prec,
+                    },
                     &mut inexact,
                 )
             } else {
                 e = e2;
                 m2.abs_add(
                     m1,
-                    p,
-                    (e2 - e1) as usize,
-                    rm,
-                    d3.is_positive(),
-                    full_prec,
+                    AddSubSpec {
+                        p,
+                        m2_shift: (e2 - e1) as usize,
+                        rm,
+                        is_positive: d3.is_positive(),
+                        full_prec,
+                    },
                     &mut inexact,
                 )
             }
@@ -1414,7 +1423,7 @@ impl ExactNumNumber {
         if rm == RoundingMode::None {
             return op(p, rm);
         }
-        if p % WORD_BIT_SIZE == 0 {
+        if p.is_multiple_of(WORD_BIT_SIZE) {
             let r = op(p, rm)?;
             // A rounded subnormal result was rounded twice (at `p` bits, then onto the
             // subnormal grid); recompute it through the round-to-odd path.
@@ -1597,7 +1606,7 @@ impl ExactNumNumber {
                 shift += 1;
             }
 
-            let mut words = [0; (SZ + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE];
+            let mut words = [0; SZ.div_ceil(WORD_BIT_SIZE)];
             for w in &mut words {
                 *w = v as Word;
                 v >>= WORD_BIT_SIZE;

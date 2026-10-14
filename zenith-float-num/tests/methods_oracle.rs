@@ -110,7 +110,7 @@ fn inv_sqrt(x: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
 fn covers(est: &ExactNum, truth: &ExactNum, err: &ExactNum) -> bool {
     let width = 1088usize;
     let gap = est.sub(truth, width, RoundingMode::None).abs();
-    matches!(gap.cmp(err), Some(c) if c <= 0)
+    matches!(gap.compare(err), Some(c) if c <= 0)
 }
 
 /// `2^{extra_bits}` units in the last place of a `p`-bit rounding of `est`.
@@ -278,7 +278,7 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
         let rel = parse_at(est_tol, 384, RoundingMode::Up, &mut cc);
         let one = ExactNum::from_u8(1, 384);
         let mag = truth.abs();
-        let scale = if mag.cmp(&one) == Some(1) { mag } else { one };
+        let scale = if mag.compare(&one) == Some(1) { mag } else { one };
         let bar = rel.mul(&scale, 384, RoundingMode::Up);
         if !covers(&est, &truth, &bar) {
             return Err(format!(
@@ -381,7 +381,7 @@ fn run_ode(row: &serde_json::Value) -> Result<(), String> {
         );
         let scale = truth.abs();
         let one = ExactNum::from_u8(1, 384);
-        let mag = if scale.cmp(&one) == Some(1) { scale } else { one };
+        let mag = if scale.compare(&one) == Some(1) { scale } else { one };
         atol.add(
             &rtol.mul(&mag, 384, RoundingMode::Up),
             384,

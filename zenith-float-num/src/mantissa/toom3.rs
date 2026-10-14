@@ -63,7 +63,7 @@ impl Mantissa {
     // d1 must contain input number + have reserve of d2.len() positions in addition for the output.
     // The result is placed in d1, and the sign is returned.
     pub(super) fn toom3(d1: &[Word], d2: &[Word], d3: &mut [Word]) -> Result<(), Error> {
-        let l = (d1.len().max(d2.len()) + 2) / 3;
+        let l = d1.len().max(d2.len()).div_ceil(3);
 
         let mut buf = WordBuf::new(25 * (l + 1))?;
 
@@ -252,12 +252,10 @@ mod tests {
             //println!("let s1 = {:?};", s1);
             //println!("let s2 = {:?};", s2);
 
-            let mut ref_s = Vec::new();
-            ref_s.resize(s1.len() + s2.len(), 0);
+            let mut ref_s = vec![0; s1.len() + s2.len()];
             mul(&s1, &s2, ref_s.as_mut_slice());
 
-            let mut ret_s = Vec::new();
-            ret_s.resize(s1.len() + s2.len(), 0);
+            let mut ret_s = vec![0; s1.len() + s2.len()];
             Mantissa::toom3(&s1, &s2, &mut ret_s).unwrap();
 
             assert!(ret_s == ref_s);
@@ -271,12 +269,10 @@ mod tests {
             //println!("let s1 = {:?};", s1);
             //println!("let s2 = {:?};", s2);
 
-            let mut ref_s = Vec::new();
-            ref_s.resize(s1.len() + s2.len(), 0);
+            let mut ref_s = vec![0; s1.len() + s2.len()];
             mul(&s1, &s2, ref_s.as_mut_slice());
 
-            let mut ret_s = Vec::new();
-            ret_s.resize(s1.len() + s2.len(), 0);
+            let mut ret_s = vec![0; s1.len() + s2.len()];
             Mantissa::toom3(&s1, &s2, &mut ret_s).unwrap();
             assert!(ret_s == ref_s);
         }

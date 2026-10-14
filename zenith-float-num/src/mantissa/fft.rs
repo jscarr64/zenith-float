@@ -19,6 +19,16 @@ use itertools::izip;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+/// One level of the recursive forward FFT: twiddle stride `w`, `k1` points at depth `k`, part stride `s`, `n1` words per part.
+#[derive(Copy, Clone)]
+struct FftStep {
+    w: usize,
+    k1: usize,
+    k: usize,
+    s: usize,
+    n1: usize,
+}
+
 impl Mantissa {
     fn fft_w_shift(j: usize, k: usize) -> usize {
         let mut j = j as u64;
@@ -79,17 +89,13 @@ impl Mantissa {
         Self::fft_normalize(b, n1, modulus);
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn fft_forward(
         parts: &mut [SliceWithSign],
-        w: usize,
-        k1: usize,
-        k: usize,
-        s: usize,
-        n1: usize,
+        step: FftStep,
         modulus: &SliceWithSign,
         tmp_buf: &mut [Word],
     ) {
+        let FftStep { w, k1, k, s, n1 } = step;
         if k1 == 2 {
             let (a, b) = parts.split_at_mut(s);
             Self::fft_butterfly(a.first_mut().unwrap(), b.first_mut().unwrap(), n1, modulus);
@@ -99,8 +105,30 @@ impl Mantissa {
             let kk = k - 1;
             let s2 = s * 2;
 
-            Self::fft_forward(parts, w * 2, k2, kk, s2, n1, modulus, tmp_buf);
-            Self::fft_forward(&mut parts[s..], w * 2, k2, kk, s2, n1, modulus, tmp_buf);
+            Self::fft_forward(
+                parts,
+                FftStep {
+                    w: w * 2,
+                    k1: k2,
+                    k: kk,
+                    s: s2,
+                    n1,
+                },
+                modulus,
+                tmp_buf,
+            );
+            Self::fft_forward(
+                &mut parts[s..],
+                FftStep {
+                    w: w * 2,
+                    k1: k2,
+                    k: kk,
+                    s: s2,
+                    n1,
+                },
+                modulus,
+                tmp_buf,
+            );
 
             let mut chunks = parts.chunks_mut(s2);
 
@@ -161,10 +189,10 @@ impl Mantissa {
         }
         let k = log2_ceil(k1).max(6);
         let k1 = 1 << k;
-        let m = (n + k1 - 1) / k1;
+        let m = n.div_ceil(k1);
         let n = m * k1;
-        let n1 = (2 * n + k1 - 1) / k1 + k;
-        let n1 = ((n1 + k1 - 1) / k1) * k1;
+        let n1 = (2 * n).div_ceil(k1) + k;
+        let n1 = n1.div_ceil(k1) * k1;
         let t = n1 / k1;
         (n, k1, k, m, n1, t)
     }
@@ -175,13 +203,13 @@ impl Mantissa {
 
         let mut parts_iter = parts.iter_mut();
 
-        if m % WORD_BIT_SIZE == 0 {
+        if m.is_multiple_of(WORD_BIT_SIZE) {
             for (chunk, part) in d.chunks(m / WORD_BIT_SIZE).zip(parts_iter.by_ref()) {
                 part[..chunk.len()].copy_from_slice(chunk);
                 part[chunk.len()..].fill(0);
             }
         } else {
-            let chunk_sz = (m + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE + 1;
+            let chunk_sz = m.div_ceil(WORD_BIT_SIZE) + 1;
             let mask = WORD_MAX >> (WORD_BIT_SIZE - (m % WORD_BIT_SIZE));
             let mut s = 0;
             let mut idx;
@@ -295,7 +323,7 @@ impl Mantissa {
         modulus: &SliceWithSign,
         tmp_buf: &mut [Word],
     ) {
-        debug_assert!(n % WORD_BIT_SIZE == 0);
+        debug_assert!(n.is_multiple_of(WORD_BIT_SIZE));
 
         let (work_buf, ext_buf) = tmp_buf.split_at_mut(num.len());
 
@@ -331,10 +359,10 @@ impl Mantissa {
         modulus: &SliceWithSign,
         tmp_buf: &mut [Word],
     ) {
-        debug_assert!(n % WORD_BIT_SIZE == 0);
+        debug_assert!(n.is_multiple_of(WORD_BIT_SIZE));
 
         let n2 = n * 2;
-        let mut shift = ((j + n2 - 1) / n2) * n2 - j;
+        let mut shift = j.div_ceil(n2) * n2 - j;
 
         let mut s = 1;
         if shift >= n {
@@ -408,8 +436,18 @@ impl Mantissa {
             Self::fft_mul_mod(part2, t * j, n1, &modulus, tmp_buf);
         }
 
-        Self::fft_forward(&mut parts1, w, k1, k, 1, n1, &modulus, tmp_buf);
-        Self::fft_forward(&mut parts2, w, k1, k, 1, n1, &modulus, tmp_buf);
+        Self::fft_forward(
+            &mut parts1,
+            FftStep { w, k1, k, s: 1, n1 },
+            &modulus,
+            tmp_buf,
+        );
+        Self::fft_forward(
+            &mut parts2,
+            FftStep { w, k1, k, s: 1, n1 },
+            &modulus,
+            tmp_buf,
+        );
 
         for (part1, part2, part3) in izip!(parts1.iter(), parts2.iter(), parts3.iter_mut()) {
             Self::mul_unbalanced(part1, part2, tmp_buf2)?;
@@ -565,12 +603,10 @@ mod tests {
             let s1 = random_slice(128, 256);
             let s2 = random_slice(128, 256);
 
-            let mut ref_s = Vec::new();
-            ref_s.resize(s1.len() + s2.len(), 0);
+            let mut ref_s = vec![0; s1.len() + s2.len()];
             mul(&s1, &s2, ref_s.as_mut_slice());
 
-            let mut ret_s = Vec::new();
-            ret_s.resize(s1.len() + s2.len(), 0);
+            let mut ret_s = vec![0; s1.len() + s2.len()];
             Mantissa::fft_mul(&s1, &s2, &mut ret_s).unwrap();
 
             //println!("{:?}\n{:?}\n", s1, s2);

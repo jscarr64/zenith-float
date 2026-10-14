@@ -521,7 +521,7 @@ fn near_two_digits(got: &ExactNum, want: &ExactNum, scale: &ExactNum, cc: &mut C
     }
     let tol_unit = ExactNum::parse("0.005", Radix::Dec, width, RoundingMode::ToEven, cc);
     let tol = scale.abs().mul(&tol_unit, width, RoundingMode::None);
-    matches!(diff.cmp(&tol), Some(c) if c <= 0)
+    matches!(diff.compare(&tol), Some(c) if c <= 0)
 }
 
 fn smoke_ok(got: &Canon, expect: &Canon) -> Result<(), String> {

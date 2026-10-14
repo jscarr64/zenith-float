@@ -2644,7 +2644,7 @@ impl ExactNumNumber {
             return Ok(r);
         }
         if self.cmp(&one.neg()?) == 0 {
-            let mut r = if n % 2 == 0 { one } else { one.neg()? };
+            let mut r = if n.is_multiple_of(2) { one } else { one.neg()? };
             r.set_inexact(self.inexact());
             return Ok(r);
         }

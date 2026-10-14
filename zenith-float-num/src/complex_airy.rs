@@ -42,7 +42,7 @@ fn use_airy_series(z: &ExactComplex, dest_p: usize) -> bool {
     }
     let t = dest_p.saturating_add(112).saturating_mul(35) / 100;
     let t = ExactNum::from_u32(t.min(u32::MAX as usize) as u32, 64);
-    matches!(xi_abs(z).cmp(&t), Some(c) if c < 0)
+    matches!(xi_abs(z).compare(&t), Some(c) if c < 0)
 }
 
 /// Taylor terms reach \(\approx e^{\lvert\xi\rvert}\) while Ai can be \(\approx e^{-\lvert\xi\rvert}\):
@@ -57,12 +57,12 @@ fn airy_series_guard(z: &ExactComplex) -> usize {
 fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
     let a = z.abs(p, RoundingMode::None);
     let b = ExactNum::from_u32(bound, p);
-    matches!(a.cmp(&b), Some(c) if c < 0)
+    matches!(a.compare(&b), Some(c) if c < 0)
 }
 
 fn arg_abs_le(z: &ExactComplex, bound: &ExactNum, p: usize, cc: &mut Consts) -> bool {
     let a = z.arg(p, RoundingMode::None, cc).abs();
-    matches!(a.cmp(bound), Some(c) if c <= 0)
+    matches!(a.compare(bound), Some(c) if c <= 0)
 }
 
 fn omega_pair(p: usize) -> (ExactComplex, ExactComplex) {
@@ -214,7 +214,7 @@ impl ExactComplex {
             let (xi, _) = self.airy_xi_z(64, cc);
             let t = dest_p.saturating_add(112).saturating_mul(35) / 100;
             let t = ExactNum::from_u32(t.min(u32::MAX as usize) as u32, 64);
-            if matches!(xi.re().cmp(&t), Some(c) if c >= 0) {
+            if matches!(xi.re().compare(&t), Some(c) if c >= 0) {
                 return self.airy_asymp_bi(work_p, cc);
             }
         }
@@ -335,7 +335,7 @@ impl ExactComplex {
                 t = neg_c(&t);
             }
             let ta = t.abs(p, RoundingMode::None);
-            if matches!(ta.cmp(&prev_abs), Some(c) if c > 0) {
+            if matches!(ta.compare(&prev_abs), Some(c) if c > 0) {
                 break;
             }
             sum = sum.add(&t, p, RoundingMode::None);

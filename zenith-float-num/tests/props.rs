@@ -25,7 +25,7 @@ fn one_tenth_round_trips_directed() {
             Err(err) => panic!("format {err:?}"),
         };
         let back = ExactNum::parse(&spelled, Radix::Dec, 53, rm, &mut consts);
-        assert_eq!(n.cmp(&back), Some(0), "{rm:?} {spelled}");
+        assert_eq!(n.compare(&back), Some(0), "{rm:?} {spelled}");
         assert_eq!(n.sign(), back.sign());
     }
 }
@@ -86,7 +86,7 @@ proptest! {
             Err(_) => return Err(TestCaseError::fail("format failed")),
         };
         let back = ExactNum::parse(&spelled, Radix::Dec, 53, rm, &mut consts);
-        prop_assert_eq!(n.cmp(&back), Some(0));
+        prop_assert_eq!(n.compare(&back), Some(0));
         prop_assert_eq!(n.sign(), back.sign());
     }
 }

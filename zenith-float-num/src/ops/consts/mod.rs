@@ -400,7 +400,7 @@ mod tests {
 
         let a = cc.sqrt2(128, rm);
         let b = cc.sqrt2(128, rm);
-        assert_eq!(a.cmp(&b), Some(0));
+        assert_eq!(a.compare(&b), Some(0));
         let cached = CachedFBig::new(a);
         assert!(cached.cached_bit_len().unwrap() >= 128);
         let r = cached.round(64, rm);
@@ -440,7 +440,7 @@ mod tests {
         }
         let vals: Vec<_> = hs.into_iter().map(|h| h.join().unwrap()).collect();
         for v in &vals[1..] {
-            assert_eq!(vals[0].cmp(v), Some(0));
+            assert_eq!(vals[0].compare(v), Some(0));
         }
     }
 }

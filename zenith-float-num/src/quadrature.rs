@@ -69,7 +69,7 @@ fn tiny(p: usize, extra: i32) -> ExactNum {
 }
 
 fn below(x: &ExactNum, limit: &ExactNum) -> bool {
-    x.is_zero() || x.cmp(limit) == Some(-1)
+    x.is_zero() || x.compare(limit) == Some(-1)
 }
 
 fn factorial(n: usize, p: usize, rm: RoundingMode) -> ExactNum {
@@ -309,7 +309,7 @@ pub fn gauss_legendre<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !finite(a) || !finite(b) || a.cmp(b) != Some(-1) {
+    if !finite(a) || !finite(b) || a.compare(b) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
@@ -434,7 +434,7 @@ pub fn tanh_sinh<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !finite(a) || !finite(b) || a.cmp(b) != Some(-1) {
+    if !finite(a) || !finite(b) || a.compare(b) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
@@ -715,7 +715,7 @@ mod tests {
         let gl = gauss_legendre(|x, p, rm, _cc| x.mul(x, p, rm), &a, &b, 10, p, rm, &mut cc)
             .expect("gl x^2");
         let two_thirds = two.div(&three, p, rm);
-        assert_eq!(gl.cmp(&two_thirds), Some(0));
+        assert_eq!(gl.compare(&two_thirds), Some(0));
 
         const GL_EXACT_DEG: u32 = 38;
         const GL_EXACT_NODES: usize = 20;
@@ -737,7 +737,7 @@ mod tests {
         .expect("gl x^38");
         let thirty_nine = ExactNum::from_u32(GL_EXACT_DEG + 1, p);
         let two_over = two.div(&thirty_nine, p, rm);
-        assert_eq!(gl38.cmp(&two_over), Some(0));
+        assert_eq!(gl38.compare(&two_over), Some(0));
 
         let ts = tanh_sinh(
             |x, p, rm, _cc| {
@@ -754,16 +754,16 @@ mod tests {
         )
         .expect("tanh-sinh arcsine");
         let pi = cc.pi(p, rm);
-        assert_eq!(ts.cmp(&pi), Some(0));
+        assert_eq!(ts.compare(&pi), Some(0));
 
         let lag = gauss_laguerre(|x, p, rm, _cc| x.mul(x, p, rm), 10, p, rm, &mut cc)
             .expect("laguerre x^2");
-        assert_eq!(lag.cmp(&two), Some(0));
+        assert_eq!(lag.compare(&two), Some(0));
 
         let gh = gauss_hermite(|_x, p, _rm, _cc| ExactNum::from_u8(1, p), 1, p, rm, &mut cc)
             .expect("hermite 1");
         let sqrt_pi = pi.sqrt(p, rm);
-        assert_eq!(gh.cmp(&sqrt_pi), Some(0));
+        assert_eq!(gh.compare(&sqrt_pi), Some(0));
 
         assert!(gauss_legendre(|x, _p, _rm, _cc| x.clone(), &b, &a, 4, p, rm, &mut cc).is_none());
         assert!(gauss_legendre(|x, _p, _rm, _cc| x.clone(), &a, &b, 0, p, rm, &mut cc).is_none());

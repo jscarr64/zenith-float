@@ -190,7 +190,7 @@ fn tiny(p: usize, extra: i32) -> ExactNum {
 }
 
 fn leq(x: &ExactNum, limit: &ExactNum) -> bool {
-    matches!(x.cmp(limit), Some(-1) | Some(0))
+    matches!(x.compare(limit), Some(-1) | Some(0))
 }
 
 fn round_out(mut x: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
@@ -199,7 +199,7 @@ fn round_out(mut x: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
 }
 
 fn ord_num(a: &ExactNum, b: &ExactNum) -> Ordering {
-    match a.cmp(b) {
+    match a.compare(b) {
         Some(c) if c < 0 => Ordering::Less,
         Some(c) if c > 0 => Ordering::Greater,
         _ => Ordering::Equal,
@@ -232,7 +232,7 @@ fn legendre_beta_sq(count: usize, p: usize) -> Option<Vec<ExactNum>> {
 /// to `a_k = 0` (symmetric Legendre weight): the diagonal corrections drop out
 /// and only the `β` updates remain.
 fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
-    let known = (3 * n + 1) / 2;
+    let known = (3 * n).div_ceil(2);
     let mut b = legendre_beta_sq(known, p)?;
     b.resize(2 * n, ExactNum::new(p));
     let slen = n / 2 + 2;
@@ -243,7 +243,7 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
 
     for m in 0..n.saturating_sub(1) {
         let mut u = ExactNum::new(p);
-        let k_hi = (m + 1) / 2;
+        let k_hi = m.div_ceil(2);
         for k in (0..=k_hi).rev() {
             let mut term = b[k + n].mul(&s[k], p, rm);
             if m > k {
@@ -283,7 +283,7 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
                 s_set(&mut s, j + 1, u.clone())?;
             }
         }
-        let k = (m + 1) / 2;
+        let k = m.div_ceil(2);
         let j = n as i32 - (m as i32 - k as i32 + 2);
         if 2 * k != m {
             let num = s_at(&s, j + 1)?;
@@ -447,14 +447,14 @@ fn isolate_roots(beta: &[ExactNum], want: usize, steps: usize, p: usize) -> Opti
     let mut roots = Vec::with_capacity(want);
     for (lo, hi) in brackets {
         let root = polish_root(beta, lo, hi, p)?;
-        if !root.is_positive() || root.cmp(&one) != Some(-1) {
+        if !root.is_positive() || root.compare(&one) != Some(-1) {
             return None;
         }
         roots.push(root);
     }
     roots.sort_by(ord_num);
     for w in roots.windows(2) {
-        if w[0].cmp(&w[1]) != Some(-1) {
+        if w[0].compare(&w[1]) != Some(-1) {
             return None;
         }
     }
@@ -636,7 +636,7 @@ where
 }
 
 fn interval_ok(a: &ExactNum, b: &ExactNum) -> bool {
-    finite(a) && finite(b) && a.cmp(b) == Some(-1)
+    finite(a) && finite(b) && a.compare(b) == Some(-1)
 }
 
 /// Integrate `f` on the finite interval `[a, b]` with one (7, 15) panel.
@@ -890,7 +890,8 @@ where
                     if let Some(prev) = &prev_eps {
                         let de = ex.value.sub(prev, wrk, RoundingMode::None).abs();
                         if finite(&de) && leq(&de, &tol) {
-                            let raw = if de.cmp(&total_err) == Some(1) { de } else { total_err };
+                            let raw =
+                                if de.compare(&total_err) == Some(1) { de } else { total_err };
                             let result = gk_result(ex.value, total_g, &raw, p, rm, wrk);
                             if !finite(&result.abs_err_est) {
                                 return Err(QuadratureError::NotConverged);
@@ -907,7 +908,7 @@ where
         }
         let mut worst = 0usize;
         for i in 1..panels.len() {
-            if panels[i].err.cmp(&panels[worst].err) == Some(1) {
+            if panels[i].err.compare(&panels[worst].err) == Some(1) {
                 worst = i;
             }
         }
@@ -917,7 +918,7 @@ where
         let mid = left_a
             .add(&right_b, wrk, RoundingMode::None)
             .div(&two, wrk, RoundingMode::None);
-        if mid.cmp(&left_a) != Some(1) || mid.cmp(&right_b) != Some(-1) {
+        if mid.compare(&left_a) != Some(1) || mid.compare(&right_b) != Some(-1) {
             return Err(QuadratureError::NotConverged);
         }
         let (k1, g1) = eval_panel(&mut f, &left_a, &mid, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
@@ -1141,8 +1142,8 @@ mod tests {
         assert!(nodes[GK_GAUSS_ORDER].is_zero());
         for i in 0..GK_GAUSS_ORDER {
             let mirror = nodes.len() - 1 - i;
-            assert_eq!(nodes[i].cmp(&nodes[mirror].neg()), Some(0));
-            assert_eq!(w_k[i].cmp(&w_k[mirror]), Some(0));
+            assert_eq!(nodes[i].compare(&nodes[mirror].neg()), Some(0));
+            assert_eq!(w_k[i].compare(&w_k[mirror]), Some(0));
         }
         for (i, w) in w_g.iter().enumerate() {
             if i % 2 == 0 {
@@ -1184,7 +1185,7 @@ mod tests {
             .sub(&want, 2 * p, RoundingMode::None)
             .abs();
         assert!(
-            gap.cmp(&got.abs_err_est) != Some(1),
+            gap.compare(&got.abs_err_est) != Some(1),
             "x^22 error {} does not cover {gap}",
             got.abs_err_est
         );
@@ -1279,12 +1280,12 @@ mod tests {
                 .sub(&want_one, 2 * p, RoundingMode::None)
                 .abs();
             assert!(
-                gap.cmp(&exp_tail.abs_err_est) != Some(1),
+                gap.compare(&exp_tail.abs_err_est) != Some(1),
                 "p={p} exp gap {gap} est {} err {}",
                 exp_tail.estimate_kronrod,
                 exp_tail.abs_err_est
             );
-            assert!(gap.cmp(&tol) != Some(1), "p={p} exp estimate {gap}");
+            assert!(gap.compare(&tol) != Some(1), "p={p} exp estimate {gap}");
             let alg = integrate_adaptive_gk_infinite(
                 |x, p, rm, _cc| x.mul(x, p, rm).reciprocal(p, rm),
                 &one,
@@ -1301,7 +1302,7 @@ mod tests {
                 .sub(&want_one, 2 * p, RoundingMode::None)
                 .abs();
             assert!(
-                gap.cmp(&alg.abs_err_est) != Some(1),
+                gap.compare(&alg.abs_err_est) != Some(1),
                 "p={p} invsq gap {gap} est {}",
                 alg.estimate_kronrod
             );
@@ -1325,12 +1326,12 @@ mod tests {
                 .sub(&pi, 2 * p, RoundingMode::None)
                 .abs();
             assert!(
-                gap.cmp(&gauss.abs_err_est) != Some(1),
+                gap.compare(&gauss.abs_err_est) != Some(1),
                 "p={p} gauss gap {gap} est {} err {}",
                 gauss.estimate_kronrod,
                 gauss.abs_err_est
             );
-            assert!(gap.cmp(&tol) != Some(1), "p={p} gauss estimate {gap}");
+            assert!(gap.compare(&tol) != Some(1), "p={p} gauss estimate {gap}");
         }
     }
 }

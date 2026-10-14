@@ -393,17 +393,17 @@ mod tests {
         assert!(s.starts_with('"'), "serialized as a JSON string: {s}");
         assert!(s.contains("@p="), "precision suffix: {s}");
         let m: ExactNum = serde_json::from_str(&s).expect("deserialize");
-        assert_eq!(n.cmp(&m), Some(0));
+        assert_eq!(n.compare(&m), Some(0));
         assert_eq!(n.precision(), m.precision());
     }
 
     #[test]
     fn serde_json_integer_and_string() {
         let from_int: ExactNum = serde_json::from_str("42").expect("int");
-        assert_eq!(from_int.cmp(&ExactNum::from(42u32)), Some(0));
+        assert_eq!(from_int.compare(&ExactNum::from(42u32)), Some(0));
 
         let from_neg: ExactNum = serde_json::from_str("-7").expect("neg int");
-        assert_eq!(from_neg.cmp(&ExactNum::from(-7i32)), Some(0));
+        assert_eq!(from_neg.compare(&ExactNum::from(-7i32)), Some(0));
 
         let from_str: ExactNum = serde_json::from_str("\"1.25e+0\"").expect("decimal string");
         assert!(!from_str.is_nan());
@@ -424,7 +424,7 @@ mod tests {
     fn serde_json_negative_fraction() {
         let n: ExactNum = serde_json::from_str("\"-1.234567890123456789e-2\"").unwrap();
         let m = rt(&n);
-        assert_eq!(n.cmp(&m), Some(0));
+        assert_eq!(n.compare(&m), Some(0));
         assert!(m.is_negative());
     }
 
@@ -435,8 +435,8 @@ mod tests {
         assert!(s.contains("\"re\""), "{s}");
         assert!(s.contains("\"im\""), "{s}");
         let w: ExactComplex = serde_json::from_str(&s).expect("deserialize complex");
-        assert_eq!(z.re().cmp(w.re()), Some(0));
-        assert_eq!(z.im().cmp(w.im()), Some(0));
+        assert_eq!(z.re().compare(w.re()), Some(0));
+        assert_eq!(z.im().compare(w.im()), Some(0));
     }
 
     #[test]
@@ -451,8 +451,8 @@ mod tests {
         let s = serde_json::to_string(&r).expect("ser rat");
         assert!(s.contains("@p="), "{s}");
         let q: ExactRational = serde_json::from_str(&s).expect("de rat");
-        assert_eq!(r.num().cmp(q.num()), Some(0));
-        assert_eq!(r.den().cmp(q.den()), Some(0));
+        assert_eq!(r.num().compare(q.num()), Some(0));
+        assert_eq!(r.den().compare(q.den()), Some(0));
     }
 
     #[test]
@@ -481,7 +481,7 @@ mod tests {
         assert_eq!(b.shape(), (2, 2));
         assert_eq!(b.precision(), p);
         for i in 0..4 {
-            assert_eq!(a.get(i).unwrap().cmp(b.get(i).unwrap()), Some(0));
+            assert_eq!(a.get(i).unwrap().compare(b.get(i).unwrap()), Some(0));
         }
         let bad = js.replacen("[2,2]", "[3,3]", 1);
         let r: Result<ExactNumArray, _> = serde_json::from_str(&bad);
@@ -501,7 +501,7 @@ mod tests {
         let ball = Ball::new(mid, rad);
         let s = serde_json::to_string(&ball).expect("ser ball");
         let ball2: Ball = serde_json::from_str(&s).expect("de ball");
-        assert_eq!(ball.mid().cmp(ball2.mid()), Some(0));
-        assert_eq!(ball.rad().cmp(ball2.rad()), Some(0));
+        assert_eq!(ball.mid().compare(ball2.mid()), Some(0));
+        assert_eq!(ball.rad().compare(ball2.rad()), Some(0));
     }
 }

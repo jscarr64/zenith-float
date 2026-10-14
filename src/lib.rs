@@ -80,7 +80,7 @@
 //! let pi_lib = ctx.const_pi();
 //!
 //! // Compare computed constant with library's constant
-//! assert_eq!(pi.cmp(&pi_lib), Some(0));
+//! assert_eq!(pi.compare(&pi_lib), Some(0));
 //!
 //! // Print using decimal radix.
 //! #[cfg(feature="std")]
@@ -123,7 +123,7 @@
 //! let pi_lib = cc.pi(1024, RoundingMode::ToEven);
 //!
 //! // Compare computed constant with library's constant
-//! assert_eq!(pi.cmp(&pi_lib), Some(0));
+//! assert_eq!(pi.compare(&pi_lib), Some(0));
 //!
 //! // Print using decimal radix.
 //! #[cfg(feature="std")]
@@ -151,8 +151,6 @@
 #![deny(unused)]
 #![deny(clippy::suspicious)]
 #![deny(clippy::float_arithmetic)]
-#![allow(clippy::manual_div_ceil)]
-#![allow(clippy::manual_is_multiple_of)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 /// Computes an expression with the specified precision and rounding mode.
@@ -301,8 +299,8 @@
 ///
 /// let a = exact!("3.25");
 /// let b = fbig!("3.25");
-/// assert_eq!(a.cmp(&b), Some(0));
-/// assert_eq!(a.cmp(&ExactNum::from_word(13, 64).div(&ExactNum::from_word(4, 64), 64, RoundingMode::ToEven)), Some(0));
+/// assert_eq!(a.compare(&b), Some(0));
+/// assert_eq!(a.compare(&ExactNum::from_word(13, 64).div(&ExactNum::from_word(4, 64), 64, RoundingMode::ToEven)), Some(0));
 /// ```
 ///
 /// ## Complex expressions

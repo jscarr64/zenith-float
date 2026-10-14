@@ -481,10 +481,10 @@ mod tests {
         let mut saw_pos = false;
         let mut saw_neg = false;
         for root in &roots {
-            if root.cmp(&s2) == Some(0) {
+            if root.compare(&s2) == Some(0) {
                 saw_pos = true;
             }
-            if root.cmp(&ns2) == Some(0) {
+            if root.compare(&ns2) == Some(0) {
                 saw_neg = true;
             }
         }
@@ -495,10 +495,10 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let one = ExactNum::from_u8(1, p);
         let z = ExactNum::new(p);
-        assert_eq!(c.get2(0, 0).map(|x| x.cmp(&z)), Some(Some(0)));
-        assert_eq!(c.get2(0, 1).map(|x| x.cmp(&two)), Some(Some(0)));
-        assert_eq!(c.get2(1, 0).map(|x| x.cmp(&one)), Some(Some(0)));
-        assert_eq!(c.get2(1, 1).map(|x| x.cmp(&z)), Some(Some(0)));
+        assert_eq!(c.get2(0, 0).map(|x| x.compare(&z)), Some(Some(0)));
+        assert_eq!(c.get2(0, 1).map(|x| x.compare(&two)), Some(Some(0)));
+        assert_eq!(c.get2(1, 0).map(|x| x.compare(&one)), Some(Some(0)));
+        assert_eq!(c.get2(1, 1).map(|x| x.compare(&z)), Some(Some(0)));
 
         assert!(x2m1.div_rem(&ExactNumPoly::zero(p, rm), p, rm).is_none());
         assert!(x3.roots_real(p, rm, &mut cc).is_none());

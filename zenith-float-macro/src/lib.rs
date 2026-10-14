@@ -4,7 +4,7 @@
 //!
 //! Depend on the `zenith-float` crate and use `zenith_float::expr`. This crate is not a direct dependency for applications.
 
-#![allow(missing_docs)]
+#![deny(missing_docs)]
 #![forbid(unsafe_code)]
 #![deny(unused)]
 #![deny(clippy::suspicious)]
@@ -1214,10 +1214,8 @@ fn traverse_expr(expr: &Expr, err: &mut Vec<usize>, cc: &mut Consts) -> Result<T
     }
 }
 
-// Docs for the macro are in the zenith-float crate.
-
+/// Real `expr!`: evaluates an expression of `ExactNum` leaves with a working-precision loop until the result is correctly rounded. Full docs are on `zenith_float::expr`.
 #[proc_macro]
-#[allow(missing_docs)]
 pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let pmi = syn::parse_macro_input!(input as MacroInput);
 
@@ -1263,7 +1261,6 @@ pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 /// Complex `expr!`: same context and working-precision loop, `ExactComplex` leaves, cancellation on both parts.
 #[proc_macro]
-#[allow(missing_docs)]
 pub fn cexpr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     cplx::cexpr(input)
 }

@@ -102,14 +102,14 @@ fn factorial_n(n: usize, p: usize) -> ExactNum {
 
 fn abs_lt(x: &ExactNum, bound: u32, p: usize) -> bool {
     let a = x.abs();
-    matches!(a.cmp(&ExactNum::from_u32(bound, p)), Some(c) if c < 0)
+    matches!(a.compare(&ExactNum::from_u32(bound, p)), Some(c) if c < 0)
 }
 
 pub(crate) fn small_int(x: &ExactNum, p: usize, lo: i32, hi: i32) -> Option<i32> {
     if !x.is_int() {
         return None;
     }
-    (lo..=hi).find(|&n| x.cmp(&ExactNum::from_i32(n, p)) == Some(0))
+    (lo..=hi).find(|&n| x.compare(&ExactNum::from_i32(n, p)) == Some(0))
 }
 
 /// \(\zeta(2k)=(-1)^{k-1}B_{2k}(2\pi)^{2k}/(2\,(2k)!)\).
@@ -130,7 +130,7 @@ fn zeta_even(k: usize, p: usize, cc: &mut Consts) -> ExactNum {
     let mut z = b
         .mul(&pow, p, RoundingMode::None)
         .div(&den, p, RoundingMode::None);
-    if k % 2 == 0 {
+    if k.is_multiple_of(2) {
         z = z.neg();
     }
     z
@@ -299,9 +299,9 @@ fn reduce_clausen_angle(theta: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum
     let pi = cc.pi(p, RoundingMode::None);
     let two_pi = ExactNum::from_u8(2, p).mul(&pi, p, RoundingMode::None);
     let mut t = theta.rem(&two_pi);
-    if matches!(t.cmp(&pi), Some(c) if c > 0) {
+    if matches!(t.compare(&pi), Some(c) if c > 0) {
         t = t.sub(&two_pi, p, RoundingMode::None);
-    } else if matches!(t.cmp(&pi.neg()), Some(c) if c < 0) {
+    } else if matches!(t.compare(&pi.neg()), Some(c) if c < 0) {
         t = t.add(&two_pi, p, RoundingMode::None);
     }
     t
@@ -314,7 +314,7 @@ fn floor_small(x: &ExactNum, p: usize, cap: u32) -> Option<u32> {
     }
     let mut n = 0u32;
     while n < cap {
-        if matches!(x.cmp(&ExactNum::from_u32(n + 1, p)), Some(c) if c < 0) {
+        if matches!(x.compare(&ExactNum::from_u32(n + 1, p)), Some(c) if c < 0) {
             return Some(n);
         }
         n += 1;
@@ -1029,7 +1029,7 @@ impl ExactNum {
             return finish(ExactNum::new(wrk), p, rm);
         }
         let pi = cc.pi(wrk, RoundingMode::None);
-        if th.cmp(&pi) == Some(0) || th.cmp(&pi.neg()) == Some(0) {
+        if th.compare(&pi) == Some(0) || th.compare(&pi.neg()) == Some(0) {
             return finish(ExactNum::new(wrk), p, rm);
         }
         finish(
@@ -1093,7 +1093,7 @@ impl ExactNum {
         };
         let mut aa = a.clone();
         let mut extra = ExactNum::new(wrk);
-        while matches!(aa.cmp(&ExactNum::from_u8(1, wrk)), Some(c) if c < 0) {
+        while matches!(aa.compare(&ExactNum::from_u8(1, wrk)), Some(c) if c < 0) {
             if aa.is_zero() || (aa.is_int() && !aa.is_positive()) {
                 return cat_nan();
             }
@@ -1178,7 +1178,7 @@ impl ExactNum {
         let fact = factorial_n(n, wrk);
         let mut y = fact.mul(&z, wrk, RoundingMode::None);
         // ψ^{(n)} = (-1)^{n+1} n! ζ(n+1, z)
-        if n % 2 == 0 {
+        if n.is_multiple_of(2) {
             y = y.neg();
         }
         finish(y, p, rm)
@@ -1223,7 +1223,7 @@ impl ExactNum {
         let height = if p <= 160 { 24 } else { (32 + p / 5).max(48) };
         let shift_to = ExactNum::from_u32(height as u32, wrk);
         let mut steps: usize = 0;
-        while matches!(z.cmp(&shift_to), Some(c) if c < 0) {
+        while matches!(z.compare(&shift_to), Some(c) if c < 0) {
             steps += 1;
             z = z.add(&ExactNum::from_u8(1, wrk), wrk, RoundingMode::None);
         }
@@ -1532,17 +1532,15 @@ impl ExactNum {
             .abs()
             .exponent()
             .is_some_and(|e| (e as i64) + ((p as i64) / 2) < 0)
-            || self.cmp(&inv_e) == Some(0)
+            || self.compare(&inv_e) == Some(0)
         {
             return finish(ExactNum::from_i8(-1, wrk), p, rm);
         }
-        if matches!(self.cmp(&inv_e), Some(c) if c < 0) {
+        if matches!(self.compare(&inv_e), Some(c) if c < 0) {
             return cat_nan();
         }
-        if minus1 {
-            if !self.is_negative() || self.is_zero() {
-                return cat_nan();
-            }
+        if minus1 && (!self.is_negative() || self.is_zero()) {
+            return cat_nan();
         }
         if self.is_zero() {
             return finish(ExactNum::new(wrk), p, rm);
@@ -1558,7 +1556,7 @@ impl ExactNum {
                 )
                 .sqrt(wrk, RoundingMode::None);
             ExactNum::from_i8(-1, wrk).sub(&d, wrk, RoundingMode::None)
-        } else if matches!(self.cmp(&ExactNum::from_u8(1, wrk)), Some(c) if c > 0) {
+        } else if matches!(self.compare(&ExactNum::from_u8(1, wrk)), Some(c) if c > 0) {
             let l = self.ln(wrk, RoundingMode::None, cc);
             l.sub(&l.ln(wrk, RoundingMode::None, cc), wrk, RoundingMode::None)
         } else {
@@ -1622,13 +1620,13 @@ impl ExactNum {
         }
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
-        if self.cmp(&one) == Some(0) {
+        if self.compare(&one) == Some(0) {
             return ExactNum::from_u32(n as u32, wrk).riemann_zeta(p, rm, cc);
         }
-        if matches!(self.abs().cmp(&one), Some(c) if c > 0) {
+        if matches!(self.abs().compare(&one), Some(c) if c > 0) {
             return cat_nan();
         }
-        if self.cmp(&one.neg()) == Some(0) {
+        if self.compare(&one.neg()) == Some(0) {
             let z = ExactNum::from_u32(n as u32, wrk).riemann_zeta(wrk, RoundingMode::None, cc);
             let two = ExactNum::from_u8(2, wrk);
             let f = two.powsi(1 - (n as i64), wrk, RoundingMode::None).sub(

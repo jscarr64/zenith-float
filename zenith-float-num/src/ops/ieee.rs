@@ -90,15 +90,15 @@ mod tests {
         let x = ExactNum::from_word(6, DEFAULT_P);
         let (m, e) = x.frexp();
         let y = m.ldexp(e, DEFAULT_P, rm);
-        assert_eq!(x.cmp(&y), Some(0));
+        assert_eq!(x.compare(&y), Some(0));
         assert_eq!(
             x.scalb(1, DEFAULT_P, rm)
-                .cmp(&ExactNum::from_word(12, DEFAULT_P)),
+                .compare(&ExactNum::from_word(12, DEFAULT_P)),
             Some(0)
         );
         assert_eq!(x.ilogb(), Some(2));
         let lb = x.logb(DEFAULT_P, rm);
-        assert_eq!(lb.cmp(&ExactNum::from_word(2, DEFAULT_P)), Some(0));
+        assert_eq!(lb.compare(&ExactNum::from_word(2, DEFAULT_P)), Some(0));
         assert!(ExactNum::from_word(0, DEFAULT_P)
             .logb(DEFAULT_P, rm)
             .is_inf_neg());

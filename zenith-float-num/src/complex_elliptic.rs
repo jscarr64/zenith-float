@@ -37,7 +37,7 @@ fn is_c_zero(z: &ExactComplex) -> bool {
 }
 
 fn is_c_one(z: &ExactComplex, p: usize) -> bool {
-    z.im().is_zero() && z.re().cmp(&ExactNum::from_u8(1, p)) == Some(0)
+    z.im().is_zero() && z.re().compare(&ExactNum::from_u8(1, p)) == Some(0)
 }
 
 fn c_abs(z: &ExactComplex, p: usize) -> ExactNum {
@@ -45,7 +45,7 @@ fn c_abs(z: &ExactComplex, p: usize) -> ExactNum {
 }
 
 fn max_abs(a: &ExactNum, b: &ExactNum, _p: usize) -> ExactNum {
-    if matches!(a.cmp(b), Some(c) if c >= 0) {
+    if matches!(a.compare(b), Some(c) if c >= 0) {
         a.clone()
     } else {
         b.clone()
@@ -60,7 +60,7 @@ fn close_enough(dev: &ExactNum, an: &ExactComplex, p: usize) -> bool {
     let one = ExactNum::from_u8(1, p);
     let scale = max_abs(&c_abs(an, p), &one, p);
     let thresh = tiny_spread(p).mul(&scale, p, rm());
-    matches!(dev.cmp(&thresh), Some(c) if c < 0)
+    matches!(dev.compare(&thresh), Some(c) if c < 0)
 }
 
 fn max_dev3(
@@ -92,7 +92,7 @@ fn carlson_rc(x: &ExactComplex, y: &ExactComplex, p: usize, cc: &mut Consts) -> 
     // spread-based `close_enough` test (2^-(p/3+16)) was too loose for R_J's RC terms.
     let dxy = x.sub(y, p, rm());
     let rel = c_abs(x, p).ldexp(-((p as i32) + 8), p, rm());
-    if !is_c_zero(x) && matches!(c_abs(&dxy, p).cmp(&rel), Some(o) if o < 0) {
+    if !is_c_zero(x) && matches!(c_abs(&dxy, p).compare(&rel), Some(o) if o < 0) {
         return c_u32(1, p).div(&x.sqrt(p, rm(), cc), p, rm());
     }
     if is_c_zero(x) {
@@ -783,7 +783,7 @@ mod tests {
         assert!(near(ka.re(), kb.re(), p, 20), "K cut Re");
         assert!(ka.im().is_positive() != kb.im().is_positive() || !tiny(ka.im(), p));
         assert!(near(&ka.im().abs(), &kb.im().abs(), p, 20), "K cut |Im|");
-        assert_ne!(ka.im().cmp(kb.im()), Some(0));
+        assert_ne!(ka.im().compare(kb.im()), Some(0));
 
         // Incomplete F cut: x=3/2, m=1/2, ±ε imag on x.
         let three_half = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(2, p), p, r);
@@ -792,6 +792,6 @@ mod tests {
         let fa = xa.elliptic_f(&mh, p, r, &mut cc);
         let fb = xb.elliptic_f(&mh, p, r, &mut cc);
         assert!(!fa.is_nan() && !fb.is_nan(), "F cut defined");
-        assert_ne!(fa.im().cmp(fb.im()), Some(0), "F cut Im differs");
+        assert_ne!(fa.im().compare(fb.im()), Some(0), "F cut Im differs");
     }
 }

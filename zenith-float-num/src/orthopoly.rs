@@ -486,16 +486,16 @@ mod tests {
         let three = ExactNum::from_u8(3, p);
         let half = one.div(&two, p, rm);
 
-        assert_eq!(zero.hermite_he(4, p, rm).cmp(&three), Some(0));
-        assert_eq!(zero.laguerre(3, p, rm).cmp(&one), Some(0));
-        assert_eq!(zero.gen_laguerre(3, &zero, p, rm).cmp(&one), Some(0));
+        assert_eq!(zero.hermite_he(4, p, rm).compare(&three), Some(0));
+        assert_eq!(zero.laguerre(3, p, rm).compare(&one), Some(0));
+        assert_eq!(zero.gen_laguerre(3, &zero, p, rm).compare(&one), Some(0));
 
         let pi = cc.pi(p, rm);
         let five = ExactNum::from_u8(5, p);
         let c = pi.div(&five, p, rm).cos(p, rm, &mut cc);
         let t5 = c.chebyshev_t(5, p, rm);
         let neg_one = one.neg();
-        assert_eq!(t5.cmp(&neg_one), Some(0));
+        assert_eq!(t5.compare(&neg_one), Some(0));
 
         // Standard C_2^{(1)} = 4x² − 1 = U_2. The plan's "3x²−1 at λ=1"
         // is twice Legendre P_2 = 2 C_2^{(1/2)}.
@@ -505,23 +505,23 @@ mod tests {
             .mul(&half, p, rm)
             .mul(&half, p, rm)
             .sub(&one, p, rm);
-        assert_eq!(g1.cmp(&four_x2_m1), Some(0));
-        assert_eq!(g1.cmp(&u2), Some(0));
+        assert_eq!(g1.compare(&four_x2_m1), Some(0));
+        assert_eq!(g1.compare(&u2), Some(0));
         let lam_half = half.clone();
         let g_leg = half.gegenbauer(2, &lam_half, p, rm);
         let three_x2_m1 = three.mul(&half, p, rm).mul(&half, p, rm).sub(&one, p, rm);
         let two_p2 = g_leg.mul(&two, p, rm);
-        assert_eq!(two_p2.cmp(&three_x2_m1), Some(0));
+        assert_eq!(two_p2.compare(&three_x2_m1), Some(0));
 
         let t6 = half.chebyshev_t(6, p, rm);
         let t5h = half.chebyshev_t(5, p, rm);
         let t4h = half.chebyshev_t(4, p, rm);
         let rec = two.mul(&half, p, rm).mul(&t5h, p, rm).sub(&t4h, p, rm);
-        assert_eq!(t6.cmp(&rec), Some(0));
+        assert_eq!(t6.compare(&rec), Some(0));
 
         assert!(zero.hermite_he(ORTHOPOLY_N_MAX + 1, p, rm).is_nan());
         assert_eq!(
-            zero.hermite_h(4, p, rm).cmp(&ExactNum::from_u8(12, p)),
+            zero.hermite_h(4, p, rm).compare(&ExactNum::from_u8(12, p)),
             Some(0)
         );
     }
@@ -548,7 +548,7 @@ mod tests {
         // P_2^{(1,1)}(1/2) = (3/4)(5/4 − 1) = 3/16.
         let p2 = half.jacobi_p(2, &one, &one, p, rm);
         let want = three.div(&ExactNum::from_u8(16, p), p, rm);
-        assert_eq!(p2.cmp(&want), Some(0));
+        assert_eq!(p2.compare(&want), Some(0));
 
         // α = β = 0 is Legendre P_n.
         let j5 = three_tenths.jacobi_p(5, &zero, &zero, p, rm);
@@ -570,6 +570,6 @@ mod tests {
         assert!(zero
             .jacobi_p(ORTHOPOLY_N_MAX + 1, &zero, &zero, p, rm)
             .is_nan());
-        assert_eq!(zero.jacobi_p(0, &one, &two, p, rm).cmp(&one), Some(0));
+        assert_eq!(zero.jacobi_p(0, &one, &two, p, rm).compare(&one), Some(0));
     }
 }

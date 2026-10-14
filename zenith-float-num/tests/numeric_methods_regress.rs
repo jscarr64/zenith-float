@@ -29,9 +29,9 @@ fn close(got: &ExactNum, want: &ExactNum, bits: i32) -> bool {
 #[test]
 fn cmp_is_normalized() {
     let (two, three) = (n(2), n(3));
-    assert_eq!(three.cmp(&two), Some(1));
-    assert_eq!(two.cmp(&three), Some(-1));
-    assert_eq!(three.cmp(&three), Some(0));
+    assert_eq!(three.compare(&two), Some(1));
+    assert_eq!(two.compare(&three), Some(-1));
+    assert_eq!(three.compare(&three), Some(0));
     assert_eq!(three.neg().abs_cmp(&two), Some(1));
     assert_eq!(two.abs_cmp(&three.neg()), Some(-1));
 }

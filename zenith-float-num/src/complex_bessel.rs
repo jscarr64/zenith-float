@@ -38,7 +38,7 @@ const BESSEL_INTEGER_MAX: i32 = 64;
 fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
     let a = z.abs(p, RoundingMode::None);
     let b = ExactNum::from_u32(bound, p);
-    matches!(a.cmp(&b), Some(c) if c < 0)
+    matches!(a.compare(&b), Some(c) if c < 0)
 }
 
 /// The Hankel expansion's smallest term is about \(e^{-2\lvert z\rvert}\) (2.885|z| bits), so it is
@@ -86,7 +86,7 @@ fn i_terms_all_positive(z: &ExactComplex, nu: &ExactComplex) -> bool {
     }
     let p = nu.re().precision().unwrap_or(64).max(64);
     let minus_one = ExactNum::from_i8(-1, p);
-    matches!(nu.re().cmp(&minus_one), Some(c) if c > 0)
+    matches!(nu.re().compare(&minus_one), Some(c) if c > 0)
 }
 
 /// Upper bound on \(\lceil(|z|-\mathrm{Re}\,z)/\ln 2\rceil\).
@@ -152,7 +152,7 @@ fn integer_nu(nu: &ExactComplex, p: usize) -> Option<i32> {
     }
     for n in -BESSEL_INTEGER_MAX..=BESSEL_INTEGER_MAX {
         let w = ExactNum::from_i32(n, p);
-        if nu.re().cmp(&w) == Some(0) {
+        if nu.re().compare(&w) == Some(0) {
             return Some(n);
         }
     }
@@ -323,7 +323,7 @@ fn real_small_int(x: &ExactNum, p: usize) -> Option<i32> {
         return None;
     }
     (-BESSEL_INTEGER_MAX..=BESSEL_INTEGER_MAX)
-        .find(|&n| x.cmp(&ExactNum::from_i32(n, p)) == Some(0))
+        .find(|&n| x.compare(&ExactNum::from_i32(n, p)) == Some(0))
 }
 
 /// \(\cos(\nu\pi),\sin(\nu\pi)\) with exact zeros for integer / half-odd-integer \(\nu\).

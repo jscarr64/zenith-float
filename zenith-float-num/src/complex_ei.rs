@@ -22,7 +22,7 @@ const EI_SERIES_THRESHOLD: u32 = 16;
 fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
     let a = z.abs(p, RoundingMode::None);
     let b = ExactNum::from_u32(bound, p);
-    matches!(a.cmp(&b), Some(c) if c < 0)
+    matches!(a.compare(&b), Some(c) if c < 0)
 }
 
 /// The asymptotic series' smallest term is about \(e^{-\lvert z\rvert}\), i.e. \(1.44\lvert z\rvert\)
@@ -352,7 +352,7 @@ impl ExactComplex {
 
     fn li_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         let one = ExactComplex::one(work_p);
-        if self.im().is_zero() && self.re().cmp(one.re()) == Some(0) {
+        if self.im().is_zero() && self.re().compare(one.re()) == Some(0) {
             return nan_pair(Error::InvalidArgument);
         }
         self.ln(work_p, RoundingMode::None, cc)

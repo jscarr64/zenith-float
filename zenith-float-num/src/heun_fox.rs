@@ -85,7 +85,7 @@ fn odd_i(n: i32) -> bool {
 }
 
 fn abs_gt_one(z: &ExactNum, p: usize) -> bool {
-    matches!(z.abs().cmp(&ExactNum::from_u8(1, p)), Some(c) if c > 0)
+    matches!(z.abs().compare(&ExactNum::from_u8(1, p)), Some(c) if c > 0)
 }
 
 fn choose_series(an_n: usize, ap_n: usize, bm_n: usize, bq_n: usize, z: &ExactNum, p: usize) -> u8 {
@@ -148,7 +148,7 @@ fn meijer_g_series(
     let qn = b.len();
     let series = choose_series(n, ap.len(), m, bq.len(), z, p);
     let one = ExactNum::from_u8(1, p);
-    let r_is_one = r.cmp(&one) == Some(0);
+    let r_is_one = r.compare(&one) == Some(0);
     if !r_is_one && !z.is_positive() && !z.is_zero() {
         return GEval::Bad;
     }
@@ -389,7 +389,7 @@ fn values_agree(a: &ExactNum, b: &ExactNum, bits: usize) -> bool {
     if d.is_zero() {
         return true;
     }
-    let scale = if matches!(a.abs().cmp(&b.abs()), Some(c) if c > 0) {
+    let scale = if matches!(a.abs().compare(&b.abs()), Some(c) if c > 0) {
         a.abs()
     } else {
         b.abs()
@@ -519,7 +519,7 @@ fn as_pos_rational(x: &ExactNum, p: usize) -> Option<(i32, i32)> {
 
 fn all_unit_scales(xs: &[(ExactNum, ExactNum)], p: usize) -> bool {
     let one = ExactNum::from_u8(1, p);
-    xs.iter().all(|(_, s)| s.cmp(&one) == Some(0))
+    xs.iter().all(|(_, s)| s.compare(&one) == Some(0))
 }
 
 fn pow_i32(base: &ExactNum, n: i32, p: usize, _cc: &mut Consts) -> ExactNum {
@@ -818,12 +818,12 @@ impl ExactNum {
         }
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
-        let rad = if matches!(a.abs().cmp(&one), Some(c) if c < 0) {
+        let rad = if matches!(a.abs().compare(&one), Some(c) if c < 0) {
             a.abs()
         } else {
             one.clone()
         };
-        if matches!(self.abs().cmp(&rad), Some(c) if c >= 0) {
+        if matches!(self.abs().compare(&rad), Some(c) if c >= 0) {
             return heun_g_outside(self, a, q, alpha, beta, gamma, delta, p, rm);
         }
         let eps = alpha
@@ -969,7 +969,7 @@ impl ExactNum {
         }
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
-        if matches!(self.abs().cmp(&one), Some(c) if c >= 0) {
+        if matches!(self.abs().compare(&one), Some(c) if c >= 0) {
             return heun_c_outside(self, alpha, gamma, delta, eps, q, p, rm);
         }
         let mut b_prev = ExactNum::from_u8(1, wrk);
@@ -1080,14 +1080,14 @@ fn segment_hits(z: &ExactNum, s: &ExactNum) -> bool {
     if z.is_negative() != s.is_negative() {
         return false;
     }
-    matches!(s.abs().cmp(&z.abs()), Some(c) if c <= 0)
+    matches!(s.abs().compare(&z.abs()), Some(c) if c <= 0)
 }
 
 fn min_dist(z: &ExactNum, sings: &[ExactNum], p: usize) -> ExactNum {
     let mut m = z.sub(&sings[0], p, RoundingMode::None).abs();
     for s in &sings[1..] {
         let d = z.sub(s, p, RoundingMode::None).abs();
-        if matches!(d.cmp(&m), Some(c) if c < 0) {
+        if matches!(d.compare(&m), Some(c) if c < 0) {
             m = d;
         }
     }
@@ -1123,7 +1123,7 @@ fn params_exact(xs: &[&ExactNum]) -> bool {
 }
 
 fn exactly_equal(a: &ExactNum, b: &ExactNum) -> bool {
-    finite(a) && finite(b) && matches!(a.cmp(b), Some(0))
+    finite(a) && finite(b) && matches!(a.compare(b), Some(0))
 }
 
 /// Agreement to one ulp of `p`, measured at precision `2p`.
@@ -1139,7 +1139,7 @@ fn agrees_tight(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
     if d.is_zero() {
         return true;
     }
-    let scale = if matches!(a.abs().cmp(&b.abs()), Some(c) if c > 0) {
+    let scale = if matches!(a.abs().compare(&b.abs()), Some(c) if c > 0) {
         a.abs()
     } else {
         b.abs()
@@ -1632,7 +1632,7 @@ where
             return None;
         }
         let step = dist.ldexp(-1, p, RoundingMode::None);
-        let h = if matches!(rem.abs().cmp(&step), Some(c) if c <= 0) {
+        let h = if matches!(rem.abs().compare(&step), Some(c) if c <= 0) {
             rem
         } else if rem.is_negative() {
             step.neg()
@@ -1645,7 +1645,7 @@ where
         let ode = ode_at(&zc)?;
         let (yn, ypn) = taylor_step(&ode, &y, &yp, &h, p, acc)?;
         let next = zc.add(&h, p, RoundingMode::None);
-        if next.cmp(&zc) == Some(0) {
+        if next.compare(&zc) == Some(0) {
             return if finite(&yn) { Some(yn) } else { None };
         }
         zc = next;
@@ -1686,7 +1686,7 @@ fn heun_g_outside(
     if segment_hits(z, &one) || segment_hits(z, a) {
         return cat_nan();
     }
-    let rad = if matches!(a.abs().cmp(&one), Some(c) if c < 0) {
+    let rad = if matches!(a.abs().compare(&one), Some(c) if c < 0) {
         a.abs()
     } else {
         one.clone()

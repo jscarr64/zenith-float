@@ -118,7 +118,7 @@ impl WordBuf {
 
     /// Decrease length of the buffer to l bits. Data is shifted.
     pub fn trunc_to(&mut self, l: usize) {
-        let n = (l + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+        let n = l.div_ceil(WORD_BIT_SIZE);
         let sz = self.len();
         if n >= sz {
             return;
@@ -129,7 +129,7 @@ impl WordBuf {
 
     /// Decrease length of the buffer to l bits. Data is not moved.
     pub fn trunc_to_2(&mut self, l: usize) {
-        let n = (l + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+        let n = l.div_ceil(WORD_BIT_SIZE);
         self.truncate_words(n);
     }
 
@@ -144,7 +144,7 @@ impl WordBuf {
 
     /// Try to extend the size to fit the precision p. Data is shifted to the left.
     pub fn try_extend(&mut self, p: usize) -> Result<(), Error> {
-        let n = (p + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+        let n = p.div_ceil(WORD_BIT_SIZE);
         let l = self.len();
         if n > l {
             self.resize_len(n)?;
@@ -155,7 +155,7 @@ impl WordBuf {
 
     /// Try to extend the size to fit the precision p. Fill new elements with 0. Data is not moved.
     pub fn try_extend_2(&mut self, p: usize) -> Result<(), Error> {
-        let n = (p + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+        let n = p.div_ceil(WORD_BIT_SIZE);
         if n > self.len() {
             self.resize_len(n)?;
         }
@@ -164,7 +164,7 @@ impl WordBuf {
 
     /// Try to extend the size to fit the precision p. Data is shifted to the left by d bits.
     pub fn try_extend_3(&mut self, p: usize, d: usize) -> Result<(), Error> {
-        let n = (p + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+        let n = p.div_ceil(WORD_BIT_SIZE);
         let l = self.len();
         if n > l {
             self.resize_len(n)?;

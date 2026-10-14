@@ -195,7 +195,7 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
         ErrAlgo::Asin(arg, emin) => {
             if arg.inexact_accumulated() && arg.exponent().unwrap_or(1) < 1 {
                 let n = compute_added_err_near_one(arg, emin);
-                2 + (n + 1) / 2
+                2 + n.div_ceil(2)
             } else {
                 0
             }
@@ -636,8 +636,8 @@ mod tests {
                                                 compute_added_err(ErrAlgo::Pow(b, n, emin));
                                             let err = calc_err(d1, d2, p);
 
-                                            if !(b.abs().cmp(&ONE) == Some(0)
-                                                || bb.abs().cmp(&ONE) == Some(0))
+                                            if !(b.abs().compare(&ONE) == Some(0)
+                                                || bb.abs().compare(&ONE) == Some(0))
                                             {
                                                 let err_estimate = 1.max(err_estimate);
                                                 //println!("pow {:?} {:?}", err, err_estimate);

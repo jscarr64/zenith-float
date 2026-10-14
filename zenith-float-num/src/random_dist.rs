@@ -60,7 +60,7 @@ impl ExactNum {
         if a.is_nan() || b.is_nan() || a.is_inf() || b.is_inf() {
             return NAN;
         }
-        match a.cmp(b) {
+        match a.compare(b) {
             Some(c) if c > 0 => return dist_nan(),
             Some(0) => {
                 let mut v = a.clone();
@@ -134,7 +134,7 @@ mod tests {
         reseed_random(1);
         let u = ExactNum::random_uniform(&zero, &one, p, rm);
         assert!(!u.is_negative());
-        assert!(matches!(u.cmp(&one), Some(c) if c <= 0));
+        assert!(matches!(u.compare(&one), Some(c) if c <= 0));
         assert!(!u.is_nan());
 
         reseed_random(7);
@@ -143,8 +143,8 @@ mod tests {
         reseed_random(7);
         let h1 = ExactNum::random_gaussian(&zero, &one, p, rm, &mut cc);
         let h2 = ExactNum::random_gaussian(&zero, &one, p, rm, &mut cc);
-        assert_eq!(g1.cmp(&h1), Some(0));
-        assert_eq!(g2.cmp(&h2), Some(0));
+        assert_eq!(g1.compare(&h1), Some(0));
+        assert_eq!(g2.compare(&h2), Some(0));
 
         let p64 = 64;
         let z64 = ExactNum::from_u8(0, p64);
@@ -162,7 +162,7 @@ mod tests {
         let mean = sum.div(&n, p64, rm);
         let err = mean.sub(&o64, p64, rm).abs();
         let tol = ExactNum::from_u8(1, p64).div(&ExactNum::from_u8(20, p64), p64, rm);
-        assert!(matches!(err.cmp(&tol), Some(c) if c <= 0));
+        assert!(matches!(err.compare(&tol), Some(c) if c <= 0));
 
         reseed_random(11);
         let fill = ExactNumArray::random_fill(

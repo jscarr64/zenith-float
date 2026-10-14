@@ -298,7 +298,7 @@ mod tests {
         assert_eq!(b.shape(), (2, 2));
         assert_eq!(b.precision(), p);
         for i in 0..4 {
-            assert_eq!(a.get(i).unwrap().cmp(b.get(i).unwrap()), Some(0));
+            assert_eq!(a.get(i).unwrap().compare(b.get(i).unwrap()), Some(0));
         }
         assert!(Ieee64Array::from_csv_str("1,2\n3,4,5\n").is_err());
     }

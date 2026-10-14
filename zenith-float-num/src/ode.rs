@@ -86,7 +86,7 @@ where
     if n_steps == 0 || n_steps > ODE_MAX_STEPS {
         return None;
     }
-    if !finite(t0) || !finite(y0) || !finite(t1) || t0.cmp(t1) != Some(-1) {
+    if !finite(t0) || !finite(y0) || !finite(t1) || t0.compare(t1) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
@@ -184,7 +184,7 @@ where
     if n_steps == 0 || n_steps > ODE_MAX_STEPS {
         return None;
     }
-    if !finite(t0) || !finite(y0) || !finite(t1) || t0.cmp(t1) != Some(-1) {
+    if !finite(t0) || !finite(y0) || !finite(t1) || t0.compare(t1) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
@@ -469,7 +469,7 @@ where
     if !finite(t0) || !finite(y0) || !finite(t1) || !finite(atol) || !finite(rtol) {
         return None;
     }
-    if t0.cmp(t1) != Some(-1) || atol.is_negative() || rtol.is_negative() {
+    if t0.compare(t1) != Some(-1) || atol.is_negative() || rtol.is_negative() {
         return None;
     }
     let wrk = work_p(p);
@@ -492,21 +492,21 @@ where
     }
     let mut accepted = 0usize;
     let mut attempts = 0usize;
-    while t.cmp(t1) == Some(-1) {
+    while t.compare(t1) == Some(-1) {
         if accepted >= ODE_MAX_STEPS || attempts >= ODE_MAX_STEPS.saturating_mul(4) {
             return None;
         }
         attempts += 1;
         let remain = t1.sub(&t, wrk, RoundingMode::None);
-        if h.cmp(&remain) == Some(1) {
+        if h.compare(&remain) == Some(1) {
             h = remain;
         }
-        if h.cmp(&hmin) == Some(-1) || h.is_zero() || h.is_negative() {
+        if h.compare(&hmin) == Some(-1) || h.is_zero() || h.is_negative() {
             return None;
         }
         let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h, wrk, RoundingMode::None, cc)?;
         let err = y5.sub(&y4, wrk, RoundingMode::None).abs();
-        let ymax = if y.abs().cmp(&y5.abs()) == Some(1) { y.abs() } else { y5.abs() };
+        let ymax = if y.abs().compare(&y5.abs()) == Some(1) { y.abs() } else { y5.abs() };
         let scale = atol.add(
             &rtol.mul(&ymax, wrk, RoundingMode::None),
             wrk,
@@ -514,12 +514,12 @@ where
         );
         let ok = scale.is_zero()
             || err.is_zero()
-            || err.cmp(&scale) == Some(-1)
-            || err.cmp(&scale) == Some(0);
+            || err.compare(&scale) == Some(-1)
+            || err.compare(&scale) == Some(0);
         if ok {
             t = t.add(&h, wrk, RoundingMode::None);
             y = y5;
-            if t.cmp(t1) == Some(1) {
+            if t.compare(t1) == Some(1) {
                 t = t1.clone();
             }
             if !push_pair(&mut ts, &mut ys, t.clone(), y.clone(), ODE_MAX_STEPS + 1) {
@@ -534,9 +534,9 @@ where
                 .div(&err, wrk, RoundingMode::None)
                 .nth_root(5, wrk, RoundingMode::None);
             let raw = fac.mul(&q, wrk, RoundingMode::None);
-            if raw.cmp(&grow) == Some(1) {
+            if raw.compare(&grow) == Some(1) {
                 grow.clone()
-            } else if raw.cmp(&shrink) == Some(-1) {
+            } else if raw.compare(&shrink) == Some(-1) {
                 shrink.clone()
             } else {
                 raw
@@ -588,7 +588,7 @@ mod tests {
         let einv = one.neg().exp(p, rm, &mut cc);
         let err = yend.sub(&einv, p, rm).abs();
         let tol12 = one.div(&ten.powsi(RK4_EXP_ERR_DIGITS, p, rm), p, rm);
-        assert!(err.is_zero() || err.cmp(&tol12) == Some(-1));
+        assert!(err.is_zero() || err.compare(&tol12) == Some(-1));
 
         let atol = one.div(&ten.powsi(RK45_ATOL_DIGITS, p, rm), p, rm);
         let rtol = ExactNum::new(p);
@@ -606,7 +606,9 @@ mod tests {
         .expect("rk45");
         let y45e = y45.get(y45.len() - 1).expect("y45e").clone();
         let err45 = y45e.sub(&einv, p, rm).abs();
-        assert!(err45.is_zero() || err45.cmp(&atol) == Some(-1) || err45.cmp(&atol) == Some(0));
+        assert!(
+            err45.is_zero() || err45.compare(&atol) == Some(-1) || err45.compare(&atol) == Some(0)
+        );
 
         let (_te, ye) = euler(
             |_t, y, _p, _rm| y.clone(),
@@ -635,8 +637,8 @@ mod tests {
         let e1 = ye.get(ye.len() - 1).expect("e1").sub(&ee, p, rm).abs();
         let e2 = ye2.get(ye2.len() - 1).expect("e2").sub(&ee, p, rm).abs();
         let two_h_bound = two.div(&ExactNum::from_u32(EULER_OH_STEPS as u32, p), p, rm);
-        assert!(e1.cmp(&two_h_bound) == Some(-1));
-        assert!(e2.cmp(&e1) == Some(-1));
+        assert!(e1.compare(&two_h_bound) == Some(-1));
+        assert!(e2.compare(&e1) == Some(-1));
 
         assert!(rk4(
             |_t, y, _p, _rm, _cc| y.neg(),

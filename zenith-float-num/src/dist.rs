@@ -200,7 +200,7 @@ impl ExactNum {
             return NAN;
         }
         if self.is_negative()
-            || matches!(self.cmp(&ExactNum::from_u8(1, p)), Some(c) if c > 0)
+            || matches!(self.compare(&ExactNum::from_u8(1, p)), Some(c) if c > 0)
             || !finite_pos(alpha)
             || !finite_pos(beta)
         {
@@ -269,9 +269,9 @@ impl ExactNum {
         }
         if !nn_int(self)
             || !nn_int(n)
-            || matches!(self.cmp(n), Some(c) if c > 0)
+            || matches!(self.compare(n), Some(c) if c > 0)
             || prob.is_negative()
-            || matches!(prob.cmp(&ExactNum::from_u8(1, p)), Some(c) if c > 0)
+            || matches!(prob.compare(&ExactNum::from_u8(1, p)), Some(c) if c > 0)
         {
             return dist_nan();
         }
@@ -362,11 +362,11 @@ fn binom_mul(n: &ExactNum, k: &ExactNum, pw: usize) -> ExactNum {
     loop {
         let term = nmk.add(&i, pw, none);
         c = c.mul(&term, pw, none).div(&i, pw, none);
-        if i.cmp(k) == Some(0) {
+        if i.compare(k) == Some(0) {
             return c;
         }
         i = i.add(&one, pw, none);
-        if i.cmp(k) == Some(1) {
+        if i.compare(k) == Some(1) {
             return c;
         }
     }
@@ -395,25 +395,25 @@ mod tests {
         let np = zero.normal_pdf(&zero, &one, p, rm, &mut cc);
         let two_pi = two.mul(&cc.pi(p, rm), p, rm);
         let want_np = two_pi.sqrt(p, rm).reciprocal(p, rm);
-        assert_eq!(np.cmp(&want_np), Some(0));
+        assert_eq!(np.compare(&want_np), Some(0));
 
         let nc = zero.normal_cdf(&zero, &one, p, rm, &mut cc);
         let half = one.div(&two, p, rm);
-        assert_eq!(nc.cmp(&half), Some(0));
+        assert_eq!(nc.compare(&half), Some(0));
 
         let gp = one.gamma_pdf(&one, &one, p, rm, &mut cc);
         let em1 = one.neg().exp(p, rm, &mut cc);
-        assert_eq!(gp.cmp(&em1), Some(0));
+        assert_eq!(gp.compare(&em1), Some(0));
 
         let po = zero.poisson_pmf(&one, p, rm, &mut cc);
-        assert_eq!(po.cmp(&em1), Some(0));
+        assert_eq!(po.compare(&em1), Some(0));
 
         // χ²(2) CDF at the 95% table quantile −2 ln(0.05) = 2 ln 20 is exactly 19/20.
         let twenty = ExactNum::from_u8(20, p);
         let x95 = two.mul(&twenty.ln(p, rm, &mut cc), p, rm);
         let chi = x95.chi_squared_cdf(&two, p, rm, &mut cc);
         let table = ExactNum::from_u8(19, p).div(&ExactNum::from_u8(20, p), p, rm);
-        assert_eq!(chi.cmp(&table), Some(0));
+        assert_eq!(chi.compare(&table), Some(0));
 
         assert!(one.normal_pdf(&zero, &zero, p, rm, &mut cc).is_nan());
         assert!(one.neg().poisson_pmf(&one, p, rm, &mut cc).is_nan());

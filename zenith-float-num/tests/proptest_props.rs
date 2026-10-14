@@ -10,7 +10,7 @@ fn cfg() -> ProptestConfig {
 }
 
 fn eq(a: &ExactNum, b: &ExactNum) -> bool {
-    a.cmp(b) == Some(0)
+    a.compare(b) == Some(0)
 }
 
 fn array_eq(a: &ExactNumArray, b: &ExactNumArray) -> bool {

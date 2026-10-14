@@ -904,9 +904,9 @@ impl ExactComplex {
         let p_x = Self::work_p(p);
         if self.im.is_zero() && !self.re.is_nan() && !self.re.is_inf() {
             let one = ExactNum::from_word(1, p_x);
-            if matches!(self.re.cmp(&one), Some(c) if c < 0) {
+            if matches!(self.re.compare(&one), Some(c) if c < 0) {
                 let neg_one = one.neg();
-                let (re, im) = if matches!(self.re.cmp(&neg_one), Some(c) if c >= 0) {
+                let (re, im) = if matches!(self.re.compare(&neg_one), Some(c) if c >= 0) {
                     (
                         ExactNum::new(p_x),
                         self.re.acos(p_x, RoundingMode::None, cc),
@@ -960,10 +960,10 @@ impl ExactComplex {
                 }
                 z
             };
-            if self.re.cmp(&one_r) == Some(0) {
+            if self.re.compare(&one_r) == Some(0) {
                 return Self::new(crate::ext::INF_POS, im0());
             }
-            if self.re.cmp(&one_r.neg()) == Some(0) {
+            if self.re.compare(&one_r.neg()) == Some(0) {
                 return Self::new(crate::ext::INF_NEG, im0());
             }
         }
@@ -1058,11 +1058,11 @@ mod tests {
         let a = ExactComplex::new(ExactNum::from_u8(3, p), ExactNum::from_u8(4, p));
         let mag = a.abs(p, rm);
         let five = ExactNum::from_u8(5, p);
-        assert_eq!(mag.cmp(&five), Some(0));
+        assert_eq!(mag.compare(&five), Some(0));
 
         let i = ExactComplex::i(p);
         let i2 = i.mul(&i, p, rm);
-        assert_eq!(i2.re().cmp(&ExactNum::from_i8(-1, p)), Some(0));
+        assert_eq!(i2.re().compare(&ExactNum::from_i8(-1, p)), Some(0));
         assert!(i2.im().is_zero());
 
         let z = ExactComplex::one(p);
@@ -1098,7 +1098,7 @@ mod tests {
 
         let s = m1.sqrt(p, rm, &mut cc);
         assert!(s.re().is_zero() || s.re().exponent().unwrap_or(0) < -((p as i32) / 4));
-        assert_eq!(s.im().cmp(&ExactNum::from_u8(1, p)), Some(0));
+        assert_eq!(s.im().compare(&ExactNum::from_u8(1, p)), Some(0));
 
         let l = m1.ln(p, rm, &mut cc);
         assert!(l.re().is_zero() || l.re().exponent().unwrap_or(0) < -((p as i32) / 4));

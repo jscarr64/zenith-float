@@ -118,7 +118,7 @@ let mut ctx = Context::new(
 
 let pi = expr!(6 * atan(1 / sqrt(3)), &mut ctx);
 let pi_lib = ctx.const_pi();
-assert_eq!(pi.cmp(&pi_lib), Some(0));
+assert_eq!(pi.compare(&pi_lib), Some(0));
 ```
 
 Set the smallest exponent range that still holds your results. Internal working precision can grow with the exponent.

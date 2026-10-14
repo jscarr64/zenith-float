@@ -236,7 +236,7 @@ fn cubic_integral_identity() {
     let phi0 = parse(PHI0, p, rm, &mut consts);
     let phi1 = parse(PHI1, p, rm, &mut consts);
     let half = consts.pi(p, rm).div(&parse("2", p, rm, &mut consts), p, rm);
-    assert_eq!(phi1.cmp(&half), Some(1));
+    assert_eq!(phi1.compare(&half), Some(1));
     let diff = phi1.elliptic_f_phi(&m, p, rm, &mut consts).sub(
         &phi0.elliptic_f_phi(&m, p, rm, &mut consts),
         p,
@@ -249,7 +249,7 @@ fn cubic_integral_identity() {
     let tol = parse("5e-21", p, rm, &mut consts);
     let err = got.sub(&printed, p, RoundingMode::None).abs();
     assert!(
-        matches!(err.cmp(&tol), Some(c) if c <= 0),
+        matches!(err.compare(&tol), Some(c) if c <= 0),
         "cubic integral missed 0.90960424263889577391"
     );
 }

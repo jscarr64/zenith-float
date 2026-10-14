@@ -224,12 +224,10 @@ mod tests {
             //println!("s1 {:?}", s1);
             //println!("s2 {:?}", s2);
 
-            let mut ref_s = Vec::new();
-            ref_s.resize(s1.len() + s2.len(), 0);
+            let mut ref_s = vec![0; s1.len() + s2.len()];
             mul(&s1, &s2, &mut ref_s);
 
-            let mut ret_s = Vec::new();
-            ret_s.resize(s1.len() + s2.len(), 0);
+            let mut ret_s = vec![0; s1.len() + s2.len()];
             Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
 
             assert!(ret_s == ref_s);

@@ -630,12 +630,11 @@ impl ExactNum {
     /// Compares `self` to `d2`.
     /// Returns positive if `self` > `d2`, negative if `self` < `d2`, zero if `self` == `d2`, None if `self` or `d2` is NaN.
     /// The non-zero results are exactly `1` and `-1`.
-    #[allow(clippy::should_implement_trait)]
-    pub fn cmp(&self, d2: &ExactNum) -> Option<SignedWord> {
+    pub fn compare(&self, d2: &ExactNum) -> Option<SignedWord> {
         self.cmp_raw(d2).map(SignedWord::signum)
     }
 
-    /// [`cmp`](Self::cmp) before normalization: equal exponents return the mantissa word difference.
+    /// [`compare`](Self::compare) before normalization: equal exponents return the mantissa word difference.
     fn cmp_raw(&self, d2: &ExactNum) -> Option<SignedWord> {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
@@ -924,13 +923,13 @@ impl ExactNum {
     /// The function returns `max` if `self` is greater than `max`, `min` if `self` is less than `min`, and `self` otherwise.
     /// If either argument is NaN or `min` is greater than `max`, the function returns NaN.
     pub fn clamp(&self, min: &Self, max: &Self) -> Self {
-        if self.is_nan() || min.is_nan() || max.is_nan() || max.cmp(min).unwrap() < 0 {
+        if self.is_nan() || min.is_nan() || max.is_nan() || max.compare(min).unwrap() < 0 {
             // call to unwrap() is unreacheable
             NAN
-        } else if self.cmp(min).unwrap() < 0 {
+        } else if self.compare(min).unwrap() < 0 {
             // call to unwrap() is unreacheable
             min.clone()
-        } else if self.cmp(max).unwrap() > 0 {
+        } else if self.compare(max).unwrap() > 0 {
             // call to unwrap() is unreacheable
             max.clone()
         } else {
@@ -943,7 +942,7 @@ impl ExactNum {
     pub fn max(&self, d1: &Self) -> Self {
         if self.is_nan() || d1.is_nan() {
             NAN
-        } else if self.cmp(d1).unwrap() < 0 {
+        } else if self.compare(d1).unwrap() < 0 {
             // call to unwrap() is unreacheable
             d1.clone()
         } else {
@@ -956,7 +955,7 @@ impl ExactNum {
     pub fn min(&self, d1: &Self) -> Self {
         if self.is_nan() || d1.is_nan() {
             NAN
-        } else if self.cmp(d1).unwrap() > 0 {
+        } else if self.compare(d1).unwrap() > 0 {
             // call to unwrap() is unreacheable
             d1.clone()
         } else {
@@ -1350,7 +1349,7 @@ impl ExactNum {
         let direct = rm == RoundingMode::None || p == 0 || p >= usize::MAX / 4;
         let mut r = if direct {
             f(p, rm)
-        } else if p % WORD_BIT_SIZE == 0 {
+        } else if p.is_multiple_of(WORD_BIT_SIZE) {
             let r = f(p, rm);
             let subnormal_rounded = matches!(
                 &r.inner,
@@ -2221,7 +2220,7 @@ Accuracy: correctly-rounded",
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.nth_root(n, p, rm), v.is_zero(), true),
             Flavor::Inf(s) => {
-                if n % 2 == 0 {
+                if n.is_multiple_of(2) {
                     if s.is_negative() {
                         NAN
                     } else {
@@ -3979,14 +3978,14 @@ impl Neg for &ExactNum {
 
 impl PartialEq for ExactNum {
     fn eq(&self, other: &Self) -> bool {
-        let cmp_result = ExactNum::cmp(self, other);
+        let cmp_result = ExactNum::compare(self, other);
         matches!(cmp_result, Some(0))
     }
 }
 
 impl<'a> PartialEq<&'a ExactNum> for ExactNum {
     fn eq(&self, other: &&'a ExactNum) -> bool {
-        let cmp_result = ExactNum::cmp(self, other);
+        let cmp_result = ExactNum::compare(self, other);
         matches!(cmp_result, Some(0))
     }
 }
@@ -3995,7 +3994,7 @@ impl Eq for ExactNum {}
 
 impl PartialOrd for ExactNum {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let cmp_result = ExactNum::cmp(self, other);
+        let cmp_result = ExactNum::compare(self, other);
         match cmp_result {
             Some(v) => {
                 if v > 0 {
@@ -4013,7 +4012,7 @@ impl PartialOrd for ExactNum {
 
 impl<'a> PartialOrd<&'a ExactNum> for ExactNum {
     fn partial_cmp(&self, other: &&'a ExactNum) -> Option<Ordering> {
-        let cmp_result = ExactNum::cmp(self, other);
+        let cmp_result = ExactNum::compare(self, other);
         match cmp_result {
             Some(v) => {
                 if v > 0 {
@@ -4281,22 +4280,22 @@ mod tests {
             let i = crate::common::test_rng::random::<i64>();
             let d1 = ExactNum::from_i64(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
-            assert!(d1.cmp(&n1) == Some(0));
+            assert!(d1.compare(&n1) == Some(0));
 
             let i = crate::common::test_rng::random::<u64>();
             let d1 = ExactNum::from_u64(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
-            assert!(d1.cmp(&n1) == Some(0));
+            assert!(d1.compare(&n1) == Some(0));
 
             let i = crate::common::test_rng::random::<i128>();
             let d1 = ExactNum::from_i128(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
-            assert!(d1.cmp(&n1) == Some(0));
+            assert!(d1.compare(&n1) == Some(0));
 
             let i = crate::common::test_rng::random::<u128>();
             let d1 = ExactNum::from_u128(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
-            assert!(d1.cmp(&n1) == Some(0));
+            assert!(d1.compare(&n1) == Some(0));
         }
 
         assert!(ONE.exponent().is_some());
@@ -4309,7 +4308,7 @@ mod tests {
         assert!(INF_NEG.as_raw_parts().is_none());
         assert!(NAN.as_raw_parts().is_none());
 
-        assert!(ONE.add(&ONE, rand_p(), rm).cmp(&TWO) == Some(0));
+        assert!(ONE.add(&ONE, rand_p(), rm).compare(&TWO) == Some(0));
         assert!(ONE.add(&INF_POS, rand_p(), rm).is_inf_pos());
         assert!(INF_POS.add(&ONE, rand_p(), rm).is_inf_pos());
         assert!(ONE.add(&INF_NEG, rand_p(), rm).is_inf_neg());
@@ -4319,7 +4318,7 @@ mod tests {
         assert!(INF_NEG.add(&INF_NEG, rand_p(), rm).is_inf_neg());
         assert!(INF_NEG.add(&INF_POS, rand_p(), rm).is_nan());
 
-        assert!(ONE.add_full_prec(&ONE).cmp(&TWO) == Some(0));
+        assert!(ONE.add_full_prec(&ONE).compare(&TWO) == Some(0));
         assert!(ONE.add_full_prec(&INF_POS).is_inf_pos());
         assert!(INF_POS.add_full_prec(&ONE).is_inf_pos());
         assert!(ONE.add_full_prec(&INF_NEG).is_inf_neg());
@@ -4339,7 +4338,7 @@ mod tests {
         assert!(INF_NEG.sub_full_prec(&INF_NEG).is_nan());
         assert!(INF_NEG.sub_full_prec(&INF_POS).is_inf_neg());
 
-        assert!(ONE.mul_full_prec(&ONE).cmp(&ONE) == Some(0));
+        assert!(ONE.mul_full_prec(&ONE).compare(&ONE) == Some(0));
         assert!(ONE.mul_full_prec(&INF_POS).is_inf_pos());
         assert!(INF_POS.mul_full_prec(&ONE).is_inf_pos());
         assert!(ONE.mul_full_prec(&INF_NEG).is_inf_neg());
@@ -4349,7 +4348,7 @@ mod tests {
         assert!(INF_NEG.mul_full_prec(&INF_NEG).is_inf_pos());
         assert!(INF_NEG.mul_full_prec(&INF_POS).is_inf_neg());
 
-        assert!(TWO.sub(&ONE, rand_p(), rm).cmp(&ONE) == Some(0));
+        assert!(TWO.sub(&ONE, rand_p(), rm).compare(&ONE) == Some(0));
         assert!(ONE.sub(&INF_POS, rand_p(), rm).is_inf_neg());
         assert!(INF_POS.sub(&ONE, rand_p(), rm).is_inf_pos());
         assert!(ONE.sub(&INF_NEG, rand_p(), rm).is_inf_pos());
@@ -4359,7 +4358,7 @@ mod tests {
         assert!(INF_NEG.sub(&INF_NEG, rand_p(), rm).is_nan());
         assert!(INF_NEG.sub(&INF_POS, rand_p(), rm).is_inf_neg());
 
-        assert!(TWO.mul(&ONE, rand_p(), rm).cmp(&TWO) == Some(0));
+        assert!(TWO.mul(&ONE, rand_p(), rm).compare(&TWO) == Some(0));
         assert!(ONE.mul(&INF_POS, rand_p(), rm).is_inf_pos());
         assert!(INF_POS.mul(&ONE, rand_p(), rm).is_inf_pos());
         assert!(ONE.mul(&INF_NEG, rand_p(), rm).is_inf_neg());
@@ -4377,7 +4376,7 @@ mod tests {
         assert!(ExactNum::new(rand_p()).mul(&INF_POS, rand_p(), rm).is_nan());
         assert!(ExactNum::new(rand_p()).mul(&INF_NEG, rand_p(), rm).is_nan());
 
-        assert!(TWO.div(&TWO, rand_p(), rm).cmp(&ONE) == Some(0));
+        assert!(TWO.div(&TWO, rand_p(), rm).compare(&ONE) == Some(0));
         assert!(TWO.div(&INF_POS, rand_p(), rm).is_zero());
         assert!(INF_POS.div(&TWO, rand_p(), rm).is_inf_pos());
         assert!(TWO.div(&INF_NEG, rand_p(), rm).is_zero());
@@ -4404,12 +4403,12 @@ mod tests {
             .is_zero());
 
         assert!(TWO.rem(&TWO).is_zero());
-        assert!(TWO.rem(&INF_POS).cmp(&TWO) == Some(0));
+        assert!(TWO.rem(&INF_POS).compare(&TWO) == Some(0));
         assert!(INF_POS.rem(&TWO).is_nan());
-        assert!(TWO.rem(&INF_NEG).cmp(&TWO) == Some(0));
+        assert!(TWO.rem(&INF_NEG).compare(&TWO) == Some(0));
         assert!(INF_NEG.rem(&TWO).is_nan());
-        assert!(TWO.neg().rem(&INF_POS).cmp(&TWO.neg()) == Some(0));
-        assert!(TWO.neg().rem(&INF_NEG).cmp(&TWO.neg()) == Some(0));
+        assert!(TWO.neg().rem(&INF_POS).compare(&TWO.neg()) == Some(0));
+        assert!(TWO.neg().rem(&INF_NEG).compare(&TWO.neg()) == Some(0));
         assert!(INF_POS.rem(&TWO.neg()).is_nan());
         assert!(INF_NEG.rem(&TWO.neg()).is_nan());
         assert!(INF_POS.rem(&INF_POS).is_nan());
@@ -4449,23 +4448,23 @@ mod tests {
             assert!(op(&NAN, &NAN).is_nan());
         }
 
-        assert!(ONE.cmp(&ONE).unwrap() == 0);
-        assert!(ONE.cmp(&INF_POS).unwrap() < 0);
-        assert!(INF_POS.cmp(&ONE).unwrap() > 0);
-        assert!(INF_POS.cmp(&INF_POS).unwrap() == 0);
-        assert!(ONE.cmp(&INF_NEG).unwrap() > 0);
-        assert!(INF_NEG.cmp(&ONE).unwrap() < 0);
-        assert!(INF_NEG.cmp(&INF_NEG).unwrap() == 0);
-        assert!(INF_POS.cmp(&INF_NEG).unwrap() > 0);
-        assert!(INF_NEG.cmp(&INF_POS).unwrap() < 0);
-        assert!(INF_POS.cmp(&INF_POS).unwrap() == 0);
-        assert!(ONE.cmp(&NAN).is_none());
-        assert!(NAN.cmp(&ONE).is_none());
-        assert!(INF_POS.cmp(&NAN).is_none());
-        assert!(NAN.cmp(&INF_POS).is_none());
-        assert!(INF_NEG.cmp(&NAN).is_none());
-        assert!(NAN.cmp(&INF_NEG).is_none());
-        assert!(NAN.cmp(&NAN).is_none());
+        assert!(ONE.compare(&ONE).unwrap() == 0);
+        assert!(ONE.compare(&INF_POS).unwrap() < 0);
+        assert!(INF_POS.compare(&ONE).unwrap() > 0);
+        assert!(INF_POS.compare(&INF_POS).unwrap() == 0);
+        assert!(ONE.compare(&INF_NEG).unwrap() > 0);
+        assert!(INF_NEG.compare(&ONE).unwrap() < 0);
+        assert!(INF_NEG.compare(&INF_NEG).unwrap() == 0);
+        assert!(INF_POS.compare(&INF_NEG).unwrap() > 0);
+        assert!(INF_NEG.compare(&INF_POS).unwrap() < 0);
+        assert!(INF_POS.compare(&INF_POS).unwrap() == 0);
+        assert!(ONE.compare(&NAN).is_none());
+        assert!(NAN.compare(&ONE).is_none());
+        assert!(INF_POS.compare(&NAN).is_none());
+        assert!(NAN.compare(&INF_POS).is_none());
+        assert!(INF_NEG.compare(&NAN).is_none());
+        assert!(NAN.compare(&INF_NEG).is_none());
+        assert!(NAN.compare(&NAN).is_none());
 
         assert!(ONE.abs_cmp(&ONE).unwrap() == 0);
         assert!(ONE.abs_cmp(&INF_POS).unwrap() < 0);
@@ -4494,12 +4493,12 @@ mod tests {
         // Results are exactly -1/0/1 (1.0.4 returned the mantissa word difference, e.g.
         // 3.cmp(2) = 2^62, so callers testing `== Some(1)` / `== Some(-1)` misfired).
         let three = ExactNum::from_u8(3, 64);
-        assert_eq!(three.cmp(&two), Some(1));
-        assert_eq!(two.cmp(&three), Some(-1));
+        assert_eq!(three.compare(&two), Some(1));
+        assert_eq!(two.compare(&three), Some(-1));
         assert_eq!(three.abs_cmp(&neg_two), Some(1));
         assert_eq!(neg_two.abs_cmp(&three), Some(-1));
-        assert_eq!(INF_POS.cmp(&INF_NEG), Some(1));
-        assert_eq!(INF_NEG.cmp(&INF_POS), Some(-1));
+        assert_eq!(INF_POS.compare(&INF_NEG), Some(1));
+        assert_eq!(INF_NEG.compare(&INF_POS), Some(-1));
 
         assert!(ONE.is_positive());
         assert!(!ONE.is_negative());
@@ -4513,15 +4512,15 @@ mod tests {
         assert!(!NAN.is_positive());
         assert!(!NAN.is_negative());
 
-        assert!(ONE.pow(&ONE, rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
+        assert!(ONE.pow(&ONE, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(ExactNum::new(DEFAULT_P)
             .pow(&INF_POS, rand_p(), rm, &mut cc)
             .is_zero());
         assert!(ExactNum::new(DEFAULT_P)
             .pow(&INF_NEG, rand_p(), rm, &mut cc)
             .is_zero());
-        assert!(ONE.pow(&INF_POS, rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
-        assert!(ONE.pow(&INF_NEG, rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
+        assert!(ONE.pow(&INF_POS, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
+        assert!(ONE.pow(&INF_NEG, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(TWO.pow(&INF_POS, rand_p(), rm, &mut cc).is_inf_pos());
         assert!(TWO.pow(&INF_NEG, rand_p(), rm, &mut cc).is_inf_neg());
         assert!(INF_POS.pow(&ONE, rand_p(), rm, &mut cc).is_inf_pos());
@@ -4532,13 +4531,13 @@ mod tests {
         assert!(
             INF_POS
                 .pow(&ExactNum::new(DEFAULT_P), rand_p(), rm, &mut cc)
-                .cmp(&ONE)
+                .compare(&ONE)
                 == Some(0)
         );
         assert!(
             INF_NEG
                 .pow(&ExactNum::new(DEFAULT_P), rand_p(), rm, &mut cc)
-                .cmp(&ONE)
+                .compare(&ONE)
                 == Some(0)
         );
         assert!(INF_POS.pow(&INF_POS, rand_p(), rm, &mut cc).is_inf_pos());
@@ -4547,12 +4546,12 @@ mod tests {
         assert!(INF_NEG.pow(&INF_NEG, rand_p(), rm, &mut cc).is_zero());
 
         let half = ONE.div(&TWO, rand_p(), rm);
-        assert!(TWO.log(&TWO, rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
+        assert!(TWO.log(&TWO, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(TWO.log(&INF_POS, rand_p(), rm, &mut cc).is_zero());
         assert!(TWO.log(&INF_NEG, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_POS.log(&TWO, rand_p(), rm, &mut cc).is_inf_pos());
         assert!(INF_NEG.log(&TWO, rand_p(), rm, &mut cc).is_nan());
-        assert!(half.log(&half, rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
+        assert!(half.log(&half, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(half.log(&INF_POS, rand_p(), rm, &mut cc).is_zero());
         assert!(half.log(&INF_NEG, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_POS.log(&half, rand_p(), rm, &mut cc).is_inf_neg());
@@ -4579,8 +4578,8 @@ mod tests {
         assert!(INF_POS.powi(3, rand_p(), rm).is_inf_pos());
         assert!(INF_NEG.powi(4, rand_p(), rm).is_inf_pos());
         assert!(INF_NEG.powi(5, rand_p(), rm).is_inf_neg());
-        assert!(INF_POS.powi(0, rand_p(), rm).cmp(&ONE) == Some(0));
-        assert!(INF_NEG.powi(0, rand_p(), rm).cmp(&ONE) == Some(0));
+        assert!(INF_POS.powi(0, rand_p(), rm).compare(&ONE) == Some(0));
+        assert!(INF_NEG.powi(0, rand_p(), rm).compare(&ONE) == Some(0));
 
         assert!(TWO.log(&NAN, rand_p(), rm, &mut cc).is_nan());
         assert!(NAN.log(&TWO, rand_p(), rm, &mut cc).is_nan());
@@ -4664,8 +4663,8 @@ mod tests {
         let p = rand_p();
         let mut half_pi: ExactNum = cc.pi_num(p, rm).unwrap().into();
         half_pi.set_exponent(1);
-        assert!(INF_NEG.atan(p, rm, &mut cc).cmp(&half_pi.neg()) == Some(0));
-        assert!(INF_POS.atan(p, rm, &mut cc).cmp(&half_pi) == Some(0));
+        assert!(INF_NEG.atan(p, rm, &mut cc).compare(&half_pi.neg()) == Some(0));
+        assert!(INF_POS.atan(p, rm, &mut cc).compare(&half_pi) == Some(0));
         assert!(NAN.atan(rand_p(), rm, &mut cc).is_nan());
 
         assert!(INF_NEG.sinh(rand_p(), rm, &mut cc).is_inf_neg());
@@ -4676,8 +4675,8 @@ mod tests {
         assert!(INF_POS.cosh(rand_p(), rm, &mut cc).is_inf_pos());
         assert!(NAN.cosh(rand_p(), rm, &mut cc).is_nan());
 
-        assert!(INF_NEG.tanh(rand_p(), rm, &mut cc).cmp(&ONE.neg()) == Some(0));
-        assert!(INF_POS.tanh(rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
+        assert!(INF_NEG.tanh(rand_p(), rm, &mut cc).compare(&ONE.neg()) == Some(0));
+        assert!(INF_POS.tanh(rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(NAN.tanh(rand_p(), rm, &mut cc).is_nan());
 
         assert!(INF_NEG.asinh(rand_p(), rm, &mut cc).is_inf_neg());
@@ -4696,10 +4695,10 @@ mod tests {
         assert!(INF_POS.reciprocal(rand_p(), rm).is_zero());
         assert!(NAN.reciprocal(rand_p(), rm).is_nan());
 
-        assert!(TWO.signum().cmp(&ONE) == Some(0));
-        assert!(TWO.neg().signum().cmp(&ONE.neg()) == Some(0));
-        assert!(INF_POS.signum().cmp(&ONE) == Some(0));
-        assert!(INF_NEG.signum().cmp(&ONE.neg()) == Some(0));
+        assert!(TWO.signum().compare(&ONE) == Some(0));
+        assert!(TWO.neg().signum().compare(&ONE.neg()) == Some(0));
+        assert!(INF_POS.signum().compare(&ONE) == Some(0));
+        assert!(INF_NEG.signum().compare(&ONE.neg()) == Some(0));
         assert!(NAN.signum().is_nan());
 
         let d1 = ONE.clone();
@@ -4756,10 +4755,10 @@ mod tests {
         NAN.clone().set_precision(1, rm).unwrap();
         NAN.clone().set_sign(Sign::Pos);
 
-        assert!(INF_POS.min(&ONE).cmp(&ONE) == Some(0));
+        assert!(INF_POS.min(&ONE).compare(&ONE) == Some(0));
         assert!(INF_NEG.min(&ONE).is_inf_neg());
         assert!(NAN.min(&ONE).is_nan());
-        assert!(ONE.min(&INF_POS).cmp(&ONE) == Some(0));
+        assert!(ONE.min(&INF_POS).compare(&ONE) == Some(0));
         assert!(ONE.min(&INF_NEG).is_inf_neg());
         assert!(ONE.min(&NAN).is_nan());
         assert!(NAN.min(&INF_POS).is_nan());
@@ -4771,10 +4770,10 @@ mod tests {
         assert!(INF_NEG.min(&INF_NEG).is_inf_neg());
 
         assert!(INF_POS.max(&ONE).is_inf_pos());
-        assert!(INF_NEG.max(&ONE).cmp(&ONE) == Some(0));
+        assert!(INF_NEG.max(&ONE).compare(&ONE) == Some(0));
         assert!(NAN.max(&ONE).is_nan());
         assert!(ONE.max(&INF_POS).is_inf_pos());
-        assert!(ONE.max(&INF_NEG).cmp(&ONE) == Some(0));
+        assert!(ONE.max(&INF_NEG).compare(&ONE) == Some(0));
         assert!(ONE.max(&NAN).is_nan());
         assert!(NAN.max(&INF_POS).is_nan());
         assert!(NAN.max(&INF_NEG).is_nan());
@@ -4784,20 +4783,20 @@ mod tests {
         assert!(INF_POS.max(&INF_POS).is_inf_pos());
         assert!(INF_NEG.max(&INF_NEG).is_inf_neg());
 
-        assert!(ONE.clamp(&ONE.neg(), &TWO).cmp(&ONE) == Some(0));
+        assert!(ONE.clamp(&ONE.neg(), &TWO).compare(&ONE) == Some(0));
         assert!(ONE.clamp(&TWO, &ONE).is_nan());
         assert!(ONE.clamp(&INF_POS, &ONE).is_nan());
         assert!(ONE.clamp(&TWO, &INF_NEG).is_nan());
-        assert!(ONE.neg().clamp(&ONE, &TWO).cmp(&ONE) == Some(0));
-        assert!(TWO.clamp(&ONE.neg(), &ONE).cmp(&ONE) == Some(0));
-        assert!(INF_POS.clamp(&ONE, &TWO).cmp(&TWO) == Some(0));
+        assert!(ONE.neg().clamp(&ONE, &TWO).compare(&ONE) == Some(0));
+        assert!(TWO.clamp(&ONE.neg(), &ONE).compare(&ONE) == Some(0));
+        assert!(INF_POS.clamp(&ONE, &TWO).compare(&TWO) == Some(0));
         assert!(INF_POS.clamp(&ONE, &INF_POS).is_inf_pos());
-        assert!(INF_POS.clamp(&INF_NEG, &ONE).cmp(&ONE) == Some(0));
+        assert!(INF_POS.clamp(&INF_NEG, &ONE).compare(&ONE) == Some(0));
         assert!(INF_POS.clamp(&NAN, &INF_POS).is_nan());
         assert!(INF_POS.clamp(&ONE, &NAN).is_nan());
         assert!(INF_POS.clamp(&NAN, &NAN).is_nan());
-        assert!(INF_NEG.clamp(&ONE, &TWO).cmp(&ONE) == Some(0));
-        assert!(INF_NEG.clamp(&ONE, &INF_POS).cmp(&ONE) == Some(0));
+        assert!(INF_NEG.clamp(&ONE, &TWO).compare(&ONE) == Some(0));
+        assert!(INF_NEG.clamp(&ONE, &INF_POS).compare(&ONE) == Some(0));
         assert!(INF_NEG.clamp(&INF_NEG, &ONE).is_inf_neg());
         assert!(INF_NEG.clamp(&NAN, &INF_POS).is_nan());
         assert!(INF_NEG.clamp(&ONE, &NAN).is_nan());
@@ -4901,6 +4900,7 @@ mod tests {
 
     #[test]
     pub fn test_ops() {
+        use core::ops::Not;
         let mut cc = Consts::new().unwrap();
 
         let d1 = -&(TWO.clone());
@@ -4911,8 +4911,11 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let eighth = two.powsi(-3, p, rm);
         let expected = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(8, p), p, rm);
-        assert_eq!(eighth.cmp(&expected), Some(0));
-        assert_eq!(two.powsi(3, p, rm).cmp(&ExactNum::from_u8(8, p)), Some(0));
+        assert_eq!(eighth.compare(&expected), Some(0));
+        assert_eq!(
+            two.powsi(3, p, rm).compare(&ExactNum::from_u8(8, p)),
+            Some(0)
+        );
         assert!(
             ExactNum::from_i8(-123, p) == ExactNum::parse("-1.23e+2", Radix::Dec, p, rm, &mut cc)
         );
@@ -4969,60 +4972,60 @@ mod tests {
 
         assert!(pos > neg);
         assert!(neg < pos);
-        assert!(!(pos < neg));
-        assert!(!(neg > pos));
+        assert!((pos < neg).not());
+        assert!((neg > pos).not());
         assert!(INF_NEG < neg);
         assert!(INF_NEG < pos);
         assert!(INF_NEG < INF_POS);
-        assert!(!(INF_NEG > neg));
-        assert!(!(INF_NEG > pos));
-        assert!(!(INF_NEG > INF_POS));
+        assert!((INF_NEG > neg).not());
+        assert!((INF_NEG > pos).not());
+        assert!((INF_NEG > INF_POS).not());
         assert!(INF_POS > neg);
         assert!(INF_POS > pos);
         assert!(INF_POS > INF_NEG);
-        assert!(!(INF_POS < neg));
-        assert!(!(INF_POS < pos));
-        assert!(!(INF_POS < INF_NEG));
-        assert!(!(INF_POS > INF_POS));
-        assert!(!(INF_POS < INF_POS));
-        assert!(!(INF_NEG > INF_NEG));
-        assert!(!(INF_NEG < INF_NEG));
-        assert!(!(INF_POS > NAN));
-        assert!(!(INF_POS < NAN));
-        assert!(!(INF_NEG > NAN));
-        assert!(!(INF_NEG < NAN));
-        assert!(!(NAN > INF_POS));
-        assert!(!(NAN < INF_POS));
-        assert!(!(NAN > INF_NEG));
-        assert!(!(NAN < INF_NEG));
-        assert!(!(NAN > NAN));
-        assert!(!(NAN < NAN));
-        assert!(!(neg > NAN));
-        assert!(!(neg < NAN));
-        assert!(!(pos > NAN));
-        assert!(!(pos < NAN));
-        assert!(!(NAN > neg));
-        assert!(!(NAN < neg));
-        assert!(!(NAN > pos));
-        assert!(!(NAN < pos));
+        assert!((INF_POS < neg).not());
+        assert!((INF_POS < pos).not());
+        assert!((INF_POS < INF_NEG).not());
+        assert!((INF_POS > INF_POS).not());
+        assert!((INF_POS < INF_POS).not());
+        assert!((INF_NEG > INF_NEG).not());
+        assert!((INF_NEG < INF_NEG).not());
+        assert!((INF_POS > NAN).not());
+        assert!((INF_POS < NAN).not());
+        assert!((INF_NEG > NAN).not());
+        assert!((INF_NEG < NAN).not());
+        assert!((NAN > INF_POS).not());
+        assert!((NAN < INF_POS).not());
+        assert!((NAN > INF_NEG).not());
+        assert!((NAN < INF_NEG).not());
+        assert!((NAN > NAN).not());
+        assert!((NAN < NAN).not());
+        assert!((neg > NAN).not());
+        assert!((neg < NAN).not());
+        assert!((pos > NAN).not());
+        assert!((pos < NAN).not());
+        assert!((NAN > neg).not());
+        assert!((NAN < neg).not());
+        assert!((NAN > pos).not());
+        assert!((NAN < pos).not());
 
-        assert!(!(NAN == NAN));
-        assert!(!(NAN == INF_POS));
-        assert!(!(NAN == INF_NEG));
-        assert!(!(INF_POS == NAN));
-        assert!(!(INF_NEG == NAN));
-        assert!(!(INF_NEG == INF_POS));
-        assert!(!(INF_POS == INF_NEG));
-        assert!(!(INF_POS == neg));
-        assert!(!(INF_POS == pos));
-        assert!(!(INF_NEG == neg));
-        assert!(!(INF_NEG == pos));
-        assert!(!(neg == INF_POS));
-        assert!(!(pos == INF_POS));
-        assert!(!(neg == INF_NEG));
-        assert!(!(pos == INF_NEG));
-        assert!(!(pos == neg));
-        assert!(!(neg == pos));
+        assert!((NAN == NAN).not());
+        assert!((NAN == INF_POS).not());
+        assert!((NAN == INF_NEG).not());
+        assert!((INF_POS == NAN).not());
+        assert!((INF_NEG == NAN).not());
+        assert!((INF_NEG == INF_POS).not());
+        assert!((INF_POS == INF_NEG).not());
+        assert!((INF_POS == neg).not());
+        assert!((INF_POS == pos).not());
+        assert!((INF_NEG == neg).not());
+        assert!((INF_NEG == pos).not());
+        assert!((neg == INF_POS).not());
+        assert!((pos == INF_POS).not());
+        assert!((neg == INF_NEG).not());
+        assert!((pos == INF_NEG).not());
+        assert!((pos == neg).not());
+        assert!((neg == pos).not());
         assert!(neg == neg);
         assert!(pos == pos);
         assert!(INF_NEG == INF_NEG);
@@ -5046,7 +5049,7 @@ mod tests {
         let m = a.mul(&b, p, RoundingMode::ToEven);
         assert!(!s.is_nan(), "large-prec add hung or failed");
         assert!(!m.is_nan(), "large-prec mul hung or failed");
-        assert_eq!(s.cmp(&ExactNum::from_word(8, p)), Some(0));
+        assert_eq!(s.compare(&ExactNum::from_word(8, p)), Some(0));
     }
 
     #[test]
@@ -5059,14 +5062,14 @@ mod tests {
 
         let (hi, lo) = one.two_sum(&two, p, rm);
         let rec = hi.add(&lo, p, rm);
-        assert_eq!(rec.cmp(&ExactNum::from_u8(3, p)), Some(0));
+        assert_eq!(rec.compare(&ExactNum::from_u8(3, p)), Some(0));
 
         let (ph, pl) = two.two_product(&three, p, rm);
         let pr = ph.add(&pl, p, rm);
-        assert_eq!(pr.cmp(&ExactNum::from_u8(6, p)), Some(0));
+        assert_eq!(pr.compare(&ExactNum::from_u8(6, p)), Some(0));
 
         let sum = ExactNum::fused_sum(&[one.clone(), two.clone(), three.clone()], p, rm);
-        assert_eq!(sum.cmp(&ExactNum::from_u8(6, p)), Some(0));
+        assert_eq!(sum.compare(&ExactNum::from_u8(6, p)), Some(0));
 
         let dot = ExactNum::fused_dot(
             &[one.clone(), two.clone()],
@@ -5074,11 +5077,11 @@ mod tests {
             p,
             rm,
         );
-        assert_eq!(dot.cmp(&ExactNum::from_u8(5, p)), Some(0));
+        assert_eq!(dot.compare(&ExactNum::from_u8(5, p)), Some(0));
 
         // 1 + 2x + 3x² at x = 2 → 17
         let pv = ExactNum::polyval(&[one, two, three], &ExactNum::from_u8(2, p), p, rm);
-        assert_eq!(pv.cmp(&ExactNum::from_u8(17, p)), Some(0));
+        assert_eq!(pv.compare(&ExactNum::from_u8(17, p)), Some(0));
     }
 
     #[test]
@@ -5092,7 +5095,7 @@ mod tests {
         let sn0 = zero.jacobi_sn(&half, p, rm, &mut cc);
         assert!(sn0.is_zero(), "sn(0)");
         let cn0 = zero.jacobi_cn(&half, p, rm, &mut cc);
-        assert_eq!(cn0.cmp(&one), Some(0), "cn(0)");
+        assert_eq!(cn0.compare(&one), Some(0), "cn(0)");
         let sn_m0 = one.jacobi_sn(&zero, p, rm, &mut cc);
         let sin1 = one.sin(p, rm, &mut cc);
         let d = sn_m0.sub(&sin1, p, rm).abs();

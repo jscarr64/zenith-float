@@ -30,21 +30,21 @@ fn is_c_zero(z: &ExactComplex) -> bool {
 }
 
 fn is_c_one(z: &ExactComplex, p: usize) -> bool {
-    z.im().is_zero() && z.re().cmp(&ExactNum::from_u8(1, p)) == Some(0)
+    z.im().is_zero() && z.re().compare(&ExactNum::from_u8(1, p)) == Some(0)
 }
 
 fn c_eq(a: &ExactComplex, b: &ExactComplex) -> bool {
-    a.re().cmp(b.re()) == Some(0) && a.im().cmp(b.im()) == Some(0)
+    a.re().compare(b.re()) == Some(0) && a.im().compare(b.im()) == Some(0)
 }
 
 fn abs_lt_one(z: &ExactComplex, p: usize) -> bool {
     let az = z.abs(p, rm());
-    matches!(az.cmp(&ExactNum::from_u8(1, p)), Some(c) if c < 0)
+    matches!(az.compare(&ExactNum::from_u8(1, p)), Some(c) if c < 0)
 }
 
 fn re_lt_half(z: &ExactComplex, p: usize) -> bool {
     let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm());
-    matches!(z.re().cmp(&half), Some(c) if c < 0)
+    matches!(z.re().compare(&half), Some(c) if c < 0)
 }
 
 fn re_positive_strict(z: &ExactComplex) -> bool {
@@ -64,7 +64,7 @@ fn as_i32_real_int(z: &ExactComplex, p: usize) -> Option<i32> {
     }
     for n in 1i32..=10_000 {
         let w = ExactNum::from_u32(n as u32, p);
-        if z.re().abs().cmp(&w) == Some(0) {
+        if z.re().abs().compare(&w) == Some(0) {
             return Some(if z.re().is_negative() { -n } else { n });
         }
     }
@@ -126,7 +126,7 @@ fn hypergeom_series(
         }
         let nn = ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p);
         let den = c.add(&nn, p, rm()).mul(&one.add(&nn, p, rm()), p, rm());
-        if matches!(den.abs(p, rm()).cmp(&tiny), Some(c) if c < 0) {
+        if matches!(den.abs(p, rm()).compare(&tiny), Some(c) if c < 0) {
             return nan_pair(Error::InvalidArgument);
         }
         term = term
@@ -573,7 +573,7 @@ fn hypergeom_at(
     if let Some(m) = int_cab(a, b, c, p) {
         let omz = ExactComplex::one(p).sub(z, p, rm());
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm());
-        let near = matches!(omz.abs(p, rm()).cmp(&half), Some(o) if o <= 0);
+        let near = matches!(omz.abs(p, rm()).compare(&half), Some(o) if o <= 0);
         if left > 0 && (near || (abs_lt_one(&omz, p) && !abs_lt_one(z, p))) {
             return transform_1mz_log(a, b, c, z, m, p, cc, left - 1);
         }
@@ -583,8 +583,8 @@ fn hypergeom_at(
         let omz = ExactComplex::one(p).sub(z, p, rm());
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm());
         let nine_tenths = ExactNum::from_u8(9, p).div(&ExactNum::from_u8(10, p), p, rm());
-        let near = matches!(omz.abs(p, rm()).cmp(&half), Some(o) if o <= 0);
-        let slow = matches!(z.abs(p, rm()).cmp(&nine_tenths), Some(o) if o > 0);
+        let near = matches!(omz.abs(p, rm()).compare(&half), Some(o) if o <= 0);
+        let slow = matches!(z.abs(p, rm()).compare(&nine_tenths), Some(o) if o > 0);
         if near && slow && abs_lt_one(z, p) {
             return transform_1mz_guarded(a, b, c, z, p, cc, left - 1);
         }
@@ -669,7 +669,7 @@ impl ExactComplex {
             && b.im().is_zero()
             && c.im().is_zero()
             && z.im().is_zero()
-            && matches!(z.re().cmp(&ExactNum::from_u8(1, dest)), Some(o) if o < 0)
+            && matches!(z.re().compare(&ExactNum::from_u8(1, dest)), Some(o) if o < 0)
         {
             let r = self
                 .re()
@@ -769,7 +769,7 @@ mod tests {
         let fb = one.hypergeom_2f1(&one, &two, &below, p, r, &mut cc);
         assert!(!fa.is_nan() && !fb.is_nan(), "cut defined");
         assert!(near(fa.re(), fb.re(), p, 20), "cut Re");
-        assert_ne!(fa.im().cmp(fb.im()), Some(0), "cut Im differs");
+        assert_ne!(fa.im().compare(fb.im()), Some(0), "cut Im differs");
         assert!(near(&fa.im().abs(), &fb.im().abs(), p, 20), "cut |Im|");
     }
 }

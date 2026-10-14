@@ -29,7 +29,7 @@ fn map_to_unit(
     if !finite(x) || !finite(a) || !finite(b) {
         return None;
     }
-    if a.cmp(b) != Some(-1) {
+    if a.compare(b) != Some(-1) {
         return None;
     }
     let two = ExactNum::from_u8(2, p);
@@ -98,7 +98,7 @@ where
     if n == 0 || n > CHEBYSHEV_MAX_DEGREE {
         return None;
     }
-    if !finite(a) || !finite(b) || a.cmp(b) != Some(-1) {
+    if !finite(a) || !finite(b) || a.compare(b) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
@@ -279,7 +279,7 @@ mod tests {
             let exact = x.exp(p, rm, &mut cc);
             let err = approx.sub(&exact, p, rm).abs();
             assert!(
-                err.is_zero() || err.cmp(&tol) == Some(-1),
+                err.is_zero() || err.compare(&tol) == Some(-1),
                 "exp({}) error not < 10^{{-15}}",
                 xi
             );
@@ -294,7 +294,7 @@ mod tests {
             let exact = x.exp(p, rm, &mut cc);
             let err = approx.sub(&exact, p, rm).abs();
             assert!(
-                err.is_zero() || err.cmp(&node_slack) == Some(-1),
+                err.is_zero() || err.compare(&node_slack) == Some(-1),
                 "node {k} interpolant farther than a working word from exp"
             );
         }
@@ -311,14 +311,14 @@ mod tests {
         )
         .expect("identity coeffs");
         let one = ExactNum::from_u8(1, p);
-        assert_eq!(id_c[1].cmp(&one), Some(0));
+        assert_eq!(id_c[1].compare(&one), Some(0));
         for k in 0..IDENTITY_NODES {
             let t = unit_node(k, IDENTITY_NODES, p, rm, &mut cc);
             let x = map_from_unit(&t, &a, &b, p, rm);
             let approx = chebyshev_eval(&id_c, &x, &a, &b, p, rm);
             let err = approx.sub(&x, p, rm).abs();
             assert!(
-                err.is_zero() || err.cmp(&node_slack) == Some(-1),
+                err.is_zero() || err.compare(&node_slack) == Some(-1),
                 "identity node {k} farther than a working word from x"
             );
         }
@@ -327,13 +327,13 @@ mod tests {
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let via_clenshaw = clenshaw(&c, &half, p, rm);
         let via_direct = chebyshev_sum_direct(&c, &half, p, rm);
-        assert_eq!(via_clenshaw.cmp(&half), Some(0));
-        assert_eq!(via_direct.cmp(&half), Some(0));
-        assert_eq!(via_clenshaw.cmp(&via_direct), Some(0));
+        assert_eq!(via_clenshaw.compare(&half), Some(0));
+        assert_eq!(via_direct.compare(&half), Some(0));
+        assert_eq!(via_clenshaw.compare(&via_direct), Some(0));
 
         assert!(
             chebyshev_coeffs(|x, p, rm, cc| x.exp(p, rm, cc), 0, &a, &b, p, rm, &mut cc).is_none()
         );
-        assert!(chebyshev_error_bound(&c, p).cmp(&ExactNum::from_u8(5, p)) == Some(0));
+        assert!(chebyshev_error_bound(&c, p).compare(&ExactNum::from_u8(5, p)) == Some(0));
     }
 }

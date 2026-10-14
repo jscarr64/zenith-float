@@ -1298,7 +1298,7 @@ impl ExactNumArray {
             let mut best = a[ix(k, k)].abs();
             for r in (k + 1)..n {
                 let t = a[ix(r, k)].abs();
-                if matches!(t.cmp(&best), Some(c) if c > 0) {
+                if matches!(t.compare(&best), Some(c) if c > 0) {
                     best = t;
                     piv = r;
                 }
@@ -1469,7 +1469,7 @@ impl ExactNumArray {
             for j in 0..i {
                 let aij = svd_copy_prec(&self.vals[i * n + j], p, rm);
                 let aji = svd_copy_prec(&self.vals[j * n + i], p, rm);
-                if aij.cmp(&aji) != Some(0) {
+                if aij.compare(&aji) != Some(0) {
                     return None;
                 }
             }
@@ -1946,7 +1946,7 @@ fn svd_decomp_tall(
     for i in 0..n {
         let mut best = i;
         for j in (i + 1)..n {
-            if matches!(d[j].cmp(&d[best]), Some(c) if c > 0) {
+            if matches!(d[j].compare(&d[best]), Some(c) if c > 0) {
                 best = j;
             }
         }
@@ -2110,7 +2110,7 @@ fn eigen_decomp_sym(
     for i in 0..n {
         let mut best = i;
         for j in (i + 1)..n {
-            if matches!(d[j].cmp(&d[best]), Some(c) if c > 0) {
+            if matches!(d[j].compare(&d[best]), Some(c) if c > 0) {
                 best = j;
             }
         }
@@ -2307,9 +2307,9 @@ mod tests {
         let a = ExactNumArray::from_values(p, &[one.clone(), two.clone()]);
         let b = ExactNumArray::from_values(p, &[two.clone(), one.clone()]);
         let s = a.add(&b).unwrap();
-        assert_eq!(s.get(0).unwrap().cmp(&ExactNum::from_u8(3, p)), Some(0));
+        assert_eq!(s.get(0).unwrap().compare(&ExactNum::from_u8(3, p)), Some(0));
         let d = a.dot(&b).unwrap();
-        assert_eq!(d.cmp(&ExactNum::from_u8(4, p)), Some(0));
+        assert_eq!(d.compare(&ExactNum::from_u8(4, p)), Some(0));
     }
 
     #[test]
@@ -2415,10 +2415,10 @@ mod tests {
         let b = ExactNumArray::from_shape(p, 2, 2, &[n(5), n(6), n(7), n(8)]).unwrap();
         let c = a.matmul(&b).unwrap();
         assert_eq!(c.shape(), (2, 2));
-        assert_eq!(c.get2(0, 0).unwrap().cmp(&n(19)), Some(0));
-        assert_eq!(c.get2(0, 1).unwrap().cmp(&n(22)), Some(0));
-        assert_eq!(c.get2(1, 0).unwrap().cmp(&n(43)), Some(0));
-        assert_eq!(c.get2(1, 1).unwrap().cmp(&n(50)), Some(0));
+        assert_eq!(c.get2(0, 0).unwrap().compare(&n(19)), Some(0));
+        assert_eq!(c.get2(0, 1).unwrap().compare(&n(22)), Some(0));
+        assert_eq!(c.get2(1, 0).unwrap().compare(&n(43)), Some(0));
+        assert_eq!(c.get2(1, 1).unwrap().compare(&n(50)), Some(0));
     }
 
     #[test]
@@ -2520,7 +2520,7 @@ mod tests {
             one.ln_gamma(p, rm, &mut cc)
                 .get(0)
                 .unwrap()
-                .cmp(&ExactNum::from_u8(0, p)),
+                .compare(&ExactNum::from_u8(0, p)),
             Some(0)
         );
         let x = ExactNumArray::from_values(p, &[ExactNum::from_u8(3, p)]);
@@ -2528,11 +2528,11 @@ mod tests {
             x.legendre_p(0, p, rm)
                 .get(0)
                 .unwrap()
-                .cmp(&ExactNum::from_u8(1, p)),
+                .compare(&ExactNum::from_u8(1, p)),
             Some(0)
         );
         assert_eq!(
-            x.floor().get(0).unwrap().cmp(&ExactNum::from_u8(3, p)),
+            x.floor().get(0).unwrap().compare(&ExactNum::from_u8(3, p)),
             Some(0)
         );
     }
@@ -2550,7 +2550,7 @@ mod tests {
         for i in 0..2 {
             for j in 0..3 {
                 let want = vals[i * 3 + j].sin(p, rm, &mut cc);
-                assert_eq!(s.get2(i, j).unwrap().cmp(&want), Some(0));
+                assert_eq!(s.get2(i, j).unwrap().compare(&want), Some(0));
             }
         }
         let row = ExactNumArray::from_values(p, &[n(1), n(2)]);
@@ -2568,7 +2568,7 @@ mod tests {
         let out = a.bessel_j_nu(&half, p, rm, &mut cc);
         for (i, x) in xs.iter().enumerate() {
             let want = x.bessel_j_nu(&half, p, rm, &mut cc);
-            assert_eq!(out.get(i).unwrap().cmp(&want), Some(0));
+            assert_eq!(out.get(i).unwrap().compare(&want), Some(0));
         }
         let nan_in = ExactNumArray::from_values(p, &[ExactNum::nan(None)]);
         assert!(nan_in.sin(p, rm, &mut cc).get(0).unwrap().is_nan());
@@ -2586,10 +2586,10 @@ mod tests {
         let out_ns = a.jacobi_ns(&half, p, rm, &mut cc);
         for (i, x) in xs.iter().enumerate() {
             let want = x.jacobi_sn(&half, p, rm, &mut cc);
-            assert_eq!(out.get(i).unwrap().cmp(&want), Some(0));
+            assert_eq!(out.get(i).unwrap().compare(&want), Some(0));
             if !x.is_zero() {
                 let want_ns = x.jacobi_ns(&half, p, rm, &mut cc);
-                assert_eq!(out_ns.get(i).unwrap().cmp(&want_ns), Some(0));
+                assert_eq!(out_ns.get(i).unwrap().compare(&want_ns), Some(0));
             }
         }
     }
@@ -2618,7 +2618,7 @@ mod tests {
         for i in 0..2 {
             for j in 0..2 {
                 assert_eq!(
-                    lu.get2(i, j).unwrap().cmp(pa.get2(i, j).unwrap()),
+                    lu.get2(i, j).unwrap().compare(pa.get2(i, j).unwrap()),
                     Some(0),
                     "PA=LU at {i},{j}"
                 );
@@ -2680,8 +2680,8 @@ mod tests {
         let n = |k: u8| ExactNum::from_u8(k, p);
         let a = ExactNumArray::from_shape(p, 2, 2, &[n(3), n(0), n(0), n(2)]).unwrap();
         let (u, s, vt) = a.svd_decomp(p, rm).expect("SVD");
-        assert_eq!(s.get2(0, 0).unwrap().cmp(&n(3)), Some(0));
-        assert_eq!(s.get2(1, 1).unwrap().cmp(&n(2)), Some(0));
+        assert_eq!(s.get2(0, 0).unwrap().compare(&n(3)), Some(0));
+        assert_eq!(s.get2(1, 1).unwrap().compare(&n(2)), Some(0));
         assert!(near_num(s.get2(0, 1).unwrap(), &n(0), p));
         assert!(near_num(s.get2(1, 0).unwrap(), &n(0), p));
         let us = u.matmul(&s).expect("U Σ");
@@ -2732,8 +2732,8 @@ mod tests {
         let wide =
             ExactNumArray::from_shape(p, 2, 3, &[n(1), n(0), n(0), n(0), n(2), n(0)]).unwrap();
         let (uw, sw, vtw) = wide.svd_decomp(p, rm).expect("wide SVD");
-        assert_eq!(sw.get2(0, 0).unwrap().cmp(&n(2)), Some(0));
-        assert_eq!(sw.get2(1, 1).unwrap().cmp(&n(1)), Some(0));
+        assert_eq!(sw.get2(0, 0).unwrap().compare(&n(2)), Some(0));
+        assert_eq!(sw.get2(1, 1).unwrap().compare(&n(1)), Some(0));
         let usw = uw.matmul(&sw).expect("Uw Σw");
         let recw = usw.matmul(&vtw).expect("wide recon");
         for i in 0..2 {
