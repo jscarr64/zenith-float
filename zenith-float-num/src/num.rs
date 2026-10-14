@@ -1286,7 +1286,10 @@ impl ExactNumNumber {
                 {
                     // non zero for directed rounding modes,
                     // non zero for rounding to even/odd when msb of self is the rounding bit
-                    *ret.m.digits_mut().last_mut().unwrap() = WORD_SIGNIFICANT_BIT;
+                    let Some(top) = ret.m.digits_mut().last_mut() else {
+                        return Err(Error::InvalidArgument); // a rounded result has at least one word
+                    };
+                    *top = WORD_SIGNIFICANT_BIT;
                     ret.m.set_bit_len(ret.mantissa_max_bit_len());
 
                     let e = -(n as i64 - 1);

@@ -764,7 +764,10 @@ impl ExactNumNumber {
         let mut iter = self.mantissa().digits().iter().rev();
 
         let mut done = WORD_BIT_SIZE - shift + e_shift;
-        let mut d = *iter.next().unwrap() as DoubleWord; // iter is never empty.
+        let Some(&top) = iter.next() else {
+            return Err(Error::InvalidArgument); // a finite nonzero value has at least one word
+        };
+        let mut d = top as DoubleWord;
         let mut cnt = 0;
 
         loop {

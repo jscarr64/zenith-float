@@ -270,8 +270,11 @@ impl ExactInt {
         if Self::cmp_abs(a, b) == Ordering::Less {
             return (Vec::new(), a.to_vec());
         }
-        let bits = (a.len() - 1) * WORD_BIT_SIZE
-            + (WORD_BIT_SIZE - a.last().unwrap().leading_zeros() as usize); // a >= b, b nonempty
+        let Some(top) = a.last() else {
+            // a and b both empty: 0 / 0 has no quotient bits; the zero remainder is empty.
+            return (Vec::new(), Vec::new());
+        };
+        let bits = (a.len() - 1) * WORD_BIT_SIZE + (WORD_BIT_SIZE - top.leading_zeros() as usize);
         let mut rem: Vec<Word> = Vec::new();
         let mut quot = vec![0; a.len()];
         for i in (0..bits).rev() {
@@ -511,6 +514,11 @@ impl PartialEq for ExactInt {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn div_rem_abs_empty_operands_no_panic() {
+        assert_eq!(ExactInt::div_rem_abs(&[], &[]), (Vec::new(), Vec::new()));
+    }
 
     #[test]
     fn exact_int_fact20_gcd_pow2_divrem() {

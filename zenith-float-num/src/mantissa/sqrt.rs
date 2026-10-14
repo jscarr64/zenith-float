@@ -101,9 +101,13 @@ impl Mantissa {
             // s*2 and normalize
             let mut s2buf = WordBuf::new(sbuf.len() + 1)?;
             s2buf[..sbuf.len()].copy_from_slice(&sbuf);
-            *s2buf.last_mut().unwrap() = 0; // s2buf has at least 1 element.
+            if let Some(last) = s2buf.last_mut() {
+                *last = 0; // s2buf is sbuf.len() + 1 long, so this always runs
+            }
 
-            let pos = find_one_from(&s2buf, 0).unwrap(); // size of s2buf > size of sbuf
+            let Some(pos) = find_one_from(&s2buf, 0) else {
+                return Err(Error::InvalidArgument); // the square root of a nonzero m2 is nonzero
+            };
 
             shift_slice_left(&mut s2buf, pos);
 
