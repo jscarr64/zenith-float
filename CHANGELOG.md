@@ -41,6 +41,10 @@ The library no longer contains any `#[allow]` or `#[expect]`. The underlying cod
 - The internal `mantissa::mantissa` module is now `mantissa::base` (`module_inception`).
 - `zenith-float-macro` documents `expr!` and `cexpr!` and denies `missing_docs` instead of allowing it.
 
+### Invariant violations are errors, not panics
+
+Internal size and shape checks in the arithmetic kernels used to `unwrap()` or `panic!()`. They now return `Err(Error::InvalidArgument)` and the callers propagate it: the FFT multiplier (`fft_forward`, `fft_reverse`, `fft_decompose`, `fft_mul_mod`, `fft_div_mod`), Toom-2 and Toom-3, `div_basic` and its correction step, `SliceWithSign::{add, sub, copy_from, decrement_abs}`, `root_estimate`, `sqrt_rem`, `div_rem_abs` on empty operands, `round`, and the binary/decimal converters. `ExactNum::clamp`, `min`, `max` and the parser no longer unwrap. The rounding `match`es list every `RoundingMode` variant instead of ending in `unreachable!()`. `expr!` and `cexpr!` report a failure to build the constant cache as a `compile_error!` instead of panicking inside the compiler. Results for valid inputs are unchanged. Still open: the constants in `common/consts.rs` (start-up `expect`), `SliceWithSign`'s `DerefMut` on an immutable view, and unchecked indexing (see PROGRESS.md).
+
 ### Build without default features
 
 `cargo build --no-default-features` failed because the `hex_golds` binary needs `std`. The binary now declares `required-features = ["std"]`, so a `no_std` build skips it (021fa87).
