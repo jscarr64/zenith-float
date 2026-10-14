@@ -1,0 +1,20 @@
+# Test-only workflow: runs the test suite on ARM64; it builds and publishes nothing.
+name: arm-tests
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+permissions:
+  contents: read
+jobs:
+  arm-tests:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99'
+      - run: cargo test --locked --workspace
+      - run: cargo test --locked -p zenith-float-num --test oracle
+        name: Oracle tests (fast tier)
