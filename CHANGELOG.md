@@ -10,7 +10,7 @@ Problems in one program led to a forensic audit of the others. This 2.0.0 sectio
 
 ### Changed
 
-The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). A crate that compiled on the previous compiler has to move to Rust 1.99 before it can depend on 2.0.0.
+The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). `rust-version` is `"1.99"` in every crate, and `rust-toolchain.toml` pins channel `1.99` with `clippy` and `rustfmt`. A crate that compiled on the previous compiler has to move to Rust 1.99 before it can depend on 2.0.0.
 
 ### Subnormal underflow
 
@@ -111,6 +111,15 @@ This is a breaking change. Code that read `abs_err_est` as `|K − G|` should su
 The limb operations are now portable integer arithmetic: a widening sum for the carry, a widening difference for the borrow, and index walks for the shifts. Decimal conversion fills the buffer with `resize`. The software IEEE lanes use `wrapping_add` and a widening multiply. For a carry or borrow of 0 or 1 the new limbs match the old intrinsics, including a chain of `WORD_MAX`. `ieee_soft` is not from astro-float; its public bit patterns are unchanged. The astro-float MIT notice on `common/util.rs` and `mantissa/conv.rs` stays.
 
 `scripts/ci_no_intrinsics.sh` rejects `std::arch`, `core::arch`, `asm!`, `global_asm!`, `target_feature`, `f32`, and `f64` in every Rust source, and rejects `unsafe` outside `scripts/no_intrinsics_allowlist.txt`. The allowlist is the `no_std` host and qemu harnesses, plus the optional MPFR test oracle. Those are not linked into the library. The library crates forbid `unsafe_code`. Callers do not see a signature change. A build that depended on the x86 intrinsic being the only implementation of a limb add now gets the same bits from the portable sum.
+
+### Tests
+
+- `tests/oracle/goldens/quad.jsonl`: 12 `gk-eps` rows (deep tier) for the Wynn-ε Gauss–Kronrod path on endpoint singularities: 6 integrands (\(x^{-0.75}\), \(x^{-0.9}\), \(x^{-0.99}\), and \(\ln^k x/\sqrt{x}\) for \(k=1,2,3\)) × 256 and 512 bits. 18 `gk-inf` rows cover `integrate_adaptive_gk_infinite`. `abs_err_est` on those rows is checked against the oracle.
+- `tests/oracle/goldens/specials/elliptic.jsonl`: \(m=0\) shortcut goldens for \(F\), \(E\), and \(\Pi\) in all seven rounding modes, and angle-form goldens for `elliptic_f_phi`, `elliptic_e_phi`, and `elliptic_pi_phi`. `tests/elliptic_phi.rs` covers the period reduction, \(\varphi=\pm\pi/2\), and the `NaN(InvalidArgument)` cases.
+- `carry_tests` in `common/util.rs`: `add_carry` and `sub_borrow` against a widening double-word reference (`u128` for 64-bit words, `u64` for 32-bit words), with carry-in 0 and 1 edges, random limbs, and 8-limb all-`WORD_MAX` chains.
+- `tests/oracle/goldens/ode.jsonl` and `balls.jsonl`: 24 ODE and 24 ball regression goldens, recorded before the quadrature change.
+- `scripts/ci_no_intrinsics.sh` uses `git grep -nE` and fails hard when `git` is missing or the search itself errors, so a broken search cannot pass as "no match".
+- `.github/workflows/arm-tests.yml`: a test-only ARM64 workflow (`ubuntu-24.04-arm`, Rust 1.99) that runs the workspace tests and the oracle test. It does not publish.
 
 ## 1.0.12 — 2026-10-06
 

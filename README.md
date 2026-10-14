@@ -1,20 +1,21 @@
 # zenith-float
 
-> **Please upgrade to zenith-float 1.0.12.** Versions 1.0.0 through 1.0.4
-> return wrong values from `erf`, `erfc`, `normal_cdf`, `hypergeom_2f1`,
-> `betainc`, the gamma family, Bessel and several other special functions for
-> some inputs, with no error reported, and their quadrature, root-finding and
-> ODE routines return `None` for intervals such as `[2, 3]`. 1.0.5 fixes these
-> with no API changes:
-> `cargo update -p zenith-float -p zenith-float-num -p zenith-float-macro`.
-> Versions 1.0.0 through 1.0.4 have been yanked from crates.io.
-> Details: [1.0.5 release notes](https://github.com/jscarr64/zenith-float/releases/tag/v1.0.5). 1.0.6 is an additive SoftFloat pack: Jacobi \(P_n^{(\alpha,\beta)}\), real large-argument Bessel Hankel, complex Bessel cut/speed fixes, catalog specials (Scorer, Kelvin, Struve, Anger–Weber, Clausen, Barnes \(G\), polygamma / Hurwitz, inverse Jacobi, \({}_pF_q\), Lambert \(W\)), plus Meijer \(G\), Fox \(H\), and local / confluent Heun. 1.0.7 is a compile-only fix: the 1.85-required unsafe wrappers around `_addcarry_u64`/`_subborrow_u64` stay, and `unused_unsafe` is allowed so the crate builds on rustc 1.93+ (those intrinsics became safe in 1.93, not 1.87). No math change. 1.0.8 corrects the README upgrade target; no math. 1.0.9 sizes the Bessel \(I\) series guard to cancellation (a 32-bit pad when every term is positive) instead of \(1.5\lvert z\rvert+16\). 1.0.10 adds SoftFloat Gauss–Kronrod (7, 15) and Wynn ε quadrature. 1.0.11 evaluates non-integer complex \(K_\nu\) in the series regime from \(I_{\pm\nu}\) (DLMF 10.27.4), takes the Meijer \(G\) logarithmic limit at coincident poles, and continues local and confluent Heun along the real interval that does not meet a singular point. No public signature was removed or changed. 1.0.12 adds the astro-float MIT notice and requires an exact dyadic identity, or agreement to one ulp of `p`, before a Heun value is replaced by \({}_2F_1\) or \({}_1F_1\).
+> **2.0.0 is a breaking release.** It raises the MSRV to Rust 1.99, makes
+> `parse` consume the whole string, tags invalid operations
+> `NaN(InvalidArgument)`, changes `GkResult::abs_err_est`, adds angle-form
+> elliptic functions, and removes every platform intrinsic and `unsafe` block
+> from the library. See [CHANGELOG.md](CHANGELOG.md) for each change and its
+> migration. 2.0.0 is not yet published; the current crates.io release is 1.0.12.
 
-Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Current release: **1.0.12**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
+Arbitrary-precision software floating-point numbers in Rust, plus software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`) and 1-D arrays. Version **2.0.0**. First stable release: **1.0.0** on [crates.io](https://crates.io/crates/zenith-float).
 
 All arithmetic runs on integer limbs. The library does not use hardware floating-point registers for calculations. Construct `ExactNum` from integers or from binary, octal, decimal, or hexadecimal strings; construct IEEE widths from integer bit patterns (`from_bits`).
 
 The library can work without `std` if a memory allocator is available.
+
+MSRV is **Rust 1.99**: `rust-version = "1.99"` in every crate, and `rust-toolchain.toml` pins channel `1.99` with clippy and rustfmt.
+
+The library crates forbid `unsafe_code` and use no platform intrinsics, SIMD, inline assembly, or `f32`/`f64`; `scripts/ci_no_intrinsics.sh` enforces this.
 
 Besides the usual `+ − × ÷` and the elementary functions (`sqrt`, `exp`, `exp2`, `exp10`, `ln`, trig, hyperbolic), the public API includes `hypot`, `atan2`, `log1p`, `expm1`, `rem_pi`, specials (`erf`, `gamma`, `bessel_j`, Jacobi `sn`/`cn`/`dn`), IEEE split (`frexp`, `ldexp`, `logb`), extra constants (√2, φ, γ), `cexpr!` for complex expressions, and `SharedConsts` for sharing a constant cache across threads.
 
@@ -59,21 +60,27 @@ zenith-float was developed with the help of AI assistants from SpaceXAI, Anthrop
 
 ```toml
 [dependencies]
-zenith-float = "1.0"
+zenith-float = "2.0"
 ```
 
 `no_std` (allocator required):
 
 ```toml
 [dependencies]
-zenith-float = { version = "1.0", default-features = false }
+zenith-float = { version = "2.0", default-features = false }
 ```
 
 `no_std` is tested: `scripts/ci_nostd.sh` runs the mpmath reference cases in a `#![no_std]` harness (`nostd-tests/`) on a libc-only Linux binary and bare-metal on `thumbv7em-none-eabihf` under QEMU.
 
 ## Known issues
 
-None. The items open at 1.0.10 are closed in 1.0.11: non-integer complex `bessel_k` inside the series regime, Meijer \(G\) at coincident poles, and local / confluent Heun for \(\lvert z\rvert\ge 1\). The three items in the 1.0.5 audit (`doc/AUDIT.md`) are the same closures (real large-argument Bessel in 1.0.6, negative-real complex Bessel in 1.0.6, series-regime complex \(K\) in 1.0.11). A Heun argument whose real segment from 0 meets a singular point is `NaN(InvalidArgument)`; that is the domain of the real solution, recorded in the method rustdoc, not an open defect. 1.0.12 tightens the Heun \({}_2F_1\) / \({}_1F_1\) parameter test so a near-miss is not treated as that closed form.
+What 2.0.0 guarantees, and what it does not:
+
+- Rounding is done in software on integer limbs, so the same inputs, precision, and rounding mode give bit-identical results on every platform.
+- The Gauss–Kronrod `abs_err_est` is a conservative error estimate, validated against oracles. It is not a guaranteed bound.
+- Guaranteed error bounds are not part of 2.0.0. Ball arithmetic that provides them is planned in a separate crate.
+
+No other open issues. The items listed in the 1.0.5 audit (`doc/AUDIT.md`) were closed in 1.0.6 and 1.0.11. A Heun argument whose real segment from 0 meets a singular point is `NaN(InvalidArgument)`; that is the domain of the real solution, not an open defect.
 
 ## Rounding
 
@@ -140,8 +147,5 @@ Cross-library comparison (bigfloat-bench compatible workloads, TSV output):
 ```bash
 ./scripts/compare-bench.sh --quick    # zenith vs astro @ 132 bits, core tasks → doc/compare-results.tsv
 ./scripts/compare-bench.sh --full       # 132 / 1000 / 10000 bits, full task matrix
-./scripts/compare-bench.sh --dashu    # include dashu-float (FBig)
-```
-h.sh --full       # 132 / 1000 / 10000 bits, full task matrix
 ./scripts/compare-bench.sh --dashu    # include dashu-float (FBig)
 ```
