@@ -65,11 +65,6 @@ fn err_name(err: Option<Error>) -> Option<String> {
     }
 }
 
-fn storage_words(p: usize) -> usize {
-    let rounded = p.div_ceil(64) * 64;
-    rounded / 64
-}
-
 fn canon_of(n: &ExactNum) -> Canon {
     if n.is_nan() {
         return Canon::Nan(err_name(n.err()));
@@ -154,7 +149,8 @@ fn arg_value(tok: &str, p: usize, cc: &mut Consts) -> ExactNum {
             n
         }
         "3min" | "+3min" | "-3min" => {
-            let mut words = vec![0u64; storage_words(p).max(1)];
+            let mut words: Vec<zenith_float_num::Word> =
+                vec![0; p.div_ceil(zenith_float_num::WORD_BIT_SIZE).max(1)];
             words[0] = 3;
             let mut n = ExactNum::from_words(&words, Sign::Pos, EXPONENT_MIN);
             if tok.starts_with('-') {

@@ -215,7 +215,7 @@ impl ExactNumNumber {
                 let words = [d as Word, (d >> WORD_BIT_SIZE) as Word];
                 if p < WORD_BIT_SIZE * 2 {
                     if words[0] != 0 {
-                        return Err(Error::InvalidArgument);
+                        Err(Error::InvalidArgument)
                     } else {
                         Ok(ExactNumNumber {
                             m: Mantissa::from_word(p, words[1])?,

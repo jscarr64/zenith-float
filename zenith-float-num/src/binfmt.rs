@@ -412,7 +412,7 @@ fn finite_from_u32(
     exp: Exponent,
     inexact: bool,
 ) -> Result<ExactNum, Error> {
-    if u32s.len() % WORD_U32 != 0 {
+    if !u32s.len().is_multiple_of(WORD_U32) {
         return Err(Error::InvalidArgument);
     }
     if n_sig > u32s.len() * 32 {
