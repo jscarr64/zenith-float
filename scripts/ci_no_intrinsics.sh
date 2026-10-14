@@ -5,9 +5,16 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
+if ! command -v git >/dev/null 2>&1; then
+  echo "error: git not found" >&2
+  exit 1
+fi
+
 fail=0
 
-if rg -n --glob '*.rs' \
+# git grep exits 0 on a match, 1 on no match, and 2 or more on an error.
+status=0
+git grep -nE \
   -e 'std::arch' \
   -e 'core::arch' \
   -e '\basm!' \
@@ -16,9 +23,21 @@ if rg -n --glob '*.rs' \
   -e 'is_x86_feature_detected' \
   -e '\bf32\b' \
   -e '\bf64\b' \
-  .; then
+  -- '*.rs' || status=$?
+if [[ "$status" -ge 2 ]]; then
+  echo "error: git grep failed with status $status" >&2
+  exit 1
+fi
+if [[ "$status" -eq 0 ]]; then
   echo "error: platform intrinsics, inline asm, or hardware float tokens in Rust sources" >&2
   fail=1
+fi
+
+status=0
+unsafe_hits="$(git grep -nE '\bunsafe\b' -- '*.rs')" || status=$?
+if [[ "$status" -ge 2 ]]; then
+  echo "error: git grep failed with status $status" >&2
+  exit 1
 fi
 
 allow=()
@@ -44,7 +63,7 @@ while IFS= read -r hit; do
     echo "error: unsafe outside the allowlist: $hit" >&2
     fail=1
   fi
-done < <(rg -n --glob '*.rs' '\bunsafe\b' . || true)
+done <<< "$unsafe_hits"
 
 if [[ "$fail" -ne 0 ]]; then
   exit 1
