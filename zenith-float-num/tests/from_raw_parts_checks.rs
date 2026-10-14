@@ -101,7 +101,7 @@ fn from_raw_parts_rejects_inconsistent_parts() {
 
         // (c) subnormal: mantissa words all zero except the lowest word = 1 (so 1 significant bit, top bit clear), n = 1
         {
-            let mut m = vec![0; p / WORD_BIT_SIZE];
+            let mut m: Vec<Word> = vec![0; p / WORD_BIT_SIZE];
             m[0] = 1;
             for &e in &[EXPONENT_MIN + 1, -1, 0, 1, EXPONENT_MAX] {
                 for &s in &signs {
@@ -144,7 +144,7 @@ fn from_raw_parts_rejects_inconsistent_parts() {
 
         // (d) mantissa words all zero with n = 1 -> invalid.
         {
-            let m = vec![0; p / WORD_BIT_SIZE];
+            let m: Vec<Word> = vec![0; p / WORD_BIT_SIZE];
             for &s in &signs {
                 let y = ExactNum::from_raw_parts(&m, 1, s, EXPONENT_MIN, false);
                 assert_invalid(&y, &format!("all-zero mantissa with n=1 for p={}", p));

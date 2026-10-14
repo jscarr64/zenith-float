@@ -118,6 +118,12 @@ The rustdoc on `RoundingMode` called `Up` "round half toward positive infinity",
 
 The rustdoc now says directed rounding toward +∞, −∞, zero, or away from zero. `ToEven` and `ToOdd` are still round-half-to-even and round-half-to-odd. No value changes. `tests/rounding_mode_docs.rs` checks the wording and sweeps non-representable quotients over four precisions and both signs to show each mode lands on its side of the exact value.
 
+### `from_raw_parts` skipped its checks
+
+`ExactNum::from_raw_parts` documents that it returns `NaN` when `n` is larger than the mantissa, when `n` does not match the mantissa's significant bits, when a subnormal mantissa does not carry `EXPONENT_MIN`, when the size is too large, and when `e` is outside `EXPONENT_MIN..=EXPONENT_MAX`. It copied the words into a mantissa and called the unchecked constructor, so none of that happened. `from_raw_parts(&[0xC000…], 65, Pos, 2, false)` on one 64-bit word came back as a finite value with a 65-bit length on a 64-bit mantissa, and a one-bit subnormal mantissa was accepted with any exponent. Later operations on those values read past the significand or misplaced the binary point.
+
+The public constructor now goes through the checked `ExactNumNumber::from_raw_parts`, which was previously compiled only for unit tests. Every documented invalid case is `NaN(InvalidArgument)`; nothing panics. Parts that came from `as_raw_parts` still round-trip unchanged. Code that built numbers from inconsistent parts now gets `NaN(InvalidArgument)` and has to pass the bit count and exponent `as_raw_parts` would report. `tests/from_raw_parts_checks.rs` round-trips 4 precisions × 4 mantissas × 7 exponents including both limits × both signs, and rejects each inconsistent shape at every precision and sign.
+
 ### Tests
 
 - `tests/oracle/goldens/quad.jsonl`: 12 `gk-eps` rows (deep tier) for the Wynn-ε Gauss–Kronrod path on endpoint singularities: 6 integrands (\(x^{-0.75}\), \(x^{-0.9}\), \(x^{-0.99}\), and \(\ln^k x/\sqrt{x}\) for \(k=1,2,3\)) × 256 and 512 bits. 18 `gk-inf` rows cover `integrate_adaptive_gk_infinite`. `abs_err_est` on those rows is checked against the oracle.

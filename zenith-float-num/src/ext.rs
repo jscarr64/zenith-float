@@ -1279,8 +1279,7 @@ impl ExactNum {
     /// - `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
     pub fn from_raw_parts(m: &[Word], n: usize, s: Sign, e: Exponent, inexact: bool) -> Self {
         Self::result_to_ext(
-            crate::mantissa::Mantissa::from_raw_parts(m, n)
-                .map(|mantissa| ExactNumNumber::from_raw_unchecked(mantissa, s, e, inexact)),
+            ExactNumNumber::from_raw_parts(m, n, s, e, inexact),
             false,
             true,
         )
