@@ -97,13 +97,23 @@ def mpf_arg(tok: str, p: int):
     return g.mpf_of(key)
 
 
+# Functions that round at exactly p bits (2.0.0); the others round at round_p(p).
+EXACT_BIT_OPS = {
+    "erf", "erfc", "gamma", "ln_gamma", "digamma", "ei", "ci", "li", "elliptic_k",
+    "elliptic_e_complete",
+}
+# The op of the row being evaluated, set by eval_row.
+CURRENT_OP = [""]
+
+
 def round_real(x, p: int, rm: str) -> dict:
     import mpmath as mp
 
     mp.mp.dps = max(80, g.round_p(p) // 2 + 40)
     if x == 0:
         return g.zero("-" if mp.sign(x) < 0 else "+", g.round_p(p))
-    return g.round_mpf(mp.mpf(x), p, rm)
+    sig = p if CURRENT_OP[0] in EXACT_BIT_OPS and p >= 2 else None
+    return g.round_mpf(mp.mpf(x), p, rm, sig=sig)
 
 
 def nan() -> dict:
@@ -480,6 +490,7 @@ def eval_phi(op: str, raw_args: list[str], p: int, rm: str) -> dict:
 
 
 def eval_row(op: str, raw_args: list[str], p: int, rm: str, extra: dict) -> dict:
+    CURRENT_OP[0] = op
     if op in PHI_OPS:
         return eval_phi(op, raw_args, p, rm)
     nums = []

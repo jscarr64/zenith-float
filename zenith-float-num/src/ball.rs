@@ -45,7 +45,8 @@ impl Ball {
             return ExactNum::new(p);
         }
         let e = x.exponent().unwrap_or(0);
-        let bits = x.mantissa_max_bit_len().unwrap_or(p) as i32;
+        // The midpoint is rounded at `p` bits (2.0.0: exact-bit rounding), not at its storage width.
+        let bits = x.mantissa_max_bit_len().unwrap_or(p).min(p.max(1)) as i32;
         let mut u = ExactNum::from_word(1, p);
         u.set_exponent(e.saturating_sub(bits.saturating_sub(2)));
         u

@@ -327,7 +327,10 @@ impl ExactNumNumber {
                 let tp = TEN.powi(n, p_x, RoundingMode::None)?;
 
                 if tp.cmp(&x) == 0 {
+                    // log10(10^n) = n exactly: drop the flag of the approximate quotient.
+                    ret.set_inexact(false);
                     ret.set_precision(p, rm)?;
+                    ret.set_inexact(ret.inexact() || self.inexact());
                     return Ok(ret);
                 }
             }

@@ -1041,7 +1041,12 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn atan(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.atan(p, rm, cc), v.is_zero(), true),
+            Flavor::Value(v) => match Self::exact_operand(v) {
+                Ok((x, acc)) => Self::round_exact(acc, p, rm, |q, r| {
+                    Self::result_to_ext(x.atan(q, r, cc), x.is_zero(), true)
+                }),
+                Err(e) => Self::result_to_ext(Err(e), false, true),
+            },
             Flavor::Inf(s) => Self::result_to_ext(Self::half_pi(*s, p, rm, cc), false, true),
             Flavor::NaN(err) => Self::nan(*err),
         }
@@ -1126,7 +1131,12 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn log1p(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.log1p(p, rm, cc), false, false),
+            Flavor::Value(v) => match Self::exact_operand(v) {
+                Ok((x, acc)) => Self::round_exact(acc, p, rm, |q, r| {
+                    Self::result_to_ext(x.log1p(q, r, cc), false, false)
+                }),
+                Err(e) => Self::result_to_ext(Err(e), false, true),
+            },
             Flavor::Inf(s) => {
                 if s.is_positive() {
                     INF_POS
@@ -1145,7 +1155,12 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn expm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.expm1(p, rm, cc), false, true),
+            Flavor::Value(v) => match Self::exact_operand(v) {
+                Ok((x, acc)) => Self::round_exact(acc, p, rm, |q, r| {
+                    Self::result_to_ext_rm(x.expm1(q, r, cc), false, true, q, r)
+                }),
+                Err(e) => Self::result_to_ext(Err(e), false, true),
+            },
             Flavor::Inf(s) => {
                 if s.is_positive() {
                     INF_POS
@@ -1165,7 +1180,12 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn tanh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.tanh(p, rm, cc), v.is_zero(), true),
+            Flavor::Value(v) => match Self::exact_operand(v) {
+                Ok((x, acc)) => Self::round_exact(acc, p, rm, |q, r| {
+                    Self::result_to_ext(x.tanh(q, r, cc), x.is_zero(), true)
+                }),
+                Err(e) => Self::result_to_ext(Err(e), false, true),
+            },
             Flavor::Inf(s) => Self::from_i8(s.to_int(), p),
             Flavor::NaN(err) => Self::nan(*err),
         }
@@ -1771,8 +1791,46 @@ macro_rules! gen_wrapper_arg_rm {
     };
 }
 
+macro_rules! gen_wrapper_exact_rm {
+    // rounded at exactly `p` bits through `round_exact`, with a per-operation flag
+    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $p:ident, usize) => {
+        #[doc=$comment]
+        pub fn $fname(&self, $p: usize, rm: RoundingMode) -> $ret {
+            match &self.inner {
+                Flavor::Value(v) => match Self::exact_operand(v) {
+                    Ok((x, acc)) => Self::round_exact(acc, $p, rm, |q, r| {
+                        Self::result_to_ext(x.$fname(q, r), x.is_zero(), true)
+                    }),
+                    Err(e) => Self::result_to_ext(Err(e), false, true),
+                },
+                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::NaN(err) => Self::nan(*err),
+            }
+        }
+    };
+}
+
 macro_rules! gen_wrapper_arg_rm_cc {
-    // unwrap error, function requires self as argument
+    // rounded at exactly `p` bits through `round_exact`, with a per-operation flag
+    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $p:ident, usize) => {
+        #[doc=$comment]
+        pub fn $fname(&self, $p: usize, rm: RoundingMode, cc: &mut Consts) -> $ret {
+            match &self.inner {
+                Flavor::Value(v) => match Self::exact_operand(v) {
+                    Ok((x, acc)) => Self::round_exact(acc, $p, rm, |q, r| {
+                        Self::result_to_ext(x.$fname(q, r, cc), x.is_zero(), true)
+                    }),
+                    Err(e) => Self::result_to_ext(Err(e), false, true),
+                },
+                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::NaN(err) => Self::nan(*err),
+            }
+        }
+    };
+}
+
+macro_rules! gen_wrapper_word_rm_cc {
+    // a reduction that is not a rounded function value: word precision, accumulated flag
     ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $($arg:ident, $arg_type:ty),*) => {
         #[doc=$comment]
         pub fn $fname(&self$(,$arg: $arg_type)*, rm: RoundingMode, cc: &mut Consts) -> $ret {
@@ -1794,8 +1852,11 @@ macro_rules! gen_wrapper_ovf_rm_cc {
         #[doc=$comment]
         pub fn $fname(&self, $p: usize, rm: RoundingMode, cc: &mut Consts) -> $ret {
             match &self.inner {
-                Flavor::Value(v) => {
-                    Self::result_to_ext_rm(v.$fname($p, rm, cc), v.is_zero(), true, $p, rm)
+                Flavor::Value(v) => match Self::exact_operand(v) {
+                    Ok((x, acc)) => Self::round_exact(acc, $p, rm, |q, r| {
+                        Self::result_to_ext_rm(x.$fname(q, r, cc), x.is_zero(), true, q, r)
+                    }),
+                    Err(e) => Self::result_to_ext(Err(e), false, true),
                 },
                 Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
                 Flavor::NaN(err) => Self::nan(*err),
@@ -1805,15 +1866,20 @@ macro_rules! gen_wrapper_ovf_rm_cc {
 }
 
 macro_rules! gen_wrapper_log {
-    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $($arg:ident, $arg_type:ty),*) => {
+    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $p:ident, usize) => {
         #[doc=$comment]
-        pub fn $fname(&self$(,$arg: $arg_type)*, rm: RoundingMode, cc: &mut Consts) -> $ret {
+        pub fn $fname(&self, $p: usize, rm: RoundingMode, cc: &mut Consts) -> $ret {
             match &self.inner {
                 Flavor::Value(v) => {
                     if v.is_zero() {
                         return INF_NEG;
                     }
-                    Self::result_to_ext(v.$fname($($arg,)* rm, cc), v.is_zero(), true)
+                    match Self::exact_operand(v) {
+                        Ok((x, acc)) => Self::round_exact(acc, $p, rm, |q, r| {
+                            Self::result_to_ext(x.$fname(q, r, cc), false, true)
+                        }),
+                        Err(e) => Self::result_to_ext(Err(e), false, true),
+                    }
                 },
                 Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
                 Flavor::NaN(err) => Self::nan(*err),
@@ -1941,7 +2007,7 @@ Accuracy: correctly-rounded",
             Flavor::NaN(err) => Self::nan(*err),
         }
     }
-    gen_wrapper_arg_rm!(
+    gen_wrapper_exact_rm!(
         "Computes the cube root of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
 Accuracy: correctly-rounded",
@@ -2049,7 +2115,7 @@ Accuracy: correctly-rounded",
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_word_rm_cc!(
         "Reduces `self` modulo `2π` into the interval `(-2π, 2π)` using precision `p` and rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.",
         rem_pi,

@@ -803,7 +803,7 @@ def mpf_of(v: tuple):
     return sign * mp.mpf(v[2]) / mp.mpf(v[3]) * mp.power(2, v[4])
 
 
-def round_mpf(x, p: int, rm: str, sign_hint: str | None = None) -> dict:
+def round_mpf(x, p: int, rm: str, sign_hint: str | None = None, sig: int | None = None) -> dict:
     import mpmath as mp
 
     if x == 0:
@@ -814,7 +814,7 @@ def round_mpf(x, p: int, rm: str, sign_hint: str | None = None) -> dict:
     ax = abs(x)
     m, e = mp.frexp(ax)
     mant = int(mp.floor(m * mp.power(2, bits)))
-    return round_rational(sign, mant, 1, int(e) - bits, p, rm)
+    return round_rational(sign, mant, 1, int(e) - bits, p, rm, sig_bits=sig)
 
 
 def complex_expect(op: str, p: int, rm: str, args: list[str]) -> dict:
