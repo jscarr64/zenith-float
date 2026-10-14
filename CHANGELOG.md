@@ -52,6 +52,34 @@ The cache is reused only when it still has a guard word below the new precision.
 
 The real part is now `ln(max(|re|, |im|)) + ½ ln(1 + (min/max)²)`, computed with extra precision and rounded once. A logarithm just off the cut keeps that small positive real part. The argument is unchanged.
 
+### Accuracy labels
+
+Public numeric functions now carry an `Accuracy` label in the rustdoc: correctly rounded, working precision (with a lost-bit bound), an enclosure, or unspecified. `Accuracy`, `accuracy_of`, and `ACCURACY` are new. A function that was already documented as a Ziv leaf stays correctly rounded. Lambert \(W\), Kelvin, Scorer, Clausen, Barnes \(G\), Weber, Anger, Struve, zeta, Hurwitz, \({}_1F_1\), \({}_0F_1\), \(pFq\), the polylogarithm, polygamma, Meijer \(G\), Fox \(H\), and Heun stay unspecified. Orthogonal polynomials and Legendre stay working precision, 32 bits. This does not change any value.
+
+### Riemann zeta at 0 and −1
+
+`riemann_zeta(0)` is \(-1/2\) and `riemann_zeta(-1)` is \(-1/12\). Both used to be `NaN(InvalidArgument)`. This is a breaking change. Callers that treated 0 and −1 as out of domain should test the argument before calling. Other non-integers, the pole \(s=1\), and integers \(s\le -2\) stay `NaN(InvalidArgument)`.
+
+### Clausen
+
+\(\mathrm{Cl}_3\) of a nonzero angle integrated \(\mathrm{Cl}_2\), and \(\mathrm{Cl}_2\) was itself a quadrature, so the pair did not return. Both are now the Bernoulli series on \((-\pi,\pi]\). \(\mathrm{Cl}_2(0)=\mathrm{Cl}_2(\pm\pi)=0\) and \(\mathrm{Cl}_3(0)=\zeta(3)\) are unchanged. There is no timeout argument. The values move by more than an ulp; the class stays unspecified.
+
+### Weber \(E_0\)
+
+\(E_0(z)\) for \(|z|<8\) is \(-(4/\pi)\sum J_{2k+1}(z)/(2k+1)\). The quadrature at 256 bits had the wrong leading digits (`E_0(0.3)` was about \(-0.043\) instead of \(-0.189\)). Other orders still use the integral. The class stays unspecified.
+
+### Barnes \(G\)
+
+Non-integer \(G\) at 256 bits was about 60 bits off. \(\ln A\) uses enough Euler–Maclaurin terms in \(\zeta'(2)\) for the whole word. Integer arguments stay the factorial product. The class stays unspecified.
+
+### Word rounding of catalog and orthogonal polynomials
+
+Catalog and orthogonal-polynomial results were rounded to exactly `p` bits. A request for 53 or 113 bits is stored in a wider word, and the low bits of that word were zero. They are now rounded to the full word (`p` rounded up to a multiple of 64), the same width the elementary functions already use. Word-aligned requests (64, 128, 256) are unchanged when the series was already accurate to that word.
+
+### Elliptic argument
+
+`elliptic_f`, `elliptic_e`, and `elliptic_pi` already took the sine of the amplitude and the parameter \(m=k^2\). The rustdoc and the capabilities table now say that in those words. \(|x|>1\), including an angle such as 2 passed in place of \(\sin 2\), stays `NaN(InvalidArgument)`. The argument meaning did not change, and call sites outside this crate were not edited.
+
 ## 1.0.12 — 2026-10-06
 
 Attribution for code derived from [astro-float](https://github.com/stencillogic/astro-float) (MIT, Copyright (c) 2022 stencillogic; crates `astro-float` 0.9.6, `astro-float-num` 0.3.7, `astro-float-macro` 0.4.6, commit `c0d9a26`). `NOTICE` has the full MIT copyright and permission notice. Each derived file names that origin. Original work stays under Apache-2.0 and is also offered as MIT. The file list is `doc/PROVENANCE.md`.

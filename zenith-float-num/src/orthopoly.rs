@@ -25,7 +25,8 @@ fn n_ok(n: usize) -> bool {
 }
 
 fn finish(mut y: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
-    let _ = y.set_precision(p, rm);
+    let w = WORD_BIT_SIZE.max(1);
+    let _ = y.set_precision(p.div_ceil(w).saturating_mul(w), rm);
     y
 }
 
