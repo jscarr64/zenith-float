@@ -37,7 +37,8 @@ ZIV = {
     "ei", "si", "ci", "li", "fresnel_s", "fresnel_c", "ai", "bi", "ai_prime",
     "bi_prime", "bessel_j", "bessel_j_nu", "bessel_y", "bessel_i", "bessel_k",
     "elliptic_k", "elliptic_e_complete", "elliptic_f", "elliptic_e",
-    "elliptic_pi", "elliptic_pi_complete", "jacobi_am", "jacobi_sn", "jacobi_cn",
+    "elliptic_pi", "elliptic_pi_complete", "elliptic_f_phi", "elliptic_e_phi",
+    "elliptic_pi_phi", "jacobi_am", "jacobi_sn", "jacobi_cn",
     "jacobi_dn", "jacobi_arcsn", "hypergeom_2f1", "betainc", "normal_cdf",
 }
 
@@ -51,6 +52,8 @@ FILE_OF = {
     "elliptic_k": "elliptic", "elliptic_e_complete": "elliptic",
     "elliptic_f": "elliptic", "elliptic_e": "elliptic",
     "elliptic_pi": "elliptic", "elliptic_pi_complete": "elliptic",
+    "elliptic_f_phi": "elliptic", "elliptic_e_phi": "elliptic",
+    "elliptic_pi_phi": "elliptic",
     "jacobi_am": "jacobi", "jacobi_sn": "jacobi", "jacobi_cn": "jacobi",
     "jacobi_dn": "jacobi", "jacobi_arcsn": "jacobi",
     "ai": "airy", "bi": "airy", "ai_prime": "airy", "bi_prime": "airy",
@@ -356,7 +359,119 @@ def pack(value, p: int, rm: str) -> dict:
     return round_real(value, p, rm)
 
 
+# Recorded from mpmath (dps 200, nstr 180). phi(x) = arccos(2*sqrt(3)/(1+sqrt(3)+x) - 1).
+# m = (2+sqrt(3))/4. The integral identity is checked in main().
+HALF_PI = (
+    "1.57079632679489661923132169163975144209858469968755291048747229615390820314310449931401741267105853399107404325664115332354692230477529111586267970406424055872514205135096926055278"
+)
+THREE_PI_OVER_4 = (
+    "2.35619449019234492884698253745962716314787704953132936573120844423086230471465674897102611900658780098661106488496172998532038345716293667379401955609636083808771307702645389082917"
+)
+M_CUBIC = (
+    "0.933012701892219323381861585376468091735701313452595157013951744862983254227200009270286546689312143918906535353851675757492486273749738119702913878023593412132023307975576395516994"
+)
+PHI0 = (
+    "1.29953257306887582080339773503650160302735297255117556883708654212600457346289335365431960644782250061318071518211065710940897438485509079286935599598508141086119376863166755133786"
+)
+PHI1 = (
+    "1.64265492275483293872763014546957250537481163728018102972221743087594415906527765906601436244541554006160551657304897484811247961936506448745328548521739496845797918755628708095511"
+)
+# 1 - 2^{-30}, an exact dyadic just below the complete-integral pole.
+M_NEAR_ONE = "0.999999999068677425384521484375"
+PHI_OPS = ("elliptic_f_phi", "elliptic_e_phi", "elliptic_pi_phi")
+
+
+def nonfinite_tok(tok: str) -> bool:
+    return tok.lower() in ("inf", "+inf", "-inf", "nan", "+nan", "-nan")
+
+
+def round_half_even(q):
+    """Nearest integer, ties to even. Matches `round(0, ToEven)`."""
+    import mpmath as mp
+
+    n = mp.floor(q)
+    frac = q - n
+    half = mp.mpf("0.5")
+    if frac < half:
+        return n
+    if frac > half:
+        return n + 1
+    if mp.floor(n / 2) * 2 == n:
+        return n
+    return n + 1
+
+
+def phi_not_real(val) -> bool:
+    import mpmath as mp
+
+    if val == "nan":
+        return True
+    if isinstance(val, mp.mpc):
+        return val.imag != 0
+    if hasattr(val, "imag") and val.imag != 0:
+        return True
+    return bool(mp.isnan(val))
+
+
+def eval_phi(op: str, raw_args: list[str], p: int, rm: str) -> dict:
+    """Angle-form goldens. mpmath takes φ; poles follow this crate, not ellipf(π/2, 1)."""
+    import mpmath as mp
+
+    if any(nonfinite_tok(tok) for tok in raw_args):
+        return nan()
+    mp.mp.dps = max(100, g.round_p(p) // 2 + 40)
+    nums = [mpf_arg(tok, p) for tok in raw_args]
+    if op == "elliptic_pi_phi":
+        n, phi, m = nums
+    else:
+        n = None
+        phi, m = nums
+    half = mpf_arg(HALF_PI, p)
+    one = mp.mpf(1)
+    sign = -1 if phi < 0 else 1
+    if phi == half or phi == -half:
+        if op == "elliptic_f_phi":
+            if m > 1:
+                return nan()
+            if m == 1:
+                return g.inf("-" if sign < 0 else "+")
+            val = sign * mp.ellipk(m)
+        elif op == "elliptic_e_phi":
+            if m > 1:
+                return nan()
+            val = sign * mp.ellipe(m)
+        else:
+            # Π(n|m) in this crate is InvalidArgument for n >= 1 or m >= 1,
+            # including the pole mpmath reports as +inf.
+            if m >= 1 or n >= 1:
+                return nan()
+            val = sign * mp.ellippi(n, mp.pi / 2, m)
+        return pack(val, p, rm)
+    k = round_half_even(phi / mp.pi)
+    if op == "elliptic_f_phi":
+        if m == 1 and k != 0:
+            return g.inf("-" if sign < 0 else "+")
+        if m > 1 and k != 0:
+            return nan()
+        val = mp.ellipf(phi, m)
+    elif op == "elliptic_e_phi":
+        if m > 1 and k != 0:
+            return nan()
+        val = mp.ellipe(phi, m)
+    else:
+        if k != 0 and (m >= 1 or n >= 1):
+            return nan()
+        val = mp.ellippi(n, phi, m)
+    if phi_not_real(val):
+        return nan()
+    if mp.isinf(val):
+        return g.inf("-" if val < 0 else "+")
+    return pack(val, p, rm)
+
+
 def eval_row(op: str, raw_args: list[str], p: int, rm: str, extra: dict) -> dict:
+    if op in PHI_OPS:
+        return eval_phi(op, raw_args, p, rm)
     nums = []
     for tok in raw_args:
         if tok.startswith("n:"):
@@ -533,6 +648,101 @@ def base_cases() -> list[dict]:
     return rows
 
 
+def phi_cases() -> list[dict]:
+    """Angle φ, not sin φ. Appended after the sine-form rows so those lines stay put."""
+    rows: list[dict] = []
+
+    def add(op, args, note):
+        rows.append({
+            "op": op,
+            "args": [str(a) for a in args],
+            "exact": False,
+            "lost_max": None,
+            "note": note,
+            "extra": {},
+            "grid": "phi",
+        })
+
+    neg_half = "-" + HALF_PI
+    # F(φ|m). ±π/2 is ±K. m = 1 at |φ| >= π/2 is signed infinity. m > 1 is
+    # real only while the path stays inside |sin t| < 1/√m.
+    f_rows = [
+        (["0.5", "0.5"], "F(0.5|0.5); phi inside (0, pi/2)"),
+        ([HALF_PI, "0.5"], "F(pi/2|0.5) = K(0.5)"),
+        (["2", "0.5"], "F(2|0.5); phi past pi/2"),
+        ([THREE_PI_OVER_4, "0.5"], "F(3pi/4|0.5) = 2K - F(pi/4)"),
+        (["5", "0.3"], "F(5|0.3)"),
+        (["100", "0.5"], "F(100|0.5); large phi, extended reduction"),
+        (["-0.7", "0.5"], "odd in phi"),
+        (["0", "0.5"], "F(0|m) = 0"),
+        (["0.8", "0"], "m = 0 is the angle"),
+        (["1", "0.99"], "m close to 1, phi inside (0, pi/2)"),
+        (["0.6", M_CUBIC], "m = (2+sqrt(3))/4"),
+        (["1.2", "-0.3"], "negative m"),
+        (["2", M_NEAR_ONE], "m = 1-2^{-30}, phi past pi/2"),
+        ([PHI0, M_CUBIC], "cubic integral phi(0); integral_0^1 dx/sqrt(x^3+1)"),
+        ([PHI1, M_CUBIC], "cubic integral phi(1); phi past pi/2"),
+        (["0.2", "1.5"], "m > 1, small phi, real"),
+        (["1", "1.5"], "m > 1, path not real"),
+        (["2", "1"], "F(2|1) = +inf"),
+        ([HALF_PI, "1"], "F(pi/2|1) = +inf, same as K(1)"),
+        ([HALF_PI, "1.5"], "F(pi/2|m>1) is not real"),
+        ([neg_half, "0.5"], "F(-pi/2|0.5) = -K(0.5)"),
+        (["inf", "0.5"], "infinity is InvalidArgument"),
+    ]
+    for args, note in f_rows:
+        add("elliptic_f_phi", args, note)
+    e_rows = [
+        (["0.5", "0.5"], "E(0.5|0.5)"),
+        ([HALF_PI, "0.5"], "E(pi/2|0.5) = E(0.5)"),
+        (["2", "0.5"], "E(2|0.5)"),
+        ([THREE_PI_OVER_4, "0.5"], "E(3pi/4|0.5)"),
+        (["5", "0.3"], "E(5|0.3)"),
+        (["100", "0.5"], "E(100|0.5)"),
+        (["-0.7", "0.5"], "odd in phi"),
+        (["0", "0.5"], "E(0|m) = 0"),
+        (["0.8", "0"], "m = 0"),
+        (["1", "0.99"], "m close to 1"),
+        (["2", M_NEAR_ONE], "m = 1-2^{-30}"),
+        (["1.2", "-0.3"], "negative m"),
+        (["0.2", "1.5"], "m > 1, small phi, real"),
+        (["1", "1.5"], "m > 1, path not real"),
+        (["2", "1"], "E(2|1) stays real"),
+        ([HALF_PI, "1"], "E(pi/2|1) = 1"),
+        ([HALF_PI, "1.5"], "E(pi/2|m>1) is not real"),
+        ([neg_half, "0.5"], "E(-pi/2|0.5) = -E(0.5)"),
+        (["inf", "0.5"], "infinity is InvalidArgument"),
+    ]
+    for args, note in e_rows:
+        add("elliptic_e_phi", args, note)
+    # Π(n; φ|m). n on both sides of 1. n = 1 at sin^2 = 1 is InvalidArgument
+    # (the complete integral rejects n >= 1; mpmath's +inf is not used).
+    p_rows = [
+        (["0.2", "0.4", "0.3"], "Pi(0.2; 0.4|0.3)"),
+        (["0.2", HALF_PI, "0.3"], "Pi(0.2; pi/2|0.3) = Pi(0.2|0.3)"),
+        (["0.2", "2", "0.3"], "Pi past pi/2"),
+        (["0.2", "-0.4", "0.3"], "odd in phi"),
+        (["0.2", "0", "0.5"], "Pi(n; 0|m) = 0"),
+        (["0.5", "0.8", "0"], "m = 0"),
+        (["-0.5", "2", "0.5"], "negative n, phi past pi/2"),
+        (["2", "0.3", "0.5"], "n > 1, path still real"),
+        (["1", "0.4", "0.3"], "n = 1 inside (0, pi/2), real"),
+        (["1", HALF_PI, "0.3"], "n = 1 at pi/2 is the pole"),
+        (["2", "1", "0.5"], "n > 1, path reaches 1/sqrt(n)"),
+        (["0.2", "100", "0.5"], "large phi"),
+        (["0.3", "0.5", "-0.25"], "negative m"),
+        (["0.2", "0.4", "0.99"], "m close to 1"),
+        (["0.2", "1.2", M_NEAR_ONE], "m = 1-2^{-30}, phi past pi/2"),
+        (["0.2", "0.2", "1.5"], "m > 1, small phi, real"),
+        (["0.2", "1", "1.5"], "m > 1, path not real"),
+        (["0.2", neg_half, "0.3"], "Pi(n; -pi/2|m) = -Pi(n|m)"),
+        (["0.2", "inf", "0.5"], "infinity is InvalidArgument"),
+    ]
+    for args, note in p_rows:
+        add("elliptic_pi_phi", args, note)
+    return rows
+
+
 def fixture_rows() -> list[dict]:
     rows = []
     root = ROOT / "zenith-float-num" / "tests"
@@ -655,6 +865,13 @@ def expand(cases: list[dict]) -> dict[str, list[dict]]:
             slots = [(case["p"], "deep", "ToEven")]
         elif grid == "fixture128":
             slots = [(128, "deep", "ToEven")]
+        elif grid == "phi":
+            # 256-bit rows are fast so the default suite sees them. Their
+            # budget is 10 s: a 256-bit Carlson row can exceed the 2 s fast cap.
+            slots = []
+            for rm_name in ALL_RM:
+                slots.append((256, "fast", rm_name))
+                slots.append((512, "deep", rm_name))
         else:
             slots = []
             for p in FAST_P:
@@ -677,7 +894,7 @@ def expand(cases: list[dict]) -> dict[str, list[dict]]:
                 "p": p,
                 "rm": rm,
                 "args": case["args"],
-                "budget_s": 2 if tier == "fast" else 10,
+                "budget_s": 10 if grid == "phi" or tier == "deep" else 2,
                 "expect": expect,
             }
             if case["exact"]:
@@ -726,7 +943,39 @@ def main() -> None:
     sn0 = eval_row("jacobi_sn", ["0", "0.5"], 53, "ToEven", {})
     if sn0.get("m") != ["0000000000000000"]:
         raise SystemExit(f"sn(0) golden is not 0: {sn0}")
-    cases = base_cases() + fixture_rows()
+    mp.mp.dps = 80
+    if abs(mp.mpf(HALF_PI) - mp.pi / 2) > mp.power(10, -60):
+        raise SystemExit("recorded pi/2 drifted")
+    if abs(mp.mpf(THREE_PI_OVER_4) - 3 * mp.pi / 4) > mp.power(10, -60):
+        raise SystemExit("recorded 3pi/4 drifted")
+    m_cubic = (2 + mp.sqrt(3)) / 4
+    if abs(mp.mpf(M_CUBIC) - m_cubic) > mp.power(10, -60):
+        raise SystemExit("recorded cubic m drifted")
+
+    def cubic_phi(x):
+        return mp.acos(2 * mp.sqrt(3) / (1 + mp.sqrt(3) + x) - 1)
+
+    phi0 = cubic_phi(0)
+    phi1 = cubic_phi(1)
+    if abs(mp.mpf(PHI0) - phi0) > mp.power(10, -60):
+        raise SystemExit("recorded phi0 drifted")
+    if abs(mp.mpf(PHI1) - phi1) > mp.power(10, -60):
+        raise SystemExit("recorded phi1 drifted")
+    # ∫_0^1 dx/√(x^3+1) = 3^{-1/4} (F(φ1|m) - F(φ0|m)). The printed 20 digits
+    # are a truncation; the next digits are 249…, so the residual is ~2.5e-21.
+    integral = mp.power(3, -mp.mpf("0.25")) * (
+        mp.ellipf(phi1, m_cubic) - mp.ellipf(phi0, m_cubic)
+    )
+    printed = mp.mpf("0.90960424263889577391")
+    if abs(integral - printed) > mp.mpf("1e-20"):
+        raise SystemExit(f"cubic integral is not 0.90960424263889577391: {integral}")
+    half_inf = eval_row("elliptic_f_phi", [HALF_PI, "1"], 256, "ToEven", {})
+    if half_inf.get("k") != "inf" or half_inf.get("s") != "+":
+        raise SystemExit(f"F(pi/2|1) golden is not +inf: {half_inf}")
+    pole = eval_row("elliptic_pi_phi", ["1", HALF_PI, "0.3"], 256, "ToEven", {})
+    if pole.get("k") != "nan":
+        raise SystemExit(f"Pi(1; pi/2|0.3) golden is not nan: {pole}")
+    cases = base_cases() + fixture_rows() + phi_cases()
     files = expand(cases)
     OUT.mkdir(parents=True, exist_ok=True)
     for name, rows in files.items():

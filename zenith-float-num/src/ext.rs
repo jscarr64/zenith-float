@@ -2479,6 +2479,7 @@ Accuracy: correctly-rounded",
     /// range is `F(arcsin(sin θ)|m)`, which is not `F(θ|m)`.
     /// `m` is the parameter `k²`, not the elliptic modulus `k`.
     /// `F(±1 | 1) = ±∞` (the logarithmic singularity; consistent with `elliptic_k(1) = +∞`).
+    /// The amplitude `φ` itself belongs to [`Self::elliptic_f_phi`], not here.
     ///
     /// # Precision
     ///
@@ -2507,7 +2508,8 @@ Accuracy: correctly-rounded",
     /// Same argument convention as [`Self::elliptic_f`]: `self` is `sin φ`,
     /// not the amplitude `φ`, and `|self| > 1` is `NaN(InvalidArgument)`.
     /// `m` is the parameter `k²`, not the modulus `k`. The function is odd in
-    /// `self`.
+    /// `self`. The amplitude `φ` itself belongs to [`Self::elliptic_e_phi`],
+    /// not here.
     ///
     /// # Precision
     ///
@@ -2555,7 +2557,8 @@ Accuracy: correctly-rounded",
     /// `x` is the sine of the amplitude, not the amplitude `φ`, same as
     /// [`Self::elliptic_f`]. `|x| > 1` is `NaN(InvalidArgument)`. `m` is the
     /// parameter `k²`, not the modulus `k`. `self` is the characteristic `n`,
-    /// not an angle.
+    /// not an angle. The amplitude `φ` itself belongs to
+    /// [`Self::elliptic_pi_phi`], not here.
     ///
     /// # Precision
     ///
@@ -2580,6 +2583,109 @@ Accuracy: correctly-rounded",
                 Self::nan(*err)
             }
             _ => NAN,
+        }
+    }
+    /// Incomplete elliptic integral of the first kind, `F(φ|m)`, with
+    /// `self = φ` the amplitude and `m = k²`.
+    ///
+    /// This takes the angle `φ`. [`Self::elliptic_f`] takes `sin φ`, not the
+    /// angle. An angle passed to `elliptic_f` is not `F(φ|m)`.
+    ///
+    /// Any real `φ` is reduced as `φ = r + kπ` with `|r| ≤ π/2`, at a working
+    /// precision that grows with the exponent of `φ`, and
+    /// `F(φ|m) = F(r|m) + 2k K(m)`. The function is odd in `φ`.
+    /// `φ = ±π/2`, when that equality holds at the requested precision, is
+    /// `±K(m)`.
+    ///
+    /// `m > 1` is `NaN(InvalidArgument)` when the integrand is not real on the
+    /// path from `0` to `φ` (it reaches `|sin t| > 1/√m`, including every
+    /// `|φ| ≥ π/2`). `m = 1` and `|φ| ≥ π/2` is signed infinity, the same
+    /// singularity as `F(±1|1)` and `K(1)`. A `NaN` argument keeps its error
+    /// tag. An infinity is `NaN(InvalidArgument)`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: argument reduction, then Carlson `R_F` and `K(m)`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn elliptic_f_phi(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(phi), Flavor::Value(mv)) => {
+                Self::result_to_ext(phi.elliptic_f_phi(mv, p, rm, cc), phi.is_zero(), true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => Self::nan(Some(Error::InvalidArgument)),
+        }
+    }
+    /// Incomplete elliptic integral of the second kind, `E(φ|m)`, with
+    /// `self = φ` the amplitude and `m = k²`.
+    ///
+    /// This takes the angle `φ`. [`Self::elliptic_e`] takes `sin φ`, not the
+    /// angle. Reduction and the oddness in `φ` match [`Self::elliptic_f_phi`]:
+    /// `E(φ|m) = E(r|m) + 2k E(m)`. `φ = ±π/2` is `±E(m)`.
+    ///
+    /// `m > 1` is `NaN(InvalidArgument)` when the integrand is not real on the
+    /// path. `m = 1` stays real for every real `φ` (`E(φ|1) = ∫|cos|`). A
+    /// `NaN` argument keeps its error tag. An infinity is
+    /// `NaN(InvalidArgument)`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: argument reduction, then Carlson `R_F` / `R_D` and `E(m)`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn elliptic_e_phi(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(phi), Flavor::Value(mv)) => {
+                Self::result_to_ext(phi.elliptic_e_phi(mv, p, rm, cc), phi.is_zero(), true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => Self::nan(Some(Error::InvalidArgument)),
+        }
+    }
+    /// Incomplete elliptic integral of the third kind, `Π(n; φ|m)`, with
+    /// `self = n`, `phi` the amplitude, and `m = k²`.
+    ///
+    /// `phi` is the angle. [`Self::elliptic_pi`] takes `sin φ` in that slot,
+    /// not the angle. `self` is the characteristic `n`, not an angle.
+    /// Reduction matches [`Self::elliptic_f_phi`]:
+    /// `Π(n; φ|m) = Π(n; r|m) + 2k Π(n|m)`, and the result is odd in `φ`.
+    /// `φ = ±π/2` is `±Π(n|m)` when that complete integral is real.
+    ///
+    /// `n = 1` is `NaN(InvalidArgument)` at the poles where `sin² t = 1`
+    /// (`φ = π/2 + kπ`). `n > 1` is the same error once the path reaches
+    /// `sin² t = 1/n`. `n < 1` on either side of those poles is the real
+    /// value, including negative `n`. `m > 1` is `NaN(InvalidArgument)` when
+    /// the integrand is not real. A `NaN` argument keeps its error tag. An
+    /// infinity is `NaN(InvalidArgument)`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: argument reduction, then Carlson `R_J` and `Π(n|m)`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn elliptic_pi_phi(
+        &self,
+        phi: &Self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        match (&self.inner, &phi.inner, &m.inner) {
+            (Flavor::Value(n), Flavor::Value(ph), Flavor::Value(mv)) => {
+                Self::result_to_ext(n.elliptic_pi_phi(ph, mv, p, rm, cc), ph.is_zero(), true)
+            }
+            (Flavor::NaN(err), _, _) | (_, Flavor::NaN(err), _) | (_, _, Flavor::NaN(err)) => {
+                Self::nan(*err)
+            }
+            _ => Self::nan(Some(Error::InvalidArgument)),
         }
     }
     /// Jacobi amplitude `am(self | m)`. Parameter `m = k² ∈ [0, 1]`.

@@ -2246,6 +2246,44 @@ impl ExactNumNumber {
         }
     }
 
+    /// \(F(\varphi|m)\) for an amplitude \(\varphi\). See [`ExactNum::elliptic_f_phi`].
+    pub fn elliptic_f_phi(
+        &self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let _ = (self, m, p, rm, cc);
+        Err(Error::InvalidArgument)
+    }
+
+    /// \(E(\varphi|m)\) for an amplitude \(\varphi\). See [`ExactNum::elliptic_e_phi`].
+    pub fn elliptic_e_phi(
+        &self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let _ = (self, m, p, rm, cc);
+        Err(Error::InvalidArgument)
+    }
+
+    /// \(\Pi(n;\varphi|m)\) for an amplitude \(\varphi\). `self` is \(n\).
+    /// See [`ExactNum::elliptic_pi_phi`].
+    pub fn elliptic_pi_phi(
+        &self,
+        phi: &Self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let _ = (self, phi, m, p, rm, cc);
+        Err(Error::InvalidArgument)
+    }
+
     /// Legendre \(P_n(\mathrm{self})\) for integer \(n\). Recurrence at \(p+O(n)\) bits.
     pub fn legendre_p(&self, n: u32, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         let p = round_p(p);
