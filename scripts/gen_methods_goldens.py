@@ -158,6 +158,50 @@ def quad_rows():
                 true=dec(2),
             )
         )
+        # Infinite-range (7, 15). The rational map is part of the row.
+        for kind, integ, a, b, truth in (
+            ("pos", "exp_neg", "0", "inf", mp.mpf(1)),
+            ("alg", "invsq", "1", "inf", mp.mpf(1)),
+            ("bi", "gauss", "-inf", "inf", mp.sqrt(pi)),
+        ):
+            rows.append(
+                row(
+                    id=f"gk-inf-{kind}-{p}-{rm}",
+                    tier=tier,
+                    op="gk_infinite",
+                    shape="infinite",
+                    p=p,
+                    rm=rm,
+                    integrand=integ,
+                    a=a,
+                    b=b,
+                    tol="1e-8",
+                    est_tol="1e-8",
+                    panels=24,
+                    true=dec(truth),
+                    note="infinite-range GK",
+                )
+            )
+        # Endpoint singularity. The ε table supplies the estimate. The row
+        # checks that estimate against the truth, and that abs_err_est covers it.
+        rows.append(
+            row(
+                id=f"gk-eps-invsqrt-{p}-{rm}",
+                tier=tier,
+                op="gk_adaptive",
+                shape="epsilon",
+                p=p,
+                rm=rm,
+                integrand="invsqrt",
+                a="0",
+                b="1",
+                tol="1e-8",
+                est_tol="1e-6",
+                panels=32,
+                true=dec(2),
+                note="epsilon-extrapolation GK",
+            )
+        )
     return rows
 
 

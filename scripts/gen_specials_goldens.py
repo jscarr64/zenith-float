@@ -426,6 +426,16 @@ def eval_phi(op: str, raw_args: list[str], p: int, rm: str) -> dict:
     else:
         n = None
         phi, m = nums
+    # F(φ|0) = E(φ|0) = φ, and Π(0; φ|0) = φ. The harness parses φ at `p`
+    # with ToEven, and the kernel rounds that value once. Every mode therefore
+    # shares the ToEven encoding of the argument. mp.ellipf(φ, 0) is not that
+    # encoding: a directed mode follows the integrator's rounding noise.
+    identity = m == 0 and (
+        op in ("elliptic_f_phi", "elliptic_e_phi") or (op == "elliptic_pi_phi" and n == 0)
+    )
+    if identity:
+        tok = raw_args[1] if op == "elliptic_pi_phi" else raw_args[0]
+        return g.finalize(g.parse_dec(tok), p, "ToEven")
     half = mpf_arg(HALF_PI, p)
     one = mp.mpf(1)
     sign = -1 if phi < 0 else 1
@@ -743,6 +753,48 @@ def phi_cases() -> list[dict]:
     return rows
 
 
+def shortcut_cases() -> list[dict]:
+    """Identity shortcuts. Each one is the input, or one elementary call, rounded once."""
+    import mpmath as mp
+
+    mp.mp.dps = 200
+    pi = mp.nstr(mp.pi, 180, strip_zeros=False)
+    three_half = mp.nstr(3 * mp.pi / 2, 180, strip_zeros=False)
+    rows: list[dict] = []
+
+    def add(op, args, note):
+        rows.append({
+            "op": op,
+            "args": [str(a) for a in args],
+            "exact": False,
+            "lost_max": None,
+            "note": note,
+            "extra": {},
+            "grid": "phi",
+        })
+
+    # m = 0 is the amplitude, including the half-turn and full-turn angles.
+    for op in ("elliptic_f_phi", "elliptic_e_phi"):
+        add(op, ["-0.8", "0"], "shortcut m=0: the value is the input rounded once")
+        add(op, [HALF_PI, "0"], "shortcut m=0 and phi=pi/2: the value is the input rounded once")
+        add(op, [pi, "0"], "shortcut m=0 and phi=pi: the value is the input rounded once")
+        add(op, [three_half, "0"], "shortcut m=0 and phi=3*pi/2: the value is the input rounded once")
+        add(op, ["0", "0"], "shortcut phi=0 and m=0")
+    # n = 0 is F. phi = 0 is 0. n = 0 and m = 0 is the amplitude.
+    add("elliptic_pi_phi", ["0", "0.7", "0.4"], "shortcut n=0: Pi equals F")
+    add("elliptic_pi_phi", ["0", HALF_PI, "0.25"], "shortcut n=0 and phi=pi/2: Pi equals K")
+    add("elliptic_pi_phi", ["0", "0.8", "0"], "shortcut n=0 and m=0: Pi equals the input rounded once")
+    add("elliptic_pi_phi", ["0", "0", "0.3"], "shortcut phi=0")
+    # Sine form. m = 0 is one arcsin. n = 0 is F. x = 0 is 0.
+    add("elliptic_f", ["0.5", "0"], "shortcut m=0: F(x|0) is arcsin(x) rounded once")
+    add("elliptic_e", ["0.5", "0"], "shortcut m=0: E(x|0) is arcsin(x) rounded once")
+    add("elliptic_pi", ["0", "0.5", "0.3"], "shortcut n=0: Pi equals F")
+    add("elliptic_f", ["0", "0.3"], "shortcut x=0")
+    add("elliptic_e", ["0", "0.3"], "shortcut x=0")
+    add("elliptic_pi", ["0.2", "0", "0.3"], "shortcut x=0")
+    return rows
+
+
 def fixture_rows() -> list[dict]:
     rows = []
     root = ROOT / "zenith-float-num" / "tests"
@@ -975,7 +1027,7 @@ def main() -> None:
     pole = eval_row("elliptic_pi_phi", ["1", HALF_PI, "0.3"], 256, "ToEven", {})
     if pole.get("k") != "nan":
         raise SystemExit(f"Pi(1; pi/2|0.3) golden is not nan: {pole}")
-    cases = base_cases() + fixture_rows() + phi_cases()
+    cases = base_cases() + fixture_rows() + phi_cases() + shortcut_cases()
     files = expand(cases)
     OUT.mkdir(parents=True, exist_ok=True)
     for name, rows in files.items():

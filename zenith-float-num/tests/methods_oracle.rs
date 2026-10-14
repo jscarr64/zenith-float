@@ -1,7 +1,8 @@
 //! Quadrature, ODE, and ball goldens.
 //!
 //! `quad.jsonl` rows that return `GkResult` fail unless
-//! `|true − estimate| ≤ abs_err_est`. ODE rows fail unless the final value
+//! `|true − estimate| ≤ abs_err_est`. Rows with `est_tol` also fail unless
+//! the estimate itself is inside that relative tolerance. ODE rows fail unless the final value
 //! stays inside the tolerance the solver was given. Ball rows fail unless
 //! every listed true value lies in the returned ball. Value quadratures
 //! (Legendre, Laguerre, Hermite, tanh–sinh) and Wynn have no error field;
@@ -13,8 +14,8 @@
 
 use zenith_float_num::{
     euler, gauss_hermite, gauss_kronrod_interval, gauss_laguerre, gauss_legendre,
-    integrate_adaptive_gk, rk4, rk45_adaptive, tanh_sinh, wynn_epsilon, Ball, Consts, ExactNum,
-    QuadratureError, Radix, RoundingMode,
+    integrate_adaptive_gk, rk4, rk45_adaptive, tanh_sinh,
+    wynn_epsilon, Ball, Consts, ExactNum, QuadratureError, Radix, RoundingMode,
 };
 
 fn tier_selected(tier: &str) -> bool {
@@ -69,6 +70,9 @@ fn sample(name: &str, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts)
                 x.reciprocal(p, rm)
             }
         }
+        "exp_neg" => x.neg().exp(p, rm, cc),
+        "gauss" => x.mul(x, p, rm).neg().exp(p, rm, cc),
+        "invsq" => x.mul(x, p, rm).reciprocal(p, rm),
         _ => ExactNum::nan(None),
     }
 }
@@ -222,6 +226,18 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
         }
         other => return Err(format!("unknown op {other}")),
     };
+    if let Some(est_tol) = row.get("est_tol").and_then(|v| v.as_str()) {
+        let rel = parse_at(est_tol, 384, RoundingMode::Up, &mut cc);
+        let one = ExactNum::from_u8(1, 384);
+        let mag = truth.abs();
+        let scale = if mag.cmp(&one) == Some(1) { mag } else { one };
+        let bar = rel.mul(&scale, 384, RoundingMode::Up);
+        if !covers(&est, &truth, &bar) {
+            return Err(format!(
+                "estimate {est} misses accuracy {est_tol} around {truth}"
+            ));
+        }
+    }
     if covers(&est, &truth, &err) {
         Ok(())
     } else {
