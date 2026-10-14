@@ -428,3 +428,48 @@ fn exact_bit_ei() {
         |r, a, rnd| unsafe { mpfr::eint(r.as_raw_mut(), a.as_raw(), rnd) },
     );
 }
+
+// Pair functions: both results round at exactly `p` bits with their own flag.
+
+#[test]
+fn exact_bit_sin_cos_pair() {
+    for (part, mp) in [(0usize, mpfr::sin as unsafe extern "C" fn(_, _, _) -> _), (1, mpfr::cos)] {
+        sweep_unary(
+            if part == 0 { "sin_cos.0" } else { "sin_cos.1" },
+            &[(-6, 4, true)],
+            &[(0, 0), (1, 0), (3, 0)],
+            6,
+            |x, p, rm, cc| {
+                let (s, c) = x.sin_cos(p, rm, cc);
+                if part == 0 {
+                    s
+                } else {
+                    c
+                }
+            },
+            |r, a, rnd| unsafe { mp(r.as_raw_mut(), a.as_raw(), rnd) },
+        );
+    }
+}
+
+#[test]
+fn exact_bit_sinh_cosh_pair() {
+    for (part, mp) in [(0usize, mpfr::sinh as unsafe extern "C" fn(_, _, _) -> _), (1, mpfr::cosh)]
+    {
+        sweep_unary(
+            if part == 0 { "sinh_cosh.0" } else { "sinh_cosh.1" },
+            &[(-6, 4, true), (32, 33, true)],
+            &[(0, 0), (1, 0)],
+            6,
+            |x, p, rm, cc| {
+                let (s, c) = x.sinh_cosh(p, rm, cc);
+                if part == 0 {
+                    s
+                } else {
+                    c
+                }
+            },
+            |r, a, rnd| unsafe { mp(r.as_raw_mut(), a.as_raw(), rnd) },
+        );
+    }
+}
