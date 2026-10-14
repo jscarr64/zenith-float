@@ -2,7 +2,7 @@
 //!
 //! [`kronrod_pair`], [`gauss_kronrod_interval`], [`integrate_adaptive_gk`],
 //! and [`wynn_epsilon`] are the (7, 15) rule: Laurie’s Jacobi–Kronrod
-//! recurrence, a `|K−G|` estimate, and Wynn’s ε table. The adaptive idea
+//! recurrence, an error bound on the Kronrod value, and Wynn’s ε table. The adaptive idea
 //! follows Piessens, de Doncker-Kapenga, Überhuber, and Kahaner, *QUADPACK*
 //! (Springer, 1983). The Fortran is not transcribed.
 
@@ -40,14 +40,21 @@ const QUADRATURE_BISECT_STEPS: usize = 16;
 /// Hard cap on tanh–sinh sample index `|k|`.
 const TANH_SINH_K_MAX: usize = 512;
 
+/// Destination width, rounded up to a word, plus two guard words.
+///
+/// The same guard as the (7, 15) rule. One extra word rounds Gauss nodes in
+/// the same place the weighted sum is formed.
 fn work_p(p: usize) -> usize {
-    p.saturating_add(WORD_BIT_SIZE)
+    let stored = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
+    stored.saturating_add(WORD_BIT_SIZE.saturating_mul(2))
 }
 
 /// Extra word so `1-x²` stays nonzero at tanh–sinh nodes until the Jacobian
-/// is smaller than a unit in the last place of a `p`-bit result.
+/// is smaller than a unit in the last place of a `p`-bit result. Never
+/// narrower than [`work_p`].
 fn work_p_de(p: usize) -> usize {
-    p.saturating_mul(2).saturating_add(WORD_BIT_SIZE)
+    let doubled = p.saturating_mul(2).saturating_add(WORD_BIT_SIZE);
+    work_p(p).max(doubled)
 }
 
 fn finite(x: &ExactNum) -> bool {

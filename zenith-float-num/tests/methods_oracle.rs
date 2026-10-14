@@ -5,8 +5,9 @@
 //! stays inside the tolerance the solver was given. Ball rows fail unless
 //! every listed true value lies in the returned ball. Value quadratures
 //! (Legendre, Laguerre, Hermite, tanh–sinh) and Wynn have no error field;
-//! those rows fail unless the true error is at most 64 ulps of the stored
-//! result.
+//! those rows fail unless the true error is at most 64 ulps of the requested
+//! precision (4 ulps for Wynn). The unit is `2^{e-p}`, the same unit
+//! `set_precision(p)` rounds to.
 //!
 //! Fast tier is the default. `ORACLE_TIER=deep` also runs the deep rows.
 
@@ -74,16 +75,16 @@ fn sample(name: &str, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts)
 
 fn covers(est: &ExactNum, truth: &ExactNum, err: &ExactNum) -> bool {
     let width = 384usize;
-    let gap = est.sub(truth, width, RoundingMode::Up).abs();
+    let gap = est.sub(truth, width, RoundingMode::None).abs();
     matches!(gap.cmp(err), Some(c) if c <= 0)
 }
 
-/// `2^{extra_bits}` units in the last place of `est`.
-fn ulps(est: &ExactNum, extra_bits: i32) -> ExactNum {
-    let width = est.mantissa_max_bit_len().unwrap_or(64);
+/// `2^{extra_bits}` units in the last place of a `p`-bit rounding of `est`.
+fn ulps(est: &ExactNum, p: usize, extra_bits: i32) -> ExactNum {
+    let width = est.mantissa_max_bit_len().unwrap_or(64).max(32);
     let e = est.exponent().unwrap_or(0);
     ExactNum::from_u8(1, width).ldexp(
-        e.saturating_sub(width as i32).saturating_add(extra_bits),
+        e.saturating_sub(p as i32).saturating_add(extra_bits),
         width,
         RoundingMode::Up,
     )
@@ -202,7 +203,7 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
                 ),
             }
             .ok_or("quadrature returned None")?;
-            let err = ulps(&got, 6);
+            let err = ulps(&got, p, 6);
             (got, err)
         }
         "wynn" => {
@@ -216,7 +217,7 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
                 term = term.mul(&half, p, rm);
             }
             let got = wynn_epsilon(&seq, p, rm).ok_or("wynn returned None")?;
-            let err = ulps(&got, 2);
+            let err = ulps(&got, p, 2);
             (got, err)
         }
         other => return Err(format!("unknown op {other}")),

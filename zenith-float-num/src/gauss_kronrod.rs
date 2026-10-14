@@ -1,8 +1,10 @@
 //! Gauss–Kronrod quadrature and Wynn’s ε table on [`ExactNum`].
 //!
 //! The (7, 15) pair is the fixed rule QUADPACK uses inside `QAG` / `QAGS`:
-//! a 7-point Gauss–Legendre estimate embedded in a 15-point Kronrod estimate,
-//! with absolute error `|K − G|`. Endpoint singularities are accelerated by
+//! a 7-point Gauss–Legendre estimate embedded in a 15-point Kronrod estimate.
+//! The returned error is a bound on the true error of the Kronrod value, at
+//! least `|K − G|` plus one unit in the last place of the rounded estimate.
+//! Endpoint singularities are accelerated by
 //! Wynn’s ε-algorithm on the sequence of partial sums, the same device
 //! Piessens, de Doncker-Kapenga, Überhuber, and Kahaner describe for `QAGS`
 //! (*QUADPACK*, Springer, 1983; the SLATEC port of that design is public
@@ -14,7 +16,8 @@
 //! followed by Golub–Welsch weights (the squared first component of the
 //! normalized eigenvector). The matrix is symmetric, so the diagonal is zero
 //! and only the squared sub-diagonals `β_j = j² / (4j² − 1)` are stored.
-//! Everything is evaluated at `p + WORD_BIT_SIZE` bits and then rounded to `p`.
+//! Everything is evaluated two words above the destination width (that width
+//! rounded up to a multiple of 64, plus 128 bits) and then rounded to `p`.
 //!
 //! # Not in this slice
 //!
@@ -81,12 +84,38 @@ pub struct GkResult {
     pub estimate_kronrod: ExactNum,
     /// Embedded Gauss sum `G` on the same nodes (not extrapolated).
     pub estimate_gauss: ExactNum,
-    /// Absolute error estimate. A single panel reports `|K − G|` after the
-    /// factor `(b − a) / 2`. An accepted ε value reports the difference of
-    /// the last two even-order ε entries.
+    /// A bound on the absolute error of `estimate_kronrod`.
+    ///
+    /// On one panel the bound is at least `|K − G|` after the factor
+    /// `(b − a) / 2`. When an ε value is accepted, the stopping test is still
+    /// the difference of the last two even-order ε entries, but the bound is
+    /// at least the sum of the local `|K − G|` on the panels that produced
+    /// that value. One unit in the last place of the rounded estimate is
+    /// added, and the bound is rounded away from zero. It can be larger than
+    /// `|K − G|`, and it can be larger than the tolerance that stopped the
+    /// iteration. Callers that want `|K − G|` itself should subtract
+    /// `estimate_kronrod` and `estimate_gauss`.
     ///
     /// Accuracy: enclosure
     pub abs_err_est: ExactNum,
+}
+
+impl GkResult {
+    /// A panel or an accepted adaptive value.
+    ///
+    /// `abs_err_est` is a bound on the true error of `estimate_kronrod`.
+    /// It is not recomputed from the two sums.
+    pub fn new(
+        estimate_kronrod: ExactNum,
+        estimate_gauss: ExactNum,
+        abs_err_est: ExactNum,
+    ) -> Self {
+        Self {
+            estimate_kronrod,
+            estimate_gauss,
+            abs_err_est,
+        }
+    }
 }
 
 struct Panel {
@@ -103,8 +132,49 @@ struct WynnValue {
     order: usize,
 }
 
+/// Destination width, rounded up to a word, plus two guard words.
+///
+/// One extra word leaves a 53-bit request at 117 bits. Laurie and Golub–Welsch
+/// then round the nodes where the sums are formed, so `K` and `G` share the
+/// error and `|K − G|` collapses under the true remainder. Two guard words
+/// keep that remainder visible.
 fn work_p(p: usize) -> usize {
-    p.saturating_add(WORD_BIT_SIZE)
+    let stored = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
+    stored.saturating_add(WORD_BIT_SIZE.saturating_mul(2))
+}
+
+/// One unit in the last place of a `p`-bit rounding of `x`.
+///
+/// `set_precision(p)` keeps `p` significant bits, so the unit is `2^{e-p}`
+/// of the value’s exponent, not the unit of the wider stored word.
+fn result_ulp(x: &ExactNum, p: usize) -> ExactNum {
+    let width = p.max(GK_MIN_PREC);
+    let e = x.exponent().unwrap_or(0);
+    let shift = e.saturating_sub(p as i32);
+    ExactNum::from_u8(1, width).ldexp(shift, width, RoundingMode::Up)
+}
+
+/// `|raw|` plus one destination ulp, rounded away from zero.
+fn bound_err(raw: &ExactNum, result: &ExactNum, p: usize, wrk: usize) -> ExactNum {
+    let ulp = result_ulp(result, p);
+    let mut gap = raw.abs();
+    let _ = gap.set_precision(wrk, RoundingMode::Up);
+    let sum = gap.add(&ulp, wrk, RoundingMode::Up);
+    round_out(sum, p, RoundingMode::Up)
+}
+
+fn gk_result(
+    k: ExactNum,
+    g: ExactNum,
+    raw_err: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+    wrk: usize,
+) -> GkResult {
+    let estimate_kronrod = round_out(k, p, rm);
+    let estimate_gauss = round_out(g, p, rm);
+    let abs_err_est = bound_err(raw_err, &estimate_kronrod, p, wrk);
+    GkResult::new(estimate_kronrod, estimate_gauss, abs_err_est)
 }
 
 fn finite(x: &ExactNum) -> bool {
@@ -503,9 +573,10 @@ fn kronrod_legendre_at(
 /// right. `w_gauss[i]` is zero when `nodes[i]` is a Kronrod-only abscissa
 /// (every even 0-based index). The embedded Gauss nodes are the odd indices.
 ///
-/// Nodes and weights are computed at `p + WORD_BIT_SIZE` and rounded to `p`
-/// with `rm`. Returns `None` when `n_gauss` is not 7, `p` is below 32, or the
-/// Jacobi–Kronrod matrix does not yield a positive-weight rule.
+/// Nodes and weights are computed two words above the destination width and
+/// rounded to `p` with `rm`. Returns `None` when `n_gauss` is not 7, `p` is
+/// below 32, or the Jacobi–Kronrod matrix does not yield a positive-weight
+/// rule.
 pub fn kronrod_pair(
     n_gauss: usize,
     p: usize,
@@ -570,9 +641,11 @@ fn interval_ok(a: &ExactNum, b: &ExactNum) -> bool {
 /// # Precision
 ///
 /// `p` is the destination precision in bits. The rule and the weighted sum
-/// run at `p + WORD_BIT_SIZE`, then `estimate_kronrod`, `estimate_gauss`, and
-/// `abs_err_est = |K − G|` are rounded with `rm`. There is no tolerance
-/// argument: a single panel always returns if every sample is finite.
+/// run two words above the destination width. `estimate_kronrod` and
+/// `estimate_gauss` are rounded with `rm`. `abs_err_est` is `|K − G|` plus
+/// one unit in the last place of the rounded Kronrod value, rounded away
+/// from zero. There is no tolerance argument: a single panel always returns
+/// if every sample is finite.
 ///
 /// # Errors
 ///
@@ -605,11 +678,11 @@ where
     if !finite(&k) || !finite(&g) || !finite(&err) {
         return Err(QuadratureError::NotConverged);
     }
-    Ok(GkResult {
-        estimate_kronrod: round_out(k, p, rm),
-        estimate_gauss: round_out(g, p, rm),
-        abs_err_est: round_out(err, p, rm),
-    })
+    let result = gk_result(k, g, &err, p, rm, wrk);
+    if !finite(&result.abs_err_est) {
+        return Err(QuadratureError::NotConverged);
+    }
+    Ok(result)
 }
 
 fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
@@ -667,7 +740,8 @@ fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
 /// so a pure geometric series still returns its limit after the column that
 /// found it. `None` if `seq` is empty, any entry is non-finite, or `p < 32`.
 ///
-/// The table is built at `p + WORD_BIT_SIZE` and rounded to `p` with `rm`.
+/// The table is built two words above the destination width and rounded to
+/// `p` with `rm`.
 pub fn wynn_epsilon(seq: &[ExactNum], p: usize, rm: RoundingMode) -> Option<ExactNum> {
     if p < GK_MIN_PREC {
         return None;
@@ -720,8 +794,11 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 /// The panel with the largest `|K − G|` is bisected until the sum of those
 /// estimates meets the tolerance, or until two successive even-order ε
 /// values on the sequence of global Kronrod sums agree to the tolerance.
-/// This is the QUADPACK error idea (local `|K − G|`, global ε) without the
-/// `QAGS` heap, four-way split, or roundoff flags.
+/// The ε difference is only a stopping test. The returned `abs_err_est` is
+/// a bound: the sum of the local `|K − G|` when that test accepts, otherwise
+/// the sum that met the tolerance, plus one unit in the last place of the
+/// rounded estimate. This is the QUADPACK error idea (local `|K − G|`,
+/// global ε) without the `QAGS` heap, four-way split, or roundoff flags.
 ///
 /// # Arguments
 ///
@@ -734,8 +811,9 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 ///   performs at most `15 * (2 * max_subintervals − 1)` evaluations, because
 ///   each bisection discards one panel and samples two new ones.
 /// * `p` — destination precision in bits (at least 32). Nodes, weights, and
-///   panel sums use `p + WORD_BIT_SIZE` guard bits.
-/// * `rm` — rounding mode for the three returned fields.
+///   panel sums use two guard words above the destination width.
+/// * `rm` — rounding mode for `estimate_kronrod` and `estimate_gauss`.
+///   `abs_err_est` is always rounded away from zero.
 ///
 /// # Errors
 ///
@@ -796,11 +874,11 @@ where
         seq.push(total_k.clone());
         let tol = abs_tolerance(&tol_work, &total_k, wrk);
         if leq(&total_err, &tol) {
-            return Ok(GkResult {
-                estimate_kronrod: round_out(total_k, p, rm),
-                estimate_gauss: round_out(total_g, p, rm),
-                abs_err_est: round_out(total_err, p, rm),
-            });
+            let result = gk_result(total_k, total_g, &total_err, p, rm, wrk);
+            if !finite(&result.abs_err_est) {
+                return Err(QuadratureError::NotConverged);
+            }
+            return Ok(result);
         }
         if seq.len() >= 3 {
             if let Some(ex) = wynn_table(&seq, wrk) {
@@ -808,11 +886,12 @@ where
                     if let Some(prev) = &prev_eps {
                         let de = ex.value.sub(prev, wrk, RoundingMode::None).abs();
                         if finite(&de) && leq(&de, &tol) {
-                            return Ok(GkResult {
-                                estimate_kronrod: round_out(ex.value, p, rm),
-                                estimate_gauss: round_out(total_g, p, rm),
-                                abs_err_est: round_out(de, p, rm),
-                            });
+                            let raw = if de.cmp(&total_err) == Some(1) { de } else { total_err };
+                            let result = gk_result(ex.value, total_g, &raw, p, rm, wrk);
+                            if !finite(&result.abs_err_est) {
+                                return Err(QuadratureError::NotConverged);
+                            }
+                            return Ok(result);
                         }
                     }
                     prev_eps = Some(ex.value);
@@ -927,6 +1006,15 @@ mod tests {
             correct > (p as i32) - 8,
             "x^22 bits {correct} estimate {}",
             got.estimate_kronrod
+        );
+        let gap = got
+            .estimate_kronrod
+            .sub(&want, 2 * p, RoundingMode::None)
+            .abs();
+        assert!(
+            gap.cmp(&got.abs_err_est) != Some(1),
+            "x^22 error {} does not cover {gap}",
+            got.abs_err_est
         );
     }
 

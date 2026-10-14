@@ -2,7 +2,7 @@
 
 ## 2.0.0 (unreleased)
 
-Issues found in one program led us to a forensic audit of our other crates. This release lists every finding and its fix. The arithmetic, rounding, and parser items below are the first batch. Later sections will record the elementary, constant, and special-function fixes before 2.0.0 is published. Nothing here has been published.
+Problems in one program led to a forensic audit of the others. This 2.0.0 section is that audit in full: every issue found, the fix, and the migration for each break in the public API. The workspace version is 2.0.0. Nothing here has been published.
 
 ### Added
 
@@ -10,21 +10,21 @@ Issues found in one program led us to a forensic audit of our other crates. This
 
 ### Changed
 
-The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking).
+The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). A crate that compiled on the previous compiler has to move to Rust 1.99 before it can depend on 2.0.0.
 
 ### Subnormal underflow
 
 `mul`, `div`, and `add` flushed a result below the minimum positive subnormal to zero whenever the rounding mode was not `Up`, `Down`, or `FromZero`. The discarded significand was ignored, so a value above half an ulp of the minimum positive, and a tie under `ToOdd`, became zero. `ToOdd` of half the minimum positive must be the minimum positive, because zero is even. Directed modes that round away from zero already kept that minimum; `ToEven` of an exact tie correctly stays zero.
 
-The flush now compares the residual with half an ulp and applies the same rounding rule as every other inexact result.
+The flush now compares the residual with half an ulp and applies the same rounding rule as every other inexact result. Code that depended on flushing a tie, or a value above half an ulp, to zero under `ToEven`, `ToOdd`, or `None` now sees the rounded minimum positive or a kept zero, the same rule the directed modes already used.
 
 ### Signed zero
 
-`(+0) + (-0)` returned the sign of the second operand, so the sum was `-0` in every rounding mode. IEEE 754 addition of zeros with opposite signs is `+0`, except for `roundTowardNegative` (`Down`), which is `-0`. The same rule applies to exact cancellation: `1 + (-1)` and `5 - 5` are `+0` except under `Down`, where they are `-0`. `(-0) + (-0)` stays `-0` in every mode.
+`(+0) + (-0)` returned the sign of the second operand, so the sum was `-0` in every rounding mode. IEEE 754 addition of zeros with opposite signs is `+0`, except for `roundTowardNegative` (`Down`), which is `-0`. The same rule applies to exact cancellation: `1 + (-1)` and `5 - 5` are `+0` except under `Down`, where they are `-0`. `(-0) + (-0)` stays `-0` in every mode. Code that required those sums to be `-0` outside `Down` has to round with `Down` or set the sign itself.
 
 ### Invalid operations carry `InvalidArgument`
 
-`0 * Inf`, `Inf * 0`, `Inf - Inf`, `Inf + (-Inf)`, `Inf / Inf`, and remainder of an infinity were `NaN` with an empty error tag. Callers could not tell them from an uninitialized `NaN`. They are now `NaN(InvalidArgument)`. `0 / 0` was already tagged and is unchanged.
+`0 * Inf`, `Inf * 0`, `Inf - Inf`, `Inf + (-Inf)`, `Inf / Inf`, and remainder of an infinity were `NaN` with an empty error tag. Callers could not tell them from an uninitialized `NaN`. They are now `NaN(InvalidArgument)`. `0 / 0` was already tagged and is unchanged. Code that treated `err() == None` as the result of these operations now sees `Some(InvalidArgument)`. Use `is_nan()` when the tag does not matter.
 
 ### Parsing consumes the whole string
 
@@ -36,29 +36,29 @@ The flush now compares the residual with half an ulp and applies the same roundi
 
 `format` rounded the decimal digits with the same directed mode that `parse` would apply again. Under `Up` and `ToZero`, `parse(format(x))` moved one ulp. `0.1` at 53 bits printed `1.0000000000000000001e-1` with `Up` and parsed back to the next number up. `ToEven` was unaffected.
 
-`format` in base 10 now retries with extra digits. Those digits are rounded onto the side of the value that the same mode accepts, and the retry stops when `parse` at the same precision returns the same sign, exponent, and limbs. The spelling of a directed value can be longer than in 1.0.12. The value is the one `parse` produced.
+`format` in base 10 now retries with extra digits. Those digits are rounded onto the side of the value that the same mode accepts, and the retry stops when `parse` at the same precision returns the same sign, exponent, and limbs. The spelling of a directed value can be longer than in 1.0.12. The value is the one `parse` produced. Code that matched the old spelling has to accept the longer text.
 
 ### Integer powers
 
 `exp2` and `exp10` of an exact integer, and `pow` with an exact integer exponent, went through `exp(n · ln x)`. When the power is an exact dyadic, a directed mode sees every discarded bit equal and the Ziv loop gives up. `exp2(2)`, `exp2(20)`, `exp10(2)`, and `exp10(20)` at 24, 53, and 113 bits returned `NaN(PrecisionRetryExhausted)` for `Up`, `Down`, `ToZero`, and `FromZero`. `None` returned the next number down. `ToEven` and `ToOdd` were already the exact power. `pow(0.5, -2)` is the same bug at every width, including 256 and 1024 bits: the value is the integer 4.
 
-An exact integer exponent whose magnitude fits in one word, and whose base is exact, is now exponentiated by squaring at full precision and rounded once. A negative exponent divides that product once. Inexact inputs still use the logarithm. `NaN(PrecisionRetryExhausted)` on these exact powers becomes the integer (or the correctly rounded integer, when `10^20` does not fit).
+An exact integer exponent whose magnitude fits in one word, and whose base is exact, is now exponentiated by squaring at full precision and rounded once. A negative exponent divides that product once. Inexact inputs still use the logarithm. `NaN(PrecisionRetryExhausted)` on these exact powers becomes the integer (or the correctly rounded integer, when `10^20` does not fit). Code that treated that `NaN` as "not an integer power" now receives the integer.
 
 ### Constant cache
 
 `sqrt2` and `phi` at 113 bits under `Up` and `FromZero` were one ulp low when a coarser request had been cached first. A 24-, 53-, or 64-bit request is computed at 128 bits. The 113-bit request is also stored in 128 bits, so the cache was reused and `set_precision` did nothing. A fresh cache, or a cache filled at 256 bits, was already the higher neighbor.
 
-The cache is reused only when it still has a guard word below the new precision. Otherwise it is recomputed. `sqrt2(113, Up)` and `phi(113, Up)` after a narrower request now match a fresh cache, and the same holds for `FromZero`. Euler's constant is filled again when the saved value has no guard word left, so a later, wider request does not treat that cache as final.
+The cache is reused only when it still has a guard word below the new precision. Otherwise it is recomputed. `sqrt2(113, Up)` and `phi(113, Up)` after a narrower request now match a fresh cache, and the same holds for `FromZero`. Euler's constant is filled again when the saved value has no guard word left, so a later, wider request does not treat that cache as final. Code that reused a coarse cache and expected the low neighbor at 113 bits under `Up` or `FromZero` now gets the higher neighbor.
 
 ### Complex inverse sine on the cut
 
-`asin` of a real number with absolute value greater than 1 ignored the sign of a zero imaginary part. Both sides of the cut came back with the principal imaginary part: negative for `x > 1`, positive for `x < -1`. The value above the cut (`+0`) is unchanged and matches the principal value. The value below the cut (`-0`) is now the conjugate. The parts are rounded to the word-sized precision, same as the real elementary functions. A request for 24, 53, or 113 bits no longer stops at that many bits inside a wider word.
+`asin` of a real number with absolute value greater than 1 ignored the sign of a zero imaginary part. Both sides of the cut came back with the principal imaginary part: negative for `x > 1`, positive for `x < -1`. The value above the cut (`+0`) is unchanged and matches the principal value. The value below the cut (`-0`) is now the conjugate. The parts are rounded to the word-sized precision, same as the real elementary functions. A request for 24, 53, or 113 bits no longer stops at that many bits inside a wider word. Code that read the sign of a zero imaginary part on the cut and expected the principal value on both sides now gets the conjugate below the cut.
 
 ### Complex logarithm near the cut
 
 `ln(z)` took the modulus at the destination precision and then the logarithm. For `z = -1 + 10^{-12} i`, `|z| - 1` is about `5·10^{-25}`. At 64 stored bits that difference is below one ulp of 1, so the real part was `+0`. The imaginary part, near `±π`, was already right. The same cancellation hides `2^{-p}` at 113 bits.
 
-The real part is now `ln(max(|re|, |im|)) + ½ ln(1 + (min/max)²)`, computed with extra precision and rounded once. A logarithm just off the cut keeps that small positive real part. The argument is unchanged.
+The real part is now `ln(max(|re|, |im|)) + ½ ln(1 + (min/max)²)`, computed with extra precision and rounded once. A logarithm just off the cut keeps that small positive real part. The argument is unchanged. Code that treated a zero real part just off the cut as exact now has to accept that small positive part.
 
 ### Accuracy labels
 
@@ -70,23 +70,31 @@ Public numeric functions now carry an `Accuracy` label in the rustdoc: correctly
 
 ### Clausen
 
-\(\mathrm{Cl}_3\) of a nonzero angle integrated \(\mathrm{Cl}_2\), and \(\mathrm{Cl}_2\) was itself a quadrature, so the pair did not return. Both are now the Bernoulli series on \((-\pi,\pi]\). \(\mathrm{Cl}_2(0)=\mathrm{Cl}_2(\pm\pi)=0\) and \(\mathrm{Cl}_3(0)=\zeta(3)\) are unchanged. There is no timeout argument. The values move by more than an ulp; the class stays unspecified.
+\(\mathrm{Cl}_3\) of a nonzero angle integrated \(\mathrm{Cl}_2\), and \(\mathrm{Cl}_2\) was itself a quadrature, so the pair did not return. Both are now the Bernoulli series on \((-\pi,\pi]\). \(\mathrm{Cl}_2(0)=\mathrm{Cl}_2(\pm\pi)=0\) and \(\mathrm{Cl}_3(0)=\zeta(3)\) are unchanged. There is no timeout argument. The values move by more than an ulp; the class stays unspecified. Callers who pinned the old digits of \(\mathrm{Cl}_2\) or \(\mathrm{Cl}_3\) have to accept the Bernoulli values.
 
 ### Weber \(E_0\)
 
-\(E_0(z)\) for \(|z|<8\) is \(-(4/\pi)\sum J_{2k+1}(z)/(2k+1)\). The quadrature at 256 bits had the wrong leading digits (`E_0(0.3)` was about \(-0.043\) instead of \(-0.189\)). Other orders still use the integral. The class stays unspecified.
+\(E_0(z)\) for \(|z|<8\) is \(-(4/\pi)\sum J_{2k+1}(z)/(2k+1)\). The quadrature at 256 bits had the wrong leading digits (`E_0(0.3)` was about \(-0.043\) instead of \(-0.189\)). Other orders still use the integral. The class stays unspecified. Callers who pinned the old leading digits of \(E_0\) on \(|z|<8\) have to accept the series.
 
 ### Barnes \(G\)
 
-Non-integer \(G\) at 256 bits was about 60 bits off. \(\ln A\) uses enough Euler–Maclaurin terms in \(\zeta'(2)\) for the whole word. Integer arguments stay the factorial product. The class stays unspecified.
+Non-integer \(G\) at 256 bits was about 60 bits off. \(\ln A\) uses enough Euler–Maclaurin terms in \(\zeta'(2)\) for the whole word. Integer arguments stay the factorial product. The class stays unspecified. Callers who pinned a non-integer \(G\) at 256 bits have to accept the corrected value.
 
 ### Word rounding of catalog and orthogonal polynomials
 
-Catalog and orthogonal-polynomial results were rounded to exactly `p` bits. A request for 53 or 113 bits is stored in a wider word, and the low bits of that word were zero. They are now rounded to the full word (`p` rounded up to a multiple of 64), the same width the elementary functions already use. Word-aligned requests (64, 128, 256) are unchanged when the series was already accurate to that word.
+Catalog and orthogonal-polynomial results were rounded to exactly `p` bits. A request for 53 or 113 bits is stored in a wider word, and the low bits of that word were zero. They are now rounded to the full word (`p` rounded up to a multiple of 64), the same width the elementary functions already use. Word-aligned requests (64, 128, 256) are unchanged when the series was already accurate to that word. Code that compared a 53- or 113-bit catalog value for limb identity with a `p`-bit rounding has to compare at the full word.
 
 ### Elliptic argument
 
-`elliptic_f`, `elliptic_e`, and `elliptic_pi` already took the sine of the amplitude and the parameter \(m=k^2\). The rustdoc and the capabilities table now say that in those words. \(|x|>1\), including an angle such as 2 passed in place of \(\sin 2\), stays `NaN(InvalidArgument)`. The argument meaning did not change, and call sites outside this crate were not edited.
+`elliptic_f`, `elliptic_e`, and `elliptic_pi` already took the sine of the amplitude and the parameter \(m=k^2\). The rustdoc and the capabilities table now say that in those words. \(|x|>1\), including an angle such as 2 passed in place of \(\sin 2\), stays `NaN(InvalidArgument)`. The argument meaning did not change, and call sites outside this crate were not edited. Callers who passed the angle into that slot should call `elliptic_f_phi`, `elliptic_e_phi`, or `elliptic_pi_phi`.
+
+### Gauss–Kronrod error bound
+
+`GkResult::abs_err_est` was documented as `|K − G|`, and as the difference of the last two even-order ε entries when that difference stopped the iteration. On a smooth integrand the two rules share the same rounded nodes, so they agree far more closely than either agrees with the integral. At 53 bits, \(\int_0^1 e^x\,dx\) was high by about \(8\cdot10^{-17}\) while the reported error was about \(10^{-19}\), roughly 700 times too small. The same bar missed \(\int_0^1 \sin x\,dx\). On \(\int_0^1 x^{-1/2}\,dx\) the ε difference was about \(10^{-56}\) while the integral was high by about \(5\cdot10^{-21}\). Gauss–Legendre, Gauss–Laguerre, and Gauss–Hermite used the same short working precision, so a low-degree polynomial could miss by many units of the stored word.
+
+The (7, 15) rule and those Gauss rules now run at two guard words above the destination width (that width rounded up to a multiple of 64, plus 128 bits). Tanh–sinh keeps its wider double-exponential guard when that is already more. `abs_err_est` is a bound on the true error of `estimate_kronrod`: at least `|K − G|` on one panel, or the sum of the local `|K − G|` when an ε value is accepted, plus one unit in the last place of the rounded estimate. The bound is rounded away from zero. It can be larger than `|K − G|`, and it can be larger than the tolerance that stopped the iteration. `estimate_kronrod` and `estimate_gauss` keep their meaning and still use the caller's rounding mode. The ε difference remains the stopping test for an extrapolated value; it is not the published bound.
+
+This is a breaking change. Code that read `abs_err_est` as `|K − G|` should subtract `estimate_kronrod` and `estimate_gauss`. Build the struct with `GkResult::new`. Do not rely on field order.
 
 ## 1.0.12 — 2026-10-06
 

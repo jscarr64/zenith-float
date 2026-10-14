@@ -21,8 +21,8 @@ pub enum Accuracy {
     },
     /// The returned radius or error field contains the true value.
     ///
-    /// `Ball` radii are enclosures. `GkResult::abs_err_est` keeps the
-    /// documented `|K−G|` meaning until that contract changes.
+    /// `Ball` radii and `GkResult::abs_err_est` are enclosures. The
+    /// Gauss–Kronrod field bounds the true error of the rounded estimate.
     Enclosure,
     /// Returns in time, stays in the documented domain, and has the right sign
     /// and at least two correct decimal digits. Not a rounding promise.
