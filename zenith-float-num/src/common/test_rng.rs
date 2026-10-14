@@ -134,3 +134,19 @@ fn test_rng_draws() {
     let _ = random::<u32>();
     let _ = random::<u64>();
 }
+
+/// A thread whose stream is pinned does not restart when another test thread calls
+/// `reseed_random` (the cause of the `test_compute_added_err` flake under `random`).
+#[cfg(all(test, feature = "std"))]
+#[test]
+fn test_pinned_stream_ignores_other_threads() {
+    let expected: Vec<u64> = {
+        pin_thread_seed(42);
+        (0..8).map(|_| random::<u64>()).collect()
+    };
+    pin_thread_seed(42);
+    let mut got: Vec<u64> = (0..4).map(|_| random::<u64>()).collect();
+    std::thread::spawn(|| reseed_random(11)).join().unwrap();
+    got.extend((0..4).map(|_| random::<u64>()));
+    assert_eq!(got, expected);
+}
