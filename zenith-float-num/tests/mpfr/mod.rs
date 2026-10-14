@@ -13,3 +13,4 @@ pub mod exact_bit_binary;
 pub mod exact_bit_functions;
 pub mod fuzz_round_modes;
 pub mod overflow_modes;
+pub mod subnormal_odd;
