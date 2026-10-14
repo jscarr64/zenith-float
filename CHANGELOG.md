@@ -194,6 +194,8 @@ README upgrade target corrected to 1.0.8; no math.
 
 1.0.7 keeps the 1.85-required unsafe wrappers on `_addcarry_u64`/`_subborrow_u64` and allows `unused_unsafe` so the crate builds on rustc 1.93+ (those intrinsics became safe in 1.93, not 1.87).
 
+(Superseded in 2.0.0: intrinsics and unsafe removed; see Forensic audit.)
+
 ## 1.0.6 — 2026-10-02
 
 Additive SoftFloat pack: Jacobi \(P_n^{(\alpha,\beta)}\), real large-\(|x|\) Bessel Hankel, complex Bessel cut/speed fixes, and the catalog specials Accumath was missing. No public signature was removed or changed — **1.0.6, not 2.0.0**. Jeff publishes crates.io — this tag is not published from the PR.
