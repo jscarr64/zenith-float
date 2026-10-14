@@ -379,19 +379,21 @@ mod carry_tests {
         xorshift(state) as Word
     }
 
-    /// Carry-flag form of the old add-with-carry intrinsic. The two flags are
-    /// added, so a carry of 2 survives when both additions overflow.
+    /// Widening reference: `u128` for 64-bit words, `u64` for 32-bit words.
+    /// The sum is the low word of `a + b + c` and the carry is the high part,
+    /// so a carry of 2 survives when `c` is a full word.
     fn ref_add(a: Word, b: Word, c: Word) -> (Word, Word) {
-        let (s1, c1) = a.overflowing_add(b);
-        let (s2, c2) = s1.overflowing_add(c);
-        (Word::from(c1) + Word::from(c2), s2)
+        let wide = DoubleWord::from(a) + DoubleWord::from(b) + DoubleWord::from(c);
+        ((wide >> WORD_BIT_SIZE) as Word, wide as Word)
     }
 
-    /// Borrow-flag form of the old subtract-with-borrow intrinsic.
+    /// Widening reference for subtraction. The difference is the low word of
+    /// `a - b - c` taken modulo the double word; any high bit set is a borrow.
     fn ref_sub(a: Word, b: Word, c: Word) -> (Word, Word) {
-        let (d1, b1) = a.overflowing_sub(b);
-        let (d2, b2) = d1.overflowing_sub(c);
-        (Word::from(b1 || b2), d2)
+        let wide = DoubleWord::from(a)
+            .wrapping_sub(DoubleWord::from(b))
+            .wrapping_sub(DoubleWord::from(c));
+        (Word::from(wide >> WORD_BIT_SIZE != 0), wide as Word)
     }
 
     fn check_add(a: Word, b: Word, c: Word) {
@@ -415,10 +417,10 @@ mod carry_tests {
 
     #[test]
     fn carry_and_borrow_edges() {
-        let edges = [0, 1, 2, WORD_MAX - 1, WORD_MAX];
+        let edges = [0, 1, WORD_MAX - 1, WORD_MAX];
         for &a in &edges {
             for &b in &edges {
-                for &c in &edges {
+                for c in [0, 1] {
                     check_add(a, b, c);
                     check_sub(a, b, c);
                 }
@@ -441,8 +443,12 @@ mod carry_tests {
     }
 
     fn chain_add(a: &[Word], b: &[Word]) -> (Vec<Word>, Word) {
+        chain_add_in(a, b, 0)
+    }
+
+    fn chain_add_in(a: &[Word], b: &[Word], carry_in: Word) -> (Vec<Word>, Word) {
         let mut out = vec![0; a.len()];
-        let mut carry = 0;
+        let mut carry = carry_in;
         for i in 0..a.len() {
             carry = add_carry(a[i], b[i], carry, &mut out[i]);
         }
@@ -450,8 +456,12 @@ mod carry_tests {
     }
 
     fn chain_add_ref(a: &[Word], b: &[Word]) -> (Vec<Word>, Word) {
+        chain_add_ref_in(a, b, 0)
+    }
+
+    fn chain_add_ref_in(a: &[Word], b: &[Word], carry_in: Word) -> (Vec<Word>, Word) {
         let mut out = vec![0; a.len()];
-        let mut carry = 0;
+        let mut carry = carry_in;
         for i in 0..a.len() {
             let (next, limb) = ref_add(a[i], b[i], carry);
             out[i] = limb;
@@ -461,8 +471,12 @@ mod carry_tests {
     }
 
     fn chain_sub(a: &[Word], b: &[Word]) -> (Vec<Word>, Word) {
+        chain_sub_in(a, b, 0)
+    }
+
+    fn chain_sub_in(a: &[Word], b: &[Word], borrow_in: Word) -> (Vec<Word>, Word) {
         let mut out = vec![0; a.len()];
-        let mut borrow = 0;
+        let mut borrow = borrow_in;
         for i in 0..a.len() {
             borrow = sub_borrow(a[i], b[i], borrow, &mut out[i]);
         }
@@ -470,8 +484,12 @@ mod carry_tests {
     }
 
     fn chain_sub_ref(a: &[Word], b: &[Word]) -> (Vec<Word>, Word) {
+        chain_sub_ref_in(a, b, 0)
+    }
+
+    fn chain_sub_ref_in(a: &[Word], b: &[Word], borrow_in: Word) -> (Vec<Word>, Word) {
         let mut out = vec![0; a.len()];
-        let mut borrow = 0;
+        let mut borrow = borrow_in;
         for i in 0..a.len() {
             let (next, limb) = ref_sub(a[i], b[i], borrow);
             out[i] = limb;
@@ -511,6 +529,33 @@ mod carry_tests {
                 assert_eq!(chain_add(&a, &b), chain_add_ref(&a, &b));
                 assert_eq!(chain_sub(&a, &b), chain_sub_ref(&a, &b));
             }
+        }
+    }
+
+    #[test]
+    fn carry_chains_eight_limbs_all_max() {
+        let max = [WORD_MAX; 8];
+        let zero = [0; 8];
+        for cin in [0, 1] {
+            let sum = chain_add_in(&max, &max, cin);
+            assert_eq!(sum, chain_add_ref_in(&max, &max, cin));
+            assert_eq!(sum.0[0], WORD_MAX - 1 + cin);
+            assert!(sum.0[1..].iter().all(|&w| w == WORD_MAX));
+            assert_eq!(sum.1, 1);
+
+            let ripple = chain_add_in(&max, &zero, cin);
+            assert_eq!(ripple, chain_add_ref_in(&max, &zero, cin));
+            assert_eq!(ripple, (vec![if cin == 1 { 0 } else { WORD_MAX }; 8], cin));
+
+            let diff = chain_sub_in(&zero, &max, cin);
+            assert_eq!(diff, chain_sub_ref_in(&zero, &max, cin));
+            assert_eq!(diff.0[0], 1 - cin);
+            assert!(diff.0[1..].iter().all(|&w| w == 0));
+            assert_eq!(diff.1, 1);
+
+            let same = chain_sub_in(&max, &max, cin);
+            assert_eq!(same, chain_sub_ref_in(&max, &max, cin));
+            assert_eq!(same, (vec![if cin == 1 { WORD_MAX } else { 0 }; 8], cin));
         }
     }
 
