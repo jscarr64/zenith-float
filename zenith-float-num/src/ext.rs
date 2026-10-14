@@ -116,7 +116,8 @@ impl ExactNum {
     }
 
     /// Adds `d2` to `self` and returns the result of the operation with precision `p` rounded according to `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// The result is rounded at exactly `p` bits (storage is still a whole number of words);
+    /// with `RoundingMode::None` the result keeps the storage precision.
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
@@ -137,7 +138,11 @@ impl ExactNum {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
                 Flavor::Value(v2) => Self::result_to_ext_rm(
-                    if full_prec { v1.add_full_prec(v2) } else { v1.add_per_op(v2, p, rm) },
+                    if full_prec {
+                        v1.add_full_prec(v2)
+                    } else {
+                        ExactNumNumber::exact_bits(p, rm, |q, r| v1.add_per_op(v2, q, r))
+                    },
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
                     p,
@@ -168,7 +173,8 @@ impl ExactNum {
     }
 
     /// Subtracts `d2` from `self` and returns the result of the operation with precision `p` rounded according to `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// The result is rounded at exactly `p` bits (storage is still a whole number of words);
+    /// with `RoundingMode::None` the result keeps the storage precision.
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
@@ -189,7 +195,11 @@ impl ExactNum {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
                 Flavor::Value(v2) => Self::result_to_ext_rm(
-                    if full_prec { v1.sub_full_prec(v2) } else { v1.sub_per_op(v2, p, rm) },
+                    if full_prec {
+                        v1.sub_full_prec(v2)
+                    } else {
+                        ExactNumNumber::exact_bits(p, rm, |q, r| v1.sub_per_op(v2, q, r))
+                    },
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
                     p,
@@ -224,7 +234,8 @@ impl ExactNum {
     }
 
     /// Multiplies `d2` by `self` and returns the result of the operation with precision `p` rounded according to `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// The result is rounded at exactly `p` bits (storage is still a whole number of words);
+    /// with `RoundingMode::None` the result keeps the storage precision.
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
@@ -441,7 +452,11 @@ impl ExactNum {
             Flavor::Value(v1) => {
                 match &d2.inner {
                     Flavor::Value(v2) => Self::result_to_ext_rm(
-                        if full_prec { v1.mul_full_prec(v2) } else { v1.mul_per_op(v2, p, rm) },
+                        if full_prec {
+                            v1.mul_full_prec(v2)
+                        } else {
+                            ExactNumNumber::exact_bits(p, rm, |q, r| v1.mul_per_op(v2, q, r))
+                        },
                         v1.is_zero(),
                         v1.sign() == v2.sign(),
                         p,
@@ -488,7 +503,8 @@ impl ExactNum {
     }
 
     /// Divides `self` by `d2` and returns the result of the operation with precision `p` rounded according to `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// The result is rounded at exactly `p` bits (storage is still a whole number of words);
+    /// with `RoundingMode::None` the result keeps the storage precision.
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
@@ -496,7 +512,7 @@ impl ExactNum {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
                 Flavor::Value(v2) => Self::result_to_ext_rm(
-                    v1.div_per_op(v2, p, rm),
+                    ExactNumNumber::exact_bits(p, rm, |q, r| v1.div_per_op(v2, q, r)),
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
                     p,
@@ -1223,6 +1239,10 @@ impl ExactNum {
                 if toward_zero {
                     match ExactNumNumber::max_value(p) {
                         Ok(mut m) => {
+                            // The largest value representable with exactly `p` bits.
+                            if let Err(e) = m.set_precision(p, RoundingMode::ToZero) {
+                                return Self::result_to_ext(Err(e), is_dividend_zero, is_same_sign);
+                            }
                             m.set_sign(s);
                             m.set_inexact(true);
                             ExactNum {

@@ -471,7 +471,32 @@ pub fn assert_exact_eq(n: &ExactNum, f: &Float, p: usize, op: &str, cc: &mut Con
         assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of zero");
         return;
     }
-    let s = conv_str_from_mpfr_compat(f.to_string_radix(2, None));
-    let want = ExactNum::parse(&s, Radix::Bin, p, RoundingMode::None, cc);
-    assert_eq!(*n, want, "{op}: MPFR {f}");
+    let _ = (p, &cc);
+    // Exact value of the zenith number, rebuilt from its words (parsing would flush
+    // subnormals): sum of word_i * 2^(64 i) * 2^(e - 64 len), with the widest MPFR range.
+    let (words, _, sign, e, _) = n.as_raw_parts().expect("finite zenith value");
+    let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+    unsafe {
+        mpfr::set_emin(mpfr::get_emin_min());
+        mpfr::set_emax(mpfr::get_emax_max());
+    }
+    let mut z = rug::Integer::new();
+    for w in words.iter().rev() {
+        z <<= 64;
+        z += *w;
+    }
+    let bits = (64 * words.len()) as u32;
+    let mut got = Float::with_val(bits.max(64), &z);
+    got >>= (64 * words.len()) as isize - e as isize;
+    if sign == Sign::Neg {
+        got = -got;
+    }
+    let mut want = Float::with_val(bits.max(64), 0);
+    unsafe { mpfr::set(want.as_raw_mut(), f.as_raw(), rnd_t::RNDN) };
+    let equal = got == want;
+    unsafe {
+        mpfr::set_emin(old_min);
+        mpfr::set_emax(old_max);
+    }
+    assert!(equal, "{op}: MPFR {f}, zenith {n:?} = {got}");
 }

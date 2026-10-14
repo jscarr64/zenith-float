@@ -461,9 +461,9 @@ def expect_of(op: str, p: int, rm: str, args: list[str]) -> dict:
         v = parse_dec(args[0])
         return round_rational(v[1], v[2], v[3], v[4], p, rm, sig_bits=p)
     sig = p if op in EXACT_OPS and p >= 2 else None
-    a = token(args[0], p, sig)
-    b = token(args[1], p, sig) if len(args) > 1 else None
-    c = token(args[2], p, sig) if len(args) > 2 else None
+    a = token(args[0], p)
+    b = token(args[1], p) if len(args) > 1 else None
+    c = token(args[2], p) if len(args) > 2 else None
     if op == "add":
         return finalize(add_raw(a, b), p, rm, sig)
     if op == "sub":
@@ -548,7 +548,9 @@ def build_cases() -> list[dict]:
     seen: set[tuple] = set()
 
     def add(tier: str, op: str, p: int, rm: str, args: list[str], **extra: object) -> None:
-        if op not in EXACT_OPS and op not in KEEP_REQUESTED_P:
+        # RoundingMode::None skips rounding, so arithmetic keeps the storage precision.
+        storage_only = op not in EXACT_OPS or (rm == "None" and op != "chop")
+        if storage_only and op not in KEEP_REQUESTED_P:
             p = round_p(p)
         key = (tier, op, p, rm, tuple(args), tuple(sorted(extra)))
         if key in seen:
@@ -904,7 +906,9 @@ def build_step2() -> list[dict]:
     seen: set[tuple] = set()
 
     def add(tier: str, op: str, p: int, rm: str, args: list[str], **extra: object) -> None:
-        if op not in EXACT_OPS and op not in KEEP_REQUESTED_P:
+        # RoundingMode::None skips rounding, so arithmetic keeps the storage precision.
+        storage_only = op not in EXACT_OPS or (rm == "None" and op != "chop")
+        if storage_only and op not in KEEP_REQUESTED_P:
             p = round_p(p)
         key = (tier, op, p, rm, tuple(args), tuple(sorted(extra)))
         if key in seen:

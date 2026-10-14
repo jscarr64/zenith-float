@@ -251,7 +251,7 @@ fn fuzz_mpfr_exact_bit_precision() {
     for p in [24usize, 53, 64, 65, 100, 113, 127, 128, 130, 200, 255] {
         let storage = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
         for (band, e1lo, e1hi, e2lo, e2hi) in bands {
-            for i in 0..12 {
+            for i in 0..60 {
                 let mut n1 = ExactNum::random_normal(storage, e1lo, e1hi);
                 let mut n2 = ExactNum::random_normal(storage, e2lo, e2hi);
                 n1.set_precision(p, RoundingMode::ToZero).unwrap();

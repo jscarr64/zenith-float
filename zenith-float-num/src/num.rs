@@ -811,7 +811,8 @@ impl ExactNumNumber {
 
             let mut shift = (EXPONENT_MIN as isize - e) as usize;
 
-            let mut inexact = self.inexact;
+            let rounded_before = self.op_inexact();
+            let mut inexact = false;
 
             if self.m.round_mantissa(
                 shift,
@@ -825,7 +826,7 @@ impl ExactNumNumber {
             }
 
             self.inexact |= inexact;
-            self.op_inexact = None;
+            self.op_inexact = Some(rounded_before || inexact);
 
             if shift > 0 {
                 self.m.shift_right(shift);
@@ -838,7 +839,7 @@ impl ExactNumNumber {
             let below_half = e < EXPONENT_MIN as isize - pbits;
             let class = if below_half { -1 } else { Self::mantissa_vs_half(&self.m) };
             self.inexact = true;
-            self.op_inexact = None;
+            self.op_inexact = Some(true);
             if Self::flush_to_min(class, rm, is_positive) {
                 self.m.set_zero();
                 self.m.digits_mut()[0] = 1;
@@ -1425,6 +1426,61 @@ impl ExactNumNumber {
         s: usize,
     ) -> Result<bool, Error> {
         self.set_precision_internal(p, rm, self.inexact(), s)
+    }
+
+    /// Evaluates a correctly-rounded operation `op(precision, rounding)` so that the result is
+    /// rounded at exactly `p` bits. Word-aligned precisions and `RoundingMode::None` call `op`
+    /// directly; otherwise `op` runs toward zero with a guard word and the result is rounded to
+    /// odd and then to `p` bits with `rm`.
+    pub(crate) fn exact_bits<F>(p: usize, rm: RoundingMode, op: F) -> Result<Self, Error>
+    where
+        F: Fn(usize, RoundingMode) -> Result<Self, Error>,
+    {
+        Self::p_assertion(p)?;
+        if rm == RoundingMode::None {
+            return op(p, rm);
+        }
+        if p % WORD_BIT_SIZE == 0 {
+            let r = op(p, rm)?;
+            // A rounded subnormal result was rounded twice (at `p` bits, then onto the
+            // subnormal grid); recompute it through the round-to-odd path.
+            if r.e != EXPONENT_MIN || !r.op_inexact() {
+                return Ok(r);
+            }
+        }
+        let wide = op(round_p(p) + WORD_BIT_SIZE, RoundingMode::ToZero)?;
+        if wide.is_zero() && !wide.op_inexact() {
+            // Exact zero: its sign depends on the rounding mode.
+            return op(p, rm);
+        }
+        wide.round_odd_to(p, rm)
+    }
+
+    /// Rounds a result that was computed toward zero at a precision of at least `p + 2` bits
+    /// to exactly `p` bits with `rm`: the sticky bit is folded into the least significant bit
+    /// (round to odd) before the final rounding, so no double-rounding error can occur.
+    /// The per-operation flag must say whether the toward-zero computation rounded.
+    pub(crate) fn round_odd_to(mut self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        let rounded = self.op_inexact();
+        let acc = self.inexact;
+
+        if rounded {
+            if self.m.is_zero() {
+                // A nonzero magnitude below the finest grid of the wide format.
+                self.m = Mantissa::min(self.mantissa_max_bit_len())?;
+                self.e = EXPONENT_MIN;
+            } else if let Some(w) = self.m.digits_mut().first_mut() {
+                *w |= 1;
+            }
+        }
+
+        self.inexact = false;
+        self.set_precision(p, rm)?;
+        let rounded_again = self.inexact;
+
+        self.inexact = acc || rounded_again;
+        self.op_inexact = Some(rounded || rounded_again);
+        Ok(self)
     }
 
     fn set_precision_internal(
