@@ -356,3 +356,75 @@ fn exact_bit_atanh() {
         |r, a, rnd| unsafe { mpfr::atanh(r.as_raw_mut(), a.as_raw(), rnd) },
     );
 }
+
+#[test]
+fn exact_bit_gamma() {
+    sweep_unary(
+        "gamma",
+        &[(-3, 4, false)],
+        &[(1, 0), (3, 0), (5, 0), (1, 1)],
+        6,
+        |x, p, rm, cc| x.gamma(p, rm, cc),
+        |r, a, rnd| unsafe { mpfr::gamma(r.as_raw_mut(), a.as_raw(), rnd) },
+    );
+}
+
+#[test]
+fn exact_bit_ln_gamma() {
+    sweep_unary(
+        "ln_gamma",
+        &[(-3, 6, false)],
+        &[(1, 0), (2, 0), (3, 0)],
+        6,
+        |x, p, rm, cc| x.ln_gamma(p, rm, cc),
+        |r, a, rnd| unsafe { mpfr::lngamma(r.as_raw_mut(), a.as_raw(), rnd) },
+    );
+}
+
+#[test]
+fn exact_bit_digamma() {
+    sweep_unary(
+        "digamma",
+        &[(-3, 6, false)],
+        &[(1, 0), (2, 0)],
+        6,
+        |x, p, rm, cc| x.digamma(p, rm, cc),
+        |r, a, rnd| unsafe { mpfr::digamma(r.as_raw_mut(), a.as_raw(), rnd) },
+    );
+}
+
+#[test]
+fn exact_bit_erf() {
+    sweep_unary(
+        "erf",
+        &[(-6, 2, true)],
+        &[(0, 0), (1, 0)],
+        6,
+        |x, p, rm, cc| x.erf(p, rm, cc),
+        |r, a, rnd| unsafe { mpfr::erf(r.as_raw_mut(), a.as_raw(), rnd) },
+    );
+}
+
+#[test]
+fn exact_bit_erfc() {
+    sweep_unary(
+        "erfc",
+        &[(-6, 2, true)],
+        &[(0, 0), (1, 0)],
+        6,
+        |x, p, rm, cc| x.erfc(p, rm, cc),
+        |r, a, rnd| unsafe { mpfr::erfc(r.as_raw_mut(), a.as_raw(), rnd) },
+    );
+}
+
+#[test]
+fn exact_bit_ei() {
+    sweep_unary(
+        "ei",
+        &[(-6, 4, false)],
+        &[(1, 0), (2, 0)],
+        6,
+        |x, p, rm, cc| x.ei(p, rm, cc),
+        |r, a, rnd| unsafe { mpfr::eint(r.as_raw_mut(), a.as_raw(), rnd) },
+    );
+}
