@@ -11,4 +11,6 @@ target=i686-unknown-linux-musl
 rustup target add --toolchain 1.99 "$target" >/dev/null
 export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static"
 bash "$root/scripts/ci_hex_common.sh" --target "$target"
+# Clippy on the 32-bit word size: lints that only fire when WORD_BIT_SIZE = 32.
+cargo clippy -p zenith-float-num --all-targets --target "$target" -- -D warnings
 echo "ci_hex_32bit: ok"
