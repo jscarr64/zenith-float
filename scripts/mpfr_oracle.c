@@ -76,6 +76,23 @@ static void emit_sign_z(int sign, mpz_t z, long ez) {
     printf(" %ld\n", ez);
 }
 
+/* Overflow: largest finite when the mode rounds toward zero for this sign, else Inf. */
+static void emit_overflow(int sign, int prec, const char *rm) {
+    int toward_zero = (strcmp(rm, "ToZero") == 0) || (strcmp(rm, "Down") == 0 && sign >= 0) ||
+                      (strcmp(rm, "Up") == 0 && sign < 0);
+    if (toward_zero) {
+        mpz_t z;
+        mpz_init(z);
+        mpz_set_ui(z, 1);
+        mpz_mul_2exp(z, z, (mp_bitcnt_t)prec);
+        mpz_sub_ui(z, z, 1);
+        emit_sign_z(sign, z, (long)EMAX - (long)prec);
+        mpz_clear(z);
+    } else {
+        printf("inf %s\n", sign < 0 ? "-" : "+");
+    }
+}
+
 /* Round sign * z * 2^ez to prec bits. z is non-negative. */
 static void emit_rounded(mpz_t z, long ez, int sign, int prec, const char *rm) {
     if (mpz_sgn(z) == 0) {
@@ -91,7 +108,7 @@ static void emit_rounded(mpz_t z, long ez, int sign, int prec, const char *rm) {
     mpz_init(limit);
 
     if (fl > EMAX) {
-        printf("inf %s\n", sign < 0 ? "-" : "+");
+        emit_overflow(sign, prec, rm);
         goto done;
     }
 
@@ -142,7 +159,7 @@ static void emit_rounded(mpz_t z, long ez, int sign, int prec, const char *rm) {
             e += 1;
         }
         if (e > EMAX) {
-            printf("inf %s\n", sign < 0 ? "-" : "+");
+            emit_overflow(sign, prec, rm);
             goto done;
         }
         emit_sign_z(sign, q, e - (long)prec);

@@ -194,16 +194,16 @@ pub fn conv_to_mpfr(p: usize, n: &ExactNum, cc: &mut Consts) -> Float {
 // assert float values are equal or differ not more than 1 ulp.
 pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, cc: &mut Consts) {
     if n.is_inf() {
-        // inf
-        let ovf = unsafe { mpfr::overflow_p() };
-        assert!(f.is_infinite() || ovf != 0, "{}", op);
-        if eq {
-            if n.is_positive() {
-                assert!(f.is_sign_positive(), "{}", op);
-            } else {
-                assert!(f.is_sign_negative(), "{}", op);
-            }
+        // Inf only where MPFR is Inf: an overflow rounded toward zero is the largest
+        // finite value in MPFR, so the overflow flag alone does not admit Inf.
+        assert!(f.is_infinite(), "{} zenith Inf, MPFR {}", op, f);
+        if n.is_positive() {
+            assert!(f.is_sign_positive(), "{}", op);
+        } else {
+            assert!(f.is_sign_negative(), "{}", op);
         }
+    } else if f.is_infinite() {
+        panic!("{} MPFR Inf, zenith {:?}", op, n);
     } else if n.is_nan() {
         // nan
         if eq {

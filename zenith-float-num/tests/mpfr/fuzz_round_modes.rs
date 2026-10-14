@@ -1,6 +1,8 @@
-//! Short MPFR differential: add / mul / sqrt under every IEEE rounding mode.
+//! Short MPFR differential: add / mul / sqrt under every IEEE rounding mode, and
+//! exponent overflow of add / sub / mul / div (max finite toward zero, Inf otherwise).
 
 use crate::mpfr::common::assert_float_close;
+use crate::mpfr::common::conv_to_mpfr;
 use crate::mpfr::common::get_float_pair;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::common::test_zf_op_no_cc;
@@ -102,5 +104,115 @@ fn fuzz_mpfr_bit_exact_all_round_modes() {
             }
         }
         let _ = (f1, f2, i);
+    }
+}
+
+#[test]
+fn fuzz_mpfr_overflow_all_round_modes() {
+    reset_test_rng();
+    let mut cc = Consts::new().unwrap();
+    unsafe {
+        mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
+        mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
+    }
+
+    for &p in &[64, 128, 192, 256, 512] {
+        let max = ExactNum::max_value(p);
+        let seconds = vec![
+            max.clone(),
+            max.neg(),
+            ExactNum::from_i8(2, p),
+            ExactNum::from_i8(-2, p),
+            {
+                let mut x = ExactNum::from_i8(3, p);
+                x.set_exponent(1);
+                x
+            },
+            {
+                let mut x = ExactNum::from_i8(1, p);
+                x.set_exponent(0);
+                x
+            },
+            {
+                let mut x = ExactNum::from_i8(-1, p);
+                x.set_exponent(-1);
+                x
+            },
+        ];
+
+        for n1 in [&max, &max.neg()] {
+            for n2 in &seconds {
+                let f1 = conv_to_mpfr(p, n1, &mut cc);
+                let f2 = conv_to_mpfr(p, n2, &mut cc);
+                let a = n1.clone();
+                let b = n2.clone();
+
+                for &(rm, rnd) in ROUNDS.iter() {
+                    unsafe { mpfr::clear_flags() };
+                    test_zf_op_no_cc!(
+                        true,
+                        a,
+                        b,
+                        add,
+                        f1,
+                        f2,
+                        add,
+                        p,
+                        rm,
+                        rnd,
+                        (p, &a, &b, rm, "overflow add"),
+                        cc
+                    );
+
+                    unsafe { mpfr::clear_flags() };
+                    test_zf_op_no_cc!(
+                        true,
+                        a,
+                        b,
+                        sub,
+                        f1,
+                        f2,
+                        sub,
+                        p,
+                        rm,
+                        rnd,
+                        (p, &a, &b, rm, "overflow sub"),
+                        cc
+                    );
+
+                    unsafe { mpfr::clear_flags() };
+                    test_zf_op_no_cc!(
+                        true,
+                        a,
+                        b,
+                        mul,
+                        f1,
+                        f2,
+                        mul,
+                        p,
+                        rm,
+                        rnd,
+                        (p, &a, &b, rm, "overflow mul"),
+                        cc
+                    );
+
+                    unsafe { mpfr::clear_flags() };
+                    test_zf_op_no_cc!(
+                        true,
+                        a,
+                        b,
+                        div,
+                        f1,
+                        f2,
+                        div,
+                        p,
+                        rm,
+                        rnd,
+                        (p, &a, &b, rm, "overflow div"),
+                        cc
+                    );
+                }
+            }
+        }
     }
 }

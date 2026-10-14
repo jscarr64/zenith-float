@@ -51,6 +51,17 @@ def inf(sign: str) -> dict:
     return {"k": "inf", "s": sign}
 
 
+def overflow(sign: str, prec: int, rm: str, sig: int | None = None) -> dict:
+    """Overflow result: largest finite when the mode rounds toward zero for this sign, else Inf."""
+    if sig is None:
+        sig = prec
+    toward_zero = (rm == "ToZero") or (rm == "Down" and sign == "+") or (rm == "Up" and sign == "-")
+    if toward_zero:
+        mant = ((1 << sig) - 1) << (prec - sig)
+        return {"k": "f", "s": sign, "e": EMAX, "m": words_of(mant, prec)}
+    return inf(sign)
+
+
 def nan(err: str | None = "InvalidArgument") -> dict:
     return {"k": "nan", "err": err}
 
@@ -148,7 +159,7 @@ def round_abs(sign: str, n: int, d: int, ez: int, prec: int, rm: str) -> dict:
         q = 1 << (prec - 1)
         e = EMIN + 1
         if e > EMAX:
-            return inf(sign)
+            return overflow(sign, prec, rm)
     return {"k": "f", "s": sign, "e": e, "m": words_of(q, prec)}
 
 
@@ -164,7 +175,7 @@ def round_rational(sign: str, n: int, d: int, ez: int, p: int, rm: str, sig_bits
     d //= g
     fl = ez + floor_log2_ratio(n, d)
     if fl > EMAX:
-        return inf(sign)
+        return overflow(sign, prec, rm, sig)
     if fl < EMIN:
         return round_abs(sign, n, d, ez, prec, rm)
     e = fl + 1
@@ -175,7 +186,7 @@ def round_rational(sign: str, n: int, d: int, ez: int, p: int, rm: str, sig_bits
         mant = 1 << (sig - 1)
         e += 1
     if e > EMAX:
-        return inf(sign)
+        return overflow(sign, prec, rm, sig)
     if mant == 0 or e < EMIN:
         return round_abs(sign, n, d, ez, prec, rm)
     mant <<= prec - sig
@@ -613,6 +624,22 @@ def build_cases() -> list[dict]:
         "+",
         "-",
     ]
+    # Overflow in every mode and both signs: max finite toward zero, Inf otherwise.
+    for tier, precs in (("fast", FAST_P), ("deep", DEEP_P)):
+        for p in precs:
+            for rm in MODES:
+                for op, a, b in (
+                    ("add", "-max", "-max"),
+                    ("sub", "max", "-max"),
+                    ("sub", "-max", "max"),
+                    ("mul", "max", "1.5"),
+                    ("mul", "-max", "-2"),
+                    ("mul", "max", "-2"),
+                    ("div", "max", "0.5"),
+                    ("div", "-max", "0.5"),
+                    ("div", "max", "-0.25"),
+                ):
+                    add(tier, op, p, rm, [a, b])
     for tier, precs, modes in (
         ("fast", [24, 53, 113], ["ToEven", "Up", "ToZero"]),
         ("deep", [256], MODES),
