@@ -5122,3 +5122,77 @@ mod rand_tests {
         }
     }
 }
+
+/// Characterization of the NaN / Inf argument paths: the result of an operation with a NaN operand is a NaN
+/// carrying that operand's error (first NaN operand in argument order wins), Inf operands keep their sign.
+#[cfg(test)]
+mod special_arg_tests {
+    use crate::defs::{RoundingMode, DEFAULT_P};
+    use crate::{Consts, Error, ExactNum, INF_NEG, INF_POS};
+
+    const P: usize = DEFAULT_P;
+    const RM: RoundingMode = RoundingMode::ToEven;
+
+    fn nans() -> [ExactNum; 2] {
+        [ExactNum::nan(Some(Error::InvalidArgument)), ExactNum::nan(None)]
+    }
+
+    fn same_nan(r: &ExactNum, want: &ExactNum) {
+        assert!(r.is_nan(), "expected NaN, got {r:?}");
+        assert_eq!(r.err(), want.err());
+    }
+
+    fn one() -> ExactNum {
+        ExactNum::from_u8(1, P)
+    }
+
+    #[test]
+    fn nan_operand_wins_in_ternary_and_binary_ops() {
+        let mut cc = match Consts::new() {
+            Ok(c) => c,
+            Err(e) => panic!("consts: {e:?}"),
+        };
+        for n in nans() {
+            let v = one();
+            for (a, b, c) in [(&n, &v, &v), (&v, &n, &v), (&v, &v, &n)] {
+                same_nan(&a.fma(b, c, P, RM), &n);
+                same_nan(&a.mul_add(b, c, P, RM), &n);
+            }
+            for (a, b) in [(&n, &v), (&v, &n)] {
+                same_nan(&a.atan2(b, P, RM, &mut cc), &n);
+                same_nan(&a.next_after(b, P, RM), &n);
+            }
+            same_nan(&n.copysign(&v, P, RM), &n);
+            same_nan(&n.hypot(&v, P, RM), &n);
+            same_nan(&v.hypot(&n, P, RM), &n);
+            let (hi, lo) = n.two_sum(&v, P, RM);
+            same_nan(&hi, &n);
+            same_nan(&lo, &n);
+            let (hi, lo) = v.two_sum(&n, P, RM);
+            same_nan(&hi, &n);
+            same_nan(&lo, &n);
+            let (hi, lo) = n.two_product(&v, P, RM);
+            same_nan(&hi, &n);
+            same_nan(&lo, &n);
+            let (hi, lo) = v.two_product(&n, P, RM);
+            same_nan(&hi, &n);
+            same_nan(&lo, &n);
+        }
+    }
+
+    #[test]
+    fn frexp_and_ldexp_keep_specials() {
+        for n in nans() {
+            let (m, e) = n.frexp();
+            same_nan(&m, &n);
+            assert_eq!(e, 0);
+            same_nan(&n.ldexp(3, P, RM), &n);
+        }
+        let (m, e) = INF_POS.frexp();
+        assert!(m.is_inf() && m.is_positive() && e == 0);
+        let (m, e) = INF_NEG.frexp();
+        assert!(m.is_inf() && m.is_negative() && e == 0);
+        assert!(INF_POS.ldexp(3, P, RM).is_positive() && INF_POS.ldexp(3, P, RM).is_inf());
+        assert!(INF_NEG.ldexp(3, P, RM).is_negative() && INF_NEG.ldexp(3, P, RM).is_inf());
+    }
+}
