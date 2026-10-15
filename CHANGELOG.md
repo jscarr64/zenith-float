@@ -106,6 +106,14 @@ The pair functions still rounded at a word multiple, set both flags from the sha
 
 `rem` takes no precision or rounding mode because the remainder of two floating-point numbers always fits: it is smaller than both operands and its last bit is no finer than the finer operand's. A sweep against an exact big-integer remainder (all test precisions, operands far apart, close, and in the subnormal band) confirms it. The sweep found one bug: a remainder below `EXPONENT_MIN` was always flushed to zero, because the range check compared with `usize::MAX as i64`, which is `-1`. Subnormal remainders are now returned exactly. `inexact()` on a remainder is false; `inexact_accumulated()` keeps the operands' history.
 
+### Full-precision sum with a zero operand (bug fix)
+
+`ExactNum::add_full_prec` and `sub_full_prec` returned a wrong value when exactly one operand was zero: `0.add_full_prec(1)` returned a zero with an empty mantissa (exponent 1) flagged inexact, instead of 1. Both now return the other operand exactly (negated for `sub` when the zero is the first operand), with that operand's own `inexact()`. The fixed-precision `add` and `sub` were not affected and are bit-identical to 1.x. Found by the add/sub grid digest test while removing the operand copies: it differs from the pre-change code in exactly 40 results, all of this kind. Test: `add_sub_zero_tests::full_prec_with_zero_operand_is_the_other_operand`; the grid digest is pinned in `grid_digest_tests::add_sub_grid_digest`.
+
+### Rust 1.99 patch releases in CI
+
+`scripts/use_rust_1_99.sh` installs channel `1.99` and accepts any `1.99.x` compiler (it used to demand exactly 1.99.0, which broke the `hex-32bit` and `prepublish` steps once 1.99.1 was released). Other minor releases are still refused.
+
 ### Deterministic `test_compute_added_err`
 
 Under `--features random` the `random_dist` tests reseed the shared test generator from their own threads, which restarted the stream of `macro_util::test_compute_added_err` part-way through and made it fail at random. The test now pins its own stream (`test_rng::pin_thread_seed`, test builds only). This is a test-only change.
