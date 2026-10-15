@@ -5346,4 +5346,99 @@ mod special_arg_tests {
             same_nan(&n.neg_via_mul(), &n);
         }
     }
+    // ---- unary derivations that will take `self`: every call below is on a temporary, so the
+    // same test compiles before and after the signature change.
+
+    /// `k / 4`: an exact binary fraction.
+    fn q(k: i64) -> ExactNum {
+        ExactNum::from_i64(k, P).div(&ExactNum::from_u8(4, P), P, RM)
+    }
+
+    fn eq(a: &ExactNum, b: &ExactNum) -> bool {
+        matches!(a.compare(b), Some(0))
+    }
+
+    #[test]
+    fn abs_characterization() {
+        let third = || ExactNum::from_u8(1, P).div(&ExactNum::from_u8(3, P), 64, RM);
+        assert!(eq(&q(-15).abs(), &q(15)));
+        assert!(eq(&q(15).abs(), &q(15)));
+        assert!(!q(-15).abs().is_negative());
+        let z = ExactNum::new(64).neg().abs();
+        assert!(z.is_zero() && !z.is_negative());
+        assert!(INF_NEG.abs().is_inf() && INF_NEG.abs().is_positive());
+        assert!(INF_POS.abs().is_inf() && INF_POS.abs().is_positive());
+        for n in nans() {
+            same_nan(&n.abs(), &n);
+        }
+        let t = third().neg().abs();
+        assert!(t.is_positive() && t.inexact_accumulated() && t.inexact() == third().inexact());
+        assert_eq!(t.mantissa_max_bit_len(), third().mantissa_max_bit_len());
+        assert_eq!(t.compare(&third()), Some(0));
+    }
+
+    #[test]
+    fn int_and_fract_characterization() {
+        assert!(eq(&q(15).int(), &q(12)));
+        assert!(eq(&q(-15).int(), &q(-12)));
+        assert!(eq(&q(15).fract(), &q(3)));
+        assert!(eq(&q(-15).fract(), &q(-3)));
+        assert!(q(3).int().is_zero());
+        assert!(eq(&q(3).fract(), &q(3)));
+        assert!(eq(&q(-1).fract(), &q(-1)));
+        assert!(q(16).fract().is_zero());
+        assert!(eq(&q(16).int(), &q(16)));
+        let big = ExactNum::from_u8(1, P).ldexp(300, P, RM);
+        assert!(big.fract().is_zero());
+        assert!(eq(&big.int(), &ExactNum::from_u8(1, P).ldexp(300, P, RM)));
+        assert!(ExactNum::new(P).int().is_zero() && ExactNum::new(P).fract().is_zero());
+        assert!(INF_POS.int().is_nan() && INF_NEG.fract().is_nan());
+        for n in nans() {
+            same_nan(&n.int(), &n);
+            same_nan(&n.fract(), &n);
+        }
+        let x = q(23);
+        assert_eq!(x.fract().mantissa_max_bit_len(), x.mantissa_max_bit_len());
+    }
+
+    #[test]
+    fn round_characterization() {
+        assert!(eq(&q(7).round(1, RM), &q(8)));
+        assert!(eq(&q(7).round(2, RM), &q(7)));
+        assert!(eq(&q(5).round(1, RM), &q(4)));
+        assert!(eq(&q(-7).round(1, RM), &q(-8)));
+        assert!(eq(&q(7).round(0, RoundingMode::ToZero), &q(4)));
+        assert!(INF_POS.round(3, RM).is_inf() && INF_POS.round(3, RM).is_positive());
+        assert!(INF_NEG.round(3, RM).is_inf() && INF_NEG.round(3, RM).is_negative());
+        for n in nans() {
+            same_nan(&n.round(3, RM), &n);
+        }
+    }
+
+    #[test]
+    fn frexp_ldexp_characterization() {
+        let (m, e) = q(48).frexp();
+        assert!(eq(&m, &q(3)) && e == 4);
+        let (m, e) = q(-48).frexp();
+        assert!(eq(&m, &q(-3)) && e == 4);
+        let (m, e) = q(1).frexp();
+        assert!(eq(&m, &q(2)) && e == -1);
+        let (m, e) = ExactNum::new(P).frexp();
+        assert!(m.is_zero() && e == 0);
+        assert!(eq(&q(12).ldexp(5, P, RM), &q(384)));
+        assert!(eq(&q(12).ldexp(-2, P, RM), &q(3)));
+        assert!(eq(&q(-12).ldexp(1, P, RM), &q(-24)));
+        assert!(ExactNum::new(P).ldexp(7, P, RM).is_zero());
+        assert!(q(4).ldexp(crate::Exponent::MAX, P, RM).is_inf());
+        assert!(q(-4).ldexp(crate::Exponent::MAX, P, RM).is_negative());
+        let third = || ExactNum::from_u8(1, P).div(&ExactNum::from_u8(3, P), 64, RM);
+        let t = third().ldexp(3, 64, RM);
+        assert!(t.inexact_accumulated());
+        assert!(eq(&t, &third().mul(&q(32), 64, RM)));
+        // rounding to a smaller precision rounds once
+        let r = ExactNum::from_u32(0xFFFF_FFFF, P).ldexp(1, 8, RoundingMode::ToZero);
+        assert!(r
+            .compare(&ExactNum::from_u32(0xFFFF_FFFF, P).ldexp(1, P, RM))
+            .is_some_and(|c| c < 0));
+    }
 }
