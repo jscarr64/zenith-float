@@ -124,8 +124,8 @@ impl ExactNum {
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
-    pub fn add(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
-        self.add_op(d2, p, rm, false)
+    pub fn add(self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
+        (&self).add_op(d2, p, rm, false)
     }
 
     /// Adds `d2` to `self` and returns the result of the operation.
@@ -181,8 +181,8 @@ impl ExactNum {
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
-    pub fn sub(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
-        self.sub_op(d2, p, rm, false)
+    pub fn sub(self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
+        (&self).sub_op(d2, p, rm, false)
     }
 
     /// Subtracts `d2` from `self` and returns the result of the operation.
@@ -303,7 +303,7 @@ impl ExactNum {
     /// Reconstruct with `hi.add(&lo, p, rm)` (not `add_full_prec`, which uses internal precision 0).
     ///
     /// Accuracy: correctly-rounded
-    pub fn two_sum(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
+    pub fn two_sum(self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
         if self.is_nan() {
             return (Self::nan(self.err()), Self::nan(self.err()));
         }
@@ -4192,8 +4192,56 @@ macro_rules! impl_exact_binop {
     };
 }
 
-impl_exact_binop!(Add, add, add);
-impl_exact_binop!(Sub, sub, sub);
+// `add` and `sub` take their first operand by value, so there is no `&ExactNum + &ExactNum`: nothing could
+// own the result's storage without copying an operand. `&a + b` is `b + a`; `&a - b` is `-b + a`.
+impl core::ops::Add<&ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: &ExactNum) -> ExactNum {
+        ExactNum::add(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Add<ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::add(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Add<ExactNum> for &ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::add(rhs, self, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<&ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: &ExactNum) -> ExactNum {
+        ExactNum::sub(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::sub(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<ExactNum> for &ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::add(-rhs, self, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
 impl_exact_binop!(Mul, mul, mul);
 impl_exact_binop!(Div, div, div);
 
