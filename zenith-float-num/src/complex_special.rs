@@ -86,13 +86,17 @@ pub(crate) fn term_negligible(t: &ExactComplex, p: usize) -> bool {
 
 fn l1_below_series_bound(z: &ExactComplex, p: usize) -> bool {
     let (re, im) = (z.re(), z.im());
+    let bound = ExactNum::from_u32(FADDEEVA_SERIES_L1, p);
     let s = match (re.is_negative(), im.is_negative()) {
-        (false, false) => re.add(im, p, RoundingMode::None),
+        // `re + im < bound` is decided as `re < bound - im`: no sum of two borrowed values.
+        (false, false) => {
+            let room = bound.sub(im, p, RoundingMode::None);
+            return matches!(re.compare(&room), Some(c) if c < 0);
+        }
         (false, true) => im.neg_via_mul().add(re, p, RoundingMode::None),
         (true, false) => re.neg_via_mul().add(im, p, RoundingMode::None),
         (true, true) => re.neg_via_mul().sub(im, p, RoundingMode::None),
     };
-    let bound = ExactNum::from_u32(FADDEEVA_SERIES_L1, p);
     matches!(s.compare(&bound), Some(c) if c < 0)
 }
 

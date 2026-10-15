@@ -394,7 +394,8 @@ impl ExactNum {
         if n == 0 {
             return finish(one, p, rm);
         }
-        let apb = alpha.add(beta, wrk, RoundingMode::None);
+        // α+β of two borrowed (retry-invariant) inputs: exact sum, no consumed operand.
+        let apb = alpha.add_full_prec(beta);
         let amb = beta.neg_via_mul().add(alpha, wrk, RoundingMode::None);
         let p1 = amb
             .add(
