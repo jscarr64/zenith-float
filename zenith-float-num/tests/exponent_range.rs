@@ -96,7 +96,7 @@ fn arithmetic_at_the_top_of_the_range() {
                     "{info} mul"
                 );
                 assert_eq!(
-                    big.add(&big, p, rm).exponent(),
+                    ExactNum::add_ref(&big, &big, p, rm).exponent(),
                     Some(EXPONENT_MAX),
                     "{info} add"
                 );
@@ -111,11 +111,18 @@ fn arithmetic_at_the_top_of_the_range() {
                     Some(EXPONENT_MAX - 1),
                     "{info} max/2"
                 );
-                assert!(max.sub(&max, p, rm).is_zero(), "{info} max-max");
+                assert!(
+                    ExactNum::sub_ref(&max, &max, p, rm).is_zero(),
+                    "{info} max-max"
+                );
                 let toward_zero = rm == RoundingMode::ToZero
                     || (rm == RoundingMode::Down && !negative)
                     || (rm == RoundingMode::Up && negative);
-                for r in [max.mul(&two, p, rm), max.add(&max, p, rm), max.div(&half, p, rm)] {
+                for r in [
+                    max.mul(&two, p, rm),
+                    ExactNum::add_ref(&max, &max, p, rm),
+                    max.div(&half, p, rm),
+                ] {
                     if toward_zero {
                         assert_eq!(r, max, "{info} overflow toward zero");
                     } else {
@@ -153,7 +160,7 @@ fn arithmetic_at_the_bottom_of_the_range() {
                 assert_eq!(r.mul(&two, p, rm), tiny, "{info} subnormal * 2");
                 let m = signed(ExactNum::min_positive(p), negative);
                 assert_eq!(
-                    m.add(&m, p, rm).exponent(),
+                    ExactNum::add_ref(&m, &m, p, rm).exponent(),
                     Some(EXPONENT_MIN),
                     "{info} min+min"
                 );

@@ -2313,7 +2313,7 @@ mod tests {
         let two = Ieee64::from_i32(2);
         let a = Ieee64Array::from_values(&[one, two]);
         let b = Ieee64Array::from_values(&[two, one]);
-        let s = a.add(&b).unwrap();
+        let s = a.clone().add(&b).unwrap();
         assert_eq!(s.get(0).unwrap().to_bits(), Ieee64::from_i32(3).to_bits());
         assert_eq!(s.get(1).unwrap().to_bits(), Ieee64::from_i32(3).to_bits());
         let d = a.dot(&b).unwrap();
@@ -2349,7 +2349,7 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let a = ExactNumArray::from_values(p, &[one.clone(), two.clone()]);
         let b = ExactNumArray::from_values(p, &[two.clone(), one.clone()]);
-        let s = a.add(&b).unwrap();
+        let s = a.clone().add(&b).unwrap();
         assert_eq!(s.get(0).unwrap().compare(&ExactNum::from_u8(3, p)), Some(0));
         let d = a.dot(&b).unwrap();
         assert_eq!(d.compare(&ExactNum::from_u8(4, p)), Some(0));
@@ -2520,7 +2520,7 @@ mod tests {
             let x2 = ti.to_exact(p);
             assert_eq!(
                 add.get(i).unwrap().to_bits(),
-                Ieee64::from_exact(&xa.add(&x1, p, rm)).to_bits()
+                Ieee64::from_exact(&x1.add(&xa, p, rm)).to_bits()
             );
             assert_eq!(
                 mul.get(i).unwrap().to_bits(),
@@ -2672,7 +2672,7 @@ mod tests {
     }
 
     fn near_num(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - 40)
     }
 

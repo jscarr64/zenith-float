@@ -1152,7 +1152,7 @@ mod tests {
         let z = ExactComplex::one(p);
         let e = z.exp(p, rm, &mut cc);
         let back = e.ln(p, rm, &mut cc);
-        let d = back.re().sub(z.re(), p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&back.re(), z.re(), p, RoundingMode::None).abs();
         assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 4));
 
         let z0 = ExactComplex::zero(p);
@@ -1165,11 +1165,11 @@ mod tests {
         let two = ExactComplex::from_real(ExactNum::from_u8(2, p), p);
         let four = ExactComplex::from_real(ExactNum::from_u8(4, p), p);
         let lg = four.log2(p, rm, &mut cc);
-        let d = lg.re().sub(two.re(), p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&lg.re(), two.re(), p, RoundingMode::None).abs();
         assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 8));
         assert!(lg.im().is_zero() || lg.im().exponent().unwrap_or(0) < -((p as i32) / 4));
         let e2 = two.exp2(p, rm, &mut cc);
-        let d2 = e2.re().sub(four.re(), p, RoundingMode::None).abs();
+        let d2 = ExactNum::sub_ref(&e2.re(), four.re(), p, RoundingMode::None).abs();
         assert!(d2.is_zero() || d2.exponent().unwrap_or(0) < -((p as i32) / 8));
     }
 
@@ -1190,7 +1190,7 @@ mod tests {
         let d = (if l.im().is_negative() {
             l.im().neg_via_mul().sub(&pi, p, RoundingMode::None)
         } else {
-            l.im().sub(&pi, p, RoundingMode::None)
+            ExactNum::sub_ref(&l.im(), &pi, p, RoundingMode::None)
         })
         .abs();
         assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 8));
@@ -1201,7 +1201,7 @@ mod tests {
         let db = (if lb.im().is_negative() {
             lb.im().neg_via_mul().sub(&pi, p, RoundingMode::None)
         } else {
-            lb.im().sub(&pi, p, RoundingMode::None)
+            pi.neg().add(&lb.im(), p, RoundingMode::None)
         })
         .abs();
         assert!(db.is_zero() || db.exponent().unwrap_or(0) < -((p as i32) / 8));
@@ -1288,7 +1288,7 @@ mod tests {
         let z = ExactComplex::new(ExactNum::from_i8(-3, p), ExactNum::from_u8(4, p));
         let l = z.ln(p, rm, &mut cc);
         let ln5 = ExactNum::from_u8(5, p).ln(p, rm, &mut cc);
-        let d = l.re().sub(&ln5, p, RoundingMode::None).abs();
+        let d = ln5.neg().add(&l.re(), p, RoundingMode::None).abs();
         assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 2));
         assert!(l.im().is_positive());
     }

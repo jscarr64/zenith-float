@@ -1235,7 +1235,7 @@ mod tests {
     use crate::complex_special::two_c;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / 4))
     }
 
@@ -1244,8 +1244,8 @@ mod tests {
     }
 
     fn cnear_bits(a: &ExactComplex, b: &ExactComplex, p: usize, slack: i32) -> bool {
-        let dr = a.re().sub(b.re(), p, RoundingMode::None).abs();
-        let di = a.im().sub(b.im(), p, RoundingMode::None).abs();
+        let dr = ExactNum::sub_ref(&a.re(), b.re(), p, RoundingMode::None).abs();
+        let di = ExactNum::sub_ref(&a.im(), b.im(), p, RoundingMode::None).abs();
         (dr.is_zero() || dr.exponent().is_some_and(|e| e < -((p as i32) / slack)))
             && (di.is_zero() || di.exponent().is_some_and(|e| e < -((p as i32) / slack)))
     }
@@ -1301,12 +1301,18 @@ mod tests {
         assert!(cnear(&i_z, &via_j, p));
 
         let h = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
-        let hc = ExactComplex::from_real(h, p);
-        let num = z.add(&hc, p, rm).bessel_j_nu(&nu0, p, rm, &mut cc).sub(
-            &z.sub(&hc, p, rm).bessel_j_nu(&nu0, p, rm, &mut cc),
-            p,
-            rm,
-        );
+        let hc = ExactComplex::from_real(h.clone(), p);
+        let num = ExactComplex::from_real(h.clone(), p)
+            .add(&z, p, rm)
+            .bessel_j_nu(&nu0, p, rm, &mut cc)
+            .sub(
+                &ExactComplex::from_real(h, p)
+                    .neg()
+                    .add(&z, p, rm)
+                    .bessel_j_nu(&nu0, p, rm, &mut cc),
+                p,
+                rm,
+            );
         let deriv = num.div(&hc.mul(&two_c(p), p, rm), p, rm);
         let expect = neg_c(z.bessel_j_nu(&nu1, p, rm, &mut cc));
         assert!(cnear_bits(&deriv, &expect, p, 8));

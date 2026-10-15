@@ -1134,7 +1134,7 @@ mod tests {
         if got.is_nan() {
             return i32::MIN;
         }
-        let d = got.sub(want, 2 * p, RoundingMode::None);
+        let d = ExactNum::sub_ref(&got, want, 2 * p, RoundingMode::None);
         if d.is_zero() {
             return i32::MAX;
         }
@@ -1287,6 +1287,7 @@ mod tests {
             let want_one = ExactNum::from_u8(1, p);
             let gap = exp_tail
                 .estimate_kronrod
+                .clone()
                 .sub(&want_one, 2 * p, RoundingMode::None)
                 .abs();
             assert!(
@@ -1309,6 +1310,7 @@ mod tests {
             .expect("1/x^2");
             let gap = alg
                 .estimate_kronrod
+                .clone()
                 .sub(&want_one, 2 * p, RoundingMode::None)
                 .abs();
             assert!(
@@ -1333,6 +1335,7 @@ mod tests {
             let pi = cc.pi(p, rm).sqrt(p, rm);
             let gap = gauss
                 .estimate_kronrod
+                .clone()
                 .sub(&pi, 2 * p, RoundingMode::None)
                 .abs();
             assert!(

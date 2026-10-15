@@ -33,7 +33,7 @@ proptest! {
         let rm = RoundingMode::ToEven;
         let a = ExactNum::from_i64(n1, p);
         let b = ExactNum::from_i64(n2, p);
-        prop_assert!(eq(&a.add(&b, p, rm), &b.add(&a, p, rm)));
+        prop_assert!(eq(&ExactNum::from_i64(n1, p).add(&b, p, rm), &b.add(&a, p, rm)));
     }
 
     /// Directed rounding only. `ToEven` double-rounds and is not this identity.

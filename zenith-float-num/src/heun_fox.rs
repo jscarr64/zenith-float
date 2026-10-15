@@ -1918,7 +1918,7 @@ mod tests {
     use super::*;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / 4))
     }
 
@@ -1978,7 +1978,9 @@ mod tests {
         let gamma = ExactNum::from_u8(6, p).div(&ExactNum::from_u8(5, p), p, rm);
         let zz = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(10, p), p, rm);
         let aa = ExactNum::from_u8(5, p).div(&ExactNum::from_u8(2, p), p, rm);
-        let delta = alpha.add(&beta, p, rm).sub(&gamma, p, rm).add(&one, p, rm);
+        let delta = ExactNum::add_ref(&alpha, &beta, p, rm)
+            .sub(&gamma, p, rm)
+            .add(&one, p, rm);
         let qv = aa.mul(&alpha, p, rm).mul(&beta, p, rm);
         let hg = zz.heun_g(&aa, &qv, &alpha, &beta, &gamma, &delta, p, rm, &mut cc);
         let f = alpha.hypergeom_2f1(&beta, &gamma, &zz, p, rm, &mut cc);

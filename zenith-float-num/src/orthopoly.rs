@@ -533,7 +533,7 @@ mod tests {
     }
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&a, b, p, RoundingMode::None).abs();
         if d.is_zero() {
             return true;
         }

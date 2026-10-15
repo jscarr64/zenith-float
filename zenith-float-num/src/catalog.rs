@@ -1696,7 +1696,7 @@ mod tests {
     use super::*;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / 4))
     }
 

@@ -72,8 +72,8 @@ impl ExactNum {
             _ => {}
         }
         let u = random_unit(p, RoundingMode::None);
-        let span = b.sub(a, p, RoundingMode::None);
-        a.add(&span.mul(&u, p, RoundingMode::None), p, rm)
+        let span = ExactNum::sub_ref(&b, a, p, RoundingMode::None);
+        span.mul(&u, p, RoundingMode::None).add(&a, p, rm)
     }
 
     /// Gaussian \(N(\mu,\sigma^2)\) via Box–Muller at `(p, rm)`.
@@ -100,7 +100,7 @@ impl ExactNum {
         let theta = two.mul(&cc.pi(pw, none), pw, none).mul(&u2, pw, none);
         let (s, _) = theta.sin_cos(pw, none, cc);
         let z = r.mul(&s, pw, none);
-        mu.add(&sigma.mul(&z, pw, none), p, rm)
+        sigma.mul(&z, pw, none).add(&mu, p, rm)
     }
 
     /// Exponential sample with rate `lambda` (inverse CDF \(-\ln U/\lambda\)).

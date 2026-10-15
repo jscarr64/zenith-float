@@ -352,9 +352,16 @@ mod tests {
         assert_eq!(via_direct.compare(&half), Some(0));
         assert_eq!(via_clenshaw.compare(&via_direct), Some(0));
 
-        assert!(
-            chebyshev_coeffs(|x, p, rm, cc| x.exp(p, rm, cc), 0, &a, &b, p, rm, &mut cc).is_none()
-        );
+        assert!(chebyshev_coeffs(
+            |x, p, rm, cc| x.exp(p, rm, cc),
+            0,
+            a.clone(),
+            &b,
+            p,
+            rm,
+            &mut cc
+        )
+        .is_none());
         assert!(chebyshev_error_bound(&c, p).compare(&ExactNum::from_u8(5, p)) == Some(0));
     }
 }

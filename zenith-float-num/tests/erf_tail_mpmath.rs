@@ -1365,7 +1365,7 @@ fn bits(got: &ExactNum, want: &ExactNum, cap: usize) -> usize {
         return 0;
     }
     let wp = cap + 64;
-    let err = got.sub(want, wp, RoundingMode::None);
+    let err = ExactNum::sub_ref(&got, want, wp, RoundingMode::None);
     if err.is_zero() {
         return cap;
     }

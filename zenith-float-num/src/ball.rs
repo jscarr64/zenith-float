@@ -567,9 +567,9 @@ mod tests {
         assert!(be.erf(p, rm, &mut cc).contains(&erf1, p));
 
         let ln1 = one.ln(256, rm, &mut cc);
-        assert!(be.ln(p, rm, &mut cc).contains(&ln1, p));
+        assert!(be.clone().ln(p, rm, &mut cc).contains(&ln1, p));
         let sq = one.sqrt(256, rm);
-        assert!(be.sqrt(p, rm).contains(&sq, p));
+        assert!(be.clone().sqrt(p, rm).contains(&sq, p));
         assert!(be
             .cos(p, rm, &mut cc)
             .contains(&one.cos(256, rm, &mut cc), p));
@@ -577,6 +577,7 @@ mod tests {
             .bessel_j0(p, rm, &mut cc)
             .contains(&one.bessel_j(0, 256, rm, &mut cc), p));
         assert!(be
+            .clone()
             .bessel_j1(p, rm, &mut cc)
             .contains(&one.bessel_j(1, 256, rm, &mut cc), p));
 
@@ -601,7 +602,7 @@ mod tests {
 
         let small = ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
         let d = ComplexBall::new(mid.clone(), small);
-        let s = d.sin(p, rm, &mut cc);
+        let s = d.clone().sin(p, rm, &mut cc);
         let c = d.cos(p, rm, &mut cc);
         let ss = s.mul(&s, p, rm);
         let cc2 = c.mul(&c, p, rm);

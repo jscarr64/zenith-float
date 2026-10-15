@@ -709,7 +709,7 @@ mod tests {
     use core::ops::Neg;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize, slack: i32) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - slack)
     }
 
@@ -766,11 +766,12 @@ mod tests {
             ExactNum::from_u8(1, p).div(&ExactNum::from_u8(10, p), p, r),
         );
         let lhs = a.hypergeom_2f1(&b, &c, &z, p, r, &mut cc);
-        let cab = c.sub(&a, p, r).sub(&b, p, r);
+        let cab = ExactComplex::sub_ref(&c, &a, p, r).sub(&b, p, r);
         let pref = ExactComplex::one(p).sub(&z, p, r).pow(&cab, p, r, &mut cc);
         let rhs = pref.mul(
-            &c.sub(&a, p, r)
-                .hypergeom_2f1(&c.sub(&b, p, r), &c, &z, p, r, &mut cc),
+            &a.neg()
+                .add(&c, p, r)
+                .hypergeom_2f1(&b.neg().add(&c, p, r), &c, &z, p, r, &mut cc),
             p,
             r,
         );

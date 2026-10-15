@@ -98,10 +98,9 @@ fn gk_eps_candidates() {
             let chosen = CHOSEN.contains(&name);
             match got {
                 Ok(r) => {
-                    let gap = r
-                        .estimate_kronrod
-                        .sub(&truth, WIDTH, RoundingMode::None)
-                        .abs();
+                    let gap =
+                        ExactNum::sub_ref(&r.estimate_kronrod, &truth, WIDTH, RoundingMode::None)
+                            .abs();
                     let covered = matches!(gap.compare(&r.abs_err_est), Some(c) if c <= 0);
                     let one = ExactNum::from_u8(1, WIDTH);
                     let mag = truth.abs();

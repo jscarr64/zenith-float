@@ -842,7 +842,7 @@ mod tests {
 
         let a = crate::ExactComplex::new(re_pos, im.clone());
         let b = crate::ExactComplex::new(near_m1, im);
-        let ret = a.add(&b, p, rm);
+        let ret = crate::ExactComplex::add_ref(&a, &b, p, rm);
         let (re_err, im_err) = complex_cancel_bits(&a, &b, &ret, true);
         assert!(re_err.is_some(), "real part should report cancellation");
         assert!(
@@ -858,7 +858,7 @@ mod tests {
         re.set_inexact(true);
         let c = crate::ExactComplex::new(re.clone(), im_pos);
         let d = crate::ExactComplex::new(re, im_neg);
-        let ret2 = c.add(&d, p, rm);
+        let ret2 = crate::ExactComplex::add_ref(&c, &d, p, rm);
         let (re_err2, im_err2) = complex_cancel_bits(&c, &d, &ret2, true);
         assert!(re_err2.is_none(), "real part should stay independent");
         assert!(

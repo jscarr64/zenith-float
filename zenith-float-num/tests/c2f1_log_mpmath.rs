@@ -4,6 +4,7 @@
 //! printed to p·log10(2)+12 digits). The first 1.0.5 candidate returned NaN for 34 of these
 //! 54 cases.
 
+use core::ops::Neg;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, Radix, RoundingMode};
 
 const RM: RoundingMode = RoundingMode::ToEven;
@@ -98,8 +99,8 @@ fn complex_2f1_log_case_mpmath() {
             continue;
         }
         let scale = exp2(&wr).max(exp2(&wi));
-        let er = got.re().sub(&wr, wp, RoundingMode::None);
-        let ei = got.im().sub(&wi, wp, RoundingMode::None);
+        let er = wr.neg().add(&got.re(), wp, RoundingMode::None);
+        let ei = wi.neg().add(&got.im(), wp, RoundingMode::None);
         let err = exp2(&er).max(exp2(&ei));
         if err > scale - need {
             failures.push(format!(

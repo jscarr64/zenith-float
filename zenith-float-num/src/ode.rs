@@ -624,8 +624,8 @@ mod tests {
         assert_eq!(ye2.len(), EULER_OH_STEPS * 2 + 1);
         let two = ExactNum::from_u8(2, p);
         let ee = one.exp(p, rm, &mut cc);
-        let e1 = ye.get(ye.len() - 1).expect("e1").sub(&ee, p, rm).abs();
-        let e2 = ye2.get(ye2.len() - 1).expect("e2").sub(&ee, p, rm).abs();
+        let e1 = ExactNum::sub_ref(ye.get(ye.len() - 1).expect("e1"), &ee, p, rm).abs();
+        let e2 = ExactNum::sub_ref(ye2.get(ye2.len() - 1).expect("e2"), &ee, p, rm).abs();
         let two_h_bound = two.div(&ExactNum::from_u32(EULER_OH_STEPS as u32, p), p, rm);
         assert!(e1.compare(&two_h_bound) == Some(-1));
         assert!(e2.compare(&e1) == Some(-1));

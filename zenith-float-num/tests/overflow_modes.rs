@@ -55,7 +55,13 @@ fn overflow_follows_rounding_mode() {
 
         for &rm in &MODES {
             // max.add(&max) -> pos
-            expect_overflow(&max.add(&max, p, rm), false, p, rm, "add pos");
+            expect_overflow(
+                &ExactNum::add_ref(&ExactNum::max_value(p), &max, p, rm),
+                false,
+                p,
+                rm,
+                "add pos",
+            );
 
             // max.neg().add(&max.neg()) -> neg
             expect_overflow(
@@ -67,7 +73,13 @@ fn overflow_follows_rounding_mode() {
             );
 
             // max.sub(&max.neg()) -> pos
-            expect_overflow(&max.sub(&neg_of(&max), p, rm), false, p, rm, "sub pos");
+            expect_overflow(
+                &ExactNum::sub_ref(&max, &neg_of(&max), p, rm),
+                false,
+                p,
+                rm,
+                "sub pos",
+            );
 
             // max.neg().sub(&max) -> neg
             expect_overflow(&neg_of(&max).sub(&max, p, rm), true, p, rm, "neg sub pos");

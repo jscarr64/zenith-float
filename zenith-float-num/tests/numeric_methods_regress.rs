@@ -27,7 +27,7 @@ fn n(v: u8) -> ExactNum {
 
 /// `|got − want| < 2^-bits · max(1, |want|)`.
 fn close(got: &ExactNum, want: &ExactNum, bits: i32) -> bool {
-    let d = got.sub(want, 4 * P, RoundingMode::None);
+    let d = ExactNum::sub_ref(&got, want, 4 * P, RoundingMode::None);
     if d.is_zero() {
         return true;
     }
@@ -158,7 +158,7 @@ fn chebyshev_equal_exponent_interval() {
     let c = chebyshev_coeffs(
         |x, p, rm, cc| x.ln(p, rm, cc),
         60,
-        &n(2),
+        n(2),
         &n(3),
         P,
         RM,

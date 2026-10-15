@@ -669,7 +669,7 @@ mod tests {
     use core::ops::Neg;
 
     fn near_bits(a: &ExactNum, b: &ExactNum, p: usize, slack: i32) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / slack))
     }
 
@@ -749,8 +749,8 @@ mod tests {
 
         let h = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
         let hc = ExactComplex::from_real(h.clone(), p);
-        let zp = z.add(&hc, p, rm);
-        let zm = z.sub(&hc, p, rm);
+        let zp = ExactComplex::add_ref(&z, &hc, p, rm);
+        let zm = ExactComplex::sub_ref(&z, &hc, p, rm);
         let num = zp.erf(p, rm, &mut cc).sub(&zm.erf(p, rm, &mut cc), p, rm);
         let two_h = hc.mul(&two_c(p), p, rm);
         let deriv = num.div(&two_h, p, rm);
@@ -805,7 +805,7 @@ mod tests {
             ExactNum::from_u8(2, p).div(&ExactNum::from_u8(5, p), p, rm),
         );
         let gz = z.gamma(p, rm, &mut cc);
-        let omz = one.sub(&z, p, rm);
+        let omz = ExactComplex::one(p).sub(&z, p, rm);
         let gom = omz.gamma(p, rm, &mut cc);
         let lhs = gz.mul(&gom, p, rm);
         let piz = pi_c(p, &mut cc).mul(&z, p, rm);
@@ -825,7 +825,7 @@ mod tests {
         assert!(near(psi1.re(), &neg_g, p));
         assert!(tiny(psi1.im(), p));
 
-        let zp1 = z.add(&one, p, rm);
+        let zp1 = ExactComplex::one(p).add(&z, p, rm);
         let dpsi = zp1
             .digamma(p, rm, &mut cc)
             .sub(&z.digamma(p, rm, &mut cc), p, rm);
@@ -840,12 +840,18 @@ mod tests {
         }
 
         let h = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
-        let hc = ExactComplex::from_real(h, p);
-        let num = z.add(&hc, p, rm).ln_gamma(p, rm, &mut cc).sub(
-            &z.sub(&hc, p, rm).ln_gamma(p, rm, &mut cc),
-            p,
-            rm,
-        );
+        let hc = ExactComplex::from_real(h.clone(), p);
+        let num = ExactComplex::from_real(h.clone(), p)
+            .add(&z, p, rm)
+            .ln_gamma(p, rm, &mut cc)
+            .sub(
+                &ExactComplex::from_real(h, p)
+                    .neg()
+                    .add(&z, p, rm)
+                    .ln_gamma(p, rm, &mut cc),
+                p,
+                rm,
+            );
         let deriv = num.div(&hc.mul(&two_c(p), p, rm), p, rm);
         let psi = z.digamma(p, rm, &mut cc);
         assert!(cnear_bits(&deriv, &psi, p, 8));

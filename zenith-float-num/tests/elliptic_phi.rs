@@ -43,7 +43,7 @@ fn is_invalid(n: &ExactNum) -> bool {
 /// Ulps of `a - b` at the stored width of `p`. Zero when the values match.
 fn ulp_gap(a: &ExactNum, b: &ExactNum, p: usize) -> i32 {
     let width = p.div_ceil(64) * 64;
-    let diff = a.sub(b, width, RoundingMode::None);
+    let diff = ExactNum::sub_ref(&a, b, width, RoundingMode::None);
     if diff.is_zero() {
         return 0;
     }
@@ -140,7 +140,7 @@ fn periodicity_adds_two_complete_periods() {
     let n = parse(n_text, hi, rm, &mut consts);
     let pi = consts.pi(hi, rm);
     let two = parse("2", hi, rm, &mut consts);
-    let shifted = phi.add(&pi, hi, none);
+    let shifted = pi.add(&phi, hi, none);
 
     let f_shift = shifted.elliptic_f_phi(&m, p, rm, &mut consts);
     let f_sum = phi.elliptic_f_phi(&m, hi, rm, &mut consts).add(
