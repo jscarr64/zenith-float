@@ -569,7 +569,6 @@ fn gauss_hermite_nodes(
     }
     let wrk = work_p(p);
     let nu = n as u32;
-    let two = ExactNum::from_u8(2, wrk);
     let hi = ExactNum::from_u32((4 * n + 2) as u32, wrk).sqrt(wrk, RoundingMode::None);
     let zero = ExactNum::new(wrk);
     let want_pos = n / 2;
@@ -628,7 +627,9 @@ fn gauss_hermite_nodes(
                 if n == 0 {
                     return ExactNum::new(p);
                 }
-                ExactNum::mul_ref(&n_f, &two, p, rm).mul(&x.hermite_h(n - 1, p, rm), p, rm)
+                ExactNum::from_u8(2, p)
+                    .mul(&n_f, p, rm)
+                    .mul(&x.hermite_h(n - 1, p, rm), p, rm)
             },
             x0,
             wrk,
