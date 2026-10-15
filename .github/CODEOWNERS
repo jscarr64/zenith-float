@@ -6,3 +6,4 @@
 /tools/rules_scan.sh @jscarr64
 /tools/no_clone.py @jscarr64
 /tools/no_clone.sh @jscarr64
+/tools/full_gate.sh @jscarr64
