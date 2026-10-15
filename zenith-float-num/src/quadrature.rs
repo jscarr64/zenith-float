@@ -378,7 +378,7 @@ where
         if !finite(&w) {
             break;
         }
-        if k > 0 && below(&w.abs(), &wmin) {
+        if k > 0 && below(&w.abs_via_mul(), &wmin) {
             break;
         }
         let mut eval = |s: &ExactNum| {

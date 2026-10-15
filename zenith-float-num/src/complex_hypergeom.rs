@@ -64,7 +64,7 @@ fn as_i32_real_int(z: &ExactComplex, p: usize) -> Option<i32> {
     }
     for n in 1i32..=10_000 {
         let w = ExactNum::from_u32(n as u32, p);
-        if z.re().abs().compare(&w) == Some(0) {
+        if z.re().abs_via_mul().compare(&w) == Some(0) {
             return Some(if z.re().is_negative() { -n } else { n });
         }
     }
@@ -773,6 +773,9 @@ mod tests {
         assert!(!fa.is_nan() && !fb.is_nan(), "cut defined");
         assert!(near(fa.re(), fb.re(), p, 20), "cut Re");
         assert_ne!(fa.im().compare(fb.im()), Some(0), "cut Im differs");
-        assert!(near(&fa.im().abs(), &fb.im().abs(), p, 20), "cut |Im|");
+        assert!(
+            near(&fa.im().abs_via_mul(), &fb.im().abs_via_mul(), p, 20),
+            "cut |Im|"
+        );
     }
 }

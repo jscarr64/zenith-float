@@ -2076,14 +2076,24 @@ macro_rules! gen_wrapper_log {
 }
 
 impl ExactNum {
-    gen_wrapper_arg!(
-        "Returns the absolute value of `self`.
-Accuracy: correctly-rounded",
-        abs,
-        Self,
-        { INF_POS },
-        { INF_POS },
-    );
+    /// Returns the absolute value of `self`. Takes ownership; nothing is copied.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn abs(mut self) -> Self {
+        if self.is_negative() {
+            self.inv_sign();
+        }
+        self
+    }
+
+    /// `|self|` for an operand that has to stay borrowed: fresh `±1` times `self` through the
+    /// general multiplication kernel at the operand's own precision (exact; see
+    /// [`Self::neg_via_mul`]).
+    pub(crate) fn abs_via_mul(&self) -> Self {
+        let p = self.mantissa_max_bit_len().unwrap_or(crate::WORD_BIT_SIZE);
+        let sign = if self.is_negative() { -1 } else { 1 };
+        Self::from_i8(sign, p).mul(self, p, RoundingMode::None)
+    }
     /// Returns a value with the magnitude of `self` and the sign of `sign`.
     ///
     /// Accuracy: correctly-rounded
@@ -5261,7 +5271,7 @@ mod special_arg_tests {
         let n = mk().neg();
         assert!(n.is_negative());
         assert_eq!(n.mantissa_max_bit_len(), mk().mantissa_max_bit_len());
-        assert!(matches!(n.abs().compare(&mk()), Some(0)));
+        assert!(matches!(n.abs_via_mul().compare(&mk()), Some(0)));
         assert!(matches!(n.neg().compare(&mk()), Some(0)));
         let z = ExactNum::new(64).neg();
         assert!(z.is_zero() && z.is_negative());
@@ -5369,7 +5379,7 @@ mod special_arg_tests {
         assert!(INF_NEG.abs().is_inf() && INF_NEG.abs().is_positive());
         assert!(INF_POS.abs().is_inf() && INF_POS.abs().is_positive());
         for n in nans() {
-            same_nan(&n.abs(), &n);
+            same_nan(&n.abs_via_mul(), &n);
         }
         let t = third().neg().abs();
         assert!(t.is_positive() && t.inexact_accumulated() && t.inexact() == third().inexact());
@@ -5440,5 +5450,51 @@ mod special_arg_tests {
         assert!(r
             .compare(&ExactNum::from_u32(0xFFFF_FFFF, P).ldexp(1, P, RM))
             .is_some_and(|c| c < 0));
+    }
+    #[test]
+    fn abs_via_mul_equals_abs_for_every_kind_of_operand() {
+        let same = |mk: &dyn Fn() -> ExactNum| {
+            let x = mk();
+            let want = mk().abs();
+            let got = x.abs_via_mul();
+            if want.is_nan() {
+                same_nan(&got, &want);
+                return;
+            }
+            assert_eq!(got.is_inf(), want.is_inf(), "{x:?}");
+            assert_eq!(got.is_negative(), want.is_negative(), "{x:?}");
+            assert_eq!(got.is_zero(), want.is_zero(), "{x:?}");
+            assert_eq!(
+                got.inexact_accumulated(),
+                want.inexact_accumulated(),
+                "{x:?}"
+            );
+            if !want.is_inf() {
+                assert!(matches!(got.compare(&want), Some(0)), "{x:?}");
+                assert_eq!(
+                    got.mantissa_max_bit_len(),
+                    want.mantissa_max_bit_len(),
+                    "{x:?}"
+                );
+                assert_eq!(got.exponent(), want.exponent(), "{x:?}");
+            }
+        };
+        for p in [1usize, 40, 64, 65, 128, 300] {
+            same(&|| ExactNum::new(p));
+            same(&|| ExactNum::new(p).neg());
+            same(&|| ExactNum::from_u32(0xDEAD_BEEF, p));
+            same(&|| ExactNum::from_u32(0xDEAD_BEEF, p).neg());
+            same(&|| ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, RM));
+            same(&|| {
+                ExactNum::from_u8(1, p)
+                    .div(&ExactNum::from_u8(3, p), p, RM)
+                    .neg()
+            });
+        }
+        same(&|| INF_POS);
+        same(&|| INF_NEG);
+        for n in nans() {
+            same_nan(&n.abs_via_mul(), &n);
+        }
     }
 }

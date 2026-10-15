@@ -66,8 +66,8 @@ impl Ball {
     /// Product of two balls with a first-order radius bound plus a rounding ulp.
     pub fn mul(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
         let mid = self.mid.mul(&other.mid, p, rm);
-        let a = self.mid.abs().mul(&other.rad, p, RoundingMode::Up);
-        let b = other.mid.abs().mul(&self.rad, p, RoundingMode::Up);
+        let a = self.mid.abs_via_mul().mul(&other.rad, p, RoundingMode::Up);
+        let b = other.mid.abs_via_mul().mul(&self.rad, p, RoundingMode::Up);
         let c = self.rad.mul(&other.rad, p, RoundingMode::Up);
         let rad = a
             .add(&b, p, RoundingMode::Up)
@@ -81,7 +81,7 @@ impl Ball {
     pub fn exp(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.exp(p, rm, cc);
         let em1 = self.rad.expm1(p, RoundingMode::Up, cc);
-        let rad = mid.abs().mul(&em1, p, RoundingMode::Up).add(
+        let rad = mid.abs_via_mul().mul(&em1, p, RoundingMode::Up).add(
             &Self::rounding_ulp(&mid, p),
             p,
             RoundingMode::Up,
@@ -177,7 +177,7 @@ impl Ball {
             return Self::nan_ball(p);
         }
         let mid = self.mid.bessel_j(1, p, rm, cc);
-        let den = self.mid.abs().sub(&self.rad, p, RoundingMode::Down);
+        let den = self.mid.abs_via_mul().sub(&self.rad, p, RoundingMode::Down);
         let extra = ExactNum::from_u8(1, p).div(&den, p, RoundingMode::Up);
         let lip = ExactNum::from_u8(1, p).add(&extra, p, RoundingMode::Up);
         let rad = lip.mul(&self.rad, p, RoundingMode::Up).add(
@@ -219,10 +219,10 @@ impl Ball {
         if self.mid.is_nan() || self.rad.is_nan() || self.mid.is_zero() {
             return false;
         }
-        matches!(self.mid.abs().compare(&self.rad), Some(c) if c > 0)
+        matches!(self.mid.abs_cmp(&self.rad), Some(c) if c > 0)
             && !self
                 .mid
-                .abs()
+                .abs_via_mul()
                 .sub(&self.rad, p, RoundingMode::Down)
                 .is_zero()
     }
@@ -344,7 +344,11 @@ impl ComplexBall {
     /// Sine. \(\lvert\cos(z)\rvert\le\cosh(\lvert\mathrm{Im}\,m\rvert+r)\).
     pub fn sin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.sin(p, rm, cc);
-        let im_hi = self.mid.im().abs().add(&self.rad, p, RoundingMode::Up);
+        let im_hi = self
+            .mid
+            .im()
+            .abs_via_mul()
+            .add(&self.rad, p, RoundingMode::Up);
         let lip = im_hi.sinh_cosh(p, RoundingMode::Up, cc).1;
         let rad =
             lip.mul(&self.rad, p, RoundingMode::Up)
@@ -355,7 +359,11 @@ impl ComplexBall {
     /// Cosine. Same Lipschitz bound as `sin`.
     pub fn cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.cos(p, rm, cc);
-        let im_hi = self.mid.im().abs().add(&self.rad, p, RoundingMode::Up);
+        let im_hi = self
+            .mid
+            .im()
+            .abs_via_mul()
+            .add(&self.rad, p, RoundingMode::Up);
         let lip = im_hi.sinh_cosh(p, RoundingMode::Up, cc).1;
         let rad =
             lip.mul(&self.rad, p, RoundingMode::Up)

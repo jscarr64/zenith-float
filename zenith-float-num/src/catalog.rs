@@ -50,12 +50,8 @@ fn under_word(err: &ExactNum, p: usize) -> bool {
 /// Residual below `2^{-(word width + 4)}` relative to `sum`.
 fn under_word_rel(term: &ExactNum, sum: &ExactNum, p: usize) -> bool {
     let guard = (word_p(p) as i64).saturating_add(4);
-    let rel = sum.abs().exponent().unwrap_or(0) as i64;
-    term.is_zero()
-        || term
-            .abs()
-            .exponent()
-            .is_some_and(|e| (e as i64) + guard < rel)
+    let rel = sum.exponent().unwrap_or(0) as i64;
+    term.is_zero() || term.exponent().is_some_and(|e| (e as i64) + guard < rel)
 }
 
 /// Upper bound on \(\log_2(n!)\).
@@ -102,7 +98,7 @@ fn factorial_n(n: usize, p: usize) -> ExactNum {
 }
 
 fn abs_lt(x: &ExactNum, bound: u32, p: usize) -> bool {
-    let a = x.abs();
+    let a = x.abs_via_mul();
     matches!(a.compare(&ExactNum::from_u32(bound, p)), Some(c) if c < 0)
 }
 
@@ -326,7 +322,7 @@ fn floor_small(x: &ExactNum, p: usize, cap: u32) -> Option<u32> {
 /// Terms of the Bernoulli series so the tail is below `2^{-bits}` on \((-\pi,\pi)\).
 fn clausen_nterms(theta: &ExactNum, bits: usize, cc: &mut Consts) -> usize {
     let p = 64;
-    let abs = theta.abs();
+    let abs = theta.abs_via_mul();
     if abs.is_zero() {
         return 8;
     }
@@ -351,7 +347,7 @@ fn clausen_cl2_series(theta: &ExactNum, p: usize, bits: usize, cc: &mut Consts) 
         theta
             .mul(&th2, p, RoundingMode::None)
             .div(&ExactNum::from_u8(6, p), p, RoundingMode::None);
-    let ln_abs = theta.abs().ln(p, RoundingMode::None, cc);
+    let ln_abs = theta.abs_via_mul().ln(p, RoundingMode::None, cc);
     let mut sum = theta.sub(
         &theta.mul(&ln_abs, p, RoundingMode::None),
         p,
@@ -488,9 +484,8 @@ fn scorer_gi_series(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
         sum = sum.add(&term, p, RoundingMode::None);
         if term.is_zero()
             || term
-                .abs()
                 .exponent()
-                .is_some_and(|e| (e as i64) + (p as i64) < sum.abs().exponent().unwrap_or(0) as i64)
+                .is_some_and(|e| (e as i64) + (p as i64) < sum.exponent().unwrap_or(0) as i64)
         {
             break;
         }
@@ -515,12 +510,7 @@ fn scorer_gi_asymp_plus(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
             .mul(&fac, p, RoundingMode::None)
             .div(&x3, p, RoundingMode::None);
         sum = sum.add(&term, p, RoundingMode::None);
-        if term.is_zero()
-            || term
-                .abs()
-                .exponent()
-                .is_some_and(|e| (e as i64) + (p as i64) < 0)
-        {
+        if term.is_zero() || term.exponent().is_some_and(|e| (e as i64) + (p as i64) < 0) {
             break;
         }
     }
@@ -544,12 +534,7 @@ fn scorer_hi_asymp_minus(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
         let t = if sign < 0 { term.clone().neg() } else { term.clone() };
         sum = sum.add(&t, p, RoundingMode::None);
         sign = -sign;
-        if term.is_zero()
-            || term
-                .abs()
-                .exponent()
-                .is_some_and(|e| (e as i64) + (p as i64) < 0)
-        {
+        if term.is_zero() || term.exponent().is_some_and(|e| (e as i64) + (p as i64) < 0) {
             break;
         }
     }
@@ -1532,7 +1517,6 @@ impl ExactNum {
             .neg();
         let gap = self.sub(&inv_e, wrk, RoundingMode::None);
         if gap
-            .abs()
             .exponent()
             .is_some_and(|e| (e as i64) + ((p as i64) / 2) < 0)
             || self.compare(&inv_e) == Some(0)
@@ -1626,7 +1610,7 @@ impl ExactNum {
         if self.compare(&one) == Some(0) {
             return ExactNum::from_u32(n as u32, wrk).riemann_zeta(p, rm, cc);
         }
-        if matches!(self.abs().compare(&one), Some(c) if c > 0) {
+        if matches!(self.abs_cmp(&one), Some(c) if c > 0) {
             return cat_nan();
         }
         if self.compare(&ExactNum::from_i8(-1, wrk)) == Some(0) {

@@ -453,7 +453,7 @@ impl ExactInt {
         }
         let p = v.precision().unwrap_or(DEFAULT_P).max(WORD_BIT_SIZE + 8);
         let two_w = ExactNum::from_u8(1, p).ldexp(WORD_BIT_SIZE as i32, p, RoundingMode::None);
-        let mut cur = v.abs();
+        let mut cur = v.abs_via_mul();
         let mut limbs = Vec::new();
         while !cur.is_zero() {
             let r = cur.rem(&two_w);

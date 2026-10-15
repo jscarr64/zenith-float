@@ -506,7 +506,7 @@ where
         }
         let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h, wrk, RoundingMode::None, cc)?;
         let err = y5.sub(&y4, wrk, RoundingMode::None).abs();
-        let ymax = if y.abs().compare(&y5.abs()) == Some(1) { y.abs() } else { y5.abs() };
+        let ymax = if y.abs_cmp(&y5) == Some(1) { y.abs_via_mul() } else { y5.abs_via_mul() };
         let scale = atol.add(
             &rtol.mul(&ymax, wrk, RoundingMode::None),
             wrk,

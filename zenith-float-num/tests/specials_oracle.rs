@@ -17,6 +17,15 @@ use zenith_float_num::{
     Sign, Word, INF_NEG, INF_POS,
 };
 
+/// `|x|` for an operand that stays borrowed: fresh `±1` times `x` at `x`'s own precision.
+fn abs_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    let sign = if x.is_negative() { -1 } else { 1 };
+    ExactNum::from_i8(sign, p).mul(x, p, RoundingMode::None)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 enum Canon {
     Finite {
@@ -520,7 +529,7 @@ fn near_two_digits(got: &ExactNum, want: &ExactNum, scale: &ExactNum, cc: &mut C
         return false;
     }
     let tol_unit = ExactNum::parse("0.005", Radix::Dec, width, RoundingMode::ToEven, cc);
-    let tol = scale.abs().mul(&tol_unit, width, RoundingMode::None);
+    let tol = abs_of(scale).mul(&tol_unit, width, RoundingMode::None);
     matches!(diff.compare(&tol), Some(c) if c <= 0)
 }
 

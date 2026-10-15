@@ -960,7 +960,7 @@ impl ExactNumArray {
     }
     /// Elementwise absolute value.
     pub fn abs(&self) -> Self {
-        self.map_at(self.p, |x| x.abs())
+        self.map_at(self.p, |x| x.abs_via_mul())
     }
     /// Elementwise signum.
     pub fn signum(&self) -> Self {
@@ -1303,9 +1303,9 @@ impl ExactNumArray {
         let ix = |r: usize, c: usize| r * m + c;
         for k in 0..kmax {
             let mut piv = k;
-            let mut best = a[ix(k, k)].abs();
+            let mut best = a[ix(k, k)].abs_via_mul();
             for r in (k + 1)..n {
-                let t = a[ix(r, k)].abs();
+                let t = a[ix(r, k)].abs_via_mul();
                 if matches!(t.compare(&best), Some(c) if c > 0) {
                     best = t;
                     piv = r;
@@ -1688,11 +1688,11 @@ fn svd_negligible(e: &ExactNum, d0: &ExactNum, d1: &ExactNum, p: usize, rm: Roun
     if e.is_nan() || e.is_inf() {
         return false;
     }
-    let scale = d0.abs().add(&d1.abs(), p, rm);
+    let scale = d0.abs_via_mul().add(&d1.abs_via_mul(), p, rm);
     if scale.is_zero() {
         return e.is_zero();
     }
-    match (e.abs().exponent(), scale.exponent()) {
+    match (e.exponent(), scale.exponent()) {
         (Some(ee), Some(se)) => ee < se - (p as i32 - SVD_CONV_GUARD_BITS),
         _ => false,
     }
@@ -2002,7 +2002,7 @@ fn eigen_wilkinson(
     let signed = if delta.is_negative() { h.neg() } else { h };
     let denom = delta.add(&signed, p, rm);
     if denom.is_zero() {
-        return c.sub(&b.abs(), p, rm);
+        return c.sub(&b.abs_via_mul(), p, rm);
     }
     c.sub(&b.mul(b, p, rm).div(&denom, p, rm), p, rm)
 }

@@ -277,7 +277,7 @@ where
     let one = ExactNum::from_u8(1, wrk);
     let two = ExactNum::from_u8(2, wrk);
     let three = ExactNum::from_u8(3, wrk);
-    let half_tol = tol.abs().div(&two, wrk, none);
+    let half_tol = tol.abs_via_mul().div(&two, wrk, none);
     let eps2 = one.ldexp(1 - wrk as i32, wrk, none);
     let mut fa = f(&a, wrk, none, cc);
     let mut fb = f(&b, wrk, none, cc);
@@ -295,7 +295,7 @@ where
             d = b.sub(&a, wrk, none);
             e = d.clone();
         }
-        if lt(&fc.abs(), &fb.abs()) {
+        if lt(&fc.abs_via_mul(), &fb.abs_via_mul()) {
             a = b;
             b = c;
             c = a.clone();
@@ -303,14 +303,16 @@ where
             fb = fc;
             fc = fa.clone();
         }
-        let tol1 = eps2.mul(&b.abs(), wrk, none).add(&half_tol, wrk, none);
+        let tol1 = eps2
+            .mul(&b.abs_via_mul(), wrk, none)
+            .add(&half_tol, wrk, none);
         let m = c.sub(&b, wrk, none).div(&two, wrk, none);
-        if fb.is_zero() || !lt(&tol1, &m.abs()) {
+        if fb.is_zero() || !lt(&tol1, &m.abs_via_mul()) {
             let mut out = b;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
         }
-        if !lt(&e.abs(), &tol1) && lt(&fb.abs(), &fa.abs()) {
+        if !lt(&e.abs_via_mul(), &tol1) && lt(&fb.abs_via_mul(), &fa.abs_via_mul()) {
             // Secant (a == c) or inverse quadratic interpolation, as the correction p/q.
             let s = fb.div(&fa, wrk, none);
             let two_m = two.mul(&m, wrk, none);
@@ -358,7 +360,7 @@ where
         }
         a = b.clone();
         fa = fb.clone();
-        b = if lt(&tol1, &d.abs()) {
+        b = if lt(&tol1, &d.abs_via_mul()) {
             b.add(&d, wrk, none)
         } else if m.is_positive() {
             b.add(&tol1, wrk, none)

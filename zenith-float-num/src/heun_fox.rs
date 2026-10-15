@@ -86,7 +86,7 @@ fn odd_i(n: i32) -> bool {
 }
 
 fn abs_gt_one(z: &ExactNum, p: usize) -> bool {
-    matches!(z.abs().compare(&ExactNum::from_u8(1, p)), Some(c) if c > 0)
+    matches!(z.abs_cmp(&ExactNum::from_u8(1, p)), Some(c) if c > 0)
 }
 
 fn choose_series(an_n: usize, ap_n: usize, bm_n: usize, bq_n: usize, z: &ExactNum, p: usize) -> u8 {
@@ -390,10 +390,10 @@ fn values_agree(a: &ExactNum, b: &ExactNum, bits: usize) -> bool {
     if d.is_zero() {
         return true;
     }
-    let scale = if matches!(a.abs().compare(&b.abs()), Some(c) if c > 0) {
-        a.abs()
+    let scale = if matches!(a.abs_cmp(b), Some(c) if c > 0) {
+        a.abs_via_mul()
     } else {
-        b.abs()
+        b.abs_via_mul()
     };
     let Some(de) = d.exponent() else {
         return false;
@@ -819,12 +819,12 @@ impl ExactNum {
         }
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
-        let rad = if matches!(a.abs().compare(&one), Some(c) if c < 0) {
-            a.abs()
+        let rad = if matches!(a.abs_cmp(&one), Some(c) if c < 0) {
+            a.abs_via_mul()
         } else {
             one.clone()
         };
-        if matches!(self.abs().compare(&rad), Some(c) if c >= 0) {
+        if matches!(self.abs_cmp(&rad), Some(c) if c >= 0) {
             return heun_g_outside(self, a, q, alpha, beta, gamma, delta, p, rm);
         }
         let eps = alpha
@@ -891,9 +891,10 @@ impl ExactNum {
             let term = c_next.mul(&zp, wrk, RoundingMode::None);
             sum = sum.add(&term, wrk, RoundingMode::None);
             if term.is_zero()
-                || term.abs().exponent().is_some_and(|e| {
-                    (e as i64) + (p as i64) < sum.abs().exponent().unwrap_or(0) as i64
-                })
+                || term
+                    .abs()
+                    .exponent()
+                    .is_some_and(|e| (e as i64) + (p as i64) < sum.exponent().unwrap_or(0) as i64)
             {
                 break;
             }
@@ -970,7 +971,7 @@ impl ExactNum {
         }
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
-        if matches!(self.abs().compare(&one), Some(c) if c >= 0) {
+        if matches!(self.abs_cmp(&one), Some(c) if c >= 0) {
             return heun_c_outside(self, alpha, gamma, delta, eps, q, p, rm);
         }
         let mut b_prev = ExactNum::from_u8(1, wrk);
@@ -1020,9 +1021,10 @@ impl ExactNum {
             let term = b_next.mul(&zp, wrk, RoundingMode::None);
             sum = sum.add(&term, wrk, RoundingMode::None);
             if term.is_zero()
-                || term.abs().exponent().is_some_and(|e| {
-                    (e as i64) + (p as i64) < sum.abs().exponent().unwrap_or(0) as i64
-                })
+                || term
+                    .abs()
+                    .exponent()
+                    .is_some_and(|e| (e as i64) + (p as i64) < sum.exponent().unwrap_or(0) as i64)
             {
                 break;
             }
@@ -1060,14 +1062,14 @@ fn rel_below(term: &ExactNum, peak: i32, bits: usize) -> bool {
     if term.is_zero() {
         return true;
     }
-    match term.abs().exponent() {
+    match term.exponent() {
         Some(e) => (e as i64) + (bits as i64) < i64::from(peak),
         None => false,
     }
 }
 
 fn bump_peak(peak: &mut i32, v: &ExactNum) {
-    if let Some(e) = v.abs().exponent() {
+    if let Some(e) = v.exponent() {
         if e > *peak {
             *peak = e;
         }
@@ -1081,7 +1083,7 @@ fn segment_hits(z: &ExactNum, s: &ExactNum) -> bool {
     if z.is_negative() != s.is_negative() {
         return false;
     }
-    matches!(s.abs().compare(&z.abs()), Some(c) if c <= 0)
+    matches!(s.abs_cmp(z), Some(c) if c <= 0)
 }
 
 fn min_dist(z: &ExactNum, sings: &[ExactNum], p: usize) -> ExactNum {
@@ -1140,10 +1142,10 @@ fn agrees_tight(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
     if d.is_zero() {
         return true;
     }
-    let scale = if matches!(a.abs().compare(&b.abs()), Some(c) if c > 0) {
-        a.abs()
+    let scale = if matches!(a.abs_cmp(b), Some(c) if c > 0) {
+        a.abs_via_mul()
     } else {
-        b.abs()
+        b.abs_via_mul()
     };
     let Some(de) = d.exponent() else {
         return false;
@@ -1633,7 +1635,7 @@ where
             return None;
         }
         let step = dist.ldexp(-1, p, RoundingMode::None);
-        let h = if matches!(rem.abs().compare(&step), Some(c) if c <= 0) {
+        let h = if matches!(rem.abs_via_mul().compare(&step), Some(c) if c <= 0) {
             rem
         } else if rem.is_negative() {
             step.neg()
@@ -1687,8 +1689,8 @@ fn heun_g_outside(
     if segment_hits(z, &one) || segment_hits(z, a) {
         return cat_nan();
     }
-    let rad = if matches!(a.abs().compare(&one), Some(c) if c < 0) {
-        a.abs()
+    let rad = if matches!(a.abs_cmp(&one), Some(c) if c < 0) {
+        a.abs_via_mul()
     } else {
         one.clone()
     };

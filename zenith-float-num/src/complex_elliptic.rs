@@ -783,7 +783,10 @@ mod tests {
         let kb = below.elliptic_k(p, r, &mut cc);
         assert!(near(ka.re(), kb.re(), p, 20), "K cut Re");
         assert!(ka.im().is_positive() != kb.im().is_positive() || !tiny(ka.im(), p));
-        assert!(near(&ka.im().abs(), &kb.im().abs(), p, 20), "K cut |Im|");
+        assert!(
+            near(&ka.im().abs_via_mul(), &kb.im().abs_via_mul(), p, 20),
+            "K cut |Im|"
+        );
         assert_ne!(ka.im().compare(kb.im()), Some(0));
 
         // Incomplete F cut: x=3/2, m=1/2, ±ε imag on x.

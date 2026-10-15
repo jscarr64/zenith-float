@@ -515,7 +515,7 @@ impl ExactComplex {
 
     /// Principal value on \(x<0\): \(J_\nu(-x+0i)=e^{i\nu\pi}J_\nu(x)\).
     fn bessel_neg_real_j(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
-        let x = self.re().abs();
+        let x = self.re().abs_via_mul();
         let nure = nu.re();
         let jx = x.bessel_j_nu(nure, p, RoundingMode::None, cc);
         let (c, s) = cos_sin_nu_pi(nure, p, cc);
@@ -527,7 +527,7 @@ impl ExactComplex {
 
     /// \(Y_\nu(-x+0i)=e^{-i\nu\pi}Y_\nu(x)+2i\cos(\nu\pi)J_\nu(x)\).
     fn bessel_neg_real_y(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
-        let x = self.re().abs();
+        let x = self.re().abs_via_mul();
         let nure = nu.re();
         let jx = x.bessel_j_nu(nure, p, RoundingMode::None, cc);
         let yx = x.bessel_y(nure, p, RoundingMode::None, cc);
@@ -543,7 +543,7 @@ impl ExactComplex {
 
     /// \(I_\nu(-x+0i)=e^{i\nu\pi}I_\nu(x)\).
     fn bessel_neg_real_i(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
-        let x = self.re().abs();
+        let x = self.re().abs_via_mul();
         let nure = nu.re();
         let ix = x.bessel_i(nure, p, RoundingMode::None, cc);
         let (c, s) = cos_sin_nu_pi(nure, p, cc);
@@ -555,7 +555,7 @@ impl ExactComplex {
 
     /// \(K_\nu(-x+0i)=e^{-i\nu\pi}K_\nu(x)-i\pi I_\nu(x)\).
     fn bessel_neg_real_k(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
-        let x = self.re().abs();
+        let x = self.re().abs_via_mul();
         let nure = nu.re();
         let ix = x.bessel_i(nure, p, RoundingMode::None, cc);
         let kx = x.bessel_k(nure, p, RoundingMode::None, cc);

@@ -161,7 +161,7 @@ fn result_ulp(x: &ExactNum, p: usize) -> ExactNum {
 /// `|raw|` plus one destination ulp, rounded away from zero.
 fn err_estimate(raw: &ExactNum, result: &ExactNum, p: usize, wrk: usize) -> ExactNum {
     let ulp = result_ulp(result, p);
-    let mut gap = raw.abs();
+    let mut gap = raw.abs_via_mul();
     let _ = gap.set_precision(wrk, RoundingMode::Up);
     let sum = gap.add(&ulp, wrk, RoundingMode::Up);
     round_out(sum, p, RoundingMode::Up)
@@ -771,7 +771,7 @@ fn abs_tolerance(tol_rel: &ExactNum, estimate: &ExactNum, p: usize) -> ExactNum 
     let rm = RoundingMode::None;
     let floor = tiny(p, 1);
     let one = ExactNum::from_u8(1, p);
-    let mut scale = estimate.abs();
+    let mut scale = estimate.abs_via_mul();
     if leq(&scale, &one) {
         scale = one;
     }

@@ -641,8 +641,8 @@ mod tests {
                                                 compute_added_err(ErrAlgo::Pow(b, n, emin));
                                             let err = calc_err(d1, d2, p);
 
-                                            if !(b.abs().compare(&one()) == Some(0)
-                                                || bb.abs().compare(&one()) == Some(0))
+                                            if !(b.abs_via_mul().compare(&one()) == Some(0)
+                                                || bb.abs_via_mul().compare(&one()) == Some(0))
                                             {
                                                 let err_estimate = 1.max(err_estimate);
                                                 //println!("pow {:?} {:?}", err, err_estimate);

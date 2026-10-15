@@ -19,6 +19,15 @@ use zenith_float_num::{
     wynn_epsilon, Ball, Consts, ExactNum, QuadratureError, Radix, RoundingMode,
 };
 
+/// `|x|` for an operand that stays borrowed: fresh `±1` times `x` at `x`'s own precision.
+fn abs_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    let sign = if x.is_negative() { -1 } else { 1 };
+    ExactNum::from_i8(sign, p).mul(x, p, RoundingMode::None)
+}
+
 /// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
 fn neg_of(x: &ExactNum) -> ExactNum {
     let p = x
@@ -286,7 +295,7 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
     if let Some(est_tol) = row.get("est_tol").and_then(|v| v.as_str()) {
         let rel = parse_at(est_tol, 384, RoundingMode::Up, &mut cc);
         let one = ExactNum::from_u8(1, 384);
-        let mag = truth.abs();
+        let mag = abs_of(&truth);
         let scale = if mag.compare(&one) == Some(1) { mag } else { one };
         let bar = rel.mul(&scale, 384, RoundingMode::Up);
         if !covers(&est, &truth, &bar) {
@@ -388,7 +397,7 @@ fn run_ode(row: &serde_json::Value) -> Result<(), String> {
             RoundingMode::Up,
             &mut cc,
         );
-        let scale = truth.abs();
+        let scale = abs_of(&truth);
         let one = ExactNum::from_u8(1, 384);
         let mag = if scale.compare(&one) == Some(1) { scale } else { one };
         atol.add(
