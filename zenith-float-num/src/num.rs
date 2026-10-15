@@ -1120,7 +1120,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     pub fn floor(&self) -> Result<Self, Error> {
         let int = self.int()?;
-        if self.is_negative() && !self.fract()?.m.is_zero() {
+        if self.is_negative() && !self.is_int() {
             return int.sub(&ONE, int.mantissa_max_bit_len(), RoundingMode::ToZero);
         }
         Ok(int)
@@ -1133,7 +1133,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     pub fn ceil(&self) -> Result<Self, Error> {
         let int = self.int()?;
-        if self.is_positive() && !self.fract()?.m.is_zero() {
+        if self.is_positive() && !self.is_int() {
             return int.add(&ONE, int.mantissa_max_bit_len(), RoundingMode::ToZero);
         }
         Ok(int)

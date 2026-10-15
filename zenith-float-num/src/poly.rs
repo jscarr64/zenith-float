@@ -223,7 +223,7 @@ impl ExactNumPoly {
         }
         let mut g: Option<ExactInt> = None;
         for c in &self.coeffs {
-            if c.is_nan() || c.is_inf() || !c.fract().is_zero() {
+            if c.is_nan() || c.is_inf() || !c.is_int() {
                 return None;
             }
             let i = ExactInt::from_exact_num(c)?;

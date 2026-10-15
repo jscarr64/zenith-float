@@ -182,8 +182,7 @@ impl ExactNumNumber {
             return Err(Error::ExponentOverflow(Sign::Pos));
         }
 
-        let fr = self.fract()?;
-        if !self.is_positive() && fr.is_zero() {
+        if !self.is_positive() && self.is_int() {
             return Err(Error::InvalidArgument);
         }
 
@@ -249,7 +248,7 @@ impl ExactNumNumber {
     }
 
     fn gamma_positive(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        if self.fract()?.is_zero() && self.is_positive() {
+        if self.is_int() && self.is_positive() {
             for n in 1u32..=64 {
                 let w = Self::from_word(n as Word, p)?;
                 if self.cmp(&w) == 0 {
@@ -323,7 +322,7 @@ impl ExactNumNumber {
     pub fn digamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
-        if !self.is_positive() && self.fract()?.is_zero() {
+        if !self.is_positive() && self.is_int() {
             return Err(Error::InvalidArgument);
         }
         let mut p_inc = WORD_BIT_SIZE;
@@ -4134,7 +4133,7 @@ fn as_i32_exact(x: &ExactNumNumber, p: usize) -> Result<Option<i32>, Error> {
     if x.is_zero() {
         return Ok(Some(0));
     }
-    if !x.fract()?.is_zero() {
+    if !x.is_int() {
         return Ok(None);
     }
     let u = match x.abs()?.int_as_usize() {

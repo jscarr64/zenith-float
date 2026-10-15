@@ -41,7 +41,7 @@ fn is_int(x: &ExactNum) -> bool {
     if x.is_nan() || x.is_inf() {
         return false;
     }
-    x.fract().is_zero()
+    x.is_int()
 }
 
 fn gcd_int(mut a: ExactNum, mut b: ExactNum) -> ExactNum {
