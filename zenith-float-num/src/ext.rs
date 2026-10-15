@@ -5583,12 +5583,13 @@ mod add_sub_zero_tests {
     }
 }
 
-/// Characterization of `ldexp` / `scalb` over a grid of operands (zero, normal, near both ends of the exponent
+/// Characterization over grids of operands: `ldexp` / `scalb` (one operand) and `add` / `sub` / `add_full_prec` /
+/// `sub_full_prec` (pairs, including every zero, Inf and NaN combination). Original text: `ldexp` / `scalb` over a grid of operands (zero, normal, near both ends of the exponent
 /// range), shifts, precisions and rounding modes: the digest of every result (value, sign, exponent, flags)
 /// is pinned (storage representation, inline or heap, is not part of the value), so the signature change to `self`
 /// must reproduce every bit. Both the `&self` and the `self` implementation give this digest.
 #[cfg(test)]
-mod ldexp_grid_tests {
+mod grid_digest_tests {
     use crate::defs::{RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
     use crate::{Error, ExactNum, INF_NEG, INF_POS};
     use core::hash::{Hash, Hasher};
@@ -5712,5 +5713,36 @@ mod ldexp_grid_tests {
         assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
         println!("ldexp grid digest = {}", h.finish());
         assert_eq!(h.finish(), 3_896_020_040_264_525_112);
+    }
+
+    #[test]
+    fn add_sub_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..OPERANDS {
+            for j in 0..OPERANDS {
+                for p in [1usize, 53, 64, 65, 128, 192, 200] {
+                    for rm in RMS {
+                        digest(&operand(i).add(&operand(j), p, rm), &mut h);
+                        digest(&operand(i).sub(&operand(j), p, rm), &mut h);
+                        count += 2;
+                    }
+                }
+                // full precision of operands 2^32 apart would need a 2^32-bit mantissa
+                let (ei, ej) = (operand(i).exponent(), operand(j).exponent());
+                let near = match (ei, ej) {
+                    (Some(a), Some(b)) => a.abs_diff(b) < 4096,
+                    _ => true,
+                };
+                if near {
+                    digest(&operand(i).add_full_prec(&operand(j)), &mut h);
+                    digest(&operand(i).sub_full_prec(&operand(j)), &mut h);
+                    count += 2;
+                }
+            }
+        }
+        assert_eq!(count, 37_550);
+        println!("add/sub grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 5_394_997_061_799_985_050);
     }
 }
