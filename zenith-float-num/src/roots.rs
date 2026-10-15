@@ -59,9 +59,7 @@ where
     }
     let two = ExactNum::from_u8(2, wrk);
     for k in 1..=ROOT_MAX_ITER {
-        let mid = a
-            .add(&b, wrk, RoundingMode::None)
-            .div(&two, wrk, RoundingMode::None);
+        let mid = a.add_full_prec(&b).div(&two, wrk, RoundingMode::None);
         if !strictly_inside(&mid, &a, &b) {
             // The bracket is two adjacent working-precision values: `tol` is below resolution.
             let mut out = mid;

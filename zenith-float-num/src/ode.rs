@@ -111,7 +111,7 @@ where
         let y2 = half_h
             .mul(&k1, wrk, RoundingMode::None)
             .add(&y, wrk, RoundingMode::None);
-        let t2 = t.add(&half_h, wrk, RoundingMode::None);
+        let t2 = t.add_full_prec(&half_h);
         let k2 = f(&t2, &y2, wrk, RoundingMode::None, cc);
         let y3 = half_h
             .mul(&k2, wrk, RoundingMode::None)

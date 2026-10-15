@@ -222,7 +222,7 @@ impl ExactNum {
         let bfn = alpha
             .gamma(pw, none, cc)
             .mul(&beta.gamma(pw, none, cc), pw, none)
-            .div(&alpha.add(beta, pw, none).gamma(pw, none, cc), pw, none);
+            .div(&alpha.add_full_prec(beta).gamma(pw, none, cc), pw, none);
         num.div(&bfn, p, rm)
     }
 
@@ -365,7 +365,7 @@ fn binom_mul(n: &ExactNum, k: &ExactNum, pw: usize) -> ExactNum {
     let mut c = one.clone();
     let nmk = k.neg_via_mul().add(&n, pw, none);
     loop {
-        let term = nmk.add(&i, pw, none);
+        let term = nmk.add_full_prec(&i);
         c = c.mul(&term, pw, none).div(&i, pw, none);
         if i.compare(k) == Some(0) {
             return c;

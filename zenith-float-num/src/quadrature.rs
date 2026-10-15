@@ -363,9 +363,7 @@ where
         .neg_via_mul()
         .add(&b, wrk, RoundingMode::None)
         .div(&two, wrk, RoundingMode::None);
-    let mid = a
-        .add(b, wrk, RoundingMode::None)
-        .div(&two, wrk, RoundingMode::None);
+    let mid = a.add_full_prec(b).div(&two, wrk, RoundingMode::None);
     let pi = cc.pi(wrk, RoundingMode::None);
     let half_pi = pi.div(&two, wrk, RoundingMode::None);
     let wmin = tiny(wrk, 8);
