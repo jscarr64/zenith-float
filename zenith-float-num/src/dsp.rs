@@ -94,8 +94,8 @@ pub fn dct(
         let (sn, cs) = ang.sin_cos(wrk, RoundingMode::None, cc);
         let yr = spec.get2(0, k)?;
         let yi = spec.get2(1, k)?;
-        let re = ExactNum::mul_ref(yr, &cs, wrk, RoundingMode::None).add(
-            &ExactNum::mul_ref(yi, &sn, wrk, RoundingMode::None),
+        let re = cs.mul(yr, wrk, RoundingMode::None).add(
+            &sn.mul(yi, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
@@ -175,8 +175,8 @@ pub fn dst(
         let yr = spec.get2(0, m)?;
         let yi = spec.get2(1, m)?;
         // −Im(Y[m] exp(−iθ)) = yr sinθ − yi cosθ
-        let val = ExactNum::mul_ref(yr, &sn, wrk, RoundingMode::None).sub(
-            &ExactNum::mul_ref(yi, &cs, wrk, RoundingMode::None),
+        let val = sn.mul(yr, wrk, RoundingMode::None).sub(
+            &cs.mul(yi, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );

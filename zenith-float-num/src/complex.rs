@@ -222,11 +222,11 @@ impl ExactComplex {
     }
 
     /// Implementation of [`Self::mul`] on operands without inexact history.
-    fn mul_word(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
+    fn mul_word(self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         let ac = ExactNum::mul_ref(&self.re, &rhs.re, p, rm);
         let bd = ExactNum::mul_ref(&self.im, &rhs.im, p, rm);
-        let ad = ExactNum::mul_ref(&self.re, &rhs.im, p, rm);
-        let bc = ExactNum::mul_ref(&self.im, &rhs.re, p, rm);
+        let ad = self.re.mul(&rhs.im, p, rm);
+        let bc = self.im.mul(&rhs.re, p, rm);
         Self::new(ac.sub(&bd, p, rm), ad.add(&bc, p, rm))
     }
 
@@ -241,11 +241,11 @@ impl ExactComplex {
     }
 
     /// Implementation of [`Self::div`] on operands without inexact history.
-    fn div_word(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
+    fn div_word(self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         let ac = ExactNum::mul_ref(&self.re, &rhs.re, p, RoundingMode::None);
         let bd = ExactNum::mul_ref(&self.im, &rhs.im, p, RoundingMode::None);
-        let bc = ExactNum::mul_ref(&self.im, &rhs.re, p, RoundingMode::None);
-        let ad = ExactNum::mul_ref(&self.re, &rhs.im, p, RoundingMode::None);
+        let bc = self.im.mul(&rhs.re, p, RoundingMode::None);
+        let ad = self.re.mul(&rhs.im, p, RoundingMode::None);
         let den = rhs.re.sqr(p, RoundingMode::None).add(
             &rhs.im.sqr(p, RoundingMode::None),
             p,

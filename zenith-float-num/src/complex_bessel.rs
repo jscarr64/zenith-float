@@ -543,11 +543,11 @@ impl ExactComplex {
         let yx = x.bessel_y(nure, p, RoundingMode::None, cc);
         let (c, s) = cos_sin_nu_pi(nure, p, cc);
         let two = ExactNum::from_u8(2, p);
-        let re = ExactNum::mul_ref(&c, &yx, p, RoundingMode::None);
         let im = two
             .mul(&c, p, RoundingMode::None)
             .mul(&jx, p, RoundingMode::None)
             .sub(&s.mul(&yx, p, RoundingMode::None), p, RoundingMode::None);
+        let re = c.mul(&yx, p, RoundingMode::None);
         ExactComplex::new(re, im)
     }
 

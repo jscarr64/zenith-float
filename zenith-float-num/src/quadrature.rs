@@ -253,7 +253,7 @@ fn gauss_legendre_nodes(
                 let pn = x.legendre_p(nu, p, rm);
                 let pnm = if nu == 0 { ExactNum::new(p) } else { x.legendre_p(nu - 1, p, rm) };
                 let d = x.sqr(p, rm).neg().add(&one, p, rm);
-                pnm.sub(&ExactNum::mul_ref(x, &pn, p, rm), p, rm)
+                pnm.sub(&pn.mul(x, p, rm), p, rm)
                     .mul(&n_f, p, rm)
                     .div(&d, p, rm)
             },
@@ -358,13 +358,13 @@ where
     for k in 0..TANH_SINH_K_MAX {
         let t = ExactNum::from_u32(k as u32, wrk).mul(h, wrk, RoundingMode::None);
         let (sh, ch) = t.sinh_cosh(wrk, RoundingMode::None, cc);
-        let u = ExactNum::mul_ref(&half_pi, &sh, wrk, RoundingMode::None);
+        let u = sh.mul(&half_pi, wrk, RoundingMode::None);
         let (su, cu) = u.sinh_cosh(wrk, RoundingMode::None, cc);
         if !finite(&cu) || cu.is_zero() {
             break;
         }
         let xi = su.div(&cu, wrk, RoundingMode::None);
-        let w = ExactNum::mul_ref(&half_pi, &ch, wrk, RoundingMode::None).div(
+        let w = ch.mul(&half_pi, wrk, RoundingMode::None).div(
             &cu.sqr(wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
@@ -599,12 +599,8 @@ fn gauss_hermite_nodes(
         };
         ExactNum::div_ref(
             &scale,
-            &ExactNum::mul_ref(
-                &nsq,
-                &hm.sqr(wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            ),
+            &hm.sqr(wrk, RoundingMode::None)
+                .mul(&nsq, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         )

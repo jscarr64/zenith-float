@@ -336,13 +336,11 @@ fn char_poly(lam: &ExactNum, beta: &[ExactNum], p: usize) -> Option<(ExactNum, E
         return None;
     }
     for b in beta {
-        let p_new =
-            ExactNum::mul_ref(lam, &p1, p, rm).sub(&ExactNum::mul_ref(b, &p0, p, rm), p, rm);
-        let d_new = ExactNum::mul_ref(lam, &d1, p, rm).add(&p1, p, rm).sub(
-            &ExactNum::mul_ref(b, &d0, p, rm),
-            p,
-            rm,
-        );
+        let p_new = ExactNum::mul_ref(lam, &p1, p, rm).sub(&p0.mul(b, p, rm), p, rm);
+        let d_new =
+            ExactNum::mul_ref(lam, &d1, p, rm)
+                .add(&p1, p, rm)
+                .sub(&d0.mul(b, p, rm), p, rm);
         if !finite(&p_new) || !finite(&d_new) {
             return None;
         }
@@ -495,11 +493,8 @@ fn jacobi_weight(
     }
     sumsq = sumsq.add(&v_prev.sqr(p, rm), p, rm);
     for i in 2..m {
-        let numer = ExactNum::mul_ref(lam, &v_prev, p, rm).sub(
-            &ExactNum::mul_ref(&off[i - 2], &v_prev2, p, rm),
-            p,
-            rm,
-        );
+        let numer =
+            ExactNum::mul_ref(lam, &v_prev, p, rm).sub(&v_prev2.mul(&off[i - 2], p, rm), p, rm);
         let v = numer.div(&off[i - 1], p, rm);
         if !finite(&v) {
             return None;

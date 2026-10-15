@@ -1340,9 +1340,9 @@ impl ExactNumArray {
             }
             let akk = a[ix(k, k)].clone();
             for i in (k + 1)..n {
-                let lik = ExactNum::div_ref(&a[ix(i, k)], &akk, p, rm);
+                let old = core::mem::replace(&mut a[ix(i, k)], ExactNum::from_u8(0, p));
+                let lik = old.div(&akk, p, rm);
                 lvals[i * n + k] = lik.clone();
-                a[ix(i, k)] = ExactNum::from_u8(0, p);
                 for j in (k + 1)..m {
                     let t = ExactNum::mul_ref(&lik, &a[ix(k, j)], p, rm);
                     a[ix(i, j)] = t.neg().add(&a[ix(i, j)], p, rm);
@@ -1424,8 +1424,8 @@ impl ExactNumArray {
                 nrm = nrm.sqrt(p, rm);
                 r[j * n + j] = nrm.clone();
                 if !nrm.is_zero() {
-                    for t in 0..m {
-                        q[t * k + j] = ExactNum::div_ref(&v[t], &nrm, p, rm);
+                    for (t, vt) in v.into_iter().enumerate().take(m) {
+                        q[t * k + j] = vt.div(&nrm, p, rm);
                     }
                 }
             }
@@ -1813,9 +1813,9 @@ fn svd_qr_sweep(
         let ej = e[j].clone();
         let dj1 = d[j + 1].clone();
         f = ExactNum::mul_ref(&cs, &dj, p, rm).add(&ExactNum::mul_ref(&sn, &ej, p, rm), p, rm);
-        e[j] = ExactNum::mul_ref(&cs, &ej, p, rm).sub(&dj.mul(&sn, p, rm), p, rm);
+        e[j] = ej.mul(&cs, p, rm).sub(&dj.mul(&sn, p, rm), p, rm);
         g = ExactNum::mul_ref(&sn, &dj1, p, rm);
-        d[j + 1] = ExactNum::mul_ref(&cs, &dj1, p, rm);
+        d[j + 1] = dj1.mul(&cs, p, rm);
         svd_apply_givens_cols(v, n, n, j, j + 1, &cs, &sn, p, rm);
 
         let (cs, sn, r) = svd_rotg(&f, &g, p, rm);
@@ -1826,7 +1826,8 @@ fn svd_qr_sweep(
         d[j + 1] = dj1.mul(&cs, p, rm).sub(&ej.mul(&sn, p, rm), p, rm);
         if j + 1 < last {
             g = ExactNum::mul_ref(&sn, &e[j + 1], p, rm);
-            e[j + 1] = ExactNum::mul_ref(&cs, &e[j + 1], p, rm);
+            let old = core::mem::replace(&mut e[j + 1], svd_zero(p));
+            e[j + 1] = old.mul(&cs, p, rm);
         }
         svd_apply_givens_cols(u, m, m, j, j + 1, &cs, &sn, p, rm);
     }
@@ -2296,16 +2297,14 @@ fn fft_dit(
             for j in 0..half {
                 let t = k + j + half;
                 let u = k + j;
-                let tr = ExactNum::mul_ref(&w_re, &re[t], p, rm).sub(
-                    &ExactNum::mul_ref(&w_im, &im[t], p, rm),
+                let rt = core::mem::replace(&mut re[t], svd_zero(p));
+                let it = core::mem::replace(&mut im[t], svd_zero(p));
+                let tr = ExactNum::mul_ref(&w_re, &rt, p, rm).sub(
+                    &ExactNum::mul_ref(&w_im, &it, p, rm),
                     p,
                     rm,
                 );
-                let ti = ExactNum::mul_ref(&w_re, &im[t], p, rm).add(
-                    &ExactNum::mul_ref(&w_im, &re[t], p, rm),
-                    p,
-                    rm,
-                );
+                let ti = it.mul(&w_re, p, rm).add(&rt.mul(&w_im, p, rm), p, rm);
                 let ur = core::mem::replace(&mut re[u], svd_zero(p));
                 let ui = core::mem::replace(&mut im[u], svd_zero(p));
                 re[t] = ExactNum::sub_ref(&ur, &tr, p, rm);
@@ -2328,8 +2327,8 @@ fn fft_dit(
     if inverse {
         let inv_n = svd_one(p).div(&fft_from_len(n, p), p, rm);
         for i in 0..n {
-            re[i] = ExactNum::mul_ref(&re[i], &inv_n, p, rm);
-            im[i] = ExactNum::mul_ref(&inv_n, &im[i], p, rm);
+            re[i] = core::mem::replace(&mut re[i], svd_zero(p)).mul(&inv_n, p, rm);
+            im[i] = core::mem::replace(&mut im[i], svd_zero(p)).mul(&inv_n, p, rm);
         }
     }
     let mut vals = Vec::with_capacity(n.checked_mul(2)?);

@@ -271,11 +271,7 @@ impl ExactNumPoly {
         if lc.is_zero() {
             return s;
         }
-        let xs: Vec<ExactNum> = s
-            .coeffs
-            .iter()
-            .map(|c| ExactNum::div_ref(c, &lc, p, rm))
-            .collect();
+        let xs: Vec<ExactNum> = s.coeffs.into_iter().map(|c| c.div(&lc, p, rm)).collect();
         Self::from_coeffs(p, rm, &xs)
     }
 

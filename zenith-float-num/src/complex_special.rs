@@ -437,7 +437,7 @@ impl ExactComplex {
             nfact = nfact.mul(&ExactNum::from_u32(n as u32, p), p, RoundingMode::None);
             upow = upow.mul(&u2, p, RoundingMode::None);
             let two_n_1 = ExactNum::from_u32((2 * n + 1) as u32, p);
-            let den = ExactNum::mul_ref(&nfact, &two_n_1, p, RoundingMode::None);
+            let den = two_n_1.mul(&nfact, p, RoundingMode::None);
             let mut t = upow.div(&ExactComplex::from_real(den, p), p, RoundingMode::None);
             if n % 2 == 1 {
                 t = neg_c(t);

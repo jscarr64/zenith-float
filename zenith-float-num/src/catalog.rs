@@ -359,12 +359,11 @@ fn clausen_cl2_series(theta: &ExactNum, p: usize, bits: usize, cc: &mut Consts) 
         .mul(theta, p, RoundingMode::None)
         .neg()
         .add(theta, p, RoundingMode::None);
-    for k in 1..=nterms {
-        let b = &bs[k - 1];
+    for (k, b) in (1..=nterms).zip(bs) {
         if b.is_nan() {
             return cat_nan();
         }
-        let raw = ExactNum::mul_ref(b, &u, p, RoundingMode::None).div(
+        let raw = b.mul(&u, p, RoundingMode::None).div(
             &ExactNum::from_u32((2 * k) as u32, p),
             p,
             RoundingMode::None,
@@ -409,12 +408,11 @@ fn clausen_cl3_series(theta_abs: &ExactNum, p: usize, bits: usize, cc: &mut Cons
             p,
             RoundingMode::None,
         );
-    for k in 1..=nterms {
-        let b = &bs[k - 1];
+    for (k, b) in (1..=nterms).zip(bs) {
         if b.is_nan() {
             return cat_nan();
         }
-        let raw = ExactNum::mul_ref(b, &u, p, RoundingMode::None).div(
+        let raw = b.mul(&u, p, RoundingMode::None).div(
             &ExactNum::from_u32((2 * k) as u32, p),
             p,
             RoundingMode::None,
@@ -1664,7 +1662,7 @@ fn barnes_ln_g_plus1(z: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     let m = (12 + p / 12).min(48);
     let bs = even_bernoulli_ext(m + 1, p);
     let mut z2k = ExactNum::from_u8(1, p);
-    for (k, b) in bs.iter().enumerate().skip(1) {
+    for (k, b) in bs.into_iter().enumerate().skip(1) {
         z2k = z2k.mul(&z2, p, RoundingMode::None);
         let kf = ExactNum::from_u32(k as u32, p);
         let kp1 = ExactNum::from_u32((k + 1) as u32, p);
@@ -1672,11 +1670,7 @@ fn barnes_ln_g_plus1(z: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
             .mul(&kf, p, RoundingMode::None)
             .mul(&kp1, p, RoundingMode::None)
             .mul(&z2k, p, RoundingMode::None);
-        s = s.add(
-            &ExactNum::div_ref(b, &den, p, RoundingMode::None),
-            p,
-            RoundingMode::None,
-        );
+        s = s.add(&b.div(&den, p, RoundingMode::None), p, RoundingMode::None);
     }
     s
 }

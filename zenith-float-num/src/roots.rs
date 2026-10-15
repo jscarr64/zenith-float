@@ -134,12 +134,13 @@ where
         if !finite(&y) || !finite(&d) || d.is_zero() {
             return None;
         }
-        let step = ExactNum::div_ref(&y, &d, wrk, RoundingMode::None);
+        let y_zero = y.is_zero();
+        let step = y.div(&d, wrk, RoundingMode::None);
         x = x.sub(&step, wrk, RoundingMode::None);
         if !finite(&x) {
             return None;
         }
-        if y.is_zero() || below_tol(&step.abs(), tol) {
+        if y_zero || below_tol(&step.abs(), tol) {
             let _ = x.set_precision(p, rm);
             return Some((x, k));
         }
