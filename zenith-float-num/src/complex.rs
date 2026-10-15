@@ -29,6 +29,11 @@ impl ExactComplex {
         Self { re, im }
     }
 
+    /// Consumes the value and returns `(re, im)` by move; no copy of either part.
+    pub fn into_parts(self) -> (ExactNum, ExactNum) {
+        (self.re, self.im)
+    }
+
     /// Real part.
     pub fn re(&self) -> &ExactNum {
         &self.re
@@ -1118,5 +1123,39 @@ mod tests {
     fn test_complex_nan() {
         let n = ExactComplex::new(NAN.clone(), ExactNum::new(64));
         assert!(n.is_nan());
+    }
+
+    #[test]
+    fn into_parts_moves_both_parts() {
+        let re = ExactNum::from_u8(3, 64);
+        let im = ExactNum::from_u8(5, 64);
+        let (r, i) = ExactComplex::new(re, im).into_parts();
+        assert!(matches!(r.compare(&ExactNum::from_u8(3, 64)), Some(0)));
+        assert!(matches!(i.compare(&ExactNum::from_u8(5, 64)), Some(0)));
+    }
+
+    #[test]
+    fn exponent_range_check_on_complex_parts() {
+        let p = 64;
+        let big = ExactNum::from_u8(1, p).ldexp(100, p, RoundingMode::ToEven);
+        let small = ExactNum::from_u8(1, p).ldexp(-100, p, RoundingMode::ToEven);
+        let ok = ExactNum::from_u8(3, p);
+        let z = crate::macro_util::check_complex_exponent_range(
+            ExactComplex::new(big.neg(), small),
+            -50,
+            50,
+        );
+        assert!(z.re().is_inf() && z.re().is_negative());
+        assert!(z.im().is_zero());
+        let z = crate::macro_util::check_complex_exponent_range(
+            ExactComplex::new(ok.neg(), ok),
+            -50,
+            50,
+        );
+        assert!(matches!(
+            z.re().compare(&ExactNum::from_u8(3, p).neg()),
+            Some(0)
+        ));
+        assert!(matches!(z.im().compare(&ExactNum::from_u8(3, p)), Some(0)));
     }
 }

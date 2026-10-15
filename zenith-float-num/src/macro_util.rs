@@ -256,9 +256,10 @@ pub fn check_complex_exponent_range(
     emin: Exponent,
     emax: Exponent,
 ) -> crate::ExactComplex {
+    let (re, im) = z.into_parts();
     crate::ExactComplex::new(
-        check_exponent_range(z.re().clone(), emin, emax),
-        check_exponent_range(z.im().clone(), emin, emax),
+        check_exponent_range(re, emin, emax),
+        check_exponent_range(im, emin, emax),
     )
 }
 

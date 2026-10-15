@@ -127,6 +127,7 @@ const SKIP: &[&str] = &[
     "im",
     "conj",
     "from_real",
+    "into_parts",
     "mid",
 ];
 

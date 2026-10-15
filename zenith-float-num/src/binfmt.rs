@@ -194,7 +194,7 @@ fn nan_from_flag(flag: u8) -> Result<ExactNum, Error> {
         BINARY_FLAG_NAN_OOM => Ok(ExactNum::nan(Some(Error::MemoryAllocation))),
         BINARY_FLAG_NAN_OVF_POS => Ok(ExactNum::nan(Some(Error::ExponentOverflow(Sign::Pos)))),
         BINARY_FLAG_NAN_OVF_NEG => Ok(ExactNum::nan(Some(Error::ExponentOverflow(Sign::Neg)))),
-        BINARY_FLAG_NAN_BARE => Ok(NAN.clone()),
+        BINARY_FLAG_NAN_BARE => Ok(NAN),
         _ => Err(Error::InvalidArgument),
     }
 }
@@ -332,8 +332,8 @@ fn decode_num(bytes: &[u8]) -> Result<(ExactNum, usize), Error> {
             return Err(Error::InvalidArgument);
         }
         let v = match flag {
-            BINARY_FLAG_INF_POS => INF_POS.clone(),
-            BINARY_FLAG_INF_NEG => INF_NEG.clone(),
+            BINARY_FLAG_INF_POS => INF_POS,
+            BINARY_FLAG_INF_NEG => INF_NEG,
             _ => nan_from_flag(flag)?,
         };
         return Ok((v, BINARY_INLINE_LEN));

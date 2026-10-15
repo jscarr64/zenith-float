@@ -239,7 +239,7 @@ fn encode_exact(n: &ExactNum) -> String {
 fn decode_exact_cell(s: &str) -> Result<ExactNum, Error> {
     let t = s.trim();
     if t.is_empty() {
-        return Ok(crate::NAN.clone());
+        return Ok(crate::NAN);
     }
     let (body, p) = match t.rfind(P_MARK) {
         Some(i) => {
