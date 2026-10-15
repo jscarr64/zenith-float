@@ -4,6 +4,7 @@
 //! It uses special cases of numbers, like zero, one, maximum possible value, a number with many trailing zeroes in mantissa, etc.
 
 use std::ops::Add;
+use std::ops::Neg;
 
 use crate::mpfr::common::{
     assert_float_close, conv_to_mpfr, get_last_zero, get_near_one, get_oned_sides, get_oned_zeroed,

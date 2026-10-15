@@ -8,6 +8,7 @@ use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::common::test_random;
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::Float;
+use std::ops::Neg;
 use zenith_float_num::{Consts, ExactNum, Exponent, RoundingMode, WORD_BIT_SIZE};
 
 pub const PRECISIONS: [usize; 11] = [24, 53, 64, 65, 100, 113, 127, 128, 130, 200, 255];

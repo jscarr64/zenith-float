@@ -6,6 +6,7 @@ use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::exact_bit_functions::{check, exact_input, input, MODES, PRECISIONS};
 use gmp_mpfr_sys::mpfr;
 use rug::Float;
+use std::ops::Neg;
 use zenith_float_num::{Consts, ExactNum, Radix, WORD_BIT_SIZE};
 
 fn storage(p: usize) -> usize {

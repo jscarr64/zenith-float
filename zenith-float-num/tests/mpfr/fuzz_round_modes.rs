@@ -15,9 +15,18 @@ use crate::mpfr::common::BinOp;
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::float::{exp_max, exp_min};
 use rug::Float;
+use std::ops::Neg;
 use zenith_float_num::{
     Consts, ExactNum, Exponent, RoundingMode, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
 };
+
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
 
 const ROUNDS: [(RoundingMode, rnd_t); 5] = [
     (RoundingMode::ToEven, rnd_t::RNDN),
@@ -88,7 +97,7 @@ fn fuzz_mpfr_bit_exact_all_round_modes() {
                 }
             }
             for (rm, rnd) in ROUNDS {
-                let a = if n1.is_negative() { n1.neg() } else { n1.clone() };
+                let a = if n1.is_negative() { neg_of(&n1) } else { n1.clone() };
                 let fa = Float::with_val(p as u32, f1.abs_ref());
                 test_zf_op_no_cc!(
                     true,
@@ -141,7 +150,7 @@ fn fuzz_mpfr_overflow_all_round_modes() {
         let max = ExactNum::max_value(p);
         let seconds = vec![
             max.clone(),
-            max.neg(),
+            neg_of(&max),
             ExactNum::from_i8(2, p),
             ExactNum::from_i8(-2, p),
             {
@@ -161,7 +170,8 @@ fn fuzz_mpfr_overflow_all_round_modes() {
             },
         ];
 
-        for n1 in [&max, &max.neg()] {
+        let neg_max = neg_of(&max);
+        for n1 in [&max, &neg_max] {
             for n2 in &seconds {
                 let f1 = conv_to_mpfr(p, n1, &mut cc);
                 let f2 = conv_to_mpfr(p, n2, &mut cc);

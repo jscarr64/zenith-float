@@ -10,6 +10,12 @@ use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::Float;
 use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MAX, WORD_BIT_SIZE};
 
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x.mantissa_max_bit_len().unwrap_or(WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
+
 /// Like `check`, except that `ToOdd` (round half to odd) is compared with the `ToEven`
 /// reference when that one overflowed: the common reference emulates `ToOdd` at `p + 1`
 /// bits, which cannot overflow.
@@ -72,7 +78,13 @@ fn overflow_by_mode_binary() {
         ),
         (
             "pow",
-            |a, b, p, rm, cc| a.abs().pow(b, p, rm, cc),
+            |a, b, p, rm, cc| {
+                if a.is_negative() {
+                    neg_of(a).pow(b, p, rm, cc)
+                } else {
+                    a.pow(b, p, rm, cc)
+                }
+            },
             |r, a, b, rnd| unsafe {
                 let mut aa = a.clone();
                 aa.abs_mut();
