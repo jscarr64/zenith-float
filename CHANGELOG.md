@@ -45,6 +45,10 @@ The library no longer contains any `#[allow]` or `#[expect]`. The underlying cod
 
 Internal size and shape checks in the arithmetic kernels used to `unwrap()` or `panic!()`. They now return `Err(Error::InvalidArgument)` and the callers propagate it: the FFT multiplier (`fft_forward`, `fft_reverse`, `fft_decompose`, `fft_mul_mod`, `fft_div_mod`), Toom-2 and Toom-3, `div_basic` and its correction step, `SliceWithSign::{add, sub, copy_from, decrement_abs}`, `root_estimate`, `sqrt_rem`, `div_rem_abs` on empty operands, `round`, and the binary/decimal converters. `ExactNum::clamp`, `min`, `max` and the parser no longer unwrap. The rounding `match`es list every `RoundingMode` variant instead of ending in `unreachable!()`. `expr!` and `cexpr!` report a failure to build the constant cache as a `compile_error!` instead of panicking inside the compiler. Results for valid inputs are unchanged. Still open: the constants in `common/consts.rs` (start-up `expect`), `SliceWithSign`'s `DerefMut` on an immutable view, and unchecked indexing (see PROGRESS.md).
 
+### Constants without start-up panics
+
+The internal constants (`ONE`, `TWO`, `THREE`, `FOUR`, `TEN`) were `lazy_static` values built with `expect`. They are now `static` values built by `const fn`, so there is nothing to allocate and nothing to fail, and the `lazy_static` dependency is gone. That needs 128 bits to fit inline on every target, so `INLINE_WORDS` is `DEFAULT_P / WORD_BIT_SIZE`: 2 with a 64-bit `Word` (unchanged) and 4 with a 32-bit `Word` (was 2). On 32-bit targets a 128-bit `ExactNum` is now stored inline, and `is_inline()` is true for it. The decimal conversion cache behind `FromStr` and `Display` is created on first use; if it cannot be created, `from_str` returns `Err(MemoryAllocation)` and `fmt` returns `fmt::Error`. Eight unused constants were deleted, and the public-module `ONE` and `TWO` in `ext` became test-only.
+
 ### Build without default features
 
 `cargo build --no-default-features` failed because the `hex_golds` binary needs `std`. The binary now declares `required-features = ["std"]`, so a `no_std` build skips it (021fa87).

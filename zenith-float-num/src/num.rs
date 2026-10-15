@@ -91,6 +91,28 @@ impl ExactNumNumber {
         })
     }
 
+    /// `d` at [`DEFAULT_P`](crate::defs::DEFAULT_P) bits, built without allocating or failing.
+    /// Equal to `from_word(d, DEFAULT_P)`.
+    pub(crate) const fn small_const(d: Word) -> Self {
+        if d == 0 {
+            return ExactNumNumber {
+                m: Mantissa::zero_default(),
+                e: 0,
+                s: Sign::Pos,
+                inexact: false,
+                op_inexact: None,
+            };
+        }
+        let shift = d.leading_zeros();
+        ExactNumNumber {
+            m: Mantissa::from_normalized_top_word(d << shift),
+            e: (WORD_BIT_SIZE - shift as usize) as Exponent,
+            s: Sign::Pos,
+            inexact: false,
+            op_inexact: None,
+        }
+    }
+
     /// Returns the maximum value for the specified precision `p`: all bits of the mantissa are set to 1,
     /// the exponent has the maximum possible value, and the sign is positive.
     /// Precision is rounded upwards to the word size.

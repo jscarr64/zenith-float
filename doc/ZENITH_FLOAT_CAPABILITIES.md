@@ -56,7 +56,7 @@ Both pass 77/77. There is no separate `alloc` feature: `alloc` is always require
 | --- | --- |
 | `Word` | `u64` on 64-bit targets; `u32` on 32-bit |
 | `WORD_BIT_SIZE` | 64 or 32 accordingly |
-| `INLINE_WORDS` | `2` — mantissas of ≤ 128 bits live on the stack |
+| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE` (2 on 64-bit, 4 on 32-bit) — mantissas of ≤ 128 bits live on the stack |
 | `EXPONENT_MAX` | `i32::MAX` on every target |
 | `EXPONENT_MIN` | `i32::MIN` on every target |
 | Default operator precision | 128 bits, `ToEven` — used by `+` `−` `×` `÷` operator traits only |
@@ -549,7 +549,7 @@ These are design decisions, not a backlog:
 | `euler_gamma` constant | ✅ | ⬜ | ⬜ |
 | `with_rounding_mode` scoped closure | ✅ | ⬜ | ⬜ |
 | Ziv + `Ball` correct-rounding proof | ✅ | ⬜ | ✅ |
-| Stack-inlined small values | ✅ `INLINE_WORDS = 2` | ⬜ | ✅ |
+| Stack-inlined small values | ✅ `INLINE_WORDS = DEFAULT_P / WORD_BIT_SIZE` | ⬜ | ✅ |
 | MPFR bit-oracle tests (optional) | ✅ | ✅ | fuzz + unit |
 
 dashu-float 0.6.0: `consts.rs` is an empty stub (no γ). `FBig::with_rounding::<R>()` changes the rounding type parameter; it is not a scoped `Context` closure. astro-float rows are for 0.9.6.

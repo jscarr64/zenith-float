@@ -2,7 +2,7 @@
 // Copyright (c) 2022 stencillogic, MIT License.
 //! Mantissa of a number.
 
-use crate::common::buf::WordBuf;
+use crate::common::buf::{WordBuf, INLINE_WORDS};
 use crate::common::util::add_carry;
 use crate::common::util::find_one_from;
 use crate::common::util::shift_slice_left;
@@ -55,6 +55,23 @@ impl Mantissa {
     // reserve a buffer for mantissa.
     fn reserve_new(sz: usize) -> Result<WordBuf, Error> {
         WordBuf::new(sz)
+    }
+
+    /// A [`DEFAULT_P`](crate::defs::DEFAULT_P)-bit mantissa whose top word is `top`, which must have its
+    /// most significant bit set. Const and allocation-free.
+    pub(crate) const fn from_normalized_top_word(top: Word) -> Self {
+        Mantissa {
+            m: WordBuf::inline_with_top_word(top),
+            n: WORD_BIT_SIZE * INLINE_WORDS,
+        }
+    }
+
+    /// The zero mantissa of [`DEFAULT_P`](crate::defs::DEFAULT_P) bits. Const and allocation-free.
+    pub(crate) const fn zero_default() -> Self {
+        Mantissa {
+            m: WordBuf::inline_with_top_word(0),
+            n: 0,
+        }
     }
 
     /// New mantissa with length of at least `p` bits filled with zeroes.

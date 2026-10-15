@@ -43,7 +43,7 @@ A finite `ExactNum` is a **sign**, a **binary mantissa** stored as an array of w
 | `WORD_MAX` | `Word::MAX` |
 | `WORD_BASE` | `WORD_MAX + 1` as a double-width integer |
 | `WORD_SIGNIFICANT_BIT` | high bit of a word |
-| `INLINE_WORDS` | `2` — small mantissas stored inline |
+| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE`: 2 with a 64-bit `Word`, 4 with a 32-bit `Word`; small mantissas stored inline |
 | `EXPONENT_BIT_SIZE` | 32 |
 | `EXPONENT_MAX` | `i32::MAX` on every target (2.0.0; was `i32::MAX / 4` on 32-bit) |
 | `EXPONENT_MIN` | `i32::MIN` on every target (2.0.0; was `i32::MIN / 4` on 32-bit) |

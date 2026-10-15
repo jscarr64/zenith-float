@@ -16,7 +16,6 @@ use crate::Sign;
 use crate::Word;
 use crate::WORD_BIT_SIZE;
 use core::num::FpCategory;
-use lazy_static::lazy_static;
 
 #[cfg(feature = "std")]
 use core::fmt::Write;
@@ -43,14 +42,17 @@ fn invalid_op() -> ExactNum {
     ExactNum::nan(Some(Error::InvalidArgument))
 }
 
-lazy_static! {
+/// 1 (test support: the library itself builds its constants in `common::consts`).
+#[cfg(test)]
+pub(crate) static ONE: ExactNum = ExactNum {
+    inner: Flavor::Value(ExactNumNumber::small_const(1)),
+};
 
-    /// 1
-    pub static ref ONE: ExactNum = ExactNum { inner: Flavor::Value(ExactNumNumber::from_word(1, DEFAULT_P).expect("Constant ONE initialized")) };
-
-    /// 2
-    pub static ref TWO: ExactNum = ExactNum { inner: Flavor::Value(ExactNumNumber::from_word(2, DEFAULT_P).expect("Constant TWO initialized")) };
-}
+/// 2 (test support).
+#[cfg(test)]
+pub(crate) static TWO: ExactNum = ExactNum {
+    inner: Flavor::Value(ExactNumNumber::small_const(2)),
+};
 
 /// A floating point number of arbitrary precision.
 #[derive(Debug)]
@@ -4042,10 +4044,15 @@ impl FromStr for ExactNum {
     /// Other failures, such as exponent overflow, are `Err`.
     /// The implementation is not available in no_std environment.
     fn from_str(src: &str) -> Result<ExactNum, Self::Err> {
-        let bf = crate::common::consts::TENPOWERS.with(|tp| {
-            let cc = &mut tp.borrow_mut();
-            ExactNum::parse(src, Radix::Dec, usize::MAX, RoundingMode::ToEven, cc)
-        });
+        let bf = crate::common::consts::with_tenpowers(|cc| {
+            Ok(ExactNum::parse(
+                src,
+                Radix::Dec,
+                usize::MAX,
+                RoundingMode::ToEven,
+                cc,
+            ))
+        })?;
 
         if bf.is_nan() {
             match bf.err() {
@@ -4086,8 +4093,7 @@ macro_rules! impl_format_rdx {
             /// Formats the number.
             /// The implementation is not available in no_std environment.
             fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
-                crate::common::consts::TENPOWERS.with(|tp| {
-                    let cc = &mut tp.borrow_mut();
+                crate::common::consts::with_tenpowers_fmt(|cc| {
                     self.write_str(f, $rdx, RoundingMode::ToEven, cc)
                 })
             }
@@ -4108,8 +4114,7 @@ impl_format_rdx!(UpperHex, Radix::Hex);
 #[cfg(feature = "std")]
 impl core::fmt::UpperExp for ExactNum {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
-        crate::common::consts::TENPOWERS.with(|tp| {
-            let cc = &mut tp.borrow_mut();
+        crate::common::consts::with_tenpowers_fmt(|cc| {
             let mut s = String::new();
             self.write_str(&mut s, Radix::Dec, RoundingMode::ToEven, cc)?;
             f.write_str(&s.replace('e', "E"))
@@ -4119,8 +4124,7 @@ impl core::fmt::UpperExp for ExactNum {
 #[cfg(feature = "std")]
 impl core::fmt::LowerHex for ExactNum {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
-        crate::common::consts::TENPOWERS.with(|tp| {
-            let cc = &mut tp.borrow_mut();
+        crate::common::consts::with_tenpowers_fmt(|cc| {
             let mut s = String::new();
             self.write_str(&mut s, Radix::Hex, RoundingMode::ToEven, cc)?;
             if matches!(s.as_str(), "Inf" | "-Inf" | "NaN" | "Err") {
@@ -4714,12 +4718,8 @@ mod tests {
         };
 
         assert!(d1.mantissa_digits() == Some(words));
-        // DEFAULT_P = 128 bits is 2 limbs on 64-bit (inline, INLINE_WORDS = 2) but 4 limbs on
-        // 32-bit (heap).
-        #[cfg(not(target_pointer_width = "32"))]
+        // DEFAULT_P = 128 bits is INLINE_WORDS limbs on every target (2 on 64-bit, 4 on 32-bit).
         assert!(d1.is_inline());
-        #[cfg(target_pointer_width = "32")]
-        assert!(!d1.is_inline());
         assert!(d1.mantissa_max_bit_len() == Some(DEFAULT_P));
         assert!(d1.precision() == Some(DEFAULT_P));
         assert!(d1.sign() == Some(Sign::Pos));
