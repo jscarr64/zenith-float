@@ -537,6 +537,9 @@ fn kronrod_legendre_at(
         return None;
     }
     let beta = laurie_legendre_beta(n, p)?;
+    // The nodes are the roots and their negatives. Each half is its own computation:
+    // the roots are deterministic, so both vectors are bit-identical and nothing is copied.
+    let negative_half = positive_roots(&beta, n, p)?;
     let positive = positive_roots(&beta, n, p)?;
     let two = ExactNum::from_u8(2, p);
     let gbeta = legendre_beta_sq(n - 1, p)?;
@@ -545,16 +548,16 @@ fn kronrod_legendre_at(
     let mut w_gauss = vec![ExactNum::new(p); 2 * n + 1];
     let zero = ExactNum::new(p);
     let w0 = jacobi_weight(&zero, &beta, &two, p)?;
-    for r in positive.iter().rev() {
-        let w = jacobi_weight(r, &beta, &two, p)?;
+    for r in negative_half.into_iter().rev() {
+        let w = jacobi_weight(&r, &beta, &two, p)?;
         nodes.push(r.neg());
         w_kronrod.push(w);
     }
     nodes.push(zero);
     w_kronrod.push(w0);
-    for r in &positive {
-        let w = jacobi_weight(r, &beta, &two, p)?;
-        nodes.push(r.clone());
+    for r in positive {
+        let w = jacobi_weight(&r, &beta, &two, p)?;
+        nodes.push(r);
         w_kronrod.push(w);
     }
     if nodes.len() != GK_KRONROD_ORDER {
@@ -1333,5 +1336,21 @@ mod tests {
             );
             assert!(gap.compare(&tol) != Some(1), "p={p} gauss estimate {gap}");
         }
+    }
+
+    #[test]
+    fn kronrod_nodes_are_exactly_symmetric_and_ordered() {
+        let mut cc = Consts::new().expect("consts");
+        let (nodes, w_gauss, w_kronrod) =
+            kronrod_legendre_at(GK_GAUSS_ORDER, 256, &mut cc).expect("nodes");
+        let n = nodes.len();
+        assert_eq!(n, GK_KRONROD_ORDER);
+        for i in 0..n / 2 {
+            assert_eq!(nodes[i].compare(&nodes[n - 1 - i].neg()), Some(0));
+            assert_eq!(w_kronrod[i].compare(&w_kronrod[n - 1 - i]), Some(0));
+            assert_eq!(nodes[i].compare(&nodes[i + 1]), Some(-1));
+        }
+        assert!(nodes[n / 2].is_zero());
+        assert_eq!(w_gauss.len(), n);
     }
 }
