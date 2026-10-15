@@ -152,6 +152,36 @@ impl ExactComplex {
         self.im.atan2(&self.re, p, rm, cc)
     }
 
+    /// `a + b` with both operands borrowed: the sanctioned form for a site where both operands are
+    /// still needed afterwards (see [`ExactNum::add_ref`]). Parts and flags are those of [`Self::add`];
+    /// neither operand is copied.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn add_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {
+        let inputs = a.inexact_accumulated() || b.inexact_accumulated();
+        let mut r = Self::new(
+            ExactNum::add_ref(&a.re, &b.re, p, rm),
+            ExactNum::add_ref(&a.im, &b.im, p, rm),
+        );
+        r.re.set_inexact(r.re.inexact());
+        r.im.set_inexact(r.im.inexact());
+        Self::per_op(inputs, r)
+    }
+
+    /// `a - b` with both operands borrowed. Same contract as [`Self::add_ref`].
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn sub_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {
+        let inputs = a.inexact_accumulated() || b.inexact_accumulated();
+        let mut r = Self::new(
+            ExactNum::sub_ref(&a.re, &b.re, p, rm),
+            ExactNum::sub_ref(&a.im, &b.im, p, rm),
+        );
+        r.re.set_inexact(r.re.inexact());
+        r.im.set_inexact(r.im.inexact());
+        Self::per_op(inputs, r)
+    }
+
     /// `self + rhs` at precision `p`.
     ///
     /// Accuracy: correctly-rounded

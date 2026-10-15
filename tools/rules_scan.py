@@ -9,7 +9,7 @@ Usage:
   tools/rules_scan.sh --staged             # git diff --cached
   tools/rules_scan.sh --working            # git diff HEAD (staged + unstaged)
   tools/rules_scan.sh --diff-file F        # a saved unified diff (used by the self-test)
-  tools/rules_scan.sh --count-only         # only the clone-count baseline check
+  tools/rules_scan.sh --count-only         # only the clone-count and add_ref/sub_ref-count baseline checks
   tools/rules_scan.sh --update-baseline    # lower tools/clone_count_baseline.txt to the current count (never raises it)
 
 LIBRARY PATHS (clone, to_vec, cloned, to_owned, unsafe, allow, unwrap, expect, panic): .rs files under
@@ -27,6 +27,10 @@ ONLY JEFF MAY EXTEND IT (.github/CODEOWNERS requires his review). Models never a
 
 CLONE COUNT: total `.clone(` occurrences in non-test library code (the four library dirs) must never go
 up versus tools/clone_count_baseline.txt. The baseline is only ever lowered, with --update-baseline.
+
+REF-SUM COUNT: total uses of `add_ref(` / `sub_ref(` (the borrowed-borrowed sums, sanctioned only where both
+operands are still live) in non-test library code, definitions (`fn add_ref`) excluded. Same ratchet as the
+clone count against tools/ref_sum_count_baseline.txt: it may only go down; --update-baseline lowers it.
 """
 import hashlib, os, re, subprocess, sys, collections
 
@@ -153,8 +157,35 @@ def clone_count():
     return total
 
 
+REF_SUM = re.compile(r"\b(?:add_ref|sub_ref)\(")
+
+
+def ref_sum_count():
+    total = 0
+    for d in no_clone.DIRS:
+        for dp, dn, fn in os.walk(os.path.join(ROOT, d)):
+            dn[:] = [x for x in dn if x not in ("target", ".git")]
+            for f in fn:
+                if not f.endswith(".rs"):
+                    continue
+                rel = os.path.relpath(os.path.join(dp, f), ROOT)
+                if not is_lib(rel):
+                    continue
+                lines = open(os.path.join(dp, f), errors="replace").read().split("\n")
+                mask = no_clone.test_mask(lines)
+                for i, l in enumerate(lines):
+                    code = strip(l)
+                    if not mask[i] and not re.search(r"\bfn\s+(add_ref|sub_ref)\b", code):
+                        total += len(REF_SUM.findall(code))
+    return total
+
+
 def baseline_path():
     return os.path.join(ROOT, "tools", "clone_count_baseline.txt")
+
+
+def ref_baseline_path():
+    return os.path.join(ROOT, "tools", "ref_sum_count_baseline.txt")
 
 
 def read_baseline():
@@ -183,11 +214,36 @@ def count_check(update=False):
     return 0
 
 
+def ref_count_check(update=False):
+    cur = ref_sum_count()
+    try:
+        base = int(open(ref_baseline_path()).read().split()[0])
+    except (OSError, ValueError, IndexError):
+        print("rules_scan: missing or unreadable tools/ref_sum_count_baseline.txt")
+        return 1
+    if cur > base:
+        print("rules_scan: add_ref/sub_ref use count %d is ABOVE the baseline %d (it may only go down)" % (cur, base))
+        return 1
+    if cur < base:
+        if update:
+            open(ref_baseline_path(), "w").write("%d\n" % cur)
+            print("rules_scan: ref-sum baseline lowered %d -> %d" % (base, cur))
+        else:
+            print("rules_scan: add_ref/sub_ref use count %d is below baseline %d: lower the baseline (rules_scan.sh --update-baseline)" % (cur, base))
+        return 0
+    print("rules_scan: add_ref/sub_ref use count %d == baseline" % cur)
+    return 0
+
+
+def both_count_checks(update=False):
+    return max(count_check(update), ref_count_check(update))
+
+
 def main(argv):
     if "--count-only" in argv:
-        return count_check()
+        return both_count_checks()
     if "--update-baseline" in argv:
-        return count_check(update=True)
+        return both_count_checks(update=True)
     mode, rev, with_count = "range", "HEAD", False
     if "--diff-file" in argv:
         mode = "file"
@@ -216,7 +272,7 @@ def main(argv):
     print("rules_scan: %d flagged %s" % (len(hits), dict(by)))
     rc = 1 if hits else 0
     if with_count and not os.environ.get("RULES_SCAN_SKIP_COUNT"):
-        rc = max(rc, count_check())
+        rc = max(rc, both_count_checks())
     return rc
 
 
