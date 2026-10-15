@@ -1718,8 +1718,8 @@ fn svd_negligible(e: &ExactNum, d0: &ExactNum, d1: &ExactNum, p: usize, rm: Roun
     // |d0| + |d1|
     let scale = match (d0.is_negative(), d1.is_negative()) {
         (false, false) => d0.add(d1, p, rm),
-        (false, true) => d1.neg_via_mul().add(d0, p, rm),
-        (true, false) => d0.neg_via_mul().add(d1, p, rm),
+        (false, true) => ExactNum::sub_ref(d0, &d1, p, rm),
+        (true, false) => ExactNum::sub_ref(d1, &d0, p, rm),
         (true, true) => d0.neg_via_mul().sub(d1, p, rm),
     };
     if scale.is_zero() {
@@ -1742,7 +1742,7 @@ fn svd_wilkinson_shift(
     let two = ExactNum::from_u8(2, p);
     let b = d_prev
         .add(d_last, p, rm)
-        .mul(&d_last.neg_via_mul().add(d_prev, p, rm), p, rm)
+        .mul(&ExactNum::sub_ref(d_prev, &d_last, p, rm), p, rm)
         .add(&e_prev.mul(e_prev, p, rm), p, rm)
         .div(&two, p, rm);
     let t = d_last.mul(e_last, p, rm);
@@ -1776,7 +1776,7 @@ fn svd_qr_sweep(
     let shift = svd_wilkinson_shift(&d[last - 1], &d[last], &e_prev, &e[last - 1], p, rm);
     let mut f = d[p_blk]
         .add(&d[last], p, rm)
-        .mul(&d[last].neg_via_mul().add(&d[p_blk], p, rm), p, rm)
+        .mul(&ExactNum::sub_ref(&d[p_blk], &d[last], p, rm), p, rm)
         .add(&shift, p, rm);
     let mut g = d[p_blk].mul(&e[p_blk], p, rm);
     for j in p_blk..last {
@@ -2027,7 +2027,7 @@ fn eigen_wilkinson(
     rm: RoundingMode,
 ) -> ExactNum {
     let half = svd_one(p).div(&ExactNum::from_u8(2, p), p, rm);
-    let delta = c.neg_via_mul().add(a, p, rm).mul(&half, p, rm);
+    let delta = ExactNum::sub_ref(a, &c, p, rm).mul(&half, p, rm);
     if delta.is_zero() && b.is_zero() {
         return c.clone();
     }
@@ -2035,7 +2035,7 @@ fn eigen_wilkinson(
     let signed = if delta.is_negative() { h.neg() } else { h };
     let denom = delta.add(&signed, p, rm);
     if denom.is_zero() {
-        return if b.is_negative() { c.add(b, p, rm) } else { b.neg_via_mul().add(c, p, rm) };
+        return if b.is_negative() { c.add(b, p, rm) } else { ExactNum::sub_ref(c, &b, p, rm) };
     }
     b.mul(b, p, rm).div(&denom, p, rm).neg().add(&c, p, rm)
 }
@@ -2270,8 +2270,8 @@ fn fft_dit(
                 let ti = w_re.mul(&im[t], p, rm).add(&w_im.mul(&re[t], p, rm), p, rm);
                 let ur = core::mem::replace(&mut re[u], svd_zero(p));
                 let ui = core::mem::replace(&mut im[u], svd_zero(p));
-                re[t] = tr.neg_via_mul().add(&ur, p, rm);
-                im[t] = ti.neg_via_mul().add(&ui, p, rm);
+                re[t] = ExactNum::sub_ref(&ur, &tr, p, rm);
+                im[t] = ExactNum::sub_ref(&ui, &ti, p, rm);
                 re[u] = tr.add(&ur, p, rm);
                 im[u] = ti.add(&ui, p, rm);
                 let nr = w_re.mul(&wm_re, p, rm).sub(&w_im.mul(&wm_im, p, rm), p, rm);

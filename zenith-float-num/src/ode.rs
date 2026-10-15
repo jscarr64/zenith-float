@@ -91,10 +91,7 @@ where
     }
     let wrk = work_p(p);
     let n_f = ExactNum::from_u32(n_steps as u32, wrk);
-    let h = t0
-        .neg_via_mul()
-        .add(&t1, wrk, RoundingMode::None)
-        .div(&n_f, wrk, RoundingMode::None);
+    let h = ExactNum::sub_ref(&t1, &t0, wrk, RoundingMode::None).div(&n_f, wrk, RoundingMode::None);
     let two = ExactNum::from_u8(2, wrk);
     let six = ExactNum::from_u8(6, wrk);
     let half_h = h.div(&two, wrk, RoundingMode::None);
@@ -182,10 +179,7 @@ where
     }
     let wrk = work_p(p);
     let n_f = ExactNum::from_u32(n_steps as u32, wrk);
-    let h = t0
-        .neg_via_mul()
-        .add(&t1, wrk, RoundingMode::None)
-        .div(&n_f, wrk, RoundingMode::None);
+    let h = ExactNum::sub_ref(&t1, &t0, wrk, RoundingMode::None).div(&n_f, wrk, RoundingMode::None);
     let mut t = t0.clone();
     let mut y = y0.clone();
     let _ = t.set_precision(wrk, RoundingMode::None);
@@ -475,9 +469,7 @@ where
     let _ = t.set_precision(wrk, RoundingMode::None);
     let _ = y.set_precision(wrk, RoundingMode::None);
     let mut h =
-        t0.neg_via_mul()
-            .add(&t1, wrk, RoundingMode::None)
-            .ldexp(-4, wrk, RoundingMode::None);
+        ExactNum::sub_ref(&t1, &t0, wrk, RoundingMode::None).ldexp(-4, wrk, RoundingMode::None);
     let mut ts = Vec::new();
     let mut ys = Vec::new();
     if !push_pair(&mut ts, &mut ys, t.clone(), y.clone(), ODE_MAX_STEPS + 1) {
@@ -490,7 +482,7 @@ where
             return None;
         }
         attempts += 1;
-        let remain = t.neg_via_mul().add(&t1, wrk, RoundingMode::None);
+        let remain = ExactNum::sub_ref(&t1, &t, wrk, RoundingMode::None);
         if h.compare(&remain) == Some(1) {
             h = remain;
         }
@@ -498,7 +490,7 @@ where
             return None;
         }
         let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h, wrk, RoundingMode::None, cc)?;
-        let err = y4.neg_via_mul().add(&y5, wrk, RoundingMode::None).abs();
+        let err = ExactNum::sub_ref(&y5, &y4, wrk, RoundingMode::None).abs();
         let big = if y.abs_cmp(&y5) == Some(1) { &y } else { &y5 };
         let negated;
         let ymax: &ExactNum = if big.is_negative() {

@@ -389,7 +389,7 @@ fn polish_root(
         if !finite(&step) {
             break;
         }
-        let next = step.neg_via_mul().add(&x, p, rm);
+        let next = ExactNum::sub_ref(&x, &step, p, rm);
         if !finite(&next) {
             break;
         }
@@ -616,7 +616,7 @@ where
 {
     let rm = RoundingMode::None;
     let two = ExactNum::from_u8(2, p);
-    let half = a.neg_via_mul().add(&b, p, rm).div(&two, p, rm);
+    let half = ExactNum::sub_ref(&b, &a, p, rm).div(&two, p, rm);
     let mid = a.add(b, p, rm).div(&two, p, rm);
     if !finite(&half) || !finite(&mid) || !half.is_positive() {
         return Err(QuadratureError::InvalidArgument);
@@ -682,7 +682,7 @@ where
     let _ = aa.set_precision(wrk, RoundingMode::None);
     let _ = bb.set_precision(wrk, RoundingMode::None);
     let (k, g) = eval_panel(&mut f, &aa, &bb, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
-    let err = g.neg_via_mul().add(&k, wrk, RoundingMode::None).abs();
+    let err = ExactNum::sub_ref(&k, &g, wrk, RoundingMode::None).abs();
     if !finite(&k) || !finite(&g) || !finite(&err) {
         return Err(QuadratureError::NotConverged);
     }
@@ -705,7 +705,7 @@ fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
         let mut next = Vec::with_capacity(cols[k].len() - 1);
         let mut broke = false;
         for i in 0..cols[k].len() - 1 {
-            let diff = cols[k][i].neg_via_mul().add(&cols[k][i + 1], p, rm);
+            let diff = ExactNum::sub_ref(&cols[k][i + 1], &cols[k][i], p, rm);
             if !finite(&diff) || diff.is_zero() {
                 broke = true;
                 break;
@@ -867,7 +867,7 @@ where
     let mut tol_work = tol_rel.clone();
     let _ = tol_work.set_precision(wrk, RoundingMode::None);
     let (k0, g0) = eval_panel(&mut f, &aa, &bb, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
-    let err0 = g0.neg_via_mul().add(&k0, wrk, RoundingMode::None).abs();
+    let err0 = ExactNum::sub_ref(&k0, &g0, wrk, RoundingMode::None).abs();
     let mut panels = vec![Panel {
         a: aa,
         b: bb,
@@ -896,10 +896,7 @@ where
             if let Some(ex) = wynn_table(&seq, wrk) {
                 if ex.order >= 2 {
                     if let Some(prev) = &prev_eps {
-                        let de = prev
-                            .neg_via_mul()
-                            .add(&ex.value, wrk, RoundingMode::None)
-                            .abs();
+                        let de = ExactNum::sub_ref(&ex.value, &prev, wrk, RoundingMode::None).abs();
                         if finite(&de) && leq(&de, &tol) {
                             let raw =
                                 if de.compare(&total_err) == Some(1) { de } else { total_err };
@@ -938,8 +935,8 @@ where
         let (k2, g2) = eval_panel(
             &mut f, &mid, &right_b, &nodes, &w_gauss, &w_kronrod, wrk, cc,
         )?;
-        let e1 = g1.neg_via_mul().add(&k1, wrk, RoundingMode::None).abs();
-        let e2 = g2.neg_via_mul().add(&k2, wrk, RoundingMode::None).abs();
+        let e1 = ExactNum::sub_ref(&k1, &g1, wrk, RoundingMode::None).abs();
+        let e2 = ExactNum::sub_ref(&k2, &g2, wrk, RoundingMode::None).abs();
         panels[worst] = Panel {
             a: left_a,
             b: mid.clone(),
@@ -1007,7 +1004,7 @@ where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
     let one = ExactNum::from_u8(1, p);
-    let den = t.neg_via_mul().add(&one, p, rm);
+    let den = ExactNum::sub_ref(&one, &t, p, rm);
     if !finite(&den) || !den.is_positive() {
         return ExactNum::new(p);
     }
@@ -1034,7 +1031,7 @@ where
 {
     let one = ExactNum::from_u8(1, p);
     let t2 = t.mul(t, p, rm);
-    let den = t2.neg_via_mul().add(&one, p, rm);
+    let den = ExactNum::sub_ref(&one, &t2, p, rm);
     if !finite(&den) || den.is_zero() || den.is_negative() {
         return ExactNum::new(p);
     }

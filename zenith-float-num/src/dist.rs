@@ -74,7 +74,7 @@ impl ExactNum {
         }
         let pw = work_p(p);
         let none = RoundingMode::None;
-        let z = mu.neg_via_mul().add(&self, pw, none);
+        let z = ExactNum::sub_ref(&self, &mu, pw, none);
         let two = ExactNum::from_u8(2, pw);
         let sig2 = sigma.mul(sigma, pw, none);
         let expo = z
@@ -133,7 +133,7 @@ impl ExactNum {
         let pw = work_p(p);
         let none = RoundingMode::None;
         let two = ExactNum::from_u8(2, pw);
-        let z = mu.neg_via_mul().add(&self, pw, none).div(
+        let z = ExactNum::sub_ref(&self, &mu, pw, none).div(
             &sigma.mul(&two.sqrt(pw, none), pw, none),
             pw,
             none,
@@ -286,7 +286,7 @@ impl ExactNum {
         let none = RoundingMode::None;
         let c = binom_mul(n, self, pw);
         let q = ExactNum::from_u8(1, pw).sub(prob, pw, none);
-        let nmk = self.neg_via_mul().add(&n, pw, none);
+        let nmk = ExactNum::sub_ref(&n, &self, pw, none);
         c.mul(&prob.pow(self, pw, none, cc), pw, none)
             .mul(&q.pow(&nmk, pw, none, cc), pw, none)
             .set_prec_val(p, rm)
@@ -365,7 +365,7 @@ fn binom_mul(n: &ExactNum, k: &ExactNum, pw: usize) -> ExactNum {
     }
     let mut i = one.clone();
     let mut c = one.clone();
-    let nmk = k.neg_via_mul().add(&n, pw, none);
+    let nmk = ExactNum::sub_ref(&n, &k, pw, none);
     loop {
         let term = ExactNum::add_ref(&nmk, &i, pw, none);
         c = c.mul(&term, pw, none).div(&i, pw, none);

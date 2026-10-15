@@ -238,7 +238,7 @@ impl Ball {
         if x.is_nan() || self.mid.is_nan() || self.rad.is_nan() {
             return false;
         }
-        let d = x.neg_via_mul().add(&self.mid, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&self.mid, &x, p, RoundingMode::None).abs();
         matches!(d.compare(&self.rad), Some(c) if c <= 0)
     }
 }
@@ -389,11 +389,7 @@ impl ComplexBall {
         if z.is_nan() || self.mid.is_nan() || self.rad.is_nan() {
             return false;
         }
-        let d = self
-            .mid
-            .neg_via_mul()
-            .add(z, p, RoundingMode::None)
-            .abs(p, RoundingMode::Up);
+        let d = ExactComplex::sub_ref(z, &self.mid, p, RoundingMode::None).abs(p, RoundingMode::Up);
         matches!(d.compare(&self.rad), Some(c) if c <= 0)
     }
 }

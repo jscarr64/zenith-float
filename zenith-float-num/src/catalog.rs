@@ -1518,7 +1518,7 @@ impl ExactNum {
         let inv_e = ExactNum::from_u8(1, wrk)
             .div(&e, wrk, RoundingMode::None)
             .neg();
-        let gap = inv_e.neg_via_mul().add(&self, wrk, RoundingMode::None);
+        let gap = ExactNum::sub_ref(&self, &inv_e, wrk, RoundingMode::None);
         if gap
             .exponent()
             .is_some_and(|e| (e as i64) + ((p as i64) / 2) < 0)
@@ -1585,7 +1585,7 @@ impl ExactNum {
                 .div(&den, wrk, RoundingMode::None)
                 .neg()
                 .add(&w, wrk, RoundingMode::None);
-            let err = w.neg_via_mul().add(&nxt, wrk, RoundingMode::None).abs();
+            let err = w.neg().add(&nxt, wrk, RoundingMode::None).abs();
             w = nxt;
             if under_word(&err, p) {
                 break;

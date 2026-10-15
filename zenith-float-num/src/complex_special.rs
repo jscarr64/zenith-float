@@ -93,8 +93,8 @@ fn l1_below_series_bound(z: &ExactComplex, p: usize) -> bool {
             let room = bound.sub(im, p, RoundingMode::None);
             return matches!(re.compare(&room), Some(c) if c < 0);
         }
-        (false, true) => im.neg_via_mul().add(re, p, RoundingMode::None),
-        (true, false) => re.neg_via_mul().add(im, p, RoundingMode::None),
+        (false, true) => ExactNum::sub_ref(re, &im, p, RoundingMode::None),
+        (true, false) => ExactNum::sub_ref(im, &re, p, RoundingMode::None),
         (true, true) => re.neg_via_mul().sub(im, p, RoundingMode::None),
     };
     matches!(s.compare(&bound), Some(c) if c < 0)

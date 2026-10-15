@@ -385,10 +385,11 @@ impl ExactComplex {
                 .mul(&erf_p, p, RoundingMode::None);
         let two_i = two_c(p).mul(&i, p, RoundingMode::None);
         // `c+ - c-` is `-c- + c+`: both stay borrowed until the sum below takes `c+`.
-        let s = c_minus_is
-            .neg_via_mul()
-            .add(&c_plus_is, p, RoundingMode::None)
-            .div(&two_i, p, RoundingMode::None);
+        let s = ExactComplex::sub_ref(&c_plus_is, &c_minus_is, p, RoundingMode::None).div(
+            &two_i,
+            p,
+            RoundingMode::None,
+        );
         let c = c_plus_is.add(&c_minus_is, p, RoundingMode::None).mul(
             &half_c(p),
             p,

@@ -825,7 +825,7 @@ impl ExactComplex {
             RoundingMode::None,
         ));
         let a = half_c(work_p).add(nu, work_p, RoundingMode::None);
-        let b = nu.neg_via_mul().add(&half, work_p, RoundingMode::None);
+        let b = ExactComplex::sub_ref(&half, &nu, work_p, RoundingMode::None);
         let f = hypergeom_2f0_lentz(&a, &b, &w, work_p, dest_p)?;
         let pi = pi_c(work_p, cc);
         let omega = pi
@@ -879,7 +879,7 @@ impl ExactComplex {
         if ip.is_nan() || im.is_nan() {
             return None;
         }
-        let diff = ip.neg_via_mul().add(&im, acc, RoundingMode::None);
+        let diff = ExactComplex::sub_ref(&im, &ip, acc, RoundingMode::None);
         if diff.is_nan() {
             return None;
         }

@@ -78,7 +78,12 @@ where
             a = mid.clone();
             fa = fm.clone();
         }
-        if fm.is_zero() || below_tol(&a.neg_via_mul().add(&b, wrk, RoundingMode::None).abs(), tol) {
+        if fm.is_zero()
+            || below_tol(
+                &ExactNum::sub_ref(&b, &a, wrk, RoundingMode::None).abs(),
+                tol,
+            )
+        {
             let mut out = mid;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
@@ -183,7 +188,7 @@ where
         return None;
     }
     for k in 1..=ROOT_MAX_ITER {
-        let den = fa.neg_via_mul().add(&fb, wrk, RoundingMode::None);
+        let den = ExactNum::sub_ref(&fb, &fa, wrk, RoundingMode::None);
         if den.is_zero() {
             return None;
         }
@@ -205,7 +210,12 @@ where
         if !finite(&c) || !finite(&fc) {
             return None;
         }
-        if fc.is_zero() || below_tol(&a.neg_via_mul().add(&b, wrk, RoundingMode::None).abs(), tol) {
+        if fc.is_zero()
+            || below_tol(
+                &ExactNum::sub_ref(&b, &a, wrk, RoundingMode::None).abs(),
+                tol,
+            )
+        {
             let mut out = c;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
@@ -294,13 +304,13 @@ where
     }
     let mut c = a.clone();
     let mut fc = fa.clone();
-    let mut d = a.neg_via_mul().add(&b, wrk, none);
+    let mut d = ExactNum::sub_ref(&b, &a, wrk, none);
     let mut e = d.clone();
     for k in 1..=ROOT_MAX_ITER {
         if same_sign(&fb, &fc) {
             c = a.clone();
             fc = fa.clone();
-            d = a.neg_via_mul().add(&b, wrk, none);
+            d = ExactNum::sub_ref(&b, &a, wrk, none);
             e = d.clone();
         }
         if abs_lt(&fc, &fb) {
@@ -317,7 +327,7 @@ where
             eps2.mul(&b, wrk, none)
         }
         .add(&half_tol, wrk, none);
-        let m = b.neg_via_mul().add(&c, wrk, none).div(&two, wrk, none);
+        let m = ExactNum::sub_ref(&c, &b, wrk, none).div(&two, wrk, none);
         if fb.is_zero() || !abs_lt(&tol1, &m) {
             let mut out = b;
             let _ = out.set_precision(p, rm);
@@ -328,18 +338,15 @@ where
             let s = fb.div(&fa, wrk, none);
             let two_m = two.mul(&m, wrk, none);
             let (mut pn, mut q) = if a.compare(&c) == Some(0) {
-                (
-                    two_m.mul(&s, wrk, none),
-                    s.neg_via_mul().add(&one, wrk, none),
-                )
+                (two_m.mul(&s, wrk, none), s.neg().add(&one, wrk, none))
             } else {
                 let qa = fa.div(&fc, wrk, none);
                 let r = fb.div(&fc, wrk, none);
                 let inner = two_m
                     .mul(&qa, wrk, none)
-                    .mul(&r.neg_via_mul().add(&qa, wrk, none), wrk, none)
+                    .mul(&ExactNum::sub_ref(&qa, &r, wrk, none), wrk, none)
                     .sub(
-                        &a.neg_via_mul().add(&b, wrk, none).mul(
+                        &ExactNum::sub_ref(&b, &a, wrk, none).mul(
                             &ExactNum::from_u8(1, wrk).neg().add(&r, wrk, none),
                             wrk,
                             none,

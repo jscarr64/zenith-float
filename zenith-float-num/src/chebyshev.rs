@@ -35,7 +35,7 @@ fn map_to_unit(
     let two = ExactNum::from_u8(2, p);
     let num = two.mul(x, p, rm).sub(a, p, rm).sub(b, p, rm);
     // b - a is -a + b: `-a` is a real negation of the borrowed `a`, and the sum owns its result
-    let den = a.neg_via_mul().add(b, p, rm);
+    let den = ExactNum::sub_ref(b, &a, p, rm);
     if den.is_zero() {
         return None;
     }
@@ -46,7 +46,7 @@ fn map_to_unit(
 /// sum is written into it.
 fn unit_map(a: ExactNum, b: &ExactNum, p: usize, rm: RoundingMode) -> (ExactNum, ExactNum) {
     let two = ExactNum::from_u8(2, p);
-    let half = a.neg_via_mul().add(b, p, rm).div(&two, p, rm);
+    let half = ExactNum::sub_ref(b, &a, p, rm).div(&two, p, rm);
     let mid = a.add(b, p, rm).div(&two, p, rm);
     (mid, half)
 }
