@@ -406,7 +406,7 @@ impl ExactNumPoly {
         let b = self.coeff(1);
         let c = self.coeff(0);
         let four = ExactNum::from_u8(4, wrk);
-        let disc = ExactNum::mul_ref(&b, &b, wrk, RoundingMode::None).sub(
+        let disc = b.sqr(wrk, RoundingMode::None).sub(
             &four
                 .mul(&a, wrk, RoundingMode::None)
                 .mul(&c, wrk, RoundingMode::None),

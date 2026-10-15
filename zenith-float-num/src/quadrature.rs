@@ -252,7 +252,7 @@ fn gauss_legendre_nodes(
             |x, p, rm, _cc| {
                 let pn = x.legendre_p(nu, p, rm);
                 let pnm = if nu == 0 { ExactNum::new(p) } else { x.legendre_p(nu - 1, p, rm) };
-                let d = ExactNum::mul_ref(x, x, p, rm).neg().add(&one, p, rm);
+                let d = x.sqr(p, rm).neg().add(&one, p, rm);
                 pnm.sub(&ExactNum::mul_ref(x, &pn, p, rm), p, rm)
                     .mul(&n_f, p, rm)
                     .div(&d, p, rm)
@@ -268,7 +268,8 @@ fn gauss_legendre_nodes(
         } else {
             x.legendre_p(nu - 1, wrk, RoundingMode::None)
         };
-        let d = ExactNum::mul_ref(&x, &x, wrk, RoundingMode::None)
+        let d = x
+            .sqr(wrk, RoundingMode::None)
             .neg()
             .add(&one, wrk, RoundingMode::None);
         let dp = ExactNum::from_u32(nu, wrk)
@@ -283,11 +284,7 @@ fn gauss_legendre_nodes(
             )
             .div(&d, wrk, RoundingMode::None);
         let w = ExactNum::from_u8(2, wrk).div(
-            &d.mul(
-                &ExactNum::mul_ref(&dp, &dp, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            ),
+            &d.mul(&dp.sqr(wrk, RoundingMode::None), wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
@@ -368,7 +365,7 @@ where
         }
         let xi = su.div(&cu, wrk, RoundingMode::None);
         let w = ExactNum::mul_ref(&half_pi, &ch, wrk, RoundingMode::None).div(
-            &ExactNum::mul_ref(&cu, &cu, wrk, RoundingMode::None),
+            &cu.sqr(wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
@@ -520,11 +517,8 @@ fn gauss_laguerre_nodes(
         let ln1 = x.laguerre(n + 1, wrk, RoundingMode::None);
         let w = ExactNum::div_ref(
             &x,
-            &ExactNum::mul_ref(&ln1, &ln1, wrk, RoundingMode::None).mul(
-                &np1sq,
-                wrk,
-                RoundingMode::None,
-            ),
+            &ln1.sqr(wrk, RoundingMode::None)
+                .mul(&np1sq, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
@@ -607,7 +601,7 @@ fn gauss_hermite_nodes(
             &scale,
             &ExactNum::mul_ref(
                 &nsq,
-                &ExactNum::mul_ref(&hm, &hm, wrk, RoundingMode::None),
+                &hm.sqr(wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             ),
@@ -705,16 +699,8 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let three = ExactNum::from_u8(3, p);
 
-        let gl = gauss_legendre(
-            |x, p, rm, _cc| ExactNum::mul_ref(x, x, p, rm),
-            &a,
-            &b,
-            10,
-            p,
-            rm,
-            &mut cc,
-        )
-        .expect("gl x^2");
+        let gl = gauss_legendre(|x, p, rm, _cc| x.sqr(p, rm), &a, &b, 10, p, rm, &mut cc)
+            .expect("gl x^2");
         let two_thirds = ExactNum::from_u8(2, p).div(&three, p, rm);
         assert_eq!(gl.compare(&two_thirds), Some(0));
 
@@ -743,9 +729,7 @@ mod tests {
         let ts = tanh_sinh(
             |x, p, rm, _cc| {
                 let one = ExactNum::from_u8(1, p);
-                one.sub(&ExactNum::mul_ref(x, x, p, rm), p, rm)
-                    .sqrt(p, rm)
-                    .reciprocal(p, rm)
+                one.sub(&x.sqr(p, rm), p, rm).sqrt(p, rm).reciprocal(p, rm)
             },
             &a,
             &b,
@@ -757,14 +741,8 @@ mod tests {
         let pi = cc.pi(p, rm);
         assert_eq!(ts.compare(&pi), Some(0));
 
-        let lag = gauss_laguerre(
-            |x, p, rm, _cc| ExactNum::mul_ref(x, x, p, rm),
-            10,
-            p,
-            rm,
-            &mut cc,
-        )
-        .expect("laguerre x^2");
+        let lag =
+            gauss_laguerre(|x, p, rm, _cc| x.sqr(p, rm), 10, p, rm, &mut cc).expect("laguerre x^2");
         assert_eq!(lag.compare(&two), Some(0));
 
         let gh = gauss_hermite(|_x, p, _rm, _cc| ExactNum::from_u8(1, p), 1, p, rm, &mut cc)

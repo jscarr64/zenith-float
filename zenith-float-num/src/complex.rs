@@ -246,8 +246,8 @@ impl ExactComplex {
         let bd = ExactNum::mul_ref(&self.im, &rhs.im, p, RoundingMode::None);
         let bc = ExactNum::mul_ref(&self.im, &rhs.re, p, RoundingMode::None);
         let ad = ExactNum::mul_ref(&self.re, &rhs.im, p, RoundingMode::None);
-        let den = ExactNum::mul_ref(&rhs.re, &rhs.re, p, RoundingMode::None).add(
-            &ExactNum::mul_ref(&rhs.im, &rhs.im, p, RoundingMode::None),
+        let den = rhs.re.sqr(p, RoundingMode::None).add(
+            &rhs.im.sqr(p, RoundingMode::None),
             p,
             RoundingMode::None,
         );
@@ -314,7 +314,8 @@ impl ExactComplex {
         };
         let ln_big = big.ln(work, RoundingMode::None, cc);
         let ratio = small.div(&big, work, RoundingMode::None);
-        let corr = ExactNum::mul_ref(&ratio, &ratio, work, RoundingMode::None)
+        let corr = ratio
+            .sqr(work, RoundingMode::None)
             .log1p(work, RoundingMode::None, cc)
             .ldexp(-1, work, RoundingMode::None);
         let mut real = ln_big.add(&corr, work, RoundingMode::None);

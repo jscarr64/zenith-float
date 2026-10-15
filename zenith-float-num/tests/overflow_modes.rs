@@ -152,13 +152,7 @@ fn overflow_follows_rounding_mode() {
 
             // big = from_i8(3,p) with set_exponent(EXPONENT_MAX / 2 + 2); big.mul(&big) -> pos
             let big = with_exp(ExactNum::from_i8(3, p), EXPONENT_MAX / 2 + 2);
-            expect_overflow(
-                &ExactNum::mul_ref(&big, &big, p, rm),
-                false,
-                p,
-                rm,
-                "large mul pos",
-            );
+            expect_overflow(&big.sqr(p, rm), false, p, rm, "large mul pos");
 
             // big.neg().mul(&big) -> neg
             expect_overflow(

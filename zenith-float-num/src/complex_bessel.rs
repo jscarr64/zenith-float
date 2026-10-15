@@ -1001,7 +1001,7 @@ impl ExactComplex {
             );
             zk = zk.mul(&z2, work_p, RoundingMode::None);
             let h = harmonic(m, work_p);
-            let den = ExactNum::mul_ref(&fact, &fact, work_p, RoundingMode::None);
+            let den = fact.sqr(work_p, RoundingMode::None);
             let mut term = ExactComplex::from_real(h.div(&den, work_p, RoundingMode::None), work_p)
                 .mul(&zk, work_p, RoundingMode::None);
             if m % 2 == 0 {

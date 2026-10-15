@@ -80,7 +80,7 @@ fn sample(name: &str, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts)
                 x.reciprocal(p, rm).sqrt(p, rm)
             }
         }
-        "sq" => ExactNum::mul_ref(x, x, p, rm),
+        "sq" => x.sqr(p, rm),
         "inv" => {
             if x.is_zero() {
                 ExactNum::nan(None)
@@ -89,19 +89,19 @@ fn sample(name: &str, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts)
             }
         }
         "exp_neg" => neg_of(x).exp(p, rm, cc),
-        "gauss" => ExactNum::mul_ref(x, x, p, rm).neg().exp(p, rm, cc),
-        "invsq" => ExactNum::mul_ref(x, x, p, rm).reciprocal(p, rm),
+        "gauss" => x.sqr(p, rm).neg().exp(p, rm, cc),
+        "invsq" => x.sqr(p, rm).reciprocal(p, rm),
         "xpow_m0p9" => nonzero(x, |x| power(x, "-0.9", p, rm, cc)),
         "xpow_m0p99" => nonzero(x, |x| power(x, "-0.99", p, rm, cc)),
         "xpow_m0p75" => nonzero(x, |x| power(x, "-0.75", p, rm, cc)),
         "log_invsqrt" => nonzero(x, |x| x.ln(p, rm, cc).mul(&inv_sqrt(x, p, rm), p, rm)),
         "log2_invsqrt" => nonzero(x, |x| {
             let l = x.ln(p, rm, cc);
-            ExactNum::mul_ref(&l, &l, p, rm).mul(&inv_sqrt(x, p, rm), p, rm)
+            l.sqr(p, rm).mul(&inv_sqrt(x, p, rm), p, rm)
         }),
         "log3_invsqrt" => nonzero(x, |x| {
             let l = x.ln(p, rm, cc);
-            let l2 = ExactNum::mul_ref(&l, &l, p, rm);
+            let l2 = l.sqr(p, rm);
             l2.mul(&l, p, rm).mul(&inv_sqrt(x, p, rm), p, rm)
         }),
         _ => ExactNum::nan(None),

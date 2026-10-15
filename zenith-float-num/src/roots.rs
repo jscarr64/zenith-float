@@ -451,7 +451,7 @@ mod tests {
         assert_eq!(broot.compare(&pi), Some(0));
 
         let nroot = newton(
-            |x, p, rm, _cc| ExactNum::mul_ref(x, x, p, rm).sub(&two, p, rm),
+            |x, p, rm, _cc| x.sqr(p, rm).sub(&two, p, rm),
             |x, p, rm, _cc| ExactNum::mul_ref(&two, x, p, rm),
             &one,
             &tol,

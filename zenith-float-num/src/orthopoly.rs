@@ -430,8 +430,8 @@ impl ExactNum {
                     RoundingMode::None,
                 )
                 .mul(&two_k_apb, wrk, RoundingMode::None);
-            let a2mb2 = ExactNum::mul_ref(alpha, alpha, wrk, RoundingMode::None).sub(
-                &ExactNum::mul_ref(beta, beta, wrk, RoundingMode::None),
+            let a2mb2 = alpha.sqr(wrk, RoundingMode::None).sub(
+                &beta.sqr(wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             );

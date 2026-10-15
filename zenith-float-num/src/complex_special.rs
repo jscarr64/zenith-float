@@ -68,8 +68,8 @@ pub(crate) fn pi_c(p: usize, cc: &mut Consts) -> ExactComplex {
 
 /// Guard bits for [`ExactComplex::erf_power_series`]: `1.5·2^e + 16` with \(\lvert u\rvert^2<2^e\).
 fn erf_series_guard_bits(u: &ExactComplex) -> usize {
-    let a2 = ExactNum::mul_ref(u.re(), u.re(), 64, RoundingMode::None).add(
-        &ExactNum::mul_ref(u.im(), u.im(), 64, RoundingMode::None),
+    let a2 = u.re().sqr(64, RoundingMode::None).add(
+        &u.im().sqr(64, RoundingMode::None),
         64,
         RoundingMode::None,
     );
@@ -103,7 +103,7 @@ fn use_faddeeva_series(z: &ExactComplex, p: usize) -> bool {
         return true;
     }
     let az = z.abs(p, RoundingMode::None);
-    let az2 = ExactNum::mul_ref(&az, &az, p, RoundingMode::None);
+    let az2 = az.sqr(p, RoundingMode::None);
     let thresh = ExactNum::from_u32(p.min(u32::MAX as usize) as u32, p);
     matches!(az2.compare(&thresh), Some(c) if c < 0)
 }
@@ -690,7 +690,7 @@ mod tests {
         let pi = cc.pi(p, RoundingMode::None);
         let sqrt_pi = pi.sqrt(p, RoundingMode::None);
         let scale = ExactNum::from_u8(2, p).div(&sqrt_pi, p, RoundingMode::None);
-        let x2 = ExactNum::mul_ref(x, x, p, RoundingMode::None);
+        let x2 = x.sqr(p, RoundingMode::None);
         let mut xpow = x.clone();
         let mut nfact = ExactNum::from_u8(1, p);
         let mut sum = xpow.clone();

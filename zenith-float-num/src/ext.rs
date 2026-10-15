@@ -4539,6 +4539,8 @@ mod tests {
         assert!(ExactNum::mul_ref(&INF_POS, &INF_POS, rand_p(), rm).is_inf_pos());
         assert!(ExactNum::mul_ref(&INF_POS, &INF_NEG, rand_p(), rm).is_inf_neg());
         assert!(ExactNum::mul_ref(&INF_NEG, &INF_NEG, rand_p(), rm).is_inf_pos());
+        assert!(INF_POS.sqr(rand_p(), rm).is_inf_pos());
+        assert!(INF_NEG.sqr(rand_p(), rm).is_inf_pos());
         assert!(ExactNum::mul_ref(&INF_NEG, &INF_POS, rand_p(), rm).is_inf_neg());
         assert!(INF_POS.mul(&ExactNum::new(rand_p()), rand_p(), rm).is_nan());
         assert!(INF_NEG.mul(&ExactNum::new(rand_p()), rand_p(), rm).is_nan());

@@ -100,8 +100,8 @@ fn bench_trig_identity(c: &mut Criterion) {
             b.iter(|| {
                 let s = x.sin(p, rm, &mut cc);
                 let c = x.cos(p, rm, &mut cc);
-                let s2 = ExactNum::mul_ref(&s, &s, p, RoundingMode::None);
-                let c2 = ExactNum::mul_ref(&c, &c, p, RoundingMode::None);
+                let s2 = s.sqr(p, RoundingMode::None);
+                let c2 = c.sqr(p, RoundingMode::None);
                 sink(s2.add(&c2, p, rm));
             });
         });

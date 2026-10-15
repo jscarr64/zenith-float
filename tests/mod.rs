@@ -1277,8 +1277,8 @@ fn expr_bessel_j0_y0_sq_working_prec() {
     let p_wrk = p + WORD_BIT_SIZE + 16;
     let j = x.bessel_j(0, p_wrk, RoundingMode::None, &mut cc);
     let y = x.bessel_y(&nu0, p_wrk, RoundingMode::None, &mut cc);
-    let mut expect = ExactNum::mul_ref(&j, &j, p_wrk, RoundingMode::None).add(
-        &ExactNum::mul_ref(&y, &y, p_wrk, RoundingMode::None),
+    let mut expect = j.sqr(p_wrk, RoundingMode::None).add(
+        &y.sqr(p_wrk, RoundingMode::None),
         p_wrk,
         RoundingMode::None,
     );

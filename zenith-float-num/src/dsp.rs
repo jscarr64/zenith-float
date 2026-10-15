@@ -390,7 +390,7 @@ pub fn kaiser_window(
         let t = ExactNum::from_u32(k as u32, wrk)
             .sub(&mid, wrk, none)
             .div(&mid, wrk, none);
-        let rad = one.sub(&ExactNum::mul_ref(&t, &t, wrk, none), wrk, none);
+        let rad = one.sub(&t.sqr(wrk, none), wrk, none);
         if rad.is_negative() {
             return None;
         }
@@ -515,14 +515,10 @@ mod tests {
         let mut e_f = ExactNum::from_u8(0, p);
         for j in 0..8 {
             let xv = cosine.get(j).unwrap();
-            e_t = e_t.add(&ExactNum::mul_ref(xv, xv, p, rm), p, rm);
+            e_t = e_t.add(&xv.sqr(p, rm), p, rm);
             let xr = cspec.get2(0, j).unwrap();
             let xi = cspec.get2(1, j).unwrap();
-            e_f = e_f.add(&ExactNum::mul_ref(xr, xr, p, rm), p, rm).add(
-                &ExactNum::mul_ref(xi, xi, p, rm),
-                p,
-                rm,
-            );
+            e_f = e_f.add(&xr.sqr(p, rm), p, rm).add(&xi.sqr(p, rm), p, rm);
         }
         let parseval = e_f.div(&n8, p, rm);
         assert!(near(&parseval, &e_t, p));

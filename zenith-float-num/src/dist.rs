@@ -76,8 +76,9 @@ impl ExactNum {
         let none = RoundingMode::None;
         let z = ExactNum::sub_ref(self, mu, pw, none);
         let two = ExactNum::from_u8(2, pw);
-        let sig2 = ExactNum::mul_ref(sigma, sigma, pw, none);
-        let expo = ExactNum::mul_ref(&z, &z, pw, none)
+        let sig2 = sigma.sqr(pw, none);
+        let expo = z
+            .sqr(pw, none)
             .div(&ExactNum::from_u8(2, pw).mul(&sig2, pw, none), pw, none)
             .neg();
         let num = expo.exp(pw, none, cc);
@@ -350,11 +351,7 @@ impl ExactNum {
             none,
         );
         let body = one
-            .add(
-                &ExactNum::mul_ref(self, self, pw, none).div(nu, pw, none),
-                pw,
-                none,
-            )
+            .add(&self.sqr(pw, none).div(nu, pw, none), pw, none)
             .pow(&half_np1.neg(), pw, none, cc);
         pref.mul(&body, p, rm)
     }

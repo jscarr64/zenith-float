@@ -165,7 +165,7 @@ fn arithmetic_at_the_bottom_of_the_range() {
                     "{info} min+min"
                 );
                 assert_eq!(
-                    ExactNum::mul_ref(&tiny, &tiny, p, rm).is_zero(),
+                    tiny.sqr(p, rm).is_zero(),
                     !matches!(rm, RoundingMode::FromZero | RoundingMode::Up),
                     "{info} underflow of min_normal^2"
                 );

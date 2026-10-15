@@ -50,11 +50,11 @@ fn eval(name: &str, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -
         "log_invsqrt" => x.ln(p, rm, cc).mul(&inv_sqrt(x, p, rm), p, rm),
         "log2_invsqrt" => {
             let l = x.ln(p, rm, cc);
-            ExactNum::mul_ref(&l, &l, p, rm).mul(&inv_sqrt(x, p, rm), p, rm)
+            l.sqr(p, rm).mul(&inv_sqrt(x, p, rm), p, rm)
         }
         "log3_invsqrt" => {
             let l = x.ln(p, rm, cc);
-            let l2 = ExactNum::mul_ref(&l, &l, p, rm);
+            let l2 = l.sqr(p, rm);
             l2.mul(&l, p, rm).mul(&inv_sqrt(x, p, rm), p, rm)
         }
         "arcsine" => {

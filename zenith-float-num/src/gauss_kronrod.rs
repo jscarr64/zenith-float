@@ -493,7 +493,7 @@ fn jacobi_weight(
     if !finite(&v_prev) {
         return None;
     }
-    sumsq = sumsq.add(&ExactNum::mul_ref(&v_prev, &v_prev, p, rm), p, rm);
+    sumsq = sumsq.add(&v_prev.sqr(p, rm), p, rm);
     for i in 2..m {
         let numer = ExactNum::mul_ref(lam, &v_prev, p, rm).sub(
             &ExactNum::mul_ref(&off[i - 2], &v_prev2, p, rm),
@@ -504,7 +504,7 @@ fn jacobi_weight(
         if !finite(&v) {
             return None;
         }
-        sumsq = sumsq.add(&ExactNum::mul_ref(&v, &v, p, rm), p, rm);
+        sumsq = sumsq.add(&v.sqr(p, rm), p, rm);
         v_prev2 = v_prev;
         v_prev = v;
     }
@@ -1021,7 +1021,7 @@ where
     }
     let end = at_prec(end.clone(), p);
     let x = if positive { end.add(&step, p, rm) } else { end.sub(&step, p, rm) };
-    let jac = one.div(&ExactNum::mul_ref(&den, &den, p, rm), p, rm);
+    let jac = one.div(&den.sqr(p, rm), p, rm);
     weighted_sample(f, x, jac, p, rm, cc)
 }
 
@@ -1037,14 +1037,14 @@ where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
     let one = ExactNum::from_u8(1, p);
-    let t2 = ExactNum::mul_ref(t, t, p, rm);
+    let t2 = t.sqr(p, rm);
     let den = ExactNum::sub_ref(&one, &t2, p, rm);
     if !finite(&den) || den.is_zero() || den.is_negative() {
         return ExactNum::new(p);
     }
     let x = ExactNum::div_ref(t, &den, p, rm);
     let num = one.add(&t2, p, rm);
-    let jac = num.div(&ExactNum::mul_ref(&den, &den, p, rm), p, rm);
+    let jac = num.div(&den.sqr(p, rm), p, rm);
     weighted_sample(f, x, jac, p, rm, cc)
 }
 
@@ -1305,7 +1305,7 @@ mod tests {
             );
             assert!(gap.compare(&tol) != Some(1), "p={p} exp estimate {gap}");
             let alg = integrate_adaptive_gk_infinite(
-                |x, p, rm, _cc| ExactNum::mul_ref(x, x, p, rm).reciprocal(p, rm),
+                |x, p, rm, _cc| x.sqr(p, rm).reciprocal(p, rm),
                 &one,
                 &pos,
                 &tol,
@@ -1327,7 +1327,7 @@ mod tests {
             );
             let gauss = integrate_adaptive_gk_infinite(
                 |x, p, rm, cc| {
-                    let y = ExactNum::mul_ref(x, x, p, rm);
+                    let y = x.sqr(p, rm);
                     y.neg().exp(p, rm, cc)
                 },
                 &neg,

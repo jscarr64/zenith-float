@@ -1419,7 +1419,7 @@ impl ExactNumArray {
             if j < k {
                 let mut nrm = ExactNum::from_u8(0, p);
                 for vt in v.iter().take(m) {
-                    nrm = nrm.add(&ExactNum::mul_ref(vt, vt, p, rm), p, rm);
+                    nrm = nrm.add(&vt.sqr(p, rm), p, rm);
                 }
                 nrm = nrm.sqrt(p, rm);
                 r[j * n + j] = nrm.clone();
@@ -1630,7 +1630,7 @@ fn svd_householder(
     v[0] = signed.add(&v[0], p, rm);
     let mut vtv = svd_zero(p);
     for vi in &v {
-        vtv = vtv.add(&ExactNum::mul_ref(vi, vi, p, rm), p, rm);
+        vtv = vtv.add(&vi.sqr(p, rm), p, rm);
     }
     if vtv.is_zero() {
         return None;
@@ -1769,14 +1769,14 @@ fn svd_wilkinson_shift(
     let two = ExactNum::from_u8(2, p);
     let b = ExactNum::add_ref(d_prev, d_last, p, rm)
         .mul(&ExactNum::sub_ref(d_prev, d_last, p, rm), p, rm)
-        .add(&ExactNum::mul_ref(e_prev, e_prev, p, rm), p, rm)
+        .add(&e_prev.sqr(p, rm), p, rm)
         .div(&two, p, rm);
     let t = ExactNum::mul_ref(d_last, e_last, p, rm);
-    let c = ExactNum::mul_ref(&t, &t, p, rm);
+    let c = t.sqr(p, rm);
     if b.is_zero() && c.is_zero() {
         return svd_zero(p);
     }
-    let disc = ExactNum::mul_ref(&b, &b, p, rm).add(&c, p, rm).sqrt(p, rm);
+    let disc = b.sqr(p, rm).add(&c, p, rm).sqrt(p, rm);
     let signed = if b.is_negative() { disc.neg() } else { disc };
     let denom = b.add(&signed, p, rm);
     if denom.is_zero() {
@@ -2066,10 +2066,7 @@ fn eigen_wilkinson(
             ExactNum::sub_ref(c, b, p, rm)
         };
     }
-    ExactNum::mul_ref(b, b, p, rm)
-        .div(&denom, p, rm)
-        .neg()
-        .add(c, p, rm)
+    b.sqr(p, rm).div(&denom, p, rm).neg().add(c, p, rm)
 }
 
 fn eigen_qr_sweep(
@@ -2094,8 +2091,8 @@ fn eigen_qr_sweep(
         let d0 = d[k].clone();
         let ee = e[k].clone();
         let d1 = d[k + 1].clone();
-        let c2 = ExactNum::mul_ref(&cs, &cs, p, rm);
-        let s2 = ExactNum::mul_ref(&sn, &sn, p, rm);
+        let c2 = cs.sqr(p, rm);
+        let s2 = sn.sqr(p, rm);
         let cs2 = ExactNum::mul_ref(&cs, &sn, p, rm);
         let two_cse = ExactNum::from_u8(2, p).mul(&ExactNum::mul_ref(&cs2, &ee, p, rm), p, rm);
         d[k] = ExactNum::mul_ref(&c2, &d0, p, rm).add(&two_cse, p, rm).add(
@@ -2573,7 +2570,7 @@ mod tests {
                 div.get(i).unwrap().to_bits(),
                 Ieee64::from_exact(&ExactNum::div_ref(&xa, &xa, p, rm)).to_bits()
             );
-            let sqe = ExactNum::mul_ref(&xa, &xa, p, rm).sqrt(p, rm);
+            let sqe = xa.sqr(p, rm).sqrt(p, rm);
             assert_eq!(
                 sq.get(i).unwrap().to_bits(),
                 Ieee64::from_exact(&sqe).to_bits()
@@ -2963,14 +2960,10 @@ mod tests {
         let mut e_f = ExactNum::from_u8(0, p);
         for j in 0..8 {
             let x = cosine.get(j).unwrap();
-            e_t = e_t.add(&ExactNum::mul_ref(x, x, p, rm), p, rm);
+            e_t = e_t.add(&x.sqr(p, rm), p, rm);
             let xr = cspec.get2(0, j).unwrap();
             let xi = cspec.get2(1, j).unwrap();
-            e_f = e_f.add(&ExactNum::mul_ref(xr, xr, p, rm), p, rm).add(
-                &ExactNum::mul_ref(xi, xi, p, rm),
-                p,
-                rm,
-            );
+            e_f = e_f.add(&xr.sqr(p, rm), p, rm).add(&xi.sqr(p, rm), p, rm);
         }
         let parseval = e_f.div(&n8, p, rm);
         assert!(near_num(&parseval, &e_t, p));

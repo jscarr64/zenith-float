@@ -283,7 +283,7 @@ fn ln_glaisher(p: usize, cc: &mut Consts) -> ExactNum {
         .add(&twopi.ln(p, RoundingMode::None, cc), p, RoundingMode::None)
         .div(&twelve, p, RoundingMode::None);
     let zp = zeta_prime_2(p, cc);
-    let pi2 = ExactNum::mul_ref(&pi, &pi, p, RoundingMode::None);
+    let pi2 = pi.sqr(p, RoundingMode::None);
     let b = zp.div(&two.mul(&pi2, p, RoundingMode::None), p, RoundingMode::None);
     a.sub(&b, p, RoundingMode::None)
 }
@@ -344,7 +344,7 @@ fn clausen_nterms(theta: &ExactNum, bits: usize, cc: &mut Consts) -> usize {
 fn clausen_cl2_series(theta: &ExactNum, p: usize, bits: usize, cc: &mut Consts) -> ExactNum {
     let nterms = clausen_nterms(theta, bits, cc);
     let bs = even_bernoulli_ext(nterms, p);
-    let th2 = ExactNum::mul_ref(theta, theta, p, RoundingMode::None);
+    let th2 = theta.sqr(p, RoundingMode::None);
     let mut u = ExactNum::mul_ref(theta, &th2, p, RoundingMode::None).div(
         &ExactNum::from_u8(6, p),
         p,
@@ -390,7 +390,7 @@ fn clausen_cl2_series(theta: &ExactNum, p: usize, bits: usize, cc: &mut Consts) 
 fn clausen_cl3_series(theta_abs: &ExactNum, p: usize, bits: usize, cc: &mut Consts) -> ExactNum {
     let nterms = clausen_nterms(theta_abs, bits, cc);
     let bs = even_bernoulli_ext(nterms, p);
-    let th2 = ExactNum::mul_ref(theta_abs, theta_abs, p, RoundingMode::None);
+    let th2 = theta_abs.sqr(p, RoundingMode::None);
     let mut u = ExactNum::mul_ref(theta_abs, &th2, p, RoundingMode::None).div(
         &ExactNum::from_u8(6, p),
         p,
@@ -508,7 +508,7 @@ fn scorer_gi_series(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
 /// \(Gi(x)\sim(\pi x)^{-1}\sum (3k+1)^{\overline{\times}}/x^{3k}\) for \(x\to+\infty\).
 fn scorer_gi_asymp_plus(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     let pi = cc.pi(p, RoundingMode::None);
-    let x3 = ExactNum::mul_ref(x, x, p, RoundingMode::None).mul(x, p, RoundingMode::None);
+    let x3 = x.sqr(p, RoundingMode::None).mul(x, p, RoundingMode::None);
     let mut term = ExactNum::from_u8(1, p);
     let mut sum = term.clone();
     for k in 0..=series_cap(p) {
@@ -527,7 +527,7 @@ fn scorer_gi_asymp_plus(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
 /// \(Hi(x)\sim-(\pi x)^{-1}\sum (-1)^k(3k+1)^{\overline{\times}}/x^{3k}\) as \(x\to-\infty\).
 fn scorer_hi_asymp_minus(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     let pi = cc.pi(p, RoundingMode::None);
-    let x3 = ExactNum::mul_ref(x, x, p, RoundingMode::None).mul(x, p, RoundingMode::None);
+    let x3 = x.sqr(p, RoundingMode::None).mul(x, p, RoundingMode::None);
     let mut term = ExactNum::from_u8(1, p);
     let mut sum = term.clone();
     let mut sign = -1i32;
@@ -875,7 +875,7 @@ impl ExactNum {
         }
         let two = ExactNum::from_u8(2, wrk);
         let half = ExactNum::div_ref(self, &two, wrk, RoundingMode::None);
-        let z2 = ExactNum::mul_ref(&half, &half, wrk, RoundingMode::None);
+        let z2 = half.sqr(wrk, RoundingMode::None);
         let three_half = ExactNum::from_u8(3, wrk).div(&two, wrk, RoundingMode::None);
         let mut sum = ExactNum::new(wrk);
         let mut zk = ExactNum::from_u8(1, wrk);
@@ -1294,11 +1294,7 @@ impl ExactNum {
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
         let s = one
-            .sub(
-                &ExactNum::mul_ref(self, self, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            )
+            .sub(&self.sqr(wrk, RoundingMode::None), wrk, RoundingMode::None)
             .sqrt(wrk, RoundingMode::None);
         finish(s.elliptic_f(m, wrk, RoundingMode::None, cc), p, rm)
     }
@@ -1325,11 +1321,7 @@ impl ExactNum {
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
         let s = one
-            .sub(
-                &ExactNum::mul_ref(self, self, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            )
+            .sub(&self.sqr(wrk, RoundingMode::None), wrk, RoundingMode::None)
             .div(m, wrk, RoundingMode::None)
             .sqrt(wrk, RoundingMode::None);
         finish(s.elliptic_f(m, wrk, RoundingMode::None, cc), p, rm)
@@ -1646,7 +1638,7 @@ fn barnes_ln_g_plus1(z: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     let three = ExactNum::from_u8(3, p);
     let four = ExactNum::from_u8(4, p);
     let twelve = ExactNum::from_u32(12, p);
-    let z2 = ExactNum::mul_ref(z, z, p, RoundingMode::None);
+    let z2 = z.sqr(p, RoundingMode::None);
     let lnz = z.ln(p, RoundingMode::None, cc);
     let pi = cc.pi(p, RoundingMode::None);
     let twopi = ExactNum::from_u8(2, p).mul(&pi, p, RoundingMode::None);
@@ -1791,13 +1783,11 @@ mod tests {
         // Li_2(1/2) = π²/12 − (ln 2)²/2
         let pi = cc.pi(p, rm);
         let ln2 = cc.ln_2(p, rm);
-        let want = ExactNum::mul_ref(&pi, &pi, p, rm)
-            .div(&ExactNum::from_u32(12, p), p, rm)
-            .sub(
-                &ExactNum::mul_ref(&ln2, &ln2, p, rm).div(&ExactNum::from_u8(2, p), p, rm),
-                p,
-                rm,
-            );
+        let want = pi.sqr(p, rm).div(&ExactNum::from_u32(12, p), p, rm).sub(
+            &ln2.sqr(p, rm).div(&ExactNum::from_u8(2, p), p, rm),
+            p,
+            rm,
+        );
         assert!(near(&li2h, &want, p));
 
         let lna = ln_glaisher(p, &mut cc);
