@@ -5606,6 +5606,8 @@ mod grid_digest_tests {
     ];
 
     const OPERANDS: usize = 21;
+    /// Operands 21 and 22 are subnormal.
+    const PAIR_OPERANDS: usize = 23;
 
     /// Operand `i` of the grid, built fresh on every call (`ldexp` consumes it).
     fn operand(i: usize) -> ExactNum {
@@ -5630,6 +5632,13 @@ mod grid_digest_tests {
             8 => INF_NEG,
             9 => ExactNum::nan(Some(Error::InvalidArgument)),
             10 => ExactNum::nan(None),
+            21 => ExactNum::from_u8(3, 64)
+                .ldexp(EXPONENT_MIN + 1, 64, RoundingMode::None)
+                .ldexp(-20, 64, RoundingMode::None),
+            22 => third(192)
+                .ldexp(EXPONENT_MIN + 1, 192, RoundingMode::None)
+                .ldexp(-100, 192, RoundingMode::None)
+                .neg(),
             _ => {
                 let k = ks[(i - 11) / 2];
                 if (i - 11).is_multiple_of(2) {
@@ -5719,8 +5728,8 @@ mod grid_digest_tests {
     fn add_sub_grid_digest() {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
-        for i in 0..OPERANDS {
-            for j in 0..OPERANDS {
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
                         digest(&operand(i).add(&operand(j), p, rm), &mut h);
@@ -5741,8 +5750,8 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 37_550);
+        assert_eq!(count, 45_030);
         println!("add/sub grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 5_394_997_061_799_985_050);
+        assert_eq!(h.finish(), 14_948_210_774_588_920_455);
     }
 }
