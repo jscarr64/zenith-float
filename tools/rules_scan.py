@@ -31,6 +31,9 @@ up versus tools/clone_count_baseline.txt. The baseline is only ever lowered, wit
 REF-SUM COUNT: total uses of `add_ref(` / `sub_ref(` (the borrowed-borrowed sums, sanctioned only where both
 operands are still live) in non-test library code, definitions (`fn add_ref`) excluded. Same ratchet as the
 clone count against tools/ref_sum_count_baseline.txt: it may only go down; --update-baseline lowers it.
+
+MUL-REF COUNT: the same ratchet, separately, for `mul_ref(` / `div_ref(` (borrowed-borrowed products and
+quotients, sanctioned only where both operands are still live) against tools/mul_ref_count_baseline.txt.
 """
 import hashlib, os, re, subprocess, sys, collections
 
@@ -157,10 +160,16 @@ def clone_count():
     return total
 
 
-REF_SUM = re.compile(r"\b(?:add_ref|sub_ref)\(")
+REF_KINDS = (
+    # (label, function names, baseline file)
+    ("add_ref/sub_ref", ("add_ref", "sub_ref"), "ref_sum_count_baseline.txt"),
+    ("mul_ref/div_ref", ("mul_ref", "div_ref"), "mul_ref_count_baseline.txt"),
+)
 
 
-def ref_sum_count():
+def ref_sum_count(names=("add_ref", "sub_ref")):
+    use = re.compile(r"\b(?:%s)\(" % "|".join(names))
+    deff = re.compile(r"\bfn\s+(?:%s)\b" % "|".join(names))
     total = 0
     for d in no_clone.DIRS:
         for dp, dn, fn in os.walk(os.path.join(ROOT, d)):
@@ -175,8 +184,8 @@ def ref_sum_count():
                 mask = no_clone.test_mask(lines)
                 for i, l in enumerate(lines):
                     code = strip(l)
-                    if not mask[i] and not re.search(r"\bfn\s+(add_ref|sub_ref)\b", code):
-                        total += len(REF_SUM.findall(code))
+                    if not mask[i] and not deff.search(code):
+                        total += len(use.findall(code))
     return total
 
 
@@ -184,8 +193,8 @@ def baseline_path():
     return os.path.join(ROOT, "tools", "clone_count_baseline.txt")
 
 
-def ref_baseline_path():
-    return os.path.join(ROOT, "tools", "ref_sum_count_baseline.txt")
+def ref_baseline_path(name="ref_sum_count_baseline.txt"):
+    return os.path.join(ROOT, "tools", name)
 
 
 def read_baseline():
@@ -215,24 +224,28 @@ def count_check(update=False):
 
 
 def ref_count_check(update=False):
-    cur = ref_sum_count()
-    try:
-        base = int(open(ref_baseline_path()).read().split()[0])
-    except (OSError, ValueError, IndexError):
-        print("rules_scan: missing or unreadable tools/ref_sum_count_baseline.txt")
-        return 1
-    if cur > base:
-        print("rules_scan: add_ref/sub_ref use count %d is ABOVE the baseline %d (it may only go down)" % (cur, base))
-        return 1
-    if cur < base:
-        if update:
-            open(ref_baseline_path(), "w").write("%d\n" % cur)
-            print("rules_scan: ref-sum baseline lowered %d -> %d" % (base, cur))
+    rc = 0
+    for label, names, fname in REF_KINDS:
+        cur = ref_sum_count(names)
+        path = ref_baseline_path(fname)
+        try:
+            base = int(open(path).read().split()[0])
+        except (OSError, ValueError, IndexError):
+            print("rules_scan: missing or unreadable tools/%s" % fname)
+            rc = 1
+            continue
+        if cur > base:
+            print("rules_scan: %s use count %d is ABOVE the baseline %d (it may only go down)" % (label, cur, base))
+            rc = 1
+        elif cur < base:
+            if update:
+                open(path, "w").write("%d\n" % cur)
+                print("rules_scan: %s baseline lowered %d -> %d" % (label, base, cur))
+            else:
+                print("rules_scan: %s use count %d is below baseline %d: lower the baseline (rules_scan.sh --update-baseline)" % (label, cur, base))
         else:
-            print("rules_scan: add_ref/sub_ref use count %d is below baseline %d: lower the baseline (rules_scan.sh --update-baseline)" % (cur, base))
-        return 0
-    print("rules_scan: add_ref/sub_ref use count %d == baseline" % cur)
-    return 0
+            print("rules_scan: %s use count %d == baseline" % (label, cur))
+    return rc
 
 
 def both_count_checks(update=False):

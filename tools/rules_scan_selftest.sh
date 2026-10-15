@@ -12,7 +12,7 @@ mkdiff() { # mkdiff <path> <added line...>  -> fixture diff on stdout
   for l in "$@"; do printf '+%s\n' "$l"; done
 }
 LIB=zenith-float-num/src/foo.rs
-export RULES_SCAN_ROOT="$t"; mkdir -p "$t/tools"; : > "$t/tools/rules_allowlist.txt"; echo 0 > "$t/tools/clone_count_baseline.txt"; echo 0 > "$t/tools/ref_sum_count_baseline.txt"
+export RULES_SCAN_ROOT="$t"; mkdir -p "$t/tools"; : > "$t/tools/rules_allowlist.txt"; echo 0 > "$t/tools/clone_count_baseline.txt"; echo 0 > "$t/tools/ref_sum_count_baseline.txt"; echo 0 > "$t/tools/mul_ref_count_baseline.txt"
 export RULES_SCAN_SKIP_COUNT=1   # fixture diffs have no tree to count
 
 mkdiff $LIB 'let a = 1 + 2;' 'let s = a.max(b);' > "$t/clean.diff"
@@ -61,7 +61,7 @@ scan --diff-file "$t/d.diff" >/dev/null || fail "allowlisted site still flagged"
 # git modes in a throwaway repo
 g="$t/repo"; mkdir -p "$g/zenith-float-num/src" "$g/tools"; cd "$g" || exit 1
 git init -q . && git config user.email a@b && git config user.name t
-cp "$t/tools/rules_allowlist.txt" tools/; echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/ref_sum_count_baseline.txt
+cp "$t/tools/rules_allowlist.txt" tools/; echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/ref_sum_count_baseline.txt; echo 0 > tools/mul_ref_count_baseline.txt
 printf 'fn a() {}\n' > zenith-float-num/src/x.rs; git add -A; git commit -qm base; base=$(git rev-parse HEAD)
 export RULES_SCAN_ROOT="$g"; unset RULES_SCAN_SKIP_COUNT
 scan "$base..HEAD" >/dev/null || fail "empty range flagged"
@@ -94,11 +94,29 @@ mod tests { fn t(a: &N, b: &N) { let s = N::add_ref(a, b); } }
 EOF
 git add -A; git commit -qm refs
 echo 2 > tools/ref_sum_count_baseline.txt; echo 5 > tools/clone_count_baseline.txt
-scan --count-only | grep -q "use count 2 == baseline" || fail "ref count should be 2 (definitions, comments, strings, tests excluded): $(scan --count-only)"
+scan --count-only | grep -q "add_ref/sub_ref use count 2 == baseline" || fail "ref count should be 2 (definitions, comments, strings, tests excluded): $(scan --count-only)"
 echo 1 > tools/ref_sum_count_baseline.txt; scan --count-only | grep -q "ABOVE" || fail "ref count above baseline not reported"
 scan --count-only >/dev/null && fail "ref count above baseline passed"
 echo 7 > tools/ref_sum_count_baseline.txt; scan --count-only | grep -qi "lower the baseline" || fail "no hint to lower ref baseline"
 scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/ref_sum_count_baseline.txt)" = 2 ] || fail "ref baseline not lowered"
 echo 0 > tools/ref_sum_count_baseline.txt; scan --update-baseline >/dev/null && fail "raising ref baseline allowed"; [ "$(tr -d '[:space:]' < tools/ref_sum_count_baseline.txt)" = 0 ] || fail "ref baseline raised"
 rm -f tools/ref_sum_count_baseline.txt; scan --count-only >/dev/null && fail "missing ref baseline passed"
+# mul_ref/div_ref use-count baseline: its own file, same rules, independent of the add_ref/sub_ref count
+cat > zenith-float-num/src/x.rs <<'EOF'
+impl N { pub fn mul_ref(a: &N, b: &N) -> N { a.go(b) } pub fn div_ref(a: &N, b: &N) -> N { a.go(b) } }
+fn u(a: &N, b: &N) { let s = N::mul_ref(a, b); let d = N::div_ref(a, b); let z = N::add_ref(a, b); }
+// N::mul_ref(a, b) in a comment
+fn s() { let x = "N::div_ref(a, b)"; }
+#[cfg(test)]
+mod tests { fn t(a: &N, b: &N) { let s = N::mul_ref(a, b); } }
+EOF
+echo 1 > tools/ref_sum_count_baseline.txt; echo 2 > tools/mul_ref_count_baseline.txt
+scan --count-only | grep -q "mul_ref/div_ref use count 2 == baseline" || fail "mul ref count should be 2: $(scan --count-only)"
+scan --count-only | grep -q "add_ref/sub_ref use count 1 == baseline" || fail "add ref count should stay 1 beside mul_ref: $(scan --count-only)"
+echo 1 > tools/mul_ref_count_baseline.txt; scan --count-only | grep -q "mul_ref/div_ref use count 2 is ABOVE" || fail "mul ref above baseline not reported"
+scan --count-only >/dev/null && fail "mul ref count above baseline passed"
+echo 7 > tools/mul_ref_count_baseline.txt; scan --count-only | grep -qi "mul_ref/div_ref use count 2 is below baseline" || fail "no hint to lower mul ref baseline"
+scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/mul_ref_count_baseline.txt)" = 2 ] || fail "mul ref baseline not lowered"
+echo 0 > tools/mul_ref_count_baseline.txt; scan --update-baseline >/dev/null && fail "raising mul ref baseline allowed"; [ "$(tr -d '[:space:]' < tools/mul_ref_count_baseline.txt)" = 0 ] || fail "mul ref baseline raised"
+rm -f tools/mul_ref_count_baseline.txt; scan --count-only >/dev/null && fail "missing mul ref baseline passed"
 echo "rules_scan selftest: ok"

@@ -3,6 +3,7 @@
 /tools/clone_allowlist.txt @jscarr64
 /tools/clone_count_baseline.txt @jscarr64
 /tools/ref_sum_count_baseline.txt @jscarr64
+/tools/mul_ref_count_baseline.txt @jscarr64
 /tools/rules_scan.py @jscarr64
 /tools/rules_scan.sh @jscarr64
 /tools/no_clone.py @jscarr64

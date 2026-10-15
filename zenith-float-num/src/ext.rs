@@ -267,6 +267,26 @@ impl ExactNum {
         self.mul_op(d2, p, rm, false)
     }
 
+    /// `a * b` with both operands borrowed: the sanctioned form for a site where **both operands are
+    /// still needed afterwards** (a square `x * x`, a dot-product term, a recurrence step). Built in a
+    /// fresh buffer by the same kernel as [`Self::mul`]; neither operand is copied. The result, sign of
+    /// zero, both inexact flags, Inf/NaN handling and subnormal results are those of `mul`.
+    ///
+    /// Every use of `add_ref`, `sub_ref`, `mul_ref` and `div_ref` in library code is counted by
+    /// `tools/rules_scan.sh` (`tools/ref_sum_count_baseline.txt`, which may only go down).
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn mul_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {
+        a.mul_op(b, p, rm, false)
+    }
+
+    /// `a / b` with both operands borrowed. Same contract as [`Self::mul_ref`].
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn div_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {
+        a.div_op(b, p, rm)
+    }
+
     /// Multiplies `d2` by `self` and returns the result of the operation.
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer multiplication.
@@ -592,6 +612,10 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn div(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
+        self.div_op(d2, p, rm)
+    }
+
+    fn div_op(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
                 Flavor::Value(v2) => Self::result_to_ext_rm(
