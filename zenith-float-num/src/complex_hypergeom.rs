@@ -251,7 +251,7 @@ fn transform_1mz(
     let gcab = gamma_fixed(&cab, p, cc);
     let gca = gamma_fixed(&ExactComplex::sub_ref(&c, &a, p, rm()), p, cc);
     let gcb = gamma_fixed(&ExactComplex::sub_ref(&c, &b, p, rm()), p, cc);
-    let abc = a.add(b, p, rm()).sub(c, p, rm());
+    let abc = ExactComplex::add_ref(&a, b, p, rm()).sub(c, p, rm());
     let gabc = gamma_fixed(&abc, p, cc);
     let ga = gamma_fixed(a, p, cc);
     let gb = gamma_fixed(b, p, cc);
@@ -267,7 +267,9 @@ fn transform_1mz(
     }
     let a_pref = gc.mul(&gcab, p, rm()).div(&gca.mul(&gcb, p, rm()), p, rm());
     let b_pref = gc.mul(&gabc, p, rm()).div(&ga.mul(&gb, p, rm()), p, rm());
-    let cap1 = a.add(b, p, rm()).sub(c, p, rm()).add(&one, p, rm());
+    let cap1 = ExactComplex::add_ref(&a, b, p, rm())
+        .sub(c, p, rm())
+        .add(&one, p, rm());
     let t1 = a_pref.mul(&hypergeom_at(a, b, &cap1, &omz, p, cc, left), p, rm());
     let f2 = hypergeom_at(
         &ExactComplex::sub_ref(&c, &a, p, rm()),

@@ -219,7 +219,7 @@ where
 
 fn map_ab(xi: &ExactNum, a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
     let two = ExactNum::from_u8(2, p);
-    let mid = a.add(b, p, rm).div(&two, p, rm);
+    let mid = ExactNum::add_ref(&a, b, p, rm).div(&two, p, rm);
     let half = ExactNum::sub_ref(&b, &a, p, rm).div(&two, p, rm);
     mid.add(&half.mul(xi, p, rm), p, rm)
 }

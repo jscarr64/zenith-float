@@ -346,7 +346,7 @@ where
     );
     let k5 = f(&t5, &y5s, p, rm, cc);
 
-    let t6 = t.add(h, p, rm);
+    let t6 = ExactNum::add_ref(&t, h, p, rm);
     let y6 = axpy(
         &axpy(
             &axpy(

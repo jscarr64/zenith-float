@@ -346,7 +346,7 @@ where
                     .mul(&qa, wrk, none)
                     .mul(&ExactNum::sub_ref(&qa, &r, wrk, none), wrk, none)
                     .sub(
-                        &ExactNum::sub_ref(&b, &a, wrk, none).mul(
+                        &a.neg().add(&b, wrk, none).mul(
                             &ExactNum::from_u8(1, wrk).neg().add(&r, wrk, none),
                             wrk,
                             none,

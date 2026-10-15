@@ -1717,7 +1717,7 @@ fn svd_negligible(e: &ExactNum, d0: &ExactNum, d1: &ExactNum, p: usize, rm: Roun
     }
     // |d0| + |d1|
     let scale = match (d0.is_negative(), d1.is_negative()) {
-        (false, false) => d0.add(d1, p, rm),
+        (false, false) => ExactNum::add_ref(&d0, d1, p, rm),
         (false, true) => ExactNum::sub_ref(d0, &d1, p, rm),
         (true, false) => ExactNum::sub_ref(d1, &d0, p, rm),
         (true, true) => d0.neg_via_mul().sub(d1, p, rm),
@@ -1740,8 +1740,7 @@ fn svd_wilkinson_shift(
     rm: RoundingMode,
 ) -> ExactNum {
     let two = ExactNum::from_u8(2, p);
-    let b = d_prev
-        .add(d_last, p, rm)
+    let b = ExactNum::add_ref(&d_prev, d_last, p, rm)
         .mul(&ExactNum::sub_ref(d_prev, &d_last, p, rm), p, rm)
         .add(&e_prev.mul(e_prev, p, rm), p, rm)
         .div(&two, p, rm);
@@ -1774,8 +1773,7 @@ fn svd_qr_sweep(
     let last = q_blk - 1;
     let e_prev = if last >= p_blk + 2 { e[last - 2].clone() } else { svd_zero(p) };
     let shift = svd_wilkinson_shift(&d[last - 1], &d[last], &e_prev, &e[last - 1], p, rm);
-    let mut f = d[p_blk]
-        .add(&d[last], p, rm)
+    let mut f = ExactNum::add_ref(&d[p_blk], &d[last], p, rm)
         .mul(&ExactNum::sub_ref(&d[p_blk], &d[last], p, rm), p, rm)
         .add(&shift, p, rm);
     let mut g = d[p_blk].mul(&e[p_blk], p, rm);
@@ -2035,7 +2033,11 @@ fn eigen_wilkinson(
     let signed = if delta.is_negative() { h.neg() } else { h };
     let denom = delta.add(&signed, p, rm);
     if denom.is_zero() {
-        return if b.is_negative() { c.add(b, p, rm) } else { ExactNum::sub_ref(c, &b, p, rm) };
+        return if b.is_negative() {
+            ExactNum::add_ref(&c, b, p, rm)
+        } else {
+            ExactNum::sub_ref(c, &b, p, rm)
+        };
     }
     b.mul(b, p, rm).div(&denom, p, rm).neg().add(&c, p, rm)
 }

@@ -617,7 +617,7 @@ where
     let rm = RoundingMode::None;
     let two = ExactNum::from_u8(2, p);
     let half = ExactNum::sub_ref(&b, &a, p, rm).div(&two, p, rm);
-    let mid = a.add(b, p, rm).div(&two, p, rm);
+    let mid = ExactNum::add_ref(&a, b, p, rm).div(&two, p, rm);
     if !finite(&half) || !finite(&mid) || !half.is_positive() {
         return Err(QuadratureError::InvalidArgument);
     }
