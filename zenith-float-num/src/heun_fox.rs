@@ -287,7 +287,8 @@ fn meijer_g_series(
             let expn = if r_is_one {
                 ak.sub(&one, p, RoundingMode::None)
             } else {
-                ak.sub(&one, p, RoundingMode::None)
+                one.neg()
+                    .add(&ak, p, RoundingMode::None)
                     .div(r, p, RoundingMode::None)
             };
             let zp = pow_real(z, &expn, p, cc);
@@ -376,7 +377,7 @@ fn perturb_row(xs: &[ExactNum], h: &mut ExactNum, wp: usize, k: &mut u32) -> Opt
         *k = k.saturating_add(1);
         let den = ExactNum::from_u32(*k + 1, wp);
         let bump = h.div(&den, wp, RoundingMode::None);
-        *h = h.add(&bump, wp, RoundingMode::None);
+        *h = bump.add(&h, wp, RoundingMode::None);
     }
     Some(row)
 }
@@ -1421,12 +1422,12 @@ fn heun_g_ode(
     let b1 = gamma
         .mul(&zm1.add(&zma, p, RoundingMode::None), p, RoundingMode::None)
         .add(
-            &delta.mul(&z0.add(&zma, p, RoundingMode::None), p, RoundingMode::None),
+            &delta.mul(&zma.add(&z0, p, RoundingMode::None), p, RoundingMode::None),
             p,
             RoundingMode::None,
         )
         .add(
-            &eps.mul(&z0.add(&zm1, p, RoundingMode::None), p, RoundingMode::None),
+            &eps.mul(&zm1.add(&z0, p, RoundingMode::None), p, RoundingMode::None),
             p,
             RoundingMode::None,
         );
@@ -1855,7 +1856,7 @@ fn fox_h_gauss(
     }
     for (ai, &ai_int) in a.iter().zip(a_int.iter()) {
         let base = ExactNum::from_i32(ai_int, p);
-        let expn = ai.sub(&half, p, RoundingMode::None);
+        let expn = half.neg().add(&ai, p, RoundingMode::None);
         m_fac = m_fac.div(&pow_real(&base, &expn, p, cc), p, RoundingMode::None);
     }
     let pi = cc.pi(p, RoundingMode::None);

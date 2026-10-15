@@ -181,7 +181,7 @@ fn cpx_tiny(z: &ExactComplex, p: usize) -> bool {
 
 fn term_near_one(delta: &ExactComplex, p: usize) -> bool {
     let one = ExactComplex::one(p.max(64));
-    let d = delta.sub(&one, 64, RoundingMode::None);
+    let d = one.neg().add(&delta, 64, RoundingMode::None);
     cpx_tiny(&d, p)
 }
 
@@ -209,7 +209,7 @@ fn hypergeom_2f0_lentz(
         let ak = a
             .add(&km1, work_p, RoundingMode::None)
             .mul(
-                &b.add(&km1, work_p, RoundingMode::None),
+                &km1.add(&b, work_p, RoundingMode::None),
                 work_p,
                 RoundingMode::None,
             )

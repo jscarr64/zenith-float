@@ -1539,7 +1539,7 @@ impl ExactNum {
             let d = two
                 .mul(&e, wrk, RoundingMode::None)
                 .mul(
-                    &self.sub(&inv_e, wrk, RoundingMode::None),
+                    &inv_e.neg().add(&self, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                 )

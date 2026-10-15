@@ -131,7 +131,7 @@ fn hypergeom_series(
         }
         term = term
             .mul(&a.add(&nn, p, rm()), p, rm())
-            .mul(&b.add(&nn, p, rm()), p, rm())
+            .mul(&nn.add(&b, p, rm()), p, rm())
             .div(&den, p, rm())
             .mul(z, p, rm());
         sum = sum.add(&term, p, rm());
@@ -366,7 +366,7 @@ fn log_case_sum(
         .mul(&rg, p, rm());
     pref2 = neg_c(pref2);
     let am = a.add(&mf, p, rm());
-    let bm = b.add(&mf, p, rm());
+    let bm = mf.add(&b, p, rm());
     let lnw = w.ln(p, rm(), cc);
     let mut psi_n1 = one.digamma_at(p, cc);
     let mut psi_nm1 = re(m + 1).digamma_at(p, cc);

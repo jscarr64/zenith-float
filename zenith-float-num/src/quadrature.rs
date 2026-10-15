@@ -254,7 +254,7 @@ fn gauss_legendre_nodes(
             |x, p, rm, _cc| {
                 let pn = x.legendre_p(nu, p, rm);
                 let pnm = if nu == 0 { ExactNum::new(p) } else { x.legendre_p(nu - 1, p, rm) };
-                let d = one.sub(&x.mul(x, p, rm), p, rm);
+                let d = x.mul(x, p, rm).neg().add(&one, p, rm);
                 n_f.mul(&pnm.sub(&x.mul(&pn, p, rm), p, rm), p, rm)
                     .div(&d, p, rm)
             },
