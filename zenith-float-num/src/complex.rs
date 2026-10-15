@@ -350,9 +350,18 @@ impl ExactComplex {
         let rm = RoundingMode::ToEven;
         let exact = |x: &ExactNum| finite(x) && !x.inexact_accumulated();
         let a = self.re.hypot(&self.im, p_x, rm);
-        let h = a.add(&self.re.abs_via_mul(), p_x, rm).ldexp(-1, p_x, rm);
+        let h = if self.re.is_negative() {
+            a.sub(&self.re, p_x, rm)
+        } else {
+            a.add(&self.re, p_x, rm)
+        }
+        .ldexp(-1, p_x, rm);
         let t = h.sqrt(p_x, rm);
-        let u = self.im.abs_via_mul().div(&t.ldexp(1, p_x, rm), p_x, rm);
+        let u = if self.im.is_negative() {
+            self.im.neg_via_mul().div(&t.ldexp(1, p_x, rm), p_x, rm)
+        } else {
+            self.im.div(&t.ldexp(1, p_x, rm), p_x, rm)
+        };
         if !(exact(&a) && exact(&h) && exact(&t) && exact(&u)) {
             return None;
         }
@@ -1117,13 +1126,23 @@ mod tests {
         let l = m1.ln(p, rm, &mut cc);
         assert!(l.re().is_zero() || l.re().exponent().unwrap_or(0) < -((p as i32) / 4));
         let pi = cc.pi(p, rm);
-        let d = l.im().abs_via_mul().sub(&pi, p, RoundingMode::None).abs();
+        let d = (if l.im().is_negative() {
+            l.im().neg_via_mul().sub(&pi, p, RoundingMode::None)
+        } else {
+            l.im().sub(&pi, p, RoundingMode::None)
+        })
+        .abs();
         assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 8));
         assert!(l.im().is_positive());
 
         let below = ExactComplex::new(ExactNum::from_i8(-1, p), ExactNum::new(p).neg());
         let lb = below.ln(p, rm, &mut cc);
-        let db = lb.im().abs_via_mul().sub(&pi, p, RoundingMode::None).abs();
+        let db = (if lb.im().is_negative() {
+            lb.im().neg_via_mul().sub(&pi, p, RoundingMode::None)
+        } else {
+            lb.im().sub(&pi, p, RoundingMode::None)
+        })
+        .abs();
         assert!(db.is_zero() || db.exponent().unwrap_or(0) < -((p as i32) / 8));
         assert!(lb.im().is_negative());
     }

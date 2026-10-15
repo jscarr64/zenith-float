@@ -194,7 +194,11 @@ pub fn chebyshev_eval(
 pub fn chebyshev_error_bound(coeffs: &[ExactNum], p: usize) -> ExactNum {
     let mut acc = ExactNum::new(p);
     for c in coeffs.iter().skip(1) {
-        acc = acc.add(&c.abs_via_mul(), p, RoundingMode::ToEven);
+        acc = if c.is_negative() {
+            acc.sub(c, p, RoundingMode::ToEven)
+        } else {
+            acc.add(c, p, RoundingMode::ToEven)
+        };
     }
     acc
 }

@@ -66,8 +66,16 @@ impl Ball {
     /// Product of two balls with a first-order radius bound plus a rounding ulp.
     pub fn mul(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
         let mid = self.mid.mul(&other.mid, p, rm);
-        let a = self.mid.abs_via_mul().mul(&other.rad, p, RoundingMode::Up);
-        let b = other.mid.abs_via_mul().mul(&self.rad, p, RoundingMode::Up);
+        let a = if self.mid.is_negative() {
+            self.mid.neg_via_mul().mul(&other.rad, p, RoundingMode::Up)
+        } else {
+            self.mid.mul(&other.rad, p, RoundingMode::Up)
+        };
+        let b = if other.mid.is_negative() {
+            other.mid.neg_via_mul().mul(&self.rad, p, RoundingMode::Up)
+        } else {
+            other.mid.mul(&self.rad, p, RoundingMode::Up)
+        };
         let c = self.rad.mul(&other.rad, p, RoundingMode::Up);
         let rad = a
             .add(&b, p, RoundingMode::Up)
@@ -81,11 +89,12 @@ impl Ball {
     pub fn exp(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.exp(p, rm, cc);
         let em1 = self.rad.expm1(p, RoundingMode::Up, cc);
-        let rad = mid.abs_via_mul().mul(&em1, p, RoundingMode::Up).add(
-            &Self::rounding_ulp(&mid, p),
-            p,
-            RoundingMode::Up,
-        );
+        let rad = (if mid.is_negative() {
+            mid.neg_via_mul().mul(&em1, p, RoundingMode::Up)
+        } else {
+            mid.mul(&em1, p, RoundingMode::Up)
+        })
+        .add(&Self::rounding_ulp(&mid, p), p, RoundingMode::Up);
         Ball { mid, rad }
     }
 
@@ -177,7 +186,11 @@ impl Ball {
             return Self::nan_ball(p);
         }
         let mid = self.mid.bessel_j(1, p, rm, cc);
-        let den = self.mid.abs_via_mul().sub(&self.rad, p, RoundingMode::Down);
+        let den = if self.mid.is_negative() {
+            self.mid.neg_via_mul().sub(&self.rad, p, RoundingMode::Down)
+        } else {
+            self.mid.sub(&self.rad, p, RoundingMode::Down)
+        };
         let extra = ExactNum::from_u8(1, p).div(&den, p, RoundingMode::Up);
         let lip = ExactNum::from_u8(1, p).add(&extra, p, RoundingMode::Up);
         let rad = lip.mul(&self.rad, p, RoundingMode::Up).add(
@@ -220,11 +233,12 @@ impl Ball {
             return false;
         }
         matches!(self.mid.abs_cmp(&self.rad), Some(c) if c > 0)
-            && !self
-                .mid
-                .abs_via_mul()
-                .sub(&self.rad, p, RoundingMode::Down)
-                .is_zero()
+            && !if self.mid.is_negative() {
+                self.mid.neg_via_mul().sub(&self.rad, p, RoundingMode::Down)
+            } else {
+                self.mid.sub(&self.rad, p, RoundingMode::Down)
+            }
+            .is_zero()
     }
 
     /// True when `x` lies in `[mid − rad, mid + rad]` (NaN / Inf never contained).
@@ -344,11 +358,13 @@ impl ComplexBall {
     /// Sine. \(\lvert\cos(z)\rvert\le\cosh(\lvert\mathrm{Im}\,m\rvert+r)\).
     pub fn sin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.sin(p, rm, cc);
-        let im_hi = self
-            .mid
-            .im()
-            .abs_via_mul()
-            .add(&self.rad, p, RoundingMode::Up);
+        let im = self.mid.im();
+        // |im| + rad
+        let im_hi = if im.is_negative() {
+            self.rad.sub(im, p, RoundingMode::Up)
+        } else {
+            im.add(&self.rad, p, RoundingMode::Up)
+        };
         let lip = im_hi.sinh_cosh(p, RoundingMode::Up, cc).1;
         let rad =
             lip.mul(&self.rad, p, RoundingMode::Up)
@@ -359,11 +375,13 @@ impl ComplexBall {
     /// Cosine. Same Lipschitz bound as `sin`.
     pub fn cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.cos(p, rm, cc);
-        let im_hi = self
-            .mid
-            .im()
-            .abs_via_mul()
-            .add(&self.rad, p, RoundingMode::Up);
+        let im = self.mid.im();
+        // |im| + rad
+        let im_hi = if im.is_negative() {
+            self.rad.sub(im, p, RoundingMode::Up)
+        } else {
+            im.add(&self.rad, p, RoundingMode::Up)
+        };
         let lip = im_hi.sinh_cosh(p, RoundingMode::Up, cc).1;
         let rad =
             lip.mul(&self.rad, p, RoundingMode::Up)

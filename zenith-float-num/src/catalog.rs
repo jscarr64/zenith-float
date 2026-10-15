@@ -98,8 +98,7 @@ fn factorial_n(n: usize, p: usize) -> ExactNum {
 }
 
 fn abs_lt(x: &ExactNum, bound: u32, p: usize) -> bool {
-    let a = x.abs_via_mul();
-    matches!(a.compare(&ExactNum::from_u32(bound, p)), Some(c) if c < 0)
+    matches!(x.abs_cmp(&ExactNum::from_u32(bound, p)), Some(c) if c < 0)
 }
 
 pub(crate) fn small_int(x: &ExactNum, p: usize, lo: i32, hi: i32) -> Option<i32> {
@@ -322,12 +321,18 @@ fn floor_small(x: &ExactNum, p: usize, cap: u32) -> Option<u32> {
 /// Terms of the Bernoulli series so the tail is below `2^{-bits}` on \((-\pi,\pi)\).
 fn clausen_nterms(theta: &ExactNum, bits: usize, cc: &mut Consts) -> usize {
     let p = 64;
-    let abs = theta.abs_via_mul();
+    let negated;
+    let abs: &ExactNum = if theta.is_negative() {
+        negated = theta.neg_via_mul();
+        &negated
+    } else {
+        theta
+    };
     if abs.is_zero() {
         return 8;
     }
     let two_pi = ExactNum::from_u8(2, p).mul(&cc.pi(p, RoundingMode::None), p, RoundingMode::None);
-    let ratio = two_pi.div(&abs, p, RoundingMode::None);
+    let ratio = two_pi.div(abs, p, RoundingMode::None);
     let ln2 = ExactNum::from_u8(2, p).ln(p, RoundingMode::None, cc);
     let log2_ratio = ratio
         .ln(p, RoundingMode::None, cc)
@@ -347,7 +352,11 @@ fn clausen_cl2_series(theta: &ExactNum, p: usize, bits: usize, cc: &mut Consts) 
         theta
             .mul(&th2, p, RoundingMode::None)
             .div(&ExactNum::from_u8(6, p), p, RoundingMode::None);
-    let ln_abs = theta.abs_via_mul().ln(p, RoundingMode::None, cc);
+    let ln_abs = if theta.is_negative() {
+        theta.neg_via_mul().ln(p, RoundingMode::None, cc)
+    } else {
+        theta.ln(p, RoundingMode::None, cc)
+    };
     let mut sum = theta.sub(
         &theta.mul(&ln_abs, p, RoundingMode::None),
         p,

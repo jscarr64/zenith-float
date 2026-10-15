@@ -73,6 +73,11 @@ fn below(x: &ExactNum, limit: &ExactNum) -> bool {
     x.is_zero() || x.compare(limit) == Some(-1)
 }
 
+/// `below(|x|, limit)` without forming `|x|`.
+fn below_abs(x: &ExactNum, limit: &ExactNum) -> bool {
+    x.is_zero() || matches!(x.abs_cmp(limit), Some(-1))
+}
+
 fn factorial(n: usize, p: usize, rm: RoundingMode) -> ExactNum {
     let mut acc = ExactNum::from_u8(1, p);
     for k in 2..=n {
@@ -378,7 +383,7 @@ where
         if !finite(&w) {
             break;
         }
-        if k > 0 && below(&w.abs_via_mul(), &wmin) {
+        if k > 0 && below_abs(&w, &wmin) {
             break;
         }
         let mut eval = |s: &ExactNum| {

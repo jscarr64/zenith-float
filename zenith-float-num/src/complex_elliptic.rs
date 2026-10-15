@@ -784,7 +784,7 @@ mod tests {
         assert!(near(ka.re(), kb.re(), p, 20), "K cut Re");
         assert!(ka.im().is_positive() != kb.im().is_positive() || !tiny(ka.im(), p));
         assert!(
-            near(&ka.im().abs_via_mul(), &kb.im().abs_via_mul(), p, 20),
+            near(&ka.im().clone().abs(), &kb.im().clone().abs(), p, 20),
             "K cut |Im|"
         );
         assert_ne!(ka.im().compare(kb.im()), Some(0));

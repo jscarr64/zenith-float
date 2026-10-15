@@ -159,9 +159,9 @@ fn result_ulp(x: &ExactNum, p: usize) -> ExactNum {
 }
 
 /// `|raw|` plus one destination ulp, rounded away from zero.
-fn err_estimate(raw: &ExactNum, result: &ExactNum, p: usize, wrk: usize) -> ExactNum {
+fn err_estimate(raw: ExactNum, result: &ExactNum, p: usize, wrk: usize) -> ExactNum {
     let ulp = result_ulp(result, p);
-    let mut gap = raw.abs_via_mul();
+    let mut gap = raw.abs();
     let _ = gap.set_precision(wrk, RoundingMode::Up);
     let sum = gap.add(&ulp, wrk, RoundingMode::Up);
     round_out(sum, p, RoundingMode::Up)
@@ -170,7 +170,7 @@ fn err_estimate(raw: &ExactNum, result: &ExactNum, p: usize, wrk: usize) -> Exac
 fn gk_result(
     k: ExactNum,
     g: ExactNum,
-    raw_err: &ExactNum,
+    raw_err: ExactNum,
     p: usize,
     rm: RoundingMode,
     wrk: usize,
@@ -685,7 +685,7 @@ where
     if !finite(&k) || !finite(&g) || !finite(&err) {
         return Err(QuadratureError::NotConverged);
     }
-    let result = gk_result(k, g, &err, p, rm, wrk);
+    let result = gk_result(k, g, err, p, rm, wrk);
     if !finite(&result.abs_err_est) {
         return Err(QuadratureError::NotConverged);
     }
@@ -771,11 +771,14 @@ fn abs_tolerance(tol_rel: &ExactNum, estimate: &ExactNum, p: usize) -> ExactNum 
     let rm = RoundingMode::None;
     let floor = tiny(p, 1);
     let one = ExactNum::from_u8(1, p);
-    let mut scale = estimate.abs_via_mul();
-    if leq(&scale, &one) {
-        scale = one;
-    }
-    let rel = tol_rel.mul(&scale, p, rm);
+    let negated;
+    let est: &ExactNum = if estimate.is_negative() {
+        negated = estimate.neg_via_mul();
+        &negated
+    } else {
+        estimate
+    };
+    let rel = if leq(est, &one) { tol_rel.mul(&one, p, rm) } else { tol_rel.mul(est, p, rm) };
     if !finite(&rel) || leq(&rel, &floor) {
         floor
     } else {
@@ -882,7 +885,7 @@ where
         seq.push(total_k.clone());
         let tol = abs_tolerance(&tol_work, &total_k, wrk);
         if leq(&total_err, &tol) {
-            let result = gk_result(total_k, total_g, &total_err, p, rm, wrk);
+            let result = gk_result(total_k, total_g, total_err, p, rm, wrk);
             if !finite(&result.abs_err_est) {
                 return Err(QuadratureError::NotConverged);
             }
@@ -896,7 +899,7 @@ where
                         if finite(&de) && leq(&de, &tol) {
                             let raw =
                                 if de.compare(&total_err) == Some(1) { de } else { total_err };
-                            let result = gk_result(ex.value, total_g, &raw, p, rm, wrk);
+                            let result = gk_result(ex.value, total_g, raw, p, rm, wrk);
                             if !finite(&result.abs_err_est) {
                                 return Err(QuadratureError::NotConverged);
                             }

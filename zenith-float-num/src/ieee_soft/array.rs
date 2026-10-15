@@ -958,9 +958,14 @@ impl ExactNumArray {
     pub fn round(&self, n: usize, rm: RoundingMode) -> Self {
         self.map_at(self.p, |x| x.round(n, rm))
     }
-    /// Elementwise absolute value.
-    pub fn abs(&self) -> Self {
-        self.map_at(self.p, |x| x.abs_via_mul())
+    /// Elementwise absolute value. Takes ownership; every element is updated in place.
+    pub fn abs(mut self) -> Self {
+        for x in self.vals.iter_mut() {
+            if x.is_negative() {
+                x.inv_sign();
+            }
+        }
+        self
     }
     /// Elementwise signum.
     pub fn signum(&self) -> Self {
@@ -1303,11 +1308,8 @@ impl ExactNumArray {
         let ix = |r: usize, c: usize| r * m + c;
         for k in 0..kmax {
             let mut piv = k;
-            let mut best = a[ix(k, k)].abs_via_mul();
             for r in (k + 1)..n {
-                let t = a[ix(r, k)].abs_via_mul();
-                if matches!(t.compare(&best), Some(c) if c > 0) {
-                    best = t;
+                if matches!(a[ix(r, k)].abs_cmp(&a[ix(piv, k)]), Some(c) if c > 0) {
                     piv = r;
                 }
             }
@@ -1688,7 +1690,13 @@ fn svd_negligible(e: &ExactNum, d0: &ExactNum, d1: &ExactNum, p: usize, rm: Roun
     if e.is_nan() || e.is_inf() {
         return false;
     }
-    let scale = d0.abs_via_mul().add(&d1.abs_via_mul(), p, rm);
+    // |d0| + |d1|
+    let scale = match (d0.is_negative(), d1.is_negative()) {
+        (false, false) => d0.add(d1, p, rm),
+        (false, true) => d0.sub(d1, p, rm),
+        (true, false) => d1.sub(d0, p, rm),
+        (true, true) => d0.neg_via_mul().sub(d1, p, rm),
+    };
     if scale.is_zero() {
         return e.is_zero();
     }
@@ -2002,7 +2010,7 @@ fn eigen_wilkinson(
     let signed = if delta.is_negative() { h.neg() } else { h };
     let denom = delta.add(&signed, p, rm);
     if denom.is_zero() {
-        return c.sub(&b.abs_via_mul(), p, rm);
+        return if b.is_negative() { c.add(b, p, rm) } else { c.sub(b, p, rm) };
     }
     c.sub(&b.mul(b, p, rm).div(&denom, p, rm), p, rm)
 }

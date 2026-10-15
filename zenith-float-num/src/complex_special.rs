@@ -84,10 +84,13 @@ pub(crate) fn term_negligible(t: &ExactComplex, p: usize) -> bool {
 }
 
 fn l1_below_series_bound(z: &ExactComplex, p: usize) -> bool {
-    let s = z
-        .re()
-        .abs_via_mul()
-        .add(&z.im().abs_via_mul(), p, RoundingMode::None);
+    let (re, im) = (z.re(), z.im());
+    let s = match (re.is_negative(), im.is_negative()) {
+        (false, false) => re.add(im, p, RoundingMode::None),
+        (false, true) => re.sub(im, p, RoundingMode::None),
+        (true, false) => im.sub(re, p, RoundingMode::None),
+        (true, true) => re.neg_via_mul().sub(im, p, RoundingMode::None),
+    };
     let bound = ExactNum::from_u32(FADDEEVA_SERIES_L1, p);
     matches!(s.compare(&bound), Some(c) if c < 0)
 }

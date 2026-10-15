@@ -453,14 +453,14 @@ impl ExactInt {
         }
         let p = v.precision().unwrap_or(DEFAULT_P).max(WORD_BIT_SIZE + 8);
         let two_w = ExactNum::from_u8(1, p).ldexp(WORD_BIT_SIZE as i32, p, RoundingMode::None);
-        let mut cur = v.abs_via_mul();
+        let sign = if v.is_negative() { Sign::Neg } else { Sign::Pos };
+        let mut cur = v.abs();
         let mut limbs = Vec::new();
         while !cur.is_zero() {
             let r = cur.rem(&two_w);
             limbs.push(exact_word_lt_base(&r));
             cur = cur.div(&two_w, p, RoundingMode::ToZero).int();
         }
-        let sign = if v.is_negative() { Sign::Neg } else { Sign::Pos };
         Some(Self::from_limbs(sign, limbs))
     }
 }

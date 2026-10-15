@@ -390,11 +390,8 @@ fn values_agree(a: &ExactNum, b: &ExactNum, bits: usize) -> bool {
     if d.is_zero() {
         return true;
     }
-    let scale = if matches!(a.abs_cmp(b), Some(c) if c > 0) {
-        a.abs_via_mul()
-    } else {
-        b.abs_via_mul()
-    };
+    // |a| and |b| have the exponent and the zero-ness of a and b.
+    let scale = if matches!(a.abs_cmp(b), Some(c) if c > 0) { a } else { b };
     let Some(de) = d.exponent() else {
         return false;
     };
@@ -819,12 +816,18 @@ impl ExactNum {
         }
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
-        let rad = if matches!(a.abs_cmp(&one), Some(c) if c < 0) {
-            a.abs_via_mul()
+        let negated;
+        let rad: &ExactNum = if matches!(a.abs_cmp(&one), Some(c) if c < 0) {
+            if a.is_negative() {
+                negated = a.neg_via_mul();
+                &negated
+            } else {
+                a
+            }
         } else {
-            one.clone()
+            &one
         };
-        if matches!(self.abs_cmp(&rad), Some(c) if c >= 0) {
+        if matches!(self.abs_cmp(rad), Some(c) if c >= 0) {
             return heun_g_outside(self, a, q, alpha, beta, gamma, delta, p, rm);
         }
         let eps = alpha
@@ -1142,11 +1145,8 @@ fn agrees_tight(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
     if d.is_zero() {
         return true;
     }
-    let scale = if matches!(a.abs_cmp(b), Some(c) if c > 0) {
-        a.abs_via_mul()
-    } else {
-        b.abs_via_mul()
-    };
+    // |a| and |b| have the exponent and the zero-ness of a and b.
+    let scale = if matches!(a.abs_cmp(b), Some(c) if c > 0) { a } else { b };
     let Some(de) = d.exponent() else {
         return false;
     };
@@ -1635,7 +1635,7 @@ where
             return None;
         }
         let step = dist.ldexp(-1, p, RoundingMode::None);
-        let h = if matches!(rem.abs_via_mul().compare(&step), Some(c) if c <= 0) {
+        let h = if matches!(rem.abs_cmp(&step), Some(c) if c <= 0) {
             rem
         } else if rem.is_negative() {
             step.neg()
@@ -1689,12 +1689,18 @@ fn heun_g_outside(
     if segment_hits(z, &one) || segment_hits(z, a) {
         return cat_nan();
     }
-    let rad = if matches!(a.abs_cmp(&one), Some(c) if c < 0) {
-        a.abs_via_mul()
+    let negated;
+    let rad: &ExactNum = if matches!(a.abs_cmp(&one), Some(c) if c < 0) {
+        if a.is_negative() {
+            negated = a.neg_via_mul();
+            &negated
+        } else {
+            a
+        }
     } else {
-        one.clone()
+        &one
     };
-    let seed = disk_seed(z, &rad, wrk);
+    let seed = disk_seed(z, rad, wrk);
     let Some((y, yp)) = eval_jet(&coefs, &seed, wrk, p.saturating_add(32)) else {
         return cat_nan();
     };
