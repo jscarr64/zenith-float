@@ -125,7 +125,9 @@ fn carlson_rf(
     let mut y = y0.clone();
     let mut z = z0.clone();
     for _ in 0..carlson_dupe_cap(p) {
-        let an = x.add(&y, p, rm()).add(&z, p, rm()).div(&three, p, rm());
+        let an = ExactComplex::add_ref(&x, &y, p, rm())
+            .add(&z, p, rm())
+            .div(&three, p, rm());
         if close_enough(&max_dev3(&an, &x, &y, &z, p), &an, p) {
             return rf_series(&an, &x, &y, &z, p, cc);
         }
@@ -213,8 +215,7 @@ fn carlson_rd(
     let mut sum = ExactComplex::zero(p);
     let mut fac = c_u32(1, p);
     for _ in 0..carlson_dupe_cap(p) {
-        let an = x
-            .add(&y, p, rm())
+        let an = ExactComplex::add_ref(&x, &y, p, rm())
             .add(&three.mul(&z, p, rm()), p, rm())
             .div(&five, p, rm());
         if close_enough(&max_dev3(&an, &x, &y, &z, p), &an, p) {
@@ -230,15 +231,12 @@ fn carlson_rd(
             .mul(&sy, p, rm())
             .add(&sy.mul(&sz, p, rm()), p, rm())
             .add(&sz.mul(&sx, p, rm()), p, rm());
-        sum = sum.add(
-            &fac.div(&sz.mul(&z.add(&lam, p, rm()), p, rm()), p, rm()),
-            p,
-            rm(),
-        );
+        let zl = z.add(&lam, p, rm());
+        sum = sum.add(&fac.div(&sz.mul(&zl, p, rm()), p, rm()), p, rm());
         fac = fac.div(&four, p, rm());
         x = x.add(&lam, p, rm()).div(&four, p, rm());
         y = y.add(&lam, p, rm()).div(&four, p, rm());
-        z = z.add(&lam, p, rm()).div(&four, p, rm());
+        z = zl.div(&four, p, rm());
     }
     nan_pair(Error::InvalidArgument)
 }
@@ -321,8 +319,7 @@ fn carlson_rj(
     let mut sum = ExactComplex::zero(p);
     let mut fac = c_u32(1, p);
     for _ in 0..carlson_dupe_cap(p) {
-        let an = x
-            .add(&y, p, rm())
+        let an = ExactComplex::add_ref(&x, &y, p, rm())
             .add(&z, p, rm())
             .add(&two.mul(&pv, p, rm()), p, rm())
             .div(&five, p, rm());
@@ -343,10 +340,14 @@ fn carlson_rj(
             .add(&sy.mul(&sz, p, rm()), p, rm())
             .add(&sz.mul(&sx, p, rm()), p, rm());
         let alpha = pv
-            .mul(&sx.add(&sy, p, rm()).add(&sz, p, rm()), p, rm())
+            .mul(
+                &ExactComplex::add_ref(&sx, &sy, p, rm()).add(&sz, p, rm()),
+                p,
+                rm(),
+            )
             .add(&sx.mul(&sy, p, rm()).mul(&sz, p, rm()), p, rm());
         let alpha = alpha.mul(&alpha, p, rm());
-        let pl = pv.add(&lam, p, rm());
+        let pl = ExactComplex::add_ref(&pv, &lam, p, rm());
         let beta = pv.mul(&pl, p, rm()).mul(&pl, p, rm());
         sum = sum.add(
             &fac.mul(&carlson_rc(&alpha, &beta, p, cc), p, rm()),
@@ -357,7 +358,7 @@ fn carlson_rj(
         x = x.add(&lam, p, rm()).div(&four, p, rm());
         y = y.add(&lam, p, rm()).div(&four, p, rm());
         z = z.add(&lam, p, rm()).div(&four, p, rm());
-        pv = pv.add(&lam, p, rm()).div(&four, p, rm());
+        pv = pl.div(&four, p, rm());
     }
     nan_pair(Error::InvalidArgument)
 }

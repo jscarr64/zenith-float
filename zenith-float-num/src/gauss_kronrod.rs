@@ -366,7 +366,7 @@ fn polish_root(
         return Some(lo);
     }
     for _ in 0..GK_BISECT_STEPS {
-        let mid = lo.add(&hi, p, rm).div(&two, p, rm);
+        let mid = ExactNum::add_ref(&lo, &hi, p, rm).div(&two, p, rm);
         let (fm, _) = char_poly(&mid, beta, p)?;
         if fm.is_zero() {
             return Some(mid);

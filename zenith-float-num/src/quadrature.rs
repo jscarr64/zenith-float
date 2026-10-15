@@ -146,7 +146,7 @@ where
     }
     let two = ExactNum::from_u8(2, p);
     for _ in 0..QUADRATURE_BISECT_STEPS {
-        let m = a.add(&b, p, rm).div(&two, p, rm);
+        let m = ExactNum::add_ref(&a, &b, p, rm).div(&two, p, rm);
         let fm = f(&m, p, rm, cc);
         if !finite(&fm) {
             return None;
