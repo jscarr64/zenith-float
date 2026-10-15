@@ -2,6 +2,7 @@
 //! Run on a 32-bit target (`scripts/ci_hex_32bit.sh`, `i686-unknown-linux-musl`) as well as
 //! on the host: results near both limits must be the same on both.
 
+use std::ops::Neg;
 use zenith_float_num::{ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
 const MODES: [RoundingMode; 6] = [

@@ -1,5 +1,6 @@
 //! `ExactNum::from_raw_parts` enforces its documented checks (2.0.0 audit, defect 5).
 
+use std::ops::Neg;
 use zenith_float_num::{Error, ExactNum, Sign, Word, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
 fn assert_invalid(r: &ExactNum, what: &str) {

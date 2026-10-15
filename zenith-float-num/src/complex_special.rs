@@ -48,8 +48,8 @@ pub(crate) fn nan_pair(e: Error) -> ExactComplex {
     ExactComplex::new(ExactNum::nan(Some(e)), ExactNum::nan(Some(e)))
 }
 
-pub(crate) fn neg_c(z: &ExactComplex) -> ExactComplex {
-    ExactComplex::new(z.re().neg(), z.im().neg())
+pub(crate) fn neg_c(z: ExactComplex) -> ExactComplex {
+    z.neg()
 }
 
 pub(crate) fn two_c(p: usize) -> ExactComplex {
@@ -353,7 +353,7 @@ impl ExactComplex {
     /// `erfc(z) = e^{-z²} w(iz)`, with the reflection form when `Re(z) ≤ 0`.
     fn erfc_via_faddeeva(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         let z2 = self.mul(self, work_p, RoundingMode::None);
-        let em = neg_c(&z2).exp(work_p, RoundingMode::None, cc);
+        let em = neg_c(z2).exp(work_p, RoundingMode::None, cc);
         let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);
         if re_positive(self) {
             em.mul(
@@ -364,7 +364,7 @@ impl ExactComplex {
         } else {
             two_c(work_p).sub(
                 &em.mul(
-                    &Self::faddeeva(&neg_c(&iz), work_p, dest_p, cc),
+                    &Self::faddeeva(&neg_c(iz), work_p, dest_p, cc),
                     work_p,
                     RoundingMode::None,
                 ),
@@ -379,12 +379,12 @@ impl ExactComplex {
         if im_negative_or_neg_real(z) {
             let z2 = z.mul(z, work_p, RoundingMode::None);
             let two_exp = two_c(work_p).mul(
-                &neg_c(&z2).exp(work_p, RoundingMode::None, cc),
+                &neg_c(z2).exp(work_p, RoundingMode::None, cc),
                 work_p,
                 RoundingMode::None,
             );
             return two_exp.sub(
-                &Self::faddeeva_upper(&neg_c(z), work_p, dest_p, cc),
+                &Self::faddeeva_upper(&z.neg_via_mul(), work_p, dest_p, cc),
                 work_p,
                 RoundingMode::None,
             );
@@ -402,11 +402,11 @@ impl ExactComplex {
 
     /// Poppe–Wijers power series: \(w(z)=e^{-z^2}(1-\mathrm{erf}(-iz))\).
     fn faddeeva_series(z: &Self, p: usize, cc: &mut Consts) -> Self {
-        let u = neg_c(&ExactComplex::i(p)).mul(z, p, RoundingMode::None);
+        let u = neg_c(ExactComplex::i(p)).mul(z, p, RoundingMode::None);
         let erf_u = Self::erf_power_series(&u, p, cc);
         let erfc_u = ExactComplex::one(p).sub(&erf_u, p, RoundingMode::None);
         let z2 = z.mul(z, p, RoundingMode::None);
-        neg_c(&z2)
+        neg_c(z2)
             .exp(p, RoundingMode::None, cc)
             .mul(&erfc_u, p, RoundingMode::None)
     }
@@ -431,7 +431,7 @@ impl ExactComplex {
             let den = nfact.mul(&two_n_1, p, RoundingMode::None);
             let mut t = upow.div(&ExactComplex::from_real(den, p), p, RoundingMode::None);
             if n % 2 == 1 {
-                t = neg_c(&t);
+                t = neg_c(t);
             }
             sum = sum.add(&t, p, RoundingMode::None);
             if term_negligible(&t, p) {
@@ -653,6 +653,7 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::ops::Neg;
 
     fn near_bits(a: &ExactNum, b: &ExactNum, p: usize, slack: i32) -> bool {
         let d = a.sub(b, p, RoundingMode::None).abs();
@@ -719,8 +720,8 @@ mod tests {
 
         let z = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
         let ez = z.erf(p, rm, &mut cc);
-        let em = neg_c(&z).erf(p, rm, &mut cc);
-        assert!(cnear(&ez, &neg_c(&em), p));
+        let em = z.neg_via_mul().erf(p, rm, &mut cc);
+        assert!(cnear(&ez, &neg_c(em), p));
 
         let one_c = ExactComplex::one(p);
         let erfc_z = z.erfc(p, rm, &mut cc);
@@ -741,7 +742,7 @@ mod tests {
         let two_h = hc.mul(&two_c(p), p, rm);
         let deriv = num.div(&two_h, p, rm);
         let z2 = z.mul(&z, p, rm);
-        let expm = neg_c(&z2).exp(p, rm, &mut cc);
+        let expm = neg_c(z2).exp(p, rm, &mut cc);
         let two_over = ExactNum::from_u8(2, p).div(&cc.pi(p, rm).sqrt(p, rm), p, rm);
         let expect = ExactComplex::from_real(two_over, p).mul(&expm, p, rm);
         assert!(cnear_bits(&deriv, &expect, p, 8));
@@ -754,7 +755,7 @@ mod tests {
         let eb = big.erf(p, rm, &mut cc);
         assert!(near(eb.re(), &ExactNum::from_u8(1, p), p));
         assert!(tiny(eb.im(), p));
-        assert!(cnear(&eb, &neg_c(&neg_c(&big).erf(p, rm, &mut cc)), p));
+        assert!(cnear(&eb, &neg_c(neg_c(big).erf(p, rm, &mut cc)), p));
         let far = ExactComplex::from_real(ExactNum::from_u8(20, p), p);
         let ef = far.erf(p, rm, &mut cc);
         assert!(near(ef.re(), &ExactNum::from_u8(1, p), p));

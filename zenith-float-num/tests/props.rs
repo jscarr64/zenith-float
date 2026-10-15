@@ -2,7 +2,16 @@
 //! decimal round-trip, elementary symmetries, and constant-cache order.
 
 use proptest::prelude::*;
+use std::ops::Neg;
 use zenith_float_num::{Consts, Error, ExactNum, Radix, RoundingMode, Sign};
+
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
 
 fn cc() -> Consts {
     match Consts::new() {
@@ -104,7 +113,7 @@ fn elementary_symmetries() {
     let rm = RoundingMode::ToEven;
     for text in ["0.5", "1", "1.25", "2"] {
         let x = ExactNum::parse(text, Radix::Dec, p, rm, &mut consts);
-        let neg_x = x.neg();
+        let neg_x = neg_of(&x);
         let erf_x = x.erf(p, rm, &mut consts);
         let erf_neg = neg_x.erf(p, rm, &mut consts);
         assert!(

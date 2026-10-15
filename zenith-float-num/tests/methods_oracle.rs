@@ -12,11 +12,20 @@
 //!
 //! Fast tier is the default. `ORACLE_TIER=deep` also runs the deep rows.
 
+use std::ops::Neg;
 use zenith_float_num::{
     euler, gauss_hermite, gauss_kronrod_interval, gauss_laguerre, gauss_legendre,
     integrate_adaptive_gk, integrate_adaptive_gk_infinite, rk4, rk45_adaptive, tanh_sinh,
     wynn_epsilon, Ball, Consts, ExactNum, QuadratureError, Radix, RoundingMode,
 };
+
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
 
 fn tier_selected(tier: &str) -> bool {
     match std::env::var("ORACLE_TIER") {
@@ -70,7 +79,7 @@ fn sample(name: &str, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts)
                 x.reciprocal(p, rm)
             }
         }
-        "exp_neg" => x.neg().exp(p, rm, cc),
+        "exp_neg" => neg_of(x).exp(p, rm, cc),
         "gauss" => x.mul(x, p, rm).neg().exp(p, rm, cc),
         "invsq" => x.mul(x, p, rm).reciprocal(p, rm),
         "xpow_m0p9" => nonzero(x, |x| power(x, "-0.9", p, rm, cc)),

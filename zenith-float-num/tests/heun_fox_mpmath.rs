@@ -1,6 +1,15 @@
 //! Meijer G / Fox H / Heun vs mpmath 1.4.1 (50-digit golds) and independent reductions.
 
+use std::ops::Neg;
 use zenith_float_num::{Consts, Error, ExactNum, Radix, RoundingMode};
+
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
 
 const RM: RoundingMode = RoundingMode::ToEven;
 
@@ -151,7 +160,7 @@ fn heun_fox_mpmath() {
         dec("0.15", p, &mut cc).meijer_g(
             core::slice::from_ref(&half),
             &[],
-            &[qtr.clone(), qtr.neg()],
+            &[qtr.clone(), neg_of(&qtr)],
             &[],
             p,
             RM,
@@ -396,7 +405,7 @@ fn heun_fox_mpmath() {
             &dec("0.4", p, &mut cc),
             &dec("1.3", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("0.4", p, &mut cc),
             p,
             RM,
@@ -413,7 +422,7 @@ fn heun_fox_mpmath() {
             &dec("-0.7", p, &mut cc),
             &dec("2.2", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("-0.7", p, &mut cc),
             p,
             RM,
@@ -557,7 +566,7 @@ fn heun_fox_mpmath() {
             &dec("0.4", p, &mut cc),
             &dec("1.3", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("0.4", p, &mut cc),
             p,
             RM,
@@ -574,7 +583,7 @@ fn heun_fox_mpmath() {
             &dec("0.4", p, &mut cc),
             &dec("1.3", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("0.4", p, &mut cc),
             p,
             RM,
@@ -651,7 +660,7 @@ fn heun_fox_mpmath() {
     let gam3 = ExactNum::from_i32(3, p);
     check(
         "HeunC exact 1F1(-2;3;1/2)",
-        z_half.heun_c(&al2, &gam3, &zero, &one.neg(), &al2, p, RM, &mut cc),
+        z_half.heun_c(&al2, &gam3, &zero, &neg_of(&one), &al2, p, RM, &mut cc),
         "0.6875",
         p,
         &mut cc,

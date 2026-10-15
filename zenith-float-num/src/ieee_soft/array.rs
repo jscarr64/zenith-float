@@ -11,6 +11,7 @@ use crate::Consts;
 use crate::Error;
 use crate::ExactNum;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// QR sweeps allowed per singular value before [`ExactNumArray::svd_decomp`]
 /// returns `None`.
@@ -649,6 +650,17 @@ macro_rules! exact_arr_p_rm_cc {
     };
 }
 
+/// Elementwise negation: takes the array and flips every sign in place.
+impl core::ops::Neg for ExactNumArray {
+    type Output = ExactNumArray;
+    fn neg(mut self) -> ExactNumArray {
+        for x in self.vals.iter_mut() {
+            x.inv_sign();
+        }
+        self
+    }
+}
+
 impl ExactNumArray {
     /// Empty 0×0 array at precision `p`.
     pub fn new(p: usize) -> Self {
@@ -953,10 +965,6 @@ impl ExactNumArray {
     /// Elementwise signum.
     pub fn signum(&self) -> Self {
         self.map_at(self.p, |x| x.signum())
-    }
-    /// Elementwise negation.
-    pub fn neg(&self) -> Self {
-        self.map_at(self.p, |x| x.neg())
     }
     /// Elementwise reciprocal.
     pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Self {

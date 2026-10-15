@@ -18,6 +18,7 @@ use crate::Consts;
 use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
+use core::ops::Neg;
 
 /// \(\lvert z\rvert\) below this uses the Taylor pair \((f,g)\).
 const AIRY_SERIES_THRESHOLD: u32 = 8;
@@ -194,7 +195,7 @@ impl ExactComplex {
                 work_p,
                 RoundingMode::None,
             );
-            return neg_c(&t1.add(&t2, work_p, RoundingMode::None));
+            return neg_c(t1.add(&t2, work_p, RoundingMode::None));
         }
         self.airy_asymp_ai(work_p, cc)
     }
@@ -332,7 +333,7 @@ impl ExactComplex {
             u = u.mul(&ratio, p, RoundingMode::None);
             let mut t = u.div(&xi_pow, p, RoundingMode::None);
             if alt && k % 2 == 1 {
-                t = neg_c(&t);
+                t = neg_c(t);
             }
             let ta = t.abs(p, RoundingMode::None);
             if matches!(ta.compare(&prev_abs), Some(c) if c > 0) {
@@ -355,7 +356,7 @@ impl ExactComplex {
         let pi_m12 =
             ExactComplex::one(p).div(&pi.sqrt(p, RoundingMode::None, cc), p, RoundingMode::None);
         let z_m14 = ExactComplex::one(p).div(&z14, p, RoundingMode::None);
-        let exp_m = neg_c(&xi).exp(p, RoundingMode::None, cc);
+        let exp_m = xi.neg_via_mul().exp(p, RoundingMode::None, cc);
         let su = self.airy_u_sum(&xi, p, true);
         half.mul(&pi_m12, p, RoundingMode::None)
             .mul(&z_m14, p, RoundingMode::None)

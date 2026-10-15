@@ -1,6 +1,7 @@
 //! Property tests (`PROPTEST_CASES`). No `mpfr-tests` feature.
 
 use proptest::prelude::*;
+use std::ops::Neg;
 use zenith_float_num::{
     Consts, ExactNum, ExactNumArray, ExactRational, RoundingMode, PROPTEST_CASES, WORD_BIT_SIZE,
 };

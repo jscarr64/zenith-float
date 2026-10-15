@@ -6,6 +6,7 @@ use crate::ExactNum;
 use crate::ExactNumArray;
 use crate::RoundingMode;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// Maximum real length for [`dct`] / [`idct`] / [`dst`] / [`idst`] and the
 /// window generators. Transforms use a `2N`-point FFT, so this is half of

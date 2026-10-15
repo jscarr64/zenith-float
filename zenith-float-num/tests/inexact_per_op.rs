@@ -1,6 +1,15 @@
 //! The inexact flag reports whether this operation rounded (2.0.0 audit, defect 3).
 
+use std::ops::Neg;
 use zenith_float_num::{ExactNum, RoundingMode};
+
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
 
 fn with_exp(mut x: ExactNum, e: i32) -> ExactNum {
     x.set_exponent(e);
@@ -88,7 +97,7 @@ fn inexact_is_not_inherited_from_operands() {
                 exact(&third.add(&third, p, rm), "third + third", p, rm, negative);
                 exact(&third.sub(&third, p, rm), "third - third", p, rm, negative);
                 exact(
-                    &third.sub(&third.neg(), p, rm),
+                    &third.sub(&neg_of(&third), p, rm),
                     "third - (-third)",
                     p,
                     rm,

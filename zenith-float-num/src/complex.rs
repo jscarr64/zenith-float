@@ -7,6 +7,7 @@ use crate::ExactNum;
 use crate::Exponent;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
+use core::ops::Neg;
 
 fn abs_part(x: ExactNum) -> ExactNum {
     if x.is_negative() {
@@ -988,8 +989,13 @@ impl ExactComplex {
         Self::new(self.re.ldexp(n, p, rm), self.im.ldexp(n, p, rm))
     }
 
-    fn neg(&self) -> Self {
+    pub(crate) fn neg(self) -> Self {
         Self::new(self.re.neg(), self.im.neg())
+    }
+
+    /// `-self` for an operand that has to stay borrowed (see [`ExactNum::neg_via_mul`]).
+    pub(crate) fn neg_via_mul(&self) -> Self {
+        Self::new(self.re.neg_via_mul(), self.im.neg_via_mul())
     }
 }
 
@@ -1151,7 +1157,7 @@ mod tests {
         assert!(z.re().is_inf() && z.re().is_negative());
         assert!(z.im().is_zero());
         let z = crate::macro_util::check_complex_exponent_range(
-            ExactComplex::new(ok.neg(), ok),
+            ExactComplex::new(ok.neg_via_mul(), ok),
             -50,
             50,
         );
@@ -1184,7 +1190,7 @@ mod tests {
         assert_eq!(up.im().compare(&pi), Some(0));
         let down = ExactComplex::new(ExactNum::from_i8(-2, p), ExactNum::new(p).neg())
             .acosh(p, rm, &mut cc);
-        assert_eq!(down.im().compare(&pi.neg()), Some(0));
+        assert_eq!(down.im().compare(&pi.neg_via_mul()), Some(0));
         assert_eq!(up.re().compare(down.re()), Some(0));
         // |x| < 1: purely imaginary, im = acos(x).
         let inside =

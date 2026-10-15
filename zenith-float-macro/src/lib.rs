@@ -1202,7 +1202,7 @@ fn traverse_unary(
     let op_expr = traverse_expr(&expr.expr, err, cc)?;
 
     match expr.op {
-        UnOp::Neg(_) => Ok(quote!(zenith_float::ExactNum::neg(&(#op_expr)))),
+        UnOp::Neg(_) => Ok(quote!(-(#op_expr))),
         _ => Err(Error::new(
             expr.span(),
             "unexpected unary operator. Only \"-\" is allowed.",

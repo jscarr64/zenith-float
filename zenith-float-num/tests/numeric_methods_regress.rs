@@ -4,10 +4,19 @@
 //! rejected and `rk45_adaptive` with a non-zero `rtol` never accepted a step. Root finders now
 //! also stop (instead of returning `None`) when `tol` is below the working resolution.
 
+use std::ops::Neg;
 use zenith_float_num::{
     bisect, brent, chebyshev_coeffs, chebyshev_eval, gauss_legendre, illinois, rk4, rk45_adaptive,
     root_default_tol, tanh_sinh, Consts, ExactNum, Radix, RoundingMode,
 };
+
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
 
 const RM: RoundingMode = RoundingMode::ToEven;
 const P: usize = 128;
@@ -32,7 +41,7 @@ fn cmp_is_normalized() {
     assert_eq!(three.compare(&two), Some(1));
     assert_eq!(two.compare(&three), Some(-1));
     assert_eq!(three.compare(&three), Some(0));
-    assert_eq!(three.neg().abs_cmp(&two), Some(1));
+    assert_eq!(neg_of(&three).abs_cmp(&two), Some(1));
     assert_eq!(two.abs_cmp(&three.neg()), Some(-1));
 }
 

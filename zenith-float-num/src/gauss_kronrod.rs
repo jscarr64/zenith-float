@@ -36,6 +36,7 @@ use crate::RoundingMode;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
+use core::ops::Neg;
 
 /// Gauss order of the supported Kronrod pair. Only this order is built.
 pub const GK_GAUSS_ORDER: usize = 7;
@@ -1145,7 +1146,7 @@ mod tests {
         assert!(nodes[GK_GAUSS_ORDER].is_zero());
         for i in 0..GK_GAUSS_ORDER {
             let mirror = nodes.len() - 1 - i;
-            assert_eq!(nodes[i].compare(&nodes[mirror].neg()), Some(0));
+            assert_eq!(nodes[i].compare(&nodes[mirror].neg_via_mul()), Some(0));
             assert_eq!(w_k[i].compare(&w_k[mirror]), Some(0));
         }
         for (i, w) in w_g.iter().enumerate() {
@@ -1267,7 +1268,7 @@ mod tests {
             let pos = ExactNum::parse("inf", crate::Radix::Dec, p, rm, &mut cc);
             let neg = ExactNum::parse("-inf", crate::Radix::Dec, p, rm, &mut cc);
             let exp_tail = integrate_adaptive_gk_infinite(
-                |x, p, rm, cc| x.neg().exp(p, rm, cc),
+                |x, p, rm, cc| x.neg_via_mul().exp(p, rm, cc),
                 &zero,
                 &pos,
                 &tol,
@@ -1346,7 +1347,7 @@ mod tests {
         let n = nodes.len();
         assert_eq!(n, GK_KRONROD_ORDER);
         for i in 0..n / 2 {
-            assert_eq!(nodes[i].compare(&nodes[n - 1 - i].neg()), Some(0));
+            assert_eq!(nodes[i].compare(&nodes[n - 1 - i].neg_via_mul()), Some(0));
             assert_eq!(w_kronrod[i].compare(&w_kronrod[n - 1 - i]), Some(0));
             assert_eq!(nodes[i].compare(&nodes[i + 1]), Some(-1));
         }

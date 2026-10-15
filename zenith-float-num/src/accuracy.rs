@@ -264,7 +264,6 @@ pub const ACCURACY: &[(&str, Accuracy)] = &[
     ("ExactNum::mul", Accuracy::CorrectlyRounded),
     ("ExactNum::mul_add", Accuracy::CorrectlyRounded),
     ("ExactNum::mul_full_prec", Accuracy::CorrectlyRounded),
-    ("ExactNum::neg", Accuracy::CorrectlyRounded),
     ("ExactNum::next_after", Accuracy::CorrectlyRounded),
     ("ExactNum::nth_root", Accuracy::CorrectlyRounded),
     ("ExactNum::polygamma", Accuracy::Unspecified),

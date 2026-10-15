@@ -771,8 +771,8 @@ fn traverse_unary(
     let op_expr = traverse_expr(&expr.expr, err, cc)?;
     match expr.op {
         UnOp::Neg(_) => Ok(quote!({
-            let z = #op_expr;
-            zenith_float::ExactComplex::new(z.re().neg(), z.im().neg())
+            let (re, im) = (#op_expr).into_parts();
+            zenith_float::ExactComplex::new(-re, -im)
         })),
         _ => Err(Error::new(
             expr.span(),

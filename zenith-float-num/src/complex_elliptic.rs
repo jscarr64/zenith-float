@@ -698,6 +698,7 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::ops::Neg;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize, slack: i32) -> bool {
         let d = a.sub(b, p, RoundingMode::None).abs();
@@ -777,7 +778,7 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let eps = ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
         let above = ExactComplex::new(two.clone(), eps.clone());
-        let below = ExactComplex::new(two, eps.neg());
+        let below = ExactComplex::new(two, eps.neg_via_mul());
         let ka = above.elliptic_k(p, r, &mut cc);
         let kb = below.elliptic_k(p, r, &mut cc);
         assert!(near(ka.re(), kb.re(), p, 20), "K cut Re");

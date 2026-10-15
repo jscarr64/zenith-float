@@ -1533,13 +1533,13 @@ impl ExactNum {
         Self::result_to_ext(ExactNumNumber::from_word(d, p), false, true)
     }
 
-    /// Returns a copy of the number with the sign reversed.
-    ///
-    /// Accuracy: correctly-rounded
-    pub fn neg(&self) -> Self {
-        let mut ret = self.clone();
-        ret.inv_sign();
-        ret
+    /// `-self` for an operand that has to stay borrowed: fresh `-1` times `self` through the
+    /// general multiplication kernel at the operand's own precision. The product is exact, keeps
+    /// the sign of zero, Inf and NaN (with its error) and the accumulated inexact flag, and sets
+    /// the per-operation flag to false (nothing was rounded); nothing is cloned.
+    pub(crate) fn neg_via_mul(&self) -> Self {
+        let p = self.mantissa_max_bit_len().unwrap_or(crate::WORD_BIT_SIZE);
+        Self::from_i8(-1, p).mul(self, p, RoundingMode::None)
     }
 
     /// Decomposes `self` into raw parts.
@@ -3966,15 +3966,6 @@ impl Neg for ExactNum {
     }
 }
 
-impl Neg for &ExactNum {
-    type Output = ExactNum;
-    fn neg(self) -> Self::Output {
-        let mut ret = self.clone();
-        ret.inv_sign();
-        ret
-    }
-}
-
 //
 // ordering traits
 //
@@ -4373,10 +4364,18 @@ mod tests {
         assert!(INF_POS.mul(&ONE, rand_p(), rm).is_inf_pos());
         assert!(ONE.mul(&INF_NEG, rand_p(), rm).is_inf_neg());
         assert!(INF_NEG.mul(&ONE, rand_p(), rm).is_inf_neg());
-        assert!(ONE.neg().mul(&INF_POS, rand_p(), rm).is_inf_neg());
-        assert!(ONE.neg().mul(&INF_NEG, rand_p(), rm).is_inf_pos());
-        assert!(INF_POS.mul(&ONE.neg(), rand_p(), rm).is_inf_neg());
-        assert!(INF_NEG.mul(&ONE.neg(), rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::from_i8(-1, DEFAULT_P)
+            .mul(&INF_POS, rand_p(), rm)
+            .is_inf_neg());
+        assert!(ExactNum::from_i8(-1, DEFAULT_P)
+            .mul(&INF_NEG, rand_p(), rm)
+            .is_inf_pos());
+        assert!(INF_POS
+            .mul(&ExactNum::from_i8(-1, DEFAULT_P), rand_p(), rm)
+            .is_inf_neg());
+        assert!(INF_NEG
+            .mul(&ExactNum::from_i8(-1, DEFAULT_P), rand_p(), rm)
+            .is_inf_pos());
         assert!(INF_POS.mul(&INF_POS, rand_p(), rm).is_inf_pos());
         assert!(INF_POS.mul(&INF_NEG, rand_p(), rm).is_inf_neg());
         assert!(INF_NEG.mul(&INF_NEG, rand_p(), rm).is_inf_pos());
@@ -4391,10 +4390,18 @@ mod tests {
         assert!(INF_POS.div(&TWO, rand_p(), rm).is_inf_pos());
         assert!(TWO.div(&INF_NEG, rand_p(), rm).is_zero());
         assert!(INF_NEG.div(&TWO, rand_p(), rm).is_inf_neg());
-        assert!(TWO.neg().div(&INF_POS, rand_p(), rm).is_zero());
-        assert!(TWO.neg().div(&INF_NEG, rand_p(), rm).is_zero());
-        assert!(INF_POS.div(&TWO.neg(), rand_p(), rm).is_inf_neg());
-        assert!(INF_NEG.div(&TWO.neg(), rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::from_i8(-2, DEFAULT_P)
+            .div(&INF_POS, rand_p(), rm)
+            .is_zero());
+        assert!(ExactNum::from_i8(-2, DEFAULT_P)
+            .div(&INF_NEG, rand_p(), rm)
+            .is_zero());
+        assert!(INF_POS
+            .div(&ExactNum::from_i8(-2, DEFAULT_P), rand_p(), rm)
+            .is_inf_neg());
+        assert!(INF_NEG
+            .div(&ExactNum::from_i8(-2, DEFAULT_P), rand_p(), rm)
+            .is_inf_pos());
         assert!(INF_POS.div(&INF_POS, rand_p(), rm).is_nan());
         assert!(INF_POS.div(&INF_NEG, rand_p(), rm).is_nan());
         assert!(INF_NEG.div(&INF_NEG, rand_p(), rm).is_nan());
@@ -4417,10 +4424,20 @@ mod tests {
         assert!(INF_POS.rem(&TWO).is_nan());
         assert!(TWO.rem(&INF_NEG).compare(&TWO) == Some(0));
         assert!(INF_NEG.rem(&TWO).is_nan());
-        assert!(TWO.neg().rem(&INF_POS).compare(&TWO.neg()) == Some(0));
-        assert!(TWO.neg().rem(&INF_NEG).compare(&TWO.neg()) == Some(0));
-        assert!(INF_POS.rem(&TWO.neg()).is_nan());
-        assert!(INF_NEG.rem(&TWO.neg()).is_nan());
+        assert!(
+            ExactNum::from_i8(-2, DEFAULT_P)
+                .rem(&INF_POS)
+                .compare(&ExactNum::from_i8(-2, DEFAULT_P))
+                == Some(0)
+        );
+        assert!(
+            ExactNum::from_i8(-2, DEFAULT_P)
+                .rem(&INF_NEG)
+                .compare(&ExactNum::from_i8(-2, DEFAULT_P))
+                == Some(0)
+        );
+        assert!(INF_POS.rem(&ExactNum::from_i8(-2, DEFAULT_P)).is_nan());
+        assert!(INF_NEG.rem(&ExactNum::from_i8(-2, DEFAULT_P)).is_nan());
         assert!(INF_POS.rem(&INF_POS).is_nan());
         assert!(INF_POS.rem(&INF_NEG).is_nan());
         assert!(INF_NEG.rem(&INF_NEG).is_nan());
@@ -4495,11 +4512,11 @@ mod tests {
         assert!(NAN.abs_cmp(&NAN).is_none());
         // Finite values compare by magnitude, whatever their signs (1.0.4 compared signed values).
         let two = ExactNum::from_u8(2, 64);
-        let neg_two = two.neg();
+        let neg_two = two.neg_via_mul();
         assert!(neg_two.abs_cmp(&ONE).unwrap() > 0);
         assert!(ONE.abs_cmp(&neg_two).unwrap() < 0);
         assert!(neg_two.abs_cmp(&two).unwrap() == 0);
-        assert!(ONE.neg().abs_cmp(&INF_POS).unwrap() < 0);
+        assert!(ExactNum::from_i8(-1, DEFAULT_P).abs_cmp(&INF_POS).unwrap() < 0);
         // Results are exactly -1/0/1 (1.0.4 returned the mantissa word difference, e.g.
         // 3.cmp(2) = 2^62, so callers testing `== Some(1)` / `== Some(-1)` misfired).
         let three = ExactNum::from_u8(3, 64);
@@ -4513,8 +4530,8 @@ mod tests {
         assert!(ONE.is_positive());
         assert!(!ONE.is_negative());
 
-        assert!(ONE.neg().is_negative());
-        assert!(!ONE.neg().is_positive());
+        assert!(ExactNum::from_i8(-1, DEFAULT_P).is_negative());
+        assert!(!ExactNum::from_i8(-1, DEFAULT_P).is_positive());
         assert!(!INF_POS.is_negative());
         assert!(INF_POS.is_positive());
         assert!(INF_NEG.is_negative());
@@ -4536,8 +4553,12 @@ mod tests {
         assert!(INF_POS.pow(&ONE, rand_p(), rm, &mut cc).is_inf_pos());
         assert!(INF_NEG.pow(&ONE, rand_p(), rm, &mut cc).is_inf_neg());
         assert!(INF_NEG.pow(&TWO, rand_p(), rm, &mut cc).is_inf_pos());
-        assert!(INF_POS.pow(&ONE.neg(), rand_p(), rm, &mut cc).is_zero());
-        assert!(INF_NEG.pow(&ONE.neg(), rand_p(), rm, &mut cc).is_zero());
+        assert!(INF_POS
+            .pow(&ExactNum::from_i8(-1, DEFAULT_P), rand_p(), rm, &mut cc)
+            .is_zero());
+        assert!(INF_NEG
+            .pow(&ExactNum::from_i8(-1, DEFAULT_P), rand_p(), rm, &mut cc)
+            .is_zero());
         assert!(
             INF_POS
                 .pow(&ExactNum::new(DEFAULT_P), rand_p(), rm, &mut cc)
@@ -4673,7 +4694,7 @@ mod tests {
         let p = rand_p();
         let mut half_pi: ExactNum = cc.pi_num(p, rm).unwrap().into();
         half_pi.set_exponent(1);
-        assert!(INF_NEG.atan(p, rm, &mut cc).compare(&half_pi.neg()) == Some(0));
+        assert!(INF_NEG.atan(p, rm, &mut cc).compare(&half_pi.neg_via_mul()) == Some(0));
         assert!(INF_POS.atan(p, rm, &mut cc).compare(&half_pi) == Some(0));
         assert!(NAN.atan(rand_p(), rm, &mut cc).is_nan());
 
@@ -4685,7 +4706,12 @@ mod tests {
         assert!(INF_POS.cosh(rand_p(), rm, &mut cc).is_inf_pos());
         assert!(NAN.cosh(rand_p(), rm, &mut cc).is_nan());
 
-        assert!(INF_NEG.tanh(rand_p(), rm, &mut cc).compare(&ONE.neg()) == Some(0));
+        assert!(
+            INF_NEG
+                .tanh(rand_p(), rm, &mut cc)
+                .compare(&ExactNum::from_i8(-1, DEFAULT_P))
+                == Some(0)
+        );
         assert!(INF_POS.tanh(rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(NAN.tanh(rand_p(), rm, &mut cc).is_nan());
 
@@ -4706,9 +4732,14 @@ mod tests {
         assert!(NAN.reciprocal(rand_p(), rm).is_nan());
 
         assert!(TWO.signum().compare(&ONE) == Some(0));
-        assert!(TWO.neg().signum().compare(&ONE.neg()) == Some(0));
+        assert!(
+            ExactNum::from_i8(-2, DEFAULT_P)
+                .signum()
+                .compare(&ExactNum::from_i8(-1, DEFAULT_P))
+                == Some(0)
+        );
         assert!(INF_POS.signum().compare(&ONE) == Some(0));
-        assert!(INF_NEG.signum().compare(&ONE.neg()) == Some(0));
+        assert!(INF_NEG.signum().compare(&ExactNum::from_i8(-1, DEFAULT_P)) == Some(0));
         assert!(NAN.signum().is_nan());
 
         let d1 = ONE.clone();
@@ -4789,12 +4820,25 @@ mod tests {
         assert!(INF_POS.max(&INF_POS).is_inf_pos());
         assert!(INF_NEG.max(&INF_NEG).is_inf_neg());
 
-        assert!(ONE.clamp(&ONE.neg(), &TWO).compare(&ONE) == Some(0));
+        assert!(
+            ONE.clamp(&ExactNum::from_i8(-1, DEFAULT_P), &TWO)
+                .compare(&ONE)
+                == Some(0)
+        );
         assert!(ONE.clamp(&TWO, &ONE).is_nan());
         assert!(ONE.clamp(&INF_POS, &ONE).is_nan());
         assert!(ONE.clamp(&TWO, &INF_NEG).is_nan());
-        assert!(ONE.neg().clamp(&ONE, &TWO).compare(&ONE) == Some(0));
-        assert!(TWO.clamp(&ONE.neg(), &ONE).compare(&ONE) == Some(0));
+        assert!(
+            ExactNum::from_i8(-1, DEFAULT_P)
+                .clamp(&ONE, &TWO)
+                .compare(&ONE)
+                == Some(0)
+        );
+        assert!(
+            TWO.clamp(&ExactNum::from_i8(-1, DEFAULT_P), &ONE)
+                .compare(&ONE)
+                == Some(0)
+        );
         assert!(INF_POS.clamp(&ONE, &TWO).compare(&TWO) == Some(0));
         assert!(INF_POS.clamp(&ONE, &INF_POS).is_inf_pos());
         assert!(INF_POS.clamp(&INF_NEG, &ONE).compare(&ONE) == Some(0));
@@ -4909,7 +4953,7 @@ mod tests {
         use core::ops::Not;
         let mut cc = Consts::new().unwrap();
 
-        let d1 = -&(TWO.clone());
+        let d1 = -ExactNum::from_u8(2, DEFAULT_P);
         assert!(d1.is_negative());
 
         let p = DEFAULT_P;
@@ -5143,6 +5187,7 @@ mod rand_tests {
 mod special_arg_tests {
     use crate::defs::{RoundingMode, DEFAULT_P};
     use crate::{Consts, Error, ExactNum, INF_NEG, INF_POS};
+    use core::ops::Neg;
 
     const P: usize = DEFAULT_P;
     const RM: RoundingMode = RoundingMode::ToEven;
@@ -5223,7 +5268,7 @@ mod special_arg_tests {
         assert!(INF_POS.neg().is_inf() && INF_POS.neg().is_negative());
         assert!(INF_NEG.neg().is_inf() && INF_NEG.neg().is_positive());
         for n in nans() {
-            same_nan(&n.neg(), &n);
+            same_nan(&n.neg_via_mul(), &n);
         }
         let third = || ExactNum::from_u8(1, P).div(&ExactNum::from_u8(3, P), 64, RM);
         assert!(third().inexact());
@@ -5249,5 +5294,56 @@ mod special_arg_tests {
         assert!(m.is_inf() && m.is_negative() && e == 0);
         assert!(INF_POS.ldexp(3, P, RM).is_positive() && INF_POS.ldexp(3, P, RM).is_inf());
         assert!(INF_NEG.ldexp(3, P, RM).is_negative() && INF_NEG.ldexp(3, P, RM).is_inf());
+    }
+    #[test]
+    fn neg_via_mul_equals_neg_for_every_kind_of_operand() {
+        let same = |mk: &dyn Fn() -> ExactNum| {
+            let x = mk();
+            let want = mk().neg();
+            let got = x.neg_via_mul();
+            if want.is_nan() {
+                same_nan(&got, &want);
+                return;
+            }
+            assert_eq!(got.is_inf(), want.is_inf(), "{x:?}");
+            assert_eq!(got.is_negative(), want.is_negative(), "{x:?}");
+            assert_eq!(got.is_zero(), want.is_zero(), "{x:?}");
+            // The accumulated flag is kept; the per-operation flag is false because the
+            // product is exact (neg keeps the operand's stale per-operation flag).
+            assert_eq!(
+                got.inexact_accumulated(),
+                want.inexact_accumulated(),
+                "{x:?}"
+            );
+            assert!(!got.inexact(), "{x:?}");
+            assert_eq!(got.compare(&want), want.compare(&got), "{x:?}");
+            if !want.is_inf() {
+                assert!(matches!(got.compare(&want), Some(0)), "{x:?}");
+                assert_eq!(
+                    got.mantissa_max_bit_len(),
+                    want.mantissa_max_bit_len(),
+                    "{x:?}"
+                );
+                assert_eq!(got.exponent(), want.exponent(), "{x:?}");
+            }
+        };
+        for p in [1usize, 40, 64, 65, 128, 300] {
+            same(&|| ExactNum::new(p));
+            same(&|| ExactNum::new(p).neg());
+            same(&|| ExactNum::from_u32(0xDEAD_BEEF, p));
+            same(&|| ExactNum::from_u32(0xDEAD_BEEF, p).neg());
+            same(&|| ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, RM));
+            same(&|| {
+                ExactNum::from_u8(1, p)
+                    .div(&ExactNum::from_u8(3, p), p, RM)
+                    .neg()
+            });
+            same(&|| ExactNum::from_u8(1, p).ldexp(-10_000, p, RM));
+        }
+        same(&|| INF_POS);
+        same(&|| INF_NEG);
+        for n in nans() {
+            same_nan(&n.neg_via_mul(), &n);
+        }
     }
 }

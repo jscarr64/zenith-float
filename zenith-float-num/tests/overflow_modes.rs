@@ -1,6 +1,15 @@
 //! Exponent overflow follows the rounding mode (2.0.0 audit, defect 1).
 
+use std::ops::Neg;
 use zenith_float_num::{ExactNum, RoundingMode, EXPONENT_MAX};
+
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
 
 fn with_exp(mut x: ExactNum, e: i32) -> ExactNum {
     x.set_exponent(e);
@@ -50,7 +59,7 @@ fn overflow_follows_rounding_mode() {
 
             // max.neg().add(&max.neg()) -> neg
             expect_overflow(
-                &max.neg().add(&max.neg(), p, rm),
+                &neg_of(&max).add(&neg_of(&max), p, rm),
                 true,
                 p,
                 rm,
@@ -58,10 +67,10 @@ fn overflow_follows_rounding_mode() {
             );
 
             // max.sub(&max.neg()) -> pos
-            expect_overflow(&max.sub(&max.neg(), p, rm), false, p, rm, "sub pos");
+            expect_overflow(&max.sub(&neg_of(&max), p, rm), false, p, rm, "sub pos");
 
             // max.neg().sub(&max) -> neg
-            expect_overflow(&max.neg().sub(&max, p, rm), true, p, rm, "neg sub pos");
+            expect_overflow(&neg_of(&max).sub(&max, p, rm), true, p, rm, "neg sub pos");
 
             // max.mul(&two) -> pos
             expect_overflow(&max.mul(&two, p, rm), false, p, rm, "mul pos by 2");
@@ -70,14 +79,14 @@ fn overflow_follows_rounding_mode() {
             expect_overflow(&max.mul(&onehalf, p, rm), false, p, rm, "mul pos by 1.5");
 
             // max.neg().mul(&two) -> neg
-            expect_overflow(&max.neg().mul(&two, p, rm), true, p, rm, "neg mul by 2");
+            expect_overflow(&neg_of(&max).mul(&two, p, rm), true, p, rm, "neg mul by 2");
 
             // max.mul(&two.neg()) -> neg
-            expect_overflow(&max.mul(&two.neg(), p, rm), true, p, rm, "pos mul by -2");
+            expect_overflow(&max.mul(&neg_of(&two), p, rm), true, p, rm, "pos mul by -2");
 
             // max.neg().mul(&two.neg()) -> pos
             expect_overflow(
-                &max.neg().mul(&two.neg(), p, rm),
+                &neg_of(&max).mul(&neg_of(&two), p, rm),
                 false,
                 p,
                 rm,
@@ -88,10 +97,22 @@ fn overflow_follows_rounding_mode() {
             expect_overflow(&max.div(&half, p, rm), false, p, rm, "div pos by 0.5");
 
             // max.neg().div(&half) -> neg
-            expect_overflow(&max.neg().div(&half, p, rm), true, p, rm, "neg div by 0.5");
+            expect_overflow(
+                &neg_of(&max).div(&half, p, rm),
+                true,
+                p,
+                rm,
+                "neg div by 0.5",
+            );
 
             // max.div(&half.neg()) -> neg
-            expect_overflow(&max.div(&half.neg(), p, rm), true, p, rm, "pos div by -0.5");
+            expect_overflow(
+                &max.div(&neg_of(&half), p, rm),
+                true,
+                p,
+                rm,
+                "pos div by -0.5",
+            );
 
             // big = from_i8(3,p) with set_exponent(EXPONENT_MAX / 2 + 2); big.mul(&big) -> pos
             let big = with_exp(ExactNum::from_i8(3, p), EXPONENT_MAX / 2 + 2);
@@ -99,7 +120,7 @@ fn overflow_follows_rounding_mode() {
 
             // big.neg().mul(&big) -> neg
             expect_overflow(
-                &big.neg().mul(&big, p, rm),
+                &neg_of(&big).mul(&big, p, rm),
                 true,
                 p,
                 rm,
@@ -119,8 +140,8 @@ fn finite_max_is_not_overflow() {
         for &rm in &MODES {
             assert_eq!(max.mul(&one, p, rm), max, "max*1 p={p} rm={rm:?}");
             assert_eq!(
-                max.neg().add(&zero, p, rm),
-                max.neg(),
+                neg_of(&max).add(&zero, p, rm),
+                neg_of(&max),
                 "-max+0 p={p} rm={rm:?}"
             );
         }

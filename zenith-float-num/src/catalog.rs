@@ -12,6 +12,7 @@ use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 pub(crate) fn work_p(p: usize) -> usize {
     p.saturating_add(WORD_BIT_SIZE.saturating_mul(2))

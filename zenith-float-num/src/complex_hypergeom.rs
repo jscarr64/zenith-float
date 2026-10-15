@@ -203,7 +203,7 @@ fn is_112(a: &ExactComplex, b: &ExactComplex, c: &ExactComplex, p: usize) -> boo
 fn f112(z: &ExactComplex, p: usize, cc: &mut Consts) -> ExactComplex {
     let one = ExactComplex::one(p);
     let omz = one.sub(z, p, rm());
-    neg_c(&omz.ln(p, rm(), cc)).div(z, p, rm())
+    neg_c(omz.ln(p, rm(), cc)).div(z, p, rm())
 }
 
 fn pfaff(
@@ -221,7 +221,7 @@ fn pfaff(
         return nan_pair(Error::InvalidArgument);
     }
     let w = z.div(&zm1, p, rm());
-    let pref = one.sub(z, p, rm()).pow(&neg_c(a), p, rm(), cc);
+    let pref = one.sub(z, p, rm()).pow(&a.neg_via_mul(), p, rm(), cc);
     let cb = c.sub(b, p, rm());
     pref.mul(&hypergeom_at(a, &cb, c, &w, p, cc, left), p, rm())
 }
@@ -239,7 +239,7 @@ fn transform_1mz(
     let one = ExactComplex::one(p);
     let omz = one.sub(z, p, rm());
     let cab = c.sub(a, p, rm()).sub(b, p, rm());
-    if is_nonpos_integer(&cab) || is_nonpos_integer(&neg_c(&cab)) {
+    if is_nonpos_integer(&cab) || is_nonpos_integer(&cab.neg_via_mul()) {
         return nan_pair(Error::InvalidArgument);
     }
     let gc = gamma_fixed(c, p, cc);
@@ -361,8 +361,10 @@ fn log_case_sum(
     if is_c_zero(&rg) {
         return Some((total, max_e));
     }
-    let mut pref2 = powi_c(&neg_c(&w), m, p).mul(&gc, p, rm()).mul(&rg, p, rm());
-    pref2 = neg_c(&pref2);
+    let mut pref2 = powi_c(&w.neg_via_mul(), m, p)
+        .mul(&gc, p, rm())
+        .mul(&rg, p, rm());
+    pref2 = neg_c(pref2);
     let am = a.add(&mf, p, rm());
     let bm = b.add(&mf, p, rm());
     let lnw = w.ln(p, rm(), cc);
@@ -509,7 +511,7 @@ fn transform_inv(
     }
     let one = ExactComplex::one(p);
     let inv = one.div(z, p, rm());
-    let mz = neg_c(z);
+    let mz = z.neg_via_mul();
     let t1 = inv_term(a, b, c, &mz, &inv, p, cc, left);
     let t2 = inv_term(b, a, c, &mz, &inv, p, cc, left);
     t1.add(&t2, p, rm())
@@ -534,7 +536,7 @@ fn inv_term(
         return nan_pair(Error::InvalidArgument);
     }
     let pref = gc.mul(&gbma, p, rm()).div(&gb.mul(&gcma, p, rm()), p, rm());
-    let pow = mz.pow(&neg_c(a), p, rm(), cc);
+    let pow = mz.pow(&a.neg_via_mul(), p, rm(), cc);
     let ac1 = a.sub(c, p, rm()).add(&one, p, rm());
     let ab1 = a.sub(b, p, rm()).add(&one, p, rm());
     pref.mul(&pow, p, rm())
@@ -687,6 +689,7 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::ops::Neg;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize, slack: i32) -> bool {
         let d = a.sub(b, p, RoundingMode::None).abs();

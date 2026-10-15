@@ -205,7 +205,7 @@ Unless noted, results round with `(p, rm)`.
 | `polyval` | Horner; `coeffs[0]` is the constant term (lowest degree first) |
 | `rem` | remainder (`self` rem `d2`); no `p`/`rm` |
 | `reciprocal` | `1/self` |
-| `neg` | copy with inverted sign (also `Neg` / `inv_sign` in place) |
+| `Neg` (`-x`, `x.neg()` with `std::ops::Neg` in scope) | takes the value, flips the sign in place (also `inv_sign`) |
 | `pow` | `self^n` (arbitrary `ExactNum` exponent); needs `Consts` |
 | `powi` | `self^n` for `usize` `n` |
 | `powsi` | `self^n` for `isize` `n` |

@@ -4,6 +4,7 @@ use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
 use crate::ExactNum;
 use crate::RoundingMode;
+use core::ops::Neg;
 
 /// Maximum iterations for every method in this module.
 pub const ROOT_MAX_ITER: usize = 256;

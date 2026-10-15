@@ -3,7 +3,16 @@
 //! `elliptic_f` takes `sin φ`. `elliptic_f_phi` takes `φ`. The same split holds
 //! for `E` and `Π`.
 
+use std::ops::Neg;
 use zenith_float_num::{Consts, Error, ExactNum, Radix, RoundingMode, INF_POS};
+
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
 
 const HALF_PI: &str = "1.57079632679489661923132169163975144209858469968755291048747229615390820314310449931401741267105853399107404325664115332354692230477529111586267970406424055872514205135096926055278";
 const M_CUBIC: &str = "0.933012701892219323381861585376468091735701313452595157013951744862983254227200009270286546689312143918906535353851675757492486273749738119702913878023593412132023307975576395516994";
@@ -167,7 +176,7 @@ fn odd_in_phi_under_to_even() {
     let n = parse("0.2", p, rm, &mut consts);
     for text in ["0.4", "2", "5"] {
         let phi = parse(text, p, rm, &mut consts);
-        let neg = phi.neg();
+        let neg = neg_of(&phi);
         let f = phi.elliptic_f_phi(&m, p, rm, &mut consts);
         let fn_ = neg.elliptic_f_phi(&m, p, rm, &mut consts);
         assert!(same_bits(&f.neg(), &fn_), "F odd at {text}");

@@ -10,6 +10,7 @@ use crate::Consts;
 use crate::ExactNum;
 use crate::RoundingMode;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// Max length of any one Meijer / Fox parameter group.
 const PARAM_MAX: usize = 8;
@@ -965,7 +966,7 @@ impl ExactNum {
             return finish(ExactNum::from_u8(1, p), p, rm);
         }
         if heun_c_is_1f1(alpha, delta, eps, q, p) {
-            return self.hypergeom_1f1(&alpha.neg(), gamma, p, rm, cc);
+            return self.hypergeom_1f1(&alpha.neg_via_mul(), gamma, p, rm, cc);
         }
         let wrk = work_p(p);
         let one = ExactNum::from_u8(1, wrk);
@@ -973,7 +974,7 @@ impl ExactNum {
             return heun_c_outside(self, alpha, gamma, delta, eps, q, p, rm);
         }
         let mut b_prev = ExactNum::from_u8(1, wrk);
-        let mut b = q.neg().div(gamma, wrk, RoundingMode::None);
+        let mut b = q.neg_via_mul().div(gamma, wrk, RoundingMode::None);
         let mut zp = self.clone();
         let mut sum = b_prev.add(
             &b.mul(&zp, wrk, RoundingMode::None),
@@ -1274,7 +1275,7 @@ fn heun_c_coefs(
     q: &ExactNum,
     p: usize,
 ) -> Option<(Vec<ExactNum>, bool)> {
-    let b1 = q.neg().div(gamma, p, RoundingMode::None);
+    let b1 = q.neg_via_mul().div(gamma, p, RoundingMode::None);
     if !finite(&b1) {
         return None;
     }
@@ -1894,7 +1895,7 @@ mod tests {
         let one = ExactNum::from_u8(1, p);
 
         let g = z.meijer_g(&[], &[], core::slice::from_ref(&zero), &[], p, rm, &mut cc);
-        let e = z.neg().exp(p, rm, &mut cc);
+        let e = z.neg_via_mul().exp(p, rm, &mut cc);
         assert!(near(&g, &e, p), "G^{{1,0}}_{{0,1}}(1/2) = e^{{-1/2}}");
 
         let fox = z.fox_h(
@@ -1949,7 +1950,7 @@ mod tests {
         let al = ExactNum::from_u8(2, p).div(&ExactNum::from_u8(5, p), p, rm);
         let gam = ExactNum::from_u8(13, p).div(&ExactNum::from_u8(10, p), p, rm);
         let zc = ExactNum::from_u8(7, p).div(&ExactNum::from_u8(20, p), p, rm);
-        let hc = zc.heun_c(&al, &gam, &zero, &one.neg(), &al, p, rm, &mut cc);
+        let hc = zc.heun_c(&al, &gam, &zero, &one.neg_via_mul(), &al, p, rm, &mut cc);
         let f1 = zc.hypergeom_1f1(&al.neg(), &gam, p, rm, &mut cc);
         assert!(near(&hc, &f1, p), "HeunC 1F1 reduction");
 

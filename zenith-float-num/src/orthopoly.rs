@@ -471,6 +471,7 @@ impl ExactNum {
 mod tests {
     use super::*;
     use crate::Consts;
+    use core::ops::Neg;
 
     fn gold_p() -> (usize, RoundingMode) {
         (256, RoundingMode::ToEven)
@@ -494,7 +495,7 @@ mod tests {
         let five = ExactNum::from_u8(5, p);
         let c = pi.div(&five, p, rm).cos(p, rm, &mut cc);
         let t5 = c.chebyshev_t(5, p, rm);
-        let neg_one = one.neg();
+        let neg_one = one.neg_via_mul();
         assert_eq!(t5.compare(&neg_one), Some(0));
 
         // Standard C_2^{(1)} = 4x² − 1 = U_2. The plan's "3x²−1 at λ=1"
@@ -559,7 +560,7 @@ mod tests {
         let alpha = half.clone();
         let beta = one.div(&three, p, rm);
         let x = three_tenths.clone();
-        let nx = x.neg();
+        let nx = x.neg_via_mul();
         let lhs = nx.jacobi_p(6, &alpha, &beta, p, rm);
         let rhs = x.jacobi_p(6, &beta, &alpha, p, rm);
         assert!(near(&lhs, &rhs, p), "even-n reflection");

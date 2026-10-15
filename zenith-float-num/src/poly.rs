@@ -8,6 +8,7 @@ use crate::ExactNum;
 use crate::ExactNumArray;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// Highest degree whose companion eigenvalues have a closed form on this type.
 ///
@@ -478,7 +479,7 @@ mod tests {
         let roots = x2m2.roots_real(p, rm, &mut cc).expect("roots");
         assert_eq!(roots.len(), 2);
         let s2 = ExactNum::from_u8(2, p).sqrt(p, rm);
-        let ns2 = s2.neg();
+        let ns2 = s2.neg_via_mul();
         let mut saw_pos = false;
         let mut saw_neg = false;
         for root in &roots {

@@ -1,5 +1,6 @@
 //! Catalog specials vs mpmath 1.4.1 at 50 digits / 2p+64 bits.
 
+use std::ops::Neg;
 use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode};
 
 const RM: RoundingMode = RoundingMode::ToEven;

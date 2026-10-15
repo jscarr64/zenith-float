@@ -12,6 +12,7 @@ use crate::ExactNum;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
+use core::ops::Neg;
 
 /// Arbitrary-precision signed integer. Distinct from [`ExactNum`], which is floating-point.
 ///

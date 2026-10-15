@@ -23,6 +23,7 @@ use crate::Consts;
 use crate::ExactNum;
 use crate::RoundingMode;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// Maximum number of Gauss nodes. Larger `n` is `None`.
 pub const QUADRATURE_MAX_NODES: usize = 64;

@@ -6,6 +6,14 @@
 
 use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode};
 
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
+
 const RM: RoundingMode = RoundingMode::ToEven;
 
 /// (op, precision, x, reference with 50 significant digits)
@@ -1399,10 +1407,10 @@ fn erf_erfc_tail_symmetry() {
         let p = 256;
         let xv = ExactNum::parse(x, Radix::Dec, p, RM, &mut cc);
         let a = xv.erf(p, RM, &mut cc);
-        let b = xv.neg().erf(p, RM, &mut cc);
+        let b = neg_of(&xv).erf(p, RM, &mut cc);
         assert!(a.add(&b, p, RoundingMode::None).is_zero(), "erf odd at {x}");
         let two = ExactNum::from_u8(2, p);
-        let c = xv.neg().erfc(p, RM, &mut cc);
+        let c = neg_of(&xv).erfc(p, RM, &mut cc);
         let d = two.sub(&xv.erfc(p, RM, &mut cc), p, RM);
         assert!(bits(&c, &d, 250) >= 250, "erfc reflection at {x}");
     }

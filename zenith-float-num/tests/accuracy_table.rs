@@ -52,7 +52,6 @@ const ELEMENTARY: &[&str] = &[
     "atanh",
     "sin_cos",
     "sinh_cosh",
-    "neg",
     "floor",
     "ceil",
     "int",

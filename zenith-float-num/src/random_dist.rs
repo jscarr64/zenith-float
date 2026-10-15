@@ -8,6 +8,7 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use crate::Word;
 use crate::NAN;
+use core::ops::Neg;
 
 fn dist_nan() -> ExactNum {
     ExactNum::nan(Some(Error::InvalidArgument))
@@ -93,7 +94,9 @@ impl ExactNum {
         let u1 = random_unit_open(pw, none);
         let u2 = random_unit(pw, none);
         let two = ExactNum::from_u8(2, pw);
-        let r = two.neg().mul(&u1.ln(pw, none, cc), pw, none).sqrt(pw, none);
+        let r = ExactNum::from_i8(-2, pw)
+            .mul(&u1.ln(pw, none, cc), pw, none)
+            .sqrt(pw, none);
         let theta = two.mul(&cc.pi(pw, none), pw, none).mul(&u2, pw, none);
         let (s, _) = theta.sin_cos(pw, none, cc);
         let z = r.mul(&s, pw, none);

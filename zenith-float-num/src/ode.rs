@@ -574,7 +574,7 @@ mod tests {
         let ten = ExactNum::from_u8(10, p);
 
         let (_t, y) = rk4(
-            |_t, y, _p, _rm, _cc| y.neg(),
+            |_t, y, _p, _rm, _cc| y.neg_via_mul(),
             &zero,
             &one,
             &one,
@@ -585,7 +585,7 @@ mod tests {
         )
         .expect("rk4");
         let yend = y.get(y.len() - 1).expect("yend").clone();
-        let einv = one.neg().exp(p, rm, &mut cc);
+        let einv = one.neg_via_mul().exp(p, rm, &mut cc);
         let err = yend.sub(&einv, p, rm).abs();
         let tol12 = one.div(&ten.powsi(RK4_EXP_ERR_DIGITS, p, rm), p, rm);
         assert!(err.is_zero() || err.compare(&tol12) == Some(-1));
@@ -593,7 +593,7 @@ mod tests {
         let atol = one.div(&ten.powsi(RK45_ATOL_DIGITS, p, rm), p, rm);
         let rtol = ExactNum::new(p);
         let (_t45, y45) = rk45_adaptive(
-            |_t, y, _p, _rm, _cc| y.neg(),
+            |_t, y, _p, _rm, _cc| y.neg_via_mul(),
             &zero,
             &one,
             &one,
@@ -641,7 +641,7 @@ mod tests {
         assert!(e2.compare(&e1) == Some(-1));
 
         assert!(rk4(
-            |_t, y, _p, _rm, _cc| y.neg(),
+            |_t, y, _p, _rm, _cc| y.neg_via_mul(),
             &one,
             &one,
             &zero,

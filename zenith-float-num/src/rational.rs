@@ -10,6 +10,7 @@ use crate::NAN;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
+use core::ops::Neg;
 
 /// Exact rational `num/den`. Distinct from [`ExactNum`], which is floating-point.
 ///

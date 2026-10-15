@@ -550,6 +550,7 @@ fn u32_from_usize(v: usize) -> Result<u32, Error> {
 mod tests {
     use super::*;
     use crate::RoundingMode;
+    use core::ops::Neg;
 
     fn p64() -> usize {
         64
