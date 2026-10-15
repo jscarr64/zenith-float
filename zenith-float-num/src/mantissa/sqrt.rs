@@ -3,7 +3,7 @@
 //! Square root.
 
 use crate::common::buf::WordBuf;
-use crate::common::int::SliceWithSign;
+use crate::common::int::{SliceRef, SliceWithSign};
 use crate::common::util::find_one_from;
 use crate::common::util::shift_slice_left;
 use crate::common::util::shift_slice_right;
@@ -162,10 +162,7 @@ impl Mantissa {
         }
     }
 
-    fn sqrt_rem_split(
-        m: &[Word],
-        l: usize,
-    ) -> (SliceWithSign<'_>, SliceWithSign<'_>, SliceWithSign<'_>) {
+    fn sqrt_rem_split(m: &[Word], l: usize) -> (SliceRef<'_>, SliceRef<'_>, SliceRef<'_>) {
         let (m, m2) = m.split_at(2 * l);
         let (m0, m1) = m.split_at(l);
 

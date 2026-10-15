@@ -3,7 +3,7 @@
 //! Multiplication with FFT.
 
 use crate::common::buf::WordBuf;
-use crate::common::int::SliceWithSign;
+use crate::common::int::{SliceMut, SliceWithSign};
 use crate::common::util::add_carry;
 use crate::common::util::log2_ceil;
 use crate::common::util::shift_slice_left_copy;
@@ -47,10 +47,10 @@ impl Mantissa {
 
     #[inline]
     fn fft_butterfly(
-        a: &mut SliceWithSign,
-        b: &mut SliceWithSign,
+        a: &mut SliceMut<'_>,
+        b: &mut SliceMut<'_>,
         n1: usize,
-        modulus: &SliceWithSign,
+        modulus: &SliceMut<'_>,
     ) {
         debug_assert!(a.sign() > 0 && b.sign() > 0);
 
@@ -90,9 +90,9 @@ impl Mantissa {
     }
 
     fn fft_forward(
-        parts: &mut [SliceWithSign],
+        parts: &mut [SliceMut],
         step: FftStep,
-        modulus: &SliceWithSign,
+        modulus: &SliceMut<'_>,
         tmp_buf: &mut [Word],
     ) -> Result<(), Error> {
         let FftStep { w, k1, k, s, n1 } = step;
@@ -162,11 +162,11 @@ impl Mantissa {
     }
 
     fn fft_reverse(
-        parts: &mut [SliceWithSign],
+        parts: &mut [SliceMut],
         w: usize,
         k1: usize,
         n1: usize,
-        modulus: &SliceWithSign,
+        modulus: &SliceMut<'_>,
         tmp_buf: &mut [Word],
     ) -> Result<(), Error> {
         if k1 == 2 {
@@ -222,7 +222,7 @@ impl Mantissa {
     }
 
     // decompose in parts.len() = k1 parts, each of size m
-    fn fft_decompose(d: &[Word], m: usize, parts: &mut [SliceWithSign]) -> Result<(), Error> {
+    fn fft_decompose(d: &[Word], m: usize, parts: &mut [SliceMut]) -> Result<(), Error> {
         debug_assert!(!parts.is_empty());
 
         let mut parts_iter = parts.iter_mut();
@@ -281,7 +281,7 @@ impl Mantissa {
         n: usize,
         tmp_buf: &'a mut [Word],
         s: i8,
-    ) -> Result<SliceWithSign<'a>, Error> {
+    ) -> Result<SliceMut<'a>, Error> {
         let mut chunks = num.chunks(n / WORD_BIT_SIZE);
 
         if let Some(first_chunk) = chunks.next() {
@@ -309,7 +309,7 @@ impl Mantissa {
     }
 
     // results in  0 <= num < modulus, assuming abs(num) not much greater than modulus
-    fn fft_normalize(num: &mut SliceWithSign, n: usize, modulus: &SliceWithSign) {
+    fn fft_normalize(num: &mut SliceMut<'_>, n: usize, modulus: &SliceMut<'_>) {
         if num.sign() < 0 && !num.is_zero() {
             let last = n / WORD_BIT_SIZE;
 
@@ -346,10 +346,10 @@ impl Mantissa {
     // num and modulus should have up to n bits of additional free space for shifting.
     // tmp_buf is a reusable buffer of size == num.len().
     fn fft_mul_mod(
-        num: &mut SliceWithSign,
+        num: &mut SliceMut<'_>,
         j: usize,
         n: usize,
-        modulus: &SliceWithSign,
+        modulus: &SliceMut<'_>,
         tmp_buf: &mut [Word],
     ) -> Result<(), Error> {
         debug_assert!(n.is_multiple_of(WORD_BIT_SIZE));
@@ -382,10 +382,10 @@ impl Mantissa {
     // num should have up to n bits of additional free space for shifting.
     // tmp_buf is a reusable buffer of size == num.len().
     fn fft_div_mod(
-        num: &mut SliceWithSign,
+        num: &mut SliceMut<'_>,
         j: usize,
         n: usize,
-        modulus: &SliceWithSign,
+        modulus: &SliceMut<'_>,
         tmp_buf: &mut [Word],
     ) -> Result<(), Error> {
         debug_assert!(n.is_multiple_of(WORD_BIT_SIZE));
@@ -414,8 +414,8 @@ impl Mantissa {
         buf: &mut [Word],
         k1: usize,
         part_len: usize,
-    ) -> Result<Vec<SliceWithSign<'_>>, Error> {
-        let mut parts = Vec::<SliceWithSign>::new();
+    ) -> Result<Vec<SliceMut<'_>>, Error> {
+        let mut parts = Vec::<SliceMut<'_>>::new();
         parts.try_reserve_exact(k1)?;
 
         let mut rest = buf;

@@ -3,17 +3,14 @@
 //! Toom-3 multiplication.
 
 use crate::common::buf::WordBuf;
-use crate::common::int::SliceWithSign;
+use crate::common::int::{SliceMut, SliceRef, SliceWithSign};
 use crate::common::util::shift_slice_left_copy;
 use crate::defs::Error;
 use crate::defs::Word;
 use crate::mantissa::Mantissa;
 
 impl Mantissa {
-    fn toom3_get_splits(
-        m: &[Word],
-        l: usize,
-    ) -> (SliceWithSign<'_>, SliceWithSign<'_>, SliceWithSign<'_>) {
+    fn toom3_get_splits(m: &[Word], l: usize) -> (SliceRef<'_>, SliceRef<'_>, SliceRef<'_>) {
         let b11 = l.min(m.len());
         let b12 = l.min(m.len() - b11) + b11;
         let b13 = l.min(m.len() - b12) + b12;
@@ -30,18 +27,18 @@ impl Mantissa {
     }
 
     fn toom3_factors<'a>(
-        params: (SliceWithSign<'a>, SliceWithSign<'a>, SliceWithSign<'a>),
-        x1: &mut SliceWithSign<'_>,
+        params: (SliceRef<'a>, SliceRef<'a>, SliceRef<'a>),
+        x1: &mut SliceMut<'_>,
         buf1: &'a mut [Word],
         buf2: &'a mut [Word],
         buf3: &'a mut [Word],
     ) -> Result<
         (
-            SliceWithSign<'a>,
-            SliceWithSign<'a>,
-            SliceWithSign<'a>,
-            SliceWithSign<'a>,
-            SliceWithSign<'a>,
+            SliceRef<'a>,
+            SliceMut<'a>,
+            SliceMut<'a>,
+            SliceMut<'a>,
+            SliceRef<'a>,
         ),
         Error,
     > {

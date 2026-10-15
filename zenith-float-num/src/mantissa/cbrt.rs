@@ -3,7 +3,7 @@
 //! Cube root.
 
 use crate::common::buf::WordBuf;
-use crate::common::int::SliceWithSign;
+use crate::common::int::{SliceMut, SliceWithSign};
 use crate::common::util::find_one_from;
 use crate::common::util::shift_slice_left;
 use crate::common::util::shift_slice_right;
@@ -97,7 +97,7 @@ impl Mantissa {
     fn cbrt_remainder(
         tmpbuf: &mut WordBuf,
         sbuf: &mut WordBuf,
-        r: &mut SliceWithSign,
+        r: &mut SliceMut<'_>,
     ) -> Result<(), Error> {
         let (sqbuf, rest) = tmpbuf.split_at_mut(sbuf.len() * 2);
         let scbuf = &mut rest[..sbuf.len() * 3];

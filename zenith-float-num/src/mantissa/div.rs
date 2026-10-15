@@ -3,7 +3,7 @@
 //! Division algos.
 
 use crate::common::buf::WordBuf;
-use crate::common::int::SliceWithSign;
+use crate::common::int::{SliceMut, SliceRef, SliceWithSign};
 use crate::common::util::add_carry;
 use crate::common::util::log2_ceil;
 use crate::defs::DoubleWord;
@@ -198,9 +198,9 @@ impl Mantissa {
 
     // recursive division correction
     fn div_correction(
-        a: &mut SliceWithSign,
-        q: &mut SliceWithSign,
-        step: SliceWithSign,
+        a: &mut SliceMut<'_>,
+        q: &mut SliceMut<'_>,
+        step: SliceRef<'_>,
     ) -> Result<(), Error> {
         while a.sign() < 0 && !a.is_zero() {
             q.decrement_abs()?;
