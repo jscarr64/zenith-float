@@ -5211,6 +5211,31 @@ mod special_arg_tests {
     }
 
     #[test]
+    fn neg_flips_the_sign_and_keeps_everything_else() {
+        let mk = || ExactNum::from_u32(0xDEAD_BEEF, 40);
+        let n = mk().neg();
+        assert!(n.is_negative());
+        assert_eq!(n.mantissa_max_bit_len(), mk().mantissa_max_bit_len());
+        assert!(matches!(n.abs().compare(&mk()), Some(0)));
+        assert!(matches!(n.neg().compare(&mk()), Some(0)));
+        let z = ExactNum::new(64).neg();
+        assert!(z.is_zero() && z.is_negative());
+        assert!(INF_POS.neg().is_inf() && INF_POS.neg().is_negative());
+        assert!(INF_NEG.neg().is_inf() && INF_NEG.neg().is_positive());
+        for n in nans() {
+            same_nan(&n.neg(), &n);
+        }
+        let third = || ExactNum::from_u8(1, P).div(&ExactNum::from_u8(3, P), 64, RM);
+        assert!(third().inexact());
+        let t = third().neg();
+        assert!(t.inexact() && t.is_negative());
+        assert!(matches!(
+            (-ExactNum::from_u8(2, P)).compare(&ExactNum::from_u8(2, P).neg()),
+            Some(0)
+        ));
+    }
+
+    #[test]
     fn frexp_and_ldexp_keep_specials() {
         for n in nans() {
             let (m, e) = n.frexp();
