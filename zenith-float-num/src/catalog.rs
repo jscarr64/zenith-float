@@ -249,9 +249,10 @@ fn zeta_prime_2(p: usize, cc: &mut Consts) -> ExactNum {
     let two = ExactNum::from_u8(2, p);
     let half = one.div(&two, p, RoundingMode::None);
     let n2 = n0.mul(&n0, p, RoundingMode::None);
-    let integral = ln
-        .add(&one, p, RoundingMode::None)
-        .div(&n0, p, RoundingMode::None);
+    let integral =
+        ExactNum::from_u8(1, p)
+            .add(&ln, p, RoundingMode::None)
+            .div(&n0, p, RoundingMode::None);
     let mid = half
         .mul(&ln, p, RoundingMode::None)
         .div(&n2, p, RoundingMode::None);
@@ -1517,7 +1518,7 @@ impl ExactNum {
         let inv_e = ExactNum::from_u8(1, wrk)
             .div(&e, wrk, RoundingMode::None)
             .neg();
-        let gap = self.sub(&inv_e, wrk, RoundingMode::None);
+        let gap = inv_e.neg_via_mul().add(&self, wrk, RoundingMode::None);
         if gap
             .exponent()
             .is_some_and(|e| (e as i64) + ((p as i64) / 2) < 0)
@@ -1559,16 +1560,17 @@ impl ExactNum {
             let num = wew.sub(self, wrk, RoundingMode::None);
             let den = ew
                 .mul(
-                    &w.add(&one, wrk, RoundingMode::None),
+                    &ExactNum::from_u8(1, wrk).add(&w, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                 )
                 .sub(
-                    &w.add(&two, wrk, RoundingMode::None)
+                    &ExactNum::from_u8(2, wrk)
+                        .add(&w, wrk, RoundingMode::None)
                         .mul(&num, wrk, RoundingMode::None)
                         .div(
                             &two.mul(
-                                &w.add(&one, wrk, RoundingMode::None),
+                                &ExactNum::from_u8(1, wrk).add(&w, wrk, RoundingMode::None),
                                 wrk,
                                 RoundingMode::None,
                             ),
@@ -1583,7 +1585,7 @@ impl ExactNum {
                 wrk,
                 RoundingMode::None,
             );
-            let err = nxt.sub(&w, wrk, RoundingMode::None).abs();
+            let err = w.neg_via_mul().add(&nxt, wrk, RoundingMode::None).abs();
             w = nxt;
             if under_word(&err, p) {
                 break;

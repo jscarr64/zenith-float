@@ -179,14 +179,14 @@ fn kummer_z_one(
     p: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
-    let cab = c.sub(a, p, rm()).sub(b, p, rm());
+    let cab = a.neg_via_mul().add(&c, p, rm()).sub(b, p, rm());
     if !re_positive_strict(&cab) {
         return nan_pair(Error::InvalidArgument);
     }
     let gc = gamma_fixed(c, p, cc);
     let gcab = gamma_fixed(&cab, p, cc);
-    let gca = gamma_fixed(&c.sub(a, p, rm()), p, cc);
-    let gcb = gamma_fixed(&c.sub(b, p, rm()), p, cc);
+    let gca = gamma_fixed(&a.neg_via_mul().add(&c, p, rm()), p, cc);
+    let gcb = gamma_fixed(&b.neg_via_mul().add(&c, p, rm()), p, cc);
     if gc.is_nan() || gcab.is_nan() || gca.is_nan() || gcb.is_nan() {
         return nan_pair(Error::InvalidArgument);
     }
@@ -216,13 +216,13 @@ fn pfaff(
     left: u32,
 ) -> ExactComplex {
     let one = ExactComplex::one(p);
-    let zm1 = z.sub(&one, p, rm());
+    let zm1 = one.neg_via_mul().add(&z, p, rm());
     if is_c_zero(&zm1) {
         return nan_pair(Error::InvalidArgument);
     }
     let w = z.div(&zm1, p, rm());
     let pref = one.sub(z, p, rm()).pow(&a.neg_via_mul(), p, rm(), cc);
-    let cb = c.sub(b, p, rm());
+    let cb = b.neg_via_mul().add(&c, p, rm());
     pref.mul(&hypergeom_at(a, &cb, c, &w, p, cc, left), p, rm())
 }
 
@@ -238,14 +238,14 @@ fn transform_1mz(
 ) -> ExactComplex {
     let one = ExactComplex::one(p);
     let omz = one.sub(z, p, rm());
-    let cab = c.sub(a, p, rm()).sub(b, p, rm());
+    let cab = a.neg_via_mul().add(&c, p, rm()).sub(b, p, rm());
     if is_nonpos_integer(&cab) || is_nonpos_integer(&cab.neg_via_mul()) {
         return nan_pair(Error::InvalidArgument);
     }
     let gc = gamma_fixed(c, p, cc);
     let gcab = gamma_fixed(&cab, p, cc);
-    let gca = gamma_fixed(&c.sub(a, p, rm()), p, cc);
-    let gcb = gamma_fixed(&c.sub(b, p, rm()), p, cc);
+    let gca = gamma_fixed(&a.neg_via_mul().add(&c, p, rm()), p, cc);
+    let gcb = gamma_fixed(&b.neg_via_mul().add(&c, p, rm()), p, cc);
     let abc = a.add(b, p, rm()).sub(c, p, rm());
     let gabc = gamma_fixed(&abc, p, cc);
     let ga = gamma_fixed(a, p, cc);
@@ -265,8 +265,8 @@ fn transform_1mz(
     let cap1 = a.add(b, p, rm()).sub(c, p, rm()).add(&one, p, rm());
     let t1 = a_pref.mul(&hypergeom_at(a, b, &cap1, &omz, p, cc, left), p, rm());
     let f2 = hypergeom_at(
-        &c.sub(a, p, rm()),
-        &c.sub(b, p, rm()),
+        &a.neg_via_mul().add(&c, p, rm()),
+        &b.neg_via_mul().add(&c, p, rm()),
         &cab.add(&one, p, rm()),
         &omz,
         p,
@@ -306,7 +306,7 @@ fn cexp(z: &ExactComplex) -> i32 {
 
 /// Integer \(m=c-a-b\) (real, \(\lvert m\rvert\le 10\,000\)), if it is one.
 fn int_cab(a: &ExactComplex, b: &ExactComplex, c: &ExactComplex, p: usize) -> Option<i32> {
-    let cab = c.sub(a, p, rm()).sub(b, p, rm());
+    let cab = a.neg_via_mul().add(&c, p, rm()).sub(b, p, rm());
     as_i32_real_int(&cab, p)
 }
 
@@ -437,7 +437,15 @@ fn transform_1mz_log(
         let one = ExactComplex::one(p);
         let w = one.sub(z, p, rm());
         let wm = one.div(&powi_c(&w, m.unsigned_abs(), p), p, rm());
-        let f = hypergeom_at(&c.sub(a, p, rm()), &c.sub(b, p, rm()), c, z, p, cc, left);
+        let f = hypergeom_at(
+            &a.neg_via_mul().add(&c, p, rm()),
+            &b.neg_via_mul().add(&c, p, rm()),
+            c,
+            z,
+            p,
+            cc,
+            left,
+        );
         return wm.mul(&f, p, rm());
     }
     let m = m as u32;
@@ -463,7 +471,7 @@ fn transform_1mz_log(
 /// \(1/\delta\), \(\delta\) = distance of \(c-a-b\) to the nearest integer, and the two terms cancel
 /// to \(O(1)\). Returns \(\lceil\log_2(1/\delta)\rceil\) (0 when \(\delta\ge 1/2\)).
 fn near_int_loss(a: &ExactComplex, b: &ExactComplex, c: &ExactComplex, p: usize) -> usize {
-    let cab = c.sub(a, p, rm()).sub(b, p, rm());
+    let cab = a.neg_via_mul().add(&c, p, rm()).sub(b, p, rm());
     let e = |x: &ExactNum| -> i64 {
         if x.is_zero() {
             i64::MIN / 2
@@ -530,16 +538,16 @@ fn inv_term(
 ) -> ExactComplex {
     let one = ExactComplex::one(p);
     let gc = gamma_fixed(c, p, cc);
-    let gbma = gamma_fixed(&b.sub(a, p, rm()), p, cc);
+    let gbma = gamma_fixed(&a.neg_via_mul().add(&b, p, rm()), p, cc);
     let gb = gamma_fixed(b, p, cc);
-    let gcma = gamma_fixed(&c.sub(a, p, rm()), p, cc);
+    let gcma = gamma_fixed(&a.neg_via_mul().add(&c, p, rm()), p, cc);
     if gc.is_nan() || gbma.is_nan() || gb.is_nan() || gcma.is_nan() {
         return nan_pair(Error::InvalidArgument);
     }
     let pref = gc.mul(&gbma, p, rm()).div(&gb.mul(&gcma, p, rm()), p, rm());
     let pow = mz.pow(&a.neg_via_mul(), p, rm(), cc);
-    let ac1 = a.sub(c, p, rm()).add(&one, p, rm());
-    let ab1 = a.sub(b, p, rm()).add(&one, p, rm());
+    let ac1 = c.neg_via_mul().add(&a, p, rm()).add(&one, p, rm());
+    let ab1 = b.neg_via_mul().add(&a, p, rm()).add(&one, p, rm());
     pref.mul(&pow, p, rm())
         .mul(&hypergeom_at(a, &ac1, &ab1, inv, p, cc, left), p, rm())
 }
@@ -601,11 +609,12 @@ fn hypergeom_at(
     let next = left - 1;
     let one = ExactComplex::one(p);
     let omz = one.sub(z, p, rm());
-    let zm1 = z.sub(&one, p, rm());
+    let zm1 = one.neg_via_mul().add(&z, p, rm());
     if re_lt_half(z, p) && !is_c_zero(&zm1) {
         return pfaff(a, b, c, z, p, cc, next);
     }
-    if abs_lt_one(&omz, p) && !is_nonpos_integer(&c.sub(a, p, rm()).sub(b, p, rm())) {
+    if abs_lt_one(&omz, p) && !is_nonpos_integer(&a.neg_via_mul().add(&c, p, rm()).sub(b, p, rm()))
+    {
         return transform_1mz_guarded(a, b, c, z, p, cc, next);
     }
     let inv = one.div(z, p, rm());

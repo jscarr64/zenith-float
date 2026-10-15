@@ -181,8 +181,9 @@ where
     let n_grid = want
         .saturating_mul(QUADRATURE_BRACKET_MUL)
         .saturating_add(4);
-    let step = hi
-        .sub(lo, p, rm)
+    let step = lo
+        .neg_via_mul()
+        .add(&hi, p, rm)
         .div(&ExactNum::from_u32(n_grid as u32, p), p, rm);
     let mut prev_x = lo.clone();
     let mut prev_f = f(lo, p, rm, cc);
@@ -222,7 +223,7 @@ where
 fn map_ab(xi: &ExactNum, a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
     let two = ExactNum::from_u8(2, p);
     let mid = a.add(b, p, rm).div(&two, p, rm);
-    let half = b.sub(a, p, rm).div(&two, p, rm);
+    let half = a.neg_via_mul().add(&b, p, rm).div(&two, p, rm);
     mid.add(&half.mul(xi, p, rm), p, rm)
 }
 
@@ -322,8 +323,9 @@ where
     let wrk = work_p(p);
     let nodes = gauss_legendre_nodes(n, wrk, RoundingMode::None, cc)?;
     let two = ExactNum::from_u8(2, wrk);
-    let half = b
-        .sub(a, wrk, RoundingMode::None)
+    let half = a
+        .neg_via_mul()
+        .add(&b, wrk, RoundingMode::None)
         .div(&two, wrk, RoundingMode::None);
     let mut acc = ExactNum::new(wrk);
     for (xi, wi) in &nodes {
@@ -357,8 +359,9 @@ where
 {
     let wrk = work_p_de(p);
     let two = ExactNum::from_u8(2, wrk);
-    let half = b
-        .sub(a, wrk, RoundingMode::None)
+    let half = a
+        .neg_via_mul()
+        .add(&b, wrk, RoundingMode::None)
         .div(&two, wrk, RoundingMode::None);
     let mid = a
         .add(b, wrk, RoundingMode::None)
@@ -465,7 +468,7 @@ where
         }
         let s = tanh_sinh_sum(&mut f, a, b, &h, p, rm, cc)?;
         if let Some(pr) = &prev {
-            let err = s.sub(pr, p, rm).abs();
+            let err = pr.neg_via_mul().add(&s, p, rm).abs();
             if below(&err, &guard) {
                 return Some(s);
             }

@@ -881,7 +881,7 @@ impl ExactComplex {
         if ip.is_nan() || im.is_nan() {
             return None;
         }
-        let diff = im.sub(&ip, acc, RoundingMode::None);
+        let diff = ip.neg_via_mul().add(&im, acc, RoundingMode::None);
         if diff.is_nan() {
             return None;
         }
@@ -1045,7 +1045,7 @@ impl ExactComplex {
                 work_p,
                 RoundingMode::None,
             );
-            let hkp1 = hk.add(&rec, work_p, RoundingMode::None);
+            let hkp1 = rec.add(&hk, work_p, RoundingMode::None);
             let den = kfact.mul(&kp1fact, work_p, RoundingMode::None);
             let mut term = ExactComplex::from_real(
                 hk.add(&hkp1, work_p, RoundingMode::None)
@@ -1127,7 +1127,11 @@ impl ExactComplex {
         for k in 1..=series_term_cap(p) {
             let odd = ExactComplex::from_real(ExactNum::from_u32((2 * k - 1) as u32, p), p);
             let odd2 = odd.mul(&odd, p, RoundingMode::None);
-            prod = prod.mul(&mu.sub(&odd2, p, RoundingMode::None), p, RoundingMode::None);
+            prod = prod.mul(
+                &odd2.neg().add(&mu, p, RoundingMode::None),
+                p,
+                RoundingMode::None,
+            );
             kf = kf.mul(&ExactNum::from_u32(k as u32, p), p, RoundingMode::None);
             pz = pz.mul(&eight_z, p, RoundingMode::None);
             let term = prod.div(

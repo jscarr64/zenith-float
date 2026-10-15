@@ -70,9 +70,9 @@ fn max_dev3(
     z: &ExactComplex,
     p: usize,
 ) -> ExactNum {
-    let dx = c_abs(&an.sub(x, p, rm()), p);
-    let dy = c_abs(&an.sub(y, p, rm()), p);
-    let dz = c_abs(&an.sub(z, p, rm()), p);
+    let dx = c_abs(&x.neg_via_mul().add(&an, p, rm()), p);
+    let dy = c_abs(&y.neg_via_mul().add(&an, p, rm()), p);
+    let dz = c_abs(&z.neg_via_mul().add(&an, p, rm()), p);
     max_abs(&max_abs(&dx, &dy, p), &dz, p)
 }
 
@@ -90,7 +90,7 @@ fn carlson_rc(x: &ExactComplex, y: &ExactComplex, p: usize, cc: &mut Consts) -> 
     }
     // Shortcut 1/√x only when |x − y| < 2^-(p+8)|x| (first-order error (y − x)/(3x)); the
     // spread-based `close_enough` test (2^-(p/3+16)) was too loose for R_J's RC terms.
-    let dxy = x.sub(y, p, rm());
+    let dxy = y.neg_via_mul().add(&x, p, rm());
     let rel = c_abs(x, p).ldexp(-((p as i32) + 8), p, rm());
     if !is_c_zero(x) && matches!(c_abs(&dxy, p).compare(&rel), Some(o) if o < 0) {
         return c_u32(1, p).div(&x.sqrt(p, rm(), cc), p, rm());
@@ -151,9 +151,9 @@ fn rf_series(
     p: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
-    let xx = an.sub(x, p, rm()).div(an, p, rm());
-    let yy = an.sub(y, p, rm()).div(an, p, rm());
-    let zz = an.sub(z, p, rm()).div(an, p, rm());
+    let xx = x.neg_via_mul().add(&an, p, rm()).div(an, p, rm());
+    let yy = y.neg_via_mul().add(&an, p, rm()).div(an, p, rm());
+    let zz = z.neg_via_mul().add(&an, p, rm()).div(an, p, rm());
     let e2 = xx.mul(&yy, p, rm()).sub(&zz.mul(&zz, p, rm()), p, rm());
     let e3 = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
     let e2s = e2.mul(&e2, p, rm());
@@ -251,9 +251,9 @@ fn rd_series(
     p: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
-    let xx = an.sub(x, p, rm()).div(an, p, rm());
-    let yy = an.sub(y, p, rm()).div(an, p, rm());
-    let zz = an.sub(z, p, rm()).div(an, p, rm());
+    let xx = x.neg_via_mul().add(&an, p, rm()).div(an, p, rm());
+    let yy = y.neg_via_mul().add(&an, p, rm()).div(an, p, rm());
+    let zz = z.neg_via_mul().add(&an, p, rm()).div(an, p, rm());
     let e2 = xx.mul(&yy, p, rm()).sub(&zz.mul(&zz, p, rm()), p, rm());
     let e3 = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
     let e2s = e2.mul(&e2, p, rm());
@@ -371,10 +371,10 @@ fn rj_series(
     p: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
-    let xx = an.sub(x, p, rm()).div(an, p, rm());
-    let yy = an.sub(y, p, rm()).div(an, p, rm());
-    let zz = an.sub(z, p, rm()).div(an, p, rm());
-    let pp = an.sub(pv, p, rm()).div(an, p, rm());
+    let xx = x.neg_via_mul().add(&an, p, rm()).div(an, p, rm());
+    let yy = y.neg_via_mul().add(&an, p, rm()).div(an, p, rm());
+    let zz = z.neg_via_mul().add(&an, p, rm()).div(an, p, rm());
+    let pp = pv.neg_via_mul().add(&an, p, rm()).div(an, p, rm());
     let xyz = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
     let xy_xz_yz = xx
         .mul(&yy, p, rm())

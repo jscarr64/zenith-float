@@ -170,24 +170,26 @@ fn meijer_g_series(
             let mut gn = Vec::new();
             for (j, bj) in b.iter().enumerate().take(m) {
                 if j != h {
-                    gn.push(bj.sub(bh, p, RoundingMode::None));
+                    gn.push(bh.neg_via_mul().add(&bj, p, RoundingMode::None));
                 }
             }
             for aj in a.iter().take(n) {
-                gn.push(
-                    one.sub(aj, p, RoundingMode::None)
-                        .add(bh, p, RoundingMode::None),
-                );
+                gn.push(aj.neg_via_mul().add(&one, p, RoundingMode::None).add(
+                    bh,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let mut gd = Vec::new();
             for aj in a.iter().skip(n) {
-                gd.push(aj.sub(bh, p, RoundingMode::None));
+                gd.push(bh.neg_via_mul().add(&aj, p, RoundingMode::None));
             }
             for bj in b.iter().skip(m) {
-                gd.push(
-                    one.sub(bj, p, RoundingMode::None)
-                        .add(bh, p, RoundingMode::None),
-                );
+                gd.push(bj.neg_via_mul().add(&one, p, RoundingMode::None).add(
+                    bh,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let ratio = match gamma_ratio(&gn, &gd, p, cc) {
                 Err(()) => return GEval::Singular,
@@ -196,18 +198,20 @@ fn meijer_g_series(
             };
             let mut hn = Vec::with_capacity(pn);
             for aj in &a {
-                hn.push(
-                    one.sub(aj, p, RoundingMode::None)
-                        .add(bh, p, RoundingMode::None),
-                );
+                hn.push(aj.neg_via_mul().add(&one, p, RoundingMode::None).add(
+                    bh,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let mut hd = Vec::with_capacity(qn.saturating_sub(1));
             for (j, bj) in b.iter().enumerate() {
                 if j != h {
-                    hd.push(
-                        one.sub(bj, p, RoundingMode::None)
-                            .add(bh, p, RoundingMode::None),
-                    );
+                    hd.push(bj.neg_via_mul().add(&one, p, RoundingMode::None).add(
+                        bh,
+                        p,
+                        RoundingMode::None,
+                    ));
                 }
             }
             let f = hz.hypergeom_pfq(&hn, &hd, p, RoundingMode::None, cc);
@@ -240,24 +244,26 @@ fn meijer_g_series(
             let mut gn = Vec::new();
             for (j, aj) in a.iter().enumerate().take(n) {
                 if j != k {
-                    gn.push(ak.sub(aj, p, RoundingMode::None));
+                    gn.push(aj.neg_via_mul().add(&ak, p, RoundingMode::None));
                 }
             }
             for bj in b.iter().take(m) {
-                gn.push(
-                    one.sub(ak, p, RoundingMode::None)
-                        .add(bj, p, RoundingMode::None),
-                );
+                gn.push(ak.neg_via_mul().add(&one, p, RoundingMode::None).add(
+                    bj,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let mut gd = Vec::new();
             for bj in b.iter().skip(m) {
-                gd.push(ak.sub(bj, p, RoundingMode::None));
+                gd.push(bj.neg_via_mul().add(&ak, p, RoundingMode::None));
             }
             for aj in a.iter().skip(n) {
-                gd.push(
-                    one.sub(ak, p, RoundingMode::None)
-                        .add(aj, p, RoundingMode::None),
-                );
+                gd.push(ak.neg_via_mul().add(&one, p, RoundingMode::None).add(
+                    aj,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let ratio = match gamma_ratio(&gn, &gd, p, cc) {
                 Err(()) => return GEval::Singular,
@@ -266,10 +272,11 @@ fn meijer_g_series(
             };
             let mut hn = Vec::with_capacity(qn);
             for bj in &b {
-                hn.push(
-                    one.sub(ak, p, RoundingMode::None)
-                        .add(bj, p, RoundingMode::None),
-                );
+                hn.push(ak.neg_via_mul().add(&one, p, RoundingMode::None).add(
+                    bj,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let mut hd = Vec::with_capacity(pn.saturating_sub(1));
             for (j, aj) in a.iter().enumerate() {
@@ -285,7 +292,7 @@ fn meijer_g_series(
                 return GEval::Singular;
             }
             let expn = if r_is_one {
-                ak.sub(&one, p, RoundingMode::None)
+                one.neg_via_mul().add(&ak, p, RoundingMode::None)
             } else {
                 one.neg()
                     .add(&ak, p, RoundingMode::None)
@@ -344,7 +351,11 @@ fn max_int_cluster(xs: &[ExactNum], p: usize) -> usize {
                 if seen[v] {
                     continue;
                 }
-                if xs[u].sub(&xs[v], p, RoundingMode::None).is_int() {
+                if xs[v]
+                    .neg_via_mul()
+                    .add(&xs[u], p, RoundingMode::None)
+                    .is_int()
+                {
                     seen[v] = true;
                     stack.push(v);
                 }
@@ -387,7 +398,7 @@ fn values_agree(a: &ExactNum, b: &ExactNum, bits: usize) -> bool {
         return false;
     }
     let wp = bits.saturating_mul(2).max(128);
-    let d = a.sub(b, wp, RoundingMode::None).abs();
+    let d = b.neg_via_mul().add(&a, wp, RoundingMode::None).abs();
     if d.is_zero() {
         return true;
     }
@@ -1090,9 +1101,9 @@ fn segment_hits(z: &ExactNum, s: &ExactNum) -> bool {
 }
 
 fn min_dist(z: &ExactNum, sings: &[ExactNum], p: usize) -> ExactNum {
-    let mut m = z.sub(&sings[0], p, RoundingMode::None).abs();
+    let mut m = sings[0].neg_via_mul().add(&z, p, RoundingMode::None).abs();
     for s in &sings[1..] {
-        let d = z.sub(s, p, RoundingMode::None).abs();
+        let d = s.neg_via_mul().add(&z, p, RoundingMode::None).abs();
         if matches!(d.compare(&m), Some(c) if c < 0) {
             m = d;
         }
@@ -1141,7 +1152,7 @@ fn agrees_tight(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         return false;
     }
     let tight = p.saturating_mul(2).max(64);
-    let d = a.sub(b, tight, RoundingMode::None).abs();
+    let d = b.neg_via_mul().add(&a, tight, RoundingMode::None).abs();
     if d.is_zero() {
         return true;
     }
@@ -1391,7 +1402,7 @@ fn heun_g_ode(
     let zm1 = ExactNum::from_u8(1, p)
         .neg()
         .add(&z0, p, RoundingMode::None);
-    let zma = z0.sub(a, p, RoundingMode::None);
+    let zma = a.neg_via_mul().add(&z0, p, RoundingMode::None);
     let a0 = z0
         .mul(&zm1, p, RoundingMode::None)
         .mul(&zma, p, RoundingMode::None);
@@ -1634,7 +1645,7 @@ where
 {
     let acc = bits.saturating_add(32);
     for _ in 0..HEUN_STEP_MAX {
-        let rem = target.sub(&zc, p, RoundingMode::None);
+        let rem = zc.neg_via_mul().add(&target, p, RoundingMode::None);
         if close_enough(&rem, target, bits) {
             return if finite(&y) { Some(y) } else { None };
         }
@@ -1655,7 +1666,7 @@ where
         }
         let ode = ode_at(&zc)?;
         let (yn, ypn) = taylor_step(&ode, &y, &yp, &h, p, acc)?;
-        let next = zc.add(&h, p, RoundingMode::None);
+        let next = h.add(&zc, p, RoundingMode::None);
         if next.compare(&zc) == Some(0) {
             return if finite(&yn) { Some(yn) } else { None };
         }
@@ -1851,7 +1862,7 @@ fn fox_h_gauss(
     let mut m_fac = ExactNum::from_u8(1, p);
     for (bj, &bj_int) in b.iter().zip(b_int.iter()) {
         let base = ExactNum::from_i32(bj_int, p);
-        let expn = bj.sub(&half, p, RoundingMode::None);
+        let expn = half.neg_via_mul().add(&bj, p, RoundingMode::None);
         m_fac = m_fac.mul(&pow_real(&base, &expn, p, cc), p, RoundingMode::None);
     }
     for (ai, &ai_int) in a.iter().zip(a_int.iter()) {
