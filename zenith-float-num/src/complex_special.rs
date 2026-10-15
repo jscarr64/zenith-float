@@ -12,6 +12,7 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// L1 radius \(\lvert\mathrm{Re}\,z\rvert+\lvert\mathrm{Im}\,z\rvert\) below which
 /// the Faddeeva power series is used (Poppe–Wijers inner region).
@@ -87,8 +88,8 @@ fn l1_below_series_bound(z: &ExactComplex, p: usize) -> bool {
     let (re, im) = (z.re(), z.im());
     let s = match (re.is_negative(), im.is_negative()) {
         (false, false) => re.add(im, p, RoundingMode::None),
-        (false, true) => re.sub(im, p, RoundingMode::None),
-        (true, false) => im.sub(re, p, RoundingMode::None),
+        (false, true) => im.neg_via_mul().add(re, p, RoundingMode::None),
+        (true, false) => re.neg_via_mul().add(im, p, RoundingMode::None),
         (true, true) => re.neg_via_mul().sub(im, p, RoundingMode::None),
     };
     let bound = ExactNum::from_u32(FADDEEVA_SERIES_L1, p);
@@ -292,18 +293,19 @@ impl ExactComplex {
             let two_pi = cc
                 .pi(pw, RoundingMode::None)
                 .ldexp(1, pw, RoundingMode::None);
-            let k = im
-                .add(&pi, pw, RoundingMode::None)
+            let k = pi
+                .add(im, pw, RoundingMode::None)
                 .div(&two_pi, pw, RoundingMode::None)
                 .floor();
             if k.is_zero() {
                 return v;
             }
-            let im = k
-                .mul(&two_pi, pw, RoundingMode::None)
-                .neg()
-                .add(&im, pw, RoundingMode::None);
-            ExactComplex::new(v.re().clone(), im)
+            let (re, v_im) = v.into_parts();
+            let im =
+                k.mul(&two_pi, pw, RoundingMode::None)
+                    .neg()
+                    .add(&v_im, pw, RoundingMode::None);
+            ExactComplex::new(re, im)
         })
     }
 
