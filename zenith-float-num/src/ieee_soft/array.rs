@@ -2026,7 +2026,7 @@ fn eigen_wilkinson(
     if denom.is_zero() {
         return if b.is_negative() { c.add(b, p, rm) } else { c.sub(b, p, rm) };
     }
-    c.sub(&b.mul(b, p, rm).div(&denom, p, rm), p, rm)
+    b.mul(b, p, rm).div(&denom, p, rm).neg().add(&c, p, rm)
 }
 
 fn eigen_qr_sweep(

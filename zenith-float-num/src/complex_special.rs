@@ -299,11 +299,10 @@ impl ExactComplex {
             if k.is_zero() {
                 return v;
             }
-            let im = im.sub(
-                &k.mul(&two_pi, pw, RoundingMode::None),
-                pw,
-                RoundingMode::None,
-            );
+            let im = k
+                .mul(&two_pi, pw, RoundingMode::None)
+                .neg()
+                .add(&im, pw, RoundingMode::None);
             ExactComplex::new(v.re().clone(), im)
         })
     }
@@ -555,7 +554,7 @@ impl ExactComplex {
 
     fn ln_gamma_stirling(&self, p: usize, cc: &mut Consts) -> Self {
         let ln_z = self.ln(p, RoundingMode::None, cc);
-        let zmh = self.sub(&half_c(p), p, RoundingMode::None);
+        let zmh = half_c(p).neg().add(&self, p, RoundingMode::None);
         let mut s = zmh.mul(&ln_z, p, RoundingMode::None);
         s = s.sub(self, p, RoundingMode::None);
         let two_pi = two_c(p).mul(&pi_c(p, cc), p, RoundingMode::None);

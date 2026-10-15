@@ -734,8 +734,8 @@ impl ExactComplex {
     ) -> (Self, Option<i32>, Option<i32>) {
         let half = self.mul(&half_c(wp), wp, RoundingMode::None);
         let pow = half.pow(nu, wp, RoundingMode::None, cc);
-        let g = nu
-            .add(&ExactComplex::one(wp), wp, RoundingMode::None)
+        let g = ExactComplex::one(wp)
+            .add(&nu, wp, RoundingMode::None)
             .gamma(wp, RoundingMode::None, cc);
         let mut term = pow.div(&g, wp, RoundingMode::None);
         let mut sum = term.clone();
@@ -908,7 +908,8 @@ impl ExactComplex {
         let half = self.mul(&half_c(p), p, RoundingMode::None);
         let pow = half.pow(nu, p, RoundingMode::None, cc);
         let g =
-            nu.add(&ExactComplex::one(p), p, RoundingMode::None)
+            ExactComplex::one(p)
+                .add(&nu, p, RoundingMode::None)
                 .gamma(p, RoundingMode::None, cc);
         let mut term = pow.div(&g, p, RoundingMode::None);
         let mut sum = term.clone();
@@ -1099,15 +1100,11 @@ impl ExactComplex {
             p,
             RoundingMode::None,
         );
-        let chi = self.sub(
-            &two_nu_1.mul(&pi_c(p, cc), p, RoundingMode::None).div(
-                &four_c(p),
-                p,
-                RoundingMode::None,
-            ),
-            p,
-            RoundingMode::None,
-        );
+        let chi = two_nu_1
+            .mul(&pi_c(p, cc), p, RoundingMode::None)
+            .div(&four_c(p), p, RoundingMode::None)
+            .neg()
+            .add(&self, p, RoundingMode::None);
         let two_over = two_c(p).div(
             &pi_c(p, cc).mul(self, p, RoundingMode::None),
             p,

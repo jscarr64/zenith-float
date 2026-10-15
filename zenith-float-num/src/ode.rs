@@ -148,15 +148,13 @@ where
             wrk,
             RoundingMode::None,
         );
-        t = t0.add(
-            &h.mul(
+        t = h
+            .mul(
                 &ExactNum::from_u32((k + 1) as u32, wrk),
                 wrk,
                 RoundingMode::None,
-            ),
-            wrk,
-            RoundingMode::None,
-        );
+            )
+            .add(&t0, wrk, RoundingMode::None);
         if !finite(&t) || !finite(&y) {
             return None;
         }
@@ -210,15 +208,13 @@ where
             wrk,
             RoundingMode::None,
         );
-        t = t0.add(
-            &h.mul(
+        t = h
+            .mul(
                 &ExactNum::from_u32((k + 1) as u32, wrk),
                 wrk,
                 RoundingMode::None,
-            ),
-            wrk,
-            RoundingMode::None,
-        );
+            )
+            .add(&t0, wrk, RoundingMode::None);
         if !finite(&t) || !finite(&y) {
             return None;
         }
@@ -306,7 +302,7 @@ fn axpy(
     p: usize,
     rm: RoundingMode,
 ) -> ExactNum {
-    y.add(&h.mul(a, p, rm).mul(k, p, rm), p, rm)
+    h.mul(a, p, rm).mul(k, p, rm).add(&y, p, rm)
 }
 
 fn dp45_step<F>(
@@ -323,15 +319,15 @@ where
     F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
     let k1 = f(t, y, p, rm, cc);
-    let t2 = t.add(&h.mul(&tab.c2, p, rm), p, rm);
+    let t2 = h.mul(&tab.c2, p, rm).add(&t, p, rm);
     let y2 = axpy(y, h, &tab.a21, &k1, p, rm);
     let k2 = f(&t2, &y2, p, rm, cc);
 
-    let t3 = t.add(&h.mul(&tab.c3, p, rm), p, rm);
+    let t3 = h.mul(&tab.c3, p, rm).add(&t, p, rm);
     let y3 = axpy(&axpy(y, h, &tab.a31, &k1, p, rm), h, &tab.a32, &k2, p, rm);
     let k3 = f(&t3, &y3, p, rm, cc);
 
-    let t4 = t.add(&h.mul(&tab.c4, p, rm), p, rm);
+    let t4 = h.mul(&tab.c4, p, rm).add(&t, p, rm);
     let y4s = axpy(
         &axpy(&axpy(y, h, &tab.a41, &k1, p, rm), h, &tab.a42, &k2, p, rm),
         h,
@@ -342,7 +338,7 @@ where
     );
     let k4 = f(&t4, &y4s, p, rm, cc);
 
-    let t5 = t.add(&h.mul(&tab.c5, p, rm), p, rm);
+    let t5 = h.mul(&tab.c5, p, rm).add(&t, p, rm);
     let y5s = axpy(
         &axpy(
             &axpy(&axpy(y, h, &tab.a51, &k1, p, rm), h, &tab.a52, &k2, p, rm),
@@ -514,11 +510,9 @@ where
         } else {
             big
         };
-        let scale = atol.add(
-            &rtol.mul(ymax, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
+        let scale = rtol
+            .mul(ymax, wrk, RoundingMode::None)
+            .add(&atol, wrk, RoundingMode::None);
         let ok = scale.is_zero()
             || err.is_zero()
             || err.compare(&scale) == Some(-1)

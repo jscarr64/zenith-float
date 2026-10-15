@@ -194,7 +194,8 @@ where
         let x = if i == n_grid {
             hi.clone()
         } else {
-            lo.add(&step.mul(&ExactNum::from_u32(i as u32, p), p, rm), p, rm)
+            step.mul(&ExactNum::from_u32(i as u32, p), p, rm)
+                .add(&lo, p, rm)
         };
         let y = f(&x, p, rm, cc);
         if !finite(&y) {

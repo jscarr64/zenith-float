@@ -941,9 +941,10 @@ impl ExactComplex {
             .neg()
             .add(&self, p_x, RoundingMode::None)
             .sqrt(p_x, RoundingMode::None, cc);
-        let zp = Self::one(p_x)
-            .add(&self, p_x, RoundingMode::None)
-            .sqrt(p_x, RoundingMode::None, cc);
+        let zp =
+            Self::one(p_x)
+                .add(&self, p_x, RoundingMode::None)
+                .sqrt(p_x, RoundingMode::None, cc);
         zm.mul(&zp, p_x, RoundingMode::None)
             .add(&self, p_x, RoundingMode::None)
             .ln(p_x, RoundingMode::None, cc)

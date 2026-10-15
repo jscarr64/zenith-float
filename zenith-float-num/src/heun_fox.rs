@@ -487,8 +487,9 @@ fn near_small_int(x: &ExactNum, p: usize, lo: i32, hi: i32) -> Option<i32> {
         return Some(n);
     }
     for n in lo..=hi {
-        let d = x
-            .sub(&ExactNum::from_i32(n, p), p, RoundingMode::None)
+        let d = ExactNum::from_i32(n, p)
+            .neg()
+            .add(&x, p, RoundingMode::None)
             .abs();
         if d.is_zero()
             || d.exponent()
@@ -1007,11 +1008,9 @@ impl ExactNum {
                     RoundingMode::None,
                 )
                 .sub(q, wrk, RoundingMode::None);
-            let coef_nm1 = alpha.add(
-                &eps.mul(&nm1, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            );
+            let coef_nm1 =
+                eps.mul(&nm1, wrk, RoundingMode::None)
+                    .add(&alpha, wrk, RoundingMode::None);
             let b_next = coef_n
                 .mul(&b, wrk, RoundingMode::None)
                 .add(
@@ -1304,7 +1303,9 @@ fn heun_c_coefs(
                 RoundingMode::None,
             )
             .sub(q, p, RoundingMode::None);
-        let coef_nm1 = alpha.add(&eps.mul(&nm1, p, RoundingMode::None), p, RoundingMode::None);
+        let coef_nm1 = eps
+            .mul(&nm1, p, RoundingMode::None)
+            .add(&alpha, p, RoundingMode::None);
         let b_next = coef_n
             .mul(&b, p, RoundingMode::None)
             .add(
@@ -1508,7 +1509,9 @@ fn taylor_step(
     let mut c_k = y.clone();
     let mut c_kp1 = yp.clone();
     let mut hpow = h.clone();
-    let mut sum = y.add(&yp.mul(h, p, RoundingMode::None), p, RoundingMode::None);
+    let mut sum = yp
+        .mul(h, p, RoundingMode::None)
+        .add(&y, p, RoundingMode::None);
     let mut dsum = yp.clone();
     let mut peak_y = i32::MIN;
     let mut peak_d = i32::MIN;
@@ -1798,7 +1801,7 @@ fn fox_h_gauss(
     for (ai, &ai_int) in a.iter().zip(a_int.iter()) {
         let aif = ExactNum::from_i32(ai_int, p);
         for k in 0..ai_int {
-            let num = ai.add(&ExactNum::from_i32(k, p), p, RoundingMode::None);
+            let num = ExactNum::from_i32(k, p).add(&ai, p, RoundingMode::None);
             a_tilde.push(num.div(&aif, p, RoundingMode::None));
         }
     }
@@ -1806,7 +1809,7 @@ fn fox_h_gauss(
     for (bj, &bj_int) in b.iter().zip(b_int.iter()) {
         let bif = ExactNum::from_i32(bj_int, p);
         for k in 0..bj_int {
-            let num = bj.add(&ExactNum::from_i32(k, p), p, RoundingMode::None);
+            let num = ExactNum::from_i32(k, p).add(&bj, p, RoundingMode::None);
             b_tilde.push(num.div(&bif, p, RoundingMode::None));
         }
     }
