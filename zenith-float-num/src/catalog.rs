@@ -846,7 +846,10 @@ impl ExactNum {
             let pref = self
                 .div(&two, wrk, RoundingMode::None)
                 .pow(
-                    &nu.sub(&half, wrk, RoundingMode::None),
+                    &ExactNum::from_u8(1, wrk)
+                        .div(&two, wrk, RoundingMode::None)
+                        .neg()
+                        .add(&nu, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                     cc,
@@ -854,7 +857,9 @@ impl ExactNum {
                 .mul(&two, wrk, RoundingMode::None)
                 .div(
                     &pi.mul(
-                        &nu.add(&half, wrk, RoundingMode::None)
+                        &ExactNum::from_u8(1, wrk)
+                            .div(&two, wrk, RoundingMode::None)
+                            .add(&nu, wrk, RoundingMode::None)
                             .gamma(wrk, RoundingMode::None, cc),
                         wrk,
                         RoundingMode::None,

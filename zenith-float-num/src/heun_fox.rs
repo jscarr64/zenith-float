@@ -1387,7 +1387,9 @@ fn heun_g_ode(
 ) -> Option<OdePoly> {
     let one = ExactNum::from_u8(1, p);
     let eps = heun_eps(alpha, beta, gamma, delta, p);
-    let zm1 = z0.sub(&one, p, RoundingMode::None);
+    let zm1 = ExactNum::from_u8(1, p)
+        .neg()
+        .add(&z0, p, RoundingMode::None);
     let zma = z0.sub(a, p, RoundingMode::None);
     let a0 = z0
         .mul(&zm1, p, RoundingMode::None)
@@ -1457,7 +1459,9 @@ fn heun_c_ode(
     p: usize,
 ) -> Option<OdePoly> {
     let one = ExactNum::from_u8(1, p);
-    let zm1 = z0.sub(&one, p, RoundingMode::None);
+    let zm1 = ExactNum::from_u8(1, p)
+        .neg()
+        .add(&z0, p, RoundingMode::None);
     let a0 = z0.mul(&zm1, p, RoundingMode::None);
     if a0.is_zero() || !finite(&a0) {
         return None;

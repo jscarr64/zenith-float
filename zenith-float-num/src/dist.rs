@@ -168,7 +168,7 @@ impl ExactNum {
         let pw = work_p(p);
         let none = RoundingMode::None;
         let one = ExactNum::from_u8(1, pw);
-        let am1 = alpha.sub(&one, pw, none);
+        let am1 = ExactNum::from_u8(1, pw).neg().add(&alpha, pw, none);
         let xb = self.div(beta, pw, none);
         let num = self
             .pow(&am1, pw, none, cc)
@@ -210,8 +210,8 @@ impl ExactNum {
         let pw = work_p(p);
         let none = RoundingMode::None;
         let one = ExactNum::from_u8(1, pw);
-        let am1 = alpha.sub(&one, pw, none);
-        let bm1 = beta.sub(&one, pw, none);
+        let am1 = ExactNum::from_u8(1, pw).neg().add(&alpha, pw, none);
+        let bm1 = ExactNum::from_u8(1, pw).neg().add(&beta, pw, none);
         let num = self.pow(&am1, pw, none, cc).mul(
             &one.sub(self, pw, none).pow(&bm1, pw, none, cc),
             pw,
@@ -241,7 +241,9 @@ impl ExactNum {
         let pw = work_p(p);
         let none = RoundingMode::None;
         let one = ExactNum::from_u8(1, pw);
-        let kf = self.add(&one, pw, none).gamma(pw, none, cc);
+        let kf = ExactNum::from_u8(1, pw)
+            .add(&self, pw, none)
+            .gamma(pw, none, cc);
         lambda
             .pow(self, pw, none, cc)
             .mul(&lambda.neg_via_mul().exp(pw, none, cc), pw, none)
@@ -332,7 +334,7 @@ impl ExactNum {
         let none = RoundingMode::None;
         let one = ExactNum::from_u8(1, pw);
         let two = ExactNum::from_u8(2, pw);
-        let np1 = nu.add(&one, pw, none);
+        let np1 = ExactNum::from_u8(1, pw).add(&nu, pw, none);
         let half_np1 = np1.div(&two, pw, none);
         let half_n = nu.div(&two, pw, none);
         let pref = half_np1.gamma(pw, none, cc).div(
