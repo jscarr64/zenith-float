@@ -1854,14 +1854,14 @@ impl ExactNum {
     }
 
     /// Split `self = m · 2^e` with `m` in `[0.5, 1)` (zeros return `(0, 0)`; Inf/NaN return `(self, 0)`).
-    pub fn frexp(&self) -> (Self, Exponent) {
-        match &self.inner {
+    pub fn frexp(self) -> (Self, Exponent) {
+        match self.inner {
             Flavor::Value(v) => match v.frexp() {
                 Ok((m, e)) => (m.into(), e),
                 Err(err) => (Self::nan(Some(err)), 0),
             },
             Flavor::Inf(s) => (Self::inf_with_sign(s.is_positive()), 0),
-            Flavor::NaN(err) => (Self::nan(*err), 0),
+            Flavor::NaN(err) => (Self::nan(err), 0),
         }
     }
 
@@ -5293,7 +5293,7 @@ mod special_arg_tests {
     #[test]
     fn frexp_and_ldexp_keep_specials() {
         for n in nans() {
-            let (m, e) = n.frexp();
+            let (m, e) = ExactNum::nan(n.err()).frexp();
             same_nan(&m, &n);
             assert_eq!(e, 0);
             same_nan(&n.ldexp(3, P, RM), &n);

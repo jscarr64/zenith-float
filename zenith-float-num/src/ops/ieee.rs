@@ -7,14 +7,13 @@ use crate::{Exponent, RoundingMode, Sign};
 
 impl ExactNumNumber {
     /// Split into a mantissa in `[0.5, 1)` and a power of two: `self = m · 2^e`.
-    pub fn frexp(&self) -> Result<(Self, Exponent), Error> {
+    pub fn frexp(mut self) -> Result<(Self, Exponent), Error> {
         if self.is_zero() {
-            return Ok((self.clone()?, 0));
+            return Ok((self, 0));
         }
         let e = self.exponent();
-        let mut m = self.clone()?;
-        m.set_exponent(0);
-        Ok((m, e))
+        self.set_exponent(0);
+        Ok((self, e))
     }
 
     /// `self · 2^n` (same as `ldexp` / integer `scalb`).
@@ -88,7 +87,7 @@ mod tests {
     fn frexp_ldexp_roundtrip() {
         let rm = RoundingMode::ToEven;
         let x = ExactNum::from_word(6, DEFAULT_P);
-        let (m, e) = x.frexp();
+        let (m, e) = ExactNum::from_word(6, DEFAULT_P).frexp();
         let y = m.ldexp(e, DEFAULT_P, rm);
         assert_eq!(x.compare(&y), Some(0));
         assert_eq!(
