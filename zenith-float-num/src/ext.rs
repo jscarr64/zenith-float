@@ -128,6 +128,27 @@ impl ExactNum {
         self.add_op(d2, p, rm, false)
     }
 
+    /// `a + b` with both operands borrowed: the sanctioned form for a site where **both operands are
+    /// still needed afterwards**. The sum is built in a fresh buffer by the same kernel as [`Self::add`]
+    /// (the zero-aware kernel branch included); neither operand is copied. The result, its signs of zero,
+    /// both inexact flags, Inf/NaN handling and subnormal results are those of `add`.
+    ///
+    /// Use [`Self::add`] when the first operand is dead after the call. Every use of `add_ref` and
+    /// `sub_ref` in library code is counted by `tools/rules_scan.sh` (`tools/ref_sum_count_baseline.txt`,
+    /// which may only go down).
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn add_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {
+        a.add_op(b, p, rm, false)
+    }
+
+    /// `a - b` with both operands borrowed. Same contract as [`Self::add_ref`], for subtraction.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn sub_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {
+        a.sub_op(b, p, rm, false)
+    }
+
     /// Adds `d2` to `self` and returns the result of the operation.
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer addition.
@@ -5765,6 +5786,70 @@ mod grid_digest_tests {
         assert_eq!(count, OPERANDS * 11 * 6);
         println!("round grid digest = {}", h.finish());
         assert_eq!(h.finish(), 2_584_562_321_548_619_649);
+    }
+
+    /// `ExactNum::add_ref` / `sub_ref` (both operands borrowed) hash to the same digest as the
+    /// `add`/`sub` grid pinned on the pre-rule-R code (`add_sub_grid_digest`): same grid, same order.
+    #[test]
+    fn add_ref_sub_ref_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
+                for p in [1usize, 53, 64, 65, 128, 192, 200] {
+                    for rm in RMS {
+                        digest(&ExactNum::add_ref(&operand(i), &operand(j), p, rm), &mut h);
+                        digest(&ExactNum::sub_ref(&operand(i), &operand(j), p, rm), &mut h);
+                        count += 2;
+                    }
+                }
+                let (ei, ej) = (operand(i).exponent(), operand(j).exponent());
+                let near = match (ei, ej) {
+                    (Some(a), Some(b)) => a.abs_diff(b) < 4096,
+                    _ => true,
+                };
+                if near {
+                    digest(&operand(i).add_full_prec(&operand(j)), &mut h);
+                    digest(&operand(i).sub_full_prec(&operand(j)), &mut h);
+                    count += 2;
+                }
+            }
+        }
+        assert_eq!(count, 45_030);
+        assert_eq!(h.finish(), 7_232_426_507_586_278_165);
+    }
+
+    /// `ExactComplex::add_ref` / `sub_ref` against the complex add/sub grid pinned on the old code.
+    #[test]
+    fn complex_add_ref_sub_ref_grid_digest() {
+        use crate::ExactComplex;
+        let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for a in parts {
+            for b in parts {
+                for c in parts {
+                    for d in parts {
+                        for p in [1usize, 64, 128] {
+                            for rm in RMS {
+                                let z1 = ExactComplex::new(operand(a), operand(b));
+                                let z2 = ExactComplex::new(operand(c), operand(d));
+                                for r in [
+                                    ExactComplex::add_ref(&z1, &z2, p, rm),
+                                    ExactComplex::sub_ref(&z1, &z2, p, rm),
+                                ] {
+                                    digest(r.re(), &mut h);
+                                    digest(r.im(), &mut h);
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        assert_eq!(h.finish(), 10_853_667_709_392_583_003);
     }
 
     #[test]
