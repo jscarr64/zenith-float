@@ -5504,6 +5504,29 @@ mod add_sub_zero_tests {
         ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, RoundingMode::ToEven)
     }
 
+    /// Full-precision sum with a zero operand is the other operand, exactly. (Before the zero-aware
+    /// kernel branch this returned a value with an empty mantissa, flagged inexact.)
+    #[test]
+    fn full_prec_with_zero_operand_is_the_other_operand() {
+        for x in [
+            ExactNum::from_u8(1, 64),
+            ExactNum::from_u8(7, 64).neg(),
+            third(64),
+            third(192).neg(),
+        ] {
+            for neg in [false, true] {
+                let sum = zero(neg).add_full_prec(&x);
+                let diff = zero(neg).sub_full_prec(&x);
+                let sum2 = x.add_full_prec(&zero(neg));
+                assert!(sum == x, "0 + x");
+                assert_eq!(sum.inexact(), x.inexact(), "0 + x flag");
+                assert!(diff == x.neg_via_mul(), "0 - x");
+                assert!(sum2 == x, "x + 0");
+                assert_eq!(sum2.exponent(), x.exponent());
+            }
+        }
+    }
+
     #[test]
     fn zero_plus_zero_sign_rule() {
         for rm in RMS {
@@ -5752,6 +5775,8 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 45_030);
         println!("add/sub grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 14_948_210_774_588_920_455);
+        // Differs from the digest pinned on the pre-kernel-branch code in exactly 40 results: full-precision
+        // sums with a zero operand (see `full_prec_with_zero_operand_is_the_other_operand`).
+        assert_eq!(h.finish(), 7_232_426_507_586_278_165);
     }
 }

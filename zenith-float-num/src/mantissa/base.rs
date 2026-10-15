@@ -380,7 +380,10 @@ impl Mantissa {
             full_prec,
         } = spec;
         debug_assert!(self.m[self.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
-        debug_assert!(m2.m[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
+        // A zero `m2` (with `m2_shift` > 0) sums `self` with nothing: the result is `self` written out and
+        // rounded by the code below, which is how `add` and `sub` handle a zero operand.
+        debug_assert!(m2.is_zero() || m2.m[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
+        debug_assert!(!m2.is_zero() || m2_shift > 0);
 
         let p = Self::bit_len_to_word_len(p);
         let mut c = 0;

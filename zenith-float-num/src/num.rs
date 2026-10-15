@@ -686,37 +686,47 @@ impl ExactNumNumber {
 
         let mut d3 = Self::new(0)?;
 
-        // one of the args is zero
+        // Both operands are zero: the result is a zero of precision `p`, signed by the rules for zeros.
         if self.m.is_zero() && d2.m.is_zero() {
             let other = if op < 0 { d2.s.invert() } else { d2.s };
             let negative =
                 if self.s == other { self.s == Sign::Neg } else { rm == RoundingMode::Down };
-            let mut ret = if op < 0 { d2.neg()? } else { d2.clone()? };
-            let inputs = ret.inexact;
-            ret.inexact = false;
-            ret.set_precision(p, rm)?;
-            ret.finish_flags(inputs, per_op);
+            let mut ret = Self::new(p)?;
+            ret.finish_flags(d2.inexact, per_op);
             ret.set_sign(if negative { Sign::Neg } else { Sign::Pos });
             return Ok(ret);
         }
 
-        if self.m.is_zero() {
-            let mut ret = if op < 0 { d2.neg() } else { d2.clone() }?;
-            let inputs = ret.inexact;
-            ret.inexact = false;
-            ret.set_precision(p, rm)?;
-            ret.finish_flags(inputs, per_op);
-
-            return Ok(ret);
-        }
-
-        if d2.m.is_zero() {
-            let mut ret = self.clone()?;
-            let inputs = ret.inexact;
-            ret.inexact = false;
-            ret.set_precision(p, rm)?;
-            ret.finish_flags(inputs, per_op);
-
+        // One operand is zero: the general kernel sums the other operand with a zero mantissa, so the
+        // result is written (and rounded to `p`) by the same code as every other sum.
+        if self.m.is_zero() || d2.m.is_zero() {
+            let (src, sign) = if self.m.is_zero() {
+                (d2, if op < 0 { d2.s.invert() } else { d2.s })
+            } else {
+                (self, self.s)
+            };
+            let (e0, m0_opt) = src.normalize()?;
+            let m0 = m0_opt.as_ref().unwrap_or(&src.m);
+            let inputs = src.inexact;
+            let mut inexact = false;
+            d3.s = sign;
+            let zero = Mantissa::new(WORD_BIT_SIZE)?;
+            let (shift, m3) = m0.abs_add(
+                &zero,
+                AddSubSpec {
+                    p,
+                    m2_shift: 1,
+                    rm,
+                    is_positive: d3.is_positive(),
+                    full_prec,
+                },
+                &mut inexact,
+            )?;
+            let mut ret = Self::finish_sum(d3, e0 - shift, m3, (inexact, inputs), rm, per_op)?;
+            if ret.is_zero() {
+                // A subnormal operand rounded to zero keeps the minimal exponent, as `set_precision` left it.
+                ret.e = EXPONENT_MIN;
+            }
             return Ok(ret);
         }
 
@@ -728,7 +738,7 @@ impl ExactNumNumber {
         let inputs = self.inexact || d2.inexact;
         let mut inexact = false;
 
-        let mut e;
+        let e;
         let (shift, m3) = if (self.s != d2.s && op >= 0) || (op < 0 && self.s == d2.s) {
             // subtract
             let cmp = self.abs_cmp(d2);
@@ -801,13 +811,25 @@ impl ExactNumNumber {
             }
         }?;
 
-        d3.inexact |= inexact;
-
         #[cfg(not(target_pointer_width = "32"))]
         {
             debug_assert!(shift <= i64::MAX / 2 && e >= i64::MIN / 2);
         }
-        e -= shift;
+        Self::finish_sum(d3, e - shift, m3, (inexact, inputs), rm, per_op)
+    }
+
+    /// Writes the exponent and mantissa of a finished sum into `d3` (sign already set) and sets the flags.
+    /// `e` is the exponent after the normalization shift; `flags` is (this sum rounded, an input was inexact).
+    fn finish_sum(
+        mut d3: Self,
+        e: i64,
+        m3: Mantissa,
+        flags: (bool, bool),
+        rm: RoundingMode,
+        per_op: bool,
+    ) -> Result<Self, Error> {
+        let (inexact, inputs) = flags;
+        d3.inexact |= inexact;
 
         if e > EXPONENT_MAX as i64 {
             return Err(Error::ExponentOverflow(d3.s));
