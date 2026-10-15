@@ -81,10 +81,18 @@ impl BenchFloat for ZenithFloat {
         let cc = Rc::clone(&state.cc);
         let result = match task {
             "add" => task_for_two_args(values, |a, b| {
-                Self::new(a.inner.add(b.inner(), a.p(), a.rm()), Rc::clone(&cc), a.p())
+                Self::new(
+                    ExactNum::add_ref(&a.inner, b.inner(), a.p(), a.rm()),
+                    Rc::clone(&cc),
+                    a.p(),
+                )
             }),
             "sub" => task_for_two_args(values, |a, b| {
-                Self::new(a.inner.sub(b.inner(), a.p(), a.rm()), Rc::clone(&cc), a.p())
+                Self::new(
+                    ExactNum::sub_ref(&a.inner, b.inner(), a.p(), a.rm()),
+                    Rc::clone(&cc),
+                    a.p(),
+                )
             }),
             "mul" => task_for_two_args(values, |a, b| {
                 Self::new(a.inner.mul(b.inner(), a.p(), a.rm()), Rc::clone(&cc), a.p())

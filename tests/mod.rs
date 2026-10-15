@@ -13,8 +13,8 @@ use zenith_float_num::{
 fn native_operators() {
     let a = ExactNum::from(6);
     let b = ExactNum::from(2);
-    assert_eq!((&a + &b).compare(&ExactNum::from(8)), Some(0));
-    assert_eq!((&a - &b).compare(&ExactNum::from(4)), Some(0));
+    assert_eq!((a.clone() + &b).compare(&ExactNum::from(8)), Some(0));
+    assert_eq!((a.clone() - &b).compare(&ExactNum::from(4)), Some(0));
     assert_eq!((&a * &b).compare(&ExactNum::from(12)), Some(0));
     assert_eq!((&a / &b).compare(&ExactNum::from(3)), Some(0));
 }
@@ -337,7 +337,7 @@ fn macro_run_cexpr_tests() {
     assert!(tiny_part(cpi.im(), p) && tiny_part(pi0.im(), p));
 
     let back = cexpr!(ln(exp(x)), &mut ctx);
-    let d = back.re().sub(x.re(), p, RoundingMode::None).abs();
+    let d = back.re().clone().sub(x.re(), p, RoundingMode::None).abs();
     assert!(d.exponent().unwrap_or(0) < -((p as i32) / 8));
     assert!(tiny_part(back.im(), p));
 

@@ -30,7 +30,7 @@ fn traverse_binary(
             quote!({
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
-                let ret = zenith_float::ExactComplex::add(
+                let ret = zenith_float::ExactComplex::add_ref(
                     &arg1,
                     &arg2,
                     p_wrk,
@@ -64,7 +64,7 @@ fn traverse_binary(
             quote!({
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
-                let ret = zenith_float::ExactComplex::sub(
+                let ret = zenith_float::ExactComplex::sub_ref(
                     &arg1,
                     &arg2,
                     p_wrk,

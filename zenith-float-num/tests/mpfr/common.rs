@@ -72,7 +72,7 @@ macro_rules! test_zf_op {
 
 macro_rules! test_zf_op_no_cc {
     ($eq:literal, $n1:ident, $n2:ident, $zf_op:ident, $f1:ident, $f2:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
-        let n3 = ExactNum::$zf_op(&($n1), &($n2), $p, $rm);
+        let n3 = ($n1).clone().$zf_op(&($n2), $p, $rm);
 
         let mut f3 = Float::with_val($p as u32, 1);
 
@@ -233,7 +233,7 @@ pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, c
             op
         );
 
-        let d = n.sub(&n2, 1, RoundingMode::None).abs();
+        let d = n.clone().sub(&n2, 1, RoundingMode::None).abs();
         assert!(
             d.exponent().is_some(),
             "{} zenith {:?}, MPFR {}, difference {:?}",

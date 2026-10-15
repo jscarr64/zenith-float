@@ -79,21 +79,21 @@ fn subnormal_band_every_mode() {
                 let cases: [(&str, ExactNum, MpOp); 5] = [
                     (
                         "mul",
-                        x.mul(&y, p, rm),
+                        x.clone().mul(&y, p, rm),
                         Box::new(|r: &mut Float, rnd| unsafe {
                             mpfr::mul(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), rnd)
                         }),
                     ),
                     (
                         "add",
-                        x.add(&z, p, rm),
+                        x.clone().add(&z, p, rm),
                         Box::new(|r: &mut Float, rnd| unsafe {
                             mpfr::add(r.as_raw_mut(), fx.as_raw(), fz.as_raw(), rnd)
                         }),
                     ),
                     (
                         "sub",
-                        x.sub(&z, p, rm),
+                        x.clone().sub(&z, p, rm),
                         Box::new(|r: &mut Float, rnd| unsafe {
                             mpfr::sub(r.as_raw_mut(), fx.as_raw(), fz.as_raw(), rnd)
                         }),
