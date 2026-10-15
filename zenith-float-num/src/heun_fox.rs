@@ -281,10 +281,11 @@ fn meijer_g_series(
             let mut hd = Vec::with_capacity(pn.saturating_sub(1));
             for (j, aj) in a.iter().enumerate() {
                 if j != k {
-                    hd.push(
-                        one.add(aj, p, RoundingMode::None)
-                            .sub(ak, p, RoundingMode::None),
-                    );
+                    hd.push(ExactNum::from_u8(1, p).add(aj, p, RoundingMode::None).sub(
+                        ak,
+                        p,
+                        RoundingMode::None,
+                    ));
                 }
             }
             let f = hz.hypergeom_pfq(&hn, &hd, p, RoundingMode::None, cc);
@@ -855,7 +856,7 @@ impl ExactNum {
             RoundingMode::None,
         );
         let mut zp = self.clone();
-        let mut sum = c_prev.add(
+        let mut sum = ExactNum::from_u8(1, wrk).add(
             &c.mul(&zp, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
@@ -873,7 +874,7 @@ impl ExactNum {
             let qj = jf.mul(
                 &jm1.add(gamma, wrk, RoundingMode::None)
                     .mul(
-                        &one.add(a, wrk, RoundingMode::None),
+                        &ExactNum::from_u8(1, wrk).add(a, wrk, RoundingMode::None),
                         wrk,
                         RoundingMode::None,
                     )
@@ -993,7 +994,7 @@ impl ExactNum {
         let mut b_prev = ExactNum::from_u8(1, wrk);
         let mut b = q.neg_via_mul().div(gamma, wrk, RoundingMode::None);
         let mut zp = self.clone();
-        let mut sum = b_prev.add(
+        let mut sum = ExactNum::from_u8(1, wrk).add(
             &b.mul(&zp, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
@@ -1003,7 +1004,7 @@ impl ExactNum {
             let nm1 = ExactNum::from_u32((n - 1) as u32, wrk);
             let np1 = ExactNum::from_u32((n + 1) as u32, wrk);
             let left = np1.mul(
-                &nf.add(gamma, wrk, RoundingMode::None),
+                &ExactNum::from_u32(n as u32, wrk).add(gamma, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             );
@@ -1243,7 +1244,11 @@ fn heun_g_coefs(
         );
         let qj = jf.mul(
             &jm1.add(gamma, p, RoundingMode::None)
-                .mul(&one.add(a, p, RoundingMode::None), p, RoundingMode::None)
+                .mul(
+                    &ExactNum::from_u8(1, p).add(a, p, RoundingMode::None),
+                    p,
+                    RoundingMode::None,
+                )
                 .add(&a.mul(delta, p, RoundingMode::None), p, RoundingMode::None)
                 .add(&eps, p, RoundingMode::None),
             p,

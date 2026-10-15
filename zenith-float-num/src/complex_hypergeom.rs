@@ -237,7 +237,7 @@ fn transform_1mz(
     left: u32,
 ) -> ExactComplex {
     let one = ExactComplex::one(p);
-    let omz = one.sub(z, p, rm());
+    let omz = ExactComplex::one(p).sub(z, p, rm());
     let cab = a.neg_via_mul().add(&c, p, rm()).sub(b, p, rm());
     if is_nonpos_integer(&cab) || is_nonpos_integer(&cab.neg_via_mul()) {
         return nan_pair(Error::InvalidArgument);
@@ -267,7 +267,7 @@ fn transform_1mz(
     let f2 = hypergeom_at(
         &a.neg_via_mul().add(&c, p, rm()),
         &b.neg_via_mul().add(&c, p, rm()),
-        &cab.add(&one, p, rm()),
+        &one.add(&cab, p, rm()),
         &omz,
         p,
         cc,
@@ -329,7 +329,7 @@ fn log_case_sum(
     cc: &mut Consts,
 ) -> Option<(ExactComplex, i32)> {
     let one = ExactComplex::one(p);
-    let w = one.sub(z, p, rm());
+    let w = ExactComplex::one(p).sub(z, p, rm());
     let re = |v: u32| ExactComplex::from_real(ExactNum::from_u32(v, p), p);
     let mf = re(m);
     let gc = c.gamma_at(p, cc);
@@ -435,7 +435,7 @@ fn transform_1mz_log(
 ) -> ExactComplex {
     if m < 0 {
         let one = ExactComplex::one(p);
-        let w = one.sub(z, p, rm());
+        let w = ExactComplex::one(p).sub(z, p, rm());
         let wm = one.div(&powi_c(&w, m.unsigned_abs(), p), p, rm());
         let f = hypergeom_at(
             &a.neg_via_mul().add(&c, p, rm()),
@@ -608,7 +608,7 @@ fn hypergeom_at(
     }
     let next = left - 1;
     let one = ExactComplex::one(p);
-    let omz = one.sub(z, p, rm());
+    let omz = ExactComplex::one(p).sub(z, p, rm());
     let zm1 = one.neg_via_mul().add(&z, p, rm());
     if re_lt_half(z, p) && !is_c_zero(&zm1) {
         return pfaff(a, b, c, z, p, cc, next);

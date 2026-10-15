@@ -215,7 +215,7 @@ fn hypergeom_2f0_lentz(
             )
             .mul(w, work_p, RoundingMode::None)
             .div(&kk, work_p, RoundingMode::None);
-        d = one.add(
+        d = ExactComplex::one(work_p).add(
             &ak.mul(&d, work_p, RoundingMode::None),
             work_p,
             RoundingMode::None,

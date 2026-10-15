@@ -1548,7 +1548,9 @@ impl ExactNum {
             ExactNum::from_i8(-1, wrk).sub(&d, wrk, RoundingMode::None)
         } else if matches!(self.compare(&ExactNum::from_u8(1, wrk)), Some(c) if c > 0) {
             let l = self.ln(wrk, RoundingMode::None, cc);
-            l.sub(&l.ln(wrk, RoundingMode::None, cc), wrk, RoundingMode::None)
+            l.ln(wrk, RoundingMode::None, cc)
+                .neg()
+                .add(&l, wrk, RoundingMode::None)
         } else {
             self.clone()
         };
@@ -1580,11 +1582,10 @@ impl ExactNum {
                     wrk,
                     RoundingMode::None,
                 );
-            let nxt = w.sub(
-                &num.div(&den, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            );
+            let nxt = num
+                .div(&den, wrk, RoundingMode::None)
+                .neg()
+                .add(&w, wrk, RoundingMode::None);
             let err = w.neg_via_mul().add(&nxt, wrk, RoundingMode::None).abs();
             w = nxt;
             if under_word(&err, p) {

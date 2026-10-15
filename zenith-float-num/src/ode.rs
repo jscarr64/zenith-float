@@ -108,24 +108,18 @@ where
     ys.push(y.clone());
     for k in 0..n_steps {
         let k1 = f(&t, &y, wrk, RoundingMode::None, cc);
-        let y2 = y.add(
-            &half_h.mul(&k1, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
+        let y2 = half_h
+            .mul(&k1, wrk, RoundingMode::None)
+            .add(&y, wrk, RoundingMode::None);
         let t2 = t.add(&half_h, wrk, RoundingMode::None);
         let k2 = f(&t2, &y2, wrk, RoundingMode::None, cc);
-        let y3 = y.add(
-            &half_h.mul(&k2, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
+        let y3 = half_h
+            .mul(&k2, wrk, RoundingMode::None)
+            .add(&y, wrk, RoundingMode::None);
         let k3 = f(&t2, &y3, wrk, RoundingMode::None, cc);
-        let y4 = y.add(
-            &h.mul(&k3, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
+        let y4 = h
+            .mul(&k3, wrk, RoundingMode::None)
+            .add(&y, wrk, RoundingMode::None);
         let t4 = t.add(&h, wrk, RoundingMode::None);
         let k4 = f(&t4, &y4, wrk, RoundingMode::None, cc);
         if !finite(&k1) || !finite(&k2) || !finite(&k3) || !finite(&k4) {

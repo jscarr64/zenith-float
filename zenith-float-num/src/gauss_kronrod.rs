@@ -338,8 +338,9 @@ fn char_poly(lam: &ExactNum, beta: &[ExactNum], p: usize) -> Option<(ExactNum, E
     }
     for b in beta {
         let p_new = lam.mul(&p1, p, rm).sub(&b.mul(&p0, p, rm), p, rm);
-        let d_new = p1
-            .add(&lam.mul(&d1, p, rm), p, rm)
+        let d_new = lam
+            .mul(&d1, p, rm)
+            .add(&p1, p, rm)
             .sub(&b.mul(&d0, p, rm), p, rm);
         if !finite(&p_new) || !finite(&d_new) {
             return None;
