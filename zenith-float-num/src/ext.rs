@@ -280,6 +280,22 @@ impl ExactNum {
         a.mul_op(b, p, rm, false)
     }
 
+    /// `self * self`, rounded to `p` bits: the square of a value that is still needed afterwards.
+    ///
+    /// A plain function, not a copy primitive: it reads `self` twice, builds a fresh result in its own buffer
+    /// and neither duplicates nor consumes `self`. Value, sign of zero in every rounding mode, both inexact
+    /// flags, `op_inexact`, Inf, subnormal results and the error kind of a NaN operand are those of
+    /// `ExactNum::mul_ref(&x, &x, p, rm)` (and of the old `x * x`), pinned by `sqr_grid_digest`. It replaces
+    /// every `mul_ref(&x, &x, ..)`, so a square is not a both-operands-borrowed product and is not counted by
+    /// the `mul_ref`/`div_ref` use-count ratchet.
+    ///
+    /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn sqr(&self, p: usize, rm: RoundingMode) -> Self {
+        self.mul_op(self, p, rm, false)
+    }
+
     /// `a / b` with both operands borrowed. Same contract as [`Self::mul_ref`].
     ///
     /// Accuracy: correctly-rounded
@@ -6112,6 +6128,74 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
         assert_eq!(h.finish(), 6_916_243_447_203_512_029);
+    }
+
+    /// Squares through `mul_ref(&x, &x)`: the 23 grid operands (NaN of both kinds, +-Inf, +-0, the subnormal
+    /// band, the exponent extremes) at 7 precisions in all 6 rounding modes. Pinned on the code before
+    /// `sqr` existed; `sqr_grid_digest` below must hash to the same value.
+    #[test]
+    fn square_via_mul_ref_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
+                for rm in RMS {
+                    let x = operand(i);
+                    digest(&ExactNum::mul_ref(&x, &x, p, rm), &mut h);
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * 9 * 6);
+        println!("square grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 175_783_324_882_499_832);
+    }
+
+    /// `ExactNum::sqr(&x, p, rm)` against the digest pinned on `mul_ref(&x, &x, p, rm)`: value, sign of zero,
+    /// both inexact flags, `op_inexact`, NaN error kind, Inf, subnormal results.
+    #[test]
+    fn sqr_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
+                for rm in RMS {
+                    digest(&operand(i).sqr(p, rm), &mut h);
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * 9 * 6);
+        assert_eq!(h.finish(), 175_783_324_882_499_832);
+    }
+
+    /// Field-for-field agreement of `sqr` with `mul_ref(&x, &x)` (not just a hash), including the NaN kind of
+    /// a NaN operand, the sign of a zero result in every mode, and that `x` is left untouched.
+    #[test]
+    fn sqr_equals_mul_ref_of_the_same_operand() {
+        for i in 0..PAIR_OPERANDS {
+            for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
+                for rm in RMS {
+                    let x = operand(i);
+                    let before = value_repr(&x);
+                    let want = ExactNum::mul_ref(&x, &x, p, rm);
+                    let got = x.sqr(p, rm);
+                    assert_eq!(value_repr(&got), value_repr(&want), "i={i} p={p} {rm:?}");
+                    assert_eq!(got.inexact(), want.inexact(), "i={i} p={p} {rm:?}");
+                    assert_eq!(
+                        got.inexact_accumulated(),
+                        want.inexact_accumulated(),
+                        "i={i} p={p} {rm:?}"
+                    );
+                    assert_eq!(got.err(), want.err(), "NaN kind, i={i} p={p} {rm:?}");
+                    assert_eq!(
+                        value_repr(&x),
+                        before,
+                        "operand changed, i={i} p={p} {rm:?}"
+                    );
+                }
+            }
+        }
     }
 
     /// The `*` and `/` operators on every combination of owned and borrowed operands that remains after

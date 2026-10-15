@@ -8,6 +8,7 @@ use crate::mpfr::common::conv_to_mpfr;
 use crate::mpfr::common::get_float_pair;
 use crate::mpfr::common::get_oned_zeroed;
 use crate::mpfr::common::mpfr_reference;
+use crate::mpfr::common::mpfr_reference_with;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::common::test_random;
 use crate::mpfr::common::test_zf_op_no_cc;
@@ -351,4 +352,59 @@ fn zenith_binop_uses_both_operands_mpfr_mul_p24() {
         let n4 = zenith_binop(&n1, &n2, BinOp::Div, p, rm);
         assert_exact_eq(&n4, &f4, p, &format!("div {rm:?}"), &mut cc);
     }
+}
+
+/// `ExactNum::sqr` against MPFR's own square (`mpfr::sqr`) at exact precision in every rounding mode
+/// (ToOdd emulated), over the mid, high and low exponent bands, and against `mul_ref(&x, &x)`.
+#[test]
+fn fuzz_mpfr_sqr_all_round_modes() {
+    reset_test_rng();
+    let mut cc = Consts::new().unwrap();
+    unsafe {
+        mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
+        mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
+    }
+    let modes = [
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::ToZero,
+        RoundingMode::FromZero,
+    ];
+    let bands: [(&str, Exponent, Exponent); 4] = [
+        ("mid", -40, 40),
+        ("high", EXPONENT_MAX / 2 - 3, EXPONENT_MAX / 2 + 3),
+        ("overflow", EXPONENT_MAX - 3, EXPONENT_MAX),
+        ("low", EXPONENT_MIN, EXPONENT_MIN + 3),
+    ];
+    let mut checked = 0usize;
+    for p in [24usize, 53, 64, 65, 100, 128, 130, 200, 255] {
+        let storage = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
+        for (band, elo, ehi) in bands {
+            for i in 0..40 {
+                let mut x = ExactNum::random_normal(storage, elo, ehi);
+                x.set_precision(p, RoundingMode::ToZero).unwrap();
+                if test_random::<bool>() {
+                    x = x.neg();
+                }
+                let fx = conv_to_mpfr(p, &x, &mut cc);
+                for rm in modes {
+                    if rm == RoundingMode::ToOdd && band == "low" {
+                        continue;
+                    }
+                    let (f, _) = mpfr_reference_with(p as u32, rm, |r, rnd| unsafe {
+                        mpfr::sqr(r.as_raw_mut(), fx.as_raw(), rnd)
+                    });
+                    let got = x.sqr(p, rm);
+                    let info = format!("sqr {band} #{i} p={p} {rm:?} {x:?}");
+                    assert_exact_eq(&got, &f, p, &info, &mut cc);
+                    assert_eq!(got, ExactNum::mul_ref(&x, &x, p, rm), "{info}");
+                    checked += 1;
+                }
+            }
+        }
+    }
+    // 9 precisions x 4 bands x 40 operands x 6 modes, less ToOdd in the low band
+    assert_eq!(checked, 9 * 40 * (3 * 6 + 5));
 }
