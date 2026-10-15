@@ -107,9 +107,12 @@ impl N { pub fn mul_ref(a: &N, b: &N) -> N { a.go(b) } pub fn div_ref(a: &N, b: 
 fn u(a: &N, b: &N) { let s = N::mul_ref(a, b); let d = N::div_ref(a, b); let z = N::add_ref(a, b); }
 // N::mul_ref(a, b) in a comment
 fn s() { let x = "N::div_ref(a, b)"; }
+impl N { pub fn sqr(&self, p: usize) -> N { self.go(self) } }
+fn q(a: &N) { let s = a.sqr(1); let t = N::sqr(a, 2); }
 #[cfg(test)]
 mod tests { fn t(a: &N, b: &N) { let s = N::mul_ref(a, b); } }
 EOF
+# sqr is a plain function (no copy): it is not a mul_ref use, so the two sqr uses above leave the count at 2
 echo 1 > tools/ref_sum_count_baseline.txt; echo 2 > tools/mul_ref_count_baseline.txt
 scan --count-only | grep -q "mul_ref/div_ref use count 2 == baseline" || fail "mul ref count should be 2: $(scan --count-only)"
 scan --count-only | grep -q "add_ref/sub_ref use count 1 == baseline" || fail "add ref count should stay 1 beside mul_ref: $(scan --count-only)"
