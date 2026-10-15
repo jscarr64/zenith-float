@@ -42,18 +42,6 @@ fn invalid_op() -> ExactNum {
     ExactNum::nan(Some(Error::InvalidArgument))
 }
 
-/// 1 (test support: the library itself builds its constants in `common::consts`).
-#[cfg(test)]
-pub(crate) static ONE: ExactNum = ExactNum {
-    inner: Flavor::Value(ExactNumNumber::small_const(1)),
-};
-
-/// 2 (test support).
-#[cfg(test)]
-pub(crate) static TWO: ExactNum = ExactNum {
-    inner: Flavor::Value(ExactNumNumber::small_const(2)),
-};
-
 /// A floating point number of arbitrary precision.
 #[derive(Debug)]
 pub struct ExactNum {
@@ -4208,10 +4196,15 @@ mod tests {
 
     use crate::common::util::rand_p;
     use crate::defs::DEFAULT_P;
-    use crate::ext::ONE;
-    use crate::ext::TWO;
     use crate::Consts;
     use crate::Error;
+
+    static ONE: ExactNum = ExactNum {
+        inner: super::Flavor::Value(crate::num::ExactNumNumber::small_const(1)),
+    };
+    static TWO: ExactNum = ExactNum {
+        inner: super::Flavor::Value(crate::num::ExactNumNumber::small_const(2)),
+    };
     use crate::ExactNum;
     use crate::Radix;
     use crate::Sign;

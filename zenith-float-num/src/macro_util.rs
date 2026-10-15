@@ -301,9 +301,13 @@ pub fn complex_cancel_bits(
 #[cfg(test)]
 mod tests {
 
+    fn one() -> crate::ExactNum {
+        crate::ExactNum::from_word(1, crate::defs::DEFAULT_P)
+    }
+
     use crate::{
-        ext::ONE, mantissa::Mantissa, num::ExactNumNumber, Consts, Exponent, RoundingMode, Sign,
-        Word, EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS, NAN, WORD_BIT_SIZE, WORD_MAX,
+        mantissa::Mantissa, num::ExactNumNumber, Consts, Exponent, RoundingMode, Sign, Word,
+        EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS, NAN, WORD_BIT_SIZE, WORD_MAX,
         WORD_SIGNIFICANT_BIT,
     };
 
@@ -636,8 +640,8 @@ mod tests {
                                                 compute_added_err(ErrAlgo::Pow(b, n, emin));
                                             let err = calc_err(d1, d2, p);
 
-                                            if !(b.abs().compare(&ONE) == Some(0)
-                                                || bb.abs().compare(&ONE) == Some(0))
+                                            if !(b.abs().compare(&one()) == Some(0)
+                                                || bb.abs().compare(&one()) == Some(0))
                                             {
                                                 let err_estimate = 1.max(err_estimate);
                                                 //println!("pow {:?} {:?}", err, err_estimate);
