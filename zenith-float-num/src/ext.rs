@@ -5767,6 +5767,58 @@ mod grid_digest_tests {
         assert_eq!(h.finish(), 2_584_562_321_548_619_649);
     }
 
+    /// The `+` and `-` operators on every combination of owned and borrowed operands that exists.
+    #[test]
+    fn operator_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
+                digest(&(&operand(i) + operand(j)), &mut h);
+                digest(&(operand(i) + &operand(j)), &mut h);
+                digest(&(operand(i) + operand(j)), &mut h);
+                digest(&(&operand(i) - operand(j)), &mut h);
+                digest(&(operand(i) - &operand(j)), &mut h);
+                digest(&(operand(i) - operand(j)), &mut h);
+                count += 6;
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
+        println!("operator grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 7_046_299_910_751_575_496);
+    }
+
+    /// `ExactComplex::add` and `sub` over parts that include zeros, Inf, NaN, inexact and subnormal values.
+    #[test]
+    fn complex_add_sub_grid_digest() {
+        use crate::ExactComplex;
+        let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for a in parts {
+            for b in parts {
+                for c in parts {
+                    for d in parts {
+                        for p in [1usize, 64, 128] {
+                            for rm in RMS {
+                                let z1 = || ExactComplex::new(operand(a), operand(b));
+                                let z2 = || ExactComplex::new(operand(c), operand(d));
+                                for r in [z1().add(&z2(), p, rm), z1().sub(&z2(), p, rm)] {
+                                    digest(r.re(), &mut h);
+                                    digest(r.im(), &mut h);
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        println!("complex add/sub grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 10_853_667_709_392_583_003);
+    }
+
     #[test]
     fn add_sub_grid_digest() {
         let mut h = DefaultHasher::new();
