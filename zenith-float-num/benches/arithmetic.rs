@@ -19,7 +19,7 @@ fn bench_add(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
             b.iter(|| {
                 for (a, b_val) in pairs {
-                    sink(a.add(b_val, p, rm));
+                    sink(ExactNum::add_ref(a, b_val, p, rm));
                 }
             });
         });

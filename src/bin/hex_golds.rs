@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Print canonical `to_bytes()` hex for one representative of each special.
 //!
 //! Output is independent of `WORD_BIT_SIZE` (binary interchange uses big-endian `u32` limbs).
@@ -42,7 +43,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let two = n(2, p);
     let half = one.div(&two, p, rm);
 
-    emit("add_1_2", &one.add(&two, p, rm))?;
+    emit("add_1_2", &n(1, p).add(&two, p, rm))?;
     emit("sqrt_2", &two.sqrt(p, rm))?;
     emit("exp_1", &one.exp(p, rm, &mut cc))?;
     emit("sin_1", &one.sin(p, rm, &mut cc))?;

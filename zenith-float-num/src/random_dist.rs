@@ -8,6 +8,7 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use crate::Word;
 use crate::NAN;
+use core::ops::Neg;
 
 fn dist_nan() -> ExactNum {
     ExactNum::nan(Some(Error::InvalidArgument))
@@ -60,7 +61,7 @@ impl ExactNum {
         if a.is_nan() || b.is_nan() || a.is_inf() || b.is_inf() {
             return NAN;
         }
-        match a.cmp(b) {
+        match a.compare(b) {
             Some(c) if c > 0 => return dist_nan(),
             Some(0) => {
                 let mut v = a.clone();
@@ -71,8 +72,8 @@ impl ExactNum {
             _ => {}
         }
         let u = random_unit(p, RoundingMode::None);
-        let span = b.sub(a, p, RoundingMode::None);
-        a.add(&span.mul(&u, p, RoundingMode::None), p, rm)
+        let span = ExactNum::sub_ref(b, a, p, RoundingMode::None);
+        span.mul(&u, p, RoundingMode::None).add(a, p, rm)
     }
 
     /// Gaussian \(N(\mu,\sigma^2)\) via Box–Muller at `(p, rm)`.
@@ -93,11 +94,13 @@ impl ExactNum {
         let u1 = random_unit_open(pw, none);
         let u2 = random_unit(pw, none);
         let two = ExactNum::from_u8(2, pw);
-        let r = two.neg().mul(&u1.ln(pw, none, cc), pw, none).sqrt(pw, none);
+        let r = ExactNum::from_i8(-2, pw)
+            .mul(&u1.ln(pw, none, cc), pw, none)
+            .sqrt(pw, none);
         let theta = two.mul(&cc.pi(pw, none), pw, none).mul(&u2, pw, none);
         let (s, _) = theta.sin_cos(pw, none, cc);
         let z = r.mul(&s, pw, none);
-        mu.add(&sigma.mul(&z, pw, none), p, rm)
+        sigma.mul(&z, pw, none).add(mu, p, rm)
     }
 
     /// Exponential sample with rate `lambda` (inverse CDF \(-\ln U/\lambda\)).
@@ -134,7 +137,7 @@ mod tests {
         reseed_random(1);
         let u = ExactNum::random_uniform(&zero, &one, p, rm);
         assert!(!u.is_negative());
-        assert!(matches!(u.cmp(&one), Some(c) if c <= 0));
+        assert!(matches!(u.compare(&one), Some(c) if c <= 0));
         assert!(!u.is_nan());
 
         reseed_random(7);
@@ -143,8 +146,8 @@ mod tests {
         reseed_random(7);
         let h1 = ExactNum::random_gaussian(&zero, &one, p, rm, &mut cc);
         let h2 = ExactNum::random_gaussian(&zero, &one, p, rm, &mut cc);
-        assert_eq!(g1.cmp(&h1), Some(0));
-        assert_eq!(g2.cmp(&h2), Some(0));
+        assert_eq!(g1.compare(&h1), Some(0));
+        assert_eq!(g2.compare(&h2), Some(0));
 
         let p64 = 64;
         let z64 = ExactNum::from_u8(0, p64);
@@ -162,7 +165,7 @@ mod tests {
         let mean = sum.div(&n, p64, rm);
         let err = mean.sub(&o64, p64, rm).abs();
         let tol = ExactNum::from_u8(1, p64).div(&ExactNum::from_u8(20, p64), p64, rm);
-        assert!(matches!(err.cmp(&tol), Some(c) if c <= 0));
+        assert!(matches!(err.compare(&tol), Some(c) if c <= 0));
 
         reseed_random(11);
         let fill = ExactNumArray::random_fill(

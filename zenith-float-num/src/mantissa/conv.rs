@@ -50,10 +50,7 @@ impl Mantissa {
                 }
                 ret.reverse(); // happens just once
             } else {
-                unsafe {
-                    // for better performance
-                    ret.set_len(l);
-                }
+                ret.resize(l, 0);
                 for d in ret.iter_mut().rev() {
                     *d = (v % 10) as u8;
                     v /= 10;
@@ -179,7 +176,7 @@ impl Mantissa {
             let (_, tenpower, _) = &tenpowers[p];
 
             let mut newchunks = Vec::new();
-            newchunks.try_reserve_exact((chunks.len() + 1) / 2)?;
+            newchunks.try_reserve_exact(chunks.len().div_ceil(2))?;
 
             for pair in chunks.chunks(2) {
                 if pair.len() == 2 {
@@ -301,7 +298,7 @@ mod tests {
             loop {
                 expected.push(s[0] as u8);
                 t.trunc_leading_zeroes();
-                if t.len() == 0 {
+                if t.is_empty() {
                     expected.reverse();
                     break;
                 }

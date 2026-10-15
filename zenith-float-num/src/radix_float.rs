@@ -99,6 +99,6 @@ mod tests {
         let rf = RadixFloat::with_radix(n.clone(), rdx);
         let s = rf.format(rm, &mut cc).unwrap();
         let g = RadixFloat::parse(&s, rdx, p, rm, &mut cc).unwrap();
-        assert_eq!(n.cmp(g.value()), Some(0));
+        assert_eq!(n.compare(g.value()), Some(0));
     }
 }

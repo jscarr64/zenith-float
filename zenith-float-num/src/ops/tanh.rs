@@ -42,7 +42,7 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len());
 
-        compute_small_exp!(self, self.exponent() as isize * 2 - 1, true, p_wrk, p, rm);
+        compute_small_exp!(self, self.exponent() as i64 * 2 - 1, true, p_wrk, p, rm);
 
         // (e^(2*x) - 1) / (e^(2*x) + 1)
 
@@ -75,7 +75,7 @@ impl ExactNumNumber {
                 },
             }?;
 
-            if xexp.exponent() as isize > p_x as isize {
+            if xexp.exponent() as i64 > p_x as i64 {
                 return self.process_large_exp(p, rm);
             }
 

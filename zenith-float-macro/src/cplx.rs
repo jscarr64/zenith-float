@@ -30,7 +30,7 @@ fn traverse_binary(
             quote!({
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
-                let ret = zenith_float::ExactComplex::add(
+                let ret = zenith_float::ExactComplex::add_ref(
                     &arg1,
                     &arg2,
                     p_wrk,
@@ -64,7 +64,7 @@ fn traverse_binary(
             quote!({
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
-                let ret = zenith_float::ExactComplex::sub(
+                let ret = zenith_float::ExactComplex::sub_ref(
                     &arg1,
                     &arg2,
                     p_wrk,
@@ -771,8 +771,8 @@ fn traverse_unary(
     let op_expr = traverse_expr(&expr.expr, err, cc)?;
     match expr.op {
         UnOp::Neg(_) => Ok(quote!({
-            let z = #op_expr;
-            zenith_float::ExactComplex::new(z.re().neg(), z.im().neg())
+            let (re, im) = (#op_expr).into_parts();
+            zenith_float::ExactComplex::new(-re, -im)
         })),
         _ => Err(Error::new(
             expr.span(),
@@ -811,7 +811,10 @@ pub fn cexpr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let pmi = syn::parse_macro_input!(input as MacroInput);
     let MacroInput { expr, ctx } = pmi;
     let mut err = Vec::new();
-    let mut cc = Consts::new().expect("Failed to initialize constant cache.");
+    let mut cc = match crate::util::consts_or_compile_error(Consts::new()) {
+        Ok(cc) => cc,
+        Err(ts) => return ts.into(),
+    };
     let expr = traverse_expr(&expr, &mut err, &mut cc).unwrap_or_else(|e| e.to_compile_error());
     let err_sz = err.len();
     quote!({

@@ -3,17 +3,14 @@
 //! Toom-3 multiplication.
 
 use crate::common::buf::WordBuf;
-use crate::common::int::SliceWithSign;
+use crate::common::int::{SliceMut, SliceRef, SliceWithSign};
 use crate::common::util::shift_slice_left_copy;
 use crate::defs::Error;
 use crate::defs::Word;
 use crate::mantissa::Mantissa;
 
 impl Mantissa {
-    fn toom3_get_splits(
-        m: &[Word],
-        l: usize,
-    ) -> (SliceWithSign<'_>, SliceWithSign<'_>, SliceWithSign<'_>) {
+    fn toom3_get_splits(m: &[Word], l: usize) -> (SliceRef<'_>, SliceRef<'_>, SliceRef<'_>) {
         let b11 = l.min(m.len());
         let b12 = l.min(m.len() - b11) + b11;
         let b13 = l.min(m.len() - b12) + b12;
@@ -30,40 +27,43 @@ impl Mantissa {
     }
 
     fn toom3_factors<'a>(
-        params: (SliceWithSign<'a>, SliceWithSign<'a>, SliceWithSign<'a>),
-        x1: &mut SliceWithSign<'_>,
+        params: (SliceRef<'a>, SliceRef<'a>, SliceRef<'a>),
+        x1: &mut SliceMut<'_>,
         buf1: &'a mut [Word],
         buf2: &'a mut [Word],
         buf3: &'a mut [Word],
-    ) -> (
-        SliceWithSign<'a>,
-        SliceWithSign<'a>,
-        SliceWithSign<'a>,
-        SliceWithSign<'a>,
-        SliceWithSign<'a>,
-    ) {
+    ) -> Result<
+        (
+            SliceRef<'a>,
+            SliceMut<'a>,
+            SliceMut<'a>,
+            SliceMut<'a>,
+            SliceRef<'a>,
+        ),
+        Error,
+    > {
         let (m0, m1, m2) = params;
 
         let mut p1 = SliceWithSign::new_mut(buf1, 1);
         let mut p2 = SliceWithSign::new_mut(buf2, 1);
         let mut p3 = SliceWithSign::new_mut(buf3, 1);
 
-        m0.add(&m2, x1);
-        x1.add(&m1, &mut p1);
-        x1.sub(&m1, &mut p2);
+        m0.add(&m2, x1)?;
+        x1.add(&m1, &mut p1)?;
+        x1.sub(&m1, &mut p2)?;
 
-        p2.add(&m2, &mut p3);
+        p2.add(&m2, &mut p3)?;
         p3.shift_left(1);
         p3.sub_assign(&m0);
 
-        (m0, p1, p2, p3, m2)
+        Ok((m0, p1, p2, p3, m2))
     }
 
     // Toom-3 multiplication.
     // d1 must contain input number + have reserve of d2.len() positions in addition for the output.
     // The result is placed in d1, and the sign is returned.
     pub(super) fn toom3(d1: &[Word], d2: &[Word], d3: &mut [Word]) -> Result<(), Error> {
-        let l = (d1.len().max(d2.len()) + 2) / 3;
+        let l = d1.len().max(d2.len()).div_ceil(3);
 
         let mut buf = WordBuf::new(25 * (l + 1))?;
 
@@ -104,9 +104,9 @@ impl Mantissa {
         let mut s3 = SliceWithSign::new_mut(s3buf, 1);
         let mut s4 = SliceWithSign::new_mut(&mut s4buf[..params0.2.len() + params1.2.len()], 1);
 
-        let (p0, p1, p2, p3, p4) = Self::toom3_factors(params0, &mut x1, p1buf, p2buf, p3buf);
+        let (p0, p1, p2, p3, p4) = Self::toom3_factors(params0, &mut x1, p1buf, p2buf, p3buf)?;
 
-        let (q0, q1, q2, q3, q4) = Self::toom3_factors(params1, &mut x1, q1buf, q2buf, q3buf);
+        let (q0, q1, q2, q3, q4) = Self::toom3_factors(params1, &mut x1, q1buf, q2buf, q3buf)?;
 
         debug_assert!(p1.len() + q1.len() == s1.len());
         debug_assert!(p2.len() + q2.len() == s2.len());
@@ -122,11 +122,11 @@ impl Mantissa {
         s2.set_sign(p2.sign() * q2.sign());
         s3.set_sign(p3.sign() * q3.sign());
 
-        s3.sub(&s1, &mut w3);
+        s3.sub(&s1, &mut w3)?;
         w3.div_by_word(3);
-        s1.sub(&s2, &mut w1);
+        s1.sub(&s2, &mut w1)?;
         w1.shift_right(1);
-        s2.sub(&s0, &mut w2);
+        s2.sub(&s0, &mut w2)?;
         w3.sub_assign(&w2);
         w3.set_sign(-w3.sign());
         shift_slice_left_copy(&s4, &mut x3, 2);
@@ -252,12 +252,10 @@ mod tests {
             //println!("let s1 = {:?};", s1);
             //println!("let s2 = {:?};", s2);
 
-            let mut ref_s = Vec::new();
-            ref_s.resize(s1.len() + s2.len(), 0);
+            let mut ref_s = vec![0; s1.len() + s2.len()];
             mul(&s1, &s2, ref_s.as_mut_slice());
 
-            let mut ret_s = Vec::new();
-            ret_s.resize(s1.len() + s2.len(), 0);
+            let mut ret_s = vec![0; s1.len() + s2.len()];
             Mantissa::toom3(&s1, &s2, &mut ret_s).unwrap();
 
             assert!(ret_s == ref_s);
@@ -271,12 +269,10 @@ mod tests {
             //println!("let s1 = {:?};", s1);
             //println!("let s2 = {:?};", s2);
 
-            let mut ref_s = Vec::new();
-            ref_s.resize(s1.len() + s2.len(), 0);
+            let mut ref_s = vec![0; s1.len() + s2.len()];
             mul(&s1, &s2, ref_s.as_mut_slice());
 
-            let mut ret_s = Vec::new();
-            ret_s.resize(s1.len() + s2.len(), 0);
+            let mut ret_s = vec![0; s1.len() + s2.len()];
             Mantissa::toom3(&s1, &s2, &mut ret_s).unwrap();
             assert!(ret_s == ref_s);
         }

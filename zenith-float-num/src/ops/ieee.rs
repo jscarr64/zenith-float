@@ -1,55 +1,52 @@
 //! IEEE-style exponent decomposition without hardware floats.
 
 use crate::common::util::round_p;
-use crate::defs::{Error, EXPONENT_MAX, EXPONENT_MIN};
+use crate::defs::{Error, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::{Exponent, RoundingMode, Sign};
 
 impl ExactNumNumber {
     /// Split into a mantissa in `[0.5, 1)` and a power of two: `self = m · 2^e`.
-    pub fn frexp(&self) -> Result<(Self, Exponent), Error> {
+    pub fn frexp(mut self) -> Result<(Self, Exponent), Error> {
         if self.is_zero() {
-            return Ok((self.clone()?, 0));
+            return Ok((self, 0));
         }
         let e = self.exponent();
-        let mut m = self.clone()?;
-        m.set_exponent(0);
-        Ok((m, e))
+        self.set_exponent(0);
+        Ok((self, e))
     }
 
     /// `self · 2^n` (same as `ldexp` / integer `scalb`).
-    pub fn ldexp(&self, n: Exponent, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+    pub fn ldexp(mut self, n: Exponent, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
         if self.is_zero() {
-            let mut z = self.clone()?;
-            z.set_precision(p, rm)?;
-            return Ok(z);
+            self.set_precision(p, rm)?;
+            return Ok(self);
         }
         let e = self.exponent();
         match e.checked_add(n) {
-            Some(sum) if Self::exponent_in_range(sum) => {
-                let mut ret = self.clone()?;
-                ret.set_exponent(sum);
-                ret.set_precision(p, rm)?;
-                Ok(ret)
+            // The exponent range is all of `Exponent`, so `checked_add` is the range check.
+            Some(sum) => {
+                self.set_exponent(sum);
+                self.set_precision(p, rm)?;
+                Ok(self)
             }
             _ => {
                 if n >= 0 {
                     Err(Error::ExponentOverflow(self.sign()))
                 } else {
-                    Ok(Self::new2(p, self.sign(), true)?)
+                    // Below the range: scale by 2^EXPONENT_MIN in a multiplication, which
+                    // rounds onto the subnormal grid (or to zero / the least value) by mode.
+                    let s1 = e as i64 + n as i64 - EXPONENT_MIN as i64;
+                    let s1 = Exponent::try_from(s1).unwrap_or(EXPONENT_MIN);
+                    self.set_exponent(s1);
+                    let mut b = Self::from_word(1, WORD_BIT_SIZE)?;
+                    b.set_exponent(EXPONENT_MIN + 1);
+                    self.mul(&b, p, rm)
                 }
             }
         }
-    }
-
-    #[cfg_attr(
-        not(target_pointer_width = "32"),
-        allow(clippy::absurd_extreme_comparisons)
-    )]
-    fn exponent_in_range(e: Exponent) -> bool {
-        (EXPONENT_MIN..=EXPONENT_MAX).contains(&e)
     }
 
     /// Binary `logb`: `floor(log2(|self|))` as an integer-valued float.
@@ -87,20 +84,22 @@ mod tests {
     fn frexp_ldexp_roundtrip() {
         let rm = RoundingMode::ToEven;
         let x = ExactNum::from_word(6, DEFAULT_P);
-        let (m, e) = x.frexp();
+        let (m, e) = ExactNum::from_word(6, DEFAULT_P).frexp();
+        let m_exp = m.exponent();
         let y = m.ldexp(e, DEFAULT_P, rm);
-        assert_eq!(x.cmp(&y), Some(0));
+        assert_eq!(x.compare(&y), Some(0));
         assert_eq!(
-            x.scalb(1, DEFAULT_P, rm)
-                .cmp(&ExactNum::from_word(12, DEFAULT_P)),
+            ExactNum::from_word(6, DEFAULT_P)
+                .scalb(1, DEFAULT_P, rm)
+                .compare(&ExactNum::from_word(12, DEFAULT_P)),
             Some(0)
         );
         assert_eq!(x.ilogb(), Some(2));
         let lb = x.logb(DEFAULT_P, rm);
-        assert_eq!(lb.cmp(&ExactNum::from_word(2, DEFAULT_P)), Some(0));
+        assert_eq!(lb.compare(&ExactNum::from_word(2, DEFAULT_P)), Some(0));
         assert!(ExactNum::from_word(0, DEFAULT_P)
             .logb(DEFAULT_P, rm)
             .is_inf_neg());
-        assert_eq!(m.exponent(), Some(0));
+        assert_eq!(m_exp, Some(0));
     }
 }

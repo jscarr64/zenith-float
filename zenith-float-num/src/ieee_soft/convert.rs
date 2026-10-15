@@ -3,6 +3,7 @@
 use super::arith::{pack_finite, pack_inf, pack_qnan, unpack, Class, Format};
 use crate::defs::{RoundingMode, Word, WORD_BIT_SIZE};
 use crate::ExactNum;
+use core::ops::Neg;
 
 pub(super) fn to_exact(bits: u64, f: Format, p: usize) -> ExactNum {
     let u = unpack(bits, f);

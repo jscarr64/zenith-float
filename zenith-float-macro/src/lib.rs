@@ -4,9 +4,19 @@
 //!
 //! Depend on the `zenith-float` crate and use `zenith_float::expr`. This crate is not a direct dependency for applications.
 
-#![allow(missing_docs)]
+#![deny(missing_docs)]
+#![forbid(unsafe_code)]
 #![deny(unused)]
 #![deny(clippy::suspicious)]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::unreachable,
+        clippy::panic
+    )
+)]
 
 mod cplx;
 mod util;
@@ -57,8 +67,8 @@ fn traverse_binary(
             quote!({
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
-                let ret = zenith_float::ExactNum::add(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::None);
-                if arg1.inexact() || arg2.inexact() {
+                let ret = zenith_float::ExactNum::add_ref(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::None);
+                if arg1.inexact_accumulated() || arg2.inexact_accumulated() {
                     if let (Some(e1), Some(e2), Some(e3)) = (arg1.exponent(), arg2.exponent(), ret.exponent()) {
                         if (e1 as isize - e2 as isize).abs() <= 1 && arg1.sign() != arg2.sign() {
                             let newerr = (e1.max(e2) as isize - e3 as isize).unsigned_abs() + 1;
@@ -77,8 +87,8 @@ fn traverse_binary(
             quote!({
                 let arg1 = #left_expr;
                 let arg2 = #right_expr;
-                let ret = zenith_float::ExactNum::sub(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::None);
-                if arg1.inexact() || arg2.inexact() {
+                let ret = zenith_float::ExactNum::sub_ref(&arg1, &arg2, p_wrk, zenith_float::RoundingMode::None);
+                if arg1.inexact_accumulated() || arg2.inexact_accumulated() {
                     if let (Some(e1), Some(e2), Some(e3)) = (arg1.exponent(), arg2.exponent(), ret.exponent()) {
                         if (e1 as isize - e2 as isize).abs() <= 1 && arg1.sign() == arg2.sign() {
                             let newerr = (e1.max(e2) as isize - e3 as isize).unsigned_abs() + 1;
@@ -221,7 +231,7 @@ fn ldexp_fun(
     };
 
     Ok(quote!(#fun(
-        &(#arg),
+        (#arg),
         #n as zenith_float::Exponent,
         p_wrk,
         zenith_float::RoundingMode::None
@@ -1192,7 +1202,7 @@ fn traverse_unary(
     let op_expr = traverse_expr(&expr.expr, err, cc)?;
 
     match expr.op {
-        UnOp::Neg(_) => Ok(quote!(zenith_float::ExactNum::neg(&(#op_expr)))),
+        UnOp::Neg(_) => Ok(quote!(-(#op_expr))),
         _ => Err(Error::new(
             expr.span(),
             "unexpected unary operator. Only \"-\" is allowed.",
@@ -1213,10 +1223,8 @@ fn traverse_expr(expr: &Expr, err: &mut Vec<usize>, cc: &mut Consts) -> Result<T
     }
 }
 
-// Docs for the macro are in the zenith-float crate.
-
+/// Real `expr!`: evaluates an expression of `ExactNum` leaves with a working-precision loop until the result is correctly rounded. Full docs are on `zenith_float::expr`.
 #[proc_macro]
-#[allow(missing_docs)]
 pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let pmi = syn::parse_macro_input!(input as MacroInput);
 
@@ -1224,7 +1232,10 @@ pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
     let mut err = Vec::new();
 
-    let mut cc = Consts::new().expect("Failed to initialize constant cache.");
+    let mut cc = match crate::util::consts_or_compile_error(Consts::new()) {
+        Ok(cc) => cc,
+        Err(ts) => return ts.into(),
+    };
 
     let expr = traverse_expr(&expr, &mut err, &mut cc).unwrap_or_else(|e| e.to_compile_error());
 
@@ -1262,7 +1273,6 @@ pub fn expr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
 
 /// Complex `expr!`: same context and working-precision loop, `ExactComplex` leaves, cancellation on both parts.
 #[proc_macro]
-#[allow(missing_docs)]
 pub fn cexpr(input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     cplx::cexpr(input)
 }

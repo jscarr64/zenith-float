@@ -29,23 +29,37 @@ fn map_to_unit(
     if !finite(x) || !finite(a) || !finite(b) {
         return None;
     }
-    if a.cmp(b) != Some(-1) {
+    if a.compare(b) != Some(-1) {
         return None;
     }
     let two = ExactNum::from_u8(2, p);
     let num = two.mul(x, p, rm).sub(a, p, rm).sub(b, p, rm);
-    let den = b.sub(a, p, rm);
+    // b - a is -a + b: `-a` is a real negation of the borrowed `a`, and the sum owns its result
+    let den = ExactNum::sub_ref(b, a, p, rm);
     if den.is_zero() {
         return None;
     }
     Some(num.div(&den, p, rm))
 }
 
-fn map_from_unit(t: &ExactNum, a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
+/// `(mid, half)` of the interval `[a, b]`: `(a + b) / 2` and `(b - a) / 2`. `a` is taken by value because the
+/// sum is written into it.
+fn unit_map(a: ExactNum, b: &ExactNum, p: usize, rm: RoundingMode) -> (ExactNum, ExactNum) {
     let two = ExactNum::from_u8(2, p);
+    let half = ExactNum::sub_ref(b, &a, p, rm).div(&two, p, rm);
     let mid = a.add(b, p, rm).div(&two, p, rm);
-    let half = b.sub(a, p, rm).div(&two, p, rm);
-    mid.add(&half.mul(t, p, rm), p, rm)
+    (mid, half)
+}
+
+/// The point of `[a, b]` at `t`: `mid + half * t`.
+fn map_from_unit(
+    t: &ExactNum,
+    mid: &ExactNum,
+    half: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+) -> ExactNum {
+    half.mul(t, p, rm).add(mid, p, rm)
 }
 
 /// Chebyshev–Gauss node `t_k = cos(π (2k+1) / (2n))` on `[-1, 1]`.
@@ -86,7 +100,7 @@ fn node_cos_j(
 pub fn chebyshev_coeffs<F>(
     mut f: F,
     n: usize,
-    a: &ExactNum,
+    a: ExactNum,
     b: &ExactNum,
     p: usize,
     rm: RoundingMode,
@@ -98,14 +112,15 @@ where
     if n == 0 || n > CHEBYSHEV_MAX_DEGREE {
         return None;
     }
-    if !finite(a) || !finite(b) || a.cmp(b) != Some(-1) {
+    if !finite(&a) || !finite(b) || a.compare(b) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
+    let (mid, half) = unit_map(a, b, wrk, RoundingMode::None);
     let mut fx = Vec::with_capacity(n);
     for k in 0..n {
         let t = unit_node(k, n, wrk, RoundingMode::None, cc);
-        let x = map_from_unit(&t, a, b, wrk, RoundingMode::None);
+        let x = map_from_unit(&t, &mid, &half, wrk, RoundingMode::None);
         let y = f(&x, wrk, RoundingMode::None, cc);
         if !finite(&y) {
             return None;
@@ -194,7 +209,11 @@ pub fn chebyshev_eval(
 pub fn chebyshev_error_bound(coeffs: &[ExactNum], p: usize) -> ExactNum {
     let mut acc = ExactNum::new(p);
     for c in coeffs.iter().skip(1) {
-        acc = acc.add(&c.abs(), p, RoundingMode::ToEven);
+        acc = if c.is_negative() {
+            acc.sub(c, p, RoundingMode::ToEven)
+        } else {
+            acc.add(c, p, RoundingMode::ToEven)
+        };
     }
     acc
 }
@@ -247,7 +266,7 @@ mod tests {
     /// Plan gold: 20-term `exp` on `[-1, 1]`.
     const CHEBYSHEV_EXP_TERMS: usize = 20;
     /// Plan gold: error smaller than `10^{-15}`.
-    const CHEBYSHEV_EXP_ERR_DIGITS: isize = 15;
+    const CHEBYSHEV_EXP_ERR_DIGITS: i64 = 15;
 
     fn gold_p() -> (usize, RoundingMode) {
         (256, RoundingMode::ToEven)
@@ -262,7 +281,7 @@ mod tests {
         let coeffs = chebyshev_coeffs(
             |x, p, rm, cc| x.exp(p, rm, cc),
             CHEBYSHEV_EXP_TERMS,
-            &a,
+            ExactNum::from_i64(-1, p),
             &b,
             p,
             rm,
@@ -279,7 +298,7 @@ mod tests {
             let exact = x.exp(p, rm, &mut cc);
             let err = approx.sub(&exact, p, rm).abs();
             assert!(
-                err.is_zero() || err.cmp(&tol) == Some(-1),
+                err.is_zero() || err.compare(&tol) == Some(-1),
                 "exp({}) error not < 10^{{-15}}",
                 xi
             );
@@ -289,12 +308,13 @@ mod tests {
             ExactNum::from_u8(1, p).ldexp(-((p as i32) - (crate::WORD_BIT_SIZE as i32)), p, rm);
         for k in 0..CHEBYSHEV_EXP_TERMS {
             let t = unit_node(k, CHEBYSHEV_EXP_TERMS, p, rm, &mut cc);
-            let x = map_from_unit(&t, &a, &b, p, rm);
+            let (mid, half) = unit_map(ExactNum::from_i64(-1, p), &b, p, rm);
+            let x = map_from_unit(&t, &mid, &half, p, rm);
             let approx = chebyshev_eval(&coeffs, &x, &a, &b, p, rm);
             let exact = x.exp(p, rm, &mut cc);
             let err = approx.sub(&exact, p, rm).abs();
             assert!(
-                err.is_zero() || err.cmp(&node_slack) == Some(-1),
+                err.is_zero() || err.compare(&node_slack) == Some(-1),
                 "node {k} interpolant farther than a working word from exp"
             );
         }
@@ -303,7 +323,7 @@ mod tests {
         let id_c = chebyshev_coeffs(
             |x, _p, _rm, _cc| x.clone(),
             IDENTITY_NODES,
-            &a,
+            ExactNum::from_i64(-1, p),
             &b,
             p,
             rm,
@@ -311,14 +331,15 @@ mod tests {
         )
         .expect("identity coeffs");
         let one = ExactNum::from_u8(1, p);
-        assert_eq!(id_c[1].cmp(&one), Some(0));
+        assert_eq!(id_c[1].compare(&one), Some(0));
         for k in 0..IDENTITY_NODES {
             let t = unit_node(k, IDENTITY_NODES, p, rm, &mut cc);
-            let x = map_from_unit(&t, &a, &b, p, rm);
+            let (mid, half) = unit_map(ExactNum::from_i64(-1, p), &b, p, rm);
+            let x = map_from_unit(&t, &mid, &half, p, rm);
             let approx = chebyshev_eval(&id_c, &x, &a, &b, p, rm);
             let err = approx.sub(&x, p, rm).abs();
             assert!(
-                err.is_zero() || err.cmp(&node_slack) == Some(-1),
+                err.is_zero() || err.compare(&node_slack) == Some(-1),
                 "identity node {k} farther than a working word from x"
             );
         }
@@ -327,13 +348,20 @@ mod tests {
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let via_clenshaw = clenshaw(&c, &half, p, rm);
         let via_direct = chebyshev_sum_direct(&c, &half, p, rm);
-        assert_eq!(via_clenshaw.cmp(&half), Some(0));
-        assert_eq!(via_direct.cmp(&half), Some(0));
-        assert_eq!(via_clenshaw.cmp(&via_direct), Some(0));
+        assert_eq!(via_clenshaw.compare(&half), Some(0));
+        assert_eq!(via_direct.compare(&half), Some(0));
+        assert_eq!(via_clenshaw.compare(&via_direct), Some(0));
 
-        assert!(
-            chebyshev_coeffs(|x, p, rm, cc| x.exp(p, rm, cc), 0, &a, &b, p, rm, &mut cc).is_none()
-        );
-        assert!(chebyshev_error_bound(&c, p).cmp(&ExactNum::from_u8(5, p)) == Some(0));
+        assert!(chebyshev_coeffs(
+            |x, p, rm, cc| x.exp(p, rm, cc),
+            0,
+            a.clone(),
+            &b,
+            p,
+            rm,
+            &mut cc
+        )
+        .is_none());
+        assert!(chebyshev_error_bound(&c, p).compare(&ExactNum::from_u8(5, p)) == Some(0));
     }
 }

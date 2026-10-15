@@ -61,11 +61,6 @@ impl ExactNumNumber {
             }
         }
 
-        #[cfg(target_pointer_width = "32")]
-        if e < EXPONENT_MIN || e > EXPONENT_MAX {
-            return Err(Error::InvalidArgument);
-        }
-
         match rdx.value() {
             2 => Self::conv_from_binary(sign, digits, e, p, rm),
             10 => Self::conv_from_dec(sign, digits, e, p, rm, cc),
@@ -84,7 +79,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
     ) -> Result<Self, Error> {
         if digits.is_empty() {
-            return Self::new(if p < usize::MAX { p } else { DEFAULT_P });
+            return Self::zero_with_sign(sign, if p < usize::MAX { p } else { DEFAULT_P });
         }
 
         Self::p_assertion(round_p(digits.len()))?;
@@ -107,14 +102,20 @@ impl ExactNumNumber {
             shift += 1;
 
             if shift == WORD_BIT_SIZE {
-                *dst.next().unwrap() = d; // mantissa has precision of digits.len()
+                let Some(w) = dst.next() else {
+                    return Err(Error::InvalidArgument); // mantissa has precision of digits.len()
+                };
+                *w = d;
                 shift = 0;
                 d = 0;
             }
         }
 
         if shift > 0 {
-            *dst.next().unwrap() = d; // mantissa has precision of digits.len()
+            let Some(w) = dst.next() else {
+                return Err(Error::InvalidArgument); // mantissa has precision of digits.len()
+            };
+            *w = d;
         }
 
         mantissa.update_bit_len();
@@ -128,18 +129,16 @@ impl ExactNumNumber {
         } else {
             let shift = mantissa.max_bit_len() - mantissa.bit_len();
 
-            if shift > 0 {
-                if e > EXPONENT_MIN {
-                    let e_shift = (e - EXPONENT_MIN) as usize;
+            if shift > 0 && e > EXPONENT_MIN {
+                let e_shift = (e - EXPONENT_MIN) as usize;
 
-                    if e_shift >= shift {
-                        mantissa.normilize2();
-                        e -= shift as Exponent;
-                    } else {
-                        mantissa.shift_left(e_shift);
-                        mantissa.set_bit_len(mantissa.bit_len() + e_shift);
-                        e = EXPONENT_MIN;
-                    }
+                if e_shift >= shift {
+                    mantissa.normilize2();
+                    e -= shift as Exponent;
+                } else {
+                    mantissa.shift_left(e_shift);
+                    mantissa.set_bit_len(mantissa.bit_len() + e_shift);
+                    e = EXPONENT_MIN;
                 }
             }
 
@@ -167,7 +166,7 @@ impl ExactNumNumber {
             let mut v = *v;
 
             if v == 0 {
-                e_shift -= shift as isize;
+                e_shift -= shift as i64;
                 zeroes += 1;
             } else {
                 if v >= base {
@@ -196,9 +195,9 @@ impl ExactNumNumber {
             let mut m = Mantissa::new(msz)?;
 
             // exponent
-            let e = e as isize * shift as isize + e_shift;
+            let e = e as i64 * shift as i64 + e_shift;
 
-            if e > EXPONENT_MAX as isize {
+            if e > EXPONENT_MAX as i64 {
                 return Err(Error::ExponentOverflow(sign));
             }
 
@@ -237,7 +236,7 @@ impl ExactNumNumber {
 
             m.set_bit_len(m.max_bit_len());
 
-            let mut ret = if e < EXPONENT_MIN as isize {
+            let mut ret = if e < EXPONENT_MIN as i64 {
                 if p < usize::MAX {
                     let mut num = ExactNumNumber::from_raw_unchecked(m, sign, EXPONENT_MIN, false);
 
@@ -253,7 +252,7 @@ impl ExactNumNumber {
 
                     num
                 } else {
-                    let e_shift = (EXPONENT_MIN as isize - e) as usize;
+                    let e_shift = (EXPONENT_MIN as i64 - e) as usize;
                     let newbitlen = m.bit_len().saturating_add(e_shift);
 
                     Self::p_assertion(round_p(newbitlen))?;
@@ -286,7 +285,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
     ) -> Result<Self, Error> {
         if digits.is_empty() {
-            return Self::new(if p < usize::MAX { p } else { DEFAULT_P });
+            return Self::zero_with_sign(sign, if p < usize::MAX { p } else { DEFAULT_P });
         }
 
         for &d in digits {
@@ -315,7 +314,7 @@ impl ExactNumNumber {
             }
         }
 
-        let exp_adj = e as isize - digits.len() as isize;
+        let exp_adj = e as i64 - digits.len() as i64;
         if exp_adj > 0 {
             let pwr = b.powi(exp_adj as usize, p_wrk, RoundingMode::None)?;
             acc = acc.mul(&pwr, p_wrk, RoundingMode::None)?;
@@ -341,7 +340,7 @@ impl ExactNumNumber {
         let leadzeroes = digits.iter().take_while(|&&x| x == 0).count();
 
         if digits.len() - leadzeroes == 0 {
-            return Self::new(if p < usize::MAX { p } else { DEFAULT_P });
+            return Self::zero_with_sign(sign, if p < usize::MAX { p } else { DEFAULT_P });
         }
 
         let k = log2_ceil(digits.len() - leadzeroes);
@@ -358,7 +357,7 @@ impl ExactNumNumber {
         let x = ExactNumNumber::from_raw_unchecked(m, sign, me, false);
 
         // exponent part
-        let n = e as isize - digits.len() as isize;
+        let n = e as i64 - digits.len() as i64;
 
         let p = if p < usize::MAX {
             p
@@ -374,8 +373,8 @@ impl ExactNumNumber {
 
         // error estimation
         let mut err = 0;
-        let npowmax = n.unsigned_abs() / TEN_PWR_MAX_FROM_DEC;
-        let tenpowrem = n.unsigned_abs() % TEN_PWR_MAX_FROM_DEC;
+        let npowmax = crate::common::util::abs_usize(n) / TEN_PWR_MAX_FROM_DEC;
+        let tenpowrem = crate::common::util::abs_usize(n) % TEN_PWR_MAX_FROM_DEC;
         if npowmax != 0 {
             err += 3 * npowmax;
         }
@@ -446,16 +445,32 @@ impl ExactNumNumber {
     ) -> Result<(Sign, Vec<u8>, Exponent), Error> {
         match rdx.value() {
             2 => self.conv_to_binary(),
-            10 => self.conv_to_dec(rm, cc),
+            10 => self.conv_to_dec(rm, cc, 0),
             b if b.is_power_of_two() => self.conv_to_commensurable(b.trailing_zeros() as usize),
             b => self.conv_to_general(b, rm, cc),
         }
+    }
+
+    fn zero_with_sign(sign: Sign, p: usize) -> Result<Self, Error> {
+        let mut z = Self::new(p)?;
+        z.set_sign(sign);
+        Ok(z)
+    }
+
+    pub(crate) fn convert_to_dec_extra(
+        &self,
+        rm: RoundingMode,
+        cc: &mut Consts,
+        extra_digits: usize,
+    ) -> Result<(Sign, Vec<u8>, Exponent), Error> {
+        self.conv_to_dec(rm, cc, extra_digits)
     }
 
     fn conv_to_dec(
         &self,
         rm: RoundingMode,
         cc: &mut Consts,
+        extra_digits: usize,
     ) -> Result<(Sign, Vec<u8>, Exponent), Error> {
         if self.precision() == 0 {
             return Ok((self.sign(), Vec::new(), 0));
@@ -463,7 +478,7 @@ impl ExactNumNumber {
 
         let p = self.mantissa_max_bit_len();
         let subn_e = p - self.precision();
-        let dec_len = (p as u64 * 301029996 / 1000000000) as usize + 1;
+        let dec_len = (p as u64 * 301029996 / 1000000000) as usize + 1 + extra_digits;
 
         let mut err = WORD_BIT_SIZE; // speculative
         let mut p_wrk = round_p((dec_len as u64 * 3321928095 / 1000000000) as usize + 1 + err);
@@ -475,12 +490,12 @@ impl ExactNumNumber {
             x.set_inexact(false);
 
             let n_wrk = ((p_wrk as i64 - self.exponent() as i64 + subn_e as i64) * 301029996
-                / 1000000000) as isize
+                / 1000000000)
                 + 1;
 
             let mut err_acc = 0;
 
-            let mut pwr = n_wrk.unsigned_abs();
+            let mut pwr = crate::common::util::abs_usize(n_wrk);
             if pwr > TEN_PWR_MAX_TO_DEC {
                 let tp = TEN.powi(TEN_PWR_MAX_TO_DEC, p_wrk, RoundingMode::None)?;
                 err_acc += 1;
@@ -528,12 +543,12 @@ impl ExactNumNumber {
             let tenpowers = cc.tenpowers(k)?;
             let mut digits = m.conv_to_dec(1 << k, tenpowers, k.saturating_sub(1), true)?;
 
-            let mut e_out = digits.len() as isize - n_wrk;
+            let mut e_out = digits.len() as i64 - n_wrk;
 
             let mut e_subn = 0;
-            if e_out < EXPONENT_MIN as isize {
-                e_subn = (EXPONENT_MIN as isize - e_out) as usize;
-                e_out = EXPONENT_MIN as isize;
+            if e_out < EXPONENT_MIN as i64 {
+                e_subn = (EXPONENT_MIN as i64 - e_out) as usize;
+                e_out = EXPONENT_MIN as i64;
             }
 
             let mut e_out = e_out as Exponent;
@@ -653,7 +668,7 @@ impl ExactNumNumber {
             let mut c = false;
 
             if rm == RoundingMode::ToEven || rm == RoundingMode::ToOdd {
-                let is_even = digits[n - 1] % 2 == 0;
+                let is_even = digits[n - 1].is_multiple_of(2);
                 let dn = digits[n];
 
                 let (rem0, rem9) = get_rem(&digits[n + 1..]);
@@ -682,7 +697,11 @@ impl ExactNumNumber {
                             c = true;
                         }
                     }
-                    _ => unreachable!(),
+                    RoundingMode::None
+                    | RoundingMode::Up
+                    | RoundingMode::Down
+                    | RoundingMode::ToZero
+                    | RoundingMode::FromZero => {}
                 };
             } else {
                 let (rem0, rem9) = get_rem(&digits[n..]);
@@ -712,7 +731,7 @@ impl ExactNumNumber {
                             c = true;
                         }
                     }
-                    _ => unreachable!(),
+                    RoundingMode::None | RoundingMode::ToEven | RoundingMode::ToOdd => {}
                 };
             }
 
@@ -755,7 +774,10 @@ impl ExactNumNumber {
         let mut iter = self.mantissa().digits().iter().rev();
 
         let mut done = WORD_BIT_SIZE - shift + e_shift;
-        let mut d = *iter.next().unwrap() as DoubleWord; // iter is never empty.
+        let Some(&top) = iter.next() else {
+            return Err(Error::InvalidArgument); // a finite nonzero value has at least one word
+        };
+        let mut d = top as DoubleWord;
         let mut cnt = 0;
 
         loop {
@@ -832,11 +854,10 @@ impl ExactNumNumber {
 
         for _ in 0..max_digits {
             x = x.mul(&b, p, RoundingMode::None)?;
-            let iv = x.int()?;
             let mut digit = 0u8;
             for d in 1..base {
                 let dv = Self::from_usize(d as usize)?;
-                if dv.cmp(&iv) > 0 {
+                if dv.cmp(&x) > 0 {
                     break;
                 }
                 digit = d;

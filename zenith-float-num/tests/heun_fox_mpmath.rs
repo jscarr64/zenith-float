@@ -1,6 +1,15 @@
 //! Meijer G / Fox H / Heun vs mpmath 1.4.1 (50-digit golds) and independent reductions.
 
+use std::ops::Neg;
 use zenith_float_num::{Consts, Error, ExactNum, Radix, RoundingMode};
+
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
 
 const RM: RoundingMode = RoundingMode::ToEven;
 
@@ -12,7 +21,7 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
     if got.is_nan() {
         return i32::MIN;
     }
-    let d = got.sub(want, 2 * p, RoundingMode::None);
+    let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
     if d.is_zero() {
         return i32::MAX;
     }
@@ -151,7 +160,7 @@ fn heun_fox_mpmath() {
         dec("0.15", p, &mut cc).meijer_g(
             core::slice::from_ref(&half),
             &[],
-            &[qtr.clone(), qtr.neg()],
+            &[qtr.clone(), neg_of(&qtr)],
             &[],
             p,
             RM,
@@ -341,7 +350,9 @@ fn heun_fox_mpmath() {
             &alpha,
             &beta,
             &gamma,
-            &alpha.add(&beta, p, RM).sub(&gamma, p, RM).add(&one, p, RM),
+            &ExactNum::add_ref(&alpha, &beta, p, RM)
+                .sub(&gamma, p, RM)
+                .add(&one, p, RM),
             p,
             RM,
             &mut cc,
@@ -396,7 +407,7 @@ fn heun_fox_mpmath() {
             &dec("0.4", p, &mut cc),
             &dec("1.3", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("0.4", p, &mut cc),
             p,
             RM,
@@ -413,7 +424,7 @@ fn heun_fox_mpmath() {
             &dec("-0.7", p, &mut cc),
             &dec("2.2", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("-0.7", p, &mut cc),
             p,
             RM,
@@ -487,7 +498,9 @@ fn heun_fox_mpmath() {
             &alpha,
             &beta,
             &gamma,
-            &alpha.add(&beta, p, RM).sub(&gamma, p, RM).add(&one, p, RM),
+            &ExactNum::add_ref(&alpha, &beta, p, RM)
+                .sub(&gamma, p, RM)
+                .add(&one, p, RM),
             p,
             RM,
             &mut cc,
@@ -557,7 +570,7 @@ fn heun_fox_mpmath() {
             &dec("0.4", p, &mut cc),
             &dec("1.3", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("0.4", p, &mut cc),
             p,
             RM,
@@ -574,7 +587,7 @@ fn heun_fox_mpmath() {
             &dec("0.4", p, &mut cc),
             &dec("1.3", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("0.4", p, &mut cc),
             p,
             RM,
@@ -635,7 +648,7 @@ fn heun_fox_mpmath() {
     );
     // q = -20 + 2^{-120} is inside the old p-8 slack and outside one ulp.
     // mpmath series of the general HeunG (not hyp2f1) at 80 decimals.
-    let q_near = m20.add(&one.ldexp(-120, p, RM), p, RM);
+    let q_near = m20.add(&ExactNum::from_u8(1, p).ldexp(-120, p, RM), p, RM);
     check_not_closed_form(
         "HeunG near-miss q=-20+2^{-120}",
         z_half.heun_g(&two, &q_near, &m10, &one, &one, &m9, p, RM, &mut cc),
@@ -651,7 +664,7 @@ fn heun_fox_mpmath() {
     let gam3 = ExactNum::from_i32(3, p);
     check(
         "HeunC exact 1F1(-2;3;1/2)",
-        z_half.heun_c(&al2, &gam3, &zero, &one.neg(), &al2, p, RM, &mut cc),
+        z_half.heun_c(&al2, &gam3, &zero, &neg_of(&one), &al2, p, RM, &mut cc),
         "0.6875",
         p,
         &mut cc,
@@ -660,10 +673,10 @@ fn heun_fox_mpmath() {
     // q = 10 + 2^{-119} still passed values_agree(..., p) (about p-8 bits).
     // mpmath confluent series, not hyp1f1(-10; 3; 1/2).
     let al10 = ExactNum::from_i32(10, p);
-    let q_c = al10.add(&one.ldexp(-119, p, RM), p, RM);
+    let q_c = ExactNum::from_i32(10, p).add(&ExactNum::from_u8(1, p).ldexp(-119, p, RM), p, RM);
     check_not_closed_form(
         "HeunC near-miss q=10+2^{-119}",
-        z_half.heun_c(&al10, &gam3, &zero, &one.neg(), &q_c, p, RM, &mut cc),
+        z_half.heun_c(&al10, &gam3, &zero, &neg_of(&one), &q_c, p, RM, &mut cc),
         "0.05432435599265874059710865266420821969265251848607852039",
         "0.05432435599265874059710865266420821976377531933087488643",
         p,

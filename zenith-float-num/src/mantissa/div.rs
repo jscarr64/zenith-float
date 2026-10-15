@@ -3,7 +3,7 @@
 //! Division algos.
 
 use crate::common::buf::WordBuf;
-use crate::common::int::SliceWithSign;
+use crate::common::int::{SliceMut, SliceRef, SliceWithSign};
 use crate::common::util::add_carry;
 use crate::common::util::log2_ceil;
 use crate::defs::DoubleWord;
@@ -45,7 +45,9 @@ impl Mantissa {
             if val < d {
                 rh = val;
                 val = *iter.next().unwrap_or(&0) as DoubleWord;
-                *m3iter.next().unwrap() = 0; // m3 is at least 1 word long.
+                if let Some(q) = m3iter.next() {
+                    *q = 0; // m3 is at least 1 word long
+                }
                 rem[0] = rh as Word;
                 j -= 1;
             }
@@ -164,7 +166,9 @@ impl Mantissa {
                 if val < d {
                     rh = val;
                     val = *iter.next().unwrap_or(&0) as DoubleWord;
-                    *remiter.next().unwrap() = 0; // rem is at least 1 word long.
+                    if let Some(r) = remiter.next() {
+                        *r = 0; // rem is at least 1 word long
+                    }
                     j -= 1;
                 }
 
@@ -193,11 +197,16 @@ impl Mantissa {
     }
 
     // recursive division correction
-    fn div_correction(a: &mut SliceWithSign, q: &mut SliceWithSign, step: SliceWithSign) {
+    fn div_correction(
+        a: &mut SliceMut<'_>,
+        q: &mut SliceMut<'_>,
+        step: SliceRef<'_>,
+    ) -> Result<(), Error> {
         while a.sign() < 0 && !a.is_zero() {
-            q.decrement_abs();
+            q.decrement_abs()?;
             a.add_assign(&step);
         }
+        Ok(())
     }
 
     // Recursive integer division divides m1 by m2, returns quotinent and remainder.
@@ -257,7 +266,7 @@ impl Mantissa {
                 tmpbuf[k + m2.len()..].fill(0);
                 tmpbuf[k..k + m2.len()].copy_from_slice(m2);
                 let b = SliceWithSign::new(&tmpbuf, 1);
-                Self::div_correction(&mut a3, &mut q1, b);
+                Self::div_correction(&mut a3, &mut q1, b)?;
             }
 
             let mut ub = a3.len();
@@ -289,7 +298,7 @@ impl Mantissa {
 
                 if a4.sign() < 0 {
                     // correction
-                    Self::div_correction(&mut a4, &mut q0, b);
+                    Self::div_correction(&mut a4, &mut q0, b)?;
                 }
 
                 // quot = q1 * 2^k + q0;

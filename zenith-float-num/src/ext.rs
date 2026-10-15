@@ -3,6 +3,7 @@
 //! ExactNum including finite numbers, NaN, and `Inf`.
 
 use crate::common::util::log2_ceil;
+use crate::common::util::round_p;
 use crate::defs::SignedWord;
 use crate::defs::DEFAULT_P;
 use crate::num::ExactNumNumber;
@@ -15,7 +16,6 @@ use crate::Sign;
 use crate::Word;
 use crate::WORD_BIT_SIZE;
 use core::num::FpCategory;
-use lazy_static::lazy_static;
 
 #[cfg(feature = "std")]
 use core::fmt::Write;
@@ -28,6 +28,9 @@ pub const NAN: ExactNum = ExactNum {
     inner: Flavor::NaN(None),
 };
 
+/// The NaN that `clamp`, `min` and `max` hand out by reference.
+static NAN_VALUE: ExactNum = NAN;
+
 /// Positive infinity.
 pub const INF_POS: ExactNum = ExactNum {
     inner: Flavor::Inf(Sign::Pos),
@@ -38,13 +41,8 @@ pub const INF_NEG: ExactNum = ExactNum {
     inner: Flavor::Inf(Sign::Neg),
 };
 
-lazy_static! {
-
-    /// 1
-    pub static ref ONE: ExactNum = ExactNum { inner: Flavor::Value(ExactNumNumber::from_word(1, DEFAULT_P).expect("Constant ONE initialized")) };
-
-    /// 2
-    pub static ref TWO: ExactNum = ExactNum { inner: Flavor::Value(ExactNumNumber::from_word(2, DEFAULT_P).expect("Constant TWO initialized")) };
+fn invalid_op() -> ExactNum {
+    ExactNum::nan(Some(Error::InvalidArgument))
 }
 
 /// A floating point number of arbitrary precision.
@@ -65,6 +63,15 @@ impl ExactNum {
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn new(p: usize) -> Self {
         Self::result_to_ext(ExactNumNumber::new(p), false, true)
+    }
+
+    /// Positive or negative infinity, built fresh (no copy of an existing value).
+    fn inf_with_sign(positive: bool) -> Self {
+        if positive {
+            INF_POS
+        } else {
+            INF_NEG
+        }
     }
 
     /// Constructs not-a-number with an associated error `err`.
@@ -112,15 +119,41 @@ impl ExactNum {
     }
 
     /// Adds `d2` to `self` and returns the result of the operation with precision `p` rounded according to `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// The result is rounded at exactly `p` bits (storage is still a whole number of words);
+    /// with `RoundingMode::None` the result keeps the storage precision.
     /// The function returns NaN if the precision `p` is incorrect.
-    pub fn add(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn add(self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         self.add_op(d2, p, rm, false)
+    }
+
+    /// `a + b` with both operands borrowed: the sanctioned form for a site where **both operands are
+    /// still needed afterwards**. The sum is built in a fresh buffer by the same kernel as [`Self::add`]
+    /// (the zero-aware kernel branch included); neither operand is copied. The result, its signs of zero,
+    /// both inexact flags, Inf/NaN handling and subnormal results are those of `add`.
+    ///
+    /// Use [`Self::add`] when the first operand is dead after the call. Every use of `add_ref` and
+    /// `sub_ref` in library code is counted by `tools/rules_scan.sh` (`tools/ref_sum_count_baseline.txt`,
+    /// which may only go down).
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn add_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {
+        a.add_op(b, p, rm, false)
+    }
+
+    /// `a - b` with both operands borrowed. Same contract as [`Self::add_ref`], for subtraction.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn sub_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {
+        a.sub_op(b, p, rm, false)
     }
 
     /// Adds `d2` to `self` and returns the result of the operation.
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer addition.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn add_full_prec(&self, d2: &Self) -> Self {
         self.add_op(d2, 0, RoundingMode::None, true)
     }
@@ -128,10 +161,16 @@ impl ExactNum {
     fn add_op(&self, d2: &Self, p: usize, rm: RoundingMode, full_prec: bool) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
-                Flavor::Value(v2) => Self::result_to_ext(
-                    if full_prec { v1.add_full_prec(v2) } else { v1.add(v2, p, rm) },
+                Flavor::Value(v2) => Self::result_to_ext_rm(
+                    if full_prec {
+                        v1.add_full_prec(v2)
+                    } else {
+                        ExactNumNumber::exact_bits(p, rm, |q, r| v1.add_per_op(v2, q, r))
+                    },
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
+                    p,
+                    rm,
                 ),
                 Flavor::Inf(s2) => ExactNum {
                     inner: Flavor::Inf(*s2),
@@ -144,7 +183,7 @@ impl ExactNum {
                 },
                 Flavor::Inf(s2) => {
                     if *s1 != *s2 {
-                        NAN
+                        invalid_op()
                     } else {
                         ExactNum {
                             inner: Flavor::Inf(*s2),
@@ -158,15 +197,20 @@ impl ExactNum {
     }
 
     /// Subtracts `d2` from `self` and returns the result of the operation with precision `p` rounded according to `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// The result is rounded at exactly `p` bits (storage is still a whole number of words);
+    /// with `RoundingMode::None` the result keeps the storage precision.
     /// The function returns NaN if the precision `p` is incorrect.
-    pub fn sub(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn sub(self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         self.sub_op(d2, p, rm, false)
     }
 
     /// Subtracts `d2` from `self` and returns the result of the operation.
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer subtraction.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn sub_full_prec(&self, d2: &Self) -> Self {
         self.sub_op(d2, 0, RoundingMode::None, true)
     }
@@ -174,10 +218,16 @@ impl ExactNum {
     fn sub_op(&self, d2: &Self, p: usize, rm: RoundingMode, full_prec: bool) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
-                Flavor::Value(v2) => Self::result_to_ext(
-                    if full_prec { v1.sub_full_prec(v2) } else { v1.sub(v2, p, rm) },
+                Flavor::Value(v2) => Self::result_to_ext_rm(
+                    if full_prec {
+                        v1.sub_full_prec(v2)
+                    } else {
+                        ExactNumNumber::exact_bits(p, rm, |q, r| v1.sub_per_op(v2, q, r))
+                    },
                     v1.is_zero(),
                     v1.sign() == v2.sign(),
+                    p,
+                    rm,
                 ),
                 Flavor::Inf(s2) => {
                     if s2.is_positive() {
@@ -194,7 +244,7 @@ impl ExactNum {
                 },
                 Flavor::Inf(s2) => {
                     if *s1 == *s2 {
-                        NAN
+                        invalid_op()
                     } else {
                         ExactNum {
                             inner: Flavor::Inf(*s1),
@@ -208,8 +258,11 @@ impl ExactNum {
     }
 
     /// Multiplies `d2` by `self` and returns the result of the operation with precision `p` rounded according to `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// The result is rounded at exactly `p` bits (storage is still a whole number of words);
+    /// with `RoundingMode::None` the result keeps the storage precision.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn mul(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         self.mul_op(d2, p, rm, false)
     }
@@ -217,6 +270,8 @@ impl ExactNum {
     /// Multiplies `d2` by `self` and returns the result of the operation.
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer multiplication.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn mul_full_prec(&self, d2: &Self) -> Self {
         self.mul_op(d2, 0, RoundingMode::None, true)
     }
@@ -224,19 +279,34 @@ impl ExactNum {
     /// Computes `self * b + c` with precision `p`, rounded once with `rm`.
     ///
     /// Unlike `mul` followed by `add`, the product is not rounded to `p` before the addition.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fma(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        let b_c = b.exact_copy_ext();
+        let c_c = c.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || b.inexact_accumulated() || c.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| x.fma_word(&b_c, &c_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::fma`].
+    fn fma_word(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         if b.is_nan() {
-            return b.clone();
+            return Self::nan(b.err());
         }
         if c.is_nan() {
-            return c.clone();
+            return Self::nan(c.err());
         }
         match (&self.inner, &b.inner, &c.inner) {
             (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(cv)) => {
-                Self::result_to_ext(a.fma(bv, cv, p, rm), false, true)
+                Self::result_to_ext_rm(a.fma(bv, cv, p, rm), false, true, p, rm)
             }
             _ => {
                 let prod = self.mul(b, p, RoundingMode::None);
@@ -252,12 +322,14 @@ impl ExactNum {
     ///
     /// Inf / NaN: `hi` is `self.add(b, p, rm)`; `lo` is zero (or NaN if `hi` is NaN).
     /// Reconstruct with `hi.add(&lo, p, rm)` (not `add_full_prec`, which uses internal precision 0).
-    pub fn two_sum(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn two_sum(self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
         if self.is_nan() {
-            return (self.clone(), Self::nan(self.err()));
+            return (Self::nan(self.err()), Self::nan(self.err()));
         }
         if b.is_nan() {
-            return (b.clone(), Self::nan(b.err()));
+            return (Self::nan(b.err()), Self::nan(b.err()));
         }
         if self.is_inf() || b.is_inf() {
             return (self.add(b, p, rm), Self::new(p));
@@ -277,7 +349,7 @@ impl ExactNum {
         }
         if lo.is_zero() {
             let mut z = Self::new(p);
-            z.set_inexact(lo.inexact());
+            z.set_inexact(lo.inexact_accumulated());
             return z;
         }
         lo
@@ -285,12 +357,14 @@ impl ExactNum {
 
     /// Two-product: `(hi, lo)` with `hi` rounded to `p` bits using `rm` and `hi + lo` equal to the
     /// exact product of finite operands (via [`mul_full_prec`](Self::mul_full_prec)).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn two_product(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
         if self.is_nan() {
-            return (self.clone(), Self::nan(self.err()));
+            return (Self::nan(self.err()), Self::nan(self.err()));
         }
         if b.is_nan() {
-            return (b.clone(), Self::nan(b.err()));
+            return (Self::nan(b.err()), Self::nan(b.err()));
         }
         if self.is_inf() || b.is_inf() {
             return (self.mul(b, p, rm), Self::new(p));
@@ -305,7 +379,17 @@ impl ExactNum {
     }
 
     /// Sum `xs` at extra working precision and round once to `p` bits.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fused_sum(xs: &[Self], p: usize, rm: RoundingMode) -> Self {
+        let xs_c: Vec<Self> = xs.iter().map(|v| v.exact_copy_ext()).collect();
+        Self::round_exact(xs.iter().any(|v| v.inexact_accumulated()), p, rm, |q, r| {
+            Self::fused_sum_word(&xs_c, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::fused_sum`].
+    fn fused_sum_word(xs: &[Self], p: usize, rm: RoundingMode) -> Self {
         if xs.is_empty() {
             return Self::new(p);
         }
@@ -329,7 +413,22 @@ impl ExactNum {
 
     /// Dot product of equal-length slices: extra-precision `∑ xs[i]*ys[i]`, then one round to `p`.
     /// Length mismatch yields NaN (`InvalidArgument`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fused_dot(xs: &[Self], ys: &[Self], p: usize, rm: RoundingMode) -> Self {
+        let xs_c: Vec<Self> = xs.iter().map(|v| v.exact_copy_ext()).collect();
+        let ys_c: Vec<Self> = ys.iter().map(|v| v.exact_copy_ext()).collect();
+        Self::round_exact(
+            xs.iter().any(|v| v.inexact_accumulated())
+                || ys.iter().any(|v| v.inexact_accumulated()),
+            p,
+            rm,
+            |q, r| Self::fused_dot_word(&xs_c, &ys_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::fused_dot`].
+    fn fused_dot_word(xs: &[Self], ys: &[Self], p: usize, rm: RoundingMode) -> Self {
         if xs.len() != ys.len() {
             return Self::nan(Some(Error::InvalidArgument));
         }
@@ -358,7 +457,21 @@ impl ExactNum {
     /// Horner evaluation `a₀ + x(a₁ + x(a₂ + …))` with fused multiply-add at extra working precision,
     /// then one round to `p`. `coeffs[0]` is the constant term (lowest degree first).
     /// Empty `coeffs` yields zero.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn polyval(coeffs: &[Self], x: &Self, p: usize, rm: RoundingMode) -> Self {
+        let x_c = x.exact_copy_ext();
+        let coeffs_c: Vec<Self> = coeffs.iter().map(|v| v.exact_copy_ext()).collect();
+        Self::round_exact(
+            x.inexact_accumulated() || coeffs.iter().any(|v| v.inexact_accumulated()),
+            p,
+            rm,
+            |q, r| Self::polyval_word(&coeffs_c, &x_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::polyval`].
+    fn polyval_word(coeffs: &[Self], x: &Self, p: usize, rm: RoundingMode) -> Self {
         if coeffs.is_empty() {
             return Self::new(p);
         }
@@ -384,19 +497,34 @@ impl ExactNum {
     }
 
     /// Alias of [`Self::fma`].
+    ///
+    /// Accuracy: correctly-rounded
     pub fn mul_add(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        let b_c = b.exact_copy_ext();
+        let c_c = c.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || b.inexact_accumulated() || c.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| x.mul_add_word(&b_c, &c_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::mul_add`].
+    fn mul_add_word(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         if b.is_nan() {
-            return b.clone();
+            return Self::nan(b.err());
         }
         if c.is_nan() {
-            return c.clone();
+            return Self::nan(c.err());
         }
         match (&self.inner, &b.inner, &c.inner) {
             (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(cv)) => {
-                Self::result_to_ext(a.mul_add(bv, cv, p, rm), false, true)
+                Self::result_to_ext_rm(a.mul_add(bv, cv, p, rm), false, true, p, rm)
             }
             _ => self.fma(b, c, p, rm),
         }
@@ -406,15 +534,21 @@ impl ExactNum {
         match &self.inner {
             Flavor::Value(v1) => {
                 match &d2.inner {
-                    Flavor::Value(v2) => Self::result_to_ext(
-                        if full_prec { v1.mul_full_prec(v2) } else { v1.mul(v2, p, rm) },
+                    Flavor::Value(v2) => Self::result_to_ext_rm(
+                        if full_prec {
+                            v1.mul_full_prec(v2)
+                        } else {
+                            ExactNumNumber::exact_bits(p, rm, |q, r| v1.mul_per_op(v2, q, r))
+                        },
                         v1.is_zero(),
                         v1.sign() == v2.sign(),
+                        p,
+                        rm,
                     ),
                     Flavor::Inf(s2) => {
                         if v1.is_zero() {
                             // 0*inf
-                            NAN
+                            invalid_op()
                         } else {
                             let s = if v1.sign() == *s2 { Sign::Pos } else { Sign::Neg };
                             ExactNum {
@@ -430,7 +564,7 @@ impl ExactNum {
                     Flavor::Value(v2) => {
                         if v2.is_zero() {
                             // inf*0
-                            NAN
+                            invalid_op()
                         } else {
                             let s = if v2.sign() == *s1 { Sign::Pos } else { Sign::Neg };
                             ExactNum {
@@ -452,14 +586,21 @@ impl ExactNum {
     }
 
     /// Divides `self` by `d2` and returns the result of the operation with precision `p` rounded according to `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// The result is rounded at exactly `p` bits (storage is still a whole number of words);
+    /// with `RoundingMode::None` the result keeps the storage precision.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn div(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
-                Flavor::Value(v2) => {
-                    Self::result_to_ext(v1.div(v2, p, rm), v1.is_zero(), v1.sign() == v2.sign())
-                }
+                Flavor::Value(v2) => Self::result_to_ext_rm(
+                    ExactNumNumber::exact_bits(p, rm, |q, r| v1.div_per_op(v2, q, r)),
+                    v1.is_zero(),
+                    v1.sign() == v2.sign(),
+                    p,
+                    rm,
+                ),
                 Flavor::Inf(_) => Self::new(v1.mantissa_max_bit_len()),
                 Flavor::NaN(err) => Self::nan(*err),
             },
@@ -471,7 +612,7 @@ impl ExactNum {
                         INF_NEG
                     }
                 }
-                Flavor::Inf(_) => NAN,
+                Flavor::Inf(_) => invalid_op(),
                 Flavor::NaN(err) => Self::nan(*err),
             },
             Flavor::NaN(err) => Self::nan(*err),
@@ -479,16 +620,32 @@ impl ExactNum {
     }
 
     /// Returns the remainder of division of `|self|` by `|d2|`. The sign of the result is set to the sign of `self`.
+    ///
+    /// The remainder is always exact: its last bit is no finer than the finer of the two
+    /// operands' last bits and it is smaller than both, so it fits without rounding. It takes
+    /// no precision or rounding mode, and `inexact()` is false.
+    ///
+    /// Accuracy: exact
     pub fn rem(&self, d2: &Self) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
                 Flavor::Value(v2) => {
-                    Self::result_to_ext(v1.rem(v2), v1.is_zero(), v1.sign() == v2.sign())
+                    // The remainder is exact; its flag reports this operation, which never
+                    // rounds, and the accumulated flag keeps both operands' history.
+                    let inputs = v1.inexact() || v2.inexact();
+                    let r = match (v1.exact_copy(), v2.exact_copy()) {
+                        (Ok(a), Ok(b)) => a.rem(&b).map(|mut r| {
+                            r.finish_flags(inputs, true);
+                            r
+                        }),
+                        (Err(e), _) | (_, Err(e)) => Err(e),
+                    };
+                    Self::result_to_ext(r, v1.is_zero(), v1.sign() == v2.sign())
                 }
                 Flavor::Inf(_) => self.clone(),
                 Flavor::NaN(err) => Self::nan(*err),
             },
-            Flavor::Inf(_) => NAN,
+            Flavor::Inf(_) => invalid_op(),
             Flavor::NaN(err) => Self::nan(*err),
         }
     }
@@ -496,12 +653,11 @@ impl ExactNum {
     /// Compares `self` to `d2`.
     /// Returns positive if `self` > `d2`, negative if `self` < `d2`, zero if `self` == `d2`, None if `self` or `d2` is NaN.
     /// The non-zero results are exactly `1` and `-1`.
-    #[allow(clippy::should_implement_trait)]
-    pub fn cmp(&self, d2: &ExactNum) -> Option<SignedWord> {
+    pub fn compare(&self, d2: &ExactNum) -> Option<SignedWord> {
         self.cmp_raw(d2).map(SignedWord::signum)
     }
 
-    /// [`cmp`](Self::cmp) before normalization: equal exponents return the mantissa word difference.
+    /// [`compare`](Self::compare) before normalization: equal exponents return the mantissa word difference.
     fn cmp_raw(&self, d2: &ExactNum) -> Option<SignedWord> {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
@@ -560,14 +716,34 @@ impl ExactNum {
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn pow(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let x = self.exact_copy_ext();
+        let n_c = n.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || n.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| x.pow_word(&n_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::pow`].
+    fn pow_word(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v1) => {
                 match &n.inner {
-                    Flavor::Value(v2) => Self::result_to_ext(
+                    // 0^(-n) is a pole (Inf in every mode); any other overflow follows `rm`.
+                    Flavor::Value(v2) if v1.is_zero() => {
+                        Self::result_to_ext(v1.pow(v2, p, rm, cc), true, v1.sign() == v2.sign())
+                    }
+                    Flavor::Value(v2) => Self::result_to_ext_rm(
                         v1.pow(v2, p, rm, cc),
-                        v1.is_zero(),
+                        false,
                         v1.sign() == v2.sign(),
+                        p,
+                        rm,
                     ),
                     Flavor::Inf(s2) => {
                         // v1^inf
@@ -620,9 +796,19 @@ impl ExactNum {
     /// Compute the power of `self` to the integer `n` with precision `p`. The result is rounded using the rounding mode `rm`.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn powi(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            x.powi_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::powi`].
+    fn powi_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
-            Flavor::Value(v1) => Self::result_to_ext(v1.powi(n, p, rm), false, true),
+            Flavor::Value(v1) => Self::result_to_ext_rm(v1.powi(n, p, rm), false, true, p, rm),
             Flavor::Inf(s1) => {
                 // inf ^ v2
                 if n == 0 {
@@ -641,9 +827,19 @@ impl ExactNum {
     /// Precision is rounded upwards to the word size.
     /// Negative `n` is a reciprocal of the corresponding positive power.
     /// The function returns NaN if the precision `p` is incorrect, or Inf if `self` is zero and `n` is negative.
-    pub fn powsi(&self, n: isize, p: usize, rm: RoundingMode) -> Self {
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn powsi(&self, n: i64, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            x.powsi_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::powsi`].
+    fn powsi_word(&self, n: i64, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
-            Flavor::Value(v1) => Self::result_to_ext(v1.powsi(n, p, rm), false, true),
+            Flavor::Value(v1) => Self::result_to_ext_rm(v1.powsi(n, p, rm), false, true, p, rm),
             Flavor::Inf(s1) => {
                 if n == 0 {
                     Self::from_u8(1, p)
@@ -663,6 +859,8 @@ impl ExactNum {
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn log(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v1) => {
@@ -747,44 +945,43 @@ impl ExactNum {
     /// Restricts the value of `self` to an interval determined by the values of `min` and `max`.
     /// The function returns `max` if `self` is greater than `max`, `min` if `self` is less than `min`, and `self` otherwise.
     /// If either argument is NaN or `min` is greater than `max`, the function returns NaN.
-    pub fn clamp(&self, min: &Self, max: &Self) -> Self {
-        if self.is_nan() || min.is_nan() || max.is_nan() || max.cmp(min).unwrap() < 0 {
-            // call to unwrap() is unreacheable
-            NAN
-        } else if self.cmp(min).unwrap() < 0 {
-            // call to unwrap() is unreacheable
-            min.clone()
-        } else if self.cmp(max).unwrap() > 0 {
-            // call to unwrap() is unreacheable
-            max.clone()
+    pub fn clamp<'a>(&'a self, min: &'a Self, max: &'a Self) -> &'a Self {
+        if self.is_nan()
+            || min.is_nan()
+            || max.is_nan()
+            || matches!(max.compare(min), Some(c) if c < 0)
+        {
+            &NAN_VALUE
+        } else if matches!(self.compare(min), Some(c) if c < 0) {
+            min
+        } else if matches!(self.compare(max), Some(c) if c > 0) {
+            max
         } else {
-            self.clone()
+            self
         }
     }
 
-    /// Returns the value of `d1` if `d1` is greater than `self`, or the value of `self` otherwise.
-    /// If either argument is NaN, the function returns NaN.
-    pub fn max(&self, d1: &Self) -> Self {
+    /// Returns `d1` if `d1` is greater than `self`, or `self` otherwise (a borrow of one of the two
+    /// operands, no copy). If either argument is NaN, the function returns NaN.
+    pub fn max<'a>(&'a self, d1: &'a Self) -> &'a Self {
         if self.is_nan() || d1.is_nan() {
-            NAN
-        } else if self.cmp(d1).unwrap() < 0 {
-            // call to unwrap() is unreacheable
-            d1.clone()
+            &NAN_VALUE
+        } else if matches!(self.compare(d1), Some(c) if c < 0) {
+            d1
         } else {
-            self.clone()
+            self
         }
     }
 
-    /// Returns value of `d1` if `d1` is less than `self`, or the value of `self` otherwise.
-    /// If either argument is NaN, the function returns NaN.
-    pub fn min(&self, d1: &Self) -> Self {
+    /// Returns `d1` if `d1` is less than `self`, or `self` otherwise (a borrow of one of the two
+    /// operands, no copy). If either argument is NaN, the function returns NaN.
+    pub fn min<'a>(&'a self, d1: &'a Self) -> &'a Self {
         if self.is_nan() || d1.is_nan() {
-            NAN
-        } else if self.cmp(d1).unwrap() > 0 {
-            // call to unwrap() is unreacheable
-            d1.clone()
+            &NAN_VALUE
+        } else if matches!(self.compare(d1), Some(c) if c > 0) {
+            d1
         } else {
-            self.clone()
+            self
         }
     }
 
@@ -804,6 +1001,8 @@ impl ExactNum {
 
     /// Parses a number from the string `s`.
     /// The function expects `s` to be a number in scientific format in radix `rdx`, or +-Inf, or NaN.
+    /// The whole string is consumed. Trailing characters, a bare exponent such as `1e` or `1e+`,
+    /// and any other malformed text produce `NaN(InvalidArgument)`.
     /// if `p` equals to usize::MAX then the precision of the resulting number is determined automatically from the input.
     ///
     /// ## Examples
@@ -825,6 +1024,11 @@ impl ExactNum {
     /// assert!(n.is_nan());
     /// ```
     pub fn parse(s: &str, rdx: Radix, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        Self::round_exact(false, p, rm, |q, r| Self::parse_word(s, rdx, q, r, cc))
+    }
+
+    /// Word-precision implementation of [`Self::parse`].
+    fn parse_word(s: &str, rdx: Radix, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match crate::parser::parse(s, rdx) {
             Ok(ps) => {
                 if ps.is_inf() {
@@ -960,9 +1164,16 @@ impl ExactNum {
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn atan(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.atan(p, rm, cc), v.is_zero(), true),
+            Flavor::Value(v) => match Self::exact_operand(v) {
+                Ok((x, acc)) => Self::round_exact(acc, p, rm, |q, r| {
+                    Self::result_to_ext(x.atan(q, r, cc), x.is_zero(), true)
+                }),
+                Err(e) => Self::result_to_ext(Err(e), false, true),
+            },
             Flavor::Inf(s) => Self::result_to_ext(Self::half_pi(*s, p, rm, cc), false, true),
             Flavor::NaN(err) => Self::nan(*err),
         }
@@ -972,12 +1183,26 @@ impl ExactNum {
     /// The result is rounded using the rounding mode `rm`.
     /// This function requires constants cache `cc`.
     /// Precision is rounded upwards to the word size.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn atan2(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let y_c = self.exact_copy_ext();
+        let x_c = x.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || x.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| y_c.atan2_word(&x_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::atan2`].
+    fn atan2_word(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         if x.is_nan() {
-            return x.clone();
+            return Self::nan(x.err());
         }
 
         match (&self.inner, &x.inner) {
@@ -1017,19 +1242,33 @@ impl ExactNum {
     /// The result is rounded using the rounding mode `rm`.
     /// Precision is rounded upwards to the word size.
     /// `hypot(±Inf, y)` and `hypot(x, ±Inf)` are `+Inf`, including when the other argument is NaN.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn hypot(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        let other_c = other.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || other.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| x.hypot_word(&other_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::hypot`].
+    fn hypot_word(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_inf() || other.is_inf() {
             return INF_POS;
         }
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         if other.is_nan() {
-            return other.clone();
+            return Self::nan(other.err());
         }
         match (&self.inner, &other.inner) {
             (Flavor::Value(a), Flavor::Value(b)) => {
-                Self::result_to_ext(a.hypot(b, p, rm), false, true)
+                Self::result_to_ext_rm(a.hypot(b, p, rm), false, true, p, rm)
             }
             _ => NAN,
         }
@@ -1039,9 +1278,16 @@ impl ExactNum {
     /// The result is rounded using the rounding mode `rm`.
     /// This function requires constants cache `cc`.
     /// Returns `-Inf` for `self == -1`, and NaN if `self < -1`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn log1p(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.log1p(p, rm, cc), false, false),
+            Flavor::Value(v) => match Self::exact_operand(v) {
+                Ok((x, acc)) => Self::round_exact(acc, p, rm, |q, r| {
+                    Self::result_to_ext(x.log1p(q, r, cc), false, false)
+                }),
+                Err(e) => Self::result_to_ext(Err(e), false, true),
+            },
             Flavor::Inf(s) => {
                 if s.is_positive() {
                     INF_POS
@@ -1056,9 +1302,16 @@ impl ExactNum {
     /// Computes `exp(self) - 1` with precision `p`.
     /// The result is rounded using the rounding mode `rm`.
     /// This function requires constants cache `cc`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn expm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.expm1(p, rm, cc), false, true),
+            Flavor::Value(v) => match Self::exact_operand(v) {
+                Ok((x, acc)) => Self::round_exact(acc, p, rm, |q, r| {
+                    Self::result_to_ext_rm(x.expm1(q, r, cc), false, true, q, r)
+                }),
+                Err(e) => Self::result_to_ext(Err(e), false, true),
+            },
             Flavor::Inf(s) => {
                 if s.is_positive() {
                     INF_POS
@@ -1074,9 +1327,16 @@ impl ExactNum {
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn tanh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.tanh(p, rm, cc), v.is_zero(), true),
+            Flavor::Value(v) => match Self::exact_operand(v) {
+                Ok((x, acc)) => Self::round_exact(acc, p, rm, |q, r| {
+                    Self::result_to_ext(x.tanh(q, r, cc), x.is_zero(), true)
+                }),
+                Err(e) => Self::result_to_ext(Err(e), false, true),
+            },
             Flavor::Inf(s) => Self::from_i8(s.to_int(), p),
             Flavor::NaN(err) => Self::nan(*err),
         }
@@ -1094,6 +1354,73 @@ impl ExactNum {
         half_pi.set_sign(s);
 
         Ok(half_pi)
+    }
+
+    /// Evaluates `f(precision, rounding)`, a function computed on operands whose inexact flags
+    /// were cleared, so that the result is rounded at exactly `p` bits and carries a
+    /// per-operation `inexact` flag; `inputs_inexact` is folded into the accumulated flag.
+    ///
+    /// Word-aligned precisions with a normal result call `f(p, rm)` directly. Otherwise `f`
+    /// runs toward zero with a guard word, and the result is rounded to odd and then to `p`
+    /// bits with `rm`, which is a single correct rounding. A rounded subnormal result at an
+    /// aligned precision takes the same path, so it is not rounded twice.
+    pub(crate) fn round_exact<F>(inputs_inexact: bool, p: usize, rm: RoundingMode, mut f: F) -> Self
+    where
+        F: FnMut(usize, RoundingMode) -> Self,
+    {
+        let direct = rm == RoundingMode::None || p == 0 || p >= usize::MAX / 4;
+        let mut r = if direct {
+            f(p, rm)
+        } else if p.is_multiple_of(WORD_BIT_SIZE) {
+            let r = f(p, rm);
+            let subnormal_rounded = matches!(
+                &r.inner,
+                Flavor::Value(v) if v.exponent() == crate::EXPONENT_MIN && v.inexact()
+            );
+            if subnormal_rounded {
+                Self::round_odd_path(p, rm, &mut f)
+            } else {
+                r
+            }
+        } else {
+            Self::round_odd_path(p, rm, &mut f)
+        };
+        if let Flavor::Value(v) = &mut r.inner {
+            v.finish_flags(inputs_inexact, true);
+        }
+        r
+    }
+
+    fn round_odd_path<F>(p: usize, rm: RoundingMode, f: &mut F) -> Self
+    where
+        F: FnMut(usize, RoundingMode) -> Self,
+    {
+        let wide = f(round_p(p) + WORD_BIT_SIZE, RoundingMode::ToZero);
+        match wide.inner {
+            Flavor::Value(v) => {
+                if v.is_zero() && !v.inexact() {
+                    // Exact zero: its sign depends on the rounding mode.
+                    return f(p, rm);
+                }
+                let is_zero = v.is_zero();
+                Self::result_to_ext_rm(v.round_odd_to(p, rm), is_zero, true, p, rm)
+            }
+            // Inf and NaN do not depend on the precision; recompute for the mode's own value.
+            Flavor::Inf(_) | Flavor::NaN(_) => f(p, rm),
+        }
+    }
+
+    /// A copy of `self` with both inexact flags cleared, for [`Self::round_exact`].
+    pub(crate) fn exact_copy_ext(&self) -> Self {
+        let mut c = self.clone();
+        c.set_inexact(false);
+        c
+    }
+
+    /// The operand of a function evaluated through [`Self::round_exact`]: a copy with both
+    /// flags cleared, and its accumulated flag.
+    fn exact_operand(v: &ExactNumNumber) -> Result<(ExactNumNumber, bool), Error> {
+        Ok((v.exact_copy()?, v.inexact()))
     }
 
     fn result_to_ext(
@@ -1126,6 +1453,48 @@ impl ExactNum {
             Ok(v) => ExactNum {
                 inner: Flavor::Value(v),
             },
+        }
+    }
+
+    /// Like `result_to_ext`, but an exponent overflow follows `rm` as in IEEE 754 and MPFR:
+    /// the largest finite value of precision `p` with the overflow sign when `rm` rounds toward
+    /// zero for that sign (`ToZero`, `Down` for a positive result, `Up` for a negative one),
+    /// otherwise Inf. The largest finite value is marked inexact.
+    fn result_to_ext_rm(
+        res: Result<ExactNumNumber, Error>,
+        is_dividend_zero: bool,
+        is_same_sign: bool,
+        p: usize,
+        rm: RoundingMode,
+    ) -> ExactNum {
+        match res {
+            Err(Error::ExponentOverflow(s)) => {
+                let toward_zero = matches!(
+                    (s.is_positive(), rm),
+                    (_, RoundingMode::ToZero)
+                        | (true, RoundingMode::Down)
+                        | (false, RoundingMode::Up)
+                );
+                if toward_zero {
+                    match ExactNumNumber::max_value(p) {
+                        Ok(mut m) => {
+                            // The largest value representable with exactly `p` bits.
+                            if let Err(e) = m.set_precision(p, RoundingMode::ToZero) {
+                                return Self::result_to_ext(Err(e), is_dividend_zero, is_same_sign);
+                            }
+                            m.set_sign(s);
+                            m.set_inexact(true);
+                            ExactNum {
+                                inner: Flavor::Value(m),
+                            }
+                        }
+                        Err(e) => Self::result_to_ext(Err(e), is_dividend_zero, is_same_sign),
+                    }
+                } else {
+                    Self::result_to_ext(res, is_dividend_zero, is_same_sign)
+                }
+            }
+            _ => Self::result_to_ext(res, is_dividend_zero, is_same_sign),
         }
     }
 
@@ -1185,11 +1554,13 @@ impl ExactNum {
         Self::result_to_ext(ExactNumNumber::from_word(d, p), false, true)
     }
 
-    /// Returns a copy of the number with the sign reversed.
-    pub fn neg(&self) -> Self {
-        let mut ret = self.clone();
-        ret.inv_sign();
-        ret
+    /// `-self` for an operand that has to stay borrowed: fresh `-1` times `self` through the
+    /// general multiplication kernel at the operand's own precision. The product is exact, keeps
+    /// the sign of zero, Inf and NaN (with its error) and the accumulated inexact flag, and sets
+    /// the per-operation flag to false (nothing was rounded); nothing is cloned.
+    pub(crate) fn neg_via_mul(&self) -> Self {
+        let p = self.mantissa_max_bit_len().unwrap_or(crate::WORD_BIT_SIZE);
+        Self::from_i8(-1, p).mul(self, p, RoundingMode::None)
     }
 
     /// Decomposes `self` into raw parts.
@@ -1217,12 +1588,11 @@ impl ExactNum {
     /// - `n` is larger than the number of bits in `m`.
     /// - `n` is smaller than the number of bits in `m`, but `m` does not represent corresponding subnormal number mantissa.
     /// - `n` is smaller than the number of bits in `m`, but `e` is not the minimum possible exponent.
-    /// - `n` or the size of `m` is too large (larger than isize::MAX / 2 + EXPONENT_MIN).
+    /// - `n` or the size of `m` is too large (larger than i64::MAX / 2 + EXPONENT_MIN).
     /// - `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
     pub fn from_raw_parts(m: &[Word], n: usize, s: Sign, e: Exponent, inexact: bool) -> Self {
         Self::result_to_ext(
-            crate::mantissa::Mantissa::from_raw_parts(m, n)
-                .map(|mantissa| ExactNumNumber::from_raw_unchecked(mantissa, s, e, inexact)),
+            ExactNumNumber::from_raw_parts(m, n, s, e, inexact),
             false,
             true,
         )
@@ -1303,6 +1673,8 @@ impl ExactNum {
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - InvalidArgument: the precision is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn set_precision(&mut self, p: usize, rm: RoundingMode) -> Result<(), Error> {
         if let Flavor::Value(v) = &mut self.inner {
             v.set_precision(p, rm)
@@ -1315,9 +1687,21 @@ impl ExactNum {
     /// The result is rounded using the rounding mode `rm`.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            x.reciprocal_word(q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::reciprocal`].
+    fn reciprocal_word(&self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.reciprocal(p, rm), false, v.is_positive()),
+            Flavor::Value(v) => {
+                Self::result_to_ext_rm(v.reciprocal(p, rm), false, v.is_positive(), p, rm)
+            }
             Flavor::Inf(s) => {
                 let mut ret = Self::new(p);
                 ret.set_sign(*s);
@@ -1432,11 +1816,37 @@ impl ExactNum {
     }
 
     /// Returns true if `self` is inexact. The function returns false if `self` is Inf or NaN.
+    ///
+    /// For `add`, `sub`, `mul`, and `div` the flag is per operation: it is true only if that
+    /// operation rounded, whatever the operands' flags were. Other functions report
+    /// [`ExactNum::inexact_accumulated`].
     pub fn inexact(&self) -> bool {
+        if let Flavor::Value(v) = &self.inner {
+            v.op_inexact()
+        } else {
+            false
+        }
+    }
+
+    /// Returns true if `self`, or any value it was computed from, was rounded. The function
+    /// returns false if `self` is Inf or NaN. This accumulated flag is what the `expr!` macro
+    /// and the correct-rounding loops use to know whether a chain of operations is exact.
+    pub fn inexact_accumulated(&self) -> bool {
         if let Flavor::Value(v) = &self.inner {
             v.inexact()
         } else {
             false
+        }
+    }
+
+    /// Sets the per-operation flag to `op` and adds `inputs` to the accumulated flag, which
+    /// otherwise stays this part's own. A zero part that this operation did not round keeps
+    /// no history, as with a real product by an exact zero (Ziv loops rely on it).
+    pub(crate) fn finish_part(&mut self, op: bool, inputs: bool) {
+        if let Flavor::Value(v) = &mut self.inner {
+            let inherit = inputs && !(v.is_zero() && !v.inexact());
+            v.finish_flags(inherit, true);
+            v.set_op_inexact(op);
         }
     }
 
@@ -1465,31 +1875,90 @@ impl ExactNum {
     }
 
     /// Split `self = m · 2^e` with `m` in `[0.5, 1)` (zeros return `(0, 0)`; Inf/NaN return `(self, 0)`).
-    pub fn frexp(&self) -> (Self, Exponent) {
-        match &self.inner {
+    pub fn frexp(self) -> (Self, Exponent) {
+        match self.inner {
             Flavor::Value(v) => match v.frexp() {
                 Ok((m, e)) => (m.into(), e),
                 Err(err) => (Self::nan(Some(err)), 0),
             },
-            Flavor::Inf(_) | Flavor::NaN(_) => (self.clone(), 0),
+            Flavor::Inf(s) => (Self::inf_with_sign(s.is_positive()), 0),
+            Flavor::NaN(err) => (Self::nan(err), 0),
         }
     }
 
-    /// `self · 2^n`. Alias of [`Self::scalb`].
-    pub fn ldexp(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
-        match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.ldexp(n, p, rm), v.is_zero(), true),
-            Flavor::Inf(_) | Flavor::NaN(_) => self.clone(),
+    /// `self · 2^n`. Alias of [`Self::scalb`]. Takes ownership; the exponent is changed in the operand's own
+    /// storage.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn ldexp(self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        let inputs = self.inexact_accumulated();
+        match self.inner {
+            Flavor::Inf(s) => Self::inf_with_sign(s.is_positive()),
+            Flavor::NaN(err) => Self::nan(err),
+            Flavor::Value(mut v) => {
+                v.set_inexact(false);
+                Self::ldexp_value(v, inputs, n, p, rm)
+            }
         }
     }
 
-    /// `self · 2^n` (IEEE `scalbn`).
-    pub fn scalb(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+    /// `ldexp` of a finite operand whose flags are cleared; `inputs` is its accumulated flag.
+    /// Zero is handled first (its sign depends on the mode); every other operand takes one call at `p`
+    /// bits, or one call at a wider width rounded toward zero followed by a round-to-odd step (see
+    /// [`Self::round_exact`]).
+    fn ldexp_value(
+        v: ExactNumNumber,
+        inputs: bool,
+        n: Exponent,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Self {
+        let zero = v.is_zero();
+        let direct = rm == RoundingMode::None || p == 0 || p >= usize::MAX / 4;
+        let mut r = if direct || zero {
+            Self::result_to_ext_rm(v.ldexp(n, p, rm), zero, true, p, rm)
+        } else {
+            let wp = round_p(p) + WORD_BIT_SIZE;
+            let wide = Self::result_to_ext_rm(
+                v.ldexp(n, wp, RoundingMode::ToZero),
+                false,
+                true,
+                wp,
+                RoundingMode::ToZero,
+            );
+            match wide.inner {
+                Flavor::Value(w) => {
+                    let is_zero = w.is_zero();
+                    Self::result_to_ext_rm(w.round_odd_to(p, rm), is_zero, true, p, rm)
+                }
+                other => ExactNum { inner: other },
+            }
+        };
+        if let Flavor::Value(v) = &mut r.inner {
+            v.finish_flags(inputs, true);
+        }
+        r
+    }
+
+    /// `self · 2^n` (IEEE `scalbn`). Takes ownership, like [`Self::ldexp`].
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn scalb(self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         self.ldexp(n, p, rm)
     }
 
     /// `floor(log2(|self|))` as a float. Zero becomes `-Inf`; Inf/NaN unchanged in kind.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn logb(&self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.logb_word(q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::logb`].
+    fn logb_word(&self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.logb(p, rm), v.is_zero(), true),
             Flavor::Inf(_) => INF_POS,
@@ -1522,28 +1991,34 @@ impl Clone for ExactNum {
     }
 }
 
-macro_rules! gen_wrapper_arg {
-    // function requires self as argument
-    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $($arg:ident, $arg_type:ty),*) => {
+macro_rules! gen_wrapper_own {
+    // function takes self by value and hands its storage to the result
+    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block $(,)?) => {
         #[doc=$comment]
-        pub fn $fname(&self$(,$arg: $arg_type)*) -> $ret {
-            match &self.inner {
-                Flavor::Value(v) => Self::result_to_ext(v.$fname($($arg,)*), v.is_zero(), true),
+        pub fn $fname(self) -> $ret {
+            match self.inner {
+                Flavor::Value(v) => {
+                    let is_zero = v.is_zero();
+                    Self::result_to_ext(v.$fname(), is_zero, true)
+                }
                 Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
-                Flavor::NaN(err) => Self::nan(*err),
+                Flavor::NaN(err) => Self::nan(err),
             }
         }
     };
 }
 
-macro_rules! gen_wrapper_arg_rm {
-    // unwrap error, function requires self as argument
-    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $($arg:ident, $arg_type:ty),*) => {
+macro_rules! gen_wrapper_exact_rm {
+    // rounded at exactly `p` bits through `round_exact`, with a per-operation flag
+    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $p:ident, usize) => {
         #[doc=$comment]
-        pub fn $fname(&self$(,$arg: $arg_type)*, rm: RoundingMode) -> $ret {
+        pub fn $fname(&self, $p: usize, rm: RoundingMode) -> $ret {
             match &self.inner {
-                Flavor::Value(v) => {
-                    Self::result_to_ext(v.$fname($($arg,)* rm), v.is_zero(), true)
+                Flavor::Value(v) => match Self::exact_operand(v) {
+                    Ok((x, acc)) => Self::round_exact(acc, $p, rm, |q, r| {
+                        Self::result_to_ext(x.$fname(q, r), x.is_zero(), true)
+                    }),
+                    Err(e) => Self::result_to_ext(Err(e), false, true),
                 },
                 Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
                 Flavor::NaN(err) => Self::nan(*err),
@@ -1553,13 +2028,57 @@ macro_rules! gen_wrapper_arg_rm {
 }
 
 macro_rules! gen_wrapper_arg_rm_cc {
-    // unwrap error, function requires self as argument
+    // rounded at exactly `p` bits through `round_exact`, with a per-operation flag
+    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $p:ident, usize) => {
+        #[doc=$comment]
+        pub fn $fname(&self, $p: usize, rm: RoundingMode, cc: &mut Consts) -> $ret {
+            match &self.inner {
+                Flavor::Value(v) => match Self::exact_operand(v) {
+                    Ok((x, acc)) => Self::round_exact(acc, $p, rm, |q, r| {
+                        Self::result_to_ext(x.$fname(q, r, cc), x.is_zero(), true)
+                    }),
+                    Err(e) => Self::result_to_ext(Err(e), false, true),
+                },
+                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::NaN(err) => Self::nan(*err),
+            }
+        }
+    };
+}
+
+macro_rules! gen_wrapper_word_rm_cc {
+    // a reduction that is not a rounded function value: word precision, accumulated flag
     ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $($arg:ident, $arg_type:ty),*) => {
         #[doc=$comment]
         pub fn $fname(&self$(,$arg: $arg_type)*, rm: RoundingMode, cc: &mut Consts) -> $ret {
             match &self.inner {
                 Flavor::Value(v) => {
                     Self::result_to_ext(v.$fname($($arg,)* rm, cc), v.is_zero(), true)
+                },
+                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::NaN(err) => Self::nan(*err),
+            }
+        }
+    };
+}
+
+macro_rules! gen_wrapper_ovf_rm_cc {
+    // like gen_wrapper_arg_rm_cc, for functions whose only ExponentOverflow away from zero is a
+    // finite result past the range: that overflow follows the rounding mode
+    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $p:ident, usize) => {
+        #[doc=$comment]
+        pub fn $fname(&self, $p: usize, rm: RoundingMode, cc: &mut Consts) -> $ret {
+            match &self.inner {
+                Flavor::Value(v) => match Self::exact_operand(v) {
+                    Ok((x, acc)) => Self::round_exact(acc, $p, rm, |q, r| {
+                        if x.is_zero() {
+                            // a pole at zero (Γ, Ei) is an exact infinity in every mode
+                            Self::result_to_ext(x.$fname(q, r, cc), true, true)
+                        } else {
+                            Self::result_to_ext_rm(x.$fname(q, r, cc), false, true, q, r)
+                        }
+                    }),
+                    Err(e) => Self::result_to_ext(Err(e), false, true),
                 },
                 Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
                 Flavor::NaN(err) => Self::nan(*err),
@@ -1569,15 +2088,20 @@ macro_rules! gen_wrapper_arg_rm_cc {
 }
 
 macro_rules! gen_wrapper_log {
-    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $($arg:ident, $arg_type:ty),*) => {
+    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $p:ident, usize) => {
         #[doc=$comment]
-        pub fn $fname(&self$(,$arg: $arg_type)*, rm: RoundingMode, cc: &mut Consts) -> $ret {
+        pub fn $fname(&self, $p: usize, rm: RoundingMode, cc: &mut Consts) -> $ret {
             match &self.inner {
                 Flavor::Value(v) => {
                     if v.is_zero() {
                         return INF_NEG;
                     }
-                    Self::result_to_ext(v.$fname($($arg,)* rm, cc), v.is_zero(), true)
+                    match Self::exact_operand(v) {
+                        Ok((x, acc)) => Self::round_exact(acc, $p, rm, |q, r| {
+                            Self::result_to_ext(x.$fname(q, r, cc), false, true)
+                        }),
+                        Err(e) => Self::result_to_ext(Err(e), false, true),
+                    }
                 },
                 Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
                 Flavor::NaN(err) => Self::nan(*err),
@@ -1587,17 +2111,22 @@ macro_rules! gen_wrapper_log {
 }
 
 impl ExactNum {
-    gen_wrapper_arg!(
-        "Returns the absolute value of `self`.",
-        abs,
-        Self,
-        { INF_POS },
-        { INF_POS },
-    );
+    /// Returns the absolute value of `self`. Takes ownership; nothing is copied.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn abs(mut self) -> Self {
+        if self.is_negative() {
+            self.inv_sign();
+        }
+        self
+    }
+
     /// Returns a value with the magnitude of `self` and the sign of `sign`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn copysign(&self, sign: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         let sign_num = match &sign.inner {
             Flavor::Value(v) => v.clone(),
@@ -1621,12 +2150,14 @@ impl ExactNum {
         }
     }
     /// Returns the next representable value from `self` toward `toward` at precision `p`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn next_after(&self, toward: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         if toward.is_nan() {
-            return toward.clone();
+            return Self::nan(toward.err());
         }
         match (&self.inner, &toward.inner) {
             (Flavor::Value(v), Flavor::Value(t)) => {
@@ -1636,51 +2167,85 @@ impl ExactNum {
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
         }
     }
-    gen_wrapper_arg!("Returns the integer part of `self`.", int, Self, { NAN }, {
-        NAN
-    },);
-    gen_wrapper_arg!(
-        "Returns the fractional part of `self`.",
+    gen_wrapper_own!(
+        "Returns the integer part of `self`.
+Accuracy: correctly-rounded",
+        int,
+        Self,
+        { NAN },
+        { NAN },
+    );
+    gen_wrapper_own!(
+        "Returns the fractional part of `self`.
+Accuracy: correctly-rounded",
         fract,
         Self,
         { NAN },
         { NAN },
     );
-    gen_wrapper_arg!(
-        "Returns the smallest integer greater than or equal to `self`.",
+    gen_wrapper_own!(
+        "Returns the smallest integer greater than or equal to `self`.
+Accuracy: correctly-rounded",
         ceil,
         Self,
         { INF_POS },
         { INF_NEG },
     );
-    gen_wrapper_arg!(
-        "Returns the largest integer less than or equal to `self`.",
+    gen_wrapper_own!(
+        "Returns the largest integer less than or equal to `self`.
+Accuracy: correctly-rounded",
         floor,
         Self,
         { INF_POS },
         { INF_NEG },
     );
-    gen_wrapper_arg_rm!("Returns the rounded number with `n` binary positions in the fractional part of the number using rounding mode `rm`.", 
-        round,
-        Self,
-        { INF_POS },
-        { INF_NEG },
-        n,
-        usize
-    );
-    gen_wrapper_arg_rm!(
-        "Computes the square root of a number with precision `p`. The result is rounded using the rounding mode `rm`.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
-        sqrt,
-        Self,
-        { INF_POS },
-        { NAN },
-        p,
-        usize
-    );
-    gen_wrapper_arg_rm!(
+    /// Returns the rounded number with `n` binary positions in the fractional part of the number using rounding mode `rm`.
+    /// Takes ownership; the result is written in the operand's storage.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn round(self, n: usize, rm: RoundingMode) -> Self {
+        match self.inner {
+            Flavor::Value(v) => {
+                let is_zero = v.is_zero();
+                Self::result_to_ext(v.round(n, rm), is_zero, true)
+            }
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    INF_POS
+                } else {
+                    INF_NEG
+                }
+            }
+            Flavor::NaN(err) => Self::nan(err),
+        }
+    }
+    /// Computes the square root of a number with precision `p`. The result is rounded using
+    /// the rounding mode `rm` at exactly `p` bits; `inexact()` reports this operation only.
+    /// The function returns NaN if the precision `p` is incorrect.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn sqrt(&self, p: usize, rm: RoundingMode) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => match Self::exact_operand(v) {
+                Ok((x, acc)) => Self::round_exact(acc, p, rm, |q, r| {
+                    Self::result_to_ext(x.sqrt(q, r), x.is_zero(), true)
+                }),
+                Err(e) => Self::result_to_ext(Err(e), false, true),
+            },
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    INF_POS
+                } else {
+                    NAN
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+    gen_wrapper_exact_rm!(
         "Computes the cube root of a number with precision `p`. The result is rounded using the rounding mode `rm`.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         cbrt,
         Self,
         { INF_POS },
@@ -1689,14 +2254,24 @@ impl ExactNum {
         usize
     );
     /// Computes the `n`-th root of `self` with precision `p`. `n = 2` and `n = 3` delegate to [`sqrt`](Self::sqrt) and [`cbrt`](Self::cbrt).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn nth_root(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let x = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            x.nth_root_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::nth_root`].
+    fn nth_root_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if n == 0 {
             return Self::nan(Some(Error::InvalidArgument));
         }
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.nth_root(n, p, rm), v.is_zero(), true),
             Flavor::Inf(s) => {
-                if n % 2 == 0 {
+                if n.is_multiple_of(2) {
                     if s.is_negative() {
                         NAN
                     } else {
@@ -1714,7 +2289,8 @@ impl ExactNum {
     gen_wrapper_log!(
         "Computes the natural logarithm of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         ln,
         Self,
         { INF_POS },
@@ -1725,7 +2301,8 @@ impl ExactNum {
     gen_wrapper_log!(
         "Computes the logarithm base 2 of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         log2,
         Self,
         { INF_POS },
@@ -1736,7 +2313,8 @@ impl ExactNum {
     gen_wrapper_log!(
         "Computes the logarithm base 10 of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         log10,
         Self,
         { INF_POS },
@@ -1744,10 +2322,11 @@ impl ExactNum {
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Computes `e` to the power of `self` with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         exp,
         Self,
         { INF_POS },
@@ -1755,10 +2334,11 @@ impl ExactNum {
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Computes `2` to the power of `self` with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         exp2,
         Self,
         { INF_POS },
@@ -1766,10 +2346,11 @@ impl ExactNum {
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Computes `10` to the power of `self` with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         exp10,
         Self,
         { INF_POS },
@@ -1777,7 +2358,7 @@ impl ExactNum {
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_word_rm_cc!(
         "Reduces `self` modulo `2π` into the interval `(-2π, 2π)` using precision `p` and rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.",
         rem_pi,
@@ -1791,7 +2372,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the sine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         sin,
         Self,
         { NAN },
@@ -1802,7 +2384,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the cosine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         cos,
         Self,
         { NAN },
@@ -1811,23 +2394,17 @@ impl ExactNum {
         usize
     );
     /// Computes `(sin(self), cos(self))` with precision `p` using a shared argument reduction.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn sin_cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> (Self, Self) {
-        match &self.inner {
-            Flavor::Value(v) => match v.sin_cos(p, rm, cc) {
-                Ok((s, c)) => (
-                    Self::result_to_ext(Ok(s), false, true),
-                    Self::result_to_ext(Ok(c), false, true),
-                ),
-                Err(e) => (Self::nan(Some(e)), Self::nan(Some(e))),
-            },
-            Flavor::Inf(_) => (NAN, NAN),
-            Flavor::NaN(err) => (Self::nan(*err), Self::nan(*err)),
-        }
+        // Each result goes through its own exact-p-bit rounding and per-operation flag.
+        (self.sin(p, rm, cc), self.cos(p, rm, cc))
     }
     gen_wrapper_arg_rm_cc!(
         "Computes the tangent of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         tan,
         Self,
         { NAN },
@@ -1838,7 +2415,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the arcsine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.", 
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded", 
         asin,
         Self,
         {NAN},
@@ -1849,7 +2427,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the arccosine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         acos,
         Self,
         { NAN },
@@ -1858,10 +2437,11 @@ impl ExactNum {
         usize
     );
 
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Computes the hyperbolic sine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache cc for computing the result. 
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         sinh,
         Self,
         { INF_POS },
@@ -1869,10 +2449,11 @@ impl ExactNum {
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Computes the hyperbolic cosine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache cc for computing the result. 
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         cosh,
         Self,
         { INF_POS },
@@ -1881,31 +2462,12 @@ impl ExactNum {
         usize
     );
     /// Computes `(sinh(self), cosh(self))` with precision `p` using a single `exp(|x|)` evaluation.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn sinh_cosh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> (Self, Self) {
-        match &self.inner {
-            Flavor::Value(v) => match v.sinh_cosh(p, rm, cc) {
-                Ok((s, c)) => (
-                    Self::result_to_ext(Ok(s), false, true),
-                    Self::result_to_ext(Ok(c), false, true),
-                ),
-                Err(Error::ExponentOverflow(s)) => {
-                    if s.is_positive() {
-                        (INF_POS, INF_POS)
-                    } else {
-                        (INF_NEG, INF_POS)
-                    }
-                }
-                Err(e) => (Self::nan(Some(e)), Self::nan(Some(e))),
-            },
-            Flavor::Inf(s) => {
-                if s.is_positive() {
-                    (INF_POS, INF_POS)
-                } else {
-                    (INF_NEG, INF_POS)
-                }
-            }
-            Flavor::NaN(err) => (Self::nan(*err), Self::nan(*err)),
-        }
+        // Each result goes through its own exact-p-bit rounding, per-operation flag and
+        // mode-aware overflow.
+        (self.sinh(p, rm, cc), self.cosh(p, rm, cc))
     }
     gen_wrapper_arg_rm_cc!(
         "Error function `erf(self)` with precision `p`.
@@ -1915,7 +2477,8 @@ impl ExactNum {
 - Algorithm: Taylor series when `|x|.exponent() ≤ 2`; complementary asymptotic otherwise. Saturates to `±1` when `2|e| > p+4`.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on `|x| ≲ 4`.
 - Thresholds: exponent cut `≤ 2` (not a named constant).
-- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`. Complex `erf` on the real axis uses the same oracle; GNU MPC has no `mpc_erf`.",
+- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`. Complex `erf` on the real axis uses the same oracle; GNU MPC has no `mpc_erf`.
+Accuracy: correctly-rounded",
         erf,
         Self,
         { ExactNum::from_u8(1, p) },
@@ -1930,7 +2493,8 @@ impl ExactNum {
 
 - Algorithm: `1 - erf` at extra working precision (same series / asymptotic as `erf`).
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on `|x| ≲ 4`.
-- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`.",
+- MPFR oracle: yes, `|x| ≲ 4` under `mpfr-tests`.
+Accuracy: correctly-rounded",
         erfc,
         Self,
         { Self::new(p) },
@@ -1938,14 +2502,15 @@ impl ExactNum {
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Gamma function `Γ(self)` with precision `p`. Poles at non-positive integers yield NaN (or +Inf at 0).
 
 # Precision
 
 - Algorithm: Stirling series for `ln Γ` then `exp`; reflection across the negative axis. Integer factorials for small positive integers.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on the oracle domain.
-- MPFR oracle: yes, under `mpfr-tests`.",
+- MPFR oracle: yes, under `mpfr-tests`.
+Accuracy: correctly-rounded",
         gamma,
         Self,
         { INF_POS },
@@ -1960,7 +2525,8 @@ impl ExactNum {
 
 - Algorithm: Stirling series (Bernoulli) at working precision `p + WORD_BIT_SIZE`.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR on the oracle domain.
-- MPFR oracle: yes, under `mpfr-tests`.",
+- MPFR oracle: yes, under `mpfr-tests`.
+Accuracy: correctly-rounded",
         ln_gamma,
         Self,
         { INF_POS },
@@ -1975,7 +2541,8 @@ impl ExactNum {
 
 - Algorithm: recurrence to a large argument, then Bernoulli series; reflection for `z < 0`.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR `digamma` on `z > 0`.
-- MPFR oracle: yes, `z > 0` under `mpfr-tests`.",
+- MPFR oracle: yes, `z > 0` under `mpfr-tests`.
+Accuracy: correctly-rounded",
         digamma,
         Self,
         { INF_POS },
@@ -1990,7 +2557,21 @@ impl ExactNum {
     /// - Algorithm: power series in `x` at working precision; `+∞` in `x` returns `Γ(self)`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: identity `γ(s,x)=Γ(s)−Γ(s,x)`; upper uses `mpfr_gamma_inc`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn gammainc(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let x_c = x.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || x.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.gammainc_word(&x_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::gammainc`].
+    fn gammainc_word(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &x.inner) {
             (Flavor::Value(s), Flavor::Value(xv)) => {
                 Self::result_to_ext(s.gammainc(xv, p, rm, cc), xv.is_zero(), true)
@@ -2013,7 +2594,21 @@ impl ExactNum {
     /// - Algorithm: `Γ(self) - γ(self, x)` at working precision; `+∞` in `x` returns 0.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: yes, `mpfr_gamma_inc` under `mpfr-tests`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn gammainc_upper(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let x_c = x.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || x.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.gammainc_upper_word(&x_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::gammainc_upper`].
+    fn gammainc_upper_word(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &x.inner) {
             (Flavor::Value(s), Flavor::Value(xv)) => {
                 Self::result_to_ext(s.gammainc_upper(xv, p, rm, cc), xv.is_zero(), true)
@@ -2029,14 +2624,15 @@ impl ExactNum {
             (Flavor::Inf(_), _) => NAN,
         }
     }
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Exponential integral `Ei(self)` (principal value for `self < 0`). `0` is a pole.
 
 # Precision
 
 - Algorithm: power series for moderate `|x|`; factorial asymptotic when `|x|` is large (`exponent() > 6` and `|x| ≳ 0.7 p`).
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: yes, `mpfr_eint` under `mpfr-tests`.",
+- MPFR oracle: yes, `mpfr_eint` under `mpfr-tests`.
+Accuracy: correctly-rounded",
         ei,
         Self,
         { INF_POS },
@@ -2051,7 +2647,17 @@ impl ExactNum {
     /// - Algorithm: series, or auxiliary `f,g` asymptotic on the same cut as `Ei`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (`Si` odd, `Si(0)=0`, `Si(+∞)=π/2`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.si_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::si`].
+    fn si_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.si(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => Self::result_to_ext(Self::half_pi(*s, p, rm, cc), false, true),
@@ -2065,7 +2671,8 @@ impl ExactNum {
 
 - Algorithm: series, or auxiliary `f,g` asymptotic (same `|x|` cut as `Ei`). Near-zero is a pole.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: no (identity / series golds; GNU MPFR has no `Si`/`Ci`).",
+- MPFR oracle: no (identity / series golds; GNU MPFR has no `Si`/`Ci`).
+Accuracy: correctly-rounded",
         ci,
         Self,
         { Self::new(p) },
@@ -2080,7 +2687,8 @@ impl ExactNum {
 
 - Algorithm: `Ei(ln self)` at extra working precision (inherits `Ei` series / asymptotic).
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: no (`li(e)=Ei(1)` identity).",
+- MPFR oracle: no (`li(e)=Ei(1)` identity).
+Accuracy: correctly-rounded",
         li,
         Self,
         { INF_POS },
@@ -2095,7 +2703,17 @@ impl ExactNum {
     /// - Algorithm: series, or auxiliary `f,g` when `|x|.exponent() ≥ 8` (or `3 x² > p`).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (`S` odd, `S(0)=0`, `S(+∞)=1/2`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fresnel_s(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.fresnel_s_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::fresnel_s`].
+    fn fresnel_s_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.fresnel_sc_ext(true, p, rm, cc)
     }
 
@@ -2106,7 +2724,17 @@ impl ExactNum {
     /// - Algorithm: same series / auxiliary `f,g` split as [`Self::fresnel_s`].
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (same identities as [`Self::fresnel_s`]).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fresnel_c(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.fresnel_c_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::fresnel_c`].
+    fn fresnel_c_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.fresnel_sc_ext(false, p, rm, cc)
     }
 
@@ -2133,7 +2761,17 @@ impl ExactNum {
     /// - Algorithm: power series for `|x| < AIRY_SERIES_THRESHOLD` (`8`); asymptotic otherwise.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: yes, `mpfr_ai` under `mpfr-tests`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ai(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.ai_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::ai`].
+    fn ai_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.ai(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
@@ -2154,7 +2792,17 @@ impl ExactNum {
     /// - Algorithm: same `AIRY_SERIES_THRESHOLD = 8` split as [`Self::ai`].
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (`Ai Bi' − Ai' Bi = 1/π`; GNU MPFR has no `Bi`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.bi_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::bi`].
+    fn bi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bi(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
@@ -2175,7 +2823,17 @@ impl ExactNum {
     /// - Algorithm: differentiated series / asymptotic; `AIRY_SERIES_THRESHOLD = 8`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ai_prime(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.ai_prime_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::ai_prime`].
+    fn ai_prime_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.ai_prime(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
@@ -2196,7 +2854,17 @@ impl ExactNum {
     /// - Algorithm: differentiated series / asymptotic; `AIRY_SERIES_THRESHOLD = 8`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bi_prime(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.bi_prime_word(q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::bi_prime`].
+    fn bi_prime_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bi_prime(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
@@ -2221,7 +2889,17 @@ impl ExactNum {
     ///   `J_n(-x)=(-1)^n J_n(x)`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR `jn` for `n = 0,1,2`.
     /// - MPFR oracle: yes, `n = 0,1,2` under `mpfr-tests`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_j(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.bessel_j_word(n, q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::bessel_j`].
+    fn bessel_j_word(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.bessel_j(n, p, rm, cc), v.is_zero(), true),
             Flavor::Inf(_) => NAN,
@@ -2260,7 +2938,21 @@ impl ExactNum {
     ///   Hankel expansion (same switch as [`Self::bessel_j`]) for large `|x|`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (identity golds).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.bessel_j_nu_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::bessel_j_nu`].
+    fn bessel_j_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_j_nu)
     }
 
@@ -2272,7 +2964,21 @@ impl ExactNum {
     ///   for large `x` (same switch as [`Self::bessel_j`]). Cut on \((-\infty, 0]\).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: yes, `mpfr_yn` for `n = 0,1` under `mpfr-tests`.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_y(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.bessel_y_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::bessel_y`].
+    fn bessel_y_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_y)
     }
 
@@ -2283,7 +2989,21 @@ impl ExactNum {
     /// - Algorithm: series; \(I_ν(z) = i^{-ν} J_ν(iz)\) for the complex path.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_i(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.bessel_i_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::bessel_i`].
+    fn bessel_i_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_i)
     }
 
@@ -2294,7 +3014,21 @@ impl ExactNum {
     /// - Algorithm: series / Temme; large-`|x|` asymptotic `k_asymptotic`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bessel_k(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let nu_c = nu.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || nu.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.bessel_k_word(&nu_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::bessel_k`].
+    fn bessel_k_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         self.bessel_nu_ext(nu, p, rm, cc, ExactNumNumber::bessel_k)
     }
     gen_wrapper_arg_rm_cc!(
@@ -2304,7 +3038,8 @@ impl ExactNum {
 
 - Algorithm: Carlson `R_F` duplication; cap `max(128, p/4 + 64)` steps.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: no (identity golds; GNU MPFR has no Carlson `K`).",
+- MPFR oracle: no (identity golds; GNU MPFR has no Carlson `K`).
+Accuracy: correctly-rounded",
         elliptic_k,
         Self,
         { NAN },
@@ -2319,7 +3054,8 @@ impl ExactNum {
 
 - Algorithm: Carlson `R_F` / `R_D`; cap `max(128, p/4 + 64)` steps.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
-- MPFR oracle: no.",
+- MPFR oracle: no.
+Accuracy: correctly-rounded",
         elliptic_e_complete,
         Self,
         { NAN },
@@ -2327,15 +3063,39 @@ impl ExactNum {
         p,
         usize
     );
-    /// Incomplete `F(self | m)` for `|self| ≤ 1`. `self = sin φ`, `m = k²`.
+    /// Incomplete elliptic integral of the first kind, `F(φ|m)`, with
+    /// `self = sin φ` and `m = k²`.
+    ///
+    /// `self` is the sine of the amplitude, not the amplitude `φ`. An angle is
+    /// not accepted in this argument: `|self| > 1` is `NaN(InvalidArgument)`,
+    /// so a value past `π/2` (for example `2`) cannot be passed here.
+    /// `elliptic_f(sin φ, m)` is `F(φ|m)` for `φ` in `[-π/2, π/2]`, and the
+    /// function is odd in `self`. `elliptic_f(sin θ, m)` for `θ` outside that
+    /// range is `F(arcsin(sin θ)|m)`, which is not `F(θ|m)`.
+    /// `m` is the parameter `k²`, not the elliptic modulus `k`.
     /// `F(±1 | 1) = ±∞` (the logarithmic singularity; consistent with `elliptic_k(1) = +∞`).
+    /// The amplitude `φ` itself belongs to [`Self::elliptic_f_phi`], not here.
     ///
     /// # Precision
     ///
     /// - Algorithm: Carlson `R_F`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_f(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_f_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_f`].
+    fn elliptic_f_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(x), Flavor::Value(mv)) => {
                 if let Ok(one) = ExactNumNumber::from_word(1, WORD_BIT_SIZE) {
@@ -2349,14 +3109,35 @@ impl ExactNum {
             _ => NAN,
         }
     }
-    /// Incomplete `E(self | m)` for `|self| ≤ 1`.
+    /// Incomplete elliptic integral of the second kind, `E(φ|m)`, with
+    /// `self = sin φ` and `m = k²`.
+    ///
+    /// Same argument convention as [`Self::elliptic_f`]: `self` is `sin φ`,
+    /// not the amplitude `φ`, and `|self| > 1` is `NaN(InvalidArgument)`.
+    /// `m` is the parameter `k²`, not the modulus `k`. The function is odd in
+    /// `self`. The amplitude `φ` itself belongs to [`Self::elliptic_e_phi`],
+    /// not here.
     ///
     /// # Precision
     ///
     /// - Algorithm: Carlson `R_F` / `R_D`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_e(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_e_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_e`].
+    fn elliptic_e_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(x), Flavor::Value(mv)) => {
                 Self::result_to_ext(x.elliptic_e(mv, p, rm, cc), x.is_zero(), true)
@@ -2372,7 +3153,27 @@ impl ExactNum {
     /// - Algorithm: Carlson `R_J`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_pi_complete(
+        &self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_pi_complete_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_pi_complete`].
+    fn elliptic_pi_complete_word(
         &self,
         m: &Self,
         p: usize,
@@ -2387,14 +3188,43 @@ impl ExactNum {
             _ => NAN,
         }
     }
-    /// Incomplete `Π(self; x | m)`.
+    /// Incomplete elliptic integral of the third kind, `Π(n; φ|m)`, with
+    /// `self = n`, `x = sin φ`, and `m = k²`.
+    ///
+    /// `x` is the sine of the amplitude, not the amplitude `φ`, same as
+    /// [`Self::elliptic_f`]. `|x| > 1` is `NaN(InvalidArgument)`. `m` is the
+    /// parameter `k²`, not the modulus `k`. `self` is the characteristic `n`,
+    /// not an angle. The amplitude `φ` itself belongs to
+    /// [`Self::elliptic_pi_phi`], not here.
     ///
     /// # Precision
     ///
     /// - Algorithm: Carlson `R_J`; cap `max(128, p/4 + 64)` steps.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_pi(
+        &self,
+        x: &Self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let x_c = x.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || x.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_pi_word(&x_c, &m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_pi`].
+    fn elliptic_pi_word(
         &self,
         x: &Self,
         m: &Self,
@@ -2412,6 +3242,153 @@ impl ExactNum {
             _ => NAN,
         }
     }
+    /// Incomplete elliptic integral of the first kind, `F(φ|m)`, with
+    /// `self = φ` the amplitude and `m = k²`.
+    ///
+    /// This takes the angle `φ`. [`Self::elliptic_f`] takes `sin φ`, not the
+    /// angle. An angle passed to `elliptic_f` is not `F(φ|m)`.
+    ///
+    /// Any real `φ` is reduced as `φ = r + kπ` with `|r| ≤ π/2`, at a working
+    /// precision that grows with the exponent of `φ`, and
+    /// `F(φ|m) = F(r|m) + 2k K(m)`. The function is odd in `φ`.
+    /// `φ = ±π/2`, when that equality holds at the requested precision, is
+    /// `±K(m)`.
+    ///
+    /// `m > 1` is `NaN(InvalidArgument)` when the integrand is not real on the
+    /// path from `0` to `φ` (it reaches `|sin t| > 1/√m`, including every
+    /// `|φ| ≥ π/2`). `m = 1` and `|φ| ≥ π/2` is signed infinity, the same
+    /// singularity as `F(±1|1)` and `K(1)`. A `NaN` argument keeps its error
+    /// tag. An infinity is `NaN(InvalidArgument)`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: argument reduction, then Carlson `R_F` and `K(m)`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn elliptic_f_phi(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_f_phi_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_f_phi`].
+    fn elliptic_f_phi_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(phi), Flavor::Value(mv)) => {
+                Self::result_to_ext(phi.elliptic_f_phi(mv, p, rm, cc), phi.is_zero(), true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => Self::nan(Some(Error::InvalidArgument)),
+        }
+    }
+    /// Incomplete elliptic integral of the second kind, `E(φ|m)`, with
+    /// `self = φ` the amplitude and `m = k²`.
+    ///
+    /// This takes the angle `φ`. [`Self::elliptic_e`] takes `sin φ`, not the
+    /// angle. Reduction and the oddness in `φ` match [`Self::elliptic_f_phi`]:
+    /// `E(φ|m) = E(r|m) + 2k E(m)`. `φ = ±π/2` is `±E(m)`.
+    ///
+    /// `m > 1` is `NaN(InvalidArgument)` when the integrand is not real on the
+    /// path. `m = 1` stays real for every real `φ` (`E(φ|1) = ∫|cos|`). A
+    /// `NaN` argument keeps its error tag. An infinity is
+    /// `NaN(InvalidArgument)`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: argument reduction, then Carlson `R_F` / `R_D` and `E(m)`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn elliptic_e_phi(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_e_phi_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_e_phi`].
+    fn elliptic_e_phi_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(phi), Flavor::Value(mv)) => {
+                Self::result_to_ext(phi.elliptic_e_phi(mv, p, rm, cc), phi.is_zero(), true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => Self::nan(Some(Error::InvalidArgument)),
+        }
+    }
+    /// Incomplete elliptic integral of the third kind, `Π(n; φ|m)`, with
+    /// `self = n`, `phi` the amplitude, and `m = k²`.
+    ///
+    /// `phi` is the angle. [`Self::elliptic_pi`] takes `sin φ` in that slot,
+    /// not the angle. `self` is the characteristic `n`, not an angle.
+    /// Reduction matches [`Self::elliptic_f_phi`]:
+    /// `Π(n; φ|m) = Π(n; r|m) + 2k Π(n|m)`, and the result is odd in `φ`.
+    /// `φ = ±π/2` is `±Π(n|m)` when that complete integral is real.
+    ///
+    /// `n = 1` is `NaN(InvalidArgument)` at the poles where `sin² t = 1`
+    /// (`φ = π/2 + kπ`). `n > 1` is the same error once the path reaches
+    /// `sin² t = 1/n`. `n < 1` on either side of those poles is the real
+    /// value, including negative `n`. `m > 1` is `NaN(InvalidArgument)` when
+    /// the integrand is not real. A `NaN` argument keeps its error tag. An
+    /// infinity is `NaN(InvalidArgument)`.
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: argument reduction, then Carlson `R_J` and `Π(n|m)`.
+    /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
+    /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn elliptic_pi_phi(
+        &self,
+        phi: &Self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let phi_c = phi.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || phi.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.elliptic_pi_phi_word(&phi_c, &m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::elliptic_pi_phi`].
+    fn elliptic_pi_phi_word(
+        &self,
+        phi: &Self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        match (&self.inner, &phi.inner, &m.inner) {
+            (Flavor::Value(n), Flavor::Value(ph), Flavor::Value(mv)) => {
+                Self::result_to_ext(n.elliptic_pi_phi(ph, mv, p, rm, cc), ph.is_zero(), true)
+            }
+            (Flavor::NaN(err), _, _) | (_, Flavor::NaN(err), _) | (_, _, Flavor::NaN(err)) => {
+                Self::nan(*err)
+            }
+            _ => Self::nan(Some(Error::InvalidArgument)),
+        }
+    }
     /// Jacobi amplitude `am(self | m)`. Parameter `m = k² ∈ [0, 1]`.
     ///
     /// # Precision
@@ -2419,7 +3396,21 @@ impl ExactNum {
     /// - Algorithm: AGM / descending Landen; cap `JACOBI_AGM_MAX = 128`. \(m=0\) is trig; \(m=1\) is hyperbolic.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (identity golds; GNU MPFR has no Jacobi `sn`).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_am(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_am_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_am`].
+    fn jacobi_am_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_am(mv, p, rm, cc), u.is_zero(), true)
@@ -2436,7 +3427,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_sn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_sn_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_sn`].
+    fn jacobi_sn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_sn(mv, p, rm, cc), u.is_zero(), true)
@@ -2452,7 +3457,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_cn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_cn_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_cn`].
+    fn jacobi_cn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_cn(mv, p, rm, cc), u.is_zero(), true)
@@ -2468,7 +3487,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_dn(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_dn_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_dn`].
+    fn jacobi_dn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_dn(mv, p, rm, cc), false, true)
@@ -2484,7 +3517,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_cd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_cd_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_cd`].
+    fn jacobi_cd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_cd(mv, p, rm, cc), false, true)
@@ -2500,7 +3547,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_ns(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_ns_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_ns`].
+    fn jacobi_ns_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_ns(mv, p, rm, cc), false, true)
@@ -2516,7 +3577,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_nc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_nc_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_nc`].
+    fn jacobi_nc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_nc(mv, p, rm, cc), false, true)
@@ -2532,7 +3607,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_nd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_nd_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_nd`].
+    fn jacobi_nd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_nd(mv, p, rm, cc), false, true)
@@ -2548,7 +3637,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_sc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_sc_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_sc`].
+    fn jacobi_sc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_sc(mv, p, rm, cc), false, true)
@@ -2564,7 +3667,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_sd(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_sd_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_sd`].
+    fn jacobi_sd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_sd(mv, p, rm, cc), false, true)
@@ -2580,7 +3697,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_cs(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_cs_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_cs`].
+    fn jacobi_cs_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_cs(mv, p, rm, cc), false, true)
@@ -2596,7 +3727,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_ds(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_ds_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_ds`].
+    fn jacobi_ds_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_ds(mv, p, rm, cc), false, true)
@@ -2612,7 +3757,21 @@ impl ExactNum {
     /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn jacobi_dc(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let m_c = m.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || m.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_dc_word(&m_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_dc`].
+    fn jacobi_dc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
                 Self::result_to_ext(u.jacobi_dc(mv, p, rm, cc), false, true)
@@ -2628,7 +3787,17 @@ impl ExactNum {
     /// - Algorithm: three-term recurrence at `p + O(n)` bits. Cap `ORTHOPOLY_N_MAX`.
     /// - Bound: working-precision recurrence (not a Ziv leaf).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn legendre_p(&self, n: u32, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.legendre_p_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::legendre_p`].
+    fn legendre_p_word(&self, n: u32, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.legendre_p(n, p, rm), false, true),
             Flavor::Inf(_) => NAN,
@@ -2642,7 +3811,17 @@ impl ExactNum {
     /// - Algorithm: recurrence from \(P_n\); Condon–Shortley phase.
     /// - Bound: working-precision recurrence (not a Ziv leaf).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn assoc_legendre_p(&self, n: u32, m: i32, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.assoc_legendre_p_word(n, m, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::assoc_legendre_p`].
+    fn assoc_legendre_p_word(&self, n: u32, m: i32, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext(v.assoc_legendre_p(n, m, p, rm), false, true),
             Flavor::Inf(_) => NAN,
@@ -2661,7 +3840,34 @@ impl ExactNum {
     ///   repeated with more guard bits. Series cap `HYPERGEOM_TERM_MAX`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn hypergeom_2f1(
+        &self,
+        b: &Self,
+        c: &Self,
+        z: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let b_c = b.exact_copy_ext();
+        let c_c = c.exact_copy_ext();
+        let z_c = z.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated()
+                || b.inexact_accumulated()
+                || c.inexact_accumulated()
+                || z.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.hypergeom_2f1_word(&b_c, &c_c, &z_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::hypergeom_2f1`].
+    fn hypergeom_2f1_word(
         &self,
         b: &Self,
         c: &Self,
@@ -2688,7 +3894,29 @@ impl ExactNum {
     /// - Algorithm: series / continued fraction in `x ∈ [0, 1]` for `a > 0`, `b > 0`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn betainc(&self, b: &Self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy_ext();
+        let b_c = b.exact_copy_ext();
+        let x_c = x.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || b.inexact_accumulated() || x.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.betainc_word(&b_c, &x_c, q, r, cc),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::betainc`].
+    fn betainc_word(
+        &self,
+        b: &Self,
+        x: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
         match (&self.inner, &b.inner, &x.inner) {
             (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(xv)) => {
                 Self::result_to_ext(a.betainc(bv, xv, p, rm, cc), xv.is_zero(), true)
@@ -2702,7 +3930,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the hyperbolic arcsine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         asinh,
         Self,
         { INF_POS },
@@ -2713,7 +3942,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the hyperbolic arccosine of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         acosh,
         Self,
         { INF_POS },
@@ -2724,7 +3954,8 @@ impl ExactNum {
     gen_wrapper_arg_rm_cc!(
         "Computes the hyperbolic arctangent of a number with precision `p`. The result is rounded using the rounding mode `rm`.
         This function requires constants cache `cc` for computing the result.
-        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.",
+        Precision is rounded upwards to the word size. The function returns NaN if the precision `p` is incorrect.
+Accuracy: correctly-rounded",
         atanh,
         Self,
         { NAN },
@@ -2783,29 +4014,20 @@ impl Neg for ExactNum {
     }
 }
 
-impl Neg for &ExactNum {
-    type Output = ExactNum;
-    fn neg(self) -> Self::Output {
-        let mut ret = self.clone();
-        ret.inv_sign();
-        ret
-    }
-}
-
 //
 // ordering traits
 //
 
 impl PartialEq for ExactNum {
     fn eq(&self, other: &Self) -> bool {
-        let cmp_result = ExactNum::cmp(self, other);
+        let cmp_result = ExactNum::compare(self, other);
         matches!(cmp_result, Some(0))
     }
 }
 
 impl<'a> PartialEq<&'a ExactNum> for ExactNum {
     fn eq(&self, other: &&'a ExactNum) -> bool {
-        let cmp_result = ExactNum::cmp(self, other);
+        let cmp_result = ExactNum::compare(self, other);
         matches!(cmp_result, Some(0))
     }
 }
@@ -2814,7 +4036,7 @@ impl Eq for ExactNum {}
 
 impl PartialOrd for ExactNum {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        let cmp_result = ExactNum::cmp(self, other);
+        let cmp_result = ExactNum::compare(self, other);
         match cmp_result {
             Some(v) => {
                 if v > 0 {
@@ -2832,7 +4054,7 @@ impl PartialOrd for ExactNum {
 
 impl<'a> PartialOrd<&'a ExactNum> for ExactNum {
     fn partial_cmp(&self, other: &&'a ExactNum) -> Option<Ordering> {
-        let cmp_result = ExactNum::cmp(self, other);
+        let cmp_result = ExactNum::compare(self, other);
         match cmp_result {
             Some(v) => {
                 if v > 0 {
@@ -2858,17 +4080,25 @@ impl Default for ExactNum {
 impl FromStr for ExactNum {
     type Err = Error;
 
-    /// Returns parsed number or NAN in case of error.
+    /// Returns the parsed number.
+    /// Malformed text is `Ok(NaN(InvalidArgument))`.
+    /// Other failures, such as exponent overflow, are `Err`.
     /// The implementation is not available in no_std environment.
     fn from_str(src: &str) -> Result<ExactNum, Self::Err> {
-        let bf = crate::common::consts::TENPOWERS.with(|tp| {
-            let cc = &mut tp.borrow_mut();
-            ExactNum::parse(src, Radix::Dec, usize::MAX, RoundingMode::ToEven, cc)
-        });
+        let bf = crate::common::consts::with_tenpowers(|cc| {
+            Ok(ExactNum::parse(
+                src,
+                Radix::Dec,
+                usize::MAX,
+                RoundingMode::ToEven,
+                cc,
+            ))
+        })?;
 
         if bf.is_nan() {
-            if let Some(err) = bf.err() {
-                return Err(err);
+            match bf.err() {
+                Some(Error::InvalidArgument) | None => {}
+                Some(err) => return Err(err),
             }
         }
 
@@ -2904,8 +4134,7 @@ macro_rules! impl_format_rdx {
             /// Formats the number.
             /// The implementation is not available in no_std environment.
             fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
-                crate::common::consts::TENPOWERS.with(|tp| {
-                    let cc = &mut tp.borrow_mut();
+                crate::common::consts::with_tenpowers_fmt(|cc| {
                     self.write_str(f, $rdx, RoundingMode::ToEven, cc)
                 })
             }
@@ -2926,8 +4155,7 @@ impl_format_rdx!(UpperHex, Radix::Hex);
 #[cfg(feature = "std")]
 impl core::fmt::UpperExp for ExactNum {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
-        crate::common::consts::TENPOWERS.with(|tp| {
-            let cc = &mut tp.borrow_mut();
+        crate::common::consts::with_tenpowers_fmt(|cc| {
             let mut s = String::new();
             self.write_str(&mut s, Radix::Dec, RoundingMode::ToEven, cc)?;
             f.write_str(&s.replace('e', "E"))
@@ -2937,8 +4165,7 @@ impl core::fmt::UpperExp for ExactNum {
 #[cfg(feature = "std")]
 impl core::fmt::LowerHex for ExactNum {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
-        crate::common::consts::TENPOWERS.with(|tp| {
-            let cc = &mut tp.borrow_mut();
+        crate::common::consts::with_tenpowers_fmt(|cc| {
             let mut s = String::new();
             self.write_str(&mut s, Radix::Hex, RoundingMode::ToEven, cc)?;
             if matches!(s.as_str(), "Inf" | "-Inf" | "NaN" | "Err") {
@@ -2986,8 +4213,64 @@ macro_rules! impl_exact_binop {
     };
 }
 
-impl_exact_binop!(Add, add, add);
-impl_exact_binop!(Sub, sub, sub);
+// `add` and `sub` take their first operand by value, so there is no `&ExactNum + &ExactNum`: nothing could
+// own the result's storage without copying an operand. `&a + b` is `b + a`; `&a - b` is `-b + a`.
+impl core::ops::Add<&ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: &ExactNum) -> ExactNum {
+        ExactNum::add(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Add<ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::add(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Add<ExactNum> for &ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: ExactNum) -> ExactNum {
+        // `rhs + self` is `self + rhs` for every pair except two NaNs, where the first operand's error wins.
+        if self.is_nan() && rhs.is_nan() {
+            return ExactNum::nan(self.err());
+        }
+        ExactNum::add(rhs, self, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<&ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: &ExactNum) -> ExactNum {
+        ExactNum::sub(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::sub(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<ExactNum> for &ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: ExactNum) -> ExactNum {
+        // `-rhs + self` is `self - rhs` for every pair except two NaNs, where the first operand's error wins.
+        if self.is_nan() && rhs.is_nan() {
+            return ExactNum::nan(self.err());
+        }
+        ExactNum::add(-rhs, self, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
 impl_exact_binop!(Mul, mul, mul);
 impl_exact_binop!(Div, div, div);
 
@@ -3022,10 +4305,15 @@ mod tests {
 
     use crate::common::util::rand_p;
     use crate::defs::DEFAULT_P;
-    use crate::ext::ONE;
-    use crate::ext::TWO;
     use crate::Consts;
     use crate::Error;
+
+    static ONE: ExactNum = ExactNum {
+        inner: super::Flavor::Value(crate::num::ExactNumNumber::small_const(1)),
+    };
+    static TWO: ExactNum = ExactNum {
+        inner: super::Flavor::Value(crate::num::ExactNumNumber::small_const(2)),
+    };
     use crate::ExactNum;
     use crate::Radix;
     use crate::Sign;
@@ -3097,22 +4385,22 @@ mod tests {
             let i = crate::common::test_rng::random::<i64>();
             let d1 = ExactNum::from_i64(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
-            assert!(d1.cmp(&n1) == Some(0));
+            assert!(d1.compare(&n1) == Some(0));
 
             let i = crate::common::test_rng::random::<u64>();
             let d1 = ExactNum::from_u64(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
-            assert!(d1.cmp(&n1) == Some(0));
+            assert!(d1.compare(&n1) == Some(0));
 
             let i = crate::common::test_rng::random::<i128>();
             let d1 = ExactNum::from_i128(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
-            assert!(d1.cmp(&n1) == Some(0));
+            assert!(d1.compare(&n1) == Some(0));
 
             let i = crate::common::test_rng::random::<u128>();
             let d1 = ExactNum::from_u128(i, rand_p());
             let n1 = ExactNum::parse(&format!("{}", i), Radix::Dec, rand_p(), rm, &mut cc);
-            assert!(d1.cmp(&n1) == Some(0));
+            assert!(d1.compare(&n1) == Some(0));
         }
 
         assert!(ONE.exponent().is_some());
@@ -3125,17 +4413,17 @@ mod tests {
         assert!(INF_NEG.as_raw_parts().is_none());
         assert!(NAN.as_raw_parts().is_none());
 
-        assert!(ONE.add(&ONE, rand_p(), rm).cmp(&TWO) == Some(0));
-        assert!(ONE.add(&INF_POS, rand_p(), rm).is_inf_pos());
-        assert!(INF_POS.add(&ONE, rand_p(), rm).is_inf_pos());
-        assert!(ONE.add(&INF_NEG, rand_p(), rm).is_inf_neg());
-        assert!(INF_NEG.add(&ONE, rand_p(), rm).is_inf_neg());
-        assert!(INF_POS.add(&INF_POS, rand_p(), rm).is_inf_pos());
-        assert!(INF_POS.add(&INF_NEG, rand_p(), rm).is_nan());
-        assert!(INF_NEG.add(&INF_NEG, rand_p(), rm).is_inf_neg());
-        assert!(INF_NEG.add(&INF_POS, rand_p(), rm).is_nan());
+        assert!(ExactNum::add_ref(&ONE, &ONE, rand_p(), rm).compare(&TWO) == Some(0));
+        assert!(ExactNum::add_ref(&ONE, &INF_POS, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::add_ref(&INF_POS, &ONE, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::add_ref(&ONE, &INF_NEG, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::add_ref(&INF_NEG, &ONE, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::add_ref(&INF_POS, &INF_POS, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::add_ref(&INF_POS, &INF_NEG, rand_p(), rm).is_nan());
+        assert!(ExactNum::add_ref(&INF_NEG, &INF_NEG, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::add_ref(&INF_NEG, &INF_POS, rand_p(), rm).is_nan());
 
-        assert!(ONE.add_full_prec(&ONE).cmp(&TWO) == Some(0));
+        assert!(ONE.add_full_prec(&ONE).compare(&TWO) == Some(0));
         assert!(ONE.add_full_prec(&INF_POS).is_inf_pos());
         assert!(INF_POS.add_full_prec(&ONE).is_inf_pos());
         assert!(ONE.add_full_prec(&INF_NEG).is_inf_neg());
@@ -3155,7 +4443,7 @@ mod tests {
         assert!(INF_NEG.sub_full_prec(&INF_NEG).is_nan());
         assert!(INF_NEG.sub_full_prec(&INF_POS).is_inf_neg());
 
-        assert!(ONE.mul_full_prec(&ONE).cmp(&ONE) == Some(0));
+        assert!(ONE.mul_full_prec(&ONE).compare(&ONE) == Some(0));
         assert!(ONE.mul_full_prec(&INF_POS).is_inf_pos());
         assert!(INF_POS.mul_full_prec(&ONE).is_inf_pos());
         assert!(ONE.mul_full_prec(&INF_NEG).is_inf_neg());
@@ -3165,25 +4453,33 @@ mod tests {
         assert!(INF_NEG.mul_full_prec(&INF_NEG).is_inf_pos());
         assert!(INF_NEG.mul_full_prec(&INF_POS).is_inf_neg());
 
-        assert!(TWO.sub(&ONE, rand_p(), rm).cmp(&ONE) == Some(0));
-        assert!(ONE.sub(&INF_POS, rand_p(), rm).is_inf_neg());
-        assert!(INF_POS.sub(&ONE, rand_p(), rm).is_inf_pos());
-        assert!(ONE.sub(&INF_NEG, rand_p(), rm).is_inf_pos());
-        assert!(INF_NEG.sub(&ONE, rand_p(), rm).is_inf_neg());
-        assert!(INF_POS.sub(&INF_POS, rand_p(), rm).is_nan());
-        assert!(INF_POS.sub(&INF_NEG, rand_p(), rm).is_inf_pos());
-        assert!(INF_NEG.sub(&INF_NEG, rand_p(), rm).is_nan());
-        assert!(INF_NEG.sub(&INF_POS, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::sub_ref(&TWO, &ONE, rand_p(), rm).compare(&ONE) == Some(0));
+        assert!(ExactNum::sub_ref(&ONE, &INF_POS, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::sub_ref(&INF_POS, &ONE, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::sub_ref(&ONE, &INF_NEG, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::sub_ref(&INF_NEG, &ONE, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::sub_ref(&INF_POS, &INF_POS, rand_p(), rm).is_nan());
+        assert!(ExactNum::sub_ref(&INF_POS, &INF_NEG, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::sub_ref(&INF_NEG, &INF_NEG, rand_p(), rm).is_nan());
+        assert!(ExactNum::sub_ref(&INF_NEG, &INF_POS, rand_p(), rm).is_inf_neg());
 
-        assert!(TWO.mul(&ONE, rand_p(), rm).cmp(&TWO) == Some(0));
+        assert!(TWO.mul(&ONE, rand_p(), rm).compare(&TWO) == Some(0));
         assert!(ONE.mul(&INF_POS, rand_p(), rm).is_inf_pos());
         assert!(INF_POS.mul(&ONE, rand_p(), rm).is_inf_pos());
         assert!(ONE.mul(&INF_NEG, rand_p(), rm).is_inf_neg());
         assert!(INF_NEG.mul(&ONE, rand_p(), rm).is_inf_neg());
-        assert!(ONE.neg().mul(&INF_POS, rand_p(), rm).is_inf_neg());
-        assert!(ONE.neg().mul(&INF_NEG, rand_p(), rm).is_inf_pos());
-        assert!(INF_POS.mul(&ONE.neg(), rand_p(), rm).is_inf_neg());
-        assert!(INF_NEG.mul(&ONE.neg(), rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::from_i8(-1, DEFAULT_P)
+            .mul(&INF_POS, rand_p(), rm)
+            .is_inf_neg());
+        assert!(ExactNum::from_i8(-1, DEFAULT_P)
+            .mul(&INF_NEG, rand_p(), rm)
+            .is_inf_pos());
+        assert!(INF_POS
+            .mul(&ExactNum::from_i8(-1, DEFAULT_P), rand_p(), rm)
+            .is_inf_neg());
+        assert!(INF_NEG
+            .mul(&ExactNum::from_i8(-1, DEFAULT_P), rand_p(), rm)
+            .is_inf_pos());
         assert!(INF_POS.mul(&INF_POS, rand_p(), rm).is_inf_pos());
         assert!(INF_POS.mul(&INF_NEG, rand_p(), rm).is_inf_neg());
         assert!(INF_NEG.mul(&INF_NEG, rand_p(), rm).is_inf_pos());
@@ -3193,15 +4489,23 @@ mod tests {
         assert!(ExactNum::new(rand_p()).mul(&INF_POS, rand_p(), rm).is_nan());
         assert!(ExactNum::new(rand_p()).mul(&INF_NEG, rand_p(), rm).is_nan());
 
-        assert!(TWO.div(&TWO, rand_p(), rm).cmp(&ONE) == Some(0));
+        assert!(TWO.div(&TWO, rand_p(), rm).compare(&ONE) == Some(0));
         assert!(TWO.div(&INF_POS, rand_p(), rm).is_zero());
         assert!(INF_POS.div(&TWO, rand_p(), rm).is_inf_pos());
         assert!(TWO.div(&INF_NEG, rand_p(), rm).is_zero());
         assert!(INF_NEG.div(&TWO, rand_p(), rm).is_inf_neg());
-        assert!(TWO.neg().div(&INF_POS, rand_p(), rm).is_zero());
-        assert!(TWO.neg().div(&INF_NEG, rand_p(), rm).is_zero());
-        assert!(INF_POS.div(&TWO.neg(), rand_p(), rm).is_inf_neg());
-        assert!(INF_NEG.div(&TWO.neg(), rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::from_i8(-2, DEFAULT_P)
+            .div(&INF_POS, rand_p(), rm)
+            .is_zero());
+        assert!(ExactNum::from_i8(-2, DEFAULT_P)
+            .div(&INF_NEG, rand_p(), rm)
+            .is_zero());
+        assert!(INF_POS
+            .div(&ExactNum::from_i8(-2, DEFAULT_P), rand_p(), rm)
+            .is_inf_neg());
+        assert!(INF_NEG
+            .div(&ExactNum::from_i8(-2, DEFAULT_P), rand_p(), rm)
+            .is_inf_pos());
         assert!(INF_POS.div(&INF_POS, rand_p(), rm).is_nan());
         assert!(INF_POS.div(&INF_NEG, rand_p(), rm).is_nan());
         assert!(INF_NEG.div(&INF_NEG, rand_p(), rm).is_nan());
@@ -3220,14 +4524,24 @@ mod tests {
             .is_zero());
 
         assert!(TWO.rem(&TWO).is_zero());
-        assert!(TWO.rem(&INF_POS).cmp(&TWO) == Some(0));
+        assert!(TWO.rem(&INF_POS).compare(&TWO) == Some(0));
         assert!(INF_POS.rem(&TWO).is_nan());
-        assert!(TWO.rem(&INF_NEG).cmp(&TWO) == Some(0));
+        assert!(TWO.rem(&INF_NEG).compare(&TWO) == Some(0));
         assert!(INF_NEG.rem(&TWO).is_nan());
-        assert!(TWO.neg().rem(&INF_POS).cmp(&TWO.neg()) == Some(0));
-        assert!(TWO.neg().rem(&INF_NEG).cmp(&TWO.neg()) == Some(0));
-        assert!(INF_POS.rem(&TWO.neg()).is_nan());
-        assert!(INF_NEG.rem(&TWO.neg()).is_nan());
+        assert!(
+            ExactNum::from_i8(-2, DEFAULT_P)
+                .rem(&INF_POS)
+                .compare(&ExactNum::from_i8(-2, DEFAULT_P))
+                == Some(0)
+        );
+        assert!(
+            ExactNum::from_i8(-2, DEFAULT_P)
+                .rem(&INF_NEG)
+                .compare(&ExactNum::from_i8(-2, DEFAULT_P))
+                == Some(0)
+        );
+        assert!(INF_POS.rem(&ExactNum::from_i8(-2, DEFAULT_P)).is_nan());
+        assert!(INF_NEG.rem(&ExactNum::from_i8(-2, DEFAULT_P)).is_nan());
         assert!(INF_POS.rem(&INF_POS).is_nan());
         assert!(INF_POS.rem(&INF_NEG).is_nan());
         assert!(INF_NEG.rem(&INF_NEG).is_nan());
@@ -3237,7 +4551,7 @@ mod tests {
         assert!(ExactNum::new(rand_p()).rem(&INF_POS).is_zero());
         assert!(ExactNum::new(rand_p()).rem(&INF_NEG).is_zero());
 
-        for op in [ExactNum::add, ExactNum::sub, ExactNum::mul, ExactNum::div] {
+        for op in [ExactNum::add_ref, ExactNum::sub_ref, ExactNum::mul, ExactNum::div] {
             assert!(op(&NAN, &ONE, rand_p(), rm).is_nan());
             assert!(op(&ONE, &NAN, rand_p(), rm).is_nan());
             assert!(op(&NAN, &INF_POS, rand_p(), rm).is_nan());
@@ -3265,23 +4579,23 @@ mod tests {
             assert!(op(&NAN, &NAN).is_nan());
         }
 
-        assert!(ONE.cmp(&ONE).unwrap() == 0);
-        assert!(ONE.cmp(&INF_POS).unwrap() < 0);
-        assert!(INF_POS.cmp(&ONE).unwrap() > 0);
-        assert!(INF_POS.cmp(&INF_POS).unwrap() == 0);
-        assert!(ONE.cmp(&INF_NEG).unwrap() > 0);
-        assert!(INF_NEG.cmp(&ONE).unwrap() < 0);
-        assert!(INF_NEG.cmp(&INF_NEG).unwrap() == 0);
-        assert!(INF_POS.cmp(&INF_NEG).unwrap() > 0);
-        assert!(INF_NEG.cmp(&INF_POS).unwrap() < 0);
-        assert!(INF_POS.cmp(&INF_POS).unwrap() == 0);
-        assert!(ONE.cmp(&NAN).is_none());
-        assert!(NAN.cmp(&ONE).is_none());
-        assert!(INF_POS.cmp(&NAN).is_none());
-        assert!(NAN.cmp(&INF_POS).is_none());
-        assert!(INF_NEG.cmp(&NAN).is_none());
-        assert!(NAN.cmp(&INF_NEG).is_none());
-        assert!(NAN.cmp(&NAN).is_none());
+        assert!(ONE.compare(&ONE).unwrap() == 0);
+        assert!(ONE.compare(&INF_POS).unwrap() < 0);
+        assert!(INF_POS.compare(&ONE).unwrap() > 0);
+        assert!(INF_POS.compare(&INF_POS).unwrap() == 0);
+        assert!(ONE.compare(&INF_NEG).unwrap() > 0);
+        assert!(INF_NEG.compare(&ONE).unwrap() < 0);
+        assert!(INF_NEG.compare(&INF_NEG).unwrap() == 0);
+        assert!(INF_POS.compare(&INF_NEG).unwrap() > 0);
+        assert!(INF_NEG.compare(&INF_POS).unwrap() < 0);
+        assert!(INF_POS.compare(&INF_POS).unwrap() == 0);
+        assert!(ONE.compare(&NAN).is_none());
+        assert!(NAN.compare(&ONE).is_none());
+        assert!(INF_POS.compare(&NAN).is_none());
+        assert!(NAN.compare(&INF_POS).is_none());
+        assert!(INF_NEG.compare(&NAN).is_none());
+        assert!(NAN.compare(&INF_NEG).is_none());
+        assert!(NAN.compare(&NAN).is_none());
 
         assert!(ONE.abs_cmp(&ONE).unwrap() == 0);
         assert!(ONE.abs_cmp(&INF_POS).unwrap() < 0);
@@ -3302,26 +4616,26 @@ mod tests {
         assert!(NAN.abs_cmp(&NAN).is_none());
         // Finite values compare by magnitude, whatever their signs (1.0.4 compared signed values).
         let two = ExactNum::from_u8(2, 64);
-        let neg_two = two.neg();
+        let neg_two = two.neg_via_mul();
         assert!(neg_two.abs_cmp(&ONE).unwrap() > 0);
         assert!(ONE.abs_cmp(&neg_two).unwrap() < 0);
         assert!(neg_two.abs_cmp(&two).unwrap() == 0);
-        assert!(ONE.neg().abs_cmp(&INF_POS).unwrap() < 0);
+        assert!(ExactNum::from_i8(-1, DEFAULT_P).abs_cmp(&INF_POS).unwrap() < 0);
         // Results are exactly -1/0/1 (1.0.4 returned the mantissa word difference, e.g.
         // 3.cmp(2) = 2^62, so callers testing `== Some(1)` / `== Some(-1)` misfired).
         let three = ExactNum::from_u8(3, 64);
-        assert_eq!(three.cmp(&two), Some(1));
-        assert_eq!(two.cmp(&three), Some(-1));
+        assert_eq!(three.compare(&two), Some(1));
+        assert_eq!(two.compare(&three), Some(-1));
         assert_eq!(three.abs_cmp(&neg_two), Some(1));
         assert_eq!(neg_two.abs_cmp(&three), Some(-1));
-        assert_eq!(INF_POS.cmp(&INF_NEG), Some(1));
-        assert_eq!(INF_NEG.cmp(&INF_POS), Some(-1));
+        assert_eq!(INF_POS.compare(&INF_NEG), Some(1));
+        assert_eq!(INF_NEG.compare(&INF_POS), Some(-1));
 
         assert!(ONE.is_positive());
         assert!(!ONE.is_negative());
 
-        assert!(ONE.neg().is_negative());
-        assert!(!ONE.neg().is_positive());
+        assert!(ExactNum::from_i8(-1, DEFAULT_P).is_negative());
+        assert!(!ExactNum::from_i8(-1, DEFAULT_P).is_positive());
         assert!(!INF_POS.is_negative());
         assert!(INF_POS.is_positive());
         assert!(INF_NEG.is_negative());
@@ -3329,32 +4643,36 @@ mod tests {
         assert!(!NAN.is_positive());
         assert!(!NAN.is_negative());
 
-        assert!(ONE.pow(&ONE, rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
+        assert!(ONE.pow(&ONE, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(ExactNum::new(DEFAULT_P)
             .pow(&INF_POS, rand_p(), rm, &mut cc)
             .is_zero());
         assert!(ExactNum::new(DEFAULT_P)
             .pow(&INF_NEG, rand_p(), rm, &mut cc)
             .is_zero());
-        assert!(ONE.pow(&INF_POS, rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
-        assert!(ONE.pow(&INF_NEG, rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
+        assert!(ONE.pow(&INF_POS, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
+        assert!(ONE.pow(&INF_NEG, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(TWO.pow(&INF_POS, rand_p(), rm, &mut cc).is_inf_pos());
         assert!(TWO.pow(&INF_NEG, rand_p(), rm, &mut cc).is_inf_neg());
         assert!(INF_POS.pow(&ONE, rand_p(), rm, &mut cc).is_inf_pos());
         assert!(INF_NEG.pow(&ONE, rand_p(), rm, &mut cc).is_inf_neg());
         assert!(INF_NEG.pow(&TWO, rand_p(), rm, &mut cc).is_inf_pos());
-        assert!(INF_POS.pow(&ONE.neg(), rand_p(), rm, &mut cc).is_zero());
-        assert!(INF_NEG.pow(&ONE.neg(), rand_p(), rm, &mut cc).is_zero());
+        assert!(INF_POS
+            .pow(&ExactNum::from_i8(-1, DEFAULT_P), rand_p(), rm, &mut cc)
+            .is_zero());
+        assert!(INF_NEG
+            .pow(&ExactNum::from_i8(-1, DEFAULT_P), rand_p(), rm, &mut cc)
+            .is_zero());
         assert!(
             INF_POS
                 .pow(&ExactNum::new(DEFAULT_P), rand_p(), rm, &mut cc)
-                .cmp(&ONE)
+                .compare(&ONE)
                 == Some(0)
         );
         assert!(
             INF_NEG
                 .pow(&ExactNum::new(DEFAULT_P), rand_p(), rm, &mut cc)
-                .cmp(&ONE)
+                .compare(&ONE)
                 == Some(0)
         );
         assert!(INF_POS.pow(&INF_POS, rand_p(), rm, &mut cc).is_inf_pos());
@@ -3363,12 +4681,12 @@ mod tests {
         assert!(INF_NEG.pow(&INF_NEG, rand_p(), rm, &mut cc).is_zero());
 
         let half = ONE.div(&TWO, rand_p(), rm);
-        assert!(TWO.log(&TWO, rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
+        assert!(TWO.log(&TWO, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(TWO.log(&INF_POS, rand_p(), rm, &mut cc).is_zero());
         assert!(TWO.log(&INF_NEG, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_POS.log(&TWO, rand_p(), rm, &mut cc).is_inf_pos());
         assert!(INF_NEG.log(&TWO, rand_p(), rm, &mut cc).is_nan());
-        assert!(half.log(&half, rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
+        assert!(half.log(&half, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(half.log(&INF_POS, rand_p(), rm, &mut cc).is_zero());
         assert!(half.log(&INF_NEG, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_POS.log(&half, rand_p(), rm, &mut cc).is_inf_neg());
@@ -3395,8 +4713,8 @@ mod tests {
         assert!(INF_POS.powi(3, rand_p(), rm).is_inf_pos());
         assert!(INF_NEG.powi(4, rand_p(), rm).is_inf_pos());
         assert!(INF_NEG.powi(5, rand_p(), rm).is_inf_neg());
-        assert!(INF_POS.powi(0, rand_p(), rm).cmp(&ONE) == Some(0));
-        assert!(INF_NEG.powi(0, rand_p(), rm).cmp(&ONE) == Some(0));
+        assert!(INF_POS.powi(0, rand_p(), rm).compare(&ONE) == Some(0));
+        assert!(INF_NEG.powi(0, rand_p(), rm).compare(&ONE) == Some(0));
 
         assert!(TWO.log(&NAN, rand_p(), rm, &mut cc).is_nan());
         assert!(NAN.log(&TWO, rand_p(), rm, &mut cc).is_nan());
@@ -3480,8 +4798,8 @@ mod tests {
         let p = rand_p();
         let mut half_pi: ExactNum = cc.pi_num(p, rm).unwrap().into();
         half_pi.set_exponent(1);
-        assert!(INF_NEG.atan(p, rm, &mut cc).cmp(&half_pi.neg()) == Some(0));
-        assert!(INF_POS.atan(p, rm, &mut cc).cmp(&half_pi) == Some(0));
+        assert!(INF_NEG.atan(p, rm, &mut cc).compare(&half_pi.neg_via_mul()) == Some(0));
+        assert!(INF_POS.atan(p, rm, &mut cc).compare(&half_pi) == Some(0));
         assert!(NAN.atan(rand_p(), rm, &mut cc).is_nan());
 
         assert!(INF_NEG.sinh(rand_p(), rm, &mut cc).is_inf_neg());
@@ -3492,8 +4810,13 @@ mod tests {
         assert!(INF_POS.cosh(rand_p(), rm, &mut cc).is_inf_pos());
         assert!(NAN.cosh(rand_p(), rm, &mut cc).is_nan());
 
-        assert!(INF_NEG.tanh(rand_p(), rm, &mut cc).cmp(&ONE.neg()) == Some(0));
-        assert!(INF_POS.tanh(rand_p(), rm, &mut cc).cmp(&ONE) == Some(0));
+        assert!(
+            INF_NEG
+                .tanh(rand_p(), rm, &mut cc)
+                .compare(&ExactNum::from_i8(-1, DEFAULT_P))
+                == Some(0)
+        );
+        assert!(INF_POS.tanh(rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(NAN.tanh(rand_p(), rm, &mut cc).is_nan());
 
         assert!(INF_NEG.asinh(rand_p(), rm, &mut cc).is_inf_neg());
@@ -3512,10 +4835,15 @@ mod tests {
         assert!(INF_POS.reciprocal(rand_p(), rm).is_zero());
         assert!(NAN.reciprocal(rand_p(), rm).is_nan());
 
-        assert!(TWO.signum().cmp(&ONE) == Some(0));
-        assert!(TWO.neg().signum().cmp(&ONE.neg()) == Some(0));
-        assert!(INF_POS.signum().cmp(&ONE) == Some(0));
-        assert!(INF_NEG.signum().cmp(&ONE.neg()) == Some(0));
+        assert!(TWO.signum().compare(&ONE) == Some(0));
+        assert!(
+            ExactNum::from_i8(-2, DEFAULT_P)
+                .signum()
+                .compare(&ExactNum::from_i8(-1, DEFAULT_P))
+                == Some(0)
+        );
+        assert!(INF_POS.signum().compare(&ONE) == Some(0));
+        assert!(INF_NEG.signum().compare(&ExactNum::from_i8(-1, DEFAULT_P)) == Some(0));
         assert!(NAN.signum().is_nan());
 
         let d1 = ONE.clone();
@@ -3532,12 +4860,8 @@ mod tests {
         };
 
         assert!(d1.mantissa_digits() == Some(words));
-        // DEFAULT_P = 128 bits is 2 limbs on 64-bit (inline, INLINE_WORDS = 2) but 4 limbs on
-        // 32-bit (heap).
-        #[cfg(not(target_pointer_width = "32"))]
+        // DEFAULT_P = 128 bits is INLINE_WORDS limbs on every target (2 on 64-bit, 4 on 32-bit).
         assert!(d1.is_inline());
-        #[cfg(target_pointer_width = "32")]
-        assert!(!d1.is_inline());
         assert!(d1.mantissa_max_bit_len() == Some(DEFAULT_P));
         assert!(d1.precision() == Some(DEFAULT_P));
         assert!(d1.sign() == Some(Sign::Pos));
@@ -3572,10 +4896,10 @@ mod tests {
         NAN.clone().set_precision(1, rm).unwrap();
         NAN.clone().set_sign(Sign::Pos);
 
-        assert!(INF_POS.min(&ONE).cmp(&ONE) == Some(0));
+        assert!(INF_POS.min(&ONE).compare(&ONE) == Some(0));
         assert!(INF_NEG.min(&ONE).is_inf_neg());
         assert!(NAN.min(&ONE).is_nan());
-        assert!(ONE.min(&INF_POS).cmp(&ONE) == Some(0));
+        assert!(ONE.min(&INF_POS).compare(&ONE) == Some(0));
         assert!(ONE.min(&INF_NEG).is_inf_neg());
         assert!(ONE.min(&NAN).is_nan());
         assert!(NAN.min(&INF_POS).is_nan());
@@ -3587,10 +4911,10 @@ mod tests {
         assert!(INF_NEG.min(&INF_NEG).is_inf_neg());
 
         assert!(INF_POS.max(&ONE).is_inf_pos());
-        assert!(INF_NEG.max(&ONE).cmp(&ONE) == Some(0));
+        assert!(INF_NEG.max(&ONE).compare(&ONE) == Some(0));
         assert!(NAN.max(&ONE).is_nan());
         assert!(ONE.max(&INF_POS).is_inf_pos());
-        assert!(ONE.max(&INF_NEG).cmp(&ONE) == Some(0));
+        assert!(ONE.max(&INF_NEG).compare(&ONE) == Some(0));
         assert!(ONE.max(&NAN).is_nan());
         assert!(NAN.max(&INF_POS).is_nan());
         assert!(NAN.max(&INF_NEG).is_nan());
@@ -3600,20 +4924,33 @@ mod tests {
         assert!(INF_POS.max(&INF_POS).is_inf_pos());
         assert!(INF_NEG.max(&INF_NEG).is_inf_neg());
 
-        assert!(ONE.clamp(&ONE.neg(), &TWO).cmp(&ONE) == Some(0));
+        assert!(
+            ONE.clamp(&ExactNum::from_i8(-1, DEFAULT_P), &TWO)
+                .compare(&ONE)
+                == Some(0)
+        );
         assert!(ONE.clamp(&TWO, &ONE).is_nan());
         assert!(ONE.clamp(&INF_POS, &ONE).is_nan());
         assert!(ONE.clamp(&TWO, &INF_NEG).is_nan());
-        assert!(ONE.neg().clamp(&ONE, &TWO).cmp(&ONE) == Some(0));
-        assert!(TWO.clamp(&ONE.neg(), &ONE).cmp(&ONE) == Some(0));
-        assert!(INF_POS.clamp(&ONE, &TWO).cmp(&TWO) == Some(0));
+        assert!(
+            ExactNum::from_i8(-1, DEFAULT_P)
+                .clamp(&ONE, &TWO)
+                .compare(&ONE)
+                == Some(0)
+        );
+        assert!(
+            TWO.clamp(&ExactNum::from_i8(-1, DEFAULT_P), &ONE)
+                .compare(&ONE)
+                == Some(0)
+        );
+        assert!(INF_POS.clamp(&ONE, &TWO).compare(&TWO) == Some(0));
         assert!(INF_POS.clamp(&ONE, &INF_POS).is_inf_pos());
-        assert!(INF_POS.clamp(&INF_NEG, &ONE).cmp(&ONE) == Some(0));
+        assert!(INF_POS.clamp(&INF_NEG, &ONE).compare(&ONE) == Some(0));
         assert!(INF_POS.clamp(&NAN, &INF_POS).is_nan());
         assert!(INF_POS.clamp(&ONE, &NAN).is_nan());
         assert!(INF_POS.clamp(&NAN, &NAN).is_nan());
-        assert!(INF_NEG.clamp(&ONE, &TWO).cmp(&ONE) == Some(0));
-        assert!(INF_NEG.clamp(&ONE, &INF_POS).cmp(&ONE) == Some(0));
+        assert!(INF_NEG.clamp(&ONE, &TWO).compare(&ONE) == Some(0));
+        assert!(INF_NEG.clamp(&ONE, &INF_POS).compare(&ONE) == Some(0));
         assert!(INF_NEG.clamp(&INF_NEG, &ONE).is_inf_neg());
         assert!(INF_NEG.clamp(&NAN, &INF_POS).is_nan());
         assert!(INF_NEG.clamp(&ONE, &NAN).is_nan());
@@ -3710,15 +5047,17 @@ mod tests {
         let d1str = format!("{}", NAN);
         assert_eq!(d1str, "NaN");
 
-        assert!(ExactNum::from_str("abc").is_ok());
-        assert!(ExactNum::from_str("abc").unwrap().is_nan());
+        let bad = ExactNum::from_str("abc").unwrap();
+        assert!(bad.is_nan());
+        assert_eq!(bad.err(), Some(Error::InvalidArgument));
     }
 
     #[test]
     pub fn test_ops() {
+        use core::ops::Not;
         let mut cc = Consts::new().unwrap();
 
-        let d1 = -&(TWO.clone());
+        let d1 = -ExactNum::from_u8(2, DEFAULT_P);
         assert!(d1.is_negative());
 
         let p = DEFAULT_P;
@@ -3726,8 +5065,11 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let eighth = two.powsi(-3, p, rm);
         let expected = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(8, p), p, rm);
-        assert_eq!(eighth.cmp(&expected), Some(0));
-        assert_eq!(two.powsi(3, p, rm).cmp(&ExactNum::from_u8(8, p)), Some(0));
+        assert_eq!(eighth.compare(&expected), Some(0));
+        assert_eq!(
+            two.powsi(3, p, rm).compare(&ExactNum::from_u8(8, p)),
+            Some(0)
+        );
         assert!(
             ExactNum::from_i8(-123, p) == ExactNum::parse("-1.23e+2", Radix::Dec, p, rm, &mut cc)
         );
@@ -3784,60 +5126,60 @@ mod tests {
 
         assert!(pos > neg);
         assert!(neg < pos);
-        assert!(!(pos < neg));
-        assert!(!(neg > pos));
+        assert!((pos < neg).not());
+        assert!((neg > pos).not());
         assert!(INF_NEG < neg);
         assert!(INF_NEG < pos);
         assert!(INF_NEG < INF_POS);
-        assert!(!(INF_NEG > neg));
-        assert!(!(INF_NEG > pos));
-        assert!(!(INF_NEG > INF_POS));
+        assert!((INF_NEG > neg).not());
+        assert!((INF_NEG > pos).not());
+        assert!((INF_NEG > INF_POS).not());
         assert!(INF_POS > neg);
         assert!(INF_POS > pos);
         assert!(INF_POS > INF_NEG);
-        assert!(!(INF_POS < neg));
-        assert!(!(INF_POS < pos));
-        assert!(!(INF_POS < INF_NEG));
-        assert!(!(INF_POS > INF_POS));
-        assert!(!(INF_POS < INF_POS));
-        assert!(!(INF_NEG > INF_NEG));
-        assert!(!(INF_NEG < INF_NEG));
-        assert!(!(INF_POS > NAN));
-        assert!(!(INF_POS < NAN));
-        assert!(!(INF_NEG > NAN));
-        assert!(!(INF_NEG < NAN));
-        assert!(!(NAN > INF_POS));
-        assert!(!(NAN < INF_POS));
-        assert!(!(NAN > INF_NEG));
-        assert!(!(NAN < INF_NEG));
-        assert!(!(NAN > NAN));
-        assert!(!(NAN < NAN));
-        assert!(!(neg > NAN));
-        assert!(!(neg < NAN));
-        assert!(!(pos > NAN));
-        assert!(!(pos < NAN));
-        assert!(!(NAN > neg));
-        assert!(!(NAN < neg));
-        assert!(!(NAN > pos));
-        assert!(!(NAN < pos));
+        assert!((INF_POS < neg).not());
+        assert!((INF_POS < pos).not());
+        assert!((INF_POS < INF_NEG).not());
+        assert!((INF_POS > INF_POS).not());
+        assert!((INF_POS < INF_POS).not());
+        assert!((INF_NEG > INF_NEG).not());
+        assert!((INF_NEG < INF_NEG).not());
+        assert!((INF_POS > NAN).not());
+        assert!((INF_POS < NAN).not());
+        assert!((INF_NEG > NAN).not());
+        assert!((INF_NEG < NAN).not());
+        assert!((NAN > INF_POS).not());
+        assert!((NAN < INF_POS).not());
+        assert!((NAN > INF_NEG).not());
+        assert!((NAN < INF_NEG).not());
+        assert!((NAN > NAN).not());
+        assert!((NAN < NAN).not());
+        assert!((neg > NAN).not());
+        assert!((neg < NAN).not());
+        assert!((pos > NAN).not());
+        assert!((pos < NAN).not());
+        assert!((NAN > neg).not());
+        assert!((NAN < neg).not());
+        assert!((NAN > pos).not());
+        assert!((NAN < pos).not());
 
-        assert!(!(NAN == NAN));
-        assert!(!(NAN == INF_POS));
-        assert!(!(NAN == INF_NEG));
-        assert!(!(INF_POS == NAN));
-        assert!(!(INF_NEG == NAN));
-        assert!(!(INF_NEG == INF_POS));
-        assert!(!(INF_POS == INF_NEG));
-        assert!(!(INF_POS == neg));
-        assert!(!(INF_POS == pos));
-        assert!(!(INF_NEG == neg));
-        assert!(!(INF_NEG == pos));
-        assert!(!(neg == INF_POS));
-        assert!(!(pos == INF_POS));
-        assert!(!(neg == INF_NEG));
-        assert!(!(pos == INF_NEG));
-        assert!(!(pos == neg));
-        assert!(!(neg == pos));
+        assert!((NAN == NAN).not());
+        assert!((NAN == INF_POS).not());
+        assert!((NAN == INF_NEG).not());
+        assert!((INF_POS == NAN).not());
+        assert!((INF_NEG == NAN).not());
+        assert!((INF_NEG == INF_POS).not());
+        assert!((INF_POS == INF_NEG).not());
+        assert!((INF_POS == neg).not());
+        assert!((INF_POS == pos).not());
+        assert!((INF_NEG == neg).not());
+        assert!((INF_NEG == pos).not());
+        assert!((neg == INF_POS).not());
+        assert!((pos == INF_POS).not());
+        assert!((neg == INF_NEG).not());
+        assert!((pos == INF_NEG).not());
+        assert!((pos == neg).not());
+        assert!((neg == pos).not());
         assert!(neg == neg);
         assert!(pos == pos);
         assert!(INF_NEG == INF_NEG);
@@ -3857,11 +5199,11 @@ mod tests {
         let p = 128 * WORD_BIT_SIZE;
         let a = ExactNum::from_word(3, p);
         let b = ExactNum::from_word(5, p);
-        let s = a.add(&b, p, RoundingMode::ToEven);
+        let s = ExactNum::from_word(3, p).add(&b, p, RoundingMode::ToEven);
         let m = a.mul(&b, p, RoundingMode::ToEven);
         assert!(!s.is_nan(), "large-prec add hung or failed");
         assert!(!m.is_nan(), "large-prec mul hung or failed");
-        assert_eq!(s.cmp(&ExactNum::from_word(8, p)), Some(0));
+        assert_eq!(s.compare(&ExactNum::from_word(8, p)), Some(0));
     }
 
     #[test]
@@ -3872,28 +5214,32 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let three = ExactNum::from_u8(3, p);
 
-        let (hi, lo) = one.two_sum(&two, p, rm);
+        let (hi, lo) = one.clone().two_sum(&two, p, rm);
         let rec = hi.add(&lo, p, rm);
-        assert_eq!(rec.cmp(&ExactNum::from_u8(3, p)), Some(0));
+        assert_eq!(rec.compare(&ExactNum::from_u8(3, p)), Some(0));
 
-        let (ph, pl) = two.two_product(&three, p, rm);
+        let (ph, pl) = two.clone().two_product(&three, p, rm);
         let pr = ph.add(&pl, p, rm);
-        assert_eq!(pr.cmp(&ExactNum::from_u8(6, p)), Some(0));
+        assert_eq!(pr.compare(&ExactNum::from_u8(6, p)), Some(0));
 
-        let sum = ExactNum::fused_sum(&[one.clone(), two.clone(), three.clone()], p, rm);
-        assert_eq!(sum.cmp(&ExactNum::from_u8(6, p)), Some(0));
-
-        let dot = ExactNum::fused_dot(
-            &[one.clone(), two.clone()],
-            &[three.clone(), one.clone()],
+        let sum = ExactNum::fused_sum(
+            &[ExactNum::from_u8(1, p), two.clone(), three.clone()],
             p,
             rm,
         );
-        assert_eq!(dot.cmp(&ExactNum::from_u8(5, p)), Some(0));
+        assert_eq!(sum.compare(&ExactNum::from_u8(6, p)), Some(0));
+
+        let dot = ExactNum::fused_dot(
+            &[ExactNum::from_u8(1, p), two.clone()],
+            &[three.clone(), ExactNum::from_u8(1, p)],
+            p,
+            rm,
+        );
+        assert_eq!(dot.compare(&ExactNum::from_u8(5, p)), Some(0));
 
         // 1 + 2x + 3x² at x = 2 → 17
         let pv = ExactNum::polyval(&[one, two, three], &ExactNum::from_u8(2, p), p, rm);
-        assert_eq!(pv.cmp(&ExactNum::from_u8(17, p)), Some(0));
+        assert_eq!(pv.compare(&ExactNum::from_u8(17, p)), Some(0));
     }
 
     #[test]
@@ -3907,7 +5253,7 @@ mod tests {
         let sn0 = zero.jacobi_sn(&half, p, rm, &mut cc);
         assert!(sn0.is_zero(), "sn(0)");
         let cn0 = zero.jacobi_cn(&half, p, rm, &mut cc);
-        assert_eq!(cn0.cmp(&one), Some(0), "cn(0)");
+        assert_eq!(cn0.compare(&one), Some(0), "cn(0)");
         let sn_m0 = one.jacobi_sn(&zero, p, rm, &mut cc);
         let sin1 = one.sin(p, rm, &mut cc);
         let d = sn_m0.sub(&sin1, p, rm).abs();
@@ -3940,5 +5286,714 @@ mod rand_tests {
             assert!(n.exponent().unwrap() >= exp_from && n.exponent().unwrap() <= exp_to);
             assert!(n.precision().unwrap() >= p);
         }
+    }
+}
+
+/// Characterization of the NaN / Inf argument paths: the result of an operation with a NaN operand is a NaN
+/// carrying that operand's error (first NaN operand in argument order wins), Inf operands keep their sign.
+#[cfg(test)]
+mod special_arg_tests {
+    use crate::defs::{RoundingMode, DEFAULT_P};
+    use crate::{Consts, Error, ExactNum, INF_NEG, INF_POS};
+    use core::ops::Neg;
+
+    const P: usize = DEFAULT_P;
+    const RM: RoundingMode = RoundingMode::ToEven;
+
+    fn nans() -> [ExactNum; 2] {
+        [ExactNum::nan(Some(Error::InvalidArgument)), ExactNum::nan(None)]
+    }
+
+    fn same_nan(r: &ExactNum, want: &ExactNum) {
+        assert!(r.is_nan(), "expected NaN, got {r:?}");
+        assert_eq!(r.err(), want.err());
+    }
+
+    fn one() -> ExactNum {
+        ExactNum::from_u8(1, P)
+    }
+
+    #[test]
+    fn nan_operand_wins_in_ternary_and_binary_ops() {
+        let mut cc = match Consts::new() {
+            Ok(c) => c,
+            Err(e) => panic!("consts: {e:?}"),
+        };
+        for n in nans() {
+            let v = one();
+            for (a, b, c) in [(&n, &v, &v), (&v, &n, &v), (&v, &v, &n)] {
+                same_nan(&a.fma(b, c, P, RM), &n);
+                same_nan(&a.mul_add(b, c, P, RM), &n);
+            }
+            for (a, b) in [(&n, &v), (&v, &n)] {
+                same_nan(&a.atan2(b, P, RM, &mut cc), &n);
+                same_nan(&a.next_after(b, P, RM), &n);
+            }
+            same_nan(&n.copysign(&v, P, RM), &n);
+            same_nan(&n.hypot(&v, P, RM), &n);
+            same_nan(&v.hypot(&n, P, RM), &n);
+            let (hi, lo) = n.clone().two_sum(&v, P, RM);
+            same_nan(&hi, &n);
+            same_nan(&lo, &n);
+            let (hi, lo) = v.clone().two_sum(&n, P, RM);
+            same_nan(&hi, &n);
+            same_nan(&lo, &n);
+            let (hi, lo) = n.two_product(&v, P, RM);
+            same_nan(&hi, &n);
+            same_nan(&lo, &n);
+            let (hi, lo) = v.two_product(&n, P, RM);
+            same_nan(&hi, &n);
+            same_nan(&lo, &n);
+        }
+    }
+
+    #[test]
+    fn min_max_clamp_borrow_an_operand() {
+        let (lo, hi, mid) = (one(), ExactNum::from_u8(3, P), ExactNum::from_u8(2, P));
+        assert!(core::ptr::eq(lo.max(&hi), &hi));
+        assert!(core::ptr::eq(hi.max(&lo), &hi));
+        assert!(core::ptr::eq(lo.min(&hi), &lo));
+        assert!(core::ptr::eq(hi.min(&lo), &lo));
+        assert!(core::ptr::eq(mid.clamp(&lo, &hi), &mid));
+        assert!(core::ptr::eq(lo.clamp(&mid, &hi), &mid));
+        assert!(core::ptr::eq(hi.clamp(&lo, &mid), &mid));
+        for n in nans() {
+            assert!(lo.max(&n).is_nan() && n.min(&lo).is_nan() && lo.clamp(&n, &hi).is_nan());
+        }
+        assert!(hi.clamp(&hi, &lo).is_nan());
+    }
+
+    #[test]
+    fn neg_flips_the_sign_and_keeps_everything_else() {
+        let mk = || ExactNum::from_u32(0xDEAD_BEEF, 40);
+        let n = mk().neg();
+        assert!(n.is_negative());
+        assert_eq!(n.mantissa_max_bit_len(), mk().mantissa_max_bit_len());
+        assert_eq!(n.abs_cmp(&mk()), Some(0));
+        assert!(matches!(n.neg().compare(&mk()), Some(0)));
+        let z = ExactNum::new(64).neg();
+        assert!(z.is_zero() && z.is_negative());
+        assert!(INF_POS.neg().is_inf() && INF_POS.neg().is_negative());
+        assert!(INF_NEG.neg().is_inf() && INF_NEG.neg().is_positive());
+        for n in nans() {
+            same_nan(&n.neg_via_mul(), &n);
+        }
+        let third = || ExactNum::from_u8(1, P).div(&ExactNum::from_u8(3, P), 64, RM);
+        assert!(third().inexact());
+        let t = third().neg();
+        assert!(t.inexact() && t.is_negative());
+        assert!(matches!(
+            (-ExactNum::from_u8(2, P)).compare(&ExactNum::from_u8(2, P).neg()),
+            Some(0)
+        ));
+    }
+
+    #[test]
+    fn frexp_and_ldexp_keep_specials() {
+        for n in nans() {
+            let (m, e) = ExactNum::nan(n.err()).frexp();
+            same_nan(&m, &n);
+            assert_eq!(e, 0);
+            let want = ExactNum::nan(n.err());
+            same_nan(&n.ldexp(3, P, RM), &want);
+        }
+        let (m, e) = INF_POS.frexp();
+        assert!(m.is_inf() && m.is_positive() && e == 0);
+        let (m, e) = INF_NEG.frexp();
+        assert!(m.is_inf() && m.is_negative() && e == 0);
+        assert!(INF_POS.ldexp(3, P, RM).is_positive() && INF_POS.ldexp(3, P, RM).is_inf());
+        assert!(INF_NEG.ldexp(3, P, RM).is_negative() && INF_NEG.ldexp(3, P, RM).is_inf());
+    }
+    #[test]
+    fn neg_via_mul_equals_neg_for_every_kind_of_operand() {
+        let same = |mk: &dyn Fn() -> ExactNum| {
+            let x = mk();
+            let want = mk().neg();
+            let got = x.neg_via_mul();
+            if want.is_nan() {
+                same_nan(&got, &want);
+                return;
+            }
+            assert_eq!(got.is_inf(), want.is_inf(), "{x:?}");
+            assert_eq!(got.is_negative(), want.is_negative(), "{x:?}");
+            assert_eq!(got.is_zero(), want.is_zero(), "{x:?}");
+            // The accumulated flag is kept; the per-operation flag is false because the
+            // product is exact (neg keeps the operand's stale per-operation flag).
+            assert_eq!(
+                got.inexact_accumulated(),
+                want.inexact_accumulated(),
+                "{x:?}"
+            );
+            assert!(!got.inexact(), "{x:?}");
+            assert_eq!(got.compare(&want), want.compare(&got), "{x:?}");
+            if !want.is_inf() {
+                assert!(matches!(got.compare(&want), Some(0)), "{x:?}");
+                assert_eq!(
+                    got.mantissa_max_bit_len(),
+                    want.mantissa_max_bit_len(),
+                    "{x:?}"
+                );
+                assert_eq!(got.exponent(), want.exponent(), "{x:?}");
+            }
+        };
+        for p in [1usize, 40, 64, 65, 128, 300] {
+            same(&|| ExactNum::new(p));
+            same(&|| ExactNum::new(p).neg());
+            same(&|| ExactNum::from_u32(0xDEAD_BEEF, p));
+            same(&|| ExactNum::from_u32(0xDEAD_BEEF, p).neg());
+            same(&|| ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, RM));
+            same(&|| {
+                ExactNum::from_u8(1, p)
+                    .div(&ExactNum::from_u8(3, p), p, RM)
+                    .neg()
+            });
+            same(&|| ExactNum::from_u8(1, p).ldexp(-10_000, p, RM));
+        }
+        same(&|| INF_POS);
+        same(&|| INF_NEG);
+        for n in nans() {
+            same_nan(&n.neg_via_mul(), &n);
+        }
+    }
+    // ---- unary derivations that will take `self`: every call below is on a temporary, so the
+    // same test compiles before and after the signature change.
+
+    /// `k / 4`: an exact binary fraction.
+    fn q(k: i64) -> ExactNum {
+        ExactNum::from_i64(k, P).div(&ExactNum::from_u8(4, P), P, RM)
+    }
+
+    fn eq(a: &ExactNum, b: &ExactNum) -> bool {
+        matches!(a.compare(b), Some(0))
+    }
+
+    #[test]
+    fn abs_characterization() {
+        let third = || ExactNum::from_u8(1, P).div(&ExactNum::from_u8(3, P), 64, RM);
+        assert!(eq(&q(-15).abs(), &q(15)));
+        assert!(eq(&q(15).abs(), &q(15)));
+        assert!(!q(-15).abs().is_negative());
+        let z = ExactNum::new(64).neg().abs();
+        assert!(z.is_zero() && !z.is_negative());
+        assert!(INF_NEG.abs().is_inf() && INF_NEG.abs().is_positive());
+        assert!(INF_POS.abs().is_inf() && INF_POS.abs().is_positive());
+        for n in nans() {
+            let want = ExactNum::nan(n.err());
+            same_nan(&n.abs(), &want);
+        }
+        let t = third().neg().abs();
+        assert!(t.is_positive() && t.inexact_accumulated() && t.inexact() == third().inexact());
+        assert_eq!(t.mantissa_max_bit_len(), third().mantissa_max_bit_len());
+        assert_eq!(t.compare(&third()), Some(0));
+    }
+
+    #[test]
+    fn int_and_fract_characterization() {
+        assert!(eq(&q(15).int(), &q(12)));
+        assert!(eq(&q(-15).int(), &q(-12)));
+        assert!(eq(&q(15).fract(), &q(3)));
+        assert!(eq(&q(-15).fract(), &q(-3)));
+        assert!(q(3).int().is_zero());
+        assert!(eq(&q(3).fract(), &q(3)));
+        assert!(eq(&q(-1).fract(), &q(-1)));
+        assert!(q(16).fract().is_zero());
+        assert!(eq(&q(16).int(), &q(16)));
+        let big = || ExactNum::from_u8(1, P).ldexp(300, P, RM);
+        assert!(big().fract().is_zero());
+        assert!(eq(&big().int(), &big()));
+        assert!(ExactNum::new(P).int().is_zero() && ExactNum::new(P).fract().is_zero());
+        assert!(INF_POS.int().is_nan() && INF_NEG.fract().is_nan());
+        for (n, m) in nans().into_iter().zip(nans()) {
+            same_nan(&n.int(), &m);
+        }
+        for (n, m) in nans().into_iter().zip(nans()) {
+            same_nan(&n.fract(), &m);
+        }
+        assert_eq!(
+            q(23).fract().mantissa_max_bit_len(),
+            q(23).mantissa_max_bit_len()
+        );
+    }
+
+    #[test]
+    fn round_characterization() {
+        assert!(eq(&q(7).round(1, RM), &q(8)));
+        assert!(eq(&q(7).round(2, RM), &q(7)));
+        assert!(eq(&q(5).round(1, RM), &q(4)));
+        assert!(eq(&q(-7).round(1, RM), &q(-8)));
+        assert!(eq(&q(7).round(0, RoundingMode::ToZero), &q(4)));
+        assert!(INF_POS.round(3, RM).is_inf() && INF_POS.round(3, RM).is_positive());
+        assert!(INF_NEG.round(3, RM).is_inf() && INF_NEG.round(3, RM).is_negative());
+        for (n, m) in nans().into_iter().zip(nans()) {
+            same_nan(&n.round(3, RM), &m);
+        }
+    }
+
+    #[test]
+    fn frexp_ldexp_characterization() {
+        let (m, e) = q(48).frexp();
+        assert!(eq(&m, &q(3)) && e == 4);
+        let (m, e) = q(-48).frexp();
+        assert!(eq(&m, &q(-3)) && e == 4);
+        let (m, e) = q(1).frexp();
+        assert!(eq(&m, &q(2)) && e == -1);
+        let (m, e) = ExactNum::new(P).frexp();
+        assert!(m.is_zero() && e == 0);
+        assert!(eq(&q(12).ldexp(5, P, RM), &q(384)));
+        assert!(eq(&q(12).ldexp(-2, P, RM), &q(3)));
+        assert!(eq(&q(-12).ldexp(1, P, RM), &q(-24)));
+        assert!(ExactNum::new(P).ldexp(7, P, RM).is_zero());
+        assert!(q(4).ldexp(crate::Exponent::MAX, P, RM).is_inf());
+        assert!(q(-4).ldexp(crate::Exponent::MAX, P, RM).is_negative());
+        let third = || ExactNum::from_u8(1, P).div(&ExactNum::from_u8(3, P), 64, RM);
+        let t = third().ldexp(3, 64, RM);
+        assert!(t.inexact_accumulated());
+        assert!(eq(&t, &third().mul(&q(32), 64, RM)));
+        // rounding to a smaller precision rounds once
+        let r = ExactNum::from_u32(0xFFFF_FFFF, P).ldexp(1, 8, RoundingMode::ToZero);
+        assert!(r
+            .compare(&ExactNum::from_u32(0xFFFF_FFFF, P).ldexp(1, P, RM))
+            .is_some_and(|c| c < 0));
+    }
+}
+
+/// Characterization of `add` / `sub` when an operand is zero (the "return the other operand" shortcut that rule R
+/// deletes): value, sign of zero, rounding to `p`, flags, Inf / NaN. Every call is on a temporary or a borrowed
+/// second operand, so the same test compiles before and after the signature change.
+#[cfg(test)]
+mod add_sub_zero_tests {
+    use crate::defs::RoundingMode;
+    use crate::{Error, ExactNum, INF_NEG, INF_POS};
+    use core::ops::Neg;
+
+    const RMS: [RoundingMode; 5] = [
+        RoundingMode::ToEven,
+        RoundingMode::ToZero,
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::FromZero,
+    ];
+
+    fn zero(neg: bool) -> ExactNum {
+        let z = ExactNum::new(64);
+        if neg {
+            z.neg()
+        } else {
+            z
+        }
+    }
+
+    fn third(p: usize) -> ExactNum {
+        ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, RoundingMode::ToEven)
+    }
+
+    /// Full-precision sum with a zero operand is the other operand, exactly. (Before the zero-aware
+    /// kernel branch this returned a value with an empty mantissa, flagged inexact.)
+    #[test]
+    fn full_prec_with_zero_operand_is_the_other_operand() {
+        for x in [
+            ExactNum::from_u8(1, 64),
+            ExactNum::from_u8(7, 64).neg(),
+            third(64),
+            third(192).neg(),
+        ] {
+            for neg in [false, true] {
+                let sum = zero(neg).add_full_prec(&x);
+                let diff = zero(neg).sub_full_prec(&x);
+                let sum2 = x.add_full_prec(&zero(neg));
+                assert!(sum == x, "0 + x");
+                assert_eq!(sum.inexact(), x.inexact(), "0 + x flag");
+                assert!(diff == x.neg_via_mul(), "0 - x");
+                assert!(sum2 == x, "x + 0");
+                assert_eq!(sum2.exponent(), x.exponent());
+            }
+        }
+    }
+
+    #[test]
+    fn zero_plus_zero_sign_rule() {
+        for rm in RMS {
+            for (an, bn) in [(false, false), (false, true), (true, false), (true, true)] {
+                let want_add = if an == bn { an } else { rm == RoundingMode::Down };
+                let r = zero(an).add(&zero(bn), 64, rm);
+                assert!(r.is_zero());
+                assert_eq!(r.is_negative(), want_add, "{an} + {bn} {rm:?}");
+                let want_sub = if an != bn { an } else { rm == RoundingMode::Down };
+                let r = zero(an).sub(&zero(bn), 64, rm);
+                assert!(r.is_zero());
+                assert_eq!(r.is_negative(), want_sub, "{an} - {bn} {rm:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn one_zero_operand_returns_the_other_rounded_to_p() {
+        for rm in RMS {
+            for p in [64, 128, 192] {
+                for neg in [false, true] {
+                    let x = if neg { third(192).neg() } else { third(192) };
+                    // reference: the same value rounded to p by set_precision
+                    let mut want = ExactNum::new(64).add(&x, 192, RoundingMode::None);
+                    want.set_precision(p, rm).unwrap();
+                    for zn in [false, true] {
+                        let z = zero(zn);
+                        let a = ExactNum::add_ref(&x, &z, p, rm);
+                        let b = ExactNum::add_ref(&z, &x, p, rm);
+                        let c = ExactNum::sub_ref(&x, &z, p, rm);
+                        let d = z.sub(&x, p, rm);
+                        for r in [&a, &b, &c] {
+                            assert_eq!(r.compare(&want), Some(0), "p={p} {rm:?} neg={neg}");
+                            assert_eq!(r.mantissa_max_bit_len(), want.mantissa_max_bit_len());
+                        }
+                        let mut want_neg = ExactNum::new(64).sub(&x, 192, RoundingMode::None);
+                        want_neg.set_precision(p, rm).unwrap();
+                        assert_eq!(d.compare(&want_neg), Some(0), "p={p} {rm:?}");
+                        assert_eq!(a.is_negative(), neg);
+                        assert_eq!(d.is_negative(), !neg);
+                        // 192 bits of 1/3 do not fit 64 or 128 bits
+                        if p < 192 {
+                            assert!(a.inexact_accumulated() && b.inexact_accumulated());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn zero_with_exact_operand_is_exact() {
+        let x = ExactNum::from_u8(12, 64);
+        for rm in RMS {
+            let r = x.clone().add(&zero(false), 64, rm);
+            assert!(!r.inexact_accumulated());
+            assert_eq!(r.compare(&x), Some(0));
+            let r = zero(true).sub(&x, 64, rm);
+            assert_eq!(r.compare(&x.neg_via_mul()), Some(0));
+        }
+    }
+
+    #[test]
+    fn zero_with_inf_and_nan() {
+        let nan = ExactNum::nan(Some(Error::InvalidArgument));
+        for rm in RMS {
+            assert!(zero(false).add(&INF_POS, 64, rm).is_positive());
+            assert!(zero(true).add(&INF_NEG, 64, rm).is_inf() && INF_NEG.is_negative());
+            assert!(INF_NEG.sub(&zero(false), 64, rm).is_negative());
+            assert!(zero(false).sub(&INF_POS, 64, rm).is_negative());
+            assert!(zero(false).sub(&INF_POS, 64, rm).is_inf());
+            let r = zero(false).add(&nan, 64, rm);
+            assert!(r.is_nan() && r.err() == nan.err());
+            let r = nan.clone().sub(&zero(true), 64, rm);
+            assert!(r.is_nan() && r.err() == nan.err());
+        }
+    }
+}
+
+/// Characterization over grids of operands: `ldexp` / `scalb` (one operand) and `add` / `sub` / `add_full_prec` /
+/// `sub_full_prec` (pairs, including every zero, Inf and NaN combination). Original text: `ldexp` / `scalb` over a grid of operands (zero, normal, near both ends of the exponent
+/// range), shifts, precisions and rounding modes: the digest of every result (value, sign, exponent, flags)
+/// is pinned (storage representation, inline or heap, is not part of the value), so the signature change to `self`
+/// must reproduce every bit. Both the `&self` and the `self` implementation give this digest.
+#[cfg(test)]
+mod grid_digest_tests {
+    use crate::defs::{RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
+    use crate::{Error, ExactNum, INF_NEG, INF_POS};
+    use core::hash::{Hash, Hasher};
+    use core::ops::Neg;
+    use std::collections::hash_map::DefaultHasher;
+
+    const RMS: [RoundingMode; 6] = [
+        RoundingMode::None,
+        RoundingMode::ToEven,
+        RoundingMode::ToZero,
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::FromZero,
+    ];
+
+    const OPERANDS: usize = 21;
+    /// Operands 21 and 22 are subnormal.
+    const PAIR_OPERANDS: usize = 23;
+
+    /// Operand `i` of the grid, built fresh on every call (`ldexp` consumes it).
+    fn operand(i: usize) -> ExactNum {
+        let third =
+            |p| ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, RoundingMode::ToEven);
+        let ks = [
+            EXPONENT_MIN + 3,
+            EXPONENT_MIN + 70,
+            EXPONENT_MIN + 200,
+            EXPONENT_MAX - 3,
+            EXPONENT_MAX - 70,
+        ];
+        match i {
+            0 => ExactNum::new(64),
+            1 => ExactNum::new(64).neg(),
+            2 => ExactNum::from_u8(1, 64),
+            3 => ExactNum::from_u8(7, 64).neg(),
+            4 => third(64),
+            5 => third(192).neg(),
+            6 => third(320),
+            7 => INF_POS,
+            8 => INF_NEG,
+            9 => ExactNum::nan(Some(Error::InvalidArgument)),
+            10 => ExactNum::nan(None),
+            21 => ExactNum::from_u8(3, 64)
+                .ldexp(EXPONENT_MIN + 1, 64, RoundingMode::None)
+                .ldexp(-20, 64, RoundingMode::None),
+            22 => third(192)
+                .ldexp(EXPONENT_MIN + 1, 192, RoundingMode::None)
+                .ldexp(-100, 192, RoundingMode::None)
+                .neg(),
+            _ => {
+                let k = ks[(i - 11) / 2];
+                if (i - 11).is_multiple_of(2) {
+                    ExactNum::from_u8(3, 64).ldexp(k, 64, RoundingMode::None)
+                } else {
+                    third(192).ldexp(k, 192, RoundingMode::None).neg()
+                }
+            }
+        }
+    }
+
+    /// `{r:?}` without the storage representation: inline capacity and heap buffers print differently for the
+    /// same words, and which one a result lives in is not part of its value.
+    fn value_repr(r: &ExactNum) -> String {
+        let d = format!("{r:?}");
+        let mut out = String::new();
+        let mut rest = d.as_str();
+        while let Some(i) = rest.find("inner: ") {
+            let (head, tail) = rest.split_at(i + "inner: ".len());
+            out.push_str(head);
+            if let Some(t) = tail.strip_prefix("Inline { data: [") {
+                let close = t.find("], len: ").unwrap();
+                let words: Vec<&str> = t[..close].split(", ").collect();
+                let after = &t[close + "], len: ".len()..];
+                let digits = after.find(|c: char| !c.is_ascii_digit()).unwrap();
+                let len: usize = after[..digits].parse().unwrap();
+                out.push_str(&format!("{:?}", &words[..len]));
+                rest = &after[digits + " }".len()..];
+            } else if let Some(t) = tail.strip_prefix("Heap([") {
+                let close = t.find("])").unwrap();
+                let words: Vec<&str> = t[..close].split(", ").collect();
+                out.push_str(&format!("{words:?}"));
+                rest = &t[close + "])".len()..];
+            } else {
+                rest = tail;
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
+    fn digest(r: &ExactNum, h: &mut DefaultHasher) {
+        value_repr(r).hash(h);
+        r.inexact().hash(h);
+        r.inexact_accumulated().hash(h);
+    }
+
+    #[test]
+    fn ldexp_and_scalb_grid_digest() {
+        let shifts = [
+            0,
+            1,
+            -1,
+            5,
+            -64,
+            64,
+            -200,
+            200,
+            1 << 20,
+            -(1 << 20),
+            EXPONENT_MAX / 2,
+            EXPONENT_MIN / 2,
+            EXPONENT_MAX,
+            EXPONENT_MIN,
+            EXPONENT_MAX - 1,
+            EXPONENT_MIN + 1,
+        ];
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..OPERANDS {
+            for n in shifts {
+                for p in [1usize, 53, 64, 65, 128, 192, 200] {
+                    for rm in RMS {
+                        digest(&operand(i).ldexp(n, p, rm), &mut h);
+                        digest(&operand(i).scalb(n, p, rm), &mut h);
+                        count += 2;
+                    }
+                }
+            }
+        }
+        assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
+        println!("ldexp grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 3_896_020_040_264_525_112);
+    }
+
+    #[test]
+    fn round_grid_digest() {
+        let positions = [0usize, 1, 5, 63, 64, 65, 100, 200, 1 << 20, 1 << 40, usize::MAX / 2];
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..OPERANDS {
+            for n in positions {
+                for rm in RMS {
+                    digest(&operand(i).round(n, rm), &mut h);
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, OPERANDS * 11 * 6);
+        println!("round grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 2_584_562_321_548_619_649);
+    }
+
+    /// The `+` and `-` operators on every combination of owned and borrowed operands that exists.
+    #[test]
+    fn operator_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
+                digest(&(&operand(i) + operand(j)), &mut h);
+                digest(&(operand(i) + &operand(j)), &mut h);
+                digest(&(operand(i) + operand(j)), &mut h);
+                digest(&(&operand(i) - operand(j)), &mut h);
+                digest(&(operand(i) - &operand(j)), &mut h);
+                digest(&(operand(i) - operand(j)), &mut h);
+                count += 6;
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
+        println!("operator grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 7_046_299_910_751_575_496);
+    }
+
+    /// `ExactComplex::add` and `sub` over parts that include zeros, Inf, NaN, inexact and subnormal values.
+    #[test]
+    fn complex_add_sub_grid_digest() {
+        use crate::ExactComplex;
+        let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for a in parts {
+            for b in parts {
+                for c in parts {
+                    for d in parts {
+                        for p in [1usize, 64, 128] {
+                            for rm in RMS {
+                                let z1 = || ExactComplex::new(operand(a), operand(b));
+                                let z2 = || ExactComplex::new(operand(c), operand(d));
+                                for r in [z1().add(&z2(), p, rm), z1().sub(&z2(), p, rm)] {
+                                    digest(r.re(), &mut h);
+                                    digest(r.im(), &mut h);
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        println!("complex add/sub grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 10_853_667_709_392_583_003);
+    }
+
+    /// `ExactNum::add_ref` / `sub_ref` (both operands borrowed) hash to the same digest as the
+    /// `add`/`sub` grid pinned on the pre-rule-R code (`add_sub_grid_digest`): same grid, same order.
+    #[test]
+    fn add_ref_sub_ref_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
+                for p in [1usize, 53, 64, 65, 128, 192, 200] {
+                    for rm in RMS {
+                        digest(&ExactNum::add_ref(&operand(i), &operand(j), p, rm), &mut h);
+                        digest(&ExactNum::sub_ref(&operand(i), &operand(j), p, rm), &mut h);
+                        count += 2;
+                    }
+                }
+                let (ei, ej) = (operand(i).exponent(), operand(j).exponent());
+                let near = match (ei, ej) {
+                    (Some(a), Some(b)) => a.abs_diff(b) < 4096,
+                    _ => true,
+                };
+                if near {
+                    digest(&operand(i).add_full_prec(&operand(j)), &mut h);
+                    digest(&operand(i).sub_full_prec(&operand(j)), &mut h);
+                    count += 2;
+                }
+            }
+        }
+        assert_eq!(count, 45_030);
+        assert_eq!(h.finish(), 7_232_426_507_586_278_165);
+    }
+
+    /// `ExactComplex::add_ref` / `sub_ref` against the complex add/sub grid pinned on the old code.
+    #[test]
+    fn complex_add_ref_sub_ref_grid_digest() {
+        use crate::ExactComplex;
+        let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for a in parts {
+            for b in parts {
+                for c in parts {
+                    for d in parts {
+                        for p in [1usize, 64, 128] {
+                            for rm in RMS {
+                                let z1 = ExactComplex::new(operand(a), operand(b));
+                                let z2 = ExactComplex::new(operand(c), operand(d));
+                                for r in [
+                                    ExactComplex::add_ref(&z1, &z2, p, rm),
+                                    ExactComplex::sub_ref(&z1, &z2, p, rm),
+                                ] {
+                                    digest(r.re(), &mut h);
+                                    digest(r.im(), &mut h);
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        assert_eq!(h.finish(), 10_853_667_709_392_583_003);
+    }
+
+    #[test]
+    fn add_sub_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
+                for p in [1usize, 53, 64, 65, 128, 192, 200] {
+                    for rm in RMS {
+                        digest(&operand(i).add(&operand(j), p, rm), &mut h);
+                        digest(&operand(i).sub(&operand(j), p, rm), &mut h);
+                        count += 2;
+                    }
+                }
+                // full precision of operands 2^32 apart would need a 2^32-bit mantissa
+                let (ei, ej) = (operand(i).exponent(), operand(j).exponent());
+                let near = match (ei, ej) {
+                    (Some(a), Some(b)) => a.abs_diff(b) < 4096,
+                    _ => true,
+                };
+                if near {
+                    digest(&operand(i).add_full_prec(&operand(j)), &mut h);
+                    digest(&operand(i).sub_full_prec(&operand(j)), &mut h);
+                    count += 2;
+                }
+            }
+        }
+        assert_eq!(count, 45_030);
+        println!("add/sub grid digest = {}", h.finish());
+        // Differs from the digest pinned on the pre-kernel-branch code in exactly 40 results: full-precision
+        // sums with a zero operand (see `full_prec_with_zero_operand_is_the_other_operand`).
+        assert_eq!(h.finish(), 7_232_426_507_586_278_165);
     }
 }

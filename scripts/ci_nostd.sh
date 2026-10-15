@@ -10,7 +10,11 @@
 #
 # Needs: rustup target thumbv7em-none-eabihf; qemu-system-arm on PATH (or QEMU=/path/to/it).
 set -euo pipefail
-cd "$(dirname "$0")/.."
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+# shellcheck source=use_rust_1_99.sh
+source "$root/scripts/use_rust_1_99.sh"
+rustup target add --toolchain 1.99 thumbv7em-none-eabihf >/dev/null
 QEMU="${QEMU:-qemu-system-arm}"
 
 echo "== cargo build -p zenith-float-num --no-default-features --lib --target thumbv7em-none-eabihf"

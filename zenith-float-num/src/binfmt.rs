@@ -194,7 +194,7 @@ fn nan_from_flag(flag: u8) -> Result<ExactNum, Error> {
         BINARY_FLAG_NAN_OOM => Ok(ExactNum::nan(Some(Error::MemoryAllocation))),
         BINARY_FLAG_NAN_OVF_POS => Ok(ExactNum::nan(Some(Error::ExponentOverflow(Sign::Pos)))),
         BINARY_FLAG_NAN_OVF_NEG => Ok(ExactNum::nan(Some(Error::ExponentOverflow(Sign::Neg)))),
-        BINARY_FLAG_NAN_BARE => Ok(NAN.clone()),
+        BINARY_FLAG_NAN_BARE => Ok(NAN),
         _ => Err(Error::InvalidArgument),
     }
 }
@@ -332,8 +332,8 @@ fn decode_num(bytes: &[u8]) -> Result<(ExactNum, usize), Error> {
             return Err(Error::InvalidArgument);
         }
         let v = match flag {
-            BINARY_FLAG_INF_POS => INF_POS.clone(),
-            BINARY_FLAG_INF_NEG => INF_NEG.clone(),
+            BINARY_FLAG_INF_POS => INF_POS,
+            BINARY_FLAG_INF_NEG => INF_NEG,
             _ => nan_from_flag(flag)?,
         };
         return Ok((v, BINARY_INLINE_LEN));
@@ -412,7 +412,7 @@ fn finite_from_u32(
     exp: Exponent,
     inexact: bool,
 ) -> Result<ExactNum, Error> {
-    if u32s.len() % WORD_U32 != 0 {
+    if !u32s.len().is_multiple_of(WORD_U32) {
         return Err(Error::InvalidArgument);
     }
     if n_sig > u32s.len() * 32 {
@@ -550,6 +550,7 @@ fn u32_from_usize(v: usize) -> Result<u32, Error> {
 mod tests {
     use super::*;
     use crate::RoundingMode;
+    use core::ops::Neg;
 
     fn p64() -> usize {
         64
@@ -575,7 +576,7 @@ mod tests {
             assert_eq!(buf.as_bytes()[1], BINARY_FORMAT_VERSION);
             let y = ExactNum::from_inline_bytes(buf.as_bytes()).unwrap();
             assert!(raw_eq(x, &y), "inline limbs");
-            assert_eq!(x.cmp(&y), Some(0));
+            assert_eq!(x.compare(&y), Some(0));
             let v = x.to_bytes().unwrap();
             assert_eq!(v.len(), BINARY_INLINE_LEN);
             let z = ExactNum::from_bytes(&v).unwrap();
@@ -619,7 +620,7 @@ mod tests {
         assert_eq!(v[0], BINARY_FLAG_HEAP_POS);
         let y = ExactNum::from_bytes(&v).unwrap();
         assert!(raw_eq(&x, &y));
-        assert_eq!(x.cmp(&y), Some(0));
+        assert_eq!(x.compare(&y), Some(0));
     }
 
     #[test]
@@ -633,7 +634,7 @@ mod tests {
         assert_eq!(b.shape(), (2, 2));
         assert_eq!(b.precision(), p);
         for i in 0..4 {
-            assert_eq!(a.get(i).unwrap().cmp(b.get(i).unwrap()), Some(0));
+            assert_eq!(a.get(i).unwrap().compare(b.get(i).unwrap()), Some(0));
             assert!(raw_eq(a.get(i).unwrap(), b.get(i).unwrap()));
         }
         let mut bad = v.clone();
@@ -674,7 +675,7 @@ mod tests {
         let b = ExactNum::from_u8(1, p);
         let s = a.add(&b, p, RoundingMode::ToEven);
         let expect = ExactNum::from_u64(1u64 << 32, p);
-        assert_eq!(s.cmp(&expect), Some(0));
+        assert_eq!(s.compare(&expect), Some(0));
         assert!(s.err().is_none());
         let buf = s.to_inline_bytes().unwrap();
         assert!(raw_eq(

@@ -522,9 +522,6 @@ name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
-dependencies = [
- "spin",
-]
 
 [[package]]
 name = "libc"
@@ -911,12 +908,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 
 [[package]]
-name = "spin"
-version = "0.9.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3763264f6b73151db08c50ff20d7d8a0b8796e021cdea7ceedad07b80155fa0e"
-
-[[package]]
 name = "static_assertions"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1272,7 +1263,7 @@ checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
 name = "zenith-float"
-version = "1.0.12"
+version = "2.0.0"
 dependencies = [
  "trybuild",
  "zenith-float-macro",
@@ -1281,7 +1272,7 @@ dependencies = [
 
 [[package]]
 name = "zenith-float-compare"
-version = "1.0.12"
+version = "2.0.0"
 dependencies = [
  "astro-float",
  "clap",
@@ -1293,7 +1284,7 @@ dependencies = [
 
 [[package]]
 name = "zenith-float-macro"
-version = "1.0.12"
+version = "2.0.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1303,12 +1294,11 @@ dependencies = [
 
 [[package]]
 name = "zenith-float-num"
-version = "1.0.12"
+version = "2.0.0"
 dependencies = [
  "criterion",
  "gmp-mpfr-sys",
  "itertools",
- "lazy_static",
  "proptest",
  "rand 0.8.8",
  "rug",

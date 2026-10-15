@@ -61,20 +61,15 @@ fn run_compare_ops(run_cnt: usize, p_rng: usize, p_min: usize) {
 
         let (n1, mut f1) = get_float_pair(p1, -(e_rng as Exponent), e_rng as Exponent, &mut cc);
 
-        let n2 = n1.round((p as Exponent - n1.exponent().unwrap()) as usize, rm);
+        let msg = format!("{:?}", (&n1, p, rm, "prec round"));
+        let positions = (p as Exponent - n1.exponent().unwrap()) as usize;
+        let n2 = n1.round(positions, rm);
 
         unsafe {
             mpfr::prec_round(f1.as_raw_mut(), p as mpfr::prec_t, rnd);
         }
 
-        assert_float_close(
-            n2,
-            f1,
-            p,
-            &format!("{:?}", (n1, p, rm, "prec round")),
-            true,
-            &mut cc,
-        );
+        assert_float_close(n2, f1, p, &msg, true, &mut cc);
     }
 
     // add, sub

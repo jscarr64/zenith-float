@@ -1,5 +1,6 @@
 // Derived from astro-float (https://github.com/stencillogic/astro-float),
 // Copyright (c) 2022 stencillogic, MIT License.
+#![forbid(unsafe_code)]
 //! zenith-float implements arbitrary-precision software floating-point numbers
 //! (`ExactNum`) and software IEEE-754 binary32/binary64 (`Ieee32` / `Ieee64`).
 //! All arithmetic uses integer limbs. The library does not use hardware floating-point for calculations.
@@ -28,8 +29,9 @@
 //! Before the result is returned to the user, the result is rounded according to the rounding mode and reduced to the expected precision.
 //!
 //!
-//! The result of an operation is marked as inexact if some of the bits were rounded when producing the result,
-//! or if any of the operation's arguments were marked as inexact. The information about exactness is used to achieve correct rounding.
+//! Each number carries two exactness flags. `inexact()` on the result of `add`, `sub`, `mul`, or `div` is true only if
+//! that operation rounded. `inexact_accumulated()` is also true if any value the result was computed from was inexact;
+//! the correct-rounding loops and the `expr!` macro use it. Other functions report the accumulated flag through `inexact()`.
 //!
 //!
 //! `ExactNum` can be parsed from a string and formatted into a string using binary, octal, decimal, or hexadecimal representation.
@@ -78,7 +80,7 @@
 //! let pi_lib = ctx.const_pi();
 //!
 //! // Compare computed constant with library's constant
-//! assert_eq!(pi.cmp(&pi_lib), Some(0));
+//! assert_eq!(pi.compare(&pi_lib), Some(0));
 //!
 //! // Print using decimal radix.
 //! #[cfg(feature="std")]
@@ -121,7 +123,7 @@
 //! let pi_lib = cc.pi(1024, RoundingMode::ToEven);
 //!
 //! // Compare computed constant with library's constant
-//! assert_eq!(pi.cmp(&pi_lib), Some(0));
+//! assert_eq!(pi.compare(&pi_lib), Some(0));
 //!
 //! // Print using decimal radix.
 //! #[cfg(feature="std")]
@@ -149,8 +151,15 @@
 #![deny(unused)]
 #![deny(clippy::suspicious)]
 #![deny(clippy::float_arithmetic)]
-#![allow(clippy::manual_div_ceil)]
-#![allow(clippy::manual_is_multiple_of)]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::unreachable,
+        clippy::panic
+    )
+)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 /// Computes an expression with the specified precision and rounding mode.
@@ -299,8 +308,8 @@
 ///
 /// let a = exact!("3.25");
 /// let b = fbig!("3.25");
-/// assert_eq!(a.cmp(&b), Some(0));
-/// assert_eq!(a.cmp(&ExactNum::from_word(13, 64).div(&ExactNum::from_word(4, 64), 64, RoundingMode::ToEven)), Some(0));
+/// assert_eq!(a.compare(&b), Some(0));
+/// assert_eq!(a.compare(&ExactNum::from_word(13, 64).div(&ExactNum::from_word(4, 64), 64, RoundingMode::ToEven)), Some(0));
 /// ```
 ///
 /// ## Complex expressions

@@ -203,12 +203,24 @@ where
 pub fn root_estimate(m: &[Word], n: usize) -> Result<WordBuf, Error> {
     let mut buf = WordBuf::new(m.len() / n + 1)?;
 
-    if !buf.is_empty() {
-        buf.fill(0);
-
-        let nbits = log2_floor(*m.last().unwrap() as usize); // m nonempty (root of a mantissa)
-
-        *buf.last_mut().unwrap() = 1 << (nbits / n + 1); // buf.len() > 0
+    let Some(&top) = m.last() else {
+        return Err(Error::InvalidArgument); // the root of an empty mantissa has no estimate
+    };
+    buf.fill(0);
+    if let Some(last) = buf.last_mut() {
+        *last = 1 << (log2_floor(top as usize) / n + 1);
     }
     Ok(buf)
+}
+
+#[cfg(test)]
+mod root_estimate_tests {
+    use super::root_estimate;
+    use crate::defs::Error;
+
+    #[test]
+    fn empty_mantissa_is_error_not_panic() {
+        assert!(matches!(root_estimate(&[], 2), Err(Error::InvalidArgument)));
+        assert!(root_estimate(&[1 << 3], 2).is_ok());
+    }
 }

@@ -8,6 +8,7 @@ use crate::ExactNum;
 use crate::ExactNumArray;
 use alloc::vec;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// Highest degree whose companion eigenvalues have a closed form on this type.
 ///
@@ -165,7 +166,7 @@ impl ExactNumPoly {
         for (i, a) in self.coeffs.iter().enumerate() {
             for (j, b) in rhs.coeffs.iter().enumerate() {
                 let t = a.mul(b, p, rm);
-                out[i + j] = out[i + j].add(&t, p, rm);
+                out[i + j] = t.add(&out[i + j], p, rm);
             }
         }
         Self::from_coeffs(p, rm, &out)
@@ -203,11 +204,12 @@ impl ExactNumPoly {
             let deg_r = r.len() - 1;
             let shift = deg_r - deg_g;
             let t = r[deg_r].div(&lc_g, p, rm);
-            q[shift] = q[shift].add(&t, p, rm);
+            let slot = core::mem::replace(&mut q[shift], ExactNum::new(p));
+            q[shift] = slot.add(&t, p, rm);
             for i in 0..=deg_g {
                 let term = t.mul(&g.coeff(i), p, rm);
                 let idx = i + shift;
-                r[idx] = r[idx].sub(&term, p, rm);
+                r[idx] = term.neg().add(&r[idx], p, rm);
             }
             while r.last().is_some_and(|c| c.is_zero()) {
                 r.pop();
@@ -222,7 +224,7 @@ impl ExactNumPoly {
         }
         let mut g: Option<ExactInt> = None;
         for c in &self.coeffs {
-            if c.is_nan() || c.is_inf() || !c.fract().is_zero() {
+            if c.is_nan() || c.is_inf() || !c.is_int() {
                 return None;
             }
             let i = ExactInt::from_exact_num(c)?;
@@ -411,13 +413,14 @@ impl ExactNumPoly {
             return None;
         }
         let sqrt_d = disc.sqrt(wrk, RoundingMode::None);
+        // `-b + sqrt_d` is `sqrt_d - b`; `-b - sqrt_d` is `-sqrt_d - b` (same value, same rounding).
+        let neg_sqrt_d = sqrt_d.neg_via_mul();
+        let mut r1 = sqrt_d
+            .sub(&b, wrk, RoundingMode::None)
+            .div(&two_a, wrk, RoundingMode::None);
         let mut r0 =
-            b.neg()
-                .sub(&sqrt_d, wrk, RoundingMode::None)
-                .div(&two_a, wrk, RoundingMode::None);
-        let mut r1 =
-            b.neg()
-                .add(&sqrt_d, wrk, RoundingMode::None)
+            neg_sqrt_d
+                .sub(&b, wrk, RoundingMode::None)
                 .div(&two_a, wrk, RoundingMode::None);
         let _ = r0.set_precision(p, rm);
         let _ = r1.set_precision(p, rm);
@@ -477,14 +480,14 @@ mod tests {
         let roots = x2m2.roots_real(p, rm, &mut cc).expect("roots");
         assert_eq!(roots.len(), 2);
         let s2 = ExactNum::from_u8(2, p).sqrt(p, rm);
-        let ns2 = s2.neg();
+        let ns2 = s2.neg_via_mul();
         let mut saw_pos = false;
         let mut saw_neg = false;
         for root in &roots {
-            if root.cmp(&s2) == Some(0) {
+            if root.compare(&s2) == Some(0) {
                 saw_pos = true;
             }
-            if root.cmp(&ns2) == Some(0) {
+            if root.compare(&ns2) == Some(0) {
                 saw_neg = true;
             }
         }
@@ -495,12 +498,34 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let one = ExactNum::from_u8(1, p);
         let z = ExactNum::new(p);
-        assert_eq!(c.get2(0, 0).map(|x| x.cmp(&z)), Some(Some(0)));
-        assert_eq!(c.get2(0, 1).map(|x| x.cmp(&two)), Some(Some(0)));
-        assert_eq!(c.get2(1, 0).map(|x| x.cmp(&one)), Some(Some(0)));
-        assert_eq!(c.get2(1, 1).map(|x| x.cmp(&z)), Some(Some(0)));
+        assert_eq!(c.get2(0, 0).map(|x| x.compare(&z)), Some(Some(0)));
+        assert_eq!(c.get2(0, 1).map(|x| x.compare(&two)), Some(Some(0)));
+        assert_eq!(c.get2(1, 0).map(|x| x.compare(&one)), Some(Some(0)));
+        assert_eq!(c.get2(1, 1).map(|x| x.compare(&z)), Some(Some(0)));
 
         assert!(x2m1.div_rem(&ExactNumPoly::zero(p, rm), p, rm).is_none());
         assert!(x3.roots_real(p, rm, &mut cc).is_none());
+    }
+
+    #[test]
+    fn quadratic_roots_are_ordered_minus_then_plus() {
+        let (p, rm) = gold_p();
+        let mut cc = Consts::new().expect("consts");
+        // x^2 - 3x + 2 = (x - 1)(x - 2): r0 = (3 - 1)/2 = 1 (minus branch), r1 = 2.
+        let poly = ExactNumPoly::from_i64_coeffs(p, rm, &[2, -3, 1]);
+        let roots = poly.roots_real(p, rm, &mut cc).expect("roots");
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0].compare(&ExactNum::from_u8(1, p)), Some(0));
+        assert_eq!(roots[1].compare(&ExactNum::from_u8(2, p)), Some(0));
+        // Negative b: -b is positive.
+        let poly = ExactNumPoly::from_i64_coeffs(p, rm, &[-6, 1, 1]);
+        let roots = poly.roots_real(p, rm, &mut cc).expect("roots");
+        assert_eq!(roots[0].compare(&ExactNum::from_i8(-3, p)), Some(0));
+        assert_eq!(roots[1].compare(&ExactNum::from_u8(2, p)), Some(0));
+        // Double root: one entry.
+        let poly = ExactNumPoly::from_i64_coeffs(p, rm, &[1, 2, 1]);
+        let roots = poly.roots_real(p, rm, &mut cc).expect("roots");
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].compare(&ExactNum::from_i8(-1, p)), Some(0));
     }
 }

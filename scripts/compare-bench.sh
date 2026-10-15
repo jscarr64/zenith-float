@@ -11,6 +11,8 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+# shellcheck source=use_rust_1_99.sh
+source "$root/scripts/use_rust_1_99.sh"
 
 out="${COMPARE_OUT:-doc/compare-results.tsv}"
 libs=(--lib zenith --lib astro --lib dashu)

@@ -68,7 +68,7 @@ impl Mantissa {
                     let mut dst = SliceWithSign::new_mut(&mut m3[lb..], 1);
 
                     if even {
-                        dst.copy_from(&src);
+                        dst.copy_from(&src)?;
                     } else {
                         dst.add_assign(&src);
                     }

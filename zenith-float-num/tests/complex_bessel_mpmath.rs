@@ -5,6 +5,7 @@
 //! - `I`/`K` at real z > 0 with real non-integer ν (never converged: NaN or minutes).
 //! - `K` on its cut with Im z = +0: the value from above, like `I` and `J`.
 
+use core::ops::Neg;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, Radix, RoundingMode};
 
 const RM: RoundingMode = RoundingMode::ToEven;
@@ -268,8 +269,8 @@ fn complex_bessel_mpmath() {
         let wr = ExactNum::parse(want_re, Radix::Dec, wp, RM, &mut cc);
         let wi = ExactNum::parse(want_im, Radix::Dec, wp, RM, &mut cc);
         let scale = exp2(&wr).max(exp2(&wi));
-        let er = got.re().sub(&wr, wp, RoundingMode::None);
-        let ei = got.im().sub(&wi, wp, RoundingMode::None);
+        let er = wr.neg().add(got.re(), wp, RoundingMode::None);
+        let ei = wi.neg().add(got.im(), wp, RoundingMode::None);
         let err = exp2(&er).max(exp2(&ei));
         let need = p as i32 - 4;
         if err > scale - need {
@@ -327,8 +328,8 @@ fn complex_bessel_k_series_regime() {
         let wr = ExactNum::parse(want_re, Radix::Dec, wp, RM, &mut cc);
         let wi = ExactNum::parse(want_im, Radix::Dec, wp, RM, &mut cc);
         let scale = exp2(&wr).max(exp2(&wi));
-        let er = got.re().sub(&wr, wp, RoundingMode::None);
-        let ei = got.im().sub(&wi, wp, RoundingMode::None);
+        let er = wr.neg().add(got.re(), wp, RoundingMode::None);
+        let ei = wi.neg().add(got.im(), wp, RoundingMode::None);
         let err = exp2(&er).max(exp2(&ei));
         let need = p as i32 - 4;
         assert!(

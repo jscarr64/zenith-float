@@ -58,8 +58,8 @@ impl ArgReductionEstimator for TanArgReductionEstimator {
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
     #[inline]
-    fn reduction_effect(n: usize, m: isize) -> usize {
-        (n as isize + m) as usize
+    fn reduction_effect(n: usize, m: i64) -> usize {
+        (n as i64 + m) as usize
     }
 }
 
@@ -83,7 +83,7 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len());
 
-        compute_small_exp!(self, self.exponent() as isize * 2 - 1, false, p_wrk, p, rm);
+        compute_small_exp!(self, self.exponent() as i64 * 2 - 1, false, p_wrk, p, rm);
 
         p_wrk += p_inc;
 
@@ -119,12 +119,12 @@ impl ExactNumNumber {
         let (reduction_times, _niter, e_eff) = series_cost_optimize::<TanArgReductionEstimator>(
             p,
             &polycoeff_gen,
-            -(self.exponent() as isize),
+            -(self.exponent() as i64),
             1,
             true,
         );
 
-        let add_prec = reduction_times as isize * 4 + 9 - e_eff as isize;
+        let add_prec = reduction_times as i64 * 4 + 9 - e_eff as i64;
         let p_arg = p + if add_prec > 0 { add_prec as usize } else { 0 };
         self.set_precision(p_arg, rm)?;
 
@@ -161,7 +161,7 @@ impl ExactNumNumber {
         let mut q2 = ExactNumNumber::from_word(1, 1)?;
         let mut p2 = ExactNumNumber::from_word(1, 1)?;
 
-        while fct.exponent() as isize - (xxacc.exponent() as isize) <= p as isize {
+        while fct.exponent() as i64 - (xxacc.exponent() as i64) <= p as i64 {
             // -x^2, +x^4, -x^6, ...
             xxacc = xxacc.mul(&xx, p, rm)?;
 

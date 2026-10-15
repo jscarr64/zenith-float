@@ -33,9 +33,9 @@ impl ArgReductionEstimator for SinhArgReductionEstimator {
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
     #[inline]
-    fn reduction_effect(n: usize, m: isize) -> usize {
+    fn reduction_effect(n: usize, m: i64) -> usize {
         // n*log2(3) + m
-        (n as isize * 1000 / 631 + m) as usize
+        (n as i64 * 1000 / 631 + m) as usize
     }
 }
 
@@ -63,7 +63,7 @@ impl ExactNumNumber {
 
         compute_small_exp!(
             ONE,
-            self.exponent() as isize,
+            self.exponent() as i64,
             self.is_negative(),
             p_wrk,
             p,
@@ -129,7 +129,7 @@ impl ExactNumNumber {
     fn exp_positive_arg(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         debug_assert!(!self.is_zero());
 
-        if self.exponent() as isize > WORD_BIT_SIZE as isize {
+        if self.exponent() as i64 > WORD_BIT_SIZE as i64 {
             return Err(Error::ExponentOverflow(self.sign()));
         }
 
@@ -151,7 +151,13 @@ impl ExactNumNumber {
             ONE.clone()
         }?;
 
-        let mut fract = self.fract()?;
+        // |fract(self)| = |self| - int, computed from the integer part found above.
+        let int_num = Self::from_usize(int)?;
+        let mut fract = if self.is_negative() {
+            self.add_full_prec(&int_num)
+        } else {
+            self.sub_full_prec(&int_num)
+        }?;
         let e_fract = if !fract.is_zero() {
             fract.set_inexact(false);
             fract.set_precision(p_work, RoundingMode::None)?;
@@ -173,7 +179,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     ///  - DivisionByZero: `self` is zero and `n` is negative.
-    pub fn powsi(&self, n: isize, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+    pub fn powsi(&self, n: i64, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         if n >= 0 {
             self.powi_internal(n as usize, p, rm, true)
         } else {
@@ -193,7 +199,12 @@ impl ExactNumNumber {
             loop {
                 let p_x = p_wrk + 2;
 
-                let x = self.powi_internal(n.unsigned_abs(), p_x, RoundingMode::None, false)?;
+                let x = self.powi_internal(
+                    crate::common::util::abs_usize(n),
+                    p_x,
+                    RoundingMode::None,
+                    false,
+                )?;
 
                 if x.inexact() {
                     let mut ret = ONE.div(&x, p_x, RoundingMode::None)?;
@@ -312,6 +323,48 @@ impl ExactNumNumber {
         }
     }
 
+    /// Exact integer power by squaring, then a single rounding to `p`.
+    fn pow_exact_integer(
+        &self,
+        mag: usize,
+        negative_exponent: bool,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Self, Error> {
+        let p = round_p(p);
+        let mut square = self.clone()?;
+        square.set_sign(Sign::Pos);
+        let mut exp = mag;
+        let mut acc = ONE.clone()?;
+        while exp > 1 {
+            if exp & 1 == 1 {
+                acc = acc.mul_full_prec(&square)?;
+            }
+            square = square.mul_full_prec(&square)?;
+            exp >>= 1;
+        }
+        acc = acc.mul_full_prec(&square)?;
+        let odd = mag & 1 == 1;
+        let ret_sign = if odd { self.sign() } else { Sign::Pos };
+        let effective_rm = if ret_sign.is_negative() {
+            match rm {
+                RoundingMode::Up => RoundingMode::Down,
+                RoundingMode::Down => RoundingMode::Up,
+                other => other,
+            }
+        } else {
+            rm
+        };
+        let mut ret = if negative_exponent {
+            ONE.div(&acc, p, effective_rm)?
+        } else {
+            acc.set_precision(p, effective_rm)?;
+            acc
+        };
+        ret.set_sign(ret_sign);
+        Ok(ret)
+    }
+
     fn powi_sqr_mul(
         arg: &Self,
         mut x: Self,
@@ -397,7 +450,7 @@ impl ExactNumNumber {
         let (reduction_times, niter, e_eff) = series_cost_optimize::<SinhArgReductionEstimator>(
             p,
             &polycoeff_gen,
-            -(self.exponent() as isize),
+            -(self.exponent() as i64),
             2,
             false,
         );
@@ -405,7 +458,7 @@ impl ExactNumNumber {
         // Argument reduction gives error 2^(-p+5) per step, and 2^(-p+3) once.
         // First terms of the series give 2^(-p+5).
         // The error of the remaining terms of the series is compensated.
-        let add_prec = reduction_times as isize * 5 + 8 - e_eff as isize;
+        let add_prec = reduction_times as i64 * 5 + 8 - e_eff as i64;
         let p_arg = p + if add_prec > 0 { add_prec as usize } else { 0 };
         self.set_precision(p_arg, rm)?;
 
@@ -525,6 +578,51 @@ impl ExactNumNumber {
             }
         }
 
+        // An exact integer power is a product, then one rounding. The logarithm
+        // path cannot certify an exact dyadic under a directed mode.
+        if n.is_int() && !n.inexact() && !self.inexact() {
+            if let Ok(mag) = n.int_as_usize() {
+                let width = self.mantissa_max_bit_len().max(1);
+                if mag >= 2 && width.saturating_mul(mag) <= 1_048_576 {
+                    return self.pow_exact_integer(mag, n.is_negative(), p, rm);
+                }
+            }
+        }
+
+        // A half-integer power of a value with an exact square root is exact or one
+        // rounding of an exact product: 9^0.5 = 3, 4^(-1.5) = 1/8.
+        if rm != RoundingMode::None
+            && !n.inexact()
+            && !self.inexact()
+            && self.is_positive()
+            && !n.is_int()
+            && n.exponent() < 64
+        {
+            let mut twice = n.clone()?;
+            twice.set_exponent(n.exponent() + 1);
+            if twice.is_int() {
+                let w = self.mantissa_max_bit_len() + WORD_BIT_SIZE;
+                let root = self.sqrt(w, RoundingMode::ToZero)?;
+                if !root.inexact() {
+                    if let Ok(mag) = twice.int_as_usize() {
+                        if mag == 1 {
+                            return if n.is_negative() {
+                                ONE.div(&root, p, rm)
+                            } else {
+                                let mut ret = root;
+                                ret.set_precision(p, rm)?;
+                                Ok(ret)
+                            };
+                        }
+                        let width = root.mantissa_max_bit_len().max(1);
+                        if width.saturating_mul(mag) <= 1_048_576 {
+                            return root.pow_exact_integer(mag, n.is_negative(), p, rm);
+                        }
+                    }
+                }
+            }
+        }
+
         // actual pow : self^n = e^(n * ln(self))
 
         let p = round_p(p);
@@ -575,7 +673,7 @@ impl ExactNumNumber {
 
                 compute_small_exp!(
                     ONE,
-                    m.exponent() as isize,
+                    m.exponent() as i64,
                     m.is_negative(),
                     p_ext,
                     p,

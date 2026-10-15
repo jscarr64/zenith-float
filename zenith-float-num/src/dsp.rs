@@ -6,6 +6,7 @@ use crate::ExactNum;
 use crate::ExactNumArray;
 use crate::RoundingMode;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// Maximum real length for [`dct`] / [`idct`] / [`dst`] / [`idst`] and the
 /// window generators. Transforms use a `2N`-point FFT, so this is half of
@@ -205,11 +206,13 @@ pub fn idst(
     let two = ExactNum::from_u8(2, wrk);
     let two_n = two.div(&nn, wrk, none);
     let half = ExactNum::from_u8(1, wrk).div(&two, wrk, none);
-    let last = x[n - 1].mul(&half, wrk, none);
     let mut out = Vec::with_capacity(n);
     for ni in 0..n {
         let n_half = ExactNum::from_u32(ni as u32, wrk).add(&half, wrk, none);
-        let mut acc = if ni % 2 == 0 { last.clone() } else { last.neg() };
+        // `x[n-1] * half` is recomputed per output bin: its sign flips for odd bins and
+        // the unflipped value is needed again by the next bin.
+        let last = x[n - 1].mul(&half, wrk, none);
+        let mut acc = if ni % 2 == 0 { last } else { last.neg() };
         for (k, xk) in x.iter().enumerate().take(n - 1) {
             let ang = pi
                 .mul(&ExactNum::from_u32((k + 1) as u32, wrk), wrk, none)
@@ -278,9 +281,9 @@ pub fn hann_window(n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Opt
     let wrk = work_p(p);
     let none = RoundingMode::None;
     let half = frac(1, 2, wrk, none);
-    let one = ExactNum::from_u8(1, wrk);
     let mut vals = Vec::with_capacity(n);
     for k in 0..n {
+        let one = ExactNum::from_u8(1, wrk);
         let c = two_pi_k_over_nm1(k, n, wrk, none, cc).cos(wrk, none, cc);
         let w = half.mul(&one.sub(&c, wrk, none), wrk, none);
         if !finite(&w) {
@@ -306,10 +309,10 @@ pub fn hamming_window(
     }
     let wrk = work_p(p);
     let none = RoundingMode::None;
-    let a0 = frac(27, 50, wrk, none);
     let a1 = frac(23, 50, wrk, none);
     let mut vals = Vec::with_capacity(n);
     for k in 0..n {
+        let a0 = frac(27, 50, wrk, none);
         let c = two_pi_k_over_nm1(k, n, wrk, none, cc).cos(wrk, none, cc);
         let w = a0.sub(&a1.mul(&c, wrk, none), wrk, none);
         if !finite(&w) {
@@ -335,12 +338,12 @@ pub fn blackman_window(
     }
     let wrk = work_p(p);
     let none = RoundingMode::None;
-    let a0 = frac(21, 50, wrk, none);
     let a1 = frac(1, 2, wrk, none);
     let a2 = frac(2, 25, wrk, none);
     let two = ExactNum::from_u8(2, wrk);
     let mut vals = Vec::with_capacity(n);
     for k in 0..n {
+        let a0 = frac(21, 50, wrk, none);
         let th = two_pi_k_over_nm1(k, n, wrk, none, cc);
         let c1 = th.cos(wrk, none, cc);
         let c2 = th.mul(&two, wrk, none).cos(wrk, none, cc);
@@ -381,9 +384,9 @@ pub fn kaiser_window(
     }
     let two = ExactNum::from_u8(2, wrk);
     let mid = ExactNum::from_u32((n - 1) as u32, wrk).div(&two, wrk, none);
-    let one = ExactNum::from_u8(1, wrk);
     let mut vals = Vec::with_capacity(n);
     for k in 0..n {
+        let one = ExactNum::from_u8(1, wrk);
         let t = ExactNum::from_u32(k as u32, wrk)
             .sub(&mid, wrk, none)
             .div(&mid, wrk, none);
@@ -437,7 +440,7 @@ mod tests {
     }
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - 40)
     }
 

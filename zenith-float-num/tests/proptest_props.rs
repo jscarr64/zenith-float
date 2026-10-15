@@ -1,6 +1,7 @@
 //! Property tests (`PROPTEST_CASES`). No `mpfr-tests` feature.
 
 use proptest::prelude::*;
+use std::ops::Neg;
 use zenith_float_num::{
     Consts, ExactNum, ExactNumArray, ExactRational, RoundingMode, PROPTEST_CASES, WORD_BIT_SIZE,
 };
@@ -10,7 +11,7 @@ fn cfg() -> ProptestConfig {
 }
 
 fn eq(a: &ExactNum, b: &ExactNum) -> bool {
-    a.cmp(b) == Some(0)
+    a.compare(b) == Some(0)
 }
 
 fn array_eq(a: &ExactNumArray, b: &ExactNumArray) -> bool {
@@ -32,7 +33,7 @@ proptest! {
         let rm = RoundingMode::ToEven;
         let a = ExactNum::from_i64(n1, p);
         let b = ExactNum::from_i64(n2, p);
-        prop_assert!(eq(&a.add(&b, p, rm), &b.add(&a, p, rm)));
+        prop_assert!(eq(&ExactNum::from_i64(n1, p).add(&b, p, rm), &b.add(&a, p, rm)));
     }
 
     /// Directed rounding only. `ToEven` double-rounds and is not this identity.

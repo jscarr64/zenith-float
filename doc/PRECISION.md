@@ -19,7 +19,7 @@ Public helpers:
 
 ## Stack inlining
 
-Mantissa buffers of at most **`INLINE_WORDS` (2)** limbs (`128` bits at 64-bit `Word`) live on the stack. Larger precisions promote to the heap.
+Mantissa buffers of at most **`INLINE_WORDS`** limbs live on the stack. `INLINE_WORDS` is `DEFAULT_P / WORD_BIT_SIZE`, so a `DEFAULT_P` = 128-bit value is inline on every target (2 limbs at 64-bit `Word`, 4 at 32-bit). Larger precisions promote to the heap.
 
 ## Constant cache
 

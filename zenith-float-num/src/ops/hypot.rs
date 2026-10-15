@@ -1,7 +1,7 @@
 //! Hypotenuse: `sqrt(x² + y²)` without intermediate overflow.
 
 use crate::common::util::{bump_prec_retry, round_p};
-use crate::defs::{Error, WORD_BIT_SIZE};
+use crate::defs::{Error, Exponent, EXPONENT_MAX, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::{RoundingMode, Sign};
 
@@ -34,6 +34,34 @@ impl ExactNumNumber {
             ax.set_precision(p, rm)?;
             ax.set_inexact(ax.inexact() | inexact);
             return Ok(ax);
+        }
+
+        if !ax.is_subnormal() && !ay.is_subnormal() {
+            // sqrt(x^2 + y^2) with the sum of squares formed exactly after scaling x to
+            // [0.5, 1): one correct rounding by sqrt, exact results included (3, 4 -> 5).
+            // Mantissas may carry leading zeros; normalize so exponents compare magnitudes.
+            let mut sx = ax.clone()?;
+            let ex = ax.exponent() as i64 - sx.normalize2() as i64;
+            let mut sy = ay.clone()?;
+            let ey = ay.exponent() as i64 - sy.normalize2() as i64;
+            let wx = sx.mantissa_max_bit_len() as i64;
+            sx.set_exponent(0);
+            // y only adds a sticky bit once y^2 lies below both x^2's last bit and the
+            // p-bit result's guard bits; past that it is replaced by a smaller stand-in.
+            let lim = wx.max(p as i64 / 2 + 1) + WORD_BIT_SIZE as i64;
+            let dy = if ex - ey > lim + WORD_BIT_SIZE as i64 { -lim } else { ey - ex };
+            sy.set_exponent(dy as Exponent);
+            let s2 = sx
+                .mul_full_prec(&sx)?
+                .add_full_prec(&sy.mul_full_prec(&sy)?)?;
+            let mut ret = s2.sqrt(p, rm)?;
+            let e = ret.exponent() as i64 + ex;
+            if e > EXPONENT_MAX as i64 {
+                return Err(Error::ExponentOverflow(Sign::Pos));
+            }
+            ret.set_exponent(e as Exponent);
+            ret.set_inexact(ret.inexact() | inexact);
+            return Ok(ret);
         }
 
         let mut p_inc = WORD_BIT_SIZE;

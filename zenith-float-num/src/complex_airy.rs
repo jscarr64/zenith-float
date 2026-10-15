@@ -18,6 +18,7 @@ use crate::Consts;
 use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
+use core::ops::Neg;
 
 /// \(\lvert z\rvert\) below this uses the Taylor pair \((f,g)\).
 const AIRY_SERIES_THRESHOLD: u32 = 8;
@@ -42,7 +43,7 @@ fn use_airy_series(z: &ExactComplex, dest_p: usize) -> bool {
     }
     let t = dest_p.saturating_add(112).saturating_mul(35) / 100;
     let t = ExactNum::from_u32(t.min(u32::MAX as usize) as u32, 64);
-    matches!(xi_abs(z).cmp(&t), Some(c) if c < 0)
+    matches!(xi_abs(z).compare(&t), Some(c) if c < 0)
 }
 
 /// Taylor terms reach \(\approx e^{\lvert\xi\rvert}\) while Ai can be \(\approx e^{-\lvert\xi\rvert}\):
@@ -57,12 +58,12 @@ fn airy_series_guard(z: &ExactComplex) -> usize {
 fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
     let a = z.abs(p, RoundingMode::None);
     let b = ExactNum::from_u32(bound, p);
-    matches!(a.cmp(&b), Some(c) if c < 0)
+    matches!(a.compare(&b), Some(c) if c < 0)
 }
 
 fn arg_abs_le(z: &ExactComplex, bound: &ExactNum, p: usize, cc: &mut Consts) -> bool {
     let a = z.arg(p, RoundingMode::None, cc).abs();
-    matches!(a.cmp(bound), Some(c) if c <= 0)
+    matches!(a.compare(bound), Some(c) if c <= 0)
 }
 
 fn omega_pair(p: usize) -> (ExactComplex, ExactComplex) {
@@ -128,7 +129,16 @@ impl ExactComplex {
     ///   asymptotic expansion (with the connection formula outside `|arg z| ≤ 2π/3`) otherwise.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ai(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.ai_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::ai`] on operands without inexact history.
+    fn ai_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -143,7 +153,16 @@ impl ExactComplex {
     /// - Algorithm: same series / asymptotic switch as [`Self::ai`].
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn bi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.bi_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::bi`] on operands without inexact history.
+    fn bi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -176,7 +195,7 @@ impl ExactComplex {
                 work_p,
                 RoundingMode::None,
             );
-            return neg_c(&t1.add(&t2, work_p, RoundingMode::None));
+            return neg_c(t1.add(&t2, work_p, RoundingMode::None));
         }
         self.airy_asymp_ai(work_p, cc)
     }
@@ -196,7 +215,7 @@ impl ExactComplex {
             let (xi, _) = self.airy_xi_z(64, cc);
             let t = dest_p.saturating_add(112).saturating_mul(35) / 100;
             let t = ExactNum::from_u32(t.min(u32::MAX as usize) as u32, 64);
-            if matches!(xi.re().cmp(&t), Some(c) if c >= 0) {
+            if matches!(xi.re().compare(&t), Some(c) if c >= 0) {
                 return self.airy_asymp_bi(work_p, cc);
             }
         }
@@ -314,10 +333,10 @@ impl ExactComplex {
             u = u.mul(&ratio, p, RoundingMode::None);
             let mut t = u.div(&xi_pow, p, RoundingMode::None);
             if alt && k % 2 == 1 {
-                t = neg_c(&t);
+                t = neg_c(t);
             }
             let ta = t.abs(p, RoundingMode::None);
-            if matches!(ta.cmp(&prev_abs), Some(c) if c > 0) {
+            if matches!(ta.compare(&prev_abs), Some(c) if c > 0) {
                 break;
             }
             sum = sum.add(&t, p, RoundingMode::None);
@@ -337,7 +356,7 @@ impl ExactComplex {
         let pi_m12 =
             ExactComplex::one(p).div(&pi.sqrt(p, RoundingMode::None, cc), p, RoundingMode::None);
         let z_m14 = ExactComplex::one(p).div(&z14, p, RoundingMode::None);
-        let exp_m = neg_c(&xi).exp(p, RoundingMode::None, cc);
+        let exp_m = xi.neg_via_mul().exp(p, RoundingMode::None, cc);
         let su = self.airy_u_sum(&xi, p, true);
         half.mul(&pi_m12, p, RoundingMode::None)
             .mul(&z_m14, p, RoundingMode::None)
@@ -365,7 +384,7 @@ mod tests {
     use super::*;
 
     fn near_bits(a: &ExactNum, b: &ExactNum, p: usize, slack: i32) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / slack))
     }
 

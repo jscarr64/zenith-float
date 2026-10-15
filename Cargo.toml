@@ -8,8 +8,9 @@ exclude = ["nostd-tests"]
 resolver = "2"
 
 [workspace.package]
-version = "1.0.12"
+version = "2.0.0"
 edition = "2021"
+rust-version = "1.99"
 authors = ["Jeffrey S Carr <jscarr1964@gmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/jscarr64/zenith-float"
@@ -19,6 +20,7 @@ homepage = "https://github.com/jscarr64/zenith-float"
 name = "zenith-float"
 version.workspace = true
 edition.workspace = true
+rust-version = "1.99"
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -40,8 +42,14 @@ keywords = ["arbitrary-precision", "bigfloat", "numeric", "no-std"]
 categories = ["mathematics", "no-std", "science"]
 
 [dependencies]
-zenith-float-num = { path = "zenith-float-num", version = "1.0.12", default-features = false }
-zenith-float-macro = { path = "zenith-float-macro", version = "1.0.12" }
+zenith-float-num = { path = "zenith-float-num", version = "2.0.0", default-features = false }
+zenith-float-macro = { path = "zenith-float-macro", version = "2.0.0" }
+
+# hex_golds prints golds with std I/O; a --no-default-features build skips it.
+[[bin]]
+name = "hex_golds"
+path = "src/bin/hex_golds.rs"
+required-features = ["std"]
 
 [features]
 default = ["std"]

@@ -5,10 +5,19 @@
 //! `_2F1(...,0)=1`, `K(0)=π/2`.
 
 use crate::mpfr::common::reset_test_rng;
+use std::ops::Neg;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, RoundingMode, WORD_BIT_SIZE};
 
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
+
 fn bits_agree(a: &ExactNum, b: &ExactNum, p: usize, min_bits: i32, label: &str) {
-    let d = a.sub(b, p, RoundingMode::None).abs();
+    let d = a.clone().sub(b, p, RoundingMode::None).abs();
     if d.is_zero() {
         return;
     }
@@ -37,7 +46,7 @@ fn mpfr_identity_no_oracle_specials() {
     let half = one.div(&two, p, rm);
 
     let s1 = one.si(p, rm, &mut cc);
-    let sn = one.neg().si(p, rm, &mut cc);
+    let sn = neg_of(&one).si(p, rm, &mut cc);
     bits_agree(&s1, &sn.neg(), p, (p as i32) / 4, "Si odd");
     assert!(zero.si(p, rm, &mut cc).is_zero());
     let hp = cc.pi(p, rm).div(&two, p, rm);
@@ -63,7 +72,7 @@ fn mpfr_identity_no_oracle_specials() {
     let fs = one.fresnel_s(p, rm, &mut cc);
     bits_agree(
         &fs,
-        &one.neg().fresnel_s(p, rm, &mut cc).neg(),
+        &neg_of(&one).fresnel_s(p, rm, &mut cc).neg(),
         p,
         (p as i32) / 4,
         "S odd",
@@ -77,7 +86,7 @@ fn mpfr_identity_no_oracle_specials() {
     );
 
     let k_half = one.bessel_k(&half, p, rm, &mut cc);
-    let want_k = hp.sqrt(p, rm).mul(&one.neg().exp(p, rm, &mut cc), p, rm);
+    let want_k = hp.sqrt(p, rm).mul(&neg_of(&one).exp(p, rm, &mut cc), p, rm);
     bits_agree(&k_half, &want_k, p, (p as i32) / 4, "K_{1/2}(1)");
 
     let ai = one.ai(p, rm, &mut cc);
@@ -108,13 +117,17 @@ fn mpfr_identity_no_oracle_specials() {
 
     let z = ExactComplex::new(one.clone(), one);
     let ez = z.erf(p, rm, &mut cc);
-    let em = ExactComplex::new(z.re().neg(), z.im().neg()).erf(p, rm, &mut cc);
-    assert!(tiny(&ez.re().add(em.re(), p, rm), p) && tiny(&ez.im().add(em.im(), p, rm), p));
+    let em = ExactComplex::new(neg_of(z.re()), neg_of(z.im())).erf(p, rm, &mut cc);
+    assert!(
+        tiny(&ez.re().clone().add(em.re(), p, rm), p)
+            && tiny(&ez.im().clone().add(em.im(), p, rm), p)
+    );
     let erfc_z = z.erfc(p, rm, &mut cc);
     let one_c = ExactComplex::one(p);
     let id = one_c.sub(&ez, p, rm);
     assert!(
-        tiny(&erfc_z.re().sub(id.re(), p, rm), p) && tiny(&erfc_z.im().sub(id.im(), p, rm), p),
+        tiny(&erfc_z.re().clone().sub(id.re(), p, rm), p)
+            && tiny(&erfc_z.im().clone().sub(id.im(), p, rm), p),
         "erfc=1-erf"
     );
 
@@ -122,7 +135,7 @@ fn mpfr_identity_no_oracle_specials() {
     let g5 = five.gamma(p, rm, &mut cc);
     let tf = ExactNum::from_u8(24, p);
     assert!(
-        tiny(&g5.re().sub(&tf, p, rm), p) && tiny(g5.im(), p),
+        tiny(&g5.re().clone().sub(&tf, p, rm), p) && tiny(g5.im(), p),
         "Γ(5)=24"
     );
 }

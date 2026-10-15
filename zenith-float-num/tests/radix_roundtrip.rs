@@ -1,7 +1,7 @@
 //! Structured stress tests for parse/format round-trip across radices 2–36.
 
 use zenith_float_num::{
-    seeded_random as random, Consts, ExactNum, Exponent, Radix, RoundingMode, Sign,
+    seeded_random as random, Consts, Error, ExactNum, Exponent, Radix, RoundingMode, Sign,
     DEFAULT_RANDOM_SEED, WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT,
 };
 
@@ -11,7 +11,34 @@ const TEST_EXP_BOUND: Exponent = 64;
 fn roundtrip_exact(rdx: Radix, n: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) {
     let s = n.format(rdx, rm, cc).expect("format");
     let g = ExactNum::parse(&s, rdx, p, rm, cc);
-    assert_eq!(n.cmp(&g), Some(0), "rdx={:?} s={s}", rdx.value());
+    assert_eq!(n.compare(&g), Some(0), "rdx={:?} s={s}", rdx.value());
+}
+
+/// A significand character is legal when it is `.` or a digit of `base`.
+fn literal_in_radix(lit: &str, base: u8) -> bool {
+    lit.chars().all(|c| c == '.' || c.is_digit(u32::from(base)))
+}
+
+/// In-radix text must round-trip as a finite value. A digit outside the radix is
+/// `NaN(InvalidArgument)`; formatting it prints `NaN`, which parses back as NaN.
+fn roundtrip_literal(rdx: Radix, base: u8, lit: &str, p: usize, cc: &mut Consts) {
+    let rm = RoundingMode::ToEven;
+    let n = ExactNum::parse(lit, rdx, p, rm, cc);
+    if literal_in_radix(lit, base) {
+        roundtrip_exact(rdx, &n, p, rm, cc);
+        return;
+    }
+    assert!(n.is_nan(), "rdx={} lit={lit}", base);
+    assert_eq!(
+        n.err(),
+        Some(Error::InvalidArgument),
+        "rdx={} lit={lit}",
+        base
+    );
+    let s = n.format(rdx, rm, cc).expect("format");
+    assert_eq!(s, "NaN", "rdx={base} lit={lit}");
+    let g = ExactNum::parse(&s, rdx, p, rm, cc);
+    assert!(g.is_nan(), "rdx={base} s={s}");
 }
 
 #[test]
@@ -36,15 +63,10 @@ fn radix_roundtrip_general_bases() {
     for base in [3u8, 5, 7, 9, 11, 12, 15, 20, 36] {
         let rdx = Radix::try_new(base).unwrap();
         for lit in ["0.1", "1.0", "2.5"] {
-            if base < 11 && lit.chars().any(|c| c.is_ascii_alphabetic()) {
-                continue;
-            }
-            let n = ExactNum::parse(lit, rdx, p, RoundingMode::ToEven, &mut cc);
-            roundtrip_exact(rdx, &n, p, RoundingMode::ToEven, &mut cc);
+            roundtrip_literal(rdx, base, lit, p, &mut cc);
         }
         if base >= 11 {
-            let n = ExactNum::parse("A.5", rdx, p, RoundingMode::ToEven, &mut cc);
-            roundtrip_exact(rdx, &n, p, RoundingMode::ToEven, &mut cc);
+            roundtrip_literal(rdx, base, "A.5", p, &mut cc);
         }
     }
 }

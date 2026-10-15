@@ -1,6 +1,291 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 (unreleased)
+
+Problems in one program led to a forensic audit of the others. This 2.0.0 section is that audit in full: every issue found, the fix, and the migration for each break in the public API. The workspace version is 2.0.0. Nothing here has been published.
+
+### Added
+
+`elliptic_f_phi`, `elliptic_e_phi`, and `elliptic_pi_phi` take the amplitude \(\varphi\). `elliptic_f`, `elliptic_e`, and `elliptic_pi` still take \(\sin\varphi\). Downstream callers passed the angle into the \(\sin\varphi\) slot: `elliptic_f(2, m)` is `NaN(InvalidArgument)`, not \(F(2\mid m)\). The angle form accepts any real \(\varphi\), reduces \(\varphi = r + k\pi\) with \(|r|\le\pi/2\) in extended precision, and adds \(2k\) times the complete integral. \(\varphi=\pm\pi/2\) is \(\pm K\), \(\pm E\), or \(\pm\Pi\). A parameter \(m>1\) whose path is not real, and a characteristic \(n=1\) at a pole, are `NaN(InvalidArgument)` rather than a silent wrong value.
+
+`ExactNum::inexact_accumulated()` keeps the old meaning of `inexact()`: true when this value or anything it was computed from was rounded. See "`inexact` is per operation".
+
+### Changed
+
+The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). `rust-version` is `"1.99"` in every crate, and `rust-toolchain.toml` pins channel `1.99` with `clippy` and `rustfmt`. A crate that compiled on the previous compiler has to move to Rust 1.99 before it can depend on 2.0.0.
+
+Behaviour changes from the audit, each with its own section below:
+
+- `add`, `sub`, `mul`, and `div` round at exactly `p` bits instead of `p` rounded up to a word, and subnormal results are no longer rounded twice.
+- Every other rounded function also rounds at exactly `p` bits: roots, `hypot`, `fma`, `pow`, parsing, the exp/log, trigonometric and hyperbolic families, and every real special function. See "Exact-`p`-bit rounding beyond the basic operations".
+- An exponent overflow under `ToZero`, under `Down` for a positive result, and under `Up` for a negative result returns `±max_value(p)` instead of `±Inf`.
+- `inexact()` describes the operation that produced the value, for every rounded function and for `ExactComplex`. `inexact_accumulated()` is the old flag; `ExactComplex::inexact_accumulated()` is new.
+- `ldexp` and `scalb` below the exponent range round onto the subnormal grid by mode instead of returning zero.
+- `sin_cos` and `sinh_cosh` round each result at exactly `p` bits with its own `inexact()`; `sinh_cosh` overflow follows the mode.
+- `rem` returns subnormal remainders instead of zero, and its `inexact()` is false: the remainder is always exact.
+- `add_full_prec` and `sub_full_prec` with one zero operand return the other operand exactly (with its own `inexact()`). They used to return a value with an empty mantissa flagged inexact. All other `add`/`sub` results are unchanged: the addition kernel now writes the sum of a nonzero operand with a zero mantissa itself instead of copying the operand first (the zero-aware kernel branch), which removes the three `.clone()` sites of `add`/`sub`.
+- `from_raw_parts` validates its parts and returns `NaN(InvalidArgument)` for inconsistent ones.
+- `EXPONENT_MAX` and `EXPONENT_MIN` are `i32::MAX` and `i32::MIN` on 32-bit targets too.
+- The `RoundingMode` documentation describes `Up`, `Down`, `ToZero`, and `FromZero` as directed modes, not tie rules (documentation only).
+- `ExactNum::cmp` is now `ExactNum::compare`, and `Context::clone` is removed (breaking). See "No lint exemptions".
+- `Radix` is an enum (`Bin`, `Oct`, `Dec`, `Hex`, `Other`); `Radix::Bin` and the others are written the same way (breaking only for code that relied on it being a struct).
+
+### `add_ref` and `sub_ref`: the borrowed-borrowed sum (added)
+
+`ExactNum::add_ref(&a, &b, p, rm)` and `ExactNum::sub_ref(&a, &b, p, rm)` (and the same two on `ExactComplex`) add or subtract two operands that are both borrowed. The result is written to a fresh buffer by the same kernel as `add`/`sub` (the zero-aware branch included); neither operand is copied, and there is no `.clone()`, no multiply-by-one and no add-zero. Value, signs of zero in every rounding mode, both inexact flags, Inf/NaN and subnormal results are those of `add`/`sub`, pinned by `add_ref_sub_ref_grid_digest` (the 45030-case `add_sub_grid_digest` digest, taken on the pre-rule-R code) and `complex_add_ref_sub_ref_grid_digest` (the complex grid digest, also pinned on the old code).
+
+They are the sanctioned form for a site where **both operands are still needed afterwards** (a bisection midpoint `(a+b)/2` with `a` and `b` both live, a Carlson duplication step, the `(d_prev+d_last)(d_prev-d_last)` of the SVD shift). Everywhere else the first operand is owned and dead after the call and `add(self, &b)` is used. To keep them from spreading, `tools/rules_scan.sh` counts every use of `add_ref(`/`sub_ref(` in non-test library code against `tools/ref_sum_count_baseline.txt` (a ratchet like the clone count: it may only go down; CODEOWNERS-protected; `--update-baseline` lowers it). The count starts at 4 (the four calls inside the `ExactComplex` wrappers) and is raised once, in the Rule R commit, to the number of both-live sites that conversion needs.
+
+### No cloning in the library (breaking, in progress)
+
+The library no longer copies a value to hand it back. `tools/no_clone.sh` fails on `.clone()`, `.to_vec()`, `.cloned()` and on `Clone` derives and impls on big-number types, with an empty allowlist; `tools/rules_scan.sh` checks every diff. The work goes bottom-up (core, conversions, elementary, special, complex and containers, macro); each layer lists its API changes here with a migration. Counts of `.clone(` in library code: 620 at the start, 594 after layer 1b, 588 after layer 2a, 542 after the compare crate, 532 after `neg`, 530 after `frexp`, 528 after the `abs` restructure, 525 after `ldexp`/`scalb`, 522 after the zero-aware `add`/`sub` kernel branch, 520 after `int`/`fract`/`ceil`/`floor`, 519 after `round`, 514 after Rule R (`add`/`sub` take `self`).
+
+- `ExactNum::ldexp` and `ExactNum::scalb` take `self` (`pub fn ldexp(self, n, p, rm) -> Self`); the exponent is changed in the operand's own storage. Results are bit-identical (value, sign, exponent, precision and both inexact flags; only whether the buffer is inline or on the heap may differ), pinned by a 14112-case grid digest test that gives the same digest before and after. Migration: `x.ldexp(n, p, rm)` on a value you still need afterwards becomes a call on a value you rebuild (for a constant, `ExactNum::from_u8(1, p).ldexp(n, p, rm)` instead of `one.ldexp(..)`), or reorder so the scaling is the last use of `x`; `h.sqrt(p, rm).ldexp(1, p, rm)` is recomputed where the unscaled value is read again. `expr!`'s `ldexp(..)`/`scalb(..)` are unchanged. `ExactComplex::ldexp`/`scalb` still take `&self`. Accumath and latex-rust: no `ldexp`/`scalb` call outside the bundled zenith-float copy.
+- `ExactNum::frexp` takes `self` and returns the mantissa built in the operand's own storage (`(Self, Exponent)`; zero, Inf and NaN come back as themselves with exponent 0). Migration: `x.frexp()` on a value you still need becomes a call on a value you rebuild or are done with (`let e = x.exponent();` when only the exponent is wanted). Accumath: no use of `ExactNum::frexp`.
+- `ExactNum::int`, `fract`, `ceil` and `floor` take `self` and work in the operand's own storage (the inner `ExactNumNumber` versions too); `ExactNumArray::int`, `fract`, `ceil` and `floor` take `self` and consume the elements. Results are bit-identical (the existing characterization tests and the oracle suites are unchanged). Migration: `x.int()` / `x.fract()` on a value you still need afterwards becomes a call on a value you rebuild or are done with; `x.fract().is_zero()` is `x.is_int()`; a digit loop that compared against `x.int()` compares against `x` itself (an integer is at most `x` exactly when it is at most `int(x)` for `x >= 0`). Inside the library: `ExactInt::from_exact_num` reads the lowest limb from `x.rem(2^w)` and the rest from the truncated quotient instead of copying `x.int()`; `exp`'s fractional part is computed as `|x| - int(x)` from the integer part already in hand instead of `x.fract()` (exact, same bits). Accumath and latex-rust: no use of `ExactNum::{int, fract, ceil, floor}`.
+- `ExactNum::round` and `ExactNumArray::round` take `self` and round in the operand's own storage (the inner `ExactNumNumber::round` too). Results are bit-identical, pinned by a 726-case grid digest test (21 operands x 11 positions x 6 modes) taken on the old code. Migration: `x.round(n, rm)` on a value you still need afterwards becomes a call on a value you rebuild, or reorder so the rounding is the last use of `x`. Accumath and latex-rust: no use of `ExactNum::round`.
+- `ExactNum::abs` takes `self` (`pub fn abs(self) -> Self`) and flips the sign in place only when it is negative; NaN keeps its error, `-0` becomes `+0`, `-Inf` becomes `+Inf`. `ExactNumArray::abs` takes `self` as well and updates every element in place (it was `abs(&self)`). Migration: `x.abs()` on a value you still need afterwards becomes `x.abs_cmp(&y)` when only a magnitude comparison was wanted, `x.exponent()` / `x.is_zero()` when only the exponent or zero-ness was read (neither depends on the sign), or a branch on the sign that uses the borrowed `x` directly when `x` is not negative and `-1 * x` (`ExactNum::from_i8(-1, p).mul(&x, p, rm)`, exact at the precision of `x`) when it is: `|x| + y` is `if x.is_negative() { y.sub(&x, p, rm) } else { x.add(&y, p, rm) }`, `|x| - y` is `if x.is_negative() { (-1·x).sub(&y, p, rm) } else { x.sub(&y, p, rm) }`. Where the value is mutated afterwards, pass ownership of `x` into the callee (as `gauss_kronrod`'s error estimate does). There is no `±1 * x` form for the non-negative case: nothing in the library multiplies by one to copy. Accumath: `soft.rs:185` (`self.inner.as_ref().abs()`-style call) needs the sign branch above; no other `ExactNum::abs` use outside the bundled zenith-float copy.
+- `add` and `sub` take `self` and borrow the second operand (Rule R): `ExactNum::{add, sub}(self, &other, p, rm)`, `ExactComplex::{add, sub}`, `ExactNumArray::add_scalar(self, &s)` and the operators `ExactNumArray + &ExactNumArray` / `- &ExactNumArray` (`Output = Option<ExactNumArray>`, elementwise in the operand's own storage; they replace the inherent `add`/`sub`, which clippy's `should_implement_trait` rejects for a by-value `self`: call `a + &b`, or `Add::add(a, &b)`), `Ball::add`, `ComplexBall::add` and `ExactNum::two_sum`. `Ball::{ln, sqrt, bessel_j1}` and `ComplexBall::{exp, sin, cos}` take `self` as well, so the endpoints are computed once from the ball they consume. The operators `ExactNum + &ExactNum`, `ExactNum + ExactNum`, `&ExactNum + ExactNum` and the matching `-` forms exist; `&a + &b` and `&a - &b` are gone (there is no way to add two borrowed values without a copy except `add_ref`/`sub_ref`). Results are bit-identical to the borrowed forms they replace (value, sign of zero in every rounding mode, flags, Inf/NaN, subnormals), pinned by `add_sub_grid_digest` (45030 cases), `complex_add_sub_grid_digest`, `operator_grid_digest`, `add_ref_sub_ref_grid_digest` and the unchanged `ldexp`/`round` grid digests: every digest was recorded on the pre-Rule-R code and is unchanged. Migration: `a.add(&b, p, rm)` is unchanged when `a` is dead afterwards; when `a` is still needed, use `ExactNum::add_ref(&a, &b, p, rm)` if `b` is too (the sanctioned both-live form, counted by the ratchet) or rebuild `a`; `a - b` with both live is `ExactNum::sub_ref(&a, &b, p, rm)`, never `(-b) + a`. The library has 147 `add_ref`/`sub_ref` uses at both-live sites (bisection and midpoint sums, the 13 former `add_full_prec` sites of `heun_fox`/`dist`, `(a-b)` terms in the special functions, `jacobi_p_word`'s `alpha + beta`, `l1_below_series_bound`'s `re + im`); `tools/ref_sum_count_baseline.txt` pins the count. `neg_via_mul` is not used for subtraction (its count is 73, below the 74 it had before Rule R). Library sites where the owned operand was the second one now add in the other order (`a + b` is computed as `b + a`; about 16 sites, e.g. in `hypergeom`, `heun_fox`, `fft_dit`, `ExactComplex::exp`): the value, the sign of zero, and the flags are those of the original, and only the error code of a result whose two operands are NaN with *different* error kinds can differ (the first operand's error used to win). The operators `&a + b` and `&a - b` keep the old rule for two NaNs explicitly. Accumath: `ExactNum::add`/`sub` call sites that pass a still-live first operand must switch to `add_ref`/`sub_ref` (or clone, outside the library).
+- Negation takes ownership and flips the sign in place: the inherent `ExactNum::neg(&self)` and `ExactNumArray::neg(&self)` are removed, and the `std::ops::Neg` impls for `ExactNum` (existing) and `ExactNumArray` (new) are the only negation. `impl Neg for &ExactNum` is removed. Clippy's `should_implement_trait` forbids an inherent `neg(self)`, so there is none. Migration: `x.neg()` needs `use std::ops::Neg;` (or write `-x`); `x.neg()` / `-&x` on a value you still need afterwards becomes `ExactNum::from_i8(-1, p).mul(&x, p, rm)` (a fresh `-1` times the borrowed operand: exact when `p` is at least the precision of `x`, keeps the sign of zero, Inf, NaN and the accumulated inexact flag; the per-operation flag is false because nothing is rounded), or reorder so the negation is the last use of `x`. For a constant, build it directly (`ExactNum::from_i8(-1, p)`). `expr!`/`cexpr!` unary minus is unchanged. Accumath: `crates/engine_core/src/soft.rs:1532` and `:1539` (`self.inner.as_ref().neg()` on an `Arc<ExactNum>`) need the `from_i8(-1, p).mul(..)` form at the operand's precision; no other `ExactNum::neg` use outside the bundled zenith-float copy.
+- `ExactNum::min`, `max`, and `clamp` return a reference to one of their operands (`&'a Self`) instead of a copy. A returned NaN is a shared static NaN. Migration: call methods on the result as before (auto-deref); where an owned value is needed, build it explicitly from the borrowed one (for example `ExactNum::round(..)` to the precision you want) instead of expecting a clone. Accumath: none of its calls use these on `ExactNum` (checked: no `ExactNum::{min,max,clamp}` call in crates/engine_core).
+- Added `ExactComplex::into_parts(self) -> (ExactNum, ExactNum)`: moves both parts out without copying. Use it instead of `z.re().clone()` / `z.im().clone()` on a value you own. Accumath: hypergeom.rs 73-74 and elliptic.rs 105-106 can use it on upgrade.
+- `binfmt`/`csvfmt` decoders return the `NAN`, `INF_POS` and `INF_NEG` constants directly (no change in behaviour).
+- (Planned, not yet done) `impl Clone for ExactNum` and every `Clone` derive on the big-number types are removed in the last step; migration notes per site follow then. Accumath on upgrade from `=1.0.12`: 4 `.cmp(` to `.compare(` at crates/engine_core/src/soft.rs:174, 179, 1476, 1482, and 23 `.clone()` lines on `ExactNum`/`ExactComplex`/`INF_*` (soft.rs 56, 61, 1208, 1213, 1409; hypergeom.rs 61-64, 73-74; elliptic.rs 105-106, 190-191, 222-223, 292-294; lfunction.rs 86, 94, 179); 9 of them go away with `ExactComplex::into_parts`, the `INF_*` consts used directly, borrowed slice inputs, and an out-of-place precision change; 14 need ownership moved into `ExactNum`/`ExactComplex` constructors.
+
+### No lint exemptions
+
+The library no longer contains any `#[allow]` or `#[expect]`. The underlying code was fixed instead:
+
+- Eight crate-level clippy exemptions are gone from `zenith-float-num` (`manual_div_ceil`, `manual_is_multiple_of`, `neg_cmp_op_on_partial_ord`, `len_zero`, `slow_vector_initialization`, `comparison_chain`, `collapsible_else_if`, `collapsible_if`), and the first two are gone from `zenith-float`. The code uses `div_ceil` and `is_multiple_of`, and nested `if`s are collapsed. The `PartialOrd` tests write `(a < b).not()` instead of `!(a < b)`.
+- `Radix` was a struct with associated constants `Bin`, `Oct`, `Dec`, and `Hex`, which needed `non_upper_case_globals`. It is now an enum with those four variants and `Other(OtherRadix)`. `Radix::try_new` returns the named variant for 2, 8, 10, and 16, so equal bases compare equal. `OtherRadix` has a private field, so only `try_new` can build one. Code that writes `Radix::Dec` or calls `try_new`, `value`, or `u8::from` is unchanged.
+- `ExactNum::cmp(&self, &ExactNum) -> Option<SignedWord>` had the name of `Ord::cmp` with a different signature, which needed `should_implement_trait`. It is now `ExactNum::compare`, with the same behaviour. Migration: replace `.cmp(` with `.compare(` on `ExactNum`. A deprecated `cmp` alias was not kept, because it would still need the exemption. The `<`, `>`, and `partial_cmp` operators are unchanged.
+- `Context::clone(&self) -> Result<Context, Error>` had the name of `Clone::clone` with a different signature, which needed `should_implement_trait`. It is removed, not renamed: nothing in zenith-float, Accumath or any other checkout on the development machine called it, and a copy of a context (its constants cache included) is better made explicitly. Migration: build a new one with `Context::new(p, rm, Consts::new()?, emin, emax)`.
+- The internal `Mantissa::abs_add` and `abs_sub` take an `AddSubSpec`, and the internal FFT takes an `FftStep`, instead of eight arguments (`too_many_arguments`).
+- The internal `mantissa::mantissa` module is now `mantissa::base` (`module_inception`).
+- `zenith-float-macro` documents `expr!` and `cexpr!` and denies `missing_docs` instead of allowing it.
+
+### Invariant violations are errors, not panics
+
+Internal size and shape checks in the arithmetic kernels used to `unwrap()` or `panic!()`. They now return `Err(Error::InvalidArgument)` and the callers propagate it: the FFT multiplier (`fft_forward`, `fft_reverse`, `fft_decompose`, `fft_mul_mod`, `fft_div_mod`), Toom-2 and Toom-3, `div_basic` and its correction step, `SliceWithSign::{add, sub, copy_from, decrement_abs}`, `root_estimate`, `sqrt_rem`, `div_rem_abs` on empty operands, `round`, and the binary/decimal converters. `ExactNum::clamp`, `min`, `max` and the parser no longer unwrap. The rounding `match`es list every `RoundingMode` variant instead of ending in `unreachable!()`. `expr!` and `cexpr!` report a failure to build the constant cache as a `compile_error!` instead of panicking inside the compiler. Results for valid inputs are unchanged. The three library crates now deny `clippy::unwrap_used`, `clippy::expect_used`, and `clippy::unreachable` outside `cfg(test)`, so they cannot come back. Still open: `clippy::panic` (one site, `SliceWithSign`'s `DerefMut` on an immutable view) and unchecked indexing (see PROGRESS.md).
+
+### Constants without start-up panics
+
+The internal constants (`ONE`, `TWO`, `THREE`, `FOUR`, `TEN`) were `lazy_static` values built with `expect`. They are now `static` values built by `const fn`, so there is nothing to allocate and nothing to fail, and the `lazy_static` dependency is gone. That needs 128 bits to fit inline on every target, so `INLINE_WORDS` is `DEFAULT_P / WORD_BIT_SIZE`: 2 with a 64-bit `Word` (unchanged) and 4 with a 32-bit `Word` (was 2). On 32-bit targets a 128-bit `ExactNum` is now stored inline, and `is_inline()` is true for it. The decimal conversion cache behind `FromStr` and `Display` is created on first use; if it cannot be created, `from_str` returns `Err(MemoryAllocation)` and `fmt` returns `fmt::Error`. Eight unused constants were deleted, and the public-module `ONE` and `TWO` in `ext` became test-only.
+
+### Build without default features
+
+`cargo build --no-default-features` failed because the `hex_golds` binary needs `std`. The binary now declares `required-features = ["std"]`, so a `no_std` build skips it (021fa87).
+
+### Special-function oracle under debug builds
+
+The per-row wall-clock budgets in the special-function oracle are for optimised builds. A debug build under load timed out `struve_h` at 53 bits in the prepublish run, though the whole file takes 1.6 s alone. Debug builds now get ten times the budget (6bcf901).
+
+### Exact-`p`-bit rounding beyond the basic operations
+
+Only `add`, `sub`, `mul`, and `div` rounded at exactly `p` bits; every other function rounded at `p` rounded up to a word and then again at `p`, so its last bit could be wrong in any directed mode and at ties. All rounded functions now run toward zero with a guard word, round to odd, and then round once at `p` bits in the requested mode. An exact result (`sqrt(4)`, `exp(0)`, `log(1)`, `log10(1000)`, `hypot(3, 4)`, `9^0.5`, `nth_root(16, 4)`) is exact and reports `inexact() == false`. Fixes found on the way:
+
+- `hypot` never terminated on exact results (`PrecisionRetryExhausted` for `(3, 4)`); it now forms the sum of squares exactly and takes one rounded square root.
+- `fma` dropped a far-smaller addend, which gave wrong directed results and flags; an exact cancellation is `-0` under `Down`.
+- `nth_root` chained square and cube roots and rounded twice.
+- Parsing rounds the decimal value once at `p` bits.
+
+Results can differ from 1.x in the last bit. Code that compared bit patterns with 1.x output has to regenerate them.
+
+### Overflow follows the rounding mode in every function
+
+`gamma` and `Ei` returned `+Inf` on overflow in every mode. They now return `±max_value(p)` under `ToZero`, under `Down` for a positive result, and under `Up` for a negative result, like the other functions. Poles (`gamma(0)`, `Ei(0)`) stay infinite. `ToOdd` rounds to nearest, so it overflows to infinity like `ToEven`.
+
+### `ExactComplex::inexact` is per operation
+
+`ExactComplex::inexact()` was true when either part, or anything it was computed from, was rounded. It now reports whether this operation rounded either part, like `ExactNum::inexact()`; `inexact_accumulated()` keeps the old meaning. `sqrt` of a complex number with an exact root (`sqrt(3+4i) = 2+i`) is exact.
+
+### `ldexp` underflow
+
+`ldexp(x, n)` and `scalb` returned zero whenever the shifted exponent fell below `EXPONENT_MIN`, even when the result was a representable subnormal. They now round onto the subnormal grid in the requested mode.
+
+### 32-bit clippy
+
+`scripts/ci_hex_32bit.sh` runs clippy on `i686-unknown-linux-musl`. Two lints that only fire with 32-bit words were fixed (`modulo_one` in `binfmt.rs`, `needless_return` in `num.rs`).
+
+### `sin_cos` and `sinh_cosh`
+
+The pair functions still rounded at a word multiple, set both flags from the shared computation, and returned `±Inf` on `sinh_cosh` overflow in every mode. Each result now goes through the same exact-`p`-bit rounding as `sin`, `cos`, `sinh`, and `cosh`, with its own per-operation flag and mode-aware overflow. The two values are computed separately, so a call costs about as much as the two single functions.
+
+### `rem` is exact
+
+`rem` takes no precision or rounding mode because the remainder of two floating-point numbers always fits: it is smaller than both operands and its last bit is no finer than the finer operand's. A sweep against an exact big-integer remainder (all test precisions, operands far apart, close, and in the subnormal band) confirms it. The sweep found one bug: a remainder below `EXPONENT_MIN` was always flushed to zero, because the range check compared with `usize::MAX as i64`, which is `-1`. Subnormal remainders are now returned exactly. `inexact()` on a remainder is false; `inexact_accumulated()` keeps the operands' history.
+
+### Full-precision sum with a zero operand (bug fix)
+
+`ExactNum::add_full_prec` and `sub_full_prec` returned a wrong value when exactly one operand was zero: `0.add_full_prec(1)` returned a zero with an empty mantissa (exponent 1) flagged inexact, instead of 1. Both now return the other operand exactly (negated for `sub` when the zero is the first operand), with that operand's own `inexact()`. The fixed-precision `add` and `sub` were not affected and are bit-identical to 1.x. Found by the add/sub grid digest test while removing the operand copies: it differs from the pre-change code in exactly 40 results, all of this kind. Test: `add_sub_zero_tests::full_prec_with_zero_operand_is_the_other_operand`; the grid digest is pinned in `grid_digest_tests::add_sub_grid_digest`.
+
+### Rust 1.99 patch releases in CI
+
+`scripts/use_rust_1_99.sh` installs channel `1.99` and accepts any `1.99.x` compiler (it used to demand exactly 1.99.0, which broke the `hex-32bit` and `prepublish` steps once 1.99.1 was released). Other minor releases are still refused.
+
+### Deterministic `test_compute_added_err`
+
+Under `--features random` the `random_dist` tests reseed the shared test generator from their own threads, which restarted the stream of `macro_util::test_compute_added_err` part-way through and made it fail at random. The test now pins its own stream (`test_rng::pin_thread_seed`, test builds only). This is a test-only change.
+
+### Subnormal underflow
+
+`mul`, `div`, and `add` flushed a result below the minimum positive subnormal to zero whenever the rounding mode was not `Up`, `Down`, or `FromZero`. The discarded significand was ignored, so a value above half an ulp of the minimum positive, and a tie under `ToOdd`, became zero. `ToOdd` of half the minimum positive must be the minimum positive, because zero is even. Directed modes that round away from zero already kept that minimum; `ToEven` of an exact tie correctly stays zero.
+
+The flush now compares the residual with half an ulp and applies the same rounding rule as every other inexact result. Code that depended on flushing a tie, or a value above half an ulp, to zero under `ToEven`, `ToOdd`, or `None` now sees the rounded minimum positive or a kept zero, the same rule the directed modes already used.
+
+### Signed zero
+
+`(+0) + (-0)` returned the sign of the second operand, so the sum was `-0` in every rounding mode. IEEE 754 addition of zeros with opposite signs is `+0`, except for `roundTowardNegative` (`Down`), which is `-0`. The same rule applies to exact cancellation: `1 + (-1)` and `5 - 5` are `+0` except under `Down`, where they are `-0`. `(-0) + (-0)` stays `-0` in every mode. Code that required those sums to be `-0` outside `Down` has to round with `Down` or set the sign itself.
+
+### Invalid operations carry `InvalidArgument`
+
+`0 * Inf`, `Inf * 0`, `Inf - Inf`, `Inf + (-Inf)`, `Inf / Inf`, and remainder of an infinity were `NaN` with an empty error tag. Callers could not tell them from an uninitialized `NaN`. They are now `NaN(InvalidArgument)`. `0 / 0` was already tagged and is unchanged. Code that treated `err() == None` as the result of these operations now sees `Some(InvalidArgument)`. Use `is_nan()` when the tag does not matter.
+
+### Parsing consumes the whole string
+
+`parse` used to accept a valid prefix and ignore the rest. `1.5foo` was `1.5`, `0x10` was `0`, `1.2.3` was `1.2`, and `infinity` was `Inf`. A bare exponent was the same class of bug: `1e`, `1e+`, `1e-`, and `1E` were read as `1` with an exponent of zero. Strings that were not numbers at all, including `""`, `"."`, `"nanx"`, and `++1`, came back as `NaN` with no error tag.
+
+`parse` now requires the entire string to be a finite number, `Inf`, or `NaN`. Anything else is `NaN(InvalidArgument)`. Well-formed `NaN` and `Inf` are unchanged, including their signs for infinities. This is a breaking change. Code that passed a longer buffer and relied on the prefix must slice the number out before calling `parse`. Code that used a bare `e` to mean exponent zero must write `e0` or omit the exponent. A digit outside the radix is the same break: `2.5` in base 3 used to be read as `2` and is now `NaN(InvalidArgument)`. `format` of that `NaN` prints `NaN`, and parsing that text back is still a `NaN` (the error tag is not part of the spelling). A `NaN` from untrusted text now has `err() == Some(InvalidArgument)` instead of `None`; check `is_nan()` if the tag does not matter.
+
+### Decimal round-trip
+
+`format` rounded the decimal digits with the same directed mode that `parse` would apply again. Under `Up` and `ToZero`, `parse(format(x))` moved one ulp. `0.1` at 53 bits printed `1.0000000000000000001e-1` with `Up` and parsed back to the next number up. `ToEven` was unaffected.
+
+`format` in base 10 now retries with extra digits. Those digits are rounded onto the side of the value that the same mode accepts, and the retry stops when `parse` at the same precision returns the same sign, exponent, and limbs. The spelling of a directed value can be longer than in 1.0.12. The value is the one `parse` produced. Code that matched the old spelling has to accept the longer text.
+
+### Integer powers
+
+`exp2` and `exp10` of an exact integer, and `pow` with an exact integer exponent, went through `exp(n · ln x)`. When the power is an exact dyadic, a directed mode sees every discarded bit equal and the Ziv loop gives up. `exp2(2)`, `exp2(20)`, `exp10(2)`, and `exp10(20)` at 24, 53, and 113 bits returned `NaN(PrecisionRetryExhausted)` for `Up`, `Down`, `ToZero`, and `FromZero`. `None` returned the next number down. `ToEven` and `ToOdd` were already the exact power. `pow(0.5, -2)` is the same bug at every width, including 256 and 1024 bits: the value is the integer 4.
+
+An exact integer exponent whose magnitude fits in one word, and whose base is exact, is now exponentiated by squaring at full precision and rounded once. A negative exponent divides that product once. Inexact inputs still use the logarithm. `NaN(PrecisionRetryExhausted)` on these exact powers becomes the integer (or the correctly rounded integer, when `10^20` does not fit). Code that treated that `NaN` as "not an integer power" now receives the integer.
+
+### Constant cache
+
+`sqrt2` and `phi` at 113 bits under `Up` and `FromZero` were one ulp low when a coarser request had been cached first. A 24-, 53-, or 64-bit request is computed at 128 bits. The 113-bit request is also stored in 128 bits, so the cache was reused and `set_precision` did nothing. A fresh cache, or a cache filled at 256 bits, was already the higher neighbor.
+
+The cache is reused only when it still has a guard word below the new precision. Otherwise it is recomputed. `sqrt2(113, Up)` and `phi(113, Up)` after a narrower request now match a fresh cache, and the same holds for `FromZero`. Euler's constant is filled again when the saved value has no guard word left, so a later, wider request does not treat that cache as final. Code that reused a coarse cache and expected the low neighbor at 113 bits under `Up` or `FromZero` now gets the higher neighbor.
+
+### Complex inverse sine on the cut
+
+`asin` of a real number with absolute value greater than 1 ignored the sign of a zero imaginary part. Both sides of the cut came back with the principal imaginary part: negative for `x > 1`, positive for `x < -1`. The value above the cut (`+0`) is unchanged and matches the principal value. The value below the cut (`-0`) is now the conjugate. The parts are rounded to the word-sized precision, same as the real elementary functions. A request for 24, 53, or 113 bits no longer stops at that many bits inside a wider word. Code that read the sign of a zero imaginary part on the cut and expected the principal value on both sides now gets the conjugate below the cut.
+
+### Complex logarithm near the cut
+
+`ln(z)` took the modulus at the destination precision and then the logarithm. For `z = -1 + 10^{-12} i`, `|z| - 1` is about `5·10^{-25}`. At 64 stored bits that difference is below one ulp of 1, so the real part was `+0`. The imaginary part, near `±π`, was already right. The same cancellation hides `2^{-p}` at 113 bits.
+
+The real part is now `ln(max(|re|, |im|)) + ½ ln(1 + (min/max)²)`, computed with extra precision and rounded once. A logarithm just off the cut keeps that small positive real part. The argument is unchanged. Code that treated a zero real part just off the cut as exact now has to accept that small positive part.
+
+### Accuracy labels
+
+Public numeric functions now carry an `Accuracy` label in the rustdoc: correctly rounded, working precision (with a lost-bit bound), an enclosure, or unspecified. `Accuracy`, `accuracy_of`, and `ACCURACY` are new. A function that was already documented as a Ziv leaf stays correctly rounded. Lambert \(W\), Kelvin, Scorer, Clausen, Barnes \(G\), Weber, Anger, Struve, zeta, Hurwitz, \({}_1F_1\), \({}_0F_1\), \(pFq\), the polylogarithm, polygamma, Meijer \(G\), Fox \(H\), and Heun stay unspecified. Orthogonal polynomials and Legendre stay working precision, 32 bits. This does not change any value.
+
+### Riemann zeta at 0 and −1
+
+`riemann_zeta(0)` is \(-1/2\) and `riemann_zeta(-1)` is \(-1/12\). Both used to be `NaN(InvalidArgument)`. This is a breaking change. Callers that treated 0 and −1 as out of domain should test the argument before calling. Other non-integers, the pole \(s=1\), and integers \(s\le -2\) stay `NaN(InvalidArgument)`.
+
+### Clausen
+
+\(\mathrm{Cl}_3\) of a nonzero angle integrated \(\mathrm{Cl}_2\), and \(\mathrm{Cl}_2\) was itself a quadrature, so the pair did not return. Both are now the Bernoulli series on \((-\pi,\pi]\). \(\mathrm{Cl}_2(0)=\mathrm{Cl}_2(\pm\pi)=0\) and \(\mathrm{Cl}_3(0)=\zeta(3)\) are unchanged. There is no timeout argument. The values move by more than an ulp; the class stays unspecified. Callers who pinned the old digits of \(\mathrm{Cl}_2\) or \(\mathrm{Cl}_3\) have to accept the Bernoulli values.
+
+### Weber \(E_0\)
+
+\(E_0(z)\) for \(|z|<8\) is \(-(4/\pi)\sum J_{2k+1}(z)/(2k+1)\). The quadrature at 256 bits had the wrong leading digits (`E_0(0.3)` was about \(-0.043\) instead of \(-0.189\)). Other orders still use the integral. The class stays unspecified. Callers who pinned the old leading digits of \(E_0\) on \(|z|<8\) have to accept the series.
+
+### Barnes \(G\)
+
+Non-integer \(G\) at 256 bits was about 60 bits off. \(\ln A\) uses enough Euler–Maclaurin terms in \(\zeta'(2)\) for the whole word. Integer arguments stay the factorial product. The class stays unspecified. Callers who pinned a non-integer \(G\) at 256 bits have to accept the corrected value.
+
+### Word rounding of catalog and orthogonal polynomials
+
+Catalog and orthogonal-polynomial results were rounded to exactly `p` bits. A request for 53 or 113 bits is stored in a wider word, and the low bits of that word were zero. They are now rounded to the full word (`p` rounded up to a multiple of 64), the same width the elementary functions already use. Word-aligned requests (64, 128, 256) are unchanged when the series was already accurate to that word. Code that compared a 53- or 113-bit catalog value for limb identity with a `p`-bit rounding has to compare at the full word.
+
+### Elliptic argument
+
+`elliptic_f`, `elliptic_e`, and `elliptic_pi` already took the sine of the amplitude and the parameter \(m=k^2\). The rustdoc and the capabilities table now say that in those words. \(|x|>1\), including an angle such as 2 passed in place of \(\sin 2\), stays `NaN(InvalidArgument)`. The argument meaning did not change, and call sites outside this crate were not edited. Callers who passed the angle into that slot should call `elliptic_f_phi`, `elliptic_e_phi`, or `elliptic_pi_phi`.
+
+### Gauss–Kronrod error estimate
+
+`GkResult::abs_err_est` was documented as `|K − G|`, and as the difference of the last two even-order ε entries when that difference stopped the iteration. On a smooth integrand the two rules share the same rounded nodes, so they agree far more closely than either agrees with the integral. At 53 bits, \(\int_0^1 e^x\,dx\) was high by about \(8\cdot10^{-17}\) while the reported error was about \(10^{-19}\), roughly 700 times too small. The same bar missed \(\int_0^1 \sin x\,dx\). On \(\int_0^1 x^{-1/2}\,dx\) the ε difference was about \(10^{-56}\) while the integral was high by about \(5\cdot10^{-21}\). Gauss–Legendre, Gauss–Laguerre, and Gauss–Hermite used the same short working precision, so a low-degree polynomial could miss by many units of the stored word.
+
+The (7, 15) rule and those Gauss rules now run at two guard words above the destination width (that width rounded up to a multiple of 64, plus 128 bits). Tanh–sinh keeps its wider double-exponential guard when that is already more. `abs_err_est` is a conservative error estimate, validated against oracles: at least `|K − G|` on one panel, or the sum of the local `|K − G|` when an ε value is accepted, plus one unit in the last place of the rounded estimate. The estimate is rounded away from zero. It can be larger than `|K − G|`, and it can be larger than the tolerance that stopped the iteration. `estimate_kronrod` and `estimate_gauss` keep their meaning and still use the caller's rounding mode. The ε difference remains the stopping test for an extrapolated value; it is not the published estimate.
+
+This is a breaking change. Code that read `abs_err_est` as `|K − G|` should subtract `estimate_kronrod` and `estimate_gauss`. Build the struct with `GkResult::new`. Do not rely on field order.
+
+### Elliptic shortcuts round once
+
+\(F(\varphi\mid 0)\) and \(E(\varphi\mid 0)\) are \(\varphi\). The angle-form path reduced \(\varphi\) through sine and arcsine at a working precision, then rounded again. `Up`, `Down`, `ToZero`, `FromZero`, and `None` failed the roundability test and returned `NaN` for \(\varphi=0.8\) at 256 and 512 bits. `ToEven` and `ToOdd` happened to land on the input. Those shortcuts now round the amplitude once, in the caller's mode. \(\varphi=0\) stays exact zero. \(\varphi=k\pi/2\) with \(m=0\), including \(\pm\pi/2\), \(\pi\), and \(3\pi/2\), is that same rounding. The sine-form \(m=0\) shortcut is one arcsine. \(\Pi(0;\varphi\mid m)\) calls \(F\) once. \(n=0\) on the sine form already called \(F\).
+
+### Infinite-range Gauss–Kronrod
+
+`integrate_adaptive_gk_infinite` maps a half-line or the whole line onto a finite interval and uses the same (7, 15) rule. `abs_err_est` on those rows is the same conservative error estimate, validated against oracles, and the estimate itself is checked against `est_tol`.
+
+### Platform intrinsics
+
+`add_carry` and `sub_borrow` in the limb kernel called `_addcarry_u64` and `_subborrow_u64` (and the 32-bit pair) through `core::arch`. That code came with `common/util.rs` from astro-float and still carried the MIT notice. On x86-64 the intrinsic was the live path for every addition, subtraction, and product of `ExactNum`. `shift_slice_left` and `shift_slice_right` walked those limbs through raw pointers. Decimal conversion used `Vec::set_len`. `ieee_soft` added and multiplied software binary32 and binary64 lanes with x86-64 and AArch64 integer SIMD (`_mm_add_epi32`, `_mm_add_epi64`, `_mm_mul_epu32`, `vaddq_u32`). None of those paths used `f32` or `f64`. There is no `asm!`, `global_asm!`, or `target_feature`.
+
+The limb operations are now portable integer arithmetic: a widening sum for the carry, a widening difference for the borrow, and index walks for the shifts. Decimal conversion fills the buffer with `resize`. The software IEEE lanes use `wrapping_add` and a widening multiply. For a carry or borrow of 0 or 1 the new limbs match the old intrinsics, including a chain of `WORD_MAX`. `ieee_soft` is not from astro-float; its public bit patterns are unchanged. The astro-float MIT notice on `common/util.rs` and `mantissa/conv.rs` stays.
+
+`scripts/ci_no_intrinsics.sh` rejects `std::arch`, `core::arch`, `asm!`, `global_asm!`, `target_feature`, `f32`, and `f64` in every Rust source, and rejects `unsafe` outside `scripts/no_intrinsics_allowlist.txt`. The allowlist is the `no_std` host and qemu harnesses, plus the optional MPFR test oracle. Those are not linked into the library. The library crates forbid `unsafe_code`. Callers do not see a signature change. A build that depended on the x86 intrinsic being the only implementation of a limb add now gets the same bits from the portable sum.
+
+### Directed rounding modes were documented as ties
+
+The rustdoc on `RoundingMode` called `Up` "round half toward positive infinity", `Down` "round half toward negative infinity", `ToZero` "round half toward zero", and `FromZero` "round half away from zero". Those words describe round-to-nearest with a tie rule. The kernel (`round_mantissa`) has always rounded these four modes in one direction: any discarded bit moves `Up` to the next value above, `Down` to the next value below, `FromZero` away from zero, and `ToZero` truncates. A caller who trusted the rustdoc expected a nearest result and got a directed one.
+
+The rustdoc now says directed rounding toward +∞, −∞, zero, or away from zero. `ToEven` and `ToOdd` are still round-half-to-even and round-half-to-odd. No value changes. `tests/rounding_mode_docs.rs` checks the wording and sweeps non-representable quotients over four precisions and both signs to show each mode lands on its side of the exact value.
+
+### `from_raw_parts` skipped its checks
+
+`ExactNum::from_raw_parts` documents that it returns `NaN` when `n` is larger than the mantissa, when `n` does not match the mantissa's significant bits, when a subnormal mantissa does not carry `EXPONENT_MIN`, when the size is too large, and when `e` is outside `EXPONENT_MIN..=EXPONENT_MAX`. It copied the words into a mantissa and called the unchecked constructor, so none of that happened. `from_raw_parts(&[0xC000…], 65, Pos, 2, false)` on one 64-bit word came back as a finite value with a 65-bit length on a 64-bit mantissa, and a one-bit subnormal mantissa was accepted with any exponent. Later operations on those values read past the significand or misplaced the binary point.
+
+The public constructor now goes through the checked `ExactNumNumber::from_raw_parts`, which was previously compiled only for unit tests. Every documented invalid case is `NaN(InvalidArgument)`; nothing panics. Parts that came from `as_raw_parts` still round-trip unchanged. Code that built numbers from inconsistent parts now gets `NaN(InvalidArgument)` and has to pass the bit count and exponent `as_raw_parts` would report. `tests/from_raw_parts_checks.rs` round-trips 4 precisions × 4 mantissas × 7 exponents including both limits × both signs, and rejects each inconsistent shape at every precision and sign.
+
+### Exponent overflow follows the rounding mode
+
+Every exponent overflow came back as `±Inf`, whatever the rounding mode. `num.rs` reported `ExponentOverflow(sign)` from `mul`, `div`, `rem`, and `add`, and `result_to_ext` turned that into an infinity without looking at `rm`. IEEE 754 and MPFR return the largest finite value when the mode rounds toward zero for the result's sign: `ToZero` always, `Down` for a positive result, `Up` for a negative one. `max_value(p) * 2` under `ToZero` was `+Inf`; it is `max_value(p)`. The oracle hid this twice. `tests/mpfr/common.rs` accepted any `Inf` once MPFR's sticky overflow flag had been raised by any earlier operation, and `scripts/gen_oracle_goldens.py` and `scripts/mpfr_oracle.c` both wrote `Inf` for every mode, so the goldens agreed with the bug.
+
+`add`, `sub`, `mul`, `div`, `fma`, `mul_add`, `pow`, `powi`, `powsi`, `hypot`, `reciprocal`, `ldexp`, `exp`, `exp2`, `exp10`, `sinh`, and `cosh` now return `±max_value(p)`, marked inexact, in those three cases and `±Inf` in every other mode (`ToEven`, `ToOdd`, `FromZero`, `None`, `Up` for a positive result, `Down` for a negative one). Poles are not overflows: `0^(-n)`, `1/0`, and functions that signal a pole with `ExponentOverflow` (`atanh(±1)` and the like) stay `±Inf`. `reciprocal` above the Newton threshold also reported a positive overflow for a negative argument; the sign is now the argument's. Code that tested `is_inf()` to detect overflow under `ToZero`, `Down`, or `Up` has to compare with `max_value(p)` as well.
+
+The MPFR check now requires `Inf` exactly where MPFR is `Inf` and fails when MPFR is `Inf` and zenith is not. Both generators emit the mode-correct value, the goldens were regenerated (`edges.jsonl` gains nine overflow rows per precision and mode, both signs, for `add`, `sub`, `mul`, and `div`; `parse.jsonl` ids shift), and `tests/overflow_modes.rs` sweeps 14 overflowing operations over all seven modes and four precisions. `fuzz_mpfr_overflow_all_round_modes` does the same against MPFR at five precisions.
+
+### `inexact` is per operation
+
+`add`, `sub`, `mul`, and `div` started from `self.inexact || d2.inexact` (`num.rs` 337, 409, 633) and then added whatever this operation rounded. The flag on the result answered "was anything upstream rounded", not "did this operation round". `(1/3) * 2` is exact, and its `inexact()` was `true` because `1/3` had been rounded. A caller could not tell from the flag whether the operation it just performed was exact.
+
+`ExactNum::inexact()` on the result of `add`, `sub`, `mul`, or `div` is now true only when that operation rounded, including rounding onto the subnormal grid. The operands' flags are not inherited. This is a breaking change: code that read `inexact()` to learn whether a chain of operations was exact has to call the new `ExactNum::inexact_accumulated()`.
+
+The accumulated flag is still needed, so it is kept as that separate API. The correct-rounding loops decide whether a value needs a roundability check from it (`try_set_precision`), negative `powi` uses it to know whether repeated squaring was exact, and the `expr!`/`cexpr!` macros use it to know whether a cancellation can carry error. Each number now carries both flags; the kernel's own `add`/`sub`/`mul`/`div` still accumulate, the public wrappers also record the per-operation flag, and any in-place change (`set_precision`, `set_inexact`) drops back to the accumulated flag; subnormalization keeps the per-operation flag and adds its own rounding to it. Other functions (`sqrt`, the transcendentals, `ExactComplex`) report the accumulated flag through `inexact()`, as before. `set_inexact` sets both. The macros, `macro_util`, `ExactComplex::inexact`, and the Heun exactness test read `inexact_accumulated()`, so their behaviour is unchanged. `tests/inexact_per_op.rs` sweeps six modes, four precisions, and both signs over ten exact operations on an inexact operand, two rounding operations, and the accumulated chain.
+
+### `add`, `sub`, `mul`, and `div` round at exactly `p` bits
+
+These four operations rounded at `round_p(p)`, the next multiple of 64, whatever `p` was asked for. `a.add(&b, 24, ToEven)` was a 64-bit result; a caller asking for binary32 or binary64 behaviour got neither, and the requested precision only decided the storage. `set_precision` was already bit-granular, so `chop` was the one place that honoured `p`. A second fault sat under every precision: a result that fell below `2^EXPONENT_MIN` was rounded twice, once at `p` bits and again onto the subnormal grid, so it could be one unit off in the last place. The MPFR sweep found `p = 64` products with `ToEven` landing on the wrong neighbour.
+
+`ExactNumNumber::exact_bits` now evaluates the four operations. With `p` a multiple of 64 and a normal result, it calls the operation as before. Otherwise it computes toward zero at `round_p(p) + 64` bits, folds the sticky bit into the last bit (round to odd), and rounds once more to `p` bits with `rm`. Two bits of headroom make that second rounding exact, so the result is correctly rounded at `p` bits in every mode, including `ToOdd`, and on the subnormal grid `2^(EXPONENT_MIN - p)`. An exact zero is recomputed directly so that its sign follows the mode. An overflow toward zero returns `max_value(p)` truncated to `p` bits. `subnormalize` no longer drops the per-operation `inexact` flag, which the round-to-odd step depends on. Storage is still a whole number of words; the bits below `p` are zero. `RoundingMode::None` skips rounding and keeps the storage precision, as before. Unaligned precisions cost one extra word and a second rounding.
+
+The scope is limited to these four. `sqrt`, `cbrt`, `hypot`, `fma`, `rem`, parsing, and every function built on the kernels still round at `round_p(p)`, and their documentation still says so. Their golden rows are labelled with that effective precision, not with the request. The constant-cache rows keep `p = 113` because they test a 113-bit request after a narrower one. The goldens use `p` bits for the four exact ops (the operand tokens remain the zenith inputs at storage precision) and were regenerated; `fuzz_mpfr_exact_bit_precision` checks the four operations against MPFR. It runs eleven precisions (24, 53, 64, 65, 100, 113, 127, 128, 130, 200, 255) over three exponent bands, including the subnormal range, in six modes plus `ToOdd` in the normal range, with random signs, and compares bit for bit, subnormals included.
+
+### The rounding-mode fuzz covered three operations and one precision
+
+`fuzz_mpfr_bit_exact_all_round_modes` ran `add`, `mul`, and `sqrt` at 128 bits only, in five modes, on uniformly random operands. It never ran `sub` or `div` and never ran `ToOdd`, and random operands almost never hit an exact tie, so most of the tie-breaking code had no MPFR check. With `ToOdd` ties deliberately broken toward even, the old test still passed.
+
+The test now runs `add`, `sub`, `mul`, and `div` bit for bit against `mpfr_reference` in all six rounding modes, `ToOdd` included (MPFR has no ties-to-odd mode; the reference emulates it with a toward-zero result at `p + 1` bits and the ternary value). It uses precisions of 64, 128, 192, 320, and 1024 bits. Half of the operands are runs of ones followed by zeros with random signs, which produces exact ties and carries out of the top word. `sqrt` and `nth_root` keep the five MPFR modes at every precision. Under the same broken `ToOdd`, the new test fails at the 13th case: a 128-bit `Mul`. Unaligned precisions and the subnormal range are covered by `fuzz_mpfr_exact_bit_precision`. `get_random_rnd_pair` still returns only the five MPFR modes, because its 44 callers pass the MPFR mode straight to MPFR; `ToOdd` is covered through `mpfr_reference` instead. No library change.
+
+### The exponent range is the same on 32-bit targets
+
+`EXPONENT_MAX` and `EXPONENT_MIN` were `i32::MAX / 4` and `i32::MIN / 4` on 32-bit pointers (`defs.rs` 49–58). The kernel computed exponents in `isize`, which is 32 bits there, and the quarter range was headroom against `e1 + e2 - shift` overflowing. The same value could therefore be finite on x86_64 and `Inf` on i686 or Cortex-M. That broke the claim that results are bit-identical on every platform, and the hex golds never reached the limits.
+
+Exponent arithmetic is now done in `i64` on every target, and both constants are `i32::MAX` and `i32::MIN` everywhere. Every `isize` in `src` became `i64`. Conversions from an exponent difference back to a count go through `common::util::abs_usize`, which saturates where `usize` is 32 bits. `p_assertion` also rejects `p >= usize::MAX / 4`, so precision arithmetic cannot wrap a 32-bit `usize`; the 64-bit limit is unchanged. The checks and clamps that existed only for 32-bit targets became vacuous and were removed. They were in `from_words`, `from_raw_parts`, `set_exponent`, `random_normal`, the radix conversion, and `ldexp`'s `exponent_in_range`, which took a `#[allow]`. `parser` tests use the same `e+7FFFFFFF` overflow input on both widths.
+
+This is a public change for 32-bit users. Values between `2^(i32::MAX/4)` and `2^i32::MAX` are now finite instead of overflowing, and they underflow at `2^i32::MIN` instead of `2^(i32::MIN/4)`. `doc/LIBRARY.md` and `doc/ZENITH_FLOAT_CAPABILITIES.md` are updated. `tests/exponent_range.rs` checks the constants, `max_value`, `min_positive`, and `min_positive_normal` at four precisions. It sweeps `ldexp` to three exponents at each limit and `mul`, `add`, `sub`, and `div` at the top and bottom of the range, including overflow and subnormal results, in six modes and both signs. It failed on `i686-unknown-linux-musl` before the change. With the change, it passes there in debug, with overflow checks on, together with the library unit tests and the property, edge, overflow, and `inexact` suites. `tests/oracle.rs` does not build for 32-bit words (it passes `u64` limbs), as before.
+
+### Tests
+
+- `tests/oracle/goldens/quad.jsonl`: 12 `gk-eps` rows (deep tier) for the Wynn-ε Gauss–Kronrod path on endpoint singularities: 6 integrands (\(x^{-0.75}\), \(x^{-0.9}\), \(x^{-0.99}\), and \(\ln^k x/\sqrt{x}\) for \(k=1,2,3\)) × 256 and 512 bits. 18 `gk-inf` rows cover `integrate_adaptive_gk_infinite`. `abs_err_est` on those rows is checked against the oracle.
+- `tests/oracle/goldens/specials/elliptic.jsonl`: \(m=0\) shortcut goldens for \(F\), \(E\), and \(\Pi\) in all seven rounding modes, and angle-form goldens for `elliptic_f_phi`, `elliptic_e_phi`, and `elliptic_pi_phi`. `tests/elliptic_phi.rs` covers the period reduction, \(\varphi=\pm\pi/2\), and the `NaN(InvalidArgument)` cases.
+- `carry_tests` in `common/util.rs`: `add_carry` and `sub_borrow` against a widening double-word reference (`u128` for 64-bit words, `u64` for 32-bit words), with carry-in 0 and 1 edges, random limbs, and 8-limb all-`WORD_MAX` chains.
+- `tests/oracle/goldens/ode.jsonl` and `balls.jsonl`: 24 ODE and 24 ball regression goldens, recorded before the quadrature change.
+- `scripts/ci_no_intrinsics.sh` uses `git grep -nE` and fails hard when `git` is missing or the search itself errors, so a broken search cannot pass as "no match".
+- Audit tests, each red before its fix: `tests/rounding_mode_docs.rs`, `tests/from_raw_parts_checks.rs`, `tests/overflow_modes.rs`, `tests/inexact_per_op.rs`, `tests/exponent_range.rs` (red on i686), and in `tests/mpfr/fuzz_round_modes.rs` `fuzz_mpfr_overflow_all_round_modes`, `fuzz_mpfr_exact_bit_precision`, and the widened `fuzz_mpfr_bit_exact_all_round_modes`.
+- `.github/workflows/arm-tests.yml`: a test-only ARM64 workflow (`ubuntu-24.04-arm`, Rust 1.99) that runs the workspace tests and the oracle test. It does not publish.
 
 ## 1.0.12 — 2026-10-06
 
@@ -83,6 +368,8 @@ README upgrade target corrected to 1.0.8; no math.
 ## 1.0.7 — 2026-10-02
 
 1.0.7 keeps the 1.85-required unsafe wrappers on `_addcarry_u64`/`_subborrow_u64` and allows `unused_unsafe` so the crate builds on rustc 1.93+ (those intrinsics became safe in 1.93, not 1.87).
+
+(Superseded in 2.0.0: intrinsics and unsafe removed; see Forensic audit.)
 
 ## 1.0.6 — 2026-10-02
 

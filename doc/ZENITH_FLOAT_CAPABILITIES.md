@@ -1,7 +1,7 @@
 # zenith-float Capability Reference
 
-**Version:** 1.0.12  
-**Date:** 2026-10-05  
+**Version:** 2.0.0  
+**Date:** 2026-10-14  
 **License:** MIT OR Apache-2.0  
 **Status:** Public crate  
 
@@ -56,9 +56,9 @@ Both pass 77/77. There is no separate `alloc` feature: `alloc` is always require
 | --- | --- |
 | `Word` | `u64` on 64-bit targets; `u32` on 32-bit |
 | `WORD_BIT_SIZE` | 64 or 32 accordingly |
-| `INLINE_WORDS` | `2` — mantissas of ≤ 128 bits live on the stack |
-| `EXPONENT_MAX` | `i32::MAX` on 64-bit; `i32::MAX / 4` on 32-bit |
-| `EXPONENT_MIN` | `i32::MIN` on 64-bit; `i32::MIN / 4` on 32-bit |
+| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE` (2 on 64-bit, 4 on 32-bit) — mantissas of ≤ 128 bits live on the stack |
+| `EXPONENT_MAX` | `i32::MAX` on every target |
+| `EXPONENT_MIN` | `i32::MIN` on every target |
 | Default operator precision | 128 bits, `ToEven` — used by `+` `−` `×` `÷` operator traits only |
 | `MAX_PREC_RETRY` | `256` — extra word-sized retry steps beyond `p` for correct-rounding loops |
 | `SVD_ITER_MAX` | `64` — QR sweeps per singular value in `svd_decomp`; then `None` |
@@ -243,12 +243,13 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `bessel_j(n, p, rm, cc)` | `bessel_j(x, n)` | Integer order; Miller recurrence for large \(n\); \(J_n(0)=\delta_{n0}\) |
 | `bessel_j_nu` / `bessel_y` / `bessel_i` / `bessel_k` | `bessel_j_nu(x, ν)` etc. | Real order. \(K\): \(x>0\). \(J\)/\(Y\): series, or Hankel (DLMF 10.17) when \(\lvert x\rvert\ge\max(16,0.35(p+112))\) and \(\lvert\nu\rvert^2<2\lvert x\rvert\) (also when the series guard would exceed `BESSEL_GUARD_MAX`). \(Y\): \(x>0\). |
 | Scorer / Kelvin / Struve / Anger–Weber | `scorer_gi`, `kelvin_ber`, `struve_h(x,ν)`, … | SoftFloat catalog; Kelvin via complex \(J,K\); Anger integer order = Bessel \(J\) |
-| Clausen / Barnes \(G\) / ζ / polygamma | `clausen_cl2`, `barnes_g`, `riemann_zeta`, `hurwitz_zeta`, `polygamma` | \(\mathrm{Cl}_2=-\int\ln\lvert 2\sin(t/2)\rvert\); ζ integer \(s\ge 2\); \(\psi^{(0)}=\) digamma |
+| Clausen / Barnes \(G\) / ζ / polygamma | `clausen_cl2`, `barnes_g`, `riemann_zeta`, `hurwitz_zeta`, `polygamma` | \(\mathrm{Cl}_2\) and \(\mathrm{Cl}_3\) by the Bernoulli series on \((-\pi,\pi]\); \(\zeta(0)=-1/2\), \(\zeta(-1)=-1/12\), and integer \(s\ge 2\); the pole \(s=1\), integers \(s\le -2\), and non-integers are `NaN(InvalidArgument)`; \(\psi^{(0)}=\) digamma |
 | Inverse Jacobi / \(pFq\) / Lambert \(W\) / \(\mathrm{Li}_n\) | `jacobi_arcsn`, `hypergeom_1f1`, `lambert_w0`, `polylog` | `arcsn=F`; series \(pFq\); \(W_0\) on \([-1/e,\infty)\); \(\mathrm{Li}_n\) for \(\lvert x\rvert\le 1\) |
 | Meijer \(G\) / Fox \(H\) / Heun | `meijer_g`, `fox_h`, `heun_g`, `heun_c` | Residue \(G\) (DLMF 16.17); coincident poles use the hypercomb limit (two shifts must agree). Fox \(H\) via \(G\) or Gauss lift of positive rational \(A,B\). Local Heun DLMF 31.3 and confluent DLMF 31.12.1: series in the disk, Taylor continuation elsewhere on the real component that contains 0. A singular point on that segment is `NaN(InvalidArgument)`. Not `expr!` leaves. |
 | `elliptic_k` / `elliptic_e_complete` | `elliptic_k` / `elliptic_e` | Complete; \(m=k^2\); \(K(1)=+\infty\); \(K(m>1)=m^{-1/2}K(1/m)\); \(E\) for \(m\le 1\) |
-| `elliptic_f` / `elliptic_e` | `elliptic_f` / `elliptic_e_inc` | Incomplete; \(x=\sin\varphi\), \(\lvert x\rvert\le 1\) |
-| `elliptic_pi_complete` / `elliptic_pi` | `elliptic_pi` / `elliptic_pi_inc` | \(n<1\), \(m<1\) complete |
+| `elliptic_f` / `elliptic_e` | `elliptic_f` / `elliptic_e_inc` | Incomplete. The first argument is \(x=\sin\varphi\), **not** the amplitude \(\varphi\). \(\lvert x\rvert\le 1\); a larger value, including an angle past \(\pi/2\), is `NaN(InvalidArgument)`. \(\varphi\in[-\pi/2,\pi/2]\) is recovered as \(\operatorname{elliptic\_f}(\sin\varphi, m)=F(\varphi\mid m)\). The function is odd in \(x\). The second argument is the parameter \(m=k^2\), **not** the modulus \(k\). For the angle, use `elliptic_f_phi` / `elliptic_e_phi`. |
+| `elliptic_f_phi` / `elliptic_e_phi` / `elliptic_pi_phi` | `elliptic_f_phi(phi, m)` | Amplitude \(\varphi\), **not** \(\sin\varphi\). `elliptic_f`, `elliptic_e`, and `elliptic_pi` still take \(\sin\varphi\). Any real \(\varphi=r+k\pi\) with \(\lvert r\rvert\le\pi/2\), reduced in extended precision, then \(F(\varphi\mid m)=F(r\mid m)+2k\,K(m)\) (the same shift for \(E\) and \(\Pi\)). Odd in \(\varphi\). \(\varphi=\pm\pi/2\) is \(\pm K\), \(\pm E\), \(\pm\Pi\). \(m>1\) is `NaN(InvalidArgument)` when the integrand is not real on the path. \(n=1\) is `NaN(InvalidArgument)` at the poles \(\sin^2 t=1\). An infinity argument is `NaN(InvalidArgument)`. |
+| `elliptic_pi_complete` / `elliptic_pi` | `elliptic_pi` / `elliptic_pi_inc` | Complete: characteristic \(n<1\), parameter \(m=k^2<1\). Incomplete: `self` is \(n\), the middle argument is \(x=\sin\varphi\) (not \(\varphi\)), and \(m=k^2\) (not \(k\)). \(\lvert x\rvert>1\) is `NaN(InvalidArgument)`. For the angle, use `elliptic_pi_phi`. |
 | `jacobi_am` / `jacobi_sn` / `jacobi_cn` / `jacobi_dn` / `jacobi_cd` / `jacobi_ns` / `jacobi_nc` / `jacobi_nd` / `jacobi_sc` / `jacobi_sd` / `jacobi_cs` / `jacobi_ds` / `jacobi_dc` | yes | Real \(m=k^2\in[0,1]\); \(m=0\) trig; \(m=1\) hyperbolic; AGM otherwise. Period reduction uses \(K\) only when \(\lvert u\rvert\ge\pi\) (avoids nested Ziv). Zero denominator → NaN. Inverse of `jacobi_sn` is `elliptic_f`. Golds: `sn(0)=0`; `sn(u\|0)=\sin u`; `sn(u\|1)=\tanh u`; `sn^2+cn^2=1`; `dn^2+m\,sn^2=1`; `sn(K/2)`; `sn(u+4K)=sn(u)`; \(\partial_u sn=cn\,dn\); `ns·sn=1`; `F(sn(u\|m)\|m)=u` |
 | `legendre_p` / `assoc_legendre_p` | `legendre_p(x, n)` / `legendre_p_assoc(x, n, m)` | Integer \(n\); recurrence at \(p+O(n)\) bits; Condon–Shortley |
 | `hypergeom_2f1` | `hypergeom_2f1(a,b,c,z)` | Series for \(\lvert z\rvert\le 1/2\); Pfaff for \(z<-1/2\); \(z\to 1-z\) connection (DLMF 15.8.4, log case A&S 15.3.10–11) for \(1/2<z<1\); Gauss at \(z=1\) when \(c-a-b>0\); \(z>1\) → NaN; cancellation measured and re-evaluated with guard bits |
@@ -548,7 +549,7 @@ These are design decisions, not a backlog:
 | `euler_gamma` constant | ✅ | ⬜ | ⬜ |
 | `with_rounding_mode` scoped closure | ✅ | ⬜ | ⬜ |
 | Ziv + `Ball` correct-rounding proof | ✅ | ⬜ | ✅ |
-| Stack-inlined small values | ✅ `INLINE_WORDS = 2` | ⬜ | ✅ |
+| Stack-inlined small values | ✅ `INLINE_WORDS = DEFAULT_P / WORD_BIT_SIZE` | ⬜ | ✅ |
 | MPFR bit-oracle tests (optional) | ✅ | ✅ | fuzz + unit |
 
 dashu-float 0.6.0: `consts.rs` is an empty stub (no γ). `FBig::with_rounding::<R>()` changes the rounding type parameter; it is not a scoped `Context` closure. astro-float rows are for 0.9.6.
@@ -559,6 +560,7 @@ dashu-float 0.6.0: `consts.rs` is an empty stub (no γ). `FBig::with_rounding::<
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| 2.0.0 | 2026-10-14 | 2.0.0 audit release: exact-`p`-bit rounding, `compare` replaces `cmp`, no lint exemptions, no panics or unwraps in library code, allocation-free constants (`INLINE_WORDS = DEFAULT_P / WORD_BIT_SIZE`), zero-clone library work in progress (see `CHANGELOG.md`). |
 | 1.0.12 | 2026-10-06 | MIT notice for code derived from astro-float (`NOTICE`, file headers, `doc/PROVENANCE.md`). Heun \({}_2F_1\) / \({}_1F_1\) reduction requires an exact dyadic identity or one ulp of `p`, not about eight bits of slack. |
 | 1.0.11 | 2026-10-05 | Series-regime complex \(K\) via DLMF 10.27.4; Meijer \(G\) logarithmic coincident-pole limit; Heun continued past the unit disk up to the nearest real singular point. |
 | 1.0.6 | 2026-10-02 | Additive pack: `jacobi_p`; real large-\(\lvert x\rvert\) Hankel \(J/Y\); complex Bessel cut + Temme \(K\); Scorer / Kelvin / Struve / Anger–Weber / Clausen / Barnes \(G\) / polygamma / Hurwitz / inverse Jacobi / \(pFq\) / Lambert \(W\); Meijer \(G\), Fox \(H\), local / confluent Heun. No breaking signatures (not 2.0.0). |

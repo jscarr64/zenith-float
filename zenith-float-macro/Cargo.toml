@@ -2,6 +2,7 @@
 name = "zenith-float-macro"
 version.workspace = true
 edition.workspace = true
+rust-version = "1.99"
 authors.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -17,5 +18,5 @@ proc-macro = true
 [dependencies]
 quote = { version = "1", default-features = false }
 syn = { version = "1", default-features = false, features = ["parsing", "proc-macro", "full", "extra-traits", "printing"] }
-zenith-float-num = { version = "1.0.12", path = "../zenith-float-num", default-features = false }
+zenith-float-num = { version = "2.0.0", path = "../zenith-float-num", default-features = false }
 proc-macro2 = { version = "1", default-features = false }

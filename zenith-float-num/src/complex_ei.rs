@@ -15,6 +15,7 @@ use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
+use core::ops::Neg;
 
 /// Use the power series for \(\mathrm{Ei}\) when \(\lvert z\rvert\) is below this, whatever the precision.
 const EI_SERIES_THRESHOLD: u32 = 16;
@@ -22,7 +23,7 @@ const EI_SERIES_THRESHOLD: u32 = 16;
 fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
     let a = z.abs(p, RoundingMode::None);
     let b = ExactNum::from_u32(bound, p);
-    matches!(a.cmp(&b), Some(c) if c < 0)
+    matches!(a.compare(&b), Some(c) if c < 0)
 }
 
 /// The asymptotic series' smallest term is about \(e^{-\lvert z\rvert}\), i.e. \(1.44\lvert z\rvert\)
@@ -63,7 +64,16 @@ impl ExactComplex {
     ///   asymptotic `e^z/z Σ k!/z^k + iπ·sgn(Im z)` otherwise.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.ei_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::ei`] on operands without inexact history.
+    fn ei_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -81,7 +91,16 @@ impl ExactComplex {
     /// - Algorithm: via [`Self::ei`].
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.si_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::si`] on operands without inexact history.
+    fn si_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -108,7 +127,16 @@ impl ExactComplex {
     /// - Algorithm: via [`Self::ei`].
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn ci(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.ci_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::ci`] on operands without inexact history.
+    fn ci_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -126,7 +154,16 @@ impl ExactComplex {
     /// - Algorithm: [`Self::ei`] of `ln z`.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn li(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.li_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::li`] on operands without inexact history.
+    fn li_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -143,7 +180,16 @@ impl ExactComplex {
     ///
     /// - Algorithm: via complex `erf`; Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fresnel_s(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.fresnel_s_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::fresnel_s`] on operands without inexact history.
+    fn fresnel_s_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -157,7 +203,16 @@ impl ExactComplex {
     ///
     /// - Algorithm: via complex `erf`; Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn fresnel_c(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.fresnel_c_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::fresnel_c`] on operands without inexact history.
+    fn fresnel_c_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -185,7 +240,8 @@ impl ExactComplex {
             } else {
                 let pi = cc.pi(work_p, RoundingMode::None);
                 let pi = if s < 0 { pi.neg() } else { pi };
-                ExactComplex::new(a.re().clone(), a.im().add(&pi, work_p, RoundingMode::None))
+                let (re, im) = a.into_parts();
+                ExactComplex::new(re, im.add(&pi, work_p, RoundingMode::None))
             }
         }
     }
@@ -255,11 +311,11 @@ impl ExactComplex {
         // \(\mathrm{Si}\) is odd; the \(\mathrm{Ei}\) combination minus \(\pi/2\) is the
         // principal value for \(\mathrm{Re}\,z\ge 0\).
         if self.re().is_negative() || (self.re().is_zero() && self.im().is_negative()) {
-            return neg_c(&neg_c(self).si_at(work_p, dest_p, cc));
+            return neg_c(self.neg_via_mul().si_at(work_p, dest_p, cc));
         }
         let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);
         let e_plus = iz.ei_at(work_p, dest_p, cc);
-        let e_minus = neg_c(&iz).ei_at(work_p, dest_p, cc);
+        let e_minus = neg_c(iz).ei_at(work_p, dest_p, cc);
         let two_i = two_c(work_p).mul(&ExactComplex::i(work_p), work_p, RoundingMode::None);
         let half_pi = pi_c(work_p, cc).mul(&half_c(work_p), work_p, RoundingMode::None);
         e_plus
@@ -271,7 +327,7 @@ impl ExactComplex {
     fn ci_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);
         let e_plus = iz.ei_at(work_p, dest_p, cc);
-        let e_minus = neg_c(&iz).ei_at(work_p, dest_p, cc);
+        let e_minus = iz.neg_via_mul().ei_at(work_p, dest_p, cc);
         // (Ei(iz) + Ei(-iz)) / 2 = γ + (ln(iz) + ln(-iz)) / 2 + (entire part). The principal
         // Ci(z) = γ + ln z + (entire part) (DLMF 6.2.11), so add i·(arg z − (arg(iz) + arg(−iz)) / 2),
         // which is 0 for Re z > 0 and ±π for Re z < 0.
@@ -282,7 +338,7 @@ impl ExactComplex {
         );
         let arg_z = self.ln(work_p, RoundingMode::None, cc).im().clone();
         let arg_p = iz.ln(work_p, RoundingMode::None, cc).im().clone();
-        let arg_m = neg_c(&iz).ln(work_p, RoundingMode::None, cc).im().clone();
+        let (_, arg_m) = neg_c(iz).ln(work_p, RoundingMode::None, cc).into_parts();
         let corr = arg_z.sub(
             &arg_p
                 .add(&arg_m, work_p, RoundingMode::None)
@@ -290,15 +346,13 @@ impl ExactComplex {
             work_p,
             RoundingMode::None,
         );
-        ExactComplex::new(
-            half_sum.re().clone(),
-            half_sum.im().add(&corr, work_p, RoundingMode::None),
-        )
+        let (re, im) = half_sum.into_parts();
+        ExactComplex::new(re, im.add(&corr, work_p, RoundingMode::None))
     }
 
     fn li_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         let one = ExactComplex::one(work_p);
-        if self.im().is_zero() && self.re().cmp(one.re()) == Some(0) {
+        if self.im().is_zero() && self.re().compare(one.re()) == Some(0) {
             return nan_pair(Error::InvalidArgument);
         }
         self.ln(work_p, RoundingMode::None, cc)
@@ -313,7 +367,7 @@ impl ExactComplex {
             .mul(&half_c(p), p, RoundingMode::None);
         let one = ExactComplex::one(p);
         let i = ExactComplex::i(p);
-        let one_p_i = one.add(&i, p, RoundingMode::None);
+        let one_p_i = ExactComplex::one(p).add(&i, p, RoundingMode::None);
         let one_m_i = one.sub(&i, p, RoundingMode::None);
         let erf_m = one_m_i
             .mul(&scale, p, RoundingMode::None)
@@ -329,16 +383,18 @@ impl ExactComplex {
             one_m_i
                 .mul(&half_c(p), p, RoundingMode::None)
                 .mul(&erf_p, p, RoundingMode::None);
+        let two_i = two_c(p).mul(&i, p, RoundingMode::None);
+        // `c+ - c-` is `-c- + c+`: both stay borrowed until the sum below takes `c+`.
+        let s = ExactComplex::sub_ref(&c_plus_is, &c_minus_is, p, RoundingMode::None).div(
+            &two_i,
+            p,
+            RoundingMode::None,
+        );
         let c = c_plus_is.add(&c_minus_is, p, RoundingMode::None).mul(
             &half_c(p),
             p,
             RoundingMode::None,
         );
-        let two_i = two_c(p).mul(&i, p, RoundingMode::None);
-        let s =
-            c_plus_is
-                .sub(&c_minus_is, p, RoundingMode::None)
-                .div(&two_i, p, RoundingMode::None);
         (s, c)
     }
 
@@ -359,7 +415,7 @@ mod tests {
     use crate::complex_special::two_c;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / 4))
     }
 
@@ -368,8 +424,8 @@ mod tests {
     }
 
     fn cnear_bits(a: &ExactComplex, b: &ExactComplex, p: usize, slack: i32) -> bool {
-        let dr = a.re().sub(b.re(), p, RoundingMode::None).abs();
-        let di = a.im().sub(b.im(), p, RoundingMode::None).abs();
+        let dr = ExactNum::sub_ref(a.re(), b.re(), p, RoundingMode::None).abs();
+        let di = ExactNum::sub_ref(a.im(), b.im(), p, RoundingMode::None).abs();
         (dr.is_zero() || dr.exponent().is_some_and(|e| e < -((p as i32) / slack)))
             && (di.is_zero() || di.exponent().is_some_and(|e| e < -((p as i32) / slack)))
     }
@@ -397,27 +453,41 @@ mod tests {
 
         let z = ExactComplex::new(ExactNum::from_u8(1, p), half_c(p).re().clone());
         let sz = z.si(p, rm, &mut cc);
-        assert!(cnear(&sz, &neg_c(&neg_c(&z).si(p, rm, &mut cc)), p));
+        assert!(cnear(&sz, &neg_c(z.neg_via_mul().si(p, rm, &mut cc)), p));
 
         let fs0 = z0.fresnel_s(p, rm, &mut cc);
         let fc0 = z0.fresnel_c(p, rm, &mut cc);
         assert!(tiny(fs0.re(), p) && tiny(fs0.im(), p));
         assert!(tiny(fc0.re(), p) && tiny(fc0.im(), p));
 
-        let h = ExactNum::from_u8(2, p).powsi(-((p as isize) / 8), p, rm);
-        let hc = ExactComplex::from_real(h, p);
-        let num_ei =
-            z.add(&hc, p, rm)
-                .ei(p, rm, &mut cc)
-                .sub(&z.sub(&hc, p, rm).ei(p, rm, &mut cc), p, rm);
+        let h = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
+        let hc = ExactComplex::from_real(h.clone(), p);
+        let num_ei = ExactComplex::from_real(h.clone(), p)
+            .add(&z, p, rm)
+            .ei(p, rm, &mut cc)
+            .sub(
+                &ExactComplex::from_real(h.clone(), p)
+                    .neg()
+                    .add(&z, p, rm)
+                    .ei(p, rm, &mut cc),
+                p,
+                rm,
+            );
         let deriv_ei = num_ei.div(&hc.mul(&two_c(p), p, rm), p, rm);
         let expect_ei = z.exp(p, rm, &mut cc).div(&z, p, rm);
         assert!(cnear_bits(&deriv_ei, &expect_ei, p, 8));
 
-        let num_si =
-            z.add(&hc, p, rm)
-                .si(p, rm, &mut cc)
-                .sub(&z.sub(&hc, p, rm).si(p, rm, &mut cc), p, rm);
+        let num_si = ExactComplex::from_real(h.clone(), p)
+            .add(&z, p, rm)
+            .si(p, rm, &mut cc)
+            .sub(
+                &ExactComplex::from_real(h, p)
+                    .neg()
+                    .add(&z, p, rm)
+                    .si(p, rm, &mut cc),
+                p,
+                rm,
+            );
         let deriv_si = num_si.div(&hc.mul(&two_c(p), p, rm), p, rm);
         let expect_si = z.sin(p, rm, &mut cc).div(&z, p, rm);
         assert!(cnear_bits(&deriv_si, &expect_si, p, 8));

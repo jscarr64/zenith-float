@@ -30,7 +30,6 @@ mod sign;
 mod sin;
 mod sin_cos;
 mod sinh;
-mod sinh_cosh;
 pub(crate) mod special;
 mod sqrt;
 mod tan;

@@ -37,7 +37,7 @@ fn is_c_zero(z: &ExactComplex) -> bool {
 }
 
 fn is_c_one(z: &ExactComplex, p: usize) -> bool {
-    z.im().is_zero() && z.re().cmp(&ExactNum::from_u8(1, p)) == Some(0)
+    z.im().is_zero() && z.re().compare(&ExactNum::from_u8(1, p)) == Some(0)
 }
 
 fn c_abs(z: &ExactComplex, p: usize) -> ExactNum {
@@ -45,7 +45,7 @@ fn c_abs(z: &ExactComplex, p: usize) -> ExactNum {
 }
 
 fn max_abs(a: &ExactNum, b: &ExactNum, _p: usize) -> ExactNum {
-    if matches!(a.cmp(b), Some(c) if c >= 0) {
+    if matches!(a.compare(b), Some(c) if c >= 0) {
         a.clone()
     } else {
         b.clone()
@@ -60,7 +60,7 @@ fn close_enough(dev: &ExactNum, an: &ExactComplex, p: usize) -> bool {
     let one = ExactNum::from_u8(1, p);
     let scale = max_abs(&c_abs(an, p), &one, p);
     let thresh = tiny_spread(p).mul(&scale, p, rm());
-    matches!(dev.cmp(&thresh), Some(c) if c < 0)
+    matches!(dev.compare(&thresh), Some(c) if c < 0)
 }
 
 fn max_dev3(
@@ -70,9 +70,9 @@ fn max_dev3(
     z: &ExactComplex,
     p: usize,
 ) -> ExactNum {
-    let dx = c_abs(&an.sub(x, p, rm()), p);
-    let dy = c_abs(&an.sub(y, p, rm()), p);
-    let dz = c_abs(&an.sub(z, p, rm()), p);
+    let dx = c_abs(&ExactComplex::sub_ref(an, x, p, rm()), p);
+    let dy = c_abs(&ExactComplex::sub_ref(an, y, p, rm()), p);
+    let dz = c_abs(&ExactComplex::sub_ref(an, z, p, rm()), p);
     max_abs(&max_abs(&dx, &dy, p), &dz, p)
 }
 
@@ -90,9 +90,9 @@ fn carlson_rc(x: &ExactComplex, y: &ExactComplex, p: usize, cc: &mut Consts) -> 
     }
     // Shortcut 1/√x only when |x − y| < 2^-(p+8)|x| (first-order error (y − x)/(3x)); the
     // spread-based `close_enough` test (2^-(p/3+16)) was too loose for R_J's RC terms.
-    let dxy = x.sub(y, p, rm());
+    let dxy = ExactComplex::sub_ref(x, y, p, rm());
     let rel = c_abs(x, p).ldexp(-((p as i32) + 8), p, rm());
-    if !is_c_zero(x) && matches!(c_abs(&dxy, p).cmp(&rel), Some(o) if o < 0) {
+    if !is_c_zero(x) && matches!(c_abs(&dxy, p).compare(&rel), Some(o) if o < 0) {
         return c_u32(1, p).div(&x.sqrt(p, rm(), cc), p, rm());
     }
     if is_c_zero(x) {
@@ -125,7 +125,9 @@ fn carlson_rf(
     let mut y = y0.clone();
     let mut z = z0.clone();
     for _ in 0..carlson_dupe_cap(p) {
-        let an = x.add(&y, p, rm()).add(&z, p, rm()).div(&three, p, rm());
+        let an = ExactComplex::add_ref(&x, &y, p, rm())
+            .add(&z, p, rm())
+            .div(&three, p, rm());
         if close_enough(&max_dev3(&an, &x, &y, &z, p), &an, p) {
             return rf_series(&an, &x, &y, &z, p, cc);
         }
@@ -151,9 +153,9 @@ fn rf_series(
     p: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
-    let xx = an.sub(x, p, rm()).div(an, p, rm());
-    let yy = an.sub(y, p, rm()).div(an, p, rm());
-    let zz = an.sub(z, p, rm()).div(an, p, rm());
+    let xx = ExactComplex::sub_ref(an, x, p, rm()).div(an, p, rm());
+    let yy = ExactComplex::sub_ref(an, y, p, rm()).div(an, p, rm());
+    let zz = ExactComplex::sub_ref(an, z, p, rm()).div(an, p, rm());
     let e2 = xx.mul(&yy, p, rm()).sub(&zz.mul(&zz, p, rm()), p, rm());
     let e3 = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
     let e2s = e2.mul(&e2, p, rm());
@@ -213,8 +215,7 @@ fn carlson_rd(
     let mut sum = ExactComplex::zero(p);
     let mut fac = c_u32(1, p);
     for _ in 0..carlson_dupe_cap(p) {
-        let an = x
-            .add(&y, p, rm())
+        let an = ExactComplex::add_ref(&x, &y, p, rm())
             .add(&three.mul(&z, p, rm()), p, rm())
             .div(&five, p, rm());
         if close_enough(&max_dev3(&an, &x, &y, &z, p), &an, p) {
@@ -230,15 +231,12 @@ fn carlson_rd(
             .mul(&sy, p, rm())
             .add(&sy.mul(&sz, p, rm()), p, rm())
             .add(&sz.mul(&sx, p, rm()), p, rm());
-        sum = sum.add(
-            &fac.div(&sz.mul(&z.add(&lam, p, rm()), p, rm()), p, rm()),
-            p,
-            rm(),
-        );
+        let zl = z.add(&lam, p, rm());
+        sum = sum.add(&fac.div(&sz.mul(&zl, p, rm()), p, rm()), p, rm());
         fac = fac.div(&four, p, rm());
         x = x.add(&lam, p, rm()).div(&four, p, rm());
         y = y.add(&lam, p, rm()).div(&four, p, rm());
-        z = z.add(&lam, p, rm()).div(&four, p, rm());
+        z = zl.div(&four, p, rm());
     }
     nan_pair(Error::InvalidArgument)
 }
@@ -251,9 +249,9 @@ fn rd_series(
     p: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
-    let xx = an.sub(x, p, rm()).div(an, p, rm());
-    let yy = an.sub(y, p, rm()).div(an, p, rm());
-    let zz = an.sub(z, p, rm()).div(an, p, rm());
+    let xx = ExactComplex::sub_ref(an, x, p, rm()).div(an, p, rm());
+    let yy = ExactComplex::sub_ref(an, y, p, rm()).div(an, p, rm());
+    let zz = ExactComplex::sub_ref(an, z, p, rm()).div(an, p, rm());
     let e2 = xx.mul(&yy, p, rm()).sub(&zz.mul(&zz, p, rm()), p, rm());
     let e3 = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
     let e2s = e2.mul(&e2, p, rm());
@@ -321,13 +319,12 @@ fn carlson_rj(
     let mut sum = ExactComplex::zero(p);
     let mut fac = c_u32(1, p);
     for _ in 0..carlson_dupe_cap(p) {
-        let an = x
-            .add(&y, p, rm())
+        let an = ExactComplex::add_ref(&x, &y, p, rm())
             .add(&z, p, rm())
             .add(&two.mul(&pv, p, rm()), p, rm())
             .div(&five, p, rm());
         let d4 = max_dev3(&an, &x, &y, &z, p);
-        let dp = c_abs(&an.sub(&pv, p, rm()), p);
+        let dp = c_abs(&ExactComplex::sub_ref(&an, &pv, p, rm()), p);
         let dmax = max_abs(&d4, &dp, p);
         if close_enough(&dmax, &an, p) {
             let series = rj_series(&an, &x, &y, &z, &pv, p, cc);
@@ -343,10 +340,14 @@ fn carlson_rj(
             .add(&sy.mul(&sz, p, rm()), p, rm())
             .add(&sz.mul(&sx, p, rm()), p, rm());
         let alpha = pv
-            .mul(&sx.add(&sy, p, rm()).add(&sz, p, rm()), p, rm())
+            .mul(
+                &ExactComplex::add_ref(&sx, &sy, p, rm()).add(&sz, p, rm()),
+                p,
+                rm(),
+            )
             .add(&sx.mul(&sy, p, rm()).mul(&sz, p, rm()), p, rm());
         let alpha = alpha.mul(&alpha, p, rm());
-        let pl = pv.add(&lam, p, rm());
+        let pl = ExactComplex::add_ref(&pv, &lam, p, rm());
         let beta = pv.mul(&pl, p, rm()).mul(&pl, p, rm());
         sum = sum.add(
             &fac.mul(&carlson_rc(&alpha, &beta, p, cc), p, rm()),
@@ -357,7 +358,7 @@ fn carlson_rj(
         x = x.add(&lam, p, rm()).div(&four, p, rm());
         y = y.add(&lam, p, rm()).div(&four, p, rm());
         z = z.add(&lam, p, rm()).div(&four, p, rm());
-        pv = pv.add(&lam, p, rm()).div(&four, p, rm());
+        pv = pl.div(&four, p, rm());
     }
     nan_pair(Error::InvalidArgument)
 }
@@ -371,10 +372,10 @@ fn rj_series(
     p: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
-    let xx = an.sub(x, p, rm()).div(an, p, rm());
-    let yy = an.sub(y, p, rm()).div(an, p, rm());
-    let zz = an.sub(z, p, rm()).div(an, p, rm());
-    let pp = an.sub(pv, p, rm()).div(an, p, rm());
+    let xx = ExactComplex::sub_ref(an, x, p, rm()).div(an, p, rm());
+    let yy = ExactComplex::sub_ref(an, y, p, rm()).div(an, p, rm());
+    let zz = ExactComplex::sub_ref(an, z, p, rm()).div(an, p, rm());
+    let pp = ExactComplex::sub_ref(an, pv, p, rm()).div(an, p, rm());
     let xyz = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
     let xy_xz_yz = xx
         .mul(&yy, p, rm())
@@ -384,7 +385,7 @@ fn rj_series(
     let p3 = p2.mul(&pp, p, rm());
     let two = c_u32(2, p);
     let three = c_u32(3, p);
-    let e2 = xy_xz_yz.sub(&three.mul(&p2, p, rm()), p, rm());
+    let e2 = three.mul(&p2, p, rm()).neg().add(&xy_xz_yz, p, rm());
     let e3 = xyz
         .add(&two.mul(&p3, p, rm()), p, rm())
         .sub(&pp.mul(&xy_xz_yz, p, rm()), p, rm());
@@ -430,7 +431,16 @@ impl ExactComplex {
     /// - Algorithm: Carlson `R_F` in ℂ; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
     /// - Bound: identities evaluated outside Ziv (nested Ziv would exhaust `MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_k(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.elliptic_k_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::elliptic_k`] on operands without inexact history.
+    fn elliptic_k_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -448,7 +458,7 @@ impl ExactComplex {
     fn elliptic_k_at(&self, p: usize, cc: &mut Consts) -> Self {
         let zero = ExactComplex::zero(p);
         let one = ExactComplex::one(p);
-        let om = one.sub(self, p, rm());
+        let om = ExactComplex::one(p).sub(self, p, rm());
         carlson_rf(&zero, &om, &one, p, cc)
     }
 
@@ -459,7 +469,16 @@ impl ExactComplex {
     /// - Algorithm: Carlson `R_F` / `R_D`; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
     /// - Bound: same as [`Self::elliptic_k`].
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_e_complete(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let inputs = self.inexact_accumulated();
+        Self::per_op(inputs, this.elliptic_e_complete_word(p, rm, cc))
+    }
+
+    /// Implementation of [`Self::elliptic_e_complete`] on operands without inexact history.
+    fn elliptic_e_complete_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
@@ -478,13 +497,14 @@ impl ExactComplex {
         let zero = ExactComplex::zero(p);
         let one = ExactComplex::one(p);
         let three = c_u32(3, p);
-        let om = one.sub(self, p, rm());
+        let om = ExactComplex::one(p).sub(self, p, rm());
         let rf = carlson_rf(&zero, &om, &one, p, cc);
         let rd = carlson_rd(&zero, &om, &one, p, cc);
         rf.sub(&self.div(&three, p, rm()).mul(&rd, p, rm()), p, rm())
     }
 
-    /// Incomplete \(F(x|m)\), \(x=\sin\varphi\), \(m=k^2\).
+    /// Incomplete \(F(x|m)\). `self` is \(x=\sin\varphi\), not the amplitude
+    /// \(\varphi\). \(m=k^2\), not the modulus \(k\).
     ///
     /// # Precision
     ///
@@ -493,7 +513,17 @@ impl ExactComplex {
     ///
     /// Carlson \(R_F(1-x^2,1-mx^2,1)\). Cuts when \(1-x^2\) or \(1-mx^2\) lies on
     /// \((-\infty,0]\) (principal square-root cut). \(F(x,0)=\arcsin x\).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_f(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let m_c = m.exact_copy();
+        let inputs = self.inexact_accumulated() || m.inexact_accumulated();
+        Self::per_op(inputs, this.elliptic_f_word(&m_c, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::elliptic_f`] on operands without inexact history.
+    fn elliptic_f_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || m.is_nan() {
             return nan_pair(Error::InvalidArgument);
         }
@@ -513,13 +543,14 @@ impl ExactComplex {
     fn elliptic_f_at(&self, m: &Self, p: usize, cc: &mut Consts) -> Self {
         let one = ExactComplex::one(p);
         let x2 = self.mul(self, p, rm());
-        let a = one.sub(&x2, p, rm());
-        let b = one.sub(&m.mul(&x2, p, rm()), p, rm());
+        let a = ExactComplex::one(p).sub(&x2, p, rm());
+        let b = ExactComplex::one(p).sub(&m.mul(&x2, p, rm()), p, rm());
         let rf = carlson_rf(&a, &b, &one, p, cc);
         self.mul(&rf, p, rm())
     }
 
-    /// Incomplete \(E(x|m)\). Same \(x,m\) convention as [`Self::elliptic_f`].
+    /// Incomplete \(E(x|m)\). Same convention as [`Self::elliptic_f`]:
+    /// `self` is \(x=\sin\varphi\), not \(\varphi\), and \(m=k^2\), not \(k\).
     ///
     /// # Precision
     ///
@@ -527,7 +558,17 @@ impl ExactComplex {
     /// - MPFR oracle: no.
     ///
     /// Cuts as for \(F\). \(E(x,0)=\arcsin x\); \(E(x,1)=x\).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_e(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let this = self.exact_copy();
+        let m_c = m.exact_copy();
+        let inputs = self.inexact_accumulated() || m.inexact_accumulated();
+        Self::per_op(inputs, this.elliptic_e_word(&m_c, p, rm, cc))
+    }
+
+    /// Implementation of [`Self::elliptic_e`] on operands without inexact history.
+    fn elliptic_e_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || m.is_nan() {
             return nan_pair(Error::InvalidArgument);
         }
@@ -548,8 +589,8 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let three = c_u32(3, p);
         let x2 = self.mul(self, p, rm());
-        let a = one.sub(&x2, p, rm());
-        let b = one.sub(&m.mul(&x2, p, rm()), p, rm());
+        let a = ExactComplex::one(p).sub(&x2, p, rm());
+        let b = ExactComplex::one(p).sub(&m.mul(&x2, p, rm()), p, rm());
         let rf = carlson_rf(&a, &b, &one, p, cc);
         let rd = carlson_rd(&a, &b, &one, p, cc);
         self.mul(&rf, p, rm()).sub(
@@ -568,6 +609,8 @@ impl ExactComplex {
     ///
     /// - Algorithm: Carlson `R_J`; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
     /// - MPFR oracle: no.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_pi_complete(
         &self,
         m: &Self,
@@ -592,14 +635,15 @@ impl ExactComplex {
         let zero = ExactComplex::zero(p);
         let one = ExactComplex::one(p);
         let three = c_u32(3, p);
-        let om = one.sub(m, p, rm());
-        let on = one.sub(self, p, rm());
+        let om = ExactComplex::one(p).sub(m, p, rm());
+        let on = ExactComplex::one(p).sub(self, p, rm());
         let rf = carlson_rf(&zero, &om, &one, p, cc);
         let rj = carlson_rj(&zero, &om, &one, &on, p, cc);
         rf.add(&self.div(&three, p, rm()).mul(&rj, p, rm()), p, rm())
     }
 
-    /// Incomplete \(\Pi(n;x|m)\). `self` is \(n\).
+    /// Incomplete \(\Pi(n;x|m)\). `self` is the characteristic \(n\).
+    /// `x` is \(\sin\varphi\), not the amplitude \(\varphi\). \(m=k^2\), not \(k\).
     ///
     /// # Precision
     ///
@@ -608,6 +652,8 @@ impl ExactComplex {
     ///
     /// Cuts when \(1-x^2\), \(1-mx^2\), or \(1-nx^2\) meets the Carlson cut
     /// \((-\infty,0]\). \(\Pi(0;x|m)=F(x|m)\).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn elliptic_pi(
         &self,
         x: &Self,
@@ -633,9 +679,9 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let three = c_u32(3, p);
         let x2 = x.mul(x, p, rm());
-        let a = one.sub(&x2, p, rm());
-        let b = one.sub(&m.mul(&x2, p, rm()), p, rm());
-        let pv = one.sub(&self.mul(&x2, p, rm()), p, rm());
+        let a = ExactComplex::one(p).sub(&x2, p, rm());
+        let b = ExactComplex::one(p).sub(&m.mul(&x2, p, rm()), p, rm());
+        let pv = ExactComplex::one(p).sub(&self.mul(&x2, p, rm()), p, rm());
         let rf = carlson_rf(&a, &b, &one, p, cc);
         let rj = carlson_rj(&a, &b, &one, &pv, p, cc);
         x.mul(&rf, p, rm()).add(
@@ -653,9 +699,10 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::ops::Neg;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize, slack: i32) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - slack)
     }
 
@@ -732,13 +779,16 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let eps = ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
         let above = ExactComplex::new(two.clone(), eps.clone());
-        let below = ExactComplex::new(two, eps.neg());
+        let below = ExactComplex::new(two, eps.neg_via_mul());
         let ka = above.elliptic_k(p, r, &mut cc);
         let kb = below.elliptic_k(p, r, &mut cc);
         assert!(near(ka.re(), kb.re(), p, 20), "K cut Re");
         assert!(ka.im().is_positive() != kb.im().is_positive() || !tiny(ka.im(), p));
-        assert!(near(&ka.im().abs(), &kb.im().abs(), p, 20), "K cut |Im|");
-        assert_ne!(ka.im().cmp(kb.im()), Some(0));
+        assert!(
+            near(&ka.im().clone().abs(), &kb.im().clone().abs(), p, 20),
+            "K cut |Im|"
+        );
+        assert_ne!(ka.im().compare(kb.im()), Some(0));
 
         // Incomplete F cut: x=3/2, m=1/2, ±ε imag on x.
         let three_half = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(2, p), p, r);
@@ -747,6 +797,6 @@ mod tests {
         let fa = xa.elliptic_f(&mh, p, r, &mut cc);
         let fb = xb.elliptic_f(&mh, p, r, &mut cc);
         assert!(!fa.is_nan() && !fb.is_nan(), "F cut defined");
-        assert_ne!(fa.im().cmp(fb.im()), Some(0), "F cut Im differs");
+        assert_ne!(fa.im().compare(fb.im()), Some(0), "F cut Im differs");
     }
 }

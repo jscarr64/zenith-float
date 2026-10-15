@@ -4,6 +4,7 @@ use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
 use crate::ExactNum;
 use crate::RoundingMode;
+use core::ops::Neg;
 
 /// Maximum iterations for every method in this module.
 pub const ROOT_MAX_ITER: usize = 256;
@@ -27,7 +28,7 @@ fn opposite_signs(a: &ExactNum, b: &ExactNum) -> bool {
 }
 
 fn below_tol(x: &ExactNum, tol: &ExactNum) -> bool {
-    x.is_zero() || x.cmp(tol) == Some(-1) || x.cmp(tol) == Some(0)
+    x.is_zero() || x.compare(tol) == Some(-1) || x.compare(tol) == Some(0)
 }
 
 /// Suggested absolute tolerance `2^{ROOT_DEFAULT_TOL}` at precision `p`.
@@ -47,7 +48,7 @@ fn bisect_counted<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !finite(&a) || !finite(&b) || !finite(tol) || a.cmp(&b) != Some(-1) {
+    if !finite(&a) || !finite(&b) || !finite(tol) || a.compare(&b) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
@@ -58,9 +59,8 @@ where
     }
     let two = ExactNum::from_u8(2, wrk);
     for k in 1..=ROOT_MAX_ITER {
-        let mid = a
-            .add(&b, wrk, RoundingMode::None)
-            .div(&two, wrk, RoundingMode::None);
+        let mid =
+            ExactNum::add_ref(&a, &b, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
         if !strictly_inside(&mid, &a, &b) {
             // The bracket is two adjacent working-precision values: `tol` is below resolution.
             let mut out = mid;
@@ -78,7 +78,12 @@ where
             a = mid.clone();
             fa = fm.clone();
         }
-        if fm.is_zero() || below_tol(&b.sub(&a, wrk, RoundingMode::None).abs(), tol) {
+        if fm.is_zero()
+            || below_tol(
+                &ExactNum::sub_ref(&b, &a, wrk, RoundingMode::None).abs(),
+                tol,
+            )
+        {
             let mut out = mid;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
@@ -172,7 +177,7 @@ fn illinois_counted<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !finite(&a) || !finite(&b) || !finite(tol) || a.cmp(&b) != Some(-1) {
+    if !finite(&a) || !finite(&b) || !finite(tol) || a.compare(&b) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
@@ -183,7 +188,7 @@ where
         return None;
     }
     for k in 1..=ROOT_MAX_ITER {
-        let den = fb.sub(&fa, wrk, RoundingMode::None);
+        let den = ExactNum::sub_ref(&fb, &fa, wrk, RoundingMode::None);
         if den.is_zero() {
             return None;
         }
@@ -205,7 +210,12 @@ where
         if !finite(&c) || !finite(&fc) {
             return None;
         }
-        if fc.is_zero() || below_tol(&b.sub(&a, wrk, RoundingMode::None).abs(), tol) {
+        if fc.is_zero()
+            || below_tol(
+                &ExactNum::sub_ref(&b, &a, wrk, RoundingMode::None).abs(),
+                tol,
+            )
+        {
             let mut out = c;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
@@ -240,11 +250,16 @@ where
 }
 
 fn strictly_inside(x: &ExactNum, lo: &ExactNum, hi: &ExactNum) -> bool {
-    x.cmp(lo) == Some(1) && x.cmp(hi) == Some(-1)
+    x.compare(lo) == Some(1) && x.compare(hi) == Some(-1)
 }
 
 fn lt(x: &ExactNum, y: &ExactNum) -> bool {
-    matches!(x.cmp(y), Some(c) if c < 0)
+    matches!(x.compare(y), Some(c) if c < 0)
+}
+
+/// `lt(|x|, |y|)` without forming either magnitude.
+fn abs_lt(x: &ExactNum, y: &ExactNum) -> bool {
+    matches!(x.abs_cmp(y), Some(c) if c < 0)
 }
 
 fn same_sign(x: &ExactNum, y: &ExactNum) -> bool {
@@ -268,7 +283,7 @@ fn brent_counted<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !finite(&a) || !finite(&b) || !finite(tol) || a.cmp(&b) != Some(-1) {
+    if !finite(&a) || !finite(&b) || !finite(tol) || a.compare(&b) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
@@ -276,8 +291,12 @@ where
     let one = ExactNum::from_u8(1, wrk);
     let two = ExactNum::from_u8(2, wrk);
     let three = ExactNum::from_u8(3, wrk);
-    let half_tol = tol.abs().div(&two, wrk, none);
-    let eps2 = one.ldexp(1 - wrk as i32, wrk, none);
+    let half_tol = if tol.is_negative() {
+        tol.neg_via_mul().div(&two, wrk, none)
+    } else {
+        tol.div(&two, wrk, none)
+    };
+    let eps2 = ExactNum::from_u8(1, wrk).ldexp(1 - wrk as i32, wrk, none);
     let mut fa = f(&a, wrk, none, cc);
     let mut fb = f(&b, wrk, none, cc);
     if !opposite_signs(&fa, &fb) {
@@ -285,16 +304,16 @@ where
     }
     let mut c = a.clone();
     let mut fc = fa.clone();
-    let mut d = b.sub(&a, wrk, none);
+    let mut d = ExactNum::sub_ref(&b, &a, wrk, none);
     let mut e = d.clone();
     for k in 1..=ROOT_MAX_ITER {
         if same_sign(&fb, &fc) {
             c = a.clone();
             fc = fa.clone();
-            d = b.sub(&a, wrk, none);
+            d = ExactNum::sub_ref(&b, &a, wrk, none);
             e = d.clone();
         }
-        if lt(&fc.abs(), &fb.abs()) {
+        if abs_lt(&fc, &fb) {
             a = b;
             b = c;
             c = a.clone();
@@ -302,34 +321,47 @@ where
             fb = fc;
             fc = fa.clone();
         }
-        let tol1 = eps2.mul(&b.abs(), wrk, none).add(&half_tol, wrk, none);
-        let m = c.sub(&b, wrk, none).div(&two, wrk, none);
-        if fb.is_zero() || !lt(&tol1, &m.abs()) {
+        let tol1 = if b.is_negative() {
+            eps2.mul(&b.neg_via_mul(), wrk, none)
+        } else {
+            eps2.mul(&b, wrk, none)
+        }
+        .add(&half_tol, wrk, none);
+        let m = ExactNum::sub_ref(&c, &b, wrk, none).div(&two, wrk, none);
+        if fb.is_zero() || !abs_lt(&tol1, &m) {
             let mut out = b;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
         }
-        if !lt(&e.abs(), &tol1) && lt(&fb.abs(), &fa.abs()) {
+        if !abs_lt(&e, &tol1) && abs_lt(&fb, &fa) {
             // Secant (a == c) or inverse quadratic interpolation, as the correction p/q.
             let s = fb.div(&fa, wrk, none);
             let two_m = two.mul(&m, wrk, none);
-            let (mut pn, mut q) = if a.cmp(&c) == Some(0) {
-                (two_m.mul(&s, wrk, none), one.sub(&s, wrk, none))
+            let (mut pn, mut q) = if a.compare(&c) == Some(0) {
+                (two_m.mul(&s, wrk, none), s.neg().add(&one, wrk, none))
             } else {
                 let qa = fa.div(&fc, wrk, none);
                 let r = fb.div(&fc, wrk, none);
                 let inner = two_m
                     .mul(&qa, wrk, none)
-                    .mul(&qa.sub(&r, wrk, none), wrk, none)
+                    .mul(&ExactNum::sub_ref(&qa, &r, wrk, none), wrk, none)
                     .sub(
-                        &b.sub(&a, wrk, none).mul(&r.sub(&one, wrk, none), wrk, none),
+                        &a.neg().add(&b, wrk, none).mul(
+                            &ExactNum::from_u8(1, wrk).neg().add(&r, wrk, none),
+                            wrk,
+                            none,
+                        ),
                         wrk,
                         none,
                     );
                 let den = qa
                     .sub(&one, wrk, none)
                     .mul(&r.sub(&one, wrk, none), wrk, none)
-                    .mul(&s.sub(&one, wrk, none), wrk, none);
+                    .mul(
+                        &ExactNum::from_u8(1, wrk).neg().add(&s, wrk, none),
+                        wrk,
+                        none,
+                    );
                 (s.mul(&inner, wrk, none), den)
             };
             if pn.is_positive() {
@@ -357,7 +389,7 @@ where
         }
         a = b.clone();
         fa = fb.clone();
-        b = if lt(&tol1, &d.abs()) {
+        b = if abs_lt(&tol1, &d) {
             b.add(&d, wrk, none)
         } else if m.is_positive() {
             b.add(&tol1, wrk, none)
@@ -419,7 +451,7 @@ mod tests {
             &mut cc,
         )
         .expect("bisect sin");
-        assert_eq!(broot.cmp(&pi), Some(0));
+        assert_eq!(broot.compare(&pi), Some(0));
 
         let nroot = newton(
             |x, p, rm, _cc| x.mul(x, p, rm).sub(&two, p, rm),
@@ -433,7 +465,7 @@ mod tests {
         )
         .expect("newton sqrt2");
         let s2 = two.sqrt(p, rm);
-        assert_eq!(nroot.cmp(&s2), Some(0));
+        assert_eq!(nroot.compare(&s2), Some(0));
 
         let (rbrent, briters) = brent_counted(
             |x, p, rm, cc| x.sin(p, rm, cc),
@@ -445,7 +477,7 @@ mod tests {
             &mut cc,
         )
         .expect("brent sin");
-        assert_eq!(rbrent.cmp(&pi), Some(0));
+        assert_eq!(rbrent.compare(&pi), Some(0));
         assert!(briters < biters);
 
         let iroot = illinois(
@@ -458,7 +490,7 @@ mod tests {
             &mut cc,
         )
         .expect("illinois sin");
-        assert_eq!(iroot.cmp(&pi), Some(0));
+        assert_eq!(iroot.compare(&pi), Some(0));
 
         assert!(bisect(
             |x, p, rm, cc| x.sin(p, rm, cc),

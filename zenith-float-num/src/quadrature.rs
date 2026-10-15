@@ -2,12 +2,14 @@
 //!
 //! [`kronrod_pair`], [`gauss_kronrod_interval`], [`integrate_adaptive_gk`],
 //! and [`wynn_epsilon`] are the (7, 15) rule: Laurie’s Jacobi–Kronrod
-//! recurrence, a `|K−G|` estimate, and Wynn’s ε table. The adaptive idea
+//! recurrence, a conservative error estimate of the Kronrod value, validated
+//! against oracles, and Wynn’s ε table. The adaptive idea
 //! follows Piessens, de Doncker-Kapenga, Überhuber, and Kahaner, *QUADPACK*
 //! (Springer, 1983). The Fortran is not transcribed.
 
 pub use crate::gauss_kronrod::gauss_kronrod_interval;
 pub use crate::gauss_kronrod::integrate_adaptive_gk;
+pub use crate::gauss_kronrod::integrate_adaptive_gk_infinite;
 pub use crate::gauss_kronrod::kronrod_pair;
 pub use crate::gauss_kronrod::wynn_epsilon;
 pub use crate::gauss_kronrod::GkResult;
@@ -21,6 +23,7 @@ use crate::Consts;
 use crate::ExactNum;
 use crate::RoundingMode;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// Maximum number of Gauss nodes. Larger `n` is `None`.
 pub const QUADRATURE_MAX_NODES: usize = 64;
@@ -40,14 +43,21 @@ const QUADRATURE_BISECT_STEPS: usize = 16;
 /// Hard cap on tanh–sinh sample index `|k|`.
 const TANH_SINH_K_MAX: usize = 512;
 
+/// Destination width, rounded up to a word, plus two guard words.
+///
+/// The same guard as the (7, 15) rule. One extra word rounds Gauss nodes in
+/// the same place the weighted sum is formed.
 fn work_p(p: usize) -> usize {
-    p.saturating_add(WORD_BIT_SIZE)
+    let stored = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
+    stored.saturating_add(WORD_BIT_SIZE.saturating_mul(2))
 }
 
 /// Extra word so `1-x²` stays nonzero at tanh–sinh nodes until the Jacobian
-/// is smaller than a unit in the last place of a `p`-bit result.
+/// is smaller than a unit in the last place of a `p`-bit result. Never
+/// narrower than [`work_p`].
 fn work_p_de(p: usize) -> usize {
-    p.saturating_mul(2).saturating_add(WORD_BIT_SIZE)
+    let doubled = p.saturating_mul(2).saturating_add(WORD_BIT_SIZE);
+    work_p(p).max(doubled)
 }
 
 fn finite(x: &ExactNum) -> bool {
@@ -59,8 +69,13 @@ fn tiny(p: usize, extra: i32) -> ExactNum {
     ExactNum::from_u8(1, p).ldexp(e, p, RoundingMode::ToEven)
 }
 
-fn below(x: &ExactNum, bound: &ExactNum) -> bool {
-    x.is_zero() || x.cmp(bound) == Some(-1)
+fn below(x: &ExactNum, limit: &ExactNum) -> bool {
+    x.is_zero() || x.compare(limit) == Some(-1)
+}
+
+/// `below(|x|, limit)` without forming `|x|`.
+fn below_abs(x: &ExactNum, limit: &ExactNum) -> bool {
+    x.is_zero() || matches!(x.abs_cmp(limit), Some(-1))
 }
 
 fn factorial(n: usize, p: usize, rm: RoundingMode) -> ExactNum {
@@ -131,7 +146,7 @@ where
     }
     let two = ExactNum::from_u8(2, p);
     for _ in 0..QUADRATURE_BISECT_STEPS {
-        let m = a.add(&b, p, rm).div(&two, p, rm);
+        let m = ExactNum::add_ref(&a, &b, p, rm).div(&two, p, rm);
         let fm = f(&m, p, rm, cc);
         if !finite(&fm) {
             return None;
@@ -166,9 +181,7 @@ where
     let n_grid = want
         .saturating_mul(QUADRATURE_BRACKET_MUL)
         .saturating_add(4);
-    let step = hi
-        .sub(lo, p, rm)
-        .div(&ExactNum::from_u32(n_grid as u32, p), p, rm);
+    let step = ExactNum::sub_ref(hi, lo, p, rm).div(&ExactNum::from_u32(n_grid as u32, p), p, rm);
     let mut prev_x = lo.clone();
     let mut prev_f = f(lo, p, rm, cc);
     if !finite(&prev_f) {
@@ -179,7 +192,8 @@ where
         let x = if i == n_grid {
             hi.clone()
         } else {
-            lo.add(&step.mul(&ExactNum::from_u32(i as u32, p), p, rm), p, rm)
+            step.mul(&ExactNum::from_u32(i as u32, p), p, rm)
+                .add(lo, p, rm)
         };
         let y = f(&x, p, rm, cc);
         if !finite(&y) {
@@ -205,8 +219,8 @@ where
 
 fn map_ab(xi: &ExactNum, a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
     let two = ExactNum::from_u8(2, p);
-    let mid = a.add(b, p, rm).div(&two, p, rm);
-    let half = b.sub(a, p, rm).div(&two, p, rm);
+    let mid = ExactNum::add_ref(a, b, p, rm).div(&two, p, rm);
+    let half = ExactNum::sub_ref(b, a, p, rm).div(&two, p, rm);
     mid.add(&half.mul(xi, p, rm), p, rm)
 }
 
@@ -238,7 +252,7 @@ fn gauss_legendre_nodes(
             |x, p, rm, _cc| {
                 let pn = x.legendre_p(nu, p, rm);
                 let pnm = if nu == 0 { ExactNum::new(p) } else { x.legendre_p(nu - 1, p, rm) };
-                let d = one.sub(&x.mul(x, p, rm), p, rm);
+                let d = x.mul(x, p, rm).neg().add(&one, p, rm);
                 n_f.mul(&pnm.sub(&x.mul(&pn, p, rm), p, rm), p, rm)
                     .div(&d, p, rm)
             },
@@ -253,7 +267,10 @@ fn gauss_legendre_nodes(
         } else {
             x.legendre_p(nu - 1, wrk, RoundingMode::None)
         };
-        let d = one.sub(&x.mul(&x, wrk, RoundingMode::None), wrk, RoundingMode::None);
+        let d = x
+            .mul(&x, wrk, RoundingMode::None)
+            .neg()
+            .add(&one, wrk, RoundingMode::None);
         let dp = n_f
             .mul(
                 &pnm.sub(
@@ -300,15 +317,13 @@ pub fn gauss_legendre<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !finite(a) || !finite(b) || a.cmp(b) != Some(-1) {
+    if !finite(a) || !finite(b) || a.compare(b) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
     let nodes = gauss_legendre_nodes(n, wrk, RoundingMode::None, cc)?;
     let two = ExactNum::from_u8(2, wrk);
-    let half = b
-        .sub(a, wrk, RoundingMode::None)
-        .div(&two, wrk, RoundingMode::None);
+    let half = ExactNum::sub_ref(b, a, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
     let mut acc = ExactNum::new(wrk);
     for (xi, wi) in &nodes {
         let x = map_ab(xi, a, b, wrk, RoundingMode::None);
@@ -341,12 +356,8 @@ where
 {
     let wrk = work_p_de(p);
     let two = ExactNum::from_u8(2, wrk);
-    let half = b
-        .sub(a, wrk, RoundingMode::None)
-        .div(&two, wrk, RoundingMode::None);
-    let mid = a
-        .add(b, wrk, RoundingMode::None)
-        .div(&two, wrk, RoundingMode::None);
+    let half = ExactNum::sub_ref(b, a, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
+    let mid = ExactNum::add_ref(a, b, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
     let pi = cc.pi(wrk, RoundingMode::None);
     let half_pi = pi.div(&two, wrk, RoundingMode::None);
     let wmin = tiny(wrk, 8);
@@ -368,15 +379,13 @@ where
         if !finite(&w) {
             break;
         }
-        if k > 0 && below(&w.abs(), &wmin) {
+        if k > 0 && below_abs(&w, &wmin) {
             break;
         }
         let mut eval = |s: &ExactNum| {
-            let x = mid.add(
-                &half.mul(s, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            );
+            let x = half
+                .mul(s, wrk, RoundingMode::None)
+                .add(&mid, wrk, RoundingMode::None);
             f(&x, wrk, RoundingMode::None, cc)
         };
         let y0 = eval(&xi);
@@ -425,7 +434,7 @@ pub fn tanh_sinh<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !finite(a) || !finite(b) || a.cmp(b) != Some(-1) {
+    if !finite(a) || !finite(b) || a.compare(b) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
@@ -449,7 +458,7 @@ where
         }
         let s = tanh_sinh_sum(&mut f, a, b, &h, p, rm, cc)?;
         if let Some(pr) = &prev {
-            let err = s.sub(pr, p, rm).abs();
+            let err = ExactNum::sub_ref(&s, pr, p, rm).abs();
             if below(&err, &guard) {
                 return Some(s);
             }
@@ -706,7 +715,7 @@ mod tests {
         let gl = gauss_legendre(|x, p, rm, _cc| x.mul(x, p, rm), &a, &b, 10, p, rm, &mut cc)
             .expect("gl x^2");
         let two_thirds = two.div(&three, p, rm);
-        assert_eq!(gl.cmp(&two_thirds), Some(0));
+        assert_eq!(gl.compare(&two_thirds), Some(0));
 
         const GL_EXACT_DEG: u32 = 38;
         const GL_EXACT_NODES: usize = 20;
@@ -728,7 +737,7 @@ mod tests {
         .expect("gl x^38");
         let thirty_nine = ExactNum::from_u32(GL_EXACT_DEG + 1, p);
         let two_over = two.div(&thirty_nine, p, rm);
-        assert_eq!(gl38.cmp(&two_over), Some(0));
+        assert_eq!(gl38.compare(&two_over), Some(0));
 
         let ts = tanh_sinh(
             |x, p, rm, _cc| {
@@ -745,16 +754,16 @@ mod tests {
         )
         .expect("tanh-sinh arcsine");
         let pi = cc.pi(p, rm);
-        assert_eq!(ts.cmp(&pi), Some(0));
+        assert_eq!(ts.compare(&pi), Some(0));
 
         let lag = gauss_laguerre(|x, p, rm, _cc| x.mul(x, p, rm), 10, p, rm, &mut cc)
             .expect("laguerre x^2");
-        assert_eq!(lag.cmp(&two), Some(0));
+        assert_eq!(lag.compare(&two), Some(0));
 
         let gh = gauss_hermite(|_x, p, _rm, _cc| ExactNum::from_u8(1, p), 1, p, rm, &mut cc)
             .expect("hermite 1");
         let sqrt_pi = pi.sqrt(p, rm);
-        assert_eq!(gh.cmp(&sqrt_pi), Some(0));
+        assert_eq!(gh.compare(&sqrt_pi), Some(0));
 
         assert!(gauss_legendre(|x, _p, _rm, _cc| x.clone(), &b, &a, 4, p, rm, &mut cc).is_none());
         assert!(gauss_legendre(|x, _p, _rm, _cc| x.clone(), &a, &b, 0, p, rm, &mut cc).is_none());

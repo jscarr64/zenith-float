@@ -122,10 +122,10 @@ mod tests {
         assert!(neg_zero.is_zero() && neg_zero.is_negative());
         assert!(pos_zero.is_zero() && pos_zero.is_positive());
 
-        let x = ExactNumNumber::parse("1.8p+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc)
+        let x = ExactNumNumber::parse("1.8", crate::Radix::Hex, p, RoundingMode::None, &mut cc)
             .unwrap();
-        let y = ExactNumNumber::parse("-1p+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc)
-            .unwrap();
+        let y =
+            ExactNumNumber::parse("-1", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
         let r = x.copysign(&y, p, rm).unwrap();
         assert!(r.is_negative());
     }

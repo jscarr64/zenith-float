@@ -3,21 +3,24 @@
 //! zenith-float implements arbitrary-precision software floating-point numbers.
 
 #![cfg_attr(not(feature = "std"), no_std)]
+#![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(unused)]
 #![deny(clippy::suspicious)]
 #![deny(clippy::float_arithmetic)]
-#![allow(clippy::manual_div_ceil)]
-#![allow(clippy::manual_is_multiple_of)]
-#![allow(clippy::neg_cmp_op_on_partial_ord)]
-#![allow(clippy::len_zero)]
-#![allow(clippy::slow_vector_initialization)]
-#![allow(clippy::comparison_chain)]
-#![allow(clippy::collapsible_else_if)]
-#![allow(clippy::collapsible_if)]
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::unreachable,
+        clippy::panic
+    )
+)]
 
 extern crate alloc;
 
+mod accuracy;
 mod ball;
 mod binfmt;
 mod catalog;
@@ -64,6 +67,9 @@ mod for_3rd;
 #[doc(hidden)]
 pub mod macro_util;
 
+pub use crate::accuracy::accuracy_of;
+pub use crate::accuracy::Accuracy;
+pub use crate::accuracy::ACCURACY;
 pub use crate::ball::ziv_round;
 pub use crate::ball::ziv_round_vec;
 pub use crate::ball::Ball;
@@ -92,6 +98,7 @@ pub use crate::common::buf::INLINE_WORDS;
 pub use crate::complex::ExactComplex;
 pub use crate::defs::Error;
 pub use crate::defs::Exponent;
+pub use crate::defs::OtherRadix;
 pub use crate::defs::Radix;
 pub use crate::defs::RoundingMode;
 pub use crate::defs::Sign;
@@ -147,6 +154,7 @@ pub use crate::quadrature::gauss_kronrod_interval;
 pub use crate::quadrature::gauss_laguerre;
 pub use crate::quadrature::gauss_legendre;
 pub use crate::quadrature::integrate_adaptive_gk;
+pub use crate::quadrature::integrate_adaptive_gk_infinite;
 pub use crate::quadrature::kronrod_pair;
 pub use crate::quadrature::tanh_sinh;
 pub use crate::quadrature::wynn_epsilon;
@@ -219,7 +227,7 @@ mod tests {
         let pi_lib = cc.pi_num(1024, rm).unwrap().into();
 
         // Compare computed constant with library's constant
-        assert_eq!(pi.cmp(&pi_lib), Some(0));
+        assert_eq!(pi.compare(&pi_lib), Some(0));
 
         // Print using decimal radix.
         //println!("{}", pi);

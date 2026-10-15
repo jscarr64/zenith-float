@@ -34,7 +34,11 @@ impl ExactNumNumber {
         let mut p_wrk = p + p_inc;
 
         loop {
-            let mut ret = self.reciprocal_newton(p_wrk)?;
+            // The Newton step runs on |self|; an overflow there has the sign of `self`.
+            let mut ret = self.reciprocal_newton(p_wrk).map_err(|e| match e {
+                Error::ExponentOverflow(_) => Error::ExponentOverflow(self.sign()),
+                other => other,
+            })?;
 
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());

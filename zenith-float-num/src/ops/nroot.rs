@@ -39,33 +39,23 @@ impl ExactNumNumber {
         }
 
         if self.is_zero() {
-            let sign = if n % 2 == 0 { Sign::Pos } else { self.sign() };
+            let sign = if n.is_multiple_of(2) { Sign::Pos } else { self.sign() };
             return Self::new2(p, sign, self.inexact());
         }
 
         let mut sign = Sign::Pos;
         let mut x = self.clone()?;
         if self.is_negative() {
-            if n % 2 == 0 {
+            if n.is_multiple_of(2) {
                 return Err(Error::InvalidArgument);
             }
             sign = Sign::Neg;
             x = self.abs()?;
         }
 
-        let mut n_rem = n;
-        while n_rem % 2 == 0 {
-            x = x.sqrt(p, rm)?;
-            n_rem /= 2;
-        }
-        while n_rem % 3 == 0 {
-            x = x.cbrt(p, rm)?;
-            n_rem /= 3;
-        }
-
-        if n_rem > 1 {
-            x = Self::nth_root_newton(&x, n_rem, p, rm)?;
-        }
+        // One correctly rounded root. Chaining sqrt and cbrt rounded twice (x^(1/4) was
+        // sqrt(sqrt(x)), each rounded at p bits) and could be one unit off.
+        x = Self::nth_root_newton(&x, n, p, rm)?;
 
         x.set_sign(sign);
         Ok(x)

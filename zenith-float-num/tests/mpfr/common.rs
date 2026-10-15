@@ -8,8 +8,8 @@ use rand::{Rng, SeedableRng};
 use rug::Float;
 use std::cell::RefCell;
 use zenith_float_num::{
-    Consts, ExactNum, Exponent, Radix, RoundingMode, Sign, Word, WORD_BIT_SIZE,
-    WORD_SIGNIFICANT_BIT,
+    Consts, ExactNum, Exponent, Radix, RoundingMode, Sign, Word, EXPONENT_MAX, EXPONENT_MIN,
+    WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT,
 };
 
 thread_local! {
@@ -72,7 +72,7 @@ macro_rules! test_zf_op {
 
 macro_rules! test_zf_op_no_cc {
     ($eq:literal, $n1:ident, $n2:ident, $zf_op:ident, $f1:ident, $f2:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
-        let n3 = ExactNum::$zf_op(&($n1), &($n2), $p, $rm);
+        let n3 = ($n1).clone().$zf_op(&($n2), $p, $rm);
 
         let mut f3 = Float::with_val($p as u32, 1);
 
@@ -194,16 +194,16 @@ pub fn conv_to_mpfr(p: usize, n: &ExactNum, cc: &mut Consts) -> Float {
 // assert float values are equal or differ not more than 1 ulp.
 pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, cc: &mut Consts) {
     if n.is_inf() {
-        // inf
-        let ovf = unsafe { mpfr::overflow_p() };
-        assert!(f.is_infinite() || ovf != 0, "{}", op);
-        if eq {
-            if n.is_positive() {
-                assert!(f.is_sign_positive(), "{}", op);
-            } else {
-                assert!(f.is_sign_negative(), "{}", op);
-            }
+        // Inf only where MPFR is Inf: an overflow rounded toward zero is the largest
+        // finite value in MPFR, so the overflow flag alone does not admit Inf.
+        assert!(f.is_infinite(), "{} zenith Inf, MPFR {}", op, f);
+        if n.is_positive() {
+            assert!(f.is_sign_positive(), "{}", op);
+        } else {
+            assert!(f.is_sign_negative(), "{}", op);
         }
+    } else if f.is_infinite() {
+        panic!("{} MPFR Inf, zenith {:?}", op, n);
     } else if n.is_nan() {
         // nan
         if eq {
@@ -233,7 +233,15 @@ pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, c
             op
         );
 
-        let d = n.sub(&n2, 1, RoundingMode::None).abs();
+        let d = n.clone().sub(&n2, 1, RoundingMode::None).abs();
+        assert!(
+            d.exponent().is_some(),
+            "{} zenith {:?}, MPFR {}, difference {:?}",
+            op,
+            n,
+            f,
+            d
+        );
 
         let e1 = n.exponent().unwrap() as isize
             - (n.mantissa_max_bit_len().unwrap() - n.precision().unwrap()) as isize;
@@ -368,4 +376,144 @@ pub fn bf_from_mantissa_and_exp_rng(m: &[Word], exp_from: Exponent, exp_to: Expo
     let s = if test_random::<u8>() & 1 == 0 { Sign::Pos } else { Sign::Neg };
 
     ExactNum::from_words(m, s, e)
+}
+
+/// Binary operations with an exact-precision MPFR reference.
+#[derive(Copy, Clone, Debug)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+fn mpfr_binop(r: &mut Float, a: &Float, b: &Float, op: BinOp, rnd: rnd_t) -> i32 {
+    match op {
+        BinOp::Add => unsafe { mpfr::add(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
+        BinOp::Sub => unsafe { mpfr::sub(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
+        BinOp::Mul => unsafe { mpfr::mul(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
+        BinOp::Div => unsafe { mpfr::div(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
+    }
+}
+
+/// `a op b` correctly rounded at exactly `p` bits in the zenith format: `m * 2^e` with
+/// `0.5 <= m < 1`, `e` in `EXPONENT_MIN..=EXPONENT_MAX`, and subnormals on the fixed grid
+/// `2^(EXPONENT_MIN - p)`. MPFR emulates that grid with `emin = EXPONENT_MIN - p + 1` and
+/// `mpfr_subnormalize`. MPFR has no ties-to-odd mode: `ToOdd` rounds toward zero at `p + 1`
+/// bits and decides from the extra bit and the ternary value. That emulation is for results
+/// in the normal range only.
+pub fn mpfr_reference(a: &Float, b: &Float, op: BinOp, p: u32, rm: RoundingMode) -> Float {
+    mpfr_reference_with(p, rm, |r, rnd| mpfr_binop(r, a, b, op, rnd)).0
+}
+
+/// Like [`mpfr_reference`] for any MPFR function: `f(result, rnd)` computes into `result`
+/// (whose precision is already set) and returns the MPFR ternary value. Returns the
+/// result and whether it is inexact.
+pub fn mpfr_reference_with<F>(p: u32, rm: RoundingMode, f: F) -> (Float, bool)
+where
+    F: Fn(&mut Float, rnd_t) -> i32,
+{
+    let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+    unsafe {
+        mpfr::set_emax(EXPONENT_MAX as mpfr::exp_t);
+        mpfr::set_emin(EXPONENT_MIN as mpfr::exp_t - p as mpfr::exp_t + 1);
+    }
+    let rnd = match rm {
+        RoundingMode::ToEven => Some(rnd_t::RNDN),
+        RoundingMode::Up => Some(rnd_t::RNDU),
+        RoundingMode::Down => Some(rnd_t::RNDD),
+        RoundingMode::ToZero => Some(rnd_t::RNDZ),
+        RoundingMode::FromZero => Some(rnd_t::RNDA),
+        RoundingMode::ToOdd => None,
+        RoundingMode::None => panic!("no MPFR reference for {rm:?}"),
+    };
+    let out = if let Some(rnd) = rnd {
+        let mut r = Float::new(p);
+        let t = f(&mut r, rnd);
+        let t2 = unsafe { mpfr::subnormalize(r.as_raw_mut(), t, rnd) };
+        let inexact = t2 != 0 || t != 0;
+        (r, inexact)
+    } else {
+        let mut w = Float::new(p + 1);
+        let t = f(&mut w, rnd_t::RNDZ);
+        let mut lo = Float::new(p);
+        let mut hi = Float::new(p);
+        unsafe {
+            mpfr::set(lo.as_raw_mut(), w.as_raw(), rnd_t::RNDZ);
+            mpfr::set(hi.as_raw_mut(), w.as_raw(), rnd_t::RNDA);
+        }
+        let odd = |x: &Float, bits: u32| {
+            !x.is_zero() && unsafe { mpfr::min_prec(x.as_raw()) } as u32 == bits
+        };
+        let v = if lo == hi {
+            lo
+        } else if t == 0 {
+            // w is the exact midpoint: the tie goes to the odd neighbour.
+            if odd(&lo, p) {
+                lo
+            } else {
+                hi
+            }
+        } else if odd(&w, p + 1) {
+            // the exact value lies above the midpoint
+            hi
+        } else {
+            lo
+        };
+        let inexact = t != 0 || unsafe { mpfr::min_prec(w.as_raw()) } as u32 > p;
+        (v, inexact)
+    };
+    unsafe {
+        mpfr::set_emin(old_min);
+        mpfr::set_emax(old_max);
+    }
+    out
+}
+
+/// Bit-exact comparison of a zenith result with an MPFR value of the same precision,
+/// including Inf, the sign of zero, and subnormals.
+pub fn assert_exact_eq(n: &ExactNum, f: &Float, p: usize, op: &str, cc: &mut Consts) {
+    if f.is_nan() {
+        assert!(n.is_nan(), "{op}: MPFR NaN, zenith {n:?}");
+        return;
+    }
+    if f.is_infinite() {
+        assert!(n.is_inf(), "{op}: MPFR {f}, zenith {n:?}");
+        assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of Inf");
+        return;
+    }
+    assert!(!n.is_inf() && !n.is_nan(), "{op}: MPFR {f}, zenith {n:?}");
+    if f.is_zero() {
+        assert!(n.is_zero(), "{op}: MPFR {f}, zenith {n:?}");
+        assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of zero");
+        return;
+    }
+    let _ = (p, &cc);
+    // Exact value of the zenith number, rebuilt from its words (parsing would flush
+    // subnormals): sum of word_i * 2^(64 i) * 2^(e - 64 len), with the widest MPFR range.
+    let (words, _, sign, e, _) = n.as_raw_parts().expect("finite zenith value");
+    let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+    unsafe {
+        mpfr::set_emin(mpfr::get_emin_min());
+        mpfr::set_emax(mpfr::get_emax_max());
+    }
+    let mut z = rug::Integer::new();
+    for w in words.iter().rev() {
+        z <<= 64;
+        z += *w;
+    }
+    let bits = (64 * words.len()) as u32;
+    let mut got = Float::with_val(bits.max(64), &z);
+    got >>= (64 * words.len()) as isize - e as isize;
+    if sign == Sign::Neg {
+        got = -got;
+    }
+    let mut want = Float::with_val(bits.max(64), 0);
+    unsafe { mpfr::set(want.as_raw_mut(), f.as_raw(), rnd_t::RNDN) };
+    let equal = got == want;
+    unsafe {
+        mpfr::set_emin(old_min);
+        mpfr::set_emax(old_max);
+    }
+    assert!(equal, "{op}: MPFR {f}, zenith {n:?} = {got}");
 }

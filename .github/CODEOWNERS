@@ -1,0 +1,10 @@
+# Changes to the rules allowlist, the clone-count baseline and the gate scripts need Jeff's review.
+/tools/rules_allowlist.txt @jscarr64
+/tools/clone_allowlist.txt @jscarr64
+/tools/clone_count_baseline.txt @jscarr64
+/tools/ref_sum_count_baseline.txt @jscarr64
+/tools/rules_scan.py @jscarr64
+/tools/rules_scan.sh @jscarr64
+/tools/no_clone.py @jscarr64
+/tools/no_clone.sh @jscarr64
+/tools/full_gate.sh @jscarr64

@@ -1,5 +1,6 @@
 //! Catalog specials vs mpmath 1.4.1 at 50 digits / 2p+64 bits.
 
+use std::ops::Neg;
 use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode};
 
 const RM: RoundingMode = RoundingMode::ToEven;
@@ -12,7 +13,7 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
     if got.is_nan() {
         return i32::MIN;
     }
-    let d = got.sub(want, 2 * p, RoundingMode::None);
+    let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
     if d.is_zero() {
         return i32::MAX;
     }

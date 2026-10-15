@@ -20,7 +20,7 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
     if got.is_nan() {
         return i32::MIN;
     }
-    let d = got.sub(want, 2 * p, RoundingMode::None);
+    let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
     if d.is_zero() {
         return i32::MAX;
     }
@@ -155,7 +155,7 @@ fn gk_epsilon_beats_plain_gauss_on_invsqrt() {
 }
 
 #[test]
-fn gk_nonfinite_and_reversed_bounds_are_errors() {
+fn gk_nonfinite_and_reversed_endpoints_are_errors() {
     // A reversed interval and a NaN sample must not come back as a finite
     // integral. The typed error is the whole assertion.
     let mut cc = Consts::new().unwrap();

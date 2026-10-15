@@ -30,12 +30,12 @@ fn assert_same(got: &ExactRational, want: &Rational) {
         .unwrap_or_else(|| panic!("GMP denom overflow {want}"));
     let p = got.num().precision().unwrap_or(128);
     assert_eq!(
-        got.num().cmp(&ExactNum::from_i64(wn, p)),
+        got.num().compare(&ExactNum::from_i64(wn, p)),
         Some(0),
         "num {got:?} vs GMP {want}"
     );
     assert_eq!(
-        got.den().cmp(&ExactNum::from_i64(wd, p)),
+        got.den().compare(&ExactNum::from_i64(wd, p)),
         Some(0),
         "den {got:?} vs GMP {want}"
     );
