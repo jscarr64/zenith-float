@@ -8,6 +8,10 @@
 #![deny(unused)]
 #![deny(clippy::suspicious)]
 #![deny(clippy::float_arithmetic)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::unreachable)
+)]
 
 extern crate alloc;
 

@@ -8,6 +8,10 @@
 #![forbid(unsafe_code)]
 #![deny(unused)]
 #![deny(clippy::suspicious)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::unreachable)
+)]
 
 mod cplx;
 mod util;

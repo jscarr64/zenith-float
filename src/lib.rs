@@ -151,6 +151,10 @@
 #![deny(unused)]
 #![deny(clippy::suspicious)]
 #![deny(clippy::float_arithmetic)]
+#![cfg_attr(
+    not(test),
+    deny(clippy::unwrap_used, clippy::expect_used, clippy::unreachable)
+)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 /// Computes an expression with the specified precision and rounding mode.
