@@ -865,11 +865,13 @@ impl ExactNum {
             let jf = ExactNum::from_u32(j as u32, wrk);
             let jm1 = ExactNum::from_u32((j - 1) as u32, wrk);
             let jp1 = ExactNum::from_u32((j + 1) as u32, wrk);
-            let pj = jm1.add(alpha, wrk, RoundingMode::None).mul(
-                &jm1.add(beta, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            );
+            let pj = ExactNum::from_u32((j - 1) as u32, wrk)
+                .add(alpha, wrk, RoundingMode::None)
+                .mul(
+                    &ExactNum::from_u32((j - 1) as u32, wrk).add(beta, wrk, RoundingMode::None),
+                    wrk,
+                    RoundingMode::None,
+                );
             // Q_j = j((j-1+γ)(1+a) + aδ + ε)
             let qj = jf.mul(
                 &jm1.add(gamma, wrk, RoundingMode::None)
@@ -1014,7 +1016,8 @@ impl ExactNum {
             // n(n-1+γ+δ-ε)-q
             let coef_n = nf
                 .mul(
-                    &nm1.add(gamma, wrk, RoundingMode::None)
+                    &ExactNum::from_u32((n - 1) as u32, wrk)
+                        .add(gamma, wrk, RoundingMode::None)
                         .add(delta, wrk, RoundingMode::None)
                         .sub(eps, wrk, RoundingMode::None),
                     wrk,
@@ -1237,8 +1240,8 @@ fn heun_g_coefs(
         let jf = un(j as u32, p);
         let jm1 = un((j - 1) as u32, p);
         let jp1 = un((j + 1) as u32, p);
-        let pj = jm1.add(alpha, p, RoundingMode::None).mul(
-            &jm1.add(beta, p, RoundingMode::None),
+        let pj = un((j - 1) as u32, p).add(alpha, p, RoundingMode::None).mul(
+            &un((j - 1) as u32, p).add(beta, p, RoundingMode::None),
             p,
             RoundingMode::None,
         );
@@ -1307,13 +1310,18 @@ fn heun_c_coefs(
         let nf = un(n as u32, p);
         let nm1 = un((n - 1) as u32, p);
         let np1 = un((n + 1) as u32, p);
-        let left = np1.mul(&nf.add(gamma, p, RoundingMode::None), p, RoundingMode::None);
+        let left = np1.mul(
+            &un(n as u32, p).add(gamma, p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        );
         if left.is_zero() || !finite(&left) {
             return None;
         }
         let coef_n = nf
             .mul(
-                &nm1.add(gamma, p, RoundingMode::None)
+                &un((n - 1) as u32, p)
+                    .add(gamma, p, RoundingMode::None)
                     .add(delta, p, RoundingMode::None)
                     .sub(eps, p, RoundingMode::None),
                 p,
