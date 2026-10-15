@@ -845,8 +845,7 @@ impl ExactNum {
         if matches!(self.abs_cmp(rad), Some(c) if c >= 0) {
             return heun_g_outside(self, a, q, alpha, beta, gamma, delta, p, rm);
         }
-        let eps = alpha
-            .add_full_prec(beta)
+        let eps = ExactNum::add_ref(alpha, beta, wrk, RoundingMode::None)
             .sub(gamma, wrk, RoundingMode::None)
             .sub(delta, wrk, RoundingMode::None)
             .add(&one, wrk, RoundingMode::None);
@@ -1133,8 +1132,7 @@ fn heun_eps(
     delta: &ExactNum,
     p: usize,
 ) -> ExactNum {
-    alpha
-        .add_full_prec(beta)
+    ExactNum::add_ref(alpha, beta, p, RoundingMode::None)
         .sub(gamma, p, RoundingMode::None)
         .sub(delta, p, RoundingMode::None)
         .add(&ExactNum::from_u8(1, p), p, RoundingMode::None)
@@ -1192,8 +1190,7 @@ fn heun_g_is_2f1(
     let q_star = a
         .mul(alpha, p, RoundingMode::None)
         .mul(beta, p, RoundingMode::None);
-    let d_star = alpha
-        .add_full_prec(beta)
+    let d_star = ExactNum::add_ref(alpha, beta, p, RoundingMode::None)
         .sub(gamma, p, RoundingMode::None)
         .add(&one, p, RoundingMode::None);
     agrees_tight(q, &q_star, p) && agrees_tight(delta, &d_star, p)
@@ -1445,7 +1442,11 @@ fn heun_g_ode(
             RoundingMode::None,
         );
     let b1 = gamma
-        .mul(&zm1.add_full_prec(&zma), p, RoundingMode::None)
+        .mul(
+            &ExactNum::add_ref(&zm1, &zma, p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        )
         .add(
             &delta.mul(&zma.add(&z0, p, RoundingMode::None), p, RoundingMode::None),
             p,
@@ -1456,7 +1457,8 @@ fn heun_g_ode(
             p,
             RoundingMode::None,
         );
-    let b2 = gamma.add_full_prec(delta).add(&eps, p, RoundingMode::None);
+    let b2 =
+        ExactNum::add_ref(gamma, delta, p, RoundingMode::None).add(&eps, p, RoundingMode::None);
     let ab = alpha.mul(beta, p, RoundingMode::None);
     Some(OdePoly {
         a0,
@@ -1502,10 +1504,11 @@ fn heun_c_ode(
             p,
             RoundingMode::None,
         );
-    let b1 =
-        gamma
-            .add_full_prec(delta)
-            .add(&eps.mul(&a1, p, RoundingMode::None), p, RoundingMode::None);
+    let b1 = ExactNum::add_ref(gamma, delta, p, RoundingMode::None).add(
+        &eps.mul(&a1, p, RoundingMode::None),
+        p,
+        RoundingMode::None,
+    );
     Some(OdePoly {
         a0,
         a1,

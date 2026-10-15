@@ -926,9 +926,11 @@ where
         let left_a = panels[worst].a.clone();
         let right_b = panels[worst].b.clone();
         let two = ExactNum::from_u8(2, wrk);
-        let mid = left_a
-            .add_full_prec(&right_b)
-            .div(&two, wrk, RoundingMode::None);
+        let mid = ExactNum::add_ref(&left_a, &right_b, wrk, RoundingMode::None).div(
+            &two,
+            wrk,
+            RoundingMode::None,
+        );
         if mid.compare(&left_a) != Some(1) || mid.compare(&right_b) != Some(-1) {
             return Err(QuadratureError::NotConverged);
         }
