@@ -5554,3 +5554,97 @@ mod add_sub_zero_tests {
         }
     }
 }
+
+/// Characterization of `ldexp` / `scalb` over a grid of operands (zero, normal, near both ends of the exponent
+/// range), shifts, precisions and rounding modes: the digest of every result (value, sign, exponent, flags)
+/// is pinned, so the signature change to `self` must reproduce every bit.
+#[cfg(test)]
+mod ldexp_grid_tests {
+    use crate::defs::{RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
+    use crate::{Error, ExactNum, INF_NEG, INF_POS};
+    use core::hash::{Hash, Hasher};
+    use core::ops::Neg;
+    use std::collections::hash_map::DefaultHasher;
+
+    const RMS: [RoundingMode; 6] = [
+        RoundingMode::None,
+        RoundingMode::ToEven,
+        RoundingMode::ToZero,
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::FromZero,
+    ];
+
+    fn operands() -> Vec<ExactNum> {
+        let third =
+            |p| ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, RoundingMode::ToEven);
+        let mut v = vec![
+            ExactNum::new(64),
+            ExactNum::new(64).neg(),
+            ExactNum::from_u8(1, 64),
+            ExactNum::from_u8(7, 64).neg(),
+            third(64),
+            third(192).neg(),
+            third(320),
+            INF_POS,
+            INF_NEG,
+            ExactNum::nan(Some(Error::InvalidArgument)),
+            ExactNum::nan(None),
+        ];
+        for k in [
+            EXPONENT_MIN + 3,
+            EXPONENT_MIN + 70,
+            EXPONENT_MIN + 200,
+            EXPONENT_MAX - 3,
+            EXPONENT_MAX - 70,
+        ] {
+            v.push(ExactNum::from_u8(3, 64).ldexp(k, 64, RoundingMode::None));
+            v.push(third(192).ldexp(k, 192, RoundingMode::None).neg());
+        }
+        v
+    }
+
+    fn digest(r: &ExactNum, h: &mut DefaultHasher) {
+        format!("{r:?}").hash(h);
+        r.inexact().hash(h);
+        r.inexact_accumulated().hash(h);
+    }
+
+    #[test]
+    fn ldexp_and_scalb_grid_digest() {
+        let shifts = [
+            0,
+            1,
+            -1,
+            5,
+            -64,
+            64,
+            -200,
+            200,
+            1 << 20,
+            -(1 << 20),
+            EXPONENT_MAX / 2,
+            EXPONENT_MIN / 2,
+            EXPONENT_MAX,
+            EXPONENT_MIN,
+            EXPONENT_MAX - 1,
+            EXPONENT_MIN + 1,
+        ];
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for x in operands() {
+            for n in shifts {
+                for p in [1usize, 53, 64, 65, 128, 192, 200] {
+                    for rm in RMS {
+                        digest(&x.ldexp(n, p, rm), &mut h);
+                        digest(&x.scalb(n, p, rm), &mut h);
+                        count += 2;
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 21 * 16 * 7 * 6 * 2);
+        println!("ldexp grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 14_041_916_081_487_717_860);
+    }
+}
