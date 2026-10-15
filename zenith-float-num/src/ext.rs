@@ -124,7 +124,7 @@ impl ExactNum {
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
-    pub fn add(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
+    pub fn add(self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         self.add_op(d2, p, rm, false)
     }
 
@@ -202,7 +202,7 @@ impl ExactNum {
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
-    pub fn sub(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
+    pub fn sub(self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         self.sub_op(d2, p, rm, false)
     }
 
@@ -324,7 +324,7 @@ impl ExactNum {
     /// Reconstruct with `hi.add(&lo, p, rm)` (not `add_full_prec`, which uses internal precision 0).
     ///
     /// Accuracy: correctly-rounded
-    pub fn two_sum(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
+    pub fn two_sum(self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
         if self.is_nan() {
             return (Self::nan(self.err()), Self::nan(self.err()));
         }
@@ -4213,8 +4213,64 @@ macro_rules! impl_exact_binop {
     };
 }
 
-impl_exact_binop!(Add, add, add);
-impl_exact_binop!(Sub, sub, sub);
+// `add` and `sub` take their first operand by value, so there is no `&ExactNum + &ExactNum`: nothing could
+// own the result's storage without copying an operand. `&a + b` is `b + a`; `&a - b` is `-b + a`.
+impl core::ops::Add<&ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: &ExactNum) -> ExactNum {
+        ExactNum::add(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Add<ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::add(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Add<ExactNum> for &ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: ExactNum) -> ExactNum {
+        // `rhs + self` is `self + rhs` for every pair except two NaNs, where the first operand's error wins.
+        if self.is_nan() && rhs.is_nan() {
+            return ExactNum::nan(self.err());
+        }
+        ExactNum::add(rhs, self, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<&ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: &ExactNum) -> ExactNum {
+        ExactNum::sub(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::sub(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<ExactNum> for &ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: ExactNum) -> ExactNum {
+        // `-rhs + self` is `self - rhs` for every pair except two NaNs, where the first operand's error wins.
+        if self.is_nan() && rhs.is_nan() {
+            return ExactNum::nan(self.err());
+        }
+        ExactNum::add(-rhs, self, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
 impl_exact_binop!(Mul, mul, mul);
 impl_exact_binop!(Div, div, div);
 
@@ -4357,15 +4413,15 @@ mod tests {
         assert!(INF_NEG.as_raw_parts().is_none());
         assert!(NAN.as_raw_parts().is_none());
 
-        assert!(ONE.add(&ONE, rand_p(), rm).compare(&TWO) == Some(0));
-        assert!(ONE.add(&INF_POS, rand_p(), rm).is_inf_pos());
-        assert!(INF_POS.add(&ONE, rand_p(), rm).is_inf_pos());
-        assert!(ONE.add(&INF_NEG, rand_p(), rm).is_inf_neg());
-        assert!(INF_NEG.add(&ONE, rand_p(), rm).is_inf_neg());
-        assert!(INF_POS.add(&INF_POS, rand_p(), rm).is_inf_pos());
-        assert!(INF_POS.add(&INF_NEG, rand_p(), rm).is_nan());
-        assert!(INF_NEG.add(&INF_NEG, rand_p(), rm).is_inf_neg());
-        assert!(INF_NEG.add(&INF_POS, rand_p(), rm).is_nan());
+        assert!(ExactNum::add_ref(&ONE, &ONE, rand_p(), rm).compare(&TWO) == Some(0));
+        assert!(ExactNum::add_ref(&ONE, &INF_POS, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::add_ref(&INF_POS, &ONE, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::add_ref(&ONE, &INF_NEG, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::add_ref(&INF_NEG, &ONE, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::add_ref(&INF_POS, &INF_POS, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::add_ref(&INF_POS, &INF_NEG, rand_p(), rm).is_nan());
+        assert!(ExactNum::add_ref(&INF_NEG, &INF_NEG, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::add_ref(&INF_NEG, &INF_POS, rand_p(), rm).is_nan());
 
         assert!(ONE.add_full_prec(&ONE).compare(&TWO) == Some(0));
         assert!(ONE.add_full_prec(&INF_POS).is_inf_pos());
@@ -4397,15 +4453,15 @@ mod tests {
         assert!(INF_NEG.mul_full_prec(&INF_NEG).is_inf_pos());
         assert!(INF_NEG.mul_full_prec(&INF_POS).is_inf_neg());
 
-        assert!(TWO.sub(&ONE, rand_p(), rm).compare(&ONE) == Some(0));
-        assert!(ONE.sub(&INF_POS, rand_p(), rm).is_inf_neg());
-        assert!(INF_POS.sub(&ONE, rand_p(), rm).is_inf_pos());
-        assert!(ONE.sub(&INF_NEG, rand_p(), rm).is_inf_pos());
-        assert!(INF_NEG.sub(&ONE, rand_p(), rm).is_inf_neg());
-        assert!(INF_POS.sub(&INF_POS, rand_p(), rm).is_nan());
-        assert!(INF_POS.sub(&INF_NEG, rand_p(), rm).is_inf_pos());
-        assert!(INF_NEG.sub(&INF_NEG, rand_p(), rm).is_nan());
-        assert!(INF_NEG.sub(&INF_POS, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::sub_ref(&TWO, &ONE, rand_p(), rm).compare(&ONE) == Some(0));
+        assert!(ExactNum::sub_ref(&ONE, &INF_POS, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::sub_ref(&INF_POS, &ONE, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::sub_ref(&ONE, &INF_NEG, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::sub_ref(&INF_NEG, &ONE, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::sub_ref(&INF_POS, &INF_POS, rand_p(), rm).is_nan());
+        assert!(ExactNum::sub_ref(&INF_POS, &INF_NEG, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::sub_ref(&INF_NEG, &INF_NEG, rand_p(), rm).is_nan());
+        assert!(ExactNum::sub_ref(&INF_NEG, &INF_POS, rand_p(), rm).is_inf_neg());
 
         assert!(TWO.mul(&ONE, rand_p(), rm).compare(&TWO) == Some(0));
         assert!(ONE.mul(&INF_POS, rand_p(), rm).is_inf_pos());
@@ -4495,7 +4551,7 @@ mod tests {
         assert!(ExactNum::new(rand_p()).rem(&INF_POS).is_zero());
         assert!(ExactNum::new(rand_p()).rem(&INF_NEG).is_zero());
 
-        for op in [ExactNum::add, ExactNum::sub, ExactNum::mul, ExactNum::div] {
+        for op in [ExactNum::add_ref, ExactNum::sub_ref, ExactNum::mul, ExactNum::div] {
             assert!(op(&NAN, &ONE, rand_p(), rm).is_nan());
             assert!(op(&ONE, &NAN, rand_p(), rm).is_nan());
             assert!(op(&NAN, &INF_POS, rand_p(), rm).is_nan());
@@ -5143,7 +5199,7 @@ mod tests {
         let p = 128 * WORD_BIT_SIZE;
         let a = ExactNum::from_word(3, p);
         let b = ExactNum::from_word(5, p);
-        let s = a.add(&b, p, RoundingMode::ToEven);
+        let s = ExactNum::from_word(3, p).add(&b, p, RoundingMode::ToEven);
         let m = a.mul(&b, p, RoundingMode::ToEven);
         assert!(!s.is_nan(), "large-prec add hung or failed");
         assert!(!m.is_nan(), "large-prec mul hung or failed");
@@ -5158,20 +5214,24 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let three = ExactNum::from_u8(3, p);
 
-        let (hi, lo) = one.two_sum(&two, p, rm);
+        let (hi, lo) = one.clone().two_sum(&two, p, rm);
         let rec = hi.add(&lo, p, rm);
         assert_eq!(rec.compare(&ExactNum::from_u8(3, p)), Some(0));
 
-        let (ph, pl) = two.two_product(&three, p, rm);
+        let (ph, pl) = two.clone().two_product(&three, p, rm);
         let pr = ph.add(&pl, p, rm);
         assert_eq!(pr.compare(&ExactNum::from_u8(6, p)), Some(0));
 
-        let sum = ExactNum::fused_sum(&[one.clone(), two.clone(), three.clone()], p, rm);
+        let sum = ExactNum::fused_sum(
+            &[ExactNum::from_u8(1, p), two.clone(), three.clone()],
+            p,
+            rm,
+        );
         assert_eq!(sum.compare(&ExactNum::from_u8(6, p)), Some(0));
 
         let dot = ExactNum::fused_dot(
-            &[one.clone(), two.clone()],
-            &[three.clone(), one.clone()],
+            &[ExactNum::from_u8(1, p), two.clone()],
+            &[three.clone(), ExactNum::from_u8(1, p)],
             p,
             rm,
         );
@@ -5272,10 +5332,10 @@ mod special_arg_tests {
             same_nan(&n.copysign(&v, P, RM), &n);
             same_nan(&n.hypot(&v, P, RM), &n);
             same_nan(&v.hypot(&n, P, RM), &n);
-            let (hi, lo) = n.two_sum(&v, P, RM);
+            let (hi, lo) = n.clone().two_sum(&v, P, RM);
             same_nan(&hi, &n);
             same_nan(&lo, &n);
-            let (hi, lo) = v.two_sum(&n, P, RM);
+            let (hi, lo) = v.clone().two_sum(&n, P, RM);
             same_nan(&hi, &n);
             same_nan(&lo, &n);
             let (hi, lo) = n.two_product(&v, P, RM);
@@ -5577,9 +5637,9 @@ mod add_sub_zero_tests {
                     want.set_precision(p, rm).unwrap();
                     for zn in [false, true] {
                         let z = zero(zn);
-                        let a = x.add(&z, p, rm);
-                        let b = z.add(&x, p, rm);
-                        let c = x.sub(&z, p, rm);
+                        let a = ExactNum::add_ref(&x, &z, p, rm);
+                        let b = ExactNum::add_ref(&z, &x, p, rm);
+                        let c = ExactNum::sub_ref(&x, &z, p, rm);
                         let d = z.sub(&x, p, rm);
                         for r in [&a, &b, &c] {
                             assert_eq!(r.compare(&want), Some(0), "p={p} {rm:?} neg={neg}");
@@ -5604,7 +5664,7 @@ mod add_sub_zero_tests {
     fn zero_with_exact_operand_is_exact() {
         let x = ExactNum::from_u8(12, 64);
         for rm in RMS {
-            let r = x.add(&zero(false), 64, rm);
+            let r = x.clone().add(&zero(false), 64, rm);
             assert!(!r.inexact_accumulated());
             assert_eq!(r.compare(&x), Some(0));
             let r = zero(true).sub(&x, 64, rm);
@@ -5623,7 +5683,7 @@ mod add_sub_zero_tests {
             assert!(zero(false).sub(&INF_POS, 64, rm).is_inf());
             let r = zero(false).add(&nan, 64, rm);
             assert!(r.is_nan() && r.err() == nan.err());
-            let r = nan.sub(&zero(true), 64, rm);
+            let r = nan.clone().sub(&zero(true), 64, rm);
             assert!(r.is_nan() && r.err() == nan.err());
         }
     }
@@ -5786,6 +5846,58 @@ mod grid_digest_tests {
         assert_eq!(count, OPERANDS * 11 * 6);
         println!("round grid digest = {}", h.finish());
         assert_eq!(h.finish(), 2_584_562_321_548_619_649);
+    }
+
+    /// The `+` and `-` operators on every combination of owned and borrowed operands that exists.
+    #[test]
+    fn operator_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
+                digest(&(&operand(i) + operand(j)), &mut h);
+                digest(&(operand(i) + &operand(j)), &mut h);
+                digest(&(operand(i) + operand(j)), &mut h);
+                digest(&(&operand(i) - operand(j)), &mut h);
+                digest(&(operand(i) - &operand(j)), &mut h);
+                digest(&(operand(i) - operand(j)), &mut h);
+                count += 6;
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
+        println!("operator grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 7_046_299_910_751_575_496);
+    }
+
+    /// `ExactComplex::add` and `sub` over parts that include zeros, Inf, NaN, inexact and subnormal values.
+    #[test]
+    fn complex_add_sub_grid_digest() {
+        use crate::ExactComplex;
+        let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for a in parts {
+            for b in parts {
+                for c in parts {
+                    for d in parts {
+                        for p in [1usize, 64, 128] {
+                            for rm in RMS {
+                                let z1 = || ExactComplex::new(operand(a), operand(b));
+                                let z2 = || ExactComplex::new(operand(c), operand(d));
+                                for r in [z1().add(&z2(), p, rm), z1().sub(&z2(), p, rm)] {
+                                    digest(r.re(), &mut h);
+                                    digest(r.im(), &mut h);
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        println!("complex add/sub grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 10_853_667_709_392_583_003);
     }
 
     /// `ExactNum::add_ref` / `sub_ref` (both operands borrowed) hash to the same digest as the

@@ -21,7 +21,7 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
     if got.is_nan() {
         return i32::MIN;
     }
-    let d = got.sub(want, 2 * p, RoundingMode::None);
+    let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
     if d.is_zero() {
         return i32::MAX;
     }
@@ -350,7 +350,9 @@ fn heun_fox_mpmath() {
             &alpha,
             &beta,
             &gamma,
-            &alpha.add(&beta, p, RM).sub(&gamma, p, RM).add(&one, p, RM),
+            &ExactNum::add_ref(&alpha, &beta, p, RM)
+                .sub(&gamma, p, RM)
+                .add(&one, p, RM),
             p,
             RM,
             &mut cc,
@@ -496,7 +498,9 @@ fn heun_fox_mpmath() {
             &alpha,
             &beta,
             &gamma,
-            &alpha.add(&beta, p, RM).sub(&gamma, p, RM).add(&one, p, RM),
+            &ExactNum::add_ref(&alpha, &beta, p, RM)
+                .sub(&gamma, p, RM)
+                .add(&one, p, RM),
             p,
             RM,
             &mut cc,
@@ -669,7 +673,7 @@ fn heun_fox_mpmath() {
     // q = 10 + 2^{-119} still passed values_agree(..., p) (about p-8 bits).
     // mpmath confluent series, not hyp1f1(-10; 3; 1/2).
     let al10 = ExactNum::from_i32(10, p);
-    let q_c = al10.add(&ExactNum::from_u8(1, p).ldexp(-119, p, RM), p, RM);
+    let q_c = ExactNum::from_i32(10, p).add(&ExactNum::from_u8(1, p).ldexp(-119, p, RM), p, RM);
     check_not_closed_form(
         "HeunC near-miss q=10+2^{-119}",
         z_half.heun_c(&al10, &gam3, &zero, &neg_of(&one), &q_c, p, RM, &mut cc),

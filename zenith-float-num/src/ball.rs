@@ -8,6 +8,7 @@ use crate::Error;
 use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
+use core::ops::Neg;
 
 /// Extra rounding-ulp multiples added to a transcendental Lipschitz radius.
 const BALL_TRANSCENDENTAL_ERROR_TERMS: u32 = 8;
@@ -53,9 +54,10 @@ impl Ball {
     }
 
     /// Sum of two balls: midpoint add at precision `p`, radius `r1+r2` plus a rounding ulp.
-    pub fn add(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
-        let mid = self.mid.add(&other.mid, p, rm);
-        let rad = self.rad.add(&other.rad, p, RoundingMode::Up).add(
+    pub fn add(self, other: &Self, p: usize, rm: RoundingMode) -> Self {
+        let Ball { mid: m1, rad: r1 } = self;
+        let mid = m1.add(&other.mid, p, rm);
+        let rad = r1.add(&other.rad, p, RoundingMode::Up).add(
             &Self::rounding_ulp(&mid, p),
             p,
             RoundingMode::Up,
@@ -102,31 +104,31 @@ impl Ball {
     /// plus a rounding ulp.
     pub fn sin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.sin(p, rm, cc);
-        let rad = self
-            .rad
-            .add(&Self::rounding_ulp(&mid, p), p, RoundingMode::Up);
+        let rad = Self::rounding_ulp(&mid, p).add(&self.rad, p, RoundingMode::Up);
         Ball { mid, rad }
     }
 
     /// Cosine of a ball. \(\lvert\cos'\rvert\le 1\).
     pub fn cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.cos(p, rm, cc);
-        let rad = self
-            .rad
-            .add(&Self::rounding_ulp(&mid, p), p, RoundingMode::Up);
+        let rad = Self::rounding_ulp(&mid, p).add(&self.rad, p, RoundingMode::Up);
         Ball { mid, rad }
     }
 
     /// Natural log of a ball. Domain: the ball must lie in \((0,+\infty)\).
     /// Lipschitz \(\lvert\ln'\rvert=1/x\le 1/(m-r)\).
-    pub fn ln(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !self.strictly_positive(p) {
+    pub fn ln(self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let Ball { mid: m, rad: r } = self;
+        if !Self::above_zero(&m, &r) {
             return Self::nan_ball(p);
         }
-        let mid = self.mid.ln(p, rm, cc);
-        let den = self.mid.sub(&self.rad, p, RoundingMode::Down);
+        let mid = m.ln(p, rm, cc);
+        let den = m.sub(&r, p, RoundingMode::Down);
+        if den.is_negative() || den.is_zero() {
+            return Self::nan_ball(p);
+        }
         let lip = ExactNum::from_u8(1, p).div(&den, p, RoundingMode::Up);
-        let rad = lip.mul(&self.rad, p, RoundingMode::Up).add(
+        let rad = lip.mul(&r, p, RoundingMode::Up).add(
             &Self::transcendental_slack(&mid, p),
             p,
             RoundingMode::Up,
@@ -136,19 +138,21 @@ impl Ball {
 
     /// Square root of a ball. Domain: the ball must lie in \((0,+\infty)\).
     /// Lipschitz \(1/(2\sqrt{x})\le 1/(2\sqrt{m-r})\).
-    pub fn sqrt(&self, p: usize, rm: RoundingMode) -> Self {
-        if !self.strictly_positive(p) {
+    pub fn sqrt(self, p: usize, rm: RoundingMode) -> Self {
+        let Ball { mid: m, rad: r } = self;
+        if !Self::above_zero(&m, &r) {
             return Self::nan_ball(p);
         }
-        let mid = self.mid.sqrt(p, rm);
-        let lo = self
-            .mid
-            .sub(&self.rad, p, RoundingMode::Down)
-            .sqrt(p, RoundingMode::Down);
+        let mid = m.sqrt(p, rm);
+        let lo = m.sub(&r, p, RoundingMode::Down);
+        if lo.is_negative() || lo.is_zero() {
+            return Self::nan_ball(p);
+        }
+        let lo = lo.sqrt(p, RoundingMode::Down);
         let two = ExactNum::from_u8(2, p);
         let den = two.mul(&lo, p, RoundingMode::Down);
         let lip = ExactNum::from_u8(1, p).div(&den, p, RoundingMode::Up);
-        let rad = lip.mul(&self.rad, p, RoundingMode::Up).add(
+        let rad = lip.mul(&r, p, RoundingMode::Up).add(
             &Self::transcendental_slack(&mid, p),
             p,
             RoundingMode::Up,
@@ -173,27 +177,29 @@ impl Ball {
     /// \(J_0\) of a ball. \(\lvert J_0'\rvert=\lvert J_1\rvert\le 1\).
     pub fn bessel_j0(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.bessel_j(0, p, rm, cc);
-        let rad = self
-            .rad
-            .add(&Self::transcendental_slack(&mid, p), p, RoundingMode::Up);
+        let rad = Self::transcendental_slack(&mid, p).add(&self.rad, p, RoundingMode::Up);
         Ball { mid, rad }
     }
 
     /// \(J_1\) of a ball. \(\lvert J_1'\rvert=\lvert J_0-J_1/x\rvert\le 1+1/(\lvert m\rvert-r)\)
     /// when the ball excludes \(0\).
-    pub fn bessel_j1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !self.excludes_zero(p) {
+    pub fn bessel_j1(self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let Ball { mid: m, rad: r } = self;
+        if m.is_nan() || r.is_nan() || m.is_zero() || !matches!(m.abs_cmp(&r), Some(c) if c > 0) {
             return Self::nan_ball(p);
         }
-        let mid = self.mid.bessel_j(1, p, rm, cc);
-        let den = if self.mid.is_negative() {
-            self.mid.neg_via_mul().sub(&self.rad, p, RoundingMode::Down)
+        let mid = m.bessel_j(1, p, rm, cc);
+        let den = if m.is_negative() {
+            m.neg().sub(&r, p, RoundingMode::Down)
         } else {
-            self.mid.sub(&self.rad, p, RoundingMode::Down)
+            m.sub(&r, p, RoundingMode::Down)
         };
+        if den.is_zero() {
+            return Self::nan_ball(p);
+        }
         let extra = ExactNum::from_u8(1, p).div(&den, p, RoundingMode::Up);
         let lip = ExactNum::from_u8(1, p).add(&extra, p, RoundingMode::Up);
-        let rad = lip.mul(&self.rad, p, RoundingMode::Up).add(
+        let rad = lip.mul(&r, p, RoundingMode::Up).add(
             &Self::transcendental_slack(&mid, p),
             p,
             RoundingMode::Up,
@@ -219,26 +225,12 @@ impl Ball {
         }
     }
 
-    fn strictly_positive(&self, p: usize) -> bool {
-        if self.mid.is_nan() || self.rad.is_nan() || !self.mid.is_positive() {
+    /// `mid` is a positive number strictly above `rad` (the lower endpoint is then positive).
+    fn above_zero(mid: &ExactNum, rad: &ExactNum) -> bool {
+        if mid.is_nan() || rad.is_nan() || !mid.is_positive() {
             return false;
         }
-        matches!(self.mid.compare(&self.rad), Some(c) if c > 0)
-            && !self.mid.sub(&self.rad, p, RoundingMode::Down).is_negative()
-            && !self.mid.sub(&self.rad, p, RoundingMode::Down).is_zero()
-    }
-
-    fn excludes_zero(&self, p: usize) -> bool {
-        if self.mid.is_nan() || self.rad.is_nan() || self.mid.is_zero() {
-            return false;
-        }
-        matches!(self.mid.abs_cmp(&self.rad), Some(c) if c > 0)
-            && !if self.mid.is_negative() {
-                self.mid.neg_via_mul().sub(&self.rad, p, RoundingMode::Down)
-            } else {
-                self.mid.sub(&self.rad, p, RoundingMode::Down)
-            }
-            .is_zero()
+        matches!(mid.compare(rad), Some(c) if c > 0)
     }
 
     /// True when `x` lies in `[mid − rad, mid + rad]` (NaN / Inf never contained).
@@ -246,7 +238,7 @@ impl Ball {
         if x.is_nan() || self.mid.is_nan() || self.rad.is_nan() {
             return false;
         }
-        let d = self.mid.sub(x, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&self.mid, x, p, RoundingMode::None).abs();
         matches!(d.compare(&self.rad), Some(c) if c <= 0)
     }
 }
@@ -299,13 +291,12 @@ impl ComplexBall {
     }
 
     /// Sum of two disks: radii add, plus rounding slack.
-    pub fn add(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
-        let mid = self.mid.add(&other.mid, p, rm);
-        let rad = self.rad.add(&other.rad, p, RoundingMode::Up).add(
-            &Self::slack(&mid, p),
-            p,
-            RoundingMode::Up,
-        );
+    pub fn add(self, other: &Self, p: usize, rm: RoundingMode) -> Self {
+        let ComplexBall { mid: m1, rad: r1 } = self;
+        let mid = m1.add(&other.mid, p, rm);
+        let rad =
+            r1.add(&other.rad, p, RoundingMode::Up)
+                .add(&Self::slack(&mid, p), p, RoundingMode::Up);
         ComplexBall { mid, rad }
     }
 
@@ -329,13 +320,15 @@ impl ComplexBall {
     }
 
     /// Exponential. Lipschitz \(\lvert e^z\rvert\le \exp(\mathrm{Re}\,m+r)\).
-    pub fn exp(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        let mid = self.mid.exp(p, rm, cc);
-        let re_hi = self.mid.re().add(&self.rad, p, RoundingMode::Up);
+    pub fn exp(self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let ComplexBall { mid: m, rad: r } = self;
+        let mid = m.exp(p, rm, cc);
+        let (m_re, _m_im) = m.into_parts();
+        let re_hi = m_re.add(&r, p, RoundingMode::Up);
         let lip = re_hi.exp(p, RoundingMode::Up, cc);
-        let rad =
-            lip.mul(&self.rad, p, RoundingMode::Up)
-                .add(&Self::slack(&mid, p), p, RoundingMode::Up);
+        let rad = lip
+            .mul(&r, p, RoundingMode::Up)
+            .add(&Self::slack(&mid, p), p, RoundingMode::Up);
         ComplexBall { mid, rad }
     }
 
@@ -356,36 +349,38 @@ impl ComplexBall {
     }
 
     /// Sine. \(\lvert\cos(z)\rvert\le\cosh(\lvert\mathrm{Im}\,m\rvert+r)\).
-    pub fn sin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        let mid = self.mid.sin(p, rm, cc);
-        let im = self.mid.im();
+    pub fn sin(self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let ComplexBall { mid: m, rad: r } = self;
+        let mid = m.sin(p, rm, cc);
+        let (_m_re, im) = m.into_parts();
         // |im| + rad
         let im_hi = if im.is_negative() {
-            self.rad.sub(im, p, RoundingMode::Up)
+            im.neg().add(&r, p, RoundingMode::Up)
         } else {
-            im.add(&self.rad, p, RoundingMode::Up)
+            im.add(&r, p, RoundingMode::Up)
         };
         let lip = im_hi.sinh_cosh(p, RoundingMode::Up, cc).1;
-        let rad =
-            lip.mul(&self.rad, p, RoundingMode::Up)
-                .add(&Self::slack(&mid, p), p, RoundingMode::Up);
+        let rad = lip
+            .mul(&r, p, RoundingMode::Up)
+            .add(&Self::slack(&mid, p), p, RoundingMode::Up);
         ComplexBall { mid, rad }
     }
 
     /// Cosine. Same Lipschitz bound as `sin`.
-    pub fn cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        let mid = self.mid.cos(p, rm, cc);
-        let im = self.mid.im();
+    pub fn cos(self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let ComplexBall { mid: m, rad: r } = self;
+        let mid = m.cos(p, rm, cc);
+        let (_m_re, im) = m.into_parts();
         // |im| + rad
         let im_hi = if im.is_negative() {
-            self.rad.sub(im, p, RoundingMode::Up)
+            im.neg().add(&r, p, RoundingMode::Up)
         } else {
-            im.add(&self.rad, p, RoundingMode::Up)
+            im.add(&r, p, RoundingMode::Up)
         };
         let lip = im_hi.sinh_cosh(p, RoundingMode::Up, cc).1;
-        let rad =
-            lip.mul(&self.rad, p, RoundingMode::Up)
-                .add(&Self::slack(&mid, p), p, RoundingMode::Up);
+        let rad = lip
+            .mul(&r, p, RoundingMode::Up)
+            .add(&Self::slack(&mid, p), p, RoundingMode::Up);
         ComplexBall { mid, rad }
     }
 
@@ -394,9 +389,7 @@ impl ComplexBall {
         if z.is_nan() || self.mid.is_nan() || self.rad.is_nan() {
             return false;
         }
-        let d = z
-            .sub(&self.mid, p, RoundingMode::None)
-            .abs(p, RoundingMode::Up);
+        let d = ExactComplex::sub_ref(z, &self.mid, p, RoundingMode::None).abs(p, RoundingMode::Up);
         matches!(d.compare(&self.rad), Some(c) if c <= 0)
     }
 }
@@ -574,9 +567,9 @@ mod tests {
         assert!(be.erf(p, rm, &mut cc).contains(&erf1, p));
 
         let ln1 = one.ln(256, rm, &mut cc);
-        assert!(be.ln(p, rm, &mut cc).contains(&ln1, p));
+        assert!(be.clone().ln(p, rm, &mut cc).contains(&ln1, p));
         let sq = one.sqrt(256, rm);
-        assert!(be.sqrt(p, rm).contains(&sq, p));
+        assert!(be.clone().sqrt(p, rm).contains(&sq, p));
         assert!(be
             .cos(p, rm, &mut cc)
             .contains(&one.cos(256, rm, &mut cc), p));
@@ -584,6 +577,7 @@ mod tests {
             .bessel_j0(p, rm, &mut cc)
             .contains(&one.bessel_j(0, 256, rm, &mut cc), p));
         assert!(be
+            .clone()
             .bessel_j1(p, rm, &mut cc)
             .contains(&one.bessel_j(1, 256, rm, &mut cc), p));
 
@@ -608,7 +602,7 @@ mod tests {
 
         let small = ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
         let d = ComplexBall::new(mid.clone(), small);
-        let s = d.sin(p, rm, &mut cc);
+        let s = d.clone().sin(p, rm, &mut cc);
         let c = d.cos(p, rm, &mut cc);
         let ss = s.mul(&s, p, rm);
         let cc2 = c.mul(&c, p, rm);

@@ -170,24 +170,26 @@ fn meijer_g_series(
             let mut gn = Vec::new();
             for (j, bj) in b.iter().enumerate().take(m) {
                 if j != h {
-                    gn.push(bj.sub(bh, p, RoundingMode::None));
+                    gn.push(ExactNum::sub_ref(bj, bh, p, RoundingMode::None));
                 }
             }
             for aj in a.iter().take(n) {
-                gn.push(
-                    one.sub(aj, p, RoundingMode::None)
-                        .add(bh, p, RoundingMode::None),
-                );
+                gn.push(ExactNum::sub_ref(&one, aj, p, RoundingMode::None).add(
+                    bh,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let mut gd = Vec::new();
             for aj in a.iter().skip(n) {
-                gd.push(aj.sub(bh, p, RoundingMode::None));
+                gd.push(ExactNum::sub_ref(aj, bh, p, RoundingMode::None));
             }
             for bj in b.iter().skip(m) {
-                gd.push(
-                    one.sub(bj, p, RoundingMode::None)
-                        .add(bh, p, RoundingMode::None),
-                );
+                gd.push(ExactNum::sub_ref(&one, bj, p, RoundingMode::None).add(
+                    bh,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let ratio = match gamma_ratio(&gn, &gd, p, cc) {
                 Err(()) => return GEval::Singular,
@@ -196,18 +198,20 @@ fn meijer_g_series(
             };
             let mut hn = Vec::with_capacity(pn);
             for aj in &a {
-                hn.push(
-                    one.sub(aj, p, RoundingMode::None)
-                        .add(bh, p, RoundingMode::None),
-                );
+                hn.push(ExactNum::sub_ref(&one, aj, p, RoundingMode::None).add(
+                    bh,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let mut hd = Vec::with_capacity(qn.saturating_sub(1));
             for (j, bj) in b.iter().enumerate() {
                 if j != h {
-                    hd.push(
-                        one.sub(bj, p, RoundingMode::None)
-                            .add(bh, p, RoundingMode::None),
-                    );
+                    hd.push(ExactNum::sub_ref(&one, bj, p, RoundingMode::None).add(
+                        bh,
+                        p,
+                        RoundingMode::None,
+                    ));
                 }
             }
             let f = hz.hypergeom_pfq(&hn, &hd, p, RoundingMode::None, cc);
@@ -240,24 +244,26 @@ fn meijer_g_series(
             let mut gn = Vec::new();
             for (j, aj) in a.iter().enumerate().take(n) {
                 if j != k {
-                    gn.push(ak.sub(aj, p, RoundingMode::None));
+                    gn.push(ExactNum::sub_ref(ak, aj, p, RoundingMode::None));
                 }
             }
             for bj in b.iter().take(m) {
-                gn.push(
-                    one.sub(ak, p, RoundingMode::None)
-                        .add(bj, p, RoundingMode::None),
-                );
+                gn.push(ExactNum::sub_ref(&one, ak, p, RoundingMode::None).add(
+                    bj,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let mut gd = Vec::new();
             for bj in b.iter().skip(m) {
-                gd.push(ak.sub(bj, p, RoundingMode::None));
+                gd.push(ExactNum::sub_ref(ak, bj, p, RoundingMode::None));
             }
             for aj in a.iter().skip(n) {
-                gd.push(
-                    one.sub(ak, p, RoundingMode::None)
-                        .add(aj, p, RoundingMode::None),
-                );
+                gd.push(ExactNum::sub_ref(&one, ak, p, RoundingMode::None).add(
+                    aj,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let ratio = match gamma_ratio(&gn, &gd, p, cc) {
                 Err(()) => return GEval::Singular,
@@ -266,18 +272,20 @@ fn meijer_g_series(
             };
             let mut hn = Vec::with_capacity(qn);
             for bj in &b {
-                hn.push(
-                    one.sub(ak, p, RoundingMode::None)
-                        .add(bj, p, RoundingMode::None),
-                );
+                hn.push(ExactNum::sub_ref(&one, ak, p, RoundingMode::None).add(
+                    bj,
+                    p,
+                    RoundingMode::None,
+                ));
             }
             let mut hd = Vec::with_capacity(pn.saturating_sub(1));
             for (j, aj) in a.iter().enumerate() {
                 if j != k {
-                    hd.push(
-                        one.add(aj, p, RoundingMode::None)
-                            .sub(ak, p, RoundingMode::None),
-                    );
+                    hd.push(ExactNum::from_u8(1, p).add(aj, p, RoundingMode::None).sub(
+                        ak,
+                        p,
+                        RoundingMode::None,
+                    ));
                 }
             }
             let f = hz.hypergeom_pfq(&hn, &hd, p, RoundingMode::None, cc);
@@ -285,9 +293,11 @@ fn meijer_g_series(
                 return GEval::Singular;
             }
             let expn = if r_is_one {
-                ak.sub(&one, p, RoundingMode::None)
+                ExactNum::sub_ref(ak, &one, p, RoundingMode::None)
             } else {
-                ak.sub(&one, p, RoundingMode::None)
+                ExactNum::from_u8(1, p)
+                    .neg()
+                    .add(ak, p, RoundingMode::None)
                     .div(r, p, RoundingMode::None)
             };
             let zp = pow_real(z, &expn, p, cc);
@@ -343,7 +353,7 @@ fn max_int_cluster(xs: &[ExactNum], p: usize) -> usize {
                 if seen[v] {
                     continue;
                 }
-                if xs[u].sub(&xs[v], p, RoundingMode::None).is_int() {
+                if ExactNum::sub_ref(&xs[u], &xs[v], p, RoundingMode::None).is_int() {
                     seen[v] = true;
                     stack.push(v);
                 }
@@ -376,7 +386,7 @@ fn perturb_row(xs: &[ExactNum], h: &mut ExactNum, wp: usize, k: &mut u32) -> Opt
         *k = k.saturating_add(1);
         let den = ExactNum::from_u32(*k + 1, wp);
         let bump = h.div(&den, wp, RoundingMode::None);
-        *h = h.add(&bump, wp, RoundingMode::None);
+        *h = bump.add(h, wp, RoundingMode::None);
     }
     Some(row)
 }
@@ -386,7 +396,7 @@ fn values_agree(a: &ExactNum, b: &ExactNum, bits: usize) -> bool {
         return false;
     }
     let wp = bits.saturating_mul(2).max(128);
-    let d = a.sub(b, wp, RoundingMode::None).abs();
+    let d = ExactNum::sub_ref(a, b, wp, RoundingMode::None).abs();
     if d.is_zero() {
         return true;
     }
@@ -487,8 +497,9 @@ fn near_small_int(x: &ExactNum, p: usize, lo: i32, hi: i32) -> Option<i32> {
         return Some(n);
     }
     for n in lo..=hi {
-        let d = x
-            .sub(&ExactNum::from_i32(n, p), p, RoundingMode::None)
+        let d = ExactNum::from_i32(n, p)
+            .neg()
+            .add(x, p, RoundingMode::None)
             .abs();
         if d.is_zero()
             || d.exponent()
@@ -830,8 +841,7 @@ impl ExactNum {
         if matches!(self.abs_cmp(rad), Some(c) if c >= 0) {
             return heun_g_outside(self, a, q, alpha, beta, gamma, delta, p, rm);
         }
-        let eps = alpha
-            .add(beta, wrk, RoundingMode::None)
+        let eps = ExactNum::add_ref(alpha, beta, wrk, RoundingMode::None)
             .sub(gamma, wrk, RoundingMode::None)
             .sub(delta, wrk, RoundingMode::None)
             .add(&one, wrk, RoundingMode::None);
@@ -842,7 +852,7 @@ impl ExactNum {
             RoundingMode::None,
         );
         let mut zp = self.clone();
-        let mut sum = c_prev.add(
+        let mut sum = ExactNum::from_u8(1, wrk).add(
             &c.mul(&zp, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
@@ -851,16 +861,18 @@ impl ExactNum {
             let jf = ExactNum::from_u32(j as u32, wrk);
             let jm1 = ExactNum::from_u32((j - 1) as u32, wrk);
             let jp1 = ExactNum::from_u32((j + 1) as u32, wrk);
-            let pj = jm1.add(alpha, wrk, RoundingMode::None).mul(
-                &jm1.add(beta, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            );
+            let pj = ExactNum::from_u32((j - 1) as u32, wrk)
+                .add(alpha, wrk, RoundingMode::None)
+                .mul(
+                    &ExactNum::from_u32((j - 1) as u32, wrk).add(beta, wrk, RoundingMode::None),
+                    wrk,
+                    RoundingMode::None,
+                );
             // Q_j = j((j-1+γ)(1+a) + aδ + ε)
             let qj = jf.mul(
                 &jm1.add(gamma, wrk, RoundingMode::None)
                     .mul(
-                        &one.add(a, wrk, RoundingMode::None),
+                        &ExactNum::from_u8(1, wrk).add(a, wrk, RoundingMode::None),
                         wrk,
                         RoundingMode::None,
                     )
@@ -980,7 +992,7 @@ impl ExactNum {
         let mut b_prev = ExactNum::from_u8(1, wrk);
         let mut b = q.neg_via_mul().div(gamma, wrk, RoundingMode::None);
         let mut zp = self.clone();
-        let mut sum = b_prev.add(
+        let mut sum = ExactNum::from_u8(1, wrk).add(
             &b.mul(&zp, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
@@ -990,7 +1002,7 @@ impl ExactNum {
             let nm1 = ExactNum::from_u32((n - 1) as u32, wrk);
             let np1 = ExactNum::from_u32((n + 1) as u32, wrk);
             let left = np1.mul(
-                &nf.add(gamma, wrk, RoundingMode::None),
+                &ExactNum::from_u32(n as u32, wrk).add(gamma, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             );
@@ -1000,18 +1012,17 @@ impl ExactNum {
             // n(n-1+γ+δ-ε)-q
             let coef_n = nf
                 .mul(
-                    &nm1.add(gamma, wrk, RoundingMode::None)
+                    &ExactNum::from_u32((n - 1) as u32, wrk)
+                        .add(gamma, wrk, RoundingMode::None)
                         .add(delta, wrk, RoundingMode::None)
                         .sub(eps, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                 )
                 .sub(q, wrk, RoundingMode::None);
-            let coef_nm1 = alpha.add(
-                &eps.mul(&nm1, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            );
+            let coef_nm1 =
+                eps.mul(&nm1, wrk, RoundingMode::None)
+                    .add(alpha, wrk, RoundingMode::None);
             let b_next = coef_n
                 .mul(&b, wrk, RoundingMode::None)
                 .add(
@@ -1090,9 +1101,9 @@ fn segment_hits(z: &ExactNum, s: &ExactNum) -> bool {
 }
 
 fn min_dist(z: &ExactNum, sings: &[ExactNum], p: usize) -> ExactNum {
-    let mut m = z.sub(&sings[0], p, RoundingMode::None).abs();
+    let mut m = ExactNum::sub_ref(z, &sings[0], p, RoundingMode::None).abs();
     for s in &sings[1..] {
-        let d = z.sub(s, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(z, s, p, RoundingMode::None).abs();
         if matches!(d.compare(&m), Some(c) if c < 0) {
             m = d;
         }
@@ -1117,8 +1128,7 @@ fn heun_eps(
     delta: &ExactNum,
     p: usize,
 ) -> ExactNum {
-    alpha
-        .add(beta, p, RoundingMode::None)
+    ExactNum::add_ref(alpha, beta, p, RoundingMode::None)
         .sub(gamma, p, RoundingMode::None)
         .sub(delta, p, RoundingMode::None)
         .add(&ExactNum::from_u8(1, p), p, RoundingMode::None)
@@ -1141,7 +1151,7 @@ fn agrees_tight(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         return false;
     }
     let tight = p.saturating_mul(2).max(64);
-    let d = a.sub(b, tight, RoundingMode::None).abs();
+    let d = ExactNum::sub_ref(a, b, tight, RoundingMode::None).abs();
     if d.is_zero() {
         return true;
     }
@@ -1176,8 +1186,7 @@ fn heun_g_is_2f1(
     let q_star = a
         .mul(alpha, p, RoundingMode::None)
         .mul(beta, p, RoundingMode::None);
-    let d_star = alpha
-        .add(beta, p, RoundingMode::None)
+    let d_star = ExactNum::add_ref(alpha, beta, p, RoundingMode::None)
         .sub(gamma, p, RoundingMode::None)
         .add(&one, p, RoundingMode::None);
     agrees_tight(q, &q_star, p) && agrees_tight(delta, &d_star, p)
@@ -1225,14 +1234,18 @@ fn heun_g_coefs(
         let jf = un(j as u32, p);
         let jm1 = un((j - 1) as u32, p);
         let jp1 = un((j + 1) as u32, p);
-        let pj = jm1.add(alpha, p, RoundingMode::None).mul(
-            &jm1.add(beta, p, RoundingMode::None),
+        let pj = un((j - 1) as u32, p).add(alpha, p, RoundingMode::None).mul(
+            &un((j - 1) as u32, p).add(beta, p, RoundingMode::None),
             p,
             RoundingMode::None,
         );
         let qj = jf.mul(
             &jm1.add(gamma, p, RoundingMode::None)
-                .mul(&one.add(a, p, RoundingMode::None), p, RoundingMode::None)
+                .mul(
+                    &ExactNum::from_u8(1, p).add(a, p, RoundingMode::None),
+                    p,
+                    RoundingMode::None,
+                )
                 .add(&a.mul(delta, p, RoundingMode::None), p, RoundingMode::None)
                 .add(&eps, p, RoundingMode::None),
             p,
@@ -1291,20 +1304,27 @@ fn heun_c_coefs(
         let nf = un(n as u32, p);
         let nm1 = un((n - 1) as u32, p);
         let np1 = un((n + 1) as u32, p);
-        let left = np1.mul(&nf.add(gamma, p, RoundingMode::None), p, RoundingMode::None);
+        let left = np1.mul(
+            &un(n as u32, p).add(gamma, p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        );
         if left.is_zero() || !finite(&left) {
             return None;
         }
         let coef_n = nf
             .mul(
-                &nm1.add(gamma, p, RoundingMode::None)
+                &un((n - 1) as u32, p)
+                    .add(gamma, p, RoundingMode::None)
                     .add(delta, p, RoundingMode::None)
                     .sub(eps, p, RoundingMode::None),
                 p,
                 RoundingMode::None,
             )
             .sub(q, p, RoundingMode::None);
-        let coef_nm1 = alpha.add(&eps.mul(&nm1, p, RoundingMode::None), p, RoundingMode::None);
+        let coef_nm1 = eps
+            .mul(&nm1, p, RoundingMode::None)
+            .add(alpha, p, RoundingMode::None);
         let b_next = coef_n
             .mul(&b, p, RoundingMode::None)
             .add(
@@ -1386,8 +1406,8 @@ fn heun_g_ode(
 ) -> Option<OdePoly> {
     let one = ExactNum::from_u8(1, p);
     let eps = heun_eps(alpha, beta, gamma, delta, p);
-    let zm1 = z0.sub(&one, p, RoundingMode::None);
-    let zma = z0.sub(a, p, RoundingMode::None);
+    let zm1 = ExactNum::from_u8(1, p).neg().add(z0, p, RoundingMode::None);
+    let zma = ExactNum::sub_ref(z0, a, p, RoundingMode::None);
     let a0 = z0
         .mul(&zm1, p, RoundingMode::None)
         .mul(&zma, p, RoundingMode::None);
@@ -1416,20 +1436,23 @@ fn heun_g_ode(
             RoundingMode::None,
         );
     let b1 = gamma
-        .mul(&zm1.add(&zma, p, RoundingMode::None), p, RoundingMode::None)
-        .add(
-            &delta.mul(&z0.add(&zma, p, RoundingMode::None), p, RoundingMode::None),
+        .mul(
+            &ExactNum::add_ref(&zm1, &zma, p, RoundingMode::None),
             p,
             RoundingMode::None,
         )
         .add(
-            &eps.mul(&z0.add(&zm1, p, RoundingMode::None), p, RoundingMode::None),
+            &delta.mul(&zma.add(z0, p, RoundingMode::None), p, RoundingMode::None),
+            p,
+            RoundingMode::None,
+        )
+        .add(
+            &eps.mul(&zm1.add(z0, p, RoundingMode::None), p, RoundingMode::None),
             p,
             RoundingMode::None,
         );
-    let b2 = gamma
-        .add(delta, p, RoundingMode::None)
-        .add(&eps, p, RoundingMode::None);
+    let b2 =
+        ExactNum::add_ref(gamma, delta, p, RoundingMode::None).add(&eps, p, RoundingMode::None);
     let ab = alpha.mul(beta, p, RoundingMode::None);
     Some(OdePoly {
         a0,
@@ -1456,7 +1479,7 @@ fn heun_c_ode(
     p: usize,
 ) -> Option<OdePoly> {
     let one = ExactNum::from_u8(1, p);
-    let zm1 = z0.sub(&one, p, RoundingMode::None);
+    let zm1 = ExactNum::from_u8(1, p).neg().add(z0, p, RoundingMode::None);
     let a0 = z0.mul(&zm1, p, RoundingMode::None);
     if a0.is_zero() || !finite(&a0) {
         return None;
@@ -1473,7 +1496,7 @@ fn heun_c_ode(
             p,
             RoundingMode::None,
         );
-    let b1 = gamma.add(delta, p, RoundingMode::None).add(
+    let b1 = ExactNum::add_ref(gamma, delta, p, RoundingMode::None).add(
         &eps.mul(&a1, p, RoundingMode::None),
         p,
         RoundingMode::None,
@@ -1508,7 +1531,9 @@ fn taylor_step(
     let mut c_k = y.clone();
     let mut c_kp1 = yp.clone();
     let mut hpow = h.clone();
-    let mut sum = y.add(&yp.mul(h, p, RoundingMode::None), p, RoundingMode::None);
+    let mut sum = yp
+        .mul(h, p, RoundingMode::None)
+        .add(y, p, RoundingMode::None);
     let mut dsum = yp.clone();
     let mut peak_y = i32::MIN;
     let mut peak_d = i32::MIN;
@@ -1626,7 +1651,7 @@ where
 {
     let acc = bits.saturating_add(32);
     for _ in 0..HEUN_STEP_MAX {
-        let rem = target.sub(&zc, p, RoundingMode::None);
+        let rem = ExactNum::sub_ref(target, &zc, p, RoundingMode::None);
         if close_enough(&rem, target, bits) {
             return if finite(&y) { Some(y) } else { None };
         }
@@ -1647,7 +1672,7 @@ where
         }
         let ode = ode_at(&zc)?;
         let (yn, ypn) = taylor_step(&ode, &y, &yp, &h, p, acc)?;
-        let next = zc.add(&h, p, RoundingMode::None);
+        let next = h.add(&zc, p, RoundingMode::None);
         if next.compare(&zc) == Some(0) {
             return if finite(&yn) { Some(yn) } else { None };
         }
@@ -1798,7 +1823,7 @@ fn fox_h_gauss(
     for (ai, &ai_int) in a.iter().zip(a_int.iter()) {
         let aif = ExactNum::from_i32(ai_int, p);
         for k in 0..ai_int {
-            let num = ai.add(&ExactNum::from_i32(k, p), p, RoundingMode::None);
+            let num = ExactNum::from_i32(k, p).add(ai, p, RoundingMode::None);
             a_tilde.push(num.div(&aif, p, RoundingMode::None));
         }
     }
@@ -1806,7 +1831,7 @@ fn fox_h_gauss(
     for (bj, &bj_int) in b.iter().zip(b_int.iter()) {
         let bif = ExactNum::from_i32(bj_int, p);
         for k in 0..bj_int {
-            let num = bj.add(&ExactNum::from_i32(k, p), p, RoundingMode::None);
+            let num = ExactNum::from_i32(k, p).add(bj, p, RoundingMode::None);
             b_tilde.push(num.div(&bif, p, RoundingMode::None));
         }
     }
@@ -1843,12 +1868,15 @@ fn fox_h_gauss(
     let mut m_fac = ExactNum::from_u8(1, p);
     for (bj, &bj_int) in b.iter().zip(b_int.iter()) {
         let base = ExactNum::from_i32(bj_int, p);
-        let expn = bj.sub(&half, p, RoundingMode::None);
+        let expn = ExactNum::sub_ref(bj, &half, p, RoundingMode::None);
         m_fac = m_fac.mul(&pow_real(&base, &expn, p, cc), p, RoundingMode::None);
     }
     for (ai, &ai_int) in a.iter().zip(a_int.iter()) {
         let base = ExactNum::from_i32(ai_int, p);
-        let expn = ai.sub(&half, p, RoundingMode::None);
+        let expn = one
+            .div(&two, p, RoundingMode::None)
+            .neg()
+            .add(ai, p, RoundingMode::None);
         m_fac = m_fac.div(&pow_real(&base, &expn, p, cc), p, RoundingMode::None);
     }
     let pi = cc.pi(p, RoundingMode::None);
@@ -1886,7 +1914,7 @@ mod tests {
     use super::*;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / 4))
     }
 
@@ -1946,7 +1974,9 @@ mod tests {
         let gamma = ExactNum::from_u8(6, p).div(&ExactNum::from_u8(5, p), p, rm);
         let zz = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(10, p), p, rm);
         let aa = ExactNum::from_u8(5, p).div(&ExactNum::from_u8(2, p), p, rm);
-        let delta = alpha.add(&beta, p, rm).sub(&gamma, p, rm).add(&one, p, rm);
+        let delta = ExactNum::add_ref(&alpha, &beta, p, rm)
+            .sub(&gamma, p, rm)
+            .add(&one, p, rm);
         let qv = aa.mul(&alpha, p, rm).mul(&beta, p, rm);
         let hg = zz.heun_g(&aa, &qv, &alpha, &beta, &gamma, &delta, p, rm, &mut cc);
         let f = alpha.hypergeom_2f1(&beta, &gamma, &zz, p, rm, &mut cc);

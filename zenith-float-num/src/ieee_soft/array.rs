@@ -651,6 +651,27 @@ macro_rules! exact_arr_p_rm_cc {
 }
 
 /// Elementwise negation: takes the array and flips every sign in place.
+/// Elementwise `self + rhs` at the array's precision, written into `self`'s own storage; `None` when
+/// the shapes differ. (A trait impl: clippy reserves an inherent `add(self, _)` for `std::ops::Add`.)
+impl core::ops::Add<&ExactNumArray> for ExactNumArray {
+    type Output = Option<ExactNumArray>;
+
+    fn add(self, rhs: &ExactNumArray) -> Option<ExactNumArray> {
+        let p = self.p;
+        self.zip_own(rhs, |a, b| a.add(b, p, RoundingMode::ToEven))
+    }
+}
+
+/// Elementwise `self - rhs`; see the `Add` impl.
+impl core::ops::Sub<&ExactNumArray> for ExactNumArray {
+    type Output = Option<ExactNumArray>;
+
+    fn sub(self, rhs: &ExactNumArray) -> Option<ExactNumArray> {
+        let p = self.p;
+        self.zip_own(rhs, |a, b| a.sub(b, p, RoundingMode::ToEven))
+    }
+}
+
 impl core::ops::Neg for ExactNumArray {
     type Output = ExactNumArray;
     fn neg(mut self) -> ExactNumArray {
@@ -837,28 +858,10 @@ impl ExactNumArray {
         &self.vals
     }
 
-    /// Elementwise add at `p`.
-    pub fn add(&self, rhs: &Self) -> Option<Self> {
-        self.zip(rhs, |a, b| a.add(b, self.p, RoundingMode::ToEven))
-    }
-
     /// Add a scalar to every lane.
-    pub fn add_scalar(&self, s: &ExactNum) -> Self {
-        Self {
-            p: self.p,
-            vals: self
-                .vals
-                .iter()
-                .map(|x| x.add(s, self.p, RoundingMode::ToEven))
-                .collect(),
-            rows: self.rows,
-            cols: self.cols,
-        }
-    }
-
-    /// Elementwise sub.
-    pub fn sub(&self, rhs: &Self) -> Option<Self> {
-        self.zip(rhs, |a, b| a.sub(b, self.p, RoundingMode::ToEven))
+    pub fn add_scalar(self, s: &ExactNum) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.add(s, p, RoundingMode::ToEven))
     }
 
     /// Elementwise mul.
@@ -1337,7 +1340,7 @@ impl ExactNumArray {
                 a[ix(i, k)] = ExactNum::from_u8(0, p);
                 for j in (k + 1)..m {
                     let t = lik.mul(&a[ix(k, j)], p, rm);
-                    a[ix(i, j)] = a[ix(i, j)].sub(&t, p, rm);
+                    a[ix(i, j)] = t.neg().add(&a[ix(i, j)], p, rm);
                 }
             }
         }
@@ -1405,7 +1408,7 @@ impl ExactNumArray {
                 r[i * n + j] = dot.clone();
                 for t in 0..m {
                     let qi = q[t * k + i].clone();
-                    v[t] = v[t].sub(&dot.mul(&qi, p, rm), p, rm);
+                    v[t] = dot.mul(&qi, p, rm).neg().add(&v[t], p, rm);
                 }
             }
             if j < k {
@@ -1525,6 +1528,23 @@ impl ExactNumArray {
         })
     }
 
+    fn zip_own(self, rhs: &Self, op: impl Fn(ExactNum, &ExactNum) -> ExactNum) -> Option<Self> {
+        if self.rows != rhs.rows || self.cols != rhs.cols {
+            return None;
+        }
+        Some(Self {
+            p: self.p,
+            vals: self
+                .vals
+                .into_iter()
+                .zip(rhs.vals.iter())
+                .map(|(a, b)| op(a, b))
+                .collect(),
+            rows: self.rows,
+            cols: self.cols,
+        })
+    }
+
     fn map_own(self, p: usize, op: impl FnMut(ExactNum) -> ExactNum) -> Self {
         Self {
             p,
@@ -1602,7 +1622,7 @@ fn svd_householder(
     }
     let mut v = x.to_vec();
     let signed = if v[0].is_negative() { norm.neg() } else { norm };
-    v[0] = v[0].add(&signed, p, rm);
+    v[0] = signed.add(&v[0], p, rm);
     let mut vtv = svd_zero(p);
     for vi in &v {
         vtv = vtv.add(&vi.mul(vi, p, rm), p, rm);
@@ -1634,7 +1654,7 @@ fn svd_apply_house_left(
         for (i, vi) in v.iter().enumerate().take(vlen) {
             let t = s.mul(vi, p, rm);
             let idx = (row0 + i) * cols + j;
-            a[idx] = a[idx].sub(&t, p, rm);
+            a[idx] = t.neg().add(&a[idx], p, rm);
         }
     }
 }
@@ -1660,7 +1680,7 @@ fn svd_apply_house_right(
         for (t, vt) in v.iter().enumerate().take(vlen) {
             let tt = s.mul(vt, p, rm);
             let idx = i * cols + col0 + t;
-            a[idx] = a[idx].sub(&tt, p, rm);
+            a[idx] = tt.neg().add(&a[idx], p, rm);
         }
     }
 }
@@ -1706,9 +1726,9 @@ fn svd_negligible(e: &ExactNum, d0: &ExactNum, d1: &ExactNum, p: usize, rm: Roun
     }
     // |d0| + |d1|
     let scale = match (d0.is_negative(), d1.is_negative()) {
-        (false, false) => d0.add(d1, p, rm),
-        (false, true) => d0.sub(d1, p, rm),
-        (true, false) => d1.sub(d0, p, rm),
+        (false, false) => ExactNum::add_ref(d0, d1, p, rm),
+        (false, true) => ExactNum::sub_ref(d0, d1, p, rm),
+        (true, false) => ExactNum::sub_ref(d1, d0, p, rm),
         (true, true) => d0.neg_via_mul().sub(d1, p, rm),
     };
     if scale.is_zero() {
@@ -1729,9 +1749,8 @@ fn svd_wilkinson_shift(
     rm: RoundingMode,
 ) -> ExactNum {
     let two = ExactNum::from_u8(2, p);
-    let b = d_prev
-        .add(d_last, p, rm)
-        .mul(&d_prev.sub(d_last, p, rm), p, rm)
+    let b = ExactNum::add_ref(d_prev, d_last, p, rm)
+        .mul(&ExactNum::sub_ref(d_prev, d_last, p, rm), p, rm)
         .add(&e_prev.mul(e_prev, p, rm), p, rm)
         .div(&two, p, rm);
     let t = d_last.mul(e_last, p, rm);
@@ -1763,9 +1782,8 @@ fn svd_qr_sweep(
     let last = q_blk - 1;
     let e_prev = if last >= p_blk + 2 { e[last - 2].clone() } else { svd_zero(p) };
     let shift = svd_wilkinson_shift(&d[last - 1], &d[last], &e_prev, &e[last - 1], p, rm);
-    let mut f = d[p_blk]
-        .add(&d[last], p, rm)
-        .mul(&d[p_blk].sub(&d[last], p, rm), p, rm)
+    let mut f = ExactNum::add_ref(&d[p_blk], &d[last], p, rm)
+        .mul(&ExactNum::sub_ref(&d[p_blk], &d[last], p, rm), p, rm)
         .add(&shift, p, rm);
     let mut g = d[p_blk].mul(&e[p_blk], p, rm);
     for j in p_blk..last {
@@ -2016,7 +2034,7 @@ fn eigen_wilkinson(
     rm: RoundingMode,
 ) -> ExactNum {
     let half = svd_one(p).div(&ExactNum::from_u8(2, p), p, rm);
-    let delta = a.sub(c, p, rm).mul(&half, p, rm);
+    let delta = ExactNum::sub_ref(a, c, p, rm).mul(&half, p, rm);
     if delta.is_zero() && b.is_zero() {
         return c.clone();
     }
@@ -2024,9 +2042,13 @@ fn eigen_wilkinson(
     let signed = if delta.is_negative() { h.neg() } else { h };
     let denom = delta.add(&signed, p, rm);
     if denom.is_zero() {
-        return if b.is_negative() { c.add(b, p, rm) } else { c.sub(b, p, rm) };
+        return if b.is_negative() {
+            ExactNum::add_ref(c, b, p, rm)
+        } else {
+            ExactNum::sub_ref(c, b, p, rm)
+        };
     }
-    c.sub(&b.mul(b, p, rm).div(&denom, p, rm), p, rm)
+    b.mul(b, p, rm).div(&denom, p, rm).neg().add(c, p, rm)
 }
 
 fn eigen_qr_sweep(
@@ -2041,7 +2063,7 @@ fn eigen_qr_sweep(
 ) {
     let last = q_blk - 1;
     let mu = eigen_wilkinson(&d[last - 1], &e[last - 1], &d[last], p, rm);
-    let mut f = d[p_blk].sub(&mu, p, rm);
+    let mut f = mu.neg().add(&d[p_blk], p, rm);
     let mut g = e[p_blk].clone();
     let two = ExactNum::from_u8(2, p);
     for k in p_blk..last {
@@ -2257,12 +2279,12 @@ fn fft_dit(
                 let u = k + j;
                 let tr = w_re.mul(&re[t], p, rm).sub(&w_im.mul(&im[t], p, rm), p, rm);
                 let ti = w_re.mul(&im[t], p, rm).add(&w_im.mul(&re[t], p, rm), p, rm);
-                let ur = re[u].clone();
-                let ui = im[u].clone();
-                re[u] = ur.add(&tr, p, rm);
-                im[u] = ui.add(&ti, p, rm);
-                re[t] = ur.sub(&tr, p, rm);
-                im[t] = ui.sub(&ti, p, rm);
+                let ur = core::mem::replace(&mut re[u], svd_zero(p));
+                let ui = core::mem::replace(&mut im[u], svd_zero(p));
+                re[t] = ExactNum::sub_ref(&ur, &tr, p, rm);
+                im[t] = ExactNum::sub_ref(&ui, &ti, p, rm);
+                re[u] = tr.add(&ur, p, rm);
+                im[u] = ti.add(&ui, p, rm);
                 let nr = w_re.mul(&wm_re, p, rm).sub(&w_im.mul(&wm_im, p, rm), p, rm);
                 let ni = w_re.mul(&wm_im, p, rm).add(&w_im.mul(&wm_re, p, rm), p, rm);
                 w_re = nr;
@@ -2300,7 +2322,7 @@ mod tests {
         let two = Ieee64::from_i32(2);
         let a = Ieee64Array::from_values(&[one, two]);
         let b = Ieee64Array::from_values(&[two, one]);
-        let s = a.add(&b).unwrap();
+        let s = a.clone().add(&b).unwrap();
         assert_eq!(s.get(0).unwrap().to_bits(), Ieee64::from_i32(3).to_bits());
         assert_eq!(s.get(1).unwrap().to_bits(), Ieee64::from_i32(3).to_bits());
         let d = a.dot(&b).unwrap();
@@ -2336,7 +2358,7 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let a = ExactNumArray::from_values(p, &[one.clone(), two.clone()]);
         let b = ExactNumArray::from_values(p, &[two.clone(), one.clone()]);
-        let s = a.add(&b).unwrap();
+        let s = (a.clone() + &b).unwrap();
         assert_eq!(s.get(0).unwrap().compare(&ExactNum::from_u8(3, p)), Some(0));
         let d = a.dot(&b).unwrap();
         assert_eq!(d.compare(&ExactNum::from_u8(4, p)), Some(0));
@@ -2507,7 +2529,7 @@ mod tests {
             let x2 = ti.to_exact(p);
             assert_eq!(
                 add.get(i).unwrap().to_bits(),
-                Ieee64::from_exact(&xa.add(&x1, p, rm)).to_bits()
+                Ieee64::from_exact(&x1.add(&xa, p, rm)).to_bits()
             );
             assert_eq!(
                 mul.get(i).unwrap().to_bits(),
@@ -2584,7 +2606,7 @@ mod tests {
             }
         }
         let row = ExactNumArray::from_values(p, &[n(1), n(2)]);
-        assert!(a.add(&row).is_none());
+        assert!((a + &row).is_none());
     }
 
     #[test]
@@ -2659,7 +2681,7 @@ mod tests {
     }
 
     fn near_num(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - 40)
     }
 

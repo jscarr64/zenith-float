@@ -37,7 +37,7 @@ fn mpfr_compare_complex() {
         let a = ExactComplex::new(ar, ai);
         let b = ExactComplex::new(br, bi);
 
-        let s = a.add(&b, p, rm);
+        let s = a.clone().add(&b, p, rm);
         let mut fre = Float::with_val(p as u32, 1);
         let mut fim = Float::with_val(p as u32, 1);
         unsafe {
@@ -47,7 +47,7 @@ fn mpfr_compare_complex() {
         assert_float_close(s.re().clone(), fre.clone(), p, "cplx add re", true, &mut cc);
         assert_float_close(s.im().clone(), fim.clone(), p, "cplx add im", true, &mut cc);
 
-        let pr = a.mul(&b, p, rm);
+        let pr = a.clone().mul(&b, p, rm);
         let mut fac = Float::with_val(p as u32, 1);
         let mut fbd = Float::with_val(p as u32, 1);
         let mut fad = Float::with_val(p as u32, 1);

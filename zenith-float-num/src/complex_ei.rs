@@ -240,7 +240,8 @@ impl ExactComplex {
             } else {
                 let pi = cc.pi(work_p, RoundingMode::None);
                 let pi = if s < 0 { pi.neg() } else { pi };
-                ExactComplex::new(a.re().clone(), a.im().add(&pi, work_p, RoundingMode::None))
+                let (re, im) = a.into_parts();
+                ExactComplex::new(re, im.add(&pi, work_p, RoundingMode::None))
             }
         }
     }
@@ -345,10 +346,8 @@ impl ExactComplex {
             work_p,
             RoundingMode::None,
         );
-        ExactComplex::new(
-            half_sum.re().clone(),
-            half_sum.im().add(&corr, work_p, RoundingMode::None),
-        )
+        let (re, im) = half_sum.into_parts();
+        ExactComplex::new(re, im.add(&corr, work_p, RoundingMode::None))
     }
 
     fn li_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -368,7 +367,7 @@ impl ExactComplex {
             .mul(&half_c(p), p, RoundingMode::None);
         let one = ExactComplex::one(p);
         let i = ExactComplex::i(p);
-        let one_p_i = one.add(&i, p, RoundingMode::None);
+        let one_p_i = ExactComplex::one(p).add(&i, p, RoundingMode::None);
         let one_m_i = one.sub(&i, p, RoundingMode::None);
         let erf_m = one_m_i
             .mul(&scale, p, RoundingMode::None)
@@ -384,16 +383,18 @@ impl ExactComplex {
             one_m_i
                 .mul(&half_c(p), p, RoundingMode::None)
                 .mul(&erf_p, p, RoundingMode::None);
+        let two_i = two_c(p).mul(&i, p, RoundingMode::None);
+        // `c+ - c-` is `-c- + c+`: both stay borrowed until the sum below takes `c+`.
+        let s = ExactComplex::sub_ref(&c_plus_is, &c_minus_is, p, RoundingMode::None).div(
+            &two_i,
+            p,
+            RoundingMode::None,
+        );
         let c = c_plus_is.add(&c_minus_is, p, RoundingMode::None).mul(
             &half_c(p),
             p,
             RoundingMode::None,
         );
-        let two_i = two_c(p).mul(&i, p, RoundingMode::None);
-        let s =
-            c_plus_is
-                .sub(&c_minus_is, p, RoundingMode::None)
-                .div(&two_i, p, RoundingMode::None);
         (s, c)
     }
 
@@ -414,7 +415,7 @@ mod tests {
     use crate::complex_special::two_c;
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
         d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / 4))
     }
 
@@ -423,8 +424,8 @@ mod tests {
     }
 
     fn cnear_bits(a: &ExactComplex, b: &ExactComplex, p: usize, slack: i32) -> bool {
-        let dr = a.re().sub(b.re(), p, RoundingMode::None).abs();
-        let di = a.im().sub(b.im(), p, RoundingMode::None).abs();
+        let dr = ExactNum::sub_ref(a.re(), b.re(), p, RoundingMode::None).abs();
+        let di = ExactNum::sub_ref(a.im(), b.im(), p, RoundingMode::None).abs();
         (dr.is_zero() || dr.exponent().is_some_and(|e| e < -((p as i32) / slack)))
             && (di.is_zero() || di.exponent().is_some_and(|e| e < -((p as i32) / slack)))
     }
@@ -460,19 +461,33 @@ mod tests {
         assert!(tiny(fc0.re(), p) && tiny(fc0.im(), p));
 
         let h = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
-        let hc = ExactComplex::from_real(h, p);
-        let num_ei =
-            z.add(&hc, p, rm)
-                .ei(p, rm, &mut cc)
-                .sub(&z.sub(&hc, p, rm).ei(p, rm, &mut cc), p, rm);
+        let hc = ExactComplex::from_real(h.clone(), p);
+        let num_ei = ExactComplex::from_real(h.clone(), p)
+            .add(&z, p, rm)
+            .ei(p, rm, &mut cc)
+            .sub(
+                &ExactComplex::from_real(h.clone(), p)
+                    .neg()
+                    .add(&z, p, rm)
+                    .ei(p, rm, &mut cc),
+                p,
+                rm,
+            );
         let deriv_ei = num_ei.div(&hc.mul(&two_c(p), p, rm), p, rm);
         let expect_ei = z.exp(p, rm, &mut cc).div(&z, p, rm);
         assert!(cnear_bits(&deriv_ei, &expect_ei, p, 8));
 
-        let num_si =
-            z.add(&hc, p, rm)
-                .si(p, rm, &mut cc)
-                .sub(&z.sub(&hc, p, rm).si(p, rm, &mut cc), p, rm);
+        let num_si = ExactComplex::from_real(h.clone(), p)
+            .add(&z, p, rm)
+            .si(p, rm, &mut cc)
+            .sub(
+                &ExactComplex::from_real(h, p)
+                    .neg()
+                    .add(&z, p, rm)
+                    .si(p, rm, &mut cc),
+                p,
+                rm,
+            );
         let deriv_si = num_si.div(&hc.mul(&two_c(p), p, rm), p, rm);
         let expect_si = z.sin(p, rm, &mut cc).div(&z, p, rm);
         assert!(cnear_bits(&deriv_si, &expect_si, p, 8));

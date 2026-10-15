@@ -86,8 +86,8 @@ fn fuzz_mpfr_bit_exact_all_round_modes() {
             for op in ops {
                 for rm in ALL_MODES {
                     let n3 = match op {
-                        BinOp::Add => n1.add(&n2, p, rm),
-                        BinOp::Sub => n1.sub(&n2, p, rm),
+                        BinOp::Add => n1.clone().add(&n2, p, rm),
+                        BinOp::Sub => n1.clone().sub(&n2, p, rm),
                         BinOp::Mul => n1.mul(&n2, p, rm),
                         BinOp::Div => n1.div(&n2, p, rm),
                     };
@@ -298,8 +298,8 @@ fn fuzz_mpfr_exact_bit_precision() {
                             continue;
                         }
                         let n3 = match op {
-                            BinOp::Add => n1.add(&n2, p, rm),
-                            BinOp::Sub => n1.sub(&n2, p, rm),
+                            BinOp::Add => n1.clone().add(&n2, p, rm),
+                            BinOp::Sub => n1.clone().sub(&n2, p, rm),
                             BinOp::Mul => n1.mul(&n2, p, rm),
                             BinOp::Div => n1.div(&n2, p, rm),
                         };

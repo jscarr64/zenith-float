@@ -459,7 +459,7 @@ fn lost_bits(got: &ExactNum, want: &ExactNum, scale: &ExactNum, p: usize) -> Res
         };
     }
     let width = round_p(p).max(64).saturating_mul(2);
-    let diff = got.sub(want, width, RoundingMode::None);
+    let diff = ExactNum::sub_ref(got, want, width, RoundingMode::None);
     if diff.is_zero() {
         return Ok(0);
     }
@@ -521,7 +521,7 @@ fn near_two_digits(got: &ExactNum, want: &ExactNum, scale: &ExactNum, cc: &mut C
         return false;
     }
     let width = 256usize;
-    let diff = got.sub(want, width, RoundingMode::None).abs();
+    let diff = ExactNum::sub_ref(got, want, width, RoundingMode::None).abs();
     if diff.is_zero() {
         return true;
     }

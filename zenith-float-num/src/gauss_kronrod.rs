@@ -338,8 +338,9 @@ fn char_poly(lam: &ExactNum, beta: &[ExactNum], p: usize) -> Option<(ExactNum, E
     }
     for b in beta {
         let p_new = lam.mul(&p1, p, rm).sub(&b.mul(&p0, p, rm), p, rm);
-        let d_new = p1
-            .add(&lam.mul(&d1, p, rm), p, rm)
+        let d_new = lam
+            .mul(&d1, p, rm)
+            .add(&p1, p, rm)
             .sub(&b.mul(&d0, p, rm), p, rm);
         if !finite(&p_new) || !finite(&d_new) {
             return None;
@@ -365,7 +366,7 @@ fn polish_root(
         return Some(lo);
     }
     for _ in 0..GK_BISECT_STEPS {
-        let mid = lo.add(&hi, p, rm).div(&two, p, rm);
+        let mid = ExactNum::add_ref(&lo, &hi, p, rm).div(&two, p, rm);
         let (fm, _) = char_poly(&mid, beta, p)?;
         if fm.is_zero() {
             return Some(mid);
@@ -388,7 +389,7 @@ fn polish_root(
         if !finite(&step) {
             break;
         }
-        let next = x.sub(&step, p, rm);
+        let next = ExactNum::sub_ref(&x, &step, p, rm);
         if !finite(&next) {
             break;
         }
@@ -615,15 +616,15 @@ where
 {
     let rm = RoundingMode::None;
     let two = ExactNum::from_u8(2, p);
-    let half = b.sub(a, p, rm).div(&two, p, rm);
-    let mid = a.add(b, p, rm).div(&two, p, rm);
+    let half = ExactNum::sub_ref(b, a, p, rm).div(&two, p, rm);
+    let mid = ExactNum::add_ref(a, b, p, rm).div(&two, p, rm);
     if !finite(&half) || !finite(&mid) || !half.is_positive() {
         return Err(QuadratureError::InvalidArgument);
     }
     let mut sk = ExactNum::new(p);
     let mut sg = ExactNum::new(p);
     for i in 0..nodes.len() {
-        let x = mid.add(&half.mul(&nodes[i], p, rm), p, rm);
+        let x = half.mul(&nodes[i], p, rm).add(&mid, p, rm);
         let y = f(&x, p, rm, cc);
         if !finite(&y) {
             return Err(QuadratureError::InvalidArgument);
@@ -681,7 +682,7 @@ where
     let _ = aa.set_precision(wrk, RoundingMode::None);
     let _ = bb.set_precision(wrk, RoundingMode::None);
     let (k, g) = eval_panel(&mut f, &aa, &bb, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
-    let err = k.sub(&g, wrk, RoundingMode::None).abs();
+    let err = ExactNum::sub_ref(&k, &g, wrk, RoundingMode::None).abs();
     if !finite(&k) || !finite(&g) || !finite(&err) {
         return Err(QuadratureError::NotConverged);
     }
@@ -704,7 +705,7 @@ fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
         let mut next = Vec::with_capacity(cols[k].len() - 1);
         let mut broke = false;
         for i in 0..cols[k].len() - 1 {
-            let diff = cols[k][i + 1].sub(&cols[k][i], p, rm);
+            let diff = ExactNum::sub_ref(&cols[k][i + 1], &cols[k][i], p, rm);
             if !finite(&diff) || diff.is_zero() {
                 broke = true;
                 break;
@@ -866,7 +867,7 @@ where
     let mut tol_work = tol_rel.clone();
     let _ = tol_work.set_precision(wrk, RoundingMode::None);
     let (k0, g0) = eval_panel(&mut f, &aa, &bb, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
-    let err0 = k0.sub(&g0, wrk, RoundingMode::None).abs();
+    let err0 = ExactNum::sub_ref(&k0, &g0, wrk, RoundingMode::None).abs();
     let mut panels = vec![Panel {
         a: aa,
         b: bb,
@@ -895,7 +896,7 @@ where
             if let Some(ex) = wynn_table(&seq, wrk) {
                 if ex.order >= 2 {
                     if let Some(prev) = &prev_eps {
-                        let de = ex.value.sub(prev, wrk, RoundingMode::None).abs();
+                        let de = ExactNum::sub_ref(&ex.value, prev, wrk, RoundingMode::None).abs();
                         if finite(&de) && leq(&de, &tol) {
                             let raw =
                                 if de.compare(&total_err) == Some(1) { de } else { total_err };
@@ -922,9 +923,11 @@ where
         let left_a = panels[worst].a.clone();
         let right_b = panels[worst].b.clone();
         let two = ExactNum::from_u8(2, wrk);
-        let mid = left_a
-            .add(&right_b, wrk, RoundingMode::None)
-            .div(&two, wrk, RoundingMode::None);
+        let mid = ExactNum::add_ref(&left_a, &right_b, wrk, RoundingMode::None).div(
+            &two,
+            wrk,
+            RoundingMode::None,
+        );
         if mid.compare(&left_a) != Some(1) || mid.compare(&right_b) != Some(-1) {
             return Err(QuadratureError::NotConverged);
         }
@@ -932,8 +935,8 @@ where
         let (k2, g2) = eval_panel(
             &mut f, &mid, &right_b, &nodes, &w_gauss, &w_kronrod, wrk, cc,
         )?;
-        let e1 = k1.sub(&g1, wrk, RoundingMode::None).abs();
-        let e2 = k2.sub(&g2, wrk, RoundingMode::None).abs();
+        let e1 = ExactNum::sub_ref(&k1, &g1, wrk, RoundingMode::None).abs();
+        let e2 = ExactNum::sub_ref(&k2, &g2, wrk, RoundingMode::None).abs();
         panels[worst] = Panel {
             a: left_a,
             b: mid.clone(),
@@ -1001,7 +1004,7 @@ where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
     let one = ExactNum::from_u8(1, p);
-    let den = one.sub(t, p, rm);
+    let den = ExactNum::sub_ref(&one, t, p, rm);
     if !finite(&den) || !den.is_positive() {
         return ExactNum::new(p);
     }
@@ -1028,7 +1031,7 @@ where
 {
     let one = ExactNum::from_u8(1, p);
     let t2 = t.mul(t, p, rm);
-    let den = one.sub(&t2, p, rm);
+    let den = ExactNum::sub_ref(&one, &t2, p, rm);
     if !finite(&den) || den.is_zero() || den.is_negative() {
         return ExactNum::new(p);
     }
@@ -1131,7 +1134,7 @@ mod tests {
         if got.is_nan() {
             return i32::MIN;
         }
-        let d = got.sub(want, 2 * p, RoundingMode::None);
+        let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
         if d.is_zero() {
             return i32::MAX;
         }
@@ -1284,6 +1287,7 @@ mod tests {
             let want_one = ExactNum::from_u8(1, p);
             let gap = exp_tail
                 .estimate_kronrod
+                .clone()
                 .sub(&want_one, 2 * p, RoundingMode::None)
                 .abs();
             assert!(
@@ -1306,6 +1310,7 @@ mod tests {
             .expect("1/x^2");
             let gap = alg
                 .estimate_kronrod
+                .clone()
                 .sub(&want_one, 2 * p, RoundingMode::None)
                 .abs();
             assert!(
@@ -1330,6 +1335,7 @@ mod tests {
             let pi = cc.pi(p, rm).sqrt(p, rm);
             let gap = gauss
                 .estimate_kronrod
+                .clone()
                 .sub(&pi, 2 * p, RoundingMode::None)
                 .abs();
             assert!(

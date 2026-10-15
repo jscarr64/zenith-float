@@ -127,7 +127,7 @@ fn inv_sqrt(x: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
 
 fn covers(est: &ExactNum, truth: &ExactNum, err: &ExactNum) -> bool {
     let width = 1088usize;
-    let gap = est.sub(truth, width, RoundingMode::None).abs();
+    let gap = ExactNum::sub_ref(est, truth, width, RoundingMode::None).abs();
     matches!(gap.compare(err), Some(c) if c <= 0)
 }
 

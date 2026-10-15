@@ -59,9 +59,8 @@ where
     }
     let two = ExactNum::from_u8(2, wrk);
     for k in 1..=ROOT_MAX_ITER {
-        let mid = a
-            .add(&b, wrk, RoundingMode::None)
-            .div(&two, wrk, RoundingMode::None);
+        let mid =
+            ExactNum::add_ref(&a, &b, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
         if !strictly_inside(&mid, &a, &b) {
             // The bracket is two adjacent working-precision values: `tol` is below resolution.
             let mut out = mid;
@@ -79,7 +78,12 @@ where
             a = mid.clone();
             fa = fm.clone();
         }
-        if fm.is_zero() || below_tol(&b.sub(&a, wrk, RoundingMode::None).abs(), tol) {
+        if fm.is_zero()
+            || below_tol(
+                &ExactNum::sub_ref(&b, &a, wrk, RoundingMode::None).abs(),
+                tol,
+            )
+        {
             let mut out = mid;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
@@ -184,7 +188,7 @@ where
         return None;
     }
     for k in 1..=ROOT_MAX_ITER {
-        let den = fb.sub(&fa, wrk, RoundingMode::None);
+        let den = ExactNum::sub_ref(&fb, &fa, wrk, RoundingMode::None);
         if den.is_zero() {
             return None;
         }
@@ -206,7 +210,12 @@ where
         if !finite(&c) || !finite(&fc) {
             return None;
         }
-        if fc.is_zero() || below_tol(&b.sub(&a, wrk, RoundingMode::None).abs(), tol) {
+        if fc.is_zero()
+            || below_tol(
+                &ExactNum::sub_ref(&b, &a, wrk, RoundingMode::None).abs(),
+                tol,
+            )
+        {
             let mut out = c;
             let _ = out.set_precision(p, rm);
             return Some((out, k));
@@ -295,13 +304,13 @@ where
     }
     let mut c = a.clone();
     let mut fc = fa.clone();
-    let mut d = b.sub(&a, wrk, none);
+    let mut d = ExactNum::sub_ref(&b, &a, wrk, none);
     let mut e = d.clone();
     for k in 1..=ROOT_MAX_ITER {
         if same_sign(&fb, &fc) {
             c = a.clone();
             fc = fa.clone();
-            d = b.sub(&a, wrk, none);
+            d = ExactNum::sub_ref(&b, &a, wrk, none);
             e = d.clone();
         }
         if abs_lt(&fc, &fb) {
@@ -318,7 +327,7 @@ where
             eps2.mul(&b, wrk, none)
         }
         .add(&half_tol, wrk, none);
-        let m = c.sub(&b, wrk, none).div(&two, wrk, none);
+        let m = ExactNum::sub_ref(&c, &b, wrk, none).div(&two, wrk, none);
         if fb.is_zero() || !abs_lt(&tol1, &m) {
             let mut out = b;
             let _ = out.set_precision(p, rm);
@@ -329,22 +338,30 @@ where
             let s = fb.div(&fa, wrk, none);
             let two_m = two.mul(&m, wrk, none);
             let (mut pn, mut q) = if a.compare(&c) == Some(0) {
-                (two_m.mul(&s, wrk, none), one.sub(&s, wrk, none))
+                (two_m.mul(&s, wrk, none), s.neg().add(&one, wrk, none))
             } else {
                 let qa = fa.div(&fc, wrk, none);
                 let r = fb.div(&fc, wrk, none);
                 let inner = two_m
                     .mul(&qa, wrk, none)
-                    .mul(&qa.sub(&r, wrk, none), wrk, none)
+                    .mul(&ExactNum::sub_ref(&qa, &r, wrk, none), wrk, none)
                     .sub(
-                        &b.sub(&a, wrk, none).mul(&r.sub(&one, wrk, none), wrk, none),
+                        &a.neg().add(&b, wrk, none).mul(
+                            &ExactNum::from_u8(1, wrk).neg().add(&r, wrk, none),
+                            wrk,
+                            none,
+                        ),
                         wrk,
                         none,
                     );
                 let den = qa
                     .sub(&one, wrk, none)
                     .mul(&r.sub(&one, wrk, none), wrk, none)
-                    .mul(&s.sub(&one, wrk, none), wrk, none);
+                    .mul(
+                        &ExactNum::from_u8(1, wrk).neg().add(&s, wrk, none),
+                        wrk,
+                        none,
+                    );
                 (s.mul(&inner, wrk, none), den)
             };
             if pn.is_positive() {

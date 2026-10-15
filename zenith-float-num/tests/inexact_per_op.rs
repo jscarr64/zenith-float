@@ -94,10 +94,22 @@ fn inexact_is_not_inherited_from_operands() {
                 exact(&third.mul(&two, p, rm), "third * two", p, rm, negative);
                 exact(&third.div(&two, p, rm), "third / two", p, rm, negative);
                 exact(&third.mul(&half, p, rm), "third * half", p, rm, negative);
-                exact(&third.add(&third, p, rm), "third + third", p, rm, negative);
-                exact(&third.sub(&third, p, rm), "third - third", p, rm, negative);
                 exact(
-                    &third.sub(&neg_of(&third), p, rm),
+                    &ExactNum::add_ref(&third, &third, p, rm),
+                    "third + third",
+                    p,
+                    rm,
+                    negative,
+                );
+                exact(
+                    &ExactNum::sub_ref(&third, &third, p, rm),
+                    "third - third",
+                    p,
+                    rm,
+                    negative,
+                );
+                exact(
+                    &neg_of(&third).neg().add(&third, p, rm),
                     "third - (-third)",
                     p,
                     rm,
@@ -111,7 +123,7 @@ fn inexact_is_not_inherited_from_operands() {
                     negative,
                 );
                 exact(
-                    &third.add(&ExactNum::from_i8(0, p), p, rm),
+                    &ExactNum::from_i8(0, p).add(&third, p, rm),
                     "third + 0",
                     p,
                     rm,
@@ -155,7 +167,7 @@ fn accumulated_flag_still_inherits() {
                 back.inexact_accumulated(),
                 "accumulated sub p={p} rm={rm:?}"
             );
-            let exact = two.add(&two, p, rm);
+            let exact = ExactNum::from_i8(2, p).add(&two, p, rm);
             assert!(!exact.inexact_accumulated(), "exact chain p={p} rm={rm:?}");
         }
     }
@@ -181,8 +193,8 @@ fn complex_inexact_is_per_operation() {
             let z34 = cx(3, 4, p);
             let z12 = cx(1, 2, p);
             let checks: [(&str, ExactComplex); 10] = [
-                ("add", z34.add(&z12, p, rm)),
-                ("sub", z34.sub(&z12, p, rm)),
+                ("add", ExactComplex::add_ref(&z34, &z12, p, rm)),
+                ("sub", ExactComplex::sub_ref(&z34, &z12, p, rm)),
                 ("mul", z34.mul(&z12, p, rm)),
                 ("div", cx(-5, 10, p).div(&z12, p, rm)),
                 ("sqrt", z34.sqrt(p, rm, &mut cc)),
