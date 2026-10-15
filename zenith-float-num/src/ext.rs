@@ -5498,3 +5498,112 @@ mod special_arg_tests {
         }
     }
 }
+
+/// Characterization of `add` / `sub` when an operand is zero (the "return the other operand" shortcut that rule R
+/// deletes): value, sign of zero, rounding to `p`, flags, Inf / NaN. Every call is on a temporary or a borrowed
+/// second operand, so the same test compiles before and after the signature change.
+#[cfg(test)]
+mod add_sub_zero_tests {
+    use crate::defs::RoundingMode;
+    use crate::{Error, ExactNum, INF_NEG, INF_POS};
+    use core::ops::Neg;
+
+    const RMS: [RoundingMode; 5] = [
+        RoundingMode::ToEven,
+        RoundingMode::ToZero,
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::FromZero,
+    ];
+
+    fn zero(neg: bool) -> ExactNum {
+        let z = ExactNum::new(64);
+        if neg {
+            z.neg()
+        } else {
+            z
+        }
+    }
+
+    fn third(p: usize) -> ExactNum {
+        ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, RoundingMode::ToEven)
+    }
+
+    #[test]
+    fn zero_plus_zero_sign_rule() {
+        for rm in RMS {
+            for (an, bn) in [(false, false), (false, true), (true, false), (true, true)] {
+                let want_add = if an == bn { an } else { rm == RoundingMode::Down };
+                let r = zero(an).add(&zero(bn), 64, rm);
+                assert!(r.is_zero());
+                assert_eq!(r.is_negative(), want_add, "{an} + {bn} {rm:?}");
+                let want_sub = if an != bn { an } else { rm == RoundingMode::Down };
+                let r = zero(an).sub(&zero(bn), 64, rm);
+                assert!(r.is_zero());
+                assert_eq!(r.is_negative(), want_sub, "{an} - {bn} {rm:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn one_zero_operand_returns_the_other_rounded_to_p() {
+        for rm in RMS {
+            for p in [64, 128, 192] {
+                for neg in [false, true] {
+                    let x = if neg { third(192).neg() } else { third(192) };
+                    // reference: the same value rounded to p by set_precision
+                    let mut want = ExactNum::new(64).add(&x, 192, RoundingMode::None);
+                    want.set_precision(p, rm).unwrap();
+                    for zn in [false, true] {
+                        let z = zero(zn);
+                        let a = x.add(&z, p, rm);
+                        let b = z.add(&x, p, rm);
+                        let c = x.sub(&z, p, rm);
+                        let d = z.sub(&x, p, rm);
+                        for r in [&a, &b, &c] {
+                            assert_eq!(r.compare(&want), Some(0), "p={p} {rm:?} neg={neg}");
+                            assert_eq!(r.mantissa_max_bit_len(), want.mantissa_max_bit_len());
+                        }
+                        let mut want_neg = ExactNum::new(64).sub(&x, 192, RoundingMode::None);
+                        want_neg.set_precision(p, rm).unwrap();
+                        assert_eq!(d.compare(&want_neg), Some(0), "p={p} {rm:?}");
+                        assert_eq!(a.is_negative(), neg);
+                        assert_eq!(d.is_negative(), !neg);
+                        // 192 bits of 1/3 do not fit 64 or 128 bits
+                        if p < 192 {
+                            assert!(a.inexact_accumulated() && b.inexact_accumulated());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn zero_with_exact_operand_is_exact() {
+        let x = ExactNum::from_u8(12, 64);
+        for rm in RMS {
+            let r = x.add(&zero(false), 64, rm);
+            assert!(!r.inexact_accumulated());
+            assert_eq!(r.compare(&x), Some(0));
+            let r = zero(true).sub(&x, 64, rm);
+            assert_eq!(r.compare(&x.neg_via_mul()), Some(0));
+        }
+    }
+
+    #[test]
+    fn zero_with_inf_and_nan() {
+        let nan = ExactNum::nan(Some(Error::InvalidArgument));
+        for rm in RMS {
+            assert!(zero(false).add(&INF_POS, 64, rm).is_positive());
+            assert!(zero(true).add(&INF_NEG, 64, rm).is_inf() && INF_NEG.is_negative());
+            assert!(INF_NEG.sub(&zero(false), 64, rm).is_negative());
+            assert!(zero(false).sub(&INF_POS, 64, rm).is_negative());
+            assert!(zero(false).sub(&INF_POS, 64, rm).is_inf());
+            let r = zero(false).add(&nan, 64, rm);
+            assert!(r.is_nan() && r.err() == nan.err());
+            let r = nan.sub(&zero(true), 64, rm);
+            assert!(r.is_nan() && r.err() == nan.err());
+        }
+    }
+}
