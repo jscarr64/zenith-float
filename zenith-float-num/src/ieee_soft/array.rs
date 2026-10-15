@@ -959,8 +959,9 @@ impl ExactNumArray {
         self.map_own(p, |x| x.floor())
     }
     /// Elementwise `round` with `n` binary fractional bits.
-    pub fn round(&self, n: usize, rm: RoundingMode) -> Self {
-        self.map_at(self.p, |x| x.round(n, rm))
+    pub fn round(self, n: usize, rm: RoundingMode) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.round(n, rm))
     }
     /// Elementwise absolute value. Takes ownership; every element is updated in place.
     pub fn abs(mut self) -> Self {

@@ -435,6 +435,7 @@ mod tests {
             let mut pi = cc.pi(p, pirm);
             pi.set_exponent(0);
             let pi_rounded = pi.round(bits, pirm);
+            let mut pi = cc.pi(p, pirm);
             let pi_digits = pi_rounded.mantissa_digits().unwrap();
 
             let l = m1.len();

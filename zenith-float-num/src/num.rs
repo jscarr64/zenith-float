@@ -1299,84 +1299,82 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - ExponentOverflow: rounding causes exponent overflow.
     ///  - InvalidArgument: `n` is too large.
-    pub fn round(&self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
+    pub fn round(mut self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
         if n as u64 >= (i64::MAX / 2) as u64 {
             return Err(Error::InvalidArgument);
         }
 
-        let mut ret = self.clone()?;
-
-        let e = self.mantissa_max_bit_len() as i64 - self.e as i64;
+        let max_bits = self.mantissa_max_bit_len();
+        let e = max_bits as i64 - self.e as i64;
 
         if e > 0 && e as usize > n && !self.is_zero() {
             let m = e as usize - n;
 
-            if m >= self.mantissa_max_bit_len() {
+            if m >= max_bits {
                 let is_positive = self.is_positive();
                 let msb_set = self.m.most_significant_word() & WORD_SIGNIFICANT_BIT != 0;
+                let below_half =
+                    count_leading_zeroes_skip_first(self.mantissa().digits()) != max_bits;
 
-                ret.m.set_zero();
+                self.m.set_zero();
 
                 if rm == RoundingMode::FromZero
                     || (is_positive && rm == RoundingMode::Up)
                     || (!is_positive && rm == RoundingMode::Down)
-                    || (m == self.mantissa_max_bit_len()
+                    || (m == max_bits
                         && ((msb_set && rm == RoundingMode::ToOdd)
-                            || (rm == RoundingMode::ToEven
-                                && msb_set
-                                && count_leading_zeroes_skip_first(self.mantissa().digits())
-                                    != self.mantissa_max_bit_len())))
+                            || (rm == RoundingMode::ToEven && msb_set && below_half)))
                 {
                     // non zero for directed rounding modes,
                     // non zero for rounding to even/odd when msb of self is the rounding bit
-                    let Some(top) = ret.m.digits_mut().last_mut() else {
+                    let Some(top) = self.m.digits_mut().last_mut() else {
                         return Err(Error::InvalidArgument); // a rounded result has at least one word
                     };
                     *top = WORD_SIGNIFICANT_BIT;
-                    ret.m.set_bit_len(ret.mantissa_max_bit_len());
+                    self.m.set_bit_len(self.mantissa_max_bit_len());
 
                     let e = -(n as i64 - 1);
                     if e < EXPONENT_MIN as i64 {
-                        ret.e = EXPONENT_MIN;
-                        ret.subnormalize(e, rm);
+                        self.e = EXPONENT_MIN;
+                        self.subnormalize(e, rm);
                     } else {
-                        ret.e = e as Exponent;
+                        self.e = e as Exponent;
                     }
                 } else {
-                    ret.e = 0;
+                    self.e = 0;
                 }
 
-                ret.inexact |= true; // self was not zero
+                self.inexact |= true; // self was not zero
             } else {
-                let mut inexact = ret.inexact;
+                let mut inexact = self.inexact;
 
-                let ovf = ret.m.round_mantissa(
+                let ovf = self.m.round_mantissa(
                     m,
                     rm,
                     self.is_positive(),
                     &mut false,
-                    ret.m.max_bit_len(),
+                    self.m.max_bit_len(),
                     &mut inexact,
                 );
 
-                ret.inexact |= inexact;
+                self.inexact |= inexact;
 
                 if ovf {
-                    if ret.e == EXPONENT_MAX {
-                        return Err(Error::ExponentOverflow(ret.s));
+                    if self.e == EXPONENT_MAX {
+                        return Err(Error::ExponentOverflow(self.s));
                     }
 
-                    ret.e += 1;
-                } else if ret.m.is_all_zero() {
-                    ret.m.set_bit_len(0);
-                    ret.e = 0;
-                } else if ret.is_subnormal() {
-                    ret.m.update_bit_len();
+                    self.e += 1;
+                } else if self.m.is_all_zero() {
+                    self.m.set_bit_len(0);
+                    self.e = 0;
+                } else if self.is_subnormal() {
+                    self.m.update_bit_len();
                 }
             }
         }
 
-        Ok(ret)
+        Ok(self)
     }
 
     #[cfg(any(test, feature = "random"))]
@@ -3347,6 +3345,7 @@ mod tests {
         for (m1, s, e1, n, rm, m2, e2) in testset {
             //println!("{:?}", (m1, s, e1, n, rm, m2, e2));
             let d1 = ExactNumNumber::from_words(&m1, s, e1).unwrap();
+            let d1_inexact = d1.inexact();
             let d2 = d1.round(n, rm).unwrap();
 
             let m2m = Mantissa::from_words(m2.len() * WORD_BIT_SIZE, &m2).unwrap();
@@ -3354,7 +3353,7 @@ mod tests {
             assert_eq!(d2.mantissa().bit_len(), m2m.bit_len());
             assert_eq!(d2.sign(), s);
             assert_eq!(d2.exponent(), e2);
-            assert!(!d1.inexact());
+            assert!(!d1_inexact);
             assert!(d2.inexact());
         }
     }

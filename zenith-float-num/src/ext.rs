@@ -1987,22 +1987,6 @@ macro_rules! gen_wrapper_own {
     };
 }
 
-macro_rules! gen_wrapper_arg_rm {
-    // unwrap error, function requires self as argument
-    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $($arg:ident, $arg_type:ty),*) => {
-        #[doc=$comment]
-        pub fn $fname(&self$(,$arg: $arg_type)*, rm: RoundingMode) -> $ret {
-            match &self.inner {
-                Flavor::Value(v) => {
-                    Self::result_to_ext(v.$fname($($arg,)* rm), v.is_zero(), true)
-                },
-                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
-                Flavor::NaN(err) => Self::nan(*err),
-            }
-        }
-    };
-}
-
 macro_rules! gen_wrapper_exact_rm {
     // rounded at exactly `p` bits through `round_exact`, with a per-operation flag
     ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $p:ident, usize) => {
@@ -2194,15 +2178,26 @@ Accuracy: correctly-rounded",
         { INF_POS },
         { INF_NEG },
     );
-    gen_wrapper_arg_rm!("Returns the rounded number with `n` binary positions in the fractional part of the number using rounding mode `rm`.
-Accuracy: correctly-rounded", 
-        round,
-        Self,
-        { INF_POS },
-        { INF_NEG },
-        n,
-        usize
-    );
+    /// Returns the rounded number with `n` binary positions in the fractional part of the number using rounding mode `rm`.
+    /// Takes ownership; the result is written in the operand's storage.
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn round(self, n: usize, rm: RoundingMode) -> Self {
+        match self.inner {
+            Flavor::Value(v) => {
+                let is_zero = v.is_zero();
+                Self::result_to_ext(v.round(n, rm), is_zero, true)
+            }
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    INF_POS
+                } else {
+                    INF_NEG
+                }
+            }
+            Flavor::NaN(err) => Self::nan(err),
+        }
+    }
     /// Computes the square root of a number with precision `p`. The result is rounded using
     /// the rounding mode `rm` at exactly `p` bits; `inexact()` reports this operation only.
     /// The function returns NaN if the precision `p` is incorrect.
@@ -5448,8 +5443,8 @@ mod special_arg_tests {
         assert!(eq(&q(7).round(0, RoundingMode::ToZero), &q(4)));
         assert!(INF_POS.round(3, RM).is_inf() && INF_POS.round(3, RM).is_positive());
         assert!(INF_NEG.round(3, RM).is_inf() && INF_NEG.round(3, RM).is_negative());
-        for n in nans() {
-            same_nan(&n.round(3, RM), &n);
+        for (n, m) in nans().into_iter().zip(nans()) {
+            same_nan(&n.round(3, RM), &m);
         }
     }
 
@@ -5752,6 +5747,24 @@ mod grid_digest_tests {
         assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
         println!("ldexp grid digest = {}", h.finish());
         assert_eq!(h.finish(), 3_896_020_040_264_525_112);
+    }
+
+    #[test]
+    fn round_grid_digest() {
+        let positions = [0usize, 1, 5, 63, 64, 65, 100, 200, 1 << 20, 1 << 40, usize::MAX / 2];
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..OPERANDS {
+            for n in positions {
+                for rm in RMS {
+                    digest(&operand(i).round(n, rm), &mut h);
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, OPERANDS * 11 * 6);
+        println!("round grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 2_584_562_321_548_619_649);
     }
 
     #[test]
