@@ -270,7 +270,10 @@ fn gauss_legendre_nodes(
         } else {
             x.legendre_p(nu - 1, wrk, RoundingMode::None)
         };
-        let d = one.sub(&x.mul(&x, wrk, RoundingMode::None), wrk, RoundingMode::None);
+        let d = x
+            .mul(&x, wrk, RoundingMode::None)
+            .neg()
+            .add(&one, wrk, RoundingMode::None);
         let dp = n_f
             .mul(
                 &pnm.sub(
@@ -389,11 +392,9 @@ where
             break;
         }
         let mut eval = |s: &ExactNum| {
-            let x = mid.add(
-                &half.mul(s, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            );
+            let x = half
+                .mul(s, wrk, RoundingMode::None)
+                .add(&mid, wrk, RoundingMode::None);
             f(&x, wrk, RoundingMode::None, cc)
         };
         let y0 = eval(&xi);

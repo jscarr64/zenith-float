@@ -1554,7 +1554,6 @@ impl ExactNum {
         } else {
             self.clone()
         };
-        let one = ExactNum::from_u8(1, wrk);
         let two = ExactNum::from_u8(2, wrk);
         for _ in 0..(8 + p / 16) {
             let ew = w.exp(wrk, RoundingMode::None, cc);

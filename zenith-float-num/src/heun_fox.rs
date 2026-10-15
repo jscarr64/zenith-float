@@ -295,7 +295,8 @@ fn meijer_g_series(
             let expn = if r_is_one {
                 one.neg_via_mul().add(&ak, p, RoundingMode::None)
             } else {
-                one.neg()
+                ExactNum::from_u8(1, p)
+                    .neg()
                     .add(&ak, p, RoundingMode::None)
                     .div(r, p, RoundingMode::None)
             };
@@ -1877,7 +1878,10 @@ fn fox_h_gauss(
     }
     for (ai, &ai_int) in a.iter().zip(a_int.iter()) {
         let base = ExactNum::from_i32(ai_int, p);
-        let expn = half.neg().add(&ai, p, RoundingMode::None);
+        let expn = one
+            .div(&two, p, RoundingMode::None)
+            .neg()
+            .add(&ai, p, RoundingMode::None);
         m_fac = m_fac.div(&pow_real(&base, &expn, p, cc), p, RoundingMode::None);
     }
     let pi = cc.pi(p, RoundingMode::None);

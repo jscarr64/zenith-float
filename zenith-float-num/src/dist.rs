@@ -169,7 +169,6 @@ impl ExactNum {
         }
         let pw = work_p(p);
         let none = RoundingMode::None;
-        let one = ExactNum::from_u8(1, pw);
         let am1 = ExactNum::from_u8(1, pw).neg().add(&alpha, pw, none);
         let xb = self.div(beta, pw, none);
         let num = self
@@ -242,7 +241,6 @@ impl ExactNum {
         }
         let pw = work_p(p);
         let none = RoundingMode::None;
-        let one = ExactNum::from_u8(1, pw);
         let kf = ExactNum::from_u8(1, pw)
             .add(&self, pw, none)
             .gamma(pw, none, cc);

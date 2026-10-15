@@ -223,11 +223,9 @@ fn hypergeom_2f0_lentz(
         if cpx_tiny(&d, dest_p) {
             d = tiny.clone();
         }
-        c = one.add(
-            &ak.div(&c, work_p, RoundingMode::None),
-            work_p,
-            RoundingMode::None,
-        );
+        c = ak
+            .div(&c, work_p, RoundingMode::None)
+            .add(&one, work_p, RoundingMode::None);
         if cpx_tiny(&c, dest_p) {
             c = tiny.clone();
         }
@@ -826,8 +824,8 @@ impl ExactComplex {
             work_p,
             RoundingMode::None,
         ));
-        let a = half.add(nu, work_p, RoundingMode::None);
-        let b = half.sub(nu, work_p, RoundingMode::None);
+        let a = half_c(work_p).add(nu, work_p, RoundingMode::None);
+        let b = nu.neg_via_mul().add(&half, work_p, RoundingMode::None);
         let f = hypergeom_2f0_lentz(&a, &b, &w, work_p, dest_p)?;
         let pi = pi_c(work_p, cc);
         let omega = pi

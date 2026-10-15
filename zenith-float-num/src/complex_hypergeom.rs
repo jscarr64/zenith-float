@@ -110,7 +110,6 @@ fn hypergeom_series(
     z: &ExactComplex,
     p: usize,
 ) -> ExactComplex {
-    let one = ExactComplex::one(p);
     let mut term = ExactComplex::one(p);
     let mut sum = ExactComplex::one(p);
     let tiny = ExactNum::from_u8(1, p).ldexp(-((p as i32) - 8), p, rm());
@@ -127,7 +126,7 @@ fn hypergeom_series(
         let nn = ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p);
         let den = ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p)
             .add(&c, p, rm())
-            .mul(&one.add(&nn, p, rm()), p, rm());
+            .mul(&ExactComplex::one(p).add(&nn, p, rm()), p, rm());
         if matches!(den.abs(p, rm()).compare(&tiny), Some(c) if c < 0) {
             return nan_pair(Error::InvalidArgument);
         }
@@ -353,7 +352,7 @@ fn log_case_sum(
         for n in 0..m - 1 {
             let nn = re(n);
             let num = re(n).add(&a, p, rm()).mul(&re(n).add(&b, p, rm()), p, rm());
-            let den = re(n + 1).mul(&one_m.add(&nn, p, rm()), p, rm());
+            let den = re(n + 1).mul(&nn.add(&one_m, p, rm()), p, rm());
             t = t.mul(&num, p, rm()).div(&den, p, rm()).mul(&w, p, rm());
             max_e = max_e.max(cexp(&t.mul(&pref, p, rm())));
             s = s.add(&t, p, rm());
@@ -384,8 +383,9 @@ fn log_case_sum(
     let big = max_abs_param(&[a, b, c], p);
     let mut converged = false;
     for n in 0..HYPERGEOM_SERIES_MAX_TERMS {
-        let bracket = lnw
-            .sub(&psi_n1, p, rm())
+        let bracket = psi_n1
+            .neg_via_mul()
+            .add(&lnw, p, rm())
             .sub(&psi_nm1, p, rm())
             .add(&psi_a, p, rm())
             .add(&psi_b, p, rm());
@@ -398,8 +398,8 @@ fn log_case_sum(
         }
         // Advance n → n+1.
         let nn = re(n);
-        let a_n = am.add(&nn, p, rm());
-        let b_n = bm.add(&nn, p, rm());
+        let a_n = re(n).add(&am, p, rm());
+        let b_n = nn.add(&bm, p, rm());
         coef = coef.mul(&a_n.mul(&b_n, p, rm()), p, rm()).div(
             &re(n + 1).mul(&re(n + m + 1), p, rm()),
             p,

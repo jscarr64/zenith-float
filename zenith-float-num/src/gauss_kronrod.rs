@@ -624,7 +624,7 @@ where
     let mut sk = ExactNum::new(p);
     let mut sg = ExactNum::new(p);
     for i in 0..nodes.len() {
-        let x = mid.add(&half.mul(&nodes[i], p, rm), p, rm);
+        let x = half.mul(&nodes[i], p, rm).add(&mid, p, rm);
         let y = f(&x, p, rm, cc);
         if !finite(&y) {
             return Err(QuadratureError::InvalidArgument);
