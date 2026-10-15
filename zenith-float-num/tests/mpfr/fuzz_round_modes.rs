@@ -11,6 +11,7 @@ use crate::mpfr::common::mpfr_reference;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::common::test_random;
 use crate::mpfr::common::test_zf_op_no_cc;
+use crate::mpfr::common::zenith_binop;
 use crate::mpfr::common::BinOp;
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::float::{exp_max, exp_min};
@@ -297,16 +298,7 @@ fn fuzz_mpfr_exact_bit_precision() {
                         if rm == RoundingMode::ToOdd && band == "low" {
                             continue;
                         }
-                        let n3 = match op {
-                            BinOp::Add => n1.clone().add(&n2, p, rm),
-                            BinOp::Sub => n1.clone().sub(&n2, p, rm),
-                            BinOp::Mul => {
-                                ExactNum::random_normal(storage, e1lo, e1hi).mul(&n2, p, rm)
-                            }
-                            BinOp::Div => {
-                                ExactNum::random_normal(storage, e1lo, e1hi).div(&n2, p, rm)
-                            }
-                        };
+                        let n3 = zenith_binop(&n1, &n2, op, p, rm);
                         let f3 = mpfr_reference(&f1, &f2, op, p as u32, rm);
                         let info = format!("{band} #{i} p={p} {op:?} {rm:?} {n1:?} {n2:?}");
                         assert_exact_eq(&n3, &f3, p, &info, &mut cc);
@@ -314,5 +306,49 @@ fn fuzz_mpfr_exact_bit_precision() {
                 }
             }
         }
+    }
+}
+
+/// Regression for the f7de24b rewrite of `fuzz_mpfr_exact_bit_precision`: the mul/div arms built a fresh random
+/// first operand instead of using `n1`, so zenith computed a different product than MPFR (`mid #0 p=24 Mul ToEven`).
+/// The operands are the exact ones of that failure; the oracle is MPFR (`mpfr::mul`, RNDN, p = 24).
+#[test]
+fn zenith_binop_uses_both_operands_mpfr_mul_p24() {
+    let mut cc = Consts::new().unwrap();
+    unsafe {
+        mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
+        mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
+    }
+    let p = 24usize;
+    let n1 = ExactNum::from_raw_parts(
+        &[9994389172669906944],
+        64,
+        zenith_float_num::Sign::Pos,
+        -5,
+        true,
+    );
+    let n2 = ExactNum::from_raw_parts(
+        &[16400126323906838528],
+        64,
+        zenith_float_num::Sign::Neg,
+        38,
+        true,
+    );
+    let f1 = conv_to_mpfr(p, &n1, &mut cc);
+    let f2 = conv_to_mpfr(p, &n2, &mut cc);
+    let f3 = mpfr_reference(&f1, &f2, BinOp::Mul, p as u32, RoundingMode::ToEven);
+    // the value MPFR reports for this product (an outside oracle, independent of zenith)
+    let want = -4.13765094e9_f64;
+    assert!(
+        ((f3.to_f64() - want) / want).abs() < 1e-8,
+        "MPFR product {f3}"
+    );
+    for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::Up] {
+        let f3 = mpfr_reference(&f1, &f2, BinOp::Mul, p as u32, rm);
+        let n3 = zenith_binop(&n1, &n2, BinOp::Mul, p, rm);
+        assert_exact_eq(&n3, &f3, p, &format!("mul {rm:?}"), &mut cc);
+        let f4 = mpfr_reference(&f1, &f2, BinOp::Div, p as u32, rm);
+        let n4 = zenith_binop(&n1, &n2, BinOp::Div, p, rm);
+        assert_exact_eq(&n4, &f4, p, &format!("div {rm:?}"), &mut cc);
     }
 }

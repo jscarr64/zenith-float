@@ -47,7 +47,12 @@ fn inexact_is_set_when_this_op_rounds() {
                 let one = if negative { one.neg() } else { one };
                 let three = ExactNum::from_i8(3, p);
 
-                let third = ExactNum::from_i8(1, p).div(&three, p, rm);
+                let third = ExactNum::div_ref(&one, &three, p, rm);
+                assert_eq!(
+                    third.is_negative(),
+                    negative,
+                    "the quotient of the signed one keeps its sign: p={p}, rm={rm:?}"
+                );
                 assert!(
                     third.inexact(),
                     "Expected division to be inexact for p={}, rm={:?}, negative={}",

@@ -387,6 +387,23 @@ pub enum BinOp {
     Div,
 }
 
+/// Zenith result of `n1 op n2` where both operands stay live afterwards (the fuzz loops read them again
+/// for the failure message and for the other ops/modes): the borrowed-borrowed forms, no copy.
+pub fn zenith_binop(
+    n1: &ExactNum,
+    n2: &ExactNum,
+    op: BinOp,
+    p: usize,
+    rm: RoundingMode,
+) -> ExactNum {
+    match op {
+        BinOp::Add => ExactNum::add_ref(n1, n2, p, rm),
+        BinOp::Sub => ExactNum::sub_ref(n1, n2, p, rm),
+        BinOp::Mul => ExactNum::mul_ref(n1, n2, p, rm),
+        BinOp::Div => ExactNum::div_ref(n1, n2, p, rm),
+    }
+}
+
 fn mpfr_binop(r: &mut Float, a: &Float, b: &Float, op: BinOp, rnd: rnd_t) -> i32 {
     match op {
         BinOp::Add => unsafe { mpfr::add(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
