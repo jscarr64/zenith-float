@@ -102,18 +102,14 @@ impl Ball {
     /// plus a rounding ulp.
     pub fn sin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.sin(p, rm, cc);
-        let rad = self
-            .rad
-            .add(&Self::rounding_ulp(&mid, p), p, RoundingMode::Up);
+        let rad = Self::rounding_ulp(&mid, p).add(&self.rad, p, RoundingMode::Up);
         Ball { mid, rad }
     }
 
     /// Cosine of a ball. \(\lvert\cos'\rvert\le 1\).
     pub fn cos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.cos(p, rm, cc);
-        let rad = self
-            .rad
-            .add(&Self::rounding_ulp(&mid, p), p, RoundingMode::Up);
+        let rad = Self::rounding_ulp(&mid, p).add(&self.rad, p, RoundingMode::Up);
         Ball { mid, rad }
     }
 
@@ -173,9 +169,7 @@ impl Ball {
     /// \(J_0\) of a ball. \(\lvert J_0'\rvert=\lvert J_1\rvert\le 1\).
     pub fn bessel_j0(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let mid = self.mid.bessel_j(0, p, rm, cc);
-        let rad = self
-            .rad
-            .add(&Self::transcendental_slack(&mid, p), p, RoundingMode::Up);
+        let rad = Self::transcendental_slack(&mid, p).add(&self.rad, p, RoundingMode::Up);
         Ball { mid, rad }
     }
 
