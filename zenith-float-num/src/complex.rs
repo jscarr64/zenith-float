@@ -182,34 +182,29 @@ impl ExactComplex {
         Self::per_op(inputs, r)
     }
 
-    /// `self + rhs` at precision `p`.
+    /// `self + rhs` at precision `p`. Takes `self` by value: each part of the result is written by
+    /// the corresponding part of `self` (see [`ExactNum::add`]).
     ///
     /// Accuracy: correctly-rounded
-    pub fn add(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
-        let this = self.exact_copy();
-        let rhs_c = rhs.exact_copy();
+    pub fn add(self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         let inputs = self.inexact_accumulated() || rhs.inexact_accumulated();
-        Self::per_op(inputs, this.add_word(&rhs_c, p, rm))
+        let (re, im) = self.into_parts();
+        Self::per_op(
+            inputs,
+            Self::new(re.add(&rhs.re, p, rm), im.add(&rhs.im, p, rm)),
+        )
     }
 
-    /// Implementation of [`Self::add`] on operands without inexact history.
-    fn add_word(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
-        Self::new(self.re.add(&rhs.re, p, rm), self.im.add(&rhs.im, p, rm))
-    }
-
-    /// `self - rhs` at precision `p`.
+    /// `self - rhs` at precision `p`. Takes `self` by value.
     ///
     /// Accuracy: correctly-rounded
-    pub fn sub(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
-        let this = self.exact_copy();
-        let rhs_c = rhs.exact_copy();
+    pub fn sub(self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         let inputs = self.inexact_accumulated() || rhs.inexact_accumulated();
-        Self::per_op(inputs, this.sub_word(&rhs_c, p, rm))
-    }
-
-    /// Implementation of [`Self::sub`] on operands without inexact history.
-    fn sub_word(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
-        Self::new(self.re.sub(&rhs.re, p, rm), self.im.sub(&rhs.im, p, rm))
+        let (re, im) = self.into_parts();
+        Self::per_op(
+            inputs,
+            Self::new(re.sub(&rhs.re, p, rm), im.sub(&rhs.im, p, rm)),
+        )
     }
 
     /// `self * rhs` at precision `p`.
@@ -380,6 +375,7 @@ impl ExactComplex {
         let rm = RoundingMode::ToEven;
         let exact = |x: &ExactNum| finite(x) && !x.inexact_accumulated();
         let a = self.re.hypot(&self.im, p_x, rm);
+        let a_exact = exact(&a);
         let h = if self.re.is_negative() {
             a.sub(&self.re, p_x, rm)
         } else {
@@ -394,7 +390,7 @@ impl ExactComplex {
         } else {
             self.im.div(&t2, p_x, rm)
         };
-        if !(exact(&a) && exact(&h) && exact(&t) && exact(&u)) {
+        if !(a_exact && exact(&h) && exact(&t) && exact(&u)) {
             return None;
         }
         Some(if self.re.is_negative() {
@@ -904,13 +900,12 @@ impl ExactComplex {
     /// Implementation of [`Self::atan`] on operands without inexact history.
     fn atan_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
-        let i = Self::i(p_x);
-        let num = i.add(self, p_x, RoundingMode::None);
-        let den = i.sub(self, p_x, RoundingMode::None);
+        let num = Self::i(p_x).add(self, p_x, RoundingMode::None);
+        let den = Self::i(p_x).sub(self, p_x, RoundingMode::None);
         let ln = num
             .div(&den, p_x, RoundingMode::None)
             .ln(p_x, RoundingMode::None, cc);
-        let half_i = i.ldexp_parts(-1, p_x, RoundingMode::None);
+        let half_i = Self::i(p_x).ldexp_parts(-1, p_x, RoundingMode::None);
         half_i.mul(&ln, p_x, RoundingMode::None).finish(p, rm)
     }
 
@@ -930,7 +925,7 @@ impl ExactComplex {
         let rad =
             z2.add(&Self::one(p_x), p_x, RoundingMode::None)
                 .sqrt(p_x, RoundingMode::None, cc);
-        self.add(&rad, p_x, RoundingMode::None)
+        rad.add(self, p_x, RoundingMode::None)
             .ln(p_x, RoundingMode::None, cc)
             .finish(p, rm)
     }
@@ -971,20 +966,19 @@ impl ExactComplex {
                 return Self::new(re, im).finish(p, rm);
             }
         }
-        let one = Self::one(p_x);
-        let zm = self
-            .sub(&one, p_x, RoundingMode::None)
+        // `z - 1` is `-1 + z` and `z + 1` is `1 + z`: the constants own the sums, `z` stays borrowed.
+        let zm = Self::one(p_x)
+            .neg()
+            .add(&self, p_x, RoundingMode::None)
             .sqrt(p_x, RoundingMode::None, cc);
-        let zp = self
-            .add(&one, p_x, RoundingMode::None)
-            .sqrt(p_x, RoundingMode::None, cc);
-        self.add(
-            &zm.mul(&zp, p_x, RoundingMode::None),
-            p_x,
-            RoundingMode::None,
-        )
-        .ln(p_x, RoundingMode::None, cc)
-        .finish(p, rm)
+        let zp =
+            Self::one(p_x)
+                .add(&self, p_x, RoundingMode::None)
+                .sqrt(p_x, RoundingMode::None, cc);
+        zm.mul(&zp, p_x, RoundingMode::None)
+            .add(&self, p_x, RoundingMode::None)
+            .ln(p_x, RoundingMode::None, cc)
+            .finish(p, rm)
     }
 
     /// Principal `atanh`: `(1/2) ln((1+z)/(1−z))`.
@@ -1017,9 +1011,8 @@ impl ExactComplex {
                 return Self::new(crate::ext::INF_NEG, im0());
             }
         }
-        let one = Self::one(p_x);
-        let num = one.add(self, p_x, RoundingMode::None);
-        let den = one.sub(self, p_x, RoundingMode::None);
+        let num = Self::one(p_x).add(self, p_x, RoundingMode::None);
+        let den = Self::one(p_x).sub(self, p_x, RoundingMode::None);
         num.div(&den, p_x, RoundingMode::None)
             .ln(p_x, RoundingMode::None, cc)
             .ldexp_parts(-1, p_x, RoundingMode::None)
@@ -1069,8 +1062,44 @@ macro_rules! impl_cplx_binop {
     };
 }
 
-impl_cplx_binop!(Add, add);
-impl_cplx_binop!(Sub, sub);
+// `add` and `sub` take their first operand by value, so there is no `&ExactComplex + &ExactComplex`
+// (see the operators on `ExactNum`): `&a + b` is `b + a`, `&a - b` is `-b + a`.
+impl core::ops::Add<&ExactComplex> for ExactComplex {
+    type Output = ExactComplex;
+    fn add(self, rhs: &ExactComplex) -> ExactComplex {
+        ExactComplex::add(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+impl core::ops::Add<ExactComplex> for ExactComplex {
+    type Output = ExactComplex;
+    fn add(self, rhs: ExactComplex) -> ExactComplex {
+        ExactComplex::add(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+impl core::ops::Add<ExactComplex> for &ExactComplex {
+    type Output = ExactComplex;
+    fn add(self, rhs: ExactComplex) -> ExactComplex {
+        ExactComplex::add(rhs, self, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+impl core::ops::Sub<&ExactComplex> for ExactComplex {
+    type Output = ExactComplex;
+    fn sub(self, rhs: &ExactComplex) -> ExactComplex {
+        ExactComplex::sub(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+impl core::ops::Sub<ExactComplex> for ExactComplex {
+    type Output = ExactComplex;
+    fn sub(self, rhs: ExactComplex) -> ExactComplex {
+        ExactComplex::sub(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+impl core::ops::Sub<ExactComplex> for &ExactComplex {
+    type Output = ExactComplex;
+    fn sub(self, rhs: ExactComplex) -> ExactComplex {
+        ExactComplex::add(rhs.neg(), self, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
 impl_cplx_binop!(Mul, mul);
 impl_cplx_binop!(Div, div);
 

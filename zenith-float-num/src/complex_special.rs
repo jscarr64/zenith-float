@@ -12,6 +12,7 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// L1 radius \(\lvert\mathrm{Re}\,z\rvert+\lvert\mathrm{Im}\,z\rvert\) below which
 /// the Faddeeva power series is used (Poppe–Wijers inner region).
@@ -85,13 +86,17 @@ pub(crate) fn term_negligible(t: &ExactComplex, p: usize) -> bool {
 
 fn l1_below_series_bound(z: &ExactComplex, p: usize) -> bool {
     let (re, im) = (z.re(), z.im());
+    let bound = ExactNum::from_u32(FADDEEVA_SERIES_L1, p);
     let s = match (re.is_negative(), im.is_negative()) {
-        (false, false) => re.add(im, p, RoundingMode::None),
-        (false, true) => re.sub(im, p, RoundingMode::None),
-        (true, false) => im.sub(re, p, RoundingMode::None),
+        // `re + im < bound` is decided as `re < bound - im`: no sum of two borrowed values.
+        (false, false) => {
+            let room = bound.sub(im, p, RoundingMode::None);
+            return matches!(re.compare(&room), Some(c) if c < 0);
+        }
+        (false, true) => im.neg_via_mul().add(re, p, RoundingMode::None),
+        (true, false) => re.neg_via_mul().add(im, p, RoundingMode::None),
         (true, true) => re.neg_via_mul().sub(im, p, RoundingMode::None),
     };
-    let bound = ExactNum::from_u32(FADDEEVA_SERIES_L1, p);
     matches!(s.compare(&bound), Some(c) if c < 0)
 }
 
@@ -292,19 +297,19 @@ impl ExactComplex {
             let two_pi = cc
                 .pi(pw, RoundingMode::None)
                 .ldexp(1, pw, RoundingMode::None);
-            let k = im
-                .add(&pi, pw, RoundingMode::None)
+            let k = pi
+                .add(im, pw, RoundingMode::None)
                 .div(&two_pi, pw, RoundingMode::None)
                 .floor();
             if k.is_zero() {
                 return v;
             }
-            let im = im.sub(
-                &k.mul(&two_pi, pw, RoundingMode::None),
-                pw,
-                RoundingMode::None,
-            );
-            ExactComplex::new(v.re().clone(), im)
+            let (re, v_im) = v.into_parts();
+            let im =
+                k.mul(&two_pi, pw, RoundingMode::None)
+                    .neg()
+                    .add(&v_im, pw, RoundingMode::None);
+            ExactComplex::new(re, im)
         })
     }
 
@@ -555,7 +560,7 @@ impl ExactComplex {
 
     fn ln_gamma_stirling(&self, p: usize, cc: &mut Consts) -> Self {
         let ln_z = self.ln(p, RoundingMode::None, cc);
-        let zmh = self.sub(&half_c(p), p, RoundingMode::None);
+        let zmh = half_c(p).neg().add(&self, p, RoundingMode::None);
         let mut s = zmh.mul(&ln_z, p, RoundingMode::None);
         s = s.sub(self, p, RoundingMode::None);
         let two_pi = two_c(p).mul(&pi_c(p, cc), p, RoundingMode::None);

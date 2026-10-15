@@ -124,8 +124,8 @@ impl ExactNum {
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
-    pub fn add(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
-        self.add_op(d2, p, rm, false)
+    pub fn add(self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
+        (&self).add_op(d2, p, rm, false)
     }
 
     /// `a + b` with both operands borrowed: the sanctioned form for a site where **both operands are
@@ -202,8 +202,8 @@ impl ExactNum {
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
-    pub fn sub(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
-        self.sub_op(d2, p, rm, false)
+    pub fn sub(self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
+        (&self).sub_op(d2, p, rm, false)
     }
 
     /// Subtracts `d2` from `self` and returns the result of the operation.
@@ -324,7 +324,7 @@ impl ExactNum {
     /// Reconstruct with `hi.add(&lo, p, rm)` (not `add_full_prec`, which uses internal precision 0).
     ///
     /// Accuracy: correctly-rounded
-    pub fn two_sum(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
+    pub fn two_sum(self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
         if self.is_nan() {
             return (Self::nan(self.err()), Self::nan(self.err()));
         }
@@ -4213,8 +4213,56 @@ macro_rules! impl_exact_binop {
     };
 }
 
-impl_exact_binop!(Add, add, add);
-impl_exact_binop!(Sub, sub, sub);
+// `add` and `sub` take their first operand by value, so there is no `&ExactNum + &ExactNum`: nothing could
+// own the result's storage without copying an operand. `&a + b` is `b + a`; `&a - b` is `-b + a`.
+impl core::ops::Add<&ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: &ExactNum) -> ExactNum {
+        ExactNum::add(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Add<ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::add(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Add<ExactNum> for &ExactNum {
+    type Output = ExactNum;
+
+    fn add(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::add(rhs, self, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<&ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: &ExactNum) -> ExactNum {
+        ExactNum::sub(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::sub(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Sub<ExactNum> for &ExactNum {
+    type Output = ExactNum;
+
+    fn sub(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::add(-rhs, self, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
 impl_exact_binop!(Mul, mul, mul);
 impl_exact_binop!(Div, div, div);
 
@@ -5786,6 +5834,58 @@ mod grid_digest_tests {
         assert_eq!(count, OPERANDS * 11 * 6);
         println!("round grid digest = {}", h.finish());
         assert_eq!(h.finish(), 2_584_562_321_548_619_649);
+    }
+
+    /// The `+` and `-` operators on every combination of owned and borrowed operands that exists.
+    #[test]
+    fn operator_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
+                digest(&(&operand(i) + operand(j)), &mut h);
+                digest(&(operand(i) + &operand(j)), &mut h);
+                digest(&(operand(i) + operand(j)), &mut h);
+                digest(&(&operand(i) - operand(j)), &mut h);
+                digest(&(operand(i) - &operand(j)), &mut h);
+                digest(&(operand(i) - operand(j)), &mut h);
+                count += 6;
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
+        println!("operator grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 7_046_299_910_751_575_496);
+    }
+
+    /// `ExactComplex::add` and `sub` over parts that include zeros, Inf, NaN, inexact and subnormal values.
+    #[test]
+    fn complex_add_sub_grid_digest() {
+        use crate::ExactComplex;
+        let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for a in parts {
+            for b in parts {
+                for c in parts {
+                    for d in parts {
+                        for p in [1usize, 64, 128] {
+                            for rm in RMS {
+                                let z1 = || ExactComplex::new(operand(a), operand(b));
+                                let z2 = || ExactComplex::new(operand(c), operand(d));
+                                for r in [z1().add(&z2(), p, rm), z1().sub(&z2(), p, rm)] {
+                                    digest(r.re(), &mut h);
+                                    digest(r.im(), &mut h);
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        println!("complex add/sub grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 10_853_667_709_392_583_003);
     }
 
     /// `ExactNum::add_ref` / `sub_ref` (both operands borrowed) hash to the same digest as the

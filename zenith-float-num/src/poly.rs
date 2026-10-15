@@ -166,7 +166,7 @@ impl ExactNumPoly {
         for (i, a) in self.coeffs.iter().enumerate() {
             for (j, b) in rhs.coeffs.iter().enumerate() {
                 let t = a.mul(b, p, rm);
-                out[i + j] = out[i + j].add(&t, p, rm);
+                out[i + j] = t.add(&out[i + j], p, rm);
             }
         }
         Self::from_coeffs(p, rm, &out)
@@ -204,11 +204,12 @@ impl ExactNumPoly {
             let deg_r = r.len() - 1;
             let shift = deg_r - deg_g;
             let t = r[deg_r].div(&lc_g, p, rm);
-            q[shift] = q[shift].add(&t, p, rm);
+            let slot = core::mem::replace(&mut q[shift], ExactNum::new(p));
+            q[shift] = slot.add(&t, p, rm);
             for i in 0..=deg_g {
                 let term = t.mul(&g.coeff(i), p, rm);
                 let idx = i + shift;
-                r[idx] = r[idx].sub(&term, p, rm);
+                r[idx] = term.neg().add(&r[idx], p, rm);
             }
             while r.last().is_some_and(|c| c.is_zero()) {
                 r.pop();
@@ -413,12 +414,12 @@ impl ExactNumPoly {
         }
         let sqrt_d = disc.sqrt(wrk, RoundingMode::None);
         // `-b + sqrt_d` is `sqrt_d - b`; `-b - sqrt_d` is `-sqrt_d - b` (same value, same rounding).
+        let neg_sqrt_d = sqrt_d.neg_via_mul();
         let mut r1 = sqrt_d
             .sub(&b, wrk, RoundingMode::None)
             .div(&two_a, wrk, RoundingMode::None);
         let mut r0 =
-            sqrt_d
-                .neg()
+            neg_sqrt_d
                 .sub(&b, wrk, RoundingMode::None)
                 .div(&two_a, wrk, RoundingMode::None);
         let _ = r0.set_precision(p, rm);

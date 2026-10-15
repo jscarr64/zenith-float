@@ -91,8 +91,9 @@ where
     }
     let wrk = work_p(p);
     let n_f = ExactNum::from_u32(n_steps as u32, wrk);
-    let h = t1
-        .sub(t0, wrk, RoundingMode::None)
+    let h = t0
+        .neg_via_mul()
+        .add(&t1, wrk, RoundingMode::None)
         .div(&n_f, wrk, RoundingMode::None);
     let two = ExactNum::from_u8(2, wrk);
     let six = ExactNum::from_u8(6, wrk);
@@ -107,24 +108,18 @@ where
     ys.push(y.clone());
     for k in 0..n_steps {
         let k1 = f(&t, &y, wrk, RoundingMode::None, cc);
-        let y2 = y.add(
-            &half_h.mul(&k1, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
-        let t2 = t.add(&half_h, wrk, RoundingMode::None);
+        let y2 = half_h
+            .mul(&k1, wrk, RoundingMode::None)
+            .add(&y, wrk, RoundingMode::None);
+        let t2 = t.add_full_prec(&half_h);
         let k2 = f(&t2, &y2, wrk, RoundingMode::None, cc);
-        let y3 = y.add(
-            &half_h.mul(&k2, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
+        let y3 = half_h
+            .mul(&k2, wrk, RoundingMode::None)
+            .add(&y, wrk, RoundingMode::None);
         let k3 = f(&t2, &y3, wrk, RoundingMode::None, cc);
-        let y4 = y.add(
-            &h.mul(&k3, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
+        let y4 = h
+            .mul(&k3, wrk, RoundingMode::None)
+            .add(&y, wrk, RoundingMode::None);
         let t4 = t.add(&h, wrk, RoundingMode::None);
         let k4 = f(&t4, &y4, wrk, RoundingMode::None, cc);
         if !finite(&k1) || !finite(&k2) || !finite(&k3) || !finite(&k4) {
@@ -148,15 +143,13 @@ where
             wrk,
             RoundingMode::None,
         );
-        t = t0.add(
-            &h.mul(
+        t = h
+            .mul(
                 &ExactNum::from_u32((k + 1) as u32, wrk),
                 wrk,
                 RoundingMode::None,
-            ),
-            wrk,
-            RoundingMode::None,
-        );
+            )
+            .add(&t0, wrk, RoundingMode::None);
         if !finite(&t) || !finite(&y) {
             return None;
         }
@@ -189,8 +182,9 @@ where
     }
     let wrk = work_p(p);
     let n_f = ExactNum::from_u32(n_steps as u32, wrk);
-    let h = t1
-        .sub(t0, wrk, RoundingMode::None)
+    let h = t0
+        .neg_via_mul()
+        .add(&t1, wrk, RoundingMode::None)
         .div(&n_f, wrk, RoundingMode::None);
     let mut t = t0.clone();
     let mut y = y0.clone();
@@ -210,15 +204,13 @@ where
             wrk,
             RoundingMode::None,
         );
-        t = t0.add(
-            &h.mul(
+        t = h
+            .mul(
                 &ExactNum::from_u32((k + 1) as u32, wrk),
                 wrk,
                 RoundingMode::None,
-            ),
-            wrk,
-            RoundingMode::None,
-        );
+            )
+            .add(&t0, wrk, RoundingMode::None);
         if !finite(&t) || !finite(&y) {
             return None;
         }
@@ -306,7 +298,7 @@ fn axpy(
     p: usize,
     rm: RoundingMode,
 ) -> ExactNum {
-    y.add(&h.mul(a, p, rm).mul(k, p, rm), p, rm)
+    h.mul(a, p, rm).mul(k, p, rm).add(&y, p, rm)
 }
 
 fn dp45_step<F>(
@@ -323,15 +315,15 @@ where
     F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
     let k1 = f(t, y, p, rm, cc);
-    let t2 = t.add(&h.mul(&tab.c2, p, rm), p, rm);
+    let t2 = h.mul(&tab.c2, p, rm).add(&t, p, rm);
     let y2 = axpy(y, h, &tab.a21, &k1, p, rm);
     let k2 = f(&t2, &y2, p, rm, cc);
 
-    let t3 = t.add(&h.mul(&tab.c3, p, rm), p, rm);
+    let t3 = h.mul(&tab.c3, p, rm).add(&t, p, rm);
     let y3 = axpy(&axpy(y, h, &tab.a31, &k1, p, rm), h, &tab.a32, &k2, p, rm);
     let k3 = f(&t3, &y3, p, rm, cc);
 
-    let t4 = t.add(&h.mul(&tab.c4, p, rm), p, rm);
+    let t4 = h.mul(&tab.c4, p, rm).add(&t, p, rm);
     let y4s = axpy(
         &axpy(&axpy(y, h, &tab.a41, &k1, p, rm), h, &tab.a42, &k2, p, rm),
         h,
@@ -342,7 +334,7 @@ where
     );
     let k4 = f(&t4, &y4s, p, rm, cc);
 
-    let t5 = t.add(&h.mul(&tab.c5, p, rm), p, rm);
+    let t5 = h.mul(&tab.c5, p, rm).add(&t, p, rm);
     let y5s = axpy(
         &axpy(
             &axpy(&axpy(y, h, &tab.a51, &k1, p, rm), h, &tab.a52, &k2, p, rm),
@@ -482,9 +474,10 @@ where
     let mut y = y0.clone();
     let _ = t.set_precision(wrk, RoundingMode::None);
     let _ = y.set_precision(wrk, RoundingMode::None);
-    let mut h = t1
-        .sub(t0, wrk, RoundingMode::None)
-        .ldexp(-4, wrk, RoundingMode::None);
+    let mut h =
+        t0.neg_via_mul()
+            .add(&t1, wrk, RoundingMode::None)
+            .ldexp(-4, wrk, RoundingMode::None);
     let mut ts = Vec::new();
     let mut ys = Vec::new();
     if !push_pair(&mut ts, &mut ys, t.clone(), y.clone(), ODE_MAX_STEPS + 1) {
@@ -497,7 +490,7 @@ where
             return None;
         }
         attempts += 1;
-        let remain = t1.sub(&t, wrk, RoundingMode::None);
+        let remain = t.neg_via_mul().add(&t1, wrk, RoundingMode::None);
         if h.compare(&remain) == Some(1) {
             h = remain;
         }
@@ -505,7 +498,7 @@ where
             return None;
         }
         let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h, wrk, RoundingMode::None, cc)?;
-        let err = y5.sub(&y4, wrk, RoundingMode::None).abs();
+        let err = y4.neg_via_mul().add(&y5, wrk, RoundingMode::None).abs();
         let big = if y.abs_cmp(&y5) == Some(1) { &y } else { &y5 };
         let negated;
         let ymax: &ExactNum = if big.is_negative() {
@@ -514,11 +507,9 @@ where
         } else {
             big
         };
-        let scale = atol.add(
-            &rtol.mul(ymax, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
+        let scale = rtol
+            .mul(ymax, wrk, RoundingMode::None)
+            .add(&atol, wrk, RoundingMode::None);
         let ok = scale.is_zero()
             || err.is_zero()
             || err.compare(&scale) == Some(-1)

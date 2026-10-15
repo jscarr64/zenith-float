@@ -181,7 +181,7 @@ fn cpx_tiny(z: &ExactComplex, p: usize) -> bool {
 
 fn term_near_one(delta: &ExactComplex, p: usize) -> bool {
     let one = ExactComplex::one(p.max(64));
-    let d = delta.sub(&one, 64, RoundingMode::None);
+    let d = one.neg().add(&delta, 64, RoundingMode::None);
     cpx_tiny(&d, p)
 }
 
@@ -206,16 +206,16 @@ fn hypergeom_2f0_lentz(
     for k in 1..=cap {
         let km1 = ExactComplex::from_real(ExactNum::from_u32((k - 1) as u32, work_p), work_p);
         let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, work_p), work_p);
-        let ak = a
-            .add(&km1, work_p, RoundingMode::None)
+        let ak = ExactComplex::from_real(ExactNum::from_u32((k - 1) as u32, work_p), work_p)
+            .add(&a, work_p, RoundingMode::None)
             .mul(
-                &b.add(&km1, work_p, RoundingMode::None),
+                &km1.add(&b, work_p, RoundingMode::None),
                 work_p,
                 RoundingMode::None,
             )
             .mul(w, work_p, RoundingMode::None)
             .div(&kk, work_p, RoundingMode::None);
-        d = one.add(
+        d = ExactComplex::one(work_p).add(
             &ak.mul(&d, work_p, RoundingMode::None),
             work_p,
             RoundingMode::None,
@@ -223,11 +223,9 @@ fn hypergeom_2f0_lentz(
         if cpx_tiny(&d, dest_p) {
             d = tiny.clone();
         }
-        c = one.add(
-            &ak.div(&c, work_p, RoundingMode::None),
-            work_p,
-            RoundingMode::None,
-        );
+        c = ak
+            .div(&c, work_p, RoundingMode::None)
+            .add(&one, work_p, RoundingMode::None);
         if cpx_tiny(&c, dest_p) {
             c = tiny.clone();
         }
@@ -734,8 +732,8 @@ impl ExactComplex {
     ) -> (Self, Option<i32>, Option<i32>) {
         let half = self.mul(&half_c(wp), wp, RoundingMode::None);
         let pow = half.pow(nu, wp, RoundingMode::None, cc);
-        let g = nu
-            .add(&ExactComplex::one(wp), wp, RoundingMode::None)
+        let g = ExactComplex::one(wp)
+            .add(&nu, wp, RoundingMode::None)
             .gamma(wp, RoundingMode::None, cc);
         let mut term = pow.div(&g, wp, RoundingMode::None);
         let mut sum = term.clone();
@@ -743,7 +741,7 @@ impl ExactComplex {
         let hh = half.mul(&half, wp, RoundingMode::None);
         for k in 1..=term_cap {
             let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, wp), wp);
-            let den = kk
+            let den = ExactComplex::from_real(ExactNum::from_u32(k as u32, wp), wp)
                 .add(nu, wp, RoundingMode::None)
                 .mul(&kk, wp, RoundingMode::None);
             term = term
@@ -826,8 +824,8 @@ impl ExactComplex {
             work_p,
             RoundingMode::None,
         ));
-        let a = half.add(nu, work_p, RoundingMode::None);
-        let b = half.sub(nu, work_p, RoundingMode::None);
+        let a = half_c(work_p).add(nu, work_p, RoundingMode::None);
+        let b = nu.neg_via_mul().add(&half, work_p, RoundingMode::None);
         let f = hypergeom_2f0_lentz(&a, &b, &w, work_p, dest_p)?;
         let pi = pi_c(work_p, cc);
         let omega = pi
@@ -881,7 +879,7 @@ impl ExactComplex {
         if ip.is_nan() || im.is_nan() {
             return None;
         }
-        let diff = im.sub(&ip, acc, RoundingMode::None);
+        let diff = ip.neg_via_mul().add(&im, acc, RoundingMode::None);
         if diff.is_nan() {
             return None;
         }
@@ -908,14 +906,15 @@ impl ExactComplex {
         let half = self.mul(&half_c(p), p, RoundingMode::None);
         let pow = half.pow(nu, p, RoundingMode::None, cc);
         let g =
-            nu.add(&ExactComplex::one(p), p, RoundingMode::None)
+            ExactComplex::one(p)
+                .add(&nu, p, RoundingMode::None)
                 .gamma(p, RoundingMode::None, cc);
         let mut term = pow.div(&g, p, RoundingMode::None);
         let mut sum = term.clone();
         let hh = half.mul(&half, p, RoundingMode::None);
         for k in 1..=series_term_cap(p) {
             let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p);
-            let den = kk
+            let den = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p)
                 .add(nu, p, RoundingMode::None)
                 .mul(&kk, p, RoundingMode::None);
             term = term
@@ -1044,7 +1043,7 @@ impl ExactComplex {
                 work_p,
                 RoundingMode::None,
             );
-            let hkp1 = hk.add(&rec, work_p, RoundingMode::None);
+            let hkp1 = rec.add(&hk, work_p, RoundingMode::None);
             let den = kfact.mul(&kp1fact, work_p, RoundingMode::None);
             let mut term = ExactComplex::from_real(
                 hk.add(&hkp1, work_p, RoundingMode::None)
@@ -1099,15 +1098,11 @@ impl ExactComplex {
             p,
             RoundingMode::None,
         );
-        let chi = self.sub(
-            &two_nu_1.mul(&pi_c(p, cc), p, RoundingMode::None).div(
-                &four_c(p),
-                p,
-                RoundingMode::None,
-            ),
-            p,
-            RoundingMode::None,
-        );
+        let chi = two_nu_1
+            .mul(&pi_c(p, cc), p, RoundingMode::None)
+            .div(&four_c(p), p, RoundingMode::None)
+            .neg()
+            .add(&self, p, RoundingMode::None);
         let two_over = two_c(p).div(
             &pi_c(p, cc).mul(self, p, RoundingMode::None),
             p,
@@ -1130,7 +1125,11 @@ impl ExactComplex {
         for k in 1..=series_term_cap(p) {
             let odd = ExactComplex::from_real(ExactNum::from_u32((2 * k - 1) as u32, p), p);
             let odd2 = odd.mul(&odd, p, RoundingMode::None);
-            prod = prod.mul(&mu.sub(&odd2, p, RoundingMode::None), p, RoundingMode::None);
+            prod = prod.mul(
+                &odd2.neg().add(&mu, p, RoundingMode::None),
+                p,
+                RoundingMode::None,
+            );
             kf = kf.mul(&ExactNum::from_u32(k as u32, p), p, RoundingMode::None);
             pz = pz.mul(&eight_z, p, RoundingMode::None);
             let term = prod.div(

@@ -240,7 +240,8 @@ impl ExactComplex {
             } else {
                 let pi = cc.pi(work_p, RoundingMode::None);
                 let pi = if s < 0 { pi.neg() } else { pi };
-                ExactComplex::new(a.re().clone(), a.im().add(&pi, work_p, RoundingMode::None))
+                let (re, im) = a.into_parts();
+                ExactComplex::new(re, im.add(&pi, work_p, RoundingMode::None))
             }
         }
     }
@@ -345,10 +346,8 @@ impl ExactComplex {
             work_p,
             RoundingMode::None,
         );
-        ExactComplex::new(
-            half_sum.re().clone(),
-            half_sum.im().add(&corr, work_p, RoundingMode::None),
-        )
+        let (re, im) = half_sum.into_parts();
+        ExactComplex::new(re, im.add(&corr, work_p, RoundingMode::None))
     }
 
     fn li_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -368,7 +367,7 @@ impl ExactComplex {
             .mul(&half_c(p), p, RoundingMode::None);
         let one = ExactComplex::one(p);
         let i = ExactComplex::i(p);
-        let one_p_i = one.add(&i, p, RoundingMode::None);
+        let one_p_i = ExactComplex::one(p).add(&i, p, RoundingMode::None);
         let one_m_i = one.sub(&i, p, RoundingMode::None);
         let erf_m = one_m_i
             .mul(&scale, p, RoundingMode::None)
@@ -384,16 +383,17 @@ impl ExactComplex {
             one_m_i
                 .mul(&half_c(p), p, RoundingMode::None)
                 .mul(&erf_p, p, RoundingMode::None);
+        let two_i = two_c(p).mul(&i, p, RoundingMode::None);
+        // `c+ - c-` is `-c- + c+`: both stay borrowed until the sum below takes `c+`.
+        let s = c_minus_is
+            .neg_via_mul()
+            .add(&c_plus_is, p, RoundingMode::None)
+            .div(&two_i, p, RoundingMode::None);
         let c = c_plus_is.add(&c_minus_is, p, RoundingMode::None).mul(
             &half_c(p),
             p,
             RoundingMode::None,
         );
-        let two_i = two_c(p).mul(&i, p, RoundingMode::None);
-        let s =
-            c_plus_is
-                .sub(&c_minus_is, p, RoundingMode::None)
-                .div(&two_i, p, RoundingMode::None);
         (s, c)
     }
 
