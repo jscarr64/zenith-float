@@ -6097,4 +6097,27 @@ mod grid_digest_tests {
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
         assert_eq!(h.finish(), 6_916_243_447_203_512_029);
     }
+
+    /// The `*` and `/` operators on every combination of owned and borrowed operands that remains after
+    /// Rule R (`&a * &b` and `&a / &b` do not exist). Pinned on the code that still had them, hashing the
+    /// same three forms.
+    #[test]
+    fn operator_mul_div_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
+                digest(&(&operand(i) * operand(j)), &mut h);
+                digest(&(operand(i) * &operand(j)), &mut h);
+                digest(&(operand(i) * operand(j)), &mut h);
+                digest(&(&operand(i) / operand(j)), &mut h);
+                digest(&(operand(i) / &operand(j)), &mut h);
+                digest(&(operand(i) / operand(j)), &mut h);
+                count += 6;
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
+        println!("operator mul/div grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 4_600_225_949_441_908_206);
+    }
 }
