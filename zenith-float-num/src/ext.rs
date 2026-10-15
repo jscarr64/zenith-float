@@ -5996,4 +5996,81 @@ mod grid_digest_tests {
         // sums with a zero operand (see `full_prec_with_zero_operand_is_the_other_operand`).
         assert_eq!(h.finish(), 7_232_426_507_586_278_165);
     }
+
+    /// `mul` and `div` over every pair of grid operands, all precisions and rounding modes. Pinned on the
+    /// code before `mul`/`div` took `self` and before `mul_ref`/`div_ref` existed.
+    #[test]
+    fn mul_div_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
+                for p in [1usize, 53, 64, 65, 128, 192, 200] {
+                    for rm in RMS {
+                        digest(&operand(i).mul(&operand(j), p, rm), &mut h);
+                        digest(&operand(i).div(&operand(j), p, rm), &mut h);
+                        count += 2;
+                    }
+                }
+                digest(&operand(i).mul_full_prec(&operand(j)), &mut h);
+                count += 1;
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
+        println!("mul/div grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 6_916_243_447_203_512_029);
+    }
+
+    /// `ExactComplex::mul` and `div` over parts that include zeros, Inf, NaN, inexact and subnormal values.
+    #[test]
+    fn complex_mul_div_grid_digest() {
+        use crate::ExactComplex;
+        let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for a in parts {
+            for b in parts {
+                for c in parts {
+                    for d in parts {
+                        for p in [1usize, 64, 128] {
+                            for rm in RMS {
+                                let z1 = || ExactComplex::new(operand(a), operand(b));
+                                let z2 = || ExactComplex::new(operand(c), operand(d));
+                                for r in [z1().mul(&z2(), p, rm), z1().div(&z2(), p, rm)] {
+                                    digest(r.re(), &mut h);
+                                    digest(r.im(), &mut h);
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        println!("complex mul/div grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 10_955_470_768_505_023_618);
+    }
+
+    /// `ExactNum::mul_ref` / `div_ref` (both operands borrowed) against the digest pinned on the old code.
+    #[test]
+    fn mul_ref_div_ref_grid_digest() {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
+                for p in [1usize, 53, 64, 65, 128, 192, 200] {
+                    for rm in RMS {
+                        digest(&ExactNum::mul_ref(&operand(i), &operand(j), p, rm), &mut h);
+                        digest(&ExactNum::div_ref(&operand(i), &operand(j), p, rm), &mut h);
+                        count += 2;
+                    }
+                }
+                digest(&operand(i).mul_full_prec(&operand(j)), &mut h);
+                count += 1;
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
+        assert_eq!(h.finish(), 6_916_243_447_203_512_029);
+    }
 }
