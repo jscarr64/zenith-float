@@ -207,7 +207,7 @@ fn hypergeom_2f0_lentz(
         let km1 = ExactComplex::from_real(ExactNum::from_u32((k - 1) as u32, work_p), work_p);
         let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, work_p), work_p);
         let ak = a
-            .add_full_prec(&km1)
+            .add(&km1, work_p, RoundingMode::None)
             .mul(
                 &km1.add(&b, work_p, RoundingMode::None),
                 work_p,
@@ -743,7 +743,9 @@ impl ExactComplex {
         let hh = half.mul(&half, wp, RoundingMode::None);
         for k in 1..=term_cap {
             let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, wp), wp);
-            let den = kk.add_full_prec(nu).mul(&kk, wp, RoundingMode::None);
+            let den = ExactComplex::from_real(ExactNum::from_u32(k as u32, wp), wp)
+                .add(nu, wp, RoundingMode::None)
+                .mul(&kk, wp, RoundingMode::None);
             term = term
                 .mul(&hh, wp, RoundingMode::None)
                 .div(&den, wp, RoundingMode::None);
@@ -824,7 +826,7 @@ impl ExactComplex {
             work_p,
             RoundingMode::None,
         ));
-        let a = half.add_full_prec(nu);
+        let a = half.add(nu, work_p, RoundingMode::None);
         let b = half.sub(nu, work_p, RoundingMode::None);
         let f = hypergeom_2f0_lentz(&a, &b, &w, work_p, dest_p)?;
         let pi = pi_c(work_p, cc);
@@ -914,7 +916,9 @@ impl ExactComplex {
         let hh = half.mul(&half, p, RoundingMode::None);
         for k in 1..=series_term_cap(p) {
             let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p);
-            let den = kk.add_full_prec(nu).mul(&kk, p, RoundingMode::None);
+            let den = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p)
+                .add(nu, p, RoundingMode::None)
+                .mul(&kk, p, RoundingMode::None);
             term = term
                 .mul(&hh, p, RoundingMode::None)
                 .div(&den, p, RoundingMode::None);
