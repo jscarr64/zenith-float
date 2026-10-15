@@ -14,7 +14,7 @@
 //! operand, so it cannot meet two NaNs of different kinds; `ln_gamma` (which contains one) is pinned
 //! below as unchanged.
 
-use zenith_float_num::{Consts, Error, ExactComplex, ExactNum, RoundingMode};
+use zenith_float_num::{Consts, Error, ExactComplex, ExactNum, ExactNumArray, RoundingMode};
 
 const P: usize = 128;
 const RM: RoundingMode = RoundingMode::ToEven;
@@ -40,6 +40,21 @@ fn ckind(z: &ExactComplex) -> String {
 }
 fn cx(re: ExactNum, im: ExactNum) -> ExactComplex {
     ExactComplex::new(re, im)
+}
+fn akinds(x: &ExactNumArray) -> String {
+    x.as_slice().iter().map(kind).collect::<Vec<_>>().join(",")
+}
+fn adecomp(r: Option<(ExactNumArray, ExactNumArray)>) -> String {
+    match r {
+        Some((q, r)) => format!("q=[{}] r=[{}]", akinds(&q), akinds(&r)),
+        None => "none".to_string(),
+    }
+}
+fn asvd(r: Option<(ExactNumArray, ExactNumArray, ExactNumArray)>) -> String {
+    match r {
+        Some((u, s, v)) => format!("u=[{}] s=[{}] v=[{}]", akinds(&u), akinds(&s), akinds(&v)),
+        None => "none".to_string(),
+    }
 }
 
 fn observations() -> Vec<(String, String)> {
@@ -111,6 +126,26 @@ fn observations() -> Vec<(String, String)> {
                 format!("ln_gamma {t}"),
                 ckind(&z().ln_gamma(P, RM, &mut cc)),
             );
+        }
+    }
+    // Sites that feed two data-derived values to one product (complex exp/sqrt, QR and SVD): the kind the
+    // result carries when both operands are NaN with different kinds. Recorded on the code before those
+    // products were reordered.
+    for (na, fa) in kinds {
+        for (nb, fb) in kinds {
+            let t = format!("{na}{nb}");
+            let z = || cx(fa(), fb());
+            put(format!("cexp {t}"), ckind(&z().exp(P, RM, &mut cc)));
+            put(format!("csqrt {t}"), ckind(&z().sqrt(P, RM, &mut cc)));
+            // 2x2 matrices whose columns are (a, b) / (b, a) and whose rows are (a, a) / (b, b).
+            let layouts: [(&str, [ExactNum; 4]); 2] =
+                [("col", [fa(), fb(), fb(), fa()]), ("row", [fa(), fa(), fb(), fb()])];
+            for (name, vals) in layouts {
+                if let Some(m) = ExactNumArray::from_shape(P, 2, 2, &vals) {
+                    put(format!("qr {name} {t}"), adecomp(m.qr_decomp(P, RM)));
+                    put(format!("svd {name} {t}"), asvd(m.svd_decomp(P, RM)));
+                }
+            }
         }
     }
     out
@@ -279,6 +314,60 @@ asinh NB => re=None im=None
 ln_gamma NB => re=None im=Some(DivisionByZero)
 asinh NN => re=None im=None
 ln_gamma NN => re=None im=None
+cexp AA => re=Some(InvalidArgument) im=Some(InvalidArgument)
+csqrt AA => re=Some(InvalidArgument) im=Some(InvalidArgument)
+qr col AA => q=[Some(InvalidArgument),Some(InvalidArgument),Some(InvalidArgument),Some(InvalidArgument)] r=[Some(InvalidArgument),Some(InvalidArgument),not-nan,Some(InvalidArgument)]
+svd col AA => none
+qr row AA => q=[Some(InvalidArgument),Some(InvalidArgument),Some(InvalidArgument),Some(InvalidArgument)] r=[Some(InvalidArgument),Some(InvalidArgument),not-nan,Some(InvalidArgument)]
+svd row AA => none
+cexp AB => re=Some(InvalidArgument) im=Some(InvalidArgument)
+csqrt AB => re=Some(InvalidArgument) im=Some(InvalidArgument)
+qr col AB => q=[Some(InvalidArgument),Some(InvalidArgument),Some(DivisionByZero),Some(InvalidArgument)] r=[Some(InvalidArgument),Some(InvalidArgument),not-nan,Some(InvalidArgument)]
+svd col AB => none
+qr row AB => q=[Some(InvalidArgument),Some(InvalidArgument),Some(DivisionByZero),Some(InvalidArgument)] r=[Some(InvalidArgument),Some(InvalidArgument),not-nan,Some(InvalidArgument)]
+svd row AB => none
+cexp AN => re=Some(InvalidArgument) im=Some(InvalidArgument)
+csqrt AN => re=Some(InvalidArgument) im=Some(InvalidArgument)
+qr col AN => q=[Some(InvalidArgument),Some(InvalidArgument),None,Some(InvalidArgument)] r=[Some(InvalidArgument),Some(InvalidArgument),not-nan,Some(InvalidArgument)]
+svd col AN => none
+qr row AN => q=[Some(InvalidArgument),Some(InvalidArgument),None,Some(InvalidArgument)] r=[Some(InvalidArgument),Some(InvalidArgument),not-nan,Some(InvalidArgument)]
+svd row AN => none
+cexp BA => re=Some(DivisionByZero) im=Some(DivisionByZero)
+csqrt BA => re=Some(DivisionByZero) im=Some(DivisionByZero)
+qr col BA => q=[Some(DivisionByZero),Some(DivisionByZero),Some(InvalidArgument),Some(DivisionByZero)] r=[Some(DivisionByZero),Some(DivisionByZero),not-nan,Some(DivisionByZero)]
+svd col BA => none
+qr row BA => q=[Some(DivisionByZero),Some(DivisionByZero),Some(InvalidArgument),Some(DivisionByZero)] r=[Some(DivisionByZero),Some(DivisionByZero),not-nan,Some(DivisionByZero)]
+svd row BA => none
+cexp BB => re=Some(DivisionByZero) im=Some(DivisionByZero)
+csqrt BB => re=Some(DivisionByZero) im=Some(DivisionByZero)
+qr col BB => q=[Some(DivisionByZero),Some(DivisionByZero),Some(DivisionByZero),Some(DivisionByZero)] r=[Some(DivisionByZero),Some(DivisionByZero),not-nan,Some(DivisionByZero)]
+svd col BB => none
+qr row BB => q=[Some(DivisionByZero),Some(DivisionByZero),Some(DivisionByZero),Some(DivisionByZero)] r=[Some(DivisionByZero),Some(DivisionByZero),not-nan,Some(DivisionByZero)]
+svd row BB => none
+cexp BN => re=Some(DivisionByZero) im=Some(DivisionByZero)
+csqrt BN => re=Some(DivisionByZero) im=Some(DivisionByZero)
+qr col BN => q=[Some(DivisionByZero),Some(DivisionByZero),None,Some(DivisionByZero)] r=[Some(DivisionByZero),Some(DivisionByZero),not-nan,Some(DivisionByZero)]
+svd col BN => none
+qr row BN => q=[Some(DivisionByZero),Some(DivisionByZero),None,Some(DivisionByZero)] r=[Some(DivisionByZero),Some(DivisionByZero),not-nan,Some(DivisionByZero)]
+svd row BN => none
+cexp NA => re=None im=None
+csqrt NA => re=None im=None
+qr col NA => q=[None,None,Some(InvalidArgument),None] r=[None,None,not-nan,None]
+svd col NA => none
+qr row NA => q=[None,None,Some(InvalidArgument),None] r=[None,None,not-nan,None]
+svd row NA => none
+cexp NB => re=None im=None
+csqrt NB => re=None im=None
+qr col NB => q=[None,None,Some(DivisionByZero),None] r=[None,None,not-nan,None]
+svd col NB => none
+qr row NB => q=[None,None,Some(DivisionByZero),None] r=[None,None,not-nan,None]
+svd row NB => none
+cexp NN => re=None im=None
+csqrt NN => re=None im=None
+qr col NN => q=[None,None,None,None] r=[None,None,not-nan,None]
+svd col NN => none
+qr row NN => q=[None,None,None,None] r=[None,None,not-nan,None]
+svd row NN => none
 ";
 
 #[test]
