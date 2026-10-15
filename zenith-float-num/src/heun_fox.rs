@@ -1658,7 +1658,7 @@ where
     None
 }
 
-fn disk_seed(z: &ExactNum, radius: &ExactNum, p: usize) -> ExactNum {
+fn disk_seed(z: &ExactNum, radius: ExactNum, p: usize) -> ExactNum {
     let half = radius.ldexp(-1, p, RoundingMode::None);
     if z.is_negative() {
         half.neg()
@@ -1689,18 +1689,16 @@ fn heun_g_outside(
     if segment_hits(z, &one) || segment_hits(z, a) {
         return cat_nan();
     }
-    let negated;
-    let rad: &ExactNum = if matches!(a.abs_cmp(&one), Some(c) if c < 0) {
-        if a.is_negative() {
-            negated = a.neg_via_mul();
-            &negated
-        } else {
-            a
+    let seed = if matches!(a.abs_cmp(&one), Some(c) if c < 0) {
+        // ±|a|/2 with the sign of z: scale -a (fresh, owned) and flip the sign when it differs.
+        let mut half = a.neg_via_mul().ldexp(-1, wrk, RoundingMode::None);
+        if half.is_negative() != z.is_negative() {
+            half = -half;
         }
+        half
     } else {
-        &one
+        disk_seed(z, ExactNum::from_u8(1, wrk), wrk)
     };
-    let seed = disk_seed(z, rad, wrk);
     let Some((y, yp)) = eval_jet(&coefs, &seed, wrk, p.saturating_add(32)) else {
         return cat_nan();
     };
@@ -1735,7 +1733,7 @@ fn heun_c_outside(
     if !z.is_negative() {
         return cat_nan();
     }
-    let seed = disk_seed(z, &one, wrk);
+    let seed = disk_seed(z, ExactNum::from_u8(1, wrk), wrk);
     let Some((y, yp)) = eval_jet(&coefs, &seed, wrk, p.saturating_add(32)) else {
         return cat_nan();
     };

@@ -54,10 +54,10 @@ fn ldexp_reaches_both_limits() {
     for p in precisions() {
         for rm in MODES {
             for negative in [false, true] {
-                let one = signed(ExactNum::from_u8(1, p), negative);
+                let one = || signed(ExactNum::from_u8(1, p), negative);
                 // 1 = 0.5 * 2^1, so 1 * 2^(k - 1) has exponent k.
                 for k in [EXPONENT_MAX - 2, EXPONENT_MAX - 1, EXPONENT_MAX] {
-                    let r = one.ldexp(k - 1, p, rm);
+                    let r = one().ldexp(k - 1, p, rm);
                     assert_eq!(
                         r.exponent(),
                         Some(k),
@@ -66,7 +66,7 @@ fn ldexp_reaches_both_limits() {
                     assert_eq!(r.is_negative(), negative);
                 }
                 for k in [EXPONENT_MIN + 1, EXPONENT_MIN + 2, EXPONENT_MIN + 3] {
-                    let r = one.ldexp(k - 1, p, rm);
+                    let r = one().ldexp(k - 1, p, rm);
                     assert_eq!(
                         r.exponent(),
                         Some(k),

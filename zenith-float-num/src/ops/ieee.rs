@@ -17,22 +17,20 @@ impl ExactNumNumber {
     }
 
     /// `self · 2^n` (same as `ldexp` / integer `scalb`).
-    pub fn ldexp(&self, n: Exponent, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+    pub fn ldexp(mut self, n: Exponent, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
         if self.is_zero() {
-            let mut z = self.clone()?;
-            z.set_precision(p, rm)?;
-            return Ok(z);
+            self.set_precision(p, rm)?;
+            return Ok(self);
         }
         let e = self.exponent();
         match e.checked_add(n) {
             // The exponent range is all of `Exponent`, so `checked_add` is the range check.
             Some(sum) => {
-                let mut ret = self.clone()?;
-                ret.set_exponent(sum);
-                ret.set_precision(p, rm)?;
-                Ok(ret)
+                self.set_exponent(sum);
+                self.set_precision(p, rm)?;
+                Ok(self)
             }
             _ => {
                 if n >= 0 {
@@ -42,11 +40,10 @@ impl ExactNumNumber {
                     // rounds onto the subnormal grid (or to zero / the least value) by mode.
                     let s1 = e as i64 + n as i64 - EXPONENT_MIN as i64;
                     let s1 = Exponent::try_from(s1).unwrap_or(EXPONENT_MIN);
-                    let mut a = self.clone()?;
-                    a.set_exponent(s1);
+                    self.set_exponent(s1);
                     let mut b = Self::from_word(1, WORD_BIT_SIZE)?;
                     b.set_exponent(EXPONENT_MIN + 1);
-                    a.mul(&b, p, rm)
+                    self.mul(&b, p, rm)
                 }
             }
         }
@@ -88,10 +85,12 @@ mod tests {
         let rm = RoundingMode::ToEven;
         let x = ExactNum::from_word(6, DEFAULT_P);
         let (m, e) = ExactNum::from_word(6, DEFAULT_P).frexp();
+        let m_exp = m.exponent();
         let y = m.ldexp(e, DEFAULT_P, rm);
         assert_eq!(x.compare(&y), Some(0));
         assert_eq!(
-            x.scalb(1, DEFAULT_P, rm)
+            ExactNum::from_word(6, DEFAULT_P)
+                .scalb(1, DEFAULT_P, rm)
                 .compare(&ExactNum::from_word(12, DEFAULT_P)),
             Some(0)
         );
@@ -101,6 +100,6 @@ mod tests {
         assert!(ExactNum::from_word(0, DEFAULT_P)
             .logb(DEFAULT_P, rm)
             .is_inf_neg());
-        assert_eq!(m.exponent(), Some(0));
+        assert_eq!(m_exp, Some(0));
     }
 }

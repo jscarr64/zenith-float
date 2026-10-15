@@ -38,9 +38,10 @@ fn oracle(fx: &Float, fy: &Float) -> Float {
 fn conv(w: usize, x: &ExactNum, cc: &mut Consts) -> Float {
     let e = x.exponent().unwrap_or(0);
     // two steps: -EXPONENT_MIN does not fit in an Exponent
-    let s = x
-        .ldexp(-(e / 2), w, RoundingMode::None)
-        .ldexp(-(e - e / 2), w, RoundingMode::None);
+    let s =
+        x.clone()
+            .ldexp(-(e / 2), w, RoundingMode::None)
+            .ldexp(-(e - e / 2), w, RoundingMode::None);
     let f = conv_to_mpfr(w, &s, cc);
     let old = unsafe { gmp_mpfr_sys::mpfr::get_emin() };
     unsafe { gmp_mpfr_sys::mpfr::set_emin(gmp_mpfr_sys::mpfr::get_emin_min()) };

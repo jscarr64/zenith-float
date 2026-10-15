@@ -2968,7 +2968,7 @@ fn betainc_cf(
     p: usize,
 ) -> Result<ExactNumNumber, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
-    let tiny = one.ldexp(-(2 * p as i32), p, RoundingMode::None)?;
+    let tiny = ExactNumNumber::from_word(1, p)?.ldexp(-(2 * p as i32), p, RoundingMode::None)?;
     let floor_tiny = |v: ExactNumNumber| -> Result<ExactNumNumber, Error> {
         if v.abs()?.cmp(&tiny) < 0 {
             tiny.clone()

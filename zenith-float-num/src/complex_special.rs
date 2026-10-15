@@ -289,7 +289,9 @@ impl ExactComplex {
                 return v;
             }
             let pi = cc.pi(pw, RoundingMode::None);
-            let two_pi = pi.ldexp(1, pw, RoundingMode::None);
+            let two_pi = cc
+                .pi(pw, RoundingMode::None)
+                .ldexp(1, pw, RoundingMode::None);
             let k = im
                 .add(&pi, pw, RoundingMode::None)
                 .div(&two_pi, pw, RoundingMode::None)

@@ -363,7 +363,7 @@ fn jacobi_agm(
     }
     let last = aa.len() - 1;
     let shift = Exponent::try_from(last).map_err(|_| Error::InvalidArgument)?;
-    let twon = one.ldexp(shift, p, RoundingMode::None)?;
+    let twon = ExactNumNumber::from_word(1, p)?.ldexp(shift, p, RoundingMode::None)?;
     let mut phi = twon
         .mul(&aa[last], p, RoundingMode::None)?
         .mul(u, p, RoundingMode::None)?;

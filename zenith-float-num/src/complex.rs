@@ -357,10 +357,12 @@ impl ExactComplex {
         }
         .ldexp(-1, p_x, rm);
         let t = h.sqrt(p_x, rm);
+        // 2t, recomputed from `h` because `t` is still read below
+        let t2 = h.sqrt(p_x, rm).ldexp(1, p_x, rm);
         let u = if self.im.is_negative() {
-            self.im.neg_via_mul().div(&t.ldexp(1, p_x, rm), p_x, rm)
+            self.im.neg_via_mul().div(&t2, p_x, rm)
         } else {
-            self.im.div(&t.ldexp(1, p_x, rm), p_x, rm)
+            self.im.div(&t2, p_x, rm)
         };
         if !(exact(&a) && exact(&h) && exact(&t) && exact(&u)) {
             return None;
@@ -636,7 +638,7 @@ impl ExactComplex {
     }
 
     /// Implementation of [`Self::ldexp`] on operands without inexact history.
-    fn ldexp_word(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+    fn ldexp_word(self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         self.ldexp_parts(n, p, rm)
     }
 
@@ -650,7 +652,7 @@ impl ExactComplex {
     }
 
     /// Implementation of [`Self::scalb`] on operands without inexact history.
-    fn scalb_word(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+    fn scalb_word(self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         self.ldexp(n, p, rm)
     }
 
@@ -994,7 +996,7 @@ impl ExactComplex {
             .finish(p, rm)
     }
 
-    fn ldexp_parts(&self, n: crate::Exponent, p: usize, rm: RoundingMode) -> Self {
+    fn ldexp_parts(self, n: crate::Exponent, p: usize, rm: RoundingMode) -> Self {
         Self::new(self.re.ldexp(n, p, rm), self.im.ldexp(n, p, rm))
     }
 

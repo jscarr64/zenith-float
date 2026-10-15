@@ -231,7 +231,7 @@ fn ldexp_fun(
     };
 
     Ok(quote!(#fun(
-        &(#arg),
+        (#arg),
         #n as zenith_float::Exponent,
         p_wrk,
         zenith_float::RoundingMode::None

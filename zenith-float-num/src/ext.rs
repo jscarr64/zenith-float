@@ -1865,37 +1865,64 @@ impl ExactNum {
         }
     }
 
-    /// `self · 2^n`. Alias of [`Self::scalb`].
+    /// `self · 2^n`. Alias of [`Self::scalb`]. Takes ownership; the exponent is changed in the operand's own
+    /// storage.
     ///
     /// Accuracy: correctly-rounded
-    pub fn ldexp(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
-        let this = self.exact_copy_ext();
-        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
-            this.ldexp_word(n, q, r)
-        })
-    }
-
-    /// Word-precision implementation of [`Self::ldexp`].
-    fn ldexp_word(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
-        match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext_rm(v.ldexp(n, p, rm), v.is_zero(), true, p, rm),
+    pub fn ldexp(self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+        let inputs = self.inexact_accumulated();
+        match self.inner {
             Flavor::Inf(s) => Self::inf_with_sign(s.is_positive()),
-            Flavor::NaN(err) => Self::nan(*err),
+            Flavor::NaN(err) => Self::nan(err),
+            Flavor::Value(mut v) => {
+                v.set_inexact(false);
+                Self::ldexp_value(v, inputs, n, p, rm)
+            }
         }
     }
 
-    /// `self · 2^n` (IEEE `scalbn`).
-    ///
-    /// Accuracy: correctly-rounded
-    pub fn scalb(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
-        let this = self.exact_copy_ext();
-        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
-            this.scalb_word(n, q, r)
-        })
+    /// `ldexp` of a finite operand whose flags are cleared; `inputs` is its accumulated flag.
+    /// Zero is handled first (its sign depends on the mode); every other operand takes one call at `p`
+    /// bits, or one call at a wider width rounded toward zero followed by a round-to-odd step (see
+    /// [`Self::round_exact`]).
+    fn ldexp_value(
+        v: ExactNumNumber,
+        inputs: bool,
+        n: Exponent,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Self {
+        let zero = v.is_zero();
+        let direct = rm == RoundingMode::None || p == 0 || p >= usize::MAX / 4;
+        let mut r = if direct || zero {
+            Self::result_to_ext_rm(v.ldexp(n, p, rm), zero, true, p, rm)
+        } else {
+            let wp = round_p(p) + WORD_BIT_SIZE;
+            let wide = Self::result_to_ext_rm(
+                v.ldexp(n, wp, RoundingMode::ToZero),
+                false,
+                true,
+                wp,
+                RoundingMode::ToZero,
+            );
+            match wide.inner {
+                Flavor::Value(w) => {
+                    let is_zero = w.is_zero();
+                    Self::result_to_ext_rm(w.round_odd_to(p, rm), is_zero, true, p, rm)
+                }
+                other => ExactNum { inner: other },
+            }
+        };
+        if let Flavor::Value(v) = &mut r.inner {
+            v.finish_flags(inputs, true);
+        }
+        r
     }
 
-    /// Word-precision implementation of [`Self::scalb`].
-    fn scalb_word(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
+    /// `self · 2^n` (IEEE `scalbn`). Takes ownership, like [`Self::ldexp`].
+    ///
+    /// Accuracy: correctly-rounded
+    pub fn scalb(self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         self.ldexp(n, p, rm)
     }
 
@@ -5288,7 +5315,8 @@ mod special_arg_tests {
             let (m, e) = ExactNum::nan(n.err()).frexp();
             same_nan(&m, &n);
             assert_eq!(e, 0);
-            same_nan(&n.ldexp(3, P, RM), &n);
+            let want = ExactNum::nan(n.err());
+            same_nan(&n.ldexp(3, P, RM), &want);
         }
         let (m, e) = INF_POS.frexp();
         assert!(m.is_inf() && m.is_positive() && e == 0);
@@ -5557,7 +5585,8 @@ mod add_sub_zero_tests {
 
 /// Characterization of `ldexp` / `scalb` over a grid of operands (zero, normal, near both ends of the exponent
 /// range), shifts, precisions and rounding modes: the digest of every result (value, sign, exponent, flags)
-/// is pinned, so the signature change to `self` must reproduce every bit.
+/// is pinned (storage representation, inline or heap, is not part of the value), so the signature change to `self`
+/// must reproduce every bit. Both the `&self` and the `self` implementation give this digest.
 #[cfg(test)]
 mod ldexp_grid_tests {
     use crate::defs::{RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
@@ -5575,37 +5604,74 @@ mod ldexp_grid_tests {
         RoundingMode::FromZero,
     ];
 
-    fn operands() -> Vec<ExactNum> {
+    const OPERANDS: usize = 21;
+
+    /// Operand `i` of the grid, built fresh on every call (`ldexp` consumes it).
+    fn operand(i: usize) -> ExactNum {
         let third =
             |p| ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, RoundingMode::ToEven);
-        let mut v = vec![
-            ExactNum::new(64),
-            ExactNum::new(64).neg(),
-            ExactNum::from_u8(1, 64),
-            ExactNum::from_u8(7, 64).neg(),
-            third(64),
-            third(192).neg(),
-            third(320),
-            INF_POS,
-            INF_NEG,
-            ExactNum::nan(Some(Error::InvalidArgument)),
-            ExactNum::nan(None),
-        ];
-        for k in [
+        let ks = [
             EXPONENT_MIN + 3,
             EXPONENT_MIN + 70,
             EXPONENT_MIN + 200,
             EXPONENT_MAX - 3,
             EXPONENT_MAX - 70,
-        ] {
-            v.push(ExactNum::from_u8(3, 64).ldexp(k, 64, RoundingMode::None));
-            v.push(third(192).ldexp(k, 192, RoundingMode::None).neg());
+        ];
+        match i {
+            0 => ExactNum::new(64),
+            1 => ExactNum::new(64).neg(),
+            2 => ExactNum::from_u8(1, 64),
+            3 => ExactNum::from_u8(7, 64).neg(),
+            4 => third(64),
+            5 => third(192).neg(),
+            6 => third(320),
+            7 => INF_POS,
+            8 => INF_NEG,
+            9 => ExactNum::nan(Some(Error::InvalidArgument)),
+            10 => ExactNum::nan(None),
+            _ => {
+                let k = ks[(i - 11) / 2];
+                if (i - 11).is_multiple_of(2) {
+                    ExactNum::from_u8(3, 64).ldexp(k, 64, RoundingMode::None)
+                } else {
+                    third(192).ldexp(k, 192, RoundingMode::None).neg()
+                }
+            }
         }
-        v
+    }
+
+    /// `{r:?}` without the storage representation: inline capacity and heap buffers print differently for the
+    /// same words, and which one a result lives in is not part of its value.
+    fn value_repr(r: &ExactNum) -> String {
+        let d = format!("{r:?}");
+        let mut out = String::new();
+        let mut rest = d.as_str();
+        while let Some(i) = rest.find("inner: ") {
+            let (head, tail) = rest.split_at(i + "inner: ".len());
+            out.push_str(head);
+            if let Some(t) = tail.strip_prefix("Inline { data: [") {
+                let close = t.find("], len: ").unwrap();
+                let words: Vec<&str> = t[..close].split(", ").collect();
+                let after = &t[close + "], len: ".len()..];
+                let digits = after.find(|c: char| !c.is_ascii_digit()).unwrap();
+                let len: usize = after[..digits].parse().unwrap();
+                out.push_str(&format!("{:?}", &words[..len]));
+                rest = &after[digits + " }".len()..];
+            } else if let Some(t) = tail.strip_prefix("Heap([") {
+                let close = t.find("])").unwrap();
+                let words: Vec<&str> = t[..close].split(", ").collect();
+                out.push_str(&format!("{words:?}"));
+                rest = &t[close + "])".len()..];
+            } else {
+                rest = tail;
+            }
+        }
+        out.push_str(rest);
+        out
     }
 
     fn digest(r: &ExactNum, h: &mut DefaultHasher) {
-        format!("{r:?}").hash(h);
+        value_repr(r).hash(h);
         r.inexact().hash(h);
         r.inexact_accumulated().hash(h);
     }
@@ -5632,19 +5698,19 @@ mod ldexp_grid_tests {
         ];
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
-        for x in operands() {
+        for i in 0..OPERANDS {
             for n in shifts {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        digest(&x.ldexp(n, p, rm), &mut h);
-                        digest(&x.scalb(n, p, rm), &mut h);
+                        digest(&operand(i).ldexp(n, p, rm), &mut h);
+                        digest(&operand(i).scalb(n, p, rm), &mut h);
                         count += 2;
                     }
                 }
             }
         }
-        assert_eq!(count, 21 * 16 * 7 * 6 * 2);
+        assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
         println!("ldexp grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 14_041_916_081_487_717_860);
+        assert_eq!(h.finish(), 3_896_020_040_264_525_112);
     }
 }

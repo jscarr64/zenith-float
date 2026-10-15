@@ -10,7 +10,7 @@ use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MIN, WORD_BIT_SI
 /// `conv_to_mpfr` for values near the bottom of the range: converts `x / 2^e`, then scales.
 fn conv_small(w: usize, x: &ExactNum, cc: &mut Consts) -> Float {
     let e = x.exponent().unwrap_or(0);
-    let s = x.ldexp(-e, w, RoundingMode::None);
+    let s = x.clone().ldexp(-e, w, RoundingMode::None);
     let f = conv_to_mpfr(w, &s, cc);
     let old = unsafe { mpfr::get_emin() };
     unsafe { mpfr::set_emin(mpfr::get_emin_min()) };
@@ -107,7 +107,7 @@ fn subnormal_band_every_mode() {
                     ),
                     (
                         "ldexp",
-                        x.ldexp(-k, p, rm),
+                        x.clone().ldexp(-k, p, rm),
                         Box::new(|r: &mut Float, rnd| unsafe {
                             mpfr::div_2ui(r.as_raw_mut(), fx.as_raw(), k as _, rnd)
                         }),

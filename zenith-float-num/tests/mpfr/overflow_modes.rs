@@ -40,7 +40,7 @@ fn check_ovf(
 /// `conv_to_mpfr` for values near the exponent limit: converts `x / 2^e`, then scales.
 fn conv_big(w: usize, x: &ExactNum, cc: &mut Consts) -> Float {
     let e = x.exponent().unwrap_or(0);
-    let s = x.ldexp(-e, w, RoundingMode::None);
+    let s = x.clone().ldexp(-e, w, RoundingMode::None);
     let f = conv_to_mpfr(w, &s, cc);
     // MPFR's default exponent range is narrower than zenith's.
     let old = unsafe { mpfr::get_emax() };
@@ -130,7 +130,7 @@ fn overflow_by_mode_binary() {
                         mpfr::fma(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), fx.as_raw(), rnd)
                     },
                 );
-                let got = x.ldexp(4, p, rm);
+                let got = x.clone().ldexp(4, p, rm);
                 check_ovf(
                     &got,
                     p,

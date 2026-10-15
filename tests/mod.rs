@@ -636,10 +636,10 @@ fn macro_run_basic_tests() {
     debug_assert_eq!(res, x.bi(p, rm, &mut cc));
 
     let res: ExactNum = expr!(ldexp(x, 3), &mut ctx);
-    debug_assert_eq!(res, x.ldexp(3, p, rm));
+    debug_assert_eq!(res, x.clone().ldexp(3, p, rm));
 
     let res: ExactNum = expr!(scalb(x, -1), &mut ctx);
-    debug_assert_eq!(res, x.scalb(-1, p, rm));
+    debug_assert_eq!(res, x.clone().scalb(-1, p, rm));
 
     let res: ExactNum = expr!(logb(x), &mut ctx);
     debug_assert_eq!(res, x.logb(p, rm));

@@ -287,7 +287,7 @@ where
     } else {
         tol.div(&two, wrk, none)
     };
-    let eps2 = one.ldexp(1 - wrk as i32, wrk, none);
+    let eps2 = ExactNum::from_u8(1, wrk).ldexp(1 - wrk as i32, wrk, none);
     let mut fa = f(&a, wrk, none, cc);
     let mut fb = f(&b, wrk, none, cc);
     if !opposite_signs(&fa, &fb) {

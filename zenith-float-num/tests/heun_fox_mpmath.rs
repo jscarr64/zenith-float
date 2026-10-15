@@ -644,7 +644,7 @@ fn heun_fox_mpmath() {
     );
     // q = -20 + 2^{-120} is inside the old p-8 slack and outside one ulp.
     // mpmath series of the general HeunG (not hyp2f1) at 80 decimals.
-    let q_near = m20.add(&one.ldexp(-120, p, RM), p, RM);
+    let q_near = m20.add(&ExactNum::from_u8(1, p).ldexp(-120, p, RM), p, RM);
     check_not_closed_form(
         "HeunG near-miss q=-20+2^{-120}",
         z_half.heun_g(&two, &q_near, &m10, &one, &one, &m9, p, RM, &mut cc),
@@ -669,10 +669,10 @@ fn heun_fox_mpmath() {
     // q = 10 + 2^{-119} still passed values_agree(..., p) (about p-8 bits).
     // mpmath confluent series, not hyp1f1(-10; 3; 1/2).
     let al10 = ExactNum::from_i32(10, p);
-    let q_c = al10.add(&one.ldexp(-119, p, RM), p, RM);
+    let q_c = al10.add(&ExactNum::from_u8(1, p).ldexp(-119, p, RM), p, RM);
     check_not_closed_form(
         "HeunC near-miss q=10+2^{-119}",
-        z_half.heun_c(&al10, &gam3, &zero, &one.neg(), &q_c, p, RM, &mut cc),
+        z_half.heun_c(&al10, &gam3, &zero, &neg_of(&one), &q_c, p, RM, &mut cc),
         "0.05432435599265874059710865266420821969265251848607852039",
         "0.05432435599265874059710865266420821976377531933087488643",
         p,

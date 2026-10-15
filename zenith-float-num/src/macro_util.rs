@@ -831,7 +831,7 @@ mod tests {
         let rm = RoundingMode::None;
         let one = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
-        let tiny = one.ldexp(-80, p, rm);
+        let tiny = ExactNum::from_u8(1, p).ldexp(-80, p, rm);
         let mut near_m1 = ExactNum::from_i8(-1, p).add(&tiny, p, rm);
         let mut re_pos = one.clone();
         re_pos.set_inexact(true);
