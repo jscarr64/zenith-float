@@ -62,6 +62,15 @@ impl ExactNum {
         Self::result_to_ext(ExactNumNumber::new(p), false, true)
     }
 
+    /// Positive or negative infinity, built fresh (no copy of an existing value).
+    fn inf_with_sign(positive: bool) -> Self {
+        if positive {
+            INF_POS
+        } else {
+            INF_NEG
+        }
+    }
+
     /// Constructs not-a-number with an associated error `err`.
     pub fn nan(err: Option<Error>) -> Self {
         ExactNum {
@@ -263,13 +272,13 @@ impl ExactNum {
     /// Word-precision implementation of [`Self::fma`].
     fn fma_word(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         if b.is_nan() {
-            return b.clone();
+            return Self::nan(b.err());
         }
         if c.is_nan() {
-            return c.clone();
+            return Self::nan(c.err());
         }
         match (&self.inner, &b.inner, &c.inner) {
             (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(cv)) => {
@@ -293,10 +302,10 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn two_sum(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
         if self.is_nan() {
-            return (self.clone(), Self::nan(self.err()));
+            return (Self::nan(self.err()), Self::nan(self.err()));
         }
         if b.is_nan() {
-            return (b.clone(), Self::nan(b.err()));
+            return (Self::nan(b.err()), Self::nan(b.err()));
         }
         if self.is_inf() || b.is_inf() {
             return (self.add(b, p, rm), Self::new(p));
@@ -328,10 +337,10 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn two_product(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
         if self.is_nan() {
-            return (self.clone(), Self::nan(self.err()));
+            return (Self::nan(self.err()), Self::nan(self.err()));
         }
         if b.is_nan() {
-            return (b.clone(), Self::nan(b.err()));
+            return (Self::nan(b.err()), Self::nan(b.err()));
         }
         if self.is_inf() || b.is_inf() {
             return (self.mul(b, p, rm), Self::new(p));
@@ -481,13 +490,13 @@ impl ExactNum {
     /// Word-precision implementation of [`Self::mul_add`].
     fn mul_add_word(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         if b.is_nan() {
-            return b.clone();
+            return Self::nan(b.err());
         }
         if c.is_nan() {
-            return c.clone();
+            return Self::nan(c.err());
         }
         match (&self.inner, &b.inner, &c.inner) {
             (Flavor::Value(a), Flavor::Value(bv), Flavor::Value(cv)) => {
@@ -1166,10 +1175,10 @@ impl ExactNum {
     /// Word-precision implementation of [`Self::atan2`].
     fn atan2_word(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         if x.is_nan() {
-            return x.clone();
+            return Self::nan(x.err());
         }
 
         match (&self.inner, &x.inner) {
@@ -1228,10 +1237,10 @@ impl ExactNum {
             return INF_POS;
         }
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         if other.is_nan() {
-            return other.clone();
+            return Self::nan(other.err());
         }
         match (&self.inner, &other.inner) {
             (Flavor::Value(a), Flavor::Value(b)) => {
@@ -1848,7 +1857,8 @@ impl ExactNum {
                 Ok((m, e)) => (m.into(), e),
                 Err(err) => (Self::nan(Some(err)), 0),
             },
-            Flavor::Inf(_) | Flavor::NaN(_) => (self.clone(), 0),
+            Flavor::Inf(s) => (Self::inf_with_sign(s.is_positive()), 0),
+            Flavor::NaN(err) => (Self::nan(*err), 0),
         }
     }
 
@@ -1866,7 +1876,8 @@ impl ExactNum {
     fn ldexp_word(&self, n: Exponent, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v) => Self::result_to_ext_rm(v.ldexp(n, p, rm), v.is_zero(), true, p, rm),
-            Flavor::Inf(_) | Flavor::NaN(_) => self.clone(),
+            Flavor::Inf(s) => Self::inf_with_sign(s.is_positive()),
+            Flavor::NaN(err) => Self::nan(*err),
         }
     }
 
@@ -2075,7 +2086,7 @@ Accuracy: correctly-rounded",
     /// Accuracy: correctly-rounded
     pub fn copysign(&self, sign: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         let sign_num = match &sign.inner {
             Flavor::Value(v) => v.clone(),
@@ -2103,10 +2114,10 @@ Accuracy: correctly-rounded",
     /// Accuracy: correctly-rounded
     pub fn next_after(&self, toward: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_nan() {
-            return self.clone();
+            return Self::nan(self.err());
         }
         if toward.is_nan() {
-            return toward.clone();
+            return Self::nan(toward.err());
         }
         match (&self.inner, &toward.inner) {
             (Flavor::Value(v), Flavor::Value(t)) => {
