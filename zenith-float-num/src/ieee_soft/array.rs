@@ -2283,8 +2283,8 @@ fn fft_dit(
                 let ui = core::mem::replace(&mut im[u], svd_zero(p));
                 re[t] = ExactNum::sub_ref(&ur, &tr, p, rm);
                 im[t] = ExactNum::sub_ref(&ui, &ti, p, rm);
-                re[u] = tr.add(&ur, p, rm);
-                im[u] = ti.add(&ui, p, rm);
+                re[u] = ur.add(&tr, p, rm);
+                im[u] = ui.add(&ti, p, rm);
                 let nr = w_re.mul(&wm_re, p, rm).sub(&w_im.mul(&wm_im, p, rm), p, rm);
                 let ni = w_re.mul(&wm_im, p, rm).add(&w_im.mul(&wm_re, p, rm), p, rm);
                 w_re = nr;
