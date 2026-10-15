@@ -206,8 +206,8 @@ fn hypergeom_2f0_lentz(
     for k in 1..=cap {
         let km1 = ExactComplex::from_real(ExactNum::from_u32((k - 1) as u32, work_p), work_p);
         let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, work_p), work_p);
-        let ak = a
-            .add(&km1, work_p, RoundingMode::None)
+        let ak = ExactComplex::from_real(ExactNum::from_u32((k - 1) as u32, work_p), work_p)
+            .add(&a, work_p, RoundingMode::None)
             .mul(
                 &km1.add(&b, work_p, RoundingMode::None),
                 work_p,

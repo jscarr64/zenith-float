@@ -125,12 +125,18 @@ fn hypergeom_series(
             break;
         }
         let nn = ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p);
-        let den = c.add(&nn, p, rm()).mul(&one.add(&nn, p, rm()), p, rm());
+        let den = ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p)
+            .add(&c, p, rm())
+            .mul(&one.add(&nn, p, rm()), p, rm());
         if matches!(den.abs(p, rm()).compare(&tiny), Some(c) if c < 0) {
             return nan_pair(Error::InvalidArgument);
         }
         term = term
-            .mul(&a.add(&nn, p, rm()), p, rm())
+            .mul(
+                &ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p).add(&a, p, rm()),
+                p,
+                rm(),
+            )
             .mul(&nn.add(&b, p, rm()), p, rm())
             .div(&den, p, rm())
             .mul(z, p, rm());
@@ -339,14 +345,14 @@ fn log_case_sum(
         // Finite part. (1-m)_n ≠ 0 for n < m; Γ(a+m) = Γ(c-b), Γ(b+m) = Γ(c-a).
         let pref = factorial_c(m - 1, p)
             .mul(&gc, p, rm())
-            .mul(&rgamma_c(&a.add(&mf, p, rm()), p, cc), p, rm())
-            .mul(&rgamma_c(&b.add(&mf, p, rm()), p, cc), p, rm());
+            .mul(&rgamma_c(&re(m).add(&a, p, rm()), p, cc), p, rm())
+            .mul(&rgamma_c(&re(m).add(&b, p, rm()), p, cc), p, rm());
         let mut t = ExactComplex::one(p);
         let mut s = ExactComplex::one(p);
         let one_m = ExactComplex::from_real(ExactNum::from_i64(1 - m as i64, p), p);
         for n in 0..m - 1 {
             let nn = re(n);
-            let num = a.add(&nn, p, rm()).mul(&b.add(&nn, p, rm()), p, rm());
+            let num = re(n).add(&a, p, rm()).mul(&re(n).add(&b, p, rm()), p, rm());
             let den = re(n + 1).mul(&one_m.add(&nn, p, rm()), p, rm());
             t = t.mul(&num, p, rm()).div(&den, p, rm()).mul(&w, p, rm());
             max_e = max_e.max(cexp(&t.mul(&pref, p, rm())));
@@ -365,7 +371,7 @@ fn log_case_sum(
         .mul(&gc, p, rm())
         .mul(&rg, p, rm());
     pref2 = neg_c(pref2);
-    let am = a.add(&mf, p, rm());
+    let am = re(m).add(&a, p, rm());
     let bm = mf.add(&b, p, rm());
     let lnw = w.ln(p, rm(), cc);
     let mut psi_n1 = one.digamma_at(p, cc);
