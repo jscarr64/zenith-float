@@ -2328,7 +2328,7 @@ impl ExactNumNumber {
         half.div_by_2(RoundingMode::None);
         let q = self.div(&pi, p, RoundingMode::None)?;
         let k = q.round(0, RoundingMode::ToEven)?;
-        if !k.fract()?.is_zero() {
+        if !k.is_int() {
             return Ok(None);
         }
         let r = self.sub(&k.mul(&pi, p, RoundingMode::None)?, p, RoundingMode::None)?;

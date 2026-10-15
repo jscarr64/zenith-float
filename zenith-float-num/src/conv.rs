@@ -854,11 +854,10 @@ impl ExactNumNumber {
 
         for _ in 0..max_digits {
             x = x.mul(&b, p, RoundingMode::None)?;
-            let iv = x.int()?;
             let mut digit = 0u8;
             for d in 1..base {
                 let dv = Self::from_usize(d as usize)?;
-                if dv.cmp(&iv) > 0 {
+                if dv.cmp(&x) > 0 {
                     break;
                 }
                 digit = d;

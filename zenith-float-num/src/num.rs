@@ -1140,9 +1140,10 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    pub fn floor(&self) -> Result<Self, Error> {
+    pub fn floor(self) -> Result<Self, Error> {
+        let below = self.is_negative() && !self.is_int();
         let int = self.int()?;
-        if self.is_negative() && !self.is_int() {
+        if below {
             return int.sub(&ONE, int.mantissa_max_bit_len(), RoundingMode::ToZero);
         }
         Ok(int)
@@ -1153,9 +1154,10 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    pub fn ceil(&self) -> Result<Self, Error> {
+    pub fn ceil(self) -> Result<Self, Error> {
+        let above = self.is_positive() && !self.is_int();
         let int = self.int()?;
-        if self.is_positive() && !self.is_int() {
+        if above {
             return int.add(&ONE, int.mantissa_max_bit_len(), RoundingMode::ToZero);
         }
         Ok(int)
@@ -1166,8 +1168,7 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    pub fn fract(&self) -> Result<Self, Error> {
-        let mut ret = self.clone()?;
+    pub fn fract(mut self) -> Result<Self, Error> {
         if self.e > 0 {
             if (self.e as usize) < self.m.max_bit_len() {
                 // remove integer part of mantissa & normalize at the same time
@@ -1175,23 +1176,23 @@ impl ExactNumNumber {
                     let mut e = self.e as i64 - shift as i64;
                     if e < EXPONENT_MIN as i64 {
                         let shift1 = (self.e as i64 - EXPONENT_MIN as i64) as usize;
-                        ret.m.shift_left(shift1);
-                        ret.m.mask_bits(shift - shift1, true);
+                        self.m.shift_left(shift1);
+                        self.m.mask_bits(shift - shift1, true);
                         e = EXPONENT_MIN as i64;
                     } else {
-                        ret.m.shift_left(shift);
+                        self.m.shift_left(shift);
                     }
-                    ret.e = e as Exponent;
+                    self.e = e as Exponent;
                 } else {
-                    ret.m.set_zero();
-                    ret.e = 0;
+                    self.m.set_zero();
+                    self.e = 0;
                 }
             } else {
-                ret.m.set_zero();
-                ret.e = 0;
+                self.m.set_zero();
+                self.e = 0;
             }
         }
-        Ok(ret)
+        Ok(self)
     }
 
     /// Returns integer part of a number.
@@ -1199,20 +1200,18 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    pub fn int(&self) -> Result<Self, Error> {
-        let mut ret = self.clone()?;
-
+    pub fn int(mut self) -> Result<Self, Error> {
         if self.e > 0 {
             if (self.e as usize) < self.m.max_bit_len() {
-                ret.m
+                self.m
                     .mask_bits(self.m.max_bit_len() - self.e as usize, false)
             }
         } else {
-            ret.m.set_zero();
-            ret.e = 0;
+            self.m.set_zero();
+            self.e = 0;
         }
 
-        Ok(ret)
+        Ok(self)
     }
 
     /// Returns true if `self` is odd integer number.
@@ -2543,7 +2542,7 @@ mod tests {
 
         d1 = ExactNumNumber::new(p).unwrap();
         assert!(d1.fract().unwrap().is_zero());
-        assert!(d1.int().unwrap().is_zero());
+        assert!(ExactNumNumber::new(p).unwrap().int().unwrap().is_zero());
 
         // ceil & floor
         // rem

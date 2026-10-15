@@ -471,10 +471,11 @@ fn near_int_loss(a: &ExactComplex, b: &ExactComplex, c: &ExactComplex, p: usize)
             x.exponent().map_or(0, i64::from)
         }
     };
-    let f = cab.re().fract().abs();
+    let (re, im) = cab.into_parts();
+    let f = re.fract().abs();
     let g = ExactNum::from_u8(1, p).sub(&f, p, rm());
     let re_e = e(&f).min(e(&g));
-    let dist_e = re_e.max(e(cab.im()));
+    let dist_e = re_e.max(e(&im));
     usize::try_from(-dist_e).unwrap_or(0)
 }
 

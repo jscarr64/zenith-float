@@ -939,20 +939,24 @@ impl ExactNumArray {
     }
 
     /// Elementwise integer part.
-    pub fn int(&self) -> Self {
-        self.map_at(self.p, |x| x.int())
+    pub fn int(self) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.int())
     }
     /// Elementwise fractional part.
-    pub fn fract(&self) -> Self {
-        self.map_at(self.p, |x| x.fract())
+    pub fn fract(self) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.fract())
     }
     /// Elementwise `ceil`.
-    pub fn ceil(&self) -> Self {
-        self.map_at(self.p, |x| x.ceil())
+    pub fn ceil(self) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.ceil())
     }
     /// Elementwise `floor`.
-    pub fn floor(&self) -> Self {
-        self.map_at(self.p, |x| x.floor())
+    pub fn floor(self) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.floor())
     }
     /// Elementwise `round` with `n` binary fractional bits.
     pub fn round(&self, n: usize, rm: RoundingMode) -> Self {
@@ -1518,6 +1522,15 @@ impl ExactNumArray {
             rows: self.rows,
             cols: self.cols,
         })
+    }
+
+    fn map_own(self, p: usize, op: impl FnMut(ExactNum) -> ExactNum) -> Self {
+        Self {
+            p,
+            vals: self.vals.into_iter().map(op).collect(),
+            rows: self.rows,
+            cols: self.cols,
+        }
     }
 
     fn map_at(&self, p: usize, op: impl FnMut(&ExactNum) -> ExactNum) -> Self {

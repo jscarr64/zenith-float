@@ -1970,15 +1970,18 @@ impl Clone for ExactNum {
     }
 }
 
-macro_rules! gen_wrapper_arg {
-    // function requires self as argument
-    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $($arg:ident, $arg_type:ty),*) => {
+macro_rules! gen_wrapper_own {
+    // function takes self by value and hands its storage to the result
+    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block $(,)?) => {
         #[doc=$comment]
-        pub fn $fname(&self$(,$arg: $arg_type)*) -> $ret {
-            match &self.inner {
-                Flavor::Value(v) => Self::result_to_ext(v.$fname($($arg,)*), v.is_zero(), true),
+        pub fn $fname(self) -> $ret {
+            match self.inner {
+                Flavor::Value(v) => {
+                    let is_zero = v.is_zero();
+                    Self::result_to_ext(v.$fname(), is_zero, true)
+                }
                 Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
-                Flavor::NaN(err) => Self::nan(*err),
+                Flavor::NaN(err) => Self::nan(err),
             }
         }
     };
@@ -2159,7 +2162,7 @@ impl ExactNum {
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
         }
     }
-    gen_wrapper_arg!(
+    gen_wrapper_own!(
         "Returns the integer part of `self`.
 Accuracy: correctly-rounded",
         int,
@@ -2167,7 +2170,7 @@ Accuracy: correctly-rounded",
         { NAN },
         { NAN },
     );
-    gen_wrapper_arg!(
+    gen_wrapper_own!(
         "Returns the fractional part of `self`.
 Accuracy: correctly-rounded",
         fract,
@@ -2175,7 +2178,7 @@ Accuracy: correctly-rounded",
         { NAN },
         { NAN },
     );
-    gen_wrapper_arg!(
+    gen_wrapper_own!(
         "Returns the smallest integer greater than or equal to `self`.
 Accuracy: correctly-rounded",
         ceil,
@@ -2183,7 +2186,7 @@ Accuracy: correctly-rounded",
         { INF_POS },
         { INF_NEG },
     );
-    gen_wrapper_arg!(
+    gen_wrapper_own!(
         "Returns the largest integer less than or equal to `self`.
 Accuracy: correctly-rounded",
         floor,
@@ -5419,17 +5422,21 @@ mod special_arg_tests {
         assert!(eq(&q(-1).fract(), &q(-1)));
         assert!(q(16).fract().is_zero());
         assert!(eq(&q(16).int(), &q(16)));
-        let big = ExactNum::from_u8(1, P).ldexp(300, P, RM);
-        assert!(big.fract().is_zero());
-        assert!(eq(&big.int(), &ExactNum::from_u8(1, P).ldexp(300, P, RM)));
+        let big = || ExactNum::from_u8(1, P).ldexp(300, P, RM);
+        assert!(big().fract().is_zero());
+        assert!(eq(&big().int(), &big()));
         assert!(ExactNum::new(P).int().is_zero() && ExactNum::new(P).fract().is_zero());
         assert!(INF_POS.int().is_nan() && INF_NEG.fract().is_nan());
-        for n in nans() {
-            same_nan(&n.int(), &n);
-            same_nan(&n.fract(), &n);
+        for (n, m) in nans().into_iter().zip(nans()) {
+            same_nan(&n.int(), &m);
         }
-        let x = q(23);
-        assert_eq!(x.fract().mantissa_max_bit_len(), x.mantissa_max_bit_len());
+        for (n, m) in nans().into_iter().zip(nans()) {
+            same_nan(&n.fract(), &m);
+        }
+        assert_eq!(
+            q(23).fract().mantissa_max_bit_len(),
+            q(23).mantissa_max_bit_len()
+        );
     }
 
     #[test]

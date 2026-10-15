@@ -151,7 +151,13 @@ impl ExactNumNumber {
             ONE.clone()
         }?;
 
-        let mut fract = self.fract()?;
+        // |fract(self)| = |self| - int, computed from the integer part found above.
+        let int_num = Self::from_usize(int)?;
+        let mut fract = if self.is_negative() {
+            self.add_full_prec(&int_num)
+        } else {
+            self.sub_full_prec(&int_num)
+        }?;
         let e_fract = if !fract.is_zero() {
             fract.set_inexact(false);
             fract.set_precision(p_work, RoundingMode::None)?;
