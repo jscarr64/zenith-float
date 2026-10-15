@@ -59,3 +59,67 @@ thread_local! {
 }
 
 pub const TRIG_EXP_THRES: Exponent = -(WORD_BIT_SIZE as Exponent);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::common::buf::INLINE_WORDS;
+    use crate::defs::Word;
+
+    // DEFAULT_P bits must fit inline on every target, so building the constants cannot allocate.
+    const _: () = assert!(INLINE_WORDS * WORD_BIT_SIZE >= DEFAULT_P);
+
+    // The constants are `const`-constructible: no lazy initialisation, no Result.
+    const SEVEN: ExactNumNumber = ExactNumNumber::small_const(7);
+
+    fn same(a: &ExactNumNumber, b: &ExactNumNumber) -> bool {
+        a.exponent() == b.exponent()
+            && a.sign() == b.sign()
+            && a.mantissa().digits() == b.mantissa().digits()
+            && a.mantissa().bit_len() == b.mantissa().bit_len()
+            && a.mantissa().max_bit_len() == b.mantissa().max_bit_len()
+    }
+
+    #[test]
+    fn constants_equal_from_word_and_stay_inline() {
+        let all: [(&ExactNumNumber, Word); 13] = [
+            (&ONE, 1),
+            (&TWO, 2),
+            (&THREE, 3),
+            (&FOUR, 4),
+            (&FIVE, 5),
+            (&SIX, 6),
+            (&EIGHT, 8),
+            (&TEN, 10),
+            (&FIFTEEN, 15),
+            (&SIXTEEN, 16),
+            (&C24, 24),
+            (&FOURTY, 40),
+            (&C120, 120),
+        ];
+        for (c, n) in all {
+            let expect = ExactNumNumber::from_word(n, DEFAULT_P);
+            assert!(matches!(&expect, Ok(e) if same(c, e)), "constant {n}");
+            assert!(c.is_inline(), "constant {n} must not allocate");
+        }
+        let seven = ExactNumNumber::from_word(7, DEFAULT_P);
+        assert!(matches!(&seven, Ok(e) if same(&SEVEN, e)));
+    }
+
+    #[test]
+    fn small_const_zero_is_zero() {
+        let z = ExactNumNumber::small_const(0);
+        assert!(z.mantissa().is_zero());
+        assert_eq!(z.exponent(), 0);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn tenpowers_is_fallible_and_reusable() {
+        assert_eq!(with_tenpowers(|_| Ok(5usize)), Ok(5));
+        assert_eq!(with_tenpowers(|_| Ok(6usize)), Ok(6));
+        let e: Result<(), crate::defs::Error> =
+            with_tenpowers(|_| Err(crate::defs::Error::InvalidArgument));
+        assert_eq!(e, Err(crate::defs::Error::InvalidArgument));
+    }
+}
