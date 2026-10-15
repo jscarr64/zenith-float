@@ -1783,11 +1783,11 @@ fn svd_zero_last_super(
     for j in (p_blk..k).rev() {
         let (cs, sn, t) = svd_rotg(&d[j], &f, p, rm);
         d[j] = t;
+        svd_apply_givens_cols(v, n, n, j, k, &cs, &sn, p, rm);
         if j > p_blk {
             f = sn.neg().mul(&e[j - 1], p, rm);
             e[j - 1] = cs.mul(&e[j - 1], p, rm);
         }
-        svd_apply_givens_cols(v, n, n, j, k, &cs, &sn, p, rm);
     }
 }
 
@@ -1806,11 +1806,11 @@ fn svd_zero_first_super(
     for j in (p_blk + 1)..q_blk {
         let (cs, sn, t) = svd_rotg(&d[j], &f, p, rm);
         d[j] = t;
+        svd_apply_givens_cols(u, m, m, p_blk, j, &cs, &sn, p, rm);
         if j + 1 < q_blk {
             f = sn.neg().mul(&e[j], p, rm);
             e[j] = cs.mul(&e[j], p, rm);
         }
-        svd_apply_givens_cols(u, m, m, p_blk, j, &cs, &sn, p, rm);
     }
 }
 
@@ -1936,10 +1936,10 @@ fn svd_decomp_tall(
 
     for (i, di) in d.iter_mut().enumerate().take(n) {
         if di.is_negative() {
-            *di = di.neg();
+            di.inv_sign();
             for r in 0..m {
                 let idx = r * m + i;
-                u[idx] = u[idx].neg();
+                u[idx].inv_sign();
             }
         }
     }

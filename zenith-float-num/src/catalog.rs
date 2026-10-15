@@ -560,8 +560,10 @@ fn kelvin_j_arg(x: &ExactNum, p: usize, _cc: &mut Consts) -> ExactComplex {
     // x exp(3πi/4) = x (−√2/2 + i √2/2)
     let two = ExactNum::from_u8(2, p);
     let s = two.sqrt(p, RoundingMode::None);
-    let h = x.div(&s, p, RoundingMode::None);
-    ExactComplex::new(h.neg(), h)
+    // `-h` and `h` are two separate numbers; each is computed (no copy of `h`).
+    let re = x.div(&s, p, RoundingMode::None).neg();
+    let im = x.div(&s, p, RoundingMode::None);
+    ExactComplex::new(re, im)
 }
 
 fn kelvin_k_arg(x: &ExactNum, p: usize, _cc: &mut Consts) -> ExactComplex {
@@ -1626,7 +1628,7 @@ impl ExactNum {
         if matches!(self.abs().compare(&one), Some(c) if c > 0) {
             return cat_nan();
         }
-        if self.compare(&one.neg()) == Some(0) {
+        if self.compare(&ExactNum::from_i8(-1, wrk)) == Some(0) {
             let z = ExactNum::from_u32(n as u32, wrk).riemann_zeta(wrk, RoundingMode::None, cc);
             let two = ExactNum::from_u8(2, wrk);
             let f = two.powsi(1 - (n as i64), wrk, RoundingMode::None).sub(

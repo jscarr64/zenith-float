@@ -117,6 +117,16 @@ impl ExactRational {
 
     /// `self + rhs` as an exact rational.
     pub fn add(&self, rhs: &Self) -> Self {
+        self.add_signed(rhs, false)
+    }
+
+    /// `self - rhs`.
+    pub fn sub(&self, rhs: &Self) -> Self {
+        self.add_signed(rhs, true)
+    }
+
+    /// `self + rhs`, or `self - rhs` when `subtract` is set: `ad ± bc` over `bd`.
+    fn add_signed(&self, rhs: &Self, subtract: bool) -> Self {
         if self.is_nan() || rhs.is_nan() {
             return Self::new(NAN, rat_one());
         }
@@ -124,14 +134,9 @@ impl ExactRational {
         let rm = RoundingMode::None;
         let ad = self.num.mul(&rhs.den, p, rm);
         let bc = rhs.num.mul(&self.den, p, rm);
-        let num = ad.add(&bc, p, rm);
+        let num = if subtract { ad.sub(&bc, p, rm) } else { ad.add(&bc, p, rm) };
         let den = self.den.mul(&rhs.den, p, rm);
         Self::new(num, den)
-    }
-
-    /// `self - rhs`.
-    pub fn sub(&self, rhs: &Self) -> Self {
-        self.add(&Self::new(rhs.num.neg(), rhs.den.clone()))
     }
 
     /// `self * rhs`.
@@ -554,5 +559,19 @@ mod tests {
         let mut cc = Consts::new().unwrap();
         let sci = ExactNum::parse("1.5e3", Radix::Dec, 256, RoundingMode::ToEven, &mut cc);
         assert_eq!(sci.compare(&ExactNum::from_i32(1500, 256)), Some(0));
+    }
+
+    #[test]
+    fn sub_matches_add_of_the_negation() {
+        let d = r(1, 2).sub(&r(1, 3));
+        assert!(d.num().compare(&ExactNum::from_i64(1, DEFAULT_P)) == Some(0));
+        assert!(d.den().compare(&ExactNum::from_i64(6, DEFAULT_P)) == Some(0));
+        let z = r(5, 7).sub(&r(5, 7));
+        assert!(z.num().is_zero());
+        let n = r(-3, 4).sub(&r(1, 4));
+        assert!(n.num().compare(&ExactNum::from_i64(-1, DEFAULT_P)) == Some(0));
+        assert!(r(1, 2)
+            .sub(&ExactRational::new(NAN, ExactNum::from_i64(1, DEFAULT_P)))
+            .is_nan());
     }
 }

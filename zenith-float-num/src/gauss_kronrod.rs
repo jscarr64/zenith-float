@@ -1074,7 +1074,7 @@ where
     if a_neg && b_pos {
         return integrate_adaptive_gk(
             |t, wp, wrm, cc| whole_line_sample(&mut f, t, wp, wrm, cc),
-            &one.neg(),
+            &ExactNum::from_i8(-1, p),
             &one,
             tol_rel,
             max_subintervals,

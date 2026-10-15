@@ -205,11 +205,13 @@ pub fn idst(
     let two = ExactNum::from_u8(2, wrk);
     let two_n = two.div(&nn, wrk, none);
     let half = ExactNum::from_u8(1, wrk).div(&two, wrk, none);
-    let last = x[n - 1].mul(&half, wrk, none);
     let mut out = Vec::with_capacity(n);
     for ni in 0..n {
         let n_half = ExactNum::from_u32(ni as u32, wrk).add(&half, wrk, none);
-        let mut acc = if ni % 2 == 0 { last.clone() } else { last.neg() };
+        // `x[n-1] * half` is recomputed per output bin: its sign flips for odd bins and
+        // the unflipped value is needed again by the next bin.
+        let last = x[n - 1].mul(&half, wrk, none);
+        let mut acc = if ni % 2 == 0 { last } else { last.neg() };
         for (k, xk) in x.iter().enumerate().take(n - 1) {
             let ang = pi
                 .mul(&ExactNum::from_u32((k + 1) as u32, wrk), wrk, none)

@@ -8,11 +8,11 @@ use crate::Exponent;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
 
-fn abs_part(x: &ExactNum) -> ExactNum {
+fn abs_part(x: ExactNum) -> ExactNum {
     if x.is_negative() {
         x.neg()
     } else {
-        x.clone()
+        x
     }
 }
 
@@ -130,8 +130,8 @@ impl ExactComplex {
     }
 
     /// Implementation of [`Self::conj`] on operands without inexact history.
-    fn conj_word(&self) -> Self {
-        Self::new(self.re.clone(), self.im.neg())
+    fn conj_word(self) -> Self {
+        Self::new(self.re, self.im.neg())
     }
 
     /// Modulus `|z| = hypot(re, im)` at precision `p`.
@@ -261,7 +261,7 @@ impl ExactComplex {
     }
 
     /// Implementation of [`Self::ln`] on operands without inexact history.
-    fn ln_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+    fn ln_word(self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.re.is_nan()
             || self.im.is_nan()
             || self.re.is_inf()
@@ -272,8 +272,10 @@ impl ExactComplex {
         }
         let prec = round_p(p);
         let work = prec.saturating_mul(2).saturating_add(256);
-        let re_abs = abs_part(&self.re);
-        let im_abs = abs_part(&self.im);
+        // The argument only borrows `self`; compute it before the parts are moved.
+        let arg = self.arg(p, rm, cc);
+        let re_abs = abs_part(self.re);
+        let im_abs = abs_part(self.im);
         let (big, small) = match re_abs.abs_cmp(&im_abs) {
             Some(ord) if ord >= 0 => (re_abs, im_abs),
             Some(_) => (im_abs, re_abs),
@@ -294,7 +296,7 @@ impl ExactComplex {
         if let Err(err) = real.set_precision(prec, rm) {
             return Self::new(ExactNum::nan(Some(err)), ExactNum::nan(Some(err)));
         }
-        Self::new(real, self.arg(p, rm, cc))
+        Self::new(real, arg)
     }
 
     fn ln_mod_arg(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -905,12 +907,13 @@ impl ExactComplex {
     }
 
     /// Implementation of [`Self::acosh`] on operands without inexact history.
-    fn acosh_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+    fn acosh_word(self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
         if self.im.is_zero() && !self.re.is_nan() && !self.re.is_inf() {
             let one = ExactNum::from_word(1, p_x);
             if matches!(self.re.compare(&one), Some(c) if c < 0) {
                 let neg_one = one.neg();
+                let im_negative = self.im.is_negative();
                 let (re, im) = if matches!(self.re.compare(&neg_one), Some(c) if c >= 0) {
                     (
                         ExactNum::new(p_x),
@@ -922,7 +925,7 @@ impl ExactComplex {
                         cc.pi(p_x, RoundingMode::None),
                     )
                 };
-                let im = if self.im.is_negative() { im.neg() } else { im };
+                let im = if im_negative { im.neg() } else { im };
                 return Self::new(re, im).finish(p, rm);
             }
         }
@@ -1157,5 +1160,50 @@ mod tests {
             Some(0)
         ));
         assert!(matches!(z.im().compare(&ExactNum::from_u8(3, p)), Some(0)));
+    }
+
+    #[test]
+    fn conj_flips_only_the_imaginary_sign() {
+        let p = 128;
+        let z = ExactComplex::new(ExactNum::from_u8(3, p), ExactNum::from_u8(4, p));
+        let c = z.conj();
+        assert_eq!(c.re().compare(&ExactNum::from_u8(3, p)), Some(0));
+        assert_eq!(c.im().compare(&ExactNum::from_i8(-4, p)), Some(0));
+        let back = c.conj();
+        assert_eq!(back.im().compare(&ExactNum::from_u8(4, p)), Some(0));
+    }
+
+    #[test]
+    fn acosh_of_real_below_minus_one_has_pi_imaginary_part_with_signed_sign() {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        let pi = cc.pi(p, rm);
+        let up =
+            ExactComplex::new(ExactNum::from_i8(-2, p), ExactNum::new(p)).acosh(p, rm, &mut cc);
+        assert_eq!(up.im().compare(&pi), Some(0));
+        let down = ExactComplex::new(ExactNum::from_i8(-2, p), ExactNum::new(p).neg())
+            .acosh(p, rm, &mut cc);
+        assert_eq!(down.im().compare(&pi.neg()), Some(0));
+        assert_eq!(up.re().compare(down.re()), Some(0));
+        // |x| < 1: purely imaginary, im = acos(x).
+        let inside =
+            ExactComplex::new(ExactNum::from_i8(-1, p), ExactNum::new(p)).acosh(p, rm, &mut cc);
+        assert!(inside.re().is_zero());
+        assert_eq!(inside.im().compare(&pi), Some(0));
+    }
+
+    #[test]
+    fn ln_of_second_quadrant_point_uses_the_larger_part_for_the_modulus() {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().unwrap();
+        // ln(-3 + 4i): re = ln 5, |re part| < |im part| exercises the swapped (big, small) arm.
+        let z = ExactComplex::new(ExactNum::from_i8(-3, p), ExactNum::from_u8(4, p));
+        let l = z.ln(p, rm, &mut cc);
+        let ln5 = ExactNum::from_u8(5, p).ln(p, rm, &mut cc);
+        let d = l.re().sub(&ln5, p, RoundingMode::None).abs();
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 2));
+        assert!(l.im().is_positive());
     }
 }

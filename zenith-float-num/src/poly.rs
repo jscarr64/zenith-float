@@ -411,13 +411,14 @@ impl ExactNumPoly {
             return None;
         }
         let sqrt_d = disc.sqrt(wrk, RoundingMode::None);
+        // `-b + sqrt_d` is `sqrt_d - b`; `-b - sqrt_d` is `-sqrt_d - b` (same value, same rounding).
+        let mut r1 = sqrt_d
+            .sub(&b, wrk, RoundingMode::None)
+            .div(&two_a, wrk, RoundingMode::None);
         let mut r0 =
-            b.neg()
-                .sub(&sqrt_d, wrk, RoundingMode::None)
-                .div(&two_a, wrk, RoundingMode::None);
-        let mut r1 =
-            b.neg()
-                .add(&sqrt_d, wrk, RoundingMode::None)
+            sqrt_d
+                .neg()
+                .sub(&b, wrk, RoundingMode::None)
                 .div(&two_a, wrk, RoundingMode::None);
         let _ = r0.set_precision(p, rm);
         let _ = r1.set_precision(p, rm);
@@ -502,5 +503,27 @@ mod tests {
 
         assert!(x2m1.div_rem(&ExactNumPoly::zero(p, rm), p, rm).is_none());
         assert!(x3.roots_real(p, rm, &mut cc).is_none());
+    }
+
+    #[test]
+    fn quadratic_roots_are_ordered_minus_then_plus() {
+        let (p, rm) = gold_p();
+        let mut cc = Consts::new().expect("consts");
+        // x^2 - 3x + 2 = (x - 1)(x - 2): r0 = (3 - 1)/2 = 1 (minus branch), r1 = 2.
+        let poly = ExactNumPoly::from_i64_coeffs(p, rm, &[2, -3, 1]);
+        let roots = poly.roots_real(p, rm, &mut cc).expect("roots");
+        assert_eq!(roots.len(), 2);
+        assert_eq!(roots[0].compare(&ExactNum::from_u8(1, p)), Some(0));
+        assert_eq!(roots[1].compare(&ExactNum::from_u8(2, p)), Some(0));
+        // Negative b: -b is positive.
+        let poly = ExactNumPoly::from_i64_coeffs(p, rm, &[-6, 1, 1]);
+        let roots = poly.roots_real(p, rm, &mut cc).expect("roots");
+        assert_eq!(roots[0].compare(&ExactNum::from_i8(-3, p)), Some(0));
+        assert_eq!(roots[1].compare(&ExactNum::from_u8(2, p)), Some(0));
+        // Double root: one entry.
+        let poly = ExactNumPoly::from_i64_coeffs(p, rm, &[1, 2, 1]);
+        let roots = poly.roots_real(p, rm, &mut cc).expect("roots");
+        assert_eq!(roots.len(), 1);
+        assert_eq!(roots[0].compare(&ExactNum::from_i8(-1, p)), Some(0));
     }
 }
