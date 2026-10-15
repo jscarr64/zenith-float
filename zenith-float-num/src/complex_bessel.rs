@@ -341,7 +341,7 @@ fn cos_sin_nu_pi(nu: &ExactNum, p: usize, cc: &mut Consts) -> (ExactNum, ExactNu
         }
     }
     let pi = cc.pi(p, RoundingMode::None);
-    let a = nu.mul(&pi, p, RoundingMode::None);
+    let a = pi.mul(nu, p, RoundingMode::None);
     (
         a.cos(p, RoundingMode::None, cc),
         a.sin(p, RoundingMode::None, cc),
@@ -543,7 +543,7 @@ impl ExactComplex {
         let yx = x.bessel_y(nure, p, RoundingMode::None, cc);
         let (c, s) = cos_sin_nu_pi(nure, p, cc);
         let two = ExactNum::from_u8(2, p);
-        let re = c.mul(&yx, p, RoundingMode::None);
+        let re = ExactNum::mul_ref(&c, &yx, p, RoundingMode::None);
         let im = two
             .mul(&c, p, RoundingMode::None)
             .mul(&jx, p, RoundingMode::None)
@@ -1001,7 +1001,7 @@ impl ExactComplex {
             );
             zk = zk.mul(&z2, work_p, RoundingMode::None);
             let h = harmonic(m, work_p);
-            let den = fact.mul(&fact, work_p, RoundingMode::None);
+            let den = ExactNum::mul_ref(&fact, &fact, work_p, RoundingMode::None);
             let mut term = ExactComplex::from_real(h.div(&den, work_p, RoundingMode::None), work_p)
                 .mul(&zk, work_p, RoundingMode::None);
             if m % 2 == 0 {
@@ -1045,7 +1045,7 @@ impl ExactComplex {
                 RoundingMode::None,
             );
             let hkp1 = rec.add(&hk, work_p, RoundingMode::None);
-            let den = kfact.mul(&kp1fact, work_p, RoundingMode::None);
+            let den = ExactNum::mul_ref(&kfact, &kp1fact, work_p, RoundingMode::None);
             let mut term = ExactComplex::from_real(
                 hk.add(&hkp1, work_p, RoundingMode::None)
                     .div(&den, work_p, RoundingMode::None),

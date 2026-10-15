@@ -95,10 +95,18 @@ impl BenchFloat for ZenithFloat {
                 )
             }),
             "mul" => task_for_two_args(values, |a, b| {
-                Self::new(a.inner.mul(b.inner(), a.p(), a.rm()), Rc::clone(&cc), a.p())
+                Self::new(
+                    ExactNum::mul_ref(&a.inner, b.inner(), a.p(), a.rm()),
+                    Rc::clone(&cc),
+                    a.p(),
+                )
             }),
             "div" => task_for_two_args(values, |a, b| {
-                Self::new(a.inner.div(b.inner(), a.p(), a.rm()), Rc::clone(&cc), a.p())
+                Self::new(
+                    ExactNum::div_ref(&a.inner, b.inner(), a.p(), a.rm()),
+                    Rc::clone(&cc),
+                    a.p(),
+                )
             }),
             "sqrt" => task_for_one_arg(values, |a, b| {
                 Self::new(b.inner().sqrt(a.p(), a.rm()), Rc::clone(&cc), a.p())

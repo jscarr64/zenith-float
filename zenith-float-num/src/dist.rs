@@ -76,14 +76,13 @@ impl ExactNum {
         let none = RoundingMode::None;
         let z = ExactNum::sub_ref(self, mu, pw, none);
         let two = ExactNum::from_u8(2, pw);
-        let sig2 = sigma.mul(sigma, pw, none);
-        let expo = z
-            .mul(&z, pw, none)
-            .div(&two.mul(&sig2, pw, none), pw, none)
+        let sig2 = ExactNum::mul_ref(sigma, sigma, pw, none);
+        let expo = ExactNum::mul_ref(&z, &z, pw, none)
+            .div(&ExactNum::from_u8(2, pw).mul(&sig2, pw, none), pw, none)
             .neg();
         let num = expo.exp(pw, none, cc);
         let two_pi = two.mul(&cc.pi(pw, none), pw, none);
-        let den = sigma.mul(&two_pi.sqrt(pw, none), pw, none);
+        let den = two_pi.sqrt(pw, none).mul(sigma, pw, none);
         num.div(&den, p, rm)
     }
 
@@ -134,7 +133,7 @@ impl ExactNum {
         let none = RoundingMode::None;
         let two = ExactNum::from_u8(2, pw);
         let z = ExactNum::sub_ref(self, mu, pw, none).div(
-            &sigma.mul(&two.sqrt(pw, none), pw, none),
+            &two.sqrt(pw, none).mul(sigma, pw, none),
             pw,
             none,
         );
@@ -170,7 +169,7 @@ impl ExactNum {
         let pw = work_p(p);
         let none = RoundingMode::None;
         let am1 = ExactNum::from_u8(1, pw).neg().add(alpha, pw, none);
-        let xb = self.div(beta, pw, none);
+        let xb = ExactNum::div_ref(self, beta, pw, none);
         let num = self
             .pow(&am1, pw, none, cc)
             .mul(&xb.neg().exp(pw, none, cc), pw, none);
@@ -311,8 +310,8 @@ impl ExactNum {
         let pw = work_p(p);
         let none = RoundingMode::None;
         let two = ExactNum::from_u8(2, pw);
-        let s = k.div(&two, pw, none);
-        let xh = self.div(&two, pw, none);
+        let s = ExactNum::div_ref(k, &two, pw, none);
+        let xh = ExactNum::div_ref(self, &two, pw, none);
         s.gammainc(&xh, pw, none, cc)
             .div(&s.gamma(pw, none, cc), p, rm)
     }
@@ -340,9 +339,9 @@ impl ExactNum {
         let two = ExactNum::from_u8(2, pw);
         let np1 = ExactNum::from_u8(1, pw).add(nu, pw, none);
         let half_np1 = np1.div(&two, pw, none);
-        let half_n = nu.div(&two, pw, none);
+        let half_n = ExactNum::div_ref(nu, &two, pw, none);
         let pref = half_np1.gamma(pw, none, cc).div(
-            &nu.mul(&cc.pi(pw, none), pw, none).sqrt(pw, none).mul(
+            &cc.pi(pw, none).mul(nu, pw, none).sqrt(pw, none).mul(
                 &half_n.gamma(pw, none, cc),
                 pw,
                 none,
@@ -351,7 +350,11 @@ impl ExactNum {
             none,
         );
         let body = one
-            .add(&self.mul(self, pw, none).div(nu, pw, none), pw, none)
+            .add(
+                &ExactNum::mul_ref(self, self, pw, none).div(nu, pw, none),
+                pw,
+                none,
+            )
             .pow(&half_np1.neg(), pw, none, cc);
         pref.mul(&body, p, rm)
     }
@@ -400,12 +403,12 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
 
         let np = zero.normal_pdf(&zero, &one, p, rm, &mut cc);
-        let two_pi = two.mul(&cc.pi(p, rm), p, rm);
+        let two_pi = ExactNum::from_u8(2, p).mul(&cc.pi(p, rm), p, rm);
         let want_np = two_pi.sqrt(p, rm).reciprocal(p, rm);
         assert_eq!(np.compare(&want_np), Some(0));
 
         let nc = zero.normal_cdf(&zero, &one, p, rm, &mut cc);
-        let half = one.div(&two, p, rm);
+        let half = ExactNum::from_u8(1, p).div(&two, p, rm);
         assert_eq!(nc.compare(&half), Some(0));
 
         let gp = one.gamma_pdf(&one, &one, p, rm, &mut cc);
@@ -417,7 +420,7 @@ mod tests {
 
         // χ²(2) CDF at the 95% table quantile −2 ln(0.05) = 2 ln 20 is exactly 19/20.
         let twenty = ExactNum::from_u8(20, p);
-        let x95 = two.mul(&twenty.ln(p, rm, &mut cc), p, rm);
+        let x95 = ExactNum::from_u8(2, p).mul(&twenty.ln(p, rm, &mut cc), p, rm);
         let chi = x95.chi_squared_cdf(&two, p, rm, &mut cc);
         let table = ExactNum::from_u8(19, p).div(&ExactNum::from_u8(20, p), p, rm);
         assert_eq!(chi.compare(&table), Some(0));

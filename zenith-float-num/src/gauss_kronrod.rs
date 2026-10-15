@@ -211,12 +211,11 @@ fn ord_num(a: &ExactNum, b: &ExactNum) -> Ordering {
 fn legendre_beta_sq(count: usize, p: usize) -> Option<Vec<ExactNum>> {
     let rm = RoundingMode::None;
     let one = ExactNum::from_u8(1, p);
-    let four = ExactNum::from_u8(4, p);
     let mut b = Vec::with_capacity(count);
     for j in 1..=count {
         let jf = ExactNum::from_u32(j as u32, p);
-        let js = jf.mul(&jf, p, rm);
-        let den = four.mul(&js, p, rm).sub(&one, p, rm);
+        let js = ExactNum::from_u32(j as u32, p).mul(&jf, p, rm);
+        let den = ExactNum::from_u8(4, p).mul(&js, p, rm).sub(&one, p, rm);
         let beta = js.div(&den, p, rm);
         if !finite(&beta) || !beta.is_positive() {
             return None;
@@ -246,9 +245,9 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
         let mut u = ExactNum::new(p);
         let k_hi = m.div_ceil(2);
         for k in (0..=k_hi).rev() {
-            let mut term = b[k + n].mul(&s[k], p, rm);
+            let mut term = ExactNum::mul_ref(&b[k + n], &s[k], p, rm);
             if m > k {
-                let bl = b[m - k - 1].mul(&s[k + 1], p, rm);
+                let bl = ExactNum::mul_ref(&b[m - k - 1], &s[k + 1], p, rm);
                 term = term.sub(&bl, p, rm);
             }
             if !finite(&term) {
@@ -274,8 +273,8 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
                 let j = n as i32 - (m as i32 - k as i32) - 1;
                 let sj = s_at(&s, j + 1)?;
                 let sj1 = s_at(&s, j + 2)?;
-                let bk = b[k + n].mul(&sj, p, rm);
-                let bl = b[m - k - 1].mul(&sj1, p, rm);
+                let bk = sj.mul(&b[k + n], p, rm);
+                let bl = sj1.mul(&b[m - k - 1], p, rm);
                 let piece = bk.sub(&bl, p, rm);
                 if !finite(&piece) {
                     return None;
@@ -337,11 +336,13 @@ fn char_poly(lam: &ExactNum, beta: &[ExactNum], p: usize) -> Option<(ExactNum, E
         return None;
     }
     for b in beta {
-        let p_new = lam.mul(&p1, p, rm).sub(&b.mul(&p0, p, rm), p, rm);
-        let d_new = lam
-            .mul(&d1, p, rm)
-            .add(&p1, p, rm)
-            .sub(&b.mul(&d0, p, rm), p, rm);
+        let p_new =
+            ExactNum::mul_ref(lam, &p1, p, rm).sub(&ExactNum::mul_ref(b, &p0, p, rm), p, rm);
+        let d_new = ExactNum::mul_ref(lam, &d1, p, rm).add(&p1, p, rm).sub(
+            &ExactNum::mul_ref(b, &d0, p, rm),
+            p,
+            rm,
+        );
         if !finite(&p_new) || !finite(&d_new) {
             return None;
         }
@@ -488,27 +489,29 @@ fn jacobi_weight(
     }
     let mut v_prev2 = ExactNum::from_u8(1, p);
     let mut sumsq = ExactNum::from_u8(1, p);
-    let mut v_prev = lam.div(&off[0], p, rm);
+    let mut v_prev = ExactNum::div_ref(lam, &off[0], p, rm);
     if !finite(&v_prev) {
         return None;
     }
-    sumsq = sumsq.add(&v_prev.mul(&v_prev, p, rm), p, rm);
+    sumsq = sumsq.add(&ExactNum::mul_ref(&v_prev, &v_prev, p, rm), p, rm);
     for i in 2..m {
-        let numer = lam
-            .mul(&v_prev, p, rm)
-            .sub(&off[i - 2].mul(&v_prev2, p, rm), p, rm);
+        let numer = ExactNum::mul_ref(lam, &v_prev, p, rm).sub(
+            &ExactNum::mul_ref(&off[i - 2], &v_prev2, p, rm),
+            p,
+            rm,
+        );
         let v = numer.div(&off[i - 1], p, rm);
         if !finite(&v) {
             return None;
         }
-        sumsq = sumsq.add(&v.mul(&v, p, rm), p, rm);
+        sumsq = sumsq.add(&ExactNum::mul_ref(&v, &v, p, rm), p, rm);
         v_prev2 = v_prev;
         v_prev = v;
     }
     if !finite(&sumsq) || !sumsq.is_positive() {
         return None;
     }
-    let w = mu0.div(&sumsq, p, rm);
+    let w = ExactNum::div_ref(mu0, &sumsq, p, rm);
     if finite(&w) && w.is_positive() {
         Some(w)
     } else {
@@ -624,20 +627,20 @@ where
     let mut sk = ExactNum::new(p);
     let mut sg = ExactNum::new(p);
     for i in 0..nodes.len() {
-        let x = half.mul(&nodes[i], p, rm).add(&mid, p, rm);
+        let x = ExactNum::mul_ref(&half, &nodes[i], p, rm).add(&mid, p, rm);
         let y = f(&x, p, rm, cc);
         if !finite(&y) {
             return Err(QuadratureError::InvalidArgument);
         }
-        sk = sk.add(&w_kronrod[i].mul(&y, p, rm), p, rm);
+        sk = sk.add(&ExactNum::mul_ref(&w_kronrod[i], &y, p, rm), p, rm);
         if !w_gauss[i].is_zero() {
-            sg = sg.add(&w_gauss[i].mul(&y, p, rm), p, rm);
+            sg = sg.add(&y.mul(&w_gauss[i], p, rm), p, rm);
         }
         if !finite(&sk) || !finite(&sg) {
             return Err(QuadratureError::NotConverged);
         }
     }
-    Ok((half.mul(&sk, p, rm), half.mul(&sg, p, rm)))
+    Ok((sk.mul(&half, p, rm), half.mul(&sg, p, rm)))
 }
 
 fn interval_ok(a: &ExactNum, b: &ExactNum) -> bool {
@@ -779,7 +782,11 @@ fn abs_tolerance(tol_rel: &ExactNum, estimate: &ExactNum, p: usize) -> ExactNum 
     } else {
         estimate
     };
-    let rel = if leq(est, &one) { tol_rel.mul(&one, p, rm) } else { tol_rel.mul(est, p, rm) };
+    let rel = if leq(est, &one) {
+        one.mul(tol_rel, p, rm)
+    } else {
+        ExactNum::mul_ref(tol_rel, est, p, rm)
+    };
     if !finite(&rel) || leq(&rel, &floor) {
         floor
     } else {
@@ -1008,13 +1015,13 @@ where
     if !finite(&den) || !den.is_positive() {
         return ExactNum::new(p);
     }
-    let step = t.div(&den, p, rm);
+    let step = ExactNum::div_ref(t, &den, p, rm);
     if !finite(&step) {
         return ExactNum::new(p);
     }
     let end = at_prec(end.clone(), p);
     let x = if positive { end.add(&step, p, rm) } else { end.sub(&step, p, rm) };
-    let jac = one.div(&den.mul(&den, p, rm), p, rm);
+    let jac = one.div(&ExactNum::mul_ref(&den, &den, p, rm), p, rm);
     weighted_sample(f, x, jac, p, rm, cc)
 }
 
@@ -1030,14 +1037,14 @@ where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
     let one = ExactNum::from_u8(1, p);
-    let t2 = t.mul(t, p, rm);
+    let t2 = ExactNum::mul_ref(t, t, p, rm);
     let den = ExactNum::sub_ref(&one, &t2, p, rm);
     if !finite(&den) || den.is_zero() || den.is_negative() {
         return ExactNum::new(p);
     }
-    let x = t.div(&den, p, rm);
+    let x = ExactNum::div_ref(t, &den, p, rm);
     let num = one.add(&t2, p, rm);
-    let jac = num.div(&den.mul(&den, p, rm), p, rm);
+    let jac = num.div(&ExactNum::mul_ref(&den, &den, p, rm), p, rm);
     weighted_sample(f, x, jac, p, rm, cc)
 }
 
@@ -1298,7 +1305,7 @@ mod tests {
             );
             assert!(gap.compare(&tol) != Some(1), "p={p} exp estimate {gap}");
             let alg = integrate_adaptive_gk_infinite(
-                |x, p, rm, _cc| x.mul(x, p, rm).reciprocal(p, rm),
+                |x, p, rm, _cc| ExactNum::mul_ref(x, x, p, rm).reciprocal(p, rm),
                 &one,
                 &pos,
                 &tol,
@@ -1320,7 +1327,7 @@ mod tests {
             );
             let gauss = integrate_adaptive_gk_infinite(
                 |x, p, rm, cc| {
-                    let y = x.mul(x, p, rm);
+                    let y = ExactNum::mul_ref(x, x, p, rm);
                     y.neg().exp(p, rm, cc)
                 },
                 &neg,

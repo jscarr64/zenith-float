@@ -47,7 +47,7 @@ fn inexact_is_set_when_this_op_rounds() {
                 let one = if negative { one.neg() } else { one };
                 let three = ExactNum::from_i8(3, p);
 
-                let third = one.div(&three, p, rm);
+                let third = ExactNum::from_i8(1, p).div(&three, p, rm);
                 assert!(
                     third.inexact(),
                     "Expected division to be inexact for p={}, rm={:?}, negative={}",
@@ -91,9 +91,27 @@ fn inexact_is_not_inherited_from_operands() {
                 );
 
                 // These operations should be exact and not inexact
-                exact(&third.mul(&two, p, rm), "third * two", p, rm, negative);
-                exact(&third.div(&two, p, rm), "third / two", p, rm, negative);
-                exact(&third.mul(&half, p, rm), "third * half", p, rm, negative);
+                exact(
+                    &ExactNum::mul_ref(&third, &two, p, rm),
+                    "third * two",
+                    p,
+                    rm,
+                    negative,
+                );
+                exact(
+                    &ExactNum::div_ref(&third, &two, p, rm),
+                    "third / two",
+                    p,
+                    rm,
+                    negative,
+                );
+                exact(
+                    &ExactNum::mul_ref(&third, &half, p, rm),
+                    "third * half",
+                    p,
+                    rm,
+                    negative,
+                );
                 exact(
                     &ExactNum::add_ref(&third, &third, p, rm),
                     "third + third",
@@ -130,7 +148,7 @@ fn inexact_is_not_inherited_from_operands() {
                     negative,
                 );
                 exact(
-                    &third.mul(&ExactNum::from_i8(1, p), p, rm),
+                    &ExactNum::from_i8(1, p).mul(&third, p, rm),
                     "third * 1",
                     p,
                     rm,
@@ -145,7 +163,13 @@ fn inexact_is_not_inherited_from_operands() {
                 );
 
                 // Exact operations on exact operands
-                exact(&two.mul(&three, p, rm), "two * three", p, rm, negative);
+                exact(
+                    &ExactNum::from_i8(2, p).mul(&three, p, rm),
+                    "two * three",
+                    p,
+                    rm,
+                    negative,
+                );
                 exact(&three.sub(&two, p, rm), "three - two", p, rm, negative);
             }
         }
@@ -158,7 +182,7 @@ fn accumulated_flag_still_inherits() {
         for &rm in &MODES {
             let third = ExactNum::from_i8(1, p).div(&ExactNum::from_i8(3, p), p, rm);
             let two = ExactNum::from_i8(2, p);
-            let doubled = third.mul(&two, p, rm);
+            let doubled = ExactNum::mul_ref(&third, &two, p, rm);
             assert!(!doubled.inexact(), "per-op p={p} rm={rm:?}");
             assert!(doubled.inexact_accumulated(), "accumulated p={p} rm={rm:?}");
             let back = doubled.sub(&third, p, rm);

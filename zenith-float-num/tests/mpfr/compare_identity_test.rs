@@ -43,7 +43,7 @@ fn mpfr_identity_no_oracle_specials() {
     let one = ExactNum::from_u8(1, p);
     let zero = ExactNum::new(p);
     let two = ExactNum::from_u8(2, p);
-    let half = one.div(&two, p, rm);
+    let half = ExactNum::from_u8(1, p).div(&two, p, rm);
 
     let s1 = one.si(p, rm, &mut cc);
     let sn = neg_of(&one).si(p, rm, &mut cc);
@@ -94,7 +94,13 @@ fn mpfr_identity_no_oracle_specials() {
     let aip = one.ai_prime(p, rm, &mut cc);
     let bip = one.bi_prime(p, rm, &mut cc);
     let wr = ai.mul(&bip, p, rm).sub(&aip.mul(&bi, p, rm), p, rm);
-    bits_agree(&wr, &one.div(&cc.pi(p, rm), p, rm), p, 40, "Airy Wronskian");
+    bits_agree(
+        &wr,
+        &ExactNum::from_u8(1, p).div(&cc.pi(p, rm), p, rm),
+        p,
+        40,
+        "Airy Wronskian",
+    );
 
     bits_agree(
         &zero.elliptic_k(p, rm, &mut cc),

@@ -15,8 +15,14 @@ fn native_operators() {
     let b = ExactNum::from(2);
     assert_eq!((a.clone() + &b).compare(&ExactNum::from(8)), Some(0));
     assert_eq!((a.clone() - &b).compare(&ExactNum::from(4)), Some(0));
-    assert_eq!((&a * &b).compare(&ExactNum::from(12)), Some(0));
-    assert_eq!((&a / &b).compare(&ExactNum::from(3)), Some(0));
+    assert_eq!(
+        (ExactNum::from(6) * &b).compare(&ExactNum::from(12)),
+        Some(0)
+    );
+    assert_eq!(
+        (ExactNum::from(6) / &b).compare(&ExactNum::from(3)),
+        Some(0)
+    );
 }
 
 #[test]
@@ -1271,8 +1277,8 @@ fn expr_bessel_j0_y0_sq_working_prec() {
     let p_wrk = p + WORD_BIT_SIZE + 16;
     let j = x.bessel_j(0, p_wrk, RoundingMode::None, &mut cc);
     let y = x.bessel_y(&nu0, p_wrk, RoundingMode::None, &mut cc);
-    let mut expect = j.mul(&j, p_wrk, RoundingMode::None).add(
-        &y.mul(&y, p_wrk, RoundingMode::None),
+    let mut expect = ExactNum::mul_ref(&j, &j, p_wrk, RoundingMode::None).add(
+        &ExactNum::mul_ref(&y, &y, p_wrk, RoundingMode::None),
         p_wrk,
         RoundingMode::None,
     );

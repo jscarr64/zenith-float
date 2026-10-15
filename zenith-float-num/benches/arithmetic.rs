@@ -38,7 +38,7 @@ fn bench_mul(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
             b.iter(|| {
                 for (a, b_val) in pairs {
-                    sink(a.mul(b_val, p, rm));
+                    sink(ExactNum::mul_ref(a, b_val, p, rm));
                 }
             });
         });
@@ -58,7 +58,7 @@ fn bench_mul_fft_scale(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
             b.iter(|| {
                 for (a, b_val) in pairs {
-                    sink(a.mul(b_val, p, rm));
+                    sink(ExactNum::mul_ref(a, b_val, p, rm));
                 }
             });
         });
@@ -77,7 +77,7 @@ fn bench_div(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
             b.iter(|| {
                 for (a, b_val) in pairs {
-                    sink(a.div(b_val, p, rm));
+                    sink(ExactNum::div_ref(a, b_val, p, rm));
                 }
             });
         });
@@ -119,14 +119,14 @@ fn bench_recip_mul_vs_div(c: &mut Criterion) {
         b.iter(|| {
             let inv = divisor.reciprocal(p, RoundingMode::None);
             for x in values.iter().skip(1) {
-                sink(inv.mul(x, p, RoundingMode::None));
+                sink(ExactNum::mul_ref(&inv, x, p, RoundingMode::None));
             }
         });
     });
     group.bench_function("direct_div", |b| {
         b.iter(|| {
             for x in values.iter().skip(1) {
-                sink(x.div(&divisor, p, rm));
+                sink(ExactNum::div_ref(x, &divisor, p, rm));
             }
         });
     });
@@ -184,7 +184,7 @@ fn bench_div_one(c: &mut Criterion) {
             let one = ExactNum::from_word(1, p);
             b.iter(|| {
                 for x in values {
-                    sink(one.div(x, p, rm));
+                    sink(ExactNum::div_ref(&one, x, p, rm));
                 }
             });
         });

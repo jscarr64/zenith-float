@@ -91,7 +91,7 @@ fn arithmetic_at_the_top_of_the_range() {
                 );
                 let info = format!("p={p} {rm:?} neg={negative}");
                 assert_eq!(
-                    big.mul(&two, p, rm).exponent(),
+                    ExactNum::mul_ref(&big, &two, p, rm).exponent(),
                     Some(EXPONENT_MAX),
                     "{info} mul"
                 );
@@ -107,7 +107,7 @@ fn arithmetic_at_the_top_of_the_range() {
                 );
                 let max = signed(ExactNum::max_value(p), negative);
                 assert_eq!(
-                    max.mul(&half, p, rm).exponent(),
+                    ExactNum::mul_ref(&max, &half, p, rm).exponent(),
                     Some(EXPONENT_MAX - 1),
                     "{info} max/2"
                 );
@@ -119,9 +119,9 @@ fn arithmetic_at_the_top_of_the_range() {
                     || (rm == RoundingMode::Down && !negative)
                     || (rm == RoundingMode::Up && negative);
                 for r in [
-                    max.mul(&two, p, rm),
+                    two.mul(&max, p, rm),
                     ExactNum::add_ref(&max, &max, p, rm),
-                    max.div(&half, p, rm),
+                    ExactNum::div_ref(&max, &half, p, rm),
                 ] {
                     if toward_zero {
                         assert_eq!(r, max, "{info} overflow toward zero");
@@ -154,7 +154,7 @@ fn arithmetic_at_the_bottom_of_the_range() {
                 let r = r.div(&two, p, rm);
                 assert_eq!(r.exponent(), Some(EXPONENT_MIN), "{info} div to the limit");
                 let tiny = signed(ExactNum::min_positive_normal(p), negative);
-                let r = tiny.div(&two, p, rm);
+                let r = ExactNum::div_ref(&tiny, &two, p, rm);
                 assert_eq!(r.exponent(), Some(EXPONENT_MIN), "{info} subnormal");
                 assert!(!r.is_zero(), "{info} subnormal is not zero");
                 assert_eq!(r.mul(&two, p, rm), tiny, "{info} subnormal * 2");
@@ -165,7 +165,7 @@ fn arithmetic_at_the_bottom_of_the_range() {
                     "{info} min+min"
                 );
                 assert_eq!(
-                    tiny.mul(&tiny, p, rm).is_zero(),
+                    ExactNum::mul_ref(&tiny, &tiny, p, rm).is_zero(),
                     !matches!(rm, RoundingMode::FromZero | RoundingMode::Up),
                     "{info} underflow of min_normal^2"
                 );

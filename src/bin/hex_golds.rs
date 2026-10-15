@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let one = n(1, p);
     let two = n(2, p);
-    let half = one.div(&two, p, rm);
+    let half = ExactNum::div_ref(&one, &two, p, rm);
 
     emit("add_1_2", &n(1, p).add(&two, p, rm))?;
     emit("sqrt_2", &two.sqrt(p, rm))?;

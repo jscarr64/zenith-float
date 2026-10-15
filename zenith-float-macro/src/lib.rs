@@ -105,11 +105,11 @@ fn traverse_binary(
         BinOp::Mul(_) => {
             err.push(3);
             quote!(
-                zenith_float::ExactNum::mul(&(#left_expr), &(#right_expr), p_wrk, zenith_float::RoundingMode::None))
+                zenith_float::ExactNum::mul(#left_expr, &(#right_expr), p_wrk, zenith_float::RoundingMode::None))
         }
         BinOp::Div(_) => {
             err.push(3);
-            quote!(zenith_float::ExactNum::div(&(#left_expr), &(#right_expr), p_wrk, zenith_float::RoundingMode::None))
+            quote!(zenith_float::ExactNum::div(#left_expr, &(#right_expr), p_wrk, zenith_float::RoundingMode::None))
         }
         BinOp::Rem(_) => {
             quote!(zenith_float::ExactNum::rem(&(#left_expr), &(#right_expr)))

@@ -134,7 +134,7 @@ where
         if !finite(&y) || !finite(&d) || d.is_zero() {
             return None;
         }
-        let step = y.div(&d, wrk, RoundingMode::None);
+        let step = ExactNum::div_ref(&y, &d, wrk, RoundingMode::None);
         x = x.sub(&step, wrk, RoundingMode::None);
         if !finite(&x) {
             return None;
@@ -192,10 +192,9 @@ where
         if den.is_zero() {
             return None;
         }
-        let c = a
-            .mul(&fb, wrk, RoundingMode::None)
+        let c = ExactNum::mul_ref(&a, &fb, wrk, RoundingMode::None)
             .sub(
-                &b.mul(&fa, wrk, RoundingMode::None),
+                &ExactNum::mul_ref(&b, &fa, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             )
@@ -290,11 +289,10 @@ where
     let none = RoundingMode::None;
     let one = ExactNum::from_u8(1, wrk);
     let two = ExactNum::from_u8(2, wrk);
-    let three = ExactNum::from_u8(3, wrk);
     let half_tol = if tol.is_negative() {
         tol.neg_via_mul().div(&two, wrk, none)
     } else {
-        tol.div(&two, wrk, none)
+        ExactNum::div_ref(tol, &two, wrk, none)
     };
     let eps2 = ExactNum::from_u8(1, wrk).ldexp(1 - wrk as i32, wrk, none);
     let mut fa = f(&a, wrk, none, cc);
@@ -322,9 +320,9 @@ where
             fc = fa.clone();
         }
         let tol1 = if b.is_negative() {
-            eps2.mul(&b.neg_via_mul(), wrk, none)
+            b.neg_via_mul().mul(&eps2, wrk, none)
         } else {
-            eps2.mul(&b, wrk, none)
+            ExactNum::mul_ref(&eps2, &b, wrk, none)
         }
         .add(&half_tol, wrk, none);
         let m = ExactNum::sub_ref(&c, &b, wrk, none).div(&two, wrk, none);
@@ -335,13 +333,13 @@ where
         }
         if !abs_lt(&e, &tol1) && abs_lt(&fb, &fa) {
             // Secant (a == c) or inverse quadratic interpolation, as the correction p/q.
-            let s = fb.div(&fa, wrk, none);
-            let two_m = two.mul(&m, wrk, none);
+            let s = ExactNum::div_ref(&fb, &fa, wrk, none);
+            let two_m = ExactNum::from_u8(2, wrk).mul(&m, wrk, none);
             let (mut pn, mut q) = if a.compare(&c) == Some(0) {
                 (two_m.mul(&s, wrk, none), s.neg().add(&one, wrk, none))
             } else {
                 let qa = fa.div(&fc, wrk, none);
-                let r = fb.div(&fc, wrk, none);
+                let r = ExactNum::div_ref(&fb, &fc, wrk, none);
                 let inner = two_m
                     .mul(&qa, wrk, none)
                     .mul(&ExactNum::sub_ref(&qa, &r, wrk, none), wrk, none)
@@ -369,14 +367,13 @@ where
             } else {
                 pn = pn.neg();
             }
-            let lim1 = three.mul(&m, wrk, none).mul(&q, wrk, none).sub(
-                &tol1.mul(&q, wrk, none).abs(),
-                wrk,
-                none,
-            );
+            let lim1 = ExactNum::from_u8(3, wrk)
+                .mul(&m, wrk, none)
+                .mul(&q, wrk, none)
+                .sub(&ExactNum::mul_ref(&tol1, &q, wrk, none).abs(), wrk, none);
             let lim2 = e.mul(&q, wrk, none).abs();
             let lim = if lt(&lim1, &lim2) { lim1 } else { lim2 };
-            if lt(&two.mul(&pn, wrk, none), &lim) {
+            if lt(&ExactNum::from_u8(2, wrk).mul(&pn, wrk, none), &lim) {
                 e = d;
                 d = pn.div(&q, wrk, none);
             } else {
@@ -454,8 +451,8 @@ mod tests {
         assert_eq!(broot.compare(&pi), Some(0));
 
         let nroot = newton(
-            |x, p, rm, _cc| x.mul(x, p, rm).sub(&two, p, rm),
-            |x, p, rm, _cc| two.mul(x, p, rm),
+            |x, p, rm, _cc| ExactNum::mul_ref(x, x, p, rm).sub(&two, p, rm),
+            |x, p, rm, _cc| ExactNum::mul_ref(&two, x, p, rm),
             &one,
             &tol,
             ROOT_MAX_ITER,

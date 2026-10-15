@@ -61,7 +61,7 @@ impl ExactNum {
         let _ = cur.set_precision(wrk, RoundingMode::None);
         for k in 1..n {
             let kf = ExactNum::from_u32(k as u32, wrk);
-            let next = self.mul(&cur, wrk, RoundingMode::None).sub(
+            let next = ExactNum::mul_ref(self, &cur, wrk, RoundingMode::None).sub(
                 &kf.mul(&prev, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
@@ -99,10 +99,10 @@ impl ExactNum {
             return finish(two.mul(self, wrk, RoundingMode::None), p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = two.mul(self, wrk, RoundingMode::None);
+        let mut cur = ExactNum::from_u8(2, wrk).mul(self, wrk, RoundingMode::None);
         for k in 1..n {
             let two_k = ExactNum::from_u32((2 * k) as u32, wrk);
-            let next = two
+            let next = ExactNum::from_u8(2, wrk)
                 .mul(self, wrk, RoundingMode::None)
                 .mul(&cur, wrk, RoundingMode::None)
                 .sub(
@@ -221,12 +221,11 @@ impl ExactNum {
         if n == 1 {
             return finish(self.clone(), p, rm);
         }
-        let two = ExactNum::from_u8(2, wrk);
         let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = self.clone();
         let _ = cur.set_precision(wrk, RoundingMode::None);
         for _ in 1..n {
-            let next = two
+            let next = ExactNum::from_u8(2, wrk)
                 .mul(self, wrk, RoundingMode::None)
                 .mul(&cur, wrk, RoundingMode::None)
                 .sub(&prev, wrk, RoundingMode::None);
@@ -263,9 +262,9 @@ impl ExactNum {
             return finish(two.mul(self, wrk, RoundingMode::None), p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = two.mul(self, wrk, RoundingMode::None);
+        let mut cur = ExactNum::from_u8(2, wrk).mul(self, wrk, RoundingMode::None);
         for _ in 1..n {
-            let next = two
+            let next = ExactNum::from_u8(2, wrk)
                 .mul(self, wrk, RoundingMode::None)
                 .mul(&cur, wrk, RoundingMode::None)
                 .sub(&prev, wrk, RoundingMode::None);
@@ -315,18 +314,18 @@ impl ExactNum {
             );
         }
         let mut prev = one.clone();
-        let mut cur = two
+        let mut cur = ExactNum::from_u8(2, wrk)
             .mul(lambda, wrk, RoundingMode::None)
             .mul(self, wrk, RoundingMode::None);
         for k in 1..n {
-            let two_n_l = two.mul(
+            let two_n_l = ExactNum::from_u8(2, wrk).mul(
                 &ExactNum::from_u32(k as u32, wrk).add(lambda, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             );
             let n_2l_1 = ExactNum::from_u32(k as u32, wrk)
                 .add(
-                    &two.mul(lambda, wrk, RoundingMode::None),
+                    &ExactNum::from_u8(2, wrk).mul(lambda, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                 )
@@ -421,7 +420,7 @@ impl ExactNum {
             let two_k_apb_2 = ExactNum::from_u32((2 * k) as u32, wrk)
                 .add(&apb, wrk, RoundingMode::None)
                 .add(&two, wrk, RoundingMode::None);
-            let a_den = two
+            let a_den = ExactNum::from_u8(2, wrk)
                 .mul(&k1, wrk, RoundingMode::None)
                 .mul(
                     &ExactNum::from_u32(k as u32, wrk)
@@ -431,18 +430,18 @@ impl ExactNum {
                     RoundingMode::None,
                 )
                 .mul(&two_k_apb, wrk, RoundingMode::None);
-            let a2mb2 = alpha.mul(alpha, wrk, RoundingMode::None).sub(
-                &beta.mul(beta, wrk, RoundingMode::None),
+            let a2mb2 = ExactNum::mul_ref(alpha, alpha, wrk, RoundingMode::None).sub(
+                &ExactNum::mul_ref(beta, beta, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             );
-            let b_num = two_k_apb_1.mul(&a2mb2, wrk, RoundingMode::None);
+            let b_num = a2mb2.mul(&two_k_apb_1, wrk, RoundingMode::None);
             let c_num = two_k_apb.mul(&two_k_apb_1, wrk, RoundingMode::None).mul(
                 &two_k_apb_2,
                 wrk,
                 RoundingMode::None,
             );
-            let d_num = two
+            let d_num = ExactNum::from_u8(2, wrk)
                 .mul(
                     &ExactNum::from_u32(k as u32, wrk).add(alpha, wrk, RoundingMode::None),
                     wrk,
@@ -490,7 +489,7 @@ mod tests {
         let one = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
         let three = ExactNum::from_u8(3, p);
-        let half = one.div(&two, p, rm);
+        let half = ExactNum::from_u8(1, p).div(&two, p, rm);
 
         assert_eq!(zero.hermite_he(4, p, rm).compare(&three), Some(0));
         assert_eq!(zero.laguerre(3, p, rm).compare(&one), Some(0));
@@ -548,12 +547,12 @@ mod tests {
         let one = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
         let three = ExactNum::from_u8(3, p);
-        let half = one.div(&two, p, rm);
-        let three_tenths = three.div(&ExactNum::from_u8(10, p), p, rm);
+        let half = ExactNum::from_u8(1, p).div(&two, p, rm);
+        let three_tenths = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(10, p), p, rm);
 
         // P_2^{(1,1)}(1/2) = (3/4)(5/4 − 1) = 3/16.
         let p2 = half.jacobi_p(2, &one, &one, p, rm);
-        let want = three.div(&ExactNum::from_u8(16, p), p, rm);
+        let want = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(16, p), p, rm);
         assert_eq!(p2.compare(&want), Some(0));
 
         // α = β = 0 is Legendre P_n.
@@ -563,7 +562,7 @@ mod tests {
 
         // P_n^{(α,β)}(−x) = (−1)^n P_n^{(β,α)}(x).
         let alpha = half.clone();
-        let beta = one.div(&three, p, rm);
+        let beta = ExactNum::from_u8(1, p).div(&three, p, rm);
         let x = three_tenths.clone();
         let nx = x.neg_via_mul();
         let lhs = nx.jacobi_p(6, &alpha, &beta, p, rm);

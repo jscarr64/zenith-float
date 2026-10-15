@@ -84,7 +84,7 @@ fn roots_default_tol_and_equal_exponent_bracket() {
     // Bracket [2, 3] (1.0.4: rejected as not a < b).
     let six = n(6);
     let r = bisect(
-        |x, p, rm, _| x.mul(x, p, rm).sub(&ExactNum::from_u8(6, p), p, rm),
+        |x, p, rm, _| ExactNum::mul_ref(x, x, p, rm).sub(&ExactNum::from_u8(6, p), p, rm),
         &n(2),
         &n(3),
         &tol,
@@ -95,7 +95,7 @@ fn roots_default_tol_and_equal_exponent_bracket() {
     .expect("bisect x² = 6");
     assert!(close(&r, &six.sqrt(4 * P, RM), 125));
     let r = illinois(
-        |x, p, rm, _| x.mul(x, p, rm).sub(&ExactNum::from_u8(6, p), p, rm),
+        |x, p, rm, _| ExactNum::mul_ref(x, x, p, rm).sub(&ExactNum::from_u8(6, p), p, rm),
         &n(2),
         &n(3),
         &tol,
@@ -106,7 +106,7 @@ fn roots_default_tol_and_equal_exponent_bracket() {
     .expect("illinois x² = 6");
     assert!(close(&r, &six.sqrt(4 * P, RM), 125));
     let r = brent(
-        |x, p, rm, _| x.mul(x, p, rm).sub(&ExactNum::from_u8(6, p), p, rm),
+        |x, p, rm, _| ExactNum::mul_ref(x, x, p, rm).sub(&ExactNum::from_u8(6, p), p, rm),
         &n(2),
         &n(3),
         &tol,

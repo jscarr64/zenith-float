@@ -263,7 +263,7 @@ impl ExactNum {
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
-    pub fn mul(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
+    pub fn mul(self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         self.mul_op(d2, p, rm, false)
     }
 
@@ -329,7 +329,7 @@ impl ExactNum {
                 Self::result_to_ext_rm(a.fma(bv, cv, p, rm), false, true, p, rm)
             }
             _ => {
-                let prod = self.mul(b, p, RoundingMode::None);
+                let prod = ExactNum::mul_ref(self, b, p, RoundingMode::None);
                 prod.add(c, p, rm)
             }
         }
@@ -387,7 +387,7 @@ impl ExactNum {
             return (Self::nan(b.err()), Self::nan(b.err()));
         }
         if self.is_inf() || b.is_inf() {
-            return (self.mul(b, p, rm), Self::new(p));
+            return (ExactNum::mul_ref(self, b, p, rm), Self::new(p));
         }
         let exact = self.mul_full_prec(b);
         let mut hi = exact.clone();
@@ -465,7 +465,7 @@ impl ExactNum {
         };
         let mut acc = Self::new(p_wrk);
         for (x, y) in xs.iter().zip(ys.iter()) {
-            let prod = x.mul(y, p_wrk, RoundingMode::None);
+            let prod = ExactNum::mul_ref(x, y, p_wrk, RoundingMode::None);
             acc = acc.add(&prod, p_wrk, RoundingMode::None);
         }
         if let Err(err) = acc.set_precision(p, rm) {
@@ -611,7 +611,7 @@ impl ExactNum {
     /// The function returns NaN if the precision `p` is incorrect.
     ///
     /// Accuracy: correctly-rounded
-    pub fn div(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
+    pub fn div(self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         self.div_op(d2, p, rm)
     }
 
@@ -4201,42 +4201,6 @@ impl core::fmt::LowerHex for ExactNum {
     }
 }
 
-macro_rules! impl_exact_binop {
-    ($trait:ident, $method:ident, $op:ident) => {
-        impl core::ops::$trait<&ExactNum> for &ExactNum {
-            type Output = ExactNum;
-
-            fn $method(self, rhs: &ExactNum) -> ExactNum {
-                ExactNum::$op(self, rhs, DEFAULT_P, RoundingMode::ToEven)
-            }
-        }
-
-        impl core::ops::$trait<ExactNum> for &ExactNum {
-            type Output = ExactNum;
-
-            fn $method(self, rhs: ExactNum) -> ExactNum {
-                ExactNum::$op(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
-            }
-        }
-
-        impl core::ops::$trait<&ExactNum> for ExactNum {
-            type Output = ExactNum;
-
-            fn $method(self, rhs: &ExactNum) -> ExactNum {
-                ExactNum::$op(&self, rhs, DEFAULT_P, RoundingMode::ToEven)
-            }
-        }
-
-        impl core::ops::$trait<ExactNum> for ExactNum {
-            type Output = ExactNum;
-
-            fn $method(self, rhs: ExactNum) -> ExactNum {
-                ExactNum::$op(&self, &rhs, DEFAULT_P, RoundingMode::ToEven)
-            }
-        }
-    };
-}
-
 // `add` and `sub` take their first operand by value, so there is no `&ExactNum + &ExactNum`: nothing could
 // own the result's storage without copying an operand. `&a + b` is `b + a`; `&a - b` is `-b + a`.
 impl core::ops::Add<&ExactNum> for ExactNum {
@@ -4295,8 +4259,60 @@ impl core::ops::Sub<ExactNum> for &ExactNum {
     }
 }
 
-impl_exact_binop!(Mul, mul, mul);
-impl_exact_binop!(Div, div, div);
+// `mul` and `div` follow the same rule: `a * &b`, `a * b`, `a / &b`, `a / b` and `&a * b` exist; `&a * &b` and
+// `&a / &b` do not. `&a * b` is `b * a` (the first operand's NaN error wins, as before). `&a / b` cannot be
+// reordered, so it is the one place where the operator uses `div_ref`.
+impl core::ops::Mul<&ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn mul(self, rhs: &ExactNum) -> ExactNum {
+        ExactNum::mul(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Mul<ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn mul(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::mul(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Mul<ExactNum> for &ExactNum {
+    type Output = ExactNum;
+
+    fn mul(self, rhs: ExactNum) -> ExactNum {
+        // `rhs * self` is `self * rhs` for every pair except two NaNs, where the first operand's error wins.
+        if self.is_nan() && rhs.is_nan() {
+            return ExactNum::nan(self.err());
+        }
+        ExactNum::mul(rhs, self, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Div<&ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn div(self, rhs: &ExactNum) -> ExactNum {
+        ExactNum::div(self, rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Div<ExactNum> for ExactNum {
+    type Output = ExactNum;
+
+    fn div(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::div(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
+
+impl core::ops::Div<ExactNum> for &ExactNum {
+    type Output = ExactNum;
+
+    fn div(self, rhs: ExactNum) -> ExactNum {
+        ExactNum::div_ref(self, &rhs, DEFAULT_P, RoundingMode::ToEven)
+    }
+}
 
 /// A trait for conversion with additional arguments.
 pub trait FromExt<T> {
@@ -4487,11 +4503,11 @@ mod tests {
         assert!(ExactNum::sub_ref(&INF_NEG, &INF_NEG, rand_p(), rm).is_nan());
         assert!(ExactNum::sub_ref(&INF_NEG, &INF_POS, rand_p(), rm).is_inf_neg());
 
-        assert!(TWO.mul(&ONE, rand_p(), rm).compare(&TWO) == Some(0));
-        assert!(ONE.mul(&INF_POS, rand_p(), rm).is_inf_pos());
-        assert!(INF_POS.mul(&ONE, rand_p(), rm).is_inf_pos());
-        assert!(ONE.mul(&INF_NEG, rand_p(), rm).is_inf_neg());
-        assert!(INF_NEG.mul(&ONE, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::mul_ref(&TWO, &ONE, rand_p(), rm).compare(&TWO) == Some(0));
+        assert!(ExactNum::mul_ref(&ONE, &INF_POS, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::mul_ref(&INF_POS, &ONE, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::mul_ref(&ONE, &INF_NEG, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::mul_ref(&INF_NEG, &ONE, rand_p(), rm).is_inf_neg());
         assert!(ExactNum::from_i8(-1, DEFAULT_P)
             .mul(&INF_POS, rand_p(), rm)
             .is_inf_neg());
@@ -4504,20 +4520,20 @@ mod tests {
         assert!(INF_NEG
             .mul(&ExactNum::from_i8(-1, DEFAULT_P), rand_p(), rm)
             .is_inf_pos());
-        assert!(INF_POS.mul(&INF_POS, rand_p(), rm).is_inf_pos());
-        assert!(INF_POS.mul(&INF_NEG, rand_p(), rm).is_inf_neg());
-        assert!(INF_NEG.mul(&INF_NEG, rand_p(), rm).is_inf_pos());
-        assert!(INF_NEG.mul(&INF_POS, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::mul_ref(&INF_POS, &INF_POS, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::mul_ref(&INF_POS, &INF_NEG, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::mul_ref(&INF_NEG, &INF_NEG, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::mul_ref(&INF_NEG, &INF_POS, rand_p(), rm).is_inf_neg());
         assert!(INF_POS.mul(&ExactNum::new(rand_p()), rand_p(), rm).is_nan());
         assert!(INF_NEG.mul(&ExactNum::new(rand_p()), rand_p(), rm).is_nan());
         assert!(ExactNum::new(rand_p()).mul(&INF_POS, rand_p(), rm).is_nan());
         assert!(ExactNum::new(rand_p()).mul(&INF_NEG, rand_p(), rm).is_nan());
 
-        assert!(TWO.div(&TWO, rand_p(), rm).compare(&ONE) == Some(0));
-        assert!(TWO.div(&INF_POS, rand_p(), rm).is_zero());
-        assert!(INF_POS.div(&TWO, rand_p(), rm).is_inf_pos());
-        assert!(TWO.div(&INF_NEG, rand_p(), rm).is_zero());
-        assert!(INF_NEG.div(&TWO, rand_p(), rm).is_inf_neg());
+        assert!(ExactNum::div_ref(&TWO, &TWO, rand_p(), rm).compare(&ONE) == Some(0));
+        assert!(ExactNum::div_ref(&TWO, &INF_POS, rand_p(), rm).is_zero());
+        assert!(ExactNum::div_ref(&INF_POS, &TWO, rand_p(), rm).is_inf_pos());
+        assert!(ExactNum::div_ref(&TWO, &INF_NEG, rand_p(), rm).is_zero());
+        assert!(ExactNum::div_ref(&INF_NEG, &TWO, rand_p(), rm).is_inf_neg());
         assert!(ExactNum::from_i8(-2, DEFAULT_P)
             .div(&INF_POS, rand_p(), rm)
             .is_zero());
@@ -4530,10 +4546,10 @@ mod tests {
         assert!(INF_NEG
             .div(&ExactNum::from_i8(-2, DEFAULT_P), rand_p(), rm)
             .is_inf_pos());
-        assert!(INF_POS.div(&INF_POS, rand_p(), rm).is_nan());
-        assert!(INF_POS.div(&INF_NEG, rand_p(), rm).is_nan());
-        assert!(INF_NEG.div(&INF_NEG, rand_p(), rm).is_nan());
-        assert!(INF_NEG.div(&INF_POS, rand_p(), rm).is_nan());
+        assert!(ExactNum::div_ref(&INF_POS, &INF_POS, rand_p(), rm).is_nan());
+        assert!(ExactNum::div_ref(&INF_POS, &INF_NEG, rand_p(), rm).is_nan());
+        assert!(ExactNum::div_ref(&INF_NEG, &INF_NEG, rand_p(), rm).is_nan());
+        assert!(ExactNum::div_ref(&INF_NEG, &INF_POS, rand_p(), rm).is_nan());
         assert!(INF_POS
             .div(&ExactNum::new(rand_p()), rand_p(), rm)
             .is_inf_pos());
@@ -4575,7 +4591,7 @@ mod tests {
         assert!(ExactNum::new(rand_p()).rem(&INF_POS).is_zero());
         assert!(ExactNum::new(rand_p()).rem(&INF_NEG).is_zero());
 
-        for op in [ExactNum::add_ref, ExactNum::sub_ref, ExactNum::mul, ExactNum::div] {
+        for op in [ExactNum::add_ref, ExactNum::sub_ref, ExactNum::mul_ref, ExactNum::div_ref] {
             assert!(op(&NAN, &ONE, rand_p(), rm).is_nan());
             assert!(op(&ONE, &NAN, rand_p(), rm).is_nan());
             assert!(op(&NAN, &INF_POS, rand_p(), rm).is_nan());
@@ -4704,7 +4720,7 @@ mod tests {
         assert!(INF_POS.pow(&INF_NEG, rand_p(), rm, &mut cc).is_zero());
         assert!(INF_NEG.pow(&INF_NEG, rand_p(), rm, &mut cc).is_zero());
 
-        let half = ONE.div(&TWO, rand_p(), rm);
+        let half = ExactNum::div_ref(&ONE, &TWO, rand_p(), rm);
         assert!(TWO.log(&TWO, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(TWO.log(&INF_POS, rand_p(), rm, &mut cc).is_zero());
         assert!(TWO.log(&INF_NEG, rand_p(), rm, &mut cc).is_nan());
@@ -5273,7 +5289,7 @@ mod tests {
         let mut cc = Consts::new().unwrap();
         let one = ExactNum::from_u8(1, p);
         let zero = ExactNum::from_u8(0, p);
-        let half = one.div(&ExactNum::from_u8(2, p), p, rm);
+        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let sn0 = zero.jacobi_sn(&half, p, rm, &mut cc);
         assert!(sn0.is_zero(), "sn(0)");
         let cn0 = zero.jacobi_cn(&half, p, rm, &mut cc);

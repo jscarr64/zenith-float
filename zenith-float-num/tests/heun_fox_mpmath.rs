@@ -83,7 +83,7 @@ fn heun_fox_mpmath() {
     let p = 128usize;
     let zero = ExactNum::new(p);
     let one = ExactNum::from_u8(1, p);
-    let half = one.div(&ExactNum::from_u8(2, p), p, RM);
+    let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RM);
     let two = ExactNum::from_u8(2, p);
     let three = ExactNum::from_u8(3, p);
 
@@ -154,7 +154,7 @@ fn heun_fox_mpmath() {
         &mut failures,
     );
     // awkward half-integer poles
-    let qtr = one.div(&ExactNum::from_u8(4, p), p, RM);
+    let qtr = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(4, p), p, RM);
     check(
         "G^{2,1}_{1,2}(0.15|1/2; 1/4,-1/4)",
         dec("0.15", p, &mut cc).meijer_g(
@@ -206,13 +206,13 @@ fn heun_fox_mpmath() {
     // J_{1/4}(1.2) = G^{1,0}_{0,2}((0.6)^2 | ; ν/2; −ν/2)
     let nu = qtr.clone();
     let x = dec("1.2", p, &mut cc);
-    let arg = x.div(&two, p, RM).mul(&x.div(&two, p, RM), p, RM);
+    let arg = ExactNum::div_ref(&x, &two, p, RM).mul(&x.div(&two, p, RM), p, RM);
     check(
         "G Bessel J_{1/4}(1.2)",
         arg.meijer_g(
             &[],
             &[],
-            &[nu.div(&two, p, RM)],
+            &[ExactNum::div_ref(&nu, &two, p, RM)],
             &[nu.neg().div(&two, p, RM)],
             p,
             RM,
@@ -338,8 +338,8 @@ fn heun_fox_mpmath() {
     );
 
     // HeunG → 2F1 (independent: mpmath hyp2f1)
-    let alpha = one.div(&three, p, RM);
-    let beta = two.div(&ExactNum::from_u8(5, p), p, RM);
+    let alpha = ExactNum::div_ref(&one, &three, p, RM);
+    let beta = ExactNum::div_ref(&two, &ExactNum::from_u8(5, p), p, RM);
     let gamma = ExactNum::from_u8(4, p).div(&three, p, RM);
     let zz = dec("0.35", p, &mut cc);
     check(
@@ -634,7 +634,7 @@ fn heun_fox_mpmath() {
 
     // Exact dyadic parameters: HeunG(-10,1;1;1/2) = (1/2)^10.
     // mpmath 1.4.1 hyp2f1(-10, 1, 1, 1/2).
-    let z_half = one.div(&two, p, RM);
+    let z_half = ExactNum::div_ref(&one, &two, p, RM);
     let m10 = ExactNum::from_i32(-10, p);
     let m9 = ExactNum::from_i32(-9, p);
     let m20 = ExactNum::from_i32(-20, p);

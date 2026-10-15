@@ -223,10 +223,10 @@ impl ExactComplex {
 
     /// Implementation of [`Self::mul`] on operands without inexact history.
     fn mul_word(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
-        let ac = self.re.mul(&rhs.re, p, rm);
-        let bd = self.im.mul(&rhs.im, p, rm);
-        let ad = self.re.mul(&rhs.im, p, rm);
-        let bc = self.im.mul(&rhs.re, p, rm);
+        let ac = ExactNum::mul_ref(&self.re, &rhs.re, p, rm);
+        let bd = ExactNum::mul_ref(&self.im, &rhs.im, p, rm);
+        let ad = ExactNum::mul_ref(&self.re, &rhs.im, p, rm);
+        let bc = ExactNum::mul_ref(&self.im, &rhs.re, p, rm);
         Self::new(ac.sub(&bd, p, rm), ad.add(&bc, p, rm))
     }
 
@@ -242,12 +242,12 @@ impl ExactComplex {
 
     /// Implementation of [`Self::div`] on operands without inexact history.
     fn div_word(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
-        let ac = self.re.mul(&rhs.re, p, RoundingMode::None);
-        let bd = self.im.mul(&rhs.im, p, RoundingMode::None);
-        let bc = self.im.mul(&rhs.re, p, RoundingMode::None);
-        let ad = self.re.mul(&rhs.im, p, RoundingMode::None);
-        let den = rhs.re.mul(&rhs.re, p, RoundingMode::None).add(
-            &rhs.im.mul(&rhs.im, p, RoundingMode::None),
+        let ac = ExactNum::mul_ref(&self.re, &rhs.re, p, RoundingMode::None);
+        let bd = ExactNum::mul_ref(&self.im, &rhs.im, p, RoundingMode::None);
+        let bc = ExactNum::mul_ref(&self.im, &rhs.re, p, RoundingMode::None);
+        let ad = ExactNum::mul_ref(&self.re, &rhs.im, p, RoundingMode::None);
+        let den = ExactNum::mul_ref(&rhs.re, &rhs.re, p, RoundingMode::None).add(
+            &ExactNum::mul_ref(&rhs.im, &rhs.im, p, RoundingMode::None),
             p,
             RoundingMode::None,
         );
@@ -270,7 +270,7 @@ impl ExactComplex {
     fn exp_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let er = self.re.exp(p, RoundingMode::None, cc);
         let (s, c) = self.im.sin_cos(p, RoundingMode::None, cc);
-        Self::new(er.mul(&c, p, rm), er.mul(&s, p, rm))
+        Self::new(ExactNum::mul_ref(&er, &c, p, rm), er.mul(&s, p, rm))
     }
 
     /// Principal logarithm `ln|z| + i Arg(z)`.
@@ -314,8 +314,7 @@ impl ExactComplex {
         };
         let ln_big = big.ln(work, RoundingMode::None, cc);
         let ratio = small.div(&big, work, RoundingMode::None);
-        let corr = ratio
-            .mul(&ratio, work, RoundingMode::None)
+        let corr = ExactNum::mul_ref(&ratio, &ratio, work, RoundingMode::None)
             .log1p(work, RoundingMode::None, cc)
             .ldexp(-1, work, RoundingMode::None);
         let mut real = ln_big.add(&corr, work, RoundingMode::None);
@@ -388,7 +387,7 @@ impl ExactComplex {
         let u = if self.im.is_negative() {
             self.im.neg_via_mul().div(&t2, p_x, rm)
         } else {
-            self.im.div(&t2, p_x, rm)
+            ExactNum::div_ref(&self.im, &t2, p_x, rm)
         };
         if !(a_exact && exact(&h) && exact(&t) && exact(&u)) {
             return None;
@@ -525,7 +524,7 @@ impl ExactComplex {
         let half_th = th.ldexp(-1, p_x, RoundingMode::None);
         let (s, c) = half_th.sin_cos(p_x, RoundingMode::None, cc);
         Self::new(
-            sr.mul(&c, p_x, RoundingMode::None),
+            ExactNum::mul_ref(&sr, &c, p_x, RoundingMode::None),
             sr.mul(&s, p_x, RoundingMode::None),
         )
         .finish(p, rm)

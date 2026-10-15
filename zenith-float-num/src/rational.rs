@@ -133,10 +133,10 @@ impl ExactRational {
         }
         let p = work_p(&[&self.num, &self.den, &rhs.num, &rhs.den]);
         let rm = RoundingMode::None;
-        let ad = self.num.mul(&rhs.den, p, rm);
-        let bc = rhs.num.mul(&self.den, p, rm);
+        let ad = ExactNum::mul_ref(&self.num, &rhs.den, p, rm);
+        let bc = ExactNum::mul_ref(&rhs.num, &self.den, p, rm);
         let num = if subtract { ad.sub(&bc, p, rm) } else { ad.add(&bc, p, rm) };
-        let den = self.den.mul(&rhs.den, p, rm);
+        let den = ExactNum::mul_ref(&self.den, &rhs.den, p, rm);
         Self::new(num, den)
     }
 
@@ -147,7 +147,10 @@ impl ExactRational {
         }
         let p = work_p(&[&self.num, &self.den, &rhs.num, &rhs.den]);
         let rm = RoundingMode::None;
-        Self::new(self.num.mul(&rhs.num, p, rm), self.den.mul(&rhs.den, p, rm))
+        Self::new(
+            ExactNum::mul_ref(&self.num, &rhs.num, p, rm),
+            ExactNum::mul_ref(&self.den, &rhs.den, p, rm),
+        )
     }
 
     /// `self / rhs`. Zero `rhs` is `NaN`.
@@ -157,7 +160,10 @@ impl ExactRational {
         }
         let p = work_p(&[&self.num, &self.den, &rhs.num, &rhs.den]);
         let rm = RoundingMode::None;
-        Self::new(self.num.mul(&rhs.den, p, rm), self.den.mul(&rhs.num, p, rm))
+        Self::new(
+            ExactNum::mul_ref(&self.num, &rhs.den, p, rm),
+            ExactNum::mul_ref(&self.den, &rhs.num, p, rm),
+        )
     }
 
     /// Convert to an `ExactNum` at `(p, rm)`.
@@ -165,12 +171,12 @@ impl ExactRational {
         if self.is_nan() {
             return NAN;
         }
-        self.num.div(&self.den, p, rm)
+        ExactNum::div_ref(&self.num, &self.den, p, rm)
     }
 
     fn quot(&self) -> ExactNum {
         let p = work_p(&[&self.num, &self.den]);
-        self.num.div(&self.den, p, RoundingMode::None)
+        ExactNum::div_ref(&self.num, &self.den, p, RoundingMode::None)
     }
 
     /// Greatest integer `≤ self` as a rational with denominator `1`.
@@ -278,8 +284,8 @@ impl ExactRational {
         }
         let p = work_p(&[&self.num, &self.den, &other.num, &other.den]);
         let rm = RoundingMode::None;
-        let left = self.num.mul(&other.den, p, rm);
-        let right = other.num.mul(&self.den, p, rm);
+        let left = ExactNum::mul_ref(&self.num, &other.den, p, rm);
+        let right = ExactNum::mul_ref(&other.num, &self.den, p, rm);
         match left.compare(&right) {
             Some(c) if c > 0 => Some(Ordering::Greater),
             Some(c) if c < 0 => Some(Ordering::Less),

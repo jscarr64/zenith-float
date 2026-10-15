@@ -50,16 +50,16 @@ fn eval(name: &str, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -
         "log_invsqrt" => x.ln(p, rm, cc).mul(&inv_sqrt(x, p, rm), p, rm),
         "log2_invsqrt" => {
             let l = x.ln(p, rm, cc);
-            l.mul(&l, p, rm).mul(&inv_sqrt(x, p, rm), p, rm)
+            ExactNum::mul_ref(&l, &l, p, rm).mul(&inv_sqrt(x, p, rm), p, rm)
         }
         "log3_invsqrt" => {
             let l = x.ln(p, rm, cc);
-            let l2 = l.mul(&l, p, rm);
+            let l2 = ExactNum::mul_ref(&l, &l, p, rm);
             l2.mul(&l, p, rm).mul(&inv_sqrt(x, p, rm), p, rm)
         }
         "arcsine" => {
             let one = ExactNum::from_u8(1, p);
-            let q = x.mul(&one.sub(x, p, rm), p, rm);
+            let q = one.sub(x, p, rm).mul(x, p, rm);
             if q.is_zero() {
                 ExactNum::nan(None)
             } else {
@@ -105,7 +105,7 @@ fn gk_eps_candidates() {
                     let one = ExactNum::from_u8(1, WIDTH);
                     let mag = truth.abs();
                     let scale = if mag.compare(&one) == Some(1) { mag } else { one };
-                    let bar = rel.mul(&scale, WIDTH, RoundingMode::Up);
+                    let bar = scale.mul(&rel, WIDTH, RoundingMode::Up);
                     let est_ok = matches!(gap.compare(&bar), Some(c) if c <= 0);
                     println!(
                         "p={p} {name} est={} abs_err_est={} gap={} covered={covered} est_ok={est_ok}",

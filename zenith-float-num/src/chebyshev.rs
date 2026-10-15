@@ -59,7 +59,7 @@ fn map_from_unit(
     p: usize,
     rm: RoundingMode,
 ) -> ExactNum {
-    half.mul(t, p, rm).add(mid, p, rm)
+    ExactNum::mul_ref(half, t, p, rm).add(mid, p, rm)
 }
 
 /// Chebyshev–Gauss node `t_k = cos(π (2k+1) / (2n))` on `[-1, 1]`.
@@ -128,14 +128,13 @@ where
         fx.push(y);
     }
     let n_f = ExactNum::from_u32(n as u32, wrk);
-    let two = ExactNum::from_u8(2, wrk);
     let mut coeffs = Vec::with_capacity(n);
     for j in 0..n {
         let mut s = ExactNum::new(wrk);
         for (k, fxk) in fx.iter().enumerate().take(n) {
             let w = node_cos_j(j, k, n, wrk, RoundingMode::None, cc);
             s = s.add(
-                &fxk.mul(&w, wrk, RoundingMode::None),
+                &w.mul(fxk, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             );
@@ -143,7 +142,7 @@ where
         let scale = if j == 0 {
             ExactNum::from_u8(1, wrk).div(&n_f, wrk, RoundingMode::None)
         } else {
-            two.div(&n_f, wrk, RoundingMode::None)
+            ExactNum::from_u8(2, wrk).div(&n_f, wrk, RoundingMode::None)
         };
         let mut c = s.mul(&scale, wrk, RoundingMode::None);
         let _ = c.set_precision(p, rm);
@@ -164,11 +163,10 @@ pub fn clenshaw(coeffs: &[ExactNum], x: &ExactNum, p: usize, rm: RoundingMode) -
         return NAN;
     }
     let wrk = work_p(p);
-    let two = ExactNum::from_u8(2, wrk);
     let mut b1 = ExactNum::new(wrk);
     let mut b2 = ExactNum::new(wrk);
     for c in coeffs.iter().skip(1).rev() {
-        let t = two
+        let t = ExactNum::from_u8(2, wrk)
             .mul(x, wrk, RoundingMode::None)
             .mul(&b1, wrk, RoundingMode::None)
             .sub(&b2, wrk, RoundingMode::None)
@@ -176,8 +174,8 @@ pub fn clenshaw(coeffs: &[ExactNum], x: &ExactNum, p: usize, rm: RoundingMode) -
         b2 = b1;
         b1 = t;
     }
-    let mut y = x
-        .mul(&b1, wrk, RoundingMode::None)
+    let mut y = b1
+        .mul(x, wrk, RoundingMode::None)
         .sub(&b2, wrk, RoundingMode::None)
         .add(&coeffs[0], wrk, RoundingMode::None);
     let _ = y.set_precision(p, rm);
@@ -226,7 +224,6 @@ fn chebyshev_sum_direct(coeffs: &[ExactNum], x: &ExactNum, p: usize, rm: Roundin
     }
     let wrk = work_p(p);
     let one = ExactNum::from_u8(1, wrk);
-    let two = ExactNum::from_u8(2, wrk);
     let mut t_prev = one;
     let mut acc = coeffs[0].clone();
     let _ = acc.set_precision(wrk, RoundingMode::None);
@@ -237,17 +234,17 @@ fn chebyshev_sum_direct(coeffs: &[ExactNum], x: &ExactNum, p: usize, rm: Roundin
     let mut t_cur = x.clone();
     let _ = t_cur.set_precision(wrk, RoundingMode::None);
     acc = acc.add(
-        &coeffs[1].mul(&t_cur, wrk, RoundingMode::None),
+        &ExactNum::mul_ref(&coeffs[1], &t_cur, wrk, RoundingMode::None),
         wrk,
         RoundingMode::None,
     );
     for c in coeffs.iter().skip(2) {
-        let t_next = two
+        let t_next = ExactNum::from_u8(2, wrk)
             .mul(x, wrk, RoundingMode::None)
             .mul(&t_cur, wrk, RoundingMode::None)
             .sub(&t_prev, wrk, RoundingMode::None);
         acc = acc.add(
-            &c.mul(&t_next, wrk, RoundingMode::None),
+            &ExactNum::mul_ref(c, &t_next, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );

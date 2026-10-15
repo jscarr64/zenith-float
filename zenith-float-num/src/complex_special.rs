@@ -68,8 +68,8 @@ pub(crate) fn pi_c(p: usize, cc: &mut Consts) -> ExactComplex {
 
 /// Guard bits for [`ExactComplex::erf_power_series`]: `1.5·2^e + 16` with \(\lvert u\rvert^2<2^e\).
 fn erf_series_guard_bits(u: &ExactComplex) -> usize {
-    let a2 = u.re().mul(u.re(), 64, RoundingMode::None).add(
-        &u.im().mul(u.im(), 64, RoundingMode::None),
+    let a2 = ExactNum::mul_ref(u.re(), u.re(), 64, RoundingMode::None).add(
+        &ExactNum::mul_ref(u.im(), u.im(), 64, RoundingMode::None),
         64,
         RoundingMode::None,
     );
@@ -103,7 +103,7 @@ fn use_faddeeva_series(z: &ExactComplex, p: usize) -> bool {
         return true;
     }
     let az = z.abs(p, RoundingMode::None);
-    let az2 = az.mul(&az, p, RoundingMode::None);
+    let az2 = ExactNum::mul_ref(&az, &az, p, RoundingMode::None);
     let thresh = ExactNum::from_u32(p.min(u32::MAX as usize) as u32, p);
     matches!(az2.compare(&thresh), Some(c) if c < 0)
 }
@@ -437,7 +437,7 @@ impl ExactComplex {
             nfact = nfact.mul(&ExactNum::from_u32(n as u32, p), p, RoundingMode::None);
             upow = upow.mul(&u2, p, RoundingMode::None);
             let two_n_1 = ExactNum::from_u32((2 * n + 1) as u32, p);
-            let den = nfact.mul(&two_n_1, p, RoundingMode::None);
+            let den = ExactNum::mul_ref(&nfact, &two_n_1, p, RoundingMode::None);
             let mut t = upow.div(&ExactComplex::from_real(den, p), p, RoundingMode::None);
             if n % 2 == 1 {
                 t = neg_c(t);
@@ -690,19 +690,20 @@ mod tests {
         let pi = cc.pi(p, RoundingMode::None);
         let sqrt_pi = pi.sqrt(p, RoundingMode::None);
         let scale = ExactNum::from_u8(2, p).div(&sqrt_pi, p, RoundingMode::None);
-        let x2 = x.mul(x, p, RoundingMode::None);
+        let x2 = ExactNum::mul_ref(x, x, p, RoundingMode::None);
         let mut xpow = x.clone();
         let mut nfact = ExactNum::from_u8(1, p);
         let mut sum = xpow.clone();
         for n in 1..=series_term_cap(p) {
             nfact = nfact.mul(&ExactNum::from_u32(n as u32, p), p, RoundingMode::None);
             xpow = xpow.mul(&x2, p, RoundingMode::None);
-            let den = nfact.mul(
+            let den = ExactNum::mul_ref(
+                &nfact,
                 &ExactNum::from_u32((2 * n + 1) as u32, p),
                 p,
                 RoundingMode::None,
             );
-            let t = xpow.div(&den, p, RoundingMode::None);
+            let t = ExactNum::div_ref(&xpow, &den, p, RoundingMode::None);
             sum = sum.add(&t, p, RoundingMode::None);
             if t.is_zero() || t.exponent().is_some_and(|e| (e as i64) + (p as i64) < 0) {
                 break;

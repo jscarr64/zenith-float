@@ -165,7 +165,7 @@ impl ExactNumPoly {
         let mut out = vec![ExactNum::new(p); n];
         for (i, a) in self.coeffs.iter().enumerate() {
             for (j, b) in rhs.coeffs.iter().enumerate() {
-                let t = a.mul(b, p, rm);
+                let t = ExactNum::mul_ref(a, b, p, rm);
                 out[i + j] = t.add(&out[i + j], p, rm);
             }
         }
@@ -203,11 +203,11 @@ impl ExactNumPoly {
         while r.len() > deg_g {
             let deg_r = r.len() - 1;
             let shift = deg_r - deg_g;
-            let t = r[deg_r].div(&lc_g, p, rm);
+            let t = ExactNum::div_ref(&r[deg_r], &lc_g, p, rm);
             let slot = core::mem::replace(&mut q[shift], ExactNum::new(p));
             q[shift] = slot.add(&t, p, rm);
             for i in 0..=deg_g {
-                let term = t.mul(&g.coeff(i), p, rm);
+                let term = g.coeff(i).mul(&t, p, rm);
                 let idx = i + shift;
                 r[idx] = term.neg().add(&r[idx], p, rm);
             }
@@ -248,7 +248,11 @@ impl ExactNumPoly {
         let mut s = if let Some(cont) = self.integer_content() {
             if !cont.is_zero() && !cont.is_one() {
                 let d = cont.to_exact_num(p, rm);
-                let xs: Vec<ExactNum> = self.coeffs.iter().map(|c| c.div(&d, p, rm)).collect();
+                let xs: Vec<ExactNum> = self
+                    .coeffs
+                    .iter()
+                    .map(|c| ExactNum::div_ref(c, &d, p, rm))
+                    .collect();
                 Self::from_coeffs(p, rm, &xs)
             } else {
                 self.clone()
@@ -267,7 +271,11 @@ impl ExactNumPoly {
         if lc.is_zero() {
             return s;
         }
-        let xs: Vec<ExactNum> = s.coeffs.iter().map(|c| c.div(&lc, p, rm)).collect();
+        let xs: Vec<ExactNum> = s
+            .coeffs
+            .iter()
+            .map(|c| ExactNum::div_ref(c, &lc, p, rm))
+            .collect();
         Self::from_coeffs(p, rm, &xs)
     }
 
@@ -314,7 +322,7 @@ impl ExactNumPoly {
         let mut out = Vec::with_capacity(self.coeffs.len() - 1);
         for (k, c) in self.coeffs.iter().enumerate().skip(1) {
             let n = ExactNum::from_u32(k as u32, p);
-            out.push(c.mul(&n, p, rm));
+            out.push(n.mul(c, p, rm));
         }
         Self::from_coeffs(p, rm, &out)
     }
@@ -328,7 +336,7 @@ impl ExactNumPoly {
         out.push(ExactNum::new(p));
         for (k, c) in self.coeffs.iter().enumerate() {
             let den = ExactNum::from_u32((k + 1) as u32, p);
-            out.push(c.div(&den, p, rm));
+            out.push(ExactNum::div_ref(c, &den, p, rm));
         }
         Self::from_coeffs(p, rm, &out)
     }
@@ -398,7 +406,7 @@ impl ExactNumPoly {
         let b = self.coeff(1);
         let c = self.coeff(0);
         let four = ExactNum::from_u8(4, wrk);
-        let disc = b.mul(&b, wrk, RoundingMode::None).sub(
+        let disc = ExactNum::mul_ref(&b, &b, wrk, RoundingMode::None).sub(
             &four
                 .mul(&a, wrk, RoundingMode::None)
                 .mul(&c, wrk, RoundingMode::None),

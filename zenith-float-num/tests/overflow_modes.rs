@@ -85,16 +85,34 @@ fn overflow_follows_rounding_mode() {
             expect_overflow(&neg_of(&max).sub(&max, p, rm), true, p, rm, "neg sub pos");
 
             // max.mul(&two) -> pos
-            expect_overflow(&max.mul(&two, p, rm), false, p, rm, "mul pos by 2");
+            expect_overflow(
+                &ExactNum::max_value(p).mul(&two, p, rm),
+                false,
+                p,
+                rm,
+                "mul pos by 2",
+            );
 
             // max.mul(&onehalf) -> pos
-            expect_overflow(&max.mul(&onehalf, p, rm), false, p, rm, "mul pos by 1.5");
+            expect_overflow(
+                &ExactNum::max_value(p).mul(&onehalf, p, rm),
+                false,
+                p,
+                rm,
+                "mul pos by 1.5",
+            );
 
             // max.neg().mul(&two) -> neg
             expect_overflow(&neg_of(&max).mul(&two, p, rm), true, p, rm, "neg mul by 2");
 
             // max.mul(&two.neg()) -> neg
-            expect_overflow(&max.mul(&neg_of(&two), p, rm), true, p, rm, "pos mul by -2");
+            expect_overflow(
+                &ExactNum::max_value(p).mul(&neg_of(&two), p, rm),
+                true,
+                p,
+                rm,
+                "pos mul by -2",
+            );
 
             // max.neg().mul(&two.neg()) -> pos
             expect_overflow(
@@ -106,7 +124,13 @@ fn overflow_follows_rounding_mode() {
             );
 
             // max.div(&half) -> pos
-            expect_overflow(&max.div(&half, p, rm), false, p, rm, "div pos by 0.5");
+            expect_overflow(
+                &ExactNum::max_value(p).div(&half, p, rm),
+                false,
+                p,
+                rm,
+                "div pos by 0.5",
+            );
 
             // max.neg().div(&half) -> neg
             expect_overflow(
@@ -119,7 +143,7 @@ fn overflow_follows_rounding_mode() {
 
             // max.div(&half.neg()) -> neg
             expect_overflow(
-                &max.div(&neg_of(&half), p, rm),
+                &ExactNum::max_value(p).div(&neg_of(&half), p, rm),
                 true,
                 p,
                 rm,
@@ -128,7 +152,13 @@ fn overflow_follows_rounding_mode() {
 
             // big = from_i8(3,p) with set_exponent(EXPONENT_MAX / 2 + 2); big.mul(&big) -> pos
             let big = with_exp(ExactNum::from_i8(3, p), EXPONENT_MAX / 2 + 2);
-            expect_overflow(&big.mul(&big, p, rm), false, p, rm, "large mul pos");
+            expect_overflow(
+                &ExactNum::mul_ref(&big, &big, p, rm),
+                false,
+                p,
+                rm,
+                "large mul pos",
+            );
 
             // big.neg().mul(&big) -> neg
             expect_overflow(
@@ -150,7 +180,11 @@ fn finite_max_is_not_overflow() {
         let zero = ExactNum::from_i8(0, p);
 
         for &rm in &MODES {
-            assert_eq!(max.mul(&one, p, rm), max, "max*1 p={p} rm={rm:?}");
+            assert_eq!(
+                ExactNum::max_value(p).mul(&one, p, rm),
+                max,
+                "max*1 p={p} rm={rm:?}"
+            );
             assert_eq!(
                 neg_of(&max).add(&zero, p, rm),
                 neg_of(&max),

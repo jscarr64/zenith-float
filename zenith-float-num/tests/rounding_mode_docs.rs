@@ -38,10 +38,10 @@ fn directed_modes_are_directed_not_half() {
                     let a = ExactNum::from_i8(n, p);
                     let b = ExactNum::from_i8(d, p);
 
-                    let q_up = a.div(&b, p, RoundingMode::Up);
-                    let q_down = a.div(&b, p, RoundingMode::Down);
-                    let q_zero = a.div(&b, p, RoundingMode::ToZero);
-                    let q_from = a.div(&b, p, RoundingMode::FromZero);
+                    let q_up = ExactNum::from_i8(n, p).div(&b, p, RoundingMode::Up);
+                    let q_down = ExactNum::from_i8(n, p).div(&b, p, RoundingMode::Down);
+                    let q_zero = ExactNum::from_i8(n, p).div(&b, p, RoundingMode::ToZero);
+                    let q_from = ExactNum::from_i8(n, p).div(&b, p, RoundingMode::FromZero);
 
                     // q_down < q_up strictly
                     assert!(
@@ -54,7 +54,7 @@ fn directed_modes_are_directed_not_half() {
                     );
 
                     // Check that results are on correct side of true quotient
-                    let prod_up = q_up.mul(&b, 2 * p + 64, RoundingMode::None);
+                    let prod_up = ExactNum::mul_ref(&q_up, &b, 2 * p + 64, RoundingMode::None);
                     assert!(
                         prod_up.compare(&a).unwrap() > 0,
                         "For p={}, n={}, d={} (sign={}), q_up*d should be > n",
@@ -64,7 +64,7 @@ fn directed_modes_are_directed_not_half() {
                         sign
                     );
 
-                    let prod_down = q_down.mul(&b, 2 * p + 64, RoundingMode::None);
+                    let prod_down = b.mul(&q_down, 2 * p + 64, RoundingMode::None);
                     assert!(
                         prod_down.compare(&a).unwrap() < 0,
                         "For p={}, n={}, d={} (sign={}), q_down*d should be < n",

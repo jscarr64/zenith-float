@@ -88,8 +88,8 @@ fn fuzz_mpfr_bit_exact_all_round_modes() {
                     let n3 = match op {
                         BinOp::Add => n1.clone().add(&n2, p, rm),
                         BinOp::Sub => n1.clone().sub(&n2, p, rm),
-                        BinOp::Mul => n1.mul(&n2, p, rm),
-                        BinOp::Div => n1.div(&n2, p, rm),
+                        BinOp::Mul => ExactNum::mul_ref(&n1, &n2, p, rm),
+                        BinOp::Div => ExactNum::div_ref(&n1, &n2, p, rm),
                     };
                     let f3 = mpfr_reference(&f1, &f2, op, p as u32, rm);
                     let info = format!("#{i} p={p} {op:?} {rm:?} {n1:?} {n2:?}");
@@ -300,8 +300,12 @@ fn fuzz_mpfr_exact_bit_precision() {
                         let n3 = match op {
                             BinOp::Add => n1.clone().add(&n2, p, rm),
                             BinOp::Sub => n1.clone().sub(&n2, p, rm),
-                            BinOp::Mul => n1.mul(&n2, p, rm),
-                            BinOp::Div => n1.div(&n2, p, rm),
+                            BinOp::Mul => {
+                                ExactNum::random_normal(storage, e1lo, e1hi).mul(&n2, p, rm)
+                            }
+                            BinOp::Div => {
+                                ExactNum::random_normal(storage, e1lo, e1hi).div(&n2, p, rm)
+                            }
                         };
                         let f3 = mpfr_reference(&f1, &f2, op, p as u32, rm);
                         let info = format!("{band} #{i} p={p} {op:?} {rm:?} {n1:?} {n2:?}");

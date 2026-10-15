@@ -88,14 +88,14 @@ pub fn dct(
     let two_n = ExactNum::from_u32(n2 as u32, wrk);
     let mut out = Vec::with_capacity(n);
     for k in 0..n {
-        let ang = pi
-            .mul(&ExactNum::from_u32(k as u32, wrk), wrk, RoundingMode::None)
+        let ang = ExactNum::from_u32(k as u32, wrk)
+            .mul(&pi, wrk, RoundingMode::None)
             .div(&two_n, wrk, RoundingMode::None);
         let (sn, cs) = ang.sin_cos(wrk, RoundingMode::None, cc);
         let yr = spec.get2(0, k)?;
         let yi = spec.get2(1, k)?;
-        let re = yr.mul(&cs, wrk, RoundingMode::None).add(
-            &yi.mul(&sn, wrk, RoundingMode::None),
+        let re = ExactNum::mul_ref(yr, &cs, wrk, RoundingMode::None).add(
+            &ExactNum::mul_ref(yi, &sn, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
@@ -124,19 +124,19 @@ pub fn idct(
     let nn = ExactNum::from_u32(n as u32, wrk);
     let two = ExactNum::from_u8(2, wrk);
     let inv_n = ExactNum::from_u8(1, wrk).div(&nn, wrk, none);
-    let two_n = two.div(&nn, wrk, none);
+    let two_n = ExactNum::from_u8(2, wrk).div(&nn, wrk, none);
     let half = ExactNum::from_u8(1, wrk).div(&two, wrk, none);
     let mut out = Vec::with_capacity(n);
     for ni in 0..n {
         let n_half = ExactNum::from_u32(ni as u32, wrk).add(&half, wrk, none);
-        let mut acc = x[0].mul(&inv_n, wrk, none);
+        let mut acc = ExactNum::mul_ref(&inv_n, &x[0], wrk, none);
         for (k, xk) in x.iter().enumerate().take(n).skip(1) {
-            let ang = pi
-                .mul(&ExactNum::from_u32(k as u32, wrk), wrk, none)
+            let ang = ExactNum::from_u32(k as u32, wrk)
+                .mul(&pi, wrk, none)
                 .mul(&n_half, wrk, none)
                 .div(&nn, wrk, none);
             let c = ang.cos(wrk, none, cc);
-            acc = acc.add(&xk.mul(&c, wrk, none).mul(&two_n, wrk, none), wrk, none);
+            acc = acc.add(&c.mul(xk, wrk, none).mul(&two_n, wrk, none), wrk, none);
         }
         if !finite(&acc) {
             return None;
@@ -168,15 +168,15 @@ pub fn dst(
     let mut out = Vec::with_capacity(n);
     for k in 0..n {
         let m = k + 1;
-        let ang = pi
-            .mul(&ExactNum::from_u32(m as u32, wrk), wrk, RoundingMode::None)
+        let ang = ExactNum::from_u32(m as u32, wrk)
+            .mul(&pi, wrk, RoundingMode::None)
             .div(&two_n, wrk, RoundingMode::None);
         let (sn, cs) = ang.sin_cos(wrk, RoundingMode::None, cc);
         let yr = spec.get2(0, m)?;
         let yi = spec.get2(1, m)?;
         // −Im(Y[m] exp(−iθ)) = yr sinθ − yi cosθ
-        let val = yr.mul(&sn, wrk, RoundingMode::None).sub(
-            &yi.mul(&cs, wrk, RoundingMode::None),
+        let val = ExactNum::mul_ref(yr, &sn, wrk, RoundingMode::None).sub(
+            &ExactNum::mul_ref(yi, &cs, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
@@ -204,22 +204,22 @@ pub fn idst(
     let pi = cc.pi(wrk, none);
     let nn = ExactNum::from_u32(n as u32, wrk);
     let two = ExactNum::from_u8(2, wrk);
-    let two_n = two.div(&nn, wrk, none);
+    let two_n = ExactNum::from_u8(2, wrk).div(&nn, wrk, none);
     let half = ExactNum::from_u8(1, wrk).div(&two, wrk, none);
     let mut out = Vec::with_capacity(n);
     for ni in 0..n {
         let n_half = ExactNum::from_u32(ni as u32, wrk).add(&half, wrk, none);
         // `x[n-1] * half` is recomputed per output bin: its sign flips for odd bins and
         // the unflipped value is needed again by the next bin.
-        let last = x[n - 1].mul(&half, wrk, none);
+        let last = ExactNum::mul_ref(&half, &x[n - 1], wrk, none);
         let mut acc = if ni % 2 == 0 { last } else { last.neg() };
         for (k, xk) in x.iter().enumerate().take(n - 1) {
-            let ang = pi
-                .mul(&ExactNum::from_u32((k + 1) as u32, wrk), wrk, none)
+            let ang = ExactNum::from_u32((k + 1) as u32, wrk)
+                .mul(&pi, wrk, none)
                 .mul(&n_half, wrk, none)
                 .div(&nn, wrk, none);
             let s = ang.sin(wrk, none, cc);
-            acc = acc.add(&xk.mul(&s, wrk, none), wrk, none);
+            acc = acc.add(&s.mul(xk, wrk, none), wrk, none);
         }
         acc = acc.mul(&two_n, wrk, none);
         if !finite(&acc) {
@@ -285,7 +285,7 @@ pub fn hann_window(n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Opt
     for k in 0..n {
         let one = ExactNum::from_u8(1, wrk);
         let c = two_pi_k_over_nm1(k, n, wrk, none, cc).cos(wrk, none, cc);
-        let w = half.mul(&one.sub(&c, wrk, none), wrk, none);
+        let w = one.sub(&c, wrk, none).mul(&half, wrk, none);
         if !finite(&w) {
             return None;
         }
@@ -314,7 +314,7 @@ pub fn hamming_window(
     for k in 0..n {
         let a0 = frac(27, 50, wrk, none);
         let c = two_pi_k_over_nm1(k, n, wrk, none, cc).cos(wrk, none, cc);
-        let w = a0.sub(&a1.mul(&c, wrk, none), wrk, none);
+        let w = a0.sub(&c.mul(&a1, wrk, none), wrk, none);
         if !finite(&w) {
             return None;
         }
@@ -348,8 +348,8 @@ pub fn blackman_window(
         let c1 = th.cos(wrk, none, cc);
         let c2 = th.mul(&two, wrk, none).cos(wrk, none, cc);
         let w = a0
-            .sub(&a1.mul(&c1, wrk, none), wrk, none)
-            .add(&a2.mul(&c2, wrk, none), wrk, none);
+            .sub(&c1.mul(&a1, wrk, none), wrk, none)
+            .add(&c2.mul(&a2, wrk, none), wrk, none);
         if !finite(&w) {
             return None;
         }
@@ -390,11 +390,11 @@ pub fn kaiser_window(
         let t = ExactNum::from_u32(k as u32, wrk)
             .sub(&mid, wrk, none)
             .div(&mid, wrk, none);
-        let rad = one.sub(&t.mul(&t, wrk, none), wrk, none);
+        let rad = one.sub(&ExactNum::mul_ref(&t, &t, wrk, none), wrk, none);
         if rad.is_negative() {
             return None;
         }
-        let arg = b.mul(&rad.sqrt(wrk, none), wrk, none);
+        let arg = rad.sqrt(wrk, none).mul(&b, wrk, none);
         let w = arg.bessel_i(&nu0, wrk, none, cc).div(&i0b, wrk, none);
         if !finite(&w) {
             return None;
@@ -488,7 +488,7 @@ mod tests {
         let mut cos_vals = Vec::with_capacity(8);
         for k in 0..8u8 {
             let kn = ExactNum::from_u8(k, p);
-            let ang = two_pi.mul(&kn, p, rm).div(&n8, p, rm);
+            let ang = kn.mul(&two_pi, p, rm).div(&n8, p, rm);
             cos_vals.push(ang.cos(p, rm, &mut cc));
         }
         let cosine = ExactNumArray::from_values(p, &cos_vals);
@@ -515,12 +515,14 @@ mod tests {
         let mut e_f = ExactNum::from_u8(0, p);
         for j in 0..8 {
             let xv = cosine.get(j).unwrap();
-            e_t = e_t.add(&xv.mul(xv, p, rm), p, rm);
+            e_t = e_t.add(&ExactNum::mul_ref(xv, xv, p, rm), p, rm);
             let xr = cspec.get2(0, j).unwrap();
             let xi = cspec.get2(1, j).unwrap();
-            e_f = e_f
-                .add(&xr.mul(xr, p, rm), p, rm)
-                .add(&xi.mul(xi, p, rm), p, rm);
+            e_f = e_f.add(&ExactNum::mul_ref(xr, xr, p, rm), p, rm).add(
+                &ExactNum::mul_ref(xi, xi, p, rm),
+                p,
+                rm,
+            );
         }
         let parseval = e_f.div(&n8, p, rm);
         assert!(near(&parseval, &e_t, p));

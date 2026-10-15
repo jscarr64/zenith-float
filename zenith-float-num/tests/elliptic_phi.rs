@@ -144,7 +144,7 @@ fn periodicity_adds_two_complete_periods() {
 
     let f_shift = shifted.elliptic_f_phi(&m, p, rm, &mut consts);
     let f_sum = phi.elliptic_f_phi(&m, hi, rm, &mut consts).add(
-        &two.mul(&m.elliptic_k(hi, rm, &mut consts), hi, none),
+        &m.elliptic_k(hi, rm, &mut consts).mul(&two, hi, none),
         hi,
         none,
     );
@@ -152,7 +152,8 @@ fn periodicity_adds_two_complete_periods() {
 
     let e_shift = shifted.elliptic_e_phi(&m, p, rm, &mut consts);
     let e_sum = phi.elliptic_e_phi(&m, hi, rm, &mut consts).add(
-        &two.mul(&m.elliptic_e_complete(hi, rm, &mut consts), hi, none),
+        &m.elliptic_e_complete(hi, rm, &mut consts)
+            .mul(&two, hi, none),
         hi,
         none,
     );

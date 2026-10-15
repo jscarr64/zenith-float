@@ -100,7 +100,7 @@ impl ExactNum {
         let theta = two.mul(&cc.pi(pw, none), pw, none).mul(&u2, pw, none);
         let (s, _) = theta.sin_cos(pw, none, cc);
         let z = r.mul(&s, pw, none);
-        sigma.mul(&z, pw, none).add(mu, p, rm)
+        z.mul(sigma, pw, none).add(mu, p, rm)
     }
 
     /// Exponential sample with rate `lambda` (inverse CDF \(-\ln U/\lambda\)).

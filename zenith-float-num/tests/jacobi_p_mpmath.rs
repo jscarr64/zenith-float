@@ -95,7 +95,7 @@ fn jacobi_p_mpmath() {
         let one = ExactNum::from_u8(1, p);
         let three = ExactNum::from_u8(3, p);
         let four = ExactNum::from_u8(4, p);
-        let alpha = one.div(&three, p, RM);
+        let alpha = ExactNum::from_u8(1, p).div(&three, p, RM);
         let beta = ExactNum::from_u8(2, p).div(&three, p, RM);
         let x = one.div(&four, p, RM);
         let want = parse(

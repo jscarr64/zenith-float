@@ -28,7 +28,8 @@ fn xi_abs(z: &ExactComplex) -> ExactNum {
     let a = z.abs(64, RoundingMode::None);
     let two_thirds =
         ExactNum::from_u8(2, 64).div(&ExactNum::from_u8(3, 64), 64, RoundingMode::None);
-    a.mul(&a.sqrt(64, RoundingMode::None), 64, RoundingMode::None)
+    a.sqrt(64, RoundingMode::None)
+        .mul(&a, 64, RoundingMode::None)
         .mul(&two_thirds, 64, RoundingMode::None)
 }
 
@@ -91,7 +92,8 @@ fn exp_i_pi_6(p: usize, cc: &mut Consts) -> (ExactComplex, ExactComplex) {
 
 fn two_pi_over_three(p: usize, cc: &mut Consts) -> ExactNum {
     two_c(p)
-        .re()
+        .into_parts()
+        .0
         .mul(&cc.pi(p, RoundingMode::None), p, RoundingMode::None)
         .div(&ExactNum::from_u8(3, p), p, RoundingMode::None)
 }

@@ -67,18 +67,18 @@ impl Ball {
 
     /// Product of two balls with a first-order radius bound plus a rounding ulp.
     pub fn mul(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
-        let mid = self.mid.mul(&other.mid, p, rm);
+        let mid = ExactNum::mul_ref(&self.mid, &other.mid, p, rm);
         let a = if self.mid.is_negative() {
             self.mid.neg_via_mul().mul(&other.rad, p, RoundingMode::Up)
         } else {
-            self.mid.mul(&other.rad, p, RoundingMode::Up)
+            ExactNum::mul_ref(&self.mid, &other.rad, p, RoundingMode::Up)
         };
         let b = if other.mid.is_negative() {
             other.mid.neg_via_mul().mul(&self.rad, p, RoundingMode::Up)
         } else {
-            other.mid.mul(&self.rad, p, RoundingMode::Up)
+            ExactNum::mul_ref(&other.mid, &self.rad, p, RoundingMode::Up)
         };
-        let c = self.rad.mul(&other.rad, p, RoundingMode::Up);
+        let c = ExactNum::mul_ref(&self.rad, &other.rad, p, RoundingMode::Up);
         let rad = a
             .add(&b, p, RoundingMode::Up)
             .add(&c, p, RoundingMode::Up)
@@ -94,7 +94,7 @@ impl Ball {
         let rad = (if mid.is_negative() {
             mid.neg_via_mul().mul(&em1, p, RoundingMode::Up)
         } else {
-            mid.mul(&em1, p, RoundingMode::Up)
+            em1.mul(&mid, p, RoundingMode::Up)
         })
         .add(&Self::rounding_ulp(&mid, p), p, RoundingMode::Up);
         Ball { mid, rad }
@@ -311,7 +311,7 @@ impl ComplexBall {
             .mid
             .abs(p, RoundingMode::Up)
             .mul(&self.rad, p, RoundingMode::Up);
-        let c = self.rad.mul(&other.rad, p, RoundingMode::Up);
+        let c = ExactNum::mul_ref(&self.rad, &other.rad, p, RoundingMode::Up);
         let rad = a
             .add(&b, p, RoundingMode::Up)
             .add(&c, p, RoundingMode::Up)

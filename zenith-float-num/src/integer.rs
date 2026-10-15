@@ -457,7 +457,9 @@ impl ExactInt {
         // The lowest limb is the integer part of `x mod 2^w` (the remainder keeps the sign of `x`, and the
         // limb is read from its magnitude); the rest comes from the truncated quotient.
         let mut limbs = vec![exact_word_lt_base(&x.rem(&two_w))];
-        let mut cur = x.div(&two_w, p, RoundingMode::ToZero).int().abs();
+        let mut cur = ExactNum::div_ref(x, &two_w, p, RoundingMode::ToZero)
+            .int()
+            .abs();
         while !cur.is_zero() {
             let r = cur.rem(&two_w);
             limbs.push(exact_word_lt_base(&r));

@@ -63,12 +63,12 @@ fn overflow_by_mode_binary() {
         ),
         (
             "mul",
-            |a, b, p, rm, _| a.mul(b, p, rm),
+            |a, b, p, rm, _| ExactNum::mul_ref(a, b, p, rm),
             |r, a, b, rnd| unsafe { mpfr::mul(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
         ),
         (
             "div",
-            |a, b, p, rm, _| a.div(b, p, rm),
+            |a, b, p, rm, _| ExactNum::div_ref(a, b, p, rm),
             |r, a, b, rnd| unsafe { mpfr::div(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
         ),
         (
