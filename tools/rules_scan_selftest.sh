@@ -68,7 +68,7 @@ scan "$base..HEAD" >/dev/null || fail "empty range flagged"
 printf 'fn a() {}\nfn b(x: &S) { let y = x.clone(); }\n' > zenith-float-num/src/x.rs
 scan --working >/dev/null && fail "working diff clone not flagged"
 git add -A; scan --staged >/dev/null && fail "staged diff clone not flagged"
-scan --working >/dev/null || fail "working mode should see nothing after staging"
+scan --working >/dev/null && fail "working mode (git diff HEAD) must still see staged additions"
 git commit -qm bad; scan "$base..HEAD" >/dev/null && fail "range clone not flagged"
 # cfg(test) module in the tip file is exempt
 printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(x: &S) { let y = x.clone(); let _ = r.unwrap(); }\n}\n' > zenith-float-num/src/x.rs

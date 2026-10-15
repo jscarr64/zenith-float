@@ -25,7 +25,7 @@ def test_mask(lines):
     skip = [False] * len(lines)
     i = 0
     while i < len(lines):
-        if re.match(r"\s*#\[cfg\(test\)\]", lines[i]):
+        if re.match(r"\s*#\[cfg\((test\)|all\(test\b)", lines[i]):
             j, depth, seen = i, 0, False
             while j < len(lines):
                 depth += lines[j].count("{") - lines[j].count("}")
