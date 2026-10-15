@@ -29,6 +29,13 @@ Behaviour changes from the audit, each with its own section below:
 - `ExactNum::cmp` is now `ExactNum::compare`, and `Context::clone` is removed (breaking). See "No lint exemptions".
 - `Radix` is an enum (`Bin`, `Oct`, `Dec`, `Hex`, `Other`); `Radix::Bin` and the others are written the same way (breaking only for code that relied on it being a struct).
 
+### No cloning in the library (breaking, in progress)
+
+The library no longer copies a value to hand it back. `tools/no_clone.sh` fails on `.clone()`, `.to_vec()`, `.cloned()` and on `Clone` derives and impls on big-number types, with an empty allowlist; `tools/rules_scan.sh` checks every diff. The work goes bottom-up (core, conversions, elementary, special, complex and containers, macro); each layer lists its API changes here with a migration. Counts of `.clone(` in library code: 620 at the start, 601 after layer 1a.
+
+- `ExactNum::min`, `max`, and `clamp` return a reference to one of their operands (`&'a Self`) instead of a copy. A returned NaN is a shared static NaN. Migration: call methods on the result as before (auto-deref); where an owned value is needed, build it explicitly from the borrowed one (for example `ExactNum::round(..)` to the precision you want) instead of expecting a clone. Accumath: none of its calls use these on `ExactNum` (checked: no `ExactNum::{min,max,clamp}` call in crates/engine_core).
+- (Planned, not yet done) `impl Clone for ExactNum` and every `Clone` derive on the big-number types are removed in the last step; migration notes per site follow then. Accumath on upgrade from `=1.0.12`: 4 `.cmp(` to `.compare(` at crates/engine_core/src/soft.rs:174, 179, 1476, 1482, and 23 `.clone()` lines on `ExactNum`/`ExactComplex`/`INF_*` (soft.rs 56, 61, 1208, 1213, 1409; hypergeom.rs 61-64, 73-74; elliptic.rs 105-106, 190-191, 222-223, 292-294; lfunction.rs 86, 94, 179); 9 of them go away with `ExactComplex::into_parts`, the `INF_*` consts used directly, borrowed slice inputs, and an out-of-place precision change; 14 need ownership moved into `ExactNum`/`ExactComplex` constructors.
+
 ### No lint exemptions
 
 The library no longer contains any `#[allow]` or `#[expect]`. The underlying code was fixed instead:

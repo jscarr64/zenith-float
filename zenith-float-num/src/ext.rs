@@ -28,6 +28,9 @@ pub const NAN: ExactNum = ExactNum {
     inner: Flavor::NaN(None),
 };
 
+/// The NaN that `clamp`, `min` and `max` hand out by reference.
+static NAN_VALUE: ExactNum = NAN;
+
 /// Positive infinity.
 pub const INF_POS: ExactNum = ExactNum {
     inner: Flavor::Inf(Sign::Pos),
@@ -921,43 +924,43 @@ impl ExactNum {
     /// Restricts the value of `self` to an interval determined by the values of `min` and `max`.
     /// The function returns `max` if `self` is greater than `max`, `min` if `self` is less than `min`, and `self` otherwise.
     /// If either argument is NaN or `min` is greater than `max`, the function returns NaN.
-    pub fn clamp(&self, min: &Self, max: &Self) -> Self {
+    pub fn clamp<'a>(&'a self, min: &'a Self, max: &'a Self) -> &'a Self {
         if self.is_nan()
             || min.is_nan()
             || max.is_nan()
             || matches!(max.compare(min), Some(c) if c < 0)
         {
-            NAN
+            &NAN_VALUE
         } else if matches!(self.compare(min), Some(c) if c < 0) {
-            min.clone()
+            min
         } else if matches!(self.compare(max), Some(c) if c > 0) {
-            max.clone()
+            max
         } else {
-            self.clone()
+            self
         }
     }
 
-    /// Returns the value of `d1` if `d1` is greater than `self`, or the value of `self` otherwise.
-    /// If either argument is NaN, the function returns NaN.
-    pub fn max(&self, d1: &Self) -> Self {
+    /// Returns `d1` if `d1` is greater than `self`, or `self` otherwise (a borrow of one of the two
+    /// operands, no copy). If either argument is NaN, the function returns NaN.
+    pub fn max<'a>(&'a self, d1: &'a Self) -> &'a Self {
         if self.is_nan() || d1.is_nan() {
-            NAN
+            &NAN_VALUE
         } else if matches!(self.compare(d1), Some(c) if c < 0) {
-            d1.clone()
+            d1
         } else {
-            self.clone()
+            self
         }
     }
 
-    /// Returns value of `d1` if `d1` is less than `self`, or the value of `self` otherwise.
-    /// If either argument is NaN, the function returns NaN.
-    pub fn min(&self, d1: &Self) -> Self {
+    /// Returns `d1` if `d1` is less than `self`, or `self` otherwise (a borrow of one of the two
+    /// operands, no copy). If either argument is NaN, the function returns NaN.
+    pub fn min<'a>(&'a self, d1: &'a Self) -> &'a Self {
         if self.is_nan() || d1.is_nan() {
-            NAN
+            &NAN_VALUE
         } else if matches!(self.compare(d1), Some(c) if c > 0) {
-            d1.clone()
+            d1
         } else {
-            self.clone()
+            self
         }
     }
 
@@ -5189,6 +5192,22 @@ mod special_arg_tests {
             same_nan(&hi, &n);
             same_nan(&lo, &n);
         }
+    }
+
+    #[test]
+    fn min_max_clamp_borrow_an_operand() {
+        let (lo, hi, mid) = (one(), ExactNum::from_u8(3, P), ExactNum::from_u8(2, P));
+        assert!(core::ptr::eq(lo.max(&hi), &hi));
+        assert!(core::ptr::eq(hi.max(&lo), &hi));
+        assert!(core::ptr::eq(lo.min(&hi), &lo));
+        assert!(core::ptr::eq(hi.min(&lo), &lo));
+        assert!(core::ptr::eq(mid.clamp(&lo, &hi), &mid));
+        assert!(core::ptr::eq(lo.clamp(&mid, &hi), &mid));
+        assert!(core::ptr::eq(hi.clamp(&lo, &mid), &mid));
+        for n in nans() {
+            assert!(lo.max(&n).is_nan() && n.min(&lo).is_nan() && lo.clamp(&n, &hi).is_nan());
+        }
+        assert!(hi.clamp(&hi, &lo).is_nan());
     }
 
     #[test]
