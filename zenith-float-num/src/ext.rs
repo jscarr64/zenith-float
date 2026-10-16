@@ -2276,7 +2276,7 @@ Accuracy: correctly-rounded",
                 if s.is_positive() {
                     INF_POS
                 } else {
-                    NAN
+                    Self::nan(Some(Error::InvalidArgument))
                 }
             }
             Flavor::NaN(err) => Self::nan(*err),
@@ -5426,6 +5426,23 @@ mod special_arg_tests {
     fn same_nan(r: &ExactNum, want: &ExactNum) {
         assert!(r.is_nan(), "expected NaN, got {r:?}");
         assert_eq!(r.err(), want.err());
+    }
+
+    /// `sqrt` of a negative number is NaN with the `InvalidArgument` kind whether the negative operand is
+    /// finite or -Inf (it used to be a kind-less NaN for -Inf).
+    #[test]
+    fn sqrt_of_negative_inf_has_the_same_nan_kind_as_a_negative_finite() {
+        let finite = ExactNum::from_u8(3, 64)
+            .neg()
+            .sqrt(64, RoundingMode::ToEven);
+        assert!(finite.is_nan());
+        assert_eq!(finite.err(), Some(Error::InvalidArgument));
+        for rm in [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down] {
+            let inf = INF_NEG.sqrt(64, rm);
+            assert!(inf.is_nan());
+            assert_eq!(inf.err(), finite.err(), "sqrt(-Inf) NaN kind");
+        }
+        assert!(INF_POS.sqrt(64, RoundingMode::ToEven).is_inf_pos());
     }
 
     fn one() -> ExactNum {
