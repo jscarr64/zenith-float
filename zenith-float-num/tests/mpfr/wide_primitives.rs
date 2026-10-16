@@ -496,13 +496,8 @@ fn cbrt_over_the_whole_range() -> Res {
     )
 }
 
-/// A negative operand at or below `2^EXPONENT_MIN` whose reciprocal overflows, at 192 bits or more (the Newton path):
-/// the `Inf` has the wrong sign (`reciprocal_of_a_tiny_negative_number_known_wrong`). The overflow itself is `Inf` in
-/// every rounding mode on 1.0.x, like every other operation (the tests expect that, see `mpfr_reference_with`).
-fn reciprocal_known_wrong(_m: u64, k: i64, neg: bool, p: usize) -> bool {
-    neg && k <= MIN && p_eff(p) >= 192
-}
-
+/// The overflow of a reciprocal is `Inf` in every rounding mode on 1.0.x, like every other operation (the tests
+/// expect that, see `mpfr_reference_with`); its sign is the operand's.
 fn reciprocal_run(skip: Skip, only_known_wrong: bool) -> Res {
     let ops: Vec<(u64, i64)> = unary_operands()
         .into_iter()
@@ -526,13 +521,13 @@ fn reciprocal_run(skip: Skip, only_known_wrong: bool) -> Res {
 
 #[test]
 fn reciprocal_over_the_whole_range() -> Res {
-    reciprocal_run(reciprocal_known_wrong, false)
+    reciprocal_run(no_skip, false)
 }
 
-/// KNOWN WRONG (1.0.12): the reciprocal of a negative number at or below `2^EXPONENT_MIN` overflows, and at 192 bits
-/// or more (the Newton path) the `Inf` is `+Inf` instead of `-Inf` (`div` gives `-Inf`).
+/// Fixed in 1.0.13: the reciprocal of a negative number at or below `2^EXPONENT_MIN` overflows; at 192 bits or more
+/// (the Newton path) the `Inf` was `+Inf` instead of `-Inf` (`div` gives `-Inf`).
 #[test]
-fn reciprocal_of_a_tiny_negative_number_known_wrong() -> Res {
+fn reciprocal_of_a_tiny_negative_number_keeps_its_sign() -> Res {
     reciprocal_run(no_skip, true)
 }
 
@@ -986,7 +981,7 @@ fn primitives_at_20000_bits() -> Res {
             signs: &[true],
             precisions: &[20_000],
             flags: true,
-            skip: reciprocal_known_wrong,
+            skip: no_skip,
         },
         |x, p, rm| x.reciprocal(p, rm),
         |r, a, rd| r.assign_round(a.recip_ref(), rd),
