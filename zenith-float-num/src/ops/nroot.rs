@@ -77,9 +77,19 @@ impl ExactNumNumber {
         cand: &Self,
         n: usize,
         p: usize,
+        p_wrk: usize,
     ) -> Result<Option<Self>, Error> {
         let mut r = cand.clone()?;
         r.set_precision(p, RoundingMode::ToEven)?;
+        // `cand` is correct to about `p_wrk` bits: an exact root is within a few units of its last correct
+        // bit of the `p`-bit number. Anything farther away is not exact, and the (expensive for a large `n`)
+        // power below is skipped.
+        let off = cand.sub_full_prec(&r)?;
+        if !off.is_zero()
+            && (off.exponent() as i64) > (cand.exponent() as i64).saturating_sub(p_wrk as i64) + 8
+        {
+            return Ok(None);
+        }
         let bits = r
             .mantissa_max_bit_len()
             .saturating_mul(n)
@@ -128,15 +138,15 @@ impl ExactNumNumber {
             let mut x_new = scaled.add(&quot, p_x, RoundingMode::None)?;
             x_new = x_new.div(&n_num, p_x, RoundingMode::None)?;
 
-            let cand = x_new.clone()?;
+            // An exact root (e.g. 1e10^(1/5) = 100) can never be certified by the rounding test, and
+            // the test may succeed with the sticky flag set (`nth_root(2^7, 7)` at 64 bits `ToEven` was
+            // flagged inexact): check the nearest p-bit candidate by exact powering first.
+            if let Some(r) = Self::nth_root_exact_candidate(abs_self, &x_new, n, p, p_wrk)? {
+                break Ok(r);
+            }
             if x_new.try_set_precision(p, rm, p_wrk)? {
                 x_new.set_inexact(x_new.inexact() | abs_self.inexact());
                 break Ok(x_new);
-            }
-            // An exact root (e.g. 1e10^(1/5) = 100) can never be certified by the rounding test;
-            // check the nearest p-bit candidate by exact powering instead.
-            if let Some(r) = Self::nth_root_exact_candidate(abs_self, &cand, n, p)? {
-                break Ok(r);
             }
 
             x = x_new;

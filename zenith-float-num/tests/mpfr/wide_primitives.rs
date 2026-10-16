@@ -639,10 +639,10 @@ fn nth_root_with_a_composite_n_known_wrong() -> Res {
     Ok(())
 }
 
-/// KNOWN WRONG (finding 2): an exact `nth_root` (`2^7` for `n = 7`, also `2^2147483583`) at 64 bits and more is
+/// Fixed in 1.0.13: an exact `nth_root` (`2^7` for `n = 7`, also `2^2147483583`) at 64 bits and more is
 /// flagged inexact in `ToEven` and `ToOdd` (the value is right; the flag is not). At 24 bits it is not flagged.
 #[test]
-fn nth_root_exact_result_is_not_inexact_known_wrong() -> Res {
+fn nth_root_exact_result_is_not_inexact() -> Res {
     let ops = [(1u64, 7i64), (1, 2_147_483_583)];
     unary(
         "nth_root 7 exact flag",
