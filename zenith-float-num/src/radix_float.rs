@@ -13,7 +13,7 @@ use core::ops::{Deref, DerefMut};
 use alloc::string::String;
 
 /// A floating-point value with an associated parse/format radix.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RadixFloat {
     value: ExactNum,
     radix: Radix,

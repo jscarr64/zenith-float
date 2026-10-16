@@ -81,7 +81,7 @@ impl core::fmt::Display for QuadratureError {
 impl std::error::Error for QuadratureError {}
 
 /// One (7, 15) panel, or the value accepted by [`integrate_adaptive_gk`].
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct GkResult {
     /// Kronrod sum `K`. When [`integrate_adaptive_gk`] accepts an ε value,
     /// this field is that extrapolation rather than the raw panel sum.

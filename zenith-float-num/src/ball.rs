@@ -14,7 +14,7 @@ use core::ops::Neg;
 const BALL_TRANSCENDENTAL_ERROR_TERMS: u32 = 8;
 
 /// Enclosure `mid ± rad` used to certify that a rounded midpoint is unique.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Ball {
     mid: ExactNum,
     rad: ExactNum,
