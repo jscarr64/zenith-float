@@ -389,11 +389,15 @@ impl ExactNumNumber {
         let a2 = arg.mul(arg, p_x, rm)?;
         let mut odd: Vec<Self> = Vec::with_capacity(8);
         odd.push(arg.clone()?);
-        let mut cur = arg.clone()?;
-        for _ in 1..8 {
-            cur = cur.mul(&a2, p_x, rm)?;
-            odd.push(cur.clone()?);
+        // arg^3, arg^5, ..., arg^15: each power is formed from the previous one first and then moved into the table
+        // (capacity 8 was reserved above, so the pushes cannot fail).
+        let mut cur = arg.mul(&a2, p_x, rm)?;
+        for _ in 2..8 {
+            let next = cur.mul(&a2, p_x, rm)?;
+            odd.push(cur);
+            cur = next;
         }
+        odd.push(cur);
 
         while bp > 0 {
             if j & WORD_SIGNIFICANT_BIT as usize == 0 {
@@ -468,9 +472,9 @@ impl ExactNumNumber {
             self
         };
 
-        let acc = arg.clone()?; // x
         let x_step = arg.mul(&arg, p_arg, rm)?; // x^2
         let x_first = arg.mul(&x_step, p_arg, rm)?; // x^3
+        let acc = arg; // x (moved: the powers above are the last borrows of it)
 
         let ret = series_run(acc, x_first, x_step, niter, &mut polycoeff_gen)?;
 
