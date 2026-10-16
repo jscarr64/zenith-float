@@ -5973,7 +5973,9 @@ mod grid_digest_tests {
 
     #[test]
     fn round_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
-        let positions = [0usize, 1, 5, 63, 64, 65, 100, 200, 1 << 20, 1 << 40, usize::MAX / 2];
+        // 2^40 on a 64-bit target (the pinned digest); the same distance from the top of a narrower `usize`.
+        let huge = 1usize << (usize::BITS - 24);
+        let positions = [0usize, 1, 5, 63, 64, 65, 100, 200, 1 << 20, huge, usize::MAX / 2];
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..OPERANDS {
@@ -5986,7 +5988,10 @@ mod grid_digest_tests {
         }
         assert_eq!(count, OPERANDS * 11 * 6);
         println!("round grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_584_562_321_548_619_649);
+        // pinned on a 64-bit target; a narrower `usize` has a different position grid
+        if cfg!(target_pointer_width = "64") {
+            assert_eq!(h.finish(), 2_584_562_321_548_619_649);
+        }
         Ok(())
     }
 
