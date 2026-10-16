@@ -99,16 +99,27 @@ fn test_powi() -> Result<(), crate::Error> {
         let i = random::<usize>() % 1000 + 1;
         let p1 = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
         let prec = (crate::common::test_rng::random::<usize>() % prec_rng + 1) * WORD_BIT_SIZE;
-        let mut d1 = ExactNumNumber::random_normal(
-            p1,
-            -TEST_EXP_BOUND / i as Exponent,
-            TEST_EXP_BOUND / i as Exponent,
-        )?;
-        d1.set_sign(Sign::Pos);
+        // d1 is built twice from one seed (the reference value needs its own owner); the stream then resumes from a
+        // fresh seed so later draws do not repeat.
+        let build_d1 = |seed: u64| -> Result<ExactNumNumber, crate::Error> {
+            let resume = random::<u64>();
+            crate::common::test_rng::pin_thread_seed(seed);
+            let built = ExactNumNumber::random_normal(
+                p1,
+                -TEST_EXP_BOUND / i as Exponent,
+                TEST_EXP_BOUND / i as Exponent,
+            );
+            crate::common::test_rng::pin_thread_seed(resume);
+            let mut d = built?;
+            d.set_sign(Sign::Pos);
+            Ok(d)
+        };
+        let seed = random::<u64>();
+        let d1 = build_d1(seed)?;
 
         let d2 = d1.powi(i, prec, RoundingMode::ToEven)?;
 
-        let mut d3 = d1.clone()?;
+        let mut d3 = build_d1(seed)?;
         d3.set_precision(prec + core::mem::size_of::<usize>(), RoundingMode::None)?;
         for _ in 1..i {
             d3 = d3.mul(&d1, d3.mantissa_max_bit_len(), RoundingMode::None)?;

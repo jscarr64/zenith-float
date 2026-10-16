@@ -231,11 +231,21 @@ mod tests {
             let p2 = (random::<usize>() % 32 + 3) * WORD_BIT_SIZE;
             let p = p1.min(p2);
 
-            let n = if i & 1 == 0 {
-                ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND)?
-            } else {
-                random_subnormal(p1)
+            // n is built twice from one seed (the rounded reference needs its own owner); the stream then resumes
+            // from a fresh seed so later draws do not repeat.
+            let build_n = |seed: u64| -> Result<ExactNumNumber, crate::Error> {
+                let resume = random::<u64>();
+                crate::common::test_rng::pin_thread_seed(seed);
+                let built = if i & 1 == 0 {
+                    ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND)
+                } else {
+                    Ok(random_subnormal(p1))
+                };
+                crate::common::test_rng::pin_thread_seed(resume);
+                built
             };
+            let n_seed = random::<u64>();
+            let n = build_n(n_seed)?;
 
             let skip_dec = n.exponent().unsigned_abs() as usize > MAX_DEC_SCALE;
 
@@ -254,7 +264,7 @@ mod tests {
                 let d = ExactNumNumber::parse(&s, rdx, p2, rm, &mut cc)?;
 
                 if p2 < p1 {
-                    let mut x = n.clone()?;
+                    let mut x = build_n(n_seed)?;
                     x.set_precision(p, rm)?;
                     assert!(x.cmp(&d) == 0);
                 } else {
