@@ -6619,6 +6619,42 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 1a pin: the entry points whose Ziv / precision-retry loops keep a working copy of the operand
+    /// across iterations (`ln`, `log` with a base, `log1p`, `sin_cos`, `sinh_cosh`, `nth_root`), over the whole
+    /// operand grid (specials included, so error kinds and NaN kinds enter the digest) and several
+    /// precisions and modes. Recorded on the code that still copies, before the owned-operand wrapper.
+    #[test]
+    fn ziv_entry_points_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = crate::Consts::new()?;
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in (0..11).chain(21..23) {
+            for p in [64usize, 200] {
+                for rm in [RoundingMode::ToEven, RoundingMode::Down] {
+                    digest(&operand(i).ln(p, rm, &mut cc), &mut h)?;
+                    digest(&operand(i).log1p(p, rm, &mut cc), &mut h)?;
+                    let (s, c) = operand(i).sin_cos(p, rm, &mut cc);
+                    digest(&s, &mut h)?;
+                    digest(&c, &mut h)?;
+                    let (s, c) = operand(i).sinh_cosh(p, rm, &mut cc);
+                    digest(&s, &mut h)?;
+                    digest(&c, &mut h)?;
+                    digest(&operand(i).nth_root(3, p, rm), &mut h)?;
+                    digest(&operand(i).nth_root(5, p, rm), &mut h)?;
+                    count += 8;
+                    for b in [2usize, 4, 6] {
+                        digest(&operand(i).log(&operand(b), p, rm, &mut cc), &mut h)?;
+                        count += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 13 * 2 * 2 * 11);
+        println!("ziv entry points digest = {}", h.finish());
+        assert_eq!(h.finish(), 2_735_357_469_467_868_262);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
