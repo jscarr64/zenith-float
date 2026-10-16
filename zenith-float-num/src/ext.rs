@@ -6384,6 +6384,37 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 0a pin for `hypot`: the second argument is shifted far below, a little below, level with and far
+    /// above the first, so the stand-in (`dy`) path and both orderings are taken, over every first operand
+    /// (zeros, infinities and NaNs included).
+    #[test]
+    fn hypot_scaling_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for a in 0..OPERANDS {
+            for b in [2usize, 3, 9, 21] {
+                for shift in [-3000i32, -200, 0, 3000] {
+                    for p in [64usize, 200] {
+                        for rm in [RoundingMode::ToEven, RoundingMode::Up] {
+                            let bs = operand(b).ldexp(
+                                shift as crate::Exponent,
+                                256,
+                                RoundingMode::ToEven,
+                            );
+                            digest(&operand(a).hypot(&bs, p, rm), &mut h)?;
+                            digest(&bs.hypot(&operand(a), p, rm), &mut h)?;
+                            count += 2;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, OPERANDS * 4 * 4 * 2 * 2 * 2);
+        println!("hypot scaling digest = {}", h.finish());
+        assert_eq!(h.finish(), 8_843_648_132_186_564_184);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
