@@ -6352,6 +6352,38 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 0a pin for `fma`: the addend is shifted far above and far below the product so that both
+    /// stand-in ("tiny") branches and the plain branch are all taken, over every addend operand
+    /// (zeros, infinities and NaNs included).
+    #[test]
+    fn fma_stand_in_branches_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for a in [2usize, 21] {
+            for b in [3usize, 9] {
+                for c in 0..OPERANDS {
+                    for shift in [-3000i32, 0, 3000] {
+                        for p in [64usize, 200] {
+                            for rm in [RoundingMode::ToEven, RoundingMode::Down] {
+                                let cs = operand(c).ldexp(
+                                    shift as crate::Exponent,
+                                    4096,
+                                    RoundingMode::ToEven,
+                                );
+                                digest(&operand(a).fma(&operand(b), &cs, p, rm), &mut h)?;
+                                count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 2 * 2 * OPERANDS * 3 * 2 * 2);
+        println!("fma stand-in digest = {}", h.finish());
+        assert_eq!(h.finish(), 11_123_373_615_326_845_983);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
