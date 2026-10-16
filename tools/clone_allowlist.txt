@@ -1,1 +1,8 @@
-# path<TAB>fn<TAB>reason<TAB>Jeff approval. EMPTY by policy: every entry needs a concrete proof and Jeff approval.
+# path<TAB>fn<TAB>reason<TAB>approval<TAB>doc<TAB>sites. EMPTY by policy except the named exception below: every entry needs a concrete proof and Jeff approval.
+# Format, stale-entry and count rules: tools/no_clone.py and tools/NO_CLONE_RULES.md. Only `.clone()` sites can be listed. The excepted-site total may only go down (tools/exception_count_baseline.txt).
+# Exception: constant caches (borrowck example and compiler output in tools/NO_CLONE_RULES.md).
+zenith-float-num/src/ops/consts/pi.rs	for_prec	pi getter hands out an owned value rounded to k bits and keeps its cached series value (a returned &ExactNum fails E0499)	Jeff via Paul, chat 2026-10-15	tools/NO_CLONE_RULES.md	1
+zenith-float-num/src/ops/consts/e.rs	for_prec	e getter hands out an owned value rounded to k bits and keeps its cached series value (a returned &ExactNum fails E0499)	Jeff via Paul, chat 2026-10-15	tools/NO_CLONE_RULES.md	1
+zenith-float-num/src/ops/consts/ln2.rs	for_prec	ln2 getter hands out an owned value rounded to k bits and keeps its cached value (a returned &ExactNum fails E0499)	Jeff via Paul, chat 2026-10-15	tools/NO_CLONE_RULES.md	1
+zenith-float-num/src/ops/consts/ln10.rs	for_prec	ln10 getter hands out an owned value rounded to k bits and keeps its cached value (a returned &ExactNum fails E0499)	Jeff via Paul, chat 2026-10-15	tools/NO_CLONE_RULES.md	1
+zenith-float-num/src/ops/consts/mod.rs	round	CachedFBig::round returns the wide cached value rounded to p bits as a new owned value (a returned &ExactNum fails E0515)	Jeff via Paul, chat 2026-10-15	tools/NO_CLONE_RULES.md	1

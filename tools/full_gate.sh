@@ -8,6 +8,9 @@
 # default c74e834^ = the parent of the first commit with rules_scan and the baseline) and enforces the baseline
 # count; `no-clone-progress` prints the remaining no_clone.sh violations (a tracked count, it never fails the gate).
 # The zero-clone goal is unchanged: the baseline in tools/clone_count_baseline.txt only goes down.
+# `rules-scan` also enforces (via rules_scan.py count checks) the helper-copy baseline (tools/helper_copy_count_baseline.txt),
+# the exception allowlist (stale entries fail, tools/exception_count_baseline.txt) and the library-scoped ref ratchets;
+# the clone count includes test code. `no-clone-progress` also prints the helper-copy count. All baselines only go down.
 set -u
 T=${T:-/tmp/zf-gate-logs}; mkdir -p "$T"
 cd "${REPO:-$(cd "$(dirname "$0")/.." && pwd)}" || exit 2
@@ -25,7 +28,7 @@ run mpfr "cargo test -p zenith-float-num --release --features mpfr-tests -- --te
 # ratchet mode: the clone ratchet started at c74e834 (first commit with rules_scan + baseline); older added lines are tracked by no-clone-progress, not flagged here
 run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BASE:-c74e834^}..HEAD"
 # informational: remaining violations are a tracked count (must only go down; hard fail is for the final step)
-run no-clone-progress "tools/no_clone_selftest.sh && { tools/no_clone.sh | tail -1; true; }"
+run no-clone-progress "tools/no_clone_selftest.sh && { tools/no_clone.sh | tail -1; tools/no_clone.sh --helpers | tail -1; true; }"
 run fmt "cargo fmt --all -- --check"
 run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 run clippy-i686 "cargo clippy -p zenith-float-num --all-targets --target i686-unknown-linux-musl -- -D warnings"

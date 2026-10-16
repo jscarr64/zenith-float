@@ -9,13 +9,14 @@ Usage:
   tools/rules_scan.sh --staged             # git diff --cached
   tools/rules_scan.sh --working            # git diff HEAD (staged + unstaged)
   tools/rules_scan.sh --diff-file F        # a saved unified diff (used by the self-test)
-  tools/rules_scan.sh --count-only         # only the clone-count and add_ref/sub_ref-count baseline checks
-  tools/rules_scan.sh --update-baseline    # lower tools/clone_count_baseline.txt to the current count (never raises it)
+  tools/rules_scan.sh --count-only         # only the count baseline checks (clone, helper-copy, ref ratchets) and the exception checks
+  tools/rules_scan.sh --update-baseline    # lower the baselines to the current counts (never raises one)
 
 LIBRARY PATHS (clone, to_vec, cloned, to_owned, unsafe, allow, unwrap, expect, panic): .rs files under
   zenith-float-num/src/  zenith-float-macro/src/  zenith-float-compare/src/  src/
-  excluding any path with a tests/ benches/ examples/ tools/ component, files named tests.rs, and
-  any added line inside a #[cfg(test)] item of the file at the diff's tip.
+  excluding any path with a tools/ component, and any added line inside a #[cfg(test)] item of the file at the
+  diff's tip. (tests/ benches/ examples/ components and files named tests.rs are NOT excluded any more: test code is
+  counted. The counters below also walk the test dirs, see no_clone.TEST_DIRS.)
 CALCULATION PATHS (f32, f64): the library paths above except zenith-float-compare/src/ (benchmark adapters).
 
 Flagged on added lines only (comments and string literals are ignored):
@@ -25,11 +26,21 @@ ALLOWLIST: tools/rules_allowlist.txt, one `path:hash<TAB>reason` per line; the k
 for every flagged site (hash = sha1 of the added line with whitespace collapsed). The file starts EMPTY.
 ONLY JEFF MAY EXTEND IT (.github/CODEOWNERS requires his review). Models never add entries.
 
-CLONE COUNT: total `.clone(` occurrences in non-test library code (the four library dirs) must never go
-up versus tools/clone_count_baseline.txt. The baseline is only ever lowered, with --update-baseline.
+CLONE COUNT: total `.clone(` occurrences in ALL scanned code, test code included (the four library dirs and
+no_clone.TEST_DIRS; tools/ and target dirs excluded) must never go up versus tools/clone_count_baseline.txt. The
+baseline is only ever lowered, with --update-baseline.
+
+HELPER-COPY COUNT: total uses of the hidden copy helpers (no_clone.HELPERS: exact_copy_ext, exact_copy, exact_operand,
+copy_p, svd_copy_prec, lift_num) in non-definition positions, plus Rc::clone / Arc::clone in zenith-float-compare/src
+(see no_clone.helper_sites for exactly how they are counted). Same ratchet against tools/helper_copy_count_baseline.txt.
+
+EXCEPTIONS: tools/clone_allowlist.txt (see tools/no_clone.py and tools/NO_CLONE_RULES.md). Checked here on every
+count check: a stale or malformed entry fails, and the number of excepted `.clone()` sites may never exceed
+tools/exception_count_baseline.txt (lowered with --update-baseline, never raised).
 
 REF-SUM COUNT: total uses of `add_ref(` / `sub_ref(` (the borrowed-borrowed sums, sanctioned only where both
-operands are still live) in non-test library code, definitions (`fn add_ref`) excluded. Same ratchet as the
+operands are still live) in non-test library code (REF_SCOPE = "library": scoped on purpose, test uses are not
+counted; the report line also prints the with-tests figure), definitions (`fn add_ref`) excluded. Same ratchet as the
 clone count against tools/ref_sum_count_baseline.txt: it may only go down; --update-baseline lowers it.
 
 MUL-REF COUNT: the same ratchet, separately, for `mul_ref(` / `div_ref(` (borrowed-borrowed products and
@@ -45,7 +56,10 @@ import no_clone  # test_mask, DIRS
 
 LIB = re.compile(r"^(zenith-float-num/src|zenith-float-macro/src|zenith-float-compare/src|src)/.*\.rs$")
 CALC = re.compile(r"^(zenith-float-num/src|zenith-float-macro/src|src)/.*\.rs$")
-EXCL_PARTS = {"tests", "benches", "examples", "tools"}
+EXCL_PARTS = {"tools"}
+# Scope of the add_ref/sub_ref/mul_ref/div_ref ratchets: the library only (the pre-test-counting meaning).
+REF_SCOPE = "library"
+REF_EXCL_PARTS = {"tests", "benches", "examples", "tools"}
 PATTERNS = [
     ("clone", re.compile(r"\.clone\(")),
     ("to_vec", re.compile(r"\.to_vec\(")),
@@ -63,10 +77,19 @@ STR = re.compile(r'"(?:\\.|[^"\\])*"')
 
 
 def is_lib(path):
+    """library-dir .rs files, test files included (only tools/ is excluded)"""
+    parts = path.split("/")
+    if not LIB.match(path):
+        return False
+    return not (EXCL_PARTS & set(parts[:-1]))
+
+
+def is_lib_only(path):
+    """the old library-only scope (no tests/ benches/ examples/ components, no tests.rs): used by the ref ratchets"""
     parts = path.split("/")
     if not LIB.match(path) or parts[-1] == "tests.rs":
         return False
-    return not (EXCL_PARTS & set(parts[:-1]))
+    return not (REF_EXCL_PARTS & set(parts[:-1]))
 
 
 def strip(line):
@@ -142,22 +165,16 @@ def scan_diff(text, mode, rev):
 
 
 def clone_count():
+    """`.clone(` occurrences in every scanned file (library + test dirs), test code included"""
     total = 0
-    for d in no_clone.DIRS:
-        for dp, dn, fn in os.walk(os.path.join(ROOT, d)):
-            dn[:] = [x for x in dn if x not in ("target", ".git")]
-            for f in fn:
-                if not f.endswith(".rs"):
-                    continue
-                rel = os.path.relpath(os.path.join(dp, f), ROOT)
-                if not is_lib(rel):
-                    continue
-                lines = open(os.path.join(dp, f), errors="replace").read().split("\n")
-                mask = no_clone.test_mask(lines)
-                for i, l in enumerate(lines):
-                    if not mask[i]:
-                        total += len(re.findall(r"\.clone\(", strip(l)))
+    for rel, p in no_clone.rs_files():
+        for l in open(p, errors="replace").read().split("\n"):
+            total += len(re.findall(r"\.clone\(", strip(l)))
     return total
+
+
+def helper_copy_count():
+    return no_clone.helper_copy_count()
 
 
 REF_KINDS = (
@@ -167,25 +184,22 @@ REF_KINDS = (
 )
 
 
-def ref_sum_count(names=("add_ref", "sub_ref")):
+def ref_sum_count(names=("add_ref", "sub_ref"), with_tests=False):
+    """uses of the named ref functions, definitions (`fn NAME`), comments and strings excluded.
+    Default scope is the library only (REF_SCOPE): #[cfg(test)] items, tests.rs and tests/benches/examples components
+    are skipped. with_tests=True counts every scanned file instead (library + test dirs); it is for the report only."""
     use = re.compile(r"\b(?:%s)\(" % "|".join(names))
     deff = re.compile(r"\bfn\s+(?:%s)\b" % "|".join(names))
     total = 0
-    for d in no_clone.DIRS:
-        for dp, dn, fn in os.walk(os.path.join(ROOT, d)):
-            dn[:] = [x for x in dn if x not in ("target", ".git")]
-            for f in fn:
-                if not f.endswith(".rs"):
-                    continue
-                rel = os.path.relpath(os.path.join(dp, f), ROOT)
-                if not is_lib(rel):
-                    continue
-                lines = open(os.path.join(dp, f), errors="replace").read().split("\n")
-                mask = no_clone.test_mask(lines)
-                for i, l in enumerate(lines):
-                    code = strip(l)
-                    if not mask[i] and not deff.search(code):
-                        total += len(use.findall(code))
+    for rel, p in no_clone.rs_files(None if with_tests else no_clone.DIRS):
+        if not with_tests and not is_lib_only(rel):
+            continue
+        lines = open(p, errors="replace").read().split("\n")
+        mask = [False] * len(lines) if with_tests else no_clone.test_mask(lines)
+        for i, l in enumerate(lines):
+            code = strip(l)
+            if not mask[i] and not deff.search(code):
+                total += len(use.findall(code))
     return total
 
 
@@ -245,11 +259,58 @@ def ref_count_check(update=False):
                 print("rules_scan: %s use count %d is below baseline %d: lower the baseline (rules_scan.sh --update-baseline)" % (label, cur, base))
         else:
             print("rules_scan: %s use count %d == baseline" % (label, cur))
+        wt = ref_sum_count(names, with_tests=True)
+        if wt != cur:
+            print("rules_scan: note: %s uses incl. test code = %d (ratchet scope: %s only, %d test uses not counted)" % (label, wt, REF_SCOPE, wt - cur))
     return rc
 
 
+def ratchet(label, fname, cur, update, what="count", extra=""):
+    """cur vs tools/<fname>: above -> fail; below -> hint (or lower with update); equal -> ok. Returns rc."""
+    path = os.path.join(ROOT, "tools", fname)
+    try:
+        base = int(open(path).read().split()[0])
+    except (OSError, ValueError, IndexError):
+        print("rules_scan: missing or unreadable tools/%s" % fname)
+        return 1
+    if cur > base:
+        print("rules_scan: %s %s %d is ABOVE the baseline %d (it may only go down)%s" % (label, what, cur, base, extra))
+        return 1
+    if cur < base:
+        if update:
+            open(path, "w").write("%d\n" % cur)
+            print("rules_scan: %s baseline lowered %d -> %d" % (label, base, cur))
+        else:
+            print("rules_scan: %s %s %d is below baseline %d: lower the baseline (rules_scan.sh --update-baseline)" % (label, what, cur, base))
+        return 0
+    print("rules_scan: %s %s %d == baseline%s" % (label, what, cur, extra))
+    return 0
+
+
+def helper_count_check(update=False):
+    return ratchet("helper-copy", "helper_copy_count_baseline.txt", helper_copy_count(), update)
+
+
+def exception_check(update=False):
+    """clone allowlist: malformed or stale entries fail; the excepted-site count may only go down"""
+    r = no_clone.scan()
+    rc = 0
+    for e in r["errors"]:
+        print("rules_scan: clone allowlist error: " + e)
+        rc = 1
+    for k in r["stale"]:
+        print("rules_scan: STALE clone allowlist entry %s %s: no .clone() site matches it any more; remove it" % k)
+        rc = 1
+    for h in r["allowed"]:
+        print("rules_scan: excepted site %s:%d [%s]" % (h[0], h[1], h[2]))
+    return max(rc, ratchet("clone exceptions", "exception_count_baseline.txt", len(r["allowed"]), update, "site count"))
+
+
 def both_count_checks(update=False):
-    return max(count_check(update), ref_count_check(update))
+    rc = max(count_check(update), ref_count_check(update), helper_count_check(update), exception_check(update))
+    if rc == 0:
+        print("rules_scan: all count baselines hold")
+    return rc
 
 
 def main(argv):
