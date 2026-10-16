@@ -1214,6 +1214,11 @@ impl ExactNumNumber {
         }
     }
 
+    /// Returns true if `self` is a nonzero power of two (a single set bit in the mantissa).
+    pub(crate) fn is_power_of_two(&self) -> bool {
+        !self.is_zero() && self.m.find_one_from(1).is_none()
+    }
+
     /// Returns true if `self` is an integer number.
     pub fn is_int(&self) -> bool {
         if self.e > 0 {

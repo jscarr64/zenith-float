@@ -508,8 +508,6 @@ const ALL_NAMES: [&str; 10] =
 /// From the bottom of the exponent range to 2, around `-p/2` and `-p` where the result changes from "1 plus a
 /// tail below the last bit" to "1 plus a tail the rounding has to see": all six modes, `p = 20032`.
 #[test]
-// The exponent `-(w - 1)` (`log1p(-sqrt(2) 2^-w)` with `ToEven`) is left out on purpose: it exposes the known
-// roundability-check issue described under "Known issues" in the CHANGELOG.
 fn wide_exponent_range_at_20032_bits() -> Res {
     const W: usize = 20_032;
     let w = W as Exponent;
@@ -523,6 +521,7 @@ fn wide_exponent_range_at_20032_bits() -> Res {
         -(w + 64),
         -(w + 1),
         -w,
+        -(w - 1), // `log1p(-sqrt(2) 2^-w)`: the roundability-check case
         -(w / 2 + 1),
         -(w / 2),
         -(w / 2 - 1),
@@ -544,6 +543,286 @@ fn wide_exponent_range_at_20032_bits() -> Res {
 fn roundability_check_log1p_hard_case_at_20032_bits() -> Res {
     const W: usize = 20_032;
     sweep(W, &[-(W as Exponent - 1)], &["log1p"])
+}
+
+/// A power of two to an integer power is exactly a power of two, also at the ends of the exponent range
+/// (overflow, the smallest normal number, subnormal results, results far below the grid): the Ziv loop
+/// cannot decide such a result, so `pow` has to recognise it. MPFR is the oracle.
+#[test]
+fn pow_of_a_power_of_two_is_exact_at_the_ends_of_the_range() -> Res {
+    use_full_exponent_range();
+    let mut cc = Consts::new()?;
+    let big = 1i64 << 31;
+    // (base exponent k: the base is 2^k, integer power n)
+    let cases: [(i32, i64); 17] = [
+        (1, big - 1),
+        (1, big - 2),
+        (1, -(big - 2)),
+        (1, -big),
+        (1, -(big + 1)),
+        (1, -(big + 5)),
+        (1, -(big + 63)),
+        (1, -(big + 200)),
+        (3, 1 << 30),
+        (3, 715_827_882),
+        (-1, big - 3),
+        (-1, -(big - 3)),
+        (2, 3),
+        (-3, 5),
+        (10, 100),
+        (-7, -9),
+        (1000, 3),
+    ];
+    for (k, n) in cases {
+        for base_negative in [false, true] {
+            for p in [64usize, 128] {
+                let mut base = pow2(64, k);
+                let mut fb = Float::with_val(64, 1) << k;
+                if base_negative {
+                    base = -base;
+                    fb = -fb;
+                }
+                let mut ex = ExactNum::from_word(n.unsigned_abs(), 64);
+                if n < 0 {
+                    ex = -ex;
+                }
+                let fe = Float::with_val(64, n);
+                for rm in MODES {
+                    let got = base.pow(&ex, p, rm, &mut cc);
+                    let info = format!("({}2^{k})^{n}", if base_negative { "-" } else { "" });
+                    check(&got, p, rm, &info, &mut cc, |r, rnd| {
+                        ternary(r.assign_round(rug::ops::Pow::pow(&fb, &fe), round_of(rnd)))
+                    })?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Results that are exactly representable: the Ziv loop never clears the roundability check for them (the
+/// approximation stays next to a representable number for ever), so each function has to recognise its exact
+/// results before the loop. Every function with such results is covered, at three precisions and in every
+/// mode. MPFR is the oracle.
+#[test]
+fn exact_results_are_decided_not_retried() -> Res {
+    use_full_exponent_range();
+    let mut cc = Consts::new()?;
+    let int = |n: u64, p: usize| ExactNum::from_word(n, p);
+    for p in [53usize, 64, 128] {
+        // f(x) is exact: (name, argument, zenith, MPFR)
+        type Mp = fn(&mut Float, &Float, Round) -> std::cmp::Ordering;
+        let one_arg: Vec<(&str, ExactNum, ZfFn, Mp)> = vec![
+            (
+                "ln",
+                int(1, p),
+                |x, p, rm, cc| x.ln(p, rm, cc),
+                |r, a, rd| r.assign_round(a.ln_ref(), rd),
+            ),
+            (
+                "exp",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.exp(p, rm, cc),
+                |r, a, rd| r.assign_round(a.exp_ref(), rd),
+            ),
+            (
+                "cos",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.cos(p, rm, cc),
+                |r, a, rd| r.assign_round(a.cos_ref(), rd),
+            ),
+            (
+                "cosh",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.cosh(p, rm, cc),
+                |r, a, rd| r.assign_round(a.cosh_ref(), rd),
+            ),
+            (
+                "acos",
+                int(1, p),
+                |x, p, rm, cc| x.acos(p, rm, cc),
+                |r, a, rd| r.assign_round(a.acos_ref(), rd),
+            ),
+            (
+                "acosh",
+                int(1, p),
+                |x, p, rm, cc| x.acosh(p, rm, cc),
+                |r, a, rd| r.assign_round(a.acosh_ref(), rd),
+            ),
+            (
+                "sin",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.sin(p, rm, cc),
+                |r, a, rd| r.assign_round(a.sin_ref(), rd),
+            ),
+            (
+                "tan",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.tan(p, rm, cc),
+                |r, a, rd| r.assign_round(a.tan_ref(), rd),
+            ),
+            (
+                "asin",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.asin(p, rm, cc),
+                |r, a, rd| r.assign_round(a.asin_ref(), rd),
+            ),
+            (
+                "atan",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.atan(p, rm, cc),
+                |r, a, rd| r.assign_round(a.atan_ref(), rd),
+            ),
+            (
+                "sinh",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.sinh(p, rm, cc),
+                |r, a, rd| r.assign_round(a.sinh_ref(), rd),
+            ),
+            (
+                "tanh",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.tanh(p, rm, cc),
+                |r, a, rd| r.assign_round(a.tanh_ref(), rd),
+            ),
+            (
+                "asinh",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.asinh(p, rm, cc),
+                |r, a, rd| r.assign_round(a.asinh_ref(), rd),
+            ),
+            (
+                "atanh",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.atanh(p, rm, cc),
+                |r, a, rd| r.assign_round(a.atanh_ref(), rd),
+            ),
+            (
+                "expm1",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.expm1(p, rm, cc),
+                |r, a, rd| r.assign_round(a.exp_m1_ref(), rd),
+            ),
+            (
+                "log1p",
+                ExactNum::new(p),
+                |x, p, rm, cc| x.log1p(p, rm, cc),
+                |r, a, rd| r.assign_round(a.ln_1p_ref(), rd),
+            ),
+        ];
+        for (name, x, zf, mp) in &one_arg {
+            run_unary(name, "exact", p, x, &mut cc, *zf, *mp)?;
+        }
+        // powers of two and of ten
+        for k in [-1000, -5, 0, 1, 7, 1000, 1 << 20] {
+            let x = pow2(p, k);
+            run_unary(
+                "log2",
+                &format!("2^{k}"),
+                p,
+                &x,
+                &mut cc,
+                |x, p, rm, cc| x.log2(p, rm, cc),
+                |r, a, rd| r.assign_round(a.log2_ref(), rd),
+            )?;
+        }
+        for j in [0u32, 1, 2, 3, 6, 10, 19] {
+            let x = int(10u64.pow(j), p);
+            run_unary(
+                "log10",
+                &format!("10^{j}"),
+                p,
+                &x,
+                &mut cc,
+                |x, p, rm, cc| x.log10(p, rm, cc),
+                |r, a, rd| r.assign_round(a.log10_ref(), rd),
+            )?;
+        }
+    }
+    exact_results_of_other_shapes(&mut cc)
+}
+
+/// Reciprocal, `hypot`, `nth_root`, `log` and `fma` with an exactly representable result, at precisions where
+/// they take the Ziv loop (the reciprocal runs a Newton iteration above a few words).
+fn exact_results_of_other_shapes(cc: &mut Consts) -> Res {
+    let int = |n: u64, p: usize| ExactNum::from_word(n, p);
+    for p in [64usize, 128, 4096] {
+        let tag = format!("p={p}");
+        let run = |name: &str,
+                   got: &dyn Fn(RoundingMode) -> ExactNum,
+                   want: &dyn Fn(&mut Float, Round) -> std::cmp::Ordering,
+                   cc: &mut Consts|
+         -> Res {
+            for rm in MODES {
+                check(&got(rm), p, rm, &format!("{name} {tag}"), cc, |r, rnd| {
+                    ternary(want(r, round_of(rnd)))
+                })?;
+            }
+            Ok(())
+        };
+        // 1 / 2^k
+        for k in [-1000, -3, 1, 2, 10, 1000] {
+            let x = pow2(p, k);
+            let fx = argument_to_mpfr(p, &x, cc)?;
+            run(
+                &format!("reciprocal(2^{k})"),
+                &|rm| x.reciprocal(p, rm),
+                &|r, rd| r.assign_round(fx.recip_ref(), rd),
+                cc,
+            )?;
+        }
+        // hypot of Pythagorean triples, scaled
+        for (a, b, k) in [(3u64, 4u64, 0), (5, 12, 0), (8, 15, 7), (20, 21, -9), (3, 4, 1000)] {
+            let (x, y) = (
+                int(a, p).ldexp(k, p, RoundingMode::ToEven),
+                int(b, p).ldexp(k, p, RoundingMode::ToEven),
+            );
+            let (fx, fy) = (argument_to_mpfr(p, &x, cc)?, argument_to_mpfr(p, &y, cc)?);
+            run(
+                &format!("hypot({a},{b})2^{k}"),
+                &|rm| x.hypot(&y, p, rm),
+                &|r, rd| r.assign_round(fx.hypot_ref(&fy), rd),
+                cc,
+            )?;
+        }
+        // perfect powers
+        for (base, n) in [(2u64, 4usize), (3, 7), (10, 6), (5, 5), (7, 4)] {
+            let v = int(base.pow(n as u32), p);
+            let fv = argument_to_mpfr(p, &v, cc)?;
+            run(
+                &format!("nth_root({base}^{n},{n})"),
+                &|rm| v.nth_root(n, p, rm),
+                &|r, rd| r.assign_round(fv.root_ref(n as u32), rd),
+                cc,
+            )?;
+        }
+        // log base b of b^j, and fma(3, 4, 5)
+        for (b, j) in [(2u64, 5u32), (3, 4), (10, 3), (7, 2)] {
+            let v = int(b.pow(j), p);
+            let base = int(b, p);
+            let want = Float::with_val(p as u32, j);
+            for rm in MODES {
+                let got = v.log(&base, p, rm, cc);
+                check(
+                    &got,
+                    p,
+                    rm,
+                    &format!("log({b}^{j}, {b}) {tag}"),
+                    cc,
+                    |r, rnd| ternary(r.assign_round(&want, round_of(rnd))),
+                )?;
+            }
+        }
+        let (a, b, c) = (int(3, p), int(4, p), int(5, p));
+        let want = Float::with_val(p as u32, 17);
+        run(
+            "fma(3,4,5)",
+            &|rm| a.fma(&b, &c, p, rm),
+            &|r, rd| r.assign_round(&want, rd),
+            cc,
+        )?;
+    }
+    Ok(())
 }
 
 /// The same at `p = 100032` (the precision of the original failure) for the arguments where the tail of the

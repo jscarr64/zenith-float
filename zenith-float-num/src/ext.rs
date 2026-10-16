@@ -6570,7 +6570,66 @@ mod grid_digest_tests {
         let am = u.jacobi_am(&zero_m, 300, RoundingMode::ToEven, &mut cc);
         assert!(ExactNum::sub_ref(&am, &u, 300, RoundingMode::ToEven).is_zero());
         println!("jacobi digest = {}", h.finish());
-        assert_eq!(h.finish(), 13_695_875_014_094_095_401);
+        // Re-pinned (was 13_695_875_014_094_095_401): 23 entries x 2 precisions (all at the tiny operand 21, `ToEven`)
+        // were `NaN(PrecisionRetryExhausted)`, a wrong answer. `am`, `sn`, `sc`, `sd` of `u = 3 * 2^(-2^31 - 19)`
+        // are `u` and the other nine functions are 1, because `f(u|m) = t (1 - O(u^2))` is far closer to the
+        // representable `t` than half an ulp, and a value just below a representable number rounds to it
+        // to nearest; the roundability check had treated that as undecidable. Oracle: mpmath, see the CHANGELOG.
+        assert_eq!(h.finish(), 6_259_183_207_121_670_912);
+        Ok(())
+    }
+
+    /// `f(u|m)` for `u = 3 * 2^(-2^31 - 19)` (a subnormal operand) is `t (1 - O(u^2))` with `t = u` for `am`, `sn`,
+    /// `sc`, `sd` and `t = 1` for `cn`, `dn`, `cd`, `nc`, `nd`, `dc` (series in `u`; mpmath at a surrogate `u`
+    /// confirms the constants). The deviation is below `2^-(2^32)`, so to nearest the result is `t` itself,
+    /// not an error. `ToEven` used to return `NaN(PrecisionRetryExhausted)` for most of these: a value just
+    /// below a representable number is not a hard case to round to nearest.
+    #[test]
+    fn jacobi_of_a_tiny_argument_rounds_to_the_leading_term(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        type J = fn(&ExactNum, &ExactNum, usize, RoundingMode, &mut crate::Consts) -> ExactNum;
+        let leading_u: [J; 4] = [
+            ExactNum::jacobi_am,
+            ExactNum::jacobi_sn,
+            ExactNum::jacobi_sc,
+            ExactNum::jacobi_sd,
+        ];
+        let leading_one: [J; 6] = [
+            ExactNum::jacobi_cn,
+            ExactNum::jacobi_dn,
+            ExactNum::jacobi_cd,
+            ExactNum::jacobi_nc,
+            ExactNum::jacobi_nd,
+            ExactNum::jacobi_dc,
+        ];
+        let mut cc = crate::Consts::new()?;
+        // m = 0, 1, 1/2, 3/16 (am(u|0) = u exactly; the others by the series)
+        let ms = [
+            ExactNum::new(64),
+            ExactNum::from_u8(1, 64),
+            ExactNum::from_u8(1, 64).ldexp(-1, 64, RoundingMode::None),
+            ExactNum::from_u8(3, 64).ldexp(-4, 64, RoundingMode::None),
+        ];
+        for p in [64usize, 128] {
+            for m in &ms {
+                for f in leading_u {
+                    let got = f(&operand(21), m, p, RoundingMode::ToEven, &mut cc);
+                    assert_eq!(
+                        got.compare(&operand(21)),
+                        Some(0),
+                        "u p={p} m={m:?}: {got:?}"
+                    );
+                }
+                for f in leading_one {
+                    let got = f(&operand(21), m, p, RoundingMode::ToEven, &mut cc);
+                    assert_eq!(
+                        got.compare(&ExactNum::from_u8(1, 64)),
+                        Some(0),
+                        "1 p={p} m={m:?}: {got:?}"
+                    );
+                }
+            }
+        }
         Ok(())
     }
 

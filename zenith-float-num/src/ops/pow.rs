@@ -6,13 +6,13 @@ use crate::common::consts::{FOUR, THREE};
 use crate::common::util::{bump_prec_retry, calc_add_cost, calc_mul_cost, round_p};
 use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
-use crate::EXPONENT_MIN;
 use crate::{
     common::consts::ONE,
     defs::{Error, WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT},
     num::ExactNumNumber,
     RoundingMode, Sign,
 };
+use crate::{Exponent, EXPONENT_MAX, EXPONENT_MIN};
 
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
@@ -624,6 +624,40 @@ impl ExactNumNumber {
                         }
                     }
                 }
+            }
+        }
+
+        // A power of two to an integer power is exactly a power of two: `(±2^k)^n = ±2^(k n)`. The logarithm
+        // path below cannot decide such a result (it is exactly representable, so the approximation never
+        // clears the roundability check), and it has to be recognised before the loop.
+        if nint && self.is_power_of_two() && n.exponent() < 64 {
+            if let Ok(mag) = n.int_as_usize() {
+                let k = self.exponent() as i128 - 1;
+                let q = if n.is_negative() { -(mag as i128) * k } else { mag as i128 * k };
+                let ret_sign = if n.is_odd_int() { self.sign() } else { Sign::Pos };
+                if q + 1 > EXPONENT_MAX as i128 {
+                    return Err(Error::ExponentOverflow(ret_sign));
+                }
+                let effective_rm = if ret_sign.is_negative() {
+                    match rm {
+                        RoundingMode::Up => RoundingMode::Down,
+                        RoundingMode::Down => RoundingMode::Up,
+                        v => v,
+                    }
+                } else {
+                    rm
+                };
+                // `ldexp` takes an `i32`: below the range, scale in two steps (the second one rounds onto the
+                // subnormal grid by mode, or to zero / the least value).
+                let first = q.max(EXPONENT_MIN as i128);
+                let second = (q - first).max(EXPONENT_MIN as i128);
+                let mut ret = Self::from_word(1, p)?
+                    .ldexp(first as Exponent, p, effective_rm)?
+                    .ldexp(second as Exponent, p, effective_rm)?;
+                ret.set_sign(ret_sign);
+                // The values are exact; the flag only reports an operand that was itself rounded.
+                ret.set_inexact(ret.inexact() || self.inexact() || n.inexact());
+                return Ok(ret);
             }
         }
 

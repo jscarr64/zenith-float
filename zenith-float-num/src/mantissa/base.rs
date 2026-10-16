@@ -882,58 +882,72 @@ impl Mantissa {
             let mut cc = (n - (self.max_bit_len() - s)) / WORD_BIT_SIZE; // num of roundable significant words
 
             if rm == RoundingMode::ToEven || rm == RoundingMode::ToOdd {
+                // Nearest: `n` is now the index of the round bit.
+                let known_from = self.max_bit_len() - s; // bits below this index are unknown
+                let round_bit_known = n > known_from;
                 let n = n - 1;
                 let mut rem_zero = true;
-                let mut td = 0; // either all bits set, or zero (default)
 
                 // analyze bits at n and at n+1
                 // to decide if we need to add 1 or not.
                 let np1 = n + 1;
                 i = n / WORD_BIT_SIZE;
-                let mut z = i;
                 t = n % WORD_BIT_SIZE;
                 let ip1 = np1 / WORD_BIT_SIZE;
                 let tp1 = np1 % WORD_BIT_SIZE;
                 let num = (self.m[i] >> t) & 1;
+
+                // Roundability: the known bits below the round bit (the `t` bits of word `i` and the whole
+                // words `known_from / WORD_BIT_SIZE ..i`) must not all be zeros after a round bit of one, or
+                // all be ones after a round bit of zero (checked below), or the unknown bits could move the
+                // value across the half-way point. `uniform` is the pattern
+                // seen so far (zeros or ones); a bit group that breaks the pattern decides the rounding.
+                let mut uniform: Option<Word> = None;
                 if t > 0 {
                     let rb = self.m[i] << (WORD_BIT_SIZE - t);
                     if rb != 0 {
                         rem_zero = false;
-
-                        if *check_roundable {
-                            // try to get information from preceding bits
-                            let msk = rb & (WORD_MAX << (WORD_BIT_SIZE - t));
-                            if msk == rb {
-                                td = WORD_MAX;
-                            } else if msk != 0 {
+                    }
+                    if round_bit_known {
+                        if rb == 0 {
+                            uniform = Some(0);
+                        } else if rb == WORD_MAX << (WORD_BIT_SIZE - t) {
+                            uniform = Some(WORD_MAX);
+                        } else {
+                            *check_roundable = false; // self is roundable
+                        }
+                    }
+                }
+                if *check_roundable && round_bit_known {
+                    let known_word = known_from / WORD_BIT_SIZE;
+                    for &v in self.m[known_word.min(i)..i].iter().rev() {
+                        match uniform {
+                            None if v == 0 => uniform = Some(0),
+                            None if v == WORD_MAX => uniform = Some(WORD_MAX),
+                            Some(u) if v == u => {}
+                            _ => {
                                 *check_roundable = false; // self is roundable
+                                break;
                             }
                         }
                     }
-                } else if *check_roundable && cc > 0 && z > 0 {
-                    // try to get information from preceding word
-                    z -= 1;
-                    if self.m[z] == WORD_MAX {
-                        td = WORD_MAX;
-                        rem_zero = false; // sticky is set
-                    } else if self.m[z] != 0 {
-                        *check_roundable = false; // self is roundable
-                        rem_zero = false; // sticky is set
-                    }
-                    cc -= 1;
+                }
+
+                // Nearest only has a half-way point to be close to: a round bit of one followed by known
+                // zeros, or a round bit of zero followed by known ones. A round bit of one followed by ones
+                // (just below a representable number) rounds up, and a round bit of zero followed by zeros
+                // (just above one) rounds down, whatever the unknown bits are.
+                if *check_roundable
+                    && round_bit_known
+                    && ((uniform == Some(0) && num == 0) || (uniform == Some(WORD_MAX) && num == 1))
+                {
+                    *check_roundable = false; // self is roundable
                 }
 
                 let nump1 = if ip1 < self_len { (self.m[ip1] >> tp1) & 1 } else { 0 };
 
                 // anything before n'th word becomes 0
-                for v in &mut self.m[..n / WORD_BIT_SIZE] {
-                    if *check_roundable && cc > 0 {
-                        if *v != td {
-                            *check_roundable = false; // self is roundable
-                        } else {
-                            cc -= 1;
-                        }
-                    }
+                for v in &mut self.m[..i] {
                     if *v != 0 {
                         rem_zero = false;
                     }
