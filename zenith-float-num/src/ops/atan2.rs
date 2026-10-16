@@ -55,12 +55,10 @@ impl ExactNumNumber {
             let p_x = p_wrk + 3;
 
             let mut ret = match y.div(x, p_x, RoundingMode::None) {
+                // `|y/x|` is beyond the exponent range: the angle is `±π/2` for either sign of `x`
+                // (`x` is negligible next to `y`), with the sign of `y`.
                 Err(Error::ExponentOverflow(_)) => {
-                    if x.is_positive() {
-                        Self::signed_half_pi(y.sign(), p_x, RoundingMode::None, cc, inexact)?
-                    } else {
-                        Self::signed_pi(y.sign(), p_x, RoundingMode::None, cc, inexact)?
-                    }
+                    Self::signed_half_pi(y.sign(), p_x, RoundingMode::None, cc, inexact)?
                 }
                 Err(e) => return Err(e),
                 Ok(q) => {
