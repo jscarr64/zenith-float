@@ -19,8 +19,9 @@ the exception allowlist only go down; all of them are CODEOWNERS-protected (`@js
 `nostd-tests` (`no_clone.TEST_DIRS`) are scanned like library code by `no_clone.py` and by the clone count. `tools/` and
 `target/` are never scanned. The ref ratchets keep their old meaning (library code only), so test uses of
 `add_ref` etc. do not count against them; `rules_scan.sh --count-only` prints the with-tests figure as a note.
-The diff scan (`rules_scan.sh A..B`) still skips added lines inside `#[cfg(test)]` items for the non-clone rules
-(`unwrap`, `panic!`, `f64`, ...); new test clones are caught by the clone-count ratchet.
+The diff scan (`rules_scan.sh A..B`) applies the clone rules (`.clone(`, `.to_vec(`, `.cloned(`) to added test lines too
+(`#[cfg(test)]` items, `tests.rs`, `tests/`, `benches/`, `examples/` files under the library dirs). Test code stays exempt
+from the other rules (`unsafe`, `allow`, `unwrap`, `expect`, `panic!`, `f32`/`f64`), whose meaning is unchanged.
 
 ### Helper-copy counter: how it counts
 

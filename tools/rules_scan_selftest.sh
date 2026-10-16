@@ -54,6 +54,12 @@ for p in zenith-float-num/src/ops/tests.rs zenith-float-num/src/tests/x.rs zenit
   scan --diff-file "$t/p.diff" >/dev/null && fail "test-code path no longer exempt, but not flagged: $p"
 done
 
+# ...but the non-clone rules stay exempt for test files (tests.rs, tests/ benches/ examples/ components)
+for p in zenith-float-num/src/ops/tests.rs zenith-float-num/src/tests/x.rs; do
+  mkdiff $p 'let v = r.unwrap(); let w = r.expect("x"); panic!("p"); let a: f64 = 1.0; unsafe {}' > "$t/p.diff"
+  scan --diff-file "$t/p.diff" >/dev/null || fail "non-clone rule flagged in test file $p: $(scan --diff-file "$t/p.diff")"
+done
+
 # f64 is only a calculation-path rule: compare crate is lib for clone but not for f64
 mkdiff zenith-float-compare/src/a.rs 'let a: f64 = 1.0;' > "$t/c.diff"; scan --diff-file "$t/c.diff" >/dev/null || fail "f64 flagged in compare (not a calc path)"
 mkdiff zenith-float-compare/src/a.rs 'let a = b.clone();' > "$t/c.diff"; scan --diff-file "$t/c.diff" >/dev/null && fail "clone in compare not flagged"
@@ -77,9 +83,11 @@ scan --working >/dev/null && fail "working diff clone not flagged"
 git add -A; scan --staged >/dev/null && fail "staged diff clone not flagged"
 scan --working >/dev/null && fail "working mode (git diff HEAD) must still see staged additions"
 git commit -qm bad; scan "$base..HEAD" >/dev/null && fail "range clone not flagged"
-# cfg(test) module in the tip file is exempt from the diff scan's non-clone rules (the clone COUNT does count it: see below)
+# cfg(test) module in the tip file is exempt from the diff scan's non-clone rules (unwrap...), but its clone IS flagged (test code is counted)
 printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(x: &S) { let y = x.clone(); let _ = r.unwrap(); }\n}\n' > zenith-float-num/src/x.rs
-git add -A; git commit -qm t; RULES_SCAN_SKIP_COUNT=1 scan "$base..HEAD" >/dev/null || fail "cfg(test) additions flagged: $(RULES_SCAN_SKIP_COUNT=1 scan "$base..HEAD")"
+git add -A; git commit -qm t; out="$(RULES_SCAN_SKIP_COUNT=1 scan "$base..HEAD")" && fail "clone in a cfg(test) module not flagged by the diff scan"
+echo "$out" | grep -q "\[clone\]" || fail "cfg(test) clone flagged with the wrong label: $out"
+echo "$out" | grep -q "\[unwrap\]" && fail "unwrap in a cfg(test) module flagged (non-clone rules stay exempt for test code): $out"
 scan "$base..HEAD" >/dev/null && fail "clone in a cfg(test) module not counted by the range scan's clone count (baseline 0)"
 
 # clone-count baseline: may only go down

@@ -14,9 +14,10 @@ Usage:
 
 LIBRARY PATHS (clone, to_vec, cloned, to_owned, unsafe, allow, unwrap, expect, panic): .rs files under
   zenith-float-num/src/  zenith-float-macro/src/  zenith-float-compare/src/  src/
-  excluding any path with a tools/ component, and any added line inside a #[cfg(test)] item of the file at the
-  diff's tip. (tests/ benches/ examples/ components and files named tests.rs are NOT excluded any more: test code is
-  counted. The counters below also walk the test dirs, see no_clone.TEST_DIRS.)
+  excluding any path with a tools/ component. Test code (an added line inside a #[cfg(test)] item of the file at the
+  diff's tip, files named tests.rs, tests/ benches/ examples/ components) is no longer excluded: the clone rules
+  (clone, to_vec, cloned) apply to it. It stays exempt from the other rules (unsafe, allow, unwrap, expect, panic,
+  f32, f64), whose meaning is unchanged. The counters below also walk the test dirs, see no_clone.TEST_DIRS.
 CALCULATION PATHS (f32, f64): the library paths above except zenith-float-compare/src/ (benchmark adapters).
 
 Flagged on added lines only (comments and string literals are ignored):
@@ -73,6 +74,7 @@ PATTERNS = [
     ("f32", re.compile(r"\bf32\b|\d_?f32\b")),
     ("f64", re.compile(r"\bf64\b|\d_?f64\b")),
 ]
+CLONE_RULES = ("clone", "to_vec", "cloned")  # applied to test code too
 STR = re.compile(r'"(?:\\.|[^"\\])*"')
 
 
@@ -152,12 +154,15 @@ def scan_diff(text, mode, rev):
             t = tip_text(path, mode, rev)
             masks[path] = no_clone.test_mask(t.split("\n")) if t else None
         m = masks[path]
-        if m is not None and 0 < n <= len(m) and m[n - 1]:
-            continue
+        # test code (#[cfg(test)] items, tests.rs, tests/ benches/ examples/ files) is exempt from the NON-clone rules
+        # (unwrap, expect, panic!, unsafe, allow, f32/f64) as before, but the clone rules apply to it: it is counted.
+        in_test = (m is not None and 0 < n <= len(m) and m[n - 1]) or not is_lib_only(path)
         code = strip(content)
         key = "%s:%s" % (path, hashlib.sha1(" ".join(content.split()).encode()).hexdigest()[:12])
         for label, rx in PATTERNS:
             if label in ("f32", "f64") and not CALC.match(path):
+                continue
+            if in_test and label not in CLONE_RULES:
                 continue
             if rx.search(code) and key not in allow:
                 hits.append((path, n, label, " ".join(content.split()), key))
