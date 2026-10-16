@@ -30,7 +30,7 @@ const MODES: [RoundingMode; 6] = [
 
 type Res = Result<(), Box<dyn std::error::Error>>;
 
-fn round_of(rnd: rnd_t) -> Round {
+pub fn round_of(rnd: rnd_t) -> Round {
     match rnd {
         rnd_t::RNDZ => Round::Zero,
         rnd_t::RNDU => Round::Up,
@@ -40,7 +40,7 @@ fn round_of(rnd: rnd_t) -> Round {
     }
 }
 
-fn ternary(o: std::cmp::Ordering) -> i32 {
+pub fn ternary(o: std::cmp::Ordering) -> i32 {
     o as i32
 }
 
