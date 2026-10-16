@@ -255,43 +255,26 @@ fn cbrt_over_the_whole_range() -> Res {
     )
 }
 
-/// The reciprocal of a subnormal overflows: at 200 bits (more than the operand's 192) the directed modes that
-/// must return the largest finite number return infinity (`reciprocal_of_a_subnormal_at_200_bits_known_wrong`).
-fn reciprocal_known_wrong(m: u64, k: i64, _neg: bool, p: usize) -> bool {
-    is_subnormal(m, k) && p > OPERAND_PRECISION
-}
+/// Precisions of the reciprocal: the usual ones and those where the Newton iteration starts (above two words).
+const RECIPROCAL_PRECISIONS: [usize; 13] = [1, 2, 3, 5, 24, 53, 64, 65, 128, 129, 192, 200, 256];
 
-fn reciprocal_run(skip: Skip, only_known_wrong: bool) -> Res {
-    let ops: Vec<(u64, i64)> = unary_operands()
-        .into_iter()
-        .filter(|&(m, k)| !only_known_wrong || is_subnormal(m, k))
-        .collect();
-    let precisions: &[usize] = if only_known_wrong { &[200, 256] } else { &PRECISIONS };
+/// `reciprocal` of every operand of the grid at every precision, subnormal operands included: above 128 bits
+/// the Newton start read the top 64 bits of a subnormal's mantissa, which are zero, so `1 / 2^-2147483768` was
+/// `Inf` in the directed modes where the largest finite number is the result (`div_ref(1, x)` was right).
+#[test]
+fn reciprocal_over_the_whole_range() -> Res {
     unary(
         "reciprocal",
         Sweep {
-            operands: &ops,
+            operands: &unary_operands(),
             signs: &[false, true],
-            precisions,
+            precisions: &RECIPROCAL_PRECISIONS,
             flags: true,
-            skip,
+            skip: no_skip,
         },
         |x, p, rm| x.reciprocal(p, rm),
         |r, a, rd| r.assign_round(a.recip_ref(), rd),
     )
-}
-
-#[test]
-fn reciprocal_over_the_whole_range() -> Res {
-    reciprocal_run(reciprocal_known_wrong, false)
-}
-
-/// KNOWN WRONG (`/tmp/zf-logs/zf-w1-findings.md`, finding 1): `reciprocal` of a subnormal at a precision above
-/// the operand's returns infinity instead of the largest finite number for `Down` and `ToZero` (`Up`/`Down`
-/// for the negative operand), while `div_ref(1, x)` is right.
-#[test]
-fn reciprocal_of_a_subnormal_at_200_bits_known_wrong() -> Res {
-    reciprocal_run(no_skip, true)
 }
 
 /// Exact results at the ends of the range: perfect squares and cubes (the root is exact in every mode and not

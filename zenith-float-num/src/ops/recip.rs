@@ -26,7 +26,10 @@ impl ExactNumNumber {
             return Err(Error::DivisionByZero);
         }
 
-        if p <= WORD_BIT_SIZE * (NEWTON_MIN_WORDS - 1) {
+        // The Newton start reads the top word of the mantissa, which is zero for a subnormal whose
+        // leading bits are zeros (`1 / 2^-2147483768` came out as a division by zero, `Inf`); the
+        // division kernel takes a subnormal divisor as stored.
+        if p <= WORD_BIT_SIZE * (NEWTON_MIN_WORDS - 1) || self.is_subnormal() {
             return ONE.div(self, p, rm);
         }
 

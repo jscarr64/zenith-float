@@ -6815,7 +6815,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * 6 * 6 * 6);
         println!("reciprocal nth_root grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 6_457_415_459_444_892_387);
+        assert_eq!(h.finish(), 1_369_146_293_907_659_395);
         Ok(())
     }
 
