@@ -7,6 +7,18 @@ use crate::common::util::round_p;
 use crate::{num::ExactNumNumber, Consts, Error, Exponent, RoundingMode, Sign, WORD_BIT_SIZE};
 
 impl ExactNumNumber {
+    /// `±2^k` for `k >= EXPONENT_MIN - p` (`p` a multiple of the word size): the last bit of a `p`-bit number with the
+    /// exponent `k + p`, including the subnormal range, where it is formed by an exact product of two powers of two.
+    pub(crate) fn pow2_unit(sign: Sign, k: i64, p: usize) -> Result<Self, Error> {
+        let min = crate::defs::EXPONENT_MIN as i64;
+        if k >= min - 1 {
+            return Self::sticky_term(sign, (k + 1) as Exponent);
+        }
+        let hi = Self::sticky_term(sign, crate::defs::EXPONENT_MIN)?;
+        let lo = Self::sticky_term(Sign::Pos, (k - min + 2) as Exponent)?;
+        hi.mul(&lo, p, RoundingMode::None)
+    }
+
     /// A one-bit number `±2^(e - 1)`: the stand-in for a term that is far below the rounding position of a sum.
     /// Adding it exactly (`add_full_prec`) keeps the direction of the lost term, so that one final rounding
     /// by `set_precision` gives the correctly rounded result of the sum in every rounding mode.

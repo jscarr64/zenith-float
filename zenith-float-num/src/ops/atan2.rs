@@ -48,6 +48,20 @@ impl ExactNumNumber {
             };
         }
 
+        // A quotient this small is `atan(q) = q - q³/3 + ...`, a hair below `q`: no working precision below
+        // about `-2 * exponent(q)` bits can tell `q` from the result, so the retry loop below never ends in
+        // the directed modes (`PrecisionRetryExhausted`). The result is `q` rounded, or `q` minus a hair.
+        if x.is_positive() {
+            let p_q = p + 2 * WORD_BIT_SIZE;
+            let e_est = (y.exponent() as i64).saturating_sub(x.exponent() as i64);
+            let bits = y
+                .mantissa_max_bit_len()
+                .saturating_add(x.mantissa_max_bit_len());
+            if e_est.saturating_mul(2) < -((p_q + bits + 2 * WORD_BIT_SIZE) as i64) {
+                return Self::atan2_tiny_quotient(y, x, p, rm, p_q);
+            }
+        }
+
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p + p_inc;
 
@@ -80,6 +94,34 @@ impl ExactNumNumber {
 
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
+    }
+
+    /// `atan2(y, x)` for `x > 0` and `|y / x|` below `2^-(p_q + bits of y and x + 2 words) / 2`.
+    fn atan2_tiny_quotient(
+        y: &Self,
+        x: &Self,
+        p: usize,
+        rm: RoundingMode,
+        p_q: usize,
+    ) -> Result<Self, Error> {
+        let q = y.div(x, p_q, RoundingMode::None)?;
+        if q.is_zero() || q.inexact() {
+            // `q` underflowed, or `y / x` is not a `p_q`-bit number: its distance to a rounding boundary is
+            // far above `q³/3`, so the result rounds like `y / x`.
+            let mut ret = y.div(x, p, rm)?;
+            ret.set_inexact(true);
+            return Ok(ret);
+        }
+        // `y / x` is exactly `q`: the result is below it by less than the last bit of `q`. One bit down and
+        // "something more" (the inexact flag is the sticky bit of the final rounding) is that open interval.
+        let k = (q.exponent() as i64).saturating_sub(q.mantissa_max_bit_len() as i64);
+        let unit = Self::pow2_unit(q.sign(), k, p_q)?;
+        let mut ret = q.sub(&unit, p_q, RoundingMode::None)?;
+        ret.set_inexact(true);
+        ret.set_precision(p, rm)?;
+        // the result differs from `q`, so it is inexact whatever the operands' flags
+        ret.set_inexact(true);
+        Ok(ret)
     }
 
     fn signed_half_pi(

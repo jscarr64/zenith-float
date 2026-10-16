@@ -764,9 +764,9 @@ const C: i64 = 0;
 const D: i64 = MAX - 130;
 const E: i64 = MAX - 64;
 
-/// `(exponent of y, exponent of x)` of the `atan2` operand pairs that are wrong (finding 4): the quotient
-/// `y / x` is far from one, so the result is `+-pi/2` (or `pi/2 + tiny`) or a tiny number.
-const ATAN2_KNOWN_WRONG: [(i64, i64); 14] = [
+/// `(exponent of y, exponent of x)` of the operand pairs whose quotient `y / x` is far from one, so that the result
+/// is `+-pi/2` (or `pi/2 + tiny`) or a tiny number (wrong, or `NaN`, in 1.0.12).
+const ATAN2_EXTREME: [(i64, i64); 14] = [
     (D, B),
     (E, B),
     (C, A),
@@ -783,12 +783,8 @@ const ATAN2_KNOWN_WRONG: [(i64, i64); 14] = [
     (A, E),
 ];
 
-fn atan2_is_known_wrong(a: (u64, i64), b: (u64, i64)) -> bool {
-    ATAN2_KNOWN_WRONG.contains(&(a.1, b.1))
-}
-
-fn atan2_is_not_known_wrong(a: (u64, i64), b: (u64, i64)) -> bool {
-    !atan2_is_known_wrong(a, b)
+fn atan2_is_not_extreme(a: (u64, i64), b: (u64, i64)) -> bool {
+    !ATAN2_EXTREME.contains(&(a.1, b.1))
 }
 
 fn atan2_run(skip_pair: fn((u64, i64), (u64, i64)) -> bool) -> Res {
@@ -804,22 +800,22 @@ fn atan2_run(skip_pair: fn((u64, i64), (u64, i64)) -> bool) -> Res {
 
 #[test]
 fn atan2_over_the_whole_range() -> Res {
-    atan2_run(atan2_is_known_wrong)
+    atan2_run(|_, _| false)
 }
 
-/// KNOWN WRONG (finding 4): `atan2` is wrong, or `NaN(PrecisionRetryExhausted)`, when the quotient of the arguments is
-/// extreme: `atan2(2^2147483517, -2^-2147483643)` is `pi` (rounded) instead of `pi/2`; `atan2(1,
-/// 2^2147483517)` and `atan2(2^-2147483718, 1)` are `NaN` in the modes that need the retry loop.
+/// Fixed in 1.0.13: `atan2` was wrong, or `NaN(PrecisionRetryExhausted)`, when the quotient of the arguments is
+/// extreme: `atan2(2^2147483517, -2^-2147483643)` was `pi` (rounded) instead of `pi/2`; `atan2(1, 2^2147483517)`
+/// and `atan2(2^-2147483718, 1)` were `NaN` in the modes that need the retry loop.
 #[test]
-fn atan2_with_an_extreme_quotient_known_wrong() -> Res {
-    atan2_run(atan2_is_not_known_wrong)
+fn atan2_with_an_extreme_quotient() -> Res {
+    atan2_run(atan2_is_not_extreme)
 }
 
-/// KNOWN WRONG (1.0.12): `atan2(2^-g, 1)`, `atan2(1, 2^g)` and the same with a negative `x` for `g` from 2^6 to 2^24:
-/// `NaN(PrecisionRetryExhausted)` in the directed modes and `ToOdd` from about `g = 9888` (the result is `y/x` minus a
-/// sticky bit; `ToEven` and the flag are right).
+/// Fixed in 1.0.13: `atan2(2^-g, 1)`, `atan2(1, 2^g)` and the same with negative signs, `g` from 2^6 to 2^24, were
+/// `NaN(PrecisionRetryExhausted)` in the directed modes and `ToOdd` from about `g = 9888` (the result is `y/x` minus
+/// a sticky bit; `ToEven` and the flag were right).
 #[test]
-fn atan2_with_a_large_quotient_known_wrong() -> Res {
+fn atan2_with_a_large_quotient() -> Res {
     let mut run = Run::new(true)?;
     for g in [64i64, 300, 1000, 9000, 9888, 20_000, 1 << 20, 1 << 24] {
         // (y as (significand, exponent), x as (significand, exponent))
