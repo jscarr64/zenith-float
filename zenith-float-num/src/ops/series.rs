@@ -294,7 +294,11 @@ fn series_rectangular<T: PolycoeffGen>(
     // run computation
     let poly_val = compute_row(p, &cache, polycoeff_gen)?;
     acc = acc.add(&poly_val, p, RoundingMode::None)?;
-    let mut terminal_pow = x_pow.clone()?;
+    // The running terminal power starts equal to `x_pow` (the next power after the cached ones). It is recomputed from
+    // the last cached power with the same operands and rounding, which gives the identical value, so that `x_pow` and
+    // `terminal_pow` each have one owner.
+    let last_cached = cache.last().ok_or(Error::InvalidArgument)?;
+    let mut terminal_pow = last_cached.mul(&x_step, p, RoundingMode::None)?;
     niter -= cache_sz;
 
     loop {
