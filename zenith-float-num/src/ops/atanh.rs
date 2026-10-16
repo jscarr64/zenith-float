@@ -27,8 +27,10 @@ impl ExactNumNumber {
         let p = round_p(p);
 
         if self.is_zero() {
-            let mut ret = self.clone()?;
-            ret.set_precision(p, RoundingMode::None)?;
+            // a zero is fully described by its sign and inexact flag: build it at the result precision.
+            let mut ret = Self::new(p)?;
+            ret.set_sign(self.sign());
+            ret.set_inexact(self.inexact());
             return Ok(ret);
         }
 
