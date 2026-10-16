@@ -708,7 +708,10 @@ mod retry_budget_tests {
                 assert!(steps <= limit / WORD_BIT_SIZE + 1, "p = {p}: {steps} steps");
             }
             assert!(p_wrk > limit);
-            assert!(p_wrk <= limit * 6 / 5 + WORD_BIT_SIZE, "p = {p}: stopped at {p_wrk}");
+            assert!(
+                p_wrk <= limit * 6 / 5 + WORD_BIT_SIZE,
+                "p = {p}: stopped at {p_wrk}"
+            );
         }
     }
 }
