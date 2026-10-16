@@ -6867,6 +6867,164 @@ mod grid_digest_tests {
         assert_eq!(h.finish(), 4_600_225_949_441_908_206);
         Ok(())
     }
+
+    /// All seven rounding modes, `ToOdd` included (the pinned grids above use six).
+    const ALL_RMS: [RoundingMode; 7] = [
+        RoundingMode::None,
+        RoundingMode::ToEven,
+        RoundingMode::ToZero,
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::FromZero,
+        RoundingMode::ToOdd,
+    ];
+
+    /// Two results are the same bit for bit: the value as stored (sign, exponent, words, NaN kind), and both inexact flags.
+    fn same(a: &ExactNum, b: &ExactNum) -> Result<bool, Box<dyn std::error::Error>> {
+        Ok(value_repr(a)? == value_repr(b)?
+            && a.inexact() == b.inexact()
+            && a.inexact_accumulated() == b.inexact_accumulated())
+    }
+
+    /// `add_ref`, `sub_ref`, `mul_ref` and `div_ref` give the same result as `add`, `sub`, `mul` and `div` on a fresh
+    /// owned operand, bit for bit, on the pinned pair grid (the 23 operands: NaN of both kinds, +-Inf, +-0, inexact thirds,
+    /// the subnormal band, the exponent extremes) at the 7 precisions of the digest grids, in all 7 rounding modes.
+    #[test]
+    fn ref_forms_equal_owned_forms_bit_for_bit() -> Result<(), Box<dyn std::error::Error>> {
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for j in 0..PAIR_OPERANDS {
+                for p in [1usize, 53, 64, 65, 128, 192, 200] {
+                    for rm in ALL_RMS {
+                        let (a, b) = (operand(i), operand(j));
+                        let pairs = [
+                            (
+                                "add",
+                                ExactNum::add_ref(&a, &b, p, rm),
+                                operand(i).add(&b, p, rm),
+                            ),
+                            (
+                                "sub",
+                                ExactNum::sub_ref(&a, &b, p, rm),
+                                operand(i).sub(&b, p, rm),
+                            ),
+                            (
+                                "mul",
+                                ExactNum::mul_ref(&a, &b, p, rm),
+                                operand(i).mul(&b, p, rm),
+                            ),
+                            (
+                                "div",
+                                ExactNum::div_ref(&a, &b, p, rm),
+                                operand(i).div(&b, p, rm),
+                            ),
+                        ];
+                        for (name, by_ref, owned) in &pairs {
+                            assert!(
+                                same(by_ref, owned)?,
+                                "{name}_ref differs from {name}: operands {i}, {j}, p = {p}, {rm:?}: {by_ref:?} vs {owned:?}"
+                            );
+                            count += 1;
+                        }
+                        // the operands are untouched by the ref forms
+                        assert!(same(&a, &operand(i))? && same(&b, &operand(j))?);
+                    }
+                }
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 7 * 7 * 4);
+        Ok(())
+    }
+
+    /// The same operand passed twice by reference (`add_ref(&x, &x)`), as the squares and `x / x` sites do.
+    #[test]
+    fn ref_forms_with_one_operand_twice_equal_the_owned_forms(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for p in [1usize, 53, 64, 65, 128, 192, 200] {
+                for rm in ALL_RMS {
+                    let x = operand(i);
+                    let pairs = [
+                        (
+                            "add",
+                            ExactNum::add_ref(&x, &x, p, rm),
+                            operand(i).add(&operand(i), p, rm),
+                        ),
+                        (
+                            "sub",
+                            ExactNum::sub_ref(&x, &x, p, rm),
+                            operand(i).sub(&operand(i), p, rm),
+                        ),
+                        (
+                            "mul",
+                            ExactNum::mul_ref(&x, &x, p, rm),
+                            operand(i).mul(&operand(i), p, rm),
+                        ),
+                        (
+                            "div",
+                            ExactNum::div_ref(&x, &x, p, rm),
+                            operand(i).div(&operand(i), p, rm),
+                        ),
+                    ];
+                    for (name, by_ref, owned) in &pairs {
+                        assert!(
+                            same(by_ref, owned)?,
+                            "{name}_ref(&x, &x) differs from {name}: operand {i}, p = {p}, {rm:?}: {by_ref:?} vs {owned:?}"
+                        );
+                        count += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * 7 * 7 * 4);
+        Ok(())
+    }
+
+    /// `ExactComplex::add_ref` / `sub_ref` against `add` / `sub`, on the complex grid (8 parts per component, 3 precisions),
+    /// all 7 rounding modes, both parts and both inexact flags of each part.
+    #[test]
+    fn complex_ref_forms_equal_owned_forms_bit_for_bit() -> Result<(), Box<dyn std::error::Error>> {
+        use crate::ExactComplex;
+        let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
+        let mut count = 0usize;
+        for a in parts {
+            for b in parts {
+                for c in parts {
+                    for d in parts {
+                        for p in [1usize, 64, 128] {
+                            for rm in ALL_RMS {
+                                let z1 = ExactComplex::new(operand(a), operand(b));
+                                let z2 = ExactComplex::new(operand(c), operand(d));
+                                let own1 = || ExactComplex::new(operand(a), operand(b));
+                                let pairs = [
+                                    (
+                                        "add",
+                                        ExactComplex::add_ref(&z1, &z2, p, rm),
+                                        own1().add(&z2, p, rm),
+                                    ),
+                                    (
+                                        "sub",
+                                        ExactComplex::sub_ref(&z1, &z2, p, rm),
+                                        own1().sub(&z2, p, rm),
+                                    ),
+                                ];
+                                for (name, by_ref, owned) in &pairs {
+                                    assert!(
+                                        same(by_ref.re(), owned.re())? && same(by_ref.im(), owned.im())?,
+                                        "complex {name}_ref differs from {name}: parts {a}, {b}, {c}, {d}, p = {p}, {rm:?}"
+                                    );
+                                    count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 7 * 2);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
