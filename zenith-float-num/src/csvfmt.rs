@@ -263,49 +263,67 @@ mod tests {
     use super::*;
 
     #[test]
-    fn csv_ieee64_100x3_roundtrip() {
+    fn csv_ieee64_100x3_roundtrip() -> Result<(), crate::Error> {
         let mut vals = Vec::new();
         for i in 0..300 {
             vals.push(Ieee64::from_i32(i));
         }
-        let a = Ieee64Array::from_shape(100, 3, &vals).unwrap();
-        let text = a.to_csv_string().unwrap();
-        let b = Ieee64Array::from_csv_str(&text).unwrap();
+        let a = Ieee64Array::from_shape(100, 3, &vals).ok_or(crate::Error::InvalidArgument)?;
+        let text = a.to_csv_string()?;
+        let b = Ieee64Array::from_csv_str(&text)?;
         assert_eq!(b.shape(), (100, 3));
         assert_eq!(a.as_bits(), b.as_bits());
+        Ok(())
     }
 
     #[test]
-    fn csv_missing_cell_is_nan() {
-        let b = Ieee64Array::from_csv_str("1,,3\n").unwrap();
+    fn csv_missing_cell_is_nan() -> Result<(), crate::Error> {
+        let b = Ieee64Array::from_csv_str("1,,3\n")?;
         assert_eq!(b.shape(), (1, 3));
-        assert_eq!(b.get(0).unwrap().to_bits(), 1);
-        assert_eq!(b.get(1).unwrap().to_bits(), Ieee64::NAN.to_bits());
-        assert_eq!(b.get(2).unwrap().to_bits(), 3);
-        let short = Ieee64Array::from_csv_str("5,6\n7\n").unwrap();
+        assert_eq!(b.get(0).ok_or(crate::Error::InvalidArgument)?.to_bits(), 1);
+        assert_eq!(
+            b.get(1).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+            Ieee64::NAN.to_bits()
+        );
+        assert_eq!(b.get(2).ok_or(crate::Error::InvalidArgument)?.to_bits(), 3);
+        let short = Ieee64Array::from_csv_str("5,6\n7\n")?;
         assert_eq!(short.shape(), (2, 2));
-        assert_eq!(short.get2(1, 1).unwrap().to_bits(), Ieee64::NAN.to_bits());
+        assert_eq!(
+            short
+                .get2(1, 1)
+                .ok_or(crate::Error::InvalidArgument)?
+                .to_bits(),
+            Ieee64::NAN.to_bits()
+        );
+        Ok(())
     }
 
     #[test]
-    fn csv_exact_num_roundtrip_and_too_many_cols() {
+    fn csv_exact_num_roundtrip_and_too_many_cols() -> Result<(), crate::Error> {
         let p = 64;
         let n = |k: u8| ExactNum::from_u8(k, p);
-        let a = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(3), n(4)]).unwrap();
-        let text = a.to_csv_string().unwrap();
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(3), n(4)])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let text = a.to_csv_string()?;
         assert!(text.contains("@p=64"));
-        let b = ExactNumArray::from_csv_str(&text).unwrap();
+        let b = ExactNumArray::from_csv_str(&text)?;
         assert_eq!(b.shape(), (2, 2));
         assert_eq!(b.precision(), p);
         for i in 0..4 {
-            assert_eq!(a.get(i).unwrap().compare(b.get(i).unwrap()), Some(0));
+            assert_eq!(
+                a.get(i)
+                    .ok_or(crate::Error::InvalidArgument)?
+                    .compare(b.get(i).ok_or(crate::Error::InvalidArgument)?),
+                Some(0)
+            );
         }
         assert!(Ieee64Array::from_csv_str("1,2\n3,4,5\n").is_err());
+        Ok(())
     }
 
     #[cfg(feature = "std")]
     #[test]
-    fn csv_path_roundtrip() {
+    fn csv_path_roundtrip() -> Result<(), crate::Error> {
         let a = Ieee64Array::from_shape(
             2,
             2,
@@ -316,12 +334,13 @@ mod tests {
                 Ieee64::from_i32(4),
             ],
         )
-        .unwrap();
+        .ok_or(crate::Error::InvalidArgument)?;
         let path = std::env::temp_dir().join("zenith_csv_path_gold.csv");
-        a.to_csv(&path).unwrap();
-        let b = Ieee64Array::from_csv(&path).unwrap();
+        a.to_csv(&path)?;
+        let b = Ieee64Array::from_csv(&path)?;
         let _ = std::fs::remove_file(&path);
         assert_eq!(a.as_bits(), b.as_bits());
         assert!(Ieee64Array::from_csv("/no/such/zenith_csv_missing.csv").is_err());
+        Ok(())
     }
 }

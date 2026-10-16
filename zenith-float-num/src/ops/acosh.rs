@@ -103,15 +103,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_acosh() {
-        let mut cc = Consts::new().unwrap();
+    fn test_acosh() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
 
         // near 1
         let p = 448;
-        let n1 = ExactNumNumber::parse("1.0000000000000000000000000000000000000000000B56A0EBA6F7D47E21A7B2A7806A698BABAF2F05BC61E2F8FB50FE0B98F55B181AC9C8_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let n2 = n1.acosh(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("4.C31368910963B1A1BCFC0EDBD393FB7A5E876F9751D93A20E7E48EC0D16090ADA5F46DF2184D32A19C500088EA09CBD4F23DF713113D8A58_e-16", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n1 = ExactNumNumber::parse("1.0000000000000000000000000000000000000000000B56A0EBA6F7D47E21A7B2A7806A698BABAF2F05BC61E2F8FB50FE0B98F55B181AC9C8_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let n2 = n1.acosh(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("4.C31368910963B1A1BCFC0EDBD393FB7A5E876F9751D93A20E7E48EC0D16090ADA5F46DF2184D32A19C500088EA09CBD4F23DF713113D8A58_e-16", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         // println!("{:?}", n1.format(crate::Radix::Bin, rm).unwrap());
         // println!("{:?}", n2.format(crate::Radix::Hex, rm).unwrap());
@@ -120,24 +120,24 @@ mod tests {
 
         // large exp
         let p = 320;
-        let n1 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A200000000000000004D3C337F7C8D419EBBFC39B4BEC14AF6_e+1000", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let n2 = n1.acosh(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("2.C5DAB0AF9025886C3364C7B6D6741EB19D4FB009D3F92CA21B77498D9F0666363C665F2F324EAEC8_e+3", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n1 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A200000000000000004D3C337F7C8D419EBBFC39B4BEC14AF6_e+1000", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let n2 = n1.acosh(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("2.C5DAB0AF9025886C3364C7B6D6741EB19D4FB009D3F92CA21B77498D9F0666363C665F2F324EAEC8_e+3", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         //println!("{:?}", n2.format(crate::Radix::Hex, rm).unwrap());
 
         assert!(n2.cmp(&n3) == 0);
 
-        let d1 = ExactNumNumber::max_value(p).unwrap();
-        let d2 = ExactNumNumber::min_value(p).unwrap();
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
+        let d1 = ExactNumNumber::max_value(p)?;
+        let d2 = ExactNumNumber::min_value(p)?;
+        let d3 = ExactNumNumber::min_positive(p)?;
 
         // MAX
-        let mut d4 = d1.acosh(p, RoundingMode::Down, &mut cc).unwrap();
+        let mut d4 = d1.acosh(p, RoundingMode::Down, &mut cc)?;
 
         d4.set_exponent(d4.exponent() - 1);
-        let d5 = d4.cosh(p, rm, &mut cc).unwrap();
-        let mut d5 = d5.mul(&d5, p, rm).unwrap();
+        let d5 = d4.cosh(p, rm, &mut cc)?;
+        let mut d5 = d5.mul(&d5, p, rm)?;
         d5.set_exponent(d5.exponent() + 1);
 
         let mut eps = ExactNumNumber::small_const(1);
@@ -145,18 +145,12 @@ mod tests {
             d1.exponent() - p as Exponent + core::mem::size_of::<Exponent>() as Exponent * 8,
         );
 
-        assert!(
-            d1.sub(&d5, p, RoundingMode::ToEven)
-                .unwrap()
-                .abs()
-                .unwrap()
-                .cmp(&eps)
-                < 0
-        );
+        assert!(d1.sub(&d5, p, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 
         assert!(d2.acosh(p, rm, &mut cc).unwrap_err() == Error::InvalidArgument);
         assert!(d3.acosh(p, rm, &mut cc).unwrap_err() == Error::InvalidArgument);
 
-        assert!(ONE.acosh(p, rm, &mut cc).unwrap().is_zero());
+        assert!(ONE.acosh(p, rm, &mut cc)?.is_zero());
+        Ok(())
     }
 }

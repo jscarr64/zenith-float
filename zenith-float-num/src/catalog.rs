@@ -1685,10 +1685,10 @@ mod tests {
     }
 
     #[test]
-    fn test_catalog_identities() {
+    fn test_catalog_identities() -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
@@ -1805,5 +1805,6 @@ mod tests {
         let sn = u.jacobi_sn(&mpar, p, rm, &mut cc);
         let back = sn.jacobi_arcsn(&mpar, p, rm, &mut cc);
         assert!(near(&back, &u, p));
+        Ok(())
     }
 }

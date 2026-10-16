@@ -562,7 +562,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_int_fact20_gcd_pow2_divrem() {
+    fn exact_int_fact20_gcd_pow2_divrem() -> Result<(), crate::Error> {
         let mut fact = ExactInt::one();
         for k in 2..=20 {
             fact = fact.mul(&ExactInt::from_i64(k));
@@ -582,7 +582,7 @@ mod tests {
 
         let (q, r) = ExactInt::from_i64(17)
             .div_rem(&ExactInt::from_i64(5))
-            .unwrap();
+            .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(q, ExactInt::from_i64(3));
         assert_eq!(r, ExactInt::from_i64(2));
 
@@ -591,5 +591,6 @@ mod tests {
         assert_eq!(ExactInt::from_exact_num(&f), Some(n));
         assert!(ExactInt::from_exact_num(&crate::NAN).is_none());
         assert!(ExactInt::from_i64(1).div_rem(&ExactInt::zero()).is_none());
+        Ok(())
     }
 }

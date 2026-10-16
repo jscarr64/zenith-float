@@ -395,10 +395,10 @@ mod tests {
     }
 
     #[test]
-    fn test_complex_airy_golds() {
+    fn test_complex_airy_golds() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
 
         let z0 = ExactComplex::zero(p);
         let a0 = z0.ai(p, rm, &mut cc);
@@ -438,5 +438,6 @@ mod tests {
         let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
         assert!(nan.ai(p, rm, &mut cc).is_nan());
         assert!(nan.bi(p, rm, &mut cc).is_nan());
+        Ok(())
     }
 }

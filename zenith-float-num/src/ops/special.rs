@@ -4312,39 +4312,46 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_erf_gamma_bessel() {
+    fn test_erf_gamma_bessel() -> Result<(), crate::Error> {
         let p = 256;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
 
-        let zero = ExactNumNumber::new(p).unwrap();
-        assert!(zero.erf(p, rm, &mut cc).unwrap().is_zero());
+        let zero = ExactNumNumber::new(p)?;
+        assert!(zero.erf(p, rm, &mut cc)?.is_zero());
 
-        let one = ExactNumNumber::from_word(1, p).unwrap();
-        let g1 = one.gamma(p, rm, &mut cc).unwrap();
-        let d = g1.sub(&one, p, RoundingMode::None).unwrap().abs().unwrap();
+        let one = ExactNumNumber::from_word(1, p)?;
+        let g1 = one.gamma(p, rm, &mut cc)?;
+        let d = g1.sub(&one, p, RoundingMode::None)?.abs()?;
         assert!(d.is_zero() || d.exponent() < -((p as i32) / 4));
 
-        let five = ExactNumNumber::from_word(5, p).unwrap();
-        let g5 = five.gamma(p, rm, &mut cc).unwrap();
-        let tf = ExactNumNumber::from_word(24, p).unwrap();
-        let d = g5.sub(&tf, p, RoundingMode::None).unwrap().abs().unwrap();
+        let five = ExactNumNumber::from_word(5, p)?;
+        let g5 = five.gamma(p, rm, &mut cc)?;
+        let tf = ExactNumNumber::from_word(24, p)?;
+        let d = g5.sub(&tf, p, RoundingMode::None)?.abs()?;
         assert!(d.is_zero() || d.exponent() < -((p as i32) / 4));
 
-        let j0 = zero.bessel_j(0, p, rm, &mut cc).unwrap();
-        let d = j0.sub(&one, p, RoundingMode::None).unwrap().abs().unwrap();
+        let j0 = zero.bessel_j(0, p, rm, &mut cc)?;
+        let d = j0.sub(&one, p, RoundingMode::None)?.abs()?;
         assert!(d.is_zero() || d.exponent() < -((p as i32) / 4));
 
-        let x = ExactNumNumber::from_word(1, p).unwrap();
-        let e = x.erf(p, rm, &mut cc).unwrap();
-        let en = x.neg().unwrap().erf(p, rm, &mut cc).unwrap();
-        assert!(e.cmp(&en.neg().unwrap()) == 0);
+        let x = ExactNumNumber::from_word(1, p)?;
+        let e = x.erf(p, rm, &mut cc)?;
+        let en = x.neg()?.erf(p, rm, &mut cc)?;
+        assert!(e.cmp(&en.neg()?) == 0);
+        Ok(())
     }
 
-    fn bits_agree(a: &ExactNumNumber, b: &ExactNumNumber, p: usize, min_bits: i32, label: &str) {
-        let d = a.sub(b, p, RoundingMode::None).unwrap().abs().unwrap();
+    fn bits_agree(
+        a: &ExactNumNumber,
+        b: &ExactNumNumber,
+        p: usize,
+        min_bits: i32,
+        label: &str,
+    ) -> Result<(), crate::Error> {
+        let d = a.sub(b, p, RoundingMode::None)?.abs()?;
         if d.is_zero() {
-            return;
+            return Ok(());
         }
         let rel = d.exponent() - a.exponent();
         assert!(
@@ -4353,132 +4360,112 @@ mod tests {
             a.exponent(),
             b.exponent()
         );
+        Ok(())
     }
 
     #[test]
-    fn test_ei_si_li_fresnel() {
+    fn test_ei_si_li_fresnel() -> Result<(), crate::Error> {
         let p = 256;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let one = ExactNumNumber::from_word(1, p).unwrap();
-        let zero = ExactNumNumber::new(p).unwrap();
+        let one = ExactNumNumber::from_word(1, p)?;
+        let zero = ExactNumNumber::new(p)?;
 
         assert!(one.ei(p, rm, &mut cc).is_ok());
         assert!(zero.ei(p, rm, &mut cc).is_err());
-        assert!(one.neg().unwrap().ei(p, rm, &mut cc).is_ok());
+        assert!(one.neg()?.ei(p, rm, &mut cc).is_ok());
 
-        let s0 = zero.si(p, rm, &mut cc).unwrap();
+        let s0 = zero.si(p, rm, &mut cc)?;
         assert!(s0.is_zero());
-        let s1 = one.si(p, rm, &mut cc).unwrap();
-        let sn = one.neg().unwrap().si(p, rm, &mut cc).unwrap();
-        assert!(s1.cmp(&sn.neg().unwrap()) == 0);
+        let s1 = one.si(p, rm, &mut cc)?;
+        let sn = one.neg()?.si(p, rm, &mut cc)?;
+        assert!(s1.cmp(&sn.neg()?) == 0);
 
-        let e = ExactNumNumber::from_word(1, p)
-            .unwrap()
-            .exp(p, rm, &mut cc)
-            .unwrap();
-        let li_e = e.li(p, rm, &mut cc).unwrap();
-        let ei1 = one.ei(p, rm, &mut cc).unwrap();
-        bits_agree(&li_e, &ei1, p, (p as i32) / 4, "li(e)=Ei(1)");
+        let e = ExactNumNumber::from_word(1, p)?.exp(p, rm, &mut cc)?;
+        let li_e = e.li(p, rm, &mut cc)?;
+        let ei1 = one.ei(p, rm, &mut cc)?;
+        bits_agree(&li_e, &ei1, p, (p as i32) / 4, "li(e)=Ei(1)")?;
 
         assert!(one.li(p, rm, &mut cc).is_err());
         assert!(zero.ci(p, rm, &mut cc).is_err());
         assert!(one.ci(p, rm, &mut cc).is_ok());
 
-        assert!(zero.fresnel_s(p, rm, &mut cc).unwrap().is_zero());
-        assert!(zero.fresnel_c(p, rm, &mut cc).unwrap().is_zero());
-        let fs = one.fresnel_s(p, rm, &mut cc).unwrap();
-        let fns = one.neg().unwrap().fresnel_s(p, rm, &mut cc).unwrap();
-        assert!(fs.cmp(&fns.neg().unwrap()) == 0);
+        assert!(zero.fresnel_s(p, rm, &mut cc)?.is_zero());
+        assert!(zero.fresnel_c(p, rm, &mut cc)?.is_zero());
+        let fs = one.fresnel_s(p, rm, &mut cc)?;
+        let fns = one.neg()?.fresnel_s(p, rm, &mut cc)?;
+        assert!(fs.cmp(&fns.neg()?) == 0);
 
-        let forty = ExactNumNumber::from_word(40, p).unwrap();
+        let forty = ExactNumNumber::from_word(40, p)?;
         bits_agree(
-            &forty.si(p, rm, &mut cc).unwrap(),
-            &forty.si(128, rm, &mut cc).unwrap(),
+            &forty.si(p, rm, &mut cc)?,
+            &forty.si(128, rm, &mut cc)?,
             p,
             80,
             "Si(40)",
-        );
+        )?;
         bits_agree(
-            &forty.ci(p, rm, &mut cc).unwrap(),
-            &forty.ci(128, rm, &mut cc).unwrap(),
+            &forty.ci(p, rm, &mut cc)?,
+            &forty.ci(128, rm, &mut cc)?,
             p,
             80,
             "Ci(40)",
-        );
+        )?;
 
-        let three_hundred = ExactNumNumber::from_word(300, p).unwrap();
-        let si300 = three_hundred.si(p, rm, &mut cc).unwrap();
-        let mut half_pi = cc.pi_num(p, RoundingMode::None).unwrap();
+        let three_hundred = ExactNumNumber::from_word(300, p)?;
+        let si300 = three_hundred.si(p, rm, &mut cc)?;
+        let mut half_pi = cc.pi_num(p, RoundingMode::None)?;
         half_pi.div_by_2(RoundingMode::None);
-        let gap = half_pi
-            .sub(&si300, p, RoundingMode::None)
-            .unwrap()
-            .abs()
-            .unwrap();
+        let gap = half_pi.sub(&si300, p, RoundingMode::None)?.abs()?;
         assert!(gap.exponent() < -6, "Si(300) within O(1/x) of π/2");
         bits_agree(
             &si300,
-            &three_hundred.si(128, rm, &mut cc).unwrap(),
+            &three_hundred.si(128, rm, &mut cc)?,
             p,
             80,
             "Si(300)",
-        );
+        )?;
 
-        let sixty_four = ExactNumNumber::from_word(64, p).unwrap();
+        let sixty_four = ExactNumNumber::from_word(64, p)?;
         bits_agree(
-            &sixty_four.si(p, rm, &mut cc).unwrap(),
-            &sixty_four.si(64, rm, &mut cc).unwrap(),
+            &sixty_four.si(p, rm, &mut cc)?,
+            &sixty_four.si(64, rm, &mut cc)?,
             p,
             40,
             "Si(64) series vs f,g",
-        );
+        )?;
         bits_agree(
-            &sixty_four.ci(p, rm, &mut cc).unwrap(),
-            &sixty_four.ci(64, rm, &mut cc).unwrap(),
+            &sixty_four.ci(p, rm, &mut cc)?,
+            &sixty_four.ci(64, rm, &mut cc)?,
             p,
             40,
             "Ci(64) series vs f,g",
-        );
-        let eight = ExactNumNumber::from_word(8, p).unwrap();
+        )?;
+        let eight = ExactNumNumber::from_word(8, p)?;
         bits_agree(
-            &eight.fresnel_s(p, rm, &mut cc).unwrap(),
-            &eight.fresnel_s(64, rm, &mut cc).unwrap(),
+            &eight.fresnel_s(p, rm, &mut cc)?,
+            &eight.fresnel_s(64, rm, &mut cc)?,
             p,
             40,
             "S(8) series vs f,g",
-        );
+        )?;
         bits_agree(
-            &three_hundred.ei(p, rm, &mut cc).unwrap(),
-            &three_hundred.ei(128, rm, &mut cc).unwrap(),
+            &three_hundred.ei(p, rm, &mut cc)?,
+            &three_hundred.ei(128, rm, &mut cc)?,
             p,
             80,
             "Ei(300)",
-        );
+        )?;
 
-        let twenty = ExactNumNumber::from_word(20, p).unwrap();
-        let fs20 = twenty.fresnel_s(p, rm, &mut cc).unwrap();
-        let fc20 = twenty.fresnel_c(p, rm, &mut cc).unwrap();
-        let half = one_half(p).unwrap();
-        let ds = half
-            .sub(&fs20, p, RoundingMode::None)
-            .unwrap()
-            .abs()
-            .unwrap();
-        let dc = half
-            .sub(&fc20, p, RoundingMode::None)
-            .unwrap()
-            .abs()
-            .unwrap();
+        let twenty = ExactNumNumber::from_word(20, p)?;
+        let fs20 = twenty.fresnel_s(p, rm, &mut cc)?;
+        let fc20 = twenty.fresnel_c(p, rm, &mut cc)?;
+        let half = one_half(p)?;
+        let ds = half.sub(&fs20, p, RoundingMode::None)?.abs()?;
+        let dc = half.sub(&fc20, p, RoundingMode::None)?.abs()?;
         assert!(ds.exponent() < -4, "S(20) near 1/2");
         assert!(dc.exponent() < -4, "C(20) near 1/2");
-        bits_agree(
-            &fs20,
-            &twenty.fresnel_s(128, rm, &mut cc).unwrap(),
-            p,
-            80,
-            "S(20)",
-        );
+        bits_agree(&fs20, &twenty.fresnel_s(128, rm, &mut cc)?, p, 80, "S(20)")?;
 
         let half_ext = crate::ExactNum::from_u8(1, p).div(&crate::ExactNum::from_u8(2, p), p, rm);
         let inf_si = crate::INF_POS.si(p, rm, &mut cc);
@@ -4495,295 +4482,238 @@ mod tests {
             .sub(&half_ext, p, rm)
             .abs();
         assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 4));
+        Ok(())
     }
 
     #[test]
-    fn test_digamma_gammainc() {
+    fn test_digamma_gammainc() -> Result<(), crate::Error> {
         let p = 256;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let one = ExactNumNumber::from_word(1, p).unwrap();
-        let two = ExactNumNumber::from_word(2, p).unwrap();
-        let zero = ExactNumNumber::new(p).unwrap();
-        let g = cc.euler_gamma_num(p, RoundingMode::None).unwrap();
-        let half = one_half(p).unwrap();
+        let one = ExactNumNumber::from_word(1, p)?;
+        let two = ExactNumNumber::from_word(2, p)?;
+        let zero = ExactNumNumber::new(p)?;
+        let g = cc.euler_gamma_num(p, RoundingMode::None)?;
+        let half = one_half(p)?;
 
         assert!(zero.digamma(p, rm, &mut cc).is_err());
-        let neg_half = half.neg().unwrap();
-        let psi_nh = neg_half.digamma(p, rm, &mut cc).unwrap();
+        let neg_half = half.neg()?;
+        let psi_nh = neg_half.digamma(p, rm, &mut cc)?;
         // ψ(1/2) = −γ − 2 ln 2; ψ(−1/2) = ψ(1/2) − π cot(−π/2) wait: 1−(−1/2)=3/2
         // ψ(−1/2) = ψ(3/2) − π cot(−π/2). cot(−π/2)=0, ψ(3/2)=ψ(1/2)+2
-        let three_half = ExactNumNumber::from_word(3, p)
-            .unwrap()
-            .div(&two, p, RoundingMode::None)
-            .unwrap();
-        let psi_32 = three_half.digamma(p, rm, &mut cc).unwrap();
-        bits_agree(&psi_nh, &psi_32, p, 40, "psi(-1/2)=psi(3/2)");
-        let psi1 = one.digamma(p, rm, &mut cc).unwrap();
-        let r1 = psi1.add(&g, p, RoundingMode::None).unwrap().abs().unwrap();
+        let three_half = ExactNumNumber::from_word(3, p)?.div(&two, p, RoundingMode::None)?;
+        let psi_32 = three_half.digamma(p, rm, &mut cc)?;
+        bits_agree(&psi_nh, &psi_32, p, 40, "psi(-1/2)=psi(3/2)")?;
+        let psi1 = one.digamma(p, rm, &mut cc)?;
+        let r1 = psi1.add(&g, p, RoundingMode::None)?.abs()?;
         assert!(r1.is_zero() || r1.exponent() < -80, "psi(1)+γ");
 
-        let psi2 = two.digamma(p, rm, &mut cc).unwrap();
+        let psi2 = two.digamma(p, rm, &mut cc)?;
         let r2 = psi2
-            .add(&g, p, RoundingMode::None)
-            .unwrap()
-            .sub(&one, p, RoundingMode::None)
-            .unwrap()
-            .abs()
-            .unwrap();
+            .add(&g, p, RoundingMode::None)?
+            .sub(&one, p, RoundingMode::None)?
+            .abs()?;
         assert!(r2.is_zero() || r2.exponent() < -80, "psi(2)+γ-1");
 
-        let psih = half.digamma(p, rm, &mut cc).unwrap();
-        let ln2 = cc.ln_2_num(p, RoundingMode::None).unwrap();
-        let two_ln2 = two.mul(&ln2, p, RoundingMode::None).unwrap();
-        let want = g
-            .neg()
-            .unwrap()
-            .sub(&two_ln2, p, RoundingMode::None)
-            .unwrap();
-        bits_agree(&psih, &want, p, 80, "psi(1/2)");
+        let psih = half.digamma(p, rm, &mut cc)?;
+        let ln2 = cc.ln_2_num(p, RoundingMode::None)?;
+        let two_ln2 = two.mul(&ln2, p, RoundingMode::None)?;
+        let want = g.neg()?.sub(&two_ln2, p, RoundingMode::None)?;
+        bits_agree(&psih, &want, p, 80, "psi(1/2)")?;
 
-        let five = ExactNumNumber::from_word(5, p).unwrap();
-        assert!(five.gammainc(&zero, p, rm, &mut cc).unwrap().is_zero());
-        let g11 = one.gammainc(&one, p, rm, &mut cc).unwrap();
-        let en = one.neg().unwrap().exp(p, rm, &mut cc).unwrap();
-        let want = one.sub(&en, p, RoundingMode::None).unwrap();
-        bits_agree(&g11, &want, p, 80, "γ(1,1)");
-        let gu = one.gammainc_upper(&one, p, rm, &mut cc).unwrap();
-        bits_agree(&gu, &en, p, 80, "Γ(1,1)=e^{-1}");
-        assert!(one.gammainc(&one.neg().unwrap(), p, rm, &mut cc).is_err());
+        let five = ExactNumNumber::from_word(5, p)?;
+        assert!(five.gammainc(&zero, p, rm, &mut cc)?.is_zero());
+        let g11 = one.gammainc(&one, p, rm, &mut cc)?;
+        let en = one.neg()?.exp(p, rm, &mut cc)?;
+        let want = one.sub(&en, p, RoundingMode::None)?;
+        bits_agree(&g11, &want, p, 80, "γ(1,1)")?;
+        let gu = one.gammainc_upper(&one, p, rm, &mut cc)?;
+        bits_agree(&gu, &en, p, 80, "Γ(1,1)=e^{-1}")?;
+        assert!(one.gammainc(&one.neg()?, p, rm, &mut cc).is_err());
+        Ok(())
     }
 
     #[test]
-    fn test_bessel_family() {
+    fn test_bessel_family() -> Result<(), crate::Error> {
         let p = 256;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let one = ExactNumNumber::from_word(1, p).unwrap();
-        let zero = ExactNumNumber::new(p).unwrap();
-        let half = one_half(p).unwrap();
-        let two = ExactNumNumber::from_word(2, p).unwrap();
+        let one = ExactNumNumber::from_word(1, p)?;
+        let zero = ExactNumNumber::new(p)?;
+        let half = one_half(p)?;
+        let two = ExactNumNumber::from_word(2, p)?;
 
-        let j0 = zero.bessel_j_nu(&zero, p, rm, &mut cc).unwrap();
-        bits_agree(&j0, &one, p, 80, "J_0(0)");
+        let j0 = zero.bessel_j_nu(&zero, p, rm, &mut cc)?;
+        bits_agree(&j0, &one, p, 80, "J_0(0)")?;
 
-        let i0 = zero.bessel_i(&zero, p, rm, &mut cc).unwrap();
-        bits_agree(&i0, &one, p, 80, "I_0(0)");
+        let i0 = zero.bessel_i(&zero, p, rm, &mut cc)?;
+        bits_agree(&i0, &one, p, 80, "I_0(0)")?;
 
         assert!(zero.bessel_y(&zero, p, rm, &mut cc).is_err());
         assert!(zero.bessel_k(&zero, p, rm, &mut cc).is_err());
 
-        let k_half = one.bessel_k(&half, p, rm, &mut cc).unwrap();
-        let pi = cc.pi_num(p, RoundingMode::None).unwrap();
-        let mut nx = ExactNumNumber::from_word(1, p).unwrap();
+        let k_half = one.bessel_k(&half, p, rm, &mut cc)?;
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let mut nx = ExactNumNumber::from_word(1, p)?;
         nx.set_sign(Sign::Neg);
         let want = pi
-            .div(&two, p, RoundingMode::None)
-            .unwrap()
-            .sqrt(p, RoundingMode::None)
-            .unwrap()
-            .mul(&nx.exp(p, rm, &mut cc).unwrap(), p, RoundingMode::None)
-            .unwrap();
-        bits_agree(&k_half, &want, p, 80, "K_{1/2}(1)");
+            .div(&two, p, RoundingMode::None)?
+            .sqrt(p, RoundingMode::None)?
+            .mul(&nx.exp(p, rm, &mut cc)?, p, RoundingMode::None)?;
+        bits_agree(&k_half, &want, p, 80, "K_{1/2}(1)")?;
 
-        let k_neg = one.bessel_k(&half.neg().unwrap(), p, rm, &mut cc).unwrap();
-        bits_agree(&k_half, &k_neg, p, 80, "K_{-1/2}=K_{1/2}");
+        let k_neg = one.bessel_k(&half.neg()?, p, rm, &mut cc)?;
+        bits_agree(&k_half, &k_neg, p, 80, "K_{-1/2}=K_{1/2}")?;
 
-        let k0 = one.bessel_k(&zero, p, rm, &mut cc).unwrap();
-        let k1 = one.bessel_k(&one, p, rm, &mut cc).unwrap();
-        let i0 = one.bessel_i(&zero, p, rm, &mut cc).unwrap();
-        let i1 = one.bessel_i(&one, p, rm, &mut cc).unwrap();
-        let w = i0
-            .mul(&k1, p, RoundingMode::None)
-            .unwrap()
-            .add(
-                &i1.mul(&k0, p, RoundingMode::None).unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        bits_agree(&w, &one, p, 40, "Wronskian at 1");
+        let k0 = one.bessel_k(&zero, p, rm, &mut cc)?;
+        let k1 = one.bessel_k(&one, p, rm, &mut cc)?;
+        let i0 = one.bessel_i(&zero, p, rm, &mut cc)?;
+        let i1 = one.bessel_i(&one, p, rm, &mut cc)?;
+        let w = i0.mul(&k1, p, RoundingMode::None)?.add(
+            &i1.mul(&k0, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        bits_agree(&w, &one, p, 40, "Wronskian at 1")?;
 
-        let j2000 = zero.bessel_j(2000, p, rm, &mut cc).unwrap();
+        let j2000 = zero.bessel_j(2000, p, rm, &mut cc)?;
         assert!(j2000.is_zero(), "J_2000(0)=0");
-        let k50 = one
-            .bessel_k(&ExactNumNumber::from_word(50, p).unwrap(), p, rm, &mut cc)
-            .unwrap();
-        let k49 = one
-            .bessel_k(&ExactNumNumber::from_word(49, p).unwrap(), p, rm, &mut cc)
-            .unwrap();
-        let k51 = one
-            .bessel_k(&ExactNumNumber::from_word(51, p).unwrap(), p, rm, &mut cc)
-            .unwrap();
+        let k50 = one.bessel_k(&ExactNumNumber::from_word(50, p)?, p, rm, &mut cc)?;
+        let k49 = one.bessel_k(&ExactNumNumber::from_word(49, p)?, p, rm, &mut cc)?;
+        let k51 = one.bessel_k(&ExactNumNumber::from_word(51, p)?, p, rm, &mut cc)?;
         // K_{ν+1} = (2ν/x) K_ν + K_{ν−1}
-        let rec = ExactNumNumber::from_word(100, p)
-            .unwrap()
-            .mul(&k50, p, RoundingMode::None)
-            .unwrap()
-            .add(&k49, p, RoundingMode::None)
-            .unwrap();
-        bits_agree(&k51, &rec, p, 20, "K recurrence at 50");
+        let rec = ExactNumNumber::from_word(100, p)?
+            .mul(&k50, p, RoundingMode::None)?
+            .add(&k49, p, RoundingMode::None)?;
+        bits_agree(&k51, &rec, p, 20, "K recurrence at 50")?;
 
         // Large-|x| Hankel: J_0(20000) class used to be InvalidArgument.
-        let x20k = ExactNumNumber::from_word(20000, p).unwrap();
-        let j0_big = x20k.bessel_j(0, p, rm, &mut cc).unwrap();
-        let y0_big = x20k.bessel_y(&zero, p, rm, &mut cc).unwrap();
-        let j1_big = x20k.bessel_j(1, p, rm, &mut cc).unwrap();
-        let y1_big = x20k.bessel_y(&one, p, rm, &mut cc).unwrap();
-        let wr = j0_big
-            .mul(&y1_big, p, RoundingMode::None)
-            .unwrap()
-            .sub(
-                &j1_big.mul(&y0_big, p, RoundingMode::None).unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
+        let x20k = ExactNumNumber::from_word(20000, p)?;
+        let j0_big = x20k.bessel_j(0, p, rm, &mut cc)?;
+        let y0_big = x20k.bessel_y(&zero, p, rm, &mut cc)?;
+        let j1_big = x20k.bessel_j(1, p, rm, &mut cc)?;
+        let y1_big = x20k.bessel_y(&one, p, rm, &mut cc)?;
+        let wr = j0_big.mul(&y1_big, p, RoundingMode::None)?.sub(
+            &j1_big.mul(&y0_big, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
         let want_w = two
             .div(
-                &pi.mul(&x20k, p, RoundingMode::None).unwrap(),
+                &pi.mul(&x20k, p, RoundingMode::None)?,
                 p,
                 RoundingMode::None,
-            )
-            .unwrap()
-            .neg()
-            .unwrap();
-        bits_agree(&wr, &want_w, p, 40, "J/Y Wronskian at 20000");
+            )?
+            .neg()?;
+        bits_agree(&wr, &want_w, p, 40, "J/Y Wronskian at 20000")?;
+        Ok(())
     }
 
     #[test]
-    fn test_elliptic_integrals() {
+    fn test_elliptic_integrals() -> Result<(), crate::Error> {
         let p = 256;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let one = ExactNumNumber::from_word(1, p).unwrap();
-        let zero = ExactNumNumber::new(p).unwrap();
-        let two = ExactNumNumber::from_word(2, p).unwrap();
-        let three = ExactNumNumber::from_word(3, p).unwrap();
-        let four = ExactNumNumber::from_word(4, p).unwrap();
-        let half = one_half(p).unwrap();
-        let pi = cc.pi_num(p, RoundingMode::None).unwrap();
-        let mut half_pi = cc.pi_num(p, RoundingMode::None).unwrap();
+        let one = ExactNumNumber::from_word(1, p)?;
+        let zero = ExactNumNumber::new(p)?;
+        let two = ExactNumNumber::from_word(2, p)?;
+        let three = ExactNumNumber::from_word(3, p)?;
+        let four = ExactNumNumber::from_word(4, p)?;
+        let half = one_half(p)?;
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let mut half_pi = cc.pi_num(p, RoundingMode::None)?;
         half_pi.div_by_2(RoundingMode::None);
 
-        let k0 = zero.elliptic_k(p, rm, &mut cc).unwrap();
-        bits_agree(&k0, &half_pi, p, 80, "K(0)");
-        let e0 = zero.elliptic_e_complete(p, rm, &mut cc).unwrap();
-        bits_agree(&e0, &half_pi, p, 80, "E(0)");
-        let e1 = one.elliptic_e_complete(p, rm, &mut cc).unwrap();
-        bits_agree(&e1, &one, p, 80, "E(1)");
+        let k0 = zero.elliptic_k(p, rm, &mut cc)?;
+        bits_agree(&k0, &half_pi, p, 80, "K(0)")?;
+        let e0 = zero.elliptic_e_complete(p, rm, &mut cc)?;
+        bits_agree(&e0, &half_pi, p, 80, "E(0)")?;
+        let e1 = one.elliptic_e_complete(p, rm, &mut cc)?;
+        bits_agree(&e1, &one, p, 80, "E(1)")?;
         assert!(matches!(
             one.elliptic_k(p, rm, &mut cc),
             Err(Error::ExponentOverflow(Sign::Pos))
         ));
 
-        let k_half = half.elliptic_k(p, rm, &mut cc).unwrap();
-        let q = ExactNumNumber::from_word(1, p)
-            .unwrap()
-            .div(&four, p, RoundingMode::None)
-            .unwrap();
-        let k4 = four.elliptic_k(p, rm, &mut cc).unwrap();
-        let kq = q.elliptic_k(p, rm, &mut cc).unwrap();
-        let want4 = kq.div(&two, p, RoundingMode::None).unwrap();
-        bits_agree(&k4, &want4, p, 40, "K(4)=K(1/4)/2");
-        let g14 = q.gamma(p, rm, &mut cc).unwrap();
-        let want_k = g14
-            .mul(&g14, p, RoundingMode::None)
-            .unwrap()
-            .div(
-                &four
-                    .mul(
-                        &pi.sqrt(p, RoundingMode::None).unwrap(),
-                        p,
-                        RoundingMode::None,
-                    )
-                    .unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        bits_agree(&k_half, &want_k, p, 80, "K(1/2)");
+        let k_half = half.elliptic_k(p, rm, &mut cc)?;
+        let q = ExactNumNumber::from_word(1, p)?.div(&four, p, RoundingMode::None)?;
+        let k4 = four.elliptic_k(p, rm, &mut cc)?;
+        let kq = q.elliptic_k(p, rm, &mut cc)?;
+        let want4 = kq.div(&two, p, RoundingMode::None)?;
+        bits_agree(&k4, &want4, p, 40, "K(4)=K(1/4)/2")?;
+        let g14 = q.gamma(p, rm, &mut cc)?;
+        let want_k = g14.mul(&g14, p, RoundingMode::None)?.div(
+            &four.mul(&pi.sqrt(p, RoundingMode::None)?, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        bits_agree(&k_half, &want_k, p, 80, "K(1/2)")?;
 
-        let e_half = half.elliptic_e_complete(p, rm, &mut cc).unwrap();
+        let e_half = half.elliptic_e_complete(p, rm, &mut cc)?;
         let want_e = pi
             .div(
-                &four.mul(&k_half, p, RoundingMode::None).unwrap(),
+                &four.mul(&k_half, p, RoundingMode::None)?,
                 p,
                 RoundingMode::None,
-            )
-            .unwrap()
+            )?
             .add(
-                &k_half.div(&two, p, RoundingMode::None).unwrap(),
+                &k_half.div(&two, p, RoundingMode::None)?,
                 p,
                 RoundingMode::None,
-            )
-            .unwrap();
-        bits_agree(&e_half, &want_e, p, 80, "E(1/2)");
+            )?;
+        bits_agree(&e_half, &want_e, p, 80, "E(1/2)")?;
 
-        let x = one_half(p).unwrap();
-        let f0 = x.elliptic_f(&zero, p, rm, &mut cc).unwrap();
-        bits_agree(&f0, &x.asin(p, rm, &mut cc).unwrap(), p, 80, "F(x|0)");
-        let f1 = x.elliptic_f(&one, p, rm, &mut cc).unwrap();
-        bits_agree(&f1, &x.atanh(p, rm, &mut cc).unwrap(), p, 80, "F(x|1)");
-        let ei1 = x.elliptic_e(&one, p, rm, &mut cc).unwrap();
-        bits_agree(&ei1, &x, p, 80, "E(x|1)");
+        let x = one_half(p)?;
+        let f0 = x.elliptic_f(&zero, p, rm, &mut cc)?;
+        bits_agree(&f0, &x.asin(p, rm, &mut cc)?, p, 80, "F(x|0)")?;
+        let f1 = x.elliptic_f(&one, p, rm, &mut cc)?;
+        bits_agree(&f1, &x.atanh(p, rm, &mut cc)?, p, 80, "F(x|1)")?;
+        let ei1 = x.elliptic_e(&one, p, rm, &mut cc)?;
+        bits_agree(&ei1, &x, p, 80, "E(x|1)")?;
         assert!(one.elliptic_f(&one, p, rm, &mut cc).is_err());
 
-        let m13 = one.div(&three, p, RoundingMode::None).unwrap();
-        let k13 = m13.elliptic_k(p, rm, &mut cc).unwrap();
-        let f1 = one.elliptic_f(&m13, p, rm, &mut cc).unwrap();
-        bits_agree(&k13, &f1, p, 80, "K=F(1)");
-        let e13 = m13.elliptic_e_complete(p, rm, &mut cc).unwrap();
-        let ei = one.elliptic_e(&m13, p, rm, &mut cc).unwrap();
-        bits_agree(&e13, &ei, p, 80, "E=E(1)");
+        let m13 = one.div(&three, p, RoundingMode::None)?;
+        let k13 = m13.elliptic_k(p, rm, &mut cc)?;
+        let f1 = one.elliptic_f(&m13, p, rm, &mut cc)?;
+        bits_agree(&k13, &f1, p, 80, "K=F(1)")?;
+        let e13 = m13.elliptic_e_complete(p, rm, &mut cc)?;
+        let ei = one.elliptic_e(&m13, p, rm, &mut cc)?;
+        bits_agree(&e13, &ei, p, 80, "E=E(1)")?;
 
-        let pim = zero.elliptic_pi_complete(&half, p, rm, &mut cc).unwrap();
-        bits_agree(&pim, &k_half, p, 80, "Π(0,m)=K");
-        let pi0 = zero.elliptic_pi(&x, &half, p, rm, &mut cc).unwrap();
-        let fx = x.elliptic_f(&half, p, rm, &mut cc).unwrap();
-        bits_agree(&pi0, &fx, p, 80, "Π(0;x|m)=F");
+        let pim = zero.elliptic_pi_complete(&half, p, rm, &mut cc)?;
+        bits_agree(&pim, &k_half, p, 80, "Π(0,m)=K")?;
+        let pi0 = zero.elliptic_pi(&x, &half, p, rm, &mut cc)?;
+        let fx = x.elliptic_f(&half, p, rm, &mut cc)?;
+        bits_agree(&pi0, &fx, p, 80, "Π(0;x|m)=F")?;
 
-        let n = one.div(&four, p, RoundingMode::None).unwrap();
-        let got = n.elliptic_pi(&x, &zero, p, rm, &mut cc).unwrap();
+        let n = one.div(&four, p, RoundingMode::None)?;
+        let got = n.elliptic_pi(&x, &zero, p, rm, &mut cc)?;
         let root = one
-            .sub(&n, p, RoundingMode::None)
-            .unwrap()
-            .sqrt(p, RoundingMode::None)
-            .unwrap();
+            .sub(&n, p, RoundingMode::None)?
+            .sqrt(p, RoundingMode::None)?;
         let want = root
-            .mul(&x, p, RoundingMode::None)
-            .unwrap()
+            .mul(&x, p, RoundingMode::None)?
             .div(
-                &one.sub(
-                    &x.mul(&x, p, RoundingMode::None).unwrap(),
-                    p,
-                    RoundingMode::None,
-                )
-                .unwrap()
-                .sqrt(p, RoundingMode::None)
-                .unwrap(),
+                &one.sub(&x.mul(&x, p, RoundingMode::None)?, p, RoundingMode::None)?
+                    .sqrt(p, RoundingMode::None)?,
                 p,
                 RoundingMode::None,
-            )
-            .unwrap()
-            .atan(p, rm, &mut cc)
-            .unwrap()
-            .div(&root, p, RoundingMode::None)
-            .unwrap();
-        bits_agree(&got, &want, p, 80, "Π(n;x|0)");
+            )?
+            .atan(p, rm, &mut cc)?
+            .div(&root, p, RoundingMode::None)?;
+        bits_agree(&got, &want, p, 80, "Π(n;x|0)")?;
 
-        let pmm = m13.elliptic_pi_complete(&m13, p, rm, &mut cc).unwrap();
-        let want = e13
-            .div(
-                &one.sub(&m13, p, RoundingMode::None).unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        bits_agree(&pmm, &want, p, 40, "Π(m,m)");
+        let pmm = m13.elliptic_pi_complete(&m13, p, rm, &mut cc)?;
+        let want = e13.div(
+            &one.sub(&m13, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        bits_agree(&pmm, &want, p, 40, "Π(m,m)")?;
 
         assert!(one.elliptic_pi_complete(&half, p, rm, &mut cc).is_err());
         assert!(two.elliptic_f(&zero, p, rm, &mut cc).is_err());
+        Ok(())
     }
 
     // References: /workspace/zf/refs/gen_2f1_refs.py (mpmath 1.4.1, mp.dps = 50, each
@@ -4791,13 +4721,12 @@ mod tests {
     // non-integer and integer c-a-b (log cases, both signs), near-integer c-a-b, z near 1,
     // |z| <= 1/2, negative z down to -1e6, terminating series, and z = 1.
     #[test]
-    fn test_hypergeom_2f1_mpmath() {
+    fn test_hypergeom_2f1_mpmath() -> Result<(), crate::Error> {
         let p = 128;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let dec = |s: &str, cc: &mut Consts| {
-            ExactNumNumber::parse(s, crate::defs::Radix::Dec, p, rm, cc).unwrap()
-        };
+        let dec =
+            |s: &str, cc: &mut Consts| ExactNumNumber::parse(s, crate::defs::Radix::Dec, p, rm, cc);
         let cases = [
             (
                 "1",
@@ -5076,16 +5005,19 @@ mod tests {
             ("0.5", "-0.25", "0.5", "1", "0"),
         ];
         for (a, b, c, z, want) in cases {
-            let [av, bv, cv, zv] = [a, b, c, z].map(|s| dec(s, &mut cc));
+            let av = dec(a, &mut cc)?;
+            let bv = dec(b, &mut cc)?;
+            let cv = dec(c, &mut cc)?;
+            let zv = dec(z, &mut cc)?;
             let label = alloc::format!("2F1({a}, {b}; {c}; {z})");
             let got = av
                 .hypergeom_2f1(&bv, &cv, &zv, p, rm, &mut cc)
                 .unwrap_or_else(|e| panic!("{label}: {e:?}"));
-            let want = dec(want, &mut cc);
+            let want = dec(want, &mut cc)?;
             if want.is_zero() {
                 assert!(got.is_zero(), "{label}: expected exact 0");
             } else {
-                bits_agree(&got, &want, p, 120, &label);
+                bits_agree(&got, &want, p, 120, &label)?;
             }
         }
         let invalid = [
@@ -5095,25 +5027,28 @@ mod tests {
             ("0.5", "0.5", "-2", "0.3", "pole at c = -2"),
         ];
         for (a, b, c, z, why) in invalid {
-            let [av, bv, cv, zv] = [a, b, c, z].map(|s| dec(s, &mut cc));
+            let av = dec(a, &mut cc)?;
+            let bv = dec(b, &mut cc)?;
+            let cv = dec(c, &mut cc)?;
+            let zv = dec(z, &mut cc)?;
             assert!(
                 av.hypergeom_2f1(&bv, &cv, &zv, p, rm, &mut cc).is_err(),
                 "{why}"
             );
         }
+        Ok(())
     }
 
     // References: /workspace/zf/refs/gen_2f1_refs.py (mpmath betainc(a, b, 0, x,
     // regularized=True), mp.dps = 50, inputs rounded to 128 bits). I_0.7(30.5, 2.25) used to
     // come back as 2.68e240 through the old 2F1 Pfaff branch.
     #[test]
-    fn test_betainc_mpmath() {
+    fn test_betainc_mpmath() -> Result<(), crate::Error> {
         let p = 128;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let dec = |s: &str, cc: &mut Consts| {
-            ExactNumNumber::parse(s, crate::defs::Radix::Dec, p, rm, cc).unwrap()
-        };
+        let dec =
+            |s: &str, cc: &mut Consts| ExactNumNumber::parse(s, crate::defs::Radix::Dec, p, rm, cc);
         let cases = [
             (
                 "30.5",
@@ -5214,26 +5149,28 @@ mod tests {
             ("0.001", "0.001", "0.5", "0.5"),
         ];
         for (a, b, x, want) in cases {
-            let [av, bv, xv] = [a, b, x].map(|s| dec(s, &mut cc));
+            let av = dec(a, &mut cc)?;
+            let bv = dec(b, &mut cc)?;
+            let xv = dec(x, &mut cc)?;
             let label = alloc::format!("I_{x}({a}, {b})");
             let got = av
                 .betainc(&bv, &xv, p, rm, &mut cc)
                 .unwrap_or_else(|e| panic!("{label}: {e:?}"));
-            bits_agree(&got, &dec(want, &mut cc), p, 120, &label);
+            bits_agree(&got, &dec(want, &mut cc)?, p, 120, &label)?;
         }
+        Ok(())
     }
 
     // References: /workspace/zf/refs/gen_gamma_refs.py (mpmath, mp.dps = 400). Before 1.0.5
     // the Stirling series started at z >= 32 (gamma) / z >= 128 (digamma) with 64 terms, which
     // capped gamma near 274 correct bits and digamma near 530 whatever the precision asked.
     #[test]
-    fn test_gamma_digamma_high_precision() {
+    fn test_gamma_digamma_high_precision() -> Result<(), crate::Error> {
         let p = 1024;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let dec = |s: &str, cc: &mut Consts| {
-            ExactNumNumber::parse(s, crate::defs::Radix::Dec, p, rm, cc).unwrap()
-        };
+        let dec =
+            |s: &str, cc: &mut Consts| ExactNumNumber::parse(s, crate::defs::Radix::Dec, p, rm, cc);
         let cases = [
             ("0.3", "2.99156898768759062831251651590491779111280602492171511274411965095638876787632021799025995255765056542142562682614202237570044313685592565039738332500699651731492217445693233669501544707963377073843625467587119914446338609689724358296069475868570923910448073904676197524186031618193782973959519480201743913441846269484020926939138", "-3.50252422220013298896449450737198159953790828840450209566491975126416371903591035905203493019247296315255849330906099086131413050655055954527794120627288788834403942521473264272871185619845792144602545923064374445895433893233464772352890648958999888003674386339797798702859422961831709565727973413316725322338864624067819849202019"),
             ("3.7", "4.1706517837966031653936029986179837279404455809898292945722466324606422685813692411505269066909944153872906767134758267882411321237339947614951553474226244444095217987337371855360796708629477024837169605083452577126872521433265350148023719876668471470669216309124355964013589712118318138521849706134504731375899736002728295617768", "1.16715353936151138587386396614504688117374878787689916455965074078023789550185395821468166859491773967994604749319569991382969422962925178688049288952435893289539968114159009249272573586281515296928168200307293681328111704651702375912858415352758641207254910912020702174151466809993841444669828620914213481044476105894875417630202"),
@@ -5241,160 +5178,129 @@ mod tests {
             ("-2.5", "-0.945308720482941881225689324448610764158693043265273135047364154588219351781883830066640350260557154888654305932950704355325948195053025388013383311788153103179753439281656065519960092282107107322097117535609580160093140808187455850942240101432124809912238386397286741500758280280483315416223644000483412484060657854653415164622928", "1.10315664064524318722569033366791109947350706200623255961953941279501169594961256451799294938208254206803225737571821271833512218066386271637715116575159120655171119126698645854837864662628806147732505042720246680802275486308815174019100773441769687963010702067494673598401202657231149432143243715766674712012979544692612931066196"),
         ];
         for (x, g, psi) in cases {
-            let xv = dec(x, &mut cc);
-            let got_g = xv.gamma(p, rm, &mut cc).unwrap();
+            let xv = dec(x, &mut cc)?;
+            let got_g = xv.gamma(p, rm, &mut cc)?;
             bits_agree(
                 &got_g,
-                &dec(g, &mut cc),
+                &dec(g, &mut cc)?,
                 p,
                 1016,
                 &alloc::format!("gamma({x})"),
-            );
-            let got_psi = xv.digamma(p, rm, &mut cc).unwrap();
+            )?;
+            let got_psi = xv.digamma(p, rm, &mut cc)?;
             bits_agree(
                 &got_psi,
-                &dec(psi, &mut cc),
+                &dec(psi, &mut cc)?,
                 p,
                 1016,
                 &alloc::format!("digamma({x})"),
-            );
+            )?;
         }
+        Ok(())
     }
 
     #[test]
-    fn test_legendre_hypergeom_betainc() {
+    fn test_legendre_hypergeom_betainc() -> Result<(), crate::Error> {
         let p = 256;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let one = ExactNumNumber::from_word(1, p).unwrap();
-        let zero = ExactNumNumber::new(p).unwrap();
-        let two = ExactNumNumber::from_word(2, p).unwrap();
-        let three = ExactNumNumber::from_word(3, p).unwrap();
-        let half = one_half(p).unwrap();
+        let one = ExactNumNumber::from_word(1, p)?;
+        let zero = ExactNumNumber::new(p)?;
+        let two = ExactNumNumber::from_word(2, p)?;
+        let three = ExactNumNumber::from_word(3, p)?;
+        let half = one_half(p)?;
 
         for n in 0u32..=8 {
-            let p1 = one.legendre_p(n, p, rm).unwrap();
-            bits_agree(&p1, &one, p, 80, "P_n(1)");
-            let pm = one.neg().unwrap().legendre_p(n, p, rm).unwrap();
-            let want = if n % 2 == 0 {
-                ExactNumNumber::from_word(1, p).unwrap()
-            } else {
-                one.neg().unwrap()
-            };
-            bits_agree(&pm, &want, p, 80, "P_n(-1)");
+            let p1 = one.legendre_p(n, p, rm)?;
+            bits_agree(&p1, &one, p, 80, "P_n(1)")?;
+            let pm = one.neg()?.legendre_p(n, p, rm)?;
+            let want = if n % 2 == 0 { ExactNumNumber::from_word(1, p)? } else { one.neg()? };
+            bits_agree(&pm, &want, p, 80, "P_n(-1)")?;
         }
-        let p2 = zero.legendre_p(2, p, rm).unwrap();
-        bits_agree(&p2, &half.neg().unwrap(), p, 80, "P_2(0)");
-        let p100 = one.legendre_p(100, p, rm).unwrap();
-        bits_agree(&p100, &one, p, 80, "P_100(1)");
-        let p128 = one.neg().unwrap().legendre_p(128, p, rm).unwrap();
-        bits_agree(&p128, &one, p, 80, "P_128(-1)");
-        let xh = one_half(p).unwrap();
-        let pn = xh.legendre_p(128, p, rm).unwrap();
-        let pn1 = xh.legendre_p(127, p, rm).unwrap();
-        let pn2 = xh.legendre_p(126, p, rm).unwrap();
+        let p2 = zero.legendre_p(2, p, rm)?;
+        bits_agree(&p2, &half.neg()?, p, 80, "P_2(0)")?;
+        let p100 = one.legendre_p(100, p, rm)?;
+        bits_agree(&p100, &one, p, 80, "P_100(1)")?;
+        let p128 = one.neg()?.legendre_p(128, p, rm)?;
+        bits_agree(&p128, &one, p, 80, "P_128(-1)")?;
+        let xh = one_half(p)?;
+        let pn = xh.legendre_p(128, p, rm)?;
+        let pn1 = xh.legendre_p(127, p, rm)?;
+        let pn2 = xh.legendre_p(126, p, rm)?;
         // (n+1) P_{n+1} = (2n+1) x P_n − n P_{n−1}  at n=127
-        let n = ExactNumNumber::from_word(127, p).unwrap();
-        let np1 = ExactNumNumber::from_word(128, p).unwrap();
-        let two_n1 = ExactNumNumber::from_word(255, p).unwrap();
-        let lhs = np1.mul(&pn, p, RoundingMode::None).unwrap();
+        let n = ExactNumNumber::from_word(127, p)?;
+        let np1 = ExactNumNumber::from_word(128, p)?;
+        let two_n1 = ExactNumNumber::from_word(255, p)?;
+        let lhs = np1.mul(&pn, p, RoundingMode::None)?;
         let rhs = two_n1
-            .mul(&xh, p, RoundingMode::None)
-            .unwrap()
-            .mul(&pn1, p, RoundingMode::None)
-            .unwrap()
-            .sub(
-                &n.mul(&pn2, p, RoundingMode::None).unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        bits_agree(&lhs, &rhs, p, 20, "Bonnet n=127");
+            .mul(&xh, p, RoundingMode::None)?
+            .mul(&pn1, p, RoundingMode::None)?
+            .sub(&n.mul(&pn2, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        bits_agree(&lhs, &rhs, p, 20, "Bonnet n=127")?;
 
-        let p11 = half.assoc_legendre_p(1, 1, p, rm).unwrap();
+        let p11 = half.assoc_legendre_p(1, 1, p, rm)?;
         let want = one
             .sub(
-                &half.mul(&half, p, RoundingMode::None).unwrap(),
+                &half.mul(&half, p, RoundingMode::None)?,
                 p,
                 RoundingMode::None,
-            )
-            .unwrap()
-            .sqrt(p, RoundingMode::None)
-            .unwrap()
-            .neg()
-            .unwrap();
-        bits_agree(&p11, &want, p, 80, "P_1^1(1/2)");
+            )?
+            .sqrt(p, RoundingMode::None)?
+            .neg()?;
+        bits_agree(&p11, &want, p, 80, "P_1^1(1/2)")?;
 
-        let f0 = half
-            .hypergeom_2f1(&half, &one, &zero, p, rm, &mut cc)
-            .unwrap();
-        bits_agree(&f0, &one, p, 80, "2F1(...,0)");
+        let f0 = half.hypergeom_2f1(&half, &one, &zero, p, rm, &mut cc)?;
+        bits_agree(&f0, &one, p, 80, "2F1(...,0)")?;
 
-        let nm2 = two.neg().unwrap();
-        let fpoly = nm2
-            .hypergeom_2f1(&one, &one, &half, p, rm, &mut cc)
-            .unwrap();
+        let nm2 = two.neg()?;
+        let fpoly = nm2.hypergeom_2f1(&one, &one, &half, p, rm, &mut cc)?;
         bits_agree(
             &fpoly,
-            &one.div(&four_word(p), p, RoundingMode::None).unwrap(),
+            &one.div(&four_word(p), p, RoundingMode::None)?,
             p,
             80,
             "2F1(-2,1;1;1/2)",
-        );
+        )?;
 
-        let fln = one
-            .hypergeom_2f1(&one, &two, &half, p, rm, &mut cc)
-            .unwrap();
-        let ln2 = cc.ln_2_num(p, RoundingMode::None).unwrap();
+        let fln = one.hypergeom_2f1(&one, &two, &half, p, rm, &mut cc)?;
+        let ln2 = cc.ln_2_num(p, RoundingMode::None)?;
         bits_agree(
             &fln,
-            &two.mul(&ln2, p, RoundingMode::None).unwrap(),
+            &two.mul(&ln2, p, RoundingMode::None)?,
             p,
             80,
             "2F1(1,1;2;1/2)",
-        );
+        )?;
 
-        let fg = nm2
-            .hypergeom_2f1(&one, &three, &one, p, rm, &mut cc)
-            .unwrap();
-        bits_agree(&fg, &half, p, 80, "2F1(-2,1;3;1)");
+        let fg = nm2.hypergeom_2f1(&one, &three, &one, p, rm, &mut cc)?;
+        bits_agree(&fg, &half, p, 80, "2F1(-2,1;3;1)")?;
 
-        let fm1 = one
-            .hypergeom_2f1(&one, &two, &one.neg().unwrap(), p, rm, &mut cc)
-            .unwrap();
-        bits_agree(&fm1, &ln2, p, 40, "2F1(1,1;2;-1)=ln2");
-        let fterm2 = nm2
-            .hypergeom_2f1(&one, &three, &two, p, rm, &mut cc)
-            .unwrap();
-        let third = one.div(&three, p, RoundingMode::None).unwrap();
-        bits_agree(&fterm2, &third, p, 80, "2F1(-2,1;3;2)=1/3");
+        let fm1 = one.hypergeom_2f1(&one, &two, &one.neg()?, p, rm, &mut cc)?;
+        bits_agree(&fm1, &ln2, p, 40, "2F1(1,1;2;-1)=ln2")?;
+        let fterm2 = nm2.hypergeom_2f1(&one, &three, &two, p, rm, &mut cc)?;
+        let third = one.div(&three, p, RoundingMode::None)?;
+        bits_agree(&fterm2, &third, p, 80, "2F1(-2,1;3;2)=1/3")?;
 
         assert!(one
             .hypergeom_2f1(&one, &three, &two, p, rm, &mut cc)
             .is_err());
 
-        let fk = half
-            .hypergeom_2f1(&half, &one, &half, p, rm, &mut cc)
-            .unwrap();
-        let k = half.elliptic_k(p, rm, &mut cc).unwrap();
-        let pi = cc.pi_num(p, RoundingMode::None).unwrap();
+        let fk = half.hypergeom_2f1(&half, &one, &half, p, rm, &mut cc)?;
+        let k = half.elliptic_k(p, rm, &mut cc)?;
+        let pi = cc.pi_num(p, RoundingMode::None)?;
         let want = two
-            .div(&pi, p, RoundingMode::None)
-            .unwrap()
-            .mul(&k, p, RoundingMode::None)
-            .unwrap();
-        bits_agree(&fk, &want, p, 40, "2F1 = 2K/π");
+            .div(&pi, p, RoundingMode::None)?
+            .mul(&k, p, RoundingMode::None)?;
+        bits_agree(&fk, &want, p, 40, "2F1 = 2K/π")?;
 
-        assert!(half
-            .betainc(&half, &zero, p, rm, &mut cc)
-            .unwrap()
-            .is_zero());
-        let i1 = half.betainc(&half, &one, p, rm, &mut cc).unwrap();
-        bits_agree(&i1, &one, p, 80, "I_1(a,b)");
+        assert!(half.betainc(&half, &zero, p, rm, &mut cc)?.is_zero());
+        let i1 = half.betainc(&half, &one, p, rm, &mut cc)?;
+        bits_agree(&i1, &one, p, 80, "I_1(a,b)")?;
         // I_{1/2}(1,1) = 1/2
-        let i11 = one.betainc(&one, &half, p, rm, &mut cc).unwrap();
-        bits_agree(&i11, &half, p, 80, "I_{1/2}(1,1)");
+        let i11 = one.betainc(&one, &half, p, rm, &mut cc)?;
+        bits_agree(&i11, &half, p, 80, "I_{1/2}(1,1)")?;
         assert!(zero.betainc(&one, &half, p, rm, &mut cc).is_err());
+        Ok(())
     }
 
     fn four_word(p: usize) -> ExactNumNumber {

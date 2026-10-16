@@ -246,44 +246,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_tangent() {
+    fn test_tangent() -> Result<(), crate::Error> {
         let p = 320;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let mut n1 = ExactNumNumber::from_word(2, p).unwrap();
+        let mut n1 = ExactNumNumber::from_word(2, p)?;
         n1.set_exponent(0);
-        let _n2 = n1.tan(p, rm, &mut cc).unwrap();
+        let _n2 = n1.tan(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Dec, rm).unwrap());
 
         // asymptotic & extrema testing
-        let mut half_pi = cc.pi_num(128, RoundingMode::None).unwrap();
+        let mut half_pi = cc.pi_num(128, RoundingMode::None)?;
         half_pi.set_exponent(1);
-        half_pi.set_precision(p, RoundingMode::None).unwrap();
+        half_pi.set_precision(p, RoundingMode::None)?;
 
-        let n2 = half_pi.tan(p, rm, &mut cc).unwrap();
+        let n2 = half_pi.tan(p, rm, &mut cc)?;
         let n3 = ExactNumNumber::parse(
             "3.1F0B46DCBD63D29899ECF829DA54DE0EE0852B2569B572B793E50817CEF4C77D959712B45E2B7E4C_e+20",
             crate::Radix::Hex,
             p,
             RoundingMode::None, &mut cc,
         )
-        .unwrap();
+        ?;
 
         assert!(n2.cmp(&n3) == 0);
 
         // large exponent
         half_pi.set_exponent(256);
-        let n2 = half_pi.tan(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("4.ECDEC5EF3A1EA5339A46BC0C490F52A86A033C56BCDD413E36C657EB7757F073500B013B9A7B43C0_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n2 = half_pi.tan(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("4.ECDEC5EF3A1EA5339A46BC0C490F52A86A033C56BCDD413E36C657EB7757F073500B013B9A7B43C0_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         assert!(n2.cmp(&n3) == 0);
 
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
         let n1 = random_subnormal(p);
 
-        assert!(d3.tan(p, rm, &mut cc).unwrap().cmp(&d3) == 0);
-        assert!(zero.tan(p, rm, &mut cc).unwrap().is_zero());
-        assert!(n1.tan(p, rm, &mut cc).unwrap().cmp(&n1) == 0);
+        assert!(d3.tan(p, rm, &mut cc)?.cmp(&d3) == 0);
+        assert!(zero.tan(p, rm, &mut cc)?.is_zero());
+        assert!(n1.tan(p, rm, &mut cc)?.cmp(&n1) == 0);
+        Ok(())
     }
 }

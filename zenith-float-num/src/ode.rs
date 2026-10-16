@@ -556,9 +556,9 @@ mod tests {
     const EULER_OH_STEPS: usize = 1000;
 
     #[test]
-    fn ode_rk4_rk45_euler() {
+    fn ode_rk4_rk45_euler() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
         let ten = ExactNum::from_u8(10, p);
@@ -573,8 +573,8 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("rk4");
-        let yend = y.get(y.len() - 1).expect("yend");
+        .ok_or(crate::Error::InvalidArgument)?;
+        let yend = y.get(y.len() - 1).ok_or(crate::Error::InvalidArgument)?;
         let einv = one.neg_via_mul().exp(p, rm, &mut cc);
         let err = ExactNum::sub_ref(yend, &einv, p, rm).abs();
         let tol12 = ExactNum::from_u8(1, p).div(&ten.powsi(RK4_EXP_ERR_DIGITS, p, rm), p, rm);
@@ -593,8 +593,10 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("rk45");
-        let y45e = y45.get(y45.len() - 1).expect("y45e");
+        .ok_or(crate::Error::InvalidArgument)?;
+        let y45e = y45
+            .get(y45.len() - 1)
+            .ok_or(crate::Error::InvalidArgument)?;
         let err45 = ExactNum::sub_ref(y45e, &einv, p, rm).abs();
         assert!(
             err45.is_zero() || err45.compare(&atol) == Some(-1) || err45.compare(&atol) == Some(0)
@@ -609,7 +611,7 @@ mod tests {
             p,
             rm,
         )
-        .expect("euler 1000");
+        .ok_or(crate::Error::InvalidArgument)?;
         let (_te2, ye2) = euler(
             |_t, y, _p, _rm| y.clone(),
             &zero,
@@ -619,13 +621,26 @@ mod tests {
             p,
             rm,
         )
-        .expect("euler 2000");
+        .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(ye.len(), EULER_OH_STEPS + 1);
         assert_eq!(ye2.len(), EULER_OH_STEPS * 2 + 1);
         let two = ExactNum::from_u8(2, p);
         let ee = one.exp(p, rm, &mut cc);
-        let e1 = ExactNum::sub_ref(ye.get(ye.len() - 1).expect("e1"), &ee, p, rm).abs();
-        let e2 = ExactNum::sub_ref(ye2.get(ye2.len() - 1).expect("e2"), &ee, p, rm).abs();
+        let e1 = ExactNum::sub_ref(
+            ye.get(ye.len() - 1).ok_or(crate::Error::InvalidArgument)?,
+            &ee,
+            p,
+            rm,
+        )
+        .abs();
+        let e2 = ExactNum::sub_ref(
+            ye2.get(ye2.len() - 1)
+                .ok_or(crate::Error::InvalidArgument)?,
+            &ee,
+            p,
+            rm,
+        )
+        .abs();
         let two_h_bound = two.div(&ExactNum::from_u32(EULER_OH_STEPS as u32, p), p, rm);
         assert!(e1.compare(&two_h_bound) == Some(-1));
         assert!(e2.compare(&e1) == Some(-1));
@@ -641,5 +656,6 @@ mod tests {
             &mut cc
         )
         .is_none());
+        Ok(())
     }
 }

@@ -713,10 +713,10 @@ mod tests {
     }
 
     #[test]
-    fn test_complex_erf_golds() {
+    fn test_complex_erf_golds() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
 
         let z0 = ExactComplex::zero(p);
         let e0 = z0.erf(p, rm, &mut cc);
@@ -770,13 +770,14 @@ mod tests {
         let ef = far.erf(p, rm, &mut cc);
         assert!(near(ef.re(), &ExactNum::from_u8(1, p), p));
         assert!(tiny(ef.im(), p));
+        Ok(())
     }
 
     #[test]
-    fn test_complex_gamma_golds() {
+    fn test_complex_gamma_golds() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
 
         let one = ExactComplex::one(p);
         let g1 = one.gamma(p, rm, &mut cc);
@@ -855,5 +856,6 @@ mod tests {
 
         let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
         assert!(nan.gamma(p, rm, &mut cc).is_nan());
+        Ok(())
     }
 }

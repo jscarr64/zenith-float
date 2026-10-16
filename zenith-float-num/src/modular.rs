@@ -247,14 +247,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn modular_pow_inv_miller_rho() {
+    fn modular_pow_inv_miller_rho() -> Result<(), crate::Error> {
         let two = ExactInt::from_u64(2);
         let exp = ExactInt::from_u64(100);
         let m = ExactInt::from_u64(1_000_000_007);
-        let got = mod_pow(&two, &exp, &m).expect("mod_pow");
+        let got = mod_pow(&two, &exp, &m).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(got, ExactInt::from_u64(976_371_285));
 
-        let inv = mod_inv(&ExactInt::from_u64(3), &ExactInt::from_u64(7)).expect("inv");
+        let inv = mod_inv(&ExactInt::from_u64(3), &ExactInt::from_u64(7))
+            .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(inv, ExactInt::from_u64(5));
         assert!(mod_inv(&ExactInt::from_u64(2), &ExactInt::from_u64(4)).is_none());
 
@@ -267,8 +268,8 @@ mod tests {
         assert!(!miller_rabin(&ExactInt::from_u64(9), &wits));
 
         let n = ExactInt::from_u64(8051);
-        let f = pollard_rho(&n).expect("rho");
-        let other = n.div_rem(&f).expect("div").0;
+        let f = pollard_rho(&n).ok_or(crate::Error::InvalidArgument)?;
+        let other = n.div_rem(&f).ok_or(crate::Error::InvalidArgument)?.0;
         let a = ExactInt::from_u64(83);
         let b = ExactInt::from_u64(97);
         assert!(
@@ -277,5 +278,6 @@ mod tests {
         );
         assert!(pollard_rho(&ExactInt::from_u64(31)).is_none());
         assert!(mod_pow(&two, &ExactInt::from_i64(-1), &m).is_none());
+        Ok(())
     }
 }

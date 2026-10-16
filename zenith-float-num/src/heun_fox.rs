@@ -1940,10 +1940,10 @@ mod tests {
     }
 
     #[test]
-    fn test_meijer_heun_identities() {
+    fn test_meijer_heun_identities() -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let z = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let zero = ExactNum::new(p);
@@ -2028,5 +2028,6 @@ mod tests {
             .heun_g(&aa, &qv, &alpha, &beta, &gamma, &delta, p, rm, &mut cc)
             .is_nan());
         assert!(z.meijer_g(&[], &[], &[], &[], p, rm, &mut cc).is_nan());
+        Ok(())
     }
 }

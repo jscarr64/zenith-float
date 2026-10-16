@@ -458,13 +458,15 @@ mod tests {
     }
 
     #[test]
-    fn exact_num_poly_div_rem_gcd_compose_deriv_roots() {
+    fn exact_num_poly_div_rem_gcd_compose_deriv_roots() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
 
         let x2m1 = ExactNumPoly::from_i64_coeffs(p, rm, &[-1, 0, 1]);
         let xm1 = ExactNumPoly::from_i64_coeffs(p, rm, &[-1, 1]);
-        let (q, r) = x2m1.div_rem(&xm1, p, rm).expect("div_rem");
+        let (q, r) = x2m1
+            .div_rem(&xm1, p, rm)
+            .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(q, ExactNumPoly::from_i64_coeffs(p, rm, &[1, 1]));
         assert!(r.is_zero());
 
@@ -481,7 +483,9 @@ mod tests {
         assert_eq!(dx, ExactNumPoly::from_i64_coeffs(p, rm, &[0, 0, 3]));
 
         let x2m2 = ExactNumPoly::from_i64_coeffs(p, rm, &[-2, 0, 1]);
-        let roots = x2m2.roots_real(p, rm, &mut cc).expect("roots");
+        let roots = x2m2
+            .roots_real(p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(roots.len(), 2);
         let s2 = ExactNum::from_u8(2, p).sqrt(p, rm);
         let ns2 = s2.neg_via_mul();
@@ -497,7 +501,9 @@ mod tests {
         }
         assert!(saw_pos && saw_neg);
 
-        let c = x2m2.companion_matrix(p, rm).expect("companion");
+        let c = x2m2
+            .companion_matrix(p, rm)
+            .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(c.shape(), (2, 2));
         let two = ExactNum::from_u8(2, p);
         let one = ExactNum::from_u8(1, p);
@@ -509,27 +515,35 @@ mod tests {
 
         assert!(x2m1.div_rem(&ExactNumPoly::zero(p, rm), p, rm).is_none());
         assert!(x3.roots_real(p, rm, &mut cc).is_none());
+        Ok(())
     }
 
     #[test]
-    fn quadratic_roots_are_ordered_minus_then_plus() {
+    fn quadratic_roots_are_ordered_minus_then_plus() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         // x^2 - 3x + 2 = (x - 1)(x - 2): r0 = (3 - 1)/2 = 1 (minus branch), r1 = 2.
         let poly = ExactNumPoly::from_i64_coeffs(p, rm, &[2, -3, 1]);
-        let roots = poly.roots_real(p, rm, &mut cc).expect("roots");
+        let roots = poly
+            .roots_real(p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(roots.len(), 2);
         assert_eq!(roots[0].compare(&ExactNum::from_u8(1, p)), Some(0));
         assert_eq!(roots[1].compare(&ExactNum::from_u8(2, p)), Some(0));
         // Negative b: -b is positive.
         let poly = ExactNumPoly::from_i64_coeffs(p, rm, &[-6, 1, 1]);
-        let roots = poly.roots_real(p, rm, &mut cc).expect("roots");
+        let roots = poly
+            .roots_real(p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(roots[0].compare(&ExactNum::from_i8(-3, p)), Some(0));
         assert_eq!(roots[1].compare(&ExactNum::from_u8(2, p)), Some(0));
         // Double root: one entry.
         let poly = ExactNumPoly::from_i64_coeffs(p, rm, &[1, 2, 1]);
-        let roots = poly.roots_real(p, rm, &mut cc).expect("roots");
+        let roots = poly
+            .roots_real(p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(roots.len(), 1);
         assert_eq!(roots[0].compare(&ExactNum::from_i8(-1, p)), Some(0));
+        Ok(())
     }
 }

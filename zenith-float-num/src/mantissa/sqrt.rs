@@ -206,7 +206,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sqrt_basic() {
+    fn test_sqrt_basic() -> Result<(), crate::Error> {
         const MAX_BUF: usize = 4;
 
         let s1: &[Word] = &[WORD_MAX];
@@ -214,7 +214,7 @@ mod tests {
         let s3: &[Word] = &[WORD_MAX, WORD_MAX, WORD_MAX];
         let s4: &[Word] = &[WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX];
         for s1 in [s1, s2, s3, s4] {
-            let (qb, rb) = Mantissa::sqrt_rem_basic(s1).unwrap();
+            let (qb, rb) = Mantissa::sqrt_rem_basic(s1)?;
 
             assert_sqrt!(s1, &qb, &rb, MAX_BUF, "max");
         }
@@ -224,7 +224,7 @@ mod tests {
         let s3: &[Word] = &[WORD_MAX - 1, WORD_MAX, WORD_MAX];
         let s4: &[Word] = &[WORD_MAX - 1, WORD_MAX, WORD_MAX, WORD_MAX];
         for s1 in [s1, s2, s3, s4] {
-            let (qb, rb) = Mantissa::sqrt_rem_basic(s1).unwrap();
+            let (qb, rb) = Mantissa::sqrt_rem_basic(s1)?;
 
             assert_sqrt!(s1, &qb, &rb, MAX_BUF, "single zero");
         }
@@ -235,7 +235,7 @@ mod tests {
             let s3: &[Word] = &[int, 0, 0];
             let s4: &[Word] = &[int, 0, 0, 0];
             for s1 in [s1, s2, s3, s4] {
-                let (qb, rb) = Mantissa::sqrt_rem_basic(s1).unwrap();
+                let (qb, rb) = Mantissa::sqrt_rem_basic(s1)?;
 
                 assert_sqrt!(s1, &qb, &rb, MAX_BUF, "int");
             }
@@ -244,16 +244,17 @@ mod tests {
         for _ in 0..1000 {
             let s1 = random_normalized_slice(MAX_BUF, MAX_BUF);
 
-            let (qb, rb) = Mantissa::sqrt_rem_basic(&s1).unwrap();
+            let (qb, rb) = Mantissa::sqrt_rem_basic(&s1)?;
 
             //println!("\n{:?}\n{:?}\n{:?}", s1, qb, rb);
 
             assert_sqrt!(&s1, &qb, &rb, MAX_BUF, "rand");
         }
+        Ok(())
     }
 
     #[test]
-    fn test_sqrt_rem() {
+    fn test_sqrt_rem() -> Result<(), crate::Error> {
         const MAX_BUF: usize = 100;
 
         let s1: &[Word] = &[WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX];
@@ -274,7 +275,7 @@ mod tests {
             WORD_MAX, WORD_MAX, WORD_MAX,
         ];
         for s1 in [s1, s2, s3, s4, s5, s6, s7] {
-            let (qb, rb) = Mantissa::sqrt_rem(s1).unwrap();
+            let (qb, rb) = Mantissa::sqrt_rem(s1)?;
 
             assert_sqrt!(s1, &qb, &rb, MAX_BUF, "max");
         }
@@ -330,7 +331,7 @@ mod tests {
             WORD_MAX,
         ];
         for s1 in [s1, s2, s3, s4, s5, s6, s7] {
-            let (qb, rb) = Mantissa::sqrt_rem(s1).unwrap();
+            let (qb, rb) = Mantissa::sqrt_rem(s1)?;
 
             assert_sqrt!(s1, &qb, &rb, MAX_BUF, "single zero");
         }
@@ -343,7 +344,7 @@ mod tests {
         let s6: &[Word] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT];
         let s7: &[Word] = &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT];
         for s1 in [s1, s2, s3, s4, s5, s6, s7] {
-            let (qb, rb) = Mantissa::sqrt_rem(s1).unwrap();
+            let (qb, rb) = Mantissa::sqrt_rem(s1)?;
 
             assert_sqrt!(s1, &qb, &rb, MAX_BUF, "msb set");
         }
@@ -356,7 +357,7 @@ mod tests {
         let s6: &[Word] = &[3, 0, 0, 0, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT];
         let s7: &[Word] = &[7, 0, 0, 0, 0, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT];
         for s1 in [s1, s2, s3, s4, s5, s6, s7] {
-            let (qb, rb) = Mantissa::sqrt_rem(s1).unwrap();
+            let (qb, rb) = Mantissa::sqrt_rem(s1)?;
 
             assert_sqrt!(s1, &qb, &rb, MAX_BUF, "zeroes between");
         }
@@ -364,12 +365,13 @@ mod tests {
         for _ in 0..1000 {
             let s1 = random_normalized_slice(1, MAX_BUF);
 
-            let (qb, rb) = Mantissa::sqrt_rem(&s1).unwrap();
+            let (qb, rb) = Mantissa::sqrt_rem(&s1)?;
 
             //println!("\n{:?}\n{:?}\n{:?}", s1, qb, rb);
 
             assert_sqrt!(&s1, &qb, &rb, MAX_BUF, "rand");
         }
+        Ok(())
     }
 
     fn random_normalized_slice(min_len: usize, max_len: usize) -> Vec<Word> {

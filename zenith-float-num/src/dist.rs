@@ -391,10 +391,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn dist_plan_golds() {
+    fn dist_plan_golds() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let zero = ExactNum::from_u8(0, p);
         let one = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
@@ -424,5 +424,6 @@ mod tests {
 
         assert!(one.normal_pdf(&zero, &zero, p, rm, &mut cc).is_nan());
         assert!(one.neg_via_mul().poisson_pmf(&one, p, rm, &mut cc).is_nan());
+        Ok(())
     }
 }

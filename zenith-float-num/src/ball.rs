@@ -465,7 +465,7 @@ mod tests {
     }
 
     #[test]
-    fn ziv_round_vec_hypot_atan2() {
+    fn ziv_round_vec_hypot_atan2() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToEven;
         for p in [64usize, 128, 256] {
             let a = ExactNum::from_u8(3, p);
@@ -477,7 +477,7 @@ mod tests {
         }
 
         let p = 256;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let got = ziv_round_vec(
             p,
             rm,
@@ -486,6 +486,7 @@ mod tests {
         );
         let quarter = cc.pi(p, rm).div(&ExactNum::from_u8(4, p), p, rm);
         assert_eq!(got.compare(&quarter), Some(0));
+        Ok(())
     }
 
     #[test]
@@ -499,10 +500,10 @@ mod tests {
     }
 
     #[test]
-    fn ball_exp_contains_one_and_two() {
+    fn ball_exp_contains_one_and_two() -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let two = ExactNum::from_u8(2, p);
         let mk_rad = || two.powsi(-20, p, rm);
         let z = Ball::new(ExactNum::from_u8(0, p), mk_rad());
@@ -513,13 +514,14 @@ mod tests {
         let bln = Ball::new(ln2, mk_rad());
         let e2 = bln.exp(p, rm, &mut cc);
         assert!(e2.contains(&two, p));
+        Ok(())
     }
 
     #[test]
-    fn ball_sin_contains_zero_at_origin_and_pi() {
+    fn ball_sin_contains_zero_at_origin_and_pi() -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let two = ExactNum::from_u8(2, p);
         let mk_rad = || two.powsi(-20, p, rm);
         let z = Ball::new(ExactNum::from_u8(0, p), mk_rad());
@@ -530,13 +532,14 @@ mod tests {
         let bpi = Ball::new(pi, mk_rad());
         let sp = bpi.sin(p, rm, &mut cc);
         assert!(sp.contains(&ExactNum::from_u8(0, p), p));
+        Ok(())
     }
 
     #[test]
-    fn ball_exp_sin_contain_scalar_at_a_point() {
+    fn ball_exp_sin_contain_scalar_at_a_point() -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let x = ExactNum::from_u8(1, p);
         let rad = ExactNum::from_u8(2, p).powsi(-12, p, rm);
         let b = Ball::new(ExactNum::from_u8(1, p), rad);
@@ -544,13 +547,14 @@ mod tests {
         assert!(b.exp(p, rm, &mut cc).contains(&hi, p));
         let hs = x.sin(256, rm, &mut cc);
         assert!(b.sin(p, rm, &mut cc).contains(&hs, p));
+        Ok(())
     }
 
     #[test]
-    fn ball_plan_transcendental_golds() {
+    fn ball_plan_transcendental_golds() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let mk_rad = || ExactNum::from_u8(1, p).ldexp(-(p as i32), p, RoundingMode::None);
         let six = ExactNum::from_u8(6, p);
         let pi6 = cc.pi(p, rm).div(&six, p, rm);
@@ -584,13 +588,14 @@ mod tests {
         let composed = be.sin(p, rm, &mut cc).exp(p, rm, &mut cc);
         let true_c = one.sin(256, rm, &mut cc).exp(256, rm, &mut cc);
         assert!(composed.contains(&true_c, p));
+        Ok(())
     }
 
     #[test]
-    fn complex_ball_exp_and_pythagoras() {
+    fn complex_ball_exp_and_pythagoras() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let mk_mid = || {
             ExactComplex::new(
                 ExactNum::from_u8(3, p).div(&ExactNum::from_u8(10, p), p, rm),
@@ -616,5 +621,6 @@ mod tests {
         let cc2 = c.mul(&c, p, rm);
         let py = ss.add(&cc2, p, rm);
         assert!(py.contains(&ExactComplex::one(p), p));
+        Ok(())
     }
 }

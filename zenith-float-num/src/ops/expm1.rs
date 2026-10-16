@@ -88,26 +88,27 @@ mod tests {
     use crate::RoundingMode;
 
     #[test]
-    fn test_expm1() {
-        let mut cc = Consts::new().unwrap();
+    fn test_expm1() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
         let p = WORD_BIT_SIZE * 5;
 
-        let z = ExactNumNumber::new(p).unwrap();
-        assert!(z.expm1(p, rm, &mut cc).unwrap().is_zero());
+        let z = ExactNumNumber::new(p)?;
+        assert!(z.expm1(p, rm, &mut cc)?.is_zero());
 
         let one = ExactNumNumber::small_const(1);
-        let e1 = one.expm1(p, rm, &mut cc).unwrap();
+        let e1 = one.expm1(p, rm, &mut cc)?;
         assert!(e1.is_positive());
         assert!(!e1.is_zero());
 
         for _ in 0..40 {
-            let x = ExactNumNumber::random_normal(p, -12, -2).unwrap();
-            let y = x.expm1(p, rm, &mut cc).unwrap();
-            let back = y.log1p(p, rm, &mut cc).unwrap();
+            let x = ExactNumNumber::random_normal(p, -12, -2)?;
+            let y = x.expm1(p, rm, &mut cc)?;
+            let back = y.log1p(p, rm, &mut cc)?;
             let mut eps = ExactNumNumber::small_const(1);
             eps.set_exponent(x.exponent() - p as crate::Exponent + 6);
-            assert!(back.sub(&x, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
+            assert!(back.sub(&x, p, rm)?.abs()?.cmp(&eps) < 0);
         }
+        Ok(())
     }
 }

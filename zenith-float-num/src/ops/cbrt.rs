@@ -71,19 +71,17 @@ mod tests {
     };
 
     #[test]
-    fn test_cbrt() {
-        let mut cc = Consts::new().unwrap();
+    fn test_cbrt() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let mut eps = ExactNumNumber::small_const(1);
 
         for _ in 0..1000 {
             let prec = (crate::common::test_rng::random::<usize>() % 5 + 1) * WORD_BIT_SIZE;
-            let d1 = ExactNumNumber::random_normal(prec, EXPONENT_MIN, EXPONENT_MAX).unwrap();
-            let d2 = d1.cbrt(prec, RoundingMode::ToEven).unwrap();
-            let d3 = d2
-                .mul(&d2, prec, RoundingMode::ToEven)
-                .unwrap()
-                .mul(&d2, prec, RoundingMode::ToEven)
-                .unwrap();
+            let d1 = ExactNumNumber::random_normal(prec, EXPONENT_MIN, EXPONENT_MAX)?;
+            let d2 = d1.cbrt(prec, RoundingMode::ToEven)?;
+            let d3 =
+                d2.mul(&d2, prec, RoundingMode::ToEven)?
+                    .mul(&d2, prec, RoundingMode::ToEven)?;
 
             eps.set_exponent(d1.exponent() - prec as Exponent + 3);
 
@@ -91,70 +89,36 @@ mod tests {
             //println!("d2 {:?}", d2.format(crate::Radix::Bin, RoundingMode::None).unwrap());
             //println!("d3 {:?}", d3.format(crate::Radix::Bin, RoundingMode::None).unwrap());
 
-            assert!(
-                d1.sub(&d3, prec, RoundingMode::ToEven)
-                    .unwrap()
-                    .abs()
-                    .unwrap()
-                    .cmp(&eps)
-                    < 0
-            );
+            assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
         }
 
         // MAX
         let prec = 320;
-        let d1 = ExactNumNumber::max_value(prec).unwrap();
-        let d2 = d1.cbrt(prec, RoundingMode::ToEven).unwrap();
+        let d1 = ExactNumNumber::max_value(prec)?;
+        let d2 = d1.cbrt(prec, RoundingMode::ToEven)?;
         let d3 = d2
-            .mul(&d2, prec, RoundingMode::ToEven)
-            .unwrap()
-            .mul(&d2, prec, RoundingMode::ToEven)
-            .unwrap();
+            .mul(&d2, prec, RoundingMode::ToEven)?
+            .mul(&d2, prec, RoundingMode::ToEven)?;
         eps.set_exponent(d1.exponent() - prec as Exponent + 3);
-        assert!(
-            d1.sub(&d3, prec, RoundingMode::ToEven)
-                .unwrap()
-                .abs()
-                .unwrap()
-                .cmp(&eps)
-                < 0
-        );
+        assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 
         // MIN
-        let d1 = ExactNumNumber::min_value(prec).unwrap();
-        let d2 = d1.cbrt(prec, RoundingMode::ToEven).unwrap();
+        let d1 = ExactNumNumber::min_value(prec)?;
+        let d2 = d1.cbrt(prec, RoundingMode::ToEven)?;
         let d3 = d2
-            .mul(&d2, prec, RoundingMode::ToEven)
-            .unwrap()
-            .mul(&d2, prec, RoundingMode::ToEven)
-            .unwrap();
+            .mul(&d2, prec, RoundingMode::ToEven)?
+            .mul(&d2, prec, RoundingMode::ToEven)?;
         eps.set_exponent(d1.exponent() - prec as Exponent + 3);
-        assert!(
-            d1.sub(&d3, prec, RoundingMode::ToEven)
-                .unwrap()
-                .abs()
-                .unwrap()
-                .cmp(&eps)
-                < 0
-        );
+        assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 
         // MIN POSITIVE
-        let d1 = ExactNumNumber::min_positive(prec).unwrap();
-        let d2 = d1.cbrt(prec, RoundingMode::ToEven).unwrap();
+        let d1 = ExactNumNumber::min_positive(prec)?;
+        let d2 = d1.cbrt(prec, RoundingMode::ToEven)?;
         let d3 = d2
-            .mul(&d2, prec, RoundingMode::ToEven)
-            .unwrap()
-            .mul(&d2, prec, RoundingMode::ToEven)
-            .unwrap();
-        let eps = ExactNumNumber::min_positive(prec).unwrap();
-        assert!(
-            d1.sub(&d3, prec, RoundingMode::ToEven)
-                .unwrap()
-                .abs()
-                .unwrap()
-                .cmp(&eps)
-                <= 0
-        );
+            .mul(&d2, prec, RoundingMode::ToEven)?
+            .mul(&d2, prec, RoundingMode::ToEven)?;
+        let eps = ExactNumNumber::min_positive(prec)?;
+        assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) <= 0);
 
         // near 1
         let p = 320;
@@ -164,17 +128,15 @@ mod tests {
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
-        let d2 = d1.cbrt(p, RoundingMode::ToEven).unwrap();
+        )?;
+        let d2 = d1.cbrt(p, RoundingMode::ToEven)?;
         let d3 = ExactNumNumber::parse(
             "F.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFB9ED752A27F96D7B9ED752A27F96D8_e-1",
             crate::Radix::Hex,
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
+        )?;
 
         //println!("{:?}", d2.format(crate::Radix::Hex, RoundingMode::None).unwrap());
 
@@ -186,17 +148,15 @@ mod tests {
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
-        let d2 = d1.cbrt(p, RoundingMode::ToEven).unwrap();
+        )?;
+        let d2 = d1.cbrt(p, RoundingMode::ToEven)?;
         let d3 = ExactNumNumber::parse(
             "1.00000000000000000000000000000000000000000000000000000000000000000F42CA7F7D4EC2D4",
             crate::Radix::Hex,
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
+        )?;
 
         // println!("{:?}", d2.format(crate::Radix::Hex, RoundingMode::None).unwrap());
 
@@ -206,28 +166,20 @@ mod tests {
         for _ in 0..1000 {
             let d1 = random_subnormal(prec);
 
-            let d2 = d1.cbrt(prec, RoundingMode::ToEven).unwrap();
-            let d3 = d2
-                .mul(&d2, prec, RoundingMode::ToEven)
-                .unwrap()
-                .mul(&d2, prec, RoundingMode::ToEven)
-                .unwrap();
+            let d2 = d1.cbrt(prec, RoundingMode::ToEven)?;
+            let d3 =
+                d2.mul(&d2, prec, RoundingMode::ToEven)?
+                    .mul(&d2, prec, RoundingMode::ToEven)?;
 
-            let eps = ExactNumNumber::min_positive(prec).unwrap();
+            let eps = ExactNumNumber::min_positive(prec)?;
             // eps.set_exponent(eps.get_exponent() + 3);
 
             // println!("{:?}", d1.format(crate::Radix::Bin, RoundingMode::None).unwrap());
             // println!("{:?}", d3.format(crate::Radix::Bin, RoundingMode::None).unwrap());
             // println!("{:?}", eps.format(crate::Radix::Bin, RoundingMode::None).unwrap());
 
-            assert!(
-                d1.sub(&d3, prec, RoundingMode::ToEven)
-                    .unwrap()
-                    .abs()
-                    .unwrap()
-                    .cmp(&eps)
-                    <= 0
-            );
+            assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) <= 0);
         }
+        Ok(())
     }
 }

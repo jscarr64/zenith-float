@@ -1256,10 +1256,10 @@ mod tests {
     }
 
     #[test]
-    fn test_complex_bessel_golds() {
+    fn test_complex_bessel_golds() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
 
         let z1 = ExactComplex::one(p);
         let nu0 = ExactComplex::zero(p);
@@ -1331,13 +1331,14 @@ mod tests {
         let jb = below.bessel_j_nu(&half, p, rm, &mut cc);
         assert!(!cnear(&ja, &jb, p));
         assert!(cnear_bits(&ja, &jb.conj(), p, 8) || !tiny(ja.im(), p) || !tiny(jb.im(), p));
+        Ok(())
     }
 
     #[test]
-    fn test_complex_bessel_negative_real_axis() {
+    fn test_complex_bessel_negative_real_axis() -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let x = ExactNum::from_u8(2, p);
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let zneg = ExactComplex::from_real(x.neg_via_mul(), p);
@@ -1366,6 +1367,7 @@ mod tests {
         let jx = x.bessel_j_nu(&half, p, rm, &mut cc);
         assert!(tiny(j.re(), p));
         assert!(near(j.im(), &jx, p));
+        Ok(())
     }
 
     #[test]

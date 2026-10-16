@@ -103,18 +103,19 @@ mod tests {
     use alloc::vec::Vec;
 
     #[test]
-    fn test_mul_unbalanced() {
+    fn test_mul_unbalanced() -> Result<(), crate::Error> {
         let sz1 = random::<usize>() % 10 + 1;
         let sz2 = random::<usize>() % 10 * sz1 + random::<usize>() % sz1 + sz1;
         let f = random_slice(1, sz1);
-        let mut ret1 = WordBuf::new(sz1 + sz2).unwrap();
-        let mut ret2 = WordBuf::new(sz1 + sz2).unwrap();
+        let mut ret1 = WordBuf::new(sz1 + sz2)?;
+        let mut ret2 = WordBuf::new(sz1 + sz2)?;
         for _ in 0..1000 {
             let v = random_slice(sz1, sz2);
-            Mantissa::mul_unbalanced(&f, &v, &mut ret1).unwrap();
-            Mantissa::mul_slices(&f, &v, &mut ret2).unwrap();
+            Mantissa::mul_unbalanced(&f, &v, &mut ret1)?;
+            Mantissa::mul_slices(&f, &v, &mut ret2)?;
             assert!(ret1[..] == ret2[..]);
         }
+        Ok(())
     }
 
     fn random_slice(min_len: usize, max_len: usize) -> Vec<Word> {

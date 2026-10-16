@@ -276,9 +276,9 @@ mod tests {
     }
 
     #[test]
-    fn chebyshev_exp_nodes_clenshaw() {
+    fn chebyshev_exp_nodes_clenshaw() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let a = ExactNum::from_i64(-1, p);
         let b = ExactNum::from_u8(1, p);
         let coeffs = chebyshev_coeffs(
@@ -290,7 +290,7 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("coeffs");
+        .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(coeffs.len(), CHEBYSHEV_EXP_TERMS);
 
         let ten = ExactNum::from_u8(10, p);
@@ -332,7 +332,7 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("identity coeffs");
+        .ok_or(crate::Error::InvalidArgument)?;
         let one = ExactNum::from_u8(1, p);
         assert_eq!(id_c[1].compare(&one), Some(0));
         for k in 0..IDENTITY_NODES {
@@ -365,5 +365,6 @@ mod tests {
             chebyshev_coeffs(|x, p, rm, cc| x.exp(p, rm, cc), 0, a, &b, p, rm, &mut cc).is_none()
         );
         assert!(chebyshev_error_bound(&c, p).compare(&ExactNum::from_u8(5, p)) == Some(0));
+        Ok(())
     }
 }

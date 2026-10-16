@@ -265,15 +265,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_inline_small_and_promote() {
-        let mut b = WordBuf::new(1).unwrap();
+    fn test_inline_small_and_promote() -> Result<(), crate::Error> {
+        let mut b = WordBuf::new(1)?;
         assert!(b.is_inline());
         assert_eq!(b.len(), 1);
         b[0] = 7;
-        b.try_extend_2(WORD_BIT_SIZE * 8).unwrap();
+        b.try_extend_2(WORD_BIT_SIZE * 8)?;
         assert!(!b.is_inline());
         assert_eq!(b.len(), 8);
         assert_eq!(b[0], 7);
+        Ok(())
     }
 
     #[test]

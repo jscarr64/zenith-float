@@ -1144,10 +1144,11 @@ mod tests {
     }
 
     #[test]
-    fn gk715_x22_exact_and_weights_symmetric() {
+    fn gk715_x22_exact_and_weights_symmetric() -> Result<(), Box<dyn std::error::Error>> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
-        let (nodes, w_g, w_k) = kronrod_pair(GK_GAUSS_ORDER, p, rm, &mut cc).expect("pair");
+        let mut cc = Consts::new()?;
+        let (nodes, w_g, w_k) =
+            kronrod_pair(GK_GAUSS_ORDER, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(nodes.len(), GK_KRONROD_ORDER);
         assert_eq!(w_g.len(), GK_KRONROD_ORDER);
         assert_eq!(w_k.len(), GK_KRONROD_ORDER);
@@ -1181,8 +1182,7 @@ mod tests {
             p,
             rm,
             &mut cc,
-        )
-        .expect("x^22");
+        )?;
         let two = ExactNum::from_u8(2, p);
         let twenty_three = ExactNum::from_u8(23, p);
         let want = two.div(&twenty_three, p, rm);
@@ -1201,10 +1201,11 @@ mod tests {
             "x^22 error {} does not cover {gap}",
             got.abs_err_est
         );
+        Ok(())
     }
 
     #[test]
-    fn wynn_geometric_series_hits_two() {
+    fn wynn_geometric_series_hits_two() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
         // Partial sums of Σ (1/2)^k from k = 0. One geometric component, so
         // the even ε column of order 2 is the limit 2 in exact arithmetic.
@@ -1219,7 +1220,7 @@ mod tests {
             acc
         };
         let seq: Vec<ExactNum> = (1..=4).map(partial).collect();
-        let got = wynn_epsilon(&seq, p, rm).expect("wynn");
+        let got = wynn_epsilon(&seq, p, rm).ok_or(crate::Error::InvalidArgument)?;
         let two = ExactNum::from_u8(2, p);
         let correct = bits(&got, &two, p);
         assert!(
@@ -1229,12 +1230,13 @@ mod tests {
         assert!(wynn_epsilon(&[], p, rm).is_none());
         let nan = ExactNum::nan(None);
         assert!(wynn_epsilon(&[nan], p, rm).is_none());
+        Ok(())
     }
 
     #[test]
-    fn gk_rejects_bad_interval_and_nonfinite_sample() {
+    fn gk_rejects_bad_interval_and_nonfinite_sample() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let a = ExactNum::from_u8(0, p);
         let b = ExactNum::from_u8(1, p);
         let swapped = gauss_kronrod_interval(
@@ -1268,11 +1270,12 @@ mod tests {
             &mut cc,
         );
         assert_eq!(tight.unwrap_err(), QuadratureError::NotConverged);
+        Ok(())
     }
 
     #[test]
-    fn gk_infinite_exp_and_gaussian_cover_the_truth() {
-        let mut cc = Consts::new().expect("consts");
+    fn gk_infinite_exp_and_gaussian_cover_the_truth() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = Consts::new()?;
         for (p, rm) in [
             (53usize, RoundingMode::ToEven),
             (53, RoundingMode::Up),
@@ -1293,8 +1296,7 @@ mod tests {
                 p,
                 rm,
                 &mut cc,
-            )
-            .expect("exp tail");
+            )?;
             let want_one = ExactNum::from_u8(1, p);
             let gap = ExactNum::sub_ref(
                 &exp_tail.estimate_kronrod,
@@ -1319,8 +1321,7 @@ mod tests {
                 p,
                 rm,
                 &mut cc,
-            )
-            .expect("1/x^2");
+            )?;
             let gap =
                 ExactNum::sub_ref(&alg.estimate_kronrod, &want_one, 2 * p, RoundingMode::None)
                     .abs();
@@ -1341,8 +1342,7 @@ mod tests {
                 p,
                 rm,
                 &mut cc,
-            )
-            .expect("gaussian");
+            )?;
             let pi = cc.pi(p, rm).sqrt(p, rm);
             let gap =
                 ExactNum::sub_ref(&gauss.estimate_kronrod, &pi, 2 * p, RoundingMode::None).abs();
@@ -1354,13 +1354,14 @@ mod tests {
             );
             assert!(gap.compare(&tol) != Some(1), "p={p} gauss estimate {gap}");
         }
+        Ok(())
     }
 
     #[test]
-    fn kronrod_nodes_are_exactly_symmetric_and_ordered() {
-        let mut cc = Consts::new().expect("consts");
-        let (nodes, w_gauss, w_kronrod) =
-            kronrod_legendre_at(GK_GAUSS_ORDER, 256, &mut cc).expect("nodes");
+    fn kronrod_nodes_are_exactly_symmetric_and_ordered() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let (nodes, w_gauss, w_kronrod) = kronrod_legendre_at(GK_GAUSS_ORDER, 256, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
         let n = nodes.len();
         assert_eq!(n, GK_KRONROD_ORDER);
         for i in 0..n / 2 {
@@ -1370,5 +1371,6 @@ mod tests {
         }
         assert!(nodes[n / 2].is_zero());
         assert_eq!(w_gauss.len(), n);
+        Ok(())
     }
 }

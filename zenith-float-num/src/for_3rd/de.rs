@@ -387,27 +387,29 @@ mod tests {
     }
 
     #[test]
-    fn serde_json_roundtrip() {
+    fn serde_json_roundtrip() -> Result<(), crate::Error> {
         let n = ExactNum::from(42u32);
-        let s = serde_json::to_string(&n).expect("serialize");
+        let s = serde_json::to_string(&n)?;
         assert!(s.starts_with('"'), "serialized as a JSON string: {s}");
         assert!(s.contains("@p="), "precision suffix: {s}");
-        let m: ExactNum = serde_json::from_str(&s).expect("deserialize");
+        let m: ExactNum = serde_json::from_str(&s)?;
         assert_eq!(n.compare(&m), Some(0));
         assert_eq!(n.precision(), m.precision());
+        Ok(())
     }
 
     #[test]
-    fn serde_json_integer_and_string() {
-        let from_int: ExactNum = serde_json::from_str("42").expect("int");
+    fn serde_json_integer_and_string() -> Result<(), crate::Error> {
+        let from_int: ExactNum = serde_json::from_str("42")?;
         assert_eq!(from_int.compare(&ExactNum::from(42u32)), Some(0));
 
-        let from_neg: ExactNum = serde_json::from_str("-7").expect("neg int");
+        let from_neg: ExactNum = serde_json::from_str("-7")?;
         assert_eq!(from_neg.compare(&ExactNum::from(-7i32)), Some(0));
 
-        let from_str: ExactNum = serde_json::from_str("\"1.25e+0\"").expect("decimal string");
+        let from_str: ExactNum = serde_json::from_str("\"1.25e+0\"")?;
         assert!(!from_str.is_nan());
         assert!(from_str.is_positive());
+        Ok(())
     }
 
     #[test]
@@ -421,22 +423,24 @@ mod tests {
     }
 
     #[test]
-    fn serde_json_negative_fraction() {
-        let n: ExactNum = serde_json::from_str("\"-1.234567890123456789e-2\"").unwrap();
+    fn serde_json_negative_fraction() -> Result<(), crate::Error> {
+        let n: ExactNum = serde_json::from_str("\"-1.234567890123456789e-2\"")?;
         let m = rt(&n);
         assert_eq!(n.compare(&m), Some(0));
         assert!(m.is_negative());
+        Ok(())
     }
 
     #[test]
-    fn serde_json_complex() {
+    fn serde_json_complex() -> Result<(), crate::Error> {
         let z = ExactComplex::new(ExactNum::from(3u32), ExactNum::from(-4i32));
-        let s = serde_json::to_string(&z).expect("serialize complex");
+        let s = serde_json::to_string(&z)?;
         assert!(s.contains("\"re\""), "{s}");
         assert!(s.contains("\"im\""), "{s}");
-        let w: ExactComplex = serde_json::from_str(&s).expect("deserialize complex");
+        let w: ExactComplex = serde_json::from_str(&s)?;
         assert_eq!(z.re().compare(w.re()), Some(0));
         assert_eq!(z.im().compare(w.im()), Some(0));
+        Ok(())
     }
 
     #[test]
@@ -446,20 +450,21 @@ mod tests {
     }
 
     #[test]
-    fn serde_rational_one_third() {
+    fn serde_rational_one_third() -> Result<(), crate::Error> {
         let r = ExactRational::from_i64(1, 3);
-        let s = serde_json::to_string(&r).expect("ser rat");
+        let s = serde_json::to_string(&r)?;
         assert!(s.contains("@p="), "{s}");
-        let q: ExactRational = serde_json::from_str(&s).expect("de rat");
+        let q: ExactRational = serde_json::from_str(&s)?;
         assert_eq!(r.num().compare(q.num()), Some(0));
         assert_eq!(r.den().compare(q.den()), Some(0));
+        Ok(())
     }
 
     #[test]
-    fn serde_exact_int_and_array() {
+    fn serde_exact_int_and_array() -> Result<(), crate::Error> {
         let n = ExactInt::from_i64(-123);
-        let s = serde_json::to_string(&n).expect("ser int");
-        let m: ExactInt = serde_json::from_str(&s).expect("de int");
+        let s = serde_json::to_string(&n)?;
+        let m: ExactInt = serde_json::from_str(&s)?;
         assert_eq!(n, m);
 
         let p = 256;
@@ -473,35 +478,36 @@ mod tests {
                 ExactNum::from_u8(3, p),
                 ExactNum::from_u8(4, p),
             ],
-        )
-        .unwrap();
-        let js = serde_json::to_string(&a).expect("ser arr");
+        )?;
+        let js = serde_json::to_string(&a)?;
         assert!(js.contains("\"p\""), "{js}");
-        let b: ExactNumArray = serde_json::from_str(&js).expect("de arr");
+        let b: ExactNumArray = serde_json::from_str(&js)?;
         assert_eq!(b.shape(), (2, 2));
         assert_eq!(b.precision(), p);
         for i in 0..4 {
-            assert_eq!(a.get(i).unwrap().compare(b.get(i).unwrap()), Some(0));
+            assert_eq!(a.get(i)?.compare(b.get(i)?), Some(0));
         }
         let bad = js.replacen("[2,2]", "[3,3]", 1);
         let r: Result<ExactNumArray, _> = serde_json::from_str(&bad);
         assert!(r.is_err());
+        Ok(())
     }
 
     #[test]
-    fn serde_ieee64_bits_and_ball() {
+    fn serde_ieee64_bits_and_ball() -> Result<(), crate::Error> {
         let a =
             Ieee64Array::from_values(&[Ieee64::from_i32(1), Ieee64::from_bits(0x7ff8000000000001)]);
-        let js = serde_json::to_string(&a).expect("ser ieee");
-        let b: Ieee64Array = serde_json::from_str(&js).expect("de ieee");
+        let js = serde_json::to_string(&a)?;
+        let b: Ieee64Array = serde_json::from_str(&js)?;
         assert_eq!(a.as_bits(), b.as_bits());
 
         let mid = ExactNum::from_u8(1, 128);
         let rad = ExactNum::from_u8(1, 128).ldexp(-8, 128, crate::RoundingMode::ToEven);
         let ball = Ball::new(mid, rad);
-        let s = serde_json::to_string(&ball).expect("ser ball");
-        let ball2: Ball = serde_json::from_str(&s).expect("de ball");
+        let s = serde_json::to_string(&ball)?;
+        let ball2: Ball = serde_json::from_str(&s)?;
         assert_eq!(ball.mid().compare(ball2.mid()), Some(0));
         assert_eq!(ball.rad().compare(ball2.rad()), Some(0));
+        Ok(())
     }
 }

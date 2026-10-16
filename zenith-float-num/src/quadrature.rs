@@ -688,16 +688,16 @@ mod tests {
     }
 
     #[test]
-    fn quadrature_gl_tanh_laguerre_hermite() {
+    fn quadrature_gl_tanh_laguerre_hermite() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let a = ExactNum::from_i64(-1, p);
         let b = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
         let three = ExactNum::from_u8(3, p);
 
         let gl = gauss_legendre(|x, p, rm, _cc| x.sqr(p, rm), &a, &b, 10, p, rm, &mut cc)
-            .expect("gl x^2");
+            .ok_or(crate::Error::InvalidArgument)?;
         let two_thirds = ExactNum::from_u8(2, p).div(&three, p, rm);
         assert_eq!(gl.compare(&two_thirds), Some(0));
 
@@ -718,7 +718,7 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("gl x^38");
+        .ok_or(crate::Error::InvalidArgument)?;
         let thirty_nine = ExactNum::from_u32(GL_EXACT_DEG + 1, p);
         let two_over = ExactNum::from_u8(2, p).div(&thirty_nine, p, rm);
         assert_eq!(gl38.compare(&two_over), Some(0));
@@ -734,16 +734,16 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("tanh-sinh arcsine");
+        .ok_or(crate::Error::InvalidArgument)?;
         let pi = cc.pi(p, rm);
         assert_eq!(ts.compare(&pi), Some(0));
 
-        let lag =
-            gauss_laguerre(|x, p, rm, _cc| x.sqr(p, rm), 10, p, rm, &mut cc).expect("laguerre x^2");
+        let lag = gauss_laguerre(|x, p, rm, _cc| x.sqr(p, rm), 10, p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(lag.compare(&two), Some(0));
 
         let gh = gauss_hermite(|_x, p, _rm, _cc| ExactNum::from_u8(1, p), 1, p, rm, &mut cc)
-            .expect("hermite 1");
+            .ok_or(crate::Error::InvalidArgument)?;
         let sqrt_pi = pi.sqrt(p, rm);
         assert_eq!(gh.compare(&sqrt_pi), Some(0));
 
@@ -767,5 +767,6 @@ mod tests {
             &mut cc
         )
         .is_none());
+        Ok(())
     }
 }

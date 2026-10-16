@@ -153,14 +153,17 @@ fn test_rng_draws() {
 /// `reseed_random` (the cause of the `test_compute_added_err` flake under `random`).
 #[cfg(all(test, feature = "std"))]
 #[test]
-fn test_pinned_stream_ignores_other_threads() {
+fn test_pinned_stream_ignores_other_threads() -> Result<(), crate::Error> {
     let expected: Vec<u64> = {
         pin_thread_seed(42);
         (0..8).map(|_| random::<u64>()).collect()
     };
     pin_thread_seed(42);
     let mut got: Vec<u64> = (0..4).map(|_| random::<u64>()).collect();
-    std::thread::spawn(|| reseed_random(11)).join().unwrap();
+    std::thread::spawn(|| reseed_random(11))
+        .join()
+        .map_err(|_| crate::Error::InvalidArgument)?;
     got.extend((0..4).map(|_| random::<u64>()));
     assert_eq!(got, expected);
+    Ok(())
 }

@@ -125,46 +125,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_tanh() {
+    fn test_tanh() -> Result<(), crate::Error> {
         let p = 320;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let mut n1 = ExactNumNumber::from_word(1, p).unwrap();
+        let mut n1 = ExactNumNumber::from_word(1, p)?;
         n1.set_exponent(0);
-        let _n2 = n1.tanh(p, rm, &mut cc).unwrap();
+        let _n2 = n1.tanh(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Dec, rm).unwrap());
 
         // asymptotic & extrema testing
         let p = 640;
-        let n1 = ExactNumNumber::parse("8.00000000000000100000000000000010B6200000000000000000000000000002E8B9840AAAAAAAAAAAAAAAAAAAAAAAAADE85C5950B78E38E38E38E38E38E38E3902814A92D7C21CDB6DB6DB6DB6DB6E_e+1", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let n2 = n1.tanh(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("F.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF3455354A958B21BA74F856FDC3BA2D793AEBE0E1D1ADF118BD9D0B592FF14C815D2C_e-1", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n1 = ExactNumNumber::parse("8.00000000000000100000000000000010B6200000000000000000000000000002E8B9840AAAAAAAAAAAAAAAAAAAAAAAAADE85C5950B78E38E38E38E38E38E38E3902814A92D7C21CDB6DB6DB6DB6DB6E_e+1", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let n2 = n1.tanh(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("F.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF3455354A958B21BA74F856FDC3BA2D793AEBE0E1D1ADF118BD9D0B592FF14C815D2C_e-1", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         assert!(n2.cmp(&n3) == 0);
 
         // near zero
         let p = 448;
-        let n1 = ExactNumNumber::parse("-4.029AC2B966FC8CD896222A09593F0751477AD7BA9C969E57290BDE947A2E1514DF2901A1C5624013106A5197035DCA72C221BA963E190A20_e-13", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let n2 = n1.tanh(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("-4.029AC2B966FC8CD896222A09593F0751477AC23B7FED67E140D1714FFCEC504D75DF70C388B621AF2FBC77C90C98C50F852D65BEDA273128_e-13", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n1 = ExactNumNumber::parse("-4.029AC2B966FC8CD896222A09593F0751477AD7BA9C969E57290BDE947A2E1514DF2901A1C5624013106A5197035DCA72C221BA963E190A20_e-13", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let n2 = n1.tanh(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("-4.029AC2B966FC8CD896222A09593F0751477AC23B7FED67E140D1714FFCEC504D75DF70C388B621AF2FBC77C90C98C50F852D65BEDA273128_e-13", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         //println!("{:?}", n1.format(crate::Radix::Hex, rm, &mut cc).unwrap());
         //println!("{:?}", n2.format(crate::Radix::Hex, rm, &mut cc).unwrap());
 
         assert!(n2.cmp(&n3) == 0);
 
-        let d1 = ExactNumNumber::max_value(p).unwrap();
-        let d2 = ExactNumNumber::min_value(p).unwrap();
+        let d1 = ExactNumNumber::max_value(p)?;
+        let d2 = ExactNumNumber::min_value(p)?;
 
-        assert!(d1.tanh(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
-        assert!(d2.tanh(p, rm, &mut cc).unwrap().cmp(&ONE.neg().unwrap()) == 0);
+        assert!(d1.tanh(p, rm, &mut cc)?.cmp(&ONE) == 0);
+        assert!(d2.tanh(p, rm, &mut cc)?.cmp(&ONE.neg()?) == 0);
 
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
         let n1 = random_subnormal(p);
 
-        assert!(d3.tanh(p, rm, &mut cc).unwrap().cmp(&d3) == 0);
-        assert!(zero.tanh(p, rm, &mut cc).unwrap().is_zero());
-        assert!(n1.tanh(p, rm, &mut cc).unwrap().cmp(&n1) == 0);
+        assert!(d3.tanh(p, rm, &mut cc)?.cmp(&d3) == 0);
+        assert!(zero.tanh(p, rm, &mut cc)?.is_zero());
+        assert!(n1.tanh(p, rm, &mut cc)?.cmp(&n1) == 0);
+        Ok(())
     }
 }

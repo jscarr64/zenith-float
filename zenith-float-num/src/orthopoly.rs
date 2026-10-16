@@ -482,9 +482,9 @@ mod tests {
     }
 
     #[test]
-    fn orthopoly_he4_laguerre_t5_gegenbauer_recurrence() {
+    fn orthopoly_he4_laguerre_t5_gegenbauer_recurrence() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
@@ -529,6 +529,7 @@ mod tests {
             zero.hermite_h(4, p, rm).compare(&ExactNum::from_u8(12, p)),
             Some(0)
         );
+        Ok(())
     }
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {

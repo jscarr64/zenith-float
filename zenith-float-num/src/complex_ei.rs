@@ -435,10 +435,10 @@ mod tests {
     }
 
     #[test]
-    fn test_complex_ei_golds() {
+    fn test_complex_ei_golds() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
 
         let one = ExactComplex::one(p);
         let ei1 = one.ei(p, rm, &mut cc);
@@ -512,5 +512,6 @@ mod tests {
 
         let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
         assert!(nan.ei(p, rm, &mut cc).is_nan());
+        Ok(())
     }
 }

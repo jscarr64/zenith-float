@@ -100,58 +100,58 @@ mod tests {
     use crate::Consts;
 
     #[test]
-    fn test_copysign() {
+    fn test_copysign() -> Result<(), crate::Error> {
         let p = 128;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
 
-        let pos = ExactNumNumber::from_word(5, p).unwrap();
-        let neg = ExactNumNumber::from_i8(-3, p).unwrap();
+        let pos = ExactNumNumber::from_word(5, p)?;
+        let neg = ExactNumNumber::from_i8(-3, p)?;
 
-        let r = pos.copysign(&neg, p, rm).unwrap();
+        let r = pos.copysign(&neg, p, rm)?;
         assert!(r.is_negative());
-        assert!(r.cmp(&ExactNumNumber::from_word(5, p).unwrap().neg().unwrap()) == 0);
+        assert!(r.cmp(&ExactNumNumber::from_word(5, p)?.neg()?) == 0);
 
-        let r = neg.copysign(&pos, p, rm).unwrap();
+        let r = neg.copysign(&pos, p, rm)?;
         assert!(r.is_positive());
-        assert!(r.cmp(&ExactNumNumber::from_word(3, p).unwrap()) == 0);
+        assert!(r.cmp(&ExactNumNumber::from_word(3, p)?) == 0);
 
-        let zero = ExactNumNumber::new(p).unwrap();
-        let neg_zero = zero.copysign(&neg, p, rm).unwrap();
-        let pos_zero = zero.copysign(&pos, p, rm).unwrap();
+        let zero = ExactNumNumber::new(p)?;
+        let neg_zero = zero.copysign(&neg, p, rm)?;
+        let pos_zero = zero.copysign(&pos, p, rm)?;
         assert!(neg_zero.is_zero() && neg_zero.is_negative());
         assert!(pos_zero.is_zero() && pos_zero.is_positive());
 
-        let x = ExactNumNumber::parse("1.8", crate::Radix::Hex, p, RoundingMode::None, &mut cc)
-            .unwrap();
-        let y =
-            ExactNumNumber::parse("-1", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let r = x.copysign(&y, p, rm).unwrap();
+        let x = ExactNumNumber::parse("1.8", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let y = ExactNumNumber::parse("-1", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let r = x.copysign(&y, p, rm)?;
         assert!(r.is_negative());
+        Ok(())
     }
 
     #[test]
-    fn test_next_after() {
+    fn test_next_after() -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::ToEven;
 
-        let one = ExactNumNumber::from_word(1, p).unwrap();
-        let two = ExactNumNumber::from_word(2, p).unwrap();
-        let next = one.next_after(&two, p, rm).unwrap();
+        let one = ExactNumNumber::from_word(1, p)?;
+        let two = ExactNumNumber::from_word(2, p)?;
+        let next = one.next_after(&two, p, rm)?;
         assert!(next.cmp(&one) > 0);
         assert!(next.cmp(&two) < 0);
 
-        let prev = two.next_after(&one, p, rm).unwrap();
+        let prev = two.next_after(&one, p, rm)?;
         assert!(prev.cmp(&two) < 0);
         assert!(prev.cmp(&one) > 0);
 
-        let zero = ExactNumNumber::new(p).unwrap();
-        let min_pos = ExactNumNumber::min_positive(p).unwrap();
-        assert!(zero.next_after(&two, p, rm).unwrap().cmp(&min_pos) == 0);
+        let zero = ExactNumNumber::new(p)?;
+        let min_pos = ExactNumNumber::min_positive(p)?;
+        assert!(zero.next_after(&two, p, rm)?.cmp(&min_pos) == 0);
 
-        let neg_min = min_pos.neg().unwrap();
-        assert!(zero.next_after(&neg_min, p, rm).unwrap().cmp(&neg_min) == 0);
+        let neg_min = min_pos.neg()?;
+        assert!(zero.next_after(&neg_min, p, rm)?.cmp(&neg_min) == 0);
 
-        assert!(one.next_after(&one, p, rm).unwrap().cmp(&one) == 0);
+        assert!(one.next_after(&one, p, rm)?.cmp(&one) == 0);
+        Ok(())
     }
 }

@@ -127,10 +127,10 @@ mod tests {
     const RANDOM_EXP_MEAN_SAMPLES: usize = 10_000;
 
     #[test]
-    fn random_dist_plan_golds() {
+    fn random_dist_plan_golds() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let zero = ExactNum::from_u8(0, p);
         let one = ExactNum::from_u8(1, p);
 
@@ -175,11 +175,12 @@ mod tests {
             rm,
             &mut cc,
         )
-        .unwrap();
+        .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(fill.shape(), (100, 100));
 
         assert!(ExactNum::random_uniform(&one, &zero, p, rm).is_nan());
         assert!(ExactNum::random_gaussian(&zero, &zero, p, rm, &mut cc).is_nan());
         assert!(ExactNum::random_exponential(&z64, p64, rm, &mut cc).is_nan());
+        Ok(())
     }
 }

@@ -142,23 +142,22 @@ mod tests {
     use crate::Consts;
 
     #[test]
-    fn test_nth_root() {
+    fn test_nth_root() -> Result<(), crate::Error> {
         let p = 320;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
 
-        let sixteen = ExactNumNumber::from_word(16, p).unwrap();
+        let sixteen = ExactNumNumber::from_word(16, p)?;
         assert!(
             sixteen
-                .nth_root(4, p, rm)
-                .unwrap()
-                .cmp(&ExactNumNumber::from_word(2, p).unwrap())
+                .nth_root(4, p, rm)?
+                .cmp(&ExactNumNumber::from_word(2, p)?)
                 == 0
         );
 
-        let neg = ExactNumNumber::from_i8(-8, p).unwrap();
-        let root = neg.nth_root(3, p, rm).unwrap();
-        assert!(root.cmp(&ExactNumNumber::from_i8(-2, p).unwrap()) == 0);
+        let neg = ExactNumNumber::from_i8(-8, p)?;
+        let root = neg.nth_root(3, p, rm)?;
+        assert!(root.cmp(&ExactNumNumber::from_i8(-2, p)?) == 0);
 
         assert!(neg.nth_root(4, p, rm).is_err());
         assert!(sixteen.nth_root(0, p, rm).is_err());
@@ -169,11 +168,11 @@ mod tests {
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
-        let sqrt = d1.sqrt(p, rm).unwrap();
-        assert!(d1.nth_root(2, p, rm).unwrap().cmp(&sqrt) == 0);
-        let cbrt = d1.cbrt(p, rm).unwrap();
-        assert!(d1.nth_root(3, p, rm).unwrap().cmp(&cbrt) == 0);
+        )?;
+        let sqrt = d1.sqrt(p, rm)?;
+        assert!(d1.nth_root(2, p, rm)?.cmp(&sqrt) == 0);
+        let cbrt = d1.cbrt(p, rm)?;
+        assert!(d1.nth_root(3, p, rm)?.cmp(&cbrt) == 0);
+        Ok(())
     }
 }

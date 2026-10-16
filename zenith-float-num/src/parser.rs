@@ -290,7 +290,7 @@ mod tests {
     use {alloc::format, alloc::string::String, alloc::vec};
 
     #[test]
-    pub fn test_parser() {
+    pub fn test_parser() -> Result<(), crate::Error> {
         // combinations of possible valid components of a number and expected resulting characteristics.
         let mantissas = ["0.0", "0", ".000", "00.", "000123", "456.", "789.012", ".3456", "0.0078"];
         let expected_mantissas = [
@@ -325,7 +325,7 @@ mod tests {
                     let e = exponents[k];
                     let numstr = String::from(s) + m + e;
 
-                    let ps = parse(&numstr, Radix::Dec).unwrap();
+                    let ps = parse(&numstr, Radix::Dec)?;
 
                     assert!(!ps.is_inf());
                     assert!(!ps.is_nan());
@@ -349,7 +349,7 @@ mod tests {
                 let s = signs[i];
                 let numstr = String::from(s) + inf;
 
-                let ps = parse(&numstr, Radix::Dec).unwrap();
+                let ps = parse(&numstr, Radix::Dec)?;
 
                 assert!(ps.is_inf());
                 assert!(ps.sign() == expected_signs[i]);
@@ -359,27 +359,27 @@ mod tests {
 
         // test nan
         for nan in nans {
-            let ps = parse(nan, Radix::Dec).unwrap();
+            let ps = parse(nan, Radix::Dec)?;
             assert!(!ps.is_inf());
             assert!(ps.is_nan());
         }
 
         // bin
-        let ps = parse("101.00101e+1101", Radix::Bin).unwrap();
+        let ps = parse("101.00101e+1101", Radix::Bin)?;
         let (m, s, e) = ps.raw_parts();
         assert!(m == [1, 0, 1, 0, 0, 1, 0, 1]);
         assert!(s == Sign::Pos);
         assert!(e == 16);
 
         // oct
-        let ps = parse("2670.343e+703", Radix::Oct).unwrap();
+        let ps = parse("2670.343e+703", Radix::Oct)?;
         let (m, s, e) = ps.raw_parts();
         assert!(m == [2, 6, 7, 0, 3, 4, 3]);
         assert!(s == Sign::Pos);
         assert!(e == 0o707);
 
         // hex
-        let ps = parse("abc.def09123e_e-1fa", Radix::Hex).unwrap();
+        let ps = parse("abc.def09123e_e-1fa", Radix::Hex)?;
         let (m, s, e) = ps.raw_parts();
         assert!(m == [10, 11, 12, 13, 14, 15, 0, 9, 1, 2, 3, 14]);
         assert!(s == Sign::Pos);
@@ -387,12 +387,12 @@ mod tests {
 
         // large exp
         let numstr = "abc.def09123e_e+7FFFFFFF";
-        let ps = parse(numstr, Radix::Hex).unwrap();
+        let ps = parse(numstr, Radix::Hex)?;
         assert!(ps.is_inf());
         assert!(ps.sign().is_positive());
 
         let numstr = "-abc.def09123e_e+7FFFFFFF";
-        let ps = parse(numstr, Radix::Hex).unwrap();
+        let ps = parse(numstr, Radix::Hex)?;
         assert!(ps.is_inf());
         assert!(!ps.is_nan());
         assert!(ps.sign().is_negative());
@@ -400,14 +400,13 @@ mod tests {
         let ps = parse(
             "-abc.def09123e_e+ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
             Radix::Hex,
-        )
-        .unwrap();
+        )?;
         assert!(ps.is_inf());
         assert!(!ps.is_nan());
         assert!(ps.sign().is_negative());
 
         let numstr = format!("0.0000abc_e+{:X}", EXPONENT_MAX);
-        let ps = parse(&numstr, Radix::Hex).unwrap();
+        let ps = parse(&numstr, Radix::Hex)?;
         assert!(!ps.is_inf());
         assert!(!ps.is_nan());
         let (m, _s, e) = ps.raw_parts();
@@ -419,7 +418,7 @@ mod tests {
             "abc.def09123e_e-{:x}",
             (EXPONENT_MIN as i64 - 4).unsigned_abs()
         );
-        let ps = parse(&numstr, Radix::Hex).unwrap();
+        let ps = parse(&numstr, Radix::Hex)?;
         assert!(!ps.is_inf());
         assert!(!ps.is_nan());
         let (m, _s, e) = ps.raw_parts();
@@ -430,7 +429,7 @@ mod tests {
             "0.0000abcdef09123e_e-{:X}",
             (EXPONENT_MIN as i64).unsigned_abs()
         );
-        let ps = parse(&numstr, Radix::Hex).unwrap();
+        let ps = parse(&numstr, Radix::Hex)?;
         assert!(!ps.is_inf());
         assert!(!ps.is_nan());
         let (m, _s, e) = ps.raw_parts();
@@ -443,8 +442,7 @@ mod tests {
         let ps = parse(
             "abc.def09123e_e-ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
             Radix::Hex,
-        )
-        .unwrap();
+        )?;
         assert!(!ps.is_inf());
         assert!(!ps.is_nan());
         let (m, _s, e) = ps.raw_parts();
@@ -458,9 +456,10 @@ mod tests {
             assert!(parse(bad, Radix::Dec).is_err(), "{bad}");
         }
         assert!(parse("1_e", Radix::Hex).is_err());
-        let ps = parse("nan", Radix::Dec).unwrap();
+        let ps = parse("nan", Radix::Dec)?;
         assert!(ps.is_nan());
-        let ps = parse("inf", Radix::Dec).unwrap();
+        let ps = parse("inf", Radix::Dec)?;
         assert!(ps.is_inf());
+        Ok(())
     }
 }

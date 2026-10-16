@@ -182,7 +182,7 @@ mod tests {
     use alloc::vec::Vec;
 
     #[test]
-    fn test_toom2() {
+    fn test_toom2() -> Result<(), crate::Error> {
         // d1*d2
         let s1 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
         let s2 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
@@ -190,7 +190,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 36];
-        Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -201,7 +201,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 15];
-        Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -212,7 +212,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 13];
-        Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -223,7 +223,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 15];
-        Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -234,7 +234,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 15];
-        Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -250,10 +250,11 @@ mod tests {
             mul(&s1, &s2, &mut ref_s);
 
             let mut ret_s = vec![0; s1.len() + s2.len()];
-            Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+            Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
             assert!(ret_s == ref_s);
         }
+        Ok(())
     }
 
     fn random_slice(min_len: usize, max_len: usize) -> Vec<Word> {

@@ -922,8 +922,8 @@ mod tests {
     use alloc::vec;
 
     #[test]
-    fn test_conv_num() {
-        let mut cc = Consts::new().unwrap();
+    fn test_conv_num() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
 
         // Decimal I/O uses software big-float conversion only (no hardware floats).
 
@@ -935,11 +935,8 @@ mod tests {
                 Sign::Pos,
                 -1,
                 false,
-            )
-            .unwrap();
-            let (s, m, e) = n
-                .convert_to_radix(Radix::Oct, RoundingMode::None, &mut cc)
-                .unwrap();
+            )?;
+            let (s, m, e) = n.convert_to_radix(Radix::Oct, RoundingMode::None, &mut cc)?;
             let g = ExactNumNumber::convert_from_radix(
                 s,
                 &m,
@@ -948,8 +945,7 @@ mod tests {
                 160,
                 RoundingMode::ToEven,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
 
             assert!(n.cmp(&g) == 0);
 
@@ -959,11 +955,8 @@ mod tests {
                 Sign::Pos,
                 -0,
                 false,
-            )
-            .unwrap();
-            let (s, m, e) = n
-                .convert_to_radix(Radix::Dec, RoundingMode::None, &mut cc)
-                .unwrap();
+            )?;
+            let (s, m, e) = n.convert_to_radix(Radix::Dec, RoundingMode::None, &mut cc)?;
 
             assert_eq!(
                 m,
@@ -983,8 +976,7 @@ mod tests {
                 96,
                 RoundingMode::ToEven,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
             assert!(g.cmp(&n) == 0);
         }
 
@@ -996,11 +988,8 @@ mod tests {
                 Sign::Pos,
                 -1,
                 false,
-            )
-            .unwrap();
-            let (s, m, e) = n
-                .convert_to_radix(Radix::Oct, RoundingMode::None, &mut cc)
-                .unwrap();
+            )?;
+            let (s, m, e) = n.convert_to_radix(Radix::Oct, RoundingMode::None, &mut cc)?;
             let g = ExactNumNumber::convert_from_radix(
                 s,
                 &m,
@@ -1009,8 +998,7 @@ mod tests {
                 192,
                 RoundingMode::ToEven,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
 
             assert!(n.cmp(&g) == 0);
 
@@ -1020,11 +1008,8 @@ mod tests {
                 Sign::Pos,
                 -0,
                 false,
-            )
-            .unwrap();
-            let (s, m, e) = n
-                .convert_to_radix(Radix::Dec, RoundingMode::ToEven, &mut cc)
-                .unwrap();
+            )?;
+            let (s, m, e) = n.convert_to_radix(Radix::Dec, RoundingMode::ToEven, &mut cc)?;
 
             assert_eq!(
                 m,
@@ -1045,8 +1030,7 @@ mod tests {
                 192,
                 RoundingMode::ToEven,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
             //println!("{:?}", g);
             //println!("{:?}", n);
             assert!(g.cmp(&n) == 0);
@@ -1061,12 +1045,10 @@ mod tests {
             let p2 = (random::<usize>() % p_rng + 1) * WORD_BIT_SIZE;
             let p = p1.min(p2);
 
-            let mut n = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap();
+            let mut n = ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND)?;
             let rdx = random_radix();
 
-            let (s1, m1, e1) = n
-                .convert_to_radix(rdx, RoundingMode::ToEven, &mut cc)
-                .unwrap();
+            let (s1, m1, e1) = n.convert_to_radix(rdx, RoundingMode::ToEven, &mut cc)?;
             let mut g = ExactNumNumber::convert_from_radix(
                 s1,
                 &m1,
@@ -1075,8 +1057,7 @@ mod tests {
                 p2,
                 RoundingMode::ToEven,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
 
             //println!("\n{:?}", rdx);
             //println!("{:?} {:?} {}", s1, m1, e1);
@@ -1084,19 +1065,12 @@ mod tests {
 
             if rdx == Radix::Dec {
                 eps.set_exponent(n.exponent() - p as Exponent + 4);
-                assert!(
-                    n.sub(&g, p, RoundingMode::None)
-                        .unwrap()
-                        .abs()
-                        .unwrap()
-                        .cmp(&eps)
-                        <= 0
-                );
+                assert!(n.sub(&g, p, RoundingMode::None)?.abs()?.cmp(&eps) <= 0);
             } else {
                 if p2 < p1 {
-                    n.set_precision(p, RoundingMode::ToEven).unwrap();
+                    n.set_precision(p, RoundingMode::ToEven)?;
                 } else if p2 > p1 {
-                    g.set_precision(p, RoundingMode::ToEven).unwrap();
+                    g.set_precision(p, RoundingMode::ToEven)?;
                 }
 
                 assert!(n.cmp(&g) == 0);
@@ -1115,9 +1089,7 @@ mod tests {
                 continue;
             }
 
-            let (s1, m1, e1) = n
-                .convert_to_radix(rdx, RoundingMode::ToEven, &mut cc)
-                .unwrap();
+            let (s1, m1, e1) = n.convert_to_radix(rdx, RoundingMode::ToEven, &mut cc)?;
 
             //println!("\n{:?}", rdx);
             //println!("{:?} {:?} {}", s1, m1, e1);
@@ -1130,33 +1102,27 @@ mod tests {
                 p2,
                 RoundingMode::ToEven,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
 
             //println!("\n{:?}", rdx);
             //println!("{:?} {:?} {}", s1, m1, e1);
             //println!("{:?}\n{:?}", n, g);
 
             if rdx == Radix::Dec {
-                let mut eps = ExactNumNumber::min_positive(p).unwrap();
+                let mut eps = ExactNumNumber::min_positive(p)?;
                 eps.set_exponent(eps.exponent() + 1);
 
                 assert!(
-                    n.sub(&g, p, RoundingMode::None)
-                        .unwrap()
-                        .abs()
-                        .unwrap()
-                        .cmp(&eps)
-                        <= 0,
+                    n.sub(&g, p, RoundingMode::None)?.abs()?.cmp(&eps) <= 0,
                     "{:?} {:?}",
                     n,
                     g
                 );
             } else {
                 if p2 < p1 {
-                    n.set_precision(p, RoundingMode::ToEven).unwrap();
+                    n.set_precision(p, RoundingMode::ToEven)?;
                 } else if p2 > p1 {
-                    g.set_precision(p, RoundingMode::ToEven).unwrap();
+                    g.set_precision(p, RoundingMode::ToEven)?;
                 }
 
                 assert!(n.cmp(&g) == 0, "{:?} {:?} {:?}", rdx, n, g);
@@ -1175,29 +1141,26 @@ mod tests {
             // min, max
             // for p2 < p1 rounding will cause overflow, for p2 >= p1 no rounding is needed.
             let rm = RoundingMode::None;
-            for mut n in
-                [ExactNumNumber::max_value(p1).unwrap(), ExactNumNumber::min_value(p1).unwrap()]
-            {
+            for mut n in [ExactNumNumber::max_value(p1)?, ExactNumNumber::min_value(p1)?] {
                 //println!("\n{:?} {} {}", rdx, p1, p2);
                 //println!("{:?}", n);
 
-                let (s1, m1, e1) = n.convert_to_radix(rdx, rm, &mut cc).unwrap();
+                let (s1, m1, e1) = n.convert_to_radix(rdx, rm, &mut cc)?;
 
                 //println!("{:?} {:?} {}", s1, m1, e1);
 
-                let mut g =
-                    ExactNumNumber::convert_from_radix(s1, &m1, e1, rdx, p2, rm, &mut cc).unwrap();
+                let mut g = ExactNumNumber::convert_from_radix(s1, &m1, e1, rdx, p2, rm, &mut cc)?;
 
                 //println!("{:?}", g);
 
                 if rdx == Radix::Dec {
                     eps.set_exponent(n.exponent() - p as Exponent + 4);
-                    assert!(n.sub(&g, p, rm).unwrap().abs().unwrap().cmp(&eps) <= 0);
+                    assert!(n.sub(&g, p, rm)?.abs()?.cmp(&eps) <= 0);
                 } else {
                     if p2 < p1 {
-                        n.set_precision(p, rm).unwrap();
+                        n.set_precision(p, rm)?;
                     } else if p2 > p1 {
-                        g.set_precision(p, rm).unwrap();
+                        g.set_precision(p, rm)?;
                     }
 
                     assert!(n.cmp(&g) == 0);
@@ -1206,26 +1169,25 @@ mod tests {
 
             // min subnormal
             let rm = RoundingMode::ToEven;
-            let mut n = ExactNumNumber::min_positive(p1).unwrap();
+            let mut n = ExactNumNumber::min_positive(p1)?;
             //println!("\n{:?} {} {}", rdx, p1, p2);
             //println!("{:?}", n);
-            let (s1, m1, e1) = n.convert_to_radix(rdx, rm, &mut cc).unwrap();
+            let (s1, m1, e1) = n.convert_to_radix(rdx, rm, &mut cc)?;
 
             //println!("{:?} {:?} {}", s1, m1, e1);
 
-            let mut g =
-                ExactNumNumber::convert_from_radix(s1, &m1, e1, rdx, p2, rm, &mut cc).unwrap();
+            let mut g = ExactNumNumber::convert_from_radix(s1, &m1, e1, rdx, p2, rm, &mut cc)?;
             //println!("{:?}", g);
 
             if rdx == Radix::Dec {
-                let mut eps = ExactNumNumber::min_positive(p).unwrap();
+                let mut eps = ExactNumNumber::min_positive(p)?;
                 eps.set_exponent(eps.exponent() + 1);
-                assert!(n.sub(&g, p, rm).unwrap().abs().unwrap().cmp(&eps) <= 0);
+                assert!(n.sub(&g, p, rm)?.abs()?.cmp(&eps) <= 0);
             } else {
                 if p2 < p1 {
-                    n.set_precision(p, rm).unwrap();
+                    n.set_precision(p, rm)?;
                 } else if p2 > p1 {
-                    g.set_precision(p, rm).unwrap();
+                    g.set_precision(p, rm)?;
                 }
                 assert!(n.cmp(&g) == 0);
             }
@@ -1244,8 +1206,7 @@ mod tests {
                     p1,
                     RoundingMode::ToEven,
                     &mut cc
-                )
-                .unwrap()
+                )?
                 .is_zero());
                 let m1 = [1, rdx.value(), 0];
                 assert!(
@@ -1270,8 +1231,7 @@ mod tests {
                     0,
                     RoundingMode::ToEven,
                     &mut cc,
-                )
-                .unwrap()
+                )?
                 .is_zero());
                 let m1 = [0; 256];
                 assert!(ExactNumNumber::convert_from_radix(
@@ -1282,8 +1242,7 @@ mod tests {
                     p1,
                     RoundingMode::ToEven,
                     &mut cc,
-                )
-                .unwrap()
+                )?
                 .is_zero());
                 let m1 = [0];
                 assert!(ExactNumNumber::convert_from_radix(
@@ -1294,8 +1253,7 @@ mod tests {
                     p1,
                     RoundingMode::ToEven,
                     &mut cc,
-                )
-                .unwrap()
+                )?
                 .is_zero());
             }
         }
@@ -1305,11 +1263,8 @@ mod tests {
             &[1052139549, 0, 0, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT],
             Sign::Pos,
             1,
-        )
-        .unwrap();
-        let (s, d, e) = n
-            .convert_to_radix(Radix::Dec, RoundingMode::ToEven, &mut cc)
-            .unwrap();
+        )?;
+        let (s, d, e) = n.convert_to_radix(Radix::Dec, RoundingMode::ToEven, &mut cc)?;
         let g = ExactNumNumber::convert_from_radix(
             s,
             &d,
@@ -1318,12 +1273,10 @@ mod tests {
             n.mantissa_max_bit_len(),
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
+        )?;
         assert!(
             g.cmp(&n) == 0
-                || g.sub(&n, n.mantissa_max_bit_len(), RoundingMode::ToEven)
-                    .unwrap()
+                || g.sub(&n, n.mantissa_max_bit_len(), RoundingMode::ToEven)?
                     .exponent()
                     < -(n.mantissa_max_bit_len() as Exponent - 4)
         );
@@ -1528,18 +1481,15 @@ mod tests {
                 usize::MAX,
                 RoundingMode::None,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
 
-            let (s, d, e) = g
-                .convert_to_radix(rdx, RoundingMode::None, &mut cc)
-                .unwrap();
+            let (s, d, e) = g.convert_to_radix(rdx, RoundingMode::None, &mut cc)?;
 
             // verify no information loss in mantissa becase of length
             let lead_zeroes_s1 = s1.iter().take_while(|&&x| x == 0).count();
             let lead_zeroes_d = d.iter().take_while(|&&x| x == 0).count();
-            assert!(*d.iter().last().unwrap() != 0);
-            assert!(*s1.iter().last().unwrap() != 0);
+            assert!(*d.iter().last().ok_or(crate::Error::InvalidArgument)? != 0);
+            assert!(*s1.iter().last().ok_or(crate::Error::InvalidArgument)? != 0);
             assert!(d.len() - lead_zeroes_d >= s1.len() - lead_zeroes_s1);
 
             let mut n = ExactNumNumber::convert_from_radix(
@@ -1550,16 +1500,13 @@ mod tests {
                 usize::MAX,
                 RoundingMode::None,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
 
             if rdx == Radix::Dec {
                 if g.mantissa_max_bit_len() < n.mantissa_max_bit_len() {
-                    n.set_precision(g.mantissa_max_bit_len(), RoundingMode::ToEven)
-                        .unwrap();
+                    n.set_precision(g.mantissa_max_bit_len(), RoundingMode::ToEven)?;
                 } else {
-                    g.set_precision(n.mantissa_max_bit_len(), RoundingMode::ToEven)
-                        .unwrap();
+                    g.set_precision(n.mantissa_max_bit_len(), RoundingMode::ToEven)?;
                 }
 
                 assert!(n.cmp(&g) == 0);
@@ -1569,6 +1516,7 @@ mod tests {
         }
 
         // unknown p: decimal
+        Ok(())
     }
 
     fn random_radix() -> Radix {
@@ -1582,7 +1530,7 @@ mod tests {
     }
 
     #[test]
-    fn test_round_dec() {
+    fn test_round_dec() -> Result<(), crate::Error> {
         let mut testset = [
             (
                 RoundingMode::ToEven,
@@ -1899,8 +1847,7 @@ mod tests {
             Sign::Pos,
             &mut 0,
             false
-        )
-        .unwrap());
+        )?);
         assert!(!ExactNumNumber::try_round_dec(
             &mut [9, 9, 9, 9, 9, 9],
             3,
@@ -1908,8 +1855,7 @@ mod tests {
             Sign::Pos,
             &mut 0,
             true
-        )
-        .unwrap());
+        )?);
 
         let mut e = 0;
         assert!(ExactNumNumber::try_round_dec(
@@ -1919,8 +1865,7 @@ mod tests {
             Sign::Pos,
             &mut e,
             true
-        )
-        .unwrap());
+        )?);
         assert_eq!(e, 1);
 
         e = EXPONENT_MAX;
@@ -1935,5 +1880,6 @@ mod tests {
             ),
             Err(Error::ExponentOverflow(Sign::Neg))
         );
+        Ok(())
     }
 }

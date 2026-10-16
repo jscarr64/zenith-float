@@ -92,59 +92,59 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_atanh() {
+    fn test_atanh() -> Result<(), crate::Error> {
         let p = 320;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let mut n1 = ExactNumNumber::from_word(1, p).unwrap();
+        let mut n1 = ExactNumNumber::from_word(1, p)?;
         n1.set_exponent(-34);
-        let _n2 = n1.atanh(p, rm, &mut cc).unwrap();
+        let _n2 = n1.atanh(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Bin, rm).unwrap());
 
-        let mut n1 = ExactNumNumber::from_word(1, p).unwrap();
+        let mut n1 = ExactNumNumber::from_word(1, p)?;
         n1.set_exponent(0);
-        let _n2 = n1.atanh(p, rm, &mut cc).unwrap();
+        let _n2 = n1.atanh(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Bin, rm).unwrap());
 
         // asymptotic & extrema testing
         let p = 640;
-        let n1 = ExactNumNumber::parse("F.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8EE51946EC87F86A7E6DA4D8C6ED8DFAE4D7B7FF0B8356E63EF277C97F2E2111AECCBE8F2DF4EFE48F618B1E75C7CBBDCFCE32604DE9F240_e-1", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let n2 = n1.atanh(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("4.34C10E83FA43CA88E0A3A0125990D4B8BC2CF39E0695A6B9F73DE8F43C00767B966992C0A98F96AAC882152114C2FE89AD58DA3BA9E2013CAD88370B80F7D9AD4D9B6494C0591D3CAA382BF6FBD88730_e+1", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n1 = ExactNumNumber::parse("F.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF8EE51946EC87F86A7E6DA4D8C6ED8DFAE4D7B7FF0B8356E63EF277C97F2E2111AECCBE8F2DF4EFE48F618B1E75C7CBBDCFCE32604DE9F240_e-1", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let n2 = n1.atanh(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("4.34C10E83FA43CA88E0A3A0125990D4B8BC2CF39E0695A6B9F73DE8F43C00767B966992C0A98F96AAC882152114C2FE89AD58DA3BA9E2013CAD88370B80F7D9AD4D9B6494C0591D3CAA382BF6FBD88730_e+1", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         assert!(n2.cmp(&n3) == 0);
 
         // small value
         let p = 320;
-        let n1 = ExactNumNumber::parse("7.C3A95633A7BFB754F49F839BCFDED202E43C4EEB4E6CC1292F4751559BBC55E859642CBB19881B10_e-F", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let n2 = n1.atanh(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("7.C3A95633A7BFB754F49F839BCFDF6E088C51BE9FAF9B30BC9499ABD8AFDA2F9E0F9B97FBDB228480_e-f", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n1 = ExactNumNumber::parse("7.C3A95633A7BFB754F49F839BCFDED202E43C4EEB4E6CC1292F4751559BBC55E859642CBB19881B10_e-F", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let n2 = n1.atanh(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("7.C3A95633A7BFB754F49F839BCFDF6E088C51BE9FAF9B30BC9499ABD8AFDA2F9E0F9B97FBDB228480_e-f", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         // println!("{:?}", n1.format(crate::Radix::Bin, rm).unwrap());
         // println!("{:?}", n2.format(crate::Radix::Hex, rm).unwrap());
 
         assert!(n2.cmp(&n3) == 0);
 
-        let d1 = ExactNumNumber::max_value(p).unwrap();
-        let d2 = ExactNumNumber::min_value(p).unwrap();
+        let d1 = ExactNumNumber::max_value(p)?;
+        let d2 = ExactNumNumber::min_value(p)?;
 
         assert!(d1.atanh(p, rm, &mut cc).unwrap_err() == Error::InvalidArgument);
         assert!(d2.atanh(p, rm, &mut cc).unwrap_err() == Error::InvalidArgument);
 
         // subnormal
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
 
-        assert!(d3.atanh(p, rm, &mut cc).unwrap().cmp(&d3) == 0);
-        assert!(zero.atanh(p, rm, &mut cc).unwrap().is_zero());
+        assert!(d3.atanh(p, rm, &mut cc)?.cmp(&d3) == 0);
+        assert!(zero.atanh(p, rm, &mut cc)?.is_zero());
 
         assert!(ONE.atanh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Pos));
         assert!(
-            ONE.neg().unwrap().atanh(p, rm, &mut cc).unwrap_err()
-                == Error::ExponentOverflow(Sign::Neg)
+            ONE.neg()?.atanh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Neg)
         );
 
         let n1 = random_subnormal(p);
-        assert!(n1.atanh(p, rm, &mut cc).unwrap().cmp(&n1) == 0);
+        assert!(n1.atanh(p, rm, &mut cc)?.cmp(&n1) == 0);
+        Ok(())
     }
 }

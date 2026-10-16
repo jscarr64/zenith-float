@@ -168,43 +168,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sine() {
+    fn test_sine() -> Result<(), crate::Error> {
         let p = 320;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let mut n1 = ExactNumNumber::from_word(5, p).unwrap();
+        let mut n1 = ExactNumNumber::from_word(5, p)?;
         n1.set_exponent(0);
-        let _n2 = n1.sin(p, rm, &mut cc).unwrap();
+        let _n2 = n1.sin(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Dec, rm).unwrap());
 
         // asymptotic & extrema testing
-        let mut half_pi = cc.pi_num(128, RoundingMode::None).unwrap();
+        let mut half_pi = cc.pi_num(128, RoundingMode::None)?;
         half_pi.set_exponent(1);
-        half_pi.set_precision(p, RoundingMode::None).unwrap();
+        half_pi.set_precision(p, RoundingMode::None)?;
 
-        let n2 = half_pi.sin(p, rm, &mut cc).unwrap();
+        let n2 = half_pi.sin(p, rm, &mut cc)?;
         let n3 = ExactNumNumber::parse(
             "F.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF2DC85F7E77EC487_e-1",
             crate::Radix::Hex,
             640,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
+        )?;
 
         assert!(n2.cmp(&n3) == 0);
 
         // large exponent
         half_pi.set_exponent(256);
-        let n2 = half_pi.sin(p, rm, &mut cc).unwrap();
+        let n2 = half_pi.sin(p, rm, &mut cc)?;
         let n3 = ExactNumNumber::parse(
             "F.AE195882CABDC16FAF2A733AB99159AF50C47E8B9ED8BA42C5872FF88A52726061B4231170F1BE8_e-1",
             crate::Radix::Hex,
             640,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
+        )?;
 
         //println!("{:?}", n2.format(crate::Radix::Hex, rm).unwrap());
 
@@ -212,21 +210,22 @@ mod tests {
 
         // small exponent
         let p = 384;
-        let d1 = ExactNumNumber::parse("-4.6C7B4339E519CAFC9C58869B348D66FD510B4E74F0A6476126B55FD73F5533C7B84C5733C34BB312677AE7C015A666D0_e-17", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let d2 = d1.sin(p, RoundingMode::ToEven, &mut cc).unwrap();
-        let d3 = ExactNumNumber::parse("-4.6C7B4339E519CAFC9C58869B348D66FD510B4E74F0A638F3725423CE43E0D375A6FEE810D77915E6EA2D8EE32EBCF618_e-17", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let d1 = ExactNumNumber::parse("-4.6C7B4339E519CAFC9C58869B348D66FD510B4E74F0A6476126B55FD73F5533C7B84C5733C34BB312677AE7C015A666D0_e-17", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let d2 = d1.sin(p, RoundingMode::ToEven, &mut cc)?;
+        let d3 = ExactNumNumber::parse("-4.6C7B4339E519CAFC9C58869B348D66FD510B4E74F0A638F3725423CE43E0D375A6FEE810D77915E6EA2D8EE32EBCF618_e-17", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         // println!("{:?}", d1.format(crate::Radix::Bin, RoundingMode::None).unwrap());
         // println!("{:?}", d2.format(crate::Radix::Hex, RoundingMode::None).unwrap());
 
         assert!(d2.cmp(&d3) == 0);
 
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
         let n1 = random_subnormal(p);
 
-        assert!(d3.sin(p, rm, &mut cc).unwrap().cmp(&d3) == 0);
-        assert!(zero.sin(p, rm, &mut cc).unwrap().is_zero());
-        assert!(n1.sin(p, rm, &mut cc).unwrap().cmp(&n1) == 0);
+        assert!(d3.sin(p, rm, &mut cc)?.cmp(&d3) == 0);
+        assert!(zero.sin(p, rm, &mut cc)?.is_zero());
+        assert!(n1.sin(p, rm, &mut cc)?.cmp(&n1) == 0);
+        Ok(())
     }
 }

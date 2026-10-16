@@ -576,7 +576,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fft_mul() {
+    fn test_fft_mul() -> Result<(), crate::Error> {
         // d1*d2
         let s1 = [
             1975132958, 2865607635, 3785004856, 2329109360, 82327679, 1315874535, 144553447,
@@ -590,7 +590,7 @@ mod tests {
         let mut ret_s = [0; 16];
 
         mul(&s1, &s2, &mut ref_s);
-        Mantissa::fft_mul(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::fft_mul(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -602,7 +602,7 @@ mod tests {
         let mut ret_s = [0; 10];
 
         mul(&s1, &s2, &mut ref_s);
-        Mantissa::fft_mul(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::fft_mul(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -613,7 +613,7 @@ mod tests {
         let mut ref_s = [0; 16];
 
         mul(&s1, &s2, &mut ref_s);
-        Mantissa::fft_mul(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::fft_mul(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -632,7 +632,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 200];
-        Mantissa::fft_mul(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::fft_mul(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -643,7 +643,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 100];
-        Mantissa::fft_mul(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::fft_mul(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -654,7 +654,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 15];
-        Mantissa::fft_mul(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::fft_mul(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -665,7 +665,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 30];
-        Mantissa::fft_mul(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::fft_mul(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -678,12 +678,13 @@ mod tests {
             mul(&s1, &s2, ref_s.as_mut_slice());
 
             let mut ret_s = vec![0; s1.len() + s2.len()];
-            Mantissa::fft_mul(&s1, &s2, &mut ret_s).unwrap();
+            Mantissa::fft_mul(&s1, &s2, &mut ret_s)?;
 
             //println!("{:?}\n{:?}\n", s1, s2);
             //println!("{:?}\n{:?}\n", ret_s, ref_s);
             assert!(ret_s == ref_s);
         }
+        Ok(())
     }
 
     fn random_slice(min_len: usize, max_len: usize) -> Vec<Word> {

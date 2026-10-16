@@ -75,44 +75,40 @@ mod tests {
     use crate::RoundingMode;
 
     #[test]
-    fn test_log1p() {
-        let mut cc = Consts::new().unwrap();
+    fn test_log1p() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
         let p = WORD_BIT_SIZE * 5;
 
-        let z = ExactNumNumber::new(p).unwrap();
-        assert!(z.log1p(p, rm, &mut cc).unwrap().is_zero());
+        let z = ExactNumNumber::new(p)?;
+        assert!(z.log1p(p, rm, &mut cc)?.is_zero());
 
         let one = ExactNumNumber::small_const(1);
-        let ln2 = one.log1p(p, rm, &mut cc).unwrap();
-        let ln2b = ExactNumNumber::from_i8(2, p)
-            .unwrap()
-            .ln(p, rm, &mut cc)
-            .unwrap();
+        let ln2 = one.log1p(p, rm, &mut cc)?;
+        let ln2b = ExactNumNumber::from_i8(2, p)?.ln(p, rm, &mut cc)?;
         assert_eq!(ln2.cmp(&ln2b), 0);
 
         assert!(matches!(
-            one.neg().unwrap().log1p(p, rm, &mut cc),
+            one.neg()?.log1p(p, rm, &mut cc),
             Err(Error::DivisionByZero)
         ));
         assert!(matches!(
-            ExactNumNumber::from_i8(-2, p)
-                .unwrap()
-                .log1p(p, rm, &mut cc),
+            ExactNumNumber::from_i8(-2, p)?.log1p(p, rm, &mut cc),
             Err(Error::InvalidArgument)
         ));
 
         for _ in 0..40 {
-            let x = ExactNumNumber::random_normal(p, -30, -2).unwrap();
+            let x = ExactNumNumber::random_normal(p, -30, -2)?;
             if x.is_negative() {
                 continue;
             }
-            let l = x.log1p(p, rm, &mut cc).unwrap();
-            let u = one.add(&x, p, rm).unwrap();
-            let back = l.exp(p, rm, &mut cc).unwrap();
+            let l = x.log1p(p, rm, &mut cc)?;
+            let u = one.add(&x, p, rm)?;
+            let back = l.exp(p, rm, &mut cc)?;
             let mut eps = ExactNumNumber::small_const(1);
             eps.set_exponent(u.exponent() - p as crate::Exponent + 5);
-            assert!(back.sub(&u, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
+            assert!(back.sub(&u, p, rm)?.abs()?.cmp(&eps) < 0);
         }
+        Ok(())
     }
 }

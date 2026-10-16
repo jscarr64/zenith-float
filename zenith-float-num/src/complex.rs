@@ -1134,10 +1134,10 @@ mod tests {
     use crate::NAN;
 
     #[test]
-    fn test_complex_arith() {
+    fn test_complex_arith() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
 
         let a = ExactComplex::new(ExactNum::from_u8(3, p), ExactNum::from_u8(4, p));
         let mag = a.abs(p, rm);
@@ -1171,13 +1171,14 @@ mod tests {
         let e2 = two.exp2(p, rm, &mut cc);
         let d2 = ExactNum::sub_ref(e2.re(), four.re(), p, RoundingMode::None).abs();
         assert!(d2.is_zero() || d2.exponent().unwrap_or(0) < -((p as i32) / 8));
+        Ok(())
     }
 
     #[test]
-    fn test_complex_branch_cuts() {
+    fn test_complex_branch_cuts() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let m1 = ExactComplex::from_real(ExactNum::from_i8(-1, p), p);
 
         let s = m1.sqrt(p, rm, &mut cc);
@@ -1206,6 +1207,7 @@ mod tests {
         .abs();
         assert!(db.is_zero() || db.exponent().unwrap_or(0) < -((p as i32) / 8));
         assert!(lb.im().is_negative());
+        Ok(())
     }
 
     #[test]
@@ -1260,10 +1262,11 @@ mod tests {
     }
 
     #[test]
-    fn acosh_of_real_below_minus_one_has_pi_imaginary_part_with_signed_sign() {
+    fn acosh_of_real_below_minus_one_has_pi_imaginary_part_with_signed_sign(
+    ) -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let pi = cc.pi(p, rm);
         let up =
             ExactComplex::new(ExactNum::from_i8(-2, p), ExactNum::new(p)).acosh(p, rm, &mut cc);
@@ -1277,13 +1280,15 @@ mod tests {
             ExactComplex::new(ExactNum::from_i8(-1, p), ExactNum::new(p)).acosh(p, rm, &mut cc);
         assert!(inside.re().is_zero());
         assert_eq!(inside.im().compare(&pi), Some(0));
+        Ok(())
     }
 
     #[test]
-    fn ln_of_second_quadrant_point_uses_the_larger_part_for_the_modulus() {
+    fn ln_of_second_quadrant_point_uses_the_larger_part_for_the_modulus() -> Result<(), crate::Error>
+    {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         // ln(-3 + 4i): re = ln 5, |re part| < |im part| exercises the swapped (big, small) arm.
         let z = ExactComplex::new(ExactNum::from_i8(-3, p), ExactNum::from_u8(4, p));
         let l = z.ln(p, rm, &mut cc);
@@ -1291,5 +1296,6 @@ mod tests {
         let d = ln5.neg().add(l.re(), p, RoundingMode::None).abs();
         assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 2));
         assert!(l.im().is_positive());
+        Ok(())
     }
 }

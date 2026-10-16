@@ -91,26 +91,28 @@ mod tests {
     use crate::defs::WORD_BIT_SIZE;
 
     #[test]
-    fn test_fma_zero_factor() {
+    fn test_fma_zero_factor() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToEven;
         let p = WORD_BIT_SIZE * 4;
-        let a = ExactNumNumber::from_i8(5, p).unwrap();
-        let b = ExactNumNumber::new(p).unwrap();
-        let c = ExactNumNumber::from_i8(3, p).unwrap();
-        assert_eq!(a.fma(&b, &c, p, rm).unwrap().cmp(&c), 0);
+        let a = ExactNumNumber::from_i8(5, p)?;
+        let b = ExactNumNumber::new(p)?;
+        let c = ExactNumNumber::from_i8(3, p)?;
+        assert_eq!(a.fma(&b, &c, p, rm)?.cmp(&c), 0);
+        Ok(())
     }
 
     #[test]
-    fn test_fma_disjoint_exponents_skips_full_product() {
+    fn test_fma_disjoint_exponents_skips_full_product() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToEven;
         let p = WORD_BIT_SIZE * 2;
-        let a = ExactNumNumber::from_i8(3, p).unwrap();
-        let b = ExactNumNumber::from_i8(5, p).unwrap();
-        let mut c = ExactNumNumber::from_i8(1, p).unwrap();
+        let a = ExactNumNumber::from_i8(3, p)?;
+        let b = ExactNumNumber::from_i8(5, p)?;
+        let mut c = ExactNumNumber::from_i8(1, p)?;
         c.set_exponent(c.exponent() + 10_000);
-        let got = a.fma(&b, &c, p, rm).unwrap();
+        let got = a.fma(&b, &c, p, rm)?;
         let mut want = c;
-        want.set_precision(p, rm).unwrap();
+        want.set_precision(p, rm)?;
         assert_eq!(got.cmp(&want), 0);
+        Ok(())
     }
 }

@@ -225,33 +225,33 @@ mod tests {
     use alloc::vec::Vec;
 
     #[test]
-    fn test_compute_tenpowers() {
-        fn tenpower_from(x: Word) -> (WordBuf, WordBuf, usize) {
-            let mut wb = WordBuf::new(1).unwrap();
+    fn test_compute_tenpowers() -> Result<(), crate::Error> {
+        fn tenpower_from(x: Word) -> Result<(WordBuf, WordBuf, usize), crate::Error> {
+            let mut wb = WordBuf::new(1)?;
             wb[0] = x;
 
-            let mut wb2 = WordBuf::new(1).unwrap();
+            let mut wb2 = WordBuf::new(1)?;
             wb2[0] = x;
 
             let shift = Mantissa::maximize(&mut wb);
             assert!(wb[0] & WORD_SIGNIFICANT_BIT != 0);
 
-            (wb, wb2, shift)
+            Ok((wb, wb2, shift))
         }
 
         let mut tenpowers = Vec::with_capacity(4);
         let refval = [
-            tenpower_from(10),
-            tenpower_from(100),
-            tenpower_from(10000),
-            tenpower_from(100000000),
+            tenpower_from(10)?,
+            tenpower_from(100)?,
+            tenpower_from(10000)?,
+            tenpower_from(100000000)?,
         ];
 
-        Mantissa::compute_tenpowers(&mut tenpowers, 0).unwrap();
-        Mantissa::compute_tenpowers(&mut tenpowers, 3).unwrap();
-        Mantissa::compute_tenpowers(&mut tenpowers, 1).unwrap();
-        Mantissa::compute_tenpowers(&mut tenpowers, 0).unwrap();
-        Mantissa::compute_tenpowers(&mut tenpowers, 4).unwrap();
+        Mantissa::compute_tenpowers(&mut tenpowers, 0)?;
+        Mantissa::compute_tenpowers(&mut tenpowers, 3)?;
+        Mantissa::compute_tenpowers(&mut tenpowers, 1)?;
+        Mantissa::compute_tenpowers(&mut tenpowers, 0)?;
+        Mantissa::compute_tenpowers(&mut tenpowers, 4)?;
 
         for ((tenpower, tenpower2, shift), (refwb, refwb2, refshift)) in
             tenpowers.iter().zip(refval.iter())
@@ -262,17 +262,17 @@ mod tests {
         }
 
         // 10^32
-        Mantissa::compute_tenpowers(&mut tenpowers, 8).unwrap();
+        Mantissa::compute_tenpowers(&mut tenpowers, 8)?;
         assert_eq!(tenpowers.len(), 8);
 
         let (tenpow, tenpow2, shift) = &tenpowers[7];
         for (tenpow, shift) in [(tenpow, *shift), (tenpow2, 0)] {
-            let mut wb = WordBuf::new(tenpow.len()).unwrap();
+            let mut wb = WordBuf::new(tenpow.len())?;
             wb.copy_from_slice(tenpow.deref());
             shift_slice_right(&mut wb, shift);
 
             for _ in 0..128 {
-                let (q, r) = Mantissa::div_basic(&wb, &[10]).unwrap();
+                let (q, r) = Mantissa::div_basic(&wb, &[10])?;
                 assert!(r.iter().all(|x| *x == 0));
                 assert!(q.iter().any(|x| *x != 0));
                 wb = q;
@@ -282,19 +282,20 @@ mod tests {
             assert_eq!(wb.len(), 1);
             assert_eq!(wb[0], 1);
         }
+        Ok(())
     }
 
     #[test]
-    fn test_conv_dec() {
+    fn test_conv_dec() -> Result<(), crate::Error> {
         let mut tenpowers = Vec::with_capacity(10);
-        Mantissa::compute_tenpowers(&mut tenpowers, 16).unwrap();
+        Mantissa::compute_tenpowers(&mut tenpowers, 16)?;
 
         let ten = [10];
 
-        let test_input = |input: WordBuf| {
+        let test_input = |input: WordBuf| -> Result<(), crate::Error> {
             let l = input.len();
             let mut expected = Vec::new();
-            let (mut t, mut s) = Mantissa::div_basic(&input, &ten).unwrap();
+            let (mut t, mut s) = Mantissa::div_basic(&input, &ten)?;
             loop {
                 expected.push(s[0] as u8);
                 t.trunc_leading_zeroes();
@@ -302,7 +303,7 @@ mod tests {
                     expected.reverse();
                     break;
                 }
-                let (q, r) = Mantissa::div_basic(&t, &ten).unwrap();
+                let (q, r) = Mantissa::div_basic(&t, &ten)?;
                 t = q;
                 s = r;
             }
@@ -310,7 +311,7 @@ mod tests {
             let mut m = Mantissa::from_word_buf(input);
 
             // from vec<u8>
-            let m2 = Mantissa::conv_from_dec(&expected, &tenpowers).unwrap();
+            let m2 = Mantissa::conv_from_dec(&expected, &tenpowers)?;
 
             assert_eq!(m.digits(), m2.digits());
 
@@ -319,20 +320,22 @@ mod tests {
 
             let p = log2_ceil(k);
 
-            let ret = m.conv_to_dec(1 << p, &tenpowers, p - 1, true).unwrap();
+            let ret = m.conv_to_dec(1 << p, &tenpowers, p - 1, true)?;
 
             assert_eq!(ret, expected);
+            Ok(())
         };
 
         for _ in 0..10 {
             for l in 1..50 {
-                let mut input = WordBuf::new(l).unwrap();
+                let mut input = WordBuf::new(l)?;
                 for v in input.iter_mut() {
                     *v = random();
                 }
 
-                test_input(input);
+                test_input(input)?;
             }
         }
+        Ok(())
     }
 }

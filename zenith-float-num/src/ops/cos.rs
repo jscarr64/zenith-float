@@ -169,22 +169,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cosine() {
+    fn test_cosine() -> Result<(), crate::Error> {
         let p = 320;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let mut n1 = ExactNumNumber::from_word(1, 320).unwrap();
+        let mut n1 = ExactNumNumber::from_word(1, 320)?;
         n1.set_exponent(0);
-        let _n2 = n1.cos(p, rm, &mut cc).unwrap();
+        let _n2 = n1.cos(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Dec, rm).unwrap());
 
         // asymptotic & extrema testing
-        let mut half_pi = cc.pi_num(128, RoundingMode::None).unwrap();
+        let mut half_pi = cc.pi_num(128, RoundingMode::None)?;
         half_pi.set_exponent(1);
-        half_pi.set_precision(p, RoundingMode::None).unwrap();
+        half_pi.set_precision(p, RoundingMode::None)?;
 
-        let n2 = half_pi.cos(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("5.2049C1114CF98E804177D4C76273644A29410F31C6809BBDF2A33679A7486365EEEE1A43A7D13E58_e-21", crate::Radix::Hex, 640, RoundingMode::None, &mut cc).unwrap();
+        let n2 = half_pi.cos(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("5.2049C1114CF98E804177D4C76273644A29410F31C6809BBDF2A33679A7486365EEEE1A43A7D13E58_e-21", crate::Radix::Hex, 640, RoundingMode::None, &mut cc)?;
 
         //println!("{:?}", n2.format(crate::Radix::Bin, rm).unwrap());
 
@@ -192,8 +192,8 @@ mod tests {
 
         // large exponent
         half_pi.set_exponent(256);
-        let n2 = half_pi.cos(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("3.2F00069261A9FFC022D09F662F2E2DDBEFD1AF138813F2A71D7601C58E793299EA052E4EBC59107C_e-1", crate::Radix::Hex, 640, RoundingMode::None, &mut cc).unwrap();
+        let n2 = half_pi.cos(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("3.2F00069261A9FFC022D09F662F2E2DDBEFD1AF138813F2A71D7601C58E793299EA052E4EBC59107C_e-1", crate::Radix::Hex, 640, RoundingMode::None, &mut cc)?;
 
         //println!("{:?}", n2.format(crate::Radix::Hex, rm).unwrap());
 
@@ -201,20 +201,21 @@ mod tests {
 
         // small exponent
         let p = 384;
-        let n1 = ExactNumNumber::parse("1.992EF09686C3DC782C05BFD7863A715ECBDAED45DBAEE3ADFEF1AB8F74DB393D8CD6EAF9CA8443A6C28CF59D35B7FF56_e-20", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let n2 = n1.cos(p, RoundingMode::ToEven, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("F.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEB8FC7D51D69792F9AB263F754D161F6A_e-1", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n1 = ExactNumNumber::parse("1.992EF09686C3DC782C05BFD7863A715ECBDAED45DBAEE3ADFEF1AB8F74DB393D8CD6EAF9CA8443A6C28CF59D35B7FF56_e-20", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let n2 = n1.cos(p, RoundingMode::ToEven, &mut cc)?;
+        let n3 = ExactNumNumber::parse("F.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEB8FC7D51D69792F9AB263F754D161F6A_e-1", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         // println!("{:?}", n1.format(crate::Radix::Hex, rm).unwrap());
 
         assert!(n2.cmp(&n3) == 0);
 
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
         let d4 = random_subnormal(p);
 
-        assert!(d3.cos(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
-        assert!(zero.cos(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
-        assert!(d4.cos(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
+        assert!(d3.cos(p, rm, &mut cc)?.cmp(&ONE) == 0);
+        assert!(zero.cos(p, rm, &mut cc)?.cmp(&ONE) == 0);
+        assert!(d4.cos(p, rm, &mut cc)?.cmp(&ONE) == 0);
+        Ok(())
     }
 }

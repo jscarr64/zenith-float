@@ -197,7 +197,7 @@ pub use crate::common::test_rng::{random_seed, reseed_random, seeded_random, DEF
 mod tests {
 
     #[test]
-    fn test_bigfloat() {
+    fn test_bigfloat() -> Result<(), crate::Error> {
         use crate::Consts;
         use crate::ExactNum;
         use crate::RoundingMode;
@@ -209,7 +209,7 @@ mod tests {
         let rm = RoundingMode::ToEven;
 
         // Initialize mathematical constants cache
-        let mut cc = Consts::new().expect("An error occured when initializing constants");
+        let mut cc = Consts::new()?;
 
         // Compute pi: pi = 6*arctan(1/sqrt(3))
         let six = ExactNum::from_word(6, 1);
@@ -221,15 +221,16 @@ mod tests {
         let mut pi = six.mul(&n, p, rm);
 
         // Reduce precision to 1024
-        pi.set_precision(1024, rm).expect("Precision updated");
+        pi.set_precision(1024, rm)?;
 
         // Use library's constant for verifying the result
-        let pi_lib = cc.pi_num(1024, rm).unwrap().into();
+        let pi_lib = cc.pi_num(1024, rm)?.into();
 
         // Compare computed constant with library's constant
         assert_eq!(pi.compare(&pi_lib), Some(0));
 
         // Print using decimal radix.
         //println!("{}", pi);
+        Ok(())
     }
 }

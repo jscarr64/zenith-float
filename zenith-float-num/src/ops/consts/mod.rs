@@ -367,8 +367,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn progressive_constant_cache_extends() {
-        let mut cc = Consts::new().expect("constants");
+    fn progressive_constant_cache_extends() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
         let _ = cc.pi(128, rm);
         let _ = cc.e(128, rm);
@@ -402,14 +402,20 @@ mod tests {
         let b = cc.sqrt2(128, rm);
         assert_eq!(a.compare(&b), Some(0));
         let cached = CachedFBig::new(a);
-        assert!(cached.cached_bit_len().unwrap() >= 128);
+        assert!(
+            cached
+                .cached_bit_len()
+                .ok_or(crate::Error::InvalidArgument)?
+                >= 128
+        );
         let r = cached.round(64, rm);
         assert!(!r.is_nan());
+        Ok(())
     }
 
     #[test]
-    fn euler_gamma_matches_known_digits() {
-        let mut cc = Consts::new().expect("constants");
+    fn euler_gamma_matches_known_digits() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
         let p = 128;
         let g = cc.euler_gamma(p, rm);
@@ -421,16 +427,19 @@ mod tests {
             &mut cc,
         );
         let d = g.sub(&known, p, RoundingMode::None);
-        assert!(d.is_zero() || d.exponent().unwrap() < -((p as i32) / 4));
+        assert!(
+            d.is_zero() || d.exponent().ok_or(crate::Error::InvalidArgument)? < -((p as i32) / 4)
+        );
+        Ok(())
     }
 
     #[cfg(feature = "std")]
     #[test]
-    fn shared_consts_parallel_pi() {
+    fn shared_consts_parallel_pi() -> Result<(), crate::Error> {
         use std::sync::Arc;
         use std::thread;
 
-        let cc = Arc::new(SharedConsts::new().expect("constants"));
+        let cc = Arc::new(SharedConsts::new()?);
         let mut hs = Vec::new();
         for _ in 0..4 {
             let cc = Arc::clone(&cc);
@@ -438,9 +447,13 @@ mod tests {
                 cc.with(|c| c.pi(128, RoundingMode::ToEven))
             }));
         }
-        let vals: Vec<_> = hs.into_iter().map(|h| h.join().unwrap()).collect();
+        let mut vals = Vec::with_capacity(hs.len());
+        for h in hs {
+            vals.push(h.join().map_err(|_| crate::Error::InvalidArgument)?);
+        }
         for v in &vals[1..] {
             assert_eq!(vals[0].compare(v), Some(0));
         }
+        Ok(())
     }
 }

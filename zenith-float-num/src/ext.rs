@@ -4388,25 +4388,26 @@ mod tests {
 
     #[cfg(target_pointer_width = "32")]
     #[test]
-    fn test_decimal_formatting_round_trip() {
+    fn test_decimal_formatting_round_trip() -> Result<(), crate::Error> {
         // Regression test: on 32-bit targets, decimal formatting must produce a string
         // that parses back to the original value without losing precision.
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let p = 53;
         let rm = RoundingMode::ToEven;
         let value = ExactNum::parse("1.0", Radix::Dec, p, rm, &mut cc);
 
-        let formatted = value.format(Radix::Dec, rm, &mut cc).unwrap();
+        let formatted = value.format(Radix::Dec, rm, &mut cc)?;
         assert_eq!(formatted, "1.e+0");
 
         let reparsed = ExactNum::parse(&formatted, Radix::Dec, p, rm, &mut cc);
         assert_eq!(reparsed, value);
+        Ok(())
     }
 
     #[test]
-    fn test_ext() {
+    fn test_ext() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToOdd;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
 
         // Inf & NaN
         let d1 = ExactNum::from_u8(1, rand_p());
@@ -4637,16 +4638,41 @@ mod tests {
             assert!(op(&NAN, &NAN).is_nan());
         }
 
-        assert!(ONE.compare(&ONE).unwrap() == 0);
-        assert!(ONE.compare(&INF_POS).unwrap() < 0);
-        assert!(INF_POS.compare(&ONE).unwrap() > 0);
-        assert!(INF_POS.compare(&INF_POS).unwrap() == 0);
-        assert!(ONE.compare(&INF_NEG).unwrap() > 0);
-        assert!(INF_NEG.compare(&ONE).unwrap() < 0);
-        assert!(INF_NEG.compare(&INF_NEG).unwrap() == 0);
-        assert!(INF_POS.compare(&INF_NEG).unwrap() > 0);
-        assert!(INF_NEG.compare(&INF_POS).unwrap() < 0);
-        assert!(INF_POS.compare(&INF_POS).unwrap() == 0);
+        assert!(ONE.compare(&ONE).ok_or(crate::Error::InvalidArgument)? == 0);
+        assert!(ONE.compare(&INF_POS).ok_or(crate::Error::InvalidArgument)? < 0);
+        assert!(INF_POS.compare(&ONE).ok_or(crate::Error::InvalidArgument)? > 0);
+        assert!(
+            INF_POS
+                .compare(&INF_POS)
+                .ok_or(crate::Error::InvalidArgument)?
+                == 0
+        );
+        assert!(ONE.compare(&INF_NEG).ok_or(crate::Error::InvalidArgument)? > 0);
+        assert!(INF_NEG.compare(&ONE).ok_or(crate::Error::InvalidArgument)? < 0);
+        assert!(
+            INF_NEG
+                .compare(&INF_NEG)
+                .ok_or(crate::Error::InvalidArgument)?
+                == 0
+        );
+        assert!(
+            INF_POS
+                .compare(&INF_NEG)
+                .ok_or(crate::Error::InvalidArgument)?
+                > 0
+        );
+        assert!(
+            INF_NEG
+                .compare(&INF_POS)
+                .ok_or(crate::Error::InvalidArgument)?
+                < 0
+        );
+        assert!(
+            INF_POS
+                .compare(&INF_POS)
+                .ok_or(crate::Error::InvalidArgument)?
+                == 0
+        );
         assert!(ONE.compare(&NAN).is_none());
         assert!(NAN.compare(&ONE).is_none());
         assert!(INF_POS.compare(&NAN).is_none());
@@ -4655,16 +4681,41 @@ mod tests {
         assert!(NAN.compare(&INF_NEG).is_none());
         assert!(NAN.compare(&NAN).is_none());
 
-        assert!(ONE.abs_cmp(&ONE).unwrap() == 0);
-        assert!(ONE.abs_cmp(&INF_POS).unwrap() < 0);
-        assert!(INF_POS.abs_cmp(&ONE).unwrap() > 0);
-        assert!(INF_POS.abs_cmp(&INF_POS).unwrap() == 0);
-        assert!(ONE.abs_cmp(&INF_NEG).unwrap() < 0);
-        assert!(INF_NEG.abs_cmp(&ONE).unwrap() > 0);
-        assert!(INF_NEG.abs_cmp(&INF_NEG).unwrap() == 0);
-        assert!(INF_POS.abs_cmp(&INF_NEG).unwrap() == 0);
-        assert!(INF_NEG.abs_cmp(&INF_POS).unwrap() == 0);
-        assert!(INF_POS.abs_cmp(&INF_POS).unwrap() == 0);
+        assert!(ONE.abs_cmp(&ONE).ok_or(crate::Error::InvalidArgument)? == 0);
+        assert!(ONE.abs_cmp(&INF_POS).ok_or(crate::Error::InvalidArgument)? < 0);
+        assert!(INF_POS.abs_cmp(&ONE).ok_or(crate::Error::InvalidArgument)? > 0);
+        assert!(
+            INF_POS
+                .abs_cmp(&INF_POS)
+                .ok_or(crate::Error::InvalidArgument)?
+                == 0
+        );
+        assert!(ONE.abs_cmp(&INF_NEG).ok_or(crate::Error::InvalidArgument)? < 0);
+        assert!(INF_NEG.abs_cmp(&ONE).ok_or(crate::Error::InvalidArgument)? > 0);
+        assert!(
+            INF_NEG
+                .abs_cmp(&INF_NEG)
+                .ok_or(crate::Error::InvalidArgument)?
+                == 0
+        );
+        assert!(
+            INF_POS
+                .abs_cmp(&INF_NEG)
+                .ok_or(crate::Error::InvalidArgument)?
+                == 0
+        );
+        assert!(
+            INF_NEG
+                .abs_cmp(&INF_POS)
+                .ok_or(crate::Error::InvalidArgument)?
+                == 0
+        );
+        assert!(
+            INF_POS
+                .abs_cmp(&INF_POS)
+                .ok_or(crate::Error::InvalidArgument)?
+                == 0
+        );
         assert!(ONE.abs_cmp(&NAN).is_none());
         assert!(NAN.abs_cmp(&ONE).is_none());
         assert!(INF_POS.abs_cmp(&NAN).is_none());
@@ -4675,10 +4726,15 @@ mod tests {
         // Finite values compare by magnitude, whatever their signs (1.0.4 compared signed values).
         let two = ExactNum::from_u8(2, 64);
         let neg_two = two.neg_via_mul();
-        assert!(neg_two.abs_cmp(&ONE).unwrap() > 0);
-        assert!(ONE.abs_cmp(&neg_two).unwrap() < 0);
-        assert!(neg_two.abs_cmp(&two).unwrap() == 0);
-        assert!(ExactNum::from_i8(-1, DEFAULT_P).abs_cmp(&INF_POS).unwrap() < 0);
+        assert!(neg_two.abs_cmp(&ONE).ok_or(crate::Error::InvalidArgument)? > 0);
+        assert!(ONE.abs_cmp(&neg_two).ok_or(crate::Error::InvalidArgument)? < 0);
+        assert!(neg_two.abs_cmp(&two).ok_or(crate::Error::InvalidArgument)? == 0);
+        assert!(
+            ExactNum::from_i8(-1, DEFAULT_P)
+                .abs_cmp(&INF_POS)
+                .ok_or(crate::Error::InvalidArgument)?
+                < 0
+        );
         // Results are exactly -1/0/1 (1.0.4 returned the mantissa word difference, e.g.
         // 3.cmp(2) = 2^62, so callers testing `== Some(1)` / `== Some(-1)` misfired).
         let three = ExactNum::from_u8(3, 64);
@@ -4854,7 +4910,7 @@ mod tests {
         assert!(NAN.acos(rand_p(), rm, &mut cc).is_nan());
 
         let p = rand_p();
-        let mut half_pi: ExactNum = cc.pi_num(p, rm).unwrap().into();
+        let mut half_pi: ExactNum = cc.pi_num(p, rm)?.into();
         half_pi.set_exponent(1);
         assert!(INF_NEG.atan(p, rm, &mut cc).compare(&half_pi.neg_via_mul()) == Some(0));
         assert!(INF_POS.atan(p, rm, &mut cc).compare(&half_pi) == Some(0));
@@ -4944,7 +5000,7 @@ mod tests {
 
         for mut special in [INF_POS, INF_NEG, NAN] {
             special.set_exponent(1);
-            special.set_precision(1, rm).unwrap();
+            special.set_precision(1, rm)?;
             special.set_sign(Sign::Pos);
         }
 
@@ -5051,12 +5107,13 @@ mod tests {
             INF_NEG.convert_to_radix(Radix::Dec, RoundingMode::None, &mut cc)
                 == Err(Error::InvalidArgument)
         );
+        Ok(())
     }
 
     #[cfg(feature = "std")]
     #[test]
-    fn test_ops_std() {
-        let mut cc = Consts::new().unwrap();
+    fn test_ops_std() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
 
         let d1 = ExactNum::parse(
             "0.0123456789012345678901234567890123456789",
@@ -5073,8 +5130,8 @@ mod tests {
             format!("{:E}", d1),
             "1.23456789012345678901234567890123456789E-2"
         );
-        let mut d2 = ExactNum::from_str(&d1str).unwrap();
-        d2.set_precision(DEFAULT_P, RoundingMode::ToEven).unwrap();
+        let mut d2 = ExactNum::from_str(&d1str)?;
+        d2.set_precision(DEFAULT_P, RoundingMode::ToEven)?;
         assert_eq!(d2, d1);
 
         let d1 = ExactNum::parse(
@@ -5086,8 +5143,8 @@ mod tests {
         );
         let d1str = format!("{}", d1);
         assert_eq!(&d1str, "-1.23456789012345678901234567890123456789e+2");
-        let mut d2 = ExactNum::from_str(&d1str).unwrap();
-        d2.set_precision(DEFAULT_P, RoundingMode::ToEven).unwrap();
+        let mut d2 = ExactNum::from_str(&d1str)?;
+        d2.set_precision(DEFAULT_P, RoundingMode::ToEven)?;
         assert_eq!(d2, d1);
 
         let d1str = format!("{}", INF_POS);
@@ -5099,15 +5156,16 @@ mod tests {
         let d1str = format!("{}", NAN);
         assert_eq!(d1str, "NaN");
 
-        let bad = ExactNum::from_str("abc").unwrap();
+        let bad = ExactNum::from_str("abc")?;
         assert!(bad.is_nan());
         assert_eq!(bad.err(), Some(Error::InvalidArgument));
+        Ok(())
     }
 
     #[test]
-    pub fn test_ops() {
+    pub fn test_ops() -> Result<(), crate::Error> {
         use core::ops::Not;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
 
         let d1 = -ExactNum::from_u8(2, DEFAULT_P);
         assert!(d1.is_negative());
@@ -5236,6 +5294,7 @@ mod tests {
         assert!(pos == pos);
         assert!(INF_NEG == INF_NEG);
         assert!(INF_POS == INF_POS);
+        Ok(())
     }
 
     #[test]
@@ -5295,10 +5354,10 @@ mod tests {
     }
 
     #[test]
-    fn test_jacobi_sn_public() {
+    fn test_jacobi_sn_public() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let one = ExactNum::from_u8(1, p);
         let zero = ExactNum::from_u8(0, p);
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
@@ -5309,10 +5368,14 @@ mod tests {
         let sn_m0 = one.jacobi_sn(&zero, p, rm, &mut cc);
         let sin1 = one.sin(p, rm, &mut cc);
         let d = sn_m0.sub(&sin1, p, rm).abs();
-        assert!(d.is_zero() || d.exponent().unwrap() < -80, "sn(1|0)=sin 1");
+        assert!(
+            d.is_zero() || d.exponent().ok_or(crate::Error::InvalidArgument)? < -80,
+            "sn(1|0)=sin 1"
+        );
         assert!(one
             .jacobi_sn(&ExactNum::from_i8(2, p), p, rm, &mut cc)
             .is_nan());
+        Ok(())
     }
 }
 
@@ -5324,7 +5387,7 @@ mod rand_tests {
     use crate::common::util::TEST_EXP_BOUND;
 
     #[test]
-    fn test_rand() {
+    fn test_rand() -> Result<(), crate::Error> {
         for _ in 0..100 {
             let p = crate::common::test_rng::random::<usize>() % 192 + DEFAULT_P;
             let exp_from = crate::common::test_rng::random::<Exponent>().abs() % TEST_EXP_BOUND;
@@ -5335,9 +5398,13 @@ mod rand_tests {
             let n = ExactNum::random_normal(p, exp_from, exp_to);
 
             assert!(!n.is_subnormal());
-            assert!(n.exponent().unwrap() >= exp_from && n.exponent().unwrap() <= exp_to);
-            assert!(n.precision().unwrap() >= p);
+            assert!(
+                n.exponent().ok_or(crate::Error::InvalidArgument)? >= exp_from
+                    && n.exponent().ok_or(crate::Error::InvalidArgument)? <= exp_to
+            );
+            assert!(n.precision().ok_or(crate::Error::InvalidArgument)? >= p);
         }
+        Ok(())
     }
 }
 
@@ -5679,14 +5746,14 @@ mod add_sub_zero_tests {
     }
 
     #[test]
-    fn one_zero_operand_returns_the_other_rounded_to_p() {
+    fn one_zero_operand_returns_the_other_rounded_to_p() -> Result<(), crate::Error> {
         for rm in RMS {
             for p in [64, 128, 192] {
                 for neg in [false, true] {
                     let x = if neg { third(192).neg() } else { third(192) };
                     // reference: the same value rounded to p by set_precision
                     let mut want = ExactNum::new(64).add(&x, 192, RoundingMode::None);
-                    want.set_precision(p, rm).unwrap();
+                    want.set_precision(p, rm)?;
                     for zn in [false, true] {
                         let z = zero(zn);
                         let a = ExactNum::add_ref(&x, &z, p, rm);
@@ -5698,7 +5765,7 @@ mod add_sub_zero_tests {
                             assert_eq!(r.mantissa_max_bit_len(), want.mantissa_max_bit_len());
                         }
                         let mut want_neg = ExactNum::new(64).sub(&x, 192, RoundingMode::None);
-                        want_neg.set_precision(p, rm).unwrap();
+                        want_neg.set_precision(p, rm)?;
                         assert_eq!(d.compare(&want_neg), Some(0), "p={p} {rm:?}");
                         assert_eq!(a.is_negative(), neg);
                         assert_eq!(d.is_negative(), !neg);
@@ -5710,6 +5777,7 @@ mod add_sub_zero_tests {
                 }
             }
         }
+        Ok(())
     }
 
     #[test]

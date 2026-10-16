@@ -428,9 +428,9 @@ mod tests {
     }
 
     #[test]
-    fn roots_bisect_newton_brent_illinois() {
+    fn roots_bisect_newton_brent_illinois() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let tol = root_default_tol(p, rm);
         let three = ExactNum::from_u8(3, p);
         let four = ExactNum::from_u8(4, p);
@@ -448,7 +448,7 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("bisect sin");
+        .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(broot.compare(&pi), Some(0));
 
         let nroot = newton(
@@ -461,7 +461,7 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("newton sqrt2");
+        .ok_or(crate::Error::InvalidArgument)?;
         let s2 = two.sqrt(p, rm);
         assert_eq!(nroot.compare(&s2), Some(0));
 
@@ -474,7 +474,7 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("brent sin");
+        .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(rbrent.compare(&pi), Some(0));
         assert!(briters < biters);
 
@@ -487,7 +487,7 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("illinois sin");
+        .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(iroot.compare(&pi), Some(0));
 
         assert!(bisect(
@@ -500,5 +500,6 @@ mod tests {
             &mut cc
         )
         .is_none());
+        Ok(())
     }
 }

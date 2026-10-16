@@ -480,7 +480,7 @@ mod tests {
     }
 
     #[test]
-    fn rational_reduce_add_sign_to_float() {
+    fn rational_reduce_add_sign_to_float() -> Result<(), crate::Error> {
         let half = r(1, 2);
         let two_four = r(2, 4);
         assert_eq!(two_four, half);
@@ -508,7 +508,7 @@ mod tests {
         let got = ExactRational::from_i64(1, 3).to_exact_num(p, rm);
         let want_f = ExactNum::from_i64(1, p).div(&ExactNum::from_i64(3, p), p, rm);
         assert_eq!(got.compare(&want_f), Some(0));
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let parsed = ExactNum::parse(
             "0.33333333333333333333333333333333333333333333333333333333333333333333333333333333",
             Radix::Dec,
@@ -529,43 +529,45 @@ mod tests {
             ExactRational::from_i64(2, 1)
         );
         assert!(ExactRational::from_i64(1, 0).is_nan());
+        Ok(())
     }
 
     #[test]
-    fn parse_exact_tenth_half_eighth_sci() {
-        let tenth = ExactRational::parse_exact("0.1").unwrap();
+    fn parse_exact_tenth_half_eighth_sci() -> Result<(), crate::Error> {
+        let tenth = ExactRational::parse_exact("0.1").ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(
             tenth.mul(&ExactRational::from_i64(10, 1)),
             ExactRational::from_i64(1, 1)
         );
 
-        let half = ExactNum::parse_exact("0.5").unwrap();
-        let p = half.precision().unwrap();
+        let half = ExactNum::parse_exact("0.5").ok_or(crate::Error::InvalidArgument)?;
+        let p = half.precision().ok_or(crate::Error::InvalidArgument)?;
         let want = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::ToEven);
         assert_eq!(half.compare(&want), Some(0));
         assert_eq!(half.ilogb(), Some(-1));
-        let (_m, _n, s, _e, _) = half.as_raw_parts().unwrap();
+        let (_m, _n, s, _e, _) = half.as_raw_parts().ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(s, crate::Sign::Pos);
 
         assert_eq!(
             ExactRational::parse_exact("0.125")
-                .unwrap()
+                .ok_or(crate::Error::InvalidArgument)?
                 .format_exact(Radix::Dec)
                 .as_deref(),
             Some("0.125")
         );
         assert_eq!(
             ExactNum::parse_exact("0.125")
-                .unwrap()
+                .ok_or(crate::Error::InvalidArgument)?
                 .format_exact(Radix::Dec)
                 .as_deref(),
             Some("0.125")
         );
         assert!(ExactNum::parse_exact("0.1").is_none());
 
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let sci = ExactNum::parse("1.5e3", Radix::Dec, 256, RoundingMode::ToEven, &mut cc);
         assert_eq!(sci.compare(&ExactNum::from_i32(1500, 256)), Some(0));
+        Ok(())
     }
 
     #[test]

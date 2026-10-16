@@ -732,8 +732,8 @@ mod test {
     use super::*;
 
     #[test]
-    fn test_power() {
-        let mut cc = Consts::new().unwrap();
+    fn test_power() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
 
         // near 1
         let p = 320;
@@ -743,17 +743,15 @@ mod test {
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
-        let d2 = d1.exp(p, RoundingMode::ToEven, &mut cc).unwrap();
+        )?;
+        let d2 = d1.exp(p, RoundingMode::ToEven, &mut cc)?;
         let d3 = ExactNumNumber::parse(
             "2.B7E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A5496AF9D95160A40F47A2ECF1C6AEA0",
             crate::Radix::Hex,
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
+        )?;
 
         // println!("{:?}", d1.format(crate::Radix::Bin, RoundingMode::None).unwrap());
         // println!("{:?}", d2.format(crate::Radix::Hex, RoundingMode::None).unwrap());
@@ -766,17 +764,15 @@ mod test {
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
-        let d2 = d1.exp(p, RoundingMode::ToEven, &mut cc).unwrap();
+        )?;
+        let d2 = d1.exp(p, RoundingMode::ToEven, &mut cc)?;
         let d3 = ExactNumNumber::parse(
             "2.B7E151628AED2A6ABF7158809CF4F3C762E7160F38B4DA56A784D9045190CFEFAEC1BE22DDEADB48",
             crate::Radix::Hex,
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
+        )?;
 
         // println!("{:?}", d1.format(crate::Radix::Bin, RoundingMode::None).unwrap());
         // println!("{:?}", d2.format(crate::Radix::Hex, RoundingMode::None).unwrap());
@@ -785,44 +781,44 @@ mod test {
 
         // random subnormal
         let d1 = random_subnormal(p);
-        assert!(d1.exp(p, RoundingMode::ToEven, &mut cc).unwrap().cmp(&ONE) == 0);
+        assert!(d1.exp(p, RoundingMode::ToEven, &mut cc)?.cmp(&ONE) == 0);
 
         // pow(small, small)
         let p = 256;
-        let mut d1 = ExactNumNumber::parse("1.10010100010011110010001011101010010101111000010101010100010010111001000100011101010111011010110011011111110000010010101000110001001000000101000010101111001100110111100011101000110001001000000101000010101111001100110111100011101010011101101", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
+        let mut d1 = ExactNumNumber::parse("1.10010100010011110010001011101010010101111000010101010100010010111001000100011101010111011010110011011111110000010010101000110001001000000101000010101111001100110111100011101000110001001000000101000010101111001100110111100011101010011101101", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
         d1.set_exponent(-123456);
-        let mut d2 = ExactNumNumber::parse("1.00110001001000010100001010111100110011011110001110101001110110100000101000010010101111000010110010100010011110010001011101010101010001001011100110111111100100010001110101011101101011000001001010100101111001100110111100011101000110001001000", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
+        let mut d2 = ExactNumNumber::parse("1.00110001001000010100001010111100110011011110001110101001110110100000101000010010101111000010110010100010011110010001011101010101010001001011100110111111100100010001110101011101101011000001001010100101111001100110111100011101000110001001000", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
         d2.set_exponent(-123);
-        let d3 = d1.pow(&d2, p, RoundingMode::ToEven, &mut cc).unwrap();
-        let d4 = ExactNumNumber::parse("1.111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111100111000110010011110111100111111100111010011001110010010110010100100110010110111110110100011010000110110011010111101110000011100011010100110100000001e-1", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
+        let d3 = d1.pow(&d2, p, RoundingMode::ToEven, &mut cc)?;
+        let d4 = ExactNumNumber::parse("1.111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111100111000110010011110111100111111100111010011001110010010110010100100110010110111110110100011010000110110011010111101110000011100011010100110100000001e-1", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
 
         assert!(d4.cmp(&d3) == 0);
 
         // pow(large, small)
-        let mut d1 = ExactNumNumber::parse("1.10010100010011110010001011101010010101111000010101010100010010111001000100011101010111011010110011011111110000010010101000110001001000000101000010101111001100110111100011101000110001001000000101000010101111001100110111100011101010011101101", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
+        let mut d1 = ExactNumNumber::parse("1.10010100010011110010001011101010010101111000010101010100010010111001000100011101010111011010110011011111110000010010101000110001001000000101000010101111001100110111100011101000110001001000000101000010101111001100110111100011101010011101101", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
         d1.set_exponent(123456);
-        let mut d2 = ExactNumNumber::parse("1.00110001001000010100001010111100110011011110001110101001110110100000101000010010101111000010110010100010011110010001011101010101010001001011100110111111100100010001110101011101101011000001001010100101111001100110111100011101000110001001000", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
+        let mut d2 = ExactNumNumber::parse("1.00110001001000010100001010111100110011011110001110101001110110100000101000010010101111000010110010100010011110010001011101010101010001001011100110111111100100010001110101011101101011000001001010100101111001100110111100011101000110001001000", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
         d2.set_exponent(-123);
-        let d3 = d1.pow(&d2, p, RoundingMode::ToEven, &mut cc).unwrap();
-        let d4 = ExactNumNumber::parse("1.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000110001110011010111001000101100100101011011111001101101011011010100101111001001000010000010100110110011000001011011111000000000010111010000010110111", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
+        let d3 = d1.pow(&d2, p, RoundingMode::ToEven, &mut cc)?;
+        let d4 = ExactNumNumber::parse("1.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000110001110011010111001000101100100101011011111001101101011011010100101111001001000010000010100110110011000001011011111000000000010111010000010110111", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
 
         assert!(d4.cmp(&d3) == 0);
 
         // pow(>~1, large)
-        let d1 = ExactNumNumber::parse("1.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000110001110011010111001000101100100101011011111001101101011011010100101111001001000010000010100110110011000001011011111000000000010111010000010110111", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
-        let mut d2 = ExactNumNumber::parse("1.00110001001000010100001010111100110011011110001110101001110110100000101000010010101111000010110010100010011110010001011101010101010001001011100110111111100100010001110101011101101011000001001010100101111001100110111100011101000110001001000", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
+        let d1 = ExactNumNumber::parse("1.00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000110001110011010111001000101100100101011011111001101101011011010100101111001001000010000010100110110011000001011011111000000000010111010000010110111", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
+        let mut d2 = ExactNumNumber::parse("1.00110001001000010100001010111100110011011110001110101001110110100000101000010010101111000010110010100010011110010001011101010101010001001011100110111111100100010001110101011101101011000001001010100101111001100110111100011101000110001001000", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
         d2.set_exponent(123);
-        let d3 = d1.pow(&d2, p, RoundingMode::ToEven, &mut cc).unwrap();
-        let d4 = ExactNumNumber::parse("1.000011101011111010010100111000101101011001100110110100101011001110100110011011100100100101011100010100011101011111010011100011010000110001100111001011000001111110001110000110000000101101011001010001000011011001000010001110000100110000110011111100000001e+1010101101000111", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
+        let d3 = d1.pow(&d2, p, RoundingMode::ToEven, &mut cc)?;
+        let d4 = ExactNumNumber::parse("1.000011101011111010010100111000101101011001100110110100101011001110100110011011100100100101011100010100011101011111010011100011010000110001100111001011000001111110001110000110000000101101011001010001000011011001000010001110000100110000110011111100000001e+1010101101000111", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
 
         assert!(d4.cmp(&d3) == 0);
 
         // pow(<~1, large)
-        let d1 = ExactNumNumber::parse("0.1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111110001110011010111001000101100100101011011111001101101011011010100101111001001000010000010100110110011000001011011111000000000010111010000010110111", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
-        let mut d2 = ExactNumNumber::parse("1.00110001001000010100001010111100110011011110001110101001110110100000101000010010101111000010110010100010011110010001011101010101010001001011100110111111100100010001110101011101101011000001001010100101111001100110111100011101000110001001000", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
+        let d1 = ExactNumNumber::parse("0.1111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111110001110011010111001000101100100101011011111001101101011011010100101111001001000010000010100110110011000001011011111000000000010111010000010110111", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
+        let mut d2 = ExactNumNumber::parse("1.00110001001000010100001010111100110011011110001110101001110110100000101000010010101111000010110010100010011110010001011101010101010001001011100110111111100100010001110101011101101011000001001010100101111001100110111100011101000110001001000", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
         d2.set_exponent(123);
-        let d3 = d1.pow(&d2, p, RoundingMode::ToEven, &mut cc).unwrap();
-        let d4 = ExactNumNumber::parse("1.010011011001100100100000101011101001110011001100011001011011010010101111101100111101011010101101101111100111001001001101000111110001010010111101110010011100001011011111001111001001001100100111010100100010010111011011110010110101110000100111001100100000011e-110000110100111100", crate::Radix::Bin, p, RoundingMode::None, &mut cc).unwrap();
+        let d3 = d1.pow(&d2, p, RoundingMode::ToEven, &mut cc)?;
+        let d4 = ExactNumNumber::parse("1.010011011001100100100000101011101001110011001100011001011011010010101111101100111101011010101101101111100111001001001101000111110001010010111101110010011100001011011111001111001001001100100111010100100010010111011011110010110101110000100111001100100000011e-110000110100111100", crate::Radix::Bin, p, RoundingMode::None, &mut cc)?;
 
         // println!("{:?}", d1.format(crate::Radix::Bin, RoundingMode::None).unwrap());
         // println!("{:?}", d2.format(crate::Radix::Bin, RoundingMode::None).unwrap());
@@ -831,9 +827,9 @@ mod test {
         assert!(d4.cmp(&d3) == 0);
 
         // max, min, subnormal
-        let d1 = ExactNumNumber::max_value(p).unwrap();
-        let d2 = ExactNumNumber::min_value(p).unwrap();
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
+        let d1 = ExactNumNumber::max_value(p)?;
+        let d2 = ExactNumNumber::min_value(p)?;
+        let d3 = ExactNumNumber::min_positive(p)?;
 
         assert!(
             d1.exp(p, RoundingMode::ToEven, &mut cc).unwrap_err()
@@ -843,87 +839,48 @@ mod test {
             d1.pow(&d1, p, RoundingMode::ToEven, &mut cc).unwrap_err()
                 == Error::ExponentOverflow(Sign::Pos)
         );
-        assert!(d1
-            .pow(&d2, p, RoundingMode::ToEven, &mut cc)
-            .unwrap()
-            .is_zero());
-        assert!(
-            d1.pow(&d3, p, RoundingMode::ToEven, &mut cc)
-                .unwrap()
-                .cmp(&ONE)
-                == 0
-        );
+        assert!(d1.pow(&d2, p, RoundingMode::ToEven, &mut cc)?.is_zero());
+        assert!(d1.pow(&d3, p, RoundingMode::ToEven, &mut cc)?.cmp(&ONE) == 0);
 
-        assert!(d2.exp(p, RoundingMode::ToEven, &mut cc).unwrap().is_zero());
+        assert!(d2.exp(p, RoundingMode::ToEven, &mut cc)?.is_zero());
 
-        assert!(d3.exp(p, RoundingMode::ToEven, &mut cc).unwrap().cmp(&ONE) == 0);
+        assert!(d3.exp(p, RoundingMode::ToEven, &mut cc)?.cmp(&ONE) == 0);
 
-        assert!(d3
-            .pow(&d1, p, RoundingMode::ToEven, &mut cc)
-            .unwrap()
-            .is_zero());
+        assert!(d3.pow(&d1, p, RoundingMode::ToEven, &mut cc)?.is_zero());
         assert!(
             d3.pow(&d2, p, RoundingMode::ToEven, &mut cc).unwrap_err()
                 == Error::ExponentOverflow(Sign::Pos)
         );
-        assert!(
-            d3.pow(&d3, p, RoundingMode::ToEven, &mut cc)
-                .unwrap()
-                .cmp(&ONE)
-                == 0
-        );
+        assert!(d3.pow(&d3, p, RoundingMode::ToEven, &mut cc)?.cmp(&ONE) == 0);
 
-        assert!(
-            d1.pow(&ONE, p, RoundingMode::ToEven, &mut cc)
-                .unwrap()
-                .cmp(&d1)
-                == 0
-        );
-        assert!(
-            d3.pow(&ONE, p, RoundingMode::ToEven, &mut cc)
-                .unwrap()
-                .cmp(&d3)
-                == 0
-        );
-        assert!(
-            ONE.pow(&d1, p, RoundingMode::ToEven, &mut cc)
-                .unwrap()
-                .cmp(&ONE)
-                == 0
-        );
-        assert!(
-            ONE.pow(&d2, p, RoundingMode::ToEven, &mut cc)
-                .unwrap()
-                .cmp(&ONE)
-                == 0
-        );
-        assert!(
-            ONE.pow(&d3, p, RoundingMode::ToEven, &mut cc)
-                .unwrap()
-                .cmp(&ONE)
-                == 0
-        );
+        assert!(d1.pow(&ONE, p, RoundingMode::ToEven, &mut cc)?.cmp(&d1) == 0);
+        assert!(d3.pow(&ONE, p, RoundingMode::ToEven, &mut cc)?.cmp(&d3) == 0);
+        assert!(ONE.pow(&d1, p, RoundingMode::ToEven, &mut cc)?.cmp(&ONE) == 0);
+        assert!(ONE.pow(&d2, p, RoundingMode::ToEven, &mut cc)?.cmp(&ONE) == 0);
+        assert!(ONE.pow(&d3, p, RoundingMode::ToEven, &mut cc)?.cmp(&ONE) == 0);
 
         let rm = RoundingMode::ToOdd;
-        let d1 = TWO.pow(&ONE.neg().unwrap(), p, rm, &mut cc).unwrap();
-        let d2 = ONE.div(&TWO, p, rm).unwrap();
+        let d1 = TWO.pow(&ONE.neg()?, p, rm, &mut cc)?;
+        let d2 = ONE.div(&TWO, p, rm)?;
 
         assert!(d1.cmp(&d2) == 0);
+        Ok(())
     }
 
     #[test]
-    fn test_exp2_exp10() {
-        let mut cc = Consts::new().unwrap();
+    fn test_exp2_exp10() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let p = 320;
         let rm = RoundingMode::ToEven;
 
-        let x = ExactNumNumber::from_word(3, p).unwrap();
-        let d2 = x.exp2(p, rm, &mut cc).unwrap();
-        let d2_ref = TWO.pow(&x, p, rm, &mut cc).unwrap();
+        let x = ExactNumNumber::from_word(3, p)?;
+        let d2 = x.exp2(p, rm, &mut cc)?;
+        let d2_ref = TWO.pow(&x, p, rm, &mut cc)?;
         assert_eq!(d2.cmp(&d2_ref), 0);
 
-        let d10 = x.exp10(p, rm, &mut cc).unwrap();
-        let d10_ref = TEN.pow(&x, p, rm, &mut cc).unwrap();
+        let d10 = x.exp10(p, rm, &mut cc)?;
+        let d10_ref = TEN.pow(&x, p, rm, &mut cc)?;
         assert_eq!(d10.cmp(&d10_ref), 0);
+        Ok(())
     }
 }

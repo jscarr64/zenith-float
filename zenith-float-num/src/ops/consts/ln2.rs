@@ -145,9 +145,9 @@ mod tests {
 
     #[test]
     #[cfg(target_pointer_width = "32")]
-    fn test_ln2_const() {
-        let mut ln2 = Ln2Cache::new().unwrap();
-        let c = ln2.for_prec(3200, RoundingMode::ToEven).unwrap();
+    fn test_ln2_const() -> Result<(), crate::Error> {
+        let mut ln2 = Ln2Cache::new()?;
+        let c = ln2.for_prec(3200, RoundingMode::ToEven)?;
         //println!("{:?}", c);
         let r = ExactNumNumber::from_raw_parts(
             &[
@@ -171,16 +171,16 @@ mod tests {
             Sign::Pos,
             0,
             false,
-        )
-        .unwrap();
+        )?;
         assert!(c.cmp(&r) == 0);
+        Ok(())
     }
 
     #[test]
     #[cfg(not(target_pointer_width = "32"))]
-    fn test_ln2_const() {
-        let mut ln2 = Ln2Cache::new().unwrap();
-        let c = ln2.for_prec(3200, RoundingMode::ToEven).unwrap();
+    fn test_ln2_const() -> Result<(), crate::Error> {
+        let mut ln2 = Ln2Cache::new()?;
+        let c = ln2.for_prec(3200, RoundingMode::ToEven)?;
         //println!("{:?}", c);
         let r = ExactNumNumber::from_raw_parts(
             &[
@@ -239,8 +239,8 @@ mod tests {
             Sign::Pos,
             0,
             false,
-        )
-        .unwrap();
+        )?;
         assert!(c.cmp(&r) == 0);
+        Ok(())
     }
 }

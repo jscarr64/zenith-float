@@ -93,34 +93,35 @@ mod tests {
     use crate::RoundingMode;
 
     #[test]
-    fn test_hypot() {
+    fn test_hypot() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToEven;
         let p = WORD_BIT_SIZE * 5;
 
-        let z = ExactNumNumber::new(p).unwrap();
-        let h = z.hypot(&z, p, rm).unwrap();
+        let z = ExactNumNumber::new(p)?;
+        let h = z.hypot(&z, p, rm)?;
         assert!(h.is_zero());
 
-        let x = ExactNumNumber::from_i8(3, p).unwrap();
-        let y = ExactNumNumber::from_i8(4, p).unwrap();
-        let h = x.hypot(&y, p, rm).unwrap();
-        let five = ExactNumNumber::from_i8(5, p).unwrap();
+        let x = ExactNumNumber::from_i8(3, p)?;
+        let y = ExactNumNumber::from_i8(4, p)?;
+        let h = x.hypot(&y, p, rm)?;
+        let five = ExactNumNumber::from_i8(5, p)?;
         assert_eq!(h.cmp(&five), 0);
 
-        let nx = x.neg().unwrap();
-        assert_eq!(nx.hypot(&y, p, rm).unwrap().cmp(&five), 0);
+        let nx = x.neg()?;
+        assert_eq!(nx.hypot(&y, p, rm)?.cmp(&five), 0);
 
         for _ in 0..40 {
-            let a = ExactNumNumber::random_normal(p, -10, 10).unwrap();
-            let b = ExactNumNumber::random_normal(p, -10, 10).unwrap();
-            let h = a.hypot(&b, p, rm).unwrap();
+            let a = ExactNumNumber::random_normal(p, -10, 10)?;
+            let b = ExactNumNumber::random_normal(p, -10, 10)?;
+            let h = a.hypot(&b, p, rm)?;
             let p2 = p + WORD_BIT_SIZE;
-            let aa = a.mul(&a, p2, rm).unwrap();
-            let bb = b.mul(&b, p2, rm).unwrap();
-            let s = aa.add(&bb, p2, rm).unwrap().sqrt(p, rm).unwrap();
+            let aa = a.mul(&a, p2, rm)?;
+            let bb = b.mul(&b, p2, rm)?;
+            let s = aa.add(&bb, p2, rm)?.sqrt(p, rm)?;
             let mut eps = ExactNumNumber::small_const(1);
             eps.set_exponent(h.exponent() - p as crate::Exponent + 6);
-            assert!(h.sub(&s, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
+            assert!(h.sub(&s, p, rm)?.abs()?.cmp(&eps) < 0);
         }
+        Ok(())
     }
 }

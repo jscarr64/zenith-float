@@ -392,7 +392,7 @@ mod tests {
     use alloc::vec::Vec;
 
     #[test]
-    fn test_div_unbalanced() {
+    fn test_div_unbalanced() -> Result<(), crate::Error> {
         const MAX_BUF: usize = 300;
         let mut wb = [0; MAX_BUF];
         let mut buf = [0; MAX_BUF];
@@ -400,7 +400,7 @@ mod tests {
             let s1 = random_normalized_slice(1, MAX_BUF);
             let s2 = random_normalized_slice(s1.len(), MAX_BUF);
 
-            let (q, r) = Mantissa::div_unbalanced(&s2, &s1).unwrap();
+            let (q, r) = Mantissa::div_unbalanced(&s2, &s1)?;
 
             buf[..s1.len()].copy_from_slice(&s1);
             buf[s1.len()..].fill(0);
@@ -411,6 +411,7 @@ mod tests {
             d1.add_assign(&d3);
             assert!(s2 == d1[..s2.len()]);
         }
+        Ok(())
     }
 
     fn random_normalized_slice(min_len: usize, max_len: usize) -> Vec<Word> {

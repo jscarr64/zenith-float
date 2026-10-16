@@ -81,15 +81,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_arccosine() {
-        let mut cc = Consts::new().unwrap();
+    fn test_arccosine() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
 
         let rm = RoundingMode::ToEven;
         let p = 64;
-        let mut n1 = ExactNumNumber::from_word(4294967295, p).unwrap();
+        let mut n1 = ExactNumNumber::from_word(4294967295, p)?;
         n1.set_exponent(0);
         //println!("{}", n1.format(crate::Radix::Dec, RoundingMode::None).unwrap());
-        let _n2 = n1.acos(p, rm, &mut cc).unwrap();
+        let _n2 = n1.acos(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Dec, rm).unwrap());
 
         // near 1
@@ -100,40 +100,40 @@ mod tests {
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
-        let n2 = n1.acos(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("5.2049C1114CF98E7B6DB49CCF999F4A5E697D73E5DA6BEC6578098357460BAFFB0C25779F1C63E8D8_e-21", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        )?;
+        let n2 = n1.acos(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("5.2049C1114CF98E7B6DB49CCF999F4A5E697D73E5DA6BEC6578098357460BAFFB0C25779F1C63E8D8_e-21", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         // println!("{:?}", n2.format(crate::Radix::Hex, rm).unwrap());
 
         assert!(n2.cmp(&n3) == 0);
 
         // near zero
-        let n1 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A200000000000000004D3C337F7C8D419EBBFC39B4BEC14AF6_e-10", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let n2 = n1.acos(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("1.921FB54442D18467F76D0FD2BEE6B538C877D6FA13175F455EB9961B4834A04EF790AE0274E87FF6_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n1 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A200000000000000004D3C337F7C8D419EBBFC39B4BEC14AF6_e-10", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let n2 = n1.acos(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("1.921FB54442D18467F76D0FD2BEE6B538C877D6FA13175F455EB9961B4834A04EF790AE0274E87FF6_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         // println!("{:?}", n2.format(crate::Radix::Hex, rm).unwrap());
 
         assert!(n2.cmp(&n3) == 0);
 
-        let d1 = ExactNumNumber::max_value(p).unwrap();
-        let d2 = ExactNumNumber::min_value(p).unwrap();
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
+        let d1 = ExactNumNumber::max_value(p)?;
+        let d2 = ExactNumNumber::min_value(p)?;
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
 
-        let mut half_pi = cc.pi_num(p, RoundingMode::ToEven).unwrap();
+        let mut half_pi = cc.pi_num(p, RoundingMode::ToEven)?;
         half_pi.set_exponent(1);
 
         assert!(d1.acos(p, rm, &mut cc).is_err());
         assert!(d2.acos(p, rm, &mut cc).is_err());
-        assert!(d3.acos(p, rm, &mut cc).unwrap().cmp(&half_pi) == 0);
-        assert!(zero.acos(p, rm, &mut cc).unwrap().cmp(&half_pi) == 0);
-        assert!(ONE.acos(p, rm, &mut cc).unwrap().is_zero());
+        assert!(d3.acos(p, rm, &mut cc)?.cmp(&half_pi) == 0);
+        assert!(zero.acos(p, rm, &mut cc)?.cmp(&half_pi) == 0);
+        assert!(ONE.acos(p, rm, &mut cc)?.is_zero());
 
         // subnormal arg
         let n1 = random_subnormal(p);
-        assert!(n1.acos(p, rm, &mut cc).unwrap().cmp(&half_pi) == 0);
+        assert!(n1.acos(p, rm, &mut cc)?.cmp(&half_pi) == 0);
+        Ok(())
     }
 }

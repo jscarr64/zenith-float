@@ -222,9 +222,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_strop() {
-        let mut eps = ExactNumNumber::from_word(1, 192).unwrap();
-        let mut cc = Consts::new().unwrap();
+    fn test_strop() -> Result<(), crate::Error> {
+        let mut eps = ExactNumNumber::from_word(1, 192)?;
+        let mut cc = Consts::new()?;
 
         for i in 0..test_loop_count(1000) {
             let p1 = (random::<usize>() % 32 + 3) * WORD_BIT_SIZE;
@@ -232,7 +232,7 @@ mod tests {
             let p = p1.min(p2);
 
             let n = if i & 1 == 0 {
-                ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND).unwrap()
+                ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND)?
             } else {
                 random_subnormal(p1)
             };
@@ -251,12 +251,12 @@ mod tests {
                     _ => unreachable!(),
                 };
 
-                let s = n.format(rdx, rm, &mut cc).unwrap();
-                let d = ExactNumNumber::parse(&s, rdx, p2, rm, &mut cc).unwrap();
+                let s = n.format(rdx, rm, &mut cc)?;
+                let d = ExactNumNumber::parse(&s, rdx, p2, rm, &mut cc)?;
 
                 if p2 < p1 {
-                    let mut x = n.clone().unwrap();
-                    x.set_precision(p, rm).unwrap();
+                    let mut x = n.clone()?;
+                    x.set_precision(p, rm)?;
                     assert!(x.cmp(&d) == 0);
                 } else {
                     assert!(n.cmp(&d) == 0);
@@ -264,31 +264,16 @@ mod tests {
             }
 
             if !skip_dec {
-                let s = n.format(Radix::Dec, RoundingMode::ToEven, &mut cc).unwrap();
-                let d = ExactNumNumber::parse(&s, Radix::Dec, p2, RoundingMode::ToEven, &mut cc)
-                    .unwrap();
+                let s = n.format(Radix::Dec, RoundingMode::ToEven, &mut cc)?;
+                let d = ExactNumNumber::parse(&s, Radix::Dec, p2, RoundingMode::ToEven, &mut cc)?;
 
                 if i & 1 == 0 {
                     eps.set_exponent(n.exponent() - p as Exponent + 4);
-                    assert!(
-                        d.sub(&n, p, RoundingMode::None)
-                            .unwrap()
-                            .abs()
-                            .unwrap()
-                            .cmp(&eps)
-                            < 0
-                    );
+                    assert!(d.sub(&n, p, RoundingMode::None)?.abs()?.cmp(&eps) < 0);
                 } else {
-                    let mut eps2 = ExactNumNumber::min_positive(p).unwrap();
+                    let mut eps2 = ExactNumNumber::min_positive(p)?;
                     eps2.set_exponent(eps2.exponent() + 2);
-                    assert!(
-                        d.sub(&n, p, RoundingMode::None)
-                            .unwrap()
-                            .abs()
-                            .unwrap()
-                            .cmp(&eps2)
-                            < 0
-                    );
+                    assert!(d.sub(&n, p, RoundingMode::None)?.abs()?.cmp(&eps2) < 0);
                 }
             }
         }
@@ -305,25 +290,23 @@ mod tests {
             }
             // min, max
             // for p2 < p1 rounding will cause overflow, for p2 >= p1 no rounding is needed.
-            for mut n in
-                [ExactNumNumber::max_value(p1).unwrap(), ExactNumNumber::min_value(p1).unwrap()]
-            {
+            for mut n in [ExactNumNumber::max_value(p1)?, ExactNumNumber::min_value(p1)?] {
                 //println!("\n{:?} {} {}", rdx, p1, p2);
                 //println!("{:?}", n);
 
-                let s = n.format(rdx, rm, &mut cc).unwrap();
-                let mut g = ExactNumNumber::parse(&s, rdx, p2, rm, &mut cc).unwrap();
+                let s = n.format(rdx, rm, &mut cc)?;
+                let mut g = ExactNumNumber::parse(&s, rdx, p2, rm, &mut cc)?;
 
                 //println!("{:?}", g);
 
                 if rdx == Radix::Dec {
                     eps.set_exponent(n.exponent() - p as Exponent + 4); // 4, since rm is none
-                    assert!(n.sub(&g, p, rm).unwrap().abs().unwrap().cmp(&eps) <= 0);
+                    assert!(n.sub(&g, p, rm)?.abs()?.cmp(&eps) <= 0);
                 } else {
                     if p2 < p1 {
-                        n.set_precision(p, rm).unwrap();
+                        n.set_precision(p, rm)?;
                     } else if p2 > p1 {
-                        g.set_precision(p, rm).unwrap();
+                        g.set_precision(p, rm)?;
                     }
 
                     assert!(n.cmp(&g) == 0);
@@ -331,22 +314,23 @@ mod tests {
             }
 
             // min subnormal
-            let mut n = ExactNumNumber::min_positive(p1).unwrap();
-            let s = n.format(rdx, rm, &mut cc).unwrap();
-            let mut g = ExactNumNumber::parse(&s, rdx, p2, rm, &mut cc).unwrap();
+            let mut n = ExactNumNumber::min_positive(p1)?;
+            let s = n.format(rdx, rm, &mut cc)?;
+            let mut g = ExactNumNumber::parse(&s, rdx, p2, rm, &mut cc)?;
 
             if rdx == Radix::Dec {
-                let mut eps = ExactNumNumber::min_positive(p).unwrap();
+                let mut eps = ExactNumNumber::min_positive(p)?;
                 eps.set_exponent(eps.exponent() + 2);
-                assert!(n.sub(&g, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
+                assert!(n.sub(&g, p, rm)?.abs()?.cmp(&eps) < 0);
             } else {
                 if p2 < p1 {
-                    n.set_precision(p, rm).unwrap();
+                    n.set_precision(p, rm)?;
                 } else if p2 > p1 {
-                    g.set_precision(p, rm).unwrap();
+                    g.set_precision(p, rm)?;
                 }
                 assert!(n.cmp(&g) == 0);
             }
         }
+        Ok(())
     }
 }

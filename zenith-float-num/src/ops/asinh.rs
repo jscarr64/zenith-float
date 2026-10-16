@@ -111,19 +111,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_asinh() {
+    fn test_asinh() -> Result<(), crate::Error> {
         let p = 320;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let mut n1 = ExactNumNumber::from_word(1, p).unwrap();
+        let mut n1 = ExactNumNumber::from_word(1, p)?;
         n1.set_exponent(0);
-        let _n2 = n1.asinh(p, rm, &mut cc).unwrap();
+        let _n2 = n1.asinh(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Dec, rm).unwrap());
 
         // near zero
-        let n1 = ExactNumNumber::parse("-6.2625AC139402BE3D18693E64BFF93D122A9FB2295D654817665874F984C1D9E32B6C42F068F33020_e-13", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let n2 = n1.asinh(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("-6.2625AC139402BE3D18693E64BFF93D122A9F8B69858A068F649D78ADAF2C51C59A22D727857055D8_e-13", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n1 = ExactNumNumber::parse("-6.2625AC139402BE3D18693E64BFF93D122A9FB2295D654817665874F984C1D9E32B6C42F068F33020_e-13", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let n2 = n1.asinh(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("-6.2625AC139402BE3D18693E64BFF93D122A9F8B69858A068F649D78ADAF2C51C59A22D727857055D8_e-13", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         // println!("{:?}", n1.format(crate::Radix::Hex, rm).unwrap());
         // println!("{:?}", n2.format(crate::Radix::Hex, rm).unwrap());
@@ -131,46 +131,39 @@ mod tests {
         assert!(n2.cmp(&n3) == 0);
 
         // large exp
-        let n1 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A200000000000000004D3C337F7C8D419EBBFC39B4BEC14AF6_e+1000", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let n2 = n1.asinh(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("2.C5DAB0AF9025886C3364C7B6D6741EB19D4FB009D3F92CA21B77498D9F0666363C665F2F324EAEC8_e+3", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n1 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A200000000000000004D3C337F7C8D419EBBFC39B4BEC14AF6_e+1000", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let n2 = n1.asinh(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("2.C5DAB0AF9025886C3364C7B6D6741EB19D4FB009D3F92CA21B77498D9F0666363C665F2F324EAEC8_e+3", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         // println!("{:?}", n1.format(crate::Radix::Bin, rm).unwrap());
         // println!("{:?}", n2.format(crate::Radix::Hex, rm).unwrap());
 
         assert!(n2.cmp(&n3) == 0);
 
-        let d1 = ExactNumNumber::max_value(p).unwrap();
-        let d2 = ExactNumNumber::min_value(p).unwrap();
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
+        let d1 = ExactNumNumber::max_value(p)?;
+        let d2 = ExactNumNumber::min_value(p)?;
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
 
         let mut eps = ExactNumNumber::small_const(1);
         eps.set_exponent(
             d1.exponent() - p as Exponent + core::mem::size_of::<Exponent>() as Exponent * 8,
         );
 
-        let mut d4 = d1.asinh(p, rm, &mut cc).unwrap();
+        let mut d4 = d1.asinh(p, rm, &mut cc)?;
         // avoid overflow using sinh(x) = 2 * sinh(x/2)^2
         d4.set_exponent(d4.exponent() - 1);
-        let tmp = d4.sinh(p + 1, RoundingMode::None, &mut cc).unwrap();
-        let mut d5 = tmp.mul(&tmp, p, rm).unwrap();
+        let tmp = d4.sinh(p + 1, RoundingMode::None, &mut cc)?;
+        let mut d5 = tmp.mul(&tmp, p, rm)?;
         d5.set_exponent(d5.exponent() + 1);
 
-        assert!(
-            d1.sub(&d5, p, RoundingMode::ToEven)
-                .unwrap()
-                .abs()
-                .unwrap()
-                .cmp(&eps)
-                < 0
-        );
+        assert!(d1.sub(&d5, p, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 
-        let mut d4 = d2.asinh(p, rm, &mut cc).unwrap();
+        let mut d4 = d2.asinh(p, rm, &mut cc)?;
         // avoid overflow using sinh(x) = 2 * sinh(x/2)^2
         d4.set_exponent(d4.exponent() - 1);
-        let tmp = d4.sinh(p + 1, RoundingMode::None, &mut cc).unwrap();
-        let mut d5 = tmp.mul(&tmp, p, rm).unwrap();
+        let tmp = d4.sinh(p + 1, RoundingMode::None, &mut cc)?;
+        let mut d5 = tmp.mul(&tmp, p, rm)?;
         d5.set_exponent(d5.exponent() + 1);
         d5.set_sign(Sign::Neg);
 
@@ -178,20 +171,14 @@ mod tests {
             d2.exponent() - p as Exponent + core::mem::size_of::<Exponent>() as Exponent * 8,
         );
 
-        assert!(
-            d2.sub(&d5, p, RoundingMode::ToEven)
-                .unwrap()
-                .abs()
-                .unwrap()
-                .cmp(&eps)
-                < 0
-        );
+        assert!(d2.sub(&d5, p, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 
-        assert!(d3.asinh(p, rm, &mut cc).unwrap().cmp(&d3) == 0);
-        assert!(zero.asinh(p, rm, &mut cc).unwrap().is_zero());
+        assert!(d3.asinh(p, rm, &mut cc)?.cmp(&d3) == 0);
+        assert!(zero.asinh(p, rm, &mut cc)?.is_zero());
 
         // subnormal arg
         let n1 = random_subnormal(p);
-        assert!(n1.asinh(p, rm, &mut cc).unwrap().cmp(&n1) == 0);
+        assert!(n1.asinh(p, rm, &mut cc)?.cmp(&n1) == 0);
+        Ok(())
     }
 }

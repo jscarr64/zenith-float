@@ -118,8 +118,8 @@ mod tests {
     use crate::{Consts, RoundingMode};
 
     #[test]
-    fn test_reciprocal_newton_matches_div() {
-        let mut cc = Consts::new().unwrap();
+    fn test_reciprocal_newton_matches_div() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
 
         let d1 = ExactNumNumber::parse(
@@ -128,42 +128,37 @@ mod tests {
             320,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
-        let newton = d1.reciprocal(320, rm).unwrap();
-        let div = ONE.div(&d1, 320, rm).unwrap();
+        )?;
+        let newton = d1.reciprocal(320, rm)?;
+        let div = ONE.div(&d1, 320, rm)?;
         assert_eq!(newton.cmp(&div), 0);
 
         let p = WORD_BIT_SIZE * 8;
         for _ in 0..80 {
-            let x = ExactNumNumber::random_normal(p, -64, 64).unwrap();
+            let x = ExactNumNumber::random_normal(p, -64, 64)?;
             if x.is_zero() {
                 continue;
             }
-            let r = x.reciprocal(p, rm).unwrap();
-            let d = ONE.div(&x, p, rm).unwrap();
+            let r = x.reciprocal(p, rm)?;
+            let d = ONE.div(&x, p, rm)?;
             assert_eq!(r.cmp(&d), 0);
         }
 
         let p = WORD_BIT_SIZE * 5;
-        let t = ExactNumNumber::from_i8(3, p).unwrap();
-        assert_eq!(
-            t.reciprocal(p, rm)
-                .unwrap()
-                .cmp(&ONE.div(&t, p, rm).unwrap()),
-            0
-        );
+        let t = ExactNumNumber::from_i8(3, p)?;
+        assert_eq!(t.reciprocal(p, rm)?.cmp(&ONE.div(&t, p, rm)?), 0);
 
         // Exact dyadic reciprocals must not NaN / error under ToEven.
         for v in [1i8, 2, 4, 8, 16, 32] {
-            let x = ExactNumNumber::from_i8(v, p).unwrap();
-            let r = x.reciprocal(p, rm).unwrap();
-            let d = ONE.div(&x, p, rm).unwrap();
+            let x = ExactNumNumber::from_i8(v, p)?;
+            let r = x.reciprocal(p, rm)?;
+            let d = ONE.div(&x, p, rm)?;
             assert_eq!(r.cmp(&d), 0, "1/{v}");
             assert!(!r.inexact(), "1/{v} should be exact");
         }
 
-        let z = ExactNumNumber::new(p).unwrap();
+        let z = ExactNumNumber::new(p)?;
         assert!(matches!(z.reciprocal(p, rm), Err(Error::DivisionByZero)));
+        Ok(())
     }
 }

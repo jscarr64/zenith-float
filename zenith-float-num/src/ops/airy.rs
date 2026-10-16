@@ -450,10 +450,16 @@ mod tests {
     use super::*;
     use crate::defs::RoundingMode;
 
-    fn bits_agree(a: &ExactNumNumber, b: &ExactNumNumber, p: usize, min_bits: i32, label: &str) {
-        let d = a.sub(b, p, RoundingMode::None).unwrap().abs().unwrap();
+    fn bits_agree(
+        a: &ExactNumNumber,
+        b: &ExactNumNumber,
+        p: usize,
+        min_bits: i32,
+        label: &str,
+    ) -> Result<(), crate::Error> {
+        let d = a.sub(b, p, RoundingMode::None)?.abs()?;
         if d.is_zero() {
-            return;
+            return Ok(());
         }
         let rel = d.exponent() - a.exponent();
         assert!(
@@ -462,107 +468,87 @@ mod tests {
             a.exponent(),
             b.exponent()
         );
+        Ok(())
     }
 
     #[test]
-    fn test_airy_golds() {
+    fn test_airy_golds() -> Result<(), crate::Error> {
         let p = 256;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let zero = ExactNumNumber::new(p).unwrap();
-        let one = ExactNumNumber::from_word(1, p).unwrap();
-        let (c1, _c2, sqrt3) = airy_cs(p, &mut cc).unwrap();
-        let ai0 = zero.ai(p, rm, &mut cc).unwrap();
-        bits_agree(&ai0, &c1, p, 80, "Ai(0)=c1");
-        let bi0 = zero.bi(p, rm, &mut cc).unwrap();
-        let three = ExactNumNumber::from_word(3, p).unwrap();
-        let six = ExactNumNumber::from_word(6, p).unwrap();
-        let one_n = ExactNumNumber::from_word(1, p).unwrap();
-        let mut m16 = one_n.div(&six, p, RoundingMode::None).unwrap();
+        let zero = ExactNumNumber::new(p)?;
+        let one = ExactNumNumber::from_word(1, p)?;
+        let (c1, _c2, sqrt3) = airy_cs(p, &mut cc)?;
+        let ai0 = zero.ai(p, rm, &mut cc)?;
+        bits_agree(&ai0, &c1, p, 80, "Ai(0)=c1")?;
+        let bi0 = zero.bi(p, rm, &mut cc)?;
+        let three = ExactNumNumber::from_word(3, p)?;
+        let six = ExactNumNumber::from_word(6, p)?;
+        let one_n = ExactNumNumber::from_word(1, p)?;
+        let mut m16 = one_n.div(&six, p, RoundingMode::None)?;
         m16.set_sign(Sign::Neg);
-        let two_third = ExactNumNumber::from_word(2, p)
-            .unwrap()
-            .div(&three, p, RoundingMode::None)
-            .unwrap();
-        let g23 = two_third.gamma(p, RoundingMode::None, &mut cc).unwrap();
-        let bi0_want = three
-            .pow(&m16, p, RoundingMode::None, &mut cc)
-            .unwrap()
-            .div(&g23, p, RoundingMode::None)
-            .unwrap();
-        bits_agree(&bi0, &bi0_want, p, 80, "Bi(0)=3^{-1/6}/Γ(2/3)");
+        let two_third = ExactNumNumber::from_word(2, p)?.div(&three, p, RoundingMode::None)?;
+        let g23 = two_third.gamma(p, RoundingMode::None, &mut cc)?;
+        let bi0_want =
+            three
+                .pow(&m16, p, RoundingMode::None, &mut cc)?
+                .div(&g23, p, RoundingMode::None)?;
+        bits_agree(&bi0, &bi0_want, p, 80, "Bi(0)=3^{-1/6}/Γ(2/3)")?;
         bits_agree(
             &bi0,
-            &sqrt3.mul(&c1, p, RoundingMode::None).unwrap(),
+            &sqrt3.mul(&c1, p, RoundingMode::None)?,
             p,
             80,
             "Bi(0)=√3 c1",
-        );
+        )?;
 
-        let x = ExactNumNumber::from_word(1, p).unwrap();
-        let ai = x.ai(p, rm, &mut cc).unwrap();
-        let bi = x.bi(p, rm, &mut cc).unwrap();
-        let aip = x.ai_prime(p, rm, &mut cc).unwrap();
-        let bip = x.bi_prime(p, rm, &mut cc).unwrap();
-        let wr = ai
-            .mul(&bip, p, RoundingMode::None)
-            .unwrap()
-            .sub(
-                &aip.mul(&bi, p, RoundingMode::None).unwrap(),
+        let x = ExactNumNumber::from_word(1, p)?;
+        let ai = x.ai(p, rm, &mut cc)?;
+        let bi = x.bi(p, rm, &mut cc)?;
+        let aip = x.ai_prime(p, rm, &mut cc)?;
+        let bip = x.bi_prime(p, rm, &mut cc)?;
+        let wr = ai.mul(&bip, p, RoundingMode::None)?.sub(
+            &aip.mul(&bi, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let wr_want = ExactNumNumber::from_word(1, p)?.div(&pi, p, RoundingMode::None)?;
+        bits_agree(&wr, &wr_want, p, 40, "Wronskian at x=1")?;
+
+        let xm = one.neg()?;
+        let wrn = {
+            let ai = xm.ai(p, rm, &mut cc)?;
+            let bi = xm.bi(p, rm, &mut cc)?;
+            let aip = xm.ai_prime(p, rm, &mut cc)?;
+            let bip = xm.bi_prime(p, rm, &mut cc)?;
+            ai.mul(&bip, p, RoundingMode::None)?.sub(
+                &aip.mul(&bi, p, RoundingMode::None)?,
                 p,
                 RoundingMode::None,
-            )
-            .unwrap();
-        let pi = cc.pi_num(p, RoundingMode::None).unwrap();
-        let wr_want = ExactNumNumber::from_word(1, p)
-            .unwrap()
-            .div(&pi, p, RoundingMode::None)
-            .unwrap();
-        bits_agree(&wr, &wr_want, p, 40, "Wronskian at x=1");
-
-        let xm = one.neg().unwrap();
-        let wrn = {
-            let ai = xm.ai(p, rm, &mut cc).unwrap();
-            let bi = xm.bi(p, rm, &mut cc).unwrap();
-            let aip = xm.ai_prime(p, rm, &mut cc).unwrap();
-            let bip = xm.bi_prime(p, rm, &mut cc).unwrap();
-            ai.mul(&bip, p, RoundingMode::None)
-                .unwrap()
-                .sub(
-                    &aip.mul(&bi, p, RoundingMode::None).unwrap(),
-                    p,
-                    RoundingMode::None,
-                )
-                .unwrap()
+            )?
         };
-        bits_agree(&wrn, &wr_want, p, 40, "Wronskian at x=-1");
+        bits_agree(&wrn, &wr_want, p, 40, "Wronskian at x=-1")?;
 
-        let ten = ExactNumNumber::from_word(10, p).unwrap();
-        assert!(ten.ai(p, rm, &mut cc).unwrap().is_positive());
-        assert!(ten.bi(p, rm, &mut cc).unwrap().is_positive());
+        let ten = ExactNumNumber::from_word(10, p)?;
+        assert!(ten.ai(p, rm, &mut cc)?.is_positive());
+        assert!(ten.bi(p, rm, &mut cc)?.is_positive());
 
         // Ai'' ≈ x Ai via centered difference on Ai'.
-        let mut h = ExactNumNumber::from_word(1, p).unwrap();
+        let mut h = ExactNumNumber::from_word(1, p)?;
         h.set_exponent(-((p as i32) / 8));
-        let xp = x.add(&h, p, RoundingMode::None).unwrap();
-        let xm = x.sub(&h, p, RoundingMode::None).unwrap();
+        let xp = x.add(&h, p, RoundingMode::None)?;
+        let xm = x.sub(&h, p, RoundingMode::None)?;
         let d2 = xp
-            .ai_prime(p, rm, &mut cc)
-            .unwrap()
-            .sub(&xm.ai_prime(p, rm, &mut cc).unwrap(), p, RoundingMode::None)
-            .unwrap()
+            .ai_prime(p, rm, &mut cc)?
+            .sub(&xm.ai_prime(p, rm, &mut cc)?, p, RoundingMode::None)?
             .div(
-                &h.mul(
-                    &ExactNumNumber::from_word(2, p).unwrap(),
-                    p,
-                    RoundingMode::None,
-                )
-                .unwrap(),
+                &h.mul(&ExactNumNumber::from_word(2, p)?, p, RoundingMode::None)?,
                 p,
                 RoundingMode::None,
-            )
-            .unwrap();
-        let xai = x.mul(&ai, p, RoundingMode::None).unwrap();
-        bits_agree(&d2, &xai, p, 8, "Ai''=x Ai at x=1");
+            )?;
+        let xai = x.mul(&ai, p, RoundingMode::None)?;
+        bits_agree(&d2, &xai, p, 8, "Ai''=x Ai at x=1")?;
+        Ok(())
     }
 }

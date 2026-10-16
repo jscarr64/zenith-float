@@ -119,54 +119,48 @@ mod tests {
     use crate::RoundingMode;
 
     #[test]
-    fn test_atan2() {
-        let mut cc = Consts::new().unwrap();
+    fn test_atan2() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
         let p = WORD_BIT_SIZE * 5;
 
-        let z = ExactNumNumber::new(p).unwrap();
+        let z = ExactNumNumber::new(p)?;
         let one = ExactNumNumber::small_const(1);
-        assert!(z.atan2(&one, p, rm, &mut cc).unwrap().is_zero());
+        assert!(z.atan2(&one, p, rm, &mut cc)?.is_zero());
 
-        let y = ExactNumNumber::from_i8(1, p).unwrap();
-        let x = ExactNumNumber::from_i8(1, p).unwrap();
-        let a = y.atan2(&x, p, rm, &mut cc).unwrap();
-        let at = y.atan(p, rm, &mut cc).unwrap();
+        let y = ExactNumNumber::from_i8(1, p)?;
+        let x = ExactNumNumber::from_i8(1, p)?;
+        let a = y.atan2(&x, p, rm, &mut cc)?;
+        let at = y.atan(p, rm, &mut cc)?;
         // atan2(1,1) = π/4 = atan(1)
         assert_eq!(a.cmp(&at), 0);
 
-        let nx = x.neg().unwrap();
-        let a2 = y.atan2(&nx, p, rm, &mut cc).unwrap();
-        let mut pi = cc.pi_num(p, rm).unwrap();
+        let nx = x.neg()?;
+        let a2 = y.atan2(&nx, p, rm, &mut cc)?;
+        let mut pi = cc.pi_num(p, rm)?;
         pi.set_exponent(1); // π/2
-        let three_q = pi.add(&at, p, rm).unwrap();
+        let three_q = pi.add(&at, p, rm)?;
         let mut eps = ExactNumNumber::small_const(1);
         eps.set_exponent(a2.exponent() - p as crate::Exponent + 4);
-        assert!(a2.sub(&three_q, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
+        assert!(a2.sub(&three_q, p, rm)?.abs()?.cmp(&eps) < 0);
 
-        let ny = y.neg().unwrap();
-        let a3 = ny.atan2(&nx, p, rm, &mut cc).unwrap();
-        let three_q_neg = three_q.neg().unwrap();
+        let ny = y.neg()?;
+        let a3 = ny.atan2(&nx, p, rm, &mut cc)?;
+        let three_q_neg = three_q.neg()?;
         eps.set_exponent(a3.exponent() - p as crate::Exponent + 4);
-        assert!(
-            a3.sub(&three_q_neg, p, rm)
-                .unwrap()
-                .abs()
-                .unwrap()
-                .cmp(&eps)
-                < 0
-        );
+        assert!(a3.sub(&three_q_neg, p, rm)?.abs()?.cmp(&eps) < 0);
         assert!(a3.is_negative());
 
         for _ in 0..30 {
-            let yy = ExactNumNumber::random_normal(p, -8, 8).unwrap();
+            let yy = ExactNumNumber::random_normal(p, -8, 8)?;
             if yy.is_zero() {
                 continue;
             }
-            let a = yy.atan2(&one, p, rm, &mut cc).unwrap();
-            let b = yy.atan(p, rm, &mut cc).unwrap();
+            let a = yy.atan2(&one, p, rm, &mut cc)?;
+            let b = yy.atan(p, rm, &mut cc)?;
             eps.set_exponent(a.exponent() - p as crate::Exponent + 4);
-            assert!(a.sub(&b, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
+            assert!(a.sub(&b, p, rm)?.abs()?.cmp(&eps) < 0);
         }
+        Ok(())
     }
 }

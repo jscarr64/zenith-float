@@ -718,10 +718,10 @@ mod tests {
     }
 
     #[test]
-    fn complex_hypergeom_2f1_golds() {
+    fn complex_hypergeom_2f1_golds() -> Result<(), crate::Error> {
         let p = 256;
         let r = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let one = ExactComplex::one(p);
         let two = ExactComplex::from_real(ExactNum::from_u8(2, p), p);
         let mk_half = || ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
@@ -796,5 +796,6 @@ mod tests {
             near(&fa.into_parts().1.abs(), &fb.into_parts().1.abs(), p, 20),
             "cut |Im|"
         );
+        Ok(())
     }
 }

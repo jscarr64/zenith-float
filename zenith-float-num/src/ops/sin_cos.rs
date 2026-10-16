@@ -87,24 +87,25 @@ mod tests {
     use crate::common::util::random_subnormal;
 
     #[test]
-    fn test_sin_cos() {
+    fn test_sin_cos() -> Result<(), crate::Error> {
         let p = 320;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
 
-        let d1 = ExactNumNumber::from_word(1, p).unwrap();
-        let (s, c) = d1.sin_cos(p, rm, &mut cc).unwrap();
-        assert!(s.cmp(&d1.sin(p, rm, &mut cc).unwrap()) == 0);
-        assert!(c.cmp(&d1.cos(p, rm, &mut cc).unwrap()) == 0);
+        let d1 = ExactNumNumber::from_word(1, p)?;
+        let (s, c) = d1.sin_cos(p, rm, &mut cc)?;
+        assert!(s.cmp(&d1.sin(p, rm, &mut cc)?) == 0);
+        assert!(c.cmp(&d1.cos(p, rm, &mut cc)?) == 0);
 
-        let zero = ExactNumNumber::new(1).unwrap();
-        let (s, c) = zero.sin_cos(p, rm, &mut cc).unwrap();
+        let zero = ExactNumNumber::new(1)?;
+        let (s, c) = zero.sin_cos(p, rm, &mut cc)?;
         assert!(s.is_zero());
-        assert!(c.cmp(&ExactNumNumber::from_word(1, p).unwrap()) == 0);
+        assert!(c.cmp(&ExactNumNumber::from_word(1, p)?) == 0);
 
         let n1 = random_subnormal(p);
-        let (s, c) = n1.sin_cos(p, rm, &mut cc).unwrap();
-        assert!(s.cmp(&n1.sin(p, rm, &mut cc).unwrap()) == 0);
-        assert!(c.cmp(&n1.cos(p, rm, &mut cc).unwrap()) == 0);
+        let (s, c) = n1.sin_cos(p, rm, &mut cc)?;
+        assert!(s.cmp(&n1.sin(p, rm, &mut cc)?) == 0);
+        assert!(c.cmp(&n1.cos(p, rm, &mut cc)?) == 0);
+        Ok(())
     }
 }

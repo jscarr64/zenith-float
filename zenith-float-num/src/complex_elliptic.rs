@@ -711,10 +711,10 @@ mod tests {
     }
 
     #[test]
-    fn complex_elliptic_golds() {
+    fn complex_elliptic_golds() -> Result<(), crate::Error> {
         let p = 256;
         let r = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let z0 = ExactComplex::zero(p);
         let mk_half = || ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
         let half = mk_half();
@@ -803,5 +803,6 @@ mod tests {
         let fb = xb.elliptic_f(&mh, p, r, &mut cc);
         assert!(!fa.is_nan() && !fb.is_nan(), "F cut defined");
         assert_ne!(fa.im().compare(fb.im()), Some(0), "F cut Im differs");
+        Ok(())
     }
 }

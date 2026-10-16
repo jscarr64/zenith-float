@@ -152,7 +152,7 @@ mod tests {
     }
 
     #[test]
-    fn test_cbrt_rem() {
+    fn test_cbrt_rem() -> Result<(), crate::Error> {
         const MAX_BUF: usize = 100;
 
         for s1 in [
@@ -165,7 +165,7 @@ mod tests {
             &[WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX],
             &[WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX],
         ] {
-            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1)).unwrap();
+            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1))?;
 
             assert_sqrt!(s1 as &[Word], &qb, &rb, MAX_BUF, "max");
         }
@@ -180,7 +180,7 @@ mod tests {
             &[0, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT],
             &[0, 0, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT],
         ] {
-            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1)).unwrap();
+            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1))?;
 
             assert_sqrt!(s1 as &[Word], &qb, &rb, MAX_BUF, "significant");
         }
@@ -195,7 +195,7 @@ mod tests {
             &[1, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT],
             &[1, 0, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT],
         ] {
-            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1)).unwrap();
+            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1))?;
 
             assert_sqrt!(s1 as &[Word], &qb, &rb, MAX_BUF, "lsb + msb");
         }
@@ -210,7 +210,7 @@ mod tests {
             &[1, 0, 0, 0, 0, 0, 7],
             &[1, 0, 0, 0, 0, 0, 0, 8],
         ] {
-            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1)).unwrap();
+            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1))?;
 
             assert_sqrt!(s1 as &[Word], &qb, &rb, MAX_BUF, "subnormal");
         }
@@ -218,12 +218,13 @@ mod tests {
         for _ in 0..1000 {
             let s1 = random_normalized_slice(1, MAX_BUF);
 
-            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(&s1)).unwrap();
+            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(&s1))?;
 
             //println!("\n{:?}\n{:?}\n{:?}", s1, qb, rb);
 
             assert_sqrt!(&s1 as &[Word], &qb, &rb, MAX_BUF, "rand");
         }
+        Ok(())
     }
 
     fn random_normalized_slice(min_len: usize, max_len: usize) -> WordBuf {

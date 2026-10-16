@@ -398,10 +398,16 @@ mod tests {
     use super::*;
     use crate::defs::RoundingMode;
 
-    fn bits_agree(a: &ExactNumNumber, b: &ExactNumNumber, p: usize, min_bits: i32, label: &str) {
-        let d = a.sub(b, p, RoundingMode::None).unwrap().abs().unwrap();
+    fn bits_agree(
+        a: &ExactNumNumber,
+        b: &ExactNumNumber,
+        p: usize,
+        min_bits: i32,
+        label: &str,
+    ) -> Result<(), crate::Error> {
+        let d = a.sub(b, p, RoundingMode::None)?.abs()?;
         if d.is_zero() {
-            return;
+            return Ok(());
         }
         let rel = d.exponent() - a.exponent();
         assert!(
@@ -410,143 +416,117 @@ mod tests {
             a.exponent(),
             b.exponent()
         );
+        Ok(())
     }
 
     #[test]
-    fn test_jacobi_identities() {
+    fn test_jacobi_identities() -> Result<(), crate::Error> {
         let p = 256;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let one = ExactNumNumber::from_word(1, p).unwrap();
-        let zero = ExactNumNumber::new(p).unwrap();
-        let two = ExactNumNumber::from_word(2, p).unwrap();
-        let mut half = ExactNumNumber::from_word(1, p).unwrap();
+        let one = ExactNumNumber::from_word(1, p)?;
+        let zero = ExactNumNumber::new(p)?;
+        let two = ExactNumNumber::from_word(2, p)?;
+        let mut half = ExactNumNumber::from_word(1, p)?;
         half.div_by_2(RoundingMode::None);
 
-        let sn0 = zero.jacobi_sn(&half, p, rm, &mut cc).unwrap();
+        let sn0 = zero.jacobi_sn(&half, p, rm, &mut cc)?;
         assert!(sn0.is_zero(), "sn(0)");
-        let cn0 = zero.jacobi_cn(&half, p, rm, &mut cc).unwrap();
-        bits_agree(&cn0, &one, p, 80, "cn(0)");
-        let dn0 = zero.jacobi_dn(&half, p, rm, &mut cc).unwrap();
-        bits_agree(&dn0, &one, p, 80, "dn(0)");
-        let am0 = zero.jacobi_am(&half, p, rm, &mut cc).unwrap();
+        let cn0 = zero.jacobi_cn(&half, p, rm, &mut cc)?;
+        bits_agree(&cn0, &one, p, 80, "cn(0)")?;
+        let dn0 = zero.jacobi_dn(&half, p, rm, &mut cc)?;
+        bits_agree(&dn0, &one, p, 80, "dn(0)")?;
+        let am0 = zero.jacobi_am(&half, p, rm, &mut cc)?;
         assert!(am0.is_zero(), "am(0)");
 
-        let u = ExactNumNumber::from_word(1, p).unwrap();
-        let sn_m0 = u.jacobi_sn(&zero, p, rm, &mut cc).unwrap();
-        let sinu = u.sin(p, rm, &mut cc).unwrap();
-        bits_agree(&sn_m0, &sinu, p, 80, "sn(u|0)=sin u");
-        let cn_m0 = u.jacobi_cn(&zero, p, rm, &mut cc).unwrap();
-        let cosu = u.cos(p, rm, &mut cc).unwrap();
-        bits_agree(&cn_m0, &cosu, p, 80, "cn(u|0)=cos u");
-        let dn_m0 = u.jacobi_dn(&zero, p, rm, &mut cc).unwrap();
-        bits_agree(&dn_m0, &one, p, 80, "dn(u|0)=1");
+        let u = ExactNumNumber::from_word(1, p)?;
+        let sn_m0 = u.jacobi_sn(&zero, p, rm, &mut cc)?;
+        let sinu = u.sin(p, rm, &mut cc)?;
+        bits_agree(&sn_m0, &sinu, p, 80, "sn(u|0)=sin u")?;
+        let cn_m0 = u.jacobi_cn(&zero, p, rm, &mut cc)?;
+        let cosu = u.cos(p, rm, &mut cc)?;
+        bits_agree(&cn_m0, &cosu, p, 80, "cn(u|0)=cos u")?;
+        let dn_m0 = u.jacobi_dn(&zero, p, rm, &mut cc)?;
+        bits_agree(&dn_m0, &one, p, 80, "dn(u|0)=1")?;
 
-        let sn_m1 = u.jacobi_sn(&one, p, rm, &mut cc).unwrap();
-        let tanhu = u.tanh(p, rm, &mut cc).unwrap();
-        bits_agree(&sn_m1, &tanhu, p, 80, "sn(u|1)=tanh u");
-        let cn_m1 = u.jacobi_cn(&one, p, rm, &mut cc).unwrap();
-        let sech = one
-            .div(&u.cosh(p, rm, &mut cc).unwrap(), p, RoundingMode::None)
-            .unwrap();
-        bits_agree(&cn_m1, &sech, p, 80, "cn(u|1)=sech u");
-        let dn_m1 = u.jacobi_dn(&one, p, rm, &mut cc).unwrap();
-        bits_agree(&dn_m1, &sech, p, 80, "dn(u|1)=sech u");
+        let sn_m1 = u.jacobi_sn(&one, p, rm, &mut cc)?;
+        let tanhu = u.tanh(p, rm, &mut cc)?;
+        bits_agree(&sn_m1, &tanhu, p, 80, "sn(u|1)=tanh u")?;
+        let cn_m1 = u.jacobi_cn(&one, p, rm, &mut cc)?;
+        let sech = one.div(&u.cosh(p, rm, &mut cc)?, p, RoundingMode::None)?;
+        bits_agree(&cn_m1, &sech, p, 80, "cn(u|1)=sech u")?;
+        let dn_m1 = u.jacobi_dn(&one, p, rm, &mut cc)?;
+        bits_agree(&dn_m1, &sech, p, 80, "dn(u|1)=sech u")?;
 
-        let sn = u.jacobi_sn(&half, p, rm, &mut cc).unwrap();
-        let cn = u.jacobi_cn(&half, p, rm, &mut cc).unwrap();
-        let dn = u.jacobi_dn(&half, p, rm, &mut cc).unwrap();
-        let s2c2 = sn
-            .mul(&sn, p, RoundingMode::None)
-            .unwrap()
-            .add(
-                &cn.mul(&cn, p, RoundingMode::None).unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        bits_agree(&s2c2, &one, p, 80, "sn²+cn²=1");
-        let d2ms = dn
-            .mul(&dn, p, RoundingMode::None)
-            .unwrap()
-            .add(
-                &half
-                    .mul(
-                        &sn.mul(&sn, p, RoundingMode::None).unwrap(),
-                        p,
-                        RoundingMode::None,
-                    )
-                    .unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        bits_agree(&d2ms, &one, p, 80, "dn²+m sn²=1");
+        let sn = u.jacobi_sn(&half, p, rm, &mut cc)?;
+        let cn = u.jacobi_cn(&half, p, rm, &mut cc)?;
+        let dn = u.jacobi_dn(&half, p, rm, &mut cc)?;
+        let s2c2 = sn.mul(&sn, p, RoundingMode::None)?.add(
+            &cn.mul(&cn, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        bits_agree(&s2c2, &one, p, 80, "sn²+cn²=1")?;
+        let d2ms = dn.mul(&dn, p, RoundingMode::None)?.add(
+            &half.mul(&sn.mul(&sn, p, RoundingMode::None)?, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        bits_agree(&d2ms, &one, p, 80, "dn²+m sn²=1")?;
 
-        let k = half.elliptic_k(p, rm, &mut cc).unwrap();
-        let mut kh = half.elliptic_k(p, rm, &mut cc).unwrap();
+        let k = half.elliptic_k(p, rm, &mut cc)?;
+        let mut kh = half.elliptic_k(p, rm, &mut cc)?;
         kh.div_by_2(RoundingMode::None);
-        let snkh = kh.jacobi_sn(&half, p, rm, &mut cc).unwrap();
+        let snkh = kh.jacobi_sn(&half, p, rm, &mut cc)?;
         let kp = one
-            .sub(&half, p, RoundingMode::None)
-            .unwrap()
-            .sqrt(p, RoundingMode::None)
-            .unwrap();
-        let want = one
-            .div(
-                &one.add(&kp, p, RoundingMode::None)
-                    .unwrap()
-                    .sqrt(p, RoundingMode::None)
-                    .unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        bits_agree(&snkh, &want, p, 40, "sn(K/2|1/2)");
+            .sub(&half, p, RoundingMode::None)?
+            .sqrt(p, RoundingMode::None)?;
+        let want = one.div(
+            &one.add(&kp, p, RoundingMode::None)?
+                .sqrt(p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        bits_agree(&snkh, &want, p, 40, "sn(K/2|1/2)")?;
 
-        let four_k = four_word(p).mul(&k, p, RoundingMode::None).unwrap();
-        let u4 = u.add(&four_k, p, RoundingMode::None).unwrap();
-        let sn_per = u4.jacobi_sn(&half, p, rm, &mut cc).unwrap();
-        bits_agree(&sn_per, &sn, p, 40, "sn(u+4K)=sn(u)");
+        let four_k = four_word(p).mul(&k, p, RoundingMode::None)?;
+        let u4 = u.add(&four_k, p, RoundingMode::None)?;
+        let sn_per = u4.jacobi_sn(&half, p, rm, &mut cc)?;
+        bits_agree(&sn_per, &sn, p, 40, "sn(u+4K)=sn(u)")?;
 
-        let mut h = ExactNumNumber::from_word(1, p).unwrap();
+        let mut h = ExactNumNumber::from_word(1, p)?;
         for _ in 0..20 {
             h.div_by_2(RoundingMode::None);
         }
-        let up = u.add(&h, p, RoundingMode::None).unwrap();
-        let um = u.sub(&h, p, RoundingMode::None).unwrap();
-        let snp = up.jacobi_sn(&half, p, rm, &mut cc).unwrap();
-        let snm = um.jacobi_sn(&half, p, rm, &mut cc).unwrap();
-        let fd = snp
-            .sub(&snm, p, RoundingMode::None)
-            .unwrap()
-            .div(
-                &two.mul(&h, p, RoundingMode::None).unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        let deriv = cn.mul(&dn, p, RoundingMode::None).unwrap();
-        bits_agree(&fd, &deriv, p, 20, "d(sn)/du = cn dn");
+        let up = u.add(&h, p, RoundingMode::None)?;
+        let um = u.sub(&h, p, RoundingMode::None)?;
+        let snp = up.jacobi_sn(&half, p, rm, &mut cc)?;
+        let snm = um.jacobi_sn(&half, p, rm, &mut cc)?;
+        let fd = snp.sub(&snm, p, RoundingMode::None)?.div(
+            &two.mul(&h, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        let deriv = cn.mul(&dn, p, RoundingMode::None)?;
+        bits_agree(&fd, &deriv, p, 20, "d(sn)/du = cn dn")?;
 
-        let sn_none = u
-            .jacobi_sn(&half, 512, RoundingMode::None, &mut cc)
-            .unwrap();
-        bits_agree(&sn_none, &sn, p, 20, "sn None 512 vs ToEven 256");
+        let sn_none = u.jacobi_sn(&half, 512, RoundingMode::None, &mut cc)?;
+        bits_agree(&sn_none, &sn, p, 20, "sn None 512 vs ToEven 256")?;
 
-        assert!(u.jacobi_sn(&one.neg().unwrap(), p, rm, &mut cc).is_err());
+        assert!(u.jacobi_sn(&one.neg()?, p, rm, &mut cc).is_err());
         assert!(u.jacobi_sn(&two, p, rm, &mut cc).is_err());
-        let cd = u.jacobi_cd(&half, p, rm, &mut cc).unwrap();
-        let want_cd = cn.div(&dn, p, RoundingMode::None).unwrap();
-        bits_agree(&cd, &want_cd, p, 80, "cd=cn/dn");
-        let ns = u.jacobi_ns(&half, p, rm, &mut cc).unwrap();
-        let nssn = ns.mul(&sn, p, RoundingMode::None).unwrap();
-        bits_agree(&nssn, &one, p, 80, "ns·sn=1");
+        let cd = u.jacobi_cd(&half, p, rm, &mut cc)?;
+        let want_cd = cn.div(&dn, p, RoundingMode::None)?;
+        bits_agree(&cd, &want_cd, p, 80, "cd=cn/dn")?;
+        let ns = u.jacobi_ns(&half, p, rm, &mut cc)?;
+        let nssn = ns.mul(&sn, p, RoundingMode::None)?;
+        bits_agree(&nssn, &one, p, 80, "ns·sn=1")?;
         assert!(zero.jacobi_ns(&half, p, rm, &mut cc).is_err());
 
         // Inverse of sn is incomplete F: F(sn(u|m)|m)=u for |u|<K(m).
-        let back = sn.elliptic_f(&half, p, rm, &mut cc).unwrap();
-        bits_agree(&back, &u, p, 40, "F(sn(u|m)|m)=u");
+        let back = sn.elliptic_f(&half, p, rm, &mut cc)?;
+        bits_agree(&back, &u, p, 40, "F(sn(u|m)|m)=u")?;
+        Ok(())
     }
 
     fn four_word(p: usize) -> ExactNumNumber {

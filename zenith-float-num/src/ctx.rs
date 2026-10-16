@@ -358,16 +358,11 @@ mod tests {
     use crate::RoundingMode;
 
     #[test]
-    fn with_rounding_mode_restores() {
-        let mut ctx = Context::new(
-            128,
-            RoundingMode::ToEven,
-            Consts::new().unwrap(),
-            -1000,
-            1000,
-        );
+    fn with_rounding_mode_restores() -> Result<(), crate::Error> {
+        let mut ctx = Context::new(128, RoundingMode::ToEven, Consts::new()?, -1000, 1000);
         let inner = ctx.with_rounding_mode(RoundingMode::Down, |c| c.rounding_mode());
         assert_eq!(inner, RoundingMode::Down);
         assert_eq!(ctx.rounding_mode(), RoundingMode::ToEven);
+        Ok(())
     }
 }
