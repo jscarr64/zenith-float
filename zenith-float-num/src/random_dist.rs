@@ -42,7 +42,7 @@ fn random_unit_open(p: usize, rm: RoundingMode) -> ExactNum {
 }
 
 /// Which law [`ExactNumArray::random_fill`] samples.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum RandomDist {
     /// Uniform on `[a, b]`.
     Uniform(ExactNum, ExactNum),

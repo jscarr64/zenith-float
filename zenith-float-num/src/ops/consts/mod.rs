@@ -45,7 +45,7 @@ pub struct ConstCacheInfo {
 
 /// A float stored at extra working precision so later requests at lower (or equal)
 /// precision reuse the cache instead of recomputing.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct CachedFBig {
     inner: ExactNum,
 }

@@ -77,7 +77,7 @@ impl LaneBits for u64 {
 }
 
 /// Contiguous binary32 lanes (`u32` bits), row-major.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Ieee32Array {
     bits: Vec<u32>,
     rows: usize,
@@ -85,7 +85,7 @@ pub struct Ieee32Array {
 }
 
 /// Contiguous binary64 lanes (`u64` bits), row-major.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Ieee64Array {
     bits: Vec<u64>,
     rows: usize,
@@ -93,7 +93,7 @@ pub struct Ieee64Array {
 }
 
 /// Batch of `ExactNum` values at a shared precision `p`, row-major.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ExactNumArray {
     p: usize,
     vals: Vec<ExactNum>,

@@ -17,7 +17,7 @@ use core::ops::Neg;
 /// Both parts are integer-valued `ExactNum`s after [`Self::new`]. The
 /// denominator is positive. A zero denominator or a non-finite part is stored
 /// as `NaN/1`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ExactRational {
     num: ExactNum,
     den: ExactNum,
