@@ -6668,7 +6668,10 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 13 * 2 * 2 * 11);
         println!("ziv entry points digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_735_357_469_467_868_262);
+        // Re-recorded: the old value (2_735_357_469_467_868_262) pinned a wrong `log1p` result for the positive
+        // subnormal operand 21 with `Down` (the argument itself instead of the argument minus one grid unit);
+        // only those two entries (p = 64 and p = 200) differ. See the CHANGELOG.
+        assert_eq!(h.finish(), 6_378_838_253_543_692_452);
         Ok(())
     }
 

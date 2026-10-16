@@ -72,16 +72,44 @@ pub fn calc_add_cost(p: usize) -> usize {
     p
 }
 
-/// Maximum extra correct-rounding retries.
+/// Fixed part of the extra-precision budget of a correct-rounding retry loop, in words.
+///
+/// The budget is `max(WORD_BIT_SIZE * MAX_PREC_RETRY, 2 * p)` extra bits; see [`prec_retry_exhausted`].
 pub const MAX_PREC_RETRY: usize = 256;
 
 #[cfg(test)]
 pub const MAX_DEC_SCALE: usize = 1_000_000;
 
-/// True when working precision has grown too far past the requested precision.
+/// Number of working bits a correct-rounding retry loop may add to `p` before it gives up.
+///
+/// This is `max(WORD_BIT_SIZE * MAX_PREC_RETRY, 2 * p)`, so the loop may work at up to `3p` bits
+/// (never fewer than `p + 16384`).
+///
+/// Why `2p`: when the exact result lies within `2^-(2p+c)` (relative) of a rounding boundary, the
+/// working value has to carry about `2p + c` correct bits to fall on one side of it. Two arguments
+/// of `p` bits can produce such a result without any special structure: `cos(x)` for `x` the `p`-bit
+/// value nearest `4 pi` is `1 - (x - 4 pi)^2 / 2 ~ 1 - 2^-(2p-5)`; `exp(2^-p)` is the midpoint
+/// `1 + 2^-p` plus `2^-(2p+1)`; `log1p(2^(1-p))` is a grid point of `p` bits plus a term of relative size `2^-2p`. A budget
+/// of a fixed number of extra bits (the old `64 * 256`) is smaller than `p` for `p` above 16384 and
+/// ended these in `NaN(PrecisionRetryExhausted)`. A budget of `2p` extra bits reaches `3p`, which is
+/// the `2p + c` that such a result needs plus the up-to-20 % overshoot of the last growth step.
+///
+/// Termination: [`bump_prec_retry`] raises the working precision by at least one word per call
+/// (`p_inc` starts at one word and is `round_p(p_wrk / 5)`, never below one word, afterwards), and
+/// the limit is a finite number computed from `p` alone, so a loop that never certifies its result
+/// (for example an exactly representable result that no finite precision can separate from its
+/// boundary) fails with `PrecisionRetryExhausted` after at most `limit / 64` iterations.
+#[inline]
+pub fn prec_retry_budget(p: usize) -> usize {
+    WORD_BIT_SIZE
+        .saturating_mul(MAX_PREC_RETRY)
+        .max(p.saturating_mul(2))
+}
+
+/// True when working precision has grown too far past the requested precision (see [`prec_retry_budget`]).
 #[inline]
 pub fn prec_retry_exhausted(p_wrk: usize, p: usize) -> bool {
-    p_wrk > p.saturating_add(WORD_BIT_SIZE.saturating_mul(MAX_PREC_RETRY))
+    p_wrk > p.saturating_add(prec_retry_budget(p))
 }
 
 /// Bump working precision for a correct-rounding retry, or error instead of spinning.
@@ -625,6 +653,62 @@ mod carry_tests {
             }
             let n = (word_from(&mut state) as usize) % (8 * WORD_BIT_SIZE);
             check_shift(&src, n);
+        }
+    }
+}
+
+#[cfg(test)]
+mod retry_budget_tests {
+    use super::{bump_prec_retry, prec_retry_budget, prec_retry_exhausted, round_p};
+    use crate::defs::{Error, WORD_BIT_SIZE};
+
+    #[test]
+    fn budget_is_the_larger_of_the_fixed_part_and_twice_p() {
+        // 64 * 256 = 16384 extra bits up to p = 8192, then 2p
+        assert_eq!(prec_retry_budget(64), 16384);
+        assert_eq!(prec_retry_budget(8192), 16384);
+        assert_eq!(prec_retry_budget(8256), 16512);
+        assert_eq!(prec_retry_budget(100_032), 200_064);
+        assert_eq!(prec_retry_budget(usize::MAX), usize::MAX);
+    }
+
+    #[test]
+    fn exhausted_exactly_above_three_p_for_large_p() {
+        let p = 100_032;
+        assert!(!prec_retry_exhausted(3 * p, p));
+        assert!(prec_retry_exhausted(3 * p + 1, p));
+        // the old fixed budget gave up at p + 16384
+        assert!(!prec_retry_exhausted(p + 16385, p));
+    }
+
+    #[test]
+    fn small_p_keeps_the_fixed_budget() {
+        let p = 128;
+        assert!(!prec_retry_exhausted(p + 16384, p));
+        assert!(prec_retry_exhausted(p + 16385, p));
+    }
+
+    #[test]
+    fn a_loop_that_never_certifies_ends_in_an_error_after_a_bounded_number_of_steps() {
+        for p in [64, 128, 1000, 20_032, 100_032] {
+            let p = round_p(p);
+            let mut p_inc = WORD_BIT_SIZE;
+            let mut p_wrk = p + p_inc;
+            let mut steps = 0_usize;
+            let limit = p + prec_retry_budget(p);
+            loop {
+                match bump_prec_retry(&mut p_wrk, &mut p_inc, p) {
+                    Ok(()) => steps += 1,
+                    Err(e) => {
+                        assert_eq!(e, Error::PrecisionRetryExhausted);
+                        break;
+                    }
+                }
+                // every step adds at least one word, so the loop cannot outlast limit / 64 steps
+                assert!(steps <= limit / WORD_BIT_SIZE + 1, "p = {p}: {steps} steps");
+            }
+            assert!(p_wrk > limit);
+            assert!(p_wrk <= limit * 6 / 5 + WORD_BIT_SIZE, "p = {p}: stopped at {p_wrk}");
         }
     }
 }

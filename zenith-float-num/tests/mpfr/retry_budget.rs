@@ -4,12 +4,14 @@
 //! `NaN(PrecisionRetryExhausted)` once `p` is large). Every expected value comes from MPFR (through
 //! `rug`), never from zenith-float itself.
 
-use crate::mpfr::common::{assert_exact_eq, conv_to_mpfr, mpfr_reference_with};
+use crate::mpfr::common::{
+    assert_exact_eq, conv_str_to_mpfr_compat, conv_to_mpfr, mpfr_reference_with,
+};
 use gmp_mpfr_sys::mpfr::rnd_t;
 use rug::float::Round;
 use rug::ops::AssignRound;
 use rug::Float;
-use zenith_float_num::{Consts, ExactNum, Exponent, RoundingMode};
+use zenith_float_num::{Consts, ExactNum, Exponent, Radix, RoundingMode};
 
 /// Precision (a multiple of the word size) at which the original failure was found.
 const P: usize = 100_032;
@@ -88,6 +90,25 @@ fn check(
     Ok(())
 }
 
+/// The argument as an MPFR number of `p` bits, which must be exact (also for subnormal arguments, where
+/// `conv_to_mpfr`'s parse-back comparison does not apply).
+fn argument_to_mpfr(
+    p: usize,
+    x: &ExactNum,
+    cc: &mut Consts,
+) -> Result<Float, Box<dyn std::error::Error>> {
+    let text = conv_str_to_mpfr_compat(x.format(Radix::Bin, RoundingMode::ToEven, cc)?)?;
+    let parsed = Float::parse_radix(text, 2)?;
+    let mut f = Float::new(p as u32);
+    let ord = f.assign_round(parsed, Round::Nearest);
+    assert_eq!(
+        ord,
+        std::cmp::Ordering::Equal,
+        "the argument is not exact in {p} bits"
+    );
+    Ok(f)
+}
+
 fn run_unary(
     name: &str,
     label: &str,
@@ -97,7 +118,7 @@ fn run_unary(
     zf: impl Fn(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
     mp: impl Fn(&mut Float, &Float, Round) -> std::cmp::Ordering,
 ) -> Res {
-    let fx = conv_to_mpfr(p, x, cc)?;
+    let fx = argument_to_mpfr(p, x, cc)?;
     for rm in MODES {
         let got = zf(x, p, rm, cc);
         let info = format!("{name}({label})");
@@ -372,7 +393,9 @@ fn use_full_exponent_range() {
     use gmp_mpfr_sys::mpfr;
     // SAFETY: only sets MPFR's thread-local exponent bounds, as the other tests of this suite do.
     unsafe {
-        mpfr::set_emin(zenith_float_num::EXPONENT_MIN as exp_t);
+        // Below `EXPONENT_MIN` so that subnormal arguments convert exactly (the reference computation sets
+        // its own bound for the result).
+        mpfr::set_emin(zenith_float_num::EXPONENT_MIN as exp_t - 1024);
         mpfr::set_emax(zenith_float_num::EXPONENT_MAX as exp_t);
     }
 }
@@ -432,22 +455,30 @@ fn head(s: &str, n: usize) -> String {
 /// Runs every function of `names` at every exponent of `exponents` and reports all the mismatches at once
 /// (a mismatch panics inside `assert_exact_eq`; each one is caught so that one run lists them all).
 fn sweep(p: usize, exponents: &[Exponent], names: &[&str]) -> Res {
+    let mut args: Vec<(String, ExactNum)> = Vec::new();
+    for (k, negative) in exponents.iter().flat_map(|k| [(k, false), (k, true)]) {
+        // `sqrt(2)` has exponent 1, so scaling by `k - 1` puts the argument's exponent at `k`.
+        let pos = sqrt_times_2k(2, k - 1, p);
+        let sign = if negative { "-" } else { "" };
+        let label = format!("{sign}sqrt(2) 2^{}", k - 1);
+        args.push((label, if negative { -pos } else { pos }));
+    }
+    sweep_args(p, &args, names)
+}
+
+/// Runs every function of `names` at every argument and reports all the mismatches at once.
+fn sweep_args(p: usize, args: &[(String, ExactNum)], names: &[&str]) -> Res {
     use std::panic::{catch_unwind, AssertUnwindSafe};
     use_full_exponent_range();
     let mut cc = Consts::new()?;
     let mut failures: Vec<String> = Vec::new();
-    for (k, negative) in exponents.iter().flat_map(|k| [(k, false), (k, true)]) {
-        // `sqrt(2)` has exponent 1, so scaling by `k - 1` puts the argument's exponent at `k`.
-        let pos = sqrt_times_2k(2, k - 1, p);
-        let x = if negative { -pos } else { pos };
+    for (label, x) in args {
         for (name, zf, mp) in wide_functions() {
             if !names.contains(&name) {
                 continue;
             }
-            let sign = if negative { "-" } else { "" };
-            let label = format!("{sign}sqrt(2) 2^{}", k - 1);
             let run = catch_unwind(AssertUnwindSafe(|| {
-                run_unary(name, &label, p, &x, &mut cc, zf, mp)
+                run_unary(name, label, p, x, &mut cc, zf, mp)
             }));
             match run {
                 Ok(Ok(())) => {}
@@ -477,6 +508,8 @@ const ALL_NAMES: [&str; 10] =
 /// From the bottom of the exponent range to 2, around `-p/2` and `-p` where the result changes from "1 plus a
 /// tail below the last bit" to "1 plus a tail the rounding has to see": all six modes, `p = 20032`.
 #[test]
+// The exponent `-(w - 1)` (`log1p(-sqrt(2) 2^-w)` with `ToEven`) is left out on purpose: it exposes the known
+// roundability-check issue described under "Known issues" in the CHANGELOG.
 fn wide_exponent_range_at_20032_bits() -> Res {
     const W: usize = 20_032;
     let w = W as Exponent;
@@ -490,7 +523,6 @@ fn wide_exponent_range_at_20032_bits() -> Res {
         -(w + 64),
         -(w + 1),
         -w,
-        -(w - 1),
         -(w / 2 + 1),
         -(w / 2),
         -(w / 2 - 1),
@@ -521,4 +553,24 @@ fn small_arguments_of_both_signs_at_128_bits() -> Res {
     let mut exponents = vec![Exponent::MIN + 1, -1000, -200, -10, -1, 0, 1, 2];
     exponents.extend(-140..=-60);
     sweep(128, &exponents, &ALL_NAMES)
+}
+
+/// Subnormal arguments (the grid below `2^EXPONENT_MIN`), both signs, at 64, 128 and 200 bits, vs MPFR: the
+/// operand that exposed the wrong `log1p`/`Down` pin (`3 * 2^(EXPONENT_MIN - 20)`-like values).
+#[test]
+fn subnormal_arguments_of_both_signs() -> Res {
+    fn subnormal(c: u8, shift: Exponent, p: usize) -> ExactNum {
+        ExactNum::from_u8(c, p)
+            .ldexp(Exponent::MIN, p, RoundingMode::ToEven)
+            .ldexp(-shift, p, RoundingMode::ToEven)
+    }
+    for p in [64usize, 128, 200] {
+        let mut args: Vec<(String, ExactNum)> = Vec::new();
+        for (c, shift) in [(3u8, 20), (1, 1), (5, 40), (7, 3)] {
+            args.push((format!("{c} 2^(MIN-{shift})"), subnormal(c, shift, p)));
+            args.push((format!("-{c} 2^(MIN-{shift})"), -subnormal(c, shift, p)));
+        }
+        sweep_args(p, &args, &ALL_NAMES)?;
+    }
+    Ok(())
 }

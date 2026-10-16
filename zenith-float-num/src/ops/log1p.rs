@@ -27,7 +27,9 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len());
 
-        compute_small_exp!(self, self.exponent() as i64, false, p_wrk, p, rm);
+        // `ln(1 + x) = x - x^2/2 + ...`: the true value is below `x` in magnitude for `x > 0` and above it for
+        // `x < 0`, so the one-bit correction goes against the sign of `x` only when `x` is positive.
+        compute_small_exp!(self, self.exponent() as i64, self.is_positive(), p_wrk, p, rm);
 
         p_wrk += p_inc;
 
