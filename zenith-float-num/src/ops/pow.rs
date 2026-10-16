@@ -457,6 +457,80 @@ impl ExactNumNumber {
         Ok(sinh)
     }
 
+    /// `self^n` for `n = N / 2^j` (`j` at most `POW_ROOT_STEPS`, `|N|` small) when `self` is a `2^j`-th power:
+    /// the `j` square roots are exact and the result is the integer power `N` of the root, which is exact when it
+    /// fits and correctly rounded otherwise. `None` when `n` or `self` is not of that kind (or the result
+    /// might leave the exponent range): the caller computes `e^(n ln self)`.
+    fn pow_by_root_and_integer_power(
+        &self,
+        n: &Self,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Option<Self>, Error> {
+        const POW_ROOT_STEPS: usize = 6;
+
+        // n * 2^j is a whole number
+        let mut scaled: Option<Self> = None;
+        let mut j = 0;
+        loop {
+            let cur = match &scaled {
+                Some(v) => v,
+                None => n,
+            };
+            if cur.is_int() {
+                break;
+            }
+            if j == POW_ROOT_STEPS {
+                return Ok(None);
+            }
+            scaled = Some(cur.add_full_prec(cur)?);
+            j += 1;
+        }
+        let whole = match &scaled {
+            Some(v) => v,
+            None => n,
+        };
+
+        // the 2^j-th root of self, exact or not at all (a fraction needs a positive `self`: checked by the caller)
+        let mut root: Option<Self> = None;
+        for _ in 0..j {
+            let src = match &root {
+                Some(v) => v,
+                None => self,
+            };
+            if src.inexact() {
+                return Ok(None);
+            }
+            let r = src.sqrt(round_p(src.mantissa_max_bit_len()), RoundingMode::None)?;
+            if r.inexact() {
+                return Ok(None);
+            }
+            root = Some(r);
+        }
+        let base = match &root {
+            Some(v) => v,
+            None => self,
+        };
+
+        // |N| small enough that the result stays far inside the exponent range
+        let count = match whole.int_as_usize() {
+            Ok(v) => v,
+            Err(_) => return Ok(None),
+        };
+        let reach = (base.exponent() as i64).unsigned_abs().saturating_add(1);
+        if (count as u64).saturating_mul(reach) >= 1 << 30 {
+            return Ok(None);
+        }
+
+        let mut ret = if whole.is_negative() {
+            base.powsi(-(count as isize), p, rm)?
+        } else {
+            base.powi(count, p, rm)?
+        };
+        ret.set_inexact(ret.inexact() | self.inexact() | n.inexact());
+        Ok(Some(ret))
+    }
+
     /// Compute the power of `self` to the `n` with precision `p`. The result is rounded using the rounding mode `rm`.
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
@@ -515,7 +589,7 @@ impl ExactNumNumber {
         } else if n.exponent() == 1 && n.abs_cmp(&ONE) == 0 {
             if n.is_positive() {
                 let mut ret = self.clone()?;
-                ret.set_precision(p, rm)?;
+                ret.set_precision(round_p(p), rm)?;
                 ret.set_inexact(ret.inexact() || n.inexact());
                 return Ok(ret);
             } else {
@@ -523,6 +597,13 @@ impl ExactNumNumber {
                 ret.set_inexact(ret.inexact() || n.inexact());
                 return Ok(ret);
             }
+        }
+
+        // An exponent that is a whole number or a multiple of 1/2^j gives an exact result for 2^3, 4^0.5, 9^-1.5, 16^0.25 ...
+        // `e^(n ln x)` can not tell such a result from a number next to it: ToEven flags it inexact and the directed
+        // modes never certify it. It is the N-th power of the 2^j-th root of `x`: use the integer power.
+        if let Some(ret) = self.pow_by_root_and_integer_power(n, p, rm)? {
+            return Ok(ret);
         }
 
         // actual pow : self^n = e^(n * ln(self))
