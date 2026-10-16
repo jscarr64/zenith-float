@@ -224,7 +224,11 @@ impl ExactNumNumber {
             return Ok((zero.clone()?, zero, one.clone()?, one));
         }
         if m.is_zero() {
+            // am(u|0) = u, carried at the working precision like the other three results; a narrower value
+            // makes the caller's roundability check (which assumes `p` working bits) overflow.
             let am = self.clone()?;
+            let mut am = am;
+            am.set_precision(p, RoundingMode::None)?;
             let sn = self.sin(p, RoundingMode::None, cc)?;
             let cn = self.cos(p, RoundingMode::None, cc)?;
             return Ok((am, sn, cn, one));

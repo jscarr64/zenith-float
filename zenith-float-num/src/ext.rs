@@ -6500,6 +6500,63 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 0a pin for the Jacobi functions: all thirteen, at `u` = 0 and several nonzero (and special) operands,
+    /// for the three parameter shapes the kernel special-cases (`m` = 0, `m` = 1, and the general AGM path), and
+    /// for an out-of-range `m` (the NaN / error kind enters the digest through the repr).
+    #[test]
+    fn jacobi_all_functions_digest() -> Result<(), Box<dyn std::error::Error>> {
+        type J = fn(&ExactNum, &ExactNum, usize, RoundingMode, &mut crate::Consts) -> ExactNum;
+        let fns: [J; 13] = [
+            ExactNum::jacobi_am,
+            ExactNum::jacobi_sn,
+            ExactNum::jacobi_cn,
+            ExactNum::jacobi_dn,
+            ExactNum::jacobi_cd,
+            ExactNum::jacobi_ns,
+            ExactNum::jacobi_nc,
+            ExactNum::jacobi_nd,
+            ExactNum::jacobi_sc,
+            ExactNum::jacobi_sd,
+            ExactNum::jacobi_cs,
+            ExactNum::jacobi_ds,
+            ExactNum::jacobi_dc,
+        ];
+        let mut cc = crate::Consts::new()?;
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        let ms = || {
+            [
+                ExactNum::new(64),
+                ExactNum::from_u8(1, 64),
+                ExactNum::from_u8(1, 64).ldexp(-1, 64, RoundingMode::None),
+                ExactNum::from_u8(3, 64).ldexp(-3, 64, RoundingMode::None),
+                ExactNum::from_u8(3, 64),
+            ]
+        };
+        for f in fns {
+            for i in [0usize, 1, 2, 3, 5, 7, 21] {
+                for mi in 0..5 {
+                    for p in [64usize, 128] {
+                        for rm in [RoundingMode::ToEven, RoundingMode::Down] {
+                            let m = ms();
+                            digest(&f(&operand(i), &m[mi], p, rm, &mut cc), &mut h)?;
+                            count += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 13 * 7 * 5 * 2 * 2);
+        // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
+        let u = operand(5);
+        let zero_m = ExactNum::new(64);
+        let am = u.jacobi_am(&zero_m, 300, RoundingMode::ToEven, &mut cc);
+        assert!(ExactNum::sub_ref(&am, &u, 300, RoundingMode::ToEven).is_zero());
+        println!("jacobi digest = {}", h.finish());
+        assert_eq!(h.finish(), 13_695_875_014_094_095_401);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
