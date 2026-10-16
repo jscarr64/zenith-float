@@ -10,3 +10,4 @@ pub mod compare_rational_test;
 pub mod compare_special_fn_test;
 pub mod compare_special_test;
 pub mod fuzz_round_modes;
+pub mod wide_primitives;
