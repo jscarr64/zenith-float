@@ -6655,6 +6655,63 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 1a pin for the exact-result branch of `log(x, base)` (the raw working value is only close to an
+    /// exact result, so the nearest candidate is checked with integer powers): known exact results are
+    /// asserted, and every case enters the digest.
+    #[test]
+    fn log_exact_results_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = crate::Consts::new()?;
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        // (x, base, expected exact result or None when the result is not exact)
+        let cases: [(ExactNum, ExactNum, Option<ExactNum>); 8] = [
+            (
+                ExactNum::from_u8(8, 64),
+                ExactNum::from_u8(2, 64),
+                Some(ExactNum::from_u8(3, 64)),
+            ),
+            (
+                ExactNum::from_u8(100, 64),
+                ExactNum::from_u8(10, 64),
+                Some(ExactNum::from_u8(2, 64)),
+            ),
+            (
+                ExactNum::from_u8(81, 64),
+                ExactNum::from_u8(3, 64),
+                Some(ExactNum::from_u8(4, 64)),
+            ),
+            (
+                ExactNum::from_u8(125, 64),
+                ExactNum::from_u8(5, 64),
+                Some(ExactNum::from_u8(3, 64)),
+            ),
+            (
+                ExactNum::from_u8(1, 64).ldexp(-10, 64, RoundingMode::None),
+                ExactNum::from_u8(2, 64),
+                Some(ExactNum::from_u8(10, 64).neg()),
+            ),
+            (ExactNum::from_u8(10, 64), ExactNum::from_u8(2, 64), None),
+            (ExactNum::from_u8(7, 64), ExactNum::from_u8(3, 64), None),
+            (ExactNum::from_u8(2, 64), ExactNum::from_u8(8, 64), None),
+        ];
+        for (x, b, want) in cases {
+            for p in [53usize, 64, 128, 200] {
+                for rm in [RoundingMode::ToEven, RoundingMode::Down, RoundingMode::Up] {
+                    let got = x.log(&b, p, rm, &mut cc);
+                    if let Some(w) = &want {
+                        assert!(ExactNum::sub_ref(&got, w, 64, RoundingMode::ToEven).is_zero());
+                    }
+                    digest(&got, &mut h)?;
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 8 * 4 * 3);
+        println!("log exact digest = {}", h.finish());
+        assert_eq!(h.finish(), 2_377_979_393_201_259_388);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
