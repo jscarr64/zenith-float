@@ -9,7 +9,7 @@ the exception allowlist only go down; all of them are CODEOWNERS-protected (`@js
 |---|---|---|---|
 | `.clone(` occurrences | `rules_scan.py` `clone_count()` | `tools/clone_count_baseline.txt` | library dirs **and test code** (see below) |
 | hidden copy helpers | `no_clone.py --helpers` / `helper_copy_count()` | `tools/helper_copy_count_baseline.txt` | library dirs and test code |
-| excepted `.clone()` sites | `no_clone.py` allowlist | `tools/exception_count_baseline.txt` | none (the allowlist is empty, baseline 0) |
+| exceptions: excepted `.clone()` sites (allowlist, empty) + the Ziv working-copy helper (1) | `no_clone.py` allowlist, `rules_scan.py` `ziv_helper_check()` | `tools/exception_count_baseline.txt` | none (baseline 1: the one helper) |
 | `unwrap`/`expect`/`panic!`/`unreachable!`/`todo!`/`unimplemented!` in **test code** | `rules_scan.py` `test_panic_sites()` (`--list-test-panics`) | `tools/test_panic_count_baseline.txt` | `#[cfg(test)]` items, test files and dirs, the compare crate |
 | `add_ref(` / `sub_ref(` uses | `rules_scan.py` | `tools/ref_sum_count_baseline.txt` | **library code only** (`REF_SCOPE`) |
 | `mul_ref(` / `div_ref(` uses | `rules_scan.py` | `tools/mul_ref_count_baseline.txt` | **library code only** (`REF_SCOPE`) |
@@ -43,6 +43,28 @@ precision change and hide the copy: `exact_copy_ext`, `exact_copy`, `exact_opera
 ignored) after removing definitions: `fn NAME` and `macro_rules! NAME` are cut out of the line, and `use` lines are
 skipped. It also counts `Rc::clone` / `Arc::clone` in `zenith-float-compare/src` (handle shares, which the clone scan
 does not match because it looks for `.clone(` and `Clone::clone`). `no_clone.py --helpers --list` prints every site.
+
+## Exception: Ziv working copy
+
+**Approved** by Jeff (relayed by Paul), under four conditions, all enforced by `rules_scan.sh`:
+
+1. **One helper, one file, CODEOWNERS.** `ExactNumNumber::ziv_pass_operand`, defined in
+   `zenith-float-num/src/num/ziv_operand.rs` and nowhere else; the file has a `.github/CODEOWNERS` entry (`@jscarr64`).
+2. **A non-clone-shaped name.** `ziv_pass_operand`, not `clone`/`copy`; the helper does not call `.clone()` or `Mantissa::clone`.
+3. **One allocation plus one limb copy per retry pass, at that pass's precision.** A Ziv loop reads the same exact input
+   at a growing precision on every pass and its kernel consumes the argument, so each pass needs a fresh owned value
+   (shape A of `ziv-loop-shapes.md`). The helper allocates the new mantissa once and copies the input's words into it
+   once; it never rounds (precision may only grow), and it carries the value, sign, exponent and both inexact flags over.
+4. **The exception baseline only goes down, counted by the existing counters.** The definition counts 1 in
+   `tools/exception_count_baseline.txt` (0 -> 1, the only raise, approved). Every *use* of `ziv_pass_operand` counts in the
+   helper-copy counter (`no_clone.HELPERS`; uses inside its own file, its unit tests, are not counted).
+   **The scan rejects a second such helper**: any other `fn` whose name has `ziv` together with pass/operand/copy/clone/
+   dup/widen/working/extend, a second definition of `ziv_pass_operand`, the definition in another file, or a missing
+   CODEOWNERS entry fails, whatever the baselines say.
+
+The module is compiled only under `cfg(test)` until the first production loop uses the helper (`deny(unused)`).
+A loop converted to the helper replaces a `.clone()?` (clone count down) with a use (helper-copy count up by one);
+each such conversion is reported to Jeff before it is committed.
 
 ## Exception: constant caches
 

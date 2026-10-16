@@ -14,3 +14,4 @@
 /tools/no_clone.py @jscarr64
 /tools/no_clone.sh @jscarr64
 /tools/full_gate.sh @jscarr64
+/zenith-float-num/src/num/ziv_operand.rs @jscarr64

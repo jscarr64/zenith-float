@@ -37,8 +37,10 @@ copy_p, svd_copy_prec, lift_num) in non-definition positions, plus Rc::clone / A
 (see no_clone.helper_sites for exactly how they are counted). Same ratchet against tools/helper_copy_count_baseline.txt.
 
 EXCEPTIONS: tools/clone_allowlist.txt (see tools/no_clone.py and tools/NO_CLONE_RULES.md). Checked here on every
-count check: a stale or malformed entry fails, and the number of excepted `.clone()` sites may never exceed
-tools/exception_count_baseline.txt (lowered with --update-baseline, never raised).
+count check: a stale or malformed entry fails, and the number of excepted `.clone()` sites, plus 1 for the
+approved Ziv working-copy helper `ziv_pass_operand` (the one fn of that name, in zenith-float-num/src/num/ziv_operand.rs, with
+a CODEOWNERS entry; any second helper of that shape fails), may never exceed tools/exception_count_baseline.txt (now 1;
+lowered with --update-baseline, never raised).
 
 REF-SUM COUNT: total uses of `add_ref(` / `sub_ref(` (the borrowed-borrowed sums, sanctioned only where both
 operands are still live) in non-test library code (REF_SCOPE = "library": scoped on purpose, test uses are not
@@ -370,7 +372,7 @@ def helper_count_check(update=False):
 def exception_check(update=False):
     """clone allowlist: malformed or stale entries fail; the excepted-site count may only go down"""
     r = no_clone.scan()
-    rc = 0
+    rc, ziv = ziv_helper_check()
     for e in r["errors"]:
         print("rules_scan: clone allowlist error: " + e)
         rc = 1
@@ -379,7 +381,55 @@ def exception_check(update=False):
         rc = 1
     for h in r["allowed"]:
         print("rules_scan: excepted site %s:%d [%s]" % (h[0], h[1], h[2]))
-    return max(rc, ratchet("clone exceptions", "exception_count_baseline.txt", len(r["allowed"]), update, "site count"))
+    return max(rc, ratchet("clone exceptions", "exception_count_baseline.txt", len(r["allowed"]) + ziv, update, "site count"))
+
+
+# The one approved Ziv working-copy helper (Jeff, via Paul: one helper, one file, CODEOWNERS-protected, a non-clone-shaped name,
+# one allocation plus one limb copy per retry pass at that pass's precision). Its definition counts 1 in the exception total
+# (tools/exception_count_baseline.txt, 0 -> 1, only down). A second helper of that kind, a second definition, a definition
+# in another file or a missing CODEOWNERS entry fails regardless of any baseline.
+ZIV_NAME = no_clone.ZIV_HELPER
+ZIV_FILE = no_clone.ZIV_HELPER_FILE
+_ZIV_WORDS = r"(?:pass|operand|copy|clone|dup|widen|working|extend)"
+ZIV_DEF = re.compile(r"\bfn\s+(\w*ziv\w*%s\w*|\w*%s\w*ziv\w*)\b" % (_ZIV_WORDS, _ZIV_WORDS))
+
+
+def ziv_helper_defs():
+    """[(rel, line, name)] of every fn that looks like a Ziv working-copy helper (a name with `ziv` and pass/operand/copy/
+    clone/dup/widen/working/extend), in all scanned code, tests included."""
+    out = []
+    for rel, p in no_clone.rs_files(None):
+        for i, l in enumerate(open(p, errors="replace").read().split("\n")):
+            for m in ZIV_DEF.finditer(strip(l)):
+                out.append((rel, i + 1, m.group(1)))
+    return out
+
+
+def ziv_helper_check():
+    """-> (rc, count): count is the helper's contribution to the exception total (1 when the approved definition exists)"""
+    defs = ziv_helper_defs()
+    rc = 0
+    good = [d for d in defs if d[2] == ZIV_NAME and d[0] == ZIV_FILE]
+    seen_good = False
+    for d in defs:
+        if d in good and not seen_good:
+            seen_good = True
+            continue
+        print("rules_scan: second Ziv working-copy helper %s:%d fn %s (only one `fn %s`, in %s, is approved)" % (d + (ZIV_NAME, ZIV_FILE)))
+        rc = 1
+    if any(d[2] == ZIV_NAME and d[0] != ZIV_FILE for d in defs) or (defs and not good and any(d[2] == ZIV_NAME for d in defs)):
+        print("rules_scan: %s must live in %s" % (ZIV_NAME, ZIV_FILE))
+        rc = 1
+    if good:
+        try:
+            owners = open(os.path.join(ROOT, ".github", "CODEOWNERS"), errors="replace").read().split("\n")
+        except OSError:
+            owners = []
+        if not any(l.split()[:1] == ["/" + ZIV_FILE] and len(l.split()) > 1 for l in owners if not l.lstrip().startswith("#")):
+            print("rules_scan: %s has no CODEOWNERS entry (/%s @owner)" % (ZIV_FILE, ZIV_FILE))
+            rc = 1
+        print("rules_scan: Ziv working-copy helper %s: 1 definition in %s" % (ZIV_NAME, ZIV_FILE))
+    return rc, len(defs)
 
 
 def test_panic_check(update=False):

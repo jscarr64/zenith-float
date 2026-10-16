@@ -321,4 +321,58 @@ echo 0 > tools/neg_via_mul_count_baseline.txt; scan --update-baseline >/dev/null
 rm -f tools/neg_via_mul_count_baseline.txt; scan --count-only >/dev/null && fail "missing neg_via_mul baseline passed"
 rm -f zenith-float-num/tests/nv.rs; printf 'fn a() {}\n' > zenith-float-num/src/x.rs; echo 0 > tools/neg_via_mul_count_baseline.txt
 
+# ---- the one approved Ziv working-copy helper (exception baseline 0 -> 1): exactly one `fn ziv_pass_operand`, in
+# zenith-float-num/src/num/ziv_operand.rs, with a CODEOWNERS entry; a second helper, a second definition, the wrong file or a
+# missing CODEOWNERS entry fail; the definition counts 1 in the exception total, each use counts in the helper-copy counter ----
+ZH=zenith-float-num/src/num/ziv_operand.rs
+mkdir -p zenith-float-num/src/num .github
+: > tools/clone_allowlist.txt; echo 0 > tools/helper_copy_count_baseline.txt
+printf '/zenith-float-num/src/num/ziv_operand.rs @jscarr64\n' > .github/CODEOWNERS
+printf 'impl N { pub(crate) fn ziv_pass_operand(&self, p: usize) -> N { go(self, p) } }\n' > $ZH
+echo 1 > tools/exception_count_baseline.txt
+scan --count-only | grep -q "clone exceptions site count 1 == baseline" || fail "the Ziv helper definition should count 1 in the exception total: $(scan --count-only)"
+scan --count-only >/dev/null || fail "one helper, right file, CODEOWNERS entry, baseline 1 should pass: $(scan --count-only)"
+echo 0 > tools/exception_count_baseline.txt
+scan --count-only | grep -q "clone exceptions site count 1 is ABOVE the baseline 0" || fail "the helper without the exception baseline not reported: $(scan --count-only)"
+scan --count-only >/dev/null && fail "the Ziv helper passed with exception baseline 0"
+echo 1 > tools/exception_count_baseline.txt
+# a second helper (any ziv + copy/operand/pass/widen/... name) is rejected even when the baseline is raised to cover it
+for other in 'fn ziv_pass_operand_wide(x: &N) -> N { go(x) }' 'fn ziv_working_copy(x: &N) -> N { go(x) }' 'fn widen_for_ziv(x: &N) -> N { go(x) }' 'fn ziv_clone(x: &N) -> N { go(x) }'; do
+  printf '%s\n' "$other" > zenith-float-num/src/x.rs
+  echo 2 > tools/exception_count_baseline.txt
+  scan --count-only | grep -q "second Ziv working-copy helper" || fail "a second helper was not rejected ($other): $(scan --count-only)"
+  scan --count-only >/dev/null && fail "a second Ziv helper passed: $other"
+done
+printf 'fn a() {}\n' > zenith-float-num/src/x.rs; echo 1 > tools/exception_count_baseline.txt
+# the same name defined twice, or in another file, is a second helper
+printf 'fn ziv_pass_operand(x: &N) -> N { go(x) }\n' > zenith-float-num/src/x.rs; echo 2 > tools/exception_count_baseline.txt
+scan --count-only | grep -q "second Ziv working-copy helper" || fail "a second fn ziv_pass_operand in another file not rejected: $(scan --count-only)"
+scan --count-only >/dev/null && fail "ziv_pass_operand defined in a second file passed"
+printf 'fn a() {}\n' > zenith-float-num/src/x.rs; printf 'impl N { fn ziv_pass_operand(&self) -> N { a() } fn ziv_pass_operand(&self, p: usize) -> N { b() } }\n' > $ZH
+scan --count-only | grep -q "second Ziv working-copy helper" || fail "ziv_pass_operand defined twice in the one file not rejected: $(scan --count-only)"
+scan --count-only >/dev/null && fail "ziv_pass_operand defined twice passed"
+# the only definition in the wrong file fails (the file is fixed by the scan), and a missing CODEOWNERS entry fails
+printf 'impl N { pub(crate) fn ziv_pass_operand(&self, p: usize) -> N { go(self, p) } }\n' > $ZH; echo 1 > tools/exception_count_baseline.txt
+mv $ZH zenith-float-num/src/y.rs
+scan --count-only | grep -q "ziv_pass_operand must live in zenith-float-num/src/num/ziv_operand.rs" || fail "the helper in the wrong file not reported: $(scan --count-only)"
+scan --count-only >/dev/null && fail "the helper in the wrong file passed"
+mv zenith-float-num/src/y.rs $ZH
+: > .github/CODEOWNERS
+scan --count-only | grep -q "no CODEOWNERS entry" || fail "missing CODEOWNERS entry for the helper file not reported: $(scan --count-only)"
+scan --count-only >/dev/null && fail "the helper without a CODEOWNERS entry passed"
+printf '/zenith-float-num/src/num/ziv_operand.rs @jscarr64\n' > .github/CODEOWNERS
+scan --count-only >/dev/null || fail "restored helper setup should pass: $(scan --count-only)"
+# the exception baseline can only go down: with the helper deleted the total is 0 and the baseline can be lowered, never raised
+echo 5 > tools/exception_count_baseline.txt; scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/exception_count_baseline.txt)" = 1 ] || fail "exception baseline not lowered to the helper total"
+rm -f $ZH; scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/exception_count_baseline.txt)" = 0 ] || fail "exception baseline not lowered to 0 once the helper is gone"
+printf 'impl N { pub(crate) fn ziv_pass_operand(&self, p: usize) -> N { go(self, p) } }\n' > $ZH
+scan --update-baseline >/dev/null && fail "raising the exception baseline for the helper allowed"; [ "$(tr -d '[:space:]' < tools/exception_count_baseline.txt)" = 0 ] || fail "exception baseline raised for the helper"
+# every use of the helper counts in the helper-copy counter; the definition does not
+printf 'fn u(m: &N) { let a = m.ziv_pass_operand(p); let b = N::ziv_pass_operand(m, q); }\n// m.ziv_pass_operand(p) in a comment\n' > zenith-float-num/src/x.rs
+echo 1 > tools/exception_count_baseline.txt; echo 1 > tools/helper_copy_count_baseline.txt
+scan --count-only | grep -q "helper-copy count 2 is ABOVE the baseline 1" || fail "uses of ziv_pass_operand not counted by the helper-copy counter: $(scan --count-only)"
+echo 2 > tools/helper_copy_count_baseline.txt; scan --count-only >/dev/null || fail "two uses vs helper-copy baseline 2 should pass: $(scan --count-only)"
+rm -f $ZH; rm -rf zenith-float-num/src/num; : > .github/CODEOWNERS; printf 'fn a() {}\n' > zenith-float-num/src/x.rs
+echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt
+
 echo "rules_scan selftest: ok"

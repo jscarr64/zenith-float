@@ -11,7 +11,8 @@ section "Exception: constant caches" (tools/NO_CLONE_RULES.md). Only `.clone()` 
 no `.clone()` site is STALE and fails; sites above `sites` fail as ordinary violations; the total number of excepted
 sites may never exceed tools/exception_count_baseline.txt (enforced by rules_scan.py). Entries need Jeff's approval.
 
-Second counter (`--helpers`): uses of the hidden copy helpers (see HELPERS) in non-definition positions, plus
+Second counter (`--helpers`): uses of the hidden copy helpers (see HELPERS, which includes the approved Ziv working-copy
+helper `ziv_pass_operand`; uses inside its own file are not counted) in non-definition positions, plus
 Rc::clone / Arc::clone in zenith-float-compare. Ratchet: tools/helper_copy_count_baseline.txt (rules_scan.py).
 """
 import os, re, sys, collections
@@ -35,7 +36,11 @@ DERIVE = re.compile(r"#\[derive\(([^)]*)\)\]")
 
 # --- helper-copy counter -------------------------------------------------------------------------------------
 # Hidden copies: each of these is a `.clone()` (plus set_inexact(false) or a precision change) the clone scan cannot see.
-HELPERS = ("exact_copy_ext", "exact_copy", "exact_operand", "copy_p", "svd_copy_prec", "lift_num")
+HELPERS = ("exact_copy_ext", "exact_copy", "exact_operand", "copy_p", "svd_copy_prec", "lift_num", "ziv_pass_operand")
+# The one approved Ziv working-copy helper (exception baseline 0 -> 1, rules_scan.py ziv_helper_check): its definition file
+# is CODEOWNERS-protected, and uses inside that file (its own unit tests) are not counted; every other use is.
+ZIV_HELPER = "ziv_pass_operand"
+ZIV_HELPER_FILE = "zenith-float-num/src/num/ziv_operand.rs"
 HELPER_USE = re.compile(r"\b(%s)\b" % "|".join(HELPERS))
 # definition positions, removed before counting: `fn NAME`, `macro_rules! NAME`, `use ...NAME...;`
 HELPER_DEF = re.compile(r"\bfn\s+(?:%s)\b|\bmacro_rules!\s*(?:%s)\b" % ("|".join(HELPERS), "|".join(HELPERS)))
@@ -178,6 +183,8 @@ def helper_sites():
                 continue
             code = HELPER_DEF.sub("", code)
             for m in HELPER_USE.finditer(code):
+                if m.group(1) == ZIV_HELPER and rel == ZIV_HELPER_FILE:
+                    continue
                 out.append((rel, i + 1, m.group(1)))
             if in_compare:
                 for m in HANDLE_COPY.finditer(code):
