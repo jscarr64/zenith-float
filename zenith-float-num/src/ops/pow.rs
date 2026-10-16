@@ -2,7 +2,7 @@
 // Copyright (c) 2022 stencillogic, MIT License.
 //! Exponentiation.
 
-use crate::common::consts::{FOUR, TEN, THREE, TWO};
+use crate::common::consts::{FOUR, THREE};
 use crate::common::util::{bump_prec_retry, calc_add_cost, calc_mul_cost, round_p};
 use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
@@ -111,7 +111,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn exp2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        TWO.clone()?.pow(self, p, rm, cc)
+        ExactNumNumber::small_const(2).pow(self, p, rm, cc)
     }
 
     /// Computes `10` to the power of `self` with precision `p`. The result is rounded using `rm`.
@@ -122,7 +122,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn exp10(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        TEN.clone()?.pow(self, p, rm, cc)
+        ExactNumNumber::small_const(10).pow(self, p, rm, cc)
     }
 
     // exp for positive argument
@@ -148,7 +148,7 @@ impl ExactNumNumber {
 
             e_const.powi(int, p_work, RoundingMode::None)
         } else {
-            ONE.clone()
+            Ok(ExactNumNumber::small_const(1))
         }?;
 
         // |fract(self)| = |self| - int, computed from the integer part found above.
@@ -164,7 +164,7 @@ impl ExactNumNumber {
             fract.set_sign(Sign::Pos);
             fract.expf()
         } else {
-            ONE.clone()
+            Ok(ExactNumNumber::small_const(1))
         }?;
 
         e_int.mul(&e_fract, p, RoundingMode::FromZero)
@@ -335,7 +335,7 @@ impl ExactNumNumber {
         let mut square = self.clone()?;
         square.set_sign(Sign::Pos);
         let mut exp = mag;
-        let mut acc = ONE.clone()?;
+        let mut acc = ExactNumNumber::small_const(1);
         while exp > 1 {
             if exp & 1 == 1 {
                 acc = acc.mul_full_prec(&square)?;
@@ -485,7 +485,7 @@ impl ExactNumNumber {
     // cost: n * O(add)
     fn sinh_arg_reduce(&self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
         // sinh(3*x) = 3*sinh(x) + 4*sinh(x)^3
-        let mut d = THREE.clone()?;
+        let mut d = ExactNumNumber::small_const(3);
         for _ in 1..n {
             d = d.mul_full_prec(&THREE)?;
         }
@@ -879,7 +879,7 @@ mod test {
         assert_eq!(d2.cmp(&d2_ref), 0);
 
         let d10 = x.exp10(p, rm, &mut cc)?;
-        let d10_ref = TEN.pow(&x, p, rm, &mut cc)?;
+        let d10_ref = ExactNumNumber::small_const(10).pow(&x, p, rm, &mut cc)?;
         assert_eq!(d10.cmp(&d10_ref), 0);
         Ok(())
     }

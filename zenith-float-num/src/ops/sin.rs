@@ -134,7 +134,7 @@ impl ExactNumNumber {
     // cost: n * O(add)
     fn sin_arg_reduce(&self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
         // sin(3*x) = 3*sin(x) - 4*sin(x)^3
-        let mut d = THREE.clone()?;
+        let mut d = ExactNumNumber::small_const(3);
         for _ in 1..n {
             d = d.mul_full_prec(&THREE)?;
         }
