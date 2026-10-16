@@ -328,6 +328,29 @@ impl ExactNumNumber {
         Ok(acc)
     }
 
+    /// The integer formed by the decimal digits (no leading zeroes, non-empty), as a normalised number
+    /// with the given sign.
+    fn dec_mantissa_number(
+        sign: Sign,
+        digits: &[u8],
+        tenpowers: &[(
+            crate::common::buf::WordBuf,
+            crate::common::buf::WordBuf,
+            usize,
+        )],
+    ) -> Result<Self, Error> {
+        let mut m = Mantissa::conv_from_dec(digits, tenpowers)?;
+
+        if m.bit_len() > EXPONENT_MAX as usize {
+            return Err(Error::ExponentOverflow(sign));
+        }
+
+        let me = m.bit_len() as Exponent;
+        let _ = m.normilize2();
+
+        Ok(ExactNumNumber::from_raw_unchecked(m, sign, me, false))
+    }
+
     fn conv_from_dec(
         sign: Sign,
         digits: &[u8],
@@ -344,17 +367,9 @@ impl ExactNumNumber {
         }
 
         let k = log2_ceil(digits.len() - leadzeroes);
-        let tenpowers = cc.tenpowers(k)?;
-        let mut m = Mantissa::conv_from_dec(&digits[leadzeroes..], tenpowers)?;
-
-        if m.bit_len() > EXPONENT_MAX as usize {
-            return Err(Error::ExponentOverflow(sign));
-        }
-
-        let me = m.bit_len() as Exponent;
-        let _ = m.normilize2();
-
-        let x = ExactNumNumber::from_raw_unchecked(m, sign, me, false);
+        let x = Self::dec_mantissa_number(sign, &digits[leadzeroes..], cc.tenpowers(k)?)?;
+        // the first pass consumes `x`; a retry rebuilds the operand from the digits (rule R2).
+        let mut pending = Some(x);
 
         // exponent part
         let n = e as i64 - digits.len() as i64;
@@ -386,7 +401,10 @@ impl ExactNumNumber {
         loop {
             let p_f = p_wrk + err;
 
-            let mut f = x.clone()?;
+            let mut f = match pending.take() {
+                Some(x) => x,
+                None => Self::dec_mantissa_number(sign, &digits[leadzeroes..], cc.tenpowers(k)?)?,
+            };
 
             if npowmax != 0 {
                 let fpnmax = TEN.powi(TEN_PWR_MAX_FROM_DEC, p_f, RoundingMode::None)?;
