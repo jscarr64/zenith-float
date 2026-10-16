@@ -2820,7 +2820,7 @@ mod tests {
         Ok(())
     }
 
-    fn perm_rows(a: &ExactNumArray, perm: &[usize]) -> ExactNumArray {
+    fn perm_rows(a: &ExactNumArray, perm: &[usize]) -> Option<ExactNumArray> {
         let (n, m) = a.shape();
         let mut vals = Vec::with_capacity(n * m);
         for &r in perm {
@@ -2828,7 +2828,7 @@ mod tests {
                 vals.push(a.get2(r, c).unwrap().clone());
             }
         }
-        ExactNumArray::from_shape(a.precision(), n, m, &vals).unwrap()
+        ExactNumArray::from_shape(a.precision(), n, m, &vals)
     }
 
     #[test]
@@ -2839,7 +2839,7 @@ mod tests {
         let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(4), n(3)])
             .ok_or(crate::Error::InvalidArgument)?;
         let (l, u, perm) = a.lu_decomp(p, rm).ok_or(crate::Error::InvalidArgument)?;
-        let pa = perm_rows(&a, &perm);
+        let pa = perm_rows(&a, &perm).ok_or(crate::Error::InvalidArgument)?;
         let lu = l.matmul(&u).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(lu.shape(), (2, 2));
         for i in 0..2 {
@@ -3070,7 +3070,7 @@ mod tests {
         Ok(())
     }
 
-    fn eigen_diag(evals: &ExactNumArray, p: usize) -> ExactNumArray {
+    fn eigen_diag(evals: &ExactNumArray, p: usize) -> Option<ExactNumArray> {
         let n = evals.cols;
         let mut vals = Vec::with_capacity(n * n);
         for i in 0..n {
@@ -3082,7 +3082,7 @@ mod tests {
                 }
             }
         }
-        ExactNumArray::from_shape(p, n, n, &vals).unwrap()
+        ExactNumArray::from_shape(p, n, n, &vals)
     }
 
     #[test]
@@ -3131,7 +3131,7 @@ mod tests {
             p
         ));
         let av = a.matmul(&v).ok_or(crate::Error::InvalidArgument)?;
-        let lam = eigen_diag(&evals, p);
+        let lam = eigen_diag(&evals, p).ok_or(crate::Error::InvalidArgument)?;
         let vl = v.matmul(&lam).ok_or(crate::Error::InvalidArgument)?;
         for i in 0..2 {
             for j in 0..2 {
@@ -3181,7 +3181,7 @@ mod tests {
         }
         let av3 = a3.matmul(&v3).ok_or(crate::Error::InvalidArgument)?;
         let vl3 = v3
-            .matmul(&eigen_diag(&w3, p))
+            .matmul(&eigen_diag(&w3, p).ok_or(crate::Error::InvalidArgument)?)
             .ok_or(crate::Error::InvalidArgument)?;
         for i in 0..3 {
             for j in 0..3 {

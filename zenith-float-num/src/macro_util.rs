@@ -379,7 +379,9 @@ mod tests {
 
         if m2.add_ulp() {
             assert!(e < EXPONENT_MAX);
-            *m2.digits_mut().iter_mut().last().unwrap() = WORD_SIGNIFICANT_BIT;
+            if let Some(top) = m2.digits_mut().iter_mut().last() {
+                *top = WORD_SIGNIFICANT_BIT;
+            }
             e += 1;
         }
 
