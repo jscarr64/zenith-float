@@ -40,7 +40,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |am, _sn, _cn, _dn, _px| am.clone())
+        self.jacobi_ziv(m, p, rm, cc, |am, _sn, _cn, _dn, _px| Ok(am))
     }
 
     /// \(\operatorname{sn}(u|m)=\sin\operatorname{am}(u|m)\).
@@ -51,7 +51,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, _dn, _px| sn.clone())
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, _dn, _px| Ok(sn))
     }
 
     /// \(\operatorname{cn}(u|m)=\cos\operatorname{am}(u|m)\).
@@ -62,7 +62,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, _dn, _px| cn.clone())
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, _dn, _px| Ok(cn))
     }
 
     /// \(\operatorname{dn}(u|m)=\sqrt{1-m\,\operatorname{sn}^2(u|m)}\).
@@ -73,7 +73,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, _cn, dn, _px| dn.clone())
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, _cn, dn, _px| Ok(dn))
     }
 
     /// \(\operatorname{cd}(u|m)=\operatorname{cn}(u|m)/\operatorname{dn}(u|m)\).
@@ -87,7 +87,7 @@ impl ExactNumNumber {
         if let Some(one) = jacobi_ratio_m_one(m, p)? {
             return Ok(one);
         }
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(cn, dn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(&cn, &dn, px))
     }
 
     /// \(\operatorname{ns}(u|m)=1/\operatorname{sn}(u|m)\).
@@ -98,7 +98,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, _dn, px| rec_nz(sn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, _dn, px| rec_nz(&sn, px))
     }
 
     /// \(\operatorname{nc}(u|m)=1/\operatorname{cn}(u|m)\).
@@ -109,7 +109,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, _dn, px| rec_nz(cn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, _dn, px| rec_nz(&cn, px))
     }
 
     /// \(\operatorname{nd}(u|m)=1/\operatorname{dn}(u|m)\).
@@ -120,7 +120,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, _cn, dn, px| rec_nz(dn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, _cn, dn, px| rec_nz(&dn, px))
     }
 
     /// \(\operatorname{sc}(u|m)=\operatorname{sn}/\operatorname{cn}\).
@@ -131,7 +131,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, cn, _dn, px| div_nz(sn, cn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, cn, _dn, px| div_nz(&sn, &cn, px))
     }
 
     /// \(\operatorname{sd}(u|m)=\operatorname{sn}/\operatorname{dn}\).
@@ -142,7 +142,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, dn, px| div_nz(sn, dn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, dn, px| div_nz(&sn, &dn, px))
     }
 
     /// \(\operatorname{cs}(u|m)=\operatorname{cn}/\operatorname{sn}\).
@@ -153,7 +153,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, cn, _dn, px| div_nz(cn, sn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, cn, _dn, px| div_nz(&cn, &sn, px))
     }
 
     /// \(\operatorname{ds}(u|m)=\operatorname{dn}/\operatorname{sn}\).
@@ -164,7 +164,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, dn, px| div_nz(dn, sn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, dn, px| div_nz(&dn, &sn, px))
     }
 
     /// \(\operatorname{dc}(u|m)=\operatorname{dn}/\operatorname{cn}\).
@@ -178,7 +178,7 @@ impl ExactNumNumber {
         if let Some(one) = jacobi_ratio_m_one(m, p)? {
             return Ok(one);
         }
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(dn, cn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(&dn, &cn, px))
     }
 
     fn jacobi_ziv<F>(
@@ -190,7 +190,7 @@ impl ExactNumNumber {
         pick: F,
     ) -> Result<Self, Error>
     where
-        F: Fn(&Self, &Self, &Self, &Self, usize) -> Result<Self, Error>,
+        F: Fn(Self, Self, Self, Self, usize) -> Result<Self, Error>,
     {
         let p = round_p(p);
         Self::p_assertion(p)?;
@@ -203,7 +203,7 @@ impl ExactNumNumber {
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE * 2;
             let (am, sn, cn, dn) = self.jacobi_sncndn_at(m, p_x, cc)?;
-            let mut ret = pick(&am, &sn, &cn, &dn, p_x)?;
+            let mut ret = pick(am, sn, cn, dn, p_x)?;
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact() | m.inexact());
                 return Ok(ret);
@@ -221,7 +221,13 @@ impl ExactNumNumber {
         let zero = Self::new2(p, Sign::Pos, false)?;
         let one = Self::from_word(1, p)?;
         if self.is_zero() {
-            return Ok((zero.clone()?, zero, one.clone()?, one));
+            // rebuilt from the literals, one owner each
+            return Ok((
+                zero,
+                Self::new2(p, Sign::Pos, false)?,
+                Self::from_word(1, p)?,
+                one,
+            ));
         }
         if m.is_zero() {
             // am(u|0) = u, carried at the working precision like the other three results; a narrower value
@@ -237,9 +243,11 @@ impl ExactNumNumber {
             let sn = self.tanh(p, RoundingMode::None, cc)?;
             let ch = self.cosh(p, RoundingMode::None, cc)?;
             let cn = one.div(&ch, p, RoundingMode::None)?;
+            // dn(u|1) = cn(u|1): the same quotient formed again, one owner each.
+            let dn = one.div(&ch, p, RoundingMode::None)?;
             let sh = self.sinh(p, RoundingMode::None, cc)?;
             let am = sh.atan(p, RoundingMode::None, cc)?;
-            return Ok((am, sn, cn.clone()?, cn));
+            return Ok((am, sn, cn, dn));
         }
         let u = self.jacobi_reduce_period(m, p, cc)?;
         jacobi_agm(&u, m, p, cc)
