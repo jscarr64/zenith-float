@@ -69,7 +69,12 @@ fn split_exponent(k: i64) -> (Exponent, Exponent) {
 }
 
 fn zf(m: u64, k: i64, negative: bool) -> ExactNum {
-    let p = OPERAND_PRECISION;
+    zf_at(m, k, negative, OPERAND_PRECISION)
+}
+
+/// The same operand held in `p` bits of storage (the result is not changed by the extra bits; the kernels see a
+/// longer mantissa).
+fn zf_at(m: u64, k: i64, negative: bool, p: usize) -> ExactNum {
     let (hi, lo) = split_exponent(k);
     let x = ExactNum::from_word(m, p)
         .ldexp(hi, p, RoundingMode::ToEven)
@@ -579,22 +584,21 @@ const FMA_PRECISIONS: [usize; 8] = [1, 2, 24, 53, 64, 65, 128, 200];
 
 #[test]
 fn fma_over_the_whole_range() -> Res {
-    // total and near cancellation at every pair; an independent addend where it is not far below the product
+    // total and near cancellation, and an independent addend, at every pair
     fma_run(
-        &["-ab", "-ab(1+2^-60)"],
+        &["-ab", "-ab(1+2^-60)", "indep"],
         &[0, 1, 2, 3, 4, 5, 6, 7],
         &FMA_PRECISIONS,
         500,
-    )?;
-    fma_run(&["indep"], &[3, 7], &FMA_PRECISIONS, 50)
+    )
 }
 
-/// KNOWN WRONG (finding 5): `fma` whose addend is far below (or far above) the product and of the opposite sign,
-/// so that the sum is just below a power of two, is wrong at 65 bits or more: the result keeps about 65 bits
-/// of `2^e - tiny` instead of `p` ones (directed) or `2^e` (nearest). `fma(1, -1, 2^-200)` at `p = 128`
-/// is the smallest case; the same happens at the ends of the exponent range.
+/// `fma` whose addend is far below (or far above) the product and of the opposite sign, so that the sum is just
+/// below a power of two (`fma(1, -1, 2^-200)` at 128 bits is `-(1 - 2^-200)`: 128 ones for the directed modes
+/// that round toward zero or up, `-1` otherwise). The stand-in for a negligible term used to lie right below the
+/// other term's last bit, which is above the rounding position once `p` exceeds that term's width.
 #[test]
-fn fma_with_a_far_smaller_addend_known_wrong() -> Res {
+fn fma_with_a_far_smaller_addend() -> Res {
     let mut run = Run::new(true)?;
     let one = zf(1, 0, false);
     let minus_one = zf(1, 0, true);
@@ -608,7 +612,7 @@ fn fma_with_a_far_smaller_addend_known_wrong() -> Res {
                 let info = format!("fma(1, -1, 2^-{gap})");
                 run.check(&got, p, rm, &info, |r, rnd| {
                     ternary(r.assign_round(
-                        &(Float::with_val(256, &f_one * &f_minus_one) + &fc),
+                        &(Float::with_val(gap as u32 + 128, &f_one * &f_minus_one) + &fc),
                         round_of(rnd),
                     ))
                 });
@@ -616,7 +620,40 @@ fn fma_with_a_far_smaller_addend_known_wrong() -> Res {
         }
     }
     run.finish("fma(1, -1, tiny)", 20);
-    fma_run(&["indep"], &[0, 1, 2, 4, 5, 6], &FMA_PRECISIONS, 50)
+    Ok(())
+}
+
+/// `fma` with a subnormal product and a subnormal addend thousands of bits below it (the stand-in for the
+/// negligible addend must not be placed below the smallest exponent: its exponent wrapped around to a huge
+/// positive one and the result was `+3 * 2^2147480571` for `3 * 2^(EXPONENT_MIN - 19) * -7 + 3 * 2^(EXPONENT_MIN - 2997)`).
+/// The addend is below MPFR's emulated range for the result, which does not matter to MPFR's addition.
+#[test]
+fn fma_with_subnormal_terms_far_apart() -> Res {
+    let mut run = Run::new(true)?;
+    for (ka, kc, neg_c) in [
+        (MIN - 19, MIN - 2997, false),
+        (MIN - 19, MIN - 2997, true),
+        (MIN + 3, MIN - 5000, false),
+    ] {
+        let (a, b, c) = (zf(3, ka, false), zf(7, 0, true), zf_at(3, kc, neg_c, 8192));
+        // MPFR's range here only reaches 1024 below the smallest exponent: form the exact sum 6000 binary places
+        // higher (both terms exact, the gap is below 8192 bits), then move it down (exact) and round it once.
+        let up = 6000;
+        let (fa, fb, fc) = (mp(3, ka + up, false), mp(7, 0, true), mp(3, kc + up, neg_c));
+        let prod = Float::with_val(256, &fa * &fb);
+        let exact = Float::with_val(8192, &prod + &fc) >> (up as i32);
+        for p in [24usize, 64, 128, 200] {
+            for rm in MODES {
+                let got = a.fma(&b, &c, p, rm);
+                let info = format!("fma(3 2^{ka}, -7, +-3 2^{kc}) neg_c {neg_c}");
+                run.check(&got, p, rm, &info, |r, rnd| {
+                    ternary(r.assign_round(&exact, round_of(rnd)))
+                });
+            }
+        }
+    }
+    run.finish("fma subnormal terms", 20);
+    Ok(())
 }
 
 /// A few huge precisions (20 000 bits): the same functions at operands near both ends, a handful of cases each.

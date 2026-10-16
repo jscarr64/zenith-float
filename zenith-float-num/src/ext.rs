@@ -6402,7 +6402,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 2 * 2 * OPERANDS * 3 * 2 * 2);
         println!("fma stand-in digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_123_373_615_326_845_983);
+        assert_eq!(h.finish(), 12_491_717_288_481_368_591);
         Ok(())
     }
 

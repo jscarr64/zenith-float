@@ -1,7 +1,7 @@
 //! Fused multiply-add: `a * b + c` with a single final rounding.
 
 use crate::common::util::{bump_prec_retry, round_p};
-use crate::defs::{Error, RoundingMode};
+use crate::defs::{Error, RoundingMode, EXPONENT_MIN};
 use crate::num::ExactNumNumber;
 use crate::Exponent;
 use crate::WORD_BIT_SIZE;
@@ -46,14 +46,21 @@ impl ExactNumNumber {
         let e_prod =
             prod.exponent() as i64 - (prod.mantissa_max_bit_len() as i64 - prod.precision() as i64);
         let e_c = c.exponent() as i64 - (c.mantissa_max_bit_len() as i64 - c.precision() as i64);
-        let w_prod = prod.mantissa_max_bit_len() as i64;
-        let w_c = c.mantissa_max_bit_len() as i64;
+        // The stand-in must lie below the rounding position of the result as well, not only below the
+        // other term's last bit: a term of fewer than `p` bits has its last bit above that position,
+        // and a stand-in there would cut the sum (1 - tiny keeps only the bits down to the stand-in).
+        let w_prod = (prod.mantissa_max_bit_len() as i64).max(p as i64);
+        let w_c = (c.mantissa_max_bit_len() as i64).max(p as i64);
         let guard = 2 * WORD_BIT_SIZE as i64;
-        let mut sum = if e_prod - e_c > w_prod + guard {
+        // A stand-in whose exponent would fall below the smallest exponent cannot be stored (the exponent
+        // would wrap around to a huge positive one): both terms are then within a mantissa's width of the
+        // bottom of the range and the full-width sum is small, so it is formed without a stand-in.
+        let min = EXPONENT_MIN as i64;
+        let mut sum = if e_prod - e_c > w_prod + guard && e_prod - w_prod - 2 >= min {
             let mut tiny = c.clone()?;
             tiny.set_exponent((e_prod - w_prod - 2) as Exponent);
             prod.add_full_prec(&tiny)?
-        } else if e_c - e_prod > w_c + guard {
+        } else if e_c - e_prod > w_c + guard && e_c - w_c - 2 >= min {
             let mut tiny = prod;
             tiny.set_exponent((e_c - w_c - 2) as Exponent);
             tiny.add_full_prec(c)?
