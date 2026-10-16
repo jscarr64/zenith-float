@@ -1578,6 +1578,34 @@ impl ExactNum {
         i64::from(e).checked_sub(1)?.checked_sub(i64::try_from(lz).ok()?)
     }
 
+    /// The top 64 bits of the magnitude, the sticky bit below them, and the exponent, for a finite nonzero number:
+    /// `(mant, sticky, exp)` with `mant` in `[2^63, 2^64)` (a subnormal number is shifted left until its top bit is
+    /// set), `sticky` true when any bit below those 64 is set, and `exp` the exponent of the normalized value in the
+    /// `0.m * 2^e` convention of `exponent()`, so `|self| = 0.mant * 2^exp` plus the bits below (`exp` equals
+    /// `leading_bit_exponent() + 1`, and `exponent()` for a normal number). Independent of the word size. The sign is
+    /// ignored; `None` for zero, Inf and NaN.
+    ///
+    /// ```
+    /// # use zenith_float_num::ExactNum;
+    /// assert_eq!(ExactNum::from_word(3, 64).top_u64_mantissa_and_sticky(), Some((3 << 62, false, 2)));
+    /// ```
+    pub fn top_u64_mantissa_and_sticky(&self) -> Option<(u64, bool, i64)> {
+        let (words, _, _, e, _) = self.as_raw_parts()?;
+        let lz = Self::mantissa_leading_zero_bits(words)?;
+        let skip = lz / WORD_BIT_SIZE;
+        // enough words to hold 64 bits after the shift that removes the leading zeros of the top nonzero word
+        let k = (64 + WORD_BIT_SIZE).div_ceil(WORD_BIT_SIZE);
+        let window = words.iter().rev().skip(skip).take(k);
+        let taken = window.len();
+        let acc = window.fold(0u128, |a, w| (a << WORD_BIT_SIZE) | u128::from(*w));
+        let acc = acc << ((k - taken) * WORD_BIT_SIZE);
+        let norm = acc << acc.leading_zeros();
+        let below = words.iter().rev().skip(skip + k).any(|w| *w != 0);
+        let sticky = (norm as u64) != 0 || below;
+        let exp = i64::from(e).checked_sub(i64::try_from(lz).ok()?)?;
+        Some(((norm >> 64) as u64, sticky, exp))
+    }
+
     /// Returns the number of significant bits used in the mantissa, or None if `self` is Inf or NaN.
     /// Normal numbers use all bits of the mantissa.
     /// Subnormal numbers use fewer bits than the mantissa can hold.

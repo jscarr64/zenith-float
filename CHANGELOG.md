@@ -12,6 +12,8 @@ Problems in one program led to a forensic audit of the others. This 2.0.0 sectio
 
 `ExactNum::leading_bit_exponent() -> Option<i64>` (new, prerequisite P1 of zenith-bound): the exponent of the leading set bit, `floor(log2(|x|))`, which is `exponent() - 1` for a normal number and lower for a subnormal number (it counts the mantissa's leading zero bits, so it can be below `EXPONENT_MIN`: `min_positive(p)` gives `EXPONENT_MIN - p` rounded to a word; `ilogb` returns an `i32` and cannot say that). `None` for zero, Inf and NaN. Tested against an exact integer model on 1 to 313 words (20,000 bits), normal and subnormal, both signs, exponents over the whole range, and against MPFR's exponent. Additive; no existing result changes.
 
+`ExactNum::top_u64_mantissa_and_sticky() -> Option<(u64, bool, i64)>` (new, prerequisite P2 of zenith-bound): the top 64 bits of the magnitude (top bit set; a subnormal number is shifted up), the sticky bit for every bit below them, and the exponent of the normalized value in the `exponent()` convention (`0.mant * 2^exp`; `leading_bit_exponent() + 1`, an `i64` because a subnormal number's is below `EXPONENT_MIN`). Independent of the word size. `None` for zero, Inf and NaN. Tested against an exact integer model (`rug::Integer`) on 1 to 313 words, normal and subnormal with 1 to 64*len-1 leading zeros, both signs; a planted mutant (sticky ignoring the words below the window) is caught. Additive.
+
 ### Changed
 
 The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). `rust-version` is `"1.99"` in every crate, and `rust-toolchain.toml` pins channel `1.99` with `clippy` and `rustfmt`. A crate that compiled on the previous compiler has to move to Rust 1.99 before it can depend on 2.0.0.

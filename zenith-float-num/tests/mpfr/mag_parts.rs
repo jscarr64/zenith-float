@@ -1,4 +1,4 @@
-//! `leading_bit_exponent` (P1), then `top_u64_mantissa_and_sticky` (P2), `from_mag_parts` and `pow2` (P3): prerequisites of
+//! `leading_bit_exponent`, `top_u64_mantissa_and_sticky`, `from_mag_parts` and `pow2` (the prerequisites P1 to P3 of
 //! zenith-bound) over the whole exponent range, subnormals included, and widths from one word to 313 words
 //! (20 000 bits). The oracle is exact integer arithmetic (`rug::Integer`) on the words of the operand, and MPFR
 //! (`Float`) for the powers of two that MPFR can hold.
@@ -6,7 +6,7 @@
 use crate::mpfr::retry_budget::use_full_exponent_range;
 use rug::integer::Order;
 use rug::{Float, Integer};
-use zenith_float_num::{ExactNum, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN, INF_POS};
+use zenith_float_num::{ExactNum, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS};
 
 type Res = Result<(), Box<dyn std::error::Error>>;
 
@@ -165,6 +165,47 @@ fn leading_bit_exponent_agrees_with_mpfr() -> Res {
             assert_eq!(x.leading_bit_exponent(), Some(i64::from(e) - 1), "{m:#x} 2^{k}");
         }
     }
+    Ok(())
+}
+
+#[test]
+fn top_u64_mantissa_and_sticky_matches_the_integer_model() -> Res {
+    let mut sticky_seen = 0;
+    for (x, want, what) in operands()? {
+        let got = x.top_u64_mantissa_and_sticky();
+        assert_eq!(got, Some((want.top, want.sticky, want.leading + 1)), "{what}");
+        if want.sticky {
+            sticky_seen += 1;
+        }
+        // the top bit is always set
+        if let Some((t, _, _)) = got {
+            assert_eq!(t >> 63, 1, "{what}");
+        }
+    }
+    assert!(sticky_seen > 100, "the sweep must contain sticky operands");
+    // a single low bit far below the top word makes the sticky bit
+    let mut w = vec![0u64; 313];
+    if let Some(t) = w.last_mut() {
+        *t = 1 << 63;
+    }
+    if let Some(b) = w.first_mut() {
+        *b = 1;
+    }
+    let x = operand(&w, false, 5)?;
+    assert_eq!(x.top_u64_mantissa_and_sticky(), Some((1 << 63, true, 5)));
+    // the sign does not matter; zero, Inf and NaN have no parts
+    let y = operand(&w, true, 5)?;
+    assert_eq!(y.top_u64_mantissa_and_sticky(), Some((1 << 63, true, 5)));
+    assert_eq!(ExactNum::new(64).top_u64_mantissa_and_sticky(), None);
+    assert_eq!(INF_NEG.top_u64_mantissa_and_sticky(), None);
+    assert_eq!(ExactNum::nan(None).top_u64_mantissa_and_sticky(), None);
+    // 1, 3 and the smallest subnormal
+    assert_eq!(ExactNum::from_word(1, 64).top_u64_mantissa_and_sticky(), Some((1 << 63, false, 1)));
+    assert_eq!(ExactNum::from_word(3, 64).top_u64_mantissa_and_sticky(), Some((3 << 62, false, 2)));
+    assert_eq!(
+        ExactNum::min_positive(20_000).top_u64_mantissa_and_sticky(),
+        Some((1 << 63, false, MIN - 20_032 + 1))
+    );
     Ok(())
 }
 
