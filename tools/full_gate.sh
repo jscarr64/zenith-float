@@ -10,6 +10,7 @@
 # The zero-clone goal is unchanged: the baseline in tools/clone_count_baseline.txt only goes down.
 # `rules-scan` also enforces (via rules_scan.py count checks) the helper-copy baseline (tools/helper_copy_count_baseline.txt),
 # the exception allowlist (stale entries fail, tools/exception_count_baseline.txt) and the library-scoped ref ratchets;
+# and the neg_via_mul use-count baseline (tools/neg_via_mul_count_baseline.txt, all scanned code incl. tests; it only goes down).
 # the clone count includes test code. `no-clone-progress` also prints the helper-copy count. All baselines only go down.
 set -u
 T=${T:-/tmp/zf-gate-logs}; mkdir -p "$T"

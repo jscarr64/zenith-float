@@ -13,7 +13,7 @@ mkdiff() { # mkdiff <path> <added line...>  -> fixture diff on stdout
   for l in "$@"; do printf '+%s\n' "$l"; done
 }
 LIB=zenith-float-num/src/foo.rs
-export RULES_SCAN_ROOT="$t"; mkdir -p "$t/tools"; : > "$t/tools/rules_allowlist.txt"; echo 0 > "$t/tools/clone_count_baseline.txt"; echo 0 > "$t/tools/ref_sum_count_baseline.txt"; echo 0 > "$t/tools/mul_ref_count_baseline.txt"; echo 0 > "$t/tools/helper_copy_count_baseline.txt"; echo 0 > "$t/tools/exception_count_baseline.txt"; echo 0 > "$t/tools/test_panic_count_baseline.txt"
+export RULES_SCAN_ROOT="$t"; mkdir -p "$t/tools"; : > "$t/tools/rules_allowlist.txt"; echo 0 > "$t/tools/clone_count_baseline.txt"; echo 0 > "$t/tools/ref_sum_count_baseline.txt"; echo 0 > "$t/tools/mul_ref_count_baseline.txt"; echo 0 > "$t/tools/helper_copy_count_baseline.txt"; echo 0 > "$t/tools/exception_count_baseline.txt"; echo 0 > "$t/tools/test_panic_count_baseline.txt"; echo 0 > "$t/tools/neg_via_mul_count_baseline.txt"
 export RULES_SCAN_SKIP_COUNT=1   # fixture diffs have no tree to count
 
 mkdiff $LIB 'let a = 1 + 2;' 'let s = a.max(b);' > "$t/clean.diff"
@@ -96,7 +96,7 @@ scan --diff-file "$t/d.diff" >/dev/null || fail "allowlisted site still flagged"
 # git modes in a throwaway repo
 g="$t/repo"; mkdir -p "$g/zenith-float-num/src" "$g/tools"; cd "$g" || exit 1
 git init -q . && git config user.email a@b && git config user.name t
-cp "$t/tools/rules_allowlist.txt" tools/; echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/ref_sum_count_baseline.txt; echo 0 > tools/mul_ref_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt; echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/test_panic_count_baseline.txt
+cp "$t/tools/rules_allowlist.txt" tools/; echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/ref_sum_count_baseline.txt; echo 0 > tools/mul_ref_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt; echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/test_panic_count_baseline.txt; echo 0 > tools/neg_via_mul_count_baseline.txt
 printf 'fn a() {}\n' > zenith-float-num/src/x.rs; git add -A; git commit -qm base; base=$(git rev-parse HEAD)
 export RULES_SCAN_ROOT="$g"; unset RULES_SCAN_SKIP_COUNT
 scan "$base..HEAD" >/dev/null || fail "empty range flagged"
@@ -305,5 +305,20 @@ printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(r: R) { let _ = r.unwrap(
 git add -A; scan --staged >/dev/null && fail "unwrap in a cfg(test) module not flagged by the staged scan"
 printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(r: R) -> Result<(), E> { let _v = r?; assert!(true); Ok(()) }\n}\n' > zenith-float-num/src/x.rs
 git add -A; scan --staged >/dev/null || fail "Result-returning test flagged: $(scan --staged)"
+
+# neg_via_mul use-count baseline: counts uses in all scanned code, tests included (definitions, comments, strings and
+# names that merely start with the word excluded), may only go down
+printf 'impl N { pub fn neg_via_mul(&self) -> N { go(self) } }\nfn u(a: &N, b: &N) { let s = a.neg_via_mul(); let d = N::neg_via_mul(b); }\n// a.neg_via_mul() in a comment\n/// [`N::neg_via_mul`]\nfn s() { let x = "a.neg_via_mul()"; }\nfn neg_via_mul_equals_neg() {}\n' > zenith-float-num/src/x.rs
+printf '#[test]\nfn t(a: &N) { let s = a.neg_via_mul(); }\n' > zenith-float-num/tests/nv.rs
+rm -f tools/test_panic_count_baseline.txt; echo 0 > tools/test_panic_count_baseline.txt
+echo 3 > tools/neg_via_mul_count_baseline.txt
+scan --count-only | grep -q "neg_via_mul use count 3 == baseline" || fail "neg_via_mul count should be 3 (2 in src, 1 in a test dir; definition, comments, strings, longer names excluded): $(scan --count-only)"
+echo 2 > tools/neg_via_mul_count_baseline.txt; scan --count-only | grep -q "neg_via_mul use count 3 is ABOVE the baseline 2" || fail "neg_via_mul count above baseline not reported"
+scan --count-only >/dev/null && fail "a new neg_via_mul use passed the ratchet"
+echo 9 > tools/neg_via_mul_count_baseline.txt; scan --count-only | grep -qi "neg_via_mul use count 3 is below baseline 9: lower the baseline" || fail "no hint to lower the neg_via_mul baseline"
+scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/neg_via_mul_count_baseline.txt)" = 3 ] || fail "neg_via_mul baseline not lowered"
+echo 0 > tools/neg_via_mul_count_baseline.txt; scan --update-baseline >/dev/null && fail "raising the neg_via_mul baseline allowed"; [ "$(tr -d '[:space:]' < tools/neg_via_mul_count_baseline.txt)" = 0 ] || fail "neg_via_mul baseline raised"
+rm -f tools/neg_via_mul_count_baseline.txt; scan --count-only >/dev/null && fail "missing neg_via_mul baseline passed"
+rm -f zenith-float-num/tests/nv.rs; printf 'fn a() {}\n' > zenith-float-num/src/x.rs; echo 0 > tools/neg_via_mul_count_baseline.txt
 
 echo "rules_scan selftest: ok"

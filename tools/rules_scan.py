@@ -10,7 +10,7 @@ Usage:
   tools/rules_scan.sh --working            # git diff HEAD (staged + unstaged)
   tools/rules_scan.sh --diff-file F        # a saved unified diff (used by the self-test)
   tools/rules_scan.sh --list-test-panics   # every unwrap/expect/panic!/... site in test code (file:line [kind]), then the count
-  tools/rules_scan.sh --count-only         # only the count baseline checks (clone, helper-copy, ref ratchets) and the exception checks
+  tools/rules_scan.sh --count-only         # only the count baseline checks (clone, helper-copy, ref, neg_via_mul ratchets) and the exception checks
   tools/rules_scan.sh --update-baseline    # lower the baselines to the current counts (never raises one)
 
 LIBRARY PATHS (clone, to_vec, cloned, to_owned, unsafe, allow, unwrap, expect, panic): .rs files under
@@ -47,6 +47,15 @@ clone count against tools/ref_sum_count_baseline.txt: it may only go down; --upd
 
 MUL-REF COUNT: the same ratchet, separately, for `mul_ref(` / `div_ref(` (borrowed-borrowed products and
 quotients, sanctioned only where both operands are still live) against tools/mul_ref_count_baseline.txt.
+
+NEG-VIA-MUL COUNT: total uses of `neg_via_mul(` (negation through a fresh `-1` and the general multiplication
+kernel, for an operand that has to stay borrowed) in ALL scanned code: the four library dirs and no_clone.TEST_DIRS
+(src, tests, benches, examples, nostd-tests), test code included, because a test use is still a use that shows the
+idiom spreading. NOT counted: the definitions (`fn neg_via_mul`, ExactNum in ext.rs and ExactComplex in complex.rs, the
+approved exception), comments, doc comments and string literals, and names that merely start with the word (a test
+called `neg_via_mul_equals_neg_...` is not a use). The count only exists to stop growth: it may only go down, against
+tools/neg_via_mul_count_baseline.txt (CODEOWNERS: Jeff), lowered with --update-baseline. Prefer `neg` on an owned
+operand; a use that survives must be a borrowed operand that is still live.
 """
 import hashlib, os, re, subprocess, sys, collections
 
@@ -257,6 +266,19 @@ def ref_sum_count(names=("add_ref", "sub_ref"), with_tests=False):
     return total
 
 
+def neg_via_mul_count():
+    """uses of `neg_via_mul(` in all scanned code (library + test dirs); definitions, comments and strings excluded."""
+    use = re.compile(r"\bneg_via_mul\(")
+    deff = re.compile(r"\bfn\s+neg_via_mul\b")
+    total = 0
+    for rel, p in no_clone.rs_files(None):
+        for l in open(p, errors="replace").read().split("\n"):
+            code = strip(l)
+            if not deff.search(code):
+                total += len(use.findall(code))
+    return total
+
+
 def baseline_path():
     return os.path.join(ROOT, "tools", "clone_count_baseline.txt")
 
@@ -367,9 +389,13 @@ def test_panic_check(update=False):
     return ratchet("test-panic", "test_panic_count_baseline.txt", len(sites), update, "site count", " %s" % dict(sorted(by.items())))
 
 
+def neg_via_mul_check(update=False):
+    return ratchet("neg_via_mul", "neg_via_mul_count_baseline.txt", neg_via_mul_count(), update, "use count")
+
+
 def both_count_checks(update=False):
     rc = max(count_check(update), ref_count_check(update), helper_count_check(update), exception_check(update),
-             test_panic_check(update))
+             test_panic_check(update), neg_via_mul_check(update))
     if rc == 0:
         print("rules_scan: all count baselines hold")
     return rc
