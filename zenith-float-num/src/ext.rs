@@ -6248,6 +6248,68 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 0a pin: the trigonometric and hyperbolic kernels (argument reduction / restoration included),
+    /// hashed over the operand grid (NaN kinds, infinities, zeros, subnormals and a few large arguments),
+    /// recorded on the code that still copied the working value. A refactor that consumes `self` must keep it.
+    #[test]
+    fn trig_hyperbolic_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = crate::Consts::new()?;
+        let extra = |k: usize| match k {
+            0 => ExactNum::from_u32(100_000, 64),
+            1 => ExactNum::from_u8(5, 64).ldexp(-9, 64, RoundingMode::None),
+            2 => ExactNum::from_u8(3, 192)
+                .ldexp(6, 192, RoundingMode::None)
+                .neg(),
+            _ => ExactNum::from_u8(1, 64)
+                .div(&ExactNum::from_u8(7, 64), 64, RoundingMode::ToEven)
+                .ldexp(-4, 64, RoundingMode::None),
+        };
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in (0..11).chain(21..23).chain(100..104) {
+            for p in [53usize, 128, 200] {
+                for rm in RMS {
+                    let x = || if i < 100 { operand(i) } else { extra(i - 100) };
+                    digest(&x().sin(p, rm, &mut cc), &mut h)?;
+                    digest(&x().cos(p, rm, &mut cc), &mut h)?;
+                    digest(&x().tan(p, rm, &mut cc), &mut h)?;
+                    digest(&x().atan(p, rm, &mut cc), &mut h)?;
+                    digest(&x().sinh(p, rm, &mut cc), &mut h)?;
+                    digest(&x().cosh(p, rm, &mut cc), &mut h)?;
+                    digest(&x().tanh(p, rm, &mut cc), &mut h)?;
+                    count += 7;
+                }
+            }
+        }
+        assert_eq!(count, 17 * 3 * 6 * 7);
+        println!("trig hyperbolic grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 4_093_924_005_718_850_450);
+        Ok(())
+    }
+
+    /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
+    #[test]
+    fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in 0..PAIR_OPERANDS {
+            for p in [1usize, 53, 64, 128, 200, 320] {
+                for rm in RMS {
+                    digest(&operand(i).reciprocal(p, rm), &mut h)?;
+                    count += 1;
+                    for n in [2usize, 3, 4, 5, 7] {
+                        digest(&operand(i).nth_root(n, p, rm), &mut h)?;
+                        count += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(count, PAIR_OPERANDS * 6 * 6 * 6);
+        println!("reciprocal nth_root grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 6_457_415_459_444_892_387);
+        Ok(())
+    }
+
     /// Field-for-field agreement of `sqr` with `mul_ref(&x, &x)` (not just a hash), including the NaN kind of
     /// a NaN operand, the sign of a zero result in every mode, and that `x` is left untouched.
     #[test]
