@@ -4,9 +4,19 @@
 
 use crate::common::consts::TRIG_EXP_THRES;
 use crate::common::util::round_p;
-use crate::{num::ExactNumNumber, Consts, Error, RoundingMode};
+use crate::{num::ExactNumNumber, Consts, Error, Exponent, RoundingMode, Sign, WORD_BIT_SIZE};
 
 impl ExactNumNumber {
+    /// A one-bit number `±2^(e - 1)`: the stand-in for a term that is far below the rounding position of a sum.
+    /// Adding it exactly (`add_full_prec`) keeps the direction of the lost term, so that one final rounding
+    /// by `set_precision` gives the correctly rounded result of the sum in every rounding mode.
+    pub(crate) fn sticky_term(sign: Sign, e: Exponent) -> Result<Self, Error> {
+        let mut t = Self::from_word(1, WORD_BIT_SIZE)?;
+        t.set_exponent(e);
+        t.set_sign(sign);
+        Ok(t)
+    }
+
     /// Reduce `self` to the interval `(-2π, 2π)` for trigonometric evaluation.
     ///
     /// Uses the same working precision as `sin`/`cos`/`tan` before modular reduction.

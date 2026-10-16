@@ -1,9 +1,9 @@
 //! Hypotenuse: `sqrt(x² + y²)` without intermediate overflow.
 
 use crate::common::util::{bump_prec_retry, round_p};
-use crate::defs::{Error, WORD_BIT_SIZE};
+use crate::defs::{Error, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
-use crate::{RoundingMode, Sign};
+use crate::{Exponent, RoundingMode, Sign};
 
 impl ExactNumNumber {
     /// Computes `sqrt(self² + other²)` with precision `p`, rounded with `rm`.
@@ -34,6 +34,21 @@ impl ExactNumNumber {
             ax.set_precision(p, rm)?;
             ax.set_inexact(ax.inexact() | inexact);
             return Ok(ax);
+        }
+
+        // When `ay` is far below `ax`, `hypot = ax + ay² / (2 ax) - ...` is `ax` plus a positive amount below
+        // the rounding position of any `p`-bit result (and below the last bit of `ax`). The square of the
+        // ratio below can underflow (the term is lost and the result looks exact) or can never be certified
+        // by the rounding test (`PrecisionRetryExhausted`), so round `ax` plus a stand-in for that amount.
+        let w = p.max(ax.mantissa_max_bit_len());
+        let gap = (ax.exponent() as i64).saturating_sub(ay.exponent() as i64);
+        let e_tiny = (ax.exponent() as i64).saturating_sub((w + WORD_BIT_SIZE) as i64);
+        if gap.saturating_mul(2) > (w + 2 * WORD_BIT_SIZE) as i64 && e_tiny >= EXPONENT_MIN as i64 {
+            let tiny = Self::sticky_term(Sign::Pos, e_tiny as Exponent)?;
+            let mut ret = ax.add_full_prec(&tiny)?;
+            ret.set_precision(p, rm)?;
+            ret.set_inexact(true);
+            return Ok(ret);
         }
 
         let mut p_inc = WORD_BIT_SIZE;

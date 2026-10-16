@@ -696,7 +696,7 @@ fn binary(
 }
 
 /// The exponents of the operands differ by more than `2^20`: the square of the ratio is far below the smallest
-/// number (`far_apart_known_wrong`).
+/// number (the 1.0.12 result was the larger operand, exact).
 fn far_apart(a: (u64, i64), b: (u64, i64)) -> bool {
     (a.1 - b.1).abs() > 1 << 20
 }
@@ -718,21 +718,21 @@ fn hypot_run(skip_pair: fn((u64, i64), (u64, i64)) -> bool) -> Res {
 
 #[test]
 fn hypot_over_the_whole_range() -> Res {
-    hypot_run(far_apart)
+    hypot_run(|_, _| false)
 }
 
-/// KNOWN WRONG (1.0.12): `hypot` of operands whose exponents differ by more than `2^20` (for example
+/// Fixed in 1.0.13: `hypot` of operands whose exponents differ by more than `2^20` (for example
 /// `hypot(1, 2^-2147483643)`, or with a subnormal operand) returns the larger one exactly (`inexact` false, and
 /// `1` instead of `1 + ulp` in `Up`/`FromZero`): the square of the ratio underflows to zero.
 #[test]
-fn hypot_with_an_extreme_ratio_known_wrong() -> Res {
+fn hypot_with_an_extreme_ratio() -> Res {
     hypot_run(not_far_apart)
 }
 
-/// KNOWN WRONG (1.0.12): `hypot(1, 2^-g)` for `g` from 2^6 to 2^24 returns `NaN(PrecisionRetryExhausted)` (from
-/// about `g = 9887`) or `1` flagged exact (below that the retry loop is exhausted), in every rounding mode.
+/// Fixed in 1.0.13: `hypot(1, 2^-g)` for `g` from 2^6 to 2^24 returned `NaN(PrecisionRetryExhausted)` from about
+/// `g = 9887` in every rounding mode, and `1` flagged exact below `2^-2^30`.
 #[test]
-fn hypot_with_a_large_ratio_known_wrong() -> Res {
+fn hypot_with_a_large_ratio() -> Res {
     let mut run = Run::new(true)?;
     for g in [64i64, 300, 1000, 9000, 9887, 20_000, 1 << 20, 1 << 24] {
         let (big, small) = (zf(1, 0, false), zf(3, -g, true));
