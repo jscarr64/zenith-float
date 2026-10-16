@@ -6456,6 +6456,50 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 0a pin for `atanh` on zeros (positive, negative, inexact from an underflow, of several widths) and
+    /// on the whole operand grid: value, sign, inexact flags and NaN kind all enter the digest.
+    #[test]
+    fn atanh_zero_and_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = crate::Consts::new()?;
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        let zeros = || {
+            [
+                ExactNum::new(64),
+                ExactNum::new(64).neg(),
+                ExactNum::new(256),
+                ExactNum::new(256).neg(),
+                ExactNum::from_u8(1, 64).ldexp(crate::EXPONENT_MIN, 64, RoundingMode::ToZero),
+                ExactNum::from_u8(1, 64)
+                    .ldexp(crate::EXPONENT_MIN, 64, RoundingMode::ToZero)
+                    .neg(),
+                ExactNum::from_u8(1, 192).ldexp(crate::EXPONENT_MIN, 192, RoundingMode::ToZero),
+            ]
+        };
+        for i in 0..zeros().len() {
+            for p in [53usize, 64, 128, 300] {
+                for rm in [RoundingMode::ToEven, RoundingMode::Down] {
+                    let z = zeros();
+                    digest(&z[i].atanh(p, rm, &mut cc), &mut h)?;
+                    count += 1;
+                }
+            }
+        }
+        for i in 0..OPERANDS {
+            for p in [64usize, 200] {
+                for rm in [RoundingMode::ToEven, RoundingMode::Down] {
+                    digest(&operand(i).atanh(p, rm, &mut cc), &mut h)?;
+                    digest(&operand(i).ldexp(-3, 256, rm).atanh(p, rm, &mut cc), &mut h)?;
+                    count += 2;
+                }
+            }
+        }
+        assert_eq!(count, 7 * 4 * 2 + OPERANDS * 2 * 2 * 2);
+        println!("atanh zero digest = {}", h.finish());
+        assert_eq!(h.finish(), 8_108_490_991_899_188_321);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
