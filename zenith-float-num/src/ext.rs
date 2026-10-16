@@ -6557,6 +6557,46 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 0a pin for the four Airy functions: zero (closed form), small arguments (Taylor pair), large
+    /// positive and negative arguments (asymptotic expansions), and every special operand.
+    #[test]
+    fn airy_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = crate::Consts::new()?;
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        let extra = |k: usize| match k {
+            0 => ExactNum::from_u8(3, 64).ldexp(-2, 64, RoundingMode::None),
+            1 => ExactNum::from_u8(5, 64).neg(),
+            2 => ExactNum::from_u8(30, 64),
+            3 => ExactNum::from_u8(30, 64).neg(),
+            _ => ExactNum::from_u8(9, 64).ldexp(-1, 64, RoundingMode::None),
+        };
+        for p in [64usize, 128] {
+            for rm in [RoundingMode::ToEven, RoundingMode::Down] {
+                for i in (0..11).chain(21..23) {
+                    let x = operand(i);
+                    digest(&x.ai(p, rm, &mut cc), &mut h)?;
+                    digest(&x.bi(p, rm, &mut cc), &mut h)?;
+                    digest(&x.ai_prime(p, rm, &mut cc), &mut h)?;
+                    digest(&x.bi_prime(p, rm, &mut cc), &mut h)?;
+                    count += 4;
+                }
+                for k in 0..5 {
+                    let x = extra(k);
+                    digest(&x.ai(p, rm, &mut cc), &mut h)?;
+                    digest(&x.bi(p, rm, &mut cc), &mut h)?;
+                    digest(&x.ai_prime(p, rm, &mut cc), &mut h)?;
+                    digest(&x.bi_prime(p, rm, &mut cc), &mut h)?;
+                    count += 4;
+                }
+            }
+        }
+        assert_eq!(count, 2 * 2 * (13 + 5) * 4);
+        println!("airy digest = {}", h.finish());
+        assert_eq!(h.finish(), 1_394_724_982_563_781_065);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
