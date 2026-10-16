@@ -54,7 +54,7 @@ impl ExactNumNumber {
             tiny.set_exponent((e_prod - w_prod - 2) as Exponent);
             prod.add_full_prec(&tiny)?
         } else if e_c - e_prod > w_c + guard {
-            let mut tiny = prod.clone()?;
+            let mut tiny = prod;
             tiny.set_exponent((e_c - w_c - 2) as Exponent);
             tiny.add_full_prec(c)?
         } else {
