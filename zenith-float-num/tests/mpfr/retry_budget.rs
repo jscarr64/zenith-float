@@ -536,6 +536,16 @@ fn wide_exponent_range_at_20032_bits() -> Res {
     sweep(W, &exponents, &ALL_NAMES)
 }
 
+/// `log1p(-sqrt(2) * 2^-(w - 1))` at `w = 20032` bits: the result is `x - x^2/2 + ...` with the tail `x^2/2` at
+/// about `2^-(2w - 1)`, a hard case in `ToEven`. The roundability check of `round_mantissa` accepted an
+/// approximation whose known low bits were still a "half-way" pattern (it looked at the unknown words), so
+/// the result was rounded the wrong way. MPFR is the outside oracle.
+#[test]
+fn roundability_check_log1p_hard_case_at_20032_bits() -> Res {
+    const W: usize = 20_032;
+    sweep(W, &[-(W as Exponent - 1)], &["log1p"])
+}
+
 /// The same at `p = 100032` (the precision of the original failure) for the arguments where the tail of the
 /// series is about `2^-p` (exponents `-p/2` and `-p`) and at the bottom of the range.
 #[test]
