@@ -15,7 +15,9 @@ use rug::Float;
 use std::cmp::Ordering;
 use std::ops::Neg;
 use std::panic::{catch_unwind, AssertUnwindSafe};
-use zenith_float_num::{Consts, ExactNum, Exponent, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
+use zenith_float_num::{
+    Consts, ExactComplex, ExactNum, Exponent, RoundingMode, EXPONENT_MAX, EXPONENT_MIN,
+};
 
 type Res = Result<(), Box<dyn std::error::Error>>;
 
@@ -775,5 +777,70 @@ fn atan2_of_a_tiny_quotient_is_neither_zero_nor_nan() -> Res {
         }
     }
     run.finish("atan2 tiny quotient", 20);
+    Ok(())
+}
+
+/// The quotients users reach through `eval` (Accumath, 256-bit operands): `atan2(1e-3000, 1)` (a quotient of about
+/// 2^-9966, `NaN` in 1.0.12), `atan2(exp(-1e9), 1)` and `atan2(exp(1e9), -exp(-1e9))` (a quotient beyond 2^2^31, `pi`
+/// instead of `pi/2`). Operands are of the size `exp(+-1e9)` (2^+-1442695040), `1e+-3000` (2^+-9966) and one, in
+/// both signs, at 256 bits as well.
+#[test]
+fn atan2_at_the_scales_users_reach() -> Res {
+    const K: i64 = 1_442_695_040;
+    binary(
+        "atan2 user scales",
+        &grid(&[1, 0xdead_beef_1234_5677], &[K, -K, 9_966, -9_966, 0]),
+        &[24, 64, 128, 256],
+        no_pair_skipped,
+        |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
+        |r, y, x, rd| r.assign_round(y.atan2_ref(x), rd),
+    )
+}
+
+/// `ln` of a complex number whose parts differ by a factor `2^(+-2 * 1442695040)` (`ln(1 + exp(-1e9) i)`,
+/// `ln(-exp(-1e9) + exp(1e9) i)`): the imaginary part is `atan2` and must be the tiny angle (not `NaN`) and `pi/2`
+/// (not `pi`); the real part stays finite.
+#[test]
+fn complex_ln_with_extreme_parts() -> Res {
+    const K: i64 = 1_442_695_040;
+    let mut run = Run::new(true)?;
+    let mut cc = Consts::new()?;
+    // (re, im) as (significand, exponent, negative)
+    let cases: [((u64, i64, bool), (u64, i64, bool)); 3] = [
+        ((1, 0, false), (0xdead_beef_1234_5677, -K, false)),
+        ((0xdead_beef_1234_5677, -K, true), (1, K, false)),
+        ((3, K, false), (0xdead_beef_1234_5677, -K, true)),
+    ];
+    for &((rm_, rk, rn), (im_, ik, inn)) in &cases {
+        let z = ExactComplex::new(zf(rm_, rk, rn), zf(im_, ik, inn));
+        let (fre, fim) = (mp(rm_, rk, rn), mp(im_, ik, inn));
+        for &p in &[64usize, 128, 256] {
+            for rm in MODES {
+                let got = z.ln(p, rm, &mut cc);
+                assert!(!got.re().is_nan() && !got.im().is_nan(), "ln({rm_:#x} 2^{rk} + {im_:#x} 2^{ik} i) is NaN");
+                assert!(!got.re().is_inf(), "ln(..) real part is infinite");
+                let info = format!("ln im({rm_:#x} 2^{rk} neg {rn}, {im_:#x} 2^{ik} neg {inn})");
+                run.check(got.im(), p, rm, &info, |r, rnd| {
+                    ternary(r.assign_round(fim.atan2_ref(&fre), round_of(rnd)))
+                });
+                // real part: ln(max) + (1/2) ln(1 + (min/max)^2) at 1500 bits. Compared where its size is within
+                // MPFR's exponent range (the first case's is about 2^-2.9e9: it underflows, and is only required to
+                // be finite).
+                if rk.max(ik) > 0 {
+                    let (big, small) = if rk >= ik { (&fre, &fim) } else { (&fim, &fre) };
+                    let hi = Float::with_val(1500, big.abs_ref()).ln()
+                        + Float::with_val(
+                            1500,
+                            (Float::with_val(1500, small.abs_ref()) / Float::with_val(1500, big.abs_ref()))
+                                .square()
+                                .ln_1p(),
+                        ) / 2;
+                    let info = format!("ln re({rm_:#x} 2^{rk}, {im_:#x} 2^{ik} i)");
+                    run.check(got.re(), p, rm, &info, |r, rnd| ternary(r.assign_round(&hi, round_of(rnd))));
+                }
+            }
+        }
+    }
+    run.finish("complex ln", 20);
     Ok(())
 }
