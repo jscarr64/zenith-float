@@ -6328,6 +6328,30 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 0a pin: high-precision series (the rectangular scheme caches powers of the step) for `sin`, `exp`,
+    /// `atan` and `sinh` at 1024 and 4096 bits.
+    #[test]
+    fn series_high_precision_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = crate::Consts::new()?;
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in [2usize, 3, 4, 5, 21] {
+            for p in [1024usize, 4096] {
+                for rm in [RoundingMode::ToEven, RoundingMode::Up] {
+                    digest(&operand(i).sin(p, rm, &mut cc), &mut h)?;
+                    digest(&operand(i).exp(p, rm, &mut cc), &mut h)?;
+                    digest(&operand(i).atan(p, rm, &mut cc), &mut h)?;
+                    digest(&operand(i).sinh(p, rm, &mut cc), &mut h)?;
+                    count += 4;
+                }
+            }
+        }
+        assert_eq!(count, 5 * 2 * 2 * 4);
+        println!("series high precision digest = {}", h.finish());
+        assert_eq!(h.finish(), 12_296_853_271_819_888_553);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
