@@ -1,9 +1,10 @@
 //! Fused multiply-add: `a * b + c` with a single final rounding.
 
 use crate::common::util::{bump_prec_retry, round_p};
-use crate::defs::{Error, RoundingMode};
+use crate::defs::{Error, RoundingMode, EXPONENT_MIN};
 use crate::num::ExactNumNumber;
 use crate::WORD_BIT_SIZE;
+use crate::{Exponent, Sign};
 
 impl ExactNumNumber {
     /// Computes `self * b + c` with precision `p`, rounded once with `rm`.
@@ -29,20 +30,41 @@ impl ExactNumNumber {
             return self.mul(b, p, rm);
         }
 
-        // When |a*b| and c are separated by more than p plus two words, the
-        // smaller term cannot change the rounded p-bit result. Skip the
-        // full-width product in that case (Horner / dot-product tails).
-        let e_prod = (self.exponent() as i64).saturating_add(b.exponent() as i64);
+        // One term far below the other cannot change the rounded `p`-bit result except by its direction (the
+        // rounding modes, the inexact flag): round the larger term plus a one-bit stand-in with the sign of
+        // the smaller term, placed below the rounding position and below the larger term's last bit. Skips
+        // the full-width product when `c` dominates (Horner / dot-product tails). `p` plus two words is not
+        // enough separation on its own: the stand-in has to be below the *wider* of `p` and the term.
+        let word = WORD_BIT_SIZE as i64;
+        let e_ab = (self.exponent() as i64).saturating_add(b.exponent() as i64);
         let e_c = c.exponent() as i64;
-        let sep = e_prod.abs_diff(e_c);
-        if sep > (p as u64).saturating_add((2 * WORD_BIT_SIZE) as u64) {
-            if e_prod > e_c {
-                return self.mul(b, p, rm);
+        let sep = e_ab.saturating_sub(e_c);
+        let w_c = p.max(c.mantissa_max_bit_len()) as i64;
+        let w_ab = p.max(
+            self.mantissa_max_bit_len()
+                .saturating_add(b.mantissa_max_bit_len()),
+        ) as i64;
+        let min = EXPONENT_MIN as i64;
+        if sep < -(w_c + 2 * word) {
+            let e_tiny = e_c - w_c - word;
+            if e_tiny >= min {
+                let sign = if self.sign() == b.sign() { Sign::Pos } else { Sign::Neg };
+                let tiny = Self::sticky_term(sign, e_tiny as Exponent)?;
+                let mut sum = c.add_full_prec(&tiny)?;
+                sum.set_precision(p, rm)?;
+                sum.set_inexact(true);
+                return Ok(sum);
             }
-            let mut ret = c.clone()?;
-            ret.set_precision(p, rm)?;
-            ret.set_inexact(true);
-            return Ok(ret);
+        } else if sep > w_ab + 2 * word + 1 && e_ab - 2 >= min {
+            let prod = self.mul_full_prec(b)?;
+            let e_tiny = (prod.exponent() as i64) - w_ab - word;
+            if e_tiny >= min {
+                let tiny = Self::sticky_term(c.sign(), e_tiny as Exponent)?;
+                let mut sum = prod.add_full_prec(&tiny)?;
+                sum.set_precision(p, rm)?;
+                sum.set_inexact(true);
+                return Ok(sum);
+            }
         }
 
         let inexact = self.inexact() | b.inexact() | c.inexact();

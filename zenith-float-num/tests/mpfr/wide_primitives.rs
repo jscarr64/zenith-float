@@ -908,19 +908,22 @@ fn fma_over_the_whole_range() -> Res {
         &FMA_PRECISIONS,
         500,
     )?;
-    fma_run(&["indep"], &[3, 7], &FMA_PRECISIONS, 50)
+    fma_run(&["indep"], &[0, 1, 2, 3, 4, 5, 6, 7], &FMA_PRECISIONS, 50)
 }
 
-/// KNOWN WRONG (finding 5): `fma` whose addend is far below (or far above) the product and of the opposite sign,
-/// so that the sum is just below a power of two, is wrong at 65 bits or more: the result keeps about 65 bits
-/// of `2^e - tiny` instead of `p` ones (directed) or `2^e` (nearest). `fma(1, -1, 2^-200)` at `p = 128`
-/// is the smallest case; the same happens at the ends of the exponent range.
+/// Fixed in 1.0.13: `fma` whose addend is far below (or far above) the product, and in 1.0.12 more than
+/// `p + 128` bits away, was `c` or `a * b` rounded alone with the inexact flag set: the directed modes
+/// (`fma(1, 1, 2^-300)` in `Up` was `1`) and, when the other term is a power of two minus the tiny one
+/// (`fma(1, -1, 2^-200)`), the nearest modes' flag were wrong. Also with the addend far above a tiny product, and
+/// at the ends of the exponent range (the independent addends below).
 #[test]
-fn fma_with_a_far_smaller_addend_known_wrong() -> Res {
+fn fma_with_a_far_smaller_addend() -> Res {
     let mut run = Run::new(true)?;
     let one = zf(1, 0, false);
     let minus_one = zf(1, 0, true);
     let (f_one, f_minus_one) = (mp(1, 0, false), mp(1, 0, true));
+    // the product is exact (a one-bit times a one-bit number); the sum is rounded once, by `assign_round`
+    let product = Float::with_val(256, &f_one * &f_minus_one);
     for gap in [100i64, 200, 1000, 100_000] {
         let c = zf(1, -gap, false);
         let fc = mp(1, -gap, false);
@@ -929,10 +932,7 @@ fn fma_with_a_far_smaller_addend_known_wrong() -> Res {
                 let got = one.fma(&minus_one, &c, p, rm);
                 let info = format!("fma(1, -1, 2^-{gap})");
                 run.check(&got, p, rm, &info, |r, rnd| {
-                    ternary(r.assign_round(
-                        &(Float::with_val(256, &f_one * &f_minus_one) + &fc),
-                        round_of(rnd),
-                    ))
+                    ternary(r.assign_round(&product + &fc, round_of(rnd)))
                 });
             }
         }
@@ -941,15 +941,13 @@ fn fma_with_a_far_smaller_addend_known_wrong() -> Res {
     for gap in [100i64, 200, 1000, 100_000] {
         let a = zf(1, -gap, false);
         let fa = mp(1, -gap, false);
+        let product = Float::with_val(256, &fa * &f_one);
         for p in [24usize, 64, 65, 128, 200] {
             for rm in MODES {
                 let got = a.fma(&one, &minus_one, p, rm);
                 let info = format!("fma(2^-{gap}, 1, -1)");
                 run.check(&got, p, rm, &info, |r, rnd| {
-                    ternary(r.assign_round(
-                        &(Float::with_val(256, &fa * &f_one) + &f_minus_one),
-                        round_of(rnd),
-                    ))
+                    ternary(r.assign_round(&product + &f_minus_one, round_of(rnd)))
                 });
             }
         }
