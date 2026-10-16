@@ -1247,7 +1247,7 @@ mod tests {
             rm,
             &mut cc,
         );
-        assert_eq!(swapped.unwrap_err(), QuadratureError::InvalidArgument);
+        assert!(matches!(swapped, Err(QuadratureError::InvalidArgument)));
         let nan_f = gauss_kronrod_interval(
             |_x, _p, _rm, _cc| ExactNum::nan(None),
             &a,
@@ -1256,7 +1256,7 @@ mod tests {
             rm,
             &mut cc,
         );
-        assert_eq!(nan_f.unwrap_err(), QuadratureError::InvalidArgument);
+        assert!(matches!(nan_f, Err(QuadratureError::InvalidArgument)));
         assert!(kronrod_pair(10, p, rm, &mut cc).is_none());
         let tol = ExactNum::from_u8(1, p).ldexp(-8, p, rm);
         let tight = integrate_adaptive_gk(
@@ -1269,7 +1269,7 @@ mod tests {
             rm,
             &mut cc,
         );
-        assert_eq!(tight.unwrap_err(), QuadratureError::NotConverged);
+        assert!(matches!(tight, Err(QuadratureError::NotConverged)));
         Ok(())
     }
 

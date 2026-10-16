@@ -247,8 +247,7 @@ mod tests {
                     3 => RoundingMode::FromZero,
                     4 => RoundingMode::ToZero,
                     5 => RoundingMode::ToOdd,
-                    6 => RoundingMode::None,
-                    _ => unreachable!(),
+                    _ => RoundingMode::None,
                 };
 
                 let s = n.format(rdx, rm, &mut cc)?;

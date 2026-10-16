@@ -1209,7 +1209,7 @@ mod tests {
                 )?
                 .is_zero());
                 let m1 = [1, rdx.value(), 0];
-                assert!(
+                assert!(matches!(
                     ExactNumNumber::convert_from_radix(
                         s1,
                         &m1,
@@ -1218,10 +1218,9 @@ mod tests {
                         p1,
                         RoundingMode::ToEven,
                         &mut cc
-                    )
-                    .unwrap_err()
-                        == Error::InvalidArgument
-                );
+                    ),
+                    Err(Error::InvalidArgument)
+                ));
                 let m1 = [1, rdx.value() - 1, 0];
                 assert!(ExactNumNumber::convert_from_radix(
                     s1,
@@ -1524,8 +1523,7 @@ mod tests {
             0 => Radix::Bin,
             1 => Radix::Oct,
             2 => Radix::Dec,
-            3 => Radix::Hex,
-            _ => unreachable!(),
+            _ => Radix::Hex,
         }
     }
 

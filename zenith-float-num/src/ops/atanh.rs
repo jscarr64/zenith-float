@@ -128,8 +128,14 @@ mod tests {
         let d1 = ExactNumNumber::max_value(p)?;
         let d2 = ExactNumNumber::min_value(p)?;
 
-        assert!(d1.atanh(p, rm, &mut cc).unwrap_err() == Error::InvalidArgument);
-        assert!(d2.atanh(p, rm, &mut cc).unwrap_err() == Error::InvalidArgument);
+        assert!(matches!(
+            d1.atanh(p, rm, &mut cc),
+            Err(Error::InvalidArgument)
+        ));
+        assert!(matches!(
+            d2.atanh(p, rm, &mut cc),
+            Err(Error::InvalidArgument)
+        ));
 
         // subnormal
         let d3 = ExactNumNumber::min_positive(p)?;
@@ -138,10 +144,14 @@ mod tests {
         assert!(d3.atanh(p, rm, &mut cc)?.cmp(&d3) == 0);
         assert!(zero.atanh(p, rm, &mut cc)?.is_zero());
 
-        assert!(ONE.atanh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Pos));
-        assert!(
-            ONE.neg()?.atanh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Neg)
-        );
+        assert!(matches!(
+            ONE.atanh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
+        assert!(matches!(
+            ONE.neg()?.atanh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Neg))
+        ));
 
         let n1 = random_subnormal(p);
         assert!(n1.atanh(p, rm, &mut cc)?.cmp(&n1) == 0);

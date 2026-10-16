@@ -107,8 +107,14 @@ mod tests {
         let d1 = ExactNumNumber::max_value(p)?;
         let d2 = ExactNumNumber::min_value(p)?;
 
-        assert!(d1.cosh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Pos));
-        assert!(d2.cosh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Pos));
+        assert!(matches!(
+            d1.cosh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
+        assert!(matches!(
+            d2.cosh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
 
         let d3 = ExactNumNumber::min_positive(p)?;
         let zero = ExactNumNumber::new(1)?;

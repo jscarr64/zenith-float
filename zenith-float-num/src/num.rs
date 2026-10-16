@@ -2356,26 +2356,24 @@ mod tests {
         // overflow basic sanity
         d1 = ExactNumNumber::from_word(1, p)?;
         d1.e = EXPONENT_MAX - (d1.m.max_bit_len() - 1) as Exponent;
-        assert!(
-            ExactNumNumber::max_value(p)?.add(&d1, p, rm).unwrap_err()
-                == Error::ExponentOverflow(Sign::Pos)
-        );
-        assert!(
-            ExactNumNumber::min_value(p)?.sub(&d1, p, rm).unwrap_err()
-                == Error::ExponentOverflow(Sign::Neg)
-        );
-        assert!(
-            ExactNumNumber::max_value(p)?
-                .mul(&ExactNumNumber::max_value(p)?, p, rm)
-                .unwrap_err()
-                == Error::ExponentOverflow(Sign::Pos)
-        );
+        assert!(matches!(
+            ExactNumNumber::max_value(p)?.add(&d1, p, rm),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
+        assert!(matches!(
+            ExactNumNumber::min_value(p)?.sub(&d1, p, rm),
+            Err(Error::ExponentOverflow(Sign::Neg))
+        ));
+        assert!(matches!(
+            ExactNumNumber::max_value(p)?.mul(&ExactNumNumber::max_value(p)?, p, rm),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
         d1 = ExactNumNumber::from_word(1, p)?;
         d1.e = EXPONENT_MIN;
-        assert!(
-            ExactNumNumber::max_value(p)?.div(&d1, p, rm).unwrap_err()
-                == Error::ExponentOverflow(Sign::Pos)
-        );
+        assert!(matches!(
+            ExactNumNumber::max_value(p)?.div(&d1, p, rm),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
 
         // decompose and compose
         let (m, n, s, e, inexact) = d1.as_raw_parts();

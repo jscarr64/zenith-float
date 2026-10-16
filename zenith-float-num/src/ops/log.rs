@@ -536,9 +536,7 @@ mod tests {
                 assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
             }
             Err(e) => {
-                if e != Error::ExponentOverflow(Sign::Pos) {
-                    panic!("unexpected error");
-                }
+                assert_eq!(e, Error::ExponentOverflow(Sign::Pos), "unexpected error");
             }
         }
 
@@ -553,9 +551,7 @@ mod tests {
                 assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
             }
             Err(e) => {
-                if e != Error::ExponentOverflow(Sign::Pos) {
-                    panic!("unexpected error");
-                }
+                assert_eq!(e, Error::ExponentOverflow(Sign::Pos), "unexpected error");
             }
         }
 
@@ -607,7 +603,10 @@ mod tests {
         assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) <= 0);
 
         // arbitrary base
-        assert!(TWO.log(&ONE, p, rm, &mut cc).unwrap_err() == Error::DivisionByZero);
+        assert!(matches!(
+            TWO.log(&ONE, p, rm, &mut cc),
+            Err(Error::DivisionByZero)
+        ));
 
         let d1 = ExactNumNumber::min_positive(prec)?;
         let d2 = ExactNumNumber::max_value(prec)?;

@@ -112,8 +112,14 @@ mod tests {
         let d1 = ExactNumNumber::max_value(p)?;
         let d2 = ExactNumNumber::min_value(p)?;
 
-        assert!(d1.sinh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Pos));
-        assert!(d2.sinh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Neg));
+        assert!(matches!(
+            d1.sinh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
+        assert!(matches!(
+            d2.sinh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Neg))
+        ));
 
         let d3 = ExactNumNumber::min_positive(p)?;
         let zero = ExactNumNumber::new(1)?;
@@ -125,17 +131,17 @@ mod tests {
 
         let mut large_pos = ExactNumNumber::from_word(1, 256)?;
         large_pos.set_exponent(150);
-        assert_eq!(
-            large_pos.sinh(p, rm, &mut cc).unwrap_err(),
-            Error::ExponentOverflow(Sign::Pos)
-        );
+        assert!(matches!(
+            large_pos.sinh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
         let mut large_neg = ExactNumNumber::from_word(1, 256)?;
         large_neg.set_exponent(150);
         large_neg.set_sign(Sign::Neg);
-        assert_eq!(
-            large_neg.sinh(p, rm, &mut cc).unwrap_err(),
-            Error::ExponentOverflow(Sign::Neg)
-        );
+        assert!(matches!(
+            large_neg.sinh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Neg))
+        ));
         Ok(())
     }
 }

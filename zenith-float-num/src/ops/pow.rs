@@ -831,14 +831,14 @@ mod test {
         let d2 = ExactNumNumber::min_value(p)?;
         let d3 = ExactNumNumber::min_positive(p)?;
 
-        assert!(
-            d1.exp(p, RoundingMode::ToEven, &mut cc).unwrap_err()
-                == Error::ExponentOverflow(Sign::Pos)
-        );
-        assert!(
-            d1.pow(&d1, p, RoundingMode::ToEven, &mut cc).unwrap_err()
-                == Error::ExponentOverflow(Sign::Pos)
-        );
+        assert!(matches!(
+            d1.exp(p, RoundingMode::ToEven, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
+        assert!(matches!(
+            d1.pow(&d1, p, RoundingMode::ToEven, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
         assert!(d1.pow(&d2, p, RoundingMode::ToEven, &mut cc)?.is_zero());
         assert!(d1.pow(&d3, p, RoundingMode::ToEven, &mut cc)?.cmp(&ONE) == 0);
 
@@ -847,10 +847,10 @@ mod test {
         assert!(d3.exp(p, RoundingMode::ToEven, &mut cc)?.cmp(&ONE) == 0);
 
         assert!(d3.pow(&d1, p, RoundingMode::ToEven, &mut cc)?.is_zero());
-        assert!(
-            d3.pow(&d2, p, RoundingMode::ToEven, &mut cc).unwrap_err()
-                == Error::ExponentOverflow(Sign::Pos)
-        );
+        assert!(matches!(
+            d3.pow(&d2, p, RoundingMode::ToEven, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
         assert!(d3.pow(&d3, p, RoundingMode::ToEven, &mut cc)?.cmp(&ONE) == 0);
 
         assert!(d1.pow(&ONE, p, RoundingMode::ToEven, &mut cc)?.cmp(&d1) == 0);

@@ -147,8 +147,14 @@ mod tests {
 
         assert!(d1.sub(&d5, p, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 
-        assert!(d2.acosh(p, rm, &mut cc).unwrap_err() == Error::InvalidArgument);
-        assert!(d3.acosh(p, rm, &mut cc).unwrap_err() == Error::InvalidArgument);
+        assert!(matches!(
+            d2.acosh(p, rm, &mut cc),
+            Err(Error::InvalidArgument)
+        ));
+        assert!(matches!(
+            d3.acosh(p, rm, &mut cc),
+            Err(Error::InvalidArgument)
+        ));
 
         assert!(ONE.acosh(p, rm, &mut cc)?.is_zero());
         Ok(())
