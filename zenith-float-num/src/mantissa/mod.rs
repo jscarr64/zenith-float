@@ -15,3 +15,5 @@ mod util;
 
 pub use base::AddSubSpec;
 pub use base::Mantissa;
+#[cfg(test)]
+pub(crate) use base::CLONE_CALLS;

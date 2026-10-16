@@ -6836,3 +6836,55 @@ mod to_odd_tests {
         assert_eq!(q(33, 32, RoundingMode::Up).compare(&nine_eighths), Some(0));
     }
 }
+
+#[cfg(test)]
+mod subnormal_copy_tests {
+    use crate::mantissa::CLONE_CALLS;
+    use crate::{ExactNum, Exponent, RoundingMode};
+
+    fn clones() -> usize {
+        CLONE_CALLS.with(|c| c.get())
+    }
+
+    /// `3 * 2^(EXPONENT_MIN + 1) * 2^-20`: a subnormal (its mantissa has leading zero bits).
+    fn subnormal(p: usize) -> ExactNum {
+        ExactNum::from_u8(3, p)
+            .ldexp(Exponent::MIN + 1, p, RoundingMode::ToEven)
+            .ldexp(-20, p, RoundingMode::ToEven)
+    }
+
+    /// No operation copies an operand, subnormal or not: the number of `Mantissa::clone` calls made while
+    /// an operation runs is zero, for the four borrowed-borrowed forms, `sqr`, and the owned forms, with the
+    /// subnormal operand on either side. (A subnormal operand used to be cloned once by `normalize`.)
+    #[test]
+    fn subnormal_operands_are_not_copied() {
+        let p = 192;
+        let rm = RoundingMode::ToEven;
+        let two = ExactNum::from_u8(2, p);
+        let sub = subnormal(p);
+
+        let before = clones();
+        let _ = ExactNum::add_ref(&sub, &two, p, rm);
+        let _ = ExactNum::add_ref(&two, &sub, p, rm);
+        let _ = ExactNum::sub_ref(&sub, &two, p, rm);
+        let _ = ExactNum::sub_ref(&two, &sub, p, rm);
+        let _ = ExactNum::mul_ref(&sub, &two, p, rm);
+        let _ = ExactNum::mul_ref(&two, &sub, p, rm);
+        let _ = ExactNum::div_ref(&sub, &two, p, rm);
+        let _ = ExactNum::div_ref(&two, &sub, p, rm);
+        let _ = sub.sqr(p, rm);
+        assert_eq!(clones() - before, 0, "borrowed forms and sqr");
+
+        let before = clones();
+        let _ = subnormal(p).add(&two, p, rm);
+        let _ = ExactNum::from_u8(2, p).add(&sub, p, rm);
+        let _ = subnormal(p).sub(&two, p, rm);
+        let _ = ExactNum::from_u8(2, p).sub(&sub, p, rm);
+        let _ = subnormal(p).mul(&two, p, rm);
+        let _ = ExactNum::from_u8(2, p).mul(&sub, p, rm);
+        let _ = subnormal(p).div(&two, p, rm);
+        let _ = ExactNum::from_u8(2, p).div(&sub, p, rm);
+        assert_eq!(clones() - before, 0, "owned forms");
+    }
+}
+

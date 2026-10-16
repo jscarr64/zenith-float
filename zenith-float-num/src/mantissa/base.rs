@@ -1105,6 +1105,8 @@ impl Mantissa {
 
     /// Clones the mantissa.
     pub fn clone(&self) -> Result<Self, Error> {
+        #[cfg(test)]
+        CLONE_CALLS.with(|c| c.set(c.get() + 1));
         let mut m = Self::reserve_new(self.m.len())?;
         m.copy_from_slice(&self.m);
         Ok(Mantissa { m, n: self.n })
@@ -1297,4 +1299,11 @@ impl Mantissa {
         let n = Self::find_bit_len(&m);
         Mantissa { m, n }
     }
+}
+
+#[cfg(test)]
+std::thread_local! {
+    /// Number of `Mantissa::clone` calls made by this thread (unit tests count them to show that an
+    /// operation does not copy its operands).
+    pub(crate) static CLONE_CALLS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
 }
