@@ -6433,7 +6433,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, OPERANDS * 4 * 4 * 2 * 2 * 2);
         println!("hypot scaling digest = {}", h.finish());
-        assert_eq!(h.finish(), 8_843_648_132_186_564_184);
+        assert_eq!(h.finish(), 4_953_534_096_737_218_946);
         Ok(())
     }
 

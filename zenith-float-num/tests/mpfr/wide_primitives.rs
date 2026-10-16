@@ -416,36 +416,20 @@ fn binary(
     Ok(())
 }
 
-fn either_subnormal(a: (u64, i64), b: (u64, i64)) -> bool {
-    is_subnormal(a.0, a.1) || is_subnormal(b.0, b.1)
-}
-
-fn neither_subnormal(a: (u64, i64), b: (u64, i64)) -> bool {
-    !either_subnormal(a, b)
-}
-
-fn hypot_run(skip_pair: fn((u64, i64), (u64, i64)) -> bool) -> Res {
-    binary(
-        "hypot",
-        &binary_operands(),
-        &PRECISIONS,
-        skip_pair,
-        |a, b, p, rm, _| a.hypot(b, p, rm),
-        |r, a, b, rd| r.assign_round(a.hypot_ref(b), rd),
-    )
+fn no_pair_skipped(_: (u64, i64), _: (u64, i64)) -> bool {
+    false
 }
 
 #[test]
 fn hypot_over_the_whole_range() -> Res {
-    hypot_run(either_subnormal)
-}
-
-/// KNOWN WRONG (finding 3): `hypot` with a subnormal operand treats it as zero: `hypot(1, 2^-2147483718)`
-/// is `1` and exact in every mode (MPFR: inexact, and `1 + ulp` for `Up`); with two subnormal operands the
-/// `ToOdd` result is wrong too.
-#[test]
-fn hypot_with_a_subnormal_operand_known_wrong() -> Res {
-    hypot_run(neither_subnormal)
+    binary(
+        "hypot",
+        &binary_operands(),
+        &PRECISIONS,
+        no_pair_skipped,
+        |a, b, p, rm, _| a.hypot(b, p, rm),
+        |r, a, b, rd| r.assign_round(a.hypot_ref(b), rd),
+    )
 }
 
 /// Exponent classes of the `binary_operands` grid: `A` subnormal, `B` just above the smallest normal, `C` one,

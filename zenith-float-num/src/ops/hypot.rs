@@ -1,7 +1,7 @@
 //! Hypotenuse: `sqrt(x² + y²)` without intermediate overflow.
 
-use crate::common::util::{bump_prec_retry, round_p};
-use crate::defs::{Error, Exponent, EXPONENT_MAX, WORD_BIT_SIZE};
+use crate::common::util::round_p;
+use crate::defs::{Error, Exponent, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::{RoundingMode, Sign};
 
@@ -36,56 +36,42 @@ impl ExactNumNumber {
             return Ok(ax);
         }
 
-        if !ax.is_subnormal() && !ay.is_subnormal() {
-            // sqrt(x^2 + y^2) with the sum of squares formed exactly after scaling x to
-            // [0.5, 1): one correct rounding by sqrt, exact results included (3, 4 -> 5).
-            // Mantissas may carry leading zeros; normalize so exponents compare magnitudes.
-            // ax and ay are not used again on this path (it always returns): move them.
-            let ax_exp = ax.exponent() as i64;
-            let mut sx = ax;
-            let ex = ax_exp - sx.normalize2() as i64;
-            let ay_exp = ay.exponent() as i64;
-            let mut sy = ay;
-            let ey = ay_exp - sy.normalize2() as i64;
-            let wx = sx.mantissa_max_bit_len() as i64;
-            sx.set_exponent(0);
-            // y only adds a sticky bit once y^2 lies below both x^2's last bit and the
-            // p-bit result's guard bits; past that it is replaced by a smaller stand-in.
-            let lim = wx.max(p as i64 / 2 + 1) + WORD_BIT_SIZE as i64;
-            let dy = if ex - ey > lim + WORD_BIT_SIZE as i64 { -lim } else { ey - ex };
-            sy.set_exponent(dy as Exponent);
-            let s2 = sx
-                .mul_full_prec(&sx)?
-                .add_full_prec(&sy.mul_full_prec(&sy)?)?;
-            let mut ret = s2.sqrt(p, rm)?;
-            let e = ret.exponent() as i64 + ex;
-            if e > EXPONENT_MAX as i64 {
-                return Err(Error::ExponentOverflow(Sign::Pos));
-            }
+        // sqrt(x^2 + y^2) with the sum of squares formed exactly after scaling x to
+        // [0.5, 1): one correct rounding by sqrt, exact results included (3, 4 -> 5).
+        // Mantissas may carry leading zeros (a subnormal operand has many); normalize so exponents
+        // compare magnitudes. The exponents are kept in an `i64`, so a subnormal operand needs no
+        // special case: the result is moved onto the subnormal grid below when it lies under the range.
+        // ax and ay are not used again: move them.
+        let ax_exp = ax.exponent() as i64;
+        let mut sx = ax;
+        let ex = ax_exp - sx.normalize2() as i64;
+        let ay_exp = ay.exponent() as i64;
+        let mut sy = ay;
+        let ey = ay_exp - sy.normalize2() as i64;
+        let wx = sx.mantissa_max_bit_len() as i64;
+        sx.set_exponent(0);
+        // y only adds a sticky bit once y^2 lies below both x^2's last bit and the
+        // p-bit result's guard bits; past that it is replaced by a smaller stand-in.
+        let lim = wx.max(p as i64 / 2 + 1) + WORD_BIT_SIZE as i64;
+        let dy = if ex - ey > lim + WORD_BIT_SIZE as i64 { -lim } else { ey - ex };
+        sy.set_exponent(dy as Exponent);
+        let s2 = sx
+            .mul_full_prec(&sx)?
+            .add_full_prec(&sy.mul_full_prec(&sy)?)?;
+        let mut ret = s2.sqrt(p, rm)?;
+        let e = ret.exponent() as i64 + ex;
+        if e > EXPONENT_MAX as i64 {
+            return Err(Error::ExponentOverflow(Sign::Pos));
+        }
+        if e < EXPONENT_MIN as i64 {
+            // Under the range (the operands were subnormal): the same step `sqrt`, `mul` and `div` take.
+            ret.set_exponent(EXPONENT_MIN);
+            ret.subnormalize(e, rm);
+        } else {
             ret.set_exponent(e as Exponent);
-            ret.set_inexact(ret.inexact() | inexact);
-            return Ok(ret);
         }
-
-        let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p + p_inc;
-
-        loop {
-            let p_x = p_wrk + 2;
-            let r = ay.div(&ax, p_x, RoundingMode::None)?;
-            let one = Self::from_word(1, p_x)?;
-            let r2 = r.mul(&r, p_x, RoundingMode::None)?;
-            let t = one.add(&r2, p_x, RoundingMode::None)?;
-            let s = t.sqrt(p_x, RoundingMode::None)?;
-            let mut ret = ax.mul(&s, p_x, RoundingMode::None)?;
-
-            if ret.try_set_precision(p, rm, p_wrk)? {
-                ret.set_inexact(ret.inexact() | inexact);
-                return Ok(ret);
-            }
-
-            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
-        }
+        ret.set_inexact(ret.inexact() | inexact);
+        Ok(ret)
     }
 }
 

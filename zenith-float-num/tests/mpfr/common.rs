@@ -511,31 +511,50 @@ where
     } else {
         let mut w = Float::new(p + 1);
         let t = f(&mut w, rnd_t::RNDZ);
-        let mut lo = Float::new(p);
-        let mut hi = Float::new(p);
-        unsafe {
-            mpfr::set(lo.as_raw_mut(), w.as_raw(), rnd_t::RNDZ);
-            mpfr::set(hi.as_raw_mut(), w.as_raw(), rnd_t::RNDA);
-        }
-        let odd = |x: &Float, bits: u32| {
-            !x.is_zero() && unsafe { mpfr::min_prec(x.as_raw()) } as u32 == bits
+        // A result under the library's smallest normal exponent has fewer than `p` bits (the subnormal grid is
+        // `2^(EXPONENT_MIN - p)`): the nearest-ties-to-odd rounding is done at that many bits, from the
+        // `p + 1` bit truncation (a truncation of a truncation is the truncation, and bits lost are a sticky bit).
+        // (rug's `get_exp` is an `i32`, which cannot hold an exponent below the library's minimum)
+        let exp = if w.is_zero() || !w.is_finite() {
+            None
+        } else {
+            Some(unsafe { mpfr::get_exp(w.as_raw()) })
         };
-        let v = if lo == hi {
+        let bits = match exp {
+            Some(e) if (e as i64) < EXPONENT_MIN as i64 => {
+                (p as i64 - (EXPONENT_MIN as i64 - e as i64)).max(1) as u32
+            }
+            _ => p,
+        };
+        let mut w2 = Float::new(bits + 1);
+        let t2 = unsafe { mpfr::set(w2.as_raw_mut(), w.as_raw(), rnd_t::RNDZ) };
+        let t = if t2 != 0 { 1 } else { t };
+        let mut lo = Float::new(bits);
+        let mut hi = Float::new(bits);
+        unsafe {
+            mpfr::set(lo.as_raw_mut(), w2.as_raw(), rnd_t::RNDZ);
+            mpfr::set(hi.as_raw_mut(), w2.as_raw(), rnd_t::RNDA);
+        }
+        let odd =
+            |x: &Float, n: u32| !x.is_zero() && unsafe { mpfr::min_prec(x.as_raw()) } as u32 == n;
+        let chosen = if lo == hi {
             lo
         } else if t == 0 {
-            // w is the exact midpoint: the tie goes to the odd neighbour.
-            if odd(&lo, p) {
+            // w2 is the exact midpoint: the tie goes to the odd neighbour.
+            if odd(&lo, bits) {
                 lo
             } else {
                 hi
             }
-        } else if odd(&w, p + 1) {
+        } else if odd(&w2, bits + 1) {
             // the exact value lies above the midpoint
             hi
         } else {
             lo
         };
-        let inexact = t != 0 || unsafe { mpfr::min_prec(w.as_raw()) } as u32 > p;
+        let inexact = t != 0 || unsafe { mpfr::min_prec(w2.as_raw()) } as u32 > bits;
+        let mut v = Float::new(p);
+        unsafe { mpfr::set(v.as_raw_mut(), chosen.as_raw(), rnd_t::RNDZ) };
         (v, inexact)
     };
     unsafe {
