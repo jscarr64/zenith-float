@@ -102,7 +102,7 @@ Both pass 77/77. There is no separate `alloc` feature: `alloc` is always require
 | `ToZero` | Toward zero |
 | `FromZero` | Away from zero |
 | `ToEven` | Nearest, ties to even (recommended default) |
-| `ToOdd` | Nearest, ties to odd |
+| `ToOdd` | Nearest, ties to odd (not the sticky "round-to-odd" of algorithm papers; 17/16 at `p = 4` is 1.000 under `ToEven`, 1.001 under `ToOdd`) |
 
 Use `RoundingMode::None` for intermediate steps; round once at the end with `set_precision`. That is the practical rule for any multi-step computation.
 

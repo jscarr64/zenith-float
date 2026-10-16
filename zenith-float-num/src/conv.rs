@@ -706,6 +706,8 @@ impl ExactNumNumber {
                             c = true;
                         }
                     }
+                    // Nearest, ties to odd (not sticky round-to-odd): only the exact tie (`dn == 5`, nothing
+                    // after it) looks at parity.
                     RoundingMode::ToOdd => {
                         if dn == 5 {
                             if is_even || !rem0 {

@@ -92,7 +92,7 @@ No other open issues. The items listed in the 1.0.5 audit (`doc/AUDIT.md`) were 
 
 ## Rounding
 
-- `RoundingMode` has seven modes. `ToEven` and `ToOdd` round to nearest and break ties to the even or odd neighbour. `Up`, `Down`, `ToZero`, and `FromZero` are directed: toward +∞, toward −∞, toward zero, and away from zero, with no tie rule. `None` skips the final rounding.
+- `RoundingMode` has seven modes. `ToEven` and `ToOdd` round to nearest and break ties to the even or odd neighbour. `ToOdd` is round to nearest with ties to odd, the mirror of `ToEven`; it is not the sticky "round-to-odd" (jamming) mode used inside algorithms. At `p = 4`: 17/16 is an exact tie and gives 1.000 under `ToEven` and 1.001 under `ToOdd`; 33/32 is below the tie and gives 1.000 under both (a sticky round-to-odd would give 1.001). `Up`, `Down`, `ToZero`, and `FromZero` are directed: toward +∞, toward −∞, toward zero, and away from zero, with no tie rule. `None` skips the final rounding.
 - `add`, `sub`, `mul`, and `div` round at exactly `p` bits, for any `p`; `ExactNum::add(&b, 24, RoundingMode::ToEven)` is a correctly rounded binary32-precision sum, subnormals included. The storage is still whole 64-bit words (32-bit on 32-bit targets), and the bits below `p` are zero.
 - The other operations (`sqrt`, `cbrt`, `hypot`, `fma`, `rem`, parsing, and the transcendental and special functions) round to `p` rounded up to a whole number of words. Call `set_precision(p, rm)` afterwards for exactly `p` bits; that is a second rounding.
 - `RoundingMode::None` skips that final rounding and keeps the storage precision, with possible extra bits.

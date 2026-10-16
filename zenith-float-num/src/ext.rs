@@ -6809,3 +6809,30 @@ mod grid_digest_tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod to_odd_tests {
+    use crate::{ExactNum, RoundingMode};
+
+    /// `ToOdd` is nearest with ties to odd, not sticky round-to-odd. Hand-derived values at `p = 4`:
+    /// 17/16 = 1.0001b is an exact tie (1.000b = 1 for `ToEven`, 1.001b = 9/8 for `ToOdd`); 33/32 = 1.00001b is below
+    /// the tie (1.000b under both nearest modes; a sticky round-to-odd would give 1.001b).
+    #[test]
+    fn to_odd_is_nearest_with_ties_to_odd() {
+        let p = 4;
+        let q = |a: u8, b: u8, rm| ExactNum::from_u8(a, 64).div(&ExactNum::from_u8(b, 64), p, rm);
+        let one = ExactNum::from_u8(1, 64);
+        let nine_eighths =
+            ExactNum::from_u8(9, 64).div(&ExactNum::from_u8(8, 64), 64, RoundingMode::ToEven);
+
+        assert_eq!(q(17, 16, RoundingMode::ToEven).compare(&one), Some(0));
+        assert_eq!(
+            q(17, 16, RoundingMode::ToOdd).compare(&nine_eighths),
+            Some(0)
+        );
+        assert_eq!(q(33, 32, RoundingMode::ToEven).compare(&one), Some(0));
+        assert_eq!(q(33, 32, RoundingMode::ToOdd).compare(&one), Some(0));
+        // 33/32 is just above 1.000b, so `Up` gives 1.001b: the value a sticky round-to-odd would also give.
+        assert_eq!(q(33, 32, RoundingMode::Up).compare(&nine_eighths), Some(0));
+    }
+}

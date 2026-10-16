@@ -281,6 +281,11 @@ pub enum RoundingMode {
     /// Round half to even.
     ToEven = 32,
 
-    /// Round half to odd.
+    /// Round to nearest, ties to odd: the mirror of [`RoundingMode::ToEven`].
+    ///
+    /// This is **not** the sticky "round-to-odd" (jamming) mode that algorithms use to avoid double rounding
+    /// (where any inexact result gets its last bit set to 1): only an exact tie goes to the odd neighbour.
+    /// At `p = 4`, 17/16 is an exact tie and rounds to 1.000 under `ToEven` and to 1.001 under `ToOdd`;
+    /// 33/32 is below the tie and rounds to 1.000 under both (sticky round-to-odd would give 1.001).
     ToOdd = 64,
 }

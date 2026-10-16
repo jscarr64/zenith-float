@@ -904,6 +904,8 @@ impl Mantissa {
                             c = true;
                         }
                     }
+                    // Nearest, ties to odd (not sticky round-to-odd): only the exact tie `eq1` looks at the
+                    // neighbour's parity.
                     RoundingMode::ToOdd => {
                         if gt1 || (eq1 && (nump1 & 1) == 0) {
                             // add 1
