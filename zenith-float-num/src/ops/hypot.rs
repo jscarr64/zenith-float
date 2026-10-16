@@ -40,10 +40,13 @@ impl ExactNumNumber {
             // sqrt(x^2 + y^2) with the sum of squares formed exactly after scaling x to
             // [0.5, 1): one correct rounding by sqrt, exact results included (3, 4 -> 5).
             // Mantissas may carry leading zeros; normalize so exponents compare magnitudes.
-            let mut sx = ax.clone()?;
-            let ex = ax.exponent() as i64 - sx.normalize2() as i64;
-            let mut sy = ay.clone()?;
-            let ey = ay.exponent() as i64 - sy.normalize2() as i64;
+            // ax and ay are not used again on this path (it always returns): move them.
+            let ax_exp = ax.exponent() as i64;
+            let mut sx = ax;
+            let ex = ax_exp - sx.normalize2() as i64;
+            let ay_exp = ay.exponent() as i64;
+            let mut sy = ay;
+            let ey = ay_exp - sy.normalize2() as i64;
             let wx = sx.mantissa_max_bit_len() as i64;
             sx.set_exponent(0);
             // y only adds a sticky bit once y^2 lies below both x^2's last bit and the
