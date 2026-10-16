@@ -6415,6 +6415,47 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 0a pin for decimal parsing (`conv_from_dec`): short and long digit strings, positive and negative
+    /// exponents (including ones that need several powers-of-ten steps), and near-tie inputs that make the
+    /// first working precision fail to round and force a retry.
+    #[test]
+    fn decimal_parse_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = crate::Consts::new()?;
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        let inputs = [
+            "0.1",
+            "-2.5e3",
+            "123456789012345678901234567890e-250",
+            "7.000000000000000000000000000001e500",
+            "1e-400",
+            "-9007199254740993.00000000000000000000001",
+            "9007199254740993.00000000000000000000001",
+            "9007199254740993.000000000000000000000000000000000000001",
+            "4503599627370497.5000000000000000000000000000000000000000001",
+            "0.30000000000000000000000000000000000000000000000000000000000000000000000000000000000001",
+            "8.5e-1000",
+            "3.14159265358979323846264338327950288419716939937510582097494459230781640628620899e7",
+        ];
+        for s in inputs {
+            for p in [53usize, 64, 128, 500] {
+                for rm in
+                    [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down, RoundingMode::None]
+                {
+                    digest(
+                        &ExactNum::parse(s, crate::Radix::Dec, p, rm, &mut cc),
+                        &mut h,
+                    )?;
+                    count += 1;
+                }
+            }
+        }
+        assert_eq!(count, 12 * 4 * 4);
+        println!("decimal parse digest = {}", h.finish());
+        assert_eq!(h.finish(), 13_825_435_214_421_359_920);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
