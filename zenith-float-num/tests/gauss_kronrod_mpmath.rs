@@ -41,14 +41,13 @@ fn check(label: &str, got: &ExactNum, want: &str, min_bits: i32, cc: &mut Consts
 }
 
 #[test]
-fn gk_smooth_exp_matches_e_minus_one() {
+fn gk_smooth_exp_matches_e_minus_one() -> Result<(), Box<dyn std::error::Error>> {
     // mpmath 1.4.1, dps=60: exp(1) - 1. One (7, 15) panel is enough on a
     // short analytic interval; the Kronrod sum is the value under test.
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     let a = ExactNum::from_u8(0, P);
     let b = ExactNum::from_u8(1, P);
-    let got = gauss_kronrod_interval(|x, p, rm, cc| x.exp(p, rm, cc), &a, &b, P, RM, &mut cc)
-        .expect("exp");
+    let got = gauss_kronrod_interval(|x, p, rm, cc| x.exp(p, rm, cc), &a, &b, P, RM, &mut cc)?;
     check(
         "int_0^1 exp",
         &got.estimate_kronrod,
@@ -56,13 +55,14 @@ fn gk_smooth_exp_matches_e_minus_one() {
         (P as i32) - 8,
         &mut cc,
     );
+    Ok(())
 }
 
 #[test]
-fn gk_oscillatory_sin_matches_two() {
+fn gk_oscillatory_sin_matches_two() -> Result<(), Box<dyn std::error::Error>> {
     // The antiderivative of sin on [0, pi] is 2. mpmath nstr(quad(sin, [0, pi]))
     // at 50 decimals is 2; the adaptive driver may bisect until |K-G| agrees.
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     let a = ExactNum::from_u8(0, P);
     let b = cc.pi(P, RM);
     let rel = tol(48);
@@ -75,17 +75,17 @@ fn gk_oscillatory_sin_matches_two() {
         P,
         RM,
         &mut cc,
-    )
-    .expect("sin");
+    )?;
     check("int_0^pi sin", &got.estimate_kronrod, "2", 96, &mut cc);
+    Ok(())
 }
 
 #[test]
-fn gk_mild_endpoint_sqrt_matches_two_thirds() {
+fn gk_mild_endpoint_sqrt_matches_two_thirds() -> Result<(), Box<dyn std::error::Error>> {
     // Hand antiderivative of sqrt(x) on [0, 1] is 2/3. mpmath at 50 decimals
     // prints the same repeating expansion. The derivative blows up at 0, so
     // the driver bisects that panel instead of trusting one Gauss rule.
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     let a = ExactNum::from_u8(0, P);
     let b = ExactNum::from_u8(1, P);
     let rel = tol(40);
@@ -98,8 +98,7 @@ fn gk_mild_endpoint_sqrt_matches_two_thirds() {
         P,
         RM,
         &mut cc,
-    )
-    .expect("sqrt");
+    )?;
     check(
         "int_0^1 sqrt(x)",
         &got.estimate_kronrod,
@@ -107,15 +106,16 @@ fn gk_mild_endpoint_sqrt_matches_two_thirds() {
         56,
         &mut cc,
     );
+    Ok(())
 }
 
 #[test]
-fn gk_epsilon_beats_plain_gauss_on_invsqrt() {
+fn gk_epsilon_beats_plain_gauss_on_invsqrt() -> Result<(), Box<dyn std::error::Error>> {
     // Hand antiderivative of x^(-1/2) on (0, 1] is 2. A single 7-point Gauss
     // panel misses by several hundredths because the endpoint is not a
     // polynomial. Wynn epsilon on the adaptive Kronrod sums cancels that
     // nearly geometric panel error. mpmath's closed form at 50 decimals is 2.
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     let a = ExactNum::from_u8(0, P);
     let b = ExactNum::from_u8(1, P);
     let plain = gauss_legendre(
@@ -127,7 +127,7 @@ fn gk_epsilon_beats_plain_gauss_on_invsqrt() {
         RM,
         &mut cc,
     )
-    .expect("gauss7");
+    .ok_or("none value")?;
     let rel = tol(40);
     let adaptive = integrate_adaptive_gk(
         |x, p, rm, _cc| x.sqrt(p, rm).reciprocal(p, rm),
@@ -138,8 +138,7 @@ fn gk_epsilon_beats_plain_gauss_on_invsqrt() {
         P,
         RM,
         &mut cc,
-    )
-    .expect("adaptive invsqrt");
+    )?;
     let two = parse("2", 4 * P, &mut cc);
     let plain_bits = bits(&plain, &two, P);
     let adapt_bits = bits(&adaptive.estimate_kronrod, &two, P);
@@ -152,13 +151,14 @@ fn gk_epsilon_beats_plain_gauss_on_invsqrt() {
         "adaptive invsqrt bits {adapt_bits}, value {}",
         adaptive.estimate_kronrod
     );
+    Ok(())
 }
 
 #[test]
-fn gk_nonfinite_and_reversed_endpoints_are_errors() {
+fn gk_nonfinite_and_reversed_endpoints_are_errors() -> Result<(), Box<dyn std::error::Error>> {
     // A reversed interval and a NaN sample must not come back as a finite
     // integral. The typed error is the whole assertion.
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     let a = ExactNum::from_u8(0, P);
     let b = ExactNum::from_u8(1, P);
     let reversed = gauss_kronrod_interval(
@@ -179,4 +179,5 @@ fn gk_nonfinite_and_reversed_endpoints_are_errors() {
         &mut cc,
     );
     assert_eq!(nan.unwrap_err(), QuadratureError::InvalidArgument);
+    Ok(())
 }

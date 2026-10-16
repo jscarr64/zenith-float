@@ -15,7 +15,7 @@ fn assert_invalid(r: &ExactNum, what: &str) {
 }
 
 #[test]
-fn from_raw_parts_round_trips_valid_parts() {
+fn from_raw_parts_round_trips_valid_parts() -> Result<(), Box<dyn std::error::Error>> {
     let ps = [64, 128, 256, 1024];
     let vs = [1u64, 3, 0xFFFF_FFFF_FFFF_FFFF, 0x8000_0000_0000_0001];
     let es = [EXPONENT_MIN, EXPONENT_MIN + 1, -1, 0, 1, EXPONENT_MAX - 1, EXPONENT_MAX];
@@ -30,7 +30,7 @@ fn from_raw_parts_round_trips_valid_parts() {
                     if negative {
                         x = x.neg();
                     }
-                    let (m, n, s, ex, inexact) = x.as_raw_parts().unwrap();
+                    let (m, n, s, ex, inexact) = x.as_raw_parts().ok_or("none value")?;
                     let y = ExactNum::from_raw_parts(m, n, s, ex, inexact);
                     assert_eq!(
                         x, y,
@@ -53,7 +53,7 @@ fn from_raw_parts_round_trips_valid_parts() {
     // Test min_positive and its negation
     for &p in &ps {
         let x = ExactNum::min_positive(p);
-        let (m, n, s, ex, inexact) = x.as_raw_parts().unwrap();
+        let (m, n, s, ex, inexact) = x.as_raw_parts().ok_or("none value")?;
         let y = ExactNum::from_raw_parts(m, n, s, ex, inexact);
         assert_eq!(x, y, "Round-trip failed for min_positive p={}", p);
         assert!(
@@ -63,7 +63,7 @@ fn from_raw_parts_round_trips_valid_parts() {
         );
 
         let x_neg = ExactNum::min_positive(p).neg();
-        let (m, n, s, ex, inexact) = x_neg.as_raw_parts().unwrap();
+        let (m, n, s, ex, inexact) = x_neg.as_raw_parts().ok_or("none value")?;
         let y = ExactNum::from_raw_parts(m, n, s, ex, inexact);
         assert_eq!(
             x_neg, y,
@@ -76,10 +76,11 @@ fn from_raw_parts_round_trips_valid_parts() {
             p
         );
     }
+    Ok(())
 }
 
 #[test]
-fn from_raw_parts_rejects_inconsistent_parts() {
+fn from_raw_parts_rejects_inconsistent_parts() -> Result<(), Box<dyn std::error::Error>> {
     let ps = [64, 128, 256, 1024];
     let signs = [Sign::Pos, Sign::Neg];
 
@@ -87,7 +88,7 @@ fn from_raw_parts_rejects_inconsistent_parts() {
         // (a) normal mantissa words of from_u64(3,p) with n = p + 1 -> invalid.
         {
             let x = ExactNum::from_u64(3, p);
-            let (m, _n, s, ex, inexact) = x.as_raw_parts().unwrap();
+            let (m, _n, s, ex, inexact) = x.as_raw_parts().ok_or("none value")?;
             let y = ExactNum::from_raw_parts(m, p + 1, s, ex, inexact);
             assert_invalid(&y, &format!("normal mantissa with n=p+1 for p={}", p));
         }
@@ -95,7 +96,7 @@ fn from_raw_parts_rejects_inconsistent_parts() {
         // (b) normal mantissa (top bit set) with n = p - 1 -> invalid.
         {
             let x = ExactNum::from_u64(3, p);
-            let (m, _n, s, ex, inexact) = x.as_raw_parts().unwrap();
+            let (m, _n, s, ex, inexact) = x.as_raw_parts().ok_or("none value")?;
             let y = ExactNum::from_raw_parts(m, p - 1, s, ex, inexact);
             assert_invalid(&y, &format!("normal mantissa with n=p-1 for p={}", p));
         }
@@ -152,4 +153,5 @@ fn from_raw_parts_rejects_inconsistent_parts() {
             }
         }
     }
+    Ok(())
 }

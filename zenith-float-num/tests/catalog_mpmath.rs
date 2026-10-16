@@ -36,8 +36,8 @@ fn check(
 }
 
 #[test]
-fn catalog_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn catalog_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let mut failures = Vec::new();
     // 50-digit golds are ~166 bits, so 128-bit dest is the honest check.
     let p = 128usize;
@@ -171,4 +171,5 @@ fn catalog_mpmath() {
         &mut failures,
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }

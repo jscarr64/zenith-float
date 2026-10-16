@@ -214,9 +214,9 @@ fn cx(re: i8, im: i8, p: usize) -> zenith_float_num::ExactComplex {
 }
 
 #[test]
-fn complex_inexact_is_per_operation() {
+fn complex_inexact_is_per_operation() -> Result<(), Box<dyn std::error::Error>> {
     use zenith_float_num::{Consts, ExactComplex};
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     for &p in &[64usize, 128, 256] {
         for &rm in &MODES {
             let z34 = cx(3, 4, p);
@@ -251,4 +251,5 @@ fn complex_inexact_is_per_operation() {
             );
         }
     }
+    Ok(())
 }

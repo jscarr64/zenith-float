@@ -1376,8 +1376,8 @@ fn bits(got: &ExactNum, want: &ExactNum, cap: usize) -> usize {
 }
 
 #[test]
-fn erf_erfc_tail_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn erf_erfc_tail_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let mut failures = Vec::new();
     for &(op, p, x, want) in CASES {
         let xv = ExactNum::parse(x, Radix::Dec, p, RM, &mut cc);
@@ -1397,12 +1397,13 @@ fn erf_erfc_tail_mpmath() {
         failures.len(),
         failures.join("\n")
     );
+    Ok(())
 }
 
 #[test]
-fn erf_erfc_tail_symmetry() {
+fn erf_erfc_tail_symmetry() -> Result<(), Box<dyn std::error::Error>> {
     // erf(-x) = -erf(x) exactly; erfc(-x) = 2 - erfc(x).
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     for x in ["4", "4.2", "10", "12.5", "30"] {
         let p = 256;
         let xv = ExactNum::parse(x, Radix::Dec, p, RM, &mut cc);
@@ -1414,4 +1415,5 @@ fn erf_erfc_tail_symmetry() {
         let d = two.sub(&xv.erfc(p, RM, &mut cc), p, RM);
         assert!(bits(&c, &d, 250) >= 250, "erfc reflection at {x}");
     }
+    Ok(())
 }

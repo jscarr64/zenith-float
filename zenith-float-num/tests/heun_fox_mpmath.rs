@@ -76,8 +76,8 @@ fn dec(s: &str, p: usize, cc: &mut Consts) -> ExactNum {
 }
 
 #[test]
-fn heun_fox_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let mut failures = Vec::new();
     // 50-digit golds are ~166 bits; 128-bit dest is the honest check.
     let p = 128usize;
@@ -688,4 +688,5 @@ fn heun_fox_mpmath() {
     );
 
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }

@@ -70,8 +70,8 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
 }
 
 #[test]
-fn jacobi_p_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn jacobi_p_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let parse = |s: &str, p: usize, cc: &mut Consts| ExactNum::parse(s, Radix::Dec, p, RM, cc);
     let mut failures = Vec::new();
     for &(n, a, b, x, re) in CASES {
@@ -110,4 +110,5 @@ fn jacobi_p_mpmath() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }

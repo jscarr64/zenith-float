@@ -135,8 +135,8 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
 }
 
 #[test]
-fn bessel_large_arg_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn bessel_large_arg_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let parse = |s: &str, p: usize, cc: &mut Consts| ExactNum::parse(s, Radix::Dec, p, RM, cc);
     let mut failures = Vec::new();
     for &(kind, x, nu, re) in CASES {
@@ -159,4 +159,5 @@ fn bessel_large_arg_mpmath() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }

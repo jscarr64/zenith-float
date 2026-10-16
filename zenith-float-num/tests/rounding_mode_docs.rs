@@ -4,16 +4,13 @@ use std::fs;
 use zenith_float_num::{ExactNum, RoundingMode};
 
 #[test]
-fn rounding_mode_docs_describe_directed_modes() {
-    let content = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/defs.rs"))
-        .expect("Failed to read defs.rs");
+fn rounding_mode_docs_describe_directed_modes() -> Result<(), Box<dyn std::error::Error>> {
+    let content = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/defs.rs"))?;
 
     let start = content
         .find("pub enum RoundingMode {")
-        .expect("RoundingMode enum not found");
-    let end = content[start..]
-        .find('}')
-        .expect("RoundingMode enum not closed");
+        .ok_or("none value")?;
+    let end = content[start..].find('}').ok_or("none value")?;
 
     let enum_content = &content[start..start + end + 1];
 
@@ -26,10 +23,11 @@ fn rounding_mode_docs_describe_directed_modes() {
     assert!(enum_content.contains("/// Round toward negative infinity (directed rounding)."));
     assert!(enum_content.contains("/// Round toward zero (truncation; directed rounding)."));
     assert!(enum_content.contains("/// Round away from zero (directed rounding)."));
+    Ok(())
 }
 
 #[test]
-fn directed_modes_are_directed_not_half() {
+fn directed_modes_are_directed_not_half() -> Result<(), Box<dyn std::error::Error>> {
     for &p in &[64, 128, 192, 256] {
         for &n in &[1i8, 2, 5, 11, 127] {
             for &d in &[3i8, 7, 9, 13] {
@@ -45,7 +43,7 @@ fn directed_modes_are_directed_not_half() {
 
                     // q_down < q_up strictly
                     assert!(
-                        q_down.compare(&q_up).unwrap() < 0,
+                        q_down.compare(&q_up).ok_or("none value")? < 0,
                         "For p={}, n={}, d={} (sign={}), q_down should be less than q_up",
                         p,
                         n,
@@ -56,7 +54,7 @@ fn directed_modes_are_directed_not_half() {
                     // Check that results are on correct side of true quotient
                     let prod_up = ExactNum::mul_ref(&q_up, &b, 2 * p + 64, RoundingMode::None);
                     assert!(
-                        prod_up.compare(&a).unwrap() > 0,
+                        prod_up.compare(&a).ok_or("none value")? > 0,
                         "For p={}, n={}, d={} (sign={}), q_up*d should be > n",
                         p,
                         n,
@@ -66,7 +64,7 @@ fn directed_modes_are_directed_not_half() {
 
                     let prod_down = b.mul(&q_down, 2 * p + 64, RoundingMode::None);
                     assert!(
-                        prod_down.compare(&a).unwrap() < 0,
+                        prod_down.compare(&a).ok_or("none value")? < 0,
                         "For p={}, n={}, d={} (sign={}), q_down*d should be < n",
                         p,
                         n,
@@ -77,7 +75,7 @@ fn directed_modes_are_directed_not_half() {
                     // ToZero behavior
                     let expected_zero = if n > 0 { &q_down } else { &q_up };
                     assert_eq!(
-                        q_zero.compare(expected_zero).unwrap(),
+                        q_zero.compare(expected_zero).ok_or("none value")?,
                         0,
                         "For p={}, n={}, d={} (sign={}), q_to_zero should equal {}",
                         p,
@@ -90,7 +88,7 @@ fn directed_modes_are_directed_not_half() {
                     // FromZero behavior
                     let expected_from = if n > 0 { &q_up } else { &q_down };
                     assert_eq!(
-                        q_from.compare(expected_from).unwrap(),
+                        q_from.compare(expected_from).ok_or("none value")?,
                         0,
                         "For p={}, n={}, d={} (sign={}), q_from_zero should equal {}",
                         p,
@@ -103,4 +101,5 @@ fn directed_modes_are_directed_not_half() {
             }
         }
     }
+    Ok(())
 }

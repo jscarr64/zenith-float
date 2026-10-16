@@ -84,8 +84,8 @@ fn exp2(x: &ExactNum) -> i32 {
 }
 
 #[test]
-fn complex_2f1_log_case_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn complex_2f1_log_case_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let mut failures = Vec::new();
     for &(p, args, want_re, want_im) in CASES {
         let [a, b, cp, z] = args.map(|s| c(s, p, &mut cc));
@@ -115,4 +115,5 @@ fn complex_2f1_log_case_mpmath() {
         failures.len(),
         failures.join("\n")
     );
+    Ok(())
 }

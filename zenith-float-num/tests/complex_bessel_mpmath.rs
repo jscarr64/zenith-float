@@ -249,8 +249,8 @@ fn exp2(x: &ExactNum) -> i32 {
 }
 
 #[test]
-fn complex_bessel_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn complex_bessel_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let mut failures = Vec::new();
     for &(p, f, zs, nus, want_re, want_im) in CASES {
         let z = c(zs, p, &mut cc);
@@ -295,14 +295,15 @@ fn complex_bessel_mpmath() {
         failures.len(),
         failures.join("\n")
     );
+    Ok(())
 }
 
 /// Non-integer \(K_\nu\) inside the series regime (\(|z| < 0.35(p+112)\)), where
 /// 1.0.10 built \(K\) from \(J\pm iY\). DLMF 10.27.4 uses \(I_{\pm\nu}\) instead.
 /// Golds: mpmath 1.4.1 `besselk`.
 #[test]
-fn complex_bessel_k_series_regime() {
-    let mut cc = Consts::new().unwrap();
+fn complex_bessel_k_series_regime() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let cases = [
         (
             128usize,
@@ -338,4 +339,5 @@ fn complex_bessel_k_series_regime() {
             scale - err
         );
     }
+    Ok(())
 }

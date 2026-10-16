@@ -146,8 +146,8 @@ fn bits(got: &ExactNum, want: &ExactNum, scale: &ExactNum, p: usize) -> i32 {
 }
 
 #[test]
-fn special_audit_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn special_audit_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let parse = |s: &str, p: usize, cc: &mut Consts| ExactNum::parse(s, Radix::Dec, p, RM, cc);
     let mut failures = Vec::new();
     for &(op, p, args, re, im) in CASES {
@@ -156,10 +156,13 @@ fn special_audit_mpmath() {
             let zs: Vec<ExactComplex> = args
                 .iter()
                 .map(|s| {
-                    let (a, b) = s.split_once(',').unwrap();
-                    ExactComplex::new(parse(a, p, &mut cc), parse(b, p, &mut cc))
+                    let (a, b) = s.split_once(',').ok_or("none value")?;
+                    Ok::<ExactComplex, Box<dyn std::error::Error>>(ExactComplex::new(
+                        parse(a, p, &mut cc),
+                        parse(b, p, &mut cc),
+                    ))
                 })
-                .collect();
+                .collect::<Result<_, _>>()?;
             let want_im = parse(im, 4 * p, &mut cc);
             let g = cplx(op, p, &zs, &mut cc);
             let scale = if mag(&want_re) >= mag(&want_im) { &want_re } else { &want_im };
@@ -178,7 +181,7 @@ fn special_audit_mpmath() {
                 })
                 .collect();
             let g = if op == "nth_root" {
-                xs[0].nth_root(args[1].parse().unwrap(), p, RM)
+                xs[0].nth_root(args[1].parse()?, p, RM)
             } else {
                 real(op, p, &xs, &mut cc)
             };
@@ -189,4 +192,5 @@ fn special_audit_mpmath() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }
