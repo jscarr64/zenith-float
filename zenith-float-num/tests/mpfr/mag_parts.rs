@@ -6,7 +6,9 @@
 use crate::mpfr::retry_budget::use_full_exponent_range;
 use rug::integer::Order;
 use rug::{Float, Integer};
-use zenith_float_num::{ExactNum, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS};
+use zenith_float_num::{
+    Error, ExactNum, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS,
+};
 
 type Res = Result<(), Box<dyn std::error::Error>>;
 
@@ -209,3 +211,105 @@ fn top_u64_mantissa_and_sticky_matches_the_integer_model() -> Res {
     Ok(())
 }
 
+/// The value of an `ExactNum` as `(odd integer, exponent of its lowest set bit)`, from its raw words.
+fn odd_and_exp(x: &ExactNum) -> Result<(Integer, i64), Box<dyn std::error::Error>> {
+    let Some((words, _, _, e, _)) = x.as_raw_parts() else { return Err("no raw parts".into()) };
+    let m = Integer::from_digits(words, Order::Lsf);
+    let Some(tz) = m.find_one(0) else { return Err("zero mantissa".into()) };
+    let odd = Integer::from(&m >> tz);
+    Ok((odd, i64::from(e) - 64 * words.len() as i64 + i64::from(tz)))
+}
+
+/// The expected outcome of `from_mag_parts(mant, exp, p)`: `None` when it must be an error.
+fn mag_expect(mant: u64, exp: i64, p: usize) -> Option<(Integer, i64)> {
+    if mant == 0 {
+        return Some((Integer::new(), 0));
+    }
+    if exp > MAX {
+        return None;
+    }
+    let tz = i128::from(mant.trailing_zeros());
+    let lowest = i128::from(exp) - 64 + tz; // exponent of the lowest set bit
+    let grid = i128::from(MIN) - (p.div_ceil(64) * 64) as i128; // exponent of the smallest subnormal
+    if lowest < grid {
+        return None;
+    }
+    Some((Integer::from(mant >> tz), lowest as i64))
+}
+
+#[test]
+fn from_mag_parts_is_exact_or_an_error() -> Res {
+    let mants = [1u64 << 63, u64::MAX, 1, 3, 0xdead_beef_1234_5677, (1 << 63) | 1, 0];
+    let exps = [
+        i64::MAX, i64::MIN, MAX + 1, MAX, MAX - 1, 100, 1, 0, -5, MIN + 64, MIN + 65, MIN + 1, MIN, MIN - 1,
+        MIN - 63, MIN - 64, MIN - 65, MIN - 127, MIN - 128, MIN - 129, MIN - 200, MIN - 20_000, MIN - 20_063,
+    ];
+    let mut ok = 0;
+    let mut err = 0;
+    for &p in &[1usize, 24, 64, 65, 128, 200, 1000, 20_000] {
+        for &mant in &mants {
+            for &exp in &exps {
+                let got = ExactNum::from_mag_parts(mant, exp, p);
+                match (mag_expect(mant, exp, p), got) {
+                    (Some((odd, e)), Ok(x)) => {
+                        ok += 1;
+                        if mant == 0 {
+                            assert!(x.is_zero() && !x.is_negative(), "zero mant, exp {exp} p {p}");
+                            assert!(!x.inexact(), "exact");
+                            continue;
+                        }
+                        let (go, ge) = odd_and_exp(&x)?;
+                        assert_eq!((go, ge), (odd, e), "mant {mant:#x} exp {exp} p {p}");
+                        assert!(!x.inexact(), "mant {mant:#x} exp {exp} p {p}: inexact");
+                        assert!(x.is_positive(), "positive");
+                        // the stored width holds p bits
+                        assert!(x.mantissa_max_bit_len().is_some_and(|b| b >= p), "width at p {p}");
+                    }
+                    (None, Err(_)) => err += 1,
+                    (want, got) => {
+                        return Err(format!("mant {mant:#x} exp {exp} p {p}: expected {} got {got:?}", if want.is_some() { "Ok" } else { "an error" }).into());
+                    }
+                }
+            }
+        }
+    }
+    assert!(ok > 300 && err > 100, "ok {ok} err {err}");
+    // the overflow error carries the sign of a positive overflow
+    assert_eq!(
+        ExactNum::from_mag_parts(1 << 63, MAX + 1, 64).err(),
+        Some(Error::ExponentOverflow(Sign::Pos))
+    );
+    Ok(())
+}
+
+#[test]
+fn pow2_is_exact_over_the_range() -> Res {
+    for &p in &[1usize, 24, 64, 65, 128, 1000, 20_000] {
+        let pw = (p.div_ceil(64) * 64) as i64;
+        for &exp in &[
+            i64::MAX, MAX + 1, MAX, MAX - 1, 1000, 63, 64, 1, 0, -1, -63, -64, -65, -1000, MIN + 1, MIN, MIN - 1,
+            MIN - 70, MIN - pw + 1, MIN - pw, MIN - pw - 1, i64::MIN,
+        ] {
+            let got = ExactNum::pow2(exp, p);
+            // 2^exp has its lowest (only) bit at exp; it fits iff exp <= MAX - 1 and exp >= grid
+            let fits = exp <= MAX - 1 && exp >= MIN - pw;
+            match got {
+                Ok(x) => {
+                    assert!(fits, "pow2({exp}, {p}) must be an error");
+                    assert_eq!(x.leading_bit_exponent(), Some(exp), "pow2({exp}, {p})");
+                    let (odd, e) = odd_and_exp(&x)?;
+                    assert_eq!((odd, e), (Integer::from(1), exp));
+                    assert!(!x.inexact());
+                    // MPFR holds it when the exponent is in its default range
+                    if exp.abs() < 2_000_000_000 {
+                        use_full_exponent_range();
+                        let f = Float::with_val(2, 1) << (exp as i32);
+                        assert_eq!(f.get_exp(), Some(exp as i32 + 1));
+                    }
+                }
+                Err(_) => assert!(!fits, "pow2({exp}, {p}) must be Ok"),
+            }
+        }
+    }
+    Ok(())
+}

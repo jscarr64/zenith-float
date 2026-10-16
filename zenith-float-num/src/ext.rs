@@ -1606,6 +1606,82 @@ impl ExactNum {
         Some(((norm >> 64) as u64, sticky, exp))
     }
 
+    /// The exact number `0.mant * 2^exp = mant * 2^(exp - 64)` (positive), the `Mag` convention of zenith-bound:
+    /// `mant` in `[2^63, 2^64)` gives a value in `[2^(exp - 1), 2^exp)`, as `exponent()` reads it. Any nonzero
+    /// `mant` is accepted; `mant == 0` gives positive zero whatever `exp` is. The result has the precision `p`
+    /// (rounded up to the word size, at least 64 bits) and is never rounded.
+    ///
+    /// ## Errors
+    ///
+    ///  - `ExponentOverflow(Sign::Pos)`: `exp` is above `EXPONENT_MAX` (the value would not be finite).
+    ///  - `InvalidArgument`: the value is not representable exactly: it has bits below the smallest subnormal of
+    ///    precision `p` (`2^(EXPONENT_MIN - p)`), or `p` is not a valid precision.
+    ///
+    /// ```
+    /// # use zenith_float_num::ExactNum;
+    /// let x = ExactNum::from_mag_parts(3 << 62, 2, 64).expect("in range");
+    /// assert_eq!(x.leading_bit_exponent(), Some(1)); // 3
+    /// ```
+    pub fn from_mag_parts(mant: u64, exp: i64, p: usize) -> Result<Self, Error> {
+        let pp = round_p(p.max(64));
+        if mant == 0 {
+            return Ok(Self::new(pp));
+        }
+        if exp > i64::from(crate::EXPONENT_MAX) {
+            return Err(Error::ExponentOverflow(Sign::Pos));
+        }
+        let grid = i64::from(crate::EXPONENT_MIN) - i64::try_from(pp).map_err(|_| Error::InvalidArgument)?;
+        if exp < grid {
+            // the highest bit of the value is below the smallest subnormal
+            return Err(Error::InvalidArgument);
+        }
+        let total = exp - 64;
+        let min = i64::from(crate::EXPONENT_MIN);
+        // the first shift stays in the exponent range (the value is then normal), the second goes below it
+        let n1 = total.max(min);
+        let n2 = total - n1;
+        let n1 = Exponent::try_from(n1).map_err(|_| Error::InvalidArgument)?;
+        let n2 = Exponent::try_from(n2).map_err(|_| Error::InvalidArgument)?;
+        let base = Self::from_u64_exact(mant, pp);
+        let r = base
+            .ldexp(n1, pp, RoundingMode::ToZero)
+            .ldexp(n2, pp, RoundingMode::ToZero);
+        if r.is_nan() || r.is_inf() || r.inexact() || r.is_zero() {
+            return Err(Error::InvalidArgument);
+        }
+        Ok(r)
+    }
+
+    /// The exact number `2^exp` (positive) with precision `p` (see [`Self::from_mag_parts`]).
+    ///
+    /// ## Errors
+    ///
+    ///  - `ExponentOverflow(Sign::Pos)`: `exp` is above `EXPONENT_MAX - 1`.
+    ///  - `InvalidArgument`: `exp` is below the smallest subnormal `2^(EXPONENT_MIN - p)`, or `p` is invalid.
+    ///
+    /// ```
+    /// # use zenith_float_num::ExactNum;
+    /// let x = ExactNum::pow2(-3, 64).expect("in range");
+    /// assert_eq!(x.leading_bit_exponent(), Some(-3));
+    /// ```
+    pub fn pow2(exp: i64, p: usize) -> Result<Self, Error> {
+        let e = exp
+            .checked_add(1)
+            .ok_or(Error::ExponentOverflow(Sign::Pos))?;
+        Self::from_mag_parts(1 << 63, e, p)
+    }
+
+    /// `mant` as an exact number of precision `pp` (a multiple of the word size, at least 64).
+    fn from_u64_exact(mant: u64, pp: usize) -> Self {
+        if WORD_BIT_SIZE >= 64 {
+            Self::from_word(mant as Word, pp)
+        } else {
+            let hi = Self::from_word((mant >> 32) as Word, pp).ldexp(32, pp, RoundingMode::ToZero);
+            let lo = Self::from_word(mant as Word, pp);
+            hi.add(&lo, pp, RoundingMode::ToZero)
+        }
+    }
+
     /// Returns the number of significant bits used in the mantissa, or None if `self` is Inf or NaN.
     /// Normal numbers use all bits of the mantissa.
     /// Subnormal numbers use fewer bits than the mantissa can hold.
