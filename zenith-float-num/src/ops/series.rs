@@ -284,8 +284,11 @@ fn series_rectangular<T: PolycoeffGen>(
     let mut x_pow = x_step.clone()?;
 
     for _ in 0..cache_sz {
-        cache.push(x_pow.clone()?);
-        x_pow = x_pow.mul(&x_step, p, RoundingMode::None)?;
+        // the next power is formed from the current one first; the current one is then moved into the cache
+        // (capacity was reserved above, so the push cannot fail).
+        let next = x_pow.mul(&x_step, p, RoundingMode::None)?;
+        cache.push(x_pow);
+        x_pow = next;
     }
 
     // run computation
