@@ -10,6 +10,8 @@ Problems in one program led to a forensic audit of the others. This 2.0.0 sectio
 
 `ExactNum::inexact_accumulated()` keeps the old meaning of `inexact()`: true when this value or anything it was computed from was rounded. See "`inexact` is per operation".
 
+`ExactNum::leading_bit_exponent() -> Option<i64>` (new, prerequisite P1 of zenith-bound): the exponent of the leading set bit, `floor(log2(|x|))`, which is `exponent() - 1` for a normal number and lower for a subnormal number (it counts the mantissa's leading zero bits, so it can be below `EXPONENT_MIN`: `min_positive(p)` gives `EXPONENT_MIN - p` rounded to a word; `ilogb` returns an `i32` and cannot say that). `None` for zero, Inf and NaN. Tested against an exact integer model on 1 to 313 words (20,000 bits), normal and subnormal, both signs, exponents over the whole range, and against MPFR's exponent. Additive; no existing result changes.
+
 ### Changed
 
 The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). `rust-version` is `"1.99"` in every crate, and `rust-toolchain.toml` pins channel `1.99` with `clippy` and `rustfmt`. A crate that compiled on the previous compiler has to move to Rust 1.99 before it can depend on 2.0.0.

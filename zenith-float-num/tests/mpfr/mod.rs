@@ -12,6 +12,7 @@ pub mod compare_special_test;
 pub mod exact_bit_binary;
 pub mod exact_bit_functions;
 pub mod fuzz_round_modes;
+pub mod mag_parts;
 pub mod overflow_modes;
 pub mod rem_exact;
 pub mod retry_budget;

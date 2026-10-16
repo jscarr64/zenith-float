@@ -1546,6 +1546,38 @@ impl ExactNum {
         }
     }
 
+    /// Number of leading zero bits of the mantissa words (least significant word first), or `None` when they are all
+    /// zero.
+    fn mantissa_leading_zero_bits(words: &[Word]) -> Option<usize> {
+        words
+            .iter()
+            .rev()
+            .enumerate()
+            .find(|(_, w)| **w != 0)
+            .map(|(i, w)| i * WORD_BIT_SIZE + w.leading_zeros() as usize)
+    }
+
+    /// The exponent of the leading (most significant) set bit: `floor(log2(|self|))` for a finite nonzero number,
+    /// that is `exponent() - 1` for a normal number. A subnormal number has leading zero bits in its mantissa, so its
+    /// leading bit is below `EXPONENT_MIN - 1` (hence `i64`: `min_positive(p)` gives `EXPONENT_MIN - p`, rounded up
+    /// to a word). `None` for zero, Inf and NaN.
+    ///
+    /// The sign is ignored. This is the convention of `exponent()` made explicit: a nonzero finite number is
+    /// `0.m * 2^e = m * 2^(e - k)` with `m` of `k` bits and its top bit set, and its value lies in
+    /// `[2^(e - 1), 2^e)`; the leading-bit exponent is `e - 1`.
+    ///
+    /// ```
+    /// # use zenith_float_num::ExactNum;
+    /// assert_eq!(ExactNum::from_word(3, 64).leading_bit_exponent(), Some(1));
+    /// assert_eq!(ExactNum::from_word(1, 64).leading_bit_exponent(), Some(0));
+    /// assert_eq!(ExactNum::new(64).leading_bit_exponent(), None);
+    /// ```
+    pub fn leading_bit_exponent(&self) -> Option<i64> {
+        let (words, _, _, e, _) = self.as_raw_parts()?;
+        let lz = Self::mantissa_leading_zero_bits(words)?;
+        i64::from(e).checked_sub(1)?.checked_sub(i64::try_from(lz).ok()?)
+    }
+
     /// Returns the number of significant bits used in the mantissa, or None if `self` is Inf or NaN.
     /// Normal numbers use all bits of the mantissa.
     /// Subnormal numbers use fewer bits than the mantissa can hold.
