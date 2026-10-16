@@ -14,6 +14,9 @@ use zenith_float_num::{Consts, ExactNum, Exponent, RoundingMode};
 /// Precision (a multiple of the word size) at which the original failure was found.
 const P: usize = 100_032;
 
+/// Precision of the tests whose retry steps are the most expensive (`ln`, `log`, `nth_root`).
+const PM: usize = 40_064;
+
 const MODES: [RoundingMode; 6] = [
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
@@ -72,10 +75,15 @@ fn check(
     want: impl Fn(&mut Float, rnd_t) -> i32,
 ) -> Res {
     let (w, _) = mpfr_reference_with(p as u32, rm, want)?;
+    // Out-of-domain arguments: both sides must be NaN; everything else must be a number (never the
+    // `PrecisionRetryExhausted` NaN).
     assert!(
-        !got.is_nan(),
+        got.is_nan() == (w.is_nan()),
         "{info} p={p} {rm:?}: zenith {got:?}, MPFR {w}"
     );
+    if w.is_nan() {
+        return Ok(());
+    }
     assert_exact_eq(got, &w, p, &format!("{info} p={p} {rm:?}"), cc)?;
     Ok(())
 }
@@ -211,9 +219,9 @@ fn exp_just_above_a_tie_at_100032_bits() -> Res {
     )
 }
 
-/// `expm1(2^(1-p))` and `log1p(2^(1-p))`, `ln(1 + 2^(1-p))`: a neighbour of the grid plus a `2^-2p` term.
+/// `expm1(2^(1-p)) = x + x^2/2 + x^3/6`: the midpoint between two neighbours plus a `2^-2p` term.
 #[test]
-fn expm1_log1p_ln_near_a_grid_point_at_100032_bits() -> Res {
+fn expm1_just_above_a_tie_at_100032_bits() -> Res {
     let mut cc = Consts::new()?;
     let d = pow2(P, 1 - P as Exponent);
     run_unary(
@@ -224,7 +232,14 @@ fn expm1_log1p_ln_near_a_grid_point_at_100032_bits() -> Res {
         &mut cc,
         |x, p, rm, cc| x.expm1(p, rm, cc),
         |r, a, round| r.assign_round(a.exp_m1_ref(), round),
-    )?;
+    )
+}
+
+/// `log1p(2^(1-p)) = x - x^2/2 + x^3/3`: a grid point of `p` bits plus a term of relative size `2^-2p`.
+#[test]
+fn log1p_just_above_a_grid_point_at_100032_bits() -> Res {
+    let mut cc = Consts::new()?;
+    let d = pow2(P, 1 - P as Exponent);
     run_unary(
         "log1p",
         "2^(1-p)",
@@ -233,12 +248,20 @@ fn expm1_log1p_ln_near_a_grid_point_at_100032_bits() -> Res {
         &mut cc,
         |x, p, rm, cc| x.log1p(p, rm, cc),
         |r, a, round| r.assign_round(a.ln_1p_ref(), round),
-    )?;
-    let y = one_plus_pow2(P, 1 - P as Exponent);
+    )
+}
+
+/// `ln(1 + 2^(1-p))`: the same value as `log1p(2^(1-p))` reached through the logarithm of a number near 1
+/// (a working precision of about `2p` plus the cancellation guard of the argument; the slowest test here, so
+/// it runs at 40064 bits, a precision at which `p + 64 * 256` working bits cannot reach the `2p` these shapes need).
+#[test]
+fn ln_just_above_a_grid_point_at_40064_bits() -> Res {
+    let mut cc = Consts::new()?;
+    let y = one_plus_pow2(PM, 1 - PM as Exponent);
     run_unary(
         "ln",
         "1+2^(1-p)",
-        P,
+        PM,
         &y,
         &mut cc,
         |x, p, rm, cc| x.ln(p, rm, cc),
@@ -286,19 +309,24 @@ fn cosh_sinh_tanh_near_a_tie_at_100032_bits() -> Res {
 /// The `n`-th root of `1 + n * 2^-p` is `1 + 2^-p - (n-1) * 2^(-2p-1) / n + ...`: just below the midpoint
 /// of two neighbours, for `n = 4` and `n = 6`.
 #[test]
-fn nth_root_just_below_a_tie_at_100032_bits() -> Res {
+fn nth_root_just_below_a_tie_at_40064_bits() -> Res {
     let mut cc = Consts::new()?;
-    let y4 = one_plus_pow2(P, 2 - P as Exponent);
+    let y4 = one_plus_pow2(PM, 2 - PM as Exponent);
     let three_ulp =
-        pow2(P, 2 - P as Exponent).add(&pow2(P, 1 - P as Exponent), P, RoundingMode::ToEven);
-    let y6 = ExactNum::from_u8(1, P).add(&three_ulp, P, RoundingMode::ToEven);
+        pow2(PM, 2 - PM as Exponent).add(&pow2(PM, 1 - PM as Exponent), PM, RoundingMode::ToEven);
+    let y6 = ExactNum::from_u8(1, PM).add(&three_ulp, PM, RoundingMode::ToEven);
     for (n, y) in [(4_usize, &y4), (6, &y6)] {
-        let fy = conv_to_mpfr(P, y, &mut cc)?;
+        let fy = conv_to_mpfr(PM, y, &mut cc)?;
         for rm in MODES {
-            let got = y.nth_root(n, P, rm);
-            check(&got, P, rm, &format!("nth_root({n})"), &mut cc, |r, rnd| {
-                ternary(r.assign_round(fy.root_ref(n as u32), round_of(rnd)))
-            })?;
+            let got = y.nth_root(n, PM, rm);
+            check(
+                &got,
+                PM,
+                rm,
+                &format!("nth_root({n})"),
+                &mut cc,
+                |r, rnd| ternary(r.assign_round(fy.root_ref(n as u32), round_of(rnd))),
+            )?;
         }
     }
     Ok(())
@@ -306,24 +334,24 @@ fn nth_root_just_below_a_tie_at_100032_bits() -> Res {
 
 /// `log_b(x)` with `b = 1 + 2^(1-p)` and `x = 1 + 2^(2-p)`: `2 - 2^(1-p)` plus a term of about `2^-2p`.
 #[test]
-fn log_with_base_near_a_grid_point_at_100032_bits() -> Res {
+fn log_with_base_near_a_grid_point_at_40064_bits() -> Res {
     let mut cc = Consts::new()?;
-    let b = one_plus_pow2(P, 1 - P as Exponent);
-    let x = one_plus_pow2(P, 2 - P as Exponent);
-    let fb = conv_to_mpfr(P, &b, &mut cc)?;
-    let fx = conv_to_mpfr(P, &x, &mut cc)?;
+    let b = one_plus_pow2(PM, 1 - PM as Exponent);
+    let x = one_plus_pow2(PM, 2 - PM as Exponent);
+    let fb = conv_to_mpfr(PM, &b, &mut cc)?;
+    let fx = conv_to_mpfr(PM, &x, &mut cc)?;
     for rm in MODES {
-        let got = x.log(&b, P, rm, &mut cc);
+        let got = x.log(&b, PM, rm, &mut cc);
         check(
             &got,
-            P,
+            PM,
             rm,
             "log(1+2^(2-p), base 1+2^(1-p))",
             &mut cc,
             |r, rnd| {
                 // The quotient of two logarithms, each more precise than `p`; MPFR rounds the one division.
                 let round = round_of(rnd);
-                let wp = 2 * P as u32 + 128;
+                let wp = 2 * PM as u32 + 128;
                 let num = Float::with_val(wp, fx.ln_ref());
                 let den = Float::with_val(wp, fb.ln_ref());
                 ternary(r.assign_round(&num / &den, round))
@@ -331,4 +359,166 @@ fn log_with_base_near_a_grid_point_at_100032_bits() -> Res {
         )?;
     }
     Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// Wide range: arguments `sqrt(2) * 2^k` from the bottom of the exponent range up to 2, every mode.
+// ---------------------------------------------------------------------------------------------
+
+/// MPFR's default exponent range is narrower than zenith-float's: widen it to the library's for this thread so
+/// that the operand (and the expected value) can be built at any exponent.
+fn use_full_exponent_range() {
+    use gmp_mpfr_sys::gmp::exp_t;
+    use gmp_mpfr_sys::mpfr;
+    // SAFETY: only sets MPFR's thread-local exponent bounds, as the other tests of this suite do.
+    unsafe {
+        mpfr::set_emin(zenith_float_num::EXPONENT_MIN as exp_t);
+        mpfr::set_emax(zenith_float_num::EXPONENT_MAX as exp_t);
+    }
+}
+
+type ZfFn = fn(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum;
+type MpFn = fn(&mut Float, &Float, Round) -> std::cmp::Ordering;
+
+/// The functions of the wide-range sweeps, with their MPFR counterparts.
+fn wide_functions() -> [(&'static str, ZfFn, MpFn); 10] {
+    [
+        (
+            "exp",
+            |x, p, rm, cc| x.exp(p, rm, cc),
+            |r, a, rd| r.assign_round(a.exp_ref(), rd),
+        ),
+        (
+            "expm1",
+            |x, p, rm, cc| x.expm1(p, rm, cc),
+            |r, a, rd| r.assign_round(a.exp_m1_ref(), rd),
+        ),
+        (
+            "sinh",
+            |x, p, rm, cc| x.sinh(p, rm, cc),
+            |r, a, rd| r.assign_round(a.sinh_ref(), rd),
+        ),
+        (
+            "cosh",
+            |x, p, rm, cc| x.cosh(p, rm, cc),
+            |r, a, rd| r.assign_round(a.cosh_ref(), rd),
+        ),
+        (
+            "tanh",
+            |x, p, rm, cc| x.tanh(p, rm, cc),
+            |r, a, rd| r.assign_round(a.tanh_ref(), rd),
+        ),
+        ("sin", sin_of, mp_sin),
+        ("cos", cos_of, mp_cos),
+        ("tan", tan_of, mp_tan),
+        (
+            "atan",
+            |x, p, rm, cc| x.atan(p, rm, cc),
+            |r, a, rd| r.assign_round(a.atan_ref(), rd),
+        ),
+        (
+            "log1p",
+            |x, p, rm, cc| x.log1p(p, rm, cc),
+            |r, a, rd| r.assign_round(a.ln_1p_ref(), rd),
+        ),
+    ]
+}
+
+/// First `n` characters of a message (the failure messages carry whole MPFR values).
+fn head(s: &str, n: usize) -> String {
+    s.chars().take(n).collect()
+}
+
+/// Runs every function of `names` at every exponent of `exponents` and reports all the mismatches at once
+/// (a mismatch panics inside `assert_exact_eq`; each one is caught so that one run lists them all).
+fn sweep(p: usize, exponents: &[Exponent], names: &[&str]) -> Res {
+    use std::panic::{catch_unwind, AssertUnwindSafe};
+    use_full_exponent_range();
+    let mut cc = Consts::new()?;
+    let mut failures: Vec<String> = Vec::new();
+    for (k, negative) in exponents.iter().flat_map(|k| [(k, false), (k, true)]) {
+        // `sqrt(2)` has exponent 1, so scaling by `k - 1` puts the argument's exponent at `k`.
+        let pos = sqrt_times_2k(2, k - 1, p);
+        let x = if negative { -pos } else { pos };
+        for (name, zf, mp) in wide_functions() {
+            if !names.contains(&name) {
+                continue;
+            }
+            let sign = if negative { "-" } else { "" };
+            let label = format!("{sign}sqrt(2) 2^{}", k - 1);
+            let run = catch_unwind(AssertUnwindSafe(|| {
+                run_unary(name, &label, p, &x, &mut cc, zf, mp)
+            }));
+            match run {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => failures.push(head(&format!("{name} {label}: error {e}"), 200)),
+                Err(payload) => {
+                    let msg = match payload.downcast_ref::<String>() {
+                        Some(m) => head(m, 200),
+                        None => String::from("panic without a string message"),
+                    };
+                    failures.push(msg);
+                }
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} mismatches with MPFR:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+    Ok(())
+}
+
+const ALL_NAMES: [&str; 10] =
+    ["exp", "expm1", "sinh", "cosh", "tanh", "sin", "cos", "tan", "atan", "log1p"];
+
+/// From the bottom of the exponent range to 2, around `-p/2` and `-p` where the result changes from "1 plus a
+/// tail below the last bit" to "1 plus a tail the rounding has to see": all six modes, `p = 20032`.
+#[test]
+fn wide_exponent_range_at_20032_bits() -> Res {
+    const W: usize = 20_032;
+    let w = W as Exponent;
+    let exponents = [
+        Exponent::MIN + 1,
+        -(1 << 30) - 5,
+        -(1 << 20),
+        -3 * w,
+        -2 * w - 1,
+        -2 * w,
+        -(w + 64),
+        -(w + 1),
+        -w,
+        -(w - 1),
+        -(w / 2 + 1),
+        -(w / 2),
+        -(w / 2 - 1),
+        -(w / 4),
+        -1000,
+        -64,
+        -2,
+        0,
+        1,
+    ];
+    sweep(W, &exponents, &ALL_NAMES)
+}
+
+/// The same at `p = 100032` (the precision of the original failure) for the arguments where the tail of the
+/// series is about `2^-p` (exponents `-p/2` and `-p`) and at the bottom of the range.
+#[test]
+fn wide_exponent_range_at_100032_bits() -> Res {
+    let w = P as Exponent;
+    let exponents = [Exponent::MIN + 1, -(w + 1), -w, -(w / 2 + 1), -(w / 2)];
+    sweep(P, &exponents, &ALL_NAMES)
+}
+
+/// Arguments of both signs whose exponent is just below, at and far below `-p` (the "small argument"
+/// shortcut of the `exp`-type and `sin`-type functions), plus the ordinary range, at a small precision:
+/// the quick version of the wide sweeps.
+#[test]
+fn small_arguments_of_both_signs_at_128_bits() -> Res {
+    let mut exponents = vec![Exponent::MIN + 1, -1000, -200, -10, -1, 0, 1, 2];
+    exponents.extend(-140..=-60);
+    sweep(128, &exponents, &ALL_NAMES)
 }

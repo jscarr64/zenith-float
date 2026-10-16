@@ -3364,4 +3364,28 @@ mod tests {
         assert!(d2.inexact());
         Ok(())
     }
+    /// `try_set_precision` may look only at the `s` leading (known) words of a mantissa; the words below
+    /// them are junk. The pattern here is "round bit 0, then all ones" in the last known word: a value
+    /// just below a tie, which the known bits cannot decide, so the answer must be "not roundable"
+    /// whatever the junk word is. (The check used to compare the junk word, found it different from all
+    /// ones and wrongly declared the number roundable.)
+    #[test]
+    fn try_set_precision_looks_only_at_the_known_words() -> Result<(), crate::Error> {
+        let w = WORD_BIT_SIZE;
+        // Least significant word first: junk, round word (0 then ones), then the two result words.
+        let words = [WORD_MAX - 1, WORD_MAX >> 1, 0, WORD_SIGNIFICANT_BIT];
+        for rm in [RoundingMode::ToEven, RoundingMode::ToOdd] {
+            // Three known words: the junk word is not known, so this is not roundable yet.
+            let mut x = ExactNumNumber::from_words(&words, Sign::Pos, 0)?;
+            x.set_inexact(true);
+            assert!(!x.try_set_precision(2 * w, rm, 3 * w)?, "{rm:?}");
+
+            // All four words known: the junk word is real, the value is below the tie, so it rounds down.
+            let mut x = ExactNumNumber::from_words(&words, Sign::Pos, 0)?;
+            x.set_inexact(true);
+            assert!(x.try_set_precision(2 * w, rm, 4 * w)?, "{rm:?}");
+            assert_eq!(x.mantissa().digits(), &[0, WORD_SIGNIFICANT_BIT], "{rm:?}");
+        }
+        Ok(())
+    }
 }
