@@ -387,7 +387,6 @@ impl ExactNumNumber {
 
             let mut ret = p1.div(&p2, p_x, RoundingMode::None)?;
 
-            let mut ret2 = ret.clone()?; // clone, becuase try_set_precision modifies ret
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact() | n.inexact());
                 return Ok(ret);
@@ -397,6 +396,9 @@ impl ExactNumNumber {
                 // to it, so its power never compares equal. A representable exact result is a
                 // dyadic rational a / 2^j, and n^(a / 2^j) = self iff n^|a| = self^(±2^j), which
                 // is checked with exact integer powers.
+                // `try_set_precision` modified `ret`: the candidate is the same quotient formed again from the
+                // still-live logarithms.
+                let mut ret2 = p1.div(&p2, p_x, RoundingMode::None)?;
                 ret2.set_precision(p, RoundingMode::ToEven)?;
                 let exact = log_is_exact_dyadic(self, &y, &ret2)?;
 

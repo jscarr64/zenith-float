@@ -9,8 +9,8 @@ use crate::mpfr::common::get_prec_rng;
 use crate::mpfr::common::test_zf_op;
 use crate::mpfr::common::test_zf_op_no_cc;
 use crate::mpfr::common::{
-    assert_float_close, conv_to_mpfr, get_float_pair, get_random_rnd_pair, reset_test_rng,
-    test_random, test_zf_fma, test_zf_rem_pi,
+    assert_float_close, conv_to_mpfr, draw_seed, get_float_pair, get_random_rnd_pair,
+    normal_from_seed, reset_test_rng, test_random, test_zf_fma, test_zf_rem_pi,
 };
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
 use rug::{
@@ -87,7 +87,11 @@ fn run_compare_ops(
 
         let (rm, rnd) = get_random_rnd_pair();
 
-        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / ediv, EXPONENT_MAX / ediv, &mut cc)?;
+        // n1 is consumed by each op below: it is rebuilt from its seed for every use.
+        let s1 = draw_seed();
+        let (lo1, hi1) = (EXPONENT_MIN / ediv, EXPONENT_MAX / ediv);
+        let n1 = normal_from_seed(s1, p1, lo1, hi1);
+        let f1 = conv_to_mpfr(p1, &n1, &mut cc)?;
         let n1e = n1.exponent().ok_or("none value")?;
         let (n2, f2) = get_float_pair(
             p2,
@@ -102,7 +106,7 @@ fn run_compare_ops(
 
         test_zf_op_no_cc!(
             true,
-            n1,
+            normal_from_seed(s1, p1, lo1, hi1),
             n2,
             add,
             f1,
@@ -116,7 +120,7 @@ fn run_compare_ops(
         );
         test_zf_op_no_cc!(
             true,
-            n1,
+            normal_from_seed(s1, p1, lo1, hi1),
             n2,
             sub,
             f1,
@@ -141,8 +145,12 @@ fn run_compare_ops(
 
         let (rm, rnd) = get_random_rnd_pair();
 
-        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / ediv, EXPONENT_MAX / ediv, &mut cc)?;
-        let (n2, f2) = get_float_pair(p2, EXPONENT_MIN / ediv, EXPONENT_MAX / ediv, &mut cc)?;
+        // n1 is consumed by `mul` and `div`: it is rebuilt from its seed for every use.
+        let s1 = draw_seed();
+        let (lo, hi) = (EXPONENT_MIN / ediv, EXPONENT_MAX / ediv);
+        let n1 = normal_from_seed(s1, p1, lo, hi);
+        let f1 = conv_to_mpfr(p1, &n1, &mut cc)?;
+        let (n2, f2) = get_float_pair(p2, lo, hi, &mut cc)?;
 
         // println!("\n{:?}", rm);
         // println!("{:b}\n{}", n1, f1.to_string_radix(2, None));
@@ -150,7 +158,7 @@ fn run_compare_ops(
 
         test_zf_op_no_cc!(
             true,
-            n1,
+            normal_from_seed(s1, p1, lo, hi),
             n2,
             mul,
             f1,
@@ -165,7 +173,7 @@ fn run_compare_ops(
 
         test_zf_op_no_cc!(
             true,
-            n1,
+            normal_from_seed(s1, p1, lo, hi),
             n2,
             div,
             f1,

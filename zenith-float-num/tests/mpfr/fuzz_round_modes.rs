@@ -5,10 +5,12 @@
 use crate::mpfr::common::assert_exact_eq;
 use crate::mpfr::common::assert_float_close;
 use crate::mpfr::common::conv_to_mpfr;
+use crate::mpfr::common::draw_seed;
 use crate::mpfr::common::get_float_pair;
 use crate::mpfr::common::get_oned_zeroed;
 use crate::mpfr::common::mpfr_reference;
 use crate::mpfr::common::mpfr_reference_with;
+use crate::mpfr::common::rebuild_from_seed;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::common::test_random;
 use crate::mpfr::common::test_zf_op_no_cc;
@@ -68,16 +70,30 @@ fn fuzz_mpfr_bit_exact_all_round_modes() -> Result<(), Box<dyn std::error::Error
         for i in 0..40 {
             // Half of the operands have long runs of ones then zeros, so sums and
             // differences land on exact ties and on carries out of the last word.
+            // n1 is built from one seed so that the `sqrt` operand below can be rebuilt instead of copied.
+            let s1 = draw_seed();
+            let make_n1 = |seed: u64| {
+                rebuild_from_seed(seed, || {
+                    if i % 2 == 0 {
+                        ExactNum::random_normal(p, emin, emax)
+                    } else {
+                        let n = get_oned_zeroed(p, emin, emax);
+                        if test_random::<bool>() {
+                            n.neg()
+                        } else {
+                            n
+                        }
+                    }
+                })
+            };
             let (n1, f1, n2, f2) = if i % 2 == 0 {
-                let (n1, f1) = get_float_pair(p, emin, emax, &mut cc)?;
+                let n1 = make_n1(s1);
+                let f1 = conv_to_mpfr(p, &n1, &mut cc)?;
                 let (n2, f2) = get_float_pair(p, emin, emax, &mut cc)?;
                 (n1, f1, n2, f2)
             } else {
-                let mut n1 = get_oned_zeroed(p, emin, emax);
+                let n1 = make_n1(s1);
                 let mut n2 = get_oned_zeroed(p, emin, emax);
-                if test_random::<bool>() {
-                    n1 = n1.neg();
-                }
                 if test_random::<bool>() {
                     n2 = n2.neg();
                 }
@@ -99,7 +115,7 @@ fn fuzz_mpfr_bit_exact_all_round_modes() -> Result<(), Box<dyn std::error::Error
                 }
             }
             for (rm, rnd) in ROUNDS {
-                let a = if n1.is_negative() { neg_of(&n1) } else { n1.clone() };
+                let a = if n1.is_negative() { neg_of(&n1) } else { make_n1(s1) };
                 let fa = Float::with_val(p as u32, f1.abs_ref());
                 test_zf_op_no_cc!(
                     true,
@@ -174,18 +190,27 @@ fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>
         ];
 
         let neg_max = neg_of(&max);
-        for n1 in [&max, &neg_max] {
+        // `a` is consumed by each op below: it is rebuilt from its constructor for every use (`b` is only borrowed).
+        let mk_a = |neg: bool| {
+            let m = ExactNum::max_value(p);
+            if neg {
+                neg_of(&m)
+            } else {
+                m
+            }
+        };
+        for (is_neg, n1) in [(false, &max), (true, &neg_max)] {
             for n2 in &seconds {
                 let f1 = conv_to_mpfr(p, n1, &mut cc)?;
                 let f2 = conv_to_mpfr(p, n2, &mut cc)?;
-                let a = n1.clone();
-                let b = n2.clone();
+                let a = n1;
+                let b = n2;
 
                 for &(rm, rnd) in ROUNDS.iter() {
                     unsafe { mpfr::clear_flags() };
                     test_zf_op_no_cc!(
                         true,
-                        a,
+                        mk_a(is_neg),
                         b,
                         add,
                         f1,
@@ -201,7 +226,7 @@ fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>
                     unsafe { mpfr::clear_flags() };
                     test_zf_op_no_cc!(
                         true,
-                        a,
+                        mk_a(is_neg),
                         b,
                         sub,
                         f1,
@@ -217,7 +242,7 @@ fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>
                     unsafe { mpfr::clear_flags() };
                     test_zf_op_no_cc!(
                         true,
-                        a,
+                        mk_a(is_neg),
                         b,
                         mul,
                         f1,
@@ -233,7 +258,7 @@ fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>
                     unsafe { mpfr::clear_flags() };
                     test_zf_op_no_cc!(
                         true,
-                        a,
+                        mk_a(is_neg),
                         b,
                         div,
                         f1,

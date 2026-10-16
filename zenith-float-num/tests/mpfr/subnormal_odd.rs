@@ -1,20 +1,20 @@
 //! Results in the subnormal band round correctly in every mode, including `ToOdd`
 //! (round half to odd) at exact ties on the subnormal grid (2.0.0 audit, round 2: item d).
 
-use crate::mpfr::common::{assert_exact_eq, conv_to_mpfr, mpfr_reference_with, reset_test_rng};
+use crate::mpfr::common::{
+    assert_exact_eq, conv_to_mpfr, draw_seed, mpfr_reference_with, rebuild_from_seed,
+    reset_test_rng,
+};
 use crate::mpfr::exact_bit_functions::{input, MODES, PRECISIONS};
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::Float;
 use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MIN, WORD_BIT_SIZE};
 
 /// `conv_to_mpfr` for values near the bottom of the range: converts `x / 2^e`, then scales.
-fn conv_small(
-    w: usize,
-    x: &ExactNum,
-    cc: &mut Consts,
-) -> Result<Float, Box<dyn std::error::Error>> {
+/// Takes `x` by value (the scaling consumes it); callers rebuild the operand from its seed.
+fn conv_small(w: usize, x: ExactNum, cc: &mut Consts) -> Result<Float, Box<dyn std::error::Error>> {
     let e = x.exponent().unwrap_or(0);
-    let s = x.clone().ldexp(-e, w, RoundingMode::None);
+    let s = x.ldexp(-e, w, RoundingMode::None);
     let f = conv_to_mpfr(w, &s, cc)?;
     let old = unsafe { mpfr::get_emin() };
     unsafe { mpfr::set_emin(mpfr::get_emin_min()) };
@@ -71,14 +71,19 @@ fn subnormal_band_every_mode() -> Result<(), Box<dyn std::error::Error>> {
         let w = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
         let wide = (4 * w + 256) as u32;
         for i in 0..24 {
-            let x = input(p, lo + 1, lo + 2 * p as i32, true)?;
-            let y = input(p, -(p as i32) - 2, -1, true)?;
-            let z = input(p, lo + 1, lo + p as i32, true)?;
+            // Every operand is drawn from its own seed and rebuilt from it for each consuming use.
+            let (sx, sy, sz) = (draw_seed(), draw_seed(), draw_seed());
+            let mk_x = || rebuild_from_seed(sx, || input(p, lo + 1, lo + 2 * p as i32, true));
+            let mk_y = || rebuild_from_seed(sy, || input(p, -(p as i32) - 2, -1, true));
+            let mk_z = || rebuild_from_seed(sz, || input(p, lo + 1, lo + p as i32, true));
+            let x = mk_x()?;
+            let y = mk_y()?;
+            let z = mk_z()?;
             // shifts that land exactly on and between subnormal grid points
             let k = i % 7 + 1;
-            let fx = conv_small(w, &x, &mut cc)?;
-            let fy = conv_small(w, &y, &mut cc)?;
-            let fz = conv_small(w, &z, &mut cc)?;
+            let fx = conv_small(w, mk_x()?, &mut cc)?;
+            let fy = conv_small(w, mk_y()?, &mut cc)?;
+            let fz = conv_small(w, mk_z()?, &mut cc)?;
             for rm in MODES {
                 let cases: [(&str, ExactNum, MpOp); 5] = [
                     (
@@ -111,7 +116,7 @@ fn subnormal_band_every_mode() -> Result<(), Box<dyn std::error::Error>> {
                     ),
                     (
                         "ldexp",
-                        x.clone().ldexp(-k, p, rm),
+                        mk_x()?.ldexp(-k, p, rm),
                         Box::new(|r: &mut Float, rnd| unsafe {
                             mpfr::div_2ui(r.as_raw_mut(), fx.as_raw(), k as _, rnd)
                         }),

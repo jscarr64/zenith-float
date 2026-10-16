@@ -2,7 +2,9 @@
 //! precision of `x`, so it needs no rounding mode and is never inexact. Checked against an
 //! exact big-integer remainder (2.0.0 audit, round 2 leftovers).
 
-use crate::mpfr::common::{conv_to_mpfr, reset_test_rng, test_random};
+use crate::mpfr::common::{
+    conv_to_mpfr, draw_seed, rebuild_from_seed, reset_test_rng, test_random,
+};
 use crate::mpfr::exact_bit_functions::{input, PRECISIONS};
 use rug::{Float, Integer};
 use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MIN, WORD_BIT_SIZE};
@@ -34,14 +36,14 @@ fn oracle(fx: &Float, fy: &Float) -> Result<Float, Box<dyn std::error::Error>> {
     Ok(f)
 }
 
-/// `conv_to_mpfr` for values near the bottom of the range.
-fn conv(w: usize, x: &ExactNum, cc: &mut Consts) -> Result<Float, Box<dyn std::error::Error>> {
+/// `conv_to_mpfr` for values near the bottom of the range. Takes `x` by value (the scaling consumes
+/// it); callers rebuild the operand from its seed.
+fn conv(w: usize, x: ExactNum, cc: &mut Consts) -> Result<Float, Box<dyn std::error::Error>> {
     let e = x.exponent().unwrap_or(0);
     // two steps: -EXPONENT_MIN does not fit in an Exponent
-    let s =
-        x.clone()
-            .ldexp(-(e / 2), w, RoundingMode::None)
-            .ldexp(-(e - e / 2), w, RoundingMode::None);
+    let s = x
+        .ldexp(-(e / 2), w, RoundingMode::None)
+        .ldexp(-(e - e / 2), w, RoundingMode::None);
     let f = conv_to_mpfr(w, &s, cc)?;
     let old = unsafe { gmp_mpfr_sys::mpfr::get_emin() };
     unsafe { gmp_mpfr_sys::mpfr::set_emin(gmp_mpfr_sys::mpfr::get_emin_min()) };
@@ -74,8 +76,12 @@ fn rem_is_exact() -> Result<(), Box<dyn std::error::Error>> {
                     continue;
                 }
                 for _ in 0..4 {
-                    let x = input(px, bx.0, bx.1, true)?;
-                    let y = input(py, by.0, by.1, true)?;
+                    // Every operand is drawn from its own seed and rebuilt from it for each consuming use.
+                    let (sx, sy) = (draw_seed(), draw_seed());
+                    let mk_x = || rebuild_from_seed(sx, || input(px, bx.0, bx.1, true));
+                    let mk_y = || rebuild_from_seed(sy, || input(py, by.0, by.1, true));
+                    let x = mk_x()?;
+                    let y = mk_y()?;
                     // the integer oracle needs the two exponents within reach of each other
                     let spread =
                         x.exponent().unwrap_or(0) as i64 - y.exponent().unwrap_or(0) as i64;
@@ -84,15 +90,15 @@ fn rem_is_exact() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     let got = x.rem(&y);
                     let info = format!("rem px={px} py={py} x={x:?} y={y:?}");
-                    let fx = conv(wx, &x, &mut cc)?;
-                    let fy = conv(wy, &y, &mut cc)?;
+                    let fx = conv(wx, mk_x()?, &mut cc)?;
+                    let fy = conv(wy, mk_y()?, &mut cc)?;
                     let want = oracle(&fx, &fy)?;
                     assert!(!got.inexact(), "{info}: rem reported inexact");
                     let w = got.mantissa_max_bit_len().unwrap_or(wx).max(1);
                     let fg = if got.is_zero() {
                         Float::with_val(w as u32, 0)
                     } else {
-                        conv(w, &got, &mut cc)?
+                        conv(w, mk_x()?.rem(&y), &mut cc)?
                     };
                     assert_eq!(fg, want, "{info}: zenith {fg}, exact {want}");
                     if want.is_zero() {

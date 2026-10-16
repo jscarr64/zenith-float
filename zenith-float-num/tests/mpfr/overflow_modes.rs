@@ -3,7 +3,9 @@
 //! (2.0.0 audit, round 2: item b).
 
 use crate::mpfr::common::conv_to_mpfr;
+use crate::mpfr::common::draw_seed;
 use crate::mpfr::common::mpfr_reference_with;
+use crate::mpfr::common::rebuild_from_seed;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::exact_bit_functions::{check, input, MODES, PRECISIONS};
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
@@ -39,9 +41,10 @@ fn check_ovf(
 }
 
 /// `conv_to_mpfr` for values near the exponent limit: converts `x / 2^e`, then scales.
-fn conv_big(w: usize, x: &ExactNum, cc: &mut Consts) -> Result<Float, Box<dyn std::error::Error>> {
+/// Takes `x` by value (the scaling consumes it); callers rebuild the operand from its seed.
+fn conv_big(w: usize, x: ExactNum, cc: &mut Consts) -> Result<Float, Box<dyn std::error::Error>> {
     let e = x.exponent().unwrap_or(0);
-    let s = x.clone().ldexp(-e, w, RoundingMode::None);
+    let s = x.ldexp(-e, w, RoundingMode::None);
     let f = conv_to_mpfr(w, &s, cc)?;
     // MPFR's default exponent range is narrower than zenith's.
     let old = unsafe { mpfr::get_emax() };
@@ -97,18 +100,24 @@ fn overflow_by_mode_binary() -> Result<(), Box<dyn std::error::Error>> {
     for p in PRECISIONS {
         let w = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
         for _ in 0..3 {
-            let x = input(p, EXPONENT_MAX - 1, EXPONENT_MAX, true)?;
-            let y = input(p, EXPONENT_MAX - 1, EXPONENT_MAX, true)?;
-            let small = input(p, -3, -1, true)?;
-            let two = input(p, 3, 4, false)?;
+            // Every operand is drawn from its own seed and rebuilt from it for each consuming use.
+            let (sx, sy, ss, st) = (draw_seed(), draw_seed(), draw_seed(), draw_seed());
+            let mk_x = || rebuild_from_seed(sx, || input(p, EXPONENT_MAX - 1, EXPONENT_MAX, true));
+            let mk_y = || rebuild_from_seed(sy, || input(p, EXPONENT_MAX - 1, EXPONENT_MAX, true));
+            let mk_small = || rebuild_from_seed(ss, || input(p, -3, -1, true));
+            let mk_two = || rebuild_from_seed(st, || input(p, 3, 4, false));
+            let x = mk_x()?;
+            let y = mk_y()?;
+            let small = mk_small()?;
+            let two = mk_two()?;
             for (name, zf, mp) in ops.iter() {
-                let b = match *name {
-                    "div" => &small,
-                    "pow" => &two,
-                    _ => &y,
+                let (b, b_owned) = match *name {
+                    "div" => (&small, mk_small()?),
+                    "pow" => (&two, mk_two()?),
+                    _ => (&y, mk_y()?),
                 };
-                let fx = conv_big(w, &x, &mut cc)?;
-                let fb = conv_big(w, b, &mut cc)?;
+                let fx = conv_big(w, mk_x()?, &mut cc)?;
+                let fb = conv_big(w, b_owned, &mut cc)?;
                 for rm in MODES {
                     let got = zf(&x, b, p, rm, &mut cc);
                     let info = format!("{name} p={p} {rm:?} {x:?} {b:?}");
@@ -116,8 +125,8 @@ fn overflow_by_mode_binary() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
             // fma(x, y, x), ldexp(x, 4), powi(x, 3)
-            let fx = conv_big(w, &x, &mut cc)?;
-            let fy = conv_big(w, &y, &mut cc)?;
+            let fx = conv_big(w, mk_x()?, &mut cc)?;
+            let fy = conv_big(w, mk_y()?, &mut cc)?;
             for rm in MODES {
                 let got = x.fma(&y, &x, p, rm);
                 check_ovf(
@@ -130,7 +139,7 @@ fn overflow_by_mode_binary() -> Result<(), Box<dyn std::error::Error>> {
                         mpfr::fma(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), fx.as_raw(), rnd)
                     },
                 )?;
-                let got = x.clone().ldexp(4, p, rm);
+                let got = mk_x()?.ldexp(4, p, rm);
                 check_ovf(
                     &got,
                     p,
@@ -223,8 +232,10 @@ fn overflow_by_mode_unary() -> Result<(), Box<dyn std::error::Error>> {
         let w = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
         for (name, elo, ehi, signed, zf, mp) in ops.iter() {
             for _ in 0..2 {
-                let x = input(p, *elo, *ehi, *signed)?;
-                let fx = conv_big(w, &x, &mut cc)?;
+                let sx = draw_seed();
+                let mk_x = || rebuild_from_seed(sx, || input(p, *elo, *ehi, *signed));
+                let x = mk_x()?;
+                let fx = conv_big(w, mk_x()?, &mut cc)?;
                 for rm in MODES {
                     let got = zf(&x, p, rm, &mut cc);
                     let info = format!("{name} p={p} {rm:?} {x:?}");

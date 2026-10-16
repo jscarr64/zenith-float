@@ -30,6 +30,29 @@ pub fn reset_test_rng() {
     zenith_float_num::reseed_random(zenith_float_num::DEFAULT_RANDOM_SEED);
 }
 
+/// Draws a seed from the test stream; `rebuild_from_seed` replays a generator from it.
+pub fn draw_seed() -> u64 {
+    test_random::<u64>()
+}
+
+/// Runs `build` with both test streams (this file's and the crate's) restarted from `seed`, so it yields the
+/// same operand every time, then resumes both streams from a fresh seed drawn beforehand: a rebuild neither
+/// repeats nor shifts the draws that follow.
+pub fn rebuild_from_seed<T>(seed: u64, build: impl FnOnce() -> T) -> T {
+    let resume = test_random::<u64>();
+    TEST_RNG.with(|rng| *rng.borrow_mut() = StdRng::seed_from_u64(seed));
+    zenith_float_num::reseed_random(seed);
+    let built = build();
+    TEST_RNG.with(|rng| *rng.borrow_mut() = StdRng::seed_from_u64(resume));
+    zenith_float_num::reseed_random(resume);
+    built
+}
+
+/// The value `ExactNum::random_normal(p, emin, emax)` produces from `seed`.
+pub fn normal_from_seed(seed: u64, p: usize, emin: Exponent, emax: Exponent) -> ExactNum {
+    rebuild_from_seed(seed, || ExactNum::random_normal(p, emin, emax))
+}
+
 macro_rules! test_zf_op {
     ($eq:literal, $n1:ident, $n2:ident, $zf_op:ident, $f1:ident, $f2:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
         let n3 = ExactNum::$zf_op(&($n1), &($n2), $p, $rm, &mut $cc);
@@ -70,9 +93,11 @@ macro_rules! test_zf_op {
     };
 }
 
+// `$n1` is an expression yielding the operand to consume (an `ExactNum` the call may move, or a place
+// that the op only borrows); callers that need the operand again rebuild it from its seed.
 macro_rules! test_zf_op_no_cc {
-    ($eq:literal, $n1:ident, $n2:ident, $zf_op:ident, $f1:ident, $f2:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
-        let n3 = ($n1).clone().$zf_op(&($n2), $p, $rm);
+    ($eq:literal, $n1:expr, $n2:ident, $zf_op:ident, $f1:ident, $f2:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
+        let n3 = ($n1).$zf_op(&($n2), $p, $rm);
 
         let mut f3 = Float::with_val($p as u32, 1);
 

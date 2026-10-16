@@ -118,13 +118,18 @@ impl ExactNumNumber {
             let mut x_new = scaled.add(&quot, p_x, RoundingMode::None)?;
             x_new = x_new.div(&n_num, p_x, RoundingMode::None)?;
 
-            let cand = x_new.clone()?;
             if x_new.try_set_precision(p, rm, p_wrk)? {
                 x_new.set_inexact(x_new.inexact() | abs_self.inexact());
                 break Ok(x_new);
             }
             // An exact root (e.g. 1e10^(1/5) = 100) can never be certified by the rounding test;
             // check the nearest p-bit candidate by exact powering instead.
+            // `try_set_precision` modified `x_new`: the candidate is the same Newton step formed again from the
+            // still-live operands.
+            let cand =
+                scaled
+                    .add(&quot, p_x, RoundingMode::None)?
+                    .div(&n_num, p_x, RoundingMode::None)?;
             if let Some(r) = Self::nth_root_exact_candidate(abs_self, &cand, n, p)? {
                 break Ok(r);
             }

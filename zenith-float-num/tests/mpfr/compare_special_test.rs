@@ -11,7 +11,7 @@ use crate::mpfr::common::{
     get_periodic, get_random_rnd_pair, reset_test_rng, test_random, test_zf_op_no_cc,
     test_zf_rem_pi,
 };
-use crate::mpfr::common::{get_prec_rng, test_zf_op};
+use crate::mpfr::common::{draw_seed, get_prec_rng, rebuild_from_seed, test_zf_op};
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
 use rug::{
     float::{exp_max, exp_min},
@@ -20,6 +20,13 @@ use rug::{
 use zenith_float_num::{
     Consts, ExactNum, Exponent, EXPONENT_BIT_SIZE, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
 };
+
+/// The `i`-th operand of a rebuilt list.
+fn nth_of(list: [ExactNum; 13], i: usize) -> Result<ExactNum, Box<dyn std::error::Error>> {
+    list.into_iter()
+        .nth(i)
+        .ok_or_else(|| "operand index out of range".into())
+}
 
 #[test]
 fn mpfr_compare_special() -> Result<(), Box<dyn std::error::Error>> {
@@ -69,23 +76,28 @@ fn run_compare_special(
 
         let (rm, rnd) = get_random_rnd_pair();
 
-        let nn = [
-            ExactNum::new(p1),
-            ExactNum::new(p1).neg(),
-            ExactNum::from_i8(1, p1),
-            ExactNum::from_i8(-1, p1),
-            ExactNum::max_value(p1),
-            ExactNum::min_value(p1),
-            ExactNum::min_positive_normal(p1),
-            ExactNum::min_positive_normal(p1).neg(),
-            get_oned_zeroed(p1, emin, emax),
-            get_oned_sides(p1, emin, emax),
-            get_periodic(p1, emin, emax),
-            get_last_zero(p1, emin, emax),
-            get_near_one(p1),
-        ];
+        // `n` is consumed by add / sub / mul / div below: the list is rebuilt from its seed for every use.
+        let mk_nn = || {
+            [
+                ExactNum::new(p1),
+                ExactNum::new(p1).neg(),
+                ExactNum::from_i8(1, p1),
+                ExactNum::from_i8(-1, p1),
+                ExactNum::max_value(p1),
+                ExactNum::min_value(p1),
+                ExactNum::min_positive_normal(p1),
+                ExactNum::min_positive_normal(p1).neg(),
+                get_oned_zeroed(p1, emin, emax),
+                get_oned_sides(p1, emin, emax),
+                get_periodic(p1, emin, emax),
+                get_last_zero(p1, emin, emax),
+                get_near_one(p1),
+            ]
+        };
+        let sn = draw_seed();
+        let nn = rebuild_from_seed(sn, mk_nn);
 
-        for n in nn.iter() {
+        for (idx, n) in nn.iter().enumerate() {
             //println!("{:?}", n);
 
             let f = conv_to_mpfr(p1, n, &mut cc)?;
@@ -114,7 +126,7 @@ fn run_compare_special(
                 //println!("\n--{:?}\n{:?}", f, f1);
                 test_zf_op_no_cc!(
                     true,
-                    n,
+                    nth_of(rebuild_from_seed(sn, mk_nn), idx)?,
                     n1,
                     add,
                     f,
@@ -128,7 +140,7 @@ fn run_compare_special(
                 );
                 test_zf_op_no_cc!(
                     true,
-                    n,
+                    nth_of(rebuild_from_seed(sn, mk_nn), idx)?,
                     n1,
                     sub,
                     f,
@@ -142,7 +154,7 @@ fn run_compare_special(
                 );
                 test_zf_op_no_cc!(
                     true,
-                    n,
+                    nth_of(rebuild_from_seed(sn, mk_nn), idx)?,
                     n1,
                     mul,
                     f,
@@ -156,7 +168,7 @@ fn run_compare_special(
                 );
                 test_zf_op_no_cc!(
                     true,
-                    n,
+                    nth_of(rebuild_from_seed(sn, mk_nn), idx)?,
                     n1,
                     div,
                     f,
