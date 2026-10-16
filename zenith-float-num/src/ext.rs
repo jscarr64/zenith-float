@@ -6735,7 +6735,10 @@ mod grid_digest_tests {
         // Re-recorded: the old value (2_735_357_469_467_868_262) pinned a wrong `log1p` result for the positive
         // subnormal operand 21 with `Down` (the argument itself instead of the argument minus one grid unit);
         // only those two entries (p = 64 and p = 200) differ. See the CHANGELOG.
-        assert_eq!(h.finish(), 6_378_838_253_543_692_452);
+        // Re-recorded again for `nth_root` of a negative number with `Up`/`Down` (they were swapped for odd n >= 5):
+        // the old value was 6_378_838_253_543_692_452; only `nth_root(5)` entries of negative operands differ,
+        // each confirmed by an exact integer root. See the CHANGELOG.
+        assert_eq!(h.finish(), 9_737_237_917_636_087_535);
         Ok(())
     }
 
@@ -6815,7 +6818,10 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * 6 * 6 * 6);
         println!("reciprocal nth_root grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 1_369_146_293_907_659_395);
+        // Re-recorded for `nth_root` of a negative number with `Up`/`Down` (swapped for odd n >= 5; old value
+        // 1_369_146_293_907_659_395): only the n = 5 and 7 entries of negative operands in those modes differ,
+        // each confirmed by an exact integer root. See the CHANGELOG.
+        assert_eq!(h.finish(), 5_293_753_668_065_513_863);
         Ok(())
     }
 

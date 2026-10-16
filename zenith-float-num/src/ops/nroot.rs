@@ -1,6 +1,6 @@
 //! General n-th root computation.
 
-use crate::common::util::{bump_prec_retry, round_p};
+use crate::common::util::{bump_prec_retry, invert_rm_for_sign, round_p};
 use crate::ops::consts::Consts;
 use crate::{
     defs::{Error, WORD_BIT_SIZE},
@@ -55,7 +55,10 @@ impl ExactNumNumber {
 
         // One correctly rounded root. Chaining sqrt and cbrt rounded twice (x^(1/4) was
         // sqrt(sqrt(x)), each rounded at p bits) and could be one unit off.
-        x = Self::nth_root_newton(&x, n, p, rm)?;
+        // The root of the magnitude is rounded in the direction `rm` has for the result's sign: `Up` on a negative
+        // radicand rounds the magnitude down.
+        let rm_abs = if sign == Sign::Neg { invert_rm_for_sign(rm) } else { rm };
+        x = Self::nth_root_newton(&x, n, p, rm_abs)?;
 
         x.set_sign(sign);
         Ok(x)

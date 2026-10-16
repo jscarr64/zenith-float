@@ -616,3 +616,164 @@ fn primitives_at_20000_bits() -> Res {
         |r, a, rd| r.assign_round(a.cbrt_ref(), rd),
     )
 }
+
+// ---- W1b: regressions for four wrong answers found in published 1.0.12 --------------------------------------------
+//
+// 1.0.12 returned a wrong value for each of these; the branch's exact-`p`-bit kernels were expected to be right, and
+// these tests keep them so (each is checked against MPFR in the six modes, flags included).
+
+/// Operands of the composite-`n` root sweep: the end-of-range grid plus ordinary operands (the 1.0.12 error was at
+/// ordinary exponents: it rounded after each square or cube root).
+fn composite_root_operands() -> Vec<(u64, i64)> {
+    let mut v = unary_operands();
+    v.extend(grid(
+        &[1, 3, 5, 7, 0xdead_beef_1234_5677, u64::MAX],
+        &[-70, -9, -2, 0, 1, 3, 10, 1000, -1000],
+    ));
+    v
+}
+
+/// (a) `nth_root` with a composite `n` (4, 6, 8, 9, 10, 12, 15), whose 1.0.12 implementation took a square or cube
+/// root and rounded after each step (1 ulp wrong in 8 to 27 percent of cases there). On this branch the root is
+/// computed once and rounded once: the branch is already right, this test keeps it so.
+#[test]
+fn nth_root_with_a_composite_n() -> Res {
+    for n in [4usize, 6, 8, 9, 10, 12, 15] {
+        let name = format!("nth_root n={n}");
+        // negative operands only for odd n (an even root of a negative is NaN, checked below)
+        let signs: &[bool] = if n % 2 == 1 { &[false, true] } else { &[false] };
+        unary(
+            &name,
+            Sweep {
+                operands: &composite_root_operands(),
+                signs,
+                precisions: &[1, 2, 3, 5, 24, 53, 64, 65, 128, 200],
+                flags: true,
+                skip: no_skip,
+            },
+            |x, p, rm| x.nth_root(n, p, rm),
+            |r, a, rd| r.assign_round(a.root_ref(n as u32), rd),
+        )?;
+        // exact roots: 3^(n*j) with the exponent a multiple of n
+        let j = 40 / n;
+        let pow = 3u64.pow((n * j) as u32);
+        let n_i = n as i64;
+        let ops: Vec<(u64, i64)> = grid(
+            &[1, pow],
+            &[MIN - 120, MIN - 20, MIN + 5, 0, 10 * n_i, MAX - 130, MAX - 65],
+        )
+        .into_iter()
+        .filter(|&(_, k)| k % n_i == 0)
+        .collect();
+        let name = format!("nth_root n={n} exact");
+        unary(
+            &name,
+            Sweep {
+                operands: &ops,
+                signs: &[false],
+                precisions: &[1, 2, 24, 64, 128],
+                flags: true,
+                skip: no_skip,
+            },
+            |x, p, rm| x.nth_root(n, p, rm),
+            |r, a, rd| r.assign_round(a.root_ref(n as u32), rd),
+        )?;
+    }
+    Ok(())
+}
+
+/// (b) `hypot(1, 2^-k)` for `k >= 9887`: 1.0.12 returned `NaN` there (the scaling squared the small operand into
+/// the underflow range). The branch is right; every mode and precision is compared with MPFR and must not be NaN.
+#[test]
+fn hypot_of_one_and_a_tiny_number_is_not_nan() -> Res {
+    let ks: [i64; 10] = [
+        9_885, 9_886, 9_887, 9_888, 12_000, 100_000, 5_000_000, 2_000_000_000, 2_147_483_000, MIN + 1,
+    ];
+    let mut run = Run::new(true)?;
+    for &k in &ks {
+        let (one, tiny) = (zf(1, 0, false), zf(1, -k, false));
+        let (fone, ftiny) = (mp(1, 0, false), mp(1, -k, false));
+        for &p in &[2usize, 24, 64, 128, 200] {
+            for rm in MODES {
+                let got = one.hypot(&tiny, p, rm);
+                assert!(!got.is_nan(), "hypot(1, 2^-{k}, {p}, {rm:?}) is NaN");
+                let info = format!("hypot(1, 2^-{k})");
+                run.check(&got, p, rm, &info, |r, rnd| {
+                    ternary(r.assign_round(fone.hypot_ref(&ftiny), round_of(rnd)))
+                });
+            }
+        }
+    }
+    run.finish("hypot(1, tiny)", 20);
+    Ok(())
+}
+
+/// (c) `reciprocal` of a tiny negative operand `-2^-2147483649 .. -2^-2147483647`: the quotient overflows and the
+/// sign must be kept (`-Inf`, or the most negative finite number in `Up`/`ToZero`): 1.0.12 returned `+Inf` at
+/// `p >= 129` in the nearest modes. The branch is right.
+#[test]
+fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
+    let ops = [(1u64, MIN - 1), (1, MIN), (1, MIN + 1), (3, MIN - 2), (u64::MAX, MIN - 64)];
+    unary(
+        "reciprocal tiny negative",
+        Sweep {
+            operands: &ops,
+            signs: &[true],
+            precisions: &[24, 64, 128, 129, 192, 200, 256, 512],
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.reciprocal(p, rm),
+        |r, a, rd| r.assign_round(a.recip_ref(), rd),
+    )?;
+    // explicit: the nearest modes give -Inf at p >= 129, never +Inf
+    let mut seen = 0;
+    for k in [MIN - 1, MIN, MIN + 1] {
+        let x = zf(1, k, true);
+        for p in [129usize, 192, 256] {
+            for rm in [RoundingMode::ToEven, RoundingMode::ToOdd, RoundingMode::Down, RoundingMode::FromZero] {
+                let got = x.reciprocal(p, rm);
+                assert!(got.is_inf_neg(), "1 / -2^{k} at {p} bits {rm:?}: {got:?}");
+                seen += 1;
+            }
+        }
+    }
+    assert_eq!(seen, 36);
+    Ok(())
+}
+
+/// (d) `atan2` of a tiny quotient, `atan2(2^-2147483718, 1)`: 1.0.12 flushed it to zero, an earlier build of this
+/// branch gave `NaN(PrecisionRetryExhausted)`. The result is the quotient itself (nonzero, not NaN) once `p` is
+/// large enough to hold it, and MPFR's value in every mode and precision.
+#[test]
+fn atan2_of_a_tiny_quotient_is_neither_zero_nor_nan() -> Res {
+    let ys = [(1u64, MIN - 70), (3, MIN - 70), (1, MIN - 20), (1, MIN), (1, -1000)];
+    let mut run = Run::new(true)?;
+    let mut cc = Consts::new()?;
+    for &(m, k) in &ys {
+        for neg in [false, true] {
+            let y = zf(m, k, neg);
+            let fy = mp(m, k, neg);
+            let (one, fone) = (zf(1, 0, false), mp(1, 0, false));
+            for &p in &[24usize, 64, 128, 200] {
+                if !in_mpfr_range(m, k, p) {
+                    continue;
+                }
+                for rm in MODES {
+                    let got = y.atan2(&one, p, rm, &mut cc);
+                    assert!(!got.is_nan(), "atan2({m:#x} 2^{k}, 1, {p}, {rm:?}) is NaN");
+                    // the quotient has at most 2 significant bits, so from 128 bits (grid 2^(MIN-128)) on it is representable
+                    if k >= MIN - 70 && p >= 128 {
+                        assert!(!got.is_zero(), "atan2({m:#x} 2^{k}, 1, {p}, {rm:?}) is zero");
+                    }
+                    let info = format!("atan2({m:#x} 2^{k} neg {neg}, 1)");
+                    run.check(&got, p, rm, &info, |r, rnd| {
+                        ternary(r.assign_round(fy.atan2_ref(&fone), round_of(rnd)))
+                    });
+                }
+            }
+        }
+    }
+    run.finish("atan2 tiny quotient", 20);
+    Ok(())
+}
