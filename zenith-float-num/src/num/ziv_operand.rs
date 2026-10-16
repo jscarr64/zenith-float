@@ -44,27 +44,27 @@ impl ExactNumNumber {
 
 #[cfg(test)]
 mod tests {
-    use crate::defs::{Error, Sign, Word, EXPONENT_MIN, WORD_SIGNIFICANT_BIT};
+    use crate::defs::{Error, Sign, Word, EXPONENT_MIN, WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT};
     use crate::mantissa::CLONE_CALLS;
     use crate::num::ExactNumNumber;
 
     const TOP: Word = WORD_SIGNIFICANT_BIT;
+    /// A word value that fits the 32-bit word of the 32-bit targets too.
+    const LOW: Word = 0x0123_4567;
+    const W: usize = WORD_BIT_SIZE;
 
     fn clones() -> usize {
         CLONE_CALLS.with(|c| c.get())
     }
 
-    /// A 128-bit number widened to 256 bits: the two words move to the top of a four-word mantissa, the exponent, the
+    /// A two-word number widened to four words: the two words move to the top of a four-word mantissa, the exponent, the
     /// sign and the bit length follow, nothing is rounded. The expected words are written out by hand.
     #[test]
     fn widening_moves_the_words_to_the_top() -> Result<(), Error> {
-        let x = ExactNumNumber::from_words(&[0x0123_4567_89ab_cdef, TOP | 3], Sign::Neg, 5)?;
-        let y = x.ziv_pass_operand(256)?;
-        assert_eq!(
-            y.mantissa().digits(),
-            &[0, 0, 0x0123_4567_89ab_cdef, TOP | 3]
-        );
-        assert_eq!(y.mantissa().bit_len(), 256);
+        let x = ExactNumNumber::from_words(&[LOW, TOP | 3], Sign::Neg, 5)?;
+        let y = x.ziv_pass_operand(4 * W)?;
+        assert_eq!(y.mantissa().digits(), &[0, 0, LOW, TOP | 3]);
+        assert_eq!(y.mantissa().bit_len(), 4 * W);
         assert_eq!(y.exponent(), 5);
         assert!(y.is_negative());
         assert!(!y.inexact());
@@ -75,12 +75,12 @@ mod tests {
     #[test]
     fn same_precision_and_in_between_precisions() -> Result<(), Error> {
         let x = ExactNumNumber::from_words(&[7, TOP | 9], Sign::Pos, -3)?;
-        let same = x.ziv_pass_operand(128)?;
+        let same = x.ziv_pass_operand(2 * W)?;
         assert_eq!(same.mantissa().digits(), &[7, TOP | 9]);
         assert_eq!(same.exponent(), -3);
-        let between = x.ziv_pass_operand(129)?;
+        let between = x.ziv_pass_operand(2 * W + 1)?;
         assert_eq!(between.mantissa().digits(), &[0, 7, TOP | 9]);
-        assert_eq!(between.mantissa().bit_len(), 192);
+        assert_eq!(between.mantissa().bit_len(), 3 * W);
         Ok(())
     }
 
@@ -88,10 +88,10 @@ mod tests {
     #[test]
     fn a_subnormal_operand_keeps_its_exponent_and_gains_low_words() -> Result<(), Error> {
         let x = ExactNumNumber::from_words(&[1, 1], Sign::Pos, EXPONENT_MIN)?;
-        assert_eq!(x.mantissa().bit_len(), 65);
-        let y = x.ziv_pass_operand(256)?;
+        assert_eq!(x.mantissa().bit_len(), W + 1);
+        let y = x.ziv_pass_operand(4 * W)?;
         assert_eq!(y.mantissa().digits(), &[0, 0, 1, 1]);
-        assert_eq!(y.mantissa().bit_len(), 65 + 128);
+        assert_eq!(y.mantissa().bit_len(), W + 1 + 2 * W);
         assert_eq!(y.exponent(), EXPONENT_MIN);
         Ok(())
     }
@@ -100,7 +100,7 @@ mod tests {
     #[test]
     fn zero_stays_zero() -> Result<(), Error> {
         let x = ExactNumNumber::from_words(&[0, 0], Sign::Pos, 17)?;
-        let y = x.ziv_pass_operand(192)?;
+        let y = x.ziv_pass_operand(3 * W)?;
         assert_eq!(y.mantissa().digits(), &[0, 0, 0]);
         assert_eq!(y.mantissa().bit_len(), 0);
         assert!(y.is_zero());
@@ -112,9 +112,9 @@ mod tests {
     fn the_inexact_flags_are_carried_over() -> Result<(), Error> {
         let mut x = ExactNumNumber::from_words(&[1, TOP], Sign::Pos, 1)?;
         x.set_inexact(true);
-        assert!(x.ziv_pass_operand(192)?.inexact());
+        assert!(x.ziv_pass_operand(3 * W)?.inexact());
         x.set_op_inexact(false);
-        let y = x.ziv_pass_operand(192)?;
+        let y = x.ziv_pass_operand(3 * W)?;
         assert!(y.inexact());
         assert!(!y.op_inexact());
         Ok(())
@@ -124,10 +124,7 @@ mod tests {
     #[test]
     fn narrowing_is_refused() -> Result<(), Error> {
         let x = ExactNumNumber::from_words(&[1, TOP], Sign::Pos, 1)?;
-        assert!(matches!(
-            x.ziv_pass_operand(64),
-            Err(Error::InvalidArgument)
-        ));
+        assert!(matches!(x.ziv_pass_operand(W), Err(Error::InvalidArgument)));
         assert!(matches!(x.ziv_pass_operand(0), Err(Error::InvalidArgument)));
         Ok(())
     }
