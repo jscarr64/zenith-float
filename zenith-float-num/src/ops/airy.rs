@@ -74,7 +74,7 @@ impl ExactNumNumber {
         let (c1, c2, sqrt3) = airy_cs(p, cc)?;
         if self.is_zero() {
             let bi0 = sqrt3.mul(&c1, p, RoundingMode::None)?;
-            let aip0 = c2.clone()?.neg()?;
+            let aip0 = c2.neg()?;
             let bip0 = sqrt3.mul(&c2, p, RoundingMode::None)?;
             return Ok((c1, bi0, aip0, bip0));
         }
@@ -103,8 +103,8 @@ impl ExactNumNumber {
             .mul(self, p, RoundingMode::None)?
             .mul(self, p, RoundingMode::None)?;
         let one = Self::from_word(1, p)?;
-        let mut tf = one.clone()?;
-        let mut f = one.clone()?;
+        let mut tf = Self::from_word(1, p)?;
+        let mut f = Self::from_word(1, p)?;
         let mut fp = Self::new2(p, Sign::Pos, false)?;
         let mut tg = self.clone()?;
         let mut g = self.clone()?;
@@ -277,9 +277,10 @@ fn airy_cs(
     let two_third = two.div(&three, p, RoundingMode::None)?;
     let g23 = two_third.gamma(p, RoundingMode::None, cc)?;
     let g13 = third.gamma(p, RoundingMode::None, cc)?;
-    let mut n2t = two_third.clone()?;
+    // `two_third` and `third` are not used again: negate them in place.
+    let mut n2t = two_third;
     n2t.set_sign(Sign::Neg);
-    let mut nt = third.clone()?;
+    let mut nt = third;
     nt.set_sign(Sign::Neg);
     let c1 = three
         .pow(&n2t, p, RoundingMode::None, cc)?
@@ -335,10 +336,10 @@ fn airy_uv_sums(
     alt: bool,
 ) -> Result<(ExactNumNumber, ExactNumNumber), Error> {
     let one = ExactNumNumber::from_word(1, p)?;
-    let mut u = one.clone()?;
-    let mut sum_u = one.clone()?;
+    let mut u = ExactNumNumber::from_word(1, p)?;
+    let mut sum_u = ExactNumNumber::from_word(1, p)?;
     let mut sum_v = one;
-    let mut prev_u = sum_u.clone()?;
+    let mut prev_u = ExactNumNumber::from_word(1, p)?;
     let mut xi_pow = xi.clone()?;
     let cap = p.saturating_add(8);
     for k in 1..=cap {
@@ -391,10 +392,10 @@ fn airy_pq_sums(
     use_v: bool,
 ) -> Result<(ExactNumNumber, ExactNumNumber), Error> {
     let one = ExactNumNumber::from_word(1, p)?;
-    let mut even = one.clone()?;
+    let mut even = ExactNumNumber::from_word(1, p)?;
     let mut odd = ExactNumNumber::new2(p, Sign::Pos, false)?;
     let mut u = one;
-    let mut prev = even.clone()?;
+    let mut prev = ExactNumNumber::from_word(1, p)?;
     let mut zpow = ExactNumNumber::from_word(1, p)?;
     let cap = p.saturating_add(8);
     for k in 1..=cap {
