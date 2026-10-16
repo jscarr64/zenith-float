@@ -1575,7 +1575,9 @@ impl ExactNum {
     pub fn leading_bit_exponent(&self) -> Option<i64> {
         let (words, _, _, e, _) = self.as_raw_parts()?;
         let lz = Self::mantissa_leading_zero_bits(words)?;
-        i64::from(e).checked_sub(1)?.checked_sub(i64::try_from(lz).ok()?)
+        i64::from(e)
+            .checked_sub(1)?
+            .checked_sub(i64::try_from(lz).ok()?)
     }
 
     /// The top 64 bits of the magnitude, the sticky bit below them, and the exponent, for a finite nonzero number:
@@ -1630,7 +1632,8 @@ impl ExactNum {
         if exp > i64::from(crate::EXPONENT_MAX) {
             return Err(Error::ExponentOverflow(Sign::Pos));
         }
-        let grid = i64::from(crate::EXPONENT_MIN) - i64::try_from(pp).map_err(|_| Error::InvalidArgument)?;
+        let grid = i64::from(crate::EXPONENT_MIN)
+            - i64::try_from(pp).map_err(|_| Error::InvalidArgument)?;
         if exp < grid {
             // the highest bit of the value is below the smallest subnormal
             return Err(Error::InvalidArgument);

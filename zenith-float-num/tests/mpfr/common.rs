@@ -521,8 +521,8 @@ where
             Some(unsafe { mpfr::get_exp(w.as_raw()) })
         };
         let bits = match exp {
-            Some(e) if (e as i64) < EXPONENT_MIN as i64 => {
-                (p as i64 - (EXPONENT_MIN as i64 - e as i64)).max(1) as u32
+            Some(e) if widen(e) < EXPONENT_MIN as i64 => {
+                (p as i64 - (EXPONENT_MIN as i64 - widen(e))).max(1) as u32
             }
             _ => p,
         };
@@ -562,6 +562,11 @@ where
         mpfr::set_emax(old_max);
     }
     Ok(out)
+}
+
+/// An MPFR exponent (`c_long`: 32 or 64 bits by target) as an `i64`.
+fn widen<T: Into<i64>>(x: T) -> i64 {
+    x.into()
 }
 
 /// Bit-exact comparison of a zenith result with an MPFR value of the same precision,

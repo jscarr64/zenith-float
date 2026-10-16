@@ -59,10 +59,18 @@ fn expect_of(words: &[u64], e: i64) -> Expect {
         let t = Integer::from(&m >> sh);
         let back = Integer::from(&t << sh);
         let low = Integer::from(&m - &back);
-        Expect { leading, top: t.to_u64_wrapping(), sticky: low != 0 }
+        Expect {
+            leading,
+            top: t.to_u64_wrapping(),
+            sticky: low != 0,
+        }
     } else {
         let t = Integer::from(&m << (64 - bl) as u32);
-        Expect { leading, top: t.to_u64_wrapping(), sticky: false }
+        Expect {
+            leading,
+            top: t.to_u64_wrapping(),
+            sticky: false,
+        }
     }
 }
 
@@ -105,7 +113,11 @@ fn operands() -> Result<Vec<(ExactNum, Expect, String)>, Box<dyn std::error::Err
                 ];
                 for w in &normals {
                     let x = operand(w, neg, e)?;
-                    v.push((x, expect_of(w, e), format!("normal len {len} e {e} neg {neg}")));
+                    v.push((
+                        x,
+                        expect_of(w, e),
+                        format!("normal len {len} e {e} neg {neg}"),
+                    ));
                 }
             }
         }
@@ -120,7 +132,11 @@ fn operands() -> Result<Vec<(ExactNum, Expect, String)>, Box<dyn std::error::Err
                 let bits = (64 * len as i64 - lz) as usize;
                 let w = words_with_bits(len, bits, seed);
                 let x = operand(&w, neg, MIN)?;
-                v.push((x, expect_of(&w, MIN), format!("subnormal len {len} lz {lz} neg {neg}")));
+                v.push((
+                    x,
+                    expect_of(&w, MIN),
+                    format!("subnormal len {len} lz {lz} neg {neg}"),
+                ));
             }
         }
     }
@@ -135,10 +151,26 @@ fn leading_bit_exponent_matches_the_integer_model() -> Res {
     // the named values
     for p in [1usize, 24, 64, 65, 128, 1000, 20_000] {
         let pw = (p.div_ceil(64) * 64) as i64;
-        assert_eq!(ExactNum::min_positive(p).leading_bit_exponent(), Some(MIN - pw), "min_positive({p})");
-        assert_eq!(ExactNum::min_positive_normal(p).leading_bit_exponent(), Some(MIN - 1), "min_positive_normal({p})");
-        assert_eq!(ExactNum::max_value(p).leading_bit_exponent(), Some(MAX - 1), "max_value({p})");
-        assert_eq!(ExactNum::min_value(p).leading_bit_exponent(), Some(MAX - 1), "min_value({p})");
+        assert_eq!(
+            ExactNum::min_positive(p).leading_bit_exponent(),
+            Some(MIN - pw),
+            "min_positive({p})"
+        );
+        assert_eq!(
+            ExactNum::min_positive_normal(p).leading_bit_exponent(),
+            Some(MIN - 1),
+            "min_positive_normal({p})"
+        );
+        assert_eq!(
+            ExactNum::max_value(p).leading_bit_exponent(),
+            Some(MAX - 1),
+            "max_value({p})"
+        );
+        assert_eq!(
+            ExactNum::min_value(p).leading_bit_exponent(),
+            Some(MAX - 1),
+            "min_value({p})"
+        );
     }
     // one is 2^0; a subnormal's value is below the exponent field: 2^-2147483718 is MIN - 70
     assert_eq!(ExactNum::from_word(1, 64).leading_bit_exponent(), Some(0));
@@ -161,10 +193,15 @@ fn leading_bit_exponent_agrees_with_mpfr() -> Res {
     for &m in &[1u64, 3, 0xdead_beef_1234_5677, u64::MAX] {
         for &k in &[-2_000_000_000i64, -1000, -1, 0, 5, 1000, 2_000_000_000] {
             let f = Float::with_val(64, m) << (k as i32);
-            let Some(e) = f.get_exp() else { return Err("no exponent".into()) };
-            let x = ExactNum::from_word(m, 64)
-                .ldexp(k as i32, 64, RoundingMode::ToEven);
-            assert_eq!(x.leading_bit_exponent(), Some(i64::from(e) - 1), "{m:#x} 2^{k}");
+            let Some(e) = f.get_exp() else {
+                return Err("no exponent".into());
+            };
+            let x = ExactNum::from_word(m, 64).ldexp(k as i32, 64, RoundingMode::ToEven);
+            assert_eq!(
+                x.leading_bit_exponent(),
+                Some(i64::from(e) - 1),
+                "{m:#x} 2^{k}"
+            );
         }
     }
     Ok(())
@@ -175,7 +212,11 @@ fn top_u64_mantissa_and_sticky_matches_the_integer_model() -> Res {
     let mut sticky_seen = 0;
     for (x, want, what) in operands()? {
         let got = x.top_u64_mantissa_and_sticky();
-        assert_eq!(got, Some((want.top, want.sticky, want.leading + 1)), "{what}");
+        assert_eq!(
+            got,
+            Some((want.top, want.sticky, want.leading + 1)),
+            "{what}"
+        );
         if want.sticky {
             sticky_seen += 1;
         }
@@ -202,8 +243,14 @@ fn top_u64_mantissa_and_sticky_matches_the_integer_model() -> Res {
     assert_eq!(INF_NEG.top_u64_mantissa_and_sticky(), None);
     assert_eq!(ExactNum::nan(None).top_u64_mantissa_and_sticky(), None);
     // 1, 3 and the smallest subnormal
-    assert_eq!(ExactNum::from_word(1, 64).top_u64_mantissa_and_sticky(), Some((1 << 63, false, 1)));
-    assert_eq!(ExactNum::from_word(3, 64).top_u64_mantissa_and_sticky(), Some((3 << 62, false, 2)));
+    assert_eq!(
+        ExactNum::from_word(1, 64).top_u64_mantissa_and_sticky(),
+        Some((1 << 63, false, 1))
+    );
+    assert_eq!(
+        ExactNum::from_word(3, 64).top_u64_mantissa_and_sticky(),
+        Some((3 << 62, false, 2))
+    );
     assert_eq!(
         ExactNum::min_positive(20_000).top_u64_mantissa_and_sticky(),
         Some((1 << 63, false, MIN - 20_032 + 1))
@@ -213,9 +260,13 @@ fn top_u64_mantissa_and_sticky_matches_the_integer_model() -> Res {
 
 /// The value of an `ExactNum` as `(odd integer, exponent of its lowest set bit)`, from its raw words.
 fn odd_and_exp(x: &ExactNum) -> Result<(Integer, i64), Box<dyn std::error::Error>> {
-    let Some((words, _, _, e, _)) = x.as_raw_parts() else { return Err("no raw parts".into()) };
+    let Some((words, _, _, e, _)) = x.as_raw_parts() else {
+        return Err("no raw parts".into());
+    };
     let m = Integer::from_digits(words, Order::Lsf);
-    let Some(tz) = m.find_one(0) else { return Err("zero mantissa".into()) };
+    let Some(tz) = m.find_one(0) else {
+        return Err("zero mantissa".into());
+    };
     let odd = Integer::from(&m >> tz);
     Ok((odd, i64::from(e) - 64 * words.len() as i64 + i64::from(tz)))
 }
@@ -241,8 +292,29 @@ fn mag_expect(mant: u64, exp: i64, p: usize) -> Option<(Integer, i64)> {
 fn from_mag_parts_is_exact_or_an_error() -> Res {
     let mants = [1u64 << 63, u64::MAX, 1, 3, 0xdead_beef_1234_5677, (1 << 63) | 1, 0];
     let exps = [
-        i64::MAX, i64::MIN, MAX + 1, MAX, MAX - 1, 100, 1, 0, -5, MIN + 64, MIN + 65, MIN + 1, MIN, MIN - 1,
-        MIN - 63, MIN - 64, MIN - 65, MIN - 127, MIN - 128, MIN - 129, MIN - 200, MIN - 20_000, MIN - 20_063,
+        i64::MAX,
+        i64::MIN,
+        MAX + 1,
+        MAX,
+        MAX - 1,
+        100,
+        1,
+        0,
+        -5,
+        MIN + 64,
+        MIN + 65,
+        MIN + 1,
+        MIN,
+        MIN - 1,
+        MIN - 63,
+        MIN - 64,
+        MIN - 65,
+        MIN - 127,
+        MIN - 128,
+        MIN - 129,
+        MIN - 200,
+        MIN - 20_000,
+        MIN - 20_063,
     ];
     let mut ok = 0;
     let mut err = 0;
@@ -254,7 +326,10 @@ fn from_mag_parts_is_exact_or_an_error() -> Res {
                     (Some((odd, e)), Ok(x)) => {
                         ok += 1;
                         if mant == 0 {
-                            assert!(x.is_zero() && !x.is_negative(), "zero mant, exp {exp} p {p}");
+                            assert!(
+                                x.is_zero() && !x.is_negative(),
+                                "zero mant, exp {exp} p {p}"
+                            );
                             assert!(!x.inexact(), "exact");
                             continue;
                         }
@@ -263,11 +338,18 @@ fn from_mag_parts_is_exact_or_an_error() -> Res {
                         assert!(!x.inexact(), "mant {mant:#x} exp {exp} p {p}: inexact");
                         assert!(x.is_positive(), "positive");
                         // the stored width holds p bits
-                        assert!(x.mantissa_max_bit_len().is_some_and(|b| b >= p), "width at p {p}");
+                        assert!(
+                            x.mantissa_max_bit_len().is_some_and(|b| b >= p),
+                            "width at p {p}"
+                        );
                     }
                     (None, Err(_)) => err += 1,
                     (want, got) => {
-                        return Err(format!("mant {mant:#x} exp {exp} p {p}: expected {} got {got:?}", if want.is_some() { "Ok" } else { "an error" }).into());
+                        return Err(format!(
+                            "mant {mant:#x} exp {exp} p {p}: expected {} got {got:?}",
+                            if want.is_some() { "Ok" } else { "an error" }
+                        )
+                        .into());
                     }
                 }
             }
@@ -287,12 +369,32 @@ fn pow2_is_exact_over_the_range() -> Res {
     for &p in &[1usize, 24, 64, 65, 128, 1000, 20_000] {
         let pw = (p.div_ceil(64) * 64) as i64;
         for &exp in &[
-            i64::MAX, MAX + 1, MAX, MAX - 1, 1000, 63, 64, 1, 0, -1, -63, -64, -65, -1000, MIN + 1, MIN, MIN - 1,
-            MIN - 70, MIN - pw + 1, MIN - pw, MIN - pw - 1, i64::MIN,
+            i64::MAX,
+            MAX + 1,
+            MAX,
+            MAX - 1,
+            1000,
+            63,
+            64,
+            1,
+            0,
+            -1,
+            -63,
+            -64,
+            -65,
+            -1000,
+            MIN + 1,
+            MIN,
+            MIN - 1,
+            MIN - 70,
+            MIN - pw + 1,
+            MIN - pw,
+            MIN - pw - 1,
+            i64::MIN,
         ] {
             let got = ExactNum::pow2(exp, p);
             // 2^exp has its lowest (only) bit at exp; it fits iff exp <= MAX - 1 and exp >= grid
-            let fits = exp <= MAX - 1 && exp >= MIN - pw;
+            let fits = exp < MAX && exp >= MIN - pw;
             match got {
                 Ok(x) => {
                     assert!(fits, "pow2({exp}, {p}) must be an error");

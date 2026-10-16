@@ -689,7 +689,16 @@ fn nth_root_with_a_composite_n() -> Res {
 #[test]
 fn hypot_of_one_and_a_tiny_number_is_not_nan() -> Res {
     let ks: [i64; 10] = [
-        9_885, 9_886, 9_887, 9_888, 12_000, 100_000, 5_000_000, 2_000_000_000, 2_147_483_000, MIN + 1,
+        9_885,
+        9_886,
+        9_887,
+        9_888,
+        12_000,
+        100_000,
+        5_000_000,
+        2_000_000_000,
+        2_147_483_000,
+        MIN + 1,
     ];
     let mut run = Run::new(true)?;
     for &k in &ks {
@@ -733,7 +742,12 @@ fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
     for k in [MIN - 1, MIN, MIN + 1] {
         let x = zf(1, k, true);
         for p in [129usize, 192, 256] {
-            for rm in [RoundingMode::ToEven, RoundingMode::ToOdd, RoundingMode::Down, RoundingMode::FromZero] {
+            for rm in [
+                RoundingMode::ToEven,
+                RoundingMode::ToOdd,
+                RoundingMode::Down,
+                RoundingMode::FromZero,
+            ] {
                 let got = x.reciprocal(p, rm);
                 assert!(got.is_inf_neg(), "1 / -2^{k} at {p} bits {rm:?}: {got:?}");
                 seen += 1;
@@ -766,7 +780,10 @@ fn atan2_of_a_tiny_quotient_is_neither_zero_nor_nan() -> Res {
                     assert!(!got.is_nan(), "atan2({m:#x} 2^{k}, 1, {p}, {rm:?}) is NaN");
                     // the quotient has at most 2 significant bits, so from 128 bits (grid 2^(MIN-128)) on it is representable
                     if k >= MIN - 70 && p >= 128 {
-                        assert!(!got.is_zero(), "atan2({m:#x} 2^{k}, 1, {p}, {rm:?}) is zero");
+                        assert!(
+                            !got.is_zero(),
+                            "atan2({m:#x} 2^{k}, 1, {p}, {rm:?}) is zero"
+                        );
                     }
                     let info = format!("atan2({m:#x} 2^{k} neg {neg}, 1)");
                     run.check(&got, p, rm, &info, |r, rnd| {
@@ -806,7 +823,8 @@ fn complex_ln_with_extreme_parts() -> Res {
     let mut run = Run::new(true)?;
     let mut cc = Consts::new()?;
     // (re, im) as (significand, exponent, negative)
-    let cases: [((u64, i64, bool), (u64, i64, bool)); 3] = [
+    type Part = (u64, i64, bool);
+    let cases: [(Part, Part); 3] = [
         ((1, 0, false), (0xdead_beef_1234_5677, -K, false)),
         ((0xdead_beef_1234_5677, -K, true), (1, K, false)),
         ((3, K, false), (0xdead_beef_1234_5677, -K, true)),
@@ -817,7 +835,10 @@ fn complex_ln_with_extreme_parts() -> Res {
         for &p in &[64usize, 128, 256] {
             for rm in MODES {
                 let got = z.ln(p, rm, &mut cc);
-                assert!(!got.re().is_nan() && !got.im().is_nan(), "ln({rm_:#x} 2^{rk} + {im_:#x} 2^{ik} i) is NaN");
+                assert!(
+                    !got.re().is_nan() && !got.im().is_nan(),
+                    "ln({rm_:#x} 2^{rk} + {im_:#x} 2^{ik} i) is NaN"
+                );
                 assert!(!got.re().is_inf(), "ln(..) real part is infinite");
                 let info = format!("ln im({rm_:#x} 2^{rk} neg {rn}, {im_:#x} 2^{ik} neg {inn})");
                 run.check(got.im(), p, rm, &info, |r, rnd| {
@@ -831,12 +852,15 @@ fn complex_ln_with_extreme_parts() -> Res {
                     let hi = Float::with_val(1500, big.abs_ref()).ln()
                         + Float::with_val(
                             1500,
-                            (Float::with_val(1500, small.abs_ref()) / Float::with_val(1500, big.abs_ref()))
-                                .square()
-                                .ln_1p(),
+                            (Float::with_val(1500, small.abs_ref())
+                                / Float::with_val(1500, big.abs_ref()))
+                            .square()
+                            .ln_1p(),
                         ) / 2;
                     let info = format!("ln re({rm_:#x} 2^{rk}, {im_:#x} 2^{ik} i)");
-                    run.check(got.re(), p, rm, &info, |r, rnd| ternary(r.assign_round(&hi, round_of(rnd))));
+                    run.check(got.re(), p, rm, &info, |r, rnd| {
+                        ternary(r.assign_round(&hi, round_of(rnd)))
+                    });
                 }
             }
         }
