@@ -10,6 +10,7 @@ the exception allowlist only go down; all of them are CODEOWNERS-protected (`@js
 | `.clone(` occurrences | `rules_scan.py` `clone_count()` | `tools/clone_count_baseline.txt` | library dirs **and test code** (see below) |
 | hidden copy helpers | `no_clone.py --helpers` / `helper_copy_count()` | `tools/helper_copy_count_baseline.txt` | library dirs and test code |
 | excepted `.clone()` sites | `no_clone.py` allowlist | `tools/exception_count_baseline.txt` | none (the allowlist is empty, baseline 0) |
+| `unwrap`/`expect`/`panic!`/`unreachable!`/`todo!`/`unimplemented!` in **test code** | `rules_scan.py` `test_panic_sites()` (`--list-test-panics`) | `tools/test_panic_count_baseline.txt` | `#[cfg(test)]` items, test files and dirs, the compare crate |
 | `add_ref(` / `sub_ref(` uses | `rules_scan.py` | `tools/ref_sum_count_baseline.txt` | **library code only** (`REF_SCOPE`) |
 | `mul_ref(` / `div_ref(` uses | `rules_scan.py` | `tools/mul_ref_count_baseline.txt` | **library code only** (`REF_SCOPE`) |
 
@@ -22,6 +23,17 @@ the exception allowlist only go down; all of them are CODEOWNERS-protected (`@js
 The diff scan (`rules_scan.sh A..B`) applies the clone rules (`.clone(`, `.to_vec(`, `.cloned(`) to added test lines too
 (`#[cfg(test)]` items, `tests.rs`, `tests/`, `benches/`, `examples/` files under the library dirs). Test code stays exempt
 from the other rules (`unsafe`, `allow`, `unwrap`, `expect`, `panic!`, `f32`/`f64`), whose meaning is unchanged.
+
+### Test code may not crash either (Jeff)
+
+`unwrap(`, `unwrap_err(`, `expect(`, `expect_err(`, `panic!`, `unreachable!`, `todo!` and `unimplemented!` are banned in test
+code as in library code (`rules_scan.PANIC_RULES`). `assert!`, `assert_eq!`, `assert_ne!` and `debug_assert!` are fine: a
+test returns `Result<(), E>` and uses `?`, or asserts. The ratchet counts every such site in test code (the compare crate
+is counted whole) and may only go down (`tools/test_panic_count_baseline.txt`, CODEOWNERS `@jscarr64`).
+`rules_scan.sh --list-test-panics` prints each site. The per-line diff scan flags added test lines in `--staged`,
+`--working` and `--diff-file` modes (and in test-dir files outside the library dirs); a RANGE scan leaves test code to
+the ratchet, because the legacy sites of old commits would fail every range. An unwrap that is truly necessary must be
+reported to Jeff with file:line and the reason a `Result` return cannot work; there is no allowlist for it.
 
 ### Helper-copy counter: how it counts
 

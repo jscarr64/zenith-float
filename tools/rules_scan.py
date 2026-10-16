@@ -9,6 +9,7 @@ Usage:
   tools/rules_scan.sh --staged             # git diff --cached
   tools/rules_scan.sh --working            # git diff HEAD (staged + unstaged)
   tools/rules_scan.sh --diff-file F        # a saved unified diff (used by the self-test)
+  tools/rules_scan.sh --list-test-panics   # every unwrap/expect/panic!/... site in test code (file:line [kind]), then the count
   tools/rules_scan.sh --count-only         # only the count baseline checks (clone, helper-copy, ref ratchets) and the exception checks
   tools/rules_scan.sh --update-baseline    # lower the baselines to the current counts (never raises one)
 
@@ -68,13 +69,19 @@ PATTERNS = [
     ("to_owned", re.compile(r"\.to_owned\(")),
     ("unsafe", re.compile(r"\bunsafe\b")),
     ("allow", re.compile(r"#!?\[allow\b|^\s*#!?\[.*\ballow\(")),
-    ("unwrap", re.compile(r"\bunwrap\(")),
-    ("expect", re.compile(r"\bexpect\(")),
+    ("unwrap", re.compile(r"\bunwrap(?:_err)?\(")),
+    ("expect", re.compile(r"\bexpect(?:_err)?\(")),
     ("panic", re.compile(r"\bpanic!")),
+    ("unreachable", re.compile(r"\bunreachable!")),
+    ("todo", re.compile(r"\btodo!")),
+    ("unimplemented", re.compile(r"\bunimplemented!")),
     ("f32", re.compile(r"\bf32\b|\d_?f32\b")),
     ("f64", re.compile(r"\bf64\b|\d_?f64\b")),
 ]
 CLONE_RULES = ("clone", "to_vec", "cloned")  # applied to test code too
+# Jeff: no crash in TEST code either. These apply to test code as well (counted by the test-panic ratchet, and flagged
+# on added test lines by the --staged / --working / --diff-file scans). assert!/assert_eq!/debug_assert! are fine.
+PANIC_RULES = ("unwrap", "expect", "panic", "unreachable", "todo", "unimplemented")
 STR = re.compile(r'"(?:\\.|[^"\\])*"')
 
 
@@ -92,6 +99,42 @@ def is_lib_only(path):
     if not LIB.match(path) or parts[-1] == "tests.rs":
         return False
     return not (REF_EXCL_PARTS & set(parts[:-1]))
+
+
+def is_test_file(rel):
+    """whole-file test code: the test dirs (no_clone.TEST_DIRS), any tests.rs, any tests/ benches/ examples/ component"""
+    parts = rel.split("/")
+    if any(rel == d or rel.startswith(d + "/") for d in no_clone.TEST_DIRS):
+        return True
+    if rel.startswith("zenith-float-compare/src/"):  # benchmark adapters: a crash there is a crash in a test run
+        return True
+    return parts[-1] == "tests.rs" or bool(REF_EXCL_PARTS & set(parts[:-1]))
+
+
+def is_test_dir_file(path):
+    """.rs files in no_clone.TEST_DIRS (outside the library dirs): scanned for the clone and PANIC rules only"""
+    return path.endswith(".rs") and "tools" not in path.split("/")[:-1] and \
+        any(path.startswith(d + "/") for d in no_clone.TEST_DIRS)
+
+
+def test_panic_sites(with_lib=False):
+    """-> [(rel, line, label)] of the PANIC_RULES constructs in TEST code (cfg(test) items and whole test files, the
+    compare crate counts as test code) of every scanned file (library + test dirs). with_lib=True also returns the same
+    constructs in the non-test library code (which must be 0: the diff scan flags them as library violations)."""
+    out = []
+    for rel, p in no_clone.rs_files():
+        lines = open(p, errors="replace").read().split("\n")
+        whole = is_test_file(rel)
+        mask = no_clone.test_mask(lines)
+        for i, l in enumerate(lines):
+            if not (whole or mask[i]) and not with_lib:
+                continue
+            code = strip(l)
+            for label, rx in PATTERNS:
+                if label in PANIC_RULES:
+                    for _ in rx.finditer(code):
+                        out.append((rel, i + 1, label))
+    return out
 
 
 def strip(line):
@@ -148,7 +191,7 @@ def load_allow():
 def scan_diff(text, mode, rev):
     allow, hits, masks = load_allow(), [], {}
     for path, n, content in parse_diff(text):
-        if not is_lib(path):
+        if not (is_lib(path) or is_test_dir_file(path)):
             continue
         if path not in masks:
             t = tip_text(path, mode, rev)
@@ -157,13 +200,19 @@ def scan_diff(text, mode, rev):
         # test code (#[cfg(test)] items, tests.rs, tests/ benches/ examples/ files) is exempt from the NON-clone rules
         # (unwrap, expect, panic!, unsafe, allow, f32/f64) as before, but the clone rules apply to it: it is counted.
         in_test = (m is not None and 0 < n <= len(m) and m[n - 1]) or not is_lib_only(path)
+        # PANIC_RULES (unwrap, expect, panic!, unreachable!, todo!, unimplemented!) apply to test code too (Jeff). In a
+        # RANGE scan the legacy test sites make the added lines of old commits fail, so there the test-panic RATCHET
+        # (tools/test_panic_count_baseline.txt) is the enforcement; --staged/--working/--diff-file flag them per line.
+        strict_panic = mode != "range"
         code = strip(content)
         key = "%s:%s" % (path, hashlib.sha1(" ".join(content.split()).encode()).hexdigest()[:12])
         for label, rx in PATTERNS:
             if label in ("f32", "f64") and not CALC.match(path):
                 continue
-            if in_test and label not in CLONE_RULES:
+            if in_test and label not in CLONE_RULES and not (strict_panic and label in PANIC_RULES):
                 continue
+            if label not in CLONE_RULES + PANIC_RULES and not is_lib(path):
+                continue  # test-dir files outside the library dirs: clone and PANIC rules only
             if rx.search(code) and key not in allow:
                 hits.append((path, n, label, " ".join(content.split()), key))
     return hits
@@ -311,14 +360,28 @@ def exception_check(update=False):
     return max(rc, ratchet("clone exceptions", "exception_count_baseline.txt", len(r["allowed"]), update, "site count"))
 
 
+def test_panic_check(update=False):
+    """unwrap/expect/panic!/unreachable!/todo!/unimplemented! in test code: may only go down"""
+    sites = test_panic_sites()
+    by = collections.Counter(x[2] for x in sites)
+    return ratchet("test-panic", "test_panic_count_baseline.txt", len(sites), update, "site count", " %s" % dict(sorted(by.items())))
+
+
 def both_count_checks(update=False):
-    rc = max(count_check(update), ref_count_check(update), helper_count_check(update), exception_check(update))
+    rc = max(count_check(update), ref_count_check(update), helper_count_check(update), exception_check(update),
+             test_panic_check(update))
     if rc == 0:
         print("rules_scan: all count baselines hold")
     return rc
 
 
 def main(argv):
+    if "--list-test-panics" in argv:
+        sites = test_panic_sites()
+        for rel, n, label in sites:
+            print("%s:%d [%s]" % (rel, n, label))
+        print("rules_scan: %d test-panic sites %s" % (len(sites), dict(sorted(collections.Counter(x[2] for x in sites).items()))))
+        return 0
     if "--count-only" in argv:
         return both_count_checks()
     if "--update-baseline" in argv:

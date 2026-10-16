@@ -6,6 +6,7 @@
 /tools/mul_ref_count_baseline.txt @jscarr64
 /tools/helper_copy_count_baseline.txt @jscarr64
 /tools/exception_count_baseline.txt @jscarr64
+/tools/test_panic_count_baseline.txt @jscarr64
 /tools/NO_CLONE_RULES.md @jscarr64
 /tools/rules_scan.py @jscarr64
 /tools/rules_scan.sh @jscarr64

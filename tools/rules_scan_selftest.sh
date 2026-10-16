@@ -13,7 +13,7 @@ mkdiff() { # mkdiff <path> <added line...>  -> fixture diff on stdout
   for l in "$@"; do printf '+%s\n' "$l"; done
 }
 LIB=zenith-float-num/src/foo.rs
-export RULES_SCAN_ROOT="$t"; mkdir -p "$t/tools"; : > "$t/tools/rules_allowlist.txt"; echo 0 > "$t/tools/clone_count_baseline.txt"; echo 0 > "$t/tools/ref_sum_count_baseline.txt"; echo 0 > "$t/tools/mul_ref_count_baseline.txt"; echo 0 > "$t/tools/helper_copy_count_baseline.txt"; echo 0 > "$t/tools/exception_count_baseline.txt"
+export RULES_SCAN_ROOT="$t"; mkdir -p "$t/tools"; : > "$t/tools/rules_allowlist.txt"; echo 0 > "$t/tools/clone_count_baseline.txt"; echo 0 > "$t/tools/ref_sum_count_baseline.txt"; echo 0 > "$t/tools/mul_ref_count_baseline.txt"; echo 0 > "$t/tools/helper_copy_count_baseline.txt"; echo 0 > "$t/tools/exception_count_baseline.txt"; echo 0 > "$t/tools/test_panic_count_baseline.txt"
 export RULES_SCAN_SKIP_COUNT=1   # fixture diffs have no tree to count
 
 mkdiff $LIB 'let a = 1 + 2;' 'let s = a.max(b);' > "$t/clean.diff"
@@ -32,18 +32,32 @@ unsafe|unsafe { core::hint::unreachable_unchecked() }
 allow|#[allow(dead_code)]
 allow|#![allow(clippy::all)]
 unwrap|let v = r.unwrap();
+unwrap|let v = r.unwrap_err();
 expect|let v = r.expect("boom");
+expect|let v = r.expect_err("boom");
 panic|panic!("no");
+unreachable|unreachable!();
+todo|todo!();
+unimplemented|unimplemented!();
 f32|let a: f32 = 1.0;
 f64|let a = 1.0_f64; let b: f64 = 2.0;
 CASES
 
-# not flagged: comment, string, removed line, context line, deny attr, unwrap_or, unsafe_code, non-library paths (tools/, top-level tests/benches/examples, README); cfg(test) not visible in diff-file mode so paths only
+# not flagged: comment, string, removed line, context line, deny attr, unwrap_or, unsafe_code, non-library paths (tools/, README); cfg(test) not visible in diff-file mode so paths only
 mkdiff $LIB '// x.clone() unsafe unwrap() f64' '/// doc: panic! #[allow]' 'let s = "x.clone() unwrap() f32";' '#![forbid(unsafe_code)]' 'let v = r.unwrap_or(0);' 'let v = r.expect_err_x;' > "$t/ok.diff"
 scan --diff-file "$t/ok.diff" >/dev/null || fail "comment/string/benign lines flagged: $(scan --diff-file "$t/ok.diff")"
-for p in zenith-float-num/tests/x.rs benches/b.rs examples/e.rs tools/t.rs README.md; do
+for p in tools/t.rs README.md; do
   mkdiff $p 'let y = x.clone(); unsafe {} r.unwrap(); let a: f64 = 1.0;' > "$t/p.diff"
   scan --diff-file "$t/p.diff" >/dev/null || fail "non-lib path flagged: $p"
+done
+# the test dirs (no_clone.TEST_DIRS) are scanned for the clone rules and the PANIC rules (unwrap, expect, panic!, ...), not for unsafe/allow/f32/f64
+for p in zenith-float-num/tests/x.rs benches/b.rs examples/e.rs tests/mod.rs nostd-tests/src/lib.rs; do
+  for line in 'let y = x.clone();' 'let v = r.unwrap();' 'let v = r.expect("x");' 'panic!("p");' 'unreachable!();' 'todo!();' 'unimplemented!();'; do
+    mkdiff $p "$line" > "$t/p.diff"
+    scan --diff-file "$t/p.diff" >/dev/null && fail "test-dir file $p: not flagged: $line"
+  done
+  mkdiff $p 'unsafe {} #[allow(dead_code)] let a: f64 = 1.0; let b: f32 = 1.0;' > "$t/p.diff"
+  scan --diff-file "$t/p.diff" >/dev/null || fail "test-dir file $p: unsafe/allow/f64 flagged: $(scan --diff-file "$t/p.diff")"
 done
 printf 'diff --git a/%s b/%s\n--- a/%s\n+++ b/%s\n@@ -1,2 +1,1 @@\n-let y = x.clone();\n context\n' $LIB $LIB $LIB $LIB > "$t/rm.diff"
 scan --diff-file "$t/rm.diff" >/dev/null || fail "removed line flagged"
@@ -54,11 +68,19 @@ for p in zenith-float-num/src/ops/tests.rs zenith-float-num/src/tests/x.rs zenit
   scan --diff-file "$t/p.diff" >/dev/null && fail "test-code path no longer exempt, but not flagged: $p"
 done
 
-# ...but the non-clone rules stay exempt for test files (tests.rs, tests/ benches/ examples/ components)
+# the PANIC rules (unwrap, expect, panic!, unreachable!, todo!, unimplemented!) apply to test files too (Jeff): a panic in test code fails the scan
 for p in zenith-float-num/src/ops/tests.rs zenith-float-num/src/tests/x.rs; do
-  mkdiff $p 'let v = r.unwrap(); let w = r.expect("x"); panic!("p"); let a: f64 = 1.0; unsafe {}' > "$t/p.diff"
-  scan --diff-file "$t/p.diff" >/dev/null || fail "non-clone rule flagged in test file $p: $(scan --diff-file "$t/p.diff")"
+  for line in 'let v = r.unwrap();' 'let w = r.expect("x");' 'panic!("p");' 'unreachable!();' 'todo!();' 'unimplemented!();'; do
+    mkdiff $p "$line" > "$t/p.diff"
+    scan --diff-file "$t/p.diff" >/dev/null && fail "panic rule not applied to test file $p: $line"
+  done
+  # ...while the other non-clone rules stay exempt for test files
+  mkdiff $p 'let a: f64 = 1.0; unsafe {} #[allow(dead_code)]' > "$t/p.diff"
+  scan --diff-file "$t/p.diff" >/dev/null || fail "unsafe/allow/f64 flagged in test file $p: $(scan --diff-file "$t/p.diff")"
 done
+# assert! macros are fine in test code
+mkdiff zenith-float-num/src/ops/tests.rs 'assert!(a == b); assert_eq!(a, b); assert_ne!(a, b); debug_assert!(a);' > "$t/p.diff"
+scan --diff-file "$t/p.diff" >/dev/null || fail "assert macros flagged"
 
 # f64 is only a calculation-path rule: compare crate is lib for clone but not for f64
 mkdiff zenith-float-compare/src/a.rs 'let a: f64 = 1.0;' > "$t/c.diff"; scan --diff-file "$t/c.diff" >/dev/null || fail "f64 flagged in compare (not a calc path)"
@@ -74,7 +96,7 @@ scan --diff-file "$t/d.diff" >/dev/null || fail "allowlisted site still flagged"
 # git modes in a throwaway repo
 g="$t/repo"; mkdir -p "$g/zenith-float-num/src" "$g/tools"; cd "$g" || exit 1
 git init -q . && git config user.email a@b && git config user.name t
-cp "$t/tools/rules_allowlist.txt" tools/; echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/ref_sum_count_baseline.txt; echo 0 > tools/mul_ref_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt; echo 0 > tools/exception_count_baseline.txt
+cp "$t/tools/rules_allowlist.txt" tools/; echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/ref_sum_count_baseline.txt; echo 0 > tools/mul_ref_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt; echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/test_panic_count_baseline.txt
 printf 'fn a() {}\n' > zenith-float-num/src/x.rs; git add -A; git commit -qm base; base=$(git rev-parse HEAD)
 export RULES_SCAN_ROOT="$g"; unset RULES_SCAN_SKIP_COUNT
 scan "$base..HEAD" >/dev/null || fail "empty range flagged"
@@ -83,11 +105,11 @@ scan --working >/dev/null && fail "working diff clone not flagged"
 git add -A; scan --staged >/dev/null && fail "staged diff clone not flagged"
 scan --working >/dev/null && fail "working mode (git diff HEAD) must still see staged additions"
 git commit -qm bad; scan "$base..HEAD" >/dev/null && fail "range clone not flagged"
-# cfg(test) module in the tip file is exempt from the diff scan's non-clone rules (unwrap...), but its clone IS flagged (test code is counted)
+# cfg(test) module in the tip file: a RANGE scan leaves the panic-rule enforcement to the test-panic ratchet (checked below), but its clone IS flagged (test code is counted)
 printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(x: &S) { let y = x.clone(); let _ = r.unwrap(); }\n}\n' > zenith-float-num/src/x.rs
 git add -A; git commit -qm t; out="$(RULES_SCAN_SKIP_COUNT=1 scan "$base..HEAD")" && fail "clone in a cfg(test) module not flagged by the diff scan"
 echo "$out" | grep -q "\[clone\]" || fail "cfg(test) clone flagged with the wrong label: $out"
-echo "$out" | grep -q "\[unwrap\]" && fail "unwrap in a cfg(test) module flagged (non-clone rules stay exempt for test code): $out"
+echo "$out" | grep -q "\[unwrap\]" && fail "range scan flags a legacy test unwrap per line (the test-panic ratchet covers range mode): $out"
 scan "$base..HEAD" >/dev/null && fail "clone in a cfg(test) module not counted by the range scan's clone count (baseline 0)"
 
 # clone-count baseline: may only go down
@@ -250,5 +272,38 @@ echo 2 > tools/clone_count_baseline.txt
 echo 1 > tools/exception_count_baseline.txt; scan --count-only | grep -q "clone exceptions site count 2 is ABOVE the baseline 1" || fail "adding an exception entry beyond the baseline not caught: $(scan --count-only)"
 scan --count-only >/dev/null && fail "extra exception entry passed"
 rm -f tools/exception_count_baseline.txt; scan --count-only >/dev/null && fail "missing exception baseline passed"
+
+# ---- test-panic ratchet: unwrap/expect/panic!/unreachable!/todo!/unimplemented! in test code may only go down ----
+: > tools/clone_allowlist.txt; echo 0 > tools/exception_count_baseline.txt; rm -rf zenith-float-num/src/ops/consts
+echo 0 > tools/clone_count_baseline.txt
+rm -rf zenith-float-num/src/x.rs zenith-float-num/src/ops zenith-float-num/tests; mkdir -p zenith-float-num/tests zenith-float-num/src/ops
+cat > zenith-float-num/src/x.rs <<'EOF'
+fn lib(r: R) -> u8 { assert!(true); r.unwrap_or(0) }
+// r.unwrap() in a comment
+fn s() { let x = "r.unwrap() panic!"; }
+#[cfg(test)]
+mod tests { fn t(r: R) { let a = r.unwrap(); let b = r.expect("x"); panic!("p"); } }
+EOF
+printf 'fn t(r: R) { let a = r.unwrap_err(); unreachable!(); todo!(); unimplemented!(); }\n' > zenith-float-num/tests/it.rs
+printf 'fn t(r: R) { let a = r.unwrap(); }\n' > zenith-float-num/src/ops/tests.rs
+# 3 + 4 + 1 = 8 sites (the library fn's unwrap_or, the comment and the string do not count)
+echo 8 > tools/test_panic_count_baseline.txt
+scan --count-only | grep -q "test-panic site count 8 == baseline" || fail "test-panic count should be 8: $(scan --count-only)"
+scan --count-only >/dev/null || fail "test-panic count == baseline should pass: $(scan --count-only)"
+scan --list-test-panics | grep -q "zenith-float-num/tests/it.rs:1 \[unwrap\]" || fail "--list-test-panics misses an integration-test site: $(scan --list-test-panics)"
+echo 7 > tools/test_panic_count_baseline.txt; scan --count-only | grep -q "test-panic site count 8 is ABOVE the baseline 7" || fail "test-panic count above baseline not reported"
+scan --count-only >/dev/null && fail "a new unwrap/panic in test code passed the ratchet"
+echo 12 > tools/test_panic_count_baseline.txt; scan --count-only | grep -qi "test-panic site count 8 is below baseline 12: lower the baseline" || fail "no hint to lower the test-panic baseline"
+scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/test_panic_count_baseline.txt)" = 8 ] || fail "test-panic baseline not lowered"
+echo 0 > tools/test_panic_count_baseline.txt; scan --update-baseline >/dev/null && fail "raising the test-panic baseline allowed"; [ "$(tr -d '[:space:]' < tools/test_panic_count_baseline.txt)" = 0 ] || fail "test-panic baseline raised"
+rm -f tools/test_panic_count_baseline.txt; scan --count-only >/dev/null && fail "missing test-panic baseline passed"
+# a library (non-test) unwrap is not a test-panic site: it is the diff scan's job (flagged there)
+printf 'fn lib(r: R) -> u8 { r.unwrap() }\n' > zenith-float-num/src/x.rs; rm -f zenith-float-num/tests/it.rs zenith-float-num/src/ops/tests.rs
+echo 0 > tools/test_panic_count_baseline.txt; scan --count-only >/dev/null || fail "library unwrap counted as a test-panic site"
+# staged diff: a new unwrap in a cfg(test) module is flagged per line
+printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(r: R) { let _ = r.unwrap(); }\n}\n' > zenith-float-num/src/x.rs
+git add -A; scan --staged >/dev/null && fail "unwrap in a cfg(test) module not flagged by the staged scan"
+printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(r: R) -> Result<(), E> { let _v = r?; assert!(true); Ok(()) }\n}\n' > zenith-float-num/src/x.rs
+git add -A; scan --staged >/dev/null || fail "Result-returning test flagged: $(scan --staged)"
 
 echo "rules_scan selftest: ok"
