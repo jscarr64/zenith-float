@@ -154,7 +154,7 @@ impl ExactComplex {
 
     /// `a + b` with both operands borrowed: the sanctioned form for a site where both operands are
     /// still needed afterwards (see [`ExactNum::add_ref`]). Parts and flags are those of [`Self::add`];
-    /// a normal operand is never copied, and a subnormal operand is copied once (`normalize` builds a normalized mantissa in a fresh buffer; that copy is to be removed).
+    /// no operand is copied, a subnormal one included (the kernels read it as stored and renormalize the exact result; only `div` shifts a subnormal divisor into its own working buffer, because the division kernel needs a normalized divisor).
     ///
     /// Accuracy: correctly-rounded
     pub fn add_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {

@@ -388,7 +388,7 @@ fn log_with_base_near_a_grid_point_at_40064_bits() -> Res {
 
 /// MPFR's default exponent range is narrower than zenith-float's: widen it to the library's for this thread so
 /// that the operand (and the expected value) can be built at any exponent.
-fn use_full_exponent_range() {
+pub fn use_full_exponent_range() {
     use gmp_mpfr_sys::gmp::exp_t;
     use gmp_mpfr_sys::mpfr;
     // SAFETY: only sets MPFR's thread-local exponent bounds, as the other tests of this suite do.

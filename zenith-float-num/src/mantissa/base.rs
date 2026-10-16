@@ -276,9 +276,8 @@ impl Mantissa {
             is_positive,
             full_prec,
         } = spec;
-        // Input is expected to be normalized.
-        debug_assert!(self.m[self.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
-        debug_assert!(m2.m[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
+        // The operands are as stored (a subnormal operand has leading zero bits): the difference is exact
+        // and `maximize` below renormalizes it before it is rounded to `p`.
 
         let p = Self::bit_len_to_word_len(p);
         let mut c = 0;
@@ -379,10 +378,10 @@ impl Mantissa {
             is_positive,
             full_prec,
         } = spec;
-        debug_assert!(self.m[self.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
+        // The operands are as stored: a subnormal operand has leading zero bits and is not normalized
+        // first. The sum is exact, and `maximize` below renormalizes it before it is rounded to `p`.
         // A zero `m2` (with `m2_shift` > 0) sums `self` with nothing: the result is `self` written out and
         // rounded by the code below, which is how `add` and `sub` handle a zero operand.
-        debug_assert!(m2.is_zero() || m2.m[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
         debug_assert!(!m2.is_zero() || m2_shift > 0);
 
         let p = Self::bit_len_to_word_len(p);
@@ -459,6 +458,11 @@ impl Mantissa {
 
         let mut shift = -(c as i64);
 
+        // Only a subnormal first operand (with a subnormal second one) leaves the top bit clear.
+        if m3.m[m3.len() - 1] & WORD_SIGNIFICANT_BIT == 0 {
+            shift += Self::maximize(&mut m3.m) as i64;
+        }
+
         if full_prec {
             m3.m.trunc_trailing_zeroes();
         } else if m3.len() < p {
@@ -494,9 +498,10 @@ impl Mantissa {
         full_prec: bool,
         inexact: &mut bool,
     ) -> Result<(i64, Self), Error> {
-        debug_assert!(self.m[self.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
-        debug_assert!(m2.m[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
-
+        // The operands need not be normalized (a subnormal operand has leading zero bits): the product is
+        // exact and `maximize` below renormalizes it, so the returned shift is the product's leading zero
+        // count (one less when rounding carried), and the caller's exponent is `e1 + e2 - shift` with each
+        // operand's own exponent.
         let mut m3 = Self::reserve_new(self.len() + m2.len())?;
 
         Self::mul_unbalanced(&self.m, &m2.m, &mut m3)?;
@@ -527,11 +532,44 @@ impl Mantissa {
             m3.m.trunc_to(p * WORD_BIT_SIZE);
         }
 
-        debug_assert!((-1..=1).contains(&shift)); // prevent exponent overflow
+        debug_assert!(shift >= -1); // prevent exponent overflow
 
         m3.n = m3.max_bit_len();
 
         Ok((shift, m3))
+    }
+
+    /// Number of leading zero bits of the mantissa (zero for a normalized mantissa).
+    pub(crate) fn leading_zero_bits(&self) -> usize {
+        let mut n = 0;
+        for &w in self.m.iter().rev() {
+            if w != 0 {
+                return n + w.leading_zeros() as usize;
+            }
+            n += WORD_BIT_SIZE;
+        }
+        n
+    }
+
+    /// Writes `src << shift` (bits shifted out at the top are dropped, zeros come in at the bottom) into
+    /// `dst`, which is as long as `src`: each destination word is computed from the source words, no
+    /// slice is copied.
+    fn write_shifted_left(dst: &mut [Word], src: &[Word], shift: usize) {
+        let ws = shift / WORD_BIT_SIZE;
+        let bs = shift % WORD_BIT_SIZE;
+        for (i, d) in dst.iter_mut().enumerate() {
+            let hi = i
+                .checked_sub(ws)
+                .and_then(|j| src.get(j))
+                .copied()
+                .unwrap_or(0);
+            let lo = i
+                .checked_sub(ws + 1)
+                .and_then(|j| src.get(j))
+                .copied()
+                .unwrap_or(0);
+            *d = if bs == 0 { hi } else { (hi << bs) | (lo >> (WORD_BIT_SIZE - bs)) };
+        }
     }
 
     /// Divide mantissa by mantissa, return result and exponent ajustment.
@@ -547,18 +585,34 @@ impl Mantissa {
 
         let k = (p + m2.len()).max(self.len()) + 1;
 
-        let mut e_shift = (m2.len() as i64 - k as i64) * WORD_BIT_SIZE as i64;
+        // The operands are as stored. A subnormal dividend is shifted left (normalized) while it is written
+        // into the padded working buffer `m1` below, which exists for every dividend; a subnormal divisor
+        // is shifted into its own working buffer `d`, because the division kernel needs a normalized
+        // divisor. The caller's exponents are the operands' own, and the shifts are accounted for here.
+        let lz1 = self.leading_zero_bits();
+        let lz2 = m2.leading_zero_bits();
+
+        let mut e_shift =
+            (m2.len() as i64 - k as i64) * WORD_BIT_SIZE as i64 + lz2 as i64 - lz1 as i64;
 
         let mut m1 = Self::reserve_new(k)?;
-        if k > self.len() {
-            let l = k - self.len();
-            m1[l..].copy_from_slice(&self.m);
-            m1[..l].fill(0);
-        } else {
-            m1.copy_from_slice(&self.m);
-        }
+        let l = k - self.len();
+        m1[..l].fill(0);
+        Self::write_shifted_left(&mut m1[l..], &self.m, lz1);
 
-        let (q, r) = Self::div_unbalanced(&m1, &m2.m)?;
+        let d = if lz2 == 0 {
+            None
+        } else {
+            let mut d = Self::reserve_new(m2.len())?;
+            Self::write_shifted_left(&mut d, &m2.m, lz2);
+            Some(d)
+        };
+        let divisor: &[Word] = match &d {
+            Some(d) => d,
+            None => &m2.m,
+        };
+
+        let (q, r) = Self::div_unbalanced(&m1, divisor)?;
 
         e_shift += q.len() as i64 * WORD_BIT_SIZE as i64;
 

@@ -130,7 +130,7 @@ impl ExactNum {
 
     /// `a + b` with both operands borrowed: the sanctioned form for a site where **both operands are
     /// still needed afterwards**. The sum is built in a fresh buffer by the same kernel as [`Self::add`]
-    /// (the zero-aware kernel branch included); a normal operand is never copied, and a subnormal operand is copied once (`normalize` builds a normalized mantissa in a fresh buffer; that copy is to be removed). The result, its signs of zero,
+    /// (the zero-aware kernel branch included); no operand is copied, a subnormal one included (the kernels read it as stored and renormalize the exact result; only `div` shifts a subnormal divisor into its own working buffer, because the division kernel needs a normalized divisor). The result, its signs of zero,
     /// both inexact flags, Inf/NaN handling and subnormal results are those of `add`.
     ///
     /// Use [`Self::add`] when the first operand is dead after the call. Every use of `add_ref` and
@@ -269,7 +269,7 @@ impl ExactNum {
 
     /// `a * b` with both operands borrowed: the sanctioned form for a site where **both operands are
     /// still needed afterwards** (a square `x * x`, a dot-product term, a recurrence step). Built in a
-    /// fresh buffer by the same kernel as [`Self::mul`]; a normal operand is never copied, and a subnormal operand is copied once (`normalize` builds a normalized mantissa in a fresh buffer; that copy is to be removed). The result, sign of
+    /// fresh buffer by the same kernel as [`Self::mul`]; no operand is copied, a subnormal one included (the kernels read it as stored and renormalize the exact result; only `div` shifts a subnormal divisor into its own working buffer, because the division kernel needs a normalized divisor). The result, sign of
     /// zero, both inexact flags, Inf/NaN handling and subnormal results are those of `mul`.
     ///
     /// Every use of `add_ref`, `sub_ref`, `mul_ref` and `div_ref` in library code is counted by
@@ -283,7 +283,7 @@ impl ExactNum {
     /// `self * self`, rounded to `p` bits: the square of a value that is still needed afterwards.
     ///
     /// A plain function, not a copy primitive: it reads `self` twice, builds a fresh result in its own buffer
-    /// and does not consume `self`; a normal `self` is not copied, a subnormal one is copied once by `normalize` (to be removed). Value, sign of zero in every rounding mode, both inexact
+    /// and does not consume `self`; `self` is not copied, a subnormal one included (the product kernel reads it as stored). Value, sign of zero in every rounding mode, both inexact
     /// flags, `op_inexact`, Inf, subnormal results and the error kind of a NaN operand are those of
     /// `ExactNum::mul_ref(&x, &x, p, rm)` (and of the old `x * x`), pinned by `sqr_grid_digest`. It replaces
     /// every `mul_ref(&x, &x, ..)`, so a square is not a both-operands-borrowed product and is not counted by
@@ -6855,7 +6855,7 @@ mod subnormal_copy_tests {
 
     /// No operation copies an operand, subnormal or not: the number of `Mantissa::clone` calls made while
     /// an operation runs is zero, for the four borrowed-borrowed forms, `sqr`, and the owned forms, with the
-    /// subnormal operand on either side. (A subnormal operand used to be cloned once by `normalize`.)
+    /// subnormal operand on either side. (A subnormal operand used to be cloned once by `normalize`; a subnormal divisor is shifted into a kernel working buffer, which is not a `Mantissa::clone`.)
     #[test]
     fn subnormal_operands_are_not_copied() {
         let p = 192;
@@ -6887,4 +6887,3 @@ mod subnormal_copy_tests {
         assert_eq!(clones() - before, 0, "owned forms");
     }
 }
-

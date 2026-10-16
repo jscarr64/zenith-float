@@ -394,24 +394,16 @@ impl ExactNumNumber {
             return Ok(ret);
         }
 
-        let (e1, m1_opt) = self.normalize()?;
-        let m1_normalized = m1_opt.as_ref().unwrap_or(&self.m);
-        let (e2, m2_opt) = d2.normalize()?;
-        let m2_normalized = m2_opt.as_ref().unwrap_or(&d2.m);
-
+        // The product kernel takes the operands as stored, a subnormal one included (it is exact and is
+        // renormalized by the kernel), so no operand is copied or shifted.
         let inputs = self.inexact || d2.inexact;
         let mut inexact = false;
 
-        let (e_shift, m3) = m1_normalized.mul(
-            m2_normalized,
-            p,
-            rm,
-            s == Sign::Pos,
-            full_prec,
-            &mut inexact,
-        )?;
+        let (e_shift, m3) = self
+            .m
+            .mul(&d2.m, p, rm, s == Sign::Pos, full_prec, &mut inexact)?;
 
-        let e = e1 + e2 - e_shift;
+        let e = self.e as i64 + d2.e as i64 - e_shift;
 
         if e > EXPONENT_MAX as i64 {
             return Err(Error::ExponentOverflow(s));
@@ -483,18 +475,14 @@ impl ExactNumNumber {
             return Ok(ret);
         }
 
-        let (e1, m1_opt) = self.normalize()?;
-        let m1_normalized = m1_opt.as_ref().unwrap_or(&self.m);
-        let (e2, m2_opt) = d2.normalize()?;
-        let m2_normalized = m2_opt.as_ref().unwrap_or(&d2.m);
-
+        // The division kernel takes the operands as stored (it accounts for a subnormal operand's leading
+        // zero bits itself), so no operand is cloned.
         let inputs = self.inexact || d2.inexact;
         let mut inexact = false;
 
-        let (e_shift, m3) =
-            m1_normalized.div(m2_normalized, p, rm, s == Sign::Pos, &mut inexact)?;
+        let (e_shift, m3) = self.m.div(&d2.m, p, rm, s == Sign::Pos, &mut inexact)?;
 
-        let e = e1 - e2 + e_shift;
+        let e = self.e as i64 - d2.e as i64 + e_shift;
 
         if e > EXPONENT_MAX as i64 {
             return Err(Error::ExponentOverflow(s));
@@ -705,8 +693,7 @@ impl ExactNumNumber {
             } else {
                 (self, self.s)
             };
-            let (e0, m0_opt) = src.normalize()?;
-            let m0 = m0_opt.as_ref().unwrap_or(&src.m);
+            let (e0, m0) = (src.e as i64, &src.m);
             let inputs = src.inexact;
             let mut inexact = false;
             d3.s = sign;
@@ -730,10 +717,10 @@ impl ExactNumNumber {
             return Ok(ret);
         }
 
-        let (e1, m1_opt) = self.normalize()?;
-        let m1 = m1_opt.as_ref().unwrap_or(&self.m);
-        let (e2, m2_opt) = d2.normalize()?;
-        let m2 = m2_opt.as_ref().unwrap_or(&d2.m);
+        // The sum kernels take the operands as stored (a subnormal operand has leading zero bits and is
+        // renormalized by the kernel together with the result), so no operand is cloned.
+        let (e1, m1) = (self.e as i64, &self.m);
+        let (e2, m2) = (d2.e as i64, &d2.m);
 
         let inputs = self.inexact || d2.inexact;
         let mut inexact = false;
