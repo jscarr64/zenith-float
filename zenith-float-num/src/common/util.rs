@@ -355,13 +355,7 @@ pub(crate) fn random_subnormal(p: usize) -> Result<ExactNumNumber, crate::Error>
         Sign::Neg
     };
 
-    Ok(ExactNumNumber::from_raw_parts(
-        &m,
-        n,
-        s,
-        EXPONENT_MIN,
-        false,
-    )?)
+    ExactNumNumber::from_raw_parts(&m, n, s, EXPONENT_MIN, false)
 }
 
 #[cfg(test)]

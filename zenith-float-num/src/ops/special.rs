@@ -5304,6 +5304,6 @@ mod tests {
     }
 
     fn four_word(p: usize) -> Result<ExactNumNumber, crate::Error> {
-        Ok(ExactNumNumber::from_word(4, p)?)
+        ExactNumNumber::from_word(4, p)
     }
 }
