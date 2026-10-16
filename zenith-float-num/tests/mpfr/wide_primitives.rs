@@ -323,21 +323,20 @@ fn exact_roots_and_reciprocals_at_the_ends() -> Res {
 fn nth_root_over_the_whole_range() -> Res {
     for n in [3usize, 5, 7, 33] {
         let name = format!("nth_root n={n}");
-        // the inexact flag of an exact result is checked by the known-wrong test below
         unary(
             &name,
             Sweep {
                 operands: &unary_operands(),
                 signs: &[false],
                 precisions: &[1, 3, 24, 64, 65, 128],
-                flags: false,
+                flags: true,
                 skip: no_skip,
             },
             |x, p, rm| x.nth_root(n, p, rm),
             |r, a, rd| r.assign_round(a.root_ref(n as u32), rd),
         )?;
     }
-    // exact: 3^40 = (3^8)^5, with the flag checked at the precisions below 64 (see the known-wrong test)
+    // exact: 3^40 = (3^8)^5
     let pow = 3u64.pow(40);
     let ops: Vec<(u64, i64)> = grid(
         &[1, pow],
@@ -352,7 +351,7 @@ fn nth_root_over_the_whole_range() -> Res {
             operands: &ops,
             signs: &[false],
             precisions: &[1, 2, 24, 64, 128],
-            flags: false,
+            flags: true,
             skip: no_skip,
         },
         |x, p, rm| x.nth_root(5, p, rm),
@@ -360,10 +359,11 @@ fn nth_root_over_the_whole_range() -> Res {
     )
 }
 
-/// KNOWN WRONG (finding 2): an exact `nth_root` (`2^7` for `n = 7`, also `2^2147483583`) at 64 bits and more is
-/// flagged inexact in `ToEven` and `ToOdd` (the value is right; the flag is not). At 24 bits it is not flagged.
+/// An exact `nth_root` (`2^7` for `n = 7`, also `2^2147483583`) at 64 bits and more was flagged inexact in `ToEven`
+/// and `ToOdd` (the value was right): the Newton value is exact only up to its working noise, so rounding it
+/// cannot tell. At 24 bits it was not flagged.
 #[test]
-fn nth_root_exact_result_is_not_inexact_known_wrong() -> Res {
+fn nth_root_exact_result_is_not_inexact() -> Res {
     let ops = [(1u64, 7i64), (1, 2_147_483_583)];
     unary(
         "nth_root 7 exact flag",

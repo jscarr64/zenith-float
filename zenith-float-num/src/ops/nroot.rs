@@ -74,7 +74,13 @@ impl ExactNumNumber {
             .mantissa_max_bit_len()
             .saturating_mul(n)
             .saturating_add(WORD_BIT_SIZE);
-        let pw = r.powi(n, bits, RoundingMode::None)?;
+        // A candidate rounded up past the largest number whose power fits (the root of a number near the top of
+        // the range) has a power above the range: it is not the exact root.
+        let pw = match r.powi(n, bits, RoundingMode::None) {
+            Ok(pw) => pw,
+            Err(Error::ExponentOverflow(_)) => return Ok(None),
+            Err(e) => return Err(e),
+        };
         if pw.cmp(abs_self) == 0 {
             r.set_inexact(abs_self.inexact());
             Ok(Some(r))
@@ -119,6 +125,12 @@ impl ExactNumNumber {
             x_new = x_new.div(&n_num, p_x, RoundingMode::None)?;
 
             if x_new.try_set_precision(p, rm, p_wrk)? {
+                // The Newton value is exact only up to its working noise, so rounding it flags the result
+                // inexact even when the root is exact (`nth_root(2^7, 7)` is 2): raise the rounded value to
+                // the `n`-th power to see whether it is.
+                if let Some(r) = Self::nth_root_exact_candidate(abs_self, &x_new, n, p)? {
+                    break Ok(r);
+                }
                 x_new.set_inexact(x_new.inexact() | abs_self.inexact());
                 break Ok(x_new);
             }
