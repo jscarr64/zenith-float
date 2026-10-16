@@ -143,9 +143,9 @@ impl ExactNumNumber {
 
     // restore value for the argument reduced n times.
     // cost: n * (4*O(mul) + O(add))
-    fn sin_arg_restore(&self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
+    fn sin_arg_restore(self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
         // sin(3*x) = 3*sin(x) - 4*sin(x)^3
-        let mut sin = self.clone()?;
+        let mut sin = self;
         let p = sin.mantissa_max_bit_len();
 
         for _ in 0..n {

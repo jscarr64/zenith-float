@@ -128,15 +128,9 @@ impl ExactNumNumber {
         let p_arg = p + if add_prec > 0 { add_prec as usize } else { 0 };
         self.set_precision(p_arg, rm)?;
 
-        let arg_holder;
-        let arg = if reduction_times > 0 {
-            arg_holder = self.tan_arg_reduce(reduction_times)?;
-            &arg_holder
-        } else {
-            &self
-        };
+        let arg = if reduction_times > 0 { self.tan_arg_reduce(reduction_times)? } else { self };
 
-        let ret = Self::tan_series_run(arg, rm)?;
+        let ret = Self::tan_series_run(&arg, rm)?;
 
         if reduction_times > 0 {
             ret.tan_arg_restore(reduction_times, rm)
@@ -205,9 +199,9 @@ impl ExactNumNumber {
     }
 
     // reduce argument n times.
-    fn tan_arg_reduce(&self, n: usize) -> Result<Self, Error> {
+    fn tan_arg_reduce(self, n: usize) -> Result<Self, Error> {
         // tan(3*x) = 3*tan(x) - tan(x)^3 / (1 - 3*tan(x)^2)
-        let mut ret = self.clone()?;
+        let mut ret = self;
         let p = ret.mantissa_max_bit_len();
         if ret.exponent() < EXPONENT_MIN + n as Exponent {
             ret.set_exponent(EXPONENT_MIN);
@@ -221,10 +215,10 @@ impl ExactNumNumber {
     }
 
     // restore value for the argument reduced n times.
-    fn tan_arg_restore(&self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
+    fn tan_arg_restore(self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
         // tan(2*x) = 2*tan(x) / (1 - tan(x)^2)
 
-        let mut val = self.clone()?;
+        let mut val = self;
         let p = val.mantissa_max_bit_len();
 
         for _ in 0..n {

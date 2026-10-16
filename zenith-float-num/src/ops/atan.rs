@@ -175,9 +175,9 @@ impl ExactNumNumber {
     }
 
     // reduce argument n times.
-    fn atan_arg_reduce(&self, n: usize) -> Result<Self, Error> {
+    fn atan_arg_reduce(self, n: usize) -> Result<Self, Error> {
         // y = x / (1 + sqrt(1 + x*x))
-        let mut ret = self.clone()?;
+        let mut ret = self;
         let p = ret.mantissa_max_bit_len();
 
         for _ in 0..n {

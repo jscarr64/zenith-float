@@ -129,9 +129,9 @@ impl ExactNumNumber {
 
     // reduce argument n times.
     // cost: n * O(add)
-    fn cos_arg_reduce(&self, n: usize) -> Result<Self, Error> {
+    fn cos_arg_reduce(self, n: usize) -> Result<Self, Error> {
         // cos(2*x) = 2*cos(x)^2 - 1
-        let mut ret = self.clone()?;
+        let mut ret = self;
         let p = ret.mantissa_max_bit_len();
         if ret.exponent() < EXPONENT_MIN + n as Exponent {
             ret.set_exponent(EXPONENT_MIN);
@@ -146,9 +146,9 @@ impl ExactNumNumber {
 
     // restore value for the argument reduced n times.
     // cost: n * (4*O(mul) + O(add))
-    fn cos_arg_restore(&self, n: usize) -> Result<Self, Error> {
+    fn cos_arg_restore(self, n: usize) -> Result<Self, Error> {
         // cos(2*x) = 2*cos(x)^2 - 1
-        let mut cos = self.clone()?;
+        let mut cos = self;
         let p = cos.mantissa_max_bit_len();
 
         for _ in 0..n {
