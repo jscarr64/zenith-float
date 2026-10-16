@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+## 1.0.13
+
+Patch release: corrects the wrong answers listed below. No public signature, type or documented behaviour changed (the rustdoc item lists of the three crates are identical to 1.0.12). Only results that were wrong, or `NaN(PrecisionRetryExhausted)`, change; every value that was already right is bit for bit the same, and no existing test or pinned value changed. Each case was found by comparing with MPFR 4.2 in all six rounding modes at precisions from 1 to 4096 bits (a precision is rounded up to a multiple of 64, as always).
+
+Unchanged on purpose: the reciprocal of a number below about `2^-2147483647` (a subnormal) is `+-Inf` in the `Down` and `ToZero` modes, as it was in 1.0.12, not the largest finite number. That is the documented overflow rule (overflow is `+-Inf` in every mode and every operation), so changing it for one function would be a behaviour change; it is not part of 1.0.13.
+
+Each line: the call, what 1.0.12 returned, what is returned now.
+
+### `pow`
+
+- `pow(2, 2)`, `pow(2, -3)`, `pow(4, 0.5)`, `pow(9, 1.5)`, `pow(16, 0.25)`, `pow(1.5, 2)` and every other power whose result is exactly representable, at 64 or 256 bits: in `ToEven` the exact result carried the inexact flag; in `Up`, `Down`, `ToZero`, `FromZero` and `ToOdd` the result was `NaN(PrecisionRetryExhausted)`. Now the exact value, not flagged inexact, in every mode. A whole-number exponent, or one that is a multiple of 1/2^6 with a base that is an exact power of the matching root, is computed as an integer power of an exact root; every other `pow` is unchanged.
+- `pow(-3, 1)` at 1 to 63 bits: `-4` (rounded to the requested bits). Now `-3`: the precision is rounded up to a whole word like every other result.
+
+### `fma`
+
+- `fma(1, 1, 2^-300)` at 128 bits, `Up`: `1`. Now `1 + 2^-127`. When one of `a*b` and `c` is more than `p + 128` bits below the other, 1.0.12 returned the larger one and ignored the smaller, so every directed mode, `ToOdd` and the inexact flag were wrong. The smaller term is now replaced by a one-bit stand-in with its sign and the sum is rounded once.
+
+### `reciprocal`
+
+- `1 / -2^-2147483648` at 129 or more bits: `+Inf`. Now `-Inf` (as `div` gives). The overflow raised inside the Newton iteration lost the operand's sign.
+
+### `nth_root`
+
+- `nth_root(2^7, 7)` at 64 or 128 bits, `ToEven` or `ToOdd`: `2` flagged inexact. Now `2`, exact.
+- `nth_root(607 * 2^57, 4)` in `Down`: 1 ulp low (also wrong in other modes for `n = 4, 6, 8, 9, ...`, because the square and cube roots were each rounded to `p` bits before the next step). Now correctly rounded: a chain `n = 2^a * 3^b` runs at a higher precision and is rounded once, and any other composite `n` uses Newton on the whole `n`. Prime `n` is unchanged and the chain is not slower (`n = 4`, `p = 256`: 21.6 us to 12.0 us).
+
+### `hypot`
+
+- `hypot(1, 2^-2147483643)`: exactly `1`, flagged exact. Now `1` in `ToEven`, `Down` and `ToZero`, the next number up in `Up`, flagged inexact.
+- `hypot(1, 3 * 2^-9966)` (a gap of about `1e3000`) or any gap from `2^-9887` up to the end of the range, `Up`: `NaN(PrecisionRetryExhausted)`. Now `1 + 1 ulp`. (`hypot(2, 1e3000)` is the same case scaled.) The result is strictly above the larger operand, so it is now that operand plus a one-bit positive stand-in, rounded once.
+
+### `atan2`
+
+- `atan2(2^2147483517, -2^-2147483643)`, and any `y / x` beyond the exponent range with `x < 0`: `+-pi`. Now `+-pi/2`.
+- `atan2(3 * 2^-9966, 1)` (and `atan2(1e-3000, 1)`), `Down`, `ToZero`, `FromZero`, `Up` and `ToOdd`, and `atan2(1, 2^2147483517)`: `NaN(PrecisionRetryExhausted)`. Now the correctly rounded value, which is the quotient or one bit below it. `atan2(2^-2147483718, 1)` was flushed to zero; now it is the correctly rounded subnormal. `ToEven` and the flag were right.
+
+### Build and tests
+
+- `cargo build --no-default-features` (and the `thumbv7em-none-eabihf` build) no longer builds the `hex_golds` helper binary, which needs `std`: it is now declared with `required-features = ["std"]`. The library, its features and `hex_golds` with default features are unchanged.
+- Two `unwrap()` calls in `zenith-float-num/src/mantissa/fft.rs` and `parser.rs` were restructured (`if let`, `matches!`), so the source hygiene check of `scripts/zenith_prepublish.sh` passes. Same results for every reachable input.
+- New `zenith-float-num/tests/mpfr/wide_primitives.rs` compares `sqrt`, `cbrt`, `reciprocal`, `nth_root`, `hypot`, `atan2`, `fma` and `pow` with MPFR over the whole exponent range, at 20000 bits, and for each case above.
+
 ## 1.0.12 — 2026-10-06
 
 Attribution for code derived from [astro-float](https://github.com/stencillogic/astro-float) (MIT, Copyright (c) 2022 stencillogic; crates `astro-float` 0.9.6, `astro-float-num` 0.3.7, `astro-float-macro` 0.4.6, commit `c0d9a26`). `NOTICE` has the full MIT copyright and permission notice. Each derived file names that origin. Original work stays under Apache-2.0 and is also offered as MIT. The file list is `doc/PROVENANCE.md`.
