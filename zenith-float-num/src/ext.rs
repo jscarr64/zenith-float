@@ -6597,6 +6597,28 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 0a pin for `powi` with exponents long enough to use the windowed square-and-multiply table of odd
+    /// powers (and the plain loop for short ones), over positive and negative bases and all three modes.
+    #[test]
+    fn powi_windowed_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        for i in [2usize, 3, 4, 5, 6] {
+            for n in [7usize, 255, 1000, 65537, 1_000_003] {
+                for p in [64usize, 200] {
+                    for rm in [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down] {
+                        digest(&operand(i).powi(n, p, rm), &mut h)?;
+                        count += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(count, 5 * 5 * 2 * 3);
+        println!("powi windowed digest = {}", h.finish());
+        assert_eq!(h.finish(), 12_976_918_398_664_607_263);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
