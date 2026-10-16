@@ -614,11 +614,11 @@ fn nth_root_over_the_whole_range() -> Res {
     )
 }
 
-/// KNOWN WRONG (1.0.12): `nth_root` with a composite `n` rounds after every square or cube root step (`n = 4, 6, 8, 9,
-/// 12`, and `n = 10, 15, 33` which continue with Newton from the rounded value): the result is one ulp off in about one
+/// Fixed in 1.0.13: `nth_root` with a composite `n` rounded after every square or cube root step (`n = 4, 6, 8, 9,
+/// 12`, and `n = 10, 15, 33` which continued with Newton from the rounded value): the result was one ulp off in about one
 /// case in ten (`ToEven`) and one in five (directed modes). Values only (the flag is checked by the exact-result test).
 #[test]
-fn nth_root_with_a_composite_n_known_wrong() -> Res {
+fn nth_root_with_a_composite_n() -> Res {
     let mut ops = unary_operands();
     ops.extend([(607, 57), (0xdead_beef_1234_5677, -1000), (u64::MAX, 7), (5, MIN + 3)]);
     for n in [4usize, 6, 8, 9, 10, 12, 15, 33] {
@@ -640,7 +640,8 @@ fn nth_root_with_a_composite_n_known_wrong() -> Res {
 }
 
 /// Fixed in 1.0.13: an exact `nth_root` (`2^7` for `n = 7`, also `2^2147483583`) at 64 bits and more is
-/// flagged inexact in `ToEven` and `ToOdd` (the value is right; the flag is not). At 24 bits it is not flagged.
+/// was flagged inexact in `ToEven` and `ToOdd` (the value was right; the flag was not). A precision below 64 bits
+/// computes at 64.
 #[test]
 fn nth_root_exact_result_is_not_inexact() -> Res {
     let ops = [(1u64, 7i64), (1, 2_147_483_583)];

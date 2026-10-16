@@ -44,30 +44,64 @@ impl ExactNumNumber {
         }
 
         let mut sign = Sign::Pos;
-        let mut x = self.clone()?;
         if self.is_negative() {
             if n % 2 == 0 {
                 return Err(Error::InvalidArgument);
             }
             sign = Sign::Neg;
-            x = self.abs()?;
         }
+        let abs_self = self.abs()?;
 
-        let mut n_rem = n;
-        while n_rem % 2 == 0 {
-            x = x.sqrt(p, rm)?;
-            n_rem /= 2;
-        }
+        // `n = 2^a * 3^b` is a chain of square and cube roots; rounding after every step (each to `p` bits)
+        // gives a result that is one ulp off about one time in ten, so the chain runs at a working precision
+        // and the end result is rounded once (Ziv loop). Any other factor goes to Newton on the whole `n`.
+        let twos = n.trailing_zeros() as usize;
+        let mut n_rem = n >> twos;
+        let mut threes = 0usize;
         while n_rem % 3 == 0 {
-            x = x.cbrt(p, rm)?;
             n_rem /= 3;
+            threes += 1;
         }
 
-        if n_rem > 1 {
-            x = Self::nth_root_newton(&x, n_rem, p, rm)?;
-        }
+        let mut x = if n_rem > 1 {
+            Self::nth_root_newton(&abs_self, n, p, rm)?
+        } else {
+            let mut p_inc = WORD_BIT_SIZE;
+            let mut p_wrk = p + p_inc;
+            loop {
+                let mut x = Self::nth_root_chain(&abs_self, twos, threes, p_wrk + WORD_BIT_SIZE)?;
+                if x.try_set_precision(p, rm, p_wrk)? {
+                    x.set_inexact(x.inexact() | abs_self.inexact());
+                    break x;
+                }
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            }
+        };
 
         x.set_sign(sign);
+        Ok(x)
+    }
+
+    /// `abs_self^(1 / (2^twos * 3^threes))` as `twos` square roots and `threes` cube roots at precision `p`,
+    /// truncated (`RoundingMode::None`) at every step. `twos + threes` is at least 1.
+    fn nth_root_chain(
+        abs_self: &Self,
+        twos: usize,
+        threes: usize,
+        p: usize,
+    ) -> Result<Self, Error> {
+        let rm = RoundingMode::None;
+        let (mut x, cbrts) = if twos > 0 {
+            (abs_self.sqrt(p, rm)?, threes)
+        } else {
+            (abs_self.cbrt(p, rm)?, threes.saturating_sub(1))
+        };
+        for _ in 1..twos {
+            x = x.sqrt(p, rm)?;
+        }
+        for _ in 0..cbrts {
+            x = x.cbrt(p, rm)?;
+        }
         Ok(x)
     }
 
