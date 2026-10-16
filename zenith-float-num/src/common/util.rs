@@ -330,7 +330,7 @@ pub fn find_one_from(slice: &[Word], start_pos: usize) -> Option<usize> {
 
 /// Returns random subnormal number.
 #[cfg(test)]
-pub(crate) fn random_subnormal(p: usize) -> ExactNumNumber {
+pub(crate) fn random_subnormal(p: usize) -> Result<ExactNumNumber, crate::Error> {
     let p = round_p(if p < 3 * WORD_BIT_SIZE { 3 * WORD_BIT_SIZE } else { p });
     let n = p - crate::common::test_rng::random::<usize>() % (2 * WORD_BIT_SIZE) - 1;
     let mut m = Vec::with_capacity(p / WORD_BIT_SIZE);
@@ -344,7 +344,7 @@ pub(crate) fn random_subnormal(p: usize) -> ExactNumNumber {
             >> (WORD_BIT_SIZE - n % WORD_BIT_SIZE);
         m.push(w);
     } else {
-        *m.last_mut().unwrap() |= WORD_SIGNIFICANT_BIT;
+        *m.last_mut().ok_or(crate::Error::InvalidArgument)? |= WORD_SIGNIFICANT_BIT;
     }
 
     m.resize(p / WORD_BIT_SIZE, 0);
@@ -355,7 +355,13 @@ pub(crate) fn random_subnormal(p: usize) -> ExactNumNumber {
         Sign::Neg
     };
 
-    ExactNumNumber::from_raw_parts(&m, n, s, EXPONENT_MIN, false).unwrap()
+    Ok(ExactNumNumber::from_raw_parts(
+        &m,
+        n,
+        s,
+        EXPONENT_MIN,
+        false,
+    )?)
 }
 
 #[cfg(test)]

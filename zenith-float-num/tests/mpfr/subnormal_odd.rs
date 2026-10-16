@@ -8,15 +8,19 @@ use rug::Float;
 use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MIN, WORD_BIT_SIZE};
 
 /// `conv_to_mpfr` for values near the bottom of the range: converts `x / 2^e`, then scales.
-fn conv_small(w: usize, x: &ExactNum, cc: &mut Consts) -> Float {
+fn conv_small(
+    w: usize,
+    x: &ExactNum,
+    cc: &mut Consts,
+) -> Result<Float, Box<dyn std::error::Error>> {
     let e = x.exponent().unwrap_or(0);
     let s = x.clone().ldexp(-e, w, RoundingMode::None);
-    let f = conv_to_mpfr(w, &s, cc);
+    let f = conv_to_mpfr(w, &s, cc)?;
     let old = unsafe { mpfr::get_emin() };
     unsafe { mpfr::set_emin(mpfr::get_emin_min()) };
     let f = f << e;
     unsafe { mpfr::set_emin(old) };
-    f
+    Ok(f)
 }
 
 type MpOp<'a> = Box<dyn Fn(&mut Float, rnd_t) -> i32 + 'a>;
@@ -28,13 +32,13 @@ fn reference(
     rm: RoundingMode,
     wide: u32,
     f: &dyn Fn(&mut Float, rnd_t) -> i32,
-) -> (Float, bool) {
+) -> Result<(Float, bool), Box<dyn std::error::Error>> {
     if rm != RoundingMode::ToOdd {
         return mpfr_reference_with(p as u32, rm, f);
     }
-    let (rn, inexact) = mpfr_reference_with(p as u32, RoundingMode::ToEven, f);
-    let (lo, _) = mpfr_reference_with(p as u32, RoundingMode::ToZero, f);
-    let (hi, _) = mpfr_reference_with(p as u32, RoundingMode::FromZero, f);
+    let (rn, inexact) = mpfr_reference_with(p as u32, RoundingMode::ToEven, f)?;
+    let (lo, _) = mpfr_reference_with(p as u32, RoundingMode::ToZero, f)?;
+    let (hi, _) = mpfr_reference_with(p as u32, RoundingMode::FromZero, f)?;
     let old = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
     unsafe {
         mpfr::set_emin(mpfr::get_emin_min());
@@ -51,30 +55,30 @@ fn reference(
         mpfr::set_emin(old.0);
         mpfr::set_emax(old.1);
     }
-    if lo != hi && mid == h {
+    Ok(if lo != hi && mid == h {
         (if rn == lo { hi } else { lo }, inexact)
     } else {
         (rn, inexact)
-    }
+    })
 }
 
 #[test]
-fn subnormal_band_every_mode() {
+fn subnormal_band_every_mode() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     let lo = EXPONENT_MIN;
     for p in PRECISIONS {
         let w = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
         let wide = (4 * w + 256) as u32;
         for i in 0..24 {
-            let x = input(p, lo + 1, lo + 2 * p as i32, true);
-            let y = input(p, -(p as i32) - 2, -1, true);
-            let z = input(p, lo + 1, lo + p as i32, true);
+            let x = input(p, lo + 1, lo + 2 * p as i32, true)?;
+            let y = input(p, -(p as i32) - 2, -1, true)?;
+            let z = input(p, lo + 1, lo + p as i32, true)?;
             // shifts that land exactly on and between subnormal grid points
             let k = i % 7 + 1;
-            let fx = conv_small(w, &x, &mut cc);
-            let fy = conv_small(w, &y, &mut cc);
-            let fz = conv_small(w, &z, &mut cc);
+            let fx = conv_small(w, &x, &mut cc)?;
+            let fy = conv_small(w, &y, &mut cc)?;
+            let fz = conv_small(w, &z, &mut cc)?;
             for rm in MODES {
                 let cases: [(&str, ExactNum, MpOp); 5] = [
                     (
@@ -115,8 +119,8 @@ fn subnormal_band_every_mode() {
                 ];
                 for (name, got, f) in cases.iter() {
                     let info = format!("{name} p={p} {rm:?} x={x:?}");
-                    let (want, inexact) = reference(p, rm, wide, f.as_ref());
-                    assert_exact_eq(got, &want, p, &info, &mut cc);
+                    let (want, inexact) = reference(p, rm, wide, f.as_ref())?;
+                    assert_exact_eq(got, &want, p, &info, &mut cc)?;
                     if !want.is_zero() {
                         assert_eq!(got.inexact(), inexact, "{info}: inexact flag, MPFR {want}");
                     }
@@ -124,4 +128,5 @@ fn subnormal_band_every_mode() {
             }
         }
     }
+    Ok(())
 }

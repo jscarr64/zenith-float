@@ -145,10 +145,10 @@ mod tests {
         };
     }
 
-    fn wordbuf_from_words(s: &[Word]) -> WordBuf {
-        let mut ret = WordBuf::new(s.len()).unwrap();
+    fn wordbuf_from_words(s: &[Word]) -> Result<WordBuf, crate::Error> {
+        let mut ret = WordBuf::new(s.len())?;
         ret.copy_from_slice(s);
-        ret
+        Ok(ret)
     }
 
     #[test]
@@ -165,7 +165,7 @@ mod tests {
             &[WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX],
             &[WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX, WORD_MAX],
         ] {
-            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1))?;
+            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1)?)?;
 
             assert_sqrt!(s1 as &[Word], &qb, &rb, MAX_BUF, "max");
         }
@@ -180,7 +180,7 @@ mod tests {
             &[0, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT],
             &[0, 0, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT],
         ] {
-            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1))?;
+            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1)?)?;
 
             assert_sqrt!(s1 as &[Word], &qb, &rb, MAX_BUF, "significant");
         }
@@ -195,7 +195,7 @@ mod tests {
             &[1, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT],
             &[1, 0, 0, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT],
         ] {
-            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1))?;
+            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1)?)?;
 
             assert_sqrt!(s1 as &[Word], &qb, &rb, MAX_BUF, "lsb + msb");
         }
@@ -210,15 +210,15 @@ mod tests {
             &[1, 0, 0, 0, 0, 0, 7],
             &[1, 0, 0, 0, 0, 0, 0, 8],
         ] {
-            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1))?;
+            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(s1)?)?;
 
             assert_sqrt!(s1 as &[Word], &qb, &rb, MAX_BUF, "subnormal");
         }
 
         for _ in 0..1000 {
-            let s1 = random_normalized_slice(1, MAX_BUF);
+            let s1 = random_normalized_slice(1, MAX_BUF)?;
 
-            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(&s1))?;
+            let (qb, rb) = Mantissa::cbrt_rem(wordbuf_from_words(&s1)?)?;
 
             //println!("\n{:?}\n{:?}\n{:?}", s1, qb, rb);
 
@@ -227,14 +227,14 @@ mod tests {
         Ok(())
     }
 
-    fn random_normalized_slice(min_len: usize, max_len: usize) -> WordBuf {
+    fn random_normalized_slice(min_len: usize, max_len: usize) -> Result<WordBuf, crate::Error> {
         let l = if max_len > min_len {
             random::<usize>() % (max_len - min_len) + min_len
         } else {
             min_len
         };
 
-        let mut s1 = WordBuf::new(l).unwrap();
+        let mut s1 = WordBuf::new(l)?;
 
         for v in s1.iter_mut() {
             *v = random();
@@ -242,6 +242,6 @@ mod tests {
 
         let l = s1.len();
         s1[l - 1] |= WORD_SIGNIFICANT_BIT;
-        s1
+        Ok(s1)
     }
 }

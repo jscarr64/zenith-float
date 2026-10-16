@@ -355,29 +355,29 @@ const SHA512_K: [u64; 80] = [
 mod tests {
     use super::*;
 
-    fn hex32(s: &str) -> [u8; 32] {
+    fn hex32(s: &str) -> Result<[u8; 32], Box<dyn std::error::Error>> {
         let mut o = [0u8; 32];
         for i in 0..32 {
-            o[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap();
+            o[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16)?;
         }
-        o
+        Ok(o)
     }
 
     #[test]
-    fn hash_sha256_hmac_ct() {
+    fn hash_sha256_hmac_ct() -> Result<(), Box<dyn std::error::Error>> {
         assert_eq!(
             sha256(b""),
-            hex32("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+            hex32("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")?
         );
         assert_eq!(
             sha256(b"abc"),
-            hex32("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+            hex32("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")?
         );
         let mut key = [0u8; 20];
         key.fill(0x0b);
         assert_eq!(
             hmac_sha256(&key, b"Hi There"),
-            hex32("b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")
+            hex32("b0344c61d8db38535ca8afceaf0bf12b881dc200c9833da726e9376c2e32cff7")?
         );
         assert!(constant_time_eq(b"abc", b"abc"));
         assert!(!constant_time_eq(b"abc", b"abx"));
@@ -397,5 +397,6 @@ mod tests {
                 0xa5, 0x38, 0x32, 0x7a, 0xf9, 0x27, 0xda, 0x3e,
             ]
         );
+        Ok(())
     }
 }

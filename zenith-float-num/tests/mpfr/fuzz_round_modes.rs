@@ -49,9 +49,9 @@ const ALL_MODES: [RoundingMode; 6] = [
 ];
 
 #[test]
-fn fuzz_mpfr_bit_exact_all_round_modes() {
+fn fuzz_mpfr_bit_exact_all_round_modes() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
 
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
@@ -69,8 +69,8 @@ fn fuzz_mpfr_bit_exact_all_round_modes() {
             // Half of the operands have long runs of ones then zeros, so sums and
             // differences land on exact ties and on carries out of the last word.
             let (n1, f1, n2, f2) = if i % 2 == 0 {
-                let (n1, f1) = get_float_pair(p, emin, emax, &mut cc);
-                let (n2, f2) = get_float_pair(p, emin, emax, &mut cc);
+                let (n1, f1) = get_float_pair(p, emin, emax, &mut cc)?;
+                let (n2, f2) = get_float_pair(p, emin, emax, &mut cc)?;
                 (n1, f1, n2, f2)
             } else {
                 let mut n1 = get_oned_zeroed(p, emin, emax);
@@ -81,8 +81,8 @@ fn fuzz_mpfr_bit_exact_all_round_modes() {
                 if test_random::<bool>() {
                     n2 = n2.neg();
                 }
-                let f1 = conv_to_mpfr(p, &n1, &mut cc);
-                let f2 = conv_to_mpfr(p, &n2, &mut cc);
+                let f1 = conv_to_mpfr(p, &n1, &mut cc)?;
+                let f2 = conv_to_mpfr(p, &n2, &mut cc)?;
                 (n1, f1, n2, f2)
             };
             for op in ops {
@@ -93,9 +93,9 @@ fn fuzz_mpfr_bit_exact_all_round_modes() {
                         BinOp::Mul => ExactNum::mul_ref(&n1, &n2, p, rm),
                         BinOp::Div => ExactNum::div_ref(&n1, &n2, p, rm),
                     };
-                    let f3 = mpfr_reference(&f1, &f2, op, p as u32, rm);
+                    let f3 = mpfr_reference(&f1, &f2, op, p as u32, rm)?;
                     let info = format!("#{i} p={p} {op:?} {rm:?} {n1:?} {n2:?}");
-                    assert_exact_eq(&n3, &f3, p, &info, &mut cc);
+                    assert_exact_eq(&n3, &f3, p, &info, &mut cc)?;
                 }
             }
             for (rm, rnd) in ROUNDS {
@@ -131,18 +131,19 @@ fn fuzz_mpfr_bit_exact_all_round_modes() {
                             &format!("{:?}", (i, n, &a, p, rm, "fuzz nth_root")),
                             false,
                             &mut cc,
-                        );
+                        )?;
                     }
                 }
             }
         }
     }
+    Ok(())
 }
 
 #[test]
-fn fuzz_mpfr_overflow_all_round_modes() {
+fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
         mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
@@ -175,8 +176,8 @@ fn fuzz_mpfr_overflow_all_round_modes() {
         let neg_max = neg_of(&max);
         for n1 in [&max, &neg_max] {
             for n2 in &seconds {
-                let f1 = conv_to_mpfr(p, n1, &mut cc);
-                let f2 = conv_to_mpfr(p, n2, &mut cc);
+                let f1 = conv_to_mpfr(p, n1, &mut cc)?;
+                let f2 = conv_to_mpfr(p, n2, &mut cc)?;
                 let a = n1.clone();
                 let b = n2.clone();
 
@@ -248,6 +249,7 @@ fn fuzz_mpfr_overflow_all_round_modes() {
             }
         }
     }
+    Ok(())
 }
 
 /// Results are correctly rounded at exactly `p` bits, not at the next multiple of the word
@@ -255,9 +257,9 @@ fn fuzz_mpfr_overflow_all_round_modes() {
 /// unaligned precisions, and exponents in the middle, near `EXPONENT_MAX` (overflow), and
 /// near `EXPONENT_MIN` (subnormal results).
 #[test]
-fn fuzz_mpfr_exact_bit_precision() {
+fn fuzz_mpfr_exact_bit_precision() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
         mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
@@ -283,16 +285,16 @@ fn fuzz_mpfr_exact_bit_precision() {
             for i in 0..60 {
                 let mut n1 = ExactNum::random_normal(storage, e1lo, e1hi);
                 let mut n2 = ExactNum::random_normal(storage, e2lo, e2hi);
-                n1.set_precision(p, RoundingMode::ToZero).unwrap();
-                n2.set_precision(p, RoundingMode::ToZero).unwrap();
+                n1.set_precision(p, RoundingMode::ToZero)?;
+                n2.set_precision(p, RoundingMode::ToZero)?;
                 if test_random::<bool>() {
                     n1 = n1.neg();
                 }
                 if test_random::<bool>() {
                     n2 = n2.neg();
                 }
-                let f1 = conv_to_mpfr(p, &n1, &mut cc);
-                let f2 = conv_to_mpfr(p, &n2, &mut cc);
+                let f1 = conv_to_mpfr(p, &n1, &mut cc)?;
+                let f2 = conv_to_mpfr(p, &n2, &mut cc)?;
                 for op in ops {
                     for rm in modes {
                         // the ToOdd emulation is for normal-range results only
@@ -300,22 +302,23 @@ fn fuzz_mpfr_exact_bit_precision() {
                             continue;
                         }
                         let n3 = zenith_binop(&n1, &n2, op, p, rm);
-                        let f3 = mpfr_reference(&f1, &f2, op, p as u32, rm);
+                        let f3 = mpfr_reference(&f1, &f2, op, p as u32, rm)?;
                         let info = format!("{band} #{i} p={p} {op:?} {rm:?} {n1:?} {n2:?}");
-                        assert_exact_eq(&n3, &f3, p, &info, &mut cc);
+                        assert_exact_eq(&n3, &f3, p, &info, &mut cc)?;
                     }
                 }
             }
         }
     }
+    Ok(())
 }
 
 /// Regression for the f7de24b rewrite of `fuzz_mpfr_exact_bit_precision`: the mul/div arms built a fresh random
 /// first operand instead of using `n1`, so zenith computed a different product than MPFR (`mid #0 p=24 Mul ToEven`).
 /// The operands are the exact ones of that failure; the oracle is MPFR (`mpfr::mul`, RNDN, p = 24).
 #[test]
-fn zenith_binop_uses_both_operands_mpfr_mul_p24() {
-    let mut cc = Consts::new().unwrap();
+fn zenith_binop_uses_both_operands_mpfr_mul_p24() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
         mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
@@ -335,9 +338,9 @@ fn zenith_binop_uses_both_operands_mpfr_mul_p24() {
         38,
         true,
     );
-    let f1 = conv_to_mpfr(p, &n1, &mut cc);
-    let f2 = conv_to_mpfr(p, &n2, &mut cc);
-    let f3 = mpfr_reference(&f1, &f2, BinOp::Mul, p as u32, RoundingMode::ToEven);
+    let f1 = conv_to_mpfr(p, &n1, &mut cc)?;
+    let f2 = conv_to_mpfr(p, &n2, &mut cc)?;
+    let f3 = mpfr_reference(&f1, &f2, BinOp::Mul, p as u32, RoundingMode::ToEven)?;
     // the value MPFR reports for this product (an outside oracle, independent of zenith)
     let want = -4.13765094e9_f64;
     assert!(
@@ -345,21 +348,22 @@ fn zenith_binop_uses_both_operands_mpfr_mul_p24() {
         "MPFR product {f3}"
     );
     for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::Up] {
-        let f3 = mpfr_reference(&f1, &f2, BinOp::Mul, p as u32, rm);
+        let f3 = mpfr_reference(&f1, &f2, BinOp::Mul, p as u32, rm)?;
         let n3 = zenith_binop(&n1, &n2, BinOp::Mul, p, rm);
-        assert_exact_eq(&n3, &f3, p, &format!("mul {rm:?}"), &mut cc);
-        let f4 = mpfr_reference(&f1, &f2, BinOp::Div, p as u32, rm);
+        assert_exact_eq(&n3, &f3, p, &format!("mul {rm:?}"), &mut cc)?;
+        let f4 = mpfr_reference(&f1, &f2, BinOp::Div, p as u32, rm)?;
         let n4 = zenith_binop(&n1, &n2, BinOp::Div, p, rm);
-        assert_exact_eq(&n4, &f4, p, &format!("div {rm:?}"), &mut cc);
+        assert_exact_eq(&n4, &f4, p, &format!("div {rm:?}"), &mut cc)?;
     }
+    Ok(())
 }
 
 /// `ExactNum::sqr` against MPFR's own square (`mpfr::sqr`) at exact precision in every rounding mode
 /// (ToOdd emulated), over the mid, high and low exponent bands, and against `mul_ref(&x, &x)`.
 #[test]
-fn fuzz_mpfr_sqr_all_round_modes() {
+fn fuzz_mpfr_sqr_all_round_modes() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
         mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
@@ -384,21 +388,21 @@ fn fuzz_mpfr_sqr_all_round_modes() {
         for (band, elo, ehi) in bands {
             for i in 0..40 {
                 let mut x = ExactNum::random_normal(storage, elo, ehi);
-                x.set_precision(p, RoundingMode::ToZero).unwrap();
+                x.set_precision(p, RoundingMode::ToZero)?;
                 if test_random::<bool>() {
                     x = x.neg();
                 }
-                let fx = conv_to_mpfr(p, &x, &mut cc);
+                let fx = conv_to_mpfr(p, &x, &mut cc)?;
                 for rm in modes {
                     if rm == RoundingMode::ToOdd && band == "low" {
                         continue;
                     }
                     let (f, _) = mpfr_reference_with(p as u32, rm, |r, rnd| unsafe {
                         mpfr::sqr(r.as_raw_mut(), fx.as_raw(), rnd)
-                    });
+                    })?;
                     let got = x.sqr(p, rm);
                     let info = format!("sqr {band} #{i} p={p} {rm:?} {x:?}");
-                    assert_exact_eq(&got, &f, p, &info, &mut cc);
+                    assert_exact_eq(&got, &f, p, &info, &mut cc)?;
                     assert_eq!(got, ExactNum::mul_ref(&x, &x, p, rm), "{info}");
                     checked += 1;
                 }
@@ -407,4 +411,5 @@ fn fuzz_mpfr_sqr_all_round_modes() {
     }
     // 9 precisions x 4 bands x 40 operands x 6 modes, less ToOdd in the low band
     assert_eq!(checked, 9 * 40 * (3 * 6 + 5));
+    Ok(())
 }

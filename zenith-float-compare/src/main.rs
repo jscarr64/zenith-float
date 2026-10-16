@@ -13,7 +13,7 @@ mod zenith;
 
 use clap::Parser;
 
-use crate::backend::BenchFloat;
+use crate::backend::{BenchError, BenchFloat};
 use crate::task::{workload, TASKS};
 
 #[derive(Parser, Debug)]
@@ -43,7 +43,7 @@ struct Args {
     table: bool,
 }
 
-fn main() {
+fn main() -> Result<(), BenchError> {
     let args = Args::parse();
     for task in &args.tasks {
         if !TASKS.contains(&task.as_str()) {
@@ -57,7 +57,7 @@ fn main() {
 
     for &precision in &args.precisions {
         for task in &args.tasks {
-            let (batch, exp_from, exp_to, sign_positive) = workload(task);
+            let (batch, exp_from, exp_to, sign_positive) = workload(task)?;
             for lib in &args.libraries {
                 let best_us = match lib.as_str() {
                     "zenith" => bench_lib::<zenith::ZenithFloat>(
@@ -68,7 +68,7 @@ fn main() {
                         exp_to,
                         sign_positive,
                         args.runs,
-                    ),
+                    )?,
                     #[cfg(feature = "astro")]
                     "astro" | "astro-float" => bench_lib::<astro::AstroFloat>(
                         precision,
@@ -78,7 +78,7 @@ fn main() {
                         exp_to,
                         sign_positive,
                         args.runs,
-                    ),
+                    )?,
                     #[cfg(feature = "dashu")]
                     "dashu" | "dashu-float" => bench_lib::<dashu::DashuFloat>(
                         precision,
@@ -88,7 +88,7 @@ fn main() {
                         exp_to,
                         sign_positive,
                         args.runs,
-                    ),
+                    )?,
                     other => {
                         eprintln!(
                             "error: unknown library {other:?} (enable features: astro, dashu)"
@@ -105,6 +105,7 @@ fn main() {
             }
         }
     }
+    Ok(())
 }
 
 fn bench_lib<F: BenchFloat>(
@@ -115,31 +116,35 @@ fn bench_lib<F: BenchFloat>(
     exp_to: i32,
     sign_positive: bool,
     runs: usize,
-) -> u64 {
-    let state = F::state(precision);
+) -> Result<u64, BenchError> {
+    let state = F::state(precision)?;
     let values = F::rand_normal(batch, exp_from, exp_to, &state, sign_positive);
     let mut samples = Vec::with_capacity(runs);
     for _ in 0..runs {
-        samples.push(measure_batch::<F>(&state, task, &values));
+        samples.push(measure_batch::<F>(&state, task, &values)?);
     }
     samples.sort_unstable();
-    samples[0]
+    Ok(samples[0])
 }
 
 /// Adaptive timing loop from bigfloat-bench: accumulate until ≥1 ms, then report µs/run.
-fn measure_batch<F: BenchFloat>(state: &F::State, task: &str, values: &[F]) -> u64 {
+fn measure_batch<F: BenchFloat>(
+    state: &F::State,
+    task: &str,
+    values: &[F],
+) -> Result<u64, BenchError> {
     let mut full_us = 0u128;
     let mut iter = 1usize;
     let mut niter = 0usize;
     while full_us < 1_000 && iter < 16 {
         niter += iter;
         for _ in 0..iter {
-            let (_, d) = F::run_task(state, task, values);
+            let (_, d) = F::run_task(state, task, values)?;
             full_us += d.as_micros();
         }
         iter *= 2;
     }
-    (full_us / niter as u128) as u64
+    Ok((full_us / niter as u128) as u64)
 }
 
 #[cfg(test)]
@@ -147,8 +152,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn workload_sizes_match_bigfloat_bench() {
-        assert_eq!(workload("mul"), (1_000_000, -10, 10, false));
-        assert_eq!(workload("ln"), (10_000, -10, 10, true));
+    fn workload_sizes_match_bigfloat_bench() -> Result<(), BenchError> {
+        assert_eq!(workload("mul")?, (1_000_000, -10, 10, false));
+        assert_eq!(workload("ln")?, (10_000, -10, 10, true));
+        assert!(matches!(workload("nope"), Err(BenchError::UnknownTask(_))));
+        Ok(())
     }
 }

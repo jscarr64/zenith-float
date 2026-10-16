@@ -552,12 +552,16 @@ mod tests {
         Ok(())
     }
 
-    fn window_sum_pos(w: &ExactNumArray, p: usize) -> bool {
+    fn window_sum_pos(w: &ExactNumArray, p: usize) -> Result<bool, crate::Error> {
         let mut s = ExactNum::from_u8(0, p);
         for i in 0..w.len() {
-            s = s.add(w.get(i).unwrap(), p, RoundingMode::ToEven);
+            s = s.add(
+                w.get(i).ok_or(crate::Error::InvalidArgument)?,
+                p,
+                RoundingMode::ToEven,
+            );
         }
-        s.is_positive() && !s.is_zero()
+        Ok(s.is_positive() && !s.is_zero())
     }
 
     #[test]
@@ -620,11 +624,11 @@ mod tests {
         }
 
         let blk = blackman_window(8, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
-        assert!(window_sum_pos(&hann, p));
-        assert!(window_sum_pos(&hamm, p));
-        assert!(window_sum_pos(&blk, p));
-        assert!(window_sum_pos(&rect, p));
-        assert!(window_sum_pos(&k0, p));
+        assert!(window_sum_pos(&hann, p)?);
+        assert!(window_sum_pos(&hamm, p)?);
+        assert!(window_sum_pos(&blk, p)?);
+        assert!(window_sum_pos(&rect, p)?);
+        assert!(window_sum_pos(&k0, p)?);
 
         assert!(hann_window(0, p, rm, &mut cc).is_none());
         assert!(rectangular_window(0, p, rm).is_none());

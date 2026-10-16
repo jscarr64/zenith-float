@@ -42,7 +42,7 @@ macro_rules! test_zf_op {
         //println!("\n{:b}\n{}", $n1, $f1.to_string_radix(2, None));
         //println!("\n{:b}\n{}", n3, f3.to_string_radix(2, None));
 
-        assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc);
+        assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc)?;
     };
     ($eq:literal, $n1:ident, $zf_op:ident, $f1:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
         let n3 = ExactNum::$zf_op(&($n1), $p, $rm, &mut $cc);
@@ -54,7 +54,7 @@ macro_rules! test_zf_op {
         // println!("\n{:b}\n{}", $n1, $f1.to_string_radix(2, None));
         // println!("\n{:b}\n{}", n3, f3.to_string_radix(2, None));
 
-        assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc);
+        assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc)?;
     };
     ($eq:literal, $n1:ident, $zf_op:ident, $f1:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
         let n3 = ExactNum::$zf_op(&($n1), $p, $rm, &mut $cc);
@@ -66,7 +66,7 @@ macro_rules! test_zf_op {
         // println!("\n{:b}\n{}", $n1, $f1.to_string_radix(2, None));
         // println!("\n{:b}\n{}", n3, f3.to_string_radix(2, None));
 
-        assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc);
+        assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc)?;
     };
 }
 
@@ -82,7 +82,7 @@ macro_rules! test_zf_op_no_cc {
         //println!("\n{:b}\n{}", $n1, $f1.to_string_radix(2, None));
         //println!("\n{:b}\n{}", n3, f3.to_string_radix(2, None));
 
-        assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc);
+        assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc)?;
     };
     ($eq:literal, $n1:ident, $zf_op:ident, $f1:ident, $mpfr_op:ident, $p:ident, $rm:ident, $rnd:ident, $op_info:expr, $cc:ident) => {
         let n3 = ExactNum::$zf_op(&($n1), $p, $rm);
@@ -94,7 +94,7 @@ macro_rules! test_zf_op_no_cc {
         // println!("\n{:b}\n{}", $n1, $f1.to_string_radix(2, None));
         // println!("\n{:b}\n{}", n3, f3.to_string_radix(2, None));
 
-        assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc);
+        assert_float_close(n3, f3, $p, &format!("{:?}", $op_info), $eq, &mut $cc)?;
     };
 }
 
@@ -111,7 +111,7 @@ macro_rules! test_zf_fma {
                 $rnd,
             )
         };
-        assert_float_close(n4, f4, $p, &format!("{:?}", $op_info), $eq, &mut $cc);
+        assert_float_close(n4, f4, $p, &format!("{:?}", $op_info), $eq, &mut $cc)?;
     };
 }
 
@@ -130,7 +130,7 @@ macro_rules! test_zf_rem_pi {
                 &format!("{:?}", $op_info),
                 true,
                 &mut $cc,
-            );
+            )?;
         } else if !n3.is_nan() && !n3.is_inf() && !n3.is_zero() {
             // Not IEEE fmod; reduction is validated by sin/cos oracles on the unreduced argument.
             let e = n3.exponent().unwrap_or(0);
@@ -154,7 +154,7 @@ macro_rules! test_zf_const {
             mpfr::$mpfr_const(f1.as_raw_mut(), $rnd);
         }
 
-        assert_float_close(n1, f1, $p, &format!("{:?}", $op_info), true, &mut $cc);
+        assert_float_close(n1, f1, $p, &format!("{:?}", $op_info), true, &mut $cc)?;
     };
 }
 
@@ -173,26 +173,37 @@ pub fn get_float_pair(
     emin: Exponent,
     emax: Exponent,
     cc: &mut Consts,
-) -> (ExactNum, Float) {
+) -> Result<(ExactNum, Float), Box<dyn std::error::Error>> {
     let n = ExactNum::random_normal(p, emin, emax);
-    let f = conv_to_mpfr(p, &n, cc);
-    (n, f)
+    let f = conv_to_mpfr(p, &n, cc)?;
+    Ok((n, f))
 }
 
-pub fn conv_to_mpfr(p: usize, n: &ExactNum, cc: &mut Consts) -> Float {
-    let s1 = conv_str_to_mpfr_compat(n.format(Radix::Bin, RoundingMode::ToEven, cc).unwrap());
-    let f = Float::with_val(p as u32, Float::parse_radix(s1, 2).unwrap());
-    let s2 = conv_str_from_mpfr_compat(f.to_string_radix(2, None));
+pub fn conv_to_mpfr(
+    p: usize,
+    n: &ExactNum,
+    cc: &mut Consts,
+) -> Result<Float, Box<dyn std::error::Error>> {
+    let s1 = conv_str_to_mpfr_compat(n.format(Radix::Bin, RoundingMode::ToEven, cc)?)?;
+    let f = Float::with_val(p as u32, Float::parse_radix(s1, 2)?);
+    let s2 = conv_str_from_mpfr_compat(f.to_string_radix(2, None))?;
     //println!("\n{}\n{}", s1, s2);
     assert_eq!(
         *n,
         ExactNum::parse(&s2, Radix::Bin, p, RoundingMode::None, cc)
     );
-    f
+    Ok(f)
 }
 
 // assert float values are equal or differ not more than 1 ulp.
-pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, cc: &mut Consts) {
+pub fn assert_float_close(
+    n: ExactNum,
+    f: Float,
+    p: usize,
+    op: &str,
+    eq: bool,
+    cc: &mut Consts,
+) -> Result<(), Box<dyn std::error::Error>> {
     if n.is_inf() {
         // Inf only where MPFR is Inf: an overflow rounded toward zero is the largest
         // finite value in MPFR, so the overflow flag alone does not admit Inf.
@@ -203,7 +214,7 @@ pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, c
             assert!(f.is_sign_negative(), "{}", op);
         }
     } else if f.is_infinite() {
-        panic!("{} MPFR Inf, zenith {:?}", op, n);
+        return Err(format!("{} MPFR Inf, zenith {:?}", op, n).into());
     } else if n.is_nan() {
         // nan
         if eq {
@@ -218,13 +229,13 @@ pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, c
     } else if eq {
         // n == f
         let s1 = f.to_string_radix(2, None);
-        let s2 = conv_str_from_mpfr_compat(s1);
+        let s2 = conv_str_from_mpfr_compat(s1)?;
         let n2 = ExactNum::parse(&s2, Radix::Bin, p, RoundingMode::None, cc);
         assert_eq!(n, n2, "{}", op);
     } else {
         // at most 1 ulp difference
         let s1 = f.to_string_radix(2, None);
-        let s2 = conv_str_from_mpfr_compat(s1);
+        let s2 = conv_str_from_mpfr_compat(s1)?;
         let n2 = ExactNum::parse(&s2, Radix::Bin, p, RoundingMode::None, cc);
         assert_eq!(
             n.mantissa_max_bit_len(),
@@ -243,44 +254,47 @@ pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, c
             d
         );
 
-        let e1 = n.exponent().unwrap() as isize
-            - (n.mantissa_max_bit_len().unwrap() - n.precision().unwrap()) as isize;
-        let e2 = d.exponent().unwrap() as isize
-            - (d.mantissa_max_bit_len().unwrap() - d.precision().unwrap()) as isize;
+        let e1 = n.exponent().ok_or("none value")? as isize
+            - (n.mantissa_max_bit_len().ok_or("none value")? - n.precision().ok_or("none value")?)
+                as isize;
+        let e2 = d.exponent().ok_or("none value")? as isize
+            - (d.mantissa_max_bit_len().ok_or("none value")? - d.precision().ok_or("none value")?)
+                as isize;
 
         //println!("\n{:?}\n{:?}\n{:?}\n{} {}", n, n2, d, e1, e2);
 
         if !d.is_zero() {
             assert!(
-                e1 - e2 >= n.mantissa_max_bit_len().unwrap() as isize - 1,
+                e1 - e2 >= n.mantissa_max_bit_len().ok_or("none value")? as isize - 1,
                 "{}",
                 op
             );
         }
     }
+    Ok(())
 }
 
-pub fn conv_str_to_mpfr_compat(s: String) -> String {
+pub fn conv_str_to_mpfr_compat(s: String) -> Result<String, Box<dyn std::error::Error>> {
     let (sig, exp) = if let Some(pos) = s.find('e') {
         s.split_at(pos + 1)
     } else {
         (s.as_str(), "0")
     };
-    let expn = i64::from_str_radix(exp, 2).unwrap();
-    sig.to_owned() + &expn.to_string()
+    let expn = i64::from_str_radix(exp, 2)?;
+    Ok(sig.to_owned() + &expn.to_string())
 }
 
-pub fn conv_str_from_mpfr_compat(s: String) -> String {
+pub fn conv_str_from_mpfr_compat(s: String) -> Result<String, Box<dyn std::error::Error>> {
     if let Some(epos) = s.find('e') {
         let (sig, exp) = s.split_at(epos + 1);
-        let expn = exp.parse::<i64>().unwrap();
+        let expn = exp.parse::<i64>()?;
         if expn < 0 {
-            sig.to_owned() + "-" + &format!("{:b}", -expn)
+            Ok(sig.to_owned() + "-" + &format!("{:b}", -expn))
         } else {
-            sig.to_owned() + &format!("{:b}", expn)
+            Ok(sig.to_owned() + &format!("{:b}", expn))
         }
     } else {
-        s
+        Ok(s)
     }
 }
 
@@ -290,8 +304,7 @@ pub fn get_random_rnd_pair() -> (RoundingMode, rnd_t) {
         1 => (RoundingMode::Up, rnd_t::RNDU),
         2 => (RoundingMode::Down, rnd_t::RNDD),
         3 => (RoundingMode::FromZero, rnd_t::RNDA),
-        4 => (RoundingMode::ToZero, rnd_t::RNDZ),
-        _ => unreachable!(),
+        _ => (RoundingMode::ToZero, rnd_t::RNDZ),
     }
 }
 
@@ -330,7 +343,9 @@ pub fn get_periodic(p: usize, exp_from: Exponent, exp_to: Exponent) -> ExactNum 
         w |= bits;
     }
     let mut m1 = vec![w; p / WORD_BIT_SIZE];
-    *(m1.last_mut().unwrap()) |= 1 << (WORD_BIT_SIZE - 1);
+    if let Some(last) = m1.last_mut() {
+        *last |= 1 << (WORD_BIT_SIZE - 1);
+    }
 
     bf_from_mantissa_and_exp_rng(&m1, exp_from, exp_to)
 }
@@ -360,7 +375,9 @@ pub fn get_near_one(p: usize) -> ExactNum {
 
     m1.iter_mut().take(i).for_each(|v| *v = test_random());
 
-    *m1.last_mut().unwrap() |= WORD_SIGNIFICANT_BIT;
+    if let Some(last) = m1.last_mut() {
+        *last |= WORD_SIGNIFICANT_BIT;
+    }
 
     bf_from_mantissa_and_exp_rng(&m1, e, e)
 }
@@ -419,14 +436,24 @@ fn mpfr_binop(r: &mut Float, a: &Float, b: &Float, op: BinOp, rnd: rnd_t) -> i32
 /// `mpfr_subnormalize`. MPFR has no ties-to-odd mode: `ToOdd` rounds toward zero at `p + 1`
 /// bits and decides from the extra bit and the ternary value. That emulation is for results
 /// in the normal range only.
-pub fn mpfr_reference(a: &Float, b: &Float, op: BinOp, p: u32, rm: RoundingMode) -> Float {
-    mpfr_reference_with(p, rm, |r, rnd| mpfr_binop(r, a, b, op, rnd)).0
+pub fn mpfr_reference(
+    a: &Float,
+    b: &Float,
+    op: BinOp,
+    p: u32,
+    rm: RoundingMode,
+) -> Result<Float, Box<dyn std::error::Error>> {
+    Ok(mpfr_reference_with(p, rm, |r, rnd| mpfr_binop(r, a, b, op, rnd))?.0)
 }
 
 /// Like [`mpfr_reference`] for any MPFR function: `f(result, rnd)` computes into `result`
 /// (whose precision is already set) and returns the MPFR ternary value. Returns the
 /// result and whether it is inexact.
-pub fn mpfr_reference_with<F>(p: u32, rm: RoundingMode, f: F) -> (Float, bool)
+pub fn mpfr_reference_with<F>(
+    p: u32,
+    rm: RoundingMode,
+    f: F,
+) -> Result<(Float, bool), Box<dyn std::error::Error>>
 where
     F: Fn(&mut Float, rnd_t) -> i32,
 {
@@ -442,7 +469,13 @@ where
         RoundingMode::ToZero => Some(rnd_t::RNDZ),
         RoundingMode::FromZero => Some(rnd_t::RNDA),
         RoundingMode::ToOdd => None,
-        RoundingMode::None => panic!("no MPFR reference for {rm:?}"),
+        RoundingMode::None => {
+            unsafe {
+                mpfr::set_emin(old_min);
+                mpfr::set_emax(old_max);
+            }
+            return Err(format!("no MPFR reference for {rm:?}").into());
+        }
     };
     let out = if let Some(rnd) = rnd {
         let mut r = Float::new(p);
@@ -484,31 +517,37 @@ where
         mpfr::set_emin(old_min);
         mpfr::set_emax(old_max);
     }
-    out
+    Ok(out)
 }
 
 /// Bit-exact comparison of a zenith result with an MPFR value of the same precision,
 /// including Inf, the sign of zero, and subnormals.
-pub fn assert_exact_eq(n: &ExactNum, f: &Float, p: usize, op: &str, cc: &mut Consts) {
+pub fn assert_exact_eq(
+    n: &ExactNum,
+    f: &Float,
+    p: usize,
+    op: &str,
+    cc: &mut Consts,
+) -> Result<(), Box<dyn std::error::Error>> {
     if f.is_nan() {
         assert!(n.is_nan(), "{op}: MPFR NaN, zenith {n:?}");
-        return;
+        return Ok(());
     }
     if f.is_infinite() {
         assert!(n.is_inf(), "{op}: MPFR {f}, zenith {n:?}");
         assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of Inf");
-        return;
+        return Ok(());
     }
     assert!(!n.is_inf() && !n.is_nan(), "{op}: MPFR {f}, zenith {n:?}");
     if f.is_zero() {
         assert!(n.is_zero(), "{op}: MPFR {f}, zenith {n:?}");
         assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of zero");
-        return;
+        return Ok(());
     }
     let _ = (p, &cc);
     // Exact value of the zenith number, rebuilt from its words (parsing would flush
     // subnormals): sum of word_i * 2^(64 i) * 2^(e - 64 len), with the widest MPFR range.
-    let (words, _, sign, e, _) = n.as_raw_parts().expect("finite zenith value");
+    let (words, _, sign, e, _) = n.as_raw_parts().ok_or("none value")?;
     let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
     unsafe {
         mpfr::set_emin(mpfr::get_emin_min());
@@ -533,4 +572,5 @@ pub fn assert_exact_eq(n: &ExactNum, f: &Float, p: usize, op: &str, cc: &mut Con
         mpfr::set_emax(old_max);
     }
     assert!(equal, "{op}: MPFR {f}, zenith {n:?} = {got}");
+    Ok(())
 }

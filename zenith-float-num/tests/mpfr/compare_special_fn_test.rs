@@ -13,9 +13,9 @@ use rug::{
 use zenith_float_num::{Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
 #[test]
-fn mpfr_compare_special_fns() {
+fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
 
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as exp_t);
@@ -30,35 +30,35 @@ fn mpfr_compare_special_fns() {
     // Integer Γ(n) = (n-1)! — factorial path, 1-ULP vs MPFR.
     for k in 2u8..=12 {
         let n = ExactNum::from_u8(k, p);
-        let f = conv_to_mpfr(p, &n, &mut cc);
+        let f = conv_to_mpfr(p, &n, &mut cc)?;
         let g = n.gamma(p, rm, &mut cc);
         let mut fg = Float::with_val(p as u32, 1);
         unsafe {
             mpfr::gamma(fg.as_raw_mut(), f.as_raw(), rnd);
         }
-        assert_float_close(g, fg, p, &format!("gamma({k})"), false, &mut cc);
+        assert_float_close(g, fg, p, &format!("gamma({k})"), false, &mut cc)?;
 
         let lg = n.ln_gamma(p, rm, &mut cc);
         let mut flg = Float::with_val(p as u32, 1);
         unsafe {
             mpfr::lngamma(flg.as_raw_mut(), f.as_raw(), rnd);
         }
-        assert_float_close(lg, flg, p, &format!("ln_gamma({k})"), false, &mut cc);
+        assert_float_close(lg, flg, p, &format!("ln_gamma({k})"), false, &mut cc)?;
     }
 
     // Γ(1/2) = √π
     let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
-    let fhalf = conv_to_mpfr(p, &half, &mut cc);
+    let fhalf = conv_to_mpfr(p, &half, &mut cc)?;
     let g = half.gamma(p, rm, &mut cc);
     let mut fg = Float::with_val(p as u32, 1);
     unsafe {
         mpfr::gamma(fg.as_raw_mut(), fhalf.as_raw(), rnd);
     }
-    assert_float_close(g, fg, p, "gamma(1/2)", false, &mut cc);
+    assert_float_close(g, fg, p, "gamma(1/2)", false, &mut cc)?;
 
     // erf / erfc on a modest interval
     for _ in 0..12 {
-        let (n1, f1) = get_float_pair(p, -2, 2, &mut cc);
+        let (n1, f1) = get_float_pair(p, -2, 2, &mut cc)?;
         if n1.is_nan() || n1.is_inf() {
             continue;
         }
@@ -68,20 +68,20 @@ fn mpfr_compare_special_fns() {
         unsafe {
             mpfr::erf(fe.as_raw_mut(), f1.as_raw(), rnd);
         }
-        assert_float_close(er, fe, p, "erf", false, &mut cc);
+        assert_float_close(er, fe, p, "erf", false, &mut cc)?;
 
         let erc = n1.erfc(p, rm, &mut cc);
         let mut fec = Float::with_val(p as u32, 1);
         unsafe {
             mpfr::erfc(fec.as_raw_mut(), f1.as_raw(), rnd);
         }
-        assert_float_close(erc, fec, p, "erfc", false, &mut cc);
+        assert_float_close(erc, fec, p, "erfc", false, &mut cc)?;
     }
 
     // J_0, J_1, J_2 on |x| < 4
     for n_ord in [0i64, 1, 2] {
         for _ in 0..8 {
-            let (n1, f1) = get_float_pair(p, -2, 2, &mut cc);
+            let (n1, f1) = get_float_pair(p, -2, 2, &mut cc)?;
             if n1.is_nan() || n1.is_inf() {
                 continue;
             }
@@ -91,13 +91,13 @@ fn mpfr_compare_special_fns() {
             unsafe {
                 mpfr::jn(fj.as_raw_mut(), n_ord, f1.as_raw(), rnd);
             }
-            assert_float_close(j, fj, p, &format!("bessel_j n={n_ord}"), false, &mut cc);
+            assert_float_close(j, fj, p, &format!("bessel_j n={n_ord}"), false, &mut cc)?;
         }
     }
 
     // High integer order at modest |x|
     for n_ord in [20i64, 40] {
-        let (n1, f1) = get_float_pair(p, -1, 1, &mut cc);
+        let (n1, f1) = get_float_pair(p, -1, 1, &mut cc)?;
         if n1.is_nan() || n1.is_inf() {
             continue;
         }
@@ -107,13 +107,13 @@ fn mpfr_compare_special_fns() {
         unsafe {
             mpfr::jn(fj.as_raw_mut(), n_ord, f1.as_raw(), rnd);
         }
-        assert_float_close(j, fj, p, &format!("bessel_j n={n_ord}"), false, &mut cc);
+        assert_float_close(j, fj, p, &format!("bessel_j n={n_ord}"), false, &mut cc)?;
     }
 
     // Ei (MPFR eint) on x > 0 and Cauchy PV for x < 0
     for emin_emax in [(0, 2), (-2, 1)] {
         for _ in 0..8 {
-            let (n1, f1) = get_float_pair(p, emin_emax.0, emin_emax.1, &mut cc);
+            let (n1, f1) = get_float_pair(p, emin_emax.0, emin_emax.1, &mut cc)?;
             if n1.is_nan() || n1.is_inf() || n1.is_zero() {
                 continue;
             }
@@ -123,14 +123,14 @@ fn mpfr_compare_special_fns() {
             unsafe {
                 mpfr::eint(fe.as_raw_mut(), f1.as_raw(), rnd);
             }
-            assert_float_close(e, fe, p, "ei", false, &mut cc);
+            assert_float_close(e, fe, p, "ei", false, &mut cc)?;
         }
     }
 
     // Y_0, Y_1 (MPFR yn) on 0 < x < 4
     for n_ord in [0i64, 1] {
         for _ in 0..8 {
-            let (n1, f1) = get_float_pair(p, -1, 2, &mut cc);
+            let (n1, f1) = get_float_pair(p, -1, 2, &mut cc)?;
             if n1.is_nan() || n1.is_inf() || !n1.is_positive() {
                 continue;
             }
@@ -141,13 +141,13 @@ fn mpfr_compare_special_fns() {
             unsafe {
                 mpfr::yn(fy.as_raw_mut(), n_ord, f1.as_raw(), rnd);
             }
-            assert_float_close(y, fy, p, &format!("bessel_y n={n_ord}"), false, &mut cc);
+            assert_float_close(y, fy, p, &format!("bessel_y n={n_ord}"), false, &mut cc)?;
         }
     }
 
     // digamma on z > 0
     for _ in 0..8 {
-        let (n1, f1) = get_float_pair(p, 0, 2, &mut cc);
+        let (n1, f1) = get_float_pair(p, 0, 2, &mut cc)?;
         if n1.is_nan() || n1.is_inf() || !n1.is_positive() {
             continue;
         }
@@ -157,22 +157,22 @@ fn mpfr_compare_special_fns() {
         unsafe {
             mpfr::digamma(fd.as_raw_mut(), f1.as_raw(), rnd);
         }
-        assert_float_close(d, fd, p, "digamma", false, &mut cc);
+        assert_float_close(d, fd, p, "digamma", false, &mut cc)?;
     }
 
     // Airy Ai at x = 1 (plan §4.3) and a few modest abscissae.
     {
         let one = ExactNum::from_u8(1, p);
-        let f1 = conv_to_mpfr(p, &one, &mut cc);
+        let f1 = conv_to_mpfr(p, &one, &mut cc)?;
         let a = one.ai(p, rm, &mut cc);
         let mut fa = Float::with_val(p as u32, 1);
         unsafe {
             mpfr::ai(fa.as_raw_mut(), f1.as_raw(), rnd);
         }
-        assert_float_close(a, fa, p, "ai(1)", false, &mut cc);
+        assert_float_close(a, fa, p, "ai(1)", false, &mut cc)?;
     }
     for _ in 0..8 {
-        let (n1, f1) = get_float_pair(p, -2, 3, &mut cc);
+        let (n1, f1) = get_float_pair(p, -2, 3, &mut cc)?;
         if n1.is_nan() || n1.is_inf() {
             continue;
         }
@@ -182,13 +182,13 @@ fn mpfr_compare_special_fns() {
         unsafe {
             mpfr::ai(fa.as_raw_mut(), f1.as_raw(), rnd);
         }
-        assert_float_close(a, fa, p, "ai", false, &mut cc);
+        assert_float_close(a, fa, p, "ai", false, &mut cc)?;
     }
 
     // Upper incomplete Γ(s,x) vs MPFR gamma_inc. Lower γ is Γ(s)−Γ(s,x) (identity).
     for _ in 0..8 {
-        let (s, fs) = get_float_pair(p, 0, 2, &mut cc);
-        let (x, fx) = get_float_pair(p, 0, 2, &mut cc);
+        let (s, fs) = get_float_pair(p, 0, 2, &mut cc)?;
+        let (x, fx) = get_float_pair(p, 0, 2, &mut cc)?;
         if s.is_nan()
             || x.is_nan()
             || s.is_inf()
@@ -204,7 +204,7 @@ fn mpfr_compare_special_fns() {
         unsafe {
             mpfr::gamma_inc(fg.as_raw_mut(), fs.as_raw(), fx.as_raw(), rnd);
         }
-        assert_float_close(g, fg, p, "gammainc_upper", false, &mut cc);
+        assert_float_close(g, fg, p, "gammainc_upper", false, &mut cc)?;
     }
 
     // Bi has no mpfr_bi. Wronskian at x=1 is the identity gold.
@@ -218,21 +218,22 @@ fn mpfr_compare_special_fns() {
         let want = ExactNum::from_u8(1, p).div(&cc.pi(p, rm), p, rm);
         assert_float_close(
             wr,
-            conv_to_mpfr(p, &want, &mut cc),
+            conv_to_mpfr(p, &want, &mut cc)?,
             p,
             "airy wronskian",
             false,
             &mut cc,
-        );
+        )?;
     }
 
     let _ = test_random::<u8>();
+    Ok(())
 }
 
 #[test]
-fn mpfr_compare_extra_constants() {
+fn mpfr_compare_extra_constants() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
 
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as exp_t);
@@ -249,7 +250,7 @@ fn mpfr_compare_extra_constants() {
         unsafe {
             mpfr::sqrt(f.as_raw_mut(), two.as_raw(), rnd);
         }
-        assert_float_close(n, f, p, "const sqrt2", true, &mut cc);
+        assert_float_close(n, f, p, "const sqrt2", true, &mut cc)?;
 
         let n = cc.phi(p, rm);
         let five = Float::with_val(p as u32, 5);
@@ -262,13 +263,14 @@ fn mpfr_compare_extra_constants() {
             mpfr::add_ui(f.as_raw_mut(), s5.as_raw(), 1, rnd);
             mpfr::div_ui(f.as_raw_mut(), f.as_raw(), 2, rnd);
         }
-        assert_float_close(n, f, p, "const phi", true, &mut cc);
+        assert_float_close(n, f, p, "const phi", true, &mut cc)?;
 
         let n = cc.euler_gamma(p, rm);
         let mut f = Float::with_val(p as u32, 1);
         unsafe {
             mpfr::const_euler(f.as_raw_mut(), rnd);
         }
-        assert_float_close(n, f, p, "const euler_gamma", false, &mut cc);
+        assert_float_close(n, f, p, "const euler_gamma", false, &mut cc)?;
     }
+    Ok(())
 }

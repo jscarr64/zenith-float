@@ -568,7 +568,7 @@ mod tests {
         for _ in 0..1000 {
             let prec = (crate::common::test_rng::random::<usize>() % 3 + 3) * WORD_BIT_SIZE;
 
-            let mut d1 = random_subnormal(prec);
+            let mut d1 = random_subnormal(prec)?;
             d1.set_sign(Sign::Pos);
             let mut d2 = d1.ln(prec, RoundingMode::ToEven, &mut cc)?;
             let d2e = d2.exponent();

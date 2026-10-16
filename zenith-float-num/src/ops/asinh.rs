@@ -177,7 +177,7 @@ mod tests {
         assert!(zero.asinh(p, rm, &mut cc)?.is_zero());
 
         // subnormal arg
-        let n1 = random_subnormal(p);
+        let n1 = random_subnormal(p)?;
         assert!(n1.asinh(p, rm, &mut cc)?.cmp(&n1) == 0);
         Ok(())
     }

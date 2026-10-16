@@ -19,11 +19,8 @@ const M_CUBIC: &str = "0.9330127018922193233818615853764680917357013134525951570
 const PHI0: &str = "1.29953257306887582080339773503650160302735297255117556883708654212600457346289335365431960644782250061318071518211065710940897438485509079286935599598508141086119376863166755133786";
 const PHI1: &str = "1.64265492275483293872763014546957250537481163728018102972221743087594415906527765906601436244541554006160551657304897484811247961936506448745328548521739496845797918755628708095511";
 
-fn cc() -> Consts {
-    match Consts::new() {
-        Ok(c) => c,
-        Err(_) => panic!("constants"),
-    }
+fn cc() -> Result<Consts, zenith_float_num::Error> {
+    Consts::new()
 }
 
 fn parse(text: &str, p: usize, rm: RoundingMode, consts: &mut Consts) -> ExactNum {
@@ -52,16 +49,18 @@ fn ulp_gap(a: &ExactNum, b: &ExactNum, p: usize) -> i32 {
     width as i32 - gap
 }
 
-fn round_down(mut n: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
-    match n.set_precision(p, rm) {
-        Ok(()) => n,
-        Err(err) => panic!("set_precision {err:?}"),
-    }
+fn round_down(
+    mut n: ExactNum,
+    p: usize,
+    rm: RoundingMode,
+) -> Result<ExactNum, zenith_float_num::Error> {
+    n.set_precision(p, rm)?;
+    Ok(n)
 }
 
 #[test]
-fn sine_form_matches_through_asin() {
-    let mut consts = cc();
+fn sine_form_matches_through_asin() -> Result<(), Box<dyn std::error::Error>> {
+    let mut consts = cc()?;
     let p = 64;
     let rm = RoundingMode::ToEven;
     let m = parse("0.5", p, rm, &mut consts);
@@ -82,11 +81,12 @@ fn sine_form_matches_through_asin() {
             );
         }
     }
+    Ok(())
 }
 
 #[test]
-fn angle_two_is_not_the_sine_form() {
-    let mut consts = cc();
+fn angle_two_is_not_the_sine_form() -> Result<(), Box<dyn std::error::Error>> {
+    let mut consts = cc()?;
     let p = 64;
     let rm = RoundingMode::ToEven;
     let two = parse("2", p, rm, &mut consts);
@@ -101,11 +101,12 @@ fn angle_two_is_not_the_sine_form() {
         !same_bits(&angle, &via_sin),
         "F(2|m) collapsed to F(arcsin(sin 2)|m)"
     );
+    Ok(())
 }
 
 #[test]
-fn half_pi_matches_complete() {
-    let mut consts = cc();
+fn half_pi_matches_complete() -> Result<(), Box<dyn std::error::Error>> {
+    let mut consts = cc()?;
     let p = 64;
     let rm = RoundingMode::ToEven;
     let phi = parse(HALF_PI, p, rm, &mut consts);
@@ -123,11 +124,12 @@ fn half_pi_matches_complete() {
         &n.elliptic_pi_phi(&phi, &m, p, rm, &mut consts),
         &n.elliptic_pi_complete(&m, p, rm, &mut consts)
     ));
+    Ok(())
 }
 
 #[test]
-fn periodicity_adds_two_complete_periods() {
-    let mut consts = cc();
+fn periodicity_adds_two_complete_periods() -> Result<(), Box<dyn std::error::Error>> {
+    let mut consts = cc()?;
     let p = 64;
     let hi = 192;
     let rm = RoundingMode::ToEven;
@@ -148,7 +150,7 @@ fn periodicity_adds_two_complete_periods() {
         hi,
         none,
     );
-    assert!(same_bits(&f_shift, &round_down(f_sum, p, rm)));
+    assert!(same_bits(&f_shift, &round_down(f_sum, p, rm)?));
 
     let e_shift = shifted.elliptic_e_phi(&m, p, rm, &mut consts);
     let e_sum = phi.elliptic_e_phi(&m, hi, rm, &mut consts).add(
@@ -157,7 +159,7 @@ fn periodicity_adds_two_complete_periods() {
         hi,
         none,
     );
-    assert!(same_bits(&e_shift, &round_down(e_sum, p, rm)));
+    assert!(same_bits(&e_shift, &round_down(e_sum, p, rm)?));
 
     let p_shift = n.elliptic_pi_phi(&shifted, &m, p, rm, &mut consts);
     let p_sum = n.elliptic_pi_phi(&phi, &m, hi, rm, &mut consts).add(
@@ -165,12 +167,13 @@ fn periodicity_adds_two_complete_periods() {
         hi,
         none,
     );
-    assert!(same_bits(&p_shift, &round_down(p_sum, p, rm)));
+    assert!(same_bits(&p_shift, &round_down(p_sum, p, rm)?));
+    Ok(())
 }
 
 #[test]
-fn odd_in_phi_under_to_even() {
-    let mut consts = cc();
+fn odd_in_phi_under_to_even() -> Result<(), Box<dyn std::error::Error>> {
+    let mut consts = cc()?;
     let p = 64;
     let rm = RoundingMode::ToEven;
     let m = parse("0.3", p, rm, &mut consts);
@@ -188,11 +191,12 @@ fn odd_in_phi_under_to_even() {
         let p_neg = n.elliptic_pi_phi(&neg, &m, p, rm, &mut consts);
         assert!(same_bits(&p_pos.neg(), &p_neg), "Pi odd at {text}");
     }
+    Ok(())
 }
 
 #[test]
-fn infinity_is_invalid_argument() {
-    let mut consts = cc();
+fn infinity_is_invalid_argument() -> Result<(), Box<dyn std::error::Error>> {
+    let mut consts = cc()?;
     let p = 64;
     let rm = RoundingMode::ToEven;
     let m = parse("0.5", p, rm, &mut consts);
@@ -220,11 +224,12 @@ fn infinity_is_invalid_argument() {
         rm,
         &mut consts
     )));
+    Ok(())
 }
 
 #[test]
-fn nan_keeps_its_tag() {
-    let mut consts = cc();
+fn nan_keeps_its_tag() -> Result<(), Box<dyn std::error::Error>> {
+    let mut consts = cc()?;
     let p = 64;
     let rm = RoundingMode::ToEven;
     let tagged = ExactNum::nan(Some(Error::DivisionByZero));
@@ -232,14 +237,15 @@ fn nan_keeps_its_tag() {
     let y = tagged.elliptic_f_phi(&m, p, rm, &mut consts);
     assert!(y.is_nan());
     assert_eq!(y.err(), Some(Error::DivisionByZero));
+    Ok(())
 }
 
 #[test]
-fn cubic_integral_identity() {
+fn cubic_integral_identity() -> Result<(), Box<dyn std::error::Error>> {
     // ∫_0^1 dx/√(x³+1) = 3^{-1/4} (F(φ1|m) - F(φ0|m)), m = (2+√3)/4.
     // φ1 > π/2, so the sine-form API cannot express F(φ1|m).
     // The printed 20 digits stop at a truncation whose residual is about 2.5e-21.
-    let mut consts = cc();
+    let mut consts = cc()?;
     let p = 128;
     let rm = RoundingMode::ToEven;
     let m = parse(M_CUBIC, p, rm, &mut consts);
@@ -262,4 +268,5 @@ fn cubic_integral_identity() {
         matches!(err.compare(&tol), Some(c) if c <= 0),
         "cubic integral missed 0.90960424263889577391"
     );
+    Ok(())
 }

@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use zenith_float::{Consts, ExactNum, Exponent, RoundingMode, Sign};
 
-use crate::backend::{convert_exp, BenchFloat, BenchState};
+use crate::backend::{convert_exp, BenchError, BenchFloat, BenchState};
 use crate::task::{task_for_one_arg, task_for_two_args};
 
 #[derive(Clone)]
@@ -49,11 +49,13 @@ impl ZenithFloat {
 impl BenchFloat for ZenithFloat {
     type State = ZenithState;
 
-    fn state(precision: usize) -> Self::State {
-        ZenithState {
+    fn state(precision: usize) -> Result<Self::State, BenchError> {
+        Ok(ZenithState {
             precision,
-            cc: Rc::new(RefCell::new(Consts::new().expect("constants cache"))),
-        }
+            cc: Rc::new(RefCell::new(
+                Consts::new().map_err(|_| BenchError::Constants)?,
+            )),
+        })
     }
 
     fn rand_normal(
@@ -76,7 +78,11 @@ impl BenchFloat for ZenithFloat {
         out
     }
 
-    fn run_task(state: &Self::State, task: &str, values: &[Self]) -> (Self, std::time::Duration) {
+    fn run_task(
+        state: &Self::State,
+        task: &str,
+        values: &[Self],
+    ) -> Result<(Self, std::time::Duration), BenchError> {
         let start = Instant::now();
         let cc = Rc::clone(&state.cc);
         let result = match task {
@@ -190,9 +196,9 @@ impl BenchFloat for ZenithFloat {
                     a.p(),
                 )
             }),
-            _ => panic!("unknown task: {task}"),
+            _ => return Err(BenchError::UnknownTask(String::from(task))),
         };
-        (result, start.elapsed())
+        Ok((result, start.elapsed()))
     }
 }
 

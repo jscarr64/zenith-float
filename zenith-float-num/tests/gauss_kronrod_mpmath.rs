@@ -169,7 +169,7 @@ fn gk_nonfinite_and_reversed_endpoints_are_errors() -> Result<(), Box<dyn std::e
         RM,
         &mut cc,
     );
-    assert_eq!(reversed.unwrap_err(), QuadratureError::InvalidArgument);
+    assert!(matches!(reversed, Err(QuadratureError::InvalidArgument)));
     let nan = gauss_kronrod_interval(
         |_x, _p, _rm, _cc| ExactNum::nan(None),
         &a,
@@ -178,6 +178,6 @@ fn gk_nonfinite_and_reversed_endpoints_are_errors() -> Result<(), Box<dyn std::e
         RM,
         &mut cc,
     );
-    assert_eq!(nan.unwrap_err(), QuadratureError::InvalidArgument);
+    assert!(matches!(nan, Err(QuadratureError::InvalidArgument)));
     Ok(())
 }

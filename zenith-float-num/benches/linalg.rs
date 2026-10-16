@@ -8,7 +8,7 @@ fn sink<T>(v: T) {
     black_box(v);
 }
 
-fn diag_dominant(n: usize, p: usize) -> ExactNumArray {
+fn diag_dominant(n: usize, p: usize) -> Option<ExactNumArray> {
     let mut vals = Vec::with_capacity(n.saturating_mul(n));
     for i in 0..n {
         for j in 0..n {
@@ -19,7 +19,7 @@ fn diag_dominant(n: usize, p: usize) -> ExactNumArray {
             });
         }
     }
-    ExactNumArray::from_shape(p, n, n, &vals).expect("shape")
+    ExactNumArray::from_shape(p, n, n, &vals)
 }
 
 fn bench_matmul(c: &mut Criterion) {
@@ -27,13 +27,18 @@ fn bench_matmul(c: &mut Criterion) {
     let p = 64;
     let one = ExactNum::from_u8(1, p);
     for &n in &[10usize, 100] {
-        let a = ExactNumArray::filled_2d(p, n, n, &one).expect("shape");
+        let Some(a) = ExactNumArray::filled_2d(p, n, n, &one) else {
+            continue;
+        };
         group.bench_with_input(BenchmarkId::from_parameter(n), &a, |b, a| {
             b.iter(|| sink(a.matmul(a)));
         });
     }
     let one64 = Ieee64::from_i32(1);
-    let big = Ieee64Array::filled_2d(1000, 1000, one64).expect("shape");
+    let Some(big) = Ieee64Array::filled_2d(1000, 1000, one64) else {
+        group.finish();
+        return;
+    };
     group.sample_size(10);
     group.bench_with_input(BenchmarkId::from_parameter(1000), &big, |b, a| {
         b.iter(|| sink(a.matmul(a)));
@@ -49,7 +54,9 @@ fn bench_fft(c: &mut Criterion) {
     for &n in &[256usize, 1024, 4096] {
         let a = ExactNumArray::filled(p, n, &one);
         group.bench_with_input(BenchmarkId::from_parameter(n), &a, |b, a| {
-            let mut cc = Consts::new().expect("constants cache");
+            let Ok(mut cc) = Consts::new() else {
+                return;
+            };
             b.iter(|| sink(a.fft(p, rm, &mut cc)));
         });
     }
@@ -61,7 +68,9 @@ fn bench_lu(c: &mut Criterion) {
     let p = 64;
     let rm = RoundingMode::ToEven;
     for &n in &[50usize, 200] {
-        let a = diag_dominant(n, p);
+        let Some(a) = diag_dominant(n, p) else {
+            continue;
+        };
         group.bench_with_input(BenchmarkId::from_parameter(n), &a, |b, a| {
             b.iter(|| sink(a.lu_decomp(p, rm)));
         });

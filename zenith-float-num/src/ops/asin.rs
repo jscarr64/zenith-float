@@ -141,7 +141,7 @@ mod tests {
         assert!(ONE.neg()?.asin(p, rm, &mut cc)?.cmp(&half_pi.neg()?) == 0);
 
         // subnormal arg
-        let n1 = random_subnormal(p);
+        let n1 = random_subnormal(p)?;
         assert!(n1.asin(p, rm, &mut cc)?.cmp(&n1) == 0);
         Ok(())
     }

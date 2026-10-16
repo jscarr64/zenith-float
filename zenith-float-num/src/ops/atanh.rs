@@ -153,7 +153,7 @@ mod tests {
             Err(Error::ExponentOverflow(Sign::Neg))
         ));
 
-        let n1 = random_subnormal(p);
+        let n1 = random_subnormal(p)?;
         assert!(n1.atanh(p, rm, &mut cc)?.cmp(&n1) == 0);
         Ok(())
     }

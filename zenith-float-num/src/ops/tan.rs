@@ -280,7 +280,7 @@ mod tests {
 
         let d3 = ExactNumNumber::min_positive(p)?;
         let zero = ExactNumNumber::new(1)?;
-        let n1 = random_subnormal(p);
+        let n1 = random_subnormal(p)?;
 
         assert!(d3.tan(p, rm, &mut cc)?.cmp(&d3) == 0);
         assert!(zero.tan(p, rm, &mut cc)?.is_zero());

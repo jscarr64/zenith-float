@@ -18,7 +18,7 @@ use zenith_float_num::{Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SI
 
 // constants computation
 #[test]
-fn mpfr_compare_const() {
+fn mpfr_compare_const() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let repeat_cnt = 100;
     let run_cnt = 500;
@@ -57,7 +57,7 @@ fn mpfr_compare_const() {
     };
 
     for _ in 0..repeat_cnt {
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
 
         for _ in 0..run_cnt {
             let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
@@ -82,7 +82,7 @@ fn mpfr_compare_const() {
                 &format!("{:?}", (p, rm, "const e")),
                 true,
                 &mut cc,
-            );
+            )?;
 
             // ln(10)
             let n1 = cc.ln_10(p, rm);
@@ -98,14 +98,14 @@ fn mpfr_compare_const() {
                 &format!("{:?}", (p, rm, "const ln(10)")),
                 true,
                 &mut cc,
-            );
+            )?;
         }
     }
 
     // large prec
     let p = 1_000_000;
 
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     let rm = RoundingMode::ToEven;
     let rnd = rnd_t::RNDN;
 
@@ -145,7 +145,7 @@ fn mpfr_compare_const() {
         &format!("{:?}", (p, rm, "const e")),
         true,
         &mut cc,
-    );
+    )?;
 
     // ln(10)
     let n1 = cc.ln_10(p, rm);
@@ -161,5 +161,6 @@ fn mpfr_compare_const() {
         &format!("{:?}", (p, rm, "const ln(10)")),
         true,
         &mut cc,
-    );
+    )?;
+    Ok(())
 }

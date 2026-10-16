@@ -22,14 +22,19 @@ fn set_mpfr_exp_range() {
     assert_eq!(EXPONENT_MAX, exp_max());
 }
 
-fn run_copysign_pairs(run_cnt: usize, p: usize, emin: Exponent, emax: Exponent) {
+fn run_copysign_pairs(
+    run_cnt: usize,
+    p: usize,
+    emin: Exponent,
+    emax: Exponent,
+) -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     set_mpfr_exp_range();
 
     for i in 0..run_cnt {
-        let (n1, f1) = get_float_pair(p, emin, emax, &mut cc);
-        let (n2, f2) = get_float_pair(p, emin, emax, &mut cc);
+        let (n1, f1) = get_float_pair(p, emin, emax, &mut cc)?;
+        let (n2, f2) = get_float_pair(p, emin, emax, &mut cc)?;
         let (rm, rnd) = get_random_rnd_pair();
         test_zf_op_no_cc!(
             true,
@@ -46,26 +51,28 @@ fn run_copysign_pairs(run_cnt: usize, p: usize, emin: Exponent, emax: Exponent) 
             cc
         );
     }
+    Ok(())
 }
 
 #[test]
-fn mpfr_compare_copysign() {
-    run_copysign_pairs(64, 4 * WORD_BIT_SIZE, -64, 64);
+fn mpfr_compare_copysign() -> Result<(), Box<dyn std::error::Error>> {
+    run_copysign_pairs(64, 4 * WORD_BIT_SIZE, -64, 64)?;
+    Ok(())
 }
 
 #[test]
-fn mpfr_compare_copysign_extreme() {
+fn mpfr_compare_copysign_extreme() -> Result<(), Box<dyn std::error::Error>> {
     // Same order of magnitude as `mpfr_compare_ops_large` (~10k+ bits).
     let p = 256 * WORD_BIT_SIZE;
-    run_copysign_pairs(8, p, -128, 128);
+    run_copysign_pairs(8, p, -128, 128)?;
 
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     set_mpfr_exp_range();
     let p1 = p;
     let p_out = 160 * WORD_BIT_SIZE;
-    let (n1, f1) = get_float_pair(p1, -32, 32, &mut cc);
-    let (n2, f2) = get_float_pair(p1, -32, 32, &mut cc);
+    let (n1, f1) = get_float_pair(p1, -32, 32, &mut cc)?;
+    let (n2, f2) = get_float_pair(p1, -32, 32, &mut cc)?;
     for _ in 0..5 {
         let (rm, rnd) = get_random_rnd_pair();
         test_zf_op_no_cc!(
@@ -83,11 +90,12 @@ fn mpfr_compare_copysign_extreme() {
             cc
         );
     }
+    Ok(())
 }
 
 #[test]
-fn mpfr_compare_copysign_specials() {
-    let mut cc = Consts::new().unwrap();
+fn mpfr_compare_copysign_specials() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     set_mpfr_exp_range();
     let p = 2 * WORD_BIT_SIZE;
     let rm = RoundingMode::ToEven;
@@ -102,7 +110,7 @@ fn mpfr_compare_copysign_specials() {
     let finf = Float::with_val(p as u32, Special::Infinity);
     let fninf = Float::with_val(p as u32, Special::NegInfinity);
     reset_test_rng();
-    let (nmag, fmag) = get_float_pair(p, -8, 8, &mut cc);
+    let (nmag, fmag) = get_float_pair(p, -8, 8, &mut cc)?;
 
     test_zf_op_no_cc!(true, nmag, pz, copysign, fmag, fz, copysign, p, rm, rnd, "sign +0", cc);
     test_zf_op_no_cc!(true, nmag, nz, copysign, fmag, fnz, copysign, p, rm, rnd, "sign -0", cc);
@@ -148,4 +156,5 @@ fn mpfr_compare_copysign_specials() {
         "inf copysign -0",
         cc
     );
+    Ok(())
 }

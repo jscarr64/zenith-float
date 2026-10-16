@@ -149,7 +149,7 @@ mod tests {
 
         // random subnormal arg
         for _ in 0..1000 {
-            let mut d1 = random_subnormal(prec);
+            let mut d1 = random_subnormal(prec)?;
             d1.set_sign(Sign::Pos);
 
             let d2 = d1.sqrt(prec, RoundingMode::ToEven)?;

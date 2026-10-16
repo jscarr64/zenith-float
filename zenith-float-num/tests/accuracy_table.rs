@@ -130,13 +130,13 @@ const SKIP: &[&str] = &[
     "mid",
 ];
 
-fn src(rel: &str) -> String {
+fn src(rel: &str) -> Result<String, String> {
     let path = format!("{}/src/{rel}", env!("CARGO_MANIFEST_DIR"));
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {path}: {err}"));
-    match text.find("\n#[cfg(test)]") {
+    let text = std::fs::read_to_string(&path).map_err(|err| format!("read {path}: {err}"))?;
+    Ok(match text.find("\n#[cfg(test)]") {
         Some(cut) => text[..cut].to_string(),
         None => text,
-    }
+    })
 }
 
 fn pub_fn_names(text: &str) -> Vec<String> {
@@ -225,16 +225,16 @@ fn names_near(text: &str, marker: &str) -> Vec<String> {
     names
 }
 
-fn discovered() -> BTreeSet<String> {
+fn discovered() -> Result<BTreeSet<String>, String> {
     let mut set = BTreeSet::new();
-    for name in pub_fn_names(&src("catalog.rs"))
+    for name in pub_fn_names(&src("catalog.rs")?)
         .into_iter()
-        .chain(pub_fn_names(&src("orthopoly.rs")))
-        .chain(pub_fn_names(&src("heun_fox.rs")))
+        .chain(pub_fn_names(&src("orthopoly.rs")?))
+        .chain(pub_fn_names(&src("heun_fox.rs")?))
     {
         set.insert(format!("ExactNum::{name}"));
     }
-    let ext = src("ext.rs");
+    let ext = src("ext.rs")?;
     for name in pub_fn_names(&ext) {
         if ELEMENTARY.contains(&name.as_str()) {
             set.insert(format!("ExactNum::{name}"));
@@ -258,14 +258,14 @@ fn discovered() -> BTreeSet<String> {
         "complex_hypergeom.rs",
         "complex_special.rs",
     ] {
-        for name in pub_fn_names(&src(rel)) {
+        for name in pub_fn_names(&src(rel)?) {
             set.insert(format!("ExactComplex::{name}"));
         }
     }
     set.insert("Ball::rad".to_string());
     set.insert("ComplexBall::rad".to_string());
     set.insert("GkResult::abs_err_est".to_string());
-    set
+    Ok(set)
 }
 
 fn phrase_near(blob: &str, path: &str, phrase: &str) -> bool {
@@ -294,12 +294,12 @@ fn phrase_near(blob: &str, path: &str, phrase: &str) -> bool {
 }
 
 #[test]
-fn accuracy_labels_cover_public_numeric_functions() {
+fn accuracy_labels_cover_public_numeric_functions() -> Result<(), Box<dyn std::error::Error>> {
     let mut table = BTreeSet::new();
     for (path, _) in ACCURACY {
         assert!(table.insert((*path).to_string()), "duplicate {path}");
     }
-    let found = discovered();
+    let found = discovered()?;
     let missing: Vec<_> = found.difference(&table).collect();
     let extra: Vec<_> = table.difference(&found).collect();
     assert!(
@@ -324,7 +324,7 @@ fn accuracy_labels_cover_public_numeric_functions() {
         "gauss_kronrod.rs",
         "accuracy.rs",
     ] {
-        blob.push_str(&src(rel));
+        blob.push_str(&src(rel)?);
         blob.push('\n');
     }
     for (path, class) in ACCURACY {
@@ -397,4 +397,5 @@ fn accuracy_labels_cover_public_numeric_functions() {
     assert!(ACCURACY
         .iter()
         .all(|(_, class)| *class != Accuracy::Faithful));
+    Ok(())
 }

@@ -13,11 +13,15 @@ fn bench_ln(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
 
     for &p in PRECISIONS {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let values = cycle_batch(p, &mut cc, LN_FIXTURES, TRANSCENDENTAL_BATCH);
         group.throughput(Throughput::Elements(TRANSCENDENTAL_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {
-            let mut cc = Consts::new().expect("constants cache");
+            let Ok(mut cc) = Consts::new() else {
+                return;
+            };
             b.iter(|| {
                 for x in values {
                     sink(x.ln(p, rm, &mut cc));
@@ -33,11 +37,15 @@ fn bench_exp(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
 
     for &p in PRECISIONS {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let values = cycle_batch(p, &mut cc, EXP_FIXTURES, TRANSCENDENTAL_BATCH);
         group.throughput(Throughput::Elements(TRANSCENDENTAL_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {
-            let mut cc = Consts::new().expect("constants cache");
+            let Ok(mut cc) = Consts::new() else {
+                return;
+            };
             b.iter(|| {
                 for x in values {
                     sink(x.exp(p, rm, &mut cc));
@@ -80,11 +88,15 @@ where
     let rm = RoundingMode::ToEven;
 
     for &p in PRECISIONS {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let values = cycle_batch(p, &mut cc, TRIG_FIXTURES, TRANSCENDENTAL_BATCH);
         group.throughput(Throughput::Elements(TRANSCENDENTAL_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {
-            let mut cc = Consts::new().expect("constants cache");
+            let Ok(mut cc) = Consts::new() else {
+                return;
+            };
             b.iter(|| {
                 for x in values {
                     sink(op(x, p, rm, &mut cc));
@@ -105,7 +117,9 @@ fn bench_pow(c: &mut Criterion) {
     let exponents: &[&str] = &["0.5", "1.5", "2.0", "3.0", "0.25"];
 
     for &p in &[128, 1024, 4096] {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let pairs: Vec<(ExactNum, ExactNum)> = parse_list(
             p,
             &mut cc,
@@ -125,7 +139,9 @@ fn bench_pow(c: &mut Criterion) {
 
         group.throughput(Throughput::Elements(batch as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
-            let mut cc = Consts::new().expect("constants cache");
+            let Ok(mut cc) = Consts::new() else {
+                return;
+            };
             b.iter(|| {
                 for (base, exp) in pairs {
                     sink(base.pow(exp, p, rm, &mut cc));
@@ -144,7 +160,9 @@ fn bench_hypot(c: &mut Criterion) {
     let legs: &[&str] = &["3.0", "4.0", "5.0", "12.0", "1.234567890123456789"];
 
     for &p in PRECISIONS {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let pairs = cycle_pairs(p, &mut cc, legs, batch, 5, 2);
 
         group.throughput(Throughput::Elements(batch as u64));
@@ -164,11 +182,15 @@ fn bench_log2_log10(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
 
     for &p in &[128, 1024, 4096] {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let values = cycle_batch(p, &mut cc, LN_FIXTURES, TRANSCENDENTAL_BATCH);
         group.throughput(Throughput::Elements(TRANSCENDENTAL_BATCH as u64));
         group.bench_with_input(BenchmarkId::new("log2", p), &values, |b, values| {
-            let mut cc = Consts::new().expect("constants cache");
+            let Ok(mut cc) = Consts::new() else {
+                return;
+            };
             b.iter(|| {
                 for x in values {
                     sink(x.log2(p, rm, &mut cc));
@@ -176,7 +198,9 @@ fn bench_log2_log10(c: &mut Criterion) {
             });
         });
         group.bench_with_input(BenchmarkId::new("log10", p), &values, |b, values| {
-            let mut cc = Consts::new().expect("constants cache");
+            let Ok(mut cc) = Consts::new() else {
+                return;
+            };
             b.iter(|| {
                 for x in values {
                     sink(x.log10(p, rm, &mut cc));

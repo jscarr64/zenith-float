@@ -246,7 +246,7 @@ fn eval_row(row: &serde_json::Value) -> Result<Canon, String> {
                     let c = arg_value(args.get(2).map(String::as_str).unwrap_or("0"), p, &mut cc);
                     a.fma(&b, &c, p, rm)
                 }
-                _ => unreachable!(),
+                _ => return Err(String::from("unknown binary op")),
             }
         }
         "sqrt" => arg_value(&args[0], p, &mut cc).sqrt(p, rm),
@@ -284,12 +284,12 @@ fn eval_row(row: &serde_json::Value) -> Result<Canon, String> {
     Ok(canon_of(&got))
 }
 
-fn run_file(name: &str) {
+fn run_file(name: &str) -> Result<(), String> {
     let path = format!(
         "{}/tests/oracle/goldens/{name}.jsonl",
         env!("CARGO_MANIFEST_DIR")
     );
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {path}: {err}"));
+    let text = std::fs::read_to_string(&path).map_err(|err| format!("read {path}: {err}"))?;
     let mut ran = 0usize;
     let mut failed = 0usize;
     let mut samples: Vec<String> = Vec::new();
@@ -301,9 +301,8 @@ fn run_file(name: &str) {
         if line.is_empty() {
             continue;
         }
-        let row: serde_json::Value = serde_json::from_str(line).unwrap_or_else(|err| {
-            panic!("json {name}: {err}");
-        });
+        let row: serde_json::Value =
+            serde_json::from_str(line).map_err(|err| format!("json {name}: {err}"))?;
         let tier = row.get("tier").and_then(|v| v.as_str()).unwrap_or("fast");
         if !tier_selected(tier) {
             continue;
@@ -344,45 +343,46 @@ fn run_file(name: &str) {
         }
     }
     if failed != 0 {
-        panic!(
+        return Err(format!(
             "{name}.jsonl fast-or-selected: {failed} failed / {ran}\n{}",
             samples.join("\n")
-        );
+        ));
     }
     eprintln!("{name}.jsonl passed {ran}");
+    Ok(())
 }
 
 #[test]
-fn rounding() {
-    run_file("rounding");
+fn rounding() -> Result<(), String> {
+    run_file("rounding")
 }
 
 #[test]
-fn arith() {
-    run_file("arith");
+fn arith() -> Result<(), String> {
+    run_file("arith")
 }
 
 #[test]
-fn edges() {
-    run_file("edges");
+fn edges() -> Result<(), String> {
+    run_file("edges")
 }
 
 #[test]
-fn parse() {
-    run_file("parse");
+fn parse() -> Result<(), String> {
+    run_file("parse")
 }
 
 #[test]
-fn elementary() {
-    run_file("elementary");
+fn elementary() -> Result<(), String> {
+    run_file("elementary")
 }
 
 #[test]
-fn constants() {
-    run_file("constants");
+fn constants() -> Result<(), String> {
+    run_file("constants")
 }
 
 #[test]
-fn complex() {
-    run_file("complex");
+fn complex() -> Result<(), String> {
+    run_file("complex")
 }

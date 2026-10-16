@@ -780,7 +780,7 @@ mod test {
         assert!(d2.cmp(&d3) == 0);
 
         // random subnormal
-        let d1 = random_subnormal(p);
+        let d1 = random_subnormal(p)?;
         assert!(d1.exp(p, RoundingMode::ToEven, &mut cc)?.cmp(&ONE) == 0);
 
         // pow(small, small)

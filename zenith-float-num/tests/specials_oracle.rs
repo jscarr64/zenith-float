@@ -655,12 +655,12 @@ fn push_range(out: &mut String, start: usize, end: usize) {
     }
 }
 
-fn run_file(name: &str) {
+fn run_file(name: &str) -> Result<(), String> {
     let path = format!(
         "{}/tests/oracle/goldens/specials/{name}.jsonl",
         env!("CARGO_MANIFEST_DIR")
     );
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {path}: {err}"));
+    let text = std::fs::read_to_string(&path).map_err(|err| format!("read {path}: {err}"))?;
     let mut ran = 0usize;
     let mut failed = 0usize;
     let mut samples: Vec<String> = Vec::new();
@@ -674,7 +674,7 @@ fn run_file(name: &str) {
             continue;
         }
         let row: serde_json::Value =
-            serde_json::from_str(line).unwrap_or_else(|err| panic!("json {name}: {err}"));
+            serde_json::from_str(line).map_err(|err| format!("json {name}: {err}"))?;
         let tier = row.get("tier").and_then(|v| v.as_str()).unwrap_or("fast");
         if !tier_selected(tier) {
             continue;
@@ -718,121 +718,122 @@ fn run_file(name: &str) {
         }
     }
     if failed != 0 {
-        panic!(
+        return Err(format!(
             "{name}.jsonl: {failed} failed / {ran}\nlines {}\n{}",
             compress(&lines),
             samples.join("\n")
-        );
+        ));
     }
     eprintln!("{name}.jsonl passed {ran}");
+    Ok(())
 }
 
 #[test]
-fn erf() {
-    run_file("erf");
+fn erf() -> Result<(), String> {
+    run_file("erf")
 }
 
 #[test]
-fn gamma() {
-    run_file("gamma");
+fn gamma() -> Result<(), String> {
+    run_file("gamma")
 }
 
 #[test]
-fn bessel() {
-    run_file("bessel");
+fn bessel() -> Result<(), String> {
+    run_file("bessel")
 }
 
 #[test]
-fn elliptic() {
-    run_file("elliptic");
+fn elliptic() -> Result<(), String> {
+    run_file("elliptic")
 }
 
 #[test]
-fn jacobi() {
-    run_file("jacobi");
+fn jacobi() -> Result<(), String> {
+    run_file("jacobi")
 }
 
 #[test]
-fn airy() {
-    run_file("airy");
+fn airy() -> Result<(), String> {
+    run_file("airy")
 }
 
 #[test]
-fn expint() {
-    run_file("expint");
+fn expint() -> Result<(), String> {
+    run_file("expint")
 }
 
 #[test]
-fn hypergeom_2f1() {
-    run_file("hypergeom_2f1");
+fn hypergeom_2f1() -> Result<(), String> {
+    run_file("hypergeom_2f1")
 }
 
 #[test]
-fn hypergeom_1f1() {
-    run_file("hypergeom_1f1");
+fn hypergeom_1f1() -> Result<(), String> {
+    run_file("hypergeom_1f1")
 }
 
 #[test]
-fn hypergeom_0f1() {
-    run_file("hypergeom_0f1");
+fn hypergeom_0f1() -> Result<(), String> {
+    run_file("hypergeom_0f1")
 }
 
 #[test]
-fn lambert() {
-    run_file("lambert");
+fn lambert() -> Result<(), String> {
+    run_file("lambert")
 }
 
 #[test]
-fn kelvin() {
-    run_file("kelvin");
+fn kelvin() -> Result<(), String> {
+    run_file("kelvin")
 }
 
 #[test]
-fn scorer() {
-    run_file("scorer");
+fn scorer() -> Result<(), String> {
+    run_file("scorer")
 }
 
 #[test]
-fn clausen() {
-    run_file("clausen");
+fn clausen() -> Result<(), String> {
+    run_file("clausen")
 }
 
 #[test]
-fn zeta() {
-    run_file("zeta");
+fn zeta() -> Result<(), String> {
+    run_file("zeta")
 }
 
 #[test]
-fn barnes() {
-    run_file("barnes");
+fn barnes() -> Result<(), String> {
+    run_file("barnes")
 }
 
 #[test]
-fn anger_weber_struve() {
-    run_file("anger_weber_struve");
+fn anger_weber_struve() -> Result<(), String> {
+    run_file("anger_weber_struve")
 }
 
 #[test]
-fn orthopoly() {
-    run_file("orthopoly");
+fn orthopoly() -> Result<(), String> {
+    run_file("orthopoly")
 }
 
 #[test]
-fn polylog() {
-    run_file("polylog");
+fn polylog() -> Result<(), String> {
+    run_file("polylog")
 }
 
 #[test]
-fn meijer_fox_heun() {
-    run_file("meijer_fox_heun");
+fn meijer_fox_heun() -> Result<(), String> {
+    run_file("meijer_fox_heun")
 }
 
 #[test]
-fn complex() {
-    run_file("complex");
+fn complex() -> Result<(), String> {
+    run_file("complex")
 }
 
 #[test]
-fn other() {
-    run_file("other");
+fn other() -> Result<(), String> {
+    run_file("other")
 }

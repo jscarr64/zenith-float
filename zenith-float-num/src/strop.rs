@@ -239,7 +239,7 @@ mod tests {
                 let built = if i & 1 == 0 {
                     ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND)
                 } else {
-                    Ok(random_subnormal(p1))
+                    Ok(random_subnormal(p1)?)
                 };
                 crate::common::test_rng::pin_thread_seed(resume);
                 built

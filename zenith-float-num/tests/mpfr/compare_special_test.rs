@@ -22,26 +22,32 @@ use zenith_float_num::{
 };
 
 #[test]
-fn mpfr_compare_special() {
+fn mpfr_compare_special() -> Result<(), Box<dyn std::error::Error>> {
     let run_cnt = 500;
     let p_rng = get_prec_rng();
     let p_min = 1;
 
-    run_compare_special(run_cnt, p_rng, p_min);
+    run_compare_special(run_cnt, p_rng, p_min)?;
+    Ok(())
 }
 
 #[test]
-fn mpfr_compare_special_large() {
+fn mpfr_compare_special_large() -> Result<(), Box<dyn std::error::Error>> {
     let run_cnt_large = 3;
     let p_rng_large = 1;
     let p_min_large = 1563;
 
-    run_compare_special(run_cnt_large, p_rng_large, p_min_large);
+    run_compare_special(run_cnt_large, p_rng_large, p_min_large)?;
+    Ok(())
 }
 
-fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
+fn run_compare_special(
+    run_cnt: usize,
+    p_rng: usize,
+    p_min: usize,
+) -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
 
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as exp_t);
@@ -82,7 +88,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
         for n in nn.iter() {
             //println!("{:?}", n);
 
-            let f = conv_to_mpfr(p1, n, &mut cc);
+            let f = conv_to_mpfr(p1, n, &mut cc)?;
 
             let nn1 = [
                 ExactNum::new(p2),
@@ -101,7 +107,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
             ];
 
             for n1 in nn1.iter() {
-                let f1 = conv_to_mpfr(p2, n1, &mut cc);
+                let f1 = conv_to_mpfr(p2, n1, &mut cc)?;
 
                 //println!("rm {:?}", rm);
                 //println!("\n--{:?}\n{:?}", n, n1);
@@ -197,7 +203,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
 
                 //println!("\n{:?}\n{:?}", n3, f3);
 
-                assert_float_close(n3, f3, p, &format!("{:?}", (n, n1, "rem")), true, &mut cc);
+                assert_float_close(n3, f3, p, &format!("{:?}", (n, n1, "rem")), true, &mut cc)?;
             }
 
             test_zf_op_no_cc!(true, n, sqrt, f, sqrt, p, rm, rnd, (n, p, rm, "sqrt"), cc);
@@ -238,9 +244,9 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
             test_zf_op!(true, n, atan, f, atan, p, rm, rnd, (n, p, rm, "atan"), cc);
 
             let mut n_trig = n.clone();
-            let f_trig = if n.exponent().unwrap() > 128 {
+            let f_trig = if n.exponent().ok_or("none value")? > 128 {
                 n_trig.set_exponent(128); // large exponent causes very long computation.
-                conv_to_mpfr(p1, &n_trig, &mut cc)
+                conv_to_mpfr(p1, &n_trig, &mut cc)?
             } else {
                 f.clone()
             };
@@ -345,7 +351,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
                     &format!("{:?}", (n, p, rm, "reciprocal")),
                     false,
                     &mut cc,
-                );
+                )?;
             }
         }
     }
@@ -363,7 +369,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
         let e = test_random::<usize>() % (10 + EXPONENT_MAX as usize / ediv);
         n.set_exponent(((EXPONENT_MIN as usize / ediv) as isize + e as isize) as Exponent);
 
-        let f = conv_to_mpfr(p1, &n, &mut cc);
+        let f = conv_to_mpfr(p1, &n, &mut cc)?;
 
         test_zf_op!(true, n, sin, f, sin, p, rm, rnd, (&n, p, rm, "sin"), cc);
 
@@ -371,4 +377,5 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
 
         test_zf_op!(true, n, tan, f, tan, p, rm, rnd, (n, p, rm, "tan"), cc);
     }
+    Ok(())
 }

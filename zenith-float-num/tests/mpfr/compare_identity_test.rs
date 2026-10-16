@@ -35,11 +35,11 @@ fn tiny(x: &ExactNum, p: usize) -> bool {
 }
 
 #[test]
-fn mpfr_identity_no_oracle_specials() {
+fn mpfr_identity_no_oracle_specials() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let p = 2 * WORD_BIT_SIZE;
     let rm = RoundingMode::ToEven;
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     let one = ExactNum::from_u8(1, p);
     let zero = ExactNum::new(p);
     let two = ExactNum::from_u8(2, p);
@@ -144,4 +144,5 @@ fn mpfr_identity_no_oracle_specials() {
         tiny(&ExactNum::sub_ref(g5.re(), &tf, p, rm), p) && tiny(g5.im(), p),
         "Γ(5)=24"
     );
+    Ok(())
 }

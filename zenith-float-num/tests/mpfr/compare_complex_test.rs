@@ -11,9 +11,9 @@ use rug::{
 use zenith_float_num::{Consts, ExactComplex, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
 #[test]
-fn mpfr_compare_complex() {
+fn mpfr_compare_complex() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
 
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as exp_t);
@@ -26,10 +26,10 @@ fn mpfr_compare_complex() {
 
     for _ in 0..12 {
         let (rm, rnd) = get_random_rnd_pair();
-        let (ar, far) = get_float_pair(p, -8, 8, &mut cc);
-        let (ai, fai) = get_float_pair(p, -8, 8, &mut cc);
-        let (br, fbr) = get_float_pair(p, -8, 8, &mut cc);
-        let (bi, fbi) = get_float_pair(p, -8, 8, &mut cc);
+        let (ar, far) = get_float_pair(p, -8, 8, &mut cc)?;
+        let (ai, fai) = get_float_pair(p, -8, 8, &mut cc)?;
+        let (br, fbr) = get_float_pair(p, -8, 8, &mut cc)?;
+        let (bi, fbi) = get_float_pair(p, -8, 8, &mut cc)?;
         if ar.is_nan() || ai.is_nan() || br.is_nan() || bi.is_nan() {
             continue;
         }
@@ -45,8 +45,8 @@ fn mpfr_compare_complex() {
             mpfr::add(fim.as_raw_mut(), fai.as_raw(), fbi.as_raw(), rnd);
         }
         let (sre, sim) = s.into_parts();
-        assert_float_close(sre, fre, p, "cplx add re", true, &mut cc);
-        assert_float_close(sim, fim, p, "cplx add im", true, &mut cc);
+        assert_float_close(sre, fre, p, "cplx add re", true, &mut cc)?;
+        assert_float_close(sim, fim, p, "cplx add im", true, &mut cc)?;
 
         let pr = a.mul(&b, p, rm);
         let mut fre = Float::with_val(p as u32, 1);
@@ -64,16 +64,17 @@ fn mpfr_compare_complex() {
             mpfr::add(fim.as_raw_mut(), fad.as_raw(), fbc.as_raw(), rnd);
         }
         let (pre, pim) = pr.into_parts();
-        assert_float_close(pre, fre, p, "cplx mul re", true, &mut cc);
-        assert_float_close(pim, fim, p, "cplx mul im", true, &mut cc);
+        assert_float_close(pre, fre, p, "cplx mul re", true, &mut cc)?;
+        assert_float_close(pim, fim, p, "cplx mul im", true, &mut cc)?;
     }
+    Ok(())
 }
 
 /// Complex specials on the real axis vs MPFR. GNU MPC has no erf / Γ / Ai / J_n.
 #[test]
-fn mpfr_compare_complex_real_axis() {
+fn mpfr_compare_complex_real_axis() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
 
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as exp_t);
@@ -83,7 +84,7 @@ fn mpfr_compare_complex_real_axis() {
     let p = 2 * WORD_BIT_SIZE;
 
     for _ in 0..8 {
-        let (n1, f1) = get_float_pair(p, -1, 2, &mut cc);
+        let (n1, f1) = get_float_pair(p, -1, 2, &mut cc)?;
         if n1.is_nan() || n1.is_inf() {
             continue;
         }
@@ -97,7 +98,7 @@ fn mpfr_compare_complex_real_axis() {
             mpfr::erf(fe.as_raw_mut(), f1.as_raw(), rnd);
         }
         let (er_re, er_im) = er.into_parts();
-        assert_float_close(er_re, fe, p, "cplx erf|R re", false, &mut cc);
+        assert_float_close(er_re, fe, p, "cplx erf|R re", false, &mut cc)?;
         assert!(
             er_im.is_zero() || er_im.exponent().is_some_and(|e| e < -((p as i32) / 4)),
             "cplx erf|R im"
@@ -109,7 +110,7 @@ fn mpfr_compare_complex_real_axis() {
             unsafe {
                 mpfr::gamma(fg.as_raw_mut(), f1.as_raw(), rnd);
             }
-            assert_float_close(g.into_parts().0, fg, p, "cplx gamma|R re", false, &mut cc);
+            assert_float_close(g.into_parts().0, fg, p, "cplx gamma|R re", false, &mut cc)?;
         }
 
         let a = z.ai(p, rm, &mut cc);
@@ -117,12 +118,12 @@ fn mpfr_compare_complex_real_axis() {
         unsafe {
             mpfr::ai(fa.as_raw_mut(), f1.as_raw(), rnd);
         }
-        assert_float_close(a.into_parts().0, fa, p, "cplx ai|R re", false, &mut cc);
+        assert_float_close(a.into_parts().0, fa, p, "cplx ai|R re", false, &mut cc)?;
     }
 
     for n_ord in [0i64, 1] {
         for _ in 0..4 {
-            let (n1, f1) = get_float_pair(p, -1, 2, &mut cc);
+            let (n1, f1) = get_float_pair(p, -1, 2, &mut cc)?;
             if n1.is_nan() || n1.is_inf() {
                 continue;
             }
@@ -141,7 +142,8 @@ fn mpfr_compare_complex_real_axis() {
                 &format!("cplx J_{n_ord}|R"),
                 false,
                 &mut cc,
-            );
+            )?;
         }
     }
+    Ok(())
 }

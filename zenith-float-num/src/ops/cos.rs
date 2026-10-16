@@ -211,7 +211,7 @@ mod tests {
 
         let d3 = ExactNumNumber::min_positive(p)?;
         let zero = ExactNumNumber::new(1)?;
-        let d4 = random_subnormal(p);
+        let d4 = random_subnormal(p)?;
 
         assert!(d3.cos(p, rm, &mut cc)?.cmp(&ONE) == 0);
         assert!(zero.cos(p, rm, &mut cc)?.cmp(&ONE) == 0);

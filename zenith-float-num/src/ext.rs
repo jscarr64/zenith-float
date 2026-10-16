@@ -5433,11 +5433,8 @@ mod special_arg_tests {
     }
 
     #[test]
-    fn nan_operand_wins_in_ternary_and_binary_ops() {
-        let mut cc = match Consts::new() {
-            Ok(c) => c,
-            Err(e) => panic!("consts: {e:?}"),
-        };
+    fn nan_operand_wins_in_ternary_and_binary_ops() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = Consts::new()?;
         for n in nans() {
             let v = one();
             for (a, b, c) in [(&n, &v, &v), (&v, &n, &v), (&v, &v, &n)] {
@@ -5464,6 +5461,7 @@ mod special_arg_tests {
             same_nan(&hi, &n);
             same_nan(&lo, &n);
         }
+        Ok(())
     }
 
     #[test]
@@ -5878,7 +5876,7 @@ mod grid_digest_tests {
 
     /// `{r:?}` without the storage representation: inline capacity and heap buffers print differently for the
     /// same words, and which one a result lives in is not part of its value.
-    fn value_repr(r: &ExactNum) -> String {
+    fn value_repr(r: &ExactNum) -> Result<String, crate::Error> {
         let d = format!("{r:?}");
         let mut out = String::new();
         let mut rest = d.as_str();
@@ -5886,15 +5884,19 @@ mod grid_digest_tests {
             let (head, tail) = rest.split_at(i + "inner: ".len());
             out.push_str(head);
             if let Some(t) = tail.strip_prefix("Inline { data: [") {
-                let close = t.find("], len: ").unwrap();
+                let close = t.find("], len: ").ok_or(crate::Error::InvalidArgument)?;
                 let words: Vec<&str> = t[..close].split(", ").collect();
                 let after = &t[close + "], len: ".len()..];
-                let digits = after.find(|c: char| !c.is_ascii_digit()).unwrap();
-                let len: usize = after[..digits].parse().unwrap();
+                let digits = after
+                    .find(|c: char| !c.is_ascii_digit())
+                    .ok_or(crate::Error::InvalidArgument)?;
+                let len: usize = after[..digits]
+                    .parse()
+                    .map_err(|_| crate::Error::InvalidArgument)?;
                 out.push_str(&format!("{:?}", &words[..len]));
                 rest = &after[digits + " }".len()..];
             } else if let Some(t) = tail.strip_prefix("Heap([") {
-                let close = t.find("])").unwrap();
+                let close = t.find("])").ok_or(crate::Error::InvalidArgument)?;
                 let words: Vec<&str> = t[..close].split(", ").collect();
                 out.push_str(&format!("{words:?}"));
                 rest = &t[close + "])".len()..];
@@ -5903,17 +5905,18 @@ mod grid_digest_tests {
             }
         }
         out.push_str(rest);
-        out
+        Ok(out)
     }
 
-    fn digest(r: &ExactNum, h: &mut DefaultHasher) {
-        value_repr(r).hash(h);
+    fn digest(r: &ExactNum, h: &mut DefaultHasher) -> Result<(), Box<dyn std::error::Error>> {
+        value_repr(r)?.hash(h);
         r.inexact().hash(h);
         r.inexact_accumulated().hash(h);
+        Ok(())
     }
 
     #[test]
-    fn ldexp_and_scalb_grid_digest() {
+    fn ldexp_and_scalb_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let shifts = [
             0,
             1,
@@ -5938,8 +5941,8 @@ mod grid_digest_tests {
             for n in shifts {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        digest(&operand(i).ldexp(n, p, rm), &mut h);
-                        digest(&operand(i).scalb(n, p, rm), &mut h);
+                        digest(&operand(i).ldexp(n, p, rm), &mut h)?;
+                        digest(&operand(i).scalb(n, p, rm), &mut h)?;
                         count += 2;
                     }
                 }
@@ -5948,17 +5951,18 @@ mod grid_digest_tests {
         assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
         println!("ldexp grid digest = {}", h.finish());
         assert_eq!(h.finish(), 3_896_020_040_264_525_112);
+        Ok(())
     }
 
     #[test]
-    fn round_grid_digest() {
+    fn round_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let positions = [0usize, 1, 5, 63, 64, 65, 100, 200, 1 << 20, 1 << 40, usize::MAX / 2];
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..OPERANDS {
             for n in positions {
                 for rm in RMS {
-                    digest(&operand(i).round(n, rm), &mut h);
+                    digest(&operand(i).round(n, rm), &mut h)?;
                     count += 1;
                 }
             }
@@ -5966,32 +5970,34 @@ mod grid_digest_tests {
         assert_eq!(count, OPERANDS * 11 * 6);
         println!("round grid digest = {}", h.finish());
         assert_eq!(h.finish(), 2_584_562_321_548_619_649);
+        Ok(())
     }
 
     /// The `+` and `-` operators on every combination of owned and borrowed operands that exists.
     #[test]
-    fn operator_grid_digest() {
+    fn operator_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
-                digest(&(&operand(i) + operand(j)), &mut h);
-                digest(&(operand(i) + &operand(j)), &mut h);
-                digest(&(operand(i) + operand(j)), &mut h);
-                digest(&(&operand(i) - operand(j)), &mut h);
-                digest(&(operand(i) - &operand(j)), &mut h);
-                digest(&(operand(i) - operand(j)), &mut h);
+                digest(&(&operand(i) + operand(j)), &mut h)?;
+                digest(&(operand(i) + &operand(j)), &mut h)?;
+                digest(&(operand(i) + operand(j)), &mut h)?;
+                digest(&(&operand(i) - operand(j)), &mut h)?;
+                digest(&(operand(i) - &operand(j)), &mut h)?;
+                digest(&(operand(i) - operand(j)), &mut h)?;
                 count += 6;
             }
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
         println!("operator grid digest = {}", h.finish());
         assert_eq!(h.finish(), 7_046_299_910_751_575_496);
+        Ok(())
     }
 
     /// `ExactComplex::add` and `sub` over parts that include zeros, Inf, NaN, inexact and subnormal values.
     #[test]
-    fn complex_add_sub_grid_digest() {
+    fn complex_add_sub_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         use crate::ExactComplex;
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
@@ -6005,8 +6011,8 @@ mod grid_digest_tests {
                                 let z1 = || ExactComplex::new(operand(a), operand(b));
                                 let z2 = || ExactComplex::new(operand(c), operand(d));
                                 for r in [z1().add(&z2(), p, rm), z1().sub(&z2(), p, rm)] {
-                                    digest(r.re(), &mut h);
-                                    digest(r.im(), &mut h);
+                                    digest(r.re(), &mut h)?;
+                                    digest(r.im(), &mut h)?;
                                     count += 1;
                                 }
                             }
@@ -6018,20 +6024,21 @@ mod grid_digest_tests {
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
         println!("complex add/sub grid digest = {}", h.finish());
         assert_eq!(h.finish(), 10_853_667_709_392_583_003);
+        Ok(())
     }
 
     /// `ExactNum::add_ref` / `sub_ref` (both operands borrowed) hash to the same digest as the
     /// `add`/`sub` grid pinned on the pre-rule-R code (`add_sub_grid_digest`): same grid, same order.
     #[test]
-    fn add_ref_sub_ref_grid_digest() {
+    fn add_ref_sub_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        digest(&ExactNum::add_ref(&operand(i), &operand(j), p, rm), &mut h);
-                        digest(&ExactNum::sub_ref(&operand(i), &operand(j), p, rm), &mut h);
+                        digest(&ExactNum::add_ref(&operand(i), &operand(j), p, rm), &mut h)?;
+                        digest(&ExactNum::sub_ref(&operand(i), &operand(j), p, rm), &mut h)?;
                         count += 2;
                     }
                 }
@@ -6041,19 +6048,20 @@ mod grid_digest_tests {
                     _ => true,
                 };
                 if near {
-                    digest(&operand(i).add_full_prec(&operand(j)), &mut h);
-                    digest(&operand(i).sub_full_prec(&operand(j)), &mut h);
+                    digest(&operand(i).add_full_prec(&operand(j)), &mut h)?;
+                    digest(&operand(i).sub_full_prec(&operand(j)), &mut h)?;
                     count += 2;
                 }
             }
         }
         assert_eq!(count, 45_030);
         assert_eq!(h.finish(), 7_232_426_507_586_278_165);
+        Ok(())
     }
 
     /// `ExactComplex::add_ref` / `sub_ref` against the complex add/sub grid pinned on the old code.
     #[test]
-    fn complex_add_ref_sub_ref_grid_digest() {
+    fn complex_add_ref_sub_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         use crate::ExactComplex;
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
@@ -6070,8 +6078,8 @@ mod grid_digest_tests {
                                     ExactComplex::add_ref(&z1, &z2, p, rm),
                                     ExactComplex::sub_ref(&z1, &z2, p, rm),
                                 ] {
-                                    digest(r.re(), &mut h);
-                                    digest(r.im(), &mut h);
+                                    digest(r.re(), &mut h)?;
+                                    digest(r.im(), &mut h)?;
                                     count += 1;
                                 }
                             }
@@ -6082,18 +6090,19 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
         assert_eq!(h.finish(), 10_853_667_709_392_583_003);
+        Ok(())
     }
 
     #[test]
-    fn add_sub_grid_digest() {
+    fn add_sub_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        digest(&operand(i).add(&operand(j), p, rm), &mut h);
-                        digest(&operand(i).sub(&operand(j), p, rm), &mut h);
+                        digest(&operand(i).add(&operand(j), p, rm), &mut h)?;
+                        digest(&operand(i).sub(&operand(j), p, rm), &mut h)?;
                         count += 2;
                     }
                 }
@@ -6104,8 +6113,8 @@ mod grid_digest_tests {
                     _ => true,
                 };
                 if near {
-                    digest(&operand(i).add_full_prec(&operand(j)), &mut h);
-                    digest(&operand(i).sub_full_prec(&operand(j)), &mut h);
+                    digest(&operand(i).add_full_prec(&operand(j)), &mut h)?;
+                    digest(&operand(i).sub_full_prec(&operand(j)), &mut h)?;
                     count += 2;
                 }
             }
@@ -6115,35 +6124,37 @@ mod grid_digest_tests {
         // Differs from the digest pinned on the pre-kernel-branch code in exactly 40 results: full-precision
         // sums with a zero operand (see `full_prec_with_zero_operand_is_the_other_operand`).
         assert_eq!(h.finish(), 7_232_426_507_586_278_165);
+        Ok(())
     }
 
     /// `mul` and `div` over every pair of grid operands, all precisions and rounding modes. Pinned on the
     /// code before `mul`/`div` took `self` and before `mul_ref`/`div_ref` existed.
     #[test]
-    fn mul_div_grid_digest() {
+    fn mul_div_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        digest(&operand(i).mul(&operand(j), p, rm), &mut h);
-                        digest(&operand(i).div(&operand(j), p, rm), &mut h);
+                        digest(&operand(i).mul(&operand(j), p, rm), &mut h)?;
+                        digest(&operand(i).div(&operand(j), p, rm), &mut h)?;
                         count += 2;
                     }
                 }
-                digest(&operand(i).mul_full_prec(&operand(j)), &mut h);
+                digest(&operand(i).mul_full_prec(&operand(j)), &mut h)?;
                 count += 1;
             }
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
         println!("mul/div grid digest = {}", h.finish());
         assert_eq!(h.finish(), 6_916_243_447_203_512_029);
+        Ok(())
     }
 
     /// `ExactComplex::mul` and `div` over parts that include zeros, Inf, NaN, inexact and subnormal values.
     #[test]
-    fn complex_mul_div_grid_digest() {
+    fn complex_mul_div_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         use crate::ExactComplex;
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
@@ -6157,8 +6168,8 @@ mod grid_digest_tests {
                                 let z1 = || ExactComplex::new(operand(a), operand(b));
                                 let z2 = || ExactComplex::new(operand(c), operand(d));
                                 for r in [z1().mul(&z2(), p, rm), z1().div(&z2(), p, rm)] {
-                                    digest(r.re(), &mut h);
-                                    digest(r.im(), &mut h);
+                                    digest(r.re(), &mut h)?;
+                                    digest(r.im(), &mut h)?;
                                     count += 1;
                                 }
                             }
@@ -6170,42 +6181,44 @@ mod grid_digest_tests {
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
         println!("complex mul/div grid digest = {}", h.finish());
         assert_eq!(h.finish(), 10_955_470_768_505_023_618);
+        Ok(())
     }
 
     /// `ExactNum::mul_ref` / `div_ref` (both operands borrowed) against the digest pinned on the old code.
     #[test]
-    fn mul_ref_div_ref_grid_digest() {
+    fn mul_ref_div_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        digest(&ExactNum::mul_ref(&operand(i), &operand(j), p, rm), &mut h);
-                        digest(&ExactNum::div_ref(&operand(i), &operand(j), p, rm), &mut h);
+                        digest(&ExactNum::mul_ref(&operand(i), &operand(j), p, rm), &mut h)?;
+                        digest(&ExactNum::div_ref(&operand(i), &operand(j), p, rm), &mut h)?;
                         count += 2;
                     }
                 }
-                digest(&operand(i).mul_full_prec(&operand(j)), &mut h);
+                digest(&operand(i).mul_full_prec(&operand(j)), &mut h)?;
                 count += 1;
             }
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
         assert_eq!(h.finish(), 6_916_243_447_203_512_029);
+        Ok(())
     }
 
     /// Squares through `mul_ref(&x, &x)`: the 23 grid operands (NaN of both kinds, +-Inf, +-0, the subnormal
     /// band, the exponent extremes) at 7 precisions in all 6 rounding modes. Pinned on the code before
     /// `sqr` existed; `sqr_grid_digest` below must hash to the same value.
     #[test]
-    fn square_via_mul_ref_grid_digest() {
+    fn square_via_mul_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
                     let x = operand(i);
-                    digest(&ExactNum::mul_ref(&x, &x, p, rm), &mut h);
+                    digest(&ExactNum::mul_ref(&x, &x, p, rm), &mut h)?;
                     count += 1;
                 }
             }
@@ -6213,38 +6226,40 @@ mod grid_digest_tests {
         assert_eq!(count, PAIR_OPERANDS * 9 * 6);
         println!("square grid digest = {}", h.finish());
         assert_eq!(h.finish(), 175_783_324_882_499_832);
+        Ok(())
     }
 
     /// `ExactNum::sqr(&x, p, rm)` against the digest pinned on `mul_ref(&x, &x, p, rm)`: value, sign of zero,
     /// both inexact flags, `op_inexact`, NaN error kind, Inf, subnormal results.
     #[test]
-    fn sqr_grid_digest() {
+    fn sqr_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
-                    digest(&operand(i).sqr(p, rm), &mut h);
+                    digest(&operand(i).sqr(p, rm), &mut h)?;
                     count += 1;
                 }
             }
         }
         assert_eq!(count, PAIR_OPERANDS * 9 * 6);
         assert_eq!(h.finish(), 175_783_324_882_499_832);
+        Ok(())
     }
 
     /// Field-for-field agreement of `sqr` with `mul_ref(&x, &x)` (not just a hash), including the NaN kind of
     /// a NaN operand, the sign of a zero result in every mode, and that `x` is left untouched.
     #[test]
-    fn sqr_equals_mul_ref_of_the_same_operand() {
+    fn sqr_equals_mul_ref_of_the_same_operand() -> Result<(), Box<dyn std::error::Error>> {
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
                     let x = operand(i);
-                    let before = value_repr(&x);
+                    let before = value_repr(&x)?;
                     let want = ExactNum::mul_ref(&x, &x, p, rm);
                     let got = x.sqr(p, rm);
-                    assert_eq!(value_repr(&got), value_repr(&want), "i={i} p={p} {rm:?}");
+                    assert_eq!(value_repr(&got)?, value_repr(&want)?, "i={i} p={p} {rm:?}");
                     assert_eq!(got.inexact(), want.inexact(), "i={i} p={p} {rm:?}");
                     assert_eq!(
                         got.inexact_accumulated(),
@@ -6253,35 +6268,37 @@ mod grid_digest_tests {
                     );
                     assert_eq!(got.err(), want.err(), "NaN kind, i={i} p={p} {rm:?}");
                     assert_eq!(
-                        value_repr(&x),
+                        value_repr(&x)?,
                         before,
                         "operand changed, i={i} p={p} {rm:?}"
                     );
                 }
             }
         }
+        Ok(())
     }
 
     /// The `*` and `/` operators on every combination of owned and borrowed operands that remains after
     /// Rule R (`&a * &b` and `&a / &b` do not exist). Pinned on the code that still had them, hashing the
     /// same three forms.
     #[test]
-    fn operator_mul_div_grid_digest() {
+    fn operator_mul_div_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
-                digest(&(&operand(i) * operand(j)), &mut h);
-                digest(&(operand(i) * &operand(j)), &mut h);
-                digest(&(operand(i) * operand(j)), &mut h);
-                digest(&(&operand(i) / operand(j)), &mut h);
-                digest(&(operand(i) / &operand(j)), &mut h);
-                digest(&(operand(i) / operand(j)), &mut h);
+                digest(&(&operand(i) * operand(j)), &mut h)?;
+                digest(&(operand(i) * &operand(j)), &mut h)?;
+                digest(&(operand(i) * operand(j)), &mut h)?;
+                digest(&(&operand(i) / operand(j)), &mut h)?;
+                digest(&(operand(i) / &operand(j)), &mut h)?;
+                digest(&(operand(i) / operand(j)), &mut h)?;
                 count += 6;
             }
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
         println!("operator mul/div grid digest = {}", h.finish());
         assert_eq!(h.finish(), 4_600_225_949_441_908_206);
+        Ok(())
     }
 }

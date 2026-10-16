@@ -264,7 +264,7 @@ mod tests {
         assert!(zero.atan(p, rm, &mut cc)?.is_zero());
 
         // subnormal arg
-        let n1 = random_subnormal(p);
+        let n1 = random_subnormal(p)?;
         assert!(n1.atan(p, rm, &mut cc)?.cmp(&n1) == 0);
         Ok(())
     }

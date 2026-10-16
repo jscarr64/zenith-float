@@ -26,35 +26,36 @@ fn check_ovf(
     info: &str,
     cc: &mut Consts,
     f: impl Fn(&mut Float, rnd_t) -> i32,
-) {
+) -> Result<(), Box<dyn std::error::Error>> {
     if rm == RoundingMode::ToOdd {
-        let (rn, _) = mpfr_reference_with(p as u32, RoundingMode::ToEven, &f);
+        let (rn, _) = mpfr_reference_with(p as u32, RoundingMode::ToEven, &f)?;
         if rn.is_infinite() {
-            check(got, p, RoundingMode::ToEven, info, cc, f);
-            return;
+            check(got, p, RoundingMode::ToEven, info, cc, f)?;
+            return Ok(());
         }
     }
-    check(got, p, rm, info, cc, f);
+    check(got, p, rm, info, cc, f)?;
+    Ok(())
 }
 
 /// `conv_to_mpfr` for values near the exponent limit: converts `x / 2^e`, then scales.
-fn conv_big(w: usize, x: &ExactNum, cc: &mut Consts) -> Float {
+fn conv_big(w: usize, x: &ExactNum, cc: &mut Consts) -> Result<Float, Box<dyn std::error::Error>> {
     let e = x.exponent().unwrap_or(0);
     let s = x.clone().ldexp(-e, w, RoundingMode::None);
-    let f = conv_to_mpfr(w, &s, cc);
+    let f = conv_to_mpfr(w, &s, cc)?;
     // MPFR's default exponent range is narrower than zenith's.
     let old = unsafe { mpfr::get_emax() };
     unsafe { mpfr::set_emax(mpfr::get_emax_max()) };
     let f = f << e;
     unsafe { mpfr::set_emax(old) };
-    f
+    Ok(f)
 }
 
 type Binop = fn(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum;
 type Mpbin = fn(&mut Float, &Float, &Float, rnd_t) -> i32;
 
 #[test]
-fn overflow_by_mode_binary() {
+fn overflow_by_mode_binary() -> Result<(), Box<dyn std::error::Error>> {
     let ops: [(&str, Binop, Mpbin); 5] = [
         (
             "add",
@@ -92,31 +93,31 @@ fn overflow_by_mode_binary() {
         ),
     ];
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     for p in PRECISIONS {
         let w = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
         for _ in 0..3 {
-            let x = input(p, EXPONENT_MAX - 1, EXPONENT_MAX, true);
-            let y = input(p, EXPONENT_MAX - 1, EXPONENT_MAX, true);
-            let small = input(p, -3, -1, true);
-            let two = input(p, 3, 4, false);
+            let x = input(p, EXPONENT_MAX - 1, EXPONENT_MAX, true)?;
+            let y = input(p, EXPONENT_MAX - 1, EXPONENT_MAX, true)?;
+            let small = input(p, -3, -1, true)?;
+            let two = input(p, 3, 4, false)?;
             for (name, zf, mp) in ops.iter() {
                 let b = match *name {
                     "div" => &small,
                     "pow" => &two,
                     _ => &y,
                 };
-                let fx = conv_big(w, &x, &mut cc);
-                let fb = conv_big(w, b, &mut cc);
+                let fx = conv_big(w, &x, &mut cc)?;
+                let fb = conv_big(w, b, &mut cc)?;
                 for rm in MODES {
                     let got = zf(&x, b, p, rm, &mut cc);
                     let info = format!("{name} p={p} {rm:?} {x:?} {b:?}");
-                    check_ovf(&got, p, rm, &info, &mut cc, |r, rnd| mp(r, &fx, &fb, rnd));
+                    check_ovf(&got, p, rm, &info, &mut cc, |r, rnd| mp(r, &fx, &fb, rnd))?;
                 }
             }
             // fma(x, y, x), ldexp(x, 4), powi(x, 3)
-            let fx = conv_big(w, &x, &mut cc);
-            let fy = conv_big(w, &y, &mut cc);
+            let fx = conv_big(w, &x, &mut cc)?;
+            let fy = conv_big(w, &y, &mut cc)?;
             for rm in MODES {
                 let got = x.fma(&y, &x, p, rm);
                 check_ovf(
@@ -128,7 +129,7 @@ fn overflow_by_mode_binary() {
                     |r, rnd| unsafe {
                         mpfr::fma(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), fx.as_raw(), rnd)
                     },
-                );
+                )?;
                 let got = x.clone().ldexp(4, p, rm);
                 check_ovf(
                     &got,
@@ -137,7 +138,7 @@ fn overflow_by_mode_binary() {
                     &format!("ldexp p={p} {rm:?} {x:?}"),
                     &mut cc,
                     |r, rnd| unsafe { mpfr::mul_2si(r.as_raw_mut(), fx.as_raw(), 4, rnd) },
-                );
+                )?;
                 let got = x.powi(3, p, rm);
                 check_ovf(
                     &got,
@@ -146,17 +147,18 @@ fn overflow_by_mode_binary() {
                     &format!("powi p={p} {rm:?} {x:?}"),
                     &mut cc,
                     |r, rnd| unsafe { mpfr::pow_ui(r.as_raw_mut(), fx.as_raw(), 3, rnd) },
-                );
+                )?;
             }
         }
     }
+    Ok(())
 }
 
 type Unop = fn(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum;
 type Mpun = fn(&mut Float, &Float, rnd_t) -> i32;
 
 #[test]
-fn overflow_by_mode_unary() {
+fn overflow_by_mode_unary() -> Result<(), Box<dyn std::error::Error>> {
     let ops: [(&str, i32, i32, bool, Unop, Mpun); 7] = [
         (
             "exp",
@@ -216,19 +218,20 @@ fn overflow_by_mode_unary() {
         ),
     ];
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     for p in PRECISIONS {
         let w = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
         for (name, elo, ehi, signed, zf, mp) in ops.iter() {
             for _ in 0..2 {
-                let x = input(p, *elo, *ehi, *signed);
-                let fx = conv_big(w, &x, &mut cc);
+                let x = input(p, *elo, *ehi, *signed)?;
+                let fx = conv_big(w, &x, &mut cc)?;
                 for rm in MODES {
                     let got = zf(&x, p, rm, &mut cc);
                     let info = format!("{name} p={p} {rm:?} {x:?}");
-                    check_ovf(&got, p, rm, &info, &mut cc, |r, rnd| mp(r, &fx, rnd));
+                    check_ovf(&got, p, rm, &info, &mut cc, |r, rnd| mp(r, &fx, rnd))?;
                 }
             }
         }
     }
+    Ok(())
 }

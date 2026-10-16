@@ -57,7 +57,7 @@ fn asvd(r: Option<(ExactNumArray, ExactNumArray, ExactNumArray)>) -> String {
     }
 }
 
-fn observations() -> Vec<(String, String)> {
+fn observations() -> Result<Vec<(String, String)>, Box<dyn std::error::Error>> {
     let mut out = Vec::new();
     let mut put = |k: String, v: String| out.push((k, v));
     let kinds: [(&str, fn() -> ExactNum); 3] = [("A", nan_a), ("B", nan_b), ("N", nan_n)];
@@ -116,7 +116,7 @@ fn observations() -> Vec<(String, String)> {
         );
     }
     // Public functions whose internals were reordered, fed NaN parts of different kinds.
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     for (na, fa) in kinds {
         for (nb, fb) in kinds {
             let t = format!("{na}{nb}");
@@ -148,7 +148,7 @@ fn observations() -> Vec<(String, String)> {
             }
         }
     }
-    out
+    Ok(out)
 }
 
 const EXPECTED: &str = "\
@@ -371,8 +371,8 @@ svd row NN => none
 ";
 
 #[test]
-fn both_nan_error_kind_is_pinned() {
-    let got: Vec<String> = observations()
+fn both_nan_error_kind_is_pinned() -> Result<(), Box<dyn std::error::Error>> {
+    let got: Vec<String> = observations()?
         .into_iter()
         .map(|(k, v)| format!("{k} => {v}"))
         .collect();
@@ -381,4 +381,5 @@ fn both_nan_error_kind_is_pinned() {
     for (g, w) in got.iter().zip(&want) {
         assert_eq!(g, w);
     }
+    Ok(())
 }

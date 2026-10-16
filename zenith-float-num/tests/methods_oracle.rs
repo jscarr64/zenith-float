@@ -457,12 +457,12 @@ fn run_ball(row: &serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
-fn run_file(name: &str, eval: fn(&serde_json::Value) -> Result<(), String>) {
+fn run_file(name: &str, eval: fn(&serde_json::Value) -> Result<(), String>) -> Result<(), String> {
     let path = format!(
         "{}/tests/oracle/goldens/{name}.jsonl",
         env!("CARGO_MANIFEST_DIR")
     );
-    let text = std::fs::read_to_string(&path).unwrap_or_else(|err| panic!("read {path}: {err}"));
+    let text = std::fs::read_to_string(&path).map_err(|err| format!("read {path}: {err}"))?;
     let mut ran = 0usize;
     let mut failed = 0usize;
     let mut samples = Vec::new();
@@ -470,9 +470,8 @@ fn run_file(name: &str, eval: fn(&serde_json::Value) -> Result<(), String>) {
         if line.is_empty() {
             continue;
         }
-        let row: serde_json::Value = serde_json::from_str(line).unwrap_or_else(|err| {
-            panic!("json {name}: {err}");
-        });
+        let row: serde_json::Value =
+            serde_json::from_str(line).map_err(|err| format!("json {name}: {err}"))?;
         let tier = row.get("tier").and_then(|v| v.as_str()).unwrap_or("fast");
         if !tier_selected(tier) {
             continue;
@@ -487,27 +486,28 @@ fn run_file(name: &str, eval: fn(&serde_json::Value) -> Result<(), String>) {
         }
     }
     if ran == 0 {
-        panic!("{name}.jsonl ran no rows");
+        return Err(format!("{name}.jsonl ran no rows"));
     }
     if failed != 0 {
-        panic!(
+        return Err(format!(
             "{name}.jsonl: {failed} failed / {ran}\n{}",
             samples.join("\n")
-        );
+        ));
     }
+    Ok(())
 }
 
 #[test]
-fn quad() {
-    run_file("quad", run_quad);
+fn quad() -> Result<(), String> {
+    run_file("quad", run_quad)
 }
 
 #[test]
-fn ode() {
-    run_file("ode", run_ode);
+fn ode() -> Result<(), String> {
+    run_file("ode", run_ode)
 }
 
 #[test]
-fn balls() {
-    run_file("balls", run_ball);
+fn balls() -> Result<(), String> {
+    run_file("balls", run_ball)
 }

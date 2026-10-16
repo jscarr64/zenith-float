@@ -1890,8 +1890,8 @@ mod tests {
             assert!(d1.sub(&d4, p, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 
             // subnormal
-            d1 = random_subnormal(p1);
-            d2 = random_subnormal(p2);
+            d1 = random_subnormal(p1)?;
+            d2 = random_subnormal(p2)?;
 
             let d3 = d1.sub(&d2, p, RoundingMode::ToEven)?;
             let d4 = d3.add(&d2, p, RoundingMode::ToEven)?;
@@ -2072,8 +2072,8 @@ mod tests {
             }
 
             // subnormal
-            d1 = random_subnormal(p1);
-            d2 = random_subnormal(p2);
+            d1 = random_subnormal(p1)?;
+            d2 = random_subnormal(p2)?;
 
             let d3 = d1.div(&d2, p, RoundingMode::ToEven)?;
             let d4 = d3.mul(&d2, p, RoundingMode::ToEven)?;
@@ -2542,8 +2542,8 @@ mod tests {
             assert!(ret.sub(&d3, p, RoundingMode::ToEven)?.is_zero());
 
             // subnormal
-            d1 = random_subnormal(p1);
-            d2 = random_subnormal(p2);
+            d1 = random_subnormal(p1)?;
+            d2 = random_subnormal(p2)?;
 
             let mut ret = d1.rem(&d2)?;
 

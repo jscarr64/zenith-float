@@ -232,12 +232,12 @@ const CASES: &[(usize, char, &str, &str, &str, &str)] = &[
     (256, 'k', "-20000,0", "-1.25,0.75", "3.2220108659417093651483925652063984568343734193884067733894649544961686575363304081125989e+8679", "-6.8734513329134972622548979712887064730125527438316997464567143251524220288068270189061591e+8683"),
 ];
 
-fn c(s: &str, p: usize, cc: &mut Consts) -> ExactComplex {
-    let (re, im) = s.split_once(',').unwrap();
-    ExactComplex::new(
+fn c(s: &str, p: usize, cc: &mut Consts) -> Result<ExactComplex, Box<dyn std::error::Error>> {
+    let (re, im) = s.split_once(',').ok_or("no comma")?;
+    Ok(ExactComplex::new(
         ExactNum::parse(re, Radix::Dec, p, RM, cc),
         ExactNum::parse(im, Radix::Dec, p, RM, cc),
-    )
+    ))
 }
 
 fn exp2(x: &ExactNum) -> i32 {
@@ -253,8 +253,8 @@ fn complex_bessel_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     let mut cc = Consts::new()?;
     let mut failures = Vec::new();
     for &(p, f, zs, nus, want_re, want_im) in CASES {
-        let z = c(zs, p, &mut cc);
-        let nu = c(nus, p, &mut cc);
+        let z = c(zs, p, &mut cc)?;
+        let nu = c(nus, p, &mut cc)?;
         let got = match f {
             'j' => z.bessel_j_nu(&nu, p, RM, &mut cc),
             'y' => z.bessel_y(&nu, p, RM, &mut cc),
@@ -321,8 +321,8 @@ fn complex_bessel_k_series_regime() -> Result<(), Box<dyn std::error::Error>> {
         ),
     ];
     for (p, zs, nus, want_re, want_im) in cases {
-        let z = c(zs, p, &mut cc);
-        let nu = c(nus, p, &mut cc);
+        let z = c(zs, p, &mut cc)?;
+        let nu = c(nus, p, &mut cc)?;
         let got = z.bessel_k(&nu, p, RM, &mut cc);
         assert!(!got.is_nan(), "K({zs}; {nus}) at {p} is NaN");
         let wp = p + 64;

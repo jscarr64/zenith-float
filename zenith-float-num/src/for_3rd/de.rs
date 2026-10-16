@@ -381,9 +381,9 @@ mod tests {
         INF_NEG, INF_POS, NAN,
     };
 
-    fn rt(n: &ExactNum) -> ExactNum {
-        let s = serde_json::to_string(n).expect("serialize");
-        serde_json::from_str(&s).expect("deserialize")
+    fn rt(n: &ExactNum) -> Result<ExactNum, Box<dyn std::error::Error>> {
+        let s = serde_json::to_string(n)?;
+        Ok(serde_json::from_str(&s)?)
     }
 
     #[test]
@@ -413,19 +413,20 @@ mod tests {
     }
 
     #[test]
-    fn serde_json_specials() {
-        let inf = rt(&INF_POS);
+    fn serde_json_specials() -> Result<(), Box<dyn std::error::Error>> {
+        let inf = rt(&INF_POS)?;
         assert!(inf.is_inf_pos());
-        let ninf = rt(&INF_NEG);
+        let ninf = rt(&INF_NEG)?;
         assert!(ninf.is_inf_neg());
-        let nan = rt(&NAN);
+        let nan = rt(&NAN)?;
         assert!(nan.is_nan());
+        Ok(())
     }
 
     #[test]
     fn serde_json_negative_fraction() -> Result<(), Box<dyn std::error::Error>> {
         let n: ExactNum = serde_json::from_str("\"-1.234567890123456789e-2\"")?;
-        let m = rt(&n);
+        let m = rt(&n)?;
         assert_eq!(n.compare(&m), Some(0));
         assert!(m.is_negative());
         Ok(())

@@ -1083,7 +1083,7 @@ mod tests {
             let p2 = (random::<usize>() % p_rng + 3) * WORD_BIT_SIZE;
             let p = p1.min(p2);
 
-            let mut n = random_subnormal(p1);
+            let mut n = random_subnormal(p1)?;
             let rdx = random_radix();
             if rdx == Radix::Dec && n.exponent().unsigned_abs() as usize > MAX_DEC_SCALE {
                 continue;

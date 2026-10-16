@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use astro_float::{BigFloat, Consts, Exponent, RoundingMode, Sign};
 
-use crate::backend::{convert_exp, BenchFloat, BenchState};
+use crate::backend::{convert_exp, BenchError, BenchFloat, BenchState};
 use crate::task::{task_for_one_arg, task_for_two_args};
 
 #[derive(Clone)]
@@ -53,11 +53,13 @@ impl AstroFloat {
 impl BenchFloat for AstroFloat {
     type State = AstroState;
 
-    fn state(precision: usize) -> Self::State {
-        AstroState {
+    fn state(precision: usize) -> Result<Self::State, BenchError> {
+        Ok(AstroState {
             precision,
-            cc: Rc::new(RefCell::new(Consts::new().expect("constants cache"))),
-        }
+            cc: Rc::new(RefCell::new(
+                Consts::new().map_err(|_| BenchError::Constants)?,
+            )),
+        })
     }
 
     fn rand_normal(
@@ -80,7 +82,11 @@ impl BenchFloat for AstroFloat {
         out
     }
 
-    fn run_task(state: &Self::State, task: &str, values: &[Self]) -> (Self, std::time::Duration) {
+    fn run_task(
+        state: &Self::State,
+        task: &str,
+        values: &[Self],
+    ) -> Result<(Self, std::time::Duration), BenchError> {
         let start = Instant::now();
         let p = state.precision;
         let cc = Rc::clone(&state.cc);
@@ -167,8 +173,8 @@ impl BenchFloat for AstroFloat {
                 let mut c = a.cc_mut();
                 Self::new(b.inner().atanh(a.p(), a.rm(), &mut c), Rc::clone(&cc), p)
             }),
-            _ => panic!("unknown task: {task}"),
+            _ => return Err(BenchError::UnknownTask(String::from(task))),
         };
-        (result, start.elapsed())
+        Ok((result, start.elapsed()))
     }
 }

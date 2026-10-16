@@ -71,10 +71,8 @@ fn eval(name: &str, x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -
 }
 
 #[test]
-fn gk_eps_candidates() {
-    let Ok(mut cc) = Consts::new() else {
-        panic!("constants");
-    };
+fn gk_eps_candidates() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let rm = RoundingMode::ToEven;
     let mut failures = Vec::new();
     for p in [256usize, 512] {
@@ -129,4 +127,5 @@ fn gk_eps_candidates() {
         "gk-eps candidates:\n{}",
         failures.join("\n")
     );
+    Ok(())
 }

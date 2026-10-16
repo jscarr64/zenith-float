@@ -102,7 +102,7 @@ mod tests {
         assert!(s.is_zero());
         assert!(c.cmp(&ExactNumNumber::from_word(1, p)?) == 0);
 
-        let n1 = random_subnormal(p);
+        let n1 = random_subnormal(p)?;
         let (s, c) = n1.sin_cos(p, rm, &mut cc)?;
         assert!(s.cmp(&n1.sin(p, rm, &mut cc)?) == 0);
         assert!(c.cmp(&n1.cos(p, rm, &mut cc)?) == 0);

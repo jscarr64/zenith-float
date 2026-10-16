@@ -1346,8 +1346,8 @@ const CASES: &[(&str, usize, &str, &str)] = &[
     ),
 ];
 
-fn eval(op: &str, p: usize, x: &ExactNum, cc: &mut Consts) -> ExactNum {
-    match op {
+fn eval(op: &str, p: usize, x: &ExactNum, cc: &mut Consts) -> Result<ExactNum, String> {
+    Ok(match op {
         "erf" => x.erf(p, RM, cc),
         "erfc" => x.erfc(p, RM, cc),
         "normal_cdf" => {
@@ -1355,8 +1355,8 @@ fn eval(op: &str, p: usize, x: &ExactNum, cc: &mut Consts) -> ExactNum {
             let sigma = ExactNum::from_u8(1, p);
             x.normal_cdf(&mu, &sigma, p, RM, cc)
         }
-        _ => unreachable!("{op}"),
-    }
+        _ => return Err(format!("unknown op {op}")),
+    })
 }
 
 /// Correct bits of `got` against `want` (relative), capped at `cap`.
@@ -1381,7 +1381,7 @@ fn erf_erfc_tail_mpmath() -> Result<(), Box<dyn std::error::Error>> {
     let mut failures = Vec::new();
     for &(op, p, x, want) in CASES {
         let xv = ExactNum::parse(x, Radix::Dec, p, RM, &mut cc);
-        let got = eval(op, p, &xv, &mut cc);
+        let got = eval(op, p, &xv, &mut cc)?;
         let need = (p - 2).min(160);
         let want = ExactNum::parse(want, Radix::Dec, need + 64, RM, &mut cc);
         let b = bits(&got, &want, need);

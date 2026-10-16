@@ -147,7 +147,7 @@ fn bessel_large_arg_mpmath() -> Result<(), Box<dyn std::error::Error>> {
             let got = match kind {
                 'j' => xv.bessel_j_nu(&nv, p, RM, &mut cc),
                 'y' => xv.bessel_y(&nv, p, RM, &mut cc),
-                _ => panic!("kind"),
+                _ => return Err(format!("unknown kind {kind}").into()),
             };
             let bts = bits(&got, &want, p);
             if bts < (p as i32) - 4 {

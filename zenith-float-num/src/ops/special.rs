@@ -5010,9 +5010,9 @@ mod tests {
             let cv = dec(c, &mut cc)?;
             let zv = dec(z, &mut cc)?;
             let label = alloc::format!("2F1({a}, {b}; {c}; {z})");
-            let got = av
-                .hypergeom_2f1(&bv, &cv, &zv, p, rm, &mut cc)
-                .unwrap_or_else(|e| panic!("{label}: {e:?}"));
+            let got = av.hypergeom_2f1(&bv, &cv, &zv, p, rm, &mut cc);
+            assert!(got.is_ok(), "{label}: {got:?}");
+            let got = got?;
             let want = dec(want, &mut cc)?;
             if want.is_zero() {
                 assert!(got.is_zero(), "{label}: expected exact 0");
@@ -5153,9 +5153,9 @@ mod tests {
             let bv = dec(b, &mut cc)?;
             let xv = dec(x, &mut cc)?;
             let label = alloc::format!("I_{x}({a}, {b})");
-            let got = av
-                .betainc(&bv, &xv, p, rm, &mut cc)
-                .unwrap_or_else(|e| panic!("{label}: {e:?}"));
+            let got = av.betainc(&bv, &xv, p, rm, &mut cc);
+            assert!(got.is_ok(), "{label}: {got:?}");
+            let got = got?;
             bits_agree(&got, &dec(want, &mut cc)?, p, 120, &label)?;
         }
         Ok(())
@@ -5256,7 +5256,7 @@ mod tests {
         let fpoly = nm2.hypergeom_2f1(&one, &one, &half, p, rm, &mut cc)?;
         bits_agree(
             &fpoly,
-            &one.div(&four_word(p), p, RoundingMode::None)?,
+            &one.div(&four_word(p)?, p, RoundingMode::None)?,
             p,
             80,
             "2F1(-2,1;1;1/2)",
@@ -5303,7 +5303,7 @@ mod tests {
         Ok(())
     }
 
-    fn four_word(p: usize) -> ExactNumNumber {
-        ExactNumNumber::from_word(4, p).unwrap()
+    fn four_word(p: usize) -> Result<ExactNumNumber, crate::Error> {
+        Ok(ExactNumNumber::from_word(4, p)?)
     }
 }

@@ -132,7 +132,7 @@ mod tests {
         assert!(ONE.acos(p, rm, &mut cc)?.is_zero());
 
         // subnormal arg
-        let n1 = random_subnormal(p);
+        let n1 = random_subnormal(p)?;
         assert!(n1.acos(p, rm, &mut cc)?.cmp(&half_pi) == 0);
         Ok(())
     }

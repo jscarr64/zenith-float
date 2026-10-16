@@ -13,7 +13,9 @@ fn bench_add(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
 
     for &p in PRECISIONS {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let pairs = pair_fixtures(p, &mut cc, ARITH_BATCH);
         group.throughput(Throughput::Elements(ARITH_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
@@ -32,7 +34,9 @@ fn bench_mul(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
 
     for &p in PRECISIONS {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let pairs = pair_fixtures(p, &mut cc, ARITH_BATCH);
         group.throughput(Throughput::Elements(ARITH_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
@@ -52,7 +56,9 @@ fn bench_mul_fft_scale(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
 
     for &p in FFT_MUL_PRECISIONS {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let pairs = pair_fixtures(p, &mut cc, FFT_MUL_BATCH);
         group.throughput(Throughput::Elements(FFT_MUL_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
@@ -71,7 +77,9 @@ fn bench_div(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
 
     for &p in PRECISIONS {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let pairs = pair_fixtures(p, &mut cc, ARITH_BATCH);
         group.throughput(Throughput::Elements(ARITH_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
@@ -90,7 +98,9 @@ fn bench_reciprocal(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
 
     for &p in PRECISIONS {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let values = cycle_batch(p, &mut cc, DECIMAL_FIXTURES, ARITH_BATCH);
         group.throughput(Throughput::Elements(ARITH_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {
@@ -110,7 +120,9 @@ fn bench_recip_mul_vs_div(c: &mut Criterion) {
     // Division at very high precision is a common hot path.
     let p = 14400;
 
-    let mut cc = init_cc();
+    let Some(mut cc) = init_cc() else {
+        return;
+    };
     let values = cycle_batch(p, &mut cc, DECIMAL_FIXTURES, 64);
     let divisor = ExactNum::parse(
         DECIMAL_FIXTURES[0],
@@ -144,7 +156,9 @@ fn bench_rem(c: &mut Criterion) {
     let batch = 64;
 
     for &p in &[1024, 4096, 32768] {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let pairs = pair_fixtures(p, &mut cc, batch);
         group.throughput(Throughput::Elements(batch as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
@@ -163,7 +177,9 @@ fn bench_sqrt(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
 
     for &p in PRECISIONS {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let values = cycle_batch(p, &mut cc, DECIMAL_FIXTURES, ARITH_BATCH);
         group.throughput(Throughput::Elements(ARITH_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {
@@ -183,7 +199,9 @@ fn bench_div_one(c: &mut Criterion) {
     let batch = 64;
 
     for &p in &[4096, 14400, 32768] {
-        let mut cc = init_cc();
+        let Some(mut cc) = init_cc() else {
+            return;
+        };
         let values = cycle_batch(p, &mut cc, DECIMAL_FIXTURES, batch);
         group.throughput(Throughput::Elements(batch as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {

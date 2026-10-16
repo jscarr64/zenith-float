@@ -8,7 +8,7 @@ use rug::{Float, Integer};
 use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MIN, WORD_BIT_SIZE};
 
 /// `|x| mod |y|` with the sign of `x`, from the exact integer significands.
-fn oracle(fx: &Float, fy: &Float) -> Float {
+fn oracle(fx: &Float, fy: &Float) -> Result<Float, Box<dyn std::error::Error>> {
     // Lift both operands by the same power of two so that the integer exponents stay in
     // i32 near the bottom of the range; the remainder scales with them.
     const LIFT: i32 = 1 << 12;
@@ -17,8 +17,8 @@ fn oracle(fx: &Float, fy: &Float) -> Float {
     let fx = Float::with_val(fx.prec(), fx) << LIFT;
     let fy = Float::with_val(fy.prec(), fy) << LIFT;
     unsafe { gmp_mpfr_sys::mpfr::set_emin(old) };
-    let (mx, ex) = fx.to_integer_exp().unwrap();
-    let (my, ey) = fy.to_integer_exp().unwrap();
+    let (mx, ex) = fx.to_integer_exp().ok_or("none value")?;
+    let (my, ey) = fy.to_integer_exp().ok_or("none value")?;
     let e = ex.min(ey);
     let xi = Integer::from(mx.abs_ref()) << (ex - e) as u32;
     let yi = Integer::from(my.abs_ref()) << (ey - e) as u32;
@@ -31,29 +31,29 @@ fn oracle(fx: &Float, fy: &Float) -> Float {
     unsafe { gmp_mpfr_sys::mpfr::set_emin(gmp_mpfr_sys::mpfr::get_emin_min()) };
     let f = (Float::with_val(bits, r) << e) >> LIFT;
     unsafe { gmp_mpfr_sys::mpfr::set_emin(old) };
-    f
+    Ok(f)
 }
 
 /// `conv_to_mpfr` for values near the bottom of the range.
-fn conv(w: usize, x: &ExactNum, cc: &mut Consts) -> Float {
+fn conv(w: usize, x: &ExactNum, cc: &mut Consts) -> Result<Float, Box<dyn std::error::Error>> {
     let e = x.exponent().unwrap_or(0);
     // two steps: -EXPONENT_MIN does not fit in an Exponent
     let s =
         x.clone()
             .ldexp(-(e / 2), w, RoundingMode::None)
             .ldexp(-(e - e / 2), w, RoundingMode::None);
-    let f = conv_to_mpfr(w, &s, cc);
+    let f = conv_to_mpfr(w, &s, cc)?;
     let old = unsafe { gmp_mpfr_sys::mpfr::get_emin() };
     unsafe { gmp_mpfr_sys::mpfr::set_emin(gmp_mpfr_sys::mpfr::get_emin_min()) };
     let f = f << e;
     unsafe { gmp_mpfr_sys::mpfr::set_emin(old) };
-    f
+    Ok(f)
 }
 
 #[test]
-fn rem_is_exact() {
+fn rem_is_exact() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     // (x band, y band): y far below x, close to x, above x, and the subnormal band
     let bands: [((i32, i32), (i32, i32)); 5] = [
         ((-4, 4), (-4, 4)),
@@ -74,8 +74,8 @@ fn rem_is_exact() {
                     continue;
                 }
                 for _ in 0..4 {
-                    let x = input(px, bx.0, bx.1, true);
-                    let y = input(py, by.0, by.1, true);
+                    let x = input(px, bx.0, bx.1, true)?;
+                    let y = input(py, by.0, by.1, true)?;
                     // the integer oracle needs the two exponents within reach of each other
                     let spread =
                         x.exponent().unwrap_or(0) as i64 - y.exponent().unwrap_or(0) as i64;
@@ -84,15 +84,15 @@ fn rem_is_exact() {
                     }
                     let got = x.rem(&y);
                     let info = format!("rem px={px} py={py} x={x:?} y={y:?}");
-                    let fx = conv(wx, &x, &mut cc);
-                    let fy = conv(wy, &y, &mut cc);
-                    let want = oracle(&fx, &fy);
+                    let fx = conv(wx, &x, &mut cc)?;
+                    let fy = conv(wy, &y, &mut cc)?;
+                    let want = oracle(&fx, &fy)?;
                     assert!(!got.inexact(), "{info}: rem reported inexact");
                     let w = got.mantissa_max_bit_len().unwrap_or(wx).max(1);
                     let fg = if got.is_zero() {
                         Float::with_val(w as u32, 0)
                     } else {
-                        conv(w, &got, &mut cc)
+                        conv(w, &got, &mut cc)?
                     };
                     assert_eq!(fg, want, "{info}: zenith {fg}, exact {want}");
                     if want.is_zero() {
@@ -102,4 +102,5 @@ fn rem_is_exact() {
             }
         }
     }
+    Ok(())
 }

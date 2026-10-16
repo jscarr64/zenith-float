@@ -7,8 +7,9 @@ use zenith_float_num::Consts;
 /// Precision tiers shared with the other benches.
 pub const PRECISIONS: &[usize] = &[128, 1024, 4096, 32768];
 
-pub fn init_cc() -> Consts {
-    Consts::new().expect("constants cache")
+/// `None` when the constants cache cannot be built; the benchmark that asked for it then does nothing.
+pub fn init_cc() -> Option<Consts> {
+    Consts::new().ok()
 }
 
 /// Prevent LLVM from eliminating benchmark results.

@@ -489,7 +489,7 @@ mod tests {
         )?;
         bits_agree(&snkh, &want, p, 40, "sn(K/2|1/2)")?;
 
-        let four_k = four_word(p).mul(&k, p, RoundingMode::None)?;
+        let four_k = four_word(p)?.mul(&k, p, RoundingMode::None)?;
         let u4 = u.add(&four_k, p, RoundingMode::None)?;
         let sn_per = u4.jacobi_sn(&half, p, rm, &mut cc)?;
         bits_agree(&sn_per, &sn, p, 40, "sn(u+4K)=sn(u)")?;
@@ -529,7 +529,7 @@ mod tests {
         Ok(())
     }
 
-    fn four_word(p: usize) -> ExactNumNumber {
-        ExactNumNumber::from_word(4, p).unwrap()
+    fn four_word(p: usize) -> Result<ExactNumNumber, crate::Error> {
+        Ok(ExactNumNumber::from_word(4, p)?)
     }
 }

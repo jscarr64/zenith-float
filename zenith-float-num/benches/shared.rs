@@ -8,8 +8,9 @@ use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode};
 /// and a tier large enough to exercise Toom-3 multiplication (512 mantissa words).
 pub const PRECISIONS: &[usize] = &[128, 1024, 4096, 32768];
 
-pub fn init_cc() -> Consts {
-    Consts::new().expect("constants cache")
+/// `None` when the constants cache cannot be built; the benchmark that asked for it then does nothing.
+pub fn init_cc() -> Option<Consts> {
+    Consts::new().ok()
 }
 
 pub fn parse_list(p: usize, cc: &mut Consts, literals: &[&str]) -> Vec<ExactNum> {
