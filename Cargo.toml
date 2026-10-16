@@ -51,6 +51,13 @@ serde = ["std", "zenith-float-num/serde"]
 # Optional MPFR golden tests (Linux x86_64; enable with --features mpfr-tests).
 mpfr-tests = ["zenith-float-num/mpfr-tests"]
 
+# `hex_golds` prints with `std` (and `?` converts `zenith_float::Error` into `Box<dyn Error>`, which needs the `std`
+# feature): it is built for the hex-limb CI hosts (default features), not for `--no-default-features` or bare-metal targets.
+[[bin]]
+name = "hex_golds"
+path = "src/bin/hex_golds.rs"
+required-features = ["std"]
+
 [dev-dependencies]
 trybuild = "1.0"
 
