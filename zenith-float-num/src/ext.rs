@@ -6287,6 +6287,47 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Layer 0a pin: `exp`, `exp2`, `exp10`, `pow` (integer and fractional exponent) and `powi`, hashed over the
+    /// operand grid on the code that still copied the constants `ONE`/`TWO`/`TEN`.
+    #[test]
+    fn exp_pow_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = crate::Consts::new()?;
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        let exps = || {
+            [
+                ExactNum::from_u8(3, 64),
+                ExactNum::from_u8(5, 64).ldexp(-1, 64, RoundingMode::None),
+                ExactNum::from_u8(7, 64)
+                    .ldexp(-5, 64, RoundingMode::None)
+                    .neg(),
+                ExactNum::new(64),
+            ]
+        };
+        for i in (0..11).chain(21..23) {
+            for p in [53usize, 128, 200] {
+                for rm in RMS {
+                    digest(&operand(i).exp(p, rm, &mut cc), &mut h)?;
+                    digest(&operand(i).exp2(p, rm, &mut cc), &mut h)?;
+                    digest(&operand(i).exp10(p, rm, &mut cc), &mut h)?;
+                    for e in exps() {
+                        digest(&operand(i).pow(&e, p, rm, &mut cc), &mut h)?;
+                        count += 1;
+                    }
+                    for n in [0usize, 1, 2, 3, 7, 12] {
+                        digest(&operand(i).powi(n, p, rm), &mut h)?;
+                        count += 1;
+                    }
+                    count += 3;
+                }
+            }
+        }
+        assert_eq!(count, 13 * 3 * 6 * 13);
+        println!("exp pow grid digest = {}", h.finish());
+        assert_eq!(h.finish(), 14_058_652_537_661_189_300);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
