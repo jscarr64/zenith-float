@@ -747,7 +747,25 @@ mod tests {
         let sqrt_pi = pi.sqrt(p, rm);
         assert_eq!(gh.compare(&sqrt_pi), Some(0));
 
-        assert!(gauss_legendre(|x, _p, _rm, _cc| x.clone(), &b, &a, 4, p, rm, &mut cc).is_none());
-        assert!(gauss_legendre(|x, _p, _rm, _cc| x.clone(), &a, &b, 0, p, rm, &mut cc).is_none());
+        assert!(gauss_legendre(
+            |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
+            &b,
+            &a,
+            4,
+            p,
+            rm,
+            &mut cc
+        )
+        .is_none());
+        assert!(gauss_legendre(
+            |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
+            &a,
+            &b,
+            0,
+            p,
+            rm,
+            &mut cc
+        )
+        .is_none());
     }
 }

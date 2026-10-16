@@ -1235,7 +1235,14 @@ mod tests {
         let mut cc = Consts::new().expect("consts");
         let a = ExactNum::from_u8(0, p);
         let b = ExactNum::from_u8(1, p);
-        let swapped = gauss_kronrod_interval(|x, _p, _rm, _cc| x.clone(), &b, &a, p, rm, &mut cc);
+        let swapped = gauss_kronrod_interval(
+            |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
+            &b,
+            &a,
+            p,
+            rm,
+            &mut cc,
+        );
         assert_eq!(swapped.unwrap_err(), QuadratureError::InvalidArgument);
         let nan_f = gauss_kronrod_interval(
             |_x, _p, _rm, _cc| ExactNum::nan(None),
@@ -1287,11 +1294,13 @@ mod tests {
             )
             .expect("exp tail");
             let want_one = ExactNum::from_u8(1, p);
-            let gap = exp_tail
-                .estimate_kronrod
-                .clone()
-                .sub(&want_one, 2 * p, RoundingMode::None)
-                .abs();
+            let gap = ExactNum::sub_ref(
+                &exp_tail.estimate_kronrod,
+                &want_one,
+                2 * p,
+                RoundingMode::None,
+            )
+            .abs();
             assert!(
                 gap.compare(&exp_tail.abs_err_est) != Some(1),
                 "p={p} exp gap {gap} est {} err {}",
@@ -1310,11 +1319,9 @@ mod tests {
                 &mut cc,
             )
             .expect("1/x^2");
-            let gap = alg
-                .estimate_kronrod
-                .clone()
-                .sub(&want_one, 2 * p, RoundingMode::None)
-                .abs();
+            let gap =
+                ExactNum::sub_ref(&alg.estimate_kronrod, &want_one, 2 * p, RoundingMode::None)
+                    .abs();
             assert!(
                 gap.compare(&alg.abs_err_est) != Some(1),
                 "p={p} invsq gap {gap} est {}",
@@ -1335,11 +1342,8 @@ mod tests {
             )
             .expect("gaussian");
             let pi = cc.pi(p, rm).sqrt(p, rm);
-            let gap = gauss
-                .estimate_kronrod
-                .clone()
-                .sub(&pi, 2 * p, RoundingMode::None)
-                .abs();
+            let gap =
+                ExactNum::sub_ref(&gauss.estimate_kronrod, &pi, 2 * p, RoundingMode::None).abs();
             assert!(
                 gap.compare(&gauss.abs_err_est) != Some(1),
                 "p={p} gauss gap {gap} est {} err {}",

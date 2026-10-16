@@ -1210,7 +1210,7 @@ mod tests {
 
     #[test]
     fn test_complex_nan() {
-        let n = ExactComplex::new(NAN.clone(), ExactNum::new(64));
+        let n = ExactComplex::new(NAN, ExactNum::new(64));
         assert!(n.is_nan());
     }
 

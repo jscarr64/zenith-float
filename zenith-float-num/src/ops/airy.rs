@@ -499,7 +499,7 @@ mod tests {
             "Bi(0)=√3 c1",
         );
 
-        let x = one.clone().unwrap();
+        let x = ExactNumNumber::from_word(1, p).unwrap();
         let ai = x.ai(p, rm, &mut cc).unwrap();
         let bi = x.bi(p, rm, &mut cc).unwrap();
         let aip = x.ai_prime(p, rm, &mut cc).unwrap();

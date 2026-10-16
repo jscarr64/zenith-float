@@ -1795,7 +1795,7 @@ mod tests {
         let mut d2;
         let mut d3;
         let mut ref_num;
-        let mut eps = ONE.clone().unwrap();
+        let mut eps = ExactNumNumber::small_const(1);
 
         for _ in 0..1000 {
             let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
@@ -2419,7 +2419,7 @@ mod tests {
         assert!(d2.div(&one, p, rm).unwrap().cmp(&d2) == 0);
 
         // normal -> subnormal -> normal
-        d1 = one.clone().unwrap();
+        d1 = ExactNumNumber::from_word(1, p).unwrap();
         d1.e = EXPONENT_MIN;
         d2 = ExactNumNumber::min_positive(p).unwrap();
         assert!(!d1.is_subnormal());
@@ -2431,7 +2431,7 @@ mod tests {
         assert!(!d1.is_subnormal());
 
         // overflow basic sanity
-        d1 = one.clone().unwrap();
+        d1 = ExactNumNumber::from_word(1, p).unwrap();
         d1.e = EXPONENT_MAX - (d1.m.max_bit_len() - 1) as Exponent;
         assert!(
             ExactNumNumber::max_value(p)
@@ -2454,7 +2454,7 @@ mod tests {
                 .unwrap_err()
                 == Error::ExponentOverflow(Sign::Pos)
         );
-        d1 = one.clone().unwrap();
+        d1 = ExactNumNumber::from_word(1, p).unwrap();
         d1.e = EXPONENT_MIN;
         assert!(
             ExactNumNumber::max_value(p)
@@ -2516,7 +2516,7 @@ mod tests {
         .is_ok());
 
         // sign and exponent
-        d1 = one.clone().unwrap();
+        d1 = ExactNumNumber::from_word(1, p).unwrap();
         assert!(d1.sign() == Sign::Pos);
         assert!(d1.is_positive());
         d1 = d1.neg().unwrap();

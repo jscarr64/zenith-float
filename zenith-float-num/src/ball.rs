@@ -456,13 +456,11 @@ mod tests {
     fn ball_add_contains_true_sum() {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let a = ExactNum::from(3);
-        let b = ExactNum::from(4);
-        let u = ExactNum::from_word(1, p);
-        let ba = Ball::new(a.clone(), u.clone());
-        let bb = Ball::new(b.clone(), u.clone());
+        let mk_u = || ExactNum::from_word(1, p);
+        let ba = Ball::new(ExactNum::from(3), mk_u());
+        let bb = Ball::new(ExactNum::from(4), mk_u());
         let sum = ba.add(&bb, p, rm);
-        let true_sum = a.add(&b, p, rm);
+        let true_sum = ExactNum::from(3).add(&ExactNum::from(4), p, rm);
         assert!(sum.contains(&true_sum, p));
     }
 
@@ -480,10 +478,12 @@ mod tests {
 
         let p = 256;
         let mut cc = Consts::new().unwrap();
-        let one = ExactNum::from_u8(1, p);
-        let got = ziv_round_vec(p, rm, &[one.clone(), one], |pw, xs| {
-            xs[0].atan2(&xs[1], pw, RoundingMode::None, &mut cc)
-        });
+        let got = ziv_round_vec(
+            p,
+            rm,
+            &[ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)],
+            |pw, xs| xs[0].atan2(&xs[1], pw, RoundingMode::None, &mut cc),
+        );
         let quarter = cc.pi(p, rm).div(&ExactNum::from_u8(4, p), p, rm);
         assert_eq!(got.compare(&quarter), Some(0));
     }
@@ -504,13 +504,13 @@ mod tests {
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new().unwrap();
         let two = ExactNum::from_u8(2, p);
-        let rad = two.powsi(-20, p, rm);
-        let z = Ball::new(ExactNum::from_u8(0, p), rad.clone());
+        let mk_rad = || two.powsi(-20, p, rm);
+        let z = Ball::new(ExactNum::from_u8(0, p), mk_rad());
         let ez = z.exp(p, rm, &mut cc);
         assert!(ez.contains(&ExactNum::from_u8(1, p), p));
 
         let ln2 = cc.ln_2(p, rm);
-        let bln = Ball::new(ln2, rad);
+        let bln = Ball::new(ln2, mk_rad());
         let e2 = bln.exp(p, rm, &mut cc);
         assert!(e2.contains(&two, p));
     }
@@ -521,13 +521,13 @@ mod tests {
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new().unwrap();
         let two = ExactNum::from_u8(2, p);
-        let rad = two.powsi(-20, p, rm);
-        let z = Ball::new(ExactNum::from_u8(0, p), rad.clone());
+        let mk_rad = || two.powsi(-20, p, rm);
+        let z = Ball::new(ExactNum::from_u8(0, p), mk_rad());
         let sz = z.sin(p, rm, &mut cc);
         assert!(sz.contains(&ExactNum::from_u8(0, p), p));
 
         let pi = cc.pi(p, rm);
-        let bpi = Ball::new(pi, rad);
+        let bpi = Ball::new(pi, mk_rad());
         let sp = bpi.sin(p, rm, &mut cc);
         assert!(sp.contains(&ExactNum::from_u8(0, p), p));
     }
@@ -539,7 +539,7 @@ mod tests {
         let mut cc = Consts::new().unwrap();
         let x = ExactNum::from_u8(1, p);
         let rad = ExactNum::from_u8(2, p).powsi(-12, p, rm);
-        let b = Ball::new(x.clone(), rad);
+        let b = Ball::new(ExactNum::from_u8(1, p), rad);
         let hi = x.exp(256, rm, &mut cc);
         assert!(b.exp(p, rm, &mut cc).contains(&hi, p));
         let hs = x.sin(256, rm, &mut cc);
@@ -551,15 +551,16 @@ mod tests {
         let p = 256;
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new().unwrap();
-        let rad = ExactNum::from_u8(1, p).ldexp(-(p as i32), p, RoundingMode::None);
+        let mk_rad = || ExactNum::from_u8(1, p).ldexp(-(p as i32), p, RoundingMode::None);
         let six = ExactNum::from_u8(6, p);
         let pi6 = cc.pi(p, rm).div(&six, p, rm);
-        let bsin = Ball::new(pi6, rad.clone());
+        let bsin = Ball::new(pi6, mk_rad());
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         assert!(bsin.sin(p, rm, &mut cc).contains(&half, p));
 
         let one = ExactNum::from_u8(1, p);
-        let be = Ball::new(one.clone(), rad.clone());
+        let mk_be = || Ball::new(ExactNum::from_u8(1, p), mk_rad());
+        let be = mk_be();
         let e = cc.e(p, rm);
         assert!(be.exp(p, rm, &mut cc).contains(&e, p));
 
@@ -567,17 +568,16 @@ mod tests {
         assert!(be.erf(p, rm, &mut cc).contains(&erf1, p));
 
         let ln1 = one.ln(256, rm, &mut cc);
-        assert!(be.clone().ln(p, rm, &mut cc).contains(&ln1, p));
+        assert!(mk_be().ln(p, rm, &mut cc).contains(&ln1, p));
         let sq = one.sqrt(256, rm);
-        assert!(be.clone().sqrt(p, rm).contains(&sq, p));
+        assert!(mk_be().sqrt(p, rm).contains(&sq, p));
         assert!(be
             .cos(p, rm, &mut cc)
             .contains(&one.cos(256, rm, &mut cc), p));
         assert!(be
             .bessel_j0(p, rm, &mut cc)
             .contains(&one.bessel_j(0, 256, rm, &mut cc), p));
-        assert!(be
-            .clone()
+        assert!(mk_be()
             .bessel_j1(p, rm, &mut cc)
             .contains(&one.bessel_j(1, 256, rm, &mut cc), p));
 
@@ -591,18 +591,26 @@ mod tests {
         let p = 256;
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new().unwrap();
-        let mid = ExactComplex::new(
-            ExactNum::from_u8(3, p).div(&ExactNum::from_u8(10, p), p, rm),
-            ExactNum::from_u8(2, p).div(&ExactNum::from_u8(10, p), p, rm),
-        );
+        let mk_mid = || {
+            ExactComplex::new(
+                ExactNum::from_u8(3, p).div(&ExactNum::from_u8(10, p), p, rm),
+                ExactNum::from_u8(2, p).div(&ExactNum::from_u8(10, p), p, rm),
+            )
+        };
+        let mid = mk_mid();
         let rad = ExactNum::from_u8(1, p);
         let unit = ComplexBall::new(ExactComplex::zero(p), rad);
         let e_mid = mid.exp(p, rm, &mut cc);
         assert!(unit.exp(p, rm, &mut cc).contains(&e_mid, p));
 
-        let small = ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
-        let d = ComplexBall::new(mid.clone(), small);
-        let s = d.clone().sin(p, rm, &mut cc);
+        let mk_d = || {
+            ComplexBall::new(
+                mk_mid(),
+                ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None),
+            )
+        };
+        let d = mk_d();
+        let s = mk_d().sin(p, rm, &mut cc);
         let c = d.cos(p, rm, &mut cc);
         let ss = s.mul(&s, p, rm);
         let cc2 = c.mul(&c, p, rm);

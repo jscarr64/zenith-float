@@ -420,7 +420,7 @@ mod tests {
         let one = ExactNumNumber::from_word(1, p).unwrap();
         let zero = ExactNumNumber::new(p).unwrap();
         let two = ExactNumNumber::from_word(2, p).unwrap();
-        let mut half = one.clone().unwrap();
+        let mut half = ExactNumNumber::from_word(1, p).unwrap();
         half.div_by_2(RoundingMode::None);
 
         let sn0 = zero.jacobi_sn(&half, p, rm, &mut cc).unwrap();
@@ -432,7 +432,7 @@ mod tests {
         let am0 = zero.jacobi_am(&half, p, rm, &mut cc).unwrap();
         assert!(am0.is_zero(), "am(0)");
 
-        let u = one.clone().unwrap();
+        let u = ExactNumNumber::from_word(1, p).unwrap();
         let sn_m0 = u.jacobi_sn(&zero, p, rm, &mut cc).unwrap();
         let sinu = u.sin(p, rm, &mut cc).unwrap();
         bits_agree(&sn_m0, &sinu, p, 80, "sn(u|0)=sin u");
@@ -484,7 +484,7 @@ mod tests {
         bits_agree(&d2ms, &one, p, 80, "dn²+m sn²=1");
 
         let k = half.elliptic_k(p, rm, &mut cc).unwrap();
-        let mut kh = k.clone().unwrap();
+        let mut kh = half.elliptic_k(p, rm, &mut cc).unwrap();
         kh.div_by_2(RoundingMode::None);
         let snkh = kh.jacobi_sn(&half, p, rm, &mut cc).unwrap();
         let kp = one
@@ -509,7 +509,7 @@ mod tests {
         let sn_per = u4.jacobi_sn(&half, p, rm, &mut cc).unwrap();
         bits_agree(&sn_per, &sn, p, 40, "sn(u+4K)=sn(u)");
 
-        let mut h = one.clone().unwrap();
+        let mut h = ExactNumNumber::from_word(1, p).unwrap();
         for _ in 0..20 {
             h.div_by_2(RoundingMode::None);
         }

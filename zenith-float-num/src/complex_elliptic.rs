@@ -716,8 +716,9 @@ mod tests {
         let r = RoundingMode::ToEven;
         let mut cc = Consts::new().unwrap();
         let z0 = ExactComplex::zero(p);
-        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
-        let mh = ExactComplex::from_real(half.clone(), p);
+        let mk_half = || ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
+        let half = mk_half();
+        let mh = ExactComplex::from_real(mk_half(), p);
 
         let k0 = z0.elliptic_k(p, r, &mut cc);
         let mut hp = cc.pi(p, r);
@@ -741,7 +742,7 @@ mod tests {
         let k1 = ExactComplex::one(p).elliptic_k(p, r, &mut cc);
         assert!(k1.re().is_inf_pos(), "K(1)=+∞");
 
-        let x = mh.clone();
+        let x = ExactComplex::from_real(mk_half(), p);
         let f0 = x.elliptic_f(&z0, p, r, &mut cc);
         let asin = x.asin(p, r, &mut cc);
         assert!(near(f0.re(), asin.re(), p, 8), "F(x,0)=arcsin");
@@ -777,22 +778,26 @@ mod tests {
 
         // Cut of K on [1,+∞): K(2+εi) and K(2-εi) are conjugates, not equal.
         let two = ExactNum::from_u8(2, p);
-        let eps = ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
-        let above = ExactComplex::new(two.clone(), eps.clone());
+        let mk_eps = || ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
+        let eps = mk_eps();
+        let above = ExactComplex::new(ExactNum::from_u8(2, p), mk_eps());
         let below = ExactComplex::new(two, eps.neg_via_mul());
         let ka = above.elliptic_k(p, r, &mut cc);
         let kb = below.elliptic_k(p, r, &mut cc);
         assert!(near(ka.re(), kb.re(), p, 20), "K cut Re");
         assert!(ka.im().is_positive() != kb.im().is_positive() || !tiny(ka.im(), p));
+        assert_ne!(ka.im().compare(kb.im()), Some(0));
         assert!(
-            near(&ka.im().clone().abs(), &kb.im().clone().abs(), p, 20),
+            near(&ka.into_parts().1.abs(), &kb.into_parts().1.abs(), p, 20),
             "K cut |Im|"
         );
-        assert_ne!(ka.im().compare(kb.im()), Some(0));
 
         // Incomplete F cut: x=3/2, m=1/2, ±ε imag on x.
         let three_half = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(2, p), p, r);
-        let xa = ExactComplex::new(three_half.clone(), eps.clone());
+        let xa = ExactComplex::new(
+            ExactNum::from_u8(3, p).div(&ExactNum::from_u8(2, p), p, r),
+            mk_eps(),
+        );
         let xb = ExactComplex::new(three_half, eps.neg());
         let fa = xa.elliptic_f(&mh, p, r, &mut cc);
         let fb = xb.elliptic_f(&mh, p, r, &mut cc);

@@ -4364,7 +4364,7 @@ mod tests {
     use crate::Consts;
     use crate::Error;
 
-    static ONE: ExactNum = ExactNum {
+    const ONE: ExactNum = ExactNum {
         inner: super::Flavor::Value(crate::num::ExactNumNumber::small_const(1)),
     };
     static TWO: ExactNum = ExactNum {
@@ -4904,7 +4904,7 @@ mod tests {
         assert!(INF_NEG.signum().compare(&ExactNum::from_i8(-1, DEFAULT_P)) == Some(0));
         assert!(NAN.signum().is_nan());
 
-        let d1 = ONE.clone();
+        let d1 = ONE;
         assert!(d1.exponent() == Some(1));
         let words: &[Word] = {
             #[cfg(not(target_pointer_width = "32"))]
@@ -4942,17 +4942,11 @@ mod tests {
         assert!(NAN.precision().is_none());
         assert!(NAN.sign().is_none());
 
-        INF_POS.clone().set_exponent(1);
-        INF_POS.clone().set_precision(1, rm).unwrap();
-        INF_POS.clone().set_sign(Sign::Pos);
-
-        INF_NEG.clone().set_exponent(1);
-        INF_NEG.clone().set_precision(1, rm).unwrap();
-        INF_NEG.clone().set_sign(Sign::Pos);
-
-        NAN.clone().set_exponent(1);
-        NAN.clone().set_precision(1, rm).unwrap();
-        NAN.clone().set_sign(Sign::Pos);
+        for mut special in [INF_POS, INF_NEG, NAN] {
+            special.set_exponent(1);
+            special.set_precision(1, rm).unwrap();
+            special.set_sign(Sign::Pos);
+        }
 
         assert!(INF_POS.min(&ONE).compare(&ONE) == Some(0));
         assert!(INF_NEG.min(&ONE).is_inf_neg());
@@ -5272,24 +5266,24 @@ mod tests {
         let two = ExactNum::from_u8(2, p);
         let three = ExactNum::from_u8(3, p);
 
-        let (hi, lo) = one.clone().two_sum(&two, p, rm);
+        let (hi, lo) = ExactNum::from_u8(1, p).two_sum(&two, p, rm);
         let rec = hi.add(&lo, p, rm);
         assert_eq!(rec.compare(&ExactNum::from_u8(3, p)), Some(0));
 
-        let (ph, pl) = two.clone().two_product(&three, p, rm);
+        let (ph, pl) = two.two_product(&three, p, rm);
         let pr = ph.add(&pl, p, rm);
         assert_eq!(pr.compare(&ExactNum::from_u8(6, p)), Some(0));
 
         let sum = ExactNum::fused_sum(
-            &[ExactNum::from_u8(1, p), two.clone(), three.clone()],
+            &[ExactNum::from_u8(1, p), ExactNum::from_u8(2, p), ExactNum::from_u8(3, p)],
             p,
             rm,
         );
         assert_eq!(sum.compare(&ExactNum::from_u8(6, p)), Some(0));
 
         let dot = ExactNum::fused_dot(
-            &[ExactNum::from_u8(1, p), two.clone()],
-            &[three.clone(), ExactNum::from_u8(1, p)],
+            &[ExactNum::from_u8(1, p), ExactNum::from_u8(2, p)],
+            &[ExactNum::from_u8(3, p), ExactNum::from_u8(1, p)],
             p,
             rm,
         );
@@ -5390,10 +5384,10 @@ mod special_arg_tests {
             same_nan(&n.copysign(&v, P, RM), &n);
             same_nan(&n.hypot(&v, P, RM), &n);
             same_nan(&v.hypot(&n, P, RM), &n);
-            let (hi, lo) = n.clone().two_sum(&v, P, RM);
+            let (hi, lo) = ExactNum::nan(n.err()).two_sum(&v, P, RM);
             same_nan(&hi, &n);
             same_nan(&lo, &n);
-            let (hi, lo) = v.clone().two_sum(&n, P, RM);
+            let (hi, lo) = one().two_sum(&n, P, RM);
             same_nan(&hi, &n);
             same_nan(&lo, &n);
             let (hi, lo) = n.two_product(&v, P, RM);
@@ -5722,7 +5716,7 @@ mod add_sub_zero_tests {
     fn zero_with_exact_operand_is_exact() {
         let x = ExactNum::from_u8(12, 64);
         for rm in RMS {
-            let r = x.clone().add(&zero(false), 64, rm);
+            let r = ExactNum::from_u8(12, 64).add(&zero(false), 64, rm);
             assert!(!r.inexact_accumulated());
             assert_eq!(r.compare(&x), Some(0));
             let r = zero(true).sub(&x, 64, rm);
@@ -5741,7 +5735,7 @@ mod add_sub_zero_tests {
             assert!(zero(false).sub(&INF_POS, 64, rm).is_inf());
             let r = zero(false).add(&nan, 64, rm);
             assert!(r.is_nan() && r.err() == nan.err());
-            let r = nan.clone().sub(&zero(true), 64, rm);
+            let r = ExactNum::nan(nan.err()).sub(&zero(true), 64, rm);
             assert!(r.is_nan() && r.err() == nan.err());
         }
     }

@@ -514,7 +514,7 @@ mod tests {
 
         // MAX
         let prec = 3200;
-        let mut eps = ONE.clone().unwrap();
+        let mut eps = ExactNumNumber::small_const(1);
 
         let d1 = ExactNumNumber::max_value(prec).unwrap();
         let d2 = d1.ln(prec, RoundingMode::Down, &mut cc).unwrap();
@@ -598,7 +598,7 @@ mod tests {
         );
 
         // random subnormal arg
-        let mut eps = ONE.clone().unwrap();
+        let mut eps = ExactNumNumber::small_const(1);
         for _ in 0..1000 {
             let prec = (crate::common::test_rng::random::<usize>() % 3 + 3) * WORD_BIT_SIZE;
 

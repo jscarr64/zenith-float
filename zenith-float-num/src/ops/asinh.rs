@@ -145,7 +145,7 @@ mod tests {
         let d3 = ExactNumNumber::min_positive(p).unwrap();
         let zero = ExactNumNumber::new(1).unwrap();
 
-        let mut eps = ONE.clone().unwrap();
+        let mut eps = ExactNumNumber::small_const(1);
         eps.set_exponent(
             d1.exponent() - p as Exponent + core::mem::size_of::<Exponent>() as Exponent * 8,
         );

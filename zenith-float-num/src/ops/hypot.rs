@@ -89,7 +89,6 @@ impl ExactNumNumber {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::consts::ONE;
     use crate::defs::WORD_BIT_SIZE;
     use crate::RoundingMode;
 
@@ -119,7 +118,7 @@ mod tests {
             let aa = a.mul(&a, p2, rm).unwrap();
             let bb = b.mul(&b, p2, rm).unwrap();
             let s = aa.add(&bb, p2, rm).unwrap().sqrt(p, rm).unwrap();
-            let mut eps = ONE.clone().unwrap();
+            let mut eps = ExactNumNumber::small_const(1);
             eps.set_exponent(h.exponent() - p as crate::Exponent + 6);
             assert!(h.sub(&s, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
         }

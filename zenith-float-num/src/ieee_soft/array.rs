@@ -2352,7 +2352,7 @@ mod tests {
         let two = Ieee64::from_i32(2);
         let a = Ieee64Array::from_values(&[one, two]);
         let b = Ieee64Array::from_values(&[two, one]);
-        let s = a.clone().add(&b).unwrap();
+        let s = Ieee64Array::from_values(&[one, two]).add(&b).unwrap();
         assert_eq!(s.get(0).unwrap().to_bits(), Ieee64::from_i32(3).to_bits());
         assert_eq!(s.get(1).unwrap().to_bits(), Ieee64::from_i32(3).to_bits());
         let d = a.dot(&b).unwrap();
@@ -2384,11 +2384,11 @@ mod tests {
     #[test]
     fn exact_array_add() {
         let p = 64;
-        let one = ExactNum::from_u8(1, p);
-        let two = ExactNum::from_u8(2, p);
-        let a = ExactNumArray::from_values(p, &[one.clone(), two.clone()]);
-        let b = ExactNumArray::from_values(p, &[two.clone(), one.clone()]);
-        let s = (a.clone() + &b).unwrap();
+        let mk_a =
+            || ExactNumArray::from_values(p, &[ExactNum::from_u8(1, p), ExactNum::from_u8(2, p)]);
+        let a = mk_a();
+        let b = ExactNumArray::from_values(p, &[ExactNum::from_u8(2, p), ExactNum::from_u8(1, p)]);
+        let s = (mk_a() + &b).unwrap();
         assert_eq!(s.get(0).unwrap().compare(&ExactNum::from_u8(3, p)), Some(0));
         let d = a.dot(&b).unwrap();
         assert_eq!(d.compare(&ExactNum::from_u8(4, p)), Some(0));
@@ -2832,13 +2832,12 @@ mod tests {
     fn eigen_diag(evals: &ExactNumArray, p: usize) -> ExactNumArray {
         let n = evals.cols;
         let mut vals = Vec::with_capacity(n * n);
-        let z = ExactNum::from_u8(0, p);
         for i in 0..n {
             for j in 0..n {
                 if i == j {
                     vals.push(evals.get(i).unwrap().clone());
                 } else {
-                    vals.push(z.clone());
+                    vals.push(ExactNum::from_u8(0, p));
                 }
             }
         }

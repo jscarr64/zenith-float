@@ -686,14 +686,14 @@ mod tests {
     }
 
     /// Independent real series \(\mathrm{erfi}(x)=\frac{2}{\sqrt\pi}\sum x^{2n+1}/(n!(2n+1))\).
-    fn erfi_real(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
+    fn erfi_real(mk_x: impl Fn() -> ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
         let pi = cc.pi(p, RoundingMode::None);
         let sqrt_pi = pi.sqrt(p, RoundingMode::None);
         let scale = ExactNum::from_u8(2, p).div(&sqrt_pi, p, RoundingMode::None);
-        let x2 = x.sqr(p, RoundingMode::None);
-        let mut xpow = x.clone();
+        let x2 = mk_x().sqr(p, RoundingMode::None);
+        let mut xpow = mk_x();
         let mut nfact = ExactNum::from_u8(1, p);
-        let mut sum = xpow.clone();
+        let mut sum = mk_x();
         for n in 1..=series_term_cap(p) {
             nfact = nfact.mul(&ExactNum::from_u32(n as u32, p), p, RoundingMode::None);
             xpow = xpow.mul(&x2, p, RoundingMode::None);
@@ -740,12 +740,12 @@ mod tests {
 
         let i = ExactComplex::i(p);
         let ei = i.erf(p, rm, &mut cc);
-        let erfi1 = erfi_real(&ExactNum::from_u8(1, p), p, &mut cc);
+        let erfi1 = erfi_real(|| ExactNum::from_u8(1, p), p, &mut cc);
         assert!(tiny(ei.re(), p));
         assert!(near(ei.im(), &erfi1, p));
 
         let h = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
-        let hc = ExactComplex::from_real(h.clone(), p);
+        let hc = ExactComplex::from_real(h, p);
         let zp = ExactComplex::add_ref(&z, &hc, p, rm);
         let zm = ExactComplex::sub_ref(&z, &hc, p, rm);
         let num = zp.erf(p, rm, &mut cc).sub(&zm.erf(p, rm, &mut cc), p, rm);
@@ -757,7 +757,7 @@ mod tests {
         let expect = ExactComplex::from_real(two_over, p).mul(&expm, p, rm);
         assert!(cnear_bits(&deriv, &expect, p, 8));
 
-        let nan = ExactComplex::new(crate::NAN.clone(), ExactNum::new(p));
+        let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
         assert!(nan.erf(p, rm, &mut cc).is_nan());
         assert!(nan.erfc(p, rm, &mut cc).is_nan());
 
@@ -836,13 +836,13 @@ mod tests {
             assert!(pole.digamma(p, rm, &mut cc).is_nan(), "digamma pole {n}");
         }
 
-        let h = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
-        let hc = ExactComplex::from_real(h.clone(), p);
-        let num = ExactComplex::from_real(h.clone(), p)
+        let mk_h = || ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
+        let hc = ExactComplex::from_real(mk_h(), p);
+        let num = ExactComplex::from_real(mk_h(), p)
             .add(&z, p, rm)
             .ln_gamma(p, rm, &mut cc)
             .sub(
-                &ExactComplex::from_real(h, p)
+                &ExactComplex::from_real(mk_h(), p)
                     .neg()
                     .add(&z, p, rm)
                     .ln_gamma(p, rm, &mut cc),
@@ -853,7 +853,7 @@ mod tests {
         let psi = z.digamma(p, rm, &mut cc);
         assert!(cnear_bits(&deriv, &psi, p, 8));
 
-        let nan = ExactComplex::new(crate::NAN.clone(), ExactNum::new(p));
+        let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
         assert!(nan.gamma(p, rm, &mut cc).is_nan());
     }
 }

@@ -584,16 +584,17 @@ mod carry_tests {
     }
 
     fn check_shift(src: &[Word], n: usize) {
-        let mut got_l = src.to_vec();
-        let mut want_l = src.to_vec();
+        let dup = || src.iter().copied().collect::<Vec<Word>>();
+        let mut got_l = dup();
+        let mut want_l = dup();
         shift_slice_left(&mut got_l, n);
         for _ in 0..n {
             shl1(&mut want_l);
         }
         assert_eq!(got_l, want_l, "left {n} {src:?}");
 
-        let mut got_r = src.to_vec();
-        let mut want_r = src.to_vec();
+        let mut got_r = dup();
+        let mut want_r = dup();
         shift_slice_right(&mut got_r, n);
         for _ in 0..n {
             shr1(&mut want_r);

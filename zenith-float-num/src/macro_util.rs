@@ -830,17 +830,18 @@ mod tests {
     fn test_complex_cancel_independent_parts() {
         let p = 256;
         let rm = RoundingMode::None;
-        let one = ExactNum::from_u8(1, p);
-        let two = ExactNum::from_u8(2, p);
+        let mk_inexact = |n: u8| {
+            let mut v = ExactNum::from_u8(n, p);
+            v.set_inexact(true);
+            v
+        };
         let tiny = ExactNum::from_u8(1, p).ldexp(-80, p, rm);
         let mut near_m1 = ExactNum::from_i8(-1, p).add(&tiny, p, rm);
-        let mut re_pos = one.clone();
-        re_pos.set_inexact(true);
+        let re_pos = mk_inexact(1);
         near_m1.set_inexact(true);
-        let mut im = two.clone();
-        im.set_inexact(true);
+        let im = mk_inexact(2);
 
-        let a = crate::ExactComplex::new(re_pos, im.clone());
+        let a = crate::ExactComplex::new(re_pos, mk_inexact(2));
         let b = crate::ExactComplex::new(near_m1, im);
         let ret = crate::ExactComplex::add_ref(&a, &b, p, rm);
         let (re_err, im_err) = complex_cancel_bits(&a, &b, &ret, true);
@@ -850,14 +851,11 @@ mod tests {
             "imaginary part should not share the real slot"
         );
 
-        let mut im_pos = two.clone();
+        let im_pos = mk_inexact(2);
         let mut im_neg = ExactNum::from_i8(-2, p).add(&tiny, p, rm);
-        im_pos.set_inexact(true);
         im_neg.set_inexact(true);
-        let mut re = one.clone();
-        re.set_inexact(true);
-        let c = crate::ExactComplex::new(re.clone(), im_pos);
-        let d = crate::ExactComplex::new(re, im_neg);
+        let c = crate::ExactComplex::new(mk_inexact(1), im_pos);
+        let d = crate::ExactComplex::new(mk_inexact(1), im_neg);
         let ret2 = crate::ExactComplex::add_ref(&c, &d, p, rm);
         let (re_err2, im_err2) = complex_cancel_bits(&c, &d, &ret2, true);
         assert!(re_err2.is_none(), "real part should stay independent");

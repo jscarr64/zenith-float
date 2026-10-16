@@ -170,7 +170,7 @@ mod tests {
         reseed_random(11);
         let fill = ExactNumArray::random_fill(
             (100, 100),
-            &RandomDist::Normal(z64.clone(), o64),
+            &RandomDist::Normal(ExactNum::from_u8(0, p64), o64),
             p64,
             rm,
             &mut cc,

@@ -20,7 +20,7 @@ const fn get_prec_rng() -> usize {
 #[test]
 fn test_ln_exp() {
     let prec_rng = get_prec_rng();
-    let mut eps = ONE.clone().unwrap();
+    let mut eps = ExactNumNumber::small_const(1);
 
     let mut cc = Consts::new().unwrap();
 
@@ -136,7 +136,7 @@ fn test_powi() {
 #[test]
 fn test_log2_log10_pow() {
     let prec_rng = get_prec_rng();
-    let mut eps = ONE.clone().unwrap();
+    let mut eps = ExactNumNumber::small_const(1);
 
     let mut cc = Consts::new().unwrap();
 
@@ -258,7 +258,7 @@ fn test_log2_log10_pow() {
 #[test]
 fn test_log_pow() {
     let prec_rng = get_prec_rng();
-    let mut eps = ONE.clone().unwrap();
+    let mut eps = ExactNumNumber::small_const(1);
 
     let mut cc = Consts::new().unwrap();
 
@@ -384,8 +384,8 @@ fn test_log_pow() {
 #[test]
 fn test_sin_asin() {
     let prec_rng = get_prec_rng();
-    let mut eps = ONE.clone().unwrap();
-    let mut thres = ONE.clone().unwrap();
+    let mut eps = ExactNumNumber::small_const(1);
+    let mut thres = ExactNumNumber::small_const(1);
     let thres_exp = -8;
     thres.set_exponent(thres_exp);
 
@@ -395,7 +395,9 @@ fn test_sin_asin() {
         .pi_num((prec_rng + 1) * WORD_BIT_SIZE, RoundingMode::None)
         .unwrap();
 
-    let mut half_pi = pi.clone().unwrap();
+    let mut half_pi = cc
+        .pi_num((prec_rng + 1) * WORD_BIT_SIZE, RoundingMode::None)
+        .unwrap();
     half_pi.set_exponent(1);
 
     // argument between -pi/2, pi/2
@@ -535,7 +537,7 @@ fn test_sin_asin() {
 #[test]
 fn test_cos_acos() {
     let prec_rng = get_prec_rng();
-    let mut eps = ONE.clone().unwrap();
+    let mut eps = ExactNumNumber::small_const(1);
 
     let mut cc = Consts::new().unwrap();
 
@@ -627,15 +629,13 @@ fn test_cos_acos() {
 #[test]
 fn test_tan_atan() {
     let prec_rng = get_prec_rng();
-    let mut eps = ONE.clone().unwrap();
+    let mut eps = ExactNumNumber::small_const(1);
 
     let mut cc = Consts::new().unwrap();
 
-    let pi = cc
+    let mut half_pi = cc
         .pi_num((prec_rng + 1) * WORD_BIT_SIZE, RoundingMode::None)
         .unwrap();
-
-    let mut half_pi = pi.clone().unwrap();
     half_pi.set_exponent(1);
 
     for i in 0..TEST_ITERS {
@@ -717,7 +717,7 @@ fn test_tan_atan() {
 #[test]
 fn test_sinh_asinh() {
     let prec_rng = get_prec_rng();
-    let mut eps = ONE.clone().unwrap();
+    let mut eps = ExactNumNumber::small_const(1);
 
     let mut cc = Consts::new().unwrap();
 
@@ -786,7 +786,7 @@ fn test_sinh_asinh() {
 #[test]
 fn test_cosh_acosh() {
     let prec_rng = get_prec_rng();
-    let mut eps = ONE.clone().unwrap();
+    let mut eps = ExactNumNumber::small_const(1);
 
     let mut cc = Consts::new().unwrap();
 
@@ -846,7 +846,7 @@ fn test_cosh_acosh() {
 #[test]
 fn test_tanh_atanh() {
     let prec_rng = get_prec_rng();
-    let mut eps = ONE.clone().unwrap();
+    let mut eps = ExactNumNumber::small_const(1);
 
     let mut cc = Consts::new().unwrap();
 

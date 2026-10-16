@@ -96,7 +96,7 @@ mod tests {
         let p = 128;
         let rm = RoundingMode::ToEven;
         let n = ExactNum::parse("10.5", Radix::Dec, p, rm, &mut cc);
-        let rf = RadixFloat::with_radix(n.clone(), rdx);
+        let rf = RadixFloat::with_radix(ExactNum::parse("10.5", Radix::Dec, p, rm, &mut cc), rdx);
         let s = rf.format(rm, &mut cc).unwrap();
         let g = RadixFloat::parse(&s, rdx, p, rm, &mut cc).unwrap();
         assert_eq!(n.compare(g.value()), Some(0));

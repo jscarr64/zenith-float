@@ -140,7 +140,7 @@ mod tests {
         let mut d5 = d5.mul(&d5, p, rm).unwrap();
         d5.set_exponent(d5.exponent() + 1);
 
-        let mut eps = ONE.clone().unwrap();
+        let mut eps = ExactNumNumber::small_const(1);
         eps.set_exponent(
             d1.exponent() - p as Exponent + core::mem::size_of::<Exponent>() as Exponent * 8,
         );

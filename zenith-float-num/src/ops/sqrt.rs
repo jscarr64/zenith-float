@@ -60,7 +60,6 @@ impl ExactNumNumber {
 mod tests {
 
     use super::*;
-    use crate::common::consts::ONE;
     use crate::{common::util::random_subnormal, defs::WORD_BIT_SIZE, Exponent};
     use crate::{Consts, Sign, EXPONENT_MAX};
 
@@ -116,7 +115,7 @@ mod tests {
 
         // MAX
         let prec = 3200;
-        let mut eps = ONE.clone().unwrap();
+        let mut eps = ExactNumNumber::small_const(1);
 
         let d1 = ExactNumNumber::max_value(prec).unwrap();
         let d2 = d1.sqrt(prec, RoundingMode::ToEven).unwrap();
@@ -146,7 +145,7 @@ mod tests {
         );
 
         // random
-        let mut eps = ONE.clone().unwrap();
+        let mut eps = ExactNumNumber::small_const(1);
 
         for _ in 0..1000 {
             let prec = (crate::common::test_rng::random::<usize>() % 32 + 1) * WORD_BIT_SIZE;

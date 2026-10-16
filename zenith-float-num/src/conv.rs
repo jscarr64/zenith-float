@@ -910,7 +910,6 @@ impl ExactNumNumber {
 mod tests {
 
     use super::*;
-    use crate::common::consts::ONE;
     use crate::common::test_rng::random;
     use crate::common::util::random_subnormal;
     use crate::common::util::test_loop_count;
@@ -1054,7 +1053,7 @@ mod tests {
         }
 
         // random normal values
-        let mut eps = ONE.clone().unwrap();
+        let mut eps = ExactNumNumber::small_const(1);
         let p_rng = 32;
 
         for _ in 0..test_loop_count(1000) {

@@ -574,9 +574,9 @@ mod tests {
             &mut cc,
         )
         .expect("rk4");
-        let yend = y.get(y.len() - 1).expect("yend").clone();
+        let yend = y.get(y.len() - 1).expect("yend");
         let einv = one.neg_via_mul().exp(p, rm, &mut cc);
-        let err = yend.sub(&einv, p, rm).abs();
+        let err = ExactNum::sub_ref(yend, &einv, p, rm).abs();
         let tol12 = ExactNum::from_u8(1, p).div(&ten.powsi(RK4_EXP_ERR_DIGITS, p, rm), p, rm);
         assert!(err.is_zero() || err.compare(&tol12) == Some(-1));
 
@@ -594,8 +594,8 @@ mod tests {
             &mut cc,
         )
         .expect("rk45");
-        let y45e = y45.get(y45.len() - 1).expect("y45e").clone();
-        let err45 = y45e.sub(&einv, p, rm).abs();
+        let y45e = y45.get(y45.len() - 1).expect("y45e");
+        let err45 = ExactNum::sub_ref(y45e, &einv, p, rm).abs();
         assert!(
             err45.is_zero() || err45.compare(&atol) == Some(-1) || err45.compare(&atol) == Some(0)
         );

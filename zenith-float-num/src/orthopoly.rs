@@ -512,7 +512,7 @@ mod tests {
             .sub(&one, p, rm);
         assert_eq!(g1.compare(&four_x2_m1), Some(0));
         assert_eq!(g1.compare(&u2), Some(0));
-        let lam_half = half.clone();
+        let lam_half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let g_leg = half.gegenbauer(2, &lam_half, p, rm);
         let three_x2_m1 = three.mul(&half, p, rm).mul(&half, p, rm).sub(&one, p, rm);
         let two_p2 = g_leg.mul(&two, p, rm);
@@ -561,9 +561,9 @@ mod tests {
         assert!(near(&j5, &l5, p), "P_5^{{(0,0)}}(3/10) vs Legendre");
 
         // P_n^{(α,β)}(−x) = (−1)^n P_n^{(β,α)}(x).
-        let alpha = half.clone();
+        let alpha = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let beta = ExactNum::from_u8(1, p).div(&three, p, rm);
-        let x = three_tenths.clone();
+        let x = three_tenths;
         let nx = x.neg_via_mul();
         let lhs = nx.jacobi_p(6, &alpha, &beta, p, rm);
         let rhs = x.jacobi_p(6, &beta, &alpha, p, rm);

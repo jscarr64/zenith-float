@@ -435,7 +435,7 @@ mod tests {
         let bz = z.bi(p, rm, &mut cc);
         assert!(!az.is_nan() && !bz.is_nan());
 
-        let nan = ExactComplex::new(crate::NAN.clone(), ExactNum::new(p));
+        let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
         assert!(nan.ai(p, rm, &mut cc).is_nan());
         assert!(nan.bi(p, rm, &mut cc).is_nan());
     }

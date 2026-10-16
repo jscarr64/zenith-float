@@ -451,7 +451,7 @@ mod tests {
         assert!(tiny(s0.re(), p) && tiny(s0.im(), p));
         assert!(z0.ci(p, rm, &mut cc).is_nan());
 
-        let z = ExactComplex::new(ExactNum::from_u8(1, p), half_c(p).re().clone());
+        let z = ExactComplex::new(ExactNum::from_u8(1, p), half_c(p).into_parts().0);
         let sz = z.si(p, rm, &mut cc);
         assert!(cnear(&sz, &neg_c(z.neg_via_mul().si(p, rm, &mut cc)), p));
 
@@ -460,13 +460,13 @@ mod tests {
         assert!(tiny(fs0.re(), p) && tiny(fs0.im(), p));
         assert!(tiny(fc0.re(), p) && tiny(fc0.im(), p));
 
-        let h = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
-        let hc = ExactComplex::from_real(h.clone(), p);
-        let num_ei = ExactComplex::from_real(h.clone(), p)
+        let mk_h = || ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
+        let hc = ExactComplex::from_real(mk_h(), p);
+        let num_ei = ExactComplex::from_real(mk_h(), p)
             .add(&z, p, rm)
             .ei(p, rm, &mut cc)
             .sub(
-                &ExactComplex::from_real(h.clone(), p)
+                &ExactComplex::from_real(mk_h(), p)
                     .neg()
                     .add(&z, p, rm)
                     .ei(p, rm, &mut cc),
@@ -477,11 +477,11 @@ mod tests {
         let expect_ei = z.exp(p, rm, &mut cc).div(&z, p, rm);
         assert!(cnear_bits(&deriv_ei, &expect_ei, p, 8));
 
-        let num_si = ExactComplex::from_real(h.clone(), p)
+        let num_si = ExactComplex::from_real(mk_h(), p)
             .add(&z, p, rm)
             .si(p, rm, &mut cc)
             .sub(
-                &ExactComplex::from_real(h, p)
+                &ExactComplex::from_real(mk_h(), p)
                     .neg()
                     .add(&z, p, rm)
                     .si(p, rm, &mut cc),
@@ -510,7 +510,7 @@ mod tests {
             .mul(&ExactComplex::i(p), p, rm);
         assert!(cnear_bits(&jump, &two_pi_i, p, 8));
 
-        let nan = ExactComplex::new(crate::NAN.clone(), ExactNum::new(p));
+        let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
         assert!(nan.ei(p, rm, &mut cc).is_nan());
     }
 }

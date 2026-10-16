@@ -724,9 +724,10 @@ mod tests {
         let mut cc = Consts::new().unwrap();
         let one = ExactComplex::one(p);
         let two = ExactComplex::from_real(ExactNum::from_u8(2, p), p);
-        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
-        let zh = ExactComplex::from_real(half.clone(), p);
-        let a_h = zh.clone();
+        let mk_half = || ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
+        let half = mk_half();
+        let zh = ExactComplex::from_real(mk_half(), p);
+        let a_h = ExactComplex::from_real(mk_half(), p);
         let z0 = ExactComplex::zero(p);
 
         let f1 = one.hypergeom_2f1(&one, &two, &zh, p, r, &mut cc);
@@ -783,16 +784,16 @@ mod tests {
         assert!(bad.is_nan(), "c=0 → NaN");
 
         let two_r = ExactNum::from_u8(2, p);
-        let eps = ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
-        let above = ExactComplex::new(two_r.clone(), eps.clone());
-        let below = ExactComplex::new(two_r, eps.neg());
+        let mk_eps = || ExactNum::from_u8(1, p).ldexp(-40, p, RoundingMode::None);
+        let above = ExactComplex::new(ExactNum::from_u8(2, p), mk_eps());
+        let below = ExactComplex::new(two_r, mk_eps().neg());
         let fa = one.hypergeom_2f1(&one, &two, &above, p, r, &mut cc);
         let fb = one.hypergeom_2f1(&one, &two, &below, p, r, &mut cc);
         assert!(!fa.is_nan() && !fb.is_nan(), "cut defined");
         assert!(near(fa.re(), fb.re(), p, 20), "cut Re");
         assert_ne!(fa.im().compare(fb.im()), Some(0), "cut Im differs");
         assert!(
-            near(&fa.im().clone().abs(), &fb.im().clone().abs(), p, 20),
+            near(&fa.into_parts().1.abs(), &fb.into_parts().1.abs(), p, 20),
             "cut |Im|"
         );
     }

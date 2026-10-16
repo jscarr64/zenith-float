@@ -1945,7 +1945,7 @@ mod tests {
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new().unwrap();
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
-        let z = half.clone();
+        let z = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
 
@@ -1956,7 +1956,7 @@ mod tests {
         let fox = z.fox_h(
             &[],
             &[],
-            &[(zero.clone(), one.clone())],
+            &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
             &[],
             p,
             rm,

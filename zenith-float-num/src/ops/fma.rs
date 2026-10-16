@@ -109,7 +109,7 @@ mod tests {
         let mut c = ExactNumNumber::from_i8(1, p).unwrap();
         c.set_exponent(c.exponent() + 10_000);
         let got = a.fma(&b, &c, p, rm).unwrap();
-        let mut want = c.clone().unwrap();
+        let mut want = c;
         want.set_precision(p, rm).unwrap();
         assert_eq!(got.cmp(&want), 0);
     }

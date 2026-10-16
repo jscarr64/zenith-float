@@ -1261,8 +1261,7 @@ mod tests {
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new().unwrap();
 
-        let one = ExactComplex::one(p);
-        let z1 = one.clone();
+        let z1 = ExactComplex::one(p);
         let nu0 = ExactComplex::zero(p);
         let nu1 = ExactComplex::one(p);
         let j0 = z1.bessel_j_nu(&nu0, p, rm, &mut cc);
@@ -1274,7 +1273,7 @@ mod tests {
         assert!(near(j1.re(), &rj1, p));
         assert!(tiny(j1.im(), p));
 
-        let z = ExactComplex::new(ExactNum::from_u8(1, p), half_c(p).re().clone());
+        let z = ExactComplex::new(ExactNum::from_u8(1, p), half_c(p).into_parts().0);
         let jn = z.bessel_j_nu(&nu0, p, rm, &mut cc);
         let yn1 = z.bessel_y(&nu1, p, rm, &mut cc);
         let jn1 = z.bessel_j_nu(&nu1, p, rm, &mut cc);
@@ -1301,13 +1300,13 @@ mod tests {
         let i_z = z.bessel_i(&nu0, p, rm, &mut cc);
         assert!(cnear(&i_z, &via_j, p));
 
-        let h = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
-        let hc = ExactComplex::from_real(h.clone(), p);
-        let num = ExactComplex::from_real(h.clone(), p)
+        let mk_h = || ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
+        let hc = ExactComplex::from_real(mk_h(), p);
+        let num = ExactComplex::from_real(mk_h(), p)
             .add(&z, p, rm)
             .bessel_j_nu(&nu0, p, rm, &mut cc)
             .sub(
-                &ExactComplex::from_real(h, p)
+                &ExactComplex::from_real(mk_h(), p)
                     .neg()
                     .add(&z, p, rm)
                     .bessel_j_nu(&nu0, p, rm, &mut cc),
@@ -1323,11 +1322,11 @@ mod tests {
         assert!(z0.bessel_j_nu(&half, p, rm, &mut cc).is_nan());
 
         let eps = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
-        let above = ExactComplex::new(ExactNum::from_i8(-1, p), eps.clone());
         let below = ExactComplex::new(
             ExactNum::from_i8(-1, p),
             ExactNum::from_i8(-1, p).mul(&eps, p, rm),
         );
+        let above = ExactComplex::new(ExactNum::from_i8(-1, p), eps);
         let ja = above.bessel_j_nu(&half, p, rm, &mut cc);
         let jb = below.bessel_j_nu(&half, p, rm, &mut cc);
         assert!(!cnear(&ja, &jb, p));
@@ -1342,7 +1341,10 @@ mod tests {
         let x = ExactNum::from_u8(2, p);
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let zneg = ExactComplex::from_real(x.neg_via_mul(), p);
-        let nu = ExactComplex::from_real(half.clone(), p);
+        let nu = ExactComplex::from_real(
+            ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm),
+            p,
+        );
         let i = zneg.bessel_i(&nu, p, rm, &mut cc);
         assert!(!i.is_nan());
         assert!(

@@ -65,7 +65,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::{consts::ONE, util::random_subnormal},
+        common::util::random_subnormal,
         defs::{EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE},
         Consts, Exponent,
     };
@@ -73,7 +73,7 @@ mod tests {
     #[test]
     fn test_cbrt() {
         let mut cc = Consts::new().unwrap();
-        let mut eps = ONE.clone().unwrap();
+        let mut eps = ExactNumNumber::small_const(1);
 
         for _ in 0..1000 {
             let prec = (crate::common::test_rng::random::<usize>() % 5 + 1) * WORD_BIT_SIZE;

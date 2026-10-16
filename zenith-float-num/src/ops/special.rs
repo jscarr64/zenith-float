@@ -4575,7 +4575,7 @@ mod tests {
 
         let k_half = one.bessel_k(&half, p, rm, &mut cc).unwrap();
         let pi = cc.pi_num(p, RoundingMode::None).unwrap();
-        let mut nx = one.clone().unwrap();
+        let mut nx = ExactNumNumber::from_word(1, p).unwrap();
         nx.set_sign(Sign::Neg);
         let want = pi
             .div(&two, p, RoundingMode::None)
@@ -4663,7 +4663,7 @@ mod tests {
         let four = ExactNumNumber::from_word(4, p).unwrap();
         let half = one_half(p).unwrap();
         let pi = cc.pi_num(p, RoundingMode::None).unwrap();
-        let mut half_pi = pi.clone().unwrap();
+        let mut half_pi = cc.pi_num(p, RoundingMode::None).unwrap();
         half_pi.div_by_2(RoundingMode::None);
 
         let k0 = zero.elliptic_k(p, rm, &mut cc).unwrap();
@@ -4720,7 +4720,7 @@ mod tests {
             .unwrap();
         bits_agree(&e_half, &want_e, p, 80, "E(1/2)");
 
-        let x = half.clone().unwrap();
+        let x = one_half(p).unwrap();
         let f0 = x.elliptic_f(&zero, p, rm, &mut cc).unwrap();
         bits_agree(&f0, &x.asin(p, rm, &mut cc).unwrap(), p, 80, "F(x|0)");
         let f1 = x.elliptic_f(&one, p, rm, &mut cc).unwrap();
@@ -5276,7 +5276,11 @@ mod tests {
             let p1 = one.legendre_p(n, p, rm).unwrap();
             bits_agree(&p1, &one, p, 80, "P_n(1)");
             let pm = one.neg().unwrap().legendre_p(n, p, rm).unwrap();
-            let want = if n % 2 == 0 { one.clone().unwrap() } else { one.neg().unwrap() };
+            let want = if n % 2 == 0 {
+                ExactNumNumber::from_word(1, p).unwrap()
+            } else {
+                one.neg().unwrap()
+            };
             bits_agree(&pm, &want, p, 80, "P_n(-1)");
         }
         let p2 = zero.legendre_p(2, p, rm).unwrap();
@@ -5285,7 +5289,7 @@ mod tests {
         bits_agree(&p100, &one, p, 80, "P_100(1)");
         let p128 = one.neg().unwrap().legendre_p(128, p, rm).unwrap();
         bits_agree(&p128, &one, p, 80, "P_128(-1)");
-        let xh = half.clone().unwrap();
+        let xh = one_half(p).unwrap();
         let pn = xh.legendre_p(128, p, rm).unwrap();
         let pn1 = xh.legendre_p(127, p, rm).unwrap();
         let pn2 = xh.legendre_p(126, p, rm).unwrap();
