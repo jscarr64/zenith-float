@@ -735,7 +735,19 @@ fn hypot_with_an_extreme_ratio() -> Res {
 #[test]
 fn hypot_with_a_large_ratio() -> Res {
     let mut run = Run::new(true)?;
-    for g in [64i64, 300, 1000, 9000, 9887, 20_000, 1 << 20, 1 << 24] {
+    for g in [
+        64i64,
+        300,
+        1000,
+        9000,
+        9887,
+        9966,
+        20_000,
+        1 << 20,
+        1 << 24,
+        1_000_000_000,
+        1_442_695_040,
+    ] {
         let (big, small) = (zf(1, 0, false), zf(3, -g, true));
         let (fbig, fsmall) = (mp(1, 0, false), mp(3, -g, true));
         for p in [24usize, 64, 65, 128, 200] {
@@ -817,9 +829,30 @@ fn atan2_with_an_extreme_quotient() -> Res {
 #[test]
 fn atan2_with_a_large_quotient() -> Res {
     let mut run = Run::new(true)?;
-    for g in [64i64, 300, 1000, 9000, 9888, 20_000, 1 << 20, 1 << 24] {
-        // (y as (significand, exponent), x as (significand, exponent))
-        for ((my, ky), (mx, kx)) in [((3u64, -g), (1u64, 0i64)), ((1, 0), (3, g))] {
+    // 9966 is `1e3000`, 1_442_695_040 is `exp(1e9)`: the quotients an expression evaluator reaches.
+    for g in [
+        64i64,
+        300,
+        1000,
+        9000,
+        9888,
+        9966,
+        20_000,
+        1 << 20,
+        1 << 24,
+        1_000_000_000,
+        1_442_695_040,
+    ] {
+        // (y as (significand, exponent), x as (significand, exponent)): a tiny quotient, a huge one
+        // from a huge `y` or a tiny `x` (in range up to g = 2^30, beyond it `y / x` overflows)
+        for ((my, ky), (mx, kx)) in [
+            ((3u64, -g), (1u64, 0i64)),
+            ((1, 0), (3, g)),
+            ((1, g), (3, -g)),
+            ((1, -g), (3, g)),
+            ((3, g), (1, 0)),
+            ((1, 0), (3, -g)),
+        ] {
             for (neg_y, neg_x) in [(false, false), (true, false), (false, true), (true, true)] {
                 let (y, x) = (zf(my, ky, neg_y), zf(mx, kx, neg_x));
                 let (fy, fx) = (mp(my, ky, neg_y), mp(mx, kx, neg_x));
