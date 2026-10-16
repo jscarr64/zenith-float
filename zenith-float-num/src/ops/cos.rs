@@ -116,7 +116,7 @@ impl ExactNumNumber {
 
         let acc = ExactNumNumber::from_word(1, p_arg)?; // 1
         let x_step = arg.mul(&arg, p_arg, rm)?; // x^2
-        let x_first = x_step.clone()?; // x^2
+        let x_first = arg.mul(&arg, p_arg, rm)?; // x^2 (the same product as `x_step`, formed again: one owner each)
 
         let ret = series_run(acc, x_first, x_step, niter, &mut polycoeff_gen)?;
 

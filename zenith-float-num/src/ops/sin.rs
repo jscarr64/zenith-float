@@ -117,9 +117,9 @@ impl ExactNumNumber {
             self
         };
 
-        let acc = arg.clone()?; // x
         let x_step = arg.mul(&arg, p_arg, rm)?; // x^2
         let x_first = arg.mul(&x_step, p_arg, rm)?; // x^3
+        let acc = arg; // x (moved: the powers above are the last borrows of it)
 
         let ret = series_run(acc, x_first, x_step, niter, &mut polycoeff_gen)?;
 
