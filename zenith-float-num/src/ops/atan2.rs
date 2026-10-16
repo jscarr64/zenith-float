@@ -1,7 +1,7 @@
 //! Two-argument arctangent.
 
 use crate::common::util::{bump_prec_retry, round_p};
-use crate::defs::{Error, WORD_BIT_SIZE};
+use crate::defs::{Error, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::{RoundingMode, Sign};
@@ -48,6 +48,18 @@ impl ExactNumNumber {
             };
         }
 
+        // `|y / x| < 2^(ey - ex + 1)`. When that is below half the smallest number of precision `p`, the angle
+        // (`y / x` less a part in 2^(2^31)) is rounded like the quotient itself, which is in turn rounded to zero or
+        // to the smallest number by the mode. The retry loop cannot resolve such a value: nothing it computes
+        // has a nonzero part to show at any working precision.
+        if x.is_positive()
+            && (y.exponent() as i64 - x.exponent() as i64) + 2 + p as i64 <= EXPONENT_MIN as i64
+        {
+            let mut q = y.div(x, p, rm)?;
+            q.set_inexact(true);
+            return Ok(q);
+        }
+
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p + p_inc;
 
@@ -55,15 +67,21 @@ impl ExactNumNumber {
             let p_x = p_wrk + 3;
 
             let mut ret = match y.div(x, p_x, RoundingMode::None) {
+                // |y / x| is beyond the largest number: the angle is `+-pi/2` for either sign of `x`.
                 Err(Error::ExponentOverflow(_)) => {
-                    if x.is_positive() {
-                        Self::signed_half_pi(y.sign(), p_x, RoundingMode::None, cc, inexact)?
-                    } else {
-                        Self::signed_pi(y.sign(), p_x, RoundingMode::None, cc, inexact)?
-                    }
+                    Self::signed_half_pi(y.sign(), p_x, RoundingMode::None, cc, inexact)?
                 }
                 Err(e) => return Err(e),
                 Ok(q) => {
+                    if x.is_positive() && !q.op_inexact() {
+                        // An exact quotient: `atan(q)` is `q` less a correction that no working precision can
+                        // show, so rounding `q` toward `atan(q)` needs `atan`'s own treatment of a small
+                        // argument. (The retry loop below never decides a directed rounding of a number that is
+                        // exactly representable.)
+                        let mut a = q.atan(p, rm, cc)?;
+                        a.set_inexact(a.inexact() | inexact);
+                        return Ok(a);
+                    }
                     let a = q.atan(p_x, RoundingMode::None, cc)?;
                     if x.is_positive() {
                         a

@@ -101,11 +101,6 @@ fn in_mpfr_range(m: u64, k: i64, p: usize) -> bool {
     k + 64 - m.leading_zeros() as i64 > MIN - p as i64 + 1
 }
 
-/// A subnormal operand: its exponent is below the smallest normal exponent.
-fn is_subnormal(m: u64, k: i64) -> bool {
-    k + 64 - (m.leading_zeros() as i64) < MIN
-}
-
 /// Collects the mismatches of a run: each check may panic inside `assert_exact_eq`.
 struct Run {
     cc: Consts,
@@ -432,63 +427,20 @@ fn hypot_over_the_whole_range() -> Res {
     )
 }
 
-/// Exponent classes of the `binary_operands` grid: `A` subnormal, `B` just above the smallest normal, `C` one,
-/// `D` and `E` at the top.
-const A: i64 = MIN - 70;
-const B: i64 = MIN + 5;
-const C: i64 = 0;
-const D: i64 = MAX - 130;
-const E: i64 = MAX - 64;
-
-/// `(exponent of y, exponent of x)` of the `atan2` operand pairs that are wrong (finding 4): the quotient
-/// `y / x` is far from one, so the result is `+-pi/2` (or `pi/2 + tiny`) or a tiny number.
-const ATAN2_KNOWN_WRONG: [(i64, i64); 14] = [
-    (D, B),
-    (E, B),
-    (C, A),
-    (D, A),
-    (E, A),
-    (C, B),
-    (A, C),
-    (B, C),
-    (C, D),
-    (C, E),
-    (B, D),
-    (B, E),
-    (A, D),
-    (A, E),
-];
-
-fn atan2_is_known_wrong(a: (u64, i64), b: (u64, i64)) -> bool {
-    ATAN2_KNOWN_WRONG.contains(&(a.1, b.1))
-}
-
-fn atan2_is_not_known_wrong(a: (u64, i64), b: (u64, i64)) -> bool {
-    !atan2_is_known_wrong(a, b)
-}
-
-fn atan2_run(skip_pair: fn((u64, i64), (u64, i64)) -> bool) -> Res {
+/// `atan2` over the whole range, including extreme quotients: `y / x` beyond the largest number gives `+-pi/2` for
+/// either sign of `x` (`atan2(2^2147483517, -2^-2147483643)`), an exact tiny quotient is rounded below itself by
+/// the directed modes (`atan2(2^-2147483718, 1, 128, Up)`), and a quotient below the smallest number rounds to
+/// zero or to the smallest number.
+#[test]
+fn atan2_over_the_whole_range() -> Res {
     binary(
         "atan2",
         &binary_operands(),
         &[1, 3, 24, 64, 128],
-        skip_pair,
+        no_pair_skipped,
         |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
         |r, y, x, rd| r.assign_round(y.atan2_ref(x), rd),
     )
-}
-
-#[test]
-fn atan2_over_the_whole_range() -> Res {
-    atan2_run(atan2_is_known_wrong)
-}
-
-/// KNOWN WRONG (finding 4): `atan2` is wrong, or `NaN(PrecisionRetryExhausted)`, when the quotient of the arguments is
-/// extreme: `atan2(2^2147483517, -2^-2147483643)` is `pi` (rounded) instead of `pi/2`; `atan2(1,
-/// 2^2147483517)` and `atan2(2^-2147483718, 1)` are `NaN` in the modes that need the retry loop.
-#[test]
-fn atan2_with_an_extreme_quotient_known_wrong() -> Res {
-    atan2_run(atan2_is_not_known_wrong)
 }
 
 /// `fma(a, b, c)` with `c` the exact negated product (total cancellation, the sign of the zero by mode), the product
