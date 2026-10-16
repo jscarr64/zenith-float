@@ -9,7 +9,7 @@ the exception allowlist only go down; all of them are CODEOWNERS-protected (`@js
 |---|---|---|---|
 | `.clone(` occurrences | `rules_scan.py` `clone_count()` | `tools/clone_count_baseline.txt` | library dirs **and test code** (see below) |
 | hidden copy helpers | `no_clone.py --helpers` / `helper_copy_count()` | `tools/helper_copy_count_baseline.txt` | library dirs and test code |
-| excepted `.clone()` sites | `no_clone.py` allowlist | `tools/exception_count_baseline.txt` | the five sites in `tools/clone_allowlist.txt` |
+| excepted `.clone()` sites | `no_clone.py` allowlist | `tools/exception_count_baseline.txt` | none (the allowlist is empty, baseline 0) |
 | `add_ref(` / `sub_ref(` uses | `rules_scan.py` | `tools/ref_sum_count_baseline.txt` | **library code only** (`REF_SCOPE`) |
 | `mul_ref(` / `div_ref(` uses | `rules_scan.py` | `tools/mul_ref_count_baseline.txt` | **library code only** (`REF_SCOPE`) |
 
@@ -34,14 +34,24 @@ does not match because it looks for `.clone(` and `Clone::clone`). `no_clone.py 
 
 ## Exception: constant caches
 
-`tools/clone_allowlist.txt` is empty except for one named exception: the constant caches. Each entry is
+**Withdrawn.** This exception was approved by Jeff in chat on 2026-10-15 (relayed by Paul: "Please add the other 4 as
+well") and then withdrawn the same day by his ruling R3: borrowed constant arguments (an ordinary `&ExactNum` fn
+argument, not a ref form) and retained integer series state replace it, and the constant-cache exception is dropped.
+`tools/clone_allowlist.txt` is empty again and `tools/exception_count_baseline.txt` is 0. The five former sites
+(`pi.rs`, `e.rs`, `ln2.rs`, `ln10.rs` `for_prec`, and `CachedFBig::round` in `consts/mod.rs`) are real `.clone()` calls
+and count as ordinary violations in `tools/clone_count_baseline.txt` until they are converted.
+
+This section is kept (the scan requires a doc with this heading for any allowlist entry, and the selftests exercise the
+mechanism) as the worked example of how an exception is documented: a named exception needs a concrete failing example
+with real compiler output, Jeff's approval, and an entry
 `path<TAB>fn<TAB>reason<TAB>approval<TAB>doc<TAB>sites`; `sites` is the exact number of `.clone()` sites allowed in that
 fn. A listed entry that matches no `.clone()` site is **stale** and fails the scan, sites beyond `sites` fail as
 ordinary violations, only `.clone()` can be excepted, and the total number of excepted sites can never exceed
 `tools/exception_count_baseline.txt` (it can only be lowered, `rules_scan.sh --update-baseline`).
-Approved by Jeff in chat on 2026-10-15 (relayed by Paul: "Please add the other 4 as well").
 
-| File | fn | Why |
+The (withdrawn) entries were:
+
+| File | fn | Why it was proposed |
 |---|---|---|
 | `zenith-float-num/src/ops/consts/pi.rs` | `for_prec` | hands out an owned value of pi at `k` bits and keeps the cached series value |
 | `zenith-float-num/src/ops/consts/e.rs` | `for_prec` | same, for e |
@@ -49,7 +59,15 @@ Approved by Jeff in chat on 2026-10-15 (relayed by Paul: "Please add the other 4
 | `zenith-float-num/src/ops/consts/ln10.rs` | `for_prec` | same, for ln 10 |
 | `zenith-float-num/src/ops/consts/mod.rs` | `CachedFBig::round` | returns the cached value rounded to `p` bits, the cache keeps the wide value |
 
-### Why a copy is unavoidable here
+### R3: what replaces it
+
+- A constant needed as an argument is passed borrowed: an ordinary `&ExactNum` fn argument (not an `add_ref`-style ref
+  form), so no copy is made to hand it to a kernel.
+- Integer series state (the retained `p`/`q`/`t` terms of a constant's series) may be kept between calls.
+- A getter that must return a value rounded to the caller's precision while keeping a wider value is rebuilt from the
+  retained integer series state, not copied from a cached `ExactNum`.
+
+### Why the copy looked unavoidable (historical, withdrawn)
 
 The getter must return a value rounded to the caller's precision while the cache keeps the wider value for later
 callers, so there are two live owners by construction. Getter (pi; e, ln 2 and ln 10 have the same shape):
@@ -145,7 +163,7 @@ error: could not compile `borrowck-demo` (bin "bad_round") due to 1 previous err
 
 The owned form compiles and runs in the same crate (`cargo run --bin borrowck-demo` prints two values).
 
-### Not covered by this exception
+### Not covered by the withdrawn exception
 
 `ExtraCache::for_prec` in `zenith-float-num/src/ops/consts/mod.rs` (two `.clone()` sites, the shared cache for
 phi/euler-style constants) and `#[derive(Clone)]` on `CachedFBig` are NOT listed and still count as violations.
