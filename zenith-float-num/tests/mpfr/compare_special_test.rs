@@ -21,13 +21,6 @@ use zenith_float_num::{
     Consts, ExactNum, Exponent, EXPONENT_BIT_SIZE, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
 };
 
-/// The `i`-th operand of a rebuilt list.
-fn nth_of(list: [ExactNum; 13], i: usize) -> Result<ExactNum, Box<dyn std::error::Error>> {
-    list.into_iter()
-        .nth(i)
-        .ok_or_else(|| "operand index out of range".into())
-}
-
 #[test]
 fn mpfr_compare_special() -> Result<(), Box<dyn std::error::Error>> {
     let run_cnt = 500;
@@ -76,26 +69,27 @@ fn run_compare_special(
 
         let (rm, rnd) = get_random_rnd_pair();
 
-        // `n` is consumed by add / sub / mul / div below: the list is rebuilt from its seed for every use.
-        let mk_nn = || {
-            [
-                ExactNum::new(p1),
-                ExactNum::new(p1).neg(),
-                ExactNum::from_i8(1, p1),
-                ExactNum::from_i8(-1, p1),
-                ExactNum::max_value(p1),
-                ExactNum::min_value(p1),
-                ExactNum::min_positive_normal(p1),
-                ExactNum::min_positive_normal(p1).neg(),
-                get_oned_zeroed(p1, emin, emax),
-                get_oned_sides(p1, emin, emax),
-                get_periodic(p1, emin, emax),
-                get_last_zero(p1, emin, emax),
-                get_near_one(p1),
-            ]
+        // `n` is consumed by add / sub / mul / div below: each list element has its own seed and is rebuilt from
+        // it (one element, not the whole list) for every use.
+        let mk_nth = |idx: usize, seed: u64| {
+            rebuild_from_seed(seed, || match idx {
+                0 => ExactNum::new(p1),
+                1 => ExactNum::new(p1).neg(),
+                2 => ExactNum::from_i8(1, p1),
+                3 => ExactNum::from_i8(-1, p1),
+                4 => ExactNum::max_value(p1),
+                5 => ExactNum::min_value(p1),
+                6 => ExactNum::min_positive_normal(p1),
+                7 => ExactNum::min_positive_normal(p1).neg(),
+                8 => get_oned_zeroed(p1, emin, emax),
+                9 => get_oned_sides(p1, emin, emax),
+                10 => get_periodic(p1, emin, emax),
+                11 => get_last_zero(p1, emin, emax),
+                _ => get_near_one(p1),
+            })
         };
-        let sn = draw_seed();
-        let nn = rebuild_from_seed(sn, mk_nn);
+        let seeds: [u64; 13] = std::array::from_fn(|_| draw_seed());
+        let nn: [ExactNum; 13] = std::array::from_fn(|idx| mk_nth(idx, seeds[idx]));
 
         for (idx, n) in nn.iter().enumerate() {
             //println!("{:?}", n);
@@ -126,7 +120,7 @@ fn run_compare_special(
                 //println!("\n--{:?}\n{:?}", f, f1);
                 test_zf_op_no_cc!(
                     true,
-                    nth_of(rebuild_from_seed(sn, mk_nn), idx)?,
+                    mk_nth(idx, seeds[idx]),
                     n1,
                     add,
                     f,
@@ -140,7 +134,7 @@ fn run_compare_special(
                 );
                 test_zf_op_no_cc!(
                     true,
-                    nth_of(rebuild_from_seed(sn, mk_nn), idx)?,
+                    mk_nth(idx, seeds[idx]),
                     n1,
                     sub,
                     f,
@@ -154,7 +148,7 @@ fn run_compare_special(
                 );
                 test_zf_op_no_cc!(
                     true,
-                    nth_of(rebuild_from_seed(sn, mk_nn), idx)?,
+                    mk_nth(idx, seeds[idx]),
                     n1,
                     mul,
                     f,
@@ -168,7 +162,7 @@ fn run_compare_special(
                 );
                 test_zf_op_no_cc!(
                     true,
-                    nth_of(rebuild_from_seed(sn, mk_nn), idx)?,
+                    mk_nth(idx, seeds[idx]),
                     n1,
                     div,
                     f,
