@@ -277,15 +277,17 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
             (got, err)
         }
         "wynn" => {
-            let mut seq = Vec::new();
-            let mut acc = ExactNum::new(p);
             let half = ExactNum::from_u8(1, p).ldexp(-1, p, rm);
-            let mut term = ExactNum::from_u8(1, p);
-            for _ in 0..4 {
-                acc = acc.add(&term, p, rm);
-                seq.push(acc.clone());
-                term = term.mul(&half, p, rm);
-            }
+            let partial = |n: usize| {
+                let mut acc = ExactNum::new(p);
+                let mut term = ExactNum::from_u8(1, p);
+                for _ in 0..n {
+                    acc = acc.add(&term, p, rm);
+                    term = term.mul(&half, p, rm);
+                }
+                acc
+            };
+            let seq: Vec<ExactNum> = (1..=4).map(partial).collect();
             let got = wynn_epsilon(&seq, p, rm).ok_or("wynn returned None")?;
             let err = ulps(&got, p, 2);
             (got, err)

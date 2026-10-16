@@ -99,7 +99,7 @@ fn expect_of(v: &serde_json::Value) -> Canon {
     if kind == "nan" {
         let err = match v.get("err") {
             Some(serde_json::Value::Null) | None => None,
-            Some(serde_json::Value::String(s)) => Some(s.clone()),
+            Some(serde_json::Value::String(s)) => Some(s.as_str().to_string()),
             Some(_) => Some("?".to_string()),
         };
         return Canon::Nan(err);

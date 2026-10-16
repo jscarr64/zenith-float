@@ -218,20 +218,26 @@ pub fn chebyshev_error_bound(coeffs: &[ExactNum], p: usize) -> ExactNum {
 
 /// Direct `Σ c_k T_k(x)` via the three-term recurrence (test / comparison).
 #[cfg(test)]
-fn chebyshev_sum_direct(coeffs: &[ExactNum], x: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
+fn chebyshev_sum_direct(
+    coeffs: &[ExactNum],
+    c0: ExactNum,
+    mk_x: impl Fn() -> ExactNum,
+    p: usize,
+    rm: RoundingMode,
+) -> ExactNum {
     if coeffs.is_empty() {
         return ExactNum::new(p);
     }
     let wrk = work_p(p);
     let one = ExactNum::from_u8(1, wrk);
     let mut t_prev = one;
-    let mut acc = coeffs[0].clone();
+    let mut acc = c0;
     let _ = acc.set_precision(wrk, RoundingMode::None);
     if coeffs.len() == 1 {
         let _ = acc.set_precision(p, rm);
         return acc;
     }
-    let mut t_cur = x.clone();
+    let mut t_cur = mk_x();
     let _ = t_cur.set_precision(wrk, RoundingMode::None);
     acc = acc.add(
         &ExactNum::mul_ref(&coeffs[1], &t_cur, wrk, RoundingMode::None),
@@ -240,7 +246,7 @@ fn chebyshev_sum_direct(coeffs: &[ExactNum], x: &ExactNum, p: usize, rm: Roundin
     );
     for c in coeffs.iter().skip(2) {
         let t_next = ExactNum::from_u8(2, wrk)
-            .mul(x, wrk, RoundingMode::None)
+            .mul(&mk_x(), wrk, RoundingMode::None)
             .mul(&t_cur, wrk, RoundingMode::None)
             .sub(&t_prev, wrk, RoundingMode::None);
         acc = acc.add(
@@ -344,21 +350,20 @@ mod tests {
         let c = [ExactNum::from_u8(1, p), ExactNum::from_u8(2, p), ExactNum::from_u8(3, p)];
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let via_clenshaw = clenshaw(&c, &half, p, rm);
-        let via_direct = chebyshev_sum_direct(&c, &half, p, rm);
+        let via_direct = chebyshev_sum_direct(
+            &c,
+            ExactNum::from_u8(1, p),
+            || ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm),
+            p,
+            rm,
+        );
         assert_eq!(via_clenshaw.compare(&half), Some(0));
         assert_eq!(via_direct.compare(&half), Some(0));
         assert_eq!(via_clenshaw.compare(&via_direct), Some(0));
 
-        assert!(chebyshev_coeffs(
-            |x, p, rm, cc| x.exp(p, rm, cc),
-            0,
-            a.clone(),
-            &b,
-            p,
-            rm,
-            &mut cc
-        )
-        .is_none());
+        assert!(
+            chebyshev_coeffs(|x, p, rm, cc| x.exp(p, rm, cc), 0, a, &b, p, rm, &mut cc).is_none()
+        );
         assert!(chebyshev_error_bound(&c, p).compare(&ExactNum::from_u8(5, p)) == Some(0));
     }
 }

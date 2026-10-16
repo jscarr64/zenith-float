@@ -58,7 +58,7 @@ fn overflow_by_mode_binary() {
     let ops: [(&str, Binop, Mpbin); 5] = [
         (
             "add",
-            |a, b, p, rm, _| a.clone().add(b, p, rm),
+            |a, b, p, rm, _| ExactNum::add_ref(a, b, p, rm),
             |r, a, b, rnd| unsafe { mpfr::add(r.as_raw_mut(), a.as_raw(), b.as_raw(), rnd) },
         ),
         (
@@ -86,8 +86,7 @@ fn overflow_by_mode_binary() {
                 }
             },
             |r, a, b, rnd| unsafe {
-                let mut aa = a.clone();
-                aa.abs_mut();
+                let aa = Float::with_val(a.prec(), a.abs_ref());
                 mpfr::pow(r.as_raw_mut(), aa.as_raw(), b.as_raw(), rnd)
             },
         ),

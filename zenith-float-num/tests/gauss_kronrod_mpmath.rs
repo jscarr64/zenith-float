@@ -161,7 +161,14 @@ fn gk_nonfinite_and_reversed_endpoints_are_errors() {
     let mut cc = Consts::new().unwrap();
     let a = ExactNum::from_u8(0, P);
     let b = ExactNum::from_u8(1, P);
-    let reversed = gauss_kronrod_interval(|x, _p, _rm, _cc| x.clone(), &b, &a, P, RM, &mut cc);
+    let reversed = gauss_kronrod_interval(
+        |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
+        &b,
+        &a,
+        P,
+        RM,
+        &mut cc,
+    );
     assert_eq!(reversed.unwrap_err(), QuadratureError::InvalidArgument);
     let nan = gauss_kronrod_interval(
         |_x, _p, _rm, _cc| ExactNum::nan(None),

@@ -3,10 +3,10 @@
 mod common;
 mod shared;
 
-use common::{pair_fixtures, parse_fixtures, ARITH_BATCH, FFT_MUL_BATCH, FFT_MUL_PRECISIONS};
+use common::{pair_fixtures, ARITH_BATCH, DECIMAL_FIXTURES, FFT_MUL_BATCH, FFT_MUL_PRECISIONS};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use shared::{cycle_batch, init_cc, sink, PRECISIONS};
-use zenith_float_num::{ExactNum, RoundingMode};
+use zenith_float_num::{ExactNum, Radix, RoundingMode};
 
 fn bench_add(c: &mut Criterion) {
     let mut group = c.benchmark_group("arithmetic/add");
@@ -91,7 +91,7 @@ fn bench_reciprocal(c: &mut Criterion) {
 
     for &p in PRECISIONS {
         let mut cc = init_cc();
-        let values = cycle_batch(&parse_fixtures(p, &mut cc), ARITH_BATCH);
+        let values = cycle_batch(p, &mut cc, DECIMAL_FIXTURES, ARITH_BATCH);
         group.throughput(Throughput::Elements(ARITH_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {
             b.iter(|| {
@@ -111,8 +111,14 @@ fn bench_recip_mul_vs_div(c: &mut Criterion) {
     let p = 14400;
 
     let mut cc = init_cc();
-    let values = cycle_batch(&parse_fixtures(p, &mut cc), 64);
-    let divisor = values[0].clone();
+    let values = cycle_batch(p, &mut cc, DECIMAL_FIXTURES, 64);
+    let divisor = ExactNum::parse(
+        DECIMAL_FIXTURES[0],
+        Radix::Dec,
+        p,
+        RoundingMode::ToEven,
+        &mut cc,
+    );
 
     group.throughput(Throughput::Elements(63));
     group.bench_function("recip_then_mul", |b| {
@@ -158,7 +164,7 @@ fn bench_sqrt(c: &mut Criterion) {
 
     for &p in PRECISIONS {
         let mut cc = init_cc();
-        let values = cycle_batch(&parse_fixtures(p, &mut cc), ARITH_BATCH);
+        let values = cycle_batch(p, &mut cc, DECIMAL_FIXTURES, ARITH_BATCH);
         group.throughput(Throughput::Elements(ARITH_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {
             b.iter(|| {
@@ -178,7 +184,7 @@ fn bench_div_one(c: &mut Criterion) {
 
     for &p in &[4096, 14400, 32768] {
         let mut cc = init_cc();
-        let values = cycle_batch(&parse_fixtures(p, &mut cc), batch);
+        let values = cycle_batch(p, &mut cc, DECIMAL_FIXTURES, batch);
         group.throughput(Throughput::Elements(batch as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {
             let one = ExactNum::from_word(1, p);

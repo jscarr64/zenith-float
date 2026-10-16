@@ -142,7 +142,7 @@ fn heun_fox_mpmath() {
         dec("0.3", p, &mut cc).meijer_g(
             &[],
             &[],
-            &[zero.clone(), half.clone()],
+            &[ExactNum::new(p), ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RM)],
             &[],
             p,
             RM,
@@ -160,7 +160,7 @@ fn heun_fox_mpmath() {
         dec("0.15", p, &mut cc).meijer_g(
             core::slice::from_ref(&half),
             &[],
-            &[qtr.clone(), neg_of(&qtr)],
+            &[ExactNum::from_u8(1, p).div(&ExactNum::from_u8(4, p), p, RM), neg_of(&qtr)],
             &[],
             p,
             RM,
@@ -204,7 +204,7 @@ fn heun_fox_mpmath() {
         &mut failures,
     );
     // J_{1/4}(1.2) = G^{1,0}_{0,2}((0.6)^2 | ; ν/2; −ν/2)
-    let nu = qtr.clone();
+    let nu = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(4, p), p, RM);
     let x = dec("1.2", p, &mut cc);
     let arg = ExactNum::div_ref(&x, &two, p, RM).mul(&x.div(&two, p, RM), p, RM);
     check(
@@ -261,7 +261,7 @@ fn heun_fox_mpmath() {
         half.fox_h(
             &[],
             &[],
-            &[(zero.clone(), one.clone())],
+            &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
             &[],
             p,
             RM,
@@ -277,7 +277,7 @@ fn heun_fox_mpmath() {
         half.fox_h(
             &[],
             &[],
-            &[(zero.clone(), two.clone())],
+            &[(ExactNum::new(p), ExactNum::from_u8(2, p))],
             &[],
             p,
             RM,
@@ -293,7 +293,7 @@ fn heun_fox_mpmath() {
         dec("0.4", p, &mut cc).fox_h(
             &[],
             &[],
-            &[(zero.clone(), three.clone())],
+            &[(ExactNum::new(p), ExactNum::from_u8(3, p))],
             &[],
             p,
             RM,
@@ -307,9 +307,9 @@ fn heun_fox_mpmath() {
     check(
         "fox_h [[(0.3,1)],[(0,1)]]",
         half.fox_h(
-            &[(a03.clone(), one.clone())],
+            &[(dec("0.3", p, &mut cc), ExactNum::from_u8(1, p))],
             &[],
-            &[(zero.clone(), one.clone())],
+            &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
             &[],
             p,
             RM,
@@ -325,7 +325,10 @@ fn heun_fox_mpmath() {
         half.fox_h(
             &[],
             &[],
-            &[(zero.clone(), half.clone())],
+            &[(
+                ExactNum::new(p),
+                ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RM),
+            )],
             &[],
             p,
             RM,
@@ -459,7 +462,7 @@ fn heun_fox_mpmath() {
         dec("0.7", p, &mut cc).meijer_g(
             &[],
             &[],
-            &[zero.clone(), zero.clone()],
+            &[ExactNum::new(p), ExactNum::new(p)],
             &[],
             p,
             RM,
@@ -474,7 +477,7 @@ fn heun_fox_mpmath() {
     check(
         "G coincident a=a=1 = ln(1+z)",
         dec("0.4", p, &mut cc).meijer_g(
-            &[one.clone(), one.clone()],
+            &[ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)],
             &[],
             core::slice::from_ref(&one),
             core::slice::from_ref(&zero),

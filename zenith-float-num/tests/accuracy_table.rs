@@ -300,8 +300,8 @@ fn accuracy_labels_cover_public_numeric_functions() {
         assert!(table.insert((*path).to_string()), "duplicate {path}");
     }
     let found = discovered();
-    let missing: Vec<_> = found.difference(&table).cloned().collect();
-    let extra: Vec<_> = table.difference(&found).cloned().collect();
+    let missing: Vec<_> = found.difference(&table).collect();
+    let extra: Vec<_> = table.difference(&found).collect();
     assert!(
         missing.is_empty() && extra.is_empty(),
         "missing from table: {missing:?}\nextra in table: {extra:?}"

@@ -233,7 +233,7 @@ pub fn assert_float_close(n: ExactNum, f: Float, p: usize, op: &str, eq: bool, c
             op
         );
 
-        let d = n.clone().sub(&n2, 1, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(&n, &n2, 1, RoundingMode::None).abs();
         assert!(
             d.exponent().is_some(),
             "{} zenith {:?}, MPFR {}, difference {:?}",

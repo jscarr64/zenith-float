@@ -467,8 +467,8 @@ mod tests {
 
         let (rbrent, briters) = brent_counted(
             |x, p, rm, cc| x.sin(p, rm, cc),
-            three.clone(),
-            four.clone(),
+            ExactNum::from_u8(3, p),
+            ExactNum::from_u8(4, p),
             &tol,
             p,
             rm,

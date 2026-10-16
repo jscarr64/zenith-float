@@ -637,7 +637,7 @@ mod tests {
             assert_eq!(a.get(i).unwrap().compare(b.get(i).unwrap()), Some(0));
             assert!(raw_eq(a.get(i).unwrap(), b.get(i).unwrap()));
         }
-        let mut bad = v.clone();
+        let mut bad = v;
         // rows = 3, cols = 2, but still four payloads → leftover or short read
         bad[4..8].copy_from_slice(&3u32.to_be_bytes());
         assert!(ExactNumArray::from_bytes(&bad).is_err());

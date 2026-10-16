@@ -180,7 +180,7 @@ fn run_compare_special(run_cnt: usize, p_rng: usize, p_min: usize) {
 
                 // rem
                 let p = p1.max(p2);
-                let f = f.clone().abs();
+                let f = Float::with_val(f.prec(), f.abs_ref());
                 let f1 = f1.abs();
 
                 let mut n3 = n.rem(n1);

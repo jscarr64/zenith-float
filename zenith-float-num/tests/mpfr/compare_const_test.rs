@@ -37,23 +37,24 @@ fn mpfr_compare_const() {
     assert_eq!(EXPONENT_MIN, exp_min());
     assert_eq!(EXPONENT_MAX, exp_max());
 
-    let mut mpfr_e = Float::with_val((p_max + WORD_BIT_SIZE) as u32, 1);
-    unsafe {
-        mpfr::exp(
-            mpfr_e.as_raw_mut(),
-            Float::with_val(1, 1).as_raw(),
-            rnd_t::RNDN,
-        );
-    }
-
-    let mut mpfr_ln10 = Float::with_val((p_max + WORD_BIT_SIZE) as u32, 1);
-    unsafe {
-        mpfr::log(
-            mpfr_ln10.as_raw_mut(),
-            Float::with_val(32, 10).as_raw(),
-            rnd_t::RNDN,
-        );
-    }
+    let mk_e = || {
+        let mut f = Float::with_val((p_max + WORD_BIT_SIZE) as u32, 1);
+        unsafe {
+            mpfr::exp(f.as_raw_mut(), Float::with_val(1, 1).as_raw(), rnd_t::RNDN);
+        }
+        f
+    };
+    let mk_ln10 = || {
+        let mut f = Float::with_val((p_max + WORD_BIT_SIZE) as u32, 1);
+        unsafe {
+            mpfr::log(
+                f.as_raw_mut(),
+                Float::with_val(32, 10).as_raw(),
+                rnd_t::RNDN,
+            );
+        }
+        f
+    };
 
     for _ in 0..repeat_cnt {
         let mut cc = Consts::new().unwrap();
@@ -69,7 +70,7 @@ fn mpfr_compare_const() {
 
             // e
             let n1 = cc.e(p, rm);
-            let mut f1 = mpfr_e.clone();
+            let mut f1 = mk_e();
             unsafe {
                 mpfr::prec_round(f1.as_raw_mut(), p as mpfr::prec_t, rnd);
             }
@@ -85,7 +86,7 @@ fn mpfr_compare_const() {
 
             // ln(10)
             let n1 = cc.ln_10(p, rm);
-            f1 = mpfr_ln10.clone();
+            f1 = mk_ln10();
             unsafe {
                 mpfr::prec_round(f1.as_raw_mut(), p as mpfr::prec_t, rnd);
             }
@@ -132,7 +133,7 @@ fn mpfr_compare_const() {
 
     // e
     let n1 = cc.e(p, rm);
-    let mut f1 = mpfr_e.clone();
+    let mut f1 = mpfr_e;
     unsafe {
         mpfr::prec_round(f1.as_raw_mut(), p as mpfr::prec_t, rnd);
     }
@@ -148,7 +149,7 @@ fn mpfr_compare_const() {
 
     // ln(10)
     let n1 = cc.ln_10(p, rm);
-    f1 = mpfr_ln10.clone();
+    f1 = mpfr_ln10;
     unsafe {
         mpfr::prec_round(f1.as_raw_mut(), p as mpfr::prec_t, rnd);
     }

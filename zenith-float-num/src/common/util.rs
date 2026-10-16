@@ -584,7 +584,11 @@ mod carry_tests {
     }
 
     fn check_shift(src: &[Word], n: usize) {
-        let dup = || src.iter().copied().collect::<Vec<Word>>();
+        let dup = || {
+            let mut v = Vec::with_capacity(src.len());
+            v.extend(src.iter().copied());
+            v
+        };
         let mut got_l = dup();
         let mut want_l = dup();
         shift_slice_left(&mut got_l, n);

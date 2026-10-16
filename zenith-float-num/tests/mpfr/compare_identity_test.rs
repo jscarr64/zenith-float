@@ -17,7 +17,7 @@ fn neg_of(x: &ExactNum) -> ExactNum {
 }
 
 fn bits_agree(a: &ExactNum, b: &ExactNum, p: usize, min_bits: i32, label: &str) {
-    let d = a.clone().sub(b, p, RoundingMode::None).abs();
+    let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
     if d.is_zero() {
         return;
     }
@@ -121,19 +121,19 @@ fn mpfr_identity_no_oracle_specials() {
         "_2F1(a,b;c;0)=1",
     );
 
-    let z = ExactComplex::new(one.clone(), one);
+    let z = ExactComplex::new(ExactNum::from_u8(1, p), one);
     let ez = z.erf(p, rm, &mut cc);
     let em = ExactComplex::new(neg_of(z.re()), neg_of(z.im())).erf(p, rm, &mut cc);
     assert!(
-        tiny(&ez.re().clone().add(em.re(), p, rm), p)
-            && tiny(&ez.im().clone().add(em.im(), p, rm), p)
+        tiny(&ExactNum::add_ref(ez.re(), em.re(), p, rm), p)
+            && tiny(&ExactNum::add_ref(ez.im(), em.im(), p, rm), p)
     );
     let erfc_z = z.erfc(p, rm, &mut cc);
     let one_c = ExactComplex::one(p);
     let id = one_c.sub(&ez, p, rm);
     assert!(
-        tiny(&erfc_z.re().clone().sub(id.re(), p, rm), p)
-            && tiny(&erfc_z.im().clone().sub(id.im(), p, rm), p),
+        tiny(&ExactNum::sub_ref(erfc_z.re(), id.re(), p, rm), p)
+            && tiny(&ExactNum::sub_ref(erfc_z.im(), id.im(), p, rm), p),
         "erfc=1-erf"
     );
 
@@ -141,7 +141,7 @@ fn mpfr_identity_no_oracle_specials() {
     let g5 = five.gamma(p, rm, &mut cc);
     let tf = ExactNum::from_u8(24, p);
     assert!(
-        tiny(&g5.re().clone().sub(&tf, p, rm), p) && tiny(g5.im(), p),
+        tiny(&ExactNum::sub_ref(g5.re(), &tf, p, rm), p) && tiny(g5.im(), p),
         "Γ(5)=24"
     );
 }

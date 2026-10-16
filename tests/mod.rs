@@ -11,10 +11,10 @@ use zenith_float_num::{
 
 #[test]
 fn native_operators() {
-    let a = ExactNum::from(6);
+    let mk_a = || ExactNum::from(6);
     let b = ExactNum::from(2);
-    assert_eq!((a.clone() + &b).compare(&ExactNum::from(8)), Some(0));
-    assert_eq!((a.clone() - &b).compare(&ExactNum::from(4)), Some(0));
+    assert_eq!((mk_a() + &b).compare(&ExactNum::from(8)), Some(0));
+    assert_eq!((mk_a() - &b).compare(&ExactNum::from(4)), Some(0));
     assert_eq!(
         (ExactNum::from(6) * &b).compare(&ExactNum::from(12)),
         Some(0)
@@ -343,7 +343,7 @@ fn macro_run_cexpr_tests() {
     assert!(tiny_part(cpi.im(), p) && tiny_part(pi0.im(), p));
 
     let back = cexpr!(ln(exp(x)), &mut ctx);
-    let d = back.re().clone().sub(x.re(), p, RoundingMode::None).abs();
+    let d = ExactNum::sub_ref(back.re(), x.re(), p, RoundingMode::None).abs();
     assert!(d.exponent().unwrap_or(0) < -((p as i32) / 8));
     assert!(tiny_part(back.im(), p));
 
@@ -385,8 +385,8 @@ fn cexpr_cancellation_matches_high_prec() {
         RoundingMode::None,
         &mut cc,
     );
-    let zx = ExactComplex::from_real(x.clone(), p);
-    let zy = ExactComplex::from_real(y.clone(), p);
+    let zx = ExactComplex::from_real(x, p);
+    let zy = ExactComplex::from_real(y, p);
 
     let z = cexpr!(cos(zx) - sin(zy), &mut ctx);
     let cx = zx.cos(p + 256, RoundingMode::None, &mut cc);
@@ -406,7 +406,7 @@ fn radix_base12_roundtrip() {
     let g = ExactNum::parse(&s, rdx, p, rm, &mut cc);
     assert_eq!(n.compare(&g), Some(0));
 
-    let rf = n.clone().with_radix(rdx);
+    let rf = ExactNum::parse("10.A", rdx, p, rm, &mut cc).with_radix(rdx);
     assert_eq!(rf.radix(), rdx);
     let s2 = rf.format(rm, &mut cc).unwrap();
     let g2 = RadixFloat::parse(&s2, rdx, p, rm, &mut cc).unwrap();
@@ -642,10 +642,10 @@ fn macro_run_basic_tests() {
     debug_assert_eq!(res, x.bi(p, rm, &mut cc));
 
     let res: ExactNum = expr!(ldexp(x, 3), &mut ctx);
-    debug_assert_eq!(res, x.clone().ldexp(3, p, rm));
+    debug_assert_eq!(res, ExactNum::from(1).ldexp(3, p, rm));
 
     let res: ExactNum = expr!(scalb(x, -1), &mut ctx);
-    debug_assert_eq!(res, x.clone().scalb(-1, p, rm));
+    debug_assert_eq!(res, ExactNum::from(1).scalb(-1, p, rm));
 
     let res: ExactNum = expr!(logb(x), &mut ctx);
     debug_assert_eq!(res, x.logb(p, rm));
@@ -1099,7 +1099,7 @@ fn macro_run_misc_test() {
     let rm = RoundingMode::None;
     let mut cc = Consts::new().unwrap();
     let pi1 = cc.pi(p, RoundingMode::None);
-    let mut pi2 = pi1.clone();
+    let mut pi2 = cc.pi(p, RoundingMode::None);
     pi2.set_exponent(1);
     let mut ctx = Context::new(p, rm, cc, -1000, 1000);
     let one = ExactNum::from_u32(1, p);

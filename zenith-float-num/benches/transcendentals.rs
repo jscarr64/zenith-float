@@ -4,7 +4,7 @@ mod shared;
 mod trans_common;
 
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use shared::{cycle_batch, init_cc, parse_list, sink, PRECISIONS};
+use shared::{cycle_batch, cycle_pairs, init_cc, parse_list, sink, PRECISIONS};
 use trans_common::{EXP_FIXTURES, LN_FIXTURES, TRANSCENDENTAL_BATCH, TRIG_FIXTURES};
 use zenith_float_num::{Consts, ExactNum, RoundingMode};
 
@@ -14,7 +14,7 @@ fn bench_ln(c: &mut Criterion) {
 
     for &p in PRECISIONS {
         let mut cc = init_cc();
-        let values = cycle_batch(&parse_list(p, &mut cc, LN_FIXTURES), TRANSCENDENTAL_BATCH);
+        let values = cycle_batch(p, &mut cc, LN_FIXTURES, TRANSCENDENTAL_BATCH);
         group.throughput(Throughput::Elements(TRANSCENDENTAL_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {
             let mut cc = Consts::new().expect("constants cache");
@@ -34,7 +34,7 @@ fn bench_exp(c: &mut Criterion) {
 
     for &p in PRECISIONS {
         let mut cc = init_cc();
-        let values = cycle_batch(&parse_list(p, &mut cc, EXP_FIXTURES), TRANSCENDENTAL_BATCH);
+        let values = cycle_batch(p, &mut cc, EXP_FIXTURES, TRANSCENDENTAL_BATCH);
         group.throughput(Throughput::Elements(TRANSCENDENTAL_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {
             let mut cc = Consts::new().expect("constants cache");
@@ -81,7 +81,7 @@ where
 
     for &p in PRECISIONS {
         let mut cc = init_cc();
-        let values = cycle_batch(&parse_list(p, &mut cc, TRIG_FIXTURES), TRANSCENDENTAL_BATCH);
+        let values = cycle_batch(p, &mut cc, TRIG_FIXTURES, TRANSCENDENTAL_BATCH);
         group.throughput(Throughput::Elements(TRANSCENDENTAL_BATCH as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &values, |b, values| {
             let mut cc = Consts::new().expect("constants cache");
@@ -106,15 +106,22 @@ fn bench_pow(c: &mut Criterion) {
 
     for &p in &[128, 1024, 4096] {
         let mut cc = init_cc();
-        let mut pairs = Vec::with_capacity(batch);
-        let parsed_bases = parse_list(p, &mut cc, bases);
-        let parsed_exps = parse_list(p, &mut cc, exponents);
-        for i in 0..batch {
-            pairs.push((
-                parsed_bases[i % parsed_bases.len()].clone(),
-                parsed_exps[i % parsed_exps.len()].clone(),
-            ));
-        }
+        let pairs: Vec<(ExactNum, ExactNum)> = parse_list(
+            p,
+            &mut cc,
+            &(0..batch)
+                .map(|i| bases[i % bases.len()])
+                .collect::<Vec<&str>>(),
+        )
+        .into_iter()
+        .zip(parse_list(
+            p,
+            &mut cc,
+            &(0..batch)
+                .map(|i| exponents[i % exponents.len()])
+                .collect::<Vec<&str>>(),
+        ))
+        .collect();
 
         group.throughput(Throughput::Elements(batch as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
@@ -138,16 +145,7 @@ fn bench_hypot(c: &mut Criterion) {
 
     for &p in PRECISIONS {
         let mut cc = init_cc();
-        let parsed = parse_list(p, &mut cc, legs);
-        let n = parsed.len();
-        let pairs: Vec<_> = (0..batch)
-            .map(|i| {
-                (
-                    parsed[i % n].clone(),
-                    parsed[(i.wrapping_mul(5).wrapping_add(2)) % n].clone(),
-                )
-            })
-            .collect();
+        let pairs = cycle_pairs(p, &mut cc, legs, batch, 5, 2);
 
         group.throughput(Throughput::Elements(batch as u64));
         group.bench_with_input(BenchmarkId::from_parameter(p), &pairs, |b, pairs| {
@@ -167,7 +165,7 @@ fn bench_log2_log10(c: &mut Criterion) {
 
     for &p in &[128, 1024, 4096] {
         let mut cc = init_cc();
-        let values = cycle_batch(&parse_list(p, &mut cc, LN_FIXTURES), TRANSCENDENTAL_BATCH);
+        let values = cycle_batch(p, &mut cc, LN_FIXTURES, TRANSCENDENTAL_BATCH);
         group.throughput(Throughput::Elements(TRANSCENDENTAL_BATCH as u64));
         group.bench_with_input(BenchmarkId::new("log2", p), &values, |b, values| {
             let mut cc = Consts::new().expect("constants cache");

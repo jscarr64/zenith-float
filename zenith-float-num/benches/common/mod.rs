@@ -1,6 +1,6 @@
 //! Arithmetic-only fixtures (compiled only from `arithmetic.rs`).
 
-use super::shared::parse_list;
+use super::shared::cycle_pairs;
 use zenith_float_num::{Consts, ExactNum};
 
 /// Batch size for cheap arithmetic kernels (add / mul / div / rem).
@@ -40,19 +40,6 @@ pub const DECIMAL_FIXTURES: &[&str] = &[
     "42.0",
 ];
 
-pub fn parse_fixtures(p: usize, cc: &mut Consts) -> Vec<ExactNum> {
-    parse_list(p, cc, DECIMAL_FIXTURES)
-}
-
 pub fn pair_fixtures(p: usize, cc: &mut Consts, batch: usize) -> Vec<(ExactNum, ExactNum)> {
-    let values = parse_fixtures(p, cc);
-    let n = values.len();
-    (0..batch)
-        .map(|i| {
-            (
-                values[i % n].clone(),
-                values[(i.wrapping_mul(7).wrapping_add(3)) % n].clone(),
-            )
-        })
-        .collect()
+    cycle_pairs(p, cc, DECIMAL_FIXTURES, batch, 7, 3)
 }

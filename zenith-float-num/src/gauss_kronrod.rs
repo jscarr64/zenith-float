@@ -1208,15 +1208,17 @@ mod tests {
         let (p, rm) = gold_p();
         // Partial sums of Σ (1/2)^k from k = 0. One geometric component, so
         // the even ε column of order 2 is the limit 2 in exact arithmetic.
-        let mut seq = Vec::new();
-        let mut acc = ExactNum::new(p);
         let half = ExactNum::from_u8(1, p).ldexp(-1, p, rm);
-        let mut term = ExactNum::from_u8(1, p);
-        for _ in 0..4 {
-            acc = acc.add(&term, p, rm);
-            seq.push(acc.clone());
-            term = term.mul(&half, p, rm);
-        }
+        let partial = |n: usize| {
+            let mut acc = ExactNum::new(p);
+            let mut term = ExactNum::from_u8(1, p);
+            for _ in 0..n {
+                acc = acc.add(&term, p, rm);
+                term = term.mul(&half, p, rm);
+            }
+            acc
+        };
+        let seq: Vec<ExactNum> = (1..=4).map(partial).collect();
         let got = wynn_epsilon(&seq, p, rm).expect("wynn");
         let two = ExactNum::from_u8(2, p);
         let correct = bits(&got, &two, p);

@@ -88,8 +88,8 @@ fn fuzz_mpfr_bit_exact_all_round_modes() {
             for op in ops {
                 for rm in ALL_MODES {
                     let n3 = match op {
-                        BinOp::Add => n1.clone().add(&n2, p, rm),
-                        BinOp::Sub => n1.clone().sub(&n2, p, rm),
+                        BinOp::Add => ExactNum::add_ref(&n1, &n2, p, rm),
+                        BinOp::Sub => ExactNum::sub_ref(&n1, &n2, p, rm),
                         BinOp::Mul => ExactNum::mul_ref(&n1, &n2, p, rm),
                         BinOp::Div => ExactNum::div_ref(&n1, &n2, p, rm),
                     };
@@ -151,7 +151,7 @@ fn fuzz_mpfr_overflow_all_round_modes() {
     for &p in &[64, 128, 192, 256, 512] {
         let max = ExactNum::max_value(p);
         let seconds = vec![
-            max.clone(),
+            ExactNum::max_value(p),
             neg_of(&max),
             ExactNum::from_i8(2, p),
             ExactNum::from_i8(-2, p),

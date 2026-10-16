@@ -9,12 +9,14 @@ fn sink<T>(v: T) {
 }
 
 fn diag_dominant(n: usize, p: usize) -> ExactNumArray {
-    let diag = ExactNum::from_u32((n as u32).saturating_add(3), p);
-    let off = ExactNum::from_u8(1, p);
     let mut vals = Vec::with_capacity(n.saturating_mul(n));
     for i in 0..n {
         for j in 0..n {
-            vals.push(if i == j { diag.clone() } else { off.clone() });
+            vals.push(if i == j {
+                ExactNum::from_u32((n as u32).saturating_add(3), p)
+            } else {
+                ExactNum::from_u8(1, p)
+            });
         }
     }
     ExactNumArray::from_shape(p, n, n, &vals).expect("shape")

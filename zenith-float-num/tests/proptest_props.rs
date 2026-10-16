@@ -50,11 +50,10 @@ proptest! {
         let q = WORD_BIT_SIZE;
         let p = 2 * WORD_BIT_SIZE;
         let p_hi = 4 * WORD_BIT_SIZE;
-        let x = ExactNum::from_i64(n, p_hi);
-        let mut via = x.clone();
+        let mut via = ExactNum::from_i64(n, p_hi);
         via.set_precision(p, rm).unwrap();
         via.set_precision(q, rm).unwrap();
-        let mut direct = x.clone();
+        let mut direct = ExactNum::from_i64(n, p_hi);
         direct.set_precision(q, rm).unwrap();
         prop_assert!(eq(&via, &direct));
     }
