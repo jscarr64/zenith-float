@@ -19,11 +19,7 @@ const P: usize = 64;
 const RM: RoundingMode = RoundingMode::ToEven;
 
 /// Results that differ from MPFR today; each fix removes its entries.
-const KNOWN_WRONG: &[&str] = &[
-    // powsi(-0, n): -Inf for negative odd n
-    "powsi(-0, -1)",
-    "powsi(-0, -3)",
-];
+const KNOWN_WRONG: &[&str] = &[];
 
 /// A base or exponent: `(label, zenith value, MPFR value)`.
 fn val(label: &str, sig: u64, exp2: i32, neg: bool) -> (String, ExactNum, Float) {
