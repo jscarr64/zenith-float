@@ -8,11 +8,10 @@
 use crate::mpfr::common::{assert_exact_eq, mpfr_reference_with};
 use crate::mpfr::retry_budget::use_full_exponent_range;
 use crate::mpfr::retry_budget::{round_of, ternary};
+use crate::mpfr::shifted::{self as sh, Term, Want};
 use gmp_mpfr_sys::mpfr::rnd_t;
-use rug::float::Round;
 use rug::ops::AssignRound;
 use rug::Float;
-use std::cmp::Ordering;
 use std::ops::Neg;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use zenith_float_num::{
@@ -98,11 +97,6 @@ fn mp(m: u64, k: i64, negative: bool) -> Float {
     }
 }
 
-/// The operand's exponent is inside the range MPFR emulates for a result of `p` bits.
-fn in_mpfr_range(m: u64, k: i64, p: usize) -> bool {
-    k + 64 - m.leading_zeros() as i64 > MIN - p as i64 + 1
-}
-
 /// Collects the mismatches of a run: each check may panic inside `assert_exact_eq`.
 struct Run {
     cc: Consts,
@@ -157,6 +151,31 @@ impl Run {
         self.failures.push(text.chars().take(260).collect());
     }
 
+    /// Like [`Run::check`] with a reference in a scaled space ([`crate::mpfr::shifted`]).
+    fn check_want(
+        &mut self,
+        got: &ExactNum,
+        p: usize,
+        rm: RoundingMode,
+        info: &str,
+        want: impl FnOnce() -> Result<Want, Box<dyn std::error::Error>>,
+    ) {
+        self.checked += 1;
+        let flags = self.flags;
+        let outcome = catch_unwind(AssertUnwindSafe(|| -> Res {
+            sh::check(got, &want()?, flags, info)
+        }));
+        let text = match outcome {
+            Ok(Ok(())) => return,
+            Ok(Err(e)) => format!("{info} p={p} {rm:?}: error {e}"),
+            Err(payload) => match payload.downcast_ref::<String>() {
+                Some(m) => format!("p={p} {rm:?} {m}"),
+                None => format!("{info} p={p} {rm:?}: panic without a message"),
+            },
+        };
+        self.failures.push(text.chars().take(260).collect());
+    }
+
     fn finish(self, what: &str, at_least: usize) {
         assert!(
             self.checked >= at_least,
@@ -193,7 +212,7 @@ fn unary(
     what: &str,
     sweep: Sweep,
     zf_fn: impl Fn(&ExactNum, usize, RoundingMode) -> ExactNum,
-    mp_fn: impl Fn(&mut Float, &Float, Round) -> Ordering,
+    reference: impl Fn(&Term, u32, RoundingMode) -> Result<Want, Box<dyn std::error::Error>>,
 ) -> Res {
     let Sweep {
         operands,
@@ -206,17 +225,15 @@ fn unary(
     for &(m, k) in operands {
         for &neg in signs {
             let x = zf(m, k, neg);
-            let fx = mp(m, k, neg);
+            let tx = Term::new(m, k, neg);
             for &p in precisions {
-                if !in_mpfr_range(m, k, p) || skip(m, k, neg, p) {
+                if skip(m, k, neg, p) {
                     continue;
                 }
                 for rm in MODES {
                     let got = zf_fn(&x, p, rm);
                     let info = format!("{what}({m:#x} 2^{k}, neg {neg})");
-                    run.check(&got, p, rm, &info, |r, rnd| {
-                        ternary(mp_fn(r, &fx, round_of(rnd)))
-                    });
+                    run.check_want(&got, p, rm, &info, || reference(&tx, p as u32, rm));
                 }
             }
         }
@@ -237,7 +254,7 @@ fn sqrt_over_the_whole_range() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.sqrt(p, rm),
-        |r, a, rd| r.assign_round(a.sqrt_ref(), rd),
+        |x, p, rm| sh::ref_root(x, 2, p, rm),
     )
 }
 
@@ -253,7 +270,7 @@ fn cbrt_over_the_whole_range() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.cbrt(p, rm),
-        |r, a, rd| r.assign_round(a.cbrt_ref(), rd),
+        |x, p, rm| sh::ref_root(x, 3, p, rm),
     )
 }
 
@@ -275,7 +292,7 @@ fn reciprocal_over_the_whole_range() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.reciprocal(p, rm),
-        |r, a, rd| r.assign_round(a.recip_ref(), rd),
+        |x, p, rm| sh::ref_recip(x, p, rm),
     )
 }
 
@@ -300,7 +317,7 @@ fn exact_roots_and_reciprocals_at_the_ends() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.sqrt(p, rm),
-        |r, a, rd| r.assign_round(a.sqrt_ref(), rd),
+        |x, p, rm| sh::ref_root(x, 2, p, rm),
     )?;
     let cu_ops = grid(
         &[1, cube],
@@ -317,7 +334,7 @@ fn exact_roots_and_reciprocals_at_the_ends() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.cbrt(p, rm),
-        |r, a, rd| r.assign_round(a.cbrt_ref(), rd),
+        |x, p, rm| sh::ref_root(x, 3, p, rm),
     )
 }
 
@@ -335,7 +352,7 @@ fn nth_root_over_the_whole_range() -> Res {
                 skip: no_skip,
             },
             |x, p, rm| x.nth_root(n, p, rm),
-            |r, a, rd| r.assign_round(a.root_ref(n as u32), rd),
+            |x, p, rm| sh::ref_root(x, n as u32, p, rm),
         )?;
     }
     // exact: 3^40 = (3^8)^5
@@ -357,7 +374,7 @@ fn nth_root_over_the_whole_range() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.nth_root(5, p, rm),
-        |r, a, rd| r.assign_round(a.root_ref(5), rd),
+        |x, p, rm| sh::ref_root(x, 5, p, rm),
     )
 }
 
@@ -377,7 +394,7 @@ fn nth_root_exact_result_is_not_inexact() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.nth_root(7, p, rm),
-        |r, a, rd| r.assign_round(a.root_ref(7), rd),
+        |x, p, rm| sh::ref_root(x, 7, p, rm),
     )
 }
 
@@ -387,7 +404,7 @@ fn binary(
     precisions: &[usize],
     skip_pair: fn((u64, i64), (u64, i64)) -> bool,
     zf_fn: impl Fn(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
-    mp_fn: impl Fn(&mut Float, &Float, &Float, Round) -> Ordering,
+    reference: impl Fn(&Term, &Term, u32, RoundingMode) -> Result<Want, Box<dyn std::error::Error>>,
 ) -> Res {
     let mut run = Run::new(true)?;
     for &(m1, k1) in operands {
@@ -397,18 +414,13 @@ fn binary(
             }
             for (n1, n2) in [(false, false), (true, false), (false, true), (true, true)] {
                 let (a, b) = (zf(m1, k1, n1), zf(m2, k2, n2));
-                let (fa, fb) = (mp(m1, k1, n1), mp(m2, k2, n2));
+                let (ta, tb) = (Term::new(m1, k1, n1), Term::new(m2, k2, n2));
                 for &p in precisions {
-                    if !in_mpfr_range(m1, k1, p) || !in_mpfr_range(m2, k2, p) {
-                        continue;
-                    }
                     for rm in MODES {
                         let got = zf_fn(&a, &b, p, rm, &mut run.cc);
                         let info =
                             format!("{what}({m1:#x} 2^{k1} neg {n1}, {m2:#x} 2^{k2} neg {n2})");
-                        run.check(&got, p, rm, &info, |r, rnd| {
-                            ternary(mp_fn(r, &fa, &fb, round_of(rnd)))
-                        });
+                        run.check_want(&got, p, rm, &info, || reference(&ta, &tb, p as u32, rm));
                     }
                 }
             }
@@ -430,7 +442,7 @@ fn hypot_over_the_whole_range() -> Res {
         &PRECISIONS,
         no_pair_skipped,
         |a, b, p, rm, _| a.hypot(b, p, rm),
-        |r, a, b, rd| r.assign_round(a.hypot_ref(b), rd),
+        |a, b, p, rm| sh::ref_hypot(a, b, p, rm),
     )
 }
 
@@ -446,7 +458,7 @@ fn atan2_over_the_whole_range() -> Res {
         &[1, 3, 24, 64, 128],
         no_pair_skipped,
         |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
-        |r, y, x, rd| r.assign_round(y.atan2_ref(x), rd),
+        |y, x, p, rm| sh::ref_atan2(y, x, p, rm),
     )
 }
 
@@ -469,35 +481,32 @@ fn fma_run(labels: &[&str], pairs: &[usize], precisions: &[usize], at_least: usi
     for &i in pairs {
         let ((m1, k1), (m2, k2)) = all_pairs[i];
         let (a, b) = (zf(m1, k1, false), zf(m2, k2, true));
-        let (fa, fb) = (mp(m1, k1, false), mp(m2, k2, true));
+        let (ta, tb) = (Term::new(m1, k1, false), Term::new(m2, k2, true));
         // c = -(a * b), exact in 192 bits (a 128-bit product)
         let c0 = ExactNum::mul_ref(&a, &b, OPERAND_PRECISION, RoundingMode::ToEven).neg();
         let c0_shift = ExactNum::mul_ref(&a, &b, OPERAND_PRECISION, RoundingMode::ToEven)
             .neg()
             .ldexp(-60, OPERAND_PRECISION, RoundingMode::ToEven);
         let c1 = c0_shift.add(&c0, OPERAND_PRECISION, RoundingMode::ToEven);
-        let fc0 = -Float::with_val(OPERAND_PRECISION as u32, &fa * &fb);
-        let fc0_shift = Float::with_val(OPERAND_PRECISION as u32, &fc0 >> 60);
-        let fc1 = Float::with_val(OPERAND_PRECISION as u32, &fc0 + &fc0_shift);
-        let (fc2, c2) = (mp(m2, k2 - 3, false), zf(m2, k2 - 3, false));
-        // the product of the factors is exact in 256 bits
-        let product = Float::with_val(256, &fa * &fb);
-        for (label, c, fc) in
-            [("-ab", &c0, &fc0), ("-ab(1+2^-60)", &c1, &fc1), ("indep", &c2, &fc2)]
+        let c2 = zf(m2, k2 - 3, false);
+        // the exact terms of a * b + c
+        let sums: [Vec<Term>; 3] = [
+            vec![ta.mul(&tb), ta.mul(&tb).neg()],
+            vec![ta.mul(&tb), ta.mul(&tb).neg(), ta.mul(&tb).neg().ldexp(-60)],
+            vec![ta.mul(&tb), Term::new(m2, k2 - 3, false)],
+        ];
+        for ((label, c), terms) in [("-ab", &c0), ("-ab(1+2^-60)", &c1), ("indep", &c2)]
+            .into_iter()
+            .zip(&sums)
         {
             if !labels.contains(&label) {
                 continue;
             }
             for &p in precisions {
-                if !in_mpfr_range(m1, k1, p) || !in_mpfr_range(m2, k2, p) {
-                    continue;
-                }
                 for rm in MODES {
                     let got = a.fma(&b, c, p, rm);
                     let info = format!("fma({m1:#x} 2^{k1}, -{m2:#x} 2^{k2}, {label})");
-                    run.check(&got, p, rm, &info, |r, rnd| {
-                        ternary(r.assign_round(&product + fc, round_of(rnd)))
-                    });
+                    run.check_want(&got, p, rm, &info, || sh::ref_sum(terms, p as u32, rm));
                 }
             }
         }
@@ -528,20 +537,14 @@ fn fma_with_a_far_smaller_addend() -> Res {
     let mut run = Run::new(true)?;
     let one = zf(1, 0, false);
     let minus_one = zf(1, 0, true);
-    let (f_one, f_minus_one) = (mp(1, 0, false), mp(1, 0, true));
     for gap in [100i64, 200, 1000, 100_000] {
         let c = zf(1, -gap, false);
-        let fc = mp(1, -gap, false);
+        let terms = [Term::new(1, 0, true), Term::new(1, -gap, false)];
         for p in [24usize, 64, 65, 128, 200] {
             for rm in MODES {
                 let got = one.fma(&minus_one, &c, p, rm);
                 let info = format!("fma(1, -1, 2^-{gap})");
-                run.check(&got, p, rm, &info, |r, rnd| {
-                    ternary(r.assign_round(
-                        &(Float::with_val(gap as u32 + 128, &f_one * &f_minus_one) + &fc),
-                        round_of(rnd),
-                    ))
-                });
+                run.check_want(&got, p, rm, &info, || sh::ref_sum(&terms, p as u32, rm));
             }
         }
     }
@@ -552,7 +555,6 @@ fn fma_with_a_far_smaller_addend() -> Res {
 /// `fma` with a subnormal product and a subnormal addend thousands of bits below it (the stand-in for the
 /// negligible addend must not be placed below the smallest exponent: its exponent wrapped around to a huge
 /// positive one and the result was `+3 * 2^2147480571` for `3 * 2^(EXPONENT_MIN - 19) * -7 + 3 * 2^(EXPONENT_MIN - 2997)`).
-/// The addend is below MPFR's emulated range for the result, which does not matter to MPFR's addition.
 #[test]
 fn fma_with_subnormal_terms_far_apart() -> Res {
     let mut run = Run::new(true)?;
@@ -562,19 +564,13 @@ fn fma_with_subnormal_terms_far_apart() -> Res {
         (MIN + 3, MIN - 5000, false),
     ] {
         let (a, b, c) = (zf(3, ka, false), zf(7, 0, true), zf_at(3, kc, neg_c, 8192));
-        // MPFR's range here only reaches 1024 below the smallest exponent: form the exact sum 6000 binary places
-        // higher (both terms exact, the gap is below 8192 bits), then move it down (exact) and round it once.
-        let up = 6000;
-        let (fa, fb, fc) = (mp(3, ka + up, false), mp(7, 0, true), mp(3, kc + up, neg_c));
-        let prod = Float::with_val(256, &fa * &fb);
-        let exact = Float::with_val(8192, &prod + &fc) >> (up as i32);
+        // the exact terms: the addend is a sticky bit or summed exactly, in the scaled space of the sum
+        let terms = [Term::new(3, ka, false).mul(&Term::new(7, 0, true)), Term::new(3, kc, neg_c)];
         for p in [24usize, 64, 128, 200] {
             for rm in MODES {
                 let got = a.fma(&b, &c, p, rm);
                 let info = format!("fma(3 2^{ka}, -7, +-3 2^{kc}) neg_c {neg_c}");
-                run.check(&got, p, rm, &info, |r, rnd| {
-                    ternary(r.assign_round(&exact, round_of(rnd)))
-                });
+                run.check_want(&got, p, rm, &info, || sh::ref_sum(&terms, p as u32, rm));
             }
         }
     }
@@ -596,7 +592,7 @@ fn primitives_at_20000_bits() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.sqrt(p, rm),
-        |r, a, rd| r.assign_round(a.sqrt_ref(), rd),
+        |x, p, rm| sh::ref_root(x, 2, p, rm),
     )?;
     unary(
         "reciprocal 20000",
@@ -608,7 +604,7 @@ fn primitives_at_20000_bits() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.reciprocal(p, rm),
-        |r, a, rd| r.assign_round(a.recip_ref(), rd),
+        |x, p, rm| sh::ref_recip(x, p, rm),
     )?;
     unary(
         "cbrt 20000",
@@ -620,7 +616,7 @@ fn primitives_at_20000_bits() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.cbrt(p, rm),
-        |r, a, rd| r.assign_round(a.cbrt_ref(), rd),
+        |x, p, rm| sh::ref_root(x, 3, p, rm),
     )
 }
 
@@ -659,7 +655,7 @@ fn nth_root_with_a_composite_n() -> Res {
                 skip: no_skip,
             },
             |x, p, rm| x.nth_root(n, p, rm),
-            |r, a, rd| r.assign_round(a.root_ref(n as u32), rd),
+            |x, p, rm| sh::ref_root(x, n as u32, p, rm),
         )?;
         // exact roots: 3^(n*j) with the exponent a multiple of n
         let j = 40 / n;
@@ -683,7 +679,7 @@ fn nth_root_with_a_composite_n() -> Res {
                 skip: no_skip,
             },
             |x, p, rm| x.nth_root(n, p, rm),
-            |r, a, rd| r.assign_round(a.root_ref(n as u32), rd),
+            |x, p, rm| sh::ref_root(x, n as u32, p, rm),
         )?;
     }
     Ok(())
@@ -708,14 +704,14 @@ fn hypot_of_one_and_a_tiny_number_is_not_nan() -> Res {
     let mut run = Run::new(true)?;
     for &k in &ks {
         let (one, tiny) = (zf(1, 0, false), zf(1, -k, false));
-        let (fone, ftiny) = (mp(1, 0, false), mp(1, -k, false));
+        let (tone, ttiny) = (Term::new(1, 0, false), Term::new(1, -k, false));
         for &p in &[2usize, 24, 64, 128, 200] {
             for rm in MODES {
                 let got = one.hypot(&tiny, p, rm);
                 assert!(!got.is_nan(), "hypot(1, 2^-{k}, {p}, {rm:?}) is NaN");
                 let info = format!("hypot(1, 2^-{k})");
-                run.check(&got, p, rm, &info, |r, rnd| {
-                    ternary(r.assign_round(fone.hypot_ref(&ftiny), round_of(rnd)))
+                run.check_want(&got, p, rm, &info, || {
+                    sh::ref_hypot(&tone, &ttiny, p as u32, rm)
                 });
             }
         }
@@ -740,11 +736,13 @@ fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.reciprocal(p, rm),
-        |r, a, rd| r.assign_round(a.recip_ref(), rd),
+        |x, p, rm| sh::ref_recip(x, p, rm),
     )?;
-    // explicit: the nearest modes give -Inf at p >= 129, never +Inf
+    // explicit: the nearest modes give -Inf at p >= 129, never +Inf. With the i64 limits `1 / 2^(MIN + 1)` is
+    // `2^(EXPONENT_MAX - 1)`, finite (the sweep above checks it against the shifted reference), so only
+    // `MIN - 1` and `MIN` overflow.
     let mut seen = 0;
-    for k in [MIN - 1, MIN, MIN + 1] {
+    for k in [MIN - 1, MIN] {
         let x = zf(1, k, true);
         for p in [129usize, 192, 256] {
             for rm in [
@@ -759,7 +757,7 @@ fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
             }
         }
     }
-    assert_eq!(seen, 36);
+    assert_eq!(seen, 24);
     Ok(())
 }
 
@@ -774,12 +772,9 @@ fn atan2_of_a_tiny_quotient_is_neither_zero_nor_nan() -> Res {
     for &(m, k) in &ys {
         for neg in [false, true] {
             let y = zf(m, k, neg);
-            let fy = mp(m, k, neg);
-            let (one, fone) = (zf(1, 0, false), mp(1, 0, false));
+            let ty = Term::new(m, k, neg);
+            let (one, tone) = (zf(1, 0, false), Term::new(1, 0, false));
             for &p in &[24usize, 64, 128, 200] {
-                if !in_mpfr_range(m, k, p) {
-                    continue;
-                }
                 for rm in MODES {
                     let got = y.atan2(&one, p, rm, &mut cc);
                     assert!(!got.is_nan(), "atan2({m:#x} 2^{k}, 1, {p}, {rm:?}) is NaN");
@@ -791,8 +786,8 @@ fn atan2_of_a_tiny_quotient_is_neither_zero_nor_nan() -> Res {
                         );
                     }
                     let info = format!("atan2({m:#x} 2^{k} neg {neg}, 1)");
-                    run.check(&got, p, rm, &info, |r, rnd| {
-                        ternary(r.assign_round(fy.atan2_ref(&fone), round_of(rnd)))
+                    run.check_want(&got, p, rm, &info, || {
+                        sh::ref_atan2(&ty, &tone, p as u32, rm)
                     });
                 }
             }
@@ -815,7 +810,7 @@ fn atan2_at_the_scales_users_reach() -> Res {
         &[24, 64, 128, 256],
         no_pair_skipped,
         |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
-        |r, y, x, rd| r.assign_round(y.atan2_ref(x), rd),
+        |y, x, p, rm| sh::ref_atan2(y, x, p, rm),
     )
 }
 
@@ -837,6 +832,7 @@ fn complex_ln_with_extreme_parts() -> Res {
     for &((rm_, rk, rn), (im_, ik, inn)) in &cases {
         let z = ExactComplex::new(zf(rm_, rk, rn), zf(im_, ik, inn));
         let (fre, fim) = (mp(rm_, rk, rn), mp(im_, ik, inn));
+        let (tre, tim) = (Term::new(rm_, rk, rn), Term::new(im_, ik, inn));
         for &p in &[64usize, 128, 256] {
             for rm in MODES {
                 let got = z.ln(p, rm, &mut cc);
@@ -846,8 +842,8 @@ fn complex_ln_with_extreme_parts() -> Res {
                 );
                 assert!(!got.re().is_inf(), "ln(..) real part is infinite");
                 let info = format!("ln im({rm_:#x} 2^{rk} neg {rn}, {im_:#x} 2^{ik} neg {inn})");
-                run.check(got.im(), p, rm, &info, |r, rnd| {
-                    ternary(r.assign_round(fim.atan2_ref(&fre), round_of(rnd)))
+                run.check_want(got.im(), p, rm, &info, || {
+                    sh::ref_atan2(&tim, &tre, p as u32, rm)
                 });
                 // real part: ln(max) + (1/2) ln(1 + (min/max)^2) at 1500 bits. Compared where its size is within
                 // MPFR's exponent range (the first case's is about 2^-2.9e9: it underflows, and is only required to

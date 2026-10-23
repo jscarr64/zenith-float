@@ -20,6 +20,7 @@ pub mod pow_specials;
 pub mod rem_exact;
 pub mod retry_budget;
 pub mod rng_isolation;
+pub mod shifted;
 pub mod subnormal_odd;
 pub mod subnormal_ops;
 pub mod wide_primitives;

@@ -644,9 +644,23 @@ where
             mpfr::set_emin((emin - 2).max(lo) as mpfr::exp_t);
         }
         let mut w = Float::new(p + 1);
+        unsafe { mpfr::clear_overflow() };
         let t = f(&mut w, rnd_t::RNDZ);
         unsafe {
             mpfr::set_emin(emin as mpfr::exp_t);
+        }
+        // Above the range nearest-ties-to-odd is nearest: `RNDZ` clamped `w` to the largest finite value, so the
+        // overflow is redone with `RNDN` (an exact midpoint above the largest finite value has `p + 1` bits all
+        // ones; none of the callers produce one).
+        if unsafe { mpfr::overflow_p() } != 0 {
+            let mut r = Float::new(p);
+            let t = f(&mut r, rnd_t::RNDN);
+            unsafe {
+                mpfr::set_emin(old_min);
+                mpfr::set_emax(old_max);
+            }
+            let _ = t;
+            return Ok((r, true));
         }
         // A result under the library's smallest normal exponent has fewer than `p` bits (the subnormal grid is
         // `2^(EXPONENT_MIN - p)`): the nearest-ties-to-odd rounding is done at that many bits, from the
@@ -660,9 +674,10 @@ where
         // At or below `2^(grid exponent)` no mantissa bit is left: the neighbours are 0 and the smallest
         // subnormal `g`, the midpoint `g / 2` is representable in `w`, so `|w| >= g / 2` (with the tie going
         // to the odd neighbour `g`) picks `g`. The result is always inexact.
-        let grid = EXPONENT_MIN as i64 + shift - p as i64;
+        // i128: a shift near -2^62 takes `EXPONENT_MIN + shift` below i64::MIN.
+        let grid = EXPONENT_MIN as i128 + i128::from(shift) - i128::from(p);
         if let Some(e) = exp {
-            if widen(e) <= grid {
+            if i128::from(widen(e)) <= grid {
                 let neg = w.is_sign_negative();
                 // Build 1 (exponent 1) under the widest range: the emulated `emin` can be far above it.
                 unsafe {
@@ -693,8 +708,9 @@ where
             }
         }
         let bits = match exp {
-            Some(e) if widen(e) < EXPONENT_MIN as i64 + shift => {
-                (p as i64 - (EXPONENT_MIN as i64 + shift - widen(e))).max(1) as u32
+            Some(e) if i128::from(widen(e)) < EXPONENT_MIN as i128 + i128::from(shift) => {
+                (i128::from(p) - (EXPONENT_MIN as i128 + i128::from(shift) - i128::from(widen(e))))
+                    .max(1) as u32
             }
             _ => p,
         };
@@ -740,7 +756,8 @@ where
 /// what MPFR allows.
 pub fn emulated_range(p: u32, shift: i64) -> (i64, i64) {
     let (lo, hi) = unsafe { (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max())) };
-    let emin = (EXPONENT_MIN as i64 + shift - p as i64 + 1).max(lo);
+    let emin =
+        (EXPONENT_MIN as i128 + i128::from(shift) - i128::from(p) + 1).max(i128::from(lo)) as i64;
     let emax = (EXPONENT_MAX as i64).saturating_add(shift).min(hi);
     (emin, emax)
 }
@@ -750,7 +767,7 @@ pub fn emulated_range(p: u32, shift: i64) -> (i64, i64) {
 /// tests) keep their results far below `EXPONENT_MAX`, so only the unshifted top must fit.
 pub fn emulated_range_ok(p: u32, shift: i64) -> bool {
     let (lo, hi) = unsafe { (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max())) };
-    EXPONENT_MIN as i64 + shift - p as i64 + 1 >= lo
+    EXPONENT_MIN as i128 + i128::from(shift) - i128::from(p) + 1 >= i128::from(lo)
         && (EXPONENT_MAX as i64).saturating_add(shift.min(0)) <= hi
 }
 
