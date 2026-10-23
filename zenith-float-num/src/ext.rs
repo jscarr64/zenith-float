@@ -813,7 +813,12 @@ impl ExactNum {
                                 INF_POS
                             }
                         } else {
-                            Self::new(p)
+                            // (+-inf)^(negative): a zero, negative only for -inf to an odd integer.
+                            let mut z = Self::new(p);
+                            if s1.is_negative() && v2.is_odd_int() {
+                                z.set_sign(Sign::Neg);
+                            }
+                            z
                         }
                     }
                     Flavor::Inf(s2) => {
