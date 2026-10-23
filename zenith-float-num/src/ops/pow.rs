@@ -597,8 +597,9 @@ impl ExactNumNumber {
             }
         }
 
-        // A half-integer power of a value with an exact square root is exact or one
-        // rounding of an exact product: 9^0.5 = 3, 4^(-1.5) = 1/8.
+        // A power `N / 2^j` (j <= POW_ROOT_STEPS) of a value whose 2^j-th root is exact is exact or one
+        // rounding of an exact product: 9^0.5 = 3, 4^(-1.5) = 1/8, 16^0.75 = 8, 81^(-0.25) = 1/3.
+        const POW_ROOT_STEPS: Exponent = 6;
         if rm != RoundingMode::None
             && !n.inexact()
             && !self.inexact()
@@ -607,10 +608,20 @@ impl ExactNumNumber {
             && n.exponent() < 64
         {
             let mut twice = n.clone()?;
-            twice.set_exponent(n.exponent() + 1);
+            let mut j: Exponent = 0;
+            while j < POW_ROOT_STEPS && !twice.is_int() {
+                j += 1;
+                twice.set_exponent(n.exponent() + j);
+            }
             if twice.is_int() {
                 let w = self.mantissa_max_bit_len() + WORD_BIT_SIZE;
-                let root = self.sqrt(w, RoundingMode::ToZero)?;
+                let mut root = self.sqrt(w, RoundingMode::ToZero)?;
+                let mut step = 1;
+                while step < j && !root.inexact() {
+                    let w = root.mantissa_max_bit_len() + WORD_BIT_SIZE;
+                    root = root.sqrt(w, RoundingMode::ToZero)?;
+                    step += 1;
+                }
                 if !root.inexact() {
                     if let Ok(mag) = twice.int_as_usize() {
                         if mag == 1 {
