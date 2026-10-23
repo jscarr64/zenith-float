@@ -208,40 +208,41 @@ impl Consts {
         self.ln10.for_prec(p, rm)
     }
 
-    /// Returns the value of the pi number with precision `p` using rounding mode `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// Returns the value of the pi number rounded at exactly `p` bits using rounding mode `rm`.
+    /// The function returns NaN if the precision `p` is incorrect.
     pub fn pi(&mut self, p: usize, rm: RoundingMode) -> ExactNum {
-        match self.pi_num(p, rm) {
-            Ok(v) => v.into(),
-            Err(e) => ExactNum::nan(Some(e)),
-        }
+        self.exact_p(p, rm, Self::pi_num)
     }
 
-    /// Returns the value of the Euler number with precision `p` using rounding mode `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// Returns the value of the Euler number rounded at exactly `p` bits using rounding mode `rm`.
+    /// The function returns NaN if the precision `p` is incorrect.
     pub fn e(&mut self, p: usize, rm: RoundingMode) -> ExactNum {
-        match self.e_num(p, rm) {
-            Ok(v) => v.into(),
-            Err(e) => ExactNum::nan(Some(e)),
-        }
+        self.exact_p(p, rm, Self::e_num)
     }
 
-    /// Returns the value of the natural logarithm of 2 with precision `p` using rounding mode `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// Returns the value of the natural logarithm of 2 rounded at exactly `p` bits using rounding mode `rm`.
+    /// The function returns NaN if the precision `p` is incorrect.
     pub fn ln_2(&mut self, p: usize, rm: RoundingMode) -> ExactNum {
-        match self.ln_2_num(p, rm) {
-            Ok(v) => v.into(),
-            Err(e) => ExactNum::nan(Some(e)),
-        }
+        self.exact_p(p, rm, Self::ln_2_num)
     }
 
-    /// Returns the value of the natural logarithm of 10 with precision `p` using rounding mode `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// Returns the value of the natural logarithm of 10 rounded at exactly `p` bits using rounding mode `rm`.
+    /// The function returns NaN if the precision `p` is incorrect.
     pub fn ln_10(&mut self, p: usize, rm: RoundingMode) -> ExactNum {
-        match self.ln_10_num(p, rm) {
+        self.exact_p(p, rm, Self::ln_10_num)
+    }
+
+    /// `f` (a word-precision constant) rounded at exactly `p` bits with `rm`.
+    fn exact_p(
+        &mut self,
+        p: usize,
+        rm: RoundingMode,
+        f: fn(&mut Self, usize, RoundingMode) -> Result<ExactNumNumber, Error>,
+    ) -> ExactNum {
+        ExactNum::round_exact(false, p, rm, |q, r| match f(self, q, r) {
             Ok(v) => v.into(),
             Err(e) => ExactNum::nan(Some(e)),
-        }
+        })
     }
 
     /// Return powers of 10: 100, 10000, 100000000, ...
