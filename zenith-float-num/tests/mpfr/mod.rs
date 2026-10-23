@@ -14,6 +14,7 @@ pub mod exact_bit_functions;
 pub mod fuzz_round_modes;
 pub mod mag_parts;
 pub mod overflow_modes;
+pub mod pow_specials;
 pub mod rem_exact;
 pub mod retry_budget;
 pub mod rng_isolation;
