@@ -382,6 +382,10 @@ For a negative radicand and an odd `n` of 5 or more the directed modes `Up` and 
 - Audit tests, each red before its fix: `tests/rounding_mode_docs.rs`, `tests/from_raw_parts_checks.rs`, `tests/overflow_modes.rs`, `tests/inexact_per_op.rs`, `tests/exponent_range.rs` (red on i686), and in `tests/mpfr/fuzz_round_modes.rs` `fuzz_mpfr_overflow_all_round_modes`, `fuzz_mpfr_exact_bit_precision`, and the widened `fuzz_mpfr_bit_exact_all_round_modes`.
 - `.github/workflows/arm-tests.yml`: a test-only ARM64 workflow (`ubuntu-24.04-arm`, Rust 1.99) that runs the workspace tests and the oracle test. It does not publish.
 
+### Gate: one target dir per worktree (tooling, no API change)
+
+Paul's rule of 2026-10-23, ported from zenith-bound. `tools/full_gate.sh` now needs `CARGO_TARGET_DIR`, used by one worktree only (`/tmp/target-<agent>-<worktree>`). The first step, `target-dir`, runs `tools/fresh_test_run_selftest.sh` and `tools/fresh_test_run.sh --claim`. It fails if the variable is unset or the dir is owned by another worktree (the owner is recorded in `$CARGO_TARGET_DIR/.worktree-owner`). Every `cargo test` step, `mpfr-tests-build` included, runs through `tools/fresh_test_run.sh`: it builds with `--no-run`, then fails on zero test binaries or one outside the target dir, before any test runs. The selftest was red first: an unset dir, a shared dir and a foreign binary each fail.
+
 ## 1.0.12 — 2026-10-06
 
 Attribution for code derived from [astro-float](https://github.com/stencillogic/astro-float) (MIT, Copyright (c) 2022 stencillogic; crates `astro-float` 0.9.6, `astro-float-num` 0.3.7, `astro-float-macro` 0.4.6, commit `c0d9a26`). `NOTICE` has the full MIT copyright and permission notice. Each derived file names that origin. Original work stays under Apache-2.0 and is also offered as MIT. The file list is `doc/PROVENANCE.md`.

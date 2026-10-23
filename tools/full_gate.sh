@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 # Canonical full gate. usage: tools/full_gate.sh TAG
 # Every step runs under `timeout` (STEP_TIMEOUT, default 20m); the rc of each step is written to $T/TAG.rc and its
-# output to $T/TAG-<step>.log (T defaults to /tmp/zf-gate-logs). REPO selects the checkout (default: this one);
-# CARGO_TARGET_DIR is honoured.
+# output to $T/TAG-<step>.log (T defaults to /tmp/zf-gate-logs). REPO selects the checkout (default: this one).
+# CARGO_TARGET_DIR is REQUIRED and belongs to one worktree (Paul, 2026-10-23: /tmp/target-<agent>-<worktree>). The first
+# step, target-dir, runs the tools/fresh_test_run.sh selftest and --claim: it fails if CARGO_TARGET_DIR is unset or owned
+# by another worktree (marker $CARGO_TARGET_DIR/.worktree-owner). Every cargo test step (mpfr-tests-build included) runs
+# through tools/fresh_test_run.sh: build with --no-run, then fail on zero test binaries or one outside CARGO_TARGET_DIR,
+# before any test runs; only then the tests run.
 #
 # Clone ratchet "in progress" mode: `rules-scan` scans the added lines since the ratchet started (RATCHET_BASE,
 # default c74e834^ = the parent of the first commit with rules_scan and the baseline) and enforces the baseline
@@ -54,16 +58,17 @@ run() {
   echo "  output: $T/$tag-$name.log" >> "$POPLOG_FILE"
 }
 ORACLES="--test oracle --test specials_oracle --test methods_oracle --test accuracy_table --test elliptic_phi"
-run build-debug "cargo test --workspace $TT"
+run target-dir "tools/fresh_test_run_selftest.sh && tools/fresh_test_run.sh --claim"
+run build-debug "tools/fresh_test_run.sh cargo test --workspace $TT"
 # early compile of the mpfr-tests integration tests (6ab75ce prepublish broke here only at the last step)
-run mpfr-tests-build "cargo test -p zenith-float-num --release --features mpfr-tests --no-run"
-run build-release "cargo test --workspace --release $TT"
+run mpfr-tests-build "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests --no-run"
+run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
 run build-thumbv7em "cargo build --no-default-features --target thumbv7em-none-eabihf && cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf"
-run features-random-serde "cargo test --workspace --features random,serde $TT"
-run oracle-fast "cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
-run oracle-deep "ORACLE_TIER=deep cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
-run mpfr "cargo test -p zenith-float-num --release --features mpfr-tests -- --test-threads=1"
+run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
+run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
+run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
+run mpfr "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests -- --test-threads=1"
 # ratchet mode: the clone ratchet started at c74e834 (first commit with rules_scan + baseline); older added lines are tracked by no-clone-progress, not flagged here
 run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BASE:-c74e834^}..HEAD"
 # informational: remaining violations are a tracked count (must only go down; hard fail is for the final step)
