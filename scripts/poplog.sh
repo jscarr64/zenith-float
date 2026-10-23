@@ -8,7 +8,12 @@
 #   log_step_end NAME RC [FILE] [--tests]            end line, duration, rc, counts; 0 tests on a test step = FAIL
 #   poplog_progress "record 12/500"                  current record/progress shown by the heartbeat
 #   poplog_finish [RC]                               footer PASS/FAIL, removes RUNNING row
-# Env: POPLOG_ROOT (~/pop-logs), POPLOG_HEARTBEAT (300 s), POPLOG_PROGRESS_FILE (a step may write it directly).
+# Env: POPLOG_ROOT (~/pop-logs), POPLOG_HEARTBEAT (300 s), POPLOG_PROGRESS_FILE (a step may write it directly),
+#      POPLOG_ECHO=0 (do not tee step output to stdout), POPLOG_ERR_TRAP=0 (no ERR trap),
+#      POPSLOT_HEARTBEAT (60 s: RUNNING.tsv refresh while WAITING for a slot).
+# Nested: poplog_init inside a live run (POPLOG_FILE + POPLOG_STATE_DIR inherited) writes a SUB-RUN section into the
+# parent's log (no new log, no RUNNING row); a failed sub-run/step is recorded in $POPLOG_STATE_DIR/fail and fails the parent.
+# A script whose run recorded FAIL exits 1 even if it exits 0.
 # This file must not use `set -e` effects on callers; it works under `set -euo pipefail`.
 
 POPLOG_ROOT=${POPLOG_ROOT:-$HOME/pop-logs}
@@ -19,6 +24,7 @@ POPLOG_WARNINGS=()
 POPLOG_DONE=0
 POPLOG_HB_PID=""
 POPLOG_CHILD_PID=""
+POPLOG_NESTED=0
 
 POPLOG_RUNNING_HEADER=$'#agent\tjob\tpid\tlog\tstart\tlast_heartbeat\tstate\tslot'
 _pl_iso() { date '+%Y-%m-%dT%H:%M:%S%:z'; }
@@ -106,19 +112,42 @@ _pl_on_signal() {
 }
 _pl_on_exit() {
   local rc=$?
-  [[ "$POPLOG_DONE" == 1 ]] && return
+  if [[ "$POPLOG_DONE" == 1 ]]; then
+    if [[ $rc -eq 0 && $POPLOG_OVERALL -ne 0 ]]; then exit 1; fi
+    return
+  fi
   _pl_log "EXIT without poplog_finish (rc=$rc)"
   [[ $rc -eq 0 ]] && rc=1
   poplog_finish "$rc"
 }
 
+# _pl_on_err RC LINE CMD - ERR trap: record the failing command and line (does not change control flow).
+_pl_on_err() {
+  [[ "$POPLOG_DONE" == 1 || -z "${POPLOG_FILE:-}" || ! -f "${POPLOG_FILE:-}" ]] && return 0
+  _pl_log "ERR rc=$1 line=$2 cmd=$3 (in ${BASH_SOURCE[1]:-$0})"
+}
+_pl_traps() {
+  trap '_pl_on_signal INT 130' INT
+  trap '_pl_on_signal TERM 143' TERM
+  trap '_pl_on_signal HUP 129' HUP
+  trap '_pl_on_exit' EXIT
+  if [[ "${POPLOG_ERR_TRAP:-1}" != 0 ]]; then trap '_pl_on_err "$?" "$LINENO" "$BASH_COMMAND"' ERR; fi
+}
+
 poplog_init() {
   POPLOG_AGENT=$1; POPLOG_JOB=$2; POPLOG_REPO=${3:-$PWD}; local desc=${4:-${0##*/}}
-  POPLOG_PID=$$
   POPLOG_T0=$(date +%s)
+  if [[ -n "${POPLOG_FILE:-}" && -f "${POPLOG_FILE:-}" && -n "${POPLOG_STATE_DIR:-}" && -d "${POPLOG_STATE_DIR:-}" ]]; then
+    # nested in a live run: sub-section of the parent's log; POPLOG_PID stays the parent's (its RUNNING row/slot)
+    POPLOG_NESTED=1
+    _pl_log "----- SUB-RUN START $POPLOG_AGENT/$POPLOG_JOB pid=$$ command: $desc -----"
+    _pl_traps
+    return 0
+  fi
+  POPLOG_NESTED=0
+  POPLOG_PID=$$
   local day; day=$(date +%F)
   mkdir -p "$POPLOG_ROOT/$POPLOG_AGENT/$day"
-  # nested runs (poprun -> full_gate.sh) get their own log; never reuse an inherited POPLOG_FILE
   POPLOG_FILE=$POPLOG_ROOT/$POPLOG_AGENT/$day/$(date +%H%M)-$POPLOG_JOB.log
   [[ -e "$POPLOG_FILE" ]] && POPLOG_FILE="${POPLOG_FILE%.log}-$$.log"
   POPLOG_STATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/poplog.XXXXXX")
@@ -143,11 +172,9 @@ poplog_init() {
     echo "========================="
   } > "$POPLOG_FILE"
   _pl_running_add
-  _pl_heartbeat_loop & POPLOG_HB_PID=$!
-  trap '_pl_on_signal INT 130' INT
-  trap '_pl_on_signal TERM 143' TERM
-  trap '_pl_on_signal HUP 129' HUP
-  trap '_pl_on_exit' EXIT
+  # the heartbeat must not hold the caller's stdout/stderr (piped readers) or any lock fd open
+  _pl_heartbeat_loop < /dev/null > /dev/null 2>&1 9>&- & POPLOG_HB_PID=$!
+  _pl_traps
 }
 
 log_step_start() {
@@ -186,7 +213,11 @@ log_step_end() {
   fi
   [[ $COUNT_FAILED -gt 0 ]] && verdict=FAIL
   _pl_log "STEP END $name verdict=$verdict exit=$rc duration=$(_pl_fmt "$dur") tests: run=$COUNT_RUN passed=$COUNT_PASSED failed=$COUNT_FAILED ignored=$COUNT_IGNORED (summaries=$COUNT_SUMMARIES)"
-  if [[ $verdict == FAIL ]]; then POPLOG_OVERALL=1; POPLOG_WARNINGS+=("step $name FAIL (exit $rc)"); return 1; fi
+  if [[ $verdict == FAIL ]]; then
+    POPLOG_OVERALL=1; POPLOG_WARNINGS+=("step $name FAIL (exit $rc)")
+    [[ "$POPLOG_NESTED" == 1 ]] && printf '%s\n' "$POPLOG_AGENT/$POPLOG_JOB step $name FAIL (exit $rc)" >> "$POPLOG_STATE_DIR/fail"
+    return 1
+  fi
   return 0
 }
 
@@ -199,7 +230,11 @@ poplog_run_step() {
   log_step_start "$name"
   _pl_log "CMD $*"
   local rc=0
-  "$@" > >(tee -a "$POPLOG_STATE_DIR/out" >> "$POPLOG_FILE") 2>&1 &
+  if [[ "${POPLOG_ECHO:-1}" == 0 ]]; then
+    "$@" > >(tee -a "$POPLOG_STATE_DIR/out" >> "$POPLOG_FILE") 2>&1 &
+  else
+    "$@" > >(tee -a "$POPLOG_STATE_DIR/out" "$POPLOG_FILE") 2>&1 &
+  fi
   POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"
   wait "$POPLOG_CHILD_PID" || rc=$?
   POPLOG_CHILD_PID=""; : > "$POPLOG_STATE_DIR/child"
@@ -228,10 +263,20 @@ pop_slot_acquire() {
   if ! _ps_try; then
     _ps_note "SLOT WAITING: all $POPSLOT_N slots (${POPSLOT_PREFIX}1..$POPSLOT_N) busy"
     if [[ -n "$ctx" ]]; then : > "$POPLOG_STATE_DIR/waiting"; _pl_running_update WAITING "wait/$POPSLOT_N"; fi
+    local rf=''
+    if [[ -n "$ctx" ]]; then
+      # keep the WAITING row's last_heartbeat fresh (else it reads as STALE); no stdout/lock fds held
+      ( while sleep "${POPSLOT_HEARTBEAT:-60}"; do
+          kill -0 "$POPLOG_PID" 2>/dev/null && [[ -f "$POPLOG_STATE_DIR/waiting" ]] || exit 0
+          _pl_running_update WAITING "wait/$POPSLOT_N"
+        done ) < /dev/null > /dev/null 2>&1 9>&- &
+      rf=$!
+    fi
     exec {qfd}>> "${POPSLOT_PREFIX}.queue"
     flock "$qfd"
     until _ps_try; do sleep "${POPSLOT_POLL:-3}"; done
     exec {qfd}>&-
+    if [[ -n "$rf" ]]; then pkill -P "$rf" 2>/dev/null || true; kill "$rf" 2>/dev/null || true; wait "$rf" 2>/dev/null || true; fi
   fi
   POPSLOT_WAITED=$(( $(date +%s) - t0 ))
   export POPSLOT_SLOT POPSLOT_FD POPSLOT_HELD=$POPSLOT_SLOT
@@ -245,8 +290,22 @@ poplog_finish() {
   local rc=${1:-$POPLOG_OVERALL} w
   [[ "$POPLOG_DONE" == 1 ]] && return 0
   POPLOG_DONE=1
-  if [[ -n "$POPLOG_HB_PID" ]]; then kill "$POPLOG_HB_PID" 2>/dev/null || true; fi
   [[ $rc -ne 0 ]] && POPLOG_OVERALL=1
+  if [[ "$POPLOG_NESTED" == 1 ]]; then
+    local res=PASS; [[ $POPLOG_OVERALL -ne 0 ]] && res="FAIL (exit $rc)"
+    _pl_log "----- SUB-RUN END $POPLOG_AGENT/$POPLOG_JOB RESULT: $res duration=$(_pl_fmt $(( $(date +%s) - POPLOG_T0 ))) warnings=${#POPLOG_WARNINGS[@]} -----"
+    for w in "${POPLOG_WARNINGS[@]}"; do _pl_log "  - $w"; done
+    [[ $POPLOG_OVERALL -ne 0 ]] && printf '%s\n' "$POPLOG_AGENT/$POPLOG_JOB sub-run FAIL (exit $rc)" >> "$POPLOG_STATE_DIR/fail"
+    return 0
+  fi
+  if [[ -n "$POPLOG_HB_PID" ]]; then
+    pkill -P "$POPLOG_HB_PID" 2>/dev/null || true; kill "$POPLOG_HB_PID" 2>/dev/null || true
+    wait "$POPLOG_HB_PID" 2>/dev/null || true
+  fi
+  if [[ -s "$POPLOG_STATE_DIR/fail" ]]; then
+    POPLOG_OVERALL=1
+    while IFS= read -r w; do POPLOG_WARNINGS+=("$w"); done < "$POPLOG_STATE_DIR/fail"
+  fi
   {
     echo "===== POPLOG FOOTER ====="
     if [[ $POPLOG_OVERALL -eq 0 ]]; then echo "RESULT: PASS"; else echo "RESULT: FAIL (exit $rc)"; fi
