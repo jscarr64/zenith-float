@@ -227,7 +227,13 @@ impl ExactComplex {
         let bd = ExactNum::mul_ref(&self.im, &rhs.im, p, rm);
         let ad = self.re.mul(&rhs.im, p, rm);
         let bc = self.im.mul(&rhs.re, p, rm);
-        Self::new(ac.sub(&bd, p, rm), ad.add(&bc, p, rm))
+        // A product that rounded to a zero part is dropped by the zero-aware sum's flags.
+        let products_rounded = ac.inexact() || bd.inexact() || ad.inexact() || bc.inexact();
+        let mut r = Self::new(ac.sub(&bd, p, rm), ad.add(&bc, p, rm));
+        if products_rounded {
+            r.set_inexact(true);
+        }
+        r
     }
 
     /// `self / rhs` at precision `p`.
