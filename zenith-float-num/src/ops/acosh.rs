@@ -49,7 +49,7 @@ impl ExactNumNumber {
                 // acosh(x) = ln(2*x)
                 if self.exponent() == EXPONENT_MAX {
                     // ln(2) + ln(x)
-                    p_x += 2;
+                    p_x += 4; // ln2, ln x and their sum: below 3 ulps of p_x
 
                     let lnx = x.ln(p_x, RoundingMode::None, cc)?;
 
@@ -57,6 +57,9 @@ impl ExactNumNumber {
 
                     ln2.add(&lnx, p_x, RoundingMode::None)?
                 } else {
+                    // ln at p_x is within one p_x ulp and ln(2x) - acosh(x) = 1/(4x^2) + ... is far below it;
+                    // 3 guard bits keep the sum under the 2^-p_wrk the rounding test is told (it was 0).
+                    p_x += 3;
                     x.set_exponent(self.exponent() + 1);
 
                     let lnx = x.ln(p_x, RoundingMode::None, cc)?;
