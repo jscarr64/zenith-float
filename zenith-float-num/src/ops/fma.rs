@@ -43,19 +43,24 @@ impl ExactNumNumber {
         // that bit, so the full-width sum stays small (Horner / dot-product tails) and the
         // rounding and the inexact flag stay correct in every mode.
         // Exponents of the leading set bits: mantissas may carry leading zeros.
-        let e_prod =
-            prod.exponent() as i64 - (prod.mantissa_max_bit_len() as i64 - prod.precision() as i64);
-        let e_c = c.exponent() as i64 - (c.mantissa_max_bit_len() as i64 - c.precision() as i64);
+        // In i128: the two exponents can be almost 2^63 apart (a product below the subnormal grid and an
+        // addend near EXPONENT_MAX), and their difference would wrap in i64.
+        let e_prod = i128::from(prod.exponent())
+            - (prod.mantissa_max_bit_len() as i128 - prod.precision() as i128);
+        let e_c =
+            i128::from(c.exponent()) - (c.mantissa_max_bit_len() as i128 - c.precision() as i128);
         // The stand-in must lie below the rounding position of the result as well, not only below the
         // other term's last bit: a term of fewer than `p` bits has its last bit above that position,
         // and a stand-in there would cut the sum (1 - tiny keeps only the bits down to the stand-in).
-        let w_prod = (prod.mantissa_max_bit_len() as i64).max(p as i64);
-        let w_c = (c.mantissa_max_bit_len() as i64).max(p as i64);
-        let guard = 2 * WORD_BIT_SIZE as i64;
+        let w_prod = (prod.mantissa_max_bit_len() as i128).max(p as i128);
+        let w_c = (c.mantissa_max_bit_len() as i128).max(p as i128);
+        let guard = 2 * WORD_BIT_SIZE as i128;
         // A stand-in whose exponent would fall below the smallest exponent cannot be stored (the exponent
         // would wrap around to a huge positive one): both terms are then within a mantissa's width of the
         // bottom of the range and the full-width sum is small, so it is formed without a stand-in.
-        let min = EXPONENT_MIN as i64;
+        // Both stand-in exponents below are checked to be at least `min` and lie below a stored exponent, so they
+        // fit in `Exponent`.
+        let min = i128::from(EXPONENT_MIN);
         let mut sum = if e_prod - e_c > w_prod + guard && e_prod - w_prod - 2 >= min {
             let mut tiny = c.clone()?;
             tiny.set_exponent((e_prod - w_prod - 2) as Exponent);
