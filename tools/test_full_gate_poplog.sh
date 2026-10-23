@@ -28,7 +28,9 @@ fail=0
 [[ -n "$log" ]] || { echo "FAIL: full_gate.sh wrote no poplog"; exit 1; }
 grep -q '^commit:' "$log" || { echo "FAIL: no header"; fail=1; }
 grep -q 'STEP END build-debug verdict=FAIL .*run=0 passed=0' "$log" || { echo "FAIL: zero-test build-debug not FAIL"; fail=1; }
-grep -q 'SLOT TAKEN slot=1/4 .*CARGO_BUILD_JOBS=6 RUST_TEST_THREADS=6' "$log" || { echo "FAIL: gate did not take a popslot slot at 6 jobs"; fail=1; }
+# slot geometry: POPSLOT_SLOTS x POPSLOT_JOBS, default 8 x 4 (Jeff 2026-10-23: 32 cores); read from the env, not assumed
+ns=${POPSLOT_SLOTS:-8} nj=${POPSLOT_JOBS:-4}
+grep -q "SLOT TAKEN slot=1/$ns .*CARGO_BUILD_JOBS=$nj RUST_TEST_THREADS=$nj" "$log" || { echo "FAIL: gate did not take a popslot slot 1/$ns at $nj jobs: $(grep -m1 'SLOT TAKEN' "$log")"; fail=1; }
 # early mpfr-tests compile (Paul 2026-10-23, 6ab75ce prepublish): right after build-debug, cargo test --no-run with the feature
 grep -A3 'STEP END build-debug' "$log" | grep -q 'STEP START mpfr-tests-build' || { echo "FAIL: no mpfr-tests-build step right after build-debug"; fail=1; }
 # through tools/fresh_test_run.sh (Paul, one target dir per worktree): the --no-run build with JSON output, and no test run after it
