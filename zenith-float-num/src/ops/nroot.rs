@@ -123,13 +123,23 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(abs_self.mantissa_max_bit_len());
 
-        let ln = abs_self.ln(p_wrk + 12, RoundingMode::None, &mut cc)?;
-        let inv_n = n_num.reciprocal(p_wrk + 12, RoundingMode::None)?;
-        let mut x = ln.mul(&inv_n, p_wrk + 12, RoundingMode::None)?.exp(
-            p_wrk + 12,
-            RoundingMode::None,
-            &mut cc,
-        )?;
+        // Error bound. Let p_x = p_wrk + 12 and u = 2^-p_x. The start x0 = exp(ln(a) / n) is formed at p_s bits:
+        // |ln a| < 2^b with b = bitlen(|e|) + 1, so ln, 1/n and the product carry an absolute error below
+        // 3 * 2^b * 2^-p_s / n + 2^-p_s, and exp adds one relative ulp: x0 = r * (1 + d0), |d0| < 2^(b + 3 - p_s).
+        // One Newton step maps d0 to d1 = (n - 1) / 2 * d0^2 * (1 + O(d0)), below 2^(log2 n + 2(b + 3 - p_s)).
+        // With p_s = p_x + b + bitlen(n) + 4 that is below 2^-(p_x + 6) = u / 64. The step itself
+        // (powi < 2u, div, mul, add, div < u each) adds below 6u, so the total is below 7u < 2^12 * 2^-p_x,
+        // which is the 2^-p_wrk relative error `try_set_precision(p, rm, p_wrk)` is told. Later iterations
+        // start from the previous step at a higher p_wrk, with an even smaller d0.
+        let e_abs = (abs_self.exponent() as i64).unsigned_abs();
+        let b = (u64::BITS - e_abs.leading_zeros()) as usize + 1;
+        let n_bits = (usize::BITS - n.leading_zeros()) as usize;
+        let p_s = p_wrk + 12 + b + n_bits + 4;
+        let ln = abs_self.ln(p_s, RoundingMode::None, &mut cc)?;
+        let inv_n = n_num.reciprocal(p_s, RoundingMode::None)?;
+        let mut x =
+            ln.mul(&inv_n, p_s, RoundingMode::None)?
+                .exp(p_s, RoundingMode::None, &mut cc)?;
 
         loop {
             let p_x = p_wrk + 12;
