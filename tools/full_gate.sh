@@ -56,6 +56,9 @@ run() {
   tests=""; [[ "$TEST_STEPS" == *" $name "* ]] && tests=--tests
   log_step_end "$name" "$rc" "$T/$tag-$name.log" "$tests" || true
   echo "  output: $T/$tag-$name.log" >> "$POPLOG_FILE"
+  # forward the step's test-binary and summary lines to stdout (full output stays in $T) so a wrapping
+  # fresh_test_run.sh (CMD... mode) sees which binaries ran and checks they lie inside CARGO_TARGET_DIR
+  grep -E '^ *Running .*\(/[^)]*\)$|^test result: ' "$T/$tag-$name.log" || true
 }
 ORACLES="--test oracle --test specials_oracle --test methods_oracle --test accuracy_table --test elliptic_phi"
 run target-dir "tools/fresh_test_run_selftest.sh && tools/fresh_test_run.sh --claim"
