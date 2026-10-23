@@ -107,10 +107,11 @@ poplog_init() {
   POPLOG_T0=$(date +%s)
   local day; day=$(date +%F)
   mkdir -p "$POPLOG_ROOT/$POPLOG_AGENT/$day"
-  POPLOG_FILE=${POPLOG_FILE:-$POPLOG_ROOT/$POPLOG_AGENT/$day/$(date +%H%M)-$POPLOG_JOB.log}
+  # nested runs (poprun -> full_gate.sh) get their own log; never reuse an inherited POPLOG_FILE
+  POPLOG_FILE=$POPLOG_ROOT/$POPLOG_AGENT/$day/$(date +%H%M)-$POPLOG_JOB.log
   [[ -e "$POPLOG_FILE" ]] && POPLOG_FILE="${POPLOG_FILE%.log}-$$.log"
   POPLOG_STATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/poplog.XXXXXX")
-  POPLOG_PROGRESS_FILE=${POPLOG_PROGRESS_FILE:-$POPLOG_STATE_DIR/progress}
+  POPLOG_PROGRESS_FILE=$POPLOG_STATE_DIR/progress
   export POPLOG_FILE POPLOG_PROGRESS_FILE
   : > "$POPLOG_STATE_DIR/out"; echo '-' > "$POPLOG_STATE_DIR/step"
   local sha='(not a git repo)'
