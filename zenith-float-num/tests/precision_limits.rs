@@ -60,5 +60,8 @@ fn precision_alias_reports_precisions() {
     let x = zenith_float_num::ExactNum::from_u8(3, zenith_float_num::DEFAULT_P);
     let p: Option<zenith_float_num::Precision> = x.precision();
     let m: Option<zenith_float_num::Precision> = x.mantissa_max_bit_len();
-    assert!(p == Some(zenith_float_num::DEFAULT_P) && m == p, "{p:?} {m:?}");
+    assert!(
+        p == Some(zenith_float_num::DEFAULT_P) && m == p,
+        "{p:?} {m:?}"
+    );
 }
