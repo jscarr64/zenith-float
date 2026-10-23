@@ -762,3 +762,27 @@ fn run_compare_ops(
     }
     Ok(())
 }
+
+/// `run_compare_ops` widens MPFR's global exponent range; it must put back
+/// whatever range the caller had, or later tests on the same thread see it.
+#[test]
+fn run_compare_ops_restores_the_mpfr_exponent_range() -> Result<(), Box<dyn std::error::Error>> {
+    let outer = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+    unsafe {
+        mpfr::set_emin(-1000);
+        mpfr::set_emax(1000);
+    }
+    let res = run_compare_ops(1, 1, 1);
+    let after = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+    unsafe {
+        mpfr::set_emin(outer.0);
+        mpfr::set_emax(outer.1);
+    }
+    res?;
+    assert_eq!(
+        after,
+        (-1000, 1000),
+        "MPFR exponent range leaked by run_compare_ops"
+    );
+    Ok(())
+}
