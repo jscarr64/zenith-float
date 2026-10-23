@@ -29,13 +29,11 @@ CASES=(
 for c in "${CASES[@]}"; do
   IFS='|' read -r step tool pfile pline <<< "$c"
   cmd="$(step_cmd "$step")"
-  for _ in once; do
-    for rc in 127 2; do
-      stub "$t/bin-$tool-$rc" "$tool" "$rc"
-      if (cd "$root" && PATH="$t/bin-$tool-$rc:$PATH" bash -c "$cmd") >/dev/null 2>&1; then
-        fail "$step passes when $tool exits $rc"
-      fi
-    done
+  for rc in 127 2; do
+    stub "$t/bin-$tool-$rc" "$tool" "$rc"
+    if (cd "$root" && PATH="$t/bin-$tool-$rc:$PATH" bash -c "$cmd") >/dev/null 2>&1; then
+      fail "$step passes when $tool exits $rc"
+    fi
   done
   (cd "$root" && bash -c "$cmd") >/dev/null 2>&1 || fail "$step fails on the clean tree"
   copy="$t/copy-$step"
