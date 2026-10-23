@@ -20,16 +20,6 @@ const RM: RoundingMode = RoundingMode::ToEven;
 
 /// Results that differ from MPFR today; each fix removes its entries.
 const KNOWN_WRONG: &[&str] = &[
-    // x^±Inf: the sign of x and of the exponent are ignored
-    "pow(+0, -Inf)",
-    "pow(-0, -Inf)",
-    "pow(-0.5, -Inf)",
-    "pow(-1, +Inf)",
-    "pow(-1, -Inf)",
-    "pow(-2, +Inf)",
-    "pow(-3, +Inf)",
-    "pow(0.5, -Inf)",
-    "pow(2, -Inf)",
     // (-Inf)^(negative odd integer) is -0
     "pow(-Inf, -1)",
     "pow(-Inf, -3)",
