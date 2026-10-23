@@ -948,4 +948,147 @@ fn log10_over_the_whole_range() -> Res {
         |x, p, rm, cc| x.log10(p, rm, cc),
         |r, a, rd| r.assign_round(a.log10_ref(), rd),
     )
+// ---------------------------------------------------------------------------------------------
+// pow with exact results (1.0.12: `pow(2, 2)` was flagged inexact in `ToEven` and `NaN` in `Up`)
+// ---------------------------------------------------------------------------------------------
+
+/// `m * 2^k` as a pair, with a sign: the operands of the `pow` sweeps.
+type Operand = (u64, i64, bool);
+
+/// Bases whose small powers are exact (2, 4, 8, 16, 3, 9, 27, 5, 25, 7, 10, 1.5, 0.5, 0.25) and a few that are not
+/// exact powers of anything small; with a sign for the integer exponents.
+const POW_BASES: [Operand; 14] = [
+    (1, 1, false),
+    (1, 2, false),
+    (1, 3, false),
+    (1, 4, false),
+    (3, 0, false),
+    (9, 0, false),
+    (27, 0, false),
+    (5, 0, false),
+    (25, 0, false),
+    (7, 0, false),
+    (10, 0, false),
+    (3, -1, false),
+    (1, -1, false),
+    (1, -2, false),
+];
+
+fn pow_exponents() -> Vec<Operand> {
+    let mut v: Vec<Operand> = Vec::new();
+    for i in 1..=8u64 {
+        v.push((i, 0, false));
+        v.push((i, 0, true));
+    }
+    // half-integers and quarter-integers: 0.5 .. 8.5 and 0.25 .. 4.75, positive and negative
+    for i in 0..=8u64 {
+        v.push((2 * i + 1, -1, false));
+        v.push((2 * i + 1, -1, true));
+    }
+    for i in 0..=4u64 {
+        v.push((4 * i + 1, -2, false));
+        v.push((4 * i + 3, -2, true));
+    }
+    v
+}
+
+fn pow_sweep(run: &mut Run, bases: &[Operand], exponents: &[Operand], precisions: &[usize]) {
+    use rug::ops::Pow;
+    for &(bm, bk, bneg) in bases {
+        for &(em, ek, eneg) in exponents {
+            let (x, n) = (zf(bm, bk, bneg), zf(em, ek, eneg));
+            let (fx, fn_) = (mp(bm, bk, bneg), mp(em, ek, eneg));
+            for &p in precisions {
+                for rm in MODES {
+                    let got = x.pow(&n, p, rm, &mut run.cc);
+                    let info = format!(
+                        "pow({}{bm} 2^{bk}, {}{em} 2^{ek})",
+                        if bneg { "-" } else { "" },
+                        if eneg { "-" } else { "" }
+                    );
+                    run.check(&got, p, rm, &info, |r, rnd| {
+                        ternary(r.assign_round(Pow::pow(&fx, &fn_), round_of(rnd)))
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Exact results (`2^2`, `2^-3`, `4^0.5`, `9^1.5`, `16^0.25`, `1.5^2`) are exact in every mode and carry no
+/// inexact flag; the inexact ones (`2^2.5`, `3^0.5`, `10^-2`) are correctly rounded.
+#[test]
+fn pow_of_exact_and_small_cases() -> Res {
+    let mut run = Run::new(true)?;
+    let precisions = [1usize, 2, 3, 5, 24, 53, 64, 65, 128, 200, 256];
+    pow_sweep(&mut run, &POW_BASES, &pow_exponents(), &precisions);
+    run.finish("pow small exact", 1000);
+    Ok(())
+}
+
+/// The same at larger precisions for a few bases and exponents.
+#[test]
+fn pow_of_exact_and_small_cases_at_large_precision() -> Res {
+    let mut run = Run::new(true)?;
+    let bases = [POW_BASES[0], POW_BASES[4], POW_BASES[1]];
+    let exps: Vec<Operand> = vec![
+        (2, 0, false),
+        (2, 0, true),
+        (3, 0, false),
+        (3, 0, true),
+        (1, -1, false),
+        (5, -1, false),
+        (5, -1, true),
+        (3, -1, false),
+        (3, -2, false),
+    ];
+    pow_sweep(&mut run, &bases, &exps, &[1024, 4096]);
+    run.finish("pow large precision", 100);
+    Ok(())
+}
+
+/// Negative bases with integer exponents: the sign and the exact result.
+#[test]
+fn pow_of_a_negative_base_with_an_integer_exponent() -> Res {
+    let mut run = Run::new(true)?;
+    let bases = [(1u64, 1i64, true), (3, 0, true), (5, 0, true), (3, -1, true)];
+    let exps: Vec<Operand> = pow_exponents()
+        .into_iter()
+        .filter(|&(_, k, _)| k == 0)
+        .collect();
+    pow_sweep(&mut run, &bases, &exps, &[1, 24, 64, 65, 128, 256]);
+    run.finish("pow negative base", 500);
+    Ok(())
+}
+
+/// The reported case: `pow(2, +-2)` and `pow(2, +-3)` (1.0.12: inexact in `ToEven`, `NaN` in `Up`), at 64 and 256 bits.
+#[test]
+fn pow_of_two_to_small_integers() -> Res {
+    let mut run = Run::new(true)?;
+    let exps: Vec<Operand> = vec![(2, 0, false), (2, 0, true), (3, 0, false), (3, 0, true)];
+    pow_sweep(&mut run, &[POW_BASES[0]], &exps, &[64, 256]);
+    run.finish("pow 2^n", 40);
+    Ok(())
+}
+
+/// Exact quarter powers: `16^(k/4)`, `81^(k/4)`, `256^(k/4)`, `625^(k/4)` for odd `k`, both signs (`16^0.75 = 8`,
+/// `81^-0.25 = 1/3`, ...). Exact results carry no inexact flag in any mode; the inexact ones (`81^(-1/4)` = 1/3 at
+/// a finite precision) are correctly rounded.
+#[test]
+fn pow_of_exact_quarter_powers() -> Res {
+    let mut run = Run::new(true)?;
+    let bases: [Operand; 4] = [(1, 4, false), (81, 0, false), (1, 8, false), (625, 0, false)];
+    let mut exps: Vec<Operand> = Vec::new();
+    for k in [1u64, 3, 5, 7, 9, 11] {
+        exps.push((k, -2, false));
+        exps.push((k, -2, true));
+    }
+    pow_sweep(
+        &mut run,
+        &bases,
+        &exps,
+        &[1, 2, 3, 24, 53, 64, 65, 128, 256],
+    );
+    run.finish("pow exact quarter powers", 2000);
+    Ok(())
 }
