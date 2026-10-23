@@ -11,6 +11,9 @@ impl ExactNumNumber {
     ///
     /// Uses the same working precision as `sin`/`cos`/`tan` before modular reduction.
     pub fn rem_pi(&self, p: usize, _rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        if p < crate::defs::MIN_PRECISION {
+            return Err(Error::InvalidArgument);
+        }
         let p = round_p(p);
         let add_p = (3 - TRIG_EXP_THRES) as usize;
         let p_x = p.max(self.mantissa_max_bit_len()).saturating_add(add_p);

@@ -297,6 +297,9 @@ fn exact_num_entry_points_reject_precision_zero() -> Result<(), Error> {
     if !bad(&x().polylog(3, 0, rm, &mut cc)) {
         accepted.push("polylog");
     }
+    if !bad(&x().rem_pi(0, rm, &mut cc)) {
+        accepted.push("rem_pi");
+    }
     assert!(accepted.is_empty(), "accepted p = 0: {accepted:?}");
     Ok(())
 }
