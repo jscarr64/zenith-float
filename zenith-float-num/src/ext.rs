@@ -786,16 +786,14 @@ impl ExactNum {
                         rm,
                     ),
                     Flavor::Inf(s2) => {
-                        // v1^inf
-                        let val = v1.cmp(&crate::common::consts::ONE);
-                        if val > 0 {
-                            ExactNum {
-                                inner: Flavor::Inf(*s2),
-                            }
-                        } else if val < 0 {
-                            Self::new(p)
-                        } else {
+                        // v1^(+-inf) as in IEEE 754 / MPFR: decided by |v1| against 1, whatever the sign of v1.
+                        let val = v1.abs_cmp(&crate::common::consts::ONE);
+                        if val == 0 {
                             Self::from_u8(1, p)
+                        } else if (val > 0) == s2.is_positive() {
+                            INF_POS
+                        } else {
+                            Self::new(p)
                         }
                     }
                     Flavor::NaN(err) => Self::nan(*err),
