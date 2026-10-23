@@ -301,3 +301,58 @@ fn add_sub_full_prec_are_exact() -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+
+/// nth_root's Newton start comes from exp(ln(x) / n): at wide exponents and large `n` its error is
+/// the largest, so these are the inputs where an unproven start would show (property test).
+#[test]
+fn nth_root_wide_exponents_and_large_n() -> Result<(), Box<dyn std::error::Error>> {
+    reset_test_rng();
+    let mut cc = Consts::new()?;
+    for p in [64usize, 128, 256, 512] {
+        let mut xs = Vec::new();
+        for (elo, ehi) in [(1_000_000, 1_000_000_000), (-1_000_000_000, -1_000_000), (-3, 3)] {
+            for _ in 0..3 {
+                xs.push(input(p, elo, ehi, false)?);
+            }
+        }
+        for x in &xs {
+            let fx = conv_to_mpfr(storage(p), x, &mut cc)?;
+            for n in [4usize, 5, 7, 1000, 65_537, 1 << 40] {
+                for rm in MODES {
+                    let got = x.nth_root(n, p, rm);
+                    let info = format!("nth_root({n}) p={p} {rm:?} {x:?}");
+                    check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                        mpfr::rootn_ui(r.as_raw_mut(), fx.as_raw(), n as _, rnd)
+                    })?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// acosh(x) for x above 2^(2p) takes the ln(2x) branch (property test at the branch).
+#[test]
+fn acosh_ln2x_branch() -> Result<(), Box<dyn std::error::Error>> {
+    reset_test_rng();
+    let mut cc = Consts::new()?;
+    for p in PRECISIONS.into_iter().chain(P14_PRECISIONS) {
+        let lo = 2 * storage(p) as i32 + 140;
+        let mut xs = Vec::new();
+        for _ in 0..12 {
+            xs.push(input(p, lo, lo + 3000, false)?);
+        }
+        xs.push(input(p, 1_000_000, 1_000_000_000, false)?);
+        for x in &xs {
+            let fx = conv_to_mpfr(storage(p), x, &mut cc)?;
+            for rm in MODES {
+                let got = x.acosh(p, rm, &mut cc);
+                let info = format!("acosh p={p} {rm:?} {x:?}");
+                check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
+                    mpfr::acosh(r.as_raw_mut(), fx.as_raw(), rnd)
+                })?;
+            }
+        }
+    }
+    Ok(())
+}
