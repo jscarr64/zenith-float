@@ -32,9 +32,12 @@ fn mp_ln_10(r: &mut Float, rnd: mpfr::rnd_t) -> i32 {
     unsafe { mpfr::log(r.as_raw_mut(), ten.as_raw(), rnd) }
 }
 
+/// An MPFR constant (or constant-like value) at the precision of `r`.
+type MpConst = fn(&mut Float, mpfr::rnd_t) -> i32;
+
 #[test]
 fn consts_round_at_exactly_p_bits() -> Res {
-    let table: [(&str, ZfConst, fn(&mut Float, mpfr::rnd_t) -> i32); 4] = [
+    let table: [(&str, ZfConst, MpConst); 4] = [
         ("pi", Consts::pi, mp_pi),
         ("ln_2", Consts::ln_2, mp_ln_2),
         ("e", Consts::e, mp_e),
