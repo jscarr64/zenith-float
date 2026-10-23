@@ -11,7 +11,7 @@ fn neg_of(x: &ExactNum) -> ExactNum {
     ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
 }
 
-fn with_exp(mut x: ExactNum, e: i32) -> ExactNum {
+fn with_exp(mut x: ExactNum, e: zenith_float_num::Exponent) -> ExactNum {
     x.set_exponent(e);
     x
 }

@@ -1,4 +1,4 @@
-//! The exponent range is `i32::MIN..=i32::MAX` on every target (2.0.0 audit, defect 4).
+//! The exponent range is `-(2^62 - 1)..=2^62 - 1` on every target (2.0.0 audit, defect 4; widened from `i32`).
 //! Run on a 32-bit target (`scripts/ci_hex_32bit.sh`, `i686-unknown-linux-musl`) as well as
 //! on the host: results near both limits must be the same on both.
 
@@ -27,23 +27,23 @@ fn signed(x: ExactNum, negative: bool) -> ExactNum {
 }
 
 #[test]
-fn limits_are_i32_bounds() {
-    assert_eq!(EXPONENT_MAX, i32::MAX);
-    assert_eq!(EXPONENT_MIN, i32::MIN);
+fn limits_are_62_bit_bounds() {
+    assert_eq!(EXPONENT_MAX, (1i64 << 62) - 1);
+    assert_eq!(EXPONENT_MIN, -((1i64 << 62) - 1));
     for p in precisions() {
         assert_eq!(
             ExactNum::max_value(p).exponent(),
-            Some(i32::MAX),
+            Some(EXPONENT_MAX),
             "max_value({p})"
         );
         assert_eq!(
             ExactNum::min_positive(p).exponent(),
-            Some(i32::MIN),
+            Some(EXPONENT_MIN),
             "min_positive({p})"
         );
         assert_eq!(
             ExactNum::min_positive_normal(p).exponent(),
-            Some(i32::MIN),
+            Some(EXPONENT_MIN),
             "min_positive_normal({p})"
         );
     }

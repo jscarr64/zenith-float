@@ -1,5 +1,6 @@
 //! Arbitrary-precision signed integers on `Word` limbs.
 
+use crate::defs::Exponent;
 use crate::common::util::add_carry;
 use crate::common::util::sub_borrow;
 use crate::defs::DoubleWord;
@@ -389,7 +390,7 @@ impl ExactInt {
         let work = p.max(self.bit_length()).saturating_add(WORD_BIT_SIZE);
         let mut acc = ExactNum::from_u8(0, work);
         for &limb in self.limbs.iter().rev() {
-            acc = acc.ldexp(WORD_BIT_SIZE as i32, work, RoundingMode::None);
+            acc = acc.ldexp(WORD_BIT_SIZE as Exponent, work, RoundingMode::None);
             acc = acc.add(&ExactNum::from_word(limb, work), work, RoundingMode::None);
         }
         if self.sign == Sign::Neg {
@@ -452,7 +453,7 @@ impl ExactInt {
             return Some(Self::zero());
         }
         let p = x.precision().unwrap_or(DEFAULT_P).max(WORD_BIT_SIZE + 8);
-        let two_w = ExactNum::from_u8(1, p).ldexp(WORD_BIT_SIZE as i32, p, RoundingMode::None);
+        let two_w = ExactNum::from_u8(1, p).ldexp(WORD_BIT_SIZE as Exponent, p, RoundingMode::None);
         let sign = if x.is_negative() { Sign::Neg } else { Sign::Pos };
         // The lowest limb is the integer part of `x mod 2^w` (the remainder keeps the sign of `x`, and the
         // limb is read from its magnitude); the rest comes from the truncated quotient.

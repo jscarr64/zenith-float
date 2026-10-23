@@ -39,13 +39,17 @@ pub type SignedWord = i64;
 const _: [(); 1] = [(); (core::mem::size_of::<Word>() <= core::mem::size_of::<usize>()) as usize];
 
 /// An exponent.
-pub type Exponent = i32;
+///
+/// 64 bits since 2.0 (was `i32`). The range is `±(2^62 - 1)`, MPFR's widest range on LP64 targets, which
+/// leaves two bits of headroom so that the sum or difference of two exponents (plus a precision) never
+/// overflows `i64`.
+pub type Exponent = i64;
 
-/// Maximum exponent value. The same on every target.
-pub const EXPONENT_MAX: Exponent = Exponent::MAX;
+/// Maximum exponent value: `2^62 - 1`. The same on every target.
+pub const EXPONENT_MAX: Exponent = (1 << 62) - 1;
 
-/// Minimum exponent value. The same on every target.
-pub const EXPONENT_MIN: Exponent = Exponent::MIN;
+/// Minimum exponent value: `-(2^62 - 1)`. The same on every target.
+pub const EXPONENT_MIN: Exponent = -EXPONENT_MAX;
 
 /// Exponent of the smallest positive normal number (leading mantissa bit set).
 ///
@@ -60,15 +64,23 @@ pub const MIN_PRECISION: usize = 1;
 
 /// Largest accepted precision in bits; anything above it is rejected with `Error::InvalidArgument`.
 ///
-/// Exponent arithmetic is done in `i64` and sizes in `usize` (32 bits on some targets), so the
-/// limit is the smaller of `i64::MAX / 2 + EXPONENT_MIN` and `usize::MAX / 4`, minus one.
+/// `min(2^60, usize::MAX / 4) - 1`: `2^60 - 1` on 64-bit targets, so that an exponent plus or minus a
+/// precision stays inside `±2^62` (see [`crate::defs`] exponent helpers), and
+/// `2^30 - 1` on 32-bit targets, where sizes are 32-bit `usize`.
 /// Allocating a mantissa this large still fails with `Error::MemoryAllocation` on real hardware.
 pub const MAX_PRECISION: usize = {
-    let by_exponent = (i64::MAX / 2 + EXPONENT_MIN as i64) as u64;
+    let by_exponent: u64 = 1 << 60;
     let by_size = (usize::MAX / 4) as u64;
     let lim = if by_exponent < by_size { by_exponent } else { by_size };
     (lim - 1) as usize
 };
+
+const _: () = assert!(
+    (MAX_PRECISION as u128) + 1 == if (1u128 << 60) < (usize::MAX / 4) as u128 { 1u128 << 60 } else { (usize::MAX / 4) as u128 }
+);
+// Two exponents add without overflow, and so do an exponent and twice a precision.
+const _: () = assert!(EXPONENT_MAX as i128 * 2 <= i64::MAX as i128);
+const _: () = assert!(EXPONENT_MAX as i128 + MAX_PRECISION as i128 * 2 <= i64::MAX as i128);
 
 /// Maximum value of a word.
 pub const WORD_MAX: Word = Word::MAX;

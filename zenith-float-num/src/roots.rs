@@ -1,5 +1,6 @@
 //! Scalar real root finders on [`ExactNum`].
 
+use crate::defs::Exponent;
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
 use crate::ExactNum;
@@ -33,7 +34,7 @@ fn below_tol(x: &ExactNum, tol: &ExactNum) -> bool {
 
 /// Suggested absolute tolerance `2^{ROOT_DEFAULT_TOL}` at precision `p`.
 pub fn root_default_tol(p: usize, rm: RoundingMode) -> ExactNum {
-    ExactNum::from_u8(1, p).ldexp(ROOT_DEFAULT_TOL, p, rm)
+    ExactNum::from_u8(1, p).ldexp(Exponent::from(ROOT_DEFAULT_TOL), p, rm)
 }
 
 fn bisect_counted<F>(
@@ -295,7 +296,7 @@ where
     } else {
         ExactNum::div_ref(tol, &two, wrk, none)
     };
-    let eps2 = ExactNum::from_u8(1, wrk).ldexp(1 - wrk as i32, wrk, none);
+    let eps2 = ExactNum::from_u8(1, wrk).ldexp(1 - wrk as Exponent, wrk, none);
     let mut fa = f(&a, wrk, none, cc);
     let mut fb = f(&b, wrk, none, cc);
     if !opposite_signs(&fa, &fb) {

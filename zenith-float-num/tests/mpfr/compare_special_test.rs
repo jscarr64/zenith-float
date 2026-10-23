@@ -5,6 +5,7 @@
 
 use std::ops::Add;
 use std::ops::Neg;
+use crate::mpfr::common::{RAND_EMAX, RAND_EMIN};
 
 use crate::mpfr::common::{
     assert_float_close, conv_to_mpfr, get_last_zero, get_near_one, get_oned_sides, get_oned_zeroed,
@@ -14,7 +15,6 @@ use crate::mpfr::common::{
 use crate::mpfr::common::{draw_seed, get_prec_rng, rebuild_from_seed, test_zf_op};
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
 use rug::{
-    float::{exp_max, exp_min},
     Float,
 };
 use zenith_float_num::{
@@ -54,8 +54,8 @@ fn run_compare_special(
         mpfr::set_emax(EXPONENT_MAX as exp_t);
     }
 
-    assert_eq!(EXPONENT_MIN, exp_min());
-    assert_eq!(EXPONENT_MAX, exp_max());
+    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
+    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
 
     let mpfr_one = Float::with_val(64, 1);
 
@@ -64,8 +64,8 @@ fn run_compare_special(
         let p2 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
         let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
         let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
-        let emin = EXPONENT_MIN / ediv;
-        let emax = EXPONENT_MAX / ediv;
+        let emin = RAND_EMIN / ediv;
+        let emax = RAND_EMAX / ediv;
 
         let (rm, rnd) = get_random_rnd_pair();
 
@@ -228,12 +228,43 @@ fn run_compare_special(
                 (n, p, rm, "log10"),
                 cc
             );
+            // MPFR's small-argument shortcuts compute -2 EXP(x), which wraps for exponents near its
+            // emin_min (= EXPONENT_MIN), and then size a buffer from it. Below the former 32-bit
+            // band the unary functions that follow take their operand at the band's bottom instead;
+            // i64_edges covers the 62-bit edges of the arithmetic.
+            let n_low;
+            let f_low;
+            let (n, f) = if n.exponent().is_some_and(|e| e < RAND_EMIN) {
+                let mut m = n.clone();
+                m.set_exponent(RAND_EMIN);
+                f_low = conv_to_mpfr(p1, &m, &mut cc)?;
+                n_low = m;
+                (&n_low, f_low)
+            } else {
+                (n, f)
+            };
             if !n.is_zero()
                 && !n.is_subnormal()
                 && !n.is_inf()
                 && !n.is_nan()
                 && n.exponent().unwrap_or(EXPONENT_MIN) > EXPONENT_MIN
             {
+            if n.exponent() == Some(EXPONENT_MAX) {
+                // MPFR's asinh loses ln 2 at its largest exponent (its 2x overflows):
+                // asinh(x) = sign(x) (ln 2 + ln |x|) there, to far below the last bit.
+                let r = if n.is_negative() {
+                    let mirrored = match rnd {
+                        mpfr::rnd_t::RNDU => mpfr::rnd_t::RNDD,
+                        mpfr::rnd_t::RNDD => mpfr::rnd_t::RNDU,
+                        other => other,
+                    };
+                    -big_log_ref(&Float::with_val(f.prec(), f.abs_ref()), p, mirrored)
+                } else {
+                    big_log_ref(&f, p, rnd)
+                };
+                let n3 = n.asinh(p, rm, &mut cc);
+                assert_float_close(n3, r, p, &format!("{:?}", (&n, p, rm, "asinh max")), false, &mut cc)?;
+            } else {
                 test_zf_op!(
                     false,
                     n,
@@ -246,6 +277,7 @@ fn run_compare_special(
                     (n, p, rm, "asinh"),
                     cc
                 );
+            }
             }
             test_zf_op!(true, n, atan, f, atan, p, rm, rnd, (n, p, rm, "atan"), cc);
 
@@ -313,6 +345,13 @@ fn run_compare_special(
             test_zf_op!(true, n, cosh, f, cosh, p, rm, rnd, (n, p, rm, "cosh"), cc);
             test_zf_op!(true, n, tanh, f, tanh, p, rm, rnd, (n, p, rm, "tanh"), cc);
 
+            if n.exponent() == Some(EXPONENT_MAX) && n.is_positive() {
+                // MPFR's acosh loses ln 2 at its largest exponent (its 2x overflows):
+                // acosh(x) = ln 2 + ln x there, to far below the last bit.
+                let r = big_log_ref(&f, p, rnd);
+                let n3 = n.acosh(p, rm, &mut cc);
+                assert_float_close(n3, r, p, &format!("{:?}", (&n, p, rm, "acosh max")), true, &mut cc)?;
+            } else {
             test_zf_op!(
                 true,
                 n,
@@ -325,6 +364,7 @@ fn run_compare_special(
                 (n, p, rm, "acosh"),
                 cc
             );
+            }
 
             test_zf_op!(true, n, acos, f, acos, p, rm, rnd, (n, p, rm, "acos"), cc);
             test_zf_op!(true, n, asin, f, asin, p, rm, rnd, (n, p, rm, "asin"), cc);
@@ -366,14 +406,16 @@ fn run_compare_special(
     for _ in 0..run_cnt {
         let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
         let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
-        let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
+        // The former 32-bit band: MPFR's sin reduction sizes pi by the exponent, so 62-bit
+        // exponents would ask it for exabytes.
+        let ediv: Exponent = 1 << (test_random::<u32>() % 31);
 
         let (rm, rnd) = get_random_rnd_pair();
         let (rm2, _) = get_random_rnd_pair();
 
         let mut n = cc.pi(p1, rm2);
-        let e = test_random::<usize>() % (10 + EXPONENT_MAX as usize / ediv);
-        n.set_exponent(((EXPONENT_MIN as usize / ediv) as isize + e as isize) as Exponent);
+        let e = test_random::<u64>() % (10 + (RAND_EMAX / ediv) as u64);
+        n.set_exponent(RAND_EMIN / ediv + e as Exponent);
 
         let f = conv_to_mpfr(p1, &n, &mut cc)?;
 
@@ -384,4 +426,18 @@ fn run_compare_special(
         test_zf_op!(true, n, tan, f, tan, p, rm, rnd, (n, p, rm, "tan"), cc);
     }
     Ok(())
+}
+
+/// `ln 2 + ln x` rounded to `p` bits by `rnd`, from a 256-bit-wider evaluation.
+fn big_log_ref(f: &Float, p: usize, rnd: mpfr::rnd_t) -> Float {
+    let wp = p as u32 + 256;
+    let mut l = Float::with_val(wp, 0);
+    let mut two = Float::with_val(wp, 2);
+    unsafe {
+        mpfr::log(l.as_raw_mut(), f.as_raw(), mpfr::rnd_t::RNDN);
+        mpfr::log(two.as_raw_mut(), two.as_raw(), mpfr::rnd_t::RNDN);
+    }
+    let mut r = Float::with_val(p as u32, 0);
+    unsafe { mpfr::add(r.as_raw_mut(), l.as_raw(), two.as_raw(), rnd) };
+    r
 }

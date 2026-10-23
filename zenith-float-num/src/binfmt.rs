@@ -249,7 +249,7 @@ fn write_inline(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     dest[1] = BINARY_FORMAT_VERSION;
     dest[2] = u8::try_from(n_sig).map_err(|_| Error::InvalidArgument)?;
     dest[3] = u8::from(inexact);
-    dest[4..8].copy_from_slice(&exp.to_be_bytes());
+    dest[4..8].copy_from_slice(&exp_field(exp)?.to_be_bytes());
     let mut tmp = [0u32; BINARY_INLINE_U32_WORDS];
     words_to_u32(m, &mut tmp)?;
     put_u32_be(&mut dest[8..12], tmp[0]);
@@ -301,7 +301,7 @@ fn write_num(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     dest[0] = if sign == Sign::Neg { BINARY_FLAG_HEAP_NEG } else { BINARY_FLAG_HEAP_POS };
     dest[1] = BINARY_FORMAT_VERSION;
     dest[3] = u8::from(inexact);
-    dest[4..8].copy_from_slice(&exp.to_be_bytes());
+    dest[4..8].copy_from_slice(&exp_field(exp)?.to_be_bytes());
     put_u32_be(&mut dest[8..12], u32_from_usize(n_sig)?);
     put_u32_be(&mut dest[12..16], u32_from_usize(n_u32)?);
     let mut limb = [0u32; 2];
@@ -363,7 +363,7 @@ fn decode_inline_finite(bytes: &[u8], flag: u8) -> Result<(ExactNum, usize), Err
             .map_err(|_| Error::InvalidArgument)?,
     );
     let sign = if flag == BINARY_FLAG_NEG { Sign::Neg } else { Sign::Pos };
-    let x = finite_from_u32(&[u0, u1], n_sig, sign, exp, inexact)?;
+    let x = finite_from_u32(&[u0, u1], n_sig, sign, Exponent::from(exp), inexact)?;
     Ok((x, BINARY_INLINE_LEN))
 }
 
@@ -401,8 +401,13 @@ fn decode_heap(bytes: &[u8], flag: u8) -> Result<(ExactNum, usize), Error> {
         off += U32_BYTES;
     }
     let sign = if flag == BINARY_FLAG_HEAP_NEG { Sign::Neg } else { Sign::Pos };
-    let x = finite_from_u32(&u32s, n_sig, sign, exp, inexact)?;
+    let x = finite_from_u32(&u32s, n_sig, sign, Exponent::from(exp), inexact)?;
     Ok((x, need))
+}
+
+/// Format v1 stores the exponent as a 4-byte field; exponents outside `i32` cannot be encoded.
+fn exp_field(exp: Exponent) -> Result<i32, Error> {
+    i32::try_from(exp).map_err(|_| Error::InvalidArgument)
 }
 
 fn finite_from_u32(

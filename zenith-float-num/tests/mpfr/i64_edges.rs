@@ -5,6 +5,7 @@
 //! compared in a space scaled by `2^SHIFT` (see `mpfr_reference_shifted`), because MPFR cannot hold
 //! the subnormal grid `2^(EXPONENT_MIN - p)` below its own `emin_min`.
 
+use crate::mpfr::common::{show_mp, with_full_range};
 use crate::mpfr::common::{emulated_range_ok, exact_mpfr_shifted, mpfr_reference_shifted};
 use crate::mpfr::exact_bit_functions::MODES;
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
@@ -54,9 +55,16 @@ fn half_at(p: usize, e: i64) -> Result<ExactNum, Box<dyn std::error::Error>> {
 }
 
 /// zenith result vs MPFR reference, both in the space scaled by `2^shift`.
+fn show_zf(x: &ExactNum) -> String {
+    match x.as_raw_parts() {
+        Some((w, n, s, e, inx)) => format!("{s:?} {w:x?} n={n} e={e} inexact={inx}"),
+        None => format!("special nan={} inf={}", x.is_nan(), x.is_inf()),
+    }
+}
+
 fn same(got: &ExactNum, want: &Float, inexact: bool, shift: i64, info: &str) -> Res {
     if want.is_infinite() {
-        assert!(got.is_inf(), "{info}: MPFR {want}, zenith {got:?}");
+        assert!(got.is_inf(), "{info}: MPFR {}, zenith {}", show_mp(want), show_zf(got));
         assert_eq!(
             got.is_negative(),
             want.is_sign_negative(),
@@ -66,10 +74,10 @@ fn same(got: &ExactNum, want: &Float, inexact: bool, shift: i64, info: &str) -> 
     }
     assert!(
         !got.is_nan() && !got.is_inf(),
-        "{info}: MPFR {want}, zenith {got:?}"
+        "{info}: MPFR {}, zenith {}", show_mp(want), show_zf(got)
     );
     if want.is_zero() {
-        assert!(got.is_zero(), "{info}: MPFR 0, zenith {got:?}");
+        assert!(got.is_zero(), "{info}: MPFR 0, zenith {}", show_zf(got));
         assert_eq!(
             got.is_negative(),
             want.is_sign_negative(),
@@ -87,24 +95,10 @@ fn same(got: &ExactNum, want: &Float, inexact: bool, shift: i64, info: &str) -> 
             mpfr::set_emin(old_min);
             mpfr::set_emax(old_max);
         }
-        assert!(eq, "{info}: MPFR {want}, zenith {got:?}");
+        assert!(eq, "{info}: MPFR {}, zenith {}", show_mp(want), show_zf(got));
     }
     assert_eq!(got.inexact(), inexact, "{info}: inexact flag");
     Ok(())
-}
-
-fn widest<T>(f: impl FnOnce() -> T) -> T {
-    let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
-    unsafe {
-        mpfr::set_emin(mpfr::get_emin_min());
-        mpfr::set_emax(mpfr::get_emax_max());
-    }
-    let r = f();
-    unsafe {
-        mpfr::set_emin(old_min);
-        mpfr::set_emax(old_max);
-    }
-    r
 }
 
 #[test]
@@ -135,8 +129,8 @@ fn top_edge_carry_out_and_overflow() -> Res {
                 let x = all_ones(p, e)?;
                 let half_ulp = half_at(p, e - p as i64)?;
                 let (x, h) = if neg { (x.neg(), half_ulp.neg()) } else { (x, half_ulp) };
-                let fx = widest(|| exact_mpfr_shifted(&x, 0))?;
-                let fh = widest(|| exact_mpfr_shifted(&h, 0))?;
+                let fx = with_full_range(|| exact_mpfr_shifted(&x, 0))?;
+                let fh = with_full_range(|| exact_mpfr_shifted(&h, 0))?;
                 for rm in MODES {
                     let pu = p as u32;
                     let cases: [(&str, ExactNum, Box<dyn Fn(&mut Float, rnd_t) -> i32>); 4] = [
@@ -194,8 +188,8 @@ fn bottom_edge_subnormals_round_into_normal() -> Res {
         for k in offsets(p) {
             let e = EXPONENT_MIN as i64 + k;
             let x = all_ones(p, e)?;
-            let fx = widest(|| exact_mpfr_shifted(&x, SHIFT))?;
-            let fxn = widest(|| exact_mpfr_shifted(&all_ones(p, e)?.neg(), SHIFT))?;
+            let fx = with_full_range(|| exact_mpfr_shifted(&x, SHIFT))?;
+            let fxn = with_full_range(|| exact_mpfr_shifted(&all_ones(p, e)?.neg(), SHIFT))?;
             for j in [1i64, (p / 2) as i64, p as i64 - 1, p as i64, p as i64 + 1, p as i64 + 2] {
                 let d = k + j;
                 for rm in MODES {
@@ -239,8 +233,8 @@ fn bottom_edge_subnormals_round_into_normal() -> Res {
             "largest subnormal p={p}"
         );
         let (ft, fb) = (
-            widest(|| exact_mpfr_shifted(&tiny, SHIFT))?,
-            widest(|| exact_mpfr_shifted(&big_sub, SHIFT))?,
+            with_full_range(|| exact_mpfr_shifted(&tiny, SHIFT))?,
+            with_full_range(|| exact_mpfr_shifted(&big_sub, SHIFT))?,
         );
         for rm in MODES {
             let got = ExactNum::add_ref(&big_sub, &tiny, ps, rm);

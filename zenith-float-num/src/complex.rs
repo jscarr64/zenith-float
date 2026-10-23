@@ -1153,24 +1153,24 @@ mod tests {
         let e = z.exp(p, rm, &mut cc);
         let back = e.ln(p, rm, &mut cc);
         let d = ExactNum::sub_ref(back.re(), z.re(), p, RoundingMode::None).abs();
-        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 4));
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) / 4));
 
         let z0 = ExactComplex::zero(p);
         let t = z0.tan(p, rm, &mut cc);
-        assert!(t.re().is_zero() || t.re().exponent().unwrap_or(0) < -((p as i32) / 4));
-        assert!(t.im().is_zero() || t.im().exponent().unwrap_or(0) < -((p as i32) / 4));
+        assert!(t.re().is_zero() || t.re().exponent().unwrap_or(0) < -((p as Exponent) / 4));
+        assert!(t.im().is_zero() || t.im().exponent().unwrap_or(0) < -((p as Exponent) / 4));
         let sh = z0.sinh(p, rm, &mut cc);
-        assert!(sh.re().is_zero() || sh.re().exponent().unwrap_or(0) < -((p as i32) / 4));
+        assert!(sh.re().is_zero() || sh.re().exponent().unwrap_or(0) < -((p as Exponent) / 4));
 
         let two = ExactComplex::from_real(ExactNum::from_u8(2, p), p);
         let four = ExactComplex::from_real(ExactNum::from_u8(4, p), p);
         let lg = four.log2(p, rm, &mut cc);
         let d = ExactNum::sub_ref(lg.re(), two.re(), p, RoundingMode::None).abs();
-        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 8));
-        assert!(lg.im().is_zero() || lg.im().exponent().unwrap_or(0) < -((p as i32) / 4));
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) / 8));
+        assert!(lg.im().is_zero() || lg.im().exponent().unwrap_or(0) < -((p as Exponent) / 4));
         let e2 = two.exp2(p, rm, &mut cc);
         let d2 = ExactNum::sub_ref(e2.re(), four.re(), p, RoundingMode::None).abs();
-        assert!(d2.is_zero() || d2.exponent().unwrap_or(0) < -((p as i32) / 8));
+        assert!(d2.is_zero() || d2.exponent().unwrap_or(0) < -((p as Exponent) / 8));
         Ok(())
     }
 
@@ -1182,11 +1182,11 @@ mod tests {
         let m1 = ExactComplex::from_real(ExactNum::from_i8(-1, p), p);
 
         let s = m1.sqrt(p, rm, &mut cc);
-        assert!(s.re().is_zero() || s.re().exponent().unwrap_or(0) < -((p as i32) / 4));
+        assert!(s.re().is_zero() || s.re().exponent().unwrap_or(0) < -((p as Exponent) / 4));
         assert_eq!(s.im().compare(&ExactNum::from_u8(1, p)), Some(0));
 
         let l = m1.ln(p, rm, &mut cc);
-        assert!(l.re().is_zero() || l.re().exponent().unwrap_or(0) < -((p as i32) / 4));
+        assert!(l.re().is_zero() || l.re().exponent().unwrap_or(0) < -((p as Exponent) / 4));
         let pi = cc.pi(p, rm);
         let d = (if l.im().is_negative() {
             l.im().neg_via_mul().sub(&pi, p, RoundingMode::None)
@@ -1194,7 +1194,7 @@ mod tests {
             ExactNum::sub_ref(l.im(), &pi, p, RoundingMode::None)
         })
         .abs();
-        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 8));
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) / 8));
         assert!(l.im().is_positive());
 
         let below = ExactComplex::new(ExactNum::from_i8(-1, p), ExactNum::new(p).neg());
@@ -1205,7 +1205,7 @@ mod tests {
             pi.neg().add(lb.im(), p, RoundingMode::None)
         })
         .abs();
-        assert!(db.is_zero() || db.exponent().unwrap_or(0) < -((p as i32) / 8));
+        assert!(db.is_zero() || db.exponent().unwrap_or(0) < -((p as Exponent) / 8));
         assert!(lb.im().is_negative());
         Ok(())
     }
@@ -1294,7 +1294,7 @@ mod tests {
         let l = z.ln(p, rm, &mut cc);
         let ln5 = ExactNum::from_u8(5, p).ln(p, rm, &mut cc);
         let d = ln5.neg().add(l.re(), p, RoundingMode::None).abs();
-        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 2));
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) / 2));
         assert!(l.im().is_positive());
         Ok(())
     }

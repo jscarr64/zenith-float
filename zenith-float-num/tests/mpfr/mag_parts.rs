@@ -3,6 +3,7 @@
 //! (20 000 bits). The oracle is exact integer arithmetic (`rug::Integer`) on the words of the operand, and MPFR
 //! (`Float`) for the powers of two that MPFR can hold.
 
+use zenith_float_num::Exponent;
 use crate::mpfr::retry_budget::use_full_exponent_range;
 use rug::integer::Order;
 use rug::{Float, Integer};
@@ -83,7 +84,7 @@ fn operand(words: &[u64], negative: bool, e: i64) -> Result<ExactNum, Box<dyn st
         m.significant_bits() as usize
     };
     let s = if negative { Sign::Neg } else { Sign::Pos };
-    let x = ExactNum::from_raw_parts(words, n, s, e as i32, false);
+    let x = ExactNum::from_raw_parts(words, n, s, e as Exponent, false);
     if x.is_nan() {
         return Err(format!("from_raw_parts refused {words:x?} n={n} e={e}").into());
     }
@@ -196,7 +197,7 @@ fn leading_bit_exponent_agrees_with_mpfr() -> Res {
             let Some(e) = f.get_exp() else {
                 return Err("no exponent".into());
             };
-            let x = ExactNum::from_word(m, 64).ldexp(k as i32, 64, RoundingMode::ToEven);
+            let x = ExactNum::from_word(m, 64).ldexp(k as Exponent, 64, RoundingMode::ToEven);
             assert_eq!(
                 x.leading_bit_exponent(),
                 Some(i64::from(e) - 1),

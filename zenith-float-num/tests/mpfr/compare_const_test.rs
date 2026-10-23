@@ -10,7 +10,6 @@ use gmp_mpfr_sys::{
     mpfr::{self, rnd_t},
 };
 use rug::{
-    float::{exp_max, exp_min},
     Float,
 };
 use zenith_float_num::RoundingMode;
@@ -34,8 +33,8 @@ fn mpfr_compare_const() -> Result<(), Box<dyn std::error::Error>> {
         mpfr::set_emax(EXPONENT_MAX as exp_t);
     }
 
-    assert_eq!(EXPONENT_MIN, exp_min());
-    assert_eq!(EXPONENT_MAX, exp_max());
+    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
+    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
 
     let mk_e = || {
         let mut f = Float::with_val((p_max + WORD_BIT_SIZE) as u32, 1);

@@ -37,6 +37,7 @@ mod conv;
 mod csvfmt;
 pub mod ctx;
 mod defs;
+mod exp;
 mod dist;
 mod dsp;
 mod ext;

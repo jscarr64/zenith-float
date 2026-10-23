@@ -18,6 +18,7 @@ pub use crate::gauss_kronrod::GK_GAUSS_ORDER;
 pub use crate::gauss_kronrod::GK_KRONROD_ORDER;
 pub use crate::gauss_kronrod::GK_SUBINTERVAL_MAX;
 
+use crate::defs::Exponent;
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
 use crate::ExactNum;
@@ -64,8 +65,8 @@ fn finite(x: &ExactNum) -> bool {
     !x.is_nan() && !x.is_inf()
 }
 
-fn tiny(p: usize, extra: i32) -> ExactNum {
-    let e = (p as i32).saturating_sub(extra).saturating_neg();
+fn tiny(p: usize, extra: Exponent) -> ExactNum {
+    let e = (p as Exponent).saturating_sub(extra).saturating_neg();
     ExactNum::from_u8(1, p).ldexp(e, p, RoundingMode::ToEven)
 }
 
@@ -586,7 +587,7 @@ fn gauss_hermite_nodes(
     let fact = factorial(n, wrk, RoundingMode::None);
     let pi = cc.pi(wrk, RoundingMode::None);
     let sqrt_pi = pi.sqrt(wrk, RoundingMode::None);
-    let two_pow = ExactNum::from_u8(1, wrk).ldexp((n as i32) - 1, wrk, RoundingMode::None);
+    let two_pow = ExactNum::from_u8(1, wrk).ldexp((n as Exponent) - 1, wrk, RoundingMode::None);
     let scale = two_pow
         .mul(&fact, wrk, RoundingMode::None)
         .mul(&sqrt_pi, wrk, RoundingMode::None);

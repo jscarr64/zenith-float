@@ -1,11 +1,11 @@
 //! MPFR oracles for rectangular `ExactComplex` (re/im via real MPFR ops).
 
+use zenith_float_num::Exponent;
 use crate::mpfr::common::{
     assert_float_close, get_float_pair, get_random_rnd_pair, reset_test_rng,
 };
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
 use rug::{
-    float::{exp_max, exp_min},
     Float,
 };
 use zenith_float_num::{Consts, ExactComplex, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
@@ -19,8 +19,8 @@ fn mpfr_compare_complex() -> Result<(), Box<dyn std::error::Error>> {
         mpfr::set_emin(EXPONENT_MIN as exp_t);
         mpfr::set_emax(EXPONENT_MAX as exp_t);
     }
-    assert_eq!(EXPONENT_MIN, exp_min());
-    assert_eq!(EXPONENT_MAX, exp_max());
+    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
+    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
 
     let p = 2 * WORD_BIT_SIZE;
 
@@ -100,7 +100,7 @@ fn mpfr_compare_complex_real_axis() -> Result<(), Box<dyn std::error::Error>> {
         let (er_re, er_im) = er.into_parts();
         assert_float_close(er_re, fe, p, "cplx erf|R re", false, &mut cc)?;
         assert!(
-            er_im.is_zero() || er_im.exponent().is_some_and(|e| e < -((p as i32) / 4)),
+            er_im.is_zero() || er_im.exponent().is_some_and(|e| e < -((p as Exponent) / 4)),
             "cplx erf|R im"
         );
 

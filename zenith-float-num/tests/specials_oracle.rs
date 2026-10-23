@@ -439,11 +439,11 @@ fn round_p(p: usize) -> usize {
     p.div_ceil(64) * 64
 }
 
-fn mag(x: &ExactNum) -> i32 {
+fn mag(x: &ExactNum) -> i64 {
     if x.is_zero() {
-        i32::MIN
+        i64::MIN
     } else {
-        x.exponent().unwrap_or(i32::MIN)
+        x.exponent().unwrap_or(i64::MIN)
     }
 }
 

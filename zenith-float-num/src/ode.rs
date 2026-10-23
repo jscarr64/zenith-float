@@ -36,7 +36,7 @@ fn frac(n: i64, d: i64, p: usize, rm: RoundingMode) -> ExactNum {
 
 /// Minimum step `2^{ODE_MIN_STEP}` at precision `p`.
 pub fn ode_min_step(p: usize, rm: RoundingMode) -> ExactNum {
-    ExactNum::from_u8(1, p).ldexp(ODE_MIN_STEP, p, rm)
+    ExactNum::from_u8(1, p).ldexp(crate::defs::Exponent::from(ODE_MIN_STEP), p, rm)
 }
 
 fn to_row(p: usize, rm: RoundingMode, vals: &[ExactNum]) -> Option<ExactNumArray> {

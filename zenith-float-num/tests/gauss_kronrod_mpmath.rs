@@ -24,11 +24,11 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
     if d.is_zero() {
         return i32::MAX;
     }
-    want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)
+    i32::try_from(want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)).unwrap_or(i32::MAX)
 }
 
 fn tol(bits_rel: i32) -> ExactNum {
-    ExactNum::from_u8(1, P).ldexp(-bits_rel, P, RM)
+    ExactNum::from_u8(1, P).ldexp(-i64::from(bits_rel), P, RM)
 }
 
 fn check(label: &str, got: &ExactNum, want: &str, min_bits: i32, cc: &mut Consts) {

@@ -1,5 +1,6 @@
 //! Distribution samplers on the crate RNG (`random` feature / tests).
 
+use crate::defs::Exponent;
 use crate::common::test_rng::random;
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
@@ -25,10 +26,10 @@ fn random_unit(p: usize, rm: RoundingMode) -> ExactNum {
     let mut acc = ExactNum::from_u8(0, pw);
     for _ in 0..nwords {
         let w: Word = random();
-        acc = acc.ldexp(WORD_BIT_SIZE as i32, pw, RoundingMode::None);
+        acc = acc.ldexp(WORD_BIT_SIZE as Exponent, pw, RoundingMode::None);
         acc = acc.add(&ExactNum::from_word(w, pw), pw, RoundingMode::None);
     }
-    acc.ldexp(-((nwords * WORD_BIT_SIZE) as i32), p, rm)
+    acc.ldexp(-((nwords * WORD_BIT_SIZE) as Exponent), p, rm)
 }
 
 /// `(0, 1]` — redraws a zero so `ln` is defined.

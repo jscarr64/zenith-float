@@ -2,6 +2,7 @@
 //! precision of `x`, so it needs no rounding mode and is never inexact. Checked against an
 //! exact big-integer remainder (2.0.0 audit, round 2 leftovers).
 
+use zenith_float_num::Exponent;
 use crate::mpfr::common::{
     conv_to_mpfr, draw_seed, rebuild_from_seed, reset_test_rng, test_random,
 };
@@ -47,7 +48,7 @@ fn conv(w: usize, x: ExactNum, cc: &mut Consts) -> Result<Float, Box<dyn std::er
     let f = conv_to_mpfr(w, &s, cc)?;
     let old = unsafe { gmp_mpfr_sys::mpfr::get_emin() };
     unsafe { gmp_mpfr_sys::mpfr::set_emin(gmp_mpfr_sys::mpfr::get_emin_min()) };
-    let f = f << e;
+    let f = f << (e as isize);
     unsafe { gmp_mpfr_sys::mpfr::set_emin(old) };
     Ok(f)
 }
@@ -57,7 +58,7 @@ fn rem_is_exact() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
     // (x band, y band): y far below x, close to x, above x, and the subnormal band
-    let bands: [((i32, i32), (i32, i32)); 5] = [
+    let bands: [((Exponent, Exponent), (Exponent, Exponent)); 5] = [
         ((-4, 4), (-4, 4)),
         ((200, 900), (-40, 40)),
         ((-40, 40), (60, 120)),
@@ -100,7 +101,7 @@ fn rem_is_exact() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         conv(w, mk_x()?.rem(&y), &mut cc)?
                     };
-                    assert_eq!(fg, want, "{info}: zenith {fg}, exact {want}");
+                    assert_eq!(fg, want, "{info}: zenith {}, exact {}", crate::mpfr::common::show_mp(&fg), crate::mpfr::common::show_mp(&want));
                     if want.is_zero() {
                         assert_eq!(got.is_negative(), x.is_negative(), "{info}: sign of zero");
                     }

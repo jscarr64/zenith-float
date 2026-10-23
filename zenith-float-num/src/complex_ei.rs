@@ -1,5 +1,6 @@
 //! Complex `Ei`, `Si`, `Ci`, `li`, and Fresnel integrals.
 
+use crate::defs::Exponent;
 use crate::common::util::round_p;
 use crate::complex_special::half_c;
 use crate::complex_special::nan_pair;
@@ -282,7 +283,7 @@ impl ExactComplex {
             .div(self, p, RoundingMode::None);
         let mut term = ExactComplex::one(p);
         let mut s = term.clone();
-        let mut prev_e = i32::MIN;
+        let mut prev_e = Exponent::MIN;
         for k in 1..=series_term_cap(p) {
             let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p);
             term = term
@@ -291,7 +292,7 @@ impl ExactComplex {
             let e = term
                 .abs(p, RoundingMode::None)
                 .exponent()
-                .unwrap_or(i32::MIN);
+                .unwrap_or(Exponent::MIN);
             if k > 1 && e > prev_e {
                 break;
             }
@@ -416,22 +417,22 @@ mod tests {
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / 4))
+        d.is_zero() || d.exponent().is_some_and(|e| e < -((p as Exponent) / 4))
     }
 
     fn cnear(a: &ExactComplex, b: &ExactComplex, p: usize) -> bool {
         near(a.re(), b.re(), p) && near(a.im(), b.im(), p)
     }
 
-    fn cnear_bits(a: &ExactComplex, b: &ExactComplex, p: usize, slack: i32) -> bool {
+    fn cnear_bits(a: &ExactComplex, b: &ExactComplex, p: usize, slack: Exponent) -> bool {
         let dr = ExactNum::sub_ref(a.re(), b.re(), p, RoundingMode::None).abs();
         let di = ExactNum::sub_ref(a.im(), b.im(), p, RoundingMode::None).abs();
-        (dr.is_zero() || dr.exponent().is_some_and(|e| e < -((p as i32) / slack)))
-            && (di.is_zero() || di.exponent().is_some_and(|e| e < -((p as i32) / slack)))
+        (dr.is_zero() || dr.exponent().is_some_and(|e| e < -((p as Exponent) / slack)))
+            && (di.is_zero() || di.exponent().is_some_and(|e| e < -((p as Exponent) / slack)))
     }
 
     fn tiny(x: &ExactNum, p: usize) -> bool {
-        x.is_zero() || x.exponent().is_some_and(|e| e < -((p as i32) / 4))
+        x.is_zero() || x.exponent().is_some_and(|e| e < -((p as Exponent) / 4))
     }
 
     #[test]

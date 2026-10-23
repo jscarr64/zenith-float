@@ -223,6 +223,13 @@ pub(crate) use test_zf_op;
 pub(crate) use test_zf_op_no_cc;
 pub(crate) use test_zf_rem_pi;
 
+/// Exponent band the random MPFR comparisons draw from: the former 32-bit range. The 62-bit
+/// edges are covered by `i64_edges`; drawing from them here would make the decimal `Debug`
+/// messages and the exp/pow arguments exabyte-sized.
+pub const RAND_EMIN: zenith_float_num::Exponent = i32::MIN as zenith_float_num::Exponent;
+/// Upper end of [`RAND_EMIN`]'s band.
+pub const RAND_EMAX: zenith_float_num::Exponent = i32::MAX as zenith_float_num::Exponent;
+
 pub const fn get_prec_rng() -> usize {
     157
 }
@@ -243,6 +250,20 @@ pub fn conv_to_mpfr(
     n: &ExactNum,
     cc: &mut Consts,
 ) -> Result<Float, Box<dyn std::error::Error>> {
+    // Past the former 32-bit range the binary strings get too large for MPFR's string
+    // conversion; build the value from the raw words and the 62-bit exponent instead.
+    if let Some((w, _, s, e, _)) = n.as_raw_parts() {
+        if e < RAND_EMIN || e > RAND_EMAX {
+            let bits = w.len() * WORD_BIT_SIZE;
+            let int = rug::Integer::from_digits(w, rug::integer::Order::Lsf);
+            let mut f = Float::with_val(u32::try_from(p)?, &int);
+            f <<= (e - i64::try_from(bits)?) as isize;
+            if s == Sign::Neg {
+                f = -f;
+            }
+            return Ok(f);
+        }
+    }
     let s1 = conv_str_to_mpfr_compat(n.format(Radix::Bin, RoundingMode::ToEven, cc)?)?;
     let f = Float::with_val(p as u32, Float::parse_radix(s1, 2)?);
     let s2 = conv_str_from_mpfr_compat(f.to_string_radix(2, None))?;
@@ -252,6 +273,29 @@ pub fn conv_to_mpfr(
         ExactNum::parse(&s2, Radix::Bin, p, RoundingMode::None, cc)
     );
     Ok(f)
+}
+
+/// `Some(MPFR exponent)` when either value lies outside [`RAND_EMIN`, `RAND_EMAX`].
+fn far_exponent(n: &ExactNum, f: &Float) -> Option<i64> {
+    let e_f = if f.is_normal() { unsafe { (*f.as_raw()).exp } } else { 0 };
+    let e_n = n.exponent().unwrap_or(0);
+    let far = |e: i64| !(RAND_EMIN..=RAND_EMAX).contains(&e);
+    (far(e_f) || far(e_n)).then_some(e_f)
+}
+
+/// Runs `f` with MPFR's exponent range widened to its maximum, then restores it.
+pub fn with_full_range<T>(f: impl FnOnce() -> T) -> T {
+    let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+    unsafe {
+        mpfr::set_emin(mpfr::get_emin_min());
+        mpfr::set_emax(mpfr::get_emax_max());
+    }
+    let r = f();
+    unsafe {
+        mpfr::set_emin(old_min);
+        mpfr::set_emax(old_max);
+    }
+    r
 }
 
 // assert float values are equal or differ not more than 1 ulp.
@@ -266,7 +310,7 @@ pub fn assert_float_close(
     if n.is_inf() {
         // Inf only where MPFR is Inf: an overflow rounded toward zero is the largest
         // finite value in MPFR, so the overflow flag alone does not admit Inf.
-        assert!(f.is_infinite(), "{} zenith Inf, MPFR {}", op, f);
+        assert!(f.is_infinite(), "{} zenith Inf, MPFR {}", op, show_mp(&f));
         if n.is_positive() {
             assert!(f.is_sign_positive(), "{}", op);
         } else {
@@ -283,8 +327,34 @@ pub fn assert_float_close(
         // subnormal (bit-exact mode only — otherwise compare below)
         let unf = unsafe { mpfr::underflow_p() };
         if !f.is_zero() {
-            assert!(unf != 0, "{}", op);
+            assert!(
+                unf != 0,
+                "{} zenith {:?}, MPFR exp {} prec {}",
+                op,
+                n.as_raw_parts(),
+                if f.is_normal() { unsafe { (*f.as_raw()).exp } } else { 0 },
+                f.prec()
+            );
         }
+    } else if let Some(e_f) = far_exponent(&n, &f) {
+        // Past the former 32-bit range: MPFR's binary string would be enormous, so compare in
+        // MPFR space with exact arithmetic over the full 62-bit range.
+        let mlen = n.mantissa_max_bit_len().ok_or("none value")?;
+        let e1 = n.exponent().ok_or("none value")?
+            - i64::try_from(mlen - n.precision().ok_or("none value")?)?;
+        let ok = with_full_range(|| -> Result<bool, Box<dyn std::error::Error>> {
+            let g = conv_to_mpfr(mlen, &n, cc)?;
+            if eq {
+                return Ok(g == f);
+            }
+            let d = Float::with_val(u32::try_from(mlen + f.prec() as usize + 2)?, &g - &f).abs();
+            if d.is_zero() {
+                return Ok(true);
+            }
+            let e2 = unsafe { (*d.as_raw()).exp };
+            Ok(e1 - e2 >= i64::try_from(mlen)? - 1)
+        })?;
+        assert!(ok, "{} far-range mismatch: MPFR exp {}, zenith {:?}", op, e_f, n.as_raw_parts());
     } else if eq {
         // n == f
         let s1 = f.to_string_radix(2, None);
@@ -669,11 +739,12 @@ pub fn emulated_range(p: u32, shift: i64) -> (i64, i64) {
     (emin, emax)
 }
 
-/// True if MPFR can emulate the zenith range scaled by `2^shift` at precision `p` without clamping.
+/// True if MPFR can emulate the zenith subnormal floor scaled by `2^shift` at precision `p` without
+/// clamping. A positive shift may clamp the top of the scaled range: callers using one (the bottom-edge
+/// tests) keep their results far below `EXPONENT_MAX`, so only the unshifted top must fit.
 pub fn emulated_range_ok(p: u32, shift: i64) -> bool {
     let (lo, hi) = unsafe { (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max())) };
-    EXPONENT_MIN as i64 + shift - p as i64 + 1 >= lo
-        && (EXPONENT_MAX as i64).saturating_add(shift) <= hi
+    EXPONENT_MIN as i64 + shift - p as i64 + 1 >= lo && (EXPONENT_MAX as i64).saturating_add(shift.min(0)) <= hi
 }
 
 /// The exact value of a finite zenith number times `2^shift` as an MPFR number (widest exponent range
@@ -729,13 +800,13 @@ pub fn assert_exact_eq(
         return Ok(());
     }
     if f.is_infinite() {
-        assert!(n.is_inf(), "{op}: MPFR {f}, zenith {n:?}");
+        assert!(n.is_inf(), "{op}: MPFR {}, zenith {n:?}", show_mp(f));
         assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of Inf");
         return Ok(());
     }
-    assert!(!n.is_inf() && !n.is_nan(), "{op}: MPFR {f}, zenith {n:?}");
+    assert!(!n.is_inf() && !n.is_nan(), "{op}: MPFR {}, zenith {n:?}", show_mp(f));
     if f.is_zero() {
-        assert!(n.is_zero(), "{op}: MPFR {f}, zenith {n:?}");
+        assert!(n.is_zero(), "{op}: MPFR {}, zenith {n:?}", show_mp(f));
         assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of zero");
         return Ok(());
     }
@@ -766,6 +837,19 @@ pub fn assert_exact_eq(
         mpfr::set_emin(old_min);
         mpfr::set_emax(old_max);
     }
-    assert!(equal, "{op}: MPFR {f}, zenith {n:?} = {got}");
+    assert!(equal, "{op}: MPFR {}, zenith {n:?} = {}", show_mp(f), show_mp(&got));
     Ok(())
+}
+
+/// `m * 2^e` in hex with MPFR's raw 64-bit exponent: decimal (or long binary) formatting of a
+/// number near 2^(+-2^62) would allocate exabytes.
+pub fn show_mp(f: &Float) -> String {
+    if !f.is_normal() {
+        return format!("{f}");
+    }
+    let e = unsafe { (*f.as_raw()).exp };
+    with_full_range(|| {
+        let frac = Float::with_val(f.prec(), f >> (e as isize));
+        format!("{frac:x} * 2^{e}")
+    })
 }

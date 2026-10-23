@@ -3,6 +3,7 @@
 //! Series, Euler, Pfaff, and Kummer / linear transformations in \(\mathbb{C}\).
 //! Not the real series at \(\lvert z\rvert\).
 
+use crate::defs::Exponent;
 use crate::common::util::round_p;
 use crate::complex_special::is_nonpos_integer;
 use crate::complex_special::nan_pair;
@@ -112,7 +113,7 @@ fn hypergeom_series(
 ) -> ExactComplex {
     let mut term = ExactComplex::one(p);
     let mut sum = ExactComplex::one(p);
-    let tiny = ExactNum::from_u8(1, p).ldexp(-((p as i32) - 8), p, rm());
+    let tiny = ExactNum::from_u8(1, p).ldexp(-((p as Exponent) - 8), p, rm());
     // Stop when the term is below 2^-p relative to the sum, past the largest parameter (so the
     // terms are decreasing). Hitting the cap means the series has not converged: NaN rather than
     // a silently truncated value.
@@ -303,11 +304,11 @@ fn powi_c(z: &ExactComplex, n: u32, p: usize) -> ExactComplex {
     acc
 }
 
-/// Binary exponent of `|z|` (`i32::MIN` for zero / non-finite).
-fn cexp(z: &ExactComplex) -> i32 {
+/// Binary exponent of `|z|` (`Exponent::MIN` for zero / non-finite).
+fn cexp(z: &ExactComplex) -> Exponent {
     match z.abs(64, rm()).exponent() {
         Some(e) if !z.is_nan() => e,
-        _ => i32::MIN,
+        _ => Exponent::MIN,
     }
 }
 
@@ -334,13 +335,13 @@ fn log_case_sum(
     m: u32,
     p: usize,
     cc: &mut Consts,
-) -> Option<(ExactComplex, i32)> {
+) -> Option<(ExactComplex, Exponent)> {
     let one = ExactComplex::one(p);
     let w = ExactComplex::one(p).sub(z, p, rm());
     let re = |v: u32| ExactComplex::from_real(ExactNum::from_u32(v, p), p);
     let mf = re(m);
     let gc = c.gamma_at(p, cc);
-    let mut max_e = i32::MIN;
+    let mut max_e = Exponent::MIN;
     let mut total = ExactComplex::zero(p);
     if m >= 1 {
         // Finite part. (1-m)_n ≠ 0 for n < m; Γ(a+m) = Γ(c-b), Γ(b+m) = Γ(c-a).
@@ -461,7 +462,7 @@ fn transform_1mz_log(
             return nan_pair(Error::InvalidArgument);
         };
         let ve = cexp(&v);
-        if ve == i32::MIN {
+        if ve == Exponent::MIN {
             return v;
         }
         let lost = max_e.saturating_sub(ve).max(0) as usize;
@@ -708,13 +709,13 @@ mod tests {
     use super::*;
     use core::ops::Neg;
 
-    fn near(a: &ExactNum, b: &ExactNum, p: usize, slack: i32) -> bool {
+    fn near(a: &ExactNum, b: &ExactNum, p: usize, slack: Exponent) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - slack)
+        d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) - slack)
     }
 
     fn tiny(x: &ExactNum, p: usize) -> bool {
-        x.is_zero() || x.exponent().unwrap_or(0) < -((p as i32) / 4)
+        x.is_zero() || x.exponent().unwrap_or(0) < -((p as Exponent) / 4)
     }
 
     #[test]

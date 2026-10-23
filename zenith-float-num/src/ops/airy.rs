@@ -455,7 +455,7 @@ mod tests {
         a: &ExactNumNumber,
         b: &ExactNumNumber,
         p: usize,
-        min_bits: i32,
+        min_bits: crate::Exponent,
         label: &str,
     ) -> Result<(), crate::Error> {
         let d = a.sub(b, p, RoundingMode::None)?.abs()?;
@@ -537,7 +537,7 @@ mod tests {
 
         // Ai'' ≈ x Ai via centered difference on Ai'.
         let mut h = ExactNumNumber::from_word(1, p)?;
-        h.set_exponent(-((p as i32) / 8));
+        h.set_exponent(-((p as crate::Exponent) / 8));
         let xp = x.add(&h, p, RoundingMode::None)?;
         let xm = x.sub(&h, p, RoundingMode::None)?;
         let d2 = xp

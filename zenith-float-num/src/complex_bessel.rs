@@ -1,5 +1,6 @@
 //! Complex Bessel \(J_\nu,Y_\nu,I_\nu,K_\nu\).
 
+use crate::defs::Exponent;
 use crate::common::util::round_p;
 use crate::complex_special::half_c;
 use crate::complex_special::nan_pair;
@@ -138,7 +139,7 @@ fn i_series_term_cap(z: &ExactComplex, dest_p: usize) -> usize {
         .min(u32::MAX as usize)
 }
 
-fn term_mag_exp(t: &ExactComplex) -> Option<i32> {
+fn term_mag_exp(t: &ExactComplex) -> Option<Exponent> {
     let at = t.abs(64, RoundingMode::None);
     if at.is_zero() {
         None
@@ -243,7 +244,7 @@ fn eight_c(p: usize) -> ExactComplex {
     ExactComplex::from_real(ExactNum::from_u8(8, p), p)
 }
 
-fn c_mag_exp(z: &ExactComplex) -> Option<i32> {
+fn c_mag_exp(z: &ExactComplex) -> Option<Exponent> {
     let a = z.abs(64, RoundingMode::None);
     if a.is_zero() {
         None
@@ -729,7 +730,7 @@ impl ExactComplex {
         dest_p: usize,
         term_cap: usize,
         cc: &mut Consts,
-    ) -> (Self, Option<i32>, Option<i32>) {
+    ) -> (Self, Option<Exponent>, Option<Exponent>) {
         let half = self.mul(&half_c(wp), wp, RoundingMode::None);
         let pow = half.pow(nu, wp, RoundingMode::None, cc);
         let g =
@@ -1122,7 +1123,7 @@ impl ExactComplex {
         let mut pz = ExactComplex::one(p);
         let mut psum = ExactComplex::one(p);
         let mut qsum = ExactComplex::zero(p);
-        let mut prev_e = i32::MAX;
+        let mut prev_e = Exponent::MAX;
         for k in 1..=series_term_cap(p) {
             let odd = ExactComplex::from_real(ExactNum::from_u32((2 * k - 1) as u32, p), p);
             let odd2 = odd.mul(&odd, p, RoundingMode::None);
@@ -1159,7 +1160,7 @@ impl ExactComplex {
             let e = term
                 .abs(64, RoundingMode::None)
                 .exponent()
-                .unwrap_or(i32::MIN);
+                .unwrap_or(Exponent::MIN);
             if k > 2 && e > prev_e {
                 break;
             }
@@ -1237,22 +1238,22 @@ mod tests {
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / 4))
+        d.is_zero() || d.exponent().is_some_and(|e| e < -((p as Exponent) / 4))
     }
 
     fn cnear(a: &ExactComplex, b: &ExactComplex, p: usize) -> bool {
         near(a.re(), b.re(), p) && near(a.im(), b.im(), p)
     }
 
-    fn cnear_bits(a: &ExactComplex, b: &ExactComplex, p: usize, slack: i32) -> bool {
+    fn cnear_bits(a: &ExactComplex, b: &ExactComplex, p: usize, slack: Exponent) -> bool {
         let dr = ExactNum::sub_ref(a.re(), b.re(), p, RoundingMode::None).abs();
         let di = ExactNum::sub_ref(a.im(), b.im(), p, RoundingMode::None).abs();
-        (dr.is_zero() || dr.exponent().is_some_and(|e| e < -((p as i32) / slack)))
-            && (di.is_zero() || di.exponent().is_some_and(|e| e < -((p as i32) / slack)))
+        (dr.is_zero() || dr.exponent().is_some_and(|e| e < -((p as Exponent) / slack)))
+            && (di.is_zero() || di.exponent().is_some_and(|e| e < -((p as Exponent) / slack)))
     }
 
     fn tiny(x: &ExactNum, p: usize) -> bool {
-        x.is_zero() || x.exponent().is_some_and(|e| e < -((p as i32) / 4))
+        x.is_zero() || x.exponent().is_some_and(|e| e < -((p as Exponent) / 4))
     }
 
     #[test]

@@ -64,7 +64,7 @@ fn build(m: u64, k: i64, negative: bool) -> ExactNum {
 
 fn mpfr_operand(m: u64, k: i64, negative: bool) -> Float {
     let (hi, lo) = split_exponent(k);
-    let f = (Float::with_val(OPERAND_PRECISION as u32, m) << hi) << lo;
+    let f = (Float::with_val(OPERAND_PRECISION as u32, m) << (hi as isize)) << (lo as isize);
     if negative {
         -f
     } else {

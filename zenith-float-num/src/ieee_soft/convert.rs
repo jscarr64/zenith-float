@@ -1,7 +1,7 @@
 //! Widen software IEEE values to `ExactNum` and IEEE-round back.
 
 use super::arith::{pack_finite, pack_inf, pack_qnan, unpack, Class, Format};
-use crate::defs::{RoundingMode, Word, WORD_BIT_SIZE};
+use crate::defs::{Exponent, RoundingMode, Word, WORD_BIT_SIZE};
 use crate::ExactNum;
 use core::ops::Neg;
 
@@ -27,7 +27,7 @@ pub(super) fn to_exact(bits: u64, f: Format, p: usize) -> ExactNum {
         Class::Norm | Class::Sub => {
             let mut x = ExactNum::from_u64(u.sig, p);
             let sh = u.exp - f.bias - f.frac as i32;
-            x = x.ldexp(sh, p, RoundingMode::None);
+            x = x.ldexp(Exponent::from(sh), p, RoundingMode::None);
             if u.sign {
                 x.neg()
             } else {
@@ -66,7 +66,10 @@ pub(super) fn from_exact(x: &ExactNum, f: Format) -> u64 {
     let st = sticky || (rest << 1) != 0;
     let e0 = x.exponent().unwrap_or(0);
     let unbiased = e0 - 1;
-    let mut stored = unbiased + f.bias;
+    // IEEE formats need |stored| far below 2^20; clamping keeps pack_finite's i32 arithmetic exact
+    // while still mapping out-of-range exponents to overflow/underflow.
+    let wide = unbiased.saturating_add(Exponent::from(f.bias)).clamp(-(1 << 20), 1 << 20);
+    let mut stored = i32::try_from(wide).unwrap_or(0);
     if g && (st || (sig & 1) == 1) {
         sig += 1;
         if sig >= (1u128 << (f.frac + 1)) {

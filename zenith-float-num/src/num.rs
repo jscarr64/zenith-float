@@ -15,6 +15,8 @@ use crate::defs::EXPONENT_MAX;
 use crate::defs::EXPONENT_MIN;
 use crate::defs::WORD_BIT_SIZE;
 use crate::defs::WORD_SIGNIFICANT_BIT;
+use crate::defs::MAX_PRECISION;
+use crate::exp;
 use crate::mantissa::AddSubSpec;
 use crate::mantissa::Mantissa;
 
@@ -424,7 +426,7 @@ impl ExactNumNumber {
             .m
             .mul(&d2.m, p, rm, s == Sign::Pos, full_prec, &mut inexact)?;
 
-        let e = self.e as i64 + d2.e as i64 - e_shift;
+        let e = exp::narrow(exp::wide(self.e) + exp::wide(d2.e) - exp::wide(e_shift));
 
         if e > EXPONENT_MAX as i64 {
             return Err(Error::ExponentOverflow(s));
@@ -503,7 +505,7 @@ impl ExactNumNumber {
 
         let (e_shift, m3) = self.m.div(&d2.m, p, rm, s == Sign::Pos, &mut inexact)?;
 
-        let e = self.e as i64 - d2.e as i64 + e_shift;
+        let e = exp::narrow(exp::wide(self.e) - exp::wide(d2.e) + exp::wide(e_shift));
 
         if e > EXPONENT_MAX as i64 {
             return Err(Error::ExponentOverflow(s));
@@ -661,15 +663,11 @@ impl ExactNumNumber {
 
             #[cfg(not(target_pointer_width = "32"))]
             {
-                // checks for the case when usize is larger than exponent
-                debug_assert!((shift as i64) < (i64::MAX / 2 + EXPONENT_MIN as i64));
-
-                if (self.e as i64) - shift as i64 <= i64::MIN / 2 {
-                    return Err(Error::ExponentOverflow(self.s));
-                }
+                // A shift is at most the mantissa length (< 2^60), so the result stays far inside i64.
+                debug_assert!(shift <= MAX_PRECISION);
             }
 
-            Ok((self.e as i64 - shift as i64, Some(mantissa)))
+            Ok((exp::narrow(exp::wide(self.e) - exp::wide_u(shift)), Some(mantissa)))
         } else {
             Ok((self.e as i64, None))
         }
@@ -759,7 +757,7 @@ impl ExactNumNumber {
                     m2,
                     AddSubSpec {
                         p,
-                        m2_shift: (e1 - e2) as usize,
+                        m2_shift: exp::abs_diff_shift(e1, e2),
                         rm,
                         is_positive: d3.is_positive(),
                         full_prec,
@@ -773,7 +771,7 @@ impl ExactNumNumber {
                     m1,
                     AddSubSpec {
                         p,
-                        m2_shift: (e2 - e1) as usize,
+                        m2_shift: exp::abs_diff_shift(e2, e1),
                         rm,
                         is_positive: d3.is_positive(),
                         full_prec,
@@ -798,7 +796,7 @@ impl ExactNumNumber {
                     m2,
                     AddSubSpec {
                         p,
-                        m2_shift: (e1 - e2) as usize,
+                        m2_shift: exp::abs_diff_shift(e1, e2),
                         rm,
                         is_positive: d3.is_positive(),
                         full_prec,
@@ -811,7 +809,7 @@ impl ExactNumNumber {
                     m1,
                     AddSubSpec {
                         p,
-                        m2_shift: (e2 - e1) as usize,
+                        m2_shift: exp::abs_diff_shift(e2, e1),
                         rm,
                         is_positive: d3.is_positive(),
                         full_prec,
@@ -823,9 +821,9 @@ impl ExactNumNumber {
 
         #[cfg(not(target_pointer_width = "32"))]
         {
-            debug_assert!(shift <= i64::MAX / 2 && e >= i64::MIN / 2);
+            debug_assert!(shift <= i64::MAX / 2 && e >= -exp::WIDE_LIMIT);
         }
-        Self::finish_sum(d3, e - shift, m3, (inexact, inputs), rm, per_op)
+        Self::finish_sum(d3, exp::narrow(exp::wide(e) - exp::wide(shift)), m3, (inexact, inputs), rm, per_op)
     }
 
     /// Writes the exponent and mantissa of a finished sum into `d3` (sign already set) and sets the flags.
@@ -989,7 +987,7 @@ impl ExactNumNumber {
 
         let n2 = d2.mantissa_max_bit_len() as i64 - d2.precision() as i64;
 
-        let e: i64 = self.e as i64 - n1 - d2.e as i64 + n2;
+        let e = exp::wide(self.e) - exp::wide(n1) - exp::wide(d2.e) + exp::wide(n2);
         if e > 0 {
             return 1;
         } else if e < 0 {

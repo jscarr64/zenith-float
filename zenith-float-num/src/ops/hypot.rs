@@ -53,13 +53,14 @@ impl ExactNumNumber {
         // y only adds a sticky bit once y^2 lies below both x^2's last bit and the
         // p-bit result's guard bits; past that it is replaced by a smaller stand-in.
         let lim = wx.max(p as i64 / 2 + 1) + WORD_BIT_SIZE as i64;
-        let dy = if ex - ey > lim + WORD_BIT_SIZE as i64 { -lim } else { ey - ex };
+        let gap = crate::exp::wide(ex) - crate::exp::wide(ey);
+        let dy = if gap > crate::exp::wide(lim + WORD_BIT_SIZE as i64) { -lim } else { ey - ex };
         sy.set_exponent(dy as Exponent);
         let s2 = sx
             .mul_full_prec(&sx)?
             .add_full_prec(&sy.mul_full_prec(&sy)?)?;
         let mut ret = s2.sqrt(p, rm)?;
-        let e = ret.exponent() as i64 + ex;
+        let e = crate::exp::narrow(crate::exp::wide(ret.exponent()) + crate::exp::wide(ex));
         if e > EXPONENT_MAX as i64 {
             return Err(Error::ExponentOverflow(Sign::Pos));
         }

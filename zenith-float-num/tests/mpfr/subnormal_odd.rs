@@ -1,6 +1,7 @@
 //! Results in the subnormal band round correctly in every mode, including `ToOdd`
 //! (round half to odd) at exact ties on the subnormal grid (2.0.0 audit, round 2: item d).
 
+use zenith_float_num::Exponent;
 use crate::mpfr::common::{
     assert_exact_eq, conv_to_mpfr, draw_seed, mpfr_reference_with, rebuild_from_seed,
     reset_test_rng,
@@ -18,7 +19,7 @@ fn conv_small(w: usize, x: ExactNum, cc: &mut Consts) -> Result<Float, Box<dyn s
     let f = conv_to_mpfr(w, &s, cc)?;
     let old = unsafe { mpfr::get_emin() };
     unsafe { mpfr::set_emin(mpfr::get_emin_min()) };
-    let f = f << e;
+    let f = f << (e as isize);
     unsafe { mpfr::set_emin(old) };
     Ok(f)
 }
@@ -73,9 +74,9 @@ fn subnormal_band_every_mode() -> Result<(), Box<dyn std::error::Error>> {
         for i in 0..24 {
             // Every operand is drawn from its own seed and rebuilt from it for each consuming use.
             let (sx, sy, sz) = (draw_seed(), draw_seed(), draw_seed());
-            let mk_x = || rebuild_from_seed(sx, || input(p, lo + 1, lo + 2 * p as i32, true));
-            let mk_y = || rebuild_from_seed(sy, || input(p, -(p as i32) - 2, -1, true));
-            let mk_z = || rebuild_from_seed(sz, || input(p, lo + 1, lo + p as i32, true));
+            let mk_x = || rebuild_from_seed(sx, || input(p, lo + 1, lo + 2 * p as Exponent, true));
+            let mk_y = || rebuild_from_seed(sy, || input(p, -(p as Exponent) - 2, -1, true));
+            let mk_z = || rebuild_from_seed(sz, || input(p, lo + 1, lo + p as Exponent, true));
             let x = mk_x()?;
             let y = mk_y()?;
             let z = mk_z()?;
@@ -127,7 +128,7 @@ fn subnormal_band_every_mode() -> Result<(), Box<dyn std::error::Error>> {
                     let (want, inexact) = reference(p, rm, wide, f.as_ref())?;
                     assert_exact_eq(got, &want, p, &info, &mut cc)?;
                     if !want.is_zero() {
-                        assert_eq!(got.inexact(), inexact, "{info}: inexact flag, MPFR {want}");
+                        assert_eq!(got.inexact(), inexact, "{info}: inexact flag, MPFR {}", crate::mpfr::common::show_mp(&want));
                     }
                 }
             }

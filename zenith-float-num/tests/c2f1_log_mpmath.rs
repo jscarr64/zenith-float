@@ -75,11 +75,11 @@ fn c(s: &str, p: usize, cc: &mut Consts) -> Result<ExactComplex, Box<dyn std::er
     ))
 }
 
-fn exp2(x: &ExactNum) -> i32 {
+fn exp2(x: &ExactNum) -> i64 {
     if x.is_zero() {
-        i32::MIN / 2
+        i64::MIN / 2
     } else {
-        x.exponent().unwrap_or(i32::MIN / 2)
+        x.exponent().unwrap_or(i64::MIN / 2)
     }
 }
 
@@ -103,7 +103,7 @@ fn complex_2f1_log_case_mpmath() -> Result<(), Box<dyn std::error::Error>> {
         let er = wr.neg().add(got.re(), wp, RoundingMode::None);
         let ei = wi.neg().add(got.im(), wp, RoundingMode::None);
         let err = exp2(&er).max(exp2(&ei));
-        if err > scale - need {
+        if err > scale - i64::from(need) {
             failures.push(format!(
                 "{args:?} at {p}: {} bits, need {need}",
                 scale - err

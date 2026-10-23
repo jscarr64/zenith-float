@@ -429,7 +429,7 @@ mod tests {
         );
         let d = g.sub(&known, p, RoundingMode::None);
         assert!(
-            d.is_zero() || d.exponent().ok_or(crate::Error::InvalidArgument)? < -((p as i32) / 4)
+            d.is_zero() || d.exponent().ok_or(crate::Error::InvalidArgument)? < -((p as crate::Exponent) / 4)
         );
         Ok(())
     }

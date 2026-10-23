@@ -1,6 +1,7 @@
 //! Two- and three-operand functions, roots, powers, and parsing round at exactly `p` bits in
 //! every mode with a per-operation `inexact` flag (2.0.0 audit, round 2: items a and c).
 
+use zenith_float_num::Exponent;
 use crate::mpfr::common::assert_exact_eq;
 use crate::mpfr::common::conv_to_mpfr;
 use crate::mpfr::common::reset_test_rng;
@@ -18,8 +19,8 @@ fn storage(p: usize) -> usize {
 
 fn pairs(
     p: usize,
-    a: (i32, i32, bool),
-    b: (i32, i32, bool),
+    a: (Exponent, Exponent, bool),
+    b: (Exponent, Exponent, bool),
     exact: &[(i64, i32, i64, i32)],
 ) -> Result<Vec<(ExactNum, ExactNum)>, Box<dyn std::error::Error>> {
     let mut v = Vec::new();
@@ -337,7 +338,7 @@ fn acosh_ln2x_branch() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
     for p in PRECISIONS.into_iter().chain(P14_PRECISIONS) {
-        let lo = 2 * storage(p) as i32 + 140;
+        let lo = 2 * storage(p) as Exponent + 140;
         let mut xs = Vec::new();
         for _ in 0..12 {
             xs.push(input(p, lo, lo + 3000, false)?);
