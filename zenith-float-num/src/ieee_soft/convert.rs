@@ -68,7 +68,9 @@ pub(super) fn from_exact(x: &ExactNum, f: Format) -> u64 {
     let unbiased = e0 - 1;
     // IEEE formats need |stored| far below 2^20; clamping keeps pack_finite's i32 arithmetic exact
     // while still mapping out-of-range exponents to overflow/underflow.
-    let wide = unbiased.saturating_add(Exponent::from(f.bias)).clamp(-(1 << 20), 1 << 20);
+    let wide = unbiased
+        .saturating_add(Exponent::from(f.bias))
+        .clamp(-(1 << 20), 1 << 20);
     let mut stored = i32::try_from(wide).unwrap_or(0);
     if g && (st || (sig & 1) == 1) {
         sig += 1;

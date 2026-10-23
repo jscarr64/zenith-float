@@ -3,9 +3,9 @@
 //! This test suite performs comparison of mpfr and zenith-float at bit level.
 //! It uses special cases of numbers, like zero, one, maximum possible value, a number with many trailing zeroes in mantissa, etc.
 
+use crate::mpfr::common::{RAND_EMAX, RAND_EMIN};
 use std::ops::Add;
 use std::ops::Neg;
-use crate::mpfr::common::{RAND_EMAX, RAND_EMIN};
 
 use crate::mpfr::common::{
     assert_float_close, conv_to_mpfr, get_last_zero, get_near_one, get_oned_sides, get_oned_zeroed,
@@ -14,9 +14,7 @@ use crate::mpfr::common::{
 };
 use crate::mpfr::common::{draw_seed, get_prec_rng, rebuild_from_seed, test_zf_op};
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rug::{
-    Float,
-};
+use rug::Float;
 use zenith_float_num::{
     Consts, ExactNum, Exponent, EXPONENT_BIT_SIZE, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
 };
@@ -249,35 +247,42 @@ fn run_compare_special(
                 && !n.is_nan()
                 && n.exponent().unwrap_or(EXPONENT_MIN) > EXPONENT_MIN
             {
-            if n.exponent() == Some(EXPONENT_MAX) {
-                // MPFR's asinh loses ln 2 at its largest exponent (its 2x overflows):
-                // asinh(x) = sign(x) (ln 2 + ln |x|) there, to far below the last bit.
-                let r = if n.is_negative() {
-                    let mirrored = match rnd {
-                        mpfr::rnd_t::RNDU => mpfr::rnd_t::RNDD,
-                        mpfr::rnd_t::RNDD => mpfr::rnd_t::RNDU,
-                        other => other,
+                if n.exponent() == Some(EXPONENT_MAX) {
+                    // MPFR's asinh loses ln 2 at its largest exponent (its 2x overflows):
+                    // asinh(x) = sign(x) (ln 2 + ln |x|) there, to far below the last bit.
+                    let r = if n.is_negative() {
+                        let mirrored = match rnd {
+                            mpfr::rnd_t::RNDU => mpfr::rnd_t::RNDD,
+                            mpfr::rnd_t::RNDD => mpfr::rnd_t::RNDU,
+                            other => other,
+                        };
+                        -big_log_ref(&Float::with_val(f.prec(), f.abs_ref()), p, mirrored)
+                    } else {
+                        big_log_ref(&f, p, rnd)
                     };
-                    -big_log_ref(&Float::with_val(f.prec(), f.abs_ref()), p, mirrored)
+                    let n3 = n.asinh(p, rm, &mut cc);
+                    assert_float_close(
+                        n3,
+                        r,
+                        p,
+                        &format!("{:?}", (&n, p, rm, "asinh max")),
+                        false,
+                        &mut cc,
+                    )?;
                 } else {
-                    big_log_ref(&f, p, rnd)
-                };
-                let n3 = n.asinh(p, rm, &mut cc);
-                assert_float_close(n3, r, p, &format!("{:?}", (&n, p, rm, "asinh max")), false, &mut cc)?;
-            } else {
-                test_zf_op!(
-                    false,
-                    n,
-                    asinh,
-                    f,
-                    asinh,
-                    p,
-                    rm,
-                    rnd,
-                    (n, p, rm, "asinh"),
-                    cc
-                );
-            }
+                    test_zf_op!(
+                        false,
+                        n,
+                        asinh,
+                        f,
+                        asinh,
+                        p,
+                        rm,
+                        rnd,
+                        (n, p, rm, "asinh"),
+                        cc
+                    );
+                }
             }
             test_zf_op!(true, n, atan, f, atan, p, rm, rnd, (n, p, rm, "atan"), cc);
 
@@ -350,20 +355,27 @@ fn run_compare_special(
                 // acosh(x) = ln 2 + ln x there, to far below the last bit.
                 let r = big_log_ref(&f, p, rnd);
                 let n3 = n.acosh(p, rm, &mut cc);
-                assert_float_close(n3, r, p, &format!("{:?}", (&n, p, rm, "acosh max")), true, &mut cc)?;
+                assert_float_close(
+                    n3,
+                    r,
+                    p,
+                    &format!("{:?}", (&n, p, rm, "acosh max")),
+                    true,
+                    &mut cc,
+                )?;
             } else {
-            test_zf_op!(
-                true,
-                n,
-                acosh,
-                f,
-                acosh,
-                p,
-                rm,
-                rnd,
-                (n, p, rm, "acosh"),
-                cc
-            );
+                test_zf_op!(
+                    true,
+                    n,
+                    acosh,
+                    f,
+                    acosh,
+                    p,
+                    rm,
+                    rnd,
+                    (n, p, rm, "acosh"),
+                    cc
+                );
             }
 
             test_zf_op!(true, n, acos, f, acos, p, rm, rnd, (n, p, rm, "acos"), cc);

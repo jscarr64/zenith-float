@@ -5,7 +5,6 @@
 
 use std::ops::Add;
 
-use crate::mpfr::common::{RAND_EMAX, RAND_EMIN};
 use crate::mpfr::common::get_prec_rng;
 use crate::mpfr::common::test_zf_op;
 use crate::mpfr::common::test_zf_op_no_cc;
@@ -13,10 +12,9 @@ use crate::mpfr::common::{
     assert_float_close, conv_to_mpfr, draw_seed, get_float_pair, get_random_rnd_pair,
     normal_from_seed, reset_test_rng, test_random, test_zf_fma, test_zf_rem_pi,
 };
+use crate::mpfr::common::{RAND_EMAX, RAND_EMIN};
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rug::{
-    Float,
-};
+use rug::Float;
 use zenith_float_num::Word;
 use zenith_float_num::EXPONENT_BIT_SIZE;
 use zenith_float_num::{Consts, ExactNum, Exponent, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};

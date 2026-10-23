@@ -1,6 +1,5 @@
 //! Complex `Ei`, `Si`, `Ci`, `li`, and Fresnel integrals.
 
-use crate::defs::Exponent;
 use crate::common::util::round_p;
 use crate::complex_special::half_c;
 use crate::complex_special::nan_pair;
@@ -10,6 +9,7 @@ use crate::complex_special::series_term_cap;
 use crate::complex_special::term_negligible;
 use crate::complex_special::two_c;
 use crate::complex_special::ziv_complex;
+use crate::defs::Exponent;
 use crate::Consts;
 use crate::Error;
 use crate::ExactComplex;
@@ -427,8 +427,14 @@ mod tests {
     fn cnear_bits(a: &ExactComplex, b: &ExactComplex, p: usize, slack: Exponent) -> bool {
         let dr = ExactNum::sub_ref(a.re(), b.re(), p, RoundingMode::None).abs();
         let di = ExactNum::sub_ref(a.im(), b.im(), p, RoundingMode::None).abs();
-        (dr.is_zero() || dr.exponent().is_some_and(|e| e < -((p as Exponent) / slack)))
-            && (di.is_zero() || di.exponent().is_some_and(|e| e < -((p as Exponent) / slack)))
+        (dr.is_zero()
+            || dr
+                .exponent()
+                .is_some_and(|e| e < -((p as Exponent) / slack)))
+            && (di.is_zero()
+                || di
+                    .exponent()
+                    .is_some_and(|e| e < -((p as Exponent) / slack)))
     }
 
     fn tiny(x: &ExactNum, p: usize) -> bool {

@@ -1,12 +1,12 @@
 //! Dense row-major arrays of software IEEE values and `ExactNum`.
 //! A 1-D vector is stored as shape `(1, n)`.
 
-use crate::defs::Exponent;
 use super::simd::{
     add_u32_lanes, add_u64_lanes, div_u32_lanes, div_u64_lanes, fma_u32_lanes, fma_u64_lanes,
     mul_u32_lanes, mul_u64_lanes, sqrt_u32_lanes, sqrt_u64_lanes, sub_u32_lanes, sub_u64_lanes,
 };
 use super::{Ieee32, Ieee64};
+use crate::defs::Exponent;
 use crate::defs::RoundingMode;
 use crate::Consts;
 use crate::Error;

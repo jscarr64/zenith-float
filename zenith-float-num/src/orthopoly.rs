@@ -538,7 +538,8 @@ mod tests {
             return true;
         }
         let ae = a.exponent().unwrap_or(0);
-        d.exponent().is_some_and(|e| e - ae < -((p as crate::Exponent) / 4))
+        d.exponent()
+            .is_some_and(|e| e - ae < -((p as crate::Exponent) / 4))
     }
 
     #[test]

@@ -58,6 +58,9 @@ mod tests {
         assert_eq!(narrow(wide(EXPONENT_MIN) * 4), -WIDE_LIMIT);
         assert_eq!(narrow(wide(EXPONENT_MIN) - 1), EXPONENT_MIN - 1);
         assert_eq!(mul(EXPONENT_MAX, -3), -WIDE_LIMIT);
-        assert_eq!(abs_diff_shift(EXPONENT_MAX, EXPONENT_MIN), (EXPONENT_MAX as usize) * 2);
+        assert_eq!(
+            abs_diff_shift(EXPONENT_MAX, EXPONENT_MIN),
+            (EXPONENT_MAX as usize) * 2
+        );
     }
 }

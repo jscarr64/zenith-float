@@ -191,7 +191,9 @@ impl ExactNumNumber {
             let mut m = Mantissa::new(msz)?;
 
             // exponent
-            let e = crate::exp::narrow(crate::exp::wide(crate::exp::mul(e, shift as i64)) + crate::exp::wide(e_shift));
+            let e = crate::exp::narrow(
+                crate::exp::wide(crate::exp::mul(e, shift as i64)) + crate::exp::wide(e_shift),
+            );
 
             if e > EXPONENT_MAX as i64 {
                 return Err(Error::ExponentOverflow(sign));

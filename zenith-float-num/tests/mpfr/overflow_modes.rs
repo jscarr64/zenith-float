@@ -2,7 +2,6 @@
 //! positive result and under `Up` for a negative result; `±inf` otherwise
 //! (2.0.0 audit, round 2: item b).
 
-use zenith_float_num::Exponent;
 use crate::mpfr::common::conv_to_mpfr;
 use crate::mpfr::common::draw_seed;
 use crate::mpfr::common::mpfr_reference_with;
@@ -11,6 +10,7 @@ use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::exact_bit_functions::{check, input, MODES, PRECISIONS};
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::Float;
+use zenith_float_num::Exponent;
 use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MAX, WORD_BIT_SIZE};
 
 /// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.

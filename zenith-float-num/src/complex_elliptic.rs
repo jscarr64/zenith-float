@@ -4,11 +4,11 @@
 //! \(m=k^2\); incomplete argument \(x=\sin\varphi\). Not the real series at
 //! \(\lvert z\rvert\).
 
-use crate::defs::Exponent;
 use crate::common::util::round_p;
 use crate::complex_special::nan_pair;
 use crate::complex_special::pi_c;
 use crate::complex_special::ziv_complex;
+use crate::defs::Exponent;
 use crate::Consts;
 use crate::Error;
 use crate::ExactComplex;

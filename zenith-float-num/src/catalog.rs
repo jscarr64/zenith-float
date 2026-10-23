@@ -1681,7 +1681,9 @@ mod tests {
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().is_some_and(|e| e < -((p as crate::Exponent) / 4))
+        d.is_zero()
+            || d.exponent()
+                .is_some_and(|e| e < -((p as crate::Exponent) / 4))
     }
 
     #[test]
@@ -1796,7 +1798,8 @@ mod tests {
         let lb = if dl.is_zero() {
             i32::MAX
         } else {
-            i32::try_from(lna_ref.exponent().unwrap_or(0) - dl.exponent().unwrap_or(0)).unwrap_or(i32::MAX)
+            i32::try_from(lna_ref.exponent().unwrap_or(0) - dl.exponent().unwrap_or(0))
+                .unwrap_or(i32::MAX)
         };
         assert!(lb >= 80, "ln A only {lb} bits");
 

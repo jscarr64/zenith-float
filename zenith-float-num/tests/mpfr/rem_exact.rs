@@ -2,12 +2,12 @@
 //! precision of `x`, so it needs no rounding mode and is never inexact. Checked against an
 //! exact big-integer remainder (2.0.0 audit, round 2 leftovers).
 
-use zenith_float_num::Exponent;
 use crate::mpfr::common::{
     conv_to_mpfr, draw_seed, rebuild_from_seed, reset_test_rng, test_random,
 };
 use crate::mpfr::exact_bit_functions::{input, PRECISIONS};
 use rug::{Float, Integer};
+use zenith_float_num::Exponent;
 use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MIN, WORD_BIT_SIZE};
 
 /// `|x| mod |y|` with the sign of `x`, from the exact integer significands.
@@ -101,7 +101,13 @@ fn rem_is_exact() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         conv(w, mk_x()?.rem(&y), &mut cc)?
                     };
-                    assert_eq!(fg, want, "{info}: zenith {}, exact {}", crate::mpfr::common::show_mp(&fg), crate::mpfr::common::show_mp(&want));
+                    assert_eq!(
+                        fg,
+                        want,
+                        "{info}: zenith {}, exact {}",
+                        crate::mpfr::common::show_mp(&fg),
+                        crate::mpfr::common::show_mp(&want)
+                    );
                     if want.is_zero() {
                         assert_eq!(got.is_negative(), x.is_negative(), "{info}: sign of zero");
                     }

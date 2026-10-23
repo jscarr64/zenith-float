@@ -2968,7 +2968,8 @@ fn betainc_cf(
     p: usize,
 ) -> Result<ExactNumNumber, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
-    let tiny = ExactNumNumber::from_word(1, p)?.ldexp(-(2 * p as Exponent), p, RoundingMode::None)?;
+    let tiny =
+        ExactNumNumber::from_word(1, p)?.ldexp(-(2 * p as Exponent), p, RoundingMode::None)?;
     let floor_tiny = |v: ExactNumNumber| -> Result<ExactNumNumber, Error> {
         if v.abs()?.cmp(&tiny) < 0 {
             tiny.clone()
@@ -3191,7 +3192,8 @@ fn hypergeom_series(
     let one = ExactNumNumber::from_word(1, p)?;
     let mut term = ExactNumNumber::from_word(1, p)?;
     let mut sum = ExactNumNumber::from_word(1, p)?;
-    let tiny = ExactNumNumber::from_word(1, p)?.ldexp(-((p as Exponent) - 8), p, RoundingMode::None)?;
+    let tiny =
+        ExactNumNumber::from_word(1, p)?.ldexp(-((p as Exponent) - 8), p, RoundingMode::None)?;
     let max_par = max_abs(&[a, b, c])?;
     let mut mag = one.exponent();
     for n in 0..HYPERGEOM_TERM_MAX {

@@ -3,9 +3,9 @@
 //! Software-limb [`ExactComplex`] arithmetic only. The error-function path is the
 //! Faddeeva function throughout — not the real series evaluated at \(\lvert z\rvert\).
 
-use crate::defs::Exponent;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
+use crate::defs::Exponent;
 use crate::Consts;
 use crate::Error;
 use crate::ExactComplex;

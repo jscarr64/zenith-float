@@ -354,7 +354,13 @@ pub fn assert_float_close(
             let e2 = unsafe { (*d.as_raw()).exp };
             Ok(e1 - e2 >= i64::try_from(mlen)? - 1)
         })?;
-        assert!(ok, "{} far-range mismatch: MPFR exp {}, zenith {:?}", op, e_f, n.as_raw_parts());
+        assert!(
+            ok,
+            "{} far-range mismatch: MPFR exp {}, zenith {:?}",
+            op,
+            e_f,
+            n.as_raw_parts()
+        );
     } else if eq {
         // n == f
         let s1 = f.to_string_radix(2, None);
@@ -744,7 +750,8 @@ pub fn emulated_range(p: u32, shift: i64) -> (i64, i64) {
 /// tests) keep their results far below `EXPONENT_MAX`, so only the unshifted top must fit.
 pub fn emulated_range_ok(p: u32, shift: i64) -> bool {
     let (lo, hi) = unsafe { (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max())) };
-    EXPONENT_MIN as i64 + shift - p as i64 + 1 >= lo && (EXPONENT_MAX as i64).saturating_add(shift.min(0)) <= hi
+    EXPONENT_MIN as i64 + shift - p as i64 + 1 >= lo
+        && (EXPONENT_MAX as i64).saturating_add(shift.min(0)) <= hi
 }
 
 /// The exact value of a finite zenith number times `2^shift` as an MPFR number (widest exponent range
@@ -804,7 +811,11 @@ pub fn assert_exact_eq(
         assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of Inf");
         return Ok(());
     }
-    assert!(!n.is_inf() && !n.is_nan(), "{op}: MPFR {}, zenith {n:?}", show_mp(f));
+    assert!(
+        !n.is_inf() && !n.is_nan(),
+        "{op}: MPFR {}, zenith {n:?}",
+        show_mp(f)
+    );
     if f.is_zero() {
         assert!(n.is_zero(), "{op}: MPFR {}, zenith {n:?}", show_mp(f));
         assert_eq!(n.is_negative(), f.is_sign_negative(), "{op}: sign of zero");
@@ -837,7 +848,12 @@ pub fn assert_exact_eq(
         mpfr::set_emin(old_min);
         mpfr::set_emax(old_max);
     }
-    assert!(equal, "{op}: MPFR {}, zenith {n:?} = {}", show_mp(f), show_mp(&got));
+    assert!(
+        equal,
+        "{op}: MPFR {}, zenith {n:?} = {}",
+        show_mp(f),
+        show_mp(&got)
+    );
     Ok(())
 }
 

@@ -3,13 +3,13 @@
 //! Series, Euler, Pfaff, and Kummer / linear transformations in \(\mathbb{C}\).
 //! Not the real series at \(\lvert z\rvert\).
 
-use crate::defs::Exponent;
 use crate::common::util::round_p;
 use crate::complex_special::is_nonpos_integer;
 use crate::complex_special::nan_pair;
 use crate::complex_special::neg_c;
 use crate::complex_special::term_negligible;
 use crate::complex_special::ziv_complex;
+use crate::defs::Exponent;
 use crate::Consts;
 use crate::Error;
 use crate::ExactComplex;
