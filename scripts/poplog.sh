@@ -152,7 +152,7 @@ poplog_init() {
   [[ -e "$POPLOG_FILE" ]] && POPLOG_FILE="${POPLOG_FILE%.log}-$$.log"
   POPLOG_STATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/poplog.XXXXXX")
   POPLOG_PROGRESS_FILE=$POPLOG_STATE_DIR/progress
-  export POPLOG_FILE POPLOG_PROGRESS_FILE POPLOG_PID POPLOG_STATE_DIR POPLOG_ROOT POPLOG_RUNNING
+  export POPLOG_AGENT POPLOG_FILE POPLOG_PROGRESS_FILE POPLOG_PID POPLOG_STATE_DIR POPLOG_ROOT POPLOG_RUNNING
   : > "$POPLOG_STATE_DIR/out"; echo '-' > "$POPLOG_STATE_DIR/step"
   local sha='(not a git repo)'
   sha=$(git -C "$POPLOG_REPO" rev-parse HEAD 2>/dev/null || echo '(not a git repo)')
@@ -242,48 +242,111 @@ poplog_run_step() {
   log_step_end "$name" "$rc" "$POPLOG_STATE_DIR/out" "$tests" || return 1
 }
 
-# pop_slot_acquire [N] - take the first free of N (default 3) counting-lock slots $POPSLOT_PREFIX1..N
-# (default /tmp/pop-gate.slot). Holds it on fd $POPSLOT_FD until this process exits. If none is free the run is
-# WAITING (RUNNING.tsv + heartbeat); waiters queue on $POPSLOT_PREFIX.queue (one poller at a time, FIFO-ish) and
-# poll every $POPSLOT_POLL s (default 3). Sets POPSLOT_SLOT and POPSLOT_WAITED. Works in or out of a poplog run.
+# pop_slot_acquire [N] - take one of N (default $POPSLOT_SLOTS or 4) counting-lock slots $POPSLOT_PREFIX1..N
+# (default /tmp/pop-gate.slot), held on fd $POPSLOT_FD until this process exits. Scheduler v2 (Paul 2026-10-23):
+#   - one slot per agent: an agent ($POPSLOT_AGENT / popslot --agent, else $POPLOG_AGENT, else the RUNNING.tsv row of
+#     $POPLOG_PID) that already holds a slot waits even if another slot is free;
+#   - tickets: every waiter files $POPSLOT_PREFIX.tickets/<class>-<ns>-<pid> (class 0 = priority, 1 = normal); a free slot
+#     goes to the earliest eligible ticket, priority class first, FIFO within a class; decisions under $POPSLOT_PREFIX.sched.lock;
+#   - holders are recorded in $POPSLOT_PREFIX.holders/<k> ("pid agent"); old-code holders are found via RUNNING.tsv slot k/N;
+#   - priority: POPSLOT_PRIORITY=1 (popslot --priority); RUNNING.tsv slot column shows wait/N!p while waiting;
+#   - a process whose ancestor already holds a slot (POPSLOT_HOLDER_PID alive) reuses it (no self-deadlock).
+# While WAITING, RUNNING.tsv last_heartbeat is refreshed every $POPSLOT_HEARTBEAT s (60). Polls every $POPSLOT_POLL s (3).
+# Sets POPSLOT_SLOT and POPSLOT_WAITED. Works in or out of a poplog run.
 _ps_note() { if [[ -n "${POPLOG_FILE:-}" && -f "${POPLOG_FILE:-}" ]]; then _pl_log "$*"; fi; echo "popslot: $*" >&2; }
-_ps_try() {
-  local i fd
-  for ((i = 1; i <= POPSLOT_N; i++)); do
+_ps_free() { flock -n "$1" true 2>/dev/null; }
+# _ps_slot_agent K - agent holding slot K ('' if free/unknown)
+_ps_slot_agent() {
+  local k=$1 f="${POPSLOT_PREFIX}$1" pid a
+  [[ -e "$f" ]] || return 0
+  _ps_free "$f" && return 0
+  if [[ -f "$POPSLOT_PREFIX.holders/$k" ]]; then
+    read -r pid a < "$POPSLOT_PREFIX.holders/$k" || true
+    if [[ -n "${pid:-}" ]] && kill -0 "$pid" 2>/dev/null; then printf '%s\n' "$a"; return 0; fi
+  fi
+  [[ -f "${POPLOG_RUNNING:-$POPLOG_ROOT/RUNNING.tsv}" ]] || return 0
+  while IFS=$'\t' read -r a _ pid _ _ _ st sl; do
+    [[ "$st" == RUNNING || "$st" == PAUSED ]] || continue
+    [[ "$sl" == "$k/"* ]] || continue
+    kill -0 "$pid" 2>/dev/null && { printf '%s\n' "$a"; return 0; }
+  done < <(tail -n +2 "${POPLOG_RUNNING:-$POPLOG_ROOT/RUNNING.tsv}")
+  return 0
+}
+_ps_busy_agents() {
+  local f k
+  for f in "${POPSLOT_PREFIX}"[0-9]*; do k=${f#"$POPSLOT_PREFIX"}; if [[ "$k" =~ ^[0-9]+$ ]]; then _ps_slot_agent "$k" || true; fi; done
+  return 0
+}
+# _ps_round TICKET - one scheduling decision under the sched lock; 0 = slot taken.
+_ps_round() {
+  local me=$1 lk t p a busy free=() i fd ahead=0 seen=' '
+  exec {lk}> "$POPSLOT_PREFIX.sched.lock"; flock -x "$lk"
+  for t in "$POPSLOT_PREFIX.tickets"/*; do
+    [[ -e "$t" ]] || continue; p=${t##*-}; kill -0 "$p" 2>/dev/null || rm -f "$t"
+  done
+  busy=" $(_ps_busy_agents | tr '\n' ' ') "
+  if [[ "$busy" == *" $POPSLOT_AGENT "* ]]; then POPSLOT_WHY="agent $POPSLOT_AGENT already holds a slot"; exec {lk}>&-; return 1; fi
+  for ((i = 1; i <= POPSLOT_N; i++)); do _ps_free "${POPSLOT_PREFIX}$i" && free+=("$i"); done
+  if [[ ${#free[@]} -eq 0 ]]; then POPSLOT_WHY="all $POPSLOT_N slots busy"; exec {lk}>&-; return 1; fi
+  for t in "$POPSLOT_PREFIX.tickets"/*; do
+    [[ -e "$t" ]] || continue
+    [[ "$t" == "$me" ]] && break
+    a=$(cat "$t" 2>/dev/null || true)
+    [[ "$busy" == *" $a "* || "$seen" == *" $a "* ]] && continue
+    seen+="$a "; ahead=$((ahead + 1))
+  done
+  if [[ $ahead -ge ${#free[@]} ]]; then POPSLOT_WHY="$ahead earlier/priority waiter(s) ahead"; exec {lk}>&-; return 1; fi
+  for i in "${free[@]}"; do
     exec {fd}>> "${POPSLOT_PREFIX}$i"
-    if flock -n "$fd"; then POPSLOT_FD=$fd; POPSLOT_SLOT=$i; return 0; fi
+    if flock -n "$fd"; then
+      POPSLOT_FD=$fd; POPSLOT_SLOT=$i
+      printf '%s %s\n' "$$" "$POPSLOT_AGENT" > "$POPSLOT_PREFIX.holders/$i"
+      rm -f "$me"; exec {lk}>&-; return 0
+    fi
     exec {fd}>&-
   done
-  return 1
+  POPSLOT_WHY="slot taken by an old-code waiter"; exec {lk}>&-; return 1
 }
 pop_slot_acquire() {
-  POPSLOT_N=${1:-${POPSLOT_SLOTS:-3}}; POPSLOT_PREFIX=${POPSLOT_PREFIX:-/tmp/pop-gate.slot}
-  local t0 qfd ctx=''; t0=$(date +%s)
-  [[ -n "${POPLOG_PID:-}" && -n "${POPLOG_STATE_DIR:-}" && -d "${POPLOG_STATE_DIR:-/nonexistent}" ]] && ctx=1
-  if ! _ps_try; then
-    _ps_note "SLOT WAITING: all $POPSLOT_N slots (${POPSLOT_PREFIX}1..$POPSLOT_N) busy"
-    if [[ -n "$ctx" ]]; then : > "$POPLOG_STATE_DIR/waiting"; _pl_running_update WAITING "wait/$POPSLOT_N"; fi
-    local rf=''
-    if [[ -n "$ctx" ]]; then
-      # keep the WAITING row's last_heartbeat fresh (else it reads as STALE); no stdout/lock fds held
-      ( while sleep "${POPSLOT_HEARTBEAT:-60}"; do
-          kill -0 "$POPLOG_PID" 2>/dev/null && [[ -f "$POPLOG_STATE_DIR/waiting" ]] || exit 0
-          _pl_running_update WAITING "wait/$POPSLOT_N"
-        done ) < /dev/null > /dev/null 2>&1 9>&- &
-      rf=$!
-    fi
-    exec {qfd}>> "${POPSLOT_PREFIX}.queue"
-    flock "$qfd"
-    until _ps_try; do sleep "${POPSLOT_POLL:-3}"; done
-    exec {qfd}>&-
-    if [[ -n "$rf" ]]; then pkill -P "$rf" 2>/dev/null || true; kill "$rf" 2>/dev/null || true; wait "$rf" 2>/dev/null || true; fi
+  POPSLOT_N=${1:-${POPSLOT_SLOTS:-4}}; POPSLOT_PREFIX=${POPSLOT_PREFIX:-/tmp/pop-gate.slot}
+  if [[ -n "${POPSLOT_HOLDER_PID:-}" && -n "${POPSLOT_SLOT:-}" ]] && kill -0 "$POPSLOT_HOLDER_PID" 2>/dev/null; then
+    POPSLOT_WAITED=0; _ps_note "SLOT REUSED slot=$POPSLOT_SLOT (held by ancestor pid $POPSLOT_HOLDER_PID)"; return 0
   fi
+  local t0 ctx='' prio=0 cls=1 mark='' me rf='' noted=''; t0=$(date +%s)
+  [[ -n "${POPLOG_PID:-}" && -n "${POPLOG_STATE_DIR:-}" && -d "${POPLOG_STATE_DIR:-/nonexistent}" ]] && ctx=1
+  [[ "${POPSLOT_PRIORITY:-0}" == 1 ]] && { prio=1; cls=0; mark='!p'; }
+  if [[ -z "${POPSLOT_AGENT:-}" ]]; then
+    POPSLOT_AGENT=${POPLOG_AGENT:-}
+    if [[ -z "$POPSLOT_AGENT" && -n "${POPLOG_PID:-}" && -f "${POPLOG_RUNNING:-$POPLOG_ROOT/RUNNING.tsv}" ]]; then
+      POPSLOT_AGENT=$(awk -F'\t' -v p="$POPLOG_PID" 'NR>1 && $3==p {print $1; exit}' "${POPLOG_RUNNING:-$POPLOG_ROOT/RUNNING.tsv}")
+    fi
+    [[ -n "$POPSLOT_AGENT" ]] || POPSLOT_AGENT="pid$$"
+  fi
+  mkdir -p "$POPSLOT_PREFIX.tickets" "$POPSLOT_PREFIX.holders"
+  me="$POPSLOT_PREFIX.tickets/$cls-$(date +%s%N)-$$"; printf '%s\n' "$POPSLOT_AGENT" > "$me"
+  until _ps_round "$me"; do
+    if [[ -z "$noted" ]]; then
+      noted=1
+      _ps_note "SLOT WAITING priority=$prio agent=$POPSLOT_AGENT: $POPSLOT_WHY (slots ${POPSLOT_PREFIX}1..$POPSLOT_N)"
+      if [[ -n "$ctx" ]]; then
+        : > "$POPLOG_STATE_DIR/waiting"; _pl_running_update WAITING "wait/$POPSLOT_N$mark"
+        ( while sleep "${POPSLOT_HEARTBEAT:-60}"; do
+            kill -0 "$POPLOG_PID" 2>/dev/null && [[ -f "$POPLOG_STATE_DIR/waiting" ]] || exit 0
+            _pl_running_update WAITING "wait/$POPSLOT_N$mark"
+          done ) < /dev/null > /dev/null 2>&1 9>&- &
+        rf=$!
+      fi
+    fi
+    sleep "${POPSLOT_POLL:-3}"
+  done
+  if [[ -n "$rf" ]]; then pkill -P "$rf" 2>/dev/null || true; kill "$rf" 2>/dev/null || true; wait "$rf" 2>/dev/null || true; fi
   POPSLOT_WAITED=$(( $(date +%s) - t0 ))
-  export POPSLOT_SLOT POPSLOT_FD POPSLOT_HELD=$POPSLOT_SLOT
-  # Per-gate budget (Paul/Jeff 2026-10-23): 3 slots x 8 jobs = 24 of 32 cores, unless the caller overrides.
-  export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-8} RUST_TEST_THREADS=${RUST_TEST_THREADS:-8}
+  POPSLOT_HOLDER_PID=$$
+  export POPSLOT_SLOT POPSLOT_FD POPSLOT_HELD=$POPSLOT_SLOT POPSLOT_HOLDER_PID POPSLOT_AGENT
+  # Per-gate budget (Paul 2026-10-23): 4 slots x 6 jobs = 24 of 32 cores, unless the caller overrides.
+  export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-6} RUST_TEST_THREADS=${RUST_TEST_THREADS:-6}
   if [[ -n "$ctx" ]]; then rm -f "$POPLOG_STATE_DIR/waiting"; _pl_running_update RUNNING "$POPSLOT_SLOT/$POPSLOT_N"; fi
-  _ps_note "SLOT TAKEN slot=$POPSLOT_SLOT/$POPSLOT_N (${POPSLOT_PREFIX}$POPSLOT_SLOT) waited=$(_pl_fmt "$POPSLOT_WAITED") CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS RUST_TEST_THREADS=$RUST_TEST_THREADS"
+  _ps_note "SLOT TAKEN slot=$POPSLOT_SLOT/$POPSLOT_N (${POPSLOT_PREFIX}$POPSLOT_SLOT) agent=$POPSLOT_AGENT priority=$prio waited=$(_pl_fmt "$POPSLOT_WAITED") CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS RUST_TEST_THREADS=$RUST_TEST_THREADS"
 }
 
 poplog_finish() {
