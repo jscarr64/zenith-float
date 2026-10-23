@@ -2,55 +2,82 @@
 //! precision of `x`, so it needs no rounding mode and is never inexact. Checked against an
 //! exact big-integer remainder (2.0.0 audit, round 2 leftovers).
 
-use crate::mpfr::common::{
-    conv_to_mpfr, draw_seed, rebuild_from_seed, reset_test_rng, test_random,
-};
+use crate::mpfr::common::{conv_to_mpfr, draw_seed, rebuild_from_seed, reset_test_rng};
 use crate::mpfr::exact_bit_functions::{input, PRECISIONS};
 use rug::{Float, Integer};
 use zenith_float_num::Exponent;
 use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MIN, WORD_BIT_SIZE};
 
-/// `|x| mod |y|` with the sign of `x`, from the exact integer significands.
+/// Runs `f` with MPFR's exponent range at its widest (both ends: a lifted operand can pass the default `emax`).
+fn widest_range<T>(f: impl FnOnce() -> T) -> T {
+    use gmp_mpfr_sys::mpfr;
+    let (emin, emax) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+    unsafe {
+        mpfr::set_emin(mpfr::get_emin_min());
+        mpfr::set_emax(mpfr::get_emax_max());
+    }
+    let r = f();
+    unsafe {
+        mpfr::set_emin(emin);
+        mpfr::set_emax(emax);
+    }
+    r
+}
+
+/// The significand and exponent of a finite `f`, `f = m * 2^e`, with the exponent at full `mpfr_exp_t` width
+/// (`rug`'s `to_integer_exp` narrows it to `i32`, which panics with "overflow" once the exponents use the i64 range).
+fn integer_exp(f: &Float) -> Result<(Integer, i64), Box<dyn std::error::Error>> {
+    if !f.is_finite() {
+        return Err("none value".into());
+    }
+    let mut i = Integer::new();
+    let e = unsafe { gmp_mpfr_sys::mpfr::get_z_2exp(i.as_raw_mut(), f.as_raw()) };
+    Ok((i, i64::from(e)))
+}
+
+/// `|x| mod |y|` with the sign of `x`, from the exact integer significands. Exact math at any exponent spread:
+/// for `ex >= ey` the lifted dividend is reduced as `|mx| * (2^(ex - ey) mod |my|) mod |my|` (no `2^spread`
+/// integer); for `ey - ex > 4096` the divisor exceeds the dividend and the remainder is `x` itself.
 fn oracle(fx: &Float, fy: &Float) -> Result<Float, Box<dyn std::error::Error>> {
-    // Lift both operands by the same power of two so that the integer exponents stay in
-    // i32 near the bottom of the range; the remainder scales with them.
-    const LIFT: i32 = 1 << 12;
-    let old = unsafe { gmp_mpfr_sys::mpfr::get_emin() };
-    unsafe { gmp_mpfr_sys::mpfr::set_emin(gmp_mpfr_sys::mpfr::get_emin_min()) };
-    let fx = Float::with_val(fx.prec(), fx) << LIFT;
-    let fy = Float::with_val(fy.prec(), fy) << LIFT;
-    unsafe { gmp_mpfr_sys::mpfr::set_emin(old) };
-    let (mx, ex) = fx.to_integer_exp().ok_or("none value")?;
-    let (my, ey) = fy.to_integer_exp().ok_or("none value")?;
-    let e = ex.min(ey);
-    let xi = Integer::from(mx.abs_ref()) << (ex - e) as u32;
-    let yi = Integer::from(my.abs_ref()) << (ey - e) as u32;
-    let mut r = xi % yi;
+    let (mx, ex) = integer_exp(fx)?;
+    let (my, ey) = integer_exp(fy)?;
+    let (ax, ay) = (Integer::from(mx.abs_ref()), Integer::from(my.abs_ref()));
+    let (mut r, e) = if ex >= ey {
+        let k = Integer::from(ex - ey);
+        let two = Integer::from(2);
+        let t = two.pow_mod(&k, &ay).map_err(|_| "pow_mod")?;
+        (Integer::from(&ax * &t) % &ay, ey)
+    } else if ey - ex > 4096 {
+        (ax, ex)
+    } else {
+        (ax % (ay << u32::try_from(ey - ex)?), ex)
+    };
     if fx.is_sign_negative() {
         r = -r;
     }
     let bits = r.significant_bits().max(1);
-    let old = unsafe { gmp_mpfr_sys::mpfr::get_emin() };
-    unsafe { gmp_mpfr_sys::mpfr::set_emin(gmp_mpfr_sys::mpfr::get_emin_min()) };
-    let f = (Float::with_val(bits, r) << e) >> LIFT;
-    unsafe { gmp_mpfr_sys::mpfr::set_emin(old) };
-    Ok(f)
+    let sh = isize::try_from(e)?;
+    Ok(widest_range(|| Float::with_val(bits, r) << sh))
 }
 
-/// `conv_to_mpfr` for values near the bottom of the range. Takes `x` by value (the scaling consumes
-/// it); callers rebuild the operand from its seed.
-fn conv(w: usize, x: ExactNum, cc: &mut Consts) -> Result<Float, Box<dyn std::error::Error>> {
+/// `conv_to_mpfr` of `x * 2^lift` for values near the bottom of the range: `lift` moves the zenith subnormals
+/// (below MPFR's `emin_min`) inside MPFR's range. Both operands and the result take the same `lift`, and
+/// `rem(x * 2^s, y * 2^s) = rem(x, y) * 2^s` exactly. Takes `x` by value (the scaling consumes it); callers
+/// rebuild the operand from its seed.
+fn conv(
+    w: usize,
+    x: ExactNum,
+    lift: i64,
+    cc: &mut Consts,
+) -> Result<Float, Box<dyn std::error::Error>> {
     let e = x.exponent().unwrap_or(0);
     // two steps: -EXPONENT_MIN does not fit in an Exponent
     let s = x
         .ldexp(-(e / 2), w, RoundingMode::None)
         .ldexp(-(e - e / 2), w, RoundingMode::None);
     let f = conv_to_mpfr(w, &s, cc)?;
-    let old = unsafe { gmp_mpfr_sys::mpfr::get_emin() };
-    unsafe { gmp_mpfr_sys::mpfr::set_emin(gmp_mpfr_sys::mpfr::get_emin_min()) };
-    let f = f << (e as isize);
-    unsafe { gmp_mpfr_sys::mpfr::set_emin(old) };
-    Ok(f)
+    let sh = isize::try_from(i128::from(e) + i128::from(lift))?;
+    Ok(widest_range(|| f << sh))
 }
 
 #[test]
@@ -83,23 +110,20 @@ fn rem_is_exact() -> Result<(), Box<dyn std::error::Error>> {
                     let mk_y = || rebuild_from_seed(sy, || input(py, by.0, by.1, true));
                     let x = mk_x()?;
                     let y = mk_y()?;
-                    // the integer oracle needs the two exponents within reach of each other
-                    let spread =
-                        x.exponent().unwrap_or(0) as i64 - y.exponent().unwrap_or(0) as i64;
-                    if spread.abs() > 4096 && test_random::<bool>() {
-                        continue;
-                    }
+                    // one lift for the pair: above the subnormals when either operand is near the bottom
+                    let low = x.exponent().unwrap_or(0).min(y.exponent().unwrap_or(0));
+                    let lift = if low < -(1i64 << 61) { 1i64 << 61 } else { 0 };
                     let got = x.rem(&y);
                     let info = format!("rem px={px} py={py} x={x:?} y={y:?}");
-                    let fx = conv(wx, mk_x()?, &mut cc)?;
-                    let fy = conv(wy, mk_y()?, &mut cc)?;
+                    let fx = conv(wx, mk_x()?, lift, &mut cc)?;
+                    let fy = conv(wy, mk_y()?, lift, &mut cc)?;
                     let want = oracle(&fx, &fy)?;
                     assert!(!got.inexact(), "{info}: rem reported inexact");
                     let w = got.mantissa_max_bit_len().unwrap_or(wx).max(1);
                     let fg = if got.is_zero() {
                         Float::with_val(w as u32, 0)
                     } else {
-                        conv(w, mk_x()?.rem(&y), &mut cc)?
+                        conv(w, mk_x()?.rem(&y), lift, &mut cc)?
                     };
                     assert_eq!(
                         fg,
