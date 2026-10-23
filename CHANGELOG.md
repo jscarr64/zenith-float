@@ -4,7 +4,7 @@
 
 ## 1.0.13
 
-Patch release: corrects the wrong answers listed below. No public signature, type or documented behaviour changed (the rustdoc item lists of the three crates are identical to 1.0.12). Only results that were wrong, or `NaN(PrecisionRetryExhausted)`, change; every value that was already right is bit for bit the same, and no existing test or pinned value changed. Each case was found by comparing with MPFR 4.2 in all six rounding modes at precisions from 1 to 4096 bits (a precision is rounded up to a multiple of 64, as always).
+Patch release: corrects the wrong answers listed below. No public signature or type changed (the rustdoc item lists of the three crates are identical to 1.0.12). Only results that were wrong, or `NaN(PrecisionRetryExhausted)`, change, plus one behaviour change: `pow(x, 1)` now rounds the requested precision up to a whole 64-bit word like every other result (see `pow` below); every value that was already right is bit for bit the same, and no existing test or pinned value changed. Each case was found by comparing with MPFR 4.2 in all six rounding modes at precisions from 1 to 4096 bits (a precision is rounded up to a multiple of 64, as always).
 
 Unchanged on purpose: the reciprocal of a number below about `2^-2147483647` (a subnormal) is `+-Inf` in the `Down` and `ToZero` modes, as it was in 1.0.12, not the largest finite number. That is the documented overflow rule (overflow is `+-Inf` in every mode and every operation), so changing it for one function would be a behaviour change; it is not part of 1.0.13.
 
@@ -13,7 +13,7 @@ Each line: the call, what 1.0.12 returned, what is returned now.
 ### `pow`
 
 - `pow(2, 2)`, `pow(2, -3)`, `pow(4, 0.5)`, `pow(9, 1.5)`, `pow(16, 0.25)`, `pow(1.5, 2)` and every other power whose result is exactly representable, at 64 or 256 bits: in `ToEven` the exact result carried the inexact flag; in `Up`, `Down`, `ToZero`, `FromZero` and `ToOdd` the result was `NaN(PrecisionRetryExhausted)`. Now the exact value, not flagged inexact, in every mode. A whole-number exponent, or one that is a multiple of 1/2^6 with a base that is an exact power of the matching root, is computed as an integer power of an exact root; every other `pow` is unchanged.
-- `pow(-3, 1)` at 1 to 63 bits: `-4` (rounded to the requested bits). Now `-3`: the precision is rounded up to a whole word like every other result.
+- Behaviour change: `pow(-3, 1)` at 1 to 63 bits: `-4` (rounded to the requested bits). Now `-3`: the precision is rounded up to a whole word like every other result.
 
 ### `fma`
 
