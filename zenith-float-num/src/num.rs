@@ -18,8 +18,7 @@ use crate::defs::WORD_SIGNIFICANT_BIT;
 use crate::mantissa::AddSubSpec;
 use crate::mantissa::Mantissa;
 
-// The one approved Ziv working-copy helper (see its file); test-only until the first conversion uses it.
-#[cfg(test)]
+// The one approved Ziv working-copy helper (see its file); used only at the pinned sites in tools/ziv_shape_a_sites.txt.
 mod ziv_operand;
 
 /// A finite floating point number with mantissa of an arbitrary size, an exponent, and the sign.

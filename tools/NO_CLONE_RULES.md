@@ -62,7 +62,7 @@ does not match because it looks for `.clone(` and `Clone::clone`). `no_clone.py 
    dup/widen/working/extend, a second definition of `ziv_pass_operand`, the definition in another file, or a missing
    CODEOWNERS entry fails, whatever the baselines say.
 
-The module is compiled only under `cfg(test)` until the first production loop uses the helper (`deny(unused)`).
+The module is compiled in every build since the ln/log2 conversion; its uses are limited to `tools/ziv_shape_a_sites.txt`.
 A loop converted to the helper replaces a `.clone()?` (clone count down) with a use (helper-copy count up by one);
 each such conversion is reported to Jeff before it is committed.
 
