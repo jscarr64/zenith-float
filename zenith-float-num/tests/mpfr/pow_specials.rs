@@ -20,14 +20,9 @@ const RM: RoundingMode = RoundingMode::ToEven;
 
 /// Results that differ from MPFR today; each fix removes its entries.
 const KNOWN_WRONG: &[&str] = &[
-    // powi(-0, even) is +0
-    "powi(-0, 2)",
-    "powi(-0, 4)",
-    // powsi(-0, n): -Inf for negative odd n, +0 for positive even n
+    // powsi(-0, n): -Inf for negative odd n
     "powsi(-0, -1)",
     "powsi(-0, -3)",
-    "powsi(-0, 2)",
-    "powsi(-0, 4)",
 ];
 
 /// A base or exponent: `(label, zenith value, MPFR value)`.
