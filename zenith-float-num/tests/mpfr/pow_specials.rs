@@ -20,9 +20,6 @@ const RM: RoundingMode = RoundingMode::ToEven;
 
 /// Results that differ from MPFR today; each fix removes its entries.
 const KNOWN_WRONG: &[&str] = &[
-    // (-Inf)^(negative odd integer) is -0
-    "pow(-Inf, -1)",
-    "pow(-Inf, -3)",
     // powi(-0, even) is +0
     "powi(-0, 2)",
     "powi(-0, 4)",
