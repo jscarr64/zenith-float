@@ -16,7 +16,17 @@ set -u
 T=${T:-/tmp/zf-gate-logs}; mkdir -p "$T"
 cd "${REPO:-$(cd "$(dirname "$0")/.." && pwd)}" || exit 2
 tag=${1:?usage: tools/full_gate.sh TAG}; : > "$T/$tag.rc"
-run() { name=$1; shift; echo "start $name $(date +%T)" >> "$T/$tag.rc"; timeout "${STEP_TIMEOUT:-20m}" bash -c "$*" > "$T/$tag-$name.log" 2>&1; echo "$name=$?" >> "$T/$tag.rc"; }
+# Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
+# letting a step's check read "command not found" as "no matches".
+missing=()
+for tool in bash timeout cargo rustup git grep python3 tail; do command -v "$tool" >/dev/null 2>&1 || missing+=("$tool"); done
+cargo audit --version >/dev/null 2>&1 || missing+=("cargo-audit")
+if [[ "${#missing[@]}" -gt 0 ]]; then
+  echo "error: missing tools: ${missing[*]}" | tee -a "$T/$tag.rc" >&2
+  echo "preflight=2" >> "$T/$tag.rc"; exit 2
+fi
+# pipefail: a failing command inside a step's pipeline fails the step
+run() { name=$1; shift; echo "start $name $(date +%T)" >> "$T/$tag.rc"; timeout "${STEP_TIMEOUT:-20m}" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1; echo "$name=$?" >> "$T/$tag.rc"; }
 ORACLES="--test oracle --test specials_oracle --test methods_oracle --test accuracy_table --test elliptic_phi"
 run build-debug "cargo test --workspace"
 run build-release "cargo test --workspace --release"
@@ -36,6 +46,6 @@ run clippy-i686 "cargo clippy -p zenith-float-num --all-targets --target i686-un
 run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
 run hex-32bit "bash scripts/ci_hex_32bit.sh"
-run unsafe-scan "! grep -rn --include='*.rs' -E '\bunsafe\b' zenith-float-num/src zenith-float-macro/src src 2>/dev/null | grep -v '^\s*//' | grep -vE ':\s*(//|\*)'"
+run unsafe-scan "bash tools/gate_unsafe_scan.sh"
 run prepublish "bash scripts/zenith_prepublish.sh"
-echo done >> "$T/$tag.rc"
+echo "done" >> "$T/$tag.rc"

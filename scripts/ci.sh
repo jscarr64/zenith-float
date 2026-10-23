@@ -32,10 +32,7 @@ debug_slew() {
   # Hardware float tokens, arch intrinsics, inline asm, and kernel unsafe.
   bash "$root/scripts/ci_no_intrinsics.sh"
   # CHANGELOG.md states the 2.0.0 MSRV in the words the release note requires.
-  if rg -n -i 'accumath' --glob '!scripts/ci.sh' --glob '!CHANGELOG.md' .; then
-    echo "error: this public crate must not mention that name"
-    exit 1
-  fi
+  bash "$root/scripts/ci_no_name.sh"
 
   cargo test --workspace
   cargo test -p zenith-float-num --features random --test radix_roundtrip
