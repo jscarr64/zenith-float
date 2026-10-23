@@ -6938,6 +6938,67 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// Loop-conversion pin for `ln`, `log2`, `log10` (the per-pass working copy becomes `ziv_pass_operand`): the 23
+    /// grid operands (NaN kinds, +-Inf, +-0, the subnormal band, the exponent extremes), exact powers 2^k and 10^n over
+    /// a wide exponent range, 1 +- 2^-j near the cancellation point, and inexact-flagged inputs (including an
+    /// inexact-flagged exact power of ten for the log10 exact branch), at 7 precisions in all 6 rounding modes.
+    /// Recorded on the code that still clones the input.
+    #[test]
+    fn ln_log2_log10_conversion_digest() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = crate::Consts::new()?;
+        let mut h = DefaultHasher::new();
+        let mut count = 0usize;
+        let mut xs: Vec<ExactNum> = (0..PAIR_OPERANDS).map(operand).collect();
+        for k in [1i32, 7, 64, 1000, 100_000, 1_000_000_000, -1, -64, -100_000, -1_000_000_000] {
+            xs.push(ExactNum::from_u8(1, 64).ldexp(k, 64, RoundingMode::None));
+            xs.push(ExactNum::from_u8(3, 64).ldexp(k, 64, RoundingMode::None));
+        }
+        for n in [1usize, 2, 3, 19, 20, 40, 80] {
+            xs.push(ExactNum::from_u8(10, 320).powi(n, 320, RoundingMode::None));
+        }
+        for j in [1i32, 10, 63, 64, 65, 200] {
+            let d = ExactNum::from_u8(1, 64).ldexp(-j, 64, RoundingMode::None);
+            xs.push(ExactNum::add_ref(
+                &ExactNum::from_u8(1, 320),
+                &d,
+                320,
+                RoundingMode::None,
+            ));
+            xs.push(ExactNum::sub_ref(
+                &ExactNum::from_u8(1, 320),
+                &d,
+                320,
+                RoundingMode::None,
+            ));
+        }
+        let mut hundred = ExactNum::from_u8(100, 64);
+        hundred.set_inexact(true);
+        xs.push(hundred);
+        let mut tenth_ish =
+            ExactNum::from_u8(1, 64).div(&ExactNum::from_u8(10, 64), 64, RoundingMode::ToEven);
+        tenth_ish.set_inexact(true);
+        xs.push(tenth_ish);
+        let nx = xs.len();
+        for x in &xs {
+            for p in [1usize, 24, 53, 64, 100, 200, 1024] {
+                for rm in RMS {
+                    digest(&x.ln(p, rm, &mut cc), &mut h)?;
+                    digest(&x.log2(p, rm, &mut cc), &mut h)?;
+                    digest(&x.log10(p, rm, &mut cc), &mut h)?;
+                    count += 3;
+                }
+            }
+        }
+        assert_eq!(count, nx * 7 * 6 * 3);
+        println!(
+            "ln/log2/log10 conversion digest = {} over {} entries",
+            h.finish(),
+            count
+        );
+        assert_eq!(h.finish(), 15_016_580_156_994_057_137);
+        Ok(())
+    }
+
     /// Layer 0a pin for the reciprocal (Newton step) and `nth_root` (exact-candidate check) kernels.
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
