@@ -4916,13 +4916,17 @@ mod tests {
         assert!(ExactNum::new(DEFAULT_P)
             .pow(&INF_POS, rand_p(), rm, &mut cc)
             .is_zero());
+        // IEEE 754 / MPFR: pow(+0, -Inf) = +Inf (|x| < 1); checked against mpfr_pow in
+        // tests/mpfr/pow_specials.rs (`pow(+0, -Inf)`).
         assert!(ExactNum::new(DEFAULT_P)
             .pow(&INF_NEG, rand_p(), rm, &mut cc)
-            .is_zero());
+            .is_inf_pos());
         assert!(ONE.pow(&INF_POS, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(ONE.pow(&INF_NEG, rand_p(), rm, &mut cc).compare(&ONE) == Some(0));
         assert!(TWO.pow(&INF_POS, rand_p(), rm, &mut cc).is_inf_pos());
-        assert!(TWO.pow(&INF_NEG, rand_p(), rm, &mut cc).is_inf_neg());
+        // IEEE 754 / MPFR: pow(2, -Inf) = +0 (|x| > 1).
+        let r = TWO.pow(&INF_NEG, rand_p(), rm, &mut cc);
+        assert!(r.is_zero() && r.is_positive());
         assert!(INF_POS.pow(&ONE, rand_p(), rm, &mut cc).is_inf_pos());
         assert!(INF_NEG.pow(&ONE, rand_p(), rm, &mut cc).is_inf_neg());
         assert!(INF_NEG.pow(&TWO, rand_p(), rm, &mut cc).is_inf_pos());
@@ -6501,7 +6505,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 13 * 3 * 6 * 13);
         println!("exp pow grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 14_058_652_537_661_189_300);
+        assert_eq!(h.finish(), 8_827_926_273_799_459_758);
         Ok(())
     }
 
