@@ -36,6 +36,7 @@ Behaviour changes from the audit, each with its own section below:
 - `sin_cos` and `sinh_cosh` round each result at exactly `p` bits with its own `inexact()`; `sinh_cosh` overflow follows the mode.
 - `log10` of an exact power of ten returns `n` with `inexact()` false at every precision. The exact-case check needed the approximate quotient to be an integer, so `log10(10^18)` at 128 bits was flagged inexact.
 - `nth_root` with a large `n` (e.g. 2^40) returns the root instead of `NaN(MemoryAllocation)`. The exact-root check raised the candidate to the `n`-th power at `p * n` bits; it now rules out candidates whose odd part cannot fit first.
+- `nth_root` forms its Newton start at a precision derived from the exponent and `n`, so the error the rounding test is told is a proven bound (no wrong result was found before; property test `nth_root_wide_exponents_and_large_n`).
 - `rem` returns subnormal remainders instead of zero, and its `inexact()` is false: the remainder is always exact.
 - `add_full_prec` and `sub_full_prec` with one zero operand return the other operand exactly (with its own `inexact()`). They used to return a value with an empty mantissa flagged inexact. All other `add`/`sub` results are unchanged: the addition kernel now writes the sum of a nonzero operand with a zero mantissa itself instead of copying the operand first (the zero-aware kernel branch), which removes the three `.clone()` sites of `add`/`sub`.
 - `from_raw_parts` validates its parts and returns `NaN(InvalidArgument)` for inconsistent ones.
