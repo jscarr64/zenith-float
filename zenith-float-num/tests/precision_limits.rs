@@ -44,3 +44,21 @@ fn default_precision_and_decimal_scale_are_public() {
     assert_eq!(DEFAULT_P, 128);
     assert_eq!(MAX_DEC_SCALE, 1_000_000);
 }
+
+// `Precision` is the public name of the precision type: it holds the whole accepted range, and an exponent
+// plus twice the largest precision still fits the 64-bit exponent arithmetic.
+const _: zenith_float_num::Precision = zenith_float_num::MAX_PRECISION;
+const _: zenith_float_num::Precision = zenith_float_num::MIN_PRECISION;
+const _: zenith_float_num::Precision = zenith_float_num::DEFAULT_P;
+const _: () = assert!(
+    zenith_float_num::EXPONENT_MAX as i128 + 2 * zenith_float_num::MAX_PRECISION as i128
+        <= i64::MAX as i128
+);
+
+#[test]
+fn precision_alias_reports_precisions() {
+    let x = zenith_float_num::ExactNum::from_u8(3, zenith_float_num::DEFAULT_P);
+    let p: Option<zenith_float_num::Precision> = x.precision();
+    let m: Option<zenith_float_num::Precision> = x.mantissa_max_bit_len();
+    assert!(p == Some(zenith_float_num::DEFAULT_P) && m == p, "{p:?} {m:?}");
+}
