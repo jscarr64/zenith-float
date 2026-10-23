@@ -208,6 +208,10 @@ phi/euler-style constants) and `#[derive(Clone)]` on `CachedFBig` are NOT listed
 that only goes down; a pinned, CODEOWNERS-protected (@jscarr64) list of allowed shape-A Ziv sites; loop conversions
 may resume after Stage A is gate-green."
 
+Site-list sign-off (Jeff, 2026-10-23 7:29 AM CT, @jscarr64, relayed by Paul: "Go Ahead with the list sign off"):
+`tools/ziv_shape_a_sites.txt` is signed off as exactly six sites: ln (log.rs:133), log2 (log.rs:266), sinh
+(sinh.rs:49), sin_cos (sin_cos.rs:66), sin (sin.rs:68), cos (cos.rs:71). A seventh site needs a new sign-off.
+
 How `tools/rules_scan.py` enforces it:
 
 | rule | check | file |

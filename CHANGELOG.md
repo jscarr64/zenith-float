@@ -18,6 +18,8 @@ Problems in one program led to a forensic audit of the others. This 2.0.0 sectio
 
 Rules scan (internal, Jeff's helper-copy ruling of 2026-10-16): the clone count plus the helper-copy count now has its own ratchet (`tools/clone_helper_combined_baseline.txt`, 806) that may only go down; in a commit range, a commit that raises the helper-copy count must lower the clone count by at least as much; `ziv_pass_operand` may be used only at the shape-A sites listed in `tools/ziv_shape_a_sites.txt` (ln, log2, sinh, sin_cos, cos, sin), and that list must be owned by @jscarr64 in CODEOWNERS. No library change.
 
+Shape-A site list (internal, no code change): Jeff signed off `tools/ziv_shape_a_sites.txt` on 2026-10-23 as exactly its six sites (ln, log2, sinh, sin_cos, sin, cos); recorded in that file and in `tools/NO_CLONE_RULES.md`.
+
 `reseed_random_this_thread(seed)` (new, `random` feature): gives the calling thread its own deterministic test stream that a `reseed_random` call from another thread does not restart. The MPFR test helpers use it. Before, when the MPFR suite ran on several threads, one test's reseed restarted another test's stream from the wrong seed, so an operand rebuilt from its seed came out different and `rem_is_exact`, `mpfr_compare_ops(_large)` and `subnormal_band_every_mode` failed now and then. No library result was wrong. Additive.
 
 ### Changed
