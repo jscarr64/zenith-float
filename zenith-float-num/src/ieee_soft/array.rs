@@ -697,6 +697,9 @@ impl ExactNumArray {
     pub fn filled(p: usize, n: usize, fill: &ExactNum) -> Self {
         let mut v = fill.clone();
         let _ = v.set_precision(p, RoundingMode::ToEven);
+        if p < crate::defs::MIN_PRECISION {
+            v = ExactNum::nan(Some(Error::InvalidArgument));
+        }
         Self {
             p,
             vals: alloc::vec![v; n],
@@ -710,6 +713,9 @@ impl ExactNumArray {
         let n = rows.checked_mul(cols)?;
         let mut v = fill.clone();
         let _ = v.set_precision(p, RoundingMode::ToEven);
+        if p < crate::defs::MIN_PRECISION {
+            v = ExactNum::nan(Some(Error::InvalidArgument));
+        }
         Some(Self {
             p,
             vals: alloc::vec![v; n],
@@ -727,6 +733,9 @@ impl ExactNumArray {
                 .map(|x| {
                     let mut y = x.clone();
                     let _ = y.set_precision(p, RoundingMode::ToEven);
+                    if p < crate::defs::MIN_PRECISION {
+                        y = ExactNum::nan(Some(Error::InvalidArgument));
+                    }
                     y
                 })
                 .collect(),
@@ -748,6 +757,9 @@ impl ExactNumArray {
                 .map(|x| {
                     let mut y = x.clone();
                     let _ = y.set_precision(p, RoundingMode::ToEven);
+                    if p < crate::defs::MIN_PRECISION {
+                        y = ExactNum::nan(Some(Error::InvalidArgument));
+                    }
                     y
                 })
                 .collect(),
@@ -1300,6 +1312,9 @@ impl ExactNumArray {
     /// `L` is unit lower (`n×n`). `U` is upper (`n×m`). A zero pivot
     /// (singular) or a failed heap reserve (`MemoryAllocation`) returns `None`.
     pub fn lu_decomp(&self, p: usize, rm: RoundingMode) -> Option<(Self, Self, Vec<usize>)> {
+        if p < crate::defs::MIN_PRECISION {
+            return None;
+        }
         let n = self.rows;
         let m = self.cols;
         if n == 0 || m == 0 {
