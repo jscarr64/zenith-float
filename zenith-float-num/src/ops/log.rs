@@ -15,6 +15,7 @@ use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
+use crate::defs::Word;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::ops::series::series_cost_optimize;
@@ -320,18 +321,24 @@ impl ExactNumNumber {
 
             let mut ret = p1.div(&p2, p_x, RoundingMode::None)?;
 
-            // check if x is exactly power of 10
-            if ret.is_int() {
-                let n = ret.int_as_usize()?;
-
-                let tp = TEN.powi(n, p_x, RoundingMode::None)?;
-
-                if tp.cmp(&x) == 0 {
-                    // log10(10^n) = n exactly: drop the flag of the approximate quotient.
-                    ret.set_inexact(false);
-                    ret.set_precision(p, rm)?;
-                    ret.set_inexact(ret.inexact() || self.inexact());
-                    return Ok(ret);
+            // check if x is exactly 10^n: the approximate quotient lies within an ulp of n, so n is
+            // its integer part or the next integer (the quotient need not be an integer itself).
+            // 10^n has more than p_x bits once n > p_x / 2, so larger n cannot equal x.
+            if !ret.is_negative() {
+                if let Ok(n0) = ret.int_as_usize() {
+                    for n in [Some(n0), n0.checked_add(1)].into_iter().flatten() {
+                        if n > p_x / 2 {
+                            break;
+                        }
+                        let tp = TEN.powi(n, p_x, RoundingMode::None)?;
+                        if !tp.inexact() && tp.cmp(&x) == 0 {
+                            // log10(10^n) = n exactly.
+                            let mut exact = Self::from_word(n as Word, p)?;
+                            exact.set_precision(p, rm)?;
+                            exact.set_inexact(exact.inexact() || self.inexact());
+                            return Ok(exact);
+                        }
+                    }
                 }
             }
 
