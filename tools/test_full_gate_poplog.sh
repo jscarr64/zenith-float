@@ -8,6 +8,7 @@ tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/cargo" <<'SH'
 #!/usr/bin/env bash
+echo "$*" >> "${0%/bin/cargo}/cargo.args"
 case "$*" in audit\ --version) echo "cargo-audit 0.0"; exit 0;; esac
 if [[ "$1" == test ]]; then echo "test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured"; fi
 exit 0
@@ -23,6 +24,9 @@ fail=0
 grep -q '^commit:' "$log" || { echo "FAIL: no header"; fail=1; }
 grep -q 'STEP END build-debug verdict=FAIL .*run=0 passed=0' "$log" || { echo "FAIL: zero-test build-debug not FAIL"; fail=1; }
 grep -q 'SLOT TAKEN slot=1/4 .*CARGO_BUILD_JOBS=6 RUST_TEST_THREADS=6' "$log" || { echo "FAIL: gate did not take a popslot slot at 6 jobs"; fail=1; }
+# early mpfr-tests compile (Paul 2026-10-23, 6ab75ce prepublish): right after build-debug, cargo test --no-run with the feature
+grep -A3 'STEP END build-debug' "$log" | grep -q 'STEP START mpfr-tests-build' || { echo "FAIL: no mpfr-tests-build step right after build-debug"; fail=1; }
+grep -qx 'test -p zenith-float-num --release --features mpfr-tests --no-run' "$tmp/cargo.args" || { echo "FAIL: mpfr-tests-build did not run cargo test --no-run --features mpfr-tests"; fail=1; }
 grep -q 'RESULT: FAIL' "$log" || { echo "FAIL: footer not FAIL"; fail=1; }
 [[ $rc -ne 0 ]] || { echo "FAIL: gate exited 0 with zero tests"; fail=1; }
 [[ $fail -eq 0 ]] && echo "ok: full_gate.sh poplog (zero tests -> FAIL, log $log)"

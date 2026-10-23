@@ -55,6 +55,8 @@ run() {
 }
 ORACLES="--test oracle --test specials_oracle --test methods_oracle --test accuracy_table --test elliptic_phi"
 run build-debug "cargo test --workspace $TT"
+# early compile of the mpfr-tests integration tests (6ab75ce prepublish broke here only at the last step)
+run mpfr-tests-build "cargo test -p zenith-float-num --release --features mpfr-tests --no-run"
 run build-release "cargo test --workspace --release $TT"
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
 run build-thumbv7em "cargo build --no-default-features --target thumbv7em-none-eabihf && cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf"
