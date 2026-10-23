@@ -882,7 +882,14 @@ impl ExactNum {
     /// Word-precision implementation of [`Self::powsi`].
     fn powsi_word(&self, n: i64, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
-            Flavor::Value(v1) => Self::result_to_ext_rm(v1.powsi(n, p, rm), false, true, p, rm),
+            // (-0)^(negative odd n) is -Inf: the pole takes the sign of the base only for odd n.
+            Flavor::Value(v1) => Self::result_to_ext_rm(
+                v1.powsi(n, p, rm),
+                false,
+                !(v1.is_negative() && n & 1 == 1),
+                p,
+                rm,
+            ),
             Flavor::Inf(s1) => {
                 if n == 0 {
                     Self::from_u8(1, p)
