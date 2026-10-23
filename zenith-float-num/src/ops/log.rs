@@ -327,14 +327,11 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
 
-        let mut x = self.clone()?;
-        x.set_inexact(false);
-
         loop {
             let p_x = p_wrk + 5; // avoid error being accounted by try_set_precision
-            x.set_precision(p_x, RoundingMode::None)?;
 
-            let p1 = x.ln(p_x, RoundingMode::None, cc)?;
+            // `ln` reads `self` as it is: its working precision is max(p_x, own precision) + 64 whichever width the input has.
+            let p1 = self.ln(p_x, RoundingMode::None, cc)?;
 
             let p2 = cc.ln_10_num(p_x, RoundingMode::None)?;
 
@@ -346,7 +343,7 @@ impl ExactNumNumber {
 
                 let tp = TEN.powi(n, p_x, RoundingMode::None)?;
 
-                if tp.cmp(&x) == 0 {
+                if tp.cmp(self) == 0 {
                     // log10(10^n) = n exactly: drop the flag of the approximate quotient.
                     ret.set_inexact(false);
                     ret.set_precision(p, rm)?;
