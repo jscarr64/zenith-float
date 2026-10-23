@@ -645,7 +645,15 @@ impl ExactNum {
                     p,
                     rm,
                 ),
-                Flavor::Inf(_) => Self::new(v1.mantissa_max_bit_len()),
+                Flavor::Inf(s2) => {
+                    // IEEE 754: the zero quotient takes the sign of the quotient.
+                    let z = Self::new(v1.mantissa_max_bit_len());
+                    if v1.sign() == *s2 {
+                        z
+                    } else {
+                        -z
+                    }
+                }
                 Flavor::NaN(err) => Self::nan(*err),
             },
             Flavor::Inf(s1) => match &d2.inner {
