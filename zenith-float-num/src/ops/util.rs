@@ -74,7 +74,7 @@ impl ExactNumNumber {
 /// Compute result for argument with small exponent.
 macro_rules! compute_small_exp {
     ($arg:ident, $exp:expr, $sign_inverse:expr, $p_wrk:ident, $p:ident, $rm:ident) => {
-        if $p_wrk as i64 + 1 < -($exp) {
+        if i128::from($p_wrk as i64) + 1 < -i128::from($exp) {
             let mut x = $arg.clone()?;
             if $p > x.mantissa_max_bit_len() {
                 x.set_precision($p, RoundingMode::None)?;
