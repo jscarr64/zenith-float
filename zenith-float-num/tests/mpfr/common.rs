@@ -516,10 +516,29 @@ pub fn mpfr_reference_with<F>(
 where
     F: Fn(&mut Float, rnd_t) -> i32,
 {
+    mpfr_reference_shifted(p, rm, 0, f)
+}
+
+/// Like [`mpfr_reference_with`] in a space scaled by `2^shift`: the operands `f` reads are the zenith
+/// operands times `2^shift`, and the zenith exponent range `EXPONENT_MIN..=EXPONENT_MAX` (with its
+/// subnormal grid) is emulated as `EXPONENT_MIN + shift ..= EXPONENT_MAX + shift`. The result is in the
+/// scaled space too. A positive shift lets MPFR (whose `emin_min` is `EXPONENT_MIN` on LP64 once the
+/// exponent is 62 bits) hold the subnormal grid below the zenith minimum. The emulated range is clamped
+/// to MPFR's; [`emulated_range_ok`] says whether the clamp was needed.
+pub fn mpfr_reference_shifted<F>(
+    p: u32,
+    rm: RoundingMode,
+    shift: i64,
+    f: F,
+) -> Result<(Float, bool), Box<dyn std::error::Error>>
+where
+    F: Fn(&mut Float, rnd_t) -> i32,
+{
     let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+    let (emin, emax) = emulated_range(p, shift);
     unsafe {
-        mpfr::set_emax(EXPONENT_MAX as mpfr::exp_t);
-        mpfr::set_emin(EXPONENT_MIN as mpfr::exp_t - p as mpfr::exp_t + 1);
+        mpfr::set_emax(emax as mpfr::exp_t);
+        mpfr::set_emin(emin as mpfr::exp_t);
     }
     let rnd = match rm {
         RoundingMode::ToEven => Some(rnd_t::RNDN),
@@ -543,8 +562,16 @@ where
         let inexact = t2 != 0 || t != 0;
         (r, inexact)
     } else {
+        // Two binades below the smallest subnormal so that results in `[g / 2, g)` survive the truncation.
+        unsafe {
+            let lo = widen(mpfr::get_emin_min());
+            mpfr::set_emin((emin - 2).max(lo) as mpfr::exp_t);
+        }
         let mut w = Float::new(p + 1);
         let t = f(&mut w, rnd_t::RNDZ);
+        unsafe {
+            mpfr::set_emin(emin as mpfr::exp_t);
+        }
         // A result under the library's smallest normal exponent has fewer than `p` bits (the subnormal grid is
         // `2^(EXPONENT_MIN - p)`): the nearest-ties-to-odd rounding is done at that many bits, from the
         // `p + 1` bit truncation (a truncation of a truncation is the truncation, and bits lost are a sticky bit).
@@ -554,9 +581,44 @@ where
         } else {
             Some(unsafe { mpfr::get_exp(w.as_raw()) })
         };
+        // At or below `2^(grid exponent)` no mantissa bit is left: the neighbours are 0 and the smallest
+        // subnormal `g`, the midpoint `g / 2` is representable in `w`, so `|w| >= g / 2` (with the tie going
+        // to the odd neighbour `g`) picks `g`. The result is always inexact.
+        let grid = EXPONENT_MIN as i64 + shift - p as i64;
+        if let Some(e) = exp {
+            if widen(e) <= grid {
+                let neg = w.is_sign_negative();
+                // Build 1 (exponent 1) under the widest range: the emulated `emin` can be far above it.
+                unsafe {
+                    mpfr::set_emin(mpfr::get_emin_min());
+                }
+                let mut half = Float::with_val(64, 1);
+                let mut g = Float::with_val(p, 1);
+                unsafe {
+                    mpfr::mul_2si(
+                        half.as_raw_mut(),
+                        half.as_raw(),
+                        (grid - 1) as _,
+                        rnd_t::RNDN,
+                    );
+                    mpfr::mul_2si(g.as_raw_mut(), g.as_raw(), grid as _, rnd_t::RNDN);
+                }
+                let r = if Float::with_val(p + 1, w.abs_ref()) >= half {
+                    g
+                } else {
+                    Float::with_val(p, 0)
+                };
+                let r = if neg { -r } else { r };
+                unsafe {
+                    mpfr::set_emin(old_min);
+                    mpfr::set_emax(old_max);
+                }
+                return Ok((r, true));
+            }
+        }
         let bits = match exp {
-            Some(e) if widen(e) < EXPONENT_MIN as i64 => {
-                (p as i64 - (EXPONENT_MIN as i64 - widen(e))).max(1) as u32
+            Some(e) if widen(e) < EXPONENT_MIN as i64 + shift => {
+                (p as i64 - (EXPONENT_MIN as i64 + shift - widen(e))).max(1) as u32
             }
             _ => p,
         };
@@ -596,6 +658,56 @@ where
         mpfr::set_emax(old_max);
     }
     Ok(out)
+}
+
+/// MPFR `(emin, emax)` that emulates the zenith range scaled by `2^shift` at precision `p`, clamped to
+/// what MPFR allows.
+pub fn emulated_range(p: u32, shift: i64) -> (i64, i64) {
+    let (lo, hi) = unsafe { (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max())) };
+    let emin = (EXPONENT_MIN as i64 + shift - p as i64 + 1).max(lo);
+    let emax = (EXPONENT_MAX as i64).saturating_add(shift).min(hi);
+    (emin, emax)
+}
+
+/// True if MPFR can emulate the zenith range scaled by `2^shift` at precision `p` without clamping.
+pub fn emulated_range_ok(p: u32, shift: i64) -> bool {
+    let (lo, hi) = unsafe { (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max())) };
+    EXPONENT_MIN as i64 + shift - p as i64 + 1 >= lo
+        && (EXPONENT_MAX as i64).saturating_add(shift) <= hi
+}
+
+/// The exact value of a finite zenith number times `2^shift` as an MPFR number (widest exponent range
+/// while building; the caller's range must hold the result).
+pub fn exact_mpfr_shifted(n: &ExactNum, shift: i64) -> Result<Float, Box<dyn std::error::Error>> {
+    if n.is_zero() {
+        let z = Float::with_val(64, 0);
+        return Ok(if n.is_negative() { -z } else { z });
+    }
+    let (words, _, sign, e, _) = n.as_raw_parts().ok_or("not a finite number")?;
+    let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+    unsafe {
+        mpfr::set_emin(mpfr::get_emin_min());
+        mpfr::set_emax(mpfr::get_emax_max());
+    }
+    let mut z = rug::Integer::new();
+    for w in words.iter().rev() {
+        z <<= 64;
+        z += *w;
+    }
+    let bits = (64 * words.len()) as u32;
+    let mut got = Float::with_val(bits.max(64), &z);
+    let sh = e as i64 + shift - 64 * words.len() as i64;
+    unsafe {
+        mpfr::mul_2si(got.as_raw_mut(), got.as_raw(), sh as _, rnd_t::RNDN);
+    }
+    if sign == Sign::Neg {
+        got = -got;
+    }
+    unsafe {
+        mpfr::set_emin(old_min);
+        mpfr::set_emax(old_max);
+    }
+    Ok(got)
 }
 
 /// An MPFR exponent (`c_long`: 32 or 64 bits by target) as an `i64`.
