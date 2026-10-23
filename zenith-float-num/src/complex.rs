@@ -1134,6 +1134,20 @@ mod tests {
     use crate::NAN;
 
     #[test]
+    fn mul_reports_a_product_that_rounded_to_a_zero_part() {
+        // im = (-7)(tiny) + 0 * 0: the product underflows to -0 at p = 1, so the operation rounded.
+        let tiny = ExactNum::from_u8(3, 64)
+            .ldexp(crate::EXPONENT_MIN + 1, 64, RoundingMode::None)
+            .ldexp(-20, 64, RoundingMode::None);
+        let x = ExactComplex::new(-ExactNum::from_u8(7, 64), ExactNum::new(64));
+        let y = ExactComplex::new(ExactNum::new(64), tiny);
+        let z = x.mul(&y, 1, RoundingMode::ToEven);
+        assert!(z.im().is_zero());
+        assert!(z.inexact());
+        assert!(z.inexact_accumulated());
+    }
+
+    #[test]
     fn test_complex_arith() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
