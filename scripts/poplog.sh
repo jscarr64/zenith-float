@@ -37,12 +37,24 @@ _pl_running_add() {
   (
     flock -x 9
     _pl_running_migrate
+    _pl_running_reap
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$POPLOG_AGENT" "$POPLOG_JOB" "$POPLOG_PID" "$POPLOG_FILE" \
       "$(_pl_iso)" "$(_pl_iso)" RUNNING - >> "$POPLOG_RUNNING"
   ) 9> "$POPLOG_RUNNING.lock"
 }
 # Canonical RUNNING.tsv (see README): header line, 8 tab-separated columns, ISO-8601 local times with offset.
 # _pl_running_migrate (caller holds the lock): ensure the canonical header; pad old 7-column rows with slot "-".
+# _pl_running_reap (caller holds the lock): rows whose pid is gone -> state DEAD (they never got their exit cleanup).
+_pl_running_reap() {
+  [[ -s "$POPLOG_RUNNING" ]] || return 0
+  local a j p l st hb state sl changed=0 out
+  out=$(while IFS=$'\t' read -r a j p l st hb state sl; do
+    if [[ "$a" != '#agent' && -n "$p" && "$state" != DEAD ]] && [[ "$p" =~ ^[0-9]+$ ]] && ! kill -0 "$p" 2>/dev/null; then state=DEAD; fi
+    if [[ "$a" == '#agent' ]]; then printf '%s\n' "$POPLOG_RUNNING_HEADER"; else printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$a" "$j" "$p" "$l" "$st" "$hb" "$state" "${sl:--}"; fi
+  done < "$POPLOG_RUNNING")
+  [[ "$out" == "$(cat "$POPLOG_RUNNING")" ]] && return 0
+  printf '%s\n' "$out" > "$POPLOG_RUNNING.tmp.$$" && mv "$POPLOG_RUNNING.tmp.$$" "$POPLOG_RUNNING"
+}
 _pl_running_migrate() {
   if [[ ! -s "$POPLOG_RUNNING" ]]; then printf '%s\n' "$POPLOG_RUNNING_HEADER" > "$POPLOG_RUNNING"; return 0; fi
   [[ "$(head -1 "$POPLOG_RUNNING")" == "$POPLOG_RUNNING_HEADER" ]] && return 0
@@ -54,6 +66,7 @@ _pl_running_update() {
   (
     flock -x 9
     [[ -f "$POPLOG_RUNNING" ]] || exit 0
+    _pl_running_reap
     awk -F'\t' -v OFS='\t' -v p="$POPLOG_PID" -v t="$(_pl_iso)" -v s="$1" -v sl="${2:-}" \
       'NR>1 && $3==p {$6=t; $7=s; if (sl != "") $8=sl} {print}' "$POPLOG_RUNNING" > "$POPLOG_RUNNING.tmp.$$" \
       && mv "$POPLOG_RUNNING.tmp.$$" "$POPLOG_RUNNING"
@@ -63,6 +76,7 @@ _pl_running_remove() {
   (
     flock -x 9
     [[ -f "$POPLOG_RUNNING" ]] || exit 0
+    _pl_running_reap
     awk -F'\t' -v p="$POPLOG_PID" 'NR==1 || $3!=p' "$POPLOG_RUNNING" > "$POPLOG_RUNNING.tmp.$$" \
       && mv "$POPLOG_RUNNING.tmp.$$" "$POPLOG_RUNNING"
   ) 9> "$POPLOG_RUNNING.lock"
@@ -102,6 +116,20 @@ _pl_heartbeat_loop() {
   done
 }
 
+# _pl_reap_open - a nested poplog_init leaves $POPLOG_STATE_DIR/open/<pid> until its poplog_finish; a marker whose pid
+# is gone means the sub-run exited without poplog_finish (even exit 0, even with its EXIT trap replaced) -> INCOMPLETE = FAIL.
+_pl_reap_open() {
+  local m p
+  [[ -d "${POPLOG_STATE_DIR:-}/open" ]] || return 0
+  for m in "$POPLOG_STATE_DIR"/open/*; do
+    [[ -f "$m" ]] || continue; p=${m##*/}
+    kill -0 "$p" 2>/dev/null && continue
+    printf '%s\n' "$(cat "$m") sub-run INCOMPLETE (pid $p exited without poplog_finish)" >> "$POPLOG_STATE_DIR/fail"
+    _pl_log "SUB-RUN INCOMPLETE $(cat "$m") pid=$p exited without poplog_finish -> FAIL"
+    rm -f "$m"
+  done
+  return 0
+}
 _pl_on_signal() {
   local sig=$1 code=$2
   [[ "$POPLOG_DONE" == 1 ]] && exit "$code"
@@ -140,6 +168,8 @@ poplog_init() {
   if [[ -n "${POPLOG_FILE:-}" && -f "${POPLOG_FILE:-}" && -n "${POPLOG_STATE_DIR:-}" && -d "${POPLOG_STATE_DIR:-}" ]]; then
     # nested in a live run: sub-section of the parent's log; POPLOG_PID stays the parent's (its RUNNING row/slot)
     POPLOG_NESTED=1
+    mkdir -p "$POPLOG_STATE_DIR/open"; POPLOG_OPEN_MARK=$POPLOG_STATE_DIR/open/$BASHPID
+    printf '%s\n' "$POPLOG_AGENT/$POPLOG_JOB" > "$POPLOG_OPEN_MARK"
     _pl_log "----- SUB-RUN START $POPLOG_AGENT/$POPLOG_JOB pid=$$ command: $desc -----"
     _pl_traps
     return 0
@@ -208,7 +238,7 @@ log_step_end() {
   dur=$(( $(date +%s) - ${POPLOG_STEP_T0:-$POPLOG_T0} ))
   log_counts "$f"
   [[ $rc -ne 0 ]] && verdict=FAIL
-  if [[ "$tests" == --tests || $COUNT_SUMMARIES -gt 0 ]] && [[ $((COUNT_RUN + COUNT_IGNORED)) -eq 0 ]]; then
+  if [[ "$tests" != --build ]] && [[ "$tests" == --tests || $COUNT_SUMMARIES -gt 0 ]] && [[ $((COUNT_RUN + COUNT_IGNORED)) -eq 0 ]]; then
     verdict=FAIL; POPLOG_WARNINGS+=("step $name: ZERO tests reported"); _pl_log "WARNING step $name reported zero tests -> FAIL"
   fi
   [[ $COUNT_FAILED -gt 0 ]] && verdict=FAIL
@@ -227,8 +257,11 @@ poplog_run_step() {
   [[ "${1:-}" == --tests ]] && { tests=--tests; shift; }
   [[ "${1:-}" == -- ]] && shift
   [[ "$*" =~ (cargo[[:space:]]+(test|nextest)|nextest[[:space:]]+run) ]] && tests=--tests
+  local nr='(^|[[:space:]])--no-run([[:space:];&|)]|$)'
+  [[ "$*" =~ $nr ]] && tests=--build
   log_step_start "$name"
   _pl_log "CMD $*"
+  [[ "$tests" == --build ]] && _pl_log "STEP $name is a build step (--no-run): zero-test check skipped"
   local rc=0
   if [[ "${POPLOG_ECHO:-1}" == 0 ]]; then
     "$@" > >(tee -a "$POPLOG_STATE_DIR/out" >> "$POPLOG_FILE") 2>&1 &
@@ -239,6 +272,7 @@ poplog_run_step() {
   wait "$POPLOG_CHILD_PID" || rc=$?
   POPLOG_CHILD_PID=""; : > "$POPLOG_STATE_DIR/child"
   sleep 0.2  # let tee drain
+  _pl_reap_open
   log_step_end "$name" "$rc" "$POPLOG_STATE_DIR/out" "$tests" || return 1
 }
 
@@ -344,7 +378,11 @@ pop_slot_acquire() {
   POPSLOT_HOLDER_PID=$$
   export POPSLOT_SLOT POPSLOT_FD POPSLOT_HELD=$POPSLOT_SLOT POPSLOT_HOLDER_PID POPSLOT_AGENT
   # Per-gate budget (Paul 2026-10-23): 4 slots x 6 jobs = 24 of 32 cores, unless the caller overrides.
-  export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-6} RUST_TEST_THREADS=${RUST_TEST_THREADS:-6}
+  local sj=${POPSLOT_JOBS:-6} stale=''
+  [[ -n "${CARGO_BUILD_JOBS:-}" && "$CARGO_BUILD_JOBS" != "$sj" ]] && stale+="CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS "
+  [[ -n "${RUST_TEST_THREADS:-}" && "$RUST_TEST_THREADS" != "$sj" ]] && stale+="RUST_TEST_THREADS=$RUST_TEST_THREADS "
+  [[ -n "$stale" ]] && _ps_note "SLOT overriding stale ${stale}-> $sj (slot value)"
+  export CARGO_BUILD_JOBS=$sj RUST_TEST_THREADS=$sj
   if [[ -n "$ctx" ]]; then rm -f "$POPLOG_STATE_DIR/waiting"; _pl_running_update RUNNING "$POPSLOT_SLOT/$POPSLOT_N"; fi
   _ps_note "SLOT TAKEN slot=$POPSLOT_SLOT/$POPSLOT_N (${POPSLOT_PREFIX}$POPSLOT_SLOT) agent=$POPSLOT_AGENT priority=$prio waited=$(_pl_fmt "$POPSLOT_WAITED") CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS RUST_TEST_THREADS=$RUST_TEST_THREADS"
 }
@@ -359,12 +397,14 @@ poplog_finish() {
     _pl_log "----- SUB-RUN END $POPLOG_AGENT/$POPLOG_JOB RESULT: $res duration=$(_pl_fmt $(( $(date +%s) - POPLOG_T0 ))) warnings=${#POPLOG_WARNINGS[@]} -----"
     for w in "${POPLOG_WARNINGS[@]}"; do _pl_log "  - $w"; done
     [[ $POPLOG_OVERALL -ne 0 ]] && printf '%s\n' "$POPLOG_AGENT/$POPLOG_JOB sub-run FAIL (exit $rc)" >> "$POPLOG_STATE_DIR/fail"
+    rm -f "${POPLOG_OPEN_MARK:-/nonexistent}"
     return 0
   fi
   if [[ -n "$POPLOG_HB_PID" ]]; then
     pkill -P "$POPLOG_HB_PID" 2>/dev/null || true; kill "$POPLOG_HB_PID" 2>/dev/null || true
     wait "$POPLOG_HB_PID" 2>/dev/null || true
   fi
+  _pl_reap_open
   if [[ -s "$POPLOG_STATE_DIR/fail" ]]; then
     POPLOG_OVERALL=1
     while IFS= read -r w; do POPLOG_WARNINGS+=("$w"); done < "$POPLOG_STATE_DIR/fail"
