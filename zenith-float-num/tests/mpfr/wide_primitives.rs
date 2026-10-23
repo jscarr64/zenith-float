@@ -797,7 +797,7 @@ fn atan2_of_a_tiny_quotient_is_neither_zero_nor_nan() -> Res {
     Ok(())
 }
 
-/// The quotients users reach through `eval` (Accumath, 256-bit operands): `atan2(1e-3000, 1)` (a quotient of about
+/// The quotients users reach through `eval` (a downstream calculator, 256-bit operands): `atan2(1e-3000, 1)` (a quotient of about
 /// 2^-9966, `NaN` in 1.0.12), `atan2(exp(-1e9), 1)` and `atan2(exp(1e9), -exp(-1e9))` (a quotient beyond 2^2^31, `pi`
 /// instead of `pi/2`). Operands are of the size `exp(+-1e9)` (2^+-1442695040), `1e+-3000` (2^+-9966) and one, in
 /// both signs, at 256 bits as well.
