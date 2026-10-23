@@ -74,10 +74,13 @@ pub fn calc_add_cost(p: usize) -> usize {
 
 /// Fixed part of the extra-precision budget of a correct-rounding retry loop, in words.
 ///
-/// The budget is `max(WORD_BIT_SIZE * MAX_PREC_RETRY, 2 * p)` extra bits; see [`prec_retry_exhausted`].
+/// A Ziv loop for a result of `p` bits may work at up to `max(p + 16384, 3p)` bits on 64-bit
+/// words (`p + max(WORD_BIT_SIZE * MAX_PREC_RETRY, 2p)`) before returning
+/// `NaN(PrecisionRetryExhausted)`; see [`prec_retry_budget`].
 pub const MAX_PREC_RETRY: usize = 256;
 
-#[cfg(test)]
+/// Largest decimal exponent magnitude the decimal conversion tests exercise; numbers whose binary
+/// exponent magnitude exceeds it skip the decimal round trip. Decimal conversion itself has no such limit.
 pub const MAX_DEC_SCALE: usize = 1_000_000;
 
 /// Number of working bits a correct-rounding retry loop may add to `p` before it gives up.
@@ -123,7 +126,9 @@ pub fn bump_prec_retry(p_wrk: &mut usize, p_inc: &mut usize, p: usize) -> Result
     Ok(())
 }
 
+/// Exponent bound for random test operands. Test support, not API.
 #[cfg(test)]
+#[doc(hidden)]
 pub const TEST_EXP_BOUND: crate::Exponent = 1024;
 
 #[cfg(test)]

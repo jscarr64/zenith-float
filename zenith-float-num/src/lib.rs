@@ -177,9 +177,14 @@ pub use crate::roots::root_default_tol;
 pub use crate::roots::ROOT_DEFAULT_TOL;
 pub use crate::roots::ROOT_MAX_ITER;
 
+pub use crate::common::util::MAX_DEC_SCALE;
+pub use crate::defs::DEFAULT_P;
 pub use crate::defs::EXPONENT_BIT_SIZE;
 pub use crate::defs::EXPONENT_MAX;
 pub use crate::defs::EXPONENT_MIN;
+pub use crate::defs::MAX_PRECISION;
+pub use crate::defs::MIN_NORMAL_EXPONENT;
+pub use crate::defs::MIN_PRECISION;
 pub use crate::defs::PROPTEST_CASES;
 pub use crate::defs::WORD_BASE;
 pub use crate::defs::WORD_BIT_SIZE;

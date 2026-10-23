@@ -51,8 +51,7 @@ impl ExactNumNumber {
     // Check the precision so it does not cause arithmetic overflows anywhere.
     pub(super) fn p_assertion(p: usize) -> Result<(), Error> {
         // Exponent arithmetic is done in i64; sizes in usize, which is 32 bits wide on some targets.
-        const P_LIMIT: u64 = (i64::MAX / 2 + EXPONENT_MIN as i64) as u64;
-        if p as u64 >= P_LIMIT || p >= usize::MAX / 4 {
+        if p > crate::defs::MAX_PRECISION {
             Err(Error::InvalidArgument)
         } else {
             Ok(())

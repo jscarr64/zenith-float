@@ -47,6 +47,29 @@ pub const EXPONENT_MAX: Exponent = Exponent::MAX;
 /// Minimum exponent value. The same on every target.
 pub const EXPONENT_MIN: Exponent = Exponent::MIN;
 
+/// Exponent of the smallest positive normal number (leading mantissa bit set).
+///
+/// Subnormal numbers share this exponent and have the leading bit clear, so
+/// `ExactNum::min_positive_normal(p).exponent()` and `ExactNum::min_positive(p).exponent()`
+/// are both `Some(MIN_NORMAL_EXPONENT)`. Equal to [`EXPONENT_MIN`].
+pub const MIN_NORMAL_EXPONENT: Exponent = EXPONENT_MIN;
+
+/// Smallest accepted precision in bits. Precision `0` is rejected with
+/// `Error::InvalidArgument` (a NaN from the `ExactNum` API). Precision is rounded up to whole words.
+pub const MIN_PRECISION: usize = 1;
+
+/// Largest accepted precision in bits; anything above it is rejected with `Error::InvalidArgument`.
+///
+/// Exponent arithmetic is done in `i64` and sizes in `usize` (32 bits on some targets), so the
+/// limit is the smaller of `i64::MAX / 2 + EXPONENT_MIN` and `usize::MAX / 4`, minus one.
+/// Allocating a mantissa this large still fails with `Error::MemoryAllocation` on real hardware.
+pub const MAX_PRECISION: usize = {
+    let by_exponent = (i64::MAX / 2 + EXPONENT_MIN as i64) as u64;
+    let by_size = (usize::MAX / 4) as u64;
+    let lim = if by_exponent < by_size { by_exponent } else { by_size };
+    (lim - 1) as usize
+};
+
 /// Maximum value of a word.
 pub const WORD_MAX: Word = Word::MAX;
 
@@ -56,13 +79,14 @@ pub const WORD_BASE: DoubleWord = WORD_MAX as DoubleWord + 1;
 /// Size of a word in bits.
 pub const WORD_BIT_SIZE: usize = core::mem::size_of::<Word>() * 8;
 
-/// Cases per `proptest` property under `cargo test` (no `mpfr-tests` required).
+/// Cases per `proptest` property under `cargo test` (no `mpfr-tests` required). Test support, not API.
+#[doc(hidden)]
 pub const PROPTEST_CASES: u32 = 1000;
 
 /// Word with the most significant bit set.
 pub const WORD_SIGNIFICANT_BIT: Word = WORD_MAX << (WORD_BIT_SIZE - 1);
 
-/// Default precision.
+/// Default precision in bits (two 64-bit words); the precision of the built-in [`crate::Consts`] cache.
 pub const DEFAULT_P: usize = 128;
 
 /// The size of exponent type in bits.
