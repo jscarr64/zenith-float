@@ -1,9 +1,12 @@
 //! Two- and three-operand functions, roots, powers, and parsing round at exactly `p` bits in
 //! every mode with a per-operation `inexact` flag (2.0.0 audit, round 2: items a and c).
 
+use crate::mpfr::common::assert_exact_eq;
 use crate::mpfr::common::conv_to_mpfr;
 use crate::mpfr::common::reset_test_rng;
-use crate::mpfr::exact_bit_functions::{check, exact_input, input, MODES, PRECISIONS};
+use crate::mpfr::exact_bit_functions::{
+    check, exact_input, input, MODES, P14_PRECISIONS, PRECISIONS,
+};
 use gmp_mpfr_sys::mpfr;
 use rug::Float;
 use std::ops::Neg;
@@ -231,6 +234,60 @@ fn exact_bit_hypot_wide_spread() -> Result<(), Box<dyn std::error::Error>> {
                         mpfr::hypot(r.as_raw_mut(), fa.as_raw(), fb.as_raw(), rnd)
                     })?;
                 }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// zenith-bound P14: `add_full_prec` and `sub_full_prec` never round. The result equals the exact MPFR sum or
+/// difference (computed wide enough to be exact) bit for bit, and `inexact()` is false.
+#[test]
+fn add_sub_full_prec_are_exact() -> Result<(), Box<dyn std::error::Error>> {
+    reset_test_rng();
+    let mut cc = Consts::new()?;
+    for p in PRECISIONS.into_iter().chain(P14_PRECISIONS) {
+        let mut v = Vec::new();
+        for _ in 0..8 {
+            v.push((input(p, -40, 40, true)?, input(p, -200, 200, true)?));
+        }
+        // cancellation, a far-smaller operand, equal magnitudes
+        v.push((exact_input(1, 0, p), exact_input(1, 0, p)));
+        v.push((exact_input(3, 0, p), exact_input(-3, 0, p)));
+        v.push((exact_input(1, 0, p), exact_input(-1, 300, p)));
+        v.push((exact_input(-5, 2, p), exact_input(7, 100, p)));
+        for (a, b) in &mut v {
+            a.set_inexact(false);
+            b.set_inexact(false);
+            let wide = 2 * storage(p) + 1024;
+            let fa = conv_to_mpfr(storage(p), a, &mut cc)?;
+            let fb = conv_to_mpfr(storage(p), b, &mut cc)?;
+            for (name, got, sub) in [
+                ("add_full_prec", a.add_full_prec(b), false),
+                ("sub_full_prec", a.sub_full_prec(b), true),
+            ] {
+                let mut want = Float::new(wide as u32);
+                let t = unsafe {
+                    if sub {
+                        mpfr::sub(
+                            want.as_raw_mut(),
+                            fa.as_raw(),
+                            fb.as_raw(),
+                            mpfr::rnd_t::RNDN,
+                        )
+                    } else {
+                        mpfr::add(
+                            want.as_raw_mut(),
+                            fa.as_raw(),
+                            fb.as_raw(),
+                            mpfr::rnd_t::RNDN,
+                        )
+                    }
+                };
+                let info = format!("{name} p={p} a={a:?} b={b:?}");
+                assert_eq!(t, 0, "{info}: reference not exact");
+                assert_exact_eq(&got, &want, wide, &info, &mut cc)?;
+                assert!(!got.inexact(), "{info}: inexact");
             }
         }
     }

@@ -13,6 +13,10 @@ use zenith_float_num::{Consts, ExactNum, Exponent, RoundingMode, WORD_BIT_SIZE};
 
 pub const PRECISIONS: [usize; 11] = [24, 53, 64, 65, 100, 113, 127, 128, 130, 200, 255];
 
+/// zenith-bound P14: the 256- and 512-bit sets every unary kernel is also swept at (all six modes, so `Up` and
+/// `Down` included), exact cases too.
+pub const P14_PRECISIONS: [usize; 2] = [256, 512];
+
 pub const MODES: [RoundingMode; 6] = [
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
@@ -79,7 +83,7 @@ pub fn sweep_unary(
 ) -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
-    for p in PRECISIONS {
+    for p in PRECISIONS.into_iter().chain(P14_PRECISIONS) {
         let mut inputs = Vec::new();
         for &(elo, ehi, signed) in bands {
             for _ in 0..per_band {
@@ -106,7 +110,18 @@ fn exact_bit_sqrt() -> Result<(), Box<dyn std::error::Error>> {
     sweep_unary(
         "sqrt",
         &[(-40, 40, false), (-3, 3, false)],
-        &[(1, 0), (4, 0), (9, 0), (1, 2), (49, 6), (2, 0), (3, 0)],
+        &[
+            (1, 0),
+            (4, 0),
+            (9, 0),
+            (1, 2),
+            (49, 6),
+            (2, 0),
+            (3, 0),
+            (1 << 60, 0),
+            (9, 4),
+            (1, 61),
+        ],
         12,
         |x, p, rm, _| x.sqrt(p, rm),
         |r, a, rnd| unsafe { mpfr::sqrt(r.as_raw_mut(), a.as_raw(), rnd) },
@@ -119,7 +134,7 @@ fn exact_bit_cbrt() -> Result<(), Box<dyn std::error::Error>> {
     sweep_unary(
         "cbrt",
         &[(-40, 40, true)],
-        &[(27, 0), (-8, 0), (1, 3), (2, 0)],
+        &[(27, 0), (-8, 0), (1, 3), (2, 0), (-27, 3), (1 << 60, 0)],
         6,
         |x, p, rm, _| x.cbrt(p, rm),
         |r, a, rnd| unsafe { mpfr::cbrt(r.as_raw_mut(), a.as_raw(), rnd) },
@@ -145,7 +160,7 @@ fn exact_bit_exp2() -> Result<(), Box<dyn std::error::Error>> {
     sweep_unary(
         "exp2",
         &[(-6, 4, true)],
-        &[(0, 0), (3, 0), (-5, 0), (1, 1)],
+        &[(0, 0), (3, 0), (-5, 0), (1, 1), (64, 0), (-100, 0)],
         6,
         |x, p, rm, cc| x.exp2(p, rm, cc),
         |r, a, rnd| unsafe { mpfr::exp2(r.as_raw_mut(), a.as_raw(), rnd) },
@@ -184,7 +199,7 @@ fn exact_bit_log2() -> Result<(), Box<dyn std::error::Error>> {
     sweep_unary(
         "log2",
         &[(-40, 40, false)],
-        &[(1, 0), (8, 0), (1, 5), (3, 0)],
+        &[(1, 0), (8, 0), (1, 5), (3, 0), (1, 40), (1 << 40, 0)],
         6,
         |x, p, rm, cc| x.log2(p, rm, cc),
         |r, a, rnd| unsafe { mpfr::log2(r.as_raw_mut(), a.as_raw(), rnd) },
@@ -197,7 +212,14 @@ fn exact_bit_log10() -> Result<(), Box<dyn std::error::Error>> {
     sweep_unary(
         "log10",
         &[(-40, 40, false)],
-        &[(1, 0), (100, 0), (10, 0), (2, 0)],
+        &[
+            (1, 0),
+            (100, 0),
+            (10, 0),
+            (2, 0),
+            (1_000_000, 0),
+            (1_000_000_000_000_000_000, 0),
+        ],
         6,
         |x, p, rm, cc| x.log10(p, rm, cc),
         |r, a, rnd| unsafe { mpfr::log10(r.as_raw_mut(), a.as_raw(), rnd) },
