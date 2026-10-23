@@ -52,8 +52,11 @@ impl ExactNumNumber {
         // (`y / x` less a part in 2^(2^31)) is rounded like the quotient itself, which is in turn rounded to zero or
         // to the smallest number by the mode. The retry loop cannot resolve such a value: nothing it computes
         // has a nonzero part to show at any working precision.
+        // In `i128`: with the i64 exponent range `ey - ex + 2 + p` reaches past `i64::MAX` for a huge `y` over a
+        // tiny `x`, and a wrapped sum took this branch (an overflowing quotient, `Inf` for `+-pi/2`).
         if x.is_positive()
-            && (y.exponent() as i64 - x.exponent() as i64) + 2 + p as i64 <= EXPONENT_MIN as i64
+            && i128::from(y.exponent()) - i128::from(x.exponent()) + 2 + p as i128
+                <= i128::from(EXPONENT_MIN)
         {
             let mut q = y.div(x, p, rm)?;
             q.set_inexact(true);
