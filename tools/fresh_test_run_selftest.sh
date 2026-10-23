@@ -2,7 +2,8 @@
 # Red test for Paul's rule (2026-10-23, one target dir per worktree) and tools/fresh_test_run.sh:
 # an unset CARGO_TARGET_DIR, a target dir owned by another worktree, a foreign (outside the target dir) test
 # binary, a missing binary and zero binaries each FAIL; a real cargo fixture builds, passes the binary check
-# before any test runs, then runs its test; every cargo test step in tools/full_gate.sh goes through the script.
+# before any test runs, then runs its test; every cargo test step in tools/full_gate.sh and every cargo test run in
+# scripts/zenith_prepublish.sh goes through the script.
 # usage: tools/fresh_test_run_selftest.sh   (one tiny throwaway crate under mktemp; never the repo's target dir)
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -78,5 +79,12 @@ first=$(grep -m1 -E '^run [a-z0-9-]+ "' "$g")
 while IFS= read -r line; do
   [[ $line == *'tools/fresh_test_run.sh cargo test'* ]] || fail "cargo test step not through fresh_test_run: $line"
 done < <(grep -E '^run [a-z0-9-]+ ".*cargo test' "$g")
+# the prepublish step (scripts/zenith_prepublish.sh) runs cargo test itself: each one goes through the script too
+pp="$root/scripts/zenith_prepublish.sh"; n=0
+while IFS= read -r line; do
+  n=$((n + 1))
+  [[ $line == *'tools/fresh_test_run.sh" cargo test'* ]] || fail "prepublish cargo test not through fresh_test_run: $line"
+done < <(grep -E '^[^#]*cargo test( |$)' "$pp" | grep -v '^ *step ')
+[[ $n -ge 3 ]] || fail "prepublish: expected >= 3 cargo test runs, found $n"
 [[ $bad == 0 ]] && echo "fresh_test_run_selftest: ok"
 exit "$bad"
