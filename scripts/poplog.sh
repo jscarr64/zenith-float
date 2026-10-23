@@ -20,6 +20,8 @@ POPLOG_DONE=0
 POPLOG_HB_PID=""
 POPLOG_CHILD_PID=""
 
+POPLOG_RUNNING_HEADER=$'#agent\tjob\tpid\tlog\tstart\tlast_heartbeat\tstate\tslot'
+_pl_iso() { date '+%Y-%m-%dT%H:%M:%S%:z'; }
 _pl_now() { date '+%Y-%m-%d %H:%M:%S %Z'; }
 _pl_log() { printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*" >> "$POPLOG_FILE"; }
 _pl_fmt() { local s=$1; printf '%dh%02dm%02ds' $((s / 3600)) $((s % 3600 / 60)) $((s % 60)); }
@@ -28,18 +30,26 @@ _pl_running_add() {
   mkdir -p "$POPLOG_ROOT"
   (
     flock -x 9
-    [[ -s "$POPLOG_RUNNING" ]] || printf 'agent\tjob\tpid\tlog\tstart\tlast_heartbeat\tstate\n' > "$POPLOG_RUNNING"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$POPLOG_AGENT" "$POPLOG_JOB" "$POPLOG_PID" "$POPLOG_FILE" \
-      "$(date '+%F %T')" "$(date +%s)" RUNNING >> "$POPLOG_RUNNING"
+    _pl_running_migrate
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$POPLOG_AGENT" "$POPLOG_JOB" "$POPLOG_PID" "$POPLOG_FILE" \
+      "$(_pl_iso)" "$(_pl_iso)" RUNNING - >> "$POPLOG_RUNNING"
   ) 9> "$POPLOG_RUNNING.lock"
 }
-# _pl_running_update STATE  (refresh last_heartbeat + state for our pid)
+# Canonical RUNNING.tsv (see README): header line, 8 tab-separated columns, ISO-8601 local times with offset.
+# _pl_running_migrate (caller holds the lock): ensure the canonical header; pad old 7-column rows with slot "-".
+_pl_running_migrate() {
+  if [[ ! -s "$POPLOG_RUNNING" ]]; then printf '%s\n' "$POPLOG_RUNNING_HEADER" > "$POPLOG_RUNNING"; return 0; fi
+  [[ "$(head -1 "$POPLOG_RUNNING")" == "$POPLOG_RUNNING_HEADER" ]] && return 0
+  awk -F'\t' -v OFS='\t' -v h="$POPLOG_RUNNING_HEADER" 'NR==1 {print h; if ($1 !~ /^#?agent$/) {if (NF<8) $8="-"; print}; next} {if (NF<8) $8="-"; print}' \
+    "$POPLOG_RUNNING" > "$POPLOG_RUNNING.tmp.$$" && mv "$POPLOG_RUNNING.tmp.$$" "$POPLOG_RUNNING"
+}
+# _pl_running_update STATE [SLOT]  (refresh last_heartbeat + state (+slot) for our pid)
 _pl_running_update() {
   (
     flock -x 9
     [[ -f "$POPLOG_RUNNING" ]] || exit 0
-    awk -F'\t' -v OFS='\t' -v p="$POPLOG_PID" -v t="$(date +%s)" -v s="$1" \
-      'NR>1 && $3==p {$6=t; $7=s} {print}' "$POPLOG_RUNNING" > "$POPLOG_RUNNING.tmp.$$" \
+    awk -F'\t' -v OFS='\t' -v p="$POPLOG_PID" -v t="$(_pl_iso)" -v s="$1" -v sl="${2:-}" \
+      'NR>1 && $3==p {$6=t; $7=s; if (sl != "") $8=sl} {print}' "$POPLOG_RUNNING" > "$POPLOG_RUNNING.tmp.$$" \
       && mv "$POPLOG_RUNNING.tmp.$$" "$POPLOG_RUNNING"
   ) 9> "$POPLOG_RUNNING.lock"
 }
@@ -78,6 +88,7 @@ _pl_heartbeat_loop() {
     [[ -n "$cur" ]] || cur=$(grep -a -E '^ *(PASS|FAIL|START) \[' "$POPLOG_STATE_DIR/out" 2>/dev/null | tail -1 || true)
     prog=$(tail -1 "$POPLOG_PROGRESS_FILE" 2>/dev/null || true)
     state=RUNNING
+    [[ -f "$POPLOG_STATE_DIR/waiting" ]] && state=WAITING
     if _pl_paused "$child" || _pl_paused "$POPLOG_PID"; then state=PAUSED; fi
     _pl_log "HEARTBEAT state=$state step=$step elapsed=$(_pl_fmt $(( $(date +%s) - POPLOG_T0 ))) current_test=${cur:--} progress=${prog:--}"
     [[ "$state" == PAUSED ]] && _pl_log "PAUSED (SIGSTOP detected; process state T)"
@@ -112,7 +123,7 @@ poplog_init() {
   [[ -e "$POPLOG_FILE" ]] && POPLOG_FILE="${POPLOG_FILE%.log}-$$.log"
   POPLOG_STATE_DIR=$(mktemp -d "${TMPDIR:-/tmp}/poplog.XXXXXX")
   POPLOG_PROGRESS_FILE=$POPLOG_STATE_DIR/progress
-  export POPLOG_FILE POPLOG_PROGRESS_FILE
+  export POPLOG_FILE POPLOG_PROGRESS_FILE POPLOG_PID POPLOG_STATE_DIR POPLOG_ROOT POPLOG_RUNNING
   : > "$POPLOG_STATE_DIR/out"; echo '-' > "$POPLOG_STATE_DIR/step"
   local sha='(not a git repo)'
   sha=$(git -C "$POPLOG_REPO" rev-parse HEAD 2>/dev/null || echo '(not a git repo)')
@@ -194,6 +205,40 @@ poplog_run_step() {
   POPLOG_CHILD_PID=""; : > "$POPLOG_STATE_DIR/child"
   sleep 0.2  # let tee drain
   log_step_end "$name" "$rc" "$POPLOG_STATE_DIR/out" "$tests" || return 1
+}
+
+# pop_slot_acquire [N] - take the first free of N (default 3) counting-lock slots $POPSLOT_PREFIX1..N
+# (default /tmp/pop-gate.slot). Holds it on fd $POPSLOT_FD until this process exits. If none is free the run is
+# WAITING (RUNNING.tsv + heartbeat); waiters queue on $POPSLOT_PREFIX.queue (one poller at a time, FIFO-ish) and
+# poll every $POPSLOT_POLL s (default 3). Sets POPSLOT_SLOT and POPSLOT_WAITED. Works in or out of a poplog run.
+_ps_note() { if [[ -n "${POPLOG_FILE:-}" && -f "${POPLOG_FILE:-}" ]]; then _pl_log "$*"; fi; echo "popslot: $*" >&2; }
+_ps_try() {
+  local i fd
+  for ((i = 1; i <= POPSLOT_N; i++)); do
+    exec {fd}>> "${POPSLOT_PREFIX}$i"
+    if flock -n "$fd"; then POPSLOT_FD=$fd; POPSLOT_SLOT=$i; return 0; fi
+    exec {fd}>&-
+  done
+  return 1
+}
+pop_slot_acquire() {
+  POPSLOT_N=${1:-${POPSLOT_SLOTS:-3}}; POPSLOT_PREFIX=${POPSLOT_PREFIX:-/tmp/pop-gate.slot}
+  local t0 qfd ctx=''; t0=$(date +%s)
+  [[ -n "${POPLOG_PID:-}" && -n "${POPLOG_STATE_DIR:-}" && -d "${POPLOG_STATE_DIR:-/nonexistent}" ]] && ctx=1
+  if ! _ps_try; then
+    _ps_note "SLOT WAITING: all $POPSLOT_N slots (${POPSLOT_PREFIX}1..$POPSLOT_N) busy"
+    if [[ -n "$ctx" ]]; then : > "$POPLOG_STATE_DIR/waiting"; _pl_running_update WAITING "wait/$POPSLOT_N"; fi
+    exec {qfd}>> "${POPSLOT_PREFIX}.queue"
+    flock "$qfd"
+    until _ps_try; do sleep "${POPSLOT_POLL:-3}"; done
+    exec {qfd}>&-
+  fi
+  POPSLOT_WAITED=$(( $(date +%s) - t0 ))
+  export POPSLOT_SLOT POPSLOT_FD POPSLOT_HELD=$POPSLOT_SLOT
+  # Per-gate budget (Paul/Jeff 2026-10-23): 3 slots x 8 jobs = 24 of 32 cores, unless the caller overrides.
+  export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-8} RUST_TEST_THREADS=${RUST_TEST_THREADS:-8}
+  if [[ -n "$ctx" ]]; then rm -f "$POPLOG_STATE_DIR/waiting"; _pl_running_update RUNNING "$POPSLOT_SLOT/$POPSLOT_N"; fi
+  _ps_note "SLOT TAKEN slot=$POPSLOT_SLOT/$POPSLOT_N (${POPSLOT_PREFIX}$POPSLOT_SLOT) waited=$(_pl_fmt "$POPSLOT_WAITED") CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS RUST_TEST_THREADS=$RUST_TEST_THREADS"
 }
 
 poplog_finish() {

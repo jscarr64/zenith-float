@@ -21,6 +21,13 @@ tag=${1:?usage: tools/full_gate.sh TAG}; : > "$T/$tag.rc"
 if [[ -f "$HOME/pop-logs/bin/poplog.sh" ]]; then source "$HOME/pop-logs/bin/poplog.sh"; else source "$gate_dir/../scripts/poplog.sh"; fi
 poplog_init "${POPLOG_AGENT:-rusty}" "full_gate-$tag" "$PWD" "tools/full_gate.sh $tag"
 echo "poplog: $POPLOG_FILE" | tee -a "$T/$tag.rc" >&2
+# Pop scheduling (Paul, 2026-10-23): heavy gates share 3 counting-lock slots (/tmp/pop-gate.slot1..3, replaces the
+# single flock /tmp/pop-gate.lock), 8 jobs each (24 of 32 cores). The slot is held on an fd until this script exits;
+# waiting shows as WAITING in ~/pop-logs/RUNNING.tsv. Skipped when a caller already holds a slot (POPSLOT_HELD).
+# CARGO_BUILD_JOBS / RUST_TEST_THREADS default to 8 (pop_slot_acquire) unless the caller sets them.
+if [[ -z "${POPSLOT_HELD:-}" ]]; then pop_slot_acquire "${POPSLOT_SLOTS:-3}"; fi
+export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-8} RUST_TEST_THREADS=${RUST_TEST_THREADS:-8}
+TT="-- --test-threads=$RUST_TEST_THREADS"
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".
 missing=()
@@ -47,11 +54,11 @@ run() {
   echo "  output: $T/$tag-$name.log" >> "$POPLOG_FILE"
 }
 ORACLES="--test oracle --test specials_oracle --test methods_oracle --test accuracy_table --test elliptic_phi"
-run build-debug "cargo test --workspace"
-run build-release "cargo test --workspace --release"
+run build-debug "cargo test --workspace $TT"
+run build-release "cargo test --workspace --release $TT"
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
 run build-thumbv7em "cargo build --no-default-features --target thumbv7em-none-eabihf && cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf"
-run features-random-serde "cargo test --workspace --features random,serde"
+run features-random-serde "cargo test --workspace --features random,serde $TT"
 run oracle-fast "cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
 run oracle-deep "ORACLE_TIER=deep cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
 run mpfr "cargo test -p zenith-float-num --release --features mpfr-tests -- --test-threads=1"
