@@ -9,9 +9,7 @@ use gmp_mpfr_sys::{
     gmp::exp_t,
     mpfr::{self, rnd_t},
 };
-use rug::{
-    Float,
-};
+use rug::Float;
 use zenith_float_num::RoundingMode;
 use zenith_float_num::{Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 

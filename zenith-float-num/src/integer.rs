@@ -1,9 +1,9 @@
 //! Arbitrary-precision signed integers on `Word` limbs.
 
-use crate::defs::Exponent;
 use crate::common::util::add_carry;
 use crate::common::util::sub_borrow;
 use crate::defs::DoubleWord;
+use crate::defs::Exponent;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
 use crate::defs::Word;

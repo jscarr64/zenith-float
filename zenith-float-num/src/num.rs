@@ -13,9 +13,9 @@ use crate::defs::SignedWord;
 use crate::defs::Word;
 use crate::defs::EXPONENT_MAX;
 use crate::defs::EXPONENT_MIN;
+use crate::defs::MAX_PRECISION;
 use crate::defs::WORD_BIT_SIZE;
 use crate::defs::WORD_SIGNIFICANT_BIT;
-use crate::defs::MAX_PRECISION;
 use crate::exp;
 use crate::mantissa::AddSubSpec;
 use crate::mantissa::Mantissa;
@@ -666,7 +666,10 @@ impl ExactNumNumber {
                 debug_assert!(shift <= MAX_PRECISION);
             }
 
-            Ok((exp::narrow(exp::wide(self.e) - exp::wide_u(shift)), Some(mantissa)))
+            Ok((
+                exp::narrow(exp::wide(self.e) - exp::wide_u(shift)),
+                Some(mantissa),
+            ))
         } else {
             Ok((self.e as i64, None))
         }
@@ -822,7 +825,14 @@ impl ExactNumNumber {
         {
             debug_assert!(shift <= i64::MAX / 2 && e >= -exp::WIDE_LIMIT);
         }
-        Self::finish_sum(d3, exp::narrow(exp::wide(e) - exp::wide(shift)), m3, (inexact, inputs), rm, per_op)
+        Self::finish_sum(
+            d3,
+            exp::narrow(exp::wide(e) - exp::wide(shift)),
+            m3,
+            (inexact, inputs),
+            rm,
+            per_op,
+        )
     }
 
     /// Writes the exponent and mantissa of a finished sum into `d3` (sign already set) and sets the flags.

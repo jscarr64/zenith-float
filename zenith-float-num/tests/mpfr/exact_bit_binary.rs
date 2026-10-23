@@ -1,7 +1,6 @@
 //! Two- and three-operand functions, roots, powers, and parsing round at exactly `p` bits in
 //! every mode with a per-operation `inexact` flag (2.0.0 audit, round 2: items a and c).
 
-use zenith_float_num::Exponent;
 use crate::mpfr::common::assert_exact_eq;
 use crate::mpfr::common::conv_to_mpfr;
 use crate::mpfr::common::reset_test_rng;
@@ -11,6 +10,7 @@ use crate::mpfr::exact_bit_functions::{
 use gmp_mpfr_sys::mpfr;
 use rug::Float;
 use std::ops::Neg;
+use zenith_float_num::Exponent;
 use zenith_float_num::{Consts, ExactNum, Radix, WORD_BIT_SIZE};
 
 fn storage(p: usize) -> usize {

@@ -1,7 +1,6 @@
 //! Results in the subnormal band round correctly in every mode, including `ToOdd`
 //! (round half to odd) at exact ties on the subnormal grid (2.0.0 audit, round 2: item d).
 
-use zenith_float_num::Exponent;
 use crate::mpfr::common::{
     assert_exact_eq, conv_to_mpfr, draw_seed, mpfr_reference_with, rebuild_from_seed,
     reset_test_rng,
@@ -9,6 +8,7 @@ use crate::mpfr::common::{
 use crate::mpfr::exact_bit_functions::{input, MODES, PRECISIONS};
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::Float;
+use zenith_float_num::Exponent;
 use zenith_float_num::{Consts, ExactNum, RoundingMode, EXPONENT_MIN, WORD_BIT_SIZE};
 
 /// `conv_to_mpfr` for values near the bottom of the range: converts `x / 2^e`, then scales.
@@ -128,7 +128,12 @@ fn subnormal_band_every_mode() -> Result<(), Box<dyn std::error::Error>> {
                     let (want, inexact) = reference(p, rm, wide, f.as_ref())?;
                     assert_exact_eq(got, &want, p, &info, &mut cc)?;
                     if !want.is_zero() {
-                        assert_eq!(got.inexact(), inexact, "{info}: inexact flag, MPFR {}", crate::mpfr::common::show_mp(&want));
+                        assert_eq!(
+                            got.inexact(),
+                            inexact,
+                            "{info}: inexact flag, MPFR {}",
+                            crate::mpfr::common::show_mp(&want)
+                        );
                     }
                 }
             }

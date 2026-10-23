@@ -5,8 +5,8 @@
 //! (mpmath `foxh`). Local Heun is DLMF 31.3; confluent Heun is the \(z=0\)
 //! Frobenius solution of DLMF 31.12.1.
 
-use crate::defs::Exponent;
 use crate::catalog::{cat_nan, finish, finite, series_cap, small_int, work_p};
+use crate::defs::Exponent;
 use crate::Consts;
 use crate::ExactNum;
 use crate::RoundingMode;

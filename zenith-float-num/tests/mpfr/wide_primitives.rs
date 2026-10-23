@@ -137,7 +137,12 @@ impl Run {
             let (want, inexact) = mpfr_reference_with(p as u32, rm, f)?;
             assert_exact_eq(got, &want, p, info, cc)?;
             if flags && !want.is_nan() && !want.is_infinite() {
-                assert_eq!(got.inexact(), inexact, "{info}: inexact flag, MPFR {}", crate::mpfr::common::show_mp(&want));
+                assert_eq!(
+                    got.inexact(),
+                    inexact,
+                    "{info}: inexact flag, MPFR {}",
+                    crate::mpfr::common::show_mp(&want)
+                );
             }
             Ok(())
         }));

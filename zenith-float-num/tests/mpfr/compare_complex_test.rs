@@ -1,13 +1,11 @@
 //! MPFR oracles for rectangular `ExactComplex` (re/im via real MPFR ops).
 
-use zenith_float_num::Exponent;
 use crate::mpfr::common::{
     assert_float_close, get_float_pair, get_random_rnd_pair, reset_test_rng,
 };
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rug::{
-    Float,
-};
+use rug::Float;
+use zenith_float_num::Exponent;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
 #[test]

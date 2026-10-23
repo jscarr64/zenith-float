@@ -4,9 +4,9 @@
 //! unit gold: odd/even, complementary definitions, `K_{1/2}`, Wronskian,
 //! `_2F1(...,0)=1`, `K(0)=π/2`.
 
-use zenith_float_num::Exponent;
 use crate::mpfr::common::reset_test_rng;
 use std::ops::Neg;
+use zenith_float_num::Exponent;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, RoundingMode, WORD_BIT_SIZE};
 
 /// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.

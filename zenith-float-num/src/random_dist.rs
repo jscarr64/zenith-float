@@ -1,7 +1,7 @@
 //! Distribution samplers on the crate RNG (`random` feature / tests).
 
-use crate::defs::Exponent;
 use crate::common::test_rng::random;
+use crate::defs::Exponent;
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
 use crate::Error;

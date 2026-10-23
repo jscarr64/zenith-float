@@ -136,7 +136,8 @@ fn ulps(est: &ExactNum, p: usize, extra_bits: i32) -> ExactNum {
     let width = est.mantissa_max_bit_len().unwrap_or(64).max(32);
     let e = est.exponent().unwrap_or(0);
     ExactNum::from_u8(1, width).ldexp(
-        e.saturating_sub(p as i64).saturating_add(i64::from(extra_bits)),
+        e.saturating_sub(p as i64)
+            .saturating_add(i64::from(extra_bits)),
         width,
         RoundingMode::Up,
     )

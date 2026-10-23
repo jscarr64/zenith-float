@@ -555,7 +555,8 @@ mod tests {
         let p = 256;
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
-        let mk_rad = || ExactNum::from_u8(1, p).ldexp(-(p as crate::Exponent), p, RoundingMode::None);
+        let mk_rad =
+            || ExactNum::from_u8(1, p).ldexp(-(p as crate::Exponent), p, RoundingMode::None);
         let six = ExactNum::from_u8(6, p);
         let pi6 = cc.pi(p, rm).div(&six, p, rm);
         let bsin = Ball::new(pi6, mk_rad());

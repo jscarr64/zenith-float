@@ -5,8 +5,8 @@
 //! compared in a space scaled by `2^SHIFT` (see `mpfr_reference_shifted`), because MPFR cannot hold
 //! the subnormal grid `2^(EXPONENT_MIN - p)` below its own `emin_min`.
 
-use crate::mpfr::common::{show_mp, with_full_range};
 use crate::mpfr::common::{emulated_range_ok, exact_mpfr_shifted, mpfr_reference_shifted};
+use crate::mpfr::common::{show_mp, with_full_range};
 use crate::mpfr::exact_bit_functions::MODES;
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::Float;
@@ -64,7 +64,12 @@ fn show_zf(x: &ExactNum) -> String {
 
 fn same(got: &ExactNum, want: &Float, inexact: bool, shift: i64, info: &str) -> Res {
     if want.is_infinite() {
-        assert!(got.is_inf(), "{info}: MPFR {}, zenith {}", show_mp(want), show_zf(got));
+        assert!(
+            got.is_inf(),
+            "{info}: MPFR {}, zenith {}",
+            show_mp(want),
+            show_zf(got)
+        );
         assert_eq!(
             got.is_negative(),
             want.is_sign_negative(),
@@ -74,7 +79,9 @@ fn same(got: &ExactNum, want: &Float, inexact: bool, shift: i64, info: &str) -> 
     }
     assert!(
         !got.is_nan() && !got.is_inf(),
-        "{info}: MPFR {}, zenith {}", show_mp(want), show_zf(got)
+        "{info}: MPFR {}, zenith {}",
+        show_mp(want),
+        show_zf(got)
     );
     if want.is_zero() {
         assert!(got.is_zero(), "{info}: MPFR 0, zenith {}", show_zf(got));
@@ -95,7 +102,12 @@ fn same(got: &ExactNum, want: &Float, inexact: bool, shift: i64, info: &str) -> 
             mpfr::set_emin(old_min);
             mpfr::set_emax(old_max);
         }
-        assert!(eq, "{info}: MPFR {}, zenith {}", show_mp(want), show_zf(got));
+        assert!(
+            eq,
+            "{info}: MPFR {}, zenith {}",
+            show_mp(want),
+            show_zf(got)
+        );
     }
     assert_eq!(got.inexact(), inexact, "{info}: inexact flag");
     Ok(())
@@ -250,5 +262,92 @@ fn bottom_edge_subnormals_round_into_normal() -> Res {
             )?;
         }
     }
+    Ok(())
+}
+
+/// `f(x) = g + d` for `x = +-min_positive_normal(p)`, with `g` exactly `x` or `1` and `|d|` near
+/// `2^(2 EXPONENT_MIN)`, far below any rounding bit; only the sign of `d` matters. MPFR cannot be the
+/// oracle at `EXPONENT_MIN` (its small-argument shortcuts compute `2 EXP(x)`, which wraps at its
+/// `emin_min`), so the reference is this expansion. Before the fix, the small-argument test negated
+/// `2 e - 2 = i64::MIN` and every one of these returned NaN or a wrong value.
+#[test]
+fn small_argument_shortcut_at_exponent_min() -> Res {
+    type F = fn(&ExactNum, usize, RoundingMode, &mut zenith_float_num::Consts) -> ExactNum;
+    // (name, f, g is 1 (else x), sign of d relative to sign(x) (for g = 1: the sign of d itself))
+    let fs: [(&str, F, bool, i32); 12] = [
+        ("sin", |x, p, rm, cc| x.sin(p, rm, cc), false, -1),
+        ("tan", |x, p, rm, cc| x.tan(p, rm, cc), false, 1),
+        ("asin", |x, p, rm, cc| x.asin(p, rm, cc), false, 1),
+        ("atan", |x, p, rm, cc| x.atan(p, rm, cc), false, -1),
+        ("sinh", |x, p, rm, cc| x.sinh(p, rm, cc), false, 1),
+        ("tanh", |x, p, rm, cc| x.tanh(p, rm, cc), false, -1),
+        ("asinh", |x, p, rm, cc| x.asinh(p, rm, cc), false, -1),
+        ("atanh", |x, p, rm, cc| x.atanh(p, rm, cc), false, 1),
+        ("expm1", |x, p, rm, cc| x.expm1(p, rm, cc), false, 0),
+        ("log1p", |x, p, rm, cc| x.log1p(p, rm, cc), false, 2),
+        ("cos", |x, p, rm, cc| x.cos(p, rm, cc), true, -1),
+        ("cosh", |x, p, rm, cc| x.cosh(p, rm, cc), true, 1),
+    ];
+    let mut cc = zenith_float_num::Consts::new()?;
+    let mut bad = Vec::new();
+    for p in [64usize, 128, 192] {
+        for neg in [false, true] {
+            let mk = || {
+                if neg {
+                    ExactNum::min_positive_normal(p).neg()
+                } else {
+                    ExactNum::min_positive_normal(p)
+                }
+            };
+            let x = mk();
+            for &(name, f, to_one, rel) in &fs {
+                let g = if to_one { ExactNum::from_u8(1, p) } else { mk() };
+                // expm1: d = x^2/2 > 0; log1p: d = -x^2/2 < 0 (whatever the sign of x).
+                let d: i32 = match rel {
+                    0 => 1,
+                    2 => -1,
+                    r if to_one => r,
+                    r if neg => -r,
+                    r => r,
+                };
+                for rm in MODES {
+                    let r = f(&x, p, rm, &mut cc);
+                    let toward_d = match rm {
+                        RoundingMode::Up => d > 0,
+                        RoundingMode::Down => d < 0,
+                        RoundingMode::FromZero => (d > 0) != g.is_negative(),
+                        RoundingMode::ToZero => (d > 0) == g.is_negative(),
+                        RoundingMode::ToEven => false,
+                        // Not pinned here (g itself or its neighbour on d's side): the shortcut's
+                        // to-odd handling is covered against MPFR inside its range.
+                        RoundingMode::ToOdd => {
+                            let c = r.compare(&g);
+                            if r.is_nan() || c.is_some_and(|s| s != 0 && (s > 0) != (d > 0)) {
+                                bad.push(format!("{name} p={p} neg {neg} ToOdd: cmp {c:?}"));
+                            }
+                            continue;
+                        }
+                        RoundingMode::None => continue,
+                    };
+                    let c = r.compare(&g);
+                    let ok = !r.is_nan()
+                        && match c {
+                            Some(0) => !toward_d,
+                            Some(s) => toward_d && (s > 0) == (d > 0),
+                            None => false,
+                        };
+                    if !ok {
+                        bad.push(format!(
+                            "{name}({}{} p={p}) {rm:?}: cmp {c:?} nan {}",
+                            if neg { "-" } else { "+" },
+                            "min_positive_normal",
+                            r.is_nan()
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
     Ok(())
 }

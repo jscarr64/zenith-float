@@ -76,7 +76,12 @@ pub const MAX_PRECISION: usize = {
 };
 
 const _: () = assert!(
-    (MAX_PRECISION as u128) + 1 == if (1u128 << 60) < (usize::MAX / 4) as u128 { 1u128 << 60 } else { (usize::MAX / 4) as u128 }
+    (MAX_PRECISION as u128) + 1
+        == if (1u128 << 60) < (usize::MAX / 4) as u128 {
+            1u128 << 60
+        } else {
+            (usize::MAX / 4) as u128
+        }
 );
 // Two exponents add without overflow, and so do an exponent and twice a precision.
 const _: () = assert!(EXPONENT_MAX as i128 * 2 <= i64::MAX as i128);

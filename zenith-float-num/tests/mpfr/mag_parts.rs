@@ -3,10 +3,10 @@
 //! (20 000 bits). The oracle is exact integer arithmetic (`rug::Integer`) on the words of the operand, and MPFR
 //! (`Float`) for the powers of two that MPFR can hold.
 
-use zenith_float_num::Exponent;
 use crate::mpfr::retry_budget::use_full_exponent_range;
 use rug::integer::Order;
 use rug::{Float, Integer};
+use zenith_float_num::Exponent;
 use zenith_float_num::{
     Error, ExactNum, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS,
 };

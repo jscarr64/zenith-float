@@ -6,9 +6,7 @@ use crate::mpfr::common::{
     test_random,
 };
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rug::{
-    Float,
-};
+use rug::Float;
 use zenith_float_num::{Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
 #[test]
