@@ -356,6 +356,9 @@ Above two words of precision `reciprocal` iterates Newton's method from the top 
 
 Three wrong answers when `y / x` is far from one, all found by the wide-range tests (`atan2_over_the_whole_range`, 1,712 mismatches on the old code, checked against MPFR; none on the new). (1) `y / x` beyond the largest number with `x` negative gave `±pi` instead of `±pi/2`: `atan2(2^2147483517, -2^-2147483643, 24, ToEven)` was 3.14159 (MPFR 1.5707964). The overflow branch now returns `±pi/2` for either sign of `x`. This also covers `y = 1` with a negative subnormal `x`. (2) An exact tiny quotient returned `NaN(PrecisionRetryExhausted)` in `Up`, `Down`, `ToZero`, `FromZero` and `ToOdd`: `atan2(2^-2147483718, 1, 128, Up)` and `atan2(1, 2^2147483517, 128, Up)` (the correct result is the quotient itself, rounded below it by a hair in the directed modes, MPFR `1.668e-646457032`-style values; 1.0.12 returned `0` for the first). The retry loop can never decide a directed rounding of a value that is exactly representable, so an exact quotient now goes straight to `atan`, which rounds `q - (a part too small to show)` correctly. (3) A quotient below half the smallest number of precision `p` returned `NaN` for the same reason; it is now rounded like the quotient (zero or the smallest number, by mode, with the sign of `y / x`). No pinned digest covers `atan2`; the unchanged digests and the existing `atan2` oracle test (`exact_bit_pow_atan2`) still pass.
 
+### MPFR test exponent range restored (test fix)
+- `run_compare_ops` now restores the caller's MPFR emin/emax on return (drop guard), so later tests on the same thread no longer inherit the widened range.
+
 ### pow exact roots N/2^j (bug fix)
 - `pow(x, N/2^j)` for j <= 6 (e.g. `16^0.25`) is now exact via repeated exact sqrt, matching MPFR values and the inexact flag in all modes; generalises the half-integer block, keeps exact-p `pow(x,1)`.
 

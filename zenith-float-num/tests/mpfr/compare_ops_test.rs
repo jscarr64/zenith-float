@@ -21,6 +21,32 @@ use zenith_float_num::Word;
 use zenith_float_num::EXPONENT_BIT_SIZE;
 use zenith_float_num::{Consts, ExactNum, Exponent, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 
+/// Sets MPFR's exponent range to zenith-float's and puts the caller's back
+/// on drop, including on an early `?` return.
+struct MpfrExpRange {
+    old: (exp_t, exp_t),
+}
+
+impl MpfrExpRange {
+    fn widen() -> Self {
+        let old = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
+        unsafe {
+            mpfr::set_emin(EXPONENT_MIN as exp_t);
+            mpfr::set_emax(EXPONENT_MAX as exp_t);
+        }
+        MpfrExpRange { old }
+    }
+}
+
+impl Drop for MpfrExpRange {
+    fn drop(&mut self) {
+        unsafe {
+            mpfr::set_emin(self.old.0);
+            mpfr::set_emax(self.old.1);
+        }
+    }
+}
+
 #[test]
 fn mpfr_compare_ops() -> Result<(), Box<dyn std::error::Error>> {
     let run_cnt = 1000;
@@ -49,10 +75,7 @@ fn run_compare_ops(
     reset_test_rng();
     let mut cc = Consts::new()?;
 
-    unsafe {
-        mpfr::set_emin(EXPONENT_MIN as exp_t);
-        mpfr::set_emax(EXPONENT_MAX as exp_t);
-    }
+    let _range = MpfrExpRange::widen();
 
     assert_eq!(EXPONENT_MIN, exp_min());
     assert_eq!(EXPONENT_MAX, exp_max());
