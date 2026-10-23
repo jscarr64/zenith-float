@@ -6571,6 +6571,22 @@ mod grid_digest_tests {
     /// Layer 0a pin for `hypot`: the second argument is shifted far below, a little below, level with and far
     /// above the first, so the stand-in (`dy`) path and both orderings are taken, over every first operand
     /// (zeros, infinities and NaNs included).
+    /// A product below the subnormal grid and an addend near `EXPONENT_MAX` are almost `2^63` places apart: the
+    /// gap must not wrap in `i64`, and the product is only a sticky bit below the addend.
+    #[test]
+    fn fma_of_a_subnormal_product_and_a_huge_addend_is_the_addend(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let c = operand(17);
+        for p in [64usize, 200] {
+            let got = operand(21).fma(&operand(3), &c, p, RoundingMode::ToEven);
+            assert_eq!(got.compare(&c), Some(0), "p={p}: {got:?}");
+            assert!(got.inexact(), "p={p}");
+            let down = operand(21).fma(&operand(3), &c, p, RoundingMode::Down);
+            assert_eq!(down.compare(&c), Some(-1), "p={p}: {down:?}");
+        }
+        Ok(())
+    }
+
     #[test]
     fn hypot_scaling_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
