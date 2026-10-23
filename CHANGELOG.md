@@ -34,6 +34,8 @@ The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). `rust-v
 
 `ldexp` below the range (fix, i64 exponent): a scale taking the exponent under `EXPONENT_MIN` added the two exponents in `i64` and could leave a value with an exponent below `EXPONENT_MIN` (for `0.ff..f * 2^EXPONENT_MIN` scaled by `2^-1`, exponent `EXPONENT_MIN - 1`, not rounded onto the subnormal grid). The sum is now formed in `i128`, accepted only inside the range, and an underflowing scale rounds onto the subnormal grid by the rounding mode. Found by `i64_edges::bottom_edge_subnormals_round_into_normal`.
 
+Small-argument shortcut at `EXPONENT_MIN` (fix, i64 exponent): `sin`, `asin`, `sinh`, `asinh`, `tan`, `atan`, `tanh`, `atanh`, `cos`, `cosh`, `expm1` and `log1p` of `+-min_positive_normal(p)` returned NaN or failed to round by the mode. Their shortcut tests `p + 1 < -(2 e - 2)`, and at `e = EXPONENT_MIN` the bound is `i64::MIN`, whose negation wraps in release builds. The comparison is now in `i128`. Found by `i64_edges::small_argument_shortcut_at_exponent_min` (reference: the series expansion; MPFR cannot evaluate there).
+
 Behaviour changes from the audit, each with its own section below:
 
 - `add`, `sub`, `mul`, and `div` round at exactly `p` bits instead of `p` rounded up to a word, and subnormal results are no longer rounded twice.
