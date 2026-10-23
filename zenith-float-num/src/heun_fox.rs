@@ -5,6 +5,7 @@
 //! (mpmath `foxh`). Local Heun is DLMF 31.3; confluent Heun is the \(z=0\)
 //! Frobenius solution of DLMF 31.12.1.
 
+use crate::defs::Exponent;
 use crate::catalog::{cat_nan, finish, finite, series_cap, small_int, work_p};
 use crate::Consts;
 use crate::ExactNum;
@@ -447,7 +448,7 @@ fn meijer_log_limit(
         if wp > 12_000 {
             break;
         }
-        let Ok(hmag_i) = i32::try_from(hmag) else {
+        let Ok(hmag_i) = Exponent::try_from(hmag) else {
             break;
         };
         let h0 = ExactNum::from_u8(1, wp).ldexp(-hmag_i, wp, RoundingMode::None);
@@ -1081,7 +1082,7 @@ fn un(n: u32, p: usize) -> ExactNum {
     ExactNum::from_u32(n, p)
 }
 
-fn rel_below(term: &ExactNum, peak: i32, bits: usize) -> bool {
+fn rel_below(term: &ExactNum, peak: Exponent, bits: usize) -> bool {
     if !finite(term) {
         return false;
     }
@@ -1094,7 +1095,7 @@ fn rel_below(term: &ExactNum, peak: i32, bits: usize) -> bool {
     }
 }
 
-fn bump_peak(peak: &mut i32, v: &ExactNum) {
+fn bump_peak(peak: &mut Exponent, v: &ExactNum) {
     if let Some(e) = v.exponent() {
         if e > *peak {
             *peak = e;
@@ -1379,8 +1380,8 @@ fn eval_jet(
     let mut zp = ExactNum::from_u8(1, p);
     let mut y = ExactNum::new(p);
     let mut yp = ExactNum::new(p);
-    let mut peak_y = i32::MIN;
-    let mut peak_d = i32::MIN;
+    let mut peak_y = Exponent::MIN;
+    let mut peak_d = Exponent::MIN;
     let mut term_ok = false;
     let mut deriv_ok = false;
     for (n, c) in coefs.iter().enumerate() {
@@ -1556,8 +1557,8 @@ fn taylor_step(
     let mut hpow = h.clone();
     let mut sum = ExactNum::mul_ref(yp, h, p, RoundingMode::None).add(y, p, RoundingMode::None);
     let mut dsum = yp.clone();
-    let mut peak_y = i32::MIN;
-    let mut peak_d = i32::MIN;
+    let mut peak_y = Exponent::MIN;
+    let mut peak_d = Exponent::MIN;
     bump_peak(&mut peak_y, &sum);
     bump_peak(&mut peak_d, &dsum);
     let cap = series_cap(p);
@@ -1651,7 +1652,7 @@ fn close_enough(rem: &ExactNum, target: &ExactNum, bits: usize) -> bool {
     if rem.is_zero() {
         return true;
     }
-    let mut peak = 0i32;
+    let mut peak: Exponent = 0;
     bump_peak(&mut peak, target);
     bump_peak(&mut peak, &ExactNum::from_u8(1, bits.max(64)));
     rel_below(rem, peak, bits.saturating_add(16))
@@ -1936,7 +1937,7 @@ mod tests {
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / 4))
+        d.is_zero() || d.exponent().is_some_and(|e| e < -((p as Exponent) / 4))
     }
 
     #[test]

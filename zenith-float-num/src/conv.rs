@@ -27,7 +27,7 @@ use crate::EXPONENT_MIN;
 use alloc::vec::Vec;
 
 const TEN_PWR_MAX_TO_DEC: usize = EXPONENT_MAX as usize / 4;
-const TEN_PWR_MAX_FROM_DEC: usize = (EXPONENT_MAX as u64 * 301029995 / 1000000000) as usize;
+const TEN_PWR_MAX_FROM_DEC: usize = (EXPONENT_MAX as u128 * 301029995 / 1000000000) as usize;
 
 impl ExactNumNumber {
     /// Converts an array of digits in radix `rdx` to ExactNumNumber with precision `p`.
@@ -191,7 +191,7 @@ impl ExactNumNumber {
             let mut m = Mantissa::new(msz)?;
 
             // exponent
-            let e = e as i64 * shift as i64 + e_shift;
+            let e = crate::exp::narrow(crate::exp::wide(crate::exp::mul(e, shift as i64)) + crate::exp::wide(e_shift));
 
             if e > EXPONENT_MAX as i64 {
                 return Err(Error::ExponentOverflow(sign));

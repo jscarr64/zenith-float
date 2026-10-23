@@ -53,7 +53,7 @@ fn cplx_eq(name: &str, a: &ExactComplex, b: &ExactComplex) {
 }
 
 fn tiny_part(x: &ExactNum, p: usize) -> bool {
-    x.is_zero() || x.exponent().unwrap_or(0) < -((p as i32) / 4)
+    x.is_zero() || x.exponent().unwrap_or(0) < -((p as i64) / 4)
 }
 
 #[test]
@@ -339,7 +339,7 @@ fn macro_run_cexpr_tests() -> Result<(), Box<dyn std::error::Error>> {
 
     let back = cexpr!(ln(exp(x)), &mut ctx);
     let d = ExactNum::sub_ref(back.re(), x.re(), p, RoundingMode::None).abs();
-    assert!(d.exponent().unwrap_or(0) < -((p as i32) / 8));
+    assert!(d.exponent().unwrap_or(0) < -((p as i64) / 8));
     assert!(tiny_part(back.im(), p));
 
     let two = ExactComplex::from_real(ExactNum::from(2), p);

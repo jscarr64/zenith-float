@@ -29,6 +29,7 @@
 //! Kronrod pairs other than (7, 15), and the full `QAGS` heap with its
 //! four-way split and roundoff flags.
 
+use crate::defs::Exponent;
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
 use crate::ExactNum;
@@ -154,7 +155,7 @@ fn work_p(p: usize) -> usize {
 fn result_ulp(x: &ExactNum, p: usize) -> ExactNum {
     let width = p.max(GK_MIN_PREC);
     let e = x.exponent().unwrap_or(0);
-    let shift = e.saturating_sub(p as i32);
+    let shift = e.saturating_sub(p as Exponent);
     ExactNum::from_u8(1, width).ldexp(shift, width, RoundingMode::Up)
 }
 
@@ -185,8 +186,8 @@ fn finite(x: &ExactNum) -> bool {
     !x.is_nan() && !x.is_inf()
 }
 
-fn tiny(p: usize, extra: i32) -> ExactNum {
-    let e = (p as i32).saturating_sub(extra).saturating_neg();
+fn tiny(p: usize, extra: Exponent) -> ExactNum {
+    let e = (p as Exponent).saturating_sub(extra).saturating_neg();
     ExactNum::from_u8(1, p).ldexp(e, p, RoundingMode::ToEven)
 }
 
@@ -523,7 +524,7 @@ fn weight_sum_ok(weights: &[ExactNum], target: &ExactNum, p: usize) -> bool {
     let err = acc.sub(target, p, rm).abs();
     // Working precision is `p`. Losing a quarter of those bits still leaves
     // the caller's destination (`p - WORD_BIT_SIZE`) intact.
-    let slack_bits = (p as i32) / 4;
+    let slack_bits = (p as Exponent) / 4;
     leq(&err, &tiny(p, slack_bits))
 }
 
@@ -1140,7 +1141,7 @@ mod tests {
         if d.is_zero() {
             return i32::MAX;
         }
-        want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)
+        i32::try_from(want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)).unwrap_or(i32::MAX)
     }
 
     #[test]

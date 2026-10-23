@@ -11,7 +11,7 @@ fn neg_of(x: &ExactNum) -> ExactNum {
     ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
 }
 
-fn with_exp(mut x: ExactNum, e: i32) -> ExactNum {
+fn with_exp(mut x: ExactNum, e: zenith_float_num::Exponent) -> ExactNum {
     x.set_exponent(e);
     x
 }
@@ -61,7 +61,7 @@ fn inexact_is_set_when_this_op_rounds() {
                     negative
                 );
 
-                let tiny = with_exp(ExactNum::from_i8(1, p), -(p as i32) - 8);
+                let tiny = with_exp(ExactNum::from_i8(1, p), -(p as i64) - 8);
                 let s = one.add(&tiny, p, rm);
                 assert!(
                     s.inexact(),

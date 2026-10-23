@@ -4,6 +4,7 @@
 //! \(m=k^2\); incomplete argument \(x=\sin\varphi\). Not the real series at
 //! \(\lvert z\rvert\).
 
+use crate::defs::Exponent;
 use crate::common::util::round_p;
 use crate::complex_special::nan_pair;
 use crate::complex_special::pi_c;
@@ -53,7 +54,7 @@ fn max_abs(a: &ExactNum, b: &ExactNum, _p: usize) -> ExactNum {
 }
 
 fn tiny_spread(p: usize) -> ExactNum {
-    ExactNum::from_u8(1, p).ldexp(-((p as i32) / 3 + 16), p, rm())
+    ExactNum::from_u8(1, p).ldexp(-((p as Exponent) / 3 + 16), p, rm())
 }
 
 fn close_enough(dev: &ExactNum, an: &ExactComplex, p: usize) -> bool {
@@ -91,7 +92,7 @@ fn carlson_rc(x: &ExactComplex, y: &ExactComplex, p: usize, cc: &mut Consts) -> 
     // Shortcut 1/√x only when |x − y| < 2^-(p+8)|x| (first-order error (y − x)/(3x)); the
     // spread-based `close_enough` test (2^-(p/3+16)) was too loose for R_J's RC terms.
     let dxy = ExactComplex::sub_ref(x, y, p, rm());
-    let rel = c_abs(x, p).ldexp(-((p as i32) + 8), p, rm());
+    let rel = c_abs(x, p).ldexp(-((p as Exponent) + 8), p, rm());
     if !is_c_zero(x) && matches!(c_abs(&dxy, p).compare(&rel), Some(o) if o < 0) {
         return c_u32(1, p).div(&x.sqrt(p, rm(), cc), p, rm());
     }
@@ -701,13 +702,13 @@ mod tests {
     use super::*;
     use core::ops::Neg;
 
-    fn near(a: &ExactNum, b: &ExactNum, p: usize, slack: i32) -> bool {
+    fn near(a: &ExactNum, b: &ExactNum, p: usize, slack: Exponent) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - slack)
+        d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) - slack)
     }
 
     fn tiny(x: &ExactNum, p: usize) -> bool {
-        x.is_zero() || x.exponent().unwrap_or(0) < -((p as i32) / 4)
+        x.is_zero() || x.exponent().unwrap_or(0) < -((p as Exponent) / 4)
     }
 
     #[test]

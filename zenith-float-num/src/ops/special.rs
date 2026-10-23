@@ -387,7 +387,7 @@ impl ExactNumNumber {
         let mut s = ln_z.sub(&half_inv, p, RoundingMode::None)?;
         let z2 = self.mul(self, p, RoundingMode::None)?;
         let mut zp = Self::from_word(1, p)?;
-        let mut prev_e = i32::MIN;
+        let mut prev_e = Exponent::MIN;
         let bern = even_bernoulli(64, p)?;
         for k in 1..=64 {
             zp = zp.mul(&z2, p, RoundingMode::None)?;
@@ -580,7 +580,7 @@ impl ExactNumNumber {
         let pre = ex.div(self, p, RoundingMode::None)?;
         let mut term = Self::from_word(1, p)?;
         let mut s = term.clone()?;
-        let mut prev_e = i32::MAX;
+        let mut prev_e = Exponent::MAX;
         for k in 1..=(p + 8) {
             term = term.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
             term = term.div(self, p, RoundingMode::None)?;
@@ -782,8 +782,8 @@ impl ExactNumNumber {
         if e >= 20 {
             return true;
         }
-        let xmin = 1i32 << (e - 1);
-        xmin >= ((p as i32) * 2) / 3
+        let xmin: Exponent = 1 << (e - 1);
+        xmin >= ((p as Exponent) * 2) / 3
     }
 
     /// Logarithmic integral `li(self) = Ei(ln self)` for `self > 0`, `self ≠ 1`.
@@ -1480,7 +1480,7 @@ impl ExactNumNumber {
         let mut pz = Self::from_word(1, p)?;
         let mut psum = Self::from_word(1, p)?;
         let mut qsum = Self::from_word(0, p)?;
-        let mut prev_e = i32::MAX;
+        let mut prev_e = Exponent::MAX;
         let k_max = (p + 64).min((Word::MAX as usize - 1) / 2);
         for k in 1..=k_max {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
@@ -1816,7 +1816,7 @@ impl ExactNumNumber {
         let eight_x = eight.mul(self, p, RoundingMode::None)?;
         let mut term = Self::from_word(1, p)?;
         let mut sum = Self::from_word(1, p)?;
-        let mut prev_e = i32::MAX;
+        let mut prev_e = Exponent::MAX;
         // The smallest term is near k ≈ 2x; stop there or at 2^-p.
         for k in 1..=(p + 64) {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
@@ -2968,7 +2968,7 @@ fn betainc_cf(
     p: usize,
 ) -> Result<ExactNumNumber, Error> {
     let one = ExactNumNumber::from_word(1, p)?;
-    let tiny = ExactNumNumber::from_word(1, p)?.ldexp(-(2 * p as i32), p, RoundingMode::None)?;
+    let tiny = ExactNumNumber::from_word(1, p)?.ldexp(-(2 * p as Exponent), p, RoundingMode::None)?;
     let floor_tiny = |v: ExactNumNumber| -> Result<ExactNumNumber, Error> {
         if v.abs()?.cmp(&tiny) < 0 {
             tiny.clone()
@@ -3191,7 +3191,7 @@ fn hypergeom_series(
     let one = ExactNumNumber::from_word(1, p)?;
     let mut term = ExactNumNumber::from_word(1, p)?;
     let mut sum = ExactNumNumber::from_word(1, p)?;
-    let tiny = ExactNumNumber::from_word(1, p)?.ldexp(-((p as i32) - 8), p, RoundingMode::None)?;
+    let tiny = ExactNumNumber::from_word(1, p)?.ldexp(-((p as Exponent) - 8), p, RoundingMode::None)?;
     let max_par = max_abs(&[a, b, c])?;
     let mut mag = one.exponent();
     for n in 0..HYPERGEOM_TERM_MAX {
@@ -3483,7 +3483,7 @@ fn gauss_z_one(
 }
 
 fn tiny_spread(p: usize) -> Result<ExactNumNumber, Error> {
-    ExactNumNumber::from_word(1, p)?.ldexp(-((p as i32) / 3 + 16), p, RoundingMode::None)
+    ExactNumNumber::from_word(1, p)?.ldexp(-((p as Exponent) / 3 + 16), p, RoundingMode::None)
 }
 
 fn en_max(a: &ExactNumNumber, b: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
@@ -3532,7 +3532,7 @@ fn carlson_rc(
     // |x − y| < 2^-(p+8)·max(x, y). (It used the absolute 2^-(p/3+16) before, which capped R_J —
     // and so Π — at about 340 bits for p = 512; the atan/atanh forms below do not cancel.)
     let rel = ExactNumNumber::from_word(1, p)?
-        .ldexp(-((p as i32) + 8), p, RoundingMode::None)?
+        .ldexp(-((p as Exponent) + 8), p, RoundingMode::None)?
         .mul(&en_max(x, y)?, p, RoundingMode::None)?;
     if x.sub(y, p, RoundingMode::None)?.abs()?.cmp(&rel) < 0 {
         return ExactNumNumber::from_word(1, p)?.div(
@@ -4025,7 +4025,7 @@ fn extra_bits_for_degree(n: u32) -> usize {
     round_p(n as usize)
 }
 
-pub(crate) fn series_n_max(p: usize, exp: i32) -> usize {
+pub(crate) fn series_n_max(p: usize, exp: Exponent) -> usize {
     let mag = if exp <= 0 {
         0
     } else if exp >= 16 {
@@ -4323,17 +4323,17 @@ mod tests {
         let one = ExactNumNumber::from_word(1, p)?;
         let g1 = one.gamma(p, rm, &mut cc)?;
         let d = g1.sub(&one, p, RoundingMode::None)?.abs()?;
-        assert!(d.is_zero() || d.exponent() < -((p as i32) / 4));
+        assert!(d.is_zero() || d.exponent() < -((p as Exponent) / 4));
 
         let five = ExactNumNumber::from_word(5, p)?;
         let g5 = five.gamma(p, rm, &mut cc)?;
         let tf = ExactNumNumber::from_word(24, p)?;
         let d = g5.sub(&tf, p, RoundingMode::None)?.abs()?;
-        assert!(d.is_zero() || d.exponent() < -((p as i32) / 4));
+        assert!(d.is_zero() || d.exponent() < -((p as Exponent) / 4));
 
         let j0 = zero.bessel_j(0, p, rm, &mut cc)?;
         let d = j0.sub(&one, p, RoundingMode::None)?.abs()?;
-        assert!(d.is_zero() || d.exponent() < -((p as i32) / 4));
+        assert!(d.is_zero() || d.exponent() < -((p as Exponent) / 4));
 
         let x = ExactNumNumber::from_word(1, p)?;
         let e = x.erf(p, rm, &mut cc)?;
@@ -4346,7 +4346,7 @@ mod tests {
         a: &ExactNumNumber,
         b: &ExactNumNumber,
         p: usize,
-        min_bits: i32,
+        min_bits: Exponent,
         label: &str,
     ) -> Result<(), crate::Error> {
         let d = a.sub(b, p, RoundingMode::None)?.abs()?;
@@ -4384,7 +4384,7 @@ mod tests {
         let e = ExactNumNumber::from_word(1, p)?.exp(p, rm, &mut cc)?;
         let li_e = e.li(p, rm, &mut cc)?;
         let ei1 = one.ei(p, rm, &mut cc)?;
-        bits_agree(&li_e, &ei1, p, (p as i32) / 4, "li(e)=Ei(1)")?;
+        bits_agree(&li_e, &ei1, p, (p as Exponent) / 4, "li(e)=Ei(1)")?;
 
         assert!(one.li(p, rm, &mut cc).is_err());
         assert!(zero.ci(p, rm, &mut cc).is_err());
@@ -4471,17 +4471,17 @@ mod tests {
         let inf_si = crate::INF_POS.si(p, rm, &mut cc);
         let hp = cc.pi(p, rm).div(&crate::ExactNum::from_u8(2, p), p, rm);
         let d = inf_si.sub(&hp, p, rm).abs();
-        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 4));
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) / 4));
         let d = crate::INF_POS
             .fresnel_s(p, rm, &mut cc)
             .sub(&half_ext, p, rm)
             .abs();
-        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 4));
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) / 4));
         let d = crate::INF_POS
             .fresnel_c(p, rm, &mut cc)
             .sub(&half_ext, p, rm)
             .abs();
-        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) / 4));
+        assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) / 4));
         Ok(())
     }
 

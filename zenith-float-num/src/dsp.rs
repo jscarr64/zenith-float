@@ -441,7 +441,7 @@ mod tests {
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - 40)
+        d.is_zero() || d.exponent().unwrap_or(0) < -((p as crate::Exponent) - 40)
     }
 
     fn n_at(p: usize, k: u8) -> ExactNum {

@@ -310,7 +310,7 @@ fn agm_small(c: &ExactNumNumber, a: &ExactNumNumber, p: usize) -> Result<bool, E
         return Ok(false);
     }
     let rel = c.abs()?.div(&a.abs()?, p, RoundingMode::None)?;
-    let thresh = -((p as i32) / 2 + 16);
+    let thresh = -((p as Exponent) / 2 + 16);
     Ok(rel.exponent() < thresh)
 }
 
@@ -414,7 +414,7 @@ mod tests {
         a: &ExactNumNumber,
         b: &ExactNumNumber,
         p: usize,
-        min_bits: i32,
+        min_bits: Exponent,
         label: &str,
     ) -> Result<(), crate::Error> {
         let d = a.sub(b, p, RoundingMode::None)?.abs()?;

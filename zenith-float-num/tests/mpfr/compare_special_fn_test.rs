@@ -7,7 +7,6 @@ use crate::mpfr::common::{
 };
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
 use rug::{
-    float::{exp_max, exp_min},
     Float,
 };
 use zenith_float_num::{Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
@@ -21,8 +20,8 @@ fn mpfr_compare_special_fns() -> Result<(), Box<dyn std::error::Error>> {
         mpfr::set_emin(EXPONENT_MIN as exp_t);
         mpfr::set_emax(EXPONENT_MAX as exp_t);
     }
-    assert_eq!(EXPONENT_MIN, exp_min());
-    assert_eq!(EXPONENT_MAX, exp_max());
+    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
+    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
 
     let p = 2 * WORD_BIT_SIZE;
     let (rm, rnd) = get_random_rnd_pair();

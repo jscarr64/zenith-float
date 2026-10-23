@@ -308,7 +308,7 @@ mod tests {
         }
 
         let node_slack =
-            ExactNum::from_u8(1, p).ldexp(-((p as i32) - (crate::WORD_BIT_SIZE as i32)), p, rm);
+            ExactNum::from_u8(1, p).ldexp(-((p as crate::Exponent) - (crate::WORD_BIT_SIZE as crate::Exponent)), p, rm);
         for k in 0..CHEBYSHEV_EXP_TERMS {
             let t = unit_node(k, CHEBYSHEV_EXP_TERMS, p, rm, &mut cc);
             let (mid, half) = unit_map(ExactNum::from_i64(-1, p), &b, p, rm);

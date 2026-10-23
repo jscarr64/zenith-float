@@ -123,12 +123,12 @@ fn cplx(op: &str, p: usize, a: &[ExactComplex], cc: &mut Consts) -> Result<Exact
     })
 }
 
-/// Binary exponent of a nonzero value (`i32::MIN` for zero).
-fn mag(x: &ExactNum) -> i32 {
+/// Binary exponent of a nonzero value (`i64::MIN` for zero).
+fn mag(x: &ExactNum) -> i64 {
     if x.is_zero() {
-        i32::MIN
+        i64::MIN
     } else {
-        x.exponent().unwrap_or(i32::MIN)
+        x.exponent().unwrap_or(i64::MIN)
     }
 }
 
@@ -142,7 +142,7 @@ fn bits(got: &ExactNum, want: &ExactNum, scale: &ExactNum, p: usize) -> i32 {
     if d.is_zero() {
         return i32::MAX;
     }
-    scale.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)
+    i32::try_from(scale.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)).unwrap_or(i32::MAX)
 }
 
 #[test]

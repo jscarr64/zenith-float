@@ -45,8 +45,8 @@ fn ulp_gap(a: &ExactNum, b: &ExactNum, p: usize) -> i32 {
         return 0;
     }
     let scale = a.exponent().unwrap_or(0).max(b.exponent().unwrap_or(0));
-    let gap = scale - diff.exponent().unwrap_or(i32::MIN);
-    width as i32 - gap
+    let gap = scale - diff.exponent().unwrap_or(i64::MIN / 2);
+    i32::try_from(width as i64 - gap).unwrap_or(i32::MIN)
 }
 
 fn round_down(

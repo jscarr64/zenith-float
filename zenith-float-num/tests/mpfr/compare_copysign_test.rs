@@ -6,7 +6,7 @@ use crate::mpfr::common::get_random_rnd_pair;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::common::test_zf_op_no_cc;
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
-use rug::float::{exp_max, exp_min, Special};
+use rug::float::Special;
 use rug::Float;
 use zenith_float_num::{
     Consts, ExactNum, Exponent, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS,
@@ -18,8 +18,8 @@ fn set_mpfr_exp_range() {
         mpfr::set_emin(EXPONENT_MIN as exp_t);
         mpfr::set_emax(EXPONENT_MAX as exp_t);
     }
-    assert_eq!(EXPONENT_MIN, exp_min());
-    assert_eq!(EXPONENT_MAX, exp_max());
+    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
+    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
 }
 
 fn run_copysign_pairs(

@@ -47,7 +47,7 @@ impl Ball {
         }
         let e = x.exponent().unwrap_or(0);
         // The midpoint is rounded at `p` bits (2.0.0: exact-bit rounding), not at its storage width.
-        let bits = x.mantissa_max_bit_len().unwrap_or(p).min(p.max(1)) as i32;
+        let bits = x.mantissa_max_bit_len().unwrap_or(p).min(p.max(1)) as crate::defs::Exponent;
         let mut u = ExactNum::from_word(1, p);
         u.set_exponent(e.saturating_sub(bits.saturating_sub(2)));
         u
@@ -555,7 +555,7 @@ mod tests {
         let p = 256;
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
-        let mk_rad = || ExactNum::from_u8(1, p).ldexp(-(p as i32), p, RoundingMode::None);
+        let mk_rad = || ExactNum::from_u8(1, p).ldexp(-(p as crate::Exponent), p, RoundingMode::None);
         let six = ExactNum::from_u8(6, p);
         let pi6 = cc.pi(p, rm).div(&six, p, rm);
         let bsin = Ball::new(pi6, mk_rad());

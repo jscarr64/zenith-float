@@ -3,6 +3,7 @@
 //! Software-limb [`ExactComplex`] arithmetic only. The error-function path is the
 //! Faddeeva function throughout — not the real series evaluated at \(\lvert z\rvert\).
 
+use crate::defs::Exponent;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
 use crate::Consts;
@@ -25,19 +26,19 @@ const GAMMA_STIRLING_TERMS: usize = 64;
 /// is at least this (\(\lvert z\rvert\ge 2^{k-1}\)) so Stirling terms decay. The actual target
 /// grows with the precision (see [`gamma_shift_exp`]): with a fixed target of 6 the 64-term series
 /// capped \(\Gamma\) / \(\ln\Gamma\) at about 275 correct bits whatever `p` was.
-const GAMMA_STIRLING_MIN_ABS_EXP: i32 = 6;
+const GAMMA_STIRLING_MIN_ABS_EXP: Exponent = 6;
 
 /// Same minimum shift target for digamma (real kernel uses exponent \(< 8\)).
-const DIGAMMA_STIRLING_MIN_ABS_EXP: i32 = 8;
+const DIGAMMA_STIRLING_MIN_ABS_EXP: Exponent = 8;
 
 /// Shift target so the last kept Stirling term, \(\approx 2^{364}/\lvert z\rvert^{127}\), is below
 /// \(2^{-(p+8)}\) (same bound as the real kernel).
-fn gamma_shift_exp(p: usize) -> i32 {
+fn gamma_shift_exp(p: usize) -> Exponent {
     crate::ops::special::stirling_min_exponent(p, 372, 127, GAMMA_STIRLING_MIN_ABS_EXP)
 }
 
 /// Digamma analogue of [`gamma_shift_exp`].
-fn digamma_shift_exp(p: usize) -> i32 {
+fn digamma_shift_exp(p: usize) -> Exponent {
     crate::ops::special::stirling_min_exponent(p, 379, 128, DIGAMMA_STIRLING_MIN_ABS_EXP)
 }
 
@@ -120,7 +121,7 @@ pub(crate) fn is_nonpos_integer(z: &ExactComplex) -> bool {
     z.im().is_zero() && z.re().is_int() && (z.re().is_zero() || z.re().is_negative())
 }
 
-fn abs_needs_shift(z: &ExactComplex, p: usize, min_exp: i32) -> bool {
+fn abs_needs_shift(z: &ExactComplex, p: usize, min_exp: Exponent) -> bool {
     match z.abs(p, RoundingMode::None).exponent() {
         Some(e) => e < min_exp,
         None => false,
@@ -456,7 +457,7 @@ impl ExactComplex {
         let two_z2 = two_c(p).mul(&z2, p, RoundingMode::None);
         let mut term = ExactComplex::one(p);
         let mut s = ExactComplex::one(p);
-        let mut prev_e = i32::MIN;
+        let mut prev_e = Exponent::MIN;
         for m in 1..=series_term_cap(p) {
             let odd = ExactComplex::from_real(ExactNum::from_u32((2 * m - 1) as u32, p), p);
             term = term
@@ -466,7 +467,7 @@ impl ExactComplex {
             let e = term
                 .abs(p, RoundingMode::None)
                 .exponent()
-                .unwrap_or(i32::MIN);
+                .unwrap_or(Exponent::MIN);
             if term_negligible(&term, p) {
                 break;
             }
@@ -568,7 +569,7 @@ impl ExactComplex {
         );
         let bs = even_bernoulli_numbers(GAMMA_STIRLING_TERMS, p);
         let mut zpow = self.clone();
-        let mut prev_e = i32::MIN;
+        let mut prev_e = Exponent::MIN;
         for (k, b) in bs.iter().enumerate() {
             let k = k + 1;
             let two_k = ExactNum::from_u32((2 * k) as u32, p);
@@ -580,7 +581,7 @@ impl ExactComplex {
             let e = term
                 .abs(p, RoundingMode::None)
                 .exponent()
-                .unwrap_or(i32::MIN);
+                .unwrap_or(Exponent::MIN);
             if term_negligible(&term, p) {
                 break;
             }
@@ -635,7 +636,7 @@ impl ExactComplex {
         let z2 = self.mul(self, p, RoundingMode::None);
         let mut zp = ExactComplex::one(p);
         let bs = even_bernoulli_numbers(GAMMA_STIRLING_TERMS, p);
-        let mut prev_e = i32::MIN;
+        let mut prev_e = Exponent::MIN;
         for (k, b) in bs.iter().enumerate() {
             let k = k + 1;
             zp = zp.mul(&z2, p, RoundingMode::None);
@@ -646,7 +647,7 @@ impl ExactComplex {
             let e = term
                 .abs(p, RoundingMode::None)
                 .exponent()
-                .unwrap_or(i32::MIN);
+                .unwrap_or(Exponent::MIN);
             if term_negligible(&term, p) {
                 break;
             }
@@ -664,9 +665,9 @@ mod tests {
     use super::*;
     use core::ops::Neg;
 
-    fn near_bits(a: &ExactNum, b: &ExactNum, p: usize, slack: i32) -> bool {
+    fn near_bits(a: &ExactNum, b: &ExactNum, p: usize, slack: Exponent) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / slack))
+        d.is_zero() || d.exponent().is_some_and(|e| e < -((p as Exponent) / slack))
     }
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
@@ -677,12 +678,12 @@ mod tests {
         near(a.re(), b.re(), p) && near(a.im(), b.im(), p)
     }
 
-    fn cnear_bits(a: &ExactComplex, b: &ExactComplex, p: usize, slack: i32) -> bool {
+    fn cnear_bits(a: &ExactComplex, b: &ExactComplex, p: usize, slack: Exponent) -> bool {
         near_bits(a.re(), b.re(), p, slack) && near_bits(a.im(), b.im(), p, slack)
     }
 
     fn tiny(x: &ExactNum, p: usize) -> bool {
-        x.is_zero() || x.exponent().is_some_and(|e| e < -((p as i32) / 4))
+        x.is_zero() || x.exponent().is_some_and(|e| e < -((p as Exponent) / 4))
     }
 
     /// Independent real series \(\mathrm{erfi}(x)=\frac{2}{\sqrt\pi}\sum x^{2n+1}/(n!(2n+1))\).

@@ -385,13 +385,13 @@ impl ExactComplex {
 mod tests {
     use super::*;
 
-    fn near_bits(a: &ExactNum, b: &ExactNum, p: usize, slack: i32) -> bool {
+    fn near_bits(a: &ExactNum, b: &ExactNum, p: usize, slack: crate::Exponent) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().is_some_and(|e| e < -((p as i32) / slack))
+        d.is_zero() || d.exponent().is_some_and(|e| e < -((p as crate::Exponent) / slack))
     }
 
     fn tiny(x: &ExactNum, p: usize) -> bool {
-        x.is_zero() || x.exponent().is_some_and(|e| e < -((p as i32) / 4))
+        x.is_zero() || x.exponent().is_some_and(|e| e < -((p as crate::Exponent) / 4))
     }
 
     #[test]

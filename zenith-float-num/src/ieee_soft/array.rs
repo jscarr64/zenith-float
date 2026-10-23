@@ -1,6 +1,7 @@
 //! Dense row-major arrays of software IEEE values and `ExactNum`.
 //! A 1-D vector is stored as shape `(1, n)`.
 
+use crate::defs::Exponent;
 use super::simd::{
     add_u32_lanes, add_u64_lanes, div_u32_lanes, div_u64_lanes, fma_u32_lanes, fma_u64_lanes,
     mul_u32_lanes, mul_u64_lanes, sqrt_u32_lanes, sqrt_u64_lanes, sub_u32_lanes, sub_u64_lanes,
@@ -23,7 +24,7 @@ const EIGEN_ITER_MAX: u32 = 64;
 const FFT_MAX_POINTS: usize = 4096;
 /// Bits of working precision reserved when a superdiagonal is compared to
 /// its neighboring diagonals.
-const SVD_CONV_GUARD_BITS: i32 = 4;
+const SVD_CONV_GUARD_BITS: Exponent = 4;
 
 trait LaneBits: Copy {
     fn add_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
@@ -1768,7 +1769,7 @@ fn svd_negligible(e: &ExactNum, d0: &ExactNum, d1: &ExactNum, p: usize, rm: Roun
         return e.is_zero();
     }
     match (e.exponent(), scale.exponent()) {
-        (Some(ee), Some(se)) => ee < se - (p as i32 - SVD_CONV_GUARD_BITS),
+        (Some(ee), Some(se)) => ee < se - (p as Exponent - SVD_CONV_GUARD_BITS),
         _ => false,
     }
 }
@@ -2876,7 +2877,7 @@ mod tests {
 
     fn near_num(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - 40)
+        d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) - 40)
     }
 
     #[test]

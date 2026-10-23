@@ -30,6 +30,8 @@ Shape-A site list (internal, no code change): Jeff signed off `tools/ziv_shape_a
 
 The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). `rust-version` is `"1.99"` in every crate, and `rust-toolchain.toml` pins channel `1.99` with `clippy` and `rustfmt`. A crate that compiled on the previous compiler has to move to Rust 1.99 before it can depend on 2.0.0.
 
+`Exponent` is `i64` (breaking; was `i32`). `EXPONENT_MAX` is `2^62 - 1` and `EXPONENT_MIN` is `-(2^62 - 1)`, so values from about `10^(-1.39e18)` to `10^(1.39e18)` are normal; the subnormal grid below `EXPONENT_MIN` keeps its old semantics. `MAX_PRECISION` is `min(2^60, usize::MAX / 4) - 1` (`2^60 - 1` on 64-bit targets, `2^30 - 1` on 32-bit ones), checked by a const assertion so exponent-plus-precision sums never overflow `i64`. Exponent arithmetic that can leave the range goes through one helper (`exp::wide`/`exp::narrow`, `i128` with saturation), so mul, div, add, hypot, decimal conversion and ldexp report overflow and underflow instead of wrapping. `ExactNum` stays 8 bytes on the stack (`size_of` asserted). `from_mag_parts` and `pow2` take the `i64` exponent directly. Migration: see `doc/migration-i64-exponent.md`; code that stores `exponent()` in an `i32` must widen it or use `i32::try_from`.
+
 Behaviour changes from the audit, each with its own section below:
 
 - `add`, `sub`, `mul`, and `div` round at exactly `p` bits instead of `p` rounded up to a word, and subnormal results are no longer rounded twice.

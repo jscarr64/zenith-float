@@ -5,6 +5,7 @@
 
 use std::ops::Add;
 
+use crate::mpfr::common::{RAND_EMAX, RAND_EMIN};
 use crate::mpfr::common::get_prec_rng;
 use crate::mpfr::common::test_zf_op;
 use crate::mpfr::common::test_zf_op_no_cc;
@@ -14,7 +15,6 @@ use crate::mpfr::common::{
 };
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
 use rug::{
-    float::{exp_max, exp_min},
     Float,
 };
 use zenith_float_num::Word;
@@ -77,8 +77,8 @@ fn run_compare_ops(
 
     let _range = MpfrExpRange::widen();
 
-    assert_eq!(EXPONENT_MIN, exp_min());
-    assert_eq!(EXPONENT_MAX, exp_max());
+    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
+    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
 
     // rounding
     let e_rng = WORD_BIT_SIZE * 3;
@@ -112,7 +112,7 @@ fn run_compare_ops(
 
         // n1 is consumed by each op below: it is rebuilt from its seed for every use.
         let s1 = draw_seed();
-        let (lo1, hi1) = (EXPONENT_MIN / ediv, EXPONENT_MAX / ediv);
+        let (lo1, hi1) = (RAND_EMIN / ediv, RAND_EMAX / ediv);
         let n1 = normal_from_seed(s1, p1, lo1, hi1);
         let f1 = conv_to_mpfr(p1, &n1, &mut cc)?;
         let n1e = n1.exponent().ok_or("none value")?;
@@ -170,7 +170,7 @@ fn run_compare_ops(
 
         // n1 is consumed by `mul` and `div`: it is rebuilt from its seed for every use.
         let s1 = draw_seed();
-        let (lo, hi) = (EXPONENT_MIN / ediv, EXPONENT_MAX / ediv);
+        let (lo, hi) = (RAND_EMIN / ediv, RAND_EMAX / ediv);
         let n1 = normal_from_seed(s1, p1, lo, hi);
         let f1 = conv_to_mpfr(p1, &n1, &mut cc)?;
         let (n2, f2) = get_float_pair(p2, lo, hi, &mut cc)?;
@@ -235,14 +235,14 @@ fn run_compare_ops(
 
         let (n1, mut f1) = get_float_pair(
             p1,
-            EXPONENT_MIN / ediv - p1 as Exponent,
-            EXPONENT_MAX / ediv,
+            RAND_EMIN / ediv - p1 as Exponent,
+            RAND_EMAX / ediv,
             &mut cc,
         )?;
         let (n2, mut f2) = get_float_pair(
             p2,
-            EXPONENT_MIN / ediv - p2 as Exponent,
-            EXPONENT_MAX / ediv,
+            RAND_EMIN / ediv - p2 as Exponent,
+            RAND_EMAX / ediv,
             &mut cc,
         )?;
         f1 = f1.abs();
@@ -280,8 +280,8 @@ fn run_compare_ops(
 
         let (n1, f1) = get_float_pair(
             p1,
-            if i > 1 { EXPONENT_MIN / (i - 1) as Exponent } else { EXPONENT_MIN },
-            if i > 1 { EXPONENT_MAX / (i - 1) as Exponent } else { EXPONENT_MAX },
+            if i > 1 { RAND_EMIN / (i - 1) as Exponent } else { RAND_EMIN },
+            if i > 1 { RAND_EMAX / (i - 1) as Exponent } else { RAND_EMAX },
             &mut cc,
         )?;
 
@@ -314,13 +314,13 @@ fn run_compare_ops(
         let (rm, rnd) = get_random_rnd_pair();
         // println!("{:?}", rm);
 
-        let (mut b, mut c) = get_float_pair(p2, EXPONENT_MIN / ediv, EXPONENT_MAX / ediv, &mut cc)?;
+        let (mut b, mut c) = get_float_pair(p2, RAND_EMIN / ediv, RAND_EMAX / ediv, &mut cc)?;
 
         b = b.abs();
         c = c.abs();
 
         let n = b.exponent().ok_or("none value")?.unsigned_abs();
-        let emax = if n > 1 { EXPONENT_MAX / (n - 1) as Exponent } else { EXPONENT_MAX };
+        let emax = if n > 1 { RAND_EMAX / (n - 1) as Exponent } else { RAND_EMAX };
         let emin = -emax;
 
         let (n1, f1) = get_float_pair(p1, emin, emax, &mut cc)?;
@@ -345,7 +345,7 @@ fn run_compare_ops(
     }
 
     // n1 = -inf..2^256: sin, cos, tan
-    assert_eq!(core::mem::size_of::<Exponent>(), 4);
+    assert_eq!(core::mem::size_of::<Exponent>(), 8);
     for _ in 0..run_cnt {
         let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
         let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
@@ -354,7 +354,7 @@ fn run_compare_ops(
         let (rm, rnd) = get_random_rnd_pair();
         //println!("{:?}", rm);
 
-        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / ediv, 256, &mut cc)?;
+        let (n1, f1) = get_float_pair(p1, RAND_EMIN / ediv, 256, &mut cc)?;
 
         //println!("{:?}", n1);
 
@@ -363,8 +363,8 @@ fn run_compare_ops(
         test_zf_op!(true, n1, tan, f1, tan, p, rm, rnd, (&n1, p, rm, "tan"), cc);
     }
 
-    // n1 = -inf..log2(emax)+1: sinh, cosh, tanh, exp
-    assert_eq!(core::mem::size_of::<Exponent>(), 4);
+    // n1 = -inf..log2(emax)+1 = 63: sinh, cosh, tanh, exp
+    assert_eq!(core::mem::size_of::<Exponent>(), 8);
     for _ in 0..run_cnt {
         let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
         let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
@@ -373,7 +373,7 @@ fn run_compare_ops(
         let (rm, rnd) = get_random_rnd_pair();
         //println!("{:?} {}", rm, p);
 
-        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / ediv, 33, &mut cc)?;
+        let (n1, f1) = get_float_pair(p1, RAND_EMIN / ediv, 33, &mut cc)?;
 
         //println!("{:?}", n1);
 
@@ -449,7 +449,7 @@ fn run_compare_ops(
         let (rm, rnd) = get_random_rnd_pair();
         //println!("{:?}", rm);
 
-        let (n1, f1) = get_float_pair(p1, -1, EXPONENT_MAX / ediv, &mut cc)?;
+        let (n1, f1) = get_float_pair(p1, -1, RAND_EMAX / ediv, &mut cc)?;
 
         //println!("{:?}", n1);
 
@@ -476,7 +476,7 @@ fn run_compare_ops(
         let (rm, rnd) = get_random_rnd_pair();
         // println!("{:?}", rm);
 
-        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / ediv, 1, &mut cc)?;
+        let (n1, f1) = get_float_pair(p1, RAND_EMIN / ediv, 1, &mut cc)?;
 
         //println!("{:?}\n{:?}", n1, f1.to_string_radix(2, None));
 
@@ -527,7 +527,7 @@ fn run_compare_ops(
         let (rm, rnd) = get_random_rnd_pair();
         //println!("{:?}", rm);
 
-        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / ediv, EXPONENT_MAX / ediv, &mut cc)?;
+        let (n1, f1) = get_float_pair(p1, RAND_EMIN / ediv, RAND_EMAX / ediv, &mut cc)?;
 
         // println!("{:b}", n1);
         // println!("{}", f1.to_string_radix(2, None));
@@ -620,8 +620,8 @@ fn run_compare_ops(
         let ediv = 1 << (test_random::<usize>() % (EXPONENT_BIT_SIZE - 1));
 
         let (rm, rnd) = get_random_rnd_pair();
-        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / ediv, EXPONENT_MAX / ediv, &mut cc)?;
-        let (n2, f2) = get_float_pair(p2, EXPONENT_MIN / ediv, EXPONENT_MAX / ediv, &mut cc)?;
+        let (n1, f1) = get_float_pair(p1, RAND_EMIN / ediv, RAND_EMAX / ediv, &mut cc)?;
+        let (n2, f2) = get_float_pair(p2, RAND_EMIN / ediv, RAND_EMAX / ediv, &mut cc)?;
 
         if !n1.is_nan() && !n2.is_nan() && !n1.is_inf() && !n2.is_inf() {
             let n3 = ExactNum::hypot(&n1, &n2, p, rm);
@@ -645,7 +645,7 @@ fn run_compare_ops(
         let p1 = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
         let p = (test_random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
         let (rm, rnd) = get_random_rnd_pair();
-        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / 4, -1, &mut cc)?;
+        let (n1, f1) = get_float_pair(p1, RAND_EMIN / 4, -1, &mut cc)?;
 
         test_zf_op!(
             false,
@@ -767,7 +767,7 @@ fn run_compare_ops(
 
         let (rm, rnd) = get_random_rnd_pair();
 
-        let (n1, f1) = get_float_pair(p1, EXPONENT_MIN / ediv, 0, &mut cc)?;
+        let (n1, f1) = get_float_pair(p1, RAND_EMIN / ediv, 0, &mut cc)?;
         test_zf_rem_pi!(n1, f1, p1, rm, rnd, (&n1, p1, rm, "rem_pi small"), cc);
     }
     for _ in 0..run_cnt {

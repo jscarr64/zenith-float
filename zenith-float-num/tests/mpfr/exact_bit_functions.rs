@@ -49,7 +49,7 @@ pub fn input(
 pub fn exact_input(num: i64, k: i32, p: usize) -> ExactNum {
     let storage = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
     let mut n = ExactNum::from_i64(num, storage);
-    n = n.ldexp(-k, storage, RoundingMode::ToEven);
+    n = n.ldexp(-Exponent::from(k), storage, RoundingMode::ToEven);
     n.set_inexact(true);
     n
 }
@@ -66,7 +66,7 @@ pub fn check(
     let (want, inexact) = mpfr_reference_with(p as u32, rm, f)?;
     assert_exact_eq(got, &want, p, info, cc)?;
     if !want.is_infinite() && !want.is_nan() {
-        assert_eq!(got.inexact(), inexact, "{info}: inexact flag, MPFR {want}");
+        assert_eq!(got.inexact(), inexact, "{info}: inexact flag, MPFR {}", crate::mpfr::common::show_mp(&want));
     }
     Ok(())
 }

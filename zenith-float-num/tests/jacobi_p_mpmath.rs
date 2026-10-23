@@ -66,7 +66,7 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
     if d.is_zero() {
         return i32::MAX;
     }
-    want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)
+    i32::try_from(want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)).unwrap_or(i32::MAX)
 }
 
 #[test]

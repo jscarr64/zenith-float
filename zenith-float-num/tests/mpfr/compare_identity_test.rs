@@ -4,6 +4,7 @@
 //! unit gold: odd/even, complementary definitions, `K_{1/2}`, Wronskian,
 //! `_2F1(...,0)=1`, `K(0)=π/2`.
 
+use zenith_float_num::Exponent;
 use crate::mpfr::common::reset_test_rng;
 use std::ops::Neg;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, RoundingMode, WORD_BIT_SIZE};
@@ -16,7 +17,7 @@ fn neg_of(x: &ExactNum) -> ExactNum {
     ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
 }
 
-fn bits_agree(a: &ExactNum, b: &ExactNum, p: usize, min_bits: i32, label: &str) {
+fn bits_agree(a: &ExactNum, b: &ExactNum, p: usize, min_bits: Exponent, label: &str) {
     let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
     if d.is_zero() {
         return;
@@ -31,7 +32,7 @@ fn bits_agree(a: &ExactNum, b: &ExactNum, p: usize, min_bits: i32, label: &str) 
 }
 
 fn tiny(x: &ExactNum, p: usize) -> bool {
-    x.is_zero() || x.exponent().is_some_and(|e| e < -((p as i32) / 4))
+    x.is_zero() || x.exponent().is_some_and(|e| e < -((p as Exponent) / 4))
 }
 
 #[test]
@@ -47,14 +48,14 @@ fn mpfr_identity_no_oracle_specials() -> Result<(), Box<dyn std::error::Error>> 
 
     let s1 = one.si(p, rm, &mut cc);
     let sn = neg_of(&one).si(p, rm, &mut cc);
-    bits_agree(&s1, &sn.neg(), p, (p as i32) / 4, "Si odd");
+    bits_agree(&s1, &sn.neg(), p, (p as Exponent) / 4, "Si odd");
     assert!(zero.si(p, rm, &mut cc).is_zero());
     let hp = cc.pi(p, rm).div(&two, p, rm);
     bits_agree(
         &zenith_float_num::INF_POS.si(p, rm, &mut cc),
         &hp,
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "Si(+∞)",
     );
 
@@ -63,7 +64,7 @@ fn mpfr_identity_no_oracle_specials() -> Result<(), Box<dyn std::error::Error>> 
         &e.li(p, rm, &mut cc),
         &one.ei(p, rm, &mut cc),
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "li(e)=Ei(1)",
     );
 
@@ -74,20 +75,20 @@ fn mpfr_identity_no_oracle_specials() -> Result<(), Box<dyn std::error::Error>> 
         &fs,
         &neg_of(&one).fresnel_s(p, rm, &mut cc).neg(),
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "S odd",
     );
     bits_agree(
         &zenith_float_num::INF_POS.fresnel_s(p, rm, &mut cc),
         &half,
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "S(+∞)=1/2",
     );
 
     let k_half = one.bessel_k(&half, p, rm, &mut cc);
     let want_k = hp.sqrt(p, rm).mul(&neg_of(&one).exp(p, rm, &mut cc), p, rm);
-    bits_agree(&k_half, &want_k, p, (p as i32) / 4, "K_{1/2}(1)");
+    bits_agree(&k_half, &want_k, p, (p as Exponent) / 4, "K_{1/2}(1)");
 
     let ai = one.ai(p, rm, &mut cc);
     let bi = one.bi(p, rm, &mut cc);
@@ -106,7 +107,7 @@ fn mpfr_identity_no_oracle_specials() -> Result<(), Box<dyn std::error::Error>> 
         &zero.elliptic_k(p, rm, &mut cc),
         &hp,
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "K(0)=π/2",
     );
 
@@ -117,7 +118,7 @@ fn mpfr_identity_no_oracle_specials() -> Result<(), Box<dyn std::error::Error>> 
         &a.hypergeom_2f1(&b, &c, &zero, p, rm, &mut cc),
         &one,
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "_2F1(a,b;c;0)=1",
     );
 

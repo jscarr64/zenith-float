@@ -2,6 +2,7 @@
 //! positive result and under `Up` for a negative result; `±inf` otherwise
 //! (2.0.0 audit, round 2: item b).
 
+use zenith_float_num::Exponent;
 use crate::mpfr::common::conv_to_mpfr;
 use crate::mpfr::common::draw_seed;
 use crate::mpfr::common::mpfr_reference_with;
@@ -49,7 +50,7 @@ fn conv_big(w: usize, x: ExactNum, cc: &mut Consts) -> Result<Float, Box<dyn std
     // MPFR's default exponent range is narrower than zenith's.
     let old = unsafe { mpfr::get_emax() };
     unsafe { mpfr::set_emax(mpfr::get_emax_max()) };
-    let f = f << e;
+    let f = f << (e as isize);
     unsafe { mpfr::set_emax(old) };
     Ok(f)
 }
@@ -168,7 +169,7 @@ type Mpun = fn(&mut Float, &Float, rnd_t) -> i32;
 
 #[test]
 fn overflow_by_mode_unary() -> Result<(), Box<dyn std::error::Error>> {
-    let ops: [(&str, i32, i32, bool, Unop, Mpun); 7] = [
+    let ops: [(&str, Exponent, Exponent, bool, Unop, Mpun); 7] = [
         (
             "exp",
             32,

@@ -240,11 +240,11 @@ fn c(s: &str, p: usize, cc: &mut Consts) -> Result<ExactComplex, Box<dyn std::er
     ))
 }
 
-fn exp2(x: &ExactNum) -> i32 {
+fn exp2(x: &ExactNum) -> i64 {
     if x.is_zero() {
-        i32::MIN / 2
+        i64::MIN / 2
     } else {
-        x.exponent().unwrap_or(i32::MIN / 2)
+        x.exponent().unwrap_or(i64::MIN / 2)
     }
 }
 
@@ -273,7 +273,7 @@ fn complex_bessel_mpmath() -> Result<(), Box<dyn std::error::Error>> {
         let ei = wi.neg().add(got.im(), wp, RoundingMode::None);
         let err = exp2(&er).max(exp2(&ei));
         let need = p as i32 - 4;
-        if err > scale - need {
+        if err > scale - i64::from(need) {
             failures.push(format!(
                 "{f}({zs}; {nus}) at {p}: {} bits, need {need}",
                 scale - err
@@ -334,7 +334,7 @@ fn complex_bessel_k_series_regime() -> Result<(), Box<dyn std::error::Error>> {
         let err = exp2(&er).max(exp2(&ei));
         let need = p as i32 - 4;
         assert!(
-            err <= scale - need,
+            err <= scale - i64::from(need),
             "K({zs}; {nus}) at {p}: {} bits, need {need}",
             scale - err
         );

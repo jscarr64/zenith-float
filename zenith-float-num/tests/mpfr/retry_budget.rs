@@ -424,10 +424,13 @@ pub fn use_full_exponent_range() {
     use gmp_mpfr_sys::mpfr;
     // SAFETY: only sets MPFR's thread-local exponent bounds, as the other tests of this suite do.
     unsafe {
-        // Below `EXPONENT_MIN` so that subnormal arguments convert exactly (the reference computation sets
-        // its own bound for the result).
-        mpfr::set_emin(zenith_float_num::EXPONENT_MIN as exp_t - 1024);
-        mpfr::set_emax(zenith_float_num::EXPONENT_MAX as exp_t);
+        // MPFR's widest range: its `emin_min` is `EXPONENT_MIN` once the exponent is 62 bits, so a value
+        // below it (a zenith subnormal) has no MPFR counterpart here; the shifted references hold those.
+        // (A bound past MPFR's limits is refused and would leave the default 32-bit range in place.)
+        let lo = (zenith_float_num::EXPONENT_MIN as exp_t - 1024).max(mpfr::get_emin_min());
+        let hi = (zenith_float_num::EXPONENT_MAX as exp_t).min(mpfr::get_emax_max());
+        assert_eq!(mpfr::set_emin(lo), 0, "set_emin({lo})");
+        assert_eq!(mpfr::set_emax(hi), 0, "set_emax({hi})");
     }
 }
 
@@ -585,7 +588,7 @@ fn pow_of_a_power_of_two_is_exact_at_the_ends_of_the_range() -> Res {
     let mut cc = Consts::new()?;
     let big = 1i64 << 31;
     // (base exponent k: the base is 2^k, integer power n)
-    let cases: [(i32, i64); 17] = [
+    let cases: [(Exponent, i64); 17] = [
         (1, big - 1),
         (1, big - 2),
         (1, -(big - 2)),
@@ -608,7 +611,7 @@ fn pow_of_a_power_of_two_is_exact_at_the_ends_of_the_range() -> Res {
         for base_negative in [false, true] {
             for p in [64usize, 128] {
                 let mut base = pow2(64, k);
-                let mut fb = Float::with_val(64, 1) << k;
+                let mut fb = Float::with_val(64, 1) << (k as isize);
                 if base_negative {
                     base = -base;
                     fb = -fb;

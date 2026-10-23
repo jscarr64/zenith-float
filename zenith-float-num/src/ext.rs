@@ -1646,22 +1646,20 @@ impl ExactNum {
         if mant == 0 {
             return Ok(Self::new(pp));
         }
-        if exp > i64::from(crate::EXPONENT_MAX) {
+        // `Exponent` is `i64`, so `exp` is checked against the 62-bit range directly; `grid` and
+        // `total` stay inside `i64` because `pp <= MAX_PRECISION < 2^60`.
+        if exp > crate::EXPONENT_MAX {
             return Err(Error::ExponentOverflow(Sign::Pos));
         }
-        let grid = i64::from(crate::EXPONENT_MIN)
-            - i64::try_from(pp).map_err(|_| Error::InvalidArgument)?;
+        let grid = crate::EXPONENT_MIN - i64::try_from(pp).map_err(|_| Error::InvalidArgument)?;
         if exp < grid {
             // the highest bit of the value is below the smallest subnormal
             return Err(Error::InvalidArgument);
         }
         let total = exp - 64;
-        let min = i64::from(crate::EXPONENT_MIN);
         // the first shift stays in the exponent range (the value is then normal), the second goes below it
-        let n1 = total.max(min);
-        let n2 = total - n1;
-        let n1 = Exponent::try_from(n1).map_err(|_| Error::InvalidArgument)?;
-        let n2 = Exponent::try_from(n2).map_err(|_| Error::InvalidArgument)?;
+        let n1: Exponent = total.max(crate::EXPONENT_MIN);
+        let n2: Exponent = total - n1;
         let base = Self::from_u64_exact(mant, pp);
         let r = base
             .ldexp(n1, pp, RoundingMode::ToZero)
@@ -6973,14 +6971,14 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         let mut xs: Vec<ExactNum> = (0..PAIR_OPERANDS).map(operand).collect();
-        for k in [1i32, 7, 64, 1000, 100_000, 1_000_000_000, -1, -64, -100_000, -1_000_000_000] {
+        for k in [1i64, 7, 64, 1000, 100_000, 1_000_000_000, -1, -64, -100_000, -1_000_000_000] {
             xs.push(ExactNum::from_u8(1, 64).ldexp(k, 64, RoundingMode::None));
             xs.push(ExactNum::from_u8(3, 64).ldexp(k, 64, RoundingMode::None));
         }
         for n in [1usize, 2, 3, 19, 20, 40, 80] {
             xs.push(ExactNum::from_u8(10, 320).powi(n, 320, RoundingMode::None));
         }
-        for j in [1i32, 10, 63, 64, 65, 200] {
+        for j in [1i64, 10, 63, 64, 65, 200] {
             let d = ExactNum::from_u8(1, 64).ldexp(-j, 64, RoundingMode::None);
             xs.push(ExactNum::add_ref(
                 &ExactNum::from_u8(1, 320),

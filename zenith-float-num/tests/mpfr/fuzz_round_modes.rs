@@ -17,7 +17,6 @@ use crate::mpfr::common::test_zf_op_no_cc;
 use crate::mpfr::common::zenith_binop;
 use crate::mpfr::common::BinOp;
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
-use rug::float::{exp_max, exp_min};
 use rug::Float;
 use std::ops::Neg;
 use zenith_float_num::{
@@ -59,8 +58,8 @@ fn fuzz_mpfr_bit_exact_all_round_modes() -> Result<(), Box<dyn std::error::Error
         mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
         mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
     }
-    assert_eq!(EXPONENT_MIN, exp_min());
-    assert_eq!(EXPONENT_MAX, exp_max());
+    assert_eq!(EXPONENT_MIN, unsafe { mpfr::get_emin() });
+    assert_eq!(EXPONENT_MAX, unsafe { mpfr::get_emax() });
 
     let emin: Exponent = -64;
     let emax: Exponent = 64;

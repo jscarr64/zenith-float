@@ -32,7 +32,7 @@ fn close(got: &ExactNum, want: &ExactNum, bits: i32) -> bool {
         return true;
     }
     let scale = want.exponent().unwrap_or(0).max(1);
-    d.exponent().unwrap_or(i32::MAX) <= scale - bits
+    d.exponent().unwrap_or(i64::MAX) <= scale - i64::from(bits)
 }
 
 #[test]
