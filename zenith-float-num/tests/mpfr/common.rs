@@ -12,6 +12,39 @@ use zenith_float_num::{
     WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT,
 };
 
+/// Which MPFR tier runs: `MPFR_TIER=full` keeps every run count and runs the 100032-bit tests;
+/// anything else (the default) is the fast tier, which divides the heavy run counts by 10 and skips
+/// the 100032-bit tests. `tools/full_gate.sh` runs the full tier unless `MPFR_TIER` says otherwise.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum MpfrTier {
+    Fast,
+    Full,
+}
+
+pub fn mpfr_tier() -> MpfrTier {
+    match std::env::var("MPFR_TIER") {
+        Ok(t) if t == "full" => MpfrTier::Full,
+        _ => MpfrTier::Fast,
+    }
+}
+
+/// `full` in the full tier; `full / 10` (at least 1) in the fast tier.
+pub fn tier_runs(full: usize) -> usize {
+    match mpfr_tier() {
+        MpfrTier::Full => full,
+        MpfrTier::Fast => (full / 10).max(1),
+    }
+}
+
+/// True (and a note on stderr) when the fast tier skips a 100032-bit test.
+pub fn fast_tier_skips_100032_bits(name: &str) -> bool {
+    let skip = mpfr_tier() == MpfrTier::Fast;
+    if skip {
+        eprintln!("{name}: skipped in the fast MPFR tier (set MPFR_TIER=full to run it)");
+    }
+    skip
+}
+
 thread_local! {
     static TEST_RNG: RefCell<StdRng> = RefCell::new(StdRng::seed_from_u64(0x5EED_CAFE_BADC_0D00));
 }

@@ -23,7 +23,7 @@ use zenith_float_num::{
 
 #[test]
 fn mpfr_compare_special() -> Result<(), Box<dyn std::error::Error>> {
-    let run_cnt = 500;
+    let run_cnt = crate::mpfr::common::tier_runs(500);
     let p_rng = get_prec_rng();
     let p_min = 1;
 
@@ -33,7 +33,7 @@ fn mpfr_compare_special() -> Result<(), Box<dyn std::error::Error>> {
 
 #[test]
 fn mpfr_compare_special_large() -> Result<(), Box<dyn std::error::Error>> {
-    let run_cnt_large = 3;
+    let run_cnt_large = crate::mpfr::common::tier_runs(3);
     let p_rng_large = 1;
     let p_min_large = 1563;
 
