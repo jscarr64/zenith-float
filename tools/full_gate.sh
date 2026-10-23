@@ -71,7 +71,9 @@ run build-thumbv7em "cargo build --no-default-features --target thumbv7em-none-e
 run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
 run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
 run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
-run mpfr "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests -- --test-threads=1"
+# MPFR_TIER selects the MPFR tier (tests/mpfr/common.rs): the gate runs `full` (every run count, the
+# 100032-bit tests) unless the caller sets MPFR_TIER=fast.
+run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests -- --test-threads=1"
 # ratchet mode: the clone ratchet started at c74e834 (first commit with rules_scan + baseline); older added lines are tracked by no-clone-progress, not flagged here
 run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BASE:-c74e834^}..HEAD"
 # informational: remaining violations are a tracked count (must only go down; hard fail is for the final step)

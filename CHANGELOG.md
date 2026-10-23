@@ -366,6 +366,9 @@ Three wrong answers when `y / x` is far from one, all found by the wide-range te
 - Bug fix: `ExactNum::rem_pi(0, ..)` (and `ExactNumArray::rem_pi`) accepted `p = 0` and returned a reduced value; it now returns `NaN(InvalidArgument)`. The scalar `p = 0` test now covers `rem_pi`.
 - `ExactNumArray` with `p = 0`: `filled`, `filled_2d`, `from_values` and `from_shape` now fill the array with `NaN(InvalidArgument)` instead of keeping the input values, and `lu_decomp` returns `None`. Test: `tests/precision_zero_array_api.rs` runs 86 `ExactNumArray` calls at `p = 0` (with a `p = 64` control each); it was red with `rem_pi`, `lu_decomp` and the four constructors accepting `p = 0`. `ExactNumArray::new(p)` returns an empty array and has no element to carry the error, so it is not covered.
 
+### MPFR test tiers (tests)
+- `MPFR_TIER` (`tests/mpfr/common.rs`): the default fast tier divides the run counts of `mpfr_compare_const`, `mpfr_compare_ops(_large)` and `mpfr_compare_special(_large)` by 10 (at least 1) and skips the ten 100032-bit `retry_budget` tests; `MPFR_TIER=full` keeps today's counts and runs them. `tools/full_gate.sh` runs the full tier unless `MPFR_TIER` is set. Single-thread: the full MPFR suite takes about 13 min, the fast tier about 3 min.
+
 ### `pow` infinite-exponent test expectations and `exp_pow_grid_digest` re-pin (tests)
 - `test_ext` now expects IEEE 754 / MPFR values: `pow(+0, -Inf) = +Inf` and `pow(2, -Inf) = +0`. The old test expected `+0` and `-Inf`, which were wrong. Checked against `mpfr_pow` (gmpy2) and `tests/mpfr/pow_specials.rs`. `exp_pow_grid_digest` is re-pinned to `8827926273799459758`. Bisecting showed that only 71848b8 (powi zero-even sign) changes it. The 36 changed entries are `powi(-0, n)` for n in {2, 12}, p in {53, 128, 200} and all 6 modes. Each went from -0 to +0, and MPFR gives +0 for all 36.
 

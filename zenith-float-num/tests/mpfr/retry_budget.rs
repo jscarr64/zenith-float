@@ -141,6 +141,9 @@ fn mp_cos(r: &mut Float, a: &Float, round: Round) -> std::cmp::Ordering {
 /// (and the nearest modes) need about `2p` working bits.
 #[test]
 fn cos_four_pi_at_100032_bits() -> Res {
+    if crate::mpfr::common::fast_tier_skips_100032_bits("cos_four_pi_at_100032_bits") {
+        return Ok(());
+    }
     let mut cc = Consts::new()?;
     let x = pi_times_2k(&mut cc, P, 2);
     run_unary("cos", "4 pi", P, &x, &mut cc, cos_of, mp_cos)
@@ -165,6 +168,9 @@ fn mp_tan(r: &mut Float, a: &Float, round: Round) -> std::cmp::Ordering {
 /// `cos` of 2 pi and of pi / 2 (a result of about `2^-p`: needs `2p` bits of the argument reduction).
 #[test]
 fn cos_two_pi_and_half_pi_at_100032_bits() -> Res {
+    if crate::mpfr::common::fast_tier_skips_100032_bits("cos_two_pi_and_half_pi_at_100032_bits") {
+        return Ok(());
+    }
     let mut cc = Consts::new()?;
     let x = pi_times_2k(&mut cc, P, 1);
     run_unary("cos", "2 pi", P, &x, &mut cc, cos_of, mp_cos)?;
@@ -175,6 +181,9 @@ fn cos_two_pi_and_half_pi_at_100032_bits() -> Res {
 /// `sin` near multiples of pi (tiny result) and near pi / 2 (result `1 - tiny`).
 #[test]
 fn sin_near_pi_multiples_at_100032_bits() -> Res {
+    if crate::mpfr::common::fast_tier_skips_100032_bits("sin_near_pi_multiples_at_100032_bits") {
+        return Ok(());
+    }
     let mut cc = Consts::new()?;
     for (label, k) in [("4 pi", 2), ("pi", 0), ("pi/2", -1)] {
         let x = pi_times_2k(&mut cc, P, k);
@@ -186,6 +195,9 @@ fn sin_near_pi_multiples_at_100032_bits() -> Res {
 /// `tan` near multiples of pi (tiny result) and near pi / 2 (huge result).
 #[test]
 fn tan_near_pi_multiples_at_100032_bits() -> Res {
+    if crate::mpfr::common::fast_tier_skips_100032_bits("tan_near_pi_multiples_at_100032_bits") {
+        return Ok(());
+    }
     let mut cc = Consts::new()?;
     for (label, k) in [("4 pi", 2), ("pi/2", -1)] {
         let x = pi_times_2k(&mut cc, P, k);
@@ -197,6 +209,10 @@ fn tan_near_pi_multiples_at_100032_bits() -> Res {
 /// `sin_cos` returns both values; each is compared with MPFR.
 #[test]
 fn sin_cos_near_pi_multiples_at_100032_bits() -> Res {
+    if crate::mpfr::common::fast_tier_skips_100032_bits("sin_cos_near_pi_multiples_at_100032_bits")
+    {
+        return Ok(());
+    }
     let mut cc = Consts::new()?;
     for (label, k) in [("4 pi", 2), ("pi/2", -1)] {
         let x = pi_times_2k(&mut cc, P, k);
@@ -227,6 +243,9 @@ fn sin_cos_near_pi_multiples_at_100032_bits() -> Res {
 /// `exp(2^-p)` is `1 + 2^-p + 2^(-2p-1) + ...`: the midpoint of two neighbours plus a `2^-2p` term.
 #[test]
 fn exp_just_above_a_tie_at_100032_bits() -> Res {
+    if crate::mpfr::common::fast_tier_skips_100032_bits("exp_just_above_a_tie_at_100032_bits") {
+        return Ok(());
+    }
     let mut cc = Consts::new()?;
     let x = pow2(P, -(P as Exponent));
     run_unary(
@@ -243,6 +262,9 @@ fn exp_just_above_a_tie_at_100032_bits() -> Res {
 /// `expm1(2^(1-p)) = x + x^2/2 + x^3/6`: the midpoint between two neighbours plus a `2^-2p` term.
 #[test]
 fn expm1_just_above_a_tie_at_100032_bits() -> Res {
+    if crate::mpfr::common::fast_tier_skips_100032_bits("expm1_just_above_a_tie_at_100032_bits") {
+        return Ok(());
+    }
     let mut cc = Consts::new()?;
     let d = pow2(P, 1 - P as Exponent);
     run_unary(
@@ -259,6 +281,11 @@ fn expm1_just_above_a_tie_at_100032_bits() -> Res {
 /// `log1p(2^(1-p)) = x - x^2/2 + x^3/3`: a grid point of `p` bits plus a term of relative size `2^-2p`.
 #[test]
 fn log1p_just_above_a_grid_point_at_100032_bits() -> Res {
+    if crate::mpfr::common::fast_tier_skips_100032_bits(
+        "log1p_just_above_a_grid_point_at_100032_bits",
+    ) {
+        return Ok(());
+    }
     let mut cc = Consts::new()?;
     let d = pow2(P, 1 - P as Exponent);
     run_unary(
@@ -293,6 +320,10 @@ fn ln_just_above_a_grid_point_at_40064_bits() -> Res {
 /// `cosh(x) - 1 = x^2/2 + ...` with `x^2/2` within `2^-2p` of the midpoint `2^-p`.
 #[test]
 fn cosh_sinh_tanh_near_a_tie_at_100032_bits() -> Res {
+    if crate::mpfr::common::fast_tier_skips_100032_bits("cosh_sinh_tanh_near_a_tie_at_100032_bits")
+    {
+        return Ok(());
+    }
     let mut cc = Consts::new()?;
     let half = -(P as Exponent) / 2;
     let xc = sqrt_times_2k(2, half, P);
@@ -829,6 +860,9 @@ fn exact_results_of_other_shapes(cc: &mut Consts) -> Res {
 /// series is about `2^-p` (exponents `-p/2` and `-p`) and at the bottom of the range.
 #[test]
 fn wide_exponent_range_at_100032_bits() -> Res {
+    if crate::mpfr::common::fast_tier_skips_100032_bits("wide_exponent_range_at_100032_bits") {
+        return Ok(());
+    }
     let w = P as Exponent;
     let exponents = [Exponent::MIN + 1, -(w + 1), -w, -(w / 2 + 1), -(w / 2)];
     sweep(P, &exponents, &ALL_NAMES)

@@ -20,7 +20,7 @@ use zenith_float_num::{Consts, ExactNum, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SI
 #[test]
 fn mpfr_compare_const() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let repeat_cnt = 100;
+    let repeat_cnt = crate::mpfr::common::tier_runs(100);
     let run_cnt = 500;
 
     let p_rng = get_prec_rng();
