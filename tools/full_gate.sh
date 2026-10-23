@@ -24,9 +24,9 @@ echo "poplog: $POPLOG_FILE" | tee -a "$T/$tag.rc" >&2
 # Pop scheduling (Paul, 2026-10-23): heavy gates share 3 counting-lock slots (/tmp/pop-gate.slot1..3, replaces the
 # single flock /tmp/pop-gate.lock), 8 jobs each (24 of 32 cores). The slot is held on an fd until this script exits;
 # waiting shows as WAITING in ~/pop-logs/RUNNING.tsv. Skipped when a caller already holds a slot (POPSLOT_HELD).
-# CARGO_BUILD_JOBS / RUST_TEST_THREADS default to 8 (pop_slot_acquire) unless the caller sets them.
-if [[ -z "${POPSLOT_HELD:-}" ]]; then pop_slot_acquire "${POPSLOT_SLOTS:-3}"; fi
-export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-8} RUST_TEST_THREADS=${RUST_TEST_THREADS:-8}
+# CARGO_BUILD_JOBS / RUST_TEST_THREADS default to the slot value 6 (pop_slot_acquire) unless the caller sets them.
+if [[ -z "${POPSLOT_HELD:-}" ]]; then pop_slot_acquire "${POPSLOT_SLOTS:-4}"; fi
+export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-6} RUST_TEST_THREADS=${RUST_TEST_THREADS:-6}
 TT="-- --test-threads=$RUST_TEST_THREADS"
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".
@@ -44,7 +44,7 @@ fi
 TEST_STEPS=" build-debug build-release features-random-serde oracle-fast oracle-deep mpfr "
 run() {
   name=$1; shift; echo "start $name $(date +%T)" >> "$T/$tag.rc"
-  log_step_start "$name"; ln -sf "$T/$tag-$name.log" "$POPLOG_STATE_DIR/out"
+  log_step_start "$name"; ln -sf "$T/$tag-$name.log" "$(_pl_out)"  # nested: own out file, never the parent's
   timeout "${STEP_TIMEOUT:-20m}" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1 &
   POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"
   wait "$POPLOG_CHILD_PID"; rc=$?; POPLOG_CHILD_PID=""

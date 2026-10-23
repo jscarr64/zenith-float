@@ -3,7 +3,7 @@
 # Source it, then:
 #   poplog_init AGENT JOB [REPO] [CMD-DESCRIPTION]   header + RUNNING.tsv row + heartbeat + traps
 #   log_step_start NAME                              step start line
-#   poplog_run_step NAME [--tests] -- cmd...         run cmd as a step (live output, counts, pause detection)
+#   poplog_run_step NAME [--tests] [--tests-from GLOB]... -- cmd...         run cmd as a step (live output, counts, pause detection)
 #   log_counts FILE                                  parse cargo test / nextest summaries -> COUNT_* vars
 #   log_step_end NAME RC [FILE] [--tests]            end line, duration, rc, counts; 0 tests on a test step = FAIL
 #   poplog_progress "record 12/500"                  current record/progress shown by the heartbeat
@@ -25,6 +25,9 @@ POPLOG_DONE=0
 POPLOG_HB_PID=""
 POPLOG_CHILD_PID=""
 POPLOG_NESTED=0
+POPLOG_TESTS_FROM=()
+# step output file: nested sub-runs get their own, so they never truncate or double into the parent step's counts
+_pl_out() { if [[ "$POPLOG_NESTED" == 1 ]]; then printf '%s' "$POPLOG_STATE_DIR/out.${POPLOG_SUB_PID:-$$}"; else printf '%s' "$POPLOG_STATE_DIR/out"; fi; }
 
 POPLOG_RUNNING_HEADER=$'#agent\tjob\tpid\tlog\tstart\tlast_heartbeat\tstate\tslot'
 _pl_iso() { date '+%Y-%m-%dT%H:%M:%S%:z'; }
@@ -167,7 +170,7 @@ poplog_init() {
   POPLOG_T0=$(date +%s)
   if [[ -n "${POPLOG_FILE:-}" && -f "${POPLOG_FILE:-}" && -n "${POPLOG_STATE_DIR:-}" && -d "${POPLOG_STATE_DIR:-}" ]]; then
     # nested in a live run: sub-section of the parent's log; POPLOG_PID stays the parent's (its RUNNING row/slot)
-    POPLOG_NESTED=1
+    POPLOG_NESTED=1; POPLOG_SUB_PID=$BASHPID
     mkdir -p "$POPLOG_STATE_DIR/open"; POPLOG_OPEN_MARK=$POPLOG_STATE_DIR/open/$BASHPID
     printf '%s\n' "$POPLOG_AGENT/$POPLOG_JOB" > "$POPLOG_OPEN_MARK"
     _pl_log "----- SUB-RUN START $POPLOG_AGENT/$POPLOG_JOB pid=$$ command: $desc -----"
@@ -209,7 +212,8 @@ poplog_init() {
 
 log_step_start() {
   export POPLOG_STEP=$1; POPLOG_STEP_T0=$(date +%s)
-  echo "$1" > "$POPLOG_STATE_DIR/step"; : > "$POPLOG_STATE_DIR/out"; : > "$POPLOG_PROGRESS_FILE"
+  echo "$1" > "$POPLOG_STATE_DIR/step"; : > "$(_pl_out)"; : > "$POPLOG_PROGRESS_FILE"
+  [[ "$POPLOG_NESTED" == 1 ]] || : > "$POPLOG_STATE_DIR/subcounts"
   _pl_log "STEP START $1"
 }
 
@@ -234,9 +238,33 @@ log_counts() {
 
 # log_step_end NAME RC [OUTFILE] [--tests]
 log_step_end() {
-  local name=$1 rc=$2 f=${3:-$POPLOG_STATE_DIR/out} tests=${4:-} verdict=PASS dur
-  dur=$(( $(date +%s) - ${POPLOG_STEP_T0:-$POPLOG_T0} ))
+  local name=$1 rc=$2 f=${3:-$(_pl_out)} tests=${4:-} verdict=PASS dur g x t0=${POPLOG_STEP_T0:-$POPLOG_T0}
+  local op of oi os sp=0 sf=0 si=0 ss=0 a b c d
+  dur=$(( $(date +%s) - t0 ))
   log_counts "$f"
+  # --tests-from GLOB: add `test result:` lines from files written during this step (older files are stale: ignored)
+  op=$COUNT_PASSED of=$COUNT_FAILED oi=$COUNT_IGNORED os=$COUNT_SUMMARIES
+  for g in "${POPLOG_TESTS_FROM[@]}"; do
+    for x in $(compgen -G "$g" || true); do
+      [[ -f "$x" ]] || continue
+      if [[ $(stat -c %Y "$x") -lt $t0 ]]; then _pl_log "TESTS-FROM skip stale $x (older than step start)"; continue; fi
+      log_counts "$x"; op=$((op + COUNT_PASSED)) of=$((of + COUNT_FAILED)) oi=$((oi + COUNT_IGNORED)) os=$((os + COUNT_SUMMARIES))
+      _pl_log "TESTS-FROM $x passed=$COUNT_PASSED failed=$COUNT_FAILED ignored=$COUNT_IGNORED (summaries=$COUNT_SUMMARIES)"
+    done
+  done
+  # nested poplog sub-runs report their step counts; used when larger than what reached this step's stdout
+  # (echoed nested output is already in $f, so the larger source wins instead of summing: no double count)
+  if [[ "$POPLOG_NESTED" != 1 && -s "$POPLOG_STATE_DIR/subcounts" ]]; then
+    while read -r a b c d; do sp=$((sp + a)) sf=$((sf + b)) si=$((si + c)) ss=$((ss + d)); done < "$POPLOG_STATE_DIR/subcounts"
+    if [[ $((sp + sf + si)) -gt $((op + of + oi)) ]]; then
+      _pl_log "SUB-RUN COUNTS used for step $name: passed=$sp failed=$sf ignored=$si (stdout had $((op + of + oi)))"
+      op=$sp of=$sf oi=$si os=$ss
+    fi
+  fi
+  COUNT_PASSED=$op COUNT_FAILED=$of COUNT_IGNORED=$oi COUNT_SUMMARIES=$os COUNT_RUN=$((op + of))
+  if [[ "$POPLOG_NESTED" == 1 && -n "${POPLOG_STATE_DIR:-}" ]]; then
+    printf '%s %s %s %s\n' "$COUNT_PASSED" "$COUNT_FAILED" "$COUNT_IGNORED" "$COUNT_SUMMARIES" >> "$POPLOG_STATE_DIR/subcounts"
+  fi
   [[ $rc -ne 0 ]] && verdict=FAIL
   if [[ "$tests" != --build ]] && [[ "$tests" == --tests || $COUNT_SUMMARIES -gt 0 ]] && [[ $((COUNT_RUN + COUNT_IGNORED)) -eq 0 ]]; then
     verdict=FAIL; POPLOG_WARNINGS+=("step $name: ZERO tests reported"); _pl_log "WARNING step $name reported zero tests -> FAIL"
@@ -251,11 +279,12 @@ log_step_end() {
   return 0
 }
 
-# poplog_run_step NAME [--tests] -- cmd...   (tests auto-detected for cargo test / nextest)
+# poplog_run_step NAME [--tests] [--tests-from GLOB]... -- cmd...   (tests auto-detected for cargo test / nextest)
 poplog_run_step() {
-  local name=$1 tests=''; shift
-  [[ "${1:-}" == --tests ]] && { tests=--tests; shift; }
-  [[ "${1:-}" == -- ]] && shift
+  local name=$1 tests='' tf=(); shift
+  while [[ $# -gt 0 ]]; do
+    case $1 in --tests) tests=--tests; shift ;; --tests-from) tf+=("$2"); shift 2 ;; --) shift; break ;; *) break ;; esac
+  done
   [[ "$*" =~ (cargo[[:space:]]+(test|nextest)|nextest[[:space:]]+run) ]] && tests=--tests
   local nr='(^|[[:space:]])--no-run([[:space:];&|)]|$)'
   [[ "$*" =~ $nr ]] && tests=--build
@@ -264,16 +293,19 @@ poplog_run_step() {
   [[ "$tests" == --build ]] && _pl_log "STEP $name is a build step (--no-run): zero-test check skipped"
   local rc=0
   if [[ "${POPLOG_ECHO:-1}" == 0 ]]; then
-    "$@" > >(tee -a "$POPLOG_STATE_DIR/out" >> "$POPLOG_FILE") 2>&1 &
+    "$@" > >(tee -a "$(_pl_out)" >> "$POPLOG_FILE") 2>&1 &
   else
-    "$@" > >(tee -a "$POPLOG_STATE_DIR/out" "$POPLOG_FILE") 2>&1 &
+    "$@" > >(tee -a "$(_pl_out)" "$POPLOG_FILE") 2>&1 &
   fi
   POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"
   wait "$POPLOG_CHILD_PID" || rc=$?
   POPLOG_CHILD_PID=""; : > "$POPLOG_STATE_DIR/child"
   sleep 0.2  # let tee drain
   _pl_reap_open
-  log_step_end "$name" "$rc" "$POPLOG_STATE_DIR/out" "$tests" || return 1
+  POPLOG_TESTS_FROM=("${tf[@]}")
+  local lrc=0; log_step_end "$name" "$rc" "$(_pl_out)" "$tests" || lrc=1
+  POPLOG_TESTS_FROM=()
+  return $lrc
 }
 
 # pop_slot_acquire [N] - take one of N (default $POPSLOT_SLOTS or 4) counting-lock slots $POPSLOT_PREFIX1..N
