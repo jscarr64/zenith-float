@@ -73,10 +73,14 @@ impl ExactNumNumber {
     ) -> Result<Option<Self>, Error> {
         let mut r = cand.clone()?;
         r.set_precision(p, RoundingMode::ToEven)?;
-        let bits = r
-            .mantissa_max_bit_len()
-            .saturating_mul(n)
-            .saturating_add(WORD_BIT_SIZE);
+        // r = odd * 2^k with `t` significant bits: odd^n exceeds 2^((t - 1) * n), so r^n needs more than
+        // (t - 1) * n significant bits and cannot equal `abs_self` once that reaches its significant bits.
+        // This also bounds the power's precision below (a huge `n` used to ask for r^n at p * n bits).
+        let t = Self::significant_bits(&r);
+        if t > 1 && (t - 1).saturating_mul(n) >= Self::significant_bits(abs_self) {
+            return Ok(None);
+        }
+        let bits = t.saturating_mul(n).saturating_add(WORD_BIT_SIZE);
         // A candidate rounded up past the largest number whose power fits (the root of a number near the top of
         // the range) has a power above the range: it is not the exact root.
         let pw = match r.powi(n, bits, RoundingMode::None) {
@@ -90,6 +94,20 @@ impl ExactNumNumber {
         } else {
             Ok(None)
         }
+    }
+
+    /// Number of bits from the leading one to the lowest one of the mantissa (0 for zero).
+    fn significant_bits(v: &Self) -> usize {
+        let mut tz = 0usize;
+        for w in v.mantissa().digits() {
+            if *w == 0 {
+                tz += WORD_BIT_SIZE;
+            } else {
+                tz += w.trailing_zeros() as usize;
+                break;
+            }
+        }
+        v.mantissa_max_bit_len().saturating_sub(tz)
     }
 
     fn nth_root_newton(
