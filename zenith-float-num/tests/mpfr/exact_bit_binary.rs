@@ -36,12 +36,12 @@ fn pairs(
 fn exact_bit_hypot() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
-    for p in PRECISIONS {
+    for p in PRECISIONS.into_iter().chain(P14_PRECISIONS) {
         for (x, y) in pairs(
             p,
             (-20, 20, true),
             (-20, 20, true),
-            &[(3, 0, 4, 0), (5, 0, 12, 0), (1, 0, 1, 0)],
+            &[(3, 0, 4, 0), (5, 0, 12, 0), (1, 0, 1, 0), (8, 0, 15, 0), (3, 40, 4, 40)],
         )? {
             let (fx, fy) = (
                 conv_to_mpfr(storage(p), &x, &mut cc)?,
@@ -63,12 +63,12 @@ fn exact_bit_hypot() -> Result<(), Box<dyn std::error::Error>> {
 fn exact_bit_fma() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
-    for p in PRECISIONS {
+    for p in PRECISIONS.into_iter().chain(P14_PRECISIONS) {
         for (i, (x, y)) in pairs(
             p,
             (-20, 20, true),
             (-20, 20, true),
-            &[(3, 0, 4, 0), (1, 1, 1, 1)],
+            &[(3, 0, 4, 0), (1, 1, 1, 1), (1 << 40, 0, 3, 1)],
         )?
         .into_iter()
         .enumerate()
@@ -99,12 +99,20 @@ fn exact_bit_fma() -> Result<(), Box<dyn std::error::Error>> {
 fn exact_bit_pow_atan2() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
-    for p in PRECISIONS {
+    for p in PRECISIONS.into_iter().chain(P14_PRECISIONS) {
         for (x, y) in pairs(
             p,
             (-4, 4, false),
             (-3, 3, true),
-            &[(2, 0, 3, 0), (9, 0, 1, 1), (4, 0, -1, 1), (1, 0, 7, 0)],
+            &[
+                (2, 0, 3, 0),
+                (9, 0, 1, 1),
+                (4, 0, -1, 1),
+                (1, 0, 7, 0),
+                (2, 0, 64, 0),
+                (1, 0, 0, 0),
+                (16, 0, 3, 2),
+            ],
         )? {
             let (fx, fy) = (
                 conv_to_mpfr(storage(p), &x, &mut cc)?,
@@ -131,7 +139,7 @@ fn exact_bit_pow_atan2() -> Result<(), Box<dyn std::error::Error>> {
 fn exact_bit_powi_root_reciprocal() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let mut cc = Consts::new()?;
-    for p in PRECISIONS {
+    for p in PRECISIONS.into_iter().chain(P14_PRECISIONS) {
         let mut xs: Vec<ExactNum> = (0..6)
             .map(|_| input(p, -6, 6, true))
             .collect::<Result<_, _>>()?;
