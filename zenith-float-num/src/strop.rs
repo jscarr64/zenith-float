@@ -235,13 +235,13 @@ mod tests {
             // from a fresh seed so later draws do not repeat.
             let build_n = |seed: u64| -> Result<ExactNumNumber, crate::Error> {
                 let resume = random::<u64>();
-                crate::common::test_rng::pin_thread_seed(seed);
+                crate::common::test_rng::reseed_random_this_thread(seed);
                 let built = if i & 1 == 0 {
                     ExactNumNumber::random_normal(p1, -TEST_EXP_BOUND, TEST_EXP_BOUND)
                 } else {
                     Ok(random_subnormal(p1)?)
                 };
-                crate::common::test_rng::pin_thread_seed(resume);
+                crate::common::test_rng::reseed_random_this_thread(resume);
                 built
             };
             let n_seed = random::<u64>();

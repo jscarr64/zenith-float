@@ -27,7 +27,8 @@ pub fn reset_test_rng() {
     TEST_RNG.with(|rng| {
         *rng.borrow_mut() = StdRng::seed_from_u64(0x5EED_CAFE_BADC_0D00);
     });
-    zenith_float_num::reseed_random(zenith_float_num::DEFAULT_RANDOM_SEED);
+    // per thread: a reseed from another test thread must not move this test's operands
+    zenith_float_num::reseed_random_this_thread(zenith_float_num::DEFAULT_RANDOM_SEED);
 }
 
 /// Draws a seed from the test stream; `rebuild_from_seed` replays a generator from it.
@@ -41,10 +42,10 @@ pub fn draw_seed() -> u64 {
 pub fn rebuild_from_seed<T>(seed: u64, build: impl FnOnce() -> T) -> T {
     let resume = test_random::<u64>();
     TEST_RNG.with(|rng| *rng.borrow_mut() = StdRng::seed_from_u64(seed));
-    zenith_float_num::reseed_random(seed);
+    zenith_float_num::reseed_random_this_thread(seed);
     let built = build();
     TEST_RNG.with(|rng| *rng.borrow_mut() = StdRng::seed_from_u64(resume));
-    zenith_float_num::reseed_random(resume);
+    zenith_float_num::reseed_random_this_thread(resume);
     built
 }
 

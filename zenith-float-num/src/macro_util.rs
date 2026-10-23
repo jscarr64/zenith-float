@@ -505,7 +505,9 @@ mod tests {
     #[test]
     fn test_compute_added_err() -> Result<(), crate::Error> {
         // Own stream: random_dist tests reseed the shared generator in parallel.
-        crate::common::test_rng::pin_thread_seed(crate::common::test_rng::DEFAULT_RANDOM_SEED);
+        crate::common::test_rng::reseed_random_this_thread(
+            crate::common::test_rng::DEFAULT_RANDOM_SEED,
+        );
         let mut cc = Consts::new()?;
         let emin = EXPONENT_MIN;
 

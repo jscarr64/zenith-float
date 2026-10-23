@@ -23,14 +23,15 @@ thread_local! {
         0,
         StdRng::seed_from_u64(DEFAULT_RANDOM_SEED),
     ));
-    // Set by `pin_thread_seed`: this thread keeps its own stream across global reseeds.
+    // Set by `reseed_random_this_thread`: this thread keeps its own stream across global reseeds.
     static PINNED: core::cell::Cell<bool> = const { core::cell::Cell::new(false) };
 }
 
 /// Gives the calling thread its own deterministic stream from `seed`. Later
-/// `reseed_random` calls from other test threads no longer restart it.
-#[cfg(test)]
-pub(crate) fn pin_thread_seed(seed: u64) {
+/// `reseed_random` calls from other threads no longer restart it, so tests that replay
+/// operands from a seed stay reproducible when the test harness runs them in parallel.
+#[cfg(any(test, feature = "random"))]
+pub fn reseed_random_this_thread(seed: u64) {
     ensure_init();
     PINNED.with(|p| p.set(true));
     RNG.with(|cell| *cell.borrow_mut() = (0, StdRng::seed_from_u64(seed)));
@@ -155,10 +156,10 @@ fn test_rng_draws() {
 #[test]
 fn test_pinned_stream_ignores_other_threads() -> Result<(), crate::Error> {
     let expected: Vec<u64> = {
-        pin_thread_seed(42);
+        reseed_random_this_thread(42);
         (0..8).map(|_| random::<u64>()).collect()
     };
-    pin_thread_seed(42);
+    reseed_random_this_thread(42);
     let mut got: Vec<u64> = (0..4).map(|_| random::<u64>()).collect();
     std::thread::spawn(|| reseed_random(11))
         .join()

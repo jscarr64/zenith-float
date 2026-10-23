@@ -191,7 +191,9 @@ pub use crate::csvfmt::CSV_MAX_COLS;
 pub use crate::csvfmt::CSV_MAX_ROWS;
 
 #[cfg(feature = "random")]
-pub use crate::common::test_rng::{random_seed, reseed_random, seeded_random, DEFAULT_RANDOM_SEED};
+pub use crate::common::test_rng::{
+    random_seed, reseed_random, reseed_random_this_thread, seeded_random, DEFAULT_RANDOM_SEED,
+};
 
 #[cfg(test)]
 mod tests {

@@ -103,13 +103,13 @@ fn test_powi() -> Result<(), crate::Error> {
         // fresh seed so later draws do not repeat.
         let build_d1 = |seed: u64| -> Result<ExactNumNumber, crate::Error> {
             let resume = random::<u64>();
-            crate::common::test_rng::pin_thread_seed(seed);
+            crate::common::test_rng::reseed_random_this_thread(seed);
             let built = ExactNumNumber::random_normal(
                 p1,
                 -TEST_EXP_BOUND / i as Exponent,
                 TEST_EXP_BOUND / i as Exponent,
             );
-            crate::common::test_rng::pin_thread_seed(resume);
+            crate::common::test_rng::reseed_random_this_thread(resume);
             let mut d = built?;
             d.set_sign(Sign::Pos);
             Ok(d)

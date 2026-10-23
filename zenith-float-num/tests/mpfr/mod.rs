@@ -16,6 +16,7 @@ pub mod mag_parts;
 pub mod overflow_modes;
 pub mod rem_exact;
 pub mod retry_budget;
+pub mod rng_isolation;
 pub mod subnormal_odd;
 pub mod subnormal_ops;
 pub mod wide_primitives;
