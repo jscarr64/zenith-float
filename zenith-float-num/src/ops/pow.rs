@@ -251,6 +251,10 @@ impl ExactNumNumber {
         if self.is_zero() || i == 1 {
             let mut ret = self.clone()?;
             ret.set_precision(p, rm)?;
+            if self.is_zero() && n & 1 == 0 {
+                // (+-0)^n for even n > 0 is +0.
+                ret.set_sign(crate::Sign::Pos);
+            }
             return Ok(ret);
         }
 
