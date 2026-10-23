@@ -4,6 +4,7 @@
 
 use crate::common::util::log2_ceil;
 use crate::common::util::round_p;
+use crate::defs::Precision;
 use crate::defs::SignedWord;
 use crate::defs::DEFAULT_P;
 use crate::num::ExactNumNumber;
@@ -1703,7 +1704,7 @@ impl ExactNum {
     /// Returns the number of significant bits used in the mantissa, or None if `self` is Inf or NaN.
     /// Normal numbers use all bits of the mantissa.
     /// Subnormal numbers use fewer bits than the mantissa can hold.
-    pub fn precision(&self) -> Option<usize> {
+    pub fn precision(&self) -> Option<Precision> {
         match &self.inner {
             Flavor::Value(v) => Some(v.precision()),
             _ => None,
@@ -1846,7 +1847,7 @@ impl ExactNum {
     }
 
     /// Returns the maximum mantissa length of `self` in bits regardless of whether `self` is normal or subnormal.
-    pub fn mantissa_max_bit_len(&self) -> Option<usize> {
+    pub fn mantissa_max_bit_len(&self) -> Option<Precision> {
         if let Flavor::Value(v) = &self.inner {
             Some(v.mantissa_max_bit_len())
         } else {
