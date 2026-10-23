@@ -3,6 +3,10 @@
 # per-step counts, a footer, and must FAIL a test step whose cargo test reports zero tests.
 # Uses stub cargo/rustup on PATH and a throwaway POPLOG_ROOT; never touches ~/pop-logs.
 set -euo pipefail
+# Sandbox: drop any outer poprun/popslot context (an ancestor slot would make the gate log SLOT REUSED, an
+# outer poplog would make it a nested SUB-RUN); keep POPSLOT_SLOTS/POPSLOT_JOBS, which set the geometry.
+unset POPLOG_FILE POPLOG_STATE_DIR POPLOG_PID POPLOG_PROGRESS_FILE POPLOG_STEP POPLOG_RUNNING POPLOG_JOB \
+  POPSLOT_HELD POPSLOT_SLOT POPSLOT_FD POPSLOT_HOLDER_PID POPSLOT_AGENT POPSLOT_PRIORITY CARGO_BUILD_JOBS RUST_TEST_THREADS
 root=$(cd "$(dirname "$0")/.." && pwd)
 tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin"
