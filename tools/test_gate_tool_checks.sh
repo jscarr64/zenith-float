@@ -64,5 +64,13 @@ for tool in rg git; do
   done
 done
 
+# untracked, non-ignored files count (rg semantics); .gitignore still applies
+nu="$t/name-untracked"; mkdir -p "$nu/target"
+(cd "$nu" && git init -q && echo 'fn a() {}' > ok.rs && printf 'target/\n' > .gitignore && git add ok.rs .gitignore)
+echo '// accumath' > "$nu/target/ignored.rs"
+(cd "$nu" && name_check) >/dev/null 2>&1 || fail "name check flags a gitignored file"
+echo '// accumath' > "$nu/new.rs"
+(cd "$nu" && name_check) >/dev/null 2>&1 && fail "name check passes with the name in an untracked, non-ignored file"
+
 if [[ "$bad" -ne 0 ]]; then exit 1; fi
 echo "test_gate_tool_checks: ok"
