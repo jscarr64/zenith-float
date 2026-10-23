@@ -1,7 +1,7 @@
 //! IEEE-style exponent decomposition without hardware floats.
 
 use crate::common::util::round_p;
-use crate::defs::{Error, EXPONENT_MIN, WORD_BIT_SIZE};
+use crate::defs::{Error, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::{Exponent, RoundingMode, Sign};
 
@@ -25,9 +25,9 @@ impl ExactNumNumber {
             return Ok(self);
         }
         let e = self.exponent();
-        match e.checked_add(n) {
-            // The exponent range is all of `Exponent`, so `checked_add` is the range check.
-            Some(sum) => {
+        let sum = crate::exp::wide(e) + crate::exp::wide(n);
+        match Exponent::try_from(sum) {
+            Ok(sum) if (EXPONENT_MIN..=EXPONENT_MAX).contains(&sum) => {
                 self.set_exponent(sum);
                 self.set_precision(p, rm)?;
                 Ok(self)
@@ -38,8 +38,10 @@ impl ExactNumNumber {
                 } else {
                     // Below the range: scale by 2^EXPONENT_MIN in a multiplication, which
                     // rounds onto the subnormal grid (or to zero / the least value) by mode.
-                    let s1 = e as i64 + n as i64 - EXPONENT_MIN as i64;
-                    let s1 = Exponent::try_from(s1).unwrap_or(EXPONENT_MIN);
+                    // A scale below EXPONENT_MIN would underflow even before that product, so it
+                    // is clamped (the result is then below the grid by far more than p bits).
+                    let s1 = crate::exp::narrow(sum - crate::exp::wide(EXPONENT_MIN));
+                    let s1 = s1.max(EXPONENT_MIN);
                     self.set_exponent(s1);
                     let mut b = Self::from_word(1, WORD_BIT_SIZE)?;
                     b.set_exponent(EXPONENT_MIN + 1);
