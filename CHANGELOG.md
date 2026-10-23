@@ -6,6 +6,8 @@ Problems in one program led to a forensic audit of the others. This 2.0.0 sectio
 
 ### Added
 
+- `Precision`, a public alias of `usize` naming the precision type: `MIN_PRECISION`, `MAX_PRECISION` (`2^60 - 1` on 64-bit targets, smaller on 32-bit), `DEFAULT_P` and the `precision()` / `mantissa_max_bit_len()` results are typed with it. Same type, so not a break.
+
 `elliptic_f_phi`, `elliptic_e_phi`, and `elliptic_pi_phi` take the amplitude \(\varphi\). `elliptic_f`, `elliptic_e`, and `elliptic_pi` still take \(\sin\varphi\). Downstream callers passed the angle into the \(\sin\varphi\) slot: `elliptic_f(2, m)` is `NaN(InvalidArgument)`, not \(F(2\mid m)\). The angle form accepts any real \(\varphi\), reduces \(\varphi = r + k\pi\) with \(|r|\le\pi/2\) in extended precision, and adds \(2k\) times the complete integral. \(\varphi=\pm\pi/2\) is \(\pm K\), \(\pm E\), or \(\pm\Pi\). A parameter \(m>1\) whose path is not real, and a characteristic \(n=1\) at a pole, are `NaN(InvalidArgument)` rather than a silent wrong value.
 
 `ExactNum::inexact_accumulated()` keeps the old meaning of `inexact()`: true when this value or anything it was computed from was rounded. See "`inexact` is per operation".

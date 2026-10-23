@@ -58,9 +58,15 @@ pub const EXPONENT_MIN: Exponent = -EXPONENT_MAX;
 /// are both `Some(MIN_NORMAL_EXPONENT)`. Equal to [`EXPONENT_MIN`].
 pub const MIN_NORMAL_EXPONENT: Exponent = EXPONENT_MIN;
 
+/// A precision in bits: the type of [`MIN_PRECISION`], [`MAX_PRECISION`], [`DEFAULT_P`] and of the
+/// precisions the API reports. Accepted values are `MIN_PRECISION..=MAX_PRECISION`; `MAX_PRECISION` is
+/// `2^60 - 1` on 64-bit targets and smaller (`2^30 - 1`) on 32-bit targets. An alias of `usize`, so code
+/// written against `usize` keeps compiling.
+pub type Precision = usize;
+
 /// Smallest accepted precision in bits. Precision `0` is rejected with
 /// `Error::InvalidArgument` (a NaN from the `ExactNum` API). Precision is rounded up to whole words.
-pub const MIN_PRECISION: usize = 1;
+pub const MIN_PRECISION: Precision = 1;
 
 /// Largest accepted precision in bits; anything above it is rejected with `Error::InvalidArgument`.
 ///
@@ -68,11 +74,11 @@ pub const MIN_PRECISION: usize = 1;
 /// precision stays inside `±2^62` (see [`crate::defs`] exponent helpers), and
 /// `2^30 - 1` on 32-bit targets, where sizes are 32-bit `usize`.
 /// Allocating a mantissa this large still fails with `Error::MemoryAllocation` on real hardware.
-pub const MAX_PRECISION: usize = {
+pub const MAX_PRECISION: Precision = {
     let by_exponent: u64 = 1 << 60;
     let by_size = (usize::MAX / 4) as u64;
     let lim = if by_exponent < by_size { by_exponent } else { by_size };
-    (lim - 1) as usize
+    (lim - 1) as Precision
 };
 
 const _: () = assert!(
@@ -104,7 +110,7 @@ pub const PROPTEST_CASES: u32 = 1000;
 pub const WORD_SIGNIFICANT_BIT: Word = WORD_MAX << (WORD_BIT_SIZE - 1);
 
 /// Default precision in bits (two 64-bit words); the precision of the built-in [`crate::Consts`] cache.
-pub const DEFAULT_P: usize = 128;
+pub const DEFAULT_P: Precision = 128;
 
 /// The size of exponent type in bits.
 pub const EXPONENT_BIT_SIZE: usize = core::mem::size_of::<Exponent>() * 8;

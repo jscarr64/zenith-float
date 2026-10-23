@@ -100,6 +100,7 @@ pub use crate::complex::ExactComplex;
 pub use crate::defs::Error;
 pub use crate::defs::Exponent;
 pub use crate::defs::OtherRadix;
+pub use crate::defs::Precision;
 pub use crate::defs::Radix;
 pub use crate::defs::RoundingMode;
 pub use crate::defs::Sign;

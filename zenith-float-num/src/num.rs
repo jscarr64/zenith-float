@@ -7,6 +7,7 @@ use crate::common::util::count_leading_zeroes_skip_first;
 use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::Exponent;
+use crate::defs::Precision;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
 use crate::defs::SignedWord;
@@ -1303,14 +1304,14 @@ impl ExactNumNumber {
 
     /// Returns the maximum mantissa length of `self` in bits regardless of whether `self` is normal or subnormal.
     #[inline]
-    pub fn mantissa_max_bit_len(&self) -> usize {
+    pub fn mantissa_max_bit_len(&self) -> Precision {
         self.m.max_bit_len()
     }
 
     /// Returns the number of significant bits used in the mantissa. Normal numbers use all bits of the mantissa.
     /// Subnormal numbers use fewer bits than the mantissa can hold.
     #[inline]
-    pub fn precision(&self) -> usize {
+    pub fn precision(&self) -> Precision {
         self.m.bit_len()
     }
 
