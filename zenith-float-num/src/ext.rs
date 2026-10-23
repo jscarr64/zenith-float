@@ -62,6 +62,9 @@ impl ExactNum {
     /// Returns a new number with value of 0 and precision of `p` bits. Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn new(p: usize) -> Self {
+        if p < crate::defs::MIN_PRECISION {
+            return Self::nan(Some(Error::InvalidArgument));
+        }
         Self::result_to_ext(ExactNumNumber::new(p), false, true)
     }
 
@@ -1740,6 +1743,9 @@ impl ExactNum {
     /// Returns a new number with value `d` and the precision `p`. Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn from_word(d: Word, p: usize) -> Self {
+        if p < crate::defs::MIN_PRECISION {
+            return Self::nan(Some(Error::InvalidArgument));
+        }
         Self::result_to_ext(ExactNumNumber::from_word(d, p), false, true)
     }
 

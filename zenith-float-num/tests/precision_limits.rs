@@ -24,15 +24,19 @@ fn precision_zero_is_rejected() {
     let z = ExactNum::new(0);
     assert!(z.is_nan(), "ExactNum::new(0) must be NaN");
     assert_eq!(z.err(), Some(Error::InvalidArgument));
-    assert!(ExactNum::from_word(1, 0).is_nan(), "from_word(1, 0) must be NaN");
+    assert!(
+        ExactNum::from_word(1, 0).is_nan(),
+        "from_word(1, 0) must be NaN"
+    );
     assert!(!ExactNum::new(MIN_PRECISION).is_nan());
 }
+
+const _: () = assert!(MAX_PRECISION < usize::MAX / 4);
 
 #[test]
 fn max_precision_is_the_largest_accepted_precision() {
     let over = ExactNum::new(MAX_PRECISION + 1);
     assert_eq!(over.err(), Some(Error::InvalidArgument));
-    assert!(MAX_PRECISION < usize::MAX / 4);
 }
 
 #[test]
