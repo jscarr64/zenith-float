@@ -374,7 +374,7 @@ _ps_round() {
   POPSLOT_WHY="slot taken by an old-code waiter"; exec {lk}>&-; return 1
 }
 pop_slot_acquire() {
-  POPSLOT_N=${1:-${POPSLOT_SLOTS:-4}}; POPSLOT_PREFIX=${POPSLOT_PREFIX:-/tmp/pop-gate.slot}
+  POPSLOT_N=${1:-${POPSLOT_SLOTS:-8}}; POPSLOT_PREFIX=${POPSLOT_PREFIX:-/tmp/pop-gate.slot}
   if [[ -n "${POPSLOT_HOLDER_PID:-}" && -n "${POPSLOT_SLOT:-}" ]] && kill -0 "$POPSLOT_HOLDER_PID" 2>/dev/null; then
     POPSLOT_WAITED=0; _ps_note "SLOT REUSED slot=$POPSLOT_SLOT (held by ancestor pid $POPSLOT_HOLDER_PID)"; return 0
   fi
@@ -410,7 +410,7 @@ pop_slot_acquire() {
   POPSLOT_HOLDER_PID=$$
   export POPSLOT_SLOT POPSLOT_FD POPSLOT_HELD=$POPSLOT_SLOT POPSLOT_HOLDER_PID POPSLOT_AGENT
   # Per-gate budget (Paul 2026-10-23): 4 slots x 6 jobs = 24 of 32 cores, unless the caller overrides.
-  local sj=${POPSLOT_JOBS:-6} stale=''
+  local sj=${POPSLOT_JOBS:-4} stale=''
   [[ -n "${CARGO_BUILD_JOBS:-}" && "$CARGO_BUILD_JOBS" != "$sj" ]] && stale+="CARGO_BUILD_JOBS=$CARGO_BUILD_JOBS "
   [[ -n "${RUST_TEST_THREADS:-}" && "$RUST_TEST_THREADS" != "$sj" ]] && stale+="RUST_TEST_THREADS=$RUST_TEST_THREADS "
   [[ -n "$stale" ]] && _ps_note "SLOT overriding stale ${stale}-> $sj (slot value)"

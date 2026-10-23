@@ -28,9 +28,9 @@ echo "poplog: $POPLOG_FILE" | tee -a "$T/$tag.rc" >&2
 # Pop scheduling (Paul, 2026-10-23): heavy gates share 3 counting-lock slots (/tmp/pop-gate.slot1..3, replaces the
 # single flock /tmp/pop-gate.lock), 8 jobs each (24 of 32 cores). The slot is held on an fd until this script exits;
 # waiting shows as WAITING in ~/pop-logs/RUNNING.tsv. Skipped when a caller already holds a slot (POPSLOT_HELD).
-# CARGO_BUILD_JOBS / RUST_TEST_THREADS default to the slot value 6 (pop_slot_acquire) unless the caller sets them.
-if [[ -z "${POPSLOT_HELD:-}" ]]; then pop_slot_acquire "${POPSLOT_SLOTS:-4}"; fi
-export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-6} RUST_TEST_THREADS=${RUST_TEST_THREADS:-6}
+# CARGO_BUILD_JOBS / RUST_TEST_THREADS default to the slot value POPSLOT_JOBS (4) (pop_slot_acquire) unless the caller sets them.
+if [[ -z "${POPSLOT_HELD:-}" ]]; then pop_slot_acquire "${POPSLOT_SLOTS:-8}"; fi
+export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-4}} RUST_TEST_THREADS=${RUST_TEST_THREADS:-${POPSLOT_JOBS:-4}}
 TT="-- --test-threads=$RUST_TEST_THREADS"
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".
