@@ -131,6 +131,7 @@ Only `add`, `sub`, `mul`, and `div` rounded at exactly `p` bits; every other fun
 - `fma` dropped a far-smaller addend, which gave wrong directed results and flags; an exact cancellation is `-0` under `Down`.
 - `nth_root` chained square and cube roots and rounded twice.
 - Parsing rounds the decimal value once at `p` bits.
+- `Consts::pi`, `e`, `ln_2` and `ln_10` rounded at `p` rounded up to a word (346 of 432 MPFR cases wrong at `p` from 1 to 4097); they now round once at exactly `p` bits in all six modes.
 
 Results can differ from 1.x in the last bit. Code that compared bit patterns with 1.x output has to regenerate them.
 
