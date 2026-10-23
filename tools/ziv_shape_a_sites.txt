@@ -6,3 +6,4 @@ zenith-float-num/src/ops/sinh.rs	sinh	sinh_series takes the input by value each 
 zenith-float-num/src/ops/sin_cos.rs	sin_cos	sin_series and cos_series both consume the reduced input each pass (sin_cos.rs:66)
 zenith-float-num/src/ops/cos.rs	cos	cos_series consumes a fresh input copy each pass (cos.rs:71)
 zenith-float-num/src/ops/sin.rs	sin	sin_series consumes a fresh input copy each pass (sin.rs:68)
+zenith-float-num/src/ops/log.rs	normalized_if_subnormal	ln/log2 entry: a subnormal input needs one owned normalized copy (once per call, not per pass; a normal input is borrowed)
