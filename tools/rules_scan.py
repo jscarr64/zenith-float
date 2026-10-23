@@ -58,6 +58,14 @@ approved exception), comments, doc comments and string literals, and names that 
 called `neg_via_mul_equals_neg_...` is not a use). The count only exists to stop growth: it may only go down, against
 tools/neg_via_mul_count_baseline.txt (CODEOWNERS: Jeff), lowered with --update-baseline. Prefer `neg` on an owned
 operand; a use that survives must be a borrowed operand that is still live.
+
+HELPER-COPY RULING (Jeff, 2026-10-16, tools/NO_CLONE_RULES.md "Ruling: helper_copy"): (1) COMBINED: clone count +
+helper-copy count may never exceed tools/clone_helper_combined_baseline.txt (only down). (2) PER COMMIT (range mode):
+in every commit of the range after tools/helper_copy_rule_base.txt (every commit when that file is absent), the
+helper-copy count may rise only if the clone count falls by at least as much in that same commit. (3) PINNED SITES:
+every use of `ziv_pass_operand` outside its own file must sit in a (file, fn) listed in tools/ziv_shape_a_sites.txt
+(`path<TAB>fn<TAB>reason`), and that list must be covered by a .github/CODEOWNERS line owned by @jscarr64. (1) and
+the CODEOWNERS check apply whenever tools/ziv_shape_a_sites.txt exists; (3) applies to every use.
 """
 import hashlib, os, re, subprocess, sys, collections
 
@@ -443,9 +451,118 @@ def neg_via_mul_check(update=False):
     return ratchet("neg_via_mul", "neg_via_mul_count_baseline.txt", neg_via_mul_count(), update, "use count")
 
 
+# ---- helper-copy ruling (Jeff, 2026-10-16) ----
+PINNED_FILE = "tools/ziv_shape_a_sites.txt"
+COMBINED_FILE = "clone_helper_combined_baseline.txt"
+RULE_BASE_FILE = "tools/helper_copy_rule_base.txt"
+FN_DEF = re.compile(r"\bfn\s+(\w+)")
+
+
+def pinned_sites():
+    """{(path, fn)} from tools/ziv_shape_a_sites.txt, or None when the file is absent"""
+    try:
+        text = open(os.path.join(ROOT, PINNED_FILE), errors="replace").read()
+    except OSError:
+        return None
+    out = set()
+    for l in text.split("\n"):
+        if not l.strip() or l.lstrip().startswith("#"):
+            continue
+        f = l.split("\t")
+        if len(f) >= 2:
+            out.add((f[0].strip(), f[1].strip()))
+    return out
+
+
+def enclosing_fn(rel, line):
+    lines = open(os.path.join(ROOT, rel), errors="replace").read().split("\n")
+    for l in reversed(lines[:line]):
+        m = FN_DEF.search(strip(l))
+        if m:
+            return m.group(1)
+    return None
+
+
+def codeowners_cover(path, owner="@jscarr64"):
+    try:
+        owners = open(os.path.join(ROOT, ".github", "CODEOWNERS"), errors="replace").read().split("\n")
+    except OSError:
+        return False
+    return any(l.split()[:1] == ["/" + path] and owner in l.split()[1:] for l in owners if not l.lstrip().startswith("#"))
+
+
+def ruling_check(update=False):
+    rc = 0
+    pinned = pinned_sites()
+    for rel, line, name in no_clone.helper_sites():
+        if name != ZIV_NAME:
+            continue
+        fn = enclosing_fn(rel, line)
+        if pinned is None or (rel, fn) not in pinned:
+            print("rules_scan: ziv_pass_operand use at %s:%d (fn %s) is not on the pinned shape-A list %s" % (rel, line, fn, PINNED_FILE))
+            rc = 1
+    if pinned is not None:
+        if not codeowners_cover(PINNED_FILE):
+            print("rules_scan: %s is not covered by CODEOWNERS for @jscarr64 (/%s @jscarr64)" % (PINNED_FILE, PINNED_FILE))
+            rc = 1
+        rc = max(rc, ratchet("clone+helper_copy combined", COMBINED_FILE, clone_count() + helper_copy_count(), update))
+    return rc
+
+
+def counts_at(rev, tmp):
+    """(clone, helper_copy) of the tree at rev, counted by this scanner"""
+    d = os.path.join(tmp, rev)
+    os.makedirs(d, exist_ok=True)
+    a = subprocess.run(["git", "-C", ROOT, "archive", rev], capture_output=True)
+    if a.returncode != 0:
+        return None
+    t = subprocess.run(["tar", "-x", "-C", d], input=a.stdout, capture_output=True)
+    if t.returncode != 0:
+        return None
+    env = dict(os.environ, RULES_SCAN_ROOT=d, NO_CLONE_ROOT=d)
+    r = subprocess.run([sys.executable, os.path.abspath(__file__), "--print-counts"], env=env, capture_output=True, text=True)
+    f = r.stdout.split()
+    if r.returncode != 0 or len(f) != 2:
+        return None
+    return int(f[0]), int(f[1])
+
+
+def per_commit_check(rng):
+    import tempfile
+    commits = [c for c in git("rev-list", "--reverse", "--first-parent", rng).stdout.split()]
+    try:
+        base = open(os.path.join(ROOT, RULE_BASE_FILE)).read().split()[0]
+        after = set(git("rev-list", base + ".." + rng.split("..")[-1]).stdout.split())
+        commits = [c for c in commits if c in after]
+    except (OSError, IndexError):
+        pass
+    rc = 0
+    with tempfile.TemporaryDirectory() as tmp:
+        cache = {}
+        for c in commits:
+            parent = git("rev-parse", "--verify", "-q", c + "^").stdout.strip()
+            if not parent:
+                continue
+            for r in (parent, c):
+                if r not in cache:
+                    cache[r] = counts_at(r, tmp)
+            a, b = cache[parent], cache[c]
+            if a is None or b is None:
+                print("rules_scan: could not count commit %s" % c[:10])
+                rc = 1
+                continue
+            dh, dc = b[1] - a[1], a[0] - b[0]
+            if dh > 0 and dc < dh:
+                print("rules_scan: commit %s raises helper_copy by %d but lowers clones by only %d (helper_copy may rise only with an equal-or-larger clone drop)" % (c[:10], dh, dc))
+                rc = 1
+    if rc == 0:
+        print("rules_scan: per-commit helper_copy rule holds on %d commit(s)" % len(commits))
+    return rc
+
+
 def both_count_checks(update=False):
     rc = max(count_check(update), ref_count_check(update), helper_count_check(update), exception_check(update),
-             test_panic_check(update), neg_via_mul_check(update))
+             test_panic_check(update), neg_via_mul_check(update), ruling_check(update))
     if rc == 0:
         print("rules_scan: all count baselines hold")
     return rc
@@ -457,6 +574,9 @@ def main(argv):
         for rel, n, label in sites:
             print("%s:%d [%s]" % (rel, n, label))
         print("rules_scan: %d test-panic sites %s" % (len(sites), dict(sorted(collections.Counter(x[2] for x in sites).items()))))
+        return 0
+    if "--print-counts" in argv:
+        print("%d %d" % (clone_count(), helper_copy_count()))
         return 0
     if "--count-only" in argv:
         return both_count_checks()
@@ -490,7 +610,7 @@ def main(argv):
     print("rules_scan: %d flagged %s" % (len(hits), dict(by)))
     rc = 1 if hits else 0
     if with_count and not os.environ.get("RULES_SCAN_SKIP_COUNT"):
-        rc = max(rc, both_count_checks())
+        rc = max(rc, both_count_checks(), per_commit_check(rng))
     return rc
 
 

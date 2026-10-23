@@ -15,3 +15,6 @@
 /tools/no_clone.sh @jscarr64
 /tools/full_gate.sh @jscarr64
 /zenith-float-num/src/num/ziv_operand.rs @jscarr64
+/tools/ziv_shape_a_sites.txt @jscarr64
+/tools/clone_helper_combined_baseline.txt @jscarr64
+/tools/helper_copy_rule_base.txt @jscarr64

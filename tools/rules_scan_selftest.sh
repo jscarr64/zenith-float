@@ -369,9 +369,62 @@ printf 'impl N { pub(crate) fn ziv_pass_operand(&self, p: usize) -> N { go(self,
 scan --update-baseline >/dev/null && fail "raising the exception baseline for the helper allowed"; [ "$(tr -d '[:space:]' < tools/exception_count_baseline.txt)" = 0 ] || fail "exception baseline raised for the helper"
 # every use of the helper counts in the helper-copy counter; the definition does not
 printf 'fn u(m: &N) { let a = m.ziv_pass_operand(p); let b = N::ziv_pass_operand(m, q); }\n// m.ziv_pass_operand(p) in a comment\n' > zenith-float-num/src/x.rs
-echo 1 > tools/exception_count_baseline.txt; echo 1 > tools/helper_copy_count_baseline.txt
+printf 'zenith-float-num/src/x.rs\tu\tthe kernel consumes its argument each pass\n' > tools/ziv_shape_a_sites.txt
+printf '/zenith-float-num/src/num/ziv_operand.rs @jscarr64\n/tools/ziv_shape_a_sites.txt @jscarr64\n' > .github/CODEOWNERS
+echo 1 > tools/exception_count_baseline.txt; echo 1 > tools/helper_copy_count_baseline.txt; echo 2 > tools/clone_helper_combined_baseline.txt
 scan --count-only | grep -q "helper-copy count 2 is ABOVE the baseline 1" || fail "uses of ziv_pass_operand not counted by the helper-copy counter: $(scan --count-only)"
 echo 2 > tools/helper_copy_count_baseline.txt; scan --count-only >/dev/null || fail "two uses vs helper-copy baseline 2 should pass: $(scan --count-only)"
+
+# ---- helper-copy ruling (Jeff, 2026-10-16): combined clone+helper_copy ratchet, per-commit rule, pinned shape-A sites ----
+# (a) a use outside the pinned list fails; a missing list with a use fails
+printf 'fn u(m: &N) { let a = m.ziv_pass_operand(p); }\nfn w(m: &N) { let b = m.ziv_pass_operand(q); }\n' > zenith-float-num/src/x.rs
+scan --count-only | grep -q "ziv_pass_operand use at zenith-float-num/src/x.rs:2 (fn w) is not on the pinned shape-A list" || fail "a use outside the pinned list not reported: $(scan --count-only)"
+scan --count-only >/dev/null && fail "a ziv_pass_operand use outside the pinned list passed"
+printf 'zenith-float-num/src/x.rs\tu\tr\nzenith-float-num/src/x.rs\tw\tr\n' > tools/ziv_shape_a_sites.txt
+scan --count-only >/dev/null || fail "both uses pinned should pass: $(scan --count-only)"
+mv tools/ziv_shape_a_sites.txt tools/pinned.bak
+scan --count-only | grep -q "is not on the pinned shape-A list" || fail "a use with no pinned list not reported: $(scan --count-only)"
+scan --count-only >/dev/null && fail "a use with no pinned list passed"
+mv tools/pinned.bak tools/ziv_shape_a_sites.txt
+# (b) the pinned list must be covered by CODEOWNERS for @jscarr64
+printf '/zenith-float-num/src/num/ziv_operand.rs @jscarr64\n' > .github/CODEOWNERS
+scan --count-only | grep -q "ziv_shape_a_sites.txt is not covered by CODEOWNERS for @jscarr64" || fail "uncovered pinned list not reported: $(scan --count-only)"
+scan --count-only >/dev/null && fail "pinned list without CODEOWNERS passed"
+printf '/zenith-float-num/src/num/ziv_operand.rs @jscarr64\n/tools/ziv_shape_a_sites.txt @someone\n' > .github/CODEOWNERS
+scan --count-only >/dev/null && fail "pinned list owned by someone else passed"
+printf '/zenith-float-num/src/num/ziv_operand.rs @jscarr64\n/tools/ziv_shape_a_sites.txt @jscarr64\n' > .github/CODEOWNERS
+# (c) the combined clone+helper_copy count may only go down, even when each separate baseline is raised to cover it
+printf 'fn u(m: &N) { let a = m.ziv_pass_operand(p); }\nfn w(m: &N) { let b = m.ziv_pass_operand(q); let c = m.clone(); }\n' > zenith-float-num/src/x.rs
+echo 1 > tools/clone_count_baseline.txt
+scan --count-only | grep -q "clone+helper_copy combined count 3 is ABOVE the baseline 2" || fail "combined rise not reported: $(scan --count-only)"
+scan --count-only >/dev/null && fail "combined clone+helper_copy rise passed"
+echo 3 > tools/clone_helper_combined_baseline.txt; scan --count-only >/dev/null || fail "combined at baseline should pass: $(scan --count-only)"
+echo 9 > tools/clone_helper_combined_baseline.txt; scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/clone_helper_combined_baseline.txt)" = 3 ] || fail "combined baseline not lowered"
+echo 2 > tools/clone_helper_combined_baseline.txt; scan --update-baseline >/dev/null && fail "raising the combined baseline allowed"; [ "$(tr -d '[:space:]' < tools/clone_helper_combined_baseline.txt)" = 2 ] || fail "combined baseline raised"
+rm -f tools/clone_helper_combined_baseline.txt; scan --count-only >/dev/null && fail "missing combined baseline passed"
+# (d) per commit: helper_copy may rise only in a commit that lowers clones by at least as many
+printf 'fn u(m: &N) { let a = m.clone(); }\nfn w(m: &N) { let b = m.clone(); }\n' > zenith-float-num/src/x.rs
+echo 2 > tools/clone_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt; echo 2 > tools/clone_helper_combined_baseline.txt
+git add -A; git commit -qm r0; r0=$(git rev-parse HEAD)
+printf 'fn u(m: &N) { let a = m.ziv_pass_operand(p); }\nfn w(m: &N) { let b = m.clone(); }\n' > zenith-float-num/src/x.rs
+echo 1 > tools/clone_count_baseline.txt; echo 1 > tools/helper_copy_count_baseline.txt
+git add -A; git commit -qm swap1
+scan "$r0..HEAD" >/dev/null || fail "a clone replaced by one helper use in one commit should pass: $(scan "$r0..HEAD")"
+r1=$(git rev-parse HEAD)
+printf 'fn u(m: &N) { let a = m.ziv_pass_operand(p); }\nfn w(m: &N) { let b = m.clone(); }\nfn x(m: &N) { let c = exact_copy(m); }\n' > zenith-float-num/src/x.rs
+echo 2 > tools/helper_copy_count_baseline.txt; echo 3 > tools/clone_helper_combined_baseline.txt
+git add -A; git commit -qm rise
+printf 'fn u(m: &N) { let a = m.ziv_pass_operand(p); }\nfn w(m: &N) { let b = m.ziv_pass_operand(p); }\nfn x(m: &N) { let c = exact_copy(m); }\n' > zenith-float-num/src/x.rs
+printf 'zenith-float-num/src/x.rs\tu\tr\nzenith-float-num/src/x.rs\tw\tr\n' > tools/ziv_shape_a_sites.txt
+echo 0 > tools/clone_count_baseline.txt; echo 3 > tools/helper_copy_count_baseline.txt
+git add -A; git commit -qm swap2
+out="$(scan "$r1..HEAD")" && fail "a helper_copy rise without a clone drop passed (net over the range is fine, the commit is not): $out"
+echo "$out" | grep -q "raises helper_copy by 1 but lowers clones by only 0" || fail "per-commit helper rise not reported: $out"
+git rev-parse HEAD > tools/helper_copy_rule_base.txt; git add -A; git commit -qm base-after
+scan "$(git rev-parse HEAD~1)..HEAD" >/dev/null || fail "commits before the rule base must not be checked: $(scan "$(git rev-parse HEAD~1)..HEAD")"
+git rm -q tools/helper_copy_rule_base.txt; git commit -qm unbase
+rm -f tools/ziv_shape_a_sites.txt tools/clone_helper_combined_baseline.txt; echo 0 > tools/clone_count_baseline.txt
+
 rm -f $ZH; rm -rf zenith-float-num/src/num; : > .github/CODEOWNERS; printf 'fn a() {}\n' > zenith-float-num/src/x.rs
 echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt
 

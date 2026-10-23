@@ -1,0 +1,8 @@
+# Pinned shape-A Ziv sites allowed to use ExactNumNumber::ziv_pass_operand (Jeff, 2026-10-16). One line: file<TAB>fn<TAB>reason.
+# Owned by @jscarr64 in .github/CODEOWNERS; tools/rules_scan.py rejects any use outside this list.
+zenith-float-num/src/ops/log.rs	ln	ln_series consumes the widened input each pass (log.rs:133)
+zenith-float-num/src/ops/log.rs	log2	ln_series consumes the widened input each pass (log.rs:266)
+zenith-float-num/src/ops/sinh.rs	sinh	sinh_series takes the input by value each pass (sinh.rs:49)
+zenith-float-num/src/ops/sin_cos.rs	sin_cos	sin_series and cos_series both consume the reduced input each pass (sin_cos.rs:66)
+zenith-float-num/src/ops/cos.rs	cos	cos_series consumes a fresh input copy each pass (cos.rs:71)
+zenith-float-num/src/ops/sin.rs	sin	sin_series consumes a fresh input copy each pass (sin.rs:68)

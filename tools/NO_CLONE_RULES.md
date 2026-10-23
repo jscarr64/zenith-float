@@ -201,3 +201,18 @@ The owned form compiles and runs in the same crate (`cargo run --bin borrowck-de
 
 `ExtraCache::for_prec` in `zenith-float-num/src/ops/consts/mod.rs` (two `.clone()` sites, the shared cache for
 phi/euler-style constants) and `#[derive(Clone)]` on `CachedFBig` are NOT listed and still count as violations.
+
+## Helper-copy ruling (Jeff, 2026-10-16 8:25 AM CT, relayed by Paul)
+
+"helper_copy may rise only in a commit that lowers clones by at least as many; combined clone+helper_copy ratchet
+that only goes down; a pinned, CODEOWNERS-protected (@jscarr64) list of allowed shape-A Ziv sites; loop conversions
+may resume after Stage A is gate-green."
+
+How `tools/rules_scan.py` enforces it:
+
+| rule | check | file |
+|---|---|---|
+| combined count only goes down | `ruling_check()` ratchet on clone + helper_copy | `tools/clone_helper_combined_baseline.txt` (806) |
+| helper_copy rises only with an equal-or-larger clone drop, per commit | `per_commit_check()` in range mode, commits after the rule base | `tools/helper_copy_rule_base.txt` |
+| `ziv_pass_operand` used only at pinned sites | `ruling_check()`, by file and enclosing `fn` | `tools/ziv_shape_a_sites.txt` |
+| the pinned list is owned by @jscarr64 | `codeowners_cover()` | `.github/CODEOWNERS` |
