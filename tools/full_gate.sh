@@ -13,9 +13,14 @@
 # and the neg_via_mul use-count baseline (tools/neg_via_mul_count_baseline.txt, all scanned code incl. tests; it only goes down).
 # the clone count includes test code. `no-clone-progress` also prints the helper-copy count. All baselines only go down.
 set -u
+gate_dir=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 T=${T:-/tmp/zf-gate-logs}; mkdir -p "$T"
 cd "${REPO:-$(cd "$(dirname "$0")/.." && pwd)}" || exit 2
 tag=${1:?usage: tools/full_gate.sh TAG}; : > "$T/$tag.rc"
+# shellcheck disable=SC1091
+if [[ -f "$HOME/pop-logs/bin/poplog.sh" ]]; then source "$HOME/pop-logs/bin/poplog.sh"; else source "$gate_dir/../scripts/poplog.sh"; fi
+poplog_init "${POPLOG_AGENT:-rusty}" "full_gate-$tag" "$PWD" "tools/full_gate.sh $tag"
+echo "poplog: $POPLOG_FILE" | tee -a "$T/$tag.rc" >&2
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".
 missing=()
@@ -23,10 +28,24 @@ for tool in bash timeout cargo rustup git grep python3 tail; do command -v "$too
 cargo audit --version >/dev/null 2>&1 || missing+=("cargo-audit")
 if [[ "${#missing[@]}" -gt 0 ]]; then
   echo "error: missing tools: ${missing[*]}" | tee -a "$T/$tag.rc" >&2
-  echo "preflight=2" >> "$T/$tag.rc"; exit 2
+  echo "preflight=2" >> "$T/$tag.rc"; POPLOG_WARNINGS+=("preflight: missing ${missing[*]}"); poplog_finish 2; exit 2
 fi
 # pipefail: a failing command inside a step's pipeline fails the step
-run() { name=$1; shift; echo "start $name $(date +%T)" >> "$T/$tag.rc"; timeout "${STEP_TIMEOUT:-20m}" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1; echo "$name=$?" >> "$T/$tag.rc"; }
+# Jeff's logging rule (2026-10-23): every step is logged via poplog (~/pop-logs/bin/poplog.sh, else the vendored
+# scripts/poplog.sh): header (cmd, repo, SHA, rustc, CARGO_TARGET_DIR), per-step start/end/duration/rc/test counts,
+# 5-min heartbeats, RUNNING.tsv row, PASS/FAIL footer. A test step reporting zero tests FAILs. Exit is nonzero on FAIL.
+TEST_STEPS=" build-debug build-release features-random-serde oracle-fast oracle-deep mpfr "
+run() {
+  name=$1; shift; echo "start $name $(date +%T)" >> "$T/$tag.rc"
+  log_step_start "$name"; ln -sf "$T/$tag-$name.log" "$POPLOG_STATE_DIR/out"
+  timeout "${STEP_TIMEOUT:-20m}" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1 &
+  POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"
+  wait "$POPLOG_CHILD_PID"; rc=$?; POPLOG_CHILD_PID=""
+  echo "$name=$rc" >> "$T/$tag.rc"
+  tests=""; [[ "$TEST_STEPS" == *" $name "* ]] && tests=--tests
+  log_step_end "$name" "$rc" "$T/$tag-$name.log" "$tests" || true
+  echo "  output: $T/$tag-$name.log" >> "$POPLOG_FILE"
+}
 ORACLES="--test oracle --test specials_oracle --test methods_oracle --test accuracy_table --test elliptic_phi"
 run build-debug "cargo test --workspace"
 run build-release "cargo test --workspace --release"
@@ -49,3 +68,5 @@ run hex-32bit "bash scripts/ci_hex_32bit.sh"
 run unsafe-scan "bash tools/gate_unsafe_scan.sh"
 run prepublish "bash scripts/zenith_prepublish.sh"
 echo "done" >> "$T/$tag.rc"
+poplog_finish
+exit "$POPLOG_OVERALL"
