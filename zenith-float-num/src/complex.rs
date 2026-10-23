@@ -1140,6 +1140,18 @@ mod tests {
     use crate::NAN;
 
     #[test]
+    fn div_rounds_the_exact_quotient_once() {
+        // (-7i) / (-7i) = 1 exactly; rounding the numerator 49 to one bit first gave 32/49.
+        let m7i = || ExactComplex::new(ExactNum::new(64), -ExactNum::from_u8(7, 64));
+        for rm in [RoundingMode::ToZero, RoundingMode::Down, RoundingMode::Up, RoundingMode::ToEven] {
+            let q = m7i().div(&m7i(), 1, rm);
+            assert_eq!(q.re().compare(&ExactNum::from_u8(1, 64)), Some(0), "{rm:?}");
+            assert!(q.im().is_zero(), "{rm:?}");
+            assert!(!q.inexact(), "{rm:?}");
+        }
+    }
+
+    #[test]
     fn mul_reports_a_product_that_rounded_to_a_zero_part() {
         // im = (-7)(tiny) + 0 * 0: the product underflows to -0 at p = 1, so the operation rounded.
         let tiny = ExactNum::from_u8(3, 64)
