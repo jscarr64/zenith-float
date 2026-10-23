@@ -4563,6 +4563,30 @@ mod tests {
     }
 
     #[test]
+    fn finite_divided_by_infinity_is_a_zero_with_the_sign_of_the_quotient() {
+        // IEEE 754 / MPFR: x / ±Inf = ±0 with sign(x) xor sign(divisor).
+        let xs = [
+            ExactNum::new(64),
+            -ExactNum::new(64),
+            ExactNum::from_u8(2, 64),
+            -ExactNum::from_u8(7, 64),
+        ];
+        for x in &xs {
+            for d in [INF_POS, INF_NEG] {
+                let want_neg = x.is_negative() != d.is_negative();
+                for q in [
+                    ExactNum::div_ref(x, &d, 64, RoundingMode::ToEven),
+                    ExactNum::div_ref(x, &d, 64, RoundingMode::Down),
+                    x / if d.is_negative() { INF_NEG } else { INF_POS },
+                ] {
+                    assert!(q.is_zero(), "{x:?} / {d:?} = {q:?}");
+                    assert_eq!(q.is_negative(), want_neg, "{x:?} / {d:?} = {q:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
     fn test_ext() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToOdd;
         let mut cc = Consts::new()?;
