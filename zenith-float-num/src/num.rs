@@ -52,7 +52,7 @@ impl ExactNumNumber {
     // Check the precision so it does not cause arithmetic overflows anywhere.
     pub(super) fn p_assertion(p: usize) -> Result<(), Error> {
         // Exponent arithmetic is done in i64; sizes in usize, which is 32 bits wide on some targets.
-        if p > crate::defs::MAX_PRECISION {
+        if p == 0 || p > crate::defs::MAX_PRECISION {
             Err(Error::InvalidArgument)
         } else {
             Ok(())
@@ -67,6 +67,22 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     pub fn new(p: usize) -> Result<Self, Error> {
         Self::p_assertion(p)?;
+        Ok(ExactNumNumber {
+            m: Mantissa::new(p)?,
+            e: 0,
+            s: Sign::Pos,
+            inexact: false,
+            op_inexact: None,
+        })
+    }
+
+    /// Like [`Self::new`], but also accepts `p = 0` (an empty mantissa). Crate-private: the full-precision
+    /// kernels (`add_full_prec`, `sub_full_prec`, `mul_full_prec`) use `p = 0` to mean "as wide as the exact
+    /// result", and the constants cache builds on them. Public entry points reject `p = 0`.
+    pub(crate) fn new_internal(p: usize) -> Result<Self, Error> {
+        if p > crate::defs::MAX_PRECISION {
+            return Err(Error::InvalidArgument);
+        }
         Ok(ExactNumNumber {
             m: Mantissa::new(p)?,
             e: 0,
@@ -387,12 +403,14 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let p = round_p(p);
 
-        Self::p_assertion(p)?;
+        if !full_prec {
+            Self::p_assertion(p)?;
+        }
 
         let s = if self.s == d2.s { Sign::Pos } else { Sign::Neg };
 
         if self.m.is_zero() || d2.m.is_zero() {
-            let mut ret = Self::new(p)?;
+            let mut ret = Self::new_internal(p)?;
             ret.set_sign(s);
             return Ok(ret);
         }
@@ -673,16 +691,18 @@ impl ExactNumNumber {
         per_op: bool,
     ) -> Result<Self, Error> {
         let p = round_p(p);
-        Self::p_assertion(p)?;
+        if !full_prec {
+            Self::p_assertion(p)?;
+        }
 
-        let mut d3 = Self::new(0)?;
+        let mut d3 = Self::new_internal(0)?;
 
         // Both operands are zero: the result is a zero of precision `p`, signed by the rules for zeros.
         if self.m.is_zero() && d2.m.is_zero() {
             let other = if op < 0 { d2.s.invert() } else { d2.s };
             let negative =
                 if self.s == other { self.s == Sign::Neg } else { rm == RoundingMode::Down };
-            let mut ret = Self::new(p)?;
+            let mut ret = Self::new_internal(p)?;
             ret.finish_flags(d2.inexact, per_op);
             ret.set_sign(if negative { Sign::Neg } else { Sign::Pos });
             return Ok(ret);
@@ -761,7 +781,7 @@ impl ExactNumNumber {
                     &mut inexact,
                 )
             } else {
-                let mut ret = Self::new(p)?;
+                let mut ret = Self::new_internal(p)?;
                 ret.inexact = inexact;
                 ret.finish_flags(inputs, per_op);
                 if rm == RoundingMode::Down {
@@ -1063,7 +1083,7 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    ///  - InvalidArgument: size of `m` is larger than i64::MAX / 2 + EXPONENT_MIN, or
+    ///  - InvalidArgument: `m` is empty, or its size is larger than i64::MAX / 2 + EXPONENT_MIN, or
     ///    when `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
     pub fn from_words(m: &[Word], s: Sign, mut e: Exponent) -> Result<Self, Error> {
         let p = m.len() * WORD_BIT_SIZE;
@@ -2633,12 +2653,11 @@ mod tests {
         assert!(!d1.is_odd_int());
 
         // build from words
-        let d1 = ExactNumNumber::from_words(&[], Sign::Pos, EXPONENT_MAX)?;
-        assert!(d1.is_zero());
-        assert_eq!(d1.exponent(), 0);
-        assert_eq!(d1.precision(), 0);
-        assert_eq!(d1.mantissa_max_bit_len(), 0);
-        assert_eq!(d1.sign(), Sign::Pos);
+        // An empty mantissa is precision 0, which is rejected (2.0: `MIN_PRECISION` is 1).
+        assert!(matches!(
+            ExactNumNumber::from_words(&[], Sign::Pos, EXPONENT_MAX),
+            Err(Error::InvalidArgument)
+        ));
 
         let d1 = ExactNumNumber::from_words(&[0, 0], Sign::Neg, EXPONENT_MIN)?;
         assert!(d1.is_zero());

@@ -55,10 +55,6 @@ impl ExactNumNumber {
         if p < usize::MAX {
             p = round_p(p);
             Self::p_assertion(p)?;
-
-            if p == 0 {
-                return Self::new(0);
-            }
         }
 
         match rdx.value() {
@@ -1241,17 +1237,20 @@ mod tests {
                     ),
                     Err(Error::InvalidArgument)
                 ));
+                // `p = 0` is rejected (2.0: `MIN_PRECISION` is 1).
                 let m1 = [1, rdx.value() - 1, 0];
-                assert!(ExactNumNumber::convert_from_radix(
-                    s1,
-                    &m1,
-                    e1,
-                    rdx,
-                    0,
-                    RoundingMode::ToEven,
-                    &mut cc,
-                )?
-                .is_zero());
+                assert!(matches!(
+                    ExactNumNumber::convert_from_radix(
+                        s1,
+                        &m1,
+                        e1,
+                        rdx,
+                        0,
+                        RoundingMode::ToEven,
+                        &mut cc,
+                    ),
+                    Err(Error::InvalidArgument)
+                ));
                 let m1 = [0; 256];
                 assert!(ExactNumNumber::convert_from_radix(
                     s1,

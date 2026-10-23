@@ -1421,7 +1421,11 @@ impl ExactNum {
     where
         F: FnMut(usize, RoundingMode) -> Self,
     {
-        let direct = rm == RoundingMode::None || p == 0 || p >= usize::MAX / 4;
+        // Every public entry point that goes through here rejects `p = 0` (2.0: `MIN_PRECISION` is 1).
+        if p < crate::defs::MIN_PRECISION {
+            return Self::nan(Some(Error::InvalidArgument));
+        }
+        let direct = rm == RoundingMode::None || p >= usize::MAX / 4;
         let mut r = if direct {
             f(p, rm)
         } else if p.is_multiple_of(WORD_BIT_SIZE) {
