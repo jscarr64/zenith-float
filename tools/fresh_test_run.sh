@@ -3,7 +3,9 @@
 # CARGO_TARGET_DIR (/tmp/target-<agent>-<worktree>) and runs only test binaries built inside it.
 # usage: tools/fresh_test_run.sh --claim
 #          CARGO_TARGET_DIR must be set and the cwd inside a git worktree; the first worktree to use the dir is
-#          written to $CARGO_TARGET_DIR/.worktree-owner and any other worktree on that dir FAILs (SHARED).
+#          written to $CARGO_TARGET_DIR/.worktree-owner and any other worktree on that dir FAILs (SHARED);
+#          a non-empty dir without that marker FAILs (UNMARKED). Override dirs (CARGO_BUILD_TARGET_DIR,
+#          --target-dir) take the same check.
 #        tools/fresh_test_run.sh cargo test ARGS... [-- TEST-ARGS...]
 #          --claim, then build with `cargo test ARGS --no-run --message-format=json`, then the binary check:
 #          at least one test binary, every one exists and lies inside CARGO_TARGET_DIR (else FOREIGN), all
@@ -24,15 +26,36 @@ esac
 [[ -n ${CARGO_TARGET_DIR:-} ]] || die "CARGO_TARGET_DIR is unset (one target dir per worktree: /tmp/target-<agent>-<worktree>)"
 wt=$(git rev-parse --show-toplevel 2> /dev/null) || die "$(pwd) is not inside a git worktree"
 wt=$(cd "$wt" && pwd -P)
-mkdir -p "$CARGO_TARGET_DIR" || die "cannot create target dir $CARGO_TARGET_DIR"
-td=$(cd "$CARGO_TARGET_DIR" && pwd -P)
-mk=$td/.worktree-owner
-if [[ -f $mk ]]; then
-  owner=$(cat "$mk")
-  [[ $owner == "$wt" ]] || die "SHARED target dir $td is owned by worktree $owner, not $wt (one target dir per worktree)"
-else
-  printf '%s\n' "$wt" > "$mk" || die "cannot write $mk"
-fi
+# claim_dir DIR: print DIR's real path if this worktree owns it. A dir with no marker is claimed only when
+# absent or empty; a non-empty unmarked dir (stale binaries, or a deleted marker) FAILs (UNMARKED).
+claim_dir() {
+  local d=$1 r m owner
+  if [[ -d $d && ! -f $d/.worktree-owner && -n $(ls -A "$d") ]]; then
+    die "UNMARKED target dir $d is not empty and has no .worktree-owner (stale or re-claimed; use a fresh dir)"
+  fi
+  mkdir -p "$d" || die "cannot create target dir $d"
+  r=$(cd "$d" && pwd -P)
+  m=$r/.worktree-owner
+  if [[ -f $m ]]; then
+    owner=$(cat "$m")
+    [[ $owner == "$wt" ]] || die "SHARED target dir $r is owned by worktree $owner, not $wt (one target dir per worktree)"
+  else
+    printf '%s\n' "$wt" > "$m" || die "cannot write $m"
+  fi
+  printf '%s\n' "$r"
+}
+td=$(claim_dir "$CARGO_TARGET_DIR") || exit 1
+# a caller-set override target dir (CARGO_BUILD_TARGET_DIR, --target-dir) takes the same ownership check;
+# --target-dir wins over the env in cargo, so the binary check then uses it
+if [[ -n ${CARGO_BUILD_TARGET_DIR:-} ]]; then claim_dir "$CARGO_BUILD_TARGET_DIR" > /dev/null || exit 1; fi
+prev=
+for a in "${@:2}"; do
+  [[ $a == -- ]] && break
+  o=
+  if [[ $prev == --target-dir ]]; then o=$a; elif [[ $a == --target-dir=* ]]; then o=${a#--target-dir=}; fi
+  if [[ -n $o ]]; then td=$(claim_dir "$o") || exit 1; fi
+  prev=$a
+done
 if [[ $1 == --claim ]]; then echo "fresh_test_run: target dir $td belongs to worktree $wt"; exit 0; fi
 # check_bins FILE: >= 1 binary, each present and inside $td
 check_bins() {

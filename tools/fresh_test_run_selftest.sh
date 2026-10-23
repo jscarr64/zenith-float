@@ -30,6 +30,23 @@ want pass claim "$t/wa" env CARGO_TARGET_DIR="$td" "$ftr" --claim
 want pass claim-again "$t/wa" env CARGO_TARGET_DIR="$td" "$ftr" --claim
 want fail shared-dir "$t/wb" env CARGO_TARGET_DIR="$td" "$ftr" --claim
 has 'SHARED' shared-dir; has "$wa" shared-dir
+# Spence's hole: a non-empty dir without the marker (stale binaries, or a deleted marker) must not be claimed
+mkdir -p "$t/stale/debug/deps"; printf '#!/bin/sh\n' > "$t/stale/debug/deps/harness-deadbeef"
+want fail unmarked-stale "$t/wa" env CARGO_TARGET_DIR="$t/stale" "$ftr" --claim
+has 'UNMARKED' unmarked-stale
+[[ ! -e "$t/stale/.worktree-owner" ]] || fail "unmarked-stale: marker written"
+want pass claim-empty "$t/wa" env CARGO_TARGET_DIR="$t/empty-target" "$ftr" --claim
+(cd "$t/wa" && CARGO_TARGET_DIR="$t/tdm" "$ftr" --claim > /dev/null); mkdir -p "$t/tdm/debug"
+rm "$t/tdm/.worktree-owner"
+want fail marker-deleted "$t/wb" env CARGO_TARGET_DIR="$t/tdm" "$ftr" --claim
+has 'UNMARKED' marker-deleted
+# a caller-set override target dir takes the same check (fails before any build)
+want fail override-flag-shared "$t/wb" env CARGO_TARGET_DIR="$t/wb-own" "$ftr" cargo test --target-dir "$td"
+has 'SHARED' override-flag-shared
+want fail override-eq-unmarked "$t/wb" env CARGO_TARGET_DIR="$t/wb-own" "$ftr" cargo test --target-dir="$t/stale"
+has 'UNMARKED' override-eq-unmarked
+want fail override-env-shared "$t/wb" env CARGO_TARGET_DIR="$t/wb-own" CARGO_BUILD_TARGET_DIR="$td" "$ftr" --claim
+has 'SHARED' override-env-shared
 mkdir -p "$td/debug/deps" "$t/elsewhere"
 for b in "$td/debug/deps/t-1" "$t/elsewhere/t-2"; do printf '#!/bin/sh\n' > "$b"; chmod +x "$b"; done
 printf '%s\n' "$td/debug/deps/t-1" > "$t/good.txt"
