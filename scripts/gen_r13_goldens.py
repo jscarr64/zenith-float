@@ -46,6 +46,24 @@ OUT = s9.ROOT / "zenith-float-num" / "tests" / "oracle" / "goldens" / "r13_div_h
 # ------------------------------------------------------------- arguments
 
 def arg(spec, pa: int) -> Arg:
+    """Like `arg_built`, but an argument the pa-bit format cannot hold exactly is an error
+    (the encoder would silently truncate it, e.g. to zero under the subnormal grid)."""
+    a = arg_built(spec, pa)
+    d = a.enc(pa)
+    if d["k"] != "f":
+        raise ValueError(f"{spec} encodes as {d['k']} at {pa} bits")
+    def odd(sign, n, ez):  # n*2^ez with n odd (or 0): a canonical form, no huge powers
+        if n == 0:
+            return (0, 0)
+        tz = (n & -n).bit_length() - 1
+        return (sign, n >> tz, ez + tz)
+
+    if odd(d["s"], num(d), d["e"] - 64 * len(d["m"])) != odd(a.sign, a.n, a.ez):
+        raise ValueError(f"{spec} is not representable at {pa} bits")
+    return a
+
+
+def arg_built(spec, pa: int) -> Arg:
     """("i", n, ez[, sign]) exact n*2^ez; ("max",) largest finite at pa; ("sub", k) k*2^(EMIN-pa);
     otherwise a gen_s9 spec ("d", "1.5"), ("pow2", k[, sign]), ("z", sign)."""
     kind = spec[0]
@@ -198,7 +216,7 @@ def build_cases():
     for a, b in [(3, 4), (5, 12), (8, 15), (20, 21), (119, 120), (4961, 6480)]:
         add("hypot", "triple", [i(a), i(b)])
         add("hypot", "triple", [i(a, 0, "-"), i(b, 0, "-")], ps=[24, 113])
-    for k in [EMAX - 3, EMAX - 4, EMIN + 1, EMIN - 40]:
+    for k in [EMAX - 3, EMAX - 4, EMIN + 1, EMIN - 20]:
         add("hypot", "triple-extreme", [i(3, k), i(4, k)])
     add("hypot", "triple-subnormal", [("sub", 3), ("sub", 4)])
     for a, b in [("1", "1"), ("1", "2"), ("0.1", "0.2"), ("-1.5", "2.25"), ("7", "1e-3")]:
