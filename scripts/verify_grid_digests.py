@@ -398,6 +398,26 @@ def cplx(op, p, rm, ints, a, exact=False):
         return None
     return rnd(ddiv(num, den, p + 8), p, rm)
 
+def cplx_md_none_interval(p, ints, a):
+    """None-mode complex mul: each product may land anywhere between its ToZero and FromZero
+    roundings (None keeps extra bits), then the sum is rounded: -> (lo, hi) tuples or None"""
+    k, part = ints
+    if k != 0: return None
+    A, B, C, Dd = (dv(x) for x in a)
+    def toD(t):
+        if t[0] == 'inf': raise Ambig('cplx-inf')
+        return D(t[1], t[2], t[3]) if t[0] == 'fin' else D(t[1], 0, 0)
+    def pb(d):
+        t1, _ = rnd(d, p, 'ToZero'); t2, _ = rnd(d, p, 'FromZero')
+        return (toD(t1), toD(t2)) if tle(t1, t2) else (toD(t2), toD(t1))
+    if part == 0:
+        (l1, h1), (l2, h2) = pb(dmul(A, C)), pb(dmul(B, Dd))
+        lo, hi = dadd(l1, dneg(h2)), dadd(h1, dneg(l2))
+    else:
+        (l1, h1), (l2, h2) = pb(dmul(A, Dd)), pb(dmul(B, C))
+        lo, hi = dadd(l1, l2), dadd(h1, h2)
+    return rnd(lo, p, 'Down')[0], rnd(hi, p, 'Up')[0]
+
 def main():
     path = sys.argv[1]; maxex = int(sys.argv[2]) if len(sys.argv) > 2 else 12
     stats = collections.Counter(); ex = collections.defaultdict(list); spec = collections.Counter()
@@ -454,6 +474,9 @@ def main():
                 # complex mul in None mode may round the component products: accept the componentwise bounds too
                 lo2, _ = cplx(op, p, "ToZero", ints, args); hi2, _ = cplx(op, p, "FromZero", ints, args)
                 ok_n = all(t[0] in ("fin", "zero") for t in (lo2, hi2)) and ((tle(lo2, got) and tle(got, hi2)) or (tle(hi2, got) and tle(got, lo2)))
+                if not ok_n:
+                    iv = cplx_md_none_interval(p, ints, args)
+                    ok_n = iv is not None and all(t[0] in ("fin", "zero") for t in iv) and tle(iv[0], got) and tle(got, iv[1])
             stats[key, 'none-ok' if ok_n else 'BAD'] += 1
             if not ok_n and len(ex[key, 'BAD']) < maxex: ex[key, 'BAD'].append(('none', ln[:900]))
             continue
