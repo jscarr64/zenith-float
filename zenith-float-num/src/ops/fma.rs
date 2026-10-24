@@ -1,7 +1,7 @@
 //! Fused multiply-add: `a * b + c` with a single final rounding.
 
 use crate::common::util::{bump_prec_retry, round_p};
-use crate::defs::{Error, RoundingMode, EXPONENT_MIN};
+use crate::defs::{Error, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
 use crate::num::ExactNumNumber;
 use crate::Exponent;
 use crate::WORD_BIT_SIZE;
@@ -36,17 +36,15 @@ impl ExactNumNumber {
 
         // Exact product + add, then a single round to `p` (IEEE FMA). A
         // truncated product would drop sticky bits and fail the MPFR oracle.
-        let prod = self.mul_full_prec(b)?;
+        // The product is formed with a wide exponent: it may lie outside the range while the sum does not.
+        let (prod, e_p) = self.mul_full_prec_wide(b)?;
 
         // When one term lies entirely below the other's last bit by more than two words, only
         // its sign can affect the rounding. Replace it by a same-signed stand-in just below
         // that bit, so the full-width sum stays small (Horner / dot-product tails) and the
         // rounding and the inexact flag stay correct in every mode.
-        // Exponents of the leading set bits: mantissas may carry leading zeros.
-        // In i128: the two exponents can be almost 2^63 apart (a product below the subnormal grid and an
-        // addend near EXPONENT_MAX), and their difference would wrap in i64.
-        let e_prod = i128::from(prod.exponent())
-            - (prod.mantissa_max_bit_len() as i128 - prod.precision() as i128);
+        // Exponents of the leading set bits (i128: they can be almost 2^63 apart). The product is normalized
+        // with exponent 0, so its leading bit is at `e_p`; `c` may carry leading zeros when subnormal.
         let e_c =
             i128::from(c.exponent()) - (c.mantissa_max_bit_len() as i128 - c.precision() as i128);
         // The stand-in must lie below the rounding position of the result as well, not only below the
@@ -55,23 +53,41 @@ impl ExactNumNumber {
         let w_prod = (prod.mantissa_max_bit_len() as i128).max(p as i128);
         let w_c = (c.mantissa_max_bit_len() as i128).max(p as i128);
         let guard = 2 * WORD_BIT_SIZE as i128;
-        // A stand-in whose exponent would fall below the smallest exponent cannot be stored (the exponent
-        // would wrap around to a huge positive one): both terms are then within a mantissa's width of the
-        // bottom of the range and the full-width sum is small, so it is formed without a stand-in.
-        // Both stand-in exponents below are checked to be at least `min` and lie below a stored exponent, so they
-        // fit in `Exponent`.
-        let min = i128::from(EXPONENT_MIN);
-        let mut sum = if e_prod - e_c > w_prod + guard && e_prod - w_prod - 2 >= min {
-            let mut tiny = c.clone()?;
-            tiny.set_exponent((e_prod - w_prod - 2) as Exponent);
-            prod.add_full_prec(&tiny)?
-        } else if e_c - e_prod > w_c + guard && e_c - w_c - 2 >= min {
-            let mut tiny = prod;
-            tiny.set_exponent((e_c - w_c - 2) as Exponent);
-            tiny.add_full_prec(c)?
+        // The sum is formed in a frame shifted by 2^off (true sum = sum * 2^off), so neither term has to
+        // fit the exponent range on its own; `place_scaled` puts the result back and rounds it once.
+        let (sum, off) = if e_p - e_c > w_prod + guard {
+            // The product dominates: frame at its exponent, `c` reduced to its sign.
+            let tiny = Self::sticky_unit(c.sign(), -w_prod - 2)?;
+            (prod.add_full_prec(&tiny)?, e_p)
+        } else if e_c - e_p > w_c + guard {
+            // `c` dominates (so it is in range): it stays where it is, the product becomes its sign.
+            let tiny = Self::sticky_unit(prod.sign(), e_c - w_c - 2)?;
+            (c.add_full_prec(&tiny)?, 0)
+        } else if e_p > i128::from(EXPONENT_MIN) && e_p <= i128::from(EXPONENT_MAX) {
+            // Comparable terms with the product in range: the plain exact sum.
+            let mut prod = prod;
+            prod.set_exponent(
+                Exponent::try_from(e_p).map_err(|_| Error::ExponentOverflow(prod.sign()))?,
+            );
+            (prod.add_full_prec(c)?, 0)
         } else {
-            prod.add_full_prec(c)?
+            // Comparable terms with the product outside the range: both are summed in a frame shifted by
+            // `e_p` (the addend's exponent relative to `e_p` is within two mantissa widths and a guard).
+            let rel = Exponent::try_from(i128::from(c.exponent()) - e_p)
+                .map_err(|_| Error::ExponentOverflow(c.sign()))?;
+            (prod.add_full_prec_at(0, c, rel)?, e_p)
         };
+        let mut sum = sum;
+
+        if off != 0 && !sum.is_zero() {
+            // Every bit of the exact (stand-in) sum is kept, padded to two guard bits past `p`.
+            let w = sum.mantissa_max_bit_len().max(p + WORD_BIT_SIZE);
+            sum.set_precision(w, RoundingMode::None)?;
+            let at = i128::from(sum.exponent()) + off;
+            let mut ret = sum.place_scaled(at, false, p, rm)?;
+            ret.set_inexact(ret.inexact() | inexact);
+            return Ok(ret);
+        }
 
         loop {
             if sum.is_zero() {

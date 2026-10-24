@@ -82,6 +82,8 @@ impl ExactNumNumber {
 
         if ps.is_nan() || ps.is_inf() {
             Err(Error::InvalidArgument)
+        } else if ps.out_of_range() < 0 && rdx == Radix::Bin {
+            Err(Error::ExponentOverflow(ps.sign()))
         } else {
             let (m, s, e) = ps.raw_parts();
             ExactNumNumber::convert_from_radix(s, m, e, rdx, p, rm, cc)
@@ -130,7 +132,7 @@ impl ExactNumNumber {
             Ok(ps) => ps,
             Err(_) => return Ok(false),
         };
-        if ps.is_nan() || ps.is_inf() {
+        if ps.is_nan() || ps.is_inf() || ps.out_of_range() != 0 {
             return Ok(false);
         }
         let (digits, sign, exp) = ps.raw_parts();

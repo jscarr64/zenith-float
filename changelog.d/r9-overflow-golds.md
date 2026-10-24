@@ -1,0 +1,1 @@
+- Added 7290 overflow/underflow goldens (`r9_overflow.jsonl`, from `scripts/gen_r9_overflow_goldens.py`) covering add, sub, mul, sqr, fma, ldexp, powi, powsi, exp, exp2, exp10, sinh, cosh, pow and parse at the i64 exponent edges, in all rounding modes.

@@ -348,6 +348,11 @@ def build():
         case("powsi", lambda p, sg=sg: [A(sg, 3, (1 << 60) - 3)], k=-3, note="powsi -3 underflow rounding")
         case("powsi", lambda p, sg=sg: [minsub(p, sg)], k=-1, note="1/min subnormal past")
         case("powsi", lambda p, sg=sg: [maxv(p, sg)], k=-1, note="1/MAX subnormal")
+        case("powsi", lambda p, sg=sg: [minsub(p, sg)], k=-2, note="powsi -2 of min subnormal past")
+        case("powsi", lambda p, sg=sg: [A(sg, 3, (1 << 59))], k=-5, note="powsi -5 deep subnormal")
+        case("powsi", lambda p, sg=sg: [A(sg, 1, (1 << 61))], k=-4, note="powsi -4 flush")
+        case("powsi", lambda p, sg=sg: [A(sg, 5, -(1 << 60))], k=-3, note="powsi -3 huge normal")
+        case("powsi", lambda p, sg=sg: [A(sg, 7, 1537228672809129298)], k=-3, note="powsi -3 near subnormal edge")
     # ---- exp family (positive results)
     T = 3196577161300663808  # ~ EMAX*ln2
     case("exp", lambda p: [A("+", T, 0)], note="exp near overflow")
@@ -359,6 +364,9 @@ def build():
     case("exp", lambda p: [A("-", 3196577161300663915 + 20, 0)], note="exp into subnormal")
     case("exp", lambda p: [A("-", 3196577161300663915 + 2 * p, 0)], note="exp below subnormal")
     case("exp", lambda p: [A("-", 1, 70)], note="exp far below")
+    case("exp", lambda p: [A("-", 3196577161300663915 + p // 2, 0)], note="exp mid subnormal")
+    case("exp", lambda p: [A("-", 6393154322601327830 + 3 * p, 1)], note="exp deep below, odd")
+    case("exp", lambda p: [A("-", 1, 63)], note="exp |x|=2^62")
     for k in (EMAX - 1, EMAX, EMAX + 1, EMIN - 1, EMIN - 2, EMIN - 30, -(1 << 63)):
         case("exp2", lambda p, k=k: [A("+" if k > 0 else "-", abs(k), 0)], exact=True, note=f"exp2 {k}")
     for kk in (lambda p: EMIN - p, lambda p: EMIN - p - 1, lambda p: EMIN - p - 2):

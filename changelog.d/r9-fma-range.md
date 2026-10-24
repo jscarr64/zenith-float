@@ -1,0 +1,1 @@
+- `fma` no longer fails or rounds twice when the product a·b is outside the exponent range. The product is formed at full precision with an i128 exponent. A dominated addend becomes a sticky unit, and the sum is scaled and rounded once by `place_scaled`. Overflow follows the direction rule (±Inf or ±MAX), and underflow lands on the subnormal grid with its sign kept.

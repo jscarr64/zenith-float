@@ -1,0 +1,1 @@
+- `powsi` with n < −1 now computes x^n as 1/(x0^|n|)·2^(−n·e), using a mantissa-only power. The result is rounded once onto the subnormal grid, or flushed to 0 or min-subnormal by direction, instead of failing or being double-rounded.

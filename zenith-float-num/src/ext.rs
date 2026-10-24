@@ -1162,11 +1162,41 @@ impl ExactNum {
         Self::round_exact(false, p, rm, |q, r| Self::parse_word(s, rdx, q, r, cc))
     }
 
+    /// A finite numeral whose radix exponent left the range: `MAX`/`Inf` by `rm` when above, the minimum
+    /// subnormal or a signed zero by `rm` when below (any radix digit exponent below `EXPONENT_MIN` is
+    /// below 2^(2 * EXPONENT_MIN), far under the smallest subnormal).
+    fn parse_out_of_range(s: Sign, above: bool, p: usize, rm: RoundingMode) -> Self {
+        if above {
+            return Self::result_to_ext_rm(Err(Error::ExponentOverflow(s)), false, true, p, rm);
+        }
+        let tiny = ExactNumNumber::from_word(1, round_p(p) + WORD_BIT_SIZE).and_then(|mut t| {
+            t.set_sign(s);
+            let far = i128::from(crate::EXPONENT_MIN) * 2;
+            t.place_scaled(far, true, p, rm)
+        });
+        Self::result_to_ext(tiny, false, true)
+    }
+
     /// Word-precision implementation of [`Self::parse`].
     fn parse_word(s: &str, rdx: Radix, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match crate::parser::parse(s, rdx) {
             Ok(ps) => {
-                if ps.is_inf() {
+                if ps.out_of_range() < 0 && rdx == Radix::Bin {
+                    // 0.digits * 2^e with e below the range: exact digits, placed and rounded once.
+                    let (m, s, e) = ps.raw_parts();
+                    let placed =
+                        ExactNumNumber::convert_from_radix(s, m, 0, rdx, usize::MAX, rm, cc)
+                            .and_then(|mut v| {
+                                let w = v.mantissa_max_bit_len().max(round_p(p) + WORD_BIT_SIZE);
+                                v.set_precision(w, RoundingMode::None)?;
+                                let at = i128::from(e) + i128::from(v.exponent());
+                                v.place_scaled(at, false, p, rm)
+                            });
+                    Self::result_to_ext(placed, false, true)
+                } else if ps.out_of_range() != 0 {
+                    // A radix exponent past the range: overflow, or a magnitude far below the subnormals.
+                    Self::parse_out_of_range(ps.sign(), ps.out_of_range() > 0, p, rm)
+                } else if ps.is_inf() {
                     if ps.sign() == Sign::Pos {
                         INF_POS
                     } else {
@@ -1176,10 +1206,12 @@ impl ExactNum {
                     NAN
                 } else {
                     let (m, s, e) = ps.raw_parts();
-                    Self::result_to_ext(
+                    Self::result_to_ext_rm(
                         ExactNumNumber::convert_from_radix(s, m, e, rdx, p, rm, cc),
                         false,
                         true,
+                        p,
+                        rm,
                     )
                 }
             }

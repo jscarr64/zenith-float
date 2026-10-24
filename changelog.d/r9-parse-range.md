@@ -1,0 +1,1 @@
+- Parsing a number whose exponent is beyond the range now follows the rounding direction. Overflow gives ±Inf or ±MAX. A binary-radix underflow keeps its digits and rounds once onto the subnormal grid. Other radixes flush to ±0 or ±min-subnormal and are flagged inexact.

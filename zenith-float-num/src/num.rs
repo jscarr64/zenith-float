@@ -371,6 +371,58 @@ impl ExactNumNumber {
         self.mul_general_case(d2, 0, RoundingMode::None, true, false)
     }
 
+    /// Exact product of two nonzero values whose exponent may lie outside the range: the significand
+    /// with exponent 0, and the true exponent (value = returned * 2^exponent).
+    pub(crate) fn mul_full_prec_wide(&self, d2: &Self) -> Result<(Self, i128), Error> {
+        if self.m.is_zero() || d2.m.is_zero() {
+            return Err(Error::InvalidArgument);
+        }
+        let s = if self.s == d2.s { Sign::Pos } else { Sign::Neg };
+        let mut inexact = false;
+        let (e_shift, m) = self.m.mul(
+            &d2.m,
+            0,
+            RoundingMode::None,
+            s == Sign::Pos,
+            true,
+            &mut inexact,
+        )?;
+        let e = i128::from(self.e) + i128::from(d2.e) - i128::from(e_shift);
+        let ret = ExactNumNumber {
+            m,
+            s,
+            e: 0,
+            inexact,
+            op_inexact: None,
+        };
+        Ok((ret, e))
+    }
+
+    /// A same-signed stand-in `2^(e - 1)` for a term whose only effect on a rounding is its sign
+    /// (it lies below the other term's last bit). Below the exponent range it is the smallest
+    /// subnormal of a wide enough mantissa, which sits at or below `2^(e - 1)`.
+    pub(crate) fn sticky_unit(s: Sign, e: i128) -> Result<Self, Error> {
+        let min = i128::from(EXPONENT_MIN);
+        if e >= min {
+            let mut t = Self::from_word(1, WORD_BIT_SIZE)?;
+            t.set_exponent(Exponent::try_from(e).map_err(|_| Error::ExponentOverflow(s))?);
+            t.s = s;
+            return Ok(t);
+        }
+        let w = usize::try_from(min - e + 1).map_err(|_| Error::InvalidArgument)?;
+        if w > MAX_PRECISION {
+            return Err(Error::InvalidArgument);
+        }
+        let m = Mantissa::min(round_p(w))?;
+        Ok(ExactNumNumber {
+            m,
+            s,
+            e: EXPONENT_MIN,
+            inexact: false,
+            op_inexact: None,
+        })
+    }
+
     /// Adds like `add`. The result also records whether this addition rounded (`op_inexact`).
     #[inline]
     pub(crate) fn add_per_op(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
@@ -684,6 +736,21 @@ impl ExactNumNumber {
         self.m.normilize2()
     }
 
+    /// The exact sum of `self` and `d2` as if they carried the exponents `e1` and `e2` instead of their
+    /// own (a shared frame: `fma` sums a product that lies outside the exponent range this way, without
+    /// copying the addend). Both operands must be nonzero.
+    pub(crate) fn add_full_prec_at(
+        &self,
+        e1: Exponent,
+        d2: &Self,
+        e2: Exponent,
+    ) -> Result<Self, Error> {
+        if self.m.is_zero() || d2.m.is_zero() {
+            return Err(Error::InvalidArgument);
+        }
+        self.add_sub_at((e1, e2), d2, 0, 1, RoundingMode::None, (true, false))
+    }
+
     // Combined add and sub operations.
     fn add_sub(
         &self,
@@ -693,6 +760,20 @@ impl ExactNumNumber {
         rm: RoundingMode,
         full_prec: bool,
         per_op: bool,
+    ) -> Result<Self, Error> {
+        self.add_sub_at((self.e, d2.e), d2, p, op, rm, (full_prec, per_op))
+    }
+
+    // Combined add and sub operations, the operands taken at the exponents `(e1, e2)`; `flags` is
+    // `(full_prec, per_op)`.
+    fn add_sub_at(
+        &self,
+        (e1, e2): (Exponent, Exponent),
+        d2: &Self,
+        p: usize,
+        op: i8,
+        rm: RoundingMode,
+        (full_prec, per_op): (bool, bool),
     ) -> Result<Self, Error> {
         let p = round_p(p);
         if !full_prec {
@@ -715,12 +796,12 @@ impl ExactNumNumber {
         // One operand is zero: the general kernel sums the other operand with a zero mantissa, so the
         // result is written (and rounded to `p`) by the same code as every other sum.
         if self.m.is_zero() || d2.m.is_zero() {
-            let (src, sign) = if self.m.is_zero() {
-                (d2, if op < 0 { d2.s.invert() } else { d2.s })
+            let (src, sign, e0) = if self.m.is_zero() {
+                (d2, if op < 0 { d2.s.invert() } else { d2.s }, e2)
             } else {
-                (self, self.s)
+                (self, self.s, e1)
             };
-            let (e0, m0) = (src.e, &src.m);
+            let m0 = &src.m;
             let inputs = src.inexact;
             let mut inexact = false;
             d3.s = sign;
@@ -747,8 +828,8 @@ impl ExactNumNumber {
 
         // The sum kernels take the operands as stored (a subnormal operand has leading zero bits and is
         // renormalized by the kernel together with the result), so no operand is cloned.
-        let (e1, m1) = (self.e, &self.m);
-        let (e2, m2) = (d2.e, &d2.m);
+        let m1 = &self.m;
+        let m2 = &d2.m;
 
         let inputs = self.inexact || d2.inexact;
         let mut inexact = false;
@@ -756,7 +837,7 @@ impl ExactNumNumber {
         let e;
         let (shift, m3) = if (self.s != d2.s && op >= 0) || (op < 0 && self.s == d2.s) {
             // subtract
-            let cmp = self.abs_cmp(d2);
+            let cmp = self.abs_cmp_at(e1, d2, e2);
             if cmp > 0 {
                 d3.s = self.s;
                 e = e1;
@@ -1004,6 +1085,11 @@ impl ExactNumNumber {
     /// Compares the absolute value of `self` to the absolute value of `d2`.
     /// Returns positive if `|self|` is greater than `|d2|`, negative if `|self|` is smaller than `|d2|`, 0 otherwise.
     pub fn abs_cmp(&self, d2: &Self) -> SignedWord {
+        self.abs_cmp_at(self.e, d2, d2.e)
+    }
+
+    // `abs_cmp` with the operands taken at the exponents `e1` and `e2`.
+    fn abs_cmp_at(&self, e1: Exponent, d2: &Self, e2: Exponent) -> SignedWord {
         if self.m.is_zero() {
             if d2.m.is_zero() {
                 return 0;
@@ -1020,7 +1106,7 @@ impl ExactNumNumber {
 
         let n2 = d2.mantissa_max_bit_len() as i64 - d2.precision() as i64;
 
-        let e = exp::wide(self.e) - exp::wide(n1) - exp::wide(d2.e) + exp::wide(n2);
+        let e = exp::wide(e1) - exp::wide(n1) - exp::wide(e2) + exp::wide(n2);
         if e > 0 {
             return 1;
         } else if e < 0 {
@@ -1584,6 +1670,40 @@ impl ExactNumNumber {
         Ok(self)
     }
 
+    /// Places a value whose true exponent `e` may lie outside the exponent range, then rounds it once to `p` bits.
+    /// `self` holds the significand (its own exponent is ignored) truncated toward zero to at least `p + 2` bits;
+    /// `rounded` says whether that truncation dropped anything. Above the range: `ExponentOverflow` with the sign.
+    /// Below it: the value is shifted onto the subnormal grid with the sticky bit kept, so it is rounded once.
+    pub(crate) fn place_scaled(
+        mut self,
+        e: i128,
+        rounded: bool,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Self, Error> {
+        if e > i128::from(EXPONENT_MAX) {
+            return Err(Error::ExponentOverflow(self.s));
+        }
+        self.op_inexact = Some(rounded);
+        self.inexact |= rounded;
+        if self.m.is_zero() {
+            return self.round_odd_to(p, rm);
+        }
+        if e >= i128::from(EXPONENT_MIN) {
+            self.e = Exponent::try_from(e).map_err(|_| Error::ExponentOverflow(self.s))?;
+            return self.round_odd_to(p, rm);
+        }
+        self.e = EXPONENT_MIN;
+        let floor = i128::from(EXPONENT_MIN) - i128::from(EXPONENT_MAX);
+        let e_low = i64::try_from(e.max(floor)).map_err(|_| Error::ExponentOverflow(self.s))?;
+        self.subnormalize(e_low, RoundingMode::ToZero);
+        if self.m.is_zero() {
+            // Flushed: every bit sat below the finest grid; round_odd_to turns it into a sticky unit.
+            self.e = EXPONENT_MIN;
+            self.op_inexact = Some(true);
+        }
+        self.round_odd_to(p, rm)
+    }
     fn set_precision_internal(
         &mut self,
         p: usize,

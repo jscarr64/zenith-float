@@ -72,8 +72,9 @@ impl ExactNumNumber {
                 let x = match self.exp_positive_arg(p_x, cc) {
                     Ok(v) => Ok(v),
                     Err(e) => match e {
-                        Error::ExponentOverflow(sign) => {
-                            return Self::new2(p, sign, self.inexact());
+                        Error::ExponentOverflow(_) => {
+                            // e^|x| is past the range, so e^x lies at or below the subnormals.
+                            return self.exp_neg_scaled(p, rm, cc);
                         }
                         Error::DivisionByZero => Err(Error::DivisionByZero),
                         Error::InvalidArgument => Err(Error::InvalidArgument),
@@ -92,6 +93,43 @@ impl ExactNumNumber {
                 return Ok(ret);
             }
 
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    /// `e^x` for `x < 0` whose result lies below the normal range: `e^x = e^r * 2^-(n + 1)` with
+    /// `n = floor(|x| / ln 2)` and `r = x + (n + 1) ln 2` in `(0, ln 2]`, so `e^r` is in range; the scale is
+    /// applied once by `place_scaled`, which rounds onto the subnormal grid (or flushes) with `rm`.
+    fn exp_neg_scaled(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        let far = i128::from(EXPONENT_MIN) * 2;
+        if self.exponent() > WORD_BIT_SIZE as Exponent - 1 {
+            // |x| >= 2^63: e^x < 2^-(2^63), far below the smallest subnormal. A positive sticky unit.
+            let unit = Self::from_word(1, p + WORD_BIT_SIZE)?;
+            let mut ret = unit.place_scaled(far, true, p, rm)?;
+            ret.set_inexact(true);
+            return Ok(ret);
+        }
+        let q = p + WORD_BIT_SIZE;
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = q.max(self.mantissa_max_bit_len()) + p_inc;
+        loop {
+            // |x| < 2^63, so n < 2^64 and n * ln 2 needs 64 bits above the working precision.
+            let p_l = p_wrk + 3 * WORD_BIT_SIZE;
+            let ln2 = cc.ln_2_num(p_l, RoundingMode::None)?;
+            let mut t = self.div(&ln2, p_l, RoundingMode::None)?;
+            t.set_sign(Sign::Pos);
+            let n = t.int_as_usize()?;
+            let n1 = n.checked_add(1).ok_or(Error::ExponentOverflow(Sign::Neg))?;
+            let shift = Self::from_usize(n1)?.mul(&ln2, p_l, RoundingMode::None)?;
+            let r = self.add(&shift, p_l, RoundingMode::None)?;
+            let mut y = r.exp(p_wrk, RoundingMode::None, cc)?;
+            if y.try_set_precision(q, RoundingMode::ToZero, p_wrk - WORD_BIT_SIZE)? {
+                let n1 = i128::try_from(n1).map_err(|_| Error::ExponentOverflow(Sign::Neg))?;
+                let at = i128::from(y.exponent()) - n1;
+                let mut ret = y.place_scaled(at, true, p, rm)?;
+                ret.set_inexact(true);
+                return Ok(ret);
+            }
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
     }
@@ -174,7 +212,7 @@ impl ExactNumNumber {
     ///  - DivisionByZero: `self` is zero and `n` is negative.
     pub fn powsi(&self, n: i64, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         if n >= 0 {
-            self.powi_internal(n as usize, p, rm, true)
+            self.powi_internal(n as usize, p, rm, true, false)
         } else {
             let p = round_p(p);
 
@@ -186,27 +224,46 @@ impl ExactNumNumber {
                 return ONE.div(self, p, rm);
             }
 
+            let k = crate::common::util::abs_usize(n);
+            if self.is_subnormal() {
+                // |x| < 2^EMIN and k >= 2: |x|^-k > 2^(2 * (2^62 - 1)), past the largest finite value.
+                let neg = self.is_negative() && k & 1 == 1;
+                return Err(Error::ExponentOverflow(if neg {
+                    Sign::Neg
+                } else {
+                    Sign::Pos
+                }));
+            }
+            // x = x0 * 2^ex with x0 in [1/2, 1): x^-k = (1 / x0^k) * 2^(-k * ex). x0^k and its reciprocal
+            // stay in range, the scale is applied once at the end, so x^k may overflow or underflow freely.
+            let ex = i128::from(self.exponent());
+            let k_wide = i128::try_from(k).map_err(|_| Error::InvalidArgument)?;
+            let scale = -(k_wide * ex);
+            let q = p + WORD_BIT_SIZE;
+
             let mut p_inc = WORD_BIT_SIZE;
-            let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+            let mut p_wrk = q.max(self.mantissa_max_bit_len()) + p_inc;
 
             loop {
                 let p_x = p_wrk + 2;
 
-                let x = self.powi_internal(
-                    crate::common::util::abs_usize(n),
-                    p_x,
-                    RoundingMode::None,
-                    false,
-                )?;
+                let y = self.powi_internal(k, p_x, RoundingMode::None, false, true)?;
+                if y.is_zero() || y.is_subnormal() {
+                    // x0^k below the range needs k > 2^62; the reciprocal is then past every finite value.
+                    return Err(Error::ExponentOverflow(y.sign()));
+                }
 
-                if x.inexact() {
-                    let mut ret = ONE.div(&x, p_x, RoundingMode::None)?;
-
-                    if ret.try_set_precision(p, rm, p_wrk)? {
-                        return Ok(ret);
+                let mut r = ONE.div(&y, p_x, RoundingMode::None)?;
+                let rounded = r.inexact();
+                if !rounded || r.try_set_precision(q, RoundingMode::ToZero, p_wrk)? {
+                    if !rounded {
+                        r.set_precision(q, RoundingMode::ToZero)?;
                     }
-                } else {
-                    return ONE.div(&x, p, rm);
+                    let rounded = r.inexact();
+                    let e = i128::from(r.exponent()) + scale;
+                    let mut ret = r.place_scaled(e, rounded, p, rm)?;
+                    ret.set_inexact(ret.inexact() | self.inexact());
+                    return Ok(ret);
                 }
 
                 bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
@@ -223,7 +280,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn powi(&self, n: usize, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        self.powi_internal(n, p, rm, true)
+        self.powi_internal(n, p, rm, true, false)
     }
 
     fn powi_internal(
@@ -232,6 +289,7 @@ impl ExactNumNumber {
         p: usize,
         rm: RoundingMode,
         update_inexact: bool,
+        zero_exp: bool,
     ) -> Result<Self, Error> {
         let p = round_p(p);
 
@@ -277,9 +335,14 @@ impl ExactNumNumber {
                 x.set_inexact(false);
 
                 let mut c;
-                let arg = if self.inexact() {
+                let arg = if self.inexact() || zero_exp {
                     c = self.clone()?;
                     c.set_inexact(false);
+                    if zero_exp {
+                        // Caller scales by 2^(n * exponent) itself (normal `self` only).
+                        c.set_exponent(0);
+                        x.set_exponent(0);
+                    }
                     &c
                 } else {
                     self

@@ -78,10 +78,7 @@ fn canon_expect(v: &Value) -> Result<String, String> {
         "nan" => Ok("nan".to_string()),
         "inf" => Ok(format!("inf:{}", text(v, "s")?)),
         "f" => {
-            let limbs: Vec<String> = limbs_of(v)?
-                .iter()
-                .map(|w| format!("{w:016x}"))
-                .collect();
+            let limbs: Vec<String> = limbs_of(v)?.iter().map(|w| format!("{w:016x}")).collect();
             let e: Exponent = field(v, "e")?.as_i64().ok_or("e is not an i64")?;
             Ok(format!("f:{}:{}:{}", text(v, "s")?, e, limbs.join(",")))
         }
@@ -109,7 +106,9 @@ fn arg_n(raw: &[Value], i: usize) -> Result<ExactNum, String> {
 }
 
 fn int_of(row: &Value) -> Result<i64, String> {
-    field(row, "n")?.as_i64().ok_or_else(|| "n is not an i64".to_string())
+    field(row, "n")?
+        .as_i64()
+        .ok_or_else(|| "n is not an i64".to_string())
 }
 
 fn eval(row: &Value) -> Result<ExactNum, String> {
@@ -117,7 +116,9 @@ fn eval(row: &Value) -> Result<ExactNum, String> {
     let p = usize::try_from(field(row, "p")?.as_u64().ok_or("p is not a u64")?)
         .map_err(|e| format!("p: {e}"))?;
     let rm = mode_of(text(row, "rm")?)?;
-    let raw = field(row, "args")?.as_array().ok_or("args is not an array")?;
+    let raw = field(row, "args")?
+        .as_array()
+        .ok_or("args is not an array")?;
     let mut cc = Consts::new().map_err(|e| format!("consts: {e:?}"))?;
     let r = match func {
         "add" => arg_n(raw, 0)?.add(&arg_n(raw, 1)?, p, rm),
@@ -189,7 +190,11 @@ fn check(func: &str) -> Result<(), String> {
     Err(format!(
         "{func}: {}/{rows} rows wrong:\n{}",
         bad.len(),
-        shown.iter().map(|s| s.as_str()).collect::<Vec<_>>().join("\n")
+        shown
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join("\n")
     ))
 }
 

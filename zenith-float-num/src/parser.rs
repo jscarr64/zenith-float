@@ -23,6 +23,9 @@ pub struct ParserState<'a> {
     inf: bool,
     nan: bool,
     explicit_nan: bool,
+    /// The radix exponent was past the range: `1` above (`inf` is set too), `-1` below (the mantissa is zeroed,
+    /// except for radix 2, whose digits and exponent are kept).
+    range: i8,
 }
 
 impl<'a> ParserState<'a> {
@@ -37,6 +40,7 @@ impl<'a> ParserState<'a> {
             inf: false,
             nan: true,
             explicit_nan: false,
+            range: 0,
         }
     }
 
@@ -53,6 +57,11 @@ impl<'a> ParserState<'a> {
 
     pub fn is_inf(&self) -> bool {
         self.inf
+    }
+
+    /// `1` when a finite numeral overflowed the exponent range, `-1` when it underflowed it, else `0`.
+    pub fn out_of_range(&self) -> i8 {
+        self.range
     }
 
     pub fn is_nan(&self) -> bool {
@@ -151,14 +160,19 @@ fn parse_num(parser_state: &mut ParserState, rdx: Radix) -> Result<(), Error> {
                 parser_state.e = parser_state.e.saturating_add(int_len as i64);
             }
 
-            if parser_state.e < EXPONENT_MIN {
+            if parser_state.e < EXPONENT_MIN && rdx == Radix::Bin {
+                // 2^e with e just below the range can still be a subnormal: keep the digits.
+                parser_state.range = -1;
+            } else if parser_state.e < EXPONENT_MIN {
                 let mut zero = Vec::new();
                 zero.try_reserve_exact(1)?;
                 zero.push(0);
                 parser_state.mantissa_bytes = zero;
                 parser_state.e = 0;
+                parser_state.range = -1;
             } else if parser_state.e > EXPONENT_MAX {
                 parser_state.inf = true;
+                parser_state.range = 1;
             }
         }
     }
