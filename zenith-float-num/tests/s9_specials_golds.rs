@@ -220,6 +220,10 @@ const DEBUG_FULL_TIER_IDS: &[&str] = &[
     "s9-erf-65536-ToZero-1698",
     "s9-erf-65536-FromZero-1699",
     "s9-digamma-4096-ToEven-3170",
+    "s9-digamma-4096-Up-3171",
+    "s9-digamma-4096-Down-3172",
+    "s9-digamma-4096-ToZero-3173",
+    "s9-digamma-4096-FromZero-3174",
 ];
 
 /// ψ(½) at p=65536 (= −γ − 2 ln 2): excluded from every tier until Rusty's S3 rigorous Euler
