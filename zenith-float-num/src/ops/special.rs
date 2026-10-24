@@ -638,14 +638,45 @@ impl ExactNumNumber {
     pub fn digamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
-        if !self.is_positive() && self.is_int() {
+        if self.is_zero() || (!self.is_positive() && self.is_int()) {
             return Err(Error::InvalidArgument);
         }
+        // Tiny |x|: ψ(x) = -1/x - γ + O(x); as for Γ, the Ziv loop cannot separate it from
+        // -1/x, so round -1/x once toward -γ.
+        let m = self.mantissa_max_bit_len();
+        let tiny_exp = -Exponent::try_from(m + p + 8).map_err(|_| Error::InvalidArgument)?;
+        if self.exponent() < tiny_exp {
+            let pw = round_p(m + p + 3 * WORD_BIT_SIZE);
+            let mone = Self::from_word(1, pw)?.neg()?;
+            let q = mone.div(self, pw, RoundingMode::ToZero)?;
+            let mut r = if q.inexact() {
+                let mut t = q;
+                t.set_precision(p, rm)?;
+                t
+            } else {
+                Self::round_offset(&q, Sign::Neg, p, rm)?
+            };
+            r.set_inexact(true);
+            return Ok(r);
+        }
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        let mut p_wrk = p.max(m) + p_inc;
+        let mut lost_done = 0;
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE * 2;
             let mut ret = self.digamma_at(p_x, cc)?;
+            // Near the root x₀ ≈ 1.4616 the shift sum and the asymptotic part cancel: the
+            // error is absolute, so a result of exponent -k has k fewer correct bits.
+            let lost = if ret.exponent() < 0 {
+                usize::try_from(-ret.exponent()).map_err(|_| Error::InvalidArgument)?
+            } else {
+                0
+            };
+            if lost > lost_done {
+                p_wrk = round_p(p_wrk + lost - lost_done);
+                lost_done = lost;
+                continue;
+            }
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
                 return Ok(ret);
@@ -678,23 +709,45 @@ impl ExactNumNumber {
         // One extra word absorbs the rounding of the shift sum.
         let pw = p + WORD_BIT_SIZE;
         let one = Self::from_word(1, pw)?;
+        // Half-integers: ψ(n+½) = −γ − 2 ln 2 + Σ_{k=1}^{n} 2/(2k−1).
+        if let Some(n) = self.half_integer_index()? {
+            let g = cc.euler_gamma_num(pw, RoundingMode::None)?;
+            let mut ln4 = cc.ln_2_num(pw, RoundingMode::None)?;
+            ln4.set_exponent(ln4.exponent() + 1);
+            let mut acc = Self::new(pw)?.sub(&g, pw, RoundingMode::None)?;
+            acc = acc.sub(&ln4, pw, RoundingMode::None)?;
+            let two = Self::from_word(2, pw)?;
+            for k in 1..=n {
+                let t = two.div(&from_usize_p(2 * k - 1, pw)?, pw, RoundingMode::None)?;
+                acc = acc.add(&t, pw, RoundingMode::None)?;
+            }
+            return acc.add(&Self::new(p)?, p, RoundingMode::None);
+        }
+        // Huge z: the series past -1/(2z) is below 2^-(2·pw) relative; z² would overflow.
+        if self.exponent() > Exponent::try_from(pw).map_err(|_| Error::InvalidArgument)? {
+            let ln_z = self.ln(pw, RoundingMode::None, cc)?;
+            let mut half_inv = one.div(self, pw, RoundingMode::None)?;
+            half_inv.set_exponent(half_inv.exponent() - 1);
+            return ln_z.sub(&half_inv, p, RoundingMode::None);
+        }
         let mut z = self.clone()?;
         z.set_inexact(false);
         let mut acc = Self::from_word(0, pw)?;
         let mut shifts = 0usize;
-        // Raise until the last (64th) asymptotic term, B₁₂₈/(128·z¹²⁸) ≈ 2^370.8 / z¹²⁸,
-        // is below 2^-(p+8).
-        let e_min = stirling_min_exponent(p, 379, 128, 8);
+        // Raise until the last asymptotic term (K = digamma_terms(p) Bernoulli numbers)
+        // is below 2^-(p+8). More terms at higher p keep the shift count small.
+        let terms = digamma_terms(p);
+        let e_min = asymp_min_exponent(p, terms);
         while z.exponent() < e_min && shifts < STIRLING_SHIFT_MAX {
             let rec = one.div(&z, pw, RoundingMode::None)?;
             acc = acc.sub(&rec, pw, RoundingMode::None)?;
             z = z.add(&one, pw, RoundingMode::None)?;
             shifts += 1;
         }
-        acc.add(&z.digamma_asymp(pw, cc)?, p, RoundingMode::None)
+        acc.add(&z.digamma_asymp(pw, terms, cc)?, p, RoundingMode::None)
     }
 
-    fn digamma_asymp(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+    fn digamma_asymp(&self, p: usize, terms: usize, cc: &mut Consts) -> Result<Self, Error> {
         // ln z − 1/(2z) − Σ_{k≥1} B_{2k} / (2k z^{2k})
         let ln_z = self.ln(p, RoundingMode::None, cc)?;
         let two = Self::from_word(2, p)?;
@@ -704,8 +757,8 @@ impl ExactNumNumber {
         let z2 = self.mul(self, p, RoundingMode::None)?;
         let mut zp = Self::from_word(1, p)?;
         let mut prev_e = Exponent::MIN;
-        let bern = even_bernoulli(64, p)?;
-        for k in 1..=64 {
+        let bern = even_bernoulli(terms, p)?;
+        for k in 1..=terms {
             zp = zp.mul(&z2, p, RoundingMode::None)?;
             let b = &bern[k - 1];
             let two_k = Self::from_word((2 * k) as Word, p)?;
@@ -3427,6 +3480,23 @@ fn erf_tail_below(x: &ExactNumNumber, p: usize) -> bool {
 
 /// Binary exponent from which `erfc` underflows below every subnormal (`x ≥ 2^31`).
 const ERFC_UNDERFLOW_EXPONENT: Exponent = 32;
+
+/// Bernoulli terms for the digamma asymptotic series at precision `p`: 64, up to 256.
+fn digamma_terms(p: usize) -> usize {
+    (p / 8).clamp(64, 256)
+}
+
+/// Smallest binary exponent `e` (`z ≥ 2^(e-1)`) for which the `k`-th term of a
+/// `terms`-term Stirling-type tail, `≈ (k/(πe·z))^{2k}`, is below `2^-(p+8)`:
+/// `e = ⌈(p+8)/(2k)⌉ + ⌈log2 k⌉ − 2`, never below 8.
+fn asymp_min_exponent(p: usize, terms: usize) -> Exponent {
+    let mut lg = 0usize;
+    while (1usize << lg) < terms {
+        lg += 1;
+    }
+    let need = (p + 8).div_ceil(2 * terms) + lg;
+    Exponent::try_from(need).map_or(Exponent::MAX, |e| (e - 2).max(8))
+}
 
 /// Largest `n` for which Γ(n+½) and ψ(n+½) use their closed forms.
 const HALF_INTEGER_MAX: usize = 1 << 12;
