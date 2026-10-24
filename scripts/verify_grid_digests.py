@@ -275,9 +275,9 @@ def exact_op(op, a, ints, p, rm, raw):
     if op == 'reciprocal': return ddiv(D(False, 1, 0), dv(a[0]), p + 8)
     if op == 'ldexp': d = dv(a[0]); d.E += ints[0]; return d
     if op == 'powi':
-        d = D(False, 1, 0)
-        for _ in range(ints[0]): d = dmul(d, dv(a[0]))
-        return d
+        b = dv(a[0]); n = ints[0]
+        if b.st: return None
+        return D(b.neg and n % 2 == 1, b.M ** n, b.E * n)
     if op == 'nth_root':
         if a[0].neg and ints[0] % 2 == 0: return 'nan'
         return droot(dv(a[0]), ints[0], p + 8)
@@ -367,7 +367,7 @@ def tiny_fun(op, xs):
             'exp': mpmath.exp, 'exp2': lambda t: mpmath.power(2, t), 'exp10': lambda t: mpmath.power(10, t),
             'log1p': mpmath.log1p}[op]
 
-def cplx(op, p, rm, ints, a):
+def cplx(op, p, rm, ints, a, exact=False):
     k, part = ints
     A, B, C, Dd = (dv(x) for x in a)
     if any(x.kind in ('nan', 'inf') for x in a): return None
@@ -375,7 +375,7 @@ def cplx(op, p, rm, ints, a):
         s = dadd(A if part == 0 else B, (C if part == 0 else Dd) if k == 0 else dneg(C if part == 0 else Dd))
         return rnd(s, p, rm)
     if k == 0:  # mul: componentwise rounded products then rounded sum
-        if rm == 'None':
+        if rm == "None" or exact:  # None bounds come from the exact value, not the per-mode componentwise model
             x = dadd(dmul(A, C), dneg(dmul(B, Dd))) if part == 0 else dadd(dmul(A, Dd), dmul(B, C))
             return rnd(x, p, rm)
         def rr(d):
@@ -433,8 +433,8 @@ def main():
         if rm == 'None' and exp_ix:
             # 'skip rounding' may keep extra bits: the result must lie between the ToZero and FromZero roundings at p
             try:
-                lo_t, _ = cplx(op, p, "ToZero", ints, args) if op.startswith("cplx") else expected(op, p, "ToZero", ints, args, got)
-                hi_t, _ = cplx(op, p, "FromZero", ints, args) if op.startswith("cplx") else expected(op, p, "FromZero", ints, args, got)
+                lo_t, _ = cplx(op, p, "ToZero", ints, args, True) if op.startswith("cplx") else expected(op, p, "ToZero", ints, args, got)
+                hi_t, _ = cplx(op, p, "FromZero", ints, args, True) if op.startswith("cplx") else expected(op, p, "FromZero", ints, args, got)
             except Ambig:
                 stats[key, 'ambig'] += 1; continue
             fin = all(t[0] in ("fin", "zero") for t in (lo_t, hi_t, got))
@@ -445,6 +445,10 @@ def main():
                 if ok_n and not r_ix and not op.startswith("cplx"):
                     p2 = max(got[2].bit_length() + 2, EMIN - got[3] + 2) if got[0] == "fin" else 3
                     ok_n = expected(op, p2, "ToZero", ints, args, got)[0] == got == expected(op, p2, "FromZero", ints, args, got)[0]
+            if not ok_n and op == "cplx_md" and fin:
+                # complex mul in None mode may round the component products: accept the componentwise bounds too
+                lo2, _ = cplx(op, p, "ToZero", ints, args); hi2, _ = cplx(op, p, "FromZero", ints, args)
+                ok_n = all(t[0] in ("fin", "zero") for t in (lo2, hi2)) and ((tle(lo2, got) and tle(got, hi2)) or (tle(hi2, got) and tle(got, lo2)))
             stats[key, 'none-ok' if ok_n else 'BAD'] += 1
             if not ok_n and len(ex[key, 'BAD']) < maxex: ex[key, 'BAD'].append(('none', ln[:900]))
             continue

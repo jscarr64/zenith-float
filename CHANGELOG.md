@@ -50,6 +50,8 @@ An integer power of a tiny subnormal number (`x.pow(n)` with `|x|^n` below the n
 
 A non-integer power whose logarithm path underflows (`x.pow(y)` with `e^(y ln x)` far below the subnormal range, such as `(1.5 * 2^(EMIN - 18))^2.5`) returned an exact zero; it now rounds by mode to zero or the least positive value and is flagged inexact.
 
+`ExactComplex::div` with a numerator term far below the other (an exponent gap past the working width, such as `(-7 + s i) / (-7 - 7i)` with `s` a tiny subnormal) rounded that sum without a sticky bit, so a directed rounding of a quotient just past a grid point (here `-1/2 - 7s/98` under `Down`) returned the grid point. The far term is now replaced by a same-sign proxy just below the working grid and the sum is formed exactly.
+
 `add_full_prec`, `sub_full_prec` and `mul_full_prec` with a result below the normal range kept only the words of the normalized mantissa before the subnormal shift and dropped the low bits; the mantissa now grows by the shift first, so the result is exact. Found by the grid-digest mpmath verification; `full_prec_keeps_every_bit_of_a_subnormal_result` covers it.
 
 The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). `rust-version` is `"1.99"` in every crate, and `rust-toolchain.toml` pins channel `1.99` with `clippy` and `rustfmt`. A crate that compiled on the previous compiler has to move to Rust 1.99 before it can depend on 2.0.0.

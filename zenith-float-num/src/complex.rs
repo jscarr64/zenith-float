@@ -40,14 +40,28 @@ fn exact_sum(a: &ExactNum, b: &ExactNum, sub: bool, p: usize) -> ExactNum {
     match (wide, sub) {
         (false, false) => a.add_full_prec(b),
         (false, true) => a.sub_full_prec(b),
+        // The far smaller term only decides which side of a grid point the sum lies on. It is replaced
+        // by a proxy of the same sign, a power of two just below the `w`-bit grid of the larger term, and
+        // the sum is then formed exactly: the one later rounding at `p` sees the same side (and never a
+        // tie), which a sum rounded at `w` without a sticky bit lost.
         (true, sub) => {
             let w = a.mantissa_max_bit_len().map_or(p, |la| la.max(b.mantissa_max_bit_len().map_or(p, |lb| lb)))
                 .saturating_add(p)
                 .saturating_add(2 * WORD_BIT_SIZE);
-            if sub {
-                ExactNum::sub_ref(a, b, w, RoundingMode::None)
-            } else {
-                ExactNum::add_ref(a, b, w, RoundingMode::None)
+            let a_big = a.exponent() > b.exponent();
+            let (big, small) = if a_big { (a, b) } else { (b, a) };
+            let proxy = big
+                .exponent()
+                .and_then(|e| i64::try_from(w).ok().and_then(|w| w.checked_add(2)).and_then(|w2| e.checked_sub(w2)))
+                .and_then(|e| ExactNum::pow2(e, WORD_BIT_SIZE).ok())
+                .map(|t| if small.is_negative() { -t } else { t });
+            match (proxy, a_big, sub) {
+                (Some(t), true, false) => a.add_full_prec(&t),
+                (Some(t), true, true) => a.sub_full_prec(&t),
+                (Some(t), false, false) => t.add_full_prec(b),
+                (Some(t), false, true) => t.sub_full_prec(b),
+                (None, _, true) => ExactNum::sub_ref(a, b, w, RoundingMode::None),
+                (None, _, false) => ExactNum::add_ref(a, b, w, RoundingMode::None),
             }
         }
     }
@@ -1187,6 +1201,18 @@ mod tests {
             assert!(q.im().is_zero(), "{rm:?}");
             assert!(!q.inexact(), "{rm:?}");
         }
+    }
+
+    #[test]
+    fn div_keeps_the_direction_of_a_far_smaller_numerator_term() -> Result<(), crate::Error> {
+        // (-7 + s i) / (-7 - 7i) with s = 1.5 * 2^(EMIN - 18): im = (-49 - 7s) / 98 = -1/2 - 7s/98, just below -1/2.
+        // Rounding the wide sum `bc - ad` without a sticky bit gave exactly -1/2, so Down kept -1/2.
+        let m7 = || -ExactNum::from_u8(7, 64);
+        let s = ExactNum::from_mag_parts(0xC000_0000_0000_0000, i64::from(crate::EXPONENT_MIN) - 17, 64)?;
+        let q = ExactComplex::new(m7(), s).div(&ExactComplex::new(m7(), m7()), 1, RoundingMode::Down);
+        assert_eq!(q.im().compare(&-ExactNum::from_u8(1, 64)), Some(0));
+        assert!(q.inexact());
+        Ok(())
     }
 
     #[test]
