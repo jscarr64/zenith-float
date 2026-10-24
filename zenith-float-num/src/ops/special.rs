@@ -888,24 +888,27 @@ impl ExactNumNumber {
         let z2 = self.mul(self, p, RoundingMode::None)?;
         let mut zp = Self::from_word(1, p)?;
         let mut prev_e = Exponent::MIN;
-        let bern = even_bernoulli(terms, p)?;
-        for k in 1..=terms {
-            zp = zp.mul(&z2, p, RoundingMode::None)?;
-            let b = &bern[k - 1];
-            let two_k = Self::from_word((2 * k) as Word, p)?;
-            let den = two_k.mul(&zp, p, RoundingMode::None)?;
-            let term = b.div(&den, p, RoundingMode::None)?;
-            s = s.sub(&term, p, RoundingMode::None)?;
-            let e = term.exponent();
-            if term.is_zero() || (e as i64) + (p as i64) < 0 {
-                break;
+        let p_exp = Exponent::try_from(p).map_err(|_| Error::InvalidArgument)?;
+        // Borrowed from the shared exact-Bernoulli cache (no per-call recurrence).
+        with_even_bernoulli(terms, p, |bern| {
+            for (i, b) in bern.iter().enumerate() {
+                let k = i + 1;
+                zp = zp.mul(&z2, p, RoundingMode::None)?;
+                let two_k = from_usize_p(2 * k, p)?;
+                let den = two_k.mul(&zp, p, RoundingMode::None)?;
+                let term = b.div(&den, p, RoundingMode::None)?;
+                s = s.sub(&term, p, RoundingMode::None)?;
+                let e = term.exponent();
+                if term.is_zero() || e + p_exp < 0 {
+                    break;
+                }
+                if k > 2 && e > prev_e {
+                    break;
+                }
+                prev_e = e;
             }
-            if k > 2 && e > prev_e {
-                break;
-            }
-            prev_e = e;
-        }
-        Ok(s)
+            Ok(s)
+        })
     }
 
     /// Lower incomplete gamma \(\gamma(s=\mathrm{self}, x)\) for `self > 0`, `x >= 0`.
@@ -4858,6 +4861,157 @@ pub(crate) fn even_bernoulli(n: usize, p: usize) -> Result<Vec<ExactNumNumber>, 
     Ok(out)
 }
 
+/// Exact even Bernoulli numbers, grown on demand, with p-bit roundings keyed by precision.
+///
+/// Tangent numbers `T_k` are the odd zigzag numbers `A_{2k-1}` of the Seidel–Entringer
+/// boustrophedon: `E(n,0) = 0`, `E(n,j) = E(n,j-1) + E(n-1,n-j)`, `A_n = E(n,n)`. Each new row
+/// costs `n` exact additions, so `B_2 .. B_2K` cost `O(K²)` additions in total (the former
+/// tangent recurrence in `even_bernoulli` restarts its `O(K²)` triangle with multiplications
+/// for every call). Then `B_2k = (-1)^(k-1) 2k T_k / (2^2k (2^2k - 1))`.
+struct BernoulliCache {
+    /// Boustrophedon row `row_n` (empty before the first growth); exact integers.
+    row: Vec<ExactNumNumber>,
+    row_n: usize,
+    /// `exact[k-1] = (num, den)` with `B_2k = num / den`, both exact.
+    exact: Vec<(ExactNumNumber, ExactNumNumber)>,
+    /// `(p, [B_2 .. B_2n] rounded to p bits ToEven)`, at most `BERNOULLI_P_SLOTS` entries.
+    rounded: Vec<(usize, Vec<ExactNumNumber>)>,
+}
+
+/// Distinct precisions kept in the Bernoulli cache; the oldest is dropped beyond this.
+const BERNOULLI_P_SLOTS: usize = 8;
+
+impl BernoulliCache {
+    const fn new() -> Self {
+        Self { row: Vec::new(), row_n: 0, exact: Vec::new(), rounded: Vec::new() }
+    }
+
+    /// Advances the boustrophedon one row.
+    fn next_row(&mut self) -> Result<(), Error> {
+        if self.row.is_empty() {
+            self.row.push(ExactNumNumber::from_word(1, WORD_BIT_SIZE)?);
+            self.row_n = 0;
+        }
+        let n = self.row_n + 1;
+        // A_n ≤ n! < 2^(n·bitlen(n)): every entry of row n fits exactly.
+        let bits = usize::try_from(usize::BITS - n.leading_zeros()).map_err(|_| Error::InvalidArgument)?;
+        let pn = round_p(n * bits + 2 * WORD_BIT_SIZE);
+        let mut next = Vec::with_capacity(n + 1);
+        let mut acc = ExactNumNumber::new(pn)?;
+        for j in 1..=n {
+            let prev = self.row.get(n - j).ok_or(Error::InvalidArgument)?;
+            let sum = acc.add(prev, pn, RoundingMode::None)?;
+            next.push(acc);
+            acc = sum;
+        }
+        next.push(acc);
+        self.row = next;
+        self.row_n = n;
+        Ok(())
+    }
+
+    /// Grows the exact table to at least `n` entries.
+    fn grow_exact(&mut self, n: usize) -> Result<(), Error> {
+        while self.exact.len() < n {
+            self.next_row()?;
+            if self.row_n % 2 == 0 {
+                continue;
+            }
+            let k = self.exact.len() + 1;
+            let t = self.row.last().ok_or(Error::InvalidArgument)?;
+            let pb = round_p(t.mantissa_max_bit_len() + 2 * WORD_BIT_SIZE);
+            let mut num = t.mul(&from_usize_p(2 * k, pb)?, pb, RoundingMode::None)?;
+            if k % 2 == 0 {
+                num = num.neg()?;
+            }
+            let pd = round_p(4 * k + 2 * WORD_BIT_SIZE);
+            let one = ExactNumNumber::from_word(1, pd)?;
+            let mut pow = ExactNumNumber::from_word(1, pd)?;
+            pow.set_exponent(pow.exponent() + Exponent::try_from(2 * k).map_err(|_| Error::InvalidArgument)?);
+            let den = pow.sub(&one, pd, RoundingMode::None)?.mul(&pow, pd, RoundingMode::None)?;
+            self.exact.push((num, den));
+        }
+        Ok(())
+    }
+
+    /// Grows the p-bit roundings to at least `n` entries.
+    fn grow_rounded(&mut self, n: usize, p: usize) -> Result<(), Error> {
+        self.grow_exact(n)?;
+        if !self.rounded.iter().any(|(q, _)| *q == p) {
+            if self.rounded.len() >= BERNOULLI_P_SLOTS {
+                self.rounded.remove(0);
+            }
+            self.rounded.push((p, Vec::new()));
+        }
+        let exact = &self.exact;
+        let slot = self.rounded.iter_mut().find(|(q, _)| *q == p).ok_or(Error::InvalidArgument)?;
+        while slot.1.len() < n {
+            let (num, den) = exact.get(slot.1.len()).ok_or(Error::InvalidArgument)?;
+            slot.1.push(num.div(den, p, RoundingMode::ToEven)?);
+        }
+        Ok(())
+    }
+
+    fn rounded_slice(&self, n: usize, p: usize) -> Option<&[ExactNumNumber]> {
+        self.rounded.iter().find(|(q, _)| *q == p).and_then(|(_, v)| v.get(..n))
+    }
+}
+
+#[cfg(feature = "std")]
+static BERNOULLI: std::sync::RwLock<BernoulliCache> = std::sync::RwLock::new(BernoulliCache::new());
+
+/// Exact even Bernoulli numbers `B_2 .. B_2n` as `(num, den)` pairs, borrowed for `f`.
+#[cfg(test)]
+pub(crate) fn with_exact_bernoulli<R>(
+    n: usize,
+    f: impl FnOnce(&[(ExactNumNumber, ExactNumNumber)]) -> Result<R, Error>,
+) -> Result<R, Error> {
+    #[cfg(feature = "std")]
+    {
+        {
+            let g = BERNOULLI.read().map_err(|_| Error::InvalidArgument)?;
+            if let Some(v) = g.exact.get(..n) {
+                return f(v);
+            }
+        }
+        BERNOULLI.write().map_err(|_| Error::InvalidArgument)?.grow_exact(n)?;
+        let g = BERNOULLI.read().map_err(|_| Error::InvalidArgument)?;
+        f(g.exact.get(..n).ok_or(Error::InvalidArgument)?)
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        let mut c = BernoulliCache::new();
+        c.grow_exact(n)?;
+        f(c.exact.get(..n).ok_or(Error::InvalidArgument)?)
+    }
+}
+
+/// `B_2 .. B_2n` rounded to `p` bits (ToEven), borrowed from the shared cache for `f`.
+pub(crate) fn with_even_bernoulli<R>(
+    n: usize,
+    p: usize,
+    f: impl FnOnce(&[ExactNumNumber]) -> Result<R, Error>,
+) -> Result<R, Error> {
+    #[cfg(feature = "std")]
+    {
+        {
+            let g = BERNOULLI.read().map_err(|_| Error::InvalidArgument)?;
+            if let Some(v) = g.rounded_slice(n, p) {
+                return f(v);
+            }
+        }
+        BERNOULLI.write().map_err(|_| Error::InvalidArgument)?.grow_rounded(n, p)?;
+        let g = BERNOULLI.read().map_err(|_| Error::InvalidArgument)?;
+        f(g.rounded_slice(n, p).ok_or(Error::InvalidArgument)?)
+    }
+    #[cfg(not(feature = "std"))]
+    {
+        let mut c = BernoulliCache::new();
+        c.grow_rounded(n, p)?;
+        f(c.rounded_slice(n, p).ok_or(Error::InvalidArgument)?)
+    }
+}
+
 /// Euler–Mascheroni constant γ to `p` bits (Brent–McMillan B1).
 pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
     // Brent–McMillan (algorithm B1): with t_k = (n^k / k!)^2 and H_k the harmonic numbers,
@@ -4911,6 +5065,51 @@ pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNu
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Builds the exact integer with decimal digits `s` (leading `-` allowed).
+    fn dec_int(s: &str) -> Result<ExactNumNumber, crate::Error> {
+        let p = round_p(4 * s.len() + 2 * WORD_BIT_SIZE);
+        let ten = ExactNumNumber::from_word(10, p)?;
+        let mut acc = ExactNumNumber::new(p)?;
+        for c in s.trim_start_matches('-').chars() {
+            let d = c.to_digit(10).ok_or(crate::Error::InvalidArgument)?;
+            acc = acc.mul(&ten, p, RoundingMode::None)?;
+            acc = acc.add(&ExactNumNumber::from_word(Word::from(d), p)?, p, RoundingMode::None)?;
+        }
+        if s.starts_with('-') {
+            acc = acc.neg()?;
+        }
+        Ok(acc)
+    }
+
+    /// The cached exact B_2k equal sympy `bernoulli(2k)` (sympy 1.14.0), checked by an exact
+    /// cross-multiplication; no timing involved.
+    #[test]
+    fn test_bernoulli_cache_exact_vs_sympy() -> Result<(), crate::Error> {
+        let rows: [(usize, &str, &str); 8] = [
+        (1, "1", "6"),
+        (2, "-1", "30"),
+        (3, "1", "42"),
+        (6, "-691", "2730"),
+        (10, "-174611", "330"),
+        (30, "-1215233140483755572040304994079820246041491", "56786730"),
+        (64, "-267754707742548082886954405585282394779291459592551740629978686063357792734863530145362663093519862048495908453718017", "510"),
+        (100, "-498384049428333414764928632140399662108495887457206674968055822617263669621523687568865802302210999132601412697613279391058654527145340515840099290478026350382802884371712359337984274122861159800280019110197888555893671151", "1366530"),
+        ];
+        with_exact_bernoulli(100, |rats| {
+            for (k, num_s, den_s) in rows {
+                let (num, den) = rats.get(k - 1).ok_or(crate::Error::InvalidArgument)?;
+                let (sn, sd) = (dec_int(num_s)?, dec_int(den_s)?);
+                let pl = round_p(num.mantissa_max_bit_len() + sd.mantissa_max_bit_len());
+                let pr = round_p(den.mantissa_max_bit_len() + sn.mantissa_max_bit_len());
+                let lhs = num.mul(&sd, pl, RoundingMode::None)?;
+                let rhs = den.mul(&sn, pr, RoundingMode::None)?;
+                assert!(!lhs.inexact() && !rhs.inexact(), "k={k}: inexact product");
+                assert!(lhs.cmp(&rhs) == 0, "k={k}: B_2k differs from sympy");
+            }
+            Ok(())
+        })
+    }
 
     #[test]
     fn test_erf_gamma_bessel() -> Result<(), crate::Error> {
