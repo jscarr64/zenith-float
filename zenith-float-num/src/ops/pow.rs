@@ -335,6 +335,13 @@ impl ExactNumNumber {
         p: usize,
         rm: RoundingMode,
     ) -> Result<Self, Error> {
+        // A positive power below the normal range is formed from the mantissa alone and rounded once onto
+        // the subnormal grid: `2^(lead - 1) <= |x| < 2^lead`, so `|x|^mag` lies in `[2^(mag (lead - 1)), 2^(mag lead))`.
+        let lead = i128::from(self.exponent()) - (self.mantissa_max_bit_len() as i128 - self.precision() as i128);
+        let k = mag as i128;
+        if !negative_exponent && k * (lead - 1) < i128::from(EXPONENT_MIN) && k * lead <= i128::from(EXPONENT_MAX) {
+            return self.pow_exact_integer_underflow(mag, k * lead, p, rm);
+        }
         let p = round_p(p);
         let mut square = self.clone()?;
         square.set_sign(Sign::Pos);
@@ -657,12 +664,8 @@ impl ExactNumNumber {
                 let lead = i128::from(self.exponent()) - (self.mantissa_max_bit_len() as i128 - self.precision() as i128);
                 let k = mag as i128;
                 let in_range = k * (lead - 1) >= i128::from(EXPONENT_MIN) && k * lead <= i128::from(EXPONENT_MAX);
-                if mag >= 2 && width.saturating_mul(mag) <= 1_048_576 && k * lead <= i128::from(EXPONENT_MAX) {
-                    if !in_range && !n.is_negative() {
-                        return self.pow_exact_integer_underflow(mag, k * lead, p, rm);
-                    }
-                }
-                if in_range && mag >= 2 && width.saturating_mul(mag) <= 1_048_576 {
+                let underflow = !n.is_negative() && k * lead <= i128::from(EXPONENT_MAX);
+                if (in_range || underflow) && mag >= 2 && width.saturating_mul(mag) <= 1_048_576 {
                     return self.pow_exact_integer(mag, n.is_negative(), p, rm);
                 }
             }

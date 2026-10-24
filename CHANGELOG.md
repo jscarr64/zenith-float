@@ -46,7 +46,7 @@ i64 exponent fallout: `round` no longer rejects shifts up to `EXPONENT_MAX + 2 *
 
 `round(n, rm)` reports its own rounding in `inexact()`: it kept the operand's per-operation flag, so rounding an exact value to zero said exact and rounding nothing after an inexact operation said inexact. The accumulated flag was already right. Found by the grid-digest mpmath verification; `round_reports_its_own_rounding` covers it.
 
-An integer power of a tiny subnormal number (`x.pow(n)` with `|x|^n` below the normal range) was an exact zero in every rounding mode, even `Up`: the exact squaring flushed a partial product to zero. Such a power is now formed from the normalized mantissa and rounded once onto the subnormal grid, with `inexact()` set. Found by the grid-digest mpmath verification; `power_of_a_tiny_subnormal_is_not_an_exact_zero` covers it.
+An integer power of a tiny subnormal number (`x.pow(n)` with `|x|^n` below the normal range, also a power `N / 2^j` through an exact root) was an exact zero in every rounding mode, even `Up`: the exact squaring flushed a partial product to zero. Such a power is now formed from the normalized mantissa and rounded once onto the subnormal grid, with `inexact()` set. Found by the grid-digest mpmath verification; `power_of_a_tiny_subnormal_is_not_an_exact_zero` covers it.
 
 `add_full_prec`, `sub_full_prec` and `mul_full_prec` with a result below the normal range kept only the words of the normalized mantissa before the subnormal shift and dropped the low bits; the mantissa now grows by the shift first, so the result is exact. Found by the grid-digest mpmath verification; `full_prec_keeps_every_bit_of_a_subnormal_result` covers it.
 
