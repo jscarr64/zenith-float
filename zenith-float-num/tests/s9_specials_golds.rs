@@ -189,7 +189,9 @@ fn run_row(row: &Value, cc: &mut Consts) -> Result<(), String> {
     let p = field(row, "p")?.as_u64().ok_or("p is not a u64")?;
     let p = usize::try_from(p).map_err(|e| format!("p: {e}"))?;
     let rm = mode_of(text(row, "rm")?)?;
-    let raw = field(row, "args")?.as_array().ok_or("args is not an array")?;
+    let raw = field(row, "args")?
+        .as_array()
+        .ok_or("args is not an array")?;
     let mut args = Vec::with_capacity(raw.len());
     for a in raw {
         args.push(arg_of(a)?);
@@ -230,7 +232,12 @@ fn check(func: &'static str) -> Result<(), String> {
     }
     let ids: Vec<String> = rows
         .iter()
-        .map(|r| r.get("id").and_then(Value::as_str).unwrap_or("?").to_string())
+        .map(|r| {
+            r.get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("?")
+                .to_string()
+        })
         .collect();
     let (tx, rx) = mpsc::channel::<Result<(), String>>();
     thread::spawn(move || {
