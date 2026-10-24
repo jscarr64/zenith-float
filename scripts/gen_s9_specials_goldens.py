@@ -360,9 +360,11 @@ def build_cases():
     for n in [0, 1, 2, 10]:
         for sgn in ["+", "-"]:
             add("gamma", "near-pole", [("off", f"-{n}", None, sgn)], ps=[24, 53, 113, 256])
-        add("gamma", "pole", [d(f"-{n}")], outcome="nan", ps=[53])
-    add("gamma", "pole", [("z", "+")], outcome="nan", ps=[53])
-    add("gamma", "pole", [("z", "-")], outcome="nan", ps=[53])
+        # Rusty ruling: gamma(+-0) = +-Inf exactly (MPFR); negative integers are InvalidArgument.
+        # d("-0") parses to +0, so the n = 0 row is gamma(+0) = +Inf.
+        add("gamma", "pole", [d(f"-{n}")], outcome="+inf" if n == 0 else "nan", ps=[53])
+    add("gamma", "pole", [("z", "+")], outcome="+inf", ps=[53])
+    add("gamma", "pole", [("z", "-")], outcome="-inf", ps=[53])
     add("gamma", "large-prec", [d("2.5")], ps=[16384, 65536])
     # ---------------- ln_gamma (positive arguments)
     for s in ["0.5", "1.5", "2.5", "3.25", "10.5", "100.125", "1e4", "0.01"]:
