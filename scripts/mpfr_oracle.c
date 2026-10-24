@@ -12,8 +12,10 @@
 #include <gmp.h>
 #include <mpfr.h>
 
-#define EMIN (-2147483647 - 1)
-#define EMAX 2147483647
+/* MPFR cannot hold 2^(EMIN - p) at the library range, so the cross-check runs in a
+   translated frame of +-(2^31 - 1). gen_oracle_goldens.py shifts exponents back. */
+#define EMIN (-2147483647L)
+#define EMAX 2147483647L
 
 static int round_p(int p) {
     if (p <= 0) {

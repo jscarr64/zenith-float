@@ -9,7 +9,7 @@ powers and integer square roots on the Python side, MPFR on the C side.
 Complex rows use mpmath for the principal value and MPFR for the cross-check.
 
   python3 scripts/gen_oracle_goldens.py
-  cc -O2 -o /tmp/mpfr_oracle scripts/mpfr_oracle.c -lmpfr -lgmp
+  cc -O2 -o ../logs/mpfr_oracle scripts/mpfr_oracle.c -lmpfr -lgmp
 """
 
 from __future__ import annotations
@@ -21,8 +21,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-EMIN = -2147483648
-EMAX = 2147483647
+EMIN = -(2**62 - 1)
+EMAX = 2**62 - 1
+# mpfr_oracle.c runs at +-(2^31 - 1): MPFR cannot hold 2^(EMIN - p) at +-(2^62 - 1).
+C_SHIFT = (2**62 - 1) - (2**31 - 1)
 WORD = 64
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "zenith-float-num" / "tests" / "oracle" / "goldens"
@@ -528,6 +530,10 @@ def same(st: dict, p: int, c_line: str) -> bool:
     if parts[0] != "finite" or kind[0] != "f":
         return False
     _k, sign, n, d, ez = kind
+    if ez > 2**61:
+        ez -= C_SHIFT
+    elif ez < -(2**61):
+        ez += C_SHIFT
     if sign != parts[1]:
         return False
     cz, cez = int(parts[2]), int(parts[3])
@@ -676,7 +682,7 @@ def build_cases() -> list[dict]:
 
 def load_oracle(rows: list[dict]) -> list[str]:
     cc = os.environ.get("CC", "cc")
-    binary = Path("/tmp/mpfr_oracle")
+    binary = Path(os.environ.get("MPFR_ORACLE", str(ROOT.parent / "logs" / "mpfr_oracle")))
     src = ROOT / "scripts" / "mpfr_oracle.c"
     subprocess.check_call(
         [cc, "-O2", "-o", str(binary), str(src), "-lmpfr", "-lgmp"],
