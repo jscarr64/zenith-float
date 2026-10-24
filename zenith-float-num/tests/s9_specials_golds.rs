@@ -21,6 +21,7 @@ use zenith_float_num::{Consts, Error, ExactNum, Exponent, RoundingMode, Sign, Wo
 const GOLDS: &str = include_str!("oracle/goldens/s9_specials.jsonl");
 
 /// Wall budget for one row, and for one function's whole table; the full tier gets more.
+/// Release fits these: erf(0.5) at p=65536 is 5109 series terms, 2.07 s per row (debug is slower).
 const ROW_BUDGET: Duration = Duration::from_secs(10);
 const FN_BUDGET: Duration = Duration::from_secs(120);
 const FULL_ROW_BUDGET: Duration = Duration::from_secs(120);
