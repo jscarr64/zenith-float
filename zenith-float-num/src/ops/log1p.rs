@@ -1,7 +1,7 @@
 //! `ln(1 + x)` without cancellation for small `x`.
 
 use crate::common::util::{bump_prec_retry, round_p};
-use crate::defs::{Exponent, Error, WORD_BIT_SIZE};
+use crate::defs::{Error, Exponent, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
@@ -49,7 +49,9 @@ impl ExactNumNumber {
             let p_exp = Exponent::try_from(p_x).map_err(|_| Error::InvalidArgument)?;
             if self.is_positive() && self.exponent() > p_exp + 2 {
                 let r = one.div(self, p_x, RoundingMode::None)?;
-                let mut ret = self.ln(p_x, RoundingMode::None, cc)?.add(&r, p_x, RoundingMode::None)?;
+                let mut ret =
+                    self.ln(p_x, RoundingMode::None, cc)?
+                        .add(&r, p_x, RoundingMode::None)?;
                 if ret.try_set_precision(p, rm, p_wrk)? {
                     ret.set_inexact(true);
                     return Ok(ret);

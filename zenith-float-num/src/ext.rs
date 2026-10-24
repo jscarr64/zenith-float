@@ -1492,7 +1492,9 @@ impl ExactNum {
             Flavor::Inf(s) => {
                 if s.is_positive() {
                     match ExactNumNumber::from_word(1, p) {
-                        Ok(v) => ExactNum { inner: Flavor::Value(v) },
+                        Ok(v) => ExactNum {
+                            inner: Flavor::Value(v),
+                        },
                         Err(e) => Self::nan(Some(e)),
                     }
                 } else {
@@ -1504,7 +1506,13 @@ impl ExactNum {
     }
 
     /// `B(self, b)` at `p` bits with `rm`; see [`ExactNumNumber::beta`].
-    pub(crate) fn beta_word(&self, b: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
+    pub(crate) fn beta_word(
+        &self,
+        b: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> ExactNum {
         match (&self.inner, &b.inner) {
             (Flavor::Value(x), Flavor::Value(y)) => {
                 Self::result_to_ext_rm(x.beta(y, p, rm, cc), false, true, p, rm)
