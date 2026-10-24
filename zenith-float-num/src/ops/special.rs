@@ -23,6 +23,13 @@ impl ExactNumNumber {
             return Self::new2(p, self.sign(), self.inexact());
         }
 
+        // erf(x) = ±(1 - erfc|x|) with erfc|x| below half an ulp of 1: only its sign matters.
+        if erf_tail_below(self, p) {
+            let mut one = Self::from_word(1, p)?;
+            one.set_sign(self.sign());
+            return Self::round_offset(&one, self.sign().invert(), p, rm);
+        }
+
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
 
@@ -48,6 +55,19 @@ impl ExactNumNumber {
             let mut r = Self::tiny_positive(p, rm)?;
             r.set_inexact(true);
             return Ok(r);
+        }
+
+        // erfc(x) = 2 - erfc|x| for very negative x, with the tail below half an ulp of 2.
+        if self.is_negative() && erf_tail_below(self, p) {
+            let two = Self::from_word(2, p)?;
+            return Self::round_offset(&two, Sign::Neg, p, rm);
+        }
+
+        // erfc(x) = 1 - 2x/√π + ... for tiny x: the correction is below half an ulp of 1.
+        let p_exp = Exponent::try_from(p).map_err(|_| Error::InvalidArgument)?;
+        if !self.is_zero() && self.exponent() < -(p_exp + 2) {
+            let one = Self::from_word(1, p)?;
+            return Self::round_offset(&one, self.sign().invert(), p, rm);
         }
 
         let mut p_inc = WORD_BIT_SIZE;
@@ -76,6 +96,34 @@ impl ExactNumNumber {
             | RoundingMode::ToZero
             | RoundingMode::ToEven => Self::new2(p, Sign::Pos, true),
         }
+    }
+
+    /// Rounds `base + δ` once at `p` bits with `rm`, where `base` is exact and nonzero and `δ`
+    /// has sign `toward` and a magnitude strictly between 0 and half an ulp of `base` at `p`
+    /// bits. Any such `δ` rounds the same way, so a proxy `δ` 128 bits down stands in for it.
+    /// The result is marked inexact.
+    pub(crate) fn round_offset(
+        base: &Self,
+        toward: Sign,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Self, Error> {
+        let pw = round_p(p) + 3 * WORD_BIT_SIZE;
+        let e0 = base.exponent();
+        let mut b = Self::new(pw)?;
+        b = b.add(base, pw, RoundingMode::None)?;
+        b.set_exponent(0);
+        let mut t = Self::from_word(1, pw)?;
+        let shift = Exponent::try_from(round_p(p) + 2 * WORD_BIT_SIZE)
+            .map_err(|_| Error::InvalidArgument)?;
+        t.set_exponent(1 - shift);
+        t.set_sign(toward);
+        let mut r = b.add(&t, pw, RoundingMode::None)?;
+        r.set_precision(p, rm)?;
+        let e1 = r.exponent();
+        r.set_exponent(e0 + e1);
+        r.set_inexact(true);
+        Ok(r)
     }
 
     fn erf_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -3080,6 +3128,22 @@ fn erf_x2_bits(x: &ExactNumNumber, p: usize) -> Result<Option<usize>, Error> {
         return Ok(None);
     }
     Ok(Some(round_p((x2 + 1) * 3 / 2) + WORD_BIT_SIZE))
+}
+
+/// True when `x² ≥ p + 64`, so `erfc|x| < 2^-(p+64)` sits below half an ulp of 1 at `p` bits.
+fn erf_tail_below(x: &ExactNumNumber, p: usize) -> bool {
+    if x.is_zero() {
+        return false;
+    }
+    let e = x.exponent();
+    if e < 2 {
+        return false;
+    }
+    // |x| ≥ 2^(e-1), so x² ≥ 2^(2e-2).
+    match u32::try_from(2 * e - 2) {
+        Ok(k) => 1usize.checked_shl(k).map_or(true, |v| v >= p + 64),
+        Err(_) => true,
+    }
 }
 
 /// Binary exponent from which `erfc` underflows below every subnormal (`x ≥ 2^31`).
