@@ -429,8 +429,8 @@ def main():
         if rm == 'None' and exp_ix:
             # 'skip rounding' may keep extra bits: the result must lie between the ToZero and FromZero roundings at p
             try:
-                lo_t, _ = expected(op, p, 'ToZero', ints, args, got)
-                hi_t, _ = expected(op, p, 'FromZero', ints, args, got)
+                lo_t, _ = cplx(op, p, "ToZero", ints, args) if op.startswith("cplx") else expected(op, p, "ToZero", ints, args, got)
+                hi_t, _ = cplx(op, p, "FromZero", ints, args) if op.startswith("cplx") else expected(op, p, "FromZero", ints, args, got)
             except Ambig:
                 stats[key, 'ambig'] += 1; continue
             fin = all(t[0] in ("fin", "zero") for t in (lo_t, hi_t, got))
@@ -438,7 +438,7 @@ def main():
                 ok_n = got in (lo_t, hi_t) or (hi_t[0] == "inf" and got[0] == "fin" and got[1] == hi_t[1] and (tle(lo_t, got) if not got[1] else tle(got, lo_t)))
             else:
                 ok_n = (tle(lo_t, got) and tle(got, hi_t)) or (tle(hi_t, got) and tle(got, lo_t))
-                if ok_n and not r_ix:
+                if ok_n and not r_ix and not op.startswith("cplx"):
                     p2 = max(got[2].bit_length() + 2, EMIN - got[3] + 2) if got[0] == "fin" else 3
                     ok_n = expected(op, p2, "ToZero", ints, args, got)[0] == got == expected(op, p2, "FromZero", ints, args, got)[0]
             stats[key, 'none-ok' if ok_n else 'BAD'] += 1
@@ -458,6 +458,8 @@ def main():
                 flags[key, 'inexact-flag'] += 1
                 if len(ex[key, 'flag']) < maxex: ex[key, 'flag'].append((exp_ix, ln[:600]))
             acc_exp = r_ix or any(x.acc for x in args)
+            if op in ("mul", "sqr", "op*", "mul_full", "div", "op/") and res.kind == "zero" and any(x.kind == "zero" for x in args):
+                acc_exp = r_ix  # an exact zero factor makes an exact zero: no history
             if r_acc != acc_exp and res.kind not in ("inf", "nan") and not op.startswith("cplx"):
                 flags[key, 'acc-flag'] += 1
                 if len(ex[key, 'acc']) < maxex: ex[key, 'acc'].append((acc_exp, ln[:600]))
