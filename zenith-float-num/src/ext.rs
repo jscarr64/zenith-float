@@ -720,7 +720,7 @@ impl ExactNum {
     /// operands' last bits and it is smaller than both, so it fits without rounding. It takes
     /// no precision or rounding mode, and `inexact()` is false.
     ///
-    /// Accuracy: exact
+    /// Accuracy: correctly-rounded (the remainder is exact)
     pub fn rem(&self, d2: &Self) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
