@@ -7566,6 +7566,11 @@ mod round_op_flag_tests {
             assert!(!z.inexact(), "{rm:?}");
             assert!(z.inexact_accumulated(), "{rm:?}");
         }
+        for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::None] {
+            // a subnormal operand rounded to an integer is an inexact zero
+            let t = ExactNum::from_mag_parts(0xC000_0000_0000_0000, i64::from(crate::EXPONENT_MIN) + 5, 64)?.round(0, rm);
+            assert!(t.is_zero() && t.inexact(), "{rm:?}");
+        }
         let w = ExactNum::from_mag_parts(0xC000_0000_0000_0000, 2, 64)?.round(1, RoundingMode::ToEven); // 3.0 exact
         assert!(!w.inexact());
         assert!(!w.inexact_accumulated());
@@ -7594,5 +7599,24 @@ mod underflow_zero_flag_tests {
         let sq = ExactNum::mul_ref(&x, &x, 53, RoundingMode::ToZero); // flushed to zero
         assert!(sq.is_zero() && sq.inexact());
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod full_prec_subnormal_tests {
+    use crate::{ExactNum, Sign, EXPONENT_MIN};
+
+    // A full-precision sum or product below the normal range was cut to the words of its
+    // normalized mantissa before the subnormal shift, which dropped the low word.
+    #[test]
+    fn full_prec_keeps_every_bit_of_a_subnormal_result() {
+        // a 192-bit subnormal number whose top word is zero: 0xAAAAAAA_AAAAAAAAAAAAAAAA * 2^(EMIN - 192)
+        let x = ExactNum::from_raw_parts(&[0xAAAA_AAAA_AAAA_AAAA, 0x0AAA_AAAA, 0], 92, Sign::Neg, EXPONENT_MIN, false);
+        let one = ExactNum::from_raw_parts(&[0x8000_0000_0000_0000], 64, Sign::Pos, 1, false);
+        let twice = ExactNum::from_raw_parts(&[0x5555_5555_5555_5554, 0x1555_5555, 0], 93, Sign::Neg, EXPONENT_MIN, false);
+        assert!(x.is_negative() && !x.is_zero());
+        assert!(twice.is_negative() && !twice.is_zero());
+        assert!(ExactNum::mul_full_prec(&x, &one) == x);
+        assert!(ExactNum::add_full_prec(&x, &x) == twice);
     }
 }

@@ -441,6 +441,9 @@ impl ExactNumNumber {
                 op_inexact: None,
             };
 
+            if full_prec {
+                ret.widen_for_subnormal(e)?;
+            }
             ret.subnormalize(e, rm);
             ret.finish_flags(inputs, per_op);
 
@@ -733,7 +736,7 @@ impl ExactNumNumber {
                 },
                 &mut inexact,
             )?;
-            let mut ret = Self::finish_sum(d3, e0 - shift, m3, (inexact, inputs), rm, per_op)?;
+            let mut ret = Self::finish_sum(d3, e0 - shift, m3, (inexact, inputs), rm, per_op, full_prec)?;
             if ret.is_zero() {
                 // A subnormal operand rounded to zero keeps the minimal exponent, as `set_precision` left it.
                 ret.e = EXPONENT_MIN;
@@ -833,6 +836,7 @@ impl ExactNumNumber {
             (inexact, inputs),
             rm,
             per_op,
+            full_prec,
         )
     }
 
@@ -845,6 +849,7 @@ impl ExactNumNumber {
         flags: (bool, bool),
         rm: RoundingMode,
         per_op: bool,
+        full_prec: bool,
     ) -> Result<Self, Error> {
         let (inexact, inputs) = flags;
         d3.inexact |= inexact;
@@ -857,6 +862,9 @@ impl ExactNumNumber {
 
         if e < EXPONENT_MIN as i64 {
             d3.e = EXPONENT_MIN;
+            if full_prec {
+                d3.widen_for_subnormal(e)?;
+            }
             d3.subnormalize(e, rm);
         } else {
             d3.e = e as Exponent;
@@ -864,6 +872,20 @@ impl ExactNumNumber {
         d3.finish_flags(inputs, per_op);
 
         Ok(d3)
+    }
+
+    /// A full-precision result below the normal range keeps every bit: the mantissa grows by the
+    /// subnormal shift `EXPONENT_MIN - e` before `subnormalize`, which then drops only zeros. A shift
+    /// past `MAX_PRECISION` cannot be kept and is rounded by `subnormalize` as before.
+    fn widen_for_subnormal(&mut self, e: i64) -> Result<(), Error> {
+        let sh = i128::from(EXPONENT_MIN) - i128::from(e);
+        if let Ok(sh) = usize::try_from(sh) {
+            let p2 = self.mantissa_max_bit_len().saturating_add(sh);
+            if sh > 0 && p2 <= MAX_PRECISION {
+                self.set_precision(p2, RoundingMode::None)?;
+            }
+        }
+        Ok(())
     }
 
     /// Make `self` subnormal
