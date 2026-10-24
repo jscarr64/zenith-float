@@ -63,10 +63,16 @@ fn half_at(p: usize, e: i64) -> Result<ExactNum, Box<dyn std::error::Error>> {
 
 /// zenith result vs MPFR reference, both in the space scaled by `2^shift`.
 fn show_zf(x: &ExactNum) -> String {
-    match x.as_raw_parts() {
-        Some((w, n, s, e, inx)) => format!("{s:?} {w:x?} n={n} e={e} inexact={inx}"),
-        None => format!("special nan={} inf={}", x.is_nan(), x.is_inf()),
-    }
+    let r = x.as_raw_parts();
+    format!(
+        "{:?} neg={} {:x?} n={:?} e={} inexact={}",
+        r.kind,
+        r.negative,
+        r.words,
+        r.significant_bits(),
+        r.exponent,
+        r.inexact
+    )
 }
 
 fn same(got: &ExactNum, want: &Float, inexact: bool, shift: i64, info: &str) -> Res {

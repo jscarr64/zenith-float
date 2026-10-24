@@ -1,156 +1,104 @@
-//! `ExactNum::from_raw_parts` enforces its documented checks (2.0.0 audit, defect 5).
+//! `ExactNum::from_raw_parts` enforces its documented checks (2.0.0 audit, defect 5; migrated
+//! to the `RawParts` API in R14).
 
 use std::ops::Neg;
-use zenith_float_num::{Error, ExactNum, Sign, Word, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
+use zenith_float_num::{
+    Error, ExactNum, RawKind, RawParts, Word, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
+};
 
-fn assert_invalid(r: &ExactNum, what: &str) {
-    assert!(r.is_nan(), "Expected NaN for {}, got {:?}", what, r);
-    assert_eq!(
-        r.err(),
-        Some(Error::InvalidArgument),
-        "Expected InvalidArgument error for {}, got {:?}",
-        what,
-        r.err()
+fn parts(words: &[Word], negative: bool, exponent: i64) -> RawParts<'_> {
+    RawParts {
+        kind: RawKind::Finite,
+        words,
+        precision: words.len() * WORD_BIT_SIZE,
+        negative,
+        exponent,
+        inexact: false,
+        op_inexact: false,
+    }
+}
+
+fn assert_invalid(p: &RawParts<'_>, what: &str) {
+    assert!(
+        matches!(ExactNum::from_raw_parts(p), Err(Error::InvalidArgument)),
+        "Expected InvalidArgument for {what}"
     );
 }
 
+fn round_trip(x: &ExactNum) -> Result<ExactNum, Error> {
+    ExactNum::from_raw_parts(&x.as_raw_parts())
+}
+
 #[test]
-fn from_raw_parts_round_trips_valid_parts() -> Result<(), Box<dyn std::error::Error>> {
+fn from_raw_parts_round_trips_valid_parts() -> Result<(), Error> {
     let ps = [64, 128, 256, 1024];
     let vs = [1u64, 3, 0xFFFF_FFFF_FFFF_FFFF, 0x8000_0000_0000_0001];
     let es = [EXPONENT_MIN, EXPONENT_MIN + 1, -1, 0, 1, EXPONENT_MAX - 1, EXPONENT_MAX];
-    let negatives = [false, true];
-
     for &p in &ps {
         for &v in &vs {
             for &e in &es {
-                for &negative in &negatives {
+                for negative in [false, true] {
                     let mut x = ExactNum::from_u64(v, p);
                     x.set_exponent(e);
                     if negative {
                         x = x.neg();
                     }
-                    let (m, n, s, ex, inexact) = x.as_raw_parts().ok_or("none value")?;
-                    let y = ExactNum::from_raw_parts(m, n, s, ex, inexact);
-                    assert_eq!(
-                        x, y,
-                        "Round-trip failed for p={}, v={}, e={}, negative={}",
-                        p, v, e, negative
-                    );
-                    assert!(
-                        !y.is_nan(),
-                        "Round-trip produced NaN for p={}, v={}, e={}, negative={}",
-                        p,
-                        v,
-                        e,
-                        negative
-                    );
+                    let y = round_trip(&x)?;
+                    assert_eq!(x, y, "p={p}, v={v}, e={e}, negative={negative}");
                 }
             }
         }
-    }
-
-    // Test min_positive and its negation
-    for &p in &ps {
-        let x = ExactNum::min_positive(p);
-        let (m, n, s, ex, inexact) = x.as_raw_parts().ok_or("none value")?;
-        let y = ExactNum::from_raw_parts(m, n, s, ex, inexact);
-        assert_eq!(x, y, "Round-trip failed for min_positive p={}", p);
-        assert!(
-            !y.is_nan(),
-            "Round-trip produced NaN for min_positive p={}",
-            p
-        );
-
-        let x_neg = ExactNum::min_positive(p).neg();
-        let (m, n, s, ex, inexact) = x_neg.as_raw_parts().ok_or("none value")?;
-        let y = ExactNum::from_raw_parts(m, n, s, ex, inexact);
         assert_eq!(
-            x_neg, y,
-            "Round-trip failed for negated min_positive p={}",
-            p
+            round_trip(&ExactNum::min_positive(p))?,
+            ExactNum::min_positive(p)
         );
-        assert!(
-            !y.is_nan(),
-            "Round-trip produced NaN for negated min_positive p={}",
-            p
+        assert_eq!(
+            round_trip(&ExactNum::min_positive(p).neg())?,
+            ExactNum::min_positive(p).neg()
         );
     }
     Ok(())
 }
 
 #[test]
-fn from_raw_parts_rejects_inconsistent_parts() -> Result<(), Box<dyn std::error::Error>> {
-    let ps = [64, 128, 256, 1024];
-    let signs = [Sign::Pos, Sign::Neg];
-
-    for &p in &ps {
-        // (a) normal mantissa words of from_u64(3,p) with n = p + 1 -> invalid.
-        {
-            let x = ExactNum::from_u64(3, p);
-            let (m, _n, s, ex, inexact) = x.as_raw_parts().ok_or("none value")?;
-            let y = ExactNum::from_raw_parts(m, p + 1, s, ex, inexact);
-            assert_invalid(&y, &format!("normal mantissa with n=p+1 for p={}", p));
+fn from_raw_parts_rejects_inconsistent_parts() -> Result<(), Error> {
+    for p in [64usize, 128, 256, 1024] {
+        let x = ExactNum::from_u64(3, p);
+        let good = x.as_raw_parts();
+        // (a) precision one more / one less than the stored width.
+        for precision in [p + 1, p - 1] {
+            let bad = RawParts {
+                precision,
+                ..parts(good.words, false, good.exponent)
+            };
+            assert_invalid(&bad, &format!("precision {precision} for p={p}"));
         }
-
-        // (b) normal mantissa (top bit set) with n = p - 1 -> invalid.
-        {
-            let x = ExactNum::from_u64(3, p);
-            let (m, _n, s, ex, inexact) = x.as_raw_parts().ok_or("none value")?;
-            let y = ExactNum::from_raw_parts(m, p - 1, s, ex, inexact);
-            assert_invalid(&y, &format!("normal mantissa with n=p-1 for p={}", p));
+        // (b)-(c) a subnormal mantissa (lowest bit only) needs e == EXPONENT_MIN.
+        let mut m: Vec<Word> = vec![0; p / WORD_BIT_SIZE];
+        if let Some(w) = m.first_mut() {
+            *w = 1;
         }
-
-        // (c) subnormal: mantissa words all zero except the lowest word = 1 (so 1 significant bit, top bit clear), n = 1
-        {
-            let mut m: Vec<Word> = vec![0; p / WORD_BIT_SIZE];
-            m[0] = 1;
-            for &e in &[EXPONENT_MIN + 1, -1, 0, 1, EXPONENT_MAX] {
-                for &s in &signs {
-                    let y = ExactNum::from_raw_parts(&m, 1, s, e, false);
-                    assert_invalid(
-                        &y,
-                        &format!(
-                            "subnormal with e != EXPONENT_MIN for p={}, e={}, s={:?}",
-                            p, e, s
-                        ),
-                    );
-                }
-            }
-
-            // With e = EXPONENT_MIN the same parts must be valid and equal to min_positive(p) (negated when sign is negative)
-            for &s in &signs {
-                let y = ExactNum::from_raw_parts(&m, 1, s, EXPONENT_MIN, false);
-                assert!(
-                    !y.is_nan(),
-                    "Expected valid subnormal for p={}, e=EXPONENT_MIN",
-                    p
-                );
-                if s == Sign::Neg {
-                    assert_eq!(
-                        y,
-                        ExactNum::min_positive(p).neg(),
-                        "Subnormal with negative sign should equal negated min_positive for p={}",
-                        p
-                    );
-                } else {
-                    assert_eq!(
-                        y,
-                        ExactNum::min_positive(p),
-                        "Subnormal with positive sign should equal min_positive for p={}",
-                        p
-                    );
-                }
+        for e in [EXPONENT_MIN + 1, -1, 0, 1, EXPONENT_MAX] {
+            for negative in [false, true] {
+                assert_invalid(&parts(&m, negative, e), &format!("subnormal e={e} p={p}"));
             }
         }
-
-        // (d) mantissa words all zero with n = 1 -> invalid.
-        {
-            let m: Vec<Word> = vec![0; p / WORD_BIT_SIZE];
-            for &s in &signs {
-                let y = ExactNum::from_raw_parts(&m, 1, s, EXPONENT_MIN, false);
-                assert_invalid(&y, &format!("all-zero mantissa with n=1 for p={}", p));
-            }
+        for negative in [false, true] {
+            let y = ExactNum::from_raw_parts(&parts(&m, negative, EXPONENT_MIN))?;
+            let want = if negative {
+                ExactNum::min_positive(p).neg()
+            } else {
+                ExactNum::min_positive(p)
+            };
+            assert_eq!(y, want, "subnormal p={p} negative={negative}");
+        }
+        // (d) all-zero words are not a finite non-zero value.
+        let z: Vec<Word> = vec![0; p / WORD_BIT_SIZE];
+        for negative in [false, true] {
+            assert_invalid(
+                &parts(&z, negative, EXPONENT_MIN),
+                &format!("all-zero p={p}"),
+            );
         }
     }
     Ok(())

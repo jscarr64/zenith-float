@@ -474,7 +474,7 @@ fn exact_word_lt_base(x: &ExactNum) -> Word {
     if x.is_zero() {
         return 0;
     }
-    let Some((m, _n, _s, e, _)) = x.as_raw_parts() else {
+    let Some((m, _n, _s, e, _)) = x.value_parts() else {
         return 0;
     };
     let pbuf = m.len() * WORD_BIT_SIZE;

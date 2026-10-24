@@ -1,6 +1,7 @@
 // Derived from astro-float (https://github.com/stencillogic/astro-float),
 // Copyright (c) 2022 stencillogic, MIT License.
 mod e;
+mod exact;
 mod ln10;
 mod ln2;
 mod pi;
@@ -10,6 +11,7 @@ use crate::common::util::round_p;
 use crate::mantissa::Mantissa;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::e::ECache;
+pub use crate::ops::consts::exact::ConstantId;
 use crate::ops::consts::ln10::Ln10Cache;
 use crate::ops::consts::ln2::Ln2Cache;
 use crate::ops::consts::pi::PiCache;

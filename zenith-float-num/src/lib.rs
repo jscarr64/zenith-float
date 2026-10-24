@@ -119,6 +119,8 @@ pub use crate::dsp::rectangular_window;
 pub use crate::dsp::DSP_MAX_POINTS;
 pub use crate::ext::ExactNum;
 pub use crate::ext::FromExt;
+pub use crate::ext::RawKind;
+pub use crate::ext::RawParts;
 pub use crate::ext::INF_NEG;
 pub use crate::ext::INF_POS;
 pub use crate::ext::NAN;
@@ -144,6 +146,7 @@ pub use crate::ode::ODE_MIN_STEP;
 pub use crate::ops::consts::CachedFBig;
 pub use crate::ops::consts::ConstCache;
 pub use crate::ops::consts::ConstCacheInfo;
+pub use crate::ops::consts::ConstantId;
 pub use crate::ops::consts::Consts;
 #[cfg(feature = "std")]
 pub use crate::ops::consts::SharedConsts;

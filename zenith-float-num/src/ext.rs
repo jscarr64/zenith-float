@@ -644,12 +644,15 @@ impl ExactNum {
     ///
     /// ## Errors
     ///
-    ///  - DivisionByZero: `d2` is zero and `self` is not.
-    ///  - InvalidArgument: `0 / 0`, `Inf / Inf`, a NaN operand, or an incorrect precision.
-    ///    A NaN operand's own error kind is returned when it has one.
+    ///  - InvalidArgument: an incorrect precision (`p == 0` or too large). The precision is
+    ///    checked first, so `x / 0` with `p == 0` is InvalidArgument, not DivisionByZero.
+    ///  - Then, in this order: a NaN operand gives its own error kind (InvalidArgument when it
+    ///    has none); `0 / 0` is InvalidArgument; `x / 0` with `x` non-zero (Inf included) is
+    ///    DivisionByZero; `±Inf / ±Inf` (any signs) is InvalidArgument.
     ///
     /// Accuracy: exact
     pub fn div_exact(&self, d2: &Self, p: usize) -> Result<Option<Self>, Error> {
+        ExactNumNumber::p_assertion(round_p(p))?;
         if let Flavor::NaN(err) = &self.inner {
             return Err(err.unwrap_or(Error::InvalidArgument));
         }
@@ -663,7 +666,6 @@ impl ExactNum {
                 Error::DivisionByZero
             });
         }
-        ExactNumNumber::p_assertion(round_p(p))?;
         // Toward zero: an overflow saturates to the largest finite value (marked inexact) and an
         // underflow rounds to zero or the subnormal grid (marked inexact), never to Inf.
         let q = self.div_op(d2, p, RoundingMode::ToZero);
@@ -1727,7 +1729,7 @@ impl ExactNum {
     /// assert_eq!(ExactNum::new(64).leading_bit_exponent(), None);
     /// ```
     pub fn leading_bit_exponent(&self) -> Option<i64> {
-        let (words, _, _, e, _) = self.as_raw_parts()?;
+        let (words, _, _, e, _) = self.value_parts()?;
         let lz = Self::mantissa_leading_zero_bits(words)?;
         e.checked_sub(1)?.checked_sub(i64::try_from(lz).ok()?)
     }
@@ -1744,7 +1746,7 @@ impl ExactNum {
     /// assert_eq!(ExactNum::from_word(3, 64).top_u64_mantissa_and_sticky(), Some((3 << 62, false, 2)));
     /// ```
     pub fn top_u64_mantissa_and_sticky(&self) -> Option<(u64, bool, i64)> {
-        let (words, _, _, e, _) = self.as_raw_parts()?;
+        let (words, _, _, e, _) = self.value_parts()?;
         let lz = Self::mantissa_leading_zero_bits(words)?;
         let skip = lz / WORD_BIT_SIZE;
         // enough words to hold 64 bits after the shift that removes the leading zeros of the top nonzero word
@@ -1895,39 +1897,96 @@ impl ExactNum {
         Self::from_i8(-1, p).mul(self, p, RoundingMode::None)
     }
 
-    /// Decomposes `self` into raw parts.
-    /// The function returns a reference to a slice of words representing mantissa,
-    /// numbers of significant bits in the mantissa, sign, exponent,
-    /// and a bool value which specify whether the number is inexact.
-    pub fn as_raw_parts(&self) -> Option<(&[Word], usize, Sign, Exponent, bool)> {
-        if let Flavor::Value(v) = &self.inner {
-            Some(v.as_raw_parts())
-        } else {
-            None
+    /// Mantissa words, significant bits, sign, exponent and inexact flag of a finite value.
+    pub(crate) fn value_parts(&self) -> Option<(&[Word], usize, Sign, Exponent, bool)> {
+        match &self.inner {
+            Flavor::Value(v) => Some(v.as_raw_parts()),
+            Flavor::Inf(_) | Flavor::NaN(_) => None,
         }
     }
 
-    /// Constructs a number from the raw parts:
+    /// Borrows the raw representation of `self` without copying; see [`RawParts`] for the
+    /// contract. `ExactNum::from_raw_parts(&x.as_raw_parts())` rebuilds `x` bit for bit (a NaN
+    /// comes back as a NaN without its error kind).
+    pub fn as_raw_parts(&self) -> RawParts<'_> {
+        match &self.inner {
+            Flavor::Value(v) => {
+                let (words, n, s, exponent, inexact) = v.as_raw_parts();
+                RawParts {
+                    kind: if n == 0 { RawKind::Zero } else { RawKind::Finite },
+                    words,
+                    precision: words.len() * WORD_BIT_SIZE,
+                    negative: s.is_negative(),
+                    exponent,
+                    inexact,
+                    op_inexact: v.op_inexact(),
+                }
+            }
+            Flavor::Inf(s) => RawParts::special(RawKind::Inf, s.is_negative()),
+            Flavor::NaN(_) => RawParts::special(RawKind::NaN, false),
+        }
+    }
+
+    /// Builds a number from validated raw parts; see [`RawParts`] for the contract.
     ///
-    ///  - `m` is the mantisaa.
-    ///  - `n` is the number of significant bits in mantissa.
-    ///  - `s` is the sign.
-    ///  - `e` is the exponent.
-    ///  - `inexact` specify whether number is inexact.
+    /// ## Errors
     ///
-    /// This function returns NaN in the following situations:
-    ///
-    /// - `n` is larger than the number of bits in `m`.
-    /// - `n` is smaller than the number of bits in `m`, but `m` does not represent corresponding subnormal number mantissa.
-    /// - `n` is smaller than the number of bits in `m`, but `e` is not the minimum possible exponent.
-    /// - `n` or the size of `m` is too large (larger than i64::MAX / 2 + EXPONENT_MIN).
-    /// - `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
-    pub fn from_raw_parts(m: &[Word], n: usize, s: Sign, e: Exponent, inexact: bool) -> Self {
-        Self::result_to_ext(
-            ExactNumNumber::from_raw_parts(m, n, s, e, inexact),
-            false,
-            true,
-        )
+    ///  - InvalidArgument: `precision` is 0 or differs from `words.len() * WORD_BIT_SIZE`;
+    ///    `op_inexact` is set without `inexact`; `exponent` is outside `[EXPONENT_MIN, EXPONENT_MAX]` = `±(2^62 − 1)`; a `Finite`
+    ///    mantissa is all zero, or is not normalized (top bit of the last word clear) while
+    ///    `exponent != EXPONENT_MIN`; a `Zero` has a non-zero word, no words or a non-zero
+    ///    exponent; an `Inf` / `NaN` has words, a precision, an exponent or `inexact` set, or a
+    ///    `NaN` has `negative` set.
+    ///  - MemoryAllocation: the mantissa could not be allocated.
+    pub fn from_raw_parts(parts: &RawParts<'_>) -> Result<Self, Error> {
+        let sign = if parts.negative { Sign::Neg } else { Sign::Pos };
+        if matches!(parts.kind, RawKind::Inf | RawKind::NaN) {
+            if !parts.words.is_empty()
+                || parts.precision != 0
+                || parts.exponent != 0
+                || parts.inexact
+                || parts.op_inexact
+            {
+                return Err(Error::InvalidArgument);
+            }
+            return match parts.kind {
+                RawKind::NaN if parts.negative => Err(Error::InvalidArgument),
+                RawKind::NaN => Ok(Self::nan(None)),
+                RawKind::Inf => Ok(Self {
+                    inner: Flavor::Inf(sign),
+                }),
+                RawKind::Finite | RawKind::Zero => Err(Error::InvalidArgument),
+            };
+        }
+        let width = parts
+            .words
+            .len()
+            .checked_mul(WORD_BIT_SIZE)
+            .ok_or(Error::InvalidArgument)?;
+        if parts.precision == 0 || parts.precision != width {
+            return Err(Error::InvalidArgument);
+        }
+        if parts.op_inexact && !parts.inexact {
+            return Err(Error::InvalidArgument);
+        }
+        if parts.exponent < crate::EXPONENT_MIN || parts.exponent > crate::EXPONENT_MAX {
+            return Err(Error::InvalidArgument);
+        }
+        let n = parts.significant_bits()?;
+        let ok = match parts.kind {
+            RawKind::Zero => n == 0 && parts.exponent == 0,
+            RawKind::Finite => n > 0 && (n == width || parts.exponent == crate::EXPONENT_MIN),
+            RawKind::Inf | RawKind::NaN => false,
+        };
+        if !ok {
+            return Err(Error::InvalidArgument);
+        }
+        let mut v =
+            ExactNumNumber::from_raw_parts(parts.words, n, sign, parts.exponent, parts.inexact)?;
+        if parts.op_inexact != parts.inexact {
+            v.set_op_inexact(parts.op_inexact);
+        }
+        Ok(Self::result_to_ext(Ok(v), false, true))
     }
 
     /// Constructs a number from the slice of words:
@@ -4807,10 +4866,10 @@ mod tests {
         assert!(INF_NEG.exponent().is_none());
         assert!(NAN.exponent().is_none());
 
-        assert!(ONE.as_raw_parts().is_some());
-        assert!(INF_POS.as_raw_parts().is_none());
-        assert!(INF_NEG.as_raw_parts().is_none());
-        assert!(NAN.as_raw_parts().is_none());
+        assert!(ONE.as_raw_parts().kind == crate::RawKind::Finite);
+        assert!(INF_POS.as_raw_parts().kind == crate::RawKind::Inf);
+        assert!(INF_NEG.as_raw_parts().kind == crate::RawKind::Inf);
+        assert!(NAN.as_raw_parts().kind == crate::RawKind::NaN);
 
         assert!(ExactNum::add_ref(&ONE, &ONE, rand_p(), rm).compare(&TWO) == Some(0));
         assert!(ExactNum::add_ref(&ONE, &INF_POS, rand_p(), rm).is_inf_pos());
@@ -8202,31 +8261,127 @@ mod underflow_zero_flag_tests {
 // The raw limbs below are 64-bit words.
 #[cfg(all(test, not(target_pointer_width = "32")))]
 mod full_prec_subnormal_tests {
-    use crate::{ExactNum, Sign, EXPONENT_MIN};
+    use super::{RawKind, RawParts};
+    use crate::{Error, ExactNum, Exponent, Word, EXPONENT_MIN};
+
+    fn raw(words: &[Word], negative: bool, exponent: Exponent) -> Result<ExactNum, Error> {
+        ExactNum::from_raw_parts(&RawParts {
+            kind: RawKind::Finite,
+            words,
+            precision: words.len() * crate::WORD_BIT_SIZE,
+            negative,
+            exponent,
+            inexact: false,
+            op_inexact: false,
+        })
+    }
 
     // A full-precision sum or product below the normal range was cut to the words of its
     // normalized mantissa before the subnormal shift, which dropped the low word.
     #[test]
-    fn full_prec_keeps_every_bit_of_a_subnormal_result() {
+    fn full_prec_keeps_every_bit_of_a_subnormal_result() -> Result<(), Error> {
         // a 192-bit subnormal number whose top word is zero: 0xAAAAAAA_AAAAAAAAAAAAAAAA * 2^(EMIN - 192)
-        let x = ExactNum::from_raw_parts(
-            &[0xAAAA_AAAA_AAAA_AAAA, 0x0AAA_AAAA, 0],
-            92,
-            Sign::Neg,
-            EXPONENT_MIN,
-            false,
-        );
-        let one = ExactNum::from_raw_parts(&[0x8000_0000_0000_0000], 64, Sign::Pos, 1, false);
-        let twice = ExactNum::from_raw_parts(
-            &[0x5555_5555_5555_5554, 0x1555_5555, 0],
-            93,
-            Sign::Neg,
-            EXPONENT_MIN,
-            false,
-        );
+        let x = raw(&[0xAAAA_AAAA_AAAA_AAAA, 0x0AAA_AAAA, 0], true, EXPONENT_MIN)?;
+        let one = raw(&[0x8000_0000_0000_0000], false, 1)?;
+        let twice = raw(&[0x5555_5555_5555_5554, 0x1555_5555, 0], true, EXPONENT_MIN)?;
         assert!(x.is_negative() && !x.is_zero());
         assert!(twice.is_negative() && !twice.is_zero());
         assert!(ExactNum::mul_full_prec(&x, &one) == x);
         assert!(ExactNum::add_full_prec(&x, &x) == twice);
+        Ok(())
+    }
+}
+
+/// What a [`RawParts`] describes.
+#[derive(Debug, PartialEq, Eq)]
+pub enum RawKind {
+    /// A non-zero finite value (normal, or subnormal at `EXPONENT_MIN`).
+    Finite,
+    /// Zero; the sign is in `negative`.
+    Zero,
+    /// Infinity; the sign is in `negative`.
+    Inf,
+    /// Not a number.
+    NaN,
+}
+
+/// Borrowed raw representation of an [`ExactNum`], produced by [`ExactNum::as_raw_parts`] and
+/// consumed by [`ExactNum::from_raw_parts`].
+///
+/// ## Contract
+///
+///  - `words` is the mantissa, least-significant word first (little-endian word order, native
+///    bit order inside a word). `Word` is `u64` (`u32` on 32-bit targets), `WORD_BIT_SIZE` bits.
+///  - `precision` is the stored mantissa width in bits and always equals
+///    `words.len() * WORD_BIT_SIZE` (a number created at precision `p` stores
+///    `ceil(p / WORD_BIT_SIZE)` words, so `p = 1` reports `WORD_BIT_SIZE`). No requested
+///    precision is kept apart from the word count: a value rounded at `p = 100` is stored in
+///    128 bits whose low 28 are zero, so the round trip loses nothing and later operations,
+///    which take their precision as an argument, behave identically.
+///  - Finite value `= (-1)^negative · M · 2^(exponent − precision)`, where `M` is the unsigned
+///    integer formed by `words`; equivalently `0.1m… · 2^exponent` for a normal value.
+///  - Normal: the top bit of the last word is set and
+///    `EXPONENT_MIN <= exponent <= EXPONENT_MAX`, i.e. `|exponent| <= 2^62 − 1`.
+///  - Subnormal: top bit clear (leading zero bits or words allowed), mantissa non-zero,
+///    `exponent == EXPONENT_MIN`.
+///  - Zero: `kind == Zero`, every word 0, `exponent == 0`, sign of zero in `negative`.
+///  - Inf / NaN: `words` empty, `precision == 0`, `exponent == 0`, `inexact == false`;
+///    `op_inexact == false`; `negative` is the sign of the infinity and is `false` for NaN. A
+///    NaN's error kind is not carried.
+///  - `inexact` is the accumulated inexact flag (see `ExactNum::inexact_accumulated`) and
+///    `op_inexact` the per-operation flag (see `ExactNum::inexact`); `op_inexact` implies
+///    `inexact`.
+#[derive(Debug)]
+pub struct RawParts<'a> {
+    /// Finite, Zero, Inf or NaN.
+    pub kind: RawKind,
+    /// Mantissa words, least-significant first.
+    pub words: &'a [Word],
+    /// Stored width in bits, `words.len() * WORD_BIT_SIZE`.
+    pub precision: usize,
+    /// Sign.
+    pub negative: bool,
+    /// Binary exponent of `0.1m…` form.
+    pub exponent: Exponent,
+    /// Accumulated inexact flag.
+    pub inexact: bool,
+    /// Per-operation inexact flag; implies `inexact`.
+    pub op_inexact: bool,
+}
+
+impl RawParts<'_> {
+    fn special(kind: RawKind, negative: bool) -> Self {
+        RawParts {
+            kind,
+            words: &[],
+            precision: 0,
+            negative,
+            exponent: 0,
+            inexact: false,
+            op_inexact: false,
+        }
+    }
+
+    /// Number of bits from the lowest bit up to and including the highest set bit of `words`;
+    /// equals `precision` for a normal value and 0 for zero.
+    ///
+    /// ## Errors
+    ///
+    ///  - InvalidArgument: the bit count does not fit in `usize`.
+    pub fn significant_bits(&self) -> Result<usize, Error> {
+        match self.words.iter().rposition(|w| *w != 0) {
+            Some(i) => match self.words.get(i) {
+                Some(w) => {
+                    let lz =
+                        usize::try_from(w.leading_zeros()).map_err(|_| Error::InvalidArgument)?;
+                    i.checked_add(1)
+                        .and_then(|k| k.checked_mul(WORD_BIT_SIZE))
+                        .and_then(|bits| bits.checked_sub(lz))
+                        .ok_or(Error::InvalidArgument)
+                }
+                None => Ok(0),
+            },
+            None => Ok(0),
+        }
     }
 }

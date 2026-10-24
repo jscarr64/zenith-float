@@ -462,7 +462,7 @@ mod tests {
                 let n = ExactNumNumber::from_raw_unchecked(m1, Sign::Pos, e, true);
                 pi.set_exponent(1);
                 let n = pi.add(&n.into(), p, RoundingMode::ToZero);
-                let w = n.as_raw_parts().ok_or(crate::Error::InvalidArgument)?.0;
+                let w = n.value_parts().ok_or(crate::Error::InvalidArgument)?.0;
                 m1 = Mantissa::from_words(w.len() * WORD_BIT_SIZE, w)?;
             }
         }

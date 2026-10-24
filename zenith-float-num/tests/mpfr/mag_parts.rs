@@ -83,12 +83,21 @@ fn operand(words: &[u64], negative: bool, e: i64) -> Result<ExactNum, Box<dyn st
     } else {
         m.significant_bits() as usize
     };
-    let s = if negative { Sign::Neg } else { Sign::Pos };
-    let x = ExactNum::from_raw_parts(words, n, s, e as Exponent, false);
-    if x.is_nan() {
-        return Err(format!("from_raw_parts refused {words:x?} n={n} e={e}").into());
-    }
-    Ok(x)
+    let parts = zenith_float_num::RawParts {
+        kind: if n == 0 {
+            zenith_float_num::RawKind::Zero
+        } else {
+            zenith_float_num::RawKind::Finite
+        },
+        words,
+        precision: words.len() * zenith_float_num::WORD_BIT_SIZE,
+        negative,
+        exponent: e as Exponent,
+        inexact: false,
+        op_inexact: false,
+    };
+    ExactNum::from_raw_parts(&parts)
+        .map_err(|err| format!("from_raw_parts refused {words:x?} n={n} e={e}: {err:?}").into())
 }
 
 /// Operands: normal and subnormal, 1 to 313 words, exponents over the whole range, both signs.
@@ -261,9 +270,11 @@ fn top_u64_mantissa_and_sticky_matches_the_integer_model() -> Res {
 
 /// The value of an `ExactNum` as `(odd integer, exponent of its lowest set bit)`, from its raw words.
 fn odd_and_exp(x: &ExactNum) -> Result<(Integer, i64), Box<dyn std::error::Error>> {
-    let Some((words, _, _, e, _)) = x.as_raw_parts() else {
+    let raw = x.as_raw_parts();
+    if raw.kind != zenith_float_num::RawKind::Finite {
         return Err("no raw parts".into());
-    };
+    }
+    let (words, e) = (raw.words, raw.exponent);
     let m = Integer::from_digits(words, Order::Lsf);
     let Some(tz) = m.find_one(0) else {
         return Err("zero mantissa".into());

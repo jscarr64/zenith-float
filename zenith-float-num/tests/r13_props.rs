@@ -4,7 +4,8 @@
 use proptest::prelude::*;
 use std::ops::Neg;
 use zenith_float_num::{
-    Error, ExactNum, Exponent, RoundingMode, Sign, INF_NEG, INF_POS, PROPTEST_CASES,
+    Error, ExactNum, Exponent, RoundingMode, Sign, Word, EXPONENT_MAX, EXPONENT_MIN, INF_NEG,
+    INF_POS, PROPTEST_CASES, WORD_BIT_SIZE,
 };
 
 const MODES: [RoundingMode; 5] = [
@@ -88,6 +89,114 @@ proptest! {
         let one = ExactNum::from_i64(1, p);
         let (lo, hi) = ordered(&|rm| x.reciprocal(p, rm))?;
         prop_assert!(le(&prod(&lo, &x, p)?, &one) && le(&one, &prod(&hi, &x, p)?));
+    }
+}
+
+/// Exponents over the whole `i64` range, weighted toward both ends of the representable range
+/// `±(2^62 − 1)` and just past them.
+fn full_exp() -> impl Strategy<Value = Exponent> {
+    prop_oneof![
+        any::<i64>(),
+        (EXPONENT_MIN - 70)..(EXPONENT_MIN + 300),
+        (EXPONENT_MAX - 300)..(EXPONENT_MAX + 70),
+        -300i64..300,
+    ]
+}
+
+fn in_range(e: Exponent) -> bool {
+    (EXPONENT_MIN..=EXPONENT_MAX).contains(&e)
+}
+
+/// Outside `±(2^62 − 1)` no number exists: building one gives NaN.
+fn unrepresentable(e: Exponent) -> Result<(), TestCaseError> {
+    let top: [Word; 1] = [1 << (WORD_BIT_SIZE - 1)];
+    prop_assert!(
+        ExactNum::from_words(&top, Sign::Pos, e).is_nan(),
+        "e={} built a number",
+        e
+    );
+    Ok(())
+}
+
+/// `n` (non-zero) with exponent set to `e` (`0.m · 2^e`); `e` must be in range.
+fn at_exp(n: i64, e: Exponent, p: usize) -> ExactNum {
+    let mut x = ExactNum::from_i64(n, p);
+    x.set_exponent(e);
+    x
+}
+
+/// `r` must equal `r0` scaled by `2^shift` whenever that is a normal in-range value (scaling is
+/// exact), and lie in [Down, Up] in every case (overflow / underflow included).
+fn scaled_matches(r: &ExactNum, mut r0: ExactNum, shift: i64) -> Result<(), TestCaseError> {
+    let Some(e0) = r0.exponent() else {
+        return Ok(());
+    };
+    let Some(e) = e0.checked_add(shift) else {
+        return Ok(());
+    };
+    if r0.is_zero() || !in_range(e) {
+        return Ok(());
+    }
+    r0.set_exponent(e);
+    prop_assert!(
+        r.compare(&r0) == Some(0),
+        "scaled result differs at e={}",
+        e
+    );
+    Ok(())
+}
+
+proptest! {
+    #![proptest_config(cfg())]
+
+    #[test]
+    fn div_full_exponent_range(a in 1i64..i64::MAX, na in any::<bool>(), b in 1i64..i64::MAX, ex in full_exp(), ed in full_exp(), w in 1usize..4) {
+        let p = 64 * w;
+        for e in [ex, ed] {
+            if !in_range(e) {
+                return unrepresentable(e);
+            }
+        }
+        let a = if na { -a } else { a };
+        let d = at_exp(b, ed, p);
+        ordered(&|rm| at_exp(a, ex, p).div(&d, p, rm))?;
+        for rm in MODES {
+            let r = at_exp(a, ex, p).div(&d, p, rm);
+            let r0 = at_exp(a, 0, p).div(&at_exp(b, 0, p), p, rm);
+            scaled_matches(&r, r0, ex - ed)?;
+        }
+    }
+
+    #[test]
+    fn reciprocal_full_exponent_range(a in 1i64..i64::MAX, ex in full_exp(), w in 1usize..4) {
+        let p = 64 * w;
+        if !in_range(ex) {
+            return unrepresentable(ex);
+        }
+        let x = at_exp(a, ex, p);
+        ordered(&|rm| x.reciprocal(p, rm))?;
+        for rm in MODES {
+            let r0 = at_exp(a, 0, p).reciprocal(p, rm);
+            scaled_matches(&x.reciprocal(p, rm), r0, -ex)?;
+        }
+    }
+
+    #[test]
+    fn hypot_full_exponent_range(a in 1i32..i32::MAX, b in 1i32..i32::MAX, e in full_exp(), da in -64i64..64, db in -64i64..64, w in 1usize..4) {
+        let p = 64 * w;
+        let (Some(ea), Some(eb)) = (e.checked_add(da), e.checked_add(db)) else { return Ok(()) };
+        for e in [ea, eb] {
+            if !in_range(e) {
+                return unrepresentable(e);
+            }
+        }
+        let x = at_exp(i64::from(a), ea, p);
+        let y = at_exp(i64::from(b), eb, p);
+        ordered(&|rm| x.hypot(&y, p, rm))?;
+        for rm in MODES {
+            let r0 = at_exp(i64::from(a), da, p).hypot(&at_exp(i64::from(b), db, p), p, rm);
+            scaled_matches(&x.hypot(&y, p, rm), r0, e)?;
+        }
     }
 }
 

@@ -237,9 +237,14 @@ fn write_inline(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     if x.is_inf_neg() {
         return write_special(BINARY_FLAG_INF_NEG, dest);
     }
-    let Some((m, n_sig, sign, exp, inexact)) = x.as_raw_parts() else {
-        return Err(Error::InvalidArgument);
-    };
+    let raw = x.as_raw_parts();
+    let (m, n_sig, exp, inexact) = (
+        raw.words,
+        raw.significant_bits()?,
+        raw.exponent,
+        raw.inexact,
+    );
+    let sign = if raw.negative { Sign::Neg } else { Sign::Pos };
     let n_u32 = u32_count(m.len());
     if n_u32 > BINARY_INLINE_U32_WORDS {
         return Err(Error::MemoryAllocation);
@@ -261,9 +266,7 @@ fn encoded_len(x: &ExactNum) -> Result<usize, Error> {
     if x.is_nan() || x.is_inf() {
         return Ok(BINARY_INLINE_LEN);
     }
-    let Some((m, _, _, _, _)) = x.as_raw_parts() else {
-        return Err(Error::InvalidArgument);
-    };
+    let m = x.as_raw_parts().words;
     let n_u32 = u32_count(m.len());
     if n_u32 <= BINARY_INLINE_U32_WORDS {
         Ok(BINARY_INLINE_LEN)
@@ -286,9 +289,14 @@ fn write_num(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     if x.is_nan() || x.is_inf() {
         return write_inline(x, dest);
     }
-    let Some((m, n_sig, sign, exp, inexact)) = x.as_raw_parts() else {
-        return Err(Error::InvalidArgument);
-    };
+    let raw = x.as_raw_parts();
+    let (m, n_sig, exp, inexact) = (
+        raw.words,
+        raw.significant_bits()?,
+        raw.exponent,
+        raw.inexact,
+    );
+    let sign = if raw.negative { Sign::Neg } else { Sign::Pos };
     let n_u32 = u32_count(m.len());
     if n_u32 <= BINARY_INLINE_U32_WORDS {
         return write_inline(x, dest);
@@ -429,11 +437,16 @@ fn finite_from_u32(
     for i in 0..n_words {
         words.push(word_from_u32s(&u32s[i * WORD_U32..(i + 1) * WORD_U32]));
     }
-    let x = ExactNum::from_raw_parts(&words, n_sig, sign, exp, inexact);
-    if x.is_nan() {
-        return Err(x.err().unwrap_or(Error::InvalidArgument));
-    }
-    Ok(x)
+    ExactNum::from_raw_parts(&crate::RawParts {
+        kind: if n_sig == 0 { crate::RawKind::Zero } else { crate::RawKind::Finite },
+        words: &words,
+        precision: words.len() * crate::WORD_BIT_SIZE,
+        negative: sign == Sign::Neg,
+        exponent: exp,
+        inexact,
+        // The binary format stores one flag; decoded values report it as both.
+        op_inexact: inexact,
+    })
 }
 
 fn encoded_array_len(a: &ExactNumArray) -> Result<usize, Error> {
@@ -562,7 +575,12 @@ mod tests {
     }
 
     fn raw_eq(a: &ExactNum, b: &ExactNum) -> bool {
-        a.as_raw_parts() == b.as_raw_parts()
+        let (x, y) = (a.as_raw_parts(), b.as_raw_parts());
+        x.kind == y.kind
+            && x.words == y.words
+            && x.negative == y.negative
+            && x.exponent == y.exponent
+            && x.inexact == y.inexact
     }
 
     #[test]

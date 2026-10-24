@@ -68,7 +68,14 @@ fn div_exact_specials() -> Result<(), Error> {
     ));
     assert!(NAN.div_exact(&n(1), P).is_err());
     assert!(n(1).div_exact(&NAN, P).is_err());
-    assert!(INF_POS.div_exact(&INF_NEG, P).is_err());
+    for (a, b) in [
+        (&INF_POS, &INF_NEG),
+        (&INF_POS, &INF_POS),
+        (&INF_NEG, &INF_NEG),
+        (&INF_NEG, &INF_POS),
+    ] {
+        assert!(matches!(a.div_exact(b, P), Err(Error::InvalidArgument)));
+    }
     let q = INF_POS
         .div_exact(&-n(2), P)?
         .ok_or(Error::InvalidArgument)?;
@@ -82,4 +89,30 @@ fn div_exact_specials() -> Result<(), Error> {
         Err(Error::InvalidArgument)
     ));
     Ok(())
+}
+
+/// The precision is validated before the operands: `x / 0` and `0 / 0` at `p = 0` report
+/// InvalidArgument, not DivisionByZero.
+#[test]
+fn div_exact_precision_zero_wins_over_division_by_zero() {
+    assert!(matches!(
+        n(1).div_exact(&n(0), 0),
+        Err(Error::InvalidArgument)
+    ));
+    assert!(matches!(
+        (-n(5)).div_exact(&n(0), 0),
+        Err(Error::InvalidArgument)
+    ));
+    assert!(matches!(
+        n(0).div_exact(&n(0), 0),
+        Err(Error::InvalidArgument)
+    ));
+    assert!(matches!(
+        INF_POS.div_exact(&n(0), 0),
+        Err(Error::InvalidArgument)
+    ));
+    assert!(matches!(
+        n(1).div_exact(&n(3), 0),
+        Err(Error::InvalidArgument)
+    ));
 }

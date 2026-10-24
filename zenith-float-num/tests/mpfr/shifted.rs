@@ -22,7 +22,7 @@ use rug::float::Round;
 use rug::ops::Pow;
 use rug::{Float, Integer};
 use std::cmp::Ordering;
-use zenith_float_num::{ExactNum, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN};
+use zenith_float_num::{ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -469,13 +469,17 @@ pub fn ref_log(
 /// The exact value of a finite zenith number as a [`Term`] (`m` = the mantissa words, `k` = the exponent less
 /// the storage width). Zero is `Term` zero of the number's sign lost: callers keep zero operands out.
 pub fn term_of(x: &ExactNum) -> Res<Term> {
-    let (words, _, sign, e, _) = x.as_raw_parts().ok_or("term_of: not a finite number")?;
+    let r = x.as_raw_parts();
+    if !matches!(r.kind, zenith_float_num::RawKind::Finite) {
+        return Err("term_of: not a finite number".into());
+    }
+    let (words, e) = (r.words, r.exponent);
     let mut m = Integer::new();
     for w in words.iter().rev() {
         m <<= 64;
         m += *w;
     }
-    if sign == Sign::Neg {
+    if r.negative {
         m = -m;
     }
     Ok(Term {
@@ -597,10 +601,16 @@ fn round_of_rnd(rnd: rnd_t) -> Round {
 }
 
 fn show_zf(x: &ExactNum) -> String {
-    match x.as_raw_parts() {
-        Some((w, n, s, e, inx)) => format!("{s:?} {w:x?} n={n} e={e} inexact={inx}"),
-        None => format!("special nan={} inf={}", x.is_nan(), x.is_inf()),
-    }
+    let r = x.as_raw_parts();
+    format!(
+        "{:?} neg={} {:x?} n={:?} e={} inexact={}",
+        r.kind,
+        r.negative,
+        r.words,
+        r.significant_bits(),
+        r.exponent,
+        r.inexact
+    )
 }
 
 /// Asserts that `got` is the reference: NaN, the signed infinity, the signed zero, or the value scaled by

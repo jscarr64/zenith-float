@@ -347,20 +347,26 @@ fn zenith_binop_uses_both_operands_mpfr_mul_p24() -> Result<(), Box<dyn std::err
         mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
     }
     let p = 24usize;
-    let n1 = ExactNum::from_raw_parts(
-        &[9994389172669906944],
-        64,
-        zenith_float_num::Sign::Pos,
-        -5,
-        true,
-    );
-    let n2 = ExactNum::from_raw_parts(
-        &[16400126323906838528],
-        64,
-        zenith_float_num::Sign::Neg,
-        38,
-        true,
-    );
+    let n1 = ExactNum::from_raw_parts(&zenith_float_num::RawParts {
+        kind: zenith_float_num::RawKind::Finite,
+        words: &[9994389172669906944],
+        precision: 64,
+        negative: false,
+        exponent: -5,
+        inexact: true,
+        op_inexact: true,
+    })
+    .unwrap_or(zenith_float_num::NAN);
+    let n2 = ExactNum::from_raw_parts(&zenith_float_num::RawParts {
+        kind: zenith_float_num::RawKind::Finite,
+        words: &[16400126323906838528],
+        precision: 64,
+        negative: true,
+        exponent: 38,
+        inexact: true,
+        op_inexact: true,
+    })
+    .unwrap_or(zenith_float_num::NAN);
     let f1 = conv_to_mpfr(p, &n1, &mut cc)?;
     let f2 = conv_to_mpfr(p, &n2, &mut cc)?;
     let f3 = mpfr_reference(&f1, &f2, BinOp::Mul, p as u32, RoundingMode::ToEven)?;
