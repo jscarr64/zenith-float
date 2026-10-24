@@ -635,6 +635,49 @@ impl ExactNum {
         self.div_op(d2, p, rm)
     }
 
+    /// Divides `self` by `d2` exactly: `Ok(Some(q))` when the quotient is representable with
+    /// `p` bits (word-rounded) inside the exponent range, including the subnormal grid, and
+    /// `Ok(None)` when it is not (it would round, overflow, or underflow). `q` is the value
+    /// [`Self::div`] returns in every rounding mode, and `q.inexact()` is false.
+    ///
+    /// `±Inf / finite` is `Some(±Inf)` and `finite / ±Inf` is `Some(±0)`.
+    ///
+    /// ## Errors
+    ///
+    ///  - DivisionByZero: `d2` is zero and `self` is not.
+    ///  - InvalidArgument: `0 / 0`, `Inf / Inf`, a NaN operand, or an incorrect precision.
+    ///    A NaN operand's own error kind is returned when it has one.
+    ///
+    /// Accuracy: exact
+    pub fn div_exact(&self, d2: &Self, p: usize) -> Result<Option<Self>, Error> {
+        if let Flavor::NaN(err) = &self.inner {
+            return Err(err.unwrap_or(Error::InvalidArgument));
+        }
+        if let Flavor::NaN(err) = &d2.inner {
+            return Err(err.unwrap_or(Error::InvalidArgument));
+        }
+        if d2.is_zero() {
+            return Err(if self.is_zero() {
+                Error::InvalidArgument
+            } else {
+                Error::DivisionByZero
+            });
+        }
+        ExactNumNumber::p_assertion(round_p(p))?;
+        // Toward zero: an overflow saturates to the largest finite value (marked inexact) and an
+        // underflow rounds to zero or the subnormal grid (marked inexact), never to Inf.
+        let q = self.div_op(d2, p, RoundingMode::ToZero);
+        if let Flavor::NaN(err) = &q.inner {
+            return Err(err.unwrap_or(Error::InvalidArgument));
+        }
+        let finite = matches!(self.inner, Flavor::Value(_)) && matches!(d2.inner, Flavor::Value(_));
+        if finite && q.inexact() {
+            Ok(None)
+        } else {
+            Ok(Some(q))
+        }
+    }
+
     fn div_op(&self, d2: &Self, p: usize, rm: RoundingMode) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {

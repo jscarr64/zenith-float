@@ -9,7 +9,9 @@ fn n(v: u64) -> ExactNum {
 }
 
 fn same(a: &ExactNum, b: &ExactNum) -> bool {
-    a.mantissa_digits() == b.mantissa_digits() && a.exponent() == b.exponent() && a.sign() == b.sign()
+    a.mantissa_digits() == b.mantissa_digits()
+        && a.exponent() == b.exponent()
+        && a.sign() == b.sign()
 }
 
 #[test]
@@ -54,17 +56,28 @@ fn div_exact_range_ends() -> Result<(), Error> {
 
 #[test]
 fn div_exact_specials() -> Result<(), Error> {
-    assert!(matches!(n(1).div_exact(&n(0), P), Err(Error::DivisionByZero)));
-    assert!(matches!(n(0).div_exact(&n(0), P), Err(Error::InvalidArgument)));
+    assert!(matches!(
+        n(1).div_exact(&n(0), P),
+        Err(Error::DivisionByZero)
+    ));
+    assert!(matches!(
+        n(0).div_exact(&n(0), P),
+        Err(Error::InvalidArgument)
+    ));
     assert!(NAN.div_exact(&n(1), P).is_err());
     assert!(n(1).div_exact(&NAN, P).is_err());
     assert!(INF_POS.div_exact(&INF_NEG, P).is_err());
-    let q = INF_POS.div_exact(&-n(2), P)?.ok_or(Error::InvalidArgument)?;
+    let q = INF_POS
+        .div_exact(&-n(2), P)?
+        .ok_or(Error::InvalidArgument)?;
     assert!(q.is_inf_neg());
     let q = n(2).div_exact(&INF_NEG, P)?.ok_or(Error::InvalidArgument)?;
     assert!(q.is_zero() && q.sign() == Some(zenith_float_num::Sign::Neg));
     let q = n(0).div_exact(&n(5), P)?.ok_or(Error::InvalidArgument)?;
     assert!(q.is_zero());
-    assert!(matches!(n(1).div_exact(&n(3), 0), Err(Error::InvalidArgument)));
+    assert!(matches!(
+        n(1).div_exact(&n(3), 0),
+        Err(Error::InvalidArgument)
+    ));
     Ok(())
 }
