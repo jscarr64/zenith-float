@@ -1,0 +1,1 @@
+- fix(s9): every cap-then-continue loop in special.rs now returns `PrecisionRetryExhausted` when its cap or divergence stops it before its stop rule holds, instead of using a partial sum or an out-of-bound argument. The Γ/ψ shift bounds now use the working precision the tail checks against, and `bessel_j` falls back from Hankel to the series when Hankel exhausts.
