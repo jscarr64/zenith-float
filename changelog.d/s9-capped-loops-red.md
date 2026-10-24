@@ -1,0 +1,1 @@
+- test(s9): red tests forcing every cap-then-continue loop in special.rs (shift caps via `*_capped` hooks, fixed Bernoulli tables, divergent asymptotic tails, capped power series); each must return `PrecisionRetryExhausted`.

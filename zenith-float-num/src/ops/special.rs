@@ -665,6 +665,16 @@ impl ExactNumNumber {
     }
 
     fn gamma_positive(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        self.gamma_positive_capped(p, cc, STIRLING_SHIFT_MAX)
+    }
+
+    /// [`Self::gamma_positive`] with the Stirling shift cap as a parameter (tests force it).
+    fn gamma_positive_capped(
+        &self,
+        p: usize,
+        cc: &mut Consts,
+        shift_max: usize,
+    ) -> Result<Self, Error> {
         if self.is_int() && self.is_positive() {
             for n in 1u32..=64 {
                 let w = Self::from_word(n as Word, p)?;
@@ -703,7 +713,7 @@ impl ExactNumNumber {
         // Raise the argument until the last (64th) Stirling term, B₁₂₈/(128·127·z¹²⁷)
         // ≈ 2^363.8 / z¹²⁷, is below 2^-(p+8).
         let e_min = stirling_min_exponent(p, 372, 127, 6);
-        while z.exponent() < e_min && shifts < STIRLING_SHIFT_MAX {
+        while z.exponent() < e_min && shifts < shift_max {
             acc = acc.mul(&z, pw, RoundingMode::None)?;
             z = z.add(&one, pw, RoundingMode::None)?;
             shifts += 1;
@@ -837,6 +847,16 @@ impl ExactNumNumber {
     }
 
     fn digamma_positive(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        self.digamma_positive_capped(p, cc, STIRLING_SHIFT_MAX)
+    }
+
+    /// [`Self::digamma_positive`] with the shift cap as a parameter (tests force it).
+    fn digamma_positive_capped(
+        &self,
+        p: usize,
+        cc: &mut Consts,
+        shift_max: usize,
+    ) -> Result<Self, Error> {
         // One extra word absorbs the rounding of the shift sum.
         let pw = p + WORD_BIT_SIZE;
         let one = Self::from_word(1, pw)?;
@@ -869,7 +889,7 @@ impl ExactNumNumber {
         // is below 2^-(p+8). More terms at higher p keep the shift count small.
         let terms = digamma_terms(p);
         let e_min = asymp_min_exponent(p, terms);
-        while z.exponent() < e_min && shifts < STIRLING_SHIFT_MAX {
+        while z.exponent() < e_min && shifts < shift_max {
             let rec = one.div(&z, pw, RoundingMode::None)?;
             acc = acc.sub(&rec, pw, RoundingMode::None)?;
             z = z.add(&one, pw, RoundingMode::None)?;
@@ -5082,6 +5102,77 @@ mod tests {
             acc = acc.neg()?;
         }
         Ok(acc)
+    }
+
+    /// `x` as an exact number at `p` bits: `2^e` (`e` may be negative).
+    fn pow2(e: Exponent, p: usize) -> Result<ExactNumNumber, crate::Error> {
+        let mut x = ExactNumNumber::from_word(1, p)?;
+        x.set_exponent(e + 1);
+        Ok(x)
+    }
+
+    /// `n / 4` exactly at `p` bits.
+    fn quarters(n: Word, p: usize) -> Result<ExactNumNumber, crate::Error> {
+        let mut x = ExactNumNumber::from_word(n, p)?;
+        x.set_exponent(x.exponent() - 2);
+        Ok(x)
+    }
+
+    fn exhausted<T>(r: Result<T, crate::Error>) -> bool {
+        matches!(r, Err(crate::Error::PrecisionRetryExhausted))
+    }
+
+    /// Every capped loop in this file must end in PrecisionRetryExhausted when its cap
+    /// (or divergence) stops it before its error bound holds; none may return a value.
+    #[test]
+    fn test_capped_loops_shift_caps() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 256;
+        // Γ: Stirling shift loop capped at 2 shifts, z = 0.75 stays far below e_min.
+        assert!(exhausted(quarters(3, p)?.gamma_positive_capped(p, &mut cc, 2)));
+        // ψ: shift loop capped at 2 shifts, z = 1.25.
+        assert!(exhausted(quarters(5, p)?.digamma_positive_capped(p, &mut cc, 2)));
+        Ok(())
+    }
+
+    #[test]
+    fn test_capped_loops_asymptotic_tails() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 4096;
+        let one = ExactNumNumber::from_word(1, p)?;
+        let nu0 = ExactNumNumber::from_word(0, p)?;
+        // Fixed Bernoulli tables evaluated at z = 1, far outside their bound.
+        assert!(exhausted(one.ln_gamma_stirling(p, &mut cc)));
+        assert!(exhausted(one.digamma_asymp(p, 64, &mut cc)));
+        // Divergent asymptotic series at x = 1: the smallest term is far above 2^-p.
+        assert!(exhausted(one.erfc_asymptotic(p, &mut cc)));
+        assert!(exhausted(one.ei_asymptotic(p, &mut cc)));
+        assert!(exhausted(one.si_ci_aux_fg(p)));
+        assert!(exhausted(one.fresnel_aux_fg(p, &mut cc)));
+        assert!(exhausted(one.bessel_hankel_pq(&nu0, p)));
+        assert!(exhausted(one.k_asymptotic(&nu0, p, &mut cc)));
+        Ok(())
+    }
+
+    #[test]
+    fn test_capped_loops_power_series() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 64;
+        // x = 2^20: every power series peaks near k ~ x, past its p-sized term cap.
+        let big = pow2(20, p)?;
+        let nu0 = ExactNumNumber::from_word(0, p)?;
+        assert!(exhausted(big.ei_series(p, &mut cc)));
+        assert!(exhausted(big.si_series(p)));
+        assert!(exhausted(big.ci_series(p, &mut cc)));
+        assert!(exhausted(big.fresnel_sc_series(false, p, &mut cc)));
+        assert!(exhausted(big.bessel_j_series(0, p)));
+        assert!(exhausted(big.bessel_jn_series(&nu0, p, &mut cc, true)));
+        assert!(exhausted(big.bessel_y0(p, &mut cc)));
+        assert!(exhausted(big.bessel_y1(p, &mut cc)));
+        assert!(exhausted(big.k0_series(p, &mut cc)));
+        let s1 = ExactNumNumber::from_word(1, 4096)?;
+        assert!(exhausted(s1.gammainc_at(&pow2(30, 4096)?, 4096, &mut cc)));
+        Ok(())
     }
 
     /// The cached exact B_2k equal sympy `bernoulli(2k)` (sympy 1.14.0), checked by an exact
