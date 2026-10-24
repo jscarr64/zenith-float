@@ -427,7 +427,9 @@ impl ExactNumNumber {
                 let exact = log_is_exact_dyadic(self, &y, &ret2)?;
 
                 if exact {
-                    ret2.set_inexact(ret2.inexact() | self.inexact() | n.inexact());
+                    // `ret2` is the exact result: the approximate quotient it came from does not make it inexact.
+                    ret2.set_inexact(self.inexact() | n.inexact());
+                    ret2.set_op_inexact(false);
                     ret2.set_precision(p, rm)?;
                     return Ok(ret2);
                 }

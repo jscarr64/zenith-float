@@ -967,6 +967,15 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn log(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let x = self.exact_copy_ext();
+        let b = n.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated() || n.inexact_accumulated(), p, rm, |q, r| {
+            x.log_word(&b, q, r, cc)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::log`].
+    fn log_word(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
             Flavor::Value(v1) => {
                 match &n.inner {
@@ -7581,6 +7590,17 @@ mod round_op_flag_tests {
 #[cfg(test)]
 mod underflow_zero_flag_tests {
     use crate::{Consts, ExactNum, RoundingMode, EXPONENT_MIN};
+
+    // `log(x, base)` rounded at the word size (`round_p(p)`), not at `p`, unlike every other
+    // correctly rounded function: at `p = 200` it returned a 256-bit value.
+    #[test]
+    fn log_with_a_base_rounds_at_the_requested_precision() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let r = ExactNum::from_u8(3, 64).log(&ExactNum::from_u8(2, 64), 200, RoundingMode::ToZero, &mut cc);
+        let on_grid = ExactNum::add_ref(&r, &ExactNum::new(64), 200, RoundingMode::ToZero);
+        assert!(r == on_grid && r.inexact());
+        Ok(())
+    }
 
     // The exact squaring behind an integer power used to flush a tiny partial product to a fresh
     // exact zero, so an integer power of a tiny subnormal number was an exact zero in

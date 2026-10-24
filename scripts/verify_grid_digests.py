@@ -250,6 +250,9 @@ def decide(op, xs, ints, p, rm):
             if mpmath.isinf(y): return ('inf', y < 0), False
             if y == 0:
                 return ('zero', None), None
+            if op == "tanh" and abs(y) == 1 and xs[0] != 0:
+                # |tanh x| < 1 for every finite x: a saturated value lies just inside 1 (1 - |tanh x| ~ 2e^-2|x|)
+                return rnd(D(y < 0, 1, 0, 1 if y < 0 else -1), p, rm)
             yd = mp_to_D(y)
             if yd.M.bit_length() <= 128:
                 return rnd(yd, p, rm)  # exact: 128+ trailing zero bits at p+256 only for an exact value
