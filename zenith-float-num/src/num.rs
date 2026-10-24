@@ -1096,6 +1096,9 @@ impl ExactNumNumber {
     pub fn from_words(m: &[Word], s: Sign, mut e: Exponent) -> Result<Self, Error> {
         let p = m.len() * WORD_BIT_SIZE;
         Self::p_assertion(p)?;
+        if !(EXPONENT_MIN..=EXPONENT_MAX).contains(&e) {
+            return Err(Error::InvalidArgument);
+        }
 
         let mut m = Mantissa::from_words(p, m)?;
         let bl = m.bit_len();
