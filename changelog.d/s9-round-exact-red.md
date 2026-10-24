@@ -1,0 +1,1 @@
+- test(ext): red test showing `round_exact` at p=113 returning an unrounded 128-bit value when the wide pass errors.

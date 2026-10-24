@@ -4562,6 +4562,30 @@ impl FromExt<&str> for ExactNum {
 #[cfg(test)]
 mod tests {
 
+    /// round_exact at p=113: when the wide (192-bit) pass fails, the fallback must not
+    /// return f(113)'s 128-bit value (1 + 2^-120 here) unrounded; it propagates the Err.
+    #[test]
+    fn test_round_exact_wide_err_never_unrounded() -> Result<(), crate::Error> {
+        let w = 128;
+        let one = crate::num::ExactNumNumber::from_word(1, w)?;
+        let mut tiny = crate::num::ExactNumNumber::from_word(1, w)?;
+        tiny.set_exponent(-119);
+        let v = one.add(&tiny, w, crate::RoundingMode::None)?;
+        let mut once = Some(v);
+        let f = move |q: usize, _rm: crate::RoundingMode| {
+            if q > w {
+                return ExactNum::nan(Some(Error::PrecisionRetryExhausted));
+            }
+            match once.take() {
+                Some(x) => ExactNum { inner: super::Flavor::Value(x) },
+                None => ExactNum::nan(None),
+            }
+        };
+        let r = ExactNum::round_exact(false, 113, crate::RoundingMode::ToEven, f);
+        assert_eq!(r.err(), Some(Error::PrecisionRetryExhausted));
+        Ok(())
+    }
+
     use crate::common::util::rand_p;
     use crate::defs::DEFAULT_P;
     use crate::Consts;
