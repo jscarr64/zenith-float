@@ -142,6 +142,7 @@ pub use crate::ode::rk45_adaptive;
 pub use crate::ode::ODE_MAX_STEPS;
 pub use crate::ode::ODE_MIN_STEP;
 pub use crate::ops::consts::CachedFBig;
+pub use crate::ops::special::beta;
 pub use crate::ops::consts::ConstCache;
 pub use crate::ops::consts::ConstCacheInfo;
 pub use crate::ops::consts::Consts;

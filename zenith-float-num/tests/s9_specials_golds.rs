@@ -7,8 +7,7 @@
 //! bits over the i64 exponent range.
 //!
 //! One test per function. A test fails when any of its rows differs, times out,
-//! or has no directed implementation yet (`Unsupported`). `beta` has no public
-//! real API today, so it goes through a local stub that returns `Unsupported`.
+//! or has no directed implementation yet (`Unsupported`).
 
 use std::sync::mpsc;
 use std::thread;
@@ -24,21 +23,6 @@ const ROW_BUDGET: Duration = Duration::from_secs(10);
 const FN_BUDGET: Duration = Duration::from_secs(120);
 /// Mismatch lines printed per function.
 const SHOW: usize = 8;
-
-/// The typed "no directed implementation yet" outcome.
-#[derive(Debug)]
-struct Unsupported;
-
-/// Stub for the directed real beta `B(a, b)`; no public real API exists yet.
-fn beta_directed(
-    _a: &ExactNum,
-    _b: &ExactNum,
-    _p: usize,
-    _rm: RoundingMode,
-    _cc: &mut Consts,
-) -> Result<ExactNum, Unsupported> {
-    Err(Unsupported)
-}
 
 fn mode_of(name: &str) -> Result<RoundingMode, String> {
     match name {
@@ -176,7 +160,7 @@ fn eval(
         "zeta" => x.riemann_zeta(p, rm, cc),
         "beta" => {
             let y = args.get(1).ok_or("beta needs two arguments")?;
-            beta_directed(x, y, p, rm, cc).map_err(|u| format!("{u:?}"))?
+            zenith_float_num::beta(x, y, p, rm, cc)
         }
         other => return Err(format!("unknown function {other}")),
     };

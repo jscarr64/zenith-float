@@ -6,6 +6,7 @@ use crate::defs::Error;
 use crate::defs::Exponent;
 use crate::defs::EXPONENT_MIN;
 use crate::defs::RoundingMode;
+use crate::ExactNum;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::Sign;
@@ -289,6 +290,104 @@ impl ExactNumNumber {
             }
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
+    }
+
+    /// Beta function `B(self, b) = Γ(self) Γ(b) / Γ(self + b)` at precision `p`, rounded once.
+    ///
+    /// Poles of either argument are `InvalidArgument`. Large positive arguments go through
+    /// `exp(ln Γ(a) + ln Γ(b) − ln Γ(a + b))` with guard bits for the absolute error of the sum.
+    pub fn beta(&self, b: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if self.is_beta_pole() || b.is_beta_pole() {
+            return Err(Error::InvalidArgument);
+        }
+        let inexact = self.inexact() | b.inexact();
+        let one = Self::from_word(1, WORD_BIT_SIZE)?;
+
+        // B(a, 1) = 1/a and B(1, b) = 1/b: one division, exact when the quotient is.
+        for (x, y) in [(self, b), (b, self)] {
+            if y.cmp(&one) == 0 {
+                let mut r = Self::from_word(1, p)?.div(x, p, rm)?;
+                r.set_inexact(r.inexact() | inexact);
+                return Ok(r);
+            }
+        }
+
+        // Positive integers: B(m, n) = (n−1)! / (m (m+1) ⋯ (m+n−1)), both sides exact.
+        if let (Some(m), Some(n)) = (self.beta_int_index()?, b.beta_int_index()?) {
+            let num = exact_product(1, n - 1)?;
+            let den = exact_product(m, m + n - 1)?;
+            let mut r = num.div(&den, p, rm)?;
+            r.set_inexact(r.inexact() | inexact);
+            return Ok(r);
+        }
+
+        let large = self.is_positive()
+            && b.is_positive()
+            && (self.exponent() > BETA_RATIO_EXP || b.exponent() > BETA_RATIO_EXP);
+        // |ln Γ(x)| < x·log2(x) for x ≥ 2: that many bits of the log-sum are not fraction bits.
+        let guard = if large {
+            let e = self.exponent().max(b.exponent()) + 1;
+            let lz = Exponent::BITS - e.leading_zeros();
+            usize::try_from(e).map_err(|_| Error::InvalidArgument)?
+                + usize::try_from(lz).map_err(|_| Error::InvalidArgument)?
+                + 4
+        } else {
+            0
+        };
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()).max(b.mantissa_max_bit_len()) + p_inc;
+
+        loop {
+            let p_x = round_p(p_wrk + WORD_BIT_SIZE * 2 + guard);
+            let s = self.add(b, p_x, RoundingMode::None)?;
+            let mut ret = if large {
+                let la = self.ln_gamma_positive_at(p_x, cc)?;
+                let lb = b.ln_gamma_positive_at(p_x, cc)?;
+                let ls = s.ln_gamma_positive_at(p_x, cc)?;
+                let l = la.add(&lb, p_x, RoundingMode::None)?.sub(&ls, p_x, RoundingMode::None)?;
+                let e = match l.exp(p_x, RoundingMode::None, cc) {
+                    Err(Error::ExponentOverflow(Sign::Neg)) => Self::new(p_x)?,
+                    other => other?,
+                };
+                if e.is_zero() {
+                    // B > 0 far below the subnormal range.
+                    let mut r = Self::tiny_positive(p, rm)?;
+                    r.set_inexact(true);
+                    return Ok(r);
+                }
+                e
+            } else {
+                if s.is_beta_pole() {
+                    // Γ(a + b) has a pole: B(a, b) = 0.
+                    return Self::new2(p, Sign::Pos, inexact);
+                }
+                let ga = self.gamma_at(p_x, cc)?;
+                let gb = b.gamma_at(p_x, cc)?;
+                let gs = s.gamma_at(p_x, cc)?;
+                ga.mul(&gb, p_x, RoundingMode::None)?.div(&gs, p_x, RoundingMode::None)?
+            };
+            if ret.try_set_precision(p, rm, p_wrk)? {
+                ret.set_inexact(ret.inexact() | inexact);
+                return Ok(ret);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    /// Zero or a negative integer: a pole of Γ.
+    fn is_beta_pole(&self) -> bool {
+        self.is_zero() || (self.is_negative() && self.is_int())
+    }
+
+    /// `Some(n)` when `self` is a positive integer `n ≤ BETA_INT_MAX`, else `None`.
+    fn beta_int_index(&self) -> Result<Option<usize>, Error> {
+        if !self.is_positive() || self.is_zero() || !self.is_int() || self.exponent() > BETA_RATIO_EXP + 2 {
+            return Ok(None);
+        }
+        let n = self.int_as_usize()?;
+        Ok(if n <= BETA_INT_MAX { Some(n) } else { None })
     }
 
     /// `ln Γ(self)` for positive `self` at precision `p`.
@@ -3499,6 +3598,33 @@ fn asymp_min_exponent(p: usize, terms: usize) -> Exponent {
 }
 
 /// Largest `n` for which Γ(n+½) and ψ(n+½) use their closed forms.
+/// Beta function `B(a, b)` at `p` bits with `rm`; see [`ExactNumNumber::beta`].
+pub fn beta(a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
+    let a_c = a.exact_copy_ext();
+    let b_c = b.exact_copy_ext();
+    ExactNum::round_exact(
+        a.inexact_accumulated() || b.inexact_accumulated(),
+        p,
+        rm,
+        |q, r| a_c.beta_word(&b_c, q, r, cc),
+    )
+}
+
+/// The exact integer `lo · (lo+1) ⋯ hi` (1 when `lo > hi`).
+fn exact_product(lo: usize, hi: usize) -> Result<ExactNumNumber, Error> {
+    let mut prod = ExactNumNumber::from_word(1, WORD_BIT_SIZE)?;
+    for k in lo..=hi {
+        let pb = round_p(prod.mantissa_max_bit_len() + 2 * WORD_BIT_SIZE);
+        prod = prod.mul(&from_usize_p(k, pb)?, pb, RoundingMode::None)?;
+    }
+    Ok(prod)
+}
+
+/// Beta arguments up to 2^BETA_RATIO_EXP use the Γ ratio; larger ones the ln Γ sum.
+const BETA_RATIO_EXP: Exponent = 10;
+/// Largest integer argument of the exact integer beta path.
+const BETA_INT_MAX: usize = 1 << 12;
+
 const HALF_INTEGER_MAX: usize = 1 << 12;
 
 /// Upper bound on argument shifts before the Stirling / asymptotic series.

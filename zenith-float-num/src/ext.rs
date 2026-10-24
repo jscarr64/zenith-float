@@ -1503,6 +1503,17 @@ impl ExactNum {
         }
     }
 
+    /// `B(self, b)` at `p` bits with `rm`; see [`ExactNumNumber::beta`].
+    pub(crate) fn beta_word(&self, b: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
+        match (&self.inner, &b.inner) {
+            (Flavor::Value(x), Flavor::Value(y)) => {
+                Self::result_to_ext_rm(x.beta(y, p, rm, cc), false, true, p, rm)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            (Flavor::Inf(_), _) | (_, Flavor::Inf(_)) => NAN,
+        }
+    }
+
     fn exact_operand(v: &ExactNumNumber) -> Result<(ExactNumNumber, bool), Error> {
         Ok((v.exact_copy()?, v.inexact()))
     }
