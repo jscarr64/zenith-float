@@ -42,6 +42,14 @@ impl ExactNumNumber {
         let p = round_p(p);
         Self::p_assertion(p)?;
 
+        // x ≥ 2^31: erfc(x) < e^{-x²} < 2^-(2^62·log₂e) lies below the whole subnormal grid.
+        // It is positive, so it never rounds to -0.
+        if self.is_positive() && !self.is_zero() && self.exponent() >= ERFC_UNDERFLOW_EXPONENT {
+            let mut r = Self::tiny_positive(p, rm)?;
+            r.set_inexact(true);
+            return Ok(r);
+        }
+
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
 
@@ -53,6 +61,20 @@ impl ExactNumNumber {
                 return Ok(ret);
             }
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    /// A positive value below half the smallest subnormal, rounded at `p` bits with `rm`:
+    /// `+0`, or the smallest positive subnormal when `rm` rounds away from zero or to odd.
+    pub(crate) fn tiny_positive(p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        match rm {
+            RoundingMode::Up | RoundingMode::FromZero | RoundingMode::ToOdd => {
+                Self::min_positive(p)
+            }
+            RoundingMode::None
+            | RoundingMode::Down
+            | RoundingMode::ToZero
+            | RoundingMode::ToEven => Self::new2(p, Sign::Pos, true),
         }
     }
 
@@ -3059,6 +3081,9 @@ fn erf_x2_bits(x: &ExactNumNumber, p: usize) -> Result<Option<usize>, Error> {
     }
     Ok(Some(round_p((x2 + 1) * 3 / 2) + WORD_BIT_SIZE))
 }
+
+/// Binary exponent from which `erfc` underflows below every subnormal (`x ≥ 2^31`).
+const ERFC_UNDERFLOW_EXPONENT: Exponent = 32;
 
 /// Upper bound on argument shifts before the Stirling / asymptotic series.
 const STIRLING_SHIFT_MAX: usize = 1 << 20;
