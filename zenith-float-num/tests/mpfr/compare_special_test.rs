@@ -13,10 +13,12 @@ use crate::mpfr::common::{
     test_zf_rem_pi,
 };
 use crate::mpfr::common::{draw_seed, get_prec_rng, rebuild_from_seed, test_zf_op};
+use crate::mpfr::shifted as sh;
 use gmp_mpfr_sys::{gmp::exp_t, mpfr};
 use rug::Float;
 use zenith_float_num::{
-    Consts, ExactNum, Exponent, EXPONENT_BIT_SIZE, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
+    Consts, ExactNum, Exponent, RoundingMode, EXPONENT_BIT_SIZE, EXPONENT_MAX, EXPONENT_MIN,
+    WORD_BIT_SIZE,
 };
 
 #[test]
@@ -173,20 +175,15 @@ fn run_compare_special(
                     cc
                 );
 
-                test_zf_op!(
-                    false,
+                check_pow(
                     n,
                     n1,
-                    pow,
-                    f,
-                    f1,
-                    pow,
-                    p,
-                    rm,
-                    rnd,
-                    (n, n1, p, rm, "pow"),
-                    cc
-                );
+                    &f,
+                    &f1,
+                    (p, rm, rnd),
+                    &format!("{:?}", (n, n1, p, rm, "pow")),
+                    &mut cc,
+                )?;
 
                 // rem
                 let p = p1.max(p2);
@@ -233,7 +230,7 @@ fn run_compare_special(
             let n_low;
             let f_low;
             let (n, f) = if n.exponent().is_some_and(|e| e < RAND_EMIN) {
-                let mut m = n.clone();
+                let mut m = mk_nth(idx, seeds[idx]);
                 m.set_exponent(RAND_EMIN);
                 f_low = conv_to_mpfr(p1, &m, &mut cc)?;
                 n_low = m;
@@ -452,4 +449,30 @@ fn big_log_ref(f: &Float, p: usize, rnd: mpfr::rnd_t) -> Float {
     let mut r = Float::with_val(p as u32, 0);
     unsafe { mpfr::add(r.as_raw_mut(), l.as_raw(), two.as_raw(), rnd) };
     r
+}
+
+/// `n^n1` against MPFR; where MPFR's own `pow` over- or underflows (its range ends at the zenith
+/// `EXPONENT_MIN`, above the zenith subnormal grid), against the shifted-frame reference [`sh::ref_pow`]
+/// bit for bit.
+fn check_pow(
+    n: &ExactNum,
+    n1: &ExactNum,
+    f: &Float,
+    f1: &Float,
+    (p, rm, rnd): (usize, RoundingMode, mpfr::rnd_t),
+    info: &str,
+    cc: &mut Consts,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let got = ExactNum::pow(n, n1, p, rm, cc);
+    let mut f3 = Float::with_val(p as u32, 1);
+    let edge = unsafe {
+        mpfr::clear_flags();
+        mpfr::pow(f3.as_raw_mut(), f.as_raw(), f1.as_raw(), rnd);
+        mpfr::underflow_p() != 0 || mpfr::overflow_p() != 0
+    };
+    if edge && !f3.is_nan() {
+        let want = sh::ref_pow(&sh::term_of(n)?, f, f1, f3.is_sign_negative(), p as u32, rm)?;
+        return sh::check(&got, &want, false, info);
+    }
+    assert_float_close(got, f3, p, info, false, cc)
 }

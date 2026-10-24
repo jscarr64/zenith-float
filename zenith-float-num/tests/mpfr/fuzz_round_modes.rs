@@ -9,13 +9,13 @@ use crate::mpfr::common::draw_seed;
 use crate::mpfr::common::get_float_pair;
 use crate::mpfr::common::get_oned_zeroed;
 use crate::mpfr::common::mpfr_reference;
-use crate::mpfr::common::mpfr_reference_with;
 use crate::mpfr::common::rebuild_from_seed;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::common::test_random;
 use crate::mpfr::common::test_zf_op_no_cc;
 use crate::mpfr::common::zenith_binop;
 use crate::mpfr::common::BinOp;
+use crate::mpfr::shifted as sh;
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::Float;
 use std::ops::Neg;
@@ -283,7 +283,6 @@ fn fuzz_mpfr_overflow_all_round_modes() -> Result<(), Box<dyn std::error::Error>
 #[test]
 fn fuzz_mpfr_exact_bit_precision() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new()?;
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
         mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
@@ -317,8 +316,8 @@ fn fuzz_mpfr_exact_bit_precision() -> Result<(), Box<dyn std::error::Error>> {
                 if test_random::<bool>() {
                     n2 = n2.neg();
                 }
-                let f1 = conv_to_mpfr(p, &n1, &mut cc)?;
-                let f2 = conv_to_mpfr(p, &n2, &mut cc)?;
+                // exact operands on the shifted frame: MPFR cannot hold the subnormal results of the low band
+                let (t1, t2) = (sh::term_of(&n1)?, sh::term_of(&n2)?);
                 for op in ops {
                     for rm in modes {
                         // the ToOdd emulation is for normal-range results only
@@ -326,9 +325,9 @@ fn fuzz_mpfr_exact_bit_precision() -> Result<(), Box<dyn std::error::Error>> {
                             continue;
                         }
                         let n3 = zenith_binop(&n1, &n2, op, p, rm);
-                        let f3 = mpfr_reference(&f1, &f2, op, p as u32, rm)?;
+                        let want = sh::ref_binop(&t1, &t2, op, p as u32, rm)?;
                         let info = format!("{band} #{i} p={p} {op:?} {rm:?} {n1:?} {n2:?}");
-                        assert_exact_eq(&n3, &f3, p, &info, &mut cc)?;
+                        sh::check(&n3, &want, false, &info)?;
                     }
                 }
             }
@@ -387,7 +386,6 @@ fn zenith_binop_uses_both_operands_mpfr_mul_p24() -> Result<(), Box<dyn std::err
 #[test]
 fn fuzz_mpfr_sqr_all_round_modes() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
-    let mut cc = Consts::new()?;
     unsafe {
         mpfr::set_emin(EXPONENT_MIN as gmp_mpfr_sys::gmp::exp_t);
         mpfr::set_emax(EXPONENT_MAX as gmp_mpfr_sys::gmp::exp_t);
@@ -416,17 +414,15 @@ fn fuzz_mpfr_sqr_all_round_modes() -> Result<(), Box<dyn std::error::Error>> {
                 if test_random::<bool>() {
                     x = x.neg();
                 }
-                let fx = conv_to_mpfr(p, &x, &mut cc)?;
+                let tx = sh::term_of(&x)?;
                 for rm in modes {
                     if rm == RoundingMode::ToOdd && band == "low" {
                         continue;
                     }
-                    let (f, _) = mpfr_reference_with(p as u32, rm, |r, rnd| unsafe {
-                        mpfr::sqr(r.as_raw_mut(), fx.as_raw(), rnd)
-                    })?;
+                    let want = sh::ref_sum(&[tx.mul(&tx)], p as u32, rm)?;
                     let got = x.sqr(p, rm);
                     let info = format!("sqr {band} #{i} p={p} {rm:?} {x:?}");
-                    assert_exact_eq(&got, &f, p, &info, &mut cc)?;
+                    sh::check(&got, &want, false, &info)?;
                     assert_eq!(got, ExactNum::mul_ref(&x, &x, p, rm), "{info}");
                     checked += 1;
                 }

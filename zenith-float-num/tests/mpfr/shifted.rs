@@ -15,13 +15,14 @@
 //! is exact, and against hand-computed results at the subnormal floor and beyond both ends.
 
 use crate::mpfr::common::{
-    exact_mpfr_shifted, mpfr_reference_shifted, mpfr_reference_with, show_mp,
+    exact_mpfr_shifted, mpfr_reference_shifted, mpfr_reference_with, show_mp, BinOp,
 };
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::float::Round;
+use rug::ops::Pow;
 use rug::{Float, Integer};
 use std::cmp::Ordering;
-use zenith_float_num::{ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
+use zenith_float_num::{ExactNum, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN};
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
 
@@ -463,6 +464,126 @@ pub fn ref_log(
     round_scaled(p, rm, 2, q.is_sign_negative(), 0, |o, rnd| {
         set_checked(o, &q, rnd)
     })
+}
+
+/// The exact value of a finite zenith number as a [`Term`] (`m` = the mantissa words, `k` = the exponent less
+/// the storage width). Zero is `Term` zero of the number's sign lost: callers keep zero operands out.
+pub fn term_of(x: &ExactNum) -> Res<Term> {
+    let (words, _, sign, e, _) = x.as_raw_parts().ok_or("term_of: not a finite number")?;
+    let mut m = Integer::new();
+    for w in words.iter().rev() {
+        m <<= 64;
+        m += *w;
+    }
+    if sign == Sign::Neg {
+        m = -m;
+    }
+    Ok(Term {
+        m,
+        k: i128::from(e) - 64 * i128::try_from(words.len())?,
+    })
+}
+
+/// `a op b` exactly rounded at `p` in the zenith range.
+pub fn ref_binop(a: &Term, b: &Term, op: BinOp, p: u32, rm: RoundingMode) -> Res<Want> {
+    match op {
+        BinOp::Add => ref_sum(&[a.ldexp(0), b.ldexp(0)], p, rm),
+        BinOp::Sub => ref_sum(&[a.ldexp(0), b.neg()], p, rm),
+        BinOp::Mul => ref_sum(&[a.mul(b)], p, rm),
+        BinOp::Div => ref_div(a, b, p, rm),
+    }
+}
+
+/// `|x|^y` with the sign `negative` (the caller reads it from MPFR's own result) where that result over- or
+/// underflows MPFR's range. With `L = y log2 |x|` and `t` its floor plus one, the result is `2^(L - t)` scaled by
+/// `2^t`: `L` is enclosed by directed roundings of `log2` and the product, `2^(L - t)` by directed `exp2`, at
+/// `p + 256`, `p + 512`, ... bits (doubling up to `2^22`: a `y` near an integer leaves `2^(L - t)` within
+/// `2^-prec(y)` of a power of two), until the enclosure fixes one round-to-odd value at `p + 64` bits (which
+/// rounds correctly in every mode). A `t` past the zenith range by more than `2^100` is clamped there: the
+/// stand-in of [`round_scaled`] answers it without the value.
+pub fn ref_pow(
+    tx: &Term,
+    x: &Float,
+    y: &Float,
+    negative: bool,
+    p: u32,
+    rm: RoundingMode,
+) -> Res<Want> {
+    // an integer power up to 64 is exact on the frame (the enclosure of an exact result never closes)
+    if let Some(e) = y
+        .is_integer()
+        .then(|| y.to_i32_saturating())
+        .flatten()
+        .filter(|e| e.unsigned_abs() <= 64)
+    {
+        let n = e.unsigned_abs();
+        let t = Term {
+            m: Integer::from((&tx.m).pow(n)),
+            k: tx.k * i128::from(n),
+        };
+        return if e >= 0 {
+            ref_sum(&[t], p, rm)
+        } else {
+            ref_div(&Term::new(1, 0, false), &t, p, rm)
+        };
+    }
+    let (q, t) = {
+        let _w = widest();
+        let ax = Float::with_val(x.prec(), x.abs_ref());
+        let mut found = None;
+        let ws = std::iter::successors(Some(p + 256), |w| (*w < 1 << 22).then_some(*w * 2));
+        for w in ws {
+            let l2 = [
+                Float::with_val_round(w, ax.log2_ref(), Round::Down).0,
+                Float::with_val_round(w, ax.log2_ref(), Round::Up).0,
+            ];
+            let (a, b) = if y.is_sign_negative() { (&l2[1], &l2[0]) } else { (&l2[0], &l2[1]) };
+            let l_lo = Float::with_val_round(w, a * y, Round::Down).0;
+            let l_hi = Float::with_val_round(w, b * y, Round::Up).0;
+            // clamped as a float first: an `L` near `2^(2^62)` has no integer GMP can allocate
+            let cap = Float::with_val(8, 1) << 100u32;
+            let l_c = if l_lo > cap {
+                Float::with_val(w, &cap)
+            } else if l_lo < -Float::with_val(8, &cap) {
+                -Float::with_val(w, &cap)
+            } else {
+                Float::with_val(w, l_lo.floor_ref())
+            };
+            let t_int = match l_c.to_integer() {
+                Some(i) => i + 1u32,
+                None => return Err("ref_pow: log is not finite".into()),
+            };
+            let t = i128::try_from(&t_int)?;
+            // the subnormal grid reaches `p` bits below `EXPONENT_MIN`: only beyond that is a stand-in exact enough
+            if t.abs() > MAX + i128::from(p) + 64 {
+                found = Some((Float::with_val(2, 1), t));
+                break;
+            }
+            let lo = Float::with_val_round(w, &l_lo - &t_int, Round::Down).0;
+            let hi = Float::with_val_round(w, &l_hi - &t_int, Round::Up).0;
+            let lo = Float::with_val_round(w, lo.exp2_ref(), Round::Down).0;
+            let hi = Float::with_val_round(w, hi.exp2_ref(), Round::Up).0;
+            if lo == hi {
+                found = Some((lo, t));
+                break;
+            }
+            let (zl, ol) = Float::with_val_round(p + 64, &lo, Round::Zero);
+            let (zh, oh) = Float::with_val_round(p + 64, &hi, Round::Zero);
+            if zl == zh && ol != Ordering::Equal && oh != Ordering::Equal {
+                found = Some((odd(zl, 1), t));
+                break;
+            }
+        }
+        found.ok_or_else(|| {
+            format!(
+                "ref_pow: no enclosure at 2^22 bits: x = {} y = {} p = {p} {rm:?}",
+                show_mp(x),
+                show_mp(y)
+            )
+        })?
+    };
+    let q = if negative { -q } else { q };
+    round_scaled(p, rm, t, negative, -t, |o, rnd| set_checked(o, &q, rnd))
 }
 
 fn round_of_rnd(rnd: rnd_t) -> Round {

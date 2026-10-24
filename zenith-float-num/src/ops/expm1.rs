@@ -25,7 +25,9 @@ impl ExactNumNumber {
         }
 
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len());
+        // The retry budget counts from the working start: an argument wider than `p` must not exhaust it at once.
+        let p_base = p.max(self.mantissa_max_bit_len());
+        let mut p_wrk = p_base;
 
         // `exp(x) - 1 = x + x^2/2 + ...`: the true value is above `x` in magnitude for `x > 0` and below it for
         // `x < 0`, so the one-bit correction goes against the sign of `x` only when `x` is negative.
@@ -82,7 +84,7 @@ impl ExactNumNumber {
                 return Ok(ret);
             }
 
-            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p_base)?;
         }
     }
 }

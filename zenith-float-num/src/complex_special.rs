@@ -337,6 +337,11 @@ impl ExactComplex {
     }
 
     fn erf_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+        // On the real axis the imaginary part is exactly zero: the complex path only leaves rounding noise
+        // there, which never rounds.
+        if self.im().is_zero() {
+            return ExactComplex::from_real(self.re().erf(work_p, RoundingMode::None, cc), work_p);
+        }
         if use_faddeeva_series(self, dest_p) {
             Self::erf_power_series(self, work_p, cc)
         } else {
@@ -349,6 +354,9 @@ impl ExactComplex {
     }
 
     fn erfc_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+        if self.im().is_zero() {
+            return ExactComplex::from_real(self.re().erfc(work_p, RoundingMode::None, cc), work_p);
+        }
         if use_faddeeva_series(self, dest_p) {
             ExactComplex::one(work_p).sub(
                 &Self::erf_power_series(self, work_p, cc),
@@ -857,6 +865,28 @@ mod tests {
 
         let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
         assert!(nan.gamma(p, rm, &mut cc).is_nan());
+        Ok(())
+    }
+
+    /// `erf` / `erfc` of a real `z` (an `mpfr_compare_complex_real_axis` case): the imaginary part is exactly
+    /// zero, so it must come out zero instead of exhausting the retry budget on rounding noise.
+    #[test]
+    #[cfg(target_pointer_width = "64")]
+    fn erf_real_axis_im_is_zero() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 128;
+        let x = ExactNum::from_words(
+            &[5566959752443415075, 17370124544999774818],
+            crate::Sign::Neg,
+            -1,
+        );
+        let z = ExactComplex::from_real(x, p);
+        for rm in [RoundingMode::ToZero, RoundingMode::FromZero, RoundingMode::ToEven] {
+            let e = z.erf(p, rm, &mut cc);
+            assert!(e.im().is_zero() && !e.re().is_nan(), "erf {rm:?}: {e:?}");
+            let c = z.erfc(p, rm, &mut cc);
+            assert!(c.im().is_zero() && !c.re().is_nan(), "erfc {rm:?}: {c:?}");
+        }
         Ok(())
     }
 }

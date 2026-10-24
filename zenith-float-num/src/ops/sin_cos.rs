@@ -34,7 +34,9 @@ impl ExactNumNumber {
         }
 
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len());
+        // The retry budget counts from the working start: an argument wider than `p` must not exhaust it at once.
+        let p_base = p.max(self.mantissa_max_bit_len());
+        let mut p_wrk = p_base;
 
         if (p_wrk as i128) + 1 < -(i128::from(self.exponent()) * 2 - 2) {
             let mut x = self.clone()?;
@@ -75,7 +77,7 @@ impl ExactNumNumber {
                     break Ok((sn, cs));
                 }
 
-                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p_base)?;
             }
         }
     }

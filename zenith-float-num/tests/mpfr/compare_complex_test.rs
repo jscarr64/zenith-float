@@ -88,6 +88,7 @@ fn mpfr_compare_complex_real_axis() -> Result<(), Box<dyn std::error::Error>> {
         }
         let (rm, rnd) = get_random_rnd_pair();
         let n1_positive = n1.is_positive();
+        let x_info = format!("{n1:?} {rm:?}");
         let z = ExactComplex::from_real(n1, p);
 
         let er = z.erf(p, rm, &mut cc);
@@ -99,7 +100,7 @@ fn mpfr_compare_complex_real_axis() -> Result<(), Box<dyn std::error::Error>> {
         assert_float_close(er_re, fe, p, "cplx erf|R re", false, &mut cc)?;
         assert!(
             er_im.is_zero() || er_im.exponent().is_some_and(|e| e < -((p as Exponent) / 4)),
-            "cplx erf|R im"
+            "cplx erf|R im: x = {x_info}, im = {er_im:?}"
         );
 
         if n1_positive {

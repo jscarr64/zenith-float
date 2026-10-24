@@ -1,13 +1,14 @@
 //! `add`, `sub`, `mul`, `div` and `sqr` with subnormal operands (either side, either sign) are correctly
-//! rounded in every directed and nearest mode: checked against MPFR on a grid of subnormal and tiny normal
+//! rounded in every directed and nearest mode: checked against MPFR on the shifted frame (`shifted.rs`: MPFR alone cannot hold the operands below
+//! `EXPONENT_MIN`) on a grid of subnormal and tiny normal
 //! operands, through the borrowed forms (`*_ref`) and the owned forms. The kernels take a subnormal operand
 //! as stored instead of normalizing a copy of it (`num.rs`), and this test is the outside oracle for that.
 
-use crate::mpfr::common::{assert_exact_eq, mpfr_reference, BinOp};
+use crate::mpfr::common::BinOp;
 use crate::mpfr::retry_budget::use_full_exponent_range;
-use rug::Float;
+use crate::mpfr::shifted::{self as sh, Term};
 use std::ops::Neg;
-use zenith_float_num::{Consts, ExactNum, Exponent, RoundingMode, EXPONENT_MIN};
+use zenith_float_num::{ExactNum, Exponent, RoundingMode, EXPONENT_MIN};
 
 const MODES: [RoundingMode; 5] = [
     RoundingMode::ToEven,
@@ -43,12 +44,6 @@ fn split_exponent(k: i64) -> (Exponent, Exponent) {
     ((hi as Exponent), (k - hi) as Exponent)
 }
 
-/// MPFR's exponent of `m * 2^k`: it must lie inside the emulated range (`emin = EXPONENT_MIN - p + 1`
-/// in `mpfr_reference`) for MPFR's answer to be the reference.
-fn in_mpfr_range(m: u64, k: i64, p: usize) -> bool {
-    k + 64 - m.leading_zeros() as i64 > EXPONENT_MIN - p as i64 + 1
-}
-
 fn build(m: u64, k: i64, negative: bool) -> ExactNum {
     let p = OPERAND_PRECISION;
     let (hi, lo) = split_exponent(k);
@@ -62,33 +57,19 @@ fn build(m: u64, k: i64, negative: bool) -> ExactNum {
     }
 }
 
-fn mpfr_operand(m: u64, k: i64, negative: bool) -> Float {
-    let (hi, lo) = split_exponent(k);
-    let f = (Float::with_val(OPERAND_PRECISION as u32, m) << (hi as isize)) << (lo as isize);
-    if negative {
-        -f
-    } else {
-        f
-    }
-}
-
 #[test]
 fn subnormal_operands_match_mpfr_in_every_mode() -> Result<(), Box<dyn std::error::Error>> {
     use_full_exponent_range(); // the operands are below MPFR's default `emin`
-    let mut cc = Consts::new()?;
     let ops = operands();
     let mut checked = 0usize;
     for &(m1, k1) in &ops {
         for &(m2, k2) in &ops {
             for (n1, n2) in [(false, false), (true, false), (false, true)] {
-                let f1 = mpfr_operand(m1, k1, n1);
-                let f2 = mpfr_operand(m2, k2, n2);
+                // the exact operands on the shifted frame: MPFR cannot hold `m * 2^(EXPONENT_MIN - 120)`
+                let (t1, t2) = (Term::new(m1, k1, n1), Term::new(m2, k2, n2));
                 let a = build(m1, k1, n1);
                 let b = build(m2, k2, n2);
                 for p in RESULT_PRECISIONS {
-                    if !in_mpfr_range(m1, k1, p) || !in_mpfr_range(m2, k2, p) {
-                        continue;
-                    }
                     for rm in MODES {
                         for (op, name) in [
                             (BinOp::Add, "add"),
@@ -96,7 +77,7 @@ fn subnormal_operands_match_mpfr_in_every_mode() -> Result<(), Box<dyn std::erro
                             (BinOp::Mul, "mul"),
                             (BinOp::Div, "div"),
                         ] {
-                            let want = mpfr_reference(&f1, &f2, op, p as u32, rm)?;
+                            let want = sh::ref_binop(&t1, &t2, op, p as u32, rm)?;
                             let label = format!(
                                 "{name} ({m1:#x}, {k1}, neg {n1}) ({m2:#x}, {k2}, neg {n2}) p={p} {rm:?}"
                             );
@@ -106,7 +87,7 @@ fn subnormal_operands_match_mpfr_in_every_mode() -> Result<(), Box<dyn std::erro
                                 BinOp::Mul => ExactNum::mul_ref(&a, &b, p, rm),
                                 BinOp::Div => ExactNum::div_ref(&a, &b, p, rm),
                             };
-                            assert_exact_eq(&by_ref, &want, p, &format!("{label} (ref)"), &mut cc)?;
+                            sh::check(&by_ref, &want, false, &format!("{label} (ref)"))?;
                             // The owned forms consume the first operand: rebuild it.
                             let first = build(m1, k1, n1);
                             let owned = match op {
@@ -115,13 +96,7 @@ fn subnormal_operands_match_mpfr_in_every_mode() -> Result<(), Box<dyn std::erro
                                 BinOp::Mul => first.mul(&b, p, rm),
                                 BinOp::Div => first.div(&b, p, rm),
                             };
-                            assert_exact_eq(
-                                &owned,
-                                &want,
-                                p,
-                                &format!("{label} (owned)"),
-                                &mut cc,
-                            )?;
+                            sh::check(&owned, &want, false, &format!("{label} (owned)"))?;
                             checked += 2;
                         }
                     }
@@ -129,30 +104,26 @@ fn subnormal_operands_match_mpfr_in_every_mode() -> Result<(), Box<dyn std::erro
             }
         }
     }
-    assert!(checked > 50_000, "grid too small: {checked}");
+    // every operand pair, sign pattern, precision, mode and op: none is skipped
+    assert_eq!(checked, 27 * 27 * 3 * 3 * 5 * 4 * 2);
     Ok(())
 }
 
 #[test]
 fn subnormal_square_matches_mpfr_in_every_mode() -> Result<(), Box<dyn std::error::Error>> {
     use_full_exponent_range();
-    let mut cc = Consts::new()?;
     for &(m, k) in &operands() {
-        let f = mpfr_operand(m, k, false);
+        let t = Term::new(m, k, false);
         let x = build(m, k, false);
         for p in RESULT_PRECISIONS {
-            if !in_mpfr_range(m, k, p) {
-                continue;
-            }
             for rm in MODES {
-                let want = mpfr_reference(&f, &f, BinOp::Mul, p as u32, rm)?;
+                let want = sh::ref_sum(&[t.mul(&t)], p as u32, rm)?;
                 let got = x.sqr(p, rm);
-                assert_exact_eq(
+                sh::check(
                     &got,
                     &want,
-                    p,
+                    false,
                     &format!("sqr ({m:#x}, {k}) p={p} {rm:?}"),
-                    &mut cc,
                 )?;
             }
         }

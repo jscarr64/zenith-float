@@ -8,7 +8,7 @@ use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
 use crate::{
     common::consts::ONE,
-    defs::{Error, WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT},
+    defs::{Error, Word, WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT},
     num::ExactNumNumber,
     RoundingMode, Sign,
 };
@@ -384,6 +384,73 @@ impl ExactNumNumber {
         ret.set_exponent(EXPONENT_MIN);
         ret.subnormalize(2 * EXPONENT_MIN, rm);
         Ok(ret)
+    }
+
+    /// `1 / e^m` for `m > 0` when `e^m` is above the range: the reciprocal may still be in range
+    /// (`EXPONENT_MIN = -EXPONENT_MAX`) or on the subnormal grid. `e^(m - k ln 2)` is taken with `k = p + 128`
+    /// and its reciprocal scaled by `2^-k`, rounded once at the precision the grid leaves; `None` when that
+    /// is not roundable at `p_wrk` bits.
+    fn recip_exp_scaled(
+        m: &Self,
+        p: usize,
+        p_wrk: usize,
+        p_ext: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Option<Self>, Error> {
+        let k = p + 128;
+        let kn = Self::from_word(
+            Word::try_from(k).map_err(|_| Error::InvalidArgument)?,
+            WORD_BIT_SIZE,
+        )?;
+        let shift = kn.mul(
+            &cc.ln_2_num(p_ext, RoundingMode::None)?,
+            p_ext,
+            RoundingMode::None,
+        )?;
+        let u = match m
+            .sub(&shift, p_ext, RoundingMode::None)?
+            .exp(p_ext, RoundingMode::None, cc)
+        {
+            Ok(v) => v,
+            // below `2^(EXPONENT_MIN - p - 128)`
+            Err(Error::ExponentOverflow(_)) => {
+                return Self::pow_underflow(Sign::Pos, p, rm).map(Some)
+            }
+            Err(e) => return Err(e),
+        };
+        let mut r = ONE.div(&u, p_ext, RoundingMode::FromZero)?;
+        let ki = i128::try_from(k).map_err(|_| Error::InvalidArgument)?;
+        let pi = i128::try_from(p).map_err(|_| Error::InvalidArgument)?;
+        let e_min = i128::from(EXPONENT_MIN);
+        let e = i128::from(r.exponent()) - ki;
+        if e <= e_min - pi {
+            // `r 2^-k < 2^(EXPONENT_MIN - p)`; from `2^(EXPONENT_MIN - p - 1)` (exclusive, never exact) up it
+            // rounds to the least value unless the mode is toward zero.
+            let up = e == e_min - pi && !matches!(rm, RoundingMode::ToZero | RoundingMode::Down);
+            return Self::pow_underflow(Sign::Pos, p, if up { RoundingMode::FromZero } else { rm })
+                .map(Some);
+        }
+        let pp = usize::try_from(pi - (e_min - e).max(0)).map_err(|_| Error::InvalidArgument)?;
+        if !r.try_set_precision(pp, rm, p_wrk)? {
+            return Ok(None);
+        }
+        r.set_precision(p, RoundingMode::None)?; // exact: widening
+        let e = i128::from(r.exponent()) - ki; // a carry may have bumped it
+        if e > i128::from(EXPONENT_MAX) {
+            return Err(Error::ExponentOverflow(Sign::Pos));
+        }
+        if e >= e_min {
+            r.set_exponent(Exponent::try_from(e).map_err(|_| Error::InvalidArgument)?);
+        } else {
+            r.set_exponent(EXPONENT_MIN);
+            r.subnormalize(
+                Exponent::try_from(e).map_err(|_| Error::InvalidArgument)?,
+                rm,
+            ); // exact: `pp` bits
+        }
+        r.set_inexact(true);
+        Ok(Some(r))
     }
 
     fn pow_exact_integer_underflow(
@@ -822,8 +889,18 @@ impl ExactNumNumber {
                     let u = match m.exp(p_ext, RoundingMode::None, cc) {
                         Ok(v) => Ok(v),
                         Err(e) => match e {
-                            Error::ExponentOverflow(sign) => {
-                                return Self::pow_underflow(sign, p, effective_rm);
+                            Error::ExponentOverflow(_) => {
+                                match Self::recip_exp_scaled(&m, p, p_wrk, p_ext, effective_rm, cc)?
+                                {
+                                    Some(mut v) => {
+                                        v.set_inexact(true);
+                                        return Ok(v);
+                                    }
+                                    None => {
+                                        bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+                                        continue;
+                                    }
+                                }
                             }
                             Error::DivisionByZero => Err(Error::DivisionByZero),
                             Error::InvalidArgument => Err(Error::InvalidArgument),
@@ -1017,6 +1094,42 @@ mod test {
         let d10 = x.exp10(p, rm, &mut cc)?;
         let d10_ref = ExactNumNumber::small_const(10).pow(&x, p, rm, &mut cc)?;
         assert_eq!(d10.cmp(&d10_ref), 0);
+        Ok(())
+    }
+
+    /// `x^y` with `x` near the least normal number and `y` near 1: `e^|y ln x|` is above the range, but its
+    /// reciprocal is not (`EXPONENT_MIN = -EXPONENT_MAX`); the power must not underflow to the least value.
+    #[test]
+    fn pow_near_min_normal_does_not_underflow() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 128;
+        let mut x = ExactNumNumber::from_word(3, p)?;
+        x.set_exponent(EXPONENT_MIN); // 0.75 * 2^EXPONENT_MIN
+        let tiny = ExactNumNumber::from_word(1, p)?.ldexp(-10, p, RoundingMode::None)?;
+        // y = 1 - 2^-10: x^y = x x^(-2^-10) ~ 2^(EXPONENT_MIN + 2^52), normal
+        let y = ONE.sub(&tiny, p, RoundingMode::None)?;
+        for rm in [RoundingMode::ToZero, RoundingMode::FromZero, RoundingMode::ToEven] {
+            let r = x.pow(&y, p, rm, &mut cc)?;
+            let e = i128::from(r.exponent()) - i128::from(EXPONENT_MIN);
+            assert!(
+                r.mantissa_max_bit_len() == p && (e - (1_i128 << 52)).abs() < 4,
+                "{rm:?}: {r:?}"
+            );
+        }
+        // y = 1 + 2^-57: x^y = x x^(2^-57) ~ 0.75 2^(EXPONENT_MIN - 32): subnormal
+        let y = ONE.add(
+            &ExactNumNumber::from_word(1, p)?.ldexp(-57, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        let lo =
+            ExactNumNumber::from_word(1, p)?.ldexp(EXPONENT_MIN - 34, p, RoundingMode::None)?;
+        let hi =
+            ExactNumNumber::from_word(1, p)?.ldexp(EXPONENT_MIN - 32, p, RoundingMode::None)?;
+        for rm in [RoundingMode::ToZero, RoundingMode::FromZero, RoundingMode::ToEven] {
+            let r = x.pow(&y, p, rm, &mut cc)?;
+            assert!(r.cmp(&lo) > 0 && r.cmp(&hi) < 0, "{rm:?}: {r:?}");
+        }
         Ok(())
     }
 }
