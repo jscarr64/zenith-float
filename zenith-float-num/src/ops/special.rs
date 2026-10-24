@@ -250,8 +250,9 @@ impl ExactNumNumber {
         let p = round_p(p);
         Self::p_assertion(p)?;
 
+        // Γ(±0) = ±Inf exactly, with the sign of the zero (MPFR).
         if self.is_zero() {
-            return Err(Error::ExponentOverflow(Sign::Pos));
+            return Err(Error::ExponentOverflow(self.sign()));
         }
 
         if !self.is_positive() && self.is_int() {
