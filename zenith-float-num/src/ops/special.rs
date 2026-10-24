@@ -3615,9 +3615,11 @@ fn erf_tail_below(x: &ExactNumNumber, p: usize) -> bool {
 /// Binary exponent from which `erfc` underflows below every subnormal (`x ≥ 2^31`).
 const ERFC_UNDERFLOW_EXPONENT: Exponent = 32;
 
-/// Bernoulli terms for the digamma asymptotic series at precision `p`: 64, up to 256.
+/// Bernoulli terms for the digamma asymptotic series at precision `p`: `p/8`, 64 to 1024.
+/// With the exact cache (B_2..B_2048 builds once in ~0.9 s release) a 1024 cap keeps the
+/// shift loop short: at p=8448 a 256 cap needs z ≥ 2^22 and hit STIRLING_SHIFT_MAX.
 fn digamma_terms(p: usize) -> usize {
-    (p / 8).clamp(64, 256)
+    (p / 8).clamp(64, 1024)
 }
 
 /// Smallest binary exponent `e` (`z ≥ 2^(e-1)`) for which the `k`-th term of a
