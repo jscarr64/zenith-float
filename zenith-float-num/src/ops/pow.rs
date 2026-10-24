@@ -415,12 +415,9 @@ impl ExactNumNumber {
         // `n` fractional positions of `acc` are the quantum `2^(EXPONENT_MIN - p)` of the result.
         let n = i128::try_from(p).map_err(|_| Error::InvalidArgument)? + scale - e_min;
         let mut ret = if n < 0 {
-            // `|x|^mag < 2^(EXPONENT_MIN - p - 1)`: below half the smallest subnormal number.
-            let e_t = Exponent::try_from((i128::from(acc.exponent()) + scale).max(2 * e_min))
-                .map_err(|_| Error::InvalidArgument)?;
-            acc.set_exponent(EXPONENT_MIN);
-            acc.subnormalize(e_t, erm);
-            acc
+            // `|x|^mag < 2^(EXPONENT_MIN - p - 1)`: below half the smallest subnormal number of precision `p`
+            // (the quantum of `p`, not of the wider exact power).
+            Self::pow_underflow(Sign::Pos, p, erm)?
         } else {
             let mut r = acc.round(usize::try_from(n).map_err(|_| Error::InvalidArgument)?, erm)?;
             let rounded = r.op_inexact();

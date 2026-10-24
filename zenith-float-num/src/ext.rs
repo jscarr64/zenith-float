@@ -7596,6 +7596,12 @@ mod underflow_zero_flag_tests {
         let tz = x.pow(&three, 53, RoundingMode::ToZero, &mut cc);
         assert!(tz.is_zero());
         assert!(tz.inexact());
+        // the least positive value is the quantum of the result precision, and far below half of it
+        // a nearest mode gives zero
+        let up128 = x.pow(&three, 128, RoundingMode::Up, &mut cc);
+        assert!(up128 == ExactNum::pow2(i64::from(EXPONENT_MIN) - 128, 128)? && up128.inexact());
+        let ne = x.pow(&three, 200, RoundingMode::ToEven, &mut cc);
+        assert!(ne.is_zero() && ne.inexact());
         // a power `N / 2` takes the exact square root, then the same integer power
         let r = ExactNum::from_mag_parts(0x9000_0000_0000_0000, i64::from(EXPONENT_MIN) - 17, 64)?; // its root is exact
         let half5 = ExactNum::from_mag_parts(0xA000_0000_0000_0000, 2, 64)?; // 2.5
