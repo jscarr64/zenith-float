@@ -103,3 +103,34 @@ fn from_raw_parts_rejects_inconsistent_parts() -> Result<(), Error> {
     }
     Ok(())
 }
+
+#[test]
+fn from_raw_parts_zero_may_carry_op_inexact_but_inf_nan_may_not() -> Result<(), Error> {
+    let w = [0 as Word];
+    for negative in [false, true] {
+        let z = RawParts {
+            kind: RawKind::Zero,
+            inexact: true,
+            op_inexact: true,
+            ..parts(&w, negative, 0)
+        };
+        let x = ExactNum::from_raw_parts(&z)?;
+        assert!(x.is_zero() && x.is_negative() == negative);
+        assert!(x.inexact() && x.inexact_accumulated());
+        let r = x.as_raw_parts();
+        assert!(r.kind == RawKind::Zero && r.negative == negative && r.inexact && r.op_inexact);
+    }
+    for kind in [RawKind::Inf, RawKind::NaN] {
+        let s = RawParts {
+            kind,
+            words: &[],
+            precision: 0,
+            negative: false,
+            exponent: 0,
+            inexact: true,
+            op_inexact: true,
+        };
+        assert_invalid(&s, "Inf/NaN with inexact and op_inexact");
+    }
+    Ok(())
+}

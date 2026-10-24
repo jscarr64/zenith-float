@@ -1935,8 +1935,8 @@ impl ExactNum {
     ///    `op_inexact` is set without `inexact`; `exponent` is outside `[EXPONENT_MIN, EXPONENT_MAX]` = `±(2^62 − 1)`; a `Finite`
     ///    mantissa is all zero, or is not normalized (top bit of the last word clear) while
     ///    `exponent != EXPONENT_MIN`; a `Zero` has a non-zero word, no words or a non-zero
-    ///    exponent; an `Inf` / `NaN` has words, a precision, an exponent or `inexact` set, or a
-    ///    `NaN` has `negative` set.
+    ///    exponent; an `Inf` / `NaN` has words, a precision, an exponent, `inexact` or `op_inexact` set, or a
+    ///    `NaN` has `negative` set. A `Zero` may carry `inexact` and `op_inexact`.
     ///  - MemoryAllocation: the mantissa could not be allocated.
     pub fn from_raw_parts(parts: &RawParts<'_>) -> Result<Self, Error> {
         let sign = if parts.negative { Sign::Neg } else { Sign::Pos };
@@ -8324,7 +8324,8 @@ pub enum RawKind {
 ///    `EXPONENT_MIN <= exponent <= EXPONENT_MAX`, i.e. `|exponent| <= 2^62 − 1`.
 ///  - Subnormal: top bit clear (leading zero bits or words allowed), mantissa non-zero,
 ///    `exponent == EXPONENT_MIN`.
-///  - Zero: `kind == Zero`, every word 0, `exponent == 0`, sign of zero in `negative`.
+///  - Zero: `kind == Zero`, every word 0, `exponent == 0`, sign of zero in `negative`;
+///    a zero may carry `inexact` and `op_inexact` (an underflow to zero is inexact).
 ///  - Inf / NaN: `words` empty, `precision == 0`, `exponent == 0`, `inexact == false`;
 ///    `op_inexact == false`; `negative` is the sign of the infinity and is `false` for NaN. A
 ///    NaN's error kind is not carried.
