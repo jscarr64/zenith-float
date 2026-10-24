@@ -17,10 +17,10 @@ const MODES: [RoundingMode; 5] = [
     RoundingMode::FromZero,
 ];
 
-/// Everything observable about a value's representation and flags.
 /// A binary operation at a precision and rounding mode.
 type BinOp = fn(ExactNum, &ExactNum, usize, RoundingMode) -> ExactNum;
 
+/// Everything observable about a value's representation and flags.
 fn fingerprint(x: &ExactNum) -> String {
     let r = x.as_raw_parts();
     format!(
