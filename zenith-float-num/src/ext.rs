@@ -2724,8 +2724,8 @@ Accuracy: correctly-rounded",
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
-        "`ln Γ(self)` for positive `self` with precision `p`.
+    gen_wrapper_ovf_rm_cc!(
+        "`ln |Γ(self)|` with precision `p`. Poles at zero and the negative integers yield +Inf.
 
 # Precision
 

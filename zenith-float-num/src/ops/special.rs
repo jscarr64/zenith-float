@@ -275,26 +275,67 @@ impl ExactNumNumber {
         let p = round_p(p);
         Self::p_assertion(p)?;
 
-        if !self.is_positive() {
-            return Err(Error::InvalidArgument);
+        // ln|Γ| has a pole at 0 (either sign): an exact +Inf in every mode.
+        if self.is_zero() {
+            return Err(Error::ExponentOverflow(Sign::Pos));
         }
+
+        // Negative x: reflect with the fractional part g ∈ (0, 1/2], so that
+        // |sin(πx)| = sin(πg) is formed without cancellation near the poles.
+        let reflect = if self.is_negative() {
+            let pw = self.mantissa_max_bit_len() + 2 * WORD_BIT_SIZE;
+            let x = Self::new(pw)?.add(self, pw, RoundingMode::None)?;
+            let f = x.fract()?.abs()?;
+            if f.is_zero() {
+                // Non-positive integer: a pole of Γ, so ln|Γ| is +Inf.
+                return Err(Error::DivisionByZero);
+            }
+            let one = Self::from_word(1, pw)?;
+            let half = one_half(pw)?;
+            let g = if f.cmp(&half) > 0 {
+                one.sub(&f, pw, RoundingMode::None)?
+            } else {
+                f
+            };
+            let omx = one.sub(self, pw, RoundingMode::None)?;
+            Some((g, omx))
+        } else {
+            None
+        };
 
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
 
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE * 2;
-            // Large arguments go straight to Stirling: Γ itself would overflow.
-            let mut ret = if self.exponent() >= stirling_min_exponent(p_x, 372, 127, 6) {
-                self.ln_gamma_stirling(p_x, cc)?
-            } else {
-                self.gamma_at(p_x, cc)?.ln(p_x, RoundingMode::None, cc)?
+            let mut ret = match &reflect {
+                // ln|Γ(x)| = ln π - ln sin(πg) - ln Γ(1 - x)
+                Some((g, omx)) => {
+                    let pi = cc.pi_num(p_x, RoundingMode::None)?;
+                    let s = pi.mul(g, p_x, RoundingMode::None)?.sin(p_x, RoundingMode::None, cc)?;
+                    let ln_pi = pi.ln(p_x, RoundingMode::None, cc)?;
+                    let ln_s = s.ln(p_x, RoundingMode::None, cc)?;
+                    ln_pi
+                        .sub(&ln_s, p_x, RoundingMode::None)?
+                        .sub(&omx.ln_gamma_positive_at(p_x, cc)?, p_x, RoundingMode::None)?
+                }
+                None => self.ln_gamma_positive_at(p_x, cc)?,
             };
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
                 return Ok(ret);
             }
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    /// `ln Γ(self)` for positive `self` at working precision `p`.
+    fn ln_gamma_positive_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        // Large arguments go straight to Stirling: Γ itself would overflow.
+        if self.exponent() >= stirling_min_exponent(p, 372, 127, 6) {
+            self.ln_gamma_stirling(p, cc)
+        } else {
+            self.gamma_at(p, cc)?.ln(p, RoundingMode::None, cc)
         }
     }
 
