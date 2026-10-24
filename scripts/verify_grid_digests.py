@@ -279,6 +279,8 @@ def exact_op(op, a, ints, p, rm, raw):
         if b.st: return None
         return D(b.neg and n % 2 == 1, b.M ** n, b.E * n)
     if op == 'nth_root':
+        # a zero root keeps the sign for odd n and for the square root (MPFR sqrt and rootn_ui)
+        if a[0].kind == 'zero': return D(a[0].neg and (ints[0] % 2 == 1 or ints[0] == 2), 0, 0)
         if a[0].neg and ints[0] % 2 == 0: return 'nan'
         return droot(dv(a[0]), ints[0], p + 8)
     if op == 'fma': return dadd(dmul(dv(a[0]), dv(a[1])), dv(a[2]))

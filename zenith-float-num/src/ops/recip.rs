@@ -84,7 +84,8 @@ impl ExactNumNumber {
 
         // Exact dyadics (powers of two) leave a zero residual; marking those
         // inexact makes try_set_precision loop forever (all sticky bits zero).
-        let ax = a.mul(&x, p, rm)?;
+        // The product is formed exactly: rounded at `p` it can round to 1 when `x` is not exact.
+        let ax = a.mul_full_prec(&x)?;
         let one = Self::from_word(1, p)?;
         let exact = ax.cmp(&one) == 0;
 
@@ -162,6 +163,13 @@ mod tests {
 
         let z = ExactNumNumber::new(p)?;
         assert!(matches!(z.reciprocal(p, rm), Err(Error::DivisionByZero)));
+
+        // `1 / (1/3 + d)` with `d` below the result grid: `a x` rounds to 1 at `p` and must not be read
+        // as an exact reciprocal (in `None` mode the result 3 came back flagged exact)
+        let mut third = ONE.div(&ExactNumNumber::from_i8(3, p)?, 320, RoundingMode::ToEven)?;
+        third.set_inexact(false);
+        let r = third.reciprocal(200, RoundingMode::None)?;
+        assert!(r.inexact() && r.op_inexact());
         Ok(())
     }
 }

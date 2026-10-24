@@ -54,6 +54,8 @@ A non-integer power whose logarithm path underflows (`x.pow(y)` with `e^(y ln x)
 
 An integer power of a subnormal number below half the least positive value of the result precision (`x.pow(3)` with `x` near `2^(EXPONENT_MIN - 17)`) flushed onto the quantum of the wider exact power: `Up` gave `2^(EXPONENT_MIN - 64)` instead of `2^(EXPONENT_MIN - p)`, and nearest modes gave a nonzero value instead of zero.
 
+`reciprocal` above two words judged the Newton result exact when `a x`, rounded at `p`, came out as 1, so a `None`-mode reciprocal of an operand just above `1/3` returned 3 flagged exact. The check now forms `a x` exactly.
+
 `add_full_prec`, `sub_full_prec` and `mul_full_prec` with a result below the normal range kept only the words of the normalized mantissa before the subnormal shift and dropped the low bits; the mantissa now grows by the shift first, so the result is exact. Found by the grid-digest mpmath verification; `full_prec_keeps_every_bit_of_a_subnormal_result` covers it.
 
 The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). `rust-version` is `"1.99"` in every crate, and `rust-toolchain.toml` pins channel `1.99` with `clippy` and `rustfmt`. A crate that compiled on the previous compiler has to move to Rust 1.99 before it can depend on 2.0.0.
