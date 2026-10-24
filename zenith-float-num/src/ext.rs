@@ -644,12 +644,15 @@ impl ExactNum {
     ///
     /// ## Errors
     ///
-    ///  - DivisionByZero: `d2` is zero and `self` is not.
-    ///  - InvalidArgument: `0 / 0`, `Inf / Inf`, a NaN operand, or an incorrect precision.
-    ///    A NaN operand's own error kind is returned when it has one.
+    ///  - InvalidArgument: an incorrect precision (`p == 0` or too large). The precision is
+    ///    checked first, so `x / 0` with `p == 0` is InvalidArgument, not DivisionByZero.
+    ///  - Then, in this order: a NaN operand gives its own error kind (InvalidArgument when it
+    ///    has none); `0 / 0` is InvalidArgument; `x / 0` with `x` non-zero (Inf included) is
+    ///    DivisionByZero; `±Inf / ±Inf` (any signs) is InvalidArgument.
     ///
     /// Accuracy: exact
     pub fn div_exact(&self, d2: &Self, p: usize) -> Result<Option<Self>, Error> {
+        ExactNumNumber::p_assertion(round_p(p))?;
         if let Flavor::NaN(err) = &self.inner {
             return Err(err.unwrap_or(Error::InvalidArgument));
         }
@@ -663,7 +666,6 @@ impl ExactNum {
                 Error::DivisionByZero
             });
         }
-        ExactNumNumber::p_assertion(round_p(p))?;
         // Toward zero: an overflow saturates to the largest finite value (marked inexact) and an
         // underflow rounds to zero or the subnormal grid (marked inexact), never to Inf.
         let q = self.div_op(d2, p, RoundingMode::ToZero);
