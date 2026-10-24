@@ -233,7 +233,8 @@ def J1(x):
 
 MPF = {
     "gamma": lambda a: mp.gamma(a[0]),
-    "ln_gamma": lambda a: mp.loggamma(a[0]),
+    # ln|Gamma(x)| (ruling 2): the real part of the principal loggamma.
+    "ln_gamma": lambda a: mp.re(mp.loggamma(a[0])),
     "erf": lambda a: mp.erf(a[0]),
     "erfc": lambda a: mp.erfc(a[0]),
     "expm1": lambda a: mp.expm1(a[0]),
@@ -248,7 +249,7 @@ MPF = {
 
 SYM = {
     "gamma": lambda a: sp.gamma(a[0]),
-    "ln_gamma": lambda a: sp.loggamma(a[0]),
+    "ln_gamma": lambda a: sp.log(sp.Abs(sp.gamma(a[0]))),
     "erf": lambda a: sp.erf(a[0]),
     "erfc": lambda a: sp.erfc(a[0]),
     "expm1": lambda a: sp.exp(a[0]) - 1,
@@ -376,8 +377,9 @@ def build_cases():
     add("ln_gamma", "extreme", [("pow2", (1 << 61))], ps=[24, 53])
     add("ln_gamma", "overflow", [("pow2", E_TOP)], outcome="overflow+", ps=[24, 53])
     add("ln_gamma", "extreme", [("pow2", EMIN + 10)], ps=[24, 53])
-    add("ln_gamma", "domain", [d("-1")], outcome="nan", ps=[53])
-    add("ln_gamma", "domain", [("z", "+")], outcome="nan", ps=[53])
+    # ruling 2: ln|Gamma| has a +Inf pole at 0 and at the negative integers
+    add("ln_gamma", "pole", [d("-1")], outcome="+inf", ps=[53])
+    add("ln_gamma", "pole", [("z", "+")], outcome="+inf", ps=[53])
     add("ln_gamma", "large-prec", [d("1.5")], ps=[16384])
     # ---------------- erf
     for s in ["0.5", "-0.5", "1", "2.75", "-3.5", "6", "0.0625"]:
@@ -499,6 +501,15 @@ def build_cases():
     add("beta", "cosmology", [d("1e-60"), d("1e-60")], ps=[24, 53, 113])
     add("beta", "pole", [("z", "+"), d("1")], outcome="nan", ps=[53])
     add("beta", "large-prec", [d("0.5"), d("1.5")], ps=[16384])
+    # ---------------- ln_gamma, negative arguments (ruling 2; appended so earlier ids stay put)
+    for s in ["-0.5", "-2.5", "-5.75", "-100.25"]:
+        add("ln_gamma", "negative", [d(s)])
+    for n in [1, 3]:
+        for sgn in ["+", "-"]:
+            add("ln_gamma", "near-pole", [("off", f"-{n}", None, sgn)], ps=[24, 53, 113, 256])
+    for s in ["-2", "-10"]:
+        add("ln_gamma", "pole", [d(s)], outcome="+inf", ps=[24, 53])
+    add("ln_gamma", "pole", [("z", "-")], outcome="+inf", ps=[24, 53])
 
 
 def resolve_specs(specs, p):
@@ -525,6 +536,8 @@ def outcome_expect(outcome: str, p: int, rm: str) -> dict:
         return nan()
     if outcome == "-inf":
         return inf("-")
+    if outcome == "+inf":
+        return inf("+")
     if outcome == "overflow+":
         return overflow("+", p, rm)
     if outcome == "underflow+":
