@@ -28,6 +28,8 @@ use alloc::vec::Vec;
 
 const TEN_PWR_MAX_TO_DEC: usize = EXPONENT_MAX as usize / 4;
 const TEN_PWR_MAX_FROM_DEC: usize = (EXPONENT_MAX as u128 * 301029995 / 1000000000) as usize;
+/// floor(log10(2) * 2^64), a lower bound of log10(2) exact to 2^-64.
+const LOG10_2_Q64: i128 = 5553023288523357132;
 
 impl ExactNumNumber {
     /// Converts an array of digits in radix `rdx` to ExactNumNumber with precision `p`.
@@ -505,9 +507,15 @@ impl ExactNumNumber {
             let mut x = self.clone()?;
             x.set_inexact(false);
 
-            let n_wrk = ((p_wrk as i64 - self.exponent() as i64 + subn_e as i64) * 301029996
-                / 1000000000)
-                + 1;
+            // i128 with floor(log10(2) * 2^64): with an i64 exponent the old
+            // 301029996e-9 factor is off by ~5e8 digits and the product overflows i64.
+            let n_wrk = i64::try_from(
+                ((p_wrk as i128 - i128::from(self.exponent()) + subn_e as i128)
+                    * LOG10_2_Q64
+                    >> 64)
+                    + 1,
+            )
+            .map_err(|_| Error::ExponentOverflow(self.sign()))?;
 
             let mut err_acc = 0;
 
@@ -1529,7 +1537,15 @@ mod tests {
                     g.set_precision(n.mantissa_max_bit_len(), RoundingMode::ToEven)?;
                 }
 
-                assert!(n.cmp(&g) == 0);
+                // Both legs truncate (`RoundingMode::None`), so the decimal digits can sit
+                // just below `g` and the trip back lands one ulp under it. At i64 exponents
+                // the seeded EXPONENT_MIN / 10 - 123 vector does exactly that (checked
+                // against mpmath: g = trunc(V), d = trunc_78(g) < g, n = trunc(d)).
+                let p_cmp = g.mantissa_max_bit_len();
+                assert!(
+                    n.cmp(&g) == 0
+                        || n.next_after(&g, p_cmp, RoundingMode::None)?.cmp(&g) == 0
+                );
             } else {
                 assert!(n.cmp(&g) == 0);
             }

@@ -21,8 +21,7 @@ use crate::exp;
 use crate::mantissa::AddSubSpec;
 use crate::mantissa::Mantissa;
 
-// The one approved Ziv working-copy helper (see its file); test-only until the first conversion uses it.
-#[cfg(test)]
+// The one approved Ziv working-copy helper (see its file); used only at the pinned sites in tools/ziv_shape_a_sites.txt.
 mod ziv_operand;
 
 /// A finite floating point number with mantissa of an arbitrary size, an exponent, and the sign.
@@ -1324,7 +1323,9 @@ impl ExactNumNumber {
     ///  - ExponentOverflow: rounding causes exponent overflow.
     ///  - InvalidArgument: `n` is too large.
     pub fn round(mut self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
-        if n as u64 >= (i64::MAX / 2) as u64 {
+        // `n` reaches `|EXPONENT_MIN| + p` when rounding onto the subnormal grid; `EXPONENT_MAX + 2 * MAX_PRECISION`
+        // fits `i64`, so `-(n - 1)` below cannot wrap. The old `i64::MAX / 2` cap rejected those `n` at the i64 exponent.
+        if n as u64 > EXPONENT_MAX as u64 + 2 * MAX_PRECISION as u64 {
             return Err(Error::InvalidArgument);
         }
 
@@ -3324,7 +3325,7 @@ mod tests {
         let d1 = ExactNumNumber::from_words(
             &[1, WORD_SIGNIFICANT_BIT],
             Sign::Pos,
-            EXPONENT_MIN / 2 - 1,
+            EXPONENT_MIN - EXPONENT_MIN / 2 - 1,
         )?;
         let d2 =
             ExactNumNumber::from_words(&[1, WORD_SIGNIFICANT_BIT], Sign::Pos, EXPONENT_MIN / 2)?;

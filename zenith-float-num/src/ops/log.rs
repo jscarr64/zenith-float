@@ -87,6 +87,18 @@ impl ArgReductionEstimator for LnArgReductionEstimator {
 }
 
 impl ExactNumNumber {
+    /// The leading zero bits of `self`'s mantissa: the left shift that normalizes it (non-zero only for a subnormal).
+    fn normalizing_shift(&self) -> usize {
+        let mut sh = 0;
+        for w in self.mantissa().digits().iter().rev() {
+            if *w != 0 {
+                return sh + w.leading_zeros() as usize;
+            }
+            sh += WORD_BIT_SIZE;
+        }
+        sh
+    }
+
     /// Computes the natural logarithm of a number with precision `p`. The result is rounded using the rounding mode `rm`.
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
@@ -107,11 +119,11 @@ impl ExactNumNumber {
             return Err(Error::InvalidArgument);
         }
 
-        let mut m = self.clone()?;
-        let e = m.normalize2() as i64;
-        let e = self.exponent() as i64 - e;
-
-        m.set_exponent(0);
+        // Only a subnormal has a non-zero shift; then `e` is far below 0, so the `e == 0` / `e == 1` reads of the digits
+        // below and the power-of-two test see `self`'s digits at a shift of 0 or do not depend on the shift.
+        let shift = self.normalizing_shift();
+        let m = self;
+        let e = self.exponent() as i64 - shift as i64;
 
         // cancellation when x is near 1
         let additional_prec = if e == 0 {
@@ -131,10 +143,13 @@ impl ExactNumNumber {
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
 
         loop {
-            let mut x = m.clone()?;
-
             let p_x = p_wrk + additional_prec;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let mut x = self.ziv_pass_operand(p_x)?;
+            // normalized in this pass's one copy (exact: the widening adds only low zero words)
+            if shift != 0 {
+                x.normalize2();
+            }
+            x.set_exponent(0);
 
             let p1 = Self::ln_series(x, RoundingMode::None)?;
 
@@ -231,14 +246,16 @@ impl ExactNumNumber {
             return Err(Error::InvalidArgument);
         }
 
-        let mut m = self.clone()?;
-        let e = m.normalize2() as i64;
-        let e = self.exponent() as i64 - e;
-
-        m.set_exponent(0);
+        // Only a subnormal has a non-zero shift; then `e` is far below 0, so the `e == 0` / `e == 1` reads of the digits
+        // below and the power-of-two test see `self`'s digits at a shift of 0 or do not depend on the shift.
+        let shift = self.normalizing_shift();
+        let m = self;
+        let e = self.exponent() as i64 - shift as i64;
 
         let zeroes_cnt = count_leading_zeroes_skip_first(m.mantissa().digits());
-        if zeroes_cnt == m.mantissa_max_bit_len() {
+        // one set bit: `self` is a power of two (read on the unnormalized digits, so a subnormal is covered too)
+        let set_bits: u32 = m.mantissa().digits().iter().map(|w| w.count_ones()).sum();
+        if set_bits == 1 {
             // special case: x = 0.5
             let mut ret = Self::from_usize(crate::common::util::abs_usize(e - 1))?;
 
@@ -264,11 +281,14 @@ impl ExactNumNumber {
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
 
         loop {
-            let mut x = m.clone()?;
-            x.set_inexact(false);
-
             let p_x = p_wrk + additional_prec;
-            x.set_precision(p_x, RoundingMode::None)?;
+            let mut x = self.ziv_pass_operand(p_x)?;
+            // normalized in this pass's one copy (exact: the widening adds only low zero words)
+            if shift != 0 {
+                x.normalize2();
+            }
+            x.set_exponent(0);
+            x.set_inexact(false);
 
             let p1 = Self::ln_series(x, RoundingMode::None)?;
 
@@ -308,14 +328,11 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
 
-        let mut x = self.clone()?;
-        x.set_inexact(false);
-
         loop {
             let p_x = p_wrk + 5; // avoid error being accounted by try_set_precision
-            x.set_precision(p_x, RoundingMode::None)?;
 
-            let p1 = x.ln(p_x, RoundingMode::None, cc)?;
+            // `ln` reads `self` as it is: its working precision is max(p_x, own precision) + 64 whichever width the input has.
+            let p1 = self.ln(p_x, RoundingMode::None, cc)?;
 
             let p2 = cc.ln_10_num(p_x, RoundingMode::None)?;
 
@@ -331,7 +348,7 @@ impl ExactNumNumber {
                             break;
                         }
                         let tp = TEN.powi(n, p_x, RoundingMode::None)?;
-                        if !tp.inexact() && tp.cmp(&x) == 0 {
+                        if !tp.inexact() && tp.cmp(self) == 0 {
                             // log10(10^n) = n exactly.
                             let mut exact = Self::from_word(n as Word, p)?;
                             exact.set_precision(p, rm)?;

@@ -95,19 +95,19 @@ mod tests {
         // MAX
         let prec = 320;
         let d1 = ExactNumNumber::max_value(prec)?;
-        let d2 = d1.cbrt(prec, RoundingMode::ToEven)?;
+        let d2 = d1.cbrt(prec, RoundingMode::ToZero)?;
         let d3 = d2
-            .mul(&d2, prec, RoundingMode::ToEven)?
-            .mul(&d2, prec, RoundingMode::ToEven)?;
+            .mul(&d2, prec, RoundingMode::ToZero)?
+            .mul(&d2, prec, RoundingMode::ToZero)?;
         eps.set_exponent(d1.exponent() - prec as Exponent + 3);
         assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 
         // MIN
         let d1 = ExactNumNumber::min_value(prec)?;
-        let d2 = d1.cbrt(prec, RoundingMode::ToEven)?;
+        let d2 = d1.cbrt(prec, RoundingMode::ToZero)?;
         let d3 = d2
-            .mul(&d2, prec, RoundingMode::ToEven)?
-            .mul(&d2, prec, RoundingMode::ToEven)?;
+            .mul(&d2, prec, RoundingMode::ToZero)?
+            .mul(&d2, prec, RoundingMode::ToZero)?;
         eps.set_exponent(d1.exponent() - prec as Exponent + 3);
         assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 

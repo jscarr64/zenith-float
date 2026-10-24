@@ -870,6 +870,85 @@ fn complex_ln_with_extreme_parts() -> Res {
     Ok(())
 }
 
+/// Operands of the logarithms: the grid (subnormals at `MIN - 120` and `MIN - 21`, the top of the range), exact
+/// powers of two from the bottom to the top (`2^±1e9` included), and `1 ± 2^-j` (cancellation next to one).
+fn log_operands() -> Vec<(u64, i64)> {
+    let mut v = unary_operands();
+    for k in [
+        MIN - 190,
+        MIN - 64,
+        MIN - 1,
+        MIN,
+        -1_000_000_000,
+        -1,
+        0,
+        1,
+        2,
+        63,
+        1_000_000_000,
+        MAX - 64,
+    ] {
+        v.push((1, k));
+    }
+    for k in [-1_000_000_000, 1_000_000_000] {
+        v.push((u64::MAX, k));
+        v.push((0xdead_beef_1234_5677, k));
+    }
+    for j in [1i64, 2, 5, 31, 32, 33, 62, 63] {
+        v.push(((1u64 << j) + 1, -j));
+        v.push(((1u64 << j) - 1, -j));
+    }
+    v.push((u64::MAX, -64));
+    v.push((1, MIN - 120 + 1));
+    v
+}
+
+fn log_sweep(
+    what: &str,
+    zf_fn: fn(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+    mp_fn: impl Fn(&mut Float, &Float, Round) -> Ordering,
+) -> Res {
+    let cc = std::cell::RefCell::new(Consts::new()?);
+    unary(
+        what,
+        Sweep {
+            operands: &log_operands(),
+            signs: &[false],
+            precisions: &PRECISIONS,
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| zf_fn(x, p, rm, &mut cc.borrow_mut()),
+        mp_fn,
+    )
+}
+
+/// `ln`, `log2` and `log10` over the whole range, subnormal inputs (normalized inside the Ziv pass copy) included.
+#[test]
+fn ln_over_the_whole_range() -> Res {
+    log_sweep(
+        "ln",
+        |x, p, rm, cc| x.ln(p, rm, cc),
+        |r, a, rd| r.assign_round(a.ln_ref(), rd),
+    )
+}
+
+#[test]
+fn log2_over_the_whole_range() -> Res {
+    log_sweep(
+        "log2",
+        |x, p, rm, cc| x.log2(p, rm, cc),
+        |r, a, rd| r.assign_round(a.log2_ref(), rd),
+    )
+}
+
+#[test]
+fn log10_over_the_whole_range() -> Res {
+    log_sweep(
+        "log10",
+        |x, p, rm, cc| x.log10(p, rm, cc),
+        |r, a, rd| r.assign_round(a.log10_ref(), rd),
+    )
 // ---------------------------------------------------------------------------------------------
 // pow with exact results (1.0.12: `pow(2, 2)` was flagged inexact in `ToEven` and `NaN` in `Up`)
 // ---------------------------------------------------------------------------------------------

@@ -386,13 +386,13 @@ mod tests {
         assert!(e == -0x1f7);
 
         // large exp
-        let numstr = "abc.def09123e_e+7FFFFFFF";
-        let ps = parse(numstr, Radix::Hex)?;
+        let numstr = format!("abc.def09123e_e+{:X}", EXPONENT_MAX);
+        let ps = parse(&numstr, Radix::Hex)?;
         assert!(ps.is_inf());
         assert!(ps.sign().is_positive());
 
-        let numstr = "-abc.def09123e_e+7FFFFFFF";
-        let ps = parse(numstr, Radix::Hex)?;
+        let numstr = format!("-abc.def09123e_e+{:X}", EXPONENT_MAX);
+        let ps = parse(&numstr, Radix::Hex)?;
         assert!(ps.is_inf());
         assert!(!ps.is_nan());
         assert!(ps.sign().is_negative());

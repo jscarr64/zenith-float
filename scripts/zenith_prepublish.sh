@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Pre-publish gate. Exits 0 only when all 12 checks pass.
-# Usage: ./scripts/zenith_prepublish.sh
+# Usage: CARGO_TARGET_DIR=/tmp/target-<agent>-<worktree> ./scripts/zenith_prepublish.sh
+# Every cargo test runs through tools/fresh_test_run.sh (one target dir per worktree; the test binaries are checked
+# before any test runs), so CARGO_TARGET_DIR must be set and owned by this worktree.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
@@ -15,12 +17,12 @@ step() { n=$((n + 1)); echo "== [$n/12] $* =="; }
 # --all-features includes mpfr-tests. Check 1 covers std/random/serde (and
 # compare-crate features). Check 2 is the MPFR oracle in release, single-threaded.
 step "cargo test --all-features (workspace random,serde; mpfr-tests is [2/12])"
-cargo test --workspace --features random,serde
+"$root/tools/fresh_test_run.sh" cargo test --workspace --features random,serde
 ok "workspace tests with random,serde"
 
 step "cargo test --features mpfr-tests"
 if [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]]; then
-  cargo test -p zenith-float-num --features mpfr-tests --release -- --test-threads=1
+  "$root/tools/fresh_test_run.sh" cargo test -p zenith-float-num --features mpfr-tests --release -- --test-threads=1
   ok "mpfr-tests"
 else
   fail "mpfr-tests require Linux x86_64"
@@ -69,7 +71,7 @@ if "pub const PROPTEST_CASES: u32 = 1000;" not in text:
     raise SystemExit("error: PROPTEST_CASES is not 1000 in defs.rs")
 print("PROPTEST_CASES = 1000")
 PY
-cargo test -p zenith-float-num --test proptest_props -- --test-threads=1
+"$root/tools/fresh_test_run.sh" cargo test -p zenith-float-num --test proptest_props -- --test-threads=1
 ok "proptest"
 
 step "no TODO/FIXME/HACK; unwrap() has a proof comment"

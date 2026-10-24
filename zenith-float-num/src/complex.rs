@@ -17,6 +17,42 @@ fn abs_part(x: ExactNum) -> ExactNum {
     }
 }
 
+/// `a + b` (or `a - b`) of two exact products, exact whenever its width stays bounded.
+///
+/// When the leading exponents are further apart than both widths plus `p` and two guard words, the
+/// smaller term only acts as a sticky bit below the final rounding position: the sum is then formed at
+/// that bounded width without rounding (`RoundingMode::None`), so the full-width sum never has to span
+/// the whole exponent range (`2^EXPONENT_MAX + 2^EXPONENT_MIN`).
+fn exact_sum(a: &ExactNum, b: &ExactNum, sub: bool, p: usize) -> ExactNum {
+    let wide = match (
+        a.exponent(),
+        b.exponent(),
+        a.mantissa_max_bit_len(),
+        b.mantissa_max_bit_len(),
+    ) {
+        (Some(ea), Some(eb), Some(la), Some(lb)) if !a.is_zero() && !b.is_zero() => {
+            let gap = (i128::from(ea) - i128::from(eb)).unsigned_abs();
+            let bound = (la as u128) + (lb as u128) + (p as u128) + 2 * (WORD_BIT_SIZE as u128);
+            gap > bound
+        }
+        _ => false,
+    };
+    match (wide, sub) {
+        (false, false) => a.add_full_prec(b),
+        (false, true) => a.sub_full_prec(b),
+        (true, sub) => {
+            let w = a.mantissa_max_bit_len().map_or(p, |la| la.max(b.mantissa_max_bit_len().map_or(p, |lb| lb)))
+                .saturating_add(p)
+                .saturating_add(2 * WORD_BIT_SIZE);
+            if sub {
+                ExactNum::sub_ref(a, b, w, RoundingMode::None)
+            } else {
+                ExactNum::add_ref(a, b, w, RoundingMode::None)
+            }
+        }
+    }
+}
+
 /// Complex value `re + i·im` with software-limb real and imaginary parts.
 #[derive(Debug, Clone)]
 pub struct ExactComplex {
@@ -247,19 +283,21 @@ impl ExactComplex {
     }
 
     /// Implementation of [`Self::div`] on operands without inexact history.
+    ///
+    /// The products and the sums `ac + bd`, `bc - ad`, `c^2 + d^2` are formed exactly, so each part
+    /// is the exact quotient rounded once by the final division. Rounding the numerator first
+    /// rounded twice: `(-7i)/(-7i)` at `p = 1` gave `32/49` rounded, not `1`.
     fn div_word(self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
-        let ac = ExactNum::mul_ref(&self.re, &rhs.re, p, RoundingMode::None);
-        let bd = ExactNum::mul_ref(&self.im, &rhs.im, p, RoundingMode::None);
-        let bc = self.im.mul(&rhs.re, p, RoundingMode::None);
-        let ad = self.re.mul(&rhs.im, p, RoundingMode::None);
-        let den = rhs.re.sqr(p, RoundingMode::None).add(
-            &rhs.im.sqr(p, RoundingMode::None),
-            p,
-            RoundingMode::None,
-        );
+        let ac = self.re.mul_full_prec(&rhs.re);
+        let bd = self.im.mul_full_prec(&rhs.im);
+        let bc = self.im.mul_full_prec(&rhs.re);
+        let ad = self.re.mul_full_prec(&rhs.im);
+        let cc = rhs.re.mul_full_prec(&rhs.re);
+        let dd = rhs.im.mul_full_prec(&rhs.im);
+        let den = exact_sum(&cc, &dd, false, p);
         Self::new(
-            ac.add(&bd, p, rm).div(&den, p, rm),
-            bc.sub(&ad, p, rm).div(&den, p, rm),
+            exact_sum(&ac, &bd, false, p).div(&den, p, rm),
+            exact_sum(&bc, &ad, true, p).div(&den, p, rm),
         )
     }
 
