@@ -99,6 +99,16 @@ impl ExactNumNumber {
         sh
     }
 
+    /// |e| as an exact integer, through u64 so that an i64 exponent beyond usize (a 32-bit target) is not
+    /// saturated; zero keeps the from_usize form.
+    fn exp_magnitude(e: i64) -> Result<Self, Error> {
+        if e == 0 {
+            Self::from_usize(0)
+        } else {
+            Self::from_u64_internal(e.unsigned_abs(), 64)
+        }
+    }
+
     /// Computes the natural logarithm of a number with precision `p`. The result is rounded using the rounding mode `rm`.
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
@@ -158,7 +168,7 @@ impl ExactNumNumber {
             } else {
                 let p2 = cc.ln_2_num(p1.mantissa_max_bit_len(), RoundingMode::None)?;
 
-                let mut n = Self::from_usize(crate::common::util::abs_usize(e))?;
+                let mut n = Self::exp_magnitude(e)?;
                 if e < 0 {
                     n.set_sign(Sign::Neg);
                 }
@@ -263,7 +273,7 @@ impl ExactNumNumber {
                 z.set_inexact(m.inexact());
                 return Ok(z);
             }
-            let mut ret = Self::from_usize(crate::common::util::abs_usize(e - 1))?;
+            let mut ret = Self::exp_magnitude(e - 1)?;
 
             if e < 1 {
                 ret.set_sign(Sign::Neg);
@@ -302,7 +312,7 @@ impl ExactNumNumber {
 
             let p3 = p1.div(&p2, p_x, RoundingMode::None)?;
 
-            let mut n = Self::from_usize(crate::common::util::abs_usize(e))?;
+            let mut n = Self::exp_magnitude(e)?;
             if e < 0 {
                 n.set_sign(Sign::Neg);
             }

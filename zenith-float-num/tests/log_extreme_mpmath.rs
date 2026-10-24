@@ -6,7 +6,7 @@
 //! (both must round to it), or an exact integer (ln 1, log2 2^k, log10 10^k). A result
 //! must match limb for limb at exactly `p` bits.
 
-use zenith_float_num::{Consts, ExactNum, Exponent, RoundingMode, Sign, Word};
+use zenith_float_num::{Consts, ExactNum, Exponent, RoundingMode, Sign, Word, WORD_BIT_SIZE};
 
 const GOLDS: &str = include_str!("oracle/goldens/log_extreme.tsv");
 const SHOW: usize = 8;
@@ -20,6 +20,28 @@ fn mode_of(name: &str) -> Result<RoundingMode, String> {
         "FromZero" => Ok(RoundingMode::FromZero),
         other => Err(format!("unknown mode {other}")),
     }
+}
+
+/// A Word as u64 (the identity on 64-bit builds).
+#[cfg(not(target_pointer_width = "32"))]
+fn widen(w: Word) -> u64 {
+    w
+}
+
+#[cfg(target_pointer_width = "32")]
+fn widen(w: Word) -> u64 {
+    u64::from(w)
+}
+
+/// The low Word of a u64 that already fits one Word (masked by the caller).
+#[cfg(not(target_pointer_width = "32"))]
+fn narrow(v: u64) -> Word {
+    v
+}
+
+#[cfg(target_pointer_width = "32")]
+fn narrow(v: u64) -> Word {
+    Word::try_from(v).unwrap_or(Word::MAX)
 }
 
 fn sign_str(n: &ExactNum) -> &'static str {
@@ -37,11 +59,22 @@ fn canon_of(n: &ExactNum) -> String {
     if n.is_inf() {
         return format!("inf:{}", sign_str(n));
     }
-    let limbs: Vec<String> = n
-        .mantissa_digits()
-        .unwrap_or(&[])
-        .iter()
-        .map(|word| format!("{word:016x}"))
+    // the golden limbs are 64-bit; a 32-bit Word build pairs its words (low first)
+    let per = 64 / WORD_BIT_SIZE;
+    let digits = n.mantissa_digits().unwrap_or(&[]);
+    // a 32-bit build rounds p up to 32 bits: an odd word count gets a zero low word
+    let pad = (per - digits.len() % per) % per;
+    let limbs: Vec<String> = (0..(digits.len() + pad) / per)
+        .map(|g| {
+            let v = (0..per).fold(0u64, |acc, i| {
+                let w = (g * per + i)
+                    .checked_sub(pad)
+                    .and_then(|k| digits.get(k))
+                    .map_or(0, |w| widen(*w));
+                acc | (w << (i * WORD_BIT_SIZE))
+            });
+            format!("{v:016x}")
+        })
         .collect();
     format!(
         "f:{}:{}:{}",
@@ -69,7 +102,11 @@ fn arg_of(text: &str) -> Result<ExactNum, String> {
         .map_err(|e| format!("exponent: {e}"))?;
     let mut limbs = Vec::new();
     for w in parts.next().ok_or("no limbs")?.split(',') {
-        limbs.push(Word::from_str_radix(w, 16).map_err(|e| format!("limb {w}: {e}"))?);
+        let v = u64::from_str_radix(w, 16).map_err(|e| format!("limb {w}: {e}"))?;
+        for k in 0..64 / WORD_BIT_SIZE {
+            let part = (v >> (k * WORD_BIT_SIZE)) & (u64::MAX >> (64 - WORD_BIT_SIZE));
+            limbs.push(narrow(part));
+        }
     }
     let x = ExactNum::from_words(&limbs, sign, e);
     if x.is_nan() {
