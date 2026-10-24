@@ -736,7 +736,8 @@ impl ExactNumNumber {
                 },
                 &mut inexact,
             )?;
-            let mut ret = Self::finish_sum(d3, e0 - shift, m3, (inexact, inputs), rm, per_op, full_prec)?;
+            let mut ret =
+                Self::finish_sum(d3, e0 - shift, m3, (inexact, inputs), rm, per_op, full_prec)?;
             if ret.is_zero() {
                 // A subnormal operand rounded to zero keeps the minimal exponent, as `set_precision` left it.
                 ret.e = EXPONENT_MIN;

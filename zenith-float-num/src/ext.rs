@@ -969,9 +969,12 @@ impl ExactNum {
     pub fn log(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let x = self.exact_copy_ext();
         let b = n.exact_copy_ext();
-        Self::round_exact(self.inexact_accumulated() || n.inexact_accumulated(), p, rm, |q, r| {
-            x.log_word(&b, q, r, cc)
-        })
+        Self::round_exact(
+            self.inexact_accumulated() || n.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| x.log_word(&b, q, r, cc),
+        )
     }
 
     /// Word-precision implementation of [`Self::log`].
@@ -1530,13 +1533,15 @@ impl ExactNum {
             // than p bits (128 at p=113), so its value is used only when it is exact and fits
             // p bits exactly (setting the precision drops no bit); else the error propagates.
             Flavor::NaN(err) => match f(p, rm).inner {
-                Flavor::Value(v) if p.is_multiple_of(WORD_BIT_SIZE) => {
-                    Self { inner: Flavor::Value(v) }
-                }
+                Flavor::Value(v) if p.is_multiple_of(WORD_BIT_SIZE) => Self {
+                    inner: Flavor::Value(v),
+                },
                 Flavor::Value(mut v) if !v.op_inexact() => {
                     let fits = v.set_precision(p, rm).is_ok() && !v.inexact();
                     if fits {
-                        Self { inner: Flavor::Value(v) }
+                        Self {
+                            inner: Flavor::Value(v),
+                        }
                     } else {
                         Self::nan(err)
                     }
@@ -4647,7 +4652,9 @@ mod tests {
                 return ExactNum::nan(Some(Error::PrecisionRetryExhausted));
             }
             match once.take() {
-                Some(x) => ExactNum { inner: super::Flavor::Value(x) },
+                Some(x) => ExactNum {
+                    inner: super::Flavor::Value(x),
+                },
                 None => ExactNum::nan(None),
             }
         };
@@ -6318,8 +6325,24 @@ mod grid_digest_tests {
             for n in shifts {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        dd(&mut h, "ldexp", &[&operand(i)], &[i128::from(n)], p, rm, &operand(i).ldexp(n, p, rm))?;
-                        dd(&mut h, "ldexp", &[&operand(i)], &[i128::from(n)], p, rm, &operand(i).scalb(n, p, rm))?;
+                        dd(
+                            &mut h,
+                            "ldexp",
+                            &[&operand(i)],
+                            &[i128::from(n)],
+                            p,
+                            rm,
+                            &operand(i).ldexp(n, p, rm),
+                        )?;
+                        dd(
+                            &mut h,
+                            "ldexp",
+                            &[&operand(i)],
+                            &[i128::from(n)],
+                            p,
+                            rm,
+                            &operand(i).scalb(n, p, rm),
+                        )?;
                         count += 2;
                     }
                 }
@@ -6341,7 +6364,15 @@ mod grid_digest_tests {
         for i in 0..OPERANDS {
             for n in positions {
                 for rm in RMS {
-                    dd(&mut h, "round", &[&operand(i)], &[i128::try_from(n)?], 0, rm, &operand(i).round(n, rm))?;
+                    dd(
+                        &mut h,
+                        "round",
+                        &[&operand(i)],
+                        &[i128::try_from(n)?],
+                        0,
+                        rm,
+                        &operand(i).round(n, rm),
+                    )?;
                     count += 1;
                 }
             }
@@ -6362,12 +6393,60 @@ mod grid_digest_tests {
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
-                dd(&mut h, "op+", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(&operand(i) + operand(j)))?;
-                dd(&mut h, "op+", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(operand(i) + &operand(j)))?;
-                dd(&mut h, "op+", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(operand(i) + operand(j)))?;
-                dd(&mut h, "op-", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(&operand(i) - operand(j)))?;
-                dd(&mut h, "op-", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(operand(i) - &operand(j)))?;
-                dd(&mut h, "op-", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(operand(i) - operand(j)))?;
+                dd(
+                    &mut h,
+                    "op+",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(&operand(i) + operand(j)),
+                )?;
+                dd(
+                    &mut h,
+                    "op+",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(operand(i) + &operand(j)),
+                )?;
+                dd(
+                    &mut h,
+                    "op+",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(operand(i) + operand(j)),
+                )?;
+                dd(
+                    &mut h,
+                    "op-",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(&operand(i) - operand(j)),
+                )?;
+                dd(
+                    &mut h,
+                    "op-",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(operand(i) - &operand(j)),
+                )?;
+                dd(
+                    &mut h,
+                    "op-",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(operand(i) - operand(j)),
+                )?;
                 count += 6;
             }
         }
@@ -6393,9 +6472,28 @@ mod grid_digest_tests {
                             for rm in RMS {
                                 let z1 = || ExactComplex::new(operand(a), operand(b));
                                 let z2 = || ExactComplex::new(operand(c), operand(d));
-                                for (k, r) in [z1().add(&z2(), p, rm), z1().sub(&z2(), p, rm)].into_iter().enumerate() {
-                                    dd(&mut h, COP, &[&operand(a), &operand(b), &operand(c), &operand(d)], &[i128::try_from(k)?, 0], p, rm, r.re())?;
-                                    dd(&mut h, COP, &[&operand(a), &operand(b), &operand(c), &operand(d)], &[i128::try_from(k)?, 1], p, rm, r.im())?;
+                                for (k, r) in [z1().add(&z2(), p, rm), z1().sub(&z2(), p, rm)]
+                                    .into_iter()
+                                    .enumerate()
+                                {
+                                    dd(
+                                        &mut h,
+                                        COP,
+                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
+                                        &[i128::try_from(k)?, 0],
+                                        p,
+                                        rm,
+                                        r.re(),
+                                    )?;
+                                    dd(
+                                        &mut h,
+                                        COP,
+                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
+                                        &[i128::try_from(k)?, 1],
+                                        p,
+                                        rm,
+                                        r.im(),
+                                    )?;
                                     count += 1;
                                 }
                             }
@@ -6420,8 +6518,24 @@ mod grid_digest_tests {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        dd(&mut h, "add", &[&operand(i), &operand(j)], &[], p, rm, &ExactNum::add_ref(&operand(i), &operand(j), p, rm))?;
-                        dd(&mut h, "sub", &[&operand(i), &operand(j)], &[], p, rm, &ExactNum::sub_ref(&operand(i), &operand(j), p, rm))?;
+                        dd(
+                            &mut h,
+                            "add",
+                            &[&operand(i), &operand(j)],
+                            &[],
+                            p,
+                            rm,
+                            &ExactNum::add_ref(&operand(i), &operand(j), p, rm),
+                        )?;
+                        dd(
+                            &mut h,
+                            "sub",
+                            &[&operand(i), &operand(j)],
+                            &[],
+                            p,
+                            rm,
+                            &ExactNum::sub_ref(&operand(i), &operand(j), p, rm),
+                        )?;
                         count += 2;
                     }
                 }
@@ -6431,8 +6545,24 @@ mod grid_digest_tests {
                     _ => true,
                 };
                 if near {
-                    dd(&mut h, "add_full", &[&operand(i), &operand(j)], &[], 0, RoundingMode::None, &operand(i).add_full_prec(&operand(j)))?;
-                    dd(&mut h, "sub_full", &[&operand(i), &operand(j)], &[], 0, RoundingMode::None, &operand(i).sub_full_prec(&operand(j)))?;
+                    dd(
+                        &mut h,
+                        "add_full",
+                        &[&operand(i), &operand(j)],
+                        &[],
+                        0,
+                        RoundingMode::None,
+                        &operand(i).add_full_prec(&operand(j)),
+                    )?;
+                    dd(
+                        &mut h,
+                        "sub_full",
+                        &[&operand(i), &operand(j)],
+                        &[],
+                        0,
+                        RoundingMode::None,
+                        &operand(i).sub_full_prec(&operand(j)),
+                    )?;
                     count += 2;
                 }
             }
@@ -6461,9 +6591,28 @@ mod grid_digest_tests {
                                 for (k, r) in [
                                     ExactComplex::add_ref(&z1, &z2, p, rm),
                                     ExactComplex::sub_ref(&z1, &z2, p, rm),
-                                ].into_iter().enumerate() {
-                                    dd(&mut h, COP, &[&operand(a), &operand(b), &operand(c), &operand(d)], &[i128::try_from(k)?, 0], p, rm, r.re())?;
-                                    dd(&mut h, COP, &[&operand(a), &operand(b), &operand(c), &operand(d)], &[i128::try_from(k)?, 1], p, rm, r.im())?;
+                                ]
+                                .into_iter()
+                                .enumerate()
+                                {
+                                    dd(
+                                        &mut h,
+                                        COP,
+                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
+                                        &[i128::try_from(k)?, 0],
+                                        p,
+                                        rm,
+                                        r.re(),
+                                    )?;
+                                    dd(
+                                        &mut h,
+                                        COP,
+                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
+                                        &[i128::try_from(k)?, 1],
+                                        p,
+                                        rm,
+                                        r.im(),
+                                    )?;
                                     count += 1;
                                 }
                             }
@@ -6485,8 +6634,24 @@ mod grid_digest_tests {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        dd(&mut h, "add", &[&operand(i), &operand(j)], &[], p, rm, &operand(i).add(&operand(j), p, rm))?;
-                        dd(&mut h, "sub", &[&operand(i), &operand(j)], &[], p, rm, &operand(i).sub(&operand(j), p, rm))?;
+                        dd(
+                            &mut h,
+                            "add",
+                            &[&operand(i), &operand(j)],
+                            &[],
+                            p,
+                            rm,
+                            &operand(i).add(&operand(j), p, rm),
+                        )?;
+                        dd(
+                            &mut h,
+                            "sub",
+                            &[&operand(i), &operand(j)],
+                            &[],
+                            p,
+                            rm,
+                            &operand(i).sub(&operand(j), p, rm),
+                        )?;
                         count += 2;
                     }
                 }
@@ -6497,8 +6662,24 @@ mod grid_digest_tests {
                     _ => true,
                 };
                 if near {
-                    dd(&mut h, "add_full", &[&operand(i), &operand(j)], &[], 0, RoundingMode::None, &operand(i).add_full_prec(&operand(j)))?;
-                    dd(&mut h, "sub_full", &[&operand(i), &operand(j)], &[], 0, RoundingMode::None, &operand(i).sub_full_prec(&operand(j)))?;
+                    dd(
+                        &mut h,
+                        "add_full",
+                        &[&operand(i), &operand(j)],
+                        &[],
+                        0,
+                        RoundingMode::None,
+                        &operand(i).add_full_prec(&operand(j)),
+                    )?;
+                    dd(
+                        &mut h,
+                        "sub_full",
+                        &[&operand(i), &operand(j)],
+                        &[],
+                        0,
+                        RoundingMode::None,
+                        &operand(i).sub_full_prec(&operand(j)),
+                    )?;
                     count += 2;
                 }
             }
@@ -6521,12 +6702,36 @@ mod grid_digest_tests {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        dd(&mut h, "mul", &[&operand(i), &operand(j)], &[], p, rm, &operand(i).mul(&operand(j), p, rm))?;
-                        dd(&mut h, "div", &[&operand(i), &operand(j)], &[], p, rm, &operand(i).div(&operand(j), p, rm))?;
+                        dd(
+                            &mut h,
+                            "mul",
+                            &[&operand(i), &operand(j)],
+                            &[],
+                            p,
+                            rm,
+                            &operand(i).mul(&operand(j), p, rm),
+                        )?;
+                        dd(
+                            &mut h,
+                            "div",
+                            &[&operand(i), &operand(j)],
+                            &[],
+                            p,
+                            rm,
+                            &operand(i).div(&operand(j), p, rm),
+                        )?;
                         count += 2;
                     }
                 }
-                dd(&mut h, "mul_full", &[&operand(i), &operand(j)], &[], 0, RoundingMode::None, &operand(i).mul_full_prec(&operand(j)))?;
+                dd(
+                    &mut h,
+                    "mul_full",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::None,
+                    &operand(i).mul_full_prec(&operand(j)),
+                )?;
                 count += 1;
             }
         }
@@ -6552,9 +6757,28 @@ mod grid_digest_tests {
                             for rm in RMS {
                                 let z1 = || ExactComplex::new(operand(a), operand(b));
                                 let z2 = || ExactComplex::new(operand(c), operand(d));
-                                for (k, r) in [z1().mul(&z2(), p, rm), z1().div(&z2(), p, rm)].into_iter().enumerate() {
-                                    dd(&mut h, COP, &[&operand(a), &operand(b), &operand(c), &operand(d)], &[i128::try_from(k)?, 0], p, rm, r.re())?;
-                                    dd(&mut h, COP, &[&operand(a), &operand(b), &operand(c), &operand(d)], &[i128::try_from(k)?, 1], p, rm, r.im())?;
+                                for (k, r) in [z1().mul(&z2(), p, rm), z1().div(&z2(), p, rm)]
+                                    .into_iter()
+                                    .enumerate()
+                                {
+                                    dd(
+                                        &mut h,
+                                        COP,
+                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
+                                        &[i128::try_from(k)?, 0],
+                                        p,
+                                        rm,
+                                        r.re(),
+                                    )?;
+                                    dd(
+                                        &mut h,
+                                        COP,
+                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
+                                        &[i128::try_from(k)?, 1],
+                                        p,
+                                        rm,
+                                        r.im(),
+                                    )?;
                                     count += 1;
                                 }
                             }
@@ -6578,12 +6802,36 @@ mod grid_digest_tests {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        dd(&mut h, "mul", &[&operand(i), &operand(j)], &[], p, rm, &ExactNum::mul_ref(&operand(i), &operand(j), p, rm))?;
-                        dd(&mut h, "div", &[&operand(i), &operand(j)], &[], p, rm, &ExactNum::div_ref(&operand(i), &operand(j), p, rm))?;
+                        dd(
+                            &mut h,
+                            "mul",
+                            &[&operand(i), &operand(j)],
+                            &[],
+                            p,
+                            rm,
+                            &ExactNum::mul_ref(&operand(i), &operand(j), p, rm),
+                        )?;
+                        dd(
+                            &mut h,
+                            "div",
+                            &[&operand(i), &operand(j)],
+                            &[],
+                            p,
+                            rm,
+                            &ExactNum::div_ref(&operand(i), &operand(j), p, rm),
+                        )?;
                         count += 2;
                     }
                 }
-                dd(&mut h, "mul_full", &[&operand(i), &operand(j)], &[], 0, RoundingMode::None, &operand(i).mul_full_prec(&operand(j)))?;
+                dd(
+                    &mut h,
+                    "mul_full",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::None,
+                    &operand(i).mul_full_prec(&operand(j)),
+                )?;
                 count += 1;
             }
         }
@@ -6603,7 +6851,15 @@ mod grid_digest_tests {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
                     let x = operand(i);
-                    dd(&mut h, "sqr", &[&x], &[], p, rm, &ExactNum::mul_ref(&x, &x, p, rm))?;
+                    dd(
+                        &mut h,
+                        "sqr",
+                        &[&x],
+                        &[],
+                        p,
+                        rm,
+                        &ExactNum::mul_ref(&x, &x, p, rm),
+                    )?;
                     count += 1;
                 }
             }
@@ -6623,7 +6879,15 @@ mod grid_digest_tests {
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
-                    dd(&mut h, "sqr", &[&operand(i)], &[], p, rm, &operand(i).sqr(p, rm))?;
+                    dd(
+                        &mut h,
+                        "sqr",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).sqr(p, rm),
+                    )?;
                     count += 1;
                 }
             }
@@ -6658,10 +6922,42 @@ mod grid_digest_tests {
                     dd(&mut h, "sin", &[&x()], &[], p, rm, &x().sin(p, rm, &mut cc))?;
                     dd(&mut h, "cos", &[&x()], &[], p, rm, &x().cos(p, rm, &mut cc))?;
                     dd(&mut h, "tan", &[&x()], &[], p, rm, &x().tan(p, rm, &mut cc))?;
-                    dd(&mut h, "atan", &[&x()], &[], p, rm, &x().atan(p, rm, &mut cc))?;
-                    dd(&mut h, "sinh", &[&x()], &[], p, rm, &x().sinh(p, rm, &mut cc))?;
-                    dd(&mut h, "cosh", &[&x()], &[], p, rm, &x().cosh(p, rm, &mut cc))?;
-                    dd(&mut h, "tanh", &[&x()], &[], p, rm, &x().tanh(p, rm, &mut cc))?;
+                    dd(
+                        &mut h,
+                        "atan",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().atan(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut h,
+                        "sinh",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().sinh(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut h,
+                        "cosh",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().cosh(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut h,
+                        "tanh",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().tanh(p, rm, &mut cc),
+                    )?;
                     count += 7;
                 }
             }
@@ -6692,15 +6988,55 @@ mod grid_digest_tests {
         for i in (0..11).chain(21..23) {
             for p in [53usize, 128, 200] {
                 for rm in RMS {
-                    dd(&mut h, "exp", &[&operand(i)], &[], p, rm, &operand(i).exp(p, rm, &mut cc))?;
-                    dd(&mut h, "exp2", &[&operand(i)], &[], p, rm, &operand(i).exp2(p, rm, &mut cc))?;
-                    dd(&mut h, "exp10", &[&operand(i)], &[], p, rm, &operand(i).exp10(p, rm, &mut cc))?;
+                    dd(
+                        &mut h,
+                        "exp",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).exp(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut h,
+                        "exp2",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).exp2(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut h,
+                        "exp10",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).exp10(p, rm, &mut cc),
+                    )?;
                     for e in exps() {
-                        dd(&mut h, "pow", &[&operand(i), &e], &[], p, rm, &operand(i).pow(&e, p, rm, &mut cc))?;
+                        dd(
+                            &mut h,
+                            "pow",
+                            &[&operand(i), &e],
+                            &[],
+                            p,
+                            rm,
+                            &operand(i).pow(&e, p, rm, &mut cc),
+                        )?;
                         count += 1;
                     }
                     for n in [0usize, 1, 2, 3, 7, 12] {
-                        dd(&mut h, "powi", &[&operand(i)], &[i128::try_from(n)?], p, rm, &operand(i).powi(n, p, rm))?;
+                        dd(
+                            &mut h,
+                            "powi",
+                            &[&operand(i)],
+                            &[i128::try_from(n)?],
+                            p,
+                            rm,
+                            &operand(i).powi(n, p, rm),
+                        )?;
                         count += 1;
                     }
                     count += 3;
@@ -6723,10 +7059,42 @@ mod grid_digest_tests {
         for i in [2usize, 3, 4, 5, 21] {
             for p in [1024usize, 4096] {
                 for rm in [RoundingMode::ToEven, RoundingMode::Up] {
-                    dd(&mut h, "sin", &[&operand(i)], &[], p, rm, &operand(i).sin(p, rm, &mut cc))?;
-                    dd(&mut h, "exp", &[&operand(i)], &[], p, rm, &operand(i).exp(p, rm, &mut cc))?;
-                    dd(&mut h, "atan", &[&operand(i)], &[], p, rm, &operand(i).atan(p, rm, &mut cc))?;
-                    dd(&mut h, "sinh", &[&operand(i)], &[], p, rm, &operand(i).sinh(p, rm, &mut cc))?;
+                    dd(
+                        &mut h,
+                        "sin",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).sin(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut h,
+                        "exp",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).exp(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut h,
+                        "atan",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).atan(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut h,
+                        "sinh",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).sinh(p, rm, &mut cc),
+                    )?;
                     count += 4;
                 }
             }
@@ -6755,7 +7123,15 @@ mod grid_digest_tests {
                                     4096,
                                     RoundingMode::ToEven,
                                 );
-                                dd(&mut h, "fma", &[&operand(a), &operand(b), &cs], &[], p, rm, &operand(a).fma(&operand(b), &cs, p, rm))?;
+                                dd(
+                                    &mut h,
+                                    "fma",
+                                    &[&operand(a), &operand(b), &cs],
+                                    &[],
+                                    p,
+                                    rm,
+                                    &operand(a).fma(&operand(b), &cs, p, rm),
+                                )?;
                                 count += 1;
                             }
                         }
@@ -6802,8 +7178,24 @@ mod grid_digest_tests {
                                 256,
                                 RoundingMode::ToEven,
                             );
-                            dd(&mut h, "hypot", &[&operand(a), &bs], &[], p, rm, &operand(a).hypot(&bs, p, rm))?;
-                            dd(&mut h, "hypot", &[&bs, &operand(a)], &[], p, rm, &bs.hypot(&operand(a), p, rm))?;
+                            dd(
+                                &mut h,
+                                "hypot",
+                                &[&operand(a), &bs],
+                                &[],
+                                p,
+                                rm,
+                                &operand(a).hypot(&bs, p, rm),
+                            )?;
+                            dd(
+                                &mut h,
+                                "hypot",
+                                &[&bs, &operand(a)],
+                                &[],
+                                p,
+                                rm,
+                                &bs.hypot(&operand(a), p, rm),
+                            )?;
                             count += 2;
                         }
                     }
@@ -6881,7 +7273,15 @@ mod grid_digest_tests {
             for p in [53usize, 64, 128, 300] {
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                     let z = zeros();
-                    dd(&mut h, "atanh", &[&zeros()[i]], &[], p, rm, &z[i].atanh(p, rm, &mut cc))?;
+                    dd(
+                        &mut h,
+                        "atanh",
+                        &[&zeros()[i]],
+                        &[],
+                        p,
+                        rm,
+                        &z[i].atanh(p, rm, &mut cc),
+                    )?;
                     count += 1;
                 }
             }
@@ -6889,8 +7289,24 @@ mod grid_digest_tests {
         for i in 0..OPERANDS {
             for p in [64usize, 200] {
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
-                    dd(&mut h, "atanh", &[&operand(i)], &[], p, rm, &operand(i).atanh(p, rm, &mut cc))?;
-                    dd(&mut h, "atanh", &[&operand(i).ldexp(-3, 256, rm)], &[], p, rm, &operand(i).ldexp(-3, 256, rm).atanh(p, rm, &mut cc))?;
+                    dd(
+                        &mut h,
+                        "atanh",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).atanh(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut h,
+                        "atanh",
+                        &[&operand(i).ldexp(-3, 256, rm)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).ldexp(-3, 256, rm).atanh(p, rm, &mut cc),
+                    )?;
                     count += 2;
                 }
             }
@@ -6907,7 +7323,8 @@ mod grid_digest_tests {
     #[test]
     fn jacobi_all_functions_digest() -> Result<(), Box<dyn std::error::Error>> {
         type J = fn(&ExactNum, &ExactNum, usize, RoundingMode, &mut crate::Consts) -> ExactNum;
-        const JNAMES: [&str; 13] = ["am", "sn", "cn", "dn", "cd", "ns", "nc", "nd", "sc", "sd", "cs", "ds", "dc"];
+        const JNAMES: [&str; 13] =
+            ["am", "sn", "cn", "dn", "cd", "ns", "nc", "nd", "sc", "sd", "cs", "ds", "dc"];
         let fns: [J; 13] = [
             ExactNum::jacobi_am,
             ExactNum::jacobi_sn,
@@ -6941,7 +7358,15 @@ mod grid_digest_tests {
                     for p in [64usize, 128] {
                         for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                             let m = ms();
-                            dd(&mut h, JNAMES[fi], &[&operand(i), &m[mi]], &[], p, rm, &f(&operand(i), &m[mi], p, rm, &mut cc))?;
+                            dd(
+                                &mut h,
+                                JNAMES[fi],
+                                &[&operand(i), &m[mi]],
+                                &[],
+                                p,
+                                rm,
+                                &f(&operand(i), &m[mi], p, rm, &mut cc),
+                            )?;
                             count += 1;
                         }
                     }
@@ -7068,7 +7493,15 @@ mod grid_digest_tests {
             for n in [7usize, 255, 1000, 65537, 1_000_003] {
                 for p in [64usize, 200] {
                     for rm in [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down] {
-                        dd(&mut h, "powi", &[&operand(i)], &[i128::try_from(n)?], p, rm, &operand(i).powi(n, p, rm))?;
+                        dd(
+                            &mut h,
+                            "powi",
+                            &[&operand(i)],
+                            &[i128::try_from(n)?],
+                            p,
+                            rm,
+                            &operand(i).powi(n, p, rm),
+                        )?;
                         count += 1;
                     }
                 }
@@ -7092,19 +7525,59 @@ mod grid_digest_tests {
         for i in (0..11).chain(21..23) {
             for p in [64usize, 200] {
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
-                    dd(&mut h, "ln", &[&operand(i)], &[], p, rm, &operand(i).ln(p, rm, &mut cc))?;
-                    dd(&mut h, "log1p", &[&operand(i)], &[], p, rm, &operand(i).log1p(p, rm, &mut cc))?;
+                    dd(
+                        &mut h,
+                        "ln",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).ln(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut h,
+                        "log1p",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).log1p(p, rm, &mut cc),
+                    )?;
                     let (s, c) = operand(i).sin_cos(p, rm, &mut cc);
                     dd(&mut h, "sin", &[&operand(i)], &[], p, rm, &s)?;
                     dd(&mut h, "cos", &[&operand(i)], &[], p, rm, &c)?;
                     let (s, c) = operand(i).sinh_cosh(p, rm, &mut cc);
                     dd(&mut h, "sinh", &[&operand(i)], &[], p, rm, &s)?;
                     dd(&mut h, "cosh", &[&operand(i)], &[], p, rm, &c)?;
-                    dd(&mut h, "nth_root", &[&operand(i)], &[3], p, rm, &operand(i).nth_root(3, p, rm))?;
-                    dd(&mut h, "nth_root", &[&operand(i)], &[5], p, rm, &operand(i).nth_root(5, p, rm))?;
+                    dd(
+                        &mut h,
+                        "nth_root",
+                        &[&operand(i)],
+                        &[3],
+                        p,
+                        rm,
+                        &operand(i).nth_root(3, p, rm),
+                    )?;
+                    dd(
+                        &mut h,
+                        "nth_root",
+                        &[&operand(i)],
+                        &[5],
+                        p,
+                        rm,
+                        &operand(i).nth_root(5, p, rm),
+                    )?;
                     count += 8;
                     for b in [2usize, 4, 6] {
-                        dd(&mut h, "logb", &[&operand(i), &operand(b)], &[], p, rm, &operand(i).log(&operand(b), p, rm, &mut cc))?;
+                        dd(
+                            &mut h,
+                            "logb",
+                            &[&operand(i), &operand(b)],
+                            &[],
+                            p,
+                            rm,
+                            &operand(i).log(&operand(b), p, rm, &mut cc),
+                        )?;
                         count += 1;
                     }
                 }
@@ -7248,10 +7721,26 @@ mod grid_digest_tests {
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 53, 64, 128, 200, 320] {
                 for rm in RMS {
-                    dd(&mut h, "reciprocal", &[&operand(i)], &[], p, rm, &operand(i).reciprocal(p, rm))?;
+                    dd(
+                        &mut h,
+                        "reciprocal",
+                        &[&operand(i)],
+                        &[],
+                        p,
+                        rm,
+                        &operand(i).reciprocal(p, rm),
+                    )?;
                     count += 1;
                     for n in [2usize, 3, 4, 5, 7] {
-                        dd(&mut h, "nth_root", &[&operand(i)], &[i128::try_from(n)?], p, rm, &operand(i).nth_root(n, p, rm))?;
+                        dd(
+                            &mut h,
+                            "nth_root",
+                            &[&operand(i)],
+                            &[i128::try_from(n)?],
+                            p,
+                            rm,
+                            &operand(i).nth_root(n, p, rm),
+                        )?;
                         count += 1;
                     }
                 }
@@ -7305,12 +7794,60 @@ mod grid_digest_tests {
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
-                dd(&mut h, "op*", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(&operand(i) * operand(j)))?;
-                dd(&mut h, "op*", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(operand(i) * &operand(j)))?;
-                dd(&mut h, "op*", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(operand(i) * operand(j)))?;
-                dd(&mut h, "op/", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(&operand(i) / operand(j)))?;
-                dd(&mut h, "op/", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(operand(i) / &operand(j)))?;
-                dd(&mut h, "op/", &[&operand(i), &operand(j)], &[], 0, RoundingMode::ToEven, &(operand(i) / operand(j)))?;
+                dd(
+                    &mut h,
+                    "op*",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(&operand(i) * operand(j)),
+                )?;
+                dd(
+                    &mut h,
+                    "op*",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(operand(i) * &operand(j)),
+                )?;
+                dd(
+                    &mut h,
+                    "op*",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(operand(i) * operand(j)),
+                )?;
+                dd(
+                    &mut h,
+                    "op/",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(&operand(i) / operand(j)),
+                )?;
+                dd(
+                    &mut h,
+                    "op/",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(operand(i) / &operand(j)),
+                )?;
+                dd(
+                    &mut h,
+                    "op/",
+                    &[&operand(i), &operand(j)],
+                    &[],
+                    0,
+                    RoundingMode::ToEven,
+                    &(operand(i) / operand(j)),
+                )?;
                 count += 6;
             }
         }
@@ -7577,10 +8114,16 @@ mod round_op_flag_tests {
         }
         for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::None] {
             // a subnormal operand rounded to an integer is an inexact zero
-            let t = ExactNum::from_mag_parts(0xC000_0000_0000_0000, i64::from(crate::EXPONENT_MIN) + 5, 64)?.round(0, rm);
+            let t = ExactNum::from_mag_parts(
+                0xC000_0000_0000_0000,
+                i64::from(crate::EXPONENT_MIN) + 5,
+                64,
+            )?
+            .round(0, rm);
             assert!(t.is_zero() && t.inexact(), "{rm:?}");
         }
-        let w = ExactNum::from_mag_parts(0xC000_0000_0000_0000, 2, 64)?.round(1, RoundingMode::ToEven); // 3.0 exact
+        let w =
+            ExactNum::from_mag_parts(0xC000_0000_0000_0000, 2, 64)?.round(1, RoundingMode::ToEven); // 3.0 exact
         assert!(!w.inexact());
         assert!(!w.inexact_accumulated());
         Ok(())
@@ -7596,7 +8139,12 @@ mod underflow_zero_flag_tests {
     #[test]
     fn log_with_a_base_rounds_at_the_requested_precision() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
-        let r = ExactNum::from_u8(3, 64).log(&ExactNum::from_u8(2, 64), 200, RoundingMode::ToZero, &mut cc);
+        let r = ExactNum::from_u8(3, 64).log(
+            &ExactNum::from_u8(2, 64),
+            200,
+            RoundingMode::ToZero,
+            &mut cc,
+        );
         let on_grid = ExactNum::add_ref(&r, &ExactNum::new(64), 200, RoundingMode::ToZero);
         assert!(r == on_grid && r.inexact());
         Ok(())
@@ -7650,9 +8198,21 @@ mod full_prec_subnormal_tests {
     #[test]
     fn full_prec_keeps_every_bit_of_a_subnormal_result() {
         // a 192-bit subnormal number whose top word is zero: 0xAAAAAAA_AAAAAAAAAAAAAAAA * 2^(EMIN - 192)
-        let x = ExactNum::from_raw_parts(&[0xAAAA_AAAA_AAAA_AAAA, 0x0AAA_AAAA, 0], 92, Sign::Neg, EXPONENT_MIN, false);
+        let x = ExactNum::from_raw_parts(
+            &[0xAAAA_AAAA_AAAA_AAAA, 0x0AAA_AAAA, 0],
+            92,
+            Sign::Neg,
+            EXPONENT_MIN,
+            false,
+        );
         let one = ExactNum::from_raw_parts(&[0x8000_0000_0000_0000], 64, Sign::Pos, 1, false);
-        let twice = ExactNum::from_raw_parts(&[0x5555_5555_5555_5554, 0x1555_5555, 0], 93, Sign::Neg, EXPONENT_MIN, false);
+        let twice = ExactNum::from_raw_parts(
+            &[0x5555_5555_5555_5554, 0x1555_5555, 0],
+            93,
+            Sign::Neg,
+            EXPONENT_MIN,
+            false,
+        );
         assert!(x.is_negative() && !x.is_zero());
         assert!(twice.is_negative() && !twice.is_zero());
         assert!(ExactNum::mul_full_prec(&x, &one) == x);

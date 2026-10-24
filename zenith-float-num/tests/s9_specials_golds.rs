@@ -233,7 +233,9 @@ const EXCLUDED_IDS: &[&str] = &[
 ];
 
 fn row_id_in(row: &Value, ids: &[&str]) -> bool {
-    row.get("id").and_then(Value::as_str).is_some_and(|id| ids.contains(&id))
+    row.get("id")
+        .and_then(Value::as_str)
+        .is_some_and(|id| ids.contains(&id))
 }
 
 fn rows_for(func: &str) -> Result<Vec<Value>, String> {

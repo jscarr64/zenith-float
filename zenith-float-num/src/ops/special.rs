@@ -5028,7 +5028,12 @@ const BERNOULLI_P_SLOTS: usize = 8;
 
 impl BernoulliCache {
     const fn new() -> Self {
-        Self { row: Vec::new(), row_n: 0, exact: Vec::new(), rounded: Vec::new() }
+        Self {
+            row: Vec::new(),
+            row_n: 0,
+            exact: Vec::new(),
+            rounded: Vec::new(),
+        }
     }
 
     /// Advances the boustrophedon one row.
@@ -5039,7 +5044,8 @@ impl BernoulliCache {
         }
         let n = self.row_n + 1;
         // A_n ≤ n! < 2^(n·bitlen(n)): every entry of row n fits exactly.
-        let bits = usize::try_from(usize::BITS - n.leading_zeros()).map_err(|_| Error::InvalidArgument)?;
+        let bits =
+            usize::try_from(usize::BITS - n.leading_zeros()).map_err(|_| Error::InvalidArgument)?;
         let pn = round_p(n * bits + 2 * WORD_BIT_SIZE);
         let mut next = Vec::with_capacity(n + 1);
         let mut acc = ExactNumNumber::new(pn)?;
@@ -5072,8 +5078,12 @@ impl BernoulliCache {
             let pd = round_p(4 * k + 2 * WORD_BIT_SIZE);
             let one = ExactNumNumber::from_word(1, pd)?;
             let mut pow = ExactNumNumber::from_word(1, pd)?;
-            pow.set_exponent(pow.exponent() + Exponent::try_from(2 * k).map_err(|_| Error::InvalidArgument)?);
-            let den = pow.sub(&one, pd, RoundingMode::None)?.mul(&pow, pd, RoundingMode::None)?;
+            pow.set_exponent(
+                pow.exponent() + Exponent::try_from(2 * k).map_err(|_| Error::InvalidArgument)?,
+            );
+            let den = pow
+                .sub(&one, pd, RoundingMode::None)?
+                .mul(&pow, pd, RoundingMode::None)?;
             self.exact.push((num, den));
         }
         Ok(())
@@ -5089,7 +5099,11 @@ impl BernoulliCache {
             self.rounded.push((p, Vec::new()));
         }
         let exact = &self.exact;
-        let slot = self.rounded.iter_mut().find(|(q, _)| *q == p).ok_or(Error::InvalidArgument)?;
+        let slot = self
+            .rounded
+            .iter_mut()
+            .find(|(q, _)| *q == p)
+            .ok_or(Error::InvalidArgument)?;
         while slot.1.len() < n {
             let (num, den) = exact.get(slot.1.len()).ok_or(Error::InvalidArgument)?;
             slot.1.push(num.div(den, p, RoundingMode::ToEven)?);
@@ -5098,7 +5112,10 @@ impl BernoulliCache {
     }
 
     fn rounded_slice(&self, n: usize, p: usize) -> Option<&[ExactNumNumber]> {
-        self.rounded.iter().find(|(q, _)| *q == p).and_then(|(_, v)| v.get(..n))
+        self.rounded
+            .iter()
+            .find(|(q, _)| *q == p)
+            .and_then(|(_, v)| v.get(..n))
     }
 }
 
@@ -5119,7 +5136,10 @@ pub(crate) fn with_exact_bernoulli<R>(
                 return f(v);
             }
         }
-        BERNOULLI.write().map_err(|_| Error::InvalidArgument)?.grow_exact(n)?;
+        BERNOULLI
+            .write()
+            .map_err(|_| Error::InvalidArgument)?
+            .grow_exact(n)?;
         let g = BERNOULLI.read().map_err(|_| Error::InvalidArgument)?;
         f(g.exact.get(..n).ok_or(Error::InvalidArgument)?)
     }
@@ -5145,7 +5165,10 @@ pub(crate) fn with_even_bernoulli<R>(
                 return f(v);
             }
         }
-        BERNOULLI.write().map_err(|_| Error::InvalidArgument)?.grow_rounded(n, p)?;
+        BERNOULLI
+            .write()
+            .map_err(|_| Error::InvalidArgument)?
+            .grow_rounded(n, p)?;
         let g = BERNOULLI.read().map_err(|_| Error::InvalidArgument)?;
         f(g.rounded_slice(n, p).ok_or(Error::InvalidArgument)?)
     }
@@ -5219,7 +5242,11 @@ mod tests {
         for c in s.trim_start_matches('-').chars() {
             let d = c.to_digit(10).ok_or(crate::Error::InvalidArgument)?;
             acc = acc.mul(&ten, p, RoundingMode::None)?;
-            acc = acc.add(&ExactNumNumber::from_word(Word::from(d), p)?, p, RoundingMode::None)?;
+            acc = acc.add(
+                &ExactNumNumber::from_word(Word::from(d), p)?,
+                p,
+                RoundingMode::None,
+            )?;
         }
         if s.starts_with('-') {
             acc = acc.neg()?;
@@ -5252,9 +5279,13 @@ mod tests {
         let mut cc = Consts::new()?;
         let p = 256;
         // Γ: Stirling shift loop capped at 2 shifts, z = 0.75 stays far below e_min.
-        assert!(exhausted(quarters(3, p)?.gamma_positive_capped(p, &mut cc, 2)));
+        assert!(exhausted(
+            quarters(3, p)?.gamma_positive_capped(p, &mut cc, 2)
+        ));
         // ψ: shift loop capped at 2 shifts, z = 1.25.
-        assert!(exhausted(quarters(5, p)?.digamma_positive_capped(p, &mut cc, 2)));
+        assert!(exhausted(
+            quarters(5, p)?.digamma_positive_capped(p, &mut cc, 2)
+        ));
         Ok(())
     }
 
