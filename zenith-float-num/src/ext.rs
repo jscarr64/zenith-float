@@ -7707,7 +7707,7 @@ mod grid_digest_tests {
             h.finish(),
             count
         );
-        assert_eq!(h.finish(), 17_431_376_301_017_146_749);
+        assert_eq!(h.finish(), 2_640_369_975_324_367_864);
         Ok(())
     }
 

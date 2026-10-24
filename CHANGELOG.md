@@ -851,3 +851,4 @@ First public release.
 - Dual license MIT OR Apache-2.0.
 - Re-pinned 24 grid digests (ext.rs grid_digest_tests) after the complex exact_sum, pow underflow, reciprocal Newton, log round_exact and log exact-flag fixes; every dump re-verified against mpmath (scripts/verify_grid_digests.py, 0 BAD).
 - clippy --workspace --all-targets -D warnings clean: removed 147 same-type casts, 10 useless i64 conversions, 2 manual is_multiple_of, a precedence and a map_or (cargo clippy --fix); cargo fmt over the workspace.
+- log2(1) (and any operand that is exactly one) returns the canonical zero (exponent 0) like ln and log10; it returned a zero with exponent 64. Found by the new log_extreme goldens (tests/log_extreme_mpmath.rs, scripts/gen_log_extreme_goldens.py: 2475 rows, ln/log2/log10, 33 operands, p 24..1024, five modes, mpmath at p+256/p+512). ln_log2_log10_conversion_digest re-pinned (dump re-verified, 0 BAD).

@@ -257,6 +257,12 @@ impl ExactNumNumber {
         let set_bits: u32 = m.mantissa().digits().iter().map(|w| w.count_ones()).sum();
         if set_bits == 1 {
             // special case: x = 0.5
+            if e == 1 {
+                // log2(1) = 0 in the canonical zero form (exponent 0), as ln and log10 return it
+                let mut z = Self::new(p)?;
+                z.set_inexact(m.inexact());
+                return Ok(z);
+            }
             let mut ret = Self::from_usize(crate::common::util::abs_usize(e - 1))?;
 
             if e < 1 {
