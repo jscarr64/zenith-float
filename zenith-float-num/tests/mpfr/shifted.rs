@@ -405,10 +405,16 @@ pub fn ref_atan2(y: &Term, x: &Term, p: u32, rm: RoundingMode) -> Res<Want> {
 }
 
 fn show_zf(x: &ExactNum) -> String {
-    match x.as_raw_parts() {
-        Some((w, n, s, e, inx)) => format!("{s:?} {w:x?} n={n} e={e} inexact={inx}"),
-        None => format!("special nan={} inf={}", x.is_nan(), x.is_inf()),
-    }
+    let r = x.as_raw_parts();
+    format!(
+        "{:?} neg={} {:x?} n={} e={} inexact={}",
+        r.kind,
+        r.negative,
+        r.words,
+        r.significant_bits(),
+        r.exponent,
+        r.inexact
+    )
 }
 
 /// Asserts that `got` is the reference: NaN, the signed infinity, the signed zero, or the value scaled by

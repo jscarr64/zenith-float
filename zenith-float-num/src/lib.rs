@@ -122,6 +122,8 @@ pub use crate::ext::FromExt;
 pub use crate::ext::INF_NEG;
 pub use crate::ext::INF_POS;
 pub use crate::ext::NAN;
+pub use crate::ext::RawKind;
+pub use crate::ext::RawParts;
 pub use crate::hash::constant_time_eq;
 pub use crate::hash::hmac_sha256;
 pub use crate::hash::sha256;

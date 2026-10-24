@@ -252,7 +252,7 @@ pub fn conv_to_mpfr(
 ) -> Result<Float, Box<dyn std::error::Error>> {
     // Past the former 32-bit range the binary strings get too large for MPFR's string
     // conversion; build the value from the raw words and the 62-bit exponent instead.
-    if let Some((w, _, s, e, _)) = n.as_raw_parts() {
+    if let Some((w, s, e)) = value_parts(n) {
         if e < RAND_EMIN || e > RAND_EMAX {
             let bits = w.len() * WORD_BIT_SIZE;
             let int = rug::Integer::from_digits(w, rug::integer::Order::Lsf);
@@ -778,7 +778,7 @@ pub fn exact_mpfr_shifted(n: &ExactNum, shift: i64) -> Result<Float, Box<dyn std
         let z = Float::with_val(64, 0);
         return Ok(if n.is_negative() { -z } else { z });
     }
-    let (words, _, sign, e, _) = n.as_raw_parts().ok_or("not a finite number")?;
+    let (words, sign, e) = value_parts(n).ok_or("not a finite number")?;
     let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
     unsafe {
         mpfr::set_emin(mpfr::get_emin_min());
@@ -841,7 +841,7 @@ pub fn assert_exact_eq(
     let _ = (p, &cc);
     // Exact value of the zenith number, rebuilt from its words (parsing would flush
     // subnormals): sum of word_i * 2^(64 i) * 2^(e - 64 len), with the widest MPFR range.
-    let (words, _, sign, e, _) = n.as_raw_parts().ok_or("none value")?;
+    let (words, sign, e) = value_parts(n).ok_or("none value")?;
     let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
     unsafe {
         mpfr::set_emin(mpfr::get_emin_min());
@@ -885,4 +885,15 @@ pub fn show_mp(f: &Float) -> String {
         let frac = Float::with_val(f.prec(), f >> (e as isize));
         format!("{frac:x} * 2^{e}")
     })
+}
+
+/// Words, sign and exponent of a finite value (zero included); `None` for Inf and NaN.
+fn value_parts(n: &ExactNum) -> Option<(&[zenith_float_num::Word], Sign, i64)> {
+    let r = n.as_raw_parts();
+    match r.kind {
+        zenith_float_num::RawKind::Finite | zenith_float_num::RawKind::Zero => {
+            Some((r.words, if r.negative { Sign::Neg } else { Sign::Pos }, r.exponent))
+        }
+        _ => None,
+    }
 }

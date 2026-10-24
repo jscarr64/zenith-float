@@ -30,16 +30,30 @@ pub fn str_to_exact_num_literal(s: &str, span: Span) -> Result<TokenStream, Erro
         ));
     }
 
-    if let Some((m, n, sign, e, inexact)) = f.as_raw_parts() {
-        let stoken = if sign.is_positive() {
-            quote!(zenith_float::Sign::Pos)
-        } else {
-            quote!(zenith_float::Sign::Neg)
-        };
-        Ok(quote!(zenith_float::ExactNum::from_raw_parts(&[#(#m),*], #n, #stoken, #e, #inexact)))
-    } else {
-        Ok(quote!(zenith_float::ExactNum::nan()))
-    }
+    Ok(raw_parts_expr(&f))
+}
+
+/// Tokens rebuilding `f` through `ExactNum::from_raw_parts`; NaN if the parts were rejected.
+fn raw_parts_expr(f: &ExactNum) -> TokenStream {
+    let raw = f.as_raw_parts();
+    let m = raw.words;
+    let (precision, negative, e, inexact) =
+        (raw.precision, raw.negative, raw.exponent, raw.inexact);
+    let kind = match raw.kind {
+        zenith_float_num::RawKind::Finite => quote!(zenith_float::RawKind::Finite),
+        zenith_float_num::RawKind::Zero => quote!(zenith_float::RawKind::Zero),
+        zenith_float_num::RawKind::Inf => quote!(zenith_float::RawKind::Inf),
+        zenith_float_num::RawKind::NaN => quote!(zenith_float::RawKind::NaN),
+    };
+    quote!(zenith_float::ExactNum::from_raw_parts(&zenith_float::RawParts {
+        kind: #kind,
+        words: &[#(#m),*],
+        precision: #precision,
+        negative: #negative,
+        exponent: #e,
+        inexact: #inexact,
+    })
+    .unwrap_or(zenith_float::NAN))
 }
 
 pub fn str_to_exact_num_expr(s: &str, span: Span, cc: &mut Consts) -> Result<TokenStream, Error> {
@@ -53,15 +67,9 @@ pub fn str_to_exact_num_expr(s: &str, span: Span, cc: &mut Consts) -> Result<Tok
 
     let q = if f.inexact() {
         quote!(zenith_float::macro_util::check_exponent_range(zenith_float::ExactNum::parse(#s, zenith_float::Radix::Dec, p_wrk, zenith_float::RoundingMode::ToEven, cc), emin, emax))
-    } else if let Some((m, n, s, e, inexact)) = f.as_raw_parts() {
-        let stoken = if s.is_positive() {
-            quote!(zenith_float::Sign::Pos)
-        } else {
-            quote!(zenith_float::Sign::Neg)
-        };
-        quote!(zenith_float::macro_util::check_exponent_range(zenith_float::ExactNum::from_raw_parts(&[#(#m),*], #n, #stoken, #e, #inexact), emin, emax))
     } else {
-        quote!(zenith_float::ExactNum::nan())
+        let r = raw_parts_expr(&f);
+        quote!(zenith_float::macro_util::check_exponent_range(#r, emin, emax))
     };
 
     Ok(q)

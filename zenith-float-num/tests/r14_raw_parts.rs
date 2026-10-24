@@ -53,11 +53,14 @@ fn round_trip_exponent_extremes() -> Result<(), String> {
     assert_eq!(EXPONENT_MIN, -((1i64 << 62) - 1));
     for e in [EXPONENT_MAX, EXPONENT_MAX - 1, EXPONENT_MIN, EXPONENT_MIN + 1, 0, 1, -1] {
         for s in [Sign::Pos, Sign::Neg] {
-            for m in [[TOP, 0], [TOP | 5, Word::MAX], [Word::MAX, Word::MAX]] {
+            for m in [[0, TOP], [Word::MAX, TOP | 5], [Word::MAX, Word::MAX]] {
                 let x = ExactNum::from_words(&m, s, e);
                 round_trip(&x)?;
                 let parts = x.as_raw_parts();
-                assert!(parts.kind == RawKind::Finite && parts.exponent == e);
+                assert!(
+                    parts.kind == RawKind::Finite && parts.exponent == e,
+                    "e={e} {parts:?}"
+                );
                 assert_eq!(parts.negative, s == Sign::Neg);
                 assert_eq!(parts.words, &m);
                 assert_eq!(parts.precision, 2 * WORD_BIT_SIZE);

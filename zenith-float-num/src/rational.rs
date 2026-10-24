@@ -420,7 +420,9 @@ fn exact_num_to_rational(x: &ExactNum) -> Option<ExactRational> {
     if x.is_zero() {
         return Some(ExactRational::from_i64(0, 1));
     }
-    let (m, _n, s, e, _) = x.as_raw_parts()?;
+    let raw = x.as_raw_parts();
+    let (m, e) = (raw.words, raw.exponent);
+    let s = if raw.negative { crate::Sign::Neg } else { crate::Sign::Pos };
     let pbuf = m.len() * WORD_BIT_SIZE;
     let mut num = ExactInt::from_le_words(s, m);
     let shift = e as i64 - pbuf as i64;
@@ -545,8 +547,7 @@ mod tests {
         let want = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::ToEven);
         assert_eq!(half.compare(&want), Some(0));
         assert_eq!(half.ilogb(), Some(-1));
-        let (_m, _n, s, _e, _) = half.as_raw_parts().ok_or(crate::Error::InvalidArgument)?;
-        assert_eq!(s, crate::Sign::Pos);
+        assert!(!half.as_raw_parts().negative);
 
         assert_eq!(
             ExactRational::parse_exact("0.125")

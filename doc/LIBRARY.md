@@ -169,7 +169,7 @@ These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `
 | `from_u8`, `from_u16`, `from_u32`, `from_u64`, `from_u128` | unsigned integers + precision |
 | `From` | `i8`/`u8`/`i16`/`u16`/`i32`/`u32`/`i64`/`u64`/`i128`/`u128` at default 128-bit precision |
 | `Default` | `new` at default 128-bit precision |
-| `from_raw_parts` | mantissa slice, used length, sign, exponent, inexact flag |
+| `from_raw_parts` | `from_raw_parts(&RawParts) -> Result<ExactNum, Error>`; validates kind, precision, word count, normalization and exponent range (`InvalidArgument` otherwise) |
 | `from_words` | mantissa slice, sign, exponent |
 | `max_value` / `min_value` | largest / most-negative finite at precision `p` |
 | `min_positive` / `min_positive_normal` | smallest positive (incl. subnormal) / smallest normal |
@@ -238,7 +238,7 @@ There is **no** `%` operator trait; remainder is `rem` or `expr!` `%`.
 | `exponent` | `Option<Exponent>` |
 | `precision` | `Option<usize>` mantissa bit length |
 | `sign` | `Option<Sign>` |
-| `as_raw_parts` | `Option<(&[Word], usize, Sign, Exponent, bool)>` |
+| `as_raw_parts` | `RawParts<'_>` borrowing the words: `kind`, `words` (little-endian), `precision` (= words × 64), `negative`, `exponent` (value = ±M·2^(exponent−precision)), `inexact` |
 | `mantissa_digits` | `Option<&[Word]>` |
 | `mantissa_max_bit_len` | |
 | `is_inline` | mantissa fits in `INLINE_WORDS` |
