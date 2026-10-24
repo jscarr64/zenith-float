@@ -446,6 +446,8 @@ Compile-time parse of a **string literal** into an exact `ExactNum` (same expans
 | `sqrt2(p, rm)` | √2 |
 | `phi(p, rm)` | φ = (1+√5)/2 |
 | `euler_gamma(p, rm)` | Euler–Mascheroni γ |
+| `get_exact_prec(c: ConstantId, p, rm) -> Result<ExactNum, Error>` | `ConstantId` { `Pi`, `E`, `Ln2`, `Ln10`, `Sqrt2`, `Phi`, `EulerGamma` } correctly rounded at exactly `p` bits; `Down ≤ c ≤ Up` for every `p ≥ 1`; bit-identical whatever the cache state or call order; `p = 0`, `p > MAX_PRECISION`, `RoundingMode::None` → `InvalidArgument` |
+| `Consts::is_exact(c: ConstantId) -> bool` | `false` for all seven (irrational) |
 | `cache_info()` | `ConstCacheInfo` { `pi`, `e`, `ln2`, `ln10`, `sqrt2`, `phi`, `euler` } bit lengths |
 
 **`CachedFBig`:** wrap a precomputed `ExactNum`; `new`, `cached_bit_len`, `inner`, `round(p, rm)`.

@@ -223,7 +223,7 @@ fn bit_identical_whatever_the_cache_and_order() -> Result<(), String> {
             }
             let w64 = get(&mut w, name, 64, rm)?;
             let w1000 = get(&mut w, name, 1000, rm)?;
-            for p in EDGE_P.iter().copied().filter(|&p| p < 65536) {
+            for p in EDGE_P.into_iter().filter(|&p| p < 65536) {
                 let mut f = Consts::new().map_err(|e| format!("{e:?}"))?;
                 let fresh = get(&mut f, name, p, rm)?;
                 let warm = get(&mut w, name, p, rm)?;

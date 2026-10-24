@@ -1,10 +1,12 @@
 // Derived from astro-float (https://github.com/stencillogic/astro-float),
 // Copyright (c) 2022 stencillogic, MIT License.
 mod e;
+mod exact;
 mod ln10;
 mod ln2;
 mod pi;
 
+pub use crate::ops::consts::exact::ConstantId;
 use crate::common::buf::WordBuf;
 use crate::common::util::round_p;
 use crate::mantissa::Mantissa;
