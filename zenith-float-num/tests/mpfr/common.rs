@@ -253,7 +253,7 @@ pub fn conv_to_mpfr(
     // Past the former 32-bit range the binary strings get too large for MPFR's string
     // conversion; build the value from the raw words and the 62-bit exponent instead.
     if let Some((w, _, s, e, _)) = n.as_raw_parts() {
-        if e < RAND_EMIN || e > RAND_EMAX {
+        if !(RAND_EMIN..=RAND_EMAX).contains(&e) {
             let bits = w.len() * WORD_BIT_SIZE;
             let int = rug::Integer::from_digits(w, rug::integer::Order::Lsf);
             let mut f = Float::with_val(u32::try_from(p)?, &int);
@@ -758,7 +758,7 @@ pub fn emulated_range(p: u32, shift: i64) -> (i64, i64) {
     let (lo, hi) = unsafe { (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max())) };
     let emin =
         (EXPONENT_MIN as i128 + i128::from(shift) - i128::from(p) + 1).max(i128::from(lo)) as i64;
-    let emax = (EXPONENT_MAX as i64).saturating_add(shift).min(hi);
+    let emax = EXPONENT_MAX.saturating_add(shift).min(hi);
     (emin, emax)
 }
 
@@ -768,7 +768,7 @@ pub fn emulated_range(p: u32, shift: i64) -> (i64, i64) {
 pub fn emulated_range_ok(p: u32, shift: i64) -> bool {
     let (lo, hi) = unsafe { (widen(mpfr::get_emin_min()), widen(mpfr::get_emax_max())) };
     EXPONENT_MIN as i128 + i128::from(shift) - i128::from(p) + 1 >= i128::from(lo)
-        && (EXPONENT_MAX as i64).saturating_add(shift.min(0)) <= hi
+        && EXPONENT_MAX.saturating_add(shift.min(0)) <= hi
 }
 
 /// The exact value of a finite zenith number times `2^shift` as an MPFR number (widest exponent range
@@ -791,7 +791,7 @@ pub fn exact_mpfr_shifted(n: &ExactNum, shift: i64) -> Result<Float, Box<dyn std
     }
     let bits = (64 * words.len()) as u32;
     let mut got = Float::with_val(bits.max(64), &z);
-    let sh = e as i64 + shift - 64 * words.len() as i64;
+    let sh = e + shift - 64 * words.len() as i64;
     unsafe {
         mpfr::mul_2si(got.as_raw_mut(), got.as_raw(), sh as _, rnd_t::RNDN);
     }

@@ -18,7 +18,9 @@ use crate::mpfr::common::{
     exact_mpfr_shifted, mpfr_reference_shifted, mpfr_reference_with, show_mp,
 };
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
+use rug::float::Round;
 use rug::{Float, Integer};
+use std::cmp::Ordering;
 use zenith_float_num::{ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
@@ -297,7 +299,7 @@ pub fn ref_root(x: &Term, n: u32, p: u32, rm: RoundingMode) -> Res<Want> {
     if x.is_zero() {
         return Ok(zero(x.is_negative()));
     }
-    if x.is_negative() && n % 2 == 0 {
+    if x.is_negative() && n.is_multiple_of(2) {
         return Ok(nan());
     }
     let ni = i128::from(n);
@@ -402,6 +404,75 @@ pub fn ref_atan2(y: &Term, x: &Term, p: u32, rm: RoundingMode) -> Res<Want> {
     round_scaled(p, rm, 2, neg, 0, |o, rnd| unsafe {
         mpfr::atan2(o.as_raw_mut(), fy.as_raw(), fx.as_raw(), rnd)
     })
+}
+
+/// `ln`, `log2` or `log10` of a positive `x`; `mp_fn` is MPFR's correctly rounded function. An `x` whose top
+/// bit is inside [`exact`]'s range is read as is. Further out (the zenith subnormal grid and the top binades),
+/// `log(f 2^t) = log(f) + t log(2)` with `f = x 2^-t` in `[1/2, 1)` is enclosed at growing precision until
+/// the enclosure fixes one round-to-odd value at `p + 64` bits, which rounds correctly in every mode. An
+/// enclosure of width zero is an exact result (`log2` of a power of two).
+pub fn ref_log(
+    x: &Term,
+    p: u32,
+    rm: RoundingMode,
+    mp_fn: &impl Fn(&mut Float, &Float, Round) -> Ordering,
+) -> Res<Want> {
+    if x.is_zero() || x.is_negative() {
+        return Err("ref_log: operand must be positive".into());
+    }
+    let t = x.top();
+    if t.abs() <= 1 << 61 {
+        let fx = exact(x, 0)?;
+        return round_scaled(p, rm, 2, false, 0, |o, rnd| {
+            mp_fn(o, &fx, round_of_rnd(rnd)) as i32
+        });
+    }
+    let q = {
+        let _w = widest();
+        let f = exact(x, -t)?;
+        let two = Float::with_val(2, 2);
+        let ti = Integer::from(i64::try_from(t)?);
+        let mut w = p + 128;
+        loop {
+            let mut lf = [Float::new(w), Float::new(w)];
+            let mut l2 = [Float::new(w), Float::new(w)];
+            for (i, r) in [Round::Down, Round::Up].into_iter().enumerate() {
+                mp_fn(&mut lf[i], &f, r);
+                mp_fn(&mut l2[i], &two, r);
+            }
+            let (l2_for_lo, l2_for_hi) = if t > 0 { (&l2[0], &l2[1]) } else { (&l2[1], &l2[0]) };
+            let tl_lo = Float::with_val_round(w, l2_for_lo * &ti, Round::Down).0;
+            let tl_hi = Float::with_val_round(w, l2_for_hi * &ti, Round::Up).0;
+            let lo = Float::with_val_round(w, &lf[0] + &tl_lo, Round::Down).0;
+            let hi = Float::with_val_round(w, &lf[1] + &tl_hi, Round::Up).0;
+            if lo == hi {
+                break lo;
+            }
+            let (zl, ol) = Float::with_val_round(p + 64, &lo, Round::Zero);
+            let (zh, oh) = Float::with_val_round(p + 64, &hi, Round::Zero);
+            let same_side = lo.is_sign_negative() == hi.is_sign_negative();
+            if same_side && zl == zh && ol != Ordering::Equal && oh != Ordering::Equal {
+                break odd(zl, 1);
+            }
+            if w > 1 << 20 {
+                return Err(format!("ref_log: no enclosure at {w} bits").into());
+            }
+            w *= 2;
+        }
+    };
+    round_scaled(p, rm, 2, q.is_sign_negative(), 0, |o, rnd| {
+        set_checked(o, &q, rnd)
+    })
+}
+
+fn round_of_rnd(rnd: rnd_t) -> Round {
+    match rnd {
+        rnd_t::RNDZ => Round::Zero,
+        rnd_t::RNDU => Round::Up,
+        rnd_t::RNDD => Round::Down,
+        rnd_t::RNDA => Round::AwayZero,
+        _ => Round::Nearest,
+    }
 }
 
 fn show_zf(x: &ExactNum) -> String {
@@ -690,8 +761,8 @@ mod self_test {
     /// Hand-computed results at the subnormal grid `2^(EXPONENT_MIN - p)` and beyond both ends of the range.
     #[test]
     fn ends_of_the_range_are_hand_computed() -> Res<()> {
-        let min = EXPONENT_MIN as i64;
-        let max = EXPONENT_MAX as i64;
+        let min = EXPONENT_MIN;
+        let max = EXPONENT_MAX;
         for p in [1u32, 24, 64, 128] {
             let pi = i64::from(p);
             let g = Term::new(1, min - pi, false);

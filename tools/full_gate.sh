@@ -48,6 +48,7 @@ fi
 TEST_STEPS=" build-debug build-release features-random-serde oracle-fast oracle-deep mpfr "
 run() {
   name=$1; shift; echo "start $name $(date +%T)" >> "$T/$tag.rc"
+  rm -f "$(_pl_out)"  # the last step left it a symlink to its log; log_step_start truncates it
   log_step_start "$name"; ln -sf "$T/$tag-$name.log" "$(_pl_out)"  # nested: own out file, never the parent's
   timeout "${STEP_TIMEOUT:-20m}" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1 &
   POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"

@@ -10,8 +10,10 @@ use crate::mpfr::retry_budget::use_full_exponent_range;
 use crate::mpfr::retry_budget::{round_of, ternary};
 use crate::mpfr::shifted::{self as sh, Term, Want};
 use gmp_mpfr_sys::mpfr::rnd_t;
+use rug::float::Round;
 use rug::ops::AssignRound;
 use rug::Float;
+use std::cmp::Ordering;
 use std::ops::Neg;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use zenith_float_num::{
@@ -35,8 +37,8 @@ const PRECISIONS: [usize; 10] = [1, 2, 3, 5, 24, 53, 64, 65, 128, 200];
 /// Operands are exact in this many bits (a 64-bit significand times a power of two).
 const OPERAND_PRECISION: usize = 192;
 
-const MIN: i64 = EXPONENT_MIN as i64;
-const MAX: i64 = EXPONENT_MAX as i64;
+const MIN: i64 = EXPONENT_MIN;
+const MAX: i64 = EXPONENT_MAX;
 
 /// `(significand, exponent)`: the operand is `significand * 2^exponent`. The exponents straddle the bottom of the
 /// range (below `2^(EXPONENT_MIN - 1)` is subnormal) and reach the top (`k + 64 <= EXPONENT_MAX`).
@@ -292,7 +294,7 @@ fn reciprocal_over_the_whole_range() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.reciprocal(p, rm),
-        |x, p, rm| sh::ref_recip(x, p, rm),
+        sh::ref_recip,
     )
 }
 
@@ -442,7 +444,7 @@ fn hypot_over_the_whole_range() -> Res {
         &PRECISIONS,
         no_pair_skipped,
         |a, b, p, rm, _| a.hypot(b, p, rm),
-        |a, b, p, rm| sh::ref_hypot(a, b, p, rm),
+        sh::ref_hypot,
     )
 }
 
@@ -458,7 +460,7 @@ fn atan2_over_the_whole_range() -> Res {
         &[1, 3, 24, 64, 128],
         no_pair_skipped,
         |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
-        |y, x, p, rm| sh::ref_atan2(y, x, p, rm),
+        sh::ref_atan2,
     )
 }
 
@@ -604,7 +606,7 @@ fn primitives_at_20000_bits() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.reciprocal(p, rm),
-        |x, p, rm| sh::ref_recip(x, p, rm),
+        sh::ref_recip,
     )?;
     unary(
         "cbrt 20000",
@@ -736,7 +738,7 @@ fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
             skip: no_skip,
         },
         |x, p, rm| x.reciprocal(p, rm),
-        |x, p, rm| sh::ref_recip(x, p, rm),
+        sh::ref_recip,
     )?;
     // explicit: the nearest modes give -Inf at p >= 129, never +Inf. With the i64 limits `1 / 2^(MIN + 1)` is
     // `2^(EXPONENT_MAX - 1)`, finite (the sweep above checks it against the shifted reference), so only
@@ -810,7 +812,7 @@ fn atan2_at_the_scales_users_reach() -> Res {
         &[24, 64, 128, 256],
         no_pair_skipped,
         |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
-        |y, x, p, rm| sh::ref_atan2(y, x, p, rm),
+        sh::ref_atan2,
     )
 }
 
@@ -919,7 +921,7 @@ fn log_sweep(
             skip: no_skip,
         },
         |x, p, rm| zf_fn(x, p, rm, &mut cc.borrow_mut()),
-        mp_fn,
+        |x, p, rm| sh::ref_log(x, p, rm, &mp_fn),
     )
 }
 

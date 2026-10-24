@@ -15,6 +15,9 @@ use zenith_float_num::{
     ExactNum, Exponent, RoundingMode, EXPONENT_MAX, EXPONENT_MIN, MAX_PRECISION, WORD_BIT_SIZE,
 };
 
+/// A named zenith result and the MPFR call that rounds its reference.
+type EdgeCase<'a> = (&'a str, ExactNum, Box<dyn Fn(&mut Float, rnd_t) -> i32 + 'a>);
+
 type Res = Result<(), Box<dyn std::error::Error>>;
 
 const PS: [usize; 5] = [64, 113, 16384, 16385, 65536];
@@ -134,7 +137,7 @@ fn limits_are_62_bit_and_match_mpfr() {
 fn top_edge_carry_out_and_overflow() -> Res {
     for p in PS {
         for k in offsets(p) {
-            let e = EXPONENT_MAX as i64 - k;
+            let e = EXPONENT_MAX - k;
             let two = ExactNum::from_word(2, 64);
             let f2 = Float::with_val(64, 2);
             for neg in [false, true] {
@@ -145,7 +148,7 @@ fn top_edge_carry_out_and_overflow() -> Res {
                 let fh = with_full_range(|| exact_mpfr_shifted(&h, 0))?;
                 for rm in MODES {
                     let pu = p as u32;
-                    let cases: [(&str, ExactNum, Box<dyn Fn(&mut Float, rnd_t) -> i32>); 4] = [
+                    let cases: [EdgeCase; 4] = [
                         (
                             "x+h",
                             ExactNum::add_ref(&x, &h, p, rm),
@@ -198,7 +201,7 @@ fn bottom_edge_subnormals_round_into_normal() -> Res {
             return Err(format!("MPFR cannot emulate the range at p={p}").into());
         }
         for k in offsets(p) {
-            let e = EXPONENT_MIN as i64 + k;
+            let e = EXPONENT_MIN + k;
             let x = all_ones(p, e)?;
             let fx = with_full_range(|| exact_mpfr_shifted(&x, SHIFT))?;
             let fxn = with_full_range(|| exact_mpfr_shifted(&all_ones(p, e)?.neg(), SHIFT))?;

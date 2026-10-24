@@ -13,8 +13,8 @@ use zenith_float_num::{
 
 type Res = Result<(), Box<dyn std::error::Error>>;
 
-const MIN: i64 = EXPONENT_MIN as i64;
-const MAX: i64 = EXPONENT_MAX as i64;
+const MIN: i64 = EXPONENT_MIN;
+const MAX: i64 = EXPONENT_MAX;
 
 /// A deterministic word source (a 64-bit linear congruential step).
 fn next_word(state: &mut u64) -> u64 {
@@ -269,7 +269,7 @@ fn odd_and_exp(x: &ExactNum) -> Result<(Integer, i64), Box<dyn std::error::Error
         return Err("zero mantissa".into());
     };
     let odd = Integer::from(&m >> tz);
-    Ok((odd, i64::from(e) - 64 * words.len() as i64 + i64::from(tz)))
+    Ok((odd, e - 64 * words.len() as i64 + i64::from(tz)))
 }
 
 /// The expected outcome of `from_mag_parts(mant, exp, p)`: `None` when it must be an error.

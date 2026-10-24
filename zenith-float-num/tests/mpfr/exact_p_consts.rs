@@ -106,7 +106,7 @@ fn from_mag_parts_keeps_its_exact_contract() -> Res {
             }
         }
         // grid: the lowest value is 2^(EXPONENT_MIN - word_p) (exp = EXPONENT_MIN - word_p + 1); below it is rejected
-        let edge = i64::from(EXPONENT_MIN) - wp as i64 + 1;
+        let edge = EXPONENT_MIN - wp as i64 + 1;
         let at =
             ExactNum::from_mag_parts(1 << 63, edge, p).map_err(|e| format!("grid p={p}: {e:?}"))?;
         assert_eq!(at.leading_bit_exponent(), Some(edge - 1), "grid p={p}");

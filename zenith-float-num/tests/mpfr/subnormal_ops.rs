@@ -24,7 +24,7 @@ const OPERAND_PRECISION: usize = 192;
 /// `(significand, exponent)` pairs: the operand is `significand * 2^exponent`. The exponents straddle the
 /// subnormal boundary (`2^(EXPONENT_MIN - 1)` is the smallest normal number); the last three are ordinary.
 fn operands() -> Vec<(u64, i64)> {
-    let min = EXPONENT_MIN as i64;
+    let min = EXPONENT_MIN;
     let mut v = Vec::new();
     for m in [1u64, 3, 0xdead_beef_1234_5677, u64::MAX] {
         for k in [min - 120, min - 70, min - 21, min - 3, min, min + 5] {
@@ -39,14 +39,14 @@ fn operands() -> Vec<(u64, i64)> {
 
 /// `k` as two `i32` shifts (an exponent below `EXPONENT_MIN` does not fit one).
 fn split_exponent(k: i64) -> (Exponent, Exponent) {
-    let hi = k.max(EXPONENT_MIN as i64);
+    let hi = k.max(EXPONENT_MIN);
     ((hi as Exponent), (k - hi) as Exponent)
 }
 
 /// MPFR's exponent of `m * 2^k`: it must lie inside the emulated range (`emin = EXPONENT_MIN - p + 1`
 /// in `mpfr_reference`) for MPFR's answer to be the reference.
 fn in_mpfr_range(m: u64, k: i64, p: usize) -> bool {
-    k + 64 - m.leading_zeros() as i64 > EXPONENT_MIN as i64 - p as i64 + 1
+    k + 64 - m.leading_zeros() as i64 > EXPONENT_MIN - p as i64 + 1
 }
 
 fn build(m: u64, k: i64, negative: bool) -> ExactNum {

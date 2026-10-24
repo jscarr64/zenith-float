@@ -32,7 +32,7 @@ fn integer_exp(f: &Float) -> Result<(Integer, i64), Box<dyn std::error::Error>> 
     }
     let mut i = Integer::new();
     let e = unsafe { gmp_mpfr_sys::mpfr::get_z_2exp(i.as_raw_mut(), f.as_raw()) };
-    Ok((i, i64::from(e)))
+    Ok((i, e))
 }
 
 /// `|x| mod |y|` with the sign of `x`, from the exact integer significands. Exact math at any exponent spread:
