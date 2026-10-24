@@ -6,7 +6,8 @@
 //! rounding mode (`ToEven`, `Up`, `Down`, `ToZero`, `FromZero`) at exactly `p`
 //! bits over the i64 exponent range.
 //!
-//! Digamma rows at p >= 16384 run only with `MPFR_TIER=full` (see `full_tier_only`).
+//! Digamma rows at p >= 16384, and in debug builds the rows in `DEBUG_FULL_TIER_IDS`, run only
+//! with `MPFR_TIER=full` (see `full_tier_only`). `EXCLUDED_IDS` (ψ(½)@65536) never run.
 //!
 //! One test per function. A test fails when any of its rows differs, times out,
 //! or has no directed implementation yet (`Unsupported`).
@@ -202,11 +203,37 @@ fn full_tier() -> bool {
 /// Full-tier rows: digamma at p >= 16384. ψ(½) = −γ − 2 ln 2 needs Euler γ at the working
 /// precision (44 s release at p=65536) until Rusty's S3 rigorous Euler γ lands.
 fn full_tier_only(row: &Value) -> bool {
-    row.get("fn").and_then(Value::as_str) == Some("digamma")
+    let high_p_digamma = row.get("fn").and_then(Value::as_str) == Some("digamma")
         && row
             .get("p")
             .and_then(Value::as_u64)
-            .is_some_and(|p| p >= 16384)
+            .is_some_and(|p| p >= 16384);
+    high_p_digamma || (cfg!(debug_assertions) && row_id_in(row, DEBUG_FULL_TIER_IDS))
+}
+
+/// Debug builds only: rows that exceed the default row budget unoptimized (measured in the
+/// debug gate) run in the full tier. Chosen by id, never by timing; release keeps them.
+const DEBUG_FULL_TIER_IDS: &[&str] = &[
+    "s9-erf-65536-ToEven-1695",
+    "s9-erf-65536-Up-1696",
+    "s9-erf-65536-Down-1697",
+    "s9-erf-65536-ToZero-1698",
+    "s9-erf-65536-FromZero-1699",
+    "s9-digamma-4096-ToEven-3170",
+];
+
+/// ψ(½) at p=65536 (= −γ − 2 ln 2): excluded from every tier until Rusty's S3 rigorous Euler
+/// γ lands; the current γ takes 44 s in release and over 120 s in debug.
+const EXCLUDED_IDS: &[&str] = &[
+    "s9-digamma-65536-ToEven-3380",
+    "s9-digamma-65536-Up-3381",
+    "s9-digamma-65536-Down-3382",
+    "s9-digamma-65536-ToZero-3383",
+    "s9-digamma-65536-FromZero-3384",
+];
+
+fn row_id_in(row: &Value, ids: &[&str]) -> bool {
+    row.get("id").and_then(Value::as_str).is_some_and(|id| ids.contains(&id))
 }
 
 fn rows_for(func: &str) -> Result<Vec<Value>, String> {
@@ -218,6 +245,7 @@ fn rows_for(func: &str) -> Result<Vec<Value>, String> {
         let row: Value = serde_json::from_str(line).map_err(|e| format!("json: {e}"))?;
         if row.get("fn").and_then(Value::as_str) == Some(func)
             && (full_tier() || !full_tier_only(&row))
+            && !row_id_in(&row, EXCLUDED_IDS)
         {
             out.push(row);
         }
