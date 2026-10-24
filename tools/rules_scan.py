@@ -527,6 +527,18 @@ def counts_at(rev, tmp):
     return int(f[0]), int(f[1])
 
 
+EXCEPTIONS_FILE = "tools/helper_copy_commit_exceptions.txt"
+
+
+def helper_copy_exceptions():
+    """sha prefixes exempted from the per-commit helper_copy rule by a Rusty ruling"""
+    try:
+        lines = open(os.path.join(ROOT, EXCEPTIONS_FILE)).read().splitlines()
+    except OSError:
+        return []
+    return [l.split()[0] for l in lines if l.strip() and not l.startswith("#") and len(l.split()[0]) >= 7]
+
+
 def per_commit_check(rng):
     import tempfile
     commits = [c for c in git("rev-list", "--reverse", "--first-parent", rng).stdout.split()]
@@ -552,6 +564,9 @@ def per_commit_check(rng):
                 rc = 1
                 continue
             dh, dc = b[1] - a[1], a[0] - b[0]
+            if dh > 0 and dc < dh and any(c.startswith(x) for x in helper_copy_exceptions()):
+                print("rules_scan: commit %s raises helper_copy by %d (documented exception in %s)" % (c[:10], dh, EXCEPTIONS_FILE))
+                continue
             if dh > 0 and dc < dh:
                 print("rules_scan: commit %s raises helper_copy by %d but lowers clones by only %d (helper_copy may rise only with an equal-or-larger clone drop)" % (c[:10], dh, dc))
                 rc = 1

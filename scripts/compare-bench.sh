@@ -35,7 +35,7 @@ fi
 
 {
   echo -e "library\tprecision_bits\ttask\tbatch_size\tbest_time_us"
-  cargo run -p zenith-float-compare --release "${features[@]}" -- \
+  cargo run -q -p zenith-float-compare --release "${features[@]}" -- \
     "${libs[@]}" "${precisions[@]}" "${tasks[@]}" -n 5 \
     | tail -n +2
 } > "$out"
