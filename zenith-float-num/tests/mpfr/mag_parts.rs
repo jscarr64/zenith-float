@@ -90,6 +90,7 @@ fn operand(words: &[u64], negative: bool, e: i64) -> Result<ExactNum, Box<dyn st
         negative,
         exponent: e as Exponent,
         inexact: false,
+        op_inexact: false,
     };
     ExactNum::from_raw_parts(&parts)
         .map_err(|err| format!("from_raw_parts refused {words:x?} n={n} e={e}: {err:?}").into())

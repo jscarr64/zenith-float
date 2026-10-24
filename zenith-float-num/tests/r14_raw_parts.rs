@@ -14,6 +14,7 @@ fn same(a: &RawParts<'_>, b: &RawParts<'_>) -> bool {
         && a.negative == b.negative
         && a.exponent == b.exponent
         && a.inexact == b.inexact
+        && a.op_inexact == b.op_inexact
 }
 
 /// `x -> parts -> y -> parts` gives the same parts, and `y` compares equal to `x`.
@@ -38,6 +39,7 @@ fn finite<'a>(words: &'a [Word], precision: usize, exponent: i64) -> RawParts<'a
         negative: false,
         exponent,
         inexact: false,
+        op_inexact: false,
     }
 }
 
@@ -207,6 +209,7 @@ fn reject_malformed_special_parts() {
         negative: false,
         exponent,
         inexact: false,
+        op_inexact: false,
     };
     assert!(rejected(&with(RawKind::Zero, &one, WORD_BIT_SIZE, 0)));
     assert!(rejected(&with(RawKind::Zero, &zero, WORD_BIT_SIZE, 3)));
@@ -218,4 +221,16 @@ fn reject_malformed_special_parts() {
         ..with(RawKind::Inf, &empty, 0, 0)
     };
     assert!(rejected(&inexact_inf));
+    let op_inexact_inf = RawParts {
+        op_inexact: true,
+        ..with(RawKind::Inf, &empty, 0, 0)
+    };
+    assert!(rejected(&op_inexact_inf));
+    // The per-operation flag implies the accumulated one.
+    let two = [0, TOP];
+    let op_without_acc = RawParts {
+        op_inexact: true,
+        ..with(RawKind::Finite, &two, 2 * WORD_BIT_SIZE, 1)
+    };
+    assert!(rejected(&op_without_acc));
 }

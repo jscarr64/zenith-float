@@ -18,6 +18,9 @@ const MODES: [RoundingMode; 5] = [
 ];
 
 /// Everything observable about a value's representation and flags.
+/// A binary operation at a precision and rounding mode.
+type BinOp = fn(ExactNum, &ExactNum, usize, RoundingMode) -> ExactNum;
+
 fn fingerprint(x: &ExactNum) -> String {
     let r = x.as_raw_parts();
     format!(
@@ -73,10 +76,7 @@ fn precision_round_trip_p_1_63_65_100() -> Result<(), String> {
             for q in [p, p + 1] {
                 for rm2 in MODES {
                     let seven = ExactNum::from_i64(7, 64);
-                    let ops: [(
-                        &str,
-                        fn(ExactNum, &ExactNum, usize, RoundingMode) -> ExactNum,
-                    ); 3] = [
+                    let ops: [(&str, BinOp); 3] = [
                         ("add", |a, b, q, r| a.add(b, q, r)),
                         ("mul", |a, b, q, r| a.mul(b, q, r)),
                         ("div", |a, b, q, r| a.div(b, q, r)),

@@ -37,8 +37,8 @@ pub fn str_to_exact_num_literal(s: &str, span: Span) -> Result<TokenStream, Erro
 fn raw_parts_expr(f: &ExactNum) -> TokenStream {
     let raw = f.as_raw_parts();
     let m = raw.words;
-    let (precision, negative, e, inexact) =
-        (raw.precision, raw.negative, raw.exponent, raw.inexact);
+    let (precision, negative, e, inexact, op_inexact) =
+        (raw.precision, raw.negative, raw.exponent, raw.inexact, raw.op_inexact);
     let kind = match raw.kind {
         zenith_float_num::RawKind::Finite => quote!(zenith_float::RawKind::Finite),
         zenith_float_num::RawKind::Zero => quote!(zenith_float::RawKind::Zero),
@@ -52,6 +52,7 @@ fn raw_parts_expr(f: &ExactNum) -> TokenStream {
         negative: #negative,
         exponent: #e,
         inexact: #inexact,
+        op_inexact: #op_inexact,
     })
     .unwrap_or(zenith_float::NAN))
 }

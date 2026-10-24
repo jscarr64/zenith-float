@@ -434,6 +434,8 @@ fn finite_from_u32(
         negative: sign == Sign::Neg,
         exponent: exp,
         inexact,
+        // The binary format stores one flag; decoded values report it as both.
+        op_inexact: inexact,
     })
 }
 

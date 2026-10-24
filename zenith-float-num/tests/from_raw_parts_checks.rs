@@ -14,6 +14,7 @@ fn parts(words: &[Word], negative: bool, exponent: i64) -> RawParts<'_> {
         negative,
         exponent,
         inexact: false,
+        op_inexact: false,
     }
 }
 

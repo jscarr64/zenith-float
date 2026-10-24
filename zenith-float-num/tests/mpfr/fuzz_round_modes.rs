@@ -355,6 +355,7 @@ fn zenith_binop_uses_both_operands_mpfr_mul_p24() -> Result<(), Box<dyn std::err
         negative: false,
         exponent: -5,
         inexact: true,
+        op_inexact: true,
     })
     .unwrap_or(zenith_float_num::NAN);
     let n2 = ExactNum::from_raw_parts(&zenith_float_num::RawParts {
@@ -364,6 +365,7 @@ fn zenith_binop_uses_both_operands_mpfr_mul_p24() -> Result<(), Box<dyn std::err
         negative: true,
         exponent: 38,
         inexact: true,
+        op_inexact: true,
     })
     .unwrap_or(zenith_float_num::NAN);
     let f1 = conv_to_mpfr(p, &n1, &mut cc)?;

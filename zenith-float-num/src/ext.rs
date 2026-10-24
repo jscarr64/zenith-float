@@ -1891,6 +1891,7 @@ impl ExactNum {
                     negative: s.is_negative(),
                     exponent,
                     inexact,
+                    op_inexact: v.op_inexact(),
                 }
             }
             Flavor::Inf(s) => RawParts::special(RawKind::Inf, s.is_negative()),
@@ -1903,7 +1904,7 @@ impl ExactNum {
     /// ## Errors
     ///
     ///  - InvalidArgument: `precision` is 0 or differs from `words.len() * WORD_BIT_SIZE`;
-    ///    `exponent` is outside `[EXPONENT_MIN, EXPONENT_MAX]` = `±(2^62 − 1)`; a `Finite`
+    ///    `op_inexact` is set without `inexact`; `exponent` is outside `[EXPONENT_MIN, EXPONENT_MAX]` = `±(2^62 − 1)`; a `Finite`
     ///    mantissa is all zero, or is not normalized (top bit of the last word clear) while
     ///    `exponent != EXPONENT_MIN`; a `Zero` has a non-zero word, no words or a non-zero
     ///    exponent; an `Inf` / `NaN` has words, a precision, an exponent or `inexact` set, or a
@@ -1912,7 +1913,10 @@ impl ExactNum {
     pub fn from_raw_parts(parts: &RawParts<'_>) -> Result<Self, Error> {
         let sign = if parts.negative { Sign::Neg } else { Sign::Pos };
         if matches!(parts.kind, RawKind::Inf | RawKind::NaN) {
-            if !parts.words.is_empty() || parts.precision != 0 || parts.exponent != 0 || parts.inexact {
+            if !parts.words.is_empty() || parts.precision != 0 || parts.exponent != 0
+                || parts.inexact
+                || parts.op_inexact
+            {
                 return Err(Error::InvalidArgument);
             }
             return match parts.kind {
@@ -1923,6 +1927,9 @@ impl ExactNum {
         }
         let width = parts.words.len().checked_mul(WORD_BIT_SIZE).ok_or(Error::InvalidArgument)?;
         if parts.precision == 0 || parts.precision != width {
+            return Err(Error::InvalidArgument);
+        }
+        if parts.op_inexact && !parts.inexact {
             return Err(Error::InvalidArgument);
         }
         if parts.exponent < crate::EXPONENT_MIN || parts.exponent > crate::EXPONENT_MAX {
@@ -1936,7 +1943,11 @@ impl ExactNum {
         if !ok {
             return Err(Error::InvalidArgument);
         }
-        let v = ExactNumNumber::from_raw_parts(parts.words, n, sign, parts.exponent, parts.inexact)?;
+        let mut v =
+            ExactNumNumber::from_raw_parts(parts.words, n, sign, parts.exponent, parts.inexact)?;
+        if parts.op_inexact != parts.inexact {
+            v.set_op_inexact(parts.op_inexact);
+        }
         Ok(Self::result_to_ext(Ok(v), false, true))
     }
 
@@ -7569,7 +7580,10 @@ pub enum RawKind {
 ///    bit order inside a word). `Word` is `u64` (`u32` on 32-bit targets), `WORD_BIT_SIZE` bits.
 ///  - `precision` is the stored mantissa width in bits and always equals
 ///    `words.len() * WORD_BIT_SIZE` (a number created at precision `p` stores
-///    `ceil(p / WORD_BIT_SIZE)` words, so `p = 1` reports `WORD_BIT_SIZE`).
+///    `ceil(p / WORD_BIT_SIZE)` words, so `p = 1` reports `WORD_BIT_SIZE`). No requested
+///    precision is kept apart from the word count: a value rounded at `p = 100` is stored in
+///    128 bits whose low 28 are zero, so the round trip loses nothing and later operations,
+///    which take their precision as an argument, behave identically.
 ///  - Finite value `= (-1)^negative · M · 2^(exponent − precision)`, where `M` is the unsigned
 ///    integer formed by `words`; equivalently `0.1m… · 2^exponent` for a normal value.
 ///  - Normal: the top bit of the last word is set and
@@ -7578,9 +7592,11 @@ pub enum RawKind {
 ///    `exponent == EXPONENT_MIN`.
 ///  - Zero: `kind == Zero`, every word 0, `exponent == 0`, sign of zero in `negative`.
 ///  - Inf / NaN: `words` empty, `precision == 0`, `exponent == 0`, `inexact == false`;
-///    `negative` is the sign of the infinity and is `false` for NaN. A NaN's error kind is not
-///    carried.
-///  - `inexact` is the accumulated inexact flag (see `ExactNum::inexact_accumulated`).
+///    `op_inexact == false`; `negative` is the sign of the infinity and is `false` for NaN. A
+///    NaN's error kind is not carried.
+///  - `inexact` is the accumulated inexact flag (see `ExactNum::inexact_accumulated`) and
+///    `op_inexact` the per-operation flag (see `ExactNum::inexact`); `op_inexact` implies
+///    `inexact`.
 #[derive(Debug)]
 pub struct RawParts<'a> {
     /// Finite, Zero, Inf or NaN.
@@ -7595,11 +7611,21 @@ pub struct RawParts<'a> {
     pub exponent: Exponent,
     /// Accumulated inexact flag.
     pub inexact: bool,
+    /// Per-operation inexact flag; implies `inexact`.
+    pub op_inexact: bool,
 }
 
 impl RawParts<'_> {
     fn special(kind: RawKind, negative: bool) -> Self {
-        RawParts { kind, words: &[], precision: 0, negative, exponent: 0, inexact: false }
+        RawParts {
+            kind,
+            words: &[],
+            precision: 0,
+            negative,
+            exponent: 0,
+            inexact: false,
+            op_inexact: false,
+        }
     }
 
     /// Number of bits from the lowest bit up to and including the highest set bit of `words`;
