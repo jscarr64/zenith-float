@@ -501,7 +501,7 @@ impl ExactNumNumber {
         let p_exp = Exponent::try_from(p).map_err(|_| Error::InvalidArgument)?;
         // s > p + 4: ζ(s) = 1 + 2^-s + ... with the tail below half an ulp of 1.
         let lim_bits = usize::BITS - (p + 4).leading_zeros();
-        let lim_exp = Exponent::try_from(lim_bits).map_err(|_| Error::InvalidArgument)?;
+        let lim_exp = Exponent::from(lim_bits);
         if self.is_positive() && self.exponent() > lim_exp {
             return Self::round_offset(&one, Sign::Pos, p, rm);
         }
@@ -3603,7 +3603,7 @@ fn erf_tail_below(x: &ExactNumNumber, p: usize) -> bool {
     }
     // |x| ≥ 2^(e-1), so x² ≥ 2^(2e-2).
     match u32::try_from(2 * e - 2) {
-        Ok(k) => 1usize.checked_shl(k).map_or(true, |v| v >= p + 64),
+        Ok(k) => 1usize.checked_shl(k).is_none_or(|v| v >= p + 64),
         Err(_) => true,
     }
 }
