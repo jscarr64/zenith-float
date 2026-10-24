@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Canonical full gate. usage: tools/full_gate.sh TAG
 # Every step runs under `timeout` (STEP_TIMEOUT, default 20m); the rc of each step is written to $T/TAG.rc and its
-# output to $T/TAG-<step>.log (T defaults to /tmp/zf-gate-logs). REPO selects the checkout (default: this one).
+# output to $T/TAG-<step>.log (T, else ZF_GATE_LOG_DIR, else $HOME/rusty-work/logs/zf-gate/<sha>-<time>; never /tmp). REPO selects the checkout (default: this one).
 # CARGO_TARGET_DIR is REQUIRED and belongs to one worktree (Paul, 2026-10-23: /tmp/target-<agent>-<worktree>). The first
 # step, target-dir, runs the tools/fresh_test_run.sh selftest and --claim: it fails if CARGO_TARGET_DIR is unset or owned
 # by another worktree (marker $CARGO_TARGET_DIR/.worktree-owner). Every cargo test step (mpfr-tests-build included) runs
@@ -18,7 +18,7 @@
 # the clone count includes test code. `no-clone-progress` also prints the helper-copy count. All baselines only go down.
 set -u
 gate_dir=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
-T=${T:-/tmp/zf-gate-logs}; mkdir -p "$T"
+T=${T:-${ZF_GATE_LOG_DIR:-$HOME/rusty-work/logs/zf-gate/$(git -C "$gate_dir" rev-parse --short HEAD)-$(date +%Y%m%d-%H%M%S)}}; mkdir -p "$T"
 cd "${REPO:-$(cd "$(dirname "$0")/.." && pwd)}" || exit 2
 tag=${1:?usage: tools/full_gate.sh TAG}; : > "$T/$tag.rc"
 # shellcheck disable=SC1091

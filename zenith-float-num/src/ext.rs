@@ -8183,7 +8183,8 @@ mod underflow_zero_flag_tests {
     }
 }
 
-#[cfg(test)]
+// The raw limbs below are 64-bit words.
+#[cfg(all(test, not(target_pointer_width = "32")))]
 mod full_prec_subnormal_tests {
     use crate::{ExactNum, Sign, EXPONENT_MIN};
 

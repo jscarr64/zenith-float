@@ -1052,10 +1052,13 @@ mod tests {
         }
         #[cfg(target_pointer_width = "32")]
         {
-            d.len() == 2 * pin.len()
-                && d.chunks_exact(2)
+            let (pairs, rest) = d.as_chunks::<2>();
+            rest.is_empty()
+                && pairs.len() == pin.len()
+                && pairs
+                    .iter()
                     .zip(pin)
-                    .all(|(c, p)| c.iter().rev().fold(0u64, |a, w| (a << 32) | u64::from(*w)) == *p)
+                    .all(|([lo, hi], p)| (u64::from(*hi) << 32 | u64::from(*lo)) == *p)
         }
     }
 

@@ -1,4 +1,6 @@
 //! R13: `ExactNum::div_exact` returns the quotient only when it is exact at `p` bits.
+//! The operands are 64-bit words (`from_word` takes a `u32` on 32-bit targets).
+#![cfg(not(target_pointer_width = "32"))]
 
 use zenith_float_num::{Error, ExactNum, RoundingMode, INF_NEG, INF_POS, NAN};
 
