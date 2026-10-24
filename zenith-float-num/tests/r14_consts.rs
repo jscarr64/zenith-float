@@ -7,7 +7,9 @@
 //! two agreeing, for p in 1..=65536 (1, 2, 63, 64, 65 and 65536 included) and six modes.
 
 use serde_json::Value;
-use zenith_float_num::{ConstantId, Consts, Error, ExactNum, RoundingMode, Sign, Word};
+use zenith_float_num::{
+    ConstantId, Consts, Error, ExactNum, RoundingMode, Sign, Word, MAX_PRECISION,
+};
 
 const GOLDS: &str = include_str!("oracle/goldens/r14_consts.jsonl");
 const NAMES: [&str; 7] = ["Pi", "E", "Ln2", "Ln10", "Sqrt2", "Phi", "EulerGamma"];
@@ -272,6 +274,20 @@ fn bad_precision_and_mode_are_errors() -> Result<(), String> {
                 Err(Error::InvalidArgument)
             ),
             "{name} None"
+        );
+        assert!(
+            matches!(
+                cc.get_exact_prec(id_of(name)?, MAX_PRECISION + 1, RoundingMode::ToEven),
+                Err(Error::InvalidArgument)
+            ),
+            "{name} p=MAX_PRECISION+1"
+        );
+        assert!(
+            matches!(
+                cc.get_exact_prec(id_of(name)?, usize::MAX, RoundingMode::ToEven),
+                Err(Error::InvalidArgument)
+            ),
+            "{name} p=usize::MAX"
         );
     }
     Ok(())

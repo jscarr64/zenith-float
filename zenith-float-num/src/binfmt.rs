@@ -238,7 +238,12 @@ fn write_inline(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
         return write_special(BINARY_FLAG_INF_NEG, dest);
     }
     let raw = x.as_raw_parts();
-    let (m, n_sig, exp, inexact) = (raw.words, raw.significant_bits(), raw.exponent, raw.inexact);
+    let (m, n_sig, exp, inexact) = (
+        raw.words,
+        raw.significant_bits()?,
+        raw.exponent,
+        raw.inexact,
+    );
     let sign = if raw.negative { Sign::Neg } else { Sign::Pos };
     let n_u32 = u32_count(m.len());
     if n_u32 > BINARY_INLINE_U32_WORDS {
@@ -285,7 +290,12 @@ fn write_num(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
         return write_inline(x, dest);
     }
     let raw = x.as_raw_parts();
-    let (m, n_sig, exp, inexact) = (raw.words, raw.significant_bits(), raw.exponent, raw.inexact);
+    let (m, n_sig, exp, inexact) = (
+        raw.words,
+        raw.significant_bits()?,
+        raw.exponent,
+        raw.inexact,
+    );
     let sign = if raw.negative { Sign::Neg } else { Sign::Pos };
     let n_u32 = u32_count(m.len());
     if n_u32 <= BINARY_INLINE_U32_WORDS {

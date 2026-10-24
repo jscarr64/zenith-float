@@ -30,22 +30,35 @@ pub fn str_to_exact_num_literal(s: &str, span: Span) -> Result<TokenStream, Erro
         ));
     }
 
-    Ok(raw_parts_expr(&f))
+    raw_parts_expr(&f, span)
 }
 
-/// Tokens rebuilding `f` through `ExactNum::from_raw_parts`; NaN if the parts were rejected.
-fn raw_parts_expr(f: &ExactNum) -> TokenStream {
+/// Tokens rebuilding `f` through `ExactNum::from_raw_parts`. The parts are checked at compile
+/// time (a rejected literal is a compile error); a runtime rejection yields a NaN carrying the
+/// returned error, never a bare NaN.
+fn raw_parts_expr(f: &ExactNum, span: Span) -> Result<TokenStream, Error> {
     let raw = f.as_raw_parts();
+    if let Err(err) = ExactNum::from_raw_parts(&raw) {
+        return Err(Error::new(
+            span,
+            format!("literal raw parts rejected: {err}"),
+        ));
+    }
     let m = raw.words;
-    let (precision, negative, e, inexact, op_inexact) =
-        (raw.precision, raw.negative, raw.exponent, raw.inexact, raw.op_inexact);
+    let (precision, negative, e, inexact, op_inexact) = (
+        raw.precision,
+        raw.negative,
+        raw.exponent,
+        raw.inexact,
+        raw.op_inexact,
+    );
     let kind = match raw.kind {
         zenith_float_num::RawKind::Finite => quote!(zenith_float::RawKind::Finite),
         zenith_float_num::RawKind::Zero => quote!(zenith_float::RawKind::Zero),
         zenith_float_num::RawKind::Inf => quote!(zenith_float::RawKind::Inf),
         zenith_float_num::RawKind::NaN => quote!(zenith_float::RawKind::NaN),
     };
-    quote!(zenith_float::ExactNum::from_raw_parts(&zenith_float::RawParts {
+    let ts = quote!(match zenith_float::ExactNum::from_raw_parts(&zenith_float::RawParts {
         kind: #kind,
         words: &[#(#m),*],
         precision: #precision,
@@ -53,8 +66,11 @@ fn raw_parts_expr(f: &ExactNum) -> TokenStream {
         exponent: #e,
         inexact: #inexact,
         op_inexact: #op_inexact,
-    })
-    .unwrap_or(zenith_float::NAN))
+    }) {
+        Ok(v) => v,
+        Err(err) => zenith_float::ExactNum::nan(Some(err)),
+    });
+    Ok(ts)
 }
 
 pub fn str_to_exact_num_expr(s: &str, span: Span, cc: &mut Consts) -> Result<TokenStream, Error> {
@@ -69,7 +85,7 @@ pub fn str_to_exact_num_expr(s: &str, span: Span, cc: &mut Consts) -> Result<Tok
     let q = if f.inexact() {
         quote!(zenith_float::macro_util::check_exponent_range(zenith_float::ExactNum::parse(#s, zenith_float::Radix::Dec, p_wrk, zenith_float::RoundingMode::ToEven, cc), emin, emax))
     } else {
-        let r = raw_parts_expr(&f);
+        let r = raw_parts_expr(&f, span)?;
         quote!(zenith_float::macro_util::check_exponent_range(#r, emin, emax))
     };
 

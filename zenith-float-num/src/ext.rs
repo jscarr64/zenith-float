@@ -1873,7 +1873,7 @@ impl ExactNum {
     pub(crate) fn value_parts(&self) -> Option<(&[Word], usize, Sign, Exponent, bool)> {
         match &self.inner {
             Flavor::Value(v) => Some(v.as_raw_parts()),
-            _ => None,
+            Flavor::Inf(_) | Flavor::NaN(_) => None,
         }
     }
 
@@ -1913,7 +1913,9 @@ impl ExactNum {
     pub fn from_raw_parts(parts: &RawParts<'_>) -> Result<Self, Error> {
         let sign = if parts.negative { Sign::Neg } else { Sign::Pos };
         if matches!(parts.kind, RawKind::Inf | RawKind::NaN) {
-            if !parts.words.is_empty() || parts.precision != 0 || parts.exponent != 0
+            if !parts.words.is_empty()
+                || parts.precision != 0
+                || parts.exponent != 0
                 || parts.inexact
                 || parts.op_inexact
             {
@@ -1922,10 +1924,17 @@ impl ExactNum {
             return match parts.kind {
                 RawKind::NaN if parts.negative => Err(Error::InvalidArgument),
                 RawKind::NaN => Ok(Self::nan(None)),
-                _ => Ok(Self { inner: Flavor::Inf(sign) }),
+                RawKind::Inf => Ok(Self {
+                    inner: Flavor::Inf(sign),
+                }),
+                RawKind::Finite | RawKind::Zero => Err(Error::InvalidArgument),
             };
         }
-        let width = parts.words.len().checked_mul(WORD_BIT_SIZE).ok_or(Error::InvalidArgument)?;
+        let width = parts
+            .words
+            .len()
+            .checked_mul(WORD_BIT_SIZE)
+            .ok_or(Error::InvalidArgument)?;
         if parts.precision == 0 || parts.precision != width {
             return Err(Error::InvalidArgument);
         }
@@ -1935,10 +1944,11 @@ impl ExactNum {
         if parts.exponent < crate::EXPONENT_MIN || parts.exponent > crate::EXPONENT_MAX {
             return Err(Error::InvalidArgument);
         }
-        let n = parts.significant_bits();
+        let n = parts.significant_bits()?;
         let ok = match parts.kind {
             RawKind::Zero => n == 0 && parts.exponent == 0,
-            _ => n > 0 && (n == width || parts.exponent == crate::EXPONENT_MIN),
+            RawKind::Finite => n > 0 && (n == width || parts.exponent == crate::EXPONENT_MIN),
+            RawKind::Inf | RawKind::NaN => false,
         };
         if !ok {
             return Err(Error::InvalidArgument);
@@ -7630,10 +7640,24 @@ impl RawParts<'_> {
 
     /// Number of bits from the lowest bit up to and including the highest set bit of `words`;
     /// equals `precision` for a normal value and 0 for zero.
-    pub fn significant_bits(&self) -> usize {
+    ///
+    /// ## Errors
+    ///
+    ///  - InvalidArgument: the bit count does not fit in `usize`.
+    pub fn significant_bits(&self) -> Result<usize, Error> {
         match self.words.iter().rposition(|w| *w != 0) {
-            Some(i) => self.words.get(i).map_or(0, |w| (i + 1) * WORD_BIT_SIZE - w.leading_zeros() as usize),
-            None => 0,
+            Some(i) => match self.words.get(i) {
+                Some(w) => {
+                    let lz =
+                        usize::try_from(w.leading_zeros()).map_err(|_| Error::InvalidArgument)?;
+                    i.checked_add(1)
+                        .and_then(|k| k.checked_mul(WORD_BIT_SIZE))
+                        .and_then(|bits| bits.checked_sub(lz))
+                        .ok_or(Error::InvalidArgument)
+                }
+                None => Ok(0),
+            },
+            None => Ok(0),
         }
     }
 }
