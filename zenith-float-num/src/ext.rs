@@ -1471,8 +1471,26 @@ impl ExactNum {
                 let is_zero = v.is_zero();
                 Self::result_to_ext_rm(v.round_odd_to(p, rm), is_zero, true, p, rm)
             }
-            // Inf and NaN do not depend on the precision; recompute for the mode's own value.
-            Flavor::Inf(_) | Flavor::NaN(_) => f(p, rm),
+            // Inf does not depend on the precision; recompute for the mode's own overflow value.
+            Flavor::Inf(_) => f(p, rm),
+            // The wide pass failed. At a word-aligned p, f(p, rm) is already rounded at p
+            // (the contract the direct branch above relies on). Otherwise it may carry more
+            // than p bits (128 at p=113), so its value is used only when it is exact and fits
+            // p bits exactly (setting the precision drops no bit); else the error propagates.
+            Flavor::NaN(err) => match f(p, rm).inner {
+                Flavor::Value(v) if p.is_multiple_of(WORD_BIT_SIZE) => {
+                    Self { inner: Flavor::Value(v) }
+                }
+                Flavor::Value(mut v) if !v.op_inexact() => {
+                    let fits = v.set_precision(p, rm).is_ok() && !v.inexact();
+                    if fits {
+                        Self { inner: Flavor::Value(v) }
+                    } else {
+                        Self::nan(err)
+                    }
+                }
+                Flavor::Value(_) | Flavor::Inf(_) | Flavor::NaN(_) => Self::nan(err),
+            },
         }
     }
 

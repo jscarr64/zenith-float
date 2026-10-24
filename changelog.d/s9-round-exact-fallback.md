@@ -1,0 +1,1 @@
+- fix(ext): when the wide pass of `round_exact` errors, a non-word-aligned p no longer returns f(p)'s value unrounded: it is kept only if exact and representable in p bits, otherwise the wide pass's error is propagated.
