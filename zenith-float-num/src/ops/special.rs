@@ -4,6 +4,7 @@ use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::Exponent;
+use crate::defs::EXPONENT_MIN;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
@@ -1294,10 +1295,30 @@ impl ExactNumNumber {
         Self::p_assertion(p)?;
 
         if self.is_zero() {
-            let mut z =
-                if n == 0 { Self::from_word(1, p)? } else { Self::new2(p, Sign::Pos, false)? };
+            let mut z = if n == 0 {
+                Self::from_word(1, p)?
+            } else if n % 2 == 1 {
+                Self::new2(p, self.sign(), false)?
+            } else {
+                Self::new2(p, Sign::Pos, false)?
+            };
             z.set_inexact(self.inexact());
             return Ok(z);
+        }
+
+        // Tiny |x|: J0 = 1 - x²/4 + …, J1 = x/2 - x³/16 + …; the correction is far below
+        // half an ulp, so round the exact leading term once toward it.
+        let tiny_exp = -Exponent::try_from(p / 2 + 4).map_err(|_| Error::InvalidArgument)?;
+        if n <= 1 && self.exponent() < tiny_exp && self.exponent() > EXPONENT_MIN {
+            let mut r = if n == 0 {
+                Self::round_offset(&Self::from_word(1, p)?, Sign::Neg, p, rm)?
+            } else {
+                let mut half = self.exact_copy()?;
+                half.div_by_2(RoundingMode::ToEven);
+                Self::round_offset(&half, self.sign().invert(), p, rm)?
+            };
+            r.set_inexact(true);
+            return Ok(r);
         }
 
         let nu_ord = from_usize_p(n, p)?;
@@ -1311,6 +1332,7 @@ impl ExactNumNumber {
         // The power series (and Miller's normalization sum) cancel: terms reach ≈ e^{|x|}
         // while |J_n(x)| ≈ (π|x|/2)^{-1/2}.
         let guard = bessel_cancel_bits(self, 3, 2)?;
+        let mut lost_done = 0;
 
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE + extra + guard;
@@ -1319,6 +1341,18 @@ impl ExactNumNumber {
             } else {
                 self.bessel_j_series(n, p_x)?
             };
+            // Near a zero of J_n the series sum cancels: its error is absolute (≈ 2^-p_x),
+            // so a result of exponent -k has k fewer correct bits. Widen once by k.
+            let lost = if ret.exponent() < 0 {
+                usize::try_from(-ret.exponent()).map_err(|_| Error::InvalidArgument)?
+            } else {
+                0
+            };
+            if lost > lost_done {
+                p_wrk = round_p(p_wrk + lost - lost_done);
+                lost_done = lost;
+                continue;
+            }
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
                 return Ok(ret);

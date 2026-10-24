@@ -1,0 +1,1 @@
+- `bessel_j` (J0/J1): tiny |x| rounds the exact leading term (1, or x/2) once toward the correction; J1(−0) is −0; near a zero of J_n the series result widens the working precision by the cancelled bits so the last limb is correctly rounded.
