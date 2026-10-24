@@ -36,7 +36,7 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len());
 
-        if p_wrk as i64 + 1 < -(self.exponent() as i64 * 2 - 2) {
+        if (p_wrk as i128) + 1 < -(i128::from(self.exponent()) * 2 - 2) {
             let mut x = self.clone()?;
             if p > x.mantissa_max_bit_len() {
                 x.set_precision(p, RoundingMode::None)?;
