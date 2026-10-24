@@ -242,7 +242,7 @@ def call_mp(op: str, args: list, extra: dict):
             return mp.zeta(3)
         return mp.clcos(3, a[0])
     if op == "riemann_zeta":
-        if a[0] not in (0, -1) and (a[0] < 2 or int(a[0]) != a[0]):
+        if a[0] == 1:
             return "nan"
         return mp.zeta(a[0])
     if op == "hurwitz_zeta":
@@ -636,8 +636,8 @@ def base_cases() -> list[dict]:
     add("clausen_cl3", ["0.5"], exact=False, note="timeout plus two digits")
     add("clausen_cl3", ["0"], exact=False, note="Cl3(0)=zeta(3)")
     add("clausen_cl3", ["1"], exact=False, note="nonzero angle")
-    # zeta domain that stays an error, and the two new points are in the audit list.
-    add("riemann_zeta", ["0.5"], note="non-integer stays InvalidArgument")
+    # zeta(1) stays an error; non-integer s is a value (ruling 3).
+    add("riemann_zeta", ["0.5"], exact=True, note="non-integer s is a value")
     add("riemann_zeta", ["1"], note="pole stays InvalidArgument")
     add("riemann_zeta", ["4"], exact=True, note="even integer formula")
     add("hurwitz_zeta", ["3", "0.25"], exact=True)

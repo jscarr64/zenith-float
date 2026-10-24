@@ -1485,6 +1485,24 @@ impl ExactNum {
 
     /// The operand of a function evaluated through [`Self::round_exact`]: a copy with both
     /// flags cleared, and its accumulated flag.
+    /// `ζ(self)` for real `self` at `p` bits with `rm`; see [`ExactNumNumber::zeta_real`].
+    pub(crate) fn zeta_real_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
+        match &self.inner {
+            Flavor::Value(v) => Self::result_to_ext_rm(v.zeta_real(p, rm, cc), false, true, p, rm),
+            Flavor::Inf(s) => {
+                if s.is_positive() {
+                    match ExactNumNumber::from_word(1, p) {
+                        Ok(v) => ExactNum { inner: Flavor::Value(v) },
+                        Err(e) => Self::nan(Some(e)),
+                    }
+                } else {
+                    NAN
+                }
+            }
+            Flavor::NaN(err) => Self::nan(*err),
+        }
+    }
+
     fn exact_operand(v: &ExactNumNumber) -> Result<(ExactNumNumber, bool), Error> {
         Ok((v.exact_copy()?, v.inexact()))
     }

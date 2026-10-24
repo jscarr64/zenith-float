@@ -329,6 +329,162 @@ impl ExactNumNumber {
         }
     }
 
+    /// Riemann `ζ(self)` for any real `self` at precision `p`, rounded once with `rm`.
+    ///
+    /// ## Errors
+    ///
+    ///  - InvalidArgument: `self == 1` (the pole), or the precision is incorrect.
+    ///  - ExponentOverflow: the result overflows (very negative `self`).
+    pub(crate) fn zeta_real(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+
+        let one = Self::from_word(1, p)?;
+        if self.is_zero() {
+            let mut h = one_half(p)?;
+            h.set_sign(Sign::Neg);
+            return Ok(h);
+        }
+        if self.cmp(&one) == 0 {
+            return Err(Error::InvalidArgument);
+        }
+        if self.is_negative() && self.is_int() {
+            let mut half = self.exact_copy()?;
+            half.div_by_2(RoundingMode::None);
+            if half.is_int() {
+                // Trivial zeros ζ(-2k) are +0.
+                return Self::new2(p, Sign::Pos, false);
+            }
+        }
+
+        let p_exp = Exponent::try_from(p).map_err(|_| Error::InvalidArgument)?;
+        // s > p + 4: ζ(s) = 1 + 2^-s + ... with the tail below half an ulp of 1.
+        let lim_bits = usize::BITS - (p + 4).leading_zeros();
+        let lim_exp = Exponent::try_from(lim_bits).map_err(|_| Error::InvalidArgument)?;
+        if self.is_positive() && self.exponent() > lim_exp {
+            return Self::round_offset(&one, Sign::Pos, p, rm);
+        }
+        // |s| tiny: ζ(s) = -1/2 - s·ln(2π)/2 + ... with the correction below half an ulp.
+        if self.exponent() < -(p_exp + 4) {
+            let mut h = one_half(p)?;
+            h.set_sign(Sign::Neg);
+            return Self::round_offset(&h, self.sign().invert(), p, rm);
+        }
+
+        let half = one_half(p)?;
+        let right = self.cmp(&half) >= 0;
+
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+
+        loop {
+            let p_x = p_wrk + WORD_BIT_SIZE * 2;
+            let mut ret = if right {
+                self.zeta_em(p_x, cc)?
+            } else {
+                self.zeta_reflect(p_x, cc)?
+            };
+            if ret.try_set_precision(p, rm, p_wrk)? {
+                ret.set_inexact(true);
+                return Ok(ret);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    /// `ζ(s) = 2^s π^(s-1) sin(πs/2) Γ(1-s) ζ(1-s)` for `s < 1/2`, at working precision `p`.
+    fn zeta_reflect(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        // 1 - s exactly: s carries at most p + 4 fractional bits below the binary point here.
+        let frac = Exponent::max(0, -self.exponent());
+        let frac_bits = usize::try_from(frac).map_err(|_| Error::InvalidArgument)?;
+        let pw = p + self.mantissa_max_bit_len() + frac_bits + WORD_BIT_SIZE;
+        let one = Self::from_word(1, pw)?;
+        let mut omz = one.sub(self, pw, RoundingMode::None)?;
+        // Γ and ζ only need 1 - s to the working precision, not the operand's full width.
+        omz.set_precision(p, RoundingMode::ToEven)?;
+
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let ln2 = Self::from_word(2, p)?.ln(p, RoundingMode::None, cc)?;
+        let two_s = self.mul(&ln2, p, RoundingMode::None)?.exp(p, RoundingMode::None, cc)?;
+        let sm1 = omz.neg()?;
+        let pi_s = sm1
+            .mul(&pi.ln(p, RoundingMode::None, cc)?, p, RoundingMode::None)?
+            .exp(p, RoundingMode::None, cc)?;
+        let mut arg = pi.mul(self, p, RoundingMode::None)?;
+        arg.div_by_2(RoundingMode::None);
+        let sn = arg.sin(p, RoundingMode::None, cc)?;
+        let g = omz.gamma(p, RoundingMode::None, cc)?;
+        let z = omz.zeta_em(p, cc)?;
+        two_s
+            .mul(&pi_s, p, RoundingMode::None)?
+            .mul(&sn, p, RoundingMode::None)?
+            .mul(&g, p, RoundingMode::None)?
+            .mul(&z, p, RoundingMode::None)
+    }
+
+    /// Euler–Maclaurin `ζ(s)` for `s ≥ 1/2`, `s ≠ 1`, at working precision `p`:
+    /// `Σ_{n<N} n^-s + N^(1-s)/(s-1) + N^-s/2 + Σ_k B_2k/(2k)! · s(s+1)…(s+2k-2) · N^(-s-2k+1)`.
+    fn zeta_em(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let s_int = self.int_as_usize()?;
+        let n_cut = p / 4 + 2 * s_int + 8;
+        let k_max = p / 8 + 8;
+        let one = Self::from_word(1, p)?;
+
+        // n^-s is completely multiplicative: only primes need exp(-s·ln n).
+        let mut pows: Vec<Self> = Vec::with_capacity(n_cut);
+        pows.push(Self::new(p)?);
+        pows.push(Self::from_word(1, p)?);
+        let mut sum = Self::from_word(1, p)?;
+        for n in 2..n_cut {
+            let d = (2..n).take_while(|d| d * d <= n).find(|d| n % d == 0);
+            let t = match (d, d.and_then(|d| pows.get(d)), d.and_then(|d| pows.get(n / d))) {
+                (Some(_), Some(a), Some(b)) => a.mul(b, p, RoundingMode::None)?,
+                _ => Self::from_usize(n)?
+                    .ln(p, RoundingMode::None, cc)?
+                    .mul(self, p, RoundingMode::None)?
+                    .neg()?
+                    .exp(p, RoundingMode::None, cc)?,
+            };
+            sum = sum.add(&t, p, RoundingMode::None)?;
+            pows.push(t);
+        }
+
+        let n_f = Self::from_usize(n_cut)?;
+        let n_ms = n_f
+            .ln(p, RoundingMode::None, cc)?
+            .mul(self, p, RoundingMode::None)?
+            .neg()?
+            .exp(p, RoundingMode::None, cc)?;
+        let sm1 = self.sub(&one, p, RoundingMode::None)?;
+        let lead = n_f.mul(&n_ms, p, RoundingMode::None)?.div(&sm1, p, RoundingMode::None)?;
+        let mut half_term = n_ms.exact_copy()?;
+        half_term.div_by_2(RoundingMode::None);
+        sum = sum.add(&lead, p, RoundingMode::None)?.add(&half_term, p, RoundingMode::None)?;
+
+        let n2 = n_f.mul(&n_f, p, RoundingMode::None)?;
+        let mut q = self.mul(&n_ms, p, RoundingMode::None)?.div(&n_f, p, RoundingMode::None)?;
+        q.div_by_2(RoundingMode::None);
+        let p_exp = Exponent::try_from(p).map_err(|_| Error::InvalidArgument)?;
+        let bern = even_bernoulli(k_max, p)?;
+        for (i, b) in bern.iter().enumerate() {
+            let t = b.mul(&q, p, RoundingMode::None)?;
+            sum = sum.add(&t, p, RoundingMode::None)?;
+            if t.is_zero() || t.exponent() < -(p_exp + 16) {
+                return Ok(sum);
+            }
+            let k = i + 1;
+            let a = self.add(&Self::from_usize(2 * k - 1)?, p, RoundingMode::None)?;
+            let c = self.add(&Self::from_usize(2 * k)?, p, RoundingMode::None)?;
+            let d = Self::from_usize((2 * k + 1) * (2 * k + 2))?;
+            q = q
+                .mul(&a, p, RoundingMode::None)?
+                .mul(&c, p, RoundingMode::None)?
+                .div(&n2, p, RoundingMode::None)?
+                .div(&d, p, RoundingMode::None)?;
+        }
+        Err(Error::PrecisionRetryExhausted)
+    }
+
     /// `ln Γ(self)` for positive `self` at working precision `p`.
     fn ln_gamma_positive_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // Large arguments go straight to Stirling: Γ itself would overflow.

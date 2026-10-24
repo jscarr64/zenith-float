@@ -1109,9 +1109,7 @@ impl ExactNum {
         )
     }
 
-    /// Riemann \(\zeta(s)\). Integer \(s\ge 2\), \(s=0\) (\(-1/2\)), and \(s=-1\) (\(-1/12\)).
-    ///
-    /// The pole \(s=1\), integers \(s\le -2\), and every non-integer are
+    /// Riemann \(\zeta(s)\) for real \(s\). \(\zeta(-2k)=+0\); the pole \(s=1\) is
     /// `NaN(InvalidArgument)`. `self` is \(s\).
     ///
     /// Accuracy: unspecified
@@ -1142,7 +1140,7 @@ impl ExactNum {
                 return finish(zeta_even((s / 2) as usize, wrk, cc), p, rm);
             }
         }
-        self.hurwitz_zeta(&ExactNum::from_u8(1, p), p, rm, cc)
+        self.zeta_real_word(p, rm, cc)
     }
 
     /// Polygamma \(\psi^{(n)}(\mathrm{self})\). \(n=0\) is digamma; \(n\ge1\) uses Hurwitz.
