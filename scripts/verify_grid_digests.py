@@ -14,6 +14,7 @@ from mpmath import mp, mpf
 from mpmath.libmp import from_man_exp
 
 EMIN = -(2**62 - 1)
+MAXP = (1 << 60) - 1
 EMAX = 2**62 - 1
 NUM = re.compile(r'Value\(ExactNumNumber \{ e: (-?\d+), s: (Pos|Neg), m: Mantissa \{ m: WordBuf \{ inner: \[([^\]]*)\] \}, n: (\d+) \}, inexact: (true|false), op_inexact: (None|Some\((?:true|false)\))')
 
@@ -300,6 +301,9 @@ def expected(op, p, rm, ints, args, res_t):
         d = exact_op(op, args, ints, p, rm, None)
         if d.st: raise Ambig('full-eps')
         if d.M == 0: return ('zero', None), False
+        if top(d) < EMIN and (EMIN - top(d)) + 64 * ((d.M.bit_length() + 63) // 64) > MAXP:
+            # beyond MAX_PRECISION the library cannot widen: it rounds at the word width onto the subnormal grid
+            return rnd(d, 64 * ((d.M.bit_length() + 63) // 64), rm)
         return ('fin', d.neg, d.M, d.E), False
     if op == 'round':
         d = dv(args[0])

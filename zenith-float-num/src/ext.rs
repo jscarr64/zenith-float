@@ -7603,6 +7603,12 @@ mod underflow_zero_flag_tests {
         assert!(up.is_positive() && !up.is_zero() && up.inexact());
         let tz = r.pow(&half5, 53, RoundingMode::ToZero, &mut cc);
         assert!(tz.is_zero() && tz.inexact());
+        // a root that is not exact takes the logarithm path, which also has to round the underflow
+        let s = ExactNum::from_mag_parts(0xC000_0000_0000_0000, i64::from(EXPONENT_MIN) - 17, 64)?; // 1.5 * 2^(EMIN - 18)
+        let up = s.pow(&half5, 53, RoundingMode::Up, &mut cc);
+        assert!(up.is_positive() && !up.is_zero() && up.inexact());
+        let tz = s.pow(&half5, 53, RoundingMode::ToZero, &mut cc);
+        assert!(tz.is_zero() && tz.inexact());
         let sq = ExactNum::mul_ref(&x, &x, 53, RoundingMode::ToZero); // flushed to zero
         assert!(sq.is_zero() && sq.inexact());
         Ok(())

@@ -379,6 +379,16 @@ impl ExactNumNumber {
     /// `|x|^mag` for a power whose value may lie below the normal range. The power of the
     /// normalized mantissa `y = |x| 2^-lead` (in `[1/2, 1)`) is exact; the true value is
     /// `y^mag 2^scale` with `scale = mag * lead`, rounded once onto the grid of precision `p`.
+    /// A positive power below the whole subnormal range: zero or the least positive value by the mode, always
+    /// inexact. (`ExponentOverflow` of `e^(-m)` means the power is far below `2^(EXPONENT_MIN - p)`.)
+    fn pow_underflow(sign: Sign, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        let mut ret = Self::from_word(1, p)?;
+        ret.set_sign(sign);
+        ret.set_exponent(EXPONENT_MIN);
+        ret.subnormalize(2 * EXPONENT_MIN, rm);
+        Ok(ret)
+    }
+
     fn pow_exact_integer_underflow(&self, mag: usize, scale: i128, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         let p = round_p(p);
         let mut square = self.clone()?;
@@ -786,7 +796,7 @@ impl ExactNumNumber {
                     Ok(v) => Ok(v),
                     Err(e) => match e {
                         Error::ExponentOverflow(Sign::Neg) => {
-                            return Self::new2(p, Sign::Pos, n.inexact() || ln.inexact());
+                            return Self::pow_underflow(Sign::Pos, p, effective_rm);
                         }
                         Error::ExponentOverflow(Sign::Pos) => {
                             Err(Error::ExponentOverflow(Sign::Pos))
@@ -814,7 +824,7 @@ impl ExactNumNumber {
                         Ok(v) => Ok(v),
                         Err(e) => match e {
                             Error::ExponentOverflow(sign) => {
-                                return Self::new2(p, sign, self.inexact());
+                                return Self::pow_underflow(sign, p, effective_rm);
                             }
                             Error::DivisionByZero => Err(Error::DivisionByZero),
                             Error::InvalidArgument => Err(Error::InvalidArgument),

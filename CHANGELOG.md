@@ -48,6 +48,8 @@ i64 exponent fallout: `round` no longer rejects shifts up to `EXPONENT_MAX + 2 *
 
 An integer power of a tiny subnormal number (`x.pow(n)` with `|x|^n` below the normal range, also a power `N / 2^j` through an exact root) was an exact zero in every rounding mode, even `Up`: the exact squaring flushed a partial product to zero. Such a power is now formed from the normalized mantissa and rounded once onto the subnormal grid, with `inexact()` set. Found by the grid-digest mpmath verification; `power_of_a_tiny_subnormal_is_not_an_exact_zero` covers it.
 
+A non-integer power whose logarithm path underflows (`x.pow(y)` with `e^(y ln x)` far below the subnormal range, such as `(1.5 * 2^(EMIN - 18))^2.5`) returned an exact zero; it now rounds by mode to zero or the least positive value and is flagged inexact.
+
 `add_full_prec`, `sub_full_prec` and `mul_full_prec` with a result below the normal range kept only the words of the normalized mantissa before the subnormal shift and dropped the low bits; the mantissa now grows by the shift first, so the result is exact. Found by the grid-digest mpmath verification; `full_prec_keeps_every_bit_of_a_subnormal_result` covers it.
 
 The MSRV was raised to 1.99 to match Accumath and latex-rust (breaking). `rust-version` is `"1.99"` in every crate, and `rust-toolchain.toml` pins channel `1.99` with `clippy` and `rustfmt`. A crate that compiled on the previous compiler has to move to Rust 1.99 before it can depend on 2.0.0.
