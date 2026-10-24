@@ -949,6 +949,8 @@ fn log10_over_the_whole_range() -> Res {
         |x, p, rm, cc| x.log10(p, rm, cc),
         |r, a, rd| r.assign_round(a.log10_ref(), rd),
     )
+}
+
 // ---------------------------------------------------------------------------------------------
 // pow with exact results (1.0.12: `pow(2, 2)` was flagged inexact in `ToEven` and `NaN` in `Up`)
 // ---------------------------------------------------------------------------------------------
