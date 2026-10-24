@@ -728,13 +728,12 @@ impl ExactNum {
                     // The remainder is exact; its flag reports this operation, which never
                     // rounds, and the accumulated flag keeps both operands' history.
                     let inputs = v1.inexact() || v2.inexact();
-                    let r = match (v1.exact_copy(), v2.exact_copy()) {
-                        (Ok(a), Ok(b)) => a.rem(&b).map(|mut r| {
-                            r.finish_flags(inputs, true);
-                            r
-                        }),
-                        (Err(e), _) | (_, Err(e)) => Err(e),
-                    };
+                    // `rem` never rounds: the flag it leaves on its result is the operands' history.
+                    let r = v1.rem(v2).map(|mut r| {
+                        r.set_inexact(false);
+                        r.finish_flags(inputs, true);
+                        r
+                    });
                     Self::result_to_ext(r, v1.is_zero(), v1.sign() == v2.sign())
                 }
                 Flavor::Inf(_) => self.clone(),
@@ -967,14 +966,20 @@ impl ExactNum {
     ///
     /// Accuracy: correctly-rounded
     pub fn log(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        let x = self.exact_copy_ext();
-        let b = n.exact_copy_ext();
-        Self::round_exact(
-            self.inexact_accumulated() || n.inexact_accumulated(),
-            p,
-            rm,
-            |q, r| x.log_word(&b, q, r, cc),
-        )
+        if p < crate::defs::MIN_PRECISION {
+            return Self::nan(Some(Error::InvalidArgument));
+        }
+        let mut r = self.log_word(n, p, rm, cc);
+        // Two finite operands round once at `p` through `exact_bits` (per-operation flag); the other
+        // results are fixed values that only carry the operands' history.
+        let both_finite = matches!(
+            (&self.inner, &n.inner),
+            (Flavor::Value(_), Flavor::Value(_))
+        );
+        if let (false, Flavor::Value(v)) = (both_finite, &mut r.inner) {
+            v.finish_flags(self.inexact_accumulated() || n.inexact_accumulated(), true);
+        }
+        r
     }
 
     /// Word-precision implementation of [`Self::log`].
@@ -986,7 +991,18 @@ impl ExactNum {
                         if v2.is_zero() {
                             return INF_NEG;
                         }
-                        Self::result_to_ext(v1.log(v2, p, rm, cc), false, true)
+                        Self::result_to_ext(
+                            ExactNumNumber::exact_bits(p, rm, |q, r| v1.log(v2, q, r, cc)).map(
+                                |mut r| {
+                                    // Pin the per-operation flag (a word-multiple `p` leaves it implicit).
+                                    let rounded = r.op_inexact();
+                                    r.set_op_inexact(rounded);
+                                    r
+                                },
+                            ),
+                            false,
+                            true,
+                        )
                     }
                     Flavor::Inf(s2) => {
                         // v1.log(inf)

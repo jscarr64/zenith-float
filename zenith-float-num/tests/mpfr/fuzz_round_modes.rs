@@ -130,7 +130,7 @@ fn fuzz_mpfr_bit_exact_all_round_modes() -> Result<(), Box<dyn std::error::Error
                 );
             }
             if !n1.is_zero() && i < 8 {
-                let a = if n1.is_negative() { n1.neg() } else { n1.clone() };
+                let a = n1.abs();
                 let fa = Float::with_val(p as u32, f1.abs_ref());
                 for n in [4usize, 5] {
                     for (rm, rnd) in ROUNDS {

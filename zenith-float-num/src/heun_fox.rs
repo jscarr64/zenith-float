@@ -1458,7 +1458,11 @@ fn heun_g_ode(
             p,
             RoundingMode::None,
         );
-    let b1 = ExactNum::add_ref(&zm1, &zma, p, RoundingMode::None)
+    // (z0 - 1) + (z0 - a), with z0 - 1 formed afresh
+    let b1 = ExactNum::from_u8(1, p)
+        .neg()
+        .add(z0, p, RoundingMode::None)
+        .add(&zma, p, RoundingMode::None)
         .mul(gamma, p, RoundingMode::None)
         .add(
             &zma.add(z0, p, RoundingMode::None)

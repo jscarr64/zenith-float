@@ -428,7 +428,11 @@ impl ExactNumNumber {
             let mut ret = p1.div(&p2, p_x, RoundingMode::None)?;
 
             if ret.try_set_precision(p, rm, p_wrk)? {
-                ret.set_inexact(ret.inexact() | self.inexact() | n.inexact());
+                // The per-operation flag is the quotient's own (an exact 0 for log(1) stays exact); the operands'
+                // history goes to the accumulated flag only.
+                let rounded = ret.inexact();
+                ret.set_inexact(rounded | self.inexact() | n.inexact());
+                ret.set_op_inexact(rounded);
                 return Ok(ret);
             } else {
                 // Check whether the result is exact. The candidate must be the nearest p-bit
@@ -444,9 +448,13 @@ impl ExactNumNumber {
 
                 if exact {
                     // `ret2` is the exact result: the approximate quotient it came from does not make it inexact.
-                    ret2.set_inexact(self.inexact() | n.inexact());
-                    ret2.set_op_inexact(false);
+                    // Its per-operation flag is only what the final rounding at `p` does (an exact result with more
+                    // than `p` bits rounds); the operands' history goes to the accumulated flag.
+                    ret2.set_inexact(false);
                     ret2.set_precision(p, rm)?;
+                    let rounded = ret2.inexact();
+                    ret2.set_inexact(rounded | self.inexact() | n.inexact());
+                    ret2.set_op_inexact(rounded);
                     return Ok(ret2);
                 }
             }

@@ -394,7 +394,8 @@ impl ExactNumNumber {
         rm: RoundingMode,
     ) -> Result<Self, Error> {
         let p = round_p(p);
-        let mut square = self.clone()?;
+        // The mantissa alone, as an exact product by one (no copy of `self`).
+        let mut square = self.mul_full_prec(&ExactNumNumber::small_const(1))?;
         square.set_sign(Sign::Pos);
         square.normalize2();
         square.set_exponent(0);

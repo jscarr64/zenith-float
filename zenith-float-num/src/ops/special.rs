@@ -494,13 +494,9 @@ impl ExactNumNumber {
         if self.cmp(&one) == 0 {
             return Err(Error::InvalidArgument);
         }
-        if self.is_negative() && self.is_int() {
-            let mut half = self.exact_copy()?;
-            half.div_by_2(RoundingMode::None);
-            if half.is_int() {
-                // Trivial zeros ζ(-2k) are +0.
-                return Self::new2(p, Sign::Pos, false);
-            }
+        if self.is_negative() && self.is_even_int() {
+            // Trivial zeros ζ(-2k) are +0.
+            return Self::new2(p, Sign::Pos, false);
         }
 
         let p_exp = Exponent::try_from(p).map_err(|_| Error::InvalidArgument)?;
@@ -607,8 +603,10 @@ impl ExactNumNumber {
         let lead = n_f
             .mul(&n_ms, p, RoundingMode::None)?
             .div(&sm1, p, RoundingMode::None)?;
-        let mut half_term = n_ms.exact_copy()?;
-        half_term.div_by_2(RoundingMode::None);
+        // n^(-s) / 2, exact: the product by one half keeps every bit
+        let mut half = Self::from_word(1, p)?;
+        half.set_exponent(0);
+        let half_term = n_ms.mul(&half, p, RoundingMode::None)?;
         sum = sum
             .add(&lead, p, RoundingMode::None)?
             .add(&half_term, p, RoundingMode::None)?;
@@ -738,9 +736,7 @@ impl ExactNumNumber {
         if !self.is_positive() || self.is_zero() || self.is_int() {
             return Ok(None);
         }
-        let mut twice = self.exact_copy()?;
-        twice.set_exponent(self.exponent() + 1);
-        if !twice.is_int() {
+        if !self.is_int_when_doubled() {
             return Ok(None);
         }
         let n = self.int_as_usize()?;
@@ -1638,8 +1634,10 @@ impl ExactNumNumber {
             let mut r = if n == 0 {
                 Self::round_offset(&Self::from_word(1, p)?, Sign::Neg, p, rm)?
             } else {
-                let mut half = self.exact_copy()?;
-                half.div_by_2(RoundingMode::ToEven);
+                // x / 2, exact (x is normal here): the product by one half keeps every bit
+                let mut one_half = Self::from_word(1, WORD_BIT_SIZE)?;
+                one_half.set_exponent(0);
+                let half = self.mul(&one_half, self.mantissa_max_bit_len(), RoundingMode::None)?;
                 Self::round_offset(&half, self.sign().invert(), p, rm)?
             };
             r.set_inexact(true);

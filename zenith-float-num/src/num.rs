@@ -1286,6 +1286,25 @@ impl ExactNumNumber {
         }
     }
 
+    /// Whether `self` is an even integer (zero included), read from the units bit without a copy.
+    pub(crate) fn is_even_int(&self) -> bool {
+        self.is_int_scaled(-1)
+    }
+
+    /// Whether `2 self` is an integer (an integer or a half-integer), without a copy.
+    pub(crate) fn is_int_when_doubled(&self) -> bool {
+        self.is_int_scaled(1)
+    }
+
+    /// Whether `self 2^k` is an integer: no one bit at or after mantissa position `e + k`.
+    fn is_int_scaled(&self, k: Exponent) -> bool {
+        match usize::try_from(self.e.saturating_add(k)) {
+            Ok(0) | Err(_) => self.is_zero(),
+            Ok(u) if u < self.m.max_bit_len() => self.m.find_one_from(u).is_none(),
+            Ok(_) => true,
+        }
+    }
+
     /// Returns integer part of a number as built-in integer.
     pub(super) fn int_as_usize(&self) -> Result<usize, Error> {
         if self.e > 0 {
@@ -1511,9 +1530,9 @@ impl ExactNumNumber {
     /// rounded at exactly `p` bits. Word-aligned precisions and `RoundingMode::None` call `op`
     /// directly; otherwise `op` runs toward zero with a guard word and the result is rounded to
     /// odd and then to `p` bits with `rm`.
-    pub(crate) fn exact_bits<F>(p: usize, rm: RoundingMode, op: F) -> Result<Self, Error>
+    pub(crate) fn exact_bits<F>(p: usize, rm: RoundingMode, mut op: F) -> Result<Self, Error>
     where
-        F: Fn(usize, RoundingMode) -> Result<Self, Error>,
+        F: FnMut(usize, RoundingMode) -> Result<Self, Error>,
     {
         Self::p_assertion(p)?;
         if rm == RoundingMode::None {

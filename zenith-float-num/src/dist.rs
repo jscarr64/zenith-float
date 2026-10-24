@@ -365,14 +365,15 @@ fn binom_mul(n: &ExactNum, k: &ExactNum, pw: usize) -> ExactNum {
     }
     let mut i = one.clone();
     let mut c = one.clone();
-    let nmk = ExactNum::sub_ref(n, k, pw, none);
+    // `term` = n - k + i, stepped with `i` (integers, exact)
+    let mut term = ExactNum::sub_ref(n, k, pw, none).add(&one, pw, none);
     loop {
-        let term = ExactNum::add_ref(&nmk, &i, pw, none);
         c = c.mul(&term, pw, none).div(&i, pw, none);
         if i.compare(k) == Some(0) {
             return c;
         }
         i = i.add(&one, pw, none);
+        term = term.add(&one, pw, none);
         if i.compare(k) == Some(1) {
             return c;
         }
