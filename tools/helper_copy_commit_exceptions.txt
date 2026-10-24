@@ -1,2 +1,2 @@
 # Per-commit helper_copy rule exceptions (Rusty rulings only): <full sha> <reason>
-468ad725b2 2 helper copies in log-with-base (fix(log)); totals hold at 321 (Rusty ruling 2026-10-24)
+468ad725b2ea3cf85718d00931e73217aefc5aa3 2 helper copies in log-with-base (fix(log)); totals hold at 321 (Rusty ruling 2026-10-24)

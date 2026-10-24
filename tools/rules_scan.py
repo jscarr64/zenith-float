@@ -531,12 +531,12 @@ EXCEPTIONS_FILE = "tools/helper_copy_commit_exceptions.txt"
 
 
 def helper_copy_exceptions():
-    """sha prefixes exempted from the per-commit helper_copy rule by a Rusty ruling"""
+    """full 40-char SHAs exempted from the per-commit helper_copy rule by a Rusty ruling"""
     try:
         lines = open(os.path.join(ROOT, EXCEPTIONS_FILE)).read().splitlines()
     except OSError:
         return []
-    return [l.split()[0] for l in lines if l.strip() and not l.startswith("#") and len(l.split()[0]) >= 7]
+    return [l.split()[0] for l in lines if l.strip() and not l.startswith("#") and len(l.split()[0]) == 40 and len(l.split()) >= 2]
 
 
 def per_commit_check(rng):
@@ -564,7 +564,7 @@ def per_commit_check(rng):
                 rc = 1
                 continue
             dh, dc = b[1] - a[1], a[0] - b[0]
-            if dh > 0 and dc < dh and any(c.startswith(x) for x in helper_copy_exceptions()):
+            if dh > 0 and dc < dh and c in helper_copy_exceptions():
                 print("rules_scan: commit %s raises helper_copy by %d (documented exception in %s)" % (c[:10], dh, EXCEPTIONS_FILE))
                 continue
             if dh > 0 and dc < dh:
