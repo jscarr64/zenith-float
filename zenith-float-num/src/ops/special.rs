@@ -257,8 +257,28 @@ impl ExactNumNumber {
             return Err(Error::InvalidArgument);
         }
 
+        // Tiny |x|: Γ(x) = 1/x - γ + O(x), and γ·|x| is far below every breakpoint gap of 1/x
+        // (an m-bit x keeps 1/x at least 2^-(m+p+1) away from p-bit breakpoints unless 1/x is
+        // exact), so the Ziv loop could never separate them. Round once instead.
+        let m = self.mantissa_max_bit_len();
+        let tiny_exp = -Exponent::try_from(m + p + 8).map_err(|_| Error::InvalidArgument)?;
+        if self.exponent() < tiny_exp {
+            let pw = round_p(m + p + 3 * WORD_BIT_SIZE);
+            let one = Self::from_word(1, pw)?;
+            let q = one.div(self, pw, RoundingMode::ToZero)?;
+            let mut r = if q.inexact() {
+                let mut t = q;
+                t.set_precision(p, rm)?;
+                t
+            } else {
+                Self::round_offset(&q, Sign::Neg, p, rm)?
+            };
+            r.set_inexact(true);
+            return Ok(r);
+        }
+
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        let mut p_wrk = p.max(m) + p_inc;
 
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE * 2;
@@ -527,6 +547,20 @@ impl ExactNumNumber {
             }
         }
 
+        // Half-integers: Γ(n+½) = √π · ∏_{k=1}^{n} (2k−1)/2, with the product exact.
+        if let Some(n) = self.half_integer_index()? {
+            let mut prod = Self::from_word(1, WORD_BIT_SIZE)?;
+            for k in 1..=n {
+                let pb = round_p(prod.mantissa_max_bit_len() + 2 * WORD_BIT_SIZE);
+                prod = prod.mul(&from_usize_p(2 * k - 1, pb)?, pb, RoundingMode::None)?;
+            }
+            let e = prod.exponent() - Exponent::try_from(n).map_err(|_| Error::InvalidArgument)?;
+            prod.set_exponent(e);
+            let pw = p + WORD_BIT_SIZE;
+            let rpi = cc.pi_num(pw, RoundingMode::None)?.sqrt(pw, RoundingMode::None)?;
+            return rpi.mul(&prod, p, RoundingMode::None);
+        }
+
         // One extra word covers the shift product and exp() turning the absolute error of
         // ln Γ into a relative one.
         let pw = p + WORD_BIT_SIZE;
@@ -547,6 +581,20 @@ impl ExactNumNumber {
         let lg = z.ln_gamma_stirling(pw, cc)?;
         let g = lg.exp(pw, RoundingMode::None, cc)?;
         g.div(&acc, p, RoundingMode::None)
+    }
+
+    /// `Some(n)` when `self = n + 1/2` with `n ≤ HALF_INTEGER_MAX`, else `None`.
+    fn half_integer_index(&self) -> Result<Option<usize>, Error> {
+        if !self.is_positive() || self.is_zero() || self.is_int() {
+            return Ok(None);
+        }
+        let mut twice = self.exact_copy()?;
+        twice.set_exponent(self.exponent() + 1);
+        if !twice.is_int() {
+            return Ok(None);
+        }
+        let n = self.int_as_usize()?;
+        Ok(if n <= HALF_INTEGER_MAX { Some(n) } else { None })
     }
 
     fn ln_gamma_stirling(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -3379,6 +3427,9 @@ fn erf_tail_below(x: &ExactNumNumber, p: usize) -> bool {
 
 /// Binary exponent from which `erfc` underflows below every subnormal (`x ≥ 2^31`).
 const ERFC_UNDERFLOW_EXPONENT: Exponent = 32;
+
+/// Largest `n` for which Γ(n+½) and ψ(n+½) use their closed forms.
+const HALF_INTEGER_MAX: usize = 1 << 12;
 
 /// Upper bound on argument shifts before the Stirling / asymptotic series.
 const STIRLING_SHIFT_MAX: usize = 1 << 20;
