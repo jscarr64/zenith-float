@@ -510,8 +510,7 @@ impl ExactNumNumber {
             // i128 with floor(log10(2) * 2^64): with an i64 exponent the old
             // 301029996e-9 factor is off by ~5e8 digits and the product overflows i64.
             let n_wrk = i64::try_from(
-                ((p_wrk as i128 - i128::from(self.exponent()) + subn_e as i128)
-                    * LOG10_2_Q64
+                ((p_wrk as i128 - i128::from(self.exponent()) + subn_e as i128) * LOG10_2_Q64
                     >> 64)
                     + 1,
             )
@@ -947,6 +946,119 @@ mod tests {
     #[cfg(not(feature = "std"))]
     use alloc::vec;
 
+    /// mpmath-pinned (g exponent, g words, n exponent, n words) for the decimal vectors of
+    /// the "unknown p" round trip in `test_conv_num`, in order. Words are 64-bit, little end first.
+    type DecPin = (Exponent, &'static [u64], Exponent, &'static [u64]);
+    const CONV_DEC_PINS: [DecPin; 5] = [
+        (
+            409,
+            &[
+                9277499933223628938,
+                3922711689764733432,
+                5698786213872067458,
+                13358134941265313276,
+            ],
+            409,
+            &[
+                9277499933223628938,
+                3922711689764733432,
+                5698786213872067458,
+                13358134941265313276,
+            ],
+        ),
+        (
+            -1531968934941318218,
+            &[
+                12118989213338987751,
+                8129038482058839168,
+                957869615584094226,
+                14375337014266739808,
+            ],
+            -1531968934941318218,
+            &[
+                12118989213338987750,
+                8129038482058839168,
+                957869615584094226,
+                14375337014266739808,
+            ],
+        ),
+        (
+            -1531968934941318391,
+            &[
+                14376713304243956606,
+                3717668849003244565,
+                4709716642905670367,
+                6758455429533423369,
+                13654437240512262384,
+                863961003625122258,
+                17211046775631358814,
+            ],
+            -1531968934941318391,
+            &[
+                14376713304243956605,
+                3717668849003244565,
+                4709716642905670367,
+                6758455429533423369,
+                13654437240512262384,
+                863961003625122258,
+                17211046775631358814,
+            ],
+        ),
+        (
+            -1531968934941317949,
+            &[
+                8589000564600802957,
+                953034597986637512,
+                11784980727772288842,
+                1040538886271782467,
+                15796102105945313841,
+                13627354557981012237,
+                15154764830504843509,
+            ],
+            -1531968934941317949,
+            &[
+                8589000564600802957,
+                953034597986637512,
+                11784980727772288842,
+                1040538886271782467,
+                15796102105945313841,
+                13627354557981012237,
+                15154764830504843509,
+            ],
+        ),
+        (
+            236,
+            &[
+                5812446391292657664,
+                17568215927531755994,
+                9442323477031879346,
+                15993189243573370911,
+            ],
+            236,
+            &[
+                5812446391292657664,
+                17568215927531755994,
+                9442323477031879346,
+                15993189243573370911,
+            ],
+        ),
+    ];
+
+    /// Mantissa words equal the pinned 64-bit words (32-bit targets pair up low/high words).
+    fn words_eq_u64(d: &[Word], pin: &[u64]) -> bool {
+        #[cfg(not(target_pointer_width = "32"))]
+        {
+            d == pin
+        }
+        #[cfg(target_pointer_width = "32")]
+        {
+            d.len() == 2 * pin.len()
+                && d.chunks_exact(2)
+                    .zip(pin)
+                    .all(|(c, p)| c.iter().rev().fold(0u64, |a, w| (a << 32) | u64::from(*w)) == *p)
+        }
+    }
+
     #[test]
     fn test_conv_num() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
@@ -1310,6 +1422,7 @@ mod tests {
         );
 
         // unkonwn p: binary, octal, hexadecimal
+        let mut dec_ix = 0usize;
         for (s1, exp, rdx) in [
             // Bin
             (
@@ -1537,19 +1650,25 @@ mod tests {
                     g.set_precision(n.mantissa_max_bit_len(), RoundingMode::ToEven)?;
                 }
 
-                // Both legs truncate (`RoundingMode::None`), so the decimal digits can sit
-                // just below `g` and the trip back lands one ulp under it. At i64 exponents
-                // the seeded EXPONENT_MIN / 10 - 123 vector does exactly that (checked
-                // against mpmath: g = trunc(V), d = trunc_78(g) < g, n = trunc(d)).
-                let p_cmp = g.mantissa_max_bit_len();
-                assert!(
-                    n.cmp(&g) == 0
-                        || n.next_after(&g, p_cmp, RoundingMode::None)?.cmp(&g) == 0
-                );
+                // Both legs truncate (`RoundingMode::None`). The exact results are pinned from
+                // mpmath (~/rusty-work/logs/pinconv.py, two working precisions agreeing):
+                // g = trunc_p(V), d = trunc of g to len(d) digits, n = trunc_p(d), then both
+                // rounded to even at the common precision. For the EXPONENT_MIN / 10 - 123
+                // vectors n is exactly one ulp below g: d < g, so that is the correct answer.
+                let (pg_e, pg_w, pn_e, pn_w) = CONV_DEC_PINS
+                    .get(dec_ix)
+                    .ok_or(crate::Error::InvalidArgument)?;
+                dec_ix += 1;
+                assert_eq!(g.exponent(), *pg_e);
+                assert!(words_eq_u64(g.mantissa().digits(), pg_w), "g {:?}", g);
+                assert_eq!(n.exponent(), *pn_e);
+                assert!(words_eq_u64(n.mantissa().digits(), pn_w), "n {:?}", n);
             } else {
                 assert!(n.cmp(&g) == 0);
             }
         }
+
+        assert_eq!(dec_ix, CONV_DEC_PINS.len());
 
         // unknown p: decimal
         Ok(())
