@@ -204,3 +204,34 @@ fn r13_hypot() -> Result<(), String> {
 fn r13_div_exact() -> Result<(), String> {
     check("div_exact")
 }
+
+/// The golds reach both ends of the exponent range `±(2^62 − 1)` for div, reciprocal and hypot
+/// (in an argument or in the expected result).
+#[test]
+fn golds_reach_exponent_extremes() -> Result<(), String> {
+    use zenith_float_num::{EXPONENT_MAX, EXPONENT_MIN};
+    assert_eq!(EXPONENT_MAX, (1i64 << 62) - 1);
+    for func in ["div", "reciprocal", "hypot"] {
+        for extreme in [EXPONENT_MAX, EXPONENT_MIN] {
+            let mut hits = 0usize;
+            for line in GOLDS.lines().filter(|l| !l.trim().is_empty()) {
+                let row: Value = serde_json::from_str(line).map_err(|e| e.to_string())?;
+                if text(&row, "fn")? != func {
+                    continue;
+                }
+                let args = field(&row, "args")?
+                    .as_array()
+                    .ok_or("args is not an array")?;
+                let hit = args
+                    .iter()
+                    .chain([field(&row, "expect")?])
+                    .any(|v| v.get("e").and_then(Value::as_i64) == Some(extreme));
+                hits += usize::from(hit);
+            }
+            if hits == 0 {
+                return Err(format!("no {func} gold at exponent {extreme}"));
+            }
+        }
+    }
+    Ok(())
+}
