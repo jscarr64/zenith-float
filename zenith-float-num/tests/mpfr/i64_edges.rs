@@ -16,7 +16,11 @@ use zenith_float_num::{
 };
 
 /// A named zenith result and the MPFR call that rounds its reference.
-type EdgeCase<'a> = (&'a str, ExactNum, Box<dyn Fn(&mut Float, rnd_t) -> i32 + 'a>);
+type EdgeCase<'a> = (
+    &'a str,
+    ExactNum,
+    Box<dyn Fn(&mut Float, rnd_t) -> i32 + 'a>,
+);
 
 type Res = Result<(), Box<dyn std::error::Error>>;
 
