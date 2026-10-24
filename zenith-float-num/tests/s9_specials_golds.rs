@@ -6,6 +6,8 @@
 //! rounding mode (`ToEven`, `Up`, `Down`, `ToZero`, `FromZero`) at exactly `p`
 //! bits over the i64 exponent range.
 //!
+//! Digamma rows at p >= 16384 run only with `MPFR_TIER=full` (see `full_tier_only`).
+//!
 //! One test per function. A test fails when any of its rows differs, times out,
 //! or has no directed implementation yet (`Unsupported`).
 
@@ -18,9 +20,11 @@ use zenith_float_num::{Consts, Error, ExactNum, Exponent, RoundingMode, Sign, Wo
 
 const GOLDS: &str = include_str!("oracle/goldens/s9_specials.jsonl");
 
-/// Wall budget for one row, and for one function's whole table.
+/// Wall budget for one row, and for one function's whole table; the full tier gets more.
 const ROW_BUDGET: Duration = Duration::from_secs(10);
 const FN_BUDGET: Duration = Duration::from_secs(120);
+const FULL_ROW_BUDGET: Duration = Duration::from_secs(120);
+const FULL_FN_BUDGET: Duration = Duration::from_secs(900);
 /// Mismatch lines printed per function.
 const SHOW: usize = 8;
 
@@ -189,6 +193,21 @@ fn run_row(row: &Value, cc: &mut Consts) -> Result<(), String> {
     }
 }
 
+/// `MPFR_TIER=full` (as in `tools/full_gate.sh`) also runs the full-tier rows.
+fn full_tier() -> bool {
+    std::env::var("MPFR_TIER").is_ok_and(|t| t == "full")
+}
+
+/// Full-tier rows: digamma at p >= 16384. ψ(½) = −γ − 2 ln 2 needs Euler γ at the working
+/// precision (44 s release at p=65536) until Rusty's S3 rigorous Euler γ lands.
+fn full_tier_only(row: &Value) -> bool {
+    row.get("fn").and_then(Value::as_str) == Some("digamma")
+        && row
+            .get("p")
+            .and_then(Value::as_u64)
+            .is_some_and(|p| p >= 16384)
+}
+
 fn rows_for(func: &str) -> Result<Vec<Value>, String> {
     let mut out = Vec::new();
     for line in GOLDS.lines() {
@@ -196,7 +215,9 @@ fn rows_for(func: &str) -> Result<Vec<Value>, String> {
             continue;
         }
         let row: Value = serde_json::from_str(line).map_err(|e| format!("json: {e}"))?;
-        if row.get("fn").and_then(Value::as_str) == Some(func) {
+        if row.get("fn").and_then(Value::as_str) == Some(func)
+            && (full_tier() || !full_tier_only(&row))
+        {
             out.push(row);
         }
     }
@@ -238,18 +259,23 @@ fn check(func: &'static str) -> Result<(), String> {
             }
         }
     });
+    let (row_budget, fn_budget) = if full_tier() {
+        (FULL_ROW_BUDGET, FULL_FN_BUDGET)
+    } else {
+        (ROW_BUDGET, FN_BUDGET)
+    };
     let start = Instant::now();
     let mut pass = 0usize;
     let mut fails: Vec<String> = Vec::new();
     let mut unsupported = 0usize;
     let mut timed_out = 0usize;
     for id in &ids {
-        let left = FN_BUDGET.saturating_sub(start.elapsed());
+        let left = fn_budget.saturating_sub(start.elapsed());
         if left.is_zero() {
             timed_out = total - pass - fails.len();
             break;
         }
-        match rx.recv_timeout(ROW_BUDGET.min(left)) {
+        match rx.recv_timeout(row_budget.min(left)) {
             Ok(Ok(())) => pass += 1,
             Ok(Err(why)) => {
                 if why.contains("Unsupported") {
