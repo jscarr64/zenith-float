@@ -1,0 +1,1 @@
+- R13 properties: `tests/r13_props.rs` checks Down <= every mode <= Up and Down <= true <= Up (exact products) for div, reciprocal and hypot, hypot's Inf/NaN/zero specials and exact 3-4-5, and directional hypot overflow (MAX under Down/ToZero, +Inf otherwise).
