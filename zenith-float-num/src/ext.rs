@@ -6327,7 +6327,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
         println!("ldexp grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 3_896_020_040_264_525_112);
+        assert_eq!(h.finish(), 1_196_293_272_222_150_608);
         Ok(())
     }
 
@@ -6350,7 +6350,7 @@ mod grid_digest_tests {
         println!("round grid digest = {}", h.finish());
         // pinned on a 64-bit target; a narrower `usize` has a different position grid
         if cfg!(target_pointer_width = "64") {
-            assert_eq!(h.finish(), 2_584_562_321_548_619_649);
+            assert_eq!(h.finish(), 10_921_324_020_573_550_304);
         }
         Ok(())
     }
@@ -6373,7 +6373,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
         println!("operator grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 7_046_299_910_751_575_496);
+        assert_eq!(h.finish(), 17_513_242_264_762_901_032);
         Ok(())
     }
 
@@ -6406,7 +6406,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
         println!("complex add/sub grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 10_853_667_709_392_583_003);
+        assert_eq!(h.finish(), 18_040_698_040_155_693_760);
         Ok(())
     }
 
@@ -6438,7 +6438,7 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 45_030);
-        assert_eq!(h.finish(), 7_232_426_507_586_278_165);
+        assert_eq!(h.finish(), 8_129_670_429_050_627_241);
         Ok(())
     }
 
@@ -6473,7 +6473,7 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
-        assert_eq!(h.finish(), 10_853_667_709_392_583_003);
+        assert_eq!(h.finish(), 18_040_698_040_155_693_760);
         Ok(())
     }
 
@@ -6507,7 +6507,7 @@ mod grid_digest_tests {
         println!("add/sub grid digest = {}", h.finish());
         // Differs from the digest pinned on the pre-kernel-branch code in exactly 40 results: full-precision
         // sums with a zero operand (see `full_prec_with_zero_operand_is_the_other_operand`).
-        assert_eq!(h.finish(), 7_232_426_507_586_278_165);
+        assert_eq!(h.finish(), 8_129_670_429_050_627_241);
         Ok(())
     }
 
@@ -6532,7 +6532,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
         println!("mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 6_916_243_447_203_512_029);
+        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
         Ok(())
     }
 
@@ -6565,7 +6565,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
         println!("complex mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 10_955_470_768_505_023_618);
+        assert_eq!(h.finish(), 11_266_967_239_943_518_429);
         Ok(())
     }
 
@@ -6588,7 +6588,7 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
-        assert_eq!(h.finish(), 6_916_243_447_203_512_029);
+        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
         Ok(())
     }
 
@@ -6610,7 +6610,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * 9 * 6);
         println!("square grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 175_783_324_882_499_832);
+        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
         Ok(())
     }
 
@@ -6629,7 +6629,7 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, PAIR_OPERANDS * 9 * 6);
-        assert_eq!(h.finish(), 175_783_324_882_499_832);
+        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
         Ok(())
     }
 
@@ -6668,7 +6668,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 17 * 3 * 6 * 7);
         println!("trig hyperbolic grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 4_093_924_005_718_850_450);
+        assert_eq!(h.finish(), 2_882_922_101_969_868_672);
         Ok(())
     }
 
@@ -6709,7 +6709,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 13 * 3 * 6 * 13);
         println!("exp pow grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 8_827_926_273_799_459_758);
+        assert_eq!(h.finish(), 2_398_075_299_501_098_093);
         Ok(())
     }
 
@@ -6733,7 +6733,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 5 * 2 * 2 * 4);
         println!("series high precision digest = {}", h.finish());
-        assert_eq!(h.finish(), 12_296_853_271_819_888_553);
+        assert_eq!(h.finish(), 2_612_837_872_790_074_070);
         Ok(())
     }
 
@@ -6765,7 +6765,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 2 * 2 * OPERANDS * 3 * 2 * 2);
         println!("fma stand-in digest = {}", h.finish());
-        assert_eq!(h.finish(), 12_491_717_288_481_368_591);
+        assert_eq!(h.finish(), 6_276_170_101_586_996_179);
         Ok(())
     }
 
@@ -6812,7 +6812,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, OPERANDS * 4 * 4 * 2 * 2 * 2);
         println!("hypot scaling digest = {}", h.finish());
-        assert_eq!(h.finish(), 4_953_534_096_737_218_946);
+        assert_eq!(h.finish(), 17_199_362_010_888_151_510);
         Ok(())
     }
 
@@ -6897,7 +6897,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 7 * 4 * 2 + OPERANDS * 2 * 2 * 2);
         println!("atanh zero digest = {}", h.finish());
-        assert_eq!(h.finish(), 8_108_490_991_899_188_321);
+        assert_eq!(h.finish(), 8_560_969_362_905_363_186);
         Ok(())
     }
 
@@ -6960,7 +6960,7 @@ mod grid_digest_tests {
         // are `u` and the other nine functions are 1, because `f(u|m) = t (1 - O(u^2))` is far closer to the
         // representable `t` than half an ulp, and a value just below a representable number rounds to it
         // to nearest; the roundability check had treated that as undecidable. Oracle: mpmath, see the CHANGELOG.
-        assert_eq!(h.finish(), 6_259_183_207_121_670_912);
+        assert_eq!(h.finish(), 8_344_934_497_909_943_058);
         Ok(())
     }
 
@@ -7118,7 +7118,7 @@ mod grid_digest_tests {
         // Re-recorded again for `nth_root` of a negative number with `Up`/`Down` (they were swapped for odd n >= 5):
         // the old value was 6_378_838_253_543_692_452; only `nth_root(5)` entries of negative operands differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
-        assert_eq!(h.finish(), 9_737_237_917_636_087_535);
+        assert_eq!(h.finish(), 15_733_382_221_161_312_340);
         Ok(())
     }
 
@@ -7175,7 +7175,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 4 * 3);
         println!("log exact digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_377_979_393_201_259_388);
+        assert_eq!(h.finish(), 11_246_996_610_564_981_343);
         Ok(())
     }
 
@@ -7236,7 +7236,7 @@ mod grid_digest_tests {
             h.finish(),
             count
         );
-        assert_eq!(h.finish(), 15_016_580_156_994_057_137);
+        assert_eq!(h.finish(), 17_431_376_301_017_146_749);
         Ok(())
     }
 
@@ -7262,7 +7262,7 @@ mod grid_digest_tests {
         // Re-recorded for `nth_root` of a negative number with `Up`/`Down` (swapped for odd n >= 5; old value
         // 1_369_146_293_907_659_395): only the n = 5 and 7 entries of negative operands in those modes differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
-        assert_eq!(h.finish(), 5_293_753_668_065_513_863);
+        assert_eq!(h.finish(), 2_411_520_695_892_384_189);
         Ok(())
     }
 
@@ -7316,7 +7316,7 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
         println!("operator mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 4_600_225_949_441_908_206);
+        assert_eq!(h.finish(), 11_238_293_337_447_225_181);
         Ok(())
     }
 

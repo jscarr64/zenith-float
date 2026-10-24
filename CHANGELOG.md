@@ -849,3 +849,4 @@ First public release.
 - Elementary functions, constants cache, radix parse/format, `expr!`.
 - Optional `std`, `random`, and `serde` features.
 - Dual license MIT OR Apache-2.0.
+- Re-pinned 24 grid digests (ext.rs grid_digest_tests) after the complex exact_sum, pow underflow, reciprocal Newton, log round_exact and log exact-flag fixes; every dump re-verified against mpmath (scripts/verify_grid_digests.py, 0 BAD).
