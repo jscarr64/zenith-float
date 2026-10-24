@@ -369,6 +369,65 @@ impl ExactNumNumber {
         Ok(ret)
     }
 
+    /// `|x|^mag` for a power whose value may lie below the normal range. The power of the
+    /// normalized mantissa `y = |x| 2^-lead` (in `[1/2, 1)`) is exact; the true value is
+    /// `y^mag 2^scale` with `scale = mag * lead`, rounded once onto the grid of precision `p`.
+    fn pow_exact_integer_underflow(&self, mag: usize, scale: i128, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        let p = round_p(p);
+        let mut square = self.clone()?;
+        square.set_sign(Sign::Pos);
+        square.normalize2();
+        square.set_exponent(0);
+        let mut exp = mag;
+        let mut acc = ExactNumNumber::small_const(1);
+        while exp > 1 {
+            if exp & 1 == 1 {
+                acc = acc.mul_full_prec(&square)?;
+            }
+            square = square.mul_full_prec(&square)?;
+            exp >>= 1;
+        }
+        acc = acc.mul_full_prec(&square)?;
+        let ret_sign = if mag & 1 == 1 { self.sign() } else { Sign::Pos };
+        let erm = match (ret_sign, rm) {
+            (Sign::Neg, RoundingMode::Up) => RoundingMode::Down,
+            (Sign::Neg, RoundingMode::Down) => RoundingMode::Up,
+            (_, other) => other,
+        };
+        let e_min = i128::from(EXPONENT_MIN);
+        // `n` fractional positions of `acc` are the quantum `2^(EXPONENT_MIN - p)` of the result.
+        let n = i128::try_from(p).map_err(|_| Error::InvalidArgument)? + scale - e_min;
+        let mut ret = if n < 0 {
+            // `|x|^mag < 2^(EXPONENT_MIN - p - 1)`: below half the smallest subnormal number.
+            let e_t = Exponent::try_from((i128::from(acc.exponent()) + scale).max(2 * e_min))
+                .map_err(|_| Error::InvalidArgument)?;
+            acc.set_exponent(EXPONENT_MIN);
+            acc.subnormalize(e_t, erm);
+            acc
+        } else {
+            let mut r = acc.round(usize::try_from(n).map_err(|_| Error::InvalidArgument)?, erm)?;
+            let rounded = r.op_inexact();
+            if !r.is_zero() {
+                r.set_precision(p, erm)?; // exact: `r` is on the grid of precision `p`
+                let e2 = i128::from(r.exponent()) + scale;
+                if e2 > i128::from(EXPONENT_MAX) {
+                    return Err(Error::ExponentOverflow(ret_sign));
+                }
+                if e2 >= e_min {
+                    r.set_exponent(Exponent::try_from(e2).map_err(|_| Error::InvalidArgument)?);
+                } else {
+                    r.set_exponent(EXPONENT_MIN);
+                    r.subnormalize(Exponent::try_from(e2).map_err(|_| Error::InvalidArgument)?, erm);
+                }
+            }
+            r.set_inexact(rounded);
+            r.set_op_inexact(rounded);
+            r
+        };
+        ret.set_sign(ret_sign);
+        Ok(ret)
+    }
+
     fn powi_sqr_mul(
         arg: &Self,
         mut x: Self,
@@ -591,7 +650,19 @@ impl ExactNumNumber {
         if n.is_int() && !n.inexact() && !self.inexact() {
             if let Ok(mag) = n.int_as_usize() {
                 let width = self.mantissa_max_bit_len().max(1);
-                if mag >= 2 && width.saturating_mul(mag) <= 1_048_576 {
+                // The squaring stays exact only while every partial product is a normal number:
+                // `2^(e - lz - 1) <= |x| < 2^(e - lz)`, so `|x|^k` lies in `[2^(k (e - lz - 1)), 2^(k (e - lz)))`.
+                // A positive power that can underflow is formed from the mantissa alone and rounded once onto the
+                // subnormal grid; any other power out of range takes the general path.
+                let lead = i128::from(self.exponent()) - (self.mantissa_max_bit_len() as i128 - self.precision() as i128);
+                let k = mag as i128;
+                let in_range = k * (lead - 1) >= i128::from(EXPONENT_MIN) && k * lead <= i128::from(EXPONENT_MAX);
+                if mag >= 2 && width.saturating_mul(mag) <= 1_048_576 && k * lead <= i128::from(EXPONENT_MAX) {
+                    if !in_range && !n.is_negative() {
+                        return self.pow_exact_integer_underflow(mag, k * lead, p, rm);
+                    }
+                }
+                if in_range && mag >= 2 && width.saturating_mul(mag) <= 1_048_576 {
                     return self.pow_exact_integer(mag, n.is_negative(), p, rm);
                 }
             }

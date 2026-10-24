@@ -1328,6 +1328,7 @@ impl ExactNumNumber {
         if n as u64 > EXPONENT_MAX as u64 + 2 * MAX_PRECISION as u64 {
             return Err(Error::InvalidArgument);
         }
+        let mut rounded = false;
 
         let max_bits = self.mantissa_max_bit_len();
         let e = max_bits as i64 - self.e as i64;
@@ -1370,8 +1371,9 @@ impl ExactNumNumber {
                 }
 
                 self.inexact |= true; // self was not zero
+                rounded = true;
             } else {
-                let mut inexact = self.inexact;
+                let mut inexact = false;
 
                 let ovf = self.m.round_mantissa(
                     m,
@@ -1383,6 +1385,7 @@ impl ExactNumNumber {
                 );
 
                 self.inexact |= inexact;
+                rounded = inexact;
 
                 if ovf {
                     if self.e == EXPONENT_MAX {
@@ -1399,6 +1402,7 @@ impl ExactNumNumber {
             }
         }
 
+        self.set_op_inexact(rounded);
         Ok(self)
     }
 
