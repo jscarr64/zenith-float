@@ -61,14 +61,7 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len());
 
-        compute_small_exp!(
-            ONE,
-            self.exponent() as i64,
-            self.is_negative(),
-            p_wrk,
-            p,
-            rm
-        );
+        compute_small_exp!(ONE, self.exponent(), self.is_negative(), p_wrk, p, rm);
 
         p_wrk += p_inc;
 
@@ -129,7 +122,7 @@ impl ExactNumNumber {
     fn exp_positive_arg(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         debug_assert!(!self.is_zero());
 
-        if self.exponent() as i64 > WORD_BIT_SIZE as i64 {
+        if self.exponent() > WORD_BIT_SIZE as i64 {
             return Err(Error::ExponentOverflow(self.sign()));
         }
 
@@ -544,7 +537,7 @@ impl ExactNumNumber {
         let (reduction_times, niter, e_eff) = series_cost_optimize::<SinhArgReductionEstimator>(
             p,
             &polycoeff_gen,
-            -(self.exponent() as i64),
+            -self.exponent(),
             2,
             false,
         );
@@ -820,14 +813,7 @@ impl ExactNumNumber {
                     },
                 }?;
 
-                compute_small_exp!(
-                    ONE,
-                    m.exponent() as i64,
-                    m.is_negative(),
-                    p_ext,
-                    p,
-                    effective_rm
-                );
+                compute_small_exp!(ONE, m.exponent(), m.is_negative(), p_ext, p, effective_rm);
 
                 let mut ret = if m.is_negative() {
                     m.set_sign(Sign::Pos);

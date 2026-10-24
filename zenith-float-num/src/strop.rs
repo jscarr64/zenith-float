@@ -192,7 +192,7 @@ impl ExactNumNumber {
                 let val = if self.is_subnormal() {
                     e.unsigned_abs() as usize
                 } else {
-                    crate::common::util::abs_usize(e as i64 - 1)
+                    crate::common::util::abs_usize(e - 1)
                 };
 
                 mstr.push('e');
@@ -201,7 +201,7 @@ impl ExactNumNumber {
             } else {
                 mstr.push('e');
                 mstr.push('+');
-                format_uint_radix((e as i64 - 1) as usize, rdx, &mut mstr)?;
+                format_uint_radix((e - 1) as usize, rdx, &mut mstr)?;
             };
         }
 

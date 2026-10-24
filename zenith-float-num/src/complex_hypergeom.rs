@@ -171,7 +171,7 @@ fn term_small_rel(t: &ExactComplex, s: &ExactComplex, p: usize) -> bool {
     }
     let as_ = s.abs(64, rm());
     match (at.exponent(), as_.exponent()) {
-        (Some(et), Some(es)) => (et as i64) + (p as i64) < es as i64,
+        (Some(et), Some(es)) => et + (p as i64) < es,
         _ => term_negligible(t, p),
     }
 }

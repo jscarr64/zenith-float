@@ -428,11 +428,11 @@ impl ExactNumNumber {
 
         let e = exp::narrow(exp::wide(self.e) + exp::wide(d2.e) - exp::wide(e_shift));
 
-        if e > EXPONENT_MAX as i64 {
+        if e > EXPONENT_MAX {
             return Err(Error::ExponentOverflow(s));
         }
 
-        if e < EXPONENT_MIN as i64 {
+        if e < EXPONENT_MIN {
             let mut ret = ExactNumNumber {
                 m: m3,
                 s,
@@ -510,11 +510,11 @@ impl ExactNumNumber {
 
         let e = exp::narrow(exp::wide(self.e) - exp::wide(d2.e) + exp::wide(e_shift));
 
-        if e > EXPONENT_MAX as i64 {
+        if e > EXPONENT_MAX {
             return Err(Error::ExponentOverflow(s));
         }
 
-        if e < EXPONENT_MIN as i64 {
+        if e < EXPONENT_MIN {
             let mut ret = ExactNumNumber {
                 m: m3,
                 s,
@@ -558,7 +558,7 @@ impl ExactNumNumber {
         }
 
         // represent as mN * 2 ^ eNeff
-        let e1eff = self.e as i64 - self.m.max_bit_len() as i64;
+        let e1eff = self.e - self.m.max_bit_len() as i64;
 
         let (e, m2_opt) = d2.normalize()?;
         let m2_normalized = m2_opt.as_ref().unwrap_or(&d2.m);
@@ -566,17 +566,17 @@ impl ExactNumNumber {
 
         let finalize = |mut m3: Mantissa, mut e: i64| -> Result<ExactNumNumber, Error> {
             let (m3, e) = if m3.bit_len() > 0 {
-                if e > EXPONENT_MAX as i64 {
+                if e > EXPONENT_MAX {
                     return Err(Error::ExponentOverflow(self.s));
                 }
 
-                if e < EXPONENT_MIN as i64 {
+                if e < EXPONENT_MIN {
                     // first, see if m3 is already subnormal, then shift accordingly
                     let mut excess = m3.max_bit_len() - m3.bit_len();
 
                     // `usize::MAX as i64` is -1, so the old range check flushed every
                     // subnormal remainder to zero; convert the shift instead.
-                    if let Ok(shift) = usize::try_from(EXPONENT_MIN as i64 - e) {
+                    if let Ok(shift) = usize::try_from(EXPONENT_MIN - e) {
                         if excess < shift {
                             m3.extend_subnormal(shift)?;
                             excess = m3.max_bit_len() - m3.bit_len();
@@ -586,7 +586,7 @@ impl ExactNumNumber {
                         m3.shift_left(shift);
                         m3.set_bit_len(m3.bit_len() + shift);
 
-                        e = EXPONENT_MIN as i64;
+                        e = EXPONENT_MIN;
                     } else {
                         m3.set_zero();
                         e = 0;
@@ -629,7 +629,7 @@ impl ExactNumNumber {
             let e = e2eff + m3.bit_len() as i64;
 
             finalize(m3, e)
-        } else if (self.m.bit_len() as i64 + self.e as i64) < (m2_normalized.bit_len() as i64 + e) {
+        } else if (self.m.bit_len() as i64 + self.e) < (m2_normalized.bit_len() as i64 + e) {
             // self < d2, remainder = self
             self.clone()
         } else {
@@ -675,7 +675,7 @@ impl ExactNumNumber {
                 Some(mantissa),
             ))
         } else {
-            Ok((self.e as i64, None))
+            Ok((self.e, None))
         }
     }
 
@@ -720,7 +720,7 @@ impl ExactNumNumber {
             } else {
                 (self, self.s)
             };
-            let (e0, m0) = (src.e as i64, &src.m);
+            let (e0, m0) = (src.e, &src.m);
             let inputs = src.inexact;
             let mut inexact = false;
             d3.s = sign;
@@ -747,8 +747,8 @@ impl ExactNumNumber {
 
         // The sum kernels take the operands as stored (a subnormal operand has leading zero bits and is
         // renormalized by the kernel together with the result), so no operand is cloned.
-        let (e1, m1) = (self.e as i64, &self.m);
-        let (e2, m2) = (d2.e as i64, &d2.m);
+        let (e1, m1) = (self.e, &self.m);
+        let (e2, m2) = (d2.e, &d2.m);
 
         let inputs = self.inexact || d2.inexact;
         let mut inexact = false;
@@ -855,13 +855,13 @@ impl ExactNumNumber {
         let (inexact, inputs) = flags;
         d3.inexact |= inexact;
 
-        if e > EXPONENT_MAX as i64 {
+        if e > EXPONENT_MAX {
             return Err(Error::ExponentOverflow(d3.s));
         }
 
         d3.m = m3;
 
-        if e < EXPONENT_MIN as i64 {
+        if e < EXPONENT_MIN {
             d3.e = EXPONENT_MIN;
             if full_prec {
                 d3.widen_for_subnormal(e)?;
@@ -899,10 +899,10 @@ impl ExactNumNumber {
 
         let is_positive = self.is_positive();
 
-        if (self.m.max_bit_len() as i64) + e > EXPONENT_MIN as i64 {
+        if (self.m.max_bit_len() as i64) + e > EXPONENT_MIN {
             // subnormal
 
-            let mut shift = (EXPONENT_MIN as i64 - e) as usize;
+            let mut shift = (EXPONENT_MIN - e) as usize;
 
             let rounded_before = self.op_inexact();
             let mut inexact = false;
@@ -929,7 +929,7 @@ impl ExactNumNumber {
             // Every significand bit sits strictly below the minimum positive.
             // Compare the magnitude with half an ulp of that minimum.
             let pbits = self.m.max_bit_len() as i64;
-            let below_half = e < EXPONENT_MIN as i64 - pbits;
+            let below_half = e < EXPONENT_MIN - pbits;
             let class = if below_half { -1 } else { Self::mantissa_vs_half(&self.m) };
             self.inexact = true;
             self.op_inexact = Some(true);
@@ -1127,8 +1127,8 @@ impl ExactNumNumber {
             e = 0;
         } else if bl < p {
             let mut shift = p - bl;
-            if (e as i64) < EXPONENT_MIN as i64 + shift as i64 {
-                shift = (e as i64 - EXPONENT_MIN as i64) as usize;
+            if e < EXPONENT_MIN + shift as i64 {
+                shift = (e - EXPONENT_MIN) as usize;
                 e = EXPONENT_MIN;
             } else {
                 e -= shift as Exponent;
@@ -1214,12 +1214,12 @@ impl ExactNumNumber {
             if (self.e as usize) < self.m.max_bit_len() {
                 // remove integer part of mantissa & normalize at the same time
                 if let Some(shift) = self.m.find_one_from(self.e as usize) {
-                    let mut e = self.e as i64 - shift as i64;
-                    if e < EXPONENT_MIN as i64 {
-                        let shift1 = (self.e as i64 - EXPONENT_MIN as i64) as usize;
+                    let mut e = self.e - shift as i64;
+                    if e < EXPONENT_MIN {
+                        let shift1 = (self.e - EXPONENT_MIN) as usize;
                         self.m.shift_left(shift1);
                         self.m.mask_bits(shift - shift1, true);
-                        e = EXPONENT_MIN as i64;
+                        e = EXPONENT_MIN;
                     } else {
                         self.m.shift_left(shift);
                     }
@@ -1308,7 +1308,7 @@ impl ExactNumNumber {
     pub fn set_exponent(&mut self, e: Exponent) {
         if !self.is_zero() {
             if self.is_subnormal() && e > EXPONENT_MIN {
-                let ediff = e as i64 - EXPONENT_MIN as i64;
+                let ediff = e - EXPONENT_MIN;
 
                 let n = self.mantissa_max_bit_len() - self.precision();
                 if n as i64 >= ediff {
@@ -1354,7 +1354,7 @@ impl ExactNumNumber {
         let mut rounded = false;
 
         let max_bits = self.mantissa_max_bit_len();
-        let e = max_bits as i64 - self.e as i64;
+        let e = max_bits as i64 - self.e;
 
         if e > 0 && e as usize > n && !self.is_zero() {
             let m = e as usize - n;
@@ -1383,7 +1383,7 @@ impl ExactNumNumber {
                     self.m.set_bit_len(self.mantissa_max_bit_len());
 
                     let e = -(n as i64 - 1);
-                    if e < EXPONENT_MIN as i64 {
+                    if e < EXPONENT_MIN {
                         self.e = EXPONENT_MIN;
                         self.subnormalize(e, rm);
                     } else {
@@ -1445,8 +1445,8 @@ impl ExactNumNumber {
 
         let m = Mantissa::random_normal(p)?;
         let e = if exp_from < exp_to {
-            (crate::common::test_rng::random::<i64>().abs() % (exp_to as i64 - exp_from as i64)
-                + exp_from as i64) as Exponent
+            (crate::common::test_rng::random::<i64>().abs() % (exp_to - exp_from) + exp_from)
+                as Exponent
         } else {
             exp_from
         };
@@ -1731,7 +1731,7 @@ impl ExactNumNumber {
     pub(crate) fn div_by_2(&mut self, rm: RoundingMode) {
         let e = self.exponent();
         if e == EXPONENT_MIN {
-            self.subnormalize(e as i64 - 1, rm);
+            self.subnormalize(e - 1, rm);
         } else {
             self.set_exponent(e - 1);
         }

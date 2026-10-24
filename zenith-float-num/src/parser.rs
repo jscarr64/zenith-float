@@ -151,13 +151,13 @@ fn parse_num(parser_state: &mut ParserState, rdx: Radix) -> Result<(), Error> {
                 parser_state.e = parser_state.e.saturating_add(int_len as i64);
             }
 
-            if parser_state.e < EXPONENT_MIN as i64 {
+            if parser_state.e < EXPONENT_MIN {
                 let mut zero = Vec::new();
                 zero.try_reserve_exact(1)?;
                 zero.push(0);
                 parser_state.mantissa_bytes = zero;
                 parser_state.e = 0;
-            } else if parser_state.e > EXPONENT_MAX as i64 {
+            } else if parser_state.e > EXPONENT_MAX {
                 parser_state.inf = true;
             }
         }
@@ -414,10 +414,7 @@ mod tests {
         assert_eq!(e, EXPONENT_MAX);
 
         // small exp
-        let numstr = format!(
-            "abc.def09123e_e-{:x}",
-            (EXPONENT_MIN as i64 - 4).unsigned_abs()
-        );
+        let numstr = format!("abc.def09123e_e-{:x}", (EXPONENT_MIN - 4).unsigned_abs());
         let ps = parse(&numstr, Radix::Hex)?;
         assert!(!ps.is_inf());
         assert!(!ps.is_nan());
@@ -425,10 +422,7 @@ mod tests {
         assert_eq!(m.iter().filter(|&&x| x != 0).count(), 0);
         assert!(e == 0);
 
-        let numstr = format!(
-            "0.0000abcdef09123e_e-{:X}",
-            (EXPONENT_MIN as i64).unsigned_abs()
-        );
+        let numstr = format!("0.0000abcdef09123e_e-{:X}", EXPONENT_MIN.unsigned_abs());
         let ps = parse(&numstr, Radix::Hex)?;
         assert!(!ps.is_inf());
         assert!(!ps.is_nan());

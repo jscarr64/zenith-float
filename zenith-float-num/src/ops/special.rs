@@ -135,7 +135,7 @@ impl ExactNumNumber {
         x.set_sign(Sign::Pos);
 
         // |x| large enough that erfc underflows at this precision.
-        if (x.exponent() as i64).saturating_mul(2) > p as i64 + 4 {
+        if x.exponent().saturating_mul(2) > p as i64 + 4 {
             let mut one = Self::from_word(1, p)?;
             if neg {
                 one.set_sign(Sign::Neg);
@@ -202,9 +202,7 @@ impl ExactNumNumber {
             }
             sum = sum.add(&t, p, RoundingMode::None)?;
             let past_peak = Self::from_word(n as Word, p)?.cmp(&x2) > 0;
-            if t.is_zero()
-                || (past_peak && (t.exponent() as i64) + (p as i64) < sum.exponent() as i64)
-            {
+            if t.is_zero() || (past_peak && t.exponent() + (p as i64) < sum.exponent()) {
                 return scale.mul(&sum, p, RoundingMode::None);
             }
         }
@@ -239,7 +237,7 @@ impl ExactNumNumber {
             term = term.mul(&ratio, p, RoundingMode::None)?;
             term.set_sign(if k % 2 == 1 { Sign::Neg } else { Sign::Pos });
             s = s.add(&term, p, RoundingMode::None)?;
-            if term.is_zero() || (term.exponent() as i64) + (p as i64) < 0 {
+            if term.is_zero() || term.exponent() + (p as i64) < 0 {
                 done = true;
                 break;
             }
@@ -778,7 +776,7 @@ impl ExactNumNumber {
                     .mul(&zpow, p, RoundingMode::None)?;
             let term = b.div(&den, p, RoundingMode::None)?;
             s = s.add(&term, p, RoundingMode::None)?;
-            if term.is_zero() || (term.exponent() as i64) + (p as i64) < 0 {
+            if term.is_zero() || term.exponent() + (p as i64) < 0 {
                 done = true;
                 break;
             }
@@ -1024,7 +1022,7 @@ impl ExactNumNumber {
 
     fn gammainc_at(&self, x: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // e^{-x} x^s underflows → γ(s,x) = Γ(s).
-        if (x.exponent() as i64).saturating_mul(2) > p as i64 + 8 {
+        if x.exponent().saturating_mul(2) > p as i64 + 8 {
             return self.gamma_at(p, cc);
         }
         // γ(s,x) = x^s e^{-x} Σ_{k=0} x^k / (s)_{k+1}
@@ -1089,11 +1087,7 @@ impl ExactNumNumber {
         };
         for _ in 0..8 {
             let (v, top) = self.ei_series(p + extra, cc)?;
-            let lost = if v.is_zero() {
-                usize::MAX
-            } else {
-                (top as i64 - v.exponent() as i64).max(0) as usize
-            };
+            let lost = if v.is_zero() { usize::MAX } else { (top - v.exponent()).max(0) as usize };
             if lost.saturating_add(8) <= extra {
                 let mut v = v;
                 v.set_precision(p, RoundingMode::None)?;
@@ -1123,7 +1117,7 @@ impl ExactNumNumber {
             let piece = term.div(&nw, p, RoundingMode::None)?;
             sum = sum.add(&piece, p, RoundingMode::None)?;
             top = top.max(max_exp(&[&piece]));
-            if piece.is_zero() || (piece.exponent() as i64) + (p as i64) < 0 {
+            if piece.is_zero() || piece.exponent() + (p as i64) < 0 {
                 done = true;
                 break;
             }
@@ -1155,7 +1149,7 @@ impl ExactNumNumber {
             }
             prev_e = e;
             s = s.add(&term, p, RoundingMode::None)?;
-            if term.is_zero() || (e as i64) + (p as i64) < 0 {
+            if term.is_zero() || e + (p as i64) < 0 {
                 done = true;
                 break;
             }
@@ -1294,7 +1288,7 @@ impl ExactNumNumber {
             u = u.neg()?;
             let piece = u.div(&b, p, RoundingMode::None)?;
             sum = sum.add(&piece, p, RoundingMode::None)?;
-            if piece.is_zero() || (piece.exponent() as i64) + (p as i64) < 0 {
+            if piece.is_zero() || piece.exponent() + (p as i64) < 0 {
                 done = true;
                 break;
             }
@@ -1349,7 +1343,7 @@ impl ExactNumNumber {
             prev_e = e;
             f = f.add(&f_term, p, RoundingMode::None)?;
             g = g.add(&g_term, p, RoundingMode::None)?;
-            if f_term.is_zero() || (e as i64) + (p as i64) < 0 {
+            if f_term.is_zero() || e + (p as i64) < 0 {
                 done = true;
                 break;
             }
@@ -1528,7 +1522,7 @@ impl ExactNumNumber {
             prev_e = e;
             f_sum = f_sum.add(&f_term, p, RoundingMode::None)?;
             g_sum = g_sum.add(&g_term, p, RoundingMode::None)?;
-            if f_term.is_zero() || (e as i64) + (p as i64) < 0 {
+            if f_term.is_zero() || e + (p as i64) < 0 {
                 done = true;
                 break;
             }
@@ -1853,7 +1847,7 @@ impl ExactNumNumber {
             let pi = cc.pi_num(p, RoundingMode::None)?;
             let nupi = nu.mul(&pi, p, RoundingMode::None)?;
             let s = nupi.sin(p, RoundingMode::None, cc)?;
-            if s.is_zero() || (s.exponent() as i64) + (p as i64) < 0 {
+            if s.is_zero() || s.exponent() + (p as i64) < 0 {
                 return Err(Error::InvalidArgument);
             }
             let jp = self.bessel_jn_series(nu, p, cc, true)?;
@@ -2152,7 +2146,7 @@ impl ExactNumNumber {
                 qsum = qsum.add(&signed, p, RoundingMode::None)?;
             }
             let e = term.exponent();
-            if term.is_zero() || (e as i64) + (p as i64) < 0 {
+            if term.is_zero() || e + (p as i64) < 0 {
                 done = true;
                 break;
             }
@@ -2252,7 +2246,7 @@ impl ExactNumNumber {
                 term = term.neg()?;
             }
             sum = sum.add(&term, p, RoundingMode::None)?;
-            if term.is_zero() || (term.exponent() as i64) + (p as i64) < 0 {
+            if term.is_zero() || term.exponent() + (p as i64) < 0 {
                 done = true;
                 break;
             }
@@ -2303,7 +2297,7 @@ impl ExactNumNumber {
                 term = term.neg()?;
             }
             sum = sum.add(&term, p, RoundingMode::None)?;
-            if (term.is_zero() || (term.exponent() as i64) + (p as i64) < 0) && k > 0 {
+            if (term.is_zero() || term.exponent() + (p as i64) < 0) && k > 0 {
                 done = true;
                 break;
             }
@@ -2414,7 +2408,7 @@ impl ExactNumNumber {
                 )?
                 .mul(&zk, p, RoundingMode::None)?;
             sum = sum.add(&term, p, RoundingMode::None)?;
-            if term.is_zero() || (term.exponent() as i64) + (p as i64) < 0 {
+            if term.is_zero() || term.exponent() + (p as i64) < 0 {
                 done = true;
                 break;
             }
@@ -2469,7 +2463,7 @@ impl ExactNumNumber {
         let s = mu
             .mul(&pi, p, RoundingMode::None)?
             .sin(p, RoundingMode::None, cc)?;
-        if s.is_zero() || (s.exponent() as i64) + (p as i64) < 0 {
+        if s.is_zero() || s.exponent() + (p as i64) < 0 {
             return Err(Error::InvalidArgument);
         }
         let ip = self.bessel_i(mu, p, RoundingMode::None, cc)?;
@@ -2512,7 +2506,7 @@ impl ExactNumNumber {
                 break;
             }
             sum = sum.add(&term, p, RoundingMode::None)?;
-            if term.is_zero() || (e as i64) + (p as i64) < 0 {
+            if term.is_zero() || e + (p as i64) < 0 {
                 done = true;
                 break;
             }
@@ -3715,7 +3709,7 @@ fn betainc_cf(
         }
         // Stop one word short of p: rounding keeps |Δ−1| near 2^-p.
         let step = delta.sub(&one, p, RoundingMode::None)?;
-        if step.is_zero() || (step.exponent() as i64) + ((p - WORD_BIT_SIZE) as i64) < 0 {
+        if step.is_zero() || step.exponent() + ((p - WORD_BIT_SIZE) as i64) < 0 {
             return Ok(h);
         }
     }
@@ -3920,7 +3914,7 @@ fn series_done(
     if sum.is_zero() || n.cmp(max_par) <= 0 {
         return Ok(false);
     }
-    if (term_exp as i64) >= (sum.exponent() as i64) - (p as i64) - 4 {
+    if term_exp >= sum.exponent() - (p as i64) - 4 {
         return Ok(false);
     }
     let seven_eighths = ExactNumNumber::from_word(7, p)?.ldexp(-3, p, RoundingMode::None)?;
@@ -4792,8 +4786,8 @@ fn series_negligible(t: &ExactNumNumber, sum: &ExactNumNumber, p: usize) -> bool
     if t.is_zero() {
         return true;
     }
-    let se = if sum.is_zero() { 0 } else { sum.exponent() as i64 };
-    (t.exponent() as i64) + (p as i64) < se
+    let se = if sum.is_zero() { 0 } else { sum.exponent() };
+    t.exponent() + (p as i64) < se
 }
 
 /// Largest cancellation guard (bits) the Bessel power series will use. For `J`/`Y` with
@@ -5065,14 +5059,14 @@ impl BernoulliCache {
     fn grow_exact(&mut self, n: usize) -> Result<(), Error> {
         while self.exact.len() < n {
             self.next_row()?;
-            if self.row_n % 2 == 0 {
+            if self.row_n.is_multiple_of(2) {
                 continue;
             }
             let k = self.exact.len() + 1;
             let t = self.row.last().ok_or(Error::InvalidArgument)?;
             let pb = round_p(t.mantissa_max_bit_len() + 2 * WORD_BIT_SIZE);
             let mut num = t.mul(&from_usize_p(2 * k, pb)?, pb, RoundingMode::None)?;
-            if k % 2 == 0 {
+            if k.is_multiple_of(2) {
                 num = num.neg()?;
             }
             let pd = round_p(4 * k + 2 * WORD_BIT_SIZE);
@@ -5216,8 +5210,7 @@ pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNu
         let th = t.mul(&h, pw, RoundingMode::None)?;
         a = a.add(&th, pw, RoundingMode::None)?;
         b = b.add(&t, pw, RoundingMode::None)?;
-        if k > n_min && (th.is_zero() || (th.exponent() as i64) + (pw as i64) < a.exponent() as i64)
-        {
+        if k > n_min && (th.is_zero() || th.exponent() + (pw as i64) < a.exponent()) {
             break;
         }
         k += 1;

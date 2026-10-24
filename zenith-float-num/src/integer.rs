@@ -478,7 +478,7 @@ fn exact_word_lt_base(x: &ExactNum) -> Word {
         return 0;
     };
     let pbuf = m.len() * WORD_BIT_SIZE;
-    let shift = e as i64 - pbuf as i64;
+    let shift = e - pbuf as i64;
     shift_le_low_word(m, shift)
 }
 

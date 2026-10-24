@@ -1713,9 +1713,7 @@ impl ExactNum {
     pub fn leading_bit_exponent(&self) -> Option<i64> {
         let (words, _, _, e, _) = self.as_raw_parts()?;
         let lz = Self::mantissa_leading_zero_bits(words)?;
-        i64::from(e)
-            .checked_sub(1)?
-            .checked_sub(i64::try_from(lz).ok()?)
+        e.checked_sub(1)?.checked_sub(i64::try_from(lz).ok()?)
     }
 
     /// The top 64 bits of the magnitude, the sticky bit below them, and the exponent, for a finite nonzero number:
@@ -1742,7 +1740,7 @@ impl ExactNum {
         let norm = acc << acc.leading_zeros();
         let below = words.iter().rev().skip(skip + k).any(|w| *w != 0);
         let sticky = (norm as u64) != 0 || below;
-        let exp = i64::from(e).checked_sub(i64::try_from(lz).ok()?)?;
+        let exp = e.checked_sub(i64::try_from(lz).ok()?)?;
         Some(((norm >> 64) as u64, sticky, exp))
     }
 
@@ -8114,12 +8112,8 @@ mod round_op_flag_tests {
         }
         for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::None] {
             // a subnormal operand rounded to an integer is an inexact zero
-            let t = ExactNum::from_mag_parts(
-                0xC000_0000_0000_0000,
-                i64::from(crate::EXPONENT_MIN) + 5,
-                64,
-            )?
-            .round(0, rm);
+            let t = ExactNum::from_mag_parts(0xC000_0000_0000_0000, crate::EXPONENT_MIN + 5, 64)?
+                .round(0, rm);
             assert!(t.is_zero() && t.inexact(), "{rm:?}");
         }
         let w =
@@ -8156,7 +8150,7 @@ mod underflow_zero_flag_tests {
     #[test]
     fn power_of_a_tiny_subnormal_is_not_an_exact_zero() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
-        let x = ExactNum::from_mag_parts(0xC000_0000_0000_0000, i64::from(EXPONENT_MIN) - 17, 64)?;
+        let x = ExactNum::from_mag_parts(0xC000_0000_0000_0000, EXPONENT_MIN - 17, 64)?;
         let three = ExactNum::from_u8(3, 64);
         let up = x.pow(&three, 53, RoundingMode::Up, &mut cc);
         assert!(up.is_positive() && !up.is_zero());
@@ -8167,18 +8161,18 @@ mod underflow_zero_flag_tests {
         // the least positive value is the quantum of the result precision, and far below half of it
         // a nearest mode gives zero
         let up128 = x.pow(&three, 128, RoundingMode::Up, &mut cc);
-        assert!(up128 == ExactNum::pow2(i64::from(EXPONENT_MIN) - 128, 128)? && up128.inexact());
+        assert!(up128 == ExactNum::pow2(EXPONENT_MIN - 128, 128)? && up128.inexact());
         let ne = x.pow(&three, 200, RoundingMode::ToEven, &mut cc);
         assert!(ne.is_zero() && ne.inexact());
         // a power `N / 2` takes the exact square root, then the same integer power
-        let r = ExactNum::from_mag_parts(0x9000_0000_0000_0000, i64::from(EXPONENT_MIN) - 17, 64)?; // its root is exact
+        let r = ExactNum::from_mag_parts(0x9000_0000_0000_0000, EXPONENT_MIN - 17, 64)?; // its root is exact
         let half5 = ExactNum::from_mag_parts(0xA000_0000_0000_0000, 2, 64)?; // 2.5
         let up = r.pow(&half5, 53, RoundingMode::Up, &mut cc);
         assert!(up.is_positive() && !up.is_zero() && up.inexact());
         let tz = r.pow(&half5, 53, RoundingMode::ToZero, &mut cc);
         assert!(tz.is_zero() && tz.inexact());
         // a root that is not exact takes the logarithm path, which also has to round the underflow
-        let s = ExactNum::from_mag_parts(0xC000_0000_0000_0000, i64::from(EXPONENT_MIN) - 17, 64)?; // 1.5 * 2^(EMIN - 18)
+        let s = ExactNum::from_mag_parts(0xC000_0000_0000_0000, EXPONENT_MIN - 17, 64)?; // 1.5 * 2^(EMIN - 18)
         let up = s.pow(&half5, 53, RoundingMode::Up, &mut cc);
         assert!(up.is_positive() && !up.is_zero() && up.inexact());
         let tz = s.pow(&half5, 53, RoundingMode::ToZero, &mut cc);

@@ -82,7 +82,7 @@ fn erf_series_guard_bits(u: &ExactComplex) -> usize {
 
 pub(crate) fn term_negligible(t: &ExactComplex, p: usize) -> bool {
     let m = t.abs(p, RoundingMode::None);
-    m.is_zero() || m.exponent().is_some_and(|e| (e as i64) + (p as i64) < 0)
+    m.is_zero() || m.exponent().is_some_and(|e| e + (p as i64) < 0)
 }
 
 fn l1_below_series_bound(z: &ExactComplex, p: usize) -> bool {
@@ -706,7 +706,7 @@ mod tests {
             );
             let t = ExactNum::div_ref(&xpow, &den, p, RoundingMode::None);
             sum = sum.add(&t, p, RoundingMode::None);
-            if t.is_zero() || t.exponent().is_some_and(|e| (e as i64) + (p as i64) < 0) {
+            if t.is_zero() || t.exponent().is_some_and(|e| e + (p as i64) < 0) {
                 break;
             }
         }

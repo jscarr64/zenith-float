@@ -44,14 +44,14 @@ pub(crate) fn series_cap(p: usize) -> usize {
 /// Absolute residual below `2^{-(word width + 4)}`.
 fn under_word(err: &ExactNum, p: usize) -> bool {
     let guard = (word_p(p) as i64).saturating_add(4);
-    err.is_zero() || err.exponent().is_some_and(|e| (e as i64) + guard < 0)
+    err.is_zero() || err.exponent().is_some_and(|e| e + guard < 0)
 }
 
 /// Residual below `2^{-(word width + 4)}` relative to `sum`.
 fn under_word_rel(term: &ExactNum, sum: &ExactNum, p: usize) -> bool {
     let guard = (word_p(p) as i64).saturating_add(4);
-    let rel = sum.exponent().unwrap_or(0) as i64;
-    term.is_zero() || term.exponent().is_some_and(|e| (e as i64) + guard < rel)
+    let rel = sum.exponent().unwrap_or(0);
+    term.is_zero() || term.exponent().is_some_and(|e| e + guard < rel)
 }
 
 /// Upper bound on \(\log_2(n!)\).
@@ -492,7 +492,7 @@ fn scorer_gi_series(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
         if term.is_zero()
             || term
                 .exponent()
-                .is_some_and(|e| (e as i64) + (p as i64) < sum.exponent().unwrap_or(0) as i64)
+                .is_some_and(|e| e + (p as i64) < sum.exponent().unwrap_or(0))
         {
             break;
         }
@@ -515,7 +515,7 @@ fn scorer_gi_asymp_plus(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
             .mul(&fac, p, RoundingMode::None)
             .div(&x3, p, RoundingMode::None);
         sum = sum.add(&term, p, RoundingMode::None);
-        if term.is_zero() || term.exponent().is_some_and(|e| (e as i64) + (p as i64) < 0) {
+        if term.is_zero() || term.exponent().is_some_and(|e| e + (p as i64) < 0) {
             break;
         }
     }
@@ -537,7 +537,7 @@ fn scorer_hi_asymp_minus(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
         let t = if sign < 0 { term.clone().neg() } else { term.clone() };
         sum = sum.add(&t, p, RoundingMode::None);
         sign = -sign;
-        if term.is_zero() || term.exponent().is_some_and(|e| (e as i64) + (p as i64) < 0) {
+        if term.is_zero() || term.exponent().is_some_and(|e| e + (p as i64) < 0) {
             break;
         }
     }
@@ -1504,9 +1504,7 @@ impl ExactNum {
             .div(&e, wrk, RoundingMode::None)
             .neg();
         let gap = ExactNum::sub_ref(self, &inv_e, wrk, RoundingMode::None);
-        if gap
-            .exponent()
-            .is_some_and(|e| (e as i64) + ((p as i64) / 2) < 0)
+        if gap.exponent().is_some_and(|e| e + ((p as i64) / 2) < 0)
             || self.compare(&inv_e) == Some(0)
         {
             return finish(ExactNum::from_i8(-1, wrk), p, rm);

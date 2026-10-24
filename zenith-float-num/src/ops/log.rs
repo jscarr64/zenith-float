@@ -123,7 +123,7 @@ impl ExactNumNumber {
         // below and the power-of-two test see `self`'s digits at a shift of 0 or do not depend on the shift.
         let shift = self.normalizing_shift();
         let m = self;
-        let e = self.exponent() as i64 - shift as i64;
+        let e = self.exponent() - shift as i64;
 
         // cancellation when x is near 1
         let additional_prec = if e == 0 {
@@ -250,7 +250,7 @@ impl ExactNumNumber {
         // below and the power-of-two test see `self`'s digits at a shift of 0 or do not depend on the shift.
         let shift = self.normalizing_shift();
         let m = self;
-        let e = self.exponent() as i64 - shift as i64;
+        let e = self.exponent() - shift as i64;
 
         let zeroes_cnt = count_leading_zeroes_skip_first(m.mantissa().digits());
         // one set bit: `self` is a power of two (read on the unnormalized digits, so a subnormal is covered too)

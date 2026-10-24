@@ -133,8 +133,8 @@ impl ExactNumNumber {
                 .mul(&k3p1, p, RoundingMode::None)?
                 .div(self, p, RoundingMode::None)?;
             gp = gp.add(&dtg, p, RoundingMode::None)?;
-            let tf_done = tf.is_zero() || (tf.exponent() as i64) + (p as i64) < 0;
-            let tg_done = tg.is_zero() || (tg.exponent() as i64) + (p as i64) < 0;
+            let tf_done = tf.is_zero() || tf.exponent() + (p as i64) < 0;
+            let tg_done = tg.is_zero() || tg.exponent() + (p as i64) < 0;
             if tf_done && tg_done {
                 break;
             }
@@ -375,7 +375,7 @@ fn airy_uv_sums(
         }
         sum_u = sum_u.add(&tu, p, RoundingMode::None)?;
         sum_v = sum_v.add(&tv, p, RoundingMode::None)?;
-        if tu.is_zero() || (tu.exponent() as i64) + (p as i64) < 0 {
+        if tu.is_zero() || tu.exponent() + (p as i64) < 0 {
             break;
         }
         prev_u = tu.abs()?;
@@ -438,7 +438,7 @@ fn airy_pq_sums(
         } else {
             odd = odd.add(&t, p, RoundingMode::None)?;
         }
-        if t.is_zero() || (t.exponent() as i64) + (p as i64) < 0 {
+        if t.is_zero() || t.exponent() + (p as i64) < 0 {
             break;
         }
         prev = t.abs()?;

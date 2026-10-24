@@ -47,7 +47,7 @@ fn exact_sum(a: &ExactNum, b: &ExactNum, sub: bool, p: usize) -> ExactNum {
         (true, sub) => {
             let w = a
                 .mantissa_max_bit_len()
-                .map_or(p, |la| la.max(b.mantissa_max_bit_len().map_or(p, |lb| lb)))
+                .map_or(p, |la| la.max(b.mantissa_max_bit_len().unwrap_or(p)))
                 .saturating_add(p)
                 .saturating_add(2 * WORD_BIT_SIZE);
             let a_big = a.exponent() > b.exponent();
@@ -1216,11 +1216,7 @@ mod tests {
         // (-7 + s i) / (-7 - 7i) with s = 1.5 * 2^(EMIN - 18): im = (-49 - 7s) / 98 = -1/2 - 7s/98, just below -1/2.
         // Rounding the wide sum `bc - ad` without a sticky bit gave exactly -1/2, so Down kept -1/2.
         let m7 = || -ExactNum::from_u8(7, 64);
-        let s = ExactNum::from_mag_parts(
-            0xC000_0000_0000_0000,
-            i64::from(crate::EXPONENT_MIN) - 17,
-            64,
-        )?;
+        let s = ExactNum::from_mag_parts(0xC000_0000_0000_0000, crate::EXPONENT_MIN - 17, 64)?;
         let q =
             ExactComplex::new(m7(), s).div(&ExactComplex::new(m7(), m7()), 1, RoundingMode::Down);
         assert_eq!(q.im().compare(&-ExactNum::from_u8(1, 64)), Some(0));

@@ -354,7 +354,7 @@ fn series_linear<T: PolycoeffGen>(
 
         acc = acc.add(&part, p, RoundingMode::None)?;
 
-        if part.exponent() as i64 <= acc.exponent() as i64 - acc.mantissa_max_bit_len() as i64 {
+        if part.exponent() <= acc.exponent() - acc.mantissa_max_bit_len() as i64 {
             break;
         }
 
@@ -413,13 +413,13 @@ fn series_horner<T: PolycoeffGen>(
 
     // determine number of parts and cache plynomial coeffs.
     let mut cache = Vec::<ExactNumNumber>::new();
-    let mut x_p = -(x_first.exponent() as i64) - x_step.exponent() as i64;
+    let mut x_p = -x_first.exponent() - x_step.exponent();
     let mut coef_p = 0;
 
-    while x_p + coef_p < p as i64 - add.exponent() as i64 {
+    while x_p + coef_p < p as i64 - add.exponent() {
         let coeff = polycoeff_gen.next(RoundingMode::None)?;
-        coef_p = -coeff.exponent() as i64;
-        x_p += -x_step.exponent() as i64;
+        coef_p = -coeff.exponent();
+        x_p += -x_step.exponent();
         cache.push(coeff.clone()?);
     }
 

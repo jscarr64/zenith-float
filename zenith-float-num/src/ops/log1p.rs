@@ -29,14 +29,7 @@ impl ExactNumNumber {
 
         // `ln(1 + x) = x - x^2/2 + ...`: the true value is below `x` in magnitude for `x > 0` and above it for
         // `x < 0`, so the one-bit correction goes against the sign of `x` only when `x` is positive.
-        compute_small_exp!(
-            self,
-            self.exponent() as i64,
-            self.is_positive(),
-            p_wrk,
-            p,
-            rm
-        );
+        compute_small_exp!(self, self.exponent(), self.is_positive(), p_wrk, p, rm);
 
         p_wrk += p_inc;
 

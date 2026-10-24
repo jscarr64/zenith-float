@@ -59,7 +59,7 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len());
 
-        compute_small_exp!(self, self.exponent() as i64 * 2 - 2, true, p_wrk, p, rm);
+        compute_small_exp!(self, self.exponent() * 2 - 2, true, p_wrk, p, rm);
 
         p_wrk += p_inc;
 
@@ -98,7 +98,7 @@ impl ExactNumNumber {
         let (reduction_times, niter, e_eff) = series_cost_optimize::<SinArgReductionEstimator>(
             p,
             &polycoeff_gen,
-            -(self.exponent() as i64),
+            -self.exponent(),
             2,
             false,
         );

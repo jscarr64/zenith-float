@@ -463,8 +463,7 @@ fn lost_bits(got: &ExactNum, want: &ExactNum, scale: &ExactNum, p: usize) -> Res
     if diff.is_zero() {
         return Ok(0);
     }
-    let correct =
-        i64::from(scale.exponent().unwrap_or(0)) - i64::from(diff.exponent().unwrap_or(0));
+    let correct = scale.exponent().unwrap_or(0) - diff.exponent().unwrap_or(0);
     let word = i64::try_from(round_p(p).max(64)).unwrap_or(i64::MAX);
     if correct >= word {
         Ok(0)

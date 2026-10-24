@@ -418,7 +418,7 @@ fn values_agree(a: &ExactNum, b: &ExactNum, bits: usize) -> bool {
         return false;
     };
     let mag = if scale.is_zero() { 0 } else { scale.exponent().unwrap_or(0).max(0) };
-    i64::from(de) + (bits as i64) < i64::from(mag) + 8
+    de + (bits as i64) < mag + 8
 }
 
 /// Hypercomb limit: shift every parameter by a distinct \(O(2^{-\mathrm{hmag}})\)
@@ -513,10 +513,7 @@ fn near_small_int(x: &ExactNum, p: usize, lo: i32, hi: i32) -> Option<i32> {
             .neg()
             .add(x, p, RoundingMode::None)
             .abs();
-        if d.is_zero()
-            || d.exponent()
-                .is_some_and(|e| (e as i64) + ((p as i64) / 2) < 0)
-        {
+        if d.is_zero() || d.exponent().is_some_and(|e| e + ((p as i64) / 2) < 0) {
             return Some(n);
         }
     }
@@ -922,7 +919,7 @@ impl ExactNum {
                 || term
                     .abs()
                     .exponent()
-                    .is_some_and(|e| (e as i64) + (p as i64) < sum.exponent().unwrap_or(0) as i64)
+                    .is_some_and(|e| e + (p as i64) < sum.exponent().unwrap_or(0))
             {
                 break;
             }
@@ -1051,7 +1048,7 @@ impl ExactNum {
                 || term
                     .abs()
                     .exponent()
-                    .is_some_and(|e| (e as i64) + (p as i64) < sum.exponent().unwrap_or(0) as i64)
+                    .is_some_and(|e| e + (p as i64) < sum.exponent().unwrap_or(0))
             {
                 break;
             }
@@ -1090,7 +1087,7 @@ fn rel_below(term: &ExactNum, peak: Exponent, bits: usize) -> bool {
         return true;
     }
     match term.exponent() {
-        Some(e) => (e as i64) + (bits as i64) < i64::from(peak),
+        Some(e) => e + (bits as i64) < peak,
         None => false,
     }
 }
@@ -1174,7 +1171,7 @@ fn agrees_tight(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
         return false;
     };
     let mag = if scale.is_zero() { 0 } else { scale.exponent().unwrap_or(0) };
-    i64::from(de) + (p as i64) < i64::from(mag) + 1
+    de + (p as i64) < mag + 1
 }
 
 fn heun_g_is_2f1(

@@ -423,7 +423,7 @@ fn exact_num_to_rational(x: &ExactNum) -> Option<ExactRational> {
     let (m, _n, s, e, _) = x.as_raw_parts()?;
     let pbuf = m.len() * WORD_BIT_SIZE;
     let mut num = ExactInt::from_le_words(s, m);
-    let shift = e as i64 - pbuf as i64;
+    let shift = e - pbuf as i64;
     if shift >= 0 {
         num = num.shl(shift as usize);
         Some(ExactRational::from_ints(num, ExactInt::one()))

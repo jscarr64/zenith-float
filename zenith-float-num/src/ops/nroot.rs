@@ -131,7 +131,7 @@ impl ExactNumNumber {
         // (powi < 2u, div, mul, add, div < u each) adds below 6u, so the total is below 7u < 2^12 * 2^-p_x,
         // which is the 2^-p_wrk relative error `try_set_precision(p, rm, p_wrk)` is told. Later iterations
         // start from the previous step at a higher p_wrk, with an even smaller d0.
-        let e_abs = (abs_self.exponent() as i64).unsigned_abs();
+        let e_abs = abs_self.exponent().unsigned_abs();
         let b = (u64::BITS - e_abs.leading_zeros()) as usize + 1;
         let n_bits = (usize::BITS - n.leading_zeros()) as usize;
         let p_s = p_wrk + 12 + b + n_bits + 4;

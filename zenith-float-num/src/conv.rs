@@ -197,7 +197,7 @@ impl ExactNumNumber {
                 crate::exp::wide(crate::exp::mul(e, shift as i64)) + crate::exp::wide(e_shift),
             );
 
-            if e > EXPONENT_MAX as i64 {
+            if e > EXPONENT_MAX {
                 return Err(Error::ExponentOverflow(sign));
             }
 
@@ -236,7 +236,7 @@ impl ExactNumNumber {
 
             m.set_bit_len(m.max_bit_len());
 
-            let mut ret = if e < EXPONENT_MIN as i64 {
+            let mut ret = if e < EXPONENT_MIN {
                 if p < usize::MAX {
                     let mut num = ExactNumNumber::from_raw_unchecked(m, sign, EXPONENT_MIN, false);
 
@@ -252,7 +252,7 @@ impl ExactNumNumber {
 
                     num
                 } else {
-                    let e_shift = (EXPONENT_MIN as i64 - e) as usize;
+                    let e_shift = (EXPONENT_MIN - e) as usize;
                     let newbitlen = m.bit_len().saturating_add(e_shift);
 
                     Self::p_assertion(round_p(newbitlen))?;
@@ -314,7 +314,7 @@ impl ExactNumNumber {
             }
         }
 
-        let exp_adj = e as i64 - digits.len() as i64;
+        let exp_adj = e - digits.len() as i64;
         if exp_adj > 0 {
             let pwr = b.powi(exp_adj as usize, p_wrk, RoundingMode::None)?;
             acc = acc.mul(&pwr, p_wrk, RoundingMode::None)?;
@@ -372,7 +372,7 @@ impl ExactNumNumber {
         let mut pending = Some(x);
 
         // exponent part
-        let n = e as i64 - digits.len() as i64;
+        let n = e - digits.len() as i64;
 
         let p = if p < usize::MAX {
             p
@@ -510,7 +510,7 @@ impl ExactNumNumber {
             // i128 with floor(log10(2) * 2^64): with an i64 exponent the old
             // 301029996e-9 factor is off by ~5e8 digits and the product overflows i64.
             let n_wrk = i64::try_from(
-                ((p_wrk as i128 - i128::from(self.exponent()) + subn_e as i128) * LOG10_2_Q64
+                (((p_wrk as i128 - i128::from(self.exponent()) + subn_e as i128) * LOG10_2_Q64)
                     >> 64)
                     + 1,
             )
@@ -554,7 +554,7 @@ impl ExactNumNumber {
             let (m_slice, _m_bits, _s, e, inexact) = x.as_raw_parts();
             let mut m = Mantissa::from_raw_parts(m_slice, _m_bits)?;
 
-            let shift = (e as i64).saturating_sub(p_wrk as i64).max(0) as usize;
+            let shift = e.saturating_sub(p_wrk as i64).max(0) as usize;
             if shift > 0 {
                 m.shift_left_resize(shift)?;
             }
@@ -569,9 +569,9 @@ impl ExactNumNumber {
             let mut e_out = digits.len() as i64 - n_wrk;
 
             let mut e_subn = 0;
-            if e_out < EXPONENT_MIN as i64 {
-                e_subn = (EXPONENT_MIN as i64 - e_out) as usize;
-                e_out = EXPONENT_MIN as i64;
+            if e_out < EXPONENT_MIN {
+                e_subn = (EXPONENT_MIN - e_out) as usize;
+                e_out = EXPONENT_MIN;
             }
 
             let mut e_out = e_out as Exponent;

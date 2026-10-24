@@ -33,7 +33,7 @@ impl ExactNumNumber {
         }
 
         let p_max = p.max(self.mantissa_max_bit_len());
-        compute_small_exp!(self, self.exponent() as i64 * 2 - 2, true, p_max, p, rm);
+        compute_small_exp!(self, self.exponent() * 2 - 2, true, p_max, p, rm);
 
         let mut x = self.clone()?;
         x.set_sign(Sign::Pos);
@@ -47,7 +47,7 @@ impl ExactNumNumber {
         let mut val = loop {
             let mut p_x = p_wrk;
 
-            let mut ret = if (self.exponent() as i64 - 1) / 2 > p_x as i64 + 2 {
+            let mut ret = if (self.exponent() - 1) / 2 > p_x as i64 + 2 {
                 // asinh(x) = ln(2 * |x|) * signum(x)
 
                 if self.exponent() == EXPONENT_MAX {

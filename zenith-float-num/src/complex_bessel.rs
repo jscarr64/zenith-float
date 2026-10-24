@@ -25,7 +25,7 @@ fn term_small_rel(t: &ExactComplex, s: &ExactComplex, p: usize) -> bool {
         return true;
     }
     match (at.exponent(), s.abs(64, RoundingMode::None).exponent()) {
-        (Some(et), Some(es)) => (et as i64) + (p as i64) < es as i64,
+        (Some(et), Some(es)) => et + (p as i64) < es,
         _ => term_negligible(t, p),
     }
 }
@@ -177,7 +177,7 @@ fn four_c(p: usize) -> ExactComplex {
 
 fn cpx_tiny(z: &ExactComplex, p: usize) -> bool {
     let a = z.abs(64, RoundingMode::None);
-    a.is_zero() || a.exponent().is_some_and(|e| (e as i64) + (p as i64) < 0)
+    a.is_zero() || a.exponent().is_some_and(|e| e + (p as i64) < 0)
 }
 
 fn term_near_one(delta: &ExactComplex, p: usize) -> bool {
@@ -293,7 +293,7 @@ fn sin_nu_pi_loss(nu: &ExactComplex, cc: &mut Consts) -> Option<usize> {
     if e < -4096 {
         return None;
     }
-    Some((8i64 - i64::from(e)).clamp(0, 4096) as usize)
+    Some((8i64 - e).clamp(0, 4096) as usize)
 }
 
 fn i_diff_loss(ip: &ExactComplex, im: &ExactComplex, diff: &ExactComplex) -> usize {
@@ -304,7 +304,7 @@ fn i_diff_loss(ip: &ExactComplex, im: &ExactComplex, diff: &ExactComplex) -> usi
     let Some(ed) = c_mag_exp(diff) else {
         return BESSEL_GUARD_MAX;
     };
-    (i64::from(ei) - i64::from(ed) + 8).max(0) as usize
+    (ei - ed + 8).max(0) as usize
 }
 
 /// `z > 0` real and `ν` real: every Bessel function is real there.
@@ -707,7 +707,7 @@ impl ExactComplex {
                 return sum;
             }
             let measured = match (peak_exp, sum_exp) {
-                (Some(pe), Some(se)) => (pe as i64 - se as i64 + 1).max(0) as usize,
+                (Some(pe), Some(se)) => (pe - se + 1).max(0) as usize,
                 (Some(_), None) => guard.saturating_add(work_p),
                 _ => 0,
             };

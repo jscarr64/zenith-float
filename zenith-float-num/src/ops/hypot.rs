@@ -42,10 +42,10 @@ impl ExactNumNumber {
         // compare magnitudes. The exponents are kept in an `i64`, so a subnormal operand needs no
         // special case: the result is moved onto the subnormal grid below when it lies under the range.
         // ax and ay are not used again: move them.
-        let ax_exp = ax.exponent() as i64;
+        let ax_exp = ax.exponent();
         let mut sx = ax;
         let ex = ax_exp - sx.normalize2() as i64;
-        let ay_exp = ay.exponent() as i64;
+        let ay_exp = ay.exponent();
         let mut sy = ay;
         let ey = ay_exp - sy.normalize2() as i64;
         let wx = sx.mantissa_max_bit_len() as i64;
@@ -61,10 +61,10 @@ impl ExactNumNumber {
             .add_full_prec(&sy.mul_full_prec(&sy)?)?;
         let mut ret = s2.sqrt(p, rm)?;
         let e = crate::exp::narrow(crate::exp::wide(ret.exponent()) + crate::exp::wide(ex));
-        if e > EXPONENT_MAX as i64 {
+        if e > EXPONENT_MAX {
             return Err(Error::ExponentOverflow(Sign::Pos));
         }
-        if e < EXPONENT_MIN as i64 {
+        if e < EXPONENT_MIN {
             // Under the range (the operands were subnormal): the same step `sqrt`, `mul` and `div` take.
             ret.set_exponent(EXPONENT_MIN);
             ret.subnormalize(e, rm);

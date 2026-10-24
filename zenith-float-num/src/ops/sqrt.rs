@@ -39,7 +39,7 @@ impl ExactNumNumber {
 
         let e = (e1 + (e1 & 1)) / 2 + e_shift;
 
-        if e < EXPONENT_MIN as i64 {
+        if e < EXPONENT_MIN {
             let mut ret = ExactNumNumber::from_raw_unchecked(m3, Sign::Pos, EXPONENT_MIN, inexact);
 
             ret.subnormalize(e, rm);

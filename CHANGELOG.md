@@ -850,3 +850,4 @@ First public release.
 - Optional `std`, `random`, and `serde` features.
 - Dual license MIT OR Apache-2.0.
 - Re-pinned 24 grid digests (ext.rs grid_digest_tests) after the complex exact_sum, pow underflow, reciprocal Newton, log round_exact and log exact-flag fixes; every dump re-verified against mpmath (scripts/verify_grid_digests.py, 0 BAD).
+- clippy --workspace --all-targets -D warnings clean: removed 147 same-type casts, 10 useless i64 conversions, 2 manual is_multiple_of, a precedence and a map_or (cargo clippy --fix); cargo fmt over the workspace.
