@@ -45,10 +45,12 @@ impl ExactNumNumber {
             let e = match self.exp(p_x, RoundingMode::None, cc) {
                 Err(Error::ExponentOverflow(s)) => {
                     if s == Sign::Neg {
+                        // e^x underflowed: the true value is just above -1, round once.
                         let mut m1 = Self::from_word(1, p)?;
                         m1.set_sign(Sign::Neg);
-                        m1.set_inexact(true | self.inexact());
-                        return Ok(m1);
+                        let mut r = Self::round_offset(&m1, Sign::Pos, p, rm)?;
+                        r.set_inexact(true);
+                        return Ok(r);
                     }
                     return Err(Error::ExponentOverflow(s));
                 }
@@ -59,10 +61,12 @@ impl ExactNumNumber {
             let one = Self::from_word(1, p_x)?;
 
             if e.is_zero() {
+                // e^x is below every p_x-bit number: the true value is just above -1.
                 let mut m1 = Self::from_word(1, p)?;
                 m1.set_sign(Sign::Neg);
-                m1.set_inexact(m1.inexact() | self.inexact());
-                return Ok(m1);
+                let mut r = Self::round_offset(&m1, Sign::Pos, p, rm)?;
+                r.set_inexact(true);
+                return Ok(r);
             }
 
             let mut ret = if e.cmp(&one) == 0 {

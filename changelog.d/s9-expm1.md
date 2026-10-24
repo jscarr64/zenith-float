@@ -1,0 +1,1 @@
+- `expm1`: for very negative x the result is the number just above -1 in the rounding direction (was exactly -1 in Up/ToZero).
