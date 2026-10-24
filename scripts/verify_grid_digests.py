@@ -223,6 +223,7 @@ def mpfun(op, xs, ints):
     if op in F: return F[op](x)
     if op == 'logb': return mpmath.log(x) / mpmath.log(xs[1])
     if op == 'pow': return mpmath.power(x, xs[1])
+    if op == 'powi': return mpmath.power(x, ints[0])
     if op in JAC:
         return jac(op, x, xs[1])
     raise KeyError(op)
@@ -234,6 +235,8 @@ def jac(op, u, m):
     return mpmath.ellipfun(op, u, m)
 
 def decide(op, xs, ints, p, rm):
+    # a negative base with a non-integer exponent is invalid even when |x|**y underflows
+    if op == 'pow' and xs[0] < 0 and xs[1] != mpmath.floor(xs[1]): return ('nan',), None
     last = None
     for extra in (256, 512):
         wp = p + extra
@@ -280,6 +283,8 @@ def exact_op(op, a, ints, p, rm, raw):
     if op == 'powi':
         b = dv(a[0]); n = ints[0]
         if b.st: return None
+        # a huge exact power is not materialised: the mpmath path rounds it like any other function
+        if b.M.bit_length() * abs(n) > 1 << 16 or n < 0: return None
         return D(b.neg and n % 2 == 1, b.M ** n, b.E * n)
     if op == 'nth_root':
         # a zero root keeps the sign for odd n and for the square root (MPFR sqrt and rootn_ui)
