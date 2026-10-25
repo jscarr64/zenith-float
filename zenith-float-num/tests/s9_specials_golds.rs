@@ -7,7 +7,7 @@
 //! bits over the i64 exponent range.
 //!
 //! Digamma rows at p >= 16384, and in debug builds the rows in `DEBUG_FULL_TIER_IDS`, run only
-//! with `MPFR_TIER=full` (see `full_tier_only`). `EXCLUDED_IDS` (ψ(½)@65536) never run.
+//! with `MPFR_TIER=full` (see `full_tier_only`). `EXCLUDED_IDS` (empty since S3) never run.
 //!
 //! One test per function. A test fails when any of its rows differs, times out,
 //! or has no directed implementation yet (`Unsupported`).
@@ -201,7 +201,7 @@ fn full_tier() -> bool {
 }
 
 /// Full-tier rows: digamma at p >= 16384. ψ(½) = −γ − 2 ln 2 needs Euler γ at the working
-/// precision (44 s release at p=65536) until Rusty's S3 rigorous Euler γ lands.
+/// precision; since S3 (binary-splitting B1) that is 0.49 s release at p=65536 (was 44 s).
 fn full_tier_only(row: &Value) -> bool {
     let high_p_digamma = row.get("fn").and_then(Value::as_str) == Some("digamma")
         && row
@@ -226,15 +226,9 @@ const DEBUG_FULL_TIER_IDS: &[&str] = &[
     "s9-digamma-4096-FromZero-3174",
 ];
 
-/// ψ(½) at p=65536 (= −γ − 2 ln 2): excluded from every tier until Rusty's S3 rigorous Euler
-/// γ lands; the current γ takes 44 s in release and over 120 s in debug.
-const EXCLUDED_IDS: &[&str] = &[
-    "s9-digamma-65536-ToEven-3380",
-    "s9-digamma-65536-Up-3381",
-    "s9-digamma-65536-Down-3382",
-    "s9-digamma-65536-ToZero-3383",
-    "s9-digamma-65536-FromZero-3384",
-];
+/// Rows excluded from every tier by id. Empty: ψ(½)@65536 (s9-digamma-65536-*) runs in the
+/// full tier again since S3 made Euler γ 0.49 s (release) at p=65536.
+const EXCLUDED_IDS: &[&str] = &[];
 
 fn row_id_in(row: &Value, ids: &[&str]) -> bool {
     row.get("id")

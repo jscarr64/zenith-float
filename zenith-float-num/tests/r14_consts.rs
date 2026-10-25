@@ -137,8 +137,9 @@ fn report(bad: &[String], total: usize, what: &str) -> Result<(), String> {
 }
 
 /// Fast-tier precisions: small (1, 2, 3, the word edges 63..65), medium (128, 1000) and large
-/// (4096). γ costs ≈ p^2.3 (Brent–McMillan B1 term by term, ≈ 0.6 p full-precision terms), so
-/// p ≥ 8192 for all seven constants runs in the full tier only.
+/// (4096). p ≥ 8192 for all seven constants runs in the full tier only. γ is Brent–McMillan B1
+/// by exact binary splitting with one final division (S3): 0.49 s release at p=65536, down
+/// from 44 s for the old term-by-term B1 with ≈ 0.6 p full-precision multiplications.
 const FAST_P: [usize; 9] = [1, 2, 3, 63, 64, 65, 128, 1000, 4096];
 /// FNV-1a 64 of every gold row's `canon_of` result, in file order, '\n'-joined: the full tier
 /// pins all 1050 results (value, precision, max bits and both inexact flags).
