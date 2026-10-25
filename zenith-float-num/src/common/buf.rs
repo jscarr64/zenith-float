@@ -104,8 +104,13 @@ impl WordBuf {
             Storage::Inline { data, len } => {
                 let mut v = Vec::new();
                 v.try_reserve_exact(new_len)?;
-                v.extend_from_slice(&data[..*len as usize]);
                 v.resize(new_len, 0);
+                // Spill: the inline words are moved (swapped) into the heap buffer, and the inline array is
+                // replaced right after, so no second copy of them survives.
+                let n = *len as usize;
+                if let (Some(dst), Some(src)) = (v.get_mut(..n), data.get_mut(..n)) {
+                    dst.swap_with_slice(src);
+                }
                 self.inner = Storage::Heap(v);
                 Ok(())
             }

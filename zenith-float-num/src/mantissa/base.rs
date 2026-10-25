@@ -217,43 +217,40 @@ impl Mantissa {
 
     /// Compare to m2 and return positive if self > m2, negative if self < m2, 0 otherwise.
     pub fn abs_cmp(&self, m2: &Self, normalized: bool) -> SignedWord {
-        let deref = |x: &Word| *x;
         let n = self.len().min(m2.len());
 
         if normalized {
-            Self::cmp_iters(
-                self.m.iter().rev().map(deref),
-                m2.m.iter().rev().map(deref),
-                n,
-            )
+            Self::cmp_iters(self.m.iter().rev(), m2.m.iter().rev(), n)
         } else {
             Self::cmp_iters(
-                NormalizedView::new(self.m.iter().rev().map(deref)),
-                NormalizedView::new(m2.m.iter().rev().map(deref)),
+                NormalizedView::new(self.m.iter().rev()),
+                NormalizedView::new(m2.m.iter().rev()),
                 n,
             )
         }
     }
 
-    fn cmp_iters<T>(mut iter1: T, mut iter2: T, n: usize) -> SignedWord
+    // The words are compared where they are stored (or as computed by NormalizedView): nothing is collected.
+    fn cmp_iters<A, T>(mut iter1: T, mut iter2: T, n: usize) -> SignedWord
     where
-        T: Iterator<Item = Word>,
+        A: core::borrow::Borrow<Word>,
+        T: Iterator<Item = A>,
     {
         for (a, b) in core::iter::zip(iter1.by_ref(), iter2.by_ref()).take(n) {
-            let diff = a as SignedWord - b as SignedWord;
+            let diff = *a.borrow() as SignedWord - *b.borrow() as SignedWord;
             if diff != 0 {
                 return diff;
             }
         }
 
         for v in iter1 {
-            if v != 0 {
+            if *v.borrow() != 0 {
                 return 1;
             }
         }
 
         for v in iter2 {
-            if v != 0 {
+            if *v.borrow() != 0 {
                 return -1;
             }
         }

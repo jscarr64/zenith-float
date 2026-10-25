@@ -239,6 +239,37 @@ rm -rf zenith-float-num/src/ops; echo 0 > tools/helper_copy_count_baseline.txt
 echo "rules_scan selftest: BORROW per-op fixtures ok ($bx_n)"
 rm -f zenith-float-num/src/mantissa/kern.rs
 rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ext.rs; echo 0 > tools/clone_count_baseline.txt
+# ---- BORROW holes: copies the rule must see (UFCS, spacing, slice paths, deref-collect, fn values, operators,
+# macros, helpers anywhere in the crate src) and a copy-free graph with a copy token only inside a block comment ----
+mkdir -p zenith-float-num/src/mantissa zenith-float-num/src/ops
+echo 99 > tools/clone_count_baseline.txt; echo 99 > tools/helper_copy_count_baseline.txt
+bred=""
+bcase() { # bcase <want: fail|pass> <name> <add_ref body> <mantissa/kern.rs content> [path:content]
+  { echo 'impl N {'; echo "    pub fn add_ref(a: &N, b: &N) -> N { $3 }"
+    for o in sub mul div; do echo "    pub fn ${o}_ref(a: &N, b: &N) -> N { N(0) }"; done; echo '}'; } > zenith-float-num/src/ext.rs
+  printf '%b\n' "$4" > zenith-float-num/src/mantissa/kern.rs
+  rm -f zenith-float-num/src/ops/h.rs; [ -z "${5:-}" ] || printf '%b\n' "${5#*:}" > "zenith-float-num/src/${5%%:*}"
+  bout="$(scan --count-only 2>&1)"; local got=pass
+  echo "$bout" | grep -q "BORROW" && got=fail
+  [ "$got" = "$1" ] || { bred="$bred $2"; echo "BORROW fixture red: $2 (want $1, got $got)"; }
+}
+bcase fail ufcs-clone 'let c = Clone::clone(a); k(&c, b)' 'fn k(a: &N, b: &N) -> N { N(0) }'
+bcase fail space-before-paren 'let c = a.clone (); k(&c, b)' 'fn k(a: &N, b: &N) -> N { N(0) }'
+bcase fail slice-to_vec-path 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(<[u64]>::to_vec(&a.w).len()) }'
+bcase fail vec-from-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(Vec::from(&a.w[..]).len()) }'
+bcase fail deref-map-collect 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(|x| *x).collect(); N(v.len()) }'
+bcase fail extend-from-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); v.extend_from_slice(&a.w); N(v.len()) }'
+bcase fail fn-as-value 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(a.w.iter().map(cp).count()) }\nfn cp(x: &u64) -> u64 { x.clone() }'
+bcase fail operator-dispatch 'a + b' 'impl core::ops::Add for &N { type Output = N; fn add(self, b: &N) -> N { self.clone() } }'
+bcase fail macro-body 'k(a, b)' 'macro_rules! dup { ($x:expr) => { $x.clone() } }\nfn k(a: &N, b: &N) -> N { dup!(a) }'
+bcase fail helper-outside-scope 'k(a, b)' 'fn k(a: &N, b: &N) -> N { crate::ops::h::deep(a) }' 'ops/h.rs:pub fn deep(a: &N) -> N { a.clone() }'
+bcase pass multiline-block-comment 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    /* note:\n       a.clone() is banned here */\n    let s = "/* not a comment"; N(s.len())\n}\nfn other(a: &N) -> N { a.clone() }'
+# the failure names the op and the call chain to the copy site
+bcase fail reach-path 'k(a, b)' 'fn k(a: &N, b: &N) -> N { deep(a) }\nfn deep(a: &N) -> N { a.clone() }'
+echo "$bout" | grep -q 'BORROW zenith-float-num/src/mantissa/kern.rs:2 in fn deep: `.clone(` (add_ref -> k -> deep)' || { bred="$bred reach-path-message"; echo "BORROW fixture red: reach-path-message: $bout"; }
+rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ops/h.rs zenith-float-num/src/ext.rs
+echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt
+[ -z "$bred" ] || fail "BORROW fixtures red:$bred"
 # ---- test code is counted by the clone count (cfg(test) items, tests.rs, test dirs) ----
 rm -f zenith-float-num/src/x.rs; mkdir -p zenith-float-num/src/ops zenith-float-num/tests nostd-tests/src
 printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(x: &S) { let y = x.clone(); }\n}\n' > zenith-float-num/src/x.rs
