@@ -223,6 +223,52 @@ mod tests {
 
     use super::*;
 
+    /// A binary numeral whose radix exponent is below `EXPONENT_MIN` is an underflow, not an error: the
+    /// test-only `ExactNumNumber::parse` gives the same correctly rounded subnormal or signed zero (sign,
+    /// exponent, limbs and inexact flag) as the library parse path `ExactNum::parse`, in every mode.
+    #[test]
+    fn parse_bin_underflow_matches_library() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let emin = crate::EXPONENT_MIN.unsigned_abs();
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+        ];
+        for pw in [64u64, 128, 256] {
+            let p = usize::try_from(pw).map_err(|_| crate::Error::InvalidArgument)?;
+            let below = |k: u64| format!("{:b}", emin + k);
+            let cases = [
+                format!("1e-{}", below(2)),
+                format!("1011011e-{}", below(40)),
+                format!("1.0110111e-{}", below(60)),
+                format!("1e-{}", below(1 + 64)),
+                format!("1e-{}", below(pw + 1)),
+                format!("11e-{}", below(pw + 2)),
+                format!("1e-{}", below(pw + 10)),
+            ];
+            for body in &cases {
+                for sg in ["", "-"] {
+                    let s = format!("{sg}{body}");
+                    for rm in modes {
+                        let want = crate::ExactNum::parse(&s, Radix::Bin, p, rm, &mut cc);
+                        let got = crate::ExactNum::from(ExactNumNumber::parse(&s, Radix::Bin, p, rm, &mut cc)?);
+                        assert!(!want.is_nan(), "library parse of {s} is NaN");
+                        assert_eq!(got.sign(), want.sign(), "{s} p={p} {rm:?} sign");
+                        assert_eq!(got.mantissa_digits(), want.mantissa_digits(), "{s} p={p} {rm:?} limbs");
+                        if !want.is_zero() {
+                            assert_eq!(got.exponent(), want.exponent(), "{s} p={p} {rm:?} exponent");
+                        }
+                        assert_eq!(got.inexact(), want.inexact(), "{s} p={p} {rm:?} inexact");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[test]
     fn test_strop() -> Result<(), crate::Error> {
         let mut eps = ExactNumNumber::from_word(1, 192)?;
