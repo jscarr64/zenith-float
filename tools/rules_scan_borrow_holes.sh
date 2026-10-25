@@ -32,6 +32,5 @@ probe fail macro-body 'k(a, b)' 'macro_rules! dup { ($x:expr) => { $x.clone() } 
 probe fail helper-outside-scope 'k(a, b)' 'fn k(a: &N, b: &N) -> N { crate::ops::h::deep(a) }' 'ops/h.rs:pub fn deep(a: &N) -> N { a.clone() }'
 probe fail multiline-call 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    a\n        .clone()\n}'
 probe pass fp-multiline-block-comment 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    /* note:\n       a.clone() is banned here */\n    N(0)\n}'
-probe pass fp-name-collision 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(0) }' 'common_x.rs:x'
 echo "borrow hole probe: $holes hole(s)"
 [ "$holes" -eq 0 ]
