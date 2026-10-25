@@ -80,3 +80,40 @@ fn sinh_cosh_overflow_is_directional_in_every_mode_and_sign() {
         bad.join("\n")
     );
 }
+
+/// The rest of the old `test_sinh_cosh`: sinh(0) = 0 and cosh(0) = 1 exactly in every mode; for the
+/// least positive subnormal x, sinh(x) rounds by mode next to x and cosh(x) next to 1.
+#[test]
+fn sinh_cosh_at_zero_and_at_the_least_subnormal() {
+    let mut cc = Consts::new().unwrap();
+    for p in [64usize, 320] {
+        let one = ExactNum::from_u8(1, p);
+        let zero = ExactNum::from_u8(0, p);
+        let tiny = ExactNum::min_positive(p);
+        for rm in MODES {
+            let s = zero.sinh(p, rm, &mut cc);
+            assert!(s.is_zero() && !s.inexact(), "sinh(0) p={p} {rm:?}: {s:?}");
+            let c = zero.cosh(p, rm, &mut cc);
+            assert!(
+                c.compare(&one) == Some(0) && !c.inexact(),
+                "cosh(0) p={p} {rm:?}: {c:?}"
+            );
+            // sinh(x) = x + x^3/6: x itself, or its successor when rounding up.
+            let s = tiny.sinh(p, rm, &mut cc);
+            let up = matches!(rm, RoundingMode::Up | RoundingMode::FromZero);
+            let c = s.compare(&tiny);
+            assert!(
+                s.inexact() && c == Some(if up { 1 } else { 0 }),
+                "sinh(tiny) p={p} {rm:?}: {s:?}"
+            );
+            // cosh(x) = 1 + x^2/2: 1 itself, or the successor of 1 when rounding up (ToOdd is
+            // round-half-to-odd, so nearest).
+            let c = tiny.cosh(p, rm, &mut cc);
+            let k = c.compare(&one);
+            assert!(
+                c.inexact() && k == Some(if up { 1 } else { 0 }),
+                "cosh(tiny) p={p} {rm:?}: {c:?}"
+            );
+        }
+    }
+}
