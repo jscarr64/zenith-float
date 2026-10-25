@@ -54,9 +54,21 @@ copy_from_slice, swap_with_slice, cloned, copied, to_owned, into_owned, to_vec*,
 owned conversions (`Vec|Box|Rc|...::from`, `from_iter`, `.as_slice().into()`, `x[a..b].into()`); a closure or pattern
 that binds an item by value or derefs it (`|&x|`, `|x| *x`, typed or braced, `for &x in`, `let Some(&x)`); `extend`
 fed by anything but an owned iterator; `vec![e; n]` with a non-literal e and `[e; n]` with operand data; helper-copy
-calls. Comments, strings and char literals are stripped first. A site passes only as a NAMED exception
-(BORROW_EXCEPTIONS: file, fn, token, max count, reason); the scan prints the site count and the exception count and
-fails on any unlisted site, naming the op and the reach chain: `BORROW file:line in fn f: `tok` (add_ref -> g -> f)`.
+calls; `.to_string()`, `format!`; and DATA FLOW: a value read from operand data (a deref `*x`, a loop / closure binder
+over borrowed items, an index read `a.w[i]`), alone or under arithmetic with literals / constants only (`x | 0`,
+`*s * 3 + 1`), flowing into an owned sink (`.push`, `.insert`, `Box|Rc|Arc::new`, `.map(..).collect`, `b[i] = e`,
+`*d = e` through a loop binder). Reads mixed with another scalar, or used for comparison / branching, stay allowed.
+zenith-float-num/build.rs, when present, is in scope with every fn a root. Method calls on a receiver of std /
+primitive type (known from a binding, a struct or enum-variant field, a call's return type, a std iterator adapter)
+reach only crate fns that can apply to that type, never a same-name inherent method of a crate type; a call whose
+receiver type stays unknown still falls back to every crate fn of that name (fail closed).
+LIMIT: the rule is a lexical scan, not a total analysis: taint is not followed through `let` temporaries, fn calls or
+indices computed elsewhere, so `let t = *s; *d = t;` still passes; the selftest pins it as a known-limit fixture.
+Comments, strings and char literals are stripped first. A site passes only as a NAMED exception keyed by SITE
+(tools/borrow_exceptions.tsv: file, impl type, fn, anchor = the whitespace-collapsed source line, allowance, reason):
+a site that moves to another impl or fn, or whose token changes, is unlisted. The scan prints the site and exception
+counts and fails on any unlisted site and on any allowance above the sites found ('BORROW lower allowance <file>
+<Impl>::<fn> `<anchor>` from N to M'), naming the op and the reach chain: `BORROW file:line in fn f: `tok` (add_ref -> g -> f)`.
 A root that is not found fails; --borrow-reach lists the reached fns. (This replaces the former add_ref/sub_ref and mul_ref/div_ref use-count ratchets: a use of a borrowing op copies
 nothing, so it needs no count.) Skipped when zenith-float-num/src/ext.rs does not exist.
 
@@ -547,7 +559,7 @@ BORROW_SCOPE = ("zenith-float-num/src/",)
 # Copy mechanisms (see the BORROW RULE). Spelling-independent pieces are regexes; extend(...) and vec![e; n] / [e; n]
 # need their argument parsed (borrow_copies).
 BORROW_COPY_METHODS = ("clone", "clone_from", "clone_into", "clone_from_slice", "copy_from_slice", "swap_with_slice", "cloned", "copied",
-                       "to_owned", "into_owned", "extend_from_slice", "extend_from_within", r"to_vec\w*")
+                       "to_owned", "into_owned", "to_string", "extend_from_slice", "extend_from_within", r"to_vec\w*")
 BORROW_LEAD = r"(?<![|\w)\]])\|(?!\|)"  # a closure's opening pipe (not `||`, not a bitor after an operand)
 BORROW_BANNED = re.compile(
     r"(?:\.|::)\s*(?:%s)\b(?:\s*\()?" % "|".join(BORROW_COPY_METHODS)  # method calls, UFCS paths and fn values, any spacing
@@ -557,6 +569,7 @@ BORROW_BANNED = re.compile(
     + r"|" + BORROW_LEAD + r"\s*\(?\s*&"  # |&x| / |(&a, &b)|: a closure that binds an item by value
     + r"|" + BORROW_LEAD + r"[^|;{}]*\|\s*(?:->\s*[^{|;]*?)?\{?\s*\*"  # |x| *x, |x: &T| -> T { *x }: a deref closure
     + r"|\bfor\s+\(?\s*&|\blet\s+(?:Some|Ok)?\s*\(?\s*&\s*(?:mut\s+)?[a-z_(]"  # for &x in / let &x = / if let Some(&x)
+    + r"|\bformat\s*!"  # format! builds an owned String from its arguments
     + r"|\b(?:%s)\b" % "|".join(no_clone.HELPERS))
 BORROW_LITERAL = re.compile(r"-?\d[\w.]*|(?:\w+\s*::\s*)*[A-Z][A-Z0-9_]*|true|false|None|(?:\w+\s*::\s*)*(?:new|default|zero)\s*\(\s*\)")
 BORROW_OWNED_ITER = re.compile(r"\binto_iter\s*\(|\bdrain\s*\(|\brepeat\w*\s*\(|\.\s*map\s*\(|\bfrom_fn\s*\(|\bonce\s*\(|\bsuccessors\s*\(|^\s*\(?\s*[\w.]+\s*\.\.")
@@ -575,43 +588,127 @@ def _close(code, i):
     return len(code)
 
 
-# Named exceptions: (file, fn, token, max sites, reason). A copy site of the borrow call graph passes only when its
-# (file, fn, token) is listed here and that fn holds no more such sites than listed; anything else fails. Kept to the
-# copies an algorithm needs: the result's own words, a working buffer the kernel mutates, scalar word reads.
-M = "zenith-float-num/src/mantissa/"
-SCALAR = "scalar Word read into a local (one u64 value in a register); no buffer is duplicated"
-BORROW_EXCEPTIONS = (
-    ("zenith-float-num/src/common/buf.rs", "resize_len", ".extend_from_slice(", 1,
-     "inline->heap spill of the result's own WordBuf: inline words cannot change storage by ownership"),
-    ("zenith-float-num/src/common/int.rs", "copy_from", ".copy_from_slice(", 1,
-     "SliceWithSign::copy_from: FFT accumulator / mul.rs intermediates written into a kernel's &mut working slice"),
-    (M + "base.rs", "abs_add", ".copy_from_slice(", 2,
-     "addend below the precision: the result is the other operand's words plus a sticky bit"),
-    (M + "div.rs", "div_basic", ".clone_from_slice(", 2,
-     "schoolbook division with d == 1: the remainder buffer the kernel subtracts in place starts as the operands"),
-    (M + "div.rs", "div_basic", ".copy_from_slice(", 1, "writes the computed remainder into the result buffer"),
-    (M + "div.rs", "div_recursive", ".copy_from_slice(", 7,
-     "Burnikel-Ziegler: the remainder (= dividend when it is short) and quotient/remainder blocks assembled in "
-     "working buffers the recursion mutates in place"),
-    (M + "div.rs", "div_unbalanced", ".copy_from_slice(", 5,
-     "unbalanced division: working remainder starts as the dividend and is reduced in place; quotient blocks "
-     "assembled into the result"),
-    (M + "fft.rs", "fft_decompose", ".copy_from_slice(", 3,
-     "FFT input: operand words split into zero-padded parts the transform overwrites in place"),
-    (M + "fft.rs", "fft_mul", ".copy_from_slice(", 1, "writes a reduced product part back into the transform buffer"),
-    (M + "toom3.rs", "toom3", ".copy_from_slice(", 3, "writes the evaluated parts s0/s4 into the result buffer d3"),
-    (M + "base.rs", "find_bit_len", "for&", 1, SCALAR),
-    (M + "base.rs", "leading_zero_bits", "for&", 1, SCALAR),
-    (M + "base.rs", "round_mantissa", "for&", 1, SCALAR),
-    (M + "base.rs", "word_at", "letSome(&w", 1, SCALAR),
-    (M + "util.rs", "next", "letSome(&h", 2, SCALAR + " (NormalizedView)"),
-    (M + "util.rs", "next", "letSome(&l", 1, SCALAR + " (NormalizedView)"),
-    (M + "util.rs", "next", "letSome(&v", 2, SCALAR + " (NormalizedView)"),
-    ("zenith-float-num/src/ieee_soft/array.rs", "get", ".copied(", 1,
-     SCALAR + "; IEEE soft-float bits, reached only by the name fallback of `.get(`"),
-    ("zenith-float-num/src/ieee_soft/array.rs", "map", "|&", 1,
-     SCALAR + "; IEEE soft-float bits, reached only by the name fallback of `.map(`"),
-)
+# Named exceptions live in tools/borrow_exceptions.tsv, one row per SITE:
+#   file<TAB>impl type (- for a free fn)<TAB>fn<TAB>anchor<TAB>allowance<TAB>reason
+# anchor = the site's source line, whitespace-collapsed; allowance = how many identical lines of that fn are copy
+# sites (normally 1). A copy site passes only when (file, impl, fn, anchor) is listed with exactly as many sites as
+# found: more fails (unlisted site), fewer fails too ('lower allowance ... from N to M'). So a site that moves to
+# another impl or fn, or whose token changes, fails. Kept to the copies an algorithm needs: the result's own words, a
+# working buffer the kernel mutates, scalar word reads.
+def borrow_exceptions():
+    path = os.path.join(ROOT, "tools", "borrow_exceptions.tsv")
+    if not os.path.exists(path):
+        return []
+    out = []
+    with open(path) as f:
+        for ln in f:
+            if ln.strip() and not ln.startswith("#"):
+                r, ty, fn, anchor, n, why = ln.rstrip("\n").split("\t", 5)
+                out.append((r, ty, fn, " ".join(anchor.split()), int(n), why))
+    return out
+
+
+# A: data flow. A value read from operand data -- a deref (*x), a by-ref binder of a loop or closure (for x in
+# a.iter(), |x| ...), an index read (a.w[i]) -- alone or under arithmetic with literals / constants only (x | 0,
+# *s * 3 + 1, v as Word) is a COPY when it flows into an owned sink: .push(e), .insert(_, e), Box|Rc|Arc::new(e),
+# .map(|x| e)...collect(), an index assignment b[i] = e, or a deref assignment *d = e through a loop / closure binder.
+# Anything that mixes in another scalar (a carry, a local, a call) is computation and stays allowed, as do scalar
+# reads used for comparison or branching. Lexical: taint is not followed through `let` temporaries or fn calls.
+BORROW_FLOW_TOK = re.compile(r"\d[\w.]*|[A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*|\.\.|<<|>>|\S")
+BORROW_KEYWORDS = {"as", "mut", "ref", "in", "if", "else", "match", "return", "let", "for", "while", "loop", "move"}
+
+
+def _flow_names(body):
+    """identifiers bound by a loop or closure over borrowed items (not a plain integer range)"""
+    names = set()
+    for m in re.finditer(r"\bfor\s+([^{]*?)\s+in\s+([^{]*)\{", body):
+        if re.search(r"\.\.", m.group(2)) and not re.search(r"iter|zip|chunks|windows|&", m.group(2)):
+            continue
+        names |= set(re.findall(r"\b[a-z_]\w*\b", m.group(1)))
+    for m in re.finditer(BORROW_LEAD + r"([\w\s,&:()<>\[\]']*)\|", body):
+        names |= set(re.findall(r"\b[a-z_]\w*\b", re.sub(r":[^,]*", "", m.group(1))))
+    return names - BORROW_KEYWORDS
+
+
+def _pure_read(e, names):
+    """e is an operand read alone or under arithmetic with literals / constants only"""
+    e = re.sub(r"\bas\s+[A-Za-z_]\w*", " ", e)
+    prev = None
+    while prev != e:  # index reads, innermost first
+        prev, e = e, re.sub(r"[A-Za-z_][\w.]*\s*\[[^\[\]]*\]", " \x00 ", e)
+    toks = BORROW_FLOW_TOK.findall(e.replace("\x00", " __read__ "))
+    tainted, last, k = False, None, 0
+    while k < len(toks):
+        t = toks[k]
+        nxt = toks[k + 1] if k + 1 < len(toks) else ""
+        if t == "*" and (last is None or last in "+-*/%|&^!<>~(" or last in ("<<", ">>")):
+            if re.match(r"[A-Za-z_]", nxt) and toks[k + 2:k + 3] != ["("]:
+                tainted, last, k = True, "x", k + 2
+                continue
+            return False
+        if t == "__read__" or re.fullmatch(r"[a-z_]\w*", t) and t in names:
+            tainted = True
+        elif re.fullmatch(r"\d[\w.]*|(?:[A-Z][A-Z0-9_]*)|true|false", t):
+            pass
+        elif t in ("+", "-", "*", "/", "%", "|", "&", "^", "!", "~", "(", ")", "<<", ">>"):
+            pass
+        else:
+            return False
+        if nxt == "(" and t not in ("+", "-", "*", "/", "%", "|", "&", "^", "!", "~", "(", "<<", ">>"):
+            return False  # a call: computation
+        last, k = t, k + 1
+    return tainted
+
+
+def _stmt_end(body, i):
+    """end of the expression starting at body[i]: a `;` / `,` / unmatched closer at depth 0"""
+    depth = 0
+    for j in range(i, len(body)):
+        ch = body[j]
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                return j
+            depth -= 1
+        elif ch in ";," and depth == 0:
+            return j
+    return len(body)
+
+
+def borrow_flow(body):
+    """[(offset, token)] of operand reads flowing into an owned sink"""
+    out, names = [], _flow_names(body)
+    for m in re.finditer(r"\.\s*(push|push_back|push_front|insert)\s*\(|\b(Box|Rc|Arc)\s*::\s*new\s*\(", body):
+        a = m.end() - 1
+        args = body[a + 1:_close(body, a)]
+        if m.group(1) == "insert":
+            d, cut = 0, 0
+            for q, ch in enumerate(args):
+                d += ch in "([{"; d -= ch in ")]}"
+                if ch == "," and d == 0:
+                    cut = q + 1
+            args = args[cut:]
+        if _pure_read(args, names):
+            out.append((m.start(), "flow:%s(<operand>)" % (m.group(1) or m.group(2) + "::new")))
+    for m in re.finditer(r"\.\s*map\s*\(\s*" + BORROW_LEAD + r"([^|]*)\|", body):
+        a = body.index("(", m.start())
+        c = _close(body, a)
+        if not re.match(r"[^;]*?\.\s*collect\b", body[c:]):
+            continue
+        e = body[m.end():c].strip()
+        if e.startswith("{") and e.endswith("}") and ";" not in e:
+            e = e[1:-1]
+        loc = set(re.findall(r"\b[a-z_]\w*\b", re.sub(r":[^,]*", "", m.group(1)))) - BORROW_KEYWORDS
+        if _pure_read(e, names | loc):
+            out.append((m.start(), "flow:map(<operand>).collect"))
+    for m in re.finditer(r"(?<![\w.\]])[A-Za-z_][\w.]*\s*\[[^\[\]]*\]\s*=(?!=)|(?<![\w)\]])\*\s*([a-z_]\w*)\s*=(?!=)", body):
+        if m.group(1) and m.group(1) not in names:
+            continue
+        e = body[m.end():_stmt_end(body, m.end())]
+        if _pure_read(e, names):
+            out.append((m.start(), "flow:*dst=<operand>" if m.group(1) else "flow:b[i]=<operand>"))
+    return out
 
 
 def borrow_copies(body):
@@ -634,6 +731,7 @@ def borrow_copies(body):
         e = inner[:k].strip()
         if m.group(1) and not BORROW_LITERAL.fullmatch(e) or not m.group(1) and re.search(r"[.\[]", e):
             out.append((m.start(), "vec![<operand>;n]" if m.group(1) else "[<operand>;n]"))
+    out += borrow_flow(body)
     return sorted(out)
 def strip_rust(src):
     """src with comments (line, nested block, doc) and string / char literal contents blanked; newlines and
@@ -742,7 +840,40 @@ def _span_end(code, j):
     return len(code) - 1
 
 
-fields = {}  # struct name -> {field: type key}, filled by borrow_fns
+fields = {}  # struct name / enum variant name -> {field: type key}, filled by borrow_fns
+crate_types = set()  # struct / enum names of the crate
+macro_params, macro_calls = {}, {}  # macro -> [metavar], macro -> [[arg]]
+BORROW_BUILD = "zenith-float-num/build.rs"  # a build script's output feeds the crate: every fn of it is a root
+# receivers of these types are std / primitive: only crate fns implemented FOR that type (trait impls), trait default
+# methods and blanket impls apply, never an inherent method of a crate type that merely shares the name
+BORROW_STD_RECV = {"[]", "str", "Option", "Result", "Box", "Rc", "Arc", "Cell", "RefCell", "VecDeque", "Ordering",
+                   "Iter", "u8", "u16", "u32", "u64", "u128", "usize", "i8", "i16", "i32", "i64", "i128", "isize", "bool", "char"}
+
+
+BORROW_ITER_ADAPTERS = {"iter", "iter_mut", "into_iter", "chars", "bytes", "zip", "map", "filter", "chain", "rev",
+                        "take", "skip", "enumerate", "windows", "chunks", "chunks_exact", "step_by", "peekable"}
+
+
+def _macro_types(ty):
+    """the types a `$macro.var` impl self type is instantiated with (None when unknown)"""
+    mac, var = ty[1:].split(".", 1)
+    params = macro_params.get(mac)
+    if not params or "$" + var not in params:
+        return None
+    k = params.index("$" + var)
+    calls = macro_calls.get(mac, [])
+    return {c[k] for c in calls if len(c) > k} if calls else None
+
+
+def _applies_to_std(g, ty):
+    """can crate fn g be the method called on a receiver of std / primitive type ty?"""
+    gt = g["ty"]
+    if gt is None or gt == ty:
+        return gt is not None or not g["free"]
+    if gt.startswith("$"):
+        inst = _macro_types(gt)
+        return inst is None or bool({_norm_type(x) for x in inst} & ({ty} | BORROW_STD_RECV))
+    return gt not in crate_types  # a trait's default method or a blanket impl over a generic param
 
 
 def borrow_fns():
@@ -750,10 +881,15 @@ def borrow_fns():
     file_stem). Bodies come from brace matching over comment/string-stripped text; ty is the enclosing impl's self type
     (or trait), free = not inside an impl/trait block. Macros are named `name!`."""
     out = []
-    for rel, p in no_clone.rs_files(["zenith-float-num/src"]):
-        if not rel.startswith(BORROW_SCOPE) or not is_lib_only(rel):
+    files = list(no_clone.rs_files(["zenith-float-num/src"]))
+    if os.path.exists(os.path.join(ROOT, BORROW_BUILD)):
+        files.append((BORROW_BUILD, os.path.join(ROOT, BORROW_BUILD)))
+    for rel, p in files:
+        if rel != BORROW_BUILD and (not rel.startswith(BORROW_SCOPE) or not is_lib_only(rel)):
             continue
-        code = strip_rust(open(p, errors="replace").read())
+        rawtext = open(p, errors="replace").read()
+        raw = rawtext.split("\n")
+        code = strip_rust(rawtext)
         lines = code.split("\n")
         mask = no_clone.test_mask(lines)
         code = "\n".join("" if mask[i] else l for i, l in enumerate(lines))
@@ -762,7 +898,23 @@ def borrow_fns():
             b = code.find("{", m.start(1))
             if b < 0 or ";" in code[m.start(1):b]:
                 continue
-            impls.append((m.start(1), _span_end(code, b), _impl_type(code[m.start(1):b])))
+            hdr = code[m.start(1):b]
+            mv = re.match(r"impl\b[^$]*?(?:\bfor\s+)?\$(\w+)", hdr.strip())
+            if mv:  # `impl X for $t` inside macro_rules!: key the self type by (macro, metavar), see _macro_types
+                mac = [x for x in re.finditer(r"\bmacro_rules!\s*([a-z_]\w*)", code[:m.start(1)])]
+                impls.append((m.start(1), _span_end(code, b), "$%s.%s" % (mac[-1].group(1) if mac else "", mv.group(1))))
+                continue
+            impls.append((m.start(1), _span_end(code, b), _impl_type(hdr)))
+        for m in re.finditer(r"\b(?:struct|enum)\s+([A-Z]\w*)", code):
+            crate_types.add(m.group(1))
+        for m in re.finditer(r"\benum\s+[A-Z]\w*[^{;]*\{", code):  # struct-like variants: fields by variant name
+            for v in re.finditer(r"\b([A-Z]\w*)\s*\{([^{}]*)\}", code[m.end():_span_end(code, m.end() - 1)]):
+                for g in BORROW_FIELD.findall(v.group(2)):
+                    fields.setdefault(v.group(1), {})[g[0]] = _norm_type(g[1])
+        for m in re.finditer(r"\bmacro_rules!\s*([a-z_]\w*)\s*\{\s*\(([^)]*)\)", code):  # positional metavars
+            macro_params[m.group(1)] = [re.sub(r"[:\s].*", "", x.strip()) for x in m.group(2).split(",")]
+        for m in re.finditer(r"\b([a-z_]\w*)\s*!\s*\(([^;]*?)\)\s*;", code):
+            macro_calls.setdefault(m.group(1), []).append([x.strip() for x in m.group(2).split(",")])
         for m in re.finditer(r"\bstruct\s+([A-Z]\w*)[^{;(]*\{", code):
             for g in BORROW_FIELD.findall(code[m.end():_span_end(code, m.end() - 1)]):
                 fields.setdefault(m.group(1), {})[g[0]] = _norm_type(g[1])
@@ -772,9 +924,12 @@ def borrow_fns():
             j = _span_end(code, m.end())
             encl = [t for s, e, t in impls if s < m.start() < e]
             ar, slf = _sig(code[m.end():j + 1]) if m.group(1) else (None, False)
+            rt = re.match(r"[^{;]*?\)\s*->\s*" + BORROW_TYPE, code[m.end():j + 1]) if m.group(1) else None
             out.append(dict(arity=ar, self=slf, name=name, rel=rel, line=code.count("\n", 0, m.start()) + 1, body=code[m.end():j + 1],
                             bline=code.count("\n", 0, m.end()) + 1, ty=encl[-1] if encl else None,
-                            free=not encl, mods=set(stem)))
+                            free=not encl, mods=set(stem), ret=_norm_type(rt.group(1)) if rt else None,
+                            src=raw[code.count("\n", 0, m.start()):code.count("\n", 0, j) + 1],
+                            sline=code.count("\n", 0, m.start()) + 1))
     return out
 
 
@@ -785,7 +940,14 @@ def _known_types(f):
         kt[g[0]] = _norm_type(g[1])
     for g in BORROW_LET_T.findall(f["body"]):
         kt[g[0]] = _norm_type(g[1] or g[2])
-    if f["ty"]:
+    for m in re.finditer(r"\b([A-Z]\w*)\s*\{([^{}]*)\}", f["body"]):  # Variant { a, b: c, .. } binds a, c
+        fl = fields.get(m.group(1))
+        if fl:
+            for part in m.group(2).split(","):
+                bits = [x.strip() for x in part.split(":")]
+                if bits[0] in fl:
+                    kt[re.sub(r"^(?:ref\s+)?(?:mut\s+)?", "", bits[-1])] = fl[bits[0]]
+    if f["ty"] and not f["ty"].startswith("$"):
         kt["self"] = f["ty"]
     for k, v in list(kt.items()):
         if v == "Self":
@@ -840,6 +1002,25 @@ def _recv_type(before, kt):
     for fld in chain[1:]:
         ty = fields.get(ty, {}).get(fld) if ty else None
     return ty
+
+
+def _ret_type(before, by_name):
+    """type of a call result receiver `f(..).` / `x.f(..).`: the one return type all candidates named f share"""
+    b = before.rstrip()
+    if not b.endswith(")"):
+        return None
+    depth = 0
+    for j in range(len(b) - 1, -1, -1):
+        depth += (b[j] == ")") - (b[j] == "(")
+        if depth == 0:
+            break
+    n = re.search(r"([a-z_]\w*)\s*(?:::\s*<[^<>]*>\s*)?$", b[:j])
+    if not n:
+        return None
+    rets = {g.get("ret") for g in by_name.get(n.group(1), [])}
+    if n.group(1) in BORROW_ITER_ADAPTERS and not rets & crate_types:
+        return "Iter"  # a std iterator adapter (no crate fn of that name returns a crate type)
+    return rets.pop() if len(rets) == 1 else None
 
 
 # std *types* (not traits: `Add::add`, `From::from`, `Clone::clone` dispatch into crate impls and are followed)
@@ -914,7 +1095,10 @@ def _callees(f, by_name, types):
         elif dot:
             if not call:
                 continue  # a field
-            ty = _recv_type(body[:m.start() + len(dot)], kt)
+            ty = _recv_type(body[:m.start() + len(dot)], kt) or _ret_type(body[:m.start()], by_name)
+            if ty in BORROW_STD_RECV:
+                res += [g for g in cands if not g["free"] and _applies_to_std(g, ty)]
+                continue
             typed = [g for g in cands if g["ty"] == ty] if ty else []
             # unknown receiver, a generic / trait-bound one, or a type without its own such method (trait impls for
             # slices or primitives, Deref, trait objects): every method of that name
@@ -943,6 +1127,7 @@ def borrow_closure():
     root_rel = dict((n, rel) for rel, names in BORROW_ROOTS for n in names)
     todo = collections.deque((g, (g["name"],)) for rel, names in BORROW_ROOTS for n in names
                              for g in by_name.get(n, []) if g["rel"] == rel)
+    todo += [(g, ("build.rs", g["name"])) for g in fns if g["rel"] == BORROW_BUILD]
     seen, reached, hits = set(), [], []
     while todo:
         f, path = todo.popleft()
@@ -952,7 +1137,9 @@ def borrow_closure():
         seen.add(key)
         reached.append(key)
         for off, tok in borrow_copies(f["body"]):
-            hits.append((f["rel"], f["bline"] + f["body"].count("\n", 0, off), f["name"], tok, path))
+            line = f["bline"] + f["body"].count("\n", 0, off)
+            anchor = " ".join(f["src"][line - f["sline"]].split()) if 0 <= line - f["sline"] < len(f["src"]) else ""
+            hits.append((f["rel"], line, f["name"], tok, path, f["ty"] or "-", anchor))
         for g in _callees(f, by_name, types):
             if (g["rel"], g["line"], g["name"]) not in seen:
                 todo.append((g, path + (g["name"],)))
@@ -967,17 +1154,19 @@ def borrow_check(update=False):
     missing = [n for n in roots if not any(r[2] == n for r in reached)]
     for n in missing:
         print("rules_scan: borrowing op %s not found (BORROW_ROOTS is stale)" % n)
-    allowed = {(r, f, t): n for r, f, t, n, _ in BORROW_EXCEPTIONS}
-    groups = collections.Counter((rel, name, tok) for rel, _, name, tok, _ in hits)
-    bad = [h for h in hits if groups[(h[0], h[2], h[3])] > allowed.get((h[0], h[2], h[3]), 0)]
-    for rel, line, name, tok, path in bad:
+    allowed = {(r, ty, fn, a): n for r, ty, fn, a, n, _ in borrow_exceptions()}
+    key = lambda h: (h[0], h[5], h[2], h[6])
+    groups = collections.Counter(key(h) for h in hits)
+    bad = [h for h in hits if groups[key(h)] > allowed.get(key(h), 0)]
+    for rel, line, name, tok, path, ty, anchor in bad:
         print("rules_scan: BORROW %s:%d in fn %s: `%s` (%s)" % (rel, line, name, tok, " -> ".join(path)))
-    for k, n in sorted(allowed.items()):
-        if groups.get(k, 0) < n:
-            print("rules_scan: note: borrow exception %s %s `%s` allows %d, found %d: lower it" % (k + (n, groups.get(k, 0))))
-    print("rules_scan: borrowing ops reach %d fns, %d copy sites (%d named exceptions, %d unlisted)"
-          % (len(reached), len(hits), len(hits) - len(bad), len(bad)))
-    return 1 if bad or missing else 0
+    over = [(k, n, groups.get(k, 0)) for k, n in sorted(allowed.items()) if groups.get(k, 0) < n]
+    for (rel, ty, fn, a), n, got in over:
+        print("rules_scan: BORROW lower allowance %s %s `%s` from %d to %d (tools/borrow_exceptions.tsv)"
+              % (rel, fn if ty == "-" else ty + "::" + fn, a, n, got))
+    print("rules_scan: borrowing ops reach %d fns, %d copy sites (%d named exceptions, %d unlisted, %d over-allowed)"
+          % (len(reached), len(hits), len(hits) - len(bad), len(bad), len(over)))
+    return 1 if bad or over or missing else 0
 
 
 def both_count_checks(update=False):

@@ -74,18 +74,20 @@ impl Mantissa {
             // normalize: buf1 = d1 * d, buf2 = d2 * d
             let d = WORD_BASE / (m2[n] as DoubleWord + 1); // factor d: d * m2[most significant] is close to WORD_MAX
 
-            if d == 1 {
+            // The normalized divisor is only read: with d == 1 it is m2 itself, borrowed. Its top word
+            // (index l2) is 0 in both cases (d * (m2[n] + 1) <= WORD_BASE), supplied by `once(&0)`.
+            let dv: &[Word] = if d == 1 {
                 buf1[..l1].clone_from_slice(m1);
-                buf2[..l2].clone_from_slice(m2);
                 buf1[l1] = 0;
-                buf2[l2] = 0;
+                m2
             } else {
                 Self::mul_by_word(m1, d, buf1);
                 Self::mul_by_word(m2, d, buf2);
-            }
+                buf2
+            };
 
-            let v1 = buf2[n] as DoubleWord;
-            let v2 = buf2[n - 1] as DoubleWord;
+            let v1 = dv[n] as DoubleWord;
+            let v2 = dv[n - 1] as DoubleWord;
 
             j = m - n;
             let mut m3iter = m3.iter_mut().rev();
@@ -113,7 +115,12 @@ impl Mantissa {
                 // n1_j = n1_j - n2 * qh
                 c = 0;
                 k = 0;
-                for (a, b) in buf2[..n + 2].iter().zip(buf1[j..j + n + 2].iter_mut()) {
+                for (a, b) in dv
+                    .iter()
+                    .chain(core::iter::once(&0))
+                    .take(n + 2)
+                    .zip(buf1[j..j + n + 2].iter_mut())
+                {
                     k = *a as DoubleWord * qh + k / WORD_BASE;
                     let val = k % WORD_BASE + c;
                     if (*b as DoubleWord) < val {
@@ -129,7 +136,12 @@ impl Mantissa {
                     // compensate
                     qh -= 1;
                     c = 0;
-                    for (a, b) in buf2[..n + 2].iter().zip(buf1[j..j + n + 2].iter_mut()) {
+                    for (a, b) in dv
+                        .iter()
+                        .chain(core::iter::once(&0))
+                        .take(n + 2)
+                        .zip(buf1[j..j + n + 2].iter_mut())
+                    {
                         c = add_carry(*a, *b, c as Word, b) as DoubleWord;
                     }
                     debug_assert!(c > 0);
