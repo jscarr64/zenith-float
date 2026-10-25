@@ -8,6 +8,10 @@
 //! +-Inf or +-MAX by direction, underflow lands on the subnormal grid (or 0 / the
 //! min subnormal by direction) with the sign kept. A zero's exponent is not
 //! compared (only its sign).
+//!
+//! Rows appended by `scripts/gen_r9_extra_goldens.py` (radix-2 parse underflow,
+//! hex and octal out-of-range flushes, exp at |x| just below 2^63) carry an
+//! optional `"rdx"` for parse rows and the same p+256 / p+512 agreement.
 
 use std::sync::mpsc;
 use std::thread;
@@ -111,6 +115,18 @@ fn int_of(row: &Value) -> Result<i64, String> {
         .ok_or_else(|| "n is not an i64".to_string())
 }
 
+/// The radix of a parse row: `"rdx"` is 2, 8, 10 or 16; rows without it are decimal.
+fn radix_of(row: &Value) -> Result<Radix, String> {
+    match row.get("rdx").map(Value::as_u64) {
+        None => Ok(Radix::Dec),
+        Some(Some(2)) => Ok(Radix::Bin),
+        Some(Some(8)) => Ok(Radix::Oct),
+        Some(Some(10)) => Ok(Radix::Dec),
+        Some(Some(16)) => Ok(Radix::Hex),
+        Some(other) => Err(format!("unknown rdx {other:?}")),
+    }
+}
+
 fn eval(row: &Value) -> Result<ExactNum, String> {
     let func = text(row, "fn")?;
     let p = usize::try_from(field(row, "p")?.as_u64().ok_or("p is not a u64")?)
@@ -138,7 +154,7 @@ fn eval(row: &Value) -> Result<ExactNum, String> {
         "exp10" => arg_n(raw, 0)?.exp10(p, rm, &mut cc),
         "sinh" => arg_n(raw, 0)?.sinh(p, rm, &mut cc),
         "cosh" => arg_n(raw, 0)?.cosh(p, rm, &mut cc),
-        "parse" => ExactNum::parse(text(row, "s")?, Radix::Dec, p, rm, &mut cc),
+        "parse" => ExactNum::parse(text(row, "s")?, radix_of(row)?, p, rm, &mut cc),
         other => return Err(format!("unknown function {other}")),
     };
     Ok(r)

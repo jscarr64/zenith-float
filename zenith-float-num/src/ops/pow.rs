@@ -102,7 +102,9 @@ impl ExactNumNumber {
     /// applied once by `place_scaled`, which rounds onto the subnormal grid (or flushes) with `rm`.
     fn exp_neg_scaled(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         let far = i128::from(EXPONENT_MIN) * 2;
-        if self.exponent() > WORD_BIT_SIZE as Exponent - 1 {
+        // `Word::BITS - 1` (63 for 64-bit words) as an `Exponent`, converted losslessly.
+        let top = Exponent::from(Word::BITS) - 1;
+        if self.exponent() > top {
             // |x| >= 2^63: e^x < 2^-(2^63), far below the smallest subnormal. A positive sticky unit.
             let unit = Self::from_word(1, p + WORD_BIT_SIZE)?;
             let mut ret = unit.place_scaled(far, true, p, rm)?;
