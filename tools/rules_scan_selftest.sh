@@ -234,8 +234,17 @@ hx macro-body 1 "$K:1 in fn dup!: \`.clone(\` (add_ref -> k -> dup!)" 'k(a, b)' 
 hx helper-outside-scope 1 "zenith-float-num/src/ops/h.rs:1 in fn deep: \`.clone(\` (add_ref -> k -> deep)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { crate::ops::h::deep(a) }' 'ops/h.rs:pub fn deep(a: &N) -> N { a.clone() }'
 hx multiline-call 1 "$K:3 in fn k: \`.clone(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    a\n        .clone()\n}'
 hx green-multiline-block-comment 0 - 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    /* note:\n       a.clone() is banned here */\n    N(0)\n}'
+# extra variants (Harper, against 581cdfe): caught, kept as regression reds
+hx v-ufcs-clone-ref 1 "$E:2 in fn add_ref: \`::clone\` (add_ref)" 'let c = Clone::clone(&a); k(&c, b)' "$KK"
+hx v-qualified-as-clone 1 "$E:2 in fn add_ref: \`::clone\` (add_ref)" 'let c = <N as Clone>::clone(a); k(&c, b)' "$KK"
+hx v-slice-to_owned 1 "$K:1 in fn k: \`.to_owned(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v = a.w[..].to_owned(); N(v.len()) }'
+hx v-copied-collect 1 "$K:1 in fn k: \`.copied(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().copied().collect(); N(v.len()) }'
+hx v-closure-in-let 1 "$K:1 in fn k: \`.clone(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let f = |x: &N| x.clone(); f(a) }'
+hx v-trait-default-method 1 "$K:1 in fn dup: \`.clone(\` (add_ref -> dup)" 'a.dup()' 'trait Dup { fn dup(&self) -> N { self.clone() } }\nimpl Dup for N {}'
+hx v-nested-macros 1 "$K:1 in fn inner!: \`.clone(\` (add_ref -> k -> outer! -> inner!)" 'k(a, b)' 'macro_rules! inner { ($x:expr) => { $x.clone() } }\nmacro_rules! outer { ($x:expr) => { inner!($x) } }\nfn k(a: &N, b: &N) -> N { outer!(a) }'
+hx v-map-clone-path 1 "$K:1 in fn k: \`::clone\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(Clone::clone).collect(); N(v.len()) }'
 rm -rf zenith-float-num/src/ops; echo 0 > tools/helper_copy_count_baseline.txt
-[ "$bx_n" = 28 ] || fail "BORROW fixtures: ran $bx_n, want 28"
+[ "$bx_n" = 36 ] || fail "BORROW fixtures: ran $bx_n, want 36"
 echo "rules_scan selftest: BORROW per-op fixtures ok ($bx_n)"
 rm -f zenith-float-num/src/mantissa/kern.rs
 rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ext.rs; echo 0 > tools/clone_count_baseline.txt
