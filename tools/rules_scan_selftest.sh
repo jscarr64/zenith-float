@@ -151,6 +151,7 @@ scan --count-only | grep -q "div_ref" || fail "a missing borrowing op not report
 # Layout: ext.rs holds the four ops (lines 2..5), each calling <op>_kern in mantissa/kern.rs, which calls <op>_step.
 # Reached set when copy-free: 4 ops + 4 kern + 4 step = 12 fns.
 bx_ext() { # bx_ext <op-with-direct-copy|none>
+  local o
   { echo 'impl N {'
     for o in add sub mul div; do
       if [ "$o" = "$1" ]; then echo "    pub fn ${o}_ref(a: &N, b: &N) -> N { let c = a.clone(); ${o}_kern(&c, b) }"
@@ -160,6 +161,7 @@ bx_ext() { # bx_ext <op-with-direct-copy|none>
     echo 'fn unrelated(a: &N) -> N { a.clone() }'
   } > zenith-float-num/src/ext.rs; }
 bx_kern() { # bx_kern <op-with-helper-copy|none> [extra line appended inside every step body]
+  local o
   { for o in add sub mul div; do
       echo "fn ${o}_kern(a: &N, b: &N) -> N { ${o}_step(&a.w, &b.w) }"
       if [ "$o" = "$1" ]; then echo "fn ${o}_step(x: &[u64], y: &[u64]) -> N { N(x.iter().copied().zip(y).count()) }"
