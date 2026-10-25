@@ -5172,56 +5172,108 @@ pub(crate) fn with_even_bernoulli<R>(
     }
 }
 
-/// Euler–Mascheroni constant γ to `p` bits (Brent–McMillan B1).
+/// Binary-splitting state of the Brent–McMillan sums over the terms `k = a+1 ..= b`, all exact
+/// integers (`P = n^(2(b−a))` is a power of two and never stored):
+/// `D = Π k`, `Q = D²`, `C/D = Σ 1/k`, `T = Q·Σ_k P_{a,k}/Q_{a,k}` and
+/// `V = Q·D·Σ_k (P_{a,k}/Q_{a,k})·(H_k − H_a)`, with `P_{a,k}/Q_{a,k} = Π_{i=a+1}^{k} n²/i²`.
+struct BmSplit {
+    d: ExactNumNumber,
+    c: ExactNumNumber,
+    t: ExactNumNumber,
+    v: ExactNumNumber,
+}
+
+/// `x · 2^s` (exact; `x` an integer, `s ≥ 0`).
+fn bm_shift(mut x: ExactNumNumber, s: Exponent) -> Result<ExactNumNumber, Error> {
+    if !x.is_zero() {
+        let e = x.exponent().checked_add(s).ok_or(Error::InvalidArgument)?;
+        x.set_exponent(e);
+    }
+    Ok(x)
+}
+
+/// `2^s` as an exact integer.
+fn bm_pow2(s: Exponent) -> Result<ExactNumNumber, Error> {
+    bm_shift(ExactNumNumber::from_word(1, WORD_BIT_SIZE)?, s)
+}
+
+/// [`BmSplit`] over `a+1 ..= b` for `n = 2^j` (`two_j = 2j`, so `n² = 2^two_j`).
+fn bm_split(a: u64, b: u64, two_j: Exponent) -> Result<BmSplit, Error> {
+    if b == a + 1 {
+        return Ok(BmSplit {
+            d: ExactNumNumber::from_u64(b, 64)?,
+            c: ExactNumNumber::from_word(1, WORD_BIT_SIZE)?,
+            t: bm_pow2(two_j)?,
+            v: bm_pow2(two_j)?,
+        });
+    }
+    let m = a + (b - a) / 2;
+    let l = bm_split(a, m, two_j)?;
+    let r = bm_split(m, b, two_j)?;
+    // P_L = n^(2(m−a)) = 2^(two_j·(m−a)).
+    let len = Exponent::try_from(m - a).map_err(|_| Error::InvalidArgument)?;
+    let pl = two_j.checked_mul(len).ok_or(Error::InvalidArgument)?;
+    let q_r = r.d.mul_full_prec(&r.d)?;
+    let t_r_d_r = r.t.mul_full_prec(&r.d)?;
+    // V = V_L·Q_R·D_R + P_L·(V_R·D_L + C_L·T_R·D_R)
+    let inner =
+        r.v.mul_full_prec(&l.d)?
+            .add_full_prec(&l.c.mul_full_prec(&t_r_d_r)?)?;
+    let v =
+        l.v.mul_full_prec(&q_r)?
+            .mul_full_prec(&r.d)?
+            .add_full_prec(&bm_shift(inner, pl)?)?;
+    // T = T_L·Q_R + P_L·T_R
+    let t =
+        l.t.mul_full_prec(&q_r)?
+            .add_full_prec(&bm_shift(r.t, pl)?)?;
+    // C = C_L·D_R + C_R·D_L, D = D_L·D_R
+    let c =
+        l.c.mul_full_prec(&r.d)?
+            .add_full_prec(&r.c.mul_full_prec(&l.d)?)?;
+    let d = l.d.mul_full_prec(&r.d)?;
+    Ok(BmSplit { d, c, t, v })
+}
+
+/// Euler–Mascheroni constant γ to `p` bits (Brent–McMillan B1 by exact binary splitting).
+///
+/// With `n = 2^j`, `t_k = (n^k/k!)²`, `A = Σ_{k≥0} t_k H_k` and `B = Σ_{k≥0} t_k`,
+/// `0 < A/B − ln n − γ < π e^{−4n}` (Brent and McMillan 1980). `j` is the least with
+/// `4n log2 e ≥ pw + 16`, so that error is below `2^−(pw+14)`. The sums stop at `N = 5n`
+/// (> α n, α ≈ 4.9706 solving α(ln α − 1) = 3): for `k > N`, `t_{k}/t_{k−1} ≤ 1/25`
+/// and `t_N ≤ (e n/N)^(2N) = e^{−6.09 n}`, so both tails are below `2^−(pw+16)` relative.
+/// Up to `N` everything is exact integers: `A/B = V/(D·(Q+T))` from [`bm_split`] over
+/// `1..=N`. The only roundings are that one division and `j·ln 2` (`ln2` within an ulp at
+/// `p` bits); the total is a few ulps at `pw = p + 32` bits, i.e. under `2^−(p+24)`
+/// relative, well inside the 2^64-ulp trust of the Ziv check in `get_exact_prec` and the
+/// guard words `Consts::euler_gamma_num` keeps.
+/// Cost: O(M(p log p) log p) for M the multiplication cost (the old term-by-term sum did
+/// ≈ 0.6 p full `p`-bit multiplications: 44 s at p = 65536).
 pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
-    // Brent–McMillan (algorithm B1): with t_k = (n^k / k!)^2 and H_k the harmonic numbers,
-    // γ = A/B − ln n, A = Σ t_k H_k, B = Σ t_k, error < π e^{-4n}. n is a power of two so that
-    // ln n = j ln 2, and 4n log2(e) ≥ p + 16. All terms are positive, so there is no cancellation
-    // apart from the final subtraction (a few bits, covered by the guard bits).
-    // (The previous Euler–Maclaurin sum with N = 128 and 40 Bernoulli terms was capped at
-    // about 383 correct bits whatever `p` was.)
-    let pw = p + 32;
+    let pw = p.checked_add(32).ok_or(Error::InvalidArgument)?;
     let mut j: u32 = 3;
-    while (1usize << j) * 577 < (pw + 16) * 100 {
+    // 4·2^j·log2(e) ≥ pw + 16, with 4 log2 e < 5.771 (577/100 rounds it down: one more j at most).
+    while (1usize << j)
+        .checked_mul(577)
+        .ok_or(Error::InvalidArgument)?
+        < pw.checked_add(16)
+            .and_then(|x| x.checked_mul(100))
+            .ok_or(Error::InvalidArgument)?
+    {
         j += 1;
     }
-    // n and k are one-word operands: a pw-bit divisor would make each division a full pw-by-pw
-    // long division (the cost that made γ at p = 65536 take a minute), while the quotient is the
-    // same because both values are exact.
-    let n = ExactNumNumber::from_word((1 as Word) << j, WORD_BIT_SIZE)?;
-    let mut t = ExactNumNumber::from_word(1, pw)?;
-    let mut h = ExactNumNumber::new(pw)?;
-    let mut a = ExactNumNumber::new(pw)?;
-    let mut b = ExactNumNumber::from_word(1, pw)?;
-    let n_min = 3usize << j; // terms decrease for k > n; the tail is negligible beyond ≈ 3.6 n
-    let mut k = 1usize;
-    loop {
-        let kw = ExactNumNumber::from_word(k as Word, WORD_BIT_SIZE)?;
-        t = t
-            .mul(&n, pw, RoundingMode::None)?
-            .div(&kw, pw, RoundingMode::None)?;
-        t = t
-            .mul(&n, pw, RoundingMode::None)?
-            .div(&kw, pw, RoundingMode::None)?;
-        h = h.add(
-            &ExactNumNumber::from_word(1, pw)?.div(&kw, pw, RoundingMode::None)?,
-            pw,
-            RoundingMode::None,
-        )?;
-        let th = t.mul(&h, pw, RoundingMode::None)?;
-        a = a.add(&th, pw, RoundingMode::None)?;
-        b = b.add(&t, pw, RoundingMode::None)?;
-        if k > n_min && (th.is_zero() || th.exponent() + (pw as i64) < a.exponent()) {
-            break;
-        }
-        k += 1;
-        if k > (1usize << j) * 16 {
-            return Err(Error::InvalidArgument);
-        }
-    }
-    let ln_n = ExactNumNumber::from_word(j as Word, pw)?.mul(ln2, pw, RoundingMode::None)?;
-    a.div(&b, pw, RoundingMode::None)?
-        .sub(&ln_n, pw, RoundingMode::None)
+    let n_terms = 5u64
+        .checked_shl(j)
+        .filter(|x| x >> j == 5)
+        .ok_or(Error::InvalidArgument)?;
+    let two_j = Exponent::from(j) * 2;
+    let s = bm_split(0, n_terms, two_j)?;
+    let q = s.d.mul_full_prec(&s.d)?;
+    // A/B = V / (D·(Q + T)) (the k = 0 term of B is 1, i.e. Q/Q).
+    let den = s.d.mul_full_prec(&q.add_full_prec(&s.t)?)?;
+    let ab = s.v.div(&den, pw, RoundingMode::None)?;
+    let ln_n = ExactNumNumber::from_word(Word::from(j), pw)?.mul(ln2, pw, RoundingMode::None)?;
+    ab.sub(&ln_n, pw, RoundingMode::None)
 }
 
 #[cfg(test)]

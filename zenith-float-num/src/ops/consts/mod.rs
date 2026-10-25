@@ -326,12 +326,11 @@ impl Consts {
         self.euler.for_prec(p, rm, |_| Err(Error::InvalidArgument))
     }
 
-    /// Euler–Mascheroni constant γ with precision `p` using rounding mode `rm`.
+    /// Euler–Mascheroni constant γ rounded at exactly `p` bits using rounding mode `rm`, like
+    /// [`Self::pi`]; `RoundingMode::None` keeps the word-precision value. Cached: higher
+    /// requests extend the cache, lower ones re-round it. Returns NaN if `p` is incorrect.
     pub fn euler_gamma(&mut self, p: usize, rm: RoundingMode) -> ExactNum {
-        match self.euler_gamma_num(p, rm) {
-            Ok(v) => v.into(),
-            Err(e) => ExactNum::nan(Some(e)),
-        }
+        self.exact_p(p, rm, Self::euler_gamma_num)
     }
 }
 
