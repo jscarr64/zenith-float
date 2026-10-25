@@ -191,6 +191,18 @@ kl=0; for o in add sub mul div; do kl=$((kl + 2))
   r="$(scan --borrow-reach)"; for want in "src/ext.rs:$((kl / 2 + 1)) ${o}_ref" "mantissa/kern.rs:$((kl - 1)) ${o}_kern" "mantissa/kern.rs:$kl ${o}_step"; do
     echo "$r" | grep -qF "$want" || fail "red-helper-$o: call path link [$want] not in --borrow-reach: $r"; done
 done
+# green: all four copy-free (the unrelated clone in ext.rs stays and must not trip)
+bx_ext none; bx_kern none; bx_expect 0 0 "green-all"
+# edge: copy tokens in a comment and a string literal inside reached bodies pass
+bx_ext none; bx_kern none 'let _s = "x.clone() y.to_vec()"; // z.copied() w.to_owned()'; bx_expect 0 0 "green-comment-string"
+# edge: a #[cfg(test)] fn named like a reached helper, with a clone, is not part of the graph
+bx_ext none; bx_kern none; printf '#[cfg(test)]\nmod tests {\n    fn add_step(x: &[u64]) -> Vec<u64> { x.to_vec() }\n}\n' >> zenith-float-num/src/mantissa/kern.rs; bx_expect 0 0 "green-cfg-test-shadow"
+# edge: every banned token (and a helper-copy call) in a reached helper fails, one site each
+for tok in 'x.to_vec()' 'x.iter().cloned().count()' 'x.to_owned()' 'x.clone()' 'exact_copy(x)'; do
+  bx_ext none; bx_kern none "let _c = $tok;"; out="$(scan --count-only)" && fail "BORROW fixture token $tok in 4 reached steps passed: $out"
+  echo "$out" | grep -q "borrowing ops reach 12 fns, 4 copy sites" || fail "BORROW fixture token $tok: want 4 sites: $out"
+  bx_n=$((bx_n + 1))
+done
 [ "$bx_n" = 16 ] || fail "BORROW fixtures: ran $bx_n, want 16"
 echo "rules_scan selftest: BORROW per-op fixtures ok ($bx_n)"
 rm -f zenith-float-num/src/mantissa/kern.rs
