@@ -615,7 +615,7 @@ impl Mantissa {
 
         let mut m3 = Mantissa { m: q, n: 0 };
 
-        let r_sticky = r.iter().any(|&x| x != 0);
+        let r_sticky = r.iter().any(|x| x != &0);
 
         // rounding
         if r_sticky {
@@ -823,7 +823,7 @@ impl Mantissa {
 
     /// Returns true if all digits are equal to 0.
     pub fn is_all_zero(&self) -> bool {
-        self.m.iter().all(|&v| v == 0)
+        self.m.iter().all(|v| v == &0)
     }
 
     /// Returns length of the mantissa in words.
@@ -1252,7 +1252,7 @@ impl Mantissa {
 
         let mut m3 = Mantissa { m: q, n: 0 };
 
-        let r_sticky = r.iter().any(|&x| x != 0);
+        let r_sticky = r.iter().any(|x| x != &0);
 
         // rounding
         if r_sticky {
@@ -1320,7 +1320,7 @@ impl Mantissa {
 
         let mut m3 = Mantissa { m: q, n: 0 };
 
-        let r_sticky = r.iter().any(|&x| x != 0);
+        let r_sticky = r.iter().any(|x| x != &0);
 
         // rounding
         if r_sticky {

@@ -306,6 +306,21 @@ bcase pass multiline-block-comment 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    /* 
 # the failure names the op and the call chain to the copy site
 bcase fail reach-path 'k(a, b)' 'fn k(a: &N, b: &N) -> N { deep(a) }\nfn deep(a: &N) -> N { a.clone() }'
 echo "$bout" | grep -q 'BORROW zenith-float-num/src/mantissa/kern.rs:2 in fn deep: `.clone(` (add_ref -> k -> deep)' || { bred="$bred reach-path-message"; echo "BORROW fixture red: reach-path-message: $bout"; }
+# copy by mechanism, not by spelling (Harper's second round): by-value pattern / deref closures in any form, slice
+# copy methods, slice conversions, Extend<&T>, vec![operand; n], and generic / turbofish helpers
+bcase fail ref-pattern-map 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(|&x| x).collect(); N(v.len()) }'
+bcase fail copy-from-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = vec![0u64; a.w.len()]; v.copy_from_slice(&a.w); N(v.len()) }'
+bcase fail slice-into-vec 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.as_slice().into(); N(v.len()) }'
+bcase fail clone-into 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); a.w.as_slice().clone_into(&mut v); N(v.len()) }'
+bcase fail vec-macro-copy 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v = vec![a.w[0]; 4]; N(v.len()) }'
+bcase fail typed-braced-deref 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(|x: &u64| -> u64 { *x }).collect(); N(v.len()) }'
+bcase fail extend-ref-iter 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); v.extend(a.w.iter()); N(v.len()) }'
+bcase fail generic-turbofish 'k(a, b)' 'fn k(a: &N, b: &N) -> N { g::<N>(a) }\nfn g<T: Clone>(x: &T) -> T { x.clone() }'
+# Spence's review of 581cdfe: slice-to-slice copies into a preallocated buffer are copies too
+bcase fail clone-from-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = vec![0u64; a.w.len()]; v.clone_from_slice(&a.w); N(v.len()) }'
+bcase fail swap-with-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = vec![0u64; 4]; let mut t = [0u64; 4]; v.swap_with_slice(&mut t); N(v.len()) }'
+# owned fills and owned iterators are not copies of operand data
+bcase pass owned-fill-extend 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = vec![0u64; a.w.len()]; v.extend(core::iter::repeat(0u64).take(3)); N(v.len()) }'
 rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ops/h.rs zenith-float-num/src/ext.rs
 echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt
 [ -z "$bred" ] || fail "BORROW fixtures red:$bred"

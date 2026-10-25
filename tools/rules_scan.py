@@ -43,16 +43,21 @@ a CODEOWNERS entry; any second helper of that shape fails), may never exceed too
 lowered with --update-baseline, never raised).
 
 BORROW RULE: ExactNum::{add_ref, sub_ref, mul_ref, div_ref} (zenith-float-num/src/ext.rs) are the sanctioned
-borrowing ops: both operands read in place, only the result allocated. BORROW_SCOPE is the whole zenith-float-num/src
-(non-test code). Every fn or macro_rules! body reached from them (static call graph: method/UFCS/path/bare calls, a fn
-passed as a value, operators dispatched to op-trait impls, macro invocations; resolved by impl type, field and local
-types and arity, falling back to every fn of the name when the receiver is unknown) must hold no copy: `.clone(`,
-`.to_vec(`, `.cloned(`, `.copied(`, `.to_owned(`, `.clone_from(`, `.extend_from_slice(` (any spacing), the UFCS/path forms
-(`Clone::clone(`, `<[u64]>::to_vec(`), `Vec::from(` / `Box::from(`, a deref closure `|x| *x`, or a helper-copy call.
-Comments (nested block ones too), strings and char literals are stripped first. The message names the op and the reach
-chain: `BORROW file:line in fn f: `tok` (add_ref -> g -> f)`. A root that is not found fails; --borrow-reach lists the
-reached fns.
-(This replaces the former add_ref/sub_ref and mul_ref/div_ref use-count ratchets: a use of a borrowing op copies
+borrowing ops: both operands read in place, only the result allocated. The rule fails closed, by mechanism, not by
+spelling. REACH: every non-test fn and macro_rules! of the whole zenith-float-num/src reachable from them, through
+every call form (method, UFCS / `<T as Tr>::f`, paths, turbofish and generic calls, fns used as values, operators into
+op-trait impls, macro invocations). A call is resolved by impl type, field / local types and arity; one that cannot be
+resolved (unknown or generic receiver, trait or unknown path, a type without its own such fn) follows EVERY crate fn
+of that name; only inherent fns of std types (Vec::new) are not followed. COPY: any mechanism that duplicates data:
+the clone / copy family as methods, UFCS paths or fn values (clone, clone_from, clone_into, clone_from_slice,
+copy_from_slice, swap_with_slice, cloned, copied, to_owned, into_owned, to_vec*, extend_from_slice/within); slice ->
+owned conversions (`Vec|Box|Rc|...::from`, `from_iter`, `.as_slice().into()`, `x[a..b].into()`); a closure or pattern
+that binds an item by value or derefs it (`|&x|`, `|x| *x`, typed or braced, `for &x in`, `let Some(&x)`); `extend`
+fed by anything but an owned iterator; `vec![e; n]` with a non-literal e and `[e; n]` with operand data; helper-copy
+calls. Comments, strings and char literals are stripped first. A site passes only as a NAMED exception
+(BORROW_EXCEPTIONS: file, fn, token, max count, reason); the scan prints the site count and the exception count and
+fails on any unlisted site, naming the op and the reach chain: `BORROW file:line in fn f: `tok` (add_ref -> g -> f)`.
+A root that is not found fails; --borrow-reach lists the reached fns. (This replaces the former add_ref/sub_ref and mul_ref/div_ref use-count ratchets: a use of a borrowing op copies
 nothing, so it needs no count.) Skipped when zenith-float-num/src/ext.rs does not exist.
 
 NEG-VIA-MUL COUNT: total uses of `neg_via_mul(` (negation through a fresh `-1` and the general multiplication
@@ -539,12 +544,97 @@ def per_commit_check(rng):
 BORROW_ROOTS = (("zenith-float-num/src/ext.rs", ("add_ref", "sub_ref", "mul_ref", "div_ref")),)
 # the whole crate src (non-test library code): a helper anywhere in it can be reached
 BORROW_SCOPE = ("zenith-float-num/src/",)
+# Copy mechanisms (see the BORROW RULE). Spelling-independent pieces are regexes; extend(...) and vec![e; n] / [e; n]
+# need their argument parsed (borrow_copies).
+BORROW_COPY_METHODS = ("clone", "clone_from", "clone_into", "clone_from_slice", "copy_from_slice", "swap_with_slice", "cloned", "copied",
+                       "to_owned", "into_owned", "extend_from_slice", "extend_from_within", r"to_vec\w*")
+BORROW_LEAD = r"(?<![|\w)\]])\|(?!\|)"  # a closure's opening pipe (not `||`, not a bitor after an operand)
 BORROW_BANNED = re.compile(
-    r"\.\s*(?:clone|to_vec|cloned|copied|to_owned|clone_from|extend_from_slice)\s*\("  # method calls, any spacing
-    r"|::\s*(?:clone|to_vec|to_owned|clone_from|extend_from_slice)\b"  # UFCS / paths, also as values
-    r"|\bVec\s*::\s*from\s*\(|\bBox\s*::\s*from\s*\("  # owned copies of a borrowed slice
-    r"|\|\s*&?\s*(?:mut\s+)?[a-z_][a-z0-9_]*\s*(?::\s*&[^|]*)?\|\s*\*"  # closure that derefs its item: |x| *x
-    r"|\b(?:%s)\b" % "|".join(no_clone.HELPERS))
+    r"(?:\.|::)\s*(?:%s)\b(?:\s*\()?" % "|".join(BORROW_COPY_METHODS)  # method calls, UFCS paths and fn values, any spacing
+    + r"|\b(?:Vec|Box|Rc|Arc|String|VecDeque|SmallVec|WordBuf|From|FromIterator)\s*(?:::\s*<[^>]*>\s*)?::\s*(?:from|from_iter)\b"
+    + r"|\b(?:as_slice|as_mut_slice|as_ref|borrow|deref)\s*\(\s*\)\s*\.\s*(?:try_)?into\s*\("  # slice -> owned conversion
+    + r"|\[[^\[\]]*\.\.[^\[\]]*\]\s*\.\s*(?:try_)?into\s*\("  # x[a..b].into()
+    + r"|" + BORROW_LEAD + r"\s*\(?\s*&"  # |&x| / |(&a, &b)|: a closure that binds an item by value
+    + r"|" + BORROW_LEAD + r"[^|;{}]*\|\s*(?:->\s*[^{|;]*?)?\{?\s*\*"  # |x| *x, |x: &T| -> T { *x }: a deref closure
+    + r"|\bfor\s+\(?\s*&|\blet\s+(?:Some|Ok)?\s*\(?\s*&\s*(?:mut\s+)?[a-z_(]"  # for &x in / let &x = / if let Some(&x)
+    + r"|\b(?:%s)\b" % "|".join(no_clone.HELPERS))
+BORROW_LITERAL = re.compile(r"-?\d[\w.]*|(?:\w+\s*::\s*)*[A-Z][A-Z0-9_]*|true|false|None|(?:\w+\s*::\s*)*(?:new|default|zero)\s*\(\s*\)")
+BORROW_OWNED_ITER = re.compile(r"\binto_iter\s*\(|\bdrain\s*\(|\brepeat\w*\s*\(|\.\s*map\s*\(|\bfrom_fn\s*\(|\bonce\s*\(|\bsuccessors\s*\(|^\s*\(?\s*[\w.]+\s*\.\.")
+
+
+def _close(code, i):
+    """index of the bracket closing the one at code[i]"""
+    depth = 0
+    for j in range(i, len(code)):
+        if code[j] in "([{":
+            depth += 1
+        elif code[j] in ")]}":
+            depth -= 1
+            if depth == 0:
+                return j
+    return len(code)
+
+
+# Named exceptions: (file, fn, token, max sites, reason). A copy site of the borrow call graph passes only when its
+# (file, fn, token) is listed here and that fn holds no more such sites than listed; anything else fails. Kept to the
+# copies an algorithm needs: the result's own words, a working buffer the kernel mutates, scalar word reads.
+M = "zenith-float-num/src/mantissa/"
+SCALAR = "scalar Word read into a local (one u64 value in a register); no buffer is duplicated"
+BORROW_EXCEPTIONS = (
+    ("zenith-float-num/src/common/buf.rs", "resize_len", ".extend_from_slice(", 1,
+     "inline->heap spill of the result's own WordBuf: inline words cannot change storage by ownership"),
+    ("zenith-float-num/src/common/int.rs", "copy_from", ".copy_from_slice(", 1,
+     "SliceWithSign::copy_from: FFT accumulator / mul.rs intermediates written into a kernel's &mut working slice"),
+    (M + "base.rs", "abs_add", ".copy_from_slice(", 2,
+     "addend below the precision: the result is the other operand's words plus a sticky bit"),
+    (M + "div.rs", "div_basic", ".clone_from_slice(", 2,
+     "schoolbook division with d == 1: the remainder buffer the kernel subtracts in place starts as the operands"),
+    (M + "div.rs", "div_basic", ".copy_from_slice(", 1, "writes the computed remainder into the result buffer"),
+    (M + "div.rs", "div_recursive", ".copy_from_slice(", 7,
+     "Burnikel-Ziegler: the remainder (= dividend when it is short) and quotient/remainder blocks assembled in "
+     "working buffers the recursion mutates in place"),
+    (M + "div.rs", "div_unbalanced", ".copy_from_slice(", 5,
+     "unbalanced division: working remainder starts as the dividend and is reduced in place; quotient blocks "
+     "assembled into the result"),
+    (M + "fft.rs", "fft_decompose", ".copy_from_slice(", 3,
+     "FFT input: operand words split into zero-padded parts the transform overwrites in place"),
+    (M + "fft.rs", "fft_mul", ".copy_from_slice(", 1, "writes a reduced product part back into the transform buffer"),
+    (M + "toom3.rs", "toom3", ".copy_from_slice(", 3, "writes the evaluated parts s0/s4 into the result buffer d3"),
+    (M + "base.rs", "find_bit_len", "for&", 1, SCALAR),
+    (M + "base.rs", "leading_zero_bits", "for&", 1, SCALAR),
+    (M + "base.rs", "round_mantissa", "for&", 1, SCALAR),
+    (M + "base.rs", "word_at", "letSome(&w", 1, SCALAR),
+    (M + "util.rs", "next", "letSome(&h", 2, SCALAR + " (NormalizedView)"),
+    (M + "util.rs", "next", "letSome(&l", 1, SCALAR + " (NormalizedView)"),
+    (M + "util.rs", "next", "letSome(&v", 2, SCALAR + " (NormalizedView)"),
+    ("zenith-float-num/src/ieee_soft/array.rs", "get", ".copied(", 1,
+     SCALAR + "; IEEE soft-float bits, reached only by the name fallback of `.get(`"),
+    ("zenith-float-num/src/ieee_soft/array.rs", "map", "|&", 1,
+     SCALAR + "; IEEE soft-float bits, reached only by the name fallback of `.map(`"),
+)
+
+
+def borrow_copies(body):
+    """[(offset, token)] of every copy mechanism in a stripped body"""
+    out = [(m.start(), re.sub(r"\s+", "", m.group(0))) for m in BORROW_BANNED.finditer(body)]
+    for m in re.finditer(r"\.\s*extend\s*\(", body):  # Extend<&T>: only an owned iterator may feed it
+        a = m.end() - 1
+        arg = body[a + 1:_close(body, a)]
+        if arg.lstrip().startswith("&") or not BORROW_OWNED_ITER.search(arg):
+            out.append((m.start(), ".extend(<borrowed>)"))
+    for m in re.finditer(r"(\bvec\s*!\s*)?\[", body):  # vec![e; n] and [e; n] repeat operand data unless e is a literal
+        a = m.end() - 1
+        inner, depth, k = body[a + 1:_close(body, a)], 0, None
+        for q, ch in enumerate(inner):
+            depth += ch in "([{"; depth -= ch in ")]}"
+            if ch == ";" and depth == 0:
+                k = q; break
+        if k is None:
+            continue
+        e = inner[:k].strip()
+        if m.group(1) and not BORROW_LITERAL.fullmatch(e) or not m.group(1) and re.search(r"[.\[]", e):
+            out.append((m.start(), "vec![<operand>;n]" if m.group(1) else "[<operand>;n]"))
+    return sorted(out)
 def strip_rust(src):
     """src with comments (line, nested block, doc) and string / char literal contents blanked; newlines and
     columns kept, so offsets map to the same lines. Lifetimes ('a) stay."""
@@ -598,7 +688,7 @@ BORROW_LOCAL = re.compile(r"\b(?:let|for)\s+(?:mut\s+)?([a-z_]\w*)|\|\s*&?\s*(?:
 BORROW_PAT = re.compile(r"\blet\s+([^=;]*)=|(?:[{,]|=>)\s*([^{},;=]*?)=>")
 BORROW_ITEM = re.compile(r"^[ \t]*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?((?:impl|trait)\b)", re.M)
 BORROW_FN = re.compile(r"\bfn\s+([a-z_][a-z0-9_]*)|\bmacro_rules!\s*([a-z_][a-z0-9_]*)")
-BORROW_REF = re.compile(r"(<[^<>]*(?:<[^<>]*(?:<[^<>]*>[^<>]*)*>[^<>]*)*>\s*::\s*|(?:\b(?:[A-Za-z_]\w*)\s*(?:::\s*<[^>]*>)?\s*::\s*)+)?"
+BORROW_REF = re.compile(r"(<[^<>]*(?:<[^<>]*(?:<[^<>]*>[^<>]*)*>[^<>]*)*>\s*::\s*|(?:\b(?:[A-Za-z_]\w*)\s*(?:::\s*<[^<>]*(?:<[^<>]*>[^<>]*)*>)?\s*::\s*)+)?"
                         r"(\.\s*)?\b([a-z_][a-z0-9_]*)\b(\s*!)?")
 # operator -> trait method names (dispatched only when an operand is a local / param of a crate type with that impl)
 BORROW_OPS = (("+", ("add", "add_assign")), ("-", ("sub", "sub_assign", "neg")), ("*", ("mul", "mul_assign")),
@@ -752,6 +842,24 @@ def _recv_type(before, kt):
     return ty
 
 
+# std *types* (not traits: `Add::add`, `From::from`, `Clone::clone` dispatch into crate impls and are followed)
+BORROW_STD_TYPES = {"Vec", "Box", "String", "Option", "Result", "Some", "Ok", "Err", "Rc", "Arc", "Mutex", "RwLock",
+                    "RefCell", "Cell", "VecDeque", "BTreeMap", "HashMap", "Ordering", "Wrapping", "PhantomData"}
+
+
+def _close_angle(code, i):
+    """index of the `>` closing the `<` at code[i] (`->` is not a bracket)"""
+    depth = 0
+    for j in range(i, len(code)):
+        if code[j] == "<":
+            depth += 1
+        elif code[j] == ">" and code[j - 1] != "-":
+            depth -= 1
+            if depth == 0:
+                return j
+    return len(code) - 1
+
+
 def _callees(f, by_name, types):
     """names-and-types resolution of the fns a body can reach (an over-approximation within each rule):
     `name!` -> macros; `T::name` / `<T as Tr>::name` -> fns of impl T (Self -> own impl); `mod::name` -> free fns of
@@ -771,39 +879,50 @@ def _callees(f, by_name, types):
         cands = by_name.get(name, [])
         if not cands:
             continue
-        rest = body[m.end():m.end() + 3].lstrip()
+        end = m.end()
+        tf = re.match(r"\s*::\s*<", body[end:])
+        if tf:  # turbofish: name::<T>( is a (generic) call, name::<T>:: a path
+            end = _close_angle(body, end + tf.end() - 1) + 1
+        rest = body[end:end + 3].lstrip()
         if rest.startswith("::"):
             continue  # a path segment (module or type), not a fn
         call = rest.startswith("(")
         if call:  # Rust has no overloading or default args: a callee must take exactly this many args
-            na = _top_args(body, body.index("(", m.end()))
+            na = _top_args(body, body.index("(", end))
             if na is not None:
                 cands = [g for g in cands if g["arity"] is None
                          or g["arity"] - (1 if dot and g["self"] else 0) == na
                          or (not dot and g["self"] and g["arity"] == na)]
         if path:
-            segs = re.findall(r"[A-Za-z_]\w*", path)
-            qual = re.search(r"<\s*&?\s*(?:mut\s+)?([A-Z]\w*)", path)
+            bare = path
+            while re.search(r"<[^<>]*>", bare):  # drop turbofish generics: Vec::<T>::new is Vec::new
+                bare = re.sub(r"(?:::\s*)?<[^<>]*>", "", bare)
+            segs = re.findall(r"[A-Za-z_]\w*", bare)
+            qual = re.match(r"<\s*&?\s*(?:mut\s+)?([A-Z]\w*)", path)  # <T as Tr>::f / <T>::f
             last = qual.group(1) if qual else segs[-1]
             if last == "Self":
                 last = f["ty"]
-            if last and last[0].isupper():
-                res += [g for g in cands if g["ty"] == last]
-            else:
-                res += [g for g in cands if g["free"] and (last in g["mods"] or last in ("crate", "super", "self"))]
+            if segs and segs[0] in ("core", "std", "alloc"):
+                continue  # outside the crate: no crate body to reach
+            if last in BORROW_STD_TYPES:
+                continue  # an inherent fn of a std type (Vec::new): std code calls no crate fn back
+            if last and last[0].isupper():  # Type::f; a trait, generic param or default method -> every method f
+                res += [g for g in cands if g["ty"] == last] or [g for g in cands if not g["free"]]
+            else:  # mod::f; an unknown module (a `use` alias) -> every free f
+                res += ([g for g in cands if g["free"] and (last in g["mods"] or last in ("crate", "super", "self"))]
+                        or [g for g in cands if g["free"]])
         elif dot:
             if not call:
                 continue  # a field
             ty = _recv_type(body[:m.start() + len(dot)], kt)
             typed = [g for g in cands if g["ty"] == ty] if ty else []
-            if typed or ty in ("[]", "str") or (ty and ty[0].islower()):
-                res += typed
-            else:  # unknown receiver, or a type with no such method of its own (Deref, trait objects)
-                res += [g for g in cands if not g["free"]]
+            # unknown receiver, a generic / trait-bound one, or a type without its own such method (trait impls for
+            # slices or primitives, Deref, trait objects): every method of that name
+            res += typed or [g for g in cands if not g["free"]]
         else:
-            if not call and (name in local or not re.search(r"[(,]\s*&?\s*$", body[:m.start()])
-                             or not re.match(r"\s*[),]", body[m.end():])):
-                continue  # a value only as a bare argument: f(name) / f(a, name)
+            if not call and (name in local or re.match(r"\s*(?:[:{!]|=[^=>])", body[end:])
+                             or re.search(r"\b(?:fn|let|mut|struct|enum|mod|use|as)\s*$|[\'.]\s*$", body[:m.start()])):
+                continue  # a fn value is any other use of a free fn's name: binding, argument, field init, return
             res += [g for g in cands if g["free"] or (g["ty"] and g["ty"] == f["ty"] and not call)]
     for op, names in BORROW_OPS:
         rx = re.compile(r"\b([a-z_]\w*)\s*%s=?(?![>=%s])|(?<![-=<>!&|*/%%+])%s=?\s*&?\s*(?:mut\s+)?([a-z_]\w*)"
@@ -832,9 +951,8 @@ def borrow_closure():
             continue
         seen.add(key)
         reached.append(key)
-        for b in BORROW_BANNED.finditer(f["body"]):
-            hits.append((f["rel"], f["bline"] + f["body"].count("\n", 0, b.start()), f["name"],
-                         re.sub(r"\s+", "", b.group(0)), path))
+        for off, tok in borrow_copies(f["body"]):
+            hits.append((f["rel"], f["bline"] + f["body"].count("\n", 0, off), f["name"], tok, path))
         for g in _callees(f, by_name, types):
             if (g["rel"], g["line"], g["name"]) not in seen:
                 todo.append((g, path + (g["name"],)))
@@ -849,10 +967,17 @@ def borrow_check(update=False):
     missing = [n for n in roots if not any(r[2] == n for r in reached)]
     for n in missing:
         print("rules_scan: borrowing op %s not found (BORROW_ROOTS is stale)" % n)
-    for rel, line, name, tok, path in hits:
+    allowed = {(r, f, t): n for r, f, t, n, _ in BORROW_EXCEPTIONS}
+    groups = collections.Counter((rel, name, tok) for rel, _, name, tok, _ in hits)
+    bad = [h for h in hits if groups[(h[0], h[2], h[3])] > allowed.get((h[0], h[2], h[3]), 0)]
+    for rel, line, name, tok, path in bad:
         print("rules_scan: BORROW %s:%d in fn %s: `%s` (%s)" % (rel, line, name, tok, " -> ".join(path)))
-    print("rules_scan: borrowing ops reach %d fns, %d copy sites" % (len(reached), len(hits)))
-    return 1 if hits or missing else 0
+    for k, n in sorted(allowed.items()):
+        if groups.get(k, 0) < n:
+            print("rules_scan: note: borrow exception %s %s `%s` allows %d, found %d: lower it" % (k + (n, groups.get(k, 0))))
+    print("rules_scan: borrowing ops reach %d fns, %d copy sites (%d named exceptions, %d unlisted)"
+          % (len(reached), len(hits), len(hits) - len(bad), len(bad)))
+    return 1 if bad or missing else 0
 
 
 def both_count_checks(update=False):
