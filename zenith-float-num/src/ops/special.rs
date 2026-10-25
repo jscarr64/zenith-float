@@ -5244,9 +5244,17 @@ fn bm_split(a: u64, b: u64, two_j: Exponent) -> Result<BmSplit, Error> {
 /// and `t_N ≤ (e n/N)^(2N) = e^{−6.09 n}`, so both tails are below `2^−(pw+16)` relative.
 /// Up to `N` everything is exact integers: `A/B = V/(D·(Q+T))` from [`bm_split`] over
 /// `1..=N`. The only roundings are that one division and `j·ln 2` (`ln2` within an ulp at
-/// `p` bits); the total is a few ulps at `pw = p + 32` bits, i.e. under `2^−(p+24)`
-/// relative, well inside the 2^64-ulp trust of the Ziv check in `get_exact_prec` and the
-/// guard words `Consts::euler_gamma_num` keeps.
+/// the argument precision `p`), each at the working precision `pw = p + 32` bits; with the
+/// series truncation below `2^−(pw+14)` = `2^−(p+46)`, the total is a few ulps at `pw`, i.e.
+/// under `2^−(p+24)` relative to the argument `p`.
+///
+/// There is no Ziv retry on this path: `Consts::euler_gamma` goes `exact_p` → `round_exact`,
+/// which re-rounds the cached value once (`for_prec`, `set_precision`). Correct rounding
+/// relies on a fixed margin instead: `Consts::euler_gamma_num` calls this with
+/// `p = round_p(p_req) + 8·WORD_BIT_SIZE` (`+ 512` bits with 64-bit words, `+ 256` with
+/// 32-bit), so the error is under `2^−(p_req+536)` (`2^−(p_req+280)` on 32-bit) relative to
+/// the requested precision. Rounding could only go wrong if γ sat within that distance of a
+/// `p_req`-bit rounding boundary.
 /// Cost: O(M(p log p) log p) for M the multiplication cost (the old term-by-term sum did
 /// ≈ 0.6 p full `p`-bit multiplications: 44 s at p = 65536).
 pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNumNumber, Error> {

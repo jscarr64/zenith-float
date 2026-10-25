@@ -311,6 +311,8 @@ impl Consts {
         rm: RoundingMode,
     ) -> Result<ExactNumNumber, Error> {
         let p_round = round_p(p);
+        // No Ziv retry: `euler_mascheroni` is trusted to `2^−(p_wrk+24)`, and the 8-word margin
+        // over `p_round` is what makes the single `exact_p` rounding correct.
         let p_wrk = p_round
             .checked_add(8 * WORD_BIT_SIZE)
             .ok_or(Error::InvalidArgument)?;
