@@ -243,8 +243,38 @@ hx v-closure-in-let 1 "$K:1 in fn k: \`.clone(\` (add_ref -> k)" 'k(a, b)' 'fn k
 hx v-trait-default-method 1 "$K:1 in fn dup: \`.clone(\` (add_ref -> dup)" 'a.dup()' 'trait Dup { fn dup(&self) -> N { self.clone() } }\nimpl Dup for N {}'
 hx v-nested-macros 1 "$K:1 in fn inner!: \`.clone(\` (add_ref -> k -> outer! -> inner!)" 'k(a, b)' 'macro_rules! inner { ($x:expr) => { $x.clone() } }\nmacro_rules! outer { ($x:expr) => { inner!($x) } }\nfn k(a: &N, b: &N) -> N { outer!(a) }'
 hx v-map-clone-path 1 "$K:1 in fn k: \`::clone\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(Clone::clone).collect(); N(v.len()) }'
+# round 3 (Harper): the 8 holes of 5cf3df2's probe (tools/rules_scan_borrow_holes.sh), red against 581cdfe
+hx h3-ref-pattern-closure 1 "$K:1 in fn k: \`|&\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(|&x| x).collect(); N(v.len()) }'
+hx h3-copy-from-slice 1 "$K:1 in fn k: \`.copy_from_slice(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = vec![0u64; a.w.len()]; v.copy_from_slice(&a.w); N(v.len()) }'
+hx h3-slice-into-vec 1 "$K:1 in fn k: \`as_slice().into(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.as_slice().into(); N(v.len()) }'
+hx h3-clone-into 1 "$K:1 in fn k: \`.clone_into(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); a.w.as_slice().clone_into(&mut v); N(v.len()) }'
+hx h3-vec-macro-copy 1 "$K:1 in fn k: \`vec![<operand>;n]\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v = vec![a.w[0]; 4]; N(v.len()) }'
+hx h3-typed-braced-deref 1 "$K:1 in fn k: \`|x:&u64|->u64{*\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(|x: &u64| -> u64 { *x }).collect(); N(v.len()) }'
+hx h3-extend-ref-iter 1 "$K:1 in fn k: \`.extend(<borrowed>)\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); v.extend(a.w.iter()); N(v.len()) }'
+hx h3-generic-turbofish 1 "$K:2 in fn g: \`.clone(\` (add_ref -> k -> g)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { g::<N>(a) }\nfn g<T: Clone>(x: &T) -> T { x.clone() }'
+# named exceptions (b9812ca BORROW_EXCEPTIONS): mantissa/base.rs abs_add allows 2 `.copy_from_slice(`
+B=zenith-float-num/src/mantissa/base.rs; AA='fn abs_add(a: &N, b: &N) -> N { let mut r = vec![0u64; 4]; '
+printf '%s\n' "${AA}r.copy_from_slice(&a.w); r.copy_from_slice(&b.w); N(r.len()) }" > $B
+hx x-exception-at-limit 0 - 'abs_add(a, b)' "$KK"
+# (a) a new copy in the same fn as an exception still fails: one more of the same token (all 3 sites reported), or another token
+printf '%s\n' "${AA}r.copy_from_slice(&a.w); r.copy_from_slice(&b.w); r.copy_from_slice(&a.w); N(r.len()) }" > $B
+hx x-exception-same-token-over 3 "$B:1 in fn abs_add: \`.copy_from_slice(\` (add_ref -> abs_add)" 'abs_add(a, b)' "$KK"
+printf '%s\n' "${AA}r.copy_from_slice(&a.w); r.copy_from_slice(&b.w); let c = a.clone(); N(c.w.len()) }" > $B
+hx x-exception-other-token 1 "$B:1 in fn abs_add: \`.clone(\` (add_ref -> abs_add)" 'abs_add(a, b)' "$KK"
+# ...and the same fn name in another file is not covered by the exception
+rm -f $B; mkdir -p zenith-float-num/src/ops
+hx x-exception-other-file 1 "zenith-float-num/src/ops/h.rs:1 in fn abs_add: \`.copy_from_slice(\` (add_ref -> abs_add)" 'abs_add(a, b)' "$KK" "ops/h.rs:${AA}r.copy_from_slice(&a.w); N(r.len()) }"
+# (b) an exception whose sites shrink is reported as stale (a note; the rule does not fail on it)
+printf '%s\n' "${AA}r.copy_from_slice(&a.w); N(r.len()) }" > $B
+hx x-exception-stale 0 - 'abs_add(a, b)' "$KK"
+scan --count-only | grep -qF "borrow exception $B abs_add \`.copy_from_slice(\` allows 2, found 1: lower it" || fail "stale abs_add exception (2 allowed, 1 found) not reported"
+rm -f $B
+# (c) the same-name fallback: an unresolved generic receiver follows every crate fn `frob`; copy-free ones in an
+# unrelated module are reached but raise no alarm
+hx x-fallback-copy-free 0 - 'k(a, b)' 'fn k<T: Fro>(t: &T, b: &N) -> N { t.frob() }\nimpl M { fn frob(&self) -> N { N(1) } }' 'ops/h.rs:impl Z { fn frob(&self) -> N { N(0) } }'
+scan --borrow-reach | grep -q "ops/h.rs:1 frob" || fail "same-name fallback did not reach ops/h.rs frob"
 rm -rf zenith-float-num/src/ops; echo 0 > tools/helper_copy_count_baseline.txt
-[ "$bx_n" = 36 ] || fail "BORROW fixtures: ran $bx_n, want 36"
+[ "$bx_n" = 50 ] || fail "BORROW fixtures: ran $bx_n, want 50"
 echo "rules_scan selftest: BORROW per-op fixtures ok ($bx_n)"
 rm -f zenith-float-num/src/mantissa/kern.rs
 rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ext.rs; echo 0 > tools/clone_count_baseline.txt
