@@ -4,7 +4,7 @@
 //! one is `-max` under `ToZero` and `Up`, `-inf` otherwise.
 
 use std::ops::Neg;
-use zenith_float_num::{Consts, ExactNum, RoundingMode, INF_NEG, INF_POS};
+use zenith_float_num::{Consts, Error, ExactNum, RoundingMode, INF_NEG, INF_POS};
 
 const MODES: [RoundingMode; 6] = [
     RoundingMode::ToEven,
@@ -31,26 +31,27 @@ fn expected(neg: bool, rm: RoundingMode, p: usize) -> ExactNum {
 }
 
 #[test]
-fn sinh_cosh_overflow_is_directional_in_every_mode_and_sign() {
-    let mut cc = Consts::new().unwrap();
+fn sinh_cosh_overflow_is_directional_in_every_mode_and_sign() -> Result<(), Error> {
+    let mut cc = Consts::new()?;
     let mut bad = Vec::new();
     let mut checked = 0;
     for p in [64usize, 128, 320] {
-        // 3 * 2^60 = 0.75 * 2^62: e^x has exponent about 1.08 * EXPONENT_MAX, just past the limit.
-        let xs = [
-            (
-                "3*2^60",
-                ExactNum::from_u8(3, p).ldexp(60, p, RoundingMode::None),
-            ),
-            (
-                "2^63",
-                ExactNum::from_u8(1, p).ldexp(63, p, RoundingMode::None),
-            ),
-            ("max", ExactNum::max_value(p)),
-        ];
-        for (label, x) in xs {
-            for neg in [false, true] {
-                let x = if neg { x.clone().neg() } else { x.clone() };
+        for neg in [false, true] {
+            // 3 * 2^60 = 0.75 * 2^62: e^x has exponent about 1.08 * EXPONENT_MAX, just past the limit.
+            // Each value is built fresh per sign, so the sign is applied by value.
+            let signed = |x: ExactNum| if neg { x.neg() } else { x };
+            let xs = [
+                (
+                    "3*2^60",
+                    signed(ExactNum::from_u8(3, p).ldexp(60, p, RoundingMode::None)),
+                ),
+                (
+                    "2^63",
+                    signed(ExactNum::from_u8(1, p).ldexp(63, p, RoundingMode::None)),
+                ),
+                ("max", signed(ExactNum::max_value(p))),
+            ];
+            for (label, x) in xs {
                 for rm in MODES {
                     for (name, got, rneg) in [
                         ("sinh", x.sinh(p, rm, &mut cc), neg),
@@ -79,13 +80,14 @@ fn sinh_cosh_overflow_is_directional_in_every_mode_and_sign() {
         bad.len(),
         bad.join("\n")
     );
+    Ok(())
 }
 
 /// The rest of the old `test_sinh_cosh`: sinh(0) = 0 and cosh(0) = 1 exactly in every mode; for the
 /// least positive subnormal x, sinh(x) rounds by mode next to x and cosh(x) next to 1.
 #[test]
-fn sinh_cosh_at_zero_and_at_the_least_subnormal() {
-    let mut cc = Consts::new().unwrap();
+fn sinh_cosh_at_zero_and_at_the_least_subnormal() -> Result<(), Error> {
+    let mut cc = Consts::new()?;
     for p in [64usize, 320] {
         let one = ExactNum::from_u8(1, p);
         let zero = ExactNum::from_u8(0, p);
@@ -116,4 +118,5 @@ fn sinh_cosh_at_zero_and_at_the_least_subnormal() {
             );
         }
     }
+    Ok(())
 }
