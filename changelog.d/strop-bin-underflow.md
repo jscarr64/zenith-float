@@ -1,0 +1,1 @@
+- Tests: the test-only `ExactNumNumber::parse` (`strop.rs`) now rounds a binary numeral below `EXPONENT_MIN` once onto the subnormal grid (or to a signed zero) by the rounding mode, as `ExactNum::parse` does, instead of returning `ExponentOverflow`. No public API change.
