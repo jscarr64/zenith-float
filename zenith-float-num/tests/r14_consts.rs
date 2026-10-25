@@ -150,9 +150,9 @@ fn full_tier() -> bool {
 }
 
 fn fnv1a(h: u64, bytes: &[u8]) -> u64 {
-    bytes
-        .iter()
-        .fold(h, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01b3))
+    bytes.iter().fold(h, |h, b| {
+        (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
 }
 
 /// Every row whose p passes `keep` against its gold, flagged inexact; returns the failures and
@@ -231,7 +231,8 @@ fn golds_cover_every_constant_mode_and_edge() -> Result<(), String> {
             for rm in MODES {
                 let m = format!("{rm:?}");
                 assert!(
-                    rows.iter().any(|(n, q, r, _)| n == name && *q == p && *r == m),
+                    rows.iter()
+                        .any(|(n, q, r, _)| n == name && *q == p && *r == m),
                     "{name} p={p} {m} has golds"
                 );
             }
@@ -245,7 +246,11 @@ fn golds_fast_tier_every_constant_every_mode() -> Result<(), String> {
     let rows = rows()?;
     let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
     let (bad, checked, _) = check_golds(&mut cc, &rows, |p| FAST_P.contains(&p))?;
-    assert_eq!(checked, NAMES.len() * FAST_P.len() * MODES.len(), "fast rows");
+    assert_eq!(
+        checked,
+        NAMES.len() * FAST_P.len() * MODES.len(),
+        "fast rows"
+    );
     report(&bad, checked, "fast-tier gold rows")
 }
 
