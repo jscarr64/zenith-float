@@ -207,25 +207,25 @@ done
 # ---- BORROW hole fixtures (Harper; from the former tools/rules_scan_borrow_holes.sh): add_ref (ext.rs:2) reaches a
 # copy the old name-only rule missed; each red asserts the exact site count and the op + reach chain in the message ----
 mkdir -p zenith-float-num/src/ops; echo 99 > tools/helper_copy_count_baseline.txt
-hx() { # hx <name> <want-sites> <expected BORROW line or -> <add_ref body> <kern.rs content> [path:content]
+hx() { # hx <name> <BORROW-lines>[/<copy-sites>] <expected BORROW line or -> <add_ref body> <kern.rs content> [path:content]
   { echo 'impl N {'; echo "    pub fn add_ref(a: &N, b: &N) -> N { $4 }"
     for o in sub mul div; do echo "    pub fn ${o}_ref(a: &N, b: &N) -> N { N(0) }"; done; echo '}'; } > zenith-float-num/src/ext.rs
   printf '%b\n' "$5" > zenith-float-num/src/mantissa/kern.rs
   rm -f zenith-float-num/src/ops/h.rs; [ -z "${6:-}" ] || printf '%b\n' "${6#*:}" > "zenith-float-num/src/${6%%:*}"
-  local out rc=0 n; out="$(scan --count-only 2>&1)" || rc=1
-  if [ "$2" = 0 ]; then [ $rc = 0 ] || fail "BORROW hole fixture $1: copy-free graph failed: $out"
+  local out rc=0 n w="${2%%/*}" s="${2#*/}"; out="$(scan --count-only 2>&1)" || rc=1
+  if [ "$w" = 0 ]; then [ $rc = 0 ] || fail "BORROW hole fixture $1: copy-free graph failed: $out"
   else [ $rc = 1 ] || fail "BORROW hole fixture $1: copy reachable from add_ref passed: $out"; fi
   n=$(echo "$out" | grep -c 'rules_scan: BORROW ')
-  [ "$n" = "$2" ] || fail "BORROW hole fixture $1: $n BORROW lines, want $2: $out"
-  echo "$out" | grep -q ", $2 copy sites" || fail "BORROW hole fixture $1: want $2 copy sites: $out"
+  [ "$n" = "$w" ] || fail "BORROW hole fixture $1: $n BORROW lines, want $w: $out"
+  echo "$out" | grep -q ", $s copy sites" || fail "BORROW hole fixture $1: want $s copy sites: $out"
   [ "$3" = - ] || echo "$out" | grep -qF "rules_scan: BORROW $3" || fail "BORROW hole fixture $1: message lacks [$3]: $out"
   bx_n=$((bx_n + 1)); return 0
 }
 E=zenith-float-num/src/ext.rs; K=zenith-float-num/src/mantissa/kern.rs; KK='fn k(a: &N, b: &N) -> N { N(0) }'
-hx ufcs-clone 1 "$E:2 in fn add_ref: \`::clone\` (add_ref)" 'let c = Clone::clone(a); k(&c, b)' "$KK"
+hx ufcs-clone 1 "$E:2 in fn add_ref: \`::clone(\` (add_ref)" 'let c = Clone::clone(a); k(&c, b)' "$KK"
 hx space-before-paren 1 "$E:2 in fn add_ref: \`.clone(\` (add_ref)" 'let c = a.clone (); k(&c, b)' "$KK"
-hx slice-to_vec-path 1 "$K:1 in fn k: \`::to_vec\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(<[u64]>::to_vec(&a.w).len()) }'
-hx vec-from-slice 1 "$K:1 in fn k: \`Vec::from(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(Vec::from(&a.w[..]).len()) }'
+hx slice-to_vec-path 1 "$K:1 in fn k: \`::to_vec(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(<[u64]>::to_vec(&a.w).len()) }'
+hx vec-from-slice 1 "$K:1 in fn k: \`Vec::from\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(Vec::from(&a.w[..]).len()) }'
 hx deref-map-collect 1 "$K:1 in fn k: \`|x|*\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(|x| *x).collect(); N(v.len()) }'
 hx extend-from-slice 1 "$K:1 in fn k: \`.extend_from_slice(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); v.extend_from_slice(&a.w); N(v.len()) }'
 hx fn-as-value 1 "$K:2 in fn cp: \`.clone(\` (add_ref -> k -> cp)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(a.w.iter().map(cp).count()) }\nfn cp(x: &u64) -> u64 { x.clone() }'
@@ -235,8 +235,8 @@ hx helper-outside-scope 1 "zenith-float-num/src/ops/h.rs:1 in fn deep: \`.clone(
 hx multiline-call 1 "$K:3 in fn k: \`.clone(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    a\n        .clone()\n}'
 hx green-multiline-block-comment 0 - 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    /* note:\n       a.clone() is banned here */\n    N(0)\n}'
 # extra variants (Harper, against 581cdfe): caught, kept as regression reds
-hx v-ufcs-clone-ref 1 "$E:2 in fn add_ref: \`::clone\` (add_ref)" 'let c = Clone::clone(&a); k(&c, b)' "$KK"
-hx v-qualified-as-clone 1 "$E:2 in fn add_ref: \`::clone\` (add_ref)" 'let c = <N as Clone>::clone(a); k(&c, b)' "$KK"
+hx v-ufcs-clone-ref 1 "$E:2 in fn add_ref: \`::clone(\` (add_ref)" 'let c = Clone::clone(&a); k(&c, b)' "$KK"
+hx v-qualified-as-clone 1 "$E:2 in fn add_ref: \`::clone(\` (add_ref)" 'let c = <N as Clone>::clone(a); k(&c, b)' "$KK"
 hx v-slice-to_owned 1 "$K:1 in fn k: \`.to_owned(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v = a.w[..].to_owned(); N(v.len()) }'
 hx v-copied-collect 1 "$K:1 in fn k: \`.copied(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().copied().collect(); N(v.len()) }'
 hx v-closure-in-let 1 "$K:1 in fn k: \`.clone(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let f = |x: &N| x.clone(); f(a) }'
@@ -255,18 +255,18 @@ hx h3-generic-turbofish 1 "$K:2 in fn g: \`.clone(\` (add_ref -> k -> g)" 'k(a, 
 # named exceptions (b9812ca BORROW_EXCEPTIONS): mantissa/base.rs abs_add allows 2 `.copy_from_slice(`
 B=zenith-float-num/src/mantissa/base.rs; AA='fn abs_add(a: &N, b: &N) -> N { let mut r = vec![0u64; 4]; '
 printf '%s\n' "${AA}r.copy_from_slice(&a.w); r.copy_from_slice(&b.w); N(r.len()) }" > $B
-hx x-exception-at-limit 0 - 'abs_add(a, b)' "$KK"
+hx x-exception-at-limit 0/2 - 'abs_add(a, b)' "$KK"
 # (a) a new copy in the same fn as an exception still fails: one more of the same token (all 3 sites reported), or another token
 printf '%s\n' "${AA}r.copy_from_slice(&a.w); r.copy_from_slice(&b.w); r.copy_from_slice(&a.w); N(r.len()) }" > $B
 hx x-exception-same-token-over 3 "$B:1 in fn abs_add: \`.copy_from_slice(\` (add_ref -> abs_add)" 'abs_add(a, b)' "$KK"
 printf '%s\n' "${AA}r.copy_from_slice(&a.w); r.copy_from_slice(&b.w); let c = a.clone(); N(c.w.len()) }" > $B
-hx x-exception-other-token 1 "$B:1 in fn abs_add: \`.clone(\` (add_ref -> abs_add)" 'abs_add(a, b)' "$KK"
+hx x-exception-other-token 1/3 "$B:1 in fn abs_add: \`.clone(\` (add_ref -> abs_add)" 'abs_add(a, b)' "$KK"
 # ...and the same fn name in another file is not covered by the exception
 rm -f $B; mkdir -p zenith-float-num/src/ops
 hx x-exception-other-file 1 "zenith-float-num/src/ops/h.rs:1 in fn abs_add: \`.copy_from_slice(\` (add_ref -> abs_add)" 'abs_add(a, b)' "$KK" "ops/h.rs:${AA}r.copy_from_slice(&a.w); N(r.len()) }"
 # (b) an exception whose sites shrink is reported as stale (a note; the rule does not fail on it)
 printf '%s\n' "${AA}r.copy_from_slice(&a.w); N(r.len()) }" > $B
-hx x-exception-stale 0 - 'abs_add(a, b)' "$KK"
+hx x-exception-stale 0/1 - 'abs_add(a, b)' "$KK"
 scan --count-only | grep -qF "borrow exception $B abs_add \`.copy_from_slice(\` allows 2, found 1: lower it" || fail "stale abs_add exception (2 allowed, 1 found) not reported"
 rm -f $B
 # (c) the same-name fallback: an unresolved generic receiver follows every crate fn `frob`; copy-free ones in an
