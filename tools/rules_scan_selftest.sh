@@ -420,6 +420,18 @@ echo 0 > tools/clone_count_baseline.txt; echo 3 > tools/helper_copy_count_baseli
 git add -A; git commit -qm swap2
 out="$(scan "$r1..HEAD")" && fail "a helper_copy rise without a clone drop passed (net over the range is fine, the commit is not): $out"
 echo "$out" | grep -q "raises helper_copy by 1 but lowers clones by only 0" || fail "per-commit helper rise not reported: $out"
+# a documented exception (tools/helper_copy_commit_exceptions.txt: <full sha> <allowed count> <reason>) covers that
+# commit only up to its allowed count; a line without a count is not an exception
+rise=$(git rev-parse HEAD~1)
+printf '%s 1 rise by one (selftest)\n' "$rise" > tools/helper_copy_commit_exceptions.txt
+out="$(scan "$r1..HEAD")" || fail "an exception allowing the commit's rise of 1 should pass: $out"
+echo "$out" | grep -q "raises helper_copy by 1 (documented exception, allowed 1" || fail "documented exception not reported: $out"
+printf '%s 0 rise by one (selftest)\n' "$rise" > tools/helper_copy_commit_exceptions.txt
+out="$(scan "$r1..HEAD")" && fail "a rise of 1 above an allowed count of 0 passed: $out"
+echo "$out" | grep -q "raises helper_copy by 1, above its documented exception count 0" || fail "rise above the allowed count not reported: $out"
+printf '%s rise by one, no count (selftest)\n' "$rise" > tools/helper_copy_commit_exceptions.txt
+scan "$r1..HEAD" >/dev/null && fail "an exception line without an allowed count was honoured"
+rm -f tools/helper_copy_commit_exceptions.txt
 git rev-parse HEAD > tools/helper_copy_rule_base.txt; git add -A; git commit -qm base-after
 scan "$(git rev-parse HEAD~1)..HEAD" >/dev/null || fail "commits before the rule base must not be checked: $(scan "$(git rev-parse HEAD~1)..HEAD")"
 git rm -q tools/helper_copy_rule_base.txt; git commit -qm unbase

@@ -531,12 +531,18 @@ EXCEPTIONS_FILE = "tools/helper_copy_commit_exceptions.txt"
 
 
 def helper_copy_exceptions():
-    """full 40-char SHAs exempted from the per-commit helper_copy rule by a Rusty ruling"""
+    """{full 40-char SHA: allowed helper_copy rise} from `<sha> <count> <reason>` lines (Rusty rulings only)"""
     try:
         lines = open(os.path.join(ROOT, EXCEPTIONS_FILE)).read().splitlines()
     except OSError:
-        return []
-    return [l.split()[0] for l in lines if l.strip() and not l.startswith("#") and len(l.split()[0]) == 40 and len(l.split()) >= 2]
+        return {}
+    out = {}
+    for l in lines:
+        f = l.split()
+        if l.startswith("#") or len(f) < 3 or len(f[0]) != 40 or not f[1].isdigit():
+            continue
+        out[f[0]] = int(f[1])
+    return out
 
 
 def per_commit_check(rng):
@@ -564,8 +570,13 @@ def per_commit_check(rng):
                 rc = 1
                 continue
             dh, dc = b[1] - a[1], a[0] - b[0]
-            if dh > 0 and dc < dh and c in helper_copy_exceptions():
-                print("rules_scan: commit %s raises helper_copy by %d (documented exception in %s)" % (c[:10], dh, EXCEPTIONS_FILE))
+            allowed = helper_copy_exceptions().get(c)
+            if dh > 0 and dc < dh and allowed is not None:
+                if dh > allowed:
+                    print("rules_scan: commit %s raises helper_copy by %d, above its documented exception count %d in %s" % (c[:10], dh, allowed, EXCEPTIONS_FILE))
+                    rc = 1
+                else:
+                    print("rules_scan: commit %s raises helper_copy by %d (documented exception, allowed %d, in %s)" % (c[:10], dh, allowed, EXCEPTIONS_FILE))
                 continue
             if dh > 0 and dc < dh:
                 print("rules_scan: commit %s raises helper_copy by %d but lowers clones by only %d (helper_copy may rise only with an equal-or-larger clone drop)" % (c[:10], dh, dc))
