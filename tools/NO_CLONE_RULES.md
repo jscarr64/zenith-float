@@ -11,8 +11,7 @@ the exception allowlist only go down; all of them are CODEOWNERS-protected (`@js
 | hidden copy helpers | `no_clone.py --helpers` / `helper_copy_count()` | `tools/helper_copy_count_baseline.txt` | library dirs and test code |
 | exceptions: excepted `.clone()` sites (allowlist, empty) + the Ziv working-copy helper (1) | `no_clone.py` allowlist, `rules_scan.py` `ziv_helper_check()` | `tools/exception_count_baseline.txt` | none (baseline 1: the one helper) |
 | `unwrap`/`expect`/`panic!`/`unreachable!`/`todo!`/`unimplemented!` in **test code** | `rules_scan.py` `test_panic_sites()` (`--list-test-panics`) | `tools/test_panic_count_baseline.txt` | `#[cfg(test)]` items, test files and dirs, the compare crate |
-| `add_ref(` / `sub_ref(` uses | `rules_scan.py` | `tools/ref_sum_count_baseline.txt` | **library code only** (`REF_SCOPE`) |
-| `mul_ref(` / `div_ref(` uses | `rules_scan.py` | `tools/mul_ref_count_baseline.txt` | **library code only** (`REF_SCOPE`) |
+| copy tokens reachable from `add_ref`/`sub_ref`/`mul_ref`/`div_ref` | `rules_scan.py` (BORROW rule) | none: must be 0 | library call graph of the four ops (`BORROW_SCOPE`) |
 
 ### Test code is counted
 

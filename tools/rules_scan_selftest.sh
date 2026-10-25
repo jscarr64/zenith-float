@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Self-test for tools/rules_scan.sh: fixture diffs prove every banned pattern is flagged on ADDED lines,
 # that removed/context lines, comments, strings, test code and non-lib paths are not, that the
-# allowlist works, that staged/working/range modes work, that the clone-count, helper-copy and ref baselines only go down,
+# allowlist works, that staged/working/range modes work, that the clone-count, helper-copy baselines only go down, that the borrowing ops' call graph holds no copy,
 # and that the constant-cache exception allowlist works (unlisted clone fails, listed passes, stale entry fails, count only down).
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
@@ -13,7 +13,7 @@ mkdiff() { # mkdiff <path> <added line...>  -> fixture diff on stdout
   for l in "$@"; do printf '+%s\n' "$l"; done
 }
 LIB=zenith-float-num/src/foo.rs
-export RULES_SCAN_ROOT="$t"; mkdir -p "$t/tools"; : > "$t/tools/rules_allowlist.txt"; echo 0 > "$t/tools/clone_count_baseline.txt"; echo 0 > "$t/tools/ref_sum_count_baseline.txt"; echo 0 > "$t/tools/mul_ref_count_baseline.txt"; echo 0 > "$t/tools/helper_copy_count_baseline.txt"; echo 0 > "$t/tools/exception_count_baseline.txt"; echo 0 > "$t/tools/test_panic_count_baseline.txt"; echo 0 > "$t/tools/neg_via_mul_count_baseline.txt"
+export RULES_SCAN_ROOT="$t"; mkdir -p "$t/tools"; : > "$t/tools/rules_allowlist.txt"; echo 0 > "$t/tools/clone_count_baseline.txt"; echo 0 > "$t/tools/helper_copy_count_baseline.txt"; echo 0 > "$t/tools/exception_count_baseline.txt"; echo 0 > "$t/tools/test_panic_count_baseline.txt"; echo 0 > "$t/tools/neg_via_mul_count_baseline.txt"
 export RULES_SCAN_SKIP_COUNT=1   # fixture diffs have no tree to count
 
 mkdiff $LIB 'let a = 1 + 2;' 'let s = a.max(b);' > "$t/clean.diff"
@@ -96,7 +96,7 @@ scan --diff-file "$t/d.diff" >/dev/null || fail "allowlisted site still flagged"
 # git modes in a throwaway repo
 g="$t/repo"; mkdir -p "$g/zenith-float-num/src" "$g/tools"; cd "$g" || exit 1
 git init -q . && git config user.email a@b && git config user.name t
-cp "$t/tools/rules_allowlist.txt" tools/; echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/ref_sum_count_baseline.txt; echo 0 > tools/mul_ref_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt; echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/test_panic_count_baseline.txt; echo 0 > tools/neg_via_mul_count_baseline.txt
+cp "$t/tools/rules_allowlist.txt" tools/; echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt; echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/test_panic_count_baseline.txt; echo 0 > tools/neg_via_mul_count_baseline.txt
 printf 'fn a() {}\n' > zenith-float-num/src/x.rs; git add -A; git commit -qm base; base=$(git rev-parse HEAD)
 export RULES_SCAN_ROOT="$g"; unset RULES_SCAN_SKIP_COUNT
 scan "$base..HEAD" >/dev/null || fail "empty range flagged"
@@ -121,47 +121,34 @@ echo 5 > tools/clone_count_baseline.txt; scan --count-only | grep -qi "lower" ||
 scan --update-baseline >/dev/null || fail "lowering baseline failed"; [ "$(tr -d '[:space:]' < tools/clone_count_baseline.txt)" = 1 ] || fail "baseline not lowered"
 echo 0 > tools/clone_count_baseline.txt; scan --update-baseline >/dev/null && fail "raising baseline allowed"; [ "$(tr -d '[:space:]' < tools/clone_count_baseline.txt)" = 0 ] || fail "baseline raised"
 
-# add_ref/sub_ref use-count baseline: counts non-test library uses (not definitions, comments, strings, tests), may only go down
-cat > zenith-float-num/src/x.rs <<'EOF'
-impl N { pub fn add_ref(a: &N, b: &N) -> N { a.go(b) } pub fn sub_ref(a: &N, b: &N) -> N { a.go(b) } }
-fn u(a: &N, b: &N) { let s = N::add_ref(a, b); let d = N::sub_ref(a, b); }
-// N::add_ref(a, b) in a comment
-fn s() { let x = "N::sub_ref(a, b)"; }
-#[cfg(test)]
-mod tests { fn t(a: &N, b: &N) { let s = N::add_ref(a, b); } }
+# ---- borrowing ops (add_ref/sub_ref/mul_ref/div_ref): no copy token anywhere in their call graph ----
+mkdir -p zenith-float-num/src/mantissa
+cat > zenith-float-num/src/ext.rs <<'EOF'
+impl N {
+    pub fn add_ref(a: &N, b: &N) -> N { a.go(b) }
+    pub fn sub_ref(a: &N, b: &N) -> N { a.go(b) }
+    pub fn mul_ref(a: &N, b: &N) -> N { a.go(b) }
+    pub fn div_ref(a: &N, b: &N) -> N { a.go(b) }
+}
+fn unrelated(a: &N) -> N { a.clone() }
 EOF
-git add -A; git commit -qm refs
-echo 2 > tools/ref_sum_count_baseline.txt; echo 5 > tools/clone_count_baseline.txt
-scan --count-only | grep -q "add_ref/sub_ref use count 2 == baseline" || fail "ref count should be 2 (definitions, comments, strings, tests excluded): $(scan --count-only)"
-echo 1 > tools/ref_sum_count_baseline.txt; scan --count-only | grep -q "ABOVE" || fail "ref count above baseline not reported"
-scan --count-only >/dev/null && fail "ref count above baseline passed"
-echo 7 > tools/ref_sum_count_baseline.txt; scan --count-only | grep -qi "lower the baseline" || fail "no hint to lower ref baseline"
-scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/ref_sum_count_baseline.txt)" = 2 ] || fail "ref baseline not lowered"
-echo 0 > tools/ref_sum_count_baseline.txt; scan --update-baseline >/dev/null && fail "raising ref baseline allowed"; [ "$(tr -d '[:space:]' < tools/ref_sum_count_baseline.txt)" = 0 ] || fail "ref baseline raised"
-rm -f tools/ref_sum_count_baseline.txt; scan --count-only >/dev/null && fail "missing ref baseline passed"
-# mul_ref/div_ref use-count baseline: its own file, same rules, independent of the add_ref/sub_ref count
-cat > zenith-float-num/src/x.rs <<'EOF'
-impl N { pub fn mul_ref(a: &N, b: &N) -> N { a.go(b) } pub fn div_ref(a: &N, b: &N) -> N { a.go(b) } }
-fn u(a: &N, b: &N) { let s = N::mul_ref(a, b); let d = N::div_ref(a, b); let z = N::add_ref(a, b); }
-// N::mul_ref(a, b) in a comment
-fn s() { let x = "N::div_ref(a, b)"; }
-impl N { pub fn sqr(&self, p: usize) -> N { self.go(self) } }
-fn q(a: &N) { let s = a.sqr(1); let t = N::sqr(a, 2); }
-#[cfg(test)]
-mod tests { fn t(a: &N, b: &N) { let s = N::mul_ref(a, b); } }
-EOF
-# sqr is a plain function (no copy): it is not a mul_ref use, so the two sqr uses above leave the count at 2
-echo 1 > tools/ref_sum_count_baseline.txt; echo 2 > tools/mul_ref_count_baseline.txt
-scan --count-only | grep -q "mul_ref/div_ref use count 2 == baseline" || fail "mul ref count should be 2: $(scan --count-only)"
-scan --count-only | grep -q "add_ref/sub_ref use count 1 == baseline" || fail "add ref count should stay 1 beside mul_ref: $(scan --count-only)"
-echo 1 > tools/mul_ref_count_baseline.txt; scan --count-only | grep -q "mul_ref/div_ref use count 2 is ABOVE" || fail "mul ref above baseline not reported"
-scan --count-only >/dev/null && fail "mul ref count above baseline passed"
-echo 7 > tools/mul_ref_count_baseline.txt; scan --count-only | grep -qi "mul_ref/div_ref use count 2 is below baseline" || fail "no hint to lower mul ref baseline"
-scan --update-baseline >/dev/null; [ "$(tr -d '[:space:]' < tools/mul_ref_count_baseline.txt)" = 2 ] || fail "mul ref baseline not lowered"
-echo 0 > tools/mul_ref_count_baseline.txt; scan --update-baseline >/dev/null && fail "raising mul ref baseline allowed"; [ "$(tr -d '[:space:]' < tools/mul_ref_count_baseline.txt)" = 0 ] || fail "mul ref baseline raised"
-rm -f tools/mul_ref_count_baseline.txt; scan --count-only >/dev/null && fail "missing mul ref baseline passed"
+kern() { printf 'impl M {\n    fn go(&self, b: &M) -> M {\n        kernel(&self.w)\n    }\n}\nfn kernel(w: &[u64]) -> M {\n    let v = %s;\n    M(v)\n}\n' "$1" > zenith-float-num/src/mantissa/base.rs; }
+echo 9 > tools/clone_count_baseline.txt
+kern 'w.iter().copied().sum()'
+out="$(scan --count-only)" && fail "a .copied() two calls below add_ref passed: $out"
+echo "$out" | grep -q 'BORROW zenith-float-num/src/mantissa/base.rs:7 in fn kernel: `.copied(`' || fail "copy site in the borrow call graph not reported: $out"
+echo "$out" | grep -q "fn unrelated" && fail "a clone outside the borrow call graph was reported: $out"
+for tok in 'w.to_vec()' 'w.iter().cloned().sum()' 'w.clone()'; do
+  kern "$tok"
+  scan --count-only >/dev/null && fail "$tok in the borrow call graph passed"
+done
+kern 'w.iter().sum()'; printf '// w.to_vec() in a comment\n' >> zenith-float-num/src/mantissa/base.rs
+out="$(scan --count-only)"; echo "$out" | grep -q "BORROW" && fail "a copy-free borrow call graph reported a copy: $out"
+echo "$out" | grep -q "0 copy sites" || fail "copy-free borrow graph not reported: $out"
+sed -i 's/pub fn div_ref/pub fn div_other/' zenith-float-num/src/ext.rs
+scan --count-only | grep -q "div_ref" || fail "a missing borrowing op not reported"
+rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ext.rs; echo 0 > tools/clone_count_baseline.txt
 # ---- test code is counted by the clone count (cfg(test) items, tests.rs, test dirs) ----
-echo 0 > tools/ref_sum_count_baseline.txt; echo 0 > tools/mul_ref_count_baseline.txt
 rm -f zenith-float-num/src/x.rs; mkdir -p zenith-float-num/src/ops zenith-float-num/tests nostd-tests/src
 printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(x: &S) { let y = x.clone(); }\n}\n' > zenith-float-num/src/x.rs
 echo 1 > tools/clone_count_baseline.txt; scan --count-only >/dev/null || fail "cfg(test) clone not counted (baseline 1 should hold)"
@@ -173,20 +160,6 @@ printf 'fn t(x: &S) { let y = x.clone(); }\n' > zenith-float-num/tests/it.rs
 echo 2 > tools/clone_count_baseline.txt; scan --count-only >/dev/null && fail "clone in integration tests dir not counted"
 echo 3 > tools/clone_count_baseline.txt; scan --count-only >/dev/null || fail "three test clones should total 3"
 rm -f zenith-float-num/src/ops/tests.rs zenith-float-num/tests/it.rs; printf 'fn a() {}\n' > zenith-float-num/src/x.rs; echo 0 > tools/clone_count_baseline.txt
-
-# ---- ref ratchets stay scoped to library code: test uses of add_ref etc. do not count ----
-cat > zenith-float-num/src/x.rs <<'EOF'
-fn u(a: &N, b: &N) { let s = N::add_ref(a, b); let m = N::mul_ref(a, b); }
-#[cfg(test)]
-mod tests { fn t(a: &N, b: &N) { let s = N::add_ref(a, b); let m = N::div_ref(a, b); } }
-EOF
-printf 'fn t(a: &N, b: &N) { let s = N::sub_ref(a, b); }\n' > zenith-float-num/src/ops/tests.rs
-echo 1 > tools/ref_sum_count_baseline.txt; echo 1 > tools/mul_ref_count_baseline.txt
-scan --count-only | grep -q "add_ref/sub_ref use count 1 == baseline" || fail "ref ratchet must stay library-only: $(scan --count-only)"
-scan --count-only | grep -q "add_ref/sub_ref uses incl. test code = 3" || fail "with-tests figure not reported: $(scan --count-only)"
-scan --count-only | grep -q "mul_ref/div_ref use count 1 == baseline" || fail "mul/div ratchet must stay library-only"
-scan --count-only >/dev/null || fail "test uses of ref functions must not trip the library-scoped ratchets"
-rm -f zenith-float-num/src/ops/tests.rs; printf 'fn a() {}\n' > zenith-float-num/src/x.rs; echo 0 > tools/ref_sum_count_baseline.txt; echo 0 > tools/mul_ref_count_baseline.txt
 
 # ---- helper-copy counter: uses count, definitions / comments / strings / use lines do not; ratchet only goes down ----
 cat > zenith-float-num/src/x.rs <<'EOF'

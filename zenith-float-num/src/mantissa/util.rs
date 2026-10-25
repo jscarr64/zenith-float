@@ -48,7 +48,7 @@ where
 pub struct RightShiftedSlice<'a, T> {
     s: core::slice::Iter<'a, T>,
     bits: usize,
-    prev: Option<T>,
+    prev: Option<&'a T>,
     default: T,
     extend_sz: usize,
 }
@@ -73,7 +73,7 @@ where
         let mut prev = None;
         let iter = if idx < s.len() {
             let mut iter = s[idx..].iter();
-            prev = iter.next().copied();
+            prev = iter.next();
             iter
         } else {
             [].iter()
@@ -103,7 +103,7 @@ where
         if self.extend_sz > 0 {
             self.extend_sz -= 1;
             if self.extend_sz == 0 && self.bits > 0 {
-                if let Some(hi) = self.prev {
+                if let Some(&hi) = self.prev {
                     Some(hi << (core::mem::size_of::<T>() * 8 - self.bits))
                 } else {
                     Some(self.default)
@@ -111,11 +111,11 @@ where
             } else {
                 Some(self.default)
             }
-        } else if let Some(lo) = self.prev {
-            self.prev = self.s.next().copied();
+        } else if let Some(&lo) = self.prev {
+            self.prev = self.s.next();
             if self.bits == 0 {
                 Some(lo)
-            } else if let Some(hi) = self.prev {
+            } else if let Some(&hi) = self.prev {
                 Some((hi << (core::mem::size_of::<T>() * 8 - self.bits)) | (lo >> self.bits))
             } else {
                 Some(lo >> self.bits)

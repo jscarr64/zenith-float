@@ -132,14 +132,16 @@ impl ExactNum {
         self.add_op(d2, p, rm, false)
     }
 
-    /// `a + b` with both operands borrowed: the sanctioned form for a site where **both operands are
-    /// still needed afterwards**. The sum is built in a fresh buffer by the same kernel as [`Self::add`]
-    /// (the zero-aware kernel branch included); no operand is copied, a subnormal one included (the kernels read it as stored and renormalize the exact result; only `div` shifts a subnormal divisor into its own working buffer, because the division kernel needs a normalized divisor). The result, its signs of zero,
-    /// both inexact flags, Inf/NaN handling and subnormal results are those of `add`.
-    ///
-    /// Use [`Self::add`] when the first operand is dead after the call. Every use of `add_ref` and
-    /// `sub_ref` in library code is counted by `tools/rules_scan.sh` (`tools/ref_sum_count_baseline.txt`,
-    /// which may only go down).
+    /// `a + b` rounded once to `p` bits under `rm`, with both operands borrowed: the sanctioned
+    /// borrowing form of [`Self::add`], for any site where an operand is still needed afterwards
+    /// (`ExactNum::add_ref(&x, &x, ..)` included). Both operands are read in place, never copied;
+    /// the only buffers allocated are the result and the kernels' own working space (as for
+    /// `add`). The result is bit-identical to `add`: value, sign of zero in every rounding mode,
+    /// both inexact flags, Inf/NaN, subnormal results, and directional overflow (`±Inf` when `rm`
+    /// rounds away from zero for the result's sign: `ToEven`, `FromZero`, `Up` for a positive and
+    /// `Down` for a negative result; otherwise the largest finite value of `p` bits, signed).
+    /// Errors are NaN values, as for every `ExactNum` operation. `tools/rules_scan.sh` (BORROW
+    /// rule) fails on any copy in the call graph of `add_ref`/`sub_ref`/`mul_ref`/`div_ref`.
     ///
     /// Accuracy: correctly-rounded
     pub fn add_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {
@@ -271,13 +273,8 @@ impl ExactNum {
         self.mul_op(d2, p, rm, false)
     }
 
-    /// `a * b` with both operands borrowed: the sanctioned form for a site where **both operands are
-    /// still needed afterwards** (a square `x * x`, a dot-product term, a recurrence step). Built in a
-    /// fresh buffer by the same kernel as [`Self::mul`]; no operand is copied, a subnormal one included (the kernels read it as stored and renormalize the exact result; only `div` shifts a subnormal divisor into its own working buffer, because the division kernel needs a normalized divisor). The result, sign of
-    /// zero, both inexact flags, Inf/NaN handling and subnormal results are those of `mul`.
-    ///
-    /// Every use of `add_ref`, `sub_ref`, `mul_ref` and `div_ref` in library code is counted by
-    /// `tools/rules_scan.sh` (`tools/ref_sum_count_baseline.txt`, which may only go down).
+    /// `a * b` rounded once with both operands borrowed. Same contract as [`Self::add_ref`], for
+    /// multiplication; bit-identical to [`Self::mul`]. (For a square prefer [`Self::sqr`].)
     ///
     /// Accuracy: correctly-rounded
     pub fn mul_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {
@@ -290,8 +287,7 @@ impl ExactNum {
     /// and does not consume `self`; `self` is not copied, a subnormal one included (the product kernel reads it as stored). Value, sign of zero in every rounding mode, both inexact
     /// flags, `op_inexact`, Inf, subnormal results and the error kind of a NaN operand are those of
     /// `ExactNum::mul_ref(&x, &x, p, rm)` (and of the old `x * x`), pinned by `sqr_grid_digest`. It replaces
-    /// every `mul_ref(&x, &x, ..)`, so a square is not a both-operands-borrowed product and is not counted by
-    /// the `mul_ref`/`div_ref` use-count ratchet.
+    /// every `mul_ref(&x, &x, ..)` in the library.
     ///
     /// The function returns NaN if the precision `p` is incorrect.
     ///
@@ -300,7 +296,8 @@ impl ExactNum {
         self.mul_op(self, p, rm, false)
     }
 
-    /// `a / b` with both operands borrowed. Same contract as [`Self::mul_ref`].
+    /// `a / b` rounded once with both operands borrowed. Same contract as [`Self::add_ref`], for
+    /// division; bit-identical to [`Self::div`] (`x / ±0` is a signed Inf, `0 / 0` a NaN).
     ///
     /// Accuracy: correctly-rounded
     pub fn div_ref(a: &Self, b: &Self, p: usize, rm: RoundingMode) -> Self {

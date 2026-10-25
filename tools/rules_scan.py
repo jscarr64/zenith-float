@@ -42,13 +42,12 @@ approved Ziv working-copy helper `ziv_pass_operand` (the one fn of that name, in
 a CODEOWNERS entry; any second helper of that shape fails), may never exceed tools/exception_count_baseline.txt (now 1;
 lowered with --update-baseline, never raised).
 
-REF-SUM COUNT: total uses of `add_ref(` / `sub_ref(` (the borrowed-borrowed sums, sanctioned only where both
-operands are still live) in non-test library code (REF_SCOPE = "library": scoped on purpose, test uses are not
-counted; the report line also prints the with-tests figure), definitions (`fn add_ref`) excluded. Same ratchet as the
-clone count against tools/ref_sum_count_baseline.txt: it may only go down; --update-baseline lowers it.
-
-MUL-REF COUNT: the same ratchet, separately, for `mul_ref(` / `div_ref(` (borrowed-borrowed products and
-quotients, sanctioned only where both operands are still live) against tools/mul_ref_count_baseline.txt.
+BORROW RULE: ExactNum::{add_ref, sub_ref, mul_ref, div_ref} (zenith-float-num/src/ext.rs) are the sanctioned
+borrowing ops: both operands read in place, only the result allocated. Every non-test fn of BORROW_SCOPE reached from
+them by name (static call-graph closure, an over-approximation) must hold no `.clone(` / `.to_vec(` / `.cloned(` /
+`.copied(` / `.to_owned(` and no helper-copy call; a root that is not found fails. --borrow-reach lists the reached fns.
+(This replaces the former add_ref/sub_ref and mul_ref/div_ref use-count ratchets: a use of a borrowing op copies
+nothing, so it needs no count.) Skipped when zenith-float-num/src/ext.rs does not exist.
 
 NEG-VIA-MUL COUNT: total uses of `neg_via_mul(` (negation through a fresh `-1` and the general multiplication
 kernel, for an operand that has to stay borrowed) in ALL scanned code: the four library dirs and no_clone.TEST_DIRS
@@ -79,7 +78,6 @@ LIB = re.compile(r"^(zenith-float-num/src|zenith-float-macro/src|zenith-float-co
 CALC = re.compile(r"^(zenith-float-num/src|zenith-float-macro/src|src)/.*\.rs$")
 EXCL_PARTS = {"tools"}
 # Scope of the add_ref/sub_ref/mul_ref/div_ref ratchets: the library only (the pre-test-counting meaning).
-REF_SCOPE = "library"
 REF_EXCL_PARTS = {"tests", "benches", "examples", "tools"}
 PATTERNS = [
     ("clone", re.compile(r"\.clone\(")),
@@ -250,32 +248,6 @@ def helper_copy_count():
     return no_clone.helper_copy_count()
 
 
-REF_KINDS = (
-    # (label, function names, baseline file)
-    ("add_ref/sub_ref", ("add_ref", "sub_ref"), "ref_sum_count_baseline.txt"),
-    ("mul_ref/div_ref", ("mul_ref", "div_ref"), "mul_ref_count_baseline.txt"),
-)
-
-
-def ref_sum_count(names=("add_ref", "sub_ref"), with_tests=False):
-    """uses of the named ref functions, definitions (`fn NAME`), comments and strings excluded.
-    Default scope is the library only (REF_SCOPE): #[cfg(test)] items, tests.rs and tests/benches/examples components
-    are skipped. with_tests=True counts every scanned file instead (library + test dirs); it is for the report only."""
-    use = re.compile(r"\b(?:%s)\(" % "|".join(names))
-    deff = re.compile(r"\bfn\s+(?:%s)\b" % "|".join(names))
-    total = 0
-    for rel, p in no_clone.rs_files(None if with_tests else no_clone.DIRS):
-        if not with_tests and not is_lib_only(rel):
-            continue
-        lines = open(p, errors="replace").read().split("\n")
-        mask = [False] * len(lines) if with_tests else no_clone.test_mask(lines)
-        for i, l in enumerate(lines):
-            code = strip(l)
-            if not mask[i] and not deff.search(code):
-                total += len(use.findall(code))
-    return total
-
-
 def neg_via_mul_count():
     """uses of `neg_via_mul(` in all scanned code (library + test dirs); definitions, comments and strings excluded."""
     use = re.compile(r"\bneg_via_mul\(")
@@ -291,10 +263,6 @@ def neg_via_mul_count():
 
 def baseline_path():
     return os.path.join(ROOT, "tools", "clone_count_baseline.txt")
-
-
-def ref_baseline_path(name="ref_sum_count_baseline.txt"):
-    return os.path.join(ROOT, "tools", name)
 
 
 def read_baseline():
@@ -321,34 +289,6 @@ def count_check(update=False):
         return 0
     print("rules_scan: clone count %d == baseline" % cur)
     return 0
-
-
-def ref_count_check(update=False):
-    rc = 0
-    for label, names, fname in REF_KINDS:
-        cur = ref_sum_count(names)
-        path = ref_baseline_path(fname)
-        try:
-            base = int(open(path).read().split()[0])
-        except (OSError, ValueError, IndexError):
-            print("rules_scan: missing or unreadable tools/%s" % fname)
-            rc = 1
-            continue
-        if cur > base:
-            print("rules_scan: %s use count %d is ABOVE the baseline %d (it may only go down)" % (label, cur, base))
-            rc = 1
-        elif cur < base:
-            if update:
-                open(path, "w").write("%d\n" % cur)
-                print("rules_scan: %s baseline lowered %d -> %d" % (label, base, cur))
-            else:
-                print("rules_scan: %s use count %d is below baseline %d: lower the baseline (rules_scan.sh --update-baseline)" % (label, cur, base))
-        else:
-            print("rules_scan: %s use count %d == baseline" % (label, cur))
-        wt = ref_sum_count(names, with_tests=True)
-        if wt != cur:
-            print("rules_scan: note: %s uses incl. test code = %d (ratchet scope: %s only, %d test uses not counted)" % (label, wt, REF_SCOPE, wt - cur))
-    return rc
 
 
 def ratchet(label, fname, cur, update, what="count", extra=""):
@@ -586,9 +526,88 @@ def per_commit_check(rng):
     return rc
 
 
+# ---- borrowing ops: no copy anywhere in their call graph ----
+# ExactNum::{add_ref, sub_ref, mul_ref, div_ref} read both operands in place and allocate only the result. This rule
+# walks their static call graph (every non-test fn of BORROW_SCOPE whose name is called from a reached fn; name-based,
+# so an over-approximation) and fails on a copy token in any reached body. The reached fn list is printed on failure.
+BORROW_ROOTS = (("zenith-float-num/src/ext.rs", ("add_ref", "sub_ref", "mul_ref", "div_ref")),)
+BORROW_SCOPE = ("zenith-float-num/src/ext.rs", "zenith-float-num/src/num.rs", "zenith-float-num/src/defs.rs",
+                "zenith-float-num/src/mantissa/", "zenith-float-num/src/common/")
+BORROW_BANNED = re.compile(r"\.(clone|to_vec|cloned|copied|to_owned)\(|\b(%s)\(" % "|".join(no_clone.HELPERS))
+BORROW_CALL = re.compile(r"\b([a-z_][a-z0-9_]*)\s*(?:::<[^>]*>)?\(")
+BORROW_FN = re.compile(r"\bfn\s+([a-z_][a-z0-9_]*)")
+
+
+def borrow_fns():
+    """{name: [(rel, start_line, body_text)]} for every non-test fn in BORROW_SCOPE (bodies by brace matching)."""
+    out = collections.defaultdict(list)
+    for rel, p in no_clone.rs_files(["zenith-float-num/src"]):
+        if not rel.startswith(BORROW_SCOPE) or not is_lib_only(rel):
+            continue
+        lines = open(p, errors="replace").read().split("\n")
+        mask = no_clone.test_mask(lines)
+        code = ["" if mask[i] else strip(l) for i, l in enumerate(lines)]
+        i = 0
+        while i < len(code):
+            m = BORROW_FN.search(code[i])
+            if not m:
+                i += 1
+                continue
+            depth, started, body, j = 0, False, [], i
+            while j < len(code):
+                seg = code[j][m.end():] if j == i else code[j]
+                body.append(seg)
+                for ch in seg:
+                    if ch == "{":
+                        depth, started = depth + 1, True
+                    elif ch == "}":
+                        depth -= 1
+                if started and depth <= 0:
+                    break
+                if not started and ";" in seg:  # a declaration without a body
+                    break
+                j += 1
+            out[m.group(1)].append((rel, i + 1, "\n".join(body)))
+            i += 1  # nested fns are indexed on their own too
+    return out
+
+
+def borrow_closure():
+    """-> (reached [(rel, line, name)], hits [(rel, line, name, token)])"""
+    fns = borrow_fns()
+    todo = [n for rel, names in BORROW_ROOTS for n in names]
+    seen, reached, hits = set(), [], []
+    while todo:
+        name = todo.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        for rel, line, body in fns.get(name, []):
+            reached.append((rel, line, name))
+            for k, l in enumerate(body.split("\n")):
+                for b in BORROW_BANNED.finditer(l):
+                    hits.append((rel, line + k, name, b.group(0)))
+            todo.extend(c for c in BORROW_CALL.findall(body) if c not in seen)
+    return reached, hits
+
+
+def borrow_check(update=False):
+    if not os.path.exists(os.path.join(ROOT, BORROW_ROOTS[0][0])):
+        return 0
+    reached, hits = borrow_closure()
+    roots = [n for _, names in BORROW_ROOTS for n in names]
+    missing = [n for n in roots if not any(r[2] == n for r in reached)]
+    for n in missing:
+        print("rules_scan: borrowing op %s not found (BORROW_ROOTS is stale)" % n)
+    for rel, line, name, tok in hits:
+        print("rules_scan: BORROW %s:%d in fn %s: `%s` (reachable from %s)" % (rel, line, name, tok, "/".join(roots)))
+    print("rules_scan: borrowing ops reach %d fns, %d copy sites" % (len(reached), len(hits)))
+    return 1 if hits or missing else 0
+
+
 def both_count_checks(update=False):
-    rc = max(count_check(update), ref_count_check(update), helper_count_check(update), exception_check(update),
-             test_panic_check(update), neg_via_mul_check(update), ruling_check(update))
+    rc = max(count_check(update), helper_count_check(update), exception_check(update),
+             test_panic_check(update), neg_via_mul_check(update), ruling_check(update), borrow_check(update))
     if rc == 0:
         print("rules_scan: all count baselines hold")
     return rc
@@ -604,6 +623,10 @@ def main(argv):
     if "--print-counts" in argv:
         print("%d %d" % (clone_count(), helper_copy_count()))
         return 0
+    if "--borrow-reach" in argv:
+        for rel, line, name in sorted(borrow_closure()[0]):
+            print("%s:%d %s" % (rel, line, name))
+        return borrow_check()
     if "--count-only" in argv:
         return both_count_checks()
     if "--update-baseline" in argv:

@@ -551,6 +551,14 @@ impl Mantissa {
         n
     }
 
+    /// The word of `src` at index `i`, read in place; 0 past either end.
+    fn word_at(src: &[Word], i: Option<usize>) -> Word {
+        let Some(&w) = i.and_then(|j| src.get(j)) else {
+            return 0;
+        };
+        w
+    }
+
     /// Writes `src << shift` (bits shifted out at the top are dropped, zeros come in at the bottom) into
     /// `dst`, which is as long as `src`: each destination word is computed from the source words, no
     /// slice is copied.
@@ -558,16 +566,8 @@ impl Mantissa {
         let ws = shift / WORD_BIT_SIZE;
         let bs = shift % WORD_BIT_SIZE;
         for (i, d) in dst.iter_mut().enumerate() {
-            let hi = i
-                .checked_sub(ws)
-                .and_then(|j| src.get(j))
-                .copied()
-                .unwrap_or(0);
-            let lo = i
-                .checked_sub(ws + 1)
-                .and_then(|j| src.get(j))
-                .copied()
-                .unwrap_or(0);
+            let hi = Self::word_at(src, i.checked_sub(ws));
+            let lo = Self::word_at(src, i.checked_sub(ws + 1));
             *d = if bs == 0 { hi } else { (hi << bs) | (lo >> (WORD_BIT_SIZE - bs)) };
         }
     }
