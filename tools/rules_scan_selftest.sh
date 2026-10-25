@@ -147,6 +147,51 @@ out="$(scan --count-only)"; echo "$out" | grep -q "BORROW" && fail "a copy-free 
 echo "$out" | grep -q "0 copy sites" || fail "copy-free borrow graph not reported: $out"
 sed -i 's/pub fn div_ref/pub fn div_other/' zenith-float-num/src/ext.rs
 scan --count-only | grep -q "div_ref" || fail "a missing borrowing op not reported"
+# ---- BORROW per-op fixtures (Harper): each op red direct, red via helper, green; edge cases; exact counts ----
+# Layout: ext.rs holds the four ops (lines 2..5), each calling <op>_kern in mantissa/kern.rs, which calls <op>_step.
+# Reached set when copy-free: 4 ops + 4 kern + 4 step = 12 fns.
+bx_ext() { # bx_ext <op-with-direct-copy|none>
+  { echo 'impl N {'
+    for o in add sub mul div; do
+      if [ "$o" = "$1" ]; then echo "    pub fn ${o}_ref(a: &N, b: &N) -> N { let c = a.clone(); ${o}_kern(&c, b) }"
+      else echo "    pub fn ${o}_ref(a: &N, b: &N) -> N { ${o}_kern(a, b) }"; fi
+    done
+    echo '}'
+    echo 'fn unrelated(a: &N) -> N { a.clone() }'
+  } > zenith-float-num/src/ext.rs; }
+bx_kern() { # bx_kern <op-with-helper-copy|none> [extra line appended inside every step body]
+  { for o in add sub mul div; do
+      echo "fn ${o}_kern(a: &N, b: &N) -> N { ${o}_step(&a.w, &b.w) }"
+      if [ "$o" = "$1" ]; then echo "fn ${o}_step(x: &[u64], y: &[u64]) -> N { N(x.iter().copied().zip(y).count()) }"
+      else echo "fn ${o}_step(x: &[u64], y: &[u64]) -> N { ${2:-} N(x.iter().zip(y).count()) }"; fi
+    done
+  } > zenith-float-num/src/mantissa/kern.rs; }
+bx_expect() { # bx_expect <want-rc 0|1> <want-hits> <label> [grep-pattern for the BORROW line]
+  local out rc; out="$(scan --count-only)"; rc=$?
+  [ $rc -eq 0 ] && rc=0 || rc=1
+  [ "$rc" = "$1" ] || fail "BORROW fixture $3: rc=$rc want $1: $out"
+  local n; n=$(echo "$out" | grep -c 'rules_scan: BORROW ')
+  [ "$n" = "$2" ] || fail "BORROW fixture $3: $n BORROW lines, want $2: $out"
+  echo "$out" | grep -q "borrowing ops reach 12 fns, $2 copy sites" || fail "BORROW fixture $3: wrong reach/count summary: $out"
+  [ -z "${4:-}" ] || echo "$out" | grep -qF "$4" || fail "BORROW fixture $3: message lacks [$4]: $out"
+  echo "$out" | grep -q "fn unrelated" && fail "BORROW fixture $3: unrelated fn reported: $out"
+  bx_n=$((bx_n + 1)); return 0
+}
+mkdir -p zenith-float-num/src/mantissa; rm -f zenith-float-num/src/mantissa/base.rs; echo 9 > tools/clone_count_baseline.txt; bx_n=0
+roots='(reachable from add_ref/sub_ref/mul_ref/div_ref)'
+ln=1; for o in add sub mul div; do ln=$((ln + 1))
+  bx_ext "$o"; bx_kern none
+  bx_expect 1 1 "red-direct-$o" "BORROW zenith-float-num/src/ext.rs:$ln in fn ${o}_ref: \`.clone(\` $roots"
+done
+kl=0; for o in add sub mul div; do kl=$((kl + 2))
+  bx_ext none; bx_kern "$o"
+  bx_expect 1 1 "red-helper-$o" "BORROW zenith-float-num/src/mantissa/kern.rs:$kl in fn ${o}_step: \`.copied(\` $roots"
+  r="$(scan --borrow-reach)"; for want in "src/ext.rs:$((kl / 2 + 1)) ${o}_ref" "mantissa/kern.rs:$((kl - 1)) ${o}_kern" "mantissa/kern.rs:$kl ${o}_step"; do
+    echo "$r" | grep -qF "$want" || fail "red-helper-$o: call path link [$want] not in --borrow-reach: $r"; done
+done
+[ "$bx_n" = 16 ] || fail "BORROW fixtures: ran $bx_n, want 16"
+echo "rules_scan selftest: BORROW per-op fixtures ok ($bx_n)"
+rm -f zenith-float-num/src/mantissa/kern.rs
 rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ext.rs; echo 0 > tools/clone_count_baseline.txt
 # ---- test code is counted by the clone count (cfg(test) items, tests.rs, test dirs) ----
 rm -f zenith-float-num/src/x.rs; mkdir -p zenith-float-num/src/ops zenith-float-num/tests nostd-tests/src
