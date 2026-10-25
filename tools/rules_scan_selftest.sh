@@ -147,12 +147,135 @@ out="$(scan --count-only)"; echo "$out" | grep -q "BORROW" && fail "a copy-free 
 echo "$out" | grep -q "0 copy sites" || fail "copy-free borrow graph not reported: $out"
 sed -i 's/pub fn div_ref/pub fn div_other/' zenith-float-num/src/ext.rs
 scan --count-only | grep -q "div_ref" || fail "a missing borrowing op not reported"
+# ---- BORROW per-op fixtures (Harper): each op red direct, red via helper, green; edge cases; exact counts ----
+# Layout: ext.rs holds the four ops (lines 2..5), each calling <op>_kern in mantissa/kern.rs, which calls <op>_step.
+# Reached set when copy-free: 4 ops + 4 kern + 4 step = 12 fns.
+bx_ext() { # bx_ext <op-with-direct-copy|none>
+  local o
+  { echo 'impl N {'
+    for o in add sub mul div; do
+      if [ "$o" = "$1" ]; then echo "    pub fn ${o}_ref(a: &N, b: &N) -> N { let c = a.clone(); ${o}_kern(&c, b) }"
+      else echo "    pub fn ${o}_ref(a: &N, b: &N) -> N { ${o}_kern(a, b) }"; fi
+    done
+    echo '}'
+    echo 'fn unrelated(a: &N) -> N { a.clone() }'
+  } > zenith-float-num/src/ext.rs; }
+bx_kern() { # bx_kern <op-with-helper-copy|none> [extra line appended inside every step body]
+  local o
+  { for o in add sub mul div; do
+      echo "fn ${o}_kern(a: &N, b: &N) -> N { ${o}_step(&a.w, &b.w) }"
+      if [ "$o" = "$1" ]; then echo "fn ${o}_step(x: &[u64], y: &[u64]) -> N { N(x.iter().copied().zip(y).count()) }"
+      else echo "fn ${o}_step(x: &[u64], y: &[u64]) -> N { ${2:-} N(x.iter().zip(y).count()) }"; fi
+    done
+  } > zenith-float-num/src/mantissa/kern.rs; }
+bx_expect() { # bx_expect <want-rc 0|1> <want-hits> <label> [grep-pattern for the BORROW line]
+  local out rc; out="$(scan --count-only)"; rc=$?
+  [ $rc -eq 0 ] && rc=0 || rc=1
+  [ "$rc" = "$1" ] || fail "BORROW fixture $3: rc=$rc want $1: $out"
+  local n; n=$(echo "$out" | grep -c 'rules_scan: BORROW ')
+  [ "$n" = "$2" ] || fail "BORROW fixture $3: $n BORROW lines, want $2: $out"
+  echo "$out" | grep -q "borrowing ops reach 12 fns, $2 copy sites" || fail "BORROW fixture $3: wrong reach/count summary: $out"
+  [ -z "${4:-}" ] || echo "$out" | grep -qF "$4" || fail "BORROW fixture $3: message lacks [$4]: $out"
+  echo "$out" | grep -q "fn unrelated" && fail "BORROW fixture $3: unrelated fn reported: $out"
+  bx_n=$((bx_n + 1)); return 0
+}
+mkdir -p zenith-float-num/src/mantissa; rm -f zenith-float-num/src/mantissa/base.rs; echo 9 > tools/clone_count_baseline.txt; bx_n=0
+ln=1; for o in add sub mul div; do ln=$((ln + 1))
+  bx_ext "$o"; bx_kern none
+  bx_expect 1 1 "red-direct-$o" "BORROW zenith-float-num/src/ext.rs:$ln in fn ${o}_ref: \`.clone(\` (${o}_ref)"
+done
+kl=0; for o in add sub mul div; do kl=$((kl + 2))
+  bx_ext none; bx_kern "$o"
+  bx_expect 1 1 "red-helper-$o" "BORROW zenith-float-num/src/mantissa/kern.rs:$kl in fn ${o}_step: \`.copied(\` (${o}_ref -> ${o}_kern -> ${o}_step)"
+  r="$(scan --borrow-reach)"; for want in "src/ext.rs:$((kl / 2 + 1)) ${o}_ref" "mantissa/kern.rs:$((kl - 1)) ${o}_kern" "mantissa/kern.rs:$kl ${o}_step"; do
+    echo "$r" | grep -qF "$want" || fail "red-helper-$o: call path link [$want] not in --borrow-reach: $r"; done
+done
+# green: all four copy-free (the unrelated clone in ext.rs stays and must not trip)
+bx_ext none; bx_kern none; bx_expect 0 0 "green-all"
+# edge: copy tokens in a comment and a string literal inside reached bodies pass
+bx_ext none; bx_kern none 'let _s = "x.clone() y.to_vec()"; // z.copied() w.to_owned()'; bx_expect 0 0 "green-comment-string"
+# edge: a #[cfg(test)] fn named like a reached helper, with a clone, is not part of the graph
+bx_ext none; bx_kern none; printf '#[cfg(test)]\nmod tests {\n    fn add_step(x: &[u64]) -> Vec<u64> { x.to_vec() }\n}\n' >> zenith-float-num/src/mantissa/kern.rs; bx_expect 0 0 "green-cfg-test-shadow"
+# edge: every banned token (and a helper-copy call) in a reached helper fails, one site each
+for tt in 'x.to_vec()|.to_vec(' 'x.iter().cloned().count()|.cloned(' 'x.to_owned()|.to_owned(' 'x.clone()|.clone(' 'exact_copy(x)|exact_copy'; do
+  tok=${tt%%|*}; want=${tt#*|}
+  bx_ext none; bx_kern none "let _c = $tok;"; out="$(scan --count-only)" && fail "BORROW fixture token $tok in 4 reached steps passed: $out"
+  echo "$out" | grep -q "borrowing ops reach 12 fns, 4 copy sites" || fail "BORROW fixture token $tok: want 4 sites: $out"
+  for o in add sub mul div; do echo "$out" | grep -qF "in fn ${o}_step: \`$want\` (${o}_ref -> ${o}_kern -> ${o}_step)" || fail "BORROW fixture token $tok: no ${o}_ref chain message: $out"; done
+  bx_n=$((bx_n + 1))
+done
+# ---- BORROW hole fixtures (Harper; from the former tools/rules_scan_borrow_holes.sh): add_ref (ext.rs:2) reaches a
+# copy the old name-only rule missed; each red asserts the exact site count and the op + reach chain in the message ----
+mkdir -p zenith-float-num/src/ops; echo 99 > tools/helper_copy_count_baseline.txt
+hx() { # hx <name> <BORROW-lines>[/<copy-sites>] <expected BORROW line or -> <add_ref body> <kern.rs content> [path:content]
+  { echo 'impl N {'; echo "    pub fn add_ref(a: &N, b: &N) -> N { $4 }"
+    for o in sub mul div; do echo "    pub fn ${o}_ref(a: &N, b: &N) -> N { N(0) }"; done; echo '}'; } > zenith-float-num/src/ext.rs
+  printf '%b\n' "$5" > zenith-float-num/src/mantissa/kern.rs
+  rm -f zenith-float-num/src/ops/h.rs; [ -z "${6:-}" ] || printf '%b\n' "${6#*:}" > "zenith-float-num/src/${6%%:*}"
+  local out rc=0 n w="${2%%/*}" s="${2#*/}"; out="$(scan --count-only 2>&1)" || rc=1
+  if [ "$w" = 0 ]; then [ $rc = 0 ] || fail "BORROW hole fixture $1: copy-free graph failed: $out"
+  else [ $rc = 1 ] || fail "BORROW hole fixture $1: copy reachable from add_ref passed: $out"; fi
+  n=$(echo "$out" | grep -c 'rules_scan: BORROW ')
+  [ "$n" = "$w" ] || fail "BORROW hole fixture $1: $n BORROW lines, want $w: $out"
+  echo "$out" | grep -q ", $s copy sites" || fail "BORROW hole fixture $1: want $s copy sites: $out"
+  [ "$3" = - ] || echo "$out" | grep -qF "rules_scan: BORROW $3" || fail "BORROW hole fixture $1: message lacks [$3]: $out"
+  hx_out="$out"
+  bx_n=$((bx_n + 1)); return 0
+}
+hline() { # hline <name> <expected BORROW line>: one more exact line of the preceding hx fixture
+  echo "$hx_out" | grep -qF "rules_scan: BORROW $2" || fail "BORROW hole fixture $1: message lacks [$2]: $hx_out"
+}
+bpin() { # bpin <name> <BORROW-lines>/<copy-sites> <expected BORROW line>...: exact pin of the preceding bcase's $bout
+  local nm="$1" w="${2%%/*}" s="${2#*/}" n; shift 2
+  n=$(echo "$bout" | grep -c 'rules_scan: BORROW ')
+  [ "$n" = "$w" ] || fail "BORROW fixture $nm: $n BORROW lines, want $w: $bout"
+  echo "$bout" | grep -q "borrowing ops reach [0-9]* fns, $s copy sites" || fail "BORROW fixture $nm: want $s copy sites: $bout"
+  for l in "$@"; do echo "$bout" | grep -qF "rules_scan: BORROW $l" || fail "BORROW fixture $nm: message lacks [$l]: $bout"; done
+  bp_n=$((bp_n + 1))
+}
+E=zenith-float-num/src/ext.rs; K=zenith-float-num/src/mantissa/kern.rs; KK='fn k(a: &N, b: &N) -> N { N(0) }'
+hx multiline-call 1 "$K:3 in fn k: \`.clone(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    a\n        .clone()\n}'
+# extra variants (Harper, against 581cdfe): caught, kept as regression reds
+hx v-ufcs-clone-ref 1 "$E:2 in fn add_ref: \`::clone(\` (add_ref)" 'let c = Clone::clone(&a); k(&c, b)' "$KK"
+hx v-qualified-as-clone 1 "$E:2 in fn add_ref: \`::clone(\` (add_ref)" 'let c = <N as Clone>::clone(a); k(&c, b)' "$KK"
+hx v-slice-to_owned 1 "$K:1 in fn k: \`.to_owned(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v = a.w[..].to_owned(); N(v.len()) }'
+hx v-copied-collect 1 "$K:1 in fn k: \`.copied(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().copied().collect(); N(v.len()) }'
+hx v-closure-in-let 1 "$K:1 in fn k: \`.clone(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let f = |x: &N| x.clone(); f(a) }'
+hx v-trait-default-method 1 "$K:1 in fn dup: \`.clone(\` (add_ref -> dup)" 'a.dup()' 'trait Dup { fn dup(&self) -> N { self.clone() } }\nimpl Dup for N {}'
+hx v-nested-macros 1 "$K:1 in fn inner!: \`.clone(\` (add_ref -> k -> outer! -> inner!)" 'k(a, b)' 'macro_rules! inner { ($x:expr) => { $x.clone() } }\nmacro_rules! outer { ($x:expr) => { inner!($x) } }\nfn k(a: &N, b: &N) -> N { outer!(a) }'
+hx v-map-clone-path 1 "$K:1 in fn k: \`::clone\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(Clone::clone).collect(); N(v.len()) }'
+# named exceptions, site-keyed (tools/borrow_exceptions.tsv: file, impl, fn, line anchor, allowance). Rusty's
+# exception-exact / over-allowance / moved-impl / token-swap / shift-same-name cover those cases; these add a second
+# copy on an identical line, another token beside a listed site, another file, and a listed site that is removed
+XR='zenith-float-num/src/mantissa/kern.rs\tA\tk\tr.copy_from_slice(&a.w);\t1\tfixture\n'
+XH='struct A;\nimpl A {\n    fn k(a: &N, b: &N) -> N {\n        let mut r = vec![0u64; 4];\n'
+XT='        N(r.len())\n    }\n}'; XC='        r.copy_from_slice(&a.w);\n'
+XL="lower allowance $K A::k \`r.copy_from_slice(&a.w);\` from 1 to 0 (tools/borrow_exceptions.tsv)"
+printf "$XR" > tools/borrow_exceptions.tsv
+# (a) a new copy in the same fn as an exception still fails: the same line again (both sites unlisted), or another token
+hx x-exception-same-line-twice 2 "$K:6 in fn k: \`.copy_from_slice(\` (add_ref -> k)" 'A::k(a, b)' "$XH$XC$XC$XT"
+hline x-exception-same-line-twice "$K:5 in fn k: \`.copy_from_slice(\` (add_ref -> k)"
+hx x-exception-other-token 1/2 "$K:6 in fn k: \`.clone(\` (add_ref -> k)" 'A::k(a, b)' "$XH$XC        let c = a.clone();\n$XT"
+# ...the same impl, fn and line in another file is unlisted, and the listed site it left is over-allowed
+hx x-exception-other-file 2/1 "zenith-float-num/src/ops/h.rs:5 in fn k: \`.copy_from_slice(\` (add_ref -> k)" 'A::k(a, b)' "$KK" "ops/h.rs:$XH$XC$XT"
+hline x-exception-other-file "$XL"
+# (b) a listed site that is removed makes the exception stale: the scan FAILS and says to lower it to 0
+hx x-exception-stale 1/0 "$XL" 'A::k(a, b)' "$XH$XT"
+rm -f tools/borrow_exceptions.tsv
+# (c) the same-name fallback: an unresolved generic receiver follows every crate fn `frob`; copy-free ones in an
+# unrelated module are reached but raise no alarm
+hx x-fallback-copy-free 0 - 'k(a, b)' 'fn k<T: Fro>(t: &T, b: &N) -> N { t.frob() }\nimpl M { fn frob(&self) -> N { N(1) } }' 'ops/h.rs:impl Z { fn frob(&self) -> N { N(0) } }'
+scan --borrow-reach | grep -q "ops/h.rs:1 frob" || fail "same-name fallback did not reach ops/h.rs frob"
+rm -rf zenith-float-num/src/ops; echo 0 > tools/helper_copy_count_baseline.txt
+[ "$bx_n" = 30 ] || fail "BORROW fixtures: ran $bx_n, want 30"
+echo "rules_scan selftest: BORROW per-op fixtures ok ($bx_n)"
+rm -f zenith-float-num/src/mantissa/kern.rs
 rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ext.rs; echo 0 > tools/clone_count_baseline.txt
 # ---- BORROW holes: copies the rule must see (UFCS, spacing, slice paths, deref-collect, fn values, operators,
 # macros, helpers anywhere in the crate src) and a copy-free graph with a copy token only inside a block comment ----
 mkdir -p zenith-float-num/src/mantissa zenith-float-num/src/ops
 echo 99 > tools/clone_count_baseline.txt; echo 99 > tools/helper_copy_count_baseline.txt
-bred=""
+bred="" bc_n=0 bp_n=0
 bcase() { # bcase <want: fail|pass> <name> <add_ref body> <mantissa/kern.rs content> [path:content]
   { echo 'impl N {'; echo "    pub fn add_ref(a: &N, b: &N) -> N { $3 }"
     for o in sub mul div; do echo "    pub fn ${o}_ref(a: &N, b: &N) -> N { N(0) }"; done; echo '}'; } > zenith-float-num/src/ext.rs
@@ -161,31 +284,51 @@ bcase() { # bcase <want: fail|pass> <name> <add_ref body> <mantissa/kern.rs cont
   bout="$(scan --count-only 2>&1)"; local got=pass
   echo "$bout" | grep -q "BORROW" && got=fail
   [ "$got" = "$1" ] || { bred="$bred $2"; echo "BORROW fixture red: $2 (want $1, got $got)"; }
+  bc_n=$((bc_n + 1))
 }
 bcase fail ufcs-clone 'let c = Clone::clone(a); k(&c, b)' 'fn k(a: &N, b: &N) -> N { N(0) }'
+bpin ufcs-clone 1/1 "$E:2 in fn add_ref: \`::clone(\` (add_ref)"
 bcase fail space-before-paren 'let c = a.clone (); k(&c, b)' 'fn k(a: &N, b: &N) -> N { N(0) }'
+bpin space-before-paren 1/1 "$E:2 in fn add_ref: \`.clone(\` (add_ref)"
 bcase fail slice-to_vec-path 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(<[u64]>::to_vec(&a.w).len()) }'
+bpin slice-to_vec-path 1/1 "$K:1 in fn k: \`::to_vec(\` (add_ref -> k)"
 bcase fail vec-from-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(Vec::from(&a.w[..]).len()) }'
+bpin vec-from-slice 1/1 "$K:1 in fn k: \`Vec::from\` (add_ref -> k)"
 bcase fail deref-map-collect 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(|x| *x).collect(); N(v.len()) }'
+bpin deref-map-collect 2/2 "$K:1 in fn k: \`flow:map(<operand>).collect\` (add_ref -> k)" "$K:1 in fn k: \`|x|*\` (add_ref -> k)"
 bcase fail extend-from-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); v.extend_from_slice(&a.w); N(v.len()) }'
+bpin extend-from-slice 1/1 "$K:1 in fn k: \`.extend_from_slice(\` (add_ref -> k)"
 bcase fail fn-as-value 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(a.w.iter().map(cp).count()) }\nfn cp(x: &u64) -> u64 { x.clone() }'
+bpin fn-as-value 1/1 "$K:2 in fn cp: \`.clone(\` (add_ref -> k -> cp)"
 bcase fail operator-dispatch 'a + b' 'impl core::ops::Add for &N { type Output = N; fn add(self, b: &N) -> N { self.clone() } }'
+bpin operator-dispatch 1/1 "$K:1 in fn add: \`.clone(\` (add_ref -> add)"
 bcase fail macro-body 'k(a, b)' 'macro_rules! dup { ($x:expr) => { $x.clone() } }\nfn k(a: &N, b: &N) -> N { dup!(a) }'
+bpin macro-body 1/1 "$K:1 in fn dup!: \`.clone(\` (add_ref -> k -> dup!)"
 bcase fail helper-outside-scope 'k(a, b)' 'fn k(a: &N, b: &N) -> N { crate::ops::h::deep(a) }' 'ops/h.rs:pub fn deep(a: &N) -> N { a.clone() }'
+bpin helper-outside-scope 1/1 "zenith-float-num/src/ops/h.rs:1 in fn deep: \`.clone(\` (add_ref -> k -> deep)"
 bcase pass multiline-block-comment 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    /* note:\n       a.clone() is banned here */\n    let s = "/* not a comment"; N(s.len())\n}\nfn other(a: &N) -> N { a.clone() }'
+bpin multiline-block-comment 0/0
 # the failure names the op and the call chain to the copy site
 bcase fail reach-path 'k(a, b)' 'fn k(a: &N, b: &N) -> N { deep(a) }\nfn deep(a: &N) -> N { a.clone() }'
 echo "$bout" | grep -q 'BORROW zenith-float-num/src/mantissa/kern.rs:2 in fn deep: `.clone(` (add_ref -> k -> deep)' || { bred="$bred reach-path-message"; echo "BORROW fixture red: reach-path-message: $bout"; }
 # copy by mechanism, not by spelling (Harper's second round): by-value pattern / deref closures in any form, slice
 # copy methods, slice conversions, Extend<&T>, vec![operand; n], and generic / turbofish helpers
 bcase fail ref-pattern-map 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(|&x| x).collect(); N(v.len()) }'
+bpin ref-pattern-map 2/2 "$K:1 in fn k: \`flow:map(<operand>).collect\` (add_ref -> k)" "$K:1 in fn k: \`|&\` (add_ref -> k)"
 bcase fail copy-from-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = vec![0u64; a.w.len()]; v.copy_from_slice(&a.w); N(v.len()) }'
+bpin copy-from-slice 1/1 "$K:1 in fn k: \`.copy_from_slice(\` (add_ref -> k)"
 bcase fail slice-into-vec 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.as_slice().into(); N(v.len()) }'
+bpin slice-into-vec 1/1 "$K:1 in fn k: \`as_slice().into(\` (add_ref -> k)"
 bcase fail clone-into 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); a.w.as_slice().clone_into(&mut v); N(v.len()) }'
+bpin clone-into 1/1 "$K:1 in fn k: \`.clone_into(\` (add_ref -> k)"
 bcase fail vec-macro-copy 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v = vec![a.w[0]; 4]; N(v.len()) }'
+bpin vec-macro-copy 1/1 "$K:1 in fn k: \`vec![<operand>;n]\` (add_ref -> k)"
 bcase fail typed-braced-deref 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(|x: &u64| -> u64 { *x }).collect(); N(v.len()) }'
+bpin typed-braced-deref 1/1 "$K:1 in fn k: \`|x:&u64|->u64{*\` (add_ref -> k)"
 bcase fail extend-ref-iter 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); v.extend(a.w.iter()); N(v.len()) }'
+bpin extend-ref-iter 1/1 "$K:1 in fn k: \`.extend(<borrowed>)\` (add_ref -> k)"
 bcase fail generic-turbofish 'k(a, b)' 'fn k(a: &N, b: &N) -> N { g::<N>(a) }\nfn g<T: Clone>(x: &T) -> T { x.clone() }'
+bpin generic-turbofish 1/1 "$K:2 in fn g: \`.clone(\` (add_ref -> k -> g)"
 # Spence's review of 581cdfe: slice-to-slice copies into a preallocated buffer are copies too
 bcase fail clone-from-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = vec![0u64; a.w.len()]; v.clone_from_slice(&a.w); N(v.len()) }'
 bcase fail swap-with-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = vec![0u64; 4]; let mut t = [0u64; 4]; v.swap_with_slice(&mut t); N(v.len()) }'
@@ -235,6 +378,8 @@ rm -f tools/borrow_exceptions.tsv
 rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ops/h.rs zenith-float-num/src/ext.rs
 echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt
 [ -z "$bred" ] || fail "BORROW fixtures red:$bred"
+[ "$bc_n" = 44 ] && [ "$bp_n" = 19 ] || fail "BORROW fixtures: ran $bc_n bcase + $bp_n bpin, want 44 + 19"
+[ $((bx_n + bc_n)) = 74 ] || fail "BORROW fixtures total: $((bx_n + bc_n)), want 74"
 # ---- test code is counted by the clone count (cfg(test) items, tests.rs, test dirs) ----
 rm -f zenith-float-num/src/x.rs; mkdir -p zenith-float-num/src/ops zenith-float-num/tests nostd-tests/src
 printf 'fn a() {}\n#[cfg(test)]\nmod tests {\n    fn t(x: &S) { let y = x.clone(); }\n}\n' > zenith-float-num/src/x.rs
