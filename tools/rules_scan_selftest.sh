@@ -180,14 +180,13 @@ bx_expect() { # bx_expect <want-rc 0|1> <want-hits> <label> [grep-pattern for th
   bx_n=$((bx_n + 1)); return 0
 }
 mkdir -p zenith-float-num/src/mantissa; rm -f zenith-float-num/src/mantissa/base.rs; echo 9 > tools/clone_count_baseline.txt; bx_n=0
-roots='(reachable from add_ref/sub_ref/mul_ref/div_ref)'
 ln=1; for o in add sub mul div; do ln=$((ln + 1))
   bx_ext "$o"; bx_kern none
-  bx_expect 1 1 "red-direct-$o" "BORROW zenith-float-num/src/ext.rs:$ln in fn ${o}_ref: \`.clone(\` $roots"
+  bx_expect 1 1 "red-direct-$o" "BORROW zenith-float-num/src/ext.rs:$ln in fn ${o}_ref: \`.clone(\` (${o}_ref)"
 done
 kl=0; for o in add sub mul div; do kl=$((kl + 2))
   bx_ext none; bx_kern "$o"
-  bx_expect 1 1 "red-helper-$o" "BORROW zenith-float-num/src/mantissa/kern.rs:$kl in fn ${o}_step: \`.copied(\` $roots"
+  bx_expect 1 1 "red-helper-$o" "BORROW zenith-float-num/src/mantissa/kern.rs:$kl in fn ${o}_step: \`.copied(\` (${o}_ref -> ${o}_kern -> ${o}_step)"
   r="$(scan --borrow-reach)"; for want in "src/ext.rs:$((kl / 2 + 1)) ${o}_ref" "mantissa/kern.rs:$((kl - 1)) ${o}_kern" "mantissa/kern.rs:$kl ${o}_step"; do
     echo "$r" | grep -qF "$want" || fail "red-helper-$o: call path link [$want] not in --borrow-reach: $r"; done
 done
@@ -198,12 +197,45 @@ bx_ext none; bx_kern none 'let _s = "x.clone() y.to_vec()"; // z.copied() w.to_o
 # edge: a #[cfg(test)] fn named like a reached helper, with a clone, is not part of the graph
 bx_ext none; bx_kern none; printf '#[cfg(test)]\nmod tests {\n    fn add_step(x: &[u64]) -> Vec<u64> { x.to_vec() }\n}\n' >> zenith-float-num/src/mantissa/kern.rs; bx_expect 0 0 "green-cfg-test-shadow"
 # edge: every banned token (and a helper-copy call) in a reached helper fails, one site each
-for tok in 'x.to_vec()' 'x.iter().cloned().count()' 'x.to_owned()' 'x.clone()' 'exact_copy(x)'; do
+for tt in 'x.to_vec()|.to_vec(' 'x.iter().cloned().count()|.cloned(' 'x.to_owned()|.to_owned(' 'x.clone()|.clone(' 'exact_copy(x)|exact_copy'; do
+  tok=${tt%%|*}; want=${tt#*|}
   bx_ext none; bx_kern none "let _c = $tok;"; out="$(scan --count-only)" && fail "BORROW fixture token $tok in 4 reached steps passed: $out"
   echo "$out" | grep -q "borrowing ops reach 12 fns, 4 copy sites" || fail "BORROW fixture token $tok: want 4 sites: $out"
+  for o in add sub mul div; do echo "$out" | grep -qF "in fn ${o}_step: \`$want\` (${o}_ref -> ${o}_kern -> ${o}_step)" || fail "BORROW fixture token $tok: no ${o}_ref chain message: $out"; done
   bx_n=$((bx_n + 1))
 done
-[ "$bx_n" = 16 ] || fail "BORROW fixtures: ran $bx_n, want 16"
+# ---- BORROW hole fixtures (Harper; from the former tools/rules_scan_borrow_holes.sh): add_ref (ext.rs:2) reaches a
+# copy the old name-only rule missed; each red asserts the exact site count and the op + reach chain in the message ----
+mkdir -p zenith-float-num/src/ops; echo 99 > tools/helper_copy_count_baseline.txt
+hx() { # hx <name> <want-sites> <expected BORROW line or -> <add_ref body> <kern.rs content> [path:content]
+  { echo 'impl N {'; echo "    pub fn add_ref(a: &N, b: &N) -> N { $4 }"
+    for o in sub mul div; do echo "    pub fn ${o}_ref(a: &N, b: &N) -> N { N(0) }"; done; echo '}'; } > zenith-float-num/src/ext.rs
+  printf '%b\n' "$5" > zenith-float-num/src/mantissa/kern.rs
+  rm -f zenith-float-num/src/ops/h.rs; [ -z "${6:-}" ] || printf '%b\n' "${6#*:}" > "zenith-float-num/src/${6%%:*}"
+  local out rc=0 n; out="$(scan --count-only 2>&1)" || rc=1
+  if [ "$2" = 0 ]; then [ $rc = 0 ] || fail "BORROW hole fixture $1: copy-free graph failed: $out"
+  else [ $rc = 1 ] || fail "BORROW hole fixture $1: copy reachable from add_ref passed: $out"; fi
+  n=$(echo "$out" | grep -c 'rules_scan: BORROW ')
+  [ "$n" = "$2" ] || fail "BORROW hole fixture $1: $n BORROW lines, want $2: $out"
+  echo "$out" | grep -q ", $2 copy sites" || fail "BORROW hole fixture $1: want $2 copy sites: $out"
+  [ "$3" = - ] || echo "$out" | grep -qF "rules_scan: BORROW $3" || fail "BORROW hole fixture $1: message lacks [$3]: $out"
+  bx_n=$((bx_n + 1)); return 0
+}
+E=zenith-float-num/src/ext.rs; K=zenith-float-num/src/mantissa/kern.rs; KK='fn k(a: &N, b: &N) -> N { N(0) }'
+hx ufcs-clone 1 "$E:2 in fn add_ref: \`::clone\` (add_ref)" 'let c = Clone::clone(a); k(&c, b)' "$KK"
+hx space-before-paren 1 "$E:2 in fn add_ref: \`.clone(\` (add_ref)" 'let c = a.clone (); k(&c, b)' "$KK"
+hx slice-to_vec-path 1 "$K:1 in fn k: \`::to_vec\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(<[u64]>::to_vec(&a.w).len()) }'
+hx vec-from-slice 1 "$K:1 in fn k: \`Vec::from(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(Vec::from(&a.w[..]).len()) }'
+hx deref-map-collect 1 "$K:1 in fn k: \`|x|*\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(|x| *x).collect(); N(v.len()) }'
+hx extend-from-slice 1 "$K:1 in fn k: \`.extend_from_slice(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); v.extend_from_slice(&a.w); N(v.len()) }'
+hx fn-as-value 1 "$K:2 in fn cp: \`.clone(\` (add_ref -> k -> cp)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(a.w.iter().map(cp).count()) }\nfn cp(x: &u64) -> u64 { x.clone() }'
+hx operator-dispatch 1 "$K:1 in fn add: \`.clone(\` (add_ref -> add)" 'a + b' 'impl core::ops::Add for &N { type Output = N; fn add(self, b: &N) -> N { self.clone() } }'
+hx macro-body 1 "$K:1 in fn dup!: \`.clone(\` (add_ref -> k -> dup!)" 'k(a, b)' 'macro_rules! dup { ($x:expr) => { $x.clone() } }\nfn k(a: &N, b: &N) -> N { dup!(a) }'
+hx helper-outside-scope 1 "zenith-float-num/src/ops/h.rs:1 in fn deep: \`.clone(\` (add_ref -> k -> deep)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N { crate::ops::h::deep(a) }' 'ops/h.rs:pub fn deep(a: &N) -> N { a.clone() }'
+hx multiline-call 1 "$K:3 in fn k: \`.clone(\` (add_ref -> k)" 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    a\n        .clone()\n}'
+hx green-multiline-block-comment 0 - 'k(a, b)' 'fn k(a: &N, b: &N) -> N {\n    /* note:\n       a.clone() is banned here */\n    N(0)\n}'
+rm -rf zenith-float-num/src/ops; echo 0 > tools/helper_copy_count_baseline.txt
+[ "$bx_n" = 28 ] || fail "BORROW fixtures: ran $bx_n, want 28"
 echo "rules_scan selftest: BORROW per-op fixtures ok ($bx_n)"
 rm -f zenith-float-num/src/mantissa/kern.rs
 rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ext.rs; echo 0 > tools/clone_count_baseline.txt
