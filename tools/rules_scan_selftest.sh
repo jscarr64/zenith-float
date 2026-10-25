@@ -321,6 +321,47 @@ bcase fail clone-from-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = vec
 bcase fail swap-with-slice 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = vec![0u64; 4]; let mut t = [0u64; 4]; v.swap_with_slice(&mut t); N(v.len()) }'
 # owned fills and owned iterators are not copies of operand data
 bcase pass owned-fill-extend 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = vec![0u64; a.w.len()]; v.extend(core::iter::repeat(0u64).take(3)); N(v.len()) }'
+# data flow (Spence, review of b9812ca; Harper variants4): a value read from operand data (deref, by-ref binder,
+# index read, or arithmetic on it with literals only) that flows into an owned sink (push / insert / collect /
+# index-assign / `*d =` in a loop / Box|Rc|Arc::new) is a copy. Scalar reads for comparison, branching or
+# arithmetic with other scalars stay allowed.
+V='let mut v = vec![0u64; 4];'
+bcase fail zip-deref-copy 'k(a, b)' "fn k(a: &N, b: &N) -> N { $V for (d, s) in v.iter_mut().zip(a.w.iter()) { *d = *s; } N(v.len()) }"
+bcase fail zip-copied-copy 'k(a, b)' "fn k(a: &N, b: &N) -> N { $V for (d, s) in v.iter_mut().zip(a.w.iter().copied()) { *d = s; } N(v.len()) }"
+bcase fail zip-dst-src-block 'k(a, b)' "fn k(a: &N, b: &N) -> N { $V\n    for (dst, src) in v.iter_mut().zip(&a.w) {\n        let _t = 1;\n        *dst = *src;\n    }\n    N(v.len())\n}"
+bcase fail index-copy 'k(a, b)' "fn k(a: &N, b: &N) -> N { $V for i in 0..4 { v[i] = a.w[i]; } N(v.len()) }"
+bcase fail zip-literal-arith 'k(a, b)' "fn k(a: &N, b: &N) -> N { $V for (d, s) in v.iter_mut().zip(a.w.iter()) { *d = *s * 3 + 1; } N(v.len()) }"
+bcase fail default-field-map 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut r = N::default(); r.w = a.w.iter().map(|x| x + 0).collect(); r }'
+bcase fail map-auto-deref-or 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v: Vec<u64> = a.w.iter().map(|x| x | 0).collect(); N(v.len()) }'
+bcase fail push-deref-loop 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); for x in a.w.iter() { v.push(*x); } N(v.len()) }'
+bcase fail fold-push-deref 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let v = a.w.iter().fold(Vec::new(), |mut v, x| { v.push(*x); v }); N(v.len()) }'
+bcase fail insert-index-read 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let mut v = Vec::new(); v.insert(0, a.w[1]); N(v.len()) }'
+bcase fail box-new-deref 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let x = Box::new(*a); *x }'
+bcase fail str-to-string 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let s = a.name.to_string(); N(s.len()) }'
+bcase fail format-copy 'k(a, b)' 'fn k(a: &N, b: &N) -> N { let s = format!("{}", a.name); N(s.len()) }'
+# scalar reads for comparison / branching / arithmetic with other scalars are not copies
+bcase pass scalar-reads 'k(a, b)' "fn k(a: &N, b: &N) -> N { $V let q = b.w.len() as u64; let mut c = 0; for (d, s) in v.iter_mut().zip(a.w.iter()) { if *s == 0 { continue; } *d = *s * q + c; c = *s >> 3; } N(v.len()) }"
+# a build script feeds the crate: a copy there fails like one in a reached fn
+mkdir -p zenith-float-num; printf 'fn main() { let v = vec![1u64]; let w = v.clone(); drop(w); }\n' > zenith-float-num/build.rs
+bcase fail build-rs-copy 'k(a, b)' 'fn k(a: &N, b: &N) -> N { N(0) }'
+rm -f zenith-float-num/build.rs
+# KNOWN LIMIT (documented in rules_scan.py and NO_CLONE_RULES.md): the scan is lexical, so taint is not followed
+# through a `let` temporary or a fn call. This fixture pins that limit; if it ever goes red, the rule got stronger.
+bcase pass known-limit-let-temp 'k(a, b)' "fn k(a: &N, b: &N) -> N { $V for (d, s) in v.iter_mut().zip(a.w.iter()) { let t = *s; *d = t; } N(v.len()) }"
+# exceptions are keyed by file + impl type + fn + the site's line text; an exact allowance passes, an
+# over-allowance fails and says how far to lower it, a site moved to another impl or a token swap fails
+X='struct A;\nimpl A {\n    fn k(a: &N, b: &N) -> N {\n        let c = a.clone();\n        c\n    }\n}'
+E='zenith-float-num/src/mantissa/kern.rs\tA\tk\tlet c = a.clone();'
+printf "$E\t1\tfixture\n" > tools/borrow_exceptions.tsv
+bcase pass exception-exact 'A::k(a, b)' "$X"
+printf "$E\t2\tfixture\n" > tools/borrow_exceptions.tsv
+bcase fail exception-over-allowance 'A::k(a, b)' "$X"
+echo "$bout" | grep -q 'lower allowance zenith-float-num/src/mantissa/kern.rs A::k `let c = a.clone();` from 2 to 1' || { bred="$bred over-allowance-message"; echo "BORROW fixture red: over-allowance-message: $bout"; }
+printf "$E\t1\tfixture\n" > tools/borrow_exceptions.tsv
+bcase fail exception-moved-impl 'B::k(a, b)' "${X//A/B}"
+bcase fail exception-token-swap 'A::k(a, b)' "${X//a.clone()/a.to_vec()}"
+bcase fail exception-shift-same-name 'B::j(a); A::k(a, b)' "$X\nstruct B;\nimpl B {\n    fn j(a: &N) -> N {\n        let c = a.clone();\n        c\n    }\n}"
+rm -f tools/borrow_exceptions.tsv
 rm -rf zenith-float-num/src/mantissa zenith-float-num/src/ops/h.rs zenith-float-num/src/ext.rs
 echo 0 > tools/clone_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt
 [ -z "$bred" ] || fail "BORROW fixtures red:$bred"

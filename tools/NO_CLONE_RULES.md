@@ -11,7 +11,15 @@ the exception allowlist only go down; all of them are CODEOWNERS-protected (`@js
 | hidden copy helpers | `no_clone.py --helpers` / `helper_copy_count()` | `tools/helper_copy_count_baseline.txt` | library dirs and test code |
 | exceptions: excepted `.clone()` sites (allowlist, empty) + the Ziv working-copy helper (1) | `no_clone.py` allowlist, `rules_scan.py` `ziv_helper_check()` | `tools/exception_count_baseline.txt` | none (baseline 1: the one helper) |
 | `unwrap`/`expect`/`panic!`/`unreachable!`/`todo!`/`unimplemented!` in **test code** | `rules_scan.py` `test_panic_sites()` (`--list-test-panics`) | `tools/test_panic_count_baseline.txt` | `#[cfg(test)]` items, test files and dirs, the compare crate |
-| copy tokens reachable from `add_ref`/`sub_ref`/`mul_ref`/`div_ref` | `rules_scan.py` (BORROW rule) | none: must be 0 | library call graph of the four ops (`BORROW_SCOPE`) |
+| copy tokens reachable from `add_ref`/`sub_ref`/`mul_ref`/`div_ref` | `rules_scan.py` (BORROW rule) | `tools/borrow_exceptions.tsv`: named exceptions keyed by file + impl + fn + source-line anchor, each with an exact allowance and a reason; anything unlisted or over-allowed fails | library call graph of the four ops (`BORROW_SCOPE`) plus `zenith-float-num/build.rs` |
+
+### BORROW rule: what it is and is not
+
+The BORROW rule bans copy tokens and copy data flows (an operand read, alone or under literal-only arithmetic, flowing
+into `push`/`insert`/`Box::new`/`map..collect`/an index or deref assignment) in every fn the four borrowing ops reach.
+It is a **lexical scan, not a total analysis**: taint is not followed through `let` temporaries, fn calls or indices
+computed elsewhere, so `let t = *s; *d = t;` still passes. `tools/rules_scan_selftest.sh` pins that evasion as a
+known-limit fixture so a change in coverage is visible. Review still owns what the scan cannot see.
 
 ### Test code is counted
 
