@@ -127,9 +127,9 @@ where
 }
 
 // Represent subnormal as normalized.
-pub struct NormalizedView<T>
+pub struct NormalizedView<'a, T>
 where
-    T: Iterator<Item = Word>,
+    T: Iterator<Item = &'a Word>,
 {
     iter: T,
     shift: usize,
@@ -137,16 +137,17 @@ where
     end: bool,
 }
 
-impl<T> NormalizedView<T>
+impl<'a, T> NormalizedView<'a, T>
 where
-    T: Iterator<Item = Word>,
+    T: Iterator<Item = &'a Word>,
 {
     pub fn new(mut iter: T) -> Self {
         let mut shift = 0;
         let mut end = true;
         let mut prev = 0;
 
-        for mut v in iter.by_ref() {
+        for w in iter.by_ref() {
+            let mut v = *w;
             if v != 0 {
                 prev = v;
                 while v < WORD_SIGNIFICANT_BIT {
@@ -167,9 +168,9 @@ where
     }
 }
 
-impl<T> Iterator for NormalizedView<T>
+impl<'a, T> Iterator for NormalizedView<'a, T>
 where
-    T: Iterator<Item = Word>,
+    T: Iterator<Item = &'a Word>,
 {
     type Item = Word;
 
@@ -177,7 +178,7 @@ where
         if !self.end {
             if self.shift == 0 {
                 let ret = self.prev;
-                if let Some(v) = self.iter.next() {
+                if let Some(&v) = self.iter.next() {
                     self.prev = v;
                 } else {
                     self.end = true;
@@ -185,7 +186,7 @@ where
                 Some(ret)
             } else {
                 let mut ret = self.prev << self.shift;
-                if let Some(v) = self.iter.next() {
+                if let Some(&v) = self.iter.next() {
                     ret |= v >> (WORD_BIT_SIZE - self.shift);
                     self.prev = v;
                 } else {
