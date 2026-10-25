@@ -217,43 +217,40 @@ impl Mantissa {
 
     /// Compare to m2 and return positive if self > m2, negative if self < m2, 0 otherwise.
     pub fn abs_cmp(&self, m2: &Self, normalized: bool) -> SignedWord {
-        let deref = |x: &Word| *x;
         let n = self.len().min(m2.len());
 
         if normalized {
-            Self::cmp_iters(
-                self.m.iter().rev().map(deref),
-                m2.m.iter().rev().map(deref),
-                n,
-            )
+            Self::cmp_iters(self.m.iter().rev(), m2.m.iter().rev(), n)
         } else {
             Self::cmp_iters(
-                NormalizedView::new(self.m.iter().rev().map(deref)),
-                NormalizedView::new(m2.m.iter().rev().map(deref)),
+                NormalizedView::new(self.m.iter().rev()),
+                NormalizedView::new(m2.m.iter().rev()),
                 n,
             )
         }
     }
 
-    fn cmp_iters<T>(mut iter1: T, mut iter2: T, n: usize) -> SignedWord
+    // The words are compared where they are stored (or as computed by NormalizedView): nothing is collected.
+    fn cmp_iters<A, T>(mut iter1: T, mut iter2: T, n: usize) -> SignedWord
     where
-        T: Iterator<Item = Word>,
+        A: core::borrow::Borrow<Word>,
+        T: Iterator<Item = A>,
     {
         for (a, b) in core::iter::zip(iter1.by_ref(), iter2.by_ref()).take(n) {
-            let diff = a as SignedWord - b as SignedWord;
+            let diff = *a.borrow() as SignedWord - *b.borrow() as SignedWord;
             if diff != 0 {
                 return diff;
             }
         }
 
         for v in iter1 {
-            if v != 0 {
+            if *v.borrow() != 0 {
                 return 1;
             }
         }
 
         for v in iter2 {
-            if v != 0 {
+            if *v.borrow() != 0 {
                 return -1;
             }
         }
@@ -551,6 +548,14 @@ impl Mantissa {
         n
     }
 
+    /// The word of `src` at index `i`, read in place; 0 past either end.
+    fn word_at(src: &[Word], i: Option<usize>) -> Word {
+        let Some(&w) = i.and_then(|j| src.get(j)) else {
+            return 0;
+        };
+        w
+    }
+
     /// Writes `src << shift` (bits shifted out at the top are dropped, zeros come in at the bottom) into
     /// `dst`, which is as long as `src`: each destination word is computed from the source words, no
     /// slice is copied.
@@ -558,16 +563,8 @@ impl Mantissa {
         let ws = shift / WORD_BIT_SIZE;
         let bs = shift % WORD_BIT_SIZE;
         for (i, d) in dst.iter_mut().enumerate() {
-            let hi = i
-                .checked_sub(ws)
-                .and_then(|j| src.get(j))
-                .copied()
-                .unwrap_or(0);
-            let lo = i
-                .checked_sub(ws + 1)
-                .and_then(|j| src.get(j))
-                .copied()
-                .unwrap_or(0);
+            let hi = Self::word_at(src, i.checked_sub(ws));
+            let lo = Self::word_at(src, i.checked_sub(ws + 1));
             *d = if bs == 0 { hi } else { (hi << bs) | (lo >> (WORD_BIT_SIZE - bs)) };
         }
     }
@@ -618,7 +615,7 @@ impl Mantissa {
 
         let mut m3 = Mantissa { m: q, n: 0 };
 
-        let r_sticky = r.iter().any(|&x| x != 0);
+        let r_sticky = r.iter().any(|x| x != &0);
 
         // rounding
         if r_sticky {
@@ -826,7 +823,7 @@ impl Mantissa {
 
     /// Returns true if all digits are equal to 0.
     pub fn is_all_zero(&self) -> bool {
-        self.m.iter().all(|&v| v == 0)
+        self.m.iter().all(|v| v == &0)
     }
 
     /// Returns length of the mantissa in words.
@@ -1255,7 +1252,7 @@ impl Mantissa {
 
         let mut m3 = Mantissa { m: q, n: 0 };
 
-        let r_sticky = r.iter().any(|&x| x != 0);
+        let r_sticky = r.iter().any(|x| x != &0);
 
         // rounding
         if r_sticky {
@@ -1323,7 +1320,7 @@ impl Mantissa {
 
         let mut m3 = Mantissa { m: q, n: 0 };
 
-        let r_sticky = r.iter().any(|&x| x != 0);
+        let r_sticky = r.iter().any(|x| x != &0);
 
         // rounding
         if r_sticky {

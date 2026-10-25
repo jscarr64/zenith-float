@@ -48,7 +48,7 @@ where
 pub struct RightShiftedSlice<'a, T> {
     s: core::slice::Iter<'a, T>,
     bits: usize,
-    prev: Option<T>,
+    prev: Option<&'a T>,
     default: T,
     extend_sz: usize,
 }
@@ -73,7 +73,7 @@ where
         let mut prev = None;
         let iter = if idx < s.len() {
             let mut iter = s[idx..].iter();
-            prev = iter.next().copied();
+            prev = iter.next();
             iter
         } else {
             [].iter()
@@ -103,7 +103,7 @@ where
         if self.extend_sz > 0 {
             self.extend_sz -= 1;
             if self.extend_sz == 0 && self.bits > 0 {
-                if let Some(hi) = self.prev {
+                if let Some(&hi) = self.prev {
                     Some(hi << (core::mem::size_of::<T>() * 8 - self.bits))
                 } else {
                     Some(self.default)
@@ -111,11 +111,11 @@ where
             } else {
                 Some(self.default)
             }
-        } else if let Some(lo) = self.prev {
-            self.prev = self.s.next().copied();
+        } else if let Some(&lo) = self.prev {
+            self.prev = self.s.next();
             if self.bits == 0 {
                 Some(lo)
-            } else if let Some(hi) = self.prev {
+            } else if let Some(&hi) = self.prev {
                 Some((hi << (core::mem::size_of::<T>() * 8 - self.bits)) | (lo >> self.bits))
             } else {
                 Some(lo >> self.bits)
@@ -127,9 +127,9 @@ where
 }
 
 // Represent subnormal as normalized.
-pub struct NormalizedView<T>
+pub struct NormalizedView<'a, T>
 where
-    T: Iterator<Item = Word>,
+    T: Iterator<Item = &'a Word>,
 {
     iter: T,
     shift: usize,
@@ -137,16 +137,17 @@ where
     end: bool,
 }
 
-impl<T> NormalizedView<T>
+impl<'a, T> NormalizedView<'a, T>
 where
-    T: Iterator<Item = Word>,
+    T: Iterator<Item = &'a Word>,
 {
     pub fn new(mut iter: T) -> Self {
         let mut shift = 0;
         let mut end = true;
         let mut prev = 0;
 
-        for mut v in iter.by_ref() {
+        for w in iter.by_ref() {
+            let mut v = *w;
             if v != 0 {
                 prev = v;
                 while v < WORD_SIGNIFICANT_BIT {
@@ -167,9 +168,9 @@ where
     }
 }
 
-impl<T> Iterator for NormalizedView<T>
+impl<'a, T> Iterator for NormalizedView<'a, T>
 where
-    T: Iterator<Item = Word>,
+    T: Iterator<Item = &'a Word>,
 {
     type Item = Word;
 
@@ -177,7 +178,7 @@ where
         if !self.end {
             if self.shift == 0 {
                 let ret = self.prev;
-                if let Some(v) = self.iter.next() {
+                if let Some(&v) = self.iter.next() {
                     self.prev = v;
                 } else {
                     self.end = true;
@@ -185,7 +186,7 @@ where
                 Some(ret)
             } else {
                 let mut ret = self.prev << self.shift;
-                if let Some(v) = self.iter.next() {
+                if let Some(&v) = self.iter.next() {
                     ret |= v >> (WORD_BIT_SIZE - self.shift);
                     self.prev = v;
                 } else {

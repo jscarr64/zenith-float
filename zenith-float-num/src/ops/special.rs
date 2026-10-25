@@ -5185,7 +5185,10 @@ pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNu
     while (1usize << j) * 577 < (pw + 16) * 100 {
         j += 1;
     }
-    let n = ExactNumNumber::from_word((1 as Word) << j, pw)?;
+    // n and k are one-word operands: a pw-bit divisor would make each division a full pw-by-pw
+    // long division (the cost that made γ at p = 65536 take a minute), while the quotient is the
+    // same because both values are exact.
+    let n = ExactNumNumber::from_word((1 as Word) << j, WORD_BIT_SIZE)?;
     let mut t = ExactNumNumber::from_word(1, pw)?;
     let mut h = ExactNumNumber::new(pw)?;
     let mut a = ExactNumNumber::new(pw)?;
@@ -5193,7 +5196,7 @@ pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNu
     let n_min = 3usize << j; // terms decrease for k > n; the tail is negligible beyond ≈ 3.6 n
     let mut k = 1usize;
     loop {
-        let kw = ExactNumNumber::from_word(k as Word, pw)?;
+        let kw = ExactNumNumber::from_word(k as Word, WORD_BIT_SIZE)?;
         t = t
             .mul(&n, pw, RoundingMode::None)?
             .div(&kw, pw, RoundingMode::None)?;

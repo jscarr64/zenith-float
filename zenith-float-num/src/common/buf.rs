@@ -102,9 +102,15 @@ impl WordBuf {
                 Ok(())
             }
             Storage::Inline { data, len } => {
+                // Spill of this buffer's own words (inline array -> heap Vec): they have to change storage, so
+                // they are copied once and the inline array is dropped. A length past the array is an error,
+                // never a silent drop of words.
+                let src = data
+                    .get(..usize::from(*len))
+                    .ok_or(Error::InvalidArgument)?;
                 let mut v = Vec::new();
                 v.try_reserve_exact(new_len)?;
-                v.extend_from_slice(&data[..*len as usize]);
+                v.extend_from_slice(src);
                 v.resize(new_len, 0);
                 self.inner = Storage::Heap(v);
                 Ok(())

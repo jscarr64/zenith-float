@@ -2,8 +2,6 @@
 /tools/rules_allowlist.txt @jscarr64
 /tools/clone_allowlist.txt @jscarr64
 /tools/clone_count_baseline.txt @jscarr64
-/tools/ref_sum_count_baseline.txt @jscarr64
-/tools/mul_ref_count_baseline.txt @jscarr64
 /tools/helper_copy_count_baseline.txt @jscarr64
 /tools/exception_count_baseline.txt @jscarr64
 /tools/test_panic_count_baseline.txt @jscarr64

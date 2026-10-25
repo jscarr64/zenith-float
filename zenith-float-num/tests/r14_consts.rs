@@ -136,15 +136,40 @@ fn report(bad: &[String], total: usize, what: &str) -> Result<(), String> {
     ))
 }
 
-#[test]
-fn golds_every_constant_every_mode() -> Result<(), String> {
-    let rows = rows()?;
-    let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
+/// Fast-tier precisions: small (1, 2, 3, the word edges 63..65), medium (128, 1000) and large
+/// (4096). γ costs ≈ p^2.3 (Brent–McMillan B1 term by term, ≈ 0.6 p full-precision terms), so
+/// p ≥ 8192 for all seven constants runs in the full tier only.
+const FAST_P: [usize; 9] = [1, 2, 3, 63, 64, 65, 128, 1000, 4096];
+/// FNV-1a 64 of every gold row's `canon_of` result, in file order, '\n'-joined: the full tier
+/// pins all 1050 results (value, precision, max bits and both inexact flags).
+const FULL_DIGEST: u64 = 0xbe47_caf6_df76_9963;
+
+/// `MPFR_TIER=full` (as in `tools/full_gate.sh`) also runs the full tier.
+fn full_tier() -> bool {
+    std::env::var("MPFR_TIER").is_ok_and(|t| t == "full")
+}
+
+fn fnv1a(h: u64, bytes: &[u8]) -> u64 {
+    bytes.iter().fold(h, |h, b| {
+        (h ^ u64::from(*b)).wrapping_mul(0x0000_0100_0000_01b3)
+    })
+}
+
+/// Every row whose p passes `keep` against its gold, flagged inexact; returns the failures and
+/// the digest of all results checked.
+fn check_golds(
+    cc: &mut Consts,
+    rows: &[(String, usize, String, ExactNum)],
+    keep: impl Fn(usize) -> bool,
+) -> Result<(Vec<String>, usize, u64), String> {
     let mut bad = Vec::new();
-    for (name, p, rm, want) in &rows {
-        let got = get(&mut cc, name, *p, mode_of(rm)?)?;
-        // Expect the gold value at exactly p bits, flagged inexact (no constant is exact).
-        // The gold value, flagged inexact (no constant is exact).
+    let mut checked = 0;
+    let mut digest = 0xcbf2_9ce4_8422_2325;
+    for (name, p, rm, want) in rows.iter().filter(|r| keep(r.1)) {
+        let got = get(cc, name, *p, mode_of(rm)?)?;
+        checked += 1;
+        digest = fnv1a(fnv1a(digest, canon_of(&got).as_bytes()), b"\n");
+        // The gold value at exactly p bits, flagged inexact (no constant is exact).
         let flags = got.inexact() && got.inexact_accumulated();
         if value_of(&got) != value_of(want) || !flags {
             bad.push(format!(
@@ -154,24 +179,17 @@ fn golds_every_constant_every_mode() -> Result<(), String> {
             ));
         }
     }
-    assert_eq!(rows.len(), NAMES.len() * 25 * MODES.len(), "gold row count");
-    for name in NAMES {
-        for p in EDGE_P {
-            assert!(
-                rows.iter().any(|(n, q, _, _)| n == name && *q == p),
-                "{name} p={p} has golds"
-            );
-        }
-    }
-    report(&bad, rows.len(), "gold rows")
+    Ok((bad, checked, digest))
 }
 
-#[test]
-fn down_and_up_bracket_the_constant() -> Result<(), String> {
-    // The p=65536 golds bracket each constant to 2^-65535 relative: a reference far finer
-    // than any p below it, and exactly the constant's own bracket at p=65536.
-    let rows = rows()?;
-    let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
+/// `Down < Up` and `Down ≤ c ≤ Up` at every p passing `keep`. The p=65536 golds bracket each
+/// constant to 2^-65535 relative: a reference far finer than any p below it, and exactly the
+/// constant's own bracket at p=65536.
+fn check_brackets(
+    cc: &mut Consts,
+    rows: &[(String, usize, String, ExactNum)],
+    keep: impl Fn(usize) -> bool,
+) -> Result<(Vec<String>, usize), String> {
     let mut bad = Vec::new();
     let mut checked = 0;
     for name in NAMES {
@@ -184,13 +202,13 @@ fn down_and_up_bracket_the_constant() -> Result<(), String> {
         let (lo, hi) = (reference("Down")?, reference("Up")?);
         let mut ps: Vec<usize> = rows
             .iter()
-            .filter(|(n, _, _, _)| n == name)
+            .filter(|(n, q, _, _)| n == name && keep(*q))
             .map(|r| r.1)
             .collect();
         ps.dedup();
         for p in ps {
-            let down = get(&mut cc, name, p, RoundingMode::Down)?;
-            let up = get(&mut cc, name, p, RoundingMode::Up)?;
+            let down = get(cc, name, p, RoundingMode::Down)?;
+            let up = get(cc, name, p, RoundingMode::Up)?;
             checked += 1;
             if !(down < up && down <= *lo && *hi <= up) {
                 bad.push(format!(
@@ -201,7 +219,67 @@ fn down_and_up_bracket_the_constant() -> Result<(), String> {
             }
         }
     }
-    report(&bad, checked, "brackets")
+    Ok((bad, checked))
+}
+
+#[test]
+fn golds_cover_every_constant_mode_and_edge() -> Result<(), String> {
+    let rows = rows()?;
+    assert_eq!(rows.len(), NAMES.len() * 25 * MODES.len(), "gold row count");
+    for name in NAMES {
+        for p in EDGE_P.into_iter().chain(FAST_P) {
+            for rm in MODES {
+                let m = format!("{rm:?}");
+                assert!(
+                    rows.iter()
+                        .any(|(n, q, r, _)| n == name && *q == p && *r == m),
+                    "{name} p={p} {m} has golds"
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn golds_fast_tier_every_constant_every_mode() -> Result<(), String> {
+    let rows = rows()?;
+    let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
+    let (bad, checked, _) = check_golds(&mut cc, &rows, |p| FAST_P.contains(&p))?;
+    assert_eq!(
+        checked,
+        NAMES.len() * FAST_P.len() * MODES.len(),
+        "fast rows"
+    );
+    report(&bad, checked, "fast-tier gold rows")
+}
+
+#[test]
+fn down_and_up_bracket_the_constant_fast_tier() -> Result<(), String> {
+    let rows = rows()?;
+    let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
+    let (bad, checked) = check_brackets(&mut cc, &rows, |p| FAST_P.contains(&p))?;
+    assert_eq!(checked, NAMES.len() * FAST_P.len(), "fast brackets");
+    report(&bad, checked, "fast-tier brackets")
+}
+
+/// Full tier: all 1050 rows against their golds, the digest of every result pinned, and the
+/// brackets at all 25 p, on one cache so γ at p=65536 is computed once.
+#[test]
+fn golds_full_tier_digest_and_brackets() -> Result<(), String> {
+    if !full_tier() {
+        eprintln!("r14 full tier skipped: set MPFR_TIER=full");
+        return Ok(());
+    }
+    let rows = rows()?;
+    let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
+    let (bad, checked, digest) = check_golds(&mut cc, &rows, |_| true)?;
+    assert_eq!(checked, rows.len(), "full rows");
+    report(&bad, checked, "full-tier gold rows")?;
+    assert_eq!(digest, FULL_DIGEST, "full-tier digest {digest:#018x}");
+    let (bad, checked) = check_brackets(&mut cc, &rows, |_| true)?;
+    assert_eq!(checked, NAMES.len() * 25, "full brackets");
+    report(&bad, checked, "full-tier brackets")
 }
 
 #[test]
