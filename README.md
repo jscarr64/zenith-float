@@ -1,5 +1,7 @@
 # zenith-float
 
+Part of the Accumath project family — developed for Accumath, the pure-Rust, correct-by-construction math engine. This crate is open source; Accumath itself is a separate product.
+
 > **Please upgrade to zenith-float 1.0.12.** Versions 1.0.0 through 1.0.4
 > return wrong values from `erf`, `erfc`, `normal_cdf`, `hypergeom_2f1`,
 > `betainc`, the gamma family, Bessel and several other special functions for
