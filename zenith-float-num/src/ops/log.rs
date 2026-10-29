@@ -19,6 +19,7 @@ use crate::defs::Word;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::ops::series::series_cost_optimize;
+use crate::ops::series::series_prec;
 use crate::ops::series::series_run;
 use crate::ops::series::ArgReductionEstimator;
 use crate::ops::series::PolycoeffGen;
@@ -81,8 +82,8 @@ impl ArgReductionEstimator for LnArgReductionEstimator {
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
     #[inline]
-    fn reduction_effect(n: usize, m: i64) -> usize {
-        (m + n as i64) as usize
+    fn reduction_effect(n: usize, m: i64) -> i64 {
+        m + n as i64
     }
 }
 
@@ -193,15 +194,19 @@ impl ExactNumNumber {
             series_cost_optimize::<LnArgReductionEstimator>(p, &polycoeff_gen, 0, 2, false);
 
         // to avoid diverging error e_eff must be large enough
-        if e_eff < 3 {
-            reduction_times += 3 - e_eff;
+        // (A negative e_eff is left alone, as the former usize comparison did.)
+        if (0..3).contains(&e_eff) {
+            reduction_times = usize::try_from(3 - e_eff)
+                .ok()
+                .and_then(|d| reduction_times.checked_add(d))
+                .ok_or(Error::InvalidArgument)?;
         }
 
         // sqrt gives error not more than 2^(-p+1),
         // argument substitution for atanh gives 2^(-p+5),
         // e_eff compensates error of the series and gives 2^(-p+1).
-        let add_prec = 7 - e_eff as i64;
-        let p_arg = p + if add_prec > 0 { add_prec as usize } else { 5 };
+        let add_prec = 7 - e_eff;
+        let p_arg = series_prec(p, add_prec, 5)?;
         x.set_precision(p_arg, rm)?;
 
         let arg = if reduction_times > 0 {
