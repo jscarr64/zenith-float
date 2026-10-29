@@ -7153,7 +7153,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 17 * 3 * 6 * 7);
         println!("trig hyperbolic grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_882_922_101_969_868_672);
+        #[cfg(target_pointer_width = "64")]
+        let want = 2_882_922_101_969_868_672;
+        #[cfg(target_pointer_width = "32")]
+        let want = 4_367_765_344_785_860_701;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
