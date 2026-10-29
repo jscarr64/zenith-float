@@ -294,12 +294,6 @@ pub fn count_leading_ones(m: &[Word]) -> usize {
     ret
 }
 
-/// `|x|` as `usize`, saturating at `usize::MAX` where `usize` is narrower than 64 bits.
-#[inline]
-pub fn abs_usize(x: i64) -> usize {
-    usize::try_from(x.unsigned_abs()).unwrap_or(usize::MAX)
-}
-
 /// Round precision to word bounday.
 pub fn round_p(p: usize) -> usize {
     ((p.saturating_add(WORD_BIT_SIZE - 1)) / WORD_BIT_SIZE) * WORD_BIT_SIZE

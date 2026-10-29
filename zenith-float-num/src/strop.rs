@@ -59,7 +59,7 @@ fn format_uint_radix(val: u64, rdx: Radix, out: &mut String) -> Result<(), Error
     }
     digits.reverse();
     for d in digits {
-        let ch = DIGIT_CHARS.get(usize::from(d)).copied().ok_or(Error::InvalidArgument)?;
+        let ch = *DIGIT_CHARS.get(usize::from(d)).ok_or(Error::InvalidArgument)?;
         out.push(ch);
     }
     Ok(())

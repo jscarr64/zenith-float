@@ -272,8 +272,9 @@ fn part_cancel(a: &ExactNum, b: &ExactNum, r: &ExactNum, is_add: bool) -> Option
     };
     let opp = if is_add { s1 != s2 } else { s1 == s2 };
     if (e1 - e2).abs() <= 1 && opp {
-        // A zero result has exponent 0, so the gap can exceed a 32-bit `usize`: saturate, never overflow.
-        Some(crate::common::util::abs_usize(e1.max(e2) - e3).saturating_add(1))
+        // A zero result has exponent 0, so the gap can exceed a 32-bit `usize`: an unrepresentable count is None.
+        let gap = e1.max(e2).checked_sub(e3)?;
+        usize::try_from(gap.unsigned_abs()).ok()?.checked_add(1)
     } else {
         None
     }
