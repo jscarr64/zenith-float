@@ -47,7 +47,7 @@ grep -q 'test -p zenith-float-num --lib --target i686-unknown-linux-musl --no-ru
 gate red STUB_I686_RED=1 GATE_STEPS=test-i686-lib
 [[ $(grep -c 'STEP START' "$log") -eq 1 ]] && grep -q 'STEP START test-i686-lib' "$log" || { echo "FAIL[red]: GATE_STEPS=test-i686-lib did not run exactly that step: $(grep 'STEP START' "$log" | tr '\n' ' ')"; fail=1; }
 grep -q 'RESULT: FAIL' "$log" || { echo "FAIL[red]: footer not FAIL"; fail=1; }
-grep -q 'RESULT: FAIL .*test-i686-lib' <<< "$out" || { echo "FAIL[red]: RESULT line does not name test-i686-lib: $(grep RESULT <<< "$out")"; fail=1; }
+grep -q 'RESULT: PARTIAL FAIL .*test-i686-lib' <<< "$out" || { echo "FAIL[red]: RESULT line does not name test-i686-lib: $(grep RESULT <<< "$out")"; fail=1; }
 [[ $rc -ne 0 ]] || { echo "FAIL[red]: red i686 step did not fail the gate (exit 0): not blocking"; fail=1; }
 # 3. GATE_STEPS=test-i686-lib, green: PASS, exit 0
 gate green GATE_STEPS=test-i686-lib
@@ -55,5 +55,19 @@ grep -q 'STEP END test-i686-lib verdict=PASS' "$log" && grep -q 'RESULT: PASS' "
 # 4. exact names: a prefix selects nothing and an unknown name fails the gate
 gate prefix GATE_STEPS=test-i686
 ! grep -q 'STEP START' "$log" && [[ $rc -ne 0 ]] || { echo "FAIL[prefix]: GATE_STEPS=test-i686 ran a step or exited 0 (rc=$rc)"; fail=1; }
+# 5. a selective run is PARTIAL in stdout, the .rc and the poplog footer; a default run is plain
+gate partial GATE_STEPS=test-i686-lib
+grep -q '^RESULT: PARTIAL PASS' <<< "$out" && grep -q '^RESULT: PARTIAL PASS' "$tmp/gate-partial/i686-partial.rc" \
+  && sed -n '/POPLOG FOOTER/,$p' "$log" | grep -q 'RESULT: PARTIAL PASS' || { echo "FAIL[partial]: green GATE_STEPS run is not PARTIAL PASS in stdout/.rc/footer: $(grep RESULT <<< "$out")"; fail=1; }
+gate partialred STUB_I686_RED=1 GATE_STEPS=test-i686-lib
+grep -q '^RESULT: PARTIAL FAIL .*test-i686-lib' <<< "$out" && sed -n '/POPLOG FOOTER/,$p' "$log" | grep -q 'RESULT: PARTIAL FAIL' || { echo "FAIL[partialred]: red GATE_STEPS run is not PARTIAL FAIL naming the step"; fail=1; }
+gate plain STUB_I686_RED=1
+grep -q '^RESULT: FAIL ' <<< "$out" && ! grep -q PARTIAL <<< "$out" || { echo "FAIL[plain]: default run is not a plain RESULT: FAIL"; fail=1; }
+# 6. GATE_STEPS set but matching no step ("," or " "): FAIL with a clear message, never PASS
+for sel in "," " "; do
+  gate empty GATE_STEPS="$sel"
+  [[ $rc -ne 0 ]] && grep -q '^RESULT: PARTIAL FAIL .*no step matched' <<< "$out" || { echo "FAIL[empty]: GATE_STEPS='$sel' ran nothing but rc=$rc: $(grep RESULT <<< "$out")"; fail=1; }
+  rm -rf "$tmp/pop-empty" "$tmp/gate-empty"
+done
 [[ $fail -eq 0 ]] && echo "ok: full_gate.sh test-i686-lib (default list, blocking, exact GATE_STEPS)"
 exit "$fail"

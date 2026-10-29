@@ -96,8 +96,13 @@ run hex-32bit "bash scripts/ci_hex_32bit.sh"
 run unsafe-scan "bash tools/gate_unsafe_scan.sh"
 run prepublish "bash scripts/zenith_prepublish.sh"
 for want in ${GATE_STEPS:+${GATE_STEPS//,/ }}; do [[ " ${ran[*]} " == *" $want "* ]] || { failed+=("GATE_STEPS:unknown-step:$want"); POPLOG_OVERALL=1; }; done
-if [[ ${#failed[@]} -gt 0 ]]; then res="RESULT: FAIL failed steps: ${failed[*]}"; else res="RESULT: PASS steps: ${ran[*]}"; fi
+# GATE_STEPS set but matching no step (e.g. "," or " "): nothing ran, which is a FAIL, never a PASS
+if [[ -n ${GATE_STEPS:-} && ${#ran[@]} -eq 0 ]]; then failed+=("GATE_STEPS='$GATE_STEPS': no step matched"); POPLOG_OVERALL=1; fi
+# a selective run is PARTIAL (stdout, .rc, poplog footer) so it can never be cited as a merge gate
+part=""; [[ -n ${GATE_STEPS:-} ]] && part="PARTIAL "
+if [[ ${#failed[@]} -gt 0 ]]; then res="RESULT: ${part}FAIL failed steps: ${failed[*]}"; else res="RESULT: ${part}PASS steps: ${ran[*]}"; fi
 echo "$res" | tee -a "$T/$tag.rc"; echo "gate $res" >> "$POPLOG_FILE"
+[[ -n $part ]] && POPLOG_WARNINGS+=("$res (selective GATE_STEPS run, not a merge gate)")
 echo "done" >> "$T/$tag.rc"
 poplog_finish
 exit "$POPLOG_OVERALL"
