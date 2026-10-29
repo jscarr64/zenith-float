@@ -6494,7 +6494,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
         println!("ldexp grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 1_196_293_272_222_150_608);
+        #[cfg(target_pointer_width = "64")]
+        let want = 1_196_293_272_222_150_608;
+        #[cfg(target_pointer_width = "32")]
+        let want = 5_434_581_390_640_415_895;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
