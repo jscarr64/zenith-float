@@ -3,6 +3,7 @@
 //! ExactNum including finite numbers, NaN, and `Inf`.
 
 use crate::common::util::log2_ceil;
+use crate::common::util::{bump_prec_retry, invert_rm_for_sign};
 use crate::common::util::{round_p, round_p_rm};
 use crate::defs::Precision;
 use crate::defs::SignedWord;
@@ -1374,17 +1375,12 @@ impl ExactNum {
 
         match (&self.inner, &x.inner) {
             (Flavor::Inf(sy), Flavor::Inf(sx)) => {
-                let mut q = cc.pi(p, rm);
-                q = q.div(&ExactNum::from_word(4, p), p, rm);
-                if sx.is_negative() {
-                    let three = ExactNum::from_word(3, p);
-                    q = three.mul(&q, p, rm);
-                }
-                if sy.is_negative() {
-                    q.neg()
+                let q = if sx.is_negative() {
+                    Self::three_quarter_pi(*sy, p, rm, cc)
                 } else {
-                    q
-                }
+                    Self::signed_pi_scaled(*sy, 0, p, rm, cc)
+                };
+                Self::result_to_ext(q, false, true)
             }
             (Flavor::Inf(sy), Flavor::Value(_)) => {
                 Self::result_to_ext(Self::half_pi(*sy, p, rm, cc), false, true)
@@ -1393,9 +1389,7 @@ impl ExactNum {
                 if sx.is_positive() {
                     Self::result_to_ext(ExactNumNumber::new2(p, y.sign(), y.inexact()), false, true)
                 } else {
-                    let mut pi = cc.pi(p, rm);
-                    pi.set_sign(y.sign());
-                    pi
+                    Self::result_to_ext(Self::signed_pi_scaled(y.sign(), 2, p, rm, cc), false, true)
                 }
             }
             (Flavor::Value(y), Flavor::Value(xv)) => {
@@ -1515,12 +1509,59 @@ impl ExactNum {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<ExactNumNumber, Error> {
-        let mut half_pi = cc.pi_num(p, rm)?;
+        Self::signed_pi_scaled(s, 1, p, rm, cc)
+    }
 
-        half_pi.set_exponent(1);
-        half_pi.set_sign(s);
+    /// `s * pi` with binary exponent `e` (2 for `pi`, 1 for `pi/2`, 0 for `pi/4`), rounded once in `rm`:
+    /// the magnitude is rounded in the mode that rounds the signed value the same way.
+    fn signed_pi_scaled(
+        s: Sign,
+        e: Exponent,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<ExactNumNumber, Error> {
+        let rm_abs = if s.is_negative() { invert_rm_for_sign(rm) } else { rm };
+        let mut v = cc.pi_num(p, rm_abs)?;
+        v.set_exponent(e);
+        v.set_sign(s);
+        Ok(v)
+    }
 
-        Ok(half_pi)
+    /// `s * 3pi/4` rounded once in `rm`. `3pi` lies in `[3 RD(pi), 3 RU(pi)]` (both products exact at the
+    /// working precision); the working precision grows until both ends round to the same `p`-bit value.
+    fn three_quarter_pi(
+        s: Sign,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<ExactNumNumber, Error> {
+        let rm_abs = if s.is_negative() { invert_rm_for_sign(rm) } else { rm };
+        let three = ExactNumNumber::from_word(3, WORD_BIT_SIZE)?;
+        let mut p_wrk = round_p(p)
+            .checked_add(WORD_BIT_SIZE)
+            .ok_or(Error::InvalidArgument)?;
+        let mut p_inc = WORD_BIT_SIZE;
+        loop {
+            let p_mul = p_wrk
+                .checked_add(WORD_BIT_SIZE)
+                .ok_or(Error::InvalidArgument)?;
+            let mut lo =
+                cc.pi_num(p_wrk, RoundingMode::Down)?
+                    .mul(&three, p_mul, RoundingMode::None)?;
+            let mut hi =
+                cc.pi_num(p_wrk, RoundingMode::Up)?
+                    .mul(&three, p_mul, RoundingMode::None)?;
+            lo.set_precision(p, rm_abs)?;
+            hi.set_precision(p, rm_abs)?;
+            if lo.cmp(&hi) == 0 {
+                lo.set_exponent(2);
+                lo.set_sign(s);
+                lo.set_inexact(true);
+                return Ok(lo);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
     }
 
     /// Evaluates `f(precision, rounding)`, a function computed on operands whose inexact flags
@@ -7481,9 +7522,9 @@ mod grid_digest_tests {
         assert_eq!(count, 17 * 3 * 6 * 7);
         println!("trig hyperbolic grid digest = {}", h.finish());
         #[cfg(target_pointer_width = "64")]
-        let want = 2_882_922_101_969_868_672;
+        let want = 11_147_813_322_482_799_478;
         #[cfg(target_pointer_width = "32")]
-        let want = 4_367_765_344_785_860_701;
+        let want = 3_737_091_182_715_260_247;
         assert_eq!(h.finish(), want);
         Ok(())
     }

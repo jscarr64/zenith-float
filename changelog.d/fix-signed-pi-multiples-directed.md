@@ -1,0 +1,1 @@
+- Fix `atan`, `atan2` and `si` results that are negative multiples of pi (`atan(-Inf)`, `atan2` at the infinities, at `x = 0` and on the negative real axis, `si(-Inf)`) rounding the wrong way under `Up`/`Down`, and round `atan2(±Inf, -Inf) = ±3pi/4` once instead of twice; the trig/hyperbolic grid digest is re-pinned on 64- and 32-bit (6 `atan(-Inf)` entries change).

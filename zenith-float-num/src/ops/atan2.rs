@@ -1,7 +1,7 @@
 //! Two-argument arctangent.
 
-use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p_rm;
+use crate::common::util::{bump_prec_retry, invert_rm_for_sign};
 use crate::defs::{Error, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
@@ -113,6 +113,7 @@ impl ExactNumNumber {
         cc: &mut Consts,
         inexact: bool,
     ) -> Result<Self, Error> {
+        let rm = if s.is_negative() { invert_rm_for_sign(rm) } else { rm };
         let mut h = cc.pi_num(p, rm)?;
         h.set_exponent(1);
         h.set_sign(s);
@@ -127,6 +128,7 @@ impl ExactNumNumber {
         cc: &mut Consts,
         inexact: bool,
     ) -> Result<Self, Error> {
+        let rm = if s.is_negative() { invert_rm_for_sign(rm) } else { rm };
         let mut pi = cc.pi_num(p, rm)?;
         pi.set_sign(s);
         pi.set_inexact(pi.inexact() | inexact);
