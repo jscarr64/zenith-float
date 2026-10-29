@@ -954,6 +954,19 @@ mod tests {
     use crate::defs::{Sign, EXPONENT_MAX, EXPONENT_MIN};
     use crate::WORD_SIGNIFICANT_BIT;
 
+    /// The from-decimal exponent chunk is floor(EXPONENT_MAX * 0.301029995) on every target.
+    /// A 32-bit `usize` truncated it mod 2^32, so |n| near EXPONENT_MAX / log2(10) split into
+    /// ~10^8 chunks: ~10^8 divisions at ~3.5 * 10^8 extra working bits (an effective hang).
+    #[test]
+    fn dec_exponent_chunk_not_truncated() -> Result<(), crate::Error> {
+        let want = u128::try_from(EXPONENT_MAX).map_err(|_| crate::Error::InvalidArgument)?
+            * 301029995
+            / 1000000000;
+        let have = u128::try_from(TEN_PWR_MAX_FROM_DEC).map_err(|_| crate::Error::InvalidArgument)?;
+        assert_eq!(have, want);
+        Ok(())
+    }
+
     #[cfg(not(feature = "std"))]
     use alloc::vec;
 
