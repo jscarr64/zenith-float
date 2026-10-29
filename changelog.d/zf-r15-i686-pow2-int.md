@@ -1,0 +1,1 @@
+- `exp`/`exp2`/`pow` with an argument past `2^32` in magnitude are correctly rounded on 32-bit targets: the integer part is read as `u64`, not `usize` (it gave Inf, MAX or 0), and the working precision now grows by the bits of `y ln x` (pow) and of the integer part of the exponent (`exp`), which a directed result at `exp2(EMAX-1/2)` showed lost up to 62 bits.

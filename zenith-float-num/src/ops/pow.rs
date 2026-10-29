@@ -126,13 +126,13 @@ impl ExactNumNumber {
             let ln2 = cc.ln_2_num(p_l, RoundingMode::None)?;
             let mut t = self.div(&ln2, p_l, RoundingMode::None)?;
             t.set_sign(Sign::Pos);
-            let n = t.int_as_usize()?;
+            let n = t.int_as_u64()?;
             let n1 = n.checked_add(1).ok_or(Error::ExponentOverflow(Sign::Neg))?;
-            let shift = Self::from_usize(n1)?.mul(&ln2, p_l, RoundingMode::None)?;
+            let shift = Self::from_u64_internal(n1, 64)?.mul(&ln2, p_l, RoundingMode::None)?;
             let r = self.add(&shift, p_l, RoundingMode::None)?;
             let mut y = r.exp(p_wrk, RoundingMode::None, cc)?;
             if y.try_set_precision(q, RoundingMode::ToZero, p_wrk - WORD_BIT_SIZE)? {
-                let n1 = i128::try_from(n1).map_err(|_| Error::ExponentOverflow(Sign::Neg))?;
+                let n1 = i128::from(n1);
                 let at = i128::from(y.exponent()) - n1;
                 let mut ret = y.place_scaled(at, true, p, rm)?;
                 ret.set_inexact(true);
@@ -168,30 +168,32 @@ impl ExactNumNumber {
     fn exp_positive_arg(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         debug_assert!(!self.is_zero());
 
-        if self.exponent() > WORD_BIT_SIZE as i64 {
+        // `u64`, not the word: `|x|` reaches `EMAX ln 2 ~ 2^61.5` on a 32-bit target too.
+        if self.exponent() > Exponent::from(u64::BITS) {
             return Err(Error::ExponentOverflow(self.sign()));
         }
 
-        let p_work = p + 4;
-
         // compute separately for int and fract parts, then combine the results.
-        let int = self.int_as_usize().map_err(|e| {
+        let int = self.int_as_u64().map_err(|e| {
             if matches!(e, Error::InvalidArgument) {
                 Error::ExponentOverflow(Sign::Pos)
             } else {
                 e
             }
         })?;
+        // `e^int` from `e` at `p_work` bits has relative error `int 2^-p_work`: carry the bit length of `int` too.
+        let int_bits = usize::try_from(u64::BITS - int.leading_zeros()).unwrap_or(64);
+        let p_work = p + 4 + int_bits;
         let e_int = if int > 0 {
             let e_const = cc.e_num(p_work, RoundingMode::None)?;
 
-            e_const.powi(int, p_work, RoundingMode::None)
+            e_const.powi_internal(int, p_work, RoundingMode::None, true, false)
         } else {
             Ok(ExactNumNumber::small_const(1))
         }?;
 
         // |fract(self)| = |self| - int, computed from the integer part found above.
-        let int_num = Self::from_usize(int)?;
+        let int_num = Self::from_u64_internal(int, 64)?;
         let mut fract = if self.is_negative() {
             self.add_full_prec(&int_num)
         } else {
@@ -880,9 +882,10 @@ impl ExactNumNumber {
         // path below cannot decide such a result (it is exactly representable, so the approximation never
         // clears the roundability check), and it has to be recognised before the loop.
         if nint && self.is_power_of_two() && n.exponent() < 64 {
-            if let Ok(mag) = n.int_as_usize() {
+            // `u64`, not `usize`: `|n|` reaches `2^62` on a 32-bit target too.
+            if let Ok(mag) = n.int_as_u64() {
                 let k = self.exponent() as i128 - 1;
-                let q = if n.is_negative() { -(mag as i128) * k } else { mag as i128 * k };
+                let q = if n.is_negative() { -i128::from(mag) * k } else { i128::from(mag) * k };
                 let ret_sign = if n.is_odd_int() { self.sign() } else { Sign::Pos };
                 if q + 1 > EXPONENT_MAX as i128 {
                     return Err(Error::ExponentOverflow(ret_sign));
@@ -940,9 +943,20 @@ impl ExactNumNumber {
                 let p_ext = p_wrk + 2;
                 x.set_precision(p_ext, RoundingMode::None)?;
 
-                let ln = x.ln(p_ext, RoundingMode::None, cc)?;
+                let ln0 = x.ln(p_ext, RoundingMode::None, cc)?;
+                // `m = y ln x` with `|m| < 2^e_m` carries an absolute error, the relative error of `e^m`, of
+                // `2^(e_m - p_ext)`: form it `e_m` bits higher (capped; past `2^128` `e^m` is out of range anyway).
+                let e_m = y.exponent() + ln0.exponent();
+                let lift = usize::try_from(e_m.clamp(0, 128)).unwrap_or(0);
+                let p_m = p_ext + lift;
+                let ln = if lift > 0 {
+                    x.set_precision(p_m, RoundingMode::None)?;
+                    x.ln(p_m, RoundingMode::None, cc)?
+                } else {
+                    ln0
+                };
 
-                let mut m = match y.mul(&ln, p_ext, RoundingMode::None) {
+                let mut m = match y.mul(&ln, p_m, RoundingMode::None) {
                     Ok(v) => Ok(v),
                     Err(e) => match e {
                         Error::ExponentOverflow(Sign::Neg) => {
