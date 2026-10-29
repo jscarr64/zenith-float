@@ -26,7 +26,8 @@ use crate::EXPONENT_MIN;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-const TEN_PWR_MAX_TO_DEC: usize = EXPONENT_MAX as usize / 4;
+/// EXPONENT_MAX / 4 in u64: a 32-bit `usize` would truncate it.
+const TEN_PWR_MAX_TO_DEC: u64 = EXPONENT_MAX.unsigned_abs() / 4;
 /// floor(EXPONENT_MAX * log10(2)) in u64: a 32-bit `usize` would truncate it.
 const TEN_PWR_MAX_FROM_DEC: u64 = (EXPONENT_MAX as u128 * 301029995 / 1000000000) as u64;
 /// floor(log10(2) * 2^64), a lower bound of log10(2) exact to 2^-64.
@@ -524,12 +525,11 @@ impl ExactNumNumber {
 
             let mut err_acc = 0;
 
-            // |n_wrk| in u64: a 32-bit `usize` would saturate it. What is left after the chunk loop is at most
-            // the chunk, a `usize`, so its conversion back cannot fail.
-            let chunk = u64::try_from(TEN_PWR_MAX_TO_DEC).map_err(|_| Error::InvalidArgument)?;
+            // |n_wrk| and the chunk in u64: a 32-bit `usize` would saturate or truncate them.
+            let chunk = TEN_PWR_MAX_TO_DEC;
             let mut pwr = n_wrk.unsigned_abs();
             if pwr > chunk {
-                let tp = TEN.powi(TEN_PWR_MAX_TO_DEC, p_wrk, RoundingMode::None)?;
+                let tp = TEN.powi_u64(TEN_PWR_MAX_TO_DEC, p_wrk, RoundingMode::None)?;
                 err_acc += 1;
 
                 while pwr > chunk {
@@ -544,8 +544,7 @@ impl ExactNumNumber {
             }
 
             if pwr != 0 {
-                let pwr = usize::try_from(pwr).map_err(|_| Error::InvalidArgument)?;
-                let tp = TEN.powi(pwr, p_wrk, RoundingMode::None)?;
+                let tp = TEN.powi_u64(pwr, p_wrk, RoundingMode::None)?;
                 if n_wrk < 0 {
                     x = x.div(&tp, p_wrk, RoundingMode::None)?;
                 } else {
@@ -555,7 +554,7 @@ impl ExactNumNumber {
             }
 
             if err_acc > err {
-                err_acc += err_acc / TEN_PWR_MAX_TO_DEC + 3;
+                err_acc += err_acc / usize::try_from(TEN_PWR_MAX_TO_DEC).unwrap_or(usize::MAX) + 3;
                 p_wrk += round_p(err_acc - err);
                 err = err_acc;
                 continue;
