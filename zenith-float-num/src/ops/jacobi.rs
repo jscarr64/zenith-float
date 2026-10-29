@@ -250,7 +250,17 @@ impl ExactNumNumber {
             return Ok((am, sn, cn, dn));
         }
         let u = self.jacobi_reduce_period(m, p, cc)?;
-        jacobi_agm(&u, m, p, cc)
+        let (am, sn, cn, dn) = jacobi_agm(&u, m, p, cc)?;
+        if u.cmp(self) == 0 {
+            return Ok((am, sn, cn, dn));
+        }
+        // The reduction removed a whole number of periods \(4K\); am(u+4K|m) = am(u|m) + 2π, so
+        // the removed shift comes back as shift·π/(2K). sn, cn and dn are 4K-periodic.
+        let shift = self.sub(&u, p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let two_k = Self::from_word(2, p)?.mul(&m.elliptic_k_at(p, cc)?, p, RoundingMode::None)?;
+        let turns = div_nz(&shift.mul(&pi, p, RoundingMode::None)?, &two_k, p)?;
+        Ok((am.add(&turns, p, RoundingMode::None)?, sn, cn, dn))
     }
 
     fn jacobi_reduce_period(&self, m: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {

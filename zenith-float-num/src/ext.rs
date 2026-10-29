@@ -7502,12 +7502,16 @@ mod grid_digest_tests {
         let am = u.jacobi_am(&zero_m, 300, RoundingMode::ToEven, &mut cc);
         assert!(ExactNum::sub_ref(&am, &u, 300, RoundingMode::ToEven).is_zero());
         println!("jacobi digest = {}", h.finish());
-        // Re-pinned (was 13_695_875_014_094_095_401): 23 entries x 2 precisions (all at the tiny operand 21, `ToEven`)
+        // Re-pinned (was 8_344_934_497_909_943_058): `am` dropped the \(2\pi\) multiples of the \(4K\) period
+        // reduction (am(-7|1/2) gave +0.4105, mpmath -5.8727); 8 `am` entries (u = -7, m = 1/2, 3/8) changed.
+        // Still open, so this pin is not value-checked there: dn/nd of the subnormal operand at m = 1/2
+        // return an exact 1 (sn² underflows), which is wrong under `Down` and in the inexact flag.
+        // Earlier re-pin (was 13_695_875_014_094_095_401): 23 entries x 2 precisions (all at the tiny operand 21, `ToEven`)
         // were `NaN(PrecisionRetryExhausted)`, a wrong answer. `am`, `sn`, `sc`, `sd` of `u = 3 * 2^(-2^31 - 19)`
         // are `u` and the other nine functions are 1, because `f(u|m) = t (1 - O(u^2))` is far closer to the
         // representable `t` than half an ulp, and a value just below a representable number rounds to it
         // to nearest; the roundability check had treated that as undecidable. Oracle: mpmath, see the CHANGELOG.
-        assert_eq!(h.finish(), 8_344_934_497_909_943_058);
+        assert_eq!(h.finish(), 638_880_846_716_710_340);
         Ok(())
     }
 
