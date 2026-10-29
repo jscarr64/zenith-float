@@ -3729,4 +3729,21 @@ mod tests {
         assert_eq!(prod.mantissa_max_bit_len(), 64, "mul_full_prec width");
         Ok(())
     }
+
+    #[test]
+    fn rm_none_pow_special_cases_keep_64_bit_words_on_every_target() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let zero = ExactNumNumber::from_word(0, 64)?;
+        let two = ExactNumNumber::from_word(2, 64)?;
+        let e2 = zero.exp2(200, RoundingMode::None, &mut cc)?;
+        assert_eq!(e2.mantissa_max_bit_len(), 256, "exp2(0) width");
+        let e10 = zero.exp10(200, RoundingMode::None, &mut cc)?;
+        assert_eq!(e10.mantissa_max_bit_len(), 256, "exp10(0) width");
+        let z = zero.pow(&two, 200, RoundingMode::None, &mut cc)?;
+        assert_eq!(z.mantissa_max_bit_len(), 256, "0^2 width");
+        let one = ExactNumNumber::from_word(1, 64)?;
+        let o = one.pow(&two, 200, RoundingMode::None, &mut cc)?;
+        assert_eq!(o.mantissa_max_bit_len(), 256, "1^2 width");
+        Ok(())
+    }
 }
