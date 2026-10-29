@@ -388,10 +388,17 @@ impl ExactNumNumber {
 
         // error estimation
         let mut err = 0;
-        let npowmax = crate::common::util::abs_usize(n) / TEN_PWR_MAX_FROM_DEC;
-        let tenpowrem = crate::common::util::abs_usize(n) % TEN_PWR_MAX_FROM_DEC;
+        // |n| in u64: a 32-bit `usize` would saturate an i64 decimal exponent. The remainder is below the
+        // chunk, which is a `usize`, so its conversion back cannot fail.
+        let n_abs = n.unsigned_abs();
+        let chunk = u64::try_from(TEN_PWR_MAX_FROM_DEC).map_err(|_| Error::InvalidArgument)?;
+        let npowmax = n_abs / chunk;
+        let tenpowrem = usize::try_from(n_abs % chunk).map_err(|_| Error::InvalidArgument)?;
         if npowmax != 0 {
-            err += 3 * npowmax;
+            err += usize::try_from(npowmax)
+                .ok()
+                .and_then(|q| q.checked_mul(3))
+                .ok_or(Error::ExponentOverflow(sign))?;
         }
         if tenpowrem != 0 {
             err += 3;
