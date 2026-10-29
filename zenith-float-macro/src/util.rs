@@ -44,7 +44,8 @@ fn raw_parts_expr(f: &ExactNum, span: Span) -> Result<TokenStream, Error> {
             format!("literal raw parts rejected: {err}"),
         ));
     }
-    let m = raw.words;
+    let m = zenith_float_num::macro_util::word_halves(raw.words)
+        .map_err(|err| Error::new(span, format!("literal words not split: {err}")))?;
     let (precision, negative, e, inexact, op_inexact) = (
         raw.precision,
         raw.negative,
@@ -58,9 +59,9 @@ fn raw_parts_expr(f: &ExactNum, span: Span) -> Result<TokenStream, Error> {
         zenith_float_num::RawKind::Inf => quote!(zenith_float::RawKind::Inf),
         zenith_float_num::RawKind::NaN => quote!(zenith_float::RawKind::NaN),
     };
-    let ts = quote!(match zenith_float::ExactNum::from_raw_parts(&zenith_float::RawParts {
+    let ts = quote!(match zenith_float::macro_util::from_raw_halves(&[#(#m),*], &zenith_float::RawParts {
         kind: #kind,
-        words: &[#(#m),*],
+        words: &[],
         precision: #precision,
         negative: #negative,
         exponent: #e,

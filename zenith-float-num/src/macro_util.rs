@@ -318,6 +318,79 @@ pub fn complex_cancel_bits(
     ))
 }
 
+/// 32-bit halves per mantissa word.
+const HALVES_PER_WORD: usize = crate::WORD_BIT_SIZE / 32;
+
+/// Splits mantissa words into 32-bit halves, least significant first. Used by the `exact!` proc
+/// macro, which runs on the host, so its output does not depend on the host word size.
+///
+/// ## Errors
+///
+///  - InvalidArgument: the word size is not a multiple of 32 bits.
+///  - MemoryAllocation: the output could not be allocated.
+#[doc(hidden)]
+pub fn word_halves(words: &[crate::Word]) -> Result<alloc::vec::Vec<u32>, crate::Error> {
+    let n = words
+        .len()
+        .checked_mul(HALVES_PER_WORD)
+        .ok_or(crate::Error::MemoryAllocation)?;
+    let mut out = alloc::vec::Vec::new();
+    out.try_reserve_exact(n)
+        .map_err(|_| crate::Error::MemoryAllocation)?;
+    for &w in words {
+        let bytes = w.to_le_bytes();
+        let (quads, rest) = bytes.as_chunks::<4>();
+        if !rest.is_empty() {
+            return Err(crate::Error::InvalidArgument);
+        }
+        out.extend(quads.iter().map(|q| u32::from_le_bytes(*q)));
+    }
+    Ok(out)
+}
+
+/// Rebuilds a number from raw parts whose mantissa is given as 32-bit halves, least significant
+/// first (see [`word_halves`]). Each word takes `WORD_BIT_SIZE / 32` halves: a 64-bit word is
+/// `lo | hi << 32` (both halves, through little-endian bytes), a 32-bit word is one half. No half is dropped: a count that is not a whole
+/// number of words is an error. `parts.words` must be empty; every other field is passed through.
+///
+/// ## Errors
+///
+///  - InvalidArgument: `halves.len()` is not a multiple of `WORD_BIT_SIZE / 32`, or any
+///    [`ExactNum::from_raw_parts`] rejection.
+///  - MemoryAllocation: the mantissa could not be allocated.
+#[doc(hidden)]
+pub fn from_raw_halves(
+    halves: &[u32],
+    parts: &crate::RawParts<'_>,
+) -> Result<ExactNum, crate::Error> {
+    if !parts.words.is_empty() {
+        return Err(crate::Error::InvalidArgument);
+    }
+    let (chunks, rest) = halves.as_chunks::<HALVES_PER_WORD>();
+    if !rest.is_empty() {
+        return Err(crate::Error::InvalidArgument);
+    }
+    let mut words = alloc::vec::Vec::new();
+    words
+        .try_reserve_exact(chunks.len())
+        .map_err(|_| crate::Error::MemoryAllocation)?;
+    for chunk in chunks {
+        let mut bytes = [0u8; core::mem::size_of::<crate::Word>()];
+        let (quads, tail) = bytes.as_chunks_mut::<4>();
+        if !tail.is_empty() || quads.len() != chunk.len() {
+            return Err(crate::Error::InvalidArgument);
+        }
+        for (q, h) in quads.iter_mut().zip(chunk) {
+            *q = h.to_le_bytes();
+        }
+        words.push(crate::Word::from_le_bytes(bytes));
+    }
+    ExactNum::from_raw_parts(&crate::RawParts {
+        words: &words,
+        ..*parts
+    })
+}
+
 #[cfg(test)]
 mod tests {
 

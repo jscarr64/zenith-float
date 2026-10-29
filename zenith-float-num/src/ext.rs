@@ -8322,7 +8322,7 @@ mod full_prec_subnormal_tests {
 }
 
 /// What a [`RawParts`] describes.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RawKind {
     /// A non-zero finite value (normal, or subnormal at `EXPONENT_MIN`).
     Finite,
