@@ -1,6 +1,7 @@
 //! Reciprocal via Newton iteration.
 
 use crate::common::consts::ONE;
+use crate::common::util::round_p_rm;
 use crate::common::util::{bump_prec_retry, round_p};
 use crate::defs::{Error, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
@@ -19,7 +20,7 @@ impl ExactNumNumber {
     ///  - ExponentOverflow: the resulting exponent becomes greater than the maximum allowed value for the exponent.
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         if self.is_zero() {

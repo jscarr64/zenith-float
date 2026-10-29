@@ -1,6 +1,7 @@
 //! `e^x − 1` without cancellation for small `x`.
 
-use crate::common::util::{bump_prec_retry, round_p};
+use crate::common::util::bump_prec_retry;
+use crate::common::util::round_p_rm;
 use crate::defs::{Error, Sign, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
@@ -17,7 +18,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn expm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         if self.is_zero() {

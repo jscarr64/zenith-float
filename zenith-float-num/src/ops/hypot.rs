@@ -1,6 +1,5 @@
 //! Hypotenuse: `sqrt(x² + y²)` without intermediate overflow.
-
-use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::{Error, Exponent, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::{RoundingMode, Sign};
@@ -15,7 +14,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn hypot(&self, other: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         let mut ax = self.abs()?;

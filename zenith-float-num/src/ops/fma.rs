@@ -1,6 +1,7 @@
 //! Fused multiply-add: `a * b + c` with a single final rounding.
 
-use crate::common::util::{bump_prec_retry, round_p};
+use crate::common::util::bump_prec_retry;
+use crate::common::util::round_p_rm;
 use crate::defs::{Error, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
 use crate::num::ExactNumNumber;
 use crate::Exponent;
@@ -17,7 +18,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn fma(&self, b: &Self, c: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         if self.is_zero() || b.is_zero() {

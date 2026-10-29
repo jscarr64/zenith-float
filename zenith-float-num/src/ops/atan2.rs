@@ -1,6 +1,7 @@
 //! Two-argument arctangent.
 
-use crate::common::util::{bump_prec_retry, round_p};
+use crate::common::util::bump_prec_retry;
+use crate::common::util::round_p_rm;
 use crate::defs::{Error, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
@@ -23,7 +24,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         let y = self;

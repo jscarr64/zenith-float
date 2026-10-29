@@ -2,6 +2,7 @@
 
 use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::Error;
 use crate::defs::Exponent;
 use crate::defs::RoundingMode;
@@ -18,7 +19,7 @@ use alloc::vec::Vec;
 impl ExactNumNumber {
     /// Error function `erf(self)` at precision `p`.
     pub fn erf(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         if self.is_zero() {
@@ -48,7 +49,7 @@ impl ExactNumNumber {
 
     /// Complementary error function `erfc(self) = 1 - erf(self)` at precision `p`.
     pub fn erfc(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         // x ≥ 2^31: erfc(x) < e^{-x²} < 2^-(2^62·log₂e) lies below the whole subnormal grid.
@@ -251,7 +252,7 @@ impl ExactNumNumber {
 
     /// Gamma function `Γ(self)` at precision `p`.
     pub fn gamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         // Γ(±0) = ±Inf exactly, with the sign of the zero (MPFR).
@@ -308,7 +309,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if self.is_beta_pole() || b.is_beta_pole() {
             return Err(Error::InvalidArgument);
@@ -413,7 +414,7 @@ impl ExactNumNumber {
 
     /// `ln Γ(self)` for positive `self` at precision `p`.
     pub fn ln_gamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         // ln|Γ| has a pole at 0 (either sign): an exact +Inf in every mode.
@@ -482,7 +483,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         let one = Self::from_word(1, p)?;
@@ -788,7 +789,7 @@ impl ExactNumNumber {
     /// Digamma \(\psi(\mathrm{self})=\Gamma'/\Gamma\). Poles at non-positive integers.
     /// For \(z<0\) uses \(\psi(z)=\psi(1-z)-\pi\cot(\pi z)\).
     pub fn digamma(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if self.is_zero() || (!self.is_positive() && self.is_int()) {
             return Err(Error::InvalidArgument);
@@ -961,7 +962,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if !self.is_positive() || x.is_negative() {
             return Err(Error::InvalidArgument);
@@ -993,7 +994,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if !self.is_positive() || x.is_negative() {
             return Err(Error::InvalidArgument);
@@ -1051,7 +1052,7 @@ impl ExactNumNumber {
 
     /// Exponential integral `Ei(self)` (Cauchy PV for `self < 0`). `self = 0` is a pole.
     pub fn ei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if self.is_zero() {
             return Err(Error::InvalidArgument);
@@ -1158,7 +1159,7 @@ impl ExactNumNumber {
 
     /// Sine integral `Si(self)` for all real `self`.
     pub fn si(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if self.is_zero() {
             return Self::new2(p, self.sign(), self.inexact());
@@ -1238,7 +1239,7 @@ impl ExactNumNumber {
 
     /// Cosine integral `Ci(self)` for `self > 0`.
     pub fn ci(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if !self.is_positive() {
             return Err(Error::InvalidArgument);
@@ -1365,7 +1366,7 @@ impl ExactNumNumber {
 
     /// Logarithmic integral `li(self) = Ei(ln self)` for `self > 0`, `self ≠ 1`.
     pub fn li(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         let one = Self::from_word(1, p)?;
         if !self.is_positive() || self.cmp(&one) == 0 {
@@ -1402,7 +1403,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if self.is_zero() {
             return Self::new2(p, self.sign(), self.inexact());
@@ -1612,7 +1613,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         if self.is_zero() {
@@ -1780,7 +1781,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if let Some(n) = as_i32_exact(nu, p)? {
             let an = n.unsigned_abs() as usize;
@@ -1807,7 +1808,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if !self.is_positive() {
             return Err(Error::InvalidArgument);
@@ -1867,7 +1868,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if self.is_zero() {
             if nu.is_zero() {
@@ -1903,7 +1904,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if !self.is_positive() {
             return Err(Error::InvalidArgument);
@@ -2531,7 +2532,7 @@ impl ExactNumNumber {
     /// Complete elliptic \(K(m)\). Parameter \(m=k^2\). \(m=1\) is \(+\infty\);
     /// \(m>1\) uses \(K(m)=m^{-1/2}K(1/m)\).
     pub fn elliptic_k(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         let one = Self::from_word(1, p)?;
         if self.cmp(&one) == 0 {
@@ -2591,7 +2592,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         let one = Self::from_word(1, p)?;
         if self.cmp(&one) > 0 {
@@ -2642,7 +2643,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         let one = Self::from_word(1, p)?;
         if self.abs()?.cmp(&one) > 0 {
@@ -2719,7 +2720,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         let one = Self::from_word(1, p)?;
         if self.abs()?.cmp(&one) > 0 {
@@ -2800,7 +2801,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         let one = Self::from_word(1, p)?;
         if m.cmp(&one) >= 0 || self.cmp(&one) >= 0 {
@@ -2853,7 +2854,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         let one = Self::from_word(1, p)?;
         if x.abs()?.cmp(&one) > 0 {
@@ -3100,7 +3101,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if self.is_zero() {
             return Self::new2(p, Sign::Pos, self.inexact() | m.inexact());
@@ -3181,7 +3182,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if self.is_zero() {
             return Self::new2(p, Sign::Pos, self.inexact() | m.inexact());
@@ -3268,7 +3269,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         // Π(0; φ|m) = F(φ|m). Delegate so n = 0 is not a second rounding of
         // the Carlson value that F already rounds.
@@ -3305,7 +3306,7 @@ impl ExactNumNumber {
 
     /// Legendre \(P_n(\mathrm{self})\) for integer \(n\). Recurrence at \(p+O(n)\) bits.
     pub fn legendre_p(&self, n: u32, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         let one = Self::from_word(1, p)?;
         if self.cmp(&one) == 0 {
@@ -3367,7 +3368,7 @@ impl ExactNumNumber {
         p: usize,
         rm: RoundingMode,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         let am = m.unsigned_abs();
         if am > n {
@@ -3484,7 +3485,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if z.is_zero() || self.is_zero() || b.is_zero() {
             let mut one = Self::from_word(1, p)?;
@@ -3536,7 +3537,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if !self.is_positive() || !b.is_positive() {
             return Err(Error::InvalidArgument);

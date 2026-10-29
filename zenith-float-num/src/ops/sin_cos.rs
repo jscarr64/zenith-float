@@ -2,7 +2,7 @@
 
 use crate::common::consts::TRIG_EXP_THRES;
 use crate::common::util::bump_prec_retry;
-use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
@@ -24,7 +24,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<(Self, Self), Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         if self.is_zero() {
             let sin = Self::new2(p, self.sign(), self.inexact())?;

@@ -3,7 +3,8 @@
 //! Exponentiation.
 
 use crate::common::consts::{FOUR, THREE};
-use crate::common::util::{bump_prec_retry, calc_add_cost, calc_mul_cost, round_p};
+use crate::common::util::round_p_rm;
+use crate::common::util::{bump_prec_retry, calc_add_cost, calc_mul_cost};
 use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
 use crate::{
@@ -58,7 +59,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn exp(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         if self.is_zero() {
             let mut ret = Self::from_word(1, p)?;
@@ -224,7 +225,7 @@ impl ExactNumNumber {
         if n >= 0 {
             self.powi_internal(n.unsigned_abs(), p, rm, true, false)
         } else {
-            let p = round_p(p);
+            let p = round_p_rm(p, rm);
 
             if self.is_zero() {
                 return Err(Error::DivisionByZero);
@@ -312,7 +313,7 @@ impl ExactNumNumber {
         update_inexact: bool,
         zero_exp: bool,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         let mut i = n;
 
@@ -343,7 +344,7 @@ impl ExactNumNumber {
         }
         let bit_pos = bit_pos; // make immutable
 
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
@@ -423,7 +424,7 @@ impl ExactNumNumber {
         {
             return self.pow_exact_integer_underflow(mag, k * lead, p, rm);
         }
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         let mut square = self.clone()?;
         square.set_sign(Sign::Pos);
         let mut exp = mag;
@@ -544,7 +545,7 @@ impl ExactNumNumber {
         p: usize,
         rm: RoundingMode,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         // The mantissa alone, as an exact product by one (no copy of `self`).
         let mut square = self.mul_full_prec(&ExactNumNumber::small_const(1))?;
         square.set_sign(Sign::Pos);
@@ -919,7 +920,7 @@ impl ExactNumNumber {
 
         // actual pow : self^n = e^(n * ln(self))
 
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         let mut x = self.clone()?;
         let mut y = n.clone()?;

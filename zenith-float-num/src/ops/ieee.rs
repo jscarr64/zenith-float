@@ -1,6 +1,5 @@
 //! IEEE-style exponent decomposition without hardware floats.
-
-use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::{Error, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::{Exponent, RoundingMode, Sign};
@@ -18,7 +17,7 @@ impl ExactNumNumber {
 
     /// `self · 2^n` (same as `ldexp` / integer `scalb`).
     pub fn ldexp(mut self, n: Exponent, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if self.is_zero() {
             self.set_precision(p, rm)?;
@@ -53,7 +52,7 @@ impl ExactNumNumber {
 
     /// Binary `logb`: `floor(log2(|self|))` as an integer-valued float.
     pub fn logb(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         if self.is_zero() {
             return Err(Error::ExponentOverflow(crate::Sign::Neg));

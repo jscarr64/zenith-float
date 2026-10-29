@@ -11,7 +11,7 @@ use crate::common::util::calc_mul_cost;
 use crate::common::util::calc_sqrt_cost;
 use crate::common::util::count_leading_ones;
 use crate::common::util::count_leading_zeroes_skip_first;
-use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
@@ -119,7 +119,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the argument is zero or negative, or the precision is incorrect.
     ///  - MemoryAllocation: failed to allocate memory.
     pub fn ln(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         // factoring: ln(self) = ln(x * 2^n) = ln(x) + n*ln(2), 0.5 <= x < 1
         // reduction: ln(x) = 2*ln(sqrt(x))
@@ -253,7 +253,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the argument is zero or negative, or the precision is incorrect.
     ///  - MemoryAllocation: failed to allocate memory.
     pub fn log2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         // log2(self) = ln(x * 2^n) / ln(2) = ln(x) / ln(2) + n, 0.5 <= x < 1
 
@@ -342,7 +342,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the argument is zero or negative, or the precision is incorrect.
     ///  - MemoryAllocation: failed to allocate memory.
     pub fn log10(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         // ln(self) / ln(10)
 
@@ -405,7 +405,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         if self.is_zero() || self.is_negative() || n.is_zero() || n.is_negative() {
             return Err(Error::InvalidArgument);

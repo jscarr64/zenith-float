@@ -6,7 +6,7 @@ use crate::common::consts::ONE;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::count_leading_ones;
 use crate::common::util::invert_rm_for_sign;
-use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
@@ -24,7 +24,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: argument is greater than 1 or smaller than -1, or the precision is incorrect.
     ///  - MemoryAllocation: failed to allocate memory.
     pub fn asin(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         if self.is_zero() {
             return Self::new2(p, self.sign(), self.inexact());

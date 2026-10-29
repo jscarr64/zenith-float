@@ -1,6 +1,7 @@
 //! General n-th root computation.
 
-use crate::common::util::{bump_prec_retry, invert_rm_for_sign, round_p};
+use crate::common::util::round_p_rm;
+use crate::common::util::{bump_prec_retry, invert_rm_for_sign};
 use crate::ops::consts::Consts;
 use crate::{
     defs::{Error, WORD_BIT_SIZE},
@@ -17,7 +18,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: `n` is 0, or an even root of a negative number, or the precision is incorrect.
     ///  - MemoryAllocation: failed to allocate memory.
     pub fn nth_root(&self, n: usize, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         if n == 0 {

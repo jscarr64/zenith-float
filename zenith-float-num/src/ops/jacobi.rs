@@ -1,5 +1,6 @@
 //! Jacobi elliptic functions. Parameter \(m=k^2\). Real \(m\in[0,1]\).
 
+use crate::common::util::round_p_rm;
 use alloc::vec::Vec;
 
 use crate::common::util::bump_prec_retry;
@@ -191,7 +192,7 @@ impl ExactNumNumber {
     where
         F: Fn(Self, Self, Self, Self, usize) -> Result<Self, Error>,
     {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         jacobi_m_in_unit(m, p)?;
         let mut p_inc = WORD_BIT_SIZE;

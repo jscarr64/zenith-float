@@ -8,6 +8,7 @@ mod pi;
 
 use crate::common::buf::WordBuf;
 use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::mantissa::Mantissa;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::e::ECache;
@@ -166,7 +167,7 @@ impl Consts {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - InvalidArgument: the precision is incorrect.
     pub(crate) fn pi_num(&mut self, p: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         self.pi.for_prec(p, rm)
     }
 
@@ -178,7 +179,7 @@ impl Consts {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - InvalidArgument: the precision is incorrect.
     pub(crate) fn e_num(&mut self, p: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         self.e.for_prec(p, rm)
     }
 
@@ -190,7 +191,7 @@ impl Consts {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - InvalidArgument: the precision is incorrect.
     pub(crate) fn ln_2_num(&mut self, p: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         self.ln2.for_prec(p, rm)
     }
 
@@ -206,7 +207,7 @@ impl Consts {
         p: usize,
         rm: RoundingMode,
     ) -> Result<ExactNumNumber, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         self.ln10.for_prec(p, rm)
     }
 
