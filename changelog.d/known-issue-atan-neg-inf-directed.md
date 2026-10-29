@@ -1,1 +1,0 @@
-- Known issue: `atan(-Inf)` under `Up`/`Down` rounds the magnitude of π/2 before negating it, so the result is rounded the wrong way on every target; pinned as-is in `trig_hyperbolic_grid_digest` (host and i686) and listed under Known issues in the README.
