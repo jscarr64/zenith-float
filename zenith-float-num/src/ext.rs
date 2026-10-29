@@ -7047,7 +7047,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * 9 * 6);
         println!("square grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        #[cfg(target_pointer_width = "64")]
+        let want = 17_269_539_713_433_390_012;
+        #[cfg(target_pointer_width = "32")]
+        let want = 18_336_218_928_814_008_965;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -7074,7 +7078,11 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, PAIR_OPERANDS * 9 * 6);
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        #[cfg(target_pointer_width = "64")]
+        let want = 17_269_539_713_433_390_012;
+        #[cfg(target_pointer_width = "32")]
+        let want = 18_336_218_928_814_008_965;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
