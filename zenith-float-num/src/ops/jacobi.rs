@@ -218,13 +218,13 @@ impl ExactNumNumber {
         p: usize,
         cc: &mut Consts,
     ) -> Result<(Self, Self, Self, Self), Error> {
-        let zero = Self::new2(p, Sign::Pos, false)?;
         let one = Self::from_word(1, p)?;
         if self.is_zero() {
             // rebuilt from the literals, one owner each
+            // am, sn (and so sc, sd) are odd: u = -0 gives -0.
             return Ok((
-                zero,
-                Self::new2(p, Sign::Pos, false)?,
+                Self::new2(p, self.sign(), false)?,
+                Self::new2(p, self.sign(), false)?,
                 Self::from_word(1, p)?,
                 one,
             ));
