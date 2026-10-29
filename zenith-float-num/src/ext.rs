@@ -6954,7 +6954,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
         println!("complex mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_266_967_239_943_518_429);
+        #[cfg(target_pointer_width = "64")]
+        let want = 11_266_967_239_943_518_429;
+        #[cfg(target_pointer_width = "32")]
+        let want = 6_964_102_913_802_569_992;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
