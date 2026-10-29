@@ -59,7 +59,9 @@ fn format_uint_radix(val: u64, rdx: Radix, out: &mut String) -> Result<(), Error
     }
     digits.reverse();
     for d in digits {
-        let ch = *DIGIT_CHARS.get(usize::from(d)).ok_or(Error::InvalidArgument)?;
+        let ch = *DIGIT_CHARS
+            .get(usize::from(d))
+            .ok_or(Error::InvalidArgument)?;
         out.push(ch);
     }
     Ok(())
@@ -206,11 +208,8 @@ impl ExactNumNumber {
             }
 
             if e < 1 {
-                let val = if self.is_subnormal() {
-                    e.unsigned_abs()
-                } else {
-                    (e - 1).unsigned_abs()
-                };
+                let val =
+                    if self.is_subnormal() { e.unsigned_abs() } else { (e - 1).unsigned_abs() };
 
                 mstr.push('e');
                 mstr.push('-');
@@ -324,7 +323,8 @@ mod tests {
             let n_seed = random::<u64>();
             let n = build_n(n_seed)?;
 
-            let skip_dec = usize::try_from(n.exponent().unsigned_abs()).map_or(true, |m| m > MAX_DEC_SCALE);
+            let skip_dec =
+                usize::try_from(n.exponent().unsigned_abs()).map_or(true, |m| m > MAX_DEC_SCALE);
 
             for rdx in [Radix::Bin, Radix::Oct, Radix::Hex] {
                 let rm = match random::<u8>() % 7 {
