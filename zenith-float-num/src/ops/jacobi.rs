@@ -544,4 +544,25 @@ mod tests {
     fn four_word(p: usize) -> Result<ExactNumNumber, crate::Error> {
         ExactNumNumber::from_word(4, p)
     }
+
+    #[test]
+    fn jacobi_am_keeps_the_period_shift() -> Result<(), crate::Error> {
+        // am(u+4K|m) = am(u|m) + 2π: a reduced argument has to carry its 2π multiples back.
+        // References are mpmath (300 bits) rounded to 58 fraction bits.
+        let p = 128;
+        let mut cc = Consts::new()?;
+        let rm = RoundingMode::ToEven;
+        let mut half = ExactNumNumber::from_word(1, p)?;
+        half.div_by_2(RoundingMode::None);
+        for (u, want) in [(7u64, 1_692_682_540_694_109_664u64), (21, 5_107_261_711_036_431_119)] {
+            let want =
+                ExactNumNumber::from_u64_internal(want, p)?.ldexp(-58, p, RoundingMode::None)?;
+            let pos = ExactNumNumber::from_u64_internal(u, p)?;
+            let am = pos.jacobi_am(&half, p, rm, &mut cc)?;
+            bits_agree(&am, &want, p, 50, "am(u|1/2)")?;
+            let am_neg = pos.neg()?.jacobi_am(&half, p, rm, &mut cc)?;
+            bits_agree(&am_neg, &want.neg()?, p, 50, "am(-u|1/2)")?;
+        }
+        Ok(())
+    }
 }
