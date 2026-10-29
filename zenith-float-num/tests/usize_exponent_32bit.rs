@@ -110,3 +110,19 @@ fn format_subnormal_exponent() -> Result<(), String> {
     assert_eq!(back, EXPONENT_MIN.unsigned_abs(), "{s}");
     Ok(())
 }
+
+/// Full cancellation to an exact zero (exponent 0) of operands at `2^(2^40)`: the cancelled-bit count
+/// `|e1 - e3| + 1 = 2^40 + 2` does not fit a 32-bit `usize`, so it must saturate rather than overflow.
+#[test]
+fn cancel_bits_zero_result_far_exponent() -> Result<(), String> {
+    use zenith_float_num::{macro_util::complex_cancel_bits, ExactComplex};
+    let k = 1i64 << 40;
+    let mut a = ExactComplex::new(pow2(k), ExactNum::new(P));
+    a.set_inexact(true);
+    let b = ExactComplex::new(pow2(k).neg(), ExactNum::new(P));
+    let ret = ExactComplex::new(ExactNum::new(P), ExactNum::new(P));
+    assert_eq!(ret.re().exponent(), Some(0), "zero result exponent");
+    let want = usize::try_from(k + 2).map_or(usize::MAX, |v| v);
+    assert_eq!(complex_cancel_bits(&a, &b, &ret, true), (Some(want), None));
+    Ok(())
+}
