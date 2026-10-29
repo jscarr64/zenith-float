@@ -1,0 +1,43 @@
+//! Exponents past `usize` on a 32-bit target (`i686-unknown-linux-musl`): an i64 exponent, or an integer
+//! derived from one, must not be truncated or saturated through `usize`. Every row also runs on the host,
+//! where it already holds. Exact models: powers of two, and the binary/decimal exponents of `10^N` and
+//! `2^K` from `bc -l` at scale 80 (`floor(5e9 * log2 10) = 16609640474`,
+//! `floor(2^40 * log10 2) = 330985980541`).
+
+use std::ops::Neg;
+use zenith_float_num::{ExactNum, RoundingMode};
+
+const P: usize = 64;
+
+/// `2^k` exactly: 1 = 0.5 * 2^1, so the zf exponent is `k + 1`.
+fn pow2(k: i64) -> ExactNum {
+    ExactNum::from_u8(1, P).ldexp(k, P, RoundingMode::None)
+}
+
+#[test]
+fn powsi_positive_beyond_u32() {
+    let two = ExactNum::from_u8(2, P);
+    for k in [(1i64 << 32) + 1, (1i64 << 33) + 5, 1i64 << 40] {
+        let r = two.powsi(k, P, RoundingMode::Down);
+        assert_eq!(r.exponent(), Some(k + 1), "2^{k} exponent");
+        assert!(!r.inexact(), "2^{k} is exact");
+        assert!(r == pow2(k), "2^{k}");
+    }
+    let m2 = ExactNum::from_u8(2, P).neg();
+    assert!(!m2.powsi(1i64 << 32, P, RoundingMode::Down).is_negative(), "(-2)^(2^32) > 0");
+    assert!(m2.powsi((1i64 << 32) + 1, P, RoundingMode::Down).is_negative(), "(-2)^(2^32+1) < 0");
+}
+
+#[test]
+fn powsi_negative_beyond_u32() {
+    let two = ExactNum::from_u8(2, P);
+    for k in [(1i64 << 32) + 2, (1i64 << 33) + 6, 1i64 << 40] {
+        let r = two.powsi(-k, P, RoundingMode::Down);
+        assert_eq!(r.exponent(), Some(1 - k), "2^-{k} exponent");
+        assert!(r == pow2(-k), "2^-{k}");
+    }
+    let m2 = ExactNum::from_u8(2, P).neg();
+    assert!(!m2.powsi(-(1i64 << 32), P, RoundingMode::Down).is_negative(), "(-2)^-(2^32) > 0");
+    assert!(m2.powsi(-((1i64 << 32) + 1), P, RoundingMode::Down).is_negative(), "(-2)^-(2^32+1) < 0");
+}
+
