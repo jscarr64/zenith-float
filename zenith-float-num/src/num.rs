@@ -1395,32 +1395,6 @@ impl ExactNumNumber {
         }
     }
 
-    /// The integer part of `|self|` as a `u64` on every word size (`int_as_usize` stops at 32
-    /// bits on a 32-bit target). `InvalidArgument` past `u64::MAX`.
-    pub(super) fn int_as_u64(&self) -> Result<u64, Error> {
-        if self.e <= 0 {
-            return Ok(0);
-        }
-        let e = u32::try_from(self.e).map_err(|_| Error::InvalidArgument)?;
-        if e > u64::BITS {
-            return Err(Error::InvalidArgument);
-        }
-        let mut acc: u128 = 0;
-        let mut taken: u32 = 0;
-        for w in self.m.digits().iter().rev() {
-            if taken >= u64::BITS {
-                break;
-            }
-            acc = (acc << Word::BITS) | u128::from(*w);
-            taken += Word::BITS;
-        }
-        // A mantissa narrower than the integer part (one 32-bit word, exponent 33..64): the
-        // low bits are zeros. `acc` has at most 64 bits and `e - taken < 64`, so the u128 shift
-        // is exact and `try_from` catches anything past `u64::MAX`.
-        let wide = if taken < e { acc << (e - taken) } else { acc >> (taken - e) };
-        u64::try_from(wide).map_err(|_| Error::InvalidArgument)
-    }
-
     /// Returns integer part of a number as built-in integer.
     pub(super) fn int_as_usize(&self) -> Result<usize, Error> {
         if self.e > 0 {
