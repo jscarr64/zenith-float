@@ -181,12 +181,28 @@ impl ExactNumNumber {
                 e
             }
         })?;
-        // `e^int` from `e` at `p_work` bits has relative error `int 2^-p_work`: carry the bit length of `int` too.
+        // Error bound (relative; `q = p`, and `exp` checks `q - 2` correct bits with
+        // `ret.try_set_precision(p, rm, p_wrk)` where its `p_x = p_wrk + 2` is our `q`):
+        //  - `e` cached at `p_work` bits, `<= 2^-p_work`, gives `e^int` an error `< int 2^-p_work
+        //    < 2^-(q + 4)`, as `int < 2^int_bits` and `p_work = q + 4 + int_bits`.
+        //  - The ~`2 int_bits` roundings of the squarings and products cost nothing here:
+        //    `powi_internal` runs its own Ziv loop (`let p_x = p_wrk + bit_pos * 2;`, with
+        //    `p_wrk = p.max(..) + p_inc >= p_work + WORD_BIT_SIZE` and `bit_pos = int_bits - 1`), so
+        //    `2 int_bits + WORD_BIT_SIZE - 2` guard bits cover the `ceil(log2(2 int_bits)) + 1`
+        //    those roundings need, and it hands back `e_const^int` correct to `p_work` bits (its
+        //    `ret.try_set_precision(p, rm, p_wrk)`): a further `<= 2^-p_work < 2^-(q + 4)`.
+        //  - `fract` truncated to `p_work` bits (absolute `< 2^-p_work`, as `fract < 1`) and `expf`
+        //    at `p_work` bits (a few ulps): `e^fract` within `8 * 2^-p_work <= 2^-(q + 1)`.
+        //  - The product at `q` bits: `< 2^-(q - 1)`.
+        // Sum `< 2^-(q + 3) + 2^-(q + 1) + 2^-(q - 1) < 2^-(q - 2)`: the claim holds with
+        // `p_work = p + 4 + int_bits`, so no extra guard bits are added.
         let int_bits = usize::try_from(u64::BITS - int.leading_zeros()).unwrap_or(64);
         let p_work = p + 4 + int_bits;
         let e_int = if int > 0 {
             let e_const = cc.e_num(p_work, RoundingMode::None)?;
 
+            // `update_inexact = true`: the result carries `e_const`'s inexact flag (it is rounded).
+            // `zero_exp = false`: powers `e` with its own exponent; no caller-side `2^(n e)` scale.
             e_const.powi_internal(int, p_work, RoundingMode::None, true, false)
         } else {
             Ok(ExactNumNumber::small_const(1))
