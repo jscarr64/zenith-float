@@ -85,10 +85,15 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
                         0
                     } else {
                         let n = compute_added_err_near_one(base, emin);
-                        if earg as usize > emin.unsigned_abs() as usize + EXPONENT_BIT_SIZE {
-                            0
-                        } else {
-                            n.min(earg as usize)
+                        // In u64: `emin` is near -2^62, which does not fit a 32-bit `usize`.
+                        let lim = u64::try_from(EXPONENT_BIT_SIZE)
+                            .ok()
+                            .and_then(|b| emin.unsigned_abs().checked_add(b));
+                        match lim {
+                            Some(l) if earg.unsigned_abs() <= l => {
+                                usize::try_from(earg).map_or(n, |e| n.min(e))
+                            }
+                            _ => 0,
                         }
                     };
                     5 + v + EXPONENT_BIT_SIZE
