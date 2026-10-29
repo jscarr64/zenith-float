@@ -283,7 +283,13 @@ fn part_cancel(
         return Ok(None);
     };
     let opp = if is_add { s1 != s2 } else { s1 == s2 };
-    if (e1 - e2).abs() <= 1 && opp {
+    // Exponents are bounded to +/-(2^62 - 1), so the gap cannot overflow; a failure is still an error, never a wrap.
+    let near = e1
+        .checked_sub(e2)
+        .and_then(Exponent::checked_abs)
+        .ok_or(crate::Error::InvalidArgument)?
+        <= 1;
+    if near && opp {
         // A zero result has exponent 0, so the gap can exceed a 32-bit `usize`: that is an error.
         e1.max(e2)
             .checked_sub(e3)
@@ -954,7 +960,10 @@ mod tests {
         let r = ExactNum::from_u8(0, crate::WORD_BIT_SIZE);
         assert_eq!(part_cancel(&hi, &lo, &r, true), Ok(None));
         assert_eq!(part_cancel(&lo, &hi, &r, true), Ok(None));
-        assert_eq!(part_cancel(&hi, &mk(crate::EXPONENT_MIN, false)?, &r, false), Ok(None));
+        assert_eq!(
+            part_cancel(&hi, &mk(crate::EXPONENT_MIN, false)?, &r, false),
+            Ok(None)
+        );
         Ok(())
     }
 
