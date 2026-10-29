@@ -388,10 +388,17 @@ impl ExactNumNumber {
 
         // error estimation
         let mut err = 0;
-        let npowmax = crate::common::util::abs_usize(n) / TEN_PWR_MAX_FROM_DEC;
-        let tenpowrem = crate::common::util::abs_usize(n) % TEN_PWR_MAX_FROM_DEC;
+        // |n| in u64: a 32-bit `usize` would saturate an i64 decimal exponent. The remainder is below the
+        // chunk, which is a `usize`, so its conversion back cannot fail.
+        let n_abs = n.unsigned_abs();
+        let chunk = u64::try_from(TEN_PWR_MAX_FROM_DEC).map_err(|_| Error::InvalidArgument)?;
+        let npowmax = n_abs / chunk;
+        let tenpowrem = usize::try_from(n_abs % chunk).map_err(|_| Error::InvalidArgument)?;
         if npowmax != 0 {
-            err += 3 * npowmax;
+            err += usize::try_from(npowmax)
+                .ok()
+                .and_then(|q| q.checked_mul(3))
+                .ok_or(Error::ExponentOverflow(sign))?;
         }
         if tenpowrem != 0 {
             err += 3;
@@ -518,23 +525,27 @@ impl ExactNumNumber {
 
             let mut err_acc = 0;
 
-            let mut pwr = crate::common::util::abs_usize(n_wrk);
-            if pwr > TEN_PWR_MAX_TO_DEC {
+            // |n_wrk| in u64: a 32-bit `usize` would saturate it. What is left after the chunk loop is at most
+            // the chunk, a `usize`, so its conversion back cannot fail.
+            let chunk = u64::try_from(TEN_PWR_MAX_TO_DEC).map_err(|_| Error::InvalidArgument)?;
+            let mut pwr = n_wrk.unsigned_abs();
+            if pwr > chunk {
                 let tp = TEN.powi(TEN_PWR_MAX_TO_DEC, p_wrk, RoundingMode::None)?;
                 err_acc += 1;
 
-                while pwr > TEN_PWR_MAX_TO_DEC {
+                while pwr > chunk {
                     if n_wrk < 0 {
                         x = x.div(&tp, p_wrk, RoundingMode::None)?;
                     } else {
                         x = x.mul(&tp, p_wrk, RoundingMode::None)?;
                     }
                     err_acc += 2;
-                    pwr -= TEN_PWR_MAX_TO_DEC;
+                    pwr -= chunk;
                 }
             }
 
             if pwr != 0 {
+                let pwr = usize::try_from(pwr).map_err(|_| Error::InvalidArgument)?;
                 let tp = TEN.powi(pwr, p_wrk, RoundingMode::None)?;
                 if n_wrk < 0 {
                     x = x.div(&tp, p_wrk, RoundingMode::None)?;

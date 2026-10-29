@@ -43,8 +43,9 @@ fn decimal_digit_mode(rm: RoundingMode, positive: bool) -> RoundingMode {
     }
 }
 
-fn format_uint_radix(val: usize, rdx: Radix, out: &mut String) -> Result<(), Error> {
-    let base = rdx.value() as usize;
+/// `val` is a `u64` so a 32-bit `usize` cannot truncate or saturate an i64 exponent magnitude.
+fn format_uint_radix(val: u64, rdx: Radix, out: &mut String) -> Result<(), Error> {
+    let base = u64::from(rdx.value());
     if val == 0 {
         out.push('0');
         return Ok(());
@@ -53,12 +54,15 @@ fn format_uint_radix(val: usize, rdx: Radix, out: &mut String) -> Result<(), Err
     let mut digits = Vec::new();
     digits.try_reserve_exact(32)?;
     while v > 0 {
-        digits.push((v % base) as u8);
+        digits.push(u8::try_from(v % base).map_err(|_| Error::InvalidArgument)?);
         v /= base;
     }
     digits.reverse();
     for d in digits {
-        out.push(DIGIT_CHARS[d as usize]);
+        let ch = *DIGIT_CHARS
+            .get(usize::from(d))
+            .ok_or(Error::InvalidArgument)?;
+        out.push(ch);
     }
     Ok(())
 }
@@ -204,11 +208,8 @@ impl ExactNumNumber {
             }
 
             if e < 1 {
-                let val = if self.is_subnormal() {
-                    e.unsigned_abs() as usize
-                } else {
-                    crate::common::util::abs_usize(e - 1)
-                };
+                let val =
+                    if self.is_subnormal() { e.unsigned_abs() } else { (e - 1).unsigned_abs() };
 
                 mstr.push('e');
                 mstr.push('-');
@@ -216,7 +217,7 @@ impl ExactNumNumber {
             } else {
                 mstr.push('e');
                 mstr.push('+');
-                format_uint_radix((e - 1) as usize, rdx, &mut mstr)?;
+                format_uint_radix((e - 1).unsigned_abs(), rdx, &mut mstr)?;
             };
         }
 
@@ -322,7 +323,8 @@ mod tests {
             let n_seed = random::<u64>();
             let n = build_n(n_seed)?;
 
-            let skip_dec = n.exponent().unsigned_abs() as usize > MAX_DEC_SCALE;
+            let skip_dec =
+                usize::try_from(n.exponent().unsigned_abs()).map_or(true, |m| m > MAX_DEC_SCALE);
 
             for rdx in [Radix::Bin, Radix::Oct, Radix::Hex] {
                 let rm = match random::<u8>() % 7 {

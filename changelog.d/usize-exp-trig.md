@@ -1,0 +1,1 @@
+- Trig argument reduction: the extra pi precision converts the exponent with `usize::try_from` and saturates to the 2^16 cap, so on 32-bit targets an exponent beyond `u32` no longer truncates (e.g. `2^32 + 5` gave 5 extra bits). No change on 64-bit.

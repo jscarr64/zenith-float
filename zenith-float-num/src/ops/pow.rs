@@ -8,7 +8,7 @@ use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
 use crate::{
     common::consts::ONE,
-    defs::{Error, Word, WORD_BIT_SIZE, WORD_SIGNIFICANT_BIT},
+    defs::{Error, Word, WORD_BIT_SIZE},
     num::ExactNumNumber,
     RoundingMode, Sign,
 };
@@ -18,6 +18,12 @@ use crate::{Exponent, EXPONENT_MAX, EXPONENT_MIN};
 use alloc::vec::Vec;
 
 use super::series::{series_cost_optimize, series_run, ArgReductionEstimator, FactPolycoeffGen};
+
+/// Bits of the `powi_internal` exponent integer: a `u64` on every target, so a 32-bit `usize` cannot
+/// truncate an i64 power (`powsi`).
+const POWI_EXP_BITS: usize = 64;
+/// The top bit of the `powi_internal` exponent integer.
+const POWI_EXP_TOP: u64 = 1 << 63;
 
 struct SinhArgReductionEstimator {}
 
@@ -214,7 +220,7 @@ impl ExactNumNumber {
     ///  - DivisionByZero: `self` is zero and `n` is negative.
     pub fn powsi(&self, n: i64, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         if n >= 0 {
-            self.powi_internal(n as usize, p, rm, true, false)
+            self.powi_internal(n.unsigned_abs(), p, rm, true, false)
         } else {
             let p = round_p(p);
 
@@ -226,7 +232,7 @@ impl ExactNumNumber {
                 return ONE.div(self, p, rm);
             }
 
-            let k = crate::common::util::abs_usize(n);
+            let k = n.unsigned_abs();
             if self.is_subnormal() {
                 // |x| < 2^EMIN and k >= 2: |x|^-k > 2^(2 * (2^62 - 1)), past the largest finite value.
                 let neg = self.is_negative() && k & 1 == 1;
@@ -239,7 +245,7 @@ impl ExactNumNumber {
             // x = x0 * 2^ex with x0 in [1/2, 1): x^-k = (1 / x0^k) * 2^(-k * ex). x0^k and its reciprocal
             // stay in range, the scale is applied once at the end, so x^k may overflow or underflow freely.
             let ex = i128::from(self.exponent());
-            let k_wide = i128::try_from(k).map_err(|_| Error::InvalidArgument)?;
+            let k_wide = i128::from(k);
             let scale = -(k_wide * ex);
             let q = p + WORD_BIT_SIZE;
 
@@ -282,12 +288,18 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn powi(&self, n: usize, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        self.powi_internal(n, p, rm, true, false)
+        self.powi_internal(
+            u64::try_from(n).map_err(|_| Error::InvalidArgument)?,
+            p,
+            rm,
+            true,
+            false,
+        )
     }
 
     fn powi_internal(
         &self,
-        n: usize,
+        n: u64,
         p: usize,
         rm: RoundingMode,
         update_inexact: bool,
@@ -311,9 +323,9 @@ impl ExactNumNumber {
             return Ok(ret);
         }
 
-        let mut bit_pos = WORD_BIT_SIZE;
+        let mut bit_pos = POWI_EXP_BITS;
         while bit_pos > 0 {
-            if i & WORD_SIGNIFICANT_BIT as usize != 0 {
+            if i & POWI_EXP_TOP != 0 {
                 bit_pos -= 1;
                 i <<= 1;
                 break;
@@ -585,7 +597,7 @@ impl ExactNumNumber {
         arg: &Self,
         mut x: Self,
         mut bp: usize,
-        mut j: usize,
+        mut j: u64,
         p_x: usize,
     ) -> Result<Self, Error> {
         const W: usize = 4;
@@ -594,7 +606,7 @@ impl ExactNumNumber {
             while bp > 0 {
                 bp -= 1;
                 x = x.mul(&x, p_x, rm)?;
-                if j & WORD_SIGNIFICANT_BIT as usize != 0 {
+                if j & POWI_EXP_TOP != 0 {
                     x = x.mul(arg, p_x, rm)?;
                 }
                 j <<= 1;
@@ -616,7 +628,7 @@ impl ExactNumNumber {
         odd.push(cur);
 
         while bp > 0 {
-            if j & WORD_SIGNIFICANT_BIT as usize == 0 {
+            if j & POWI_EXP_TOP == 0 {
                 x = x.mul(&x, p_x, rm)?;
                 bp -= 1;
                 j <<= 1;
@@ -627,7 +639,7 @@ impl ExactNumNumber {
             let mut w = 0usize;
             for _ in 0..take {
                 w <<= 1;
-                if tmp & WORD_SIGNIFICANT_BIT as usize != 0 {
+                if tmp & POWI_EXP_TOP != 0 {
                     w |= 1;
                 }
                 tmp <<= 1;

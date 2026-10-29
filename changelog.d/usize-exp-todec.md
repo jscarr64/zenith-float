@@ -1,0 +1,1 @@
+- Decimal output: the decimal power `|n_wrk|` is reduced by chunks in `u64`, so on 32-bit targets a value with a decimal exponent beyond `u32` no longer saturates (and no longer spins on `powi(usize::MAX)`). No change on 64-bit.

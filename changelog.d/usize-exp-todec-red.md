@@ -1,0 +1,1 @@
+- Red test: `convert_to_radix(Dec)` of `2^(±2^40)` on 32-bit (decimal power saturated through `abs_usize`).
