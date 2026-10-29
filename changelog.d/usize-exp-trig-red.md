@@ -1,0 +1,1 @@
+- Red test: the pi precision for reducing a trig argument with exponent `2^32 + 5` on 32-bit (truncated `as usize` gives 5, not the 2^16 cap). The computation is moved unchanged into `trig_reduce_extra`.
