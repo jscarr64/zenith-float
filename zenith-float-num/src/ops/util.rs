@@ -90,7 +90,8 @@ pub(super) use compute_small_exp;
 
 /// Extra bits of pi for reducing an argument with exponent `e` (`e > 2`), capped at 2^16.
 fn trig_reduce_extra(e: crate::Exponent) -> usize {
-    (e as usize).min(1 << 16)
+    // `e > 2`; an exponent past `usize` saturates to the cap instead of truncating on 32-bit.
+    usize::try_from(e).map_or(1 << 16, |x| x.min(1 << 16))
 }
 
 #[cfg(test)]
