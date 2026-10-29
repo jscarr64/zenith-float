@@ -1410,6 +1410,26 @@ impl ExactNumNumber {
         }
     }
 
+    /// Integer part of `self` as a `u64` on every target: the top 64 mantissa bits, read as bytes
+    /// from the most significant word down, shifted to the binary point.
+    pub(super) fn int_as_u64(&self) -> Result<u64, Error> {
+        if self.e <= 0 {
+            return Ok(0);
+        }
+        let e = u32::try_from(self.e)
+            .ok()
+            .filter(|e| *e <= u64::BITS)
+            .ok_or(Error::InvalidArgument)?;
+        let mut buf = [0u8; 8];
+        let bytes = self.m.digits().iter().rev().flat_map(|w| w.to_be_bytes());
+        for (dst, src) in buf.iter_mut().zip(bytes) {
+            *dst = src;
+        }
+        u64::from_be_bytes(buf)
+            .checked_shr(u64::BITS - e)
+            .ok_or(Error::InvalidArgument)
+    }
+
     /// Sets the exponent of `self`.
     /// Note that if `self` is subnormal, the exponent may not change, but the mantissa will shift instead.
     /// `e` will be clamped to the range from EXPONENT_MIN to EXPONENT_MAX if it's outside of the range.

@@ -170,14 +170,14 @@ impl ExactNumNumber {
     fn exp_positive_arg(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         debug_assert!(!self.is_zero());
 
-        if self.exponent() > WORD_BIT_SIZE as i64 {
+        if self.exponent() > Exponent::from(u64::BITS) {
             return Err(Error::ExponentOverflow(self.sign()));
         }
 
         let p_work = p + 4;
 
         // compute separately for int and fract parts, then combine the results.
-        let int = self.int_as_usize().map_err(|e| {
+        let int = self.int_as_u64().map_err(|e| {
             if matches!(e, Error::InvalidArgument) {
                 Error::ExponentOverflow(Sign::Pos)
             } else {
@@ -187,13 +187,13 @@ impl ExactNumNumber {
         let e_int = if int > 0 {
             let e_const = cc.e_num(p_work, RoundingMode::None)?;
 
-            e_const.powi(int, p_work, RoundingMode::None)
+            e_const.powi_internal(int, p_work, RoundingMode::None, true, false)
         } else {
             Ok(ExactNumNumber::small_const(1))
         }?;
 
         // |fract(self)| = |self| - int, computed from the integer part found above.
-        let int_num = Self::from_usize(int)?;
+        let int_num = Self::from_u64_internal(int, 64)?;
         let mut fract = if self.is_negative() {
             self.add_full_prec(&int_num)
         } else {
