@@ -8021,7 +8021,11 @@ mod grid_digest_tests {
         // Re-recorded for `nth_root` of a negative number with `Up`/`Down` (swapped for odd n >= 5; old value
         // 1_369_146_293_907_659_395): only the n = 5 and 7 entries of negative operands in those modes differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
-        assert_eq!(h.finish(), 2_411_520_695_892_384_189);
+        #[cfg(target_pointer_width = "64")]
+        let want = 2_411_520_695_892_384_189;
+        #[cfg(target_pointer_width = "32")]
+        let want = 2_097_062_068_096_730_454;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
