@@ -157,7 +157,7 @@ Regression baselines live in `doc/bench-baselines.tsv` (tab-separated). `REGRESS
 Cross-library comparison (bigfloat-bench compatible workloads, TSV output):
 
 ```bash
-./scripts/compare-bench.sh --quick    # zenith vs astro @ 132 bits, core tasks → doc/compare-results.tsv
+./scripts/compare-bench.sh --quick    # zenith vs astro @ 132 bits, core tasks → $CARGO_TARGET_DIR/compare-results.tsv (tools/regen_compare_results.sh updates doc/)
 ./scripts/compare-bench.sh --full       # 132 / 1000 / 10000 bits, full task matrix
 ./scripts/compare-bench.sh --dashu    # include dashu-float (FBig)
 ```

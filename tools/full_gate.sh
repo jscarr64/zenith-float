@@ -66,6 +66,7 @@ run() {
   grep -E '^ *Running .*\(/[^)]*\)$|^test result: ' "$T/$tag-$name.log" || true
 }
 ORACLES="--test oracle --test specials_oracle --test methods_oracle --test accuracy_table --test elliptic_phi"
+git status --porcelain > "$T/$tag.pre-status"
 run target-dir "tools/fresh_test_run_selftest.sh && tools/fresh_test_run.sh --claim"
 # goldens pinned by SHA256SUMS next to them (fails closed: missing/empty sums, unlisted golden, drift)
 run golden-sums "tools/golden_sums_selftest.sh && tools/golden_sums_check.sh zenith-float-num/tests/oracle/goldens borrow_ops.jsonl"
@@ -94,7 +95,10 @@ run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
 run hex-32bit "bash scripts/ci_hex_32bit.sh"
 run unsafe-scan "bash tools/gate_unsafe_scan.sh"
-run prepublish "bash scripts/zenith_prepublish.sh"
+# compare-bench output goes to the run log dir, never the tracked doc/compare-results.tsv
+run prepublish "COMPARE_OUT=$T/compare-results.tsv bash scripts/zenith_prepublish.sh"
+# the gate must leave the worktree as it found it: compare against the status taken before the first step
+run tree-clean "git status --porcelain | diff -u $T/$tag.pre-status - && echo 'tree unchanged'"
 for want in ${GATE_STEPS:+${GATE_STEPS//,/ }}; do [[ " ${ran[*]} " == *" $want "* ]] || { failed+=("GATE_STEPS:unknown-step:$want"); POPLOG_OVERALL=1; }; done
 # GATE_STEPS set but matching no step (e.g. "," or " "): nothing ran, which is a FAIL, never a PASS
 if [[ -n ${GATE_STEPS:-} && ${#ran[@]} -eq 0 ]]; then failed+=("GATE_STEPS='$GATE_STEPS': no step matched"); POPLOG_OVERALL=1; fi

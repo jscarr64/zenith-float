@@ -32,7 +32,7 @@ Tab-separated logs (no JSON):
 | File | Source |
 | ------ | -------- |
 | `doc/bench-baselines.tsv` | Criterion ids from `scripts/bench.sh` / `scripts/bench-compare.sh` |
-| `doc/compare-results.tsv` | `scripts/compare-bench.sh` vs astro-float (132-bit core ops) |
+| `doc/compare-results.tsv` | `tools/regen_compare_results.sh` (`scripts/compare-bench.sh`) vs astro-float (132-bit core ops) |
 
 Re-run `./scripts/compare-bench.sh --quick` before a crates.io publish to refresh the compare table. Dashu is optional (`--dashu`).
 

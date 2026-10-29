@@ -7,14 +7,15 @@
 # Full matrix (132 / 1000 / 10000 bits, all tasks):
 #   ./scripts/compare-bench.sh --full
 #
-# Output: doc/compare-results.tsv (tab-separated, no JSON)
+# Output: $COMPARE_OUT, default $CARGO_TARGET_DIR/compare-results.tsv (tab-separated, no JSON).
+# The published doc/compare-results.tsv is written only by tools/regen_compare_results.sh.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 # shellcheck source=use_rust_1_99.sh
 source "$root/scripts/use_rust_1_99.sh"
 
-out="${COMPARE_OUT:-doc/compare-results.tsv}"
+out="${COMPARE_OUT:-${CARGO_TARGET_DIR:-target}/compare-results.tsv}"
 libs=(--lib zenith --lib astro --lib dashu)
 features=(--features zenith-float-compare/astro,zenith-float-compare/dashu)
 precisions=(--precision 132)

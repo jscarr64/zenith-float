@@ -40,7 +40,8 @@ cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-ea
 ok "thumbv7em-none-eabihf"
 
 step "scripts/compare-bench.sh --quick"
-bash "$root/scripts/compare-bench.sh" --quick
+# output to COMPARE_OUT (the gate sets its log dir), else the target dir; never the tracked doc/compare-results.tsv
+COMPARE_OUT="${COMPARE_OUT:-$CARGO_TARGET_DIR/compare-results.tsv}" bash "$root/scripts/compare-bench.sh" --quick
 ok "compare-bench --quick"
 
 step "kernel purity grep (no f32/f64, no arch intrinsics, no kernel unsafe)"
