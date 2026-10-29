@@ -279,7 +279,9 @@ impl Mantissa {
         let p = Self::bit_len_to_word_len(p);
         let mut c = 0;
 
-        let l2 = (m2_shift + WORD_BIT_SIZE - 2) / WORD_BIT_SIZE;
+        // Split so a clamped `usize::MAX` shift (32-bit) cannot overflow; equal to `(m2_shift + W - 2) / W`.
+        let l2 = m2_shift / WORD_BIT_SIZE
+            + (m2_shift % WORD_BIT_SIZE + WORD_BIT_SIZE - 2) / WORD_BIT_SIZE;
         let mut m3 = if l2 > p && l2 > self.len() && !full_prec {
             // m2 lays outside of m1's mantissa range and outside the desired precision
             //
@@ -402,7 +404,9 @@ impl Mantissa {
 
             (m3, c)
         } else {
-            let l2 = (m2_shift + WORD_BIT_SIZE - 2) / WORD_BIT_SIZE;
+            // Split so a clamped `usize::MAX` shift (32-bit) cannot overflow; equal to `(m2_shift + W - 2) / W`.
+            let l2 = m2_shift / WORD_BIT_SIZE
+                + (m2_shift % WORD_BIT_SIZE + WORD_BIT_SIZE - 2) / WORD_BIT_SIZE;
             if l2 > p && l2 > self.len() && !full_prec {
                 // m2 lays outside of m1's mantissa range and outside the desired precision
                 //
