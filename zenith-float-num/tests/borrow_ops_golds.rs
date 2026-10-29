@@ -8,6 +8,9 @@
 //! bit-identical (limbs, exponent, sign, `inexact`, storage length) to the by-value operation whose first
 //! operand is moved in.
 
+#[path = "support/gold_limbs.rs"]
+mod gold_limbs;
+
 use serde_json::Value;
 use zenith_float_num::{Error, ExactNum, Exponent, RoundingMode, Sign, Word, WORD_BIT_SIZE};
 
@@ -44,18 +47,8 @@ fn canon_of(n: &ExactNum) -> String {
     if n.is_zero() {
         return format!("zero:{}", sign_str(n));
     }
-    let limbs: Vec<String> = n
-        .mantissa_digits()
-        .unwrap_or(&[])
-        .iter()
-        .map(|word| format!("{word:016x}"))
-        .collect();
-    format!(
-        "f:{}:{}:{}",
-        sign_str(n),
-        n.exponent().unwrap_or(0),
-        limbs.join(",")
-    )
+    let limbs = gold_limbs::hex_of(n.mantissa_digits().unwrap_or(&[]));
+    format!("f:{}:{}:{}", sign_str(n), n.exponent().unwrap_or(0), limbs)
 }
 
 /// Everything observable about a result, for the bit-identity check against the by-value operation.
@@ -85,7 +78,7 @@ fn limbs_of(v: &Value) -> Result<Vec<Word>, String> {
     let mut out = Vec::with_capacity(arr.len());
     for w in arr {
         let s = w.as_str().ok_or("limb is not a string")?;
-        out.push(Word::from_str_radix(s, 16).map_err(|e| format!("limb {s}: {e}"))?);
+        out.extend(gold_limbs::words_of(s)?);
     }
     Ok(out)
 }
@@ -99,9 +92,9 @@ fn canon_expect(v: &Value) -> Result<String, String> {
             if limbs.iter().all(|w| *w == 0) {
                 return Ok(format!("zero:{}", text(v, "s")?));
             }
-            let shown: Vec<String> = limbs.iter().map(|w| format!("{w:016x}")).collect();
+            let shown = gold_limbs::hex_of(&limbs);
             let e: Exponent = field(v, "e")?.as_i64().ok_or("e is not an i64")?;
-            Ok(format!("f:{}:{}:{}", text(v, "s")?, e, shown.join(",")))
+            Ok(format!("f:{}:{}:{}", text(v, "s")?, e, shown))
         }
         other => Err(format!("unknown kind {other}")),
     }

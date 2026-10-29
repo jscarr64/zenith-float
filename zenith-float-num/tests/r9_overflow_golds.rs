@@ -13,6 +13,9 @@
 //! hex and octal out-of-range flushes, exp at |x| just below 2^63) carry an
 //! optional `"rdx"` for parse rows and the same p+256 / p+512 agreement.
 
+#[path = "support/gold_limbs.rs"]
+mod gold_limbs;
+
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
@@ -52,9 +55,9 @@ fn canon_of(n: &ExactNum) -> String {
     }
     let digits = n.mantissa_digits().unwrap_or(&[]);
     let is_zero = digits.iter().all(|w| *w == 0);
-    let limbs: Vec<String> = digits.iter().map(|w| format!("{w:016x}")).collect();
+    let limbs = gold_limbs::hex_of(digits);
     let e = if is_zero { 0 } else { n.exponent().unwrap_or(0) };
-    format!("f:{}:{}:{}", sign_str(n), e, limbs.join(","))
+    format!("f:{}:{}:{}", sign_str(n), e, limbs)
 }
 
 fn field<'a>(v: &'a Value, key: &str) -> Result<&'a Value, String> {
@@ -72,7 +75,7 @@ fn limbs_of(v: &Value) -> Result<Vec<Word>, String> {
     let mut out = Vec::with_capacity(arr.len());
     for w in arr {
         let s = w.as_str().ok_or("limb is not a string")?;
-        out.push(Word::from_str_radix(s, 16).map_err(|e| format!("limb {s}: {e}"))?);
+        out.extend(gold_limbs::words_of(s)?);
     }
     Ok(out)
 }
@@ -82,9 +85,9 @@ fn canon_expect(v: &Value) -> Result<String, String> {
         "nan" => Ok("nan".to_string()),
         "inf" => Ok(format!("inf:{}", text(v, "s")?)),
         "f" => {
-            let limbs: Vec<String> = limbs_of(v)?.iter().map(|w| format!("{w:016x}")).collect();
+            let limbs = gold_limbs::hex_of(&limbs_of(v)?);
             let e: Exponent = field(v, "e")?.as_i64().ok_or("e is not an i64")?;
-            Ok(format!("f:{}:{}:{}", text(v, "s")?, e, limbs.join(",")))
+            Ok(format!("f:{}:{}:{}", text(v, "s")?, e, limbs))
         }
         other => Err(format!("unknown kind {other}")),
     }

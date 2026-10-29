@@ -1,0 +1,1 @@
+- `exact!`/`fbig!` literals now carry 32-bit and 64-bit mantissa words picked by the expanding crate's `target_pointer_width`, so they compile on i686.

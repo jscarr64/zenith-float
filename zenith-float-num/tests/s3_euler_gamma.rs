@@ -6,6 +6,9 @@
 //! mpmath `mpf_euler` at p+256 and p+512 bits, each error interval settled to one p-bit
 //! result and the two agreeing, for p in {24, 53, 64, 113, 256, 1024, 4096, 65536, 131072}.
 
+#[path = "support/gold_limbs.rs"]
+mod gold_limbs;
+
 use serde_json::Value;
 use std::time::Instant;
 use zenith_float_num::{ConstantId, Consts, ExactNum, RoundingMode, Sign, Word};
@@ -19,14 +22,9 @@ fn value_of(n: &ExactNum) -> String {
     if n.is_nan() || n.is_inf() {
         return format!("special:{:?}", n.err());
     }
-    let limbs: Vec<String> = n
-        .mantissa_digits()
-        .unwrap_or(&[])
-        .iter()
-        .map(|w| format!("{w:016x}"))
-        .collect();
+    let limbs = gold_limbs::hex_of(n.mantissa_digits().unwrap_or(&[]));
     let s = if n.sign() == Some(Sign::Neg) { "-" } else { "+" };
-    format!("f:{s}:{}:{}", n.exponent().unwrap_or(0), limbs.join(","))
+    format!("f:{s}:{}:{}", n.exponent().unwrap_or(0), limbs)
 }
 
 fn field<'a>(v: &'a Value, key: &str) -> Result<&'a Value, String> {
@@ -55,7 +53,7 @@ fn expect_of(v: &Value) -> Result<ExactNum, String> {
     let mut limbs = Vec::with_capacity(arr.len());
     for w in arr {
         let s = w.as_str().ok_or("limb is not a string")?;
-        limbs.push(Word::from_str_radix(s, 16).map_err(|e| format!("limb {s}: {e}"))?);
+        limbs.extend(gold_limbs::words_of(s)?);
     }
     let e = field(v, "e")?.as_i64().ok_or("e is not an i64")?;
     let sign = if text(v, "s")? == "-" { Sign::Neg } else { Sign::Pos };

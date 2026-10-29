@@ -44,14 +44,32 @@ fn raw_parts_expr(f: &ExactNum, span: Span) -> Result<TokenStream, Error> {
             format!("literal raw parts rejected: {err}"),
         ));
     }
-    let m = raw.words;
-    let (precision, negative, e, inexact, op_inexact) = (
-        raw.precision,
-        raw.negative,
-        raw.exponent,
-        raw.inexact,
-        raw.op_inexact,
-    );
+    // A proc macro runs on the host: its words are the host's width, not the target's. Emit the
+    // mantissa as 32-bit and as 64-bit words (least significant first) and let the expanding
+    // crate's `target_pointer_width` pick, the same `cfg` that picks `zenith_float::Word`.
+    let mut m32: Vec<u32> = Vec::new();
+    for w in raw.words {
+        let x = u64::from(*w);
+        let mut k = 0;
+        while k < zenith_float_num::Word::BITS {
+            m32.push(u32::try_from((x >> k) & 0xffff_ffff).unwrap_or(0));
+            k += 32;
+        }
+    }
+    if m32.len() % 2 == 1 {
+        // A 32-bit host with an odd word count: one zero low word keeps the value.
+        m32.insert(0, 0);
+    }
+    let m64: Vec<u64> = m32
+        .chunks(2)
+        .map(|c| match c {
+            [lo, hi] => u64::from(*lo) | (u64::from(*hi) << 32),
+            _ => 0,
+        })
+        .collect();
+    let (p32, p64) = (m32.len() * 32, m64.len() * 64);
+    let (negative, e, inexact, op_inexact) =
+        (raw.negative, raw.exponent, raw.inexact, raw.op_inexact);
     let kind = match raw.kind {
         zenith_float_num::RawKind::Finite => quote!(zenith_float::RawKind::Finite),
         zenith_float_num::RawKind::Zero => quote!(zenith_float::RawKind::Zero),
@@ -60,8 +78,20 @@ fn raw_parts_expr(f: &ExactNum, span: Span) -> Result<TokenStream, Error> {
     };
     let ts = quote!(match zenith_float::ExactNum::from_raw_parts(&zenith_float::RawParts {
         kind: #kind,
-        words: &[#(#m),*],
-        precision: #precision,
+        words: {
+            #[cfg(target_pointer_width = "32")]
+            let w: &[zenith_float::Word] = &[#(#m32),*];
+            #[cfg(not(target_pointer_width = "32"))]
+            let w: &[zenith_float::Word] = &[#(#m64),*];
+            w
+        },
+        precision: {
+            #[cfg(target_pointer_width = "32")]
+            let p: usize = #p32;
+            #[cfg(not(target_pointer_width = "32"))]
+            let p: usize = #p64;
+            p
+        },
         negative: #negative,
         exponent: #e,
         inexact: #inexact,
