@@ -961,7 +961,7 @@ mod tests {
             * 301029995
             / 1000000000;
         let have =
-            u128::try_from(TEN_PWR_MAX_FROM_DEC).map_err(|_| crate::Error::InvalidArgument)?;
+            u128::from(TEN_PWR_MAX_FROM_DEC);
         assert_eq!(have, want);
         Ok(())
     }
@@ -972,7 +972,7 @@ mod tests {
     #[test]
     fn dec_output_exponent_chunk_not_truncated() -> Result<(), crate::Error> {
         let want = u128::from(EXPONENT_MAX.unsigned_abs()) / 4;
-        let have = u128::try_from(TEN_PWR_MAX_TO_DEC).map_err(|_| crate::Error::InvalidArgument)?;
+        let have = u128::from(TEN_PWR_MAX_TO_DEC);
         assert_eq!(have, want);
         Ok(())
     }
