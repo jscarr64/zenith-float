@@ -1023,6 +1023,24 @@ mod test {
 
     use super::*;
 
+    /// `e^x` for an integer part near 2^61 stays within one ulp: the integer power `e^n` amplifies the
+    /// relative error of `e` by `n`, so the guard bits must cover `log2(n)`. Checked through `ln` at
+    /// 128 extra bits: an error `d` in `e^x` shows up as `|ln(e^x) - x| ~ d`.
+    #[test]
+    fn exp_large_integer_part_accuracy() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 320;
+        let half = ExactNumNumber::from_word(1, 64)?.ldexp(-1, 64, RoundingMode::None)?;
+        let x = ExactNumNumber::from_u64_internal(1u64 << 61, 64)?.add(&half, p, RoundingMode::None)?;
+        let y = x.exp(p, RoundingMode::ToEven, &mut cc)?;
+        let z = y.ln(p + 128, RoundingMode::ToEven, &mut cc)?;
+        let err = z.sub(&x, p + 128, RoundingMode::None)?.abs()?;
+        // one ulp of `y` at `p` bits is a relative 2^(1 - p); allow two.
+        let bound = ExactNumNumber::from_word(1, 64)?.ldexp(2 - 320, 64, RoundingMode::None)?;
+        assert!(err.cmp(&bound) < 0, "err exponent {}", err.exponent());
+        Ok(())
+    }
+
     /// `e^x` with an integer part past 32 bits is in range on every target: `e^(2^k) = 2^(2^k / ln 2)`,
     /// exponents from `bc -l` (`floor(2^k / l(2)) + 1`).
     #[test]
