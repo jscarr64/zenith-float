@@ -7959,7 +7959,11 @@ mod grid_digest_tests {
             h.finish(),
             count
         );
-        assert_eq!(h.finish(), 2_640_369_975_324_367_864);
+        #[cfg(target_pointer_width = "64")]
+        let want = 2_640_369_975_324_367_864;
+        #[cfg(target_pointer_width = "32")]
+        let want = 16_425_115_156_468_586_018;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
