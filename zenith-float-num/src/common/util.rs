@@ -664,7 +664,11 @@ mod retry_budget_tests {
     #[test]
     fn budget_is_the_larger_of_the_fixed_part_and_twice_p() {
         // 64 * 256 = 16384 extra bits up to p = 8192, then 2p
+        #[cfg(target_pointer_width = "64")]
         assert_eq!(prec_retry_budget(64), 16384);
+        // 32-bit: the fixed part is WORD_BIT_SIZE * MAX_PREC_RETRY = 32 * 256 = 8192, 2 * 64 = 128.
+        #[cfg(target_pointer_width = "32")]
+        assert_eq!(prec_retry_budget(64), 8192);
         assert_eq!(prec_retry_budget(8192), 16384);
         assert_eq!(prec_retry_budget(8256), 16512);
         assert_eq!(prec_retry_budget(100_032), 200_064);
@@ -683,8 +687,13 @@ mod retry_budget_tests {
     #[test]
     fn small_p_keeps_the_fixed_budget() {
         let p = 128;
-        assert!(!prec_retry_exhausted(p + 16384, p));
-        assert!(prec_retry_exhausted(p + 16385, p));
+        #[cfg(target_pointer_width = "64")]
+        let fixed = 16384;
+        // 32-bit: budget = max(32 * 256, 2 * 128) = 8192.
+        #[cfg(target_pointer_width = "32")]
+        let fixed = 8192;
+        assert!(!prec_retry_exhausted(p + fixed, p));
+        assert!(prec_retry_exhausted(p + fixed + 1, p));
     }
 
     #[test]
