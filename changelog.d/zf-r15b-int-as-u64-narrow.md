@@ -1,0 +1,1 @@
+- `exp`, `exp2` and `pow` of an integer with exponent 33..64 held in one 32-bit word (p <= 32 on i686) no longer overflow or fall off the exact power-of-two path: `int_as_u64` shifts a narrow mantissa up instead of rejecting it.

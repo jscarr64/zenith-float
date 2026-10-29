@@ -1414,10 +1414,11 @@ impl ExactNumNumber {
             acc = (acc << Word::BITS) | u128::from(*w);
             taken += Word::BITS;
         }
-        if taken < e {
-            return Err(Error::InvalidArgument);
-        }
-        u64::try_from(acc >> (taken - e)).map_err(|_| Error::InvalidArgument)
+        // A mantissa narrower than the integer part (one 32-bit word, exponent 33..64): the
+        // low bits are zeros. `acc` has at most 64 bits and `e - taken < 64`, so the u128 shift
+        // is exact and `try_from` catches anything past `u64::MAX`.
+        let wide = if taken < e { acc << (e - taken) } else { acc >> (taken - e) };
+        u64::try_from(wide).map_err(|_| Error::InvalidArgument)
     }
 
     pub(super) fn int_as_usize(&self) -> Result<usize, Error> {
