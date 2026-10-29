@@ -7,7 +7,6 @@ use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::Exponent;
 use crate::defs::RoundingMode;
-use crate::defs::Sign;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::WORD_BIT_SIZE;
@@ -424,6 +423,7 @@ fn jacobi_agm(
 mod tests {
     use super::*;
     use crate::defs::RoundingMode;
+    use crate::defs::Sign;
 
     fn bits_agree(
         a: &ExactNumNumber,
