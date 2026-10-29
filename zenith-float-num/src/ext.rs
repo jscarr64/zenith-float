@@ -7739,7 +7739,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 2 * 2 * (13 + 5) * 4);
         println!("airy digest = {}", h.finish());
-        assert_eq!(h.finish(), 1_394_724_982_563_781_065);
+        #[cfg(target_pointer_width = "64")]
+        let want = 1_394_724_982_563_781_065;
+        #[cfg(target_pointer_width = "32")]
+        let want = 8_261_041_634_717_670_478;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
