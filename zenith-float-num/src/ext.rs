@@ -7457,7 +7457,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 12 * 4 * 4);
         println!("decimal parse digest = {}", h.finish());
-        assert_eq!(h.finish(), 13_825_435_214_421_359_920);
+        #[cfg(target_pointer_width = "64")]
+        let want = 13_825_435_214_421_359_920;
+        #[cfg(target_pointer_width = "32")]
+        let want = 18_270_258_929_683_820_321;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
