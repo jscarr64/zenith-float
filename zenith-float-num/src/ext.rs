@@ -6717,7 +6717,11 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 45_030);
-        assert_eq!(h.finish(), 8_129_670_429_050_627_241);
+        #[cfg(target_pointer_width = "64")]
+        let want = 8_129_670_429_050_627_241;
+        #[cfg(target_pointer_width = "32")]
+        let want = 7_814_455_472_458_603_533;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -6837,7 +6841,11 @@ mod grid_digest_tests {
         println!("add/sub grid digest = {}", h.finish());
         // Differs from the digest pinned on the pre-kernel-branch code in exactly 40 results: full-precision
         // sums with a zero operand (see `full_prec_with_zero_operand_is_the_other_operand`).
-        assert_eq!(h.finish(), 8_129_670_429_050_627_241);
+        #[cfg(target_pointer_width = "64")]
+        let want = 8_129_670_429_050_627_241;
+        #[cfg(target_pointer_width = "32")]
+        let want = 7_814_455_472_458_603_533;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
