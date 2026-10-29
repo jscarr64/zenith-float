@@ -3714,4 +3714,19 @@ mod tests {
         assert_eq!(got.mantissa_max_bit_len(), 128);
         Ok(())
     }
+
+    #[test]
+    fn full_prec_results_keep_64_bit_words_on_every_target() -> Result<(), Error> {
+        let zero = ExactNumNumber::from_word(0, 64)?;
+        let one = ExactNumNumber::from_word(1, 64)?;
+        let three = ExactNumNumber::from_word(3, 64)?;
+        let sum = zero.add_full_prec(&one)?;
+        assert_eq!(sum.mantissa_max_bit_len(), 64, "add_full_prec width");
+        assert_eq!(sum.cmp(&one), 0);
+        let diff = zero.sub_full_prec(&three)?;
+        assert_eq!(diff.mantissa_max_bit_len(), 64, "sub_full_prec width");
+        let prod = three.mul_full_prec(&three)?;
+        assert_eq!(prod.mantissa_max_bit_len(), 64, "mul_full_prec width");
+        Ok(())
+    }
 }
