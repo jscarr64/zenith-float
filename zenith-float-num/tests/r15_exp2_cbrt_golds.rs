@@ -3,9 +3,11 @@
 //! `tests/oracle/goldens/r15_exp2_cbrt.jsonl` comes from `scripts/gen_r15_goldens.py`: mpmath
 //! at p+256 and p+512 bits (both error intervals round to one p-bit result), or a known exact
 //! value (`exp2` of an integer, `cbrt` of a perfect cube of either sign) rounded at p bits.
-//! Every row is limb-identical at exactly `p` bits over the i64 exponent range (overflow to
-//! Inf or MAX by direction, the subnormal grid), and carries the inexact flag the result must
-//! have (false on Inf, as `ExactNum::inexact` documents). Fast and deep tiers always run; the full tier (p = 65536) with `MPFR_TIER=full`.
+//! Every row is value-identical at exactly `p` bits (sign, exponent and mantissa bits, compared
+//! whatever the word size, so the same golds run on 64- and 32-bit targets) over the i64
+//! exponent range (overflow to Inf or MAX by direction, the subnormal grid), and carries the
+//! inexact flag the result must have (false on Inf, as `ExactNum::inexact` documents). Fast
+//! and deep tiers always run; the full tier (p = 65536) with `MPFR_TIER=full`.
 
 use serde_json::Value;
 use zenith_float_num::{
@@ -45,18 +47,20 @@ fn canon_of(n: &ExactNum) -> String {
     if n.is_inf() {
         return format!("inf:{}", sign_str(n));
     }
-    let limbs: Vec<String> = n
-        .mantissa_digits()
-        .unwrap_or(&[])
-        .iter()
-        .map(|word| format!("{word:016x}"))
-        .collect();
     format!(
         "f:{}:{}:{}",
         sign_str(n),
         n.exponent().unwrap_or(0),
-        limbs.join(",")
+        hex_of(n.mantissa_digits().unwrap_or(&[]))
     )
+}
+
+/// The mantissa as hex, most significant word first, trailing zeros dropped: the same text for
+/// 64- and 32-bit words (the value, not the layout).
+fn hex_of(m: &[Word]) -> String {
+    let width = usize::try_from(Word::BITS / 4).unwrap_or(16);
+    let s: String = m.iter().rev().map(|w| format!("{w:0width$x}")).collect();
+    s.trim_end_matches('0').to_string()
 }
 
 fn field<'a>(v: &'a Value, key: &str) -> Result<&'a Value, String> {
@@ -69,12 +73,17 @@ fn text<'a>(v: &'a Value, key: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("{key} is not a string"))
 }
 
+/// The gold limbs (64-bit, little-endian) as this target's words.
 fn limbs_of(v: &Value) -> Result<Vec<Word>, String> {
     let arr = field(v, "m")?.as_array().ok_or("m is not an array")?;
-    let mut out = Vec::with_capacity(arr.len());
+    let mut out = Vec::with_capacity(2 * arr.len());
     for w in arr {
         let s = w.as_str().ok_or("limb is not a string")?;
-        out.push(Word::from_str_radix(s, 16).map_err(|e| format!("limb {s}: {e}"))?);
+        let x = u64::from_str_radix(s, 16).map_err(|e| format!("limb {s}: {e}"))?;
+        let halves = if Word::BITS == 64 { vec![x] } else { vec![x & 0xffff_ffff, x >> 32] };
+        for h in halves {
+            out.push(Word::try_from(h).map_err(|e| format!("limb {s}: {e}"))?);
+        }
     }
     Ok(out)
 }
@@ -83,9 +92,9 @@ fn canon_expect(v: &Value) -> Result<String, String> {
     match text(v, "k")? {
         "inf" => Ok(format!("inf:{}", text(v, "s")?)),
         "f" => {
-            let limbs: Vec<String> = limbs_of(v)?.iter().map(|w| format!("{w:016x}")).collect();
+            let limbs = hex_of(&limbs_of(v)?);
             let e: Exponent = field(v, "e")?.as_i64().ok_or("e is not an i64")?;
-            Ok(format!("f:{}:{}:{}", text(v, "s")?, e, limbs.join(",")))
+            Ok(format!("f:{}:{}:{}", text(v, "s")?, e, limbs))
         }
         other => Err(format!("unknown kind {other}")),
     }
