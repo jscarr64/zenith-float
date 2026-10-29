@@ -1,0 +1,2 @@
+- **2.0 behaviour change:** `RoundingMode::None` truncates at `rp(p, 64)` bits (`p` rounded up to a multiple of 64) on every target. On 32-bit targets it kept `p` rounded up to a multiple of 32, so `None` results depended on the word size. 64-bit results are unchanged.
+  The decimal output path sizes its working precision the same way, and the 32-bit `test_conv_num` pins are dropped: those vectors now give the 64-bit values on every target.

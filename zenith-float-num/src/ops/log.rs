@@ -11,7 +11,7 @@ use crate::common::util::calc_mul_cost;
 use crate::common::util::calc_sqrt_cost;
 use crate::common::util::count_leading_ones;
 use crate::common::util::count_leading_zeroes_skip_first;
-use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
@@ -19,6 +19,7 @@ use crate::defs::Word;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::ops::series::series_cost_optimize;
+use crate::ops::series::series_prec;
 use crate::ops::series::series_run;
 use crate::ops::series::ArgReductionEstimator;
 use crate::ops::series::PolycoeffGen;
@@ -81,8 +82,8 @@ impl ArgReductionEstimator for LnArgReductionEstimator {
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
     #[inline]
-    fn reduction_effect(n: usize, m: i64) -> usize {
-        (m + n as i64) as usize
+    fn reduction_effect(n: usize, m: i64) -> i64 {
+        m + n as i64
     }
 }
 
@@ -118,7 +119,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the argument is zero or negative, or the precision is incorrect.
     ///  - MemoryAllocation: failed to allocate memory.
     pub fn ln(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         // factoring: ln(self) = ln(x * 2^n) = ln(x) + n*ln(2), 0.5 <= x < 1
         // reduction: ln(x) = 2*ln(sqrt(x))
@@ -193,15 +194,19 @@ impl ExactNumNumber {
             series_cost_optimize::<LnArgReductionEstimator>(p, &polycoeff_gen, 0, 2, false);
 
         // to avoid diverging error e_eff must be large enough
-        if e_eff < 3 {
-            reduction_times += 3 - e_eff;
+        // (A negative e_eff is left alone, as the former usize comparison did.)
+        if (0..3).contains(&e_eff) {
+            reduction_times = usize::try_from(3 - e_eff)
+                .ok()
+                .and_then(|d| reduction_times.checked_add(d))
+                .ok_or(Error::InvalidArgument)?;
         }
 
         // sqrt gives error not more than 2^(-p+1),
         // argument substitution for atanh gives 2^(-p+5),
         // e_eff compensates error of the series and gives 2^(-p+1).
-        let add_prec = 7 - e_eff as i64;
-        let p_arg = p + if add_prec > 0 { add_prec as usize } else { 5 };
+        let add_prec = 7 - e_eff;
+        let p_arg = series_prec(p, add_prec, 5)?;
         x.set_precision(p_arg, rm)?;
 
         let arg = if reduction_times > 0 {
@@ -248,7 +253,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the argument is zero or negative, or the precision is incorrect.
     ///  - MemoryAllocation: failed to allocate memory.
     pub fn log2(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         // log2(self) = ln(x * 2^n) / ln(2) = ln(x) / ln(2) + n, 0.5 <= x < 1
 
@@ -337,7 +342,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the argument is zero or negative, or the precision is incorrect.
     ///  - MemoryAllocation: failed to allocate memory.
     pub fn log10(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         // ln(self) / ln(10)
 
@@ -400,7 +405,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         if self.is_zero() || self.is_negative() || n.is_zero() || n.is_negative() {
             return Err(Error::InvalidArgument);
@@ -514,10 +519,7 @@ fn log_is_exact_dyadic(
 mod tests {
 
     use crate::{
-        common::{
-            consts::TEN,
-            util::{log2_ceil, random_subnormal},
-        },
+        common::{consts::TEN, util::random_subnormal},
         WORD_BIT_SIZE,
     };
 
@@ -567,23 +569,19 @@ mod tests {
         let mut eps = ExactNumNumber::small_const(1);
 
         let d1 = ExactNumNumber::max_value(prec)?;
+        // `ceil(log2(EXPONENT_MAX))` in `u64`: a `usize` cast of the exponent truncated it to 32 bits on
+        // 32-bit targets, giving 32 instead of 62 and an error bound 30 bits too tight.
+        let lg = Exponent::from(u64::BITS - (d1.exponent().unsigned_abs() - 1).leading_zeros());
         let d2 = d1.ln(prec, RoundingMode::Down, &mut cc)?;
         let d3 = d2.exp(prec, RoundingMode::Down, &mut cc)?;
-        eps.set_exponent(
-            d1.exponent() - prec as Exponent
-                + 1
-                + log2_ceil(d1.exponent().unsigned_abs() as usize) as Exponent,
-        );
+        eps.set_exponent(d1.exponent() - prec as Exponent + 1 + lg);
 
         assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 
         let d2 = d1.log2(prec, RoundingMode::ToEven, &mut cc)?;
         match TWO.pow(&d2, prec, RoundingMode::ToEven, &mut cc) {
             Ok(d3) => {
-                eps.set_exponent(
-                    d1.exponent() - prec as Exponent
-                        + log2_ceil(d1.exponent().unsigned_abs() as usize) as Exponent,
-                );
+                eps.set_exponent(d1.exponent() - prec as Exponent + lg);
 
                 assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
             }
@@ -595,10 +593,7 @@ mod tests {
         let d2 = d1.log10(prec, RoundingMode::ToEven, &mut cc)?;
         match TEN.pow(&d2, prec, RoundingMode::ToEven, &mut cc) {
             Ok(d3) => {
-                eps.set_exponent(
-                    d1.exponent() - prec as Exponent
-                        + log2_ceil(d1.exponent().unsigned_abs() as usize) as Exponent,
-                );
+                eps.set_exponent(d1.exponent() - prec as Exponent + lg);
 
                 assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
             }

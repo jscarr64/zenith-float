@@ -5,6 +5,7 @@
 
 use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::Exponent;
 use crate::Consts;
 use crate::Error;
@@ -136,7 +137,7 @@ pub(crate) fn ziv_complex<F>(p: usize, rm: RoundingMode, mut compute: F) -> Exac
 where
     F: FnMut(usize) -> ExactComplex,
 {
-    let p = round_p(p);
+    let p = round_p_rm(p, rm);
     let mut p_inc = WORD_BIT_SIZE;
     let Some(mut p_wrk) = p.checked_add(p_inc) else {
         return nan_pair(Error::InvalidArgument);

@@ -1,5 +1,6 @@
 //! Jacobi elliptic functions. Parameter \(m=k^2\). Real \(m\in[0,1]\).
 
+use crate::common::util::round_p_rm;
 use alloc::vec::Vec;
 
 use crate::common::util::bump_prec_retry;
@@ -7,7 +8,6 @@ use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::Exponent;
 use crate::defs::RoundingMode;
-use crate::defs::Sign;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::WORD_BIT_SIZE;
@@ -192,7 +192,7 @@ impl ExactNumNumber {
     where
         F: Fn(Self, Self, Self, Self, usize) -> Result<Self, Error>,
     {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
         jacobi_m_in_unit(m, p)?;
         let mut p_inc = WORD_BIT_SIZE;
@@ -218,13 +218,13 @@ impl ExactNumNumber {
         p: usize,
         cc: &mut Consts,
     ) -> Result<(Self, Self, Self, Self), Error> {
-        let zero = Self::new2(p, Sign::Pos, false)?;
         let one = Self::from_word(1, p)?;
         if self.is_zero() {
             // rebuilt from the literals, one owner each
+            // am, sn (and so sc, sd) are odd: u = -0 gives -0.
             return Ok((
-                zero,
-                Self::new2(p, Sign::Pos, false)?,
+                Self::new2(p, self.sign(), false)?,
+                Self::new2(p, self.sign(), false)?,
                 Self::from_word(1, p)?,
                 one,
             ));
@@ -250,7 +250,17 @@ impl ExactNumNumber {
             return Ok((am, sn, cn, dn));
         }
         let u = self.jacobi_reduce_period(m, p, cc)?;
-        jacobi_agm(&u, m, p, cc)
+        let (am, sn, cn, dn) = jacobi_agm(&u, m, p, cc)?;
+        if u.cmp(self) == 0 {
+            return Ok((am, sn, cn, dn));
+        }
+        // The reduction removed a whole number of periods \(4K\); am(u+4K|m) = am(u|m) + 2π, so
+        // the removed shift comes back as shift·π/(2K). sn, cn and dn are 4K-periodic.
+        let shift = self.sub(&u, p, RoundingMode::None)?;
+        let pi = cc.pi_num(p, RoundingMode::None)?;
+        let two_k = Self::from_word(2, p)?.mul(&m.elliptic_k_at(p, cc)?, p, RoundingMode::None)?;
+        let turns = div_nz(&shift.mul(&pi, p, RoundingMode::None)?, &two_k, p)?;
+        Ok((am.add(&turns, p, RoundingMode::None)?, sn, cn, dn))
     }
 
     fn jacobi_reduce_period(&self, m: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -401,7 +411,12 @@ fn jacobi_agm(
     if dnarg.is_negative() {
         return Err(Error::InvalidArgument);
     }
-    let dn = dnarg.sqrt(p, RoundingMode::None)?;
+    let mut dn = dnarg.sqrt(p, RoundingMode::None)?;
+    // A nonzero `m sn^2` that underflowed to an exact 0 leaves `dn` an exact 1; the true value is
+    // strictly below 1, so the result is inexact (the sticky information the zero dropped).
+    if msn2.is_zero() && !sn.is_zero() && !m.is_zero() {
+        dn.set_inexact(true);
+    }
     Ok((phi, sn, cn, dn))
 }
 
@@ -409,6 +424,7 @@ fn jacobi_agm(
 mod tests {
     use super::*;
     use crate::defs::RoundingMode;
+    use crate::defs::Sign;
 
     fn bits_agree(
         a: &ExactNumNumber,
@@ -543,5 +559,61 @@ mod tests {
 
     fn four_word(p: usize) -> Result<ExactNumNumber, crate::Error> {
         ExactNumNumber::from_word(4, p)
+    }
+
+    #[test]
+    fn jacobi_am_keeps_the_period_shift() -> Result<(), crate::Error> {
+        // am(u+4K|m) = am(u|m) + 2π: a reduced argument has to carry its 2π multiples back.
+        // References are mpmath (300 bits) rounded to 58 fraction bits.
+        let p = 128;
+        let mut cc = Consts::new()?;
+        let rm = RoundingMode::ToEven;
+        let mut half = ExactNumNumber::from_word(1, p)?;
+        half.div_by_2(RoundingMode::None);
+        for (u, want) in [(7u64, 1_692_682_540_694_109_664u64), (21, 5_107_261_711_036_431_119)] {
+            let want =
+                ExactNumNumber::from_u64_internal(want, p)?.ldexp(-58, p, RoundingMode::None)?;
+            let pos = ExactNumNumber::from_u64_internal(u, p)?;
+            let am = pos.jacobi_am(&half, p, rm, &mut cc)?;
+            bits_agree(&am, &want, p, 50, "am(u|1/2)")?;
+            let am_neg = pos.neg()?.jacobi_am(&half, p, rm, &mut cc)?;
+            bits_agree(&am_neg, &want.neg()?, p, 50, "am(-u|1/2)")?;
+        }
+        Ok(())
+    }
+    #[test]
+    fn jacobi_odd_functions_keep_the_sign_of_negative_zero() -> Result<(), crate::Error> {
+        // am, sn, sc and sd are odd in u, so u = -0 gives -0 exactly (sign bit, not `==`).
+        let mut cc = Consts::new()?;
+        for p in [64usize, 128, 200] {
+            let mut half = ExactNumNumber::from_word(1, p)?;
+            half.div_by_2(RoundingMode::None);
+            let mut three_eighths = ExactNumNumber::from_word(3, p)?;
+            three_eighths.div_by_2(RoundingMode::None);
+            three_eighths.div_by_2(RoundingMode::None);
+            three_eighths.div_by_2(RoundingMode::None);
+            let neg_zero = ExactNumNumber::new2(p, Sign::Neg, false)?;
+            for m in [&half, &three_eighths] {
+                for rm in [
+                    RoundingMode::ToEven,
+                    RoundingMode::Down,
+                    RoundingMode::Up,
+                    RoundingMode::ToZero,
+                ] {
+                    let got = [
+                        ("am", neg_zero.jacobi_am(m, p, rm, &mut cc)?),
+                        ("sn", neg_zero.jacobi_sn(m, p, rm, &mut cc)?),
+                        ("sc", neg_zero.jacobi_sc(m, p, rm, &mut cc)?),
+                        ("sd", neg_zero.jacobi_sd(m, p, rm, &mut cc)?),
+                    ];
+                    for (name, v) in got {
+                        assert!(v.is_zero(), "{name}(-0) at p={p} is not zero");
+                        assert!(v.is_negative(), "{name}(-0) at p={p} {rm:?} lost the sign");
+                        assert!(!v.inexact(), "{name}(-0) is exact");
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }

@@ -30,6 +30,8 @@ Shape-A site list (internal, no code change): Jeff signed off `tools/ziv_shape_a
 
 ### Changed
 
+- **`RoundingMode::None` truncates at `rp(p, 64)` on every target (behaviour change).** A `None` result keeps `p` rounded up to a multiple of 64 bits, so it is the same value on 32-bit and 64-bit targets. On 32-bit targets it used to keep a multiple of 32 bits. 64-bit results are unchanged.
+
 `atan2(y, x)` with a huge `y` and a tiny positive `x` (exponents near both ends of the i64 range, `ey - ex + p` past `i64::MAX`) returned `+Inf`/`-Inf` (and, below 64 bits, an unrounded 64-bit `+-pi/2`) instead of `+-pi/2` rounded at `p`: the tiny-quotient shortcut test wrapped. It is now computed in `i128`. Found by the shifted-reference `atan2_over_the_whole_range` sweep (540 of 12000).
 
 `fma(a, b, c)` with a product below the subnormal grid and an addend near `EXPONENT_MAX` (exponents almost `2^63` apart, e.g. `3*2^(EXPONENT_MIN-19) * -7 + 3*2^(EXPONENT_MAX-3)`) returned `NaN(MemoryAllocation)` instead of the addend rounded at `p`: the exponent gap wrapped in `i64`, so the far-apart shortcut was skipped and a `2^63`-bit sum was attempted. The gap is now computed in `i128`. Found by the `fma_stand_in_branches` digest re-pin review (8 of 1008 entries).

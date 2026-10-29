@@ -3,7 +3,7 @@
 //! Hyperbolic sine.
 
 use crate::common::util::bump_prec_retry;
-use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
@@ -22,7 +22,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn sinh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         if self.is_zero() {
             return Self::new2(p, self.sign(), self.inexact());
@@ -41,7 +41,8 @@ impl ExactNumNumber {
         x.set_inexact(false);
         x.set_sign(Sign::Pos);
 
-        let ethres = (x.exponent().unsigned_abs().max(1) as usize - 1) * 2;
+        // In u64: on 32-bit the doubled exponent can exceed `usize`, and then it exceeds any bit length.
+        let ethres = (x.exponent().unsigned_abs().max(1) - 1).checked_mul(2);
 
         loop {
             let p_x = p_wrk + 4;
@@ -50,7 +51,10 @@ impl ExactNumNumber {
             let mut ret = if x.exponent() <= 0 {
                 Self::sinh_series(x.clone()?, p_x, RoundingMode::None)?
             } else {
-                let mut val = if ethres > x.mantissa_max_bit_len() + 2 {
+                let mut val = if ethres
+                    .and_then(|t| usize::try_from(t).ok())
+                    .is_none_or(|t| t > x.mantissa_max_bit_len() + 2)
+                {
                     // e^|x| / 2 * signum(self)
 
                     x.exp(p_x, RoundingMode::None, cc)

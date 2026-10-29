@@ -1,0 +1,1 @@
+- `sinh`: the large-argument threshold is computed in `u64` and compared exactly; it no longer truncates or overflows on 32-bit.

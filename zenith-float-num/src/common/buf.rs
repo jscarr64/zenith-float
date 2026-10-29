@@ -194,21 +194,28 @@ impl WordBuf {
         Ok(())
     }
 
-    // Remove trailing words containing zeroes.
-    pub fn trunc_trailing_zeroes(&mut self) {
+    /// Remove trailing words containing zeroes, keeping whole 64-bit units: the length stays a
+    /// multiple of 64 bits on every target, so a full-precision result has the 64-bit-word layout
+    /// (on 32-bit words a short result gets one low zero word).
+    pub fn trunc_trailing_zeroes(&mut self) -> Result<(), Error> {
+        const UNIT: usize = 64 / WORD_BIT_SIZE;
+        let sz = self.len();
         let mut n = 0;
-        for v in self.as_slice().iter() {
+        for v in self.as_slice() {
             if *v == 0 {
                 n += 1;
             } else {
                 break;
             }
         }
-        if n > 0 {
-            let sz = self.len();
-            shift_slice_right(self.as_mut_slice(), n * WORD_BIT_SIZE);
-            self.truncate_words(sz - n);
+        let keep = (sz - n).next_multiple_of(UNIT);
+        if keep < sz {
+            shift_slice_right(self.as_mut_slice(), (sz - keep) * WORD_BIT_SIZE);
+            self.truncate_words(keep);
+        } else if keep > sz {
+            self.try_extend(keep * WORD_BIT_SIZE)?;
         }
+        Ok(())
     }
 
     // Remove leading words containing zeroes.

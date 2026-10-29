@@ -3,7 +3,8 @@
 //! ExactNum including finite numbers, NaN, and `Inf`.
 
 use crate::common::util::log2_ceil;
-use crate::common::util::round_p;
+use crate::common::util::{bump_prec_retry, invert_rm_for_sign};
+use crate::common::util::{round_p, round_p_rm};
 use crate::defs::Precision;
 use crate::defs::SignedWord;
 use crate::defs::DEFAULT_P;
@@ -369,7 +370,7 @@ impl ExactNum {
             return (Self::nan(b.err()), Self::nan(b.err()));
         }
         if self.is_inf() || b.is_inf() {
-            return (self.add(b, p, rm), Self::new(p));
+            return (self.add(b, p, rm), Self::new(round_p_rm(p, rm)));
         }
         let exact = self.add_full_prec(b);
         let mut hi = exact.clone();
@@ -404,7 +405,10 @@ impl ExactNum {
             return (Self::nan(b.err()), Self::nan(b.err()));
         }
         if self.is_inf() || b.is_inf() {
-            return (ExactNum::mul_ref(self, b, p, rm), Self::new(p));
+            return (
+                ExactNum::mul_ref(self, b, p, rm),
+                Self::new(round_p_rm(p, rm)),
+            );
         }
         let exact = self.mul_full_prec(b);
         let mut hi = exact.clone();
@@ -428,7 +432,7 @@ impl ExactNum {
     /// Word-precision implementation of [`Self::fused_sum`].
     fn fused_sum_word(xs: &[Self], p: usize, rm: RoundingMode) -> Self {
         if xs.is_empty() {
-            return Self::new(p);
+            return Self::new(round_p_rm(p, rm));
         }
         let extra = log2_ceil(xs.len().max(1)).saturating_add(2);
         let p_wrk = match p
@@ -470,7 +474,7 @@ impl ExactNum {
             return Self::nan(Some(Error::InvalidArgument));
         }
         if xs.is_empty() {
-            return Self::new(p);
+            return Self::new(round_p_rm(p, rm));
         }
         let extra = log2_ceil(xs.len().max(1)).saturating_add(2);
         let p_wrk = match p
@@ -510,7 +514,7 @@ impl ExactNum {
     /// Word-precision implementation of [`Self::polyval`].
     fn polyval_word(coeffs: &[Self], x: &Self, p: usize, rm: RoundingMode) -> Self {
         if coeffs.is_empty() {
-            return Self::new(p);
+            return Self::new(round_p_rm(p, rm));
         }
         let extra = log2_ceil(coeffs.len().max(1)).saturating_add(2);
         let p_wrk = match p
@@ -842,11 +846,11 @@ impl ExactNum {
                         // v1^(+-inf) as in IEEE 754 / MPFR: decided by |v1| against 1, whatever the sign of v1.
                         let val = v1.abs_cmp(&crate::common::consts::ONE);
                         if val == 0 {
-                            Self::from_u8(1, p)
+                            Self::from_u8(1, round_p_rm(p, rm))
                         } else if (val > 0) == s2.is_positive() {
                             INF_POS
                         } else {
-                            Self::new(p)
+                            Self::new(round_p_rm(p, rm))
                         }
                     }
                     Flavor::NaN(err) => Self::nan(*err),
@@ -857,7 +861,7 @@ impl ExactNum {
                     Flavor::Value(v2) => {
                         // inf ^ v2
                         if v2.is_zero() {
-                            Self::from_u8(1, p)
+                            Self::from_u8(1, round_p_rm(p, rm))
                         } else if v2.is_positive() {
                             if s1.is_negative() && v2.is_odd_int() {
                                 // v2 is odd and has no fractional part.
@@ -867,7 +871,7 @@ impl ExactNum {
                             }
                         } else {
                             // (+-inf)^(negative): a zero, negative only for -inf to an odd integer.
-                            let mut z = Self::new(p);
+                            let mut z = Self::new(round_p_rm(p, rm));
                             if s1.is_negative() && v2.is_odd_int() {
                                 z.set_sign(Sign::Neg);
                             }
@@ -879,7 +883,7 @@ impl ExactNum {
                         if s2.is_positive() {
                             INF_POS
                         } else {
-                            Self::new(p)
+                            Self::new(round_p_rm(p, rm))
                         }
                     }
                     Flavor::NaN(err) => Self::nan(*err),
@@ -908,7 +912,7 @@ impl ExactNum {
             Flavor::Inf(s1) => {
                 // inf ^ v2
                 if n == 0 {
-                    Self::from_u8(1, p)
+                    Self::from_u8(1, round_p_rm(p, rm))
                 } else if s1.is_negative() && (n & 1 == 1) {
                     INF_NEG
                 } else {
@@ -945,9 +949,9 @@ impl ExactNum {
             ),
             Flavor::Inf(s1) => {
                 if n == 0 {
-                    Self::from_u8(1, p)
+                    Self::from_u8(1, round_p_rm(p, rm))
                 } else if n < 0 {
-                    Self::new(p)
+                    Self::new(round_p_rm(p, rm))
                 } else if s1.is_negative() && (n & 1 == 1) {
                     INF_NEG
                 } else {
@@ -1006,7 +1010,7 @@ impl ExactNum {
                     Flavor::Inf(s2) => {
                         // v1.log(inf)
                         if s2.is_positive() {
-                            Self::new(p)
+                            Self::new(round_p_rm(p, rm))
                         } else {
                             NAN
                         }
@@ -1371,17 +1375,12 @@ impl ExactNum {
 
         match (&self.inner, &x.inner) {
             (Flavor::Inf(sy), Flavor::Inf(sx)) => {
-                let mut q = cc.pi(p, rm);
-                q = q.div(&ExactNum::from_word(4, p), p, rm);
-                if sx.is_negative() {
-                    let three = ExactNum::from_word(3, p);
-                    q = three.mul(&q, p, rm);
-                }
-                if sy.is_negative() {
-                    q.neg()
+                let q = if sx.is_negative() {
+                    Self::three_quarter_pi(*sy, p, rm, cc)
                 } else {
-                    q
-                }
+                    Self::signed_pi_scaled(*sy, 0, p, rm, cc)
+                };
+                Self::result_to_ext(q, false, true)
             }
             (Flavor::Inf(sy), Flavor::Value(_)) => {
                 Self::result_to_ext(Self::half_pi(*sy, p, rm, cc), false, true)
@@ -1390,9 +1389,7 @@ impl ExactNum {
                 if sx.is_positive() {
                     Self::result_to_ext(ExactNumNumber::new2(p, y.sign(), y.inexact()), false, true)
                 } else {
-                    let mut pi = cc.pi(p, rm);
-                    pi.set_sign(y.sign());
-                    pi
+                    Self::result_to_ext(Self::signed_pi_scaled(y.sign(), 2, p, rm, cc), false, true)
                 }
             }
             (Flavor::Value(y), Flavor::Value(xv)) => {
@@ -1501,7 +1498,7 @@ impl ExactNum {
                 }),
                 Err(e) => Self::result_to_ext(Err(e), false, true),
             },
-            Flavor::Inf(s) => Self::from_i8(s.to_int(), p),
+            Flavor::Inf(s) => Self::from_i8(s.to_int(), round_p_rm(p, rm)),
             Flavor::NaN(err) => Self::nan(*err),
         }
     }
@@ -1512,12 +1509,59 @@ impl ExactNum {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<ExactNumNumber, Error> {
-        let mut half_pi = cc.pi_num(p, rm)?;
+        Self::signed_pi_scaled(s, 1, p, rm, cc)
+    }
 
-        half_pi.set_exponent(1);
-        half_pi.set_sign(s);
+    /// `s * pi` with binary exponent `e` (2 for `pi`, 1 for `pi/2`, 0 for `pi/4`), rounded once in `rm`:
+    /// the magnitude is rounded in the mode that rounds the signed value the same way.
+    fn signed_pi_scaled(
+        s: Sign,
+        e: Exponent,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<ExactNumNumber, Error> {
+        let rm_abs = if s.is_negative() { invert_rm_for_sign(rm) } else { rm };
+        let mut v = cc.pi_num(p, rm_abs)?;
+        v.set_exponent(e);
+        v.set_sign(s);
+        Ok(v)
+    }
 
-        Ok(half_pi)
+    /// `s * 3pi/4` rounded once in `rm`. `3pi` lies in `[3 RD(pi), 3 RU(pi)]` (both products exact at the
+    /// working precision); the working precision grows until both ends round to the same `p`-bit value.
+    fn three_quarter_pi(
+        s: Sign,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<ExactNumNumber, Error> {
+        let rm_abs = if s.is_negative() { invert_rm_for_sign(rm) } else { rm };
+        let three = ExactNumNumber::from_word(3, WORD_BIT_SIZE)?;
+        let mut p_wrk = round_p(p)
+            .checked_add(WORD_BIT_SIZE)
+            .ok_or(Error::InvalidArgument)?;
+        let mut p_inc = WORD_BIT_SIZE;
+        loop {
+            let p_mul = p_wrk
+                .checked_add(WORD_BIT_SIZE)
+                .ok_or(Error::InvalidArgument)?;
+            let mut lo =
+                cc.pi_num(p_wrk, RoundingMode::Down)?
+                    .mul(&three, p_mul, RoundingMode::None)?;
+            let mut hi =
+                cc.pi_num(p_wrk, RoundingMode::Up)?
+                    .mul(&three, p_mul, RoundingMode::None)?;
+            lo.set_precision(p, rm_abs)?;
+            hi.set_precision(p, rm_abs)?;
+            if lo.cmp(&hi) == 0 {
+                lo.set_exponent(2);
+                lo.set_sign(s);
+                lo.set_inexact(true);
+                return Ok(lo);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
     }
 
     /// Evaluates `f(precision, rounding)`, a function computed on operands whose inexact flags
@@ -2123,7 +2167,7 @@ impl ExactNum {
                 Self::result_to_ext_rm(v.reciprocal(p, rm), false, v.is_positive(), p, rm)
             }
             Flavor::Inf(s) => {
-                let mut ret = Self::new(p);
+                let mut ret = Self::new(round_p_rm(p, rm));
                 ret.set_sign(*s);
                 ret
             }
@@ -2440,7 +2484,12 @@ macro_rules! gen_wrapper_exact_rm {
                     }),
                     Err(e) => Self::result_to_ext(Err(e), false, true),
                 },
-                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::Inf(s) => {
+                    // Results from an infinite operand are built at the rm-aware precision (64-bit words for None).
+                    let $p = round_p_rm($p, rm);
+                    let _ = $p;
+                    if s.is_positive() $pos_inf else $neg_inf
+                }
                 Flavor::NaN(err) => Self::nan(*err),
             }
         }
@@ -2459,7 +2508,12 @@ macro_rules! gen_wrapper_arg_rm_cc {
                     }),
                     Err(e) => Self::result_to_ext(Err(e), false, true),
                 },
-                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::Inf(s) => {
+                    // Results from an infinite operand are built at the rm-aware precision (64-bit words for None).
+                    let $p = round_p_rm($p, rm);
+                    let _ = $p;
+                    if s.is_positive() $pos_inf else $neg_inf
+                }
                 Flavor::NaN(err) => Self::nan(*err),
             }
         }
@@ -2500,7 +2554,12 @@ macro_rules! gen_wrapper_ovf_rm_cc {
                     }),
                     Err(e) => Self::result_to_ext(Err(e), false, true),
                 },
-                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::Inf(s) => {
+                    // Results from an infinite operand are built at the rm-aware precision (64-bit words for None).
+                    let $p = round_p_rm($p, rm);
+                    let _ = $p;
+                    if s.is_positive() $pos_inf else $neg_inf
+                }
                 Flavor::NaN(err) => Self::nan(*err),
             }
         }
@@ -2523,7 +2582,12 @@ macro_rules! gen_wrapper_log {
                         Err(e) => Self::result_to_ext(Err(e), false, true),
                     }
                 },
-                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::Inf(s) => {
+                    // Results from an infinite operand are built at the rm-aware precision (64-bit words for None).
+                    let $p = round_p_rm($p, rm);
+                    let _ = $p;
+                    if s.is_positive() $pos_inf else $neg_inf
+                }
                 Flavor::NaN(err) => Self::nan(*err),
             }
         }
@@ -3035,7 +3099,7 @@ Accuracy: correctly-rounded",
             }
             (Flavor::Value(_), Flavor::Inf(sx)) => {
                 if sx.is_positive() {
-                    Self::new(p)
+                    Self::new(round_p_rm(p, rm))
                 } else {
                     NAN
                 }
@@ -3196,7 +3260,7 @@ Accuracy: correctly-rounded",
             Flavor::Value(v) => Self::result_to_ext(v.ai(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
                 if s.is_positive() {
-                    Self::new(p)
+                    Self::new(round_p_rm(p, rm))
                 } else {
                     NAN
                 }
@@ -3258,7 +3322,7 @@ Accuracy: correctly-rounded",
             Flavor::Value(v) => Self::result_to_ext(v.ai_prime(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
                 if s.is_positive() {
-                    Self::new(p)
+                    Self::new(round_p_rm(p, rm))
                 } else {
                     NAN
                 }
@@ -4834,6 +4898,333 @@ mod tests {
         }
     }
 
+    /// `atan`, `atan2` and `si` results that are signed multiples of pi (`atan(-Inf)`, `atan2` at the
+    /// infinities, at `x = 0` and on the negative real axis, `si(-Inf)`) are rounded once from the signed
+    /// value: under `Up` a negative result is `-RD(c)` and under `Down` it is `-RU(c)`. The table is mpmath's
+    /// `mpf_pos(v, p, 'c' / 'f')` of the signed value `v` (computed at 2000 bits); `3pi/4` is checked for a
+    /// positive result as well (one rounding, not `3 * RU(pi / 4)`).
+    #[test]
+    fn signed_pi_multiples_are_rounded_once_in_the_mode_like_mpmath() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let cases = [
+            (
+                "atan_neg_inf",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -61,
+            ),
+            (
+                "atan_neg_inf",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -63,
+            ),
+            (
+                "atan_neg_inf",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -127,
+            ),
+            (
+                "atan_neg_inf",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -126,
+            ),
+            (
+                "atan2_neg_inf_one",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -61,
+            ),
+            (
+                "atan2_neg_inf_one",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -63,
+            ),
+            (
+                "atan2_neg_inf_one",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -127,
+            ),
+            (
+                "atan2_neg_inf_one",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -126,
+            ),
+            (
+                "atan2_neg_one_zero",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -61,
+            ),
+            (
+                "atan2_neg_one_zero",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -63,
+            ),
+            (
+                "atan2_neg_one_zero",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -127,
+            ),
+            (
+                "atan2_neg_one_zero",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -126,
+            ),
+            (
+                "atan2_neg_zero_neg_one",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -60,
+            ),
+            (
+                "atan2_neg_zero_neg_one",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -62,
+            ),
+            (
+                "atan2_neg_zero_neg_one",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -126,
+            ),
+            (
+                "atan2_neg_zero_neg_one",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -125,
+            ),
+            (
+                "atan2_neg_one_neg_inf",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -60,
+            ),
+            (
+                "atan2_neg_one_neg_inf",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -62,
+            ),
+            (
+                "atan2_neg_one_neg_inf",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -126,
+            ),
+            (
+                "atan2_neg_one_neg_inf",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -125,
+            ),
+            (
+                "atan2_neg_inf_pos_inf",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -62,
+            ),
+            (
+                "atan2_neg_inf_pos_inf",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -64,
+            ),
+            (
+                "atan2_neg_inf_pos_inf",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -128,
+            ),
+            (
+                "atan2_neg_inf_pos_inf",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -127,
+            ),
+            (
+                "atan2_neg_inf_neg_inf",
+                64,
+                RoundingMode::Up,
+                true,
+                "10866029187115684263",
+                -62,
+            ),
+            (
+                "atan2_neg_inf_neg_inf",
+                64,
+                RoundingMode::Down,
+                true,
+                "1358253648389460533",
+                -59,
+            ),
+            (
+                "atan2_neg_inf_neg_inf",
+                128,
+                RoundingMode::Up,
+                true,
+                "50110714878045316305922517491962692967",
+                -124,
+            ),
+            (
+                "atan2_neg_inf_neg_inf",
+                128,
+                RoundingMode::Down,
+                true,
+                "200442859512181265223690069967850771869",
+                -126,
+            ),
+            (
+                "atan2_pos_inf_neg_inf",
+                64,
+                RoundingMode::Up,
+                false,
+                "1358253648389460533",
+                -59,
+            ),
+            (
+                "atan2_pos_inf_neg_inf",
+                64,
+                RoundingMode::Down,
+                false,
+                "10866029187115684263",
+                -62,
+            ),
+            (
+                "atan2_pos_inf_neg_inf",
+                128,
+                RoundingMode::Up,
+                false,
+                "200442859512181265223690069967850771869",
+                -126,
+            ),
+            (
+                "atan2_pos_inf_neg_inf",
+                128,
+                RoundingMode::Down,
+                false,
+                "50110714878045316305922517491962692967",
+                -124,
+            ),
+            (
+                "si_neg_inf",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -61,
+            ),
+            (
+                "si_neg_inf",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -63,
+            ),
+            (
+                "si_neg_inf",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -127,
+            ),
+            (
+                "si_neg_inf",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -126,
+            ),
+        ];
+        let mut bad = 0usize;
+        for (name, p, rm, neg, man, e) in cases {
+            let m = ExactNum::parse(man, crate::Radix::Dec, 256, RoundingMode::None, &mut cc)
+                .ldexp(e, 256, RoundingMode::None);
+            let want = if neg { -m } else { m };
+            let got = match name {
+                "atan_neg_inf" => INF_NEG.atan(p, rm, &mut cc),
+                "atan2_neg_inf_one" => INF_NEG.atan2(&ExactNum::from_u8(1, p), p, rm, &mut cc),
+                "atan2_neg_one_zero" => {
+                    ExactNum::from_i8(-1, p).atan2(&ExactNum::new(p), p, rm, &mut cc)
+                }
+                "atan2_neg_zero_neg_one" => {
+                    (-ExactNum::new(p)).atan2(&ExactNum::from_i8(-1, p), p, rm, &mut cc)
+                }
+                "atan2_neg_one_neg_inf" => ExactNum::from_i8(-1, p).atan2(&INF_NEG, p, rm, &mut cc),
+                "atan2_neg_inf_pos_inf" => INF_NEG.atan2(&INF_POS, p, rm, &mut cc),
+                "atan2_neg_inf_neg_inf" => INF_NEG.atan2(&INF_NEG, p, rm, &mut cc),
+                "atan2_pos_inf_neg_inf" => INF_POS.atan2(&INF_NEG, p, rm, &mut cc),
+                _ => INF_NEG.si(p, rm, &mut cc),
+            };
+            if got.compare(&want) != Some(0) {
+                println!("{name} p={p} {rm:?}: got {got:?}, want {want:?}");
+                bad += 1;
+            }
+        }
+        assert_eq!(bad, 0, "signed pi multiples rounded in the wrong direction");
+        Ok(())
+    }
+
     #[test]
     fn test_ext() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToOdd;
@@ -5811,6 +6202,23 @@ mod tests {
             .is_nan());
         Ok(())
     }
+
+    #[test]
+    fn rm_none_results_from_infinite_operands_keep_64_bit_words_on_every_target(
+    ) -> Result<(), crate::Error> {
+        let mut cc = crate::Consts::new()?;
+        let rm = crate::RoundingMode::None;
+        let p = 200;
+        let zero = ExactNum::from_u8(0, 64);
+        let w = |x: &ExactNum| x.mantissa_max_bit_len();
+        assert_eq!(w(&INF_NEG.exp(p, rm, &mut cc)), Some(256), "exp(-inf)");
+        assert_eq!(w(&INF_NEG.exp2(p, rm, &mut cc)), Some(256), "exp2(-inf)");
+        assert_eq!(w(&INF_POS.tanh(p, rm, &mut cc)), Some(256), "tanh(inf)");
+        assert_eq!(w(&INF_POS.reciprocal(p, rm)), Some(256), "1/inf");
+        assert_eq!(w(&INF_POS.powi(0, p, rm)), Some(256), "inf^0 (powi)");
+        assert_eq!(w(&INF_POS.pow(&zero, p, rm, &mut cc)), Some(256), "inf^0");
+        Ok(())
+    }
 }
 
 #[cfg(feature = "random")]
@@ -5996,9 +6404,11 @@ mod special_arg_tests {
             assert_eq!(got.compare(&want), want.compare(&got), "{x:?}");
             if !want.is_inf() {
                 assert!(matches!(got.compare(&want), Some(0)), "{x:?}");
+                // A None product keeps whole 64-bit words (rp(p, 64)) on every target.
                 assert_eq!(
                     got.mantissa_max_bit_len(),
-                    want.mantissa_max_bit_len(),
+                    want.mantissa_max_bit_len()
+                        .map(|b| crate::common::util::round_p_rm(b, RoundingMode::None)),
                     "{x:?}"
                 );
                 assert_eq!(got.exponent(), want.exponent(), "{x:?}");
@@ -6452,7 +6862,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
         println!("ldexp grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 1_196_293_272_222_150_608);
+        #[cfg(target_pointer_width = "64")]
+        let want = 1_196_293_272_222_150_608;
+        #[cfg(target_pointer_width = "32")]
+        let want = 5_434_581_390_640_415_895;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -6554,7 +6968,12 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
         println!("operator grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 17_513_242_264_762_901_032);
+        // 32-bit: generated by logs/dg/gen32.py (mpmath values, Word=u32 layout; 64-bit control reproduces the pin above)
+        #[cfg(target_pointer_width = "64")]
+        const WANT: u64 = 17_513_242_264_762_901_032;
+        #[cfg(target_pointer_width = "32")]
+        const WANT: u64 = 17_551_922_019_031_792_118;
+        assert_eq!(h.finish(), WANT);
         Ok(())
     }
 
@@ -6606,7 +7025,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
         println!("complex add/sub grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 18_040_698_040_155_693_760);
+        #[cfg(target_pointer_width = "64")]
+        let want = 18_040_698_040_155_693_760;
+        #[cfg(target_pointer_width = "32")]
+        let want = 10_425_817_710_396_386_987;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -6670,7 +7093,11 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 45_030);
-        assert_eq!(h.finish(), 8_129_670_429_050_627_241);
+        #[cfg(target_pointer_width = "64")]
+        let want = 8_129_670_429_050_627_241;
+        #[cfg(target_pointer_width = "32")]
+        let want = 7_814_455_472_458_603_533;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -6724,7 +7151,11 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
-        assert_eq!(h.finish(), 18_040_698_040_155_693_760);
+        #[cfg(target_pointer_width = "64")]
+        let want = 18_040_698_040_155_693_760;
+        #[cfg(target_pointer_width = "32")]
+        let want = 10_425_817_710_396_386_987;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -6790,7 +7221,11 @@ mod grid_digest_tests {
         println!("add/sub grid digest = {}", h.finish());
         // Differs from the digest pinned on the pre-kernel-branch code in exactly 40 results: full-precision
         // sums with a zero operand (see `full_prec_with_zero_operand_is_the_other_operand`).
-        assert_eq!(h.finish(), 8_129_670_429_050_627_241);
+        #[cfg(target_pointer_width = "64")]
+        let want = 8_129_670_429_050_627_241;
+        #[cfg(target_pointer_width = "32")]
+        let want = 7_814_455_472_458_603_533;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -6839,7 +7274,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
         println!("mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        #[cfg(target_pointer_width = "64")]
+        let want = 8_827_555_224_262_690_728;
+        #[cfg(target_pointer_width = "32")]
+        let want = 13_285_983_356_288_713_452;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -6891,7 +7330,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
         println!("complex mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_266_967_239_943_518_429);
+        #[cfg(target_pointer_width = "64")]
+        let want = 11_266_967_239_943_518_429;
+        #[cfg(target_pointer_width = "32")]
+        let want = 6_964_102_913_802_569_992;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -6938,7 +7381,11 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        #[cfg(target_pointer_width = "64")]
+        let want = 8_827_555_224_262_690_728;
+        #[cfg(target_pointer_width = "32")]
+        let want = 13_285_983_356_288_713_452;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -6968,7 +7415,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * 9 * 6);
         println!("square grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        #[cfg(target_pointer_width = "64")]
+        let want = 17_269_539_713_433_390_012;
+        #[cfg(target_pointer_width = "32")]
+        let want = 18_336_218_928_814_008_965;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -6995,7 +7446,11 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, PAIR_OPERANDS * 9 * 6);
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        #[cfg(target_pointer_width = "64")]
+        let want = 17_269_539_713_433_390_012;
+        #[cfg(target_pointer_width = "32")]
+        let want = 18_336_218_928_814_008_965;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -7066,7 +7521,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 17 * 3 * 6 * 7);
         println!("trig hyperbolic grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_882_922_101_969_868_672);
+        #[cfg(target_pointer_width = "64")]
+        let want = 11_147_813_322_482_799_478;
+        #[cfg(target_pointer_width = "32")]
+        let want = 3_737_091_182_715_260_247;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -7147,7 +7606,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 13 * 3 * 6 * 13);
         println!("exp pow grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_398_075_299_501_098_093);
+        #[cfg(target_pointer_width = "64")]
+        let want = 2_398_075_299_501_098_093;
+        #[cfg(target_pointer_width = "32")]
+        let want = 17_685_187_096_188_672_726;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -7203,7 +7666,12 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 5 * 2 * 2 * 4);
         println!("series high precision digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_612_837_872_790_074_070);
+        // 32-bit: generated by logs/dg/gen32.py (mpmath values, Word=u32 layout; 64-bit control reproduces the pin above)
+        #[cfg(target_pointer_width = "64")]
+        const WANT: u64 = 2_612_837_872_790_074_070;
+        #[cfg(target_pointer_width = "32")]
+        const WANT: u64 = 2_481_807_751_546_904_152;
+        assert_eq!(h.finish(), WANT);
         Ok(())
     }
 
@@ -7243,7 +7711,12 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 2 * 2 * OPERANDS * 3 * 2 * 2);
         println!("fma stand-in digest = {}", h.finish());
-        assert_eq!(h.finish(), 6_276_170_101_586_996_179);
+        // 32-bit: generated by logs/dg/gen32.py (mpmath values, Word=u32 layout; 64-bit control reproduces the pin above)
+        #[cfg(target_pointer_width = "64")]
+        const WANT: u64 = 6_276_170_101_586_996_179;
+        #[cfg(target_pointer_width = "32")]
+        const WANT: u64 = 1_593_121_079_249_968_054;
+        assert_eq!(h.finish(), WANT);
         Ok(())
     }
 
@@ -7306,7 +7779,12 @@ mod grid_digest_tests {
         }
         assert_eq!(count, OPERANDS * 4 * 4 * 2 * 2 * 2);
         println!("hypot scaling digest = {}", h.finish());
-        assert_eq!(h.finish(), 17_199_362_010_888_151_510);
+        // 32-bit: generated by logs/dg/gen32.py (mpmath values, Word=u32 layout; 64-bit control reproduces the pin above)
+        #[cfg(target_pointer_width = "64")]
+        const WANT: u64 = 17_199_362_010_888_151_510;
+        #[cfg(target_pointer_width = "32")]
+        const WANT: u64 = 4_048_660_911_403_563_556;
+        assert_eq!(h.finish(), WANT);
         Ok(())
     }
 
@@ -7347,7 +7825,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 12 * 4 * 4);
         println!("decimal parse digest = {}", h.finish());
-        assert_eq!(h.finish(), 13_825_435_214_421_359_920);
+        #[cfg(target_pointer_width = "64")]
+        let want = 13_825_435_214_421_359_920;
+        #[cfg(target_pointer_width = "32")]
+        let want = 18_270_258_929_683_820_321;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -7415,7 +7897,12 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 7 * 4 * 2 + OPERANDS * 2 * 2 * 2);
         println!("atanh zero digest = {}", h.finish());
-        assert_eq!(h.finish(), 8_560_969_362_905_363_186);
+        // 32-bit: generated by logs/dg/gen32.py (mpmath values, Word=u32 layout; 64-bit control reproduces the pin above)
+        #[cfg(target_pointer_width = "64")]
+        const WANT: u64 = 8_560_969_362_905_363_186;
+        #[cfg(target_pointer_width = "32")]
+        const WANT: u64 = 5_803_567_897_899_187_373;
+        assert_eq!(h.finish(), WANT);
         Ok(())
     }
 
@@ -7482,12 +7969,22 @@ mod grid_digest_tests {
         let am = u.jacobi_am(&zero_m, 300, RoundingMode::ToEven, &mut cc);
         assert!(ExactNum::sub_ref(&am, &u, 300, RoundingMode::ToEven).is_zero());
         println!("jacobi digest = {}", h.finish());
-        // Re-pinned (was 13_695_875_014_094_095_401): 23 entries x 2 precisions (all at the tiny operand 21, `ToEven`)
+        // Re-pinned (was 8_344_934_497_909_943_058): `am` dropped the \(2\pi\) multiples of the \(4K\) period
+        // reduction (am(-7|1/2) gave +0.4105, mpmath -5.8727); 8 `am` entries (u = -7, m = 1/2, 3/8) changed.
+        // Re-pinned (was 638_880_846_716_710_340): `m sn^2` underflowing to 0 made dn/nd of the subnormal
+        // operand (m = 1/2, 3/8) an exact 1. 16 dn/nd entries changed: `ToEven` is now 1 flagged inexact
+        // (mpmath: 1 - dn = m u^2/2 > 0), `Down` is now `NaN(PrecisionRetryExhausted)` like `cn` there.
+        // Earlier re-pin (was 13_695_875_014_094_095_401): 23 entries x 2 precisions (all at the tiny operand 21, `ToEven`)
         // were `NaN(PrecisionRetryExhausted)`, a wrong answer. `am`, `sn`, `sc`, `sd` of `u = 3 * 2^(-2^31 - 19)`
         // are `u` and the other nine functions are 1, because `f(u|m) = t (1 - O(u^2))` is far closer to the
         // representable `t` than half an ulp, and a value just below a representable number rounds to it
         // to nearest; the roundability check had treated that as undecidable. Oracle: mpmath, see the CHANGELOG.
-        assert_eq!(h.finish(), 8_344_934_497_909_943_058);
+        // 32-bit: generated by logs/dg/gen32.py (mpmath values, Word=u32 layout; 64-bit control reproduces the pin above)
+        #[cfg(target_pointer_width = "64")]
+        const WANT: u64 = 8_659_318_462_419_821_720;
+        #[cfg(target_pointer_width = "32")]
+        const WANT: u64 = 6_139_828_297_236_387_860;
+        assert_eq!(h.finish(), WANT);
         Ok(())
     }
 
@@ -7545,6 +8042,39 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// `dn(u|m) = 1 - m u^2/2 + O(u^4)` and `nd = 1/dn` for the subnormal `u = operand(21)` and `m = 1/2, 3/8`:
+    /// the value is strictly below (`nd`: above) 1, so to nearest it is 1 and inexact (mpmath at a surrogate
+    /// `u = 2^-200` gives `(1 - dn) / (m u^2/2) = 1` and `(1/dn - 1) / (m u^2/2) = 1` to 60 digits). `sn^2` underflows to an exact 0, which used to make
+    /// `1 - m sn^2` an exact 1 with the inexact flag off.
+    #[test]
+    fn jacobi_dn_nd_of_a_subnormal_argument_are_inexact() -> Result<(), Box<dyn std::error::Error>>
+    {
+        type J = fn(&ExactNum, &ExactNum, usize, RoundingMode, &mut crate::Consts) -> ExactNum;
+        let fns: [(&str, J); 2] = [("dn", ExactNum::jacobi_dn), ("nd", ExactNum::jacobi_nd)];
+        let mut cc = crate::Consts::new()?;
+        let ms = [
+            ExactNum::from_u8(1, 64).ldexp(-1, 64, RoundingMode::None),
+            ExactNum::from_u8(3, 64).ldexp(-3, 64, RoundingMode::None),
+        ];
+        for p in [64usize, 128] {
+            for m in &ms {
+                for (name, f) in fns {
+                    let got = f(&operand(21), m, p, RoundingMode::ToEven, &mut cc);
+                    assert_eq!(
+                        got.compare(&ExactNum::from_u8(1, 64)),
+                        Some(0),
+                        "{name} p={p} m={m:?}: {got:?}"
+                    );
+                    assert!(
+                        got.inexact(),
+                        "{name} p={p} m={m:?} must be inexact: {got:?}"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Layer 0a pin for the four Airy functions: zero (closed form), small arguments (Taylor pair), large
     /// positive and negative arguments (asymptotic expansions), and every special operand.
     #[test]
@@ -7581,7 +8111,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 2 * 2 * (13 + 5) * 4);
         println!("airy digest = {}", h.finish());
-        assert_eq!(h.finish(), 1_394_724_982_563_781_065);
+        #[cfg(target_pointer_width = "64")]
+        let want = 1_394_724_982_563_781_065;
+        #[cfg(target_pointer_width = "32")]
+        let want = 8_261_041_634_717_670_478;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -7611,7 +8145,12 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 5 * 5 * 2 * 3);
         println!("powi windowed digest = {}", h.finish());
-        assert_eq!(h.finish(), 12_976_918_398_664_607_263);
+        // 32-bit: generated by logs/dg/gen32.py (mpmath values, Word=u32 layout; 64-bit control reproduces the pin above)
+        #[cfg(target_pointer_width = "64")]
+        const WANT: u64 = 12_976_918_398_664_607_263;
+        #[cfg(target_pointer_width = "32")]
+        const WANT: u64 = 14_780_506_644_587_673_446;
+        assert_eq!(h.finish(), WANT);
         Ok(())
     }
 
@@ -7693,7 +8232,12 @@ mod grid_digest_tests {
         // Re-recorded again for `nth_root` of a negative number with `Up`/`Down` (they were swapped for odd n >= 5):
         // the old value was 6_378_838_253_543_692_452; only `nth_root(5)` entries of negative operands differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
-        assert_eq!(h.finish(), 15_733_382_221_161_312_340);
+        // 32-bit: generated by logs/dg/gen32.py (mpmath values, Word=u32 layout; 64-bit control reproduces the pin above)
+        #[cfg(target_pointer_width = "64")]
+        const WANT: u64 = 15_733_382_221_161_312_340;
+        #[cfg(target_pointer_width = "32")]
+        const WANT: u64 = 642_497_529_214_412_721;
+        assert_eq!(h.finish(), WANT);
         Ok(())
     }
 
@@ -7750,7 +8294,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 4 * 3);
         println!("log exact digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_246_996_610_564_981_343);
+        #[cfg(target_pointer_width = "64")]
+        let want = 11_246_996_610_564_981_343;
+        #[cfg(target_pointer_width = "32")]
+        let want = 8_308_943_196_837_221_761;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -7811,7 +8359,11 @@ mod grid_digest_tests {
             h.finish(),
             count
         );
-        assert_eq!(h.finish(), 2_640_369_975_324_367_864);
+        #[cfg(target_pointer_width = "64")]
+        let want = 2_640_369_975_324_367_864;
+        #[cfg(target_pointer_width = "32")]
+        let want = 16_425_115_156_468_586_018;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -7853,7 +8405,11 @@ mod grid_digest_tests {
         // Re-recorded for `nth_root` of a negative number with `Up`/`Down` (swapped for odd n >= 5; old value
         // 1_369_146_293_907_659_395): only the n = 5 and 7 entries of negative operands in those modes differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
-        assert_eq!(h.finish(), 2_411_520_695_892_384_189);
+        #[cfg(target_pointer_width = "64")]
+        let want = 2_411_520_695_892_384_189;
+        #[cfg(target_pointer_width = "32")]
+        let want = 2_097_062_068_096_730_454;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -7955,7 +8511,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
         println!("operator mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_238_293_337_447_225_181);
+        #[cfg(target_pointer_width = "64")]
+        let want = 11_238_293_337_447_225_181;
+        #[cfg(target_pointer_width = "32")]
+        let want = 17_858_129_707_828_111_565;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -8322,7 +8882,7 @@ mod full_prec_subnormal_tests {
 }
 
 /// What a [`RawParts`] describes.
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RawKind {
     /// A non-zero finite value (normal, or subnormal at `EXPONENT_MIN`).
     Finite,

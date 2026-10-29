@@ -1,8 +1,7 @@
 // Derived from astro-float (https://github.com/stencillogic/astro-float),
 // Copyright (c) 2022 stencillogic, MIT License.
 //! Sqrt computation.
-
-use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::Sign;
 use crate::{
     defs::{Error, EXPONENT_MIN},
@@ -19,7 +18,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: argument is negative, or the precision is incorrect.
     ///  - MemoryAllocation: failed to allocate memory.
     pub fn sqrt(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         if self.is_zero() {

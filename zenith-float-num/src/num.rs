@@ -5,6 +5,7 @@
 use crate::common::consts::ONE;
 use crate::common::util::count_leading_zeroes_skip_first;
 use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::Error;
 use crate::defs::Exponent;
 use crate::defs::Precision;
@@ -455,7 +456,7 @@ impl ExactNumNumber {
         full_prec: bool,
         per_op: bool,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         if !full_prec {
             Self::p_assertion(p)?;
@@ -542,7 +543,7 @@ impl ExactNumNumber {
             };
         }
 
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         let s = if self.s == d2.s { Sign::Pos } else { Sign::Neg };
@@ -775,7 +776,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         (full_prec, per_op): (bool, bool),
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         if !full_prec {
             Self::p_assertion(p)?;
         }
@@ -1436,6 +1437,26 @@ impl ExactNumNumber {
         }
     }
 
+    /// Integer part of `self` as a `u64` on every target: the top 64 mantissa bits, read as bytes
+    /// from the most significant word down, shifted to the binary point.
+    pub(super) fn int_as_u64(&self) -> Result<u64, Error> {
+        if self.e <= 0 {
+            return Ok(0);
+        }
+        let e = u32::try_from(self.e)
+            .ok()
+            .filter(|e| *e <= u64::BITS)
+            .ok_or(Error::InvalidArgument)?;
+        let mut buf = [0u8; 8];
+        let bytes = self.m.digits().iter().rev().flat_map(|w| w.to_be_bytes());
+        for (dst, src) in buf.iter_mut().zip(bytes) {
+            *dst = src;
+        }
+        u64::from_be_bytes(buf)
+            .checked_shr(u64::BITS - e)
+            .ok_or(Error::InvalidArgument)
+    }
+
     /// Sets the exponent of `self`.
     /// Note that if `self` is subnormal, the exponent may not change, but the mantissa will shift instead.
     /// `e` will be clamped to the range from EXPONENT_MIN to EXPONENT_MAX if it's outside of the range.
@@ -1489,11 +1510,14 @@ impl ExactNumNumber {
 
         let max_bits = self.mantissa_max_bit_len();
         let e = max_bits as i64 - self.e;
+        // Fractional bits to drop, in `i64`: near the bottom of the range `e` is past `u32`, and a
+        // `usize` cast truncated it on 32-bit targets.
+        let n_wide = i64::try_from(n).map_err(|_| Error::InvalidArgument)?;
+        let max_wide = i64::try_from(max_bits).map_err(|_| Error::InvalidArgument)?;
+        let drop = e - n_wide;
 
-        if e > 0 && e as usize > n && !self.is_zero() {
-            let m = e as usize - n;
-
-            if m >= max_bits {
+        if drop > 0 && !self.is_zero() {
+            if drop >= max_wide {
                 let is_positive = self.is_positive();
                 let msb_set = self.m.most_significant_word() & WORD_SIGNIFICANT_BIT != 0;
                 let below_half =
@@ -1504,7 +1528,7 @@ impl ExactNumNumber {
                 if rm == RoundingMode::FromZero
                     || (is_positive && rm == RoundingMode::Up)
                     || (!is_positive && rm == RoundingMode::Down)
-                    || (m == max_bits
+                    || (drop == max_wide
                         && ((msb_set && rm == RoundingMode::ToOdd)
                             || (rm == RoundingMode::ToEven && msb_set && below_half)))
                 {
@@ -1533,7 +1557,7 @@ impl ExactNumNumber {
                 let mut inexact = false;
 
                 let ovf = self.m.round_mantissa(
-                    m,
+                    usize::try_from(drop).map_err(|_| Error::InvalidArgument)?,
                     rm,
                     self.is_positive(),
                     &mut false,
@@ -1781,7 +1805,7 @@ impl ExactNumNumber {
             }
         }
 
-        self.m.set_length(p)?;
+        self.m.set_length(round_p_rm(p, rm))?;
 
         Ok(true)
     }
@@ -2145,7 +2169,8 @@ mod tests {
 
         d3 = d1.sub(&d2, WORD_BIT_SIZE, RoundingMode::None)?;
 
-        assert_eq!(w, d3.mantissa().digits()[0]);
+        // None keeps a whole 64-bit word: on 32-bit words the result is the top digit of two.
+        assert_eq!(Some(&w), d3.mantissa().digits().last());
 
         // increase precision
         d1 = ExactNumNumber::from_raw_parts(
@@ -2921,6 +2946,19 @@ mod tests {
         Ok(())
     }
 
+    /// Rounding a value near the bottom of the range to a few fractional bits leaves nothing: the
+    /// fractional-bit count `max_bits - e` is past `u32` there and must not be truncated on 32-bit.
+    #[test]
+    fn round_tiny_value_to_integer_grid() -> Result<(), crate::Error> {
+        for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::None] {
+            for n in [0usize, 10] {
+                let t = ExactNumNumber::min_positive_normal(64)?.round(n, rm)?;
+                assert!(t.is_zero() && t.inexact(), "{rm:?} n = {n}");
+            }
+        }
+        Ok(())
+    }
+
     #[test]
     fn test_rounding() -> Result<(), crate::Error> {
         // trailing bits
@@ -3380,6 +3418,10 @@ mod tests {
                 [0, WORD_SIGNIFICANT_BIT],
                 -98,
             ),
+        ];
+        // Rounding onto the subnormal grid: `n` reaches `|EXPONENT_MIN|`.
+        #[cfg(not(target_pointer_width = "32"))]
+        let subnormal_grid = [
             (
                 [1, 1],
                 Sign::Pos,
@@ -3435,7 +3477,44 @@ mod tests {
                 EXPONENT_MIN,
             ),
         ];
-        for (m1, s, e1, n, rm, m2, e2) in testset {
+        // On 32-bit targets `n` stops at `usize::MAX = 2^32 - 1`, far short of `|EXPONENT_MIN|`, so the
+        // vectors above cannot be written. Exact model: a positive value below `2^EXPONENT_MIN` lies far
+        // below half of the grid step `2^-n`; `Up` gives the step `2^-n = 0.5 * 2^-(n - 1)`, `Down` and
+        // `ToEven` give zero.
+        #[cfg(target_pointer_width = "32")]
+        let step_e =
+            1 - Exponent::try_from(usize::MAX).map_err(|_| crate::Error::InvalidArgument)?;
+        #[cfg(target_pointer_width = "32")]
+        let subnormal_grid = [
+            (
+                [1, 1],
+                Sign::Pos,
+                EXPONENT_MIN,
+                usize::MAX,
+                RoundingMode::Up,
+                [0, WORD_SIGNIFICANT_BIT],
+                step_e,
+            ),
+            (
+                [1, 1],
+                Sign::Pos,
+                EXPONENT_MIN,
+                usize::MAX,
+                RoundingMode::Down,
+                [0, 0],
+                0,
+            ),
+            (
+                [0, 1],
+                Sign::Pos,
+                EXPONENT_MIN,
+                usize::MAX,
+                RoundingMode::ToEven,
+                [0, 0],
+                0,
+            ),
+        ];
+        for (m1, s, e1, n, rm, m2, e2) in testset.into_iter().chain(subnormal_grid) {
             //println!("{:?}", (m1, s, e1, n, rm, m2, e2));
             let d1 = ExactNumNumber::from_words(&m1, s, e1)?;
             let d1_inexact = d1.inexact();
@@ -3581,6 +3660,116 @@ mod tests {
         assert!(!d1.inexact());
         let d2 = d1.round(1, RoundingMode::None)?;
         assert!(d2.inexact());
+        Ok(())
+    }
+    /// `1 + 2^-64` and `2 - 2^-64` at p = 65, with the exponents shifted by `de1`, `de2`.
+    fn none_trunc_operands(
+        de1: Exponent,
+        de2: Exponent,
+    ) -> Result<(ExactNumNumber, ExactNumNumber), Error> {
+        let mut tiny = ExactNumNumber::from_word(1, 65)?;
+        tiny.set_exponent(1 - 64);
+        let mut x = ExactNumNumber::from_word(1, 65)?.add(&tiny, 65, RoundingMode::ToZero)?;
+        let mut y = ExactNumNumber::from_word(2, 65)?.sub(&tiny, 65, RoundingMode::ToZero)?;
+        x.set_exponent(x.exponent() + de1);
+        y.set_exponent(y.exponent() + de2);
+        Ok((x, y))
+    }
+
+    #[test]
+    fn rm_none_truncates_at_64_bit_words_on_every_target() -> Result<(), Error> {
+        // RoundingMode::None keeps the result truncated at rp(p, 64) bits (128 at p = 65) on every
+        // target, so a None result is the same value on 32- and 64-bit words.
+        for (de1, de2) in [(0, 0), (EXPONENT_MIN + 5, -20)] {
+            let (x, y) = none_trunc_operands(de1, de2)?;
+            let got = x.mul(&y, 65, RoundingMode::None)?;
+            // Model: the exact product (130 bits plus any subnormal shift fits in 320), cut at 128 bits.
+            let mut want = x.mul(&y, 320, RoundingMode::ToZero)?;
+            assert!(!want.inexact(), "the model product is exact");
+            want.set_precision(128, RoundingMode::ToZero)?;
+            assert!(
+                want.inexact(),
+                "the 128-bit cut drops bits, so 96 and 128 bits differ"
+            );
+            assert_eq!(
+                got.cmp(&want),
+                0,
+                "None at p=65 (de1={de1}) is not the 128-bit truncation"
+            );
+            assert_eq!(got.exponent(), want.exponent());
+        }
+        Ok(())
+    }
+
+    /// `rm_none_truncates_at_64_bit_words_on_every_target` for the entry points that round `p` themselves:
+    /// a None result keeps `rp(p, 64)` bits and drops nothing it did not have to, on every target.
+    #[test]
+    fn rm_none_entry_points_keep_64_bit_words_on_every_target() -> Result<(), Error> {
+        let none = RoundingMode::None;
+        let w = ExactNumNumber::from_word(0xFFFF_FFFF, 64)?;
+        // (2^32 - 1)^2 is exact and spans all 64 bits, which already fit rp(1, 64) = 64 bits: `ldexp` by 0 to
+        // p = 1 drops nothing.
+        let r = w.mul(&w, 64, RoundingMode::ToEven)?.ldexp(0, 1, none)?;
+        assert!(
+            !r.inexact(),
+            "ldexp((2^32 - 1)^2, 0, p = 1, None) dropped bits"
+        );
+        assert_eq!(r.mantissa_max_bit_len(), 64);
+        // The cube and fifth roots of -7 keep rp(p, 64) bits.
+        let m7 = ExactNumNumber::from_word(7, 64)?.neg()?;
+        assert_eq!(m7.nth_root(3, 200, none)?.mantissa_max_bit_len(), 256);
+        assert_eq!(m7.nth_root(5, 200, none)?.mantissa_max_bit_len(), 256);
+        assert_eq!(m7.nth_root(5, 1, none)?.mantissa_max_bit_len(), 64);
+        Ok(())
+    }
+
+    /// The reciprocal's work schedule does not depend on the word size: 1 / -(1/3 at 192 bits, last bit
+    /// rounded up) lies just inside -3, and its None value at 128 bits is the 128-bit truncation, not -3.
+    #[test]
+    fn rm_none_reciprocal_is_the_truncation_on_every_target() -> Result<(), Error> {
+        let one = ExactNumNumber::from_word(1, 192)?;
+        let three = ExactNumNumber::from_word(3, 192)?;
+        let x = one.div(&three, 192, RoundingMode::ToEven)?.neg()?;
+        let got = x.reciprocal(128, RoundingMode::None)?;
+        let want = x.reciprocal(128, RoundingMode::ToZero)?;
+        assert_eq!(
+            got.cmp(&want),
+            0,
+            "reciprocal None at p = 128 is not the truncation"
+        );
+        assert_eq!(got.mantissa_max_bit_len(), 128);
+        Ok(())
+    }
+
+    #[test]
+    fn full_prec_results_keep_64_bit_words_on_every_target() -> Result<(), Error> {
+        let zero = ExactNumNumber::from_word(0, 64)?;
+        let one = ExactNumNumber::from_word(1, 64)?;
+        let three = ExactNumNumber::from_word(3, 64)?;
+        let sum = zero.add_full_prec(&one)?;
+        assert_eq!(sum.mantissa_max_bit_len(), 64, "add_full_prec width");
+        assert_eq!(sum.cmp(&one), 0);
+        let diff = zero.sub_full_prec(&three)?;
+        assert_eq!(diff.mantissa_max_bit_len(), 64, "sub_full_prec width");
+        let prod = three.mul_full_prec(&three)?;
+        assert_eq!(prod.mantissa_max_bit_len(), 64, "mul_full_prec width");
+        Ok(())
+    }
+
+    #[test]
+    fn rm_none_pow_special_cases_keep_64_bit_words_on_every_target() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let zero = ExactNumNumber::from_word(0, 64)?;
+        let two = ExactNumNumber::from_word(2, 64)?;
+        let e2 = zero.exp2(200, RoundingMode::None, &mut cc)?;
+        assert_eq!(e2.mantissa_max_bit_len(), 256, "exp2(0) width");
+        let e10 = zero.exp10(200, RoundingMode::None, &mut cc)?;
+        assert_eq!(e10.mantissa_max_bit_len(), 256, "exp10(0) width");
+        let z = zero.pow(&two, 200, RoundingMode::None, &mut cc)?;
+        assert_eq!(z.mantissa_max_bit_len(), 256, "0^2 width");
+        let one = ExactNumNumber::from_word(1, 64)?;
+        let o = one.pow(&two, 200, RoundingMode::None, &mut cc)?;
+        assert_eq!(o.mantissa_max_bit_len(), 256, "1^2 width");
         Ok(())
     }
 }

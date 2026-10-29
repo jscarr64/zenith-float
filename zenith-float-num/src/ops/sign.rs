@@ -1,5 +1,6 @@
 //! Sign manipulation and successor operations.
 
+use crate::common::util::round_p_rm;
 use crate::common::util::{round_p, sub_borrow};
 use crate::defs::{Error, Word, WORD_MAX, WORD_SIGNIFICANT_BIT};
 use crate::num::ExactNumNumber;
@@ -35,7 +36,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn copysign(&self, sign: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         let mut ret = self.clone()?;

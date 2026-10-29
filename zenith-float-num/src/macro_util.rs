@@ -85,10 +85,15 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
                         0
                     } else {
                         let n = compute_added_err_near_one(base, emin);
-                        if earg as usize > emin.unsigned_abs() as usize + EXPONENT_BIT_SIZE {
-                            0
-                        } else {
-                            n.min(earg as usize)
+                        // In u64: `emin` is near -2^62, which does not fit a 32-bit `usize`.
+                        let lim = u64::try_from(EXPONENT_BIT_SIZE)
+                            .ok()
+                            .and_then(|b| emin.unsigned_abs().checked_add(b));
+                        match lim {
+                            Some(l) if earg.unsigned_abs() <= l => {
+                                usize::try_from(earg).map_or(n, |e| n.min(e))
+                            }
+                            _ => 0,
                         }
                     };
                     5 + v + EXPONENT_BIT_SIZE
@@ -278,7 +283,13 @@ fn part_cancel(
         return Ok(None);
     };
     let opp = if is_add { s1 != s2 } else { s1 == s2 };
-    if (e1 - e2).abs() <= 1 && opp {
+    // Exponents are bounded to +/-(2^62 - 1), so the gap cannot overflow; a failure is still an error, never a wrap.
+    let near = e1
+        .checked_sub(e2)
+        .and_then(Exponent::checked_abs)
+        .ok_or(crate::Error::InvalidArgument)?
+        <= 1;
+    if near && opp {
         // A zero result has exponent 0, so the gap can exceed a 32-bit `usize`: that is an error.
         e1.max(e2)
             .checked_sub(e3)
@@ -311,6 +322,79 @@ pub fn complex_cancel_bits(
         part_cancel(arg1.re(), arg2.re(), ret.re(), is_add)?,
         part_cancel(arg1.im(), arg2.im(), ret.im(), is_add)?,
     ))
+}
+
+/// 32-bit halves per mantissa word.
+const HALVES_PER_WORD: usize = crate::WORD_BIT_SIZE / 32;
+
+/// Splits mantissa words into 32-bit halves, least significant first. Used by the `exact!` proc
+/// macro, which runs on the host, so its output does not depend on the host word size.
+///
+/// ## Errors
+///
+///  - InvalidArgument: the word size is not a multiple of 32 bits.
+///  - MemoryAllocation: the output could not be allocated.
+#[doc(hidden)]
+pub fn word_halves(words: &[crate::Word]) -> Result<alloc::vec::Vec<u32>, crate::Error> {
+    let n = words
+        .len()
+        .checked_mul(HALVES_PER_WORD)
+        .ok_or(crate::Error::MemoryAllocation)?;
+    let mut out = alloc::vec::Vec::new();
+    out.try_reserve_exact(n)
+        .map_err(|_| crate::Error::MemoryAllocation)?;
+    for &w in words {
+        let bytes = w.to_le_bytes();
+        let (quads, rest) = bytes.as_chunks::<4>();
+        if !rest.is_empty() {
+            return Err(crate::Error::InvalidArgument);
+        }
+        out.extend(quads.iter().map(|q| u32::from_le_bytes(*q)));
+    }
+    Ok(out)
+}
+
+/// Rebuilds a number from raw parts whose mantissa is given as 32-bit halves, least significant
+/// first (see [`word_halves`]). Each word takes `WORD_BIT_SIZE / 32` halves: a 64-bit word is
+/// `lo | hi << 32` (both halves, through little-endian bytes), a 32-bit word is one half. No half is dropped: a count that is not a whole
+/// number of words is an error. `parts.words` must be empty; every other field is passed through.
+///
+/// ## Errors
+///
+///  - InvalidArgument: `halves.len()` is not a multiple of `WORD_BIT_SIZE / 32`, or any
+///    [`ExactNum::from_raw_parts`] rejection.
+///  - MemoryAllocation: the mantissa could not be allocated.
+#[doc(hidden)]
+pub fn from_raw_halves(
+    halves: &[u32],
+    parts: &crate::RawParts<'_>,
+) -> Result<ExactNum, crate::Error> {
+    if !parts.words.is_empty() {
+        return Err(crate::Error::InvalidArgument);
+    }
+    let (chunks, rest) = halves.as_chunks::<HALVES_PER_WORD>();
+    if !rest.is_empty() {
+        return Err(crate::Error::InvalidArgument);
+    }
+    let mut words = alloc::vec::Vec::new();
+    words
+        .try_reserve_exact(chunks.len())
+        .map_err(|_| crate::Error::MemoryAllocation)?;
+    for chunk in chunks {
+        let mut bytes = [0u8; core::mem::size_of::<crate::Word>()];
+        let (quads, tail) = bytes.as_chunks_mut::<4>();
+        if !tail.is_empty() || quads.len() != chunk.len() {
+            return Err(crate::Error::InvalidArgument);
+        }
+        for (q, h) in quads.iter_mut().zip(chunk) {
+            *q = h.to_le_bytes();
+        }
+        words.push(crate::Word::from_le_bytes(bytes));
+    }
+    ExactNum::from_raw_parts(&crate::RawParts {
+        words: &words,
+        ..*parts
+    })
 }
 
 #[cfg(test)]
@@ -852,6 +936,34 @@ mod tests {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// Operands at opposite ends of the exponent range: the exponent gap `e1 - e2` is computed
+    /// checked, and such operands never count as cancelling.
+    #[test]
+    fn test_part_cancel_extreme_exponent_gap() -> Result<(), crate::Error> {
+        let top = [crate::defs::WORD_SIGNIFICANT_BIT];
+        let mk = |e: Exponent, negative: bool| {
+            ExactNum::from_raw_parts(&crate::RawParts {
+                kind: crate::RawKind::Finite,
+                words: &top,
+                precision: crate::WORD_BIT_SIZE,
+                negative,
+                exponent: e,
+                inexact: true,
+                op_inexact: false,
+            })
+        };
+        let hi = mk(crate::EXPONENT_MAX, false)?;
+        let lo = mk(crate::EXPONENT_MIN, true)?;
+        let r = ExactNum::from_u8(0, crate::WORD_BIT_SIZE);
+        assert_eq!(part_cancel(&hi, &lo, &r, true), Ok(None));
+        assert_eq!(part_cancel(&lo, &hi, &r, true), Ok(None));
+        assert_eq!(
+            part_cancel(&hi, &mk(crate::EXPONENT_MIN, false)?, &r, false),
+            Ok(None)
+        );
         Ok(())
     }
 

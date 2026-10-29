@@ -1,0 +1,1 @@
+- `Mantissa::abs_add` / `abs_sub`: the shifted-operand word count is computed without overflow when the shift is clamped to `usize::MAX` (32-bit).

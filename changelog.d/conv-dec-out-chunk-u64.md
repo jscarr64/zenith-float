@@ -1,0 +1,1 @@
+- Decimal output on 32-bit targets: the to-decimal exponent chunk is held in `u64`; the truncated `usize` chunk (2^30 - 1) took ~10^9 steps for exponents near the range limit.

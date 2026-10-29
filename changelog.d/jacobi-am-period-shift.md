@@ -1,0 +1,1 @@
+- `jacobi_am` restores the `2π` multiples removed by the `4K` period reduction; `am(u|m)` was wrong for `|u| > 2K(m)` with `0 < m < 1` (e.g. `am(-7|1/2)` returned `+0.4105` instead of `-5.8727`).

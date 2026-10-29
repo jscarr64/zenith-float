@@ -6,6 +6,7 @@ use crate::common::consts::TEN;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::log2_ceil;
 use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::common::util::MAX_PREC_RETRY;
 use crate::defs::DoubleWord;
 use crate::defs::Error;
@@ -26,8 +27,10 @@ use crate::EXPONENT_MIN;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-const TEN_PWR_MAX_TO_DEC: usize = EXPONENT_MAX as usize / 4;
-const TEN_PWR_MAX_FROM_DEC: usize = (EXPONENT_MAX as u128 * 301029995 / 1000000000) as usize;
+/// EXPONENT_MAX / 4 in u64: a 32-bit `usize` would truncate it.
+const TEN_PWR_MAX_TO_DEC: u64 = EXPONENT_MAX.unsigned_abs() / 4;
+/// floor(EXPONENT_MAX * log10(2)) in u64: a 32-bit `usize` would truncate it.
+const TEN_PWR_MAX_FROM_DEC: u64 = (EXPONENT_MAX as u128 * 301029995 / 1000000000) as u64;
 /// floor(log10(2) * 2^64), a lower bound of log10(2) exact to 2^-64.
 const LOG10_2_Q64: i128 = 5553023288523357132;
 
@@ -388,12 +391,10 @@ impl ExactNumNumber {
 
         // error estimation
         let mut err = 0;
-        // |n| in u64: a 32-bit `usize` would saturate an i64 decimal exponent. The remainder is below the
-        // chunk, which is a `usize`, so its conversion back cannot fail.
+        // |n| and the chunk in u64: a 32-bit `usize` would saturate or truncate them.
         let n_abs = n.unsigned_abs();
-        let chunk = u64::try_from(TEN_PWR_MAX_FROM_DEC).map_err(|_| Error::InvalidArgument)?;
-        let npowmax = n_abs / chunk;
-        let tenpowrem = usize::try_from(n_abs % chunk).map_err(|_| Error::InvalidArgument)?;
+        let npowmax = n_abs / TEN_PWR_MAX_FROM_DEC;
+        let tenpowrem = n_abs % TEN_PWR_MAX_FROM_DEC;
         if npowmax != 0 {
             err += usize::try_from(npowmax)
                 .ok()
@@ -414,7 +415,7 @@ impl ExactNumNumber {
             };
 
             if npowmax != 0 {
-                let fpnmax = TEN.powi(TEN_PWR_MAX_FROM_DEC, p_f, RoundingMode::None)?;
+                let fpnmax = TEN.powi_u64(TEN_PWR_MAX_FROM_DEC, p_f, RoundingMode::None)?;
 
                 for _ in 0..npowmax {
                     if n < 0 {
@@ -426,7 +427,7 @@ impl ExactNumNumber {
             };
 
             if tenpowrem != 0 {
-                let fpn = TEN.powi(tenpowrem, p_f, RoundingMode::None)?;
+                let fpn = TEN.powi_u64(tenpowrem, p_f, RoundingMode::None)?;
                 if n < 0 {
                     f = f.div(&fpn, p_f, RoundingMode::None)?
                 } else {
@@ -506,7 +507,12 @@ impl ExactNumNumber {
         let dec_len = (p as u64 * 301029996 / 1000000000) as usize + 1 + extra_digits;
 
         let mut err = WORD_BIT_SIZE; // speculative
-        let mut p_wrk = round_p((dec_len as u64 * 3321928095 / 1000000000) as usize + 1 + err);
+                                     // Whole 64-bit words: the None steps below keep rp(p_wrk, 64) bits on every target, and the
+                                     // digit extraction reads x as a p_wrk-bit integer.
+        let mut p_wrk = round_p_rm(
+            (dec_len as u64 * 3321928095 / 1000000000) as usize + 1 + err,
+            RoundingMode::None,
+        );
         let mut p_inc = WORD_BIT_SIZE;
 
         let mut retries = 0usize;
@@ -525,12 +531,11 @@ impl ExactNumNumber {
 
             let mut err_acc = 0;
 
-            // |n_wrk| in u64: a 32-bit `usize` would saturate it. What is left after the chunk loop is at most
-            // the chunk, a `usize`, so its conversion back cannot fail.
-            let chunk = u64::try_from(TEN_PWR_MAX_TO_DEC).map_err(|_| Error::InvalidArgument)?;
+            // |n_wrk| and the chunk in u64: a 32-bit `usize` would saturate or truncate them.
+            let chunk = TEN_PWR_MAX_TO_DEC;
             let mut pwr = n_wrk.unsigned_abs();
             if pwr > chunk {
-                let tp = TEN.powi(TEN_PWR_MAX_TO_DEC, p_wrk, RoundingMode::None)?;
+                let tp = TEN.powi_u64(TEN_PWR_MAX_TO_DEC, p_wrk, RoundingMode::None)?;
                 err_acc += 1;
 
                 while pwr > chunk {
@@ -545,8 +550,7 @@ impl ExactNumNumber {
             }
 
             if pwr != 0 {
-                let pwr = usize::try_from(pwr).map_err(|_| Error::InvalidArgument)?;
-                let tp = TEN.powi(pwr, p_wrk, RoundingMode::None)?;
+                let tp = TEN.powi_u64(pwr, p_wrk, RoundingMode::None)?;
                 if n_wrk < 0 {
                     x = x.div(&tp, p_wrk, RoundingMode::None)?;
                 } else {
@@ -556,8 +560,8 @@ impl ExactNumNumber {
             }
 
             if err_acc > err {
-                err_acc += err_acc / TEN_PWR_MAX_TO_DEC + 3;
-                p_wrk += round_p(err_acc - err);
+                err_acc += err_acc / usize::try_from(TEN_PWR_MAX_TO_DEC).unwrap_or(usize::MAX) + 3;
+                p_wrk += round_p_rm(err_acc - err, RoundingMode::None);
                 err = err_acc;
                 continue;
             }
@@ -954,12 +958,37 @@ mod tests {
     use crate::defs::{Sign, EXPONENT_MAX, EXPONENT_MIN};
     use crate::WORD_SIGNIFICANT_BIT;
 
+    /// The from-decimal exponent chunk is floor(EXPONENT_MAX * 0.301029995) on every target.
+    /// A 32-bit `usize` truncated it mod 2^32, so |n| near EXPONENT_MAX / log2(10) split into
+    /// ~10^8 chunks: ~10^8 divisions at ~3.5 * 10^8 extra working bits (an effective hang).
+    #[test]
+    fn dec_exponent_chunk_not_truncated() -> Result<(), crate::Error> {
+        let want = u128::try_from(EXPONENT_MAX).map_err(|_| crate::Error::InvalidArgument)?
+            * 301029995
+            / 1000000000;
+        let have = u128::from(TEN_PWR_MAX_FROM_DEC);
+        assert_eq!(have, want);
+        Ok(())
+    }
+
+    /// The to-decimal exponent chunk is EXPONENT_MAX / 4 on every target. A 32-bit `usize`
+    /// truncated it to 2^30 - 1, so an exponent near EXPONENT_MIN / log2(10) took ~1.4 * 10^9
+    /// chunk multiplications (an effective hang).
+    #[test]
+    fn dec_output_exponent_chunk_not_truncated() -> Result<(), crate::Error> {
+        let want = u128::from(EXPONENT_MAX.unsigned_abs()) / 4;
+        let have = u128::from(TEN_PWR_MAX_TO_DEC);
+        assert_eq!(have, want);
+        Ok(())
+    }
+
     #[cfg(not(feature = "std"))]
     use alloc::vec;
 
+    type DecPin = (Exponent, &'static [u64], Exponent, &'static [u64]);
+
     /// mpmath-pinned (g exponent, g words, n exponent, n words) for the decimal vectors of
     /// the "unknown p" round trip in `test_conv_num`, in order. Words are 64-bit, little end first.
-    type DecPin = (Exponent, &'static [u64], Exponent, &'static [u64]);
     const CONV_DEC_PINS: [DecPin; 5] = [
         (
             409,
@@ -1054,23 +1083,22 @@ mod tests {
             ],
         ),
     ];
+    /// Mantissa words equal the pinned 64-bit words. `RoundingMode::None` truncates at whole
+    /// 64-bit words on every target (zf 2.0), so 32-bit targets hold the same value as two
+    /// 32-bit words per pin word, low half first.
+    #[cfg(not(target_pointer_width = "32"))]
+    fn words_eq_pin(d: &[Word], pin: &[u64]) -> bool {
+        d == pin
+    }
 
-    /// Mantissa words equal the pinned 64-bit words (32-bit targets pair up low/high words).
-    fn words_eq_u64(d: &[Word], pin: &[u64]) -> bool {
-        #[cfg(not(target_pointer_width = "32"))]
-        {
-            d == pin
-        }
-        #[cfg(target_pointer_width = "32")]
-        {
-            let (pairs, rest) = d.as_chunks::<2>();
-            rest.is_empty()
-                && pairs.len() == pin.len()
-                && pairs
-                    .iter()
-                    .zip(pin)
-                    .all(|([lo, hi], p)| (u64::from(*hi) << 32 | u64::from(*lo)) == *p)
-        }
+    /// Mantissa words equal the pinned 64-bit words, two 32-bit words per pin word.
+    #[cfg(target_pointer_width = "32")]
+    fn words_eq_pin(d: &[Word], pin: &[u64]) -> bool {
+        d.len() == pin.len() * 2
+            && pin.iter().zip(d.chunks(2)).all(|(p, c)| match c {
+                [lo, hi] => (u64::from(*lo) | (u64::from(*hi) << 32)) == *p,
+                _ => false,
+            })
     }
 
     #[test]
@@ -1674,9 +1702,9 @@ mod tests {
                     .ok_or(crate::Error::InvalidArgument)?;
                 dec_ix += 1;
                 assert_eq!(g.exponent(), *pg_e);
-                assert!(words_eq_u64(g.mantissa().digits(), pg_w), "g {:?}", g);
+                assert!(words_eq_pin(g.mantissa().digits(), pg_w), "g {:?}", g);
                 assert_eq!(n.exponent(), *pn_e);
-                assert!(words_eq_u64(n.mantissa().digits(), pn_w), "n {:?}", n);
+                assert!(words_eq_pin(n.mantissa().digits(), pn_w), "n {:?}", n);
             } else {
                 assert!(n.cmp(&g) == 0);
             }

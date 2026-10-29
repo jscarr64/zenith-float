@@ -1,0 +1,1 @@
+- Full-precision `add_full_prec`, `sub_full_prec` and `mul_full_prec` results now keep whole 64-bit units when trailing zero words are trimmed, so the exact result has the same width and layout on 32-bit targets as on 64-bit ones.

@@ -3,7 +3,8 @@
 //! Exponentiation.
 
 use crate::common::consts::{FOUR, THREE};
-use crate::common::util::{bump_prec_retry, calc_add_cost, calc_mul_cost, round_p};
+use crate::common::util::round_p_rm;
+use crate::common::util::{bump_prec_retry, calc_add_cost, calc_mul_cost};
 use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
 use crate::{
@@ -17,7 +18,9 @@ use crate::{Exponent, EXPONENT_MAX, EXPONENT_MIN};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use super::series::{series_cost_optimize, series_run, ArgReductionEstimator, FactPolycoeffGen};
+use super::series::{
+    series_cost_optimize, series_prec, series_run, ArgReductionEstimator, FactPolycoeffGen,
+};
 
 /// Bits of the `powi_internal` exponent integer: a `u64` on every target, so a 32-bit `usize` cannot
 /// truncate an i64 power (`powsi`).
@@ -39,9 +42,9 @@ impl ArgReductionEstimator for SinhArgReductionEstimator {
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
     #[inline]
-    fn reduction_effect(n: usize, m: i64) -> usize {
+    fn reduction_effect(n: usize, m: i64) -> i64 {
         // n*log2(3) + m
-        (n as i64 * 1000 / 631 + m) as usize
+        n as i64 * 1000 / 631 + m
     }
 }
 
@@ -56,7 +59,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn exp(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         if self.is_zero() {
             let mut ret = Self::from_word(1, p)?;
@@ -240,7 +243,7 @@ impl ExactNumNumber {
         if n >= 0 {
             self.powi_internal(n.unsigned_abs(), p, rm, true, false)
         } else {
-            let p = round_p(p);
+            let p = round_p_rm(p, rm);
 
             if self.is_zero() {
                 return Err(Error::DivisionByZero);
@@ -315,6 +318,11 @@ impl ExactNumNumber {
         )
     }
 
+    /// `powi` with a u64 power, for callers whose power does not fit a 32-bit `usize`.
+    pub(crate) fn powi_u64(&self, n: u64, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.powi_internal(n, p, rm, true, false)
+    }
+
     fn powi_internal(
         &self,
         n: u64,
@@ -323,7 +331,7 @@ impl ExactNumNumber {
         update_inexact: bool,
         zero_exp: bool,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         let mut i = n;
 
@@ -354,7 +362,7 @@ impl ExactNumNumber {
         }
         let bit_pos = bit_pos; // make immutable
 
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
@@ -434,7 +442,7 @@ impl ExactNumNumber {
         {
             return self.pow_exact_integer_underflow(mag, k * lead, p, rm);
         }
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         let mut square = self.clone()?;
         square.set_sign(Sign::Pos);
         let mut exp = mag;
@@ -555,7 +563,7 @@ impl ExactNumNumber {
         p: usize,
         rm: RoundingMode,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         // The mantissa alone, as an exact product by one (no copy of `self`).
         let mut square = self.mul_full_prec(&ExactNumNumber::small_const(1))?;
         square.set_sign(Sign::Pos);
@@ -708,8 +716,8 @@ impl ExactNumNumber {
         // Argument reduction gives error 2^(-p+5) per step, and 2^(-p+3) once.
         // First terms of the series give 2^(-p+5).
         // The error of the remaining terms of the series is compensated.
-        let add_prec = reduction_times as i64 * 5 + 8 - e_eff as i64;
-        let p_arg = p + if add_prec > 0 { add_prec as usize } else { 0 };
+        let add_prec = reduction_times as i64 * 5 + 8 - e_eff;
+        let p_arg = series_prec(p, add_prec, 0)?;
         self.set_precision(p_arg, rm)?;
 
         let arg = if reduction_times > 0 {
@@ -777,8 +785,10 @@ impl ExactNumNumber {
         cc: &mut Consts,
     ) -> Result<Self, Error> {
         let nint = n.is_int();
+        // Special-case results are built at the rm-aware word precision (64-bit units for None).
+        let p_out = round_p_rm(p, rm);
         if n.is_zero() {
-            let mut ret = Self::from_word(1, p)?;
+            let mut ret = Self::from_word(1, p_out)?;
             if n.inexact() {
                 if self.exponent() == 1 && self.abs_cmp(&ONE) == 0 {
                     ret.set_inexact(self.inexact());
@@ -796,17 +806,17 @@ impl ExactNumNumber {
                 }
             } else {
                 let s = if n.is_odd_int() { self.sign() } else { Sign::Pos };
-                Self::new2(p, s, self.inexact())
+                Self::new2(p_out, s, self.inexact())
             };
         } else if self.exponent() == 1 && self.abs_cmp(&ONE) == 0 {
             // 1^n or (-1)^n
             if n.is_odd_int() {
-                let mut ret = Self::from_i8(self.sign().to_int(), p)?;
+                let mut ret = Self::from_i8(self.sign().to_int(), p_out)?;
                 ret.set_inexact(self.inexact() || n.inexact());
                 return Ok(ret);
             } else {
                 if self.is_positive() || n.is_int() {
-                    let mut ret = Self::from_word(1, p)?;
+                    let mut ret = Self::from_word(1, p_out)?;
                     ret.set_inexact(self.inexact() || n.inexact());
                     return Ok(ret);
                 } else {
@@ -931,7 +941,7 @@ impl ExactNumNumber {
 
         // actual pow : self^n = e^(n * ln(self))
 
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         let mut x = self.clone()?;
         let mut y = n.clone()?;
@@ -1050,6 +1060,40 @@ mod test {
     use crate::common::{consts::TWO, util::random_subnormal};
 
     use super::*;
+
+    /// `e^x` for an integer part near 2^61 stays within one ulp: the integer power `e^n` amplifies the
+    /// relative error of `e` by `n`, so the guard bits must cover `log2(n)`. Checked through `ln` at
+    /// 128 extra bits: an error `d` in `e^x` shows up as `|ln(e^x) - x| ~ d`.
+    #[test]
+    fn exp_large_integer_part_accuracy() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 320;
+        let half = ExactNumNumber::from_word(1, 64)?.ldexp(-1, 64, RoundingMode::None)?;
+        let x =
+            ExactNumNumber::from_u64_internal(1u64 << 61, 64)?.add(&half, p, RoundingMode::None)?;
+        let y = x.exp(p, RoundingMode::ToEven, &mut cc)?;
+        let z = y.ln(p + 128, RoundingMode::ToEven, &mut cc)?;
+        let err = z.sub(&x, p + 128, RoundingMode::None)?.abs()?;
+        // one ulp of `y` at `p` bits is a relative 2^(1 - p); allow two.
+        let bound = ExactNumNumber::from_word(1, 64)?.ldexp(2 - 320, 64, RoundingMode::None)?;
+        assert!(err.cmp(&bound) < 0, "err exponent {}", err.exponent());
+        Ok(())
+    }
+
+    /// `e^x` with an integer part past 32 bits is in range on every target: `e^(2^k) = 2^(2^k / ln 2)`,
+    /// exponents from `bc -l` (`floor(2^k / l(2)) + 1`).
+    #[test]
+    fn exp_integer_part_beyond_u32() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        for (k, want) in [(34u32, 24_785_312_075i64), (40, 1_586_259_972_793)] {
+            let x = ExactNumNumber::from_u64_internal(1u64 << k, 64)?;
+            let r = x.exp(128, RoundingMode::ToEven, &mut cc)?;
+            assert_eq!(r.exponent(), want, "k = {k}");
+            let back = r.ln(128, RoundingMode::ToEven, &mut cc)?;
+            assert_eq!(back.exponent(), x.exponent(), "k = {k}");
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_power() -> Result<(), crate::Error> {

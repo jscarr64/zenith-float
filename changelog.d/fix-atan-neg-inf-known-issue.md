@@ -1,0 +1,1 @@
+- `atan(-Inf)` under `Up`/`Down` is no longer a known issue: it now rounds toward the mode on every target, and the README Known issues entry is removed.

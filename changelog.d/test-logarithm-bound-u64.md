@@ -1,0 +1,1 @@
+- Tests: `ops::log::test_logarithm` derives `ceil(log2(EXPONENT_MAX))` for its error bound in `u64`; the old `usize` cast truncated the exponent on 32-bit targets (32 instead of 62), so the bound was 30 bits too tight there. `ln` and `exp` were already accurate on i686 (errors identical to the host). Test-only.

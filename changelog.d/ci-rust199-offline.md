@@ -1,0 +1,1 @@
+- CI: `scripts/use_rust_1_99.sh` no longer goes online when Rust 1.99 with clippy and rustfmt is already installed. `rustup toolchain install` always re-syncs the channel, so a brief DNS outage on Pop failed the prepublish benchmark step of the 774f10d merge gate even though 1.99.1 was installed. Test: `tools/test_use_rust_1_99_offline.sh`.

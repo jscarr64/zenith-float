@@ -4,7 +4,7 @@
 
 use crate::common::consts::ONE;
 use crate::common::util::bump_prec_retry;
-use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
@@ -25,7 +25,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: argument is greater than 1 or smaller than -1, or the precision is incorrect.
     ///  - MemoryAllocation: failed to allocate memory.
     pub fn acos(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         let cmpone = self.abs_cmp(&ONE);
         if cmpone == 0 && self.is_positive() {

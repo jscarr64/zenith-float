@@ -1,0 +1,1 @@
+- `retry_budget_tests`: 32-bit expected values for the fixed retry budget (`WORD_BIT_SIZE * MAX_PREC_RETRY` = 8192 there); 64-bit values unchanged.

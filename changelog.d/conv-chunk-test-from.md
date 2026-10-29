@@ -1,0 +1,1 @@
+- Conversion tests use the infallible `u128::from` for the decimal chunk constants (clippy).

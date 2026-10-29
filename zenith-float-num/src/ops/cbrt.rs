@@ -2,8 +2,8 @@
 // Copyright (c) 2022 stencillogic, MIT License.
 //! Cube root computation.
 
+use crate::common::util::round_p_rm;
 use crate::{
-    common::util::round_p,
     defs::{Error, EXPONENT_MIN},
     num::ExactNumNumber,
     Exponent, RoundingMode,
@@ -18,7 +18,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn cbrt(&self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         if self.is_zero() {

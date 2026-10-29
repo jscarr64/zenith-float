@@ -1,0 +1,1 @@
+- Decimal input on 32-bit targets: the from-decimal exponent chunk is held in `u64`; a truncated `usize` chunk split decimal exponents near the range limit into ~10^8 steps (an effective hang).

@@ -5,7 +5,7 @@
 use crate::common::consts::ONE;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::count_leading_ones;
-use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
@@ -24,7 +24,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: when |`self`| > 1, or the precision is incorrect.
     pub fn atanh(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         if self.is_zero() {
             // a zero is fully described by its sign and inexact flag: build it at the result precision.

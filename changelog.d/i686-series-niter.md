@@ -1,0 +1,1 @@
+- `series_niter`: an iteration-count denominator that exceeds `usize` gives 0 iterations instead of overflowing (32-bit).

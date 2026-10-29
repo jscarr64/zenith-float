@@ -1,0 +1,1 @@
+- `compute_added_err` (Pow): the exponent bound is compared in `u64`, so it no longer truncates or overflows on 32-bit.
