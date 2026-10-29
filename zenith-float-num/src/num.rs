@@ -1394,7 +1394,6 @@ impl ExactNumNumber {
         }
     }
 
-    /// Returns integer part of a number as built-in integer.
     /// The integer part of `|self|` as a `u64` on every word size (`int_as_usize` stops at 32
     /// bits on a 32-bit target). `InvalidArgument` past `u64::MAX`.
     pub(super) fn int_as_u64(&self) -> Result<u64, Error> {
@@ -1421,6 +1420,7 @@ impl ExactNumNumber {
         u64::try_from(wide).map_err(|_| Error::InvalidArgument)
     }
 
+    /// Returns integer part of a number as built-in integer.
     pub(super) fn int_as_usize(&self) -> Result<usize, Error> {
         if self.e > 0 {
             debug_assert!(core::mem::size_of::<usize>() >= core::mem::size_of::<Word>());
