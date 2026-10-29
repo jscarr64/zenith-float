@@ -933,6 +933,31 @@ mod tests {
         Ok(())
     }
 
+    /// Operands at opposite ends of the exponent range: the exponent gap `e1 - e2` is computed
+    /// checked, and such operands never count as cancelling.
+    #[test]
+    fn test_part_cancel_extreme_exponent_gap() -> Result<(), crate::Error> {
+        let top = [crate::defs::WORD_SIGNIFICANT_BIT];
+        let mk = |e: Exponent, negative: bool| {
+            ExactNum::from_raw_parts(&crate::RawParts {
+                kind: crate::RawKind::Finite,
+                words: &top,
+                precision: crate::WORD_BIT_SIZE,
+                negative,
+                exponent: e,
+                inexact: true,
+                op_inexact: false,
+            })
+        };
+        let hi = mk(crate::EXPONENT_MAX, false)?;
+        let lo = mk(crate::EXPONENT_MIN, true)?;
+        let r = ExactNum::from_u8(0, crate::WORD_BIT_SIZE);
+        assert_eq!(part_cancel(&hi, &lo, &r, true), Ok(None));
+        assert_eq!(part_cancel(&lo, &hi, &r, true), Ok(None));
+        assert_eq!(part_cancel(&hi, &mk(crate::EXPONENT_MIN, false)?, &r, false), Ok(None));
+        Ok(())
+    }
+
     #[test]
     fn test_complex_cancel_independent_parts() -> Result<(), crate::Error> {
         let p = 256;
