@@ -85,8 +85,9 @@ What 2.0.0 guarantees, and what it does not:
 - Rounding is done in software on integer limbs, so the same inputs, precision, and rounding mode give bit-identical results on every platform.
 - The Gauss–Kronrod `abs_err_est` is a conservative error estimate, validated against oracles. It is not a guaranteed bound.
 - Guaranteed error bounds are not part of 2.0.0. Ball arithmetic that provides them is planned in a separate crate.
+- `atan(-Inf)` under `Up` and `Down` rounds the magnitude of π/2 in the mode before negating it, so the result is rounded in the wrong direction (toward zero under `Down`, away from it under `Up`). This is the same on every target, and it is pinned as-is in `trig_hyperbolic_grid_digest`. Fix planned; until then use `-(atan(+Inf))` with the opposite mode.
 
-No other open issues. The items listed in the 1.0.5 audit (`doc/AUDIT.md`) were closed in 1.0.6 and 1.0.11. A Heun argument whose real segment from 0 meets a singular point is `NaN(InvalidArgument)`; that is the domain of the real solution, not an open defect.
+No other open issues besides the `atan(-Inf)` item above. The items listed in the 1.0.5 audit (`doc/AUDIT.md`) were closed in 1.0.6 and 1.0.11. A Heun argument whose real segment from 0 meets a singular point is `NaN(InvalidArgument)`; that is the domain of the real solution, not an open defect.
 
 ## Rounding
 
