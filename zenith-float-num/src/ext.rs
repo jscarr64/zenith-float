@@ -7214,7 +7214,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 13 * 3 * 6 * 13);
         println!("exp pow grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_398_075_299_501_098_093);
+        #[cfg(target_pointer_width = "64")]
+        let want = 2_398_075_299_501_098_093;
+        #[cfg(target_pointer_width = "32")]
+        let want = 17_685_187_096_188_672_726;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
