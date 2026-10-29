@@ -37,7 +37,14 @@ fn traverse_binary(
                     zenith_float::RoundingMode::None,
                 );
                 let (re_err, im_err) =
-                    zenith_float::macro_util::complex_cancel_bits(&arg1, &arg2, &ret, true);
+                    match zenith_float::macro_util::complex_cancel_bits(&arg1, &arg2, &ret, true) {
+                        Ok(bits) => bits,
+                        // The cancellation cannot be retried at a representable precision: report the error.
+                        Err(err) => break zenith_float::ExactComplex::new(
+                            zenith_float::ExactNum::nan(Some(err)),
+                            zenith_float::ExactNum::nan(Some(err)),
+                        ),
+                    };
                 let mut retry = false;
                 if let Some(newerr) = re_err {
                     if errs[#errs_id] < newerr {
@@ -71,7 +78,14 @@ fn traverse_binary(
                     zenith_float::RoundingMode::None,
                 );
                 let (re_err, im_err) =
-                    zenith_float::macro_util::complex_cancel_bits(&arg1, &arg2, &ret, false);
+                    match zenith_float::macro_util::complex_cancel_bits(&arg1, &arg2, &ret, false) {
+                        Ok(bits) => bits,
+                        // The cancellation cannot be retried at a representable precision: report the error.
+                        Err(err) => break zenith_float::ExactComplex::new(
+                            zenith_float::ExactNum::nan(Some(err)),
+                            zenith_float::ExactNum::nan(Some(err)),
+                        ),
+                    };
                 let mut retry = false;
                 if let Some(newerr) = re_err {
                     if errs[#errs_id] < newerr {

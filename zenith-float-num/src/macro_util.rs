@@ -263,25 +263,37 @@ pub fn check_complex_exponent_range(
     )
 }
 
-fn part_cancel(a: &ExactNum, b: &ExactNum, r: &ExactNum, is_add: bool) -> Option<usize> {
+/// `Ok(None)`: no cancellation. `Err(InvalidArgument)`: the cancelled-bit count is not a representable
+/// working precision (32-bit `usize`), so the result cannot be retried and must not be accepted.
+fn part_cancel(
+    a: &ExactNum,
+    b: &ExactNum,
+    r: &ExactNum,
+    is_add: bool,
+) -> Result<Option<usize>, crate::Error> {
     let (Some(e1), Some(e2), Some(e3)) = (a.exponent(), b.exponent(), r.exponent()) else {
-        return None;
+        return Ok(None);
     };
     let (Some(s1), Some(s2)) = (a.sign(), b.sign()) else {
-        return None;
+        return Ok(None);
     };
     let opp = if is_add { s1 != s2 } else { s1 == s2 };
     if (e1 - e2).abs() <= 1 && opp {
-        // A zero result has exponent 0, so the gap can exceed a 32-bit `usize`: an unrepresentable count is None.
-        let gap = e1.max(e2).checked_sub(e3)?;
-        usize::try_from(gap.unsigned_abs()).ok()?.checked_add(1)
+        // A zero result has exponent 0, so the gap can exceed a 32-bit `usize`: that is an error.
+        e1.max(e2)
+            .checked_sub(e3)
+            .and_then(|gap| usize::try_from(gap.unsigned_abs()).ok())
+            .and_then(|g| g.checked_add(1))
+            .map(Some)
+            .ok_or(crate::Error::InvalidArgument)
     } else {
-        None
+        Ok(None)
     }
 }
 
 /// Extra working bits from cancellation in the **real** and **imaginary** parts,
-/// independently. Either side may be `None` when that part did not cancel.
+/// independently. Either side may be `None` when that part did not cancel. An error means a count that
+/// is not a representable working precision; `cexpr!` then returns NaN with that error.
 ///
 /// `cexpr!` stores these in two `errs[]` slots so a large imaginary cancellation
 /// cannot hide a smaller real one (or the reverse).
@@ -291,14 +303,14 @@ pub fn complex_cancel_bits(
     arg2: &crate::ExactComplex,
     ret: &crate::ExactComplex,
     is_add: bool,
-) -> (Option<usize>, Option<usize>) {
+) -> Result<(Option<usize>, Option<usize>), crate::Error> {
     if !arg1.inexact() && !arg2.inexact() {
-        return (None, None);
+        return Ok((None, None));
     }
-    (
-        part_cancel(arg1.re(), arg2.re(), ret.re(), is_add),
-        part_cancel(arg1.im(), arg2.im(), ret.im(), is_add),
-    )
+    Ok((
+        part_cancel(arg1.re(), arg2.re(), ret.re(), is_add)?,
+        part_cancel(arg1.im(), arg2.im(), ret.im(), is_add)?,
+    ))
 }
 
 #[cfg(test)]
@@ -844,7 +856,7 @@ mod tests {
     }
 
     #[test]
-    fn test_complex_cancel_independent_parts() {
+    fn test_complex_cancel_independent_parts() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::None;
         let mk_inexact = |n: u8| {
@@ -861,7 +873,7 @@ mod tests {
         let a = crate::ExactComplex::new(re_pos, mk_inexact(2));
         let b = crate::ExactComplex::new(near_m1, im);
         let ret = crate::ExactComplex::add_ref(&a, &b, p, rm);
-        let (re_err, im_err) = complex_cancel_bits(&a, &b, &ret, true);
+        let (re_err, im_err) = complex_cancel_bits(&a, &b, &ret, true)?;
         assert!(re_err.is_some(), "real part should report cancellation");
         assert!(
             im_err.is_none(),
@@ -874,11 +886,12 @@ mod tests {
         let c = crate::ExactComplex::new(mk_inexact(1), im_pos);
         let d = crate::ExactComplex::new(mk_inexact(1), im_neg);
         let ret2 = crate::ExactComplex::add_ref(&c, &d, p, rm);
-        let (re_err2, im_err2) = complex_cancel_bits(&c, &d, &ret2, true);
+        let (re_err2, im_err2) = complex_cancel_bits(&c, &d, &ret2, true)?;
         assert!(re_err2.is_none(), "real part should stay independent");
         assert!(
             im_err2.is_some(),
             "imaginary part should report cancellation"
         );
+        Ok(())
     }
 }

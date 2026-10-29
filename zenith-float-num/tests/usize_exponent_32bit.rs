@@ -28,8 +28,15 @@ fn powsi_positive_beyond_u32() {
         assert!(r == pow2(k), "2^{k}");
     }
     let m2 = ExactNum::from_u8(2, P).neg();
-    assert!(!m2.powsi(1i64 << 32, P, RoundingMode::Down).is_negative(), "(-2)^(2^32) > 0");
-    assert!(m2.powsi((1i64 << 32) + 1, P, RoundingMode::Down).is_negative(), "(-2)^(2^32+1) < 0");
+    assert!(
+        !m2.powsi(1i64 << 32, P, RoundingMode::Down).is_negative(),
+        "(-2)^(2^32) > 0"
+    );
+    assert!(
+        m2.powsi((1i64 << 32) + 1, P, RoundingMode::Down)
+            .is_negative(),
+        "(-2)^(2^32+1) < 0"
+    );
 }
 
 #[test]
@@ -41,22 +48,32 @@ fn powsi_negative_beyond_u32() {
         assert!(r == pow2(-k), "2^-{k}");
     }
     let m2 = ExactNum::from_u8(2, P).neg();
-    assert!(!m2.powsi(-(1i64 << 32), P, RoundingMode::Down).is_negative(), "(-2)^-(2^32) > 0");
-    assert!(m2.powsi(-((1i64 << 32) + 1), P, RoundingMode::Down).is_negative(), "(-2)^-(2^32+1) < 0");
+    assert!(
+        !m2.powsi(-(1i64 << 32), P, RoundingMode::Down).is_negative(),
+        "(-2)^-(2^32) > 0"
+    );
+    assert!(
+        m2.powsi(-((1i64 << 32) + 1), P, RoundingMode::Down)
+            .is_negative(),
+        "(-2)^-(2^32+1) < 0"
+    );
 }
-
-
 
 #[test]
 fn parse_decimal_exponent_beyond_u32() -> Result<(), String> {
     let mut cc = cc()?;
     let up = ExactNum::parse("1e5000000000", Radix::Dec, P, RoundingMode::ToEven, &mut cc);
     assert_eq!(up.exponent(), Some(16609640475), "1e5000000000");
-    let dn = ExactNum::parse("1e-5000000000", Radix::Dec, P, RoundingMode::ToEven, &mut cc);
+    let dn = ExactNum::parse(
+        "1e-5000000000",
+        Radix::Dec,
+        P,
+        RoundingMode::ToEven,
+        &mut cc,
+    );
     assert_eq!(dn.exponent(), Some(-16609640474), "1e-5000000000");
     Ok(())
 }
-
 
 #[test]
 fn to_decimal_exponent_beyond_u32() -> Result<(), String> {
@@ -112,7 +129,7 @@ fn format_subnormal_exponent() -> Result<(), String> {
 }
 
 /// Full cancellation to an exact zero (exponent 0) of operands at `2^(2^40)`: the cancelled-bit count
-/// `|e1 - e3| + 1 = 2^40 + 2` does not fit a 32-bit `usize`: it must be None there, never overflow.
+/// `|e1 - e3| + 1 = 2^40 + 2` does not fit a 32-bit `usize`: it must be an error there, never overflow or None.
 #[test]
 fn cancel_bits_zero_result_far_exponent() -> Result<(), String> {
     use zenith_float_num::{macro_util::complex_cancel_bits, ExactComplex};
@@ -123,6 +140,10 @@ fn cancel_bits_zero_result_far_exponent() -> Result<(), String> {
     let ret = ExactComplex::new(ExactNum::new(P), ExactNum::new(P));
     assert_eq!(ret.re().exponent(), Some(0), "zero result exponent");
     let want = usize::try_from(k + 2).ok();
-    assert_eq!(complex_cancel_bits(&a, &b, &ret, true), (want, None));
+    let got = complex_cancel_bits(&a, &b, &ret, true);
+    match want {
+        Some(w) => assert_eq!(got, Ok((Some(w), None))),
+        None => assert_eq!(got, Err(zenith_float_num::Error::InvalidArgument)),
+    }
     Ok(())
 }
