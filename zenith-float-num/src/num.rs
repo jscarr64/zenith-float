@@ -3390,6 +3390,10 @@ mod tests {
                 [0, WORD_SIGNIFICANT_BIT],
                 -98,
             ),
+        ];
+        // Rounding onto the subnormal grid: `n` reaches `|EXPONENT_MIN|`.
+        #[cfg(not(target_pointer_width = "32"))]
+        let subnormal_grid = [
             (
                 [1, 1],
                 Sign::Pos,
@@ -3445,7 +3449,44 @@ mod tests {
                 EXPONENT_MIN,
             ),
         ];
-        for (m1, s, e1, n, rm, m2, e2) in testset {
+        // On 32-bit targets `n` stops at `usize::MAX = 2^32 - 1`, far short of `|EXPONENT_MIN|`, so the
+        // vectors above cannot be written. Exact model: a positive value below `2^EXPONENT_MIN` lies far
+        // below half of the grid step `2^-n`; `Up` gives the step `2^-n = 0.5 * 2^-(n - 1)`, `Down` and
+        // `ToEven` give zero.
+        #[cfg(target_pointer_width = "32")]
+        let step_e =
+            1 - Exponent::try_from(usize::MAX).map_err(|_| crate::Error::InvalidArgument)?;
+        #[cfg(target_pointer_width = "32")]
+        let subnormal_grid = [
+            (
+                [1, 1],
+                Sign::Pos,
+                EXPONENT_MIN,
+                usize::MAX,
+                RoundingMode::Up,
+                [0, WORD_SIGNIFICANT_BIT],
+                step_e,
+            ),
+            (
+                [1, 1],
+                Sign::Pos,
+                EXPONENT_MIN,
+                usize::MAX,
+                RoundingMode::Down,
+                [0, 0],
+                0,
+            ),
+            (
+                [0, 1],
+                Sign::Pos,
+                EXPONENT_MIN,
+                usize::MAX,
+                RoundingMode::ToEven,
+                [0, 0],
+                0,
+            ),
+        ];
+        for (m1, s, e1, n, rm, m2, e2) in testset.into_iter().chain(subnormal_grid) {
             //println!("{:?}", (m1, s, e1, n, rm, m2, e2));
             let d1 = ExactNumNumber::from_words(&m1, s, e1)?;
             let d1_inexact = d1.inexact();
