@@ -57,3 +57,17 @@ fn parse_decimal_exponent_beyond_u32() -> Result<(), String> {
     Ok(())
 }
 
+
+#[test]
+fn to_decimal_exponent_beyond_u32() -> Result<(), String> {
+    let mut cc = cc()?;
+    for (k, d) in [(1i64 << 40, 330985980541i64), (-(1i64 << 40), -330985980542i64)] {
+        let (_, digits, e) = pow2(k)
+            .convert_to_radix(Radix::Dec, RoundingMode::ToEven, &mut cc)
+            .map_err(|err| format!("2^{k} to dec: {err:?}"))?;
+        let len = i64::try_from(digits.len()).map_err(|err| format!("{err}"))?;
+        // `0.d0 d1 ... * 10^e` with `d0 != 0`, so `10^(e - 1) <= 2^k < 10^e`; record what came back
+        assert_eq!(e - 1, d, "2^{k}: decimal exponent (len {len})");
+    }
+    Ok(())
+}
