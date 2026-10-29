@@ -2915,6 +2915,19 @@ mod tests {
         Ok(())
     }
 
+    /// Rounding a value near the bottom of the range to a few fractional bits leaves nothing: the
+    /// fractional-bit count `max_bits - e` is past `u32` there and must not be truncated on 32-bit.
+    #[test]
+    fn round_tiny_value_to_integer_grid() -> Result<(), crate::Error> {
+        for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::None] {
+            for n in [0usize, 10] {
+                let t = ExactNumNumber::min_positive_normal(64)?.round(n, rm)?;
+                assert!(t.is_zero() && t.inexact(), "{rm:?} n = {n}");
+            }
+        }
+        Ok(())
+    }
+
     #[test]
     fn test_rounding() -> Result<(), crate::Error> {
         // trailing bits
