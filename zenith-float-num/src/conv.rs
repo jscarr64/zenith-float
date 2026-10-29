@@ -966,6 +966,17 @@ mod tests {
         Ok(())
     }
 
+    /// The to-decimal exponent chunk is EXPONENT_MAX / 4 on every target. A 32-bit `usize`
+    /// truncated it to 2^30 - 1, so an exponent near EXPONENT_MIN / log2(10) took ~1.4 * 10^9
+    /// chunk multiplications (an effective hang).
+    #[test]
+    fn dec_output_exponent_chunk_not_truncated() -> Result<(), crate::Error> {
+        let want = u128::from(EXPONENT_MAX.unsigned_abs()) / 4;
+        let have = u128::try_from(TEN_PWR_MAX_TO_DEC).map_err(|_| crate::Error::InvalidArgument)?;
+        assert_eq!(have, want);
+        Ok(())
+    }
+
     #[cfg(not(feature = "std"))]
     use alloc::vec;
 
