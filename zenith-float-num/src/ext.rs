@@ -5996,9 +5996,11 @@ mod special_arg_tests {
             assert_eq!(got.compare(&want), want.compare(&got), "{x:?}");
             if !want.is_inf() {
                 assert!(matches!(got.compare(&want), Some(0)), "{x:?}");
+                // A None product keeps whole 64-bit words (rp(p, 64)) on every target.
                 assert_eq!(
                     got.mantissa_max_bit_len(),
-                    want.mantissa_max_bit_len(),
+                    want.mantissa_max_bit_len()
+                        .map(|b| crate::common::util::round_p_rm(b, RoundingMode::None)),
                     "{x:?}"
                 );
                 assert_eq!(got.exponent(), want.exponent(), "{x:?}");

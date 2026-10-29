@@ -5,6 +5,7 @@
 use crate::common::consts::ONE;
 use crate::common::util::count_leading_zeroes_skip_first;
 use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::defs::Error;
 use crate::defs::Exponent;
 use crate::defs::Precision;
@@ -455,7 +456,7 @@ impl ExactNumNumber {
         full_prec: bool,
         per_op: bool,
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         if !full_prec {
             Self::p_assertion(p)?;
@@ -542,7 +543,7 @@ impl ExactNumNumber {
             };
         }
 
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         Self::p_assertion(p)?;
 
         let s = if self.s == d2.s { Sign::Pos } else { Sign::Neg };
@@ -775,7 +776,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         (full_prec, per_op): (bool, bool),
     ) -> Result<Self, Error> {
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
         if !full_prec {
             Self::p_assertion(p)?;
         }
@@ -1778,7 +1779,7 @@ impl ExactNumNumber {
             }
         }
 
-        self.m.set_length(p)?;
+        self.m.set_length(round_p_rm(p, rm))?;
 
         Ok(true)
     }
@@ -2142,7 +2143,8 @@ mod tests {
 
         d3 = d1.sub(&d2, WORD_BIT_SIZE, RoundingMode::None)?;
 
-        assert_eq!(w, d3.mantissa().digits()[0]);
+        // None keeps a whole 64-bit word: on 32-bit words the result is the top digit of two.
+        assert_eq!(Some(&w), d3.mantissa().digits().last());
 
         // increase precision
         d1 = ExactNumNumber::from_raw_parts(

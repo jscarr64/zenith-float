@@ -305,6 +305,9 @@ impl From<Radix> for u8 {
 #[derive(Eq, PartialEq, Debug, Copy, Clone)]
 pub enum RoundingMode {
     /// Skip rounding operation.
+    ///
+    /// The result is truncated (rounded toward zero) at `p` rounded up to a multiple of 64 bits,
+    /// on every target, so `None` results do not depend on the machine word size.
     None = 1,
 
     /// Round toward positive infinity (directed rounding).

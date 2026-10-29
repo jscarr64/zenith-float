@@ -6,6 +6,7 @@ use crate::common::consts::TEN;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::log2_ceil;
 use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::common::util::MAX_PREC_RETRY;
 use crate::defs::DoubleWord;
 use crate::defs::Error;
@@ -506,7 +507,12 @@ impl ExactNumNumber {
         let dec_len = (p as u64 * 301029996 / 1000000000) as usize + 1 + extra_digits;
 
         let mut err = WORD_BIT_SIZE; // speculative
-        let mut p_wrk = round_p((dec_len as u64 * 3321928095 / 1000000000) as usize + 1 + err);
+        // Whole 64-bit words: the None steps below keep rp(p_wrk, 64) bits on every target, and the
+        // digit extraction reads x as a p_wrk-bit integer.
+        let mut p_wrk = round_p_rm(
+            (dec_len as u64 * 3321928095 / 1000000000) as usize + 1 + err,
+            RoundingMode::None,
+        );
         let mut p_inc = WORD_BIT_SIZE;
 
         let mut retries = 0usize;
@@ -555,7 +561,7 @@ impl ExactNumNumber {
 
             if err_acc > err {
                 err_acc += err_acc / usize::try_from(TEN_PWR_MAX_TO_DEC).unwrap_or(usize::MAX) + 3;
-                p_wrk += round_p(err_acc - err);
+                p_wrk += round_p_rm(err_acc - err, RoundingMode::None);
                 err = err_acc;
                 continue;
             }
@@ -980,15 +986,10 @@ mod tests {
     #[cfg(not(feature = "std"))]
     use alloc::vec;
 
-    #[cfg(not(target_pointer_width = "32"))]
-    type PinWord = u64;
-    #[cfg(target_pointer_width = "32")]
-    type PinWord = u32;
-    type DecPin = (Exponent, &'static [PinWord], Exponent, &'static [PinWord]);
+    type DecPin = (Exponent, &'static [u64], Exponent, &'static [u64]);
 
     /// mpmath-pinned (g exponent, g words, n exponent, n words) for the decimal vectors of
     /// the "unknown p" round trip in `test_conv_num`, in order. Words are 64-bit, little end first.
-    #[cfg(not(target_pointer_width = "32"))]
     const CONV_DEC_PINS: [DecPin; 5] = [
         (
             409,
@@ -1083,64 +1084,22 @@ mod tests {
             ],
         ),
     ];
-
-    /// The decimal pins for 32-bit targets: there `round_p` rounds precisions up to a multiple of
-    /// 32, so g and n carry 224/416-bit mantissas, not the 256/448 bits of 64-bit targets.
-    /// Independently computed by mpmath (~/rusty-work/logs/pinconv32.py, two working precisions
-    /// agreeing); words are 32-bit, little end first.
-    #[cfg(target_pointer_width = "32")]
-    const CONV_DEC_PINS: [DecPin; 5] = [
-        (
-            409,
-            &[2160086280, 2561868280, 913327487, 951903106, 1326852062, 1675247100, 3110183156],
-            409,
-            &[2160086280, 2561868280, 913327487, 951903106, 1326852062, 1675247100, 3110183156],
-        ),
-        (
-            -1531968934941318218,
-            &[2821672058, 278463616, 1892689262, 570927122, 223021399, 3320101984, 3347018969],
-            -1531968934941318218,
-            &[2821672058, 278463616, 1892689262, 570927122, 223021399, 3320101984, 3347018969],
-        ),
-        (
-            -1531968934941318391,
-            &[
-                3347339412, 23047189, 865587231, 1696809695, 1096566357, 3282458377, 1573575527,
-                1889087728, 3179171411, 2430437842, 201156596, 3122899806, 4007259098,
-            ],
-            -1531968934941318391,
-            &[
-                3347339412, 23047189, 865587231, 1696809695, 1096566357, 3282458377, 1573575527,
-                1889087728, 3179171411, 2430437842, 201156596, 3122899806, 4007259098,
-            ],
-        ),
-        (
-            -1531968934941317949,
-            &[
-                1999782529, 3752236744, 221895658, 1269897034, 2743904648, 2738212419, 242269338,
-                2360054321, 3677816620, 146944269, 3172865733, 3906140405, 3528493649,
-            ],
-            -1531968934941317949,
-            &[
-                1999782529, 3752236744, 221895658, 1269897034, 2743904648, 2738212419, 242269338,
-                2360054321, 3677816620, 146944269, 3172865733, 3906140405, 3528493649,
-            ],
-        ),
-        (
-            236,
-            &[
-                1353315634, 1105451482, 4090419022, 3201368754, 2198462252, 2831810591, 3723704545,
-            ],
-            236,
-            &[
-                1353315634, 1105451482, 4090419022, 3201368754, 2198462252, 2831810591, 3723704545,
-            ],
-        ),
-    ];
-
-    /// Mantissa words equal the pinned words (pins use the target's word size).
-    fn words_eq_pin(d: &[Word], pin: &[PinWord]) -> bool {
+    /// Mantissa words equal the pinned 64-bit words. `RoundingMode::None` truncates at whole
+    /// 64-bit words on every target (zf 2.0), so 32-bit targets hold the same value as two
+    /// 32-bit words per pin word, low half first.
+    #[cfg(not(target_pointer_width = "32"))]
+    fn words_eq_pin(d: &[Word], pin: &[u64]) -> bool {
         d == pin
+    }
+
+    /// Mantissa words equal the pinned 64-bit words, two 32-bit words per pin word.
+    #[cfg(target_pointer_width = "32")]
+    fn words_eq_pin(d: &[Word], pin: &[u64]) -> bool {
+        d.len() == pin.len() * 2
+            && pin.iter().zip(d.chunks(2)).all(|(p, c)| match c {
+                [lo, hi] => (u64::from(*lo) | (u64::from(*hi) << 32)) == *p,
+                _ => false,
+            })
     }
 
     #[test]

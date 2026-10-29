@@ -299,6 +299,19 @@ pub fn round_p(p: usize) -> usize {
     ((p.saturating_add(WORD_BIT_SIZE - 1)) / WORD_BIT_SIZE) * WORD_BIT_SIZE
 }
 
+/// Buffer precision of a result rounded with `rm`. `RoundingMode::None` keeps whole 64-bit words,
+/// `rp(p, 64)` bits, on every target, so a None result is the same value on 32- and 64-bit words;
+/// the other modes use the native word boundary (they round at `p` anyway).
+pub fn round_p_rm(p: usize, rm: RoundingMode) -> usize {
+    if rm != RoundingMode::None {
+        return round_p(p);
+    }
+    match p.div_ceil(64).checked_mul(64) {
+        Some(q) => q,
+        None => round_p(p),
+    }
+}
+
 // Convert rounding mode for an opposite sign.
 pub fn invert_rm_for_sign(rm: RoundingMode) -> RoundingMode {
     if rm == RoundingMode::Up {
