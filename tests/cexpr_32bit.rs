@@ -1,18 +1,22 @@
 //! `cexpr!` with a cancellation count that does not fit a 32-bit `usize`.
 
 use zenith_float::{cexpr, ExactComplex};
-use zenith_float_num::{ctx::Context, Consts, ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
+use zenith_float_num::{
+    ctx::Context, Consts, Error, ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN,
+};
 
-fn big(k: i64) -> ExactNum {
-    ExactNum::from_u8(1, 64).ldexp(k, 64, RoundingMode::None)
-}
-
-/// Inexact operands at `2^(2^40)` cancelling to an exact zero: the cancelled-bit count is `2^40 + 2`.
-/// On 64-bit the loop retries at that working precision and the zero is exact there. On 32-bit the
-/// count does not fit `usize`, no retry is possible, and `cexpr!` must return an error (NaN), never
-/// accept the unretried zero.
+/// `x * x - x * x` with `x = (1 + 2^-63) * 2^(2^39)`: each square needs 127 bits, so at the first working
+/// precision both products are inexact, and they cancel to an exact zero (exponent 0) from exponent
+/// `2^40 + 1`. The cancelled-bit count `2^40 + 2` is not a 32-bit `usize`, so no retry is possible
+/// and `cexpr!` must return NaN with `InvalidArgument` (the error for an unrepresentable precision),
+/// never the unretried zero. On 64-bit the retry asks for `2^40` working bits (a 128 GiB mantissa),
+/// so the test only runs where the count does not fit.
 #[test]
 fn cexpr_unrepresentable_cancellation_is_an_error() -> Result<(), Box<dyn std::error::Error>> {
+    let k = 1i64 << 39;
+    if usize::try_from(2 * k + 2).is_ok() {
+        return Ok(());
+    }
     let mut ctx = Context::new(
         64,
         RoundingMode::ToEven,
@@ -20,15 +24,15 @@ fn cexpr_unrepresentable_cancellation_is_an_error() -> Result<(), Box<dyn std::e
         EXPONENT_MIN,
         EXPONENT_MAX,
     );
-    let k = 1i64 << 40;
-    let mut a = ExactComplex::new(big(k), ExactNum::new(64));
-    a.set_inexact(true);
-    let b = ExactComplex::new(-big(k), ExactNum::new(64));
-    let z = cexpr!(a + b, &mut ctx);
-    if usize::try_from(k + 2).is_ok() {
-        assert!(z.re().is_zero() && z.im().is_zero(), "{z:?}");
-    } else {
-        assert!(z.is_nan(), "{z:?}");
-    }
+    let one = ExactNum::from_u8(1, 64);
+    let ulp = ExactNum::from_u8(1, 64).ldexp(-63, 64, RoundingMode::None);
+    let x = ExactComplex::new(
+        one.add(&ulp, 64, RoundingMode::None)
+            .ldexp(k, 64, RoundingMode::None),
+        ExactNum::new(64),
+    );
+    let z = cexpr!(x * x - x * x, &mut ctx);
+    assert!(z.is_nan(), "{z:?}");
+    assert_eq!(z.re().err(), Some(Error::InvalidArgument), "{z:?}");
     Ok(())
 }
