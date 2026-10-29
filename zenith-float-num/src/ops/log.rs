@@ -519,10 +519,7 @@ fn log_is_exact_dyadic(
 mod tests {
 
     use crate::{
-        common::{
-            consts::TEN,
-            util::{log2_ceil, random_subnormal},
-        },
+        common::{consts::TEN, util::random_subnormal},
         WORD_BIT_SIZE,
     };
 
@@ -572,23 +569,19 @@ mod tests {
         let mut eps = ExactNumNumber::small_const(1);
 
         let d1 = ExactNumNumber::max_value(prec)?;
+        // `ceil(log2(EXPONENT_MAX))` in `u64`: a `usize` cast of the exponent truncated it to 32 bits on
+        // 32-bit targets, giving 32 instead of 62 and an error bound 30 bits too tight.
+        let lg = Exponent::from(u64::BITS - (d1.exponent().unsigned_abs() - 1).leading_zeros());
         let d2 = d1.ln(prec, RoundingMode::Down, &mut cc)?;
         let d3 = d2.exp(prec, RoundingMode::Down, &mut cc)?;
-        eps.set_exponent(
-            d1.exponent() - prec as Exponent
-                + 1
-                + log2_ceil(d1.exponent().unsigned_abs() as usize) as Exponent,
-        );
+        eps.set_exponent(d1.exponent() - prec as Exponent + 1 + lg);
 
         assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 
         let d2 = d1.log2(prec, RoundingMode::ToEven, &mut cc)?;
         match TWO.pow(&d2, prec, RoundingMode::ToEven, &mut cc) {
             Ok(d3) => {
-                eps.set_exponent(
-                    d1.exponent() - prec as Exponent
-                        + log2_ceil(d1.exponent().unsigned_abs() as usize) as Exponent,
-                );
+                eps.set_exponent(d1.exponent() - prec as Exponent + lg);
 
                 assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
             }
@@ -600,10 +593,7 @@ mod tests {
         let d2 = d1.log10(prec, RoundingMode::ToEven, &mut cc)?;
         match TEN.pow(&d2, prec, RoundingMode::ToEven, &mut cc) {
             Ok(d3) => {
-                eps.set_exponent(
-                    d1.exponent() - prec as Exponent
-                        + log2_ceil(d1.exponent().unsigned_abs() as usize) as Exponent,
-                );
+                eps.set_exponent(d1.exponent() - prec as Exponent + lg);
 
                 assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
             }

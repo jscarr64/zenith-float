@@ -1031,7 +1031,8 @@ mod test {
         let mut cc = Consts::new()?;
         let p = 320;
         let half = ExactNumNumber::from_word(1, 64)?.ldexp(-1, 64, RoundingMode::None)?;
-        let x = ExactNumNumber::from_u64_internal(1u64 << 61, 64)?.add(&half, p, RoundingMode::None)?;
+        let x =
+            ExactNumNumber::from_u64_internal(1u64 << 61, 64)?.add(&half, p, RoundingMode::None)?;
         let y = x.exp(p, RoundingMode::ToEven, &mut cc)?;
         let z = y.ln(p + 128, RoundingMode::ToEven, &mut cc)?;
         let err = z.sub(&x, p + 128, RoundingMode::None)?.abs()?;
