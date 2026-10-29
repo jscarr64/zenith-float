@@ -60,7 +60,8 @@ mod tests {
         assert_eq!(mul(EXPONENT_MAX, -3), -WIDE_LIMIT);
         assert_eq!(
             abs_diff_shift(EXPONENT_MAX, EXPONENT_MIN),
-            (EXPONENT_MAX as usize) * 2
+            // 2 * EXPONENT_MAX in u64, saturated to `usize` like `abs_diff_shift` (32-bit: `usize::MAX`).
+            usize::try_from(EXPONENT_MAX.unsigned_abs().saturating_mul(2)).unwrap_or(usize::MAX)
         );
     }
 }

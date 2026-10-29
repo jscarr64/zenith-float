@@ -1,0 +1,1 @@
+- Test: `narrow_saturates_outside_the_range` computes `2 * EXPONENT_MAX` in `u64` and saturates to `usize`, so the unit tests compile on 32-bit targets. Same assertion on 64-bit.
