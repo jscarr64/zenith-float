@@ -6906,7 +6906,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
         println!("mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        #[cfg(target_pointer_width = "64")]
+        let want = 8_827_555_224_262_690_728;
+        #[cfg(target_pointer_width = "32")]
+        let want = 13_285_983_356_288_713_452;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -7009,7 +7013,11 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        #[cfg(target_pointer_width = "64")]
+        let want = 8_827_555_224_262_690_728;
+        #[cfg(target_pointer_width = "32")]
+        let want = 13_285_983_356_288_713_452;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
