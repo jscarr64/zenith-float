@@ -5811,6 +5811,23 @@ mod tests {
             .is_nan());
         Ok(())
     }
+
+    #[test]
+    fn rm_none_results_from_infinite_operands_keep_64_bit_words_on_every_target(
+    ) -> Result<(), crate::Error> {
+        let mut cc = crate::Consts::new()?;
+        let rm = crate::RoundingMode::None;
+        let p = 200;
+        let zero = ExactNum::from_u8(0, 64);
+        let w = |x: &ExactNum| x.mantissa_max_bit_len();
+        assert_eq!(w(&INF_NEG.exp(p, rm, &mut cc)), Some(256), "exp(-inf)");
+        assert_eq!(w(&INF_NEG.exp2(p, rm, &mut cc)), Some(256), "exp2(-inf)");
+        assert_eq!(w(&INF_POS.tanh(p, rm, &mut cc)), Some(256), "tanh(inf)");
+        assert_eq!(w(&INF_POS.reciprocal(p, rm)), Some(256), "1/inf");
+        assert_eq!(w(&INF_POS.powi(0, p, rm)), Some(256), "inf^0 (powi)");
+        assert_eq!(w(&INF_POS.pow(&zero, p, rm, &mut cc)), Some(256), "inf^0");
+        Ok(())
+    }
 }
 
 #[cfg(feature = "random")]
