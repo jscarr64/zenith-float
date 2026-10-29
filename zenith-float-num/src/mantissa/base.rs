@@ -339,7 +339,7 @@ impl Mantissa {
         let mut shift = Self::maximize(&mut m3.m) as i64;
 
         if full_prec {
-            m3.m.trunc_trailing_zeroes();
+            m3.m.trunc_trailing_zeroes()?;
         } else if m3.len() < p {
             let n = m3.len();
             m3.m.try_extend(p * WORD_BIT_SIZE)?;
@@ -465,7 +465,7 @@ impl Mantissa {
         }
 
         if full_prec {
-            m3.m.trunc_trailing_zeroes();
+            m3.m.trunc_trailing_zeroes()?;
         } else if m3.len() < p {
             let n = m3.len();
             m3.m.try_extend(p * WORD_BIT_SIZE)?;
@@ -514,7 +514,7 @@ impl Mantissa {
         let p = Self::bit_len_to_word_len(p);
 
         if full_prec {
-            m3.m.trunc_trailing_zeroes();
+            m3.m.trunc_trailing_zeroes()?;
         } else if m3.len() < p {
             let n = m3.len();
             m3.m.try_extend(p * WORD_BIT_SIZE)?;
