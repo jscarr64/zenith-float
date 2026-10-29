@@ -3634,4 +3634,42 @@ mod tests {
         assert!(d2.inexact());
         Ok(())
     }
+    /// `1 + 2^-64` and `2 - 2^-64` at p = 65, with the exponents shifted by `de1`, `de2`.
+    fn none_trunc_operands(
+        de1: Exponent,
+        de2: Exponent,
+    ) -> Result<(ExactNumNumber, ExactNumNumber), Error> {
+        let mut tiny = ExactNumNumber::from_word(1, 65)?;
+        tiny.set_exponent(1 - 64);
+        let mut x = ExactNumNumber::from_word(1, 65)?.add(&tiny, 65, RoundingMode::ToZero)?;
+        let mut y = ExactNumNumber::from_word(2, 65)?.sub(&tiny, 65, RoundingMode::ToZero)?;
+        x.set_exponent(x.exponent() + de1);
+        y.set_exponent(y.exponent() + de2);
+        Ok((x, y))
+    }
+
+    #[test]
+    fn rm_none_truncates_at_64_bit_words_on_every_target() -> Result<(), Error> {
+        // RoundingMode::None keeps the result truncated at rp(p, 64) bits (128 at p = 65) on every
+        // target, so a None result is the same value on 32- and 64-bit words.
+        for (de1, de2) in [(0, 0), (EXPONENT_MIN + 5, -20)] {
+            let (x, y) = none_trunc_operands(de1, de2)?;
+            let got = x.mul(&y, 65, RoundingMode::None)?;
+            // Model: the exact product (130 bits plus any subnormal shift fits in 320), cut at 128 bits.
+            let mut want = x.mul(&y, 320, RoundingMode::ToZero)?;
+            assert!(!want.inexact(), "the model product is exact");
+            want.set_precision(128, RoundingMode::ToZero)?;
+            assert!(
+                want.inexact(),
+                "the 128-bit cut drops bits, so 96 and 128 bits differ"
+            );
+            assert_eq!(
+                got.cmp(&want),
+                0,
+                "None at p=65 (de1={de1}) is not the 128-bit truncation"
+            );
+            assert_eq!(got.exponent(), want.exponent());
+        }
+        Ok(())
+    }
 }
