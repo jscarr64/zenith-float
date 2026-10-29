@@ -61,7 +61,11 @@ mod tests {
         assert_eq!(
             abs_diff_shift(EXPONENT_MAX, EXPONENT_MIN),
             // 32-bit: 2^63 - 2 exceeds `usize`, and `abs_diff_shift` clamps to `usize::MAX` by its own `unwrap_or`.
-            EXPONENT_MAX.unsigned_abs().checked_mul(2).and_then(|d| usize::try_from(d).ok()).unwrap_or(usize::MAX)
+            EXPONENT_MAX
+                .unsigned_abs()
+                .checked_mul(2)
+                .and_then(|d| usize::try_from(d).ok())
+                .unwrap_or(usize::MAX)
         );
     }
 }

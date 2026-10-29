@@ -288,7 +288,13 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
     pub fn powi(&self, n: usize, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        self.powi_internal(u64::try_from(n).map_err(|_| Error::InvalidArgument)?, p, rm, true, false)
+        self.powi_internal(
+            u64::try_from(n).map_err(|_| Error::InvalidArgument)?,
+            p,
+            rm,
+            true,
+            false,
+        )
     }
 
     fn powi_internal(
