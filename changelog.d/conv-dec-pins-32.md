@@ -1,0 +1,1 @@
+- Tests: `test_conv_num` decimal pins for 32-bit targets, computed independently with mpmath at the 32-bit-rounded precisions; 64-bit pins unchanged.

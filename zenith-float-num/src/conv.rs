@@ -960,7 +960,8 @@ mod tests {
         let want = u128::try_from(EXPONENT_MAX).map_err(|_| crate::Error::InvalidArgument)?
             * 301029995
             / 1000000000;
-        let have = u128::try_from(TEN_PWR_MAX_FROM_DEC).map_err(|_| crate::Error::InvalidArgument)?;
+        let have =
+            u128::try_from(TEN_PWR_MAX_FROM_DEC).map_err(|_| crate::Error::InvalidArgument)?;
         assert_eq!(have, want);
         Ok(())
     }
@@ -979,9 +980,15 @@ mod tests {
     #[cfg(not(feature = "std"))]
     use alloc::vec;
 
+    #[cfg(not(target_pointer_width = "32"))]
+    type PinWord = u64;
+    #[cfg(target_pointer_width = "32")]
+    type PinWord = u32;
+    type DecPin = (Exponent, &'static [PinWord], Exponent, &'static [PinWord]);
+
     /// mpmath-pinned (g exponent, g words, n exponent, n words) for the decimal vectors of
     /// the "unknown p" round trip in `test_conv_num`, in order. Words are 64-bit, little end first.
-    type DecPin = (Exponent, &'static [u64], Exponent, &'static [u64]);
+    #[cfg(not(target_pointer_width = "32"))]
     const CONV_DEC_PINS: [DecPin; 5] = [
         (
             409,
@@ -1077,22 +1084,63 @@ mod tests {
         ),
     ];
 
-    /// Mantissa words equal the pinned 64-bit words (32-bit targets pair up low/high words).
-    fn words_eq_u64(d: &[Word], pin: &[u64]) -> bool {
-        #[cfg(not(target_pointer_width = "32"))]
-        {
-            d == pin
-        }
-        #[cfg(target_pointer_width = "32")]
-        {
-            let (pairs, rest) = d.as_chunks::<2>();
-            rest.is_empty()
-                && pairs.len() == pin.len()
-                && pairs
-                    .iter()
-                    .zip(pin)
-                    .all(|([lo, hi], p)| (u64::from(*hi) << 32 | u64::from(*lo)) == *p)
-        }
+    /// The decimal pins for 32-bit targets: there `round_p` rounds precisions up to a multiple of
+    /// 32, so g and n carry 224/416-bit mantissas, not the 256/448 bits of 64-bit targets.
+    /// Independently computed by mpmath (~/rusty-work/logs/pinconv32.py, two working precisions
+    /// agreeing); words are 32-bit, little end first.
+    #[cfg(target_pointer_width = "32")]
+    const CONV_DEC_PINS: [DecPin; 5] = [
+        (
+            409,
+            &[2160086280, 2561868280, 913327487, 951903106, 1326852062, 1675247100, 3110183156],
+            409,
+            &[2160086280, 2561868280, 913327487, 951903106, 1326852062, 1675247100, 3110183156],
+        ),
+        (
+            -1531968934941318218,
+            &[2821672058, 278463616, 1892689262, 570927122, 223021399, 3320101984, 3347018969],
+            -1531968934941318218,
+            &[2821672058, 278463616, 1892689262, 570927122, 223021399, 3320101984, 3347018969],
+        ),
+        (
+            -1531968934941318391,
+            &[
+                3347339412, 23047189, 865587231, 1696809695, 1096566357, 3282458377, 1573575527,
+                1889087728, 3179171411, 2430437842, 201156596, 3122899806, 4007259098,
+            ],
+            -1531968934941318391,
+            &[
+                3347339412, 23047189, 865587231, 1696809695, 1096566357, 3282458377, 1573575527,
+                1889087728, 3179171411, 2430437842, 201156596, 3122899806, 4007259098,
+            ],
+        ),
+        (
+            -1531968934941317949,
+            &[
+                1999782529, 3752236744, 221895658, 1269897034, 2743904648, 2738212419, 242269338,
+                2360054321, 3677816620, 146944269, 3172865733, 3906140405, 3528493649,
+            ],
+            -1531968934941317949,
+            &[
+                1999782529, 3752236744, 221895658, 1269897034, 2743904648, 2738212419, 242269338,
+                2360054321, 3677816620, 146944269, 3172865733, 3906140405, 3528493649,
+            ],
+        ),
+        (
+            236,
+            &[
+                1353315634, 1105451482, 4090419022, 3201368754, 2198462252, 2831810591, 3723704545,
+            ],
+            236,
+            &[
+                1353315634, 1105451482, 4090419022, 3201368754, 2198462252, 2831810591, 3723704545,
+            ],
+        ),
+    ];
+
+    /// Mantissa words equal the pinned words (pins use the target's word size).
+    fn words_eq_pin(d: &[Word], pin: &[PinWord]) -> bool {
+        d == pin
     }
 
     #[test]
@@ -1696,9 +1744,9 @@ mod tests {
                     .ok_or(crate::Error::InvalidArgument)?;
                 dec_ix += 1;
                 assert_eq!(g.exponent(), *pg_e);
-                assert!(words_eq_u64(g.mantissa().digits(), pg_w), "g {:?}", g);
+                assert!(words_eq_pin(g.mantissa().digits(), pg_w), "g {:?}", g);
                 assert_eq!(n.exponent(), *pn_e);
-                assert!(words_eq_u64(n.mantissa().digits(), pn_w), "n {:?}", n);
+                assert!(words_eq_pin(n.mantissa().digits(), pn_w), "n {:?}", n);
             } else {
                 assert!(n.cmp(&g) == 0);
             }
