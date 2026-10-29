@@ -1,0 +1,1 @@
+- Complex cancellation bits (`part_cancel`): the `+ 1` saturates, so on 32-bit targets a zero (or far) result from operands with an exponent beyond `u32` no longer overflows. No change on 64-bit.
