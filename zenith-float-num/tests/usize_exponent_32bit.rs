@@ -122,7 +122,7 @@ fn cancel_bits_zero_result_far_exponent() -> Result<(), String> {
     let b = ExactComplex::new(pow2(k).neg(), ExactNum::new(P));
     let ret = ExactComplex::new(ExactNum::new(P), ExactNum::new(P));
     assert_eq!(ret.re().exponent(), Some(0), "zero result exponent");
-    let want = usize::try_from(k + 2).map_or(usize::MAX, |v| v);
+    let want = usize::try_from(k + 2).unwrap_or(usize::MAX);
     assert_eq!(complex_cancel_bits(&a, &b, &ret, true), (Some(want), None));
     Ok(())
 }
