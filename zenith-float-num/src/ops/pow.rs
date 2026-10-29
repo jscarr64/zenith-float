@@ -1023,6 +1023,21 @@ mod test {
 
     use super::*;
 
+    /// `e^x` with an integer part past 32 bits is in range on every target: `e^(2^k) = 2^(2^k / ln 2)`,
+    /// exponents from `bc -l` (`floor(2^k / l(2)) + 1`).
+    #[test]
+    fn exp_integer_part_beyond_u32() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        for (k, want) in [(34u32, 24_785_312_075i64), (40, 1_586_259_972_793)] {
+            let x = ExactNumNumber::from_u64_internal(1u64 << k, 64)?;
+            let r = x.exp(128, RoundingMode::ToEven, &mut cc)?;
+            assert_eq!(r.exponent(), want, "k = {k}");
+            let back = r.ln(128, RoundingMode::ToEven, &mut cc)?;
+            assert_eq!(back.exponent(), x.exponent(), "k = {k}");
+        }
+        Ok(())
+    }
+
     #[test]
     fn test_power() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
