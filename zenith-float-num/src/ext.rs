@@ -7926,7 +7926,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 4 * 3);
         println!("log exact digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_246_996_610_564_981_343);
+        #[cfg(target_pointer_width = "64")]
+        let want = 11_246_996_610_564_981_343;
+        #[cfg(target_pointer_width = "32")]
+        let want = 8_308_943_196_837_221_761;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
