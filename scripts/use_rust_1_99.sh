@@ -3,7 +3,13 @@ if ! command -v rustup >/dev/null 2>&1; then
   echo "error: rustup is required to install Rust 1.99; refusing to use another compiler" >&2
   return 1 2>/dev/null || exit 1
 fi
-if ! rustup toolchain install 1.99 --component clippy,rustfmt; then
+# Only go online when 1.99 or its clippy/rustfmt is missing: "rustup toolchain install" always
+# syncs the channel over the network, even when the toolchain is already installed.
+if rustup run 1.99 rustc --version >/dev/null 2>&1 \
+  && rustup run 1.99 cargo clippy --version >/dev/null 2>&1 \
+  && rustup run 1.99 rustfmt --version >/dev/null 2>&1; then
+  :
+elif ! rustup toolchain install 1.99 --component clippy,rustfmt; then
   echo "error: Rust 1.99 could not be installed; refusing to substitute another version" >&2
   return 1 2>/dev/null || exit 1
 fi
