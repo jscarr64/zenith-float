@@ -324,7 +324,7 @@ mod tests {
             let n_seed = random::<u64>();
             let n = build_n(n_seed)?;
 
-            let skip_dec = n.exponent().unsigned_abs() as usize > MAX_DEC_SCALE;
+            let skip_dec = usize::try_from(n.exponent().unsigned_abs()).map_or(true, |m| m > MAX_DEC_SCALE);
 
             for rdx in [Radix::Bin, Radix::Oct, Radix::Hex] {
                 let rm = match random::<u8>() % 7 {
