@@ -580,4 +580,39 @@ mod tests {
         }
         Ok(())
     }
+    #[test]
+    fn jacobi_odd_functions_keep_the_sign_of_negative_zero() -> Result<(), crate::Error> {
+        // am, sn, sc and sd are odd in u, so u = -0 gives -0 exactly (sign bit, not `==`).
+        let mut cc = Consts::new()?;
+        for p in [64usize, 128, 200] {
+            let mut half = ExactNumNumber::from_word(1, p)?;
+            half.div_by_2(RoundingMode::None);
+            let mut three_eighths = ExactNumNumber::from_word(3, p)?;
+            three_eighths.div_by_2(RoundingMode::None);
+            three_eighths.div_by_2(RoundingMode::None);
+            three_eighths.div_by_2(RoundingMode::None);
+            let neg_zero = ExactNumNumber::new2(p, Sign::Neg, false)?;
+            for m in [&half, &three_eighths] {
+                for rm in [
+                    RoundingMode::ToEven,
+                    RoundingMode::Down,
+                    RoundingMode::Up,
+                    RoundingMode::ToZero,
+                ] {
+                    let got = [
+                        ("am", neg_zero.jacobi_am(m, p, rm, &mut cc)?),
+                        ("sn", neg_zero.jacobi_sn(m, p, rm, &mut cc)?),
+                        ("sc", neg_zero.jacobi_sc(m, p, rm, &mut cc)?),
+                        ("sd", neg_zero.jacobi_sd(m, p, rm, &mut cc)?),
+                    ];
+                    for (name, v) in got {
+                        assert!(v.is_zero(), "{name}(-0) at p={p} is not zero");
+                        assert!(v.is_negative(), "{name}(-0) at p={p} {rm:?} lost the sign");
+                        assert!(!v.inexact(), "{name}(-0) is exact");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }

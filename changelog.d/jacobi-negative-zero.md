@@ -1,0 +1,1 @@
+- `jacobi_am`, `jacobi_sn`, `jacobi_sc` and `jacobi_sd` of `-0` return `-0` (they are odd in `u`); they returned `+0`.
