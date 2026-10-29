@@ -1,14 +1,17 @@
 //! Reciprocal via Newton iteration.
 
 use crate::common::consts::ONE;
-use crate::common::util::round_p_rm;
-use crate::common::util::{bump_prec_retry, round_p};
-use crate::defs::{Error, WORD_BIT_SIZE};
+use crate::common::util::{bump_prec_retry, round_p_rm};
+use crate::defs::Error;
 use crate::num::ExactNumNumber;
 use crate::{RoundingMode, Sign};
 
 /// Schoolbook `1/x` stays cheaper than Newton setup for a couple of words.
 const NEWTON_MIN_WORDS: usize = 3;
+
+/// Word size of the work schedule (cutover, increments, Newton start): 64 bits on every target, so the
+/// Newton value a `RoundingMode::None` result is cut from does not depend on the word size.
+const SCHED_BITS: usize = 64;
 
 impl ExactNumNumber {
     /// Computes the reciprocal of a number with precision `p`. The result is rounded using the rounding mode `rm`.
@@ -30,11 +33,11 @@ impl ExactNumNumber {
         // The Newton start reads the top word of the mantissa, which is zero for a subnormal whose
         // leading bits are zeros (`1 / 2^-2147483768` came out as a division by zero, `Inf`); the
         // division kernel takes a subnormal divisor as stored.
-        if p <= WORD_BIT_SIZE * (NEWTON_MIN_WORDS - 1) || self.is_subnormal() {
+        if p <= SCHED_BITS * (NEWTON_MIN_WORDS - 1) || self.is_subnormal() {
             return ONE.div(self, p, rm);
         }
 
-        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_inc = SCHED_BITS;
         let mut p_wrk = p + p_inc;
 
         loop {
@@ -50,13 +53,14 @@ impl ExactNumNumber {
             }
 
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            p_inc = round_p_rm(p_inc, RoundingMode::None);
         }
     }
 
     /// Newton: `x ← x * (2 − a x)`, doubling working precision each step.
     fn reciprocal_newton(&self, p: usize) -> Result<Self, Error> {
         let rm = RoundingMode::None;
-        let p = round_p(p);
+        let p = round_p_rm(p, rm);
 
         let mut a = self.clone()?;
         a.set_sign(Sign::Pos);
@@ -65,7 +69,7 @@ impl ExactNumNumber {
 
         let two = Self::from_word(2, p)?;
 
-        let mut p_cur = WORD_BIT_SIZE;
+        let mut p_cur = SCHED_BITS;
         let mut a_k = a.clone()?;
         a_k.set_precision(p_cur, rm)?;
         let mut x = ONE.div(&a_k, p_cur, rm)?;

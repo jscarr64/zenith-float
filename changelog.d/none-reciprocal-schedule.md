@@ -1,0 +1,1 @@
+- `reciprocal` runs its Newton work schedule (schoolbook cutover, working-precision increments, Newton start) in 64-bit units on every target, so a `RoundingMode::None` reciprocal is the same value on 32- and 64-bit words (on 32-bit it could come out as the rounded-up value, `-3` for `1 / -(1/3)` at 128 bits). 64-bit results are unchanged.
