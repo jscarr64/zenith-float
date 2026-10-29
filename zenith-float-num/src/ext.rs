@@ -8115,7 +8115,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * 6);
         println!("operator mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_238_293_337_447_225_181);
+        #[cfg(target_pointer_width = "64")]
+        let want = 11_238_293_337_447_225_181;
+        #[cfg(target_pointer_width = "32")]
+        let want = 17_858_129_707_828_111_565;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
