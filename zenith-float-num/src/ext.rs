@@ -3,7 +3,7 @@
 //! ExactNum including finite numbers, NaN, and `Inf`.
 
 use crate::common::util::log2_ceil;
-use crate::common::util::round_p;
+use crate::common::util::{round_p, round_p_rm};
 use crate::defs::Precision;
 use crate::defs::SignedWord;
 use crate::defs::DEFAULT_P;
@@ -369,7 +369,7 @@ impl ExactNum {
             return (Self::nan(b.err()), Self::nan(b.err()));
         }
         if self.is_inf() || b.is_inf() {
-            return (self.add(b, p, rm), Self::new(p));
+            return (self.add(b, p, rm), Self::new(round_p_rm(p, rm)));
         }
         let exact = self.add_full_prec(b);
         let mut hi = exact.clone();
@@ -404,7 +404,10 @@ impl ExactNum {
             return (Self::nan(b.err()), Self::nan(b.err()));
         }
         if self.is_inf() || b.is_inf() {
-            return (ExactNum::mul_ref(self, b, p, rm), Self::new(p));
+            return (
+                ExactNum::mul_ref(self, b, p, rm),
+                Self::new(round_p_rm(p, rm)),
+            );
         }
         let exact = self.mul_full_prec(b);
         let mut hi = exact.clone();
@@ -428,7 +431,7 @@ impl ExactNum {
     /// Word-precision implementation of [`Self::fused_sum`].
     fn fused_sum_word(xs: &[Self], p: usize, rm: RoundingMode) -> Self {
         if xs.is_empty() {
-            return Self::new(p);
+            return Self::new(round_p_rm(p, rm));
         }
         let extra = log2_ceil(xs.len().max(1)).saturating_add(2);
         let p_wrk = match p
@@ -470,7 +473,7 @@ impl ExactNum {
             return Self::nan(Some(Error::InvalidArgument));
         }
         if xs.is_empty() {
-            return Self::new(p);
+            return Self::new(round_p_rm(p, rm));
         }
         let extra = log2_ceil(xs.len().max(1)).saturating_add(2);
         let p_wrk = match p
@@ -510,7 +513,7 @@ impl ExactNum {
     /// Word-precision implementation of [`Self::polyval`].
     fn polyval_word(coeffs: &[Self], x: &Self, p: usize, rm: RoundingMode) -> Self {
         if coeffs.is_empty() {
-            return Self::new(p);
+            return Self::new(round_p_rm(p, rm));
         }
         let extra = log2_ceil(coeffs.len().max(1)).saturating_add(2);
         let p_wrk = match p
@@ -842,11 +845,11 @@ impl ExactNum {
                         // v1^(+-inf) as in IEEE 754 / MPFR: decided by |v1| against 1, whatever the sign of v1.
                         let val = v1.abs_cmp(&crate::common::consts::ONE);
                         if val == 0 {
-                            Self::from_u8(1, p)
+                            Self::from_u8(1, round_p_rm(p, rm))
                         } else if (val > 0) == s2.is_positive() {
                             INF_POS
                         } else {
-                            Self::new(p)
+                            Self::new(round_p_rm(p, rm))
                         }
                     }
                     Flavor::NaN(err) => Self::nan(*err),
@@ -857,7 +860,7 @@ impl ExactNum {
                     Flavor::Value(v2) => {
                         // inf ^ v2
                         if v2.is_zero() {
-                            Self::from_u8(1, p)
+                            Self::from_u8(1, round_p_rm(p, rm))
                         } else if v2.is_positive() {
                             if s1.is_negative() && v2.is_odd_int() {
                                 // v2 is odd and has no fractional part.
@@ -867,7 +870,7 @@ impl ExactNum {
                             }
                         } else {
                             // (+-inf)^(negative): a zero, negative only for -inf to an odd integer.
-                            let mut z = Self::new(p);
+                            let mut z = Self::new(round_p_rm(p, rm));
                             if s1.is_negative() && v2.is_odd_int() {
                                 z.set_sign(Sign::Neg);
                             }
@@ -879,7 +882,7 @@ impl ExactNum {
                         if s2.is_positive() {
                             INF_POS
                         } else {
-                            Self::new(p)
+                            Self::new(round_p_rm(p, rm))
                         }
                     }
                     Flavor::NaN(err) => Self::nan(*err),
@@ -908,7 +911,7 @@ impl ExactNum {
             Flavor::Inf(s1) => {
                 // inf ^ v2
                 if n == 0 {
-                    Self::from_u8(1, p)
+                    Self::from_u8(1, round_p_rm(p, rm))
                 } else if s1.is_negative() && (n & 1 == 1) {
                     INF_NEG
                 } else {
@@ -945,9 +948,9 @@ impl ExactNum {
             ),
             Flavor::Inf(s1) => {
                 if n == 0 {
-                    Self::from_u8(1, p)
+                    Self::from_u8(1, round_p_rm(p, rm))
                 } else if n < 0 {
-                    Self::new(p)
+                    Self::new(round_p_rm(p, rm))
                 } else if s1.is_negative() && (n & 1 == 1) {
                     INF_NEG
                 } else {
@@ -1006,7 +1009,7 @@ impl ExactNum {
                     Flavor::Inf(s2) => {
                         // v1.log(inf)
                         if s2.is_positive() {
-                            Self::new(p)
+                            Self::new(round_p_rm(p, rm))
                         } else {
                             NAN
                         }
@@ -1501,7 +1504,7 @@ impl ExactNum {
                 }),
                 Err(e) => Self::result_to_ext(Err(e), false, true),
             },
-            Flavor::Inf(s) => Self::from_i8(s.to_int(), p),
+            Flavor::Inf(s) => Self::from_i8(s.to_int(), round_p_rm(p, rm)),
             Flavor::NaN(err) => Self::nan(*err),
         }
     }
@@ -2123,7 +2126,7 @@ impl ExactNum {
                 Self::result_to_ext_rm(v.reciprocal(p, rm), false, v.is_positive(), p, rm)
             }
             Flavor::Inf(s) => {
-                let mut ret = Self::new(p);
+                let mut ret = Self::new(round_p_rm(p, rm));
                 ret.set_sign(*s);
                 ret
             }
@@ -2440,7 +2443,12 @@ macro_rules! gen_wrapper_exact_rm {
                     }),
                     Err(e) => Self::result_to_ext(Err(e), false, true),
                 },
-                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::Inf(s) => {
+                    // Results from an infinite operand are built at the rm-aware precision (64-bit words for None).
+                    let $p = round_p_rm($p, rm);
+                    let _ = $p;
+                    if s.is_positive() $pos_inf else $neg_inf
+                }
                 Flavor::NaN(err) => Self::nan(*err),
             }
         }
@@ -2459,7 +2467,12 @@ macro_rules! gen_wrapper_arg_rm_cc {
                     }),
                     Err(e) => Self::result_to_ext(Err(e), false, true),
                 },
-                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::Inf(s) => {
+                    // Results from an infinite operand are built at the rm-aware precision (64-bit words for None).
+                    let $p = round_p_rm($p, rm);
+                    let _ = $p;
+                    if s.is_positive() $pos_inf else $neg_inf
+                }
                 Flavor::NaN(err) => Self::nan(*err),
             }
         }
@@ -2500,7 +2513,12 @@ macro_rules! gen_wrapper_ovf_rm_cc {
                     }),
                     Err(e) => Self::result_to_ext(Err(e), false, true),
                 },
-                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::Inf(s) => {
+                    // Results from an infinite operand are built at the rm-aware precision (64-bit words for None).
+                    let $p = round_p_rm($p, rm);
+                    let _ = $p;
+                    if s.is_positive() $pos_inf else $neg_inf
+                }
                 Flavor::NaN(err) => Self::nan(*err),
             }
         }
@@ -2523,7 +2541,12 @@ macro_rules! gen_wrapper_log {
                         Err(e) => Self::result_to_ext(Err(e), false, true),
                     }
                 },
-                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
+                Flavor::Inf(s) => {
+                    // Results from an infinite operand are built at the rm-aware precision (64-bit words for None).
+                    let $p = round_p_rm($p, rm);
+                    let _ = $p;
+                    if s.is_positive() $pos_inf else $neg_inf
+                }
                 Flavor::NaN(err) => Self::nan(*err),
             }
         }
@@ -3035,7 +3058,7 @@ Accuracy: correctly-rounded",
             }
             (Flavor::Value(_), Flavor::Inf(sx)) => {
                 if sx.is_positive() {
-                    Self::new(p)
+                    Self::new(round_p_rm(p, rm))
                 } else {
                     NAN
                 }
@@ -3196,7 +3219,7 @@ Accuracy: correctly-rounded",
             Flavor::Value(v) => Self::result_to_ext(v.ai(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
                 if s.is_positive() {
-                    Self::new(p)
+                    Self::new(round_p_rm(p, rm))
                 } else {
                     NAN
                 }
@@ -3258,7 +3281,7 @@ Accuracy: correctly-rounded",
             Flavor::Value(v) => Self::result_to_ext(v.ai_prime(p, rm, cc), v.is_zero(), true),
             Flavor::Inf(s) => {
                 if s.is_positive() {
-                    Self::new(p)
+                    Self::new(round_p_rm(p, rm))
                 } else {
                     NAN
                 }

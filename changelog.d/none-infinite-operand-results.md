@@ -1,0 +1,1 @@
+- Results built from an infinite operand (for example `exp(-inf)`, `tanh(inf)`, `1/inf`, `inf^0`) use the rounding-mode-aware precision, so with `RoundingMode::None` they keep whole 64-bit words on 32-bit targets too.
