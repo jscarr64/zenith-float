@@ -1,0 +1,1 @@
+- Red test: `ExactNum::parse` of `1e±5000000000` on 32-bit (decimal exponent saturated through `abs_usize`).

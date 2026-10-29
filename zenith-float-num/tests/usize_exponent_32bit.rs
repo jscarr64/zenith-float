@@ -5,9 +5,13 @@
 //! `floor(2^40 * log10 2) = 330985980541`).
 
 use std::ops::Neg;
-use zenith_float_num::{ExactNum, RoundingMode};
+use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode};
 
 const P: usize = 64;
+
+fn cc() -> Result<Consts, String> {
+    Consts::new().map_err(|e| format!("Consts::new: {e:?}"))
+}
 
 /// `2^k` exactly: 1 = 0.5 * 2^1, so the zf exponent is `k + 1`.
 fn pow2(k: i64) -> ExactNum {
@@ -39,5 +43,17 @@ fn powsi_negative_beyond_u32() {
     let m2 = ExactNum::from_u8(2, P).neg();
     assert!(!m2.powsi(-(1i64 << 32), P, RoundingMode::Down).is_negative(), "(-2)^-(2^32) > 0");
     assert!(m2.powsi(-((1i64 << 32) + 1), P, RoundingMode::Down).is_negative(), "(-2)^-(2^32+1) < 0");
+}
+
+
+
+#[test]
+fn parse_decimal_exponent_beyond_u32() -> Result<(), String> {
+    let mut cc = cc()?;
+    let up = ExactNum::parse("1e5000000000", Radix::Dec, P, RoundingMode::ToEven, &mut cc);
+    assert_eq!(up.exponent(), Some(16609640475), "1e5000000000");
+    let dn = ExactNum::parse("1e-5000000000", Radix::Dec, P, RoundingMode::ToEven, &mut cc);
+    assert_eq!(dn.exponent(), Some(-16609640474), "1e-5000000000");
+    Ok(())
 }
 
