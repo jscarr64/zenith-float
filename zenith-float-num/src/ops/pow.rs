@@ -299,6 +299,11 @@ impl ExactNumNumber {
         )
     }
 
+    /// `powi` with a u64 power, for callers whose power does not fit a 32-bit `usize`.
+    pub(crate) fn powi_u64(&self, n: u64, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.powi_internal(n, p, rm, true, false)
+    }
+
     fn powi_internal(
         &self,
         n: u64,

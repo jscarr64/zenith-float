@@ -27,7 +27,8 @@ use crate::EXPONENT_MIN;
 use alloc::vec::Vec;
 
 const TEN_PWR_MAX_TO_DEC: usize = EXPONENT_MAX as usize / 4;
-const TEN_PWR_MAX_FROM_DEC: usize = (EXPONENT_MAX as u128 * 301029995 / 1000000000) as usize;
+/// floor(EXPONENT_MAX * log10(2)) in u64: a 32-bit `usize` would truncate it.
+const TEN_PWR_MAX_FROM_DEC: u64 = (EXPONENT_MAX as u128 * 301029995 / 1000000000) as u64;
 /// floor(log10(2) * 2^64), a lower bound of log10(2) exact to 2^-64.
 const LOG10_2_Q64: i128 = 5553023288523357132;
 
@@ -388,12 +389,10 @@ impl ExactNumNumber {
 
         // error estimation
         let mut err = 0;
-        // |n| in u64: a 32-bit `usize` would saturate an i64 decimal exponent. The remainder is below the
-        // chunk, which is a `usize`, so its conversion back cannot fail.
+        // |n| and the chunk in u64: a 32-bit `usize` would saturate or truncate them.
         let n_abs = n.unsigned_abs();
-        let chunk = u64::try_from(TEN_PWR_MAX_FROM_DEC).map_err(|_| Error::InvalidArgument)?;
-        let npowmax = n_abs / chunk;
-        let tenpowrem = usize::try_from(n_abs % chunk).map_err(|_| Error::InvalidArgument)?;
+        let npowmax = n_abs / TEN_PWR_MAX_FROM_DEC;
+        let tenpowrem = n_abs % TEN_PWR_MAX_FROM_DEC;
         if npowmax != 0 {
             err += usize::try_from(npowmax)
                 .ok()
@@ -414,7 +413,7 @@ impl ExactNumNumber {
             };
 
             if npowmax != 0 {
-                let fpnmax = TEN.powi(TEN_PWR_MAX_FROM_DEC, p_f, RoundingMode::None)?;
+                let fpnmax = TEN.powi_u64(TEN_PWR_MAX_FROM_DEC, p_f, RoundingMode::None)?;
 
                 for _ in 0..npowmax {
                     if n < 0 {
@@ -426,7 +425,7 @@ impl ExactNumNumber {
             };
 
             if tenpowrem != 0 {
-                let fpn = TEN.powi(tenpowrem, p_f, RoundingMode::None)?;
+                let fpn = TEN.powi_u64(tenpowrem, p_f, RoundingMode::None)?;
                 if n < 0 {
                     f = f.div(&fpn, p_f, RoundingMode::None)?
                 } else {
