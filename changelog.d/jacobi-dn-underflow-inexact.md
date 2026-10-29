@@ -1,0 +1,1 @@
+- `jacobi_dn` and `jacobi_nd` of a subnormal argument with `0 < m < 1` are flagged inexact: `m sn^2` underflowed to an exact 0 and made `dn` an exact 1.

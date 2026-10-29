@@ -7569,6 +7569,39 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// `dn(u|m) = 1 - m u^2/2 + O(u^4)` and `nd = 1/dn` for the subnormal `u = operand(21)` and `m = 1/2, 3/8`:
+    /// the value is strictly below (`nd`: above) 1, so to nearest it is 1 and inexact (mpmath at a surrogate
+    /// `u = 2^-200` gives `(1 - dn) / (m u^2/2) = 1` and `(1/dn - 1) / (m u^2/2) = 1` to 60 digits). `sn^2` underflows to an exact 0, which used to make
+    /// `1 - m sn^2` an exact 1 with the inexact flag off.
+    #[test]
+    fn jacobi_dn_nd_of_a_subnormal_argument_are_inexact() -> Result<(), Box<dyn std::error::Error>>
+    {
+        type J = fn(&ExactNum, &ExactNum, usize, RoundingMode, &mut crate::Consts) -> ExactNum;
+        let fns: [(&str, J); 2] = [("dn", ExactNum::jacobi_dn), ("nd", ExactNum::jacobi_nd)];
+        let mut cc = crate::Consts::new()?;
+        let ms = [
+            ExactNum::from_u8(1, 64).ldexp(-1, 64, RoundingMode::None),
+            ExactNum::from_u8(3, 64).ldexp(-3, 64, RoundingMode::None),
+        ];
+        for p in [64usize, 128] {
+            for m in &ms {
+                for (name, f) in fns {
+                    let got = f(&operand(21), m, p, RoundingMode::ToEven, &mut cc);
+                    assert_eq!(
+                        got.compare(&ExactNum::from_u8(1, 64)),
+                        Some(0),
+                        "{name} p={p} m={m:?}: {got:?}"
+                    );
+                    assert!(
+                        got.inexact(),
+                        "{name} p={p} m={m:?} must be inexact: {got:?}"
+                    );
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Layer 0a pin for the four Airy functions: zero (closed form), small arguments (Taylor pair), large
     /// positive and negative arguments (asymptotic expansions), and every special operand.
     #[test]
