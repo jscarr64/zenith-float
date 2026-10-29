@@ -1,0 +1,1 @@
+- 32-bit (i686) pin for `jacobi_all_functions_digest`, generated from mpmath by gen32.py (its 64-bit control reproduces the host pin).
