@@ -6653,7 +6653,11 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
         println!("complex add/sub grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 18_040_698_040_155_693_760);
+        #[cfg(target_pointer_width = "64")]
+        let want = 18_040_698_040_155_693_760;
+        #[cfg(target_pointer_width = "32")]
+        let want = 10_425_817_710_396_386_987;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
@@ -6775,7 +6779,11 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
-        assert_eq!(h.finish(), 18_040_698_040_155_693_760);
+        #[cfg(target_pointer_width = "64")]
+        let want = 18_040_698_040_155_693_760;
+        #[cfg(target_pointer_width = "32")]
+        let want = 10_425_817_710_396_386_987;
+        assert_eq!(h.finish(), want);
         Ok(())
     }
 
