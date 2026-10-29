@@ -4857,6 +4857,333 @@ mod tests {
         }
     }
 
+    /// `atan`, `atan2` and `si` results that are signed multiples of pi (`atan(-Inf)`, `atan2` at the
+    /// infinities, at `x = 0` and on the negative real axis, `si(-Inf)`) are rounded once from the signed
+    /// value: under `Up` a negative result is `-RD(c)` and under `Down` it is `-RU(c)`. The table is mpmath's
+    /// `mpf_pos(v, p, 'c' / 'f')` of the signed value `v` (computed at 2000 bits); `3pi/4` is checked for a
+    /// positive result as well (one rounding, not `3 * RU(pi / 4)`).
+    #[test]
+    fn signed_pi_multiples_are_rounded_once_in_the_mode_like_mpmath() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let cases = [
+            (
+                "atan_neg_inf",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -61,
+            ),
+            (
+                "atan_neg_inf",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -63,
+            ),
+            (
+                "atan_neg_inf",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -127,
+            ),
+            (
+                "atan_neg_inf",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -126,
+            ),
+            (
+                "atan2_neg_inf_one",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -61,
+            ),
+            (
+                "atan2_neg_inf_one",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -63,
+            ),
+            (
+                "atan2_neg_inf_one",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -127,
+            ),
+            (
+                "atan2_neg_inf_one",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -126,
+            ),
+            (
+                "atan2_neg_one_zero",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -61,
+            ),
+            (
+                "atan2_neg_one_zero",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -63,
+            ),
+            (
+                "atan2_neg_one_zero",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -127,
+            ),
+            (
+                "atan2_neg_one_zero",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -126,
+            ),
+            (
+                "atan2_neg_zero_neg_one",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -60,
+            ),
+            (
+                "atan2_neg_zero_neg_one",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -62,
+            ),
+            (
+                "atan2_neg_zero_neg_one",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -126,
+            ),
+            (
+                "atan2_neg_zero_neg_one",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -125,
+            ),
+            (
+                "atan2_neg_one_neg_inf",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -60,
+            ),
+            (
+                "atan2_neg_one_neg_inf",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -62,
+            ),
+            (
+                "atan2_neg_one_neg_inf",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -126,
+            ),
+            (
+                "atan2_neg_one_neg_inf",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -125,
+            ),
+            (
+                "atan2_neg_inf_pos_inf",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -62,
+            ),
+            (
+                "atan2_neg_inf_pos_inf",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -64,
+            ),
+            (
+                "atan2_neg_inf_pos_inf",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -128,
+            ),
+            (
+                "atan2_neg_inf_pos_inf",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -127,
+            ),
+            (
+                "atan2_neg_inf_neg_inf",
+                64,
+                RoundingMode::Up,
+                true,
+                "10866029187115684263",
+                -62,
+            ),
+            (
+                "atan2_neg_inf_neg_inf",
+                64,
+                RoundingMode::Down,
+                true,
+                "1358253648389460533",
+                -59,
+            ),
+            (
+                "atan2_neg_inf_neg_inf",
+                128,
+                RoundingMode::Up,
+                true,
+                "50110714878045316305922517491962692967",
+                -124,
+            ),
+            (
+                "atan2_neg_inf_neg_inf",
+                128,
+                RoundingMode::Down,
+                true,
+                "200442859512181265223690069967850771869",
+                -126,
+            ),
+            (
+                "atan2_pos_inf_neg_inf",
+                64,
+                RoundingMode::Up,
+                false,
+                "1358253648389460533",
+                -59,
+            ),
+            (
+                "atan2_pos_inf_neg_inf",
+                64,
+                RoundingMode::Down,
+                false,
+                "10866029187115684263",
+                -62,
+            ),
+            (
+                "atan2_pos_inf_neg_inf",
+                128,
+                RoundingMode::Up,
+                false,
+                "200442859512181265223690069967850771869",
+                -126,
+            ),
+            (
+                "atan2_pos_inf_neg_inf",
+                128,
+                RoundingMode::Down,
+                false,
+                "50110714878045316305922517491962692967",
+                -124,
+            ),
+            (
+                "si_neg_inf",
+                64,
+                RoundingMode::Up,
+                true,
+                "3622009729038561421",
+                -61,
+            ),
+            (
+                "si_neg_inf",
+                64,
+                RoundingMode::Down,
+                true,
+                "14488038916154245685",
+                -63,
+            ),
+            (
+                "si_neg_inf",
+                128,
+                RoundingMode::Up,
+                true,
+                "267257146016241686964920093290467695825",
+                -127,
+            ),
+            (
+                "si_neg_inf",
+                128,
+                RoundingMode::Down,
+                true,
+                "133628573008120843482460046645233847913",
+                -126,
+            ),
+        ];
+        let mut bad = 0usize;
+        for (name, p, rm, neg, man, e) in cases {
+            let m = ExactNum::parse(man, crate::Radix::Dec, 256, RoundingMode::None, &mut cc)
+                .ldexp(e, 256, RoundingMode::None);
+            let want = if neg { -m } else { m };
+            let got = match name {
+                "atan_neg_inf" => INF_NEG.atan(p, rm, &mut cc),
+                "atan2_neg_inf_one" => INF_NEG.atan2(&ExactNum::from_u8(1, p), p, rm, &mut cc),
+                "atan2_neg_one_zero" => {
+                    ExactNum::from_i8(-1, p).atan2(&ExactNum::new(p), p, rm, &mut cc)
+                }
+                "atan2_neg_zero_neg_one" => {
+                    (-ExactNum::new(p)).atan2(&ExactNum::from_i8(-1, p), p, rm, &mut cc)
+                }
+                "atan2_neg_one_neg_inf" => ExactNum::from_i8(-1, p).atan2(&INF_NEG, p, rm, &mut cc),
+                "atan2_neg_inf_pos_inf" => INF_NEG.atan2(&INF_POS, p, rm, &mut cc),
+                "atan2_neg_inf_neg_inf" => INF_NEG.atan2(&INF_NEG, p, rm, &mut cc),
+                "atan2_pos_inf_neg_inf" => INF_POS.atan2(&INF_NEG, p, rm, &mut cc),
+                _ => INF_NEG.si(p, rm, &mut cc),
+            };
+            if got.compare(&want) != Some(0) {
+                println!("{name} p={p} {rm:?}: got {got:?}, want {want:?}");
+                bad += 1;
+            }
+        }
+        assert_eq!(bad, 0, "signed pi multiples rounded in the wrong direction");
+        Ok(())
+    }
+
     #[test]
     fn test_ext() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToOdd;
