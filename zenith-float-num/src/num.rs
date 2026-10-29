@@ -3674,4 +3674,26 @@ mod tests {
         }
         Ok(())
     }
+
+    /// `rm_none_truncates_at_64_bit_words_on_every_target` for the entry points that round `p` themselves:
+    /// a None result keeps `rp(p, 64)` bits and drops nothing it did not have to, on every target.
+    #[test]
+    fn rm_none_entry_points_keep_64_bit_words_on_every_target() -> Result<(), Error> {
+        let none = RoundingMode::None;
+        let w = ExactNumNumber::from_word(0xFFFF_FFFF, 64)?;
+        // (2^32 - 1)^2 is exact and spans all 64 bits, which already fit rp(1, 64) = 64 bits: `ldexp` by 0 to
+        // p = 1 drops nothing.
+        let r = w.mul(&w, 64, RoundingMode::ToEven)?.ldexp(0, 1, none)?;
+        assert!(
+            !r.inexact(),
+            "ldexp((2^32 - 1)^2, 0, p = 1, None) dropped bits"
+        );
+        assert_eq!(r.mantissa_max_bit_len(), 64);
+        // The cube and fifth roots of -7 keep rp(p, 64) bits.
+        let m7 = ExactNumNumber::from_word(7, 64)?.neg()?;
+        assert_eq!(m7.nth_root(3, 200, none)?.mantissa_max_bit_len(), 256);
+        assert_eq!(m7.nth_root(5, 200, none)?.mantissa_max_bit_len(), 256);
+        assert_eq!(m7.nth_root(5, 1, none)?.mantissa_max_bit_len(), 64);
+        Ok(())
+    }
 }
