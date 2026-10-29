@@ -1,0 +1,1 @@
+- `powsi` / `powi`: the exponent integer is now a `u64` through `powi_internal` / `powi_sqr_mul`, so on 32-bit targets an `i64` power beyond `u32` is no longer truncated (`n >= 0`) or saturated (`n < 0`). No change on 64-bit.
