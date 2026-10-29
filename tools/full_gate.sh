@@ -45,9 +45,12 @@ fi
 # Jeff's logging rule (2026-10-23): every step is logged via poplog (~/pop-logs/bin/poplog.sh, else the vendored
 # scripts/poplog.sh): header (cmd, repo, SHA, rustc, CARGO_TARGET_DIR), per-step start/end/duration/rc/test counts,
 # 5-min heartbeats, RUNNING.tsv row, PASS/FAIL footer. A test step reporting zero tests FAILs. Exit is nonzero on FAIL.
-TEST_STEPS=" build-debug build-release features-random-serde oracle-fast oracle-deep mpfr "
+TEST_STEPS=" build-debug build-release test-i686-lib features-random-serde oracle-fast oracle-deep mpfr "
+# GATE_STEPS (space- or comma-separated): run only the steps with exactly these names; an unknown name fails the gate.
+failed=(); ran=()
 run() {
-  name=$1; shift; echo "start $name $(date +%T)" >> "$T/$tag.rc"
+  name=$1; shift; if [[ -n ${GATE_STEPS:-} && " ${GATE_STEPS//,/ } " != *" $name "* ]]; then return 0; fi; ran+=("$name")
+  echo "start $name $(date +%T)" >> "$T/$tag.rc"
   rm -f "$(_pl_out)"  # the last step left it a symlink to its log; log_step_start truncates it
   log_step_start "$name"; ln -sf "$T/$tag-$name.log" "$(_pl_out)"  # nested: own out file, never the parent's
   to=${STEP_TIMEOUT:-20m}; [[ $name == mpfr ]] && to=${MPFR_STEP_TIMEOUT:-40m}  # mpfr: integration_tests alone is ~1090 s
@@ -56,7 +59,7 @@ run() {
   wait "$POPLOG_CHILD_PID"; rc=$?; POPLOG_CHILD_PID=""
   echo "$name=$rc" >> "$T/$tag.rc"
   tests=""; [[ "$TEST_STEPS" == *" $name "* ]] && tests=--tests
-  log_step_end "$name" "$rc" "$T/$tag-$name.log" "$tests" || true
+  log_step_end "$name" "$rc" "$T/$tag-$name.log" "$tests" || failed+=("$name")
   echo "  output: $T/$tag-$name.log" >> "$POPLOG_FILE"
   # forward the step's test-binary and summary lines to stdout (full output stays in $T) so a wrapping
   # fresh_test_run.sh (CMD... mode) sees which binaries ran and checks they lie inside CARGO_TARGET_DIR
@@ -70,6 +73,8 @@ run build-debug "tools/fresh_test_run.sh cargo test --workspace $TT"
 # early compile of the mpfr-tests integration tests (6ab75ce prepublish broke here only at the last step)
 run mpfr-tests-build "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests --no-run"
 run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
+# i686 lib tests (merge-blocking from 9d66035): the 32-bit target clippy-i686 checks, run natively (static musl), own target subdir
+run test-i686-lib "CARGO_TARGET_DIR=$CARGO_TARGET_DIR/i686 tools/fresh_test_run.sh cargo test -p zenith-float-num --lib --target i686-unknown-linux-musl $TT"
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
 run build-thumbv7em "cargo build --no-default-features --target thumbv7em-none-eabihf && cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf"
 run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
@@ -90,6 +95,9 @@ run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
 run hex-32bit "bash scripts/ci_hex_32bit.sh"
 run unsafe-scan "bash tools/gate_unsafe_scan.sh"
 run prepublish "bash scripts/zenith_prepublish.sh"
+for want in ${GATE_STEPS:+${GATE_STEPS//,/ }}; do [[ " ${ran[*]} " == *" $want "* ]] || { failed+=("GATE_STEPS:unknown-step:$want"); POPLOG_OVERALL=1; }; done
+if [[ ${#failed[@]} -gt 0 ]]; then res="RESULT: FAIL failed steps: ${failed[*]}"; else res="RESULT: PASS steps: ${ran[*]}"; fi
+echo "$res" | tee -a "$T/$tag.rc"; echo "gate $res" >> "$POPLOG_FILE"
 echo "done" >> "$T/$tag.rc"
 poplog_finish
 exit "$POPLOG_OVERALL"
