@@ -3696,4 +3696,22 @@ mod tests {
         assert_eq!(m7.nth_root(5, 1, none)?.mantissa_max_bit_len(), 64);
         Ok(())
     }
+
+    /// The reciprocal's work schedule does not depend on the word size: 1 / -(1/3 at 192 bits, last bit
+    /// rounded up) lies just inside -3, and its None value at 128 bits is the 128-bit truncation, not -3.
+    #[test]
+    fn rm_none_reciprocal_is_the_truncation_on_every_target() -> Result<(), Error> {
+        let one = ExactNumNumber::from_word(1, 192)?;
+        let three = ExactNumNumber::from_word(3, 192)?;
+        let x = one.div(&three, 192, RoundingMode::ToEven)?.neg()?;
+        let got = x.reciprocal(128, RoundingMode::None)?;
+        let want = x.reciprocal(128, RoundingMode::ToZero)?;
+        assert_eq!(
+            got.cmp(&want),
+            0,
+            "reciprocal None at p = 128 is not the truncation"
+        );
+        assert_eq!(got.mantissa_max_bit_len(), 128);
+        Ok(())
+    }
 }
