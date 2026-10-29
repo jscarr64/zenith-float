@@ -507,8 +507,8 @@ impl ExactNumNumber {
         let dec_len = (p as u64 * 301029996 / 1000000000) as usize + 1 + extra_digits;
 
         let mut err = WORD_BIT_SIZE; // speculative
-        // Whole 64-bit words: the None steps below keep rp(p_wrk, 64) bits on every target, and the
-        // digit extraction reads x as a p_wrk-bit integer.
+                                     // Whole 64-bit words: the None steps below keep rp(p_wrk, 64) bits on every target, and the
+                                     // digit extraction reads x as a p_wrk-bit integer.
         let mut p_wrk = round_p_rm(
             (dec_len as u64 * 3321928095 / 1000000000) as usize + 1 + err,
             RoundingMode::None,
@@ -966,8 +966,7 @@ mod tests {
         let want = u128::try_from(EXPONENT_MAX).map_err(|_| crate::Error::InvalidArgument)?
             * 301029995
             / 1000000000;
-        let have =
-            u128::from(TEN_PWR_MAX_FROM_DEC);
+        let have = u128::from(TEN_PWR_MAX_FROM_DEC);
         assert_eq!(have, want);
         Ok(())
     }
