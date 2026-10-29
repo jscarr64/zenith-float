@@ -767,8 +767,10 @@ impl ExactNumNumber {
         cc: &mut Consts,
     ) -> Result<Self, Error> {
         let nint = n.is_int();
+        // Special-case results are built at the rm-aware word precision (64-bit units for None).
+        let p_out = round_p_rm(p, rm);
         if n.is_zero() {
-            let mut ret = Self::from_word(1, p)?;
+            let mut ret = Self::from_word(1, p_out)?;
             if n.inexact() {
                 if self.exponent() == 1 && self.abs_cmp(&ONE) == 0 {
                     ret.set_inexact(self.inexact());
@@ -786,17 +788,17 @@ impl ExactNumNumber {
                 }
             } else {
                 let s = if n.is_odd_int() { self.sign() } else { Sign::Pos };
-                Self::new2(p, s, self.inexact())
+                Self::new2(p_out, s, self.inexact())
             };
         } else if self.exponent() == 1 && self.abs_cmp(&ONE) == 0 {
             // 1^n or (-1)^n
             if n.is_odd_int() {
-                let mut ret = Self::from_i8(self.sign().to_int(), p)?;
+                let mut ret = Self::from_i8(self.sign().to_int(), p_out)?;
                 ret.set_inexact(self.inexact() || n.inexact());
                 return Ok(ret);
             } else {
                 if self.is_positive() || n.is_int() {
-                    let mut ret = Self::from_word(1, p)?;
+                    let mut ret = Self::from_word(1, p_out)?;
                     ret.set_inexact(self.inexact() || n.inexact());
                     return Ok(ret);
                 } else {

@@ -1,0 +1,1 @@
+- `pow`, `exp2` and `exp10` special-case results (zero exponent, zero base, base ±1) are built at the rounding-mode-aware precision, so with `RoundingMode::None` they keep whole 64-bit words on 32-bit targets too.
