@@ -202,7 +202,8 @@ pub(crate) fn series_run<T: PolycoeffGen>(
 fn series_niter(p: usize, m: usize) -> usize {
     let ln = log2_floor(p);
     let lln = log2_floor(ln);
-    p / (ln - lln + m - 2)
+    // A denominator past `usize::MAX` (32-bit, huge m) exceeds p, so the quotient is exactly 0.
+    (ln - lln).checked_add(m).map_or(0, |d| p / (d - 2))
 }
 
 /// Estimate cost of execution for series.
