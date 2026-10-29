@@ -1483,11 +1483,14 @@ impl ExactNumNumber {
 
         let max_bits = self.mantissa_max_bit_len();
         let e = max_bits as i64 - self.e;
+        // Fractional bits to drop, in `i64`: near the bottom of the range `e` is past `u32`, and a
+        // `usize` cast truncated it on 32-bit targets.
+        let n_wide = i64::try_from(n).map_err(|_| Error::InvalidArgument)?;
+        let max_wide = i64::try_from(max_bits).map_err(|_| Error::InvalidArgument)?;
+        let drop = e - n_wide;
 
-        if e > 0 && e as usize > n && !self.is_zero() {
-            let m = e as usize - n;
-
-            if m >= max_bits {
+        if drop > 0 && !self.is_zero() {
+            if drop >= max_wide {
                 let is_positive = self.is_positive();
                 let msb_set = self.m.most_significant_word() & WORD_SIGNIFICANT_BIT != 0;
                 let below_half =
@@ -1498,7 +1501,7 @@ impl ExactNumNumber {
                 if rm == RoundingMode::FromZero
                     || (is_positive && rm == RoundingMode::Up)
                     || (!is_positive && rm == RoundingMode::Down)
-                    || (m == max_bits
+                    || (drop == max_wide
                         && ((msb_set && rm == RoundingMode::ToOdd)
                             || (rm == RoundingMode::ToEven && msb_set && below_half)))
                 {
@@ -1527,7 +1530,7 @@ impl ExactNumNumber {
                 let mut inexact = false;
 
                 let ovf = self.m.round_mantissa(
-                    m,
+                    usize::try_from(drop).map_err(|_| Error::InvalidArgument)?,
                     rm,
                     self.is_positive(),
                     &mut false,

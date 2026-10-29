@@ -1,0 +1,1 @@
+- `ExactNumNumber::round`: the count of fractional bits to drop is kept in `i64`; near the bottom of the exponent range it is past `u32`, and the old `usize` cast truncated it on 32-bit targets, so a tiny value rounded to the integer grid kept bits instead of becoming an inexact zero (`round_reports_its_own_rounding` on i686). 64-bit results are unchanged.
