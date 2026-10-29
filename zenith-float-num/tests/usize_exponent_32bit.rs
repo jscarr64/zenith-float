@@ -5,7 +5,7 @@
 //! `floor(2^40 * log10 2) = 330985980541`).
 
 use std::ops::Neg;
-use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode};
+use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode, EXPONENT_MIN};
 
 const P: usize = 64;
 
@@ -69,5 +69,44 @@ fn to_decimal_exponent_beyond_u32() -> Result<(), String> {
         // `0.d0 d1 ... * 10^e` with `d0 != 0`, so `10^(e - 1) <= 2^k < 10^e`; record what came back
         assert_eq!(e - 1, d, "2^{k}: decimal exponent (len {len})");
     }
+    Ok(())
+}
+
+#[test]
+fn format_binary_exponent_beyond_u32() -> Result<(), String> {
+    let mut cc = cc()?;
+    for k in [1i64 << 40, (1i64 << 32) + 3] {
+        let s = pow2(k)
+            .format(Radix::Bin, RoundingMode::ToEven, &mut cc)
+            .map_err(|err| format!("2^{k}: {err:?}"))?;
+        assert!(s.ends_with(&format!("e+{k:b}")), "2^{k}: {s}");
+        let s = pow2(-k)
+            .format(Radix::Bin, RoundingMode::ToEven, &mut cc)
+            .map_err(|err| format!("2^-{k}: {err:?}"))?;
+        assert!(s.ends_with(&format!("e-{k:b}")), "2^-{k}: {s}");
+    }
+    Ok(())
+}
+
+#[test]
+fn format_decimal_exponent_beyond_u32() -> Result<(), String> {
+    let mut cc = cc()?;
+    let s = pow2(1i64 << 40)
+        .format(Radix::Dec, RoundingMode::ToEven, &mut cc)
+        .map_err(|err| format!("{err:?}"))?;
+    assert!(s.ends_with("e+330985980541"), "{s}");
+    Ok(())
+}
+
+#[test]
+fn format_subnormal_exponent() -> Result<(), String> {
+    let mut cc = cc()?;
+    let x = ExactNum::min_positive(P);
+    let s = x
+        .format(Radix::Bin, RoundingMode::ToEven, &mut cc)
+        .map_err(|err| format!("{err:?}"))?;
+    let tail = s.rsplit('-').next().ok_or("no exponent")?;
+    let back = u64::from_str_radix(tail, 2).map_err(|err| format!("{s}: {err}"))?;
+    assert_eq!(back, EXPONENT_MIN.unsigned_abs(), "{s}");
     Ok(())
 }
