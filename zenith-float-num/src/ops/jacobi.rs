@@ -411,7 +411,12 @@ fn jacobi_agm(
     if dnarg.is_negative() {
         return Err(Error::InvalidArgument);
     }
-    let dn = dnarg.sqrt(p, RoundingMode::None)?;
+    let mut dn = dnarg.sqrt(p, RoundingMode::None)?;
+    // A nonzero `m sn^2` that underflowed to an exact 0 leaves `dn` an exact 1; the true value is
+    // strictly below 1, so the result is inexact (the sticky information the zero dropped).
+    if msn2.is_zero() && !sn.is_zero() && !m.is_zero() {
+        dn.set_inexact(true);
+    }
     Ok((phi, sn, cn, dn))
 }
 
