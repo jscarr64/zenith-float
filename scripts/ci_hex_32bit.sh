@@ -13,4 +13,9 @@ export RUSTFLAGS="${RUSTFLAGS:-} -C target-feature=+crt-static"
 bash "$root/scripts/ci_hex_common.sh" --target "$target"
 # Clippy on the 32-bit word size: lints that only fire when WORD_BIT_SIZE = 32.
 cargo clippy -p zenith-float-num --all-targets --target "$target" -- -D warnings
+# zenith-bound (re-exported as zenith_float::bound, default feature `bound`) builds and passes its whole suite on 32-bit too,
+# with the same goldens as on 64-bit
+cargo clippy -p zenith-bound --all-targets --target "$target" -- -D warnings
+cargo test -p zenith-bound --target "$target"
+cargo test -p zenith-bound --release --target "$target"
 echo "ci_hex_32bit: ok"

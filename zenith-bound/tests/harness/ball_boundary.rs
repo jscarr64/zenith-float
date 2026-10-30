@@ -29,27 +29,25 @@ fn bounds() -> Result<[i64; 4], String> {
     ])
 }
 
-/// 2^62 + k as a precision.
+/// 2^62 + k as a precision; `None` on 32-bit targets, where it is not a usize.
+fn above_2_62_opt(k: usize) -> Option<usize> {
+    1usize.checked_shl(62).and_then(|b| b.checked_add(k))
+}
+
+/// 2^62 + k as a precision (64-bit targets only).
+#[cfg(target_pointer_width = "64")]
 fn above_2_62(k: usize) -> Result<usize, String> {
-    (1usize << 62)
-        .checked_add(k)
-        .ok_or_else(|| String::from("2^62 + k overflows usize"))
+    above_2_62_opt(k).ok_or_else(|| String::from("2^62 + k overflows usize"))
 }
 
 fn precisions() -> Result<Vec<usize>, String> {
     let wide = usize::try_from(u32::MAX).map_err(|_| String::from("u32::MAX as usize"))?;
-    Ok(vec![
-        0,
-        1,
-        2,
-        53,
-        4096,
-        wide,
-        above_2_62(1)?,
-        above_2_62(2)?,
-        above_2_62(3)?,
-        usize::MAX,
-    ])
+    Ok([0, 1, 2, 53, 4096, wide]
+        .into_iter()
+        // 2^62 + k only exists on 64-bit targets; usize::MAX stands for the far end on both.
+        .chain((1..=3).filter_map(above_2_62_opt))
+        .chain([usize::MAX])
+        .collect())
 }
 
 fn pi(p: usize) -> Result<i128, String> {
@@ -102,6 +100,8 @@ fn half_ulp_at_the_zf_bounds_rounds_an_underflow_out_to_the_smallest_positive_ma
     Ok(())
 }
 
+/// Needs a usize precision above 2^62, so it is compiled only for 64-bit targets.
+#[cfg(target_pointer_width = "64")]
 #[test]
 fn the_ulp_underflow_inside_the_zf_range_starts_just_above_precision_2_62() -> Result<(), String> {
     // At ZF_EXPONENT_MIN = -(2^62 - 1): ulp field -(2^62 - 1) - p + 1 reaches i64::MIN at p = 2^62 + 2 (still exact) and clamps from

@@ -9,7 +9,9 @@ use core::cmp::Ordering;
 use zenith_bound::bridge::Constant;
 use zenith_bound::error::BoundError;
 use zenith_bound::mag::Mag;
-use zenith_float_num::{ExactNum, RawKind, RawParts, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
+use zenith_float_num::{
+    ExactNum, RawKind, RawParts, RoundingMode, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE,
+};
 
 const TOP: u64 = 0x8000_0000_0000_0000;
 /// The huge precision: values with a set bit 100000 binades below their top bit.
@@ -69,11 +71,11 @@ fn want_up_lo(what: &str, x: &ExactNum, up: &Mag, lo: &Mag) -> Result<(), String
 
 /// Negative zero, built from raw parts (zf arithmetic need not produce it).
 fn neg_zero() -> Result<ExactNum, String> {
-    let words = [0u64];
+    let words = super::to_zf_words(&[0])?;
     ExactNum::from_raw_parts(&RawParts {
         kind: RawKind::Zero,
         words: &words,
-        precision: 64,
+        precision: words.len().checked_mul(WORD_BIT_SIZE).ok_or("prec")?,
         negative: true,
         exponent: 0,
         inexact: false,

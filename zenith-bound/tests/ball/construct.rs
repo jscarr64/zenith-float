@@ -187,17 +187,15 @@ fn infinity_radius_is_canonical_all_reals() -> Result<(), String> {
 
 #[test]
 fn prec_is_stored_as_requested() -> Result<(), String> {
-    for p in [
-        1usize,
-        2,
-        63,
-        64,
-        65,
-        4096,
-        0xFFFF_FFFF,
-        1 << 32,
-        zenith_bound::MAX_PRECISION,
-    ] {
+    // Candidates above MAX_PRECISION (2^30 - 1 on 32-bit targets) are not valid precisions there and are skipped; on
+    // 64-bit targets every candidate is used.
+    let candidates = [1u64, 2, 63, 64, 65, 4096, 0xFFFF_FFFF, 1 << 32];
+    let ps = candidates
+        .iter()
+        .filter_map(|p| usize::try_from(*p).ok())
+        .filter(|p| *p <= zenith_bound::MAX_PRECISION)
+        .chain([zenith_bound::MAX_PRECISION]);
+    for p in ps {
         let b = ok("exact(1, p)", Ball::exact(num(1), p))?;
         if b.prec() != p {
             return Err(format!("prec {}: got {}", p, b.prec()));

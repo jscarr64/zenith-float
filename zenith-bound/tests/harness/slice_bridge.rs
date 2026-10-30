@@ -15,7 +15,8 @@ use zenith_bound::error::BoundError;
 use zenith_bound::mag::Mag;
 use zenith_bound::MAX_PRECISION;
 use zenith_float_num::{
-    Consts, ExactNum, RawKind, RawParts, RoundingMode, EXPONENT_MAX, EXPONENT_MIN,
+    Consts, ExactNum, RawKind, RawParts, RoundingMode, Word, EXPONENT_MAX, EXPONENT_MIN,
+    WORD_BIT_SIZE,
 };
 
 use crate::common::goldens::golden_dir;
@@ -750,8 +751,10 @@ fn bridge_constant_bound_invalid_prec() -> Result<(), String> {
     Ok(())
 }
 
-/// An `ExactNum` from raw parts: `(-1)^negative * M * 2^(exponent - 64 * words.len())`, `M` little-endian words.
+/// An `ExactNum` from raw parts: `(-1)^negative * M * 2^(exponent - 64 * words.len())`, `M` little-endian 64-bit words.
+/// Each `u64` is split into zf `Word`s (one on 64-bit targets, two on 32-bit ones), so the value is the same on both.
 fn raw(words: &[u64], exponent: i64, negative: bool) -> Result<ExactNum, String> {
+    let zf_words = to_zf_words(words)?;
     let all_zero = words.iter().all(|w| *w == 0);
     let parts = RawParts {
         kind: if all_zero {
@@ -759,8 +762,8 @@ fn raw(words: &[u64], exponent: i64, negative: bool) -> Result<ExactNum, String>
         } else {
             RawKind::Finite
         },
-        words,
-        precision: words.len().checked_mul(64).ok_or("prec")?,
+        words: &zf_words,
+        precision: zf_words.len().checked_mul(WORD_BIT_SIZE).ok_or("prec")?,
         negative,
         exponent,
         inexact: false,
@@ -768,6 +771,19 @@ fn raw(words: &[u64], exponent: i64, negative: bool) -> Result<ExactNum, String>
     };
     ExactNum::from_raw_parts(&parts)
         .map_err(|e| format!("from_raw_parts({:x?}, {}): {:?}", words, exponent, e))
+}
+
+/// Little-endian `u64` words as little-endian zf `Word`s.
+fn to_zf_words(words: &[u64]) -> Result<Vec<Word>, String> {
+    let mut out = Vec::new();
+    for w in words {
+        let bytes = w.to_le_bytes();
+        let (chunks, _) = bytes.as_chunks::<{ core::mem::size_of::<Word>() }>();
+        for chunk in chunks {
+            out.push(Word::from_le_bytes(*chunk));
+        }
+    }
+    Ok(out)
 }
 
 /// `Mag` from_exact_num / from_exact_num_lower of `x` are exactly `up` / `lo`, for `x` and `-x`.
@@ -793,7 +809,7 @@ fn want_up_lo(what: &str, x: &ExactNum, up: &Mag, lo: &Mag) -> Result<(), String
 
 /// 16.S2.6 (R14 RawParts half): `from_exact_num(_lower)` read `as_raw_parts`, `to_exact_num` builds through
 /// `from_raw_parts`. Exponents across ±(2^62−1), multiword mantissas, sticky words, carries and subnormals. The stored
-/// precision is not assumed to round-trip (only `precision == 64 * words.len()`, zf's contract).
+/// precision is not assumed to round-trip (only `precision == WORD_BIT_SIZE * words.len()`, zf's contract).
 #[test]
 fn bridge_export_round_trip() -> Result<(), String> {
     let (hi, lo) = (EXPONENT_MAX, EXPONENT_MIN);
@@ -855,7 +871,7 @@ fn bridge_export_round_trip() -> Result<(), String> {
         if p.kind != RawKind::Finite
             || p.negative
             || p.exponent != e
-            || p.precision != p.words.len() * 64
+            || Some(p.precision) != p.words.len().checked_mul(WORD_BIT_SIZE)
         {
             return Err(format!("exp {}: raw parts {:?}", e, p));
         }

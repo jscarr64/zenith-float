@@ -245,6 +245,11 @@ fn pow2(e: i64) -> Result<ExactNum, String> {
     ExactNum::pow2(e, P).map_err(|err| format!("pow2({}): {:?}", e, err))
 }
 
+/// `2^64 - 1`, exact at `P` (built as `2^64 - 1` rather than from one zf word, which is 32 bits wide on 32-bit targets).
+fn all_ones() -> Result<ExactNum, String> {
+    Ok(pow2(64)?.sub(&ExactNum::from_word(1, P), P, RoundingMode::ToEven))
+}
+
 fn exact(m: &Mag) -> Result<ExactNum, String> {
     m.to_exact_num()
         .map_err(|e| format!("to_exact_num({:?}): {:?}", m, e))
@@ -262,7 +267,7 @@ fn nonneg(what: &str, d: &ExactNum) -> Result<(), String> {
 /// tail 0: (2^64-1) * 2^e, exact in a Mag; tail t > 0: 2^e + 2^(e-1) + 2^(e-t), which needs t+1 bits
 fn sample(e: i64, tail: i64) -> Result<ExactNum, String> {
     if tail < 0 {
-        let ones = ExactNum::from_word(u64::MAX, P).mul(&pow2(e)?, P, RoundingMode::ToEven);
+        let ones = all_ones()?.mul(&pow2(e)?, P, RoundingMode::ToEven);
         return Ok(ones.add(
             &pow2(e.checked_sub(200).ok_or("e-200")?)?,
             P,
@@ -270,7 +275,7 @@ fn sample(e: i64, tail: i64) -> Result<ExactNum, String> {
         ));
     }
     if tail == 0 {
-        return Ok(ExactNum::from_word(u64::MAX, P).mul(&pow2(e)?, P, RoundingMode::ToEven));
+        return Ok(all_ones()?.mul(&pow2(e)?, P, RoundingMode::ToEven));
     }
     let x = pow2(e)?.add(
         &pow2(e.checked_sub(1).ok_or("e-1")?)?,

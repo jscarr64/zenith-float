@@ -1,14 +1,14 @@
 //! The `Mag` ⇄ `ExactNum` bridge (CONTRACT 2.3, 3.3, 3.4; PLAN C5).
 //!
 //! Both directions go through zf's raw parts (R14): `ExactNum::as_raw_parts` gives the value as
-//! `(-1)^negative * M * 2^(exponent - precision)` with `M` in little-endian 64-bit words, and `ExactNum::from_raw_parts`
+//! `(-1)^negative * M * 2^(exponent - precision)` with `M` in little-endian zf `Word`s (64-bit, or 32-bit on 32-bit targets), and `ExactNum::from_raw_parts`
 //! builds one back. The reading side takes the top 64 bits of `M` as a `0.mant * 2^exp` `Mag` (round down) plus a
 //! sticky flag (any lower bit set), and one ulp more is the round-up result when bits were dropped. The stored precision
 //! is never assumed to round-trip: only the value is read.
 
 use super::{Mag, TOP};
 use crate::error::BoundError;
-use zenith_float_num::{Error, ExactNum, RawKind, RawParts, EXPONENT_MAX, EXPONENT_MIN};
+use zenith_float_num::{Error, ExactNum, RawKind, RawParts, Word, EXPONENT_MAX, EXPONENT_MIN};
 
 /// zf precision for `to_exact_num`: a `Mag` mantissa has 64 bits, so one 64-bit word is always exact.
 const EXACT_PREC: usize = 64;
@@ -28,48 +28,69 @@ fn top_of(x: &ExactNum, upper: bool) -> Option<(u64, bool, i64)> {
     }
 }
 
-/// `Ok(None)` when every word is zero, `Err(())` on exponent underflow.
-fn top_of_words(words: &[u64], exponent: i64) -> Result<Option<(u64, bool, i64)>, ()> {
-    // `skipped` zero words above the leading word, `idx` the leading word's index.
+/// Bits in one zf mantissa word (`Word` is `u64` on 64-bit targets and `u32` on 32-bit ones).
+const WORD_BITS: u32 = Word::BITS;
+
+/// `Ok(None)` when every word is zero, `Err(())` on exponent underflow. Width-independent: the result depends only on
+/// the value `M`, not on how zf splits it into words.
+fn top_of_words(words: &[Word], exponent: i64) -> Result<Option<(u64, bool, i64)>, ()> {
+    // `skipped` zero words above the leading word.
     let Some(skipped) = words.iter().rev().position(|w| *w != 0) else {
         return Ok(None);
     };
-    let Some(idx) = words
-        .len()
-        .checked_sub(1)
-        .and_then(|n| n.checked_sub(skipped))
-    else {
+    let mut nonzero = words.iter().rev().skip(skipped);
+    let Some(&hi) = nonzero.next() else {
         return Ok(None);
     };
-    let Some(&hi) = words.get(idx) else {
-        return Ok(None);
-    };
-    let lo = idx
-        .checked_sub(1)
-        .and_then(|i| words.get(i))
-        .map_or(0, |w| *w);
-    let rest_sticky = idx
-        .checked_sub(1)
-        .and_then(|i| words.get(..i))
-        .is_some_and(|ws| ws.iter().any(|w| *w != 0));
     let lz = hi.leading_zeros();
-    let window = (u128::from(hi).checked_shl(64).unwrap_or(0) | u128::from(lo))
-        .checked_shl(lz)
-        .unwrap_or(0);
+    // Gather whole words below `hi` until the window holds at least 64 bits under the leading one (at most 128 bits:
+    // two 64-bit words, or three 32-bit words); every word below the window only feeds the sticky bit.
+    let mut acc = u128::from(hi);
+    let mut nbits = WORD_BITS;
+    for w in nonzero.by_ref() {
+        if nbits.checked_sub(lz).is_some_and(|b| b > u64::BITS) {
+            break;
+        }
+        acc = acc.checked_shl(WORD_BITS).unwrap_or(0) | u128::from(*w);
+        nbits = nbits.checked_add(WORD_BITS).ok_or(())?;
+        if nbits.checked_sub(lz).is_some_and(|b| b > u64::BITS) {
+            break;
+        }
+    }
+    let rest_sticky = nonzero.any(|w| *w != 0);
+    // Left-align: the leading one of M lands on bit 127.
+    let align = u128::BITS
+        .checked_sub(nbits)
+        .and_then(|g| g.checked_add(lz))
+        .ok_or(())?;
+    let window = acc.checked_shl(align).unwrap_or(0);
     let mant = window
-        .checked_shr(64)
+        .checked_shr(u64::BITS)
         .and_then(|t| u64::try_from(t).ok())
         .unwrap_or(0);
     let sticky = rest_sticky || (window & u128::from(u64::MAX)) != 0;
-    // Leading bit of M sits at 2^(exponent - 64 * skipped - lz - 1), so the `0.mant` exponent is this.
+    // Leading bit of M sits at 2^(exponent - WORD_BITS * skipped - lz - 1), so the `0.mant` exponent is this.
     let shift = i64::try_from(skipped)
         .ok()
-        .and_then(|s| s.checked_mul(64))
+        .and_then(|s| s.checked_mul(i64::from(WORD_BITS)))
         .and_then(|s| s.checked_add(i64::from(lz)));
     match shift.and_then(|s| exponent.checked_sub(s)) {
         Some(exp) => Ok(Some((mant, sticky, exp))),
         None => Err(()),
     }
+}
+
+/// `m` as little-endian zf words: one `u64` word, or two `u32` words. The second slot is unused (and zero) on 64-bit.
+fn words_of(m: u64) -> Option<([Word; 2], usize)> {
+    let bytes = m.to_le_bytes();
+    let mut buf: [Word; 2] = [0, 0];
+    let mut n = 0usize;
+    let (chunks, _) = bytes.as_chunks::<{ core::mem::size_of::<Word>() }>();
+    for (slot, chunk) in buf.iter_mut().zip(chunks) {
+        *slot = Word::from_le_bytes(*chunk);
+        n = n.checked_add(1)?;
+    }
+    Some((buf, n))
 }
 
 impl Mag {
@@ -137,10 +158,21 @@ impl Mag {
                 }
             },
         };
-        let words = [word];
+        let Some((buf, n)) = words_of(word) else {
+            return Err(BoundError::Representation {
+                op: OP,
+                detail: "Mag mantissa does not split into zf words",
+            });
+        };
+        let Some(words) = buf.get(..n) else {
+            return Err(BoundError::Representation {
+                op: OP,
+                detail: "Mag mantissa does not split into zf words",
+            });
+        };
         let parts = RawParts {
             kind: RawKind::Finite,
-            words: &words,
+            words,
             precision: EXACT_PREC,
             negative: false,
             exponent: exp.max(EXPONENT_MIN),
