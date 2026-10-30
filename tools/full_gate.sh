@@ -31,6 +31,10 @@ echo "poplog: $POPLOG_FILE" | tee -a "$T/$tag.rc" >&2
 # CARGO_BUILD_JOBS / RUST_TEST_THREADS default to the slot value POPSLOT_JOBS (4) (pop_slot_acquire) unless the caller sets them.
 if [[ -z "${POPSLOT_HELD:-}" ]]; then pop_slot_acquire "${POPSLOT_SLOTS:-8}"; fi
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-4}} RUST_TEST_THREADS=${RUST_TEST_THREADS:-${POPSLOT_JOBS:-4}}
+# selftest scratch (tools/selftest_scratch.sh): under this run's log dir, never /tmp
+export SELFTEST_SCRATCH=${SELFTEST_SCRATCH:-$T/scratch}
+# every temp file a step makes (mktemp, python tempfile) goes under this run's log dir, never /tmp
+export TMPDIR=$T/tmp; mkdir -p "$TMPDIR"
 TT="-- --test-threads=$RUST_TEST_THREADS"
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".

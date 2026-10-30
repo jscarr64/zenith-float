@@ -9,7 +9,7 @@ unset POPLOG_FILE POPLOG_STATE_DIR POPLOG_PID POPLOG_PROGRESS_FILE POPLOG_STEP P
   POPSLOT_HELD POPSLOT_SLOT POPSLOT_FD POPSLOT_HOLDER_PID POPSLOT_AGENT POPSLOT_PRIORITY CARGO_BUILD_JOBS RUST_TEST_THREADS \
   GATE_STEPS COMPARE_OUT
 root=$(cd "$(dirname "$0")/.." && pwd)
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+tmp=$("$root/tools/selftest_scratch.sh" test_gate_tree_clean) || exit 2; trap 'rm -rf "$tmp"' EXIT
 git clone -q "$root" "$tmp/repo"
 git -C "$root" ls-files -m -o --exclude-standard | while IFS= read -r f; do
   [[ -f "$root/$f" ]] && { mkdir -p "$(dirname "$tmp/repo/$f")"; cp -p "$root/$f" "$tmp/repo/$f"; }

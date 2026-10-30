@@ -4,11 +4,11 @@
 # binary, a missing binary and zero binaries each FAIL; a real cargo fixture builds, passes the binary check
 # before any test runs, then runs its test; every cargo test step in tools/full_gate.sh and every cargo test run in
 # scripts/zenith_prepublish.sh goes through the script.
-# usage: tools/fresh_test_run_selftest.sh   (one tiny throwaway crate under mktemp; never the repo's target dir)
+# usage: tools/fresh_test_run_selftest.sh   (one tiny throwaway crate under $SELFTEST_SCRATCH; never the repo's target dir)
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 ftr="$root/tools/fresh_test_run.sh"
-t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+t=$("$root/tools/selftest_scratch.sh" fresh_test_run_selftest) || exit 2; trap 'rm -rf "$t"' EXIT
 git init -q "$t/wa"; git init -q "$t/wb"
 wa=$(cd "$t/wa" && pwd -P)
 bad=0

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Self-test for tools/golden_sums_check.sh on a scratch copy (mktemp -d under $TMPDIR): it must fail closed when
+# Self-test for tools/golden_sums_check.sh on a scratch copy (tools/selftest_scratch.sh, under $SELFTEST_SCRATCH): it must fail closed when
 # SHA256SUMS is missing, empty, does not list a required golden, or a hash mismatches; and pass on a correct pin.
 set -u
-here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
+here="$(cd "$(dirname "$0")" && pwd)"; t="$("$here/selftest_scratch.sh" golden_sums_selftest)" || exit 2; trap 'rm -rf "$t"' EXIT
 fail() { echo "GOLDEN SUMS SELFTEST FAIL: $*"; exit 1; }
 chk() { "$here/golden_sums_check.sh" "$t" borrow_ops.jsonl; }
 printf '{"id":"a"}\n{"id":"b"}\n' > "$t/borrow_ops.jsonl"; printf 'x\n' > "$t/other.jsonl"

@@ -1228,4 +1228,8 @@ def main(argv):
 
 
 if __name__ == "__main__":
+    import signal
+
+    # a gate step timeout (TERM) unwinds like an exit, so `with TemporaryDirectory()` still removes its dir
+    signal.signal(signal.SIGTERM, lambda signum, frame: sys.exit(128 + signum))
     sys.exit(main(sys.argv[1:]))

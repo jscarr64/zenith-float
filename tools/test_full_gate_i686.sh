@@ -8,7 +8,7 @@ unset POPLOG_FILE POPLOG_STATE_DIR POPLOG_PID POPLOG_PROGRESS_FILE POPLOG_STEP P
   POPSLOT_HELD POPSLOT_SLOT POPSLOT_FD POPSLOT_HOLDER_PID POPSLOT_AGENT POPSLOT_PRIORITY CARGO_BUILD_JOBS RUST_TEST_THREADS \
   GATE_STEPS
 root=$(cd "$(dirname "$0")/.." && pwd)
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+tmp=$("$root/tools/selftest_scratch.sh" test_full_gate_i686) || exit 2; trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/cargo" <<'SH'
 #!/usr/bin/env bash
