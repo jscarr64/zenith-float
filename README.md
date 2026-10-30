@@ -76,7 +76,7 @@ zenith-float = "2.0"
 zenith-float = { version = "2.0", default-features = false }
 ```
 
-`no_std` is tested: `scripts/ci_nostd.sh` runs the mpmath reference cases in a `#![no_std]` harness (`nostd-tests/`) on a libc-only Linux binary and bare-metal on `thumbv7em-none-eabihf` under QEMU.
+`no_std` is tested: `scripts/ci_nostd.sh` runs the mpmath reference cases in a `#![no_std]` harness (`nostd-tests/`) on a libc-only Linux binary and on a 64-bit `no_std` target (CI cell: ZF-M31). zenith-float is 64-bit only (P6), so no 32-bit target is tested.
 
 ## Known issues
 

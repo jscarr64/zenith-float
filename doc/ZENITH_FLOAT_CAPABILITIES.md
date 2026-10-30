@@ -41,12 +41,12 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 
 `no_std` is supported when a global allocator is available (`default-features = false`). Formatting traits require `std`.
 
-`no_std` is **built and tested** (1.0.5). `scripts/ci_nostd.sh` builds `zenith-float` and `zenith-float-num` with `--no-default-features --target thumbv7em-none-eabihf`. It then runs the `nostd-tests` harness, a `#![no_std]` crate (core + alloc only) with 77 mpmath reference cases, in two ways:
+`no_std` is **built and tested** (1.0.5). `scripts/ci_nostd.sh` builds `zenith-float` and `zenith-float-num` with `--no-default-features` for a 64-bit `no_std` target (64-bit only, P6). It then runs the `nostd-tests` harness, a `#![no_std]` crate (core + alloc only) with 77 mpmath reference cases, in two ways:
 
 - as a `#![no_std]`/`#![no_main]` binary on x86_64 Linux that links only libc;
-- bare-metal on `thumbv7em-none-eabihf` (Cortex-M4F, 32-bit limbs) under `qemu-system-arm -machine mps2-an386` with semihosting.
+- on a 64-bit `no_std` target.
 
-Both pass 77/77. There is no separate `alloc` feature: `alloc` is always required.
+The libc-only binary passes 77/77; the 64-bit `no_std` cell is set up by ZF-M31. There is no separate `alloc` feature: `alloc` is always required.
 
 ---
 
