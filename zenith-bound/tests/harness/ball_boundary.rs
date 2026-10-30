@@ -2,8 +2,8 @@
 //! TEST_PLAN L0b-14 (degenerate and all-reals) at the zf 2.0 exponent bounds `ZF_EXPONENT_MIN`, `MIN + 1`, `MAX - 1`, `ZF_EXPONENT_MAX`
 //! (Rusty: `Exponent = i64` with range +-(2^62 - 1), so an exponent sum or difference of two in-range exponents fits in i64). The bounds
 //! are defined once in `common::generators`. Spence's rule (2026-10-23 7:51 PM CT): an ulp exponent below what `Mag` holds rounds
-//! outward to the smallest positive `Mag`, never to zero. Inside the zf range that underflow needs a precision above 2^62, which no 32-bit target can express,
-//! so (ZB-TD03, one input set on every target) the clamp is tested from a pre-round exponent of `i64::MIN + 1` at small precisions.
+//! outward to the smallest positive `Mag`, never to zero. Inside the zf range that underflow happens only at precisions above 2^62
+//! (`ulp_mag(ZF_EXPONENT_MIN, p)` first clamps at p = 2^62 + 3, `half_ulp` at 2^62 + 2), so those precisions are listed explicitly.
 //! Oracle: the exponent field `mid_exp - prec + 1` (full ulp) or `mid_exp - prec` (half ulp) computed in i128 and clamped up to
 //! `i64::MIN`; the mantissa is always the top bit.
 //! COVERS: Mag::ulp_mag, Mag::half_ulp, Mag::smaller_than_half_ulp, Mag::mul_up, Mag::div_up, Ball::from_mid_rad, Ball::is_informative,
@@ -29,13 +29,20 @@ fn bounds() -> Result<[i64; 4], String> {
     ])
 }
 
-/// One precision list on every target (P1, ZB-TD03): each value is a usize on 32-bit and 64-bit targets alike. 2^30 - 1 is
-/// `MAX_PRECISION` once ZF-M28 lands, 2^30 the first refused value, u32::MAX the widest precision every target can hold.
+/// 2^62 + k as a precision. zf and zb are 64-bit only (P6), so this is always a usize.
+fn above_2_62(k: usize) -> Result<usize, String> {
+    (1usize << 62).checked_add(k).ok_or_else(|| String::from("2^62 + k overflows usize"))
+}
+
+/// One precision list (P6, 64-bit only; ZB-TD03). 2^30 - 1, 2^30 and u32::MAX bracket the planned limit (values follow ZF-M32
+/// once it lands); 2^62 + k reaches the ulp underflow inside the zf range; usize::MAX is the far end.
 fn precisions() -> Result<Vec<usize>, String> {
-    [0u64, 1, 2, 53, 4096, (1 << 30) - 1, 1 << 30, u64::from(u32::MAX)]
-        .into_iter()
-        .map(|p| usize::try_from(p).map_err(|_| format!("{} as usize", p)))
-        .collect()
+    let mut ps = vec![0, 1, 2, 53, 4096, (1 << 30) - 1, 1 << 30, u32::MAX as usize];
+    for k in 1..=3 {
+        ps.push(above_2_62(k)?);
+    }
+    ps.push(usize::MAX);
+    Ok(ps)
 }
 
 fn pi(p: usize) -> Result<i128, String> {
@@ -88,13 +95,10 @@ fn half_ulp_at_the_zf_bounds_rounds_an_underflow_out_to_the_smallest_positive_ma
     Ok(())
 }
 
-/// The outward clamp to the smallest positive `Mag`, reached the same way on every target: `Mag::ulp_mag` and `Mag::half_ulp`
-/// take any `i64` exponent, so an exponent field below `i64::MIN` comes from a pre-round exponent at `i64::MIN + 1` and a small
-/// precision (it used to need a precision above 2^62, which only 64-bit targets can express). The shapes match the old 2^62 + k
-/// cases: ulp field `e - p + 1` is `i64::MIN` at p = 2 and clamps from p = 3; half field `e - p` is `i64::MIN` at p = 1 and
-/// clamps from p = 2.
+/// A second route to the same outward clamp: a pre-round exponent of `i64::MIN + 1` at small precisions. The ulp field
+/// `e - p + 1` is `i64::MIN` at p = 2 and clamps from p = 3; the half field `e - p` is `i64::MIN` at p = 1 and clamps from p = 2.
 #[test]
-fn the_ulp_underflow_clamps_to_the_smallest_positive_mag_on_every_target() -> Result<(), String> {
+fn the_ulp_underflow_from_i64_min_plus_1_clamps_to_the_smallest_positive_mag() -> Result<(), String> {
     let min_pos = Mag::finite(TOP, i64::MIN).map_err(|err| format!("min_pos: {:?}", err))?;
     let e = bound(i64::MIN, 1)?;
     let cases = [
@@ -137,9 +141,37 @@ fn the_ulp_underflow_clamps_to_the_smallest_positive_mag_on_every_target() -> Re
     Ok(())
 }
 
-/// The Ball constructors refuse the widest precision every target can hold (u32::MAX > 2^30 - 1) with InvalidArgument.
 #[test]
-fn ball_exact_refuses_u32_max_precision_on_every_target() -> Result<(), String> {
+fn the_ulp_underflow_inside_the_zf_range_starts_just_above_precision_2_62() -> Result<(), String> {
+    // At ZF_EXPONENT_MIN = -(2^62 - 1): ulp field -(2^62 - 1) - p + 1 reaches i64::MIN at p = 2^62 + 2 (still exact) and clamps from
+    // p = 2^62 + 3; the half ulp field reaches i64::MIN at p = 2^62 + 1 and clamps from p = 2^62 + 2.
+    let min_pos = Mag::finite(TOP, i64::MIN).map_err(|err| format!("min_pos: {:?}", err))?;
+    let cases = [
+        ("ulp_mag", Mag::ulp_mag(ZF_EXPONENT_MIN, above_2_62(2)?), i64::MIN),
+        ("ulp_mag", Mag::ulp_mag(ZF_EXPONENT_MIN, above_2_62(3)?), i64::MIN),
+        ("half_ulp", Mag::half_ulp(ZF_EXPONENT_MIN, above_2_62(1)?), i64::MIN),
+        ("half_ulp", Mag::half_ulp(ZF_EXPONENT_MIN, above_2_62(2)?), i64::MIN),
+        ("ulp_mag", Mag::ulp_mag(ZF_EXPONENT_MIN, above_2_62(1)?), bound(i64::MIN, 1)?),
+    ];
+    for (what, got, want) in cases {
+        if got.exp() != Some(want) || got.mant() != Some(TOP) {
+            return Err(format!(
+                "{} at ZF_EXPONENT_MIN: want field {}, got {:?}",
+                what, want, got
+            ));
+        }
+    }
+    if Mag::ulp_mag(ZF_EXPONENT_MIN, usize::MAX) != min_pos {
+        return Err(String::from(
+            "ulp_mag(ZF_EXPONENT_MIN, usize::MAX) is not the smallest positive Mag",
+        ));
+    }
+    Ok(())
+}
+
+/// The Ball constructors refuse u32::MAX (above the planned limit; the value follows ZF-M32) with InvalidArgument.
+#[test]
+fn ball_exact_refuses_u32_max_precision() -> Result<(), String> {
     let wide = usize::try_from(u32::MAX).map_err(|_| String::from("u32::MAX as usize"))?;
     match zenith_bound::ball::Ball::exact(ExactNum::from_word(1, 64), wide) {
         Err(zenith_bound::error::BoundError::InvalidArgument { .. }) => Ok(()),
