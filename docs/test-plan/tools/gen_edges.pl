@@ -1,10 +1,10 @@
 #!/usr/bin/perl
 # Harper 2026-10-30: precision-matrix edge list v6 (Spence pmrev5 items 1-14 on top of v5: one hedge rule in tools/pm_hedge.pl, per-class pins, MPFR or mpmath primary oracle).
-use strict; use warnings; use FindBin; require "$FindBin::Bin/pm_hedge.pl";
+use strict; use warnings; use FindBin; require "$FindBin::Bin/pm_hedge.pl"; require "$FindBin::Bin/pm_target.pl";
 my $T=$ENV{PM_TREE}//"$ENV{HOME}/harper-work/zf-precision-matrix";   # worktree; sources pinned to $SRC_COMMIT
 my $IN="$T/docs/test-plan/inputs";
 my $SRC_COMMIT="7955836a845bd6419dc41d21eda6e739e3b622c5";
-my %PIN=("zf-inventory.csv"=>"ba79198eb3486944e3b43a898389b81a7ce8fb69e4f67450e49841e8fdac1d59","zb-inventory.csv"=>"b65c2bad80431500ab6280eb6ca545194407a35e9ae2f9719b5a6e5a38bdcd65","r4-required-results.csv"=>"2746dc4d05cca03d07db6cd8db600e86369a7f33b450c6b679b1d0c1bf0e8c6d","spence-gen_r4.py"=>"aa4d614617d086a49a2d625adbef1b516a7cac7ea37de58e391d40df2b51243f","FIXLIST.csv"=>"9fc4a7a58b4ea5e40f494a4ce6a1b2299d2823eb26a93b775256ec7cc366fbdd","fixes_after_1.0.12.txt"=>"03085a0acb3d5d0e51d8e8df13b3c4ad30d7843152d3d32024d6899c9f530c82","zf-audit-SUMMARY.md"=>"a7af866c6b2c6de32f4ed243170a4aa92fff19bc7e3978e86642a3dff1cb75f0");
+my %PIN=("zf-inventory.csv"=>"ba79198eb3486944e3b43a898389b81a7ce8fb69e4f67450e49841e8fdac1d59","zb-inventory.csv"=>"b65c2bad80431500ab6280eb6ca545194407a35e9ae2f9719b5a6e5a38bdcd65","r4-required-results.csv"=>"2746dc4d05cca03d07db6cd8db600e86369a7f33b450c6b679b1d0c1bf0e8c6d","spence-gen_r4.py"=>"aa4d614617d086a49a2d625adbef1b516a7cac7ea37de58e391d40df2b51243f","FIXLIST.csv"=>"3a8907f41341130e75e8dd2e0871c97e40cee96d8cf63103f7225e5d69f2606b","fixes_after_1.0.12.txt"=>"03085a0acb3d5d0e51d8e8df13b3c4ad30d7843152d3d32024d6899c9f530c82","zf-audit-SUMMARY.md"=>"a7af866c6b2c6de32f4ed243170a4aa92fff19bc7e3978e86642a3dff1cb75f0");
 for my $f (sort keys %PIN){ my $o=`sha256sum "$IN/$f"`; my ($h)=$o=~/^([0-9a-f]{64})/; die "PIN MISMATCH $f: got ".($h//"missing")." want $PIN{$f}\n" unless ($h//"") eq $PIN{$f} }
 system("git","-C",$T,"diff","--quiet",$SRC_COMMIT,"--","zenith-float-num/src","zenith-float-num/tests","zenith-bound/src","zenith-bound/tests")==0 or die "PIN MISMATCH: sources differ from $SRC_COMMIT\n";
 my $INVZF="$IN/zf-inventory.csv"; my $INVZB="$IN/zb-inventory.csv"; my $R4="$IN/r4-required-results.csv";
@@ -58,6 +58,8 @@ my $FX='docs/test-plan/inputs/FIXLIST.csv'; my $SU='docs/test-plan/inputs/zf-aud
 # pmrev4 item 3: Paul's corrected FIXLIST rows ZF-WP01..WP10 and ZF-D01, cited by line (generator refuses if absent)
 my %WPL; my $D01; { open my $fh,'<',"$T/$FX" or die "$FX"; my $l=0; while(<$fh>){ $l++; $WPL{$2}="$FX:$l ($1)" if /^(ZF-WP\d\d),[^,]*,[^,]*,ExactNum::(\w+):/; $D01="$FX:$l (ZF-D01, LIBRARY.md:399-410 -0i side of the cut)" if /^ZF-D01,/ } }
 die "PIN MISMATCH: FIXLIST lacks ZF-D01\n" unless $D01; die "PIN MISMATCH: FIXLIST has ".scalar(keys %WPL)." ZF-WP rows, want 10\n" unless keys %WPL==10;
+# pmrev7 (Jeff ruling 2026-10-30 6:00 PM CT): ZF-M27, one gold per row for both targets; cited by line (generator refuses if absent)
+my $M27; { open my $fh,'<',"$T/$FX" or die "$FX"; my $l=0; while(<$fh>){ $l++; $M27="FIXLIST:$l ZF-M27" if /^ZF-M27,/ } } die "PIN MISMATCH: FIXLIST lacks ZF-M27\n" unless $M27;
 my @N5=( # [crate, type-regex, bare-names, citation]
  ['zf','.*',[qw(sin)],"$FX:15 (ZF-01); $FX:127 (ZF-M22); $FA:87"],
  ['zf','.*',[qw(cos sin_cos tan)],"$FX:127 (ZF-M22 all trig_reduce_extra users); $FA:87 (cos, sin_cos); $FA:98 (trig)"],
@@ -217,7 +219,21 @@ sub pin2 { my $a=shift; my ($k,$c,$cr)=@$a{qw(family class crate)}; my $bare=$k=
   if($v=~m{^ExactNum::nan\(.*\)(?: /|,) Err\(}){ $v = $c=~/refuse/ ? Vk($a,'InvalidArgument') : '' }
   $v='None' if $v=~/^None(?:; None)+$/;
   $$a{required_result}=$_; $$a{refusal_variant}=$v }
-sub row { my %a=@_; pin1(\%a); pin2(\%a); { my @h=pm_hedges($a{required_result},$a{refusal_variant}); push @LEFT,"hedge(@h) $a{family} $a{class}: $a{required_result} || $a{refusal_variant}" if @h; } push @out,[@a{qw(crate family source category group class class_def inputs modes tier required_result refusal_variant oracle_x86_64 oracle_i686 check verdict_space proof)}]; $cnt{"$a{crate} $a{verdict_space}"}++ }
+# pmrev7 (Jeff ruling 2026-10-30 6:00 PM CT, ZF-M27): one gold per row for i686 and x86_64; MAX split resolved per design s4; M27 pin note.
+my @F17=qw(crate family source category group class class_def inputs modes tier required_result refusal_variant oracle_x86_64 oracle_i686 check verdict_space proof);
+sub pin3 { my $a=shift; my $c=$$a{class}; my $ex=($$a{verdict_space}//'') ne 'NA_PROOF'; my $cr=$$a{crate}; my $zb=$cr eq 'zb';
+  my $SK='MAX-timeout skip (Paul, Spence pmrev3 6; one row, both targets): the first target run of this row in a family runs first; if it times out, the run on the other target is not started and is recorded SKIPPED_AFTER_TIMEOUT, which counts as FAIL in the verdict space and in pm-coverage and is never omitted; the family\'s RC stays blocked until its FIXLIST fix lands, and every skipped run then reruns in full';
+  my $TIER='heavy only (own shard pm-max, run on both targets; budget 10 min per run; timeout = FAIL)';
+  if($c eq 'prec-MAX-i686'){ $$a{class}='prec-2^30-1'; $$a{class_def}='p = 2^30-1 on both targets (MAX_PRECISION on 32-bit targets and an ordinary precision on 64-bit targets, defs.rs:77; 2^30 bits is allocatable, Paul ruling)'; $$a{tier}=$TIER;
+    local $_=$$a{required_result}; s/ = 2\^30-1 \(allocatable on i686, Paul ruling\)/ = 2^30-1, one gold for both targets ($M27)/; s/MAX-timeout skip .*$/$SK/ or $_.=" $SK"; $$a{required_result}=$_ }
+  if($c eq 'prec-MAX-x86_64'){ $$a{class}='prec-2^60-1'; $$a{class_def}='p = 2^60-1 on both targets (MAX_PRECISION on 64-bit targets; above MAX_PRECISION on 32-bit targets, defs.rs:77)'; $$a{tier}=$TIER;
+    my ($ia,$ma)=$zb?('BoundError::InvalidArgument','BoundError::Resource'):('Error::InvalidArgument','Error::MemoryAllocation');
+    $$a{required_result}=$UNP."one outcome for both targets, which needs a decision from Jeff: at 7955836 MAX_PRECISION is target-dependent (defs.rs:77), so this input is above MAX_PRECISION on 32-bit targets (refused with $ia there) while on 64-bit targets 2^60-1 bits = 2^57 bytes cannot be allocated ($ma there); the two results differ, so no shared gold can be pinned until the precision limit is the same on both targets ($M27 scope). $SK"; $$a{refusal_variant}='' }
+  $$a{class_def}=~s/every axis point \(i686 96, x86_64 49\)/every axis point of the union of the i686 (96) and x86_64 (49) axis sets, each run on both targets with one gold/ if $c eq 'prec-axis';
+  $$a{required_result}=~s/the pinned x86_64 oracle/the pinned oracle/;
+  if($ex){ $$a{oracle_i686}="same gold as oracle_x86_64: one gold per row for both targets (Jeff ruling 2026-10-30 6:00 PM CT, $M27); the i686 run must be bit-identical to it".($zb?' (byte-identical BallRow digest)':'') }
+  if($ex && pm_m27_candidate(@$a{@F17})){ $$a{required_result}.=" Pin note ($M27, Jeff ruling 2026-10-30 6:00 PM CT): cells in the 6 directed modes (every mode except ToEven) at a p that is not a multiple of 64 are red (FAIL) until ZF-M27 lands; then every mode rounds at rp(p,64) and the result is bit-identical on i686 and x86_64." } }
+sub row { my %a=@_; pin1(\%a); pin2(\%a); pin3(\%a); { my @t=pm_target_specific(@a{@F17}); push @LEFT,"target(@t) $a{family} $a{class}" if @t; } { my @h=pm_hedges($a{required_result},$a{refusal_variant}); push @LEFT,"hedge(@h) $a{family} $a{class}: $a{required_result} || $a{refusal_variant}" if @h; } push @out,[@a{qw(crate family source category group class class_def inputs modes tier required_result refusal_variant oracle_x86_64 oracle_i686 check verdict_space proof)}]; $cnt{"$a{crate} $a{verdict_space}"}++ }
 for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
   my ($ty)=$key=~/^(.*)::[^:]+$/; $ty//='';
   for my $i (0..$#N5){ my ($c,$tr,$names,$cit)=@{$N5[$i]}; next unless $c eq $crate && $ty=~/$tr/; if(grep {$_ eq '*' || $_ eq $bare} @$names){ push @{$n5{$key}},$cit; $n5hit{$i}{$bare}=1 } }
@@ -334,14 +350,14 @@ for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
 die "pin1: ".scalar(@LEFT)." rows left with either/or text:\n".join("\n",@LEFT[0..($#LEFT<40?$#LEFT:39)])."\n" if @LEFT;
 open my $o,'>',$OUT or die; my @H=qw(crate family source category group class class_def inputs modes tier required_result refusal_variant oracle_x86_64 oracle_i686 check verdict_space proof);
 sub csvq { my $s=shift; $s="" unless defined $s; $s=~s/\s*\n\s*/ /g; $s=~s/"/""/g; "\"$s\"" }
-print $o "# precision-matrix-edges v5 (Harper 2026-10-30). Lines starting with # are metadata; the CSV header is the first line without #.\n# source commit $SRC_COMMIT (generator refuses if zenith-float-num/{src,tests} or zenith-bound/{src,tests} differ)\n";
+print $o "# precision-matrix-edges v7 (Harper 2026-10-30; ZF-M27 one gold per row). Lines starting with # are metadata; the CSV header is the first line without #.\n# source commit $SRC_COMMIT (generator refuses if zenith-float-num/{src,tests} or zenith-bound/{src,tests} differ)\n";
 print $o "# input docs/test-plan/inputs/$_ sha256:$PIN{$_}\n" for sort keys %PIN;
 print $o join(',',map {csvq($_)} @H),"\n"; print $o join(',',map {csvq($_)} @$_),"\n" for @out; close $o;
 my %fc; $fc{$$_[0]}++ for @fam; my %wp=(); $wp{$$_[1]}=1 for grep {$$_[6]=~/working-precision/} @fam;
 print "families zf=$fc{zf} zb=$fc{zb} rows=",scalar(@out),"\n"; print "$_ $cnt{$_}\n" for sort keys %cnt; print "wp families: ",join(' ',sort keys %wp),"\n";
 my %oth; $oth{$$_[2]}++ for grep {$$_[0] eq 'zf' && $$_[5] eq 'other'} @fam; print "other keys ",scalar(keys %oth)," bare; r4 fams ",scalar(keys %r4fam),"; missing: ",join(' ',grep {!$r4fam{$_}} sort keys %oth),"\n";
 
-{ my %sh; for my $r (@out){ my ($cr,$fm,$tier,$vs)=@{$r}[0,1,9,15]; my $k = $vs eq 'NA_PROOF' ? 'proof' : $tier=~/pm-max-i686/ ? 'pm-max-i686' : $tier=~/pm-max-x86_64/ ? 'pm-max-x86_64' : $tier=~/fast/ ? 'fast' : 'heavy'; $sh{"$k|$cr|$fm"}++ }
+{ my %sh; for my $r (@out){ my ($cr,$fm,$tier,$vs)=@{$r}[0,1,9,15]; my $k = $vs eq 'NA_PROOF' ? 'proof' : $tier=~/pm-max-i686/ ? 'pm-max-i686' : $tier=~/pm-max-x86_64/ ? 'pm-max-x86_64' : $tier=~/shard pm-max\b/ ? 'pm-max' : $tier=~/fast/ ? 'fast' : 'heavy'; $sh{"$k|$cr|$fm"}++ }
   open my $so,'>',$SHOUT or die; print $so "shard,crate,family,rows\n"; for (sort keys %sh){ my ($a,$b,$c)=split /\|/; print $so join(',',map {csqq($_)} $a,$b,$c,$sh{$_}),"\n" } close $so; print "shard lines: ",scalar(keys %sh),"\n" }
 sub csqq { my $s=shift; $s=~s/"/""/g; "\"$s\"" }
 open my $n5,'>',$N5OUT or die; print $n5 "crate,family,N,citations\n"; my %fam5;

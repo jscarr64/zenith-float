@@ -10,7 +10,7 @@
 #          FAIL per: duplicate row_id (never overwritten), row_id not in matrix, malformed record, any of the 5 provenance fields
 #          != the --manifest value (key=value lines: zf_sha zb_sha env_name env_hash gen_sha256), executed row missing, verdict != PASS
 #          (SKIPPED_AFTER_TIMEOUT / FAIL count as FAIL).
-#        S1 every prec-MAX-<target> (timeout-budget) row's verdict space includes SKIPPED_AFTER_TIMEOUT | S2 every NA_PROOF row cites a
+#        S1 every MAX-budget row (prec-2^30-1, prec-2^60-1; pmrev7 one row for both targets)'s verdict space includes SKIPPED_AFTER_TIMEOUT | S2 every NA_PROOF row cites a
 #        pm-proofs path | S3 every executed row's verdict space is PASS|FAIL[|SKIPPED_AFTER_TIMEOUT]
 use strict; use warnings;
 my $mode='rc'; my $res; my $man; my @a;
@@ -23,7 +23,7 @@ sub p{my $l=shift; chomp $l; my @f; my $fld=''; my $st=0; my @c=split //,$l; for
 my (%cnt,%ex,%files,%exp,$rows,$na,$exe); my $hdr=0; my $ln=0; my @ids;
 my $G=sub { my ($r,$m)=@_; $cnt{$r}++; push @{$ex{$r}},$m if @{$ex{$r}//[]}<3 };
 open F,$csv or die "$csv"; while(<F>){ $ln++; next if /^#/; if(!$hdr){$hdr=1;next} $rows++; my @f=p($_); my $id="$f[0]|$f[1]|$f[5]";
- my $shard = $f[15] eq 'NA_PROOF' ? 'proof' : $f[9]=~/pm-max-i686/ ? 'pm-max-i686' : $f[9]=~/pm-max-x86_64/ ? 'pm-max-x86_64' : $f[9]=~/fast/ ? 'fast' : 'heavy';
+ my $shard = $f[15] eq 'NA_PROOF' ? 'proof' : $f[9]=~/pm-max-i686/ ? 'pm-max-i686' : $f[9]=~/pm-max-x86_64/ ? 'pm-max-x86_64' : $f[9]=~/shard pm-max\b/ ? 'pm-max' : $f[9]=~/fast/ ? 'fast' : 'heavy';
  $exp{"$shard|$f[0]|$f[1]"}++;
  if($f[15] eq 'NA_PROOF'){ $na++; my ($pf)=$f[16]=~/^(docs\/test-plan\/pm-proofs\/\S+?\.md)#/;
    if(!$pf){ $G->('S2',"line $ln $f[1]"); next }
@@ -32,7 +32,7 @@ open F,$csv or die "$csv"; while(<F>){ $ln++; next if /^#/; if(!$hdr){$hdr=1;nex
    next }
  $exe++; push @ids,$id;
  $G->('S3',"line $ln $f[1] vs=$f[15]") unless $f[15]=~/^PASS\|FAIL(\|SKIPPED_AFTER_TIMEOUT)?$/;
- $G->('S1',"line $ln $f[1] $f[5]") if $f[5]=~/^prec-MAX-/ && $f[15] !~ /SKIPPED_AFTER_TIMEOUT/;
+ $G->('S1',"line $ln $f[1] $f[5]") if $f[5]=~/^prec-(MAX-|2\^30-1$|2\^60-1$)/ && $f[15] !~ /SKIPPED_AFTER_TIMEOUT/;
  $G->('c',"line $ln $f[1] $f[5]") if "$f[12] $f[13]"=~/UNGENERATED/;
  $G->('d',"line $ln $f[1] $f[5]") if $f[10]=~/\[PM1-UNPINNED\]/; }
 close F;
