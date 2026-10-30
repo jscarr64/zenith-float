@@ -1,0 +1,310 @@
+family	source	resolution	mode	basis	note
+ExactNum::to_inline_bytes	zenith-float-num/src/binfmt.rs:96	exact	none (no rounding step)	R3, P1	
+ExactNum::write_inline_bytes	zenith-float-num/src/binfmt.rs:107	exact	none (no rounding step)	R3, P1	
+ExactNum::from_inline_bytes	zenith-float-num/src/binfmt.rs:116	exact	none (no rounding step)	R3, P1	
+ExactNum::to_bytes	zenith-float-num/src/binfmt.rs:125	exact	none (no rounding step)	R3, P1	
+ExactNum::write_bytes	zenith-float-num/src/binfmt.rs:138	exact	none (no rounding step)	R3, P1	
+ExactNum::from_bytes	zenith-float-num/src/binfmt.rs:143	exact	none (no rounding step)	R3, P1	
+ExactNumArray::to_bytes	zenith-float-num/src/binfmt.rs:154	exact	none (no rounding step)	R3, P1	
+ExactNumArray::write_bytes	zenith-float-num/src/binfmt.rs:167	exact	none (no rounding step)	R3, P1	
+ExactNumArray::from_bytes	zenith-float-num/src/binfmt.rs:172	exact	none (no rounding step)	R3, P1	
+Sign::is_positive	zenith-float-num/src/defs.rs:138	exact	none (no rounding step)	R3, P1	
+Sign::is_negative	zenith-float-num/src/defs.rs:143	exact	none (no rounding step)	R3, P1	
+Sign::to_int	zenith-float-num/src/defs.rs:148	exact	none (no rounding step)	R3, P1	
+Radix::uses_underscore_exponent	zenith-float-num/src/defs.rs:281	exact	none (no rounding step)	R3, P1	
+Radix::bits_per_digit	zenith-float-num/src/defs.rs:286	exact	none (no rounding step)	R3, P1	
+Error::fmt	zenith-float-num/src/defs.rs:180	exact	none (no rounding step)	R3, P1	
+Error::eq	zenith-float-num/src/defs.rs:199	exact	none (no rounding step)	R3, P1	
+Error::from	zenith-float-num/src/defs.rs:208	exact	none (no rounding step)	R3, P1	
+RadixFloat::new	zenith-float-num/src/radix_float.rs:28	exact	none (no rounding step)	R3, P1	
+RadixFloat::into_inner	zenith-float-num/src/radix_float.rs:49	exact	none (no rounding step)	R3, P1	
+GkResult::new	zenith-float-num/src/gauss_kronrod.rs:113	exact	none (no rounding step)	R3, P1	
+Accuracy::doc_line	zenith-float-num/src/accuracy.rs:34	r4	fixed by R4 row	R4 (Spence table)	
+accuracy::accuracy_of	zenith-float-num/src/accuracy.rs:303	r4	fixed by R4 row	R4 (Spence table)	
+ExactInt::from_u64	zenith-float-num/src/integer.rs:58	exact	none (no rounding step)	R3, P1	
+ExactInt::from_u128	zenith-float-num/src/integer.rs:63	exact	none (no rounding step)	R3, P1	
+ExactInt::from_i64	zenith-float-num/src/integer.rs:79	exact	none (no rounding step)	R3, P1	
+ExactInt::from_i128	zenith-float-num/src/integer.rs:84	exact	none (no rounding step)	R3, P1	
+ExactInt::is_zero	zenith-float-num/src/integer.rs:98	exact	none (no rounding step)	R3, P1	
+ExactInt::is_negative	zenith-float-num/src/integer.rs:103	exact	none (no rounding step)	R3, P1	
+ExactInt::signum	zenith-float-num/src/integer.rs:108	exact	none (no rounding step)	R3, P1	
+ExactInt::bit_length	zenith-float-num/src/integer.rs:119	exact	none (no rounding step)	R3, P1	
+ExactInt::add	zenith-float-num/src/integer.rs:183	exact	none (no rounding step)	R3, P1	
+ExactInt::sub	zenith-float-num/src/integer.rs:206	exact	none (no rounding step)	R3, P1	
+ExactInt::neg	zenith-float-num/src/integer.rs:211	exact	none (no rounding step)	R3, P1	
+ExactInt::mul	zenith-float-num/src/integer.rs:222	exact	none (no rounding step)	R3, P1	
+ExactInt::div_rem	zenith-float-num/src/integer.rs:306	exact	none (no rounding step)	R3, P1	
+ExactInt::pow	zenith-float-num/src/integer.rs:331	exact	none (no rounding step)	R3, P1	
+ExactInt::to_dec_string	zenith-float-num/src/integer.rs:404	exact	none (no rounding step)	R3, P1	
+ExactInt::from_dec_string	zenith-float-num/src/integer.rs:425	exact	none (no rounding step)	R3, P1	
+ExactInt::from_exact_num	zenith-float-num/src/integer.rs:447	exact	none (no rounding step)	R3, P1	
+ExactInt::eq	zenith-float-num/src/integer.rs:515	exact	none (no rounding step)	R3, P1	
+ExactComplex::new	zenith-float-num/src/complex.rs:86	exact	none (no rounding step)	R3, P1	
+ExactComplex::into_parts	zenith-float-num/src/complex.rs:91	exact	none (no rounding step)	R3, P1	
+ExactComplex::set_inexact	zenith-float-num/src/complex.rs:146	exact	none (no rounding step)	R3, P1	
+ExactComplex::from_real	zenith-float-num/src/complex.rs:160	exact	none (no rounding step)	R3, P1	
+ExactComplex::is_nan	zenith-float-num/src/complex.rs:179	exact	none (no rounding step)	R3, P1	
+core::add	zenith-float-num/src/complex.rs:1134	mode	ToEven	M27	
+core::sub	zenith-float-num/src/complex.rs:1152	mode	ToEven	M27	
+Context::set_precision	zenith-float-num/src/ctx.rs:50	exact	none (no rounding step)	R3, P1	
+Context::set_consts	zenith-float-num/src/ctx.rs:60	exact	none (no rounding step)	R3, P1	
+Context::set_emin	zenith-float-num/src/ctx.rs:66	exact	none (no rounding step)	R3, P1	
+Context::set_emax	zenith-float-num/src/ctx.rs:72	exact	none (no rounding step)	R3, P1	
+Context::consts	zenith-float-num/src/ctx.rs:87	exact	none (no rounding step)	R3, P1	
+Context::const_pi	zenith-float-num/src/ctx.rs:92	rm	all 7 modes (rm parameter)	M27, R6	
+Context::const_e	zenith-float-num/src/ctx.rs:97	rm	all 7 modes (rm parameter)	M27, R6	
+Context::const_ln2	zenith-float-num/src/ctx.rs:102	rm	all 7 modes (rm parameter)	M27, R6	
+Context::const_ln10	zenith-float-num/src/ctx.rs:107	rm	all 7 modes (rm parameter)	M27, R6	
+Context::const_sqrt2	zenith-float-num/src/ctx.rs:112	rm	all 7 modes (rm parameter)	M27, R6	
+Context::const_phi	zenith-float-num/src/ctx.rs:117	rm	all 7 modes (rm parameter)	M27, R6	
+Context::const_euler_gamma	zenith-float-num/src/ctx.rs:122	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNumPoly::is_zero	zenith-float-num/src/poly.rs:94	exact	none (no rounding step)	R3, P1	
+ExactNumPoly::eq	zenith-float-num/src/poly.rs:440	exact	none (no rounding step)	R3, P1	
+macro_util::compute_added_err_near_one	zenith-float-num/src/macro_util.rs:12	r4	fixed by R4 row	R4 (Spence table)	
+macro_util::compute_added_err	zenith-float-num/src/macro_util.rs:52	r4	fixed by R4 row	R4 (Spence table)	
+macro_util::check_exponent_range	zenith-float-num/src/macro_util.rs:234	exact	none (no rounding step)	R3, P1	
+macro_util::check_complex_exponent_range	zenith-float-num/src/macro_util.rs:254	exact	none (no rounding step)	R3, P1	
+macro_util::complex_cancel_bits	zenith-float-num/src/macro_util.rs:301	r4	fixed by R4 row	R4 (Spence table)	
+Ieee64Array::to_csv_string	zenith-float-num/src/csvfmt.rs:36	exact	none (no rounding step)	R3, P1	
+Ieee64Array::from_csv_str	zenith-float-num/src/csvfmt.rs:44	exact	none (no rounding step)	R3, P1	
+Ieee64Array::to_csv	zenith-float-num/src/csvfmt.rs:51	exact	none (no rounding step)	R3, P1	
+Ieee64Array::from_csv	zenith-float-num/src/csvfmt.rs:58	exact	none (no rounding step)	R3, P1	
+ExactNumArray::to_csv_string	zenith-float-num/src/csvfmt.rs:67	exact	none (no rounding step)	R3, P1	
+ExactNumArray::from_csv_str	zenith-float-num/src/csvfmt.rs:92	red	unpinned	none	the RoundingMode the csvfmt.rs:92 decimal field parser uses at DEFAULT_P (owner Rusty)
+ExactNumArray::to_csv	zenith-float-num/src/csvfmt.rs:118	exact	none (no rounding step)	R3, P1	
+ExactNumArray::from_csv	zenith-float-num/src/csvfmt.rs:124	exact	none (no rounding step)	R3, P1	
+hash::constant_time_eq	zenith-float-num/src/hash.rs:62	exact	none (no rounding step)	R3, P1	
+chebyshev::chebyshev_error_bound	zenith-float-num/src/chebyshev.rs:207	mode	ToEven	M27	
+ExactNum::new	zenith-float-num/src/ext.rs:65	exact	none (no rounding step)	R3, P1	
+ExactNum::is_inf_pos	zenith-float-num/src/ext.rs:89	exact	none (no rounding step)	R3, P1	
+ExactNum::is_inf_neg	zenith-float-num/src/ext.rs:94	exact	none (no rounding step)	R3, P1	
+ExactNum::is_inf	zenith-float-num/src/ext.rs:99	exact	none (no rounding step)	R3, P1	
+ExactNum::is_nan	zenith-float-num/src/ext.rs:104	exact	none (no rounding step)	R3, P1	
+ExactNum::is_int	zenith-float-num/src/ext.rs:109	exact	none (no rounding step)	R3, P1	
+ExactNum::add_full_prec	zenith-float-num/src/ext.rs:163	none	None	R6	
+ExactNum::sub_full_prec	zenith-float-num/src/ext.rs:220	none	None	R6	
+ExactNum::mul_full_prec	zenith-float-num/src/ext.rs:312	none	None	R6	
+ExactNum::div_exact	zenith-float-num/src/ext.rs:651	mode	ToZero	M27	
+ExactNum::rem	zenith-float-num/src/ext.rs:723	exact	none (no rounding step)	R3, P1	
+ExactNum::abs_cmp	zenith-float-num/src/ext.rs:779	exact	none (no rounding step)	R3, P1	
+ExactNum::is_positive	zenith-float-num/src/ext.rs:1042	exact	none (no rounding step)	R3, P1	
+ExactNum::is_negative	zenith-float-num/src/ext.rs:1052	exact	none (no rounding step)	R3, P1	
+ExactNum::is_subnormal	zenith-float-num/src/ext.rs:1061	exact	none (no rounding step)	R3, P1	
+ExactNum::is_zero	zenith-float-num/src/ext.rs:1069	exact	none (no rounding step)	R3, P1	
+ExactNum::clamp	zenith-float-num/src/ext.rs:1080	exact	none (no rounding step)	R3, P1	
+ExactNum::max	zenith-float-num/src/ext.rs:1098	exact	none (no rounding step)	R3, P1	
+ExactNum::min	zenith-float-num/src/ext.rs:1110	exact	none (no rounding step)	R3, P1	
+ExactNum::signum	zenith-float-num/src/ext.rs:1122	exact	none (no rounding step)	R3, P1	
+ExactNum::random_normal	zenith-float-num/src/ext.rs:1302	r4	fixed by R4 row	R4 (Spence table)	
+ExactNum::exponent	zenith-float-num/src/ext.rs:1727	exact	none (no rounding step)	R3, P1	
+ExactNum::leading_bit_exponent	zenith-float-num/src/ext.rs:1760	exact	none (no rounding step)	R3, P1	
+ExactNum::top_u64_mantissa_and_sticky	zenith-float-num/src/ext.rs:1777	exact	none (no rounding step)	R3, P1	
+ExactNum::from_mag_parts	zenith-float-num/src/ext.rs:1810	mode	ToZero	M27	
+ExactNum::pow2	zenith-float-num/src/ext.rs:1851	exact	none (no rounding step)	R3, P1	
+ExactNum::max_value	zenith-float-num/src/ext.rs:1883	exact	none (no rounding step)	R3, P1	
+ExactNum::min_value	zenith-float-num/src/ext.rs:1889	exact	none (no rounding step)	R3, P1	
+ExactNum::min_positive	zenith-float-num/src/ext.rs:1898	exact	none (no rounding step)	R3, P1	
+ExactNum::min_positive_normal	zenith-float-num/src/ext.rs:1907	exact	none (no rounding step)	R3, P1	
+ExactNum::from_word	zenith-float-num/src/ext.rs:1913	red	unpinned	none	the RoundingMode ExactNumNumber::from_word applies when p is below the bit width of d, and whether d: Word (a target-width type, TD36) gets one gold for both targets (owner Rusty)
+ExactNum::from_raw_parts	zenith-float-num/src/ext.rs:1970	exact	none (no rounding step)	R3, P1	
+ExactNum::from_words	zenith-float-num/src/ext.rs:2028	exact	none (no rounding step)	R3, P1	
+ExactNum::sign	zenith-float-num/src/ext.rs:2033	exact	none (no rounding step)	R3, P1	
+ExactNum::set_exponent	zenith-float-num/src/ext.rs:2065	exact	none (no rounding step)	R3, P1	
+ExactNum::mantissa_max_bit_len	zenith-float-num/src/ext.rs:2072	exact	none (no rounding step)	R3, P1	
+ExactNum::is_inline	zenith-float-num/src/ext.rs:2082	exact	none (no rounding step)	R3, P1	
+ExactNum::set_sign	zenith-float-num/src/ext.rs:2135	exact	none (no rounding step)	R3, P1	
+ExactNum::mantissa_digits	zenith-float-num/src/ext.rs:2144	exact	none (no rounding step)	R3, P1	
+ExactNum::set_inexact	zenith-float-num/src/ext.rs:2275	exact	none (no rounding step)	R3, P1	
+ExactNum::frexp	zenith-float-num/src/ext.rs:2298	exact	none (no rounding step)	R3, P1	
+ExactNum::ilogb	zenith-float-num/src/ext.rs:2390	exact	none (no rounding step)	R3, P1	
+ExactNum::abs	zenith-float-num/src/ext.rs:2537	exact	none (no rounding step)	R3, P1	
+ExactNum::int	zenith-float-num/src/ext.rs:2590	exact	none (no rounding step)	R3, P1	
+ExactNum::fract	zenith-float-num/src/ext.rs:2598	exact	none (no rounding step)	R3, P1	
+ExactNum::ceil	zenith-float-num/src/ext.rs:2606	exact	none (no rounding step)	R3, P1	
+ExactNum::floor	zenith-float-num/src/ext.rs:2614	exact	none (no rounding step)	R3, P1	
+ExactNum::cbrt	zenith-float-num/src/ext.rs:2665	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::ln	zenith-float-num/src/ext.rs:2709	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::log2	zenith-float-num/src/ext.rs:2721	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::log10	zenith-float-num/src/ext.rs:2733	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::exp	zenith-float-num/src/ext.rs:2745	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::exp2	zenith-float-num/src/ext.rs:2757	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::exp10	zenith-float-num/src/ext.rs:2769	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::rem_pi	zenith-float-num/src/ext.rs:2781	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::sin	zenith-float-num/src/ext.rs:2792	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::cos	zenith-float-num/src/ext.rs:2804	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::tan	zenith-float-num/src/ext.rs:2823	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::asin	zenith-float-num/src/ext.rs:2835	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::acos	zenith-float-num/src/ext.rs:2847	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::sinh	zenith-float-num/src/ext.rs:2860	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::cosh	zenith-float-num/src/ext.rs:2872	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::erf	zenith-float-num/src/ext.rs:2892	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::erfc	zenith-float-num/src/ext.rs:2909	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::gamma	zenith-float-num/src/ext.rs:2925	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::ln_gamma	zenith-float-num/src/ext.rs:2941	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::digamma	zenith-float-num/src/ext.rs:2957	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::ei	zenith-float-num/src/ext.rs:3047	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::ci	zenith-float-num/src/ext.rs:3087	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::li	zenith-float-num/src/ext.rs:3103	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::elliptic_k	zenith-float-num/src/ext.rs:3454	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::elliptic_e_complete	zenith-float-num/src/ext.rs:3470	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::asinh	zenith-float-num/src/ext.rs:4350	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::acosh	zenith-float-num/src/ext.rs:4362	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::atanh	zenith-float-num/src/ext.rs:4374	rm	all 7 modes (rm parameter)	M27, R6	
+ExactNum::from	zenith-float-num/src/ext.rs:4414	exact	none (no rounding step)	R3, P1	
+ExactNum::neg	zenith-float-num/src/ext.rs:4431	exact	none (no rounding step)	R3, P1	
+ExactNum::eq	zenith-float-num/src/ext.rs:4442	exact	none (no rounding step)	R3, P1	
+PartialEq::eq	zenith-float-num/src/ext.rs:4449	exact	none (no rounding step)	R3, P1	
+ExactNum::partial_cmp	zenith-float-num/src/ext.rs:4458	exact	none (no rounding step)	R3, P1	
+PartialOrd::partial_cmp	zenith-float-num/src/ext.rs:4476	exact	none (no rounding step)	R3, P1	
+ExactNum::from_str	zenith-float-num/src/ext.rs:4507	mode	ToEven	M27	
+From::from	zenith-float-num/src/ext.rs:4532	exact	none (no rounding step)	R3, P1	
+$trait[ext.rs]::fmt	zenith-float-num/src/ext.rs:4556	mode	ToEven	M27	
+ExactNum::fmt	zenith-float-num/src/ext.rs:4577	mode	ToEven	M27	
+core::mul	zenith-float-num/src/ext.rs:4664	mode	ToEven	M27	
+core::div	zenith-float-num/src/ext.rs:4692	mode	ToEven	M27	
+Ball::new	zenith-float-num/src/ball.rs:25	exact	none (no rounding step)	R3, P1	
+ComplexBall::new	zenith-float-num/src/ball.rs:255	exact	none (no rounding step)	R3, P1	
+ExactRational::new	zenith-float-num/src/rational.rs:87	exact	none (no rounding step)	R3, P1	
+ExactRational::from_i64	zenith-float-num/src/rational.rs:92	exact	none (no rounding step)	R3, P1	
+ExactRational::is_nan	zenith-float-num/src/rational.rs:110	exact	none (no rounding step)	R3, P1	
+ExactRational::is_integer	zenith-float-num/src/rational.rs:115	exact	none (no rounding step)	R3, P1	
+ExactRational::add	zenith-float-num/src/rational.rs:120	exact	none (no rounding step)	R3, P1	
+ExactRational::sub	zenith-float-num/src/rational.rs:125	exact	none (no rounding step)	R3, P1	
+ExactRational::mul	zenith-float-num/src/rational.rs:144	none	None	R6	
+ExactRational::div	zenith-float-num/src/rational.rs:157	none	None	R6	
+ExactRational::floor	zenith-float-num/src/rational.rs:183	exact	none (no rounding step)	R3, P1	
+ExactRational::ceil	zenith-float-num/src/rational.rs:191	exact	none (no rounding step)	R3, P1	
+ExactRational::round	zenith-float-num/src/rational.rs:199	mode	FromZero	M27	
+ExactRational::from_ints	zenith-float-num/src/rational.rs:207	none	None	R6	
+ExactRational::parse_exact	zenith-float-num/src/rational.rs:225	exact	none (no rounding step)	R3, P1	
+ExactRational::format_exact	zenith-float-num/src/rational.rs:271	exact	none (no rounding step)	R3, P1	
+ExactRational::partial_cmp	zenith-float-num/src/rational.rs:281	exact	none (no rounding step)	R3, P1	
+ExactNum::parse_exact	zenith-float-num/src/rational.rs:441	exact	none (no rounding step)	R3, P1	
+ExactNum::format_exact	zenith-float-num/src/rational.rs:453	exact	none (no rounding step)	R3, P1	
+ExactRational::eq	zenith-float-num/src/rational.rs:466	exact	none (no rounding step)	R3, P1	
+CachedFBig::new	zenith-float-num/src/ops/consts/mod.rs:57	exact	none (no rounding step)	R3, P1	
+Consts::new	zenith-float-num/src/ops/consts/mod.rs:148	exact	none (no rounding step)	R3, P1	
+SharedConsts::new	zenith-float-num/src/ops/consts/mod.rs:350	exact	none (no rounding step)	R3, P1	
+Consts::is_exact	zenith-float-num/src/ops/consts/exact.rs:40	exact	none (no rounding step)	R3, P1	
+Deserialize::deserialize	zenith-float-num/src/for_3rd/de.rs:25	exact	none (no rounding step)	R3, P1	
+ExactNum::serialize	zenith-float-num/src/for_3rd/ser.rs:18	exact	none (no rounding step)	R3, P1	
+ExactComplex::serialize	zenith-float-num/src/for_3rd/ser.rs:24	exact	none (no rounding step)	R3, P1	
+ExactRational::serialize	zenith-float-num/src/for_3rd/ser.rs:33	exact	none (no rounding step)	R3, P1	
+ExactInt::serialize	zenith-float-num/src/for_3rd/ser.rs:42	exact	none (no rounding step)	R3, P1	
+Ball::serialize	zenith-float-num/src/for_3rd/ser.rs:48	exact	none (no rounding step)	R3, P1	
+ExactNumArray::serialize	zenith-float-num/src/for_3rd/ser.rs:57	mode	ToEven	M27	
+Ieee64Array::serialize	zenith-float-num/src/for_3rd/ser.rs:71	exact	none (no rounding step)	R3, P1	
+Ieee32Array::serialize	zenith-float-num/src/for_3rd/ser.rs:81	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::from_bits	zenith-float-num/src/ieee_soft/mod.rs:38	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::to_bits	zenith-float-num/src/ieee_soft/mod.rs:44	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::from_i32	zenith-float-num/src/ieee_soft/mod.rs:53	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$ty[ieee_soft/mod.rs]::is_nan	zenith-float-num/src/ieee_soft/mod.rs:69	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::is_infinite	zenith-float-num/src/ieee_soft/mod.rs:74	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::is_finite	zenith-float-num/src/ieee_soft/mod.rs:79	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::is_zero	zenith-float-num/src/ieee_soft/mod.rs:84	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::is_subnormal	zenith-float-num/src/ieee_soft/mod.rs:89	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::is_sign_negative	zenith-float-num/src/ieee_soft/mod.rs:94	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::soft_add	zenith-float-num/src/ieee_soft/mod.rs:108	r4	fixed by R4 row	R4 (Spence table)	
+$ty[ieee_soft/mod.rs]::soft_sub	zenith-float-num/src/ieee_soft/mod.rs:113	r4	fixed by R4 row	R4 (Spence table)	
+$ty[ieee_soft/mod.rs]::soft_mul	zenith-float-num/src/ieee_soft/mod.rs:118	r4	fixed by R4 row	R4 (Spence table)	
+$ty[ieee_soft/mod.rs]::soft_div	zenith-float-num/src/ieee_soft/mod.rs:123	r4	fixed by R4 row	R4 (Spence table)	
+$ty[ieee_soft/mod.rs]::sqrt	zenith-float-num/src/ieee_soft/mod.rs:128	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$ty[ieee_soft/mod.rs]::mul_add	zenith-float-num/src/ieee_soft/mod.rs:133	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$ty[ieee_soft/mod.rs]::next_up	zenith-float-num/src/ieee_soft/mod.rs:138	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::next_down	zenith-float-num/src/ieee_soft/mod.rs:143	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::next_after	zenith-float-num/src/ieee_soft/mod.rs:148	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::frexp	zenith-float-num/src/ieee_soft/mod.rs:153	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::abs	zenith-float-num/src/ieee_soft/mod.rs:164	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::copysign	zenith-float-num/src/ieee_soft/mod.rs:169	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::sign	zenith-float-num/src/ieee_soft/mod.rs:176	exact	none (no rounding step)	R3, P1	
+Ieee32::to_exact	zenith-float-num/src/ieee_soft/mod.rs:279	exact	none (no rounding step)	R3, P1	
+Ieee32::from_exact	zenith-float-num/src/ieee_soft/mod.rs:284	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+Ieee64::to_exact	zenith-float-num/src/ieee_soft/mod.rs:299	exact	none (no rounding step)	R3, P1	
+Ieee64::from_exact	zenith-float-num/src/ieee_soft/mod.rs:304	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$ty[ieee_soft/mod.rs]::eq	zenith-float-num/src/ieee_soft/mod.rs:201	exact	none (no rounding step)	R3, P1	
+$ty[ieee_soft/mod.rs]::add	zenith-float-num/src/ieee_soft/mod.rs:208	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$ty[ieee_soft/mod.rs]::sub	zenith-float-num/src/ieee_soft/mod.rs:214	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$ty[ieee_soft/mod.rs]::mul	zenith-float-num/src/ieee_soft/mod.rs:220	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$ty[ieee_soft/mod.rs]::div	zenith-float-num/src/ieee_soft/mod.rs:226	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$ty[ieee_soft/mod.rs]::neg	zenith-float-num/src/ieee_soft/mod.rs:232	exact	none (no rounding step)	R3, P1	
+$arr[ieee_soft/array.rs]::new	zenith-float-num/src/ieee_soft/array.rs:109	exact	none (no rounding step)	R3, P1	
+$arr[ieee_soft/array.rs]::from_bits	zenith-float-num/src/ieee_soft/array.rs:137	exact	none (no rounding step)	R3, P1	
+$arr[ieee_soft/array.rs]::from_shape	zenith-float-num/src/ieee_soft/array.rs:146	exact	none (no rounding step)	R3, P1	
+$arr[ieee_soft/array.rs]::from_values	zenith-float-num/src/ieee_soft/array.rs:159	exact	none (no rounding step)	R3, P1	
+$arr[ieee_soft/array.rs]::len	zenith-float-num/src/ieee_soft/array.rs:186	exact	none (no rounding step)	R3, P1	
+$arr[ieee_soft/array.rs]::is_empty	zenith-float-num/src/ieee_soft/array.rs:191	exact	none (no rounding step)	R3, P1	
+$arr[ieee_soft/array.rs]::as_bits	zenith-float-num/src/ieee_soft/array.rs:196	exact	none (no rounding step)	R3, P1	
+$arr[ieee_soft/array.rs]::get	zenith-float-num/src/ieee_soft/array.rs:201	exact	none (no rounding step)	R3, P1	
+$arr[ieee_soft/array.rs]::get2	zenith-float-num/src/ieee_soft/array.rs:206	exact	none (no rounding step)	R3, P1	
+$arr[ieee_soft/array.rs]::add	zenith-float-num/src/ieee_soft/array.rs:215	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::add_scalar	zenith-float-num/src/ieee_soft/array.rs:227	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::sub	zenith-float-num/src/ieee_soft/array.rs:233	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::mul	zenith-float-num/src/ieee_soft/array.rs:246	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::mul_scalar	zenith-float-num/src/ieee_soft/array.rs:258	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::div	zenith-float-num/src/ieee_soft/array.rs:264	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::sqrt	zenith-float-num/src/ieee_soft/array.rs:276	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::fma	zenith-float-num/src/ieee_soft/array.rs:286	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::sum	zenith-float-num/src/ieee_soft/array.rs:302	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::dot	zenith-float-num/src/ieee_soft/array.rs:311	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::matmul	zenith-float-num/src/ieee_soft/array.rs:323	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::elliptic_e_complete	zenith-float-num/src/ieee_soft/array.rs:413	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::cbrt	zenith-float-num/src/ieee_soft/array.rs:418	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::atan2	zenith-float-num/src/ieee_soft/array.rs:423	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::hypot	zenith-float-num/src/ieee_soft/array.rs:429	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::pow	zenith-float-num/src/ieee_soft/array.rs:435	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::log	zenith-float-num/src/ieee_soft/array.rs:441	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::gammainc	zenith-float-num/src/ieee_soft/array.rs:447	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::gammainc_upper	zenith-float-num/src/ieee_soft/array.rs:453	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::bessel_j	zenith-float-num/src/ieee_soft/array.rs:459	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::bessel_j_nu	zenith-float-num/src/ieee_soft/array.rs:464	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::bessel_y	zenith-float-num/src/ieee_soft/array.rs:470	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::bessel_i	zenith-float-num/src/ieee_soft/array.rs:476	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::bessel_k	zenith-float-num/src/ieee_soft/array.rs:482	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::legendre_p	zenith-float-num/src/ieee_soft/array.rs:488	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::assoc_legendre_p	zenith-float-num/src/ieee_soft/array.rs:493	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::elliptic_f	zenith-float-num/src/ieee_soft/array.rs:498	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::elliptic_e	zenith-float-num/src/ieee_soft/array.rs:504	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_sn	zenith-float-num/src/ieee_soft/array.rs:510	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_cn	zenith-float-num/src/ieee_soft/array.rs:516	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_dn	zenith-float-num/src/ieee_soft/array.rs:522	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_am	zenith-float-num/src/ieee_soft/array.rs:528	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_cd	zenith-float-num/src/ieee_soft/array.rs:534	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_ns	zenith-float-num/src/ieee_soft/array.rs:540	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_nc	zenith-float-num/src/ieee_soft/array.rs:546	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_nd	zenith-float-num/src/ieee_soft/array.rs:552	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_sc	zenith-float-num/src/ieee_soft/array.rs:558	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_sd	zenith-float-num/src/ieee_soft/array.rs:564	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_cs	zenith-float-num/src/ieee_soft/array.rs:570	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_ds	zenith-float-num/src/ieee_soft/array.rs:576	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::jacobi_dc	zenith-float-num/src/ieee_soft/array.rs:582	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::elliptic_pi_complete	zenith-float-num/src/ieee_soft/array.rs:588	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::elliptic_pi	zenith-float-num/src/ieee_soft/array.rs:596	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::hypergeom_2f1	zenith-float-num/src/ieee_soft/array.rs:605	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+$arr[ieee_soft/array.rs]::betainc	zenith-float-num/src/ieee_soft/array.rs:621	ieee	ToEven at the format precision	R3, IEEE 754-2019 roundTiesToEven	
+ExactNumArray::new	zenith-float-num/src/ieee_soft/array.rs:688	exact	none (no rounding step)	R3, P1	
+ExactNumArray::from_values	zenith-float-num/src/ieee_soft/array.rs:729	mode	ToEven	M27	
+ExactNumArray::from_shape	zenith-float-num/src/ieee_soft/array.rs:749	mode	ToEven	M27	
+ExactNumArray::len	zenith-float-num/src/ieee_soft/array.rs:847	exact	none (no rounding step)	R3, P1	
+ExactNumArray::is_empty	zenith-float-num/src/ieee_soft/array.rs:852	exact	none (no rounding step)	R3, P1	
+ExactNumArray::get	zenith-float-num/src/ieee_soft/array.rs:857	exact	none (no rounding step)	R3, P1	
+ExactNumArray::get2	zenith-float-num/src/ieee_soft/array.rs:862	exact	none (no rounding step)	R3, P1	
+ExactNumArray::as_slice	zenith-float-num/src/ieee_soft/array.rs:870	exact	none (no rounding step)	R3, P1	
+ExactNumArray::add_scalar	zenith-float-num/src/ieee_soft/array.rs:875	mode	ToEven	M27	
+ExactNumArray::mul	zenith-float-num/src/ieee_soft/array.rs:881	mode	ToEven	M27	
+ExactNumArray::mul_scalar	zenith-float-num/src/ieee_soft/array.rs:888	mode	ToEven	M27	
+ExactNumArray::div	zenith-float-num/src/ieee_soft/array.rs:902	mode	ToEven	M27	
+ExactNumArray::sum	zenith-float-num/src/ieee_soft/array.rs:909	mode	ToEven	M27	
+ExactNumArray::dot	zenith-float-num/src/ieee_soft/array.rs:918	mode	ToEven	M27	
+ExactNumArray::matmul	zenith-float-num/src/ieee_soft/array.rs:931	mode	ToEven	M27	
+ExactNumArray::int	zenith-float-num/src/ieee_soft/array.rs:963	exact	none (no rounding step)	R3, P1	
+ExactNumArray::fract	zenith-float-num/src/ieee_soft/array.rs:968	exact	none (no rounding step)	R3, P1	
+ExactNumArray::ceil	zenith-float-num/src/ieee_soft/array.rs:973	exact	none (no rounding step)	R3, P1	
+ExactNumArray::floor	zenith-float-num/src/ieee_soft/array.rs:978	exact	none (no rounding step)	R3, P1	
+ExactNumArray::abs	zenith-float-num/src/ieee_soft/array.rs:988	exact	none (no rounding step)	R3, P1	
+ExactNumArray::signum	zenith-float-num/src/ieee_soft/array.rs:997	exact	none (no rounding step)	R3, P1	
+ExactNumArray::neg	zenith-float-num/src/ieee_soft/array.rs:678	exact	none (no rounding step)	R3, P1	
+common::test_rng::reseed_random_this_thread	zenith-float-num/src/common/test_rng.rs:34	exact	none (no rounding step)	R3, P1	
+common::test_rng::random_seed	zenith-float-num/src/common/test_rng.rs:85	r4	fixed by R4 row	R4 (Spence table)	
+common::test_rng::reseed_random	zenith-float-num/src/common/test_rng.rs:94	r4	fixed by R4 row	R4 (Spence table)	
+common::test_rng::seeded_random	zenith-float-num/src/common/test_rng.rs:139	r4	fixed by R4 row	R4 (Spence table)	
+common::test_rng::DEFAULT_RANDOM_SEED	zenith-float-num/src/lib.rs:204-207	exact	none (no rounding step)	R3, P1	

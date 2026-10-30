@@ -11,8 +11,9 @@ sub p{my $l=shift; chomp $l; my @f; my $fld=''; my $st=0; my @c=split //,$l; for
   else { if($c eq '"'){ if($i+1<@c && $c[$i+1] eq '"'){$fld.='"';$i++} else {$st=0} } else {$fld.=$c} } } push @f,$fld; @f }
 open F,$csv or die; my ($n,$ln,%bad,%cls,%vs,%ex,$ung)=(0,0); my $hdr=0;
 my %allv=(%ZF,%ZB);
-while(<F>){ $ln++; if(/^#/){ next } if(!$hdr){ $hdr=1; next } $n++; my @f=p($_);
+while(<F>){ $ln++; if(/^#/){ next } if(!$hdr){ $hdr=1; $bad{"P6 32-bit reference in header '$_'"}++ for pm_p6($_); next } $n++; my @f=p($_);
  my $B=sub { my $k=shift; $bad{$k}++; $ex{$k}//="line $ln: $f[1] $f[5]" };
+ $B->("P6 32-bit reference '$_' (tools/pm_target.pl pm_p6; 64-bit minimum, ZF-M31)") for pm_p6($_);
  $B->("fields!=17") if @f!=17; my $t=join " ",@f[10,11];
  $B->("R4 MISSING") if $t=~/R4 MISSING/; $B->("UNCLEAR") if /UNCLEAR/;
   $B->("hedge $_ (tools/pm_hedge.pl rule, cols 10-11)") for pm_hedges($f[10],$f[11]); $B->("'or documented'") if /or documented/; $B->("target-specific $_ (tools/pm_target.pl rule, ZF-M27: one gold per row for both targets)") for pm_target_specific(@f);

@@ -4,9 +4,10 @@ use strict; use warnings; use FindBin; require "$FindBin::Bin/pm_hedge.pl"; requ
 my $T=$ENV{PM_TREE}//"$ENV{HOME}/harper-work/zf-precision-matrix";   # worktree; sources pinned to $SRC_COMMIT
 my $IN="$T/docs/test-plan/inputs";
 my $SRC_COMMIT="7955836a845bd6419dc41d21eda6e739e3b622c5";
-my %PIN=("zf-inventory.csv"=>"ba79198eb3486944e3b43a898389b81a7ce8fb69e4f67450e49841e8fdac1d59","zb-inventory.csv"=>"b65c2bad80431500ab6280eb6ca545194407a35e9ae2f9719b5a6e5a38bdcd65","r4-required-results.csv"=>"2746dc4d05cca03d07db6cd8db600e86369a7f33b450c6b679b1d0c1bf0e8c6d","spence-gen_r4.py"=>"aa4d614617d086a49a2d625adbef1b516a7cac7ea37de58e391d40df2b51243f","FIXLIST.csv"=>"0ef7711015e89033814670d6b48d80e41b5cc8c6753db02748712da9a1974027","fixes_after_1.0.12.txt"=>"03085a0acb3d5d0e51d8e8df13b3c4ad30d7843152d3d32024d6899c9f530c82","zf-audit-SUMMARY.md"=>"a7af866c6b2c6de32f4ed243170a4aa92fff19bc7e3978e86642a3dff1cb75f0");
+my %PIN=("zf-inventory.csv"=>"ba79198eb3486944e3b43a898389b81a7ce8fb69e4f67450e49841e8fdac1d59","zb-inventory.csv"=>"b65c2bad80431500ab6280eb6ca545194407a35e9ae2f9719b5a6e5a38bdcd65","r4-required-results.csv"=>"2746dc4d05cca03d07db6cd8db600e86369a7f33b450c6b679b1d0c1bf0e8c6d","spence-gen_r4.py"=>"aa4d614617d086a49a2d625adbef1b516a7cac7ea37de58e391d40df2b51243f","FIXLIST.csv"=>"56633946854c27c8c702b24157119102fed1e2e7a8044eb18a7111411bce08af","tie-resolution.tsv"=>"3ee454aefee8ba2521ae63fa94f721f7b1ea219486f93a8583905b54cab6c5fb","fixes_after_1.0.12.txt"=>"03085a0acb3d5d0e51d8e8df13b3c4ad30d7843152d3d32024d6899c9f530c82","zf-audit-SUMMARY.md"=>"a7af866c6b2c6de32f4ed243170a4aa92fff19bc7e3978e86642a3dff1cb75f0");
 for my $f (sort keys %PIN){ my $o=`sha256sum "$IN/$f"`; my ($h)=$o=~/^([0-9a-f]{64})/; die "PIN MISMATCH $f: got ".($h//"missing")." want $PIN{$f}\n" unless ($h//"") eq $PIN{$f} }
 system("git","-C",$T,"diff","--quiet",$SRC_COMMIT,"--","zenith-float-num/src","zenith-float-num/tests","zenith-bound/src","zenith-bound/tests")==0 or die "PIN MISMATCH: sources differ from $SRC_COMMIT\n";
+my %TIE; { open my $th,'<',"$IN/tie-resolution.tsv" or die "tie-resolution.tsv\n"; <$th>; while(<$th>){ chomp; my @c=split /\t/,$_,-1; die "TIE DUP $c[0]\n" if $TIE{$c[0]}; $TIE{$c[0]}=[@c[2..5]] } }
 my $INVZF="$IN/zf-inventory.csv"; my $INVZB="$IN/zb-inventory.csv"; my $R4="$IN/r4-required-results.csv";
 my $OUT=shift or die "out"; my $N5OUT=shift or die "n5 out"; my $SHOUT=shift or die "shards out";
 
@@ -61,7 +62,7 @@ die "PIN MISMATCH: FIXLIST lacks ZF-D01\n" unless $D01; die "PIN MISMATCH: FIXLI
 # pmrev7 (Jeff ruling 2026-10-30 6:00 PM CT): ZF-M27, one gold per row for both targets; cited by line (generator refuses if absent)
 my $M27; { open my $fh,'<',"$T/$FX" or die "$FX"; my $l=0; while(<$fh>){ $l++; $M27="FIXLIST:$l ZF-M27" if /^ZF-M27,/ } } die "PIN MISMATCH: FIXLIST lacks ZF-M27\n" unless $M27;
 # pmrev8 (FIXLIST 0ef77110, pop-logs/PRINCIPLES.md P1): ZF-M28/M29/M30/D04 cited by line (generator refuses if absent)
-my %ZFX; { open my $fh,'<',"$T/$FX" or die "$FX"; my $l=0; while(<$fh>){ $l++; $ZFX{$1}="FIXLIST:$l $1" if /^(ZF-(?:M28|M29|M30|D04)),/ } } for (qw(ZF-M28 ZF-M29 ZF-M30 ZF-D04)){ die "PIN MISMATCH: FIXLIST lacks $_" unless $ZFX{$_} } my ($M28,$M29,$M30,$D04)=@ZFX{qw(ZF-M28 ZF-M29 ZF-M30 ZF-D04)};
+my %ZFX; { open my $fh,'<',"$T/$FX" or die "$FX"; my $l=0; while(<$fh>){ $l++; $ZFX{$1}="FIXLIST:$l $1" if /^(ZF-(?:M28|M29|M30|M31|M32|D04)),/ } } for (qw(ZF-M28 ZF-M29 ZF-M30 ZF-M31 ZF-M32 ZF-D04)){ die "PIN MISMATCH: FIXLIST lacks $_" unless $ZFX{$_} } my ($M28,$M29,$M30,$D04)=@ZFX{qw(ZF-M28 ZF-M29 ZF-M30 ZF-D04)};
 my @TWIN; my %M30DONE; my $M30RE=qr/^(?:ExactNum|ExactComplex|ExactNumArray|Ball|ComplexBall|\$arr\[ieee_soft\/array\.rs\])::(?:sin|cos|tan|atan|asin|acos|ln|log|exp|sinh|cosh|tanh|pow|atan2|log2|log10|sin_cos)$/;
 my @N5=( # [crate, type-regex, bare-names, citation]
  ['zf','.*',[qw(sin)],"$FX:15 (ZF-01); $FX:127 (ZF-M22); $FA:87"],
@@ -244,8 +245,35 @@ sub pin3 { my $a=shift; my $c=$$a{class}; my $ex=($$a{verdict_space}//'') ne 'NA
   $$a{required_result}=~s/the pinned x86_64 oracle/the pinned oracle/;
   if($ex){ $$a{oracle_i686}="same gold as oracle_x86_64: one gold per row for both targets (Jeff ruling 2026-10-30 6:00 PM CT, $M27); the i686 run must be bit-identical to it".($zb?' (byte-identical BallRow digest)':'') }
   if($ex && pm_m27_candidate(@$a{@F17})){ $$a{required_result}.=" Pin note ($M27, Jeff ruling 2026-10-30 6:00 PM CT): cells in the 6 directed modes (ToEven, Up, Down, ToZero, FromZero and ToOdd: every mode except None, which is target-identical per Jeff 2026-10-29) at a p that is not a multiple of 64 are red (FAIL) until ZF-M27 lands; then every mode rounds at rp(p,64) and the result is bit-identical on i686 and x86_64." } }
+# pmrev10 (Jeff 2026-10-30 6:31 PM CT, PRINCIPLES.md P6 sha256 d39b9a60, FIXLIST ZF-M31/M32): 64-bit targets only.
+# Rows that exist only because of i686/32-bit are dropped (counted in %DROP); every other row is rewritten to name no 32-bit target.
+our %DROP; my $P6='PRINCIPLES.md P6 (Jeff 2026-10-30 6:31 PM CT)';
+sub pin4 { my $a=shift; my $c=$$a{class}; my $ex=($$a{verdict_space}//'') ne 'NA_PROOF'; my $zb=$$a{crate} eq 'zb';
+  if($c eq 'prec-2^30-1'){ $DROP{'prec-2^30-1: i686 MAX_PRECISION (was prec-MAX-i686); ZF-M28 2^30-1 superseded by ZF-M32'}++; return 0 }
+  if($c eq 'prec-2^30'){ $DROP{'prec-2^30: ZF-M28 MAX+1 twin; superseded by ZF-M32 (prec-MAXp1-refuse covers MAX+1)'}++; return 0 }
+  if($c eq 'm30-p2^24'){ $DROP{'m30-p2^24: i686 calc_mul_cost as u32 threshold (FIXLIST:148); no 64-bit edge'}++; return 0 }
+  if($c eq 'prec-2^60-1'){ my $ia=$zb?'Err(BoundError::InvalidArgument)':'Error::InvalidArgument';
+    $$a{class_def}='p = 2^60-1 (MAX_PRECISION at 7955836 on 64-bit targets, defs.rs:77)';
+    $$a{required_result}="[PM1-UNPINNED] required result: FAIL until Rusty pins the one ZF-M32 MAX_PRECISION constant for every 64-bit target ($ZFX{'ZF-M32'}, supersedes ZF-M28; $P6); pin rule: the correct result at p when 2^60-1 is at most that constant, $ia when it is above it. MAX-timeout: a run past the 10-minute budget is recorded SKIPPED_AFTER_TIMEOUT, which counts as FAIL in the verdict space and in pm-coverage and is never omitted";
+    $$a{refusal_variant}='pinned per row in the gold' }
+  if($c eq 'm30-p2^27'){ $$a{class_def}="p = 2^27 (ZF-M30 64-bit cost-overflow edge: series.rs:156,238,244 and tan.rs:128 iter_cost*niter panics at p>=2^27 on the host, $ZFX{'ZF-M30'}; an input point; P1 one gold)" }
+  if($c eq 'prec-axis'){ $$a{class_def}="every axis point of the 64-bit axis set (49 points) incl. k*W-1,k*W,k*W+1 with W=64 and thresholds T-1,T,T+1; the W=32 word points are dropped ($P6)" }
+  for my $k (keys %$a){ next if index($k,"_")==0; next unless defined $$a{$k}; local $_=$$a{$k};
+    s/ Pin note \(FIXLIST:\d+ ZF-M27, Jeff ruling[^)]*\): cells in the 6 directed modes .*?bit-identical on i686 and x86_64\./ ZF-M27 ($M27) is met on every 64-bit target: the word is 64 bits, so every mode already rounds at rp(p,64) ($P6)./;
+    s/MAX-timeout skip \(Paul, Spence pmrev3 6; one row, both targets\):.*?reruns in full/MAX-timeout: a run past the 10-minute budget is recorded SKIPPED_AFTER_TIMEOUT, which counts as FAIL in the verdict space and in pm-coverage and is never omitted; the family's RC stays blocked until its FIXLIST fix lands/;
+    s/MAX-timeout skip \(Paul, Spence pmrev3 6\):.*?(?:reruns in full|$)/MAX-timeout: a run past the 10-minute budget is recorded SKIPPED_AFTER_TIMEOUT, which counts as FAIL and is never omitted/;
+    s/ \(ZF-M19 add panics on i686\)/ (ZF-M19)/g;
+    s/ Red until ZF-M27 lands: the p=32 cell is FAIL until rounding happens at rp\(p,64\)\./ The p=32 cell is not red: on every 64-bit target the word is 64 bits, so rounding already happens at rp(p,64) ($M27, $P6)./g;
+    s/the same value on x86_64 and i686/one value on every 64-bit target/g;
+    s/\b(?:i686 and x86_64|x86_64 and i686)\b/every 64-bit target/g;
+    s/\b(?:on |for )?both targets\b/on every 64-bit target/g;
+    $$a{$k}=$_ }
+  if($ex){ $$a{oracle_i686}="same gold as oracle_x86_64: one gold per row for every 64-bit target ($P6, P1); the aarch64 run must be bit-identical to it".($zb?' (byte-identical BallRow digest)':'')." (aarch64 runnable after TD40 installs)" }
+  else { $$a{oracle_i686}='n/a (proof row)' }
+  1 }
 sub row { my %a=@_; pin1(\%a); pin2(\%a); pin3(\%a); my @R=(\%a); for my $t (@TWIN){ $$t{oracle_i686}=$a{oracle_i686}; push @R,$t } @TWIN=();
   if($a{crate} eq 'zf' && $a{class} eq 'normal' && ($a{verdict_space}//'') ne 'NA_PROOF' && $a{family}=~$M30RE && !$M30DONE{$a{family}}++){ for my $e (24,27){ push @R,{%a, class=>"m30-p2^$e", class_def=>"p = 2^$e on both targets (ZF-M30 cost-overflow threshold, an input point; P1 one gold)", inputs=>'the normal operand of the family', modes=>'ToEven', tier=>'heavy only (own shard pm-max, run on both targets; budget 10 min per run; timeout = FAIL)', required_result=>"correct result at p = 2^$e in ToEven, bit-identical to the one gold on both targets (P1). Each of these is FAIL, in debug and release builds: a panic, a wrapped cost estimate, an overflowed cost estimate, a refusal, a capped precision; MAX-timeout skip applies (design s4). Red until $M30 lands: at 7955836 the series and reduction cost estimates overflow at this p on some targets (series.rs:156,238,244; tan.rs:128; common/util.rs:55-64 calc_mul_cost; cos.rs:35 reduction_cost).", refusal_variant=>'', verdict_space=>'PASS|FAIL|SKIPPED_AFTER_TIMEOUT'} } }
+  @R=grep { pin4($_) } @R;
   for my $r (@R){ my %a=%$r; { my @t=pm_target_specific(@a{@F17}); push @LEFT,"target(@t) $a{family} $a{class}" if @t; } { my @h=pm_hedges($a{required_result},$a{refusal_variant}); push @LEFT,"hedge(@h) $a{family} $a{class}: $a{required_result} || $a{refusal_variant}" if @h; } push @out,[@a{@F17}]; $cnt{"$a{crate} $a{verdict_space}"}++ } }
 for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
   my ($ty)=$key=~/^(.*)::[^:]+$/; $ty//='';
@@ -317,7 +345,16 @@ for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
   $R->('cancellation','x - x, near-cancelling pairs','x and nextafter(x) pairs',$hasrm?$X7:$M7,$FX,$crate eq 'zb'?'enclosure; exact cancel gives mid +0 with rad from inputs (PLAN P7)':'exact cancel -> +0 (-0 under Down); near cancel correctly rounded');
   $R->('tie','exact half-ulp ties at p','constructed ties',$hasrm?$X7:'n/a',$FX,$crate eq 'zb'?'enclosure':'ToEven -> even neighbour, ToOdd -> odd neighbour, directed modes per direction, None -> RNDZ@rp(p,64)', '', ($hasrm||$crate eq 'zb'||!$G123{$bare}) ? (r4class=>'tie') : (na=>1)) if $hasrm||$crate eq 'zb';
   if(!$hasrm && $crate eq 'zf'){ if($G123{$bare}){ $R->('tie','exact half-ulp ties at p','constructed ties','n/a','proof','n/a: Spence G1-G3 family (accessor / construct-copy / exact-int-modular): no rounding happens, proven in the committed proof file','',na=>1,g123=>1) }
-    else { $R->('tie','exact half-ulp ties at p (family has no RoundingMode parameter: its fixed internal mode)','constructed ties at p in {32,64,128}','fixed mode of the family','fast+heavy',$other?'':'exact tie resolved by the fixed mode the family uses internally (read from the call at '.$src.'), equal to the oracle at that mode; no double rounding','',r4class=>'tie') } }
+    else { my $t=$TIE{$key} or die "TIE RESOLUTION MISSING $key (inputs/tie-resolution.tsv)\n"; my ($res,$tm,$basis,$note)=@$t; my $TP='constructed ties at p in {32,64,128}';
+      my %DIR=(ToEven=>'the even neighbour',ToZero=>'the neighbour nearer zero',FromZero=>'the neighbour farther from zero');
+      if($res eq 'r4'){ $R->('tie','exact half-ulp ties at p (fixed internal mode; outcome from the R4 row)',$TP,'the mode the R4 row pins','fast+heavy','','',r4class=>'tie') }
+      elsif($res eq 'exact'){ $R->('tie','exact half-ulp ties at p (no rounding step)',$TP,'none (no rounding step)','fast+heavy',"exact result: the family has no rounding step (source $src; $basis), so the constructed tie input yields its exact value, bit-identical to the one gold (P1)",'',keep=>1) }
+      elsif($res eq 'ieee'){ $R->('tie','exact half-ulp ties at the IEEE format precision (fixed roundTiesToEven)','constructed ties at the format precision (binary32: 24 bits, binary64: 53 bits)','ToEven (IEEE roundTiesToEven, fixed by the format)','fast+heavy',"correctly rounded in IEEE 754-2019 roundTiesToEven at the format precision (binary32: 24 bits, binary64: 53 bits): the tie goes to the even significand, bit-exact against the IEEE oracle ($basis; source $src). The format fixes the precision, so the p axis and ZF-M27 do not apply",'',keep=>1) }
+      elsif($res eq 'mode'){ $R->('tie',"exact half-ulp ties at p (fixed internal mode $tm)",$TP,"$tm at p in {32,64,128} (fixed internal mode, $src)",'fast+heavy',"correctly rounded at p in $tm, the mode the family fixes internally ($src): the tie goes to $DIR{$tm}, rounded once at rp(p,64), bit-identical to the one gold (R3, $M27). Red until ZF-M27 lands: the p=32 cell is FAIL until rounding happens at rp(p,64).",'',keep=>1) }
+      elsif($res eq 'none'){ $R->('tie','exact half-ulp ties at p (fixed internal mode None)',$TP,"None at p in {32,64,128} (fixed internal mode, $src)",'fast+heavy',"R6: None rounds as RNDZ at rp(p,64), so the tie goes to the neighbour nearer zero at rp(p,64) bits, bit-identical to the one gold (R6, P1; source $src)",'',keep=>1) }
+      elsif($res eq 'rm'){ $R->('tie','exact half-ulp ties at p (family takes a RoundingMode: '.(index($key,"Context::")==0?'ctx.rm':'rm parameter of the generated wrapper').", $src)",'constructed ties',$X7,$FX,'ToEven -> even neighbour, ToOdd -> odd neighbour, directed modes per direction, None -> RNDZ@rp(p,64) (R6)','',keep=>1) }
+      elsif($res eq 'red'){ $R->('tie','exact half-ulp ties at p (outcome unpinned)',$TP,'unpinned (fixed internal mode not stated)','fast+heavy',"[PM1-UNPINNED] FAIL until Rusty states $note. The single outcome is pinned when that fact lands (source $src)",'',keep=>1) }
+      else { die "TIE RESOLUTION BAD $res for $key\n" } } }
   # 5: exact range thresholds (EXPONENT_MIN/MAX, not i64)
   my $ovf = $crate eq 'zb' ? 'enclosure, or the all-reals ball (rad=Infinity) on midpoint overflow (CONTRACT 10.4); never a finite ball excluding the true value' : 'ExponentOverflow(sign): ±Inf for modes away from zero; max finite flagged inexact for modes toward zero (ToZero; Down for +; Up for -) per CONTRACT 10.4 description of zf';
   my $unf = $crate eq 'zb' ? 'radius absorbs the lost value and is never zero (CONTRACT 10.4, 3.2)' : 'correctly rounded subnormal / signed zero per mode (EXPONENT_MIN gradual underflow)';
@@ -361,9 +398,9 @@ for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
     else { $R->("rm-$m","rounding mode $m",'n/a','n/a','proof','n/a by type: no RoundingMode parameter','',na=>1) } }
 }
 die "pin1: ".scalar(@LEFT)." rows left with either/or text:\n".join("\n",@LEFT[0..($#LEFT<40?$#LEFT:39)])."\n" if @LEFT;
-open my $o,'>',$OUT or die; my @H=qw(crate family source category group class class_def inputs modes tier required_result refusal_variant oracle_x86_64 oracle_i686 check verdict_space proof);
+open my $o,'>',$OUT or die; my @H=qw(crate family source category group class class_def inputs modes tier required_result refusal_variant oracle_x86_64 oracle_aarch64 check verdict_space proof);
 sub csvq { my $s=shift; $s="" unless defined $s; $s=~s/\s*\n\s*/ /g; $s=~s/"/""/g; "\"$s\"" }
-print $o "# precision-matrix-edges v8 (Harper 2026-10-30; P1 bit-identical everywhere, pop-logs/PRINCIPLES.md; ZF-M27..M30). Lines starting with # are metadata; the CSV header is the first line without #.\n# source commit $SRC_COMMIT (generator refuses if zenith-float-num/{src,tests} or zenith-bound/{src,tests} differ)\n";
+print $o "# precision-matrix-edges v10 (Harper 2026-10-30; P1 bit-identical everywhere and P6 64-bit minimum, pop-logs/PRINCIPLES.md; ZF-M27..M32). Lines starting with # are metadata; the CSV header is the first line without #.\n# source commit $SRC_COMMIT (generator refuses if zenith-float-num/{src,tests} or zenith-bound/{src,tests} differ)\n";
 print $o "# input docs/test-plan/inputs/$_ sha256:$PIN{$_}\n" for sort keys %PIN;
 print $o join(',',map {csvq($_)} @H),"\n"; print $o join(',',map {csvq($_)} @$_),"\n" for @out; close $o;
 my %fc; $fc{$$_[0]}++ for @fam; my %wp=(); $wp{$$_[1]}=1 for grep {$$_[6]=~/working-precision/} @fam;
@@ -378,4 +415,5 @@ for my $F (@fam){ my ($crate,$key)=@$F; my $c=$n5{$key}; print $n5 join(',',map 
 print "N5 families: $fam5{5}; N3 families: $fam5{3}\n";
 for my $i (0..$#N5){ my @miss=grep {$_ ne '*' && !$n5hit{$i}{$_}} @{$N5[$i][2]}; print "N5 unmatched names (entry $i): @miss\n" if @miss }
 for my $p (@PROOFS){ my ($pp,$key,$src,$bare)=@$p; my $f="$T/$pp"; next if -e $f; open my $pf,'>',$f or die "$f"; print $pf "# NA_PROOF: $key tie row\n\nClaim: `$key` ($src) takes no RoundingMode and performs no rounding (Spence G1-G3: accessor, construct-copy or exact integer/modular), so an exact half-ulp tie at p cannot arise.\n\nEvidence: TO BE WRITTEN by the proving agent (cite the signature and body at $src).\n\nSecond-agent sign-off: UNSIGNED\n\n<!-- pm-coverage FAILs this row until the line above reads `Second-agent sign-off: <agent> <date> <commit>` -->\n"; close $pf }
+print "dropped ($_): $DROP{$_}\n" for sort keys %DROP;
 print "proof placeholders: ",scalar(@PROOFS),"\n";
