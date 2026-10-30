@@ -1,4 +1,4 @@
-# zf/zb precision matrix: design v3 (Spence second review, items 1-12; Paul rulings)
+# zf/zb precision matrix: design v4 (Spence third review, items 1-7, on v3)
 
 Agent: Harper. Date: 2026-10-30. Edge table: `precision-matrix-edges.csv` (24620 rows, 17 columns; the first 9 lines start with `#` and carry the pins below; the CSV header is the first line without `#`).
 
@@ -16,6 +16,7 @@ The generator `tools/gen_edges.pl` reads only the in-branch copies below. It che
 | zf-audit-SUMMARY.md | ~/paul-work/zf-audit-2026-10-30/SUMMARY.md | 81cf6bb72636dfab03b2a25121724db4b37e3c16e0b896c30269db89be4122f1 |
 
 - Source commit: 7955836a845bd6419dc41d21eda6e739e3b622c5 (goldens, `tests/nan_error_kinds.rs`, `defs.rs`, `error.rs`).
+- **Source branch (pmrev3 item 5):** SRC_COMMIT 7955836 is on **paul/zf-bound-merge** (581 commits ahead of zf main), not on zf main (dc6bc87). It **must be re-pinned** (goldens, nan_error_kinds.rs, defs.rs, error.rs, inputs/SHA256SUMS, regenerate, lint, pm-coverage) when that branch merges.
 - Oracle env: ~/team-env/oracle-2026-10-30 (mpmath 1.3.0, sympy 1.14.0, gmpy2 2.3.2, python-flint 0.9.0). Rust MPFR 4.2.2 / GMP 6.3.0 via rug 1.20.1 / gmp-mpfr-sys 1.6.8 (Cargo.lock @7955836).
 - `inputs/SHA256SUMS` lists the same hashes. The hashes of the generator, lint and CSV are in the Harper log for this commit.
 
@@ -134,25 +135,27 @@ Each nan row names the variant it inherits (A=InvalidArgument, B=DivisionByZero,
 - Full heavy tier: once per RC, overnight, on **4 popslot workers (Paul ruling)**.
 - `pm-max-i686` and `pm-max-x86_64` are separate heavy shards.
 
-## 13. Budgets (tools/budget.pl on this CSV)
-Cost basis (v1): zf 4.1 ms per cell, zb 12 ms per cell, i686 at 4x (measured 1.9x in parentheses). The per-row cell rules are the same as in v2.
+## 13. Budgets (tools/budget.pl on this CSV, PM-0 cost basis; Spence pmrev3 item 7)
+Cost basis: zf 4.1 ms per cell; zb 12 ms per cell (this figure is unmeasured and blocks the RC budget until it is measured); threshold cells 210 per target (PM-0 corrected survey). The i686 factor comes from PM-0 and is passed as `PM0_FAC`: median 1.91, weighted 2.70 (the planning figure), max 5.39. The source is ~/harper-work/pm0-results-2026-10-30.md and its logs: ~/pop-logs/harper/2026-10-30/1638-pm0-factor2-i686.log and 1639-pm0-factor2-x86_64.log (factor), and 1704-pm0-budget2.log :31-35 (1.91), :41-45 (2.70), :51-55 (5.39). The mpfr peak is 724 MiB RSS with a wall time of 20:36 (1642-pm0-mpfr-rss2.log: RSS at :999, wall at :994), so 8 workers at 6G MemoryMax each have room. The old unsourced "4x" factor is gone. The figures below are from `PM0_FAC=<f> PM_WORKERS=8 perl tools/budget.pl precision-matrix-edges.csv`, logged in ~/pop-logs/harper/2026-10-30/1713-pm-rev3-budget-{1.91,2.70,5.39}.log.
 
-| crate | target | fast | cut heavy | full heavy, 1 worker | full heavy, 4 popslot workers |
-|---|---|---|---|---|---|
-| zf | x86_64 | 6.7 min | 0.70 h | 11.0 h | 2.75 h |
-| zf | i686 | 26.7 min (12.7) | 2.79 h (1.33) | 44.1 h (20.9) | 11.0 h (5.2) |
-| zb | x86_64 | 2.3 min | 0.27 h | 4.3 h | 1.07 h |
-| zb | i686 | 9.3 min (4.4) | 1.07 h (0.51) | 17.1 h (8.1) | 4.3 h (2.0) |
+| crate | target | fast | cut heavy | full heavy, 1 worker (1.91 / 2.70 / 5.39) |
+|---|---|---|---|---|
+| zf | x86_64 | 6.7 min | 0.70 h | 11.01 h |
+| zf | i686 | 12.8 / 18.1 / 36.1 min | 1.33 / 1.88 / 3.76 h | 21.04 / 29.74 / 59.36 h |
+| zb | x86_64 | 2.3 min | 0.27 h | 4.27 h |
+| zb | i686 | 4.4 / 6.3 / 12.5 min | 0.51 / 0.72 / 1.44 h | 8.16 / 11.54 / 23.04 h |
 
-- MAX shards: 352 zf + 35 zb rows per target, at most 10 min each. The worst case, where every row runs to its timeout, is 64.5 h on one worker or 16.1 h on 4 workers, per target.
-- At 4x, zf i686 full heavy (11.0 h) slightly exceeds one night on 4 workers. At the measured 1.9x it is 5.2 h. The PM-0 cost runs decide which applies (Q1).
+- Full heavy, all four crate/target pairs: 44.49 / 56.57 / 97.69 slot-h, which is **5.56 / 7.07 / 12.21 h on 8 workers**.
+- MAX shards: 352 zf + 35 zb rows per target, with a 10 min timeout. Under the MAX-timeout skip (section 18) the worst case is 64.5 slot-h, or 8.06 h on 8 workers. Without the skip it would be 129.0 slot-h, or 16.12 h.
+- **8-worker RC wall time (full heavy + MAX worst case with skip): 13.62 / 15.13 / 20.27 h.** With no MAX timeouts it is 5.56 / 7.07 / 12.21 h. At the 2.70 planning factor the worst case needs two nights, so the run is resumable (section 19).
+- Per-type evidence matching (PM-0 measured the factor per family, not per operand type) is a **PM-1 must**. Until it lands, no "covered" row counts are quoted from these figures.
 
 ## 14. Rulings
 - R2: test_rng stays under the `random` feature (G13).
 - R3: the 10 working-precision families are FIXLIST items.
 - R8: Ball::div.
 - Primality: the miller_rabin doc row FAILs until its doc is fixed.
-- Paul: i686 MAX rule (section 4), ZF-PM5 N=3/N=5 (section 11), and 4 popslot workers (sections 12-13).
+- Paul: i686 MAX rule (section 4), ZF-PM5 N=3/N=5 (section 11), and 4 popslot workers (sections 12-13; the RC plan is now 8 workers, section 13). Spence-approved (pmrev3): li(+0)=+0; Ball and ComplexBall as zf types; the MAX-timeout skip (section 18).
 
 ## 15. FIXLIST additions
 1. The 10 working-precision families.
@@ -161,6 +164,41 @@ Cost basis (v1): zf 4.1 ms per cell, zb 12 ms per cell, i686 at 4x (measured 1.9
 4. Every FAIL in the MAX shards (section 4).
 
 ## 16. Open questions
-1. The budgets use v1 costs, and the PM-0 cost runs are still pending. They decide whether zf i686 full heavy fits overnight on 4 workers.
+1. The zb cost of 12 ms per cell is unmeasured. Measuring it is a PM-1 must, together with per-type evidence matching (section 13).
 2. The UNGENERATED golds are pinned at PM-3, and they block the RC until then (section 1).
-3. Spence to confirm li(+0) = +0 (section 8).
+3. The 33rd ZF-04 function (section 20) is unidentified.
+4. Re-pin SRC_COMMIT when paul/zf-bound-merge merges (section 0).
+
+## 17. pm-coverage (tools/pm_coverage.pl; Spence pmrev3 item 1)
+pm_coverage.pl is a separate tool. lint.pl stays the structure and variant lint and must be clean, while pm-coverage is the RC gate. Usage: `perl tools/pm_coverage.pl [--mode rc|design-stage] [--results verdicts.tsv] precision-matrix-edges.csv pm-shards.csv [tree]`. pm-shards.csv is written by gen_edges.pl and gives the row count for each shard and family (fast, heavy, pm-max-x86_64, pm-max-i686, proof).
+- a: an NA_PROOF row whose proof file has no `Second-agent sign-off: <agent> <date> <commit>` line (UNSIGNED) is a FAIL.
+- b: an NA_PROOF row that cites a proof file that does not exist is a FAIL.
+- c: an executed row with an UNGENERATED oracle pin is a FAIL.
+- d: a `[PM1-UNPINNED]` row (an unpinned Rule R NaN pair) is a FAIL.
+- e: a shard whose row count for a family is below the matrix count is a FAIL.
+- f: given `--results`, any executed row whose verdict is not PASS is a FAIL, including SKIPPED_AFTER_TIMEOUT and missing rows. The RC requires a results file.
+- Structural rules: S1, every prec-MAX-<target> row has the SKIPPED_AFTER_TIMEOUT verdict space; S2, every NA_PROOF row cites a pm-proofs path; S3, the executed verdict space is PASS|FAIL[|SKIPPED_AFTER_TIMEOUT].
+- `--mode rc` (the default) enforces every rule and exits 1 on any count.
+- `--mode design-stage` enforces only S1-S3 and e. It lists a-d as GAP lines with their full counts, and its output is marked NOT AN RC VERDICT.
+- Each rule was proved red on its own tampered copy (log in the commit message), and the tamper copies were deleted.
+- On these tables at design stage, rc is FAIL. The counts, by row, are: a=658 (74 files, all UNSIGNED), b=3357 (435 missing files out of 509 cited), c=19742, d=996, e=0, f not evaluated (no results yet). S1-S3 are 0. design-stage is a structural PASS that lists the same gaps.
+
+## 18. MAX-timeout skip (Paul proposal, Spence pmrev3 item 6)
+- Within a family, the x86_64 prec-MAX row runs first.
+- If that row hits its 10 min timeout, the family's i686 prec-MAX row is not run. It is recorded as **SKIPPED_AFTER_TIMEOUT**.
+- SKIPPED_AFTER_TIMEOUT counts as FAIL in the verdict space (`PASS|FAIL|SKIPPED_AFTER_TIMEOUT` on all 774 prec-MAX-<target> rows) and in pm-coverage rule f. It is never omitted.
+- The family's RC stays blocked until its FIXLIST fix lands. After the fix, every skipped row reruns in full.
+- The prec-MAXp1-refuse rows are instant refusals, so the skip does not apply to them.
+
+## 19. Resumable RC run (described now, built at PM-1; Spence pmrev3 item 7)
+- 8 popslot workers run overnight through poprun.
+- Each row's verdict is appended (fsync) to verdicts.tsv as the row finishes. The record holds the row id, verdict, zf/zb SHA, env hash (the team-env manifest plus the target) and the gen_edges.pl hash.
+- On restart, the runner skips any row already recorded with the same SHA, env hash and generator hash, and reruns the rest. A change to any of the three invalidates the record.
+- If the run is not done by morning (the window is set at PM-1), it pauses: workers finish their current row and stop. It resumes the next night.
+- **PM-1 selftest:** kill a run partway with SIGKILL, resume it, and prove that the final verdicts.tsv covers every matrix row exactly once. The check is no missing ids, no duplicate ids, and the count equals the matrix count, verified with pm-coverage rule f. The selftest is a PM-1 exit criterion.
+
+## 20. Round-3 row changes (Spence pmrev3 items 2-5)
+- **Item 2, ZF-04 at N=5:** FIXLIST.csv:18 (ZF-04, S1 wrong-answer) claims 33 "Accuracy: unspecified" functions: 29 in catalog.rs:575-1581 and 4 in heun_fox.rs. At 7955836 the source has 25 in catalog.rs plus the 4 in heun_fox.rs, which is 29. The 3 jacobi_arcsn/arccn/arcdn functions in catalog.rs:1255-1301 have no accuracy doc and are included as well. That makes 32 families by name, at N=5 for every type that has them, each cited in pm5-spotcheck-n.csv as FIXLIST.csv:18 plus the source lines. riemann_zeta keeps its recorded wrong answer (zf-audit-SUMMARY.md:23) alongside the ZF-04 citation. **One function of the 33 could not be identified.** It is an open question for Paul/Spence.
+- **Item 3:** the 996 unpinned Rule R NaN-pair rows have a required result of `[PM1-UNPINNED] ... FAIL until pinned in tests/nan_error_kinds.rs EXPECTED at PM-1`. A run whose kind matches the guess still FAILs until then (pm-coverage rule d).
+- **Item 4:** the signed-zero rows for li, ci, si, nth_root and arg carry exact expected values under C11 Annex G conjugate symmetry and the principal branch (for example ln(-1-0i) = -i*pi). Any mismatch is a red row. There are 10 such rows: ExactComplex arg, nth_root, si, ci and li; ExactNum nth_root, si, ci and li; and ExactNumArray nth_root. The "39 UNCLEAR" in Spence's log is the total of all UNCLEAR rows. The other 29 are R4 rows for decompositions, quadrature, ode and roots, and are unchanged. Paul adds the LIBRARY.md:399 doc row to FIXLIST.
+- **Item 5:** see section 0. SRC_COMMIT 7955836 is on paul/zf-bound-merge, not on zf main (dc6bc87).

@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# Harper 2026-10-30: precision-matrix edge list v3 (Spence pmrev2 items 1-12 + Paul rulings, on top of v2).
+# Harper 2026-10-30: precision-matrix edge list v4 (Spence pmrev3 items 1-7 on top of v3).
 use strict; use warnings;
 my $T=$ENV{PM_TREE}//"$ENV{HOME}/harper-work/zf-precision-matrix";   # worktree; sources pinned to $SRC_COMMIT
 my $IN="$T/docs/test-plan/inputs";
@@ -8,7 +8,7 @@ my %PIN=("zf-inventory.csv"=>"ba79198eb3486944e3b43a898389b81a7ce8fb69e4f67450e4
 for my $f (sort keys %PIN){ my $o=`sha256sum "$IN/$f"`; my ($h)=$o=~/^([0-9a-f]{64})/; die "PIN MISMATCH $f: got ".($h//"missing")." want $PIN{$f}\n" unless ($h//"") eq $PIN{$f} }
 system("git","-C",$T,"diff","--quiet",$SRC_COMMIT,"--","zenith-float-num/src","zenith-float-num/tests","zenith-bound/src","zenith-bound/tests")==0 or die "PIN MISMATCH: sources differ from $SRC_COMMIT\n";
 my $INVZF="$IN/zf-inventory.csv"; my $INVZB="$IN/zb-inventory.csv"; my $R4="$IN/r4-required-results.csv";
-my $OUT=shift or die "out"; my $N5OUT=shift or die "n5 out";
+my $OUT=shift or die "out"; my $N5OUT=shift or die "n5 out"; my $SHOUT=shift or die "shards out";
 
 sub parse_csv { my ($txt)=@_; my @rows; my @f; my $fld=''; my $q=0; my $i=0; my $n=length $txt;
   while($i<$n){ my $c=substr($txt,$i,1);
@@ -46,6 +46,12 @@ my %R4X=(as_raw_parts=>'exact and mode-independent: returns the stored (sign, ex
  seeded_random=>'determined by the seed: output is a pure function of (seed, p); digest-pinned in the gold; byte-identical on i686 and x86_64');
 # item 12: Rule R pins (tests/nan_error_kinds.rs EXPECTED)
 my %NANPIN; { open my $nf,'<',"$T/zenith-float-num/tests/nan_error_kinds.rs" or die; my $ln=0; while(<$nf>){ $ln++; if(/^(\S+) (AB|BA|AN|NA) => (.*)$/){ $NANPIN{"$1|$2"}="$3 (pinned: zenith-float-num/tests/nan_error_kinds.rs:$ln)" } } }
+my %SZ=(
+ si=>{r=>'si(+0)=+0, si(-0)=-0 (odd)', c=>'si(+-0+-0i)=+-0+-0i with both signs kept (odd, conj-symmetric); si(-1+0i)=-Si(1)+0i, si(-1-0i)=-Si(1)-0i'},
+ ci=>{r=>'ci(+0)=-Inf and ci(-0)=-Inf, each with error kind Error::DivisionByZero', c=>'ci(+0+0i)=-Inf+0i, ci(+0-0i)=-Inf-0i, ci(-0+0i)=-Inf+i*pi, ci(-0-0i)=-Inf-i*pi (each with Error::DivisionByZero); cut: ci(-1+0i)=Ci(1)+i*pi, ci(-1-0i)=Ci(1)-i*pi (DLMF 6.4.4)'},
+ li=>{r=>'li(+0)=+0 and li(-0)=+0 exactly, no error kind (Spence-approved li(+0)=+0)', c=>'li(+0+0i)=+0+0i, li(+0-0i)=+0-0i, li(-0+0i)=+0+0i, li(-0-0i)=+0-0i (no error kind); cut x<0: li(-1+0i)=conj(li(-1-0i)), imaginary part +pi side for +0i and -pi side for -0i'},
+ nth_root=>{r=>'nth_root(+0,n)=+0; nth_root(-0,n)=-0 for odd n and +0 for even n (n>0); n<0: +0 gives +Inf, -0 gives -Inf (odd n) or +Inf (even n), with Error::DivisionByZero (IEEE 754-2019 rootn)', c=>'nth_root(+-0+-0i,n)=+0+-0i (sign of im kept, as csqrt C11 G.6.4.2); cut: nth_root(-1+0i,n)=cos(pi/n)+i*sin(pi/n), nth_root(-1-0i,n)=cos(pi/n)-i*sin(pi/n)'},
+ arg=>{r=>'arg(+0)=+0, arg(-0)=+pi', c=>'arg = atan2(im,re) (C11 7.3.9.1 carg, IEEE 754-2019 9.2.1): arg(+0+0i)=+0, arg(+0-0i)=-0, arg(-0+0i)=+pi, arg(-0-0i)=-pi, arg(-1+0i)=+pi, arg(-1-0i)=-pi'});
 my %KN=(A=>'Error::InvalidArgument',B=>'Error::DivisionByZero',N=>'no kind (None)');
 # item 3: N=5 spot-check list (wrong answer ever), citations into docs/test-plan/inputs/
 my $FX='docs/test-plan/inputs/FIXLIST.csv'; my $SU='docs/test-plan/inputs/zf-audit-SUMMARY.md'; my $FA='docs/test-plan/inputs/fixes_after_1.0.12.txt';
@@ -85,6 +91,7 @@ my @N5=( # [crate, type-regex, bare-names, citation]
  ['zf','.*',[qw(ei ci li)],"$FA:98"],
  ['zf','.*',[qw(elliptic_k elliptic_e)],"$FA:98"],
  ['zf','.*',[qw(clausen_cl2 clausen_cl3 weber_e barnes_g)],"$FA:106"],
+ ['zf','.*',[qw(scorer_gi scorer_hi kelvin_ber_nu kelvin_bei_nu kelvin_ker_nu kelvin_kei_nu kelvin_ber kelvin_bei kelvin_ker kelvin_kei struve_h anger_j weber_e clausen_cl2 clausen_cl3 hurwitz_zeta riemann_zeta polygamma barnes_g jacobi_arcsn jacobi_arccn jacobi_arcdn hypergeom_0f1 hypergeom_1f1 hypergeom_pfq lambert_w0 lambert_wm1 polylog meijer_g fox_h heun_g heun_c)],"$FX:18 (ZF-04 S1 wrong-answer: 'Accuracy: unspecified' fns through round_exact without a p+64 proof; zenith-float-num/src/catalog.rs:575-1581 and heun_fox.rs:576/640/771/967 at SRC_COMMIT 7955836)"],
  ['zb','^Ball$',[qw(add sub mul_exact powi sqrt div inv hypot abs)],"$FX:67 (ZB-01 eps radius 0); $FX:68 (ZB-02 same 9 ops)"],
 );
 my (%n5,%n5hit);
@@ -131,9 +138,10 @@ for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
   my $R = sub { my ($cls,$def,$inp,$modes,$tier,$req,$var,%o)=@_;
     if($crate eq 'zf' && $R4X{$bare} && !$o{keep} && !$o{na} && $cls!~/refuse|^nan/){ $req="R4 $R4X{$bare}" }
     elsif($other && !$o{keep} && !$o{na}){ my $pc=$o{r4class}//$cls; my $h=$r4{"$bare|$pc"}; if($h){ $req="R4 $$h[0]"; $var=$$h[1] if !$var; $req.=" [convention: $$h[2]]"; $req=~s/ or documented (NaN|range)//g } else { $req="R4 MISSING for $bare|$pc"; } }
-    my $vs = $o{na} ? 'NA_PROOF' : 'PASS|FAIL'; $req=~s/ or documented (NaN|range)//g;
+    my $vs = $o{vs} // ($o{na} ? 'NA_PROOF' : 'PASS|FAIL'); $req=~s/ or documented (NaN|range)//g;
     if($o{g123}){ push @PROOFS,[$proofp,$key,$src,$bare] }
     row(%base,class=>$cls,class_def=>$def,inputs=>$inp,modes=>$modes,tier=>$tier,required_result=>$req,refusal_variant=>$var//'',verdict_space=>$vs,proof=>$o{na}?"$proofp#$cls (committed proof, signed by a second agent; pm-coverage FAIL if missing)":'', ($o{na}?(oracle_x86_64=>'n/a (proof row)',oracle_i686=>'n/a (proof row)',check=>'proof file present, cites signature/type at '.$src.', second-agent sign-off line present'):()) ) };
+  my $SKVS='PASS|FAIL|SKIPPED_AFTER_TIMEOUT'; my $SKIP='MAX-timeout skip (Paul, Spence pmrev3 6): the x86_64 MAX row of a family runs first; if it times out, the same family\'s i686 MAX row is not run and is recorded SKIPPED_AFTER_TIMEOUT, which counts as FAIL in the verdict space and in pm-coverage and is never omitted; the family\'s RC stays blocked until its FIXLIST fix lands, and every skipped row then reruns in full';
   my $M7='ToEven at p in {32,64,128,256,512,1024}; heavy: all 7 modes x axis';
   my $X7='fast: all 7 modes at p=64; heavy: all 7 modes x axis';
   my $FX='fast+heavy'; my $NA=!$hasrm;
@@ -152,15 +160,17 @@ for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
     $R->('divisor-contains-0','divisor ball with |m_b| <= r_b and r_b > 0','m_b in {0, ±r_b/2, ±r_b}, r_b > 0','n/a','fast+heavy','0 in the divisor with rad>0 gives all reals','Ok(all-reals ball: mid=+0, rad=Infinity)');
     $R->('divisor-exact-zero','divisor mid 0, rad 0','b = 0 ± 0','n/a','fast+heavy','an exact 0 divisor gives Domain',"Err(BoundError::Domain)");
   }
-  $R->('signed-zero','-0 and +0 operands','-0, +0 (and pairs for binary)',$hasrm?$X7:$M7,$FX,$crate eq 'zb'?'enclosure; -0 mid normalised to +0':'correct value and IEEE/MPFR sign of zero in every mode (exact cancel gives -0 only in Down)');
+  if($crate eq 'zf' && $SZ{$bare}){ my $cx=$key=~/^ExactComplex::/?'c':'r'; my $t=$SZ{$bare}{$cx}; $R->('signed-zero',"signed zeros and cut points ".($cx eq 'c'?'(complex: every sign of re and im zero)':'(real)'),$cx eq 'c'?'+0+0i, +0-0i, -0+0i, -0-0i and the cut points listed':'+0, -0','fast: all 7 modes at p=64; heavy: all 7 modes x axis',$FX,"exact expected values (C11 Annex G conjugate symmetry f(conj z)=conj f(z), principal branch, the sign of a zero imaginary part chooses the side of the cut; e.g. ln(-1-0i)=-i*pi): $t; values are exact or correctly rounded at p in rm; any mismatch is a red row (FIXLIST doc row for LIBRARY.md:399 is Paul's)",($t=~/DivisionByZero/?'Error::DivisionByZero':''),keep=>1) } else {
+  $R->('signed-zero','-0 and +0 operands','-0, +0 (and pairs for binary)',$hasrm?$X7:$M7,$FX,$crate eq 'zb'?'enclosure; -0 mid normalised to +0':'correct value and IEEE/MPFR sign of zero in every mode (exact cancel gives -0 only in Down)'); }
   $R->('inf','±Inf operand(s)','±Inf',$M7,$FX,$crate eq 'zb'?'refusal':'correct limit (IEEE 754-2019 7.2/9.2, MPFR semantics) or refusal',$crate eq 'zb'?$V->('Representation'):$V->('InvalidArgument').' where the limit is undefined');
   my $cplx = $key=~/^ExactComplex::/ ? 1:0;
   if($crate eq 'zf' && ($binary || $cplx)){ for my $pp (qw(AB BA AN NA)){ my ($k1,$k2)=split //,$pp;
       my $pinkey = $cplx ? ($bare=~/^(asinh|ln_gamma)$/ ? $bare : "c$bare") : $bare; my $pin=$NANPIN{"$pinkey|$pp"};
       my ($def,$req);
-      if($cplx && !$binary){ $def="complex NaN operand z with kinds (re,im) = ($k1,$k2)"; $req= $pin ? "inherited: $pin" : $bare eq 'asinh' ? '' : "inherited: re=$KN{$k1}, im=$KN{$k1} (the re part's kind wins wherever the parts mix, as pinned for cexp/csqrt/asinh; Rule R, CHANGELOG.md:131-132); unpinned: add to EXPECTED at PM-1, run disagreement = FAIL" }
-      elsif($cplx){ $def="complex NaN operands a, b with all parts of kind $k1 (a) and $k2 (b)"; $req= $pin ? "inherited: $pin" : "inherited: re=$KN{$k1}, im=$KN{$k1} (componentwise Rule R: the first operand's kind wins per part; CHANGELOG.md:131-132); unpinned: add to EXPECTED at PM-1, run disagreement = FAIL" }
-      else { $def="NaN operands (first,second) kinds = ($k1,$k2); A=InvalidArgument B=DivisionByZero N=no kind"; $req= "inherited: $KN{$k1} from the first operand (Rule R: first operand's kind wins, including kind-less N)".($pin?"; $pin":"; Rule R stated at zenith-float-num/tests/nan_error_kinds.rs:4-7 and CHANGELOG.md:131-132; not in EXPECTED: pin at PM-1, run disagreement = FAIL") }
+      if($cplx && !$binary){ $def="complex NaN operand z with kinds (re,im) = ($k1,$k2)"; $req= $pin ? "inherited: $pin" : $bare eq 'asinh' ? '' : "inherited: re=$KN{$k1}, im=$KN{$k1} (the re part's kind wins wherever the parts mix, as pinned for cexp/csqrt/asinh; Rule R, CHANGELOG.md:131-132)" }
+      elsif($cplx){ $def="complex NaN operands a, b with all parts of kind $k1 (a) and $k2 (b)"; $req= $pin ? "inherited: $pin" : "inherited: re=$KN{$k1}, im=$KN{$k1} (componentwise Rule R: the first operand's kind wins per part; CHANGELOG.md:131-132)" }
+      else { $def="NaN operands (first,second) kinds = ($k1,$k2); A=InvalidArgument B=DivisionByZero N=no kind"; $req= "inherited: $KN{$k1} from the first operand (Rule R: first operand's kind wins, including kind-less N)".($pin?"; $pin":"; Rule R stated at zenith-float-num/tests/nan_error_kinds.rs:4-7 and CHANGELOG.md:131-132") }
+      $req="[PM1-UNPINNED] required result: FAIL until this case is pinned in zenith-float-num/tests/nan_error_kinds.rs EXPECTED at PM-1 (a run whose kind matches the expectation below still FAILs until then); expectation to pin: $req" if !$pin;
       $R->("nan-$pp",$def,'NaN operands with pinned kinds',$M7,$FX,$req,$k1 eq 'N'?'no kind (None)':$KN{$k1},keep=>1) } }
   elsif($crate eq 'zf'){ for my $k (qw(A B N)){ $R->("nan-$k","NaN operand with kind $k (A=InvalidArgument B=DivisionByZero N=no kind)",'NaN operand with pinned kind',$M7,$FX,"NaN result, inherited kind $KN{$k} (unary propagation keeps the operand's kind; nan_error_kinds.rs Rule R)",$k eq 'N'?'no kind (None)':$KN{$k},keep=>1) } }
   else { $R->('nan','NaN operand','NaN midpoint (kind A, B and N)',$M7,$FX,'refusal (NaN midpoint never stored): every operand kind maps to the same variant',$V->('Representation')) }
@@ -194,8 +204,8 @@ for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
     $R->('prec-axis','every axis point (i686 96, x86_64 49) incl. k*W-1,k*W,k*W+1 and thresholds T-1,T,T+1','normal operands',$M7,$FX,$crate eq 'zb'?'enclosure at prec':$cr,'',r4class=>'prec-boundary');
     my $rq = $crate eq 'zb' ? 'enclosure or a prompt '.$V->('Resource') : 'correct result, or a prompt refusal '.$V->('MemoryAllocation').' or '.$V->('PrecisionRetryExhausted');
     my $rvv = $crate eq 'zb' ? $V->('Resource') : $V->('MemoryAllocation').' | '.$V->('PrecisionRetryExhausted');
-    $R->('prec-MAX-x86_64','p = MAX_PRECISION = 2^60-1 on x86_64','one normal operand','ToEven','heavy (shard pm-max-x86_64; 10 min per row; timeout = FAIL)',"$rq within 10 minutes; a timeout or a wrong value is FAIL and becomes a FIXLIST row",$rvv,keep=>1);
-    $R->('prec-MAX-i686','p = MAX_PRECISION = 2^30-1 on i686 (2^30 bits is allocatable, Paul ruling)','one normal operand','ToEven','heavy only (own shard pm-max-i686; budget 10 min per row; timeout = FAIL)',"$rq within the 10-minute row budget; a timeout or a wrong value is FAIL and every FAIL becomes a FIXLIST row",$rvv,keep=>1);
+    $R->('prec-MAX-x86_64','p = MAX_PRECISION = 2^60-1 on x86_64','one normal operand','ToEven','heavy (shard pm-max-x86_64; 10 min per row; timeout = FAIL)',"$rq within 10 minutes; a timeout or a wrong value is FAIL and becomes a FIXLIST row. $SKIP",$rvv,keep=>1,vs=>$SKVS);
+    $R->('prec-MAX-i686','p = MAX_PRECISION = 2^30-1 on i686 (2^30 bits is allocatable, Paul ruling)','one normal operand','ToEven','heavy only (own shard pm-max-i686; budget 10 min per row; timeout = FAIL)',"$rq within the 10-minute row budget; a timeout or a wrong value is FAIL and every FAIL becomes a FIXLIST row. $SKIP",$rvv,keep=>1,vs=>$SKVS);
     $R->('prec-0-refuse','p = 0','normal operand','ToEven','fast',"refusal: ".$V->('InvalidArgument'),$V->('InvalidArgument'),keep=>1);
     $R->('prec-MAXp1-refuse','p = MAX_PRECISION + 1','normal operand','ToEven','fast',"refusal: ".$V->('InvalidArgument'),$V->('InvalidArgument'),keep=>1);
   } else { $R->('prec-na','signature takes no precision','n/a','n/a','proof','n/a by type: no precision parameter','',na=>1) }
@@ -205,13 +215,16 @@ for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
 }
 open my $o,'>',$OUT or die; my @H=qw(crate family source category group class class_def inputs modes tier required_result refusal_variant oracle_x86_64 oracle_i686 check verdict_space proof);
 sub csvq { my $s=shift; $s="" unless defined $s; $s=~s/\s*\n\s*/ /g; $s=~s/"/""/g; "\"$s\"" }
-print $o "# precision-matrix-edges v3 (Harper 2026-10-30). Lines starting with # are metadata; the CSV header is the first line without #.\n# source commit $SRC_COMMIT (generator refuses if zenith-float-num/{src,tests} or zenith-bound/{src,tests} differ)\n";
+print $o "# precision-matrix-edges v4 (Harper 2026-10-30). Lines starting with # are metadata; the CSV header is the first line without #.\n# source commit $SRC_COMMIT (generator refuses if zenith-float-num/{src,tests} or zenith-bound/{src,tests} differ)\n";
 print $o "# input docs/test-plan/inputs/$_ sha256:$PIN{$_}\n" for sort keys %PIN;
 print $o join(',',map {csvq($_)} @H),"\n"; print $o join(',',map {csvq($_)} @$_),"\n" for @out; close $o;
 my %fc; $fc{$$_[0]}++ for @fam; my %wp=(); $wp{$$_[1]}=1 for grep {$$_[6]=~/working-precision/} @fam;
 print "families zf=$fc{zf} zb=$fc{zb} rows=",scalar(@out),"\n"; print "$_ $cnt{$_}\n" for sort keys %cnt; print "wp families: ",join(' ',sort keys %wp),"\n";
 my %oth; $oth{$$_[2]}++ for grep {$$_[0] eq 'zf' && $$_[5] eq 'other'} @fam; print "other keys ",scalar(keys %oth)," bare; r4 fams ",scalar(keys %r4fam),"; missing: ",join(' ',grep {!$r4fam{$_}} sort keys %oth),"\n";
 
+{ my %sh; for my $r (@out){ my ($cr,$fm,$tier,$vs)=@{$r}[0,1,9,15]; my $k = $vs eq 'NA_PROOF' ? 'proof' : $tier=~/pm-max-i686/ ? 'pm-max-i686' : $tier=~/pm-max-x86_64/ ? 'pm-max-x86_64' : $tier=~/fast/ ? 'fast' : 'heavy'; $sh{"$k|$cr|$fm"}++ }
+  open my $so,'>',$SHOUT or die; print $so "shard,crate,family,rows\n"; for (sort keys %sh){ my ($a,$b,$c)=split /\|/; print $so join(',',map {csqq($_)} $a,$b,$c,$sh{$_}),"\n" } close $so; print "shard lines: ",scalar(keys %sh),"\n" }
+sub csqq { my $s=shift; $s=~s/"/""/g; "\"$s\"" }
 open my $n5,'>',$N5OUT or die; print $n5 "crate,family,N,citations\n"; my %fam5;
 for my $F (@fam){ my ($crate,$key)=@$F; my $c=$n5{$key}; print $n5 join(',',map {csvq($_)} $crate,$key,$c?5:3,$c?join(' | ',@$c):'none (N=3)'),"\n"; $fam5{$c?5:3}++ } close $n5;
 print "N5 families: $fam5{5}; N3 families: $fam5{3}\n";
