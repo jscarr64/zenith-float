@@ -1,4 +1,4 @@
-# zf/zb precision matrix: design v4 (Spence third review, items 1-7, on v3)
+# zf/zb precision matrix: design v4.1 (Spence third review items 1-7; round-4 ZF-04 re-count)
 
 Agent: Harper. Date: 2026-10-30. Edge table: `precision-matrix-edges.csv` (24620 rows, 17 columns; the first 9 lines start with `#` and carry the pins below; the CSV header is the first line without `#`).
 
@@ -127,7 +127,7 @@ Each nan row names the variant it inherits (A=InvalidArgument, B=DivisionByZero,
   - elliptic_k, elliptic_e: fixes:98
   - clausen_cl2, clausen_cl3, weber_e, barnes_g: fixes:106
   - zb Ball add, sub, mul_exact, powi, sqrt, div, inv, hypot, abs: FIXLIST.csv:67 (ZB-01), FIXLIST.csv:68 (ZB-02)
-- Excluded: FIXLIST.csv:18 (ZF-04, 33 "unspecified" functions) is an unproven accuracy gap, not a recorded wrong answer.
+- ZF-04 (FIXLIST.csv:18) was excluded in v3. Since v4 every ZF-04 function is at N=5 (section 20).
 
 ## 12. Tiers
 - Fast tier: on every commit.
@@ -166,7 +166,7 @@ Cost basis: zf 4.1 ms per cell; zb 12 ms per cell (this figure is unmeasured and
 ## 16. Open questions
 1. The zb cost of 12 ms per cell is unmeasured. Measuring it is a PM-1 must, together with per-type evidence matching (section 13).
 2. The UNGENERATED golds are pinned at PM-3, and they block the RC until then (section 1).
-3. The 33rd ZF-04 function (section 20) is unidentified.
+3. ZF-04 count: FIXLIST.csv:18 and SUMMARY.md:30 say 33 (29 catalog + 4 heun_fox). The source at 7955836 and Paul's inventory.csv have 25 + 4 = 29 (section 20). Paul to correct the FIXLIST count or name the 4 missing catalog functions.
 4. Re-pin SRC_COMMIT when paul/zf-bound-merge merges (section 0).
 
 ## 17. pm-coverage (tools/pm_coverage.pl; Spence pmrev3 item 1)
@@ -198,7 +198,7 @@ pm_coverage.pl is a separate tool. lint.pl stays the structure and variant lint 
 - **PM-1 selftest:** kill a run partway with SIGKILL, resume it, and prove that the final verdicts.tsv covers every matrix row exactly once. The check is no missing ids, no duplicate ids, and the count equals the matrix count, verified with pm-coverage rule f. The selftest is a PM-1 exit criterion.
 
 ## 20. Round-3 row changes (Spence pmrev3 items 2-5)
-- **Item 2, ZF-04 at N=5:** FIXLIST.csv:18 (ZF-04, S1 wrong-answer) claims 33 "Accuracy: unspecified" functions: 29 in catalog.rs:575-1581 and 4 in heun_fox.rs. At 7955836 the source has 25 in catalog.rs plus the 4 in heun_fox.rs, which is 29. The 3 jacobi_arcsn/arccn/arcdn functions in catalog.rs:1255-1301 have no accuracy doc and are included as well. That makes 32 families by name, at N=5 for every type that has them, each cited in pm5-spotcheck-n.csv as FIXLIST.csv:18 plus the source lines. riemann_zeta keeps its recorded wrong answer (zf-audit-SUMMARY.md:23) alongside the ZF-04 citation. **One function of the 33 could not be identified.** It is an open question for Paul/Spence.
+- **Item 2, ZF-04 at N=5 (re-counted in round 4):** FIXLIST.csv:18 and ~/paul-work/zf-audit-2026-10-30/SUMMARY.md:30 claim 29 "Accuracy: unspecified" functions in catalog.rs:575-1581 plus 4 in heun_fox.rs (:576/:640/:771/:967), 33 in total. At SRC_COMMIT 7955836, `git grep -c "Accuracy: unspecified"` finds catalog.rs 25, heun_fox.rs 4 and accuracy.rs 1 (the Accuracy::Unspecified Display string at :42, not a function). catalog.rs:575-1582 has 28 pub fns with an Accuracy line: 25 say unspecified and 3 (jacobi_arcsn :1254, jacobi_arccn :1273, jacobi_arcdn :1300) say "Accuracy: correctly-rounded". Paul's own ~/paul-work/zf-audit-2026-10-30/inventory.csv also has exactly 25 catalog.rs rows with documented_accuracy unspecified. Neither FIXLIST nor SUMMARY names the 29, so 4 cannot be matched; none are invented. The likely explanation, unconfirmed: 25 + 4 = 29 was the true total, and the 4 heun_fox functions were then added again. N=5 covers 25 + 4 + 3 jacobi_arc = **32** families (not 36), each cited in pm5-spotcheck-n.csv with FIXLIST.csv:18 and its own doc and fn source lines. riemann_zeta keeps its recorded wrong answer (zf-audit-SUMMARY.md:23).
 - **Item 3:** the 996 unpinned Rule R NaN-pair rows have a required result of `[PM1-UNPINNED] ... FAIL until pinned in tests/nan_error_kinds.rs EXPECTED at PM-1`. A run whose kind matches the guess still FAILs until then (pm-coverage rule d).
 - **Item 4:** the signed-zero rows for li, ci, si, nth_root and arg carry exact expected values under C11 Annex G conjugate symmetry and the principal branch (for example ln(-1-0i) = -i*pi). Any mismatch is a red row. There are 10 such rows: ExactComplex arg, nth_root, si, ci and li; ExactNum nth_root, si, ci and li; and ExactNumArray nth_root. The "39 UNCLEAR" in Spence's log is the total of all UNCLEAR rows. The other 29 are R4 rows for decompositions, quadrature, ode and roots, and are unchanged. Paul adds the LIBRARY.md:399 doc row to FIXLIST.
 - **Item 5:** see section 0. SRC_COMMIT 7955836 is on paul/zf-bound-merge, not on zf main (dc6bc87).
