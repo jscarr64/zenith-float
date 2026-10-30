@@ -38,15 +38,15 @@ A finite `ExactNum` is a **sign**, a **binary mantissa** stored as an array of w
 
 | Item | Value |
 | --- | --- |
-| `Word` | `u64` except on 32-bit targets, where it is `u32` |
+| `Word` | `u64` (64-bit targets only) |
 | `WORD_BIT_SIZE` | 64 or 32 accordingly |
 | `WORD_MAX` | `Word::MAX` |
 | `WORD_BASE` | `WORD_MAX + 1` as a double-width integer |
 | `WORD_SIGNIFICANT_BIT` | high bit of a word |
-| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE`: 2 with a 64-bit `Word`, 4 with a 32-bit `Word`; small mantissas stored inline |
-| `EXPONENT_BIT_SIZE` | 64 (`Exponent` is `i64` on every target) |
-| `EXPONENT_MAX` | `2^62 - 1` on every target (2.0.0; was `i32::MAX`, and `i32::MAX / 4` on 32-bit before that) |
-| `EXPONENT_MIN` | `-(2^62 - 1)` on every target (2.0.0; was `i32::MIN`, and `i32::MIN / 4` on 32-bit before that) |
+| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE` = 2; small mantissas stored inline |
+| `EXPONENT_BIT_SIZE` | 64 (`Exponent` is `i64`) |
+| `EXPONENT_MAX` | `2^62 - 1` (2.0.0; was `i32::MAX`) |
+| `EXPONENT_MIN` | `-(2^62 - 1)` (2.0.0; was `i32::MIN`) |
 | Default operator precision | 128 bits (`ToEven`) for `+ − × ÷` on `ExactNum` (internal default; not a public constant) |
 | `MAX_PREC_RETRY` | `256` — extra-precision budget for correct-rounding retries (`try_set_precision`, `ziv_round`, transcendentals) |
 
@@ -220,7 +220,7 @@ There is **no** `%` operator trait; remainder is `rem` or `expr!` `%`.
 
 | Method | Meaning |
 | --- | --- |
-| `cmp` | `Option<SignedWord>` — negative / zero / positive; `None` if unordered (NaN). `SignedWord` is `i128` on 64-bit targets and `i64` on 32-bit; it is the return type of `cmp`/`abs_cmp` even though it is not re-exported at the crate root. |
+| `cmp` | `Option<SignedWord>` — negative / zero / positive; `None` if unordered (NaN). `SignedWord` is `i128`; it is the return type of `cmp`/`abs_cmp` even though it is not re-exported at the crate root. |
 | `abs_cmp` | compare absolute values |
 | `min` / `max` | |
 | `clamp` | |

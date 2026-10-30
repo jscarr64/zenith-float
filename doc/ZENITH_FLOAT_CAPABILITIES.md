@@ -54,11 +54,11 @@ Both pass 77/77. There is no separate `alloc` feature: `alloc` is always require
 
 | Item | Value |
 | --- | --- |
-| `Word` | `u64` on 64-bit targets; `u32` on 32-bit |
+| `Word` | `u64` (64-bit targets only) |
 | `WORD_BIT_SIZE` | 64 or 32 accordingly |
-| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE` (2 on 64-bit, 4 on 32-bit) — mantissas of ≤ 128 bits live on the stack |
-| `EXPONENT_MAX` | `2^62 - 1` on every target |
-| `EXPONENT_MIN` | `-(2^62 - 1)` on every target |
+| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE` = 2 — mantissas of ≤ 128 bits live on the stack |
+| `EXPONENT_MAX` | `2^62 - 1` |
+| `EXPONENT_MIN` | `-(2^62 - 1)` |
 | Default operator precision | 128 bits, `ToEven` — used by `+` `−` `×` `÷` operator traits only |
 | `MAX_PREC_RETRY` | `256` — extra word-sized retry steps beyond `p` for correct-rounding loops |
 | `SVD_ITER_MAX` | `64` — QR sweeps per singular value in `svd_decomp`; then `None` |

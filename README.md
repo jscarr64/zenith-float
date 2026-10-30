@@ -9,7 +9,7 @@
 > precision, an overflow rounded toward
 > zero returns the largest finite value, `inexact()` describes the last operation
 > only (`inexact_accumulated()` keeps the old meaning), `from_raw_parts` validates
-> its parts, and the exponent is `i64` with range `-(2^62 - 1)..=2^62 - 1` on every target.
+> its parts, and the exponent is `i64` with range `-(2^62 - 1)..=2^62 - 1` on every supported target. zenith-float and zenith-bound support 64-bit targets only (`target_pointer_width = "64"`).
 > See [CHANGELOG.md](CHANGELOG.md) for each change and its
 > migration. 2.0.0 is not yet published; the current crates.io release is 1.0.12.
 
@@ -91,13 +91,13 @@ No other open issues. The items listed in the 1.0.5 audit (`doc/AUDIT.md`) were 
 ## Rounding
 
 - `RoundingMode` has seven modes. `ToEven` and `ToOdd` round to nearest and break ties to the even or odd neighbour. `ToOdd` is round to nearest with ties to odd, the mirror of `ToEven`; it is not the sticky "round-to-odd" (jamming) mode used inside algorithms. At `p = 4`: 17/16 is an exact tie and gives 1.000 under `ToEven` and 1.001 under `ToOdd`; 33/32 is below the tie and gives 1.000 under both (a sticky round-to-odd would give 1.001). `Up`, `Down`, `ToZero`, and `FromZero` are directed: toward +∞, toward −∞, toward zero, and away from zero, with no tie rule. `None` skips the final rounding.
-- `add`, `sub`, `mul`, and `div` round at exactly `p` bits, for any `p`; `ExactNum::add(&b, 24, RoundingMode::ToEven)` is a correctly rounded binary32-precision sum, subnormals included. The storage is still whole 64-bit words (32-bit on 32-bit targets), and the bits below `p` are zero.
+- `add`, `sub`, `mul`, and `div` round at exactly `p` bits, for any `p`; `ExactNum::add(&b, 24, RoundingMode::ToEven)` is a correctly rounded binary32-precision sum, subnormals included. The storage is still whole 64-bit words, and the bits below `p` are zero.
 - The other operations (`sqrt`, `cbrt`, `hypot`, `fma`, `rem`, parsing, and the transcendental and special functions) round to `p` rounded up to a whole number of words. Call `set_precision(p, rm)` afterwards for exactly `p` bits; that is a second rounding.
 - `RoundingMode::None` skips that final rounding and keeps the storage precision, with possible extra bits.
 - `inexact()` is true when the operation that produced the value rounded it; this holds for every rounded function and for `ExactComplex`. `inexact_accumulated()` is true when anything upstream rounded.
 - Every rounded function rounds at exactly `p` bits in every mode, and exact results (`sqrt(4)`, `hypot(3, 4)`, `exp(0)`) are exact. Overflow returns `±max_value(p)` under `ToZero`, `Down` (positive) and `Up` (negative) in every function. `sin_cos` and `sinh_cosh` round and flag each result separately. `rem` is always exact and takes no rounding mode.
 - `expr!` raises working precision to compensate cancellation. It does **not** itself perform correct rounding; the completion of a rounding loop in finite time depends on the expression.
-- Overflow of the exponent range `EXPONENT_MIN..=EXPONENT_MAX` (`±(2^62 - 1)`, the same on every target) becomes `±Inf`, except that `add`, `sub`, `mul`, `div`, `fma`, `pow`, `powi`, `hypot`, `reciprocal`, `ldexp`, `exp`, `exp2`, `exp10`, `sinh`, and `cosh` return `±max_value(p)` when the mode rounds toward zero for the result's sign (`ToZero`, `Down` for positive, `Up` for negative). Allocation and invalid arguments become `NaN`; `ExactNum::err()` returns the associated `Error`.
+- Overflow of the exponent range `EXPONENT_MIN..=EXPONENT_MAX` (`±(2^62 - 1)`, the same on every 64-bit target) becomes `±Inf`, except that `add`, `sub`, `mul`, `div`, `fma`, `pow`, `powi`, `hypot`, `reciprocal`, `ldexp`, `exp`, `exp2`, `exp10`, `sinh`, and `cosh` return `±max_value(p)` when the mode rounds toward zero for the result's sign (`ToZero`, `Down` for positive, `Up` for negative). Allocation and invalid arguments become `NaN`; `ExactNum::err()` returns the associated `Error`.
 - Subnormals, `NaN`, and infinities are software values, not hardware floating-point registers.
 
 ## Example
