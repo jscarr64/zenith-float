@@ -169,9 +169,8 @@ pub enum Error {
     MemoryAllocation,
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+impl core::error::Error for Error {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         None
     }
 }
