@@ -80,12 +80,20 @@ fn rem_pi_stress_is_correctly_rounded() -> Result<(), String> {
         let cap = p.div_ceil(64).checked_mul(64).ok_or("cap overflow")?;
         let sig = got.mantissa_max_bit_len().ok_or("no mantissa")?;
         if got != want || sig > cap {
-            bad.push(format!("x=2^{} p={p} {name}: got {got:?} (mantissa {sig} bits), want {bits}", xb.len()));
+            bad.push(format!(
+                "x=2^{} p={p} {name}: got {got:?} (mantissa {sig} bits), want {bits}",
+                xb.len()
+            ));
         }
     }
     if bad.is_empty() {
         Ok(())
     } else {
-        Err(format!("{} of {} rows differ:\n{}", bad.len(), REF.len(), bad.join("\n")))
+        Err(format!(
+            "{} of {} rows differ:\n{}",
+            bad.len(),
+            REF.len(),
+            bad.join("\n")
+        ))
     }
 }

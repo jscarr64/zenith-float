@@ -34,7 +34,9 @@ fn gamma_near_pole_matches_high_precision() -> Result<(), String> {
         let d = lo.sub(&hi, 1024, RoundingMode::ToEven);
         if let Some(ed) = d.exponent() {
             if ed > eh - 250 {
-                return Err(format!("k={k}: |gamma_256 - gamma_1024| ~ 2^{ed}, value ~ 2^{eh}"));
+                return Err(format!(
+                    "k={k}: |gamma_256 - gamma_1024| ~ 2^{ed}, value ~ 2^{eh}"
+                ));
             }
         }
     }
@@ -57,12 +59,28 @@ fn gamma_near_pole_host_rows_match_mpmath() -> Result<(), String> {
     let mut bad = Vec::new();
     for &(k, bits) in HOST_REF {
         let xs = format!("-0.{}", "1".repeat(k));
-        let x = ExactNum::parse(&xs, zenith_float_num::Radix::Bin, k, RoundingMode::None, &mut cc);
-        let want = ExactNum::parse(bits, zenith_float_num::Radix::Bin, 512, RoundingMode::None, &mut cc);
+        let x = ExactNum::parse(
+            &xs,
+            zenith_float_num::Radix::Bin,
+            k,
+            RoundingMode::None,
+            &mut cc,
+        );
+        let want = ExactNum::parse(
+            bits,
+            zenith_float_num::Radix::Bin,
+            512,
+            RoundingMode::None,
+            &mut cc,
+        );
         let got = x.gamma(256, RoundingMode::ToEven, &mut cc);
         if got != want {
             bad.push(format!("k={k}: got {got:?}, want {bits}"));
         }
     }
-    if bad.is_empty() { Ok(()) } else { Err(bad.join("\n")) }
+    if bad.is_empty() {
+        Ok(())
+    } else {
+        Err(bad.join("\n"))
+    }
 }

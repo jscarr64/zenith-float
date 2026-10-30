@@ -44,19 +44,25 @@ impl ExactNumNumber {
                 .and_then(|v| v.checked_add(guard))
                 .ok_or(Error::InvalidArgument)?;
             let mut two_pi = cc.pi_num(pi_p, RoundingMode::None)?;
-            let e2 = two_pi.exponent().checked_add(1).ok_or(Error::InvalidArgument)?;
+            let e2 = two_pi
+                .exponent()
+                .checked_add(1)
+                .ok_or(Error::InvalidArgument)?;
             two_pi.set_exponent(e2);
             let mut r = self.rem(&two_pi)?;
             if !r.is_zero() {
                 // correct leading bits: exp(r) - (exp(x) + 1 - prec(2π))
-                let prec = i64::try_from(two_pi.mantissa_max_bit_len()).map_err(|_| Error::InvalidArgument)?;
+                let prec = i64::try_from(two_pi.mantissa_max_bit_len())
+                    .map_err(|_| Error::InvalidArgument)?;
                 let s = r
                     .exponent()
                     .checked_add(prec)
                     .and_then(|v| v.checked_sub(ex))
                     .and_then(|v| v.checked_sub(1))
                     .ok_or(Error::InvalidArgument)?;
-                let s = usize::try_from(s).unwrap_or(0).min(r.mantissa_max_bit_len());
+                let s = usize::try_from(s)
+                    .unwrap_or(0)
+                    .min(r.mantissa_max_bit_len());
                 if s > p && r.try_set_precision(p, rm, s)? {
                     return Ok(r);
                 }

@@ -5,8 +5,8 @@
 use zenith_float::{cexpr, exact, fbig, ExactComplex, RadixFloat};
 use zenith_float_macro::expr;
 use zenith_float_num::{
-    ctx::Context, Consts, ExactNum, Radix, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN,
-    Word, WORD_BIT_SIZE, WORD_MAX, WORD_SIGNIFICANT_BIT,
+    ctx::Context, Consts, ExactNum, Radix, RoundingMode, Sign, Word, EXPONENT_MAX, EXPONENT_MIN,
+    WORD_BIT_SIZE, WORD_MAX, WORD_SIGNIFICANT_BIT,
 };
 
 // Word-array inputs with the same value on 32- and 64-bit words: an inline `[a, b, ...]` literal

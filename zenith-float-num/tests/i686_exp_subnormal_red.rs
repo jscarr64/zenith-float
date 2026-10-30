@@ -15,7 +15,9 @@ fn exp_into_subnormal_is_not_zero() -> Result<(), String> {
     let x = ExactNum::from_words(&M, Sign::Neg, 62);
     let r = x.exp(53, RoundingMode::ToEven, &mut cc);
     if r.is_zero() || r.is_nan() {
-        return Err(format!("exp({x:?}) underflowed to {r:?}; golden is a nonzero subnormal"));
+        return Err(format!(
+            "exp({x:?}) underflowed to {r:?}; golden is a nonzero subnormal"
+        ));
     }
     Ok(())
 }
@@ -31,8 +33,20 @@ fn exp_rows_around_two_pow_63() -> Result<(), String> {
     let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
     let mut bad = Vec::new();
     for s in ["9223372036854774784", "9223372036854777856"] {
-        let x = ExactNum::parse(s, zenith_float_num::Radix::Dec, 64, RoundingMode::None, &mut cc);
-        let neg = ExactNum::parse(&format!("-{s}"), zenith_float_num::Radix::Dec, 64, RoundingMode::None, &mut cc);
+        let x = ExactNum::parse(
+            s,
+            zenith_float_num::Radix::Dec,
+            64,
+            RoundingMode::None,
+            &mut cc,
+        );
+        let neg = ExactNum::parse(
+            &format!("-{s}"),
+            zenith_float_num::Radix::Dec,
+            64,
+            RoundingMode::None,
+            &mut cc,
+        );
         let up = x.exp(53, RoundingMode::ToEven, &mut cc);
         let down = neg.exp(53, RoundingMode::ToEven, &mut cc);
         if !up.is_inf_pos() {
@@ -42,5 +56,9 @@ fn exp_rows_around_two_pow_63() -> Result<(), String> {
             bad.push(format!("exp(-{s}) = {down:?}, want +0"));
         }
     }
-    if bad.is_empty() { Ok(()) } else { Err(bad.join("\n")) }
+    if bad.is_empty() {
+        Ok(())
+    } else {
+        Err(bad.join("\n"))
+    }
 }

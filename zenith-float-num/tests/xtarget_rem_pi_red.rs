@@ -60,6 +60,11 @@ fn rem_pi_is_target_independent() -> Result<(), String> {
     if bad.is_empty() {
         Ok(())
     } else {
-        Err(format!("{} of {} rows differ:\n{}", bad.len(), REF.len(), bad.join("\n")))
+        Err(format!(
+            "{} of {} rows differ:\n{}",
+            bad.len(),
+            REF.len(),
+            bad.join("\n")
+        ))
     }
 }

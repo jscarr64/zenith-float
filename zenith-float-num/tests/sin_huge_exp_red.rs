@@ -54,6 +54,11 @@ fn sin_of_huge_power_of_two_is_correctly_rounded() -> Result<(), String> {
     if bad.is_empty() {
         Ok(())
     } else {
-        Err(format!("{} of {} rows differ:\n{}", bad.len(), REF.len(), bad.join("\n")))
+        Err(format!(
+            "{} of {} rows differ:\n{}",
+            bad.len(),
+            REF.len(),
+            bad.join("\n")
+        ))
     }
 }

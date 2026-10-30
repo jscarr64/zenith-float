@@ -46,14 +46,40 @@ fn cnum(re: &str, im: &str, cc: &mut Consts) -> ExactComplex {
 
 /// z = 1/2 + i/4, w = 1/4 + 3i/4, v = 3/2 + i/4 (exact binary values).
 fn inputs(cc: &mut Consts) -> (ExactComplex, ExactComplex, ExactComplex) {
-    (cnum("0.1", "0.01", cc), cnum("0.01", "0.11", cc), cnum("1.1", "0.01", cc))
+    (
+        cnum("0.1", "0.01", cc),
+        cnum("0.01", "0.11", cc),
+        cnum("1.1", "0.01", cc),
+    )
 }
 
 const FNS: [&str; 26] = [
-    "ei", "si", "ci", "li", "fresnel_s", "fresnel_c", "ln", "asin", "elliptic_k",
-    "elliptic_e_complete", "elliptic_f", "elliptic_e", "elliptic_pi_complete", "elliptic_pi", "ai",
-    "bi", "erf", "erfc", "gamma", "ln_gamma", "digamma", "bessel_j_nu", "bessel_y", "bessel_i",
-    "bessel_k", "hypergeom_2f1",
+    "ei",
+    "si",
+    "ci",
+    "li",
+    "fresnel_s",
+    "fresnel_c",
+    "ln",
+    "asin",
+    "elliptic_k",
+    "elliptic_e_complete",
+    "elliptic_f",
+    "elliptic_e",
+    "elliptic_pi_complete",
+    "elliptic_pi",
+    "ai",
+    "bi",
+    "erf",
+    "erfc",
+    "gamma",
+    "ln_gamma",
+    "digamma",
+    "bessel_j_nu",
+    "bessel_y",
+    "bessel_i",
+    "bessel_k",
+    "hypergeom_2f1",
 ];
 
 fn eval(f: &str, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<ExactComplex, String> {
@@ -92,7 +118,8 @@ fn eval(f: &str, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<ExactCom
 /// `a` holds a p-bit value (re-rounding `b`, an identical evaluation, to p bits changes nothing)
 /// and is stored in at most `cap` bits.
 fn p_bit_part(a: &ExactNum, mut b: ExactNum, p: usize, cap: usize) -> Result<bool, String> {
-    b.set_precision(p, RoundingMode::ToEven).map_err(|e| format!("{e:?}"))?;
+    b.set_precision(p, RoundingMode::ToEven)
+        .map_err(|e| format!("{e:?}"))?;
     let sig = a.mantissa_max_bit_len().ok_or("no mantissa")?;
     Ok(*a == b && sig <= cap)
 }
@@ -112,7 +139,12 @@ fn complex_values_are_target_independent() -> Result<(), String> {
     if bad.is_empty() {
         Ok(())
     } else {
-        Err(format!("{} of {} rows differ:\n{}", bad.len(), REF.len(), bad.join("\n")))
+        Err(format!(
+            "{} of {} rows differ:\n{}",
+            bad.len(),
+            REF.len(),
+            bad.join("\n")
+        ))
     }
 }
 
@@ -137,6 +169,10 @@ fn complex_results_have_p_bits() -> Result<(), String> {
     if bad.is_empty() {
         Ok(())
     } else {
-        Err(format!("{} of {total} rows are not p-bit values:\n{}", bad.len(), bad.join("\n")))
+        Err(format!(
+            "{} of {total} rows are not p-bit values:\n{}",
+            bad.len(),
+            bad.join("\n")
+        ))
     }
 }
