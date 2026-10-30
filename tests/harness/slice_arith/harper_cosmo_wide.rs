@@ -3,7 +3,8 @@
 //! cosmological constant, Planck mass, observable mass, h, 1e+-61, 1e+-120, 1e+-300) rounded to 128-bit (or PREC-bit)
 //! dyadics, including cancellation pairs, through harper_oracle::check_row: [LO, HI] contained (CONTRACT 16.S1.1) and
 //! rad <= tau * RREF (the tightness bound). Row and per-op counts are pinned.
-//! COVERS: Ball::add, Ball::sub, Ball::mul, Ball::mul_exact, Ball::sqr, Ball::neg, Ball::abs, Ball::div, Ball::inv, Ball::sqrt
+//! Per-op tests (one per OP tag) re-run that tag's golden rows alone, so each covered method has its own #[test].
+//! COVERS: Ball::add, Ball::sub, Ball::mul, Ball::mul_exact, Ball::sqr, Neg for Ball, Ball::abs, Ball::div, Ball::inv, Ball::sqrt
 
 use super::harper_oracle::check_row;
 use crate::common::goldens::golden_dir;
@@ -75,4 +76,79 @@ fn cosmo_wide_rows_contained_tight() -> Result<(), String> {
             shown
         ))
     }
+}
+
+/// Runs check_row on every golden row whose OP tag is `tag`; requires the pinned WANT_PER_OP count of such rows.
+fn op_rows_contained_tight(tag: &str) -> Result<(), String> {
+    let path = golden_dir()
+        .join("slices")
+        .join("arith")
+        .join("arith_wide_rows.txt");
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("{:?}: {}", path, e))?;
+    let want = WANT_PER_OP
+        .iter()
+        .find(|(op, _)| *op == tag)
+        .map(|(_, n)| *n)
+        .ok_or_else(|| format!("no pinned count for {}", tag))?;
+    let mut n = 0usize;
+    let mut bad: Vec<String> = Vec::new();
+    for line in text.lines().filter(|l| !l.starts_with('#')) {
+        if line.split(' ').next() != Some(tag) {
+            continue;
+        }
+        n = n.checked_add(1).ok_or("count")?;
+        if let Err(e) = check_row(line) {
+            bad.push(format!("{} row {}: {}", tag, n, e.get(..400).unwrap_or(&e)));
+        }
+    }
+    if n != want {
+        return Err(format!("{} {} rows, want {}", n, tag, want));
+    }
+    if bad.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{} of {} {} rows fail:\n{:#?}", bad.len(), n, tag, bad.iter().take(12).collect::<Vec<_>>()))
+    }
+}
+
+// One #[test] per covered method; check_row dispatches each tag to the Ball method of the same name (harper_oracle::run).
+#[test]
+fn cosmo_wide_op_add() -> Result<(), String> {
+    op_rows_contained_tight("add") // Ball::add
+}
+#[test]
+fn cosmo_wide_op_sub() -> Result<(), String> {
+    op_rows_contained_tight("sub") // Ball::sub
+}
+#[test]
+fn cosmo_wide_op_mul() -> Result<(), String> {
+    op_rows_contained_tight("mul") // Ball::mul
+}
+#[test]
+fn cosmo_wide_op_mul_exact() -> Result<(), String> {
+    op_rows_contained_tight("mul_exact") // Ball::mul_exact
+}
+#[test]
+fn cosmo_wide_op_sqr() -> Result<(), String> {
+    op_rows_contained_tight("sqr") // Ball::sqr
+}
+#[test]
+fn cosmo_wide_op_neg() -> Result<(), String> {
+    op_rows_contained_tight("neg") // impl Neg for Ball
+}
+#[test]
+fn cosmo_wide_op_abs() -> Result<(), String> {
+    op_rows_contained_tight("abs") // Ball::abs
+}
+#[test]
+fn cosmo_wide_op_div() -> Result<(), String> {
+    op_rows_contained_tight("div") // Ball::div
+}
+#[test]
+fn cosmo_wide_op_inv() -> Result<(), String> {
+    op_rows_contained_tight("inv") // Ball::inv
+}
+#[test]
+fn cosmo_wide_op_sqrt() -> Result<(), String> {
+    op_rows_contained_tight("sqrt") // Ball::sqrt
 }
