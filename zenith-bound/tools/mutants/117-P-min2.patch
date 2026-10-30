@@ -1,0 +1,12 @@
+diff --git a/src/precision.rs b/src/precision.rs
+--- a/src/precision.rs
++++ b/src/precision.rs
+@@ -9,7 +9,7 @@
+ pub type Precision = usize;
+ 
+ /// Smallest accepted precision in bits.
+-pub const MIN_PRECISION: Precision = 1;
++pub const MIN_PRECISION: Precision = 2;
+ 
+ /// Largest accepted precision in bits: `min(2^60, usize::MAX / 4) - 1` (zf w6 defs.rs), so an exponent plus or minus
+ /// a precision stays inside `±2^62`. That is `2^60 - 1` on 64-bit targets and `2^30 - 1` on 32-bit targets.

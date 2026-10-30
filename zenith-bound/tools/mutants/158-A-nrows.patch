@@ -1,0 +1,12 @@
+diff --git a/src/array.rs b/src/array.rs
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -195,7 +195,7 @@
+ 
+     /// The number of rows.
+     pub fn nrows(&self) -> usize {
+-        self.0.shape().first().map_or(0, |r| *r)
++        self.0.shape().get(1).map_or(0, |r| *r)
+     }
+ 
+     /// The number of columns.

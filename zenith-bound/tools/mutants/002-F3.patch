@@ -1,0 +1,12 @@
+diff --git a/src/mag/mod.rs b/src/mag/mod.rs
+--- a/src/mag/mod.rs
++++ b/src/mag/mod.rs
+@@ -78,7 +78,7 @@
+                 // 2^65 in magnitude), and `i64::try_from` fails exactly when `exp - shift`
+                 // is below `i64::MIN`, which is the documented representation error.
+                 let exp = i128::from(exp)
+-                    .checked_sub(i128::from(shift))
++                    .checked_add(i128::from(shift))
+                     .and_then(|adjusted| i64::try_from(adjusted).ok())
+                     .ok_or(BoundError::Representation {
+                         op: "Mag::finite",

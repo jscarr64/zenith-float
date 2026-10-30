@@ -1,0 +1,7 @@
+# S13 cross-target manifest: one target triple per line, or `host`. Every listed target is run in debug and release with 1 and 7 test threads.
+# TODO (decision D8, Rusty): the cross-target set for P10 is NOT decided (PLAN names thumbv6m-none-eabi, Rusty names thumbv7em; plus i686, wasm32-wasip1).
+#   Until D8 is decided this manifest lists the host only. Add a target only with its std installed and a way to execute its binaries.
+#   Verified on Pop 2026-10-16 (not enabled, pending D8): i686-unknown-linux-musl runs natively and gives digests identical to the host;
+#   thumbv7em-none-eabihf std is installed but no qemu runner exists (no_std target, the harness would also need a no_std build); thumbv6m and wasm32 are not installed.
+# i686-unknown-linux-musl
+host

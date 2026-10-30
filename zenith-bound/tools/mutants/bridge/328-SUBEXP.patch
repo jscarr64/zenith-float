@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 130a321..c2c2fcf 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -143,7 +143,7 @@ impl Mag {
+             words: &words,
+             precision: EXACT_PREC,
+             negative: false,
+-            exponent: exp.max(EXPONENT_MIN),
++            exponent: exp,
+             inexact: false,
+             op_inexact: false,
+         };

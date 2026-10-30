@@ -1,0 +1,12 @@
+diff --git a/src/mag/mod.rs b/src/mag/mod.rs
+--- a/src/mag/mod.rs
++++ b/src/mag/mod.rs
+@@ -79,7 +79,7 @@
+                 // is below `i64::MIN`, which is the documented representation error.
+                 let exp = i128::from(exp)
+                     .checked_sub(i128::from(shift))
+-                    .and_then(|adjusted| i64::try_from(adjusted).ok())
++                    .and_then(|adjusted| i64::try_from(adjusted.max(i128::from(i64::MIN))).ok())
+                     .ok_or(BoundError::Representation {
+                         op: "Mag::finite",
+                         detail: "below the smallest positive Mag",

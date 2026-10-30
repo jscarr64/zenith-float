@@ -1,0 +1,9 @@
+# Protected files: the gate, the scan, the allowlist and baselines, the toolchain pin, CONTRACT clauses, notices.
+* @jscarr64
+/Cargo.toml @jscarr64
+/tools/full_gate.sh @jscarr64
+/tools/digests.sh @jscarr64
+/tools/digest_expected.txt @jscarr64
+/tools/digest_targets.txt @jscarr64
+/tools/tightness_report.py @jscarr64
+/tools/tightness_baseline.txt @jscarr64

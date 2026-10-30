@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..2c6e358 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -177,7 +177,7 @@ impl Ball {
+         };
+         let (m, r) = (self.mid(), self.rad());
+         if r.is_infinity() {
+-            return if strict {
++            return if !strict {
+                 Err(domain(OP, "the all-reals ball reaches below 0"))
+             } else {
+                 Ball::all_reals(prec)

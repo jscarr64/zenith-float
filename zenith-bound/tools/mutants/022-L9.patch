@@ -1,0 +1,12 @@
+diff --git a/src/mag/lower.rs b/src/mag/lower.rs
+--- a/src/mag/lower.rs
++++ b/src/mag/lower.rs
+@@ -70,7 +70,7 @@ fn sub_checked(ea: i64, ma: NonZeroU64, eb: i64, mb: NonZeroU64) -> Option<Mag>
+ /// `self` minus a fraction of that ulp. The subtraction is carried at 63 extra bits and
+ /// then truncated (CONTRACT 14.2). `gap >= 64` here.
+ fn sub_wide(ea: i64, ma: NonZeroU64, gap: i128, mb: NonZeroU64) -> Option<Mag> {
+-    let wide = u128::from(ma.get()) << 63;
++    let wide = u128::from(ma.get()) << 62;
+     // Units of 2^(ea - 127): the subtrahend is mb / 2^(gap - 63), rounded up. shift >= 1 (gap >= 64).
+     // A shift of 64 or more leaves only the fraction (mb < 2^64), which still rounds up to one unit:
+     // for 64 <= shift < 128 the shifted arm would give `mb >> shift == 0` and, because the mask keeps

@@ -1,0 +1,3 @@
+# range: 1300-1399
+# Slice LA4 (src/gls.rs) mutants, owned by LA4 alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
+# ids NNN-<name> with NNN in 1300..=1399; patches go in tools/mutants/gls/ and the patch column reads gls/NNN-<name>.patch.

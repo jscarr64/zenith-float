@@ -1,0 +1,17 @@
+zenith-bound
+Copyright (c) 2026 Jeff Carr
+Licensed under MIT OR Apache-2.0 (see LICENSE-MIT, LICENSE-APACHE).
+
+Third-party code
+- Portions derived from puremp (https://github.com/KarpelesLab/puremp),
+  MIT License, (c) 2026 Karpelès Lab Inc. See NOTICE-puremp.
+
+Test oracles (dev-only, not distributed)
+- FLINT/Arb (via python-flint), MPFR and mpmath are used ONLY as development
+  test oracles. They are not dependencies of the zenith-bound crate, and no
+  part of them is included in or linked into it. FLINT/Arb and MPFR are
+  LGPL-licensed. zenith-bound's algorithms are implemented from published
+  papers only, never from their source (clean-room rule, CONTRIBUTING.md).
+- Golden files generated from oracle output (under tests/ and scripts/) are
+  dev-only test data. They are excluded from the published package and are not
+  part of the library.

@@ -1,0 +1,12 @@
+diff --git a/src/error.rs b/src/error.rs
+--- a/src/error.rs
++++ b/src/error.rs
+@@ -59,7 +59,7 @@
+     pub fn op(&self) -> &'static str {
+         match self {
+             BoundError::Representation { op, .. } => op,
+-            BoundError::InvalidArgument { op, .. } => op,
++            BoundError::InvalidArgument { op: _, .. } => "",
+             BoundError::Domain { op, .. } => op,
+             BoundError::Resource { op, .. } => op,
+             BoundError::NotPositiveDefinite { op, .. } => op,

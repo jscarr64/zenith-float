@@ -1,0 +1,11 @@
+diff --git a/src/mag/sqrt.rs b/src/mag/sqrt.rs
+index 6f35fb4..62e984c 100644
+--- a/src/mag/sqrt.rs
++++ b/src/mag/sqrt.rs
+@@ -62,5 +62,5 @@ fn sqrt_checked(exp: i64, mant: NonZeroU64, up: bool) -> Option<Mag> {
+     let root = radicand.isqrt();
+     // root < 2^64, so root * root < 2^128 and the checked multiply cannot fail.
+     let sticky = root.get().checked_mul(root.get())? != radicand.get();
+-    norm(root, scale.checked_div(2)?, sticky, up)
++    norm(root, scale.checked_div(2)?, !sticky, up)
+ }

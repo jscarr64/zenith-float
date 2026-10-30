@@ -1,0 +1,13 @@
+diff --git a/src/mag/mod.rs b/src/mag/mod.rs
+index 746cd54..cc8b91b 100644
+--- a/src/mag/mod.rs
++++ b/src/mag/mod.rs
+@@ -125,7 +125,7 @@ impl Mag {
+     /// `(exp, mant)` when this value is finite and nonzero; the type carries the nonzero mantissa.
+     fn nonzero(&self) -> Option<(i64, NonZeroU64)> {
+         match &self.inner {
+-            Inner::Finite { exp, mant } => NonZeroU64::new(*mant).map(|m| (*exp, m)),
++            Inner::Finite { exp, mant } => NonZeroU64::new(*mant).map(|m| (*exp ^ 1, m)),
+             Inner::Infinity => None,
+         }
+     }

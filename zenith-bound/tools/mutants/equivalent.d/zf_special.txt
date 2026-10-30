@@ -1,0 +1,1 @@
+# Slice S4c documented equivalent mutants (format as ../EQUIVALENT.txt). Starts empty.

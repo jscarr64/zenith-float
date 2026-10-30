@@ -1,0 +1,14 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 5995d15..6c04131 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -360,7 +360,8 @@ impl Ball {
+             Some((Ordering::Less, _)) => Tri::True,
+             // lo(a) >= hi(b): every point of `a` is >= every point of `b`, so `a < b` is certainly False, also when the
+             // balls only touch (R > 0, lo(a) = hi(b)).
+-            Some((_, Ordering::Greater | Ordering::Equal)) => Tri::False,
++            Some((_, Ordering::Greater)) => Tri::Unknown,
++            Some((_, Ordering::Equal)) => Tri::False,
+             Some((Ordering::Equal | Ordering::Greater, Ordering::Less)) | None => Tri::Unknown,
+         }
+     }

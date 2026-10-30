@@ -1,0 +1,12 @@
+diff --git a/src/arith.rs b/src/arith.rs
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -219,7 +219,7 @@
+             }
+             (Ordering::Less, true, _) => Err(domain(OP, "m - r < 0 under Strict")),
+             (Ordering::Less, false, Ordering::Less) => {
+-                Err(domain(OP, "m + r < 0: the ball misses [0, inf)"))
++                Ball::exact(ExactNum::from(0i64), prec)
+             }
+             (Ordering::Less, false, Ordering::Equal) => Ball::exact(ExactNum::from(0i64), prec),
+         }

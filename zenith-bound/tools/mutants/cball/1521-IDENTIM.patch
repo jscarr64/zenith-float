@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -63,7 +63,7 @@
+ 
+     /// Both parts identical (same mid, rad and prec).
+     pub fn identical(&self, other: &CBall) -> bool {
+-        self.re.identical(&other.re) && self.im.identical(&other.im)
++        self.re.identical(&other.re)
+     }
+ 
+     /// `(re, −im)`, exact.

@@ -1,0 +1,16 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 8e903ec..ddc977d 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -140,9 +140,9 @@ impl Mag {
+         let tb_pos = big_neg != a_big;
+         // u = tb - sb m, kept as u = (u_pos ? +1 : -1) * ur with ur formed from big and m.
+         let (ur, u_keep) = if big_neg {
+-            (big.add_full_prec(&m), a_big)
+-        } else {
+             (big.sub_full_prec(&m), a_big)
++        } else {
++            (big.add_full_prec(&m), a_big)
+         };
+         if ur.inexact() || ur.is_nan() {
+             return None;

@@ -1,0 +1,12 @@
+diff --git a/src/arith.rs b/src/arith.rs
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -99,7 +99,7 @@
+     /// `Ok(all reals)`.
+     pub fn mul_exact(self, c: &ExactNum, prec: Precision) -> BoundResult<Ball> {
+         check_prec("Ball::mul_exact", prec)?;
+-        if c.is_nan() || c.is_inf() {
++        if c.is_nan() {
+             return Err(BoundError::Representation {
+                 op: "Ball::mul_exact",
+                 detail: "NaN or infinite scalar",

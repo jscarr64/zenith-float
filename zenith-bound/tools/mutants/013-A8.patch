@@ -1,0 +1,13 @@
+diff --git a/src/mag/add.rs b/src/mag/add.rs
+index 8bcd057..bd53661 100644
+--- a/src/mag/add.rs
++++ b/src/mag/add.rs
+@@ -17,7 +17,7 @@ impl Mag {
+     /// sticky sum rounds up one unit in the last place. When the exponent gap is at least 64
+     /// and the smaller operand is nonzero, the result is the larger operand plus one unit.
+     pub fn add_up(&self, other: &Mag) -> Mag {
+-        if self.is_infinity() || other.is_infinity() {
++        if self.is_infinity() && other.is_infinity() {
+             Mag::infinity()
+         } else {
+             match (self.nonzero(), other.nonzero()) {

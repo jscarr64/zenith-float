@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 130a321..9631a53 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -178,7 +178,7 @@ fn map_zf_error(op: &'static str, e: Error) -> BoundError {
+             op,
+             detail: "zf precision retry exhausted",
+         },
+-        Error::MemoryAllocation => BoundError::Resource {
++        Error::MemoryAllocation => BoundError::Domain {
+             op,
+             detail: "zf memory allocation",
+         },

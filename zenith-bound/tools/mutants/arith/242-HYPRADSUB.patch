@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 50bf6cd..e0ad2b1 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -47,7 +47,7 @@ impl Ball {
+     pub fn add(self, other: &Ball, prec: Precision) -> BoundResult<Ball> {
+         check_prec("Ball::add", prec)?;
+         let (m, r, _) = self.into_parts();
+-        let rad = r.add_up(other.rad());
++        let rad = r.mul_up(other.rad()).add_up(&r);
+         finish(
+             "Ball::add",
+             m.add(other.mid(), prec, MID_RM),

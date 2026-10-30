@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 67b8452..b00c64c 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -60,7 +60,7 @@ fn top_of_words(words: &[u64], exponent: i64) -> Result<Option<(u64, bool, i64)>
+         .checked_shr(64)
+         .and_then(|t| u64::try_from(t).ok())
+         .unwrap_or(0);
+-    let sticky = rest_sticky || (window & u128::from(u64::MAX)) != 0;
++    let sticky = rest_sticky;
+     // Leading bit of M sits at 2^(exponent - 64 * skipped - lz - 1), so the `0.mant` exponent is this.
+     let shift = i64::try_from(skipped)
+         .ok()

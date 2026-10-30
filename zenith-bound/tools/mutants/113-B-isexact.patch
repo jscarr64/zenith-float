@@ -1,0 +1,12 @@
+diff --git a/src/ball/mod.rs b/src/ball/mod.rs
+--- a/src/ball/mod.rs
++++ b/src/ball/mod.rs
+@@ -89,7 +89,7 @@
+ 
+     /// True iff the radius is zero, so the ball is the single point `mid`.
+     pub fn is_exact(&self) -> bool {
+-        self.rad.is_zero()
++        !self.rad.is_infinity()
+     }
+ 
+     /// Moves the parts out: `(mid, rad, prec)`.

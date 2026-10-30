@@ -1,0 +1,13 @@
+diff --git a/src/mag/sqrt.rs b/src/mag/sqrt.rs
+index 6f35fb4..01b278e 100644
+--- a/src/mag/sqrt.rs
++++ b/src/mag/sqrt.rs
+@@ -10,7 +10,7 @@ use core::num::NonZeroU64;
+ /// `2^64` as a nonzero `u128`. `isolate_highest_one` keeps only the top set bit of a value whose
+ /// top bit is bit 64, so there is no `None` arm to settle and no value to get wrong.
+ fn p64() -> NonZeroU128 {
+-    (NonZeroU128::MIN | (1u128 << 64)).isolate_highest_one()
++    (NonZeroU128::MIN | (1u128 << 63)).isolate_highest_one()
+ }
+ 
+ /// `2^63` as a nonzero `u128`, built the same way.

@@ -1,0 +1,12 @@
+diff --git a/src/precision.rs b/src/precision.rs
+--- a/src/precision.rs
++++ b/src/precision.rs
+@@ -17,7 +17,7 @@
+ 
+ const fn max_precision() -> Precision {
+     let by_size = usize::MAX >> 2;
+-    let lim = if let Some(by_exponent) = 1usize.checked_shl(60) {
++    let lim = if let Some(by_exponent) = 1usize.checked_shl(61) {
+         if by_exponent < by_size {
+             by_exponent
+         } else {

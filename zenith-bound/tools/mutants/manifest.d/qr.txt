@@ -1,0 +1,3 @@
+# range: 1200-1299
+# Slice LA3 (src/qr.rs) mutants, owned by LA3 alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
+# ids NNN-<name> with NNN in 1200..=1299; patches go in tools/mutants/qr/ and the patch column reads qr/NNN-<name>.patch.

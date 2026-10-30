@@ -1,0 +1,2 @@
+# path:hash<TAB>reason. EMPTY to start. ONLY JEFF MAY EXTEND THIS FILE (see .github/CODEOWNERS); models never add entries.
+# Keys are printed as allow-key= by tools/rules_scan.sh. An unwrap that is absolutely necessary (tests included) is listed here with its reason, for Jeff.

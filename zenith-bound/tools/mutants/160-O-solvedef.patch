@@ -1,0 +1,12 @@
+diff --git a/src/policy.rs b/src/policy.rs
+--- a/src/policy.rs
++++ b/src/policy.rs
+@@ -21,7 +21,7 @@
+ 
+ impl Default for SolveOpts {
+     fn default() -> Self {
+-        SolveOpts { refine_steps: 2 }
++        SolveOpts { refine_steps: 3 }
+     }
+ }
+ 

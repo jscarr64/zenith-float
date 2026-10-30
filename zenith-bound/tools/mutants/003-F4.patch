@@ -1,0 +1,12 @@
+diff --git a/src/mag/mod.rs b/src/mag/mod.rs
+--- a/src/mag/mod.rs
++++ b/src/mag/mod.rs
+@@ -84,7 +84,7 @@
+                         op: "Mag::finite",
+                         detail: "below the smallest positive Mag",
+                     })?;
+-                Ok(Mag::from_canonical(exp, mant << shift))
++                Ok(Mag::from_canonical(exp, mant << (shift % 32)))
+             }
+         }
+     }

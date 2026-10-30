@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..9b751ab 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -252,7 +252,7 @@ impl Ball {
+             Ok(Some(q)) => q,
+             Ok(None) | Err(_) => m.div(n, prec, MID_RM),
+         };
+-        finish(OP, q, &rad, prec, false)
++        finish(OP, q, &rad, prec, true)
+     }
+ 
+     /// `1 / (n ± s) = round(1 / n) ± (s / (|n| (|n| - s)) + ε)` when `|n| > s` (16.S1.8).

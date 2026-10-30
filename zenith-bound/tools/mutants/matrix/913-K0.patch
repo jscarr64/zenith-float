@@ -1,0 +1,11 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -108,6 +108,7 @@
+     I: Iterator<Item = (&'a ExactNum, &'a Mag, &'a ExactNum, &'a Mag)>,
+ {
+     let w = work_prec(prec, k);
++    if k == 0 { return Err(resource(op, "k == 0")); }
+     let mut s = ExactNum::from(0i64);
+     let mut rad = Mag::zero();
+     for (ma, ra, mb, rb) in terms {

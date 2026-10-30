@@ -1,0 +1,13 @@
+diff --git a/src/mag/lower.rs b/src/mag/lower.rs
+index d225a6c..1215890 100644
+--- a/src/mag/lower.rs
++++ b/src/mag/lower.rs
+@@ -58,7 +58,7 @@ fn sub_checked(ea: i64, ma: NonZeroU64, eb: i64, mb: NonZeroU64) -> Option<Mag>
+             }
+         }
+         // gap < 0: the minuend has the smaller exponent, so a < b and the difference is below zero.
+-        Err(_) if gap < 0 => Some(Mag::zero()),
++        Err(_) if gap < -1 => Some(Mag::zero()),
+         // gap >= 64.
+         _ => sub_wide(ea, ma, gap, mb),
+     }

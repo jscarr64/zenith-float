@@ -1,0 +1,13 @@
+diff --git a/src/mag/cmp.rs b/src/mag/cmp.rs
+index 41a876a..cdb484a 100644
+--- a/src/mag/cmp.rs
++++ b/src/mag/cmp.rs
+@@ -24,7 +24,7 @@ impl Ord for Mag {
+     fn cmp(&self, other: &Mag) -> Ordering {
+         match (&self.inner, &other.inner) {
+             (Inner::Infinity, Inner::Infinity) => Ordering::Equal,
+-            (Inner::Infinity, _) => Ordering::Greater,
++            (Inner::Infinity, _) => Ordering::Less,
+             (_, Inner::Infinity) => Ordering::Less,
+             (Inner::Finite { exp: ea, mant: ma }, Inner::Finite { exp: eb, mant: mb }) => {
+                 match (*ma == 0, *mb == 0) {

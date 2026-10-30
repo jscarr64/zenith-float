@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 8fff0d2..6d43555 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -267,7 +267,7 @@ pub fn constant_ball(cc: &mut Consts, c: &Constant, prec: Precision) -> BoundRes
+         op: OP,
+         detail: "precision + 1 overflows",
+     })?;
+-    let mid = down.add(&half, wide, RoundingMode::Down);
++    let mid = down.add(&ExactNum::new(wide), wide, RoundingMode::Down);
+     if mid.inexact() || !mid.is_positive() {
+         return Err(not_one_ulp);
+     }

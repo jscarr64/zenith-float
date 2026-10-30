@@ -1,0 +1,4 @@
+# sha256 of heavy-tier LA golds (not committed; rebuilt deterministically by scripts/gen_la_goldens.py --heavy DIR,
+# verified by scripts/gen_la_goldens.py --check, step 'heavy' at merge points). sha256sum format.
+29995d37b2abe7cb0f621f06e6bfb4ea976a93e96801fb0257374090613ac222  la_qr_enc4096_heavy.txt
+cc87f1c458bdc30220858e4803030d777f62de2dfaca6d56c76e1871ac0c0c5f  la_qr_heavy.txt

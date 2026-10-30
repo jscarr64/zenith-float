@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index deeda66..0b71fae 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -257,7 +257,7 @@ fn check_prec(op: &'static str, prec: Precision) -> BoundResult<()> {
+ /// CONTRACT 10.4 / O2: overflow detection and the NaN error-kind mapping.
+ fn classify(op: &'static str, raw: ExactNum) -> BoundResult<Mid> {
+     if raw.is_inf() {
+-        return Ok(Mid::Overflow);
++        return Ok(Mid::Value(raw));
+     }
+     if raw.is_nan() {
+         return match raw.err() {

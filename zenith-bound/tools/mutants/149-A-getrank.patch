@@ -1,0 +1,12 @@
+diff --git a/src/array.rs b/src/array.rs
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -88,7 +88,7 @@
+ 
+     /// The element at `index` (one entry per axis), or `None` when out of range.
+     pub fn get(&self, index: &[usize]) -> Option<&Ball> {
+-        if index.len() != self.shape.len() {
++        if index.len() > self.shape.len() {
+             return None;
+         }
+         let mut offset: usize = 0;

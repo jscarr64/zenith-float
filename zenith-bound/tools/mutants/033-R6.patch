@@ -1,0 +1,13 @@
+diff --git a/src/mag/round.rs b/src/mag/round.rs
+index 904ec82..b172803 100644
+--- a/src/mag/round.rs
++++ b/src/mag/round.rs
+@@ -44,7 +44,7 @@ fn pack(exp: i128, mant: u64, up: bool) -> Mag {
+     match i64::try_from(exp) {
+         Ok(e) => Mag::from_canonical(e, mant),
+         Err(_) => {
+-            if exp > i128::from(i64::MAX) {
++            if exp >= i128::from(i64::MAX) {
+                 if up {
+                     Mag::infinity()
+                 } else {

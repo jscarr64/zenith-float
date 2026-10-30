@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -17,7 +17,7 @@
+ /// Every midpoint rounding is to nearest, ties to even (CONTRACT 15.1, O19), as in S1.
+ const MID_RM: RoundingMode = RoundingMode::ToEven;
+ /// Guard bits on top of `ceil(log2(K + 1))` (16.S6.7).
+-const GUARD_EXTRA: Precision = 2;
++const GUARD_EXTRA: Precision = 0;
+ 
+ /// `prec` outside `MIN_PRECISION..=MAX_PRECISION` is `InvalidArgument` (16.S6.3), checked first in every op.
+ fn check_prec(op: &'static str, prec: Precision) -> BoundResult<()> {

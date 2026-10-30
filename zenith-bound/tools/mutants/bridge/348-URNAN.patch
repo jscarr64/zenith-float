@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 8e903ec..71b5577 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -144,7 +144,7 @@ impl Mag {
+         } else {
+             (big.sub_full_prec(&m), a_big)
+         };
+-        if ur.inexact() || ur.is_nan() {
++        if ur.inexact() {
+             return None;
+         }
+         // Sign of ts: small enters with + when it is a, with - when it is b.

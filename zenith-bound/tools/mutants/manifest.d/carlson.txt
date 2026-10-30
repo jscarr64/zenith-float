@@ -1,0 +1,3 @@
+# range: 600-699
+# Slice S4b (src/carlson.rs) mutants, owned by S4b alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
+# ids NNN-<name> with NNN in 600..=699; patches go in tools/mutants/carlson/ and the patch column reads carlson/NNN-<name>.patch.

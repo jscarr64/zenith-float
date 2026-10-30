@@ -1,0 +1,13 @@
+diff --git a/src/mag/cmp.rs b/src/mag/cmp.rs
+index 41a876a..fbc6b7c 100644
+--- a/src/mag/cmp.rs
++++ b/src/mag/cmp.rs
+@@ -30,7 +30,7 @@ impl Ord for Mag {
+                 match (*ma == 0, *mb == 0) {
+                     (true, true) => Ordering::Equal,
+                     (true, false) => Ordering::Less,
+-                    (false, true) => Ordering::Greater,
++                    (false, true) => Ordering::Less,
+                     (false, false) => (ea, ma).cmp(&(eb, mb)),
+                 }
+             }

@@ -1,0 +1,13 @@
+diff --git a/src/mag/div.rs b/src/mag/div.rs
+index 4ae9f19..ed34d72 100644
+--- a/src/mag/div.rs
++++ b/src/mag/div.rs
+@@ -30,7 +30,7 @@ impl Mag {
+ }
+ 
+ fn div_parts(num: &Mag, den: &Mag, up: bool) -> Mag {
+-    if num.is_infinity() || den.is_infinity() {
++    if num.is_infinity() && den.is_infinity() {
+         return loose(up);
+     }
+     match (num.nonzero(), den.nonzero()) {

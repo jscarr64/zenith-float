@@ -1,0 +1,12 @@
+diff --git a/src/mag/mod.rs b/src/mag/mod.rs
+--- a/src/mag/mod.rs
++++ b/src/mag/mod.rs
+@@ -65,7 +65,7 @@
+     /// representable and this returns [`BoundError::Representation`] without rounding.
+     pub fn finite(mant: u64, exp: i64) -> Result<Mag, BoundError> {
+         match NonZeroU64::new(mant) {
+-            None if exp == 0 => Ok(Mag::zero()),
++            None if exp != 0 => Ok(Mag::zero()),
+             None => Err(BoundError::Representation {
+                 op: "Mag::finite",
+                 detail: "zero mantissa with nonzero exponent",

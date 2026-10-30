@@ -1,0 +1,13 @@
+diff --git a/src/error.rs b/src/error.rs
+index 587ab51..b361db4 100644
+--- a/src/error.rs
++++ b/src/error.rs
+@@ -103,7 +103,7 @@ impl BoundError {
+             BoundError::Resource { detail, .. } => detail,
+             BoundError::NotPositiveDefinite { detail, .. } => detail,
+             BoundError::Singular { detail, .. } => detail,
+-            BoundError::NotConverged { detail, .. } => detail,
++            BoundError::NotConverged { detail: _, .. } => "",
+             BoundError::DimensionMismatch { detail, .. } => detail,
+             BoundError::NotSymmetric { detail, .. } => detail,
+         }

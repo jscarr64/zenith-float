@@ -1,0 +1,10 @@
+diff --git a/src/enclosure.rs b/src/enclosure.rs
+--- a/src/enclosure.rs
++++ b/src/enclosure.rs
+@@ -94,5 +94,5 @@
+ fn working_prec(a: &ExactNum, b: &ExactNum) -> Option<usize> {
+     let pa = a.precision().map_or(MIN_PREC, |p| p.max(MIN_PREC));
+     let pb = b.precision().map_or(MIN_PREC, |p| p.max(MIN_PREC));
+-    pa.max(pb).checked_add(GUARD_BITS)
++    pa.max(pb).checked_add(GUARD_BITS - GUARD_BITS)
+ }

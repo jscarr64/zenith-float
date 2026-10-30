@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 0ce786b..38bc41c 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -162,7 +162,7 @@ impl Mag {
+                 } else {
+                     // y = fu ur + fs small with fu = u_keep, fs = (sign of small as ±) == ts_pos.
+                     let small_pos = !small.is_negative();
+-                    let fs_plus = small_pos == ts_pos;
++                    let fs_plus = small_pos != ts_pos;
+                     let z = if u_keep == fs_plus {
+                         ur.add_full_prec(small)
+                     } else {
