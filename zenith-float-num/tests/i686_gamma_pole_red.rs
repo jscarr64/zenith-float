@@ -40,3 +40,29 @@ fn gamma_near_pole_matches_high_precision() -> Result<(), String> {
     }
     Ok(())
 }
+
+/// Host rows (red on x86_64 too): k = 256 and 320 lose more bits to cancellation than even the
+/// 64-bit word guard (128 bits) covers. Reference: scripts/gen_gamma_near_pole_ref.py, env
+/// mpmath-1.3.0 (mpmath 1.3.0, Python 3.12.14), mpmath.gamma at mp.prec = 2048 cross-checked with
+/// the reflection formula DLMF 5.5.3, rounded nearest-even to 256 bits. Generator output SHA256:
+/// 63109927bf51f76ceaac05db3af0565f7bdb77abda694275a31fad7daaadc714
+const HOST_REF: &[(usize, &str)] = &[
+    (256, "-10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+    (320, "-100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+];
+
+#[test]
+fn gamma_near_pole_host_rows_match_mpmath() -> Result<(), String> {
+    let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
+    let mut bad = Vec::new();
+    for &(k, bits) in HOST_REF {
+        let xs = format!("-0.{}", "1".repeat(k));
+        let x = ExactNum::parse(&xs, zenith_float_num::Radix::Bin, k, RoundingMode::None, &mut cc);
+        let want = ExactNum::parse(bits, zenith_float_num::Radix::Bin, 512, RoundingMode::None, &mut cc);
+        let got = x.gamma(256, RoundingMode::ToEven, &mut cc);
+        if got != want {
+            bad.push(format!("k={k}: got {got:?}, want {bits}"));
+        }
+    }
+    if bad.is_empty() { Ok(()) } else { Err(bad.join("\n")) }
+}
