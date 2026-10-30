@@ -270,7 +270,7 @@ impl ExactNumNumber {
         let m = self.mantissa_max_bit_len();
         let tiny_exp = -Exponent::try_from(m + p + 8).map_err(|_| Error::InvalidArgument)?;
         if self.exponent() < tiny_exp {
-            let pw = round_p(m + p + 3 * WORD_BIT_SIZE);
+            let pw = round_p(m + p + 3 * GAMMA_GUARD);
             let one = Self::from_word(1, pw)?;
             let q = one.div(self, pw, RoundingMode::ToZero)?;
             let mut r = if q.inexact() {
@@ -287,12 +287,12 @@ impl ExactNumNumber {
         // Ziv cancellation charge for the reflection branch: near a pole -n, sin(πx) ≈ ±π|x + n|, so
         // rounding πx at p_x costs about log2|x| - log2|x + n| bits relative. Charge them up front.
         let charge = self.reflection_charge()?;
-        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_inc = GAMMA_GUARD;
         let mut p_wrk = p.max(m) + p_inc;
 
         loop {
             let p_x = p_wrk
-                .checked_add(WORD_BIT_SIZE * 2)
+                .checked_add(GAMMA_GUARD * 2)
                 .and_then(|v| v.checked_add(charge))
                 .ok_or(Error::InvalidArgument)?;
             let mut ret = self.gamma_at(p_x, cc)?;
@@ -671,7 +671,7 @@ impl ExactNumNumber {
         } else {
             let q = f
                 .mantissa_max_bit_len()
-                .checked_add(WORD_BIT_SIZE)
+                .checked_add(GAMMA_GUARD)
                 .ok_or(Error::InvalidArgument)?;
             let one = Self::from_word(1, q)?;
             one.sub(&f, q, RoundingMode::None)?.exponent()
@@ -4825,6 +4825,10 @@ fn series_negligible(t: &ExactNumNumber, sum: &ExactNumNumber, p: usize) -> bool
     let se = if sum.is_zero() { 0 } else { sum.exponent() };
     t.exponent() + (p as i64) < se
 }
+
+/// Guard bits of `gamma` (tiny-|x| path, Ziv step and reflection charge): 64 on every target, so the
+/// working precision and retry count do not depend on the word size.
+const GAMMA_GUARD: usize = 64;
 
 /// Largest cancellation guard (bits) the Bessel power series will use. For `J`/`Y` with
 /// `|x| ≳ 10⁴` the Hankel expansion is used instead when `|ν|² < 2|x|`. The series path still

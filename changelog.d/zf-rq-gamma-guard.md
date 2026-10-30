@@ -1,0 +1,1 @@
+- gamma: guard bits and the Ziv step are a fixed 64 bits (GAMMA_GUARD) on every target instead of one machine word.
