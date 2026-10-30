@@ -917,8 +917,8 @@ fn out_of_range_precisions_are_refused() -> Result<(), String> {
         format!("suite=mag_add seed=0123456789abcdef case=42 op=add prec={p} rm=ToEven a=+8000000000000000e-5~r=ulp b=-0~r=zero")
     };
     ReplayLine::parse_line(&line(max)).map_err(|e| format!("MAX_PRECISION refused: {e}"))?;
-    let one = zenith_float_num::ExactNum::from_word(1, 64);
-    zenith_bound::ball::Ball::exact(one.clone(), max)
+    let one = || zenith_float_num::ExactNum::from_word(1, 64);
+    zenith_bound::ball::Ball::exact(one(), max)
         .map_err(|e| format!("Ball::exact at MAX_PRECISION: {e:?}"))?;
     for p in [max.checked_add(1).ok_or("max + 1")?, usize::MAX] {
         match ReplayLine::parse_line(&line(p)) {
@@ -929,7 +929,7 @@ fn out_of_range_precisions_are_refused() -> Result<(), String> {
                 ))
             }
         }
-        match zenith_bound::ball::Ball::exact(one.clone(), p) {
+        match zenith_bound::ball::Ball::exact(one(), p) {
             Err(zenith_bound::error::BoundError::InvalidArgument { .. }) => {}
             other => {
                 return Err(format!(

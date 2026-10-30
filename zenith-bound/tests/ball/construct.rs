@@ -204,6 +204,30 @@ fn prec_is_stored_as_requested() -> Result<(), String> {
     Ok(())
 }
 
+/// The 32-bit counterpart of the candidates `prec_is_stored_as_requested` skips: a candidate that is a usize but above
+/// MAX_PRECISION is refused with InvalidArgument (never a panic or a Ball); one that is not a usize at all is not
+/// representable (`usize::try_from` refuses it). On 64-bit targets no candidate is skipped and this loop checks nothing
+/// beyond that.
+#[test]
+fn skipped_prec_candidates_are_refused() -> Result<(), String> {
+    for p in [0xFFFF_FFFFu64, 1 << 32] {
+        match usize::try_from(p) {
+            Err(_) => {}
+            Ok(p) if p <= zenith_bound::MAX_PRECISION => {}
+            Ok(p) => match Ball::exact(num(1), p) {
+                Err(BoundError::InvalidArgument { .. }) => {}
+                other => {
+                    return Err(format!(
+                        "exact(1, {}): want InvalidArgument, got {:?}",
+                        p, other
+                    ))
+                }
+            },
+        }
+    }
+    Ok(())
+}
+
 #[test]
 fn into_parts_moves_the_fields_out() -> Result<(), String> {
     let (m, r, p) = ok(

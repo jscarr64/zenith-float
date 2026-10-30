@@ -100,6 +100,30 @@ fn half_ulp_at_the_zf_bounds_rounds_an_underflow_out_to_the_smallest_positive_ma
     Ok(())
 }
 
+/// The 32-bit counterpart of the 2^62 + k precisions skipped in `precisions()` and of
+/// `the_ulp_underflow_inside_the_zf_range_starts_just_above_precision_2_62`: 2^62 + k is not a usize there
+/// (not representable), and the largest usize precision is refused by the Ball constructors with InvalidArgument.
+#[cfg(target_pointer_width = "32")]
+#[test]
+fn precision_2_62_is_not_representable_on_32_bit() -> Result<(), String> {
+    for k in 1..=3 {
+        if let Some(p) = above_2_62_opt(k) {
+            return Err(format!(
+                "2^62 + {} is a usize ({}) on a 32-bit target",
+                k, p
+            ));
+        }
+    }
+    let one = zenith_float_num::ExactNum::from_word(1, 64);
+    match zenith_bound::ball::Ball::exact(one, usize::MAX) {
+        Err(zenith_bound::error::BoundError::InvalidArgument { .. }) => Ok(()),
+        other => Err(format!(
+            "Ball::exact(1, usize::MAX): want InvalidArgument, got {:?}",
+            other
+        )),
+    }
+}
+
 /// Needs a usize precision above 2^62, so it is compiled only for 64-bit targets.
 #[cfg(target_pointer_width = "64")]
 #[test]
