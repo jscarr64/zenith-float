@@ -1,0 +1,108 @@
+774f10d,2026-10-29,fix(32-bit): cexpr! returns InvalidArgument NaN for an unrepresentable cancellation
+baaf2ac,2026-10-29,fix(32-bit): part_cancel uses checked_sub/checked_add and returns None (no saturating)
+8533b2e,2026-10-29,fix(32-bit): part_cancel saturates the cancelled-bit count (no +1 overflow)
+d38b3fe,2026-10-29,fix(32-bit): reduce_trig_arg converts the exponent with try_from, saturating to the cap
+9ee8b9f,2026-10-29,fix(32-bit): format writes the exponent magnitude from u64 (no usize truncation/saturation)
+370765c,2026-10-29,fix(32-bit): to-decimal reduces |n_wrk| in u64 (no abs_usize saturation)
+fa64a5d,2026-10-29,fix(32-bit): from-decimal splits |n| in u64 (no abs_usize saturation)
+6e2d3b6,2026-10-29,fix(32-bit): powsi carries the exponent integer as u64 (no usize truncation/saturation)
+0c242b8,2026-10-24,fix(r14): Spence review — fmt R14 hunks, checked significant_bits, exhaustive RawKind arms, no NaN fallback in float! raw parts, p>MAX_PRECISION test, op_inexact-on-Zero doc
+bf1da91,2026-10-24,fix(tests, gate): mpfr log sweeps use shifted::ref_log; all-features clippy clean; full_gate keeps step logs
+76b8c2f,2026-10-24,fix(32-bit, gate): i686 test build; hex_golds quiet for the guard; full_gate logs under $HOME
+3971b1e,2026-10-24,fix(r14): RawParts carries op_inexact; bit-identical round trip of both inexact flags
+6528746,2026-10-24,fix(oracle): edges goldens regenerated for exponent range +-(2^62-1); MPFR cross-check in a translated frame
+aeeedf3,2026-10-24,fix(log, 32-bit): exponent integer through u64, not a saturating usize; log_extreme goldens run on 32-bit words
+1a4327e,2026-10-24,fix(log2): log2(1) is the canonical zero; log_extreme goldens for ln/log2/log10 (mpmath p+256/p+512)
+e5b8912,2026-10-24,fix(r13-followup): from_words rejects exponents outside ±(2^62-1)
+7acb613,2026-10-24,fix(r13-followup): div_exact checks precision first; document error order
+468ad72,2026-10-24,fix(log): log with a base rounds at p; exact results stay exact; verifier: saturated tanh
+2b931d2,2026-10-24,fix(recip): Newton exactness check uses the exact product; verifier: signed zero nth_root
+da74a79,2026-10-24,fix(pow): integer power underflow flushes onto the result precision quantum
+f97212a,2026-10-24,fix(complex): div keeps the direction of a far smaller numerator term; verifier: powi by M**n, complex None-mode bounds (exact or componentwise)
+d783ed3,2026-10-24,fix(pow): an underflowing non-integer power rounds by mode and is inexact (was an exact zero); verifier models full-prec underflow beyond MAX_PRECISION
+f78f4d6,2026-10-24,fix(pow): N/2^j powers through an exact root also round an underflowing power onto the subnormal grid (range dispatch moved into pow_exact_integer)
+0cfee92,2026-10-24,fix(num): full-precision add/sub/mul keep every bit of a subnormal result (widen before the subnormal shift); round flag test covers a subnormal operand
+79ca61c,2026-10-24,fix(round,pow): round() reports its own rounding; integer power of a tiny subnormal rounds onto the subnormal grid instead of an exact zero; add digest dump helper and mpmath verifier (digest pins not yet updated)
+7a79b09,2026-10-24,fix(tests): restore the closing brace of log10_over_the_whole_range (lost in the c1f7330 rebase resolution; wide_primitives.rs did not parse)
+9110392,2026-10-24,fix(r13 golds): reject unrepresentable generator args (3*2^(EMIN-40) at p=24 encoded as 0); regenerate; runner green
+388afc6,2026-10-24,fix(ext): round_exact never returns an unrounded fallback value
+3965cdb,2026-10-24,fix(s9): guard cap-then-continue loops in special.rs
+7307f44,2026-10-24,fix(s9): digamma near-root shift loop hit STIRLING_SHIFT_MAX
+507c685,2026-10-24,fix(s9): gamma(-0) = -Inf exactly (sign of the zero, MPFR)
+435ca58,2026-10-24,fix(i64): round cap, sin_cos bound, conv_to_dec log10(2) in i128; re-aim i64 test fallout (inexact, cbrt, parser, conv round trip)
+4acddc5,2026-10-24,fix(s9): expm1 large negative x rounds -1 once toward +0
+26af74a,2026-10-24,fix(s9): digamma near-root cancellation, zero/tiny/huge x, half-integers
+9a817e2,2026-10-24,fix(s9): gamma timeouts (tiny-x Ziv stall, Stirling shift-loop cap)
+927e495,2026-10-24,fix(s9): J0/J1 tiny-x rounding, J1(-0)=-0, near-zero cancellation widening
+87789cb,2026-10-24,fix(s9): riemann_zeta for real s (Euler-Maclaurin + reflection), zeta(1) invalid, zeta(-2k)=+0
+36e388e,2026-10-24,fix(s9): ln_gamma is ln|Gamma| with poles, negative x and directional overflow
+a219bee,2026-10-24,fix(s9): erf/erfc near 1 and 2 round base±tiny under directed modes
+2f466af,2026-10-24,fix(s9): log1p of huge x is ln(x)+1/x, no spurious overflow
+50a81d2,2026-10-24,fix(s9): erfc underflow is +0 / min subnormal, never -0
+0cdb297,2026-10-24,fix(complex): div rounds the exact quotient once (exact products and sums, one division)
+bc9df25,2026-10-23,fix(complex): mul reports a product that rounded to a zero part
+87ae1fb,2026-10-23,fix(div): finite / ±Inf zero takes the sign of the quotient
+c45708b,2026-10-23,fix(fma): exponent gap in i128 so a subnormal product and an addend near EXPONENT_MAX do not wrap
+0099044,2026-10-23,fix(atan2): i128 for the tiny-quotient shortcut test (huge y / tiny x gave Inf)
+dbb4f8f,2026-10-23,fix(ops): compute_small_exp compares in i128 (i64::MIN negation wrapped at EXPONENT_MIN)
+825e93e,2026-10-23,fix(ldexp): i128 exponent sum; underflow rounds onto the subnormal grid
+cab00e8,2026-10-23,fix(acosh): real guard bits on the ln(2x) branch
+a068c0c,2026-10-23,fix(nth_root): prove the Newton start error bound (start precision from exponent and n)
+de2ded0,2026-10-23,fix(nth_root): bound the exact-root check's power precision (large n ran out of memory)
+45a6243,2026-10-23,fix(log10): exact powers of ten are exact at every precision (the quotient need not be an integer)
+c04ee8f,2026-10-23,fix: Consts pi/e/ln_2/ln_10 round at exactly p bits (round_exact)
+d20f094,2026-10-23,fix: ExactNumArray constructors and lu_decomp reject p=0
+6c85925,2026-10-23,fix: ExactNum::rem_pi rejects p=0 (the scalar p=0 test now covers rem_pi)
+ceb15e7,2026-10-23,fix: reject p = 0 at every public entry point; crate-private new_internal for full-prec kernels
+ad462f0,2026-10-23,test: pow(0,-Inf)=+Inf, pow(2,-Inf)=+0 per IEEE 754/MPFR; re-pin exp_pow_grid_digest
+c5dabeb,2026-10-23,powsi: (-0)^(negative odd n) is -Inf; W6 known_wrong now empty
+f5c40b5,2026-10-23,powi/powsi: (-0)^(even n > 0) is +0; 4 W6 known_wrong removed
+c953ad8,2026-10-23,pow: (-Inf)^(negative odd integer) is -0; 2 W6 known_wrong removed
+9923729,2026-10-23,pow: x^(+-Inf) decided by |x| against 1 (IEEE 754 / MPFR); 9 W6 known_wrong removed
+d8f64d3,2026-10-23,Tests: W6 pow/powi/powsi special values (+-Inf operands, signed zero, NaN rule) vs MPFR; 17 red known_wrong entries
+de02bb2,2026-10-23,fix(complex): mul reports a product that rounded to a zero part
+3e32f1d,2026-10-23,fix(div): finite / ±Inf zero takes the sign of the quotient
+6c2598b,2026-10-23,fix(fma): exponent gap in i128 so a subnormal product and an addend near EXPONENT_MAX do not wrap
+88bafb0,2026-10-23,fix(atan2): i128 for the tiny-quotient shortcut test (huge y / tiny x gave Inf)
+3389117,2026-10-23,fix(ops): compute_small_exp compares in i128 (i64::MIN negation wrapped at EXPONENT_MIN)
+5a9a83b,2026-10-23,fix(ldexp): i128 exponent sum; underflow rounds onto the subnormal grid
+ce9d6c5,2026-10-23,fix(acosh): real guard bits on the ln(2x) branch
+8c333a5,2026-10-23,fix(nth_root): prove the Newton start error bound (start precision from exponent and n)
+deab0ac,2026-10-23,fix(nth_root): bound the exact-root check's power precision (large n ran out of memory)
+5b467e4,2026-10-23,fix(log10): exact powers of ten are exact at every precision (the quotient need not be an integer)
+6483910,2026-10-23,fix: Consts pi/e/ln_2/ln_10 round at exactly p bits (round_exact)
+aecd8db,2026-10-23,fix: ExactNumArray constructors and lu_decomp reject p=0
+e706db6,2026-10-23,fix: ExactNum::rem_pi rejects p=0 (the scalar p=0 test now covers rem_pi)
+7e1b7d3,2026-10-23,fix: reject p = 0 at every public entry point; crate-private new_internal for full-prec kernels
+e7ad5b4,2026-10-23,test: pow(0,-Inf)=+Inf, pow(2,-Inf)=+0 per IEEE 754/MPFR; re-pin exp_pow_grid_digest
+ee11f4a,2026-10-23,powsi: (-0)^(negative odd n) is -Inf; W6 known_wrong now empty
+71848b8,2026-10-23,powi/powsi: (-0)^(even n > 0) is +0; 4 W6 known_wrong removed
+432852b,2026-10-23,pow: (-Inf)^(negative odd integer) is -0; 2 W6 known_wrong removed
+792cc4f,2026-10-23,pow: x^(+-Inf) decided by |x| against 1 (IEEE 754 / MPFR); 9 W6 known_wrong removed
+a4d87e6,2026-10-23,Tests: W6 pow/powi/powsi special values (+-Inf operands, signed zero, NaN rule) vs MPFR; 17 red known_wrong entries
+3cd2b14,2026-10-16,fma: the stand-in for a negligible term lies below the rounding position (fma(1,-1,2^-200) at p=128 had 65 bits) and is not used where its exponent would wrap below EXPONENT_MIN; fma_stand_in_branches_digest re-pinned (74 old entries wrong vs MPFR)
+b651f27,2026-10-16,Tests: wide-range sqrt/cbrt/reciprocal/nth_root/hypot/atan2/fma vs MPFR (subnormal, top of range, p 1..200 and 20000, 6 modes, value and inexact flag); 5 red known_wrong tests for 5 real wrong answers (/tmp/zf-logs/zf-w1-findings.md)
+f492c2c,2026-10-16,Ziv roundability check: look at the known words, count the round bit once, nearest-aware; pow exact path for powers of two; jacobi digest re-pinned (46 NaN entries proven wrong)
+30e9222,2026-10-16,Red test: log1p(-sqrt(2) 2^-20032) at p=20032 is rounded the wrong way (roundability check accepts an undecidable approximation); MPFR is the oracle
+6396091,2026-10-16,Ziv retry budget max(p+16384, 3p): cos(4 pi) at 100032 bits (and cos, sin, sin_cos, sinh/cosh/tanh, exp, expm1, log1p shapes) no longer NaN(PrecisionRetryExhausted); log1p/expm1 tiny-argument correction side fixed
+018e071,2026-10-15,fix: sqrt(-Inf) is NaN(InvalidArgument) like sqrt(-3) (was a kind-less NaN); red-first test + CHANGELOG
+ea2bb7f,2026-10-15,fix: jacobi_am(u|0) carries u at the working precision (debug-build subtract overflow in the roundability check); pin all 13 Jacobi functions (layer 0a)
+729404b,2026-10-15,Fix two mis-rewritten test sites from the mul/div Rule R conversion (mpfr fuzz regression)
+40fdbfb,2026-10-14,fix: constants are const-built statics; TENPOWERS is a fallible lazy cache
+620eb41,2026-10-14,fix: SliceWithSign add/sub/copy_from/decrement_abs and the FFT helpers return Result
+27e4f92,2026-10-14,fix: remove 4 unreachable!() and 5 invariant unwraps from rounding/division/toom2/conv
+2591c66,2026-10-14,fix: six invariant unwraps become let-else / Err(InvalidArgument)
+9a08d17,2026-10-14,fix(macro): constant-cache failure is a compile_error!, not an expect panic
+b4e4811,2026-10-14,fix(fft): size-invariant violations return Err(InvalidArgument) instead of panicking
+021fa87,2026-10-14,fix(build): hex_golds requires the std feature
+971dbe3,2026-10-14,fix: cbrt, exp/log family, trig, hyperbolic, erf/erfc, gamma/ln_gamma/digamma, ei/ci/li, elliptic_k/e_complete round at exactly p bits with per-op inexact; log10(10^n) exact; ball ulp at p bits; specials golds at p bits (item a)
+4e2ca6f,2026-10-14,fix: sqrt rounds at exactly p bits via round_exact; per-operation inexact (item a, sqrt)
+146f7e9,2026-10-14,fix: exponent arithmetic in i64; EXPONENT_MAX/MIN are i32 bounds on every target (defect 4)
+70e1c64,2026-10-14,fix: add/sub/mul/div round at exactly p bits via round-to-odd; subnormal results no longer double-rounded (defect 6)
+46ee0a5,2026-10-14,fix: inexact() is per operation for add/sub/mul/div; accumulated flag kept as inexact_accumulated() (defect 3)
+3ae1e45,2026-10-14,fix: exponent overflow returns max finite toward zero, Inf otherwise (defect 1)
+523c622,2026-10-14,fix: from_raw_parts validates its parts and returns NaN(InvalidArgument) (defect 5)
+be74e2d,2026-10-14,fix: document Up/Down/ToZero/FromZero as directed rounding (defect 2)
+115730b,2026-10-14,Fix Clausen, Weber, Barnes, zeta, and word rounding of specials.
+f3a26a9,2026-10-13,Fix exact integer powers, constant rounding, and complex cuts.
+4a5849e,2026-10-13,Fix step-1 rounding, signed zero, and strict parsing.

@@ -1,0 +1,297 @@
+# SECTION 1: pub fns on zenith-bound origin/main 8cd0298 (2026-10-25)
+crate,path,type,name,signature,slice,status
+zenith-bound,src/arith.rs:50,Ball,add,"pub fn add(self, other: &Ball, prec: Precision) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:67,Ball,sub,"pub fn sub(self, other: &Ball, prec: Precision) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:84,Ball,mul,"pub fn mul(self, other: &Ball, prec: Precision) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:100,Ball,mul_exact,"pub fn mul_exact(self, c: &ExactNum, prec: Precision) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:118,Ball,sqr,"pub fn sqr(&self, prec: Precision) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:139,Ball,powi,"pub fn powi(&self, n: u64, prec: Precision) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:174,Ball,sqrt,"pub fn sqrt(&self, prec: Precision, policy: &DomainPolicy) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:239,Ball,div,"pub fn div(self, other: &Ball, prec: Precision) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:266,Ball,inv,"pub fn inv(&self, prec: Precision) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:287,Ball,hypot,"pub fn hypot(&self, other: &Ball, prec: Precision) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:321,Ball,abs,"pub fn abs(&self, prec: Precision) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:345,Ball,mul_2exp,"pub fn mul_2exp(self, k: i64, prec: Precision) -> BoundResult<Ball>",S1,real
+zenith-bound,src/arith.rs:359,Ball,lt,"pub fn lt(&self, other: &Ball) -> Tri",S1,real
+zenith-bound,src/arith.rs:370,Ball,le,"pub fn le(&self, other: &Ball) -> Tri",S1,real
+zenith-bound,src/arith.rs:379,Ball,gt,"pub fn gt(&self, other: &Ball) -> Tri",S1,real
+zenith-bound,src/arith.rs:384,Ball,ge,"pub fn ge(&self, other: &Ball) -> Tri",S1,real
+zenith-bound,src/arith.rs:389,Ball,eq,"pub fn eq(&self, other: &Ball) -> Tri",S1,real
+zenith-bound,src/arith.rs:399,Ball,ne,"pub fn ne(&self, other: &Ball) -> Tri",S1,real
+zenith-bound,src/arith.rs:409,Ball,overlaps,"pub fn overlaps(&self, other: &Ball) -> Tri",S1,real
+zenith-bound,src/array.rs:35,BallArray,from_balls,"pub fn from_balls(shape: Box<[usize]>, balls: Vec<Ball>) -> BoundResult<BallArray>",S0 (15.5 containers),real
+zenith-bound,src/array.rs:54,BallArray,zeros,"pub fn zeros(shape: Box<[usize]>, prec: Precision) -> BoundResult<BallArray>",S0 (15.5 containers),real
+zenith-bound,src/array.rs:70,BallArray,shape,pub fn shape(&self) -> &[usize],S0 (15.5 containers),real
+zenith-bound,src/array.rs:75,BallArray,rank,pub fn rank(&self) -> usize,S0 (15.5 containers),real
+zenith-bound,src/array.rs:80,BallArray,len,pub fn len(&self) -> usize,S0 (15.5 containers),real
+zenith-bound,src/array.rs:85,BallArray,is_empty,pub fn is_empty(&self) -> bool,S0 (15.5 containers),real
+zenith-bound,src/array.rs:90,BallArray,get,"pub fn get(&self, index: &[usize]) -> Option<&Ball>",S0 (15.5 containers),real
+zenith-bound,src/array.rs:105,BallArray,as_slice,pub fn as_slice(&self) -> &[Ball],S0 (15.5 containers),real
+zenith-bound,src/array.rs:110,BallArray,into_parts,"pub fn into_parts(self) -> (Box<[usize]>, Box<[Ball]>)",S0 (15.5 containers),real
+zenith-bound,src/array.rs:121,BallVec,from_balls,pub fn from_balls(balls: Vec<Ball>) -> BallVec,S0 (15.5 containers),real
+zenith-bound,src/array.rs:133,BallVec,from_array,pub fn from_array(a: BallArray) -> BoundResult<BallVec>,S0 (15.5 containers),real
+zenith-bound,src/array.rs:144,BallVec,len,pub fn len(&self) -> usize,S0 (15.5 containers),real
+zenith-bound,src/array.rs:149,BallVec,is_empty,pub fn is_empty(&self) -> bool,S0 (15.5 containers),real
+zenith-bound,src/array.rs:154,BallVec,get,"pub fn get(&self, i: usize) -> Option<&Ball>",S0 (15.5 containers),real
+zenith-bound,src/array.rs:159,BallVec,as_array,pub fn as_array(&self) -> &BallArray,S0 (15.5 containers),real
+zenith-bound,src/array.rs:164,BallVec,into_array,pub fn into_array(self) -> BallArray,S0 (15.5 containers),real
+zenith-bound,src/array.rs:178,BallMat,from_balls,"pub fn from_balls(nrows: usize, ncols: usize, balls: Vec<Ball>) -> BoundResult<BallMat>",S0 (15.5 containers),real
+zenith-bound,src/array.rs:186,BallMat,from_array,pub fn from_array(a: BallArray) -> BoundResult<BallMat>,S0 (15.5 containers),real
+zenith-bound,src/array.rs:197,BallMat,nrows,pub fn nrows(&self) -> usize,S0 (15.5 containers),real
+zenith-bound,src/array.rs:202,BallMat,ncols,pub fn ncols(&self) -> usize,S0 (15.5 containers),real
+zenith-bound,src/array.rs:207,BallMat,get,"pub fn get(&self, i: usize, j: usize) -> Option<&Ball>",S0 (15.5 containers),real
+zenith-bound,src/array.rs:212,BallMat,as_array,pub fn as_array(&self) -> &BallArray,S0 (15.5 containers),real
+zenith-bound,src/array.rs:217,BallMat,into_array,pub fn into_array(self) -> BallArray,S0 (15.5 containers),real
+zenith-bound,src/ball/mod.rs:30,Ball,exact,"pub fn exact(mid: ExactNum, prec: Precision) -> BoundResult<Ball>",S0/L0b (Ball core),real
+zenith-bound,src/ball/mod.rs:39,Ball,from_mid_rad,"pub fn from_mid_rad(mid: ExactNum, rad: Mag, prec: Precision) -> BoundResult<Ball>",S0/L0b (Ball core),real
+zenith-bound,src/ball/mod.rs:61,Ball,all_reals,pub fn all_reals(prec: Precision) -> BoundResult<Ball>,S0/L0b (Ball core),real
+zenith-bound,src/ball/mod.rs:71,Ball,mid,pub fn mid(&self) -> &ExactNum,S0/L0b (Ball core),real
+zenith-bound,src/ball/mod.rs:76,Ball,rad,pub fn rad(&self) -> &Mag,S0/L0b (Ball core),real
+zenith-bound,src/ball/mod.rs:81,Ball,prec,pub fn prec(&self) -> Precision,S0/L0b (Ball core),real
+zenith-bound,src/ball/mod.rs:86,Ball,is_informative,pub fn is_informative(&self) -> bool,S0/L0b (Ball core),real
+zenith-bound,src/ball/mod.rs:91,Ball,is_exact,pub fn is_exact(&self) -> bool,S0/L0b (Ball core),real
+zenith-bound,src/ball/mod.rs:96,Ball,into_parts,"pub fn into_parts(self) -> (ExactNum, Mag, Precision)",S0/L0b (Ball core),real
+zenith-bound,src/bridge.rs:57,Mag,cmp_exact_num,"pub fn cmp_exact_num(&self, x: &ExactNum) -> Option<Ordering>",S2,real
+zenith-bound,src/bridge.rs:92,Mag,cmp_exact_diff,"pub fn cmp_exact_diff(&self, a: &ExactNum, b: &ExactNum) -> Option<Ordering>",S2,real
+zenith-bound,src/bridge.rs:239,(free),constant_ball,"pub fn constant_ball(cc: &mut Consts, c: &Constant, prec: Precision) -> BoundResult<Ball>",S2,real
+zenith-bound,src/cball.rs:25,CBall,new,"pub fn new(re: Ball, im: Ball) -> BoundResult<CBall>",CB,real
+zenith-bound,src/cball.rs:36,CBall,from_real,pub fn from_real(re: Ball) -> BoundResult<CBall>,CB,real
+zenith-bound,src/cball.rs:42,CBall,all_complex,pub fn all_complex(prec: Precision) -> BoundResult<CBall>,CB,real
+zenith-bound,src/cball.rs:50,CBall,re,pub fn re(&self) -> &Ball,CB,real
+zenith-bound,src/cball.rs:55,CBall,im,pub fn im(&self) -> &Ball,CB,real
+zenith-bound,src/cball.rs:60,CBall,prec,pub fn prec(&self) -> Precision,CB,real
+zenith-bound,src/cball.rs:65,CBall,identical,"pub fn identical(&self, other: &CBall) -> bool",CB,real
+zenith-bound,src/cball.rs:70,CBall,conj,pub fn conj(self) -> CBall,CB,real
+zenith-bound,src/cball.rs:78,CBall,add,"pub fn add(self, other: &CBall, prec: Precision) -> BoundResult<CBall>",CB,real
+zenith-bound,src/cball.rs:86,CBall,sub,"pub fn sub(self, other: &CBall, prec: Precision) -> BoundResult<CBall>",CB,real
+zenith-bound,src/cball.rs:94,CBall,abs,"pub fn abs(self, prec: Precision) -> BoundResult<Ball>",CB,real
+zenith-bound,src/cball.rs:101,CBall,sqr,"pub fn sqr(self, prec: Precision) -> BoundResult<CBall>",CB,real
+zenith-bound,src/cball.rs:110,CBall,mul,"pub fn mul(self, _other: &CBall, _prec: Precision) -> BoundResult<CBall>",CB,error-only (Resource not_implemented)
+zenith-bound,src/cball.rs:118,CBall,div,"pub fn div(self, _other: &CBall, _prec: Precision) -> BoundResult<CBall>",CB,error-only (Resource not_implemented)
+zenith-bound,src/error.rs:83,BoundError,op,pub fn op(&self) -> &'static str,S0 (error types),real
+zenith-bound,src/error.rs:98,BoundError,detail,pub fn detail(&self) -> &'static str,S0 (error types),real
+zenith-bound,src/mag/add.rs:19,Mag,add_up,"pub fn add_up(&self, other: &Mag) -> Mag",L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/convert.rs:77,Mag,from_exact_num,pub fn from_exact_num(x: &ExactNum) -> Mag,L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/convert.rs:97,Mag,from_exact_num_lower,pub fn from_exact_num_lower(x: &ExactNum) -> Mag,L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/convert.rs:111,Mag,to_exact_num,"pub fn to_exact_num(&self) -> Result<ExactNum, BoundError>",L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/div.rs:18,Mag,div_up,"pub fn div_up(&self, other: &Mag) -> Mag",L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/div.rs:27,Mag,div_lower,"pub fn div_lower(&self, other: &Mag) -> Mag",L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/lower.rs:16,Mag,mul_lower,"pub fn mul_lower(&self, other: &Mag) -> Mag",L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/lower.rs:30,Mag,sub_lower,"pub fn sub_lower(&self, other: &Mag) -> Mag",L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/mod.rs:47,Mag,zero,pub fn zero() -> Mag,L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/mod.rs:54,Mag,infinity,pub fn infinity() -> Mag,L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/mod.rs:66,Mag,finite,"pub fn finite(mant: u64, exp: i64) -> Result<Mag, BoundError>",L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/mod.rs:93,Mag,exp,pub fn exp(&self) -> Option<i64>,L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/mod.rs:101,Mag,mant,pub fn mant(&self) -> Option<u64>,L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/mod.rs:109,Mag,is_zero,pub fn is_zero(&self) -> bool,L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/mod.rs:114,Mag,is_infinity,pub fn is_infinity(&self) -> bool,L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/mul.rs:17,Mag,mul_up,"pub fn mul_up(&self, other: &Mag) -> Mag",L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/sqrt.rs:27,Mag,sqrt_up,pub fn sqrt_up(&self) -> Mag,L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/sqrt.rs:35,Mag,sqrt_lower,pub fn sqrt_lower(&self) -> Mag,L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/ulp.rs:17,Mag,ulp_mag,"pub fn ulp_mag(pre_round_exp: i64, prec: Precision) -> Mag",L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/ulp.rs:38,Mag,half_ulp,"pub fn half_ulp(mid_exp: i64, prec: Precision) -> Mag",L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/mag/ulp.rs:54,Mag,smaller_than_half_ulp,"pub fn smaller_than_half_ulp(&self, mid_exp: i64, prec: Precision) -> bool",L0a (Mag) / S2 for convert+cmp,real
+zenith-bound,src/matrix.rs:199,MagArray,from_mags,"pub fn from_mags(shape: Box<[usize]>, mags: Vec<Mag>) -> BoundResult<MagArray>",S6,real
+zenith-bound,src/matrix.rs:213,MagArray,shape,pub fn shape(&self) -> &[usize],S6,real
+zenith-bound,src/matrix.rs:218,MagArray,rank,pub fn rank(&self) -> usize,S6,real
+zenith-bound,src/matrix.rs:223,MagArray,len,pub fn len(&self) -> usize,S6,real
+zenith-bound,src/matrix.rs:228,MagArray,is_empty,pub fn is_empty(&self) -> bool,S6,real
+zenith-bound,src/matrix.rs:233,MagArray,get,"pub fn get(&self, index: &[usize]) -> Option<&Mag>",S6,real
+zenith-bound,src/matrix.rs:248,MagArray,as_slice,pub fn as_slice(&self) -> &[Mag],S6,real
+zenith-bound,src/matrix.rs:253,MagArray,into_parts,"pub fn into_parts(self) -> (Box<[usize]>, Box<[Mag]>)",S6,real
+zenith-bound,src/matrix.rs:264,BallArray,add,"pub fn add(self, other: &BallArray, prec: Precision) -> BoundResult<BallArray>",S6,real
+zenith-bound,src/matrix.rs:282,BallArray,sub,"pub fn sub(self, other: &BallArray, prec: Precision) -> BoundResult<BallArray>",S6,real
+zenith-bound,src/matrix.rs:301,BallArray,mid_rad,"pub fn mid_rad(self) -> BoundResult<(BallArray, MagArray)>",S6,real
+zenith-bound,src/matrix.rs:322,BallArray,from_mid_rad,"pub fn from_mid_rad( mids: BallArray, rads: &MagArray, prec: Precision, ) -> BoundResult<BallArray>",S6,real
+zenith-bound,src/matrix.rs:347,BallVec,add,"pub fn add(self, other: &BallVec, prec: Precision) -> BoundResult<BallVec>",S6,real
+zenith-bound,src/matrix.rs:355,BallVec,sub,"pub fn sub(self, other: &BallVec, prec: Precision) -> BoundResult<BallVec>",S6,real
+zenith-bound,src/matrix.rs:363,BallVec,dot,"pub fn dot(&self, other: &BallVec, prec: Precision) -> BoundResult<Ball>",S6,real
+zenith-bound,src/matrix.rs:380,BallVec,norm_inf,pub fn norm_inf(&self) -> Mag,S6,real
+zenith-bound,src/matrix.rs:389,BallVec,norm_1,pub fn norm_1(&self) -> Mag,S6,real
+zenith-bound,src/matrix.rs:395,BallVec,norm_2_up,pub fn norm_2_up(&self) -> Mag,S6,real
+zenith-bound,src/matrix.rs:405,BallMat,add,"pub fn add(self, other: &BallMat, prec: Precision) -> BoundResult<BallMat>",S6,real
+zenith-bound,src/matrix.rs:413,BallMat,sub,"pub fn sub(self, other: &BallMat, prec: Precision) -> BoundResult<BallMat>",S6,real
+zenith-bound,src/matrix.rs:421,BallMat,matvec,"pub fn matvec(&self, x: &BallVec, prec: Precision) -> BoundResult<BallVec>",S6,real
+zenith-bound,src/matrix.rs:446,BallMat,matmul,"pub fn matmul(&self, other: &BallMat, prec: Precision) -> BoundResult<BallMat>",S6,real
+zenith-bound,src/matrix.rs:474,BallMat,norm_inf,pub fn norm_inf(&self) -> Mag,S6,real
+zenith-bound,src/matrix.rs:487,BallMat,norm_1,pub fn norm_1(&self) -> Mag,S6,real
+zenith-bound,src/matrix.rs:499,BallMat,norm_frob_up,pub fn norm_frob_up(&self) -> Mag,S6,real
+
+# SECTION 2: what each in-progress branch adds vs main (pub fns new or changed in src/)
+branch,last_commit,commits_ahead,path,type,name,signature,status
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/cholesky.rs:43,BallMat,cholesky,"pub fn cholesky(&self, _prec: Precision) -> BoundResult<BallCholesky>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/cholesky.rs:52,BallMat,ldl,"pub fn ldl(&self, _prec: Precision) -> BoundResult<BallLdl>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/cholesky.rs:61,BallMat,is_spd,"pub fn is_spd(&self, _prec: Precision) -> BoundResult<Tri>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/cholesky.rs:69,BallCholesky,g,pub fn g(&self) -> &BallMat,accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/cholesky.rs:75,BallCholesky,into_g,pub fn into_g(self) -> BallMat,accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/cholesky.rs:84,BallCholesky,solve,"pub fn solve(&self, _b: &BallVec, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/cholesky.rs:93,BallCholesky,quad_form,"pub fn quad_form(&self, _r: &BallVec, _prec: Precision) -> BoundResult<Ball>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/cholesky.rs:102,BallCholesky,logdet_spd,"pub fn logdet_spd(&self, _prec: Precision) -> BoundResult<Ball>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/cholesky.rs:110,BallLdl,l,pub fn l(&self) -> &BallMat,accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/cholesky.rs:116,BallLdl,d,pub fn d(&self) -> &BallVec,accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/eigen.rs:28,BallMat,eig_sym,"pub fn eig_sym(&self, _opts: &EigOpts, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/eigen.rs:37,BallMat,eig,"pub fn eig(&self, _opts: &EigOpts, _prec: Precision) -> BoundResult<Box<[CBall]>>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/gls.rs:26,GlsResult,beta,pub fn beta(&self) -> &BallVec,accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/gls.rs:32,GlsResult,cov,pub fn cov(&self) -> &BallMat,accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/gls.rs:38,GlsResult,chi2,pub fn chi2(&self) -> &Ball,accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/gls.rs:44,GlsResult,logdet_c,pub fn logdet_c(&self) -> &Ball,accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/gls.rs:54,(free),gls,"pub fn gls(_x: &BallMat, _c: &BallMat, _y: &BallVec, _prec: Precision) -> BoundResult<GlsResult>",accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:141,BallMat,lu,"pub fn lu(&self, prec: Precision) -> BoundResult<BallLu>",real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:227,BallMat,logdet,"pub fn logdet(&self, prec: Precision) -> BoundResult<LogDet>",real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:254,BallMat,solve,"pub fn solve(&self, b: &BallVec, prec: Precision) -> BoundResult<BallVec>",real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:270,BallMat,solve_mat,"pub fn solve_mat(&self, b: &BallMat, prec: Precision) -> BoundResult<BallMat>",real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:313,BallLu,perm,pub fn perm(&self) -> &[usize],real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:318,BallLu,l,pub fn l(&self) -> &BallMat,real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:323,BallLu,u,pub fn u(&self) -> &BallMat,real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:328,BallLu,perm_sign,pub fn perm_sign(&self) -> i8,real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:349,BallLu,det,"pub fn det(&self, prec: Precision) -> BoundResult<Ball>",real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:374,BallLu,solve,"pub fn solve(&self, b: &BallVec, prec: Precision) -> BoundResult<BallVec>",real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:403,LogDet,sign,pub fn sign(&self) -> i8,real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:408,LogDet,det,pub fn det(&self) -> &Ball,real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/lu.rs:413,LogDet,ln_abs_det,pub fn ln_abs_det(&self) -> &Ball,real
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/matrix.rs:518,BallMat,solve_lower,"pub fn solve_lower( &self, _b: &BallVec, _unit_diag: bool, _prec: Precision, ) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/matrix.rs:532,BallMat,solve_upper,"pub fn solve_upper( &self, _b: &BallVec, _unit_diag: bool, _prec: Precision, ) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/matrix.rs:546,BallMat,solve_lower_mat,"pub fn solve_lower_mat( &self, _b: &BallMat, _unit_diag: bool, _prec: Precision, ) -> BoundResult<BallMat>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/matrix.rs:560,BallMat,solve_upper_mat,"pub fn solve_upper_mat( &self, _b: &BallMat, _unit_diag: bool, _prec: Precision, ) -> BoundResult<BallMat>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/qr.rs:34,BallMat,qr,"pub fn qr(&self, _prec: Precision) -> BoundResult<BallQr>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/qr.rs:43,BallMat,lstsq,"pub fn lstsq(&self, _b: &BallVec, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/qr.rs:51,BallQr,q,pub fn q(&self) -> &BallMat,accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/qr.rs:57,BallQr,r,pub fn r(&self) -> &BallMat,accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/qr.rs:63,BallQr,into_parts,"pub fn into_parts(self) -> (BallMat, BallMat)",accessor on unconstructible type (stub)
+cassie/zb-la2-lu,2026-10-30 f0ea86a,29,src/qr.rs:72,BallQr,lstsq,"pub fn lstsq(&self, _b: &BallVec, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+cassie/zb-s4b-lambertw,2026-10-30 b25a2dc,15,src/carlson.rs:65,Ball,lambert_w0,"pub fn lambert_w0(&self, prec: Precision, policy: &DomainPolicy) -> BoundResult<Ball>",real
+cassie/zb-s4b-lambertw,2026-10-30 b25a2dc,15,src/carlson.rs:74,Ball,lambert_wm1,"pub fn lambert_wm1(&self, prec: Precision, policy: &DomainPolicy) -> BoundResult<Ball>",real
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/cholesky.rs:43,BallMat,cholesky,"pub fn cholesky(&self, _prec: Precision) -> BoundResult<BallCholesky>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/cholesky.rs:52,BallMat,ldl,"pub fn ldl(&self, _prec: Precision) -> BoundResult<BallLdl>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/cholesky.rs:61,BallMat,is_spd,"pub fn is_spd(&self, _prec: Precision) -> BoundResult<Tri>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/cholesky.rs:69,BallCholesky,g,pub fn g(&self) -> &BallMat,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/cholesky.rs:75,BallCholesky,into_g,pub fn into_g(self) -> BallMat,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/cholesky.rs:84,BallCholesky,solve,"pub fn solve(&self, _b: &BallVec, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/cholesky.rs:93,BallCholesky,quad_form,"pub fn quad_form(&self, _r: &BallVec, _prec: Precision) -> BoundResult<Ball>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/cholesky.rs:102,BallCholesky,logdet_spd,"pub fn logdet_spd(&self, _prec: Precision) -> BoundResult<Ball>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/cholesky.rs:110,BallLdl,l,pub fn l(&self) -> &BallMat,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/cholesky.rs:116,BallLdl,d,pub fn d(&self) -> &BallVec,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/eigen.rs:28,BallMat,eig_sym,"pub fn eig_sym(&self, _opts: &EigOpts, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/eigen.rs:37,BallMat,eig,"pub fn eig(&self, _opts: &EigOpts, _prec: Precision) -> BoundResult<Box<[CBall]>>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/gls.rs:26,GlsResult,beta,pub fn beta(&self) -> &BallVec,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/gls.rs:32,GlsResult,cov,pub fn cov(&self) -> &BallMat,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/gls.rs:38,GlsResult,chi2,pub fn chi2(&self) -> &Ball,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/gls.rs:44,GlsResult,logdet_c,pub fn logdet_c(&self) -> &Ball,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/gls.rs:54,(free),gls,"pub fn gls(_x: &BallMat, _c: &BallMat, _y: &BallVec, _prec: Precision) -> BoundResult<GlsResult>",accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:45,BallMat,lu,"pub fn lu(&self, _prec: Precision) -> BoundResult<BallLu>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:54,BallMat,logdet,"pub fn logdet(&self, _prec: Precision) -> BoundResult<LogDet>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:63,BallMat,solve,"pub fn solve(&self, _b: &BallVec, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:72,BallMat,solve_mat,"pub fn solve_mat(&self, _b: &BallMat, _prec: Precision) -> BoundResult<BallMat>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:80,BallLu,perm,pub fn perm(&self) -> &[usize],accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:86,BallLu,l,pub fn l(&self) -> &BallMat,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:92,BallLu,u,pub fn u(&self) -> &BallMat,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:98,BallLu,perm_sign,pub fn perm_sign(&self) -> i8,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:119,BallLu,det,"pub fn det(&self, _prec: Precision) -> BoundResult<Ball>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:128,BallLu,solve,"pub fn solve(&self, _b: &BallVec, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:136,LogDet,sign,pub fn sign(&self) -> i8,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:142,LogDet,det,pub fn det(&self) -> &Ball,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/lu.rs:148,LogDet,ln_abs_det,pub fn ln_abs_det(&self) -> &Ball,accessor on unconstructible type (stub)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/matrix.rs:623,BallMat,solve_lower,"pub fn solve_lower( &self, _b: &BallVec, _unit_diag: bool, _prec: Precision, ) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/matrix.rs:637,BallMat,solve_upper,"pub fn solve_upper( &self, _b: &BallVec, _unit_diag: bool, _prec: Precision, ) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/matrix.rs:651,BallMat,solve_lower_mat,"pub fn solve_lower_mat( &self, _b: &BallMat, _unit_diag: bool, _prec: Precision, ) -> BoundResult<BallMat>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/matrix.rs:665,BallMat,solve_upper_mat,"pub fn solve_upper_mat( &self, _b: &BallMat, _unit_diag: bool, _prec: Precision, ) -> BoundResult<BallMat>",error-only (Resource not_implemented)
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/qr.rs:335,BallMat,qr,"pub fn qr(&self, prec: Precision) -> BoundResult<BallQr>",real
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/qr.rs:363,BallMat,lstsq,"pub fn lstsq(&self, b: &BallVec, prec: Precision) -> BoundResult<BallVec>",real
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/qr.rs:384,BallQr,q,pub fn q(&self) -> &BallMat,real
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/qr.rs:389,BallQr,r,pub fn r(&self) -> &BallMat,real
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/qr.rs:394,BallQr,into_parts,"pub fn into_parts(self) -> (BallMat, BallMat)",real
+rusty/zb-la3-qr,2026-10-30 b3c68b6,40,src/qr.rs:403,BallQr,lstsq,"pub fn lstsq(&self, b: &BallVec, prec: Precision) -> BoundResult<BallVec>",real
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/cholesky.rs:43,BallMat,cholesky,"pub fn cholesky(&self, _prec: Precision) -> BoundResult<BallCholesky>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/cholesky.rs:52,BallMat,ldl,"pub fn ldl(&self, _prec: Precision) -> BoundResult<BallLdl>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/cholesky.rs:61,BallMat,is_spd,"pub fn is_spd(&self, _prec: Precision) -> BoundResult<Tri>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/cholesky.rs:69,BallCholesky,g,pub fn g(&self) -> &BallMat,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/cholesky.rs:75,BallCholesky,into_g,pub fn into_g(self) -> BallMat,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/cholesky.rs:84,BallCholesky,solve,"pub fn solve(&self, _b: &BallVec, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/cholesky.rs:93,BallCholesky,quad_form,"pub fn quad_form(&self, _r: &BallVec, _prec: Precision) -> BoundResult<Ball>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/cholesky.rs:102,BallCholesky,logdet_spd,"pub fn logdet_spd(&self, _prec: Precision) -> BoundResult<Ball>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/cholesky.rs:110,BallLdl,l,pub fn l(&self) -> &BallMat,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/cholesky.rs:116,BallLdl,d,pub fn d(&self) -> &BallVec,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/eigen.rs:28,BallMat,eig_sym,"pub fn eig_sym(&self, _opts: &EigOpts, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/eigen.rs:37,BallMat,eig,"pub fn eig(&self, _opts: &EigOpts, _prec: Precision) -> BoundResult<Box<[CBall]>>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/gls.rs:26,GlsResult,beta,pub fn beta(&self) -> &BallVec,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/gls.rs:32,GlsResult,cov,pub fn cov(&self) -> &BallMat,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/gls.rs:38,GlsResult,chi2,pub fn chi2(&self) -> &Ball,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/gls.rs:44,GlsResult,logdet_c,pub fn logdet_c(&self) -> &Ball,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/gls.rs:54,(free),gls,"pub fn gls(_x: &BallMat, _c: &BallMat, _y: &BallVec, _prec: Precision) -> BoundResult<GlsResult>",accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:45,BallMat,lu,"pub fn lu(&self, _prec: Precision) -> BoundResult<BallLu>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:54,BallMat,logdet,"pub fn logdet(&self, _prec: Precision) -> BoundResult<LogDet>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:63,BallMat,solve,"pub fn solve(&self, _b: &BallVec, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:72,BallMat,solve_mat,"pub fn solve_mat(&self, _b: &BallMat, _prec: Precision) -> BoundResult<BallMat>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:80,BallLu,perm,pub fn perm(&self) -> &[usize],accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:86,BallLu,l,pub fn l(&self) -> &BallMat,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:92,BallLu,u,pub fn u(&self) -> &BallMat,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:98,BallLu,perm_sign,pub fn perm_sign(&self) -> i8,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:119,BallLu,det,"pub fn det(&self, _prec: Precision) -> BoundResult<Ball>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:128,BallLu,solve,"pub fn solve(&self, _b: &BallVec, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:136,LogDet,sign,pub fn sign(&self) -> i8,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:142,LogDet,det,pub fn det(&self) -> &Ball,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/lu.rs:148,LogDet,ln_abs_det,pub fn ln_abs_det(&self) -> &Ball,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/matrix.rs:762,BallMat,solve_lower,"pub fn solve_lower( &self, b: &BallVec, unit_diag: bool, prec: Precision, ) -> BoundResult<BallVec>",real
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/matrix.rs:783,BallMat,solve_upper,"pub fn solve_upper( &self, b: &BallVec, unit_diag: bool, prec: Precision, ) -> BoundResult<BallVec>",real
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/matrix.rs:804,BallMat,solve_lower_mat,"pub fn solve_lower_mat( &self, b: &BallMat, unit_diag: bool, prec: Precision, ) -> BoundResult<BallMat>",real
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/matrix.rs:825,BallMat,solve_upper_mat,"pub fn solve_upper_mat( &self, b: &BallMat, unit_diag: bool, prec: Precision, ) -> BoundResult<BallMat>",real
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/qr.rs:34,BallMat,qr,"pub fn qr(&self, _prec: Precision) -> BoundResult<BallQr>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/qr.rs:43,BallMat,lstsq,"pub fn lstsq(&self, _b: &BallVec, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/qr.rs:51,BallQr,q,pub fn q(&self) -> &BallMat,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/qr.rs:57,BallQr,r,pub fn r(&self) -> &BallMat,accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/qr.rs:63,BallQr,into_parts,"pub fn into_parts(self) -> (BallMat, BallMat)",accessor on unconstructible type (stub)
+spence/zb-la0-trisolve,2026-10-29 e68a221,21,src/qr.rs:72,BallQr,lstsq,"pub fn lstsq(&self, _b: &BallVec, _prec: Precision) -> BoundResult<BallVec>",error-only (Resource not_implemented)
+cassie/zb-cball,2026-10-25 b590454,,,,(no new pub fn),,ahead=0; src: none; last: cball: name CONTRACT CB items on red markers; add CB.4/7/9/10 id anchors
+cassie/zb-cball-cb10,2026-10-25 c658c45,,,,(no new pub fn),,ahead=0; src: none; last: cball: name CONTRACT CB items on red markers; add CB.4/7/9/10 id anchors
+cassie/zb-combined,2026-10-25 d843031,,,,(no new pub fn),,ahead=0; src: none; last: Merge remote-tracking branch origin/cassie/zb-cball-cb10 into cassie/zb-combined
+cassie/zb-followups-2,2026-10-25 a710b4b,,,,(no new pub fn),,ahead=0; src: none; last: cball: hand sqr gold row A=(0±2)+(0±2)i exercising 2·r_re·r_im (Spence follo
+cassie/zb-la-golds,2026-10-24 3bcb6b6,,,,(no new pub fn),,ahead=0; src: none; last: Merge remote-tracking branch origin/main into cassie/zb-la-golds
+cassie/zb-la4-cosmo,2026-10-24 07f9e09,,,,(no new pub fn),,ahead=0; src: none; last: goldens_regen/popguard selftests: unset ZB_GATE_MODE/GOLDENS_REGEN_ARGS so fixtu
+cassie/zb-la4-nits,2026-10-25 7c9a45d,,,,(no new pub fn),,ahead=0; src: none; last: goldens_regen: record ZB_GATE_MODE before the unknown-mode refusal (Spence BLOCK
+cassie/zb-pubfn-la,2026-10-25 c1d3739,,,,(no new pub fn),,ahead=0; src: none; last: slice_matrix: cargo fmt
+cassie/zb-s6-matrix,2026-10-25 a5a8179,,,,(no new pub fn),,ahead=0; src: none; last: S6: cargo fmt
+cloud/zb-l0a-mag-green,2026-10-16 993cdbe,,,,(no new pub fn),,"ahead=7; src:  10 files changed, 733 insertions(+), 88 deletions(-); last: mag: subtract downward"
+docs/accumath-family,2026-10-25 6f517e3,,,,(no new pub fn),,ahead=1; src: none; last: docs: note Accumath project family in README
+harper/zb-cosmo-range,2026-10-30 e6e50b8,,,,(no new pub fn),,"ahead=29; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: mutate_slice: mask the single-slice one() rc (err-quiet: a failing slice logged "
+harper/zb-gate-mutslice,2026-10-24 b611c1e,,,,(no new pub fn),,ahead=0; src: none; last: full_gate: a --step-timeout failure logs its whole output and exit code (was tai
+harper/zb-grepq,2026-10-29 a544b20,,,,(no new pub fn),,"ahead=19; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: mutate_slice: keep NO-VERDICT ids in the INCOMPLETE missing list (d8d955f regres"
+harper/zb-harness-tidy,2026-10-29 abcfbba,,,,(no new pub fn),,"ahead=13; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: CHANGELOG: move harpers S2 edge/diff, la4 16.S2.x scan, S2 cmp goldens, goldens "
+harper/zb-harness-tidy2,2026-10-29 26d4ba1,,,,(no new pub fn),,"ahead=14; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: mutate.sh: timeout KILLED prints a (timed out) failing-tests line; clear stale s"
+harper/zb-harness-tidy3,2026-10-29 d8d955f,,,,(no new pub fn),,"ahead=16; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: mutate.sh: equivalent-id lookup via here-string (printf|grep -q SIGPIPE under pi"
+harper/zb-harness-tidy4,2026-10-30 479b31b,,,,(no new pub fn),,"ahead=17; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: mutate_slice: keep NO-VERDICT ids in the INCOMPLETE missing list (d8d955f regres"
+harper/zb-l0b-harness,2026-10-25 6b77465,,,,(no new pub fn),,ahead=0; src: none; last: gen_arith_oracle: GREEN: mul_2exp_unf_rad rows go through make_row/truth/cross_c
+harper/zb-la-golds,2026-10-29 372c30c,,,,(no new pub fn),,ahead=12; src: none; last: gen_la_pins selftest (red): plain --check DIR must be passable: heavy rows by HE
+harper/zb-la-rows2,2026-10-29 04e9946,,,,(no new pub fn),,"ahead=20; src:  7 files changed, 513 insertions(+), 5 deletions(-); last: LA own-id reds for 16.LA2.1, 16.LA2.2, 16.LA.1, 16.LA.6 (harper, test-first; 48 "
+harper/zb-magarray-cov,2026-10-25 f6f79aa,,,,(no new pub fn),,ahead=0; src: none; last: test(matrix): cover MagArray shape/rank/len/is_empty/as_slice/into_parts
+harper/zb-popguard,2026-10-24 3d1d94b,,,,(no new pub fn),,"ahead=0; src: none; last: goldens_regen/goldlib: POPGUARD unusable on a Pop host refuses exit 2, no-guard "
+harper/zb-popguard-2,2026-10-24 7289527,,,,(no new pub fn),,ahead=0; src: none; last: popguard_selftest: no-guard host case gets a stand-in oracle venv (link to the p
+harper/zb-popguard-merge,2026-10-29 9591071,,,,(no new pub fn),,"ahead=26; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: Merge harper/zb-popguard-quiet a0a46d32 into harper/zb-cosmo-range"
+harper/zb-popguard-quiet,2026-10-29 a0a46d3,,,,(no new pub fn),,"ahead=18; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: fresh_test_run: local pipefail for the tee rc capture (runlog.sh:36 dependency n"
+harper/zb-pubfn-exempt,2026-10-25 59ba053,,,,(no new pub fn),,ahead=0; src: none; last: feat(pubfn): fail STALE-EXEMPT on exempt entries that are not public items
+harper/zb-s2-goldens,2026-10-29 c0cbb94,,,,(no new pub fn),,ahead=2; src: none; last: test(bridge): red rows for cmp_exact_diff wide gap with radius exponent EXPONENT
+harper/zb-s2-harness2,2026-10-29 076ea63,,,,(no new pub fn),,"ahead=11; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: goldens: wire gen_bridge_cmp_goldens.py into slice bridge GENERATORS and bridge_"
+harper/zb-s2diff-tests,2026-10-29 0c4e2d5,,,,(no new pub fn),,"ahead=4; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: test(bridge,arith): cmp_far_diff mantissa-above-TOP rows (TOP+1, u64::MAX at E+1"
+harper/zb-s7-fuzz,2026-10-23 2adf029,,,,(no new pub fn),,ahead=0; src: none; last: add_up gap-65 row (test renamed to gaps 0/63/64/65/200); a real mutant floor of 
+rusty/zb-s2,2026-10-25 59c3c82,,,,(no new pub fn),,ahead=0; src: none; last: fix(bridge): cmp_far_diff returns None when the exact ur or z add/sub is NaN (zf
+rusty/zb-s2-contract,2026-10-25 5c49446,,,,(no new pub fn),,ahead=1; src: none; last: docs(contract): draft Slice S2 bridge clauses 16.S2.0-16.S2.8 for review
+saved/2026-10-25/harper-zb-s10-s13-backup,2026-10-16 2c090d2,,,,(no new pub fn),,"ahead=5; src: none; last: CODEOWNERS: explicit lines for Cargo.toml, tools/full_gate.sh, digests.sh, diges"
+saved/2026-10-25/harper-zb-s10-s13-backup2,2026-10-16 7af6f64,,,,(no new pub fn),,ahead=9; src: none; last: tooling(S10): also deny clippy::match_wildcard_for_single_variants (closes the s
+saved/2026-10-25/harper-zb-s7-fuzz-backup,2026-10-16 d3d7f03,,,,(no new pub fn),,ahead=8; src: none; last: tests(mag): golden.rs perturb names MagV::Finite instead of _ (behaviour-preserv
+saved/2026-10-25/harper-zb-s7-fuzz-backup2,2026-10-16 6d221c0,,,,(no new pub fn),,"ahead=12; src: none; last: tests(S7 fuzz): tests/harness/fuzz_mag.rs scaffold (seeded draw, ZB_FUZZ_SEED/CA"
+saved/2026-10-25/harper-zb-tests-pre-rebase,2026-10-15 13715bb,,,,(no new pub fn),,"ahead=7; src: none; last: tooling(S9): rules_scan refuses -(b - a), .sub(..).neg(), neg(..sub(..)); self-t"
+saved/2026-10-25/harper-zb-tests-pre-rebase2,2026-10-15 7bc329e,,,,(no new pub fn),,"ahead=9; src: none; last: test(common): S2 generators, replay, shrinker"
+saved/2026-10-25/harper-zb-tests-pre-rebase3,2026-10-16 d71af71,,,,(no new pub fn),,ahead=12; src: none; last: test: drop .copied( from harness and common (clone-family scan)
+saved/2026-10-25/harper-zb-tests-pre-rebase4,2026-10-16 21ed949,,,,(no new pub fn),,ahead=12; src: none; last: test: drop .copied( from harness and common (clone-family scan)
+saved/2026-10-25/rusty-zb-s2-contract,2026-10-25 17e5f1b,,,,(no new pub fn),,"ahead=5; src:  2 files changed, 263 insertions(+), 54 deletions(-); last: Merge commit 9df333a91b6c5b1d8ddbae4d2c1b1d95538a9f21 into rusty/zb-s2-contract"
+saved/2026-10-25/spence-zb-l0a-mag-green2-byvalue,2026-10-16 b240941,,,,(no new pub fn),,"ahead=2; src:  3 files changed, 14 insertions(+), 20 deletions(-); last: docs(contract): add_up and sub_lower consume the operand they return, no Mag cop"
+spence/zb-l0b,2026-10-23 1ff0521,,,,(no new pub fn),,"ahead=0; src: none; last: tests(wr_nd): drop clone/copied and counter loop (rules-scan, clippy)"
+spence/zb-la-api,2026-10-29 5f30568,,,,(no new pub fn),,"ahead=18; src:  7 files changed, 513 insertions(+), 5 deletions(-); last: CONTRACT LA: containment definition, k_row tightness, working precision, logdet "
+spence/zb-la-contract,2026-10-29 ed3c6c9,,,,(no new pub fn),,"ahead=16; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: CONTRACT LA: draft S6.12 trisolve, LA1-LA5b specs (docs only)"
+spence/zb-la-plan,2026-10-24 7c90292,,,,(no new pub fn),,ahead=0; src: none; last: mutants 096 097 102 103 104 169 170 171: regenerate context against src/error.rs
+spence/zb-mutant-regen,2026-10-24 4e6bcb3,,,,(no new pub fn),,ahead=0; src: none; last: mutants 096 097 102 103 104 169 170 171: regenerate context against src/error.rs
+spence/zb-mutate-harden,2026-10-24 e83631d,,,,(no new pub fn),,ahead=0; src: none; last: mutate/test_floor/goldens hardening: fetch up front and run mutants --offline --
+spence/zb-s1,2026-10-25 1f1bda8,,,,(no new pub fn),,ahead=0; src: none; last: harper_s1cov: tighten touching-tie rows gt/lt U->F to match nit a (strictly tigh
+spence/zb-s2,2026-10-24 ceb4024,,,,(no new pub fn),,ahead=0; src: none; last: S2 mutants 336-RADULP and 338-WIDEPREC reshaped to build (rad = 2*half; wide = p
+spence/zb-s22-overflow,2026-10-29 13f1122,,,,(no new pub fn),,"ahead=17; src:  1 file changed, 69 insertions(+), 6 deletions(-); last: fix(bridge): decide cmp_exact_diff when a - b overflows EXPONENT_MAX (CONTRACT 1"
+spence/zb-s2diff-fix,2026-10-29 4a052b3,,,,(no new pub fn),,"ahead=3; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: zb bridge: cmp_far_diff decides radius exponent EXPONENT_MAX+1 (CONTRACT 16.S2.1"
+spence/zb-s2diff-gatefix,2026-10-29 47492fb,,,,(no new pub fn),,"ahead=7; src:  1 file changed, 33 insertions(+), 5 deletions(-); last: mutants(bridge): 355-ONCENAN equivalent (once guard fires only on zf allocation "
