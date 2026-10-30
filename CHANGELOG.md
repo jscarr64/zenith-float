@@ -85,7 +85,7 @@ Behaviour changes from the audit, each with its own section below:
 - `rem` returns subnormal remainders instead of zero, and its `inexact()` is false: the remainder is always exact.
 - `add_full_prec` and `sub_full_prec` with one zero operand return the other operand exactly (with its own `inexact()`). They used to return a value with an empty mantissa flagged inexact. All other `add`/`sub` results are unchanged: the addition kernel now writes the sum of a nonzero operand with a zero mantissa itself instead of copying the operand first (the zero-aware kernel branch), which removes the three `.clone()` sites of `add`/`sub`.
 - `from_raw_parts` validates its parts and returns `NaN(InvalidArgument)` for inconsistent ones.
-- `EXPONENT_MAX` and `EXPONENT_MIN` are `i32::MAX` and `i32::MIN` on 32-bit targets too.
+- `EXPONENT_MAX` and `EXPONENT_MIN` are `2^62 - 1` and `-(2^62 - 1)` on every target, 32-bit included (superseding the interim `i32::MAX` / `i32::MIN` range; see the `Exponent` is `i64` entry).
 - The `RoundingMode` documentation describes `Up`, `Down`, `ToZero`, and `FromZero` as directed modes, not tie rules (documentation only).
 - `ExactNum::cmp` is now `ExactNum::compare`, and `Context::clone` is removed (breaking). See "No lint exemptions".
 - `Radix` is an enum (`Bin`, `Oct`, `Dec`, `Hex`, `Other`); `Radix::Bin` and the others are written the same way (breaking only for code that relied on it being a struct).
