@@ -1,0 +1,2 @@
+# zenith-bound keeps rustfmt defaults for now. Without this file the workspace root rustfmt.toml would apply here.
+# FIXLIST ZF-M15: after the 12 zb branches are ported, reformat zenith-bound to the root rustfmt.toml and delete this file.
