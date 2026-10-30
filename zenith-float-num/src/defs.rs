@@ -134,8 +134,11 @@ pub(crate) fn reserve_amortized<T>(v: &mut alloc::vec::Vec<T>, add: usize) -> Re
     let total = v.len().checked_add(add).ok_or(Error::MemoryAllocation)?;
     let elem = core::mem::size_of::<T>();
     check_alloc_bytes(total, elem)?;
-    let doubled = v.capacity().checked_mul(2).unwrap_or(usize::MAX);
-    if check_alloc_bytes(doubled, elem).is_ok() {
+    let doubled_fits = v
+        .capacity()
+        .checked_mul(2)
+        .is_some_and(|d| check_alloc_bytes(d, elem).is_ok());
+    if doubled_fits {
         v.try_reserve(add)?;
     } else {
         v.try_reserve_exact(add)?;
