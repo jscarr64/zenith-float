@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# Harper lint v3: structure + error variants checked against enums parsed from source (item 10).
+# Harper lint v4 (pmrev5: UNCLEAR + either/or gold rejected, exit 1 on any BAD). Was v3: structure + error variants checked against enums parsed from source (item 10).
 use strict; use warnings;
 my ($csv,$T)=@ARGV; $T//="$ENV{HOME}/harper-work/zf-precision-matrix";
 sub en { my ($f,$name)=@_; open my $h,'<',"$T/$f" or die "$f"; local $/; my $s=<$h>; my ($b)=$s=~/pub enum \Q$name\E\b[^{]*\{(.*?)\n\}/s or die "enum $name not found in $f"; $b=~s{//[^\n]*}{}g; my %v; my $d=0; for my $l (split /\n/,$b){ $v{$1}=1 if $d==0 && $l=~/^\s*([A-Z]\w*)\b/; $d+=()=$l=~/[{(]/g; $d-=()=$l=~/[})]/g } %v }
@@ -14,7 +14,8 @@ my %allv=(%ZF,%ZB);
 while(<F>){ $ln++; if(/^#/){ next } if(!$hdr){ $hdr=1; next } $n++; my @f=p($_);
  my $B=sub { my $k=shift; $bad{$k}++; $ex{$k}//="line $ln: $f[1] $f[5]" };
  $B->("fields!=17") if @f!=17; my $t=join " ",@f[10,11];
- $B->("R4 MISSING") if $t=~/R4 MISSING/; $B->("'or documented'") if /or documented/;
+ $B->("R4 MISSING") if $t=~/R4 MISSING/; $B->("UNCLEAR") if /UNCLEAR/;
+  $B->("either/or gold (or|either|' | ' in required_result/refusal_variant)") if $t=~/\b(?:or|either)\b/i || $t=~/(?:^|\s)\|(?:\s|$)/; $B->("'or documented'") if /or documented/;
  my $own = $f[0] eq 'zf' ? \%ZF : \%ZB;
  if($f[0] eq 'zf'){ $B->("zf row names BoundError::") if $t=~/BoundError::/ }
  else { $B->("zb row names zf Error::") if $t=~/(?<!Bound)\bError::/ }
@@ -29,3 +30,4 @@ while(<F>){ $ln++; if(/^#/){ next } if(!$hdr){ $hdr=1; next } $n++; my @f=p($_);
 print "rows $n\n"; print "BAD $_ $bad{$_} (first: $ex{$_})\n" for sort keys %bad; print "lint: ",(%bad?"FAIL":"clean (no BAD lines)"),"\n";
 print "rows with an UNGENERATED oracle pin (pm-coverage FAIL, blocks RC until pinned): ",$ung//0,"\n";
 print join(" ",map {"$_=$cls{$_}"} sort keys %cls),"\n"; print "$_ $vs{$_}\n" for sort keys %vs;
+exit(%bad?1:0);
