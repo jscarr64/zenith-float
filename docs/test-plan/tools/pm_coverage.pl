@@ -1,8 +1,8 @@
 #!/usr/bin/perl
-# Harper pm-coverage v2 (pmrev5: rule f parses full records, --manifest). Was v1 (Spence pmrev3 item 1). Separate tool; lint.pl stays the structural/variant lint.
+# Harper pm-coverage v3 (pmrev6, Spence review 5 item 9: rule f is enforced in every mode once --results is given; a duplicate manifest key dies). Was v2 (pmrev5: rule f parses full records, --manifest). Was v1 (Spence pmrev3 item 1). Separate tool; lint.pl stays the structural/variant lint.
 # usage: perl pm_coverage.pl [--mode rc|design-stage] [--results verdicts.tsv --manifest run.manifest] <edges.csv> <shards.csv> [tree]
 #  rc (default, strict): every rule below is enforced; any count > 0 is FAIL and exit 1.
-#  design-stage: only the structural rules (S1-S3, e) are enforced; rules a-d are listed as GAP lines with
+#  design-stage: only the structural rules (S1-S3, e) are enforced, plus rule f whenever --results is given (any FAIL record exits 1 in every mode); rules a-d are listed as GAP lines with
 #    their full counts (never hidden, never PASS); output is marked NOT AN RC VERDICT. Exit 1 on a structural FAIL.
 # rules: a unsigned proof | b cited proof file missing | c UNGENERATED oracle pin on an executed row
 #        d unpinned PM-1 row ([PM1-UNPINNED]) | e shard per-family row count below matrix count
@@ -41,7 +41,7 @@ for my $k (sort keys %exp){ my $h=$have{$k}//0; $G->('e',"shard $k has $h rows, 
 my %fe = map { $_=>(-f "$T/$_"?1:0) } keys %files; my $fx=grep {$fe{$_}} keys %fe; my $fm=(keys %fe)-$fx;
 my @MK=qw(zf_sha zb_sha env_name env_hash gen_sha256);
 if(defined $res){ die "rule f: --results requires --manifest (expected provenance comes from the manifest, never from the results file)\n" unless defined $man;
-   my %M; open my $mh,'<',$man or die "$man"; while(<$mh>){ chomp; next if /^\s*(#|$)/; my ($k,$v)=/^\s*(\w+)\s*=\s*(\S+)\s*$/ or die "manifest: bad line $.\n"; $M{$k}=$v } close $mh;
+   my %M; open my $mh,'<',$man or die "$man"; while(<$mh>){ chomp; next if /^\s*(#|$)/; my ($k,$v)=/^\s*(\w+)\s*=\s*(\S+)\s*$/ or die "manifest: bad line $.\n"; die "manifest: duplicate key $k at line $.\n" if exists $M{$k}; $M{$k}=$v } close $mh;
    for (@MK){ die "manifest: missing $_\n" unless defined $M{$_} }
    my %known=map {$_=>1} @ids; my (%v,%seen); open R,$res or die "$res"; my $rl=0;
    while(<R>){ $rl++; chomp; next if /^#/ || $_ eq ''; my @r=split /\t/,$_,-1;
@@ -58,7 +58,7 @@ my %name=(a=>'unsigned proof',b=>'cited proof file missing',c=>'UNGENERATED orac
 my $fail=0; my %struct=map {$_=>1} qw(S1 S2 S3 e);
 for my $r (qw(a b c d e f S1 S2 S3)){ my $n=$cnt{$r}//0;
   if($r eq 'f' && !defined $res){ print "rule f ($name{f}): not evaluated, no --results file (RC requires one)\n"; $fail++ if $mode eq 'rc'; next }
-  my $enf = $mode eq 'rc' || $struct{$r}; my $tag = $n==0 ? 'PASS' : $enf ? 'FAIL' : 'GAP';
+  my $enf = $mode eq 'rc' || $struct{$r} || ($r eq 'f' && defined $res); my $tag = $n==0 ? 'PASS' : $enf ? 'FAIL' : 'GAP';
   $fail++ if $n && $enf; printf "rule %s (%s): %s count=%d%s\n",$r,$name{$r},$tag,$n,($n?" first: ".join(' ; ',@{$ex{$r}}):'') }
 print $mode eq 'design-stage' ? "DESIGN-STAGE (structural rules only; GAP lines are open gaps, NOT AN RC VERDICT): ".($fail?"FAIL":"structural PASS")."\n" : "pm-coverage RC: ".($fail?"FAIL":"PASS")."\n";
 exit($fail?1:0);

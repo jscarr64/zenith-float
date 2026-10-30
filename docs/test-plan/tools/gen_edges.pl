@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# Harper 2026-10-30: precision-matrix edge list v5 (Spence pmrev4 items 3-4 on top of v4: Paul re-pin, one outcome per row).
-use strict; use warnings;
+# Harper 2026-10-30: precision-matrix edge list v6 (Spence pmrev5 items 1-14 on top of v5: one hedge rule in tools/pm_hedge.pl, per-class pins, MPFR or mpmath primary oracle).
+use strict; use warnings; use FindBin; require "$FindBin::Bin/pm_hedge.pl";
 my $T=$ENV{PM_TREE}//"$ENV{HOME}/harper-work/zf-precision-matrix";   # worktree; sources pinned to $SRC_COMMIT
 my $IN="$T/docs/test-plan/inputs";
 my $SRC_COMMIT="7955836a845bd6419dc41d21eda6e739e3b622c5";
@@ -109,6 +109,15 @@ my $MPFR='MPFR 4.2.2 + GMP 6.3.0 via rug 1.20.1 / gmp-mpfr-sys 1.6.8 (Cargo.lock
 my $ENV='~/team-env/oracle-2026-10-30 via ORACLE_PY (mpmath 1.3.0, sympy 1.14.0, gmpy2 2.3.2, python-flint 0.9.0)';
 my %mpfrnative=map {$_=>1} qw(add sub mul div sqrt cbrt rec_sqrt recip sqr exp exp2 exp10 expm1 ln log log2 log10 ln_1p log1p sin cos tan sec csc cot asin acos atan atan2 sinh cosh tanh sech csch coth asinh acosh atanh gamma ln_gamma lgamma digamma zeta erf erfc j0 j1 jn y0 y1 yn ai agm hypot pow powi powsi fma fms li2 eint fmod remainder rint round floor ceil trunc frac abs neg sin_cos sinh_cosh nth_root beta gamma_inc);
 my %trig=map {$_=>1} qw(sin cos tan sec csc cot sin_cos sincos rem_pi);
+my $UNP='[PM1-UNPINNED] required result: FAIL until the gold pins one outcome per row at PM-1; pin rule: ';
+my $PIB='the documented up-front pi-bit budget constant (ZF-M22, FIXLIST:127; set by Rusty, the same value on x86_64 and i686)';
+my $OVFZ='ExponentOverflow(sign): ±Inf for modes away from zero; max finite flagged inexact for modes toward zero (ToZero; Down for +; Up for -) per CONTRACT 10.4 description of zf';
+my %HXEX=map{$_=>1} qw(abs neg copysign floor ceil round trunc fract clamp max min signum sign);
+my %HXCR=map{$_=>1} qw(atan atan2 tanh erf erfc sqrt cbrt ln log log2 log10 log1p asinh acosh normal_cdf ln_gamma lambert_w0);
+my %HXINV=map{$_=>1} qw(asin acos atanh);
+my %ZPOLE=(kelvin_ker=>1); my %ZUNP=map{$_=>1} qw(kelvin_ker_nu kelvin_kei_nu fox_h meijer_g);
+my %VALCL=map{$_=>1} qw(normal negative zero signed-zero cancellation tie tiny-exp subnormal-like unf-min-normal unf-min-subnormal unf-half-min-subnormal-tie prec-1-2-3 prec-axis prec-MAX-i686);
+sub Vk { my ($a,$v)=@_; return "Err(BoundError::$v)" if $$a{crate} eq 'zb'; my $r=$$a{_ret}//'value'; return 'None' if $r eq 'option'; return "Err(Error::$v)" if $r eq 'result'; return "false (documented refusal, $v-class input)" if $r eq 'bool'; "NaN whose error kind is Error::$v" }
 my %i64x=map {$_=>1} qw(scalb ldexp ilogb frexp);
 my $W=0;
 my @MODES=qw(None Up Down ToZero FromZero ToEven ToOdd);
@@ -137,15 +146,12 @@ sub pin1 { my $a=shift; return if ($$a{verdict_space}//'') eq 'NA_PROOF';
   if($c eq 'prec-MAX-x86_64'){ my ($sk)=/(MAX-timeout skip .*)$/; my $mv=(split / \| /,$v)[0]; $_="a prompt ".($cr eq 'zb'?'':'refusal ')."$mv within 10 minutes (p = 2^60-1 bits = 2^57 bytes cannot be allocated, so any returned value is FAIL); a timeout is FAIL and becomes a FIXLIST row. $sk"; $v=$mv }
   if($c eq 'prec-MAX-i686'){ my ($sk)=/(MAX-timeout skip .*)$/; $_=($cr eq 'zb'?'enclosure at prec':'correct result at p')." = 2^30-1 (allocatable on i686, Paul ruling) within the 10-minute row budget; a refusal is FAIL, a timeout is FAIL, a wrong value is FAIL, and every FAIL becomes a FIXLIST row. $sk"; $v='' }
   if(/^R3: correctly rounded at the requested p in the requested rm, or refuse with/){ $_='R3: correctly rounded at the requested p in the requested rm (valid operands; invalid operands are the out-of-domain row); a refusal is FAIL; a result accurate only to 32 bits is FAIL ('.($WPL{$bare}//'FIXLIST ZF-WP row MISSING').')'; push @LEFT,"no ZF-WP row for $k" unless $WPL{$bare} }
-  if($c=~/^trig-huge-arg e=(.*)$/){ my $e=$1; my $what=$bare eq 'rem_pi'?'x mod pi correctly rounded at p in rm (FIXLIST:31 ZF-17)':($cr eq 'zb'?'an enclosure':'correct bits at p');
-    $_ = $e=~/^(2\^16\+1|EXPONENT_MAX)$/ ? "refusal: $v (needs more than the 2^16 extra pi bits of the trig_reduce_extra cap, ops/util.rs:92-95); identical on i686 and x86_64; any returned value is FAIL (FIXLIST:15 ZF-01, FIXLIST:127 ZF-M22)"
-       : "$U$what where e + p + the reduction guard bits fit in the 2^16 cap of ops/util.rs:92-95, the refusal $v where they do not; identical on i686 and x86_64 (FIXLIST:15 ZF-01, FIXLIST:127 ZF-M22)" }
   s/length 0 or 1 window/length-0 window, length-1 window/;
   s/pollard_rho prime or cap hit -> None/pollard_rho on a prime -> None; pollard_rho cap hit -> None/;
   s/exact 0 \(pdf\/pmf\) or 0\/1 \(cdf\)/exact 0 for pdf\/pmf; cdf: exact 0 below the support, exact 1 above it/;
   if(/^R4 exponent extremes: no wrap/){ my ($cv)=/(\[convention:[^\]]*\])$/; $_=$U."no wrap (checked arithmetic); the value at the cap this family's doc states, recorded per row with the refusal named in refusal_variant where the doc states a refusal $cv" }
   if(/^R4 zero polynomial/){ my ($cv)=/(\[convention:[^\]]*\])$/; $_=$U."degree and derivative of the zero polynomial exactly as the poly.rs doc states them (one representation, recorded in the gold); integral constant 0 $cv" }
-  s{oracle MPFR or mpmath Ziv pair p\+256/p\+512}{'oracle '.($o=~/^MPFR/ ? 'MPFR (as pinned in oracle_x86_64)' : $o=~/^python-flint/ ? 'python-flint exact (as pinned in oracle_x86_64)' : $o=~/^digest/ ? 'gold digest (as pinned in oracle_x86_64)' : 'mpmath Ziv pair p+256/p+512 (as pinned in oracle_x86_64)')}e;
+  s{oracle MPFR or mpmath Ziv pair p\+256/p\+512}{'oracle '.($o=~/^primary: MPFR/ ? 'MPFR (as pinned in oracle_x86_64)' : $o=~/^primary: mpmath 1\.3\.0 exact integer/ ? 'mpmath exact integers (as pinned in oracle_x86_64)' : $o=~/digest:/ ? 'gold digest (as pinned in oracle_x86_64)' : 'mpmath Ziv pair p+256/p+512 (as pinned in oracle_x86_64)')}e;
   s/values are exact or correctly rounded at p in rm/zero, infinite and listed exact values are exact; every other value is correctly rounded at p in rm/;
   s/-0 gives -Inf \(odd n\) or \+Inf \(even n\)/-0 gives -Inf for odd n and +Inf for even n/;
   s/\(FIXLIST doc row for LIBRARY\.md:399 is Paul's\)/(doc row: $D01)/;
@@ -153,9 +159,65 @@ sub pin1 { my $a=shift; return if ($$a{verdict_space}//'') eq 'NA_PROOF';
   if($v eq 'DivisionByZero or None per doc'){ $_=$U.$_.'; refusal per family: the one the fn doc states for modulus 0 (mod_pow, mod_inv), none for the other cases'; $v='pinned per row from the fn doc' }
   $v=~s/^value or NaN\(DivisionByZero\)$/value at a non-pole zero; NaN whose error kind is Error::DivisionByZero at a pole/;
   $v=~s/^entries or None$/Some(factors)/;
-  for my $t ($_,$v){ push @LEFT,"either/or left: $k $c: $t" if $t=~/\b(?:or|either)\b/i || $t=~/(?:^|\s)\|(?:\s|$)/ || $t=~/UNCLEAR/ }
   $$a{required_result}=$_; $$a{refusal_variant}=$v }
-sub row { my %a=@_; pin1(\%a); push @out,[@a{qw(crate family source category group class class_def inputs modes tier required_result refusal_variant oracle_x86_64 oracle_i686 check verdict_space proof)}]; $cnt{"$a{crate} $a{verdict_space}"}++ }
+sub pin2 { my $a=shift; my ($k,$c,$cr)=@$a{qw(family class crate)}; my $bare=$k=~s/.*:://r;
+  local $_=$$a{required_result}//''; my $v=$$a{refusal_variant}//''; my ($cv)=/(\[convention:[^\]]*\])$/; my $CV=$cv?" $cv":'';
+  my $ex=($$a{verdict_space}//'') ne 'NA_PROOF'; my $done=0;
+  if($ex && $cr eq 'zf' && $k=~/^ExactNumArray::(lu|qr|svd|eigen)_decomp$/){ my $d=$1; my $dc=' [convention: array.rs:1315-1497 (Option return); LAPACK getrf, geqrf, gesvd normalisations; Spence pmrev5 items 6-7]';
+    my $norm='(LU: partial pivoting on the first max abs(pivot); exact inputs, so a tie always goes to the lowest index; QR: diag(R)>=0; SVD: Sigma descending, first nonzero of each u_i positive; eigen: ascending, unit-norm, sign-normalised)';
+    if($c=~/^(zero|signed-zero)$/){ my %w=(lu=>'the zero matrix has a zero pivot after partial pivoting (exactly singular)',qr=>'qr of the zero matrix has R_ii = 0',svd=>'the zero matrix has only a repeated zero singular value',eigen=>'the zero matrix has only a repeated zero eigenvalue'); $_="None: $w{$d}; Some(factors) is FAIL$dc"; $v='None' }
+    elsif($c=~/^(inf|nan)/){ $_="None: an Inf entry and a NaN entry have no exact factorisation; Some(factors) is FAIL$dc"; $v='None' }
+    elsif($c eq 'out-of-domain'){ $_="None: a non-square matrix and an empty matrix".($d eq 'lu'?' and an exactly singular matrix (a zero pivot after partial pivoting)':'')." have no factorisation under the pinned normalisation; Some(factors) is FAIL$dc"; $v='None' }
+    elsif($c eq 'ovf-max-plus-half-ulp'){ $_=$UNP."the single outcome the gold records from the fn doc for the exact factorisation whose largest entry is max finite + half ulp$dc"; $v='pinned per row in the gold' }
+    elsif($c=~/^(degenerate|prec-0-refuse|prec-MAXp1-refuse|prec-MAX-x86_64)$/){ }
+    else { $_="Some(factors): each factor entry correctly rounded at p in rm of the exact factor under the pinned normalisation $norm; inputs are generated nonsingular with distinct singular values and eigenvalues, so None is FAIL (None is pinned on the zero, signed-zero, inf, NaN, out-of-domain and degenerate rows)$dc"; $v='Some(factors)' }
+    $done=1 }
+  elsif($ex && $cr eq 'zf' && $k eq 'ode::rk45_adaptive'){ my $h='rk45 ruling (Spence pmrev4, pmrev5 item 4): within tol of mpmath odefun at 2p bits in oracle-2026-10-30, pinned per row; this row: ';
+    my $api=' (rk45_adaptive returns Option at 7955836, ode.rs:439, so this row FAILs until it reports the kind: FIXLIST API row needed)';
+    if($VALCL{$c} || $c=~/^rm-/){ $_=$h.'the value within tol of mpmath odefun at 2p bits; a refusal is FAIL'; $v='value' }
+    elsif($c=~/^prec-(0|MAXp1)-refuse$/){ $_=$h.'refusal Error::InvalidArgument (p outside [1, MAX_PRECISION])'.$api; $v='Error::InvalidArgument' }
+    elsif($c eq 'prec-MAX-x86_64'){ $_=$h.$_ }
+    else { $_=$h."refusal Error::PrecisionRetryExhausted ($c inputs: odefun at 2p bits cannot meet tol)".$api; $v='Error::PrecisionRetryExhausted' }
+    $_.=' [convention: mpmath odefun; Spence pmrev5 item 4]'; $done=1 }
+  elsif($ex && $cr eq 'zf' && $k eq 'ExactNum::from_raw_parts'){ my $h='from_raw_parts ruling (Spence pmrev4, pmrev5 item 5): exact normalized, pinned per row; this row: ';
+    if($c=~/^(raw-parts-invalid|out-of-domain|inf|nan|ovf-max-plus-half-ulp)/){ $_=$h.'refusal Err(Error::InvalidArgument): these parts do not describe a finite value at p'.($c eq 'ovf-max-plus-half-ulp'?' (exponent above EXPONENT_MAX)':'').'; any returned value is FAIL'; $v='Err(Error::InvalidArgument)' }
+    else { $_=$h.'the exact normalised value of these valid parts (from_raw_parts normalises exactly, no rounding); a refusal is FAIL (invalid parts pin Err(Error::InvalidArgument) on the raw-parts-invalid row)'; $v='' }
+    $_.=' [convention: ext.rs:1970 Result return; from_raw_parts_checks.rs]'; $done=1 }
+  if($ex && !$done && $cr eq 'zf' && $c eq 'huge-exp' && ($trig{$bare} || /\belse\b/i)){ my $cx=$k=~/^ExactComplex::/;
+    if($trig{$bare}){ my $m=Vk($a,'MemoryAllocation'); $_="refusal: $m raised before allocating: reducing an argument with exponent in [EXPONENT_MAX-64, EXPONENT_MAX] needs more pi bits than $PIB; identical on i686 and x86_64; any returned value is FAIL (FIXLIST:127 ZF-M22)"; $v=$m }
+    elsif($HXEX{$bare}){ $_='exact result (no rounding; the huge exponent is representable); a refusal is FAIL'.$CV; $v='' }
+    elsif($HXCR{$bare} || ($cx && $HXINV{$bare})){ $_='correctly rounded at p in rm (for an in-domain operand of this exponent the result is finite and in range); a refusal is FAIL'.$CV; $v='' }
+    elsif($HXINV{$bare}){ my $m=Vk($a,'InvalidArgument'); $_="refusal: $m (|x| > 1 is outside the domain); any returned value is FAIL$CV"; $v=$m }
+    else { $_=$UNP.'the one outcome the gold records for this operand: the correctly rounded value at p in rm where the exact result is in range, '.Vk($a,'ExponentOverflow').' with the sign of the exact result where it exceeds EXPONENT_MAX'.$CV; $v='pinned per row in the gold' }
+    $done=1 }
+  if($ex && !$done && $cr eq 'zf' && $c=~/^ovf-/ && /\belse\b/i){ if($c eq 'ovf-max-finite'){ $_='R4 exact max finite value at p (representable, no rounding); a refusal is FAIL'.$CV; $v='' } else { $_="R4 $OVFZ$CV"; $v='ExponentOverflow(Sign)' } $done=1 }
+  if($ex && !$done && $cr eq 'zf' && $c=~/^(tiny-exp|unf-min-normal|unf-min-subnormal|unf-half-min-subnormal-tie|subnormal-like)$/ && (/\belse\b/i || m{ / } || $v=~m{/})){
+    $_ = $c eq 'unf-min-normal' ? 'exact smallest normal 2^(EXPONENT_MIN-1) (representable, no rounding); a refusal is FAIL' : $c eq 'unf-half-min-subnormal-tie' ? 'the correctly rounded value in rm of half the smallest subnormal (ToEven, ToZero, Down(+) give +0; Up(+), FromZero, ToOdd give the min subnormal; None gives +0)' : $c eq 'unf-min-subnormal' ? 'exact smallest subnormal 2^(EXPONENT_MIN-p) (gradual underflow at EXPONENT_MIN, representable); a refusal is FAIL' : 'the correctly rounded value at p in rm under gradual underflow at EXPONENT_MIN (a subnormal result and a signed-zero result are both that rounded value); a refusal is FAIL';
+    $_.=$CV unless index($_,'[convention:')>=0; $v=''; $done=1 }
+  if($ex && !$done && $cr eq 'zf' && $c eq 'out-of-domain'){ my @t=grep {length} map {s/^\s+|\s+$//gr} split /;/,$v;
+    if(@t>1 || /\belse\b/i || m{cap/budget}){ my $r1=(grep {/InvalidArgument/} @t)[0] // Vk($a,'InvalidArgument'); $_="refusal $r1 for inputs outside the documented domain of this family (shape, index, radix, p and real-domain violations; exact poles are not inputs of this row); any returned value is FAIL$CV"; $v=$r1; $done=1 } }
+  if($ex && !$done && $v=~/non-pole zero/){
+    if($ZPOLE{$bare}){ my $m=Vk($a,'DivisionByZero'); $_="the pole at 0: +Inf with error kind Error::DivisionByZero (log singularity, DLMF 10.61); any finite value is FAIL$CV"; $v=$m }
+    elsif($ZUNP{$bare}){ $_=$UNP."the one outcome the gold records at 0 for the given parameters: the limit value where the family is finite at 0, NaN with Error::DivisionByZero where it has a pole at 0$CV"; $v='pinned per row in the gold' }
+    else { $_="the exact limit value at 0 (DLMF), correctly rounded at p in rm; this family has no pole at 0, so a refusal is FAIL$CV"; $v='' } $done=1 }
+  for my $t ($_,$v){
+    $t=~s{\bn/a\b}{not applicable}g; $t=~s{IEEE/MPFR}{IEEE and MPFR}g; $t=~s{i686/x86_64}{i686 and x86_64}g; $t=~s{Inf/Inf}{Inf divided by Inf}g;
+    $t=~s{compare/contains with NaN -> unordered/false}{compare with NaN -> unordered; contains with NaN -> false}g;
+    $t=~s{p=0 / MAX\+1 refused}{p=0 and p=MAX+1 are refused on the prec-0-refuse and prec-MAXp1-refuse rows}g;
+    $t=~s{MPFR doc / mpmath Ziv}{MPFR doc, mpmath Ziv}g;
+    $t=~s{gmpy2 / python-flint|python-flint/gmpy2}{mpmath exact integers (gmpy2 backend), python-flint second check}g;
+    $t=~s{ / }{, }g if $t=~/^(empty input|R4 empty input)/;
+    $t=~s{mode-independent where no rm; else values rounded per mode}{$$a{_hasrm}?'values rounded per mode':'mode-independent values'}ge;
+    $t=~s{\(-0 only in Down\), else correctly rounded}{(-0 only in Down); a non-cancelling pair gives the correctly rounded value}g;
+    $t=~s{; else signed Inf}{; every other Inf operand pair gives the signed Inf}g;
+    $t=~s{ / }{, }g;
+    $t=~s{(\S+)}{ my $w=$1; (index($w,'/')<0 || pm_slash_ok($w)) ? $w : ($w=~s{(?<=[A-Za-z0-9_)+\-])/(?=[A-Za-z(+\-])}{, }gr) }ge; }
+  $v='' if $v=~m{^(value , signed 0|value / signed 0|subnormal, \+-0|subnormal/\+-0)$};
+  $v='signed zero (exact)' if $v=~m{^-0 [/,] \+0$};
+  if($v=~m{^ExactNum::nan\(.*\)(?: /|,) Err\(}){ $v = $c=~/refuse/ ? Vk($a,'InvalidArgument') : '' }
+  $v='None' if $v=~/^None(?:; None)+$/;
+  $$a{required_result}=$_; $$a{refusal_variant}=$v }
+sub row { my %a=@_; pin1(\%a); pin2(\%a); { my @h=pm_hedges($a{required_result},$a{refusal_variant}); push @LEFT,"hedge(@h) $a{family} $a{class}: $a{required_result} || $a{refusal_variant}" if @h; } push @out,[@a{qw(crate family source category group class class_def inputs modes tier required_result refusal_variant oracle_x86_64 oracle_i686 check verdict_space proof)}]; $cnt{"$a{crate} $a{verdict_space}"}++ }
 for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
   my ($ty)=$key=~/^(.*)::[^:]+$/; $ty//='';
   for my $i (0..$#N5){ my ($c,$tr,$names,$cit)=@{$N5[$i]}; next unless $c eq $crate && $ty=~/$tr/; if(grep {$_ eq '*' || $_ eq $bare} @$names){ push @{$n5{$key}},$cit; $n5hit{$i}{$bare}=1 } }
@@ -167,18 +229,18 @@ for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
   my $wp = $acc=~/working-precision, 32 bits/ ? 1:0;
   my $other = ($crate eq 'zf' && $cat eq 'other') ? 1:0;
   my $grp = $crate eq 'zb' ? 'zb-enclosure' : $cat eq 'random-feature' ? 'G13 random (feature=random, R2)' : $other ? 'R4' : $cat=~/^(arith|elementary|special|trig|constant|rounding)$/ ? 'numeric-CR' : $cat=~/^(conversion|io\/format)$/ ? 'conversion' : $cat eq 'compare' ? 'compare' : 'numeric-CR';
-  my $V = sub { my $v=shift; return "Err(BoundError::$v)" if $crate eq 'zb'; return 'None' if $ret eq 'option'; return "Err(Error::$v)" if $ret eq 'result'; return "false (documented refusal; $v-class input)" if $ret eq 'bool'; "NaN whose error kind is Error::$v" };
+  my $V = sub { my $v=shift; return "Err(BoundError::$v)" if $crate eq 'zb'; return 'None' if $ret eq 'option'; return "Err(Error::$v)" if $ret eq 'result'; return "false (documented refusal, $v-class input)" if $ret eq 'bool'; "NaN whose error kind is Error::$v" };
   my $proofp="docs/test-plan/pm-proofs/$crate/".($key=~s/[^A-Za-z0-9_:.-]/_/gr).'.md';
   my $gold = sub { my $g=($goldfor{$crate}{lc $bare}||[]); @$g ? join(' | ',map {"gold:$_"} @$g) : "gold:".($crate eq 'zb'?'zenith-bound/tests/goldens/pm':'zenith-float-num/tests/pm/golds')."/$crate-".($key=~s/[^A-Za-z0-9_]+/_/gr).".jsonl\@sha256:UNGENERATED (pm-coverage FAIL until written by PM-3 and pinned in SHA256SUMS)" };
-  my $ox = $crate eq 'zb' ? "goldlib (zenith-bound/tools, ORACLE_PY=$ENV; python-flint 0.9.0 arb at prec+256), ".$gold->()
-        : ($mpfrnative{$bare} && $key=~/^ExactNum::/) ? $MPFR
-        : ($grp eq 'G13 random (feature=random, R2)') ? 'digest:'.$gold->()
-        : ($bare=~/gcd|lcm|mod_|egcd|pollard|miller|factor|binomial|isqrt|int/i) ? "python-flint 0.9.0 exact in $ENV, ".$gold->()
-        : "mpmath 1.3.0 Ziv pair p+256/p+512 must agree, in $ENV, ".$gold->();
+  my $ox = $crate eq 'zb' ? "primary: mpmath 1.3.0 at prec+256 via goldlib (zenith-bound/tools, ORACLE_PY=$ENV); second check: python-flint 0.9.0 arb, ".$gold->()
+        : ($mpfrnative{$bare} && $key=~/^ExactNum::/) ? "primary: $MPFR"
+        : ($grp eq 'G13 random (feature=random, R2)') ? "primary: mpmath 1.3.0 in $ENV generates the gold (the oracle script replays the splitmix64 seed stream and builds each value at p bits); the row checks a digest of it: digest:".$gold->()
+        : ($bare=~/gcd|lcm|mod_|egcd|pollard|miller|factor|binomial|isqrt|int/i) ? "primary: mpmath 1.3.0 exact integer arithmetic (gmpy2 backend) in $ENV; second check: python-flint 0.9.0, ".$gold->()
+        : "primary: mpmath 1.3.0 Ziv pair p+256/p+512 must agree, in $ENV, ".$gold->();
   my $oi = $crate eq 'zb' ? 'same pinned gold file + SHA as x86_64; byte-identical BallRow digest to the x86_64 run'
-        : 'gold:zenith-float-num/tests/pm/golds/i686/'.($key=~s/[^A-Za-z0-9_]+/_/gr).".jsonl\@sha256:UNGENERATED (cut from the MPFR/gold-checked x86_64 run at PM-3; pm-coverage FAIL until pinned)";
+        : 'gold:zenith-float-num/tests/pm/golds/i686/'.($key=~s/[^A-Za-z0-9_]+/_/gr).".jsonl\@sha256:UNGENERATED (cut at PM-3 from the x86_64 run checked against the same primary oracle as oracle_x86_64; pm-coverage FAIL until pinned)";
   my $chk = $crate eq 'zb' ? 'containment: exact value in [mid-rad, mid+rad]; rad <= tightness baseline' : 'exact limbs + sign + inexact flag + error kind equal the pinned oracle';
-  my %base=(crate=>$crate,family=>$key,source=>$src,category=>$cat,group=>$grp,oracle_x86_64=>$ox,oracle_i686=>$oi,check=>$chk,proof=>'',refusal_variant=>'');
+  my %base=(crate=>$crate,family=>$key,source=>$src,category=>$cat,group=>$grp,oracle_x86_64=>$ox,oracle_i686=>$oi,check=>$chk,proof=>'',refusal_variant=>'',_ret=>$ret,_hasrm=>$hasrm);
   my $cr = $crate eq 'zb' ? 'enclosure containing the exact value (sound), rad <= baseline' : $wp ? 'R3: correctly rounded at the requested p in the requested rm, or refuse with '.$V->('InvalidArgument').'; a result accurate only to 32 bits is FAIL (FIXLIST: working-precision families)' : 'correctly rounded at p in rm';
   my $R = sub { my ($cls,$def,$inp,$modes,$tier,$req,$var,%o)=@_;
     if($crate eq 'zf' && $R4X{$bare} && !$o{keep} && !$o{na} && $cls!~/refuse|^nan/){ $req="R4 $R4X{$bare}" }
@@ -234,19 +296,24 @@ for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
   $R->('ovf-max-plus-half-ulp','exact result = max finite + half ulp (and just below/above)','constructed',$hasrm?$X7:$M7,$FX,$ovf,$crate eq 'zb'?'Ok(all-reals ball)':'ExponentOverflow(Sign)',r4class=>'huge-exp');
   $R->('unf-min-normal','result = smallest normal 2^(EXPONENT_MIN-1)','constructed',$hasrm?$X7:$M7,$FX,$unf,'',r4class=>'tiny-exp');
   $R->('unf-min-subnormal','result = smallest subnormal 2^(EXPONENT_MIN-p)','constructed',$hasrm?$X7:$M7,$FX,$unf,'',r4class=>'subnormal-like');
-  $R->('unf-half-min-subnormal-tie','exact result = half the smallest subnormal (tie to 0 or min subnormal)','constructed',$hasrm?$X7:$M7,$FX,$crate eq 'zb'?$unf:'ToEven/ToZero/Down(+) -> +0; Up(+)/FromZero -> min subnormal; ToOdd -> min subnormal; None -> RNDZ (+0)','',r4class=>'tiny-exp');
-  if($i64x{$bare}){ $R->('i64-extreme-exponent-arg','exponent argument i64::MIN, i64::MIN+1, i64::MAX-1, i64::MAX, EXPONENT_MAX±1, EXPONENT_MIN±1','constructed',$hasrm?$X7:$M7,$FX,'no wrap; result saturates to ExponentOverflow(sign) / underflow per mode; ilogb/frexp exact','ExponentOverflow(Sign)',keep=>1) }
+  $R->('unf-half-min-subnormal-tie','exact result = half the smallest subnormal (tie to 0 or min subnormal)','constructed',$hasrm?$X7:$M7,$FX,$crate eq 'zb'?$unf:'ToEven, ToZero, Down(+) -> +0; Up(+), FromZero -> min subnormal; ToOdd -> min subnormal; None -> RNDZ (+0)','',r4class=>'tiny-exp');
+  if($i64x{$bare}){ $R->('i64-extreme-exponent-arg','exponent argument i64::MIN, i64::MIN+1, i64::MAX-1, i64::MAX, EXPONENT_MAX±1, EXPONENT_MIN±1','constructed',$hasrm?$X7:$M7,$FX,'no wrap; an exponent above EXPONENT_MAX gives ExponentOverflow(sign), one below EXPONENT_MIN gives the rounded underflow value in rm; ilogb and frexp are exact','ExponentOverflow(Sign)',keep=>1) }
   # 4: huge trig args
-  if($trig{$bare}){ for my $e ('2^16-1','2^16','2^16+1','EXPONENT_MAX'){ my $rv = $crate eq 'zb' ? 'Err(BoundError::Resource { .. }) (zf PrecisionRetryExhausted maps to Resource: zenith-bound/src/mag/convert.rs:209, arith.rs:595, bridge.rs:294)' : $V->('PrecisionRetryExhausted'); my $what = $bare eq 'rem_pi' ? 'x mod pi correctly rounded at p in rm (FIXLIST:31 ZF-17)' : 'correct bits at p';
-      $R->("trig-huge-arg e=$e","|x| with exponent $e (trig_reduce_extra cap 2^16, zenith-float-num/src/ops/util.rs:92-95; same cap on x86_64 and i686: 1<<16 with usize saturation)",'x = (1+2^-k)*2^e, random mantissas',$hasrm?$X7:$M7,'fast(ToEven,p=64)+heavy',"$what, or $rv; identical on i686 and x86_64; a wrong value is FAIL (FIXLIST:15 ZF-01, FIXLIST:127 ZF-M22)",$rv,keep=>1) } }
+  if($trig{$bare}){ my $hz=$hasrm?$X7:$M7; my $FM='(FIXLIST:15 ZF-01, FIXLIST:127 ZF-M22)';
+    for my $e ('2^16-1','2^16','2^16+1'){ my $what = $bare eq 'rem_pi' ? 'x mod pi correctly rounded at p in rm against the mpmath value (FIXLIST:31 ZF-17)' : ($crate eq 'zb'?'an enclosure of the mpmath value':'the correctly rounded mpmath value at p in rm');
+      $R->("trig-huge-arg e=$e","|x| with exponent $e (a ZF-M22 regression point; no refusal: the result is required)",'x = (1+2^-k)*2^e, random mantissas',$hz,'fast(ToEven,p=64)+heavy',"$what; identical on i686 and x86_64; a refusal is FAIL, a wrong value is FAIL (Spence pmrev5 timing: up to 0.07 s per row at p=1025, about 0.002 s at e=2^16+-1) $FM",'',keep=>1) }
+    my $MA=$V->('MemoryAllocation');
+    $R->('trig-huge-arg e=EXPONENT_MAX','|x| with exponent EXPONENT_MAX = 2^62-1 (defs.rs:49)','x = (1+2^-k)*2^EXPONENT_MAX',$hz,'fast(ToEven,p=64)+heavy',"refusal: $MA, raised before allocating, because the reduction needs more pi bits than $PIB; identical on i686 and x86_64; any returned value is FAIL $FM",$MA,keep=>1);
+    $R->('trig-pi-budget-under','|x| whose reduction needs pi bits just under the pi-bit budget constant','constructed from the published constant',$hz,'heavy',$UNP."the correctly rounded mpmath value at p in rm; FAIL until $PIB is published and the gold is cut $FM",'',keep=>1);
+    $R->('trig-pi-budget-over','|x| whose reduction needs pi bits just over the pi-bit budget constant','constructed from the published constant',$hz,'heavy',$UNP."refusal $MA raised before allocating; FAIL until $PIB is published and the gold is cut $FM",$MA,keep=>1) }
   # 12: T4 mul operand pairs
   if($bare eq 'mul' && $crate eq 'zf'){ for my $w (69,70,71){ my $l=2*$w; $R->("mul-pair-T4 sm=$w lg=$l","unbalanced operands: sm=$w words, lg=$l words (mantissa/mul.rs:53 lg.len()/2 >= sm.len() && sm.len() > 70)","p_a=$w*W, p_b=$l*W, both orders",$hasrm?$X7:$M7,$FX,'correctly rounded at p in rm, equal across the switch','',keep=>1) } }
   # primality (Paul)
   if($bare=~/prime|primality|miller/ && $bare!~/^(ai|bi)_prime$/){ $R->('doc-probable-prime','primality test naming/doc rule (Paul)','docs at '.$src,'n/a','fast','name or docs say "probable prime", or the function is deterministic for all inputs; currently miller_rabin docs (modular.rs:105-108) say neither -> FAIL until FIXLIST doc fix','',keep=>1) }
   # pmrev4 item 4: rows that carry the single pinned refusal of the families whose value rows now forbid it
-  if($crate eq 'zf' && $key=~/^roots::(brent|illinois)$/){ $R->('no-sign-change','bracket [a,b] with f(a) and f(b) of the same sign (no sign change)','constructed brackets',$M7,$FX,'refusal: '.$V->('InvalidArgument').'; any returned root is FAIL',$V->('InvalidArgument'),keep=>1) }
-  if($crate eq 'zf' && $key eq 'ode::rk4'){ $R->('bad-step-interval','step h <= 0, non-finite h, zero step count, empty interval, reversed interval','constructed',$M7,$FX,'refusal: '.$V->('InvalidArgument').'; any returned value is FAIL',$V->('InvalidArgument'),keep=>1) }
-  if($crate eq 'zf' && $key=~/^ExactNumArray::(lu|qr|svd|eigen)_decomp$/){ my %dg=(lu=>'an exact pivot tie that the lowest-index rule cannot break',qr=>'a zero R_ii (rank-deficient column)',svd=>'repeated singular values',eigen=>'repeated eigenvalues'); my $d=$dg{$1};
+  if($crate eq 'zf' && $key=~/^roots::(brent|illinois)$/){ $R->('no-sign-change','bracket [a,b] with f(a) and f(b) of the same sign (no sign change)','constructed brackets',$M7,$FX,'refusal: NaN whose error kind is Error::InvalidArgument, held in the returned Option (roots.rs:238, 407 return Option<ExactNum>); None is FAIL; a returned root is FAIL','NaN whose error kind is Error::InvalidArgument (held in the returned Option)',keep=>1) }
+  if($crate eq 'zf' && $key eq 'ode::rk4'){ $R->('bad-step-interval','step h <= 0, non-finite h, zero step count, empty interval, reversed interval','constructed',$M7,$FX,'refusal: Error::InvalidArgument; None is FAIL; any returned value is FAIL; rk4 returns Option at 7955836 (ode.rs:73), so this row FAILs until rk4 reports the kind: FIXLIST API row needed','Error::InvalidArgument',keep=>1) }
+  if($crate eq 'zf' && $key=~/^ExactNumArray::(lu|qr|svd|eigen)_decomp$/){ my %dg=(lu=>'an exactly singular matrix (a zero pivot after partial pivoting; exact ties go to the lowest index)',qr=>'a zero R_ii (rank-deficient column)',svd=>'repeated singular values',eigen=>'repeated eigenvalues'); my $d=$dg{$1};
     $R->('degenerate',"matrix with $d",'constructed exact matrices',$M7,$FX,"None (pinned per row in the gold for $d); Some(factors) is FAIL",'None',keep=>1) }
   if($crate eq 'zf' && $key eq 'ExactNum::from_raw_parts'){ $R->('raw-parts-invalid','parts invalid at p: exponent outside [EXPONENT_MIN, EXPONENT_MAX], limb count not matching p, p outside [1, MAX_PRECISION]','constructed raw parts',$M7,$FX,'refusal: '.$V->('InvalidArgument').'; any returned value is FAIL',$V->('InvalidArgument'),keep=>1) }
   # 2: precision axis A to Z

@@ -1,6 +1,6 @@
-# zf/zb precision matrix: design v5 (Spence fourth review items 1-5; v4.1 was round-4 ZF-04 re-count)
+# zf/zb precision matrix: design v6 (Spence review 5 items 1-14; v5 was the fourth review)
 
-Agent: Harper. Date: 2026-10-30. Edge table: `precision-matrix-edges.csv` (24628 rows, 17 columns; the first 9 lines start with `#` and carry the pins below; the CSV header is the first line without `#`).
+Agent: Harper. Date: 2026-10-30. Edge table: `precision-matrix-edges.csv` (24654 rows, 20639 executed, 17 columns; the first 9 lines start with `#` and carry the pins below; the CSV header is the first line without `#`).
 
 ## 0. Pinned inputs (item 11)
 The generator `tools/gen_edges.pl` reads only the in-branch copies below. It checks every sha256 before reading and stops with `PIN MISMATCH` if one differs. It also stops if `zenith-float-num/{src,tests}` or `zenith-bound/{src,tests}` differ from the source commit. The originals in ~/paul-work and ~/spence-work were copied unedited.
@@ -49,7 +49,7 @@ There are 7 modes. ToOdd: the oracle computes RNDN at p+1 and flips exact ties i
   - `BoundError::` in zf rows, and `Error::` in zb rows
   - any "or documented" wording
 - A negative test confirmed the lint catches `BoundError::PrecisionRetryExhausted`, `Error::Bogus` and a zf `Resource`.
-- **Trig cap in zb (item 8):** zenith-bound has no trig functions (no `fn sin|cos|tan` in zenith-bound/src). If zb reaches the zf cap through the bridge, it surfaces as `Err(BoundError::Resource{..})`: zf `PrecisionRetryExhausted` maps to `Resource` at mag/convert.rs:209, arith.rs:595 and bridge.rs:294. The cap is `trig_reduce_extra` (zenith-float-num/src/ops/util.rs:92-95), `1<<16` with usize saturation, so it is the same on host and i686. The generator writes Resource for any zb trig row. The v2 "zb" trig-huge rows were the zf `Ball::sin/cos` and `ComplexBall::sin/cos` (ball.rs:105,112,352,370). They return `Self` with a NaN midpoint, so `Error::PrecisionRetryExhausted` is the correct zf kind there.
+- **Trig in zb (review 5 item 14):** zenith-bound has no trig families. At 7955836, `git grep -n -E 'fn (sin|cos|tan|sin_cos|rem_pi|sec|csc|cot)\b' -- zenith-bound/src` has 0 hits, `git grep -i -E 'trig|sin\(|cos\('` in zenith-bound/src has 0 hits, and inputs/zb-inventory.csv has no trig entry. So no BoundError::Resource trig rows are added (zb trig rows: 0). The trig-huge rows marked zb in v2 were the zf `Ball::sin/cos` and `ComplexBall::sin/cos` (ball.rs:105,112,352,370) and carry zf kinds.
 
 ## 6. Thresholds and operand classes (item 6)
 - The threshold classes (ovf-max-finite, ovf-max-plus-half-ulp, unf-min-normal, unf-min-subnormal, unf-half-min-subnormal-tie) are kept, with the T1-T12 table and the i64 extremes for scalb, ldexp and ilogb.
@@ -59,10 +59,12 @@ There are 7 modes. ToOdd: the oracle computes RNDN at p+1 and flips exact ties i
   - `subnormal-like`: unnormalised raw parts through from_raw_parts. The input must be normalised exactly and then correctly rounded, or refused with InvalidArgument.
 - R4 families take Spence's R4 text for these classes.
 
-## 7. Huge-argument trig (item 7)
-- `trig-huge-arg` has 52 rows: 48 from v2, plus 4 for `ExactNum::rem_pi` (FIXLIST:31 ZF-17, FIXLIST:127 ZF-M22).
-- Exponents: 2^16-1, 2^16, 2^16+1 and EXPONENT_MAX.
-- Required: correct bits (for rem_pi, x mod pi correctly rounded) or PrecisionRetryExhausted, identical on both targets.
+## 7. Huge-argument trig (review 5 items 12-13)
+- `trig-huge-arg` has 52 rows (13 families x 4 exponents), plus 26 `trig-pi-budget-*` rows (13 families x under/over).
+- e = 2^16-1, 2^16, 2^16+1 (39 rows): pinned to the correctly rounded mpmath value at p in rm, identical on both targets. There is no cap here and no PrecisionRetryExhausted: a refusal is FAIL. Spence's timing: up to 0.07 s per row at p=1025, about 0.002 s at e=2^16+-1.
+- e = EXPONENT_MAX (13 rows): pinned to a NaN with Error::MemoryAllocation, refused before any allocation, because the reduction needs more pi bits than the pi-bit budget constant. Any returned value is FAIL.
+- **Requirement (ZF-M22, FIXLIST:127):** zf must publish one documented up-front pi-bit budget constant, the same on x86_64 and i686 (Rusty sets the value under ZF-M22). Argument reduction compares the pi bits it needs against the constant before allocating, and refuses with MemoryAllocation when the need is over it. The old usize-saturated `trig_reduce_extra` cap (ops/util.rs:92-95) is not a pass criterion.
+- `trig-pi-budget-under` (needs just under the constant: correctly rounded value) and `trig-pi-budget-over` (just over: MemoryAllocation refusal) are `[PM1-UNPINNED]` until the constant is published and the gold is cut.
 
 ## 8. R4 text and special rows (items 1, 5)
 - **Ci and li (item 1):**
@@ -82,7 +84,7 @@ Each nan row names the variant it inherits (A=InvalidArgument, B=DivisionByZero,
 - zb has 116 `nan` rows, all `Err(BoundError::Representation)`.
 - Total: 2548 rows (zf 2432: 1332 unary and 1100 pair rows).
 
-## 10. Oracles and PMCELL (R5)
+- **Oracle primary rule (review 5 item 8):** every oracle cell starts `primary: MPFR` or `primary: mpmath`. python-flint (arb) appears only as a second check and never generates a gold. The 95 digest rows name mpmath as their generator. Counts: MPFR primary 1228, mpmath primary 19411, flint primary 0, names neither 0.
 - Each row pins one oracle per target (`oracle_x86_64`, `oracle_i686`). The i686 golds are cut from the x86_64 run.
 - Each cell prints one line:
   `PMCELL crate=<zf|zb> family=<Type::name> class=<c> p=<p> rm=<m> target=<triple> oracle=<id> env=<path|rug-1.20.1/mpfr-4.2.2> verdict=<PASS|FAIL|NA_PROOF> ms=<t>`
@@ -163,12 +165,16 @@ Cost basis: zf 4.1 ms per cell; zb 12 ms per cell (this figure is unmeasured and
 2. Trig huge-argument reduction (ZF-01, ZF-M22).
 3. The miller_rabin doc.
 4. Every FAIL in the MAX shards (section 4).
+5. API row (review 5 items 2-3): roots::brent and roots::illinois return Option<ExactNum>, so the no-sign-change refusal is pinned as a NaN with Error::InvalidArgument held in the returned Option. rk4 and rk45_adaptive return Option, so their pinned Error kinds FAIL until they can report the kind. Each needs a FIXLIST API row.
+6. The pi-bit budget constant (section 7, ZF-M22).
 
 ## 16. Open questions
 1. The zb cost of 12 ms per cell is unmeasured. Measuring it is a PM-1 must, together with per-type evidence matching (section 13).
 2. The UNGENERATED golds are pinned at PM-3, and they block the RC until then (section 1).
 3. Closed (pmrev5): Paul corrected ZF-04 to 29 (25 + 4) in FIXLIST.csv:18; re-pinned in section 0.
 4. Re-pin SRC_COMMIT when paul/zf-bound-merge merges (section 0).
+5. **PM-1 item (review 5 item 11):** the 8 degenerate golds (the 4 `degenerate` rows for lu, qr, svd and eigen, on x86_64 and i686) need a constructed exact input per row: an exactly singular matrix for lu, a zero R_ii for qr, repeated singular values for svd, and repeated eigenvalues for eigen. They are cut at PM-1, and pm-coverage rule c stays red on them until then.
+6. Exact poles away from 0 (for example gamma at a negative integer) are excluded from the out-of-domain class and have no rows yet. That is a PM-1 item.
 
 ## 17. pm-coverage (tools/pm_coverage.pl; Spence pmrev3 item 1)
 pm_coverage.pl is a separate tool. lint.pl stays the structure and variant lint and must be clean, while pm-coverage is the RC gate. Usage: `perl tools/pm_coverage.pl [--mode rc|design-stage] [--results verdicts.tsv --manifest run.manifest] precision-matrix-edges.csv pm-shards.csv [tree]`. pm-shards.csv is written by gen_edges.pl and gives the row count for each shard and family (fast, heavy, pm-max-x86_64, pm-max-i686, proof).
@@ -177,12 +183,12 @@ pm_coverage.pl is a separate tool. lint.pl stays the structure and variant lint 
 - c: an executed row with an UNGENERATED oracle pin is a FAIL.
 - d: a `[PM1-UNPINNED]` row is a FAIL. It covers the unpinned Rule R NaN pairs and, since v5, every executed row whose single outcome cannot be pinned yet (section 21).
 - e: a shard whose row count for a family is below the matrix count is a FAIL.
-- f: given `--results` and `--manifest`, rule f parses every full record (section 17.1) and FAILs on each of: a duplicate row_id (the first record is kept and the duplicate is a FAIL; a later line never overwrites an earlier one, so SKIPPED_AFTER_TIMEOUT then PASS is red), a row_id not in the matrix, a malformed record (fewer than 7 fields), a mismatch in any of the 5 provenance fields against the manifest, an executed row with no record, and any verdict other than PASS (SKIPPED_AFTER_TIMEOUT and FAIL count as FAIL). The RC requires both files. `--results` without `--manifest` is a hard error.
+- f: given `--results` and `--manifest`, rule f parses every full record (section 17.1) and FAILs on each of: a duplicate row_id (the first record is kept and the duplicate is a FAIL; a later line never overwrites an earlier one, so SKIPPED_AFTER_TIMEOUT then PASS is red), a row_id not in the matrix, a malformed record (fewer than 7 fields), a mismatch in any of the 5 provenance fields against the manifest, an executed row with no record, and any verdict other than PASS (SKIPPED_AFTER_TIMEOUT and FAIL count as FAIL). The RC requires both files. `--results` without `--manifest` is a hard error. Since v3 (review 5 item 9), rule f is enforced in every mode once `--results` is given, so any FAIL record gives a non-zero exit in design-stage too. A duplicate key in the manifest is a hard error (dies).
 - Structural rules: S1, every prec-MAX-<target> row has the SKIPPED_AFTER_TIMEOUT verdict space; S2, every NA_PROOF row cites a pm-proofs path; S3, the executed verdict space is PASS|FAIL[|SKIPPED_AFTER_TIMEOUT].
 - `--mode rc` (the default) enforces every rule and exits 1 on any count.
-- `--mode design-stage` enforces only S1-S3 and e. It lists a-d as GAP lines with their full counts, and its output is marked NOT AN RC VERDICT.
+- `--mode design-stage` enforces S1-S3 and e, plus f whenever `--results` is given. It lists a-d as GAP lines with their full counts, and its output is marked NOT AN RC VERDICT.
 - Each rule was proved red on its own tampered copy (log in the commit message), and the tamper copies were deleted.
-- On these tables at design stage (v5), rc is FAIL. The counts, by row, are: a=658 (74 files, all UNSIGNED), b=3357 (435 missing files out of 509 cited), c=19750, d=1057, e=0, f not evaluated (no results yet). S1-S3 are 0. design-stage is a structural PASS that lists the same gaps.
+- On these tables at design stage (v6), rc is FAIL (exit 1). The counts, by row, are: a=658 (74 files, all UNSIGNED), b=3357 (435 missing files out of 509 cited), c=19776, d=1584, e=0, f not evaluated (no results yet). S1-S3 are 0. design-stage is a structural PASS (exit 0) that lists the same gaps.
 
 ### 17.1 Results record and run manifest (pmrev5 item 1)
 - verdicts.tsv: UTF-8, one record per line, TAB-separated, `#` lines are comments. Fields in order: `row_id` (`crate|family|class`, exactly the matrix id), `verdict` (PASS, FAIL or SKIPPED_AFTER_TIMEOUT), `zf_sha` (40-hex zenith-float commit), `zb_sha` (40-hex zenith-bound commit), `env_name` (for example oracle-2026-10-30), `env_hash` (sha256 of the team-env manifest plus the target triple), `gen_sha256` (sha256 of tools/gen_edges.pl). Optional trailing fields: `target`, `secs`. Rule f ignores them.
@@ -199,9 +205,9 @@ pm_coverage.pl is a separate tool. lint.pl stays the structure and variant lint 
 ## 19. Resumable RC run (described now, built at PM-1; Spence pmrev3 item 7)
 - 8 popslot workers run overnight through poprun.
 - Each row's verdict is appended (fsync) to verdicts.tsv as the row finishes. The record holds the row id, verdict, zf/zb SHA, env hash (the team-env manifest plus the target) and the gen_edges.pl hash.
-- On restart, the runner skips any row already recorded with the same SHA, env hash and generator hash, and reruns the rest. A change to any of the three invalidates the record.
+- On restart, the runner skips any row already recorded with the same SHA, env hash and generator hash, and reruns the rest. A change to any of the three invalidates the record. **Restart rule (review 5 item 10):** if the run manifest changes in any field, the runner starts a new verdicts.tsv and reruns every row; it never mixes records from two manifests.
 - If the run is not done by morning (the window is set at PM-1), it pauses: workers finish their current row and stop. It resumes the next night.
-- **PM-1 selftest:** kill a run partway with SIGKILL, resume it, and prove that the final verdicts.tsv covers every matrix row exactly once. The check is no missing ids, no duplicate ids, and the count equals the matrix count, verified with the fixed pm-coverage rule f (section 17.1: full-record parse, duplicate and unknown ids FAIL, all 5 provenance fields checked against the run manifest). **PM-1 exit criterion:** after SIGKILL and resume, `pm_coverage.pl --mode rc --results verdicts.tsv --manifest run.manifest` shows rule f count=0 (no duplicate, unknown, mismatched or missing record) on the selftest subset, and a second selftest that resumes under a changed manifest field shows rule f red. PM-1 does not exit until both hold.
+- **PM-1 selftest:** kill a run partway with SIGKILL, resume it, and prove that the final verdicts.tsv covers every executed matrix id exactly once. The check is no missing ids, no duplicate ids, and the count equals the executed-id count (the rows that are not NA_PROOF; 20639 in v6), verified with the fixed pm-coverage rule f (section 17.1: full-record parse, duplicate and unknown ids FAIL, all 5 provenance fields checked against the run manifest). **PM-1 exit criterion:** after SIGKILL and resume, `pm_coverage.pl --mode rc --results verdicts.tsv --manifest run.manifest` shows rule f count=0 (no duplicate, unknown, mismatched or missing record) on the selftest subset, and a second selftest that resumes under a changed manifest field shows rule f red. PM-1 does not exit until both hold.
 
 ## 20. Round-3 row changes (Spence pmrev3 items 2-5)
 - **Item 2, ZF-04 at N=5 (re-counted in round 4):** FIXLIST.csv:18 and ~/paul-work/zf-audit-2026-10-30/SUMMARY.md:30 claim 29 "Accuracy: unspecified" functions in catalog.rs:575-1581 plus 4 in heun_fox.rs (:576/:640/:771/:967), 33 in total. At SRC_COMMIT 7955836, `git grep -c "Accuracy: unspecified"` finds catalog.rs 25, heun_fox.rs 4 and accuracy.rs 1 (the Accuracy::Unspecified Display string at :42, not a function). catalog.rs:575-1582 has 28 pub fns with an Accuracy line: 25 say unspecified and 3 (jacobi_arcsn :1254, jacobi_arccn :1273, jacobi_arcdn :1300) say "Accuracy: correctly-rounded". Paul's own ~/paul-work/zf-audit-2026-10-30/inventory.csv also has exactly 25 catalog.rs rows with documented_accuracy unspecified. Neither FIXLIST nor SUMMARY names the 29, so 4 cannot be matched; none are invented. The likely explanation, unconfirmed: 25 + 4 = 29 was the true total, and the 4 heun_fox functions were then added again. N=5 covers 25 + 4 + 3 jacobi_arc = **32** families (not 36), each cited in pm5-spotcheck-n.csv with FIXLIST.csv:18 and its own doc and fn source lines. riemann_zeta keeps its recorded wrong answer (zf-audit-SUMMARY.md:23).
@@ -215,3 +221,8 @@ pm_coverage.pl is a separate tool. lint.pl stays the structure and variant lint 
 - MAX rows: x86_64 is pinned to the MemoryAllocation (zb Resource) refusal. i686 is pinned to the correct result or enclosure (Paul: the size is allocatable), and a refusal there is a FAIL.
 - Rows that cannot have one outcome yet are `[PM1-UNPINNED]` (rule d): 61 new rows, namely trig-huge-arg e=2^16-1 and e=2^16 (the cap rule is undecided), exponent extremes on helper functions, zero inputs whose doc leaves the result open (for example the zero polynomial and "DivisionByZero or None per doc"), and rk45.
 - Row deltas vs 3886199: 24620 -> 24628 (+8 new rows, 0 removed); 3707 rows changed (col10 3637, col11 2157), of which 3646 now carry a single pin and 61 are `[PM1-UNPINNED]`. UNCLEAR 29 -> 0; either/or in cols 10-11 3698 -> 0; `[PM1-UNPINNED]` 996 -> 1057; UNGENERATED pins 19742 -> 19750. The 10 ZF-WP families move N=3 -> N=5; the 4 heun_fox ZF-04 citations now read 29.
+
+## 22. Round-6 changes (Spence review 5 items 1-14)
+- **Hedge rule (item 1):** lint.pl v5 and gen_edges.pl share tools/pm_hedge.pl. It rejects in required_result and refusal_variant: TBD, TODO, UNCLEAR, either/or, `, else` and else, unless, otherwise, and `; ` or more than one value in refusal_variant. The `/` rule is scoped to cols 10-11: a `/` is allowed only in a source path, inside parentheses, next to a digit, or in math with `=`, `*` or `^` (for example `4/5`, `cos(pi/n)`, `x=a/b`, a source path `src/x.rs:9`), and any other `/` between alternatives (`a/b`, `Up(+)/FromZero`) is a hedge. Every executed row has exactly one outcome or `[PM1-UNPINNED]`. Tamper proof (pmrev6): against a clean green control (lint rc 0), each of TBD, TODO, slash, `, else`, unless, `; ` in refusal_variant and two values in refusal_variant was red on its own (rc 1, one BAD line each). pm-coverage: a FAIL record is red in rc and design-stage (rc 1), and a duplicate manifest key dies (rc 25) in both modes, each against a green control. The tamper copies were deleted.
+- Rulings applied: brent/illinois no-sign-change and rk4 bad-step-interval pin Error::InvalidArgument (section 15 item 5). rk45: all 33 rows cite mpmath odefun at 2p bits, with PrecisionRetryExhausted where tol cannot be met. from_raw_parts: all 20 rows pin one outcome, exact normalised or InvalidArgument. Decompositions: per-class pins on the 132 rows; zero, singular and degenerate are None; no `else ExponentOverflow`. lu: ties go to the lowest index, and None only for an exactly singular matrix. Trig: section 7.
+- Row deltas vs 3c0e1e5: 24628 -> 24654 (+26 trig-pi-budget rows); executed 20613 -> 20639. Hedges, executed rows: else 1661 -> 0, slash 5254 -> 0, rv-multi 1006 -> 0. `[PM1-UNPINNED]` executed 1057 -> 1584 (unbounded huge-exp helper families now carry a pin rule). UNGENERATED pins 19750 -> 19776.
