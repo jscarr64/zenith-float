@@ -31,7 +31,7 @@ fn precision_zero_is_rejected() {
     assert!(!ExactNum::new(MIN_PRECISION).is_nan());
 }
 
-const _: () = assert!(MAX_PRECISION < usize::MAX / 4);
+const _: () = assert!(MAX_PRECISION == (1usize << 32) - 1);
 
 #[test]
 fn max_precision_is_the_largest_accepted_precision() {
