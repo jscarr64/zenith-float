@@ -5,8 +5,8 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-if ! command -v git >/dev/null 2>&1; then
-  echo "error: git not found" >&2
+if ! command -v git >/dev/null 2>&1 || ! command -v python3 >/dev/null 2>&1; then
+  echo "error: git or python3 not found" >&2
   exit 1
 fi
 
@@ -33,11 +33,18 @@ if [[ "$status" -eq 0 ]]; then
   fail=1
 fi
 
+# `unsafe` counts only in code: comments are removed first (scripts/rust_code_only.py), so a doc comment saying "no unsafe" passes
 status=0
-unsafe_hits="$(git grep -nE '\bunsafe\b' -- '*.rs')" || status=$?
+unsafe_files="$(git grep -lE '\bunsafe\b' -- '*.rs')" || status=$?
 if [[ "$status" -ge 2 ]]; then
   echo "error: git grep failed with status $status" >&2
   exit 1
+fi
+unsafe_hits=""
+if [[ -n "$unsafe_files" ]]; then
+  mapfile -t files <<< "$unsafe_files"
+  code="$(python3 "$root/scripts/rust_code_only.py" "${files[@]}")" || { echo "error: scripts/rust_code_only.py failed" >&2; exit 1; }
+  unsafe_hits="$(grep -E '^[^:]+:[0-9]+:.*\bunsafe\b' <<< "$code" || true)"
 fi
 
 allow=()
