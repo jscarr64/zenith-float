@@ -414,6 +414,43 @@ def neg_via_mul_check(update=False):
     return ratchet("neg_via_mul", "neg_via_mul_count_baseline.txt", neg_via_mul_count(), update, "use count")
 
 
+# ---- native-width word literals in test inputs (Jeff/Spence, 2026-10-30) ----
+# `from_words(&[234, 0, WORD_SIGNIFICANT_BIT], ..)` is a different number on 32- and 64-bit words, so the two
+# targets silently test different inputs (macro_run_err_test, d57ee75). In test code an inline word-array literal
+# made only of integer literals / WORD_* / Word::MAX|MIN is banned; build the input from a
+# #[cfg(target_pointer_width = "64")] / #[cfg(target_pointer_width = "32")] const pair instead. Zero tolerance.
+WORD_LIT_ELEM = re.compile(r"^\s*(?:0x[0-9a-fA-F_]+|\d[\d_]*|WORD_[A-Z_]+|Word::MAX|Word::MIN)\s*$")
+WORD_LIT_SAFE = re.compile(r"^\s*(?:0|WORD_SIGNIFICANT_BIT)\s*$")  # one word: 0 and the top bit read the same on both
+FROM_WORDS_LIT = re.compile(r"from_words\(\s*&\[([^\]\[]*)\]")
+
+
+def word_literal_sites():
+    out = []
+    for rel, p in no_clone.rs_files():
+        if not is_test_file(rel):
+            continue
+        code = strip_rust(open(p, errors="replace").read())
+        for m in FROM_WORDS_LIT.finditer(code):
+            elems = [e for e in m.group(1).split(",") if e.strip()]
+            if not elems or not all(WORD_LIT_ELEM.match(e) for e in elems):
+                continue
+            if len(elems) == 1 and WORD_LIT_SAFE.match(elems[0]):
+                continue
+            out.append((rel, code.count("\n", 0, m.start()) + 1))
+    return out
+
+
+def word_literal_check(update=False):
+    sites = word_literal_sites()
+    for rel, n in sites:
+        print("%s:%d [native-word-literal] inline word array is a different value per word width; use a cfg(target_pointer_width) const pair" % (rel, n))
+    if sites:
+        print("rules_scan: %d native-width word literal(s) in test inputs (must be 0)" % len(sites))
+        return 1
+    print("rules_scan: native-width word literals 0")
+    return 0
+
+
 # ---- helper-copy ruling (Jeff, 2026-10-16) ----
 PINNED_FILE = "tools/ziv_shape_a_sites.txt"
 COMBINED_FILE = "clone_helper_combined_baseline.txt"
@@ -1171,7 +1208,8 @@ def borrow_check(update=False):
 
 def both_count_checks(update=False):
     rc = max(count_check(update), helper_count_check(update), exception_check(update),
-             test_panic_check(update), neg_via_mul_check(update), ruling_check(update), borrow_check(update))
+             test_panic_check(update), neg_via_mul_check(update), ruling_check(update), borrow_check(update),
+             word_literal_check(update))
     if rc == 0:
         print("rules_scan: all count baselines hold")
     return rc
@@ -1184,6 +1222,8 @@ def main(argv):
             print("%s:%d [%s]" % (rel, n, label))
         print("rules_scan: %d test-panic sites %s" % (len(sites), dict(sorted(collections.Counter(x[2] for x in sites).items()))))
         return 0
+    if "--list-word-literals" in argv:
+        return word_literal_check()
     if "--print-counts" in argv:
         print("%d %d" % (clone_count(), helper_copy_count()))
         return 0

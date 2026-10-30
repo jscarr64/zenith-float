@@ -645,4 +645,14 @@ rm -f tools/ziv_shape_a_sites.txt tools/clone_helper_combined_baseline.txt; echo
 rm -f $ZH; rm -rf zenith-float-num/src/num; : > .github/CODEOWNERS; printf 'fn a() {}\n' > zenith-float-num/src/x.rs
 echo 0 > tools/exception_count_baseline.txt; echo 0 > tools/helper_copy_count_baseline.txt
 
+
+# ---- native-width word literals in test inputs: zero tolerance ----
+mkdir -p tests
+printf 'fn t() { let x = ExactNum::from_words(&[234, 0, WORD_SIGNIFICANT_BIT], Sign::Pos, 0); }\n' > tests/wl.rs
+out="$(scan --list-word-literals)" && fail "a multi-word literal test input passed: $out"
+echo "$out" | grep -q "tests/wl.rs:1 \[native-word-literal\]" || fail "word literal not located: $out"
+scan --count-only >/dev/null && fail "count-only passed with a native-width word literal"
+printf 'fn t() { let x = ExactNum::from_words(&[WORD_SIGNIFICANT_BIT], Sign::Pos, 0); let y = ExactNum::from_words(&[lo, hi], Sign::Pos, 0); let z = ExactNum::from_words(&X, Sign::Pos, 0); }\n// from_words(&[1, 2], ..)\n' > tests/wl.rs
+out="$(scan --list-word-literals)" || fail "top-bit word, computed words, a const or a comment flagged: $out"
+rm -f tests/wl.rs
 echo "rules_scan selftest: ok"
