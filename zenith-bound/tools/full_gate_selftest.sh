@@ -60,10 +60,11 @@ env -u POPLOG_FILE -u POPLOG_STATE_DIR -u POPLOG_PID -u POPLOG_PROGRESS_FILE -u 
 ck; grep -q 'RUNLOG_SELFTEST' "$t/plainnomark.out" || fail "refused plain run does not name RUNLOG_SELFTEST: $(cat "$t/plainnomark.out")"
 ck; grep -q '^unsafe-scan=' "$t/logs/plainnomark.rc" 2>/dev/null && fail "a step ran with RUNLOG_PLAIN=1 but no marker"
 # 3. toolchain step: a rustc that is not the pinned channel (Pop's /usr/bin/rustc 1.95 ahead of ~/.cargo/bin) fails the gate
-mk tc; mkdir -p "$t/tc/tools"; cp "$root/tools/toolchain_check.sh" "$root/tools/toolchain_check_selftest.sh" "$t/tc/tools/"; printf '[toolchain]\nchannel = "1.99"\n' > "$t/tc/rust-toolchain.toml"
+# (member-crate layout: the crate is zenith-float/zenith-bound and the pin is the workspace root's ../rust-toolchain.toml)
+mk tc/crate; mkdir -p "$t/tc/crate/tools"; cp "$root/tools/toolchain_check.sh" "$root/tools/toolchain_check_selftest.sh" "$t/tc/crate/tools/"; printf '[toolchain]\nchannel = "1.99"\n' > "$t/tc/rust-toolchain.toml"
 for v in 1.95.0 1.99.1; do
   mkdir -p "$t/fake-$v"; for c in rustc cargo; do printf '#!/bin/sh\necho "%s %s (x 2026-01-01)"\n' "$c" "$v" > "$t/fake-$v/$c"; chmod +x "$t/fake-$v/$c"; done
-  "${fe[@]}" GATE_STEPS=toolchain T="$t/logs" REPO="$t/tc" PATH="$t/fake-$v:$PATH" "$root/tools/full_gate.sh" "tc-$v" > /dev/null 2>&1
+  "${fe[@]}" GATE_STEPS=toolchain T="$t/logs" REPO="$t/tc/crate" PATH="$t/fake-$v:$PATH" "$root/tools/full_gate.sh" "tc-$v" > /dev/null 2>&1
 done
 ck; [ "$(rcof tc-1.95.0 toolchain)" = 1 ] || fail "toolchain step passed with rustc 1.95.0 for channel 1.99 ($(rcof tc-1.95.0 toolchain))"
 ck; grep -q 'TOOLCHAIN MISMATCH' "$t/logs/tc-1.95.0-toolchain.log" || fail "toolchain step does not name the mismatch"

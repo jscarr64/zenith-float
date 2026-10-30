@@ -74,14 +74,14 @@ run() { name=$1; shift
   fi
   runlog_step "${tf[@]}" "$name" -- timeout "$to" bash -c "$*" > "$T/$tag-$name.log" 2>&1; rc=$?
   echo "$name=$rc" >> "$T/$tag.rc"; [ "$rc" = 0 ] || gate_rc=1; }
-run toolchain "require rustc cargo sed && tools/toolchain_check_selftest.sh && tools/toolchain_check.sh"
+run toolchain "require rustc cargo sed && tools/toolchain_check_selftest.sh && tools/toolchain_check.sh ../rust-toolchain.toml"   # zenith-float member crate: the workspace root pins the toolchain
 run target-dir "require git && tools/fresh_test_run.sh --claim"
 run build-tests "require cargo && cargo build --tests"
 run build-debug "require cargo && tools/fresh_test_run.sh cargo test -- --test-threads=\${RUST_TEST_THREADS:-8}"
 run build-release "require cargo && tools/fresh_test_run.sh cargo test --release -- --test-threads=\${RUST_TEST_THREADS:-8}"
 run test-floor "require awk grep && tools/test_floor_selftest.sh && tools/test_floor.sh build-debug \"$T/$tag-build-debug.log\" && tools/test_floor.sh build-release \"$T/$tag-build-release.log\""
 run rules-scan "require python3 git grep && tools/rules_scan_selftest.sh && tools/rules_scan.sh \${SCAN_ARGS:-\${RATCHET_BASE:-3c9f36f}..HEAD}"
-run fmt "require cargo rustfmt && cargo fmt --all -- --check"
+run fmt "require cargo rustfmt && cargo fmt -p zenith-bound -- --check"   # this crate only; the zenith-float gate formats the workspace
 run clippy "require cargo cargo-clippy && cargo clippy --all-targets -- -D warnings"
 run unsafe-scan "no_hits ':[0-9]+:\s*(//|\*)' -rn --include='*.rs' -E '\bunsafe\b'"
 run no-float-scan "no_hits ':[0-9]+:\s*(//|\*)' -rn --include='*.rs' -E '\bf32\b|\bf64\b|\bmul_add\b|core::arch|std::arch|target_feature|is_x86_feature_detected'"

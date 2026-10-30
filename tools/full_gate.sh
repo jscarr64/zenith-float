@@ -70,6 +70,10 @@ run build-debug "tools/fresh_test_run.sh cargo test --workspace $TT"
 # early compile of the mpfr-tests integration tests (6ab75ce prepublish broke here only at the last step)
 run mpfr-tests-build "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests --no-run"
 run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
+# zenith-bound (member crate, re-exported as zenith_float::bound): its own gate, every step but `mutants`. mutants alone is ~1h21m
+# (zb gate 479b31b, 2026-10-30), past STEP_TIMEOUT, so it stays a separate run: cd zenith-bound && GATE_STEPS=mutants tools/full_gate.sh
+ZB_STEPS=$(sed -n 's/^run \([a-z0-9-]*\) .*/\1/p' zenith-bound/tools/full_gate.sh | grep -vx mutants | tr '\n' ' ')
+run zb-gate "cd zenith-bound && T=\"$T/zb-gate\" GATE_STEPS=\"$ZB_STEPS\" tools/full_gate.sh \"$tag\""
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
 run build-thumbv7em "cargo build --no-default-features --target thumbv7em-none-eabihf && cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf"
 run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"

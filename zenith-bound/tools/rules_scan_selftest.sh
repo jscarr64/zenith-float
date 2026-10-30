@@ -417,5 +417,23 @@ for mode in --working --staged; do
   ck; echo "$out" | grep -c "git diff .*failed" > /dev/null || { rm -rf "$nogit"; fail "$mode: no git failure message: $out"; }
 done
 rm -rf "$nogit"
-st_done rules_scan 284   # WANT: cases this script runs (tools/selftest_cases.sh)
+# member-crate layout (zenith-bound lives in zenith-float/zenith-bound/): RULES_SCAN_ROOT is a subdirectory of the repo. A range or
+# --working scan covers only that crate, reports crate-relative paths (src/..., matching the allowlist keys), and never scans the
+# rest of the workspace; a base commit that predates the crate dir is diffed against the crate's tree.
+sub=$(mktemp -d "$(zb_scratch)"/rules-sub.XXXXXX)
+g() { git -C "$sub" -c user.name=t -c user.email=t@t -c commit.gpgsign=false "$@" >/dev/null 2>&1; }
+g init -q; mkdir -p "$sub/top" "$sub/crate/src" "$sub/crate/tools"; : > "$sub/crate/tools/rules_allowlist.txt"
+printf 'fn t() {}\n' > "$sub/top/x.rs"; g add -A; g commit -qm c0; c0=$(git -C "$sub" rev-parse HEAD)
+printf 'fn a() { let a = 1; }\n' > "$sub/crate/src/a.rs"; printf 'fn t() { let y = x.clone(); }\n' > "$sub/top/x.rs"; g add -A; g commit -qm c1; c1=$(git -C "$sub" rev-parse HEAD)
+printf 'fn a() { let a = 1; }\nfn b() { let y = x.clone(); }\n' > "$sub/crate/src/a.rs"; g add -A; g commit -qm c2
+for rng in "$c1..HEAD" "$c0..HEAD"; do
+  ck; out="$(RULES_SCAN_SKIP_COUNT=1 RULES_SCAN_ROOT="$sub/crate" python3 "$here/rules_scan.py" "$rng" 2>&1)" && { rm -rf "$sub"; fail "member crate: clone in crate/src/a.rs not flagged ($rng): $out"; }
+  ck; echo "$out" | grep -q '^src/a.rs:[0-9]* \[clone\]' || { rm -rf "$sub"; fail "member crate: hit not reported as src/a.rs ($rng): $out"; }
+  ck; echo "$out" | grep -q 'top/\|crate/' && { rm -rf "$sub"; fail "member crate: scanned outside the crate or crate-prefixed path ($rng): $out"; }
+done
+printf 'fn t() { let z = q.to_owned(); }\n' > "$sub/top/x.rs"; printf 'fn a() { let a = 1; }\nfn b() { let y = x.clone(); }\nfn c() { let w = v.to_vec(); }\n' > "$sub/crate/src/a.rs"
+ck; out="$(RULES_SCAN_SKIP_COUNT=1 RULES_SCAN_ROOT="$sub/crate" python3 "$here/rules_scan.py" --working 2>&1)"; echo "$out" | grep -q '^src/a.rs:[0-9]* \[to_vec\]' || { rm -rf "$sub"; fail "member crate --working: crate hit not reported as src/a.rs: $out"; }
+ck; echo "$out" | grep -q 'top/\|to_owned' && { rm -rf "$sub"; fail "member crate --working: scanned outside the crate: $out"; }
+rm -rf "$sub"
+st_done rules_scan 292   # WANT: cases this script runs (tools/selftest_cases.sh)
 echo "rules_scan selftest: ok"

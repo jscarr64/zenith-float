@@ -712,6 +712,24 @@ def both_count_checks(update=False):
     return max(count_check(update), ref_count_check(update), hidden_count_check(update), rebuild_count_check(update), alias_tree_check(), narrow_exponent_check(), prec_width_check())
 
 
+def crate_trees(rng):
+    """Range -> the two `git diff` operands. As a member crate (ROOT is a subdirectory of the repo, e.g. zenith-float/zenith-bound)
+    each side becomes `<rev>:<prefix>`, so the diff covers only this crate with crate-relative paths; a side that predates the crate
+    dir (pre-merge zenith-bound history, where the crate was the repo root) is used whole."""
+    sym = "..." in rng
+    a, b = rng.split("..." if sym else "..", 1)
+    a, b = a or "HEAD", b or "HEAD"
+    if sym:  # A...B means merge-base(A, B)..B, as git diff reads it
+        m = git("merge-base", a, b)
+        a = m.stdout.strip() if m.returncode == 0 and m.stdout.strip() else a
+    r = git("rev-parse", "--show-prefix")
+    prefix = r.stdout.strip().rstrip("/") if r.returncode == 0 else ""
+    if not prefix:
+        return [a, b]
+    return [
+        ("%s:%s" % (side, prefix)) if git("cat-file", "-e", "%s:%s" % (side, prefix)).returncode == 0 else side for side in (a, b)]
+
+
 def main(argv):
     if "--hidden-copies" in argv:
         sites = hidden_copy_sites()
@@ -734,7 +752,7 @@ def main(argv):
         text = open(argv[argv.index("--diff-file") + 1], errors="replace").read()
     elif "--staged" in argv or "--working" in argv:
         what = ["--cached"] if "--staged" in argv else ["HEAD"]
-        r = git("diff", *what, "--no-color", "--no-ext-diff", "-U0")
+        r = git("diff", *what, "--relative", "--no-color", "--no-ext-diff", "-U0")  # crate-relative paths, crate only
         if r.returncode != 0:  # never a vacuous "0 flagged" when git cannot diff
             print("rules_scan: git diff %s failed: %s" % (what[0], r.stderr.strip()))
             return 2
@@ -744,7 +762,7 @@ def main(argv):
         rng = args[0] if args else "origin/main..HEAD"
         if ".." not in rng:
             rng += "..HEAD"
-        r = git("diff", rng, "--no-color", "--no-ext-diff", "-U0")
+        r = git("diff", *crate_trees(rng), "--no-color", "--no-ext-diff", "-U0")
         if r.returncode != 0:
             print("rules_scan: git diff %s failed: %s" % (rng, r.stderr.strip()))
             return 2
