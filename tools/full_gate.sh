@@ -78,7 +78,7 @@ run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
 # tests, named in tools/i686_test_args.sh (they need host MPFR or the oracle goldens). Run natively (static musl),
 # own target subdir. The per-binary counts go into the gate log. args=$(...) && keeps a failing exclusion list from
 # quietly running only the libs.
-run test-i686 "args=\$(tools/i686_test_args.sh) && CARGO_TARGET_DIR=$CARGO_TARGET_DIR/i686 tools/fresh_test_run.sh cargo test --workspace --lib --bins \$args --target i686-unknown-linux-musl $TT"
+run test-i686 "args=\$(tools/i686_test_args.sh) && CARGO_TARGET_DIR=$CARGO_TARGET_DIR/i686 tools/fresh_test_run.sh cargo test --no-fail-fast --workspace --lib --bins \$args --target i686-unknown-linux-musl $TT"
 if [[ " ${ran[*]} " == *" test-i686 "* && -f "$T/$tag-test-i686.log" ]]; then
   awk '/^ +Running / { b = $NF; gsub(/[()]/, "", b); sub(/.*\//, "", b); sub(/-[^-]*$/, "", b) }
        /^test result:/ { p = f = i = 0; for (k = 1; k <= NF; k++) { if ($k ~ /^passed;?/) p = $(k-1); if ($k ~ /^failed;?/) f = $(k-1); if ($k ~ /^ignored;?/) i = $(k-1) }

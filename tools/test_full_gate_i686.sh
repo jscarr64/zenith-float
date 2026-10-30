@@ -52,7 +52,7 @@ gate() {
 gate default STUB_I686_RED=1
 grep -A3 'STEP END build-release' "$log" | grep -q 'STEP START test-i686' || { echo "FAIL[default]: no test-i686 step right after build-release"; fail=1; }
 grep -q 'STEP END test-i686 verdict=FAIL' "$log" || { echo "FAIL[default]: red i686 run is not a FAIL step"; fail=1; }
-grep -q 'test --workspace --lib --bins --test integ_a --target i686-unknown-linux-musl --no-run --message-format=json' "$tmp/cargo.args" || { echo "FAIL[default]: no cargo test --workspace (minus oracles) --target i686-unknown-linux-musl via fresh_test_run.sh"; fail=1; }
+grep -q 'test --no-fail-fast --workspace --lib --bins --test integ_a --target i686-unknown-linux-musl --no-run --message-format=json' "$tmp/cargo.args" || { echo "FAIL[default]: no cargo test --workspace (minus oracles) --target i686-unknown-linux-musl via fresh_test_run.sh"; fail=1; }
 [[ -f "$tmp/target/i686/.worktree-owner" ]] || { echo "FAIL[default]: test-i686 did not use its own target subdir \$CARGO_TARGET_DIR/i686"; fail=1; }
 [[ $rc -ne 0 ]] || { echo "FAIL[default]: gate exited 0"; fail=1; }
 # 2. GATE_STEPS=test-i686, red: only that step runs, the gate FAILs at it (blocking)
@@ -88,5 +88,9 @@ grep -q 'STEP END test-i686 verdict=FAIL' "$log" && [[ $rc -ne 0 ]] || { echo "F
 grep -q 'i686 binary integ_a: passed=3 failed=1 ignored=0' "$log" && grep -q 'i686 binary zf: passed=5 failed=0 ignored=1' "$log" || { echo "FAIL[integ]: no per-binary i686 counts in the gate log"; fail=1; }
 a=$(grep -m1 'i686-unknown-linux-musl --no-run' "$tmp/cargo.args" || true)
 [[ " $a " == *" --test integ_a "* && " $a " != *" --test oracle "* && " $a " != *" --test needs_random "* ]] || { echo "FAIL[integ]: i686 args do not include integ_a and exclude the oracle tests by name: $a"; fail=1; }
+# 8. --no-fail-fast (item 2): a red binary must not stop the later ones; the flag goes to cargo (before `--`), build and run
+gate nff GATE_STEPS=test-i686
+r=$(grep -v -- "--message-format" "$tmp/cargo.args" | grep -m1 "i686-unknown-linux-musl" || true)
+[[ " ${r%% -- *} " == *" --no-fail-fast "* ]] || { echo "FAIL[nff]: i686 test run has no --no-fail-fast before --: $r"; fail=1; }
 [[ $fail -eq 0 ]] && echo "ok: full_gate.sh test-i686 (default list, blocking, exact GATE_STEPS)"
 exit "$fail"
