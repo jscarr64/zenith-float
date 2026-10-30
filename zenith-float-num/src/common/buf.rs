@@ -62,7 +62,7 @@ impl WordBuf {
             })
         } else {
             let mut inner = Vec::new();
-            inner.try_reserve_exact(sz)?;
+            crate::defs::reserve_exact(&mut inner, sz)?;
             inner.resize(sz, 0);
             Ok(WordBuf {
                 inner: Storage::Heap(inner),
@@ -97,7 +97,7 @@ impl WordBuf {
                 Ok(())
             }
             Storage::Heap(v) => {
-                v.try_reserve(new_len - v.len())?;
+                crate::defs::reserve_amortized(v, new_len - v.len())?;
                 v.resize(new_len, 0);
                 Ok(())
             }
@@ -109,7 +109,7 @@ impl WordBuf {
                     .get(..usize::from(*len))
                     .ok_or(Error::InvalidArgument)?;
                 let mut v = Vec::new();
-                v.try_reserve_exact(new_len)?;
+                crate::defs::reserve_exact(&mut v, new_len)?;
                 v.extend_from_slice(src);
                 v.resize(new_len, 0);
                 self.inner = Storage::Heap(v);

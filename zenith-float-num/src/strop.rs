@@ -52,7 +52,7 @@ fn format_uint_radix(val: u64, rdx: Radix, out: &mut String) -> Result<(), Error
     }
     let mut v = val;
     let mut digits = Vec::new();
-    digits.try_reserve_exact(32)?;
+    crate::defs::reserve_exact(&mut digits, 32)?;
     while v > 0 {
         digits.push(u8::try_from(v % base).map_err(|_| Error::InvalidArgument)?);
         v /= base;
@@ -171,7 +171,7 @@ impl ExactNumNumber {
             + (self.mantissa_max_bit_len() + core::mem::size_of::<Exponent>() * 8)
                 / rdx.bits_per_digit();
 
-        mstr.try_reserve_exact(mstr_sz)?;
+        crate::defs::reserve_exact_str(&mut mstr, mstr_sz)?;
 
         if s == Sign::Neg {
             mstr.push('-');

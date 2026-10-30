@@ -98,7 +98,7 @@ impl ExactNumArray {
         let rows = lines.len();
         let n = rows.checked_mul(cols).ok_or(Error::InvalidArgument)?;
         let mut vals = Vec::new();
-        vals.try_reserve_exact(n)?;
+        crate::defs::reserve_exact(&mut vals, n)?;
         let mut p = None;
         for line in &lines {
             let fields = split_row(line, cols)?;
@@ -167,7 +167,7 @@ fn decode_bits_csv(text: &str) -> Result<(usize, usize, Vec<u64>), Error> {
     let rows = lines.len();
     let n = rows.checked_mul(cols).ok_or(Error::InvalidArgument)?;
     let mut bits = Vec::new();
-    bits.try_reserve_exact(n)?;
+    crate::defs::reserve_exact(&mut bits, n)?;
     for line in &lines {
         for cell in split_row(line, cols)? {
             bits.push(parse_ieee64_cell(cell)?);

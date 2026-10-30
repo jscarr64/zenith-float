@@ -165,7 +165,7 @@ fn parse_num(parser_state: &mut ParserState, rdx: Radix) -> Result<(), Error> {
                 parser_state.range = -1;
             } else if parser_state.e < EXPONENT_MIN {
                 let mut zero = Vec::new();
-                zero.try_reserve_exact(1)?;
+                crate::defs::reserve_exact(&mut zero, 1)?;
                 zero.push(0);
                 parser_state.mantissa_bytes = zero;
                 parser_state.e = 0;
@@ -206,9 +206,7 @@ fn parse_digits(
     }
 
     if ch.is_some_and(|c| is_radix_digit(c, rdx)) {
-        parser_state
-            .mantissa_bytes
-            .try_reserve_exact(parser_state.s_len)?;
+        crate::defs::reserve_exact(&mut parser_state.mantissa_bytes, parser_state.s_len)?;
 
         while let Some(c) = ch {
             if let Some(digit) = c.to_digit(rdx.value() as u32) {

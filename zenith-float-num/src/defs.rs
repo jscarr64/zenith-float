@@ -60,7 +60,7 @@ pub const MIN_NORMAL_EXPONENT: Exponent = EXPONENT_MIN;
 
 /// A precision in bits: the type of [`MIN_PRECISION`], [`MAX_PRECISION`], [`DEFAULT_P`] and of the
 /// precisions the API reports. Accepted values are `MIN_PRECISION..=MAX_PRECISION`; `MAX_PRECISION` is
-/// `2^60 - 1` on 64-bit targets and smaller (`2^30 - 1`) on 32-bit targets. An alias of `usize`, so code
+/// `2^32 - 1` on every (64-bit) target. An alias of `usize`, so code
 /// written against `usize` keeps compiling.
 pub type Precision = usize;
 
@@ -70,25 +70,78 @@ pub const MIN_PRECISION: Precision = 1;
 
 /// Largest accepted precision in bits; anything above it is rejected with `Error::InvalidArgument`.
 ///
-/// `min(2^60, usize::MAX / 4) - 1`: `2^60 - 1` on 64-bit targets, so that an exponent plus or minus a
-/// precision stays inside `±2^62` (see [`crate::defs`] exponent helpers), and
-/// `2^30 - 1` on 32-bit targets, where sizes are 32-bit `usize`.
-/// Allocating a mantissa this large still fails with `Error::MemoryAllocation` on real hardware.
-pub const MAX_PRECISION: Precision = {
-    let by_exponent: u64 = 1 << 60;
-    let by_size = (usize::MAX / 4) as u64;
-    let lim = if by_exponent < by_size { by_exponent } else { by_size };
-    (lim - 1) as Precision
-};
+/// `2^32 - 1` (`u32::MAX`) on every target (64-bit only since 2.0). An exponent plus or minus twice a
+/// precision stays far inside `±2^62`, a precision always fits `u32` (so `sqrt_int(p as u32)`-style helpers
+/// never truncate), and the 4p working width of the widest internal product, `2^28` words, fits exactly in
+/// [`MAX_ALLOC_BYTES`]. Wider internal buffers are refused with `Error::MemoryAllocation`, see
+/// [`check_alloc_bytes`]. A mantissa this large still needs 512 MiB of RAM.
+pub const MAX_PRECISION: Precision = 4_294_967_295;
 
-const _: () = assert!(
-    (MAX_PRECISION as u128) + 1
-        == if (1u128 << 60) < (usize::MAX / 4) as u128 {
-            1u128 << 60
-        } else {
-            (usize::MAX / 4) as u128
-        }
-);
+const _: () = assert!(MAX_PRECISION == (1 << 32) - 1);
+
+/// Largest single buffer the library allocates, in bytes: `2^31` (2 GiB), the same on every target.
+///
+/// Every heap buffer is sized through [`check_alloc_bytes`] before it is reserved, so a request above this
+/// budget fails with `Error::MemoryAllocation` without allocating. This bounds one buffer, not the total
+/// memory of a computation: the OS can still kill a process on a machine with too little RAM.
+pub const MAX_ALLOC_BYTES: usize = 1 << 31;
+
+/// Checks that `n` elements of `elem_bytes` bytes each fit in [`MAX_ALLOC_BYTES`].
+///
+/// ## Errors
+///
+///  - MemoryAllocation: `n * elem_bytes` exceeds [`MAX_ALLOC_BYTES`] or overflows `usize`.
+pub const fn check_alloc_bytes(n: usize, elem_bytes: usize) -> Result<(), Error> {
+    match n.checked_mul(elem_bytes) {
+        Some(b) if b <= MAX_ALLOC_BYTES => Ok(()),
+        _ => Err(Error::MemoryAllocation),
+    }
+}
+
+/// Reserves room for exactly `add` more elements in `v`, after checking that the whole buffer
+/// (`v.len() + add` elements) fits in [`MAX_ALLOC_BYTES`]. Every heap reservation in the crate goes
+/// through here (or [`reserve_amortized`]).
+///
+/// ## Errors
+///
+///  - MemoryAllocation: over the budget, or the allocator failed.
+pub(crate) fn reserve_exact<T>(v: &mut alloc::vec::Vec<T>, add: usize) -> Result<(), Error> {
+    let total = v.len().checked_add(add).ok_or(Error::MemoryAllocation)?;
+    check_alloc_bytes(total, core::mem::size_of::<T>())?;
+    v.try_reserve_exact(add)?;
+    Ok(())
+}
+
+/// [`reserve_exact`] for a `String` (one byte per element).
+///
+/// ## Errors
+///
+///  - MemoryAllocation: over the budget, or the allocator failed.
+pub(crate) fn reserve_exact_str(s: &mut alloc::string::String, add: usize) -> Result<(), Error> {
+    let total = s.len().checked_add(add).ok_or(Error::MemoryAllocation)?;
+    check_alloc_bytes(total, 1)?;
+    s.try_reserve_exact(add)?;
+    Ok(())
+}
+
+/// Like [`reserve_exact`], but lets the vector grow geometrically while the grown capacity still fits in
+/// [`MAX_ALLOC_BYTES`]; near the budget it reserves exactly.
+///
+/// ## Errors
+///
+///  - MemoryAllocation: over the budget, or the allocator failed.
+pub(crate) fn reserve_amortized<T>(v: &mut alloc::vec::Vec<T>, add: usize) -> Result<(), Error> {
+    let total = v.len().checked_add(add).ok_or(Error::MemoryAllocation)?;
+    let elem = core::mem::size_of::<T>();
+    check_alloc_bytes(total, elem)?;
+    let doubled = v.capacity().checked_mul(2).unwrap_or(usize::MAX);
+    if check_alloc_bytes(doubled, elem).is_ok() {
+        v.try_reserve(add)?;
+    } else {
+        v.try_reserve_exact(add)?;
+    }
+    Ok(())
+}
 // Two exponents add without overflow, and so do an exponent and twice a precision.
 const _: () = assert!(EXPONENT_MAX as i128 * 2 <= i64::MAX as i128);
 const _: () = assert!(EXPONENT_MAX as i128 + MAX_PRECISION as i128 * 2 <= i64::MAX as i128);
