@@ -14,6 +14,10 @@
 #![no_std]
 #![forbid(unsafe_code)]
 
+// P6 (Jeff, 2026-10-30): 64-bit targets only.
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("zenith-float 2.0 requires a 64-bit target (target_pointer_width = 64); 32-bit targets are not supported.");
+
 extern crate alloc;
 
 pub mod cases;
