@@ -185,10 +185,10 @@ fn infinity_radius_is_canonical_all_reals() -> Result<(), String> {
     Ok(())
 }
 
-/// ZB-TD03 (P6, 64-bit only): precisions up to 2^30 - 1 are stored exactly as requested (values follow ZF-M32 once it lands).
+/// ZB-TD03 (P6, 64-bit only): precisions up to MAX_PRECISION = 2^32 - 1 (ZF-M32, decided 2026-10-30) are stored exactly as requested.
 #[test]
-fn prec_up_to_2_pow_30_minus_1_is_stored_as_requested() -> Result<(), String> {
-    for prec in [1usize, 2, 63, 64, 65, 4096, (1 << 30) - 1] {
+fn prec_up_to_2_pow_32_minus_1_is_stored_as_requested() -> Result<(), String> {
+    for prec in [1usize, 2, 63, 64, 65, 4096, (1 << 30) - 1, 1 << 30, 1 << 31, (1 << 32) - 2, u32::MAX as usize] {
         let b = Ball::exact(ExactNum::from(3i64), prec).map_err(|e| format!("exact(3, {}): {:?}", prec, e))?;
         if b.prec() != prec {
             return Err(format!("exact(3, {}): prec read back {}", prec, b.prec()));
@@ -197,10 +197,10 @@ fn prec_up_to_2_pow_30_minus_1_is_stored_as_requested() -> Result<(), String> {
     Ok(())
 }
 
-/// ZB-TD03 (P6, 64-bit only): precisions from 2^30 are refused with InvalidArgument (values follow ZF-M32 once it lands).
+/// ZB-TD03 (P6, 64-bit only): precisions above MAX_PRECISION = 2^32 - 1 (ZF-M32) are refused with InvalidArgument.
 #[test]
-fn prec_from_2_pow_30_is_refused() -> Result<(), String> {
-    for prec in [1usize << 30, (1 << 31) - 1, 1 << 31, u32::MAX as usize, 1 << 32, (1 << 60) - 1] {
+fn prec_above_2_pow_32_minus_1_is_refused() -> Result<(), String> {
+    for prec in [1usize << 32, (1 << 32) + 1, 1 << 33, (1 << 60) - 1, usize::MAX] {
         match Ball::exact(ExactNum::from(3i64), prec) {
             Err(BoundError::InvalidArgument { .. }) => {}
             other => return Err(format!("exact(3, {}): want InvalidArgument, got {:?}", prec, other)),

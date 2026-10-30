@@ -34,10 +34,10 @@ fn above_2_62(k: usize) -> Result<usize, String> {
     (1usize << 62).checked_add(k).ok_or_else(|| String::from("2^62 + k overflows usize"))
 }
 
-/// One precision list (P6, 64-bit only; ZB-TD03). 2^30 - 1, 2^30 and u32::MAX bracket the planned limit (values follow ZF-M32
-/// once it lands); 2^62 + k reaches the ulp underflow inside the zf range; usize::MAX is the far end.
+/// One precision list (P6, 64-bit only; ZB-TD03). MAX_PRECISION - 1, MAX_PRECISION = u32::MAX and MAX_PRECISION + 1 bracket
+/// the ZF-M32 limit 2^32 - 1; 2^62 + k reaches the ulp underflow inside the zf range; usize::MAX is the far end.
 fn precisions() -> Result<Vec<usize>, String> {
-    let mut ps = vec![0, 1, 2, 53, 4096, (1 << 30) - 1, 1 << 30, u32::MAX as usize];
+    let mut ps = vec![0, 1, 2, 53, 4096, (1 << 32) - 2, u32::MAX as usize, 1 << 32];
     for k in 1..=3 {
         ps.push(above_2_62(k)?);
     }
@@ -169,16 +169,23 @@ fn the_ulp_underflow_inside_the_zf_range_starts_just_above_precision_2_62() -> R
     Ok(())
 }
 
-/// The Ball constructors refuse u32::MAX (above the planned limit; the value follows ZF-M32) with InvalidArgument.
+/// ZF-M32: u32::MAX is exactly MAX_PRECISION (2^32 - 1), so Ball::exact accepts it and keeps the precision.
 #[test]
-fn ball_exact_refuses_u32_max_precision() -> Result<(), String> {
+fn ball_exact_accepts_u32_max_precision() -> Result<(), String> {
     let wide = usize::try_from(u32::MAX).map_err(|_| String::from("u32::MAX as usize"))?;
     match zenith_bound::ball::Ball::exact(ExactNum::from_word(1, 64), wide) {
+        Ok(b) if b.prec() == wide => Ok(()),
+        other => Err(format!("Ball::exact(1, u32::MAX): want Ok at prec u32::MAX, got {:?}", other)),
+    }
+}
+
+/// ZF-M32: MAX_PRECISION + 1 = 2^32 is refused with InvalidArgument.
+#[test]
+fn ball_exact_refuses_max_precision_plus_1() -> Result<(), String> {
+    let over = 1usize << 32;
+    match zenith_bound::ball::Ball::exact(ExactNum::from_word(1, 64), over) {
         Err(zenith_bound::error::BoundError::InvalidArgument { .. }) => Ok(()),
-        other => Err(format!(
-            "Ball::exact(1, u32::MAX): want InvalidArgument, got {:?}",
-            other
-        )),
+        other => Err(format!("Ball::exact(1, 2^32): want InvalidArgument, got {:?}", other)),
     }
 }
 
