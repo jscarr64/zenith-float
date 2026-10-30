@@ -4,12 +4,11 @@
 //! (probe xt2, ~/rusty-work/tmp/rq/xt2-{host,i686}.txt: 21/21 rem_pi rows differ, all other probed ops identical).
 //!
 //! Expected values: 10 lies in (2pi, 4pi), so the documented (-2pi, 2pi) reduction is 10 - 2pi
-//! (pi: DLMF 3.12.1; the identity is the definition of the reduction in the doc comment). Rounded to p bits
-//! (ToEven = nearest-even, Up = toward +inf) and, for RoundingMode::None, truncated at rp(p, 64) bits.
-//! Generated with mpmath 1.3.0 at mp.prec = 4096 (env mpmath-1.3.0, Python 3.12.14, via popslot job
-//! rq-rempi-ref2; script ~/rusty-work/tmp/rq/rempi_ref.py, mpmath.libmp.normalize with round_nearest /
-//! round_ceiling / round_down). Leading bits 11.1011011110000001 = 3.71681... = 10 - 6.28318... agree with
-//! the probe's ede04abb.. mantissa on both targets.
+//! (pi: OEIS A000796; DLMF 3.12.1). Rounded to p bits (ToEven = nearest-even, Up = toward +inf) and, for
+//! RoundingMode::None, truncated at rp(p, 64) bits.
+//! Generator: scripts/gen_rem_pi_xtarget_ref.py, env mpmath-1.3.0 (mpmath 1.3.0, Python 3.12.14, mp.prec = 4096),
+//! run via popslot. Output SHA256: dd6b4c16d50392ca9bbbbf7e3a72857be2bc0b13126bf77c1d60bd2655033c4c.
+//! Leading bits 11.1011011110000001 = 3.71681... = 10 - 6.28318... agree with the probe mantissa ede04abb...
 use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode};
 
 const REF: &[(usize, &str, &str)] = &[
