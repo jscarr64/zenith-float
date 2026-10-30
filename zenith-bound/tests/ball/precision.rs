@@ -2,7 +2,8 @@
 //! alias), validated at the constructors against `MIN_PRECISION..=MAX_PRECISION`. P1: `MAX_PRECISION` is `2^30 - 1` on every
 //! target, read from zf `zenith_float_num::MAX_PRECISION` (ZF-M28). One expectation per case on every target: no cfg and no
 //! `usize::BITS` branch. Edge list: ~/eugene-work/zfzb/edge-lists/ZB-TD02.md.
-//! RED until ZF-M28 lands (x86_64 still has 2^60 - 1): rows A, B, J, K, M, N. Green on i686 today.
+//! P6 (64-bit only): host reds only. RED until ZF-M32 lands (host has 2^60 - 1): rows A, B, J, K, M, N. The 2^30 - 1 value is
+//! from M28 and is kept until M32 publishes its number (Paul 2026-10-30 6:34 PM CT); then the values follow M32.
 //! COVERS: Ball::exact, Ball::all_reals, Ball::from_mid_rad, BallArray::zeros, Ball::add, Ball::mul
 //! (Precision, MIN_PRECISION and MAX_PRECISION are a type alias and consts, which pubfn_coverage does not list.)
 
@@ -47,13 +48,6 @@ fn all_refuse(p: Precision) -> Result<(), String> {
     invalid(c.mul(&b, p), &format!("mul at {}", p))
 }
 
-/// A u64 precision is refused on every target: either it is not a usize (32-bit) or it is InvalidArgument.
-fn refused_u64(p: u64) -> Result<(), String> {
-    match usize::try_from(p) {
-        Err(_) => Ok(()),
-        Ok(p) => all_refuse(p),
-    }
-}
 
 #[test]
 fn max_precision_is_2_pow_30_minus_1_on_every_target() -> Result<(), String> {
@@ -64,7 +58,7 @@ fn max_precision_is_2_pow_30_minus_1_on_every_target() -> Result<(), String> {
     let got = u64::try_from(MAX_PRECISION).map_err(|_| String::from("MAX_PRECISION as u64"))?;
     if got != WANT_MAX {
         return Err(format!(
-            "zb MAX_PRECISION {} want {} (waiting on ZF-M28)",
+            "zb MAX_PRECISION {} want {} (waiting on ZF-M32)",
             got, WANT_MAX
         ));
     }
@@ -78,7 +72,7 @@ fn zf_max_precision_is_2_pow_30_minus_1_on_every_target() -> Result<(), String> 
         .map_err(|_| String::from("zf MAX_PRECISION as u64"))?;
     if got != WANT_MAX {
         return Err(format!(
-            "zf MAX_PRECISION {} want {} (waiting on ZF-M28)",
+            "zf MAX_PRECISION {} want {} (waiting on ZF-M32)",
             got, WANT_MAX
         ));
     }
@@ -167,7 +161,7 @@ fn precisions_from_2_pow_30_are_refused_on_every_target() -> Result<(), String> 
         1 << 60,
         (1 << 62) + 1,
     ] {
-        refused_u64(p)?;
+        all_refuse(usize::try_from(p).map_err(|_| format!("{} as usize", p))?)?;
     }
     all_refuse(usize::MAX)
 }
