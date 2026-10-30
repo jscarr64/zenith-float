@@ -45,7 +45,7 @@ fi
 # Jeff's logging rule (2026-10-23): every step is logged via poplog (~/pop-logs/bin/poplog.sh, else the vendored
 # scripts/poplog.sh): header (cmd, repo, SHA, rustc, CARGO_TARGET_DIR), per-step start/end/duration/rc/test counts,
 # 5-min heartbeats, RUNNING.tsv row, PASS/FAIL footer. A test step reporting zero tests FAILs. Exit is nonzero on FAIL.
-TEST_STEPS=" build-debug build-release test-i686 features-random-serde oracle-fast oracle-deep mpfr "
+TEST_STEPS=" build-debug build-release features-random-serde oracle-fast oracle-deep mpfr "
 # GATE_STEPS (space- or comma-separated): run only the steps with exactly these names; an unknown name fails the gate.
 failed=(); ran=()
 run() {
@@ -74,18 +74,7 @@ run build-debug "tools/fresh_test_run.sh cargo test --workspace $TT"
 # early compile of the mpfr-tests integration tests (6ab75ce prepublish broke here only at the last step)
 run mpfr-tests-build "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests --no-run"
 run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
-# i686 tests (merge-blocking from 9d66035): the whole workspace (libs, bins, integration tests) minus the oracle
-# tests, named in tools/i686_test_args.sh (they need host MPFR or the oracle goldens). Run natively (static musl),
-# own target subdir. The per-binary counts go into the gate log. args=$(...) && keeps a failing exclusion list from
-# quietly running only the libs.
-run test-i686 "args=\$(tools/i686_test_args.sh) && CARGO_TARGET_DIR=$CARGO_TARGET_DIR/i686 tools/fresh_test_run.sh cargo test --workspace --lib --bins \$args --target i686-unknown-linux-musl $TT"
-if [[ " ${ran[*]} " == *" test-i686 "* && -f "$T/$tag-test-i686.log" ]]; then
-  awk '/^ +Running / { b = $NF; gsub(/[()]/, "", b); sub(/.*\//, "", b); sub(/-[^-]*$/, "", b) }
-       /^test result:/ { p = f = i = 0; for (k = 1; k <= NF; k++) { if ($k ~ /^passed;?/) p = $(k-1); if ($k ~ /^failed;?/) f = $(k-1); if ($k ~ /^ignored;?/) i = $(k-1) }
-                         if (b != "") printf "i686 binary %s: passed=%d failed=%d ignored=%d\n", b, p, f, i; b = "" }' "$T/$tag-test-i686.log" | tee -a "$POPLOG_FILE"
-fi
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
-run build-thumbv7em "cargo build --no-default-features --target thumbv7em-none-eabihf && cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf"
 run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
 run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
 run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
@@ -98,10 +87,10 @@ run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BA
 run no-clone-progress "tools/no_clone_selftest.sh && { tools/no_clone.sh | tail -1; tools/no_clone.sh --helpers | tail -1; true; }"
 run fmt "cargo fmt --all -- --check"
 run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
-run clippy-i686 "cargo clippy -p zenith-float-num --all-targets --target i686-unknown-linux-musl -- -D warnings"
+# P6: 32-bit targets must refuse to build (i686 required; replaces test-i686, clippy-i686, hex-32bit, build-thumbv7em)
+run refuse-32bit "bash scripts/check_64bit_only.sh"
 run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
-run hex-32bit "bash scripts/ci_hex_32bit.sh"
 run unsafe-scan "bash tools/gate_unsafe_scan.sh"
 # compare-bench output goes to the run log dir, never the tracked doc/compare-results.tsv
 run prepublish "COMPARE_OUT=$T/compare-results.tsv bash scripts/zenith_prepublish.sh"

@@ -33,12 +33,6 @@ cargo build --no-default-features
 cargo build -p zenith-float-num --no-default-features
 ok "no_std host"
 
-step "cargo build --no-default-features --target thumbv7em-none-eabihf"
-rustup target add --toolchain 1.99 thumbv7em-none-eabihf >/dev/null
-cargo build --no-default-features --target thumbv7em-none-eabihf
-cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf
-ok "thumbv7em-none-eabihf"
-
 step "scripts/compare-bench.sh --quick"
 # output to COMPARE_OUT (the gate sets its log dir), else the target dir; never the tracked doc/compare-results.tsv
 COMPARE_OUT="${COMPARE_OUT:-$CARGO_TARGET_DIR/compare-results.tsv}" bash "$root/scripts/compare-bench.sh" --quick

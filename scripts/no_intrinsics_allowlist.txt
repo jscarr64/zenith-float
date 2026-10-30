@@ -5,8 +5,5 @@
 # no_std Linux host: GlobalAlloc plus libc write and exit. Not a numeric kernel.
 nostd-tests/src/bin/nostd-host.rs
 
-# qemu bare-metal heap bring-up. Not a numeric kernel.
-nostd-tests/src/bin/nostd-qemu.rs
-
 # Optional MPFR C API. Built only with --features mpfr-tests. Not linked into the library.
 zenith-float-num/tests/mpfr/
