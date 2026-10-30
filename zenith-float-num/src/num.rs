@@ -239,48 +239,7 @@ impl ExactNumNumber {
     }
 
     pub(crate) fn from_u64_internal(d: u64, p: usize) -> Result<Self, Error> {
-        #[cfg(not(target_pointer_width = "32"))]
-        {
-            Self::from_word(d, p)
-        }
-
-        #[cfg(target_pointer_width = "32")]
-        {
-            Self::p_assertion(p)?;
-
-            if d == 0 {
-                Self::new(p)
-            } else {
-                let mut d = d;
-                let mut shift = 0;
-                while d < 0x8000000000000000u64 {
-                    d <<= 1;
-                    shift += 1;
-                }
-                let words = [d as Word, (d >> WORD_BIT_SIZE) as Word];
-                if p < WORD_BIT_SIZE * 2 {
-                    if words[0] != 0 {
-                        Err(Error::InvalidArgument)
-                    } else {
-                        Ok(ExactNumNumber {
-                            m: Mantissa::from_word(p, words[1])?,
-                            e: (64 - shift) as Exponent,
-                            s: Sign::Pos,
-                            inexact: false,
-                            op_inexact: None,
-                        })
-                    }
-                } else {
-                    Ok(ExactNumNumber {
-                        m: Mantissa::from_words(p, &[d as Word, (d >> WORD_BIT_SIZE) as Word])?,
-                        e: (64 - shift) as Exponent,
-                        s: Sign::Pos,
-                        inexact: false,
-                        op_inexact: None,
-                    })
-                }
-            }
-        }
+        Self::from_word(d, p)
     }
 
     /// Returns a copy of the number with the sign reversed.
