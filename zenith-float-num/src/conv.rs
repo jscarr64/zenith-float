@@ -808,7 +808,7 @@ impl ExactNumNumber {
         }
 
         let mut ret = Vec::new();
-        ret.try_reserve_exact(self.mantissa_max_bit_len() / shift)?;
+        crate::defs::reserve_exact(&mut ret, self.mantissa_max_bit_len() / shift)?;
 
         let mask = (WORD_MAX >> (WORD_BIT_SIZE - shift)) as DoubleWord;
         let mut iter = self.mantissa().digits().iter().rev();
@@ -871,7 +871,7 @@ impl ExactNumNumber {
     ) -> Result<(Sign, Vec<u8>, Exponent), Error> {
         if self.is_zero() {
             let mut zero = Vec::new();
-            zero.try_reserve_exact(1)?;
+            crate::defs::reserve_exact(&mut zero, 1)?;
             zero.push(0);
             return Ok((self.sign(), zero, 0));
         }
@@ -890,7 +890,7 @@ impl ExactNumNumber {
 
         let mut digits = Vec::new();
         let max_digits = p * 2;
-        digits.try_reserve_exact(max_digits)?;
+        crate::defs::reserve_exact(&mut digits, max_digits)?;
 
         for _ in 0..max_digits {
             x = x.mul(&b, p, RoundingMode::None)?;
@@ -924,7 +924,7 @@ impl ExactNumNumber {
 
     fn conv_to_binary(&self) -> Result<(Sign, Vec<u8>, Exponent), Error> {
         let mut ret = Vec::new();
-        ret.try_reserve_exact(self.mantissa_max_bit_len())?;
+        crate::defs::reserve_exact(&mut ret, self.mantissa_max_bit_len())?;
         let mut cnt = 0;
 
         for v in self.mantissa().digits().iter().rev() {

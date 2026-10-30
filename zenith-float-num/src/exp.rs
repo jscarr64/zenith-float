@@ -1,7 +1,7 @@
 //! Overflow-free exponent arithmetic.
 //!
 //! Exponents lie in `EXPONENT_MIN..=EXPONENT_MAX` (±(2^62 − 1)) and precisions are at most
-//! `MAX_PRECISION` (< 2^60), so a sum of two exponents fits `i64` but a sum of two exponents and a
+//! `MAX_PRECISION` (< 2^32), so a sum of two exponents fits `i64` but a sum of two exponents and a
 //! shift, or a difference of extreme exponents, may not. Every such expression is evaluated here in
 //! `i128` and narrowed with [`narrow`], which saturates to `±WIDE_LIMIT`: far outside the exponent
 //! range (so overflow and underflow are still detected), yet leaving 2^61 of `i64` headroom for the

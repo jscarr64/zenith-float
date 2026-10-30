@@ -34,13 +34,13 @@ impl Mantissa {
                 Ok(Vec::new())
             } else {
                 let mut ret = Vec::new();
-                ret.try_reserve_exact(l)?;
+                crate::defs::reserve_exact(&mut ret, l)?;
                 ret.resize(l, 0);
                 Ok(ret)
             }
         } else if self.bit_len() <= WORD_BIT_SIZE {
             let mut ret = Vec::new();
-            ret.try_reserve_exact(l)?;
+            crate::defs::reserve_exact(&mut ret, l)?;
 
             let mut v = self.digits()[0];
             if most_significant {
@@ -80,7 +80,7 @@ impl Mantissa {
                 let mut part1 = Self::conv_to_dec(&mut r, l2, tenpowers, p - 1, false)?;
                 let mut part2 = Self::conv_to_dec(&mut q, l2, tenpowers, p - 1, most_significant)?;
 
-                part2.try_reserve_exact(l2)?;
+                crate::defs::reserve_exact(&mut part2, l2)?;
                 if part1.len() < l2 {
                     part2.resize(part2.len() + l2 - part1.len(), 0);
                 }
@@ -137,7 +137,7 @@ impl Mantissa {
         debug_assert!(input[0] != 0);
 
         let mut chunks = Vec::new();
-        chunks.try_reserve_exact(input.len().div_ceil(WORD_TENPOWER_LEN))?;
+        crate::defs::reserve_exact(&mut chunks, input.len().div_ceil(WORD_TENPOWER_LEN))?;
 
         let mut word: Word = 0;
         let mut i = 0;
@@ -176,7 +176,7 @@ impl Mantissa {
             let (_, tenpower, _) = &tenpowers[p];
 
             let mut newchunks = Vec::new();
-            newchunks.try_reserve_exact(chunks.len().div_ceil(2))?;
+            crate::defs::reserve_exact(&mut newchunks, chunks.len().div_ceil(2))?;
 
             for pair in chunks.chunks(2) {
                 if pair.len() == 2 {

@@ -678,7 +678,7 @@ impl ExactNumNumber {
 
             #[cfg(not(target_pointer_width = "32"))]
             {
-                // A shift is at most the mantissa length (< 2^60), so the result stays far inside i64.
+                // A shift is at most the mantissa length (< 2^32), so the result stays far inside i64.
                 debug_assert!(shift <= MAX_PRECISION);
             }
 

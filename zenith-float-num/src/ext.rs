@@ -1285,7 +1285,7 @@ impl ExactNum {
         };
 
         let mut ret = String::new();
-        ret.try_reserve_exact(s.len())?;
+        crate::defs::reserve_exact_str(&mut ret, s.len())?;
         ret.push_str(s);
 
         Ok(ret)
@@ -1857,7 +1857,7 @@ impl ExactNum {
             return Ok(Self::new(pp));
         }
         // `Exponent` is `i64`, so `exp` is checked against the 62-bit range directly; `grid` and
-        // `total` stay inside `i64` because `pp <= MAX_PRECISION < 2^60`.
+        // `total` stay inside `i64` because `pp <= MAX_PRECISION < 2^32`.
         if exp > crate::EXPONENT_MAX {
             return Err(Error::ExponentOverflow(Sign::Pos));
         }

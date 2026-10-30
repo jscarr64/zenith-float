@@ -1587,14 +1587,14 @@ impl ExactNumArray {
 
 fn try_alloc_vec<T: Clone>(n: usize, fill: T) -> Option<Vec<T>> {
     let mut v = Vec::new();
-    v.try_reserve_exact(n).ok()?;
+    crate::defs::reserve_exact(&mut v, n).ok()?;
     v.resize(n, fill);
     Some(v)
 }
 
 fn try_clone_vals(src: &[ExactNum]) -> Option<Vec<ExactNum>> {
     let mut v = Vec::new();
-    v.try_reserve_exact(src.len()).ok()?;
+    crate::defs::reserve_exact(&mut v, src.len()).ok()?;
     v.extend(src.iter().cloned());
     Some(v)
 }

@@ -416,7 +416,7 @@ impl Mantissa {
         part_len: usize,
     ) -> Result<Vec<SliceMut<'_>>, Error> {
         let mut parts = Vec::<SliceMut<'_>>::new();
-        parts.try_reserve_exact(k1)?;
+        crate::defs::reserve_exact(&mut parts, k1)?;
 
         let mut rest = buf;
 

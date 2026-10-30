@@ -125,7 +125,7 @@ impl ExactNum {
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let n = encoded_len(self)?;
         let mut out = Vec::new();
-        out.try_reserve_exact(n)?;
+        crate::defs::reserve_exact(&mut out, n)?;
         out.resize(n, 0);
         let wrote = write_num(self, &mut out)?;
         if wrote != n {
@@ -154,7 +154,7 @@ impl ExactNumArray {
     pub fn to_bytes(&self) -> Result<Vec<u8>, Error> {
         let n = encoded_array_len(self)?;
         let mut out = Vec::new();
-        out.try_reserve_exact(n)?;
+        crate::defs::reserve_exact(&mut out, n)?;
         out.resize(n, 0);
         let wrote = write_array(self, &mut out)?;
         if wrote != n {
@@ -399,7 +399,7 @@ fn decode_heap(bytes: &[u8], flag: u8) -> Result<(ExactNum, usize), Error> {
         return Err(Error::InvalidArgument);
     }
     let mut u32s = Vec::new();
-    u32s.try_reserve_exact(n_u32)?;
+    crate::defs::reserve_exact(&mut u32s, n_u32)?;
     let mut off = BINARY_HEADER_LEN;
     for _ in 0..n_u32 {
         let chunk: [u8; 4] = bytes[off..off + U32_BYTES]
@@ -433,7 +433,7 @@ fn finite_from_u32(
     }
     let n_words = u32s.len() / WORD_U32;
     let mut words = Vec::new();
-    words.try_reserve_exact(n_words)?;
+    crate::defs::reserve_exact(&mut words, n_words)?;
     for i in 0..n_words {
         words.push(word_from_u32s(&u32s[i * WORD_U32..(i + 1) * WORD_U32]));
     }
@@ -505,7 +505,7 @@ fn decode_array(bytes: &[u8]) -> Result<ExactNumArray, Error> {
         return Err(Error::InvalidArgument);
     }
     let mut vals = Vec::new();
-    vals.try_reserve_exact(n)?;
+    crate::defs::reserve_exact(&mut vals, n)?;
     let mut off = BINARY_HEADER_LEN;
     for _ in 0..n {
         let (v, used) = decode_num(&bytes[off..])?;

@@ -303,7 +303,7 @@ fn series_rectangular<T: PolycoeffGen>(
     let mut cache = Vec::<ExactNumNumber>::new();
     let sqrt_iter = sqrt_int(niter as u32) as usize;
     let cache_sz = MAX_CACHE.min(sqrt_iter);
-    cache.try_reserve_exact(cache_sz)?;
+    crate::defs::reserve_exact(&mut cache, cache_sz)?;
     let mut x_pow = x_step.clone()?;
 
     for _ in 0..cache_sz {

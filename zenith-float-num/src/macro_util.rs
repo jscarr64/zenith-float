@@ -341,8 +341,7 @@ pub fn word_halves(words: &[crate::Word]) -> Result<alloc::vec::Vec<u32>, crate:
         .checked_mul(HALVES_PER_WORD)
         .ok_or(crate::Error::MemoryAllocation)?;
     let mut out = alloc::vec::Vec::new();
-    out.try_reserve_exact(n)
-        .map_err(|_| crate::Error::MemoryAllocation)?;
+    crate::defs::reserve_exact(&mut out, n)?;
     for &w in words {
         let bytes = w.to_le_bytes();
         let (quads, rest) = bytes.as_chunks::<4>();
@@ -377,9 +376,7 @@ pub fn from_raw_halves(
         return Err(crate::Error::InvalidArgument);
     }
     let mut words = alloc::vec::Vec::new();
-    words
-        .try_reserve_exact(chunks.len())
-        .map_err(|_| crate::Error::MemoryAllocation)?;
+    crate::defs::reserve_exact(&mut words, chunks.len())?;
     for chunk in chunks {
         let mut bytes = [0u8; core::mem::size_of::<crate::Word>()];
         let (quads, tail) = bytes.as_chunks_mut::<4>();

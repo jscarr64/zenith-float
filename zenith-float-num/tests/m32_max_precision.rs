@@ -53,7 +53,7 @@ fn size_check_overflow() {
 // Heavy rows: each mantissa at MAX_PRECISION is 2^26 words = 512 MiB. Run under popslot --mem 10G.
 #[test]
 fn heavy_max_minus_one_and_max_accepted() {
-    let a = ExactNum::new(MAX_PRECISION - 1);
+    let a = ExactNum::from_u8(1, MAX_PRECISION - 1);
     assert!(!a.is_nan(), "p = MAX_PRECISION-1 must be accepted");
     assert!(a.precision().is_some_and(|p| p >= MAX_PRECISION - 1));
     drop(a);
