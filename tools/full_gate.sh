@@ -53,6 +53,10 @@ fi
 # scripts/poplog.sh): header (cmd, repo, SHA, rustc, CARGO_TARGET_DIR), per-step start/end/duration/rc/test counts,
 # 5-min heartbeats, RUNNING.tsv row, PASS/FAIL footer. A test step reporting zero tests FAILs. Exit is nonzero on FAIL.
 TEST_STEPS=" build-debug build-release test-i686 features-random-serde oracle-fast oracle-deep mpfr "
+HOST_COUNT_STEPS=" build-debug build-release features-random-serde oracle-fast oracle-deep mpfr "
+# test targets whose required-features are all within random,serde: features-random-serde must run each one
+RFS_EXPECT=$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null | jq -r '.packages[].targets[] | select(.kind == ["test"])
+  | select(((.["required-features"] // []) | length) > 0 and ((.["required-features"] // []) | all(. == "random" or . == "serde"))) | .name' | sort -u | tr '\n' ' ')
 # GATE_STEPS (space- or comma-separated): run only the steps with exactly these names; an unknown name fails the gate.
 failed=(); ran=()
 run() {
@@ -64,6 +68,12 @@ run() {
   timeout "$to" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1 &
   POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"
   wait "$POPLOG_CHILD_PID"; rc=$?; POPLOG_CHILD_PID=""
+  # item 3, host: a host test step FAILs on a binary that ran 0 tests (none, filtered, all ignored), lost its
+  # summary, or (features-random-serde) a required-features test target that did not run at all
+  if [[ "$HOST_COUNT_STEPS" == *" $name "* ]]; then
+    exp=(); [[ $name == features-random-serde ]] && exp=(--expect $RFS_EXPECT)
+    tools/host_test_counts.sh "$name" "$T/$tag-$name.log" "${exp[@]}" >> "$T/$tag-$name.log" 2>&1 || rc=1
+  fi
   echo "$name=$rc" >> "$T/$tag.rc"
   tests=""; [[ "$TEST_STEPS" == *" $name "* ]] && tests=--tests
   log_step_end "$name" "$rc" "$T/$tag-$name.log" "$tests" || failed+=("$name")
