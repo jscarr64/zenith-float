@@ -8,8 +8,9 @@ Usage:
                                       SHA256SUMS (gate files) and HEAVY.SHA256 (sha256 of the uncommitted heavy file)
     gen_la_goldens.py --heavy DIR     also write the heavy files la_<op>_heavy.txt into DIR (never committed)
     gen_la_goldens.py --check [DIR]   regenerate; byte-compare every gate file with the committed one (copies go to DIR
-                                      if given, per the goldlib --check DIR convention) and compare the sha256 of every
-                                      regenerated heavy file with HEAVY.SHA256. --skip-heavy limits it to the gate files.
+                                      if given, per the goldlib --check DIR convention); heavy files by HEAVY.SHA256 pin only
+                                      (pins mode: names exact, no heavy row computed; the cheap la_<op>_budget_heavy.txt is recomputed)
+    gen_la_goldens.py --check [DIR] --heavy HDIR   also recompute every heavy file into HDIR and compare its sha256 with HEAVY.SHA256
 
 Memory (Paul, 2026-10-24, after a 58 GB OOM): rows stream to unlinked spool files under target/la-goldens-spool/ and are hashed
 incrementally; run every invocation under poprun/popslot, /usr/bin/time -v and a cap, e.g.
@@ -18,7 +19,8 @@ incrementally; run every invocation under poprun/popslot, /usr/bin/time -v and a
 
 Slices (S0, tests/goldens/slices/<slice>/): LA1 cholesky, LA2 lu (+ solve, logdet), LA3 qr, LA4 gls, LA5a eigen (symmetric), LA5b eigen (general, stub: pending complex Ball).
 Gate = every case with all dims <= 12 and every input integer < 2^(10^4+64) in size; heavy = the rest
-(n = 16..32, 2^+-10^6 scales). case_ids are fixed strings; the random streams are drawn in the same order for
+(n = 16..32, 2^+-10^6 scales). Gate-size rows named in LA_BUDGET_HEAVY / GLS_COSMO_HEAVY are
+also heavy-tier (LA gate set < 1 MB); LA_BUDGET_HEAVY rows go to la_<op>_budget_heavy.txt. case_ids are fixed strings; the random streams are drawn in the same order for
 gate and heavy, so splitting never changes a row. The generator is a pure exact oracle and never calls zenith-bound.
 
 All arithmetic is exact (gmpy2.mpq / sympy QQ / Python ints). Irrational
@@ -571,6 +573,21 @@ def gls_cosmo_corpus():
 GLS_COSMO_HEAVY = frozenset({"cosmo_bao.12x3_e300", "cosmo_cmb_toeplitz.12x2_e300", "cosmo_blockdiag.12x4_e300",
                              "cosmo_lowrank.12x3_e300", "cosmo_spread.p2e10000_6x2"})
 
+# Gate-size budget, second pass (Harper 2026-10-30; Spence: slice_gls::la_gate_set_totals_under_1_mb measured 1,085,901 B on
+# harper/zb-la-golds merged into rusty/zb-la3-qr, budget 1,000,000). These gate-size rows (full case_ids) are the largest and least
+# diagnostic ones whose family/edge class keeps a smaller gate row; they are emitted to a separate heavy-tier file
+# la_<op>_budget_heavy.txt, which is cheap (gate-size rows only), so it is computed in every mode and its HEAVY.SHA256 pin is checked by
+# recompute even in pins mode. They keep their ext rows (la_<op>_enc<b>_heavy.txt are unchanged) and la_<op>_heavy.txt is untouched.
+#   logdet.cosmo_spread.p2e10000_lowrank4  46457 B  spread kept by e300_12, p2e1000_06, indef_e300_05
+#   logdet.cosmo_cond.hilbert_scaled10     30754 B  cond kept by e50_06, e100_08, e200_10
+#   logdet.cosmo_spread.e300_08            24023 B  10^+-300 spread kept by e300_12
+#   logdet.cosmo_toeplitz.tridiag12_p2e1000 14691 B toeplitz kept by kms08_rho1m1e-20, kms12_rho9_10; 2^+-1000 by cosmo_spread.p2e1000_06
+#   cholesky.hilbert.09 .. .12            46009 B  hilbert kept by cholesky.hilbert.<= 08
+#   cholesky.random_q.08                    8689 B  random_q kept by cholesky.random_q.<= 06
+LA_BUDGET_HEAVY = frozenset({"logdet.cosmo_spread.p2e10000_lowrank4", "logdet.cosmo_cond.hilbert_scaled10", "logdet.cosmo_spread.e300_08",
+                             "logdet.cosmo_toeplitz.tridiag12_p2e1000", "cholesky.hilbert.09", "cholesky.hilbert.10", "cholesky.hilbert.11",
+                             "cholesky.hilbert.12", "cholesky.random_q.08"})
+
 # ---------------------------------------------------------------- per-op emitters
 def dims_sq(A): return str(len(A))
 def dims_mn(A): return f"{len(A)}x{len(A[0])}"
@@ -862,7 +879,8 @@ def begin(cid):
     CASE = cid; _arm()
 
 class Rows:
-    """Row sink: append((text, heavy)) or append(text) (= heavy). Text goes straight to disk."""
+    """Row sink: append((text, heavy)) or append(text) (= heavy). Text goes straight to disk. A gate-size row named in LA_BUDGET_HEAVY
+    goes to the "budget" spool (la_<op>_budget_heavy.txt) and keeps heavy = False in ids (its ext rows stay)."""
     def __init__(self):
         global N_ROWS_OBJ
         os.makedirs(SPOOL_DIR, exist_ok=True)
@@ -871,18 +889,19 @@ class Rows:
             os.makedirs(PARTIAL_DIR, exist_ok=True)
             self.partial = os.path.join(PARTIAL_DIR, f"la_{OP}.rows{N_ROWS_OBJ}.partial"); heavy_spool = open(self.partial, "w+b")
         N_ROWS_OBJ += 1
-        self.spool = {False: tempfile.TemporaryFile(dir=SPOOL_DIR), True: heavy_spool}
-        self.count = {False: 0, True: 0}; self.ids = []
+        self.spool = {False: tempfile.TemporaryFile(dir=SPOOL_DIR), True: heavy_spool, "budget": tempfile.TemporaryFile(dir=SPOOL_DIR)}
+        self.count = {False: 0, True: 0, "budget": 0}; self.ids = []
     def append(self, item):
         global T_ROW
         text, heavy = item if isinstance(item, tuple) else (item, True)
         heavy = bool(heavy); cid = text.split(" ", 1)[0]
-        f = self.spool[heavy]; f.write(text.encode("utf-8") + b"\n"); self.count[heavy] += 1
+        tier = "budget" if not heavy and cid in LA_BUDGET_HEAVY else heavy
+        f = self.spool[tier]; f.write(text.encode("utf-8") + b"\n"); self.count[tier] += 1
         if heavy and self.partial is not None: f.flush(); os.fsync(f.fileno())
         self.ids.append((cid, heavy))
         if PROGRESS:
             now = time.monotonic()
-            print(f"progress: op={OP} case={cid} tier={'heavy' if heavy else 'gate'} row_s={now - T_ROW:.3f} elapsed_s={now - T0:.3f}",
+            print(f"progress: op={OP} case={cid} tier={'budget' if tier == 'budget' else 'heavy' if heavy else 'gate'} row_s={now - T_ROW:.3f} elapsed_s={now - T0:.3f}",
                   file=sys.stderr, flush=True)
             T_ROW = now
         _arm()
@@ -987,13 +1006,17 @@ def render(gate_dir, heavy_dir, skip_heavy):
         hdr, rows, expect, *rest = fn(); exts = rest[0] if rest else {}; stub = "stub" in rest
         ids = [i for i, _ in rows.ids]; assert len(ids) == len(set(ids)), "duplicate case_id"
         if stub: assert not rows, "stub file must have zero rows"
-        sl = out.setdefault(SLICE_OF[name], {"gate": {}, "heavy": {}, "names": []})
+        sl = out.setdefault(SLICE_OF[name], {"gate": {}, "heavy": {}, "budget": {}, "names": []})
         k = f"la_{name}.txt"; f = to(gate_dir, SLICE_OF[name], k)
         sl["gate"][k] = stream_file(name, "gate", hdr, rows, False, expect, f); done(gate_dir, SLICE_OF[name], k, f)
         if not stub:
             k = f"la_{name}_heavy.txt"; sl["names"].append(k); f = None if skip_heavy else to(heavy_dir, SLICE_OF[name], k)
             r = stream_file(name, "heavy", hdr, rows, True, expect, f); done(heavy_dir, SLICE_OF[name], k, f)
             if not skip_heavy: sl["heavy"][k] = r
+        if any(c.startswith(name + ".") for c in LA_BUDGET_HEAVY):   # cheap gate-size rows: computed and hashed in every mode
+            k = f"la_{name}_budget_heavy.txt"; sl["names"].append(k); f = to(heavy_dir, SLICE_OF[name], k)
+            r = stream_file(name, "heavy", hdr, rows, "budget", expect, f); done(heavy_dir, SLICE_OF[name], k, f)
+            sl["heavy"][k] = r; sl["budget"][k] = r
         want = [i for i, h in rows.ids if not h or ".cosmo_" in i]
         for tag, (ehdr, erows, eexp) in exts.items():
             assert [i for i, _ in erows.ids] == want, "ext case_ids must equal the gate case_ids (plus cosmo_* heavy ids)"
@@ -1031,8 +1054,9 @@ def main():
 def run(a):
     if a.check is not None:
         cdir = a.check or tempfile.mkdtemp(dir=(os.makedirs(SPOOL_DIR, exist_ok=True) or SPOOL_DIR))
-        print("check: heavy mode=pins (HEAVY.SHA256 pin/sha check only, no recompute)" if a.skip_heavy else "check: heavy mode=recompute", flush=True)
-        out = render(cdir, None, a.skip_heavy); bad = 0
+        pins = a.skip_heavy or a.heavy is None   # recompute heavy rows only with an explicit --heavy DIR (Cassie 2026-10-29: 2877 s > 1800 s)
+        print("check: heavy mode=pins (HEAVY.SHA256 pin/sha check only, no recompute)" if pins else "check: heavy mode=recompute", flush=True)
+        out = render(cdir, None if pins else a.heavy, pins); bad = 0
         for sl, t in sorted(out.items()):
             d = os.path.join(SLICES, sl); sums = read_sums(os.path.join(d, "SHA256SUMS"))
             for k, (h, _) in sorted(t["gate"].items()):
@@ -1042,7 +1066,7 @@ def run(a):
                 else: bad += 1; print(f"check: DIFF {sl}/{k} line {first_diff_line(p, g)}")
                 if sums.get(k) != h: bad += 1; print(f"check: SHA256SUMS mismatch {sl}/{k}")
                 if not a.check: os.remove(g)
-            if a.skip_heavy: bad += check_pins(sl, d, t["names"])
+            if pins: bad += check_pins(sl, d, t["names"])
             if t["heavy"]:
                 hs = read_sums(os.path.join(d, "HEAVY.SHA256"))
                 for k, (h, _) in sorted(t["heavy"].items()):
@@ -1058,7 +1082,12 @@ def run(a):
         for k, (_, n) in sorted(t["gate"].items()): print(f"wrote {sl}/{k} ({n} bytes)")
         p = os.path.join(d, "SHA256SUMS")   # merge, never drop other owners' lines (Rusty, 2026-10-29)
         open(p + ".tmp", "w", encoding="utf-8", newline="\n").write(merge_sums(p, {k: v[0] for k, v in t["gate"].items()})); os.replace(p + ".tmp", p)
-        if a.skip_heavy: print(f"skip-heavy: {sl}/HEAVY.SHA256 left as is (not regenerated)"); continue
+        if a.skip_heavy:
+            if t["budget"]:   # la_<op>_budget_heavy.txt is cheap and always computed: its pins are merged, every other pin is kept
+                hp = os.path.join(d, "HEAVY.SHA256")
+                open(hp + ".tmp", "w", encoding="utf-8", newline="\n").write(merge_sums(hp, {k: v[0] for k, v in t["budget"].items()})); os.replace(hp + ".tmp", hp)
+                for k, (_, n) in sorted(t["budget"].items()): print(f"wrote pin {sl}/HEAVY.SHA256 {k} ({n} bytes)")
+            print(f"skip-heavy: {sl}/HEAVY.SHA256 other pins left as is (not regenerated)"); continue
         open(os.path.join(d, "HEAVY.SHA256"), "w", encoding="utf-8", newline="\n").write(HEAVY_HDR + "".join(f"{t['heavy'][k][0]}  {k}\n" for k in sorted(t["heavy"])))
         for k, (_, n) in sorted(t["heavy"].items()):
             if a.heavy: print(f"wrote heavy {a.heavy}/{sl}/{k} ({n} bytes)")
