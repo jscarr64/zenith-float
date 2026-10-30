@@ -1,0 +1,1 @@
+- tests: the 16 inline word-array inputs in tests/mod.rs and the asin pi cut are now cfg(target_pointer_width) constants with the same value on 32- and 64-bit words.

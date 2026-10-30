@@ -9,6 +9,37 @@ use zenith_float_num::{
     Word, WORD_BIT_SIZE, WORD_MAX, WORD_SIGNIFICANT_BIT,
 };
 
+// Word-array inputs with the same value on 32- and 64-bit words: an inline `[a, b, ...]` literal
+// is a different number per word width, so the i686 run would test another input. Each 64-bit
+// word `w` becomes the 32-bit pair `[lo(w), hi(w)]`.
+#[cfg(target_pointer_width = "64")]
+const X_234_0_SIG: [Word; 3] = [234, 0, WORD_SIGNIFICANT_BIT];
+#[cfg(target_pointer_width = "32")]
+const X_234_0_SIG: [Word; 6] = [234, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT];
+#[cfg(target_pointer_width = "64")]
+const X_234_SIG: [Word; 2] = [234, WORD_SIGNIFICANT_BIT];
+#[cfg(target_pointer_width = "32")]
+const X_234_SIG: [Word; 4] = [234, 0, 0, WORD_SIGNIFICANT_BIT];
+#[cfg(target_pointer_width = "64")]
+const X_123_SIG: [Word; 2] = [123, WORD_SIGNIFICANT_BIT];
+#[cfg(target_pointer_width = "32")]
+const X_123_SIG: [Word; 4] = [123, 0, 0, WORD_SIGNIFICANT_BIT];
+#[cfg(target_pointer_width = "64")]
+const X_123_MAX: [Word; 2] = [123, WORD_MAX];
+#[cfg(target_pointer_width = "32")]
+const X_123_MAX: [Word; 4] = [123, 0, WORD_MAX, WORD_MAX];
+#[cfg(target_pointer_width = "64")]
+const X_234_MAX: [Word; 2] = [234, WORD_MAX];
+#[cfg(target_pointer_width = "32")]
+const X_234_MAX: [Word; 4] = [234, 0, WORD_MAX, WORD_MAX];
+#[cfg(target_pointer_width = "64")]
+const X_123_123_SIG: [Word; 3] = [123, 123, WORD_SIGNIFICANT_BIT];
+#[cfg(target_pointer_width = "32")]
+const X_123_123_SIG: [Word; 6] = [123, 0, 123, 0, 0, WORD_SIGNIFICANT_BIT];
+/// Precision cut for the asin input `pi(p - ASIN_PI_CUT)`: 64 bits on every target (was
+/// `WORD_BIT_SIZE`, 32 on i686).
+const ASIN_PI_CUT: usize = 64;
+
 #[test]
 fn native_operators() {
     let mk_a = || ExactNum::from(6);
@@ -735,8 +766,8 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
 
     // exp
     for x in [
-        ExactNum::from_words(&[234, 0, WORD_SIGNIFICANT_BIT], Sign::Pos, 1000000),
-        ExactNum::from_words(&[234, 0, WORD_SIGNIFICANT_BIT], Sign::Pos, -1000000),
+        ExactNum::from_words(&X_234_0_SIG, Sign::Pos, 1000000),
+        ExactNum::from_words(&X_234_0_SIG, Sign::Pos, -1000000),
     ] {
         let y1 = x.ln(p * 3, RoundingMode::None, &mut cc);
         let mut z1 = y1.exp(p * 3, RoundingMode::None, &mut cc);
@@ -753,8 +784,8 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
 
     // log2
     for x in [
-        ExactNum::from_words(&[234, WORD_SIGNIFICANT_BIT], Sign::Pos, -123),
-        ExactNum::from_words(&[234, WORD_SIGNIFICANT_BIT], Sign::Neg, -123),
+        ExactNum::from_words(&X_234_SIG, Sign::Pos, -123),
+        ExactNum::from_words(&X_234_SIG, Sign::Neg, -123),
     ] {
         let y1 = two.pow(&x, p * 2, RoundingMode::None, &mut cc);
         let mut z1 = y1.log2(p * 2, RoundingMode::None, &mut cc);
@@ -771,8 +802,8 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
 
     // log10
     for x in [
-        ExactNum::from_words(&[234, WORD_SIGNIFICANT_BIT], Sign::Pos, -123),
-        ExactNum::from_words(&[234, WORD_SIGNIFICANT_BIT], Sign::Neg, -123),
+        ExactNum::from_words(&X_234_SIG, Sign::Pos, -123),
+        ExactNum::from_words(&X_234_SIG, Sign::Neg, -123),
     ] {
         let y1 = ten.pow(&x, p * 2, RoundingMode::None, &mut cc);
         let mut z1 = y1.log10(p * 2, RoundingMode::None, &mut cc);
@@ -789,12 +820,12 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
 
     // log
     for x in [
-        ExactNum::from_words(&[234, WORD_SIGNIFICANT_BIT], Sign::Pos, -123),
-        ExactNum::from_words(&[234, WORD_SIGNIFICANT_BIT], Sign::Neg, -123),
+        ExactNum::from_words(&X_234_SIG, Sign::Pos, -123),
+        ExactNum::from_words(&X_234_SIG, Sign::Neg, -123),
     ] {
         for b in [
-            ExactNum::from_words(&[123, WORD_MAX], Sign::Pos, 0),
-            ExactNum::from_words(&[123, WORD_SIGNIFICANT_BIT], Sign::Pos, 1),
+            ExactNum::from_words(&X_123_MAX, Sign::Pos, 0),
+            ExactNum::from_words(&X_123_SIG, Sign::Pos, 1),
         ] {
             let y1 = b.pow(&x, p * 4, RoundingMode::None, &mut cc);
             let mut z1 = y1.log(&b, p * 4, RoundingMode::None, &mut cc);
@@ -968,14 +999,14 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(y2, z);
 
     // asin
-    let mut x = cc.pi(p - WORD_BIT_SIZE, RoundingMode::None);
+    let mut x = cc.pi(p - ASIN_PI_CUT, RoundingMode::None);
     x.set_exponent(1);
 
     let z = x.sin(p + 1, RoundingMode::None, &mut cc);
     let y1 = z.asin(p, rm, &mut cc);
 
-    // x = pi/2 - d, d ~ 2^-(p - WORD_BIT_SIZE): sin(x) = 1 - d^2/2, so the reference
-    // needs about 2 * (p - WORD_BIT_SIZE) + p bits; p * 4 covers both word widths.
+    // x = pi/2 - d, d ~ 2^-(p - ASIN_PI_CUT): sin(x) = 1 - d^2/2, so the reference
+    // needs about 2 * (p - ASIN_PI_CUT) + p bits; p * 4 covers it on every target.
     let z = x.sin(p * 4, RoundingMode::None, &mut cc);
     let mut y2 = z.asin(p * 4, RoundingMode::None, &mut cc);
     y2.set_precision(p, rm)?;
@@ -986,7 +1017,7 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(y2, z);
 
     // acos
-    let x = ExactNum::from_words(&[234, WORD_MAX], Sign::Pos, -100);
+    let x = ExactNum::from_words(&X_234_MAX, Sign::Pos, -100);
 
     let z = x.cos(p + 1, RoundingMode::None, &mut cc);
     let y1 = z.acos(p, rm, &mut cc);
@@ -1001,7 +1032,7 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(y2, z);
 
     // atan
-    let x = ExactNum::from_words(&[234, WORD_MAX], Sign::Neg, 128);
+    let x = ExactNum::from_words(&X_234_MAX, Sign::Neg, 128);
     let z = x.atan(p + 1, RoundingMode::None, &mut cc);
     let y1 = z.tan(p, rm, &mut cc);
 
@@ -1015,7 +1046,7 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(y2, z);
 
     // sinh
-    let x = ExactNum::from_words(&[234, 0, WORD_SIGNIFICANT_BIT], Sign::Pos, 1000000);
+    let x = ExactNum::from_words(&X_234_0_SIG, Sign::Pos, 1000000);
     let y1 = x.asinh(p * 3, RoundingMode::None, &mut cc);
     let mut z1 = y1.sinh(p * 3, RoundingMode::None, &mut cc);
     z1.set_precision(p, rm)?;
@@ -1029,7 +1060,7 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
     assert_ne!(z2, y);
 
     // cosh
-    let x = ExactNum::from_words(&[234, 0, WORD_SIGNIFICANT_BIT], Sign::Pos, 1000000);
+    let x = ExactNum::from_words(&X_234_0_SIG, Sign::Pos, 1000000);
     let y1 = x.acosh(p * 3, RoundingMode::None, &mut cc);
     let mut z1 = y1.cosh(p * 3, RoundingMode::None, &mut cc);
     z1.set_precision(p, rm)?;
@@ -1070,7 +1101,7 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(y2, z);
 
     // acosh
-    let x = ExactNum::from_words(&[123, 123, WORD_SIGNIFICANT_BIT], Sign::Pos, -100);
+    let x = ExactNum::from_words(&X_123_123_SIG, Sign::Pos, -100);
 
     let z = x.cosh(p + 1, RoundingMode::None, &mut cc);
     let y1 = z.acosh(p, rm, &mut cc);
@@ -1085,7 +1116,7 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(y2, z);
 
     // atanh
-    let x = ExactNum::from_words(&[123, 123, WORD_SIGNIFICANT_BIT], Sign::Pos, 7);
+    let x = ExactNum::from_words(&X_123_123_SIG, Sign::Pos, 7);
 
     let z = x.tanh(p + 1, RoundingMode::None, &mut cc);
     let y1 = z.atanh(p, rm, &mut cc);
