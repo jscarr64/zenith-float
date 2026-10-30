@@ -184,45 +184,28 @@ fn infinity_radius_is_canonical_all_reals() -> Result<(), String> {
     }
     Ok(())
 }
-
+/// One expectation on every target (ZB-TD03): precisions up to 2^30 - 1 are stored exactly as requested.
 #[test]
-fn prec_is_stored_as_requested() -> Result<(), String> {
-    // Candidates above MAX_PRECISION (2^30 - 1 on 32-bit targets) are not valid precisions there and are skipped; on
-    // 64-bit targets every candidate is used.
-    let candidates = [1u64, 2, 63, 64, 65, 4096, 0xFFFF_FFFF, 1 << 32];
-    let ps = candidates
-        .iter()
-        .filter_map(|p| usize::try_from(*p).ok())
-        .filter(|p| *p <= zenith_bound::MAX_PRECISION)
-        .chain([zenith_bound::MAX_PRECISION]);
-    for p in ps {
-        let b = ok("exact(1, p)", Ball::exact(num(1), p))?;
-        if b.prec() != p {
-            return Err(format!("prec {}: got {}", p, b.prec()));
+fn prec_up_to_2_pow_30_minus_1_is_stored_as_requested() -> Result<(), String> {
+    for p in [1u64, 2, 63, 64, 65, 4096, (1 << 30) - 1] {
+        let prec = usize::try_from(p).map_err(|_| format!("{} as usize", p))?;
+        let b = Ball::exact(ExactNum::from(3i64), prec).map_err(|e| format!("exact(3, {}): {:?}", p, e))?;
+        if b.prec() != prec {
+            return Err(format!("exact(3, {}): prec read back {}", p, b.prec()));
         }
     }
     Ok(())
 }
 
-/// The 32-bit counterpart of the candidates `prec_is_stored_as_requested` skips: a candidate that is a usize but above
-/// MAX_PRECISION is refused with InvalidArgument (never a panic or a Ball); one that is not a usize at all is not
-/// representable (`usize::try_from` refuses it). On 64-bit targets no candidate is skipped and this loop checks nothing
-/// beyond that.
+/// One expectation on every target (ZB-TD03): precisions from 2^30 are refused. Values that fit a usize must give
+/// InvalidArgument; values that do not fit (2^32 and up on 32-bit) are refused by the type itself.
 #[test]
-fn skipped_prec_candidates_are_refused() -> Result<(), String> {
-    for p in [0xFFFF_FFFFu64, 1 << 32] {
-        match usize::try_from(p) {
-            Err(_) => {}
-            Ok(p) if p <= zenith_bound::MAX_PRECISION => {}
-            Ok(p) => match Ball::exact(num(1), p) {
-                Err(BoundError::InvalidArgument { .. }) => {}
-                other => {
-                    return Err(format!(
-                        "exact(1, {}): want InvalidArgument, got {:?}",
-                        p, other
-                    ))
-                }
-            },
+fn prec_from_2_pow_30_is_refused_on_every_target() -> Result<(), String> {
+    for p in [1u64 << 30, (1 << 31) - 1, 1 << 31, u64::from(u32::MAX), 1 << 32, (1 << 60) - 1] {
+        let Ok(prec) = usize::try_from(p) else { continue };
+        match Ball::exact(ExactNum::from(3i64), prec) {
+            Err(BoundError::InvalidArgument { .. }) => {}
+            other => return Err(format!("exact(3, {}): want InvalidArgument, got {:?}", p, other)),
         }
     }
     Ok(())
