@@ -1,0 +1,1 @@
+- exp: the far-underflow cut of exp_neg_scaled is 2^(u64::BITS - 1) on every target (it was Word::BITS - 1, so 2^31 on 32-bit words), and the powi exponent top bit is derived from u64::BITS.

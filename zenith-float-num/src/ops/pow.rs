@@ -26,7 +26,7 @@ use super::series::{
 /// truncate an i64 power (`powsi`).
 const POWI_EXP_BITS: usize = 64;
 /// The top bit of the `powi_internal` exponent integer.
-const POWI_EXP_TOP: u64 = 1 << 63;
+const POWI_EXP_TOP: u64 = 1 << (u64::BITS - 1);
 
 struct SinhArgReductionEstimator {}
 
@@ -111,8 +111,8 @@ impl ExactNumNumber {
     /// applied once by `place_scaled`, which rounds onto the subnormal grid (or flushes) with `rm`.
     fn exp_neg_scaled(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         let far = i128::from(EXPONENT_MIN) * 2;
-        // `Word::BITS - 1` (63 for 64-bit words) as an `Exponent`, converted losslessly.
-        let top = Exponent::from(Word::BITS) - 1;
+        // `u64::BITS - 1` as an `Exponent` on every target (not `Word::BITS`, which is 32 on 32-bit words).
+        let top = Exponent::from(u64::BITS.checked_sub(1).ok_or(Error::InvalidArgument)?);
         if self.exponent() > top {
             // |x| >= 2^63: e^x < 2^-(2^63), far below the smallest subnormal. A positive sticky unit.
             let unit = Self::from_word(1, p + WORD_BIT_SIZE)?;
