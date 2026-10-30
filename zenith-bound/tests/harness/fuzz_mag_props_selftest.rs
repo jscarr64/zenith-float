@@ -887,3 +887,56 @@ fn every_property_runs_on_every_ordered_forced_pair() -> Result<(), String> {
         .collect();
     expect_eq("forced pairs in order", &seen.into_inner(), &want)
 }
+
+/// ZB-W32: the wide precision draw stays inside the target's real `MAX_PRECISION` (`2^60 - 1` on 64-bit targets,
+/// `2^30 - 1` on 32-bit ones), so every failing case prints a replay line that parses back.
+#[test]
+fn prec_wide_draws_stay_within_max_precision() -> Result<(), String> {
+    let mut rng = SplitMix64::new(0x5EED_3232);
+    let mut src = Src::random(&mut rng);
+    for i in 0..20_000u32 {
+        let p = props::draw_prec_wide(&mut src)?;
+        if p > zenith_bound::MAX_PRECISION {
+            return Err(format!(
+                "draw {}: prec {} is above MAX_PRECISION {}",
+                i,
+                p,
+                zenith_bound::MAX_PRECISION
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// ZB-W32: precisions just past `MAX_PRECISION` (and `usize::MAX`) are refused, with the precision error, by the
+/// replay parser and by the `Ball` constructor; `MAX_PRECISION` itself is accepted by both.
+#[test]
+fn out_of_range_precisions_are_refused() -> Result<(), String> {
+    let max = zenith_bound::MAX_PRECISION;
+    let line = |p: usize| {
+        format!("suite=mag_add seed=0123456789abcdef case=42 op=add prec={p} rm=ToEven a=+8000000000000000e-5~r=ulp b=-0~r=zero")
+    };
+    ReplayLine::parse_line(&line(max)).map_err(|e| format!("MAX_PRECISION refused: {e}"))?;
+    let one = zenith_float_num::ExactNum::from_word(1, 64);
+    zenith_bound::ball::Ball::exact(one.clone(), max)
+        .map_err(|e| format!("Ball::exact at MAX_PRECISION: {e:?}"))?;
+    for p in [max.checked_add(1).ok_or("max + 1")?, usize::MAX] {
+        match ReplayLine::parse_line(&line(p)) {
+            Err(e) if e == "prec is above MAX_PRECISION" => {}
+            other => {
+                return Err(format!(
+                    "replay prec {p}: want the precision error, got {other:?}"
+                ))
+            }
+        }
+        match zenith_bound::ball::Ball::exact(one.clone(), p) {
+            Err(zenith_bound::error::BoundError::InvalidArgument { .. }) => {}
+            other => {
+                return Err(format!(
+                    "Ball::exact prec {p}: want InvalidArgument, got {other:?}"
+                ))
+            }
+        }
+    }
+    Ok(())
+}

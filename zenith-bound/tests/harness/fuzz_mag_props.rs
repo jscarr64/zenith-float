@@ -1015,15 +1015,30 @@ fn prec_i128(prec: usize) -> Result<i128, String> {
 
 // ---- ulp helpers --------------------------------------------------------------------------------------------------------------
 
-fn draw_prec_wide(src: &mut Src) -> Result<usize, String> {
-    match src.below(8) {
-        0..=2 => draw_precision(src.rng, &PrecSource::Schedule).map(api_prec),
-        3 => Ok(0),
-        4 => Ok(usize::MAX),
-        5 => Ok(1 << 31),
-        6 => Ok((1 << 31) - 1),
-        _ => usize::try_from(src.below(1 << 32)).map_err(|_| String::from("precision draw")),
-    }
+/// A precision in `0..=MAX_PRECISION` for the target (`2^60 - 1` on 64-bit, `2^30 - 1` on 32-bit), weighted to the
+/// edges: 0, `MAX_PRECISION`, `2^31` and `2^31 - 1` (capped at `MAX_PRECISION`), and the schedule. Precisions above
+/// `MAX_PRECISION` are never drawn: a failing case must print a replay line that parses back
+/// (`out_of_range_precisions_are_refused` covers the refusal).
+pub fn draw_prec_wide(src: &mut Src) -> Result<usize, String> {
+    let max = zenith_bound::MAX_PRECISION;
+    let p = match src.below(8) {
+        0..=2 => draw_precision(src.rng, &PrecSource::Schedule).map(api_prec)?,
+        3 => 0,
+        4 => max,
+        5 => (1usize << 30).checked_mul(2).unwrap_or(max),
+        6 => (1usize << 30)
+            .checked_mul(2)
+            .and_then(|t| t.checked_sub(1))
+            .unwrap_or(max),
+        _ => {
+            let span = u64::try_from(max)
+                .ok()
+                .and_then(|m| m.checked_add(1))
+                .map_or(1 << 32, |m| m.min(1 << 32));
+            usize::try_from(src.below(span)).map_err(|_| String::from("precision draw"))?
+        }
+    };
+    Ok(p.min(max))
 }
 
 /// `2^k` as a `Mag` is `(k + 1, 2^63)`; above `i64::MAX` it is Infinity, below `i64::MIN` the smallest positive Mag (CONTRACT 3.2, 14.7).
