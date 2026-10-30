@@ -284,11 +284,17 @@ impl ExactNumNumber {
             return Ok(r);
         }
 
+        // Ziv cancellation charge for the reflection branch: near a pole -n, sin(πx) ≈ ±π|x + n|, so
+        // rounding πx at p_x costs about log2|x| - log2|x + n| bits relative. Charge them up front.
+        let charge = self.reflection_charge()?;
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(m) + p_inc;
 
         loop {
-            let p_x = p_wrk + WORD_BIT_SIZE * 2;
+            let p_x = p_wrk
+                .checked_add(WORD_BIT_SIZE * 2)
+                .and_then(|v| v.checked_add(charge))
+                .ok_or(Error::InvalidArgument)?;
             let mut ret = self.gamma_at(p_x, cc)?;
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
@@ -646,6 +652,37 @@ impl ExactNumNumber {
         } else {
             self.gamma_at(p, cc)?.ln(p, RoundingMode::None, cc)
         }
+    }
+
+    /// Bits the reflection branch of `gamma_at` loses near a pole: `exp(x) - exp(d) + 1` with `d` the
+    /// distance from `x` to the nearest integer, so about `log2|x| - log2|x + n|`; 0 for `x > 0`.
+    /// Exact and the same on every target.
+    fn reflection_charge(&self) -> Result<usize, Error> {
+        if self.is_positive() {
+            return Ok(0);
+        }
+        let f = self.abs()?.fract()?;
+        if f.is_zero() {
+            return Ok(0);
+        }
+        // d = min(f, 1 - f); for f >= 1/2, 1 - f is exact at the length of f plus one word.
+        let de = if f.exponent() < 0 {
+            f.exponent()
+        } else {
+            let q = f
+                .mantissa_max_bit_len()
+                .checked_add(WORD_BIT_SIZE)
+                .ok_or(Error::InvalidArgument)?;
+            let one = Self::from_word(1, q)?;
+            one.sub(&f, q, RoundingMode::None)?.exponent()
+        };
+        let c = self
+            .exponent()
+            .max(0)
+            .checked_sub(de)
+            .and_then(|v| v.checked_add(1))
+            .ok_or(Error::InvalidArgument)?;
+        usize::try_from(c).map_err(|_| Error::InvalidArgument)
     }
 
     fn gamma_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {

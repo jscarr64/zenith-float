@@ -1,0 +1,1 @@
+- gamma: near a pole the reflection branch charges about log2|x| - log2|x + n| bits up front (Ziv cancellation charge), so results next to negative integers are correctly rounded.
