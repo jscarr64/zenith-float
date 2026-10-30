@@ -2,24 +2,67 @@
 // Copyright (c) 2022 stencillogic, MIT License.
 //! Auxiliary items.
 
-use crate::common::consts::TRIG_EXP_THRES;
-use crate::common::util::round_p;
+use crate::common::util::round_p_rm;
 use crate::{num::ExactNumNumber, Consts, Error, RoundingMode};
 
+/// Initial guard bits of the `rem_pi` reduction (doubled on each Ziv retry); the same on every target.
+const REM_PI_GUARD: usize = 64;
+
 impl ExactNumNumber {
-    /// Reduce `self` to the interval `(-2π, 2π)` for trigonometric evaluation.
+    /// Reduce `self` to the interval `(-2π, 2π)`: `x - trunc(x / 2π) * 2π`, with the sign of `x`.
     ///
-    /// Uses the same working precision as `sin`/`cos`/`tan` before modular reduction.
-    pub fn rem_pi(&self, p: usize, _rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+    /// The result is rounded at `p` bits with `rm`; `RoundingMode::None` truncates at
+    /// `rp(p, 64)` bits, so the value is the same on every target. The reduction uses `2π` with
+    /// `exp(x) + p + guard` bits: `x` has fewer than `2^(exp(x) - 2)` periods, and each carries an
+    /// error below `2^(3 - prec(2π))`, so the absolute error is below `2^(exp(x) + 1 - prec(2π))`.
+    /// The bits lost to cancellation, `exp(x) - exp(result)`, are charged against that bound and the
+    /// guard is doubled (Ziv) until the result rounds correctly.
+    pub fn rem_pi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         if p < crate::defs::MIN_PRECISION {
             return Err(Error::InvalidArgument);
         }
-        let p = round_p(p);
-        let add_p = (3 - TRIG_EXP_THRES) as usize;
-        let p_x = p.max(self.mantissa_max_bit_len()).saturating_add(add_p);
-        let mut x = self.clone()?;
-        x.set_precision(p_x, RoundingMode::None)?;
-        x.reduce_trig_arg(cc, RoundingMode::None)
+        // `None` is a truncation at whole 64-bit words; truncation toward zero is `ToZero`.
+        let (p, rm) = if rm == RoundingMode::None {
+            (round_p_rm(p, rm), RoundingMode::ToZero)
+        } else {
+            (p, rm)
+        };
+        let ex = self.exponent();
+        if self.is_zero() || ex <= 2 {
+            // |x| < 4 < 2π: the reduction is the identity.
+            let mut x = self.clone()?;
+            x.set_precision(p, rm)?;
+            return Ok(x);
+        }
+        let ex_bits = usize::try_from(ex).map_err(|_| Error::InvalidArgument)?;
+        let mut guard = REM_PI_GUARD;
+        loop {
+            let pi_p = self
+                .mantissa_max_bit_len()
+                .max(p)
+                .checked_add(ex_bits)
+                .and_then(|v| v.checked_add(guard))
+                .ok_or(Error::InvalidArgument)?;
+            let mut two_pi = cc.pi_num(pi_p, RoundingMode::None)?;
+            let e2 = two_pi.exponent().checked_add(1).ok_or(Error::InvalidArgument)?;
+            two_pi.set_exponent(e2);
+            let mut r = self.rem(&two_pi)?;
+            if !r.is_zero() {
+                // correct leading bits: exp(r) - (exp(x) + 1 - prec(2π))
+                let prec = i64::try_from(two_pi.mantissa_max_bit_len()).map_err(|_| Error::InvalidArgument)?;
+                let s = r
+                    .exponent()
+                    .checked_add(prec)
+                    .and_then(|v| v.checked_sub(ex))
+                    .and_then(|v| v.checked_sub(1))
+                    .ok_or(Error::InvalidArgument)?;
+                let s = usize::try_from(s).unwrap_or(0).min(r.mantissa_max_bit_len());
+                if s > p && r.try_set_precision(p, rm, s)? {
+                    return Ok(r);
+                }
+            }
+            guard = guard.checked_mul(2).ok_or(Error::InvalidArgument)?;
+        }
     }
 
     /// Reduce `self` to interval (-2*pi; 2*pi)

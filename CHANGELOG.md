@@ -31,6 +31,7 @@ Shape-A site list (internal, no code change): Jeff signed off `tools/ziv_shape_a
 ### Changed
 
 - **`RoundingMode::None` truncates at `rp(p, 64)` on every target (behaviour change).** A `None` result keeps `p` rounded up to a multiple of 64 bits, so it is the same value on 32-bit and 64-bit targets. On 32-bit targets it used to keep a multiple of 32 bits. 64-bit results are unchanged.
+- **public behaviour change: rem_pi now honours rm and returns p bits.** `ExactNum::rem_pi` (and `ExactNumArray::rem_pi`) rounds the reduced value at `p` bits with `rm` (`None` truncates at `rp(p, 64)`), with a working precision that covers the cancellation in `x - k * 2π` (Ziv retry). It used to ignore `rm` and return the padded working value, whose precision and last bits depended on the word size. Tests: `tests/xtarget_rem_pi_red.rs`, `tests/xtarget_rem_pi_stress_red.rs`.
 
 `atan2(y, x)` with a huge `y` and a tiny positive `x` (exponents near both ends of the i64 range, `ey - ex + p` past `i64::MAX`) returned `+Inf`/`-Inf` (and, below 64 bits, an unrounded 64-bit `+-pi/2`) instead of `+-pi/2` rounded at `p`: the tiny-quotient shortcut test wrapped. It is now computed in `i128`. Found by the shifted-reference `atan2_over_the_whole_range` sweep (540 of 12000).
 

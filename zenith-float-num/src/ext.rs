@@ -2520,22 +2520,6 @@ macro_rules! gen_wrapper_arg_rm_cc {
     };
 }
 
-macro_rules! gen_wrapper_word_rm_cc {
-    // a reduction that is not a rounded function value: word precision, accumulated flag
-    ($comment:literal, $fname:ident, $ret:ty, $pos_inf:block, $neg_inf:block, $($arg:ident, $arg_type:ty),*) => {
-        #[doc=$comment]
-        pub fn $fname(&self$(,$arg: $arg_type)*, rm: RoundingMode, cc: &mut Consts) -> $ret {
-            match &self.inner {
-                Flavor::Value(v) => {
-                    Self::result_to_ext(v.$fname($($arg,)* rm, cc), v.is_zero(), true)
-                },
-                Flavor::Inf(s) => if s.is_positive() $pos_inf else $neg_inf,
-                Flavor::NaN(err) => Self::nan(*err),
-            }
-        }
-    };
-}
-
 macro_rules! gen_wrapper_ovf_rm_cc {
     // like gen_wrapper_arg_rm_cc, for functions whose only ExponentOverflow away from zero is a
     // finite result past the range: that overflow follows the rounding mode
@@ -2842,9 +2826,11 @@ Accuracy: correctly-rounded",
         p,
         usize
     );
-    gen_wrapper_word_rm_cc!(
-        "Reduces `self` modulo `2π` into the interval `(-2π, 2π)` using precision `p` and rounding mode `rm`.
-        This function requires constants cache `cc` for computing the result.",
+    gen_wrapper_arg_rm_cc!(
+        "Reduces `self` modulo `2π` into the interval `(-2π, 2π)` (`x - trunc(x / 2π) * 2π`, the sign of `x`) with precision `p`. The result is rounded at `p` bits using the rounding mode `rm`; `RoundingMode::None` truncates at `rp(p, 64)` bits.
+        This function requires constants cache `cc` for computing the result.
+
+Accuracy: correctly-rounded",
         rem_pi,
         Self,
         { NAN },

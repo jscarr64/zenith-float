@@ -1,0 +1,1 @@
+- rem_pi rounds at p bits with rm (None truncates at rp(p, 64)) and charges the x - k*2pi cancellation in a Ziv loop, so it is correct and identical on every target.
