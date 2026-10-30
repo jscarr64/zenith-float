@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# Harper lint v6 (pmrev7, Jeff ruling 2026-10-30 6:00 PM CT, ZF-M27: any target-specific gold, pin or class is BAD through the shared rule in tools/pm_target.pl). Was v5 (pmrev6, Spence review 5 item 1: every hedge form rejected through the shared rule in tools/pm_hedge.pl; exit 1 on any BAD). Was v4: UNCLEAR + either/or. Was v3: structure + error variants checked against enums parsed from source (item 10).
+# Harper lint v7 (pmrev8, pop-logs/PRINCIPLES.md P1: lint rejects any per-target gold, limit, refusal variant or budget, and FAILs any row whose expected outcome could differ by target, via pm_target_dependent in tools/pm_target.pl). Was v6 (pmrev7, Jeff ruling 2026-10-30 6:00 PM CT, ZF-M27: any target-specific gold, pin or class is BAD through the shared rule in tools/pm_target.pl). Was v5 (pmrev6, Spence review 5 item 1: every hedge form rejected through the shared rule in tools/pm_hedge.pl; exit 1 on any BAD). Was v4: UNCLEAR + either/or. Was v3: structure + error variants checked against enums parsed from source (item 10).
 use strict; use warnings; use FindBin; require "$FindBin::Bin/pm_hedge.pl"; require "$FindBin::Bin/pm_target.pl";
 my ($csv,$T)=@ARGV; $T//="$ENV{HOME}/harper-work/zf-precision-matrix";
 sub en { my ($f,$name)=@_; open my $h,'<',"$T/$f" or die "$f"; local $/; my $s=<$h>; my ($b)=$s=~/pub enum \Q$name\E\b[^{]*\{(.*?)\n\}/s or die "enum $name not found in $f"; $b=~s{//[^\n]*}{}g; my %v; my $d=0; for my $l (split /\n/,$b){ $v{$1}=1 if $d==0 && $l=~/^\s*([A-Z]\w*)\b/; $d+=()=$l=~/[{(]/g; $d-=()=$l=~/[})]/g } %v }
@@ -23,7 +23,7 @@ while(<F>){ $ln++; if(/^#/){ next } if(!$hdr){ $hdr=1; next } $n++; my @f=p($_);
  # bare CamelCase tokens that are a variant of the OTHER crate only
  while($t=~/\b([A-Z][a-z]+(?:[A-Z][a-z]+)+|Domain|Resource|Singular|Representation)\b/g){ my $w=$1; next unless $allv{$w}; $B->("variant $w not in $f[0] enum") unless $own->{$w} }
  $B->("ruling-needed") if /RULING NEEDED|ruling-needed/i; $B->("waiver/escalat") if /waiv|escalat/i;
- $B->("NA without proof") if $f[15] eq 'NA_PROOF' && $f[16] eq '';
+ $B->("P1 target-dependent $_ (tools/pm_target.pl pm_target_dependent)") for pm_target_dependent(@f); $B->("NA without proof") if $f[15] eq 'NA_PROOF' && $f[16] eq '';
  $B->("empty oracle") if $f[15] ne 'NA_PROOF' && $f[12] eq '';
  $ung++ if $f[15] ne 'NA_PROOF' && "$f[12] $f[13]"=~/UNGENERATED/;
  $cls{$f[5]=~s/ .*//r}++; $vs{"$f[0] $f[15]"}++ }

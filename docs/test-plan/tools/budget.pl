@@ -11,7 +11,7 @@ while(<F>){ next if /^#/; if(!$hd){$hd=1;next} my @f=p($_); next if $f[15] eq 'N
   my ($fast,$heavy,$cut);
   if($cls=~/^rm-/){ $fast=1; $heavy=$AX; $cut=6 }
   elsif($cls=~/refuse/){ $fast=1; $heavy=1; $cut=1 }
-  elsif($cls=~/^prec-MAX-(\S+)/){ $c{"$cr MAX $1"}++; next }
+  elsif($cls=~/^(?:prec-MAX-|prec-2\^(?:30-1|30|60-1)$|m30-)/){ $c{"$cr MAX x86_64"}++; $c{"$cr MAX i686"}++; next } # pmrev8 P1: one row runs on both targets (execution config, not an outcome)
   elsif($cls eq 'prec-1-2-3'){ $fast=3*$m7; $heavy=3*$m7; $cut=3*$m7 }
   elsif($cls=~/^trig-huge/){ $fast=1; $heavy=$AX*$m7; $cut=6*$m7 }
   elsif($cls eq 'prec-axis'){ $fast=6; $heavy=$AX*$m7; $cut=6*$m7 }

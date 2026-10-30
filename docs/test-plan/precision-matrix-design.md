@@ -1,6 +1,6 @@
-# zf/zb precision matrix: design v7 (Jeff ruling 2026-10-30 6:00 PM CT, ZF-M27; v6 was Spence review 5)
+# zf/zb precision matrix: design v8 (Jeff tasks 2026-10-30 6:11/6:13/6:15 PM CT: ZF-M28, ZF-M29, ZF-M30, ZF-D04, PRINCIPLES.md P1-P5; v7 was the ZF-M27 ruling)
 
-Agent: Harper. Date: 2026-10-30. Edge table: `precision-matrix-edges.csv` (24654 rows, 20639 executed, 17 columns; the first 9 lines start with `#` and carry the pins below; the CSV header is the first line without `#`).
+Agent: Harper. Date: 2026-10-30. Edge table: `precision-matrix-edges.csv` (25135 rows, 21120 executed, 4015 NA_PROOF, 17 columns; the first 9 lines start with `#` and carry the pins below; the CSV header is the first line without `#`). Governing principles: ~/pop-logs/PRINCIPLES.md (read-only; sha256 81780e34f9028192cc3482c9943cbc80e880f56c9dc04914b519666f4e7c9d5f as read 2026-10-30 18:2x CT), P1-P5 applied in section 24.
 
 ## 0. Pinned inputs (item 11)
 The generator `tools/gen_edges.pl` reads only the in-branch copies below. It checks every sha256 before reading and stops with `PIN MISMATCH` if one differs. It also stops if `zenith-float-num/{src,tests}` or `zenith-bound/{src,tests}` differ from the source commit. The originals in ~/paul-work and ~/spence-work were copied unedited.
@@ -11,7 +11,7 @@ The generator `tools/gen_edges.pl` reads only the in-branch copies below. It che
 | zb-inventory.csv | ~/paul-work/zb-audit-2026-10-30/inventory.csv (section 1 used) | b65c2bad80431500ab6280eb6ca545194407a35e9ae2f9719b5a6e5a38bdcd65 |
 | r4-required-results.csv | Spence R4 (via ~/harper-work/pm-review-inputs) | 2746dc4d05cca03d07db6cd8db600e86369a7f33b450c6b679b1d0c1bf0e8c6d |
 | spence-gen_r4.py | ~/spence-work/pm-review/gen_r4.py (G1-G3 lists, lines 6-19) | aa4d614617d086a49a2d625adbef1b516a7cac7ea37de58e391d40df2b51243f |
-| FIXLIST.csv | ~/paul-work/zfzb-plan-2026-10-30/FIXLIST.csv | 3a8907f41341130e75e8dd2e0871c97e40cee96d8cf63103f7225e5d69f2606b (re-pinned pmrev7: adds ZF-M26, ZF-D02, ZF-D03 and ZF-M27 at :145 after :141; ZF-04=29, ZF-WP01..10 at :131-140, ZF-D01 at :141 unchanged) |
+| FIXLIST.csv | ~/paul-work/zfzb-plan-2026-10-30/FIXLIST.csv | 0ef7711015e89033814670d6b48d80e41b5cc8c6753db02748712da9a1974027 (re-pinned pmrev8: adds ZF-M28 at :146, ZF-M29 at :147, ZF-M30 at :148 and ZF-D04 at :149 after ZF-M27 at :145; all earlier line citations unchanged) |
 | fixes_after_1.0.12.txt | ~/paul-work/zf-audit-2026-10-30/fixes_after_1.0.12.txt | 03085a0acb3d5d0e51d8e8df13b3c4ad30d7843152d3d32024d6899c9f530c82 |
 | zf-audit-SUMMARY.md | ~/paul-work/zf-audit-2026-10-30/SUMMARY.md | a7af866c6b2c6de32f4ed243170a4aa92fff19bc7e3978e86642a3dff1cb75f0 (re-pinned pmrev5) |
 
@@ -31,15 +31,15 @@ The generator `tools/gen_edges.pl` reads only the in-branch copies below. It che
 - `Ball` and `ComplexBall` in zf rows are the zf types in zenith-float-num/src/ball.rs. They are not zenith-bound types.
 
 ## 3. Rounding modes
-There are 7 modes. ToOdd: the oracle computes RNDN at p+1 and flips exact ties itself. None = RNDZ of the exact value at rp(p,64). **R6 (extended pmrev7, Jeff ruling 2026-10-30 6:00 PM CT, FIXLIST:145 ZF-M27): all 7 modes round at rp(p,64) and are bit-identical on i686 and x86_64, so each row has one gold for both targets.** Until ZF-M27 lands, cells in the 6 directed modes (every mode except ToEven; FIXLIST:145 says "all 6 directed modes") at a p that is not a multiple of 64 are red (FAIL); each such row carries a ZF-M27 pin note (16373 rows).
+There are 7 modes. ToOdd: the oracle computes RNDN at p+1 and flips exact ties itself. None = RNDZ of the exact value at rp(p,64). **R6 (pmrev8, Jeff ruling 2026-10-30 6:00 PM CT, FIXLIST:145 ZF-M27): all 7 modes round at rp(p,64) and are bit-identical on i686 and x86_64, so each row has one gold for both targets.** Until ZF-M27 lands, cells in every mode except None (ToEven, Up, Down, ToZero, FromZero, ToOdd; corrected in v8, v7 wrongly excluded ToEven) at a p that is not a multiple of 64, and every zf `prec-2^30-1` cell, are red (FAIL); each such row carries a ZF-M27 pin note (16725 rows; v7 had 16373 = -336 rm-None +336 rm-ToEven +352 zf prec-2^30-1).
 
 ## 4. Precision axis and MAX_PRECISION (item 2; closes old Q1)
 - The base axis is p ∈ {32,64,128,256,512,1024}, with 96 heavy points, and p=1,2,3 run in all 7 modes. p=0 and p=MAX+1 are refused with InvalidArgument.
-- pmrev7 (ZF-M27, one row for both targets): the old `prec-MAX-x86_64`/`prec-MAX-i686` split is gone. MAX_PRECISION is target-dependent at 7955836 (defs.rs:61-90: min(2^60, usize::MAX/4)-1, so 2^60-1 on 64-bit and 2^30-1 on 32-bit targets). Each family now has two shared rows, run on both targets:
-  - `prec-2^30-1` (387 rows): p=2^30-1 is MAX_PRECISION on i686 and an ordinary precision on x86_64; Paul ruled 2^30 bits is allocatable, so the required result below is one gold for both targets.
-  - `prec-2^60-1` (387 rows): **FLAG, needs a decision from Jeff.** On x86_64 this is MAX_PRECISION and 2^57 bytes cannot be allocated (MemoryAllocation; Resource for zb); on i686 it is above MAX_PRECISION (InvalidArgument). One input cannot give the same result on both targets, so these rows are [PM1-UNPINNED] (rule d FAIL) until the precision limit is the same on both targets. Not guessed.
-- The MAX rows run **only in the heavy tier, in their own shard `pm-max`, on both targets**. Each row has a 10-minute budget, and a timeout is FAIL.
-- The required result is the correct value, or a prompt refusal: `MemoryAllocation` or `PrecisionRetryExhausted` for zf, and `Resource` for zb. A wrong value or a timeout is FAIL, and **every FAIL becomes a FIXLIST row**.
+- pmrev8 (ZF-M28, FIXLIST:146): MAX_PRECISION is 2^30-1 on every target. Today it is min(2^60, usize::MAX/4)-1 (zenith-float-num/src/defs.rs:77), which is red until ZF-M28 lands. Each family has three shared rows, run on both targets with one gold (P1):
+  - `prec-2^30-1` (387 rows): p=MAX_PRECISION; the required result is the correct value (zb: the correct enclosure), one gold.
+  - `prec-2^30` (387 rows, new) and `prec-2^60-1` (387 rows): above MAX_PRECISION, so the required result is a prompt refusal with zf `Error::InvalidArgument` (defs.rs) and zb `BoundError::InvalidArgument` (zenith-bound/src/error.rs:22); 70 zb rows. Red until ZF-M28 lands. The v7 FLAG and the MemoryAllocation/Resource option are gone; 0 rows are left unpinned for this reason (v7: 387).
+- The MAX rows (`prec-2^30-1`, `prec-2^30`, `prec-2^60-1`, `m30-p2^24`, `m30-p2^27`) run **only in the heavy tier, in the shard `pm-max`, on both targets with the same gold**. The 10-minute per-run budget is execution config (section 24), not an expected outcome; a timeout is FAIL.
+- The required result is the correct value, or the refusal pinned on the row. A wrong value, a different variant, a NaN-as-error, a panic or a timeout is FAIL (P2), and **every FAIL becomes a FIXLIST row**.
 
 ## 5. Error variants (items 8, 10)
 - The lint (`tools/lint.pl`) parses the enums from source on every run:
@@ -87,7 +87,7 @@ Each nan row names the variant it inherits (A=InvalidArgument, B=DivisionByZero,
 - Total: 2548 rows (zf 2432: 1332 unary and 1100 pair rows).
 
 - **Oracle primary rule (review 5 item 8):** every oracle cell starts `primary: MPFR` or `primary: mpmath`. python-flint (arb) appears only as a second check and never generates a gold. The 95 digest rows name mpmath as their generator. Counts: MPFR primary 1228, mpmath primary 19411, flint primary 0, names neither 0.
-- Each row has one gold for both targets (pmrev7, ZF-M27): `oracle_x86_64` pins it and `oracle_i686` says "same gold as oracle_x86_64"; the i686 run must be bit-identical. lint v6 rejects any target-specific gold, pin or class (tools/pm_target.pl, shared with gen_edges.pl).
+- Each row has one gold for both targets (ZF-M27, P1): `oracle_x86_64` pins it and `oracle_i686` says "same gold as oracle_x86_64"; the i686 run must be bit-identical. lint v7 rejects any target-specific gold, pin or class, and (P1, pmrev8) FAILs any row whose limit, refusal variant, budget or result is target-dependent (tools/pm_target.pl `pm_target_dependent`, shared with gen_edges.pl).
 - Each cell prints one line:
   `PMCELL crate=<zf|zb> family=<Type::name> class=<c> p=<p> rm=<m> target=<triple> oracle=<id> env=<path|rug-1.20.1/mpfr-4.2.2> verdict=<PASS|FAIL|NA_PROOF> ms=<t>`
 
@@ -138,21 +138,21 @@ Each nan row names the variant it inherits (A=InvalidArgument, B=DivisionByZero,
 - Fast tier: on every commit.
 - Batch gate: fast + the cut heavy tier.
 - Full heavy tier: once per RC, overnight, on **4 popslot workers (Paul ruling)**.
-- `pm-max` is one heavy shard run on both targets (pmrev7; was `pm-max-i686` and `pm-max-x86_64`).
+- `pm-max` is one heavy shard run on both targets (pmrev7; was split per target before).
 
-## 13. Budgets (tools/budget.pl on this CSV, PM-0 cost basis; Spence pmrev3 item 7)
-Cost basis: zf 4.1 ms per cell; zb 12 ms per cell (this figure is unmeasured and blocks the RC budget until it is measured); threshold cells 210 per target (PM-0 corrected survey). The i686 factor comes from PM-0 and is passed as `PM0_FAC`: median 1.91, weighted 2.70 (the planning figure), max 5.39. The source is ~/harper-work/pm0-results-2026-10-30.md and its logs: ~/pop-logs/harper/2026-10-30/1638-pm0-factor2-i686.log and 1639-pm0-factor2-x86_64.log (factor), and 1704-pm0-budget2.log :31-35 (1.91), :41-45 (2.70), :51-55 (5.39). The mpfr peak is 724 MiB RSS with a wall time of 20:36 (1642-pm0-mpfr-rss2.log: RSS at :999, wall at :994), so 8 workers at 6G MemoryMax each have room. The old unsourced "4x" factor is gone. The figures below are from `PM0_FAC=<f> PM_WORKERS=8 perl tools/budget.pl precision-matrix-edges.csv`, logged in ~/pop-logs/harper/2026-10-30/1713-pm-rev3-budget-{1.91,2.70,5.39}.log.
+## 13. Budgets (tools/budget.pl on this CSV, PM-0 cost basis; re-run pmrev8)
+Cost basis: zf 4.1 ms per cell; zb 12 ms per cell (this figure is unmeasured and blocks the RC budget until it is measured); threshold cells 210 per target (PM-0 corrected survey). The i686 factor comes from PM-0 and is passed as `PM0_FAC`: median 1.91, weighted 2.70 (the planning figure), max 5.39. The source is ~/harper-work/pm0-results-2026-10-30.md and its logs: ~/pop-logs/harper/2026-10-30/1638-pm0-factor2-i686.log and 1639-pm0-factor2-x86_64.log (factor), and 1704-pm0-budget2.log :31-35 (1.91), :41-45 (2.70), :51-55 (5.39). The mpfr peak is 724 MiB RSS with a wall time of 20:36 (1642-pm0-mpfr-rss2.log: RSS at :999, wall at :994), so 8 workers at 6G MemoryMax each have room. The old unsourced "4x" factor is gone. The figures below are from `PM0_FAC=<f> PM_WORKERS=8 perl tools/budget.pl precision-matrix-edges.csv`, logged in ~/pop-logs/harper/2026-10-30/1820-budget8-1.91.log, 1820-budget8b.log (2.70) and 1820-budget8-5.39.log (pmrev8).
 
 | crate | target | fast | cut heavy | full heavy, 1 worker (1.91 / 2.70 / 5.39) |
 |---|---|---|---|---|
-| zf | x86_64 | 6.7 min | 0.70 h | 11.01 h |
-| zf | i686 | 12.8 / 18.1 / 36.1 min | 1.33 / 1.88 / 3.76 h | 21.04 / 29.74 / 59.36 h |
+| zf | x86_64 | 6.7 min | 0.70 h | 11.04 h |
+| zf | i686 | 12.8 / 18.1 / 36.2 min | 1.34 / 1.89 / 3.77 h | 21.09 / 29.81 / 59.50 h |
 | zb | x86_64 | 2.3 min | 0.27 h | 4.27 h |
 | zb | i686 | 4.4 / 6.3 / 12.5 min | 0.51 / 0.72 / 1.44 h | 8.16 / 11.54 / 23.04 h |
 
-- Full heavy, all four crate/target pairs: 44.49 / 56.57 / 97.69 slot-h, which is **5.56 / 7.07 / 12.21 h on 8 workers**.
-- MAX shards (pmrev7: 774 shared rows run on each target, so the per-target run count is now 704 zf + 70 zb, not 352 + 35; the budget figures below are the v6 ones and are re-run by tools/budget.pl at PM-0): 352 zf + 35 zb rows per target, with a 10 min timeout. Under the MAX-timeout skip (section 18) the worst case is 64.5 slot-h, or 8.06 h on 8 workers. Without the skip it would be 129.0 slot-h, or 16.12 h.
-- **8-worker RC wall time (full heavy + MAX worst case with skip): 13.62 / 15.13 / 20.27 h.** With no MAX timeouts it is 5.56 / 7.07 / 12.21 h. At the 2.70 planning factor the worst case needs two nights, so the run is resumable (section 19).
+- Full heavy, all four crate/target pairs: 44.57 / 56.66 / 97.86 slot-h, which is **5.57 / 7.08 / 12.23 h on 8 workers**.
+- MAX shard (pmrev8): 1150 zf rows (352 x 3 prec classes + 94 m30) and 105 zb rows (35 x 3), each run on both targets with a 10 min timeout. The v7 figures (352 + 35 per target) were stale. Worst case with the MAX-timeout skip (section 18): 209.2 slot-h, or 26.15 h on 8 workers; without the skip 418.3 slot-h, or 52.29 h. **FLAG:** this worst case is about 3x the v7 one; it only happens if every MAX row times out, and the over-limit rows are instant refusals once ZF-M28 lands.
+- **8-worker RC wall time (full heavy + MAX worst case with skip): 31.72 / 33.23 / 38.38 h.** With no MAX timeouts it is 5.57 / 7.08 / 12.23 h. The worst case needs several nights, so the run is resumable (section 19).
 - Per-type evidence matching (PM-0 measured the factor per family, not per operand type) is a **PM-1 must**. Until it lands, no "covered" row counts are quoted from these figures.
 
 ## 14. Rulings
@@ -175,8 +175,10 @@ Cost basis: zf 4.1 ms per cell; zb 12 ms per cell (this figure is unmeasured and
 2. The UNGENERATED golds are pinned at PM-3, and they block the RC until then (section 1).
 3. Closed (pmrev5): Paul corrected ZF-04 to 29 (25 + 4) in FIXLIST.csv:18; re-pinned in section 0.
 4. Re-pin SRC_COMMIT when paul/zf-bound-merge merges (section 0).
-5. **PM-1 item (review 5 item 11):** the 8 degenerate golds (the 4 `degenerate` rows for lu, qr, svd and eigen, on x86_64 and i686) need a constructed exact input per row: an exactly singular matrix for lu, a zero R_ii for qr, repeated singular values for svd, and repeated eigenvalues for eigen. They are cut at PM-1, and pm-coverage rule c stays red on them until then.
-6. Exact poles away from 0 (for example gamma at a negative integer) are excluded from the out-of-domain class and have no rows yet. That is a PM-1 item.
+5. **PM-1 item (review 5 item 11):** the 4 degenerate golds (the 4 `degenerate` rows for lu, qr, svd and eigen, one gold per row for both targets) need a constructed exact input per row: an exactly singular matrix for lu, a zero R_ii for qr, repeated singular values for svd, and repeated eigenvalues for eigen. They are cut at PM-1, and pm-coverage rule c stays red on them until then.
+6. **PM-1 item (pmrev8): poles away from 0.** Exact poles away from 0 (for example gamma at a negative integer) are excluded from the out-of-domain class and have no rows yet. PM-1 adds one row per pole-bearing family at a pole away from 0, with a P2 refusal or the documented infinity as the one gold.
+7. **FLAG (pmrev8):** 309 fixed-mode tie rows are not yet marked as ties in their text; unchanged in v8 (309 -> 309). Not a P1-P5 question.
+No P1-P5 item is an open question; each is applied in section 24.
 
 ## 17. pm-coverage (tools/pm_coverage.pl; Spence pmrev3 item 1)
 pm_coverage.pl is a separate tool. lint.pl stays the structure and variant lint and must be clean, while pm-coverage is the RC gate. Usage: `perl tools/pm_coverage.pl [--mode rc|design-stage] [--results verdicts.tsv --manifest run.manifest] precision-matrix-edges.csv pm-shards.csv [tree]`. pm-shards.csv is written by gen_edges.pl and gives the row count for each shard and family (fast, heavy, pm-max-x86_64, pm-max-i686, proof).
@@ -186,11 +188,11 @@ pm_coverage.pl is a separate tool. lint.pl stays the structure and variant lint 
 - d: a `[PM1-UNPINNED]` row is a FAIL. It covers the unpinned Rule R NaN pairs and, since v5, every executed row whose single outcome cannot be pinned yet (section 21).
 - e: a shard whose row count for a family is below the matrix count is a FAIL.
 - f: given `--results` and `--manifest`, rule f parses every full record (section 17.1) and FAILs on each of: a duplicate row_id (the first record is kept and the duplicate is a FAIL; a later line never overwrites an earlier one, so SKIPPED_AFTER_TIMEOUT then PASS is red), a row_id not in the matrix, a malformed record (fewer than 7 fields), a mismatch in any of the 5 provenance fields against the manifest, an executed row with no record, and any verdict other than PASS (SKIPPED_AFTER_TIMEOUT and FAIL count as FAIL). The RC requires both files. `--results` without `--manifest` is a hard error. Since v3 (review 5 item 9), rule f is enforced in every mode once `--results` is given, so any FAIL record gives a non-zero exit in design-stage too. A duplicate key in the manifest is a hard error (dies).
-- Structural rules: S1, every prec-MAX-<target> row has the SKIPPED_AFTER_TIMEOUT verdict space; S2, every NA_PROOF row cites a pm-proofs path; S3, the executed verdict space is PASS|FAIL[|SKIPPED_AFTER_TIMEOUT].
+- Structural rules: S1, every MAX row (`prec-MAX-*`, `prec-2^30-1`, `prec-2^30`, `prec-2^60-1`, `m30-*`) has the SKIPPED_AFTER_TIMEOUT verdict space; S2, every NA_PROOF row cites a pm-proofs path; S3, the executed verdict space is PASS|FAIL[|SKIPPED_AFTER_TIMEOUT].
 - `--mode rc` (the default) enforces every rule and exits 1 on any count.
 - `--mode design-stage` enforces S1-S3 and e, plus f whenever `--results` is given. It lists a-d as GAP lines with their full counts, and its output is marked NOT AN RC VERDICT.
 - Each rule was proved red on its own tampered copy (log in the commit message), and the tamper copies were deleted.
-- On these tables at design stage (v7), rc is FAIL (exit 1). The counts, by row, are: a=658 (74 files, all UNSIGNED), b=3357 (435 missing files out of 509 cited), c=16022, d=1971, e=0, f not evaluated (no results yet). S1-S3 are 0. design-stage is a structural PASS (exit 0) that lists the same gaps.
+- On these tables at design stage (v8), rc is FAIL (exit 1; log 1821-cov8rc-final2.log). The counts, by row, are: a=658 (74 files, all UNSIGNED), b=3357 (435 missing files out of 509 cited), c=16346, d=1584, e=0, f not evaluated (no results yet). S1-S3 are 0. design-stage is a structural PASS (exit 0; 1821-cov8design-stage-final2.log) that lists the same gaps.
 
 ### 17.1 Results record and run manifest (pmrev5 item 1)
 - verdicts.tsv: UTF-8, one record per line, TAB-separated, `#` lines are comments. Fields in order: `row_id` (`crate|family|class`, exactly the matrix id), `verdict` (PASS, FAIL or SKIPPED_AFTER_TIMEOUT), `zf_sha` (40-hex zenith-float commit), `zb_sha` (40-hex zenith-bound commit), `env_name` (for example oracle-2026-10-30), `env_hash` (sha256 of the team-env manifest plus the target triple), `gen_sha256` (sha256 of tools/gen_edges.pl). Optional trailing fields: `target`, `secs`. Rule f ignores them.
@@ -198,9 +200,9 @@ pm_coverage.pl is a separate tool. lint.pl stays the structure and variant lint 
 - Tamper proof (pmrev5): a clean control was green (rc 0). Each of dup, unknown id, zf_sha, zb_sha, env_name, env_hash and gen_sha256 was red on its own (rc 1). Logs are listed in the commit message, and the tamper copies were deleted.
 
 ## 18. MAX-timeout skip (Paul proposal, Spence pmrev3 item 6)
-- Within a family, each MAX row (`prec-2^30-1`, `prec-2^60-1`) runs on the first target first.
+- Within a family, each MAX row (`prec-2^30-1`, `prec-2^30`, `prec-2^60-1`, `m30-*`) runs on the first target first.
 - If that run hits its 10 min timeout, the same row's run on the other target is not started. It is recorded as **SKIPPED_AFTER_TIMEOUT**.
-- SKIPPED_AFTER_TIMEOUT counts as FAIL in the verdict space (`PASS|FAIL|SKIPPED_AFTER_TIMEOUT` on all 774 MAX rows) and in pm-coverage rule f. It is never omitted.
+- SKIPPED_AFTER_TIMEOUT counts as FAIL in the verdict space (`PASS|FAIL|SKIPPED_AFTER_TIMEOUT` on all 1255 MAX rows) and in pm-coverage rule f. It is never omitted.
 - The family's RC stays blocked until its FIXLIST fix lands. After the fix, every skipped row reruns in full.
 - The prec-MAXp1-refuse rows are instant refusals, so the skip does not apply to them.
 
@@ -220,7 +222,7 @@ pm_coverage.pl is a separate tool. lint.pl stays the structure and variant lint 
 ## 21. Round-5 changes (Spence fourth review items 3-5)
 - **No UNCLEAR, no either/or gold.** Every executed row pins exactly one outcome: one value, or one named refusal. The other branch is a FAIL. lint.pl v4 rejects `UNCLEAR` anywhere, and `or`, `either` or a standalone `|` in required_result or refusal_variant, and exits 1 on any BAD line. Each rule was tamper-tested red against a clean green control.
 - Class rulings (Spence): gauss_kronrod and roots illinois/brent are correctly rounded at p (Ziv), with PrecisionRetryExhausted only where the gold pins it; brent/illinois with no sign change give Error::InvalidArgument (new `no-sign-change` rows). rk4 is the exact fixed-step recurrence, correctly rounded per step; InvalidArgument only for a bad step or interval (new `bad-step-interval` row). rk45_adaptive is within tol of mpmath odefun at 2p bits in env oracle-2026-10-30, else PrecisionRetryExhausted; it is pinned per row, and rows not yet pinned are `[PM1-UNPINNED]`. LU/QR/SVD/eigen: each factor is correctly rounded under the pinned normalisation; None only for an exact pivot tie past the lowest-index rule, repeated singular values or eigenvalues, or a zero R_ii (new `degenerate` rows). from_raw_parts is exactly normalized when the parts are valid at p, else InvalidArgument (new `raw-parts-invalid` row). Where a row once said "MPFR or mpmath", the pin now names the one oracle from that row's oracle column.
-- MAX rows: x86_64 is pinned to the MemoryAllocation (zb Resource) refusal. i686 is pinned to the correct result or enclosure (Paul: the size is allocatable), and a refusal there is a FAIL.
+- MAX rows: x86_64 is pinned to the MemoryAllocation (zb Resource) refusal. i686 is pinned to the correct result or enclosure (Paul: the size is allocatable), and a refusal there is a FAIL. (Superseded by v8, section 4: one gold on both targets.)
 - Rows that cannot have one outcome yet are `[PM1-UNPINNED]` (rule d): 61 new rows, namely trig-huge-arg e=2^16-1 and e=2^16 (the cap rule is undecided), exponent extremes on helper functions, zero inputs whose doc leaves the result open (for example the zero polynomial and "DivisionByZero or None per doc"), and rk45.
 - Row deltas vs 3886199: 24620 -> 24628 (+8 new rows, 0 removed); 3707 rows changed (col10 3637, col11 2157), of which 3646 now carry a single pin and 61 are `[PM1-UNPINNED]`. UNCLEAR 29 -> 0; either/or in cols 10-11 3698 -> 0; `[PM1-UNPINNED]` 996 -> 1057; UNGENERATED pins 19742 -> 19750. The 10 ZF-WP families move N=3 -> N=5; the 4 heun_fox ZF-04 citations now read 29.
 
@@ -231,7 +233,35 @@ pm_coverage.pl is a separate tool. lint.pl stays the structure and variant lint 
 
 ## 23. Round-7 changes (Jeff ruling 2026-10-30 6:00 PM CT, FIXLIST:145 ZF-M27)
 - **One gold per row:** target-specific rows 18523 before (class 774, gold 18453, pin 1381), 0 after. oracle_i686 now reads "same gold as oracle_x86_64" on every executed row. gen_edges.pl dies on any target-specific row, and lint v6 is BAD on one (tamper: control clean; target gold, target pin and target class each red alone, rc 1).
-- **MAX:** 387+387 per-target rows became 387 `prec-2^30-1` shared rows (correct result, one gold) and 387 `prec-2^60-1` shared rows flagged [PM1-UNPINNED] (section 4). Rule d moves 1584 to 1971 (+387).
-- **M27 red:** 0 rows carried a ZF-M27 pin note before, 16373 after (= every executed row in a directed mode other than ToEven; the 6 directed modes are read as every mode except ToEven).
+- **MAX:** 387+387 split rows became 387 `prec-2^30-1` shared rows and 387 `prec-2^60-1` shared rows flagged [PM1-UNPINNED] (section 4). Rule d moved 1584 to 1971 (+387). Superseded by v8 (section 24).
+- **M27 red:** 0 rows carried a ZF-M27 pin note before, 16373 after. **Correction (v8):** v7 read "6 directed modes" as every mode except ToEven; the correct set is every mode except None (16725 rows, section 3).
 - **FIXLIST re-pin:** sha 9fc4a7a5... to 3a8907f4...; existing line citations unchanged.
 - **Row deltas:** rows 24654 to 24654, executed 20639 to 20639, NA_PROOF 4015 to 4015; rule c 19776 to 16022 (rows whose x86_64 gold is pinned no longer wait on a separate i686 gold); rule d 1584 to 1971.
+
+## 24. Round-8 changes and decision log (pmrev8; Jeff 2026-10-30 6:11, 6:13, 6:15 PM CT)
+Decision log (each principle applied directly, none left open; PRINCIPLES.md sha 81780e34...):
+- **P1 bit-identical everywhere:** every row has one gold, one limit, one refusal variant and one budget for both targets. MAX_PRECISION is 2^30-1 everywhere (ZF-M28). lint v7 now FAILs (BAD) a target-specific class, gold or pin and any target-dependent limit, refusal, budget or result. Lint BAD rows on the e7ad025 table: 0 under v6 lint, 387 dependent + 387 limit under v7 lint (log 1821-lint8-before.log, the prec-2^60-1 rows); on this table: 0 (1821-tamper8-clean-green.log).
+- **P2 correct or refuse:** over-limit rows (`prec-2^30`, `prec-2^60-1`) require InvalidArgument (zf Error, zb BoundError at error.rs:22); NaN-as-error, a panic or another variant is FAIL.
+- **P3 32-1024 bits plus boundaries +-1:** the boundary 2^30-1 / 2^30 is covered by twin rows on every family (387 new `prec-2^30` rows); the base axis is unchanged.
+- **P4 test-first, exact command and full count:** every count below comes from a poprun log, and each lint rejection class has a saved red tamper log.
+- **P5 through Paul:** FIXLIST is Paul's file, pinned at 0ef77110...; no new FIXLIST rows are invented here.
+- **Execution config:** the 10-minute per-run budget, the i686 cost factor and the worker count are execution config, not expected outcomes. lint allows them because they are the same on both targets; the budget rule only rejects a target name or target-split budget in the tier or verdict.
+
+Row changes (before e7ad025 -> after):
+- Rows 24654 -> 25135 (+387 `prec-2^30`, +94 `m30-*`); executed 20639 -> 21120; NA_PROOF 4015 -> 4015.
+- ZF-M27 notes 16373 -> 16725; wrong "except ToEven" text 16373 -> 0.
+- ZF-M28 cites 0 -> 1161 (387 x 3 prec classes); unpinned `prec-2^60-1` 387 -> 0; zb over-limit rows 70, all BoundError::InvalidArgument.
+- ZF-M29 (FIXLIST:147) cites 0 -> 31, in every Error-kind row of the brent (6), illinois (6), rk4 (6) and rk45 (13) families; the "API row" note 12 -> 0.
+- ZF-M30 (FIXLIST:148) rows 0 -> 94: `m30-p2^24` and `m30-p2^27` for each of 47 families, mode ToEven, pm-max shard on both targets, one correct gold, red until ZF-M30 lands.
+- ZF-D04 (FIXLIST:149): sinh_series (pow.rs:678) and sin_series (sin.rs:94) are internal, not exported, so no matrix row tests them directly (0 rows); they are reached through the sinh/sin M30 rows.
+- Coverage rule c 16022 -> 16346, rule d 1971 -> 1584.
+
+M30 families (series, tan and reduction-cost paths; `series_cost_optimize` at atan.rs:145, cos.rs:101, log.rs:193, pow.rs:682, sin.rs:100, tan.rs:121; `calc_mul_cost` util.rs:55; `reduction_cost` at atan.rs:69, cos.rs:29, log.rs:73, pow.rs:32, series.rs:117,159, sin.rs:27, tan.rs:53):
+- ExactComplex (15, per-op `*_word`, e.g. complex.rs:407): exp ln sin cos tan sinh cosh tanh log2 log10 log pow asin acos atan.
+- ExactNum (17, gen_wrapper_* in ext.rs, e.g. :2745 exp, :2823 tan): pow log atan atan2 tanh sin_cos ln log2 log10 exp sin cos tan asin acos sinh cosh.
+- Ball (4, ball.rs:92/106/113/125): exp sin cos ln. ComplexBall (4, ball.rs:325/342/354/372): exp ln sin cos.
+- ieee_soft array.rs $arr (3): atan2 pow log. ExactNumArray (4, map_at/map_exact, array.rs:425, :1133): sin_cos atan2 pow log.
+- Excluded: ExactInt::pow (integer square-and-multiply, integer.rs:331).
+
+Target-split scan (CSV, shards, this doc): "32-bit", "64-bit", per-target, pm-max-<target>, -only: 0. "on some targets" appears only inside red-until text that describes today's defect.
+
