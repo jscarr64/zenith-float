@@ -3,6 +3,7 @@ members = [
     "zenith-float-num",
     "zenith-float-macro",
     "zenith-float-compare",
+    "zenith-bound",
 ]
 exclude = ["nostd-tests"]
 resolver = "2"
@@ -32,6 +33,7 @@ exclude = [
     "zenith-float-num",
     "zenith-float-macro",
     "zenith-float-compare",
+    "zenith-bound",
     "scripts",
     "golds",
     "nostd-tests",
@@ -44,6 +46,8 @@ categories = ["mathematics", "no-std", "science"]
 [dependencies]
 zenith-float-num = { path = "zenith-float-num", version = "2.0.0", default-features = false }
 zenith-float-macro = { path = "zenith-float-macro", version = "2.0.0" }
+# Guaranteed-bounds (ball) arithmetic, re-exported as zenith_float::bound (feature `bound`, default on).
+zenith-bound = { path = "zenith-bound", version = "2.0.0", optional = true }
 
 # hex_golds prints golds with std I/O; a --no-default-features build skips it.
 [[bin]]
@@ -52,7 +56,9 @@ path = "src/bin/hex_golds.rs"
 required-features = ["std"]
 
 [features]
-default = ["std"]
+default = ["std", "bound"]
+# zenith-bound uses std, so --no-default-features (no_std) builds stay without it.
+bound = ["std", "dep:zenith-bound"]
 std = ["zenith-float-num/std"]
 random = ["zenith-float-num/random"]
 serde = ["std", "zenith-float-num/serde"]

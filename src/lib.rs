@@ -326,3 +326,7 @@
 pub use zenith_float_macro::{cexpr, exact, expr, fbig};
 
 pub use zenith_float_num::*;
+
+/// Guaranteed-bounds (ball) arithmetic: the zenith-bound crate (feature `bound`, on by default; needs `std`).
+#[cfg(feature = "bound")]
+pub use zenith_bound as bound;

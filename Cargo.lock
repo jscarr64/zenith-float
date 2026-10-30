@@ -1262,10 +1262,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
 
 [[package]]
+name = "zenith-bound"
+version = "2.0.0"
+dependencies = [
+ "zenith-float-num",
+]
+
+[[package]]
 name = "zenith-float"
 version = "2.0.0"
 dependencies = [
  "trybuild",
+ "zenith-bound",
  "zenith-float-macro",
  "zenith-float-num",
 ]
