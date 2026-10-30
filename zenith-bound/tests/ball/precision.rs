@@ -1,9 +1,8 @@
 //! API-freeze unit 5 (Paul/Rusty 2026-10-23), ZB-TD02 (Eugene 2026-10-30): every public prec is `Precision` (= zf `usize`
-//! alias), validated at the constructors against `MIN_PRECISION..=MAX_PRECISION`. P1: `MAX_PRECISION` is `2^30 - 1` on every
-//! target, read from zf `zenith_float_num::MAX_PRECISION` (ZF-M28). One expectation per case on every target: no cfg and no
+//! alias), validated at the constructors against `MIN_PRECISION..=MAX_PRECISION`. P1/P6: `MAX_PRECISION` is `2^32 - 1` (= `u32::MAX`) on every
+//! 64-bit target, read from zf `zenith_float_num::MAX_PRECISION` (ZF-M32, decided 2026-10-30 6:37 PM CT). One expectation per case on every target: no cfg and no
 //! `usize::BITS` branch. Edge list: ~/eugene-work/zfzb/edge-lists/ZB-TD02.md.
-//! P6 (64-bit only): host reds only. RED until ZF-M32 lands (host has 2^60 - 1): rows A, B, J, K, M, N. The 2^30 - 1 value is
-//! from M28 and is kept until M32 publishes its number (Paul 2026-10-30 6:34 PM CT); then the values follow M32.
+//! P6 (64-bit only): host reds only. RED until the ZF-M32 code lands (host has 2^60 - 1): rows A, B, J, M, N.
 //! COVERS: Ball::exact, Ball::all_reals, Ball::from_mid_rad, BallArray::zeros, Ball::add, Ball::mul
 //! (Precision, MIN_PRECISION and MAX_PRECISION are a type alias and consts, which pubfn_coverage does not list.)
 
@@ -14,8 +13,8 @@ use zenith_bound::mag::Mag;
 use zenith_bound::{Precision, MAX_PRECISION, MIN_PRECISION};
 use zenith_float_num::ExactNum;
 
-/// `2^30 - 1`: the one precision limit on every target (P1, ZF-M28).
-const WANT_MAX: u64 = (1 << 30) - 1;
+/// `2^32 - 1` (= `u32::MAX`): the one precision limit on every 64-bit target (P6, ZF-M32).
+const WANT_MAX: u64 = (1 << 32) - 1;
 
 fn invalid<T>(r: Result<T, BoundError>, what: &str) -> Result<(), String> {
     match r {
@@ -50,7 +49,7 @@ fn all_refuse(p: Precision) -> Result<(), String> {
 
 
 #[test]
-fn max_precision_is_2_pow_30_minus_1_on_every_target() -> Result<(), String> {
+fn max_precision_is_2_pow_32_minus_1_on_every_target() -> Result<(), String> {
     // Rows A and D.
     if MIN_PRECISION != 1 {
         return Err(format!("MIN_PRECISION {}", MIN_PRECISION));
@@ -66,8 +65,8 @@ fn max_precision_is_2_pow_30_minus_1_on_every_target() -> Result<(), String> {
 }
 
 #[test]
-fn zf_max_precision_is_2_pow_30_minus_1_on_every_target() -> Result<(), String> {
-    // Row B (ZF-M28).
+fn zf_max_precision_is_2_pow_32_minus_1_on_every_target() -> Result<(), String> {
+    // Row B (ZF-M32).
     let got = u64::try_from(zenith_float_num::MAX_PRECISION)
         .map_err(|_| String::from("zf MAX_PRECISION as u64"))?;
     if got != WANT_MAX {
@@ -93,9 +92,9 @@ fn zb_max_precision_reads_zf() -> Result<(), String> {
 }
 
 #[test]
-fn constructors_accept_every_precision_up_to_2_pow_30_minus_1() -> Result<(), String> {
+fn constructors_accept_every_precision_up_to_2_pow_32_minus_1() -> Result<(), String> {
     // Rows F, G, H, I.
-    let ps: [u64; 18] = [
+    let ps: [u64; 21] = [
         1,
         2,
         32,
@@ -112,6 +111,9 @@ fn constructors_accept_every_precision_up_to_2_pow_30_minus_1() -> Result<(), St
         16384,
         65536,
         1 << 28,
+        (1 << 30) - 1,
+        1 << 30,
+        1 << 31,
         WANT_MAX - 1,
         WANT_MAX,
     ];
@@ -136,26 +138,23 @@ fn constructors_accept_every_precision_up_to_2_pow_30_minus_1() -> Result<(), St
 #[test]
 fn ball_at_the_limit_is_exact_three() -> Result<(), String> {
     // Row O: same bits on every target.
-    let p = usize::try_from(WANT_MAX).map_err(|_| String::from("2^30 - 1 as usize"))?;
-    let b = Ball::exact(three(), p).map_err(|e| format!("exact(3, 2^30 - 1): {:?}", e))?;
+    let p = usize::try_from(WANT_MAX).map_err(|_| String::from("2^32 - 1 as usize"))?;
+    let b = Ball::exact(three(), p).map_err(|e| format!("exact(3, 2^32 - 1): {:?}", e))?;
     let (m, r, q) = b.into_parts();
     if m != three() || !r.is_zero() || q != p {
-        return Err(format!("exact(3, 2^30 - 1): got {:?} +- {:?} at {}", m, r, q));
+        return Err(format!("exact(3, 2^32 - 1): got {:?} +- {:?} at {}", m, r, q));
     }
     Ok(())
 }
 
 #[test]
-fn precisions_from_2_pow_30_are_refused_on_every_target() -> Result<(), String> {
-    // Rows E, J, K, L, M, N.
+fn precisions_above_2_pow_32_minus_1_are_refused_on_every_target() -> Result<(), String> {
+    // Rows E, J, L, M, N.
     for p in [
         0u64,
         WANT_MAX + 1,
         WANT_MAX + 2,
-        (1 << 31) - 1,
-        1 << 31,
-        u64::from(u32::MAX),
-        1 << 32,
+        1 << 33,
         1 << 40,
         (1 << 60) - 1,
         1 << 60,
