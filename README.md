@@ -35,6 +35,10 @@ Parts of this kernel are derived from [astro-float](https://github.com/stencillo
 
 zenith-float was developed with the help of AI assistants from SpaceXAI, Anthropic, OpenAI, Google, and Meta.
 
+## Supported targets
+
+zenith-float 2.0 supports 64-bit targets only (`target_pointer_width = "64"`: x86_64 and aarch64, any OS). A 32-bit or 16-bit target fails to compile with a clear `compile_error!`. Results are bit-identical across the supported targets.
+
 ## Crate layout
 
 - `zenith-float` — public crate: `ExactNum`, `Ieee32`/`Ieee64`, arrays, `expr!`, `cexpr!`, constants, rounding.
@@ -76,7 +80,7 @@ zenith-float = "2.0"
 zenith-float = { version = "2.0", default-features = false }
 ```
 
-`no_std` is tested: `scripts/ci_nostd.sh` runs the mpmath reference cases in a `#![no_std]` harness (`nostd-tests/`) on a libc-only Linux binary and bare-metal on `thumbv7em-none-eabihf` under QEMU.
+`no_std` is tested: `scripts/ci_nostd.sh` runs the mpmath reference cases in a `#![no_std]` harness (`nostd-tests/`) on a libc-only Linux binary.
 
 ## Known issues
 
