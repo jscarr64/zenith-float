@@ -6,7 +6,7 @@ use zenith_float::{cexpr, exact, fbig, ExactComplex, RadixFloat};
 use zenith_float_macro::expr;
 use zenith_float_num::{
     ctx::Context, Consts, ExactNum, Radix, RoundingMode, Sign, EXPONENT_MAX, EXPONENT_MIN,
-    WORD_BIT_SIZE, WORD_MAX, WORD_SIGNIFICANT_BIT,
+    Word, WORD_BIT_SIZE, WORD_MAX, WORD_SIGNIFICANT_BIT,
 };
 
 #[test]
@@ -709,9 +709,16 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
     assert_eq!(x, ctx.const_euler_gamma());
 
     // ln
+    // x = (2^191 + 234) * 2^-315, the same value on 32- and 64-bit words: `[234, 0,
+    // WORD_SIGNIFICANT_BIT]` was 2^-123 * (1/2 + 234 * 2^-192) on 64-bit words but
+    // 2^-123 * (1/2 + 234 * 2^-96) on 32-bit words, so the i686 run tested another input.
+    #[cfg(target_pointer_width = "64")]
+    const LN_X: [Word; 3] = [234, 0, WORD_SIGNIFICANT_BIT];
+    #[cfg(target_pointer_width = "32")]
+    const LN_X: [Word; 6] = [234, 0, 0, 0, 0, WORD_SIGNIFICANT_BIT];
     for x in [
-        ExactNum::from_words(&[234, 0, WORD_SIGNIFICANT_BIT], Sign::Pos, -123),
-        ExactNum::from_words(&[234, 0, WORD_SIGNIFICANT_BIT], Sign::Neg, -123),
+        ExactNum::from_words(&LN_X, Sign::Pos, -123),
+        ExactNum::from_words(&LN_X, Sign::Neg, -123),
     ] {
         let y1 = x.exp(p * 3, RoundingMode::None, &mut cc);
         let mut z1 = y1.ln(p * 3, RoundingMode::None, &mut cc);
@@ -967,8 +974,10 @@ fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
     let z = x.sin(p + 1, RoundingMode::None, &mut cc);
     let y1 = z.asin(p, rm, &mut cc);
 
-    let z = x.sin(p * 2, RoundingMode::None, &mut cc);
-    let mut y2 = z.asin(p * 2, RoundingMode::None, &mut cc);
+    // x = pi/2 - d, d ~ 2^-(p - WORD_BIT_SIZE): sin(x) = 1 - d^2/2, so the reference
+    // needs about 2 * (p - WORD_BIT_SIZE) + p bits; p * 4 covers both word widths.
+    let z = x.sin(p * 4, RoundingMode::None, &mut cc);
+    let mut y2 = z.asin(p * 4, RoundingMode::None, &mut cc);
     y2.set_precision(p, rm)?;
 
     let z = expr!(asin(sin(x)), &mut ctx);

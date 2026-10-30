@@ -1,0 +1,1 @@
+- tests: macro_run_err_test ln input is now the same value on 32- and 64-bit words, and the asin reference uses p*4 so it is exact enough on both.
