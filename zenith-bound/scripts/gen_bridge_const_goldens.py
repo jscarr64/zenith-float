@@ -6,6 +6,8 @@ interval [TLO, THI] of c at p + 192 bits (TLO rounded down, THI rounded up). Run
     ~/.local/oracle-venv/bin/python scripts/gen_bridge_const_goldens.py              write the golden
     ~/.local/oracle-venv/bin/python scripts/gen_bridge_const_goldens.py --check DIR  regenerate into DIR and compare byte for byte
     ~/.local/oracle-venv/bin/python scripts/gen_bridge_const_goldens.py --selftest   the generator's own checks
+--skip-heavy may follow any of these and is a documented no-op: this slice has no heavy tier, but tools/goldens_regen.sh passes it
+to every slice generator in gate mode (as for scripts/gen_cball_goldens.py).
 
 ORACLE. mpmath 1.3.0 libmp. Every directed result is settled twice, as zenith-float's scripts/gen_r14_const_goldens.py does (the
 generator of zf's r14_consts.jsonl, whose Down/Up rows this file matches at the shared precisions): the round-to-nearest value
@@ -161,9 +163,17 @@ def write_file(path):
     goldlib.write_lines(path, HEADER + body)
 
 
+def strip_skip_heavy(argv):
+    """Drop --skip-heavy (documented no-op: no heavy tier; tools/goldens_regen.sh passes it in gate mode)."""
+    return [a for a in argv if a != "--skip-heavy"]
+
+
 def main(argv):
     goldlib.require_mpmath()
     selftest()
+    if strip_skip_heavy(["--check", "D", "--skip-heavy"]) != ["--check", "D"] or strip_skip_heavy(["--selftest"]) != ["--selftest"]:
+        raise SystemExit("gen_bridge_const_goldens selftest: --skip-heavy not stripped")
+    argv = strip_skip_heavy(argv)
     if len(argv) == 2 and argv[0] == "--check":
         os.makedirs(argv[1], exist_ok=True)
         write_file(os.path.join(argv[1], GOLDEN_NAME))
