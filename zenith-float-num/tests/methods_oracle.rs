@@ -19,6 +19,12 @@ use zenith_float_num::{
     wynn_epsilon, Ball, Consts, ExactNum, QuadratureError, Radix, RoundingMode,
 };
 
+/// Decimal text of `x` via `ExactNum::format`, which needs no `std` (the `Display` impl does).
+fn dec(x: &ExactNum, cc: &mut Consts) -> String {
+    x.format(Radix::Dec, RoundingMode::ToEven, cc)
+        .unwrap_or_else(|e| format!("<format failed: {e}>"))
+}
+
 /// `|x|` for an operand that stays borrowed: fresh `±1` times `x` at `x`'s own precision.
 fn abs_of(x: &ExactNum) -> ExactNum {
     let p = x
@@ -303,14 +309,21 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
         let bar = rel.mul(&scale, 384, RoundingMode::Up);
         if !covers(&est, &truth, &bar) {
             return Err(format!(
-                "estimate {est} misses accuracy {est_tol} around {truth}"
+                "estimate {} misses accuracy {est_tol} around {}",
+                dec(&est, &mut cc),
+                dec(&truth, &mut cc)
             ));
         }
     }
     if covers(&est, &truth, &err) {
         Ok(())
     } else {
-        Err(format!("estimate {est} error {err} does not cover {truth}"))
+        Err(format!(
+            "estimate {} error {} does not cover {}",
+            dec(&est, &mut cc),
+            dec(&err, &mut cc),
+            dec(&truth, &mut cc)
+        ))
     }
 }
 
@@ -412,7 +425,11 @@ fn run_ode(row: &serde_json::Value) -> Result<(), String> {
     if covers(last, &truth, &err) {
         Ok(())
     } else {
-        Err(format!("y {last} exceeds reported tolerance {err}"))
+        Err(format!(
+            "y {} exceeds reported tolerance {}",
+            dec(last, &mut cc),
+            dec(&err, &mut cc)
+        ))
     }
 }
 
@@ -450,8 +467,8 @@ fn run_ball(row: &serde_json::Value) -> Result<(), String> {
         if !out.contains(&truth, 384) {
             return Err(format!(
                 "{text} is outside mid {} rad {}",
-                out.mid(),
-                out.rad()
+                dec(out.mid(), &mut cc),
+                dec(out.rad(), &mut cc)
             ));
         }
     }
