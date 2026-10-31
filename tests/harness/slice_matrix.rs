@@ -370,9 +370,21 @@ fn s6_gate_rows_replay_through_zb() -> Result<(), String> {
 #[test]
 #[ignore = "heavy tier (16.S6.10): set ZB_MATRIX_HEAVY to matrix_rows_heavy.txt (scripts/gen_matrix_goldens.py --heavy DIR; sha256 in HEAVY.SHA256)"]
 fn s6_heavy_rows_replay_through_zb() -> Result<(), String> {
-    let path = std::env::var("ZB_MATRIX_HEAVY").map_err(|e| format!("ZB_MATRIX_HEAVY: {e}"))?;
+    // ZB-P03: with ZB_MATRIX_HEAVY unset this ignored test skips with a visible SKIP line instead of failing, so a
+    // `--ignored` run without the heavy file is not red; it runs nothing and says so. Set, it replays every heavy row
+    // and prints the row count it ran (replay_text checks the count against the header and HEAVY_ROWS).
+    let path = match std::env::var("ZB_MATRIX_HEAVY") {
+        Ok(p) => p,
+        Err(std::env::VarError::NotPresent) => {
+            println!("SKIP s6_heavy_rows_replay_through_zb: ZB_MATRIX_HEAVY unset, 0 of {HEAVY_ROWS} heavy rows run");
+            return Ok(());
+        }
+        Err(std::env::VarError::NotUnicode(v)) => return Err(format!("ZB_MATRIX_HEAVY is not unicode: {v:?}")),
+    };
     let text = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
-    replay_text(&text, HEAVY_ROWS)
+    replay_text(&text, HEAVY_ROWS)?;
+    println!("HEAVY s6_heavy_rows_replay_through_zb: rows run={HEAVY_ROWS} passed={HEAVY_ROWS} file={path}");
+    Ok(())
 }
 
 // ---- hand rows ------------------------------------------------------------------------------------------------------------
