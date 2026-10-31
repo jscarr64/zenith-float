@@ -1,2 +1,2 @@
 name,value,owner,status,basis
-PM_MAX_P,PENDING-RUSTY-M32,Rusty,open,Paul M32 ruling 2026-10-30 7:18 PM CT (M32-DECISION.md proposes 2^32-1; the value is pinned only when Rusty lands ZF-M32)
+PM_MAX_P,src:zenith-float-num/src/defs.rs:MAX_PRECISION,Rusty,expected=1073479680@1accbda32e452ac5d8a64ff8f8f3e21c4b2a3cdb:zenith-float-num/src/defs.rs:82,Paul ruling 2026-10-30 8:06 PM CT: PM_MAX_P resolves from zf MAX_PRECISION in the pinned source; rusty/zf-m32r-maxprec 1accbda (read-only via rusty-ro) sets 2^30-2^18; RC FAILs until the pinned source includes it

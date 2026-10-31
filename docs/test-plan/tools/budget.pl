@@ -2,7 +2,7 @@
 # Harper budget v4 (pmrev12): measured factors for every active target in inputs/targets.csv (pmrev12 sample log pop-logs/harper/2026-10-30/1931-2036-targets.log);
 # prec-PM_MAX_P+1 rows are refused up front by the precision check (zf num.rs:55-57, zb precision.rs:17) before any allocation, so they are costed as one
 # ordinary row (4.1 ms zf, 12 ms zb, an upper bound: the check runs before the work the per-row cost measures), not at the 10-minute MAX budget.
-# MAX rows (prec-PM_MAX_P, prec-2^60-1, m30-*) are shown both ways: worst case 10 min per row per active target, and no-timeout at the per-row cost.
+# MAX rows (prec-PM_MAX_P, prec-over-MAX, m30-*) are shown both ways: worst case 10 min per row per active target, and no-timeout at the per-row cost.
 use strict; use warnings;
 sub p{my $l=shift; chomp $l; my @f; my $fld=''; my $st=0; my @c=split //,$l; for(my $i=0;$i<@c;$i++){ my $c=$c[$i];
   if($st==0){ if($c eq '"'){$st=1} elsif($c eq ','){push @f,$fld;$fld=''} else {$fld.=$c} }
@@ -20,7 +20,7 @@ while(<F>){ next if /^#/; if(!$hd){$hd=1;next} my @f=p($_); next if $f[15] eq 'N
   my ($fast,$heavy,$cut);
   if($cls=~/^rm-/){ $fast=1; $heavy=$AX; $cut=6 }
   elsif($cls=~/^m32-bytes/ || $cls=~/refuse/ || $cls eq 'prec-PM_MAX_P+1'){ $fast=1; $heavy=1; $cut=1; $c{"$cr refuse-upfront"}++ if $cls eq 'prec-PM_MAX_P+1' }
-  elsif($cls=~/^(?:prec-MAX-|prec-PM_MAX_P$|prec-2\^60-1$|m30-)/){ $c{"$cr MAX"}++; next }
+  elsif($cls=~/^(?:prec-MAX-|prec-PM_MAX_P$|prec-over-MAX$|m30-)/){ $c{"$cr MAX"}++; next }
   elsif($cls eq 'prec-1-2-3'){ $fast=3*$m7; $heavy=3*$m7; $cut=3*$m7 }
   elsif($cls=~/^trig-huge/){ $fast=1; $heavy=$AX*$m7; $cut=6*$m7 }
   elsif($cls eq 'prec-axis'){ $fast=6; $heavy=$AX*$m7; $cut=6*$m7 }
@@ -29,7 +29,7 @@ while(<F>){ next if /^#/; if(!$hd){$hd=1;next} my @f=p($_); next if $f[15] eq 'N
   else { $fast=1; $heavy=$AX; $cut=6 }
   $c{"$cr fast"}+=$fast; $c{"$cr heavy"}+=$heavy; $c{"$cr cut"}+=$cut; }
 printf "prec-PM_MAX_P+1 rows costed as up-front refusals: zf %d, zb %d\n",$c{'zf refuse-upfront'}//0,$c{'zb refuse-upfront'}//0;
-my $mxrows=($c{'zf MAX'}//0)+($c{'zb MAX'}//0); printf "MAX rows (prec-PM_MAX_P, prec-2^60-1, m30-*): zf %d, zb %d\n",$c{'zf MAX'}//0,$c{'zb MAX'}//0;
+my $mxrows=($c{'zf MAX'}//0)+($c{'zb MAX'}//0); printf "MAX rows (prec-PM_MAX_P, prec-over-MAX, m30-*): zf %d, zb %d\n",$c{'zf MAX'}//0,$c{'zb MAX'}//0;
 my ($T,$TW,$TN)=(0,0,0);
 for my $t (@ACT){ my $ht=0; my $nt=0;
   for my $cr (qw(zf zb)){ my $th=$cr eq 'zf'?$THR:0; my $h=($c{"$cr heavy"}+$th*7)*$cost{$cr}*$fac{$t}/3600000; my $f=($c{"$cr fast"}+$th)*$cost{$cr}*$fac{$t}/60000;

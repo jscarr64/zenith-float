@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # Harper lint v7 (pmrev8, pop-logs/PRINCIPLES.md P1: lint rejects any per-target gold, limit, refusal variant or budget, and FAILs any row whose expected outcome could differ by target, via pm_target_dependent in tools/pm_target.pl). Was v6 (pmrev7, Jeff ruling 2026-10-30 6:00 PM CT, ZF-M27: any target-specific gold, pin or class is BAD through the shared rule in tools/pm_target.pl). Was v5 (pmrev6, Spence review 5 item 1: every hedge form rejected through the shared rule in tools/pm_hedge.pl; exit 1 on any BAD). Was v4: UNCLEAR + either/or. Was v3: structure + error variants checked against enums parsed from source (item 10).
-use strict; use warnings; use FindBin; require "$FindBin::Bin/pm_hedge.pl"; require "$FindBin::Bin/pm_target.pl";
+use strict; use warnings; use FindBin; require "$FindBin::Bin/pm_maxp.pl"; use FindBin; require "$FindBin::Bin/pm_hedge.pl"; require "$FindBin::Bin/pm_target.pl";
 my $LM="design-stage"; if(@ARGV && $ARGV[0] eq "--mode"){ shift; $LM=shift; die "mode must be rc or design-stage\n" unless $LM=~/^(?:rc|design-stage)$/ }
-my ($csv,$T)=@ARGV; $T//="$ENV{HOME}/harper-work/zf-precision-matrix";
+our @MAXROWS; my ($csv,$T)=@ARGV; $T//="$ENV{HOME}/harper-work/zf-precision-matrix";
 sub en { my ($f,$name)=@_; open my $h,'<',"$T/$f" or die "$f"; local $/; my $s=<$h>; my ($b)=$s=~/pub enum \Q$name\E\b[^{]*\{(.*?)\n\}/s or die "enum $name not found in $f"; $b=~s{//[^\n]*}{}g; my %v; my $d=0; for my $l (split /\n/,$b){ $v{$1}=1 if $d==0 && $l=~/^\s*([A-Z]\w*)\b/; $d+=()=$l=~/[{(]/g; $d-=()=$l=~/[})]/g } %v }
 my %ZF=en('zenith-float-num/src/defs.rs','Error'); my %ZB=en('zenith-bound/src/error.rs','BoundError');
 print "zf Error (zenith-float-num/src/defs.rs): ",join(' ',sort keys %ZF),"\n";
@@ -28,7 +28,7 @@ while(<F>){ $ln++; if(/^#/){ next } if(!$hdr){ $hdr=1; $bad{"P6 32-bit reference
  $B->("P1 target-dependent $_ (tools/pm_target.pl pm_target_dependent)") for pm_target_dependent(@f); $B->("NA without proof") if $f[15] eq 'NA_PROOF' && $f[16] eq '';
  $B->("empty oracle") if $f[15] ne 'NA_PROOF' && $f[12] eq '';
  $ung++ if $f[15] ne 'NA_PROOF' && "$f[12] $f[13]"=~/UNGENERATED/;
- $B->("literal MAX precision in a MAX-class row (Paul M32 ruling 2026-10-30 7:18 PM CT: use the named pin PM_MAX_P)") if $f[5]=~/^prec-(?:PM_MAX_P|2\^60-1)/ && "$f[6] $f[10] $f[11]"=~/2\^32(?!\d)/; $B->("old MAX class $f[5] (renamed prec-PM_MAX_P, prec-PM_MAX_P+1)") if $f[5]=~/^prec-2\^32/; $cls{$f[5]=~s/ .*//r}++; $vs{"$f[0] $f[15]"}++ }
+ push @MAXROWS,[$ln,"$f[6] $f[10] $f[11]"] if $f[5]=~/^prec-(?:PM_MAX_P|over-MAX)/; $B->("literal MAX precision in a MAX-class row (Paul M32 ruling 2026-10-30 7:18 PM CT: use the named pin PM_MAX_P)") if $f[5]=~/^prec-(?:PM_MAX_P|over-MAX)/ && "$f[6] $f[10] $f[11]"=~/2\^32(?!\d)/; $B->("old MAX class $f[5] (renamed prec-PM_MAX_P, prec-PM_MAX_P+1)") if $f[5]=~/^prec-2\^32/; $cls{$f[5]=~s/ .*//r}++; $vs{"$f[0] $f[15]"}++ }
 { my $tf=$ENV{PM_TARGETS}//"$T/docs/test-plan/inputs/targets.csv"; open my $th,'<',$tf or die "$tf"; my $h=<$th>; chomp $h; $bad{"targets.csv header '$h'"}++ unless $h eq 'target,runner,status,install,factor,factor_log'; my $tn=0;
   while(<$th>){ chomp; next if /^\s*$/; $tn++; my @c=split /,/,$_,-1; my ($tg,$run,$st,$fac,$fl)=@c[0,1,2,4,5]; $fl//='';
    $bad{"targets.csv $tg: status '$st' not active|pending-install|pending-CI"}++ unless $st=~/^(?:active|pending-install|pending-CI)$/;
@@ -37,8 +37,14 @@ while(<F>){ $ln++; if(/^#/){ next } if(!$hdr){ $hdr=1; $bad{"P6 32-bit reference
    $bad{"targets.csv $tg: factor '$fac' not from a measurement (factor_log '$fl' missing)"}++ if ($fac//'') ne '' && ($fl eq '' || ! -f "$ENV{HOME}/$fl");
    $bad{"targets.csv $tg: pending-CI target names a Pop runner '$run'"}++ if $st eq 'pending-CI' && $run ne 'none' }
   print "targets.csv: $tn targets\n" }
-{ my $cf=$ENV{PM_CONSTANTS}//"$T/docs/test-plan/inputs/pm-constants.csv"; open my $ch,"<",$cf or die "$cf"; <$ch>; my %pc; while(<$ch>){ chomp; next if /^\s*$/; my @c=split /,/,$_,-1; $pc{$c[0]}=[@c] }
-  my $v=$pc{PM_MAX_P}; if(!$v){ $bad{"pm-constants.csv lacks PM_MAX_P"}++ } elsif($v->[1] eq "PENDING-RUSTY-M32"){ if($LM eq "rc"){ $bad{"RC: PM_MAX_P unresolved (PENDING-RUSTY-M32, owner $v->[2])"}++ } else { print "OPEN PIN PM_MAX_P = PENDING-RUSTY-M32 (owner $v->[2]; RC lint FAILs until resolved)\n" } } elsif($v->[1]!~/^(?:\d+|2\^\d+(?:-1)?)$/){ $bad{"PM_MAX_P value '$v->[1]' is not a number"}++ } else { print "PM_MAX_P = $v->[1] (resolved, owner $v->[2])\n" } }
+{ my $cf=$ENV{PM_CONSTANTS}//"$T/docs/test-plan/inputs/pm-constants.csv"; my $sc; { open my $hh,'<',$csv or die; while(<$hh>){ last unless /^#/; ($sc)=/^# source commit ([0-9a-f]{40})/ if !$sc } } die "no source commit in $csv\n" unless $sc;
+  my $X=eval { pm_maxp($T,$sc,$cf) }; if(!$X){ my $m=$@; chomp $m; $bad{"PM_MAX_P does not resolve: $m"}++ } else {
+   print "PM_MAX_P = zf MAX_PRECISION = $$X{value} ($$X{form}) from $$X{file}:$$X{line} at $sc sha256:$$X{sha}; expected $$X{expected} ($$X{expected_commit} $$X{expected_at}); M32 in source: ".($$X{m32}?"yes":"no")."\n";
+   if(!($$X{m32} && $$X{match})){ if($LM eq "rc"){ $bad{"RC: PM_MAX_P resolves from a source without M32 ($$X{expected_commit} not an ancestor of $sc, or value differs from the expected $$X{expected})"}++ } else { print "OPEN PIN PM_MAX_P: the pinned source predates M32; RC lint FAILs until it includes $$X{expected_commit}\n" } }
+   my @lits=pm_lits($$X{value},$$X{expected});
+   for my $r (@MAXROWS){ my ($ln,$txt)=@$r; for my $q (@lits){ if(index($txt,$q)>=0){ $bad{"literal MAX value '$q' in a MAX-class row (PM_MAX_P resolves from zf's constant, never a literal)"}++; $ex{"literal MAX value '$q' in a MAX-class row (PM_MAX_P resolves from zf's constant, never a literal)"}//="line $ln"; last } } }
+   my $TD=$ENV{PM_TOOLS}//"$T/docs/test-plan/tools"; my @tl=pm_lits($$X{expected}, $$X{m32}?($$X{value}):());
+   for my $tf (sort glob("$TD/*.pl")){ open my $th,'<',$tf or die; my $tn=0; while(my $tline=<$th>){ $tn++; for my $q (@tl){ if(index($tline,$q)>=0){ $bad{"literal MAX value '$q' in tool $tf:$tn"}++; } } } } } }
 print "lint mode $LM\n"; print "rows $n\n"; print "BAD $_ $bad{$_} (first: ".($ex{$_}//"file-level check, no row").")\n" for sort keys %bad; print "lint: ",(%bad?"FAIL":"clean (no BAD lines)"),"\n";
 print "rows with an UNGENERATED oracle pin (pm-coverage FAIL, blocks RC until pinned): ",$ung//0,"\n";
 print join(" ",map {"$_=$cls{$_}"} sort keys %cls),"\n"; print "$_ $vs{$_}\n" for sort keys %vs;

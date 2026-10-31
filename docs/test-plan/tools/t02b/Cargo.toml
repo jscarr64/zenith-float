@@ -1,0 +1,24 @@
+# ZF-T02(b) wrapper (Harper pmrev12 A2; Paul option (b), 2026-10-30). trybuild cannot cross-target: its Windows test binary
+# spawns cargo under wine and fails with "Invalid handle (os error 6)". This crate does what trybuild's t.pass does for
+# tests/mod.rs macro_compile_tests: compile each case as a bin against zenith-float (and its normal deps, as trybuild does)
+# and run it; PASS = it compiles and exits 0. Built by host cargo --target x86_64-pc-windows-gnu; each exe runs under wine.
+# Not part of the workspace (empty [workspace]); no repo src or Cargo.toml change.
+[package]
+name = "zf-t02b-trybuild-wrapper"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+zenith-float = { path = "../../../.." }
+zenith-float-macro = { path = "../../../../zenith-float-macro" }
+
+[[bin]]
+name = "expr"
+path = "../../../../tests/tests/expr.rs"
+
+[[bin]]
+name = "cexpr"
+path = "../../../../tests/tests/cexpr.rs"
