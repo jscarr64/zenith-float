@@ -177,7 +177,7 @@ ck; grep -q 'TIMEOUT' "$t/d-oom.out" && miss+="[oom: reported as TIMEOUT: $(grep
 ck; tag=mu-slicesbad; mu env FAKE_MUT=slicesbad && miss+="[slicesbad: gate exited 0] "
 ck; grep -q 'the --slices cause' "$t/logs/mu-slicesbad-mutants.log" 2>/dev/null || miss+="[slicesbad: step log lost the cause: $(cat "$t/logs/mu-slicesbad-mutants.log" 2>/dev/null)] "
 [ -z "$miss" ] || fail "mutants step did not catch: $miss"
-st_done full_gate 118   # WANT: cases this script runs (tools/selftest_cases.sh)
+st_done full_gate 120   # WANT: cases this script runs (tools/selftest_cases.sh)
 # the gate's real mutation run must not inherit MUTATE_FLOOR_ZERO_OK=1 (only the selftest fixture may use a 0 floor), nor the selftest-only
 # MUTANT_TIMEOUT_S / MUTANT_BUDGET_S / MUTATE_SETUP_S / MUTATE_SH, nor any env mutate.sh reads (MUTATE_REPO MUTATE_MANIFEST MUTATE_EQUIVALENT MUTATE_FLOOR MUTATE_TIMEOUT MUTATE_BUILD_TIMEOUT MUTATE_TMP MUTATE_PERSIST), in its --all run or in its --step-timeout computation
 u='env -u MUTATE_FLOOR_ZERO_OK -u MUTANT_TIMEOUT_S -u MUTANT_BUDGET_S -u MUTATE_SETUP_S -u MUTATE_SH -u MUTATE_REPO -u MUTATE_MANIFEST -u MUTATE_EQUIVALENT -u MUTATE_FLOOR -u MUTATE_TIMEOUT -u MUTATE_BUILD_TIMEOUT -u MUTATE_TMP -u MUTATE_PERSIST tools/mutate_slice\.sh'
