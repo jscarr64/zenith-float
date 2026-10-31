@@ -60,7 +60,7 @@ pub fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
 
 /// Timing-safe equality: always scans both slices; length mismatch is `false`.
 pub fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
-    let mut diff = (a.len() ^ b.len()) as u8;
+    let mut diff = u8::from(a.len() != b.len());
     let n = a.len().min(b.len());
     for i in 0..n {
         diff |= a[i] ^ b[i];
