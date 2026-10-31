@@ -752,7 +752,7 @@ fn bridge_constant_bound_invalid_prec() -> Result<(), String> {
 }
 
 /// An `ExactNum` from raw parts: `(-1)^negative * M * 2^(exponent - 64 * words.len())`, `M` little-endian 64-bit words.
-/// Each `u64` is split into zf `Word`s (one on 64-bit targets, two on 32-bit ones), so the value is the same on both.
+/// Each `u64` is one zf `Word` (`Word` is `u64`; 64-bit targets only, P6).
 fn raw(words: &[u64], exponent: i64, negative: bool) -> Result<ExactNum, String> {
     let zf_words = to_zf_words(words)?;
     let all_zero = words.iter().all(|w| *w == 0);

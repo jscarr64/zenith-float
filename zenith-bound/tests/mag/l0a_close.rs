@@ -245,7 +245,7 @@ fn pow2(e: i64) -> Result<ExactNum, String> {
     ExactNum::pow2(e, P).map_err(|err| format!("pow2({}): {:?}", e, err))
 }
 
-/// `2^64 - 1`, exact at `P` (built as `2^64 - 1` rather than from one zf word, which is 32 bits wide on 32-bit targets).
+/// `2^64 - 1`, exact at `P` (built as `2^64 - 1` independently of the zf word width).
 fn all_ones() -> Result<ExactNum, String> {
     Ok(pow2(64)?.sub(&ExactNum::from_word(1, P), P, RoundingMode::ToEven))
 }

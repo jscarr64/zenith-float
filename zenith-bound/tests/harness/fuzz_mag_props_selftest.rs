@@ -889,7 +889,7 @@ fn every_property_runs_on_every_ordered_forced_pair() -> Result<(), String> {
 }
 
 /// ZB-W32: the wide precision draw stays inside the target's real `MAX_PRECISION` (`2^60 - 1` on 64-bit targets,
-/// `2^30 - 1` on 32-bit ones), so every failing case prints a replay line that parses back.
+/// the only supported width, P6), so every failing case prints a replay line that parses back.
 #[test]
 fn prec_wide_draws_stay_within_max_precision() -> Result<(), String> {
     let mut rng = SplitMix64::new(0x5EED_3232);

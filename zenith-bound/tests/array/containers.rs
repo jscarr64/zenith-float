@@ -180,7 +180,7 @@ fn from_balls_rejects_more_balls_than_the_shape() -> Result<(), String> {
 fn zeros_too_large_to_allocate_is_resource_not_abort() -> Result<(), String> {
     // Gap F7 (API freeze): allocation failure is BoundError::Resource, never an abort. The
     // shape product fits in usize, so this is not InvalidArgument; the byte size does not.
-    // 2^60 elements on 64-bit targets; 2^28 - 1 on 32-bit ones (2^60 is not a usize there), still far past the address space.
+    // 2^60 elements (usize is 64-bit, P6; the unwrap_or fallback is never taken), far past the address space.
     let big = 1usize.checked_shl(60).unwrap_or(usize::MAX >> 4);
     for shape in [[big], [usize::MAX / 2]] {
         match BallArray::zeros(Box::new(shape), 64) {
