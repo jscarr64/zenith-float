@@ -3,7 +3,7 @@
 # Stub rustup: "toolchain install" fails the way an offline rustup does; "run 1.99 ..." works.
 set -u
 root="$(cd "$(dirname "$0")/.." && pwd)"
-tmp="$(mktemp -d "${TMPDIR:-$HOME}/use199.XXXXXX")"
+tmp="$("$root/tools/selftest_scratch.sh" use199)" || exit 2
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$tmp/bin"
 cat > "$tmp/bin/rustup" <<'STUB'

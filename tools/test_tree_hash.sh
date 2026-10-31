@@ -4,7 +4,7 @@
 # so a change to an ALREADY-dirty file is caught (git status would read ` M` both times). Scratch git repo.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
-tmp=$(mktemp -d); trap 'rm -rf "$tmp"' EXIT
+tmp=$("$root/tools/selftest_scratch.sh" test_tree_hash) || exit 2; trap 'rm -rf "$tmp"' EXIT
 r="$tmp/repo"; mkdir -p "$r/sub dir"; cd "$r"; git init -q
 printf 'a\n' > a.txt; printf 'b\n' > "sub dir/b c.txt"; printf 'x\n' > x.sh; ln -s a.txt link; printf 'target/\n' > .gitignore
 git add -A; git -c user.name=s -c user.email=s@invalid commit -qm init

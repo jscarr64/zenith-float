@@ -5,7 +5,7 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
-t="$(mktemp -d)"
+t="$("$root/tools/selftest_scratch.sh" test_gate_tool_checks)" || exit 2
 trap 'rm -rf "$t"' EXIT
 bad=0
 fail() { echo "FAIL: $*" >&2; bad=1; }

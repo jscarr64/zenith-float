@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Self-test for tools/no_clone.py: each banned form is caught (test code included), Copy derives are not, the allowlist works.
 set -u
-here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
+here="$(cd "$(dirname "$0")" && pwd)"; t="$("$here/selftest_scratch.sh" no_clone_selftest)" || exit 2; trap 'rm -rf "$t"' EXIT
 mkdir -p "$t/src" "$t/tools"
 run() { NO_CLONE_ROOT="$t" python3 "$here/no_clone.py" "$@"; }
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }

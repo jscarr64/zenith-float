@@ -12,7 +12,7 @@
 #          BEFORE any test runs; then the original command runs the tests (skipped when ARGS has --no-run).
 #        tools/fresh_test_run.sh --bins FILE
 #          --claim, then the binary check on FILE (one test binary path per line); used by the selftest.
-# Self-test: tools/fresh_test_run_selftest.sh. No new tools: bash, git, cargo, python3 (all in full_gate's preflight).
+# Self-test: tools/fresh_test_run_selftest.sh. No new tools: bash, git, cargo, jq (all in full_gate's preflight).
 set -euo pipefail
 die() { echo "fresh_test_run: FAIL $*" >&2; exit 1; }
 usage="usage: tools/fresh_test_run.sh --claim | --bins FILE | cargo test ARGS... [-- TEST-ARGS...]"
@@ -79,20 +79,17 @@ for a in "${@:3}"; do
     if [[ $a == --no-run ]]; then no_run=1; else pre+=("$a"); fi
   fi
 done
-w=$(mktemp -d); trap 'rm -rf "$w"' EXIT
+# build scratch inside the target dir this run owns (never /tmp); removed on every exit (no exec below, so the trap runs)
+w=$(mktemp -d "$td/.fresh.XXXXXX") || die "cannot make scratch in $td"; trap 'rm -rf "$w"' EXIT
 echo "fresh_test_run: build: cargo test ${pre[*]} --no-run --message-format=json"
 rc=0; cargo test "${pre[@]}" --no-run --message-format=json-render-diagnostics > "$w/build.json" || rc=$?
 [[ $rc == 0 ]] || die "build failed (exit $rc)"
-python3 -c '
-import json, sys
-for line in open(sys.argv[1]):
-    try:
-        m = json.loads(line)
-    except ValueError:
-        continue
-    if m.get("reason") == "compiler-artifact" and m.get("executable") and m.get("profile", {}).get("test"):
-        print(m["executable"])
-' "$w/build.json" | sort -u > "$w/bins.txt"
+jq -rR 'fromjson? | select(.reason == "compiler-artifact" and .executable != null and .profile.test == true) | .executable' "$w/build.json" | sort -u > "$w/bins.txt"
 check_bins "$w/bins.txt"
 [[ $no_run == 1 ]] && exit 0
-exec "${@:1}"
+# run the tests as a child, not exec: exec would drop the EXIT trap and leak the scratch dir. A TERM/INT/HUP
+# (the gate's step timeout) is passed on to the child, so no orphaned cargo outlives this script.
+"${@:1}" & pid=$!
+trap 'kill -TERM "$pid" 2> /dev/null; wait "$pid"; exit 143' TERM INT HUP
+rc=0; wait "$pid" || rc=$?
+exit "$rc"
