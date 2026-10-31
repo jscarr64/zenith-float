@@ -76,9 +76,9 @@ run mpfr-tests-build "tools/fresh_test_run.sh cargo test -p zenith-float-num --r
 run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
 # i686 tests (merge-blocking from 9d66035): the whole workspace (libs, bins, integration tests) minus the oracle
 # tests, named in tools/i686_test_args.sh (they need host MPFR or the oracle goldens). Run natively (static musl),
-# own target subdir. The per-binary counts go into the gate log. args=$(...) && keeps a failing exclusion list from
+# own target subdir, --no-fail-fast. The per-binary counts go into the gate log; tools/i686_test_counts.sh FAILs the step on a binary that ran 0 tests (none, all filtered, all ignored) or lost its summary. `|| exit 1` keeps a failing arg list from
 # quietly running only the libs.
-run test-i686 "args=\$(tools/i686_test_args.sh) && CARGO_TARGET_DIR=$CARGO_TARGET_DIR/i686 tools/fresh_test_run.sh cargo test --no-fail-fast --workspace --lib --bins \$args --target i686-unknown-linux-musl $TT"
+run test-i686 "args=\$(tools/i686_test_args.sh) || exit 1; CARGO_TARGET_DIR=$CARGO_TARGET_DIR/i686 tools/fresh_test_run.sh cargo test --no-fail-fast --workspace --lib --bins \$args --target i686-unknown-linux-musl $TT 2>&1 | tee $T/$tag-test-i686.out; rc=\$?; tools/i686_test_counts.sh $T/$tag-test-i686.out || rc=1; exit \$rc"
 if [[ " ${ran[*]} " == *" test-i686 "* && -f "$T/$tag-test-i686.log" ]]; then
   awk '/^ +Running / { b = $NF; gsub(/[()]/, "", b); sub(/.*\//, "", b); sub(/-[^-]*$/, "", b) }
        /^test result:/ { p = f = i = 0; for (k = 1; k <= NF; k++) { if ($k ~ /^passed;?/) p = $(k-1); if ($k ~ /^failed;?/) f = $(k-1); if ($k ~ /^ignored;?/) i = $(k-1) }
