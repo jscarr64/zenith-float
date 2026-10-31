@@ -1,0 +1,5 @@
+target,runner,status,install,factor,factor_log
+x86_64-unknown-linux-gnu,native,active,none (Pop host),1.00,pop-logs/harper/2026-10-30/1703-pm0-survey.log
+aarch64-unknown-linux-gnu,qemu-aarch64,pending-install,apt qemu-user-static gcc-aarch64-linux-gnu libc6-dev-arm64-cross; rustup target add aarch64-unknown-linux-gnu (TD40; Paul approves installs),,
+x86_64-pc-windows-gnu,wine64,pending-install,apt wine64 gcc-mingw-w64-x86-64; rustup target add x86_64-pc-windows-gnu (TD40; Paul approves installs),,
+aarch64-apple-darwin,none,pending-CI,CI only: a macOS runner (e.g. GitHub Actions macos-14); no Pop runner,,

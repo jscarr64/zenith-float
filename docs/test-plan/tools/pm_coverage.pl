@@ -32,7 +32,7 @@ open F,$csv or die "$csv"; while(<F>){ $ln++; next if /^#/; if(!$hdr){$hdr=1;nex
    next }
  $exe++; push @ids,$id;
  $G->('S3',"line $ln $f[1] vs=$f[15]") unless $f[15]=~/^PASS\|FAIL(\|SKIPPED_AFTER_TIMEOUT)?$/;
- $G->('S1',"line $ln $f[1] $f[5]") if $f[5]=~/^(?:prec-(?:MAX-|2\^30-1$|2\^30$|2\^60-1$)|m30-)/ && $f[15] !~ /SKIPPED_AFTER_TIMEOUT/;
+ $G->('S1',"line $ln $f[1] $f[5]") if $f[5]=~/^(?:prec-(?:MAX-|2\^30-1$|2\^30$|2\^60-1$|2\^32-1$|2\^32$)|m30-)/ && $f[15] !~ /SKIPPED_AFTER_TIMEOUT/;
  $G->('c',"line $ln $f[1] $f[5]") if "$f[12] $f[13]"=~/UNGENERATED/;
  $G->('d',"line $ln $f[1] $f[5]") if $f[10]=~/\[PM1-UNPINNED\]/; }
 close F;
@@ -40,6 +40,8 @@ my %have; open S,$shards or die "$shards"; <S>; while(<S>){ my @f=p($_); $have{"
 for my $k (sort keys %exp){ my $h=$have{$k}//0; $G->('e',"shard $k has $h rows, matrix has $exp{$k}") if $h<$exp{$k} }
 my %fe = map { $_=>(-f "$T/$_"?1:0) } keys %files; my $fx=grep {$fe{$_}} keys %fe; my $fm=(keys %fe)-$fx;
 my @MK=qw(zf_sha zb_sha env_name env_hash gen_sha256);
+my (%TST,@TGR,@TORD); { my $tf=$ENV{PM_TARGETS}//"$T/docs/test-plan/inputs/targets.csv"; open my $th,'<',$tf or die "$tf"; <$th>; while(<$th>){ chomp; next if /^\s*$/; my @x=split /,/,$_,-1; $TST{$x[0]}=$x[2]; push @TORD,$x[0] } }
+print "target $_: ",($TST{$_} eq 'active' ? 'active, compared against the committed gold' : "$TST{$_}, NOT-RUN"),"\n" for @TORD;
 if(defined $res){ die "rule f: --results requires --manifest (expected provenance comes from the manifest, never from the results file)\n" unless defined $man;
    my %M; open my $mh,'<',$man or die "$man"; while(<$mh>){ chomp; next if /^\s*(#|$)/; my ($k,$v)=/^\s*(\w+)\s*=\s*(\S+)\s*$/ or die "manifest: bad line $.\n"; die "manifest: duplicate key $k at line $.\n" if exists $M{$k}; $M{$k}=$v } close $mh;
    for (@MK){ die "manifest: missing $_\n" unless defined $M{$_} }
@@ -48,15 +50,17 @@ if(defined $res){ die "rule f: --results requires --manifest (expected provenanc
      if(@r<7){ $G->('f',"results line $rl malformed (".scalar(@r)." fields, need 7)"); next }
      my $i=$r[0];
      if($seen{$i}++){ $G->('f',"results line $rl duplicate row_id $i (first record kept, verdict $v{$i}; this one $r[1])"); next }
+     my $tg=$r[7]//'x86_64-unknown-linux-gnu'; push @TGR,[$i,$r[1],$tg]; if(($TST{$tg}//'') ne 'active'){ next }
      $v{$i}=$r[1];
      $G->('f',"results line $rl row_id $i not in matrix") unless $known{$i};
      for my $k (0..4){ my $got=$r[2+$k]; $G->('f',"results line $rl $i $MK[$k]=$got != manifest $M{$MK[$k]}") unless $got eq $M{$MK[$k]} } }
    close R;
+   for my $q (@TGR){ my ($i,$vv,$tg)=@$q; $G->('g',"$i target $tg is $TST{$tg}, verdict $vv (must be NOT-RUN)") if ($TST{$tg}//'unknown') ne 'active' && $vv ne 'NOT-RUN' }
    for my $i (@ids){ my $v=$v{$i}//'MISSING'; $G->('f',"$i verdict $v (counts as FAIL)") unless $v eq 'PASS' } }
 print "pm-coverage mode=$mode rows=$rows NA_PROOF=$na executed=$exe; cited proof files: ".(keys %fe)." distinct, $fx exist, $fm missing\n";
-my %name=(a=>'unsigned proof',b=>'cited proof file missing',c=>'UNGENERATED oracle pin',d=>'unpinned PM-1 row',e=>'shard per-family count below matrix',f=>'verdict not PASS (SKIPPED_AFTER_TIMEOUT/FAIL/missing = FAIL)',S1=>'MAX row lacks SKIPPED_AFTER_TIMEOUT',S2=>'NA_PROOF row without pm-proofs path',S3=>'bad executed verdict space');
-my $fail=0; my %struct=map {$_=>1} qw(S1 S2 S3 e);
-for my $r (qw(a b c d e f S1 S2 S3)){ my $n=$cnt{$r}//0;
+my %name=(a=>'unsigned proof',b=>'cited proof file missing',c=>'UNGENERATED oracle pin',d=>'unpinned PM-1 row',e=>'shard per-family count below matrix',f=>'verdict not PASS (SKIPPED_AFTER_TIMEOUT/FAIL/missing = FAIL)',g=>'pending target reported other than NOT-RUN',S1=>'MAX row lacks SKIPPED_AFTER_TIMEOUT',S2=>'NA_PROOF row without pm-proofs path',S3=>'bad executed verdict space');
+my $fail=0; my %struct=map {$_=>1} qw(S1 S2 S3 e g);
+for my $r (qw(a b c d e f g S1 S2 S3)){ my $n=$cnt{$r}//0; if($r eq 'g' && !defined $res){ print "rule g ($name{g}): not evaluated, no --results file\n"; next }
   if($r eq 'f' && !defined $res){ print "rule f ($name{f}): not evaluated, no --results file (RC requires one)\n"; $fail++ if $mode eq 'rc'; next }
   my $enf = $mode eq 'rc' || $struct{$r} || ($r eq 'f' && defined $res); my $tag = $n==0 ? 'PASS' : $enf ? 'FAIL' : 'GAP';
   $fail++ if $n && $enf; printf "rule %s (%s): %s count=%d%s\n",$r,$name{$r},$tag,$n,($n?" first: ".join(' ; ',@{$ex{$r}}):'') }

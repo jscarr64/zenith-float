@@ -11,7 +11,7 @@ sub p{my $l=shift; chomp $l; my @f; my $fld=''; my $st=0; my @c=split //,$l; for
   else { if($c eq '"'){ if($i+1<@c && $c[$i+1] eq '"'){$fld.='"';$i++} else {$st=0} } else {$fld.=$c} } } push @f,$fld; @f }
 open F,$csv or die; my ($n,$ln,%bad,%cls,%vs,%ex,$ung)=(0,0); my $hdr=0;
 my %allv=(%ZF,%ZB);
-while(<F>){ $ln++; if(/^#/){ next } if(!$hdr){ $hdr=1; $bad{"P6 32-bit reference in header '$_'"}++ for pm_p6($_); next } $n++; my @f=p($_);
+while(<F>){ $ln++; if(/^#/){ next } if(!$hdr){ $hdr=1; $bad{"P6 32-bit reference in header '$_'"}++ for pm_p6($_); $bad{"per-target column in header '$1' (targets live in inputs/targets.csv)"}++ while /\b(\w*(?:x86_64|aarch64|i686|windows|darwin|wasm32|apple|linux)\w*)\b/gi; next } $n++; my @f=p($_);
  my $B=sub { my $k=shift; $bad{$k}++; $ex{$k}//="line $ln: $f[1] $f[5]" };
  $B->("P6 32-bit reference '$_' (tools/pm_target.pl pm_p6; 64-bit minimum, ZF-M31)") for pm_p6($_);
  $B->("fields!=17") if @f!=17; my $t=join " ",@f[10,11];
@@ -28,6 +28,14 @@ while(<F>){ $ln++; if(/^#/){ next } if(!$hdr){ $hdr=1; $bad{"P6 32-bit reference
  $B->("empty oracle") if $f[15] ne 'NA_PROOF' && $f[12] eq '';
  $ung++ if $f[15] ne 'NA_PROOF' && "$f[12] $f[13]"=~/UNGENERATED/;
  $cls{$f[5]=~s/ .*//r}++; $vs{"$f[0] $f[15]"}++ }
+{ my $tf=$ENV{PM_TARGETS}//"$T/docs/test-plan/inputs/targets.csv"; open my $th,'<',$tf or die "$tf"; my $h=<$th>; chomp $h; $bad{"targets.csv header '$h'"}++ unless $h eq 'target,runner,status,install,factor,factor_log'; my $tn=0;
+  while(<$th>){ chomp; next if /^\s*$/; $tn++; my @c=split /,/,$_,-1; my ($tg,$run,$st,$fac,$fl)=@c[0,1,2,4,5]; $fl//='';
+   $bad{"targets.csv $tg: status '$st' not active|pending-install|pending-CI"}++ unless $st=~/^(?:active|pending-install|pending-CI)$/;
+   $bad{"targets.csv $tg: active target has no runner"}++ if $st eq 'active' && ($run eq '' || $run eq 'none');
+   $bad{"targets.csv $tg: active target has no measured factor"}++ if $st eq 'active' && ($fac//'') eq '';
+   $bad{"targets.csv $tg: factor '$fac' not from a measurement (factor_log '$fl' missing)"}++ if ($fac//'') ne '' && ($fl eq '' || ! -f "$ENV{HOME}/$fl");
+   $bad{"targets.csv $tg: pending-CI target names a Pop runner '$run'"}++ if $st eq 'pending-CI' && $run ne 'none' }
+  print "targets.csv: $tn targets\n" }
 print "rows $n\n"; print "BAD $_ $bad{$_} (first: $ex{$_})\n" for sort keys %bad; print "lint: ",(%bad?"FAIL":"clean (no BAD lines)"),"\n";
 print "rows with an UNGENERATED oracle pin (pm-coverage FAIL, blocks RC until pinned): ",$ung//0,"\n";
 print join(" ",map {"$_=$cls{$_}"} sort keys %cls),"\n"; print "$_ $vs{$_}\n" for sort keys %vs;

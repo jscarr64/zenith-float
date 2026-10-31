@@ -6,14 +6,20 @@ sub p{my $l=shift; chomp $l; my @f; my $fld=''; my $st=0; my @c=split //,$l; for
 my %thr=(x86_64=>210); # PM-0 corrected survey (1703-pm0-survey.log)
 my $W=$ENV{PM_WORKERS}//8; # RC worker count (Spence pmrev3 7)
  my $AX=49;   # heavy axis: the 49-point 64-bit axis set (P6 drops the W=32 points)
-my %cost=(zf=>4.1,zb=>12); my %fac=(x86_64=>1);
+my %cost=(zf=>4.1,zb=>12); my %fac; my @ACT;
+{ my $tf=$ENV{PM_TARGETS}//"$ENV{HOME}/harper-work/zf-precision-matrix/docs/test-plan/inputs/targets.csv"; open my $th,'<',$tf or die "$tf"; <$th>;
+  while(<$th>){ chomp; next if /^\s*$/; my ($tg,$run,$st,$in,$fa,$fl)=split /,/,$_,-1; $fa//=''; $fl//='';
+    if($fa ne ''){ die "budget FAIL: $tg factor $fa has no measurement log ($fl)\n" unless $fl ne '' && -f "$ENV{HOME}/$fl" }
+    if($st eq 'active'){ die "budget FAIL: active $tg has no measured factor\n" if $fa eq ''; my $k=$tg=~/^x86_64-unknown-linux/?'x86_64':$tg; $fac{$k}=$fa; push @ACT,$k; print "factor slot $tg: $fa (measured, $fl)\n" }
+    else { print "factor slot $tg: empty ($st, NOT-RUN; filled only from a measurement)\n" } } }
 open F,$ARGV[0]; my %c; my $hd=0;
 while(<F>){ next if /^#/; if(!$hd){$hd=1;next} my @f=p($_); next if $f[15] eq 'NA_PROOF'; my ($cr,$cls,$modes)=@f[0,5,8]; my $m7 = $modes=~/7 modes/ ? 7:1;
   next if $cls eq 'doc-probable-prime';
   my ($fast,$heavy,$cut);
   if($cls=~/^rm-/){ $fast=1; $heavy=$AX; $cut=6 }
+  elsif($cls=~/^m32-bytes/){ $fast=1; $heavy=1; $cut=1 }
   elsif($cls=~/refuse/){ $fast=1; $heavy=1; $cut=1 }
-  elsif($cls=~/^(?:prec-MAX-|prec-2\^60-1$|m30-)/){ $c{"$cr MAX x86_64"}++; next } # pmrev10 P6: one run per MAX row on x86_64 (the only runnable target today)
+  elsif($cls=~/^(?:prec-MAX-|prec-2\^(?:60-1|32-1|32)$|m30-)/){ $c{"$cr MAX x86_64"}++; next } # pmrev10 P6: one run per MAX row on x86_64 (the only runnable target today)
   elsif($cls eq 'prec-1-2-3'){ $fast=3*$m7; $heavy=3*$m7; $cut=3*$m7 }
   elsif($cls=~/^trig-huge/){ $fast=1; $heavy=$AX*$m7; $cut=6*$m7 }
   elsif($cls eq 'prec-axis'){ $fast=6; $heavy=$AX*$m7; $cut=6*$m7 }

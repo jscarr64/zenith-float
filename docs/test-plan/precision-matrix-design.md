@@ -1,6 +1,6 @@
-# zf/zb precision matrix: design v10 (Jeff steering 2026-10-30 6:32 PM CT: PRINCIPLES.md P6, drop i686; v9 was Jeff task 2026-10-30 6:24 PM CT: FIXLIST TD rows, tie rows; v8 was Jeff tasks 6:11/6:13/6:15 PM CT: ZF-M28, ZF-M29, ZF-M30, ZF-D04, PRINCIPLES.md P1-P5; v7 was the ZF-M27 ruling)
+# zf/zb precision matrix: design v11 (Jeff task 2026-10-30 6:52 PM CT and steering 6:53 PM CT: ZF-M32 rows, TD re-triage, FIXLIST 639e448b, pluggable targets; v10 was Jeff steering 6:32 PM CT: PRINCIPLES.md P6, drop i686; v9 was Jeff task 2026-10-30 6:24 PM CT: FIXLIST TD rows, tie rows; v8 was Jeff tasks 6:11/6:13/6:15 PM CT: ZF-M28, ZF-M29, ZF-M30, ZF-D04, PRINCIPLES.md P1-P5; v7 was the ZF-M27 ruling)
 
-Agent: Harper. Date: 2026-10-30. Edge table: `precision-matrix-edges.csv` (24314 rows, 20299 executed, 4015 NA_PROOF, 17 columns; the first 9 lines start with `#` and carry the pins below; the CSV header is the first line without `#`). Governing principles: ~/pop-logs/PRINCIPLES.md (read-only; sha256 d39b9a605a02278116f032e65283da376d7d76e904049bffcfdb35c0267061f0 as read 2026-10-30 18:3x CT; was 81780e34... at v9), P1-P5 applied in section 24, P6 in section 26.
+Agent: Harper. Date: 2026-10-30. Edge table: `precision-matrix-edges.csv` (25091 rows, 21076 executed, 4015 NA_PROOF, 17 columns; the first 9 lines start with `#` and carry the pins below; the CSV header is the first line without `#`). Governing principles: ~/pop-logs/PRINCIPLES.md (read-only; sha256 d39b9a605a02278116f032e65283da376d7d76e904049bffcfdb35c0267061f0 as read 2026-10-30 18:3x CT; was 81780e34... at v9), P1-P5 applied in section 24, P6 in section 26, v11 changes in section 27.
 
 ## 0. Pinned inputs (item 11)
 The generator `tools/gen_edges.pl` reads only the in-branch copies below. It checks every sha256 before reading and stops with `PIN MISMATCH` if one differs. It also stops if `zenith-float-num/{src,tests}` or `zenith-bound/{src,tests}` differ from the source commit. The originals in ~/paul-work and ~/spence-work were copied unedited.
@@ -11,8 +11,11 @@ The generator `tools/gen_edges.pl` reads only the in-branch copies below. It che
 | zb-inventory.csv | ~/paul-work/zb-audit-2026-10-30/inventory.csv (section 1 used) | b65c2bad80431500ab6280eb6ca545194407a35e9ae2f9719b5a6e5a38bdcd65 |
 | r4-required-results.csv | Spence R4 (via ~/harper-work/pm-review-inputs) | 2746dc4d05cca03d07db6cd8db600e86369a7f33b450c6b679b1d0c1bf0e8c6d |
 | spence-gen_r4.py | ~/spence-work/pm-review/gen_r4.py (G1-G3 lists, lines 6-19) | aa4d614617d086a49a2d625adbef1b516a7cac7ea37de58e391d40df2b51243f |
-| FIXLIST.csv | ~/paul-work/zfzb-plan-2026-10-30/FIXLIST.csv (first 196 lines) | 56633946854c27c8c702b24157119102fed1e2e7a8044eb18a7111411bce08af (re-pinned pmrev10, 196 lines: adds ZF-M31 :195 and ZF-M32 :196; ZF-M27 :145 .. ZF-D04 :149 and ZF-TD01..ZF-TD45 :150-194 unchanged. DRIFT: at 18:33:43 CT the original grew to 197 lines, sha 02c209a5..., adding ZB-D05 at :197; this pin is its 196-line prefix, per the 6:32 PM CT instruction) |
-| tie-resolution.tsv | Harper pmrev9 (one outcome per fixed-mode tie family, read from the source at 7955836; section 25) | 3ee454aefee8ba2521ae63fa94f721f7b1ea219486f93a8583905b54cab6c5fb |
+| FIXLIST.csv | ~/paul-work/zfzb-plan-2026-10-30/FIXLIST.csv (first 199 lines) | 639e448b6de811f312082e22b736cc61a0c5dadd428dd68a3bc5fedd069aace3 (re-pinned pmrev11 per steering 6:53 PM CT, 199 lines: :149 ZF-D04 text changed; new ZB-D05 :197, ZF-D07 :198, ZB-D06 :199; every other line unchanged. DRIFT: at 19:09 CT the original grew to 202 lines, sha 433910c4..., adding ZF-G01 :200, ZF-T01 :201 (owner harper), ZF-D08 :202; this pin is its 199-line prefix) |
+| M32-DECISION.md | ~/paul-work/zfzb-plan-2026-10-30/M32-DECISION.md | e6bcf204eaf5f0f57bee9ada064f47a09c66eee658bf3d35c3e343950fb65c5a |
+| td-retriage.csv | ~/spence-work/td-sweep/td-retriage.csv (same bytes as ~/paul-work/zfzb-plan-2026-10-30/STATUS-p6-retriage.csv) | fda2e99bf461b128f5145841afcc6d813fdcc79f4d20ce3186efa29e1385b88a |
+| targets.csv | Harper pmrev11 (the one target table, section 27) | 379c718d81f85f9f66d209b92a9f5b1073910de87d965981de216e604acfddad |
+| tie-resolution.tsv | Harper pmrev9 (one outcome per fixed-mode tie family, read from the source at 7955836; section 25) | 77237d71de923bbded5a27b8ffb83545fa091741a00a215115aa473920821440 (pmrev11: from_word note, section 27) |
 | fixes_after_1.0.12.txt | ~/paul-work/zf-audit-2026-10-30/fixes_after_1.0.12.txt | 03085a0acb3d5d0e51d8e8df13b3c4ad30d7843152d3d32024d6899c9f530c82 |
 | zf-audit-SUMMARY.md | ~/paul-work/zf-audit-2026-10-30/SUMMARY.md | a7af866c6b2c6de32f4ed243170a4aa92fff19bc7e3978e86642a3dff1cb75f0 (re-pinned pmrev5) |
 
@@ -88,7 +91,7 @@ Each nan row names the variant it inherits (A=InvalidArgument, B=DivisionByZero,
 - Total: 2548 rows (zf 2432: 1332 unary and 1100 pair rows).
 
 - **Oracle primary rule (review 5 item 8):** every oracle cell starts `primary: MPFR` or `primary: mpmath`. python-flint (arb) appears only as a second check and never generates a gold. The 95 digest rows name mpmath as their generator. Counts: MPFR primary 1228, mpmath primary 19411, flint primary 0, names neither 0.
-- Each row has one gold for every 64-bit target (ZF-M27, P1, P6): `oracle_x86_64` pins it and `oracle_aarch64` (column renamed in v10; was oracle_i686) says "same gold as oracle_x86_64"; the aarch64 run must be bit-identical once TD40 installs a runner. lint v10 FAILs any i686, 32-bit, thumbv*, armv7* or target_pointer_width="32" reference in a row or the header (pm_p6). lint v7 rejects any target-specific gold, pin or class, and (P1, pmrev8) FAILs any row whose limit, refusal variant, budget or result is target-dependent (tools/pm_target.pl `pm_target_dependent`, shared with gen_edges.pl).
+- Each row has one gold for every 64-bit target (ZF-M27, P1, P6): column `oracle` pins it and `gold_scope` says the gold applies to every active target in inputs/targets.csv (v11 renamed oracle_x86_64 and oracle_aarch64; rows carry no per-target column, section 27). lint v10 FAILs any i686, 32-bit, thumbv*, armv7* or target_pointer_width="32" reference in a row or the header (pm_p6). lint v7 rejects any target-specific gold, pin or class, and (P1, pmrev8) FAILs any row whose limit, refusal variant, budget or result is target-dependent (tools/pm_target.pl `pm_target_dependent`, shared with gen_edges.pl).
 - Each cell prints one line:
   `PMCELL crate=<zf|zb> family=<Type::name> class=<c> p=<p> rm=<m> target=<triple> oracle=<id> env=<path|rug-1.20.1/mpfr-4.2.2> verdict=<PASS|FAIL|NA_PROOF> ms=<t>`
 
@@ -299,19 +302,22 @@ TD citations (FIXLIST:150-194) for matrix content in this design:
 - ZF-M30 cost rows (`m30-p2^24`, `m30-p2^27`): ZF-TD25 :174, ZF-TD26 :175, ZF-TD27 :176.
 - MemoryAllocation is FAIL (section 5): ZF-TD31 :180, ZF-TD42 :191.
 - Golds compared by bytes and not by raw words (bytes/raw-parts rows): ZF-TD32 :181, ZF-TD33 :182, ZF-TD37 :186.
-- Digest positions: ZF-TD35 :184. Word-independent inputs on every target: ZF-TD36 :185 (the from_word red row).
+- Digest positions: ZF-TD35 :184. ZF-TD36 :185 and ZF-TD37 :186 are MOOT-64 (td-retriage.csv); see PM-i.
 - Oracle on every OS: ZF-TD40 :189. CRLF checkout and SHA256SUMS: ZF-TD41 :190. Path joins: ZF-TD44 :193. Timing: ZF-TD45 :194.
 - ZF-TD38 :187 and ZB-TD39 :188 are docs only and have no matrix content.
 
-Post-approval PM items (owner Harper; not implemented in v9 or v10):
-- PM-a ZF-TD35: digest grid positions in u64, independent of usize, with one pinned digest.
-- PM-b ZF-TD36: every matrix test runs on every 64-bit target with Word-independent inputs.
-- PM-c ZF-TD37: one byte or hex gold per raw-word row, compared through from_raw bits.
-- PM-d ZF-TD40: oracle via the committed gold file on Windows and macOS (proposal: ~/harper-work/td40-cross-os-proposal-2026-10-30.md).
-- PM-e ZF-TD41: a `.gitattributes` eol=lf rule for inputs, golds and SHA256SUMS, plus a CRLF tamper check.
-- PM-f ZF-TD43: the harness records every seed in the run manifest, and env seeds stay in the harness.
-- PM-g ZF-TD44: harness paths use Path joins, with a check that no path is built with a literal separator.
-- PM-h ZF-TD45: timing stays in the benchmark crate, and no verdict reads a clock other than the 10-minute budget.
+Post-approval PM items (owner Harper; not implemented in v9-v11; v11 texts follow Spence td-retriage.csv; PM-b ZF-TD36 and PM-c ZF-TD37 dropped as MOOT-64):
+- PM-a ZF-TD35 (STILL-LIVE): ext.rs:6272 digest uses std DefaultHasher; Hash for u64/usize writes native-endian bytes, so a big-endian (s390x, ppc64) digest differs, and SipHash is unspecified across Rust releases. Fix: explicit big-endian-bytes SHA256 (crate hash.rs) and one pinned digest.
+- PM-d ZF-TD40 (STILL-LIVE): the MPFR oracle is cfg x86_64+linux only (tests/integration_tests.rs:7, Cargo.toml:45), so aarch64, macOS and Windows have no oracle; MPFR exp is c_long, 32 bits on Win64 LLP64 (common.rs:808). Fix: run the committed target-independent golds on every 64-bit OS; generate on Linux only (proposal ~/harper-work/td40-cross-os-proposal-2026-10-30.md; targets in inputs/targets.csv).
+- PM-e ZF-TD41 (STILL-LIVE): CRLF on Windows with autocrlf breaks `sha256sum -c` and include_str! golds; there is no .gitattributes. Fix: `.gitattributes` eol=lf for inputs, golds and SHA256SUMS, plus a CRLF tamper.
+- PM-f ZF-TD43 (STILL-LIVE, doc-only kept for the harness): test-only env seed, no effect on results unless set, same on every OS.
+- PM-g ZF-TD44 (STILL-LIVE, doc-only): test-only temp_dir and path separators differ by OS, no effect on results.
+- PM-h ZF-TD45 (STILL-LIVE, doc-only): benchmark-only Instant timing differs by machine, no effect on results.
+- PM-i (ZF-M31, ZB-TD03, ZF-TD32, ZF-TD33, ZF-TD36, ZF-TD37): delete the 32-bit-only tests and branches. LIST ONLY; deletion is post-approval. From `rg -n 'target_pointer_width\s*=\s*"32"'` at the worktree tip:
+  - zf tests gated to 32-bit: zenith-float-num/src/ext.rs:4795 (test_decimal_formatting_round_trip), zenith-float-num/src/ops/tests.rs:792 (exp_to = 3 branch), zenith-float-num/tests/log_extreme_mpmath.rs:31 and :42 (widen/narrow helpers); whole files written for i686: zenith-float-num/tests/usize_exponent_32bit.rs:1, zenith-float-num/tests/exponent_range.rs:2 (also runs on 64-bit; only its 32-bit note goes).
+  - zb tests gated to 32-bit: zenith-bound/tests/harness/ball_boundary.rs:106 (precision_2_62_is_not_representable_on_32_bit).
+  - 32-bit gold and CI scripts: scripts/ci_hex_32bit.sh:10 (target=i686-unknown-linux-musl), golds/hex/README.md:5 and :10 (i686 lines; the hex golds themselves are shared big-endian u32 limbs and stay), zenith-bound/tools/digest_targets.txt:6 (i686 line). No gold file is 32-bit only.
+  - 32-bit source branches (ZF-TD32 binfmt.rs:532 :549, ZF-TD33 conv.rs:1064 :1082, plus defs.rs:27-35, num.rs:246 and 2389-3153, ln2.rs:147, ln10.rs:143, e.rs:145, pi.rs:174) go with ZF-M31's compile_error!.
 
 Checks (pmrev9, logs in ~/pop-logs/harper/2026-10-30/): lint clean `*-lint9-clean.log`; the tamper set `*-tamper9-*-red.log`; coverage `*-cov9-rc.log` and `*-cov9-ds.log`; the target-split scan `*-scan9.log`.
 
@@ -332,9 +338,26 @@ Decision log:
 - **Header:** `oracle_i686` -> `oracle_aarch64` ("same gold as oracle_x86_64; aarch64 runnable after TD40 installs").
 - **Budget:** i686 factor removed; no aarch64 factor (qemu not installed, nothing measured).
 - **Lint:** pm_p6 (tools/pm_target.pl) FAILs i686, 32-bit, thumbv*, armv7* and target_pointer_width="32" in any row or the header. Tampers p6target, p6word, p6header are red.
-- **ZF-D04 (:149)** mentions |x| >= 2^32 on i686. Design note: under P6 the row content is word-independent and needs no i686 case; the FIXLIST text is Paul's to edit.
 - **ZF-M31 test:** rustup keeps i686-unknown-linux-musl installed only so ZF-M31's red check (`cargo check` must fail with compile_error!) can run; it is not a matrix target.
 
 Before -> after (cb744c42 -> this commit): rows 25135 -> 24314; executed 21120 -> 20299; NA_PROOF 4015 -> 4015; pm-max rows 1255 -> 434; fast 19839, heavy 26 and proof 4015 unchanged; families 835 -> 835; target-split scan hits 38916 -> 0. Coverage rc: a 658 -> 658, b 3357 -> 3357, c 16346 -> 15764, d 1584 -> 1973, e 0 -> 0.
 
 Checks (logs in ~/pop-logs/harper/2026-10-30/): gen 1845-gen10c; lint clean 1848-lint10c; tampers 1846/1847-lint10-tamper-* and 1847/1848-lint10b-p6*; budget 1846-budget10b; coverage 1848-cov10-rc and 1848-cov10-design-stage; counts and scan 1848-count10b.
+
+## 27. Round-11 changes and decision log (pmrev11; Jeff task 2026-10-30 6:52 PM CT, steering 6:53 PM CT)
+Decision log:
+- **FIXLIST re-pin:** 56633946... (196 lines) -> 639e448b6de811f312082e22b736cc61a0c5dadd428dd68a3bc5fedd069aace3 (199 lines). Only :149 (ZF-D04, now "out-of-contract |x| on every 64-bit target") changed; ZB-D05 :197, ZF-D07 :198 and ZB-D06 :199 are new. Every cited line re-checked by rg: ZF-M27 :145, ZF-D04 :149, ZF-TD07 :156, ZF-TD08 :157, ZF-TD31 :180, ZF-TD32 :181, ZF-TD33 :182, ZF-TD35 :184, ZF-TD36 :185, ZF-TD37 :186, ZF-TD40 :189, ZF-TD41 :190, ZF-TD42 :191, ZF-TD43 :192, ZF-TD44 :193, ZF-TD45 :194, ZF-M31 :195, ZF-M32 :196.
+- **ZB-D05 :197** (CONTRACT.md 8.1 and 15.1 say prec: u32; code is Precision = usize, precision.rs:9): cited on the 70 zb refusal rows prec-2^32 (35) and prec-2^60-1 (35): both p values are outside u32 as CONTRACT.md states it and are refused in code. **ZF-D07 :198** and **ZB-D06 :199** are doc-only (README and PLAN/TEST_PLAN 32-bit claims) and touch no matrix row (0 cites).
+- **ZF-D04 note** removed from section 26: the :149 text no longer mentions i686.
+- **ZF-M32 (:196, M32-DECISION.md):**
+  - `prec-2^60-1` (387): re-pinned from `[PM1-UNPINNED]` to refusal InvalidArgument (zf 352 Error::InvalidArgument, zb 35 Err(BoundError::InvalidArgument)); red until M32 lands. Rule d 1973 -> 1586 (-387).
+  - `prec-2^32-1` (387, new, red until M32 lands): one outcome per row from the limb layout. Operands are 2^26 words = 2^29 B (from_word base.rs:110 allocates the full length). A p-bit product goes mul (base.rs:502, 2^27 words = 2^30 B) -> mul_unbalanced (mul.rs:50, no trimming) -> mul_slices (mul.rs:33-46) -> FFT, whose buffer is 830472588 words = 6643780704 B > 2^31 B, so the M32 check refuses: zf Error::MemoryAllocation, zb Err(BoundError::Resource) (bridge.rs:298). A family whose source path (same-file transitive call scan from the inventory line, depth 4) reaches a multiply gets the refusal; one that does not gets the correctly rounded gold. zf 266 refuse, 86 gold; zb 15 refuse, 20 gold. Caveat: the scan does not follow calls into other files, so a "gold" row whose work happens elsewhere may be wrong; each row's evidence names the lines scanned. CONFLICT (owner Paul, Rusty): M32-DECISION.md says "p=2^32-1 accepted+correct" and "4p = 2 GiB fits"; the FFT product buffer is 6.6 GB, so a literal 2^31-byte single-buffer check refuses every multiply at this p. FIXLIST:196 itself states neither 2^32-1 nor 2^31.
+  - `prec-2^32` (387, new): refusal InvalidArgument up front (p_assertion num.rs:55-57; zb precision.rs:17).
+  - `m32-bytes-2^31-1`, `m32-bytes-2^31`, `m32-bytes-2^31+1` (3 zf rows, family "M32 byte budget check (WordBuf::new)"): word buffers are multiples of 8 B, so 2^31±1 B is not reachable from a public API; 2^31 B = WordBuf::new(2^28 words) is reachable inside the crate only. The rows call the M32 check with n bytes directly: 2^31-1 -> Ok, 2^31 -> Ok ("larger than 2^31" read literally), 2^31+1 -> Error::MemoryAllocation. The FFT buffer steps from 1612234800 B to 3222896688 B, so no product size lands near 2^31.
+- **Pluggable targets (steering 6:53 PM CT):** the matrix stays x86_64-gold only; rows carry no per-target column (header `oracle`, `gold_scope`; lint FAILs a per-target header column). The target list lives in inputs/targets.csv (target, runner, status, install, factor, factor_log): x86_64-unknown-linux-gnu native active (factor 1.00, measured 1703-pm0-survey); aarch64-unknown-linux-gnu qemu-aarch64 pending-install; x86_64-pc-windows-gnu wine64 pending-install; aarch64-apple-darwin pending-CI. The runner compares every active target against the same gold; pm_coverage rule g FAILs a pending target reported other than NOT-RUN. lint FAILs an active target with no runner or no factor, a factor with no measurement log, and a pending-CI target naming a Pop runner. budget.pl has one factor slot per target, filled only from targets.csv with a log.
+- **TD re-triage (td-retriage.csv):** PM-b and PM-c dropped; PM-a, PM-d..PM-h re-texted; PM-i lists the 32-bit-only tests (section 25).
+- **from_word tie row** (zf|ExactNum::from_word|tie): stays red with Rusty. The Word-width half is closed (Word = u64, defs.rs:15; ZF-TD36 MOOT-64). The rounding half is open: Mantissa::from_word (num.rs:233) keeps all 64 bits of d when p < 64, and the doc (ext.rs:1911) says only that precision is rounded up to a whole Word.
+
+Before -> after (a13f9629 -> this commit): rows 24314 -> 25091 (+777 = 387 + 387 + 3); executed 20299 -> 21076; NA_PROOF 4015 -> 4015; zf 21270 -> 21977; zb 3044 -> 3114; pm-max 434 -> 1208; fast 19839 -> 19842; heavy 26 -> 26; proof 4015 -> 4015. Coverage rc: a 658 -> 658, b 3357 -> 3357, c 15764 -> 15843, d 1973 -> 1586, e 0 -> 0. Budget: full heavy 7.83 slot-h unchanged; the MAX worst case rises to 201.3 slot-h (1208 MAX rows at 10 min), RC wall 10.02 h -> 26.15 h on 8 workers.
+
+Checks (logs in ~/pop-logs/harper/2026-10-30/): gen 1913-1955-gen; lint clean 1913-1955-lint; tampers 1910-1942-tamper and 1911-1944-t4; coverage 1911-1945-covrc and 1911-1945-covds; budget 1911-1945-budget; counts 1908-1931-before plus the final count log.

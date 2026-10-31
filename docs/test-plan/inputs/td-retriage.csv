@@ -1,0 +1,50 @@
+fixlist_id,verdict,reason,new_required_fix
+ZF-M27,MOOT-64,defs.rs:15 Word=u64 on every non-32-bit target so rp(p W)=rp(p 64) everywhere,
+ZF-M19(I-W base.rs:521/857),MOOT-64,len*64 and p*64 with words<=2^54 (p<=2^60-1) stay <=2^61 < usize::MAX; 2^57 bytes < isize::MAX; no wrap on 64-bit,keep bound proof as const assert; byte budget tracked by ZF-M32
+ZF-M25(series.rs:156),STILL-LIVE,u64 cost products overflow on x86_64 and aarch64 alike: debug panic at p>=2^27 / release wrap; target-independent bug (P2),checked u128 cost or clamp p before cost
+ZF-M22,STILL-LIVE,i686 half moot but correctness past the 2^16 extra-bit cap (ops/util.rs:92) is target-independent,drop i686 wording; keep cap correctness requirement
+ZF-TD01,STILL-LIVE,split gone (2^60-1 on all 64-bit) but 2^60 bits=2^57 B exceeds every VA (48-bit=2^48 B) so p in [~2^51 2^60) fails by allocator/OS/VA not by one refusal,ZF-M32: MAX_PRECISION=2^32-1 plus up-front working-size budget (see summary)
+ZB-TD02,STILL-LIVE,same as ZF-TD01 for zb precision.rs:19; zb API prec is u32 (CONTRACT 8.1),mirror ZF-M32 constant
+ZB-TD03,MOOT-64,refusal tests are cfg 32-bit only; target no longer builds,delete cfg(32) tests under ZF-M31; add host test at the new MAX_PRECISION+1
+ZF-TD04,MOOT-64,WORD_BIT_SIZE=64 (defs.rs:103) on all 64-bit so budget identical,
+ZF-TD05,MOOT-64,Ziv step W=64 on all 64-bit targets; integer-only arithmetic,
+ZF-TD06,MOOT-64,guard 64 on all 64-bit; pure integer ops so same bits (one-rounding correctness itself is a P2 question outside this row),
+ZF-TD07,MOOT-64,Word=u64 so random::<u64> from StdRng(ChaCha12 seed_from_u64) on all 64-bit; rand byte order is LE-defined,
+ZF-TD08,MOOT-64,p+64 on all 64-bit,
+ZF-TD09,MOOT-64,ceil(p/64)*64+128 on all 64-bit,
+ZF-TD10,MOOT-64,W=64 everywhere,
+ZF-TD11,MOOT-64,W=64 everywhere,
+ZF-TD12,MOOT-64,W=64 and two_w=2^64 everywhere,
+ZF-TD13,MOOT-64,usize::MAX/4=2^62-1 > MAX_PRECISION on all 64-bit so the branch is dead,delete the usize term
+ZF-TD14,MOOT-64,word alignment = multiple of 64 everywhere,
+ZF-TD15,MOOT-64,W=64 everywhere,
+ZF-TD16,MOOT-64,W=64 everywhere,
+ZF-TD17,MOOT-64,exponent()>64 switch same everywhere,
+ZF-TD18,MOOT-64,Newton threshold 64*(NEWTON_MIN_WORDS-1) everywhere,
+ZF-TD19,MOOT-64,W=64 everywhere,
+ZF-TD20,MOOT-64,W=64 everywhere,
+ZF-TD21,MOOT-64,W=64 everywhere,
+ZF-TD22,STILL-LIVE,on 64-bit x in [2^32 2^64) gives ExponentOverflow but x>=2^64 fails int_as_usize with InvalidArgument (num.rs:1406): two variants for one overflow class on every target,map int_as_usize failure to ExponentOverflow(Pos) in special.rs:4924
+ZF-TD23,MOOT-64,kext/cache widths in W=64 everywhere,
+ZF-TD24,MOOT-64,W=64 everywhere,
+ZF-TD25,STILL-LIVE,util.rs:63 sqrt_int(p as u32) truncates for p>=2^32 (allowed up to 2^60-1) on every 64-bit target; wrong cost -> wrong method choice,MAX_PRECISION<2^32 (ZF-M32) or u64 sqrt; checked arithmetic
+ZF-TD26,STILL-LIVE,series.rs:215/220 niter*cost in u64 overflows near p~2^26 on all 64-bit (ties to M25/M30),u128 or checked saturating cost
+ZF-TD27,MOOT-64,calc_add_cost(64) everywhere,
+ZF-TD28,MOOT-64,abs_diff_shift saturation at usize::MAX=2^64 > any exponent gap (<=2^63),
+ZF-TD29,MOOT-64,special.rs:2952 usize::try_from(i64 e>=0) never fails on 64-bit so the usize::MAX/4 fallback is unreachable,delete fallback
+ZF-TD30,MOOT-64,usize::MAX/2=2^63 on all 64-bit,
+ZF-TD31,STILL-LIVE,isize::MAX bytes same on 64-bit but real limit is VA (39/42/47/48/57-bit) and allocator; merges with TD42,ZF-M32 up-front budget
+ZF-TD32,MOOT-64,cfg(32) branch of binfmt words_to_u32 no longer built; output explicit to_be_bytes (binfmt.rs:560) so endian-safe,delete cfg(32) branch
+ZF-TD33,MOOT-64,cfg(32) branch of from_u64_internal no longer built,delete branch
+ZF-TD34,MOOT-64,debug_assert present on every 64-bit build,
+ZF-TD35,STILL-LIVE,ext.rs:6272 digest uses std DefaultHasher: Hash for u64/usize writes native-endian bytes so s390x/ppc64 BE digest differs; SipHash also unspecified across Rust releases,replace with explicit be-bytes SHA256 (crate hash.rs) and pin one digest
+ZF-TD36,MOOT-64,the excluded half was 32-bit; tests now run on every 64-bit target,delete cfg gates under ZF-M31
+ZF-TD37,MOOT-64,64-bit raw-word golds apply on every 64-bit target,delete 32-bit golds
+ZF-TD38,STILL-LIVE,LIBRARY.md:48-49 and README.md:12 say EXPONENT_MAX=i32::MAX vs 2^62-1 on every target (stale); 32-bit lines become moot,fix stale exponent docs; delete per-target lines; document 64-bit minimum
+ZB-TD39,MOOT-64,32-bit exponent sentences in CONTRACT.md:99/320 describe a dropped target,replace with P6 64-bit-minimum sentence
+ZF-TD40,STILL-LIVE,MPFR oracle only cfg x86_64+linux (tests/integration_tests.rs:7 Cargo.toml:45): no oracle on aarch64 macOS Windows; mpfr exp is c_long (32-bit on Win64 LLP64 common.rs:808),run committed target-independent golds on all 64-bit OS; generate on Linux only
+ZF-TD41,STILL-LIVE,CRLF on Windows autocrlf breaks sha256sum -c and include_str! golds; no .gitattributes,
+ZF-TD42,STILL-LIVE,try_reserve success depends on Linux overcommit vs Windows commit vs macOS and on VA size,ZF-M32 up-front budget at one threshold
+ZF-TD43,STILL-LIVE,test-only env seed; no result effect unless env set; same on every OS (doc-only kept for harness),
+ZF-TD44,STILL-LIVE,test-only temp_dir/path separators differ by OS; no result effect (doc-only),
+ZF-TD45,STILL-LIVE,benchmark-only Instant timing differs by machine; no result effect (doc-only),

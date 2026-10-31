@@ -4,7 +4,7 @@ use strict; use warnings; use FindBin; require "$FindBin::Bin/pm_hedge.pl"; requ
 my $T=$ENV{PM_TREE}//"$ENV{HOME}/harper-work/zf-precision-matrix";   # worktree; sources pinned to $SRC_COMMIT
 my $IN="$T/docs/test-plan/inputs";
 my $SRC_COMMIT="7955836a845bd6419dc41d21eda6e739e3b622c5";
-my %PIN=("zf-inventory.csv"=>"ba79198eb3486944e3b43a898389b81a7ce8fb69e4f67450e49841e8fdac1d59","zb-inventory.csv"=>"b65c2bad80431500ab6280eb6ca545194407a35e9ae2f9719b5a6e5a38bdcd65","r4-required-results.csv"=>"2746dc4d05cca03d07db6cd8db600e86369a7f33b450c6b679b1d0c1bf0e8c6d","spence-gen_r4.py"=>"aa4d614617d086a49a2d625adbef1b516a7cac7ea37de58e391d40df2b51243f","FIXLIST.csv"=>"56633946854c27c8c702b24157119102fed1e2e7a8044eb18a7111411bce08af","tie-resolution.tsv"=>"3ee454aefee8ba2521ae63fa94f721f7b1ea219486f93a8583905b54cab6c5fb","fixes_after_1.0.12.txt"=>"03085a0acb3d5d0e51d8e8df13b3c4ad30d7843152d3d32024d6899c9f530c82","zf-audit-SUMMARY.md"=>"a7af866c6b2c6de32f4ed243170a4aa92fff19bc7e3978e86642a3dff1cb75f0");
+my %PIN=("zf-inventory.csv"=>"ba79198eb3486944e3b43a898389b81a7ce8fb69e4f67450e49841e8fdac1d59","zb-inventory.csv"=>"b65c2bad80431500ab6280eb6ca545194407a35e9ae2f9719b5a6e5a38bdcd65","r4-required-results.csv"=>"2746dc4d05cca03d07db6cd8db600e86369a7f33b450c6b679b1d0c1bf0e8c6d","spence-gen_r4.py"=>"aa4d614617d086a49a2d625adbef1b516a7cac7ea37de58e391d40df2b51243f","FIXLIST.csv"=>"639e448b6de811f312082e22b736cc61a0c5dadd428dd68a3bc5fedd069aace3","M32-DECISION.md"=>"e6bcf204eaf5f0f57bee9ada064f47a09c66eee658bf3d35c3e343950fb65c5a","td-retriage.csv"=>"fda2e99bf461b128f5145841afcc6d813fdcc79f4d20ce3186efa29e1385b88a","targets.csv"=>"379c718d81f85f9f66d209b92a9f5b1073910de87d965981de216e604acfddad","tie-resolution.tsv"=>"77237d71de923bbded5a27b8ffb83545fa091741a00a215115aa473920821440","fixes_after_1.0.12.txt"=>"03085a0acb3d5d0e51d8e8df13b3c4ad30d7843152d3d32024d6899c9f530c82","zf-audit-SUMMARY.md"=>"a7af866c6b2c6de32f4ed243170a4aa92fff19bc7e3978e86642a3dff1cb75f0");
 for my $f (sort keys %PIN){ my $o=`sha256sum "$IN/$f"`; my ($h)=$o=~/^([0-9a-f]{64})/; die "PIN MISMATCH $f: got ".($h//"missing")." want $PIN{$f}\n" unless ($h//"") eq $PIN{$f} }
 system("git","-C",$T,"diff","--quiet",$SRC_COMMIT,"--","zenith-float-num/src","zenith-float-num/tests","zenith-bound/src","zenith-bound/tests")==0 or die "PIN MISMATCH: sources differ from $SRC_COMMIT\n";
 my %TIE; { open my $th,'<',"$IN/tie-resolution.tsv" or die "tie-resolution.tsv\n"; <$th>; while(<$th>){ chomp; my @c=split /\t/,$_,-1; die "TIE DUP $c[0]\n" if $TIE{$c[0]}; $TIE{$c[0]}=[@c[2..5]] } }
@@ -62,7 +62,7 @@ die "PIN MISMATCH: FIXLIST lacks ZF-D01\n" unless $D01; die "PIN MISMATCH: FIXLI
 # pmrev7 (Jeff ruling 2026-10-30 6:00 PM CT): ZF-M27, one gold per row for both targets; cited by line (generator refuses if absent)
 my $M27; { open my $fh,'<',"$T/$FX" or die "$FX"; my $l=0; while(<$fh>){ $l++; $M27="FIXLIST:$l ZF-M27" if /^ZF-M27,/ } } die "PIN MISMATCH: FIXLIST lacks ZF-M27\n" unless $M27;
 # pmrev8 (FIXLIST 0ef77110, pop-logs/PRINCIPLES.md P1): ZF-M28/M29/M30/D04 cited by line (generator refuses if absent)
-my %ZFX; { open my $fh,'<',"$T/$FX" or die "$FX"; my $l=0; while(<$fh>){ $l++; $ZFX{$1}="FIXLIST:$l $1" if /^(ZF-(?:M28|M29|M30|M31|M32|D04)),/ } } for (qw(ZF-M28 ZF-M29 ZF-M30 ZF-M31 ZF-M32 ZF-D04)){ die "PIN MISMATCH: FIXLIST lacks $_" unless $ZFX{$_} } my ($M28,$M29,$M30,$D04)=@ZFX{qw(ZF-M28 ZF-M29 ZF-M30 ZF-D04)};
+my %ZFX; { open my $fh,'<',"$T/$FX" or die "$FX"; my $l=0; while(<$fh>){ $l++; $ZFX{$1}="FIXLIST:$l $1" if /^((?:ZF-(?:M28|M29|M30|M31|M32|D04|D07)|ZB-D0[56])),/ } } for (qw(ZF-M28 ZF-M29 ZF-M30 ZF-M31 ZF-M32 ZF-D04 ZF-D07 ZB-D05 ZB-D06)){ die "PIN MISMATCH: FIXLIST lacks $_" unless $ZFX{$_} } my ($M28,$M29,$M30,$D04)=@ZFX{qw(ZF-M28 ZF-M29 ZF-M30 ZF-D04)};
 my @TWIN; my %M30DONE; my $M30RE=qr/^(?:ExactNum|ExactComplex|ExactNumArray|Ball|ComplexBall|\$arr\[ieee_soft\/array\.rs\])::(?:sin|cos|tan|atan|asin|acos|ln|log|exp|sinh|cosh|tanh|pow|atan2|log2|log10|sin_cos)$/;
 my @N5=( # [crate, type-regex, bare-names, citation]
  ['zf','.*',[qw(sin)],"$FX:15 (ZF-01); $FX:127 (ZF-M22); $FA:87"],
@@ -253,9 +253,9 @@ sub pin4 { my $a=shift; my $c=$$a{class}; my $ex=($$a{verdict_space}//'') ne 'NA
   if($c eq 'prec-2^30'){ $DROP{'prec-2^30: ZF-M28 MAX+1 twin; superseded by ZF-M32 (prec-MAXp1-refuse covers MAX+1)'}++; return 0 }
   if($c eq 'm30-p2^24'){ $DROP{'m30-p2^24: i686 calc_mul_cost as u32 threshold (FIXLIST:148); no 64-bit edge'}++; return 0 }
   if($c eq 'prec-2^60-1'){ my $ia=$zb?'Err(BoundError::InvalidArgument)':'Error::InvalidArgument';
-    $$a{class_def}='p = 2^60-1 (MAX_PRECISION at 7955836 on 64-bit targets, defs.rs:77)';
-    $$a{required_result}="[PM1-UNPINNED] required result: FAIL until Rusty pins the one ZF-M32 MAX_PRECISION constant for every 64-bit target ($ZFX{'ZF-M32'}, supersedes ZF-M28; $P6); pin rule: the correct result at p when 2^60-1 is at most that constant, $ia when it is above it. MAX-timeout: a run past the 10-minute budget is recorded SKIPPED_AFTER_TIMEOUT, which counts as FAIL in the verdict space and in pm-coverage and is never omitted";
-    $$a{refusal_variant}='pinned per row in the gold' }
+    $$a{class_def}="p = 2^60-1 (the MAX_PRECISION constant at 7955836, zf defs.rs:77, zb precision.rs:17; above the ZF-M32 constant 2^32-1 of M32-DECISION.md)";
+    $$a{required_result}="refusal: $ia raised up front by the precision check (zf p_assertion num.rs:55-57 against MAX_PRECISION defs.rs:77; zb precision.rs:17), before any allocation; any returned value is FAIL; a timeout is FAIL; a crash is FAIL; an OOM kill is FAIL".($zb?" (zb Precision is usize, precision.rs:9; $ZFX{'ZB-D05'} fixes the CONTRACT u32 text)":'').". Red until $ZFX{'ZF-M32'} lands: at 7955836 the constant is 2^60-1, so this p is accepted and reaches allocation. MAX-timeout: a run past the 10-minute budget is recorded SKIPPED_AFTER_TIMEOUT, which counts as FAIL in the verdict space and in pm-coverage and is never omitted";
+    $$a{refusal_variant}=$ia }
   if($c eq 'm30-p2^27'){ $$a{class_def}="p = 2^27 (ZF-M30 64-bit cost-overflow edge: series.rs:156,238,244 and tan.rs:128 iter_cost*niter panics at p>=2^27 on the host, $ZFX{'ZF-M30'}; an input point; P1 one gold)" }
   if($c eq 'prec-axis'){ $$a{class_def}="every axis point of the 64-bit axis set (49 points) incl. k*W-1,k*W,k*W+1 with W=64 and thresholds T-1,T,T+1; the W=32 word points are dropped ($P6)" }
   for my $k (keys %$a){ next if index($k,"_")==0; next unless defined $$a{$k}; local $_=$$a{$k};
@@ -268,13 +268,41 @@ sub pin4 { my $a=shift; my $c=$$a{class}; my $ex=($$a{verdict_space}//'') ne 'NA
     s/\b(?:i686 and x86_64|x86_64 and i686)\b/every 64-bit target/g;
     s/\b(?:on |for )?both targets\b/on every 64-bit target/g;
     $$a{$k}=$_ }
-  if($ex){ $$a{oracle_i686}="same gold as oracle_x86_64: one gold per row for every 64-bit target ($P6, P1); the aarch64 run must be bit-identical to it".($zb?' (byte-identical BallRow digest)':'')." (aarch64 runnable after TD40 installs)" }
+  if($ex){ $$a{oracle_i686}="one committed gold (the oracle column) for every active target in docs/test-plan/inputs/targets.csv ($P6, P1); each active target's run must be bit-identical to it".($zb?' (byte-identical BallRow digest)':'')."; a pending target is reported NOT-RUN, never PASS" }
   else { $$a{oracle_i686}='n/a (proof row)' }
   1 }
+
+# pmrev11 ZF-M32 (FIXLIST:196; values from M32-DECISION.md, Paul 6:37 PM CT: MAX_PRECISION = 2^32-1, a single buffer larger than 2^31 bytes is refused with Error::MemoryAllocation)
+our %M32EV; my $MULRE=qr{\b(?:mul|div|sqrt|rsqrt|recip|pow|powi|exp|expm1|ln|ln1p|log\w*|sin|cos|tan|atan2?|asin|acos|sinh|cosh|tanh|gamma|lgamma|zeta|erfc?|agm|bessel\w*|hypergeom\w*|series\w*|mul_\w+|div_\w+|\w+_series)\s*\(|\s[*/]\s*[&\w(]|[*/]=};
+our %M32FL; sub m32lines { my $f=shift; $M32FL{$f}//=do { open my $h,'<',"$T/$f" or return []; [<$h>] } }
+sub m32body { my ($L,$l)=@_; my $end=$l; my $d=0; my $seen=0; for my $i ($l..scalar @$L){ my $t=$$L[$i-1]; $end=$i; my $o=()=$t=~/\{/g; my $c=()=$t=~/\}/g; $d+=$o-$c; $seen=1 if $o; last if $seen && $d<=0 } $end }
+sub m32ev { my $src=shift; my ($f,$l)=$src=~/^([^:]+):(\d+)/; return (1,"source $src not parsed (default: mul path)") unless $f;
+  return @{$M32EV{$src}} if $M32EV{$src}; my $L=m32lines($f); return (1,"$f missing (default: mul path)") unless @$L;
+  my %fn; for my $i (1..@$L){ $fn{$1}//=$i if $$L[$i-1]=~/^\s*(?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:unsafe\s+)?fn\s+(\w+)/ }
+  my @q=([$l,0,"$f:$l"]); my %vis; my @scanned;
+  while(my $e=shift @q){ my ($s0,$dep,$chain)=@$e; next if $vis{$s0}++; my $e0=m32body($L,$s0); push @scanned,"$s0-$e0";
+    for my $i ($s0..$e0){ my $t=$$L[$i-1]; next if $t=~/^\s*\/\//; my $tt=$i==$s0 ? $t=~s/^.*?\bfn\s+\w+//r : $t;
+      if($tt=~$MULRE){ my $m=$&; $m=~s/^\s+//; $m=$m=~/^\*/ ? q(multiply operator) : $m=~/^\// ? q(division operator) : $m; return @{$M32EV{$src}=[1,"$f:$i '$m' (call chain $chain; same-file transitive scan)"]} }
+      if($dep<4){ while($tt=~/\b(\w+)\s*(?:::<[^>]*>)?\(/g){ my $n=$1; push @q,[$fn{$n},$dep+1,"$chain -> $n $f:$fn{$n}"] if $fn{$n} && !$vis{$fn{$n}} } } } }
+  @{$M32EV{$src}=[0,"no multiply on the path: same-file transitive scan of $f lines ".join(',',@scanned)." (calls into other files not followed)"]} }
+sub m32row { my ($a,$p)=@_; my %b=%$a; my $zb=$b{crate} eq 'zb'; my $ia=$zb?'Err(BoundError::InvalidArgument)':'Error::InvalidArgument';
+  my $mem=$zb?'Err(BoundError::Resource) (the zf allocation refusal, mapped at bridge.rs:298)':'Error::MemoryAllocation';
+  my $MX='MAX-timeout: a run past the 10-minute budget is recorded SKIPPED_AFTER_TIMEOUT, which counts as FAIL in the verdict space and in pm-coverage and is never omitted';
+  my $red="Red until $ZFX{'ZF-M32'} lands (M32-DECISION.md; Jeff 6:52 PM CT: every M32 row is red until M32): at 7955836 MAX_PRECISION is 2^60-1 and no byte budget exists (common/buf.rs:55-70 calls try_reserve_exact only).";
+  $b{class}="prec-$p";
+  if($p eq '2^32'){ $b{class_def}="p = 2^32 = ZF-M32 MAX_PRECISION + 1 (M32-DECISION.md)";
+    $b{required_result}="refusal: $ia raised up front by the precision check (zf p_assertion num.rs:55-57; zb precision.rs:17), before any allocation; any returned value is FAIL; a timeout is FAIL".($zb?" (passed as usize, precision.rs:9; under the CONTRACT u32 text 2^32 is not representable, $ZFX{'ZB-D05'})":'').". $red $MX";
+    $b{refusal_variant}=$ia; $b{oracle_x86_64}="spec: refusal $ia (M32-DECISION.md); no numeric gold"; return \%b }
+  my ($mul,$ev)=m32ev($b{source}); $b{class_def}="p = 2^32-1 = ZF-M32 MAX_PRECISION (M32-DECISION.md); operand mantissas are 2^26 words = 2^29 B (base.rs:51-53, from_word base.rs:110 allocates the full length)";
+  if($mul){ $b{required_result}="refusal: $mem from the M32 byte check before the buffer is allocated: the p-bit product goes mul (base.rs:502, m3 = 2^27 words = 2^30 B) -> mul_unbalanced (mul.rs:50, no operand trimming) -> mul_slices (mul.rs:33-46, len > 5400 words) -> fft_mul, whose single buffer is 3*k1*part_len + 6*part_len = 830472588 words = 6643780704 B, over 2^31 B (fft.rs:437-443, fft_params fft.rs:209-222 with k1 = 64 after the sqrt_int u32 truncation common/util.rs:42-52, TD25; model pm-rev11/m32model.pl, log 1854-m32model). Path evidence: $ev. Any returned value is FAIL; a crash is FAIL; an OOM kill is FAIL; a timeout is FAIL. $red $MX";
+    $b{refusal_variant}=$zb?q(Err(BoundError::Resource)):$mem; $b{oracle_x86_64}="spec: refusal $mem (M32-DECISION.md byte budget); no numeric gold" }
+  else { $b{required_result}="correct result at p = 2^32-1 in ToEven".($zb?' (enclosure containing the exact value, as in the normal row)':' (as in the normal row)').", bit-identical to the one gold on every active target (P1): no single buffer above 2^31 B is needed (largest is the 2^29 B mantissa). Path evidence: $ev. A refusal is FAIL; a timeout is FAIL. $red $MX";
+    $b{refusal_variant}='' }
+  \%b }
 sub row { my %a=@_; pin1(\%a); pin2(\%a); pin3(\%a); my @R=(\%a); for my $t (@TWIN){ $$t{oracle_i686}=$a{oracle_i686}; push @R,$t } @TWIN=();
   if($a{crate} eq 'zf' && $a{class} eq 'normal' && ($a{verdict_space}//'') ne 'NA_PROOF' && $a{family}=~$M30RE && !$M30DONE{$a{family}}++){ for my $e (24,27){ push @R,{%a, class=>"m30-p2^$e", class_def=>"p = 2^$e on both targets (ZF-M30 cost-overflow threshold, an input point; P1 one gold)", inputs=>'the normal operand of the family', modes=>'ToEven', tier=>'heavy only (own shard pm-max, run on both targets; budget 10 min per run; timeout = FAIL)', required_result=>"correct result at p = 2^$e in ToEven, bit-identical to the one gold on both targets (P1). Each of these is FAIL, in debug and release builds: a panic, a wrapped cost estimate, an overflowed cost estimate, a refusal, a capped precision; MAX-timeout skip applies (design s4). Red until $M30 lands: at 7955836 the series and reduction cost estimates overflow at this p on some targets (series.rs:156,238,244; tan.rs:128; common/util.rs:55-64 calc_mul_cost; cos.rs:35 reduction_cost).", refusal_variant=>'', verdict_space=>'PASS|FAIL|SKIPPED_AFTER_TIMEOUT'} } }
-  @R=grep { pin4($_) } @R;
-  for my $r (@R){ my %a=%$r; { my @t=pm_target_specific(@a{@F17}); push @LEFT,"target(@t) $a{family} $a{class}" if @t; } { my @h=pm_hedges($a{required_result},$a{refusal_variant}); push @LEFT,"hedge(@h) $a{family} $a{class}: $a{required_result} || $a{refusal_variant}" if @h; } push @out,[@a{@F17}]; $cnt{"$a{crate} $a{verdict_space}"}++ } }
+  @R=grep { pin4($_) } @R; @R=map { $$_{class} eq 'prec-2^60-1' ? ($_, m32row($_,'2^32-1'), m32row($_,'2^32')) : $_ } @R;
+  for my $r (@R){ my %a=%$r; { my @t=pm_target_specific(@a{@F17}); push @LEFT,"target(@t) $a{family} $a{class}" if @t; } { my @h=pm_hedges($a{required_result},$a{refusal_variant}); push @LEFT,"hedge(@h) $a{family} $a{class}: $a{required_result} || $a{refusal_variant}" if @h; } push @out,[map { defined $_ ? s/\boracle_x86_64\b/the oracle column/gr : $_ } @a{@F17}]; $cnt{"$a{crate} $a{verdict_space}"}++ } }
 for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
   my ($ty)=$key=~/^(.*)::[^:]+$/; $ty//='';
   for my $i (0..$#N5){ my ($c,$tr,$names,$cit)=@{$N5[$i]}; next unless $c eq $crate && $ty=~/$tr/; if(grep {$_ eq '*' || $_ eq $bare} @$names){ push @{$n5{$key}},$cit; $n5hit{$i}{$bare}=1 } }
@@ -397,10 +425,15 @@ for my $F (@fam){ my ($crate,$key,$bare,$src,$sig,$cat,$acc)=@$F; $sig//='';
   for my $m (@MODES){ if($hasrm){ $R->("rm-$m","rounding mode $m vs MPFR $mpfrmode{$m}",'normal + tie + cancellation operands','p=64 fast; axis heavy',$FX,$m eq 'None'?'R6: RNDZ of the exact value at rp(p,64)':$m eq 'ToOdd'?'nearest, exact ties to the odd neighbour':"correctly rounded, $m",'',r4class=>($m eq 'ToOdd'?'rm-ToEven':"rm-$m")) }
     else { $R->("rm-$m","rounding mode $m",'n/a','n/a','proof','n/a by type: no RoundingMode parameter','',na=>1) } }
 }
+
+{ my $DER="Derivation: every zf heap buffer is a Vec<Word> with Word = u64 (defs.rs:16; WordBuf::new common/buf.rs:55-70 reserves sz words), so a buffer is 8*sz bytes: 2^31-1 and 2^31+1 are not multiples of 8 and no input produces them; 2^31 = WordBuf::new(2^28) is reachable only crate-internally. No public precision reaches 2^31 B exactly: a mantissa at p <= 2^32-1 is at most 2^26 words = 2^29 B (base.rs:51-53), a product at most 2^27 words = 2^30 B (base.rs:502), and the fft_mul buffer jumps from 1612234800 B (L1+L2 = 33546240 words) to 3222896688 B (33546241 words) (fft.rs:437-443, fft_params fft.rs:209-222, sqrt_int common/util.rs:42-52; pm-rev11/m32model.pl, log 1854-m32model). So these rows call the M32 byte check with the requested size n in bytes. 'Larger than 2^31 bytes' (M32-DECISION.md) is read literally: 2^31 is not larger, so it is accepted.";
+  for my $bb (['2^31-1','Ok: accepted (n is not larger than 2^31)',''],['2^31','Ok: accepted (n = 2^31 is not larger than 2^31, read literally)',''],['2^31+1','refusal: Error::MemoryAllocation from the check, before try_reserve_exact; Ok is FAIL','Error::MemoryAllocation']){
+    my %a=(crate=>'zf',family=>'M32 byte budget check (WordBuf::new)',source=>'zenith-float-num/src/common/buf.rs:55',category=>'limits',group=>'M32-bytes',class=>"m32-bytes-$$bb[0]",class_def=>"a single buffer request of n = $$bb[0] bytes (M32-DECISION.md byte budget)",inputs=>"n = $$bb[0] bytes passed to the M32 up-front size check. $DER",modes=>'n/a (no rounding)',tier=>'fast (unit test of the check)',required_result=>"$$bb[1]. Red until $ZFX{'ZF-M32'} lands: at 7955836 there is no byte check (buf.rs:55-70 calls try_reserve_exact only).",refusal_variant=>$$bb[2],oracle_x86_64=>'spec: M32-DECISION.md (sha256 e6bcf204) byte budget; no numeric gold',oracle_i686=>"one result for every active target in docs/test-plan/inputs/targets.csv (P1); a pending target is reported NOT-RUN, never PASS",check=>'unit test: assert the check result',verdict_space=>'PASS|FAIL',proof=>'');
+    push @out,[@a{@F17}]; $cnt{"zf PASS|FAIL"}++ } }
 die "pin1: ".scalar(@LEFT)." rows left with either/or text:\n".join("\n",@LEFT[0..($#LEFT<40?$#LEFT:39)])."\n" if @LEFT;
-open my $o,'>',$OUT or die; my @H=qw(crate family source category group class class_def inputs modes tier required_result refusal_variant oracle_x86_64 oracle_aarch64 check verdict_space proof);
+open my $o,'>',$OUT or die; my @H=qw(crate family source category group class class_def inputs modes tier required_result refusal_variant oracle gold_scope check verdict_space proof);
 sub csvq { my $s=shift; $s="" unless defined $s; $s=~s/\s*\n\s*/ /g; $s=~s/"/""/g; "\"$s\"" }
-print $o "# precision-matrix-edges v10 (Harper 2026-10-30; P1 bit-identical everywhere and P6 64-bit minimum, pop-logs/PRINCIPLES.md; ZF-M27..M32). Lines starting with # are metadata; the CSV header is the first line without #.\n# source commit $SRC_COMMIT (generator refuses if zenith-float-num/{src,tests} or zenith-bound/{src,tests} differ)\n";
+print $o "# precision-matrix-edges v11 (Harper 2026-10-30; P1 bit-identical everywhere and P6 64-bit minimum, pop-logs/PRINCIPLES.md; ZF-M27..M32; targets in docs/test-plan/inputs/targets.csv, no per-target columns). Lines starting with # are metadata; the CSV header is the first line without #.\n# source commit $SRC_COMMIT (generator refuses if zenith-float-num/{src,tests} or zenith-bound/{src,tests} differ)\n";
 print $o "# input docs/test-plan/inputs/$_ sha256:$PIN{$_}\n" for sort keys %PIN;
 print $o join(',',map {csvq($_)} @H),"\n"; print $o join(',',map {csvq($_)} @$_),"\n" for @out; close $o;
 my %fc; $fc{$$_[0]}++ for @fam; my %wp=(); $wp{$$_[1]}=1 for grep {$$_[6]=~/working-precision/} @fam;

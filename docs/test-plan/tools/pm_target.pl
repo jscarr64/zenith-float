@@ -21,7 +21,7 @@ sub pm_outcome_text { my $t=join ' ',@_; $t=~s/[Rr]ed until .*?(?:\.\s|\.$|\)|$)
 sub pm_p6 { my @r; for my $t (@_){ push @r,$1 while $t=~/((?<![A-Za-z0-9])i[3-6]86\b|\b32-bit\b|\bthumbv\w+|\barmv7\w*|target_pointer_width\s*(?:=|!=)\s*"?32"?)/gi } @r }
 sub pm_target_dependent { my @f=@_; my @r; my $o=pm_outcome_text($f[10],$f[11]);
   push @r,'refusal' if pm_outcome_text($f[11])=~/\b(?:x86_64|i686|32-bit|64-bit)\b/;
-  push @r,'limit' if $o=~/MAX_PRECISION\s*(?:=|is)\s*2\^(?!30-1\b)/ || $o=~/\b(?:32|64)-bit\b[^.;]*MAX_PRECISION|MAX_PRECISION[^.;]*\b(?:32|64)-bit\b/;
+  push @r,'limit' if $o=~/MAX_PRECISION\s*(?:=|is)\s*2\^(?!32-1\b)/ || $o=~/\b(?:32|64)-bit\b[^.;]*MAX_PRECISION|MAX_PRECISION[^.;]*\b(?:32|64)-bit\b/;
   my $tb="$f[9] $f[15]"; $tb=~s/\b(?:run )?on both targets\b//g; push @r,'budget' if $tb=~/\b(?:x86_64|i686)\b|-only shard|pm-max-(?:i686|x86_64)/;
   push @r,'dependent' if $o=~/\b(?:32|64)-bit targets?\b|word size|usize::BITS|target_pointer_width|target-dependent|per-target|depends on the target/i;
   @r }

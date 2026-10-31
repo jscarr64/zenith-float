@@ -105,7 +105,7 @@ ExactNum::max_value	zenith-float-num/src/ext.rs:1883	exact	none (no rounding ste
 ExactNum::min_value	zenith-float-num/src/ext.rs:1889	exact	none (no rounding step)	R3, P1	
 ExactNum::min_positive	zenith-float-num/src/ext.rs:1898	exact	none (no rounding step)	R3, P1	
 ExactNum::min_positive_normal	zenith-float-num/src/ext.rs:1907	exact	none (no rounding step)	R3, P1	
-ExactNum::from_word	zenith-float-num/src/ext.rs:1913	red	unpinned	none	the RoundingMode ExactNumNumber::from_word applies when p is below the bit width of d, and whether d: Word (a target-width type, TD36) gets one gold for both targets (owner Rusty)
+ExactNum::from_word	zenith-float-num/src/ext.rs:1913	red	unpinned	none	the RoundingMode ExactNumNumber::from_word applies when p is below the 64 bits of d (Mantissa::from_word num.rs:233 keeps all 64 bits; the doc at ext.rs:1911 says precision is rounded up to a whole 64-bit Word, which does not say whether the value is rounded to p) (owner Rusty; the Word-width half is closed by P6: Word = u64 at defs.rs:15, ZF-TD36 MOOT-64)
 ExactNum::from_raw_parts	zenith-float-num/src/ext.rs:1970	exact	none (no rounding step)	R3, P1	
 ExactNum::from_words	zenith-float-num/src/ext.rs:2028	exact	none (no rounding step)	R3, P1	
 ExactNum::sign	zenith-float-num/src/ext.rs:2033	exact	none (no rounding step)	R3, P1	
