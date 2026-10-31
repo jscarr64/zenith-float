@@ -33,6 +33,11 @@ cargo build --no-default-features
 cargo build -p zenith-float-num --no-default-features
 ok "no_std host"
 
+step "cargo build --no-default-features --lib --target x86_64-unknown-none"
+cargo build -p zenith-float-num --no-default-features --lib --target x86_64-unknown-none
+cargo build --no-default-features --lib --target x86_64-unknown-none
+ok "no_std x86_64-unknown-none"
+
 step "scripts/compare-bench.sh --quick"
 # output to COMPARE_OUT (the gate sets its log dir), else the target dir; never the tracked doc/compare-results.tsv
 COMPARE_OUT="${COMPARE_OUT:-$CARGO_TARGET_DIR/compare-results.tsv}" bash "$root/scripts/compare-bench.sh" --quick
