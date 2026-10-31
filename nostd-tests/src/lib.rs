@@ -3,16 +3,16 @@
 //! This crate is `#![no_std]` (core + alloc only) and depends on `zenith-float-num` with
 //! `default-features = false`, so neither the library nor the harness links `std`. The cases in
 //! [`cases`] carry mpmath references; [`run`] evaluates each one and reports the number of
-//! correct bits through a caller-supplied sink. Two runners use it:
-//!
-//! - `nostd-host`: a `#![no_std]` / `#![no_main]` binary for hosted Linux targets that links only
-//!   libc (allocator via `malloc`, output via `write`).
-//! - `nostd-qemu`: a bare-metal `thumbv7em-none-eabihf` binary (Cortex-M4F) run under
-//!   `qemu-system-arm -machine mps2-an386` with semihosting.
+//! correct bits through a caller-supplied sink. The runner `nostd-host` is a `#![no_std]` / `#![no_main]` binary for hosted Linux targets that links
+//! only libc (allocator via `malloc`, output via `write`). The bare-metal 32-bit QEMU runner was retired with P6.
 //!
 //! See `scripts/ci_nostd.sh`.
 #![no_std]
 #![forbid(unsafe_code)]
+
+// P6 (Jeff, 2026-10-30): 64-bit targets only.
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("zenith-float 2.0 requires a 64-bit target (target_pointer_width = 64); 32-bit targets are not supported.");
 
 extern crate alloc;
 

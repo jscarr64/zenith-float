@@ -1,6 +1,5 @@
 //! The exponent range is `-(2^62 - 1)..=2^62 - 1` on every target (2.0.0 audit, defect 4; widened from `i32`).
-//! Run on a 32-bit target (`scripts/ci_hex_32bit.sh`, `i686-unknown-linux-musl`) as well as
-//! on the host: results near both limits must be the same on both.
+//! Results near both limits must be the same on every 64-bit target.
 
 use std::ops::Neg;
 use zenith_float_num::{ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN, WORD_BIT_SIZE};

@@ -529,31 +529,16 @@ fn words_to_u32(words: &[Word], out: &mut [u32]) -> Result<(), Error> {
     }
     let mut i = 0;
     for &w in words {
-        #[cfg(target_pointer_width = "32")]
-        {
-            out[i] = w;
-            i += 1;
-        }
-        #[cfg(not(target_pointer_width = "32"))]
-        {
-            out[i] = w as u32;
-            out[i + 1] = (w >> 32) as u32;
-            i += 2;
-        }
+        out[i] = w as u32;
+        out[i + 1] = (w >> 32) as u32;
+        i += 2;
     }
     let _ = i;
     Ok(())
 }
 
 fn word_from_u32s(part: &[u32]) -> Word {
-    #[cfg(target_pointer_width = "32")]
-    {
-        part[0]
-    }
-    #[cfg(not(target_pointer_width = "32"))]
-    {
-        (part[0] as Word) | ((part[1] as Word) << 32)
-    }
+    (part[0] as Word) | ((part[1] as Word) << 32)
 }
 
 fn put_u32_be(dest: &mut [u8], v: u32) {

@@ -4,6 +4,10 @@
 // A `.clone()` on an `Rc` is spelled `Rc::clone(&x)` (a handle share, not a copy); big-number copies are banned by tools/no_clone.sh.
 #![deny(clippy::clone_on_ref_ptr)]
 
+// P6 (Jeff, 2026-10-30): 64-bit targets only.
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("zenith-float 2.0 requires a 64-bit target (target_pointer_width = 64); 32-bit targets are not supported.");
+
 mod astro;
 mod backend;
 #[cfg(feature = "dashu")]
