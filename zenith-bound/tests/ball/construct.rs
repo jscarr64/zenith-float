@@ -188,7 +188,8 @@ fn infinity_radius_is_canonical_all_reals() -> Result<(), String> {
 /// ZB-TD03 (P6, 64-bit only): precisions up to MAX_PRECISION = 2^32 - 1 (ZF-M32, decided 2026-10-30) are stored exactly as requested.
 #[test]
 fn prec_up_to_2_pow_32_minus_1_is_stored_as_requested() -> Result<(), String> {
-    for prec in [1usize, 2, 63, 64, 65, 4096, (1 << 30) - 1, 1 << 30, 1 << 31, (1 << 32) - 2, u32::MAX as usize] {
+    let wide = usize::try_from(u32::MAX).map_err(|_| String::from("u32::MAX does not fit usize"))?;
+    for prec in [1usize, 2, 63, 64, 65, 4096, (1 << 30) - 1, 1 << 30, 1 << 31, (1 << 32) - 2, wide] {
         let b = Ball::exact(ExactNum::from(3i64), prec).map_err(|e| format!("exact(3, {}): {:?}", prec, e))?;
         if b.prec() != prec {
             return Err(format!("exact(3, {}): prec read back {}", prec, b.prec()));

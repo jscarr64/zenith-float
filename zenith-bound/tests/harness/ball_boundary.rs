@@ -37,7 +37,8 @@ fn above_2_62(k: usize) -> Result<usize, String> {
 /// One precision list (P6, 64-bit only; ZB-TD03). MAX_PRECISION - 1, MAX_PRECISION = u32::MAX and MAX_PRECISION + 1 bracket
 /// the ZF-M32 limit 2^32 - 1; 2^62 + k reaches the ulp underflow inside the zf range; usize::MAX is the far end.
 fn precisions() -> Result<Vec<usize>, String> {
-    let mut ps = vec![0, 1, 2, 53, 4096, (1 << 32) - 2, u32::MAX as usize, 1 << 32];
+    let wide = usize::try_from(u32::MAX).map_err(|_| String::from("u32::MAX does not fit usize"))?;
+    let mut ps = vec![0, 1, 2, 53, 4096, (1 << 32) - 2, wide, 1 << 32];
     for k in 1..=3 {
         ps.push(above_2_62(k)?);
     }
