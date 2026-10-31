@@ -12,6 +12,28 @@ use zenith_float_num::{
 const RM: RoundingMode = RoundingMode::ToEven;
 const P: usize = 128;
 
+/// Decimal text of `x` via `ExactNum::format`, which needs no `std` (the `Display` impl does).
+fn dec(x: &ExactNum, cc: &mut Consts) -> String {
+    x.format(Radix::Dec, RoundingMode::ToEven, cc)
+        .unwrap_or_else(|e| format!("<format failed: {e}>"))
+}
+
+/// Test error: any `Display` error (`Error`, `QuadratureError`), so `?` works without the
+/// `std::error::Error` impls that only exist with the `std` feature.
+struct TestErr(String);
+
+impl core::fmt::Debug for TestErr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl<T: core::fmt::Display> From<T> for TestErr {
+    fn from(e: T) -> Self {
+        TestErr(e.to_string())
+    }
+}
+
 fn parse(s: &str, p: usize, cc: &mut Consts) -> ExactNum {
     ExactNum::parse(s, Radix::Dec, p, RM, cc)
 }
@@ -36,12 +58,13 @@ fn check(label: &str, got: &ExactNum, want: &str, min_bits: i32, cc: &mut Consts
     let bts = bits(got, &w, P);
     assert!(
         bts >= min_bits,
-        "{label}: {bts} correct bits, wanted {min_bits}, got {got}"
+        "{label}: {bts} correct bits, wanted {min_bits}, got {}",
+        dec(got, cc)
     );
 }
 
 #[test]
-fn gk_smooth_exp_matches_e_minus_one() -> Result<(), Box<dyn std::error::Error>> {
+fn gk_smooth_exp_matches_e_minus_one() -> Result<(), TestErr> {
     // mpmath 1.4.1, dps=60: exp(1) - 1. One (7, 15) panel is enough on a
     // short analytic interval; the Kronrod sum is the value under test.
     let mut cc = Consts::new()?;
@@ -59,7 +82,7 @@ fn gk_smooth_exp_matches_e_minus_one() -> Result<(), Box<dyn std::error::Error>>
 }
 
 #[test]
-fn gk_oscillatory_sin_matches_two() -> Result<(), Box<dyn std::error::Error>> {
+fn gk_oscillatory_sin_matches_two() -> Result<(), TestErr> {
     // The antiderivative of sin on [0, pi] is 2. mpmath nstr(quad(sin, [0, pi]))
     // at 50 decimals is 2; the adaptive driver may bisect until |K-G| agrees.
     let mut cc = Consts::new()?;
@@ -81,7 +104,7 @@ fn gk_oscillatory_sin_matches_two() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn gk_mild_endpoint_sqrt_matches_two_thirds() -> Result<(), Box<dyn std::error::Error>> {
+fn gk_mild_endpoint_sqrt_matches_two_thirds() -> Result<(), TestErr> {
     // Hand antiderivative of sqrt(x) on [0, 1] is 2/3. mpmath at 50 decimals
     // prints the same repeating expansion. The derivative blows up at 0, so
     // the driver bisects that panel instead of trusting one Gauss rule.
@@ -110,7 +133,7 @@ fn gk_mild_endpoint_sqrt_matches_two_thirds() -> Result<(), Box<dyn std::error::
 }
 
 #[test]
-fn gk_epsilon_beats_plain_gauss_on_invsqrt() -> Result<(), Box<dyn std::error::Error>> {
+fn gk_epsilon_beats_plain_gauss_on_invsqrt() -> Result<(), TestErr> {
     // Hand antiderivative of x^(-1/2) on (0, 1] is 2. A single 7-point Gauss
     // panel misses by several hundredths because the endpoint is not a
     // polynomial. Wynn epsilon on the adaptive Kronrod sums cancels that
@@ -149,13 +172,13 @@ fn gk_epsilon_beats_plain_gauss_on_invsqrt() -> Result<(), Box<dyn std::error::E
     assert!(
         adapt_bits >= 48,
         "adaptive invsqrt bits {adapt_bits}, value {}",
-        adaptive.estimate_kronrod
+        dec(&adaptive.estimate_kronrod, &mut cc)
     );
     Ok(())
 }
 
 #[test]
-fn gk_nonfinite_and_reversed_endpoints_are_errors() -> Result<(), Box<dyn std::error::Error>> {
+fn gk_nonfinite_and_reversed_endpoints_are_errors() -> Result<(), TestErr> {
     // A reversed interval and a NaN sample must not come back as a finite
     // integral. The typed error is the whole assertion.
     let mut cc = Consts::new()?;
