@@ -27,6 +27,17 @@ const ROW_BUDGET: Duration = Duration::from_secs(10);
 const FN_BUDGET: Duration = Duration::from_secs(120);
 const FULL_ROW_BUDGET: Duration = Duration::from_secs(120);
 const FULL_FN_BUDGET: Duration = Duration::from_secs(900);
+/// ZF-T02 slowdown factor for emulated runners; unset means native (1.0). A bad value panics.
+fn time_factor() -> f64 {
+    match std::env::var("ZF_TIME_FACTOR") {
+        Err(_) => 1.0,
+        Ok(s) => {
+            let f: f64 = s.parse().expect("ZF_TIME_FACTOR must be a number");
+            assert!(f.is_finite() && f >= 1.0, "ZF_TIME_FACTOR must be finite and >= 1, got {f}");
+            f
+        }
+    }
+}
 /// Mismatch lines printed per function.
 const SHOW: usize = 8;
 
@@ -288,11 +299,19 @@ fn check(func: &'static str) -> Result<(), String> {
             }
         }
     });
-    let (row_budget, fn_budget) = if full_tier() {
+    let (native_row, native_fn) = if full_tier() {
         (FULL_ROW_BUDGET, FULL_FN_BUDGET)
     } else {
         (ROW_BUDGET, FN_BUDGET)
     };
+    // ZF-T02: an emulated runner (qemu, wine) gets the native budget times its measured
+    // slowdown factor (ZF_TIME_FACTOR, from docs/test-plan/inputs/targets.csv). Same work
+    // allowance, not a looser one; native runs leave it unset (factor 1, budget unchanged).
+    let factor = time_factor();
+    let (row_budget, fn_budget) = (native_row.mul_f64(factor), native_fn.mul_f64(factor));
+    eprintln!(
+        "S9 {func}: budget native row={native_row:?} fn={native_fn:?} factor={factor} scaled row={row_budget:?} fn={fn_budget:?}"
+    );
     let start = Instant::now();
     let mut pass = 0usize;
     let mut fails: Vec<String> = Vec::new();

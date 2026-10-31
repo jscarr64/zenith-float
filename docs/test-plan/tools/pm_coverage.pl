@@ -4,6 +4,7 @@
 #  rc (default, strict): every rule below is enforced; any count > 0 is FAIL and exit 1.
 #  design-stage: only the structural rules (S1-S3, e) are enforced, plus rule f whenever --results is given (any FAIL record exits 1 in every mode); rules a-d are listed as GAP lines with
 #    their full counts (never hidden, never PASS); output is marked NOT AN RC VERDICT. Exit 1 on a structural FAIL.
+# pmrev12 (Paul M32 ruling 2026-10-30 7:18 PM CT): h unresolved PM_MAX_P pin | i TRACE-PENDING row | j [RUSTY-CONFIRM] tie pin; rc FAIL, design-stage GAP.
 # rules: a unsigned proof | b cited proof file missing | c UNGENERATED oracle pin on an executed row
 #        d unpinned PM-1 row ([PM1-UNPINNED]) | e shard per-family row count below matrix count
 #        f results records (design s17.1): row_id TAB verdict TAB zf_sha TAB zb_sha TAB env_name TAB env_hash TAB gen_sha256 [TAB target TAB secs].
@@ -20,6 +21,7 @@ my ($csv,$shards,$T)=@a; die "usage\n" unless $shards; $T//="$ENV{HOME}/harper-w
 sub p{my $l=shift; chomp $l; my @f; my $fld=''; my $st=0; my @c=split //,$l; for(my $i=0;$i<@c;$i++){ my $c=$c[$i];
   if($st==0){ if($c eq '"'){$st=1} elsif($c eq ','){push @f,$fld;$fld=''} else {$fld.=$c} }
   else { if($c eq '"'){ if($i+1<@c && $c[$i+1] eq '"'){$fld.='"';$i++} else {$st=0} } else {$fld.=$c} } } push @f,$fld; @f }
+my $PMOPEN; { my $cf=$ENV{PM_CONSTANTS}//"$T/docs/test-plan/inputs/pm-constants.csv"; open my $ch,"<",$cf or die "$cf"; <$ch>; while(<$ch>){ my @c=split /,/,$_,-1; $PMOPEN=1 if $c[0] eq "PM_MAX_P" && $c[1] eq "PENDING-RUSTY-M32" } }
 my (%cnt,%ex,%files,%exp,$rows,$na,$exe); my $hdr=0; my $ln=0; my @ids;
 my $G=sub { my ($r,$m)=@_; $cnt{$r}++; push @{$ex{$r}},$m if @{$ex{$r}//[]}<3 };
 open F,$csv or die "$csv"; while(<F>){ $ln++; next if /^#/; if(!$hdr){$hdr=1;next} $rows++; my @f=p($_); my $id="$f[0]|$f[1]|$f[5]";
@@ -32,9 +34,12 @@ open F,$csv or die "$csv"; while(<F>){ $ln++; next if /^#/; if(!$hdr){$hdr=1;nex
    next }
  $exe++; push @ids,$id;
  $G->('S3',"line $ln $f[1] vs=$f[15]") unless $f[15]=~/^PASS\|FAIL(\|SKIPPED_AFTER_TIMEOUT)?$/;
- $G->('S1',"line $ln $f[1] $f[5]") if $f[5]=~/^(?:prec-(?:MAX-|2\^30-1$|2\^30$|2\^60-1$|2\^32-1$|2\^32$)|m30-)/ && $f[15] !~ /SKIPPED_AFTER_TIMEOUT/;
+ $G->('S1',"line $ln $f[1] $f[5]") if $f[5]=~/^(?:prec-(?:MAX-|2\^30-1$|2\^30$|2\^60-1$|PM_MAX_P$|PM_MAX_P\+1$)|m30-)/ && $f[15] !~ /SKIPPED_AFTER_TIMEOUT/;
  $G->('c',"line $ln $f[1] $f[5]") if "$f[12] $f[13]"=~/UNGENERATED/;
- $G->('d',"line $ln $f[1] $f[5]") if $f[10]=~/\[PM1-UNPINNED\]/; }
+ $G->('d',"line $ln $f[1] $f[5]") if $f[10]=~/\[PM1-UNPINNED\]/;
+ $G->('h',"line $ln $f[1] $f[5]") if $PMOPEN && "$f[5] $f[6] $f[10]"=~/PM_MAX_P/;
+ $G->('i',"line $ln $f[1] $f[5]") if $f[10]=~/^TRACE-PENDING/;
+ $G->('j',"line $ln $f[1] $f[5]") if $f[10]=~/\[RUSTY-CONFIRM\]/; }
 close F;
 my %have; open S,$shards or die "$shards"; <S>; while(<S>){ my @f=p($_); $have{"$f[0]|$f[1]|$f[2]"}=$f[3] } close S;
 for my $k (sort keys %exp){ my $h=$have{$k}//0; $G->('e',"shard $k has $h rows, matrix has $exp{$k}") if $h<$exp{$k} }
@@ -58,9 +63,9 @@ if(defined $res){ die "rule f: --results requires --manifest (expected provenanc
    for my $q (@TGR){ my ($i,$vv,$tg)=@$q; $G->('g',"$i target $tg is $TST{$tg}, verdict $vv (must be NOT-RUN)") if ($TST{$tg}//'unknown') ne 'active' && $vv ne 'NOT-RUN' }
    for my $i (@ids){ my $v=$v{$i}//'MISSING'; $G->('f',"$i verdict $v (counts as FAIL)") unless $v eq 'PASS' } }
 print "pm-coverage mode=$mode rows=$rows NA_PROOF=$na executed=$exe; cited proof files: ".(keys %fe)." distinct, $fx exist, $fm missing\n";
-my %name=(a=>'unsigned proof',b=>'cited proof file missing',c=>'UNGENERATED oracle pin',d=>'unpinned PM-1 row',e=>'shard per-family count below matrix',f=>'verdict not PASS (SKIPPED_AFTER_TIMEOUT/FAIL/missing = FAIL)',g=>'pending target reported other than NOT-RUN',S1=>'MAX row lacks SKIPPED_AFTER_TIMEOUT',S2=>'NA_PROOF row without pm-proofs path',S3=>'bad executed verdict space');
+my %name=(a=>'unsigned proof',b=>'cited proof file missing',c=>'UNGENERATED oracle pin',d=>'unpinned PM-1 row',e=>'shard per-family count below matrix',f=>'verdict not PASS (SKIPPED_AFTER_TIMEOUT/FAIL/missing = FAIL)',g=>'pending target reported other than NOT-RUN',h=>'row uses the unresolved pin PM_MAX_P = PENDING-RUSTY-M32 (open pin, owner Rusty)',i=>'TRACE-PENDING PM_MAX_P row (RC-FAIL until the s28.4 trace pins it; owner Harper)',j=>'pinned tie red until Rusty confirms the src (owner Rusty)',S1=>'MAX row lacks SKIPPED_AFTER_TIMEOUT',S2=>'NA_PROOF row without pm-proofs path',S3=>'bad executed verdict space');
 my $fail=0; my %struct=map {$_=>1} qw(S1 S2 S3 e g);
-for my $r (qw(a b c d e f g S1 S2 S3)){ my $n=$cnt{$r}//0; if($r eq 'g' && !defined $res){ print "rule g ($name{g}): not evaluated, no --results file\n"; next }
+for my $r (qw(a b c d e f g h i j S1 S2 S3)){ my $n=$cnt{$r}//0; if($r eq 'g' && !defined $res){ print "rule g ($name{g}): not evaluated, no --results file\n"; next }
   if($r eq 'f' && !defined $res){ print "rule f ($name{f}): not evaluated, no --results file (RC requires one)\n"; $fail++ if $mode eq 'rc'; next }
   my $enf = $mode eq 'rc' || $struct{$r} || ($r eq 'f' && defined $res); my $tag = $n==0 ? 'PASS' : $enf ? 'FAIL' : 'GAP';
   $fail++ if $n && $enf; printf "rule %s (%s): %s count=%d%s\n",$r,$name{$r},$tag,$n,($n?" first: ".join(' ; ',@{$ex{$r}}):'') }

@@ -1,0 +1,2 @@
+name,value,owner,status,basis
+PM_MAX_P,PENDING-RUSTY-M32,Rusty,open,Paul M32 ruling 2026-10-30 7:18 PM CT (M32-DECISION.md proposes 2^32-1; the value is pinned only when Rusty lands ZF-M32)

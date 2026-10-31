@@ -1,0 +1,40 @@
+# Design artifact (Harper pmrev12, TD40): macOS arm64 gold check. NOT enabled: trigger is workflow_dispatch only, and turning
+# it on as CI needs Jeff's go in his own words. aarch64-apple-darwin stays pending-CI in docs/test-plan/inputs/targets.csv.
+# Runs the committed-gold test binaries (each asserts bit-exact equality with zenith-float-num/tests/oracle/goldens) on
+# macos-14 with the pinned toolchain 1.99 (rust-toolchain.toml), no MPFR, and uploads a verdict TSV.
+name: macos-golds
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  macos-golds:
+    runs-on: macos-14
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: '1.99'
+      - name: Check toolchain pin
+        run: |
+          grep -q 'channel = "1.99"' rust-toolchain.toml
+          rustc --version
+      - name: Run committed-gold binaries (bit for bit, no MPFR)
+        shell: bash
+        run: |
+          set -o pipefail
+          : > verdicts.tsv
+          rc=0
+          for t in r9_overflow_golds r13_div_hypot_golds borrow_ops_golds s9_specials_golds; do
+            cargo test --locked --release -p zenith-float-num --no-default-features --features std --test "$t" -- --test-threads=1 2>&1 | tee "$t.out" || rc=1
+            awk -v t="$t" '/^test .* \.\.\. (ok|FAILED)$/ { v = ($NF == "ok") ? "PASS" : "FAIL"; print t "::" $2 "\t" v "\taarch64-apple-darwin" }' "$t.out" >> verdicts.tsv
+          done
+          cat verdicts.tsv
+          exit $rc
+      - name: Upload verdict TSV
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-golds-verdicts
+          path: verdicts.tsv

@@ -70,7 +70,7 @@ Ieee64Array::from_csv_str	zenith-float-num/src/csvfmt.rs:44	exact	none (no round
 Ieee64Array::to_csv	zenith-float-num/src/csvfmt.rs:51	exact	none (no rounding step)	R3, P1	
 Ieee64Array::from_csv	zenith-float-num/src/csvfmt.rs:58	exact	none (no rounding step)	R3, P1	
 ExactNumArray::to_csv_string	zenith-float-num/src/csvfmt.rs:67	exact	none (no rounding step)	R3, P1	
-ExactNumArray::from_csv_str	zenith-float-num/src/csvfmt.rs:92	red	unpinned	none	the RoundingMode the csvfmt.rs:92 decimal field parser uses at DEFAULT_P (owner Rusty)
+ExactNumArray::from_csv_str	zenith-float-num/src/csvfmt.rs:92	pinned-red	ToEven at DEFAULT_P	Paul M32 ruling 2026-10-30 7:18 PM CT	correctly rounded at DEFAULT_P in ToEven: an exact half-ulp tie in a decimal field goes to the even neighbour at DEFAULT_P
 ExactNumArray::to_csv	zenith-float-num/src/csvfmt.rs:118	exact	none (no rounding step)	R3, P1	
 ExactNumArray::from_csv	zenith-float-num/src/csvfmt.rs:124	exact	none (no rounding step)	R3, P1	
 hash::constant_time_eq	zenith-float-num/src/hash.rs:62	exact	none (no rounding step)	R3, P1	
@@ -105,7 +105,7 @@ ExactNum::max_value	zenith-float-num/src/ext.rs:1883	exact	none (no rounding ste
 ExactNum::min_value	zenith-float-num/src/ext.rs:1889	exact	none (no rounding step)	R3, P1	
 ExactNum::min_positive	zenith-float-num/src/ext.rs:1898	exact	none (no rounding step)	R3, P1	
 ExactNum::min_positive_normal	zenith-float-num/src/ext.rs:1907	exact	none (no rounding step)	R3, P1	
-ExactNum::from_word	zenith-float-num/src/ext.rs:1913	red	unpinned	none	the RoundingMode ExactNumNumber::from_word applies when p is below the 64 bits of d (Mantissa::from_word num.rs:233 keeps all 64 bits; the doc at ext.rs:1911 says precision is rounded up to a whole 64-bit Word, which does not say whether the value is rounded to p) (owner Rusty; the Word-width half is closed by P6: Word = u64 at defs.rs:15, ZF-TD36 MOOT-64)
+ExactNum::from_word	zenith-float-num/src/ext.rs:1913	pinned-red	none (exact: precision rounds up to a whole 64-bit Word, the value is not rounded)	Paul M32 ruling 2026-10-30 7:18 PM CT	exact result: the exact word value d, because precision rounds up to a whole Word (ext.rs:1911) and Mantissa::from_word num.rs:233 keeps all 64 bits, so a constructed tie input is never rounded
 ExactNum::from_raw_parts	zenith-float-num/src/ext.rs:1970	exact	none (no rounding step)	R3, P1	
 ExactNum::from_words	zenith-float-num/src/ext.rs:2028	exact	none (no rounding step)	R3, P1	
 ExactNum::sign	zenith-float-num/src/ext.rs:2033	exact	none (no rounding step)	R3, P1	
