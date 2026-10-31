@@ -21,7 +21,7 @@
 
 zf already has a small prototype `Ball` (midpoint ± radius), but its radius is a full-precision number, some functions add a guessed "8 ulps", and nothing proves the true answer is inside.
 
-**zenith-bound** does this properly, Arb-style. A ball is `Ball { mid: ExactNum, rad: Mag, prec: u32 }`. The radius `Mag` is a tiny integer-only type (a 64-bit mantissa and a wide exponent) that is always rounded **up**. Every operation computes the midpoint, measures the rounding error it made, and adds that error to the radius. Nothing is ever dropped. When a result can't be enclosed (division by a ball that touches 0, a log of a ball that reaches 0, an overflow), the API says so with an explicit error or "indeterminate" value instead of returning a confident-looking finite ball.
+**zenith-bound** does this properly, Arb-style. A ball is `Ball { mid: ExactNum, rad: Mag, prec: Precision }`. The radius `Mag` is a tiny integer-only type (a 64-bit mantissa and a wide exponent) that is always rounded **up**. Every operation computes the midpoint, measures the rounding error it made, and adds that error to the radius. Nothing is ever dropped. When a result can't be enclosed (division by a ball that touches 0, a log of a ball that reaches 0, an overflow), the API says so with an explicit error or "indeterminate" value instead of returning a confident-looking finite ball.
 
 **What the Task 1 audit (Part K) changed.** zf's `Up` and `Down` modes really are directed roundings toward +∞ and −∞ for add, sub, mul, div and sqrt in the finite range, and MPFR checks them bit-exactly. But three things block using them as-is for bounds:
 1. **Overflow ignores the rounding mode.** An overflowing result always becomes ±Inf, even in `Down` for a positive value, where the correct answer is the largest finite number. A lower bound of +Inf is wrong. The tests and the golden generator both encode this behaviour, so nothing catches it.
@@ -233,7 +233,7 @@ Provenance: `NOTICE-puremp` at the repo root holds the full MIT text; each porte
 
 - **Types**
   - `Mag`: locked design (C6).
-  - `Ball { mid: ExactNum, rad: Mag, prec: u32 }` (B3). `prec` is exactly `prec` bits, through zf P15 (exact-bit rounding in zenith-float, LOCKED; Gemini G1; no re-chopping in zenith-bound). Before P15, zf stores `round_up_to_64(prec)` (K5), and L0 does not start.
+  - `Ball { mid: ExactNum, rad: Mag, prec: Precision }` (B3). `prec` is exactly `prec` bits, through zf P15 (exact-bit rounding in zenith-float, LOCKED; Gemini G1; no re-chopping in zenith-bound). Before P15, zf stores `round_up_to_64(prec)` (K5), and L0 does not start.
   - `ComplexBall` in **two forms** (B3): `Rect { re: Ball, im: Ball }` (Arb `acb`) and `Disk { mid: ExactComplex, rad: Mag }`, with conversions that only ever enlarge (`rect→disk`: `rad = hypot_up(r_re, r_im)`; `disk→rect`: each component gets `rad`).
   - `Interval { lo, hi }` (inf–sup) with `Ball::to_interval` (lo rounded Down, hi rounded Up) and `Interval::to_ball`, for subdivision (B1).
   - `BallPoly`, `BallSeries` (truncated power series with an order) (B1).
@@ -241,7 +241,7 @@ Provenance: `NOTICE-puremp` at the repo root holds the full MIT text; each porte
   - `Tri { True, False, Unknown }`.
   - **No `PartialEq`/`PartialOrd` on `Ball`** (or on any ball container). `==` on enclosures is ambiguous. Use `identical(&self, &Ball) -> bool` (O20; `contains` and `overlaps` return `Tri`) (same mid bits, same `Mag`, same `prec`) for representation equality and the `Tri` comparisons (`lt`, `le`, `eq`, …) for value questions.
   - `DomainPolicy { Strict, Clip }` (see Part L clause 7): one enum, an **explicit last parameter** on every op that has a domain (`tan` included); `Strict` is `Default::default()` only, there are no paired `foo()`/`foo_policy()` forms (O6 decided 2026-10-16, Paul under Jeff's delegation, Rusty recommended).
-- **Precision is explicit** on every op: `fn add(&self, b: &Ball, prec: u32, rm: RoundingMode) -> BoundResult<Ball>`. `rm` only shapes the midpoint; it never affects correctness (B1: "mid rounded to prec p with rm").
+- **Precision is explicit** on every op: `fn add(&self, b: &Ball, prec: Precision, rm: RoundingMode) -> BoundResult<Ball>`. `rm` only shapes the midpoint; it never affects correctness (B1: "mid rounded to prec p with rm").
 - **Results and error kinds** (B2):
   ```text
   enum BoundError {
@@ -291,7 +291,7 @@ value(Finite) = 0.mant · 2^exp = mant · 2^(exp − 64),   mant ∈ [2^63, 2^64
 
 1. **Value model.** A `Ball` denotes the closed set `[mid − rad, mid + rad]` of reals. `rad = Infinity` denotes all reals; its canonical form has `mid = +0`. A NaN or infinite midpoint is never stored; operations that would produce one return a `BoundError`, or the all-reals ball (`rad = Infinity`) where the true result is unbounded or overflowed (O1 decided; CONTRACT 6.2, 6.4). **Signed zero:** a −0 midpoint (for example exact cancellation under `Down`, K2) is normalized to +0 at the ball boundary (every constructor and every op result), so `identical()` and the encoding see one zero.
 2. **Invariant (stated):** for every guaranteed op `f` and inputs `x_i ∈ X_i`, `f(x_1, …) ∈ f_ball(X_1, …)`, or the op returns `BoundError`. Nothing else. (An all-reals ball satisfies the first alternative.)
-3. **Precision model.** `prec: u32` bits, at least 1, and the mid is rounded to **exactly** `prec` bits (zf P15, in 2.0.0 or 2.1; the 64-bit quantisation of K5 is gone; zenith-bound never re-chops, CONTRACT.md clause 5). `prec` shapes only the midpoint. The radius is always a `Mag` (64-bit mantissa, `i64` exponent).
+3. **Precision model.** `prec: Precision` (zf `usize`) bits, `MIN_PRECISION` (1) to `MAX_PRECISION` (`2^32 - 1`, ZF-M32), and the mid is rounded to **exactly** `prec` bits (zf P15, in 2.0.0 or 2.1; the 64-bit quantisation of K5 is gone; zenith-bound never re-chops, CONTRACT.md clause 5). `prec` shapes only the midpoint. The radius is always a `Mag` (64-bit mantissa, `i64` exponent).
 4a. **One exponent convention (LOCKED, approved by Jeff 2026-10-14; CONTRACT.md clause 1).** Everywhere in zenith-bound (API docs, `Mag`, the encoding, traces, tests) a finite nonzero value with exponent `e` and mantissa `m` (an unsigned integer of `k` bits with its top bit set) means **`0.m · 2^e = m · 2^(e − k)`**, i.e. zf's `exponent()` convention (value ∈ [2^(e−1), 2^e)). For `Mag`, `k = 64`. The leading-bit exponent, where needed, is always written `e − 1` and named `leading_bit_exponent`. No other convention (`m·2^e` with integer `m`, `mant·2^(exp−63)`) is used.
 4. **Exponent range.** Midpoints: zf's `EXPONENT_MIN..=EXPONENT_MAX` on 64-bit targets; on 32-bit targets zenith-bound refuses (`Overflow`) anything outside the 32-bit range so that results never differ by target (until P5 makes the ranges equal). Radii: `i64`, then `Infinity`.
 5. **Rounding.** The midpoint is rounded once to `prec` under the caller's `rm` from an exact or fully accounted value. The radius is rounded **up** at every step. No rounding error is ever dropped.
@@ -336,7 +336,7 @@ B2's order maps onto the layers like this: (1) contract + (2) real balls = **L0*
   | `src/ball/set_ops.rs` | `union` (hull, rounded outward), `intersect` (returns `None` when disjoint, by exact comparison) |
   | `src/ball/round.rs` | `floor`, `ceil` (not a `Ball`: `Decided(integer)` if the whole ball maps to one integer, else `Undecided`, inside `Result<_, BoundError>`; O1), `sgn` (`Decided(Positive/Negative/Zero)`, or `Undecided` when the ball contains 0 and is not exactly 0, inside `Result<_, BoundError>`; O1) |
   | `src/ball/precision.rs` | `set_prec(new_prec)`: **lowering** rounds the mid under `rm` and adds its rounding error (`ulp_mag`, only if inexact) to the radius; **raising** keeps the mid and the radius unchanged and never shrinks the radius. Plus `is_unique_at`. No `refine` on `Ball` (Gemini G4) |
-  | `src/refine.rs` | `trait Refinable { fn refine(&self, new_prec: u32) -> BoundResult<Ball>; }`, implemented only by things that can recompute from exact data: exact constructors (`ExactInput` from integers, rationals, decimal strings) and constants (pi, e, ln2, ln10). Later layers implement it for expression nodes |
+  | `src/refine.rs` | `trait Refinable { fn refine(&self, new_prec: Precision) -> BoundResult<Ball>; }`, implemented only by things that can recompute from exact data: exact constructors (`ExactInput` from integers, rationals, decimal strings) and constants (pi, e, ln2, ln10). Later layers implement it for expression nodes |
   | `src/interval.rs` | inf–sup `Interval` and conversions |
   | `src/decimal.rs` | decimal parse (gives an enclosing ball: the exact decimal rational, rounded Down/Up into a ball, radius 0 only if the decimal is a dyadic rational representable at `prec`) and decimal print (integer-only outward rounding; see Part F) |
   | `src/encode.rs` | canonical encoding (Part J) |
@@ -633,7 +633,7 @@ Columns: layer; whether it changes the zf 2.1 prerequisites; relative effect on 
 | B2 | Tests: containment, rounding, adversarial, transcendentals, refinement, reproducibility, cross-platform | all (Part E) | P13 | ≈ |
 | B2 | Oracles: python-flint dev-only next to mpmath, backed by exact rational and independent algorithms | all (Part E) | no | small + |
 | B2 | Differentiators: Rust-native, deterministic documented semantics, Accumath expression → enclosure, validated workflows | L4, Part F | no | + (Accumath, L4) |
-| B3 | Thin crate on ExactNum/zf limbs; `Ball{mid, rad: Mag, prec: u32}` | L0 | no | ≈ |
+| B3 | Thin crate on ExactNum/zf limbs; `Ball{mid, rad: Mag, prec: u32}` (history: decided as u32; superseded, prec is `Precision` = `usize`, ZB-D05) | L0 | no | ≈ |
 | B3 | Radius rules exp, sin/cos, ln, sqrt | L1 (sqrt in L0) | P6, P12 | ≈ |
 | B3 | erf/J0/J1 derivative bounds; higher specials by remainder series or zf-mid + proven bound | L2d | no | − (less research risk) |
 | B3 | ComplexBall rect + disk with conversions; `refine(new_prec)` | L2a; the `Refinable` trait in L0 (G4) | no | + |
