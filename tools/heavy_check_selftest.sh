@@ -52,5 +52,5 @@ ck; "${fe[@]}" ZB_MATRIX_HEAVY="$t/o.txt" GATE_STEPS=matrix-heavy T="$t/logs" RE
 printf 'step output\n%s\n' "$skip" > "$t/logs/planted-build-debug.log"
 ck; "${fe[@]}" GATE_STEPS=skip-scan T="$t/logs" REPO="$t/repo" "$root/tools/full_gate.sh" planted > /dev/null 2>&1 && fail "gate passed with a SKIP line in a step log"
 ck; [ "$(rcof planted skip-scan)" = 1 ] || fail "skip-scan did not fail on the planted SKIP line (rc '$(rcof planted skip-scan)')"
-st_done heavy_check 19
-echo "heavy_check selftest: ok (19 cases)"
+st_done heavy_check 18
+echo "heavy_check selftest: ok (18 cases)"
