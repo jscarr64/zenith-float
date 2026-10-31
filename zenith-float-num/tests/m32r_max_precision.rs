@@ -35,7 +35,7 @@ fn parts() -> (usize, ExactNum, ExactNum, ExactNum, ExactNum) {
     let p = MAX_PRECISION;
     let ep = i64::try_from(p).unwrap_or(i64::MAX);
     let one = ExactNum::from_u8(1, p);
-    let u = ExactNum::pow2(-ep, p).unwrap_or_else(|e| ExactNum::nan(Some(e)));
+    let u = one.clone().ldexp(-ep, p, RoundingMode::ToEven);
     let a = one.clone().sub(&u, p, RoundingMode::ToEven);
     let b = a.clone().sub(&u, p, RoundingMode::ToEven);
     for (n, x) in [("one", &one), ("u", &u), ("a", &a), ("b", &b)] {
