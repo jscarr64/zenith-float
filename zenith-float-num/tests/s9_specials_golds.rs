@@ -27,15 +27,29 @@ const ROW_BUDGET: Duration = Duration::from_secs(10);
 const FN_BUDGET: Duration = Duration::from_secs(120);
 const FULL_ROW_BUDGET: Duration = Duration::from_secs(120);
 const FULL_FN_BUDGET: Duration = Duration::from_secs(900);
+/// Largest accepted ZF_TIME_FACTOR, in thousandths (8.000). The slowest emulated runner
+/// measured is aarch64 under qemu-aarch64-static at 4.27 (wine x86_64-pc-windows-gnu is
+/// lower), so 8.000 leaves ~1.9x headroom; anything larger is a typo or a runner too slow
+/// to be a fair same-work allowance, and is refused instead of silently loosening the budget.
+/// Measurement: ~/pop-logs/harper/2026-10-30/1931-2036-targets.log (same 4 release
+/// golden-test binaries, 3 reps each, median per binary, summed: x86_64 29.482 s, aarch64
+/// qemu 126.018 s, ratio 4.27).
+const MAX_TIME_FACTOR_MILLI: u64 = 8000;
 /// ZF-T02 slowdown factor for emulated runners, in thousandths (no IEEE float): unset is
-/// native (1000). Accepts ASCII digits with at most 3 fraction digits and a value >= 1
-/// ("4.27" -> 4270); anything else (non-numeric, inf, NaN, exponent, sign, < 1) is Err,
-/// so the run FAILs instead of panicking.
+/// native (1000). Accepts ASCII digits with at most 3 fraction digits and a value in
+/// [1, 8] (`MAX_TIME_FACTOR_MILLI`), e.g. "4.27" -> 4270; leading zeros are plain digits
+/// ("01.5" -> 1500, "1.000" -> 1000). Anything else (non-numeric, inf, NaN, exponent,
+/// sign, < 1, > 8) is Err, so the run FAILs instead of panicking.
+///
+/// Who sets it: nothing in this PR sets ZF_TIME_FACTOR; native runs leave it unset. The
+/// cross-target release-check step (FIXLIST ALL-X01 / ZF-T02 wiring, the next Harper
+/// branch) sets it for emulated targets, e.g. 4.27 for aarch64 under qemu, the factor
+/// measured in the log cited at `MAX_TIME_FACTOR_MILLI`.
 fn time_factor_milli(raw: Option<&str>) -> Result<u64, String> {
     let Some(s) = raw else { return Ok(1000) };
     let bad = || {
         format!(
-            "ZF_TIME_FACTOR={s:?}: want a decimal >= 1 with at most 3 fraction digits (e.g. 4.27)"
+            "ZF_TIME_FACTOR={s:?}: want a decimal in [1, 8] with at most 3 fraction digits (e.g. 4.27)"
         )
     };
     let (int, frac, dot) = match s.split_once('.') {
@@ -55,7 +69,7 @@ fn time_factor_milli(raw: Option<&str>) -> Result<u64, String> {
         .checked_mul(1000)
         .and_then(|m| m.checked_add(part))
         .ok_or_else(bad)?;
-    if milli < 1000 {
+    if !(1000..=MAX_TIME_FACTOR_MILLI).contains(&milli) {
         return Err(bad());
     }
     Ok(milli)
