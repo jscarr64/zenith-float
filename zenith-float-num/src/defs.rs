@@ -60,7 +60,7 @@ pub const MIN_NORMAL_EXPONENT: Exponent = EXPONENT_MIN;
 
 /// A precision in bits: the type of [`MIN_PRECISION`], [`MAX_PRECISION`], [`DEFAULT_P`] and of the
 /// precisions the API reports. Accepted values are `MIN_PRECISION..=MAX_PRECISION`; `MAX_PRECISION` is
-/// `2^32 - 1` (`u32::MAX`) on every 64-bit target (ZF-M32). An alias of `usize`, so code
+/// the same on every 64-bit target (ZF-M32). An alias of `usize`, so code
 /// written against `usize` keeps compiling.
 pub type Precision = usize;
 
@@ -70,10 +70,10 @@ pub const MIN_PRECISION: Precision = 1;
 
 /// Largest accepted precision in bits; anything above it is rejected with `Error::InvalidArgument`.
 ///
-/// `2^32 - 1` (`u32::MAX`) bits on every 64-bit target (ZF-M32): a full mantissa is 512 MiB and the `4p`
-/// working buffer 2 GiB. Any single buffer over `2^31` bytes is refused up front with
-/// `Error::MemoryAllocation`, the same on every OS. A machine with less free RAM than the work needs can
-/// still be stopped by the OS out-of-memory killer.
+/// The same on every 64-bit target (ZF-M32), and small enough that the `4p` working buffer fits
+/// the allocation budget. Any single buffer over the allocation budget (`MAX_ALLOC_BYTES`, ZF-M33)
+/// is refused up front with `Error::MemoryAllocation`, the same on every OS. A machine with less
+/// free RAM than the work needs can still be stopped by the OS out-of-memory killer.
 pub const MAX_PRECISION: Precision = {
     let by_exponent: u64 = 1 << 60;
     let by_size = (usize::MAX / 4) as u64;

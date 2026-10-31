@@ -59,7 +59,7 @@ The libc-only binary passes 77/77; the 64-bit `no_std` cell is set up by ZF-M31.
 | `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE` = 2 — mantissas of ≤ 128 bits live on the stack |
 | `EXPONENT_MAX` | `2^62 - 1` |
 | `EXPONENT_MIN` | `-(2^62 - 1)` |
-| `MAX_PRECISION` | `2^32 - 1` (`u32::MAX`) bits (ZF-M32); above it `Error::InvalidArgument`. Any single buffer over `2^31` bytes (2 GiB) is refused up front with `Error::MemoryAllocation`. Residual: a machine with less free RAM than the work needs can still be OOM-killed by the OS; that is physical, not a math answer. |
+| `MAX_PRECISION` | [`MAX_PRECISION`](zenith_float_num::MAX_PRECISION) bits (ZF-M32; the same on every 64-bit target); above it `Error::InvalidArgument`. Any single buffer over the allocation budget (`MAX_ALLOC_BYTES`, ZF-M33) is refused up front with `Error::MemoryAllocation`. Residual: a machine with less free RAM than the work needs can still be OOM-killed by the OS; that is physical, not a math answer. |
 | Default operator precision | 128 bits, `ToEven` — used by `+` `−` `×` `÷` operator traits only |
 | `MAX_PREC_RETRY` | `256` — extra word-sized retry steps beyond `p` for correct-rounding loops |
 | `SVD_ITER_MAX` | `64` — QR sweeps per singular value in `svd_decomp`; then `None` |
