@@ -4,7 +4,8 @@
 # 1. The library builds with --no-default-features (no std; core + alloc) on the host.
 # 2. nostd-tests (a #![no_std] crate: core + alloc only) runs the mpmath reference cases on the host
 #    as a #![no_std]/#![no_main] binary linking only libc. It exits non-zero if any case misses its bit target.
-# The bare-metal thumbv7em (32-bit) QEMU runner was retired with P6 (64-bit targets only, 2026-10-30).
+# 3. Both libraries build --no-default-features --lib for x86_64-unknown-none (no std exists there; build-only).
+# The bare-metal 32-bit QEMU runner was retired with P6 (64-bit targets only, 2026-10-30).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
@@ -15,6 +16,9 @@ echo "== cargo build -p zenith-float-num --no-default-features --lib"
 cargo build -p zenith-float-num --no-default-features --lib
 echo "== cargo build -p zenith-float --no-default-features --lib"
 cargo build -p zenith-float --no-default-features --lib
+echo "== x86_64-unknown-none (no std): zenith-float-num, zenith-float --no-default-features --lib"
+cargo build -p zenith-float-num --no-default-features --lib --target x86_64-unknown-none
+cargo build -p zenith-float --no-default-features --lib --target x86_64-unknown-none
 
 cd nostd-tests
 echo "== nostd-host (x86_64-unknown-linux-gnu, #![no_std] + libc)"

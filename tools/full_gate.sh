@@ -92,6 +92,8 @@ run build-debug "tools/fresh_test_run.sh cargo test --workspace $TT"
 run mpfr-tests-build "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests --no-run"
 run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
+# P6: no_std proven on a target with no std at all (x86_64-unknown-none, build-only; same crates and features as build-nostd)
+run build-nostd-none "cargo build --no-default-features --lib --target x86_64-unknown-none && cargo build -p zenith-float-num --no-default-features --lib --target x86_64-unknown-none"
 run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
 run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
 run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
@@ -104,8 +106,9 @@ run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BA
 run no-clone-progress "tools/no_clone_selftest.sh && { tools/no_clone.sh | tail -1; tools/no_clone.sh --helpers | tail -1; true; }"
 run fmt "cargo fmt --all -- --check"
 run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
-# P6: 32-bit targets must refuse to build (i686 required; replaces test-i686, clippy-i686, hex-32bit, build-thumbv7em)
+# P6: 32-bit targets must refuse to build (scripts/check_64bit_only.sh; replaces the retired 32-bit steps)
 run refuse-32bit "bash scripts/check_64bit_only.sh"
+run no-32bit-scripts "tools/gate_no_32bit.sh"
 run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
 run unsafe-scan "bash tools/gate_unsafe_scan.sh"

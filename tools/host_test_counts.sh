@@ -3,7 +3,6 @@
 # binary ran 0 tests (none, all filtered out, all ignored), a Running line has no summary, the log has no
 # binaries, or a binary named after --expect did not run at all (a test skipped for a missing feature).
 # Binaries that are empty by construction are listed in ZERO_OK with the source fact checked each run, so a
-# stale entry is exit 2. The i686 variant is tools/i686_test_counts.sh (32-bit, see P6).
 set -euo pipefail
 label=${1:?usage: tools/host_test_counts.sh LABEL CARGO_TEST_LOG [--expect NAME...]}
 out=${2:?usage: tools/host_test_counts.sh LABEL CARGO_TEST_LOG [--expect NAME...]}

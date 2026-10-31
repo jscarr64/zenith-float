@@ -40,6 +40,8 @@ debug_slew() {
   cargo test -p zenith-float-num --lib --no-default-features --features std
   cargo test --workspace --features random,serde
   cargo build -p zenith-float-num --no-default-features
+  cargo build -p zenith-float-num --no-default-features --lib --target x86_64-unknown-none
+  cargo build --no-default-features --lib --target x86_64-unknown-none
 }
 
 mpfr_slew() {
