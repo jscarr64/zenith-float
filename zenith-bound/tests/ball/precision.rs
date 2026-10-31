@@ -2,7 +2,7 @@
 //! alias), validated at the constructors against `MIN_PRECISION..=MAX_PRECISION`. P1/P6: `MAX_PRECISION` is `2^32 - 1` (= `u32::MAX`) on every
 //! 64-bit target, read from zf `zenith_float_num::MAX_PRECISION` (ZF-M32, decided 2026-10-30 6:37 PM CT). One expectation per case on every target: no cfg and no
 //! `usize::BITS` branch. Edge list: ~/eugene-work/zfzb/edge-lists/ZB-TD02.md.
-//! P6 (64-bit only): host reds only. RED until the ZF-M32 code lands (host has 2^60 - 1): rows A, B, J, M, N.
+//! P6 (64-bit only): host reds only. RED until the ZF-M32 code lands (host has 2^60 - 1): rows A, B, J, M, N; rows Z1-Z3 (byte budget) are RED until the ZF-M32 size-check API lands.
 //! COVERS: Ball::exact, Ball::all_reals, Ball::from_mid_rad, BallArray::zeros, Ball::add, Ball::mul
 //! (Precision, MIN_PRECISION and MAX_PRECISION are a type alias and consts, which pubfn_coverage does not list.)
 
@@ -163,4 +163,32 @@ fn precisions_above_2_pow_32_minus_1_are_refused_on_every_target() -> Result<(),
         all_refuse(usize::try_from(p).map_err(|_| format!("{} as usize", p))?)?;
     }
     all_refuse(usize::MAX)
+}
+
+/// ZF-M32 byte budget: a single buffer larger than 2^31 bytes is refused with Error::MemoryAllocation
+/// before any allocation (zb maps it to BoundError::Resource, arith.rs:591).
+const BUDGET_BYTES: u64 = 1 << 31;
+
+/// Rows Z1-Z3 (budget-1, budget, budget+1 bytes): (bytes, refused?).
+const BUDGET_ROWS: [(u64, bool); 3] = [
+    (BUDGET_BYTES - 1, false),
+    (BUDGET_BYTES, false),
+    (BUDGET_BYTES + 1, true),
+];
+
+#[test]
+fn byte_budget_rows_wait_on_zf_m32_api() -> Result<(), String> {
+    // RED with a dependency note: ZF-M32 has not landed a public up-front size check, and no public
+    // zb or zf entry point takes a byte count, so these rows cannot be driven yet. Through precision
+    // the largest buffer is the 4p work buffer at MAX_PRECISION, exactly 2^31 bytes (row Z2), so
+    // budget+1 is unreachable without the M32 check API. When it lands, call it for each row:
+    // refused rows want Error::MemoryAllocation (BoundError::Resource in zb), the others want Ok.
+    let rows: Vec<String> = BUDGET_ROWS
+        .iter()
+        .map(|(b, refused)| format!("{} bytes refused={}", b, refused))
+        .collect();
+    Err(format!(
+        "waiting on ZF-M32 byte-budget check API; rows not driven: {}",
+        rows.join(", ")
+    ))
 }
