@@ -1,0 +1,1 @@
+- `macro_util::complex_cancel_bits`: the operand exponent gap in the cancellation check is computed with `checked_sub` / `checked_abs`; an overflow (unreachable for valid exponents) returns `Error::InvalidArgument` like an unrepresentable cancellation count. No value change.
