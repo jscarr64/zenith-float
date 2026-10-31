@@ -4,6 +4,7 @@
 // A `.clone()` on an `Rc` is spelled `Rc::clone(&x)` (a handle share, not a copy); big-number copies are banned by tools/no_clone.sh.
 #![deny(clippy::clone_on_ref_ptr)]
 
+#[cfg(feature = "astro")]
 mod astro;
 mod backend;
 #[cfg(feature = "dashu")]
