@@ -18,9 +18,7 @@ use crate::{Exponent, EXPONENT_MAX, EXPONENT_MIN};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-use super::series::{
-    series_cost_optimize, series_prec, series_run, ArgReductionEstimator, FactPolycoeffGen,
-};
+use super::series::{series_cost_optimize, series_run, ArgReductionEstimator, FactPolycoeffGen};
 
 /// Bits of the `powi_internal` exponent integer: a `u64` on every target, so a 32-bit `usize` cannot
 /// truncate an i64 power (`powsi`).
@@ -42,9 +40,9 @@ impl ArgReductionEstimator for SinhArgReductionEstimator {
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
     #[inline]
-    fn reduction_effect(n: usize, m: i64) -> i64 {
+    fn reduction_effect(n: usize, m: i64) -> usize {
         // n*log2(3) + m
-        n as i64 * 1000 / 631 + m
+        (n as i64 * 1000 / 631 + m) as usize
     }
 }
 
@@ -698,8 +696,8 @@ impl ExactNumNumber {
         // Argument reduction gives error 2^(-p+5) per step, and 2^(-p+3) once.
         // First terms of the series give 2^(-p+5).
         // The error of the remaining terms of the series is compensated.
-        let add_prec = reduction_times as i64 * 5 + 8 - e_eff;
-        let p_arg = series_prec(p, add_prec, 0)?;
+        let add_prec = reduction_times as i64 * 5 + 8 - e_eff as i64;
+        let p_arg = p + if add_prec > 0 { add_prec as usize } else { 0 };
         self.set_precision(p_arg, rm)?;
 
         let arg = if reduction_times > 0 {
