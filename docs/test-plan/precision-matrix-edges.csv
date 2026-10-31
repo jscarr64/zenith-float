@@ -1,6 +1,6 @@
 # precision-matrix-edges v12 (Harper 2026-10-30 pmrev12: PM_MAX_P pin, Paul M32 ruling 7:18 PM CT; P1 bit-identical everywhere and P6 64-bit minimum, pop-logs/PRINCIPLES.md; ZF-M27..M32; targets in docs/test-plan/inputs/targets.csv, no per-target columns). Lines starting with # are metadata; the CSV header is the first line without #.
 # source commit 7955836a845bd6419dc41d21eda6e739e3b622c5 (generator refuses if zenith-float-num/{src,tests} or zenith-bound/{src,tests} differ, except files sha256-pinned in gen_edges.pl %SRCPIN)
-# input docs/test-plan/inputs/FIXLIST.csv sha256:738a73243b29168b1337b0c2f9cbe223422183c1e3205fe4daf192637f7d38a1
+# input docs/test-plan/inputs/FIXLIST.csv sha256:8e3a564b5f8cee8782e5d98261aa03f7369dbda35763ffa791592ab8addd07f2
 # input docs/test-plan/inputs/M32-DECISION.md sha256:e6bcf204eaf5f0f57bee9ada064f47a09c66eee658bf3d35c3e343950fb65c5a
 # input docs/test-plan/inputs/fixes_after_1.0.12.txt sha256:03085a0acb3d5d0e51d8e8df13b3c4ad30d7843152d3d32024d6899c9f530c82
 # input docs/test-plan/inputs/pm-constants.csv sha256:e77c11f62cc2e656da16b872a01ae8326e315067a0cb45c679d2486191623bdd
