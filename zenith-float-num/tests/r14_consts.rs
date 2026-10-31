@@ -6,10 +6,10 @@
 //! mpmath at p+256 and p+512 bits, each error interval settled to one p-bit result and the
 //! two agreeing, for p in 1..=65536 (1, 2, 63, 64, 65 and 65536 included) and six modes.
 
-mod limbs64;
-
 use serde_json::Value;
-use zenith_float_num::{ConstantId, Consts, Error, ExactNum, RoundingMode, Sign, MAX_PRECISION};
+use zenith_float_num::{
+    ConstantId, Consts, Error, ExactNum, RoundingMode, Sign, Word, MAX_PRECISION,
+};
 
 const GOLDS: &str = include_str!("oracle/goldens/r14_consts.jsonl");
 const NAMES: [&str; 7] = ["Pi", "E", "Ln2", "Ln10", "Sqrt2", "Phi", "EulerGamma"];
@@ -54,8 +54,12 @@ fn value_of(n: &ExactNum) -> String {
     if n.is_nan() || n.is_inf() {
         return format!("special:{:?}", n.err());
     }
-    let limbs: Vec<String> =
-        limbs64::limbs_text(n.mantissa_digits().unwrap_or(&[])).unwrap_or_else(|e| vec![e]);
+    let limbs: Vec<String> = n
+        .mantissa_digits()
+        .unwrap_or(&[])
+        .iter()
+        .map(|w| format!("{w:016x}"))
+        .collect();
     let s = if n.sign() == Some(Sign::Neg) { "-" } else { "+" };
     format!("f:{s}:{}:{}", n.exponent().unwrap_or(0), limbs.join(","))
 }
@@ -88,7 +92,7 @@ fn expect_of(v: &Value) -> Result<ExactNum, String> {
     let mut limbs = Vec::with_capacity(arr.len());
     for w in arr {
         let s = w.as_str().ok_or("limb is not a string")?;
-        limbs.extend(limbs64::words_of_limb(s)?);
+        limbs.push(Word::from_str_radix(s, 16).map_err(|e| format!("limb {s}: {e}"))?);
     }
     let e = field(v, "e")?.as_i64().ok_or("e is not an i64")?;
     let sign = if text(v, "s")? == "-" { Sign::Neg } else { Sign::Pos };
