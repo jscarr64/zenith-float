@@ -26,7 +26,7 @@ zf already has a small prototype `Ball` (midpoint ± radius), but its radius is 
 **What the Task 1 audit (Part K) changed.** zf's `Up` and `Down` modes really are directed roundings toward +∞ and −∞ for add, sub, mul, div and sqrt in the finite range, and MPFR checks them bit-exactly. But three things block using them as-is for bounds:
 1. **Overflow ignores the rounding mode.** An overflowing result always becomes ±Inf, even in `Down` for a positive value, where the correct answer is the largest finite number. A lower bound of +Inf is wrong. The tests and the golden generator both encode this behaviour, so nothing catches it.
 2. **The `inexact` flag is inherited from inputs**, so it can't tell whether *this* operation rounded. Zero radii need a per-op ternary result.
-3. **The exponent is `i32`, and is a quarter of that range on 32-bit targets.** That breaks cross-target determinism near the extremes and is too narrow for a radius exponent. `Mag` therefore uses an `i64` exponent.
+3. **The exponent is `i32`, and is a quarter of that range on 32-bit targets.** That breaks cross-target determinism near the extremes and is too narrow for a radius exponent. `Mag` therefore uses an `i64` exponent. (history: true at fe5c15d; superseded by P6 and SP-i64, now `Exponent = i64`, ±(2^62 − 1) on every 64-bit target)
 
 zf precision is also rounded up to a multiple of 64 bits today. That would overestimate radii (for example ~2^11 = 2048× at `prec = 53`) and make `is_unique_at` test 64 bits, so zenith-float adds **P15, exact-bit rounding** (Gemini G1, LOCKED; 2.0.0 or 2.1, see C1), and from then on zenith-bound's `prec` means exactly `prec` bits.
 
@@ -147,7 +147,7 @@ Subnormal results in the MPFR differential only check MPFR's underflow flag, not
 - **`inexact` is inherited:** `let mut inexact = self.inexact || d2.inexact` (`src/num.rs:337`, `:409`, `:633`). A result is marked inexact if any input was, even when this op was exact. It cannot give zero radii. A per-op ternary is required.
 - **Precision is word-quantised:** "Precision is rounded upwards to the word size" (`src/num.rs` op docs, `round_p`). A zf number cannot be rounded to 4 bits. Ball `prec` will be exactly `prec` bits once P15 lands (Gemini G1). Rounding tests at tiny precisions must use zenith-bound's own integer model (C6), not zf.
 - **Exponent convention:** value = 0.m × 2^e (mantissa in [1/2, 1)); `3` is stored as `e = 2`, `m = 0xC000…` (`arith.jsonl:1`). So the **leading-bit exponent is `exponent() − 1`**.
-- **Exponent range is target-dependent:** `EXPONENT_MAX = i32::MAX`, `EXPONENT_MIN = i32::MIN` on 64-bit targets, but `/4` on 32-bit targets (`src/defs.rs:42-58`). That breaks bit-identical results across i686/wasm32 near the extremes (Part J).
+- **Exponent range is target-dependent:** `EXPONENT_MAX = i32::MAX`, `EXPONENT_MIN = i32::MIN` on 64-bit targets, but `/4` on 32-bit targets (`src/defs.rs:42-58`). That breaks bit-identical results across i686/wasm32 near the extremes (Part J). (history: true at fe5c15d; superseded by P6 and SP-i64, now `Exponent = i64`, ±(2^62 − 1) on every 64-bit target)
 - **`Consts` re-rounds from its cache to `p`** (`src/ops/consts/mod.rs:70-120`), so call order should not change bits; still needs the A→B vs B→A test.
 
 ### K6. The checklist for zf 2.1
@@ -158,7 +158,7 @@ Subnormal results in the MPFR differential only check MPFR's underflow flag, not
 | `top_u64_mantissa_and_sticky` (or similar) | **MISSING**. Parts exist: `mantissa_digits()` and `as_raw_parts()` | `src/ext.rs:1402`, `:1257` | add `top_u64_mantissa_and_sticky() -> Option<(u64, bool, i64)>` (word-size independent) |
 | `from_mag_parts` / pow2 construction | **MISSING** as such. `from_words(m, s, e)` and `ldexp` can build `m·2^e` | `src/ext.rs:1296`; `ldexp` used at `tests/oracle.rs:172` | add `from_mag_parts(mant: u64, exp: i64, p) -> Result` (exact, error if out of range) and `pow2(exp: i64, p)` |
 | exact add and mul (no rounding) | **EXISTS** | `add_full_prec` `src/ext.rs:132`, `sub_full_prec` `:182`, `mul_full_prec` `:236` | document exactness; overflow must be an error, not Inf |
-| exponent limits and min-normal exponent | **PARTIAL**. `EXPONENT_MIN/MAX` and `min_positive_normal(p)` exist; no named min-normal exponent; range differs on 32-bit | `src/defs.rs:42-58`; `src/ext.rs:1234` | add `MIN_NORMAL_EXPONENT` const; (32-bit range moot under P6) |
+| exponent limits and min-normal exponent | **PARTIAL**. `EXPONENT_MIN/MAX` and `min_positive_normal(p)` exist; no named min-normal exponent; range differs on 32-bit | `src/defs.rs:42-58`; `src/ext.rs:1234` | add `MIN_NORMAL_EXPONENT` const; (32-bit range moot under P6; history: true at fe5c15d, superseded by P6 and SP-i64) |
 | directed sqrt and div | **EXISTS**, tested (K4); overflow defect applies to div | `src/num.rs:384`; `src/ops/sqrt.rs:21` | K3 overflow fix |
 | ops returning the pre-round exponent | **MISSING** | none | `add/sub/mul/div/sqrt_with_info(..) -> (ExactNum, Ternary, pre_round_exp: i64)` |
 | `ulp`, `next_up`, `next_down` | **MISSING**. `next_after(toward, p, rm)` exists | `src/ext.rs:1697` | add `ulp(p)`, `next_up(p)`, `next_down(p)` |
@@ -168,7 +168,7 @@ Subnormal results in the MPFR differential only check MPFR's underflow flag, not
 | K3 directed overflow | **DEFECT** | K3 | fix, fix tests and generator |
 | K-doc rounding-mode docs | **DEFECT** (docs) | `src/defs.rs:253-271` | fix docs |
 
-**Exponent width.** `Exponent = i32` (`src/defs.rs:42`), full `i32` range on 64-bit targets and a quarter of it on 32-bit. `i32` covers *midpoint* exponents but **not** `Mag`: a half ulp at precision `p` needs `exp(mid) − p − 1`, which goes below `i32::MIN` for small mids, and `rad·rad` products double the exponent. **`Mag` uses `i64`**, overflow to `Infinity` (C6).
+**Exponent width.** `Exponent = i32` (`src/defs.rs:42`), full `i32` range on 64-bit targets and a quarter of it on 32-bit. `i32` covers *midpoint* exponents but **not** `Mag`: a half ulp at precision `p` needs `exp(mid) − p − 1`, which goes below `i32::MIN` for small mids, and `rad·rad` products double the exponent. **`Mag` uses `i64`**, overflow to `Infinity` (C6). (history: true at fe5c15d; superseded by P6 and SP-i64, now `Exponent = i64`, ±(2^62 − 1) on every 64-bit target)
 
 ## Part C. Crate boundary, zf prerequisites, versions, puremp port, Mag
 
