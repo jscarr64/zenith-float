@@ -117,7 +117,7 @@ pub trait ArgReductionEstimator {
     fn reduction_cost(n: usize, p: usize) -> u64;
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
-    fn reduction_effect(n: usize, m: i64) -> usize;
+    fn reduction_effect(n: usize, m: i64) -> i64;
 }
 
 /// Compute the number of reductions required for the best performance.
@@ -132,7 +132,7 @@ pub(crate) fn series_cost_optimize<S: ArgReductionEstimator>(
     m: i64,
     pwr_step: usize,
     ext: bool,
-) -> (usize, usize, usize) {
+) -> (usize, usize, i64) {
     let reduction_num_step = log2_floor(p) / 2;
 
     if reduction_num_step == 0 {
@@ -199,11 +199,33 @@ pub(crate) fn series_run<T: PolycoeffGen>(
 /// Estimate of the number of series iterations.
 /// p is the precision, m is the negative power of x
 /// (i.e. x = f*2^(-m), where 0.5 <= f < 1).
-fn series_niter(p: usize, m: usize) -> usize {
+fn series_niter(p: usize, m: i64) -> usize {
     let ln = log2_floor(p);
     let lln = log2_floor(ln);
-    // A denominator past `usize::MAX` (32-bit, huge m) exceeds p, so the quotient is exactly 0.
-    (ln - lln).checked_add(m).map_or(0, |d| p / (d - 2))
+    // A negative m, or a denominator past u64, gives 0 (as the former usize wrap did).
+    let d = u64::try_from(m)
+        .ok()
+        .zip(u64::try_from(ln - lln).ok())
+        .and_then(|(m, l)| l.checked_add(m))
+        .and_then(|d| d.checked_sub(2))
+        .filter(|&d| d > 0);
+    // A denominator past usize exceeds p, so the quotient is exactly 0.
+    d.map_or(0, |d| usize::try_from(d).map_or(0, |d| p / d))
+}
+
+/// Working precision `p + add_prec` (or `p + floor` when `add_prec <= 0`) for a series whose
+/// precision increase `add_prec` comes from an `i64` effective exponent.
+///
+/// ## Errors
+///
+///  - InvalidArgument: the precision is not representable as `usize`.
+pub(crate) fn series_prec(p: usize, add_prec: i64, floor: usize) -> Result<usize, Error> {
+    let add = if add_prec > 0 {
+        usize::try_from(add_prec).map_err(|_| Error::InvalidArgument)?
+    } else {
+        floor
+    };
+    p.checked_add(add).ok_or(Error::InvalidArgument)
 }
 
 /// Estimate cost of execution for series.

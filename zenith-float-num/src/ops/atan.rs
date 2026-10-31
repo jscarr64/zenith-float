@@ -14,6 +14,7 @@ use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::ops::series::series_cost_optimize;
+use crate::ops::series::series_prec;
 use crate::ops::series::series_run;
 use crate::ops::series::ArgReductionEstimator;
 use crate::ops::series::PolycoeffGen;
@@ -75,9 +76,9 @@ impl ArgReductionEstimator for AtanArgReductionEstimator {
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
     #[inline]
-    fn reduction_effect(n: usize, m: i64) -> usize {
+    fn reduction_effect(n: usize, m: i64) -> i64 {
         // for x much smaller than 1, reduction is almost x/2
-        (n as i64 + m) as usize
+        n as i64 + m
     }
 }
 
@@ -151,14 +152,18 @@ impl ExactNumNumber {
         );
 
         // to avoid diverging error e_eff must be large enough
-        if e_eff < 3 {
-            reduction_times += 3 - e_eff;
+        // (A negative e_eff is left alone, as the former usize comparison did.)
+        if (0..3).contains(&e_eff) {
+            reduction_times = usize::try_from(3 - e_eff)
+                .ok()
+                .and_then(|d| reduction_times.checked_add(d))
+                .ok_or(Error::InvalidArgument)?;
         }
 
         // Reduction gives 2^(-p+8) per iteration.
         // e_eff compensates error of the series and gives 2^(-p+2).
-        let add_prec = reduction_times as i64 * 8 + 2 - e_eff as i64;
-        let p_arg = p + if add_prec > 0 { add_prec as usize } else { 0 };
+        let add_prec = reduction_times as i64 * 8 + 2 - e_eff;
+        let p_arg = series_prec(p, add_prec, 0)?;
         self.set_precision(p_arg, rm)?;
 
         let arg = if reduction_times > 0 { self.atan_arg_reduce(reduction_times)? } else { self };

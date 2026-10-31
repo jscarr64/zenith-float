@@ -14,6 +14,7 @@ use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::ops::series::series_cost_optimize;
+use crate::ops::series::series_prec;
 use crate::ops::series::ArgReductionEstimator;
 use crate::ops::series::PolycoeffGen;
 use crate::ops::util::compute_small_exp;
@@ -58,8 +59,8 @@ impl ArgReductionEstimator for TanArgReductionEstimator {
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
     #[inline]
-    fn reduction_effect(n: usize, m: i64) -> usize {
-        (n as i64 + m) as usize
+    fn reduction_effect(n: usize, m: i64) -> i64 {
+        n as i64 + m
     }
 }
 
@@ -126,8 +127,8 @@ impl ExactNumNumber {
             true,
         );
 
-        let add_prec = reduction_times as i64 * 4 + 9 - e_eff as i64;
-        let p_arg = p + if add_prec > 0 { add_prec as usize } else { 0 };
+        let add_prec = reduction_times as i64 * 4 + 9 - e_eff;
+        let p_arg = series_prec(p, add_prec, 0)?;
         self.set_precision(p_arg, rm)?;
 
         let arg = if reduction_times > 0 { self.tan_arg_reduce(reduction_times)? } else { self };
