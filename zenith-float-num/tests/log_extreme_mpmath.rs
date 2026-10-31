@@ -23,25 +23,13 @@ fn mode_of(name: &str) -> Result<RoundingMode, String> {
 }
 
 /// A Word as u64 (the identity on 64-bit builds).
-#[cfg(not(target_pointer_width = "32"))]
 fn widen(w: Word) -> u64 {
     w
 }
 
-#[cfg(target_pointer_width = "32")]
-fn widen(w: Word) -> u64 {
-    u64::from(w)
-}
-
 /// The low Word of a u64 that already fits one Word (masked by the caller).
-#[cfg(not(target_pointer_width = "32"))]
 fn narrow(v: u64) -> Word {
     v
-}
-
-#[cfg(target_pointer_width = "32")]
-fn narrow(v: u64) -> Word {
-    Word::try_from(v).unwrap_or(Word::MAX)
 }
 
 fn sign_str(n: &ExactNum) -> &'static str {

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Diff example stdout (TSV rows) against golds/hex/reference.txt.
-# Extra args are forwarded to `cargo run` (e.g. --target i686-unknown-linux-gnu).
+# Extra args are forwarded to `cargo run` (e.g. --target aarch64-unknown-linux-musl).
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
