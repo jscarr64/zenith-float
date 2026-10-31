@@ -17,6 +17,8 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
 
+mod limbs64;
+
 use serde_json::Value;
 use zenith_float_num::{Consts, ExactNum, Exponent, Radix, RoundingMode, Sign, Word};
 
@@ -52,7 +54,7 @@ fn canon_of(n: &ExactNum) -> String {
     }
     let digits = n.mantissa_digits().unwrap_or(&[]);
     let is_zero = digits.iter().all(|w| *w == 0);
-    let limbs: Vec<String> = digits.iter().map(|w| format!("{w:016x}")).collect();
+    let limbs = limbs64::limbs_text(digits).unwrap_or_else(|e| vec![e]);
     let e = if is_zero { 0 } else { n.exponent().unwrap_or(0) };
     format!("f:{}:{}:{}", sign_str(n), e, limbs.join(","))
 }
@@ -72,7 +74,7 @@ fn limbs_of(v: &Value) -> Result<Vec<Word>, String> {
     let mut out = Vec::with_capacity(arr.len());
     for w in arr {
         let s = w.as_str().ok_or("limb is not a string")?;
-        out.push(Word::from_str_radix(s, 16).map_err(|e| format!("limb {s}: {e}"))?);
+        out.extend(limbs64::words_of_limb(s)?);
     }
     Ok(out)
 }
@@ -82,7 +84,7 @@ fn canon_expect(v: &Value) -> Result<String, String> {
         "nan" => Ok("nan".to_string()),
         "inf" => Ok(format!("inf:{}", text(v, "s")?)),
         "f" => {
-            let limbs: Vec<String> = limbs_of(v)?.iter().map(|w| format!("{w:016x}")).collect();
+            let limbs = limbs64::limbs_text(&limbs_of(v)?)?;
             let e: Exponent = field(v, "e")?.as_i64().ok_or("e is not an i64")?;
             Ok(format!("f:{}:{}:{}", text(v, "s")?, e, limbs.join(",")))
         }
