@@ -379,7 +379,9 @@ fn s6_heavy_rows_replay_through_zb() -> Result<(), String> {
             println!("SKIP s6_heavy_rows_replay_through_zb: ZB_MATRIX_HEAVY unset, 0 of {HEAVY_ROWS} heavy rows run");
             return Ok(());
         }
-        Err(std::env::VarError::NotUnicode(v)) => return Err(format!("ZB_MATRIX_HEAVY is not unicode: {v:?}")),
+        Err(std::env::VarError::NotUnicode(v)) => {
+            return Err(format!("ZB_MATRIX_HEAVY is not unicode: {v:?}"))
+        }
     };
     let text = std::fs::read_to_string(&path).map_err(|e| format!("cannot read {path}: {e}"))?;
     replay_text(&text, HEAVY_ROWS)?;
