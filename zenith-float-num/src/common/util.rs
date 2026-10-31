@@ -76,7 +76,7 @@ pub fn calc_add_cost(p: usize) -> usize {
 ///
 /// A Ziv loop for a result of `p` bits may work at up to `max(p + 16384, 3p)` bits on 64-bit
 /// words (`p + max(WORD_BIT_SIZE * MAX_PREC_RETRY, 2p)`) before returning
-/// `NaN(PrecisionRetryExhausted)`; see [`prec_retry_budget`].
+/// `NaN(PrecisionRetryExhausted)`; see `prec_retry_budget`.
 pub const MAX_PREC_RETRY: usize = 256;
 
 /// Largest decimal exponent magnitude the decimal conversion tests exercise; numbers whose binary

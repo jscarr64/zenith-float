@@ -3771,7 +3771,7 @@ fn asymp_min_exponent(p: usize, terms: usize) -> Exponent {
 }
 
 /// Largest `n` for which Γ(n+½) and ψ(n+½) use their closed forms.
-/// Beta function `B(a, b)` at `p` bits with `rm`; see [`ExactNumNumber::beta`].
+/// Beta function `B(a, b)` at `p` bits with `rm`; see `ExactNumNumber::beta`.
 pub fn beta(a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
     let a_c = a.exact_copy_ext();
     let b_c = b.exact_copy_ext();

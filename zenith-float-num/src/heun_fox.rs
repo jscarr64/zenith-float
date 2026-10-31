@@ -620,7 +620,7 @@ impl ExactNum {
     /// Fox \(H^{m,n}_{p,q}(\mathrm{self}\mid (a_i,A_i); (b_j,B_j))\).
     ///
     /// Each slice is pairs \((a,A)\) or \((b,B)\) in the same \(n,p,m,q\) grouping as
-    /// [`meijer_g`]. When every \(A_i=B_j=1\) this is Meijer \(G\). Positive rational
+    /// `meijer_g`. When every \(A_i=B_j=1\) this is Meijer \(G\). Positive rational
     /// scales are lifted by the Gauss multiplication formula (mpmath `foxh`).
     ///
     /// # Precision
@@ -634,7 +634,7 @@ impl ExactNum {
     ///
     /// - \(A_i,B_j\) must be positive rationals with small numerator/denominator
     ///   (denominators \(\le 16\), cleared scales \(\le 12\)). Otherwise `NaN`.
-    /// - Coincident poles after the lift use the same logarithmic limit as [`meijer_g`].
+    /// - Coincident poles after the lift use the same logarithmic limit as `meijer_g`.
     /// - Real \(\mathrm{self}>0\) when a scale is not 1 (fractional \(z^{1/r}\)).
     ///
     /// Accuracy: unspecified

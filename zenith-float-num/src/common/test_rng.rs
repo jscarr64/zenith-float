@@ -134,7 +134,7 @@ where
     draw()
 }
 
-/// Public name for [`random`] when the `random` feature is enabled.
+/// Public name for `random` when the `random` feature is enabled.
 #[cfg(feature = "random")]
 pub fn seeded_random<T>() -> T
 where

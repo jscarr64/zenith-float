@@ -419,7 +419,7 @@ where
 
 /// Same Ziv loop as [`ziv_round`], with every input lifted to `p_wrk` before `compute`.
 ///
-/// `MAX_PREC_RETRY` still bounds the number of bumps via [`bump_prec_retry`].
+/// `MAX_PREC_RETRY` still bounds the number of bumps via `bump_prec_retry`.
 pub fn ziv_round_vec<F>(p: usize, rm: RoundingMode, inputs: &[ExactNum], mut compute: F) -> ExactNum
 where
     F: FnMut(usize, &[ExactNum]) -> ExactNum,

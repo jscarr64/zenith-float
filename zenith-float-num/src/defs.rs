@@ -71,7 +71,7 @@ pub const MIN_PRECISION: Precision = 1;
 /// Largest accepted precision in bits; anything above it is rejected with `Error::InvalidArgument`.
 ///
 /// `min(2^60, usize::MAX / 4) - 1`: `2^60 - 1` on 64-bit targets, so that an exponent plus or minus a
-/// precision stays inside `±2^62` (see [`crate::defs`] exponent helpers), and
+/// precision stays inside `±2^62` (see `crate::defs` exponent helpers), and
 /// `2^30 - 1` on 32-bit targets, where sizes are 32-bit `usize`.
 /// Allocating a mantissa this large still fails with `Error::MemoryAllocation` on real hardware.
 pub const MAX_PRECISION: Precision = {
