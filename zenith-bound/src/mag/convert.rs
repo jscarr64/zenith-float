@@ -28,7 +28,7 @@ fn top_of(x: &ExactNum, upper: bool) -> Option<(u64, bool, i64)> {
     }
 }
 
-/// Bits in one zf mantissa word (`Word` is `u64` on 64-bit targets and `u32` on 32-bit ones).
+/// Bits in one zf mantissa word (`Word` is `u64`; zf supports 64-bit targets only, P6).
 const WORD_BITS: u32 = Word::BITS;
 
 /// `Ok(None)` when every word is zero, `Err(())` on exponent underflow. Width-independent: the result depends only on
@@ -80,7 +80,7 @@ fn top_of_words(words: &[Word], exponent: i64) -> Result<Option<(u64, bool, i64)
     }
 }
 
-/// `m` as little-endian zf words: one `u64` word, or two `u32` words. The second slot is unused (and zero) on 64-bit.
+/// `m` as little-endian zf words: one `u64` word in slot 0; slot 1 is unused and zero (64-bit only, P6).
 fn words_of(m: u64) -> Option<([Word; 2], usize)> {
     let bytes = m.to_le_bytes();
     let mut buf: [Word; 2] = [0, 0];

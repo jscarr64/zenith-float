@@ -998,7 +998,7 @@ pub fn canonical_case(ops: &Ops, src: &mut Src) -> Result<u8, Bad> {
     run().map_err(|m| bad("canonical", &c, m))
 }
 
-/// A generator precision (`u32`) as the API's `Precision` (`usize`, at least 32 bits on every supported target).
+/// A generator precision (`u32`) as the API's `Precision` (`usize`, 64 bits on every supported target, P6).
 fn api_prec(prec: u32) -> usize {
     usize::try_from(prec).unwrap_or(usize::MAX)
 }
