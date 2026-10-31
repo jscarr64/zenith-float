@@ -1,7 +1,7 @@
 //! The `Mag` ⇄ `ExactNum` bridge (CONTRACT 2.3, 3.3, 3.4; PLAN C5).
 //!
 //! Both directions go through zf's raw parts (R14): `ExactNum::as_raw_parts` gives the value as
-//! `(-1)^negative * M * 2^(exponent - precision)` with `M` in little-endian zf `Word`s (64-bit, or 32-bit on 32-bit targets), and `ExactNum::from_raw_parts`
+//! `(-1)^negative * M * 2^(exponent - precision)` with `M` in little-endian zf `Word`s (64-bit; zf is 64-bit only, P6), and `ExactNum::from_raw_parts`
 //! builds one back. The reading side takes the top 64 bits of `M` as a `0.mant * 2^exp` `Mag` (round down) plus a
 //! sticky flag (any lower bit set), and one ulp more is the round-up result when bits were dropped. The stored precision
 //! is never assumed to round-trip: only the value is read.
@@ -44,7 +44,7 @@ fn top_of_words(words: &[Word], exponent: i64) -> Result<Option<(u64, bool, i64)
     };
     let lz = hi.leading_zeros();
     // Gather whole words below `hi` until the window holds at least 64 bits under the leading one (at most 128 bits:
-    // two 64-bit words, or three 32-bit words); every word below the window only feeds the sticky bit.
+    // two 64-bit words); every word below the window only feeds the sticky bit.
     let mut acc = u128::from(hi);
     let mut nbits = WORD_BITS;
     for w in nonzero.by_ref() {
