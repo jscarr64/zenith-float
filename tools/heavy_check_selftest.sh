@@ -45,7 +45,7 @@ ck; hc --pin "$t/PIN" "$t/o.txt" && fail "unpinned heavy file passed the pin"
 # full_gate: matrix-heavy never skips, skip-scan fails a SKIP line in any step log
 fe=(env -u GATE_STEPS -u ZB_MATRIX_HEAVY -u POPLOG_FILE -u POPLOG_STATE_DIR -u POPLOG_PID -u POPLOG_PROGRESS_FILE RUNLOG_POPLOG=/nonexistent RUNLOG_PLAIN=1 RUNLOG_SELFTEST=1)
 rcof() { sed -n "s/^$2=//p" "$t/logs/$1.rc"; }
-mkdir -p "$t/repo/tests/goldens/slices/matrix" "$t/logs"; cp "$t/PIN" "$t/repo/tests/goldens/slices/matrix/HEAVY.SHA256"
+mkdir -p "$t/repo/tests/goldens/slices/matrix" "$t/logs"; cp "$t/PIN" "$t/repo/tests/goldens/slices/matrix/HEAVY.SHA256"; ln -s "$root/tools" "$t/repo/tools"
 ck; "${fe[@]}" GATE_STEPS=matrix-heavy T="$t/logs" REPO="$t/repo" "$root/tools/full_gate.sh" unset > /dev/null 2>&1 && fail "gate passed matrix-heavy with ZB_MATRIX_HEAVY unset"
 ck; [ "$(rcof unset matrix-heavy)" != "" ] && [ "$(rcof unset matrix-heavy)" != 0 ] || fail "matrix-heavy did not run and fail with ZB_MATRIX_HEAVY unset (rc '$(rcof unset matrix-heavy)')"
 ck; "${fe[@]}" ZB_MATRIX_HEAVY="$t/o.txt" GATE_STEPS=matrix-heavy T="$t/logs" REPO="$t/repo" "$root/tools/full_gate.sh" badpin > /dev/null 2>&1 && fail "gate passed matrix-heavy with an unpinned heavy file"
