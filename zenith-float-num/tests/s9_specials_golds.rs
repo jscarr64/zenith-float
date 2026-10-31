@@ -452,7 +452,7 @@ fn s9_beta() -> Result<(), String> {
 fn s9_time_factor_rejects_bad() -> Result<(), String> {
     for bad in [
         "abc", "", "0", "0.999", "0.5", "-1", "+2", "inf", "NaN", "1e3", "4.2701", "1.", ".5",
-        "1.2.3", " 2",
+        "1.2.3", " 2", "8.001", "1000",
     ] {
         if let Ok(v) = time_factor_milli(Some(bad)) {
             return Err(format!("ZF_TIME_FACTOR={bad:?} accepted as {v}"));
@@ -464,6 +464,10 @@ fn s9_time_factor_rejects_bad() -> Result<(), String> {
         (Some("1.34"), 1340),
         (Some("4.27"), 4270),
         (Some("2.5"), 2500),
+        (Some("8.000"), 8000),
+        (Some("8"), 8000),
+        (Some("1.000"), 1000),
+        (Some("01.5"), 1500),
     ] {
         let got = time_factor_milli(raw)?;
         if got != want {
@@ -480,6 +484,10 @@ fn s9_time_factor_rejects_bad() -> Result<(), String> {
     }
     if scaled(Duration::from_secs(u64::MAX), 2000).is_ok() {
         return Err("overflowing budget accepted".to_string());
+    }
+    // from_secs(u64::MAX) already fails at u64::try_from(as_millis); this one reaches checked_mul.
+    if scaled(Duration::from_millis(u64::MAX), 2000).is_ok() {
+        return Err("budget ms x milli overflow accepted".to_string());
     }
     Ok(())
 }
