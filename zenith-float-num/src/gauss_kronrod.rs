@@ -78,8 +78,7 @@ impl core::fmt::Display for QuadratureError {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for QuadratureError {}
+impl core::error::Error for QuadratureError {}
 
 /// One (7, 15) panel, or the value accepted by [`integrate_adaptive_gk`].
 #[derive(Debug)]
@@ -1125,7 +1124,7 @@ where
     Err(QuadratureError::InvalidArgument)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))] // Display of ExactNum is std-only
 mod tests {
     use super::*;
 

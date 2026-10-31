@@ -58,3 +58,15 @@ random = ["dep:rand"]
 serde = ["dep:serde", "std"]
 # Optional MPFR golden tests (slow; enable with --features mpfr-tests).
 mpfr-tests = ["random"]
+
+[[test]]
+name = "gauss_kronrod_mpmath"
+required-features = ["std"]
+
+[[test]]
+name = "gk_eps_probe"
+required-features = ["std"]
+
+[[test]]
+name = "methods_oracle"
+required-features = ["std"]
