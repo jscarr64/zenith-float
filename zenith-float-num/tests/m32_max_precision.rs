@@ -1,4 +1,4 @@
-//! M32: `MAX_PRECISION = 2^32 - 1` and the 2 GiB single-buffer size check (edge list m32-edge-list.md).
+//! M32: `MAX_PRECISION` (2^30 - 2^18 since M32-R, was 2^32 - 1) and the 2 GiB single-buffer size check (edge list m32-edge-list.md).
 
 use zenith_float_num::{
     check_alloc_bytes, Consts, Error, ExactNum, Radix, RoundingMode, MAX_ALLOC_BYTES, MAX_PRECISION,
@@ -7,8 +7,8 @@ use zenith_float_num::{
 const GIB2: usize = 1 << 31;
 
 #[test]
-fn max_precision_is_u32_max() {
-    assert_eq!(u64::try_from(MAX_PRECISION).ok(), Some(u64::from(u32::MAX)));
+fn max_precision_value() {
+    assert_eq!(MAX_PRECISION, (1 << 30) - (1 << 18));
 }
 
 #[test]
@@ -33,9 +33,8 @@ fn size_check_bytes() {
 
 #[test]
 fn size_check_words_threshold() {
-    // 4 * MAX_PRECISION bits rounds up to exactly 2^28 64-bit words = 2^31 bytes.
-    let words_4p = (4 * MAX_PRECISION).div_ceil(64);
-    assert_eq!(words_4p, 1 << 28);
+    // 2^28 64-bit words = 2^31 bytes exactly (M32-R: no longer tied to 4 * MAX_PRECISION, see m32-mul-trace.md).
+    let words_4p: usize = 1 << 28;
     assert_eq!(check_alloc_bytes(words_4p - 1, 8), Ok(()));
     assert_eq!(check_alloc_bytes(words_4p, 8), Ok(()));
     assert_eq!(
@@ -50,7 +49,7 @@ fn size_check_overflow() {
     assert_eq!(check_alloc_bytes(usize::MAX, 0), Ok(()));
 }
 
-// Heavy rows: each mantissa at MAX_PRECISION is 2^26 words = 512 MiB. Run under popslot --mem 10G.
+// Heavy rows: each mantissa at MAX_PRECISION is 16,773,120 words = 128 MiB. Run under popslot --mem 10G.
 #[test]
 fn heavy_max_minus_one_and_max_accepted() {
     let a = ExactNum::from_u8(1, MAX_PRECISION - 1);
@@ -64,8 +63,9 @@ fn heavy_max_minus_one_and_max_accepted() {
 }
 
 #[test]
-fn heavy_binary_conversion_over_budget_refused() {
-    // Radix-2 conversion keeps one byte per mantissa bit: 2^32 bytes at MAX_PRECISION, over the budget.
+fn heavy_binary_conversion_fits_at_max() {
+    // Radix-2 conversion keeps one byte per mantissa bit: 1,073,479,680 bytes at MAX_PRECISION, inside the
+    // budget since M32-R (it was 2^32 bytes and refused at the old MAX).
     let three = ExactNum::from_u8(3, MAX_PRECISION);
     assert!(!three.is_nan());
     let mut cc = Consts::new().expect("consts");
@@ -73,6 +73,6 @@ fn heavy_binary_conversion_over_budget_refused() {
         three
             .convert_to_radix(Radix::Bin, RoundingMode::ToEven, &mut cc)
             .map(|_| ()),
-        Err(Error::MemoryAllocation)
+        Ok(())
     );
 }

@@ -60,7 +60,7 @@ pub const MIN_NORMAL_EXPONENT: Exponent = EXPONENT_MIN;
 
 /// A precision in bits: the type of [`MIN_PRECISION`], [`MAX_PRECISION`], [`DEFAULT_P`] and of the
 /// precisions the API reports. Accepted values are `MIN_PRECISION..=MAX_PRECISION`; `MAX_PRECISION` is
-/// `2^32 - 1` on every (64-bit) target. An alias of `usize`, so code
+/// `2^30 - 2^18` on every (64-bit) target. An alias of `usize`, so code
 /// written against `usize` keeps compiling.
 pub type Precision = usize;
 
@@ -70,14 +70,20 @@ pub const MIN_PRECISION: Precision = 1;
 
 /// Largest accepted precision in bits; anything above it is rejected with `Error::InvalidArgument`.
 ///
-/// `2^32 - 1` (`u32::MAX`) on every target (64-bit only since 2.0). An exponent plus or minus twice a
-/// precision stays far inside `±2^62`, a precision always fits `u32` (so `sqrt_int(p as u32)`-style helpers
-/// never truncate), and the 4p working width of the widest internal product, `2^28` words, fits exactly in
-/// [`MAX_ALLOC_BYTES`]. Wider internal buffers are refused with `Error::MemoryAllocation`, see
-/// [`check_alloc_bytes`]. A mantissa this large still needs 512 MiB of RAM.
-pub const MAX_PRECISION: Precision = 4_294_967_295;
+/// `2^30 - 2^18` (1,073,479,680 bits, 16,773,120 words) on every target (64-bit only since 2.0): the
+/// largest precision at which add, sub, mul, div, sqrt and the radix conversions run with every single
+/// buffer inside [`MAX_ALLOC_BYTES`]. The bound is set by the multiply: two `w`-word operands go through an
+/// FFT whose work buffer is `8 * (3 * k1 + 6) * part_len` bytes, which is 1,612,234,800 bytes at this `w`
+/// and jumps to 3,222,896,688 bytes (k1 = 65536) from 33,546,241 total words. A whole number of words, so no
+/// operation rounds the precision above the limit. An exponent plus or minus twice a precision stays far
+/// inside `±2^62`, and `2 * MAX_PRECISION < 2^32`, so the FFT size helper (`sqrt_int` on a `u32`) never
+/// truncates. Families that need wider buffers at this precision refuse with `Error::MemoryAllocation`, see
+/// [`check_alloc_bytes`]. A mantissa this large needs 128 MiB of RAM.
+pub const MAX_PRECISION: Precision = 1_073_479_680;
 
-const _: () = assert!(MAX_PRECISION == (1 << 32) - 1);
+const _: () = assert!(MAX_PRECISION == (1 << 30) - (1 << 18));
+const _: () = assert!(MAX_PRECISION % 64 == 0);
+const _: () = assert!(2 * MAX_PRECISION < 1 << 32);
 
 /// Largest single buffer the library allocates, in bytes: `2^31` (2 GiB), the same on every target.
 ///
