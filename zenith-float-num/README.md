@@ -11,7 +11,7 @@ Numeric kernel of [zenith-float](https://github.com/jscarr64/zenith-float). Depe
 > precision, an overflow rounded toward
 > zero returns the largest finite value, `inexact()` describes the last operation
 > only (`inexact_accumulated()` keeps the old meaning), `from_raw_parts` validates
-> its parts, and the exponent range is `i32::MIN..=i32::MAX` on 32-bit targets too.
+> its parts, and the exponent range is `±(2^62 − 1)` on every supported (64-bit, P6) target.
 > See [CHANGELOG.md](https://github.com/jscarr64/zenith-float/blob/main/CHANGELOG.md) for each change and its
 > migration. 2.0.0 is not yet published; the current crates.io release is 1.0.12.
 
@@ -99,7 +99,7 @@ No other open issues. The items listed in the 1.0.5 audit (`doc/AUDIT.md`) were 
 - `inexact()` is true when the operation that produced the value rounded it; this holds for every rounded function and for `ExactComplex`. `inexact_accumulated()` is true when anything upstream rounded.
 - Every rounded function rounds at exactly `p` bits in every mode, and exact results (`sqrt(4)`, `hypot(3, 4)`, `exp(0)`) are exact. Overflow returns `±max_value(p)` under `ToZero`, `Down` (positive) and `Up` (negative) in every function. `sin_cos` and `sinh_cosh` round and flag each result separately. `rem` is always exact and takes no rounding mode.
 - `expr!` raises working precision to compensate cancellation. It does **not** itself perform correct rounding; the completion of a rounding loop in finite time depends on the expression.
-- Overflow of the exponent range `i32::MIN..=i32::MAX` (the same on every target) becomes `±Inf`, except that `add`, `sub`, `mul`, `div`, `fma`, `pow`, `powi`, `hypot`, `reciprocal`, `ldexp`, `exp`, `exp2`, `exp10`, `sinh`, and `cosh` return `±max_value(p)` when the mode rounds toward zero for the result's sign (`ToZero`, `Down` for positive, `Up` for negative). Allocation and invalid arguments become `NaN`; `ExactNum::err()` returns the associated `Error`.
+- Overflow of the exponent range `EXPONENT_MIN..=EXPONENT_MAX` = `±(2^62 − 1)` (the same on every 64-bit target, P6) becomes `±Inf`, except that `add`, `sub`, `mul`, `div`, `fma`, `pow`, `powi`, `hypot`, `reciprocal`, `ldexp`, `exp`, `exp2`, `exp10`, `sinh`, and `cosh` return `±max_value(p)` when the mode rounds toward zero for the result's sign (`ToZero`, `Down` for positive, `Up` for negative). Allocation and invalid arguments become `NaN`; `ExactNum::err()` returns the associated `Error`.
 - Subnormals, `NaN`, and infinities are software values, not hardware floating-point registers.
 
 ## Example

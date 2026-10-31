@@ -25,7 +25,7 @@ An `ExactNum` is a signed binary scientific number:
 
 > sign × mantissa × 2^exponent
 
-The mantissa is a list of machine **words** (`Word`: `u64` on a 64-bit host, `u32` on Thumb). You ask for a bit count `p`. The kernel **rounds `p` up to a whole number of words**. Ask for 1 bit and you get 64 bits on a 64-bit target. Ask for 65 bits and you get two words (128 bits).
+The mantissa is a list of machine **words** (`Word`: `u64`; zf is 64-bit only, P6). You ask for a bit count `p`. The kernel **rounds `p` up to a whole number of words**. Ask for 1 bit and you get 64 bits on a 64-bit target. Ask for 65 bits and you get two words (128 bits).
 
 **Why `p` is an argument, not a global.** A global `SOFT_PREC` would silently mix widths. A product of a 64-bit factor and a 1024-bit factor must say which width the *result* is. So `add`, `sin`, `gamma`, and the rest take `(p, rm)` (and `cc` when they need π or e).
 
