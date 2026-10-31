@@ -27,6 +27,61 @@ const ROW_BUDGET: Duration = Duration::from_secs(10);
 const FN_BUDGET: Duration = Duration::from_secs(120);
 const FULL_ROW_BUDGET: Duration = Duration::from_secs(120);
 const FULL_FN_BUDGET: Duration = Duration::from_secs(900);
+/// Largest accepted ZF_TIME_FACTOR, in thousandths (8.000). The slowest emulated runner
+/// measured is aarch64 under qemu-aarch64-static at 4.27 (wine x86_64-pc-windows-gnu is
+/// lower), so 8.000 leaves ~1.9x headroom; anything larger is a typo or a runner too slow
+/// to be a fair same-work allowance, and is refused instead of silently loosening the budget.
+/// Measurement: ~/pop-logs/harper/2026-10-30/1931-2036-targets.log (same 4 release
+/// golden-test binaries, 3 reps each, median per binary, summed: x86_64 29.482 s, aarch64
+/// qemu 126.018 s, ratio 4.27).
+const MAX_TIME_FACTOR_MILLI: u64 = 8000;
+/// ZF-T02 slowdown factor for emulated runners, in thousandths (no IEEE float): unset is
+/// native (1000). Accepts ASCII digits with at most 3 fraction digits and a value in
+/// [1, 8] (`MAX_TIME_FACTOR_MILLI`), e.g. "4.27" -> 4270; leading zeros are plain digits
+/// ("01.5" -> 1500, "1.000" -> 1000). Anything else (non-numeric, inf, NaN, exponent,
+/// sign, < 1, > 8) is Err, so the run FAILs instead of panicking.
+///
+/// Who sets it: nothing in this PR sets ZF_TIME_FACTOR; native runs leave it unset. The
+/// cross-target release-check step (FIXLIST ALL-X01 / ZF-T02 wiring, the next Harper
+/// branch) sets it for emulated targets, e.g. 4.27 for aarch64 under qemu, the factor
+/// measured in the log cited at `MAX_TIME_FACTOR_MILLI`.
+fn time_factor_milli(raw: Option<&str>) -> Result<u64, String> {
+    let Some(s) = raw else { return Ok(1000) };
+    let bad = || {
+        format!(
+            "ZF_TIME_FACTOR={s:?}: want a decimal in [1, 8] with at most 3 fraction digits (e.g. 4.27)"
+        )
+    };
+    let (int, frac, dot) = match s.split_once('.') {
+        Some((i, f)) => (i, f, true),
+        None => (s, "", false),
+    };
+    let digits = |t: &str| !t.is_empty() && t.bytes().all(|b| b.is_ascii_digit());
+    if !digits(int) || (dot && !digits(frac)) || frac.len() > 3 {
+        return Err(bad());
+    }
+    let whole: u64 = int.parse().map_err(|_| bad())?;
+    let mut part: u64 = if dot { frac.parse().map_err(|_| bad())? } else { 0 };
+    for _ in frac.len()..3 {
+        part = part.checked_mul(10).ok_or_else(bad)?;
+    }
+    let milli = whole
+        .checked_mul(1000)
+        .and_then(|m| m.checked_add(part))
+        .ok_or_else(bad)?;
+    if !(1000..=MAX_TIME_FACTOR_MILLI).contains(&milli) {
+        return Err(bad());
+    }
+    Ok(milli)
+}
+
+/// Exact budget scaling: native ms times the milli-factor is the scaled budget in µs.
+fn scaled(native: Duration, milli: u64) -> Result<Duration, String> {
+    let ms = u64::try_from(native.as_millis()).map_err(|e| format!("budget {native:?}: {e}"))?;
+    ms.checked_mul(milli)
+        .map(Duration::from_micros)
+        .ok_or_else(|| format!("budget {native:?} x {milli}/1000 overflows"))
+}
 /// Mismatch lines printed per function.
 const SHOW: usize = 8;
 
@@ -259,6 +314,11 @@ fn short(s: &str) -> &str {
 
 /// Runs every row of `func` on a worker thread with per-row and per-table budgets.
 fn check(func: &'static str) -> Result<(), String> {
+    let milli = match std::env::var("ZF_TIME_FACTOR") {
+        Err(std::env::VarError::NotPresent) => time_factor_milli(None)?,
+        Err(e) => return Err(format!("ZF_TIME_FACTOR: {e}")),
+        Ok(s) => time_factor_milli(Some(&s))?,
+    };
     let rows = rows_for(func)?;
     let total = rows.len();
     if total == 0 {
@@ -288,11 +348,18 @@ fn check(func: &'static str) -> Result<(), String> {
             }
         }
     });
-    let (row_budget, fn_budget) = if full_tier() {
+    let (native_row, native_fn) = if full_tier() {
         (FULL_ROW_BUDGET, FULL_FN_BUDGET)
     } else {
         (ROW_BUDGET, FN_BUDGET)
     };
+    // ZF-T02: an emulated runner (qemu, wine) gets the native budget times its measured
+    // slowdown factor (ZF_TIME_FACTOR; aarch64 under qemu measured 4.27 on Pop). Same work
+    // allowance, not a looser one; native runs leave it unset (factor 1, budget unchanged).
+    let (row_budget, fn_budget) = (scaled(native_row, milli)?, scaled(native_fn, milli)?);
+    eprintln!(
+        "S9 {func}: budget native row={native_row:?} fn={native_fn:?} factor={milli}/1000 scaled row={row_budget:?} fn={fn_budget:?}"
+    );
     let start = Instant::now();
     let mut pass = 0usize;
     let mut fails: Vec<String> = Vec::new();
@@ -393,4 +460,48 @@ fn s9_zeta() -> Result<(), String> {
 #[test]
 fn s9_beta() -> Result<(), String> {
     check("beta")
+}
+
+#[test]
+fn s9_time_factor_rejects_bad() -> Result<(), String> {
+    for bad in [
+        "abc", "", "0", "0.999", "0.5", "-1", "+2", "inf", "NaN", "1e3", "4.2701", "1.", ".5",
+        "1.2.3", " 2", "8.001", "1000",
+    ] {
+        if let Ok(v) = time_factor_milli(Some(bad)) {
+            return Err(format!("ZF_TIME_FACTOR={bad:?} accepted as {v}"));
+        }
+    }
+    for (raw, want) in [
+        (None, 1000u64),
+        (Some("1"), 1000),
+        (Some("1.34"), 1340),
+        (Some("4.27"), 4270),
+        (Some("2.5"), 2500),
+        (Some("8.000"), 8000),
+        (Some("8"), 8000),
+        (Some("1.000"), 1000),
+        (Some("01.5"), 1500),
+    ] {
+        let got = time_factor_milli(raw)?;
+        if got != want {
+            return Err(format!("ZF_TIME_FACTOR={raw:?}: got {got}, want {want}"));
+        }
+    }
+    let row = scaled(ROW_BUDGET, 4270)?;
+    if row != Duration::from_millis(42_700) {
+        return Err(format!("ROW_BUDGET x 4.27 = {row:?}, want 42.7s"));
+    }
+    let full = scaled(FULL_FN_BUDGET, 1340)?;
+    if full != Duration::from_secs(1206) {
+        return Err(format!("FULL_FN_BUDGET x 1.34 = {full:?}, want 1206s"));
+    }
+    if scaled(Duration::from_secs(u64::MAX), 2000).is_ok() {
+        return Err("overflowing budget accepted".to_string());
+    }
+    // from_secs(u64::MAX) already fails at u64::try_from(as_millis); this one reaches checked_mul.
+    if scaled(Duration::from_millis(u64::MAX), 2000).is_ok() {
+        return Err("budget ms x milli overflow accepted".to_string());
+    }
+    Ok(())
 }
