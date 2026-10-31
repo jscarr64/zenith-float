@@ -31,8 +31,8 @@ const RM: RoundingMode = RoundingMode::ToEven;
 
 /// Outcome of one case.
 pub struct Outcome {
-    /// Correct bits (`i32::MAX` if exact, `i32::MIN` if NaN / `None`).
-    pub bits: i32,
+    /// Correct bits (`i64::MAX` if exact, `i64::MIN` if NaN / `None`).
+    pub bits: i64,
     /// Whether `bits >= min_bits`.
     pub pass: bool,
 }
@@ -46,24 +46,34 @@ fn parse_c(s: &str, p: usize, cc: &mut Consts) -> ExactComplex {
     ExactComplex::new(parse(a, p, cc), parse(b, p, cc))
 }
 
-fn mag(x: &ExactNum) -> i32 {
+/// Binary exponent of `x` (`i64`, the 2.0 `Exponent`); `None` for zero, NaN or Inf, which orders below
+/// every finite magnitude.
+fn mag(x: &ExactNum) -> Option<i64> {
     if x.is_zero() {
-        i32::MIN
+        None
     } else {
-        x.exponent().unwrap_or(i32::MIN)
+        x.exponent()
     }
 }
 
 /// Correct bits of `got` against `want`, relative to the magnitude of `scale`.
-fn bits(got: &ExactNum, want: &ExactNum, scale: &ExactNum, p: usize) -> i32 {
+fn bits(got: &ExactNum, want: &ExactNum, scale: &ExactNum, p: usize) -> i64 {
     if got.is_nan() || got.is_inf() {
-        return i32::MIN;
+        return i64::MIN;
     }
     let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
     if d.is_zero() {
-        return i32::MAX;
+        return i64::MAX;
     }
-    mag(scale).saturating_sub(d.exponent().unwrap_or(0))
+    // Exponents lie in ±(2^62 - 1), so the difference fits i64; a missing magnitude or an overflow
+    // counts as no correct bits (a failed case), never a saturated value.
+    match (mag(scale), d.exponent()) {
+        (Some(m), Some(e)) => match m.checked_sub(e) {
+            Some(b) => b,
+            None => i64::MIN,
+        },
+        _ => i64::MIN,
+    }
 }
 
 fn real(op: &str, p: usize, a: &[ExactNum], cc: &mut Consts) -> ExactNum {
@@ -186,7 +196,7 @@ pub fn eval(case: &Case, cc: &mut Consts) -> Outcome {
     };
     Outcome {
         bits,
-        pass: bits >= case.min_bits,
+        pass: bits >= i64::from(case.min_bits),
     }
 }
 
@@ -202,9 +212,9 @@ pub fn run(sink: &mut dyn FnMut(&str)) -> (usize, usize) {
     let (mut ok, mut bad) = (0, 0);
     for case in CASES {
         let o = eval(case, &mut cc);
-        let shown: String = if o.bits == i32::MAX {
+        let shown: String = if o.bits == i64::MAX {
             String::from("exact")
-        } else if o.bits == i32::MIN {
+        } else if o.bits == i64::MIN {
             String::from("NaN")
         } else {
             format!("{}", o.bits)
