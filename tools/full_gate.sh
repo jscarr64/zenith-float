@@ -74,7 +74,9 @@ run build-debug "tools/fresh_test_run.sh cargo test --workspace $TT"
 # early compile of the mpfr-tests integration tests (6ab75ce prepublish broke here only at the last step)
 run mpfr-tests-build "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests --no-run"
 run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
-run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
+# no_std: host --no-default-features builds, bare-metal x86_64-unknown-none (aarch64-unknown-none SKIPs if not
+# installed; FAIL if no bare target built), then the nostd-host suite
+run no_std "bash scripts/ci_nostd.sh"
 run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
 run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
 run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
