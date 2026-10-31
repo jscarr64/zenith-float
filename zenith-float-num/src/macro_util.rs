@@ -85,7 +85,7 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
                         0
                     } else {
                         let n = compute_added_err_near_one(base, emin);
-                        // In u64: `emin` is near -2^62, which does not fit a 32-bit `usize`.
+                        // In u64: `emin` is near -2^62, which is kept in u64 rather than `usize`.
                         let lim = u64::try_from(EXPONENT_BIT_SIZE)
                             .ok()
                             .and_then(|b| emin.unsigned_abs().checked_add(b));
@@ -269,7 +269,7 @@ pub fn check_complex_exponent_range(
 }
 
 /// `Ok(None)`: no cancellation. `Err(InvalidArgument)`: the cancelled-bit count is not a representable
-/// working precision (32-bit `usize`), so the result cannot be retried and must not be accepted.
+/// working precision (it does not fit `usize`), so the result cannot be retried and must not be accepted.
 fn part_cancel(
     a: &ExactNum,
     b: &ExactNum,
@@ -290,7 +290,7 @@ fn part_cancel(
         .ok_or(crate::Error::InvalidArgument)?
         <= 1;
     if near && opp {
-        // A zero result has exponent 0, so the gap can exceed a 32-bit `usize`: that is an error.
+        // A zero result has exponent 0, so the gap can exceed `usize`: that is an error.
         e1.max(e2)
             .checked_sub(e3)
             .and_then(|gap| usize::try_from(gap.unsigned_abs()).ok())

@@ -8900,7 +8900,7 @@ pub enum RawKind {
 /// ## Contract
 ///
 ///  - `words` is the mantissa, least-significant word first (little-endian word order, native
-///    bit order inside a word). `Word` is `u64` (`u32` on 32-bit targets), `WORD_BIT_SIZE` bits.
+///    bit order inside a word). `Word` is `u64` (64-bit targets only, P6), `WORD_BIT_SIZE` bits.
 ///  - `precision` is the stored mantissa width in bits and always equals
 ///    `words.len() * WORD_BIT_SIZE` (a number created at precision `p` stores
 ///    `ceil(p / WORD_BIT_SIZE)` words, so `p = 1` reports `WORD_BIT_SIZE`). No requested

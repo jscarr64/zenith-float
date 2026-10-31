@@ -27,9 +27,9 @@ use crate::EXPONENT_MIN;
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
-/// EXPONENT_MAX / 4 in u64: a 32-bit `usize` would truncate it.
+/// EXPONENT_MAX / 4 in u64, independent of `usize` width.
 const TEN_PWR_MAX_TO_DEC: u64 = EXPONENT_MAX.unsigned_abs() / 4;
-/// floor(EXPONENT_MAX * log10(2)) in u64: a 32-bit `usize` would truncate it.
+/// floor(EXPONENT_MAX * log10(2)) in u64, independent of `usize` width.
 const TEN_PWR_MAX_FROM_DEC: u64 = (EXPONENT_MAX as u128 * 301029995 / 1000000000) as u64;
 /// floor(log10(2) * 2^64), a lower bound of log10(2) exact to 2^-64.
 const LOG10_2_Q64: i128 = 5553023288523357132;
@@ -391,7 +391,7 @@ impl ExactNumNumber {
 
         // error estimation
         let mut err = 0;
-        // |n| and the chunk in u64: a 32-bit `usize` would saturate or truncate them.
+        // |n| and the chunk in u64, independent of `usize` width.
         let n_abs = n.unsigned_abs();
         let npowmax = n_abs / TEN_PWR_MAX_FROM_DEC;
         let tenpowrem = n_abs % TEN_PWR_MAX_FROM_DEC;
@@ -531,7 +531,7 @@ impl ExactNumNumber {
 
             let mut err_acc = 0;
 
-            // |n_wrk| and the chunk in u64: a 32-bit `usize` would saturate or truncate them.
+            // |n_wrk| and the chunk in u64, independent of `usize` width.
             let chunk = TEN_PWR_MAX_TO_DEC;
             let mut pwr = n_wrk.unsigned_abs();
             if pwr > chunk {

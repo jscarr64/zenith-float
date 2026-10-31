@@ -23,7 +23,7 @@ use alloc::vec::Vec;
 
 /// Number of words kept on the stack before allocating: enough for [`DEFAULT_P`] bits, so
 /// default-precision values (and the constants built from them) never allocate. This is 2 words
-/// with a 64-bit `Word` and 4 words with a 32-bit `Word`.
+/// of the 64-bit `Word` (64-bit targets only, P6).
 pub const INLINE_WORDS: usize = DEFAULT_P / WORD_BIT_SIZE;
 
 /// Buffer for holding mantissa digits.

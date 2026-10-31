@@ -523,7 +523,7 @@ let back = sn.elliptic_f(&half, p, rm, &mut cc);
 
 **Is HDF5 supported?** No. This crate does not read or write that format. CSV and `to_bytes` remain.
 
-**`no_std`?** Allocator required. Formatting traits and `SharedConsts` need `std`. Thumb (`thumbv7em-none-eabihf`) compiles with `default-features = false`, and `scripts/ci_nostd.sh` runs the mpmath reference cases there under QEMU and in a libc-only host binary.
+**`no_std`?** Allocator required. Formatting traits and `SharedConsts` need `std`. zf is 64-bit only (P6): `no_std` is checked by building and running clippy for `x86_64-unknown-none` with `default-features = false`.
 
 **Can I plot?** Not in this crate. Format a string or pack bits in another crate.
 

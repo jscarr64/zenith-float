@@ -10,7 +10,7 @@ Doc claim wording (use verbatim): "Every zenith-bound result is a guaranteed enc
 
 | # | Item | Status | Pass criterion | Evidence |
 |---|---|---|---|---|
-| 1.1 | Stage A gate on fe5c15d | IN PROGRESS. r2 finished 08:20: every step 0 (build debug/release/nostd/thumbv7em, features, oracle fast/deep, rules, fmt, clippy x86_64/i686, audit, no-intrinsics, hex-32bit, unsafe-scan, prepublish) except mpfr=124 (20 min STEP_TIMEOUT; 372 passed, 0 failed). r3 (STEP_TIMEOUT 60m) queued on /tmp/pop-gate.lock since ~08:25 (pid 1711080) | all steps rc=0 incl. mpfr | /tmp/zf-gate-logs/fe5c15d-r2.rc, fe5c15d-r2-mpfr.log, fe5c15d-r3-launcher.log |
+| 1.1 | Stage A gate on fe5c15d | IN PROGRESS. (History, before P6: the i686 and thumbv7em steps below no longer gate a supported target.) r2 finished 08:20: every step 0 (build debug/release/nostd/thumbv7em, features, oracle fast/deep, rules, fmt, clippy x86_64/i686, audit, no-intrinsics, hex-32bit, unsafe-scan, prepublish) except mpfr=124 (20 min STEP_TIMEOUT; 372 passed, 0 failed). r3 (STEP_TIMEOUT 60m) queued on /tmp/pop-gate.lock since ~08:25 (pid 1711080) | all steps rc=0 incl. mpfr | /tmp/zf-gate-logs/fe5c15d-r2.rc, fe5c15d-r2-mpfr.log, fe5c15d-r3-launcher.log |
 | 1.2 | Full gate on 689431a (gatefix 75fa2d5 merge) | IN PROGRESS: queued (pid 1702120, ~54 min waiting at 09:20), ahead of it pr184 driver, gaterun, c471-r199, 2 accumath runs | all steps rc=0 | /tmp/zf-gate-logs/689431a-launcher.log |
 | 1.3 | ln/log2/log10 clone conversion (rework, no 7th shape-A site) | IN PROGRESS: uncommitted in /tmp/zf-oa; MPFR suite on reworked tree RC=0 (08:55); wide-range ln/log2/log10 10 tests ok; digests identical; waiting on Stage A re-green, then Jeff review per NO_CLONE_RULES | 1.1 green, committed, clone 483->482 / combined 804->803 baselines, rules scan 0, digest 15016580156994057137 unchanged | zf-progress.md 07:35-09:18; /tmp/zf-logs/mpfr-rework.log; conv-1-ln-log2.patch, conv-2b-log10.patch |
 | 1.4 | W6: pow +-Inf red tests + fixes; powi/powsi of -0 sign | IN PROGRESS: red test file written (zenith-float-num/tests/mpfr/pow_specials.rs, untracked; KNOWN_WRONG list: pow(+-0,-Inf), pow(-x,+-Inf), pow(x>1,-Inf)=-Inf, pow(+-Inf,neg odd)=+0, NaN^0/1^NaN), fixes not started | KNOWN_WRONG empty, all cases == MPFR mpfr_pow/pow_ui/pow_si, CHANGELOG line per wrong answer | /tmp/zf-logs/w6-pow_specials.rs, w6-mod.diff; signature table "W6" row |
@@ -79,7 +79,7 @@ All NOT STARTED.
 | 4.5 | CODEOWNERS paths for bound | file lists paths, scan's exception check honours it |
 | 4.6 | merge zb with --allow-unrelated-histories keeping zb SHAs | `git log` shows zb's original SHAs (3c9f36f..., harper/spence branch tips) reachable |
 | 4.7 | lints per crate (forbid unsafe, deny unwrap/expect/wildcard) | clippy 0 per crate |
-| 4.8 | no_std builds with and without `bound` (host + thumbv7em + i686) | all build |
+| 4.8 | no_std builds with and without `bound` (host + `x86_64-unknown-none`; P6 dropped thumbv7em and i686) | all build |
 
 ## P5 - whole-workspace gate with a bound tier (owner: Harper, Rusty for zf steps)
 
@@ -91,7 +91,7 @@ All NOT STARTED.
 | 5.4 | scoped cargo-mutants on the rounding/arithmetic core (cloud agent) + zb | NOT STARTED | every surviving mutant triaged (killed by a new test or justified) |
 | 5.5 | per-package pubfn coverage | NOT STARTED for bound (zf has pubfn-coverage step) | 100% of pub fns tested per package |
 | 5.6 | MSRV + rust-toolchain file (rust-version 1.99; CI accepts 1.99.x, 194c3c5) | IN PROGRESS | build on exact MSRV; toolchain file consistent across crates |
-| 5.7 | i686 + thumbv7em builds | DONE on fe5c15d-r2 (clippy-i686=0, build-thumbv7em=0, hex-32bit=0); re-run on release SHA | rc 0 at release SHA |
+| 5.7 | `x86_64-unknown-none` build + clippy (replaces i686 + thumbv7em, P6) | ZF-M16; history: i686/thumbv7em were DONE on fe5c15d-r2 | rc 0 at release SHA |
 
 ## P6 - release checklist over the whole workspace
 
