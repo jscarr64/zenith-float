@@ -1015,7 +1015,7 @@ fn prec_i128(prec: usize) -> Result<i128, String> {
 
 // ---- ulp helpers --------------------------------------------------------------------------------------------------------------
 
-/// A precision in `0..=MAX_PRECISION` for the target (`2^60 - 1` on 64-bit, `2^30 - 1` on 32-bit), weighted to the
+/// A precision in `0..=MAX_PRECISION` (`2^60 - 1`; 64-bit targets only, P6), weighted to the
 /// edges: 0, `MAX_PRECISION`, `2^31` and `2^31 - 1` (capped at `MAX_PRECISION`), and the schedule. Precisions above
 /// `MAX_PRECISION` are never drawn: a failing case must print a replay line that parses back
 /// (`out_of_range_precisions_are_refused` covers the refusal).
