@@ -298,6 +298,7 @@ mod tests {
         Ok(())
     }
 
+    #[cfg(feature = "std")]
     #[test]
     fn csv_exact_num_roundtrip_and_too_many_cols() -> Result<(), crate::Error> {
         let p = 64;

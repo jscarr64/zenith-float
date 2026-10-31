@@ -66,7 +66,7 @@ fn ensure_init() {
 }
 
 fn install_panic_hook() {
-    #[cfg(all(test, feature = "std"))]
+    #[cfg(test)] // lib tests link std (lib.rs no_std cfg_attr)
     {
         use std::sync::Once;
         static HOOK: Once = Once::new();

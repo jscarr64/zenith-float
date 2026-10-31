@@ -2,7 +2,7 @@
 // Copyright (c) 2022 stencillogic, MIT License.
 //! zenith-float implements arbitrary-precision software floating-point numbers.
 
-#![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 #![deny(unused)]

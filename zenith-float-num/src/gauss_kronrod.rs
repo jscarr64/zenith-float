@@ -1124,7 +1124,7 @@ where
     Err(QuadratureError::InvalidArgument)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "std"))] // Display of ExactNum is std-only
 mod tests {
     use super::*;
 
