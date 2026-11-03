@@ -55,13 +55,19 @@ pub fn sqrt_int(a: u32) -> u32 {
 pub fn calc_mul_cost(p: usize) -> usize {
     if p < 70 {
         p * p
+    } else if p < 1625 {
+        // toom-3: floor(sqrt(p^3))
+        match p.checked_mul(p).and_then(|pp| pp.checked_mul(p)) {
+            Some(cube) => cube.isqrt(),
+            // checked_mul overflows only for p > 2^42, far above any working precision.
+            None => usize::MAX,
+        }
     } else {
-        // toom-3
-        if p < 1625 {
-            sqrt_int((p * p * p) as u32) as usize
-        } else {
-            let q = sqrt_int(p as u32) as usize;
-            q * q * q
+        let q = p.isqrt();
+        match q.checked_mul(q).and_then(|qq| qq.checked_mul(q)) {
+            Some(cost) => cost,
+            // checked_mul overflows only for p > 2^42, far above any working precision.
+            None => usize::MAX,
         }
     }
 }
