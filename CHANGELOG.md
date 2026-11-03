@@ -28,6 +28,8 @@ Shape-A site list (internal, no code change): Jeff signed off `tools/ziv_shape_a
 
 `reseed_random_this_thread(seed)` (new, `random` feature): gives the calling thread its own deterministic test stream that a `reseed_random` call from another thread does not restart. The MPFR test helpers use it. Before, when the MPFR suite ran on several threads, one test's reseed restarted another test's stream from the wrong seed, so an operand rebuilt from its seed came out different and `rem_is_exact`, `mpfr_compare_ops(_large)` and `subnormal_band_every_mode` failed now and then. No library result was wrong. Additive.
 
+`scripts/check_zero_test_targets.sh` (new, internal): fails when any workspace test target runs 0 tests, so an empty target cannot hide in a green run. On main it reported 4 empty targets out of 54: the facade lib unit harness, the `hex_golds` bin, the `integration_tests` target (which only holds tests under the `mpfr-tests` feature), and Doc-tests for the macro crate. The facade lib and the `hex_golds` bin now have small unit tests, `integration_tests` only builds when `mpfr-tests` is on, and macro doctests are off. The script now reports zero empty targets. No library result changes.
+
 ### Changed
 
 `atan2(y, x)` with a huge `y` and a tiny positive `x` (exponents near both ends of the i64 range, `ey - ex + p` past `i64::MAX`) returned `+Inf`/`-Inf` (and, below 64 bits, an unrounded 64-bit `+-pi/2`) instead of `+-pi/2` rounded at `p`: the tiny-quotient shortcut test wrapped. It is now computed in `i128`. Found by the shifted-reference `atan2_over_the_whole_range` sweep (540 of 12000).

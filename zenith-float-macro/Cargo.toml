@@ -14,6 +14,8 @@ categories = ["mathematics"]
 
 [lib]
 proc-macro = true
+# Targets with 0 tests are off (scripts/check_zero_test_targets.sh).
+doctest = false
 
 [dependencies]
 quote = { version = "1", default-features = false }
