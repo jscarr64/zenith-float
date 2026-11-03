@@ -1,4 +1,4 @@
-//! M32: `MAX_PRECISION = 2^32 - 1` and the 2 GiB single-buffer size check (edge list m32-edge-list.md).
+//! M32: `MAX_PRECISION = 2^32 - 64` and the 2 GiB single-buffer size check (edge list m32-edge-list.md).
 
 use zenith_float_num::{
     check_alloc_bytes, Consts, Error, ExactNum, Radix, RoundingMode, MAX_ALLOC_BYTES, MAX_PRECISION,
@@ -7,8 +7,11 @@ use zenith_float_num::{
 const GIB2: usize = 1 << 31;
 
 #[test]
-fn max_precision_is_u32_max() {
-    assert_eq!(u64::try_from(MAX_PRECISION).ok(), Some(u64::from(u32::MAX)));
+fn max_precision_is_2_pow_32_minus_64() {
+    assert_eq!(
+        u64::try_from(MAX_PRECISION).ok(),
+        Some(u64::from(u32::MAX) - 63)
+    );
 }
 
 #[test]
@@ -33,13 +36,13 @@ fn size_check_bytes() {
 
 #[test]
 fn size_check_words_threshold() {
-    // 4 * MAX_PRECISION bits rounds up to exactly 2^28 64-bit words = 2^31 bytes.
+    // 4 * MAX_PRECISION bits is 2^28 - 4 64-bit words, inside the 2^28-word (2^31-byte) budget.
     let words_4p = (4 * MAX_PRECISION).div_ceil(64);
-    assert_eq!(words_4p, 1 << 28);
-    assert_eq!(check_alloc_bytes(words_4p - 1, 8), Ok(()));
+    assert_eq!(words_4p, (1 << 28) - 4);
     assert_eq!(check_alloc_bytes(words_4p, 8), Ok(()));
+    assert_eq!(check_alloc_bytes(1 << 28, 8), Ok(()));
     assert_eq!(
-        check_alloc_bytes(words_4p + 1, 8),
+        check_alloc_bytes((1 << 28) + 1, 8),
         Err(Error::MemoryAllocation)
     );
 }

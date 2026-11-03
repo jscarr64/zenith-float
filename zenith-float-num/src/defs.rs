@@ -60,7 +60,7 @@ pub const MIN_NORMAL_EXPONENT: Exponent = EXPONENT_MIN;
 
 /// A precision in bits: the type of [`MIN_PRECISION`], [`MAX_PRECISION`], [`DEFAULT_P`] and of the
 /// precisions the API reports. Accepted values are `MIN_PRECISION..=MAX_PRECISION`; `MAX_PRECISION` is
-/// `2^32 - 1` on every (64-bit) target. An alias of `usize`, so code
+/// `2^32 - 64` on every (64-bit) target. An alias of `usize`, so code
 /// written against `usize` keeps compiling.
 pub type Precision = usize;
 
@@ -70,15 +70,16 @@ pub const MIN_PRECISION: Precision = 1;
 
 /// Largest accepted precision in bits; a user precision above it is rejected with `Error::InvalidArgument`.
 ///
-/// `2^32 - 1` (`u32::MAX`) on every target (64-bit only since 2.0). An exponent plus or minus twice a
-/// precision stays far inside `±2^62`, and the 4p working width of the widest internal product, `2^28`
-/// words, fits exactly in [`MAX_ALLOC_BYTES`]. Internal working precision (guard bits, correct-rounding
+/// `2^32 - 64` on every target (64-bit only since 2.0): the largest whole number of 64-bit words below
+/// `2^32`, so word rounding never lifts an accepted precision past the cap. An exponent plus or minus
+/// twice a precision stays far inside `±2^62`, and the 4p working width of the widest internal product,
+/// `2^28 - 4` words, fits in [`MAX_ALLOC_BYTES`]. Internal working precision (guard bits, correct-rounding
 /// retry up to about 3p) can exceed [`MAX_PRECISION`] and the 2 GiB budget near the cap; such requests
 /// refuse with `Error::MemoryAllocation`, not `InvalidArgument`. Wider internal buffers are refused the
 /// same way, see [`check_alloc_bytes`]. A mantissa this large still needs 512 MiB of RAM.
-pub const MAX_PRECISION: Precision = 4_294_967_295;
+pub const MAX_PRECISION: Precision = 4_294_967_232;
 
-const _: () = assert!(MAX_PRECISION == (1 << 32) - 1);
+const _: () = assert!(MAX_PRECISION == (1 << 32) - 64);
 
 /// Largest single buffer the library allocates, in bytes: `2^31` (2 GiB), the same on every target.
 ///

@@ -3,11 +3,11 @@
 
 use zenith_float_num::{Consts, Error, ExactNum, Radix, RoundingMode, MAX_PRECISION};
 
-/// `2^32 - 1`, written out so the row does not depend on the constant it checks.
-const CAP: usize = 4_294_967_295;
+/// `2^32 - 64`, written out so the row does not depend on the constant it checks.
+const CAP: usize = 4_294_967_232;
 
 #[test]
-fn max_precision_is_2_pow_32_minus_1_not_the_old_cap() {
+fn max_precision_is_2_pow_32_minus_64_not_the_old_cap() {
     assert_ne!(MAX_PRECISION, (1 << 60) - 1, "old 1.x cap 2^60 - 1");
     assert_eq!(MAX_PRECISION, CAP);
 }
@@ -30,12 +30,13 @@ fn heavy_over_2gib_request_is_memory_allocation_through_the_root_path() {
 
 #[test]
 fn heavy_guard_bits_and_retry_near_the_cap_refuse_with_memory_allocation() {
-    // A product at the cap needs FFT buffers wider than 2 GiB once guard bits are added.
-    let three = ExactNum::from_u8(3, CAP);
+    // An unaligned precision just under the cap needs a guard word, and the guarded width passes the cap.
+    let p = CAP - 1;
+    let three = ExactNum::from_u8(3, p);
     assert!(!three.is_nan());
-    let sq = ExactNum::from_u8(3, CAP).mul(&three, CAP, RoundingMode::ToEven);
+    let sq = ExactNum::from_u8(3, p).mul(&three, p, RoundingMode::ToEven);
     assert_eq!(sq.err(), Some(Error::MemoryAllocation));
     let mut cc = Consts::new().expect("consts");
-    let l = three.ln(CAP, RoundingMode::ToEven, &mut cc);
+    let l = three.ln(p, RoundingMode::ToEven, &mut cc);
     assert_eq!(l.err(), Some(Error::MemoryAllocation));
 }

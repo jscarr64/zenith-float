@@ -49,7 +49,7 @@ A finite `ExactNum` is a **sign**, a **binary mantissa** stored as an array of w
 | `EXPONENT_MIN` | `i32::MIN` on every target (2.0.0; was `i32::MIN / 4` on 32-bit) |
 | Default operator precision | 128 bits (`ToEven`) for `+ − × ÷` on `ExactNum` (internal default; not a public constant) |
 | `MAX_PREC_RETRY` | `256` — extra-precision budget for correct-rounding retries (`try_set_precision`, `ziv_round`, transcendentals) |
-| `MAX_PRECISION` | `2^32 - 1` on every target (2.0; was `2^60 - 1`). `p > MAX_PRECISION` → `InvalidArgument` |
+| `MAX_PRECISION` | `2^32 - 64` (a whole number of 64-bit words) on every target (2.0; was `2^60 - 1`). `p > MAX_PRECISION` → `InvalidArgument` |
 | `MAX_ALLOC_BYTES` | `2^31` (2 GiB): the largest single buffer the library allocates; `check_alloc_bytes(n, elem_bytes)` refuses a larger one with `MemoryAllocation` before allocating |
 
 Special values: **`+Inf`**, **`-Inf`**, **`NaN`** (optional associated `Error`). Finite values may be **subnormal** at `EXPONENT_MIN`. Results may be marked **inexact** when bits were rounded or an argument was inexact.
