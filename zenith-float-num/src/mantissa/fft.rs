@@ -540,6 +540,19 @@ mod tests {
     }
 
     #[test]
+    fn fft_params_at_the_fft_mul_width_of_exactly_2_pow_32_bits() {
+        // fft_mul passes l = (d1.len() + d2.len()) * WORD_BIT_SIZE; two 2^25-word operands give l = 2^32,
+        // which a u32 truncation turns into 0 (k1 = 0, k = 6).
+        let words: usize = 1 << 25;
+        let l = (words + words) * WORD_BIT_SIZE;
+        assert_eq!(l, 1usize << 32);
+        let (n, k1, k, m, _, _) = Mantissa::fft_params(l);
+        assert!(k1 > 0, "k1 = 0: l was truncated to u32");
+        assert!(k >= 16, "k = {k}: l was truncated to u32");
+        assert!(n >= l && n == m * k1, "n = {n}, m = {m}, k1 = {k1}");
+    }
+
+    #[test]
     fn test_fft_size_mismatch_is_error_not_panic() {
         let mut mbuf = [1 as Word, 0, 1];
         let modulus = SliceWithSign::new_mut(&mut mbuf, 1);
