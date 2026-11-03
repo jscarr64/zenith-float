@@ -216,11 +216,8 @@ fn series_cost<T: PolycoeffGen>(niter: usize, p: usize, polycoeff_gen: &T) -> u6
     if niter >= RECT_ITER_THRESHOLD {
         // niter * (cost(mul) + cost(add) + cost(polcoeff_gen.next)) + sqrt(niter) * cost(mul)
         // + niter / 10 * (2 * cost(mul) + cost(add) + cost(polcoeff_gen.next))
-        let sqrt_niter = match u64::try_from(niter.isqrt()) {
-            Ok(s) => s,
-            // usize is at most 64 bits, so its square root always fits u64.
-            Err(_) => u64::MAX,
-        };
+        // usize is at most 64 bits, so the conversion cannot fail; u64::MAX keeps the cost an upper bound.
+        let sqrt_niter = u64::try_from(niter).map_or(u64::MAX, u64::isqrt);
         cost + sqrt_niter * cost_mul as u64
             + niter as u64 / 10 * ((cost_mul << 1) + cost_add + polycoeff_gen.iter_cost()) as u64
     } else {
