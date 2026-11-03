@@ -259,6 +259,12 @@ fn series_compute_fast<T: PolycoeffGen>(
 // x_step is a multiplication factor for each step
 // polycoeff_gen is a generator of polynomial coeeficients for the series
 // rm is the rounding mode.
+/// Number of cached powers of `x_step` for the rectangular series: `sqrt(niter)`, at most `MAX_CACHE`.
+fn rect_cache_size(niter: usize) -> usize {
+    let sqrt_iter = sqrt_int(niter as u32) as usize;
+    MAX_CACHE.min(sqrt_iter)
+}
+
 // cost: niter * (O(mul) + O(add) + cost(polcoeff_gen.next)) + sqrt(niter) * O(mul) + cost(series_line(remainder))
 fn series_rectangular<T: PolycoeffGen>(
     mut niter: usize,
@@ -278,8 +284,7 @@ fn series_rectangular<T: PolycoeffGen>(
 
     // build cache
     let mut cache = Vec::<ExactNumNumber>::new();
-    let sqrt_iter = sqrt_int(niter as u32) as usize;
-    let cache_sz = MAX_CACHE.min(sqrt_iter);
+    let cache_sz = rect_cache_size(niter);
     crate::defs::reserve_exact(&mut cache, cache_sz)?;
     let mut x_pow = x_step.clone()?;
 
@@ -434,4 +439,41 @@ fn series_horner<T: PolycoeffGen>(
     acc = acc.mul(&x_first, p, RoundingMode::None)?;
 
     add.add(&acc, p, RoundingMode::None)
+}
+
+#[cfg(test)]
+mod niter_width_tests {
+    use super::{rect_cache_size, series_cost, PolycoeffGen, MAX_CACHE};
+    use crate::defs::{Error, RoundingMode};
+    use crate::num::ExactNumNumber;
+
+    struct UnitCost;
+
+    impl PolycoeffGen for UnitCost {
+        fn next(&mut self, _rm: RoundingMode) -> Result<&ExactNumNumber, Error> {
+            Err(Error::InvalidArgument)
+        }
+
+        fn iter_cost(&self) -> usize {
+            1
+        }
+    }
+
+    #[test]
+    fn series_cost_does_not_truncate_niter_above_u32_max() {
+        // One more iteration can never make the series cheaper.
+        let at = series_cost(4_294_967_295, 64, &UnitCost);
+        let above = series_cost(4_294_967_296, 64, &UnitCost);
+        assert!(above >= at, "{above} < {at}: niter was truncated to u32");
+    }
+
+    #[test]
+    fn rect_cache_size_does_not_truncate_niter_above_u32_max() {
+        // sqrt(2^32) = 2^16, so the cache is full; a truncated niter gives an empty cache.
+        assert_eq!(
+            rect_cache_size(4_294_967_296),
+            MAX_CACHE,
+            "niter was truncated to u32"
+        );
+    }
 }

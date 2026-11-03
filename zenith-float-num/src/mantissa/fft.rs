@@ -534,6 +534,13 @@ mod tests {
     use alloc::vec::Vec;
 
     #[test]
+    fn fft_params_does_not_truncate_n_above_u32_max() {
+        // k1 is about sqrt(n) = 2^16 here; a truncated n (64) gives the minimum k = 6.
+        let (_, k1, k, _, _, _) = Mantissa::fft_params(4_294_967_360);
+        assert!(k >= 16, "k = {k}, k1 = {k1}: n was truncated to u32");
+    }
+
+    #[test]
     fn test_fft_size_mismatch_is_error_not_panic() {
         let mut mbuf = [1 as Word, 0, 1];
         let modulus = SliceWithSign::new_mut(&mut mbuf, 1);
