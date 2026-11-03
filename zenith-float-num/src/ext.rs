@@ -63,7 +63,7 @@ impl ExactNum {
     /// Returns a new number with value of 0 and precision of `p` bits. Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn new(p: usize) -> Self {
-        if p < crate::defs::MIN_PRECISION || p > crate::defs::MAX_PRECISION {
+        if !(crate::defs::MIN_PRECISION..=crate::defs::MAX_PRECISION).contains(&p) {
             return Self::nan(Some(Error::InvalidArgument));
         }
         Self::result_to_ext(ExactNumNumber::new(p), false, true)
@@ -1536,7 +1536,7 @@ impl ExactNum {
     {
         // User `p` outside `1..=MAX_PRECISION` is `InvalidArgument`. Word-rounding that still
         // steps past the cap is `MemoryAllocation` (guard bits and the retry are wider still).
-        if p < crate::defs::MIN_PRECISION || p > crate::defs::MAX_PRECISION {
+        if !(crate::defs::MIN_PRECISION..=crate::defs::MAX_PRECISION).contains(&p) {
             return Self::nan(Some(Error::InvalidArgument));
         }
         if let Err(e) = ExactNumNumber::working_width_over_cap(round_p(p)) {
@@ -1921,7 +1921,7 @@ impl ExactNum {
     /// Returns a new number with value `d` and the precision `p`. Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn from_word(d: Word, p: usize) -> Self {
-        if p < crate::defs::MIN_PRECISION || p > crate::defs::MAX_PRECISION {
+        if !(crate::defs::MIN_PRECISION..=crate::defs::MAX_PRECISION).contains(&p) {
             return Self::nan(Some(Error::InvalidArgument));
         }
         Self::result_to_ext(ExactNumNumber::from_word(d, p), false, true)
