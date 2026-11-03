@@ -51,7 +51,8 @@ impl ExactNumNumber {
         (m_slice, n, self.s, self.e, self.inexact)
     }
 
-    // Check the precision so it does not cause arithmetic overflows anywhere.
+    // User precision. `0` and anything above [`MAX_PRECISION`](crate::defs::MAX_PRECISION) are
+    // `InvalidArgument`. An internal working width past the cap is [`Self::working_width_over_cap`].
     pub(super) fn p_assertion(p: usize) -> Result<(), Error> {
         // Exponent arithmetic is done in i64; sizes in usize, which is 32 bits wide on some targets.
         if p == 0 || p > crate::defs::MAX_PRECISION {
@@ -61,13 +62,33 @@ impl ExactNumNumber {
         }
     }
 
+    /// Working width above [`MAX_PRECISION`](crate::defs::MAX_PRECISION): word-rounding, a guard word,
+    /// or a correct-rounding retry. The user's `p` was already accepted by [`Self::p_assertion`].
+    pub(super) fn working_width_over_cap(p: usize) -> Result<(), Error> {
+        if p > crate::defs::MAX_PRECISION {
+            Err(Error::MemoryAllocation)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// `round_p(p) +` one word, or [`Error::MemoryAllocation`] when that width is past the cap.
+    pub(super) fn guarded_width(p: usize) -> Result<usize, Error> {
+        match round_p(p).checked_add(WORD_BIT_SIZE) {
+            Some(w) if w <= crate::defs::MAX_PRECISION => Ok(w),
+            Some(_) | None => Err(Error::MemoryAllocation),
+        }
+    }
+
     /// Returns a new number with value of 0 and precision of `p` bits. Precision is rounded upwards to the word size.
     ///
     /// ## Errors
     ///
-    ///  - InvalidArgument: the precision is incorrect.
-    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    ///  - InvalidArgument: `p` is 0.
+    ///  - MemoryAllocation: `p` is above [`MAX_PRECISION`](crate::defs::MAX_PRECISION) (an internal
+    ///    working width; a user `p` above the cap is rejected before this), or the mantissa could not be allocated.
     pub fn new(p: usize) -> Result<Self, Error> {
+        Self::working_width_over_cap(p)?;
         Self::p_assertion(p)?;
         Ok(ExactNumNumber {
             m: Mantissa::new(p)?,
@@ -81,10 +102,10 @@ impl ExactNumNumber {
     /// Like [`Self::new`], but also accepts `p = 0` (an empty mantissa). Crate-private: the full-precision
     /// kernels (`add_full_prec`, `sub_full_prec`, `mul_full_prec`) use `p = 0` to mean "as wide as the exact
     /// result", and the constants cache builds on them. Public entry points reject `p = 0`.
+    /// A width above [`MAX_PRECISION`](crate::defs::MAX_PRECISION) is an internal working precision and
+    /// is [`Error::MemoryAllocation`].
     pub(crate) fn new_internal(p: usize) -> Result<Self, Error> {
-        if p > crate::defs::MAX_PRECISION {
-            return Err(Error::InvalidArgument);
-        }
+        Self::working_width_over_cap(p)?;
         Ok(ExactNumNumber {
             m: Mantissa::new(p)?,
             e: 0,
@@ -214,9 +235,11 @@ impl ExactNumNumber {
     ///
     /// ## Errors
     ///
-    ///  - InvalidArgument: the precision is incorrect.
-    ///  - MemoryAllocation: failed to allocate memory for mantissa.
+    ///  - InvalidArgument: `p` is 0.
+    ///  - MemoryAllocation: `p` is above [`MAX_PRECISION`](crate::defs::MAX_PRECISION) (an internal
+    ///    working width; a user `p` above the cap is rejected before this), or the mantissa could not be allocated.
     pub fn from_word(mut d: Word, p: usize) -> Result<Self, Error> {
+        Self::working_width_over_cap(p)?;
         Self::p_assertion(p)?;
 
         if d == 0 {
@@ -458,6 +481,7 @@ impl ExactNumNumber {
         let p = round_p(p);
 
         if !full_prec {
+            Self::working_width_over_cap(p)?;
             Self::p_assertion(p)?;
         }
 
@@ -543,6 +567,7 @@ impl ExactNumNumber {
         }
 
         let p = round_p(p);
+        Self::working_width_over_cap(p)?;
         Self::p_assertion(p)?;
 
         let s = if self.s == d2.s { Sign::Pos } else { Sign::Neg };
@@ -777,6 +802,7 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let p = round_p(p);
         if !full_prec {
+            Self::working_width_over_cap(p)?;
             Self::p_assertion(p)?;
         }
 
@@ -1624,6 +1650,8 @@ impl ExactNumNumber {
         F: FnMut(usize, RoundingMode) -> Result<Self, Error>,
     {
         Self::p_assertion(p)?;
+        // Word-rounding of a legal user `p` near the cap is already past `MAX_PRECISION`.
+        Self::working_width_over_cap(round_p(p))?;
         if rm == RoundingMode::None {
             return op(p, rm);
         }
@@ -1635,7 +1663,7 @@ impl ExactNumNumber {
                 return Ok(r);
             }
         }
-        let wide = op(round_p(p) + WORD_BIT_SIZE, RoundingMode::ToZero)?;
+        let wide = op(Self::guarded_width(p)?, RoundingMode::ToZero)?;
         if wide.is_zero() && !wide.op_inexact() {
             // Exact zero: its sign depends on the rounding mode.
             return op(p, rm);

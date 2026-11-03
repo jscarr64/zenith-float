@@ -17,9 +17,11 @@ impl ExactNumNumber {
     ///
     /// ## Errors
     ///
-    ///  - MemoryAllocation: failed to allocate memory for the mantissa.
-    ///  - InvalidArgument: `p` is not a valid precision, or is smaller than the precision of `self`.
+    ///  - MemoryAllocation: `p` is above [`MAX_PRECISION`](crate::defs::MAX_PRECISION), or the mantissa
+    ///    could not be allocated.
+    ///  - InvalidArgument: `p` is 0, or is smaller than the precision of `self`.
     pub(crate) fn ziv_pass_operand(&self, p: usize) -> Result<Self, Error> {
+        Self::working_width_over_cap(p)?;
         Self::p_assertion(p)?;
         let src = self.m.digits();
         let mut m = Mantissa::new(p)?;

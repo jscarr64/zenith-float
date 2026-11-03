@@ -68,13 +68,14 @@ pub type Precision = usize;
 /// `Error::InvalidArgument` (a NaN from the `ExactNum` API). Precision is rounded up to whole words.
 pub const MIN_PRECISION: Precision = 1;
 
-/// Largest accepted precision in bits; anything above it is rejected with `Error::InvalidArgument`.
+/// Largest accepted precision in bits; a user precision above it is rejected with `Error::InvalidArgument`.
 ///
 /// `2^32 - 1` (`u32::MAX`) on every target (64-bit only since 2.0). An exponent plus or minus twice a
-/// precision stays far inside `±2^62`, a precision always fits `u32` (so `sqrt_int(p as u32)`-style helpers
-/// never truncate), and the 4p working width of the widest internal product, `2^28` words, fits exactly in
-/// [`MAX_ALLOC_BYTES`]. Wider internal buffers are refused with `Error::MemoryAllocation`, see
-/// [`check_alloc_bytes`]. A mantissa this large still needs 512 MiB of RAM.
+/// precision stays far inside `±2^62`, and the 4p working width of the widest internal product, `2^28`
+/// words, fits exactly in [`MAX_ALLOC_BYTES`]. Internal working precision (guard bits, correct-rounding
+/// retry up to about 3p) can exceed [`MAX_PRECISION`] and the 2 GiB budget near the cap; such requests
+/// refuse with `Error::MemoryAllocation`, not `InvalidArgument`. Wider internal buffers are refused the
+/// same way, see [`check_alloc_bytes`]. A mantissa this large still needs 512 MiB of RAM.
 pub const MAX_PRECISION: Precision = 4_294_967_295;
 
 const _: () = assert!(MAX_PRECISION == (1 << 32) - 1);
@@ -94,7 +95,7 @@ pub const MAX_ALLOC_BYTES: usize = 1 << 31;
 pub const fn check_alloc_bytes(n: usize, elem_bytes: usize) -> Result<(), Error> {
     match n.checked_mul(elem_bytes) {
         Some(b) if b <= MAX_ALLOC_BYTES => Ok(()),
-        _ => Err(Error::MemoryAllocation),
+        Some(_) | None => Err(Error::MemoryAllocation),
     }
 }
 
