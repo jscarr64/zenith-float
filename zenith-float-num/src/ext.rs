@@ -1534,15 +1534,22 @@ impl ExactNum {
     where
         F: FnMut(usize, RoundingMode) -> Self,
     {
-        // User `p` outside `1..=MAX_PRECISION` is `InvalidArgument`. Word-rounding that still
-        // steps past the cap is `MemoryAllocation` (guard bits and the retry are wider still).
-        if !(crate::defs::MIN_PRECISION..=crate::defs::MAX_PRECISION).contains(&p) {
+        // Every public entry point that goes through here rejects `p = 0` (2.0: `MIN_PRECISION` is 1).
+        if p < crate::defs::MIN_PRECISION {
             return Self::nan(Some(Error::InvalidArgument));
         }
-        if let Err(e) = ExactNumNumber::working_width_over_cap(round_p(p)) {
-            return Self::nan(Some(e));
-        }
+        // The `usize::MAX` sentinel (full precision, used by the proc macros) goes straight to `f`.
         let direct = rm == RoundingMode::None || p >= usize::MAX / 4;
+        if !direct {
+            // A user `p` above the cap is `InvalidArgument`; word-rounding a legal `p` past the cap is a
+            // working width, so `MemoryAllocation` (guard bits and the retry are wider still).
+            if p > crate::defs::MAX_PRECISION {
+                return Self::nan(Some(Error::InvalidArgument));
+            }
+            if let Err(e) = ExactNumNumber::working_width_over_cap(round_p(p)) {
+                return Self::nan(Some(e));
+            }
+        }
         let mut r = if direct {
             f(p, rm)
         } else if p.is_multiple_of(WORD_BIT_SIZE) {
