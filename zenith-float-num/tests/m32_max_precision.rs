@@ -46,7 +46,10 @@ fn size_check_words_threshold() {
 
 #[test]
 fn size_check_overflow() {
-    assert_eq!(check_alloc_bytes(usize::MAX, 2), Err(Error::MemoryAllocation));
+    assert_eq!(
+        check_alloc_bytes(usize::MAX, 2),
+        Err(Error::MemoryAllocation)
+    );
     assert_eq!(check_alloc_bytes(usize::MAX, 0), Ok(()));
 }
 
