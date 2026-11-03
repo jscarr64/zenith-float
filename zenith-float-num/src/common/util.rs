@@ -714,3 +714,18 @@ mod retry_budget_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod mul_cost_tests {
+    use super::calc_mul_cost;
+
+    #[test]
+    fn calc_mul_cost_does_not_truncate_above_u32_max() {
+        // The retry budget lets the working precision reach about 3p, past u32::MAX near the cap.
+        let at = calc_mul_cost(4_294_967_295);
+        let above = calc_mul_cost(4_294_967_301);
+        let three_p = calc_mul_cost(12_884_901_885);
+        assert!(above >= at, "{above} < {at}: p was truncated to u32");
+        assert!(three_p > at, "{three_p} <= {at}: p was truncated to u32");
+    }
+}
