@@ -6,7 +6,6 @@ use crate::common::consts::ONE;
 use crate::common::util::calc_add_cost;
 use crate::common::util::calc_mul_cost;
 use crate::common::util::log2_floor;
-use crate::common::util::sqrt_int;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
@@ -217,7 +216,12 @@ fn series_cost<T: PolycoeffGen>(niter: usize, p: usize, polycoeff_gen: &T) -> u6
     if niter >= RECT_ITER_THRESHOLD {
         // niter * (cost(mul) + cost(add) + cost(polcoeff_gen.next)) + sqrt(niter) * cost(mul)
         // + niter / 10 * (2 * cost(mul) + cost(add) + cost(polcoeff_gen.next))
-        cost + sqrt_int(niter as u32) as u64 * cost_mul as u64
+        let sqrt_niter = match u64::try_from(niter.isqrt()) {
+            Ok(s) => s,
+            // usize is at most 64 bits, so its square root always fits u64.
+            Err(_) => u64::MAX,
+        };
+        cost + sqrt_niter * cost_mul as u64
             + niter as u64 / 10 * ((cost_mul << 1) + cost_add + polycoeff_gen.iter_cost()) as u64
     } else {
         // niter * (cost(mul) + cost(add) + cost(polycoeff_gen.next))
@@ -261,8 +265,7 @@ fn series_compute_fast<T: PolycoeffGen>(
 // rm is the rounding mode.
 /// Number of cached powers of `x_step` for the rectangular series: `sqrt(niter)`, at most `MAX_CACHE`.
 fn rect_cache_size(niter: usize) -> usize {
-    let sqrt_iter = sqrt_int(niter as u32) as usize;
-    MAX_CACHE.min(sqrt_iter)
+    MAX_CACHE.min(niter.isqrt())
 }
 
 // cost: niter * (O(mul) + O(add) + cost(polcoeff_gen.next)) + sqrt(niter) * O(mul) + cost(series_line(remainder))

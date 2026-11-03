@@ -38,19 +38,6 @@ pub fn log2_floor(mut n: usize) -> usize {
     ret
 }
 
-/// square root integer approximation.
-pub fn sqrt_int(a: u32) -> u32 {
-    let a = a as u64;
-    let mut x = a;
-    for _ in 0..20 {
-        if x == 0 {
-            break;
-        }
-        x = (a / x + x) >> 1;
-    }
-    x as u32
-}
-
 // cost of multiplication of two numbers with precision p.
 pub fn calc_mul_cost(p: usize) -> usize {
     if p < 70 {

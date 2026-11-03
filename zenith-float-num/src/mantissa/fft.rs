@@ -7,7 +7,6 @@ use crate::common::int::{SliceMut, SliceWithSign};
 use crate::common::util::add_carry;
 use crate::common::util::log2_ceil;
 use crate::common::util::shift_slice_left_copy;
-use crate::common::util::sqrt_int;
 use crate::common::util::sub_borrow;
 use crate::defs::Error;
 use crate::defs::Word;
@@ -207,7 +206,7 @@ impl Mantissa {
     }
 
     fn fft_params(n: usize) -> (usize, usize, usize, usize, usize, usize) {
-        let mut k1 = sqrt_int(n as u32) as usize;
+        let mut k1 = n.isqrt();
         if n / WORD_BIT_SIZE < 50000 {
             k1 /= 2;
         }
