@@ -221,6 +221,18 @@ impl ExactNum {
         self.sub_op(d2, 0, RoundingMode::None, true)
     }
 
+    /// MPFR `mpfr_dim`: `x - y` rounded to `p` bits with `rm` if `x > y`, else `+0`.
+    ///
+    /// This is a red-test stub (Batch 2, MP12): it always refuses so the MP12 tests
+    /// compile and fail on value. The green implementation replaces this body.
+    ///
+    /// ## Errors
+    ///
+    ///  - `InvalidArgument`: stub refusal (green: NaN input, or an invalid precision).
+    pub fn dim(&self, _y: &Self, _p: usize, _rm: RoundingMode) -> Result<Self, Error> {
+        Err(Error::InvalidArgument)
+    }
+
     fn sub_op(&self, d2: &Self, p: usize, rm: RoundingMode, full_prec: bool) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
