@@ -221,6 +221,72 @@ impl ExactNum {
         self.sub_op(d2, 0, RoundingMode::None, true)
     }
 
+    /// MPFR `mpfr_dim`: `x - y` rounded to `p` bits with `rm` if `x > y`, else `+0`.
+    ///
+    /// The difference is the correctly-rounded `sub` at `(p, rm)`; the zero result is
+    /// always `+0`, including `dim(-0, +0)`. A genuine infinity from a finite difference
+    /// is impossible, so an infinite `sub` result from finite operands is refused as
+    /// `ExponentOverflow` following the rounding mode (toward-zero modes return the
+    /// largest finite value instead, per `tests/overflow_modes.rs`); an infinite result
+    /// from an infinite operand is the correct MPFR answer (`dim(+Inf, 1) = +Inf`,
+    /// `dim(1, -Inf) = +Inf`) and is returned as `Ok(Inf)`. With
+    /// `RoundingMode::None` no rounding to `p` bits is applied, matching `sub`.
+    /// No allocation is made by this function itself; the `sub` kernel's fallible
+    /// paths surface as a NaN carrying `MemoryAllocation`, mapped here to `Err`.
+    ///
+    /// Accuracy: correctly-rounded (the `sub` result, single rounding)
+    ///
+    /// ## Errors
+    ///
+    ///  - `InvalidArgument`: a NaN input with no carried error, or `p` outside
+    ///    `MIN_PRECISION..=MAX_PRECISION`.
+    ///  - The NaN input's own carried error, when it has one.
+    ///  - `ExponentOverflow(Pos)`: the exact difference overflows and `rm` rounds
+    ///    away from zero; `ExponentOverflow(Neg)` cannot occur for `x > y` but is
+    ///    mapped from the `sub` result's sign if it ever did.
+    ///  - `MemoryAllocation`: the `sub` kernel could not allocate.
+    pub fn dim(&self, y: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        if !(crate::defs::MIN_PRECISION..=crate::defs::MAX_PRECISION).contains(&p) {
+            return Err(Error::InvalidArgument);
+        }
+        if self.is_nan() {
+            return Err(match self.err() {
+                Some(e) => e,
+                None => Error::InvalidArgument,
+            });
+        }
+        if y.is_nan() {
+            return Err(match y.err() {
+                Some(e) => e,
+                None => Error::InvalidArgument,
+            });
+        }
+        match self.compare(y) {
+            Some(c) if c > 0 => {
+                let r = Self::sub_ref(self, y, p, rm);
+                if r.is_nan() {
+                    return Err(match r.err() {
+                        Some(e) => e,
+                        None => Error::InvalidArgument,
+                    });
+                }
+                if r.is_inf() {
+                    if self.is_inf() || y.is_inf() {
+                        return Ok(r);
+                    }
+                    return Err(if r.is_inf_neg() {
+                        Error::ExponentOverflow(Sign::Neg)
+                    } else {
+                        Error::ExponentOverflow(Sign::Pos)
+                    });
+                }
+                Ok(r)
+            }
+            Some(_) => Ok(Self::new(p)),
+            None => Err(Error::InvalidArgument),
+        }
+    }
+
     fn sub_op(&self, d2: &Self, p: usize, rm: RoundingMode, full_prec: bool) -> Self {
         match &self.inner {
             Flavor::Value(v1) => match &d2.inner {
