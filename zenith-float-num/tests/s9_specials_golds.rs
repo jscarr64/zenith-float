@@ -28,12 +28,12 @@ const FN_BUDGET: Duration = Duration::from_secs(120);
 const FULL_ROW_BUDGET: Duration = Duration::from_secs(120);
 const FULL_FN_BUDGET: Duration = Duration::from_secs(900);
 /// Largest accepted ZF_TIME_FACTOR, in thousandths (8.000). The slowest emulated runner
-/// measured is aarch64 under qemu-aarch64-static at 4.27 (wine x86_64-pc-windows-gnu is
-/// lower), so 8.000 leaves ~1.9x headroom; anything larger is a typo or a runner too slow
+/// measured is aarch64 under qemu-aarch64-static at 6.50 (wine x86_64-pc-windows-gnu is
+/// lower), so 8.000 leaves headroom; anything larger is a typo or a runner too slow
 /// to be a fair same-work allowance, and is refused instead of silently loosening the budget.
-/// Measurement: ~/pop-logs/harper/2026-10-30/1931-2036-targets.log (same 4 release
-/// golden-test binaries, 3 reps each, median per binary, summed: x86_64 29.482 s, aarch64
-/// qemu 126.018 s, ratio 4.27).
+/// Pin: tools/qemu_aarch64_zf_time_factor.txt. s9_erf re-measure 2026-11-05 (ZF_TIME_FACTOR=8):
+/// median finished-in native 11.52s, qemu 71.99s, ratio 6.25; pin is 6.50 = 6.25 + 0.25 margin
+/// (logs ~/pop-logs/harper/2026-11-05/1236-zf-qemu-tf.log, 1237-zf-qemu-tf.log).
 const MAX_TIME_FACTOR_MILLI: u64 = 8000;
 /// ZF-T02 slowdown factor for emulated runners, in thousandths (no IEEE float): unset is
 /// native (1000). Accepts ASCII digits with at most 3 fraction digits and a value in
@@ -43,8 +43,7 @@ const MAX_TIME_FACTOR_MILLI: u64 = 8000;
 ///
 /// Who sets it: nothing in this PR sets ZF_TIME_FACTOR; native runs leave it unset. The
 /// cross-target release-check step (FIXLIST ALL-X01 / ZF-T02 wiring, the next Harper
-/// branch) sets it for emulated targets, e.g. 4.27 for aarch64 under qemu, the factor
-/// measured in the log cited at `MAX_TIME_FACTOR_MILLI`.
+/// branch) sets it for emulated targets, e.g. the pin in tools/qemu_aarch64_zf_time_factor.txt for aarch64 under qemu.
 fn time_factor_milli(raw: Option<&str>) -> Result<u64, String> {
     let Some(s) = raw else { return Ok(1000) };
     let bad = || {
@@ -354,7 +353,7 @@ fn check(func: &'static str) -> Result<(), String> {
         (ROW_BUDGET, FN_BUDGET)
     };
     // ZF-T02: an emulated runner (qemu, wine) gets the native budget times its measured
-    // slowdown factor (ZF_TIME_FACTOR; aarch64 under qemu measured 4.27 on Pop). Same work
+    // slowdown factor (ZF_TIME_FACTOR; aarch64 under qemu pin 6.50 on Pop). Same work
     // allowance, not a looser one; native runs leave it unset (factor 1, budget unchanged).
     let (row_budget, fn_budget) = (scaled(native_row, milli)?, scaled(native_fn, milli)?);
     eprintln!(
