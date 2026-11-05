@@ -2603,6 +2603,19 @@ Accuracy: correctly-rounded",
         { NAN },
         { NAN },
     );
+
+    /// MPFR `mpfr_modf`: integer part (trunc toward 0) and fractional part with the
+    /// sign of `self`, each rounded to `p` bits with `rm`.
+    ///
+    /// This is a red-test stub (Batch 2, MP16): it always refuses so the MP16 tests
+    /// compile and fail on value. The green implementation replaces this body.
+    ///
+    /// ## Errors
+    ///
+    ///  - `InvalidArgument`: stub refusal (green: NaN input, or an invalid precision).
+    pub fn modf(&self, _p: usize, _rm: RoundingMode) -> Result<(Self, Self), Error> {
+        Err(Error::InvalidArgument)
+    }
     gen_wrapper_own!(
         "Returns the smallest integer greater than or equal to `self`.
 Accuracy: correctly-rounded",
