@@ -32,6 +32,8 @@ Shape-A site list (internal, no code change): Jeff signed off `tools/ziv_shape_a
 
 ### Changed
 
+Line endings (vera, 2026-11-03, vera/zf-td41): a new `.gitattributes` pins text files to LF on checkout (`* text=auto eol=lf`) and pins golden data byte-exact (`*.jsonl -text`, `*.tsv -text`, `SHA256SUMS -text`, `zenith-float-num/tests/oracle/goldens/** -text`, `golds/hex/** -text`), so a Windows checkout with `core.autocrlf=true` cannot change golden bytes (which would fail `sha256sum --strict -c SHA256SUMS`) or leave a `\r` in a parsed field. No result changes: the CSV parsers already stripped one trailing `\r` per line (`data_lines` in `zenith-float-num/src/csvfmt.rs`, since the original CSV commit), so no parser code changed; the new tests are guards (`zenith-float-num/tests/crlf_inputs.rs`, `tools/gitattributes_selftest.sh`, and a CRLF case in `tools/golden_sums_selftest.sh`).
+
 `atan2(y, x)` with a huge `y` and a tiny positive `x` (exponents near both ends of the i64 range, `ey - ex + p` past `i64::MAX`) returned `+Inf`/`-Inf` (and, below 64 bits, an unrounded 64-bit `+-pi/2`) instead of `+-pi/2` rounded at `p`: the tiny-quotient shortcut test wrapped. It is now computed in `i128`. Found by the shifted-reference `atan2_over_the_whole_range` sweep (540 of 12000).
 
 `fma(a, b, c)` with a product below the subnormal grid and an addend near `EXPONENT_MAX` (exponents almost `2^63` apart, e.g. `3*2^(EXPONENT_MIN-19) * -7 + 3*2^(EXPONENT_MAX-3)`) returned `NaN(MemoryAllocation)` instead of the addend rounded at `p`: the exponent gap wrapped in `i64`, so the far-apart shortcut was skipped and a `2^63`-bit sum was attempted. The gap is now computed in `i128`. Found by the `fma_stand_in_branches` digest re-pin review (8 of 1008 entries).
