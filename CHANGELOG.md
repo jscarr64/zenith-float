@@ -6,7 +6,7 @@ Problems in one program led to a forensic audit of the others. This 2.0.0 sectio
 
 ### Added
 
-- CI: arm-tests.yml now runs the workspace tests with `--release`, matching the local gate's build-release step; `tools/test_arm_tests_release.sh` fails closed if the flag goes missing.
+- CI: arm-tests.yml now runs the workspace tests with `--release`, matching the local gate's build-release step; `tools/test_arm_tests_release.sh` fails closed if the flag goes missing. The gate runs it as the `arm-tests-release` step of `tools/full_gate.sh`.
 
 - `Precision`, a public alias of `usize` naming the precision type: `MIN_PRECISION`, `MAX_PRECISION` (`2^60 - 1` on 64-bit targets, smaller on 32-bit), `DEFAULT_P` and the `precision()` / `mantissa_max_bit_len()` results are typed with it. Same type, so not a break.
 
