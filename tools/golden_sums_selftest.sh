@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Self-test for tools/golden_sums_check.sh on a scratch copy (mktemp -d under $TMPDIR): it must fail closed when
 # SHA256SUMS is missing, empty, does not list a required golden, or a hash mismatches; and pass on a correct pin.
+# It must also fail closed on a CRLF-converted golden (ZF-TD41 hazard case).
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
 fail() { echo "GOLDEN SUMS SELFTEST FAIL: $*"; exit 1; }
@@ -15,5 +16,11 @@ printf '%s  borrow_ops.jsonl\n' "$(sum borrow_ops.jsonl)" > "$t/SHA256SUMS"; pri
 chk >/dev/null 2>&1 && fail "drifted borrow_ops.jsonl passed"; n=$((n + 1))
 printf '%s  borrow_ops.jsonl\n' "$(sum borrow_ops.jsonl)" > "$t/SHA256SUMS"
 out="$(chk 2>&1)" || fail "correct pin failed: $out"; n=$((n + 1))
-[ "$n" = 5 ] || fail "ran $n cases, want 5"
+# CRLF hazard (ZF-TD41): a golden converted to CRLF has different bytes, so
+# the pinned sums must FAIL. This simulates a Windows CRLF checkout; the
+# .gitattributes change is what prevents a real checkout from doing this.
+printf '%s  borrow_ops.jsonl\n' "$(sum borrow_ops.jsonl)" > "$t/SHA256SUMS"
+sed 's/$/\r/' "$t/borrow_ops.jsonl" > "$t/borrow_ops.crlf" && mv "$t/borrow_ops.crlf" "$t/borrow_ops.jsonl"
+chk >/dev/null 2>&1 && fail "CRLF borrow_ops.jsonl passed"; n=$((n + 1))
+[ "$n" = 6 ] || fail "ran $n cases, want 6"
 echo "golden_sums selftest: ok ($n cases)"

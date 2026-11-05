@@ -1,0 +1,11 @@
+# ZF-TD41: line endings. A Windows checkout with core.autocrlf=true must not
+# change golden bytes (which would fail `sha256sum --strict -c SHA256SUMS`) or
+# leave a '\r' in the last field of a parsed line. Text files check out LF;
+# golden data is byte-exact (-text). -text and eol=lf on the same path
+# conflict, so goldens get -text only.
+* text=auto eol=lf
+*.jsonl -text
+*.tsv -text
+SHA256SUMS -text
+zenith-float-num/tests/oracle/goldens/** -text
+golds/hex/** -text
