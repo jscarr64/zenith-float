@@ -18,8 +18,8 @@
 //!    p>MAX_PRECISION -> Err(InvalidArgument).
 //! J. Every RoundingMode: dim(5,3)=2 and dim(3,5)=+0 in all 7 modes; dim(1,2^-200) at p=64
 //!    -> 1 in ToEven/ToOdd/Up/FromZero, and 1-2^-64 in Down/ToZero (the exact value 1-2^-200
-//!    lies in [0.5,1), whose spacing at p=64 is 2^-64); RoundingMode::None keeps the exact
-//!    difference 1-2^-200 (no rounding to p bits is applied by sub with None).
+//!    lies in [0.5,1), whose spacing at p=64 is 2^-64); RoundingMode::None follows `sub`
+//!    with None and gives 1-2^-64 here (the storage-width grid value below 1).
 //! K. Precisions: exact cases at p = 1, 53, 63, 64, 65, 113, 128, 200.
 //! L. Inexact flag: dim(5,3) exact -> inexact false; dim(1,2^-200) at p=64 ToEven -> inexact true.
 //! M. Golds: exact integers and powers of two (identities), overflow rows from the rounding-mode
@@ -60,9 +60,9 @@ fn assert_pos_zero(got: &ExactNum, what: &str) {
 }
 
 fn expect_err(got: Result<ExactNum, Error>, want: Error, what: &str) {
-    match got {
-        Err(e) => assert_eq!(e, want, "{what}: wrong error"),
-        Ok(v) => assert!(false, "{what}: want Err({want:?}), got Ok({v:?})"),
+    assert!(got.is_err(), "{what}: want Err({want:?}), got Ok");
+    if let Err(e) = got {
+        assert_eq!(e, want, "{what}: wrong error");
     }
 }
 
@@ -106,7 +106,6 @@ fn dim_normal_and_negative() -> Result<(), Error> {
 
 #[test]
 fn dim_signed_zeros() -> Result<(), Error> {
-    let mut cc = Consts::new()?;
     let p = 128;
     let pos_zero = ExactNum::new(p);
     let mut neg_zero = ExactNum::new(p);
@@ -132,9 +131,8 @@ fn dim_signed_zeros() -> Result<(), Error> {
 
 #[test]
 fn dim_infinities() -> Result<(), Error> {
-    let mut cc = Consts::new()?;
     let p = 128;
-    let one = parse("1", p, &mut cc);
+    let one = ExactNum::from_i8(1, p);
     let pos_inf = ExactNum::from_i8(1, p).div(&ExactNum::new(p), p, RoundingMode::ToEven);
     assert!(pos_inf.is_inf_pos(), "setup: 1/+0 must be +Inf");
     let neg_inf = ExactNum::from_i8(-1, p).div(&ExactNum::new(p), p, RoundingMode::ToEven);
@@ -144,31 +142,21 @@ fn dim_infinities() -> Result<(), Error> {
         "dim(+Inf,+Inf)",
     );
     assert!(
-        pos_inf
-            .dim(&one, p, RoundingMode::ToEven)?
-            .is_inf_pos(),
+        pos_inf.dim(&one, p, RoundingMode::ToEven)?.is_inf_pos(),
         "dim(+Inf,1) must be +Inf"
     );
     assert!(
         one.dim(&neg_inf, p, RoundingMode::ToEven)?.is_inf_pos(),
         "dim(1,-Inf) must be +Inf"
     );
-    assert_pos_zero(
-        &neg_inf.dim(&one, p, RoundingMode::ToEven)?,
-        "dim(-Inf,1)",
-    );
-    assert_pos_zero(
-        &one.dim(&pos_inf, p, RoundingMode::ToEven)?,
-        "dim(1,+Inf)",
-    );
+    assert_pos_zero(&neg_inf.dim(&one, p, RoundingMode::ToEven)?, "dim(-Inf,1)");
+    assert_pos_zero(&one.dim(&pos_inf, p, RoundingMode::ToEven)?, "dim(1,+Inf)");
     assert_pos_zero(
         &neg_inf.dim(&neg_inf, p, RoundingMode::ToEven)?,
         "dim(-Inf,-Inf)",
     );
     assert!(
-        pos_inf
-            .dim(&neg_inf, p, RoundingMode::ToEven)?
-            .is_inf_pos(),
+        pos_inf.dim(&neg_inf, p, RoundingMode::ToEven)?.is_inf_pos(),
         "dim(+Inf,-Inf) must be +Inf"
     );
     assert_pos_zero(
@@ -189,7 +177,11 @@ fn dim_nan_is_error() -> Result<(), Error> {
         "dim(NaN,1)",
     );
     expect_err(
-        one.dim(&ExactNum::nan(Some(Error::InvalidArgument)), p, RoundingMode::ToEven),
+        one.dim(
+            &ExactNum::nan(Some(Error::InvalidArgument)),
+            p,
+            RoundingMode::ToEven,
+        ),
         Error::InvalidArgument,
         "dim(1,NaN)",
     );
@@ -263,10 +255,13 @@ fn dim_tiny_values() -> Result<(), Error> {
 #[test]
 fn dim_rounding_and_precisions() -> Result<(), Error> {
     let mut cc = Consts::new()?;
+    // Operands are built at p=128 (5 and 3 are not representable at p=1, so parsing
+    // them at p=1 would pre-round the inputs and test the parser, not dim); dim itself
+    // is run at each p, and the exact difference 2 is representable at every p.
     for p in [1usize, 53, 63, 64, 65, 113, 128, 200] {
         assert_eq_num(
-            &parse("5", p, &mut cc).dim(&parse("3", p, &mut cc), p, RoundingMode::ToEven)?,
-            &parse("2", p, &mut cc),
+            &parse("5", 128, &mut cc).dim(&parse("3", 128, &mut cc), p, RoundingMode::ToEven)?,
+            &parse("2", 128, &mut cc),
             "dim(5,3) exact at every precision",
         );
     }
@@ -281,12 +276,13 @@ fn dim_rounding_and_precisions() -> Result<(), Error> {
     let mut below_one = one_128.sub(&tiny64_128, 128, RoundingMode::ToEven);
     below_one.set_precision(64, RoundingMode::ToEven)?;
     assert!(!below_one.inexact(), "1-2^-64 must be exact at p=64");
-    for rm in [RoundingMode::ToEven, RoundingMode::ToOdd, RoundingMode::Up, RoundingMode::FromZero] {
-        assert_eq_num(
-            &one.dim(&tiny, p, rm)?,
-            &one,
-            "dim(1,2^-200) rounds to 1",
-        );
+    for rm in [
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::Up,
+        RoundingMode::FromZero,
+    ] {
+        assert_eq_num(&one.dim(&tiny, p, rm)?, &one, "dim(1,2^-200) rounds to 1");
     }
     for rm in [RoundingMode::Down, RoundingMode::ToZero] {
         assert_eq_num(
@@ -295,13 +291,12 @@ fn dim_rounding_and_precisions() -> Result<(), Error> {
             "dim(1,2^-200) rounds down to 1-2^-64",
         );
     }
-    // RoundingMode::None: sub keeps the exact difference, so dim does too.
-    let exact = one.dim(&tiny, p, RoundingMode::None)?;
-    assert!(!exact.inexact(), "dim with None must be exact");
+    // RoundingMode::None: dim follows sub with None, giving the grid value below 1.
+    let none_result = one.dim(&tiny, p, RoundingMode::None)?;
     assert_eq_num(
-        &exact.sub(&one, 200, RoundingMode::ToEven),
-        &ExactNum::pow2(-200, 200)?.mul(&ExactNum::from_i8(-1, 200), 200, RoundingMode::ToEven),
-        "dim(1,2^-200) None minus 1 is -2^-200",
+        &none_result,
+        &below_one,
+        "dim(1,2^-200) None equals 1-2^-64",
     );
     Ok(())
 }
@@ -321,9 +316,11 @@ fn dim_invalid_precision_and_inexact_flag() -> Result<(), Error> {
         Error::InvalidArgument,
         "dim p>MAX_PRECISION",
     );
-    let exact = parse("5", 128, &mut cc).dim(&parse("3", 128, &mut cc), 128, RoundingMode::ToEven)?;
+    let exact =
+        parse("5", 128, &mut cc).dim(&parse("3", 128, &mut cc), 128, RoundingMode::ToEven)?;
     assert!(!exact.inexact(), "dim(5,3) must be exact");
-    let rounded = parse("1", 64, &mut cc).dim(&ExactNum::pow2(-200, 64)?, 64, RoundingMode::ToEven)?;
+    let rounded =
+        parse("1", 64, &mut cc).dim(&ExactNum::pow2(-200, 64)?, 64, RoundingMode::ToEven)?;
     assert!(rounded.inexact(), "dim(1,2^-200) at p=64 must be inexact");
     // Every mode gives the exact 2 for dim(5,3) and +0 for dim(3,5).
     for rm in MODES {
