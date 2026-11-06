@@ -156,8 +156,8 @@ and `~/paul-work/land-seq-2026-11-06/` copies of the split proposal.
 | FP16.1 | `Ieee16` / FP16 bit-pattern ↔ `ExactNum` | Lossless `u16` ↔ `ExactNum` round-trip for every finite/NaN/Inf encoding; test-first |
 | FP16.2 | `Bfloat16` / BF16 bit-pattern ↔ `ExactNum` | Same for BF16 `u16` encodings; test-first |
 | FP16.3 | No IEEE host float in conversion path | No `f32`/`f64` in the bridge; SoftFloat / ExactNum only |
-| FFT.1 | Default per-call FFT length cap | `FFT_DEFAULT_MAX = 65536` (reject larger unless explicit opt-in API) |
-| DCT.1 | Default per-call DCT length cap | `DCT_DEFAULT_MAX = 16384` |
+| FFT.1 | Default per-call FFT length cap | `FFT_MAX_POINTS = 65_536` (was 4,096; larger rejected unless the per-call `fft_with_max_points` / `ifft_with_max_points` cap allows it) |
+| DCT.1 | Default per-call DCT length cap | `DSP_MAX_POINTS = 16_384` (was 2,048; per call: `dct`/`idct`/`dst`/`idst`_`with_max_points`) |
 | AIR.1 | Native air-gap mandate for SoftFloat classical ops | `#419`/`#437` split: no `ort`, no IEEE-ML, no AGPL YOLO in AccuMath SoftFloat path |
 
 ### Ownership

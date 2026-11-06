@@ -80,7 +80,9 @@ fn pad_fft(
 ///
 /// `X_k = Σ_n x_n cos(π(n+1/2)k/N)`. Input is a real row or column. `N` must
 /// be a power of two and at most [`DSP_MAX_POINTS`]. Empty, non-finite, or a
-/// bad shape returns `None`.
+/// bad shape returns `None`. The work runs at `p + WORD_BIT_SIZE` bits with
+/// `RoundingMode::None` and each output is rounded once to `p` with `rm`; with
+/// `rm = RoundingMode::None` that step is skipped and outputs may keep guard bits.
 pub fn dct(
     signal: &ExactNumArray,
     p: usize,
@@ -93,7 +95,7 @@ pub fn dct(
 /// [`dct`] with the length cap `max_points` given per call instead of [`DSP_MAX_POINTS`].
 /// `N > max_points` returns `None` before anything is copied; `max_points = 0` rejects every
 /// input. The internal `2N`-point FFT follows `N`, so a cap above the default works (subject
-/// to `check_alloc_bytes` on the working buffers).
+/// to `check_alloc_bytes` on the working buffers). Rounding is as in [`dct`].
 pub fn dct_with_max_points(
     signal: &ExactNumArray,
     max_points: usize,

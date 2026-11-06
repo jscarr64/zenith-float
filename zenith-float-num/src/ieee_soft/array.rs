@@ -1524,7 +1524,10 @@ impl ExactNumArray {
     /// (row 0 real, row 1 imaginary). `n` must be a power of two and at most
     /// [`FFT_MAX_POINTS`]. Returns a `(2, n)` spectrum (unnormalized).
     /// Empty, non-finite, or a bad shape returns `None`. The butterflies run at
-    /// `p + 2·log2(n) + 16` bits and each output is rounded once to `p` with `rm`.
+    /// `p + 2·log2(n) + 16` bits (inputs widened to it, never narrowed, with `RoundingMode::None`)
+    /// and each output is rounded once to `p` with `rm`. With `rm = RoundingMode::None`
+    /// that final step is skipped, as everywhere in `ExactNum`, and outputs may keep
+    /// working-precision guard bits.
     pub fn fft(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Option<Self> {
         fft_dit(self, false, FFT_MAX_POINTS, p, rm, cc)
     }
@@ -1532,7 +1535,9 @@ impl ExactNumArray {
     /// [`Self::fft`] with the length cap `max_points` given per call instead of
     /// [`FFT_MAX_POINTS`]. `n > max_points` returns `None` before anything is copied
     /// or allocated; `max_points = 0` rejects every input. A cap above the default
-    /// is honoured, subject to [`check_alloc_bytes`] on the working buffers.
+    /// is honoured, subject to [`check_alloc_bytes`] on the working buffers. Rounding is
+    /// as in [`Self::fft`] (one final rounding to `p` with `rm`; none with
+    /// `RoundingMode::None`).
     pub fn fft_with_max_points(
         &self,
         max_points: usize,
@@ -2328,6 +2333,12 @@ fn fft_work_p(p: usize, n: usize) -> Option<usize> {
     p.checked_add(logn.checked_mul(2)?.checked_add(16)?)
 }
 
+/// Precision an FFT input is copied at: `p`, or the input's own width if wider, so the
+/// copy never rounds (only the final rounding to the caller's `p` uses `rm`).
+fn widen_to(x: &ExactNum, p: usize) -> usize {
+    x.mantissa_max_bit_len().map_or(p, |b| b.max(p))
+}
+
 fn fft_split(
     a: &ExactNumArray,
     n: usize,
@@ -2339,8 +2350,8 @@ fn fft_split(
     if a.rows == 2 {
         let mut im = try_vec(n)?;
         for j in 0..n {
-            let r = svd_copy_prec(&a.vals[j], p, rm);
-            let i = svd_copy_prec(&a.vals[n + j], p, rm);
+            let r = svd_copy_prec(&a.vals[j], widen_to(&a.vals[j], p), rm);
+            let i = svd_copy_prec(&a.vals[n + j], widen_to(&a.vals[n + j], p), rm);
             if r.is_nan() || r.is_inf() || i.is_nan() || i.is_inf() {
                 return None;
             }
@@ -2350,7 +2361,7 @@ fn fft_split(
         Some((re, im))
     } else {
         for v in &a.vals {
-            let r = svd_copy_prec(v, p, rm);
+            let r = svd_copy_prec(v, widen_to(v, p), rm);
             if r.is_nan() || r.is_inf() {
                 return None;
             }
@@ -2478,7 +2489,10 @@ fn fft_dit(
     }
     let n = fft_len(a, max_points)?;
     let wp = fft_work_p(p, n)?;
-    let (re, im) = fft_split(a, n, wp, rm)?;
+    // Inputs widen to `wp` (or keep a wider width) with `RoundingMode::None`, never
+    // narrowing, so the only rounding with `rm` is the final one to `p`: no double
+    // rounding at n = 1, where no butterfly runs.
+    let (re, im) = fft_split(a, n, wp, RoundingMode::None)?;
     let (mut re, mut im) = fft_core(re, im, inverse, wp, rm, cc)?;
     round_all(&mut re, p, rm);
     round_all(&mut im, p, rm);
@@ -3618,6 +3632,39 @@ mod tests {
                 p
             ));
         }
+        Ok(())
+    }
+
+    /// n = 1 rounds once: 1 + 2^-64 + 2^-200 at p = 64 is above the tie between 1 and
+    /// 1 + 2^-63, so ToEven gives 1 + 2^-63; a pre-round to the working width (rounded
+    /// or truncated) would drop the 2^-200 sticky bit and land on the tie, giving 1.
+    #[test]
+    fn fft_n1_single_rounding() -> Result<(), crate::Error> {
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let q = 256;
+        let x = ExactNum::from_u8(1, q)
+            .add(
+                &ExactNum::from_u8(1, q).ldexp(-64, q, RoundingMode::None),
+                q,
+                RoundingMode::None,
+            )
+            .add(
+                &ExactNum::from_u8(1, q).ldexp(-200, q, RoundingMode::None),
+                q,
+                RoundingMode::None,
+            );
+        let a = ExactNumArray::from_values(q, &[x]);
+        let s = a
+            .fft(64, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        let want = ExactNum::from_u8(1, 64).add(
+            &ExactNum::from_u8(1, 64).ldexp(-63, 64, RoundingMode::None),
+            64,
+            RoundingMode::None,
+        );
+        let got = s.get2(0, 0).ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(got.compare(&want), Some(0));
         Ok(())
     }
 }
