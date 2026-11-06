@@ -1532,6 +1532,28 @@ impl ExactNumArray {
         fft_dit(self, true, p, rm, cc)
     }
 
+    /// Red-test stub (Slice 2): the green commit takes the cap per call.
+    pub fn fft_with_max_points(
+        &self,
+        _max_points: usize,
+        _p: usize,
+        _rm: RoundingMode,
+        _cc: &mut Consts,
+    ) -> Option<Self> {
+        None
+    }
+
+    /// Red-test stub (Slice 2): the green commit takes the cap per call.
+    pub fn ifft_with_max_points(
+        &self,
+        _max_points: usize,
+        _p: usize,
+        _rm: RoundingMode,
+        _cc: &mut Consts,
+    ) -> Option<Self> {
+        None
+    }
+
     fn zip(&self, rhs: &Self, op: impl Fn(&ExactNum, &ExactNum) -> ExactNum) -> Option<Self> {
         if self.rows != rhs.rows || self.cols != rhs.cols {
             return None;
@@ -2236,6 +2258,12 @@ fn fft_bitrev(mut i: usize, logn: u32) -> usize {
         i >>= 1;
     }
     r
+}
+
+/// Red-test stub (Slice 2): the green commit refuses oversized byte counts.
+#[cfg(test)]
+fn check_alloc_bytes(_count: usize) -> Option<()> {
+    Some(())
 }
 
 fn fft_split(
@@ -3296,6 +3324,193 @@ mod tests {
         assert!(ExactNumArray::from_values(p, &[n(1), n(2), n(3)])
             .fft(p, rm, &mut cc)
             .is_none());
+        Ok(())
+    }
+
+    /// `|a − b| < 2^(mag − (p − 40))`: `p − 40` bits relative to a magnitude `2^mag`.
+    fn near_mag(a: &ExactNum, b: &ExactNum, p: usize, mag: Exponent) -> bool {
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
+        d.is_zero() || d.exponent().unwrap_or(0) < mag - ((p as Exponent) - 40)
+    }
+
+    fn impulse(n: usize, p: usize) -> ExactNumArray {
+        let mut v = alloc::vec::Vec::with_capacity(n);
+        v.push(ExactNum::from_u8(1, p));
+        for _ in 1..n {
+            v.push(ExactNum::from_u8(0, p));
+        }
+        ExactNumArray::from_values(p, &v)
+    }
+
+    /// Slice 2 caps: the default is 65,536 (was 4,096); `*_with_max_points` takes the cap per
+    /// call, tighter or looser; `n > cap` and `cap = 0` are `None`.
+    #[test]
+    fn fft_default_and_per_call_caps() -> Result<(), crate::Error> {
+        let p = 64;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        assert_eq!(FFT_MAX_POINTS, 65_536);
+        // Above the old 4,096 cap: the impulse spectrum is all ones (DFT of δ_0).
+        let s = impulse(8192, p)
+            .fft(p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(s.shape(), (2, 8192));
+        let one = ExactNum::from_u8(1, p);
+        let zero = ExactNum::from_u8(0, p);
+        for j in [0usize, 1, 4095, 4096, 8191] {
+            assert!(near_num(
+                s.get2(0, j).ok_or(crate::Error::InvalidArgument)?,
+                &one,
+                p
+            ));
+            assert!(near_num(
+                s.get2(1, j).ok_or(crate::Error::InvalidArgument)?,
+                &zero,
+                p
+            ));
+        }
+        // Default cap boundary: 2 * 65,536 is refused (65,537 is not a power of two either).
+        assert!(impulse(131_072, p).fft(p, rm, &mut cc).is_none());
+        assert!(impulse(131_072, p).ifft(p, rm, &mut cc).is_none());
+        // Tighter per-call cap.
+        assert!(impulse(128, p)
+            .fft_with_max_points(64, p, rm, &mut cc)
+            .is_none());
+        assert!(impulse(128, p)
+            .ifft_with_max_points(64, p, rm, &mut cc)
+            .is_none());
+        assert!(impulse(64, p)
+            .fft_with_max_points(64, p, rm, &mut cc)
+            .is_some());
+        assert!(impulse(64, p)
+            .ifft_with_max_points(64, p, rm, &mut cc)
+            .is_some());
+        assert!(impulse(1, p)
+            .fft_with_max_points(0, p, rm, &mut cc)
+            .is_none());
+        // Looser per-call cap: 131,072 points accepted past the default.
+        let big = impulse(131_072, p)
+            .fft_with_max_points(131_072, p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(big.shape(), (2, 131_072));
+        assert!(near_num(
+            big.get2(0, 99_999).ok_or(crate::Error::InvalidArgument)?,
+            &one,
+            p
+        ));
+        // usize::MAX cap: the cap no longer limits, the input shape still does.
+        assert!(impulse(3, p)
+            .fft_with_max_points(usize::MAX, p, rm, &mut cc)
+            .is_none());
+        assert!(impulse(4, p)
+            .fft_with_max_points(usize::MAX, p, rm, &mut cc)
+            .is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn fft_check_alloc_bytes_refuses_huge() {
+        assert!(check_alloc_bytes(usize::MAX).is_none());
+        assert!(check_alloc_bytes(usize::MAX / 2).is_none());
+        assert!(check_alloc_bytes(isize::MAX.unsigned_abs()).is_none());
+        assert!(check_alloc_bytes(0).is_some());
+        assert!(check_alloc_bytes(131_072 * 2).is_some());
+    }
+
+    /// Accuracy past the old cap at n = 8,192 (p = 128): a cosine at bin 5 transforms to n/2
+    /// at bins 5 and n − 5 and zero elsewhere; ifft returns the input; Parseval holds.
+    #[test]
+    fn fft_accuracy_above_old_cap() -> Result<(), crate::Error> {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let n = 8192usize;
+        let nn = ExactNum::from_u32(8192, p);
+        let two_pi_5 = ExactNum::from_u8(10, p).mul(&cc.pi(p, rm), p, rm);
+        let mut xs = alloc::vec::Vec::with_capacity(n);
+        for k in 0..8192u32 {
+            let ang = ExactNum::from_u32(k, p)
+                .mul(&two_pi_5, p, rm)
+                .div(&nn, p, rm);
+            xs.push(ang.cos(p, rm, &mut cc));
+        }
+        let x = ExactNumArray::from_values(p, &xs);
+        let s = x.fft(p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        let half_n = ExactNum::from_u32(4096, p);
+        let zero = ExactNum::from_u8(0, p);
+        for j in 0..n {
+            let re = s.get2(0, j).ok_or(crate::Error::InvalidArgument)?;
+            let im = s.get2(1, j).ok_or(crate::Error::InvalidArgument)?;
+            let want = if j == 5 || j == n - 5 { &half_n } else { &zero };
+            assert!(near_mag(re, want, p, 13), "re[{j}]");
+            assert!(near_mag(im, &zero, p, 13), "im[{j}]");
+        }
+        let back = s
+            .ifft(p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        let mut e_t = ExactNum::from_u8(0, p);
+        let mut e_f = ExactNum::from_u8(0, p);
+        for j in 0..n {
+            let xj = x.get(j).ok_or(crate::Error::InvalidArgument)?;
+            assert!(near_num(
+                back.get2(0, j).ok_or(crate::Error::InvalidArgument)?,
+                xj,
+                p
+            ));
+            assert!(near_num(
+                back.get2(1, j).ok_or(crate::Error::InvalidArgument)?,
+                &zero,
+                p
+            ));
+            e_t = e_t.add(&xj.sqr(p, rm), p, rm);
+            let xr = s.get2(0, j).ok_or(crate::Error::InvalidArgument)?;
+            let xi = s.get2(1, j).ok_or(crate::Error::InvalidArgument)?;
+            e_f = e_f.add(&xr.sqr(p, rm), p, rm).add(&xi.sqr(p, rm), p, rm);
+        }
+        // Σ|x|² = n/2 = 4096; Σ|X|²/n must match.
+        assert!(near_mag(&e_f.div(&nn, p, rm), &e_t, p, 13));
+        assert!(near_mag(&e_t, &half_n, p, 13));
+        Ok(())
+    }
+
+    /// The full default size, n = 65,536 at p = 64: impulse → ones, and ifft brings δ_0 back.
+    #[test]
+    fn fft_at_default_cap_65536() -> Result<(), crate::Error> {
+        let p = 64;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let s = impulse(65_536, p)
+            .fft(p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        let one = ExactNum::from_u8(1, p);
+        let zero = ExactNum::from_u8(0, p);
+        for j in [0usize, 1, 32_767, 32_768, 65_535] {
+            assert!(near_num(
+                s.get2(0, j).ok_or(crate::Error::InvalidArgument)?,
+                &one,
+                p
+            ));
+            assert!(near_num(
+                s.get2(1, j).ok_or(crate::Error::InvalidArgument)?,
+                &zero,
+                p
+            ));
+        }
+        let back = s
+            .ifft(p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert!(near_num(
+            back.get2(0, 0).ok_or(crate::Error::InvalidArgument)?,
+            &one,
+            p
+        ));
+        for j in [1usize, 2, 32_768, 65_535] {
+            assert!(near_num(
+                back.get2(0, j).ok_or(crate::Error::InvalidArgument)?,
+                &zero,
+                p
+            ));
+        }
         Ok(())
     }
 }

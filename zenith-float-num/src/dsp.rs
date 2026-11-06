@@ -242,6 +242,72 @@ pub fn fft_real(
     signal.fft(p, rm, cc)
 }
 
+/// Red-test stub (Slice 2): the green commit takes the cap per call.
+pub fn dct_with_max_points(
+    _signal: &ExactNumArray,
+    _max_points: usize,
+    _p: usize,
+    _rm: RoundingMode,
+    _cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    None
+}
+
+/// Red-test stub (Slice 2): the green commit takes the cap per call.
+pub fn idct_with_max_points(
+    _signal: &ExactNumArray,
+    _max_points: usize,
+    _p: usize,
+    _rm: RoundingMode,
+    _cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    None
+}
+
+/// Red-test stub (Slice 2): the green commit takes the cap per call.
+pub fn dst_with_max_points(
+    _signal: &ExactNumArray,
+    _max_points: usize,
+    _p: usize,
+    _rm: RoundingMode,
+    _cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    None
+}
+
+/// Red-test stub (Slice 2): the green commit takes the cap per call.
+pub fn idst_with_max_points(
+    _signal: &ExactNumArray,
+    _max_points: usize,
+    _p: usize,
+    _rm: RoundingMode,
+    _cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    None
+}
+
+/// Red-test stub (Slice 2): the green commit takes the cap per call.
+pub fn fft_real_with_max_points(
+    _signal: &ExactNumArray,
+    _max_points: usize,
+    _p: usize,
+    _rm: RoundingMode,
+    _cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    None
+}
+
+/// Red-test stub (Slice 2): the green commit takes the cap per call.
+pub fn ifft_real_with_max_points(
+    _spectrum: &ExactNumArray,
+    _max_points: usize,
+    _p: usize,
+    _rm: RoundingMode,
+    _cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    None
+}
+
 fn window_len_ok(n: usize) -> bool {
     n > 0 && n <= DSP_MAX_POINTS
 }
@@ -633,6 +699,198 @@ mod tests {
         assert!(hann_window(0, p, rm, &mut cc).is_none());
         assert!(rectangular_window(0, p, rm).is_none());
         assert!(kaiser_window(4, &ExactNum::from_i64(-1, p), p, rm, &mut cc).is_none());
+        Ok(())
+    }
+
+    fn ramp(n: usize, p: usize) -> ExactNumArray {
+        // x_j = (j mod 7) − 3: small integers, not symmetric, exact at any p.
+        let mut v = Vec::with_capacity(n);
+        for j in 0..n {
+            let m = u8::try_from(j % 7).unwrap_or(0);
+            v.push(ExactNum::from_u8(m, p).sub(&ExactNum::from_u8(3, p), p, RoundingMode::None));
+        }
+        ExactNumArray::from_values(p, &v)
+    }
+
+    fn roundtrip_ok(x: &ExactNumArray, y: &ExactNumArray, p: usize) -> Result<bool, crate::Error> {
+        if x.len() != y.len() {
+            return Ok(false);
+        }
+        for j in 0..x.len() {
+            let a = x.get(j).ok_or(crate::Error::InvalidArgument)?;
+            let b = y.get(j).ok_or(crate::Error::InvalidArgument)?;
+            if !near(a, b, p) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    /// Slice 2 caps: default 16,384 (was 2,048); per-call caps tighter and looser.
+    #[test]
+    fn dsp_default_and_per_call_caps() -> Result<(), crate::Error> {
+        let p = 64;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        assert_eq!(DSP_MAX_POINTS, 16_384);
+        // Default boundary: 32,768 is refused by every transform (16,385 is not a power of two).
+        let over = ramp(32_768, p);
+        assert!(dct(&over, p, rm, &mut cc).is_none());
+        assert!(idct(&over, p, rm, &mut cc).is_none());
+        assert!(dst(&over, p, rm, &mut cc).is_none());
+        assert!(idst(&over, p, rm, &mut cc).is_none());
+        // Tighter per-call cap.
+        let x128 = ramp(128, p);
+        let x64 = ramp(64, p);
+        assert!(dct_with_max_points(&x128, 64, p, rm, &mut cc).is_none());
+        assert!(idct_with_max_points(&x128, 64, p, rm, &mut cc).is_none());
+        assert!(dst_with_max_points(&x128, 64, p, rm, &mut cc).is_none());
+        assert!(idst_with_max_points(&x128, 64, p, rm, &mut cc).is_none());
+        assert!(fft_real_with_max_points(&x128, 64, p, rm, &mut cc).is_none());
+        assert!(dct_with_max_points(&x64, 0, p, rm, &mut cc).is_none());
+        let c =
+            dct_with_max_points(&x64, 64, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        let b =
+            idct_with_max_points(&c, 64, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        assert!(roundtrip_ok(&x64, &b, p)?);
+        let s =
+            dst_with_max_points(&x64, 64, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        let b =
+            idst_with_max_points(&s, 64, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        assert!(roundtrip_ok(&x64, &b, p)?);
+        let f = fft_real_with_max_points(&x64, 64, p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert!(ifft_real_with_max_points(&f, 32, p, rm, &mut cc).is_none());
+        let b = ifft_real_with_max_points(&f, 64, p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert!(roundtrip_ok(&x64, &b, p)?);
+        // Looser per-call cap: N = 32,768 past the default (internal FFT of 65,536 points).
+        let c = dct_with_max_points(&over, 32_768, p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(c.len(), 32_768);
+        // The DC bin is Σ x_j: 32,768 = 7·4681 + 1, so Σ ((j mod 7) − 3) = 4681·0 + (0 − 3) = −3.
+        let m3 = ExactNum::from_u8(3, p).neg();
+        assert!(near_mag(
+            c.get(0).ok_or(crate::Error::InvalidArgument)?,
+            &m3,
+            p,
+            16
+        ));
+        Ok(())
+    }
+
+    fn near_mag(a: &ExactNum, b: &ExactNum, p: usize, mag: crate::Exponent) -> bool {
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
+        d.is_zero() || d.exponent().unwrap_or(0) < mag - ((p as crate::Exponent) - 40)
+    }
+
+    /// Past the old 2,048 cap at N = 4,096 (p = 128): DCT-II of cos(π(n+½)k0/N) is N/2 at k0
+    /// and 0 elsewhere (orthogonality of the DCT-II basis); idct and idst invert dct and dst.
+    #[test]
+    fn dsp_accuracy_above_old_cap() -> Result<(), crate::Error> {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let n = 4096usize;
+        let nn = ExactNum::from_u32(4096, p);
+        let pi = cc.pi(p, rm);
+        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
+        let mut xs = Vec::with_capacity(n);
+        for j in 0..4096u32 {
+            let ang = ExactNum::from_u32(j, p)
+                .add(&half, p, rm)
+                .mul(&ExactNum::from_u8(9, p), p, rm)
+                .mul(&pi, p, rm)
+                .div(&nn, p, rm);
+            xs.push(ang.cos(p, rm, &mut cc));
+        }
+        let x = ExactNumArray::from_values(p, &xs);
+        let c = dct(&x, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        let half_n = ExactNum::from_u32(2048, p);
+        let zero = ExactNum::from_u8(0, p);
+        for k in 0..n {
+            let want = if k == 9 { &half_n } else { &zero };
+            assert!(
+                near_mag(c.get(k).ok_or(crate::Error::InvalidArgument)?, want, p, 12),
+                "bin {k}"
+            );
+        }
+        let back = idct(&c, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        assert!(roundtrip_ok(&x, &back, p)?);
+        let r = ramp(n, p);
+        let s = dst(&r, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        let back = idst(&s, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        assert!(roundtrip_ok(&r, &back, p)?);
+        Ok(())
+    }
+
+    /// The `O(N log N)` inverses agree with the defining sums (the pre-2.0 direct formulas)
+    /// at N = 16 for an arbitrary input.
+    #[test]
+    fn dsp_fast_inverses_match_direct_sums() -> Result<(), crate::Error> {
+        let p = 128;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let n = 16usize;
+        let x = ramp(n, p);
+        let ci = idct(&x, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        let si = idst(&x, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        let nn = ExactNum::from_u8(16, p);
+        let pi = cc.pi(p, rm);
+        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
+        let two_over_n = ExactNum::from_u8(2, p).div(&nn, p, rm);
+        for j in 0..16u8 {
+            let jh = ExactNum::from_u8(j, p).add(&half, p, rm);
+            let x0 = x.get(0).ok_or(crate::Error::InvalidArgument)?;
+            let mut acc_c = ExactNum::mul_ref(x0, &half, p, rm);
+            let xl = x.get(n - 1).ok_or(crate::Error::InvalidArgument)?;
+            let last = ExactNum::mul_ref(xl, &half, p, rm);
+            let mut acc_s = if j % 2 == 0 { last } else { last.neg() };
+            for k in 0..16u8 {
+                let xk = x.get(usize::from(k)).ok_or(crate::Error::InvalidArgument)?;
+                if k > 0 {
+                    let a = ExactNum::from_u8(k, p)
+                        .mul(&pi, p, rm)
+                        .mul(&jh, p, rm)
+                        .div(&nn, p, rm);
+                    acc_c = acc_c.add(&a.cos(p, rm, &mut cc).mul(xk, p, rm), p, rm);
+                }
+                if k < 15 {
+                    let a = ExactNum::from_u8(k + 1, p)
+                        .mul(&pi, p, rm)
+                        .mul(&jh, p, rm)
+                        .div(&nn, p, rm);
+                    acc_s = acc_s.add(&a.sin(p, rm, &mut cc).mul(xk, p, rm), p, rm);
+                }
+            }
+            let jc = usize::from(j);
+            let want_c = acc_c.mul(&two_over_n, p, rm);
+            let want_s = acc_s.mul(&two_over_n, p, rm);
+            assert!(
+                near(ci.get(jc).ok_or(crate::Error::InvalidArgument)?, &want_c, p),
+                "idct {j}"
+            );
+            assert!(
+                near(si.get(jc).ok_or(crate::Error::InvalidArgument)?, &want_s, p),
+                "idst {j}"
+            );
+        }
+        Ok(())
+    }
+
+    /// The full default size, N = 16,384 at p = 64: dct/idct and dst/idst round trips.
+    #[test]
+    fn dsp_at_default_cap_16384() -> Result<(), crate::Error> {
+        let p = 64;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let x = ramp(16_384, p);
+        let c = dct(&x, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        let b = idct(&c, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        assert!(roundtrip_ok(&x, &b, p)?);
+        let s = dst(&x, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        let b = idst(&s, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        assert!(roundtrip_ok(&x, &b, p)?);
         Ok(())
     }
 }
