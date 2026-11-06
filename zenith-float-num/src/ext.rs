@@ -2655,14 +2655,15 @@ Accuracy: correctly-rounded",
     /// sign of `self`, each rounded to `p` bits with `rm`.
     ///
     /// Both parts are rebuilt from the borrowed mantissa words (no copy of
-    /// `self`), then rounded with `set_precision(p, rm)`; with
-    /// `RoundingMode::None`, `set_precision` keeps storage precision, matching
-    /// its own contract. Infinities are handled before the split (the split is
-    /// defined for finite values only): `+Inf` gives `(+Inf, +0)` and `-Inf`
-    /// gives `(-Inf, -0)`. The split allocates the two fresh mantissas; a
-    /// failure surfaces as a NaN carrying `MemoryAllocation`, mapped here to
-    /// `Err`, and `set_precision` surfaces allocation failure as
-    /// `Err(MemoryAllocation)`.
+    /// `self`), then rounded with `set_precision(p, rm)`. With
+    /// `RoundingMode::None`, `set_precision` still truncates storage to
+    /// `ceil(p/64)` words and sets `inexact` when that drops bits (it does
+    /// not keep the prior storage width). Infinities are handled before the
+    /// split (the split is defined for finite values only): `+Inf` gives
+    /// `(+Inf, +0)` and `-Inf` gives `(-Inf, -0)`. The split allocates the
+    /// two fresh mantissas; a failure surfaces as a NaN carrying
+    /// `MemoryAllocation`, mapped here to `Err`, and `set_precision` surfaces
+    /// allocation failure as `Err(MemoryAllocation)`.
     ///
     /// Accuracy: correctly-rounded (each part, single rounding from its exact part)
     ///

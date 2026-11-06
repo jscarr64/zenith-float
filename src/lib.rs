@@ -326,3 +326,19 @@
 pub use zenith_float_macro::{cexpr, exact, expr, fbig};
 
 pub use zenith_float_num::*;
+
+#[cfg(test)]
+mod facade_smoke_tests {
+    use crate::{ExactNum, RoundingMode};
+
+    #[test]
+    fn facade_add_uses_reexported_types() {
+        let one = ExactNum::from_i32(1, 64);
+        let two = ExactNum::from_i32(2, 64);
+        let three = ExactNum::from_i32(3, 64);
+        assert_eq!(
+            one.add(&two, 64, RoundingMode::ToEven).compare(&three),
+            Some(0)
+        );
+    }
+}

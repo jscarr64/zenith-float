@@ -35,6 +35,7 @@ debug_slew() {
   bash "$root/scripts/ci_no_name.sh"
 
   cargo test --workspace
+  bash "$root/scripts/check_zero_test_targets.sh"
   cargo test -p zenith-float-num --features random --test radix_roundtrip
   cargo test -p zenith-float-num --lib --release
   cargo test -p zenith-float-num --lib --no-default-features --features std

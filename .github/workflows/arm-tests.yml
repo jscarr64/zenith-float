@@ -15,6 +15,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: '1.99'
-      - run: cargo test --locked --workspace
+      - run: cargo test --locked --workspace --release
       - run: cargo test --locked -p zenith-float-num --test oracle
         name: Oracle tests (fast tier)

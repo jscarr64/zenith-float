@@ -66,9 +66,22 @@ ORACLES="--test oracle --test specials_oracle --test methods_oracle --test accur
 run target-dir "tools/fresh_test_run_selftest.sh && tools/fresh_test_run.sh --claim"
 # goldens pinned by SHA256SUMS next to them (fails closed: missing/empty sums, unlisted golden, drift)
 run golden-sums "tools/golden_sums_selftest.sh && tools/golden_sums_check.sh zenith-float-num/tests/oracle/goldens borrow_ops.jsonl"
+# arm-tests.yml must run the workspace tests with --release, like build-release below (fails closed: missing workflow, step or flag)
+run arm-tests-release "tools/test_arm_tests_release.sh"
+# the qemu-aarch64 ZF_TIME_FACTOR pin must stay at or above the measured s9_erf ratio + margin (fails closed)
+run qemu-time-factor "tools/test_qemu_aarch64_time_factor.sh"
 run build-debug "tools/fresh_test_run.sh cargo test --workspace $TT"
 # early compile of the mpfr-tests integration tests (6ab75ce prepublish broke here only at the last step)
 run mpfr-tests-build "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests --no-run"
+# Zero-test check. Spence review of PR #18: the check was only in
+# scripts/ci.sh, which set -e stops at the ci_no_name failure before reaching
+# it, and full_gate never called it at all. Placed here, not between
+# build-debug and mpfr-tests-build: tools/test_full_gate_poplog.sh asserts
+# mpfr-tests-build follows build-debug directly. The debug --list still
+# reuses the build-debug binaries (mpfr-tests-build is a release --no-run),
+# so this does not force an extra debug rebuild; do not move it after
+# build-release for the same reason.
+run zero-test "bash scripts/check_zero_test_targets.sh"
 run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
 run build-thumbv7em "cargo build --no-default-features --target thumbv7em-none-eabihf && cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf"

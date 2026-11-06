@@ -107,3 +107,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
     Ok(())
 }
+
+#[cfg(test)]
+mod hex_bytes_tests {
+    use super::hex_bytes;
+
+    #[test]
+    fn hex_bytes_formats_lowercase_hex() {
+        let out = hex_bytes(&[0x00, 0xab, 0xff]);
+        assert!(matches!(out, Ok(ref s) if s.as_str() == "00abff"));
+    }
+
+    #[test]
+    fn hex_bytes_empty_input_is_empty() {
+        let out = hex_bytes(&[]);
+        assert!(matches!(out, Ok(ref s) if s.is_empty()));
+    }
+}
