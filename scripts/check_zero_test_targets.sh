@@ -16,15 +16,16 @@
 # chatter) fails, so an error cannot be swallowed between header and count.
 #
 # Expected counts on this branch (default features, no mpfr-tests): the
-# workspace list has 54 targets. The mpfr-tests pass below is only for
-# zenith-float-num, which has 48 targets with mpfr-tests on x86_64-linux,
+# workspace list has 55 targets. The mpfr-tests pass below is only for
+# zenith-float-num, which has 49 targets with mpfr-tests on x86_64-linux,
 # including integration_tests.
 #
 # The counts moved 52 -> 53 (46 -> 47 for mpfr-tests) when main brought in
 # the crlf_inputs.rs test target from zf #19 (merged 2026-11-03), then
-# 53 -> 54 (47 -> 48) with mp16_modf.rs on this land tip; the count
-# moves in the same PR that adds or removes a target; a count change
-# without a target change is a failure, not a pass).
+# 53 -> 54 (47 -> 48) with mp16_modf.rs, then 54 -> 55 (48 -> 49) with
+# mp18_int_getters.rs on this stacked land tip; the count moves in the
+# same PR that adds or removes a target; a count change without a target
+# change is a failure, not a pass).
 # integration_tests minor (Spence review of PR #18): that target's tests live
 # behind cfg(all(target_arch = "x86_64", target_os = "linux")) in
 # zenith-float-num/tests/integration_tests.rs:7, so with mpfr-tests it is 0
@@ -38,8 +39,8 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-EXPECTED_TARGETS=54
-EXPECTED_MPFR_TARGETS=48
+EXPECTED_TARGETS=55
+EXPECTED_MPFR_TARGETS=49
 
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
