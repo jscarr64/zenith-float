@@ -1,5 +1,6 @@
-//! Software IEEE-754 binary32 / binary64 (`Ieee32` / `Ieee64`).
-//! Bits live in `u32` / `u64`. Arithmetic is integer only.
+//! Software IEEE-754 binary32 / binary64 (`Ieee32` / `Ieee64`), plus the 16-bit boundary formats
+//! binary16 / bfloat16 (`Ieee16` / `Bfloat16`, `u16` bits <-> `ExactNum` only).
+//! Bits live in `u16` / `u32` / `u64`. Arithmetic is integer only.
 
 mod arith;
 mod array;

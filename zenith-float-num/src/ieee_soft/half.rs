@@ -3,9 +3,10 @@
 //!
 //! Integer bit manipulation only: no hardware float type is used in decoding or rounding.
 
-use crate::defs::{Error, Exponent, RoundingMode};
+use crate::defs::{Error, Exponent, RoundingMode, Word, WORD_BIT_SIZE};
 use crate::ExactNum;
 use core::num::FpCategory;
+use core::ops::Neg;
 
 /// Layout of a 16-bit interchange format: 1 sign bit, `15 - frac` exponent bits, `frac` fraction bits.
 #[derive(Clone, Copy)]
@@ -60,14 +61,172 @@ impl Layout {
     }
 }
 
-/// Red-test stub: +0 (scaled by 2^-bias) for every pattern; the green slice decodes the fields exactly.
-fn to_exact(_bits: u16, f: Layout, p: usize) -> ExactNum {
-    ExactNum::from_u8(0, p).ldexp(-f.bias, p, RoundingMode::None)
+/// Exact value of `bits` at precision `p`.
+fn to_exact(bits: u16, f: Layout, p: usize) -> ExactNum {
+    let neg = bits & SIGN != 0;
+    let e = (bits >> f.frac) & f.exp_all();
+    let m = bits & f.frac_mask();
+    let fr = Exponent::from(f.frac);
+    let mag = match f.kind(bits) {
+        FpCategory::Nan => return crate::NAN,
+        FpCategory::Infinite => return if neg { crate::INF_NEG } else { crate::INF_POS },
+        FpCategory::Zero => ExactNum::from_u8(0, p),
+        // (-1)^s * m * 2^(1 - bias - frac)
+        FpCategory::Subnormal => {
+            ExactNum::from_u64(u64::from(m), p).ldexp(1 - f.bias - fr, p, RoundingMode::None)
+        }
+        // (-1)^s * (2^frac + m) * 2^(e - bias - frac)
+        FpCategory::Normal => ExactNum::from_u64(u64::from(m | f.hidden()), p).ldexp(
+            Exponent::from(e) - f.bias - fr,
+            p,
+            RoundingMode::None,
+        ),
+    };
+    if neg {
+        mag.neg()
+    } else {
+        mag
+    }
 }
 
-/// Red-test stub: the green slice rounds with `rm`.
-fn from_exact(_x: &ExactNum, _f: Layout, _rm: RoundingMode) -> Result<u16, Error> {
-    Err(Error::InvalidArgument)
+/// Bit `t` of the mantissa counted from its most significant bit (`t = 0`). The words are least
+/// significant first.
+fn bit_from_top(words: &[Word], t: usize) -> bool {
+    let wi = t / WORD_BIT_SIZE;
+    if wi >= words.len() {
+        return false;
+    }
+    match words.get(words.len() - 1 - wi) {
+        Some(w) => (*w >> (WORD_BIT_SIZE - 1 - t % WORD_BIT_SIZE)) & 1 == 1,
+        None => false,
+    }
+}
+
+/// True if any mantissa bit at position `t` or further down (counted from the top) is set. Every
+/// lower word is inspected, so a sticky bit in the last limb of a wide operand is seen.
+fn any_from_top(words: &[Word], t: usize) -> bool {
+    let wi = t / WORD_BIT_SIZE;
+    if wi >= words.len() {
+        return false;
+    }
+    let idx = words.len() - 1 - wi;
+    let low = WORD_BIT_SIZE - t % WORD_BIT_SIZE;
+    let one: Word = 1;
+    let mask = if low == WORD_BIT_SIZE {
+        Word::MAX
+    } else {
+        (one << low) - 1
+    };
+    let partial = words.get(idx).is_some_and(|w| *w & mask != 0);
+    partial || words.get(..idx).is_some_and(|lower| lower.iter().any(|w| *w != 0))
+}
+
+/// Number of zero bits above the leading set bit, or `None` if every word is zero.
+fn leading_zero_bits(words: &[Word]) -> Option<usize> {
+    let mut acc = 0usize;
+    for w in words.iter().rev() {
+        if *w != 0 {
+            return usize::try_from(w.leading_zeros())
+                .ok()
+                .map(|lz| acc + lz);
+        }
+        acc += WORD_BIT_SIZE;
+    }
+    None
+}
+
+/// The result of a magnitude too large for the format, by rounding direction.
+fn overflow(sign: u16, f: Layout, rm: RoundingMode) -> Result<u16, Error> {
+    let neg = sign != 0;
+    let to_inf = match rm {
+        RoundingMode::None => return Err(Error::InvalidArgument),
+        RoundingMode::ToEven | RoundingMode::ToOdd | RoundingMode::FromZero => true,
+        RoundingMode::ToZero => false,
+        RoundingMode::Up => !neg,
+        RoundingMode::Down => neg,
+    };
+    Ok(sign | if to_inf { f.inf() } else { f.max_finite() })
+}
+
+/// Round `x` to the format with `rm`. `RoundingMode::None` refuses an inexact result.
+fn from_exact(x: &ExactNum, f: Layout, rm: RoundingMode) -> Result<u16, Error> {
+    if x.is_nan() {
+        return Ok(f.qnan());
+    }
+    let sign = if x.is_negative() { SIGN } else { 0 };
+    if x.is_inf() {
+        return Ok(sign | f.inf());
+    }
+    if x.is_zero() {
+        return Ok(sign);
+    }
+    let (Some(words), Some(e)) = (x.mantissa_digits(), x.exponent()) else {
+        return Ok(sign);
+    };
+    let Some(lead) = leading_zero_bits(words) else {
+        return Ok(sign);
+    };
+    let neg = sign != 0;
+    let lead_i = i128::try_from(lead).map_err(|_| Error::InvalidArgument)?;
+    let fr = i128::from(f.frac);
+    let emin = 1 - i128::from(f.bias);
+    let emax = i128::from(f.bias);
+    // |x| lies in [2^top, 2^(top + 1)): the mantissa is a fraction in [1/2, 1) times 2^e.
+    let top = i128::from(e) - 1 - lead_i;
+    if top > emax {
+        return overflow(sign, f, rm);
+    }
+    // Exponent of the last kept bit, and the number of kept bits (frac + 1 for a normal result,
+    // fewer, possibly none, below the normal range).
+    let mut lsb = top.max(emin) - fr;
+    let kept = top - lsb + 1;
+    let (mut q, round, sticky) = if kept < 0 {
+        (0u16, false, true)
+    } else {
+        let k = usize::try_from(kept).map_err(|_| Error::InvalidArgument)?;
+        let mut q = 0u16;
+        for i in 0..k {
+            q = (q << 1) | u16::from(bit_from_top(words, lead + i));
+        }
+        (
+            q,
+            bit_from_top(words, lead + k),
+            any_from_top(words, lead + k + 1),
+        )
+    };
+    let inexact = round || sticky;
+    let odd = q & 1 == 1;
+    let up = match rm {
+        RoundingMode::None => {
+            if inexact {
+                return Err(Error::InvalidArgument);
+            }
+            false
+        }
+        RoundingMode::ToEven => round && (sticky || odd),
+        RoundingMode::ToOdd => round && (sticky || !odd),
+        RoundingMode::Up => inexact && !neg,
+        RoundingMode::Down => inexact && neg,
+        RoundingMode::ToZero => false,
+        RoundingMode::FromZero => inexact,
+    };
+    if up {
+        q += 1;
+        if q == f.hidden() << 1 {
+            q >>= 1;
+            lsb += 1;
+        }
+    }
+    if q < f.hidden() {
+        // Subnormal or zero: lsb is emin - frac here, so q is the fraction field itself.
+        return Ok(sign | q);
+    }
+    let biased = lsb + fr + i128::from(f.bias);
+    if biased >= i128::from(f.exp_all()) {
+        return overflow(sign, f, rm);
+    }
+    let ef = u16::try_from(biased).map_err(|_| Error::InvalidArgument)?;
+    Ok(sign | (ef << f.frac) | (q - f.hidden()))
 }
 
 /// Software IEEE 754 binary16 (FP16: 1 sign, 5 exponent, 10 fraction bits). Stored as `u16` bits.
