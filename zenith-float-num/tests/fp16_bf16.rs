@@ -139,15 +139,7 @@ fn decode_exhaustive(f: &Fmt) {
         let pr = (f.preds)(b);
         assert_eq!(
             pr,
-            [
-                class == 4,
-                class == 3,
-                class < 3,
-                class == 0,
-                class == 1,
-                neg,
-                class == 2
-            ],
+            [class == 4, class == 3, class < 3, class == 0, class == 1, neg, class == 2],
             "predicates {b:#06x}"
         );
         match class {
@@ -199,7 +191,7 @@ fn bfloat16_roundtrip_exhaustive_all_modes() {
 
 /// IEEE 754-2019 §4.3 choice between the magnitudes `lo` and `lo + 1` for an inexact operand.
 /// `cmp` is the operand against the midpoint (-1 below, 0 tie, 1 above).
-fn expect(lo: u16, cmp: i32, neg: bool, rm: RoundingMode) -> Result<u16, Error> {
+fn pick(lo: u16, cmp: i32, neg: bool, rm: RoundingMode) -> Result<u16, Error> {
     let hi = lo + 1;
     let s = if neg { 0x8000 } else { 0 };
     let mag = match rm {
@@ -209,7 +201,7 @@ fn expect(lo: u16, cmp: i32, neg: bool, rm: RoundingMode) -> Result<u16, Error> 
                 lo
             } else if cmp > 0 {
                 hi
-            } else if (lo % 2 == 0) == (rm == RoundingMode::ToEven) {
+            } else if lo.is_multiple_of(2) == (rm == RoundingMode::ToEven) {
                 lo
             } else {
                 hi
@@ -237,8 +229,12 @@ fn expect(lo: u16, cmp: i32, neg: bool, rm: RoundingMode) -> Result<u16, Error> 
 
 fn check(f: &Fmt, x: &ExactNum, lo: u16, cmp: i32, neg: bool, tag: &str) {
     for rm in MODES {
-        let want = expect(lo, cmp, neg, rm);
-        assert_eq!((f.from_rm)(x, rm), want, "{tag} lo={lo:#06x} neg={neg} {rm:?}");
+        let want = pick(lo, cmp, neg, rm);
+        assert_eq!(
+            (f.from_rm)(x, rm),
+            want,
+            "{tag} lo={lo:#06x} neg={neg} {rm:?}"
+        );
         if rm == RoundingMode::ToEven {
             assert_eq!(Ok((f.from_even)(x)), want, "{tag} lo={lo:#06x} neg={neg}");
         }
@@ -258,9 +254,30 @@ fn brackets_by_construction(f: &Fmt) {
         for neg in [false, true] {
             let sgn = |x: ExactNum| if neg { -x } else { x };
             check(f, &sgn(mid()), lo, 0, neg, "tie");
-            check(f, &sgn(mid().add(&tiny(), P, RoundingMode::ToEven)), lo, 1, neg, "above");
-            check(f, &sgn(mid().sub(&tiny(), P, RoundingMode::ToEven)), lo, -1, neg, "below");
-            check(f, &sgn((f.to_exact)(lo, P).add(&tiny(), P, RoundingMode::ToEven)), lo, -1, neg, "lo+tiny");
+            check(
+                f,
+                &sgn(mid().add(&tiny(), P, RoundingMode::ToEven)),
+                lo,
+                1,
+                neg,
+                "above",
+            );
+            check(
+                f,
+                &sgn(mid().sub(&tiny(), P, RoundingMode::ToEven)),
+                lo,
+                -1,
+                neg,
+                "below",
+            );
+            check(
+                f,
+                &sgn((f.to_exact)(lo, P).add(&tiny(), P, RoundingMode::ToEven)),
+                lo,
+                -1,
+                neg,
+                "lo+tiny",
+            );
         }
     }
 }
@@ -300,7 +317,8 @@ fn search_oracle(f: &Fmt, seed: u64) {
     let span = u64::try_from(f.bias - emin + i64::from(f.frac) + 24).unwrap_or(1);
     for i in 0..4000 {
         // 1024-bit mantissa in [1, 2): 16 random words, top bit forced.
-        let mut m = ExactNum::from_u64(r.next() | (1u64 << 63), P).ldexp(-63, P, RoundingMode::None);
+        let mut m =
+            ExactNum::from_u64(r.next() | (1u64 << 63), P).ldexp(-63, P, RoundingMode::None);
         for w in 1..16i64 {
             let piece = ExactNum::from_u64(r.next(), P).ldexp(-63 - 64 * w, P, RoundingMode::None);
             m = m.add(&piece, P, RoundingMode::ToEven);
@@ -320,7 +338,7 @@ fn search_oracle(f: &Fmt, seed: u64) {
         // Largest non-negative pattern lo <= max with value(lo) <= x.
         let (mut a, mut b) = (0u16, f.max);
         while a < b {
-            let c = a + (b - a + 1) / 2;
+            let c = a + (b - a).div_ceil(2);
             if (f.to_exact)(c, P).compare(&x).unwrap_or(1) <= 0 {
                 a = c;
             } else {
@@ -347,7 +365,9 @@ fn search_oracle(f: &Fmt, seed: u64) {
         let mid = upper_val(f, lo + 1)
             .add(&(f.to_exact)(lo, P), P, RoundingMode::ToEven)
             .ldexp(-1, P, RoundingMode::None);
-        let cmp = i32::try_from(x.compare(&mid).unwrap_or(0)).unwrap_or(0).signum();
+        let cmp = i32::try_from(x.compare(&mid).unwrap_or(0))
+            .unwrap_or(0)
+            .signum();
         check(f, &sx(), lo, cmp, neg, "search");
     }
 }
@@ -379,7 +399,10 @@ fn extremes(f: &Fmt) {
                 RoundingMode::Up => !neg,
                 RoundingMode::Down => neg,
                 RoundingMode::FromZero => true,
-                RoundingMode::ToEven | RoundingMode::ToOdd | RoundingMode::ToZero | RoundingMode::None => false,
+                RoundingMode::ToEven
+                | RoundingMode::ToOdd
+                | RoundingMode::ToZero
+                | RoundingMode::None => false,
             };
             let to_inf = match rm {
                 RoundingMode::Up => !neg,
@@ -399,7 +422,10 @@ fn extremes(f: &Fmt) {
             assert_eq!((f.from_rm)(&huge(), rm), wh, "huge neg={neg} {rm:?}");
             assert_eq!((f.from_rm)(&zenith_float_num::NAN, rm), Ok(f.qnan));
             assert_eq!((f.from_rm)(&zenith_float_num::INF_POS, rm), Ok(inf));
-            assert_eq!((f.from_rm)(&zenith_float_num::INF_NEG, rm), Ok(0x8000 | inf));
+            assert_eq!(
+                (f.from_rm)(&zenith_float_num::INF_NEG, rm),
+                Ok(0x8000 | inf)
+            );
             assert_eq!((f.from_rm)(&-ExactNum::from_u64(0, P), rm), Ok(0x8000));
             assert_eq!((f.from_rm)(&ExactNum::from_u64(0, P), rm), Ok(0));
         }
@@ -418,7 +444,12 @@ fn bfloat16_extremes() {
 
 #[test]
 fn golds_and_constants() {
-    let g = |x: ExactNum, k: i64, n: u64| eq(&x.ldexp(-k, P, RoundingMode::None), &ExactNum::from_u64(n, P));
+    let g = |x: ExactNum, k: i64, n: u64| {
+        eq(
+            &x.ldexp(-k, P, RoundingMode::None),
+            &ExactNum::from_u64(n, P),
+        )
+    };
     assert!(g(Ieee16::from_bits(0x3C00).to_exact(64), 0, 1));
     assert!(g(Ieee16::from_bits(0x7BFF).to_exact(64), 0, 65504));
     assert!(g(Ieee16::from_bits(0x0400).to_exact(64), -14, 1));
@@ -446,9 +477,24 @@ fn golds_and_constants() {
     assert_eq!(Bfloat16::MIN_POSITIVE_SUBNORMAL.to_bits(), 0x0001);
     // 1 + 2^-1000 at 1088 bits: the only set bit below the top word sits 1000 bits down.
     let x = || ExactNum::from_u64(1, 1088).add(&pow2(-1000), 1088, RoundingMode::ToEven);
-    assert_eq!(Ieee16::from_exact_rm(&x(), RoundingMode::ToEven).map(Ieee16::to_bits), Ok(0x3C00));
-    assert_eq!(Ieee16::from_exact_rm(&x(), RoundingMode::Up).map(Ieee16::to_bits), Ok(0x3C01));
-    assert_eq!(Ieee16::from_exact_rm(&x(), RoundingMode::None).map(Ieee16::to_bits), Err(Error::InvalidArgument));
-    assert_eq!(Bfloat16::from_exact_rm(&x(), RoundingMode::FromZero).map(Bfloat16::to_bits), Ok(0x3F81));
-    assert_eq!(Bfloat16::from_exact_rm(&x(), RoundingMode::Down).map(Bfloat16::to_bits), Ok(0x3F80));
+    assert_eq!(
+        Ieee16::from_exact_rm(&x(), RoundingMode::ToEven).map(Ieee16::to_bits),
+        Ok(0x3C00)
+    );
+    assert_eq!(
+        Ieee16::from_exact_rm(&x(), RoundingMode::Up).map(Ieee16::to_bits),
+        Ok(0x3C01)
+    );
+    assert_eq!(
+        Ieee16::from_exact_rm(&x(), RoundingMode::None).map(Ieee16::to_bits),
+        Err(Error::InvalidArgument)
+    );
+    assert_eq!(
+        Bfloat16::from_exact_rm(&x(), RoundingMode::FromZero).map(Bfloat16::to_bits),
+        Ok(0x3F81)
+    );
+    assert_eq!(
+        Bfloat16::from_exact_rm(&x(), RoundingMode::Down).map(Bfloat16::to_bits),
+        Ok(0x3F80)
+    );
 }

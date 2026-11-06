@@ -112,13 +112,12 @@ fn any_from_top(words: &[Word], t: usize) -> bool {
     let idx = words.len() - 1 - wi;
     let low = WORD_BIT_SIZE - t % WORD_BIT_SIZE;
     let one: Word = 1;
-    let mask = if low == WORD_BIT_SIZE {
-        Word::MAX
-    } else {
-        (one << low) - 1
-    };
+    let mask = if low == WORD_BIT_SIZE { Word::MAX } else { (one << low) - 1 };
     let partial = words.get(idx).is_some_and(|w| *w & mask != 0);
-    partial || words.get(..idx).is_some_and(|lower| lower.iter().any(|w| *w != 0))
+    partial
+        || words
+            .get(..idx)
+            .is_some_and(|lower| lower.iter().any(|w| *w != 0))
 }
 
 /// Number of zero bits above the leading set bit, or `None` if every word is zero.
@@ -126,9 +125,7 @@ fn leading_zero_bits(words: &[Word]) -> Option<usize> {
     let mut acc = 0usize;
     for w in words.iter().rev() {
         if *w != 0 {
-            return usize::try_from(w.leading_zeros())
-                .ok()
-                .map(|lz| acc + lz);
+            return usize::try_from(w.leading_zeros()).ok().map(|lz| acc + lz);
         }
         acc += WORD_BIT_SIZE;
     }
