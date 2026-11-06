@@ -18,7 +18,8 @@ use arith::{
 use core::cmp::Ordering;
 use core::num::FpCategory;
 
-pub use array::{ExactNumArray, Ieee32Array, Ieee64Array};
+pub use array::{check_alloc_bytes, ExactNumArray, Ieee32Array, Ieee64Array, FFT_MAX_POINTS};
+pub(crate) use array::{fft_complex, try_vec, try_zeros};
 pub use half::{Bfloat16, Ieee16};
 pub use simd::IEEE_SIMD_LANE_WIDTH;
 

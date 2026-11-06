@@ -63,7 +63,7 @@ Both pass 77/77. There is no separate `alloc` feature: `alloc` is always require
 | `MAX_PREC_RETRY` | `256` — extra word-sized retry steps beyond `p` for correct-rounding loops |
 | `SVD_ITER_MAX` | `64` — QR sweeps per singular value in `svd_decomp`; then `None` |
 | `EIGEN_ITER_MAX` | `64` — QR sweeps per eigenvalue in `eigen_decomp`; then `None` |
-| `FFT_MAX_POINTS` | `4096` — max length of `fft` / `ifft`; longer → `None` |
+| `FFT_MAX_POINTS` | `65536` — default max length of `fft` / `ifft` (was `4096`); longer → `None`; per call: `fft_with_max_points` / `ifft_with_max_points` |
 | `POLY_COMPANION_CLOSED_DEG` | `2` — `ExactNumPoly::roots_real` closed-form companion eigenvalues; higher degree → `None` |
 | `CHEBYSHEV_MAX_DEGREE` | `256` — max coefficient count for `chebyshev_coeffs`; larger `n` → `None` |
 | `ORTHOPOLY_N_MAX` | `256` — max degree for Hermite / Laguerre / Chebyshev T,U / Gegenbauer / Jacobi \(P_n^{(\alpha,\beta)}\); larger `n` → `NaN` |
@@ -74,7 +74,7 @@ Both pass 77/77. There is no separate `alloc` feature: `alloc` is always require
 | `ROOT_DEFAULT_TOL` | `−256` — default absolute tolerance exponent (`2^{ROOT_DEFAULT_TOL}`) |
 | `ODE_MAX_STEPS` | `65536` — accepted-step cap for RK4 / RK45 / Euler |
 | `ODE_MIN_STEP` | `−256` — minimum RK45 step exponent (`h_min = 2^{ODE_MIN_STEP}`) |
-| `DSP_MAX_POINTS` | `2048` — max real length for `dct`/`idct`/`dst`/`idst` (`2N`-point FFT) |
+| `DSP_MAX_POINTS` | `16384` — default max real length for `dct`/`idct`/`dst`/`idst` and windows (was `2048`; `2N`-point FFT sized by this cap); per call: `*_with_max_points` |
 | `IEEE_SIMD_LANE_WIDTH` | `4` — `u32` lanes per integer SIMD vector; binary64 uses 2 `u64` lanes |
 | `BINARY_INLINE_LEN` | `16` — stack record: flags, version, `n_sig`, inexact, `i32` exponent BE, two `u32` limbs BE |
 | `BINARY_INLINE_MANT_BITS` | `64` — max mantissa bits for [`ExactNum::to_inline_bytes`]; wider → `MemoryAllocation` |
@@ -272,7 +272,7 @@ All take `(p, rm, cc)` except `hypot` (no cache needed).
 | `lu_decomp` / `qr_decomp` | ✅ | Partial-pivot LU; modified Gram–Schmidt QR; singular or failed workspace reserve → `None`; rank-deficient QR → zero \(R_{kk}\) |
 | `svd_decomp` | ✅ | Golub–Reinsch; \((U,\Sigma,V^T)\); \(\sigma\) descending; `SVD_ITER_MAX=64` sweeps/value → `None`; empty/NaN/Inf → `None` |
 | `eigen_decomp` | ✅ | Symmetric QR; \((\Lambda,V)\) with \(\lambda\) descending; `EIGEN_ITER_MAX=64`; non-symmetric / empty / non-finite → `None` |
-| `fft` / `ifft` | ✅ | Radix-2 Cooley–Tukey; `(1,n)`/`(n,1)` real or `(2,n)` complex; unnormalized DFT; `ifft` divides by `n`; `FFT_MAX_POINTS=4096` |
+| `fft` / `ifft` | ✅ | Radix-2 Cooley–Tukey; `(1,n)`/`(n,1)` real or `(2,n)` complex; unnormalized DFT; `ifft` divides by `n`; `FFT_MAX_POINTS=65536` (per call: `fft_with_max_points`) |
 | `ExactRational` | ✅ | `num/den` reduced; `den>0`; `from_i64` / `new`; add/sub/mul/div; `to_exact_num`; `1/3+1/6=1/2`; `2/4=1/2`; `(-3)/(-4)=3/4`; 256-bit `1/3` |
 | `ExactInt` | ✅ | Little-endian `Word` limbs; `from_i64`/`u64`/`i128`/`u128`; add/sub/mul; `div_rem`; `gcd`; `pow`; `20!`; `2^100`; `gcd(48,18)=6` |
 | `ExactNumPoly` | ✅ | Dense univariate, low-to-high coeffs; `eval`/`add`/`sub`/`mul`/`div_rem`/`gcd`/`compose`/`derivative`/`integral`; `roots_real` through degree `POLY_COMPANION_CLOSED_DEG=2`; `(x²−1)÷(x−1)=(x+1,0)`; `gcd=x−1`; compose; `∂(x³)=3x²`; `±√2` |
