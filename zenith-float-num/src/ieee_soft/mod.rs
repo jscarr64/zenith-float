@@ -4,6 +4,7 @@
 mod arith;
 mod array;
 mod convert;
+mod half;
 mod simd;
 
 use crate::defs::Error;
@@ -17,6 +18,7 @@ use core::cmp::Ordering;
 use core::num::FpCategory;
 
 pub use array::{ExactNumArray, Ieee32Array, Ieee64Array};
+pub use half::{Bfloat16, Ieee16};
 pub use simd::IEEE_SIMD_LANE_WIDTH;
 
 /// Software IEEE-754 binary32 (24-bit significand, 8-bit exponent). Stored as `u32` bits.
