@@ -1,6 +1,6 @@
 //! MP16 `modf`: MPFR `mpfr_modf` — integer part (trunc toward 0) and fractional part
-//! with the sign of `x`, each rounded to `p` bits with `rm`, built on `int` and `fract`
-//! (both exact).
+//! with the sign of `x`, each rounded to `p` bits with `rm`, rebuilt from the
+//! mantissa words (no copy of `self`).
 //!
 //! Edge-case list A to Z (every row below gets a test; "no answer" = Err, never Ok(NaN)):
 //! A. Normal values: 3.75->(3,0.75); -3.75->(-3,-0.75); 5->(5,+0); -5->(-5,-0);
@@ -18,9 +18,9 @@
 //! I. Every RoundingMode: 3.75 exact in all 7 modes; 0.5+2^-100 at p=64 -> int 0 in all
 //!    modes, frac 0.5 in ToEven/ToOdd/Down/ToZero, frac 0.5+2^-64 in Up/FromZero, and
 //!    frac 0.5 in None (storage grid value, pinned, not claimed exact).
-//! J. Precisions: 5 and 0.5 exact at p = 1, 53, 63, 64, 65, 113, 128, 200; 3.75 exact at
-//!    p >= 64 (3.75 needs 3 bits, and at p=1 the integer part itself would round, so p=1
-//!    is not an exactness row for 3.75).
+//! J. Precisions: 0.5 exact at p = 1, 53, 63, 64, 65, 113, 128, 200; 5 exact at
+//!    p = 53, 63, 64, 65, 113, 128, 200 (5 needs 3 bits, so at p=1 it rounds to 4 and
+//!    is not an exactness row); 3.75 exact at p >= 64.
 //! K. Inexact flag: modf(3.75) both parts exact -> inexact false; modf(0.5+2^-100) at
 //!    p=64 ToEven -> int exact, frac inexact true.
 //! L. Golds: exact integers, powers of two and 0.75/0.25 (identities); the 0.5+2^-100 row
@@ -29,9 +29,7 @@
 //!    (mp.prec = 4*64+64 = 320): floor/frac of 0.5+2**-100 rounded to 64 bits ToEven
 //!    gives frac 0.5, Up gives 0.5+2**-64.
 
-use zenith_float_num::{
-    Consts, Error, ExactNum, Radix, RoundingMode, Sign, MAX_PRECISION,
-};
+use zenith_float_num::{Consts, Error, ExactNum, Radix, RoundingMode, Sign, MAX_PRECISION};
 
 const MODES: [RoundingMode; 7] = [
     RoundingMode::ToEven,
@@ -64,11 +62,7 @@ fn assert_zero_sign(got: &ExactNum, negative: bool, what: &str) {
     );
 }
 
-fn expect_modf_err(
-    got: Result<(ExactNum, ExactNum), Error>,
-    want: Error,
-    what: &str,
-) {
+fn expect_modf_err(got: Result<(ExactNum, ExactNum), Error>, want: Error, what: &str) {
     assert!(got.is_err(), "{what}: want Err({want:?}), got Ok");
     if let Err(e) = got {
         assert_eq!(e, want, "{what}: wrong error");
@@ -199,7 +193,14 @@ fn modf_huge_and_tiny() -> Result<(), Error> {
     let big = ExactNum::pow2(100, p)?;
     let quarter = ExactNum::pow2(-2, p)?;
     let x = ExactNum::add_ref(&big, &quarter, p, RoundingMode::ToEven);
-    assert_modf(&x, p, RoundingMode::ToEven, &big, &quarter, "modf(2^100+0.25)")?;
+    assert_modf(
+        &x,
+        p,
+        RoundingMode::ToEven,
+        &big,
+        &quarter,
+        "modf(2^100+0.25)",
+    )?;
     let max = ExactNum::max_value(p);
     assert_modf(
         &max,
@@ -213,27 +214,23 @@ fn modf_huge_and_tiny() -> Result<(), Error> {
     let (int_part, frac_part) = tiny.modf(p, RoundingMode::ToEven)?;
     assert_zero_sign(&int_part, false, "modf(2^-1000) int");
     assert_eq_num(&frac_part, &tiny, "modf(2^-1000) frac");
-    let neg_tiny = ExactNum::pow2(-1000, p)?.mul(&ExactNum::from_i8(-1, p), p, RoundingMode::ToEven);
+    let neg_tiny =
+        ExactNum::pow2(-1000, p)?.mul(&ExactNum::from_i8(-1, p), p, RoundingMode::ToEven);
     let (int_part, frac_part) = neg_tiny.modf(p, RoundingMode::ToEven)?;
     assert_zero_sign(&int_part, true, "modf(-2^-1000) int");
     assert_eq_num(&frac_part, &neg_tiny, "modf(-2^-1000) frac");
-    assert!(frac_part.is_negative(), "modf(-2^-1000) frac must be negative");
+    assert!(
+        frac_part.is_negative(),
+        "modf(-2^-1000) frac must be negative"
+    );
     Ok(())
 }
 
 #[test]
 fn modf_rounding_modes_and_precisions() -> Result<(), Error> {
     let mut cc = Consts::new()?;
-    // Exact at every precision: integers and powers of two.
+    // Exact at every precision for 0.5 (1 bit); 5 (3 bits) exact at p >= 53 in this loop.
     for p in [1usize, 53, 63, 64, 65, 113, 128, 200] {
-        assert_modf(
-            &parse("5", 128, &mut cc),
-            p,
-            RoundingMode::ToEven,
-            &parse("5", 128, &mut cc),
-            &parse("0", 128, &mut cc),
-            "modf(5) at every precision",
-        )?;
         assert_modf(
             &parse("0.5", 128, &mut cc),
             p,
@@ -241,6 +238,16 @@ fn modf_rounding_modes_and_precisions() -> Result<(), Error> {
             &parse("0", 128, &mut cc),
             &parse("0.5", 128, &mut cc),
             "modf(0.5) at every precision",
+        )?;
+    }
+    for p in [53usize, 63, 64, 65, 113, 128, 200] {
+        assert_modf(
+            &parse("5", 128, &mut cc),
+            p,
+            RoundingMode::ToEven,
+            &parse("5", 128, &mut cc),
+            &parse("0", 128, &mut cc),
+            "modf(5) at p >= 53",
         )?;
     }
     // 3.75 exact in every mode at p=128.

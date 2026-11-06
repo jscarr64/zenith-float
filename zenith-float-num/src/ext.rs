@@ -7,6 +7,7 @@ use crate::common::util::round_p;
 use crate::defs::Precision;
 use crate::defs::SignedWord;
 use crate::defs::DEFAULT_P;
+use crate::mantissa::Mantissa;
 use crate::num::ExactNumNumber;
 use crate::Consts;
 use crate::Error;
@@ -2604,17 +2605,107 @@ Accuracy: correctly-rounded",
         { NAN },
     );
 
+    /// Integer and fractional parts of a finite `self`, rebuilt from its
+    /// borrowed mantissa words: the integer part keeps the top `e` bits, the
+    /// fractional part the rest. Both are fresh constructions through
+    /// [`Self::from_words`], never a copy of `self`, so this adds no
+    /// helper-copy site. The parts are exact, with `inexact` clear; the
+    /// caller rounds them. A part that comes back NaN (only an allocation
+    /// failure can do that) is left for the caller to map to `Err`.
+    fn int_frac_parts(&self) -> Result<(Self, Self), Error> {
+        let (words, n, sign, e, _) = match self.value_parts() {
+            Some(parts) => parts,
+            None => return Err(Error::InvalidArgument),
+        };
+        let width = words
+            .len()
+            .checked_mul(WORD_BIT_SIZE)
+            .ok_or(Error::InvalidArgument)?;
+        if e <= 0 {
+            // |self| < 1: the integer part is a signed zero, the fractional
+            // part is self rebuilt from its words.
+            let mut int_m = Mantissa::from_words(width, words)?;
+            int_m.set_zero();
+            let int_part = Self::from_words(int_m.digits(), sign, e);
+            let frac_part = Self::from_words(words, sign, e);
+            return Ok((int_part, frac_part));
+        }
+        let e_usize = usize::try_from(e).map_err(|_| Error::InvalidArgument)?;
+        if e_usize >= n {
+            // No fractional bits: the integer part is self rebuilt from its
+            // words, the fractional part is a signed zero.
+            let int_part = Self::from_words(words, sign, e);
+            let mut frac_m = Mantissa::from_words(width, words)?;
+            frac_m.set_zero();
+            let frac_part = Self::from_words(frac_m.digits(), sign, e);
+            return Ok((int_part, frac_part));
+        }
+        // 0 < e < n (so `self` is normal and `n` is the full width): split
+        // the mantissa at the binary point.
+        let mut int_m = Mantissa::from_words(width, words)?;
+        int_m.mask_bits(n - e_usize, false);
+        let int_part = Self::from_words(int_m.digits(), sign, e);
+        let mut frac_m = Mantissa::from_words(width, words)?;
+        frac_m.mask_bits(e_usize, true);
+        let frac_part = Self::from_words(frac_m.digits(), sign, e);
+        Ok((int_part, frac_part))
+    }
+
     /// MPFR `mpfr_modf`: integer part (trunc toward 0) and fractional part with the
     /// sign of `self`, each rounded to `p` bits with `rm`.
     ///
-    /// This is a red-test stub (Batch 2, MP16): it always refuses so the MP16 tests
-    /// compile and fail on value. The green implementation replaces this body.
+    /// Both parts are rebuilt from the borrowed mantissa words (no copy of
+    /// `self`), then rounded with `set_precision(p, rm)`; with
+    /// `RoundingMode::None`, `set_precision` keeps storage precision, matching
+    /// its own contract. Infinities are handled before the split (the split is
+    /// defined for finite values only): `+Inf` gives `(+Inf, +0)` and `-Inf`
+    /// gives `(-Inf, -0)`. The split allocates the two fresh mantissas; a
+    /// failure surfaces as a NaN carrying `MemoryAllocation`, mapped here to
+    /// `Err`, and `set_precision` surfaces allocation failure as
+    /// `Err(MemoryAllocation)`.
+    ///
+    /// Accuracy: correctly-rounded (each part, single rounding from its exact part)
     ///
     /// ## Errors
     ///
-    ///  - `InvalidArgument`: stub refusal (green: NaN input, or an invalid precision).
-    pub fn modf(&self, _p: usize, _rm: RoundingMode) -> Result<(Self, Self), Error> {
-        Err(Error::InvalidArgument)
+    ///  - `InvalidArgument`: a NaN input with no carried error, or `p` outside
+    ///    `MIN_PRECISION..=MAX_PRECISION`.
+    ///  - The NaN input's own carried error, when it has one.
+    ///  - `MemoryAllocation`: an exact part or a rounding step could not allocate.
+    pub fn modf(&self, p: usize, rm: RoundingMode) -> Result<(Self, Self), Error> {
+        if !(crate::defs::MIN_PRECISION..=crate::defs::MAX_PRECISION).contains(&p) {
+            return Err(Error::InvalidArgument);
+        }
+        if self.is_nan() {
+            return Err(match self.err() {
+                Some(e) => e,
+                None => Error::InvalidArgument,
+            });
+        }
+        if self.is_inf() {
+            let mut frac = Self::new(p);
+            if self.is_inf_neg() {
+                frac.set_sign(Sign::Neg);
+            }
+            let int_part = if self.is_inf_neg() { INF_NEG } else { INF_POS };
+            return Ok((int_part, frac));
+        }
+        let (mut int_part, mut frac_part) = self.int_frac_parts()?;
+        if int_part.is_nan() {
+            return Err(match int_part.err() {
+                Some(e) => e,
+                None => Error::InvalidArgument,
+            });
+        }
+        if frac_part.is_nan() {
+            return Err(match frac_part.err() {
+                Some(e) => e,
+                None => Error::InvalidArgument,
+            });
+        }
+        int_part.set_precision(p, rm)?;
+        frac_part.set_precision(p, rm)?;
+        Ok((int_part, frac_part))
     }
     gen_wrapper_own!(
         "Returns the smallest integer greater than or equal to `self`.
