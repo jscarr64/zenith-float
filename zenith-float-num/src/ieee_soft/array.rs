@@ -20,8 +20,10 @@ const SVD_ITER_MAX: u32 = 64;
 /// QR sweeps allowed per eigenvalue before [`ExactNumArray::eigen_decomp`]
 /// returns `None`.
 const EIGEN_ITER_MAX: u32 = 64;
-/// Maximum length of [`ExactNumArray::fft`] / [`ExactNumArray::ifft`].
-const FFT_MAX_POINTS: usize = 4096;
+/// Default maximum length of [`ExactNumArray::fft`] / [`ExactNumArray::ifft`] (65,536; was 4,096
+/// before 2.0). [`ExactNumArray::fft_with_max_points`] / [`ExactNumArray::ifft_with_max_points`]
+/// take the cap per call instead.
+pub const FFT_MAX_POINTS: usize = 65_536;
 /// Bits of working precision reserved when a superdiagonal is compared to
 /// its neighboring diagonals.
 const SVD_CONV_GUARD_BITS: Exponent = 4;
@@ -1520,38 +1522,43 @@ impl ExactNumArray {
     ///
     /// A `(1, n)` or `(n, 1)` array is real. A `(2, n)` array is complex
     /// (row 0 real, row 1 imaginary). `n` must be a power of two and at most
-    /// `FFT_MAX_POINTS`. Returns a `(2, n)` spectrum (unnormalized).
-    /// Empty, non-finite, or a bad shape returns `None`.
+    /// [`FFT_MAX_POINTS`]. Returns a `(2, n)` spectrum (unnormalized).
+    /// Empty, non-finite, or a bad shape returns `None`. The butterflies run at
+    /// `p + 2·log2(n) + 16` bits and each output is rounded once to `p` with `rm`.
     pub fn fft(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Option<Self> {
-        fft_dit(self, false, p, rm, cc)
+        fft_dit(self, false, FFT_MAX_POINTS, p, rm, cc)
+    }
+
+    /// [`Self::fft`] with the length cap `max_points` given per call instead of
+    /// [`FFT_MAX_POINTS`]. `n > max_points` returns `None` before anything is copied
+    /// or allocated; `max_points = 0` rejects every input. A cap above the default
+    /// is honoured, subject to [`check_alloc_bytes`] on the working buffers.
+    pub fn fft_with_max_points(
+        &self,
+        max_points: usize,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Option<Self> {
+        fft_dit(self, false, max_points, p, rm, cc)
     }
 
     /// Inverse radix-2 DFT at `(p, rm, cc)`. Same layout as [`Self::fft`].
     /// The result is divided by `n` (unitary inverse of the unnormalized DFT).
     pub fn ifft(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Option<Self> {
-        fft_dit(self, true, p, rm, cc)
+        fft_dit(self, true, FFT_MAX_POINTS, p, rm, cc)
     }
 
-    /// Red-test stub (Slice 2): the green commit takes the cap per call.
-    pub fn fft_with_max_points(
-        &self,
-        _max_points: usize,
-        _p: usize,
-        _rm: RoundingMode,
-        _cc: &mut Consts,
-    ) -> Option<Self> {
-        None
-    }
-
-    /// Red-test stub (Slice 2): the green commit takes the cap per call.
+    /// [`Self::ifft`] with the length cap `max_points` given per call (same rules as
+    /// [`Self::fft_with_max_points`]).
     pub fn ifft_with_max_points(
         &self,
-        _max_points: usize,
-        _p: usize,
-        _rm: RoundingMode,
-        _cc: &mut Consts,
+        max_points: usize,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
     ) -> Option<Self> {
-        None
+        fft_dit(self, true, max_points, p, rm, cc)
     }
 
     fn zip(&self, rhs: &Self, op: impl Fn(&ExactNum, &ExactNum) -> ExactNum) -> Option<Self> {
@@ -2260,43 +2267,81 @@ fn fft_bitrev(mut i: usize, logn: u32) -> usize {
     r
 }
 
-/// Red-test stub (Slice 2): the green commit refuses oversized byte counts.
-#[cfg(test)]
-fn check_alloc_bytes(_count: usize) -> Option<()> {
+/// Refuse a buffer of `count` `ExactNum` values whose byte size overflows `usize` or exceeds
+/// `isize::MAX` (the most any allocation may hold). Called before the FFT / DSP working
+/// buffers are reserved, so an oversized request (for example a huge per-call `max_points`)
+/// returns `None` instead of panicking in the allocator; the reservation itself then uses
+/// `try_reserve_exact`, so an allocator refusal is also a `None`.
+pub fn check_alloc_bytes(count: usize) -> Option<()> {
+    let bytes = count.checked_mul(core::mem::size_of::<ExactNum>())?;
+    if bytes > isize::MAX.unsigned_abs() {
+        return None;
+    }
     Some(())
+}
+
+/// An empty vector with room for `n` values, after [`check_alloc_bytes`].
+pub(crate) fn try_vec(n: usize) -> Option<Vec<ExactNum>> {
+    check_alloc_bytes(n)?;
+    let mut v = Vec::new();
+    v.try_reserve_exact(n).ok()?;
+    Some(v)
+}
+
+/// `n` zeros at precision `p`, after [`check_alloc_bytes`].
+pub(crate) fn try_zeros(n: usize, p: usize) -> Option<Vec<ExactNum>> {
+    let mut v = try_vec(n)?;
+    for _ in 0..n {
+        v.push(svd_zero(p));
+    }
+    Some(v)
+}
+
+/// Length of an FFT input after the shape and cap checks, without copying anything.
+fn fft_len(a: &ExactNumArray, max_points: usize) -> Option<usize> {
+    let (rows, cols) = a.shape();
+    let n = if rows == 2 && cols > 0 {
+        cols
+    } else if (rows == 1 && cols > 0) || (cols == 1 && rows > 0) {
+        a.vals.len()
+    } else {
+        return None;
+    };
+    if !n.is_power_of_two() || n > max_points {
+        return None;
+    }
+    Some(n)
+}
+
+/// Working precision of an `n`-point FFT returned at `p` bits: `log2(n)` butterfly stages and
+/// the twiddle recurrence (up to `n/2` chained products per stage) each cost at most about
+/// `log2(n)` bits, so `2·log2(n) + 16` guard bits keep the result good to `p`.
+fn fft_work_p(p: usize, n: usize) -> Option<usize> {
+    let logn = usize::try_from(n.trailing_zeros()).ok()?;
+    p.checked_add(logn.checked_mul(2)?.checked_add(16)?)
 }
 
 fn fft_split(
     a: &ExactNumArray,
+    n: usize,
     p: usize,
     rm: RoundingMode,
-) -> Option<(usize, Vec<ExactNum>, Vec<ExactNum>)> {
-    let (rows, cols) = a.shape();
-    let pack = |n: usize,
-                re: Vec<ExactNum>,
-                im: Vec<ExactNum>|
-     -> Option<(usize, Vec<ExactNum>, Vec<ExactNum>)> {
-        if n == 0 || !n.is_power_of_two() || n > FFT_MAX_POINTS {
-            return None;
-        }
-        Some((n, re, im))
-    };
-    if rows == 2 && cols > 0 {
-        let mut re = Vec::with_capacity(cols);
-        let mut im = Vec::with_capacity(cols);
-        for j in 0..cols {
+) -> Option<(Vec<ExactNum>, Vec<ExactNum>)> {
+    check_alloc_bytes(n.checked_mul(2)?)?;
+    let mut re = try_vec(n)?;
+    if a.rows == 2 {
+        let mut im = try_vec(n)?;
+        for j in 0..n {
             let r = svd_copy_prec(&a.vals[j], p, rm);
-            let i = svd_copy_prec(&a.vals[cols + j], p, rm);
+            let i = svd_copy_prec(&a.vals[n + j], p, rm);
             if r.is_nan() || r.is_inf() || i.is_nan() || i.is_inf() {
                 return None;
             }
             re.push(r);
             im.push(i);
         }
-        pack(cols, re, im)
-    } else if (rows == 1 && cols > 0) || (cols == 1 && rows > 0) {
-        let n = a.vals.len();
-        let mut re = Vec::with_capacity(n);
+        Some((re, im))
+    } else {
         for v in &a.vals {
             let r = svd_copy_prec(v, p, rm);
             if r.is_nan() || r.is_inf() {
@@ -2304,20 +2349,24 @@ fn fft_split(
             }
             re.push(r);
         }
-        pack(n, re, alloc::vec![svd_zero(p); n])
-    } else {
-        None
+        Some((re, try_zeros(n, p)?))
     }
 }
 
-fn fft_dit(
-    a: &ExactNumArray,
+/// In-place radix-2 DFT of `(re, im)` at working precision `p` (the caller has already
+/// added guard bits). `inverse` conjugates the twiddles and divides by `n`.
+fn fft_core(
+    mut re: Vec<ExactNum>,
+    mut im: Vec<ExactNum>,
     inverse: bool,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
-) -> Option<ExactNumArray> {
-    let (n, mut re, mut im) = fft_split(a, p, rm)?;
+) -> Option<(Vec<ExactNum>, Vec<ExactNum>)> {
+    let n = re.len();
+    if n == 0 || !n.is_power_of_two() || im.len() != n {
+        return None;
+    }
     let logn = n.trailing_zeros();
     for i in 0..n {
         let j = fft_bitrev(i, logn);
@@ -2375,7 +2424,58 @@ fn fft_dit(
             im[i] = core::mem::replace(&mut im[i], svd_zero(p)).mul(&inv_n, p, rm);
         }
     }
-    let mut vals = Vec::with_capacity(n.checked_mul(2)?);
+    Some((re, im))
+}
+
+/// Round every value to `p` with `rm`, in place.
+fn round_all(v: &mut [ExactNum], p: usize, rm: RoundingMode) {
+    for x in v.iter_mut() {
+        let _ = x.set_precision(p, rm);
+    }
+}
+
+/// Complex DFT of owned `(re, im)` vectors (length a power of two, not capped here: the
+/// caller enforces its own length cap first) with the same guard bits as
+/// [`ExactNumArray::fft`]; the result is rounded to `p` with `rm`. Used by the DSP
+/// transforms, whose `2N`-point FFT is sized by the DSP cap rather than [`FFT_MAX_POINTS`].
+pub(crate) fn fft_complex(
+    mut re: Vec<ExactNum>,
+    mut im: Vec<ExactNum>,
+    inverse: bool,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<(Vec<ExactNum>, Vec<ExactNum>)> {
+    if p == 0 {
+        return None;
+    }
+    let wp = fft_work_p(p, re.len())?;
+    round_all(&mut re, wp, RoundingMode::None);
+    round_all(&mut im, wp, RoundingMode::None);
+    let (mut re, mut im) = fft_core(re, im, inverse, wp, rm, cc)?;
+    round_all(&mut re, p, rm);
+    round_all(&mut im, p, rm);
+    Some((re, im))
+}
+
+fn fft_dit(
+    a: &ExactNumArray,
+    inverse: bool,
+    max_points: usize,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    if p == 0 {
+        return None;
+    }
+    let n = fft_len(a, max_points)?;
+    let wp = fft_work_p(p, n)?;
+    let (re, im) = fft_split(a, n, wp, rm)?;
+    let (mut re, mut im) = fft_core(re, im, inverse, wp, rm, cc)?;
+    round_all(&mut re, p, rm);
+    round_all(&mut im, p, rm);
+    let mut vals = try_vec(n.checked_mul(2)?)?;
     vals.extend(re);
     vals.extend(im);
     Some(ExactNumArray {

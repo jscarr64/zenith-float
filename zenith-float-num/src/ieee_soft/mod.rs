@@ -16,7 +16,8 @@ use arith::{
 use core::cmp::Ordering;
 use core::num::FpCategory;
 
-pub use array::{ExactNumArray, Ieee32Array, Ieee64Array};
+pub use array::{check_alloc_bytes, ExactNumArray, Ieee32Array, Ieee64Array, FFT_MAX_POINTS};
+pub(crate) use array::{fft_complex, try_vec, try_zeros};
 pub use simd::IEEE_SIMD_LANE_WIDTH;
 
 /// Software IEEE-754 binary32 (24-bit significand, 8-bit exponent). Stored as `u32` bits.

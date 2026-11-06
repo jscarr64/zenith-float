@@ -107,13 +107,19 @@ pub use crate::defs::Sign;
 pub use crate::defs::Word;
 pub use crate::dsp::blackman_window;
 pub use crate::dsp::dct;
+pub use crate::dsp::dct_with_max_points;
 pub use crate::dsp::dst;
+pub use crate::dsp::dst_with_max_points;
 pub use crate::dsp::fft_real;
+pub use crate::dsp::fft_real_with_max_points;
 pub use crate::dsp::hamming_window;
 pub use crate::dsp::hann_window;
 pub use crate::dsp::idct;
+pub use crate::dsp::idct_with_max_points;
 pub use crate::dsp::idst;
+pub use crate::dsp::idst_with_max_points;
 pub use crate::dsp::ifft_real;
+pub use crate::dsp::ifft_real_with_max_points;
 pub use crate::dsp::kaiser_window;
 pub use crate::dsp::rectangular_window;
 pub use crate::dsp::DSP_MAX_POINTS;
@@ -129,7 +135,8 @@ pub use crate::hash::hmac_sha256;
 pub use crate::hash::sha256;
 pub use crate::hash::sha512;
 pub use crate::ieee_soft::{
-    ExactNumArray, Ieee32, Ieee32Array, Ieee64, Ieee64Array, IEEE_SIMD_LANE_WIDTH,
+    check_alloc_bytes, ExactNumArray, Ieee32, Ieee32Array, Ieee64, Ieee64Array, FFT_MAX_POINTS,
+    IEEE_SIMD_LANE_WIDTH,
 };
 pub use crate::integer::ExactInt;
 pub use crate::modular::miller_rabin;

@@ -1,6 +1,7 @@
 //! Discrete cosine / sine transforms, real-input FFT wrappers, and windows.
 
 use crate::defs::WORD_BIT_SIZE;
+use crate::ieee_soft::{fft_complex, try_vec, try_zeros};
 use crate::Consts;
 use crate::ExactNum;
 use crate::ExactNumArray;
@@ -8,10 +9,11 @@ use crate::RoundingMode;
 use alloc::vec::Vec;
 use core::ops::Neg;
 
-/// Maximum real length for [`dct`] / [`idct`] / [`dst`] / [`idst`] and the
-/// window generators. Transforms use a `2N`-point FFT, so this is half of
-/// `FFT_MAX_POINTS`.
-pub const DSP_MAX_POINTS: usize = 2048;
+/// Default maximum real length for [`dct`] / [`idct`] / [`dst`] / [`idst`] and the window
+/// generators (16,384; was 2,048 before 2.0). The `*_with_max_points` transforms take the cap
+/// per call instead. Every transform runs a `2N`-point FFT internally; that FFT is sized by
+/// this cap (or the per-call one), not by `FFT_MAX_POINTS`.
+pub const DSP_MAX_POINTS: usize = 16_384;
 
 fn work_p(p: usize) -> usize {
     p.saturating_add(WORD_BIT_SIZE)
@@ -32,37 +34,46 @@ fn to_row(p: usize, rm: RoundingMode, vals: &[ExactNum]) -> Option<ExactNumArray
     ExactNumArray::from_shape(p, 1, rounded.len(), &rounded)
 }
 
-/// Real vector from a `(1, n)` or `(n, 1)` array.
-fn as_real(signal: &ExactNumArray, p: usize, rm: RoundingMode) -> Option<Vec<ExactNum>> {
+/// `k` as an `ExactNum` at `p` bits (exact for every `usize`).
+fn num(k: usize, p: usize) -> Option<ExactNum> {
+    Some(ExactNum::from_u64(u64::try_from(k).ok()?, p))
+}
+
+/// Real vector from a `(1, n)` or `(n, 1)` array whose length is a power of two at most
+/// `max_points`. The length is checked before anything is copied or allocated.
+fn as_real_capped(signal: &ExactNumArray, max_points: usize, p: usize) -> Option<Vec<ExactNum>> {
     let (rows, cols) = signal.shape();
     if !((rows == 1 && cols > 0) || (cols == 1 && rows > 0)) {
         return None;
     }
-    let mut out = Vec::with_capacity(signal.len());
+    let n = signal.len();
+    if !n.is_power_of_two() || n > max_points {
+        return None;
+    }
+    let mut out = try_vec(n)?;
     for v in signal.as_slice() {
         if !finite(v) {
             return None;
         }
-        out.push(copy_p(v, p, rm));
+        out.push(copy_p(v, p, RoundingMode::None));
     }
     Some(out)
 }
 
-fn real_len_ok(n: usize) -> bool {
-    n > 0 && n.is_power_of_two() && n <= DSP_MAX_POINTS
-}
-
+/// Forward `2N`-point FFT of the real `x` zero-padded to `2N`.
 fn pad_fft(
-    x: &[ExactNum],
-    n2: usize,
+    mut x: Vec<ExactNum>,
     p: usize,
-    rm: RoundingMode,
     cc: &mut Consts,
-) -> Option<ExactNumArray> {
-    let zero = ExactNum::from_u8(0, p);
-    let mut y = x.to_vec();
-    y.resize(n2, zero);
-    ExactNumArray::from_values(p, &y).fft(p, rm, cc)
+) -> Option<(Vec<ExactNum>, Vec<ExactNum>)> {
+    let n2 = x.len().checked_mul(2)?;
+    crate::ieee_soft::check_alloc_bytes(n2.checked_mul(2)?)?;
+    let extra = n2 - x.len();
+    x.try_reserve_exact(extra).ok()?;
+    for _ in 0..extra {
+        x.push(ExactNum::from_u8(0, p));
+    }
+    fft_complex(x, try_zeros(n2, p)?, false, p, RoundingMode::None, cc)
 }
 
 /// Discrete cosine transform, type II, via a `2N`-point FFT.
@@ -76,74 +87,21 @@ pub fn dct(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<ExactNumArray> {
-    let wrk = work_p(p);
-    let x = as_real(signal, wrk, RoundingMode::None)?;
-    let n = x.len();
-    let n2 = n.checked_mul(2)?;
-    if !real_len_ok(n) {
-        return None;
-    }
-    let spec = pad_fft(&x, n2, wrk, RoundingMode::None, cc)?;
-    let pi = cc.pi(wrk, RoundingMode::None);
-    let two_n = ExactNum::from_u32(n2 as u32, wrk);
-    let mut out = Vec::with_capacity(n);
-    for k in 0..n {
-        let ang = ExactNum::from_u32(k as u32, wrk)
-            .mul(&pi, wrk, RoundingMode::None)
-            .div(&two_n, wrk, RoundingMode::None);
-        let (sn, cs) = ang.sin_cos(wrk, RoundingMode::None, cc);
-        let yr = spec.get2(0, k)?;
-        let yi = spec.get2(1, k)?;
-        let re = cs.mul(yr, wrk, RoundingMode::None).add(
-            &sn.mul(yi, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
-        out.push(re);
-    }
-    to_row(p, rm, &out)
+    dct_with_max_points(signal, DSP_MAX_POINTS, p, rm, cc)
 }
 
-/// Inverse of [`dct`]: type-III DCT scaled by `2/N` so `idct(dct(x)) = x`.
-///
-/// `x_n = X_0/N + (2/N) Σ_{k=1}^{N-1} X_k cos(π k (n+1/2)/N)`.
-pub fn idct(
+/// [`dct`] with the length cap `max_points` given per call instead of [`DSP_MAX_POINTS`].
+/// `N > max_points` returns `None` before anything is copied; `max_points = 0` rejects every
+/// input. The internal `2N`-point FFT follows `N`, so a cap above the default works (subject
+/// to `check_alloc_bytes` on the working buffers).
+pub fn dct_with_max_points(
     signal: &ExactNumArray,
+    max_points: usize,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<ExactNumArray> {
-    let wrk = work_p(p);
-    let x = as_real(signal, wrk, RoundingMode::None)?;
-    let n = x.len();
-    if !real_len_ok(n) {
-        return None;
-    }
-    let none = RoundingMode::None;
-    let pi = cc.pi(wrk, none);
-    let nn = ExactNum::from_u32(n as u32, wrk);
-    let two = ExactNum::from_u8(2, wrk);
-    let inv_n = ExactNum::from_u8(1, wrk).div(&nn, wrk, none);
-    let two_n = ExactNum::from_u8(2, wrk).div(&nn, wrk, none);
-    let half = ExactNum::from_u8(1, wrk).div(&two, wrk, none);
-    let mut out = Vec::with_capacity(n);
-    for ni in 0..n {
-        let n_half = ExactNum::from_u32(ni as u32, wrk).add(&half, wrk, none);
-        let mut acc = ExactNum::mul_ref(&inv_n, &x[0], wrk, none);
-        for (k, xk) in x.iter().enumerate().take(n).skip(1) {
-            let ang = ExactNum::from_u32(k as u32, wrk)
-                .mul(&pi, wrk, none)
-                .mul(&n_half, wrk, none)
-                .div(&nn, wrk, none);
-            let c = ang.cos(wrk, none, cc);
-            acc = acc.add(&c.mul(xk, wrk, none).mul(&two_n, wrk, none), wrk, none);
-        }
-        if !finite(&acc) {
-            return None;
-        }
-        out.push(acc);
-    }
-    to_row(p, rm, &out)
+    dct_dst(signal, max_points, false, p, rm, cc)
 }
 
 /// Discrete sine transform, type II, via a `2N`-point FFT.
@@ -155,157 +113,188 @@ pub fn dst(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<ExactNumArray> {
+    dst_with_max_points(signal, DSP_MAX_POINTS, p, rm, cc)
+}
+
+/// [`dst`] with a per-call length cap (same rules as [`dct_with_max_points`]).
+pub fn dst_with_max_points(
+    signal: &ExactNumArray,
+    max_points: usize,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    dct_dst(signal, max_points, true, p, rm, cc)
+}
+
+/// Type-II DCT (`sine = false`) or DST (`sine = true`) from the `2N`-point FFT `Y` of the
+/// zero-padded input: `X_k = Re(Y_k e^{-iπk/2N})`, and for the DST with `m = k + 1`,
+/// `X_k = −Im(Y_m e^{−iπm/2N}) = Re(Y_m) sin θ − Im(Y_m) cos θ`.
+fn dct_dst(
+    signal: &ExactNumArray,
+    max_points: usize,
+    sine: bool,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
     let wrk = work_p(p);
-    let x = as_real(signal, wrk, RoundingMode::None)?;
+    let none = RoundingMode::None;
+    let x = as_real_capped(signal, max_points, wrk)?;
     let n = x.len();
     let n2 = n.checked_mul(2)?;
-    if !real_len_ok(n) {
-        return None;
-    }
-    let spec = pad_fft(&x, n2, wrk, RoundingMode::None, cc)?;
-    let pi = cc.pi(wrk, RoundingMode::None);
-    let two_n = ExactNum::from_u32(n2 as u32, wrk);
-    let mut out = Vec::with_capacity(n);
+    let (yr, yi) = pad_fft(x, wrk, cc)?;
+    let pi = cc.pi(wrk, none);
+    let two_n = num(n2, wrk)?;
+    let mut out = try_vec(n)?;
     for k in 0..n {
-        let m = k + 1;
-        let ang = ExactNum::from_u32(m as u32, wrk)
-            .mul(&pi, wrk, RoundingMode::None)
-            .div(&two_n, wrk, RoundingMode::None);
-        let (sn, cs) = ang.sin_cos(wrk, RoundingMode::None, cc);
-        let yr = spec.get2(0, m)?;
-        let yi = spec.get2(1, m)?;
-        // −Im(Y[m] exp(−iθ)) = yr sinθ − yi cosθ
-        let val = sn.mul(yr, wrk, RoundingMode::None).sub(
-            &cs.mul(yi, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
-        out.push(val);
+        let m = if sine { k + 1 } else { k };
+        let ang = num(m, wrk)?.mul(&pi, wrk, none).div(&two_n, wrk, none);
+        let (sn, cs) = ang.sin_cos(wrk, none, cc);
+        let (r, i) = (yr.get(m)?, yi.get(m)?);
+        let v = if sine {
+            sn.mul(r, wrk, none).sub(&cs.mul(i, wrk, none), wrk, none)
+        } else {
+            cs.mul(r, wrk, none).add(&sn.mul(i, wrk, none), wrk, none)
+        };
+        out.push(v);
     }
     to_row(p, rm, &out)
 }
 
+/// Inverse of [`dct`]: type-III DCT scaled by `2/N` so `idct(dct(x)) = x`.
+///
+/// `x_n = X_0/N + (2/N) Σ_{k=1}^{N-1} X_k cos(π k (n+1/2)/N)`, computed in `O(N log N)`
+/// with a `2N`-point FFT.
+pub fn idct(
+    signal: &ExactNumArray,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    idct_with_max_points(signal, DSP_MAX_POINTS, p, rm, cc)
+}
+
+/// [`idct`] with a per-call length cap (same rules as [`dct_with_max_points`]).
+pub fn idct_with_max_points(
+    signal: &ExactNumArray,
+    max_points: usize,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    idct_idst(signal, max_points, false, p, rm, cc)
+}
+
 /// Inverse of [`dst`]: type-III DST scaled by `2/N` so `idst(dst(x)) = x`.
 ///
-/// `x_n = (2/N)[ (1/2)(−1)^n X_{N−1} + Σ_{k=0}^{N−2} X_k sin(π(k+1)(n+1/2)/N) ]`.
+/// `x_n = (2/N)[ (1/2)(−1)^n X_{N−1} + Σ_{k=0}^{N−2} X_k sin(π(k+1)(n+1/2)/N) ]`, computed in
+/// `O(N log N)` with a `2N`-point FFT.
 pub fn idst(
     signal: &ExactNumArray,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<ExactNumArray> {
+    idst_with_max_points(signal, DSP_MAX_POINTS, p, rm, cc)
+}
+
+/// [`idst`] with a per-call length cap (same rules as [`dct_with_max_points`]).
+pub fn idst_with_max_points(
+    signal: &ExactNumArray,
+    max_points: usize,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
+    idct_idst(signal, max_points, true, p, rm, cc)
+}
+
+/// Type-III inverses through one `2N`-point forward FFT.
+///
+/// DCT-III: with `c_0 = 1/2`, `c_k = 1` and `θ_k = πk/2N`, put `Z_k = c_k X_k e^{−iθ_k}` at
+/// `k < N` (zero above). Then `Re(FFT(Z))_n = Σ c_k X_k cos(θ_k (2n+1))`, so
+/// `x_n = (2/N) Re(FFT(Z))_n`.
+///
+/// DST-III: with `m = 1..=N`, `d_m = X_{m−1}` (`d_N = X_{N−1}/2`) and `φ_m = πm/2N`, put
+/// `Z_m = d_m e^{−iφ_m}` at index `m`. Then `−Im(FFT(Z))_n = Σ d_m sin(φ_m (2n+1))`, and
+/// `sin(πN(2n+1)/2N) = (−1)^n` gives the `X_{N−1}` term, so `x_n = −(2/N) Im(FFT(Z))_n`.
+fn idct_idst(
+    signal: &ExactNumArray,
+    max_points: usize,
+    sine: bool,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
     let wrk = work_p(p);
-    let x = as_real(signal, wrk, RoundingMode::None)?;
-    let n = x.len();
-    if !real_len_ok(n) {
-        return None;
-    }
     let none = RoundingMode::None;
+    let x = as_real_capped(signal, max_points, wrk)?;
+    let n = x.len();
+    let n2 = n.checked_mul(2)?;
+    crate::ieee_soft::check_alloc_bytes(n2.checked_mul(2)?)?;
+    let mut zr = try_zeros(n2, wrk)?;
+    let mut zi = try_zeros(n2, wrk)?;
     let pi = cc.pi(wrk, none);
-    let nn = ExactNum::from_u32(n as u32, wrk);
-    let two = ExactNum::from_u8(2, wrk);
-    let two_n = ExactNum::from_u8(2, wrk).div(&nn, wrk, none);
-    let half = ExactNum::from_u8(1, wrk).div(&two, wrk, none);
-    let mut out = Vec::with_capacity(n);
-    for ni in 0..n {
-        let n_half = ExactNum::from_u32(ni as u32, wrk).add(&half, wrk, none);
-        // `x[n-1] * half` is recomputed per output bin: its sign flips for odd bins and
-        // the unflipped value is needed again by the next bin.
-        let last = ExactNum::mul_ref(&half, &x[n - 1], wrk, none);
-        let mut acc = if ni % 2 == 0 { last } else { last.neg() };
-        for (k, xk) in x.iter().enumerate().take(n - 1) {
-            let ang = ExactNum::from_u32((k + 1) as u32, wrk)
-                .mul(&pi, wrk, none)
-                .mul(&n_half, wrk, none)
-                .div(&nn, wrk, none);
-            let s = ang.sin(wrk, none, cc);
-            acc = acc.add(&s.mul(xk, wrk, none), wrk, none);
-        }
-        acc = acc.mul(&two_n, wrk, none);
-        if !finite(&acc) {
+    let two_n = num(n2, wrk)?;
+    let half = ExactNum::from_u8(1, wrk).div(&ExactNum::from_u8(2, wrk), wrk, none);
+    for (k, xk) in x.iter().enumerate() {
+        let idx = if sine { k + 1 } else { k };
+        let ang = num(idx, wrk)?.mul(&pi, wrk, none).div(&two_n, wrk, none);
+        let (sn, cs) = ang.sin_cos(wrk, none, cc);
+        let halve = if sine { idx == n } else { k == 0 };
+        let d = if halve {
+            ExactNum::mul_ref(&half, xk, wrk, none)
+        } else {
+            ExactNum::mul_ref(&ExactNum::from_u8(1, wrk), xk, wrk, none)
+        };
+        *zr.get_mut(idx)? = ExactNum::mul_ref(&cs, &d, wrk, none);
+        *zi.get_mut(idx)? = sn.mul(&d, wrk, none).neg();
+    }
+    let (fr, fi) = fft_complex(zr, zi, false, wrk, none, cc)?;
+    let scale = ExactNum::from_u8(2, wrk).div(&num(n, wrk)?, wrk, none);
+    let mut out = try_vec(n)?;
+    for j in 0..n {
+        let v = if sine {
+            ExactNum::mul_ref(fi.get(j)?, &scale, wrk, none).neg()
+        } else {
+            ExactNum::mul_ref(fr.get(j)?, &scale, wrk, none)
+        };
+        if !finite(&v) {
             return None;
         }
-        out.push(acc);
+        out.push(v);
     }
     to_row(p, rm, &out)
 }
 
 /// Unnormalized DFT of a real row or column. Output is `(2, n)` (row 0 real,
-/// row 1 imaginary). Same power-of-two rule as [`ExactNumArray::fft`].
+/// row 1 imaginary). Same power-of-two rule and default cap as [`ExactNumArray::fft`].
 pub fn fft_real(
     signal: &ExactNumArray,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<ExactNumArray> {
-    let _ = as_real(signal, p, rm)?;
-    signal.fft(p, rm, cc)
+    fft_real_with_max_points(signal, crate::FFT_MAX_POINTS, p, rm, cc)
 }
 
-/// Red-test stub (Slice 2): the green commit takes the cap per call.
-pub fn dct_with_max_points(
-    _signal: &ExactNumArray,
-    _max_points: usize,
-    _p: usize,
-    _rm: RoundingMode,
-    _cc: &mut Consts,
-) -> Option<ExactNumArray> {
-    None
-}
-
-/// Red-test stub (Slice 2): the green commit takes the cap per call.
-pub fn idct_with_max_points(
-    _signal: &ExactNumArray,
-    _max_points: usize,
-    _p: usize,
-    _rm: RoundingMode,
-    _cc: &mut Consts,
-) -> Option<ExactNumArray> {
-    None
-}
-
-/// Red-test stub (Slice 2): the green commit takes the cap per call.
-pub fn dst_with_max_points(
-    _signal: &ExactNumArray,
-    _max_points: usize,
-    _p: usize,
-    _rm: RoundingMode,
-    _cc: &mut Consts,
-) -> Option<ExactNumArray> {
-    None
-}
-
-/// Red-test stub (Slice 2): the green commit takes the cap per call.
-pub fn idst_with_max_points(
-    _signal: &ExactNumArray,
-    _max_points: usize,
-    _p: usize,
-    _rm: RoundingMode,
-    _cc: &mut Consts,
-) -> Option<ExactNumArray> {
-    None
-}
-
-/// Red-test stub (Slice 2): the green commit takes the cap per call.
+/// [`fft_real`] with a per-call length cap (see [`ExactNumArray::fft_with_max_points`]).
 pub fn fft_real_with_max_points(
-    _signal: &ExactNumArray,
-    _max_points: usize,
-    _p: usize,
-    _rm: RoundingMode,
-    _cc: &mut Consts,
+    signal: &ExactNumArray,
+    max_points: usize,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
 ) -> Option<ExactNumArray> {
-    None
-}
-
-/// Red-test stub (Slice 2): the green commit takes the cap per call.
-pub fn ifft_real_with_max_points(
-    _spectrum: &ExactNumArray,
-    _max_points: usize,
-    _p: usize,
-    _rm: RoundingMode,
-    _cc: &mut Consts,
-) -> Option<ExactNumArray> {
-    None
+    let (rows, cols) = signal.shape();
+    if !((rows == 1 && cols > 0) || (cols == 1 && rows > 0)) {
+        return None;
+    }
+    if signal.as_slice().iter().any(|v| !finite(v)) {
+        return None;
+    }
+    signal.fft_with_max_points(max_points, p, rm, cc)
 }
 
 fn window_len_ok(n: usize) -> bool {
@@ -484,14 +473,25 @@ pub fn ifft_real(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<ExactNumArray> {
+    ifft_real_with_max_points(spectrum, crate::FFT_MAX_POINTS, p, rm, cc)
+}
+
+/// [`ifft_real`] with a per-call length cap (see [`ExactNumArray::ifft_with_max_points`]).
+pub fn ifft_real_with_max_points(
+    spectrum: &ExactNumArray,
+    max_points: usize,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNumArray> {
     let (rows, cols) = spectrum.shape();
     if rows != 2 || cols == 0 {
         return None;
     }
-    let spec = spectrum.ifft(p, rm, cc)?;
-    let mut re = Vec::with_capacity(cols);
+    let spec = spectrum.ifft_with_max_points(max_points, p, rm, cc)?;
+    let mut re = try_vec(cols)?;
     for j in 0..cols {
-        re.push(spec.get2(0, j)?.clone());
+        re.push(copy_p(spec.get2(0, j)?, p, rm));
     }
     to_row(p, rm, &re)
 }
