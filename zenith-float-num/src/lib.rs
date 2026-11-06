@@ -135,8 +135,8 @@ pub use crate::hash::hmac_sha256;
 pub use crate::hash::sha256;
 pub use crate::hash::sha512;
 pub use crate::ieee_soft::{
-    check_alloc_bytes, ExactNumArray, Ieee32, Ieee32Array, Ieee64, Ieee64Array, FFT_MAX_POINTS,
-    IEEE_SIMD_LANE_WIDTH,
+    check_alloc_bytes, Bfloat16, ExactNumArray, Ieee16, Ieee32, Ieee32Array, Ieee64, Ieee64Array,
+    FFT_MAX_POINTS, IEEE_SIMD_LANE_WIDTH,
 };
 pub use crate::integer::ExactInt;
 pub use crate::modular::miller_rabin;

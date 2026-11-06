@@ -1,9 +1,11 @@
-//! Software IEEE-754 binary32 / binary64 (`Ieee32` / `Ieee64`).
-//! Bits live in `u32` / `u64`. Arithmetic is integer only.
+//! Software IEEE-754 binary32 / binary64 (`Ieee32` / `Ieee64`), plus the 16-bit boundary formats
+//! binary16 / bfloat16 (`Ieee16` / `Bfloat16`, `u16` bits <-> `ExactNum` only).
+//! Bits live in `u16` / `u32` / `u64`. Arithmetic is integer only.
 
 mod arith;
 mod array;
 mod convert;
+mod half;
 mod simd;
 
 use crate::defs::Error;
@@ -18,6 +20,7 @@ use core::num::FpCategory;
 
 pub use array::{check_alloc_bytes, ExactNumArray, Ieee32Array, Ieee64Array, FFT_MAX_POINTS};
 pub(crate) use array::{fft_complex, try_vec, try_zeros};
+pub use half::{Bfloat16, Ieee16};
 pub use simd::IEEE_SIMD_LANE_WIDTH;
 
 /// Software IEEE-754 binary32 (24-bit significand, 8-bit exponent). Stored as `u32` bits.
