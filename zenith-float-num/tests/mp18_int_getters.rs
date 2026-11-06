@@ -82,12 +82,36 @@ fn expect_u32_err(got: Result<u32, Error>, want: Error, what: &str) {
 fn int_getters_normal_and_zeros() -> Result<(), Error> {
     let mut cc = Consts::new()?;
     let p = 128;
-    assert_eq!(parse("5", p, &mut cc).to_i64(RoundingMode::ToEven)?, 5, "to_i64(5)");
-    assert_eq!(parse("-5", p, &mut cc).to_i64(RoundingMode::ToEven)?, -5, "to_i64(-5)");
-    assert_eq!(parse("5", p, &mut cc).to_u64(RoundingMode::ToEven)?, 5, "to_u64(5)");
-    assert_eq!(parse("5", p, &mut cc).to_i32(RoundingMode::ToEven)?, 5, "to_i32(5)");
-    assert_eq!(parse("5", p, &mut cc).to_u32(RoundingMode::ToEven)?, 5, "to_u32(5)");
-    assert_eq!(parse("0", p, &mut cc).to_i64(RoundingMode::ToEven)?, 0, "to_i64(0)");
+    assert_eq!(
+        parse("5", p, &mut cc).to_i64(RoundingMode::ToEven)?,
+        5,
+        "to_i64(5)"
+    );
+    assert_eq!(
+        parse("-5", p, &mut cc).to_i64(RoundingMode::ToEven)?,
+        -5,
+        "to_i64(-5)"
+    );
+    assert_eq!(
+        parse("5", p, &mut cc).to_u64(RoundingMode::ToEven)?,
+        5,
+        "to_u64(5)"
+    );
+    assert_eq!(
+        parse("5", p, &mut cc).to_i32(RoundingMode::ToEven)?,
+        5,
+        "to_i32(5)"
+    );
+    assert_eq!(
+        parse("5", p, &mut cc).to_u32(RoundingMode::ToEven)?,
+        5,
+        "to_u32(5)"
+    );
+    assert_eq!(
+        parse("0", p, &mut cc).to_i64(RoundingMode::ToEven)?,
+        0,
+        "to_i64(0)"
+    );
     let mut neg_zero = ExactNum::new(p);
     neg_zero.set_sign(zenith_float_num::Sign::Neg);
     assert_eq!(neg_zero.to_i64(RoundingMode::ToEven)?, 0, "to_i64(-0)");
@@ -95,8 +119,17 @@ fn int_getters_normal_and_zeros() -> Result<(), Error> {
     assert_eq!(neg_zero.to_i32(RoundingMode::ToEven)?, 0, "to_i32(-0)");
     assert_eq!(neg_zero.to_u32(RoundingMode::ToEven)?, 0, "to_u32(-0)");
     // Same results at p=64.
-    assert_eq!(parse("5", 64, &mut cc).to_i64(RoundingMode::ToEven)?, 5, "to_i64(5) p=64");
-    assert!(parse("-5", 64, &mut cc).to_u32(RoundingMode::ToEven).is_err(), "to_u32(-5) p=64 Err");
+    assert_eq!(
+        parse("5", 64, &mut cc).to_i64(RoundingMode::ToEven)?,
+        5,
+        "to_i64(5) p=64"
+    );
+    assert!(
+        parse("-5", 64, &mut cc)
+            .to_u32(RoundingMode::ToEven)
+            .is_err(),
+        "to_u32(-5) p=64 Err"
+    );
     Ok(())
 }
 
@@ -165,18 +198,30 @@ fn int_getters_inf_nan_and_negatives() -> Result<(), Error> {
     let p = 128;
     let pos_inf = ExactNum::from_i8(1, p).div(&ExactNum::new(p), p, RoundingMode::ToEven);
     let neg_inf = ExactNum::from_i8(-1, p).div(&ExactNum::new(p), p, RoundingMode::ToEven);
-    assert!(pos_inf.is_inf_pos() && neg_inf.is_inf_neg(), "setup infinities");
+    assert!(
+        pos_inf.is_inf_pos() && neg_inf.is_inf_neg(),
+        "setup infinities"
+    );
     for inf in [&pos_inf, &neg_inf] {
-        expect_i64_err(inf.to_i64(RoundingMode::ToEven), Error::InvalidArgument, "to_i64(Inf)");
-        expect_u64_err(inf.to_u64(RoundingMode::ToEven), Error::InvalidArgument, "to_u64(Inf)");
+        expect_i64_err(
+            inf.to_i64(RoundingMode::ToEven),
+            Error::InvalidArgument,
+            "to_i64(Inf)",
+        );
+        expect_u64_err(
+            inf.to_u64(RoundingMode::ToEven),
+            Error::InvalidArgument,
+            "to_u64(Inf)",
+        );
         assert!(!inf.fits_i64(RoundingMode::ToEven), "fits_i64(Inf) false");
         assert!(!inf.fits_u64(RoundingMode::ToEven), "fits_u64(Inf) false");
     }
-    for nan in [
-        ExactNum::nan(Some(Error::InvalidArgument)),
-        ExactNum::nan(None),
-    ] {
-        expect_i64_err(nan.to_i64(RoundingMode::ToEven), Error::InvalidArgument, "to_i64(NaN)");
+    for nan in [ExactNum::nan(Some(Error::InvalidArgument)), ExactNum::nan(None)] {
+        expect_i64_err(
+            nan.to_i64(RoundingMode::ToEven),
+            Error::InvalidArgument,
+            "to_i64(NaN)",
+        );
         assert!(!nan.fits_i64(RoundingMode::ToEven), "fits_i64(NaN) false");
     }
     expect_i64_err(
@@ -197,7 +242,11 @@ fn int_getters_inf_nan_and_negatives() -> Result<(), Error> {
             Error::InvalidArgument,
             "to_u32(-1) in every mode",
         );
-        assert_eq!(parse("-1", p, &mut cc).to_i64(rm)?, -1, "to_i64(-1) in every mode");
+        assert_eq!(
+            parse("-1", p, &mut cc).to_i64(rm)?,
+            -1,
+            "to_i64(-1) in every mode"
+        );
         assert!(parse("-1", p, &mut cc).fits_i64(rm), "fits_i64(-1)");
         assert!(!parse("-1", p, &mut cc).fits_u64(rm), "fits_u64(-1) false");
     }
@@ -208,18 +257,46 @@ fn int_getters_inf_nan_and_negatives() -> Result<(), Error> {
 fn int_getters_huge_and_tiny() -> Result<(), Error> {
     let p = 128;
     let two63 = ExactNum::pow2(63, p)?;
-    expect_i64_err(two63.to_i64(RoundingMode::ToEven), Error::InvalidArgument, "to_i64(2^63)");
-    assert_eq!(two63.to_u64(RoundingMode::ToEven)?, 1u64 << 63, "to_u64(2^63)");
+    expect_i64_err(
+        two63.to_i64(RoundingMode::ToEven),
+        Error::InvalidArgument,
+        "to_i64(2^63)",
+    );
+    assert_eq!(
+        two63.to_u64(RoundingMode::ToEven)?,
+        1u64 << 63,
+        "to_u64(2^63)"
+    );
     assert!(two63.fits_u64(RoundingMode::ToEven));
     assert!(!two63.fits_i64(RoundingMode::ToEven));
     let two64 = ExactNum::pow2(64, p)?;
-    expect_u64_err(two64.to_u64(RoundingMode::ToEven), Error::InvalidArgument, "to_u64(2^64)");
+    expect_u64_err(
+        two64.to_u64(RoundingMode::ToEven),
+        Error::InvalidArgument,
+        "to_u64(2^64)",
+    );
     assert!(!two64.fits_u64(RoundingMode::ToEven));
     let two100 = ExactNum::pow2(100, p)?;
-    expect_i64_err(two100.to_i64(RoundingMode::ToEven), Error::InvalidArgument, "to_i64(2^100)");
-    expect_u64_err(two100.to_u64(RoundingMode::ToEven), Error::InvalidArgument, "to_u64(2^100)");
-    expect_i32_err(two100.to_i32(RoundingMode::ToEven), Error::InvalidArgument, "to_i32(2^100)");
-    expect_u32_err(two100.to_u32(RoundingMode::ToEven), Error::InvalidArgument, "to_u32(2^100)");
+    expect_i64_err(
+        two100.to_i64(RoundingMode::ToEven),
+        Error::InvalidArgument,
+        "to_i64(2^100)",
+    );
+    expect_u64_err(
+        two100.to_u64(RoundingMode::ToEven),
+        Error::InvalidArgument,
+        "to_u64(2^100)",
+    );
+    expect_i32_err(
+        two100.to_i32(RoundingMode::ToEven),
+        Error::InvalidArgument,
+        "to_i32(2^100)",
+    );
+    expect_u32_err(
+        two100.to_u32(RoundingMode::ToEven),
+        Error::InvalidArgument,
+        "to_u32(2^100)",
+    );
     // Tiny: 2^-1000 rounds to +0 in ToZero/Down/ToEven, to +1 in Up/FromZero.
     let tiny = ExactNum::pow2(-1000, p)?;
     for rm in [RoundingMode::ToZero, RoundingMode::Down, RoundingMode::ToEven] {
@@ -230,14 +307,27 @@ fn int_getters_huge_and_tiny() -> Result<(), Error> {
         assert_eq!(tiny.to_i64(rm)?, 1, "to_i64(2^-1000) up modes");
         assert_eq!(tiny.to_u64(rm)?, 1, "to_u64(2^-1000) up modes");
     }
-    let neg_tiny = ExactNum::pow2(-1000, p)?.mul(&ExactNum::from_i8(-1, p), p, RoundingMode::ToEven);
+    let neg_tiny =
+        ExactNum::pow2(-1000, p)?.mul(&ExactNum::from_i8(-1, p), p, RoundingMode::ToEven);
     for rm in [RoundingMode::ToZero, RoundingMode::Up, RoundingMode::ToEven] {
-        assert_eq!(neg_tiny.to_i64(rm)?, 0, "to_i64(-2^-1000) toward-zero modes");
-        assert_eq!(neg_tiny.to_u64(rm)?, 0, "to_u64(-2^-1000) toward-zero modes");
+        assert_eq!(
+            neg_tiny.to_i64(rm)?,
+            0,
+            "to_i64(-2^-1000) toward-zero modes"
+        );
+        assert_eq!(
+            neg_tiny.to_u64(rm)?,
+            0,
+            "to_u64(-2^-1000) toward-zero modes"
+        );
     }
     for rm in [RoundingMode::Down, RoundingMode::FromZero] {
         assert_eq!(neg_tiny.to_i64(rm)?, -1, "to_i64(-2^-1000) away modes");
-        expect_u64_err(neg_tiny.to_u64(rm), Error::InvalidArgument, "to_u64(-2^-1000) away modes");
+        expect_u64_err(
+            neg_tiny.to_u64(rm),
+            Error::InvalidArgument,
+            "to_u64(-2^-1000) away modes",
+        );
     }
     Ok(())
 }
@@ -250,12 +340,36 @@ fn int_getters_max_plus_half_and_rounding_modes() -> Result<(), Error> {
     // Down/ToZero give i64::MAX; ToEven, Up and FromZero give 2^63, which does
     // not fit i64 (probe: round0(MAX+0.5, ToEven) = 9223372036854775808).
     let x = parse("9223372036854775807.5", p, &mut cc);
-    assert_eq!(x.to_i64(RoundingMode::ToOdd)?, i64::MAX, "to_i64(MAX+0.5) ToOdd");
-    assert_eq!(x.to_i64(RoundingMode::Down)?, i64::MAX, "to_i64(MAX+0.5) Down");
-    assert_eq!(x.to_i64(RoundingMode::ToZero)?, i64::MAX, "to_i64(MAX+0.5) ToZero");
-    expect_i64_err(x.to_i64(RoundingMode::Up), Error::InvalidArgument, "to_i64(MAX+0.5) Up");
-    expect_i64_err(x.to_i64(RoundingMode::FromZero), Error::InvalidArgument, "to_i64(MAX+0.5) FromZero");
-    expect_i64_err(x.to_i64(RoundingMode::ToEven), Error::InvalidArgument, "to_i64(MAX+0.5) ToEven");
+    assert_eq!(
+        x.to_i64(RoundingMode::ToOdd)?,
+        i64::MAX,
+        "to_i64(MAX+0.5) ToOdd"
+    );
+    assert_eq!(
+        x.to_i64(RoundingMode::Down)?,
+        i64::MAX,
+        "to_i64(MAX+0.5) Down"
+    );
+    assert_eq!(
+        x.to_i64(RoundingMode::ToZero)?,
+        i64::MAX,
+        "to_i64(MAX+0.5) ToZero"
+    );
+    expect_i64_err(
+        x.to_i64(RoundingMode::Up),
+        Error::InvalidArgument,
+        "to_i64(MAX+0.5) Up",
+    );
+    expect_i64_err(
+        x.to_i64(RoundingMode::FromZero),
+        Error::InvalidArgument,
+        "to_i64(MAX+0.5) FromZero",
+    );
+    expect_i64_err(
+        x.to_i64(RoundingMode::ToEven),
+        Error::InvalidArgument,
+        "to_i64(MAX+0.5) ToEven",
+    );
     assert!(x.fits_i64(RoundingMode::ToOdd));
     assert!(x.fits_i64(RoundingMode::Down));
     assert!(x.fits_i64(RoundingMode::ToZero));
@@ -270,8 +384,15 @@ fn int_getters_max_plus_half_and_rounding_modes() -> Result<(), Error> {
         assert!(neg_half.fits_u64(rm), "fits_u64(-0.5) zero modes");
     }
     for rm in [RoundingMode::Down, RoundingMode::ToOdd, RoundingMode::FromZero] {
-        expect_u64_err(neg_half.to_u64(rm), Error::InvalidArgument, "to_u64(-0.5) minus-one modes");
-        assert!(!neg_half.fits_u64(rm), "fits_u64(-0.5) minus-one modes false");
+        expect_u64_err(
+            neg_half.to_u64(rm),
+            Error::InvalidArgument,
+            "to_u64(-0.5) minus-one modes",
+        );
+        assert!(
+            !neg_half.fits_u64(rm),
+            "fits_u64(-0.5) minus-one modes false"
+        );
     }
     // 2.5 / -2.5 in every mode.
     let pos = parse("2.5", p, &mut cc);
@@ -289,9 +410,23 @@ fn int_getters_max_plus_half_and_rounding_modes() -> Result<(), Error> {
     assert_eq!(neg.to_i64(RoundingMode::ToZero)?, -2);
     assert_eq!(neg.to_i64(RoundingMode::FromZero)?, -3);
     // None: a non-integer input is refused, an integer input converts.
-    expect_i64_err(parse("5.5", p, &mut cc).to_i64(RoundingMode::None), Error::InvalidArgument, "to_i64(5.5) None");
-    assert_eq!(parse("5", p, &mut cc).to_i64(RoundingMode::None)?, 5, "to_i64(5) None");
-    assert!(!parse("5.5", p, &mut cc).fits_i64(RoundingMode::None), "fits_i64(5.5) None false");
-    assert!(parse("5", p, &mut cc).fits_i64(RoundingMode::None), "fits_i64(5) None true");
+    expect_i64_err(
+        parse("5.5", p, &mut cc).to_i64(RoundingMode::None),
+        Error::InvalidArgument,
+        "to_i64(5.5) None",
+    );
+    assert_eq!(
+        parse("5", p, &mut cc).to_i64(RoundingMode::None)?,
+        5,
+        "to_i64(5) None"
+    );
+    assert!(
+        !parse("5.5", p, &mut cc).fits_i64(RoundingMode::None),
+        "fits_i64(5.5) None false"
+    );
+    assert!(
+        parse("5", p, &mut cc).fits_i64(RoundingMode::None),
+        "fits_i64(5) None true"
+    );
     Ok(())
 }

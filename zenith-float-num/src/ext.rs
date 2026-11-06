@@ -7,6 +7,7 @@ use crate::common::util::round_p;
 use crate::defs::Precision;
 use crate::defs::SignedWord;
 use crate::defs::DEFAULT_P;
+use crate::mantissa::Mantissa;
 use crate::num::ExactNumNumber;
 use crate::Consts;
 use crate::Error;
@@ -2604,41 +2605,318 @@ Accuracy: correctly-rounded",
         { NAN },
     );
 
-    /// MP18 integer getters and fits predicates (red-test stubs, Batch 2): these
-    /// always refuse / report false so the MP18 tests compile and fail on value.
-    /// The green implementation replaces these bodies.
-    /// Red-test stub for MP18 `to_i64`.
-    pub fn to_i64(&self, _rm: RoundingMode) -> Result<i64, Error> {
-        Err(Error::InvalidArgument)
+    /// Integer and fractional parts of a finite `self`, rebuilt from its
+    /// borrowed mantissa words: the integer part keeps the top `e` bits, the
+    /// fractional part the rest. Both are fresh constructions through
+    /// [`Self::from_words`], never a copy of `self`, so this adds no
+    /// helper-copy site. The parts are exact, with `inexact` clear; the
+    /// caller rounds them. A part that comes back NaN (only an allocation
+    /// failure can do that) is left for the caller to map to `Err`.
+    ///
+    /// (Same helper as MP16's `modf` split; the two branches carry identical
+    /// copies so each PR stands alone, and the rebase drops the duplicate.)
+    fn int_frac_parts(&self) -> Result<(Self, Self), Error> {
+        let (words, n, sign, e, _) = match self.value_parts() {
+            Some(parts) => parts,
+            None => return Err(Error::InvalidArgument),
+        };
+        let width = words
+            .len()
+            .checked_mul(WORD_BIT_SIZE)
+            .ok_or(Error::InvalidArgument)?;
+        if e <= 0 {
+            // |self| < 1: the integer part is a signed zero, the fractional
+            // part is self rebuilt from its words.
+            let mut int_m = Mantissa::from_words(width, words)?;
+            int_m.set_zero();
+            let int_part = Self::from_words(int_m.digits(), sign, e);
+            let frac_part = Self::from_words(words, sign, e);
+            return Ok((int_part, frac_part));
+        }
+        let e_usize = usize::try_from(e).map_err(|_| Error::InvalidArgument)?;
+        if e_usize >= n {
+            // No fractional bits: the integer part is self rebuilt from its
+            // words, the fractional part is a signed zero.
+            let int_part = Self::from_words(words, sign, e);
+            let mut frac_m = Mantissa::from_words(width, words)?;
+            frac_m.set_zero();
+            let frac_part = Self::from_words(frac_m.digits(), sign, e);
+            return Ok((int_part, frac_part));
+        }
+        // 0 < e < n (so `self` is normal and `n` is the full width): split
+        // the mantissa at the binary point.
+        let mut int_m = Mantissa::from_words(width, words)?;
+        int_m.mask_bits(n - e_usize, false);
+        let int_part = Self::from_words(int_m.digits(), sign, e);
+        let mut frac_m = Mantissa::from_words(width, words)?;
+        frac_m.mask_bits(e_usize, true);
+        let frac_part = Self::from_words(frac_m.digits(), sign, e);
+        Ok((int_part, frac_part))
     }
-    /// Red-test stub for MP18 `to_u64`.
-    pub fn to_u64(&self, _rm: RoundingMode) -> Result<u64, Error> {
-        Err(Error::InvalidArgument)
+
+    /// True when the truncated integer part of `self` is odd: the units bit
+    /// of the mantissa words, at position `n - e` for a finite `self` with
+    /// `0 < e < n`. A zero truncated part, and any part outside that range,
+    /// is even.
+    fn trunc_is_odd(&self) -> Result<bool, Error> {
+        let (words, n, _, e, _) = match self.value_parts() {
+            Some(parts) => parts,
+            None => return Err(Error::InvalidArgument),
+        };
+        if e <= 0 {
+            return Ok(false);
+        }
+        let e_usize = usize::try_from(e).map_err(|_| Error::InvalidArgument)?;
+        if e_usize >= n {
+            return Ok(false);
+        }
+        let pos = n - e_usize;
+        let wi = pos / WORD_BIT_SIZE;
+        let bi = pos % WORD_BIT_SIZE;
+        let bit = u32::try_from(bi).map_err(|_| Error::InvalidArgument)?;
+        Ok(((words[wi] >> bit) & 1) != 0)
     }
-    /// Red-test stub for MP18 `to_i32`.
-    pub fn to_i32(&self, _rm: RoundingMode) -> Result<i32, Error> {
-        Err(Error::InvalidArgument)
+
+    /// The integer `self` rounds to with `rm`, or an error. `RoundingMode::None`
+    /// does not round to an integer: a non-integer input is refused, an integer
+    /// input passes through. NaN and Inf are refused (a NaN's carried error
+    /// propagates, a bare NaN is `InvalidArgument`).
+    ///
+    /// The rounding is decided from the exact parts: the truncated integer and
+    /// the fractional part, rebuilt from the mantissa words without copying
+    /// `self`. A fractional part of exactly one half rounds to the even
+    /// neighbour under `ToEven` and to the odd neighbour under `ToOdd`; a
+    /// round-up adds one unit away from zero at one word more precision than
+    /// the truncated part, so the sum is exact.
+    fn rounded_int(&self, rm: RoundingMode) -> Result<Self, Error> {
+        if self.is_nan() {
+            return Err(match self.err() {
+                Some(e) => e,
+                None => Error::InvalidArgument,
+            });
+        }
+        if self.is_inf() {
+            return Err(Error::InvalidArgument);
+        }
+        let (trunc, frac) = self.int_frac_parts()?;
+        if trunc.is_nan() || frac.is_nan() {
+            let bad = if trunc.is_nan() { &trunc } else { &frac };
+            return Err(match bad.err() {
+                Some(e) => e,
+                None => Error::InvalidArgument,
+            });
+        }
+        if frac.is_zero() {
+            return Ok(trunc);
+        }
+        let negative = self.is_negative();
+        let half = Self::pow2(-1, 128)?;
+        let cmp = match frac.abs().compare(&half) {
+            Some(c) => c,
+            None => return Err(Error::InvalidArgument),
+        };
+        let trunc_odd = self.trunc_is_odd()?;
+        let round_up = match rm {
+            RoundingMode::None => return Err(Error::InvalidArgument),
+            RoundingMode::ToZero => false,
+            RoundingMode::FromZero => true,
+            RoundingMode::Up => !negative,
+            RoundingMode::Down => negative,
+            RoundingMode::ToEven => cmp > 0 || (cmp == 0 && trunc_odd),
+            RoundingMode::ToOdd => cmp > 0 || (cmp == 0 && !trunc_odd),
+        };
+        if !round_up {
+            return Ok(trunc);
+        }
+        let (twords, _, _, _, _) = match trunc.value_parts() {
+            Some(parts) => parts,
+            None => return Err(Error::InvalidArgument),
+        };
+        let p_big = twords
+            .len()
+            .checked_mul(WORD_BIT_SIZE)
+            .and_then(|w| w.checked_add(WORD_BIT_SIZE))
+            .ok_or(Error::InvalidArgument)?;
+        let one = if negative { Self::from_i8(-1, p_big) } else { Self::from_i8(1, p_big) };
+        let rounded = trunc.add(&one, p_big, RoundingMode::ToZero);
+        if rounded.is_nan() {
+            return Err(match rounded.err() {
+                Some(e) => e,
+                None => Error::InvalidArgument,
+            });
+        }
+        if !rounded.is_int() {
+            return Err(Error::InvalidArgument);
+        }
+        Ok(rounded)
     }
-    /// Red-test stub for MP18 `to_u32`.
-    pub fn to_u32(&self, _rm: RoundingMode) -> Result<u32, Error> {
-        Err(Error::InvalidArgument)
+
+    /// The value of an integer `self` as an `i128`, by repeated halving with the
+    /// existing exact `rem`/`div`/`int` operations (no new constant cache, no
+    /// mantissa-word arithmetic). The caller range-checks first, so the loop runs
+    /// at most 64 times for a value that fits a 64-bit type; a value that does
+    /// not reach zero in 128 halvings is refused rather than truncated. The
+    /// working value is rebuilt from the mantissa words for a non-negative
+    /// input (no copy of `self`); `rem` borrows the working value.
+    fn int_i128(&self) -> Result<i128, Error> {
+        if self.is_zero() {
+            return Ok(0);
+        }
+        let negative = self.is_negative();
+        let mut work = if negative {
+            ExactNum::mul_ref(self, &Self::from_i8(-1, 128), 128, RoundingMode::ToEven)
+        } else {
+            match self.value_parts() {
+                Some((words, _, sign, e, _)) => Self::from_words(words, sign, e),
+                None => return Err(Error::InvalidArgument),
+            }
+        };
+        if work.is_nan() {
+            return Err(match work.err() {
+                Some(e) => e,
+                None => Error::InvalidArgument,
+            });
+        }
+        let two = Self::from_i8(2, 128);
+        let mut acc: u128 = 0;
+        for i in 0..128usize {
+            if work.is_zero() {
+                break;
+            }
+            let rem = work.rem(&two);
+            if rem.is_nan() {
+                return Err(match rem.err() {
+                    Some(e) => e,
+                    None => Error::InvalidArgument,
+                });
+            }
+            if !rem.is_zero() {
+                let bit = u32::try_from(i).map_err(|_| Error::InvalidArgument)?;
+                acc = acc
+                    .checked_add(1u128.checked_shl(bit).ok_or(Error::InvalidArgument)?)
+                    .ok_or(Error::InvalidArgument)?;
+            }
+            let quot = work.div(&two, 128, RoundingMode::ToEven).int();
+            if quot.is_nan() {
+                return Err(match quot.err() {
+                    Some(e) => e,
+                    None => Error::InvalidArgument,
+                });
+            }
+            work = quot;
+        }
+        if !work.is_zero() {
+            return Err(Error::InvalidArgument);
+        }
+        let mag = i128::try_from(acc).map_err(|_| Error::InvalidArgument)?;
+        if negative {
+            mag.checked_neg().ok_or(Error::InvalidArgument)
+        } else {
+            Ok(mag)
+        }
     }
-    /// Red-test stub for MP18 `fits_i64`.
-    pub fn fits_i64(&self, _rm: RoundingMode) -> bool {
-        false
+
+    /// True when the integer `self` rounds to with `rm` lies in
+    /// `[min, max]` (both exact values at p=128). Any error in rounding is false,
+    /// including NaN and Inf inputs.
+    fn fits_range(&self, rm: RoundingMode, min: &Self, max: &Self) -> bool {
+        match self.rounded_int(rm) {
+            Ok(r) => {
+                matches!(r.compare(min), Some(c) if c >= 0)
+                    && matches!(r.compare(max), Some(c) if c <= 0)
+            }
+            Err(_) => false,
+        }
     }
-    /// Red-test stub for MP18 `fits_u64`.
-    pub fn fits_u64(&self, _rm: RoundingMode) -> bool {
-        false
+
+    /// MPFR `get_sj`: `self` rounded to an integer with `rm`, as an `i64`.
+    ///
+    /// Unlike MPFR, which saturates, an out-of-range result is refused with
+    /// `InvalidArgument` — never a saturated value. `RoundingMode::None` does
+    /// not round: a non-integer input is refused. `-0` converts to `0`.
+    ///
+    /// ## Errors
+    ///
+    ///  - `InvalidArgument`: NaN/Inf input, a non-integer input with `None`, or a
+    ///    rounded value outside `i64::MIN..=i64::MAX`.
+    ///  - The NaN input's own carried error, when it has one.
+    ///  - `MemoryAllocation`: a rounding or halving step could not allocate.
+    pub fn to_i64(&self, rm: RoundingMode) -> Result<i64, Error> {
+        let r = self.rounded_int(rm)?;
+        if r.compare(&Self::from_i64(i64::MIN, 128)) == Some(-1)
+            || r.compare(&Self::from_i64(i64::MAX, 128)) == Some(1)
+        {
+            return Err(Error::InvalidArgument);
+        }
+        i64::try_from(r.int_i128()?).map_err(|_| Error::InvalidArgument)
     }
-    /// Red-test stub for MP18 `fits_i32`.
-    pub fn fits_i32(&self, _rm: RoundingMode) -> bool {
-        false
+
+    /// MPFR `get_uj`: `self` rounded to an integer with `rm`, as a `u64`.
+    /// Same refusal rules as [`Self::to_i64`]; a negative rounded value (other
+    /// than `-0`, which is `0`) is refused, never saturated.
+    pub fn to_u64(&self, rm: RoundingMode) -> Result<u64, Error> {
+        let r = self.rounded_int(rm)?;
+        if r.compare(&Self::from_u64(0, 128)) == Some(-1)
+            || r.compare(&Self::from_u64(u64::MAX, 128)) == Some(1)
+        {
+            return Err(Error::InvalidArgument);
+        }
+        u64::try_from(r.int_i128()?).map_err(|_| Error::InvalidArgument)
     }
-    /// Red-test stub for MP18 `fits_u32`.
-    pub fn fits_u32(&self, _rm: RoundingMode) -> bool {
-        false
+
+    /// MPFR `get_si`: `self` rounded to an integer with `rm`, as an `i32`.
+    /// Same refusal rules as [`Self::to_i64`].
+    pub fn to_i32(&self, rm: RoundingMode) -> Result<i32, Error> {
+        let r = self.rounded_int(rm)?;
+        if r.compare(&Self::from_i32(i32::MIN, 128)) == Some(-1)
+            || r.compare(&Self::from_i32(i32::MAX, 128)) == Some(1)
+        {
+            return Err(Error::InvalidArgument);
+        }
+        i32::try_from(r.int_i128()?).map_err(|_| Error::InvalidArgument)
     }
+
+    /// MPFR `get_ui`: `self` rounded to an integer with `rm`, as a `u32`.
+    /// Same refusal rules as [`Self::to_i64`].
+    pub fn to_u32(&self, rm: RoundingMode) -> Result<u32, Error> {
+        let r = self.rounded_int(rm)?;
+        if r.compare(&Self::from_u32(0, 128)) == Some(-1)
+            || r.compare(&Self::from_u32(u32::MAX, 128)) == Some(1)
+        {
+            return Err(Error::InvalidArgument);
+        }
+        u32::try_from(r.int_i128()?).map_err(|_| Error::InvalidArgument)
+    }
+
+    /// True when `self` rounded to an integer with `rm` fits in an `i64`.
+    /// NaN, Inf and rounding errors are false, never an error.
+    pub fn fits_i64(&self, rm: RoundingMode) -> bool {
+        self.fits_range(
+            rm,
+            &Self::from_i64(i64::MIN, 128),
+            &Self::from_i64(i64::MAX, 128),
+        )
+    }
+
+    /// True when `self` rounded to an integer with `rm` fits in a `u64`.
+    pub fn fits_u64(&self, rm: RoundingMode) -> bool {
+        self.fits_range(rm, &Self::from_u64(0, 128), &Self::from_u64(u64::MAX, 128))
+    }
+
+    /// True when `self` rounded to an integer with `rm` fits in an `i32`.
+    pub fn fits_i32(&self, rm: RoundingMode) -> bool {
+        self.fits_range(
+            rm,
+            &Self::from_i32(i32::MIN, 128),
+            &Self::from_i32(i32::MAX, 128),
+        )
+    }
+
+    /// True when `self` rounded to an integer with `rm` fits in a `u32`.
+    pub fn fits_u32(&self, rm: RoundingMode) -> bool {
+        self.fits_range(rm, &Self::from_u32(0, 128), &Self::from_u32(u32::MAX, 128))
+    }
+
     gen_wrapper_own!(
         "Returns the smallest integer greater than or equal to `self`.
 Accuracy: correctly-rounded",
