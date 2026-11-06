@@ -1,13 +1,15 @@
 //! Workload sizes and reduction loops (aligned with bigfloat-bench).
 
+use crate::backend::BenchError;
+
 pub const TASKS: &[&str] = &[
     "add", "sub", "mul", "div", "sqrt", "cbrt", "ln", "exp", "pow", "sin", "asin", "cos", "acos",
     "tan", "atan", "sinh", "asinh", "cosh", "acosh", "tanh", "atanh",
 ];
 
 /// `(batch_size, exp_from_base10, exp_to_base10, force_positive)`.
-pub fn workload(task: &str) -> (usize, i32, i32, bool) {
-    match task {
+pub fn workload(task: &str) -> Result<(usize, i32, i32, bool), BenchError> {
+    Ok(match task {
         "add" | "sub" | "mul" | "div" => (1_000_000, -10, 10, false),
         "sqrt" => (100_000, -10, 10, true),
         "cbrt" => (100_000, -10, 10, false),
@@ -18,8 +20,8 @@ pub fn workload(task: &str) -> (usize, i32, i32, bool) {
         "asin" | "acos" | "atan" | "atanh" => (10_000, -10, 0, false),
         "asinh" => (10_000, -10, 10, false),
         "acosh" => (10_000, 1, 10, true),
-        _ => panic!("unknown task: {task}"),
-    }
+        _ => return Err(BenchError::UnknownTask(String::from(task))),
+    })
 }
 
 pub fn task_for_two_args<T, F>(values: &[T], mut op: F) -> T

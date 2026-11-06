@@ -11,19 +11,25 @@ use zenith_float_num::{
 
 #[test]
 fn native_operators() {
-    let a = ExactNum::from(6);
+    let mk_a = || ExactNum::from(6);
     let b = ExactNum::from(2);
-    assert_eq!((&a + &b).cmp(&ExactNum::from(8)), Some(0));
-    assert_eq!((&a - &b).cmp(&ExactNum::from(4)), Some(0));
-    assert_eq!((&a * &b).cmp(&ExactNum::from(12)), Some(0));
-    assert_eq!((&a / &b).cmp(&ExactNum::from(3)), Some(0));
+    assert_eq!((mk_a() + &b).compare(&ExactNum::from(8)), Some(0));
+    assert_eq!((mk_a() - &b).compare(&ExactNum::from(4)), Some(0));
+    assert_eq!(
+        (ExactNum::from(6) * &b).compare(&ExactNum::from(12)),
+        Some(0)
+    );
+    assert_eq!(
+        (ExactNum::from(6) / &b).compare(&ExactNum::from(3)),
+        Some(0)
+    );
 }
 
 #[test]
 fn compile_time_literals() {
     let a = exact!("2.5");
     let b = fbig!("2.5");
-    assert_eq!(a.cmp(&b), Some(0));
+    assert_eq!(a.compare(&b), Some(0));
 }
 
 fn cplx_eq(name: &str, a: &ExactComplex, b: &ExactComplex) {
@@ -31,14 +37,14 @@ fn cplx_eq(name: &str, a: &ExactComplex, b: &ExactComplex) {
         return;
     }
     assert_eq!(
-        a.re().cmp(b.re()),
+        a.re().compare(b.re()),
         Some(0),
         "{name} re {:?} vs {:?}",
         a.re(),
         b.re()
     );
     assert_eq!(
-        a.im().cmp(b.im()),
+        a.im().compare(b.im()),
         Some(0),
         "{name} im {:?} vs {:?}",
         a.im(),
@@ -47,34 +53,29 @@ fn cplx_eq(name: &str, a: &ExactComplex, b: &ExactComplex) {
 }
 
 fn tiny_part(x: &ExactNum, p: usize) -> bool {
-    x.is_zero() || x.exponent().unwrap_or(0) < -((p as i32) / 4)
+    x.is_zero() || x.exponent().unwrap_or(0) < -((p as i64) / 4)
 }
 
 #[test]
-fn cexpr_i_squared() {
-    let mut ctx = Context::new(
-        256,
-        RoundingMode::ToEven,
-        Consts::new().unwrap(),
-        -10000,
-        10000,
-    );
+fn cexpr_i_squared() -> Result<(), Box<dyn std::error::Error>> {
+    let mut ctx = Context::new(256, RoundingMode::ToEven, Consts::new()?, -10000, 10000);
     let z = cexpr!(I * I, &mut ctx);
-    assert_eq!(z.re().cmp(&ExactNum::from_i8(-1, 256)), Some(0));
+    assert_eq!(z.re().compare(&ExactNum::from_i8(-1, 256)), Some(0));
     assert!(z.im().is_zero());
 
     let z0 = ExactComplex::zero(256);
     let s = cexpr!(sin(z0), &mut ctx);
     assert!(s.re().is_zero() || s.re().exponent().unwrap_or(0) < -40);
     assert!(s.im().is_zero() || s.im().exponent().unwrap_or(0) < -40);
+    Ok(())
 }
 
 #[test]
-fn macro_run_cexpr_tests() {
+fn macro_run_cexpr_tests() -> Result<(), Box<dyn std::error::Error>> {
     let p = 320;
     let rm = RoundingMode::None;
-    let mut cc = Consts::new().unwrap();
-    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), -1000000, 1000000);
+    let mut cc = Consts::new()?;
+    let mut ctx = Context::new(p, rm, Consts::new()?, -1000000, 1000000);
 
     let x = ExactComplex::from_real(ExactNum::from(2), p);
     let y = ExactComplex::from_real(ExactNum::from(5), p);
@@ -179,10 +180,10 @@ fn macro_run_cexpr_tests() {
 
     let a = ExactComplex::new(ExactNum::from_u8(3, p), ExactNum::from_u8(4, p));
     let mag = cexpr!(abs(a), &mut ctx);
-    assert_eq!(mag.re().cmp(&a.abs(p, rm)), Some(0));
+    assert_eq!(mag.re().compare(&a.abs(p, rm)), Some(0));
     assert!(tiny_part(mag.im(), p));
     let th = cexpr!(arg(a), &mut ctx);
-    assert_eq!(th.re().cmp(&a.arg(p, rm, &mut cc)), Some(0));
+    assert_eq!(th.re().compare(&a.arg(p, rm, &mut cc)), Some(0));
     assert!(tiny_part(th.im(), p));
     cplx_eq("conj", &cexpr!(conj(a), &mut ctx), &a.conj());
     cplx_eq("ldexp", &cexpr!(ldexp(x, 3), &mut ctx), &x.ldexp(3, p, rm));
@@ -204,7 +205,7 @@ fn macro_run_cexpr_tests() {
         &x.fma(&y, &z1, p, rm),
     );
     let lb = cexpr!(logb(x), &mut ctx);
-    assert_eq!(lb.re().cmp(&x.logb(p, rm)), Some(0));
+    assert_eq!(lb.re().compare(&x.logb(p, rm)), Some(0));
     assert!(tiny_part(lb.im(), p));
 
     let m1 = ExactComplex::from_real(ExactNum::from_i8(-1, p), p);
@@ -304,7 +305,7 @@ fn macro_run_cexpr_tests() {
     );
     let ck = cexpr!(bessel_k(z1, z0), &mut ctx);
     let k0 = z1.bessel_k(&z0, p, rm, &mut cc);
-    assert_eq!(ck.re().cmp(k0.re()), Some(0), "ck0 re");
+    assert_eq!(ck.re().compare(k0.re()), Some(0), "ck0 re");
     assert!(tiny_part(ck.im(), p) && tiny_part(k0.im(), p));
 
     let mh = ExactComplex::from_real(ExactNum::from(1).div(&ExactNum::from(2), p, rm), p);
@@ -320,11 +321,11 @@ fn macro_run_cexpr_tests() {
     );
     let cf = cexpr!(elliptic_f(mh, z0), &mut ctx);
     let f0 = mh.elliptic_f(&z0, p, rm, &mut cc);
-    assert_eq!(cf.re().cmp(f0.re()), Some(0), "cellf re");
+    assert_eq!(cf.re().compare(f0.re()), Some(0), "cellf re");
     assert!(tiny_part(cf.im(), p) && tiny_part(f0.im(), p));
     let cei = cexpr!(elliptic_e_inc(mh, z0), &mut ctx);
     let ei0 = mh.elliptic_e(&z0, p, rm, &mut cc);
-    assert_eq!(cei.re().cmp(ei0.re()), Some(0), "cellei re");
+    assert_eq!(cei.re().compare(ei0.re()), Some(0), "cellei re");
     assert!(tiny_part(cei.im(), p) && tiny_part(ei0.im(), p));
     cplx_eq(
         "cellpi",
@@ -333,12 +334,12 @@ fn macro_run_cexpr_tests() {
     );
     let cpi = cexpr!(elliptic_pi_inc(z0, mh, z0), &mut ctx);
     let pi0 = z0.elliptic_pi(&mh, &z0, p, rm, &mut cc);
-    assert_eq!(cpi.re().cmp(pi0.re()), Some(0), "cellpii re");
+    assert_eq!(cpi.re().compare(pi0.re()), Some(0), "cellpii re");
     assert!(tiny_part(cpi.im(), p) && tiny_part(pi0.im(), p));
 
     let back = cexpr!(ln(exp(x)), &mut ctx);
-    let d = back.re().sub(x.re(), p, RoundingMode::None).abs();
-    assert!(d.exponent().unwrap_or(0) < -((p as i32) / 8));
+    let d = ExactNum::sub_ref(back.re(), x.re(), p, RoundingMode::None).abs();
+    assert!(d.exponent().unwrap_or(0) < -((p as i64) / 8));
     assert!(tiny_part(back.im(), p));
 
     let two = ExactComplex::from_real(ExactNum::from(2), p);
@@ -353,17 +354,18 @@ fn macro_run_cexpr_tests() {
         &two.exp2(p, rm, &mut cc),
     );
 
-    let mut tight = Context::new(p, RoundingMode::ToEven, Consts::new().unwrap(), -10, 10);
+    let mut tight = Context::new(p, RoundingMode::ToEven, Consts::new()?, -10, 10);
     let huge = cexpr!(exp(40), &mut tight);
     assert!(huge.re().is_inf() || huge.im().is_inf() || huge.is_nan() || huge.re().is_zero());
+    Ok(())
 }
 
 #[test]
-fn cexpr_cancellation_matches_high_prec() {
+fn cexpr_cancellation_matches_high_prec() -> Result<(), Box<dyn std::error::Error>> {
     let p = 192;
     let rm = RoundingMode::ToEven;
-    let mut cc = Consts::new().unwrap();
-    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), EXPONENT_MIN, EXPONENT_MAX);
+    let mut cc = Consts::new()?;
+    let mut ctx = Context::new(p, rm, Consts::new()?, EXPONENT_MIN, EXPONENT_MAX);
 
     let x = ExactNum::parse(
         "0.00000000000000000000000000000000000001",
@@ -379,32 +381,34 @@ fn cexpr_cancellation_matches_high_prec() {
         RoundingMode::None,
         &mut cc,
     );
-    let zx = ExactComplex::from_real(x.clone(), p);
-    let zy = ExactComplex::from_real(y.clone(), p);
+    let zx = ExactComplex::from_real(x, p);
+    let zy = ExactComplex::from_real(y, p);
 
     let z = cexpr!(cos(zx) - sin(zy), &mut ctx);
     let cx = zx.cos(p + 256, RoundingMode::None, &mut cc);
     let sy = zy.sin(p + 256, RoundingMode::None, &mut cc);
     let r = cx.sub(&sy, p, rm);
     cplx_eq("cancel", &z, &r);
+    Ok(())
 }
 
 #[test]
-fn radix_base12_roundtrip() {
-    let mut cc = Consts::new().unwrap();
-    let rdx = Radix::try_new(12).unwrap();
+fn radix_base12_roundtrip() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
+    let rdx = Radix::try_new(12)?;
     let p = 192;
     let rm = RoundingMode::ToEven;
     let n = ExactNum::parse("10.A", rdx, p, rm, &mut cc);
-    let s = n.format(rdx, rm, &mut cc).unwrap();
+    let s = n.format(rdx, rm, &mut cc)?;
     let g = ExactNum::parse(&s, rdx, p, rm, &mut cc);
-    assert_eq!(n.cmp(&g), Some(0));
+    assert_eq!(n.compare(&g), Some(0));
 
-    let rf = n.clone().with_radix(rdx);
+    let rf = ExactNum::parse("10.A", rdx, p, rm, &mut cc).with_radix(rdx);
     assert_eq!(rf.radix(), rdx);
-    let s2 = rf.format(rm, &mut cc).unwrap();
-    let g2 = RadixFloat::parse(&s2, rdx, p, rm, &mut cc).unwrap();
-    assert_eq!(n.cmp(g2.value()), Some(0));
+    let s2 = rf.format(rm, &mut cc)?;
+    let g2 = RadixFloat::parse(&s2, rdx, p, rm, &mut cc)?;
+    assert_eq!(n.compare(g2.value()), Some(0));
+    Ok(())
 }
 
 #[test]
@@ -415,12 +419,12 @@ fn macro_compile_tests() {
 }
 
 #[test]
-fn macro_run_basic_tests() {
+fn macro_run_basic_tests() -> Result<(), Box<dyn std::error::Error>> {
     let p = 320;
     let rm = RoundingMode::None;
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
 
-    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), -1000000, 1000000);
+    let mut ctx = Context::new(p, rm, Consts::new()?, -1000000, 1000000);
 
     let x = ExactNum::from(2);
     let y = ExactNum::from(5); // Change 4.56 to 5
@@ -636,24 +640,25 @@ fn macro_run_basic_tests() {
     debug_assert_eq!(res, x.bi(p, rm, &mut cc));
 
     let res: ExactNum = expr!(ldexp(x, 3), &mut ctx);
-    debug_assert_eq!(res, x.ldexp(3, p, rm));
+    debug_assert_eq!(res, ExactNum::from(1).ldexp(3, p, rm));
 
     let res: ExactNum = expr!(scalb(x, -1), &mut ctx);
-    debug_assert_eq!(res, x.scalb(-1, p, rm));
+    debug_assert_eq!(res, ExactNum::from(1).scalb(-1, p, rm));
 
     let res: ExactNum = expr!(logb(x), &mut ctx);
     debug_assert_eq!(res, x.logb(p, rm));
+    Ok(())
 }
 
 #[test]
-fn macro_run_err_test() {
+fn macro_run_err_test() -> Result<(), Box<dyn std::error::Error>> {
     let p = 192;
     let rm = RoundingMode::ToEven;
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
 
     // Extra-precision cases below produce exponents far outside ±10k; Inf would
     // mask the compensation the test is actually checking.
-    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), EXPONENT_MIN, EXPONENT_MAX);
+    let mut ctx = Context::new(p, rm, Consts::new()?, EXPONENT_MIN, EXPONENT_MAX);
 
     let two = ExactNum::from(2);
     let ten = ExactNum::from(10);
@@ -710,7 +715,7 @@ fn macro_run_err_test() {
     ] {
         let y1 = x.exp(p * 3, RoundingMode::None, &mut cc);
         let mut z1 = y1.ln(p * 3, RoundingMode::None, &mut cc);
-        z1.set_precision(p, rm).unwrap();
+        z1.set_precision(p, rm)?;
 
         let y2 = x.exp(p + 1, RoundingMode::None, &mut cc);
         let z2 = y2.ln(p, rm, &mut cc);
@@ -728,7 +733,7 @@ fn macro_run_err_test() {
     ] {
         let y1 = x.ln(p * 3, RoundingMode::None, &mut cc);
         let mut z1 = y1.exp(p * 3, RoundingMode::None, &mut cc);
-        z1.set_precision(p, rm).unwrap();
+        z1.set_precision(p, rm)?;
 
         let y2 = x.ln(p, RoundingMode::None, &mut cc);
         let z2 = y2.exp(p, rm, &mut cc);
@@ -746,7 +751,7 @@ fn macro_run_err_test() {
     ] {
         let y1 = two.pow(&x, p * 2, RoundingMode::None, &mut cc);
         let mut z1 = y1.log2(p * 2, RoundingMode::None, &mut cc);
-        z1.set_precision(p, rm).unwrap();
+        z1.set_precision(p, rm)?;
 
         let y2 = two.pow(&x, p + 1, RoundingMode::None, &mut cc);
         let z2 = y2.log2(p, rm, &mut cc);
@@ -764,7 +769,7 @@ fn macro_run_err_test() {
     ] {
         let y1 = ten.pow(&x, p * 2, RoundingMode::None, &mut cc);
         let mut z1 = y1.log10(p * 2, RoundingMode::None, &mut cc);
-        z1.set_precision(p, rm).unwrap();
+        z1.set_precision(p, rm)?;
 
         let y2 = ten.pow(&x, p + 1, RoundingMode::None, &mut cc);
         let z2 = y2.log10(p, rm, &mut cc);
@@ -786,7 +791,7 @@ fn macro_run_err_test() {
         ] {
             let y1 = b.pow(&x, p * 4, RoundingMode::None, &mut cc);
             let mut z1 = y1.log(&b, p * 4, RoundingMode::None, &mut cc);
-            z1.set_precision(p, rm).unwrap();
+            z1.set_precision(p, rm)?;
 
             let y2 = b.pow(&x, p + 1, RoundingMode::None, &mut cc);
             let z2 = y2.log(&b, p, rm, &mut cc);
@@ -830,7 +835,7 @@ fn macro_run_err_test() {
         &mut cc,
     );
     let mut y2 = b.pow(&n, p + 128, RoundingMode::None, &mut cc);
-    y2.set_precision(p, rm).unwrap();
+    y2.set_precision(p, rm)?;
 
     let z = expr!(pow(s1, s2), &mut ctx);
 
@@ -869,7 +874,7 @@ fn macro_run_err_test() {
         &mut cc,
     );
     let mut y2 = b.pow(&n, p + 128, RoundingMode::None, &mut cc);
-    y2.set_precision(p, rm).unwrap();
+    y2.set_precision(p, rm)?;
 
     let z = expr!(pow(s1, s2), &mut ctx);
 
@@ -894,7 +899,7 @@ fn macro_run_err_test() {
         &mut cc,
     );
     let mut y2 = n.sin(320, RoundingMode::None, &mut cc);
-    y2.set_precision(128, rm).unwrap();
+    y2.set_precision(128, rm)?;
 
     let z = expr!(sin(s1), (128, rm, &mut cc));
 
@@ -918,7 +923,7 @@ fn macro_run_err_test() {
         &mut cc,
     );
     let mut y2 = n.cos(320, RoundingMode::None, &mut cc);
-    y2.set_precision(128, rm).unwrap();
+    y2.set_precision(128, rm)?;
 
     let z = expr!(cos(s1), (128, rm, &mut cc));
 
@@ -939,16 +944,16 @@ fn macro_run_err_test() {
     let n = ExactNum::parse(
         s1,
         zenith_float_num::Radix::Dec,
-        y1.exponent().unwrap() as usize * 2 + p,
+        y1.exponent().ok_or("none value")? as usize * 2 + p,
         RoundingMode::None,
         &mut cc,
     );
     let mut y2 = n.tan(
-        y1.exponent().unwrap() as usize * 2 + p,
+        y1.exponent().ok_or("none value")? as usize * 2 + p,
         RoundingMode::None,
         &mut cc,
     );
-    y2.set_precision(p, rm).unwrap();
+    y2.set_precision(p, rm)?;
 
     let z = expr!(tan(s1), &mut ctx);
 
@@ -964,7 +969,7 @@ fn macro_run_err_test() {
 
     let z = x.sin(p * 2, RoundingMode::None, &mut cc);
     let mut y2 = z.asin(p * 2, RoundingMode::None, &mut cc);
-    y2.set_precision(p, rm).unwrap();
+    y2.set_precision(p, rm)?;
 
     let z = expr!(asin(sin(x)), &mut ctx);
 
@@ -979,7 +984,7 @@ fn macro_run_err_test() {
 
     let z = x.cos(p * 3, RoundingMode::None, &mut cc);
     let mut y2 = z.acos(p * 3, RoundingMode::None, &mut cc);
-    y2.set_precision(p, rm).unwrap();
+    y2.set_precision(p, rm)?;
 
     let z = expr!(acos(cos(x)), &mut ctx);
 
@@ -993,7 +998,7 @@ fn macro_run_err_test() {
 
     let z = x.atan(p + 256, RoundingMode::None, &mut cc);
     let mut y2 = z.tan(p + 256, RoundingMode::None, &mut cc);
-    y2.set_precision(p, rm).unwrap();
+    y2.set_precision(p, rm)?;
 
     let z = expr!(tan(atan(x)), &mut ctx);
 
@@ -1004,7 +1009,7 @@ fn macro_run_err_test() {
     let x = ExactNum::from_words(&[234, 0, WORD_SIGNIFICANT_BIT], Sign::Pos, 1000000);
     let y1 = x.asinh(p * 3, RoundingMode::None, &mut cc);
     let mut z1 = y1.sinh(p * 3, RoundingMode::None, &mut cc);
-    z1.set_precision(p, rm).unwrap();
+    z1.set_precision(p, rm)?;
 
     let y2 = x.asinh(p, RoundingMode::None, &mut cc);
     let z2 = y2.sinh(p, rm, &mut cc);
@@ -1018,7 +1023,7 @@ fn macro_run_err_test() {
     let x = ExactNum::from_words(&[234, 0, WORD_SIGNIFICANT_BIT], Sign::Pos, 1000000);
     let y1 = x.acosh(p * 3, RoundingMode::None, &mut cc);
     let mut z1 = y1.cosh(p * 3, RoundingMode::None, &mut cc);
-    z1.set_precision(p, rm).unwrap();
+    z1.set_precision(p, rm)?;
 
     let y2 = x.acosh(p, RoundingMode::None, &mut cc);
     let z2 = y2.cosh(p, rm, &mut cc);
@@ -1048,7 +1053,7 @@ fn macro_run_err_test() {
         &mut cc,
     );
     let mut y2 = x.asinh(p + 1, RoundingMode::None, &mut cc);
-    y2.set_precision(p, rm).unwrap();
+    y2.set_precision(p, rm)?;
 
     let z = expr!(asinh(x), &mut ctx);
 
@@ -1063,7 +1068,7 @@ fn macro_run_err_test() {
 
     let z = x.cosh(p + 256, RoundingMode::None, &mut cc);
     let mut y2 = z.acosh(p + 256, RoundingMode::None, &mut cc);
-    y2.set_precision(p, rm).unwrap();
+    y2.set_precision(p, rm)?;
 
     let z = expr!(acosh(cosh(x)), &mut ctx);
 
@@ -1078,22 +1083,23 @@ fn macro_run_err_test() {
 
     let z = x.tanh(p + 256, RoundingMode::None, &mut cc);
     let mut y2 = z.atanh(p + 256, RoundingMode::None, &mut cc);
-    y2.set_precision(p, rm).unwrap();
+    y2.set_precision(p, rm)?;
 
     let z = expr!(atanh(tanh(x)), &mut ctx);
 
     assert_ne!(y1, z);
     assert_eq!(y2, z);
+    Ok(())
 }
 
 // test precision range for error compensation
 #[test]
-fn macro_run_misc_test() {
+fn macro_run_misc_test() -> Result<(), Box<dyn std::error::Error>> {
     let p = 256;
     let rm = RoundingMode::None;
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     let pi1 = cc.pi(p, RoundingMode::None);
-    let mut pi2 = pi1.clone();
+    let mut pi2 = cc.pi(p, RoundingMode::None);
     pi2.set_exponent(1);
     let mut ctx = Context::new(p, rm, cc, -1000, 1000);
     let one = ExactNum::from_u32(1, p);
@@ -1177,16 +1183,16 @@ fn macro_run_misc_test() {
 
     // sin, cos, tan
     let z = expr!(sin(pi1 + 2e-300), &mut ctx);
-    assert!(z.is_zero() || z.exponent().unwrap() < 0);
+    assert!(z.is_zero() || z.exponent().ok_or("none value")? < 0);
 
     let z = expr!(cos(pi2 + 2e-300), &mut ctx);
-    assert!(z.is_zero() || z.exponent().unwrap() < 0);
+    assert!(z.is_zero() || z.exponent().ok_or("none value")? < 0);
 
     let z = expr!(tan(pi1 + 2e-300), &mut ctx);
-    assert!(z.is_zero() || z.exponent().unwrap() < 0);
+    assert!(z.is_zero() || z.exponent().ok_or("none value")? < 0);
 
     let z = expr!(tan(pi2 + 2e-300), &mut ctx);
-    assert!(z.is_zero() || z.exponent().unwrap() > 1);
+    assert!(z.is_zero() || z.exponent().ok_or("none value")? > 1);
 
     // asin
     let x = expr!(asin(1), &mut ctx);
@@ -1203,7 +1209,7 @@ fn macro_run_misc_test() {
     assert!(z == x);
 
     let z = expr!(acos(1 - 2e-301), &mut ctx);
-    assert!(z.exponent().unwrap() < 0);
+    assert!(z.exponent().ok_or("none value")? < 0);
 
     // acos
     let x = expr!(acos(-1), &mut ctx);
@@ -1242,26 +1248,28 @@ fn macro_run_misc_test() {
 
     let z = expr!(ln(5 * (1 / 5)), &mut ctx);
     assert!(z.is_zero());
+    Ok(())
 }
 
 #[test]
-fn expr_erf_plus_erfc_is_one_at_256() {
+fn expr_erf_plus_erfc_is_one_at_256() -> Result<(), Box<dyn std::error::Error>> {
     let p = 256;
     let rm = RoundingMode::ToEven;
-    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), -100000, 100000);
+    let mut ctx = Context::new(p, rm, Consts::new()?, -100000, 100000);
     let one = ExactNum::from_u8(1, p);
     let x = ExactNum::from_u8(1, p);
     let res: ExactNum = expr!(erf(x) + erfc(x), &mut ctx);
-    assert_eq!(res.cmp(&one), Some(0));
+    assert_eq!(res.compare(&one), Some(0));
     assert!(res.err().is_none());
+    Ok(())
 }
 
 #[test]
-fn expr_bessel_j0_y0_sq_working_prec() {
+fn expr_bessel_j0_y0_sq_working_prec() -> Result<(), Box<dyn std::error::Error>> {
     let p = 256;
     let rm = RoundingMode::ToEven;
-    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), -100000, 100000);
-    let mut cc = Consts::new().unwrap();
+    let mut ctx = Context::new(p, rm, Consts::new()?, -100000, 100000);
+    let mut cc = Consts::new()?;
     let x = ExactNum::from_u8(1, p);
     let nu0 = ExactNum::from_u8(0, p);
     let got: ExactNum = expr!(
@@ -1271,28 +1279,30 @@ fn expr_bessel_j0_y0_sq_working_prec() {
     let p_wrk = p + WORD_BIT_SIZE + 16;
     let j = x.bessel_j(0, p_wrk, RoundingMode::None, &mut cc);
     let y = x.bessel_y(&nu0, p_wrk, RoundingMode::None, &mut cc);
-    let mut expect = j.mul(&j, p_wrk, RoundingMode::None).add(
-        &y.mul(&y, p_wrk, RoundingMode::None),
+    let mut expect = j.sqr(p_wrk, RoundingMode::None).add(
+        &y.sqr(p_wrk, RoundingMode::None),
         p_wrk,
         RoundingMode::None,
     );
-    expect.set_precision(p, rm).unwrap();
-    assert_eq!(got.cmp(&expect), Some(0));
+    expect.set_precision(p, rm)?;
+    assert_eq!(got.compare(&expect), Some(0));
     assert!(got.err().is_none());
+    Ok(())
 }
 
 #[test]
-fn cexpr_erf_uses_p_wrk() {
+fn cexpr_erf_uses_p_wrk() -> Result<(), Box<dyn std::error::Error>> {
     let p = 256;
     let rm = RoundingMode::ToEven;
-    let mut ctx = Context::new(p, rm, Consts::new().unwrap(), -100000, 100000);
-    let mut cc = Consts::new().unwrap();
+    let mut ctx = Context::new(p, rm, Consts::new()?, -100000, 100000);
+    let mut cc = Consts::new()?;
     let z = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
     let got = cexpr!(erf(z), &mut ctx);
     let p_wrk = p + WORD_BIT_SIZE + 2;
     let mut expect = z.erf(p_wrk, RoundingMode::None, &mut cc);
-    expect.set_precision(p, rm).unwrap();
+    expect.set_precision(p, rm)?;
     cplx_eq("cexpr erf p_wrk", &got, &expect);
     assert!(got.re().err().is_none());
     assert!(got.im().err().is_none());
+    Ok(())
 }

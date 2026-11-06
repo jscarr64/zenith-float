@@ -1,0 +1,1 @@
+- Red test: complex cancellation bits for operands at `2^(2^40)` cancelling to zero on 32-bit (`abs_usize(..) + 1` overflows).

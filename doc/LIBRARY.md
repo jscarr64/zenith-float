@@ -43,10 +43,10 @@ A finite `ExactNum` is a **sign**, a **binary mantissa** stored as an array of w
 | `WORD_MAX` | `Word::MAX` |
 | `WORD_BASE` | `WORD_MAX + 1` as a double-width integer |
 | `WORD_SIGNIFICANT_BIT` | high bit of a word |
-| `INLINE_WORDS` | `2` — small mantissas stored inline |
+| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE`: 2 with a 64-bit `Word`, 4 with a 32-bit `Word`; small mantissas stored inline |
 | `EXPONENT_BIT_SIZE` | 32 |
-| `EXPONENT_MAX` | `i32::MAX` on non-32-bit pointers; `i32::MAX / 4` on 32-bit |
-| `EXPONENT_MIN` | `i32::MIN` on non-32-bit pointers; `i32::MIN / 4` on 32-bit |
+| `EXPONENT_MAX` | `i32::MAX` on every target (2.0.0; was `i32::MAX / 4` on 32-bit) |
+| `EXPONENT_MIN` | `i32::MIN` on every target (2.0.0; was `i32::MIN / 4` on 32-bit) |
 | Default operator precision | 128 bits (`ToEven`) for `+ − × ÷` on `ExactNum` (internal default; not a public constant) |
 | `MAX_PREC_RETRY` | `256` — extra-precision budget for correct-rounding retries (`try_set_precision`, `ziv_round`, transcendentals) |
 
@@ -169,7 +169,7 @@ These arrays are not NumPy-fast. `matmul` is a sequential triple loop (IEEE or `
 | `from_u8`, `from_u16`, `from_u32`, `from_u64`, `from_u128` | unsigned integers + precision |
 | `From` | `i8`/`u8`/`i16`/`u16`/`i32`/`u32`/`i64`/`u64`/`i128`/`u128` at default 128-bit precision |
 | `Default` | `new` at default 128-bit precision |
-| `from_raw_parts` | mantissa slice, used length, sign, exponent, inexact flag |
+| `from_raw_parts` | `from_raw_parts(&RawParts) -> Result<ExactNum, Error>`; validates kind, precision, word count, normalization and exponent range, `op_inexact` ⇒ `inexact`, no flags on specials (`InvalidArgument` otherwise) |
 | `from_words` | mantissa slice, sign, exponent |
 | `max_value` / `min_value` | largest / most-negative finite at precision `p` |
 | `min_positive` / `min_positive_normal` | smallest positive (incl. subnormal) / smallest normal |
@@ -205,7 +205,7 @@ Unless noted, results round with `(p, rm)`.
 | `polyval` | Horner; `coeffs[0]` is the constant term (lowest degree first) |
 | `rem` | remainder (`self` rem `d2`); no `p`/`rm` |
 | `reciprocal` | `1/self` |
-| `neg` | copy with inverted sign (also `Neg` / `inv_sign` in place) |
+| `Neg` (`-x`, `x.neg()` with `std::ops::Neg` in scope) | takes the value, flips the sign in place (also `inv_sign`) |
 | `pow` | `self^n` (arbitrary `ExactNum` exponent); needs `Consts` |
 | `powi` | `self^n` for `usize` `n` |
 | `powsi` | `self^n` for `isize` `n` |
@@ -238,7 +238,7 @@ There is **no** `%` operator trait; remainder is `rem` or `expr!` `%`.
 | `exponent` | `Option<Exponent>` |
 | `precision` | `Option<usize>` mantissa bit length |
 | `sign` | `Option<Sign>` |
-| `as_raw_parts` | `Option<(&[Word], usize, Sign, Exponent, bool)>` |
+| `as_raw_parts` | `RawParts<'_>` borrowing the words: `kind`, `words` (little-endian), `precision` (= words × 64), `negative`, `exponent` (value = ±M·2^(exponent−precision)), `inexact` (accumulated), `op_inexact` (last operation; implies `inexact`). No requested precision is kept apart from the word count: p = 100 is stored in 128 bits |
 | `mantissa_digits` | `Option<&[Word]>` |
 | `mantissa_max_bit_len` | |
 | `is_inline` | mantissa fits in `INLINE_WORDS` |
@@ -446,6 +446,8 @@ Compile-time parse of a **string literal** into an exact `ExactNum` (same expans
 | `sqrt2(p, rm)` | √2 |
 | `phi(p, rm)` | φ = (1+√5)/2 |
 | `euler_gamma(p, rm)` | Euler–Mascheroni γ |
+| `get_exact_prec(c: ConstantId, p, rm) -> Result<ExactNum, Error>` | `ConstantId` { `Pi`, `E`, `Ln2`, `Ln10`, `Sqrt2`, `Phi`, `EulerGamma` } correctly rounded at exactly `p` bits; `Down ≤ c ≤ Up` for every `p ≥ 1`; bit-identical whatever the cache state or call order; `p = 0`, `p > MAX_PRECISION`, `RoundingMode::None` → `InvalidArgument` |
+| `Consts::is_exact(c: ConstantId) -> bool` | `false` for all seven (irrational) |
 | `cache_info()` | `ConstCacheInfo` { `pi`, `e`, `ln2`, `ln10`, `sqrt2`, `phi`, `euler` } bit lengths |
 
 **`CachedFBig`:** wrap a precomputed `ExactNum`; `new`, `cached_bit_len`, `inner`, `round(p, rm)`.

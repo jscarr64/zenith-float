@@ -73,9 +73,9 @@ const CASES: &[(&str, usize, &[&str], &str, &str)] = &[
     ("c.erf", 512, &["12,3"], "1.00000000000000000000000000000000000000000000000000000000000106669628677635020726369441504879647811261136956954046773133936772022568695754312881450486322180455861795", "1.40475874727131859641515590301962680296310812051353756740793798165148819745807146447186788919596502597064684034041502655390164678812980073320275975656377309158285897e-62"),
 ];
 
-fn real(op: &str, p: usize, a: &[ExactNum], cc: &mut Consts) -> ExactNum {
+fn real(op: &str, p: usize, a: &[ExactNum], cc: &mut Consts) -> Result<ExactNum, String> {
     let x = &a[0];
-    match op {
+    Ok(match op {
         "erf" => x.erf(p, RM, cc),
         "erfc" => x.erfc(p, RM, cc),
         "ln_gamma" => x.ln_gamma(p, RM, cc),
@@ -99,13 +99,13 @@ fn real(op: &str, p: usize, a: &[ExactNum], cc: &mut Consts) -> ExactNum {
         "jacobi_dc" => x.jacobi_dc(&a[1], p, RM, cc),
         "elliptic_pi" => x.elliptic_pi(&a[1], &a[2], p, RM, cc),
         "elliptic_pi_complete" => x.elliptic_pi_complete(&a[1], p, RM, cc),
-        _ => panic!("unknown op {op}"),
-    }
+        _ => return Err(format!("unknown op {op}")),
+    })
 }
 
-fn cplx(op: &str, p: usize, a: &[ExactComplex], cc: &mut Consts) -> ExactComplex {
+fn cplx(op: &str, p: usize, a: &[ExactComplex], cc: &mut Consts) -> Result<ExactComplex, String> {
     let z = &a[0];
-    match op {
+    Ok(match op {
         "c.ci" => z.ci(p, RM, cc),
         "c.si" => z.si(p, RM, cc),
         "c.acosh" => z.acosh(p, RM, cc),
@@ -119,16 +119,16 @@ fn cplx(op: &str, p: usize, a: &[ExactComplex], cc: &mut Consts) -> ExactComplex
         "c.ln_gamma" => z.ln_gamma(p, RM, cc),
         "c.gamma" => z.gamma(p, RM, cc),
         "c.erf" => z.erf(p, RM, cc),
-        _ => panic!("unknown op {op}"),
-    }
+        _ => return Err(format!("unknown op {op}")),
+    })
 }
 
-/// Binary exponent of a nonzero value (`i32::MIN` for zero).
-fn mag(x: &ExactNum) -> i32 {
+/// Binary exponent of a nonzero value (`i64::MIN` for zero).
+fn mag(x: &ExactNum) -> i64 {
     if x.is_zero() {
-        i32::MIN
+        i64::MIN
     } else {
-        x.exponent().unwrap_or(i32::MIN)
+        x.exponent().unwrap_or(i64::MIN)
     }
 }
 
@@ -138,16 +138,16 @@ fn bits(got: &ExactNum, want: &ExactNum, scale: &ExactNum, p: usize) -> i32 {
     if got.is_nan() {
         return i32::MIN;
     }
-    let d = got.sub(want, 2 * p, RoundingMode::None);
+    let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
     if d.is_zero() {
         return i32::MAX;
     }
-    scale.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)
+    i32::try_from(scale.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)).unwrap_or(i32::MAX)
 }
 
 #[test]
-fn special_audit_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn special_audit_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let parse = |s: &str, p: usize, cc: &mut Consts| ExactNum::parse(s, Radix::Dec, p, RM, cc);
     let mut failures = Vec::new();
     for &(op, p, args, re, im) in CASES {
@@ -156,12 +156,15 @@ fn special_audit_mpmath() {
             let zs: Vec<ExactComplex> = args
                 .iter()
                 .map(|s| {
-                    let (a, b) = s.split_once(',').unwrap();
-                    ExactComplex::new(parse(a, p, &mut cc), parse(b, p, &mut cc))
+                    let (a, b) = s.split_once(',').ok_or("none value")?;
+                    Ok::<ExactComplex, Box<dyn std::error::Error>>(ExactComplex::new(
+                        parse(a, p, &mut cc),
+                        parse(b, p, &mut cc),
+                    ))
                 })
-                .collect();
+                .collect::<Result<_, _>>()?;
             let want_im = parse(im, 4 * p, &mut cc);
-            let g = cplx(op, p, &zs, &mut cc);
+            let g = cplx(op, p, &zs, &mut cc)?;
             let scale = if mag(&want_re) >= mag(&want_im) { &want_re } else { &want_im };
             let b = bits(g.re(), &want_re, scale, p).min(bits(g.im(), &want_im, scale, p));
             (b, format!("{:?}", g.re().err().or(g.im().err())))
@@ -178,9 +181,9 @@ fn special_audit_mpmath() {
                 })
                 .collect();
             let g = if op == "nth_root" {
-                xs[0].nth_root(args[1].parse().unwrap(), p, RM)
+                xs[0].nth_root(args[1].parse()?, p, RM)
             } else {
-                real(op, p, &xs, &mut cc)
+                real(op, p, &xs, &mut cc)?
             };
             (bits(&g, &want_re, &want_re, p), format!("{:?}", g.err()))
         };
@@ -189,4 +192,5 @@ fn special_audit_mpmath() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }

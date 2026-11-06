@@ -36,7 +36,7 @@ fn frac(n: i64, d: i64, p: usize, rm: RoundingMode) -> ExactNum {
 
 /// Minimum step `2^{ODE_MIN_STEP}` at precision `p`.
 pub fn ode_min_step(p: usize, rm: RoundingMode) -> ExactNum {
-    ExactNum::from_u8(1, p).ldexp(ODE_MIN_STEP, p, rm)
+    ExactNum::from_u8(1, p).ldexp(crate::defs::Exponent::from(ODE_MIN_STEP), p, rm)
 }
 
 fn to_row(p: usize, rm: RoundingMode, vals: &[ExactNum]) -> Option<ExactNumArray> {
@@ -86,17 +86,15 @@ where
     if n_steps == 0 || n_steps > ODE_MAX_STEPS {
         return None;
     }
-    if !finite(t0) || !finite(y0) || !finite(t1) || t0.cmp(t1) != Some(-1) {
+    if !finite(t0) || !finite(y0) || !finite(t1) || t0.compare(t1) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
     let n_f = ExactNum::from_u32(n_steps as u32, wrk);
-    let h = t1
-        .sub(t0, wrk, RoundingMode::None)
-        .div(&n_f, wrk, RoundingMode::None);
+    let h = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None).div(&n_f, wrk, RoundingMode::None);
     let two = ExactNum::from_u8(2, wrk);
     let six = ExactNum::from_u8(6, wrk);
-    let half_h = h.div(&two, wrk, RoundingMode::None);
+    let half_h = ExactNum::div_ref(&h, &two, wrk, RoundingMode::None);
     let mut t = t0.clone();
     let mut y = y0.clone();
     let _ = t.set_precision(wrk, RoundingMode::None);
@@ -107,24 +105,21 @@ where
     ys.push(y.clone());
     for k in 0..n_steps {
         let k1 = f(&t, &y, wrk, RoundingMode::None, cc);
-        let y2 = y.add(
-            &half_h.mul(&k1, wrk, RoundingMode::None),
+        let y2 = ExactNum::mul_ref(&half_h, &k1, wrk, RoundingMode::None).add(
+            &y,
             wrk,
             RoundingMode::None,
         );
-        let t2 = t.add(&half_h, wrk, RoundingMode::None);
+        let t2 = ExactNum::add_ref(&t, &half_h, wrk, RoundingMode::None);
         let k2 = f(&t2, &y2, wrk, RoundingMode::None, cc);
-        let y3 = y.add(
-            &half_h.mul(&k2, wrk, RoundingMode::None),
+        let y3 = ExactNum::mul_ref(&half_h, &k2, wrk, RoundingMode::None).add(
+            &y,
             wrk,
             RoundingMode::None,
         );
         let k3 = f(&t2, &y3, wrk, RoundingMode::None, cc);
-        let y4 = y.add(
-            &h.mul(&k3, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
+        let y4 =
+            ExactNum::mul_ref(&h, &k3, wrk, RoundingMode::None).add(&y, wrk, RoundingMode::None);
         let t4 = t.add(&h, wrk, RoundingMode::None);
         let k4 = f(&t4, &y4, wrk, RoundingMode::None, cc);
         if !finite(&k1) || !finite(&k2) || !finite(&k3) || !finite(&k4) {
@@ -132,31 +127,28 @@ where
         }
         let sum = k1
             .add(
-                &two.mul(&k2, wrk, RoundingMode::None),
+                &ExactNum::from_u8(2, wrk).mul(&k2, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             )
             .add(
-                &two.mul(&k3, wrk, RoundingMode::None),
+                &ExactNum::from_u8(2, wrk).mul(&k3, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             )
             .add(&k4, wrk, RoundingMode::None);
         y = y.add(
-            &h.div(&six, wrk, RoundingMode::None)
-                .mul(&sum, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
-        t = t0.add(
-            &h.mul(
-                &ExactNum::from_u32((k + 1) as u32, wrk),
+            &ExactNum::div_ref(&h, &six, wrk, RoundingMode::None).mul(
+                &sum,
                 wrk,
                 RoundingMode::None,
             ),
             wrk,
             RoundingMode::None,
         );
+        t = ExactNum::from_u32((k + 1) as u32, wrk)
+            .mul(&h, wrk, RoundingMode::None)
+            .add(t0, wrk, RoundingMode::None);
         if !finite(&t) || !finite(&y) {
             return None;
         }
@@ -184,14 +176,12 @@ where
     if n_steps == 0 || n_steps > ODE_MAX_STEPS {
         return None;
     }
-    if !finite(t0) || !finite(y0) || !finite(t1) || t0.cmp(t1) != Some(-1) {
+    if !finite(t0) || !finite(y0) || !finite(t1) || t0.compare(t1) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
     let n_f = ExactNum::from_u32(n_steps as u32, wrk);
-    let h = t1
-        .sub(t0, wrk, RoundingMode::None)
-        .div(&n_f, wrk, RoundingMode::None);
+    let h = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None).div(&n_f, wrk, RoundingMode::None);
     let mut t = t0.clone();
     let mut y = y0.clone();
     let _ = t.set_precision(wrk, RoundingMode::None);
@@ -206,19 +196,13 @@ where
             return None;
         }
         y = y.add(
-            &h.mul(&yp, wrk, RoundingMode::None),
+            &yp.mul(&h, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
-        t = t0.add(
-            &h.mul(
-                &ExactNum::from_u32((k + 1) as u32, wrk),
-                wrk,
-                RoundingMode::None,
-            ),
-            wrk,
-            RoundingMode::None,
-        );
+        t = ExactNum::from_u32((k + 1) as u32, wrk)
+            .mul(&h, wrk, RoundingMode::None)
+            .add(t0, wrk, RoundingMode::None);
         if !finite(&t) || !finite(&y) {
             return None;
         }
@@ -306,7 +290,7 @@ fn axpy(
     p: usize,
     rm: RoundingMode,
 ) -> ExactNum {
-    y.add(&h.mul(a, p, rm).mul(k, p, rm), p, rm)
+    ExactNum::mul_ref(h, a, p, rm).mul(k, p, rm).add(y, p, rm)
 }
 
 fn dp45_step<F>(
@@ -323,15 +307,15 @@ where
     F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
     let k1 = f(t, y, p, rm, cc);
-    let t2 = t.add(&h.mul(&tab.c2, p, rm), p, rm);
+    let t2 = ExactNum::mul_ref(h, &tab.c2, p, rm).add(t, p, rm);
     let y2 = axpy(y, h, &tab.a21, &k1, p, rm);
     let k2 = f(&t2, &y2, p, rm, cc);
 
-    let t3 = t.add(&h.mul(&tab.c3, p, rm), p, rm);
+    let t3 = ExactNum::mul_ref(h, &tab.c3, p, rm).add(t, p, rm);
     let y3 = axpy(&axpy(y, h, &tab.a31, &k1, p, rm), h, &tab.a32, &k2, p, rm);
     let k3 = f(&t3, &y3, p, rm, cc);
 
-    let t4 = t.add(&h.mul(&tab.c4, p, rm), p, rm);
+    let t4 = ExactNum::mul_ref(h, &tab.c4, p, rm).add(t, p, rm);
     let y4s = axpy(
         &axpy(&axpy(y, h, &tab.a41, &k1, p, rm), h, &tab.a42, &k2, p, rm),
         h,
@@ -342,7 +326,7 @@ where
     );
     let k4 = f(&t4, &y4s, p, rm, cc);
 
-    let t5 = t.add(&h.mul(&tab.c5, p, rm), p, rm);
+    let t5 = ExactNum::mul_ref(h, &tab.c5, p, rm).add(t, p, rm);
     let y5s = axpy(
         &axpy(
             &axpy(&axpy(y, h, &tab.a51, &k1, p, rm), h, &tab.a52, &k2, p, rm),
@@ -360,7 +344,7 @@ where
     );
     let k5 = f(&t5, &y5s, p, rm, cc);
 
-    let t6 = t.add(h, p, rm);
+    let t6 = ExactNum::add_ref(t, h, p, rm);
     let y6 = axpy(
         &axpy(
             &axpy(
@@ -469,7 +453,7 @@ where
     if !finite(t0) || !finite(y0) || !finite(t1) || !finite(atol) || !finite(rtol) {
         return None;
     }
-    if t0.cmp(t1) != Some(-1) || atol.is_negative() || rtol.is_negative() {
+    if t0.compare(t1) != Some(-1) || atol.is_negative() || rtol.is_negative() {
         return None;
     }
     let wrk = work_p(p);
@@ -482,9 +466,8 @@ where
     let mut y = y0.clone();
     let _ = t.set_precision(wrk, RoundingMode::None);
     let _ = y.set_precision(wrk, RoundingMode::None);
-    let mut h = t1
-        .sub(t0, wrk, RoundingMode::None)
-        .ldexp(-4, wrk, RoundingMode::None);
+    let mut h =
+        ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None).ldexp(-4, wrk, RoundingMode::None);
     let mut ts = Vec::new();
     let mut ys = Vec::new();
     if !push_pair(&mut ts, &mut ys, t.clone(), y.clone(), ODE_MAX_STEPS + 1) {
@@ -492,34 +475,41 @@ where
     }
     let mut accepted = 0usize;
     let mut attempts = 0usize;
-    while t.cmp(t1) == Some(-1) {
+    while t.compare(t1) == Some(-1) {
         if accepted >= ODE_MAX_STEPS || attempts >= ODE_MAX_STEPS.saturating_mul(4) {
             return None;
         }
         attempts += 1;
-        let remain = t1.sub(&t, wrk, RoundingMode::None);
-        if h.cmp(&remain) == Some(1) {
+        let remain = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
+        if h.compare(&remain) == Some(1) {
             h = remain;
         }
-        if h.cmp(&hmin) == Some(-1) || h.is_zero() || h.is_negative() {
+        if h.compare(&hmin) == Some(-1) || h.is_zero() || h.is_negative() {
             return None;
         }
         let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h, wrk, RoundingMode::None, cc)?;
-        let err = y5.sub(&y4, wrk, RoundingMode::None).abs();
-        let ymax = if y.abs().cmp(&y5.abs()) == Some(1) { y.abs() } else { y5.abs() };
-        let scale = atol.add(
-            &rtol.mul(&ymax, wrk, RoundingMode::None),
+        let err = ExactNum::sub_ref(&y5, &y4, wrk, RoundingMode::None).abs();
+        let big = if y.abs_cmp(&y5) == Some(1) { &y } else { &y5 };
+        let negated;
+        let ymax: &ExactNum = if big.is_negative() {
+            negated = big.neg_via_mul();
+            &negated
+        } else {
+            big
+        };
+        let scale = ExactNum::mul_ref(rtol, ymax, wrk, RoundingMode::None).add(
+            atol,
             wrk,
             RoundingMode::None,
         );
         let ok = scale.is_zero()
             || err.is_zero()
-            || err.cmp(&scale) == Some(-1)
-            || err.cmp(&scale) == Some(0);
+            || err.compare(&scale) == Some(-1)
+            || err.compare(&scale) == Some(0);
         if ok {
             t = t.add(&h, wrk, RoundingMode::None);
             y = y5;
-            if t.cmp(t1) == Some(1) {
+            if t.compare(t1) == Some(1) {
                 t = t1.clone();
             }
             if !push_pair(&mut ts, &mut ys, t.clone(), y.clone(), ODE_MAX_STEPS + 1) {
@@ -533,10 +523,10 @@ where
             let q = scale
                 .div(&err, wrk, RoundingMode::None)
                 .nth_root(5, wrk, RoundingMode::None);
-            let raw = fac.mul(&q, wrk, RoundingMode::None);
-            if raw.cmp(&grow) == Some(1) {
+            let raw = q.mul(&fac, wrk, RoundingMode::None);
+            if raw.compare(&grow) == Some(1) {
                 grow.clone()
-            } else if raw.cmp(&shrink) == Some(-1) {
+            } else if raw.compare(&shrink) == Some(-1) {
                 shrink.clone()
             } else {
                 raw
@@ -560,21 +550,21 @@ mod tests {
     }
 
     /// Global RK4 error on `y'=-y` with `h=10^{-3}` is `O(h^4) ≈ 10^{-12}`.
-    const RK4_EXP_ERR_DIGITS: isize = 12;
+    const RK4_EXP_ERR_DIGITS: i64 = 12;
     /// Adaptive gold the step cap can actually meet (plan `1e-50` needs ~10¹² steps).
-    const RK45_ATOL_DIGITS: isize = 12;
+    const RK45_ATOL_DIGITS: i64 = 12;
     const EULER_OH_STEPS: usize = 1000;
 
     #[test]
-    fn ode_rk4_rk45_euler() {
+    fn ode_rk4_rk45_euler() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
         let ten = ExactNum::from_u8(10, p);
 
         let (_t, y) = rk4(
-            |_t, y, _p, _rm, _cc| y.neg(),
+            |_t, y, _p, _rm, _cc| y.neg_via_mul(),
             &zero,
             &one,
             &one,
@@ -583,17 +573,17 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("rk4");
-        let yend = y.get(y.len() - 1).expect("yend").clone();
-        let einv = one.neg().exp(p, rm, &mut cc);
-        let err = yend.sub(&einv, p, rm).abs();
-        let tol12 = one.div(&ten.powsi(RK4_EXP_ERR_DIGITS, p, rm), p, rm);
-        assert!(err.is_zero() || err.cmp(&tol12) == Some(-1));
+        .ok_or(crate::Error::InvalidArgument)?;
+        let yend = y.get(y.len() - 1).ok_or(crate::Error::InvalidArgument)?;
+        let einv = one.neg_via_mul().exp(p, rm, &mut cc);
+        let err = ExactNum::sub_ref(yend, &einv, p, rm).abs();
+        let tol12 = ExactNum::from_u8(1, p).div(&ten.powsi(RK4_EXP_ERR_DIGITS, p, rm), p, rm);
+        assert!(err.is_zero() || err.compare(&tol12) == Some(-1));
 
-        let atol = one.div(&ten.powsi(RK45_ATOL_DIGITS, p, rm), p, rm);
+        let atol = ExactNum::from_u8(1, p).div(&ten.powsi(RK45_ATOL_DIGITS, p, rm), p, rm);
         let rtol = ExactNum::new(p);
         let (_t45, y45) = rk45_adaptive(
-            |_t, y, _p, _rm, _cc| y.neg(),
+            |_t, y, _p, _rm, _cc| y.neg_via_mul(),
             &zero,
             &one,
             &one,
@@ -603,10 +593,14 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("rk45");
-        let y45e = y45.get(y45.len() - 1).expect("y45e").clone();
-        let err45 = y45e.sub(&einv, p, rm).abs();
-        assert!(err45.is_zero() || err45.cmp(&atol) == Some(-1) || err45.cmp(&atol) == Some(0));
+        .ok_or(crate::Error::InvalidArgument)?;
+        let y45e = y45
+            .get(y45.len() - 1)
+            .ok_or(crate::Error::InvalidArgument)?;
+        let err45 = ExactNum::sub_ref(y45e, &einv, p, rm).abs();
+        assert!(
+            err45.is_zero() || err45.compare(&atol) == Some(-1) || err45.compare(&atol) == Some(0)
+        );
 
         let (_te, ye) = euler(
             |_t, y, _p, _rm| y.clone(),
@@ -617,7 +611,7 @@ mod tests {
             p,
             rm,
         )
-        .expect("euler 1000");
+        .ok_or(crate::Error::InvalidArgument)?;
         let (_te2, ye2) = euler(
             |_t, y, _p, _rm| y.clone(),
             &zero,
@@ -627,19 +621,32 @@ mod tests {
             p,
             rm,
         )
-        .expect("euler 2000");
+        .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(ye.len(), EULER_OH_STEPS + 1);
         assert_eq!(ye2.len(), EULER_OH_STEPS * 2 + 1);
         let two = ExactNum::from_u8(2, p);
         let ee = one.exp(p, rm, &mut cc);
-        let e1 = ye.get(ye.len() - 1).expect("e1").sub(&ee, p, rm).abs();
-        let e2 = ye2.get(ye2.len() - 1).expect("e2").sub(&ee, p, rm).abs();
+        let e1 = ExactNum::sub_ref(
+            ye.get(ye.len() - 1).ok_or(crate::Error::InvalidArgument)?,
+            &ee,
+            p,
+            rm,
+        )
+        .abs();
+        let e2 = ExactNum::sub_ref(
+            ye2.get(ye2.len() - 1)
+                .ok_or(crate::Error::InvalidArgument)?,
+            &ee,
+            p,
+            rm,
+        )
+        .abs();
         let two_h_bound = two.div(&ExactNum::from_u32(EULER_OH_STEPS as u32, p), p, rm);
-        assert!(e1.cmp(&two_h_bound) == Some(-1));
-        assert!(e2.cmp(&e1) == Some(-1));
+        assert!(e1.compare(&two_h_bound) == Some(-1));
+        assert!(e2.compare(&e1) == Some(-1));
 
         assert!(rk4(
-            |_t, y, _p, _rm, _cc| y.neg(),
+            |_t, y, _p, _rm, _cc| y.neg_via_mul(),
             &one,
             &one,
             &zero,
@@ -649,5 +656,6 @@ mod tests {
             &mut cc
         )
         .is_none());
+        Ok(())
     }
 }

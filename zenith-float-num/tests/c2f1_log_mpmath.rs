@@ -4,6 +4,7 @@
 //! printed to p·log10(2)+12 digits). The first 1.0.5 candidate returned NaN for 34 of these
 //! 54 cases.
 
+use core::ops::Neg;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, Radix, RoundingMode};
 
 const RM: RoundingMode = RoundingMode::ToEven;
@@ -66,28 +67,29 @@ const CASES: &[(usize, [&str; 4], &str, &str)] = &[
     (256, ["0.3,0.2", "0.7,0", "3,0.20000000000000000086736173798840354720596224069595", "1.2,0.3"], "1.0706523727028678372648571847776944359890828077495244288390699959816187634990432591932602", "0.14024896584135915809986309446674757146978758264451273767166074160786958872308959825401744"),
 ];
 
-fn c(s: &str, p: usize, cc: &mut Consts) -> ExactComplex {
-    let (re, im) = s.split_once(',').unwrap();
-    ExactComplex::new(
+fn c(s: &str, p: usize, cc: &mut Consts) -> Result<ExactComplex, Box<dyn std::error::Error>> {
+    let (re, im) = s.split_once(',').ok_or("no comma")?;
+    Ok(ExactComplex::new(
         ExactNum::parse(re, Radix::Dec, p, RM, cc),
         ExactNum::parse(im, Radix::Dec, p, RM, cc),
-    )
+    ))
 }
 
-fn exp2(x: &ExactNum) -> i32 {
+fn exp2(x: &ExactNum) -> i64 {
     if x.is_zero() {
-        i32::MIN / 2
+        i64::MIN / 2
     } else {
-        x.exponent().unwrap_or(i32::MIN / 2)
+        x.exponent().unwrap_or(i64::MIN / 2)
     }
 }
 
 #[test]
-fn complex_2f1_log_case_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn complex_2f1_log_case_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let mut failures = Vec::new();
     for &(p, args, want_re, want_im) in CASES {
         let [a, b, cp, z] = args.map(|s| c(s, p, &mut cc));
+        let (a, b, cp, z) = (a?, b?, cp?, z?);
         let got = a.hypergeom_2f1(&b, &cp, &z, p, RM, &mut cc);
         let need = p as i32 - 4;
         let wp = need as usize + 64;
@@ -98,10 +100,10 @@ fn complex_2f1_log_case_mpmath() {
             continue;
         }
         let scale = exp2(&wr).max(exp2(&wi));
-        let er = got.re().sub(&wr, wp, RoundingMode::None);
-        let ei = got.im().sub(&wi, wp, RoundingMode::None);
+        let er = wr.neg().add(got.re(), wp, RoundingMode::None);
+        let ei = wi.neg().add(got.im(), wp, RoundingMode::None);
         let err = exp2(&er).max(exp2(&ei));
-        if err > scale - need {
+        if err > scale - i64::from(need) {
             failures.push(format!(
                 "{args:?} at {p}: {} bits, need {need}",
                 scale - err
@@ -114,4 +116,5 @@ fn complex_2f1_log_case_mpmath() {
         failures.len(),
         failures.join("\n")
     );
+    Ok(())
 }

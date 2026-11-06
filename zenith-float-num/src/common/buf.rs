@@ -7,6 +7,7 @@
 
 use crate::defs::Error;
 use crate::defs::Word;
+use crate::defs::DEFAULT_P;
 use crate::defs::WORD_BIT_SIZE;
 use core::hash::{Hash, Hasher};
 use core::ops::Deref;
@@ -20,8 +21,10 @@ use crate::common::util::shift_slice_right;
 
 use alloc::vec::Vec;
 
-/// Number of words kept on the stack before allocating.
-pub const INLINE_WORDS: usize = 2;
+/// Number of words kept on the stack before allocating: enough for [`DEFAULT_P`] bits, so
+/// default-precision values (and the constants built from them) never allocate. This is 2 words
+/// with a 64-bit `Word` and 4 words with a 32-bit `Word`.
+pub const INLINE_WORDS: usize = DEFAULT_P / WORD_BIT_SIZE;
 
 /// Buffer for holding mantissa digits.
 #[derive(Debug)]
@@ -36,6 +39,18 @@ enum Storage {
 }
 
 impl WordBuf {
+    /// An inline buffer of [`INLINE_WORDS`] words, all zero except the most significant one.
+    pub(crate) const fn inline_with_top_word(top: Word) -> Self {
+        let mut data = [0; INLINE_WORDS];
+        data[INLINE_WORDS - 1] = top;
+        WordBuf {
+            inner: Storage::Inline {
+                data,
+                len: INLINE_WORDS as u8,
+            },
+        }
+    }
+
     #[inline]
     pub fn new(sz: usize) -> Result<Self, Error> {
         if sz <= INLINE_WORDS {
@@ -87,9 +102,15 @@ impl WordBuf {
                 Ok(())
             }
             Storage::Inline { data, len } => {
+                // Spill of this buffer's own words (inline array -> heap Vec): they have to change storage, so
+                // they are copied once and the inline array is dropped. A length past the array is an error,
+                // never a silent drop of words.
+                let src = data
+                    .get(..usize::from(*len))
+                    .ok_or(Error::InvalidArgument)?;
                 let mut v = Vec::new();
                 v.try_reserve_exact(new_len)?;
-                v.extend_from_slice(&data[..*len as usize]);
+                v.extend_from_slice(src);
                 v.resize(new_len, 0);
                 self.inner = Storage::Heap(v);
                 Ok(())
@@ -118,7 +139,7 @@ impl WordBuf {
 
     /// Decrease length of the buffer to l bits. Data is shifted.
     pub fn trunc_to(&mut self, l: usize) {
-        let n = (l + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+        let n = l.div_ceil(WORD_BIT_SIZE);
         let sz = self.len();
         if n >= sz {
             return;
@@ -129,7 +150,7 @@ impl WordBuf {
 
     /// Decrease length of the buffer to l bits. Data is not moved.
     pub fn trunc_to_2(&mut self, l: usize) {
-        let n = (l + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+        let n = l.div_ceil(WORD_BIT_SIZE);
         self.truncate_words(n);
     }
 
@@ -144,7 +165,7 @@ impl WordBuf {
 
     /// Try to extend the size to fit the precision p. Data is shifted to the left.
     pub fn try_extend(&mut self, p: usize) -> Result<(), Error> {
-        let n = (p + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+        let n = p.div_ceil(WORD_BIT_SIZE);
         let l = self.len();
         if n > l {
             self.resize_len(n)?;
@@ -155,7 +176,7 @@ impl WordBuf {
 
     /// Try to extend the size to fit the precision p. Fill new elements with 0. Data is not moved.
     pub fn try_extend_2(&mut self, p: usize) -> Result<(), Error> {
-        let n = (p + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+        let n = p.div_ceil(WORD_BIT_SIZE);
         if n > self.len() {
             self.resize_len(n)?;
         }
@@ -164,7 +185,7 @@ impl WordBuf {
 
     /// Try to extend the size to fit the precision p. Data is shifted to the left by d bits.
     pub fn try_extend_3(&mut self, p: usize, d: usize) -> Result<(), Error> {
-        let n = (p + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE;
+        let n = p.div_ceil(WORD_BIT_SIZE);
         let l = self.len();
         if n > l {
             self.resize_len(n)?;
@@ -250,22 +271,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_inline_small_and_promote() {
-        let mut b = WordBuf::new(1).unwrap();
+    fn test_inline_small_and_promote() -> Result<(), crate::Error> {
+        let mut b = WordBuf::new(1)?;
         assert!(b.is_inline());
         assert_eq!(b.len(), 1);
         b[0] = 7;
-        b.try_extend_2(WORD_BIT_SIZE * 8).unwrap();
+        b.try_extend_2(WORD_BIT_SIZE * 8)?;
         assert!(!b.is_inline());
         assert_eq!(b.len(), 8);
         assert_eq!(b[0], 7);
+        Ok(())
     }
 
     #[test]
     fn huge_reserve_returns_memory_error() {
         let words = (isize::MAX as usize) / core::mem::size_of::<Word>() + 1;
         assert!(matches!(WordBuf::new(words), Err(Error::MemoryAllocation)));
-        let layout_err = core::alloc::Layout::from_size_align(usize::MAX, 3).unwrap_err();
-        assert_eq!(Error::from(layout_err), Error::MemoryAllocation);
+        let layout = core::alloc::Layout::from_size_align(usize::MAX, 3);
+        assert!(layout.is_err());
+        if let Err(layout_err) = layout {
+            assert_eq!(Error::from(layout_err), Error::MemoryAllocation);
+        }
     }
 }

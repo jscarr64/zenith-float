@@ -1,0 +1,1099 @@
+//! The arithmetic primitives beyond `+ - * /` over the whole exponent range, bit for bit against MPFR:
+//! `sqrt`, `cbrt`, `reciprocal`, `hypot`, `fma`, `atan2` and `nth_root` at operands from below the subnormal
+//! band to the top of the range, at precisions from 1 bit to 200 (and a few at 20 000), in the six
+//! rounding modes MPFR can reproduce (`ToOdd` through the `p + 1` bit construction of `mpfr_reference_with`).
+//! Subnormal and overflowing results are compared too (MPFR's range is emulated by `mpfr_reference_with`), and so is
+//! the per-operation inexact flag. Every mismatch of a run is listed at once.
+
+use crate::mpfr::common::{assert_exact_eq, mpfr_reference_with};
+use crate::mpfr::retry_budget::use_full_exponent_range;
+use crate::mpfr::retry_budget::{round_of, ternary};
+use crate::mpfr::shifted::{self as sh, Term, Want};
+use gmp_mpfr_sys::mpfr::rnd_t;
+use rug::float::Round;
+use rug::ops::AssignRound;
+use rug::Float;
+use std::cmp::Ordering;
+use std::ops::Neg;
+use std::panic::{catch_unwind, AssertUnwindSafe};
+use zenith_float_num::{
+    Consts, ExactComplex, ExactNum, Exponent, RoundingMode, EXPONENT_MAX, EXPONENT_MIN,
+};
+
+type Res = Result<(), Box<dyn std::error::Error>>;
+
+const MODES: [RoundingMode; 6] = [
+    RoundingMode::ToEven,
+    RoundingMode::ToOdd,
+    RoundingMode::Up,
+    RoundingMode::Down,
+    RoundingMode::ToZero,
+    RoundingMode::FromZero,
+];
+
+/// Result precisions: tiny (1 to 5 bits), around one and two words, and a few in between.
+const PRECISIONS: [usize; 10] = [1, 2, 3, 5, 24, 53, 64, 65, 128, 200];
+
+/// Operands are exact in this many bits (a 64-bit significand times a power of two).
+const OPERAND_PRECISION: usize = 192;
+
+const MIN: i64 = EXPONENT_MIN;
+const MAX: i64 = EXPONENT_MAX;
+
+/// `(significand, exponent)`: the operand is `significand * 2^exponent`. The exponents straddle the bottom of the
+/// range (below `2^(EXPONENT_MIN - 1)` is subnormal) and reach the top (`k + 64 <= EXPONENT_MAX`).
+fn grid(significands: &[u64], exponents: &[i64]) -> Vec<(u64, i64)> {
+    let mut v = Vec::new();
+    for &m in significands {
+        for &k in exponents {
+            v.push((m, k));
+        }
+    }
+    v
+}
+
+fn unary_operands() -> Vec<(u64, i64)> {
+    grid(
+        &[1, 3, u64::MAX],
+        &[MIN - 120, MIN - 21, MIN, MIN + 5, -1, 7, MAX - 130, MAX - 64],
+    )
+}
+
+fn binary_operands() -> Vec<(u64, i64)> {
+    grid(
+        &[1, 0xdead_beef_1234_5677],
+        &[MIN - 70, MIN + 5, 0, MAX - 130, MAX - 64],
+    )
+}
+
+fn split_exponent(k: i64) -> (Exponent, Exponent) {
+    let hi = k.max(MIN);
+    ((hi as Exponent), (k - hi) as Exponent)
+}
+
+fn zf(m: u64, k: i64, negative: bool) -> ExactNum {
+    zf_at(m, k, negative, OPERAND_PRECISION)
+}
+
+/// The same operand held in `p` bits of storage (the result is not changed by the extra bits; the kernels see a
+/// longer mantissa).
+fn zf_at(m: u64, k: i64, negative: bool, p: usize) -> ExactNum {
+    let (hi, lo) = split_exponent(k);
+    let x = ExactNum::from_word(m, p)
+        .ldexp(hi, p, RoundingMode::ToEven)
+        .ldexp(lo, p, RoundingMode::ToEven);
+    if negative {
+        x.neg()
+    } else {
+        x
+    }
+}
+
+fn mp(m: u64, k: i64, negative: bool) -> Float {
+    let (hi, lo) = split_exponent(k);
+    let f = (Float::with_val(OPERAND_PRECISION as u32, m) << (hi as isize)) << (lo as isize);
+    if negative {
+        -f
+    } else {
+        f
+    }
+}
+
+/// Collects the mismatches of a run: each check may panic inside `assert_exact_eq`.
+struct Run {
+    cc: Consts,
+    failures: Vec<String>,
+    checked: usize,
+    /// Compare the per-operation inexact flag as well.
+    flags: bool,
+}
+
+impl Run {
+    fn new(flags: bool) -> Result<Self, Box<dyn std::error::Error>> {
+        use_full_exponent_range();
+        Ok(Run {
+            cc: Consts::new()?,
+            failures: Vec::new(),
+            checked: 0,
+            flags,
+        })
+    }
+
+    fn check(
+        &mut self,
+        got: &ExactNum,
+        p: usize,
+        rm: RoundingMode,
+        info: &str,
+        f: impl Fn(&mut Float, rnd_t) -> i32,
+    ) {
+        self.checked += 1;
+        let (cc, flags) = (&mut self.cc, self.flags);
+        let outcome = catch_unwind(AssertUnwindSafe(|| -> Res {
+            let (want, inexact) = mpfr_reference_with(p as u32, rm, f)?;
+            assert_exact_eq(got, &want, p, info, cc)?;
+            if flags && !want.is_nan() && !want.is_infinite() {
+                assert_eq!(
+                    got.inexact(),
+                    inexact,
+                    "{info}: inexact flag, MPFR {}",
+                    crate::mpfr::common::show_mp(&want)
+                );
+            }
+            Ok(())
+        }));
+        let text = match outcome {
+            Ok(Ok(())) => return,
+            Ok(Err(e)) => format!("{info} p={p} {rm:?}: error {e}"),
+            Err(payload) => match payload.downcast_ref::<String>() {
+                Some(m) => format!("p={p} {rm:?} {m}"),
+                None => format!("{info} p={p} {rm:?}: panic without a message"),
+            },
+        };
+        self.failures.push(text.chars().take(260).collect());
+    }
+
+    /// Like [`Run::check`] with a reference in a scaled space ([`crate::mpfr::shifted`]).
+    fn check_want(
+        &mut self,
+        got: &ExactNum,
+        p: usize,
+        rm: RoundingMode,
+        info: &str,
+        want: impl FnOnce() -> Result<Want, Box<dyn std::error::Error>>,
+    ) {
+        self.checked += 1;
+        let flags = self.flags;
+        let outcome = catch_unwind(AssertUnwindSafe(|| -> Res {
+            sh::check(got, &want()?, flags, info)
+        }));
+        let text = match outcome {
+            Ok(Ok(())) => return,
+            Ok(Err(e)) => format!("{info} p={p} {rm:?}: error {e}"),
+            Err(payload) => match payload.downcast_ref::<String>() {
+                Some(m) => format!("p={p} {rm:?} {m}"),
+                None => format!("{info} p={p} {rm:?}: panic without a message"),
+            },
+        };
+        self.failures.push(text.chars().take(260).collect());
+    }
+
+    fn finish(self, what: &str, at_least: usize) {
+        assert!(
+            self.checked >= at_least,
+            "{what}: grid too small ({})",
+            self.checked
+        );
+        assert!(
+            self.failures.is_empty(),
+            "{what}: {} of {} results differ from MPFR:\n{}",
+            self.failures.len(),
+            self.checked,
+            self.failures.join("\n")
+        );
+    }
+}
+
+/// What a sweep skips: `(significand, exponent, negative, p)` of the operand and precision.
+type Skip = fn(u64, i64, bool, usize) -> bool;
+
+/// The operands, signs and precisions of a unary sweep, whether the inexact flag is compared, what is skipped.
+struct Sweep<'a> {
+    operands: &'a [(u64, i64)],
+    signs: &'a [bool],
+    precisions: &'a [usize],
+    flags: bool,
+    skip: Skip,
+}
+
+fn no_skip(_: u64, _: i64, _: bool, _: usize) -> bool {
+    false
+}
+
+fn unary(
+    what: &str,
+    sweep: Sweep,
+    zf_fn: impl Fn(&ExactNum, usize, RoundingMode) -> ExactNum,
+    reference: impl Fn(&Term, u32, RoundingMode) -> Result<Want, Box<dyn std::error::Error>>,
+) -> Res {
+    let Sweep {
+        operands,
+        signs,
+        precisions,
+        flags,
+        skip,
+    } = sweep;
+    let mut run = Run::new(flags)?;
+    for &(m, k) in operands {
+        for &neg in signs {
+            let x = zf(m, k, neg);
+            let tx = Term::new(m, k, neg);
+            for &p in precisions {
+                if skip(m, k, neg, p) {
+                    continue;
+                }
+                for rm in MODES {
+                    let got = zf_fn(&x, p, rm);
+                    let info = format!("{what}({m:#x} 2^{k}, neg {neg})");
+                    run.check_want(&got, p, rm, &info, || reference(&tx, p as u32, rm));
+                }
+            }
+        }
+    }
+    run.finish(what, 20);
+    Ok(())
+}
+
+#[test]
+fn sqrt_over_the_whole_range() -> Res {
+    unary(
+        "sqrt",
+        Sweep {
+            operands: &unary_operands(),
+            signs: &[false],
+            precisions: &PRECISIONS,
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.sqrt(p, rm),
+        |x, p, rm| sh::ref_root(x, 2, p, rm),
+    )
+}
+
+#[test]
+fn cbrt_over_the_whole_range() -> Res {
+    unary(
+        "cbrt",
+        Sweep {
+            operands: &unary_operands(),
+            signs: &[false, true],
+            precisions: &PRECISIONS,
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.cbrt(p, rm),
+        |x, p, rm| sh::ref_root(x, 3, p, rm),
+    )
+}
+
+/// Precisions of the reciprocal: the usual ones and those where the Newton iteration starts (above two words).
+const RECIPROCAL_PRECISIONS: [usize; 13] = [1, 2, 3, 5, 24, 53, 64, 65, 128, 129, 192, 200, 256];
+
+/// `reciprocal` of every operand of the grid at every precision, subnormal operands included: above 128 bits
+/// the Newton start read the top 64 bits of a subnormal's mantissa, which are zero, so `1 / 2^-2147483768` was
+/// `Inf` in the directed modes where the largest finite number is the result (`div_ref(1, x)` was right).
+#[test]
+fn reciprocal_over_the_whole_range() -> Res {
+    unary(
+        "reciprocal",
+        Sweep {
+            operands: &unary_operands(),
+            signs: &[false, true],
+            precisions: &RECIPROCAL_PRECISIONS,
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.reciprocal(p, rm),
+        sh::ref_recip,
+    )
+}
+
+/// Exact results at the ends of the range: perfect squares and cubes (the root is exact in every mode and not
+/// inexact) and powers of two.
+#[test]
+fn exact_roots_and_reciprocals_at_the_ends() -> Res {
+    let square = 0xffff_fffe_0000_0001u64; // (2^32 - 1)^2
+    let cube = 1_000_003u64.pow(3);
+    let sq_ops = grid(
+        &[1, square],
+        &[MIN - 120, MIN - 20, MIN, -2, 4, MAX - 130, MAX - 64],
+    );
+    let sq_ops: Vec<(u64, i64)> = sq_ops.into_iter().filter(|&(_, k)| k % 2 == 0).collect();
+    unary(
+        "sqrt exact",
+        Sweep {
+            operands: &sq_ops,
+            signs: &[false],
+            precisions: &[1, 2, 24, 53, 64, 128],
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.sqrt(p, rm),
+        |x, p, rm| sh::ref_root(x, 2, p, rm),
+    )?;
+    let cu_ops = grid(
+        &[1, cube],
+        &[MIN - 120, MIN - 21, MIN + 6, -3, 9, MAX - 129, MAX - 66],
+    );
+    let cu_ops: Vec<(u64, i64)> = cu_ops.into_iter().filter(|&(_, k)| k % 3 == 0).collect();
+    unary(
+        "cbrt exact",
+        Sweep {
+            operands: &cu_ops,
+            signs: &[false, true],
+            precisions: &[1, 2, 24, 53, 64, 128],
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.cbrt(p, rm),
+        |x, p, rm| sh::ref_root(x, 3, p, rm),
+    )
+}
+
+#[test]
+fn nth_root_over_the_whole_range() -> Res {
+    for n in [3usize, 5, 7, 33] {
+        let name = format!("nth_root n={n}");
+        unary(
+            &name,
+            Sweep {
+                operands: &unary_operands(),
+                signs: &[false],
+                precisions: &[1, 3, 24, 64, 65, 128],
+                flags: true,
+                skip: no_skip,
+            },
+            |x, p, rm| x.nth_root(n, p, rm),
+            |x, p, rm| sh::ref_root(x, n as u32, p, rm),
+        )?;
+    }
+    // exact: 3^40 = (3^8)^5
+    let pow = 3u64.pow(40);
+    let ops: Vec<(u64, i64)> = grid(
+        &[1, pow],
+        &[MIN - 120, MIN - 20, MIN + 5, 0, 10, MAX - 130, MAX - 65],
+    )
+    .into_iter()
+    .filter(|&(_, k)| k % 5 == 0)
+    .collect();
+    unary(
+        "nth_root 5 exact",
+        Sweep {
+            operands: &ops,
+            signs: &[false],
+            precisions: &[1, 2, 24, 64, 128],
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.nth_root(5, p, rm),
+        |x, p, rm| sh::ref_root(x, 5, p, rm),
+    )
+}
+
+/// An exact `nth_root` (`2^7` for `n = 7`, also `2^2147483583`) at 64 bits and more was flagged inexact in `ToEven`
+/// and `ToOdd` (the value was right): the Newton value is exact only up to its working noise, so rounding it
+/// cannot tell. At 24 bits it was not flagged.
+#[test]
+fn nth_root_exact_result_is_not_inexact() -> Res {
+    let ops = [(1u64, 7i64), (1, 2_147_483_583)];
+    unary(
+        "nth_root 7 exact flag",
+        Sweep {
+            operands: &ops,
+            signs: &[false],
+            precisions: &[24, 64, 65, 128, 200],
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.nth_root(7, p, rm),
+        |x, p, rm| sh::ref_root(x, 7, p, rm),
+    )
+}
+
+fn binary(
+    what: &str,
+    operands: &[(u64, i64)],
+    precisions: &[usize],
+    skip_pair: fn((u64, i64), (u64, i64)) -> bool,
+    zf_fn: impl Fn(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+    reference: impl Fn(&Term, &Term, u32, RoundingMode) -> Result<Want, Box<dyn std::error::Error>>,
+) -> Res {
+    let mut run = Run::new(true)?;
+    for &(m1, k1) in operands {
+        for &(m2, k2) in operands {
+            if skip_pair((m1, k1), (m2, k2)) {
+                continue;
+            }
+            for (n1, n2) in [(false, false), (true, false), (false, true), (true, true)] {
+                let (a, b) = (zf(m1, k1, n1), zf(m2, k2, n2));
+                let (ta, tb) = (Term::new(m1, k1, n1), Term::new(m2, k2, n2));
+                for &p in precisions {
+                    for rm in MODES {
+                        let got = zf_fn(&a, &b, p, rm, &mut run.cc);
+                        let info =
+                            format!("{what}({m1:#x} 2^{k1} neg {n1}, {m2:#x} 2^{k2} neg {n2})");
+                        run.check_want(&got, p, rm, &info, || reference(&ta, &tb, p as u32, rm));
+                    }
+                }
+            }
+        }
+    }
+    run.finish(what, 20);
+    Ok(())
+}
+
+fn no_pair_skipped(_: (u64, i64), _: (u64, i64)) -> bool {
+    false
+}
+
+#[test]
+fn hypot_over_the_whole_range() -> Res {
+    binary(
+        "hypot",
+        &binary_operands(),
+        &PRECISIONS,
+        no_pair_skipped,
+        |a, b, p, rm, _| a.hypot(b, p, rm),
+        sh::ref_hypot,
+    )
+}
+
+/// `atan2` over the whole range, including extreme quotients: `y / x` beyond the largest number gives `+-pi/2` for
+/// either sign of `x` (`atan2(2^2147483517, -2^-2147483643)`), an exact tiny quotient is rounded below itself by
+/// the directed modes (`atan2(2^-2147483718, 1, 128, Up)`), and a quotient below the smallest number rounds to
+/// zero or to the smallest number.
+#[test]
+fn atan2_over_the_whole_range() -> Res {
+    binary(
+        "atan2",
+        &binary_operands(),
+        &[1, 3, 24, 64, 128],
+        no_pair_skipped,
+        |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
+        sh::ref_atan2,
+    )
+}
+
+/// `fma(a, b, c)` with `c` the exact negated product (total cancellation, the sign of the zero by mode), the product
+/// plus one part in 2^60 (a cancellation leaving a few bits), and an independent `c`; at the ends of the range.
+/// `labels` selects the kinds of `c`, `factor_pairs` the factors.
+fn fma_run(labels: &[&str], pairs: &[usize], precisions: &[usize], at_least: usize) -> Res {
+    let mut run = Run::new(true)?;
+    // factors whose product stays inside the range (the operands themselves reach both ends)
+    let all_pairs: [((u64, i64), (u64, i64)); 8] = [
+        ((1, MAX - 130), (1, MIN + 5)),
+        ((0xdead_beef_1234_5677, MAX - 64), (3, MIN - 40)),
+        ((u64::MAX, MIN - 70), (u64::MAX, MAX - 64)),
+        ((3, 0), (5, -7)),
+        ((0xffff_ffff_ffff_fff1, MIN + 5), (1, 90)),
+        ((7, MIN - 21), (1, 21)),
+        ((1, MAX - 70), (1, -MAX + 140)),
+        ((0xdead_beef_1234_5677, -1), (u64::MAX, 3)),
+    ];
+    for &i in pairs {
+        let ((m1, k1), (m2, k2)) = all_pairs[i];
+        let (a, b) = (zf(m1, k1, false), zf(m2, k2, true));
+        let (ta, tb) = (Term::new(m1, k1, false), Term::new(m2, k2, true));
+        // c = -(a * b), exact in 192 bits (a 128-bit product)
+        let c0 = ExactNum::mul_ref(&a, &b, OPERAND_PRECISION, RoundingMode::ToEven).neg();
+        let c0_shift = ExactNum::mul_ref(&a, &b, OPERAND_PRECISION, RoundingMode::ToEven)
+            .neg()
+            .ldexp(-60, OPERAND_PRECISION, RoundingMode::ToEven);
+        let c1 = c0_shift.add(&c0, OPERAND_PRECISION, RoundingMode::ToEven);
+        let c2 = zf(m2, k2 - 3, false);
+        // the exact terms of a * b + c
+        let sums: [Vec<Term>; 3] = [
+            vec![ta.mul(&tb), ta.mul(&tb).neg()],
+            vec![ta.mul(&tb), ta.mul(&tb).neg(), ta.mul(&tb).neg().ldexp(-60)],
+            vec![ta.mul(&tb), Term::new(m2, k2 - 3, false)],
+        ];
+        for ((label, c), terms) in [("-ab", &c0), ("-ab(1+2^-60)", &c1), ("indep", &c2)]
+            .into_iter()
+            .zip(&sums)
+        {
+            if !labels.contains(&label) {
+                continue;
+            }
+            for &p in precisions {
+                for rm in MODES {
+                    let got = a.fma(&b, c, p, rm);
+                    let info = format!("fma({m1:#x} 2^{k1}, -{m2:#x} 2^{k2}, {label})");
+                    run.check_want(&got, p, rm, &info, || sh::ref_sum(terms, p as u32, rm));
+                }
+            }
+        }
+    }
+    run.finish("fma", at_least);
+    Ok(())
+}
+
+const FMA_PRECISIONS: [usize; 8] = [1, 2, 24, 53, 64, 65, 128, 200];
+
+#[test]
+fn fma_over_the_whole_range() -> Res {
+    // total and near cancellation, and an independent addend, at every pair
+    fma_run(
+        &["-ab", "-ab(1+2^-60)", "indep"],
+        &[0, 1, 2, 3, 4, 5, 6, 7],
+        &FMA_PRECISIONS,
+        500,
+    )
+}
+
+/// `fma` whose addend is far below (or far above) the product and of the opposite sign, so that the sum is just
+/// below a power of two (`fma(1, -1, 2^-200)` at 128 bits is `-(1 - 2^-200)`: 128 ones for the directed modes
+/// that round toward zero or up, `-1` otherwise). The stand-in for a negligible term used to lie right below the
+/// other term's last bit, which is above the rounding position once `p` exceeds that term's width.
+#[test]
+fn fma_with_a_far_smaller_addend() -> Res {
+    let mut run = Run::new(true)?;
+    let one = zf(1, 0, false);
+    let minus_one = zf(1, 0, true);
+    for gap in [100i64, 200, 1000, 100_000] {
+        let c = zf(1, -gap, false);
+        let terms = [Term::new(1, 0, true), Term::new(1, -gap, false)];
+        for p in [24usize, 64, 65, 128, 200] {
+            for rm in MODES {
+                let got = one.fma(&minus_one, &c, p, rm);
+                let info = format!("fma(1, -1, 2^-{gap})");
+                run.check_want(&got, p, rm, &info, || sh::ref_sum(&terms, p as u32, rm));
+            }
+        }
+    }
+    run.finish("fma(1, -1, tiny)", 20);
+    Ok(())
+}
+
+/// `fma` with a subnormal product and a subnormal addend thousands of bits below it (the stand-in for the
+/// negligible addend must not be placed below the smallest exponent: its exponent wrapped around to a huge
+/// positive one and the result was `+3 * 2^2147480571` for `3 * 2^(EXPONENT_MIN - 19) * -7 + 3 * 2^(EXPONENT_MIN - 2997)`).
+#[test]
+fn fma_with_subnormal_terms_far_apart() -> Res {
+    let mut run = Run::new(true)?;
+    for (ka, kc, neg_c) in [
+        (MIN - 19, MIN - 2997, false),
+        (MIN - 19, MIN - 2997, true),
+        (MIN + 3, MIN - 5000, false),
+    ] {
+        let (a, b, c) = (zf(3, ka, false), zf(7, 0, true), zf_at(3, kc, neg_c, 8192));
+        // the exact terms: the addend is a sticky bit or summed exactly, in the scaled space of the sum
+        let terms = [Term::new(3, ka, false).mul(&Term::new(7, 0, true)), Term::new(3, kc, neg_c)];
+        for p in [24usize, 64, 128, 200] {
+            for rm in MODES {
+                let got = a.fma(&b, &c, p, rm);
+                let info = format!("fma(3 2^{ka}, -7, +-3 2^{kc}) neg_c {neg_c}");
+                run.check_want(&got, p, rm, &info, || sh::ref_sum(&terms, p as u32, rm));
+            }
+        }
+    }
+    run.finish("fma subnormal terms", 20);
+    Ok(())
+}
+
+/// A few huge precisions (20 000 bits): the same functions at operands near both ends, a handful of cases each.
+#[test]
+fn primitives_at_20000_bits() -> Res {
+    let ops = grid(&[3, u64::MAX], &[MIN - 20, MIN + 5, 0, MAX - 64]);
+    unary(
+        "sqrt 20000",
+        Sweep {
+            operands: &ops,
+            signs: &[false],
+            precisions: &[20_000],
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.sqrt(p, rm),
+        |x, p, rm| sh::ref_root(x, 2, p, rm),
+    )?;
+    unary(
+        "reciprocal 20000",
+        Sweep {
+            operands: &ops,
+            signs: &[true],
+            precisions: &[20_000],
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.reciprocal(p, rm),
+        sh::ref_recip,
+    )?;
+    unary(
+        "cbrt 20000",
+        Sweep {
+            operands: &ops,
+            signs: &[false],
+            precisions: &[20_000],
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.cbrt(p, rm),
+        |x, p, rm| sh::ref_root(x, 3, p, rm),
+    )
+}
+
+// ---- W1b: regressions for four wrong answers found in published 1.0.12 --------------------------------------------
+//
+// 1.0.12 returned a wrong value for each of these; the branch's exact-`p`-bit kernels were expected to be right, and
+// these tests keep them so (each is checked against MPFR in the six modes, flags included).
+
+/// Operands of the composite-`n` root sweep: the end-of-range grid plus ordinary operands (the 1.0.12 error was at
+/// ordinary exponents: it rounded after each square or cube root).
+fn composite_root_operands() -> Vec<(u64, i64)> {
+    let mut v = unary_operands();
+    v.extend(grid(
+        &[1, 3, 5, 7, 0xdead_beef_1234_5677, u64::MAX],
+        &[-70, -9, -2, 0, 1, 3, 10, 1000, -1000],
+    ));
+    v
+}
+
+/// (a) `nth_root` with a composite `n` (4, 6, 8, 9, 10, 12, 15), whose 1.0.12 implementation took a square or cube
+/// root and rounded after each step (1 ulp wrong in 8 to 27 percent of cases there). On this branch the root is
+/// computed once and rounded once: the branch is already right, this test keeps it so.
+#[test]
+fn nth_root_with_a_composite_n() -> Res {
+    for n in [4usize, 6, 8, 9, 10, 12, 15] {
+        let name = format!("nth_root n={n}");
+        // negative operands only for odd n (an even root of a negative is NaN, checked below)
+        let signs: &[bool] = if n % 2 == 1 { &[false, true] } else { &[false] };
+        unary(
+            &name,
+            Sweep {
+                operands: &composite_root_operands(),
+                signs,
+                precisions: &[1, 2, 3, 5, 24, 53, 64, 65, 128, 200],
+                flags: true,
+                skip: no_skip,
+            },
+            |x, p, rm| x.nth_root(n, p, rm),
+            |x, p, rm| sh::ref_root(x, n as u32, p, rm),
+        )?;
+        // exact roots: 3^(n*j) with the exponent a multiple of n
+        let j = 40 / n;
+        let pow = 3u64.pow((n * j) as u32);
+        let n_i = n as i64;
+        let ops: Vec<(u64, i64)> = grid(
+            &[1, pow],
+            &[MIN - 120, MIN - 20, MIN + 5, 0, 10 * n_i, MAX - 130, MAX - 65],
+        )
+        .into_iter()
+        .filter(|&(_, k)| k % n_i == 0)
+        .collect();
+        let name = format!("nth_root n={n} exact");
+        unary(
+            &name,
+            Sweep {
+                operands: &ops,
+                signs: &[false],
+                precisions: &[1, 2, 24, 64, 128],
+                flags: true,
+                skip: no_skip,
+            },
+            |x, p, rm| x.nth_root(n, p, rm),
+            |x, p, rm| sh::ref_root(x, n as u32, p, rm),
+        )?;
+    }
+    Ok(())
+}
+
+/// (b) `hypot(1, 2^-k)` for `k >= 9887`: 1.0.12 returned `NaN` there (the scaling squared the small operand into
+/// the underflow range). The branch is right; every mode and precision is compared with MPFR and must not be NaN.
+#[test]
+fn hypot_of_one_and_a_tiny_number_is_not_nan() -> Res {
+    let ks: [i64; 10] = [
+        9_885,
+        9_886,
+        9_887,
+        9_888,
+        12_000,
+        100_000,
+        5_000_000,
+        2_000_000_000,
+        2_147_483_000,
+        MIN + 1,
+    ];
+    let mut run = Run::new(true)?;
+    for &k in &ks {
+        let (one, tiny) = (zf(1, 0, false), zf(1, -k, false));
+        let (tone, ttiny) = (Term::new(1, 0, false), Term::new(1, -k, false));
+        for &p in &[2usize, 24, 64, 128, 200] {
+            for rm in MODES {
+                let got = one.hypot(&tiny, p, rm);
+                assert!(!got.is_nan(), "hypot(1, 2^-{k}, {p}, {rm:?}) is NaN");
+                let info = format!("hypot(1, 2^-{k})");
+                run.check_want(&got, p, rm, &info, || {
+                    sh::ref_hypot(&tone, &ttiny, p as u32, rm)
+                });
+            }
+        }
+    }
+    run.finish("hypot(1, tiny)", 20);
+    Ok(())
+}
+
+/// (c) `reciprocal` of a tiny negative operand `-2^-2147483649 .. -2^-2147483647`: the quotient overflows and the
+/// sign must be kept (`-Inf`, or the most negative finite number in `Up`/`ToZero`): 1.0.12 returned `+Inf` at
+/// `p >= 129` in the nearest modes. The branch is right.
+#[test]
+fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
+    let ops = [(1u64, MIN - 1), (1, MIN), (1, MIN + 1), (3, MIN - 2), (u64::MAX, MIN - 64)];
+    unary(
+        "reciprocal tiny negative",
+        Sweep {
+            operands: &ops,
+            signs: &[true],
+            precisions: &[24, 64, 128, 129, 192, 200, 256, 512],
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| x.reciprocal(p, rm),
+        sh::ref_recip,
+    )?;
+    // explicit: the nearest modes give -Inf at p >= 129, never +Inf. With the i64 limits `1 / 2^(MIN + 1)` is
+    // `2^(EXPONENT_MAX - 1)`, finite (the sweep above checks it against the shifted reference), so only
+    // `MIN - 1` and `MIN` overflow.
+    let mut seen = 0;
+    for k in [MIN - 1, MIN] {
+        let x = zf(1, k, true);
+        for p in [129usize, 192, 256] {
+            for rm in [
+                RoundingMode::ToEven,
+                RoundingMode::ToOdd,
+                RoundingMode::Down,
+                RoundingMode::FromZero,
+            ] {
+                let got = x.reciprocal(p, rm);
+                assert!(got.is_inf_neg(), "1 / -2^{k} at {p} bits {rm:?}: {got:?}");
+                seen += 1;
+            }
+        }
+    }
+    assert_eq!(seen, 24);
+    Ok(())
+}
+
+/// (d) `atan2` of a tiny quotient, `atan2(2^-2147483718, 1)`: 1.0.12 flushed it to zero, an earlier build of this
+/// branch gave `NaN(PrecisionRetryExhausted)`. The result is the quotient itself (nonzero, not NaN) once `p` is
+/// large enough to hold it, and MPFR's value in every mode and precision.
+#[test]
+fn atan2_of_a_tiny_quotient_is_neither_zero_nor_nan() -> Res {
+    let ys = [(1u64, MIN - 70), (3, MIN - 70), (1, MIN - 20), (1, MIN), (1, -1000)];
+    let mut run = Run::new(true)?;
+    let mut cc = Consts::new()?;
+    for &(m, k) in &ys {
+        for neg in [false, true] {
+            let y = zf(m, k, neg);
+            let ty = Term::new(m, k, neg);
+            let (one, tone) = (zf(1, 0, false), Term::new(1, 0, false));
+            for &p in &[24usize, 64, 128, 200] {
+                for rm in MODES {
+                    let got = y.atan2(&one, p, rm, &mut cc);
+                    assert!(!got.is_nan(), "atan2({m:#x} 2^{k}, 1, {p}, {rm:?}) is NaN");
+                    // the quotient has at most 2 significant bits, so from 128 bits (grid 2^(MIN-128)) on it is representable
+                    if k >= MIN - 70 && p >= 128 {
+                        assert!(
+                            !got.is_zero(),
+                            "atan2({m:#x} 2^{k}, 1, {p}, {rm:?}) is zero"
+                        );
+                    }
+                    let info = format!("atan2({m:#x} 2^{k} neg {neg}, 1)");
+                    run.check_want(&got, p, rm, &info, || {
+                        sh::ref_atan2(&ty, &tone, p as u32, rm)
+                    });
+                }
+            }
+        }
+    }
+    run.finish("atan2 tiny quotient", 20);
+    Ok(())
+}
+
+/// The quotients users reach through `eval` (a downstream calculator, 256-bit operands): `atan2(1e-3000, 1)` (a quotient of about
+/// 2^-9966, `NaN` in 1.0.12), `atan2(exp(-1e9), 1)` and `atan2(exp(1e9), -exp(-1e9))` (a quotient beyond 2^2^31, `pi`
+/// instead of `pi/2`). Operands are of the size `exp(+-1e9)` (2^+-1442695040), `1e+-3000` (2^+-9966) and one, in
+/// both signs, at 256 bits as well.
+#[test]
+fn atan2_at_the_scales_users_reach() -> Res {
+    const K: i64 = 1_442_695_040;
+    binary(
+        "atan2 user scales",
+        &grid(&[1, 0xdead_beef_1234_5677], &[K, -K, 9_966, -9_966, 0]),
+        &[24, 64, 128, 256],
+        no_pair_skipped,
+        |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
+        sh::ref_atan2,
+    )
+}
+
+/// `ln` of a complex number whose parts differ by a factor `2^(+-2 * 1442695040)` (`ln(1 + exp(-1e9) i)`,
+/// `ln(-exp(-1e9) + exp(1e9) i)`): the imaginary part is `atan2` and must be the tiny angle (not `NaN`) and `pi/2`
+/// (not `pi`); the real part stays finite.
+#[test]
+fn complex_ln_with_extreme_parts() -> Res {
+    const K: i64 = 1_442_695_040;
+    let mut run = Run::new(true)?;
+    let mut cc = Consts::new()?;
+    // (re, im) as (significand, exponent, negative)
+    type Part = (u64, i64, bool);
+    let cases: [(Part, Part); 3] = [
+        ((1, 0, false), (0xdead_beef_1234_5677, -K, false)),
+        ((0xdead_beef_1234_5677, -K, true), (1, K, false)),
+        ((3, K, false), (0xdead_beef_1234_5677, -K, true)),
+    ];
+    for &((rm_, rk, rn), (im_, ik, inn)) in &cases {
+        let z = ExactComplex::new(zf(rm_, rk, rn), zf(im_, ik, inn));
+        let (fre, fim) = (mp(rm_, rk, rn), mp(im_, ik, inn));
+        let (tre, tim) = (Term::new(rm_, rk, rn), Term::new(im_, ik, inn));
+        for &p in &[64usize, 128, 256] {
+            for rm in MODES {
+                let got = z.ln(p, rm, &mut cc);
+                assert!(
+                    !got.re().is_nan() && !got.im().is_nan(),
+                    "ln({rm_:#x} 2^{rk} + {im_:#x} 2^{ik} i) is NaN"
+                );
+                assert!(!got.re().is_inf(), "ln(..) real part is infinite");
+                let info = format!("ln im({rm_:#x} 2^{rk} neg {rn}, {im_:#x} 2^{ik} neg {inn})");
+                run.check_want(got.im(), p, rm, &info, || {
+                    sh::ref_atan2(&tim, &tre, p as u32, rm)
+                });
+                // real part: ln(max) + (1/2) ln(1 + (min/max)^2) at 1500 bits. Compared where its size is within
+                // MPFR's exponent range (the first case's is about 2^-2.9e9: it underflows, and is only required to
+                // be finite).
+                if rk.max(ik) > 0 {
+                    let (big, small) = if rk >= ik { (&fre, &fim) } else { (&fim, &fre) };
+                    let hi = Float::with_val(1500, big.abs_ref()).ln()
+                        + Float::with_val(
+                            1500,
+                            (Float::with_val(1500, small.abs_ref())
+                                / Float::with_val(1500, big.abs_ref()))
+                            .square()
+                            .ln_1p(),
+                        ) / 2;
+                    let info = format!("ln re({rm_:#x} 2^{rk}, {im_:#x} 2^{ik} i)");
+                    run.check(got.re(), p, rm, &info, |r, rnd| {
+                        ternary(r.assign_round(&hi, round_of(rnd)))
+                    });
+                }
+            }
+        }
+    }
+    run.finish("complex ln", 20);
+    Ok(())
+}
+
+/// Operands of the logarithms: the grid (subnormals at `MIN - 120` and `MIN - 21`, the top of the range), exact
+/// powers of two from the bottom to the top (`2^±1e9` included), and `1 ± 2^-j` (cancellation next to one).
+fn log_operands() -> Vec<(u64, i64)> {
+    let mut v = unary_operands();
+    for k in [
+        MIN - 190,
+        MIN - 64,
+        MIN - 1,
+        MIN,
+        -1_000_000_000,
+        -1,
+        0,
+        1,
+        2,
+        63,
+        1_000_000_000,
+        MAX - 64,
+    ] {
+        v.push((1, k));
+    }
+    for k in [-1_000_000_000, 1_000_000_000] {
+        v.push((u64::MAX, k));
+        v.push((0xdead_beef_1234_5677, k));
+    }
+    for j in [1i64, 2, 5, 31, 32, 33, 62, 63] {
+        v.push(((1u64 << j) + 1, -j));
+        v.push(((1u64 << j) - 1, -j));
+    }
+    v.push((u64::MAX, -64));
+    v.push((1, MIN - 120 + 1));
+    v
+}
+
+fn log_sweep(
+    what: &str,
+    zf_fn: fn(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+    mp_fn: impl Fn(&mut Float, &Float, Round) -> Ordering,
+) -> Res {
+    let cc = std::cell::RefCell::new(Consts::new()?);
+    unary(
+        what,
+        Sweep {
+            operands: &log_operands(),
+            signs: &[false],
+            precisions: &PRECISIONS,
+            flags: true,
+            skip: no_skip,
+        },
+        |x, p, rm| zf_fn(x, p, rm, &mut cc.borrow_mut()),
+        |x, p, rm| sh::ref_log(x, p, rm, &mp_fn),
+    )
+}
+
+/// `ln`, `log2` and `log10` over the whole range, subnormal inputs (normalized inside the Ziv pass copy) included.
+#[test]
+fn ln_over_the_whole_range() -> Res {
+    log_sweep(
+        "ln",
+        |x, p, rm, cc| x.ln(p, rm, cc),
+        |r, a, rd| r.assign_round(a.ln_ref(), rd),
+    )
+}
+
+#[test]
+fn log2_over_the_whole_range() -> Res {
+    log_sweep(
+        "log2",
+        |x, p, rm, cc| x.log2(p, rm, cc),
+        |r, a, rd| r.assign_round(a.log2_ref(), rd),
+    )
+}
+
+#[test]
+fn log10_over_the_whole_range() -> Res {
+    log_sweep(
+        "log10",
+        |x, p, rm, cc| x.log10(p, rm, cc),
+        |r, a, rd| r.assign_round(a.log10_ref(), rd),
+    )
+}
+
+// ---------------------------------------------------------------------------------------------
+// pow with exact results (1.0.12: `pow(2, 2)` was flagged inexact in `ToEven` and `NaN` in `Up`)
+// ---------------------------------------------------------------------------------------------
+
+/// `m * 2^k` as a pair, with a sign: the operands of the `pow` sweeps.
+type Operand = (u64, i64, bool);
+
+/// Bases whose small powers are exact (2, 4, 8, 16, 3, 9, 27, 5, 25, 7, 10, 1.5, 0.5, 0.25) and a few that are not
+/// exact powers of anything small; with a sign for the integer exponents.
+const POW_BASES: [Operand; 14] = [
+    (1, 1, false),
+    (1, 2, false),
+    (1, 3, false),
+    (1, 4, false),
+    (3, 0, false),
+    (9, 0, false),
+    (27, 0, false),
+    (5, 0, false),
+    (25, 0, false),
+    (7, 0, false),
+    (10, 0, false),
+    (3, -1, false),
+    (1, -1, false),
+    (1, -2, false),
+];
+
+fn pow_exponents() -> Vec<Operand> {
+    let mut v: Vec<Operand> = Vec::new();
+    for i in 1..=8u64 {
+        v.push((i, 0, false));
+        v.push((i, 0, true));
+    }
+    // half-integers and quarter-integers: 0.5 .. 8.5 and 0.25 .. 4.75, positive and negative
+    for i in 0..=8u64 {
+        v.push((2 * i + 1, -1, false));
+        v.push((2 * i + 1, -1, true));
+    }
+    for i in 0..=4u64 {
+        v.push((4 * i + 1, -2, false));
+        v.push((4 * i + 3, -2, true));
+    }
+    v
+}
+
+fn pow_sweep(run: &mut Run, bases: &[Operand], exponents: &[Operand], precisions: &[usize]) {
+    use rug::ops::Pow;
+    for &(bm, bk, bneg) in bases {
+        for &(em, ek, eneg) in exponents {
+            let (x, n) = (zf(bm, bk, bneg), zf(em, ek, eneg));
+            let (fx, fn_) = (mp(bm, bk, bneg), mp(em, ek, eneg));
+            for &p in precisions {
+                for rm in MODES {
+                    let got = x.pow(&n, p, rm, &mut run.cc);
+                    let info = format!(
+                        "pow({}{bm} 2^{bk}, {}{em} 2^{ek})",
+                        if bneg { "-" } else { "" },
+                        if eneg { "-" } else { "" }
+                    );
+                    run.check(&got, p, rm, &info, |r, rnd| {
+                        ternary(r.assign_round(Pow::pow(&fx, &fn_), round_of(rnd)))
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Exact results (`2^2`, `2^-3`, `4^0.5`, `9^1.5`, `16^0.25`, `1.5^2`) are exact in every mode and carry no
+/// inexact flag; the inexact ones (`2^2.5`, `3^0.5`, `10^-2`) are correctly rounded.
+#[test]
+fn pow_of_exact_and_small_cases() -> Res {
+    let mut run = Run::new(true)?;
+    let precisions = [1usize, 2, 3, 5, 24, 53, 64, 65, 128, 200, 256];
+    pow_sweep(&mut run, &POW_BASES, &pow_exponents(), &precisions);
+    run.finish("pow small exact", 1000);
+    Ok(())
+}
+
+/// The same at larger precisions for a few bases and exponents.
+#[test]
+fn pow_of_exact_and_small_cases_at_large_precision() -> Res {
+    let mut run = Run::new(true)?;
+    let bases = [POW_BASES[0], POW_BASES[4], POW_BASES[1]];
+    let exps: Vec<Operand> = vec![
+        (2, 0, false),
+        (2, 0, true),
+        (3, 0, false),
+        (3, 0, true),
+        (1, -1, false),
+        (5, -1, false),
+        (5, -1, true),
+        (3, -1, false),
+        (3, -2, false),
+    ];
+    pow_sweep(&mut run, &bases, &exps, &[1024, 4096]);
+    run.finish("pow large precision", 100);
+    Ok(())
+}
+
+/// Negative bases with integer exponents: the sign and the exact result.
+#[test]
+fn pow_of_a_negative_base_with_an_integer_exponent() -> Res {
+    let mut run = Run::new(true)?;
+    let bases = [(1u64, 1i64, true), (3, 0, true), (5, 0, true), (3, -1, true)];
+    let exps: Vec<Operand> = pow_exponents()
+        .into_iter()
+        .filter(|&(_, k, _)| k == 0)
+        .collect();
+    pow_sweep(&mut run, &bases, &exps, &[1, 24, 64, 65, 128, 256]);
+    run.finish("pow negative base", 500);
+    Ok(())
+}
+
+/// The reported case: `pow(2, +-2)` and `pow(2, +-3)` (1.0.12: inexact in `ToEven`, `NaN` in `Up`), at 64 and 256 bits.
+#[test]
+fn pow_of_two_to_small_integers() -> Res {
+    let mut run = Run::new(true)?;
+    let exps: Vec<Operand> = vec![(2, 0, false), (2, 0, true), (3, 0, false), (3, 0, true)];
+    pow_sweep(&mut run, &[POW_BASES[0]], &exps, &[64, 256]);
+    run.finish("pow 2^n", 40);
+    Ok(())
+}
+
+/// Exact quarter powers: `16^(k/4)`, `81^(k/4)`, `256^(k/4)`, `625^(k/4)` for odd `k`, both signs (`16^0.75 = 8`,
+/// `81^-0.25 = 1/3`, ...). Exact results carry no inexact flag in any mode; the inexact ones (`81^(-1/4)` = 1/3 at
+/// a finite precision) are correctly rounded.
+#[test]
+fn pow_of_exact_quarter_powers() -> Res {
+    let mut run = Run::new(true)?;
+    let bases: [Operand; 4] = [(1, 4, false), (81, 0, false), (1, 8, false), (625, 0, false)];
+    let mut exps: Vec<Operand> = Vec::new();
+    for k in [1u64, 3, 5, 7, 9, 11] {
+        exps.push((k, -2, false));
+        exps.push((k, -2, true));
+    }
+    pow_sweep(
+        &mut run,
+        &bases,
+        &exps,
+        &[1, 2, 3, 24, 53, 64, 65, 128, 256],
+    );
+    run.finish("pow exact quarter powers", 2000);
+    Ok(())
+}

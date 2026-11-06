@@ -1,8 +1,9 @@
 //! Fused multiply-add: `a * b + c` with a single final rounding.
 
 use crate::common::util::{bump_prec_retry, round_p};
-use crate::defs::{Error, RoundingMode};
+use crate::defs::{Error, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
 use crate::num::ExactNumNumber;
+use crate::Exponent;
 use crate::WORD_BIT_SIZE;
 
 impl ExactNumNumber {
@@ -29,36 +30,72 @@ impl ExactNumNumber {
             return self.mul(b, p, rm);
         }
 
-        // When |a*b| and c are separated by more than p plus two words, the
-        // smaller term cannot change the rounded p-bit result. Skip the
-        // full-width product in that case (Horner / dot-product tails).
-        let e_prod = (self.exponent() as i64).saturating_add(b.exponent() as i64);
-        let e_c = c.exponent() as i64;
-        let sep = e_prod.abs_diff(e_c);
-        if sep > (p as u64).saturating_add((2 * WORD_BIT_SIZE) as u64) {
-            if e_prod > e_c {
-                return self.mul(b, p, rm);
-            }
-            let mut ret = c.clone()?;
-            ret.set_precision(p, rm)?;
-            ret.set_inexact(true);
-            return Ok(ret);
-        }
-
         let inexact = self.inexact() | b.inexact() | c.inexact();
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p + p_inc;
 
         // Exact product + add, then a single round to `p` (IEEE FMA). A
         // truncated product would drop sticky bits and fail the MPFR oracle.
-        // Exact product + add, then a single round to `p` (IEEE FMA). A
-        // truncated product would drop sticky bits and fail the MPFR oracle.
-        let prod = self.mul_full_prec(b)?;
-        let mut sum = prod.add_full_prec(c)?;
+        // The product is formed with a wide exponent: it may lie outside the range while the sum does not.
+        let (prod, e_p) = self.mul_full_prec_wide(b)?;
+
+        // When one term lies entirely below the other's last bit by more than two words, only
+        // its sign can affect the rounding. Replace it by a same-signed stand-in just below
+        // that bit, so the full-width sum stays small (Horner / dot-product tails) and the
+        // rounding and the inexact flag stay correct in every mode.
+        // Exponents of the leading set bits (i128: they can be almost 2^63 apart). The product is normalized
+        // with exponent 0, so its leading bit is at `e_p`; `c` may carry leading zeros when subnormal.
+        let e_c =
+            i128::from(c.exponent()) - (c.mantissa_max_bit_len() as i128 - c.precision() as i128);
+        // The stand-in must lie below the rounding position of the result as well, not only below the
+        // other term's last bit: a term of fewer than `p` bits has its last bit above that position,
+        // and a stand-in there would cut the sum (1 - tiny keeps only the bits down to the stand-in).
+        let w_prod = (prod.mantissa_max_bit_len() as i128).max(p as i128);
+        let w_c = (c.mantissa_max_bit_len() as i128).max(p as i128);
+        let guard = 2 * WORD_BIT_SIZE as i128;
+        // The sum is formed in a frame shifted by 2^off (true sum = sum * 2^off), so neither term has to
+        // fit the exponent range on its own; `place_scaled` puts the result back and rounds it once.
+        let (sum, off) = if e_p - e_c > w_prod + guard {
+            // The product dominates: frame at its exponent, `c` reduced to its sign.
+            let tiny = Self::sticky_unit(c.sign(), -w_prod - 2)?;
+            (prod.add_full_prec(&tiny)?, e_p)
+        } else if e_c - e_p > w_c + guard {
+            // `c` dominates (so it is in range): it stays where it is, the product becomes its sign.
+            let tiny = Self::sticky_unit(prod.sign(), e_c - w_c - 2)?;
+            (c.add_full_prec(&tiny)?, 0)
+        } else if e_p > i128::from(EXPONENT_MIN) && e_p <= i128::from(EXPONENT_MAX) {
+            // Comparable terms with the product in range: the plain exact sum.
+            let mut prod = prod;
+            prod.set_exponent(
+                Exponent::try_from(e_p).map_err(|_| Error::ExponentOverflow(prod.sign()))?,
+            );
+            (prod.add_full_prec(c)?, 0)
+        } else {
+            // Comparable terms with the product outside the range: both are summed in a frame shifted by
+            // `e_p` (the addend's exponent relative to `e_p` is within two mantissa widths and a guard).
+            let rel = Exponent::try_from(i128::from(c.exponent()) - e_p)
+                .map_err(|_| Error::ExponentOverflow(c.sign()))?;
+            (prod.add_full_prec_at(0, c, rel)?, e_p)
+        };
+        let mut sum = sum;
+
+        if off != 0 && !sum.is_zero() {
+            // Every bit of the exact (stand-in) sum is kept, padded to two guard bits past `p`.
+            let w = sum.mantissa_max_bit_len().max(p + WORD_BIT_SIZE);
+            sum.set_precision(w, RoundingMode::None)?;
+            let at = i128::from(sum.exponent()) + off;
+            let mut ret = sum.place_scaled(at, false, p, rm)?;
+            ret.set_inexact(ret.inexact() | inexact);
+            return Ok(ret);
+        }
 
         loop {
             if sum.is_zero() {
+                // An exact cancellation is +0, or -0 when rounding down.
                 let mut ret = Self::new(p)?;
+                if rm == RoundingMode::Down {
+                    ret.set_sign(crate::Sign::Neg);
+                }
                 ret.set_inexact(inexact | sum.inexact());
                 return Ok(ret);
             }
@@ -82,26 +119,28 @@ mod tests {
     use crate::defs::WORD_BIT_SIZE;
 
     #[test]
-    fn test_fma_zero_factor() {
+    fn test_fma_zero_factor() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToEven;
         let p = WORD_BIT_SIZE * 4;
-        let a = ExactNumNumber::from_i8(5, p).unwrap();
-        let b = ExactNumNumber::new(p).unwrap();
-        let c = ExactNumNumber::from_i8(3, p).unwrap();
-        assert_eq!(a.fma(&b, &c, p, rm).unwrap().cmp(&c), 0);
+        let a = ExactNumNumber::from_i8(5, p)?;
+        let b = ExactNumNumber::new(p)?;
+        let c = ExactNumNumber::from_i8(3, p)?;
+        assert_eq!(a.fma(&b, &c, p, rm)?.cmp(&c), 0);
+        Ok(())
     }
 
     #[test]
-    fn test_fma_disjoint_exponents_skips_full_product() {
+    fn test_fma_disjoint_exponents_skips_full_product() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToEven;
         let p = WORD_BIT_SIZE * 2;
-        let a = ExactNumNumber::from_i8(3, p).unwrap();
-        let b = ExactNumNumber::from_i8(5, p).unwrap();
-        let mut c = ExactNumNumber::from_i8(1, p).unwrap();
+        let a = ExactNumNumber::from_i8(3, p)?;
+        let b = ExactNumNumber::from_i8(5, p)?;
+        let mut c = ExactNumNumber::from_i8(1, p)?;
         c.set_exponent(c.exponent() + 10_000);
-        let got = a.fma(&b, &c, p, rm).unwrap();
-        let mut want = c.clone().unwrap();
-        want.set_precision(p, rm).unwrap();
+        let got = a.fma(&b, &c, p, rm)?;
+        let mut want = c;
+        want.set_precision(p, rm)?;
         assert_eq!(got.cmp(&want), 0);
+        Ok(())
     }
 }

@@ -1,0 +1,1 @@
+- `riemann_zeta` takes any real s: Euler–Maclaurin for s ≥ 1/2, the functional equation below (1−s rounded once to the working precision, not the operand width, so Γ(1−s) no longer hits the Stirling shift cap). ζ(1) is InvalidArgument, ζ(−2k) is exact +0, tiny and huge |s| round once toward −1/2 and 1. Oracle zeta(0.5) rows now expect the value (golden generator updated).

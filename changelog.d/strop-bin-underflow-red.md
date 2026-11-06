@@ -1,0 +1,1 @@
+- Tests (red): `strop.rs` `parse_bin_underflow_matches_library` pins the test-only `ExactNumNumber::parse` on binary numerals below `EXPONENT_MIN` to the library parse path (`ExactNum::parse`): the same correctly rounded subnormal or signed zero in every rounding mode, instead of `ExponentOverflow`.

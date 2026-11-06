@@ -1,0 +1,1 @@
+- `part_cancel`: the cancelled-bit count uses `checked_sub` / `checked_add` and is `None` when it does not fit `usize` (32-bit), instead of saturating. The now-unused `abs_usize` helper is removed.

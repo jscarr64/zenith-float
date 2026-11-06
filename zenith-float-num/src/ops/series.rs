@@ -117,7 +117,7 @@ pub trait ArgReductionEstimator {
     fn reduction_cost(n: usize, p: usize) -> u64;
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
-    fn reduction_effect(n: usize, m: isize) -> usize;
+    fn reduction_effect(n: usize, m: i64) -> usize;
 }
 
 /// Compute the number of reductions required for the best performance.
@@ -129,7 +129,7 @@ pub trait ArgReductionEstimator {
 pub(crate) fn series_cost_optimize<S: ArgReductionEstimator>(
     p: usize,
     polycoeff_gen: &impl PolycoeffGen,
-    m: isize,
+    m: i64,
     pwr_step: usize,
     ext: bool,
 ) -> (usize, usize, usize) {
@@ -141,8 +141,8 @@ pub(crate) fn series_cost_optimize<S: ArgReductionEstimator>(
         return (0, niter, m_eff);
     }
 
-    let mut reduction_times = if reduction_num_step as isize > m {
-        (reduction_num_step as isize - m) as usize
+    let mut reduction_times = if reduction_num_step as i64 > m {
+        (reduction_num_step as i64 - m) as usize
     } else {
         0
     };
@@ -284,14 +284,21 @@ fn series_rectangular<T: PolycoeffGen>(
     let mut x_pow = x_step.clone()?;
 
     for _ in 0..cache_sz {
-        cache.push(x_pow.clone()?);
-        x_pow = x_pow.mul(&x_step, p, RoundingMode::None)?;
+        // the next power is formed from the current one first; the current one is then moved into the cache
+        // (capacity was reserved above, so the push cannot fail).
+        let next = x_pow.mul(&x_step, p, RoundingMode::None)?;
+        cache.push(x_pow);
+        x_pow = next;
     }
 
     // run computation
     let poly_val = compute_row(p, &cache, polycoeff_gen)?;
     acc = acc.add(&poly_val, p, RoundingMode::None)?;
-    let mut terminal_pow = x_pow.clone()?;
+    // The running terminal power starts equal to `x_pow` (the next power after the cached ones). It is recomputed from
+    // the last cached power with the same operands and rounding, which gives the identical value, so that `x_pow` and
+    // `terminal_pow` each have one owner.
+    let last_cached = cache.last().ok_or(Error::InvalidArgument)?;
+    let mut terminal_pow = last_cached.mul(&x_step, p, RoundingMode::None)?;
     niter -= cache_sz;
 
     loop {
@@ -347,8 +354,7 @@ fn series_linear<T: PolycoeffGen>(
 
         acc = acc.add(&part, p, RoundingMode::None)?;
 
-        if part.exponent() as isize <= acc.exponent() as isize - acc.mantissa_max_bit_len() as isize
-        {
+        if part.exponent() <= acc.exponent() - acc.mantissa_max_bit_len() as i64 {
             break;
         }
 
@@ -407,13 +413,13 @@ fn series_horner<T: PolycoeffGen>(
 
     // determine number of parts and cache plynomial coeffs.
     let mut cache = Vec::<ExactNumNumber>::new();
-    let mut x_p = -(x_first.exponent() as isize) - x_step.exponent() as isize;
+    let mut x_p = -x_first.exponent() - x_step.exponent();
     let mut coef_p = 0;
 
-    while x_p + coef_p < p as isize - add.exponent() as isize {
+    while x_p + coef_p < p as i64 - add.exponent() {
         let coeff = polycoeff_gen.next(RoundingMode::None)?;
-        coef_p = -coeff.exponent() as isize;
-        x_p += -x_step.exponent() as isize;
+        coef_p = -coeff.exponent();
+        x_p += -x_step.exponent();
         cache.push(coeff.clone()?);
     }
 

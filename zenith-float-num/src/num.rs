@@ -7,15 +7,22 @@ use crate::common::util::count_leading_zeroes_skip_first;
 use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::Exponent;
+use crate::defs::Precision;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
 use crate::defs::SignedWord;
 use crate::defs::Word;
 use crate::defs::EXPONENT_MAX;
 use crate::defs::EXPONENT_MIN;
+use crate::defs::MAX_PRECISION;
 use crate::defs::WORD_BIT_SIZE;
 use crate::defs::WORD_SIGNIFICANT_BIT;
+use crate::exp;
+use crate::mantissa::AddSubSpec;
 use crate::mantissa::Mantissa;
+
+// The one approved Ziv working-copy helper (see its file); used only at the pinned sites in tools/ziv_shape_a_sites.txt.
+mod ziv_operand;
 
 /// A finite floating point number with mantissa of an arbitrary size, an exponent, and the sign.
 #[derive(Debug, Hash)]
@@ -23,7 +30,13 @@ pub(crate) struct ExactNumNumber {
     e: Exponent,
     s: Sign,
     m: Mantissa,
+    // Accumulated: set when this value or any value it was computed from was rounded.
+    // Kernel code (Ziv loops, `try_set_precision`, repeated squaring) relies on it.
     inexact: bool,
+    // Per operation: `Some(r)` when the operation that produced this value records whether
+    // it rounded (`add_per_op` and friends). `None` falls back to `inexact`. Any later
+    // in-place change of the value resets it.
+    op_inexact: Option<bool>,
 }
 
 impl ExactNumNumber {
@@ -40,7 +53,8 @@ impl ExactNumNumber {
 
     // Check the precision so it does not cause arithmetic overflows anywhere.
     pub(super) fn p_assertion(p: usize) -> Result<(), Error> {
-        if p >= (isize::MAX / 2 + EXPONENT_MIN as isize) as usize {
+        // Exponent arithmetic is done in i64; sizes in usize, which is 32 bits wide on some targets.
+        if p == 0 || p > crate::defs::MAX_PRECISION {
             Err(Error::InvalidArgument)
         } else {
             Ok(())
@@ -60,6 +74,23 @@ impl ExactNumNumber {
             e: 0,
             s: Sign::Pos,
             inexact: false,
+            op_inexact: None,
+        })
+    }
+
+    /// Like [`Self::new`], but also accepts `p = 0` (an empty mantissa). Crate-private: the full-precision
+    /// kernels (`add_full_prec`, `sub_full_prec`, `mul_full_prec`) use `p = 0` to mean "as wide as the exact
+    /// result", and the constants cache builds on them. Public entry points reject `p = 0`.
+    pub(crate) fn new_internal(p: usize) -> Result<Self, Error> {
+        if p > crate::defs::MAX_PRECISION {
+            return Err(Error::InvalidArgument);
+        }
+        Ok(ExactNumNumber {
+            m: Mantissa::new(p)?,
+            e: 0,
+            s: Sign::Pos,
+            inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -77,7 +108,30 @@ impl ExactNumNumber {
             e: 0,
             s,
             inexact,
+            op_inexact: None,
         })
+    }
+
+    /// `d` at [`DEFAULT_P`](crate::defs::DEFAULT_P) bits, built without allocating or failing.
+    /// Equal to `from_word(d, DEFAULT_P)`.
+    pub(crate) const fn small_const(d: Word) -> Self {
+        if d == 0 {
+            return ExactNumNumber {
+                m: Mantissa::zero_default(),
+                e: 0,
+                s: Sign::Pos,
+                inexact: false,
+                op_inexact: None,
+            };
+        }
+        let shift = d.leading_zeros();
+        ExactNumNumber {
+            m: Mantissa::from_normalized_top_word(d << shift),
+            e: (WORD_BIT_SIZE - shift as usize) as Exponent,
+            s: Sign::Pos,
+            inexact: false,
+            op_inexact: None,
+        }
     }
 
     /// Returns the maximum value for the specified precision `p`: all bits of the mantissa are set to 1,
@@ -95,6 +149,7 @@ impl ExactNumNumber {
             e: EXPONENT_MAX,
             s: Sign::Pos,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -111,6 +166,7 @@ impl ExactNumNumber {
             e: EXPONENT_MAX,
             s: Sign::Neg,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -130,6 +186,7 @@ impl ExactNumNumber {
             e: EXPONENT_MIN,
             s: Sign::Pos,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -149,6 +206,7 @@ impl ExactNumNumber {
             e: EXPONENT_MIN,
             s: Sign::Pos,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -174,6 +232,7 @@ impl ExactNumNumber {
                 e: (WORD_BIT_SIZE - shift) as Exponent,
                 s: Sign::Pos,
                 inexact: false,
+                op_inexact: None,
             })
         }
     }
@@ -200,13 +259,14 @@ impl ExactNumNumber {
                 let words = [d as Word, (d >> WORD_BIT_SIZE) as Word];
                 if p < WORD_BIT_SIZE * 2 {
                     if words[0] != 0 {
-                        return Err(Error::InvalidArgument);
+                        Err(Error::InvalidArgument)
                     } else {
                         Ok(ExactNumNumber {
                             m: Mantissa::from_word(p, words[1])?,
                             e: (64 - shift) as Exponent,
                             s: Sign::Pos,
                             inexact: false,
+                            op_inexact: None,
                         })
                     }
                 } else {
@@ -215,6 +275,7 @@ impl ExactNumNumber {
                         e: (64 - shift) as Exponent,
                         s: Sign::Pos,
                         inexact: false,
+                        op_inexact: None,
                     })
                 }
             }
@@ -242,7 +303,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the precision is incorrect.
     #[inline]
     pub fn add(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        self.add_sub(d2, p, 1, rm, false)
+        self.add_sub(d2, p, 1, rm, false, false)
     }
 
     /// Subtracts `d2` from `self` and returns the result of the operation with precision `p` rounded according to `rm`.
@@ -255,7 +316,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the precision is incorrect.
     #[inline]
     pub fn sub(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        self.add_sub(d2, p, -1, rm, false)
+        self.add_sub(d2, p, -1, rm, false, false)
     }
 
     /// Adds `d2` to `self` and returns the result of the operation.
@@ -268,7 +329,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     #[inline]
     pub fn add_full_prec(&self, d2: &Self) -> Result<Self, Error> {
-        self.add_sub(d2, 0, 1, RoundingMode::None, true)
+        self.add_sub(d2, 0, 1, RoundingMode::None, true, false)
     }
 
     /// Subtracts `d2` from `self` and returns the result of the operation.
@@ -281,7 +342,7 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     #[inline]
     pub fn sub_full_prec(&self, d2: &Self) -> Result<Self, Error> {
-        self.add_sub(d2, 0, -1, RoundingMode::None, true)
+        self.add_sub(d2, 0, -1, RoundingMode::None, true, false)
     }
 
     /// Multiplies `d2` by `self` and returns the result of the operation with precision `p` rounded according to `rm`.
@@ -294,7 +355,7 @@ impl ExactNumNumber {
     ///  - InvalidArgument: the precision is incorrect.
     #[inline]
     pub fn mul(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
-        self.mul_general_case(d2, p, rm, false)
+        self.mul_general_case(d2, p, rm, false, false)
     }
 
     /// Multiplies `d2` by `self` and returns the result of the operation.
@@ -307,7 +368,83 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     #[inline]
     pub fn mul_full_prec(&self, d2: &Self) -> Result<Self, Error> {
-        self.mul_general_case(d2, 0, RoundingMode::None, true)
+        self.mul_general_case(d2, 0, RoundingMode::None, true, false)
+    }
+
+    /// Exact product of two nonzero values whose exponent may lie outside the range: the significand
+    /// with exponent 0, and the true exponent (value = returned * 2^exponent).
+    pub(crate) fn mul_full_prec_wide(&self, d2: &Self) -> Result<(Self, i128), Error> {
+        if self.m.is_zero() || d2.m.is_zero() {
+            return Err(Error::InvalidArgument);
+        }
+        let s = if self.s == d2.s { Sign::Pos } else { Sign::Neg };
+        let mut inexact = false;
+        let (e_shift, m) = self.m.mul(
+            &d2.m,
+            0,
+            RoundingMode::None,
+            s == Sign::Pos,
+            true,
+            &mut inexact,
+        )?;
+        let e = i128::from(self.e) + i128::from(d2.e) - i128::from(e_shift);
+        let ret = ExactNumNumber {
+            m,
+            s,
+            e: 0,
+            inexact,
+            op_inexact: None,
+        };
+        Ok((ret, e))
+    }
+
+    /// A same-signed stand-in `2^(e - 1)` for a term whose only effect on a rounding is its sign
+    /// (it lies below the other term's last bit). Below the exponent range it is the smallest
+    /// subnormal of a wide enough mantissa, which sits at or below `2^(e - 1)`.
+    pub(crate) fn sticky_unit(s: Sign, e: i128) -> Result<Self, Error> {
+        let min = i128::from(EXPONENT_MIN);
+        if e >= min {
+            let mut t = Self::from_word(1, WORD_BIT_SIZE)?;
+            t.set_exponent(Exponent::try_from(e).map_err(|_| Error::ExponentOverflow(s))?);
+            t.s = s;
+            return Ok(t);
+        }
+        let w = usize::try_from(min - e + 1).map_err(|_| Error::InvalidArgument)?;
+        if w > MAX_PRECISION {
+            return Err(Error::InvalidArgument);
+        }
+        let m = Mantissa::min(round_p(w))?;
+        Ok(ExactNumNumber {
+            m,
+            s,
+            e: EXPONENT_MIN,
+            inexact: false,
+            op_inexact: None,
+        })
+    }
+
+    /// Adds like `add`. The result also records whether this addition rounded (`op_inexact`).
+    #[inline]
+    pub(crate) fn add_per_op(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.add_sub(d2, p, 1, rm, false, true)
+    }
+
+    /// Subtracts like `sub`. The result also records whether this subtraction rounded.
+    #[inline]
+    pub(crate) fn sub_per_op(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.add_sub(d2, p, -1, rm, false, true)
+    }
+
+    /// Multiplies like `mul`. The result also records whether this multiplication rounded.
+    #[inline]
+    pub(crate) fn mul_per_op(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.mul_general_case(d2, p, rm, false, true)
+    }
+
+    /// Divides like `div`. The result also records whether this division rounded.
+    #[inline]
+    pub(crate) fn div_per_op(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.div_general_case(d2, p, rm, true)
     }
 
     fn mul_general_case(
@@ -316,59 +453,64 @@ impl ExactNumNumber {
         p: usize,
         rm: RoundingMode,
         full_prec: bool,
+        per_op: bool,
     ) -> Result<Self, Error> {
         let p = round_p(p);
 
-        Self::p_assertion(p)?;
+        if !full_prec {
+            Self::p_assertion(p)?;
+        }
 
         let s = if self.s == d2.s { Sign::Pos } else { Sign::Neg };
 
         if self.m.is_zero() || d2.m.is_zero() {
-            let mut ret = Self::new(p)?;
+            let mut ret = Self::new_internal(p)?;
             ret.set_sign(s);
             return Ok(ret);
         }
 
-        let (e1, m1_opt) = self.normalize()?;
-        let m1_normalized = m1_opt.as_ref().unwrap_or(&self.m);
-        let (e2, m2_opt) = d2.normalize()?;
-        let m2_normalized = m2_opt.as_ref().unwrap_or(&d2.m);
+        // The product kernel takes the operands as stored, a subnormal one included (it is exact and is
+        // renormalized by the kernel), so no operand is copied or shifted.
+        let inputs = self.inexact || d2.inexact;
+        let mut inexact = false;
 
-        let mut inexact = self.inexact || d2.inexact;
+        let (e_shift, m3) = self
+            .m
+            .mul(&d2.m, p, rm, s == Sign::Pos, full_prec, &mut inexact)?;
 
-        let (e_shift, m3) = m1_normalized.mul(
-            m2_normalized,
-            p,
-            rm,
-            s == Sign::Pos,
-            full_prec,
-            &mut inexact,
-        )?;
+        let e = exp::narrow(exp::wide(self.e) + exp::wide(d2.e) - exp::wide(e_shift));
 
-        let e = e1 + e2 - e_shift;
-
-        if e > EXPONENT_MAX as isize {
+        if e > EXPONENT_MAX {
             return Err(Error::ExponentOverflow(s));
         }
 
-        if e < EXPONENT_MIN as isize {
+        if e < EXPONENT_MIN {
             let mut ret = ExactNumNumber {
                 m: m3,
                 s,
                 e: EXPONENT_MIN,
                 inexact,
+                op_inexact: None,
             };
 
+            if full_prec {
+                ret.widen_for_subnormal(e)?;
+            }
             ret.subnormalize(e, rm);
+            ret.finish_flags(inputs, per_op);
 
             Ok(ret)
         } else {
-            Ok(ExactNumNumber {
+            let mut ret = ExactNumNumber {
                 m: m3,
                 s,
                 e: e as Exponent,
                 inexact,
-            })
+                op_inexact: None,
+            };
+            ret.finish_flags(inputs, per_op);
+
+            Ok(ret)
         }
     }
 
@@ -382,6 +524,16 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - InvalidArgument: both `self` and `d2` are zero or precision is incorrect.
     pub fn div(&self, d2: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        self.div_general_case(d2, p, rm, false)
+    }
+
+    fn div_general_case(
+        &self,
+        d2: &Self,
+        p: usize,
+        rm: RoundingMode,
+        per_op: bool,
+    ) -> Result<Self, Error> {
         if d2.m.is_zero() {
             return if self.is_zero() {
                 Err(Error::InvalidArgument)
@@ -401,40 +553,43 @@ impl ExactNumNumber {
             return Ok(ret);
         }
 
-        let (e1, m1_opt) = self.normalize()?;
-        let m1_normalized = m1_opt.as_ref().unwrap_or(&self.m);
-        let (e2, m2_opt) = d2.normalize()?;
-        let m2_normalized = m2_opt.as_ref().unwrap_or(&d2.m);
+        // The division kernel takes the operands as stored (it accounts for a subnormal operand's leading
+        // zero bits itself), so no operand is cloned.
+        let inputs = self.inexact || d2.inexact;
+        let mut inexact = false;
 
-        let mut inexact = self.inexact || d2.inexact;
+        let (e_shift, m3) = self.m.div(&d2.m, p, rm, s == Sign::Pos, &mut inexact)?;
 
-        let (e_shift, m3) =
-            m1_normalized.div(m2_normalized, p, rm, s == Sign::Pos, &mut inexact)?;
+        let e = exp::narrow(exp::wide(self.e) - exp::wide(d2.e) + exp::wide(e_shift));
 
-        let e = e1 - e2 + e_shift;
-
-        if e > EXPONENT_MAX as isize {
+        if e > EXPONENT_MAX {
             return Err(Error::ExponentOverflow(s));
         }
 
-        if e < EXPONENT_MIN as isize {
+        if e < EXPONENT_MIN {
             let mut ret = ExactNumNumber {
                 m: m3,
                 s,
                 e: EXPONENT_MIN,
                 inexact,
+                op_inexact: None,
             };
 
             ret.subnormalize(e, rm);
+            ret.finish_flags(inputs, per_op);
 
             Ok(ret)
         } else {
-            Ok(ExactNumNumber {
+            let mut ret = ExactNumNumber {
                 m: m3,
                 s,
                 e: e as Exponent,
                 inexact,
-            })
+                op_inexact: None,
+            };
+            ret.finish_flags(inputs, per_op);
+
+            Ok(ret)
         }
     }
 
@@ -455,28 +610,25 @@ impl ExactNumNumber {
         }
 
         // represent as mN * 2 ^ eNeff
-        let e1eff = self.e as isize - self.m.max_bit_len() as isize;
+        let e1eff = self.e - self.m.max_bit_len() as i64;
 
         let (e, m2_opt) = d2.normalize()?;
         let m2_normalized = m2_opt.as_ref().unwrap_or(&d2.m);
-        let e2eff = e - m2_normalized.max_bit_len() as isize;
+        let e2eff = e - m2_normalized.max_bit_len() as i64;
 
-        let finalize = |mut m3: Mantissa, mut e: isize| -> Result<ExactNumNumber, Error> {
+        let finalize = |mut m3: Mantissa, mut e: i64| -> Result<ExactNumNumber, Error> {
             let (m3, e) = if m3.bit_len() > 0 {
-                if e > EXPONENT_MAX as isize {
+                if e > EXPONENT_MAX {
                     return Err(Error::ExponentOverflow(self.s));
                 }
 
-                if e < EXPONENT_MIN as isize {
+                if e < EXPONENT_MIN {
                     // first, see if m3 is already subnormal, then shift accordingly
                     let mut excess = m3.max_bit_len() - m3.bit_len();
 
-                    if EXPONENT_MIN as isize - e > usize::MAX as isize {
-                        m3.set_zero();
-                        e = 0;
-                    } else {
-                        let shift = (EXPONENT_MIN as isize - e) as usize;
-
+                    // `usize::MAX as i64` is -1, so the old range check flushed every
+                    // subnormal remainder to zero; convert the shift instead.
+                    if let Ok(shift) = usize::try_from(EXPONENT_MIN - e) {
                         if excess < shift {
                             m3.extend_subnormal(shift)?;
                             excess = m3.max_bit_len() - m3.bit_len();
@@ -486,7 +638,10 @@ impl ExactNumNumber {
                         m3.shift_left(shift);
                         m3.set_bit_len(m3.bit_len() + shift);
 
-                        e = EXPONENT_MIN as isize;
+                        e = EXPONENT_MIN;
+                    } else {
+                        m3.set_zero();
+                        e = 0;
                     }
                 } else {
                     m3.normilize2();
@@ -502,6 +657,7 @@ impl ExactNumNumber {
                 s: self.s,
                 e: e as Exponent,
                 inexact: self.inexact || d2.inexact,
+                op_inexact: None,
             };
 
             Ok(ret)
@@ -522,12 +678,10 @@ impl ExactNumNumber {
 
             let m3 = m3.mul_mod(&powm, m2_normalized)?;
 
-            let e = e2eff + m3.bit_len() as isize;
+            let e = e2eff + m3.bit_len() as i64;
 
             finalize(m3, e)
-        } else if (self.m.bit_len() as isize + self.e as isize)
-            < (m2_normalized.bit_len() as isize + e)
-        {
+        } else if (self.m.bit_len() as i64 + self.e) < (m2_normalized.bit_len() as i64 + e) {
             // self < d2, remainder = self
             self.clone()
         } else {
@@ -536,7 +690,7 @@ impl ExactNumNumber {
 
             let mut m2_normalized = if let Some(m2) = m2_opt { m2 } else { d2.m.clone()? };
 
-            let e2eff = e - m2_normalized.max_bit_len() as isize;
+            let e2eff = e - m2_normalized.max_bit_len() as i64;
             let ediff = (e2eff - e1eff) as usize;
 
             let m2l = m2_normalized.max_bit_len() + ediff;
@@ -550,38 +704,51 @@ impl ExactNumNumber {
                 self.m.rem(&m2_normalized)
             }?;
 
-            let e =
-                e1eff + m3.bit_len() as isize - m2_normalized.max_bit_len() as isize + m2l as isize;
+            let e = e1eff + m3.bit_len() as i64 - m2_normalized.max_bit_len() as i64 + m2l as i64;
 
             finalize(m3, e)
         }
     }
 
     // Return normilized mantissa and exponent with corresponding shift.
-    pub(super) fn normalize(&self) -> Result<(isize, Option<Mantissa>), Error> {
+    pub(super) fn normalize(&self) -> Result<(i64, Option<Mantissa>), Error> {
         if self.is_subnormal() {
             let mut mantissa = self.m.clone()?;
             let shift = mantissa.normilize2();
 
             #[cfg(not(target_pointer_width = "32"))]
             {
-                // checks for the case when usize is larger than exponent
-                debug_assert!((shift as isize) < (isize::MAX / 2 + EXPONENT_MIN as isize));
-
-                if (self.e as isize) - shift as isize <= isize::MIN / 2 {
-                    return Err(Error::ExponentOverflow(self.s));
-                }
+                // A shift is at most the mantissa length (< 2^60), so the result stays far inside i64.
+                debug_assert!(shift <= MAX_PRECISION);
             }
 
-            Ok((self.e as isize - shift as isize, Some(mantissa)))
+            Ok((
+                exp::narrow(exp::wide(self.e) - exp::wide_u(shift)),
+                Some(mantissa),
+            ))
         } else {
-            Ok((self.e as isize, None))
+            Ok((self.e, None))
         }
     }
 
     // Normalize mantissa and return exponent shift of `self`.
     pub(crate) fn normalize2(&mut self) -> usize {
         self.m.normilize2()
+    }
+
+    /// The exact sum of `self` and `d2` as if they carried the exponents `e1` and `e2` instead of their
+    /// own (a shared frame: `fma` sums a product that lies outside the exponent range this way, without
+    /// copying the addend). Both operands must be nonzero.
+    pub(crate) fn add_full_prec_at(
+        &self,
+        e1: Exponent,
+        d2: &Self,
+        e2: Exponent,
+    ) -> Result<Self, Error> {
+        if self.m.is_zero() || d2.m.is_zero() {
+            return Err(Error::InvalidArgument);
+        }
+        self.add_sub_at((e1, e2), d2, 0, 1, RoundingMode::None, (true, false))
     }
 
     // Combined add and sub operations.
@@ -592,50 +759,97 @@ impl ExactNumNumber {
         op: i8,
         rm: RoundingMode,
         full_prec: bool,
+        per_op: bool,
+    ) -> Result<Self, Error> {
+        self.add_sub_at((self.e, d2.e), d2, p, op, rm, (full_prec, per_op))
+    }
+
+    // Combined add and sub operations, the operands taken at the exponents `(e1, e2)`; `flags` is
+    // `(full_prec, per_op)`.
+    fn add_sub_at(
+        &self,
+        (e1, e2): (Exponent, Exponent),
+        d2: &Self,
+        p: usize,
+        op: i8,
+        rm: RoundingMode,
+        (full_prec, per_op): (bool, bool),
     ) -> Result<Self, Error> {
         let p = round_p(p);
-        Self::p_assertion(p)?;
+        if !full_prec {
+            Self::p_assertion(p)?;
+        }
 
-        let mut d3 = Self::new(0)?;
+        let mut d3 = Self::new_internal(0)?;
 
-        // one of the args is zero
-        if self.m.is_zero() {
-            let mut ret = if op < 0 { d2.neg() } else { d2.clone() }?;
-
-            ret.set_precision(p, rm)?;
-
+        // Both operands are zero: the result is a zero of precision `p`, signed by the rules for zeros.
+        if self.m.is_zero() && d2.m.is_zero() {
+            let other = if op < 0 { d2.s.invert() } else { d2.s };
+            let negative =
+                if self.s == other { self.s == Sign::Neg } else { rm == RoundingMode::Down };
+            let mut ret = Self::new_internal(p)?;
+            ret.finish_flags(d2.inexact, per_op);
+            ret.set_sign(if negative { Sign::Neg } else { Sign::Pos });
             return Ok(ret);
         }
 
-        if d2.m.is_zero() {
-            let mut ret = self.clone()?;
-
-            ret.set_precision(p, rm)?;
-
+        // One operand is zero: the general kernel sums the other operand with a zero mantissa, so the
+        // result is written (and rounded to `p`) by the same code as every other sum.
+        if self.m.is_zero() || d2.m.is_zero() {
+            let (src, sign, e0) = if self.m.is_zero() {
+                (d2, if op < 0 { d2.s.invert() } else { d2.s }, e2)
+            } else {
+                (self, self.s, e1)
+            };
+            let m0 = &src.m;
+            let inputs = src.inexact;
+            let mut inexact = false;
+            d3.s = sign;
+            let zero = Mantissa::new(WORD_BIT_SIZE)?;
+            let (shift, m3) = m0.abs_add(
+                &zero,
+                AddSubSpec {
+                    p,
+                    m2_shift: 1,
+                    rm,
+                    is_positive: d3.is_positive(),
+                    full_prec,
+                },
+                &mut inexact,
+            )?;
+            let mut ret =
+                Self::finish_sum(d3, e0 - shift, m3, (inexact, inputs), rm, per_op, full_prec)?;
+            if ret.is_zero() {
+                // A subnormal operand rounded to zero keeps the minimal exponent, as `set_precision` left it.
+                ret.e = EXPONENT_MIN;
+            }
             return Ok(ret);
         }
 
-        let (e1, m1_opt) = self.normalize()?;
-        let m1 = m1_opt.as_ref().unwrap_or(&self.m);
-        let (e2, m2_opt) = d2.normalize()?;
-        let m2 = m2_opt.as_ref().unwrap_or(&d2.m);
+        // The sum kernels take the operands as stored (a subnormal operand has leading zero bits and is
+        // renormalized by the kernel together with the result), so no operand is cloned.
+        let m1 = &self.m;
+        let m2 = &d2.m;
 
-        let mut inexact = self.inexact || d2.inexact;
+        let inputs = self.inexact || d2.inexact;
+        let mut inexact = false;
 
-        let mut e;
+        let e;
         let (shift, m3) = if (self.s != d2.s && op >= 0) || (op < 0 && self.s == d2.s) {
             // subtract
-            let cmp = self.abs_cmp(d2);
+            let cmp = self.abs_cmp_at(e1, d2, e2);
             if cmp > 0 {
                 d3.s = self.s;
                 e = e1;
                 m1.abs_sub(
                     m2,
-                    p,
-                    (e1 - e2) as usize,
-                    rm,
-                    d3.is_positive(),
-                    full_prec,
+                    AddSubSpec {
+                        p,
+                        m2_shift: exp::abs_diff_shift(e1, e2),
+                        rm,
+                        is_positive: d3.is_positive(),
+                        full_prec,
+                    },
                     &mut inexact,
                 )
             } else if cmp < 0 {
@@ -643,16 +857,22 @@ impl ExactNumNumber {
                 e = e2;
                 m2.abs_sub(
                     m1,
-                    p,
-                    (e2 - e1) as usize,
-                    rm,
-                    d3.is_positive(),
-                    full_prec,
+                    AddSubSpec {
+                        p,
+                        m2_shift: exp::abs_diff_shift(e2, e1),
+                        rm,
+                        is_positive: d3.is_positive(),
+                        full_prec,
+                    },
                     &mut inexact,
                 )
             } else {
-                let mut ret = Self::new(p)?;
+                let mut ret = Self::new_internal(p)?;
                 ret.inexact = inexact;
+                ret.finish_flags(inputs, per_op);
+                if rm == RoundingMode::Down {
+                    ret.set_sign(Sign::Neg);
+                }
                 return Ok(ret);
             }
         } else {
@@ -662,53 +882,96 @@ impl ExactNumNumber {
                 e = e1;
                 m1.abs_add(
                     m2,
-                    p,
-                    (e1 - e2) as usize,
-                    rm,
-                    d3.is_positive(),
-                    full_prec,
+                    AddSubSpec {
+                        p,
+                        m2_shift: exp::abs_diff_shift(e1, e2),
+                        rm,
+                        is_positive: d3.is_positive(),
+                        full_prec,
+                    },
                     &mut inexact,
                 )
             } else {
                 e = e2;
                 m2.abs_add(
                     m1,
-                    p,
-                    (e2 - e1) as usize,
-                    rm,
-                    d3.is_positive(),
-                    full_prec,
+                    AddSubSpec {
+                        p,
+                        m2_shift: exp::abs_diff_shift(e2, e1),
+                        rm,
+                        is_positive: d3.is_positive(),
+                        full_prec,
+                    },
                     &mut inexact,
                 )
             }
         }?;
 
-        d3.inexact |= inexact;
-
         #[cfg(not(target_pointer_width = "32"))]
         {
-            debug_assert!(shift <= isize::MAX / 2 && e >= isize::MIN / 2);
+            debug_assert!(shift <= i64::MAX / 2 && e >= -exp::WIDE_LIMIT);
         }
-        e -= shift;
+        Self::finish_sum(
+            d3,
+            exp::narrow(exp::wide(e) - exp::wide(shift)),
+            m3,
+            (inexact, inputs),
+            rm,
+            per_op,
+            full_prec,
+        )
+    }
 
-        if e > EXPONENT_MAX as isize {
+    /// Writes the exponent and mantissa of a finished sum into `d3` (sign already set) and sets the flags.
+    /// `e` is the exponent after the normalization shift; `flags` is (this sum rounded, an input was inexact).
+    fn finish_sum(
+        mut d3: Self,
+        e: i64,
+        m3: Mantissa,
+        flags: (bool, bool),
+        rm: RoundingMode,
+        per_op: bool,
+        full_prec: bool,
+    ) -> Result<Self, Error> {
+        let (inexact, inputs) = flags;
+        d3.inexact |= inexact;
+
+        if e > EXPONENT_MAX {
             return Err(Error::ExponentOverflow(d3.s));
         }
 
         d3.m = m3;
 
-        if e < EXPONENT_MIN as isize {
+        if e < EXPONENT_MIN {
             d3.e = EXPONENT_MIN;
+            if full_prec {
+                d3.widen_for_subnormal(e)?;
+            }
             d3.subnormalize(e, rm);
         } else {
             d3.e = e as Exponent;
         }
+        d3.finish_flags(inputs, per_op);
 
         Ok(d3)
     }
 
+    /// A full-precision result below the normal range keeps every bit: the mantissa grows by the
+    /// subnormal shift `EXPONENT_MIN - e` before `subnormalize`, which then drops only zeros. A shift
+    /// past `MAX_PRECISION` cannot be kept and is rounded by `subnormalize` as before.
+    fn widen_for_subnormal(&mut self, e: i64) -> Result<(), Error> {
+        let sh = i128::from(EXPONENT_MIN) - i128::from(e);
+        if let Ok(sh) = usize::try_from(sh) {
+            let p2 = self.mantissa_max_bit_len().saturating_add(sh);
+            if sh > 0 && p2 <= MAX_PRECISION {
+                self.set_precision(p2, RoundingMode::None)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Make `self` subnormal
-    pub(crate) fn subnormalize(&mut self, e: isize, rm: RoundingMode) {
+    pub(crate) fn subnormalize(&mut self, e: i64, rm: RoundingMode) {
         debug_assert_eq!(self.exponent(), EXPONENT_MIN);
 
         if self.is_zero() {
@@ -717,12 +980,13 @@ impl ExactNumNumber {
 
         let is_positive = self.is_positive();
 
-        if (self.m.max_bit_len() as isize) + e > EXPONENT_MIN as isize {
+        if (self.m.max_bit_len() as i64) + e > EXPONENT_MIN {
             // subnormal
 
-            let mut shift = (EXPONENT_MIN as isize - e) as usize;
+            let mut shift = (EXPONENT_MIN - e) as usize;
 
-            let mut inexact = self.inexact;
+            let rounded_before = self.op_inexact();
+            let mut inexact = false;
 
             if self.m.round_mantissa(
                 shift,
@@ -736,24 +1000,71 @@ impl ExactNumNumber {
             }
 
             self.inexact |= inexact;
+            self.op_inexact = Some(rounded_before || inexact);
 
             if shift > 0 {
                 self.m.shift_right(shift);
                 self.m.update_bit_len();
             }
-        } else if rm == RoundingMode::FromZero
-            || (is_positive && rm == RoundingMode::Up)
-            || (!is_positive && rm == RoundingMode::Down)
-        {
-            // non zero for directed rounding modes
-            self.m.set_zero();
-            self.m.digits_mut()[0] = 1;
-            self.m.set_bit_len(1);
-            self.inexact |= true;
         } else {
-            self.m.set_zero();
-            self.e = 0;
-            self.inexact |= true;
+            // Every significand bit sits strictly below the minimum positive.
+            // Compare the magnitude with half an ulp of that minimum.
+            let pbits = self.m.max_bit_len() as i64;
+            let below_half = e < EXPONENT_MIN - pbits;
+            let class = if below_half { -1 } else { Self::mantissa_vs_half(&self.m) };
+            self.inexact = true;
+            self.op_inexact = Some(true);
+            if Self::flush_to_min(class, rm, is_positive) {
+                self.m.set_zero();
+                self.m.digits_mut()[0] = 1;
+                self.m.set_bit_len(1);
+            } else {
+                self.m.set_zero();
+                self.e = 0;
+            }
+        }
+    }
+
+    /// `-1` below half, `0` exact tie, `1` above half of the minimum positive.
+    fn mantissa_vs_half(m: &Mantissa) -> i8 {
+        let words = m.digits();
+        if words.is_empty() {
+            return -1;
+        }
+        let last = words.len() - 1;
+        let top = words[last];
+        if top > WORD_SIGNIFICANT_BIT {
+            return 1;
+        }
+        if top < WORD_SIGNIFICANT_BIT {
+            return -1;
+        }
+        for word in &words[..last] {
+            if *word != 0 {
+                return 1;
+            }
+        }
+        0
+    }
+
+    /// True when a value in `(0, min_positive)` rounds to `min_positive`.
+    fn flush_to_min(class: i8, rm: RoundingMode, is_positive: bool) -> bool {
+        let away = rm == RoundingMode::FromZero
+            || (is_positive && rm == RoundingMode::Up)
+            || (!is_positive && rm == RoundingMode::Down);
+        match class {
+            1 => {
+                !matches!(rm, RoundingMode::ToZero | RoundingMode::None)
+                    && (rm != RoundingMode::Down || !is_positive)
+                    && (rm != RoundingMode::Up || is_positive)
+            }
+            0 => match rm {
+                RoundingMode::ToOdd | RoundingMode::FromZero => true,
+                RoundingMode::Up => is_positive,
+                RoundingMode::Down => !is_positive,
+                _ => false,
+            },
+            _ => away,
         }
     }
 
@@ -774,6 +1085,11 @@ impl ExactNumNumber {
     /// Compares the absolute value of `self` to the absolute value of `d2`.
     /// Returns positive if `|self|` is greater than `|d2|`, negative if `|self|` is smaller than `|d2|`, 0 otherwise.
     pub fn abs_cmp(&self, d2: &Self) -> SignedWord {
+        self.abs_cmp_at(self.e, d2, d2.e)
+    }
+
+    // `abs_cmp` with the operands taken at the exponents `e1` and `e2`.
+    fn abs_cmp_at(&self, e1: Exponent, d2: &Self, e2: Exponent) -> SignedWord {
         if self.m.is_zero() {
             if d2.m.is_zero() {
                 return 0;
@@ -786,11 +1102,11 @@ impl ExactNumNumber {
             return 1;
         }
 
-        let n1 = self.mantissa_max_bit_len() as isize - self.precision() as isize;
+        let n1 = self.mantissa_max_bit_len() as i64 - self.precision() as i64;
 
-        let n2 = d2.mantissa_max_bit_len() as isize - d2.precision() as isize;
+        let n2 = d2.mantissa_max_bit_len() as i64 - d2.precision() as i64;
 
-        let e: isize = self.e as isize - n1 - d2.e as isize + n2;
+        let e = exp::wide(e1) - exp::wide(n1) - exp::wide(e2) + exp::wide(n2);
         if e > 0 {
             return 1;
         } else if e < 0 {
@@ -825,9 +1141,8 @@ impl ExactNumNumber {
     ///  - InvalidArgument: `n` is larger than the number of bits in `m`;
     ///    `n` is smaller than the number of bits in `m`, but `m` does not represent corresponding subnormal number mantissa;
     ///    `n` is smaller than the number of bits in `m`, but `e` is not the minimum possible exponent;
-    ///    `n` or the size of `m` is too large (larger than isize::MAX / 2 + EXPONENT_MIN);
+    ///    `n` or the size of `m` is too large (larger than i64::MAX / 2 + EXPONENT_MIN);
     ///    `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
-    #[cfg(test)]
     pub fn from_raw_parts(
         m: &[Word],
         n: usize,
@@ -837,11 +1152,6 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let p = m.len() * WORD_BIT_SIZE;
         Self::p_assertion(p)?;
-
-        #[cfg(target_pointer_width = "32")]
-        if e < EXPONENT_MIN || e > EXPONENT_MAX {
-            return Err(Error::InvalidArgument);
-        }
 
         if n > p {
             Err(Error::InvalidArgument)
@@ -860,13 +1170,25 @@ impl ExactNumNumber {
                 e = 0;
             }
 
-            Ok(ExactNumNumber { e, s, m, inexact })
+            Ok(ExactNumNumber {
+                e,
+                s,
+                m,
+                inexact,
+                op_inexact: None,
+            })
         }
     }
 
     /// Build ExactNumNumber from raw parts unchecked.
     pub(super) fn from_raw_unchecked(m: Mantissa, s: Sign, e: Exponent, inexact: bool) -> Self {
-        ExactNumNumber { e, s, m, inexact }
+        ExactNumNumber {
+            e,
+            s,
+            m,
+            inexact,
+            op_inexact: None,
+        }
     }
 
     /// Constructs a number from the slice of words:
@@ -878,14 +1200,12 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    ///  - InvalidArgument: size of `m` is larger than isize::MAX / 2 + EXPONENT_MIN, or
+    ///  - InvalidArgument: `m` is empty, or its size is larger than i64::MAX / 2 + EXPONENT_MIN, or
     ///    when `e` is less than EXPONENT_MIN or greater than EXPONENT_MAX.
     pub fn from_words(m: &[Word], s: Sign, mut e: Exponent) -> Result<Self, Error> {
         let p = m.len() * WORD_BIT_SIZE;
         Self::p_assertion(p)?;
-
-        #[cfg(target_pointer_width = "32")]
-        if e < EXPONENT_MIN || e > EXPONENT_MAX {
+        if !(EXPONENT_MIN..=EXPONENT_MAX).contains(&e) {
             return Err(Error::InvalidArgument);
         }
 
@@ -896,8 +1216,8 @@ impl ExactNumNumber {
             e = 0;
         } else if bl < p {
             let mut shift = p - bl;
-            if (e as isize) < EXPONENT_MIN as isize + shift as isize {
-                shift = (e as isize - EXPONENT_MIN as isize) as usize;
+            if e < EXPONENT_MIN + shift as i64 {
+                shift = (e - EXPONENT_MIN) as usize;
                 e = EXPONENT_MIN;
             } else {
                 e -= shift as Exponent;
@@ -911,6 +1231,7 @@ impl ExactNumNumber {
             s,
             m,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -949,9 +1270,10 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    pub fn floor(&self) -> Result<Self, Error> {
+    pub fn floor(self) -> Result<Self, Error> {
+        let below = self.is_negative() && !self.is_int();
         let int = self.int()?;
-        if self.is_negative() && !self.fract()?.m.is_zero() {
+        if below {
             return int.sub(&ONE, int.mantissa_max_bit_len(), RoundingMode::ToZero);
         }
         Ok(int)
@@ -962,9 +1284,10 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    pub fn ceil(&self) -> Result<Self, Error> {
+    pub fn ceil(self) -> Result<Self, Error> {
+        let above = self.is_positive() && !self.is_int();
         let int = self.int()?;
-        if self.is_positive() && !self.fract()?.m.is_zero() {
+        if above {
             return int.add(&ONE, int.mantissa_max_bit_len(), RoundingMode::ToZero);
         }
         Ok(int)
@@ -975,32 +1298,31 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    pub fn fract(&self) -> Result<Self, Error> {
-        let mut ret = self.clone()?;
+    pub fn fract(mut self) -> Result<Self, Error> {
         if self.e > 0 {
             if (self.e as usize) < self.m.max_bit_len() {
                 // remove integer part of mantissa & normalize at the same time
                 if let Some(shift) = self.m.find_one_from(self.e as usize) {
-                    let mut e = self.e as isize - shift as isize;
-                    if e < EXPONENT_MIN as isize {
-                        let shift1 = (self.e as isize - EXPONENT_MIN as isize) as usize;
-                        ret.m.shift_left(shift1);
-                        ret.m.mask_bits(shift - shift1, true);
-                        e = EXPONENT_MIN as isize;
+                    let mut e = self.e - shift as i64;
+                    if e < EXPONENT_MIN {
+                        let shift1 = (self.e - EXPONENT_MIN) as usize;
+                        self.m.shift_left(shift1);
+                        self.m.mask_bits(shift - shift1, true);
+                        e = EXPONENT_MIN;
                     } else {
-                        ret.m.shift_left(shift);
+                        self.m.shift_left(shift);
                     }
-                    ret.e = e as Exponent;
+                    self.e = e as Exponent;
                 } else {
-                    ret.m.set_zero();
-                    ret.e = 0;
+                    self.m.set_zero();
+                    self.e = 0;
                 }
             } else {
-                ret.m.set_zero();
-                ret.e = 0;
+                self.m.set_zero();
+                self.e = 0;
             }
         }
-        Ok(ret)
+        Ok(self)
     }
 
     /// Returns integer part of a number.
@@ -1008,20 +1330,18 @@ impl ExactNumNumber {
     /// ## Errors
     ///
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
-    pub fn int(&self) -> Result<Self, Error> {
-        let mut ret = self.clone()?;
-
+    pub fn int(mut self) -> Result<Self, Error> {
         if self.e > 0 {
             if (self.e as usize) < self.m.max_bit_len() {
-                ret.m
+                self.m
                     .mask_bits(self.m.max_bit_len() - self.e as usize, false)
             }
         } else {
-            ret.m.set_zero();
-            ret.e = 0;
+            self.m.set_zero();
+            self.e = 0;
         }
 
-        Ok(ret)
+        Ok(self)
     }
 
     /// Returns true if `self` is odd integer number.
@@ -1037,6 +1357,11 @@ impl ExactNumNumber {
         }
     }
 
+    /// Returns true if `self` is a nonzero power of two (a single set bit in the mantissa).
+    pub(crate) fn is_power_of_two(&self) -> bool {
+        !self.is_zero() && self.m.find_one_from(1).is_none()
+    }
+
     /// Returns true if `self` is an integer number.
     pub fn is_int(&self) -> bool {
         if self.e > 0 {
@@ -1047,6 +1372,25 @@ impl ExactNumNumber {
             }
         } else {
             self.is_zero()
+        }
+    }
+
+    /// Whether `self` is an even integer (zero included), read from the units bit without a copy.
+    pub(crate) fn is_even_int(&self) -> bool {
+        self.is_int_scaled(-1)
+    }
+
+    /// Whether `2 self` is an integer (an integer or a half-integer), without a copy.
+    pub(crate) fn is_int_when_doubled(&self) -> bool {
+        self.is_int_scaled(1)
+    }
+
+    /// Whether `self 2^k` is an integer: no one bit at or after mantissa position `e + k`.
+    fn is_int_scaled(&self, k: Exponent) -> bool {
+        match usize::try_from(self.e.saturating_add(k)) {
+            Ok(0) | Err(_) => self.is_zero(),
+            Ok(u) if u < self.m.max_bit_len() => self.m.find_one_from(u).is_none(),
+            Ok(_) => true,
         }
     }
 
@@ -1070,21 +1414,12 @@ impl ExactNumNumber {
     /// Note that if `self` is subnormal, the exponent may not change, but the mantissa will shift instead.
     /// `e` will be clamped to the range from EXPONENT_MIN to EXPONENT_MAX if it's outside of the range.
     pub fn set_exponent(&mut self, e: Exponent) {
-        #[cfg(target_pointer_width = "32")]
-        let e = if e < EXPONENT_MIN {
-            EXPONENT_MIN
-        } else if e > EXPONENT_MAX {
-            EXPONENT_MAX
-        } else {
-            e
-        };
-
         if !self.is_zero() {
             if self.is_subnormal() && e > EXPONENT_MIN {
-                let ediff = e as isize - EXPONENT_MIN as isize;
+                let ediff = e - EXPONENT_MIN;
 
                 let n = self.mantissa_max_bit_len() - self.precision();
-                if n as isize >= ediff {
+                if n as i64 >= ediff {
                     self.m.shift_left(ediff as usize);
                     self.m.set_bit_len(self.m.bit_len() + ediff as usize);
                 } else {
@@ -1100,14 +1435,14 @@ impl ExactNumNumber {
 
     /// Returns the maximum mantissa length of `self` in bits regardless of whether `self` is normal or subnormal.
     #[inline]
-    pub fn mantissa_max_bit_len(&self) -> usize {
+    pub fn mantissa_max_bit_len(&self) -> Precision {
         self.m.max_bit_len()
     }
 
     /// Returns the number of significant bits used in the mantissa. Normal numbers use all bits of the mantissa.
     /// Subnormal numbers use fewer bits than the mantissa can hold.
     #[inline]
-    pub fn precision(&self) -> usize {
+    pub fn precision(&self) -> Precision {
         self.m.bit_len()
     }
 
@@ -1118,81 +1453,88 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - ExponentOverflow: rounding causes exponent overflow.
     ///  - InvalidArgument: `n` is too large.
-    pub fn round(&self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
-        if n >= (isize::MAX / 2) as usize {
+    pub fn round(mut self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
+        // `n` reaches `|EXPONENT_MIN| + p` when rounding onto the subnormal grid; `EXPONENT_MAX + 2 * MAX_PRECISION`
+        // fits `i64`, so `-(n - 1)` below cannot wrap. The old `i64::MAX / 2` cap rejected those `n` at the i64 exponent.
+        if n as u64 > EXPONENT_MAX as u64 + 2 * MAX_PRECISION as u64 {
             return Err(Error::InvalidArgument);
         }
+        let mut rounded = false;
 
-        let mut ret = self.clone()?;
-
-        let e = self.mantissa_max_bit_len() as isize - self.e as isize;
+        let max_bits = self.mantissa_max_bit_len();
+        let e = max_bits as i64 - self.e;
 
         if e > 0 && e as usize > n && !self.is_zero() {
             let m = e as usize - n;
 
-            if m >= self.mantissa_max_bit_len() {
+            if m >= max_bits {
                 let is_positive = self.is_positive();
                 let msb_set = self.m.most_significant_word() & WORD_SIGNIFICANT_BIT != 0;
+                let below_half =
+                    count_leading_zeroes_skip_first(self.mantissa().digits()) != max_bits;
 
-                ret.m.set_zero();
+                self.m.set_zero();
 
                 if rm == RoundingMode::FromZero
                     || (is_positive && rm == RoundingMode::Up)
                     || (!is_positive && rm == RoundingMode::Down)
-                    || (m == self.mantissa_max_bit_len()
+                    || (m == max_bits
                         && ((msb_set && rm == RoundingMode::ToOdd)
-                            || (rm == RoundingMode::ToEven
-                                && msb_set
-                                && count_leading_zeroes_skip_first(self.mantissa().digits())
-                                    != self.mantissa_max_bit_len())))
+                            || (rm == RoundingMode::ToEven && msb_set && below_half)))
                 {
                     // non zero for directed rounding modes,
                     // non zero for rounding to even/odd when msb of self is the rounding bit
-                    *ret.m.digits_mut().last_mut().unwrap() = WORD_SIGNIFICANT_BIT;
-                    ret.m.set_bit_len(ret.mantissa_max_bit_len());
+                    let Some(top) = self.m.digits_mut().last_mut() else {
+                        return Err(Error::InvalidArgument); // a rounded result has at least one word
+                    };
+                    *top = WORD_SIGNIFICANT_BIT;
+                    self.m.set_bit_len(self.mantissa_max_bit_len());
 
-                    let e = -(n as isize - 1);
-                    if e < EXPONENT_MIN as isize {
-                        ret.e = EXPONENT_MIN;
-                        ret.subnormalize(e, rm);
+                    let e = -(n as i64 - 1);
+                    if e < EXPONENT_MIN {
+                        self.e = EXPONENT_MIN;
+                        self.subnormalize(e, rm);
                     } else {
-                        ret.e = e as Exponent;
+                        self.e = e as Exponent;
                     }
                 } else {
-                    ret.e = 0;
+                    self.e = 0;
                 }
 
-                ret.inexact |= true; // self was not zero
+                self.inexact |= true; // self was not zero
+                rounded = true;
             } else {
-                let mut inexact = ret.inexact;
+                let mut inexact = false;
 
-                let ovf = ret.m.round_mantissa(
+                let ovf = self.m.round_mantissa(
                     m,
                     rm,
                     self.is_positive(),
                     &mut false,
-                    ret.m.max_bit_len(),
+                    self.m.max_bit_len(),
                     &mut inexact,
                 );
 
-                ret.inexact |= inexact;
+                self.inexact |= inexact;
+                rounded = inexact;
 
                 if ovf {
-                    if ret.e == EXPONENT_MAX {
-                        return Err(Error::ExponentOverflow(ret.s));
+                    if self.e == EXPONENT_MAX {
+                        return Err(Error::ExponentOverflow(self.s));
                     }
 
-                    ret.e += 1;
-                } else if ret.m.is_all_zero() {
-                    ret.m.set_bit_len(0);
-                    ret.e = 0;
-                } else if ret.is_subnormal() {
-                    ret.m.update_bit_len();
+                    self.e += 1;
+                } else if self.m.is_all_zero() {
+                    self.m.set_bit_len(0);
+                    self.e = 0;
+                } else if self.is_subnormal() {
+                    self.m.update_bit_len();
                 }
             }
         }
 
-        Ok(ret)
+        self.set_op_inexact(rounded);
+        Ok(self)
     }
 
     #[cfg(any(test, feature = "random"))]
@@ -1209,16 +1551,10 @@ impl ExactNumNumber {
     pub fn random_normal(p: usize, exp_from: Exponent, exp_to: Exponent) -> Result<Self, Error> {
         Self::p_assertion(p)?;
 
-        #[cfg(target_pointer_width = "32")]
-        if exp_from < EXPONENT_MIN || exp_to > EXPONENT_MAX {
-            return Err(Error::InvalidArgument);
-        }
-
         let m = Mantissa::random_normal(p)?;
         let e = if exp_from < exp_to {
-            (crate::common::test_rng::random::<isize>().abs()
-                % (exp_to as isize - exp_from as isize)
-                + exp_from as isize) as Exponent
+            (crate::common::test_rng::random::<i64>().abs() % (exp_to - exp_from) + exp_from)
+                as Exponent
         } else {
             exp_from
         };
@@ -1232,6 +1568,7 @@ impl ExactNumNumber {
             s,
             m,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -1246,6 +1583,7 @@ impl ExactNumNumber {
             s: self.s,
             m: self.m.clone()?,
             inexact: self.inexact,
+            op_inexact: self.op_inexact,
         })
     }
 
@@ -1277,6 +1615,95 @@ impl ExactNumNumber {
         self.set_precision_internal(p, rm, self.inexact(), s)
     }
 
+    /// Evaluates a correctly-rounded operation `op(precision, rounding)` so that the result is
+    /// rounded at exactly `p` bits. Word-aligned precisions and `RoundingMode::None` call `op`
+    /// directly; otherwise `op` runs toward zero with a guard word and the result is rounded to
+    /// odd and then to `p` bits with `rm`.
+    pub(crate) fn exact_bits<F>(p: usize, rm: RoundingMode, mut op: F) -> Result<Self, Error>
+    where
+        F: FnMut(usize, RoundingMode) -> Result<Self, Error>,
+    {
+        Self::p_assertion(p)?;
+        if rm == RoundingMode::None {
+            return op(p, rm);
+        }
+        if p.is_multiple_of(WORD_BIT_SIZE) {
+            let r = op(p, rm)?;
+            // A rounded subnormal result was rounded twice (at `p` bits, then onto the
+            // subnormal grid); recompute it through the round-to-odd path.
+            if r.e != EXPONENT_MIN || !r.op_inexact() {
+                return Ok(r);
+            }
+        }
+        let wide = op(round_p(p) + WORD_BIT_SIZE, RoundingMode::ToZero)?;
+        if wide.is_zero() && !wide.op_inexact() {
+            // Exact zero: its sign depends on the rounding mode.
+            return op(p, rm);
+        }
+        wide.round_odd_to(p, rm)
+    }
+
+    /// Rounds a result that was computed toward zero at a precision of at least `p + 2` bits
+    /// to exactly `p` bits with `rm`: the sticky bit is folded into the least significant bit
+    /// (round to odd) before the final rounding, so no double-rounding error can occur.
+    /// The per-operation flag must say whether the toward-zero computation rounded.
+    pub(crate) fn round_odd_to(mut self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        let rounded = self.op_inexact();
+        let acc = self.inexact;
+
+        if rounded {
+            if self.m.is_zero() {
+                // A nonzero magnitude below the finest grid of the wide format.
+                self.m = Mantissa::min(self.mantissa_max_bit_len())?;
+                self.e = EXPONENT_MIN;
+            } else if let Some(w) = self.m.digits_mut().first_mut() {
+                *w |= 1;
+            }
+        }
+
+        self.inexact = false;
+        self.set_precision(p, rm)?;
+        let rounded_again = self.inexact;
+
+        self.inexact = acc || rounded_again;
+        self.op_inexact = Some(rounded || rounded_again);
+        Ok(self)
+    }
+
+    /// Places a value whose true exponent `e` may lie outside the exponent range, then rounds it once to `p` bits.
+    /// `self` holds the significand (its own exponent is ignored) truncated toward zero to at least `p + 2` bits;
+    /// `rounded` says whether that truncation dropped anything. Above the range: `ExponentOverflow` with the sign.
+    /// Below it: the value is shifted onto the subnormal grid with the sticky bit kept, so it is rounded once.
+    pub(crate) fn place_scaled(
+        mut self,
+        e: i128,
+        rounded: bool,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Self, Error> {
+        if e > i128::from(EXPONENT_MAX) {
+            return Err(Error::ExponentOverflow(self.s));
+        }
+        self.op_inexact = Some(rounded);
+        self.inexact |= rounded;
+        if self.m.is_zero() {
+            return self.round_odd_to(p, rm);
+        }
+        if e >= i128::from(EXPONENT_MIN) {
+            self.e = Exponent::try_from(e).map_err(|_| Error::ExponentOverflow(self.s))?;
+            return self.round_odd_to(p, rm);
+        }
+        self.e = EXPONENT_MIN;
+        let floor = i128::from(EXPONENT_MIN) - i128::from(EXPONENT_MAX);
+        let e_low = i64::try_from(e.max(floor)).map_err(|_| Error::ExponentOverflow(self.s))?;
+        self.subnormalize(e_low, RoundingMode::ToZero);
+        if self.m.is_zero() {
+            // Flushed: every bit sat below the finest grid; round_odd_to turns it into a sticky unit.
+            self.e = EXPONENT_MIN;
+            self.op_inexact = Some(true);
+        }
+        self.round_odd_to(p, rm)
+    }
     fn set_precision_internal(
         &mut self,
         p: usize,
@@ -1299,6 +1726,7 @@ impl ExactNumNumber {
             );
 
             self.inexact |= inexact;
+            self.op_inexact = None;
 
             if check_roundable && self.inexact {
                 return Ok(false);
@@ -1323,6 +1751,7 @@ impl ExactNumNumber {
                 }
             } else {
                 self.inexact |= true;
+                self.op_inexact = None;
             }
         }
 
@@ -1356,6 +1785,7 @@ impl ExactNumNumber {
             s,
             e,
             inexact: false,
+            op_inexact: None,
         })
     }
 
@@ -1414,7 +1844,7 @@ impl ExactNumNumber {
                 shift += 1;
             }
 
-            let mut words = [0; (SZ + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE];
+            let mut words = [0; SZ.div_ceil(WORD_BIT_SIZE)];
             for w in &mut words {
                 *w = v as Word;
                 v >>= WORD_BIT_SIZE;
@@ -1425,6 +1855,7 @@ impl ExactNumNumber {
                 e: (SZ - shift) as Exponent,
                 s: Sign::Pos,
                 inexact: false,
+                op_inexact: None,
             })
         }
     }
@@ -1442,7 +1873,7 @@ impl ExactNumNumber {
     pub(crate) fn div_by_2(&mut self, rm: RoundingMode) {
         let e = self.exponent();
         if e == EXPONENT_MIN {
-            self.subnormalize(e as isize - 1, rm);
+            self.subnormalize(e - 1, rm);
         } else {
             self.set_exponent(e - 1);
         }
@@ -1458,6 +1889,35 @@ impl ExactNumNumber {
     #[inline]
     pub fn set_inexact(&mut self, inexact: bool) {
         self.inexact = inexact;
+        self.op_inexact = None;
+    }
+
+    /// A copy of `self` with both inexact flags cleared, so that a function evaluated on it
+    /// reports only its own rounding.
+    pub(crate) fn exact_copy(&self) -> Result<Self, Error> {
+        let mut c = self.clone()?;
+        c.set_inexact(false);
+        Ok(c)
+    }
+
+    /// Records whether the operation that produced `self` rounded it.
+    pub(crate) fn set_op_inexact(&mut self, op: bool) {
+        self.op_inexact = Some(op);
+    }
+
+    /// Returns true if the operation that produced `self` rounded. Values whose producing
+    /// operation does not record that report the accumulated flag, `inexact()`.
+    #[inline]
+    pub fn op_inexact(&self) -> bool {
+        self.op_inexact.unwrap_or(self.inexact)
+    }
+
+    // Splits the flag after an operation that started from `inexact = false`: `self.inexact`
+    // holds what this operation rounded; `inputs` is the operands' accumulated flag.
+    pub(crate) fn finish_flags(&mut self, inputs: bool, per_op: bool) {
+        let rounded = self.inexact;
+        self.inexact = rounded || inputs;
+        self.op_inexact = if per_op { Some(rounded) } else { None };
     }
 }
 
@@ -1515,7 +1975,7 @@ mod tests {
     use alloc::format;
 
     #[test]
-    fn test_number() {
+    fn test_number() -> Result<(), crate::Error> {
         let p_rng = 10;
         let p_min = 5;
         let p1 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
@@ -1523,13 +1983,13 @@ mod tests {
         let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
 
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
 
         let mut d1;
         let mut d2;
         let mut d3;
         let mut ref_num;
-        let mut eps = ONE.clone().unwrap();
+        let mut eps = ExactNumNumber::small_const(1);
 
         for _ in 0..1000 {
             let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
@@ -1540,11 +2000,11 @@ mod tests {
             let i4: i64 = crate::common::test_rng::random::<i64>();
             let i5: i128 = crate::common::test_rng::random::<i128>();
 
-            let n1 = ExactNumNumber::from_i8(i1, p).unwrap();
-            let n2 = ExactNumNumber::from_i16(i2, p).unwrap();
-            let n3 = ExactNumNumber::from_i32(i3, p).unwrap();
-            let n4 = ExactNumNumber::from_i64(i4, p).unwrap();
-            let n5 = ExactNumNumber::from_i128(i5, p).unwrap();
+            let n1 = ExactNumNumber::from_i8(i1, p)?;
+            let n2 = ExactNumNumber::from_i16(i2, p)?;
+            let n3 = ExactNumNumber::from_i32(i3, p)?;
+            let n4 = ExactNumNumber::from_i64(i4, p)?;
+            let n5 = ExactNumNumber::from_i128(i5, p)?;
 
             let p1 = ExactNumNumber::parse(
                 &format!("{}", i1),
@@ -1552,40 +2012,35 @@ mod tests {
                 p,
                 RoundingMode::None,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
             let p2 = ExactNumNumber::parse(
                 &format!("{}", i2),
                 crate::Radix::Dec,
                 p,
                 RoundingMode::None,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
             let p3 = ExactNumNumber::parse(
                 &format!("{}", i3),
                 crate::Radix::Dec,
                 p,
                 RoundingMode::None,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
             let p4 = ExactNumNumber::parse(
                 &format!("{}", i4),
                 crate::Radix::Dec,
                 p,
                 RoundingMode::None,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
             let p5 = ExactNumNumber::parse(
                 &format!("{}", i5),
                 crate::Radix::Dec,
                 p,
                 RoundingMode::None,
                 &mut cc,
-            )
-            .unwrap();
+            )?;
 
             assert!(p1.cmp(&n1) == 0);
             assert!(p2.cmp(&n2) == 0);
@@ -1595,21 +2050,21 @@ mod tests {
         }
 
         // 0 * 0
-        d1 = ExactNumNumber::new(p1).unwrap();
-        d2 = ExactNumNumber::new(p2).unwrap();
-        ref_num = ExactNumNumber::new(p).unwrap();
-        d3 = d1.mul(&d2, p, rm).unwrap();
+        d1 = ExactNumNumber::new(p1)?;
+        d2 = ExactNumNumber::new(p2)?;
+        ref_num = ExactNumNumber::new(p)?;
+        d3 = d1.mul(&d2, p, rm)?;
         assert!(d3.cmp(&ref_num) == 0);
 
         // 0 / d2
-        d2 = ExactNumNumber::from_i8(1, p2).unwrap(); // non-zero divisor
-        d3 = d1.div(&d2, p, rm).unwrap();
-        ref_num = ExactNumNumber::new(p).unwrap();
+        d2 = ExactNumNumber::from_i8(1, p2)?; // non-zero divisor
+        d3 = d1.div(&d2, p, rm)?;
+        ref_num = ExactNumNumber::new(p)?;
         assert!(d3.cmp(&ref_num) == 0);
 
         // 0 / -d2
-        d2 = d2.neg().unwrap();
-        d3 = d1.div(&d2, p, rm).unwrap();
+        d2 = d2.neg()?;
+        d3 = d1.div(&d2, p, rm)?;
         assert!(d3.cmp(&ref_num) == 0);
 
         // add & sub & cmp
@@ -1618,38 +2073,29 @@ mod tests {
             let p2 = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
             let p = (random::<usize>() % p_rng + p_min) * WORD_BIT_SIZE;
 
-            d1 = ExactNumNumber::random_normal(p1, -(p1 as Exponent) / 2, p1 as Exponent).unwrap();
-            d2 = ExactNumNumber::random_normal(p2, -(p2 as Exponent) / 2, p2 as Exponent).unwrap();
+            d1 = ExactNumNumber::random_normal(p1, -(p1 as Exponent) / 2, p1 as Exponent)?;
+            d2 = ExactNumNumber::random_normal(p2, -(p2 as Exponent) / 2, p2 as Exponent)?;
 
-            let d3 = d1.sub(&d2, p, RoundingMode::ToEven).unwrap();
-            let d4 = d3.add(&d2, p, RoundingMode::ToEven).unwrap();
+            let d3 = d1.sub(&d2, p, RoundingMode::ToEven)?;
+            let d4 = d3.add(&d2, p, RoundingMode::ToEven)?;
 
             eps.set_exponent(d1.exponent().max(d2.exponent()) - p as Exponent + 2);
 
-            assert!(
-                d1.sub(&d4, p, RoundingMode::ToEven)
-                    .unwrap()
-                    .abs()
-                    .unwrap()
-                    .cmp(&eps)
-                    < 0
-            );
+            assert!(d1.sub(&d4, p, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
 
             // subnormal
-            d1 = random_subnormal(p1);
-            d2 = random_subnormal(p2);
+            d1 = random_subnormal(p1)?;
+            d2 = random_subnormal(p2)?;
 
-            let d3 = d1.sub(&d2, p, RoundingMode::ToEven).unwrap();
-            let d4 = d3.add(&d2, p, RoundingMode::ToEven).unwrap();
+            let d3 = d1.sub(&d2, p, RoundingMode::ToEven)?;
+            let d4 = d3.add(&d2, p, RoundingMode::ToEven)?;
 
-            d1.set_precision(p, RoundingMode::ToEven).unwrap();
+            d1.set_precision(p, RoundingMode::ToEven)?;
 
             assert!(
-                d1.sub(&d4, p, RoundingMode::ToEven)
-                    .unwrap()
-                    .abs()
-                    .unwrap()
-                    .cmp(&ExactNumNumber::min_positive(p).unwrap())
+                d1.sub(&d4, p, RoundingMode::ToEven)?
+                    .abs()?
+                    .cmp(&ExactNumNumber::min_positive(p)?)
                     <= 0
             );
         }
@@ -1662,18 +2108,16 @@ mod tests {
             Sign::Pos,
             0,
             false,
-        )
-        .unwrap();
+        )?;
         d2 = ExactNumNumber::from_raw_parts(
             &[w, WORD_MAX, WORD_MAX],
             WORD_BIT_SIZE * 3,
             Sign::Pos,
             0,
             false,
-        )
-        .unwrap();
+        )?;
 
-        d3 = d1.sub(&d2, WORD_BIT_SIZE, RoundingMode::None).unwrap();
+        d3 = d1.sub(&d2, WORD_BIT_SIZE, RoundingMode::None)?;
 
         assert_eq!(w, d3.mantissa().digits()[0]);
 
@@ -1684,20 +2128,16 @@ mod tests {
             Sign::Pos,
             0,
             false,
-        )
-        .unwrap();
+        )?;
         d2 = ExactNumNumber::from_raw_parts(
             &[0, WORD_MAX, WORD_MAX],
             WORD_BIT_SIZE * 3,
             Sign::Pos,
             -16,
             false,
-        )
-        .unwrap();
+        )?;
 
-        d3 = d1
-            .add(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)
-            .unwrap();
+        d3 = d1.add(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)?;
 
         d1 = ExactNumNumber::from_raw_parts(
             &[WORD_MAX - 10, WORD_MAX],
@@ -1705,19 +2145,15 @@ mod tests {
             Sign::Pos,
             0,
             false,
-        )
-        .unwrap();
+        )?;
         d2 = ExactNumNumber::from_raw_parts(
             &[WORD_MAX, WORD_MAX],
             WORD_BIT_SIZE * 2,
             Sign::Pos,
             -16,
             false,
-        )
-        .unwrap();
-        let d4 = d1
-            .add(&d2, WORD_BIT_SIZE * 4, RoundingMode::ToEven)
-            .unwrap();
+        )?;
+        let d4 = d1.add(&d2, WORD_BIT_SIZE * 4, RoundingMode::ToEven)?;
 
         assert!(d4.mantissa_max_bit_len() == WORD_BIT_SIZE * 4);
         assert!(d3.cmp(&d4) == 0);
@@ -1728,20 +2164,16 @@ mod tests {
             Sign::Pos,
             0,
             false,
-        )
-        .unwrap();
+        )?;
         d2 = ExactNumNumber::from_raw_parts(
             &[0, WORD_MAX, WORD_MAX],
             WORD_BIT_SIZE * 3,
             Sign::Pos,
             -16,
             false,
-        )
-        .unwrap();
+        )?;
 
-        d3 = d1
-            .sub(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)
-            .unwrap();
+        d3 = d1.sub(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)?;
 
         d1 = ExactNumNumber::from_raw_parts(
             &[WORD_MAX - 10, WORD_MAX],
@@ -1749,19 +2181,15 @@ mod tests {
             Sign::Pos,
             0,
             false,
-        )
-        .unwrap();
+        )?;
         d2 = ExactNumNumber::from_raw_parts(
             &[WORD_MAX, WORD_MAX],
             WORD_BIT_SIZE * 2,
             Sign::Pos,
             -16,
             false,
-        )
-        .unwrap();
-        let d4 = d1
-            .sub(&d2, WORD_BIT_SIZE * 4, RoundingMode::ToEven)
-            .unwrap();
+        )?;
+        let d4 = d1.sub(&d2, WORD_BIT_SIZE * 4, RoundingMode::ToEven)?;
 
         assert!(d4.mantissa_max_bit_len() == WORD_BIT_SIZE * 4);
         assert!(d3.cmp(&d4) == 0);
@@ -1773,32 +2201,24 @@ mod tests {
             Sign::Pos,
             0,
             false,
-        )
-        .unwrap();
+        )?;
         d2 = ExactNumNumber::from_raw_parts(
             &[0, WORD_MAX, WORD_MAX],
             WORD_BIT_SIZE * 3,
             Sign::Pos,
             -16,
             false,
-        )
-        .unwrap();
-        d3 = d1.add(&d2, WORD_BIT_SIZE, RoundingMode::ToEven).unwrap();
-        let mut d4 = d1
-            .add(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)
-            .unwrap();
-        d4.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)
-            .unwrap();
+        )?;
+        d3 = d1.add(&d2, WORD_BIT_SIZE, RoundingMode::ToEven)?;
+        let mut d4 = d1.add(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)?;
+        d4.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)?;
 
         assert!(d4.mantissa_max_bit_len() == WORD_BIT_SIZE);
         assert!(d3.cmp(&d4) == 0);
 
-        d3 = d1.sub(&d2, WORD_BIT_SIZE, RoundingMode::ToEven).unwrap();
-        let mut d4 = d1
-            .sub(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)
-            .unwrap();
-        d4.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)
-            .unwrap();
+        d3 = d1.sub(&d2, WORD_BIT_SIZE, RoundingMode::ToEven)?;
+        let mut d4 = d1.sub(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)?;
+        d4.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)?;
 
         assert!(d4.mantissa_max_bit_len() == WORD_BIT_SIZE);
         assert!(d3.cmp(&d4) == 0);
@@ -1808,10 +2228,10 @@ mod tests {
             let p1 = (random::<usize>() % 3 + 1) * WORD_BIT_SIZE;
             let p2 = (random::<usize>() % 3 + 1) * WORD_BIT_SIZE;
 
-            d1 = ExactNumNumber::random_normal(p1, -(p1 as Exponent) / 2, p1 as Exponent).unwrap();
-            d2 = ExactNumNumber::random_normal(p2, -(p2 as Exponent) / 2, p2 as Exponent).unwrap();
-            let d3 = d1.sub_full_prec(&d2).unwrap();
-            let d4 = d3.add_full_prec(&d2).unwrap();
+            d1 = ExactNumNumber::random_normal(p1, -(p1 as Exponent) / 2, p1 as Exponent)?;
+            d2 = ExactNumNumber::random_normal(p2, -(p2 as Exponent) / 2, p2 as Exponent)?;
+            let d3 = d1.sub_full_prec(&d2)?;
+            let d4 = d3.add_full_prec(&d2)?;
             //println!("\n=== res \n{:?} \n{:?} \n{:?} \n{:?} \n{:?} \n{:?}", d1, d2, d3, d4, d1.sub(&d4, RoundingMode::ToEven).unwrap().abs().unwrap(), eps);
             assert!(d1.cmp(&d4) == 0);
         }
@@ -1826,46 +2246,36 @@ mod tests {
                 p1,
                 EXPONENT_MIN / 2 + p as Exponent,
                 EXPONENT_MAX / 2,
-            )
-            .unwrap();
-            d2 = ExactNumNumber::random_normal(p2, EXPONENT_MIN / 2, EXPONENT_MAX / 2).unwrap();
+            )?;
+            d2 = ExactNumNumber::random_normal(p2, EXPONENT_MIN / 2, EXPONENT_MAX / 2)?;
 
             if !d2.is_zero() {
                 let d4 = if i & 1 == 0 {
-                    let d3 = d1.div(&d2, p, RoundingMode::ToEven).unwrap();
-                    d3.mul(&d2, p, RoundingMode::ToEven).unwrap()
+                    let d3 = d1.div(&d2, p, RoundingMode::ToEven)?;
+                    d3.mul(&d2, p, RoundingMode::ToEven)?
                 } else {
-                    let d3 = d1.mul(&d2, p, RoundingMode::ToEven).unwrap();
-                    d3.div(&d2, p, RoundingMode::ToEven).unwrap()
+                    let d3 = d1.mul(&d2, p, RoundingMode::ToEven)?;
+                    d3.div(&d2, p, RoundingMode::ToEven)?
                 };
 
                 eps.set_exponent(d1.exponent() - p as Exponent + 2);
 
                 //println!("\n{:?}\n{:?}\n{:?}\n{:?}", d1,d2,d3,d4);
 
-                assert!(
-                    d1.sub(&d4, p, RoundingMode::ToEven)
-                        .unwrap()
-                        .abs()
-                        .unwrap()
-                        .cmp(&eps)
-                        < 0
-                );
+                assert!(d1.sub(&d4, p, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
             }
 
             // subnormal
-            d1 = random_subnormal(p1);
-            d2 = random_subnormal(p2);
+            d1 = random_subnormal(p1)?;
+            d2 = random_subnormal(p2)?;
 
-            let d3 = d1.div(&d2, p, RoundingMode::ToEven).unwrap();
-            let d4 = d3.mul(&d2, p, RoundingMode::ToEven).unwrap();
+            let d3 = d1.div(&d2, p, RoundingMode::ToEven)?;
+            let d4 = d3.mul(&d2, p, RoundingMode::ToEven)?;
 
             assert!(
-                d1.sub(&d4, p, RoundingMode::ToEven)
-                    .unwrap()
-                    .abs()
-                    .unwrap()
-                    .cmp(&ExactNumNumber::min_positive(p).unwrap())
+                d1.sub(&d4, p, RoundingMode::ToEven)?
+                    .abs()?
+                    .cmp(&ExactNumNumber::min_positive(p)?)
                     <= 0
             );
         }
@@ -1880,13 +2290,12 @@ mod tests {
                 p1,
                 EXPONENT_MIN / 2 + p as Exponent, // avoid subnormal numbers
                 EXPONENT_MAX / 2,
-            )
-            .unwrap();
-            d2 = ExactNumNumber::random_normal(p2, EXPONENT_MIN / 2, EXPONENT_MAX / 2).unwrap();
+            )?;
+            d2 = ExactNumNumber::random_normal(p2, EXPONENT_MIN / 2, EXPONENT_MAX / 2)?;
 
             if !d2.is_zero() {
-                let d3 = d1.mul_full_prec(&d2).unwrap();
-                let d4 = d1.mul(&d2, p1 + p2, rm).unwrap();
+                let d3 = d1.mul_full_prec(&d2)?;
+                let d4 = d1.mul(&d2, p1 + p2, rm)?;
                 //println!("\n{:?}\n{:?}\n{:?}\n{:?}", d1,d2,d3,d4);
                 assert!(d3.cmp(&d4) == 0);
             }
@@ -1903,29 +2312,21 @@ mod tests {
                 p1,
                 EXPONENT_MIN / 2 + p as Exponent, // avoid subnormal numbers
                 EXPONENT_MAX / 2,
-            )
-            .unwrap();
-            d2 = ExactNumNumber::random_normal(p2, EXPONENT_MIN / 2, EXPONENT_MAX / 2).unwrap();
+            )?;
+            d2 = ExactNumNumber::random_normal(p2, EXPONENT_MIN / 2, EXPONENT_MAX / 2)?;
 
             if !d2.is_zero() {
                 let d4 = if i & 1 == 0 {
-                    let d3 = d1.div(&d2, p, RoundingMode::ToEven).unwrap();
-                    d3.mul(&d2, p, RoundingMode::ToEven).unwrap()
+                    let d3 = d1.div(&d2, p, RoundingMode::ToEven)?;
+                    d3.mul(&d2, p, RoundingMode::ToEven)?
                 } else {
-                    let d3 = d1.mul(&d2, p, RoundingMode::ToEven).unwrap();
-                    d3.div(&d2, p, RoundingMode::ToEven).unwrap()
+                    let d3 = d1.mul(&d2, p, RoundingMode::ToEven)?;
+                    d3.div(&d2, p, RoundingMode::ToEven)?
                 };
 
                 eps.set_exponent(d1.exponent() - p as Exponent + 2);
 
-                assert!(
-                    d1.sub(&d4, p, RoundingMode::ToEven)
-                        .unwrap()
-                        .abs()
-                        .unwrap()
-                        .cmp(&eps)
-                        < 0
-                );
+                assert!(d1.sub(&d4, p, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
             }
         }
 
@@ -1936,55 +2337,43 @@ mod tests {
             Sign::Pos,
             0,
             false,
-        )
-        .unwrap();
+        )?;
         d2 = ExactNumNumber::from_raw_parts(
             &[WORD_MAX, WORD_MAX - 10],
             WORD_BIT_SIZE * 2,
             Sign::Pos,
             -16,
             false,
-        )
-        .unwrap();
+        )?;
 
-        d3 = d1.mul_full_prec(&d2).unwrap();
+        d3 = d1.mul_full_prec(&d2)?;
 
-        let d4 = d1
-            .mul(&d2, WORD_BIT_SIZE * 5, RoundingMode::ToEven)
-            .unwrap();
+        let d4 = d1.mul(&d2, WORD_BIT_SIZE * 5, RoundingMode::ToEven)?;
 
         assert!(d4.mantissa_max_bit_len() == WORD_BIT_SIZE * 5);
         assert!(d3.cmp(&d4) == 0);
 
-        let d4 = d1
-            .mul(&d2, WORD_BIT_SIZE * 4, RoundingMode::ToEven)
-            .unwrap();
+        let d4 = d1.mul(&d2, WORD_BIT_SIZE * 4, RoundingMode::ToEven)?;
 
         assert!(d4.mantissa_max_bit_len() == WORD_BIT_SIZE * 4);
         assert!(d3.cmp(&d4) == 0);
 
-        d3.set_precision(WORD_BIT_SIZE * 3, RoundingMode::ToEven)
-            .unwrap();
-        let d4 = d1
-            .mul(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)
-            .unwrap();
+        d3.set_precision(WORD_BIT_SIZE * 3, RoundingMode::ToEven)?;
+        let d4 = d1.mul(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)?;
 
         assert!(d4.mantissa_max_bit_len() == WORD_BIT_SIZE * 3);
         assert!(d3.cmp(&d4) == 0);
 
-        d3.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)
-            .unwrap();
-        let d4 = d1.mul(&d2, WORD_BIT_SIZE, RoundingMode::ToEven).unwrap();
+        d3.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)?;
+        let d4 = d1.mul(&d2, WORD_BIT_SIZE, RoundingMode::ToEven)?;
 
         assert!(d4.mantissa_max_bit_len() == WORD_BIT_SIZE);
         assert!(d3.cmp(&d4) == 0);
 
-        d1 = ExactNumNumber::from_i8(2, WORD_BIT_SIZE * 2).unwrap();
-        d2 = ExactNumNumber::from_i8(3, WORD_BIT_SIZE * 2).unwrap();
+        d1 = ExactNumNumber::from_i8(2, WORD_BIT_SIZE * 2)?;
+        d2 = ExactNumNumber::from_i8(3, WORD_BIT_SIZE * 2)?;
 
-        d3 = d1
-            .div(&d2, WORD_BIT_SIZE * 5, RoundingMode::ToEven)
-            .unwrap();
+        d3 = d1.div(&d2, WORD_BIT_SIZE * 5, RoundingMode::ToEven)?;
 
         let words = {
             #[cfg(not(target_pointer_width = "32"))]
@@ -2006,9 +2395,7 @@ mod tests {
         assert!(d3.mantissa_max_bit_len() == WORD_BIT_SIZE * 5);
         assert!(d3.mantissa().digits() == words);
 
-        d3 = d1
-            .div(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)
-            .unwrap();
+        d3 = d1.div(&d2, WORD_BIT_SIZE * 3, RoundingMode::ToEven)?;
 
         let words = {
             #[cfg(not(target_pointer_width = "32"))]
@@ -2024,7 +2411,7 @@ mod tests {
         assert!(d3.mantissa_max_bit_len() == WORD_BIT_SIZE * 3);
         assert!(d3.mantissa().digits() == words);
 
-        d3 = d1.div(&d2, WORD_BIT_SIZE, RoundingMode::ToEven).unwrap();
+        d3 = d1.div(&d2, WORD_BIT_SIZE, RoundingMode::ToEven)?;
 
         let words = {
             #[cfg(not(target_pointer_width = "32"))]
@@ -2049,18 +2436,17 @@ mod tests {
                 p1,
                 EXPONENT_MIN + p as Exponent, // avoid exponent overflow error
                 EXPONENT_MAX,
-            )
-            .unwrap();
+            )?;
 
             if !d1.is_zero() {
-                let d3 = d1.reciprocal(p, rm).unwrap();
-                let d4 = ONE.div(&d3, p, rm).unwrap();
+                let d3 = d1.reciprocal(p, rm)?;
+                let d4 = ONE.div(&d3, p, rm)?;
 
                 eps.set_exponent(d1.exponent() - p as Exponent + 2);
 
                 //println!("\n{:?}\n{:?}\n{:?}", d1, d3, d4);
 
-                assert!(d1.sub(&d4, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
+                assert!(d1.sub(&d4, p, rm)?.abs()?.cmp(&eps) < 0);
             }
         }
 
@@ -2071,27 +2457,24 @@ mod tests {
             320,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
+        )?;
 
-        d2 = d1.reciprocal(320, RoundingMode::ToEven).unwrap();
-        d3 = ExactNumNumber::parse("1.00000000000000000000000000000000000000000000000000000000000000000D237A0818813B7A_e+0", crate::Radix::Hex, 320, RoundingMode::None, &mut cc).unwrap();
+        d2 = d1.reciprocal(320, RoundingMode::ToEven)?;
+        d3 = ExactNumNumber::parse("1.00000000000000000000000000000000000000000000000000000000000000000D237A0818813B7A_e+0", crate::Radix::Hex, 320, RoundingMode::None, &mut cc)?;
 
         //println!("{:?}", d2.format(crate::Radix::Hex, rm).unwrap());
 
         assert!(d2.cmp(&d3) == 0);
 
         // MAX
-        d1 = ExactNumNumber::max_value(p1).unwrap();
-        d2 = d1.reciprocal(p, rm).unwrap();
-        d3 = ONE.div(&d1, p, rm).unwrap();
+        d1 = ExactNumNumber::max_value(p1)?;
+        d2 = d1.reciprocal(p, rm)?;
+        d3 = ONE.div(&d1, p, rm)?;
         assert!(d2.cmp(&d3) == 0);
 
         // variable precision
-        d1 = ExactNumNumber::from_i8(3, WORD_BIT_SIZE * 2).unwrap();
-        d2 = d1
-            .reciprocal(WORD_BIT_SIZE * 5, RoundingMode::ToEven)
-            .unwrap();
+        d1 = ExactNumNumber::from_i8(3, WORD_BIT_SIZE * 2)?;
+        d2 = d1.reciprocal(WORD_BIT_SIZE * 5, RoundingMode::ToEven)?;
 
         let words = {
             #[cfg(not(target_pointer_width = "32"))]
@@ -2112,7 +2495,7 @@ mod tests {
 
         assert!(d2.mantissa().digits() == words);
 
-        d2 = d1.reciprocal(WORD_BIT_SIZE, RoundingMode::ToEven).unwrap();
+        d2 = d1.reciprocal(WORD_BIT_SIZE, RoundingMode::ToEven)?;
 
         let words = {
             #[cfg(not(target_pointer_width = "32"))]
@@ -2128,79 +2511,67 @@ mod tests {
         assert!(d2.mantissa().digits() == words);
 
         // subnormal numbers basic sanity
-        d1 = ExactNumNumber::min_positive(p).unwrap();
-        d2 = ExactNumNumber::min_positive(p).unwrap();
-        ref_num = ExactNumNumber::min_positive(p).unwrap();
-        let one = ExactNumNumber::from_word(1, p).unwrap();
-        ref_num = ref_num.mul(&one.add(&one, p, rm).unwrap(), p, rm).unwrap();
+        d1 = ExactNumNumber::min_positive(p)?;
+        d2 = ExactNumNumber::min_positive(p)?;
+        ref_num = ExactNumNumber::min_positive(p)?;
+        let one = ExactNumNumber::from_word(1, p)?;
+        ref_num = ref_num.mul(&one.add(&one, p, rm)?, p, rm)?;
 
         // min_positive + min_positive = 2*min_positive
-        assert!(d1.add(&d2, p, rm).unwrap().cmp(&ref_num) == 0);
-        assert!(d1.add(&d2, p, rm).unwrap().cmp(&d1) > 0);
-        assert!(d1.cmp(&d1.add(&d2, p, rm).unwrap()) < 0);
+        assert!(d1.add(&d2, p, rm)?.cmp(&ref_num) == 0);
+        assert!(d1.add(&d2, p, rm)?.cmp(&d1) > 0);
+        assert!(d1.cmp(&d1.add(&d2, p, rm)?) < 0);
 
         // min_positive - min_positive = 0
-        ref_num = ExactNumNumber::new(p).unwrap();
-        assert!(d1.sub(&d2, p, rm).unwrap().cmp(&ref_num) == 0);
+        ref_num = ExactNumNumber::new(p)?;
+        assert!(d1.sub(&d2, p, rm)?.cmp(&ref_num) == 0);
 
         // 1 * min_positive = min_positive
-        assert!(one.mul(&d2, p, rm).unwrap().cmp(&d2) == 0);
+        assert!(one.mul(&d2, p, rm)?.cmp(&d2) == 0);
 
         // min_positive / 1 = min_positive
-        assert!(d2.div(&one, p, rm).unwrap().cmp(&d2) == 0);
+        assert!(d2.div(&one, p, rm)?.cmp(&d2) == 0);
 
         // min_positive / 1 = min_positive
-        assert!(d2.div(&one, p, rm).unwrap().cmp(&d2) == 0);
+        assert!(d2.div(&one, p, rm)?.cmp(&d2) == 0);
 
         // normal -> subnormal -> normal
-        d1 = one.clone().unwrap();
+        d1 = ExactNumNumber::from_word(1, p)?;
         d1.e = EXPONENT_MIN;
-        d2 = ExactNumNumber::min_positive(p).unwrap();
+        d2 = ExactNumNumber::min_positive(p)?;
         assert!(!d1.is_subnormal());
-        assert!(d1.sub(&d2, p, rm).unwrap().cmp(&d1) < 0);
-        assert!(d1.cmp(&d1.sub(&d2, p, rm).unwrap()) > 0);
-        d1 = d1.sub(&d2, p, rm).unwrap();
+        assert!(d1.sub(&d2, p, rm)?.cmp(&d1) < 0);
+        assert!(d1.cmp(&d1.sub(&d2, p, rm)?) > 0);
+        d1 = d1.sub(&d2, p, rm)?;
         assert!(d1.is_subnormal());
-        d1 = d1.add(&d2, p, rm).unwrap();
+        d1 = d1.add(&d2, p, rm)?;
         assert!(!d1.is_subnormal());
 
         // overflow basic sanity
-        d1 = one.clone().unwrap();
+        d1 = ExactNumNumber::from_word(1, p)?;
         d1.e = EXPONENT_MAX - (d1.m.max_bit_len() - 1) as Exponent;
-        assert!(
-            ExactNumNumber::max_value(p)
-                .unwrap()
-                .add(&d1, p, rm)
-                .unwrap_err()
-                == Error::ExponentOverflow(Sign::Pos)
-        );
-        assert!(
-            ExactNumNumber::min_value(p)
-                .unwrap()
-                .sub(&d1, p, rm)
-                .unwrap_err()
-                == Error::ExponentOverflow(Sign::Neg)
-        );
-        assert!(
-            ExactNumNumber::max_value(p)
-                .unwrap()
-                .mul(&ExactNumNumber::max_value(p).unwrap(), p, rm)
-                .unwrap_err()
-                == Error::ExponentOverflow(Sign::Pos)
-        );
-        d1 = one.clone().unwrap();
+        assert!(matches!(
+            ExactNumNumber::max_value(p)?.add(&d1, p, rm),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
+        assert!(matches!(
+            ExactNumNumber::min_value(p)?.sub(&d1, p, rm),
+            Err(Error::ExponentOverflow(Sign::Neg))
+        ));
+        assert!(matches!(
+            ExactNumNumber::max_value(p)?.mul(&ExactNumNumber::max_value(p)?, p, rm),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
+        d1 = ExactNumNumber::from_word(1, p)?;
         d1.e = EXPONENT_MIN;
-        assert!(
-            ExactNumNumber::max_value(p)
-                .unwrap()
-                .div(&d1, p, rm)
-                .unwrap_err()
-                == Error::ExponentOverflow(Sign::Pos)
-        );
+        assert!(matches!(
+            ExactNumNumber::max_value(p)?.div(&d1, p, rm),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
 
         // decompose and compose
         let (m, n, s, e, inexact) = d1.as_raw_parts();
-        d2 = ExactNumNumber::from_raw_parts(m, n, s, e, inexact).unwrap();
+        d2 = ExactNumNumber::from_raw_parts(m, n, s, e, inexact)?;
         assert!(d1.cmp(&d2) == 0);
         assert!(ExactNumNumber::from_raw_parts(
             &[1, WORD_SIGNIFICANT_BIT],
@@ -2250,31 +2621,25 @@ mod tests {
         .is_ok());
 
         // sign and exponent
-        d1 = one.clone().unwrap();
+        d1 = ExactNumNumber::from_word(1, p)?;
         assert!(d1.sign() == Sign::Pos);
         assert!(d1.is_positive());
-        d1 = d1.neg().unwrap();
+        d1 = d1.neg()?;
         assert!(d1.sign() == Sign::Neg);
         assert!(d1.is_negative());
         assert!(d1.exponent() == 1);
 
         assert!(
-            ExactNumNumber::min_positive(p)
-                .unwrap()
-                .fract()
-                .unwrap()
-                .cmp(&ExactNumNumber::min_positive(p).unwrap())
+            ExactNumNumber::min_positive(p)?
+                .fract()?
+                .cmp(&ExactNumNumber::min_positive(p)?)
                 == 0
         );
-        assert!(ExactNumNumber::min_positive(p)
-            .unwrap()
-            .int()
-            .unwrap()
-            .is_zero());
+        assert!(ExactNumNumber::min_positive(p)?.int()?.is_zero());
 
-        d1 = ExactNumNumber::new(p).unwrap();
-        assert!(d1.fract().unwrap().is_zero());
-        assert!(d1.int().unwrap().is_zero());
+        d1 = ExactNumNumber::new(p)?;
+        assert!(d1.fract()?.is_zero());
+        assert!(ExactNumNumber::new(p)?.int()?.is_zero());
 
         // ceil & floor
         // rem
@@ -2300,45 +2665,40 @@ mod tests {
                         prec1,
                         RoundingMode::None,
                         &mut cc,
-                    )
-                    .unwrap();
+                    )?;
                     d2 = ExactNumNumber::parse(
                         s2,
                         crate::Radix::Dec,
                         prec2,
                         RoundingMode::None,
                         &mut cc,
-                    )
-                    .unwrap();
+                    )?;
 
                     let p = prec1.max(prec2);
 
-                    d3 = d1
-                        .sub(
-                            &d1.div(&d2, p + 1, RoundingMode::ToEven)
-                                .unwrap()
-                                .floor()
-                                .unwrap()
-                                .mul(&d2, p + 1, RoundingMode::ToEven)
-                                .unwrap(),
+                    d3 = d1.sub(
+                        &d1.div(&d2, p + 1, RoundingMode::ToEven)?.floor()?.mul(
+                            &d2,
                             p + 1,
                             RoundingMode::ToEven,
-                        )
-                        .unwrap();
+                        )?,
+                        p + 1,
+                        RoundingMode::ToEven,
+                    )?;
 
                     if sign_inv {
                         d1.inv_sign();
                         d3.inv_sign();
                     }
 
-                    let ret = d1.rem(&d2).unwrap();
+                    let ret = d1.rem(&d2)?;
 
                     // println!("\n{:?}", d1.format(crate::Radix::Dec, RoundingMode::None).unwrap());
                     // println!("{:?}", d2.format(crate::Radix::Dec, RoundingMode::None).unwrap());
                     // println!("{:?}", ret.format(crate::Radix::Dec, RoundingMode::None).unwrap());
                     // println!("{:?}", d3.format(crate::Radix::Dec, RoundingMode::None).unwrap());
 
-                    assert!(ret.sub(&d3, p, RoundingMode::ToEven).unwrap().is_zero());
+                    assert!(ret.sub(&d3, p, RoundingMode::ToEven)?.is_zero());
                 }
             }
         }
@@ -2353,48 +2713,39 @@ mod tests {
                 p1,
                 EXPONENT_MIN / 2 - p1 as Exponent,
                 EXPONENT_MAX / 2,
-            )
-            .unwrap()
-            .abs()
-            .unwrap();
-            d2 = ExactNumNumber::random_normal(p2, d1.exponent() - e_rng, d1.exponent() + e_rng)
-                .unwrap()
-                .abs()
-                .unwrap();
+            )?
+            .abs()?;
+            d2 = ExactNumNumber::random_normal(p2, d1.exponent() - e_rng, d1.exponent() + e_rng)?
+                .abs()?;
 
-            let ret = d1.rem(&d2).unwrap();
+            let ret = d1.rem(&d2)?;
 
-            d3 = d1
-                .sub(
-                    &d1.div(&d2, p + p_rng * WORD_BIT_SIZE, RoundingMode::None)
-                        .unwrap()
-                        .floor()
-                        .unwrap()
-                        .mul(&d2, p + p_rng * WORD_BIT_SIZE, RoundingMode::None)
-                        .unwrap(),
-                    ret.mantissa_max_bit_len(),
-                    RoundingMode::ToEven,
-                )
-                .unwrap();
+            d3 = d1.sub(
+                &d1.div(&d2, p + p_rng * WORD_BIT_SIZE, RoundingMode::None)?
+                    .floor()?
+                    .mul(&d2, p + p_rng * WORD_BIT_SIZE, RoundingMode::None)?,
+                ret.mantissa_max_bit_len(),
+                RoundingMode::ToEven,
+            )?;
 
             //println!("\n{:?}", d1.format(crate::Radix::Dec, RoundingMode::None).unwrap());
             //println!("{:?}", d2.format(crate::Radix::Dec, RoundingMode::None).unwrap());
             //println!("{:?}", ret.format(crate::Radix::Dec, RoundingMode::None).unwrap());
             //println!("{:?}", d3.format(crate::Radix::Dec, RoundingMode::None).unwrap());
 
-            assert!(ret.sub(&d3, p, RoundingMode::ToEven).unwrap().is_zero());
+            assert!(ret.sub(&d3, p, RoundingMode::ToEven)?.is_zero());
 
             // subnormal
-            d1 = random_subnormal(p1);
-            d2 = random_subnormal(p2);
+            d1 = random_subnormal(p1)?;
+            d2 = random_subnormal(p2)?;
 
-            let mut ret = d1.rem(&d2).unwrap();
+            let mut ret = d1.rem(&d2)?;
 
             // check with normalized numbers.
             d1.set_exponent(0);
             d2.set_exponent(0);
 
-            let mut d3 = d1.rem(&d2).unwrap();
+            let mut d3 = d1.rem(&d2)?;
 
             if !ret.is_zero() {
                 // check exponent
@@ -2407,27 +2758,19 @@ mod tests {
             ret.set_exponent((ret.mantissa_max_bit_len() - ret.precision()) as Exponent);
             d3.set_exponent(0);
 
-            assert!(
-                ret.sub(&d3, p, RoundingMode::ToEven)
-                    .unwrap()
-                    .abs()
-                    .unwrap()
-                    .cmp(&eps)
-                    <= 0
-            );
+            assert!(ret.sub(&d3, p, RoundingMode::ToEven)?.abs()?.cmp(&eps) <= 0);
         }
 
         // special case rem
-        let d1 = ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT], Sign::Pos, 2).unwrap();
-        let d2 = ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT], Sign::Pos, 65).unwrap();
+        let d1 = ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT], Sign::Pos, 2)?;
+        let d2 = ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT], Sign::Pos, 65)?;
 
-        let d3 = d2.rem(&d1).unwrap();
+        let d3 = d2.rem(&d1)?;
         assert!(d3.is_zero());
 
         // is_odd_int
         let d1 =
-            ExactNumNumber::parse("3.0", crate::Radix::Dec, 128, RoundingMode::ToEven, &mut cc)
-                .unwrap();
+            ExactNumNumber::parse("3.0", crate::Radix::Dec, 128, RoundingMode::ToEven, &mut cc)?;
         assert!(d1.is_odd_int());
         let d1 = ExactNumNumber::parse(
             "3.01",
@@ -2435,8 +2778,7 @@ mod tests {
             128,
             RoundingMode::ToEven,
             &mut cc,
-        )
-        .unwrap();
+        )?;
         assert!(!d1.is_odd_int());
         let d1 = ExactNumNumber::parse(
             "32.0",
@@ -2444,8 +2786,7 @@ mod tests {
             128,
             RoundingMode::ToEven,
             &mut cc,
-        )
-        .unwrap();
+        )?;
         assert!(!d1.is_odd_int());
         let d1 = ExactNumNumber::parse(
             "32.01",
@@ -2453,8 +2794,7 @@ mod tests {
             128,
             RoundingMode::ToEven,
             &mut cc,
-        )
-        .unwrap();
+        )?;
         assert!(!d1.is_odd_int());
         let d1 = ExactNumNumber::parse(
             "0.00000000000000000000001",
@@ -2462,8 +2802,7 @@ mod tests {
             256,
             RoundingMode::ToEven,
             &mut cc,
-        )
-        .unwrap();
+        )?;
         assert!(!d1.is_odd_int());
         let d1 = ExactNumNumber::parse(
             "5.00000000000000000000001",
@@ -2471,8 +2810,7 @@ mod tests {
             256,
             RoundingMode::ToEven,
             &mut cc,
-        )
-        .unwrap();
+        )?;
         assert!(!d1.is_odd_int());
         let d1 = ExactNumNumber::parse(
             "10000000000000000000001.0",
@@ -2480,8 +2818,7 @@ mod tests {
             256,
             RoundingMode::ToEven,
             &mut cc,
-        )
-        .unwrap();
+        )?;
         assert!(d1.is_odd_int());
         let d1 = ExactNumNumber::parse(
             "10000000000000000000001.0000000000000000001",
@@ -2489,29 +2826,26 @@ mod tests {
             256,
             RoundingMode::ToEven,
             &mut cc,
-        )
-        .unwrap();
+        )?;
         assert!(!d1.is_odd_int());
-        let d1 = ExactNumNumber::parse("1.1", crate::Radix::Bin, 256, RoundingMode::None, &mut cc)
-            .unwrap();
+        let d1 = ExactNumNumber::parse("1.1", crate::Radix::Bin, 256, RoundingMode::None, &mut cc)?;
         assert!(!d1.is_odd_int());
 
         // build from words
-        let d1 = ExactNumNumber::from_words(&[], Sign::Pos, EXPONENT_MAX).unwrap();
-        assert!(d1.is_zero());
-        assert_eq!(d1.exponent(), 0);
-        assert_eq!(d1.precision(), 0);
-        assert_eq!(d1.mantissa_max_bit_len(), 0);
-        assert_eq!(d1.sign(), Sign::Pos);
+        // An empty mantissa is precision 0, which is rejected (2.0: `MIN_PRECISION` is 1).
+        assert!(matches!(
+            ExactNumNumber::from_words(&[], Sign::Pos, EXPONENT_MAX),
+            Err(Error::InvalidArgument)
+        ));
 
-        let d1 = ExactNumNumber::from_words(&[0, 0], Sign::Neg, EXPONENT_MIN).unwrap();
+        let d1 = ExactNumNumber::from_words(&[0, 0], Sign::Neg, EXPONENT_MIN)?;
         assert!(d1.is_zero());
         assert_eq!(d1.exponent(), 0);
         assert_eq!(d1.precision(), 0);
         assert_eq!(d1.mantissa_max_bit_len(), WORD_BIT_SIZE * 2);
         assert_eq!(d1.sign(), Sign::Neg);
 
-        let d1 = ExactNumNumber::from_words(&[3, 1], Sign::Pos, EXPONENT_MAX).unwrap();
+        let d1 = ExactNumNumber::from_words(&[3, 1], Sign::Pos, EXPONENT_MAX)?;
         #[cfg(not(target_pointer_width = "32"))]
         {
             assert_eq!(
@@ -2528,14 +2862,14 @@ mod tests {
         assert_eq!(d1.mantissa_max_bit_len(), WORD_BIT_SIZE * 2);
         assert_eq!(d1.sign(), Sign::Pos);
 
-        let d1 = ExactNumNumber::from_words(&[3, 1], Sign::Neg, EXPONENT_MIN).unwrap();
+        let d1 = ExactNumNumber::from_words(&[3, 1], Sign::Neg, EXPONENT_MIN)?;
         assert_eq!(d1.mantissa().digits(), [3, 1]);
         assert_eq!(d1.exponent(), EXPONENT_MIN);
         assert_eq!(d1.precision(), WORD_BIT_SIZE + 1);
         assert_eq!(d1.mantissa_max_bit_len(), WORD_BIT_SIZE * 2);
         assert_eq!(d1.sign(), Sign::Neg);
 
-        let d1 = ExactNumNumber::from_words(&[3, 1], Sign::Pos, EXPONENT_MIN + 5).unwrap();
+        let d1 = ExactNumNumber::from_words(&[3, 1], Sign::Pos, EXPONENT_MIN + 5)?;
         assert_eq!(d1.mantissa().digits(), [3 << 5, 1 << 5]);
         assert_eq!(d1.exponent(), EXPONENT_MIN);
         assert_eq!(d1.precision(), WORD_BIT_SIZE + 6);
@@ -2552,16 +2886,17 @@ mod tests {
                 [3, 0x80000000u32]
             }
         };
-        let d1 = ExactNumNumber::from_words(&words, Sign::Pos, EXPONENT_MIN + 5).unwrap();
+        let d1 = ExactNumNumber::from_words(&words, Sign::Pos, EXPONENT_MIN + 5)?;
         assert_eq!(d1.mantissa().digits(), words);
         assert_eq!(d1.exponent(), EXPONENT_MIN + 5);
         assert_eq!(d1.precision(), WORD_BIT_SIZE * 2);
         assert_eq!(d1.mantissa_max_bit_len(), WORD_BIT_SIZE * 2);
         assert_eq!(d1.sign(), Sign::Pos);
+        Ok(())
     }
 
     #[test]
-    fn test_rounding() {
+    fn test_rounding() -> Result<(), crate::Error> {
         // trailing bits
         // 0 0000
         // 0 0001
@@ -2901,17 +3236,15 @@ mod tests {
                         sign,
                         WORD_BIT_SIZE as Exponent,
                         false,
-                    )
-                    .unwrap();
-                    let d2 = d1.round(WORD_BIT_SIZE - 4, *rm).unwrap();
+                    )?;
+                    let d2 = d1.round(WORD_BIT_SIZE - 4, *rm)?;
                     let d3 = ExactNumNumber::from_raw_parts(
                         m2,
                         WORD_BIT_SIZE * 2,
                         sign,
                         WORD_BIT_SIZE as Exponent,
                         false,
-                    )
-                    .unwrap();
+                    )?;
 
                     //println!("\n{:?} {:?}\n{:?}\nresult {:?}\nexpect {:?}", sign, rm, d1.m, d2.m, d3.m);
 
@@ -3078,26 +3411,26 @@ mod tests {
         ];
         for (m1, s, e1, n, rm, m2, e2) in testset {
             //println!("{:?}", (m1, s, e1, n, rm, m2, e2));
-            let d1 = ExactNumNumber::from_words(&m1, s, e1).unwrap();
-            let d2 = d1.round(n, rm).unwrap();
+            let d1 = ExactNumNumber::from_words(&m1, s, e1)?;
+            let d1_inexact = d1.inexact();
+            let d2 = d1.round(n, rm)?;
 
-            let m2m = Mantissa::from_words(m2.len() * WORD_BIT_SIZE, &m2).unwrap();
+            let m2m = Mantissa::from_words(m2.len() * WORD_BIT_SIZE, &m2)?;
             assert_eq!(d2.mantissa().digits(), m2m.digits());
             assert_eq!(d2.mantissa().bit_len(), m2m.bit_len());
             assert_eq!(d2.sign(), s);
             assert_eq!(d2.exponent(), e2);
-            assert!(!d1.inexact());
+            assert!(!d1_inexact);
             assert!(d2.inexact());
         }
+        Ok(())
     }
 
     #[test]
-    fn test_inexact() {
+    fn test_inexact() -> Result<(), crate::Error> {
         // any arg is inexact
-        let mut d1 =
-            ExactNumNumber::from_words(&[0, 18 << (WORD_BIT_SIZE - 5)], Sign::Pos, 5).unwrap();
-        let mut d2 =
-            ExactNumNumber::from_words(&[0, 6 << (WORD_BIT_SIZE - 3)], Sign::Pos, 3).unwrap();
+        let mut d1 = ExactNumNumber::from_words(&[0, 18 << (WORD_BIT_SIZE - 5)], Sign::Pos, 5)?;
+        let mut d2 = ExactNumNumber::from_words(&[0, 6 << (WORD_BIT_SIZE - 3)], Sign::Pos, 3)?;
 
         for op in [
             ExactNumNumber::add,
@@ -3105,42 +3438,42 @@ mod tests {
             ExactNumNumber::mul,
             ExactNumNumber::div,
         ] {
-            let d3 = op(&d1, &d2, 256, RoundingMode::None).unwrap();
+            let d3 = op(&d1, &d2, 256, RoundingMode::None)?;
             assert!(!d3.inexact());
 
             d1.set_inexact(true);
-            let d3 = op(&d1, &d2, 256, RoundingMode::None).unwrap();
+            let d3 = op(&d1, &d2, 256, RoundingMode::None)?;
             assert!(d3.inexact());
 
             d2.set_inexact(true);
-            let d3 = op(&d1, &d2, 256, RoundingMode::None).unwrap();
+            let d3 = op(&d1, &d2, 256, RoundingMode::None)?;
             assert!(d3.inexact());
 
             d1.set_inexact(false);
-            let d3 = op(&d1, &d2, 256, RoundingMode::None).unwrap();
+            let d3 = op(&d1, &d2, 256, RoundingMode::None)?;
             assert!(d3.inexact());
 
             d2.set_inexact(false);
         }
 
-        let d3 = d1.rem(&d2).unwrap();
+        let d3 = d1.rem(&d2)?;
         assert!(!d3.inexact());
 
         d1.set_inexact(true);
-        let d3 = d1.rem(&d2).unwrap();
+        let d3 = d1.rem(&d2)?;
         assert!(d3.inexact());
 
         d2.set_inexact(true);
-        let d3 = d1.rem(&d2).unwrap();
+        let d3 = d1.rem(&d2)?;
         assert!(d3.inexact());
 
         d1.set_inexact(false);
-        let d3 = d1.rem(&d2).unwrap();
+        let d3 = d1.rem(&d2)?;
         assert!(d3.inexact());
 
         // inexact because of rounding
-        let d1 = ExactNumNumber::from_words(&[2, 18 << (WORD_BIT_SIZE - 5)], Sign::Pos, 5).unwrap();
-        let d2 = ExactNumNumber::from_words(&[1, 6 << (WORD_BIT_SIZE - 3)], Sign::Pos, 3).unwrap();
+        let d1 = ExactNumNumber::from_words(&[2, 18 << (WORD_BIT_SIZE - 5)], Sign::Pos, 5)?;
+        let d2 = ExactNumNumber::from_words(&[1, 6 << (WORD_BIT_SIZE - 3)], Sign::Pos, 3)?;
 
         assert!(!d1.inexact());
         assert!(!d2.inexact());
@@ -3151,82 +3484,77 @@ mod tests {
             ExactNumNumber::mul,
             ExactNumNumber::div,
         ] {
-            let d3 = op(&d1, &d2, WORD_BIT_SIZE * 2, RoundingMode::None).unwrap();
+            let d3 = op(&d1, &d2, WORD_BIT_SIZE * 2, RoundingMode::None)?;
             assert!(d3.inexact());
-            let d3 = op(&d2, &d1, WORD_BIT_SIZE * 2, RoundingMode::None).unwrap();
+            let d3 = op(&d2, &d1, WORD_BIT_SIZE * 2, RoundingMode::None)?;
             assert!(d3.inexact());
         }
 
         // inexact because of subnormalization
-        let d1 =
-            ExactNumNumber::from_words(&[1, WORD_SIGNIFICANT_BIT], Sign::Pos, EXPONENT_MIN / 2 - 1)
-                .unwrap();
+        let d1 = ExactNumNumber::from_words(
+            &[1, WORD_SIGNIFICANT_BIT],
+            Sign::Pos,
+            EXPONENT_MIN - EXPONENT_MIN / 2 - 1,
+        )?;
         let d2 =
-            ExactNumNumber::from_words(&[1, WORD_SIGNIFICANT_BIT], Sign::Pos, EXPONENT_MIN / 2)
-                .unwrap();
+            ExactNumNumber::from_words(&[1, WORD_SIGNIFICANT_BIT], Sign::Pos, EXPONENT_MIN / 2)?;
 
         assert!(!d1.inexact());
         assert!(!d2.inexact());
 
-        let d3 = d1.mul(&d2, WORD_BIT_SIZE * 4, RoundingMode::None).unwrap();
+        let d3 = d1.mul(&d2, WORD_BIT_SIZE * 4, RoundingMode::None)?;
         assert!(d3.inexact());
 
-        let d1 = ExactNumNumber::from_words(&[1, WORD_SIGNIFICANT_BIT], Sign::Pos, EXPONENT_MIN)
-            .unwrap();
-        let d2 = ExactNumNumber::from_words(&[1, WORD_SIGNIFICANT_BIT], Sign::Pos, EXPONENT_MIN)
-            .unwrap();
+        let d1 = ExactNumNumber::from_words(&[1, WORD_SIGNIFICANT_BIT], Sign::Pos, EXPONENT_MIN)?;
+        let d2 = ExactNumNumber::from_words(&[1, WORD_SIGNIFICANT_BIT], Sign::Pos, EXPONENT_MIN)?;
 
         assert!(!d1.inexact());
         assert!(!d2.inexact());
 
-        let d3 = d1.mul(&d2, 256, RoundingMode::Up).unwrap();
+        let d3 = d1.mul(&d2, 256, RoundingMode::Up)?;
         assert!(d3.inexact());
 
-        let d3 = d1.mul(&d2, 256, RoundingMode::None).unwrap();
+        let d3 = d1.mul(&d2, 256, RoundingMode::None)?;
         assert!(d3.inexact());
 
         // set precision
-        let mut d1 = ExactNumNumber::from_words(&[0, WORD_MAX], Sign::Pos, 0).unwrap();
+        let mut d1 = ExactNumNumber::from_words(&[0, WORD_MAX], Sign::Pos, 0)?;
         assert!(!d1.inexact());
-        d1.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)
-            .unwrap();
+        d1.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)?;
         assert!(!d1.inexact());
 
-        let mut d1 = ExactNumNumber::from_words(&[0, WORD_MAX], Sign::Pos, 0).unwrap();
+        let mut d1 = ExactNumNumber::from_words(&[0, WORD_MAX], Sign::Pos, 0)?;
         d1.set_inexact(true);
         assert!(d1.inexact());
-        d1.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)
-            .unwrap();
+        d1.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)?;
         assert!(d1.inexact());
 
-        let mut d1 =
-            ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT, WORD_MAX], Sign::Pos, 0).unwrap();
+        let mut d1 = ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT, WORD_MAX], Sign::Pos, 0)?;
         assert!(!d1.inexact());
-        d1.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)
-            .unwrap();
+        d1.set_precision(WORD_BIT_SIZE, RoundingMode::ToEven)?;
         assert!(d1.inexact());
 
         // round
-        let d1 = ExactNumNumber::from_words(&[0, WORD_MAX], Sign::Pos, 0).unwrap();
+        let d1 = ExactNumNumber::from_words(&[0, WORD_MAX], Sign::Pos, 0)?;
         assert!(!d1.inexact());
-        let d2 = d1.round(WORD_BIT_SIZE, RoundingMode::ToEven).unwrap();
+        let d2 = d1.round(WORD_BIT_SIZE, RoundingMode::ToEven)?;
         assert!(!d2.inexact());
 
-        let mut d1 = ExactNumNumber::from_words(&[0, WORD_MAX], Sign::Pos, 0).unwrap();
+        let mut d1 = ExactNumNumber::from_words(&[0, WORD_MAX], Sign::Pos, 0)?;
         d1.set_inexact(true);
         assert!(d1.inexact());
-        let d2 = d1.round(WORD_BIT_SIZE, RoundingMode::ToEven).unwrap();
+        let d2 = d1.round(WORD_BIT_SIZE, RoundingMode::ToEven)?;
         assert!(d2.inexact());
 
-        let d1 =
-            ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT, WORD_MAX], Sign::Pos, 0).unwrap();
+        let d1 = ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT, WORD_MAX], Sign::Pos, 0)?;
         assert!(!d1.inexact());
-        let d2 = d1.round(WORD_BIT_SIZE, RoundingMode::None).unwrap();
+        let d2 = d1.round(WORD_BIT_SIZE, RoundingMode::None)?;
         assert!(d2.inexact());
 
-        let d1 = ExactNumNumber::from_words(&[0, WORD_MAX], Sign::Pos, -2).unwrap();
+        let d1 = ExactNumNumber::from_words(&[0, WORD_MAX], Sign::Pos, -2)?;
         assert!(!d1.inexact());
-        let d2 = d1.round(1, RoundingMode::None).unwrap();
+        let d2 = d1.round(1, RoundingMode::None)?;
         assert!(d2.inexact());
+        Ok(())
     }
 }

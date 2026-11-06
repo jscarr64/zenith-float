@@ -1,0 +1,1 @@
+- `ExactNum::div_exact` (R13 follow-up): the precision is validated before the operands, so `x / 0` with `p == 0` is `InvalidArgument` rather than `DivisionByZero`. The error order is now documented: bad precision, NaN operand, `0 / 0`, `x / 0`, `Inf / Inf`.

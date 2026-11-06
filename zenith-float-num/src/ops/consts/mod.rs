@@ -1,6 +1,7 @@
 // Derived from astro-float (https://github.com/stencillogic/astro-float),
 // Copyright (c) 2022 stencillogic, MIT License.
 mod e;
+mod exact;
 mod ln10;
 mod ln2;
 mod pi;
@@ -10,6 +11,7 @@ use crate::common::util::round_p;
 use crate::mantissa::Mantissa;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::e::ECache;
+pub use crate::ops::consts::exact::ConstantId;
 use crate::ops::consts::ln10::Ln10Cache;
 use crate::ops::consts::ln2::Ln2Cache;
 use crate::ops::consts::pi::PiCache;
@@ -45,7 +47,7 @@ pub struct ConstCacheInfo {
 
 /// A float stored at extra working precision so later requests at lower (or equal)
 /// precision reuse the cache instead of recomputing.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct CachedFBig {
     inner: ExactNum,
 }
@@ -100,7 +102,8 @@ impl ExtraCache {
     {
         let p = round_p(k);
         let p_wrk = p.checked_add(WORD_BIT_SIZE).ok_or(Error::InvalidArgument)?;
-        if self.bits >= p {
+        // A cached value with no bits below `p` cannot be re-rounded.
+        if self.bits >= p_wrk {
             if let Some(v) = &self.val {
                 let mut ret = v.clone()?;
                 ret.set_precision(p, rm)?;
@@ -207,40 +210,41 @@ impl Consts {
         self.ln10.for_prec(p, rm)
     }
 
-    /// Returns the value of the pi number with precision `p` using rounding mode `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// Returns the value of the pi number rounded at exactly `p` bits using rounding mode `rm`.
+    /// The function returns NaN if the precision `p` is incorrect.
     pub fn pi(&mut self, p: usize, rm: RoundingMode) -> ExactNum {
-        match self.pi_num(p, rm) {
-            Ok(v) => v.into(),
-            Err(e) => ExactNum::nan(Some(e)),
-        }
+        self.exact_p(p, rm, Self::pi_num)
     }
 
-    /// Returns the value of the Euler number with precision `p` using rounding mode `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// Returns the value of the Euler number rounded at exactly `p` bits using rounding mode `rm`.
+    /// The function returns NaN if the precision `p` is incorrect.
     pub fn e(&mut self, p: usize, rm: RoundingMode) -> ExactNum {
-        match self.e_num(p, rm) {
-            Ok(v) => v.into(),
-            Err(e) => ExactNum::nan(Some(e)),
-        }
+        self.exact_p(p, rm, Self::e_num)
     }
 
-    /// Returns the value of the natural logarithm of 2 with precision `p` using rounding mode `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// Returns the value of the natural logarithm of 2 rounded at exactly `p` bits using rounding mode `rm`.
+    /// The function returns NaN if the precision `p` is incorrect.
     pub fn ln_2(&mut self, p: usize, rm: RoundingMode) -> ExactNum {
-        match self.ln_2_num(p, rm) {
-            Ok(v) => v.into(),
-            Err(e) => ExactNum::nan(Some(e)),
-        }
+        self.exact_p(p, rm, Self::ln_2_num)
     }
 
-    /// Returns the value of the natural logarithm of 10 with precision `p` using rounding mode `rm`.
-    /// Precision is rounded upwards to the word size.
+    /// Returns the value of the natural logarithm of 10 rounded at exactly `p` bits using rounding mode `rm`.
+    /// The function returns NaN if the precision `p` is incorrect.
     pub fn ln_10(&mut self, p: usize, rm: RoundingMode) -> ExactNum {
-        match self.ln_10_num(p, rm) {
+        self.exact_p(p, rm, Self::ln_10_num)
+    }
+
+    /// `f` (a word-precision constant) rounded at exactly `p` bits with `rm`.
+    fn exact_p(
+        &mut self,
+        p: usize,
+        rm: RoundingMode,
+        f: fn(&mut Self, usize, RoundingMode) -> Result<ExactNumNumber, Error>,
+    ) -> ExactNum {
+        ExactNum::round_exact(false, p, rm, |q, r| match f(self, q, r) {
             Ok(v) => v.into(),
             Err(e) => ExactNum::nan(Some(e)),
-        }
+        })
     }
 
     /// Return powers of 10: 100, 10000, 100000000, ...
@@ -307,10 +311,16 @@ impl Consts {
         rm: RoundingMode,
     ) -> Result<ExactNumNumber, Error> {
         let p_round = round_p(p);
+        // No Ziv retry: `euler_mascheroni` is trusted to `2^−(p_wrk+24)`, and the 8-word margin
+        // over `p_round` is what makes the single `exact_p` rounding correct.
         let p_wrk = p_round
             .checked_add(8 * WORD_BIT_SIZE)
             .ok_or(Error::InvalidArgument)?;
-        if self.euler.cached_bit_len() < p_round {
+        // for_prec reuses the cache only when a guard word is still present.
+        let p_guard = p_round
+            .checked_add(WORD_BIT_SIZE)
+            .ok_or(Error::InvalidArgument)?;
+        if self.euler.cached_bit_len() < p_guard {
             let ln2 = self.ln_2_num(p_wrk, RoundingMode::None)?;
             let v = crate::ops::special::euler_mascheroni(p_wrk, &ln2)?;
             self.euler.install(v);
@@ -318,12 +328,11 @@ impl Consts {
         self.euler.for_prec(p, rm, |_| Err(Error::InvalidArgument))
     }
 
-    /// Euler–Mascheroni constant γ with precision `p` using rounding mode `rm`.
+    /// Euler–Mascheroni constant γ rounded at exactly `p` bits using rounding mode `rm`, like
+    /// [`Self::pi`]; `RoundingMode::None` keeps the word-precision value. Cached: higher
+    /// requests extend the cache, lower ones re-round it. Returns NaN if `p` is incorrect.
     pub fn euler_gamma(&mut self, p: usize, rm: RoundingMode) -> ExactNum {
-        match self.euler_gamma_num(p, rm) {
-            Ok(v) => v.into(),
-            Err(e) => ExactNum::nan(Some(e)),
-        }
+        self.exact_p(p, rm, Self::euler_gamma_num)
     }
 }
 
@@ -362,8 +371,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn progressive_constant_cache_extends() {
-        let mut cc = Consts::new().expect("constants");
+    fn progressive_constant_cache_extends() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
         let _ = cc.pi(128, rm);
         let _ = cc.e(128, rm);
@@ -395,16 +404,22 @@ mod tests {
 
         let a = cc.sqrt2(128, rm);
         let b = cc.sqrt2(128, rm);
-        assert_eq!(a.cmp(&b), Some(0));
+        assert_eq!(a.compare(&b), Some(0));
         let cached = CachedFBig::new(a);
-        assert!(cached.cached_bit_len().unwrap() >= 128);
+        assert!(
+            cached
+                .cached_bit_len()
+                .ok_or(crate::Error::InvalidArgument)?
+                >= 128
+        );
         let r = cached.round(64, rm);
         assert!(!r.is_nan());
+        Ok(())
     }
 
     #[test]
-    fn euler_gamma_matches_known_digits() {
-        let mut cc = Consts::new().expect("constants");
+    fn euler_gamma_matches_known_digits() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
         let p = 128;
         let g = cc.euler_gamma(p, rm);
@@ -416,16 +431,21 @@ mod tests {
             &mut cc,
         );
         let d = g.sub(&known, p, RoundingMode::None);
-        assert!(d.is_zero() || d.exponent().unwrap() < -((p as i32) / 4));
+        assert!(
+            d.is_zero()
+                || d.exponent().ok_or(crate::Error::InvalidArgument)?
+                    < -((p as crate::Exponent) / 4)
+        );
+        Ok(())
     }
 
     #[cfg(feature = "std")]
     #[test]
-    fn shared_consts_parallel_pi() {
+    fn shared_consts_parallel_pi() -> Result<(), crate::Error> {
         use std::sync::Arc;
         use std::thread;
 
-        let cc = Arc::new(SharedConsts::new().expect("constants"));
+        let cc = Arc::new(SharedConsts::new()?);
         let mut hs = Vec::new();
         for _ in 0..4 {
             let cc = Arc::clone(&cc);
@@ -433,9 +453,13 @@ mod tests {
                 cc.with(|c| c.pi(128, RoundingMode::ToEven))
             }));
         }
-        let vals: Vec<_> = hs.into_iter().map(|h| h.join().unwrap()).collect();
-        for v in &vals[1..] {
-            assert_eq!(vals[0].cmp(v), Some(0));
+        let mut vals = Vec::with_capacity(hs.len());
+        for h in hs {
+            vals.push(h.join().map_err(|_| crate::Error::InvalidArgument)?);
         }
+        for v in &vals[1..] {
+            assert_eq!(vals[0].compare(v), Some(0));
+        }
+        Ok(())
     }
 }

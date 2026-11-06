@@ -39,23 +39,59 @@ pub type SignedWord = i64;
 const _: [(); 1] = [(); (core::mem::size_of::<Word>() <= core::mem::size_of::<usize>()) as usize];
 
 /// An exponent.
-pub type Exponent = i32;
+///
+/// 64 bits since 2.0 (was `i32`). The range is `±(2^62 - 1)`, MPFR's widest range on LP64 targets, which
+/// leaves two bits of headroom so that the sum or difference of two exponents (plus a precision) never
+/// overflows `i64`.
+pub type Exponent = i64;
 
-/// Maximum exponent value.
-#[cfg(not(target_pointer_width = "32"))]
-pub const EXPONENT_MAX: Exponent = Exponent::MAX;
+/// Maximum exponent value: `2^62 - 1`. The same on every target.
+pub const EXPONENT_MAX: Exponent = (1 << 62) - 1;
 
-/// Maximum exponent value.
-#[cfg(target_pointer_width = "32")]
-pub const EXPONENT_MAX: Exponent = Exponent::MAX / 4;
+/// Minimum exponent value: `-(2^62 - 1)`. The same on every target.
+pub const EXPONENT_MIN: Exponent = -EXPONENT_MAX;
 
-/// Minimum exponent value.
-#[cfg(not(target_pointer_width = "32"))]
-pub const EXPONENT_MIN: Exponent = Exponent::MIN;
+/// Exponent of the smallest positive normal number (leading mantissa bit set).
+///
+/// Subnormal numbers share this exponent and have the leading bit clear, so
+/// `ExactNum::min_positive_normal(p).exponent()` and `ExactNum::min_positive(p).exponent()`
+/// are both `Some(MIN_NORMAL_EXPONENT)`. Equal to [`EXPONENT_MIN`].
+pub const MIN_NORMAL_EXPONENT: Exponent = EXPONENT_MIN;
 
-/// Minimum exponent value.
-#[cfg(target_pointer_width = "32")]
-pub const EXPONENT_MIN: Exponent = Exponent::MIN / 4;
+/// A precision in bits: the type of [`MIN_PRECISION`], [`MAX_PRECISION`], [`DEFAULT_P`] and of the
+/// precisions the API reports. Accepted values are `MIN_PRECISION..=MAX_PRECISION`; `MAX_PRECISION` is
+/// `2^60 - 1` on 64-bit targets and smaller (`2^30 - 1`) on 32-bit targets. An alias of `usize`, so code
+/// written against `usize` keeps compiling.
+pub type Precision = usize;
+
+/// Smallest accepted precision in bits. Precision `0` is rejected with
+/// `Error::InvalidArgument` (a NaN from the `ExactNum` API). Precision is rounded up to whole words.
+pub const MIN_PRECISION: Precision = 1;
+
+/// Largest accepted precision in bits; anything above it is rejected with `Error::InvalidArgument`.
+///
+/// `min(2^60, usize::MAX / 4) - 1`: `2^60 - 1` on 64-bit targets, so that an exponent plus or minus a
+/// precision stays inside `±2^62` (see [`crate::defs`] exponent helpers), and
+/// `2^30 - 1` on 32-bit targets, where sizes are 32-bit `usize`.
+/// Allocating a mantissa this large still fails with `Error::MemoryAllocation` on real hardware.
+pub const MAX_PRECISION: Precision = {
+    let by_exponent: u64 = 1 << 60;
+    let by_size = (usize::MAX / 4) as u64;
+    let lim = if by_exponent < by_size { by_exponent } else { by_size };
+    (lim - 1) as Precision
+};
+
+const _: () = assert!(
+    (MAX_PRECISION as u128) + 1
+        == if (1u128 << 60) < (usize::MAX / 4) as u128 {
+            1u128 << 60
+        } else {
+            (usize::MAX / 4) as u128
+        }
+);
+// Two exponents add without overflow, and so do an exponent and twice a precision.
+const _: () = assert!(EXPONENT_MAX as i128 * 2 <= i64::MAX as i128);
+const _: () = assert!(EXPONENT_MAX as i128 + MAX_PRECISION as i128 * 2 <= i64::MAX as i128);
 
 /// Maximum value of a word.
 pub const WORD_MAX: Word = Word::MAX;
@@ -66,14 +102,15 @@ pub const WORD_BASE: DoubleWord = WORD_MAX as DoubleWord + 1;
 /// Size of a word in bits.
 pub const WORD_BIT_SIZE: usize = core::mem::size_of::<Word>() * 8;
 
-/// Cases per `proptest` property under `cargo test` (no `mpfr-tests` required).
+/// Cases per `proptest` property under `cargo test` (no `mpfr-tests` required). Test support, not API.
+#[doc(hidden)]
 pub const PROPTEST_CASES: u32 = 1000;
 
 /// Word with the most significant bit set.
 pub const WORD_SIGNIFICANT_BIT: Word = WORD_MAX << (WORD_BIT_SIZE - 1);
 
-/// Default precision.
-pub const DEFAULT_P: usize = 128;
+/// Default precision in bits (two 64-bit words); the precision of the built-in [`crate::Consts`] cache.
+pub const DEFAULT_P: Precision = 128;
 
 /// The size of exponent type in bits.
 pub const EXPONENT_BIT_SIZE: usize = core::mem::size_of::<Exponent>() * 8;
@@ -180,41 +217,59 @@ impl From<LayoutError> for Error {
 }
 
 /// Radix for parse/format (bases 2 through 36).
+///
+/// The four common bases are named variants; every other base is [`Radix::Other`], built with
+/// [`Radix::try_new`]. `try_new(2)`, `try_new(8)`, `try_new(10)` and `try_new(16)` return the
+/// named variants, so equal bases always compare equal.
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
-pub struct Radix(u8);
-
-#[allow(non_upper_case_globals)]
-impl Radix {
+pub enum Radix {
     /// Binary (base 2).
-    pub const Bin: Radix = Radix(2);
+    Bin,
     /// Octal (base 8).
-    pub const Oct: Radix = Radix(8);
+    Oct,
     /// Decimal (base 10).
-    pub const Dec: Radix = Radix(10);
+    Dec,
     /// Hexadecimal (base 16).
-    pub const Hex: Radix = Radix(16);
+    Hex,
+    /// Any other base in 2..=36; only [`Radix::try_new`] can build one.
+    Other(OtherRadix),
+}
 
+/// A base in 2..=36 other than 2, 8, 10 and 16. Its field is private, so it is always valid.
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
+pub struct OtherRadix(u8);
+
+impl Radix {
     /// Creates a radix in the inclusive range 2..=36.
     ///
     /// ## Errors
     ///
     ///  - InvalidArgument: `base` is outside 2..=36.
     pub fn try_new(base: u8) -> Result<Self, Error> {
-        if (2..=36).contains(&base) {
-            Ok(Radix(base))
-        } else {
-            Err(Error::InvalidArgument)
+        match base {
+            2 => Ok(Radix::Bin),
+            8 => Ok(Radix::Oct),
+            10 => Ok(Radix::Dec),
+            16 => Ok(Radix::Hex),
+            3..=36 => Ok(Radix::Other(OtherRadix(base))),
+            _ => Err(Error::InvalidArgument),
         }
     }
 
     /// Returns the numeric base.
     pub const fn value(self) -> u8 {
-        self.0
+        match self {
+            Radix::Bin => 2,
+            Radix::Oct => 8,
+            Radix::Dec => 10,
+            Radix::Hex => 16,
+            Radix::Other(OtherRadix(b)) => b,
+        }
     }
 
     /// Returns `log2(base)` when the base is a power of two.
     pub const fn commensurable_shift(self) -> Option<usize> {
-        let b = self.0;
+        let b = self.value();
         if b.is_power_of_two() {
             Some(b.trailing_zeros() as usize)
         } else {
@@ -224,12 +279,12 @@ impl Radix {
 
     /// Whether the scientific exponent must use `_e` (digit `e` appears in mantissa digits).
     pub const fn uses_underscore_exponent(self) -> bool {
-        self.0 > 10
+        self.value() > 10
     }
 
     /// Approximate bits per digit (for buffer sizing).
     pub fn bits_per_digit(self) -> usize {
-        match self.0 {
+        match self.value() {
             2 => 1,
             8 => 3,
             10 => 3,
@@ -242,7 +297,7 @@ impl Radix {
 
 impl From<Radix> for u8 {
     fn from(r: Radix) -> u8 {
-        r.0
+        r.value()
     }
 }
 
@@ -252,21 +307,32 @@ pub enum RoundingMode {
     /// Skip rounding operation.
     None = 1,
 
-    /// Round half toward positive infinity.
+    /// Round toward positive infinity (directed rounding).
+    ///
+    /// Every inexact result moves to the next representable value at or above the exact one.
+    /// There is no tie case.
     Up = 2,
 
-    /// Round half toward negative infinity.
+    /// Round toward negative infinity (directed rounding).
+    ///
+    /// Every inexact result moves to the next representable value at or below the exact one.
+    /// There is no tie case.
     Down = 4,
 
-    /// Round half toward zero.
+    /// Round toward zero (truncation; directed rounding).
     ToZero = 8,
 
-    /// Round half away from zero.
+    /// Round away from zero (directed rounding).
     FromZero = 16,
 
     /// Round half to even.
     ToEven = 32,
 
-    /// Round half to odd.
+    /// Round to nearest, ties to odd: the mirror of [`RoundingMode::ToEven`].
+    ///
+    /// This is **not** the sticky "round-to-odd" (jamming) mode that algorithms use to avoid double rounding
+    /// (where any inexact result gets its last bit set to 1): only an exact tie goes to the odd neighbour.
+    /// At `p = 4`, 17/16 is an exact tie and rounds to 1.000 under `ToEven` and to 1.001 under `ToOdd`;
+    /// 33/32 is below the tie and rounds to 1.000 under both (sticky round-to-odd would give 1.001).
     ToOdd = 64,
 }

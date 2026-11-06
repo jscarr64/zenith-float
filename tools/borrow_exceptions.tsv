@@ -1,0 +1,38 @@
+# BORROW named exceptions, one row per copy site (see tools/rules_scan.py: borrow_exceptions)
+# file	impl (- = free fn)	fn	anchor (source line, whitespace-collapsed)	allowance	reason
+zenith-float-num/src/common/buf.rs	WordBuf	resize_len	v.extend_from_slice(src);	1	inline->heap spill of the result's own WordBuf: inline words cannot change storage by ownership
+zenith-float-num/src/common/int.rs	SliceWithSign	abs_sub	*d = *a;	1	borrow-propagating subtraction: once the borrow is spent the minuend's high words ARE the difference, written word by word into the result buffer being computed
+zenith-float-num/src/common/int.rs	SliceWithSign	copy_from	dst.copy_from_slice(src);	1	SliceWithSign::copy_from: FFT accumulator / mul.rs intermediates written into a kernel's &mut working slice
+zenith-float-num/src/common/util.rs	-	shift_slice_left_copy	*b = *a;	1	word-aligned left shift (bit shift 0) written into the caller's &mut toom3 output buffer: the shifted words are the result
+zenith-float-num/src/mantissa/base.rs	Mantissa	abs_add	m3.m.copy_from_slice(&self.m[l..]);	1	addend below the precision: the result is the other operand's words plus a sticky bit
+zenith-float-num/src/mantissa/base.rs	Mantissa	abs_add	m3.m[l..].copy_from_slice(&self.m);	1	addend below the precision: the result is the other operand's words plus a sticky bit
+zenith-float-num/src/mantissa/base.rs	Mantissa	abs_sub	*d = a;	1	borrow-propagating subtraction: once the borrow is spent the minuend's high words ARE the difference, written word by word into the result buffer being computed
+zenith-float-num/src/mantissa/base.rs	Mantissa	find_bit_len	for &v in m.iter().rev() {	1	scalar Word read into a local (one u64 value in a register); no buffer is duplicated
+zenith-float-num/src/mantissa/base.rs	Mantissa	leading_zero_bits	for &w in self.m.iter().rev() {	1	scalar Word read into a local (one u64 value in a register); no buffer is duplicated
+zenith-float-num/src/mantissa/base.rs	Mantissa	round_mantissa	for &v in self.m[known_word.min(i)..i].iter().rev() {	1	scalar Word read into a local (one u64 value in a register); no buffer is duplicated
+zenith-float-num/src/mantissa/base.rs	Mantissa	word_at	let Some(&w) = i.and_then(|j| src.get(j)) else {	1	scalar Word read into a local (one u64 value in a register); no buffer is duplicated
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_basic	buf1[..l1].clone_from_slice(m1);	1	schoolbook division with d == 1: buf1 is the remainder the kernel subtracts in place, so it starts as the dividend (the divisor is borrowed)
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_basic	rem.copy_from_slice(&buf1[..l2]);	1	writes the computed remainder into the result buffer
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_recursive	q1[..k].copy_from_slice(&q0[..k]);	1	Burnikel-Ziegler: the remainder (= dividend when it is short) and quotient/remainder blocks assembled in working buffers the recursion mutates in place
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_recursive	q1[..q0l].copy_from_slice(&q0);	1	Burnikel-Ziegler: the remainder (= dividend when it is short) and quotient/remainder blocks assembled in working buffers the recursion mutates in place
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_recursive	r.copy_from_slice(m1);	1	Burnikel-Ziegler: the remainder (= dividend when it is short) and quotient/remainder blocks assembled in working buffers the recursion mutates in place
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_recursive	rembuf[..k2].copy_from_slice(&a0);	1	Burnikel-Ziegler: the remainder (= dividend when it is short) and quotient/remainder blocks assembled in working buffers the recursion mutates in place
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_recursive	rembuf[k..k + r0.len()].copy_from_slice(&r0);	1	Burnikel-Ziegler: the remainder (= dividend when it is short) and quotient/remainder blocks assembled in working buffers the recursion mutates in place
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_recursive	rembuf[k2..k2 + r1.len()].copy_from_slice(&r1);	1	Burnikel-Ziegler: the remainder (= dividend when it is short) and quotient/remainder blocks assembled in working buffers the recursion mutates in place
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_recursive	tmpbuf[k..k + m2.len()].copy_from_slice(m2);	1	Burnikel-Ziegler: the remainder (= dividend when it is short) and quotient/remainder blocks assembled in working buffers the recursion mutates in place
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_unbalanced	buf1[..m].copy_from_slice(&q[..m]);	1	unbalanced division: working remainder starts as the dividend and is reduced in place; quotient blocks assembled into the result
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_unbalanced	buf1[mn..m].copy_from_slice(&q[..n]);	1	unbalanced division: working remainder starts as the dividend and is reduced in place; quotient blocks assembled into the result
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_unbalanced	buf3.copy_from_slice(m1);	1	unbalanced division: working remainder starts as the dividend and is reduced in place; quotient blocks assembled into the result
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_unbalanced	buf3[mn..ub].copy_from_slice(&r[..ub - mn]);	1	unbalanced division: working remainder starts as the dividend and is reduced in place; quotient blocks assembled into the result
+zenith-float-num/src/mantissa/div.rs	Mantissa	div_unbalanced	r.copy_from_slice(m1);	1	unbalanced division: working remainder starts as the dividend and is reduced in place; quotient blocks assembled into the result
+zenith-float-num/src/mantissa/fft.rs	Mantissa	fft_decompose	part[..chunk.len()].copy_from_slice(chunk);	1	FFT input: operand words split into zero-padded parts the transform overwrites in place
+zenith-float-num/src/mantissa/fft.rs	Mantissa	fft_decompose	part[..chunk_sz].copy_from_slice(&d[idx..idx + chunk_sz]);	1	FFT input: operand words split into zero-padded parts the transform overwrites in place
+zenith-float-num/src/mantissa/fft.rs	Mantissa	fft_decompose	part[..d.len() - idx].copy_from_slice(&d[idx..]);	1	FFT input: operand words split into zero-padded parts the transform overwrites in place
+zenith-float-num/src/mantissa/fft.rs	Mantissa	fft_mul	part3.copy_from_slice(&tmp_buf2[..part_len]);	1	writes a reduced product part back into the transform buffer
+zenith-float-num/src/mantissa/toom3.rs	Mantissa	toom3	d3[..s0.len()].copy_from_slice(&s0);	1	writes the evaluated parts s0/s4 into the result buffer d3
+zenith-float-num/src/mantissa/toom3.rs	Mantissa	toom3	d3[l4..].copy_from_slice(&s4[..ll - l4]);	1	writes the evaluated parts s0/s4 into the result buffer d3
+zenith-float-num/src/mantissa/toom3.rs	Mantissa	toom3	d3[l4..l4 + s4.len()].copy_from_slice(&s4);	1	writes the evaluated parts s0/s4 into the result buffer d3
+zenith-float-num/src/mantissa/util.rs	NormalizedView	next	if let Some(&v) = self.iter.next() {	2	scalar Word read into a local (one u64 value in a register); no buffer is duplicated (NormalizedView)
+zenith-float-num/src/mantissa/util.rs	RightShiftedSlice	next	if let Some(&hi) = self.prev {	1	scalar Word read into a local (one u64 value in a register); no buffer is duplicated (NormalizedView)
+zenith-float-num/src/mantissa/util.rs	RightShiftedSlice	next	} else if let Some(&hi) = self.prev {	1	scalar Word read into a local (one u64 value in a register); no buffer is duplicated (NormalizedView)
+zenith-float-num/src/mantissa/util.rs	RightShiftedSlice	next	} else if let Some(&lo) = self.prev {	1	scalar Word read into a local (one u64 value in a register); no buffer is duplicated (NormalizedView)

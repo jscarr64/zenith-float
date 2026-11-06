@@ -3,8 +3,10 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+# shellcheck source=use_rust_1_99.sh
+source "$root/scripts/use_rust_1_99.sh"
 target=wasm32-wasip1
-rustup target add "$target" >/dev/null
+rustup target add --toolchain 1.99 "$target" >/dev/null
 
 ensure_wasmtime() {
   if command -v wasmtime >/dev/null; then

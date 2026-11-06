@@ -12,7 +12,9 @@ use crate::mantissa::Mantissa;
 use itertools::izip;
 
 impl Mantissa {
-    fn add_slices(s1: &[Word], s2: &[Word], s3: &mut [Word]) {
+    /// `s3 = s1 + s2`; `s3` must be longer than both operands to hold the carry,
+    /// otherwise `Err(InvalidArgument)`.
+    fn add_slices(s1: &[Word], s2: &[Word], s3: &mut [Word]) -> Result<(), Error> {
         let mut c = 0;
 
         let (mut iter1, mut iter2) = if s1.len() > s2.len() {
@@ -30,7 +32,11 @@ impl Mantissa {
             c = add_carry(*a, 0, c, x);
         }
 
-        *iter3.next().unwrap() = c as Word; // s3 is supposed to be longer than s1 and s2 to process carry.
+        let Some(carry_slot) = iter3.next() else {
+            return Err(Error::InvalidArgument);
+        };
+        *carry_slot = c as Word;
+        Ok(())
     }
 
     fn paired_sub(s1: &[Word], s2: &[Word], s3: &mut [Word]) {
@@ -135,8 +141,8 @@ impl Mantissa {
         let (x2, rest) = rest.split_at_mut(x2l);
         let z2buf = rest;
 
-        Self::add_slices(m11, m12, x1);
-        Self::add_slices(m21, m22, x2);
+        Self::add_slices(m11, m12, x1)?;
+        Self::add_slices(m21, m22, x2)?;
 
         Self::mul_unbalanced(x1, x2, z2buf)?;
         Self::mul_unbalanced(m11, m21, m31)?;
@@ -153,6 +159,22 @@ impl Mantissa {
 mod tests {
 
     use super::*;
+
+    #[test]
+    fn add_slices_short_destination_is_error_not_panic() {
+        let mut exact = [0 as Word; 3];
+        assert_eq!(
+            Mantissa::add_slices(&[Word::MAX, 1], &[1, 2], &mut exact),
+            Ok(())
+        );
+        assert_eq!(exact, [0, 4, 0]);
+        // No room for the carry word.
+        let mut short = [0 as Word; 2];
+        assert_eq!(
+            Mantissa::add_slices(&[Word::MAX, 1], &[1, 2], &mut short),
+            Err(Error::InvalidArgument)
+        );
+    }
     use crate::common::test_rng::random;
     use crate::defs::{DoubleWord, WORD_BIT_SIZE};
 
@@ -160,7 +182,7 @@ mod tests {
     use alloc::vec::Vec;
 
     #[test]
-    fn test_toom2() {
+    fn test_toom2() -> Result<(), crate::Error> {
         // d1*d2
         let s1 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
         let s2 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
@@ -168,7 +190,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 36];
-        Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -179,7 +201,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 15];
-        Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -190,7 +212,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 13];
-        Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -201,7 +223,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 15];
-        Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -212,7 +234,7 @@ mod tests {
         mul(&s1, &s2, &mut ref_s);
 
         let mut ret_s = [0; 15];
-        Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+        Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
         assert!(ret_s == ref_s);
 
@@ -224,16 +246,15 @@ mod tests {
             //println!("s1 {:?}", s1);
             //println!("s2 {:?}", s2);
 
-            let mut ref_s = Vec::new();
-            ref_s.resize(s1.len() + s2.len(), 0);
+            let mut ref_s = vec![0; s1.len() + s2.len()];
             mul(&s1, &s2, &mut ref_s);
 
-            let mut ret_s = Vec::new();
-            ret_s.resize(s1.len() + s2.len(), 0);
-            Mantissa::toom2(&s1, &s2, &mut ret_s).unwrap();
+            let mut ret_s = vec![0; s1.len() + s2.len()];
+            Mantissa::toom2(&s1, &s2, &mut ret_s)?;
 
             assert!(ret_s == ref_s);
         }
+        Ok(())
     }
 
     fn random_slice(min_len: usize, max_len: usize) -> Vec<Word> {

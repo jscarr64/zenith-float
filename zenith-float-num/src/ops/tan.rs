@@ -58,8 +58,8 @@ impl ArgReductionEstimator for TanArgReductionEstimator {
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
     #[inline]
-    fn reduction_effect(n: usize, m: isize) -> usize {
-        (n as isize + m) as usize
+    fn reduction_effect(n: usize, m: i64) -> usize {
+        (n as i64 + m) as usize
     }
 }
 
@@ -81,9 +81,11 @@ impl ExactNumNumber {
         }
 
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len());
+        // The retry budget counts from the working start: an argument wider than `p` must not exhaust it at once.
+        let p_base = p.max(self.mantissa_max_bit_len());
+        let mut p_wrk = p_base;
 
-        compute_small_exp!(self, self.exponent() as isize * 2 - 1, false, p_wrk, p, rm);
+        compute_small_exp!(self, self.exponent() * 2 - 1, false, p_wrk, p, rm);
 
         p_wrk += p_inc;
 
@@ -107,7 +109,7 @@ impl ExactNumNumber {
                     break Ok(ret);
                 }
 
-                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p_base)?;
             }
         }
     }
@@ -119,24 +121,18 @@ impl ExactNumNumber {
         let (reduction_times, _niter, e_eff) = series_cost_optimize::<TanArgReductionEstimator>(
             p,
             &polycoeff_gen,
-            -(self.exponent() as isize),
+            -self.exponent(),
             1,
             true,
         );
 
-        let add_prec = reduction_times as isize * 4 + 9 - e_eff as isize;
+        let add_prec = reduction_times as i64 * 4 + 9 - e_eff as i64;
         let p_arg = p + if add_prec > 0 { add_prec as usize } else { 0 };
         self.set_precision(p_arg, rm)?;
 
-        let arg_holder;
-        let arg = if reduction_times > 0 {
-            arg_holder = self.tan_arg_reduce(reduction_times)?;
-            &arg_holder
-        } else {
-            &self
-        };
+        let arg = if reduction_times > 0 { self.tan_arg_reduce(reduction_times)? } else { self };
 
-        let ret = Self::tan_series_run(arg, rm)?;
+        let ret = Self::tan_series_run(&arg, rm)?;
 
         if reduction_times > 0 {
             ret.tan_arg_restore(reduction_times, rm)
@@ -161,7 +157,7 @@ impl ExactNumNumber {
         let mut q2 = ExactNumNumber::from_word(1, 1)?;
         let mut p2 = ExactNumNumber::from_word(1, 1)?;
 
-        while fct.exponent() as isize - (xxacc.exponent() as isize) <= p as isize {
+        while fct.exponent() - xxacc.exponent() <= p as i64 {
             // -x^2, +x^4, -x^6, ...
             xxacc = xxacc.mul(&xx, p, rm)?;
 
@@ -205,9 +201,9 @@ impl ExactNumNumber {
     }
 
     // reduce argument n times.
-    fn tan_arg_reduce(&self, n: usize) -> Result<Self, Error> {
+    fn tan_arg_reduce(self, n: usize) -> Result<Self, Error> {
         // tan(3*x) = 3*tan(x) - tan(x)^3 / (1 - 3*tan(x)^2)
-        let mut ret = self.clone()?;
+        let mut ret = self;
         let p = ret.mantissa_max_bit_len();
         if ret.exponent() < EXPONENT_MIN + n as Exponent {
             ret.set_exponent(EXPONENT_MIN);
@@ -221,10 +217,10 @@ impl ExactNumNumber {
     }
 
     // restore value for the argument reduced n times.
-    fn tan_arg_restore(&self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
+    fn tan_arg_restore(self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
         // tan(2*x) = 2*tan(x) / (1 - tan(x)^2)
 
-        let mut val = self.clone()?;
+        let mut val = self;
         let p = val.mantissa_max_bit_len();
 
         for _ in 0..n {
@@ -246,44 +242,45 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_tangent() {
+    fn test_tangent() -> Result<(), crate::Error> {
         let p = 320;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let mut n1 = ExactNumNumber::from_word(2, p).unwrap();
+        let mut n1 = ExactNumNumber::from_word(2, p)?;
         n1.set_exponent(0);
-        let _n2 = n1.tan(p, rm, &mut cc).unwrap();
+        let _n2 = n1.tan(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Dec, rm).unwrap());
 
         // asymptotic & extrema testing
-        let mut half_pi = cc.pi_num(128, RoundingMode::None).unwrap();
+        let mut half_pi = cc.pi_num(128, RoundingMode::None)?;
         half_pi.set_exponent(1);
-        half_pi.set_precision(p, RoundingMode::None).unwrap();
+        half_pi.set_precision(p, RoundingMode::None)?;
 
-        let n2 = half_pi.tan(p, rm, &mut cc).unwrap();
+        let n2 = half_pi.tan(p, rm, &mut cc)?;
         let n3 = ExactNumNumber::parse(
             "3.1F0B46DCBD63D29899ECF829DA54DE0EE0852B2569B572B793E50817CEF4C77D959712B45E2B7E4C_e+20",
             crate::Radix::Hex,
             p,
             RoundingMode::None, &mut cc,
         )
-        .unwrap();
+        ?;
 
         assert!(n2.cmp(&n3) == 0);
 
         // large exponent
         half_pi.set_exponent(256);
-        let n2 = half_pi.tan(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("4.ECDEC5EF3A1EA5339A46BC0C490F52A86A033C56BCDD413E36C657EB7757F073500B013B9A7B43C0_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n2 = half_pi.tan(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("4.ECDEC5EF3A1EA5339A46BC0C490F52A86A033C56BCDD413E36C657EB7757F073500B013B9A7B43C0_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         assert!(n2.cmp(&n3) == 0);
 
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
-        let n1 = random_subnormal(p);
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
+        let n1 = random_subnormal(p)?;
 
-        assert!(d3.tan(p, rm, &mut cc).unwrap().cmp(&d3) == 0);
-        assert!(zero.tan(p, rm, &mut cc).unwrap().is_zero());
-        assert!(n1.tan(p, rm, &mut cc).unwrap().cmp(&n1) == 0);
+        assert!(d3.tan(p, rm, &mut cc)?.cmp(&d3) == 0);
+        assert!(zero.tan(p, rm, &mut cc)?.is_zero());
+        assert!(n1.tan(p, rm, &mut cc)?.cmp(&n1) == 0);
+        Ok(())
     }
 }

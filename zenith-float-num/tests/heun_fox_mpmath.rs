@@ -1,6 +1,15 @@
 //! Meijer G / Fox H / Heun vs mpmath 1.4.1 (50-digit golds) and independent reductions.
 
+use std::ops::Neg;
 use zenith_float_num::{Consts, Error, ExactNum, Radix, RoundingMode};
+
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
 
 const RM: RoundingMode = RoundingMode::ToEven;
 
@@ -12,11 +21,11 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
     if got.is_nan() {
         return i32::MIN;
     }
-    let d = got.sub(want, 2 * p, RoundingMode::None);
+    let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
     if d.is_zero() {
         return i32::MAX;
     }
-    want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)
+    i32::try_from(want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)).unwrap_or(i32::MAX)
 }
 
 fn check(
@@ -67,14 +76,14 @@ fn dec(s: &str, p: usize, cc: &mut Consts) -> ExactNum {
 }
 
 #[test]
-fn heun_fox_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn heun_fox_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let mut failures = Vec::new();
     // 50-digit golds are ~166 bits; 128-bit dest is the honest check.
     let p = 128usize;
     let zero = ExactNum::new(p);
     let one = ExactNum::from_u8(1, p);
-    let half = one.div(&ExactNum::from_u8(2, p), p, RM);
+    let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RM);
     let two = ExactNum::from_u8(2, p);
     let three = ExactNum::from_u8(3, p);
 
@@ -133,7 +142,7 @@ fn heun_fox_mpmath() {
         dec("0.3", p, &mut cc).meijer_g(
             &[],
             &[],
-            &[zero.clone(), half.clone()],
+            &[ExactNum::new(p), ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RM)],
             &[],
             p,
             RM,
@@ -145,13 +154,13 @@ fn heun_fox_mpmath() {
         &mut failures,
     );
     // awkward half-integer poles
-    let qtr = one.div(&ExactNum::from_u8(4, p), p, RM);
+    let qtr = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(4, p), p, RM);
     check(
         "G^{2,1}_{1,2}(0.15|1/2; 1/4,-1/4)",
         dec("0.15", p, &mut cc).meijer_g(
             core::slice::from_ref(&half),
             &[],
-            &[qtr.clone(), qtr.neg()],
+            &[ExactNum::from_u8(1, p).div(&ExactNum::from_u8(4, p), p, RM), neg_of(&qtr)],
             &[],
             p,
             RM,
@@ -195,15 +204,15 @@ fn heun_fox_mpmath() {
         &mut failures,
     );
     // J_{1/4}(1.2) = G^{1,0}_{0,2}((0.6)^2 | ; ν/2; −ν/2)
-    let nu = qtr.clone();
+    let nu = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(4, p), p, RM);
     let x = dec("1.2", p, &mut cc);
-    let arg = x.div(&two, p, RM).mul(&x.div(&two, p, RM), p, RM);
+    let arg = ExactNum::div_ref(&x, &two, p, RM).mul(&x.div(&two, p, RM), p, RM);
     check(
         "G Bessel J_{1/4}(1.2)",
         arg.meijer_g(
             &[],
             &[],
-            &[nu.div(&two, p, RM)],
+            &[ExactNum::div_ref(&nu, &two, p, RM)],
             &[nu.neg().div(&two, p, RM)],
             p,
             RM,
@@ -252,7 +261,7 @@ fn heun_fox_mpmath() {
         half.fox_h(
             &[],
             &[],
-            &[(zero.clone(), one.clone())],
+            &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
             &[],
             p,
             RM,
@@ -268,7 +277,7 @@ fn heun_fox_mpmath() {
         half.fox_h(
             &[],
             &[],
-            &[(zero.clone(), two.clone())],
+            &[(ExactNum::new(p), ExactNum::from_u8(2, p))],
             &[],
             p,
             RM,
@@ -284,7 +293,7 @@ fn heun_fox_mpmath() {
         dec("0.4", p, &mut cc).fox_h(
             &[],
             &[],
-            &[(zero.clone(), three.clone())],
+            &[(ExactNum::new(p), ExactNum::from_u8(3, p))],
             &[],
             p,
             RM,
@@ -298,9 +307,9 @@ fn heun_fox_mpmath() {
     check(
         "fox_h [[(0.3,1)],[(0,1)]]",
         half.fox_h(
-            &[(a03.clone(), one.clone())],
+            &[(dec("0.3", p, &mut cc), ExactNum::from_u8(1, p))],
             &[],
-            &[(zero.clone(), one.clone())],
+            &[(ExactNum::new(p), ExactNum::from_u8(1, p))],
             &[],
             p,
             RM,
@@ -316,7 +325,10 @@ fn heun_fox_mpmath() {
         half.fox_h(
             &[],
             &[],
-            &[(zero.clone(), half.clone())],
+            &[(
+                ExactNum::new(p),
+                ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RM),
+            )],
             &[],
             p,
             RM,
@@ -329,8 +341,8 @@ fn heun_fox_mpmath() {
     );
 
     // HeunG → 2F1 (independent: mpmath hyp2f1)
-    let alpha = one.div(&three, p, RM);
-    let beta = two.div(&ExactNum::from_u8(5, p), p, RM);
+    let alpha = ExactNum::div_ref(&one, &three, p, RM);
+    let beta = ExactNum::div_ref(&two, &ExactNum::from_u8(5, p), p, RM);
     let gamma = ExactNum::from_u8(4, p).div(&three, p, RM);
     let zz = dec("0.35", p, &mut cc);
     check(
@@ -341,7 +353,9 @@ fn heun_fox_mpmath() {
             &alpha,
             &beta,
             &gamma,
-            &alpha.add(&beta, p, RM).sub(&gamma, p, RM).add(&one, p, RM),
+            &ExactNum::add_ref(&alpha, &beta, p, RM)
+                .sub(&gamma, p, RM)
+                .add(&one, p, RM),
             p,
             RM,
             &mut cc,
@@ -396,7 +410,7 @@ fn heun_fox_mpmath() {
             &dec("0.4", p, &mut cc),
             &dec("1.3", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("0.4", p, &mut cc),
             p,
             RM,
@@ -413,7 +427,7 @@ fn heun_fox_mpmath() {
             &dec("-0.7", p, &mut cc),
             &dec("2.2", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("-0.7", p, &mut cc),
             p,
             RM,
@@ -448,7 +462,7 @@ fn heun_fox_mpmath() {
         dec("0.7", p, &mut cc).meijer_g(
             &[],
             &[],
-            &[zero.clone(), zero.clone()],
+            &[ExactNum::new(p), ExactNum::new(p)],
             &[],
             p,
             RM,
@@ -463,7 +477,7 @@ fn heun_fox_mpmath() {
     check(
         "G coincident a=a=1 = ln(1+z)",
         dec("0.4", p, &mut cc).meijer_g(
-            &[one.clone(), one.clone()],
+            &[ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)],
             &[],
             core::slice::from_ref(&one),
             core::slice::from_ref(&zero),
@@ -487,7 +501,9 @@ fn heun_fox_mpmath() {
             &alpha,
             &beta,
             &gamma,
-            &alpha.add(&beta, p, RM).sub(&gamma, p, RM).add(&one, p, RM),
+            &ExactNum::add_ref(&alpha, &beta, p, RM)
+                .sub(&gamma, p, RM)
+                .add(&one, p, RM),
             p,
             RM,
             &mut cc,
@@ -557,7 +573,7 @@ fn heun_fox_mpmath() {
             &dec("0.4", p, &mut cc),
             &dec("1.3", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("0.4", p, &mut cc),
             p,
             RM,
@@ -574,7 +590,7 @@ fn heun_fox_mpmath() {
             &dec("0.4", p, &mut cc),
             &dec("1.3", p, &mut cc),
             &zero,
-            &one.neg(),
+            &neg_of(&one),
             &dec("0.4", p, &mut cc),
             p,
             RM,
@@ -621,7 +637,7 @@ fn heun_fox_mpmath() {
 
     // Exact dyadic parameters: HeunG(-10,1;1;1/2) = (1/2)^10.
     // mpmath 1.4.1 hyp2f1(-10, 1, 1, 1/2).
-    let z_half = one.div(&two, p, RM);
+    let z_half = ExactNum::div_ref(&one, &two, p, RM);
     let m10 = ExactNum::from_i32(-10, p);
     let m9 = ExactNum::from_i32(-9, p);
     let m20 = ExactNum::from_i32(-20, p);
@@ -635,7 +651,7 @@ fn heun_fox_mpmath() {
     );
     // q = -20 + 2^{-120} is inside the old p-8 slack and outside one ulp.
     // mpmath series of the general HeunG (not hyp2f1) at 80 decimals.
-    let q_near = m20.add(&one.ldexp(-120, p, RM), p, RM);
+    let q_near = m20.add(&ExactNum::from_u8(1, p).ldexp(-120, p, RM), p, RM);
     check_not_closed_form(
         "HeunG near-miss q=-20+2^{-120}",
         z_half.heun_g(&two, &q_near, &m10, &one, &one, &m9, p, RM, &mut cc),
@@ -651,7 +667,7 @@ fn heun_fox_mpmath() {
     let gam3 = ExactNum::from_i32(3, p);
     check(
         "HeunC exact 1F1(-2;3;1/2)",
-        z_half.heun_c(&al2, &gam3, &zero, &one.neg(), &al2, p, RM, &mut cc),
+        z_half.heun_c(&al2, &gam3, &zero, &neg_of(&one), &al2, p, RM, &mut cc),
         "0.6875",
         p,
         &mut cc,
@@ -660,10 +676,10 @@ fn heun_fox_mpmath() {
     // q = 10 + 2^{-119} still passed values_agree(..., p) (about p-8 bits).
     // mpmath confluent series, not hyp1f1(-10; 3; 1/2).
     let al10 = ExactNum::from_i32(10, p);
-    let q_c = al10.add(&one.ldexp(-119, p, RM), p, RM);
+    let q_c = ExactNum::from_i32(10, p).add(&ExactNum::from_u8(1, p).ldexp(-119, p, RM), p, RM);
     check_not_closed_form(
         "HeunC near-miss q=10+2^{-119}",
-        z_half.heun_c(&al10, &gam3, &zero, &one.neg(), &q_c, p, RM, &mut cc),
+        z_half.heun_c(&al10, &gam3, &zero, &neg_of(&one), &q_c, p, RM, &mut cc),
         "0.05432435599265874059710865266420821969265251848607852039",
         "0.05432435599265874059710865266420821976377531933087488643",
         p,
@@ -672,4 +688,5 @@ fn heun_fox_mpmath() {
     );
 
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }

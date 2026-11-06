@@ -127,16 +127,16 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
     if got.is_nan() {
         return i32::MIN;
     }
-    let d = got.sub(want, 2 * p, RoundingMode::None);
+    let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
     if d.is_zero() {
         return i32::MAX;
     }
-    want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)
+    i32::try_from(want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)).unwrap_or(i32::MAX)
 }
 
 #[test]
-fn bessel_large_arg_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn bessel_large_arg_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let parse = |s: &str, p: usize, cc: &mut Consts| ExactNum::parse(s, Radix::Dec, p, RM, cc);
     let mut failures = Vec::new();
     for &(kind, x, nu, re) in CASES {
@@ -147,7 +147,7 @@ fn bessel_large_arg_mpmath() {
             let got = match kind {
                 'j' => xv.bessel_j_nu(&nv, p, RM, &mut cc),
                 'y' => xv.bessel_y(&nv, p, RM, &mut cc),
-                _ => panic!("kind"),
+                _ => return Err(format!("unknown kind {kind}").into()),
             };
             let bts = bits(&got, &want, p);
             if bts < (p as i32) - 4 {
@@ -159,4 +159,5 @@ fn bessel_large_arg_mpmath() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }

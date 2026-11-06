@@ -3,6 +3,7 @@
 use crate::common::util::add_carry;
 use crate::common::util::sub_borrow;
 use crate::defs::DoubleWord;
+use crate::defs::Exponent;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
 use crate::defs::Word;
@@ -12,6 +13,7 @@ use crate::ExactNum;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
+use core::ops::Neg;
 
 /// Arbitrary-precision signed integer. Distinct from [`ExactNum`], which is floating-point.
 ///
@@ -270,8 +272,11 @@ impl ExactInt {
         if Self::cmp_abs(a, b) == Ordering::Less {
             return (Vec::new(), a.to_vec());
         }
-        let bits = (a.len() - 1) * WORD_BIT_SIZE
-            + (WORD_BIT_SIZE - a.last().unwrap().leading_zeros() as usize); // a >= b, b nonempty
+        let Some(top) = a.last() else {
+            // a and b both empty: 0 / 0 has no quotient bits; the zero remainder is empty.
+            return (Vec::new(), Vec::new());
+        };
+        let bits = (a.len() - 1) * WORD_BIT_SIZE + (WORD_BIT_SIZE - top.leading_zeros() as usize);
         let mut rem: Vec<Word> = Vec::new();
         let mut quot = vec![0; a.len()];
         for i in (0..bits).rev() {
@@ -385,7 +390,7 @@ impl ExactInt {
         let work = p.max(self.bit_length()).saturating_add(WORD_BIT_SIZE);
         let mut acc = ExactNum::from_u8(0, work);
         for &limb in self.limbs.iter().rev() {
-            acc = acc.ldexp(WORD_BIT_SIZE as i32, work, RoundingMode::None);
+            acc = acc.ldexp(WORD_BIT_SIZE as Exponent, work, RoundingMode::None);
             acc = acc.add(&ExactNum::from_word(limb, work), work, RoundingMode::None);
         }
         if self.sign == Sign::Neg {
@@ -443,20 +448,24 @@ impl ExactInt {
         if x.is_nan() || x.is_inf() {
             return None;
         }
-        let v = x.int();
-        if v.is_zero() {
+        // |x| < 1 truncates to zero
+        if x.exponent().is_none_or(|e| e <= 0) {
             return Some(Self::zero());
         }
-        let p = v.precision().unwrap_or(DEFAULT_P).max(WORD_BIT_SIZE + 8);
-        let two_w = ExactNum::from_u8(1, p).ldexp(WORD_BIT_SIZE as i32, p, RoundingMode::None);
-        let mut cur = v.abs();
-        let mut limbs = Vec::new();
+        let p = x.precision().unwrap_or(DEFAULT_P).max(WORD_BIT_SIZE + 8);
+        let two_w = ExactNum::from_u8(1, p).ldexp(WORD_BIT_SIZE as Exponent, p, RoundingMode::None);
+        let sign = if x.is_negative() { Sign::Neg } else { Sign::Pos };
+        // The lowest limb is the integer part of `x mod 2^w` (the remainder keeps the sign of `x`, and the
+        // limb is read from its magnitude); the rest comes from the truncated quotient.
+        let mut limbs = vec![exact_word_lt_base(&x.rem(&two_w))];
+        let mut cur = ExactNum::div_ref(x, &two_w, p, RoundingMode::ToZero)
+            .int()
+            .abs();
         while !cur.is_zero() {
             let r = cur.rem(&two_w);
             limbs.push(exact_word_lt_base(&r));
             cur = cur.div(&two_w, p, RoundingMode::ToZero).int();
         }
-        let sign = if v.is_negative() { Sign::Neg } else { Sign::Pos };
         Some(Self::from_limbs(sign, limbs))
     }
 }
@@ -465,15 +474,15 @@ fn exact_word_lt_base(x: &ExactNum) -> Word {
     if x.is_zero() {
         return 0;
     }
-    let Some((m, _n, _s, e, _)) = x.as_raw_parts() else {
+    let Some((m, _n, _s, e, _)) = x.value_parts() else {
         return 0;
     };
     let pbuf = m.len() * WORD_BIT_SIZE;
-    let shift = e as isize - pbuf as isize;
+    let shift = e - pbuf as i64;
     shift_le_low_word(m, shift)
 }
 
-fn shift_le_low_word(m: &[Word], shift: isize) -> Word {
+fn shift_le_low_word(m: &[Word], shift: i64) -> Word {
     if m.is_empty() {
         return 0;
     }
@@ -513,7 +522,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exact_int_fact20_gcd_pow2_divrem() {
+    fn div_rem_with_zero_operands_no_panic() {
+        // Zero divisor is None; zero dividend is (0, 0); the limb kernel with an empty
+        // dividend and a non-empty divisor returns an empty quotient and remainder.
+        assert!(ExactInt::one().div_rem(&ExactInt::zero()).is_none());
+        let zero_quot = ExactInt::zero().div_rem(&ExactInt::one());
+        assert!(matches!(zero_quot, Some((q, r)) if q.is_zero() && r.is_zero()));
+        assert_eq!(ExactInt::div_rem_abs(&[], &[1]), (Vec::new(), Vec::new()));
+    }
+
+    #[test]
+    fn from_exact_num_truncates_toward_zero() {
+        let p = 192;
+        let half = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
+        let mags: [u128; 7] =
+            [0, 1, 7, u64::MAX as u128, 1u128 << 64, (1u128 << 64) + 5, 1u128 << 100];
+        for m in mags {
+            for neg in [false, true] {
+                for frac in [false, true] {
+                    let mut x = ExactInt::from_u128(m).to_exact_num(p, RoundingMode::ToEven);
+                    if frac {
+                        x = x.add(&half, p, RoundingMode::None);
+                    }
+                    let want =
+                        if neg { ExactInt::from_u128(m).neg() } else { ExactInt::from_u128(m) };
+                    let x = if neg { x.neg_via_mul() } else { x };
+                    assert_eq!(
+                        ExactInt::from_exact_num(&x),
+                        Some(want),
+                        "m={m} neg={neg} frac={frac}"
+                    );
+                }
+            }
+        }
+        assert_eq!(
+            ExactInt::from_exact_num(&ExactNum::new(p)),
+            Some(ExactInt::zero())
+        );
+        assert!(ExactInt::from_exact_num(&crate::INF_POS).is_none());
+    }
+
+    #[test]
+    fn exact_int_fact20_gcd_pow2_divrem() -> Result<(), crate::Error> {
         let mut fact = ExactInt::one();
         for k in 2..=20 {
             fact = fact.mul(&ExactInt::from_i64(k));
@@ -533,7 +583,7 @@ mod tests {
 
         let (q, r) = ExactInt::from_i64(17)
             .div_rem(&ExactInt::from_i64(5))
-            .unwrap();
+            .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(q, ExactInt::from_i64(3));
         assert_eq!(r, ExactInt::from_i64(2));
 
@@ -542,5 +592,6 @@ mod tests {
         assert_eq!(ExactInt::from_exact_num(&f), Some(n));
         assert!(ExactInt::from_exact_num(&crate::NAN).is_none());
         assert!(ExactInt::from_i64(1).div_rem(&ExactInt::zero()).is_none());
+        Ok(())
     }
 }

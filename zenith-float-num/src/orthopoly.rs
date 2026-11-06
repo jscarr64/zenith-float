@@ -25,7 +25,8 @@ fn n_ok(n: usize) -> bool {
 }
 
 fn finish(mut y: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
-    let _ = y.set_precision(p, rm);
+    let w = WORD_BIT_SIZE.max(1);
+    let _ = y.set_precision(p.div_ceil(w).saturating_mul(w), rm);
     y
 }
 
@@ -34,7 +35,17 @@ impl ExactNum {
     ///
     /// `He_0 = 1`, `He_1 = x`, `He_{n+1} = x He_n − n He_{n−1}`.
     /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn hermite_he(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.hermite_he_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::hermite_he`].
+    fn hermite_he_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
         }
@@ -50,7 +61,7 @@ impl ExactNum {
         let _ = cur.set_precision(wrk, RoundingMode::None);
         for k in 1..n {
             let kf = ExactNum::from_u32(k as u32, wrk);
-            let next = self.mul(&cur, wrk, RoundingMode::None).sub(
+            let next = ExactNum::mul_ref(self, &cur, wrk, RoundingMode::None).sub(
                 &kf.mul(&prev, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
@@ -65,7 +76,17 @@ impl ExactNum {
     ///
     /// `H_0 = 1`, `H_1 = 2x`, `H_{n+1} = 2x H_n − 2n H_{n−1}`.
     /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn hermite_h(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.hermite_h_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::hermite_h`].
+    fn hermite_h_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
         }
@@ -78,10 +99,10 @@ impl ExactNum {
             return finish(two.mul(self, wrk, RoundingMode::None), p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = two.mul(self, wrk, RoundingMode::None);
+        let mut cur = ExactNum::from_u8(2, wrk).mul(self, wrk, RoundingMode::None);
         for k in 1..n {
             let two_k = ExactNum::from_u32((2 * k) as u32, wrk);
-            let next = two
+            let next = ExactNum::from_u8(2, wrk)
                 .mul(self, wrk, RoundingMode::None)
                 .mul(&cur, wrk, RoundingMode::None)
                 .sub(
@@ -100,7 +121,17 @@ impl ExactNum {
     /// `L_0 = 1`, `L_1 = 1 − x`,
     /// `L_{n+1} = ((2n+1−x) L_n − n L_{n−1}) / (n+1)`.
     /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn laguerre(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.laguerre_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::laguerre`].
+    fn laguerre_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         self.gen_laguerre(n, &ExactNum::new(p), p, rm)
     }
 
@@ -109,7 +140,21 @@ impl ExactNum {
     /// `L_0^{(α)} = 1`, `L_1^{(α)} = 1+α−x`,
     /// `L_{n+1}^{(α)} = (((2n+1+α−x) L_n − (n+α) L_{n−1}) / (n+1)`.
     /// `n > ORTHOPOLY_N_MAX` or a non-finite argument is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn gen_laguerre(&self, n: usize, alpha: &Self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        let alpha_c = alpha.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || alpha.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.gen_laguerre_word(n, &alpha_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::gen_laguerre`].
+    fn gen_laguerre_word(&self, n: usize, alpha: &Self, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) || !finite(alpha) {
             return op_nan();
         }
@@ -155,7 +200,17 @@ impl ExactNum {
     ///
     /// `T_0 = 1`, `T_1 = x`, `T_{n+1} = 2x T_n − T_{n−1}`.
     /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn chebyshev_t(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.chebyshev_t_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::chebyshev_t`].
+    fn chebyshev_t_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
         }
@@ -166,12 +221,11 @@ impl ExactNum {
         if n == 1 {
             return finish(self.clone(), p, rm);
         }
-        let two = ExactNum::from_u8(2, wrk);
         let mut prev = ExactNum::from_u8(1, wrk);
         let mut cur = self.clone();
         let _ = cur.set_precision(wrk, RoundingMode::None);
         for _ in 1..n {
-            let next = two
+            let next = ExactNum::from_u8(2, wrk)
                 .mul(self, wrk, RoundingMode::None)
                 .mul(&cur, wrk, RoundingMode::None)
                 .sub(&prev, wrk, RoundingMode::None);
@@ -185,7 +239,17 @@ impl ExactNum {
     ///
     /// `U_0 = 1`, `U_1 = 2x`, `U_{n+1} = 2x U_n − U_{n−1}`.
     /// `n > ORTHOPOLY_N_MAX` or non-finite `self` is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn chebyshev_u(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
+            this.chebyshev_u_word(n, q, r)
+        })
+    }
+
+    /// Word-precision implementation of [`Self::chebyshev_u`].
+    fn chebyshev_u_word(&self, n: usize, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) {
             return op_nan();
         }
@@ -198,9 +262,9 @@ impl ExactNum {
             return finish(two.mul(self, wrk, RoundingMode::None), p, rm);
         }
         let mut prev = ExactNum::from_u8(1, wrk);
-        let mut cur = two.mul(self, wrk, RoundingMode::None);
+        let mut cur = ExactNum::from_u8(2, wrk).mul(self, wrk, RoundingMode::None);
         for _ in 1..n {
-            let next = two
+            let next = ExactNum::from_u8(2, wrk)
                 .mul(self, wrk, RoundingMode::None)
                 .mul(&cur, wrk, RoundingMode::None)
                 .sub(&prev, wrk, RoundingMode::None);
@@ -217,7 +281,21 @@ impl ExactNum {
     /// Standard `C_n^{(λ)}`: `C_2^{(1)} = 4x² − 1 = U_2`, and
     /// `C_n^{(1/2)} = P_n` (Legendre). `n > ORTHOPOLY_N_MAX` or a
     /// non-finite argument is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn gegenbauer(&self, n: usize, lambda: &Self, p: usize, rm: RoundingMode) -> Self {
+        let this = self.exact_copy_ext();
+        let lambda_c = lambda.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || lambda.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.gegenbauer_word(n, &lambda_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::gegenbauer`].
+    fn gegenbauer_word(&self, n: usize, lambda: &Self, p: usize, rm: RoundingMode) -> Self {
         if !n_ok(n) || !finite(self) || !finite(lambda) {
             return op_nan();
         }
@@ -236,19 +314,18 @@ impl ExactNum {
             );
         }
         let mut prev = one.clone();
-        let mut cur = two
+        let mut cur = ExactNum::from_u8(2, wrk)
             .mul(lambda, wrk, RoundingMode::None)
             .mul(self, wrk, RoundingMode::None);
         for k in 1..n {
-            let kf = ExactNum::from_u32(k as u32, wrk);
-            let two_n_l = two.mul(
-                &kf.add(lambda, wrk, RoundingMode::None),
+            let two_n_l = ExactNum::from_u8(2, wrk).mul(
+                &ExactNum::from_u32(k as u32, wrk).add(lambda, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             );
-            let n_2l_1 = kf
+            let n_2l_1 = ExactNum::from_u32(k as u32, wrk)
                 .add(
-                    &two.mul(lambda, wrk, RoundingMode::None),
+                    &ExactNum::from_u8(2, wrk).mul(lambda, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                 )
@@ -277,7 +354,29 @@ impl ExactNum {
     /// `− 2(n+α)(n+β)(2n+α+β+2) P_{n−1}`.
     /// `α=β=0` is Legendre `P_n`. `n > ORTHOPOLY_N_MAX` or a non-finite
     /// argument is `NaN`.
+    ///
+    /// Accuracy: working-precision, 32 bits
     pub fn jacobi_p(
+        &self,
+        n: usize,
+        alpha: &Self,
+        beta: &Self,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Self {
+        let this = self.exact_copy_ext();
+        let alpha_c = alpha.exact_copy_ext();
+        let beta_c = beta.exact_copy_ext();
+        Self::round_exact(
+            self.inexact_accumulated() || alpha.inexact_accumulated() || beta.inexact_accumulated(),
+            p,
+            rm,
+            |q, r| this.jacobi_p_word(n, &alpha_c, &beta_c, q, r),
+        )
+    }
+
+    /// Word-precision implementation of [`Self::jacobi_p`].
+    fn jacobi_p_word(
         &self,
         n: usize,
         alpha: &Self,
@@ -294,11 +393,13 @@ impl ExactNum {
         if n == 0 {
             return finish(one, p, rm);
         }
-        let apb = alpha.add(beta, wrk, RoundingMode::None);
-        let amb = alpha.sub(beta, wrk, RoundingMode::None);
+        // α+β of two borrowed (retry-invariant) inputs that are read again below.
+        let apb = ExactNum::add_ref(alpha, beta, wrk, RoundingMode::None);
+        let amb = ExactNum::sub_ref(alpha, beta, wrk, RoundingMode::None);
         let p1 = amb
             .add(
-                &apb.add(&two, wrk, RoundingMode::None)
+                &ExactNum::from_u8(2, wrk)
+                    .add(&apb, wrk, RoundingMode::None)
                     .mul(self, wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
@@ -310,40 +411,44 @@ impl ExactNum {
         let mut prev = one.clone();
         let mut cur = p1;
         for k in 1..n {
-            let kf = ExactNum::from_u32(k as u32, wrk);
             let k1 = ExactNum::from_u32((k + 1) as u32, wrk);
             let two_k_apb =
                 ExactNum::from_u32((2 * k) as u32, wrk).add(&apb, wrk, RoundingMode::None);
-            let two_k_apb_1 = two_k_apb.add(&one, wrk, RoundingMode::None);
-            let two_k_apb_2 = two_k_apb.add(&two, wrk, RoundingMode::None);
-            let a_den = two
+            let two_k_apb_1 = ExactNum::from_u32((2 * k) as u32, wrk)
+                .add(&apb, wrk, RoundingMode::None)
+                .add(&one, wrk, RoundingMode::None);
+            let two_k_apb_2 = ExactNum::from_u32((2 * k) as u32, wrk)
+                .add(&apb, wrk, RoundingMode::None)
+                .add(&two, wrk, RoundingMode::None);
+            let a_den = ExactNum::from_u8(2, wrk)
                 .mul(&k1, wrk, RoundingMode::None)
                 .mul(
-                    &kf.add(&apb, wrk, RoundingMode::None)
+                    &ExactNum::from_u32(k as u32, wrk)
+                        .add(&apb, wrk, RoundingMode::None)
                         .add(&one, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                 )
                 .mul(&two_k_apb, wrk, RoundingMode::None);
-            let a2mb2 = alpha.mul(alpha, wrk, RoundingMode::None).sub(
-                &beta.mul(beta, wrk, RoundingMode::None),
+            let a2mb2 = alpha.sqr(wrk, RoundingMode::None).sub(
+                &beta.sqr(wrk, RoundingMode::None),
                 wrk,
                 RoundingMode::None,
             );
-            let b_num = two_k_apb_1.mul(&a2mb2, wrk, RoundingMode::None);
+            let b_num = a2mb2.mul(&two_k_apb_1, wrk, RoundingMode::None);
             let c_num = two_k_apb.mul(&two_k_apb_1, wrk, RoundingMode::None).mul(
                 &two_k_apb_2,
                 wrk,
                 RoundingMode::None,
             );
-            let d_num = two
+            let d_num = ExactNum::from_u8(2, wrk)
                 .mul(
-                    &kf.add(alpha, wrk, RoundingMode::None),
+                    &ExactNum::from_u32(k as u32, wrk).add(alpha, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                 )
                 .mul(
-                    &kf.add(beta, wrk, RoundingMode::None),
+                    &ExactNum::from_u32(k as u32, wrk).add(beta, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                 )
@@ -370,31 +475,32 @@ impl ExactNum {
 mod tests {
     use super::*;
     use crate::Consts;
+    use core::ops::Neg;
 
     fn gold_p() -> (usize, RoundingMode) {
         (256, RoundingMode::ToEven)
     }
 
     #[test]
-    fn orthopoly_he4_laguerre_t5_gegenbauer_recurrence() {
+    fn orthopoly_he4_laguerre_t5_gegenbauer_recurrence() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
         let three = ExactNum::from_u8(3, p);
-        let half = one.div(&two, p, rm);
+        let half = ExactNum::from_u8(1, p).div(&two, p, rm);
 
-        assert_eq!(zero.hermite_he(4, p, rm).cmp(&three), Some(0));
-        assert_eq!(zero.laguerre(3, p, rm).cmp(&one), Some(0));
-        assert_eq!(zero.gen_laguerre(3, &zero, p, rm).cmp(&one), Some(0));
+        assert_eq!(zero.hermite_he(4, p, rm).compare(&three), Some(0));
+        assert_eq!(zero.laguerre(3, p, rm).compare(&one), Some(0));
+        assert_eq!(zero.gen_laguerre(3, &zero, p, rm).compare(&one), Some(0));
 
         let pi = cc.pi(p, rm);
         let five = ExactNum::from_u8(5, p);
         let c = pi.div(&five, p, rm).cos(p, rm, &mut cc);
         let t5 = c.chebyshev_t(5, p, rm);
-        let neg_one = one.neg();
-        assert_eq!(t5.cmp(&neg_one), Some(0));
+        let neg_one = one.neg_via_mul();
+        assert_eq!(t5.compare(&neg_one), Some(0));
 
         // Standard C_2^{(1)} = 4x² − 1 = U_2. The plan's "3x²−1 at λ=1"
         // is twice Legendre P_2 = 2 C_2^{(1/2)}.
@@ -404,34 +510,36 @@ mod tests {
             .mul(&half, p, rm)
             .mul(&half, p, rm)
             .sub(&one, p, rm);
-        assert_eq!(g1.cmp(&four_x2_m1), Some(0));
-        assert_eq!(g1.cmp(&u2), Some(0));
-        let lam_half = half.clone();
+        assert_eq!(g1.compare(&four_x2_m1), Some(0));
+        assert_eq!(g1.compare(&u2), Some(0));
+        let lam_half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let g_leg = half.gegenbauer(2, &lam_half, p, rm);
         let three_x2_m1 = three.mul(&half, p, rm).mul(&half, p, rm).sub(&one, p, rm);
         let two_p2 = g_leg.mul(&two, p, rm);
-        assert_eq!(two_p2.cmp(&three_x2_m1), Some(0));
+        assert_eq!(two_p2.compare(&three_x2_m1), Some(0));
 
         let t6 = half.chebyshev_t(6, p, rm);
         let t5h = half.chebyshev_t(5, p, rm);
         let t4h = half.chebyshev_t(4, p, rm);
         let rec = two.mul(&half, p, rm).mul(&t5h, p, rm).sub(&t4h, p, rm);
-        assert_eq!(t6.cmp(&rec), Some(0));
+        assert_eq!(t6.compare(&rec), Some(0));
 
         assert!(zero.hermite_he(ORTHOPOLY_N_MAX + 1, p, rm).is_nan());
         assert_eq!(
-            zero.hermite_h(4, p, rm).cmp(&ExactNum::from_u8(12, p)),
+            zero.hermite_h(4, p, rm).compare(&ExactNum::from_u8(12, p)),
             Some(0)
         );
+        Ok(())
     }
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
         if d.is_zero() {
             return true;
         }
         let ae = a.exponent().unwrap_or(0);
-        d.exponent().is_some_and(|e| e - ae < -((p as i32) / 4))
+        d.exponent()
+            .is_some_and(|e| e - ae < -((p as crate::Exponent) / 4))
     }
 
     #[test]
@@ -441,13 +549,13 @@ mod tests {
         let one = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
         let three = ExactNum::from_u8(3, p);
-        let half = one.div(&two, p, rm);
-        let three_tenths = three.div(&ExactNum::from_u8(10, p), p, rm);
+        let half = ExactNum::from_u8(1, p).div(&two, p, rm);
+        let three_tenths = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(10, p), p, rm);
 
         // P_2^{(1,1)}(1/2) = (3/4)(5/4 − 1) = 3/16.
         let p2 = half.jacobi_p(2, &one, &one, p, rm);
-        let want = three.div(&ExactNum::from_u8(16, p), p, rm);
-        assert_eq!(p2.cmp(&want), Some(0));
+        let want = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(16, p), p, rm);
+        assert_eq!(p2.compare(&want), Some(0));
 
         // α = β = 0 is Legendre P_n.
         let j5 = three_tenths.jacobi_p(5, &zero, &zero, p, rm);
@@ -455,10 +563,10 @@ mod tests {
         assert!(near(&j5, &l5, p), "P_5^{{(0,0)}}(3/10) vs Legendre");
 
         // P_n^{(α,β)}(−x) = (−1)^n P_n^{(β,α)}(x).
-        let alpha = half.clone();
-        let beta = one.div(&three, p, rm);
-        let x = three_tenths.clone();
-        let nx = x.neg();
+        let alpha = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
+        let beta = ExactNum::from_u8(1, p).div(&three, p, rm);
+        let x = three_tenths;
+        let nx = x.neg_via_mul();
         let lhs = nx.jacobi_p(6, &alpha, &beta, p, rm);
         let rhs = x.jacobi_p(6, &beta, &alpha, p, rm);
         assert!(near(&lhs, &rhs, p), "even-n reflection");
@@ -469,6 +577,6 @@ mod tests {
         assert!(zero
             .jacobi_p(ORTHOPOLY_N_MAX + 1, &zero, &zero, p, rm)
             .is_nan());
-        assert_eq!(zero.jacobi_p(0, &one, &two, p, rm).cmp(&one), Some(0));
+        assert_eq!(zero.jacobi_p(0, &one, &two, p, rm).compare(&one), Some(0));
     }
 }

@@ -32,9 +32,11 @@ impl ExactNumNumber {
         }
 
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len());
+        // The retry budget counts from the working start: an argument wider than `p` must not exhaust it at once.
+        let p_base = p.max(self.mantissa_max_bit_len());
+        let mut p_wrk = p_base;
 
-        compute_small_exp!(ONE, self.exponent() as isize * 2 - 1, false, p_wrk, p, rm);
+        compute_small_exp!(ONE, self.exponent() * 2 - 1, false, p_wrk, p, rm);
 
         p_wrk += p_inc;
 
@@ -47,8 +49,7 @@ impl ExactNumNumber {
 
             x.set_sign(Sign::Pos);
 
-            let mut ret = if (x.exponent() as isize - 1) * 2 > x.mantissa_max_bit_len() as isize + 2
-            {
+            let mut ret = if (x.exponent() - 1) * 2 > x.mantissa_max_bit_len() as i64 + 2 {
                 // e^x / 2
 
                 x.exp(p_x, RoundingMode::None, cc)
@@ -69,7 +70,7 @@ impl ExactNumNumber {
                 break Ok(ret);
             }
 
-            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p_base)?;
         }
     }
 }
@@ -82,13 +83,13 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cosh() {
+    fn test_cosh() -> Result<(), crate::Error> {
         let p = 320;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let mut n1 = ExactNumNumber::from_word(1, p).unwrap();
+        let mut n1 = ExactNumNumber::from_word(1, p)?;
         n1.set_exponent(0);
-        let _n2 = n1.cosh(p, rm, &mut cc).unwrap();
+        let _n2 = n1.cosh(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Bin, rm).unwrap());
 
         // asymptotic & extrema testing
@@ -99,25 +100,31 @@ mod tests {
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
-        let n2 = n1.cosh(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("1.000000000000000000000000000000010B6200000000000000000000000000002E8B9840AAAAAAAAAAAAAAAAAAAAAAAAADE85C5950B78E38E38E38E38E38E38E3902814A92D7C21CDB6DB6DB6DB6DB6E_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        )?;
+        let n2 = n1.cosh(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("1.000000000000000000000000000000010B6200000000000000000000000000002E8B9840AAAAAAAAAAAAAAAAAAAAAAAAADE85C5950B78E38E38E38E38E38E38E3902814A92D7C21CDB6DB6DB6DB6DB6E_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         assert!(n2.cmp(&n3) == 0);
 
-        let d1 = ExactNumNumber::max_value(p).unwrap();
-        let d2 = ExactNumNumber::min_value(p).unwrap();
+        let d1 = ExactNumNumber::max_value(p)?;
+        let d2 = ExactNumNumber::min_value(p)?;
 
-        assert!(d1.cosh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Pos));
-        assert!(d2.cosh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Pos));
+        assert!(matches!(
+            d1.cosh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
+        assert!(matches!(
+            d2.cosh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
 
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
-        let d4 = random_subnormal(p);
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
+        let d4 = random_subnormal(p)?;
 
-        assert!(d3.cosh(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
-        assert!(zero.cosh(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
-        assert!(d4.cosh(p, rm, &mut cc).unwrap().cmp(&ONE) == 0);
+        assert!(d3.cosh(p, rm, &mut cc)?.cmp(&ONE) == 0);
+        assert!(zero.cosh(p, rm, &mut cc)?.cmp(&ONE) == 0);
+        assert!(d4.cosh(p, rm, &mut cc)?.cmp(&ONE) == 0);
+        Ok(())
     }
 }

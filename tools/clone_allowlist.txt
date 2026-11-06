@@ -1,0 +1,3 @@
+# path<TAB>fn<TAB>reason<TAB>approval<TAB>doc<TAB>sites. EMPTY by policy: every entry needs a concrete failing example and Jeff's approval.
+# Format, stale-entry and count rules: tools/no_clone.py and tools/NO_CLONE_RULES.md. Only `.clone()` sites can be listed. The excepted-site total may only go down (tools/exception_count_baseline.txt, now 0).
+# The constant-cache exception was approved and then withdrawn (Jeff ruling R3); see "Exception: constant caches" in tools/NO_CLONE_RULES.md for the worked example of how an exception is documented.

@@ -46,7 +46,7 @@ After the kernel has more bits than you asked for, it **cuts** using `rm`.
 | `ToEven` | Default. Nearest; ties to even. Matches usual scientific / IEEE “round to nearest, ties to even.” |
 | `Up` / `Down` | Directed rounding toward +∞ / −∞. Interval endpoints, conservative bounds. |
 | `ToZero` / `FromZero` | Toward zero / away from zero. Integer conversion, some error analyses. |
-| `ToOdd` | Nearest; ties to odd. Rare; some proofs prefer it to `ToEven`. |
+| `ToOdd` | Nearest; ties to odd (the mirror of `ToEven`, **not** the sticky “round-to-odd” that algorithm papers use to avoid double rounding). Example at `p = 4`: 17/16 is an exact tie, 1.000 under `ToEven`, 1.001 under `ToOdd`; 33/32 is below the tie and gives 1.000 under both. Rare. |
 | `None` | Do **not** cut. Extra bits may remain. Use on a method *chain*, then one `set_precision(p, ToEven)` at the end. Not a “final answer” mode. |
 
 `ToEven` is the default on operators and `expr!` because it does not systematically bias a long sum the way “always up” does, and it matches the software IEEE kernel.

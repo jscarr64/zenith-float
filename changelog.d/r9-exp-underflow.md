@@ -1,0 +1,1 @@
+- `exp(x)` for very negative x, below the normal range, used to return a signed zero and ignore the rounding mode. It now computes e^r·2^−(n+1) with r = x+(n+1)ln2, rounding once onto the subnormal grid. When |x| ≥ 2^63 it flushes to +0 or +min-subnormal by direction. The result is always positive, and the inexact flag is set.

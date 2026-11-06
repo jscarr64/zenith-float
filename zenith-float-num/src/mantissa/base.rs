@@ -2,7 +2,7 @@
 // Copyright (c) 2022 stencillogic, MIT License.
 //! Mantissa of a number.
 
-use crate::common::buf::WordBuf;
+use crate::common::buf::{WordBuf, INLINE_WORDS};
 use crate::common::util::add_carry;
 use crate::common::util::find_one_from;
 use crate::common::util::shift_slice_left;
@@ -30,6 +30,21 @@ pub struct Mantissa {
     n: usize, // number of bits, 0 is for number 0
 }
 
+/// Parameters of [`Mantissa::abs_add`] and [`Mantissa::abs_sub`].
+#[derive(Copy, Clone, Debug)]
+pub struct AddSubSpec {
+    /// Result precision in bits.
+    pub p: usize,
+    /// Right shift of the second operand, in bits.
+    pub m2_shift: usize,
+    /// Rounding mode.
+    pub rm: RoundingMode,
+    /// Sign of the result.
+    pub is_positive: bool,
+    /// Keep full precision instead of rounding to `p`.
+    pub full_prec: bool,
+}
+
 impl Mantissa {
     // bit lenth to length in words.
     #[inline]
@@ -40,6 +55,23 @@ impl Mantissa {
     // reserve a buffer for mantissa.
     fn reserve_new(sz: usize) -> Result<WordBuf, Error> {
         WordBuf::new(sz)
+    }
+
+    /// A [`DEFAULT_P`](crate::defs::DEFAULT_P)-bit mantissa whose top word is `top`, which must have its
+    /// most significant bit set. Const and allocation-free.
+    pub(crate) const fn from_normalized_top_word(top: Word) -> Self {
+        Mantissa {
+            m: WordBuf::inline_with_top_word(top),
+            n: WORD_BIT_SIZE * INLINE_WORDS,
+        }
+    }
+
+    /// The zero mantissa of [`DEFAULT_P`](crate::defs::DEFAULT_P) bits. Const and allocation-free.
+    pub(crate) const fn zero_default() -> Self {
+        Mantissa {
+            m: WordBuf::inline_with_top_word(0),
+            n: 0,
+        }
     }
 
     /// New mantissa with length of at least `p` bits filled with zeroes.
@@ -185,43 +217,40 @@ impl Mantissa {
 
     /// Compare to m2 and return positive if self > m2, negative if self < m2, 0 otherwise.
     pub fn abs_cmp(&self, m2: &Self, normalized: bool) -> SignedWord {
-        let deref = |x: &Word| *x;
         let n = self.len().min(m2.len());
 
         if normalized {
-            Self::cmp_iters(
-                self.m.iter().rev().map(deref),
-                m2.m.iter().rev().map(deref),
-                n,
-            )
+            Self::cmp_iters(self.m.iter().rev(), m2.m.iter().rev(), n)
         } else {
             Self::cmp_iters(
-                NormalizedView::new(self.m.iter().rev().map(deref)),
-                NormalizedView::new(m2.m.iter().rev().map(deref)),
+                NormalizedView::new(self.m.iter().rev()),
+                NormalizedView::new(m2.m.iter().rev()),
                 n,
             )
         }
     }
 
-    fn cmp_iters<T>(mut iter1: T, mut iter2: T, n: usize) -> SignedWord
+    // The words are compared where they are stored (or as computed by NormalizedView): nothing is collected.
+    fn cmp_iters<A, T>(mut iter1: T, mut iter2: T, n: usize) -> SignedWord
     where
-        T: Iterator<Item = Word>,
+        A: core::borrow::Borrow<Word>,
+        T: Iterator<Item = A>,
     {
         for (a, b) in core::iter::zip(iter1.by_ref(), iter2.by_ref()).take(n) {
-            let diff = a as SignedWord - b as SignedWord;
+            let diff = *a.borrow() as SignedWord - *b.borrow() as SignedWord;
             if diff != 0 {
                 return diff;
             }
         }
 
         for v in iter1 {
-            if v != 0 {
+            if *v.borrow() != 0 {
                 return 1;
             }
         }
 
         for v in iter2 {
-            if v != 0 {
+            if *v.borrow() != 0 {
                 return -1;
             }
         }
@@ -231,20 +260,21 @@ impl Mantissa {
 
     /// Subtracts m2 from self. m2 is supposed to be shifted right by m2_shift bits.
     /// `inexact` is set to true if the result is not exact.
-    #[allow(clippy::too_many_arguments)]
     pub fn abs_sub(
         &self,
         m2: &Self,
-        p: usize,
-        m2_shift: usize,
-        rm: RoundingMode,
-        is_positive: bool,
-        full_prec: bool,
+        spec: AddSubSpec,
         inexact: &mut bool,
-    ) -> Result<(isize, Self), Error> {
-        // Input is expected to be normalized.
-        debug_assert!(self.m[self.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
-        debug_assert!(m2.m[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
+    ) -> Result<(i64, Self), Error> {
+        let AddSubSpec {
+            p,
+            m2_shift,
+            rm,
+            is_positive,
+            full_prec,
+        } = spec;
+        // The operands are as stored (a subnormal operand has leading zero bits): the difference is exact
+        // and `maximize` below renormalizes it before it is rounded to `p`.
 
         let p = Self::bit_len_to_word_len(p);
         let mut c = 0;
@@ -287,9 +317,7 @@ impl Mantissa {
             // m1 1XXXXXX00000   - m1 and trailing zeroes
             // m2 0000001XXXXX   - m2_shift, m2
 
-            let l = self
-                .len()
-                .max((m2_shift + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE + m2.len());
+            let l = self.len().max(m2_shift.div_ceil(WORD_BIT_SIZE) + m2.len());
 
             let mut m3 = Mantissa::new(l * WORD_BIT_SIZE)?;
 
@@ -306,7 +334,7 @@ impl Mantissa {
 
         debug_assert!(c == 0);
 
-        let mut shift = Self::maximize(&mut m3.m) as isize;
+        let mut shift = Self::maximize(&mut m3.m) as i64;
 
         if full_prec {
             m3.m.trunc_trailing_zeroes();
@@ -334,19 +362,24 @@ impl Mantissa {
     }
 
     /// Returns exponent shift, and self + m2.
-    #[allow(clippy::too_many_arguments)]
     pub fn abs_add(
         &self,
         m2: &Self,
-        p: usize,
-        m2_shift: usize,
-        rm: RoundingMode,
-        is_positive: bool,
-        full_prec: bool,
+        spec: AddSubSpec,
         inexact: &mut bool,
-    ) -> Result<(isize, Self), Error> {
-        debug_assert!(self.m[self.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
-        debug_assert!(m2.m[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
+    ) -> Result<(i64, Self), Error> {
+        let AddSubSpec {
+            p,
+            m2_shift,
+            rm,
+            is_positive,
+            full_prec,
+        } = spec;
+        // The operands are as stored: a subnormal operand has leading zero bits and is not normalized
+        // first. The sum is exact, and `maximize` below renormalizes it before it is rounded to `p`.
+        // A zero `m2` (with `m2_shift` > 0) sums `self` with nothing: the result is `self` written out and
+        // rounded by the code below, which is how `add` and `sub` handle a zero operand.
+        debug_assert!(!m2.is_zero() || m2_shift > 0);
 
         let p = Self::bit_len_to_word_len(p);
         let mut c = 0;
@@ -398,10 +431,7 @@ impl Mantissa {
                 // m1 1XXXXXX00000   - m1 and trailing zeroes
                 // m2 0000001XXXXX   - m2_shift, m2
 
-                let l = self
-                    .len()
-                    .max((m2_shift + WORD_BIT_SIZE - 1) / WORD_BIT_SIZE + m2.len())
-                    + 1;
+                let l = self.len().max(m2_shift.div_ceil(WORD_BIT_SIZE) + m2.len()) + 1;
 
                 let mut m3 = Mantissa::new(l * WORD_BIT_SIZE)?;
 
@@ -423,7 +453,12 @@ impl Mantissa {
             }
         };
 
-        let mut shift = -(c as isize);
+        let mut shift = -(c as i64);
+
+        // Only a subnormal first operand (with a subnormal second one) leaves the top bit clear.
+        if m3.m[m3.len() - 1] & WORD_SIGNIFICANT_BIT == 0 {
+            shift += Self::maximize(&mut m3.m) as i64;
+        }
 
         if full_prec {
             m3.m.trunc_trailing_zeroes();
@@ -459,15 +494,16 @@ impl Mantissa {
         is_positive: bool,
         full_prec: bool,
         inexact: &mut bool,
-    ) -> Result<(isize, Self), Error> {
-        debug_assert!(self.m[self.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
-        debug_assert!(m2.m[m2.len() - 1] & WORD_SIGNIFICANT_BIT != 0);
-
+    ) -> Result<(i64, Self), Error> {
+        // The operands need not be normalized (a subnormal operand has leading zero bits): the product is
+        // exact and `maximize` below renormalizes it, so the returned shift is the product's leading zero
+        // count (one less when rounding carried), and the caller's exponent is `e1 + e2 - shift` with each
+        // operand's own exponent.
         let mut m3 = Self::reserve_new(self.len() + m2.len())?;
 
         Self::mul_unbalanced(&self.m, &m2.m, &mut m3)?;
 
-        let mut shift = Self::maximize(&mut m3) as isize;
+        let mut shift = Self::maximize(&mut m3) as i64;
 
         let mut m3 = Mantissa { m: m3, n: 0 };
 
@@ -493,11 +529,44 @@ impl Mantissa {
             m3.m.trunc_to(p * WORD_BIT_SIZE);
         }
 
-        debug_assert!((-1..=1).contains(&shift)); // prevent exponent overflow
+        debug_assert!(shift >= -1); // prevent exponent overflow
 
         m3.n = m3.max_bit_len();
 
         Ok((shift, m3))
+    }
+
+    /// Number of leading zero bits of the mantissa (zero for a normalized mantissa).
+    pub(crate) fn leading_zero_bits(&self) -> usize {
+        let mut n = 0;
+        for &w in self.m.iter().rev() {
+            if w != 0 {
+                return n + w.leading_zeros() as usize;
+            }
+            n += WORD_BIT_SIZE;
+        }
+        n
+    }
+
+    /// The word of `src` at index `i`, read in place; 0 past either end.
+    fn word_at(src: &[Word], i: Option<usize>) -> Word {
+        let Some(&w) = i.and_then(|j| src.get(j)) else {
+            return 0;
+        };
+        w
+    }
+
+    /// Writes `src << shift` (bits shifted out at the top are dropped, zeros come in at the bottom) into
+    /// `dst`, which is as long as `src`: each destination word is computed from the source words, no
+    /// slice is copied.
+    fn write_shifted_left(dst: &mut [Word], src: &[Word], shift: usize) {
+        let ws = shift / WORD_BIT_SIZE;
+        let bs = shift % WORD_BIT_SIZE;
+        for (i, d) in dst.iter_mut().enumerate() {
+            let hi = Self::word_at(src, i.checked_sub(ws));
+            let lo = Self::word_at(src, i.checked_sub(ws + 1));
+            *d = if bs == 0 { hi } else { (hi << bs) | (lo >> (WORD_BIT_SIZE - bs)) };
+        }
     }
 
     /// Divide mantissa by mantissa, return result and exponent ajustment.
@@ -508,29 +577,45 @@ impl Mantissa {
         rm: RoundingMode,
         is_positive: bool,
         inexact: &mut bool,
-    ) -> Result<(isize, Self), Error> {
+    ) -> Result<(i64, Self), Error> {
         let p = Self::bit_len_to_word_len(p);
 
         let k = (p + m2.len()).max(self.len()) + 1;
 
-        let mut e_shift = (m2.len() as isize - k as isize) * WORD_BIT_SIZE as isize;
+        // The operands are as stored. A subnormal dividend is shifted left (normalized) while it is written
+        // into the padded working buffer `m1` below, which exists for every dividend; a subnormal divisor
+        // is shifted into its own working buffer `d`, because the division kernel needs a normalized
+        // divisor. The caller's exponents are the operands' own, and the shifts are accounted for here.
+        let lz1 = self.leading_zero_bits();
+        let lz2 = m2.leading_zero_bits();
+
+        let mut e_shift =
+            (m2.len() as i64 - k as i64) * WORD_BIT_SIZE as i64 + lz2 as i64 - lz1 as i64;
 
         let mut m1 = Self::reserve_new(k)?;
-        if k > self.len() {
-            let l = k - self.len();
-            m1[l..].copy_from_slice(&self.m);
-            m1[..l].fill(0);
+        let l = k - self.len();
+        m1[..l].fill(0);
+        Self::write_shifted_left(&mut m1[l..], &self.m, lz1);
+
+        let d = if lz2 == 0 {
+            None
         } else {
-            m1.copy_from_slice(&self.m);
-        }
+            let mut d = Self::reserve_new(m2.len())?;
+            Self::write_shifted_left(&mut d, &m2.m, lz2);
+            Some(d)
+        };
+        let divisor: &[Word] = match &d {
+            Some(d) => d,
+            None => &m2.m,
+        };
 
-        let (q, r) = Self::div_unbalanced(&m1, &m2.m)?;
+        let (q, r) = Self::div_unbalanced(&m1, divisor)?;
 
-        e_shift += q.len() as isize * WORD_BIT_SIZE as isize;
+        e_shift += q.len() as i64 * WORD_BIT_SIZE as i64;
 
         let mut m3 = Mantissa { m: q, n: 0 };
 
-        let r_sticky = r.iter().any(|&x| x != 0);
+        let r_sticky = r.iter().any(|x| x != &0);
 
         // rounding
         if r_sticky {
@@ -538,19 +623,18 @@ impl Mantissa {
 
             if rm as u32 & 0b1100000 != 0 {
                 m3.m[0] |= 1;
-            } else if rm == RoundingMode::FromZero
+            } else if (rm == RoundingMode::FromZero
                 || (is_positive && rm == RoundingMode::Up)
-                || (!is_positive && rm == RoundingMode::Down)
+                || (!is_positive && rm == RoundingMode::Down))
+                && m3.add_ulp()
             {
-                if m3.add_ulp() {
-                    let m3l = m3.len() - 1;
-                    m3.m[m3l] = WORD_SIGNIFICANT_BIT;
-                    e_shift += 1;
-                }
+                let m3l = m3.len() - 1;
+                m3.m[m3l] = WORD_SIGNIFICANT_BIT;
+                e_shift += 1;
             }
         }
 
-        e_shift -= Self::maximize(&mut m3.m) as isize;
+        e_shift -= Self::maximize(&mut m3.m) as i64;
 
         if m3.round_mantissa(
             (m3.len() - p) * WORD_BIT_SIZE,
@@ -739,7 +823,7 @@ impl Mantissa {
 
     /// Returns true if all digits are equal to 0.
     pub fn is_all_zero(&self) -> bool {
-        self.m.iter().all(|&v| v == 0)
+        self.m.iter().all(|v| v == &0)
     }
 
     /// Returns length of the mantissa in words.
@@ -767,7 +851,7 @@ impl Mantissa {
         s: usize,
         inexact: &mut bool,
     ) -> bool {
-        debug_assert!(s % WORD_BIT_SIZE == 0); // assume s is aligned to the word size.
+        debug_assert!(s.is_multiple_of(WORD_BIT_SIZE)); // assume s is aligned to the word size.
 
         // This function is so complex, because it combines rounding for all rounding modes
         // and checks for roundability at the same time.
@@ -776,10 +860,12 @@ impl Mantissa {
             *check_roundable = false;
 
             // inexact?
-            if !(*inexact) && n > 0 && n < self.max_bit_len() {
-                if self.find_one_from(self.max_bit_len() - n).is_some() {
-                    *inexact |= true;
-                }
+            if !(*inexact)
+                && n > 0
+                && n < self.max_bit_len()
+                && self.find_one_from(self.max_bit_len() - n).is_some()
+            {
+                *inexact |= true;
             }
 
             return false;
@@ -793,58 +879,72 @@ impl Mantissa {
             let mut cc = (n - (self.max_bit_len() - s)) / WORD_BIT_SIZE; // num of roundable significant words
 
             if rm == RoundingMode::ToEven || rm == RoundingMode::ToOdd {
+                // Nearest: `n` is now the index of the round bit.
+                let known_from = self.max_bit_len() - s; // bits below this index are unknown
+                let round_bit_known = n > known_from;
                 let n = n - 1;
                 let mut rem_zero = true;
-                let mut td = 0; // either all bits set, or zero (default)
 
                 // analyze bits at n and at n+1
                 // to decide if we need to add 1 or not.
                 let np1 = n + 1;
                 i = n / WORD_BIT_SIZE;
-                let mut z = i;
                 t = n % WORD_BIT_SIZE;
                 let ip1 = np1 / WORD_BIT_SIZE;
                 let tp1 = np1 % WORD_BIT_SIZE;
                 let num = (self.m[i] >> t) & 1;
+
+                // Roundability: the known bits below the round bit (the `t` bits of word `i` and the whole
+                // words `known_from / WORD_BIT_SIZE ..i`) must not all be zeros after a round bit of one, or
+                // all be ones after a round bit of zero (checked below), or the unknown bits could move the
+                // value across the half-way point. `uniform` is the pattern
+                // seen so far (zeros or ones); a bit group that breaks the pattern decides the rounding.
+                let mut uniform: Option<Word> = None;
                 if t > 0 {
                     let rb = self.m[i] << (WORD_BIT_SIZE - t);
                     if rb != 0 {
                         rem_zero = false;
-
-                        if *check_roundable {
-                            // try to get information from preceding bits
-                            let msk = rb & (WORD_MAX << (WORD_BIT_SIZE - t));
-                            if msk == rb {
-                                td = WORD_MAX;
-                            } else if msk != 0 {
+                    }
+                    if round_bit_known {
+                        if rb == 0 {
+                            uniform = Some(0);
+                        } else if rb == WORD_MAX << (WORD_BIT_SIZE - t) {
+                            uniform = Some(WORD_MAX);
+                        } else {
+                            *check_roundable = false; // self is roundable
+                        }
+                    }
+                }
+                if *check_roundable && round_bit_known {
+                    let known_word = known_from / WORD_BIT_SIZE;
+                    for &v in self.m[known_word.min(i)..i].iter().rev() {
+                        match uniform {
+                            None if v == 0 => uniform = Some(0),
+                            None if v == WORD_MAX => uniform = Some(WORD_MAX),
+                            Some(u) if v == u => {}
+                            _ => {
                                 *check_roundable = false; // self is roundable
+                                break;
                             }
                         }
                     }
-                } else if *check_roundable && cc > 0 && z > 0 {
-                    // try to get information from preceding word
-                    z -= 1;
-                    if self.m[z] == WORD_MAX {
-                        td = WORD_MAX;
-                        rem_zero = false; // sticky is set
-                    } else if self.m[z] != 0 {
-                        *check_roundable = false; // self is roundable
-                        rem_zero = false; // sticky is set
-                    }
-                    cc -= 1;
+                }
+
+                // Nearest only has a half-way point to be close to: a round bit of one followed by known
+                // zeros, or a round bit of zero followed by known ones. A round bit of one followed by ones
+                // (just below a representable number) rounds up, and a round bit of zero followed by zeros
+                // (just above one) rounds down, whatever the unknown bits are.
+                if *check_roundable
+                    && round_bit_known
+                    && ((uniform == Some(0) && num == 0) || (uniform == Some(WORD_MAX) && num == 1))
+                {
+                    *check_roundable = false; // self is roundable
                 }
 
                 let nump1 = if ip1 < self_len { (self.m[ip1] >> tp1) & 1 } else { 0 };
 
                 // anything before n'th word becomes 0
-                for v in &mut self.m[..n / WORD_BIT_SIZE] {
-                    if *check_roundable && cc > 0 {
-                        if *v != td {
-                            *check_roundable = false; // self is roundable
-                        } else {
-                            cc -= 1;
-                        }
-                    }
+                for v in &mut self.m[..i] {
                     if *v != 0 {
                         rem_zero = false;
                     }
@@ -869,13 +969,19 @@ impl Mantissa {
                             c = true;
                         }
                     }
+                    // Nearest, ties to odd (not sticky round-to-odd): only the exact tie `eq1` looks at the
+                    // neighbour's parity.
                     RoundingMode::ToOdd => {
                         if gt1 || (eq1 && (nump1 & 1) == 0) {
                             // add 1
                             c = true;
                         }
                     }
-                    _ => unreachable!(),
+                    RoundingMode::None
+                    | RoundingMode::Up
+                    | RoundingMode::Down
+                    | RoundingMode::ToZero
+                    | RoundingMode::FromZero => {}
                 };
 
                 if c {
@@ -967,7 +1073,7 @@ impl Mantissa {
                             c = true;
                         }
                     }
-                    _ => unreachable!(),
+                    RoundingMode::None | RoundingMode::ToEven | RoundingMode::ToOdd => {}
                 };
             }
 
@@ -1064,6 +1170,8 @@ impl Mantissa {
 
     /// Clones the mantissa.
     pub fn clone(&self) -> Result<Self, Error> {
+        #[cfg(test)]
+        CLONE_CALLS.with(|c| c.set(c.get() + 1));
         let mut m = Self::reserve_new(self.m.len())?;
         m.copy_from_slice(&self.m);
         Ok(Mantissa { m, n: self.n })
@@ -1123,7 +1231,7 @@ impl Mantissa {
         is_positive: bool,
         inexact: &mut bool,
         odd_exp: bool,
-    ) -> Result<(isize, Self), Error> {
+    ) -> Result<(i64, Self), Error> {
         let p = Self::bit_len_to_word_len(p);
 
         let k = (p.max(self.len()) + 1) * 2;
@@ -1144,7 +1252,7 @@ impl Mantissa {
 
         let mut m3 = Mantissa { m: q, n: 0 };
 
-        let r_sticky = r.iter().any(|&x| x != 0);
+        let r_sticky = r.iter().any(|x| x != &0);
 
         // rounding
         if r_sticky {
@@ -1152,19 +1260,18 @@ impl Mantissa {
 
             if rm as u32 & 0b1100000 != 0 {
                 m3.m[0] |= 1;
-            } else if rm == RoundingMode::FromZero
+            } else if (rm == RoundingMode::FromZero
                 || (is_positive && rm == RoundingMode::Up)
-                || (!is_positive && rm == RoundingMode::Down)
+                || (!is_positive && rm == RoundingMode::Down))
+                && m3.add_ulp()
             {
-                if m3.add_ulp() {
-                    let m3l = m3.len() - 1;
-                    m3.m[m3l] = WORD_SIGNIFICANT_BIT;
-                    e_shift += 1;
-                }
+                let m3l = m3.len() - 1;
+                m3.m[m3l] = WORD_SIGNIFICANT_BIT;
+                e_shift += 1;
             }
         }
 
-        _ = Self::maximize(&mut m3.m) as isize;
+        _ = Self::maximize(&mut m3.m) as i64;
 
         if m3.round_mantissa(
             (m3.len() - p) * WORD_BIT_SIZE,
@@ -1190,14 +1297,14 @@ impl Mantissa {
         rm: RoundingMode,
         is_positive: bool,
         inexact: &mut bool,
-        add_exp: isize,
-    ) -> Result<(isize, Self), Error> {
+        add_exp: i64,
+    ) -> Result<(i64, Self), Error> {
         let p = Self::bit_len_to_word_len(p);
 
         let k = p.max(self.len()) + 1;
         let k3 = k * 3;
 
-        let mut e_shift = -((k * WORD_BIT_SIZE) as isize);
+        let mut e_shift = -((k * WORD_BIT_SIZE) as i64);
 
         let mut m1 = Self::reserve_new(k3)?;
 
@@ -1213,7 +1320,7 @@ impl Mantissa {
 
         let mut m3 = Mantissa { m: q, n: 0 };
 
-        let r_sticky = r.iter().any(|&x| x != 0);
+        let r_sticky = r.iter().any(|x| x != &0);
 
         // rounding
         if r_sticky {
@@ -1221,21 +1328,20 @@ impl Mantissa {
 
             if rm as u32 & 0b1100000 != 0 {
                 m3.m[0] |= 1;
-            } else if rm == RoundingMode::FromZero
+            } else if (rm == RoundingMode::FromZero
                 || (is_positive && rm == RoundingMode::Up)
-                || (!is_positive && rm == RoundingMode::Down)
+                || (!is_positive && rm == RoundingMode::Down))
+                && m3.add_ulp()
             {
-                if m3.add_ulp() {
-                    let m3l = m3.len() - 1;
-                    m3.m[m3l] = WORD_SIGNIFICANT_BIT;
-                    e_shift += 1;
-                }
+                let m3l = m3.len() - 1;
+                m3.m[m3l] = WORD_SIGNIFICANT_BIT;
+                e_shift += 1;
             }
         }
 
-        e_shift += (m3.len() * WORD_BIT_SIZE) as isize;
+        e_shift += (m3.len() * WORD_BIT_SIZE) as i64;
 
-        e_shift -= Self::maximize(&mut m3.m) as isize;
+        e_shift -= Self::maximize(&mut m3.m) as i64;
 
         if m3.round_mantissa(
             (m3.len() - p) * WORD_BIT_SIZE,
@@ -1258,4 +1364,11 @@ impl Mantissa {
         let n = Self::find_bit_len(&m);
         Mantissa { m, n }
     }
+}
+
+#[cfg(test)]
+std::thread_local! {
+    /// Number of `Mantissa::clone` calls made by this thread (unit tests count them to show that an
+    /// operation does not copy its operands).
+    pub(crate) static CLONE_CALLS: core::cell::Cell<usize> = const { core::cell::Cell::new(0) };
 }

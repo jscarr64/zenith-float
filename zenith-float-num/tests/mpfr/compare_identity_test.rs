@@ -5,10 +5,20 @@
 //! `_2F1(...,0)=1`, `K(0)=π/2`.
 
 use crate::mpfr::common::reset_test_rng;
+use std::ops::Neg;
+use zenith_float_num::Exponent;
 use zenith_float_num::{Consts, ExactComplex, ExactNum, RoundingMode, WORD_BIT_SIZE};
 
-fn bits_agree(a: &ExactNum, b: &ExactNum, p: usize, min_bits: i32, label: &str) {
-    let d = a.sub(b, p, RoundingMode::None).abs();
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
+
+fn bits_agree(a: &ExactNum, b: &ExactNum, p: usize, min_bits: Exponent, label: &str) {
+    let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
     if d.is_zero() {
         return;
     }
@@ -22,30 +32,30 @@ fn bits_agree(a: &ExactNum, b: &ExactNum, p: usize, min_bits: i32, label: &str) 
 }
 
 fn tiny(x: &ExactNum, p: usize) -> bool {
-    x.is_zero() || x.exponent().is_some_and(|e| e < -((p as i32) / 4))
+    x.is_zero() || x.exponent().is_some_and(|e| e < -((p as Exponent) / 4))
 }
 
 #[test]
-fn mpfr_identity_no_oracle_specials() {
+fn mpfr_identity_no_oracle_specials() -> Result<(), Box<dyn std::error::Error>> {
     reset_test_rng();
     let p = 2 * WORD_BIT_SIZE;
     let rm = RoundingMode::ToEven;
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     let one = ExactNum::from_u8(1, p);
     let zero = ExactNum::new(p);
     let two = ExactNum::from_u8(2, p);
-    let half = one.div(&two, p, rm);
+    let half = ExactNum::from_u8(1, p).div(&two, p, rm);
 
     let s1 = one.si(p, rm, &mut cc);
-    let sn = one.neg().si(p, rm, &mut cc);
-    bits_agree(&s1, &sn.neg(), p, (p as i32) / 4, "Si odd");
+    let sn = neg_of(&one).si(p, rm, &mut cc);
+    bits_agree(&s1, &sn.neg(), p, (p as Exponent) / 4, "Si odd");
     assert!(zero.si(p, rm, &mut cc).is_zero());
     let hp = cc.pi(p, rm).div(&two, p, rm);
     bits_agree(
         &zenith_float_num::INF_POS.si(p, rm, &mut cc),
         &hp,
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "Si(+∞)",
     );
 
@@ -54,7 +64,7 @@ fn mpfr_identity_no_oracle_specials() {
         &e.li(p, rm, &mut cc),
         &one.ei(p, rm, &mut cc),
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "li(e)=Ei(1)",
     );
 
@@ -63,35 +73,41 @@ fn mpfr_identity_no_oracle_specials() {
     let fs = one.fresnel_s(p, rm, &mut cc);
     bits_agree(
         &fs,
-        &one.neg().fresnel_s(p, rm, &mut cc).neg(),
+        &neg_of(&one).fresnel_s(p, rm, &mut cc).neg(),
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "S odd",
     );
     bits_agree(
         &zenith_float_num::INF_POS.fresnel_s(p, rm, &mut cc),
         &half,
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "S(+∞)=1/2",
     );
 
     let k_half = one.bessel_k(&half, p, rm, &mut cc);
-    let want_k = hp.sqrt(p, rm).mul(&one.neg().exp(p, rm, &mut cc), p, rm);
-    bits_agree(&k_half, &want_k, p, (p as i32) / 4, "K_{1/2}(1)");
+    let want_k = hp.sqrt(p, rm).mul(&neg_of(&one).exp(p, rm, &mut cc), p, rm);
+    bits_agree(&k_half, &want_k, p, (p as Exponent) / 4, "K_{1/2}(1)");
 
     let ai = one.ai(p, rm, &mut cc);
     let bi = one.bi(p, rm, &mut cc);
     let aip = one.ai_prime(p, rm, &mut cc);
     let bip = one.bi_prime(p, rm, &mut cc);
     let wr = ai.mul(&bip, p, rm).sub(&aip.mul(&bi, p, rm), p, rm);
-    bits_agree(&wr, &one.div(&cc.pi(p, rm), p, rm), p, 40, "Airy Wronskian");
+    bits_agree(
+        &wr,
+        &ExactNum::from_u8(1, p).div(&cc.pi(p, rm), p, rm),
+        p,
+        40,
+        "Airy Wronskian",
+    );
 
     bits_agree(
         &zero.elliptic_k(p, rm, &mut cc),
         &hp,
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "K(0)=π/2",
     );
 
@@ -102,19 +118,23 @@ fn mpfr_identity_no_oracle_specials() {
         &a.hypergeom_2f1(&b, &c, &zero, p, rm, &mut cc),
         &one,
         p,
-        (p as i32) / 4,
+        (p as Exponent) / 4,
         "_2F1(a,b;c;0)=1",
     );
 
-    let z = ExactComplex::new(one.clone(), one);
+    let z = ExactComplex::new(ExactNum::from_u8(1, p), one);
     let ez = z.erf(p, rm, &mut cc);
-    let em = ExactComplex::new(z.re().neg(), z.im().neg()).erf(p, rm, &mut cc);
-    assert!(tiny(&ez.re().add(em.re(), p, rm), p) && tiny(&ez.im().add(em.im(), p, rm), p));
+    let em = ExactComplex::new(neg_of(z.re()), neg_of(z.im())).erf(p, rm, &mut cc);
+    assert!(
+        tiny(&ExactNum::add_ref(ez.re(), em.re(), p, rm), p)
+            && tiny(&ExactNum::add_ref(ez.im(), em.im(), p, rm), p)
+    );
     let erfc_z = z.erfc(p, rm, &mut cc);
     let one_c = ExactComplex::one(p);
     let id = one_c.sub(&ez, p, rm);
     assert!(
-        tiny(&erfc_z.re().sub(id.re(), p, rm), p) && tiny(&erfc_z.im().sub(id.im(), p, rm), p),
+        tiny(&ExactNum::sub_ref(erfc_z.re(), id.re(), p, rm), p)
+            && tiny(&ExactNum::sub_ref(erfc_z.im(), id.im(), p, rm), p),
         "erfc=1-erf"
     );
 
@@ -122,7 +142,8 @@ fn mpfr_identity_no_oracle_specials() {
     let g5 = five.gamma(p, rm, &mut cc);
     let tf = ExactNum::from_u8(24, p);
     assert!(
-        tiny(&g5.re().sub(&tf, p, rm), p) && tiny(g5.im(), p),
+        tiny(&ExactNum::sub_ref(g5.re(), &tf, p, rm), p) && tiny(g5.im(), p),
         "Γ(5)=24"
     );
+    Ok(())
 }

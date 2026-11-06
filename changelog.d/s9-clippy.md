@@ -1,0 +1,1 @@
+- S9 specials: cleared the two clippy warnings the S9 commits introduced (infallible `Exponent::from` in `riemann_zeta`, `is_none_or` in the J0/J1 asymptotic test); no behavior change.

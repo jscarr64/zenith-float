@@ -1,0 +1,1 @@
+- Tests (R14, red): `tests/r14_raw_parts.rs` pins the new `RawParts` / `RawKind` raw-representation API (round-trips at `±(2^62 − 1)`, subnormals, signed zeros, Inf/NaN, precisions 1..65536) and its named rejections.

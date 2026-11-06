@@ -11,6 +11,8 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+# shellcheck source=use_rust_1_99.sh
+source "$root/scripts/use_rust_1_99.sh"
 
 out="${COMPARE_OUT:-doc/compare-results.tsv}"
 libs=(--lib zenith --lib astro --lib dashu)
@@ -33,7 +35,7 @@ fi
 
 {
   echo -e "library\tprecision_bits\ttask\tbatch_size\tbest_time_us"
-  cargo run -p zenith-float-compare --release "${features[@]}" -- \
+  cargo run -q -p zenith-float-compare --release "${features[@]}" -- \
     "${libs[@]}" "${precisions[@]}" "${tasks[@]}" -n 5 \
     | tail -n +2
 } > "$out"

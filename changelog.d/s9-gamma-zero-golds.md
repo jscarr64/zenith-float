@@ -1,0 +1,1 @@
+- S9 golds: gamma(±0) = ±Inf exactly (MPFR), negative integers stay InvalidArgument (Rusty ruling). Changed rows: s9-gamma-53-{ToEven,Up,Down,ToZero,FromZero}-685..689 and -825..829 (gamma(+0): InvalidArgument → +Inf), -830..834 (gamma(-0): InvalidArgument → -Inf).

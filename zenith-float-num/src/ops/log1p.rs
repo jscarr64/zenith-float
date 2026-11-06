@@ -1,7 +1,7 @@
 //! `ln(1 + x)` without cancellation for small `x`.
 
 use crate::common::util::{bump_prec_retry, round_p};
-use crate::defs::{Error, WORD_BIT_SIZE};
+use crate::defs::{Error, Exponent, WORD_BIT_SIZE};
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::ops::util::compute_small_exp;
@@ -25,15 +25,36 @@ impl ExactNumNumber {
         }
 
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len());
+        // The retry budget counts from the working start: an argument wider than `p` must not exhaust it at once.
+        let p_base = p.max(self.mantissa_max_bit_len());
+        let mut p_wrk = p_base;
 
-        compute_small_exp!(self, self.exponent() as isize, false, p_wrk, p, rm);
+        // `ln(1 + x) = x - x^2/2 + ...`: the true value is below `x` in magnitude for `x > 0` and above it for
+        // `x < 0`, so the one-bit correction goes against the sign of `x` only when `x` is positive.
+        compute_small_exp!(self, self.exponent(), self.is_positive(), p_wrk, p, rm);
 
         p_wrk += p_inc;
 
         loop {
             let p_x = p_wrk + 3;
             let one = Self::from_word(1, p_x)?;
+
+            // Huge x: `1 + x` can overflow, so use `ln(1 + x) = ln(x) + 1/x - ...`, whose tail
+            // `1/(2x²)` is far below the working precision.
+            let p_exp = Exponent::try_from(p_x).map_err(|_| Error::InvalidArgument)?;
+            if self.is_positive() && self.exponent() > p_exp + 2 {
+                let r = one.div(self, p_x, RoundingMode::None)?;
+                let mut ret =
+                    self.ln(p_x, RoundingMode::None, cc)?
+                        .add(&r, p_x, RoundingMode::None)?;
+                if ret.try_set_precision(p, rm, p_wrk)? {
+                    ret.set_inexact(true);
+                    return Ok(ret);
+                }
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p_base)?;
+                continue;
+            }
+
             let u = one.add(self, p_x, RoundingMode::None)?;
 
             if u.is_zero() {
@@ -63,7 +84,7 @@ impl ExactNumNumber {
                 return Ok(ret);
             }
 
-            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p_base)?;
         }
     }
 }
@@ -71,49 +92,44 @@ impl ExactNumNumber {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::consts::ONE;
     use crate::defs::WORD_BIT_SIZE;
     use crate::RoundingMode;
 
     #[test]
-    fn test_log1p() {
-        let mut cc = Consts::new().unwrap();
+    fn test_log1p() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
         let p = WORD_BIT_SIZE * 5;
 
-        let z = ExactNumNumber::new(p).unwrap();
-        assert!(z.log1p(p, rm, &mut cc).unwrap().is_zero());
+        let z = ExactNumNumber::new(p)?;
+        assert!(z.log1p(p, rm, &mut cc)?.is_zero());
 
-        let one = ONE.clone().unwrap();
-        let ln2 = one.log1p(p, rm, &mut cc).unwrap();
-        let ln2b = ExactNumNumber::from_i8(2, p)
-            .unwrap()
-            .ln(p, rm, &mut cc)
-            .unwrap();
+        let one = ExactNumNumber::small_const(1);
+        let ln2 = one.log1p(p, rm, &mut cc)?;
+        let ln2b = ExactNumNumber::from_i8(2, p)?.ln(p, rm, &mut cc)?;
         assert_eq!(ln2.cmp(&ln2b), 0);
 
         assert!(matches!(
-            one.neg().unwrap().log1p(p, rm, &mut cc),
+            one.neg()?.log1p(p, rm, &mut cc),
             Err(Error::DivisionByZero)
         ));
         assert!(matches!(
-            ExactNumNumber::from_i8(-2, p)
-                .unwrap()
-                .log1p(p, rm, &mut cc),
+            ExactNumNumber::from_i8(-2, p)?.log1p(p, rm, &mut cc),
             Err(Error::InvalidArgument)
         ));
 
         for _ in 0..40 {
-            let x = ExactNumNumber::random_normal(p, -30, -2).unwrap();
+            let x = ExactNumNumber::random_normal(p, -30, -2)?;
             if x.is_negative() {
                 continue;
             }
-            let l = x.log1p(p, rm, &mut cc).unwrap();
-            let u = one.add(&x, p, rm).unwrap();
-            let back = l.exp(p, rm, &mut cc).unwrap();
-            let mut eps = ONE.clone().unwrap();
+            let l = x.log1p(p, rm, &mut cc)?;
+            let u = one.add(&x, p, rm)?;
+            let back = l.exp(p, rm, &mut cc)?;
+            let mut eps = ExactNumNumber::small_const(1);
             eps.set_exponent(u.exponent() - p as crate::Exponent + 5);
-            assert!(back.sub(&u, p, rm).unwrap().abs().unwrap().cmp(&eps) < 0);
+            assert!(back.sub(&u, p, rm)?.abs()?.cmp(&eps) < 0);
         }
+        Ok(())
     }
 }

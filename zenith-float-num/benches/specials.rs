@@ -15,7 +15,9 @@ fn bench_erf(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
     for &p in SPECIAL_PRECISIONS {
         group.bench_with_input(BenchmarkId::from_parameter(p), &p, |b, &p| {
-            let mut cc = Consts::new().expect("constants cache");
+            let Ok(mut cc) = Consts::new() else {
+                return;
+            };
             let x = ExactNum::from_u8(1, p);
             b.iter(|| sink(x.erf(p, rm, &mut cc)));
         });
@@ -28,7 +30,9 @@ fn bench_gamma(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
     for &p in SPECIAL_PRECISIONS {
         group.bench_with_input(BenchmarkId::from_parameter(p), &p, |b, &p| {
-            let mut cc = Consts::new().expect("constants cache");
+            let Ok(mut cc) = Consts::new() else {
+                return;
+            };
             let x = ExactNum::from_u8(5, p);
             b.iter(|| sink(x.gamma(p, rm, &mut cc)));
         });
@@ -41,7 +45,9 @@ fn bench_bessel_j(c: &mut Criterion) {
     let rm = RoundingMode::ToEven;
     for &p in SPECIAL_PRECISIONS {
         group.bench_with_input(BenchmarkId::from_parameter(p), &p, |b, &p| {
-            let mut cc = Consts::new().expect("constants cache");
+            let Ok(mut cc) = Consts::new() else {
+                return;
+            };
             let x = ExactNum::from_u8(1, p);
             b.iter(|| sink(x.bessel_j(0, p, rm, &mut cc)));
         });

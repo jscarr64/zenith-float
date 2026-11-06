@@ -1,0 +1,1 @@
+- `format`: the exponent magnitude is written from a `u64`, so on 32-bit targets an exponent beyond `u32` (or the subnormal `|EXPONENT_MIN|`) is no longer truncated or saturated. No change on 64-bit.

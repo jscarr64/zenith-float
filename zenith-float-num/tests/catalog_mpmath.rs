@@ -1,5 +1,6 @@
 //! Catalog specials vs mpmath 1.4.1 at 50 digits / 2p+64 bits.
 
+use std::ops::Neg;
 use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode};
 
 const RM: RoundingMode = RoundingMode::ToEven;
@@ -12,11 +13,11 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
     if got.is_nan() {
         return i32::MIN;
     }
-    let d = got.sub(want, 2 * p, RoundingMode::None);
+    let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
     if d.is_zero() {
         return i32::MAX;
     }
-    want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)
+    i32::try_from(want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)).unwrap_or(i32::MAX)
 }
 
 fn check(
@@ -35,8 +36,8 @@ fn check(
 }
 
 #[test]
-fn catalog_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn catalog_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let mut failures = Vec::new();
     // 50-digit golds are ~166 bits, so 128-bit dest is the honest check.
     let p = 128usize;
@@ -170,4 +171,5 @@ fn catalog_mpmath() {
         &mut failures,
     );
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }

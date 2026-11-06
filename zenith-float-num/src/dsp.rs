@@ -6,6 +6,7 @@ use crate::ExactNum;
 use crate::ExactNumArray;
 use crate::RoundingMode;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// Maximum real length for [`dct`] / [`idct`] / [`dst`] / [`idst`] and the
 /// window generators. Transforms use a `2N`-point FFT, so this is half of
@@ -87,14 +88,14 @@ pub fn dct(
     let two_n = ExactNum::from_u32(n2 as u32, wrk);
     let mut out = Vec::with_capacity(n);
     for k in 0..n {
-        let ang = pi
-            .mul(&ExactNum::from_u32(k as u32, wrk), wrk, RoundingMode::None)
+        let ang = ExactNum::from_u32(k as u32, wrk)
+            .mul(&pi, wrk, RoundingMode::None)
             .div(&two_n, wrk, RoundingMode::None);
         let (sn, cs) = ang.sin_cos(wrk, RoundingMode::None, cc);
         let yr = spec.get2(0, k)?;
         let yi = spec.get2(1, k)?;
-        let re = yr.mul(&cs, wrk, RoundingMode::None).add(
-            &yi.mul(&sn, wrk, RoundingMode::None),
+        let re = cs.mul(yr, wrk, RoundingMode::None).add(
+            &sn.mul(yi, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
@@ -123,19 +124,19 @@ pub fn idct(
     let nn = ExactNum::from_u32(n as u32, wrk);
     let two = ExactNum::from_u8(2, wrk);
     let inv_n = ExactNum::from_u8(1, wrk).div(&nn, wrk, none);
-    let two_n = two.div(&nn, wrk, none);
+    let two_n = ExactNum::from_u8(2, wrk).div(&nn, wrk, none);
     let half = ExactNum::from_u8(1, wrk).div(&two, wrk, none);
     let mut out = Vec::with_capacity(n);
     for ni in 0..n {
         let n_half = ExactNum::from_u32(ni as u32, wrk).add(&half, wrk, none);
-        let mut acc = x[0].mul(&inv_n, wrk, none);
+        let mut acc = ExactNum::mul_ref(&inv_n, &x[0], wrk, none);
         for (k, xk) in x.iter().enumerate().take(n).skip(1) {
-            let ang = pi
-                .mul(&ExactNum::from_u32(k as u32, wrk), wrk, none)
+            let ang = ExactNum::from_u32(k as u32, wrk)
+                .mul(&pi, wrk, none)
                 .mul(&n_half, wrk, none)
                 .div(&nn, wrk, none);
             let c = ang.cos(wrk, none, cc);
-            acc = acc.add(&xk.mul(&c, wrk, none).mul(&two_n, wrk, none), wrk, none);
+            acc = acc.add(&c.mul(xk, wrk, none).mul(&two_n, wrk, none), wrk, none);
         }
         if !finite(&acc) {
             return None;
@@ -167,15 +168,15 @@ pub fn dst(
     let mut out = Vec::with_capacity(n);
     for k in 0..n {
         let m = k + 1;
-        let ang = pi
-            .mul(&ExactNum::from_u32(m as u32, wrk), wrk, RoundingMode::None)
+        let ang = ExactNum::from_u32(m as u32, wrk)
+            .mul(&pi, wrk, RoundingMode::None)
             .div(&two_n, wrk, RoundingMode::None);
         let (sn, cs) = ang.sin_cos(wrk, RoundingMode::None, cc);
         let yr = spec.get2(0, m)?;
         let yi = spec.get2(1, m)?;
         // −Im(Y[m] exp(−iθ)) = yr sinθ − yi cosθ
-        let val = yr.mul(&sn, wrk, RoundingMode::None).sub(
-            &yi.mul(&cs, wrk, RoundingMode::None),
+        let val = sn.mul(yr, wrk, RoundingMode::None).sub(
+            &cs.mul(yi, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
@@ -203,20 +204,22 @@ pub fn idst(
     let pi = cc.pi(wrk, none);
     let nn = ExactNum::from_u32(n as u32, wrk);
     let two = ExactNum::from_u8(2, wrk);
-    let two_n = two.div(&nn, wrk, none);
+    let two_n = ExactNum::from_u8(2, wrk).div(&nn, wrk, none);
     let half = ExactNum::from_u8(1, wrk).div(&two, wrk, none);
-    let last = x[n - 1].mul(&half, wrk, none);
     let mut out = Vec::with_capacity(n);
     for ni in 0..n {
         let n_half = ExactNum::from_u32(ni as u32, wrk).add(&half, wrk, none);
-        let mut acc = if ni % 2 == 0 { last.clone() } else { last.neg() };
+        // `x[n-1] * half` is recomputed per output bin: its sign flips for odd bins and
+        // the unflipped value is needed again by the next bin.
+        let last = ExactNum::mul_ref(&half, &x[n - 1], wrk, none);
+        let mut acc = if ni % 2 == 0 { last } else { last.neg() };
         for (k, xk) in x.iter().enumerate().take(n - 1) {
-            let ang = pi
-                .mul(&ExactNum::from_u32((k + 1) as u32, wrk), wrk, none)
+            let ang = ExactNum::from_u32((k + 1) as u32, wrk)
+                .mul(&pi, wrk, none)
                 .mul(&n_half, wrk, none)
                 .div(&nn, wrk, none);
             let s = ang.sin(wrk, none, cc);
-            acc = acc.add(&xk.mul(&s, wrk, none), wrk, none);
+            acc = acc.add(&s.mul(xk, wrk, none), wrk, none);
         }
         acc = acc.mul(&two_n, wrk, none);
         if !finite(&acc) {
@@ -278,11 +281,11 @@ pub fn hann_window(n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Opt
     let wrk = work_p(p);
     let none = RoundingMode::None;
     let half = frac(1, 2, wrk, none);
-    let one = ExactNum::from_u8(1, wrk);
     let mut vals = Vec::with_capacity(n);
     for k in 0..n {
+        let one = ExactNum::from_u8(1, wrk);
         let c = two_pi_k_over_nm1(k, n, wrk, none, cc).cos(wrk, none, cc);
-        let w = half.mul(&one.sub(&c, wrk, none), wrk, none);
+        let w = one.sub(&c, wrk, none).mul(&half, wrk, none);
         if !finite(&w) {
             return None;
         }
@@ -306,12 +309,12 @@ pub fn hamming_window(
     }
     let wrk = work_p(p);
     let none = RoundingMode::None;
-    let a0 = frac(27, 50, wrk, none);
     let a1 = frac(23, 50, wrk, none);
     let mut vals = Vec::with_capacity(n);
     for k in 0..n {
+        let a0 = frac(27, 50, wrk, none);
         let c = two_pi_k_over_nm1(k, n, wrk, none, cc).cos(wrk, none, cc);
-        let w = a0.sub(&a1.mul(&c, wrk, none), wrk, none);
+        let w = a0.sub(&c.mul(&a1, wrk, none), wrk, none);
         if !finite(&w) {
             return None;
         }
@@ -335,18 +338,18 @@ pub fn blackman_window(
     }
     let wrk = work_p(p);
     let none = RoundingMode::None;
-    let a0 = frac(21, 50, wrk, none);
     let a1 = frac(1, 2, wrk, none);
     let a2 = frac(2, 25, wrk, none);
     let two = ExactNum::from_u8(2, wrk);
     let mut vals = Vec::with_capacity(n);
     for k in 0..n {
+        let a0 = frac(21, 50, wrk, none);
         let th = two_pi_k_over_nm1(k, n, wrk, none, cc);
         let c1 = th.cos(wrk, none, cc);
         let c2 = th.mul(&two, wrk, none).cos(wrk, none, cc);
         let w = a0
-            .sub(&a1.mul(&c1, wrk, none), wrk, none)
-            .add(&a2.mul(&c2, wrk, none), wrk, none);
+            .sub(&c1.mul(&a1, wrk, none), wrk, none)
+            .add(&c2.mul(&a2, wrk, none), wrk, none);
         if !finite(&w) {
             return None;
         }
@@ -381,17 +384,17 @@ pub fn kaiser_window(
     }
     let two = ExactNum::from_u8(2, wrk);
     let mid = ExactNum::from_u32((n - 1) as u32, wrk).div(&two, wrk, none);
-    let one = ExactNum::from_u8(1, wrk);
     let mut vals = Vec::with_capacity(n);
     for k in 0..n {
+        let one = ExactNum::from_u8(1, wrk);
         let t = ExactNum::from_u32(k as u32, wrk)
             .sub(&mid, wrk, none)
             .div(&mid, wrk, none);
-        let rad = one.sub(&t.mul(&t, wrk, none), wrk, none);
+        let rad = one.sub(&t.sqr(wrk, none), wrk, none);
         if rad.is_negative() {
             return None;
         }
-        let arg = b.mul(&rad.sqrt(wrk, none), wrk, none);
+        let arg = rad.sqrt(wrk, none).mul(&b, wrk, none);
         let w = arg.bessel_i(&nu0, wrk, none, cc).div(&i0b, wrk, none);
         if !finite(&w) {
             return None;
@@ -437,8 +440,8 @@ mod tests {
     }
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - 40)
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
+        d.is_zero() || d.exponent().unwrap_or(0) < -((p as crate::Exponent) - 40)
     }
 
     fn n_at(p: usize, k: u8) -> ExactNum {
@@ -446,36 +449,50 @@ mod tests {
     }
 
     #[test]
-    fn dsp_dct_dst_fft_real() {
+    fn dsp_dct_dst_fft_real() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let n = |k: u8| n_at(p, k);
         let zero = n(0);
 
         let x = ExactNumArray::from_values(p, &[n(1), n(2), n(3), n(4)]);
-        let cx = dct(&x, p, rm, &mut cc).expect("dct");
-        let back = idct(&cx, p, rm, &mut cc).expect("idct");
+        let cx = dct(&x, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        let back = idct(&cx, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(back.len(), 4);
         for j in 0..4 {
             assert!(
-                near(back.get(j).unwrap(), x.get(j).unwrap(), p),
+                near(
+                    back.get(j).ok_or(crate::Error::InvalidArgument)?,
+                    x.get(j).ok_or(crate::Error::InvalidArgument)?,
+                    p
+                ),
                 "idct(dct(x))[{j}]"
             );
         }
 
         let cst = ExactNumArray::from_values(p, &[n(3), n(3), n(3), n(3)]);
-        let dc = dct(&cst, p, rm, &mut cc).expect("dct const");
+        let dc = dct(&cst, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
         let twelve = ExactNum::from_u8(12, p);
-        assert!(near(dc.get(0).unwrap(), &twelve, p), "DC bin");
+        assert!(
+            near(dc.get(0).ok_or(crate::Error::InvalidArgument)?, &twelve, p),
+            "DC bin"
+        );
         for j in 1..4 {
-            assert!(near(dc.get(j).unwrap(), &zero, p), "const bin {j}");
+            assert!(
+                near(dc.get(j).ok_or(crate::Error::InvalidArgument)?, &zero, p),
+                "const bin {j}"
+            );
         }
 
-        let sx = dst(&x, p, rm, &mut cc).expect("dst");
-        let sback = idst(&sx, p, rm, &mut cc).expect("idst");
+        let sx = dst(&x, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        let sback = idst(&sx, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
         for j in 0..4 {
             assert!(
-                near(sback.get(j).unwrap(), x.get(j).unwrap(), p),
+                near(
+                    sback.get(j).ok_or(crate::Error::InvalidArgument)?,
+                    x.get(j).ok_or(crate::Error::InvalidArgument)?,
+                    p
+                ),
                 "idst(dst(x))[{j}]"
             );
         }
@@ -485,16 +502,16 @@ mod tests {
         let mut cos_vals = Vec::with_capacity(8);
         for k in 0..8u8 {
             let kn = ExactNum::from_u8(k, p);
-            let ang = two_pi.mul(&kn, p, rm).div(&n8, p, rm);
+            let ang = kn.mul(&two_pi, p, rm).div(&n8, p, rm);
             cos_vals.push(ang.cos(p, rm, &mut cc));
         }
         let cosine = ExactNumArray::from_values(p, &cos_vals);
-        let cspec = fft_real(&cosine, p, rm, &mut cc).expect("fft_real cos");
+        let cspec = fft_real(&cosine, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(cspec.shape(), (2, 8));
         let four = n(4);
         for j in 0..8 {
-            let re = cspec.get2(0, j).unwrap();
-            let im = cspec.get2(1, j).unwrap();
+            let re = cspec.get2(0, j).ok_or(crate::Error::InvalidArgument)?;
+            let im = cspec.get2(1, j).ok_or(crate::Error::InvalidArgument)?;
             if j == 1 || j == 7 {
                 assert!(near(re, &four, p), "cos bin {j} re");
             } else {
@@ -503,21 +520,23 @@ mod tests {
             assert!(near(im, &zero, p), "cos bin {j} im");
         }
 
-        let rec = ifft_real(&cspec, p, rm, &mut cc).expect("ifft_real");
+        let rec = ifft_real(&cspec, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
         for j in 0..8 {
-            assert!(near(rec.get(j).unwrap(), cosine.get(j).unwrap(), p));
+            assert!(near(
+                rec.get(j).ok_or(crate::Error::InvalidArgument)?,
+                cosine.get(j).ok_or(crate::Error::InvalidArgument)?,
+                p
+            ));
         }
 
         let mut e_t = ExactNum::from_u8(0, p);
         let mut e_f = ExactNum::from_u8(0, p);
         for j in 0..8 {
-            let xv = cosine.get(j).unwrap();
-            e_t = e_t.add(&xv.mul(xv, p, rm), p, rm);
-            let xr = cspec.get2(0, j).unwrap();
-            let xi = cspec.get2(1, j).unwrap();
-            e_f = e_f
-                .add(&xr.mul(xr, p, rm), p, rm)
-                .add(&xi.mul(xi, p, rm), p, rm);
+            let xv = cosine.get(j).ok_or(crate::Error::InvalidArgument)?;
+            e_t = e_t.add(&xv.sqr(p, rm), p, rm);
+            let xr = cspec.get2(0, j).ok_or(crate::Error::InvalidArgument)?;
+            let xi = cspec.get2(1, j).ok_or(crate::Error::InvalidArgument)?;
+            e_f = e_f.add(&xr.sqr(p, rm), p, rm).add(&xi.sqr(p, rm), p, rm);
         }
         let parseval = e_f.div(&n8, p, rm);
         assert!(near(&parseval, &e_t, p));
@@ -530,52 +549,90 @@ mod tests {
         )
         .is_none());
         assert!(fft_real(&cspec, p, rm, &mut cc).is_none());
+        Ok(())
     }
 
-    fn window_sum_pos(w: &ExactNumArray, p: usize) -> bool {
+    fn window_sum_pos(w: &ExactNumArray, p: usize) -> Result<bool, crate::Error> {
         let mut s = ExactNum::from_u8(0, p);
         for i in 0..w.len() {
-            s = s.add(w.get(i).unwrap(), p, RoundingMode::ToEven);
+            s = s.add(
+                w.get(i).ok_or(crate::Error::InvalidArgument)?,
+                p,
+                RoundingMode::ToEven,
+            );
         }
-        s.is_positive() && !s.is_zero()
+        Ok(s.is_positive() && !s.is_zero())
     }
 
     #[test]
-    fn dsp_windows() {
+    fn dsp_windows() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let zero = ExactNum::from_u8(0, p);
         let three_fourths = ExactNum::from_u8(3, p).div(&ExactNum::from_u8(4, p), p, rm);
         let eight_hundredths = ExactNum::from_u8(2, p).div(&ExactNum::from_u8(25, p), p, rm);
 
-        let hann = hann_window(4, p, rm, &mut cc).expect("hann");
+        let hann = hann_window(4, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(hann.len(), 4);
-        assert!(near(hann.get(0).unwrap(), &zero, p));
-        assert!(near(hann.get(1).unwrap(), &three_fourths, p));
-        assert!(near(hann.get(2).unwrap(), &three_fourths, p));
-        assert!(near(hann.get(3).unwrap(), &zero, p));
+        assert!(near(
+            hann.get(0).ok_or(crate::Error::InvalidArgument)?,
+            &zero,
+            p
+        ));
+        assert!(near(
+            hann.get(1).ok_or(crate::Error::InvalidArgument)?,
+            &three_fourths,
+            p
+        ));
+        assert!(near(
+            hann.get(2).ok_or(crate::Error::InvalidArgument)?,
+            &three_fourths,
+            p
+        ));
+        assert!(near(
+            hann.get(3).ok_or(crate::Error::InvalidArgument)?,
+            &zero,
+            p
+        ));
 
-        let hamm = hamming_window(4, p, rm, &mut cc).expect("hamming");
-        assert!(near(hamm.get(0).unwrap(), &eight_hundredths, p));
-        assert!(near(hamm.get(3).unwrap(), &eight_hundredths, p));
-        assert!(!near(hamm.get(0).unwrap(), &zero, p));
+        let hamm = hamming_window(4, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        assert!(near(
+            hamm.get(0).ok_or(crate::Error::InvalidArgument)?,
+            &eight_hundredths,
+            p
+        ));
+        assert!(near(
+            hamm.get(3).ok_or(crate::Error::InvalidArgument)?,
+            &eight_hundredths,
+            p
+        ));
+        assert!(!near(
+            hamm.get(0).ok_or(crate::Error::InvalidArgument)?,
+            &zero,
+            p
+        ));
 
-        let rect = rectangular_window(8, p, rm).expect("rect");
-        let k0 = kaiser_window(8, &zero, p, rm, &mut cc).expect("kaiser0");
+        let rect = rectangular_window(8, p, rm).ok_or(crate::Error::InvalidArgument)?;
+        let k0 = kaiser_window(8, &zero, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(k0.len(), 8);
         for j in 0..8 {
-            assert!(near(k0.get(j).unwrap(), rect.get(j).unwrap(), p));
+            assert!(near(
+                k0.get(j).ok_or(crate::Error::InvalidArgument)?,
+                rect.get(j).ok_or(crate::Error::InvalidArgument)?,
+                p
+            ));
         }
 
-        let blk = blackman_window(8, p, rm, &mut cc).expect("blackman");
-        assert!(window_sum_pos(&hann, p));
-        assert!(window_sum_pos(&hamm, p));
-        assert!(window_sum_pos(&blk, p));
-        assert!(window_sum_pos(&rect, p));
-        assert!(window_sum_pos(&k0, p));
+        let blk = blackman_window(8, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
+        assert!(window_sum_pos(&hann, p)?);
+        assert!(window_sum_pos(&hamm, p)?);
+        assert!(window_sum_pos(&blk, p)?);
+        assert!(window_sum_pos(&rect, p)?);
+        assert!(window_sum_pos(&k0, p)?);
 
         assert!(hann_window(0, p, rm, &mut cc).is_none());
         assert!(rectangular_window(0, p, rm).is_none());
         assert!(kaiser_window(4, &ExactNum::from_i64(-1, p), p, rm, &mut cc).is_none());
+        Ok(())
     }
 }

@@ -1,6 +1,7 @@
 //! Property tests (`PROPTEST_CASES`). No `mpfr-tests` feature.
 
 use proptest::prelude::*;
+use std::ops::Neg;
 use zenith_float_num::{
     Consts, ExactNum, ExactNumArray, ExactRational, RoundingMode, PROPTEST_CASES, WORD_BIT_SIZE,
 };
@@ -10,7 +11,7 @@ fn cfg() -> ProptestConfig {
 }
 
 fn eq(a: &ExactNum, b: &ExactNum) -> bool {
-    a.cmp(b) == Some(0)
+    a.compare(b) == Some(0)
 }
 
 fn array_eq(a: &ExactNumArray, b: &ExactNumArray) -> bool {
@@ -32,7 +33,7 @@ proptest! {
         let rm = RoundingMode::ToEven;
         let a = ExactNum::from_i64(n1, p);
         let b = ExactNum::from_i64(n2, p);
-        prop_assert!(eq(&a.add(&b, p, rm), &b.add(&a, p, rm)));
+        prop_assert!(eq(&ExactNum::from_i64(n1, p).add(&b, p, rm), &b.add(&a, p, rm)));
     }
 
     /// Directed rounding only. `ToEven` double-rounds and is not this identity.
@@ -49,12 +50,11 @@ proptest! {
         let q = WORD_BIT_SIZE;
         let p = 2 * WORD_BIT_SIZE;
         let p_hi = 4 * WORD_BIT_SIZE;
-        let x = ExactNum::from_i64(n, p_hi);
-        let mut via = x.clone();
-        via.set_precision(p, rm).unwrap();
-        via.set_precision(q, rm).unwrap();
-        let mut direct = x.clone();
-        direct.set_precision(q, rm).unwrap();
+        let mut via = ExactNum::from_i64(n, p_hi);
+        via.set_precision(p, rm)?;
+        via.set_precision(q, rm)?;
+        let mut direct = ExactNum::from_i64(n, p_hi);
+        direct.set_precision(q, rm)?;
         prop_assert!(eq(&via, &direct));
     }
 
@@ -62,7 +62,7 @@ proptest! {
     fn erf_is_odd(n in -8i32..9) {
         let p = 2 * WORD_BIT_SIZE;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let x = ExactNum::from_i32(n, p);
         let e = x.erf(p, rm, &mut cc);
         let en = x.neg().erf(p, rm, &mut cc);
@@ -75,13 +75,20 @@ proptest! {
     ) {
         let p = 2 * WORD_BIT_SIZE;
         let cell = |v: i64| ExactNum::from_i64(v, p);
-        let a = ExactNumArray::from_shape(p, 2, 2, &[cell(ents[0]), cell(ents[1]), cell(ents[2]), cell(ents[3])]).unwrap();
-        let b = ExactNumArray::from_shape(p, 2, 2, &[cell(ents[4]), cell(ents[5]), cell(ents[6]), cell(ents[7])]).unwrap();
-        let c = ExactNumArray::from_shape(p, 2, 2, &[cell(ents[8]), cell(ents[9]), cell(ents[10]), cell(ents[11])]).unwrap();
-        let ab = a.matmul(&b).unwrap();
-        let left = ab.matmul(&c).unwrap();
-        let bc = b.matmul(&c).unwrap();
-        let right = a.matmul(&bc).unwrap();
+        let a = ExactNumArray::from_shape(p, 2, 2, &[cell(ents[0]), cell(ents[1]), cell(ents[2]), cell(ents[3])])
+            .ok_or_else(|| proptest::test_runner::TestCaseError::fail("shape"))?;
+        let b = ExactNumArray::from_shape(p, 2, 2, &[cell(ents[4]), cell(ents[5]), cell(ents[6]), cell(ents[7])])
+            .ok_or_else(|| proptest::test_runner::TestCaseError::fail("shape"))?;
+        let c = ExactNumArray::from_shape(p, 2, 2, &[cell(ents[8]), cell(ents[9]), cell(ents[10]), cell(ents[11])])
+            .ok_or_else(|| proptest::test_runner::TestCaseError::fail("shape"))?;
+        let ab = a.matmul(&b)
+            .ok_or_else(|| proptest::test_runner::TestCaseError::fail("matmul"))?;
+        let left = ab.matmul(&c)
+            .ok_or_else(|| proptest::test_runner::TestCaseError::fail("matmul"))?;
+        let bc = b.matmul(&c)
+            .ok_or_else(|| proptest::test_runner::TestCaseError::fail("matmul"))?;
+        let right = a.matmul(&bc)
+            .ok_or_else(|| proptest::test_runner::TestCaseError::fail("matmul"))?;
         prop_assert!(array_eq(&left, &right));
     }
 

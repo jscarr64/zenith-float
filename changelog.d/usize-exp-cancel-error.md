@@ -1,0 +1,1 @@
+- `cexpr!`: a cancellation whose cancelled-bit count is not a representable working precision (a 32-bit `usize`) now returns NaN with `Error::InvalidArgument` instead of accepting the unretried result. `macro_util::complex_cancel_bits` returns `Result<(Option<usize>, Option<usize>), Error>`.

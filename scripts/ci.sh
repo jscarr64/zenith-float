@@ -5,6 +5,8 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+# shellcheck source=use_rust_1_99.sh
+source "$root/scripts/use_rust_1_99.sh"
 
 DEBUG_BUDGET="${CI_DEBUG_SECS:-600}"
 MPFR_BUDGET="${CI_MPFR_SECS:-1800}"
@@ -27,22 +29,19 @@ run_budget() {
 }
 
 debug_slew() {
-  # Hardware IEEE type names stay out of Rust sources. Docs use binary32 / Ieee32.
-  if rg 'f32|f64' --glob '*.rs' .; then
-    echo "error: hardware IEEE type tokens are forbidden in zenith-float Rust sources"
-    exit 1
-  fi
-  if rg -n -i 'accumath' --glob '!scripts/ci.sh' .; then
-    echo "error: this public crate must not mention that name"
-    exit 1
-  fi
+  # Hardware float tokens, arch intrinsics, inline asm, and kernel unsafe.
+  bash "$root/scripts/ci_no_intrinsics.sh"
+  # CHANGELOG.md states the 2.0.0 MSRV in the words the release note requires.
+  bash "$root/scripts/ci_no_name.sh"
 
   cargo test --workspace
+  bash "$root/scripts/check_zero_test_targets.sh"
   cargo test -p zenith-float-num --features random --test radix_roundtrip
   cargo test -p zenith-float-num --lib --release
   cargo test -p zenith-float-num --lib --no-default-features --features std
   cargo test --workspace --features random,serde
   cargo build -p zenith-float-num --no-default-features
+  rustup target add --toolchain 1.99 thumbv7em-none-eabihf >/dev/null
   cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf
   cargo build --no-default-features --target thumbv7em-none-eabihf
 }

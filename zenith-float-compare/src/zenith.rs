@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use zenith_float::{Consts, ExactNum, Exponent, RoundingMode, Sign};
 
-use crate::backend::{convert_exp, BenchFloat, BenchState};
+use crate::backend::{convert_exp, BenchError, BenchFloat, BenchState};
 use crate::task::{task_for_one_arg, task_for_two_args};
 
 #[derive(Clone)]
@@ -49,11 +49,13 @@ impl ZenithFloat {
 impl BenchFloat for ZenithFloat {
     type State = ZenithState;
 
-    fn state(precision: usize) -> Self::State {
-        ZenithState {
+    fn state(precision: usize) -> Result<Self::State, BenchError> {
+        Ok(ZenithState {
             precision,
-            cc: Rc::new(RefCell::new(Consts::new().expect("constants cache"))),
-        }
+            cc: Rc::new(RefCell::new(
+                Consts::new().map_err(|_| BenchError::Constants)?,
+            )),
+        })
     }
 
     fn rand_normal(
@@ -71,100 +73,132 @@ impl BenchFloat for ZenithFloat {
             if sign_positive {
                 v.set_sign(Sign::Pos);
             }
-            out.push(Self::new(v, state.cc.clone(), state.precision));
+            out.push(Self::new(v, Rc::clone(&state.cc), state.precision));
         }
         out
     }
 
-    fn run_task(state: &Self::State, task: &str, values: &[Self]) -> (Self, std::time::Duration) {
+    fn run_task(
+        state: &Self::State,
+        task: &str,
+        values: &[Self],
+    ) -> Result<(Self, std::time::Duration), BenchError> {
         let start = Instant::now();
-        let cc = state.cc.clone();
+        let cc = Rc::clone(&state.cc);
         let result = match task {
             "add" => task_for_two_args(values, |a, b| {
-                Self::new(a.inner.add(b.inner(), a.p(), a.rm()), cc.clone(), a.p())
+                Self::new(
+                    ExactNum::add_ref(&a.inner, b.inner(), a.p(), a.rm()),
+                    Rc::clone(&cc),
+                    a.p(),
+                )
             }),
             "sub" => task_for_two_args(values, |a, b| {
-                Self::new(a.inner.sub(b.inner(), a.p(), a.rm()), cc.clone(), a.p())
+                Self::new(
+                    ExactNum::sub_ref(&a.inner, b.inner(), a.p(), a.rm()),
+                    Rc::clone(&cc),
+                    a.p(),
+                )
             }),
             "mul" => task_for_two_args(values, |a, b| {
-                Self::new(a.inner.mul(b.inner(), a.p(), a.rm()), cc.clone(), a.p())
+                Self::new(
+                    ExactNum::mul_ref(&a.inner, b.inner(), a.p(), a.rm()),
+                    Rc::clone(&cc),
+                    a.p(),
+                )
             }),
             "div" => task_for_two_args(values, |a, b| {
-                Self::new(a.inner.div(b.inner(), a.p(), a.rm()), cc.clone(), a.p())
+                Self::new(
+                    ExactNum::div_ref(&a.inner, b.inner(), a.p(), a.rm()),
+                    Rc::clone(&cc),
+                    a.p(),
+                )
             }),
             "sqrt" => task_for_one_arg(values, |a, b| {
-                Self::new(b.inner().sqrt(a.p(), a.rm()), cc.clone(), a.p())
+                Self::new(b.inner().sqrt(a.p(), a.rm()), Rc::clone(&cc), a.p())
             }),
             "cbrt" => task_for_one_arg(values, |a, b| {
-                Self::new(b.inner().cbrt(a.p(), a.rm()), cc.clone(), a.p())
+                Self::new(b.inner().cbrt(a.p(), a.rm()), Rc::clone(&cc), a.p())
             }),
             "ln" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().ln(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(b.inner().ln(a.p(), a.rm(), &mut c), Rc::clone(&cc), a.p())
             }),
             "exp" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().exp(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(b.inner().exp(a.p(), a.rm(), &mut c), Rc::clone(&cc), a.p())
             }),
             "pow" => task_for_two_args(values, |a, b| {
                 let mut c = a.cc_mut();
                 Self::new(
                     a.inner().pow(b.inner(), a.p(), a.rm(), &mut c),
-                    cc.clone(),
+                    Rc::clone(&cc),
                     a.p(),
                 )
             }),
             "sin" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().sin(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(b.inner().sin(a.p(), a.rm(), &mut c), Rc::clone(&cc), a.p())
             }),
             "asin" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().asin(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(b.inner().asin(a.p(), a.rm(), &mut c), Rc::clone(&cc), a.p())
             }),
             "cos" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().cos(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(b.inner().cos(a.p(), a.rm(), &mut c), Rc::clone(&cc), a.p())
             }),
             "acos" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().acos(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(b.inner().acos(a.p(), a.rm(), &mut c), Rc::clone(&cc), a.p())
             }),
             "tan" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().tan(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(b.inner().tan(a.p(), a.rm(), &mut c), Rc::clone(&cc), a.p())
             }),
             "atan" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().atan(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(b.inner().atan(a.p(), a.rm(), &mut c), Rc::clone(&cc), a.p())
             }),
             "sinh" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().sinh(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(b.inner().sinh(a.p(), a.rm(), &mut c), Rc::clone(&cc), a.p())
             }),
             "asinh" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().asinh(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(
+                    b.inner().asinh(a.p(), a.rm(), &mut c),
+                    Rc::clone(&cc),
+                    a.p(),
+                )
             }),
             "cosh" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().cosh(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(b.inner().cosh(a.p(), a.rm(), &mut c), Rc::clone(&cc), a.p())
             }),
             "acosh" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().acosh(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(
+                    b.inner().acosh(a.p(), a.rm(), &mut c),
+                    Rc::clone(&cc),
+                    a.p(),
+                )
             }),
             "tanh" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().tanh(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(b.inner().tanh(a.p(), a.rm(), &mut c), Rc::clone(&cc), a.p())
             }),
             "atanh" => task_for_one_arg(values, |a, b| {
                 let mut c = a.cc_mut();
-                Self::new(b.inner().atanh(a.p(), a.rm(), &mut c), cc.clone(), a.p())
+                Self::new(
+                    b.inner().atanh(a.p(), a.rm(), &mut c),
+                    Rc::clone(&cc),
+                    a.p(),
+                )
             }),
-            _ => panic!("unknown task: {task}"),
+            _ => return Err(BenchError::UnknownTask(String::from(task))),
         };
-        (result, start.elapsed())
+        Ok((result, start.elapsed()))
     }
 }
 

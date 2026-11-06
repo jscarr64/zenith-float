@@ -26,7 +26,10 @@ impl ExactNumNumber {
             return Err(Error::DivisionByZero);
         }
 
-        if p <= WORD_BIT_SIZE * (NEWTON_MIN_WORDS - 1) {
+        // The Newton start reads the top word of the mantissa, which is zero for a subnormal whose
+        // leading bits are zeros (`1 / 2^-2147483768` came out as a division by zero, `Inf`); the
+        // division kernel takes a subnormal divisor as stored.
+        if p <= WORD_BIT_SIZE * (NEWTON_MIN_WORDS - 1) || self.is_subnormal() {
             return ONE.div(self, p, rm);
         }
 
@@ -34,7 +37,11 @@ impl ExactNumNumber {
         let mut p_wrk = p + p_inc;
 
         loop {
-            let mut ret = self.reciprocal_newton(p_wrk)?;
+            // The Newton step runs on |self|; an overflow there has the sign of `self`.
+            let mut ret = self.reciprocal_newton(p_wrk).map_err(|e| match e {
+                Error::ExponentOverflow(_) => Error::ExponentOverflow(self.sign()),
+                other => other,
+            })?;
 
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
@@ -77,7 +84,8 @@ impl ExactNumNumber {
 
         // Exact dyadics (powers of two) leave a zero residual; marking those
         // inexact makes try_set_precision loop forever (all sticky bits zero).
-        let ax = a.mul(&x, p, rm)?;
+        // The product is formed exactly: rounded at `p` it can round to 1 when `x` is not exact.
+        let ax = a.mul_full_prec(&x)?;
         let one = Self::from_word(1, p)?;
         let exact = ax.cmp(&one) == 0;
 
@@ -114,8 +122,8 @@ mod tests {
     use crate::{Consts, RoundingMode};
 
     #[test]
-    fn test_reciprocal_newton_matches_div() {
-        let mut cc = Consts::new().unwrap();
+    fn test_reciprocal_newton_matches_div() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
 
         let d1 = ExactNumNumber::parse(
@@ -124,42 +132,44 @@ mod tests {
             320,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
-        let newton = d1.reciprocal(320, rm).unwrap();
-        let div = ONE.div(&d1, 320, rm).unwrap();
+        )?;
+        let newton = d1.reciprocal(320, rm)?;
+        let div = ONE.div(&d1, 320, rm)?;
         assert_eq!(newton.cmp(&div), 0);
 
         let p = WORD_BIT_SIZE * 8;
         for _ in 0..80 {
-            let x = ExactNumNumber::random_normal(p, -64, 64).unwrap();
+            let x = ExactNumNumber::random_normal(p, -64, 64)?;
             if x.is_zero() {
                 continue;
             }
-            let r = x.reciprocal(p, rm).unwrap();
-            let d = ONE.div(&x, p, rm).unwrap();
+            let r = x.reciprocal(p, rm)?;
+            let d = ONE.div(&x, p, rm)?;
             assert_eq!(r.cmp(&d), 0);
         }
 
         let p = WORD_BIT_SIZE * 5;
-        let t = ExactNumNumber::from_i8(3, p).unwrap();
-        assert_eq!(
-            t.reciprocal(p, rm)
-                .unwrap()
-                .cmp(&ONE.div(&t, p, rm).unwrap()),
-            0
-        );
+        let t = ExactNumNumber::from_i8(3, p)?;
+        assert_eq!(t.reciprocal(p, rm)?.cmp(&ONE.div(&t, p, rm)?), 0);
 
         // Exact dyadic reciprocals must not NaN / error under ToEven.
         for v in [1i8, 2, 4, 8, 16, 32] {
-            let x = ExactNumNumber::from_i8(v, p).unwrap();
-            let r = x.reciprocal(p, rm).unwrap();
-            let d = ONE.div(&x, p, rm).unwrap();
+            let x = ExactNumNumber::from_i8(v, p)?;
+            let r = x.reciprocal(p, rm)?;
+            let d = ONE.div(&x, p, rm)?;
             assert_eq!(r.cmp(&d), 0, "1/{v}");
             assert!(!r.inexact(), "1/{v} should be exact");
         }
 
-        let z = ExactNumNumber::new(p).unwrap();
+        let z = ExactNumNumber::new(p)?;
         assert!(matches!(z.reciprocal(p, rm), Err(Error::DivisionByZero)));
+
+        // `1 / (1/3 + d)` with `d` below the result grid: `a x` rounds to 1 at `p` and must not be read
+        // as an exact reciprocal (in `None` mode the result 3 came back flagged exact)
+        let mut third = ONE.div(&ExactNumNumber::from_i8(3, p)?, 320, RoundingMode::ToEven)?;
+        third.set_inexact(false);
+        let r = third.reciprocal(200, RoundingMode::None)?;
+        assert!(r.inexact() && r.op_inexact());
+        Ok(())
     }
 }

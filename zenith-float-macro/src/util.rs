@@ -30,16 +30,47 @@ pub fn str_to_exact_num_literal(s: &str, span: Span) -> Result<TokenStream, Erro
         ));
     }
 
-    if let Some((m, n, sign, e, inexact)) = f.as_raw_parts() {
-        let stoken = if sign.is_positive() {
-            quote!(zenith_float::Sign::Pos)
-        } else {
-            quote!(zenith_float::Sign::Neg)
-        };
-        Ok(quote!(zenith_float::ExactNum::from_raw_parts(&[#(#m),*], #n, #stoken, #e, #inexact)))
-    } else {
-        Ok(quote!(zenith_float::ExactNum::nan()))
+    raw_parts_expr(&f, span)
+}
+
+/// Tokens rebuilding `f` through `ExactNum::from_raw_parts`. The parts are checked at compile
+/// time (a rejected literal is a compile error); a runtime rejection yields a NaN carrying the
+/// returned error, never a bare NaN.
+fn raw_parts_expr(f: &ExactNum, span: Span) -> Result<TokenStream, Error> {
+    let raw = f.as_raw_parts();
+    if let Err(err) = ExactNum::from_raw_parts(&raw) {
+        return Err(Error::new(
+            span,
+            format!("literal raw parts rejected: {err}"),
+        ));
     }
+    let m = raw.words;
+    let (precision, negative, e, inexact, op_inexact) = (
+        raw.precision,
+        raw.negative,
+        raw.exponent,
+        raw.inexact,
+        raw.op_inexact,
+    );
+    let kind = match raw.kind {
+        zenith_float_num::RawKind::Finite => quote!(zenith_float::RawKind::Finite),
+        zenith_float_num::RawKind::Zero => quote!(zenith_float::RawKind::Zero),
+        zenith_float_num::RawKind::Inf => quote!(zenith_float::RawKind::Inf),
+        zenith_float_num::RawKind::NaN => quote!(zenith_float::RawKind::NaN),
+    };
+    let ts = quote!(match zenith_float::ExactNum::from_raw_parts(&zenith_float::RawParts {
+        kind: #kind,
+        words: &[#(#m),*],
+        precision: #precision,
+        negative: #negative,
+        exponent: #e,
+        inexact: #inexact,
+        op_inexact: #op_inexact,
+    }) {
+        Ok(v) => v,
+        Err(err) => zenith_float::ExactNum::nan(Some(err)),
+    });
+    Ok(ts)
 }
 
 pub fn str_to_exact_num_expr(s: &str, span: Span, cc: &mut Consts) -> Result<TokenStream, Error> {
@@ -53,15 +84,9 @@ pub fn str_to_exact_num_expr(s: &str, span: Span, cc: &mut Consts) -> Result<Tok
 
     let q = if f.inexact() {
         quote!(zenith_float::macro_util::check_exponent_range(zenith_float::ExactNum::parse(#s, zenith_float::Radix::Dec, p_wrk, zenith_float::RoundingMode::ToEven, cc), emin, emax))
-    } else if let Some((m, n, s, e, inexact)) = f.as_raw_parts() {
-        let stoken = if s.is_positive() {
-            quote!(zenith_float::Sign::Pos)
-        } else {
-            quote!(zenith_float::Sign::Neg)
-        };
-        quote!(zenith_float::macro_util::check_exponent_range(zenith_float::ExactNum::from_raw_parts(&[#(#m),*], #n, #stoken, #e, #inexact), emin, emax))
     } else {
-        quote!(zenith_float::ExactNum::nan())
+        let r = raw_parts_expr(&f, span)?;
+        quote!(zenith_float::macro_util::check_exponent_range(#r, emin, emax))
     };
 
     Ok(q)
@@ -75,4 +100,38 @@ pub fn check_arg_num(narg: usize, expr: &ExprCall) -> Result<(), Error> {
         ));
     }
     Ok(())
+}
+
+/// The constant cache for a macro expansion, or a `compile_error!` naming the failure.
+pub(crate) fn consts_or_compile_error(
+    r: Result<zenith_float_num::Consts, zenith_float_num::Error>,
+) -> Result<zenith_float_num::Consts, proc_macro2::TokenStream> {
+    r.map_err(|e| {
+        syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("zenith-float: failed to initialize the constant cache: {e:?}"),
+        )
+        .to_compile_error()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::consts_or_compile_error;
+
+    #[test]
+    fn consts_failure_is_compile_error_not_panic() {
+        let r = consts_or_compile_error(Err(zenith_float_num::Error::MemoryAllocation));
+        let ts = match r {
+            Ok(_) => String::new(),
+            Err(ts) => ts.to_string(),
+        };
+        assert!(ts.contains("compile_error"), "{ts}");
+        assert!(ts.contains("MemoryAllocation"), "{ts}");
+    }
+
+    #[test]
+    fn consts_success_passes_through() {
+        assert!(consts_or_compile_error(zenith_float_num::Consts::new()).is_ok());
+    }
 }

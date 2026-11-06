@@ -6,11 +6,13 @@ use super::simd::{
     mul_u32_lanes, mul_u64_lanes, sqrt_u32_lanes, sqrt_u64_lanes, sub_u32_lanes, sub_u64_lanes,
 };
 use super::{Ieee32, Ieee64};
+use crate::defs::Exponent;
 use crate::defs::RoundingMode;
 use crate::Consts;
 use crate::Error;
 use crate::ExactNum;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// QR sweeps allowed per singular value before [`ExactNumArray::svd_decomp`]
 /// returns `None`.
@@ -22,7 +24,7 @@ const EIGEN_ITER_MAX: u32 = 64;
 const FFT_MAX_POINTS: usize = 4096;
 /// Bits of working precision reserved when a superdiagonal is compared to
 /// its neighboring diagonals.
-const SVD_CONV_GUARD_BITS: i32 = 4;
+const SVD_CONV_GUARD_BITS: Exponent = 4;
 
 trait LaneBits: Copy {
     fn add_lanes(a: &[Self], b: &[Self]) -> Vec<Self>;
@@ -76,7 +78,7 @@ impl LaneBits for u64 {
 }
 
 /// Contiguous binary32 lanes (`u32` bits), row-major.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Ieee32Array {
     bits: Vec<u32>,
     rows: usize,
@@ -84,7 +86,7 @@ pub struct Ieee32Array {
 }
 
 /// Contiguous binary64 lanes (`u64` bits), row-major.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct Ieee64Array {
     bits: Vec<u64>,
     rows: usize,
@@ -92,7 +94,7 @@ pub struct Ieee64Array {
 }
 
 /// Batch of `ExactNum` values at a shared precision `p`, row-major.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ExactNumArray {
     p: usize,
     vals: Vec<ExactNum>,
@@ -649,6 +651,38 @@ macro_rules! exact_arr_p_rm_cc {
     };
 }
 
+/// Elementwise negation: takes the array and flips every sign in place.
+/// Elementwise `self + rhs` at the array's precision, written into `self`'s own storage; `None` when
+/// the shapes differ. (A trait impl: clippy reserves an inherent `add(self, _)` for `std::ops::Add`.)
+impl core::ops::Add<&ExactNumArray> for ExactNumArray {
+    type Output = Option<ExactNumArray>;
+
+    fn add(self, rhs: &ExactNumArray) -> Option<ExactNumArray> {
+        let p = self.p;
+        self.zip_own(rhs, |a, b| a.add(b, p, RoundingMode::ToEven))
+    }
+}
+
+/// Elementwise `self - rhs`; see the `Add` impl.
+impl core::ops::Sub<&ExactNumArray> for ExactNumArray {
+    type Output = Option<ExactNumArray>;
+
+    fn sub(self, rhs: &ExactNumArray) -> Option<ExactNumArray> {
+        let p = self.p;
+        self.zip_own(rhs, |a, b| a.sub(b, p, RoundingMode::ToEven))
+    }
+}
+
+impl core::ops::Neg for ExactNumArray {
+    type Output = ExactNumArray;
+    fn neg(mut self) -> ExactNumArray {
+        for x in self.vals.iter_mut() {
+            x.inv_sign();
+        }
+        self
+    }
+}
+
 impl ExactNumArray {
     /// Empty 0×0 array at precision `p`.
     pub fn new(p: usize) -> Self {
@@ -664,6 +698,9 @@ impl ExactNumArray {
     pub fn filled(p: usize, n: usize, fill: &ExactNum) -> Self {
         let mut v = fill.clone();
         let _ = v.set_precision(p, RoundingMode::ToEven);
+        if p < crate::defs::MIN_PRECISION {
+            v = ExactNum::nan(Some(Error::InvalidArgument));
+        }
         Self {
             p,
             vals: alloc::vec![v; n],
@@ -677,6 +714,9 @@ impl ExactNumArray {
         let n = rows.checked_mul(cols)?;
         let mut v = fill.clone();
         let _ = v.set_precision(p, RoundingMode::ToEven);
+        if p < crate::defs::MIN_PRECISION {
+            v = ExactNum::nan(Some(Error::InvalidArgument));
+        }
         Some(Self {
             p,
             vals: alloc::vec![v; n],
@@ -694,6 +734,9 @@ impl ExactNumArray {
                 .map(|x| {
                     let mut y = x.clone();
                     let _ = y.set_precision(p, RoundingMode::ToEven);
+                    if p < crate::defs::MIN_PRECISION {
+                        y = ExactNum::nan(Some(Error::InvalidArgument));
+                    }
                     y
                 })
                 .collect(),
@@ -715,6 +758,9 @@ impl ExactNumArray {
                 .map(|x| {
                     let mut y = x.clone();
                     let _ = y.set_precision(p, RoundingMode::ToEven);
+                    if p < crate::defs::MIN_PRECISION {
+                        y = ExactNum::nan(Some(Error::InvalidArgument));
+                    }
                     y
                 })
                 .collect(),
@@ -825,33 +871,17 @@ impl ExactNumArray {
         &self.vals
     }
 
-    /// Elementwise add at `p`.
-    pub fn add(&self, rhs: &Self) -> Option<Self> {
-        self.zip(rhs, |a, b| a.add(b, self.p, RoundingMode::ToEven))
-    }
-
     /// Add a scalar to every lane.
-    pub fn add_scalar(&self, s: &ExactNum) -> Self {
-        Self {
-            p: self.p,
-            vals: self
-                .vals
-                .iter()
-                .map(|x| x.add(s, self.p, RoundingMode::ToEven))
-                .collect(),
-            rows: self.rows,
-            cols: self.cols,
-        }
-    }
-
-    /// Elementwise sub.
-    pub fn sub(&self, rhs: &Self) -> Option<Self> {
-        self.zip(rhs, |a, b| a.sub(b, self.p, RoundingMode::ToEven))
+    pub fn add_scalar(self, s: &ExactNum) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.add(s, p, RoundingMode::ToEven))
     }
 
     /// Elementwise mul.
     pub fn mul(&self, rhs: &Self) -> Option<Self> {
-        self.zip(rhs, |a, b| a.mul(b, self.p, RoundingMode::ToEven))
+        self.zip(rhs, |a, b| {
+            ExactNum::mul_ref(a, b, self.p, RoundingMode::ToEven)
+        })
     }
 
     /// Multiply every lane by a scalar.
@@ -861,7 +891,7 @@ impl ExactNumArray {
             vals: self
                 .vals
                 .iter()
-                .map(|x| x.mul(s, self.p, RoundingMode::ToEven))
+                .map(|x| ExactNum::mul_ref(x, s, self.p, RoundingMode::ToEven))
                 .collect(),
             rows: self.rows,
             cols: self.cols,
@@ -870,7 +900,9 @@ impl ExactNumArray {
 
     /// Elementwise div.
     pub fn div(&self, rhs: &Self) -> Option<Self> {
-        self.zip(rhs, |a, b| a.div(b, self.p, RoundingMode::ToEven))
+        self.zip(rhs, |a, b| {
+            ExactNum::div_ref(a, b, self.p, RoundingMode::ToEven)
+        })
     }
 
     /// Sequential sum at `p`.
@@ -889,7 +921,7 @@ impl ExactNumArray {
         }
         let mut acc = ExactNum::from_u8(0, self.p);
         for (a, b) in self.vals.iter().zip(rhs.vals.iter()) {
-            let t = a.mul(b, self.p, RoundingMode::ToEven);
+            let t = ExactNum::mul_ref(a, b, self.p, RoundingMode::ToEven);
             acc = acc.add(&t, self.p, RoundingMode::ToEven);
         }
         Some(acc)
@@ -908,7 +940,8 @@ impl ExactNumArray {
             for j in 0..n {
                 let mut acc = ExactNum::from_u8(0, self.p);
                 for t in 0..k {
-                    let prod = self.vals[i * k + t].mul(
+                    let prod = ExactNum::mul_ref(
+                        &self.vals[i * k + t],
                         &rhs.vals[t * n + j],
                         self.p,
                         RoundingMode::ToEven,
@@ -927,36 +960,42 @@ impl ExactNumArray {
     }
 
     /// Elementwise integer part.
-    pub fn int(&self) -> Self {
-        self.map_at(self.p, |x| x.int())
+    pub fn int(self) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.int())
     }
     /// Elementwise fractional part.
-    pub fn fract(&self) -> Self {
-        self.map_at(self.p, |x| x.fract())
+    pub fn fract(self) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.fract())
     }
     /// Elementwise `ceil`.
-    pub fn ceil(&self) -> Self {
-        self.map_at(self.p, |x| x.ceil())
+    pub fn ceil(self) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.ceil())
     }
     /// Elementwise `floor`.
-    pub fn floor(&self) -> Self {
-        self.map_at(self.p, |x| x.floor())
+    pub fn floor(self) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.floor())
     }
     /// Elementwise `round` with `n` binary fractional bits.
-    pub fn round(&self, n: usize, rm: RoundingMode) -> Self {
-        self.map_at(self.p, |x| x.round(n, rm))
+    pub fn round(self, n: usize, rm: RoundingMode) -> Self {
+        let p = self.p;
+        self.map_own(p, |x| x.round(n, rm))
     }
-    /// Elementwise absolute value.
-    pub fn abs(&self) -> Self {
-        self.map_at(self.p, |x| x.abs())
+    /// Elementwise absolute value. Takes ownership; every element is updated in place.
+    pub fn abs(mut self) -> Self {
+        for x in self.vals.iter_mut() {
+            if x.is_negative() {
+                x.inv_sign();
+            }
+        }
+        self
     }
     /// Elementwise signum.
     pub fn signum(&self) -> Self {
         self.map_at(self.p, |x| x.signum())
-    }
-    /// Elementwise negation.
-    pub fn neg(&self) -> Self {
-        self.map_at(self.p, |x| x.neg())
     }
     /// Elementwise reciprocal.
     pub fn reciprocal(&self, p: usize, rm: RoundingMode) -> Self {
@@ -971,7 +1010,7 @@ impl ExactNumArray {
         self.map_at(p, |x| x.powi(n, p, rm))
     }
     /// Elementwise `powsi`.
-    pub fn powsi(&self, n: isize, p: usize, rm: RoundingMode) -> Self {
+    pub fn powsi(&self, n: i64, p: usize, rm: RoundingMode) -> Self {
         self.map_at(p, |x| x.powsi(n, p, rm))
     }
 
@@ -1274,6 +1313,9 @@ impl ExactNumArray {
     /// `L` is unit lower (`n×n`). `U` is upper (`n×m`). A zero pivot
     /// (singular) or a failed heap reserve (`MemoryAllocation`) returns `None`.
     pub fn lu_decomp(&self, p: usize, rm: RoundingMode) -> Option<(Self, Self, Vec<usize>)> {
+        if p < crate::defs::MIN_PRECISION {
+            return None;
+        }
         let n = self.rows;
         let m = self.cols;
         if n == 0 || m == 0 {
@@ -1295,11 +1337,8 @@ impl ExactNumArray {
         let ix = |r: usize, c: usize| r * m + c;
         for k in 0..kmax {
             let mut piv = k;
-            let mut best = a[ix(k, k)].abs();
             for r in (k + 1)..n {
-                let t = a[ix(r, k)].abs();
-                if matches!(t.cmp(&best), Some(c) if c > 0) {
-                    best = t;
+                if matches!(a[ix(r, k)].abs_cmp(&a[ix(piv, k)]), Some(c) if c > 0) {
                     piv = r;
                 }
             }
@@ -1317,12 +1356,12 @@ impl ExactNumArray {
             }
             let akk = a[ix(k, k)].clone();
             for i in (k + 1)..n {
-                let lik = a[ix(i, k)].div(&akk, p, rm);
+                let old = core::mem::replace(&mut a[ix(i, k)], ExactNum::from_u8(0, p));
+                let lik = old.div(&akk, p, rm);
                 lvals[i * n + k] = lik.clone();
-                a[ix(i, k)] = ExactNum::from_u8(0, p);
                 for j in (k + 1)..m {
-                    let t = lik.mul(&a[ix(k, j)], p, rm);
-                    a[ix(i, j)] = a[ix(i, j)].sub(&t, p, rm);
+                    let t = ExactNum::mul_ref(&lik, &a[ix(k, j)], p, rm);
+                    a[ix(i, j)] = t.neg().add(&a[ix(i, j)], p, rm);
                 }
             }
         }
@@ -1390,19 +1429,19 @@ impl ExactNumArray {
                 r[i * n + j] = dot.clone();
                 for t in 0..m {
                     let qi = q[t * k + i].clone();
-                    v[t] = v[t].sub(&dot.mul(&qi, p, rm), p, rm);
+                    v[t] = ExactNum::mul_ref(&dot, &qi, p, rm).neg().add(&v[t], p, rm);
                 }
             }
             if j < k {
                 let mut nrm = ExactNum::from_u8(0, p);
                 for vt in v.iter().take(m) {
-                    nrm = nrm.add(&vt.mul(vt, p, rm), p, rm);
+                    nrm = nrm.add(&vt.sqr(p, rm), p, rm);
                 }
                 nrm = nrm.sqrt(p, rm);
                 r[j * n + j] = nrm.clone();
                 if !nrm.is_zero() {
-                    for t in 0..m {
-                        q[t * k + j] = v[t].div(&nrm, p, rm);
+                    for (t, vt) in v.into_iter().enumerate().take(m) {
+                        q[t * k + j] = vt.div(&nrm, p, rm);
                     }
                 }
             }
@@ -1469,7 +1508,7 @@ impl ExactNumArray {
             for j in 0..i {
                 let aij = svd_copy_prec(&self.vals[i * n + j], p, rm);
                 let aji = svd_copy_prec(&self.vals[j * n + i], p, rm);
-                if aij.cmp(&aji) != Some(0) {
+                if aij.compare(&aji) != Some(0) {
                     return None;
                 }
             }
@@ -1508,6 +1547,32 @@ impl ExactNumArray {
             rows: self.rows,
             cols: self.cols,
         })
+    }
+
+    fn zip_own(self, rhs: &Self, op: impl Fn(ExactNum, &ExactNum) -> ExactNum) -> Option<Self> {
+        if self.rows != rhs.rows || self.cols != rhs.cols {
+            return None;
+        }
+        Some(Self {
+            p: self.p,
+            vals: self
+                .vals
+                .into_iter()
+                .zip(rhs.vals.iter())
+                .map(|(a, b)| op(a, b))
+                .collect(),
+            rows: self.rows,
+            cols: self.cols,
+        })
+    }
+
+    fn map_own(self, p: usize, op: impl FnMut(ExactNum) -> ExactNum) -> Self {
+        Self {
+            p,
+            vals: self.vals.into_iter().map(op).collect(),
+            rows: self.rows,
+            cols: self.cols,
+        }
     }
 
     fn map_at(&self, p: usize, op: impl FnMut(&ExactNum) -> ExactNum) -> Self {
@@ -1578,10 +1643,10 @@ fn svd_householder(
     }
     let mut v = x.to_vec();
     let signed = if v[0].is_negative() { norm.neg() } else { norm };
-    v[0] = v[0].add(&signed, p, rm);
+    v[0] = signed.add(&v[0], p, rm);
     let mut vtv = svd_zero(p);
     for vi in &v {
-        vtv = vtv.add(&vi.mul(vi, p, rm), p, rm);
+        vtv = vtv.add(&vi.sqr(p, rm), p, rm);
     }
     if vtv.is_zero() {
         return None;
@@ -1604,13 +1669,17 @@ fn svd_apply_house_left(
     for j in col0..cols {
         let mut s = svd_zero(p);
         for i in 0..vlen {
-            s = s.add(&v[i].mul(&a[(row0 + i) * cols + j], p, rm), p, rm);
+            s = s.add(
+                &ExactNum::mul_ref(&v[i], &a[(row0 + i) * cols + j], p, rm),
+                p,
+                rm,
+            );
         }
         s = s.mul(beta, p, rm);
         for (i, vi) in v.iter().enumerate().take(vlen) {
-            let t = s.mul(vi, p, rm);
+            let t = ExactNum::mul_ref(&s, vi, p, rm);
             let idx = (row0 + i) * cols + j;
-            a[idx] = a[idx].sub(&t, p, rm);
+            a[idx] = t.neg().add(&a[idx], p, rm);
         }
     }
 }
@@ -1630,13 +1699,17 @@ fn svd_apply_house_right(
     for i in row0..rows {
         let mut s = svd_zero(p);
         for t in 0..vlen {
-            s = s.add(&a[i * cols + col0 + t].mul(&v[t], p, rm), p, rm);
+            s = s.add(
+                &ExactNum::mul_ref(&a[i * cols + col0 + t], &v[t], p, rm),
+                p,
+                rm,
+            );
         }
         s = s.mul(beta, p, rm);
         for (t, vt) in v.iter().enumerate().take(vlen) {
-            let tt = s.mul(vt, p, rm);
+            let tt = ExactNum::mul_ref(&s, vt, p, rm);
             let idx = i * cols + col0 + t;
-            a[idx] = a[idx].sub(&tt, p, rm);
+            a[idx] = tt.neg().add(&a[idx], p, rm);
         }
     }
 }
@@ -1651,7 +1724,11 @@ fn svd_rotg(
     if r.is_zero() {
         return (svd_one(p), svd_zero(p), r);
     }
-    (a.div(&r, p, rm), b.div(&r, p, rm), r)
+    (
+        ExactNum::div_ref(a, &r, p, rm),
+        ExactNum::div_ref(b, &r, p, rm),
+        r,
+    )
 }
 
 fn svd_apply_givens_cols(
@@ -1668,8 +1745,9 @@ fn svd_apply_givens_cols(
     for i in 0..rows {
         let a = mat[i * cols + j0].clone();
         let b = mat[i * cols + j1].clone();
-        mat[i * cols + j0] = cs.mul(&a, p, rm).add(&sn.mul(&b, p, rm), p, rm);
-        mat[i * cols + j1] = cs.mul(&b, p, rm).sub(&sn.mul(&a, p, rm), p, rm);
+        mat[i * cols + j0] =
+            ExactNum::mul_ref(cs, &a, p, rm).add(&ExactNum::mul_ref(sn, &b, p, rm), p, rm);
+        mat[i * cols + j1] = b.mul(cs, p, rm).sub(&a.mul(sn, p, rm), p, rm);
     }
 }
 
@@ -1680,12 +1758,18 @@ fn svd_negligible(e: &ExactNum, d0: &ExactNum, d1: &ExactNum, p: usize, rm: Roun
     if e.is_nan() || e.is_inf() {
         return false;
     }
-    let scale = d0.abs().add(&d1.abs(), p, rm);
+    // |d0| + |d1|
+    let scale = match (d0.is_negative(), d1.is_negative()) {
+        (false, false) => ExactNum::add_ref(d0, d1, p, rm),
+        (false, true) => ExactNum::sub_ref(d0, d1, p, rm),
+        (true, false) => ExactNum::sub_ref(d1, d0, p, rm),
+        (true, true) => d0.neg_via_mul().sub(d1, p, rm),
+    };
     if scale.is_zero() {
         return e.is_zero();
     }
-    match (e.abs().exponent(), scale.exponent()) {
-        (Some(ee), Some(se)) => ee < se - (p as i32 - SVD_CONV_GUARD_BITS),
+    match (e.exponent(), scale.exponent()) {
+        (Some(ee), Some(se)) => ee < se - (p as Exponent - SVD_CONV_GUARD_BITS),
         _ => false,
     }
 }
@@ -1699,17 +1783,16 @@ fn svd_wilkinson_shift(
     rm: RoundingMode,
 ) -> ExactNum {
     let two = ExactNum::from_u8(2, p);
-    let b = d_prev
-        .add(d_last, p, rm)
-        .mul(&d_prev.sub(d_last, p, rm), p, rm)
-        .add(&e_prev.mul(e_prev, p, rm), p, rm)
+    let b = ExactNum::add_ref(d_prev, d_last, p, rm)
+        .mul(&ExactNum::sub_ref(d_prev, d_last, p, rm), p, rm)
+        .add(&e_prev.sqr(p, rm), p, rm)
         .div(&two, p, rm);
-    let t = d_last.mul(e_last, p, rm);
-    let c = t.mul(&t, p, rm);
+    let t = ExactNum::mul_ref(d_last, e_last, p, rm);
+    let c = t.sqr(p, rm);
     if b.is_zero() && c.is_zero() {
         return svd_zero(p);
     }
-    let disc = b.mul(&b, p, rm).add(&c, p, rm).sqrt(p, rm);
+    let disc = b.sqr(p, rm).add(&c, p, rm).sqrt(p, rm);
     let signed = if b.is_negative() { disc.neg() } else { disc };
     let denom = b.add(&signed, p, rm);
     if denom.is_zero() {
@@ -1733,11 +1816,10 @@ fn svd_qr_sweep(
     let last = q_blk - 1;
     let e_prev = if last >= p_blk + 2 { e[last - 2].clone() } else { svd_zero(p) };
     let shift = svd_wilkinson_shift(&d[last - 1], &d[last], &e_prev, &e[last - 1], p, rm);
-    let mut f = d[p_blk]
-        .add(&d[last], p, rm)
-        .mul(&d[p_blk].sub(&d[last], p, rm), p, rm)
+    let mut f = ExactNum::add_ref(&d[p_blk], &d[last], p, rm)
+        .mul(&ExactNum::sub_ref(&d[p_blk], &d[last], p, rm), p, rm)
         .add(&shift, p, rm);
-    let mut g = d[p_blk].mul(&e[p_blk], p, rm);
+    let mut g = ExactNum::mul_ref(&d[p_blk], &e[p_blk], p, rm);
     for j in p_blk..last {
         let (cs, sn, r) = svd_rotg(&f, &g, p, rm);
         if j > p_blk {
@@ -1746,21 +1828,22 @@ fn svd_qr_sweep(
         let dj = d[j].clone();
         let ej = e[j].clone();
         let dj1 = d[j + 1].clone();
-        f = cs.mul(&dj, p, rm).add(&sn.mul(&ej, p, rm), p, rm);
-        e[j] = cs.mul(&ej, p, rm).sub(&sn.mul(&dj, p, rm), p, rm);
-        g = sn.mul(&dj1, p, rm);
-        d[j + 1] = cs.mul(&dj1, p, rm);
+        f = ExactNum::mul_ref(&cs, &dj, p, rm).add(&ExactNum::mul_ref(&sn, &ej, p, rm), p, rm);
+        e[j] = ej.mul(&cs, p, rm).sub(&dj.mul(&sn, p, rm), p, rm);
+        g = ExactNum::mul_ref(&sn, &dj1, p, rm);
+        d[j + 1] = dj1.mul(&cs, p, rm);
         svd_apply_givens_cols(v, n, n, j, j + 1, &cs, &sn, p, rm);
 
         let (cs, sn, r) = svd_rotg(&f, &g, p, rm);
         d[j] = r;
         let ej = e[j].clone();
         let dj1 = d[j + 1].clone();
-        f = cs.mul(&ej, p, rm).add(&sn.mul(&dj1, p, rm), p, rm);
-        d[j + 1] = cs.mul(&dj1, p, rm).sub(&sn.mul(&ej, p, rm), p, rm);
+        f = ExactNum::mul_ref(&cs, &ej, p, rm).add(&ExactNum::mul_ref(&sn, &dj1, p, rm), p, rm);
+        d[j + 1] = dj1.mul(&cs, p, rm).sub(&ej.mul(&sn, p, rm), p, rm);
         if j + 1 < last {
-            g = sn.mul(&e[j + 1], p, rm);
-            e[j + 1] = cs.mul(&e[j + 1], p, rm);
+            g = ExactNum::mul_ref(&sn, &e[j + 1], p, rm);
+            let old = core::mem::replace(&mut e[j + 1], svd_zero(p));
+            e[j + 1] = old.mul(&cs, p, rm);
         }
         svd_apply_givens_cols(u, m, m, j, j + 1, &cs, &sn, p, rm);
     }
@@ -1783,11 +1866,11 @@ fn svd_zero_last_super(
     for j in (p_blk..k).rev() {
         let (cs, sn, t) = svd_rotg(&d[j], &f, p, rm);
         d[j] = t;
+        svd_apply_givens_cols(v, n, n, j, k, &cs, &sn, p, rm);
         if j > p_blk {
             f = sn.neg().mul(&e[j - 1], p, rm);
             e[j - 1] = cs.mul(&e[j - 1], p, rm);
         }
-        svd_apply_givens_cols(v, n, n, j, k, &cs, &sn, p, rm);
     }
 }
 
@@ -1806,11 +1889,11 @@ fn svd_zero_first_super(
     for j in (p_blk + 1)..q_blk {
         let (cs, sn, t) = svd_rotg(&d[j], &f, p, rm);
         d[j] = t;
+        svd_apply_givens_cols(u, m, m, p_blk, j, &cs, &sn, p, rm);
         if j + 1 < q_blk {
             f = sn.neg().mul(&e[j], p, rm);
             e[j] = cs.mul(&e[j], p, rm);
         }
-        svd_apply_givens_cols(u, m, m, p_blk, j, &cs, &sn, p, rm);
     }
 }
 
@@ -1936,17 +2019,17 @@ fn svd_decomp_tall(
 
     for (i, di) in d.iter_mut().enumerate().take(n) {
         if di.is_negative() {
-            *di = di.neg();
+            di.inv_sign();
             for r in 0..m {
                 let idx = r * m + i;
-                u[idx] = u[idx].neg();
+                u[idx].inv_sign();
             }
         }
     }
     for i in 0..n {
         let mut best = i;
         for j in (i + 1)..n {
-            if matches!(d[j].cmp(&d[best]), Some(c) if c > 0) {
+            if matches!(d[j].compare(&d[best]), Some(c) if c > 0) {
                 best = j;
             }
         }
@@ -1986,7 +2069,7 @@ fn eigen_wilkinson(
     rm: RoundingMode,
 ) -> ExactNum {
     let half = svd_one(p).div(&ExactNum::from_u8(2, p), p, rm);
-    let delta = a.sub(c, p, rm).mul(&half, p, rm);
+    let delta = ExactNum::sub_ref(a, c, p, rm).mul(&half, p, rm);
     if delta.is_zero() && b.is_zero() {
         return c.clone();
     }
@@ -1994,9 +2077,13 @@ fn eigen_wilkinson(
     let signed = if delta.is_negative() { h.neg() } else { h };
     let denom = delta.add(&signed, p, rm);
     if denom.is_zero() {
-        return c.sub(&b.abs(), p, rm);
+        return if b.is_negative() {
+            ExactNum::add_ref(c, b, p, rm)
+        } else {
+            ExactNum::sub_ref(c, b, p, rm)
+        };
     }
-    c.sub(&b.mul(b, p, rm).div(&denom, p, rm), p, rm)
+    b.sqr(p, rm).div(&denom, p, rm).neg().add(c, p, rm)
 }
 
 fn eigen_qr_sweep(
@@ -2011,9 +2098,8 @@ fn eigen_qr_sweep(
 ) {
     let last = q_blk - 1;
     let mu = eigen_wilkinson(&d[last - 1], &e[last - 1], &d[last], p, rm);
-    let mut f = d[p_blk].sub(&mu, p, rm);
+    let mut f = mu.neg().add(&d[p_blk], p, rm);
     let mut g = e[p_blk].clone();
-    let two = ExactNum::from_u8(2, p);
     for k in p_blk..last {
         let (cs, sn, r) = svd_rotg(&f, &g, p, rm);
         if k > p_blk {
@@ -2022,18 +2108,20 @@ fn eigen_qr_sweep(
         let d0 = d[k].clone();
         let ee = e[k].clone();
         let d1 = d[k + 1].clone();
-        let c2 = cs.mul(&cs, p, rm);
-        let s2 = sn.mul(&sn, p, rm);
-        let cs2 = cs.mul(&sn, p, rm);
-        let two_cse = two.mul(&cs2.mul(&ee, p, rm), p, rm);
-        d[k] = c2
-            .mul(&d0, p, rm)
-            .add(&two_cse, p, rm)
-            .add(&s2.mul(&d1, p, rm), p, rm);
-        d[k + 1] = s2
-            .mul(&d0, p, rm)
-            .sub(&two_cse, p, rm)
-            .add(&c2.mul(&d1, p, rm), p, rm);
+        let c2 = cs.sqr(p, rm);
+        let s2 = sn.sqr(p, rm);
+        let cs2 = ExactNum::mul_ref(&cs, &sn, p, rm);
+        let two_cse = ExactNum::from_u8(2, p).mul(&ExactNum::mul_ref(&cs2, &ee, p, rm), p, rm);
+        d[k] = ExactNum::mul_ref(&c2, &d0, p, rm).add(&two_cse, p, rm).add(
+            &ExactNum::mul_ref(&s2, &d1, p, rm),
+            p,
+            rm,
+        );
+        d[k + 1] = ExactNum::mul_ref(&s2, &d0, p, rm).sub(&two_cse, p, rm).add(
+            &ExactNum::mul_ref(&c2, &d1, p, rm),
+            p,
+            rm,
+        );
         e[k] = cs2
             .mul(&d1.sub(&d0, p, rm), p, rm)
             .add(&c2.sub(&s2, p, rm).mul(&ee, p, rm), p, rm);
@@ -2110,7 +2198,7 @@ fn eigen_decomp_sym(
     for i in 0..n {
         let mut best = i;
         for j in (i + 1)..n {
-            if matches!(d[j].cmp(&d[best]), Some(c) if c > 0) {
+            if matches!(d[j].compare(&d[best]), Some(c) if c > 0) {
                 best = j;
             }
         }
@@ -2213,7 +2301,7 @@ fn fft_dit(
     let two_pi = ExactNum::from_u8(2, p).mul(&cc.pi(p, rm), p, rm);
     let mut m = 2usize;
     while m <= n {
-        let ang = two_pi.div(&fft_from_len(m, p), p, rm);
+        let ang = ExactNum::div_ref(&two_pi, &fft_from_len(m, p), p, rm);
         let (sn, cs) = ang.sin_cos(p, rm, cc);
         let wm_re = cs;
         let wm_im = if inverse { sn } else { sn.neg() };
@@ -2225,15 +2313,25 @@ fn fft_dit(
             for j in 0..half {
                 let t = k + j + half;
                 let u = k + j;
-                let tr = w_re.mul(&re[t], p, rm).sub(&w_im.mul(&im[t], p, rm), p, rm);
-                let ti = w_re.mul(&im[t], p, rm).add(&w_im.mul(&re[t], p, rm), p, rm);
-                let ur = re[u].clone();
-                let ui = im[u].clone();
+                let rt = core::mem::replace(&mut re[t], svd_zero(p));
+                let it = core::mem::replace(&mut im[t], svd_zero(p));
+                let tr = ExactNum::mul_ref(&w_re, &rt, p, rm).sub(
+                    &ExactNum::mul_ref(&w_im, &it, p, rm),
+                    p,
+                    rm,
+                );
+                let ti = it.mul(&w_re, p, rm).add(&rt.mul(&w_im, p, rm), p, rm);
+                let ur = core::mem::replace(&mut re[u], svd_zero(p));
+                let ui = core::mem::replace(&mut im[u], svd_zero(p));
+                re[t] = ExactNum::sub_ref(&ur, &tr, p, rm);
+                im[t] = ExactNum::sub_ref(&ui, &ti, p, rm);
                 re[u] = ur.add(&tr, p, rm);
                 im[u] = ui.add(&ti, p, rm);
-                re[t] = ur.sub(&tr, p, rm);
-                im[t] = ui.sub(&ti, p, rm);
-                let nr = w_re.mul(&wm_re, p, rm).sub(&w_im.mul(&wm_im, p, rm), p, rm);
+                let nr = ExactNum::mul_ref(&w_re, &wm_re, p, rm).sub(
+                    &ExactNum::mul_ref(&w_im, &wm_im, p, rm),
+                    p,
+                    rm,
+                );
                 let ni = w_re.mul(&wm_im, p, rm).add(&w_im.mul(&wm_re, p, rm), p, rm);
                 w_re = nr;
                 w_im = ni;
@@ -2245,8 +2343,8 @@ fn fft_dit(
     if inverse {
         let inv_n = svd_one(p).div(&fft_from_len(n, p), p, rm);
         for i in 0..n {
-            re[i] = re[i].mul(&inv_n, p, rm);
-            im[i] = im[i].mul(&inv_n, p, rm);
+            re[i] = core::mem::replace(&mut re[i], svd_zero(p)).mul(&inv_n, p, rm);
+            im[i] = core::mem::replace(&mut im[i], svd_zero(p)).mul(&inv_n, p, rm);
         }
     }
     let mut vals = Vec::with_capacity(n.checked_mul(2)?);
@@ -2265,55 +2363,84 @@ mod tests {
     use super::*;
 
     #[test]
-    fn bin64_array_add_dot() {
+    fn bin64_array_add_dot() -> Result<(), crate::Error> {
         let one = Ieee64::from_i32(1);
         let two = Ieee64::from_i32(2);
         let a = Ieee64Array::from_values(&[one, two]);
         let b = Ieee64Array::from_values(&[two, one]);
-        let s = a.add(&b).unwrap();
-        assert_eq!(s.get(0).unwrap().to_bits(), Ieee64::from_i32(3).to_bits());
-        assert_eq!(s.get(1).unwrap().to_bits(), Ieee64::from_i32(3).to_bits());
-        let d = a.dot(&b).unwrap();
+        let s = Ieee64Array::from_values(&[one, two])
+            .add(&b)
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(
+            s.get(0).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+            Ieee64::from_i32(3).to_bits()
+        );
+        assert_eq!(
+            s.get(1).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+            Ieee64::from_i32(3).to_bits()
+        );
+        let d = a.dot(&b).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(d.to_bits(), Ieee64::from_i32(4).to_bits());
         assert_eq!(a.sum().to_bits(), Ieee64::from_i32(3).to_bits());
         let scaled = a.mul_scalar(two);
-        assert_eq!(scaled.get(0).unwrap().to_bits(), two.to_bits());
+        assert_eq!(
+            scaled
+                .get(0)
+                .ok_or(crate::Error::InvalidArgument)?
+                .to_bits(),
+            two.to_bits()
+        );
+        Ok(())
     }
 
     #[test]
-    fn bin32_array_sqrt() {
+    fn bin32_array_sqrt() -> Result<(), crate::Error> {
         let four = Ieee32::from_i32(4);
         let a = Ieee32Array::filled(3, four);
         let r = a.sqrt();
-        assert_eq!(r.get(0).unwrap().to_bits(), Ieee32::from_i32(2).to_bits());
+        assert_eq!(
+            r.get(0).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+            Ieee32::from_i32(2).to_bits()
+        );
         assert_eq!(r.len(), 3);
+        Ok(())
     }
 
     #[test]
-    fn bin64_array_exp_sin() {
-        let mut cc = Consts::new().unwrap();
+    fn bin64_array_exp_sin() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let z = Ieee64Array::from_values(&[Ieee64::ZERO]);
         let e = z.exp(&mut cc);
-        assert_eq!(e.get(0).unwrap().to_bits(), Ieee64::from_i32(1).to_bits());
+        assert_eq!(
+            e.get(0).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+            Ieee64::from_i32(1).to_bits()
+        );
         let s = z.sin(&mut cc);
-        assert!(s.get(0).unwrap().is_zero());
+        assert!(s.get(0).ok_or(crate::Error::InvalidArgument)?.is_zero());
+        Ok(())
     }
 
     #[test]
-    fn exact_array_add() {
+    fn exact_array_add() -> Result<(), crate::Error> {
         let p = 64;
-        let one = ExactNum::from_u8(1, p);
-        let two = ExactNum::from_u8(2, p);
-        let a = ExactNumArray::from_values(p, &[one.clone(), two.clone()]);
-        let b = ExactNumArray::from_values(p, &[two.clone(), one.clone()]);
-        let s = a.add(&b).unwrap();
-        assert_eq!(s.get(0).unwrap().cmp(&ExactNum::from_u8(3, p)), Some(0));
-        let d = a.dot(&b).unwrap();
-        assert_eq!(d.cmp(&ExactNum::from_u8(4, p)), Some(0));
+        let mk_a =
+            || ExactNumArray::from_values(p, &[ExactNum::from_u8(1, p), ExactNum::from_u8(2, p)]);
+        let a = mk_a();
+        let b = ExactNumArray::from_values(p, &[ExactNum::from_u8(2, p), ExactNum::from_u8(1, p)]);
+        let s = (mk_a() + &b).ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(
+            s.get(0)
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&ExactNum::from_u8(3, p)),
+            Some(0)
+        );
+        let d = a.dot(&b).ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(d.compare(&ExactNum::from_u8(4, p)), Some(0));
+        Ok(())
     }
 
     #[test]
-    fn bin64_matmul_2x2() {
+    fn bin64_matmul_2x2() -> Result<(), crate::Error> {
         let a = Ieee64Array::from_shape(
             2,
             2,
@@ -2324,7 +2451,7 @@ mod tests {
                 Ieee64::from_i32(4),
             ],
         )
-        .unwrap();
+        .ok_or(crate::Error::InvalidArgument)?;
         let b = Ieee64Array::from_shape(
             2,
             2,
@@ -2335,35 +2462,36 @@ mod tests {
                 Ieee64::from_i32(8),
             ],
         )
-        .unwrap();
-        let c = a.matmul(&b).unwrap();
+        .ok_or(crate::Error::InvalidArgument)?;
+        let c = a.matmul(&b).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(c.shape(), (2, 2));
         assert_eq!(
-            c.get2(0, 0).unwrap().to_bits(),
+            c.get2(0, 0).ok_or(crate::Error::InvalidArgument)?.to_bits(),
             Ieee64::from_i32(19).to_bits()
         );
         assert_eq!(
-            c.get2(0, 1).unwrap().to_bits(),
+            c.get2(0, 1).ok_or(crate::Error::InvalidArgument)?.to_bits(),
             Ieee64::from_i32(22).to_bits()
         );
         assert_eq!(
-            c.get2(1, 0).unwrap().to_bits(),
+            c.get2(1, 0).ok_or(crate::Error::InvalidArgument)?.to_bits(),
             Ieee64::from_i32(43).to_bits()
         );
         assert_eq!(
-            c.get2(1, 1).unwrap().to_bits(),
+            c.get2(1, 1).ok_or(crate::Error::InvalidArgument)?.to_bits(),
             Ieee64::from_i32(50).to_bits()
         );
+        Ok(())
     }
 
     #[test]
-    fn bin64_matmul_identity() {
+    fn bin64_matmul_identity() -> Result<(), crate::Error> {
         let i2 = Ieee64Array::from_shape(
             2,
             2,
             &[Ieee64::from_i32(1), Ieee64::ZERO, Ieee64::ZERO, Ieee64::from_i32(1)],
         )
-        .unwrap();
+        .ok_or(crate::Error::InvalidArgument)?;
         let a = Ieee64Array::from_shape(
             2,
             2,
@@ -2374,74 +2502,117 @@ mod tests {
                 Ieee64::from_i32(4),
             ],
         )
-        .unwrap();
-        let c = i2.matmul(&a).unwrap();
+        .ok_or(crate::Error::InvalidArgument)?;
+        let c = i2.matmul(&a).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(
-            c.get2(0, 0).unwrap().to_bits(),
+            c.get2(0, 0).ok_or(crate::Error::InvalidArgument)?.to_bits(),
             Ieee64::from_i32(1).to_bits()
         );
         assert_eq!(
-            c.get2(0, 1).unwrap().to_bits(),
+            c.get2(0, 1).ok_or(crate::Error::InvalidArgument)?.to_bits(),
             Ieee64::from_i32(2).to_bits()
         );
         assert_eq!(
-            c.get2(1, 0).unwrap().to_bits(),
+            c.get2(1, 0).ok_or(crate::Error::InvalidArgument)?.to_bits(),
             Ieee64::from_i32(3).to_bits()
         );
         assert_eq!(
-            c.get2(1, 1).unwrap().to_bits(),
+            c.get2(1, 1).ok_or(crate::Error::InvalidArgument)?.to_bits(),
             Ieee64::from_i32(4).to_bits()
         );
+        Ok(())
     }
 
     #[test]
-    fn bin64_matmul_shape_mismatch() {
-        let a = Ieee64Array::from_shape(2, 2, &[Ieee64::from_i32(1); 4]).unwrap();
-        let b = Ieee64Array::from_shape(3, 1, &[Ieee64::from_i32(1); 3]).unwrap();
+    fn bin64_matmul_shape_mismatch() -> Result<(), crate::Error> {
+        let a = Ieee64Array::from_shape(2, 2, &[Ieee64::from_i32(1); 4])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let b = Ieee64Array::from_shape(3, 1, &[Ieee64::from_i32(1); 3])
+            .ok_or(crate::Error::InvalidArgument)?;
         assert!(a.matmul(&b).is_none());
         assert!(Ieee64Array::from_shape(2, 2, &[Ieee64::from_i32(1)]).is_none());
         let row = Ieee64Array::from_values(&[Ieee64::from_i32(1); 4]);
         assert_eq!(row.shape(), (1, 4));
-        let sq = row.reshape(2, 2).unwrap();
+        let sq = row.reshape(2, 2).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(sq.shape(), (2, 2));
         assert!(row.add(&sq).is_none());
+        Ok(())
     }
 
     #[test]
-    fn exact_matmul_2x2() {
+    fn exact_matmul_2x2() -> Result<(), crate::Error> {
         let p = 64;
         let n = |k: u8| ExactNum::from_u8(k, p);
-        let a = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(3), n(4)]).unwrap();
-        let b = ExactNumArray::from_shape(p, 2, 2, &[n(5), n(6), n(7), n(8)]).unwrap();
-        let c = a.matmul(&b).unwrap();
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(3), n(4)])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let b = ExactNumArray::from_shape(p, 2, 2, &[n(5), n(6), n(7), n(8)])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let c = a.matmul(&b).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(c.shape(), (2, 2));
-        assert_eq!(c.get2(0, 0).unwrap().cmp(&n(19)), Some(0));
-        assert_eq!(c.get2(0, 1).unwrap().cmp(&n(22)), Some(0));
-        assert_eq!(c.get2(1, 0).unwrap().cmp(&n(43)), Some(0));
-        assert_eq!(c.get2(1, 1).unwrap().cmp(&n(50)), Some(0));
+        assert_eq!(
+            c.get2(0, 0)
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&n(19)),
+            Some(0)
+        );
+        assert_eq!(
+            c.get2(0, 1)
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&n(22)),
+            Some(0)
+        );
+        assert_eq!(
+            c.get2(1, 0)
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&n(43)),
+            Some(0)
+        );
+        assert_eq!(
+            c.get2(1, 1)
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&n(50)),
+            Some(0)
+        );
+        Ok(())
     }
 
     #[test]
-    fn bin32_simd_add_mul_golds() {
+    fn bin32_simd_add_mul_golds() -> Result<(), crate::Error> {
         let one = Ieee32::from_i32(1);
         let two = Ieee32::from_i32(2);
         let four = Ieee32::from_i32(4);
         let a = Ieee32Array::from_values(&[one, two, one, two, one]);
         let b = Ieee32Array::from_values(&[one, two, two, one, one]);
-        let s = a.add(&b).unwrap();
-        assert_eq!(s.get(0).unwrap().to_bits(), two.to_bits());
-        assert_eq!(s.get(1).unwrap().to_bits(), four.to_bits());
-        assert_eq!(s.get(4).unwrap().to_bits(), two.to_bits());
+        let s = a.add(&b).ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(
+            s.get(0).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+            two.to_bits()
+        );
+        assert_eq!(
+            s.get(1).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+            four.to_bits()
+        );
+        assert_eq!(
+            s.get(4).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+            two.to_bits()
+        );
         let half = Ieee32::from_bits(0x3F00_0000);
         let t = Ieee32Array::filled(4, two);
         let h = Ieee32Array::filled(4, half);
-        let p = t.mul(&h).unwrap();
-        assert_eq!(p.get(0).unwrap().to_bits(), one.to_bits());
-        assert_eq!(p.get(3).unwrap().to_bits(), one.to_bits());
+        let p = t.mul(&h).ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(
+            p.get(0).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+            one.to_bits()
+        );
+        assert_eq!(
+            p.get(3).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+            one.to_bits()
+        );
+        Ok(())
     }
 
     #[test]
-    fn ieee64_simd_1000_add_mul_div_sqrt() {
+    fn ieee64_simd_1000_add_mul_div_sqrt() -> Result<(), crate::Error> {
         const N: usize = 1000;
         let p = 128;
         let rm = RoundingMode::ToEven;
@@ -2451,134 +2622,193 @@ mod tests {
         let a = Ieee64Array::from_values(&vals);
         let one = Ieee64Array::from_values(&ones);
         let two = Ieee64Array::from_values(&twos);
-        let add = a.add(&one).unwrap();
-        let mul = a.mul(&two).unwrap();
-        let div = a.div(&a).unwrap();
-        let squares = a.mul(&a).unwrap();
+        let add = a.add(&one).ok_or(crate::Error::InvalidArgument)?;
+        let mul = a.mul(&two).ok_or(crate::Error::InvalidArgument)?;
+        let div = a.div(&a).ok_or(crate::Error::InvalidArgument)?;
+        let squares = a.mul(&a).ok_or(crate::Error::InvalidArgument)?;
         let sq = squares.sqrt();
-        let sub = a.sub(&one).unwrap();
-        let fma = a.fma(&one, &one).unwrap();
+        let sub = a.sub(&one).ok_or(crate::Error::InvalidArgument)?;
+        let fma = a.fma(&one, &one).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(add.len(), N);
         for i in 0..N {
-            let ai = a.get(i).unwrap();
-            let oi = one.get(i).unwrap();
-            let ti = two.get(i).unwrap();
-            assert_eq!(add.get(i).unwrap().to_bits(), ai.soft_add(oi).to_bits());
-            assert_eq!(mul.get(i).unwrap().to_bits(), ai.soft_mul(ti).to_bits());
-            assert_eq!(div.get(i).unwrap().to_bits(), ai.soft_div(ai).to_bits());
+            let ai = a.get(i).ok_or(crate::Error::InvalidArgument)?;
+            let oi = one.get(i).ok_or(crate::Error::InvalidArgument)?;
+            let ti = two.get(i).ok_or(crate::Error::InvalidArgument)?;
             assert_eq!(
-                sq.get(i).unwrap().to_bits(),
+                add.get(i).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+                ai.soft_add(oi).to_bits()
+            );
+            assert_eq!(
+                mul.get(i).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+                ai.soft_mul(ti).to_bits()
+            );
+            assert_eq!(
+                div.get(i).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+                ai.soft_div(ai).to_bits()
+            );
+            assert_eq!(
+                sq.get(i).ok_or(crate::Error::InvalidArgument)?.to_bits(),
                 ai.soft_mul(ai).sqrt().to_bits()
             );
-            assert_eq!(sub.get(i).unwrap().to_bits(), ai.soft_sub(oi).to_bits());
-            assert_eq!(fma.get(i).unwrap().to_bits(), ai.mul_add(oi, oi).to_bits());
+            assert_eq!(
+                sub.get(i).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+                ai.soft_sub(oi).to_bits()
+            );
+            assert_eq!(
+                fma.get(i).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+                ai.mul_add(oi, oi).to_bits()
+            );
             let xa = ai.to_exact(p);
             let x1 = oi.to_exact(p);
             let x2 = ti.to_exact(p);
             assert_eq!(
-                add.get(i).unwrap().to_bits(),
-                Ieee64::from_exact(&xa.add(&x1, p, rm)).to_bits()
+                add.get(i).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+                Ieee64::from_exact(&x1.add(&xa, p, rm)).to_bits()
             );
             assert_eq!(
-                mul.get(i).unwrap().to_bits(),
-                Ieee64::from_exact(&xa.mul(&x2, p, rm)).to_bits()
+                mul.get(i).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+                Ieee64::from_exact(&x2.mul(&xa, p, rm)).to_bits()
             );
             assert_eq!(
-                div.get(i).unwrap().to_bits(),
-                Ieee64::from_exact(&xa.div(&xa, p, rm)).to_bits()
+                div.get(i).ok_or(crate::Error::InvalidArgument)?.to_bits(),
+                Ieee64::from_exact(&ExactNum::div_ref(&xa, &xa, p, rm)).to_bits()
             );
-            let sqe = xa.mul(&xa, p, rm).sqrt(p, rm);
+            let sqe = xa.sqr(p, rm).sqrt(p, rm);
             assert_eq!(
-                sq.get(i).unwrap().to_bits(),
+                sq.get(i).ok_or(crate::Error::InvalidArgument)?.to_bits(),
                 Ieee64::from_exact(&sqe).to_bits()
             );
         }
         assert!(a
             .fma(&one, &Ieee64Array::from_values(&vals[..10]))
             .is_none());
+        Ok(())
     }
 
     #[test]
-    fn array_ufunc_identities() {
-        let mut cc = Consts::new().unwrap();
+    fn array_ufunc_identities() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let z32 = Ieee32Array::from_values(&[Ieee32::ZERO]);
-        assert!(z32.asin(&mut cc).get(0).unwrap().is_zero());
-        assert!(z32.expm1(&mut cc).get(0).unwrap().is_zero());
-        assert!(z32.log1p(&mut cc).get(0).unwrap().is_zero());
+        assert!(z32
+            .asin(&mut cc)
+            .get(0)
+            .ok_or(crate::Error::InvalidArgument)?
+            .is_zero());
+        assert!(z32
+            .expm1(&mut cc)
+            .get(0)
+            .ok_or(crate::Error::InvalidArgument)?
+            .is_zero());
+        assert!(z32
+            .log1p(&mut cc)
+            .get(0)
+            .ok_or(crate::Error::InvalidArgument)?
+            .is_zero());
         assert_eq!(
-            z32.bessel_j(0, &mut cc).get(0).unwrap().to_bits(),
+            z32.bessel_j(0, &mut cc)
+                .get(0)
+                .ok_or(crate::Error::InvalidArgument)?
+                .to_bits(),
             Ieee32::from_i32(1).to_bits()
         );
         let one64 = Ieee64Array::from_values(&[Ieee64::from_i32(1)]);
-        assert!(one64.ln_gamma(&mut cc).get(0).unwrap().is_zero());
+        assert!(one64
+            .ln_gamma(&mut cc)
+            .get(0)
+            .ok_or(crate::Error::InvalidArgument)?
+            .is_zero());
         let p = 64;
         let rm = RoundingMode::ToEven;
         let z = ExactNumArray::from_values(p, &[ExactNum::from_u8(0, p)]);
-        assert!(z.sinh(p, rm, &mut cc).get(0).unwrap().is_zero());
+        assert!(z
+            .sinh(p, rm, &mut cc)
+            .get(0)
+            .ok_or(crate::Error::InvalidArgument)?
+            .is_zero());
         let one = ExactNumArray::from_values(p, &[ExactNum::from_u8(1, p)]);
         assert_eq!(
             one.ln_gamma(p, rm, &mut cc)
                 .get(0)
-                .unwrap()
-                .cmp(&ExactNum::from_u8(0, p)),
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&ExactNum::from_u8(0, p)),
             Some(0)
         );
         let x = ExactNumArray::from_values(p, &[ExactNum::from_u8(3, p)]);
         assert_eq!(
             x.legendre_p(0, p, rm)
                 .get(0)
-                .unwrap()
-                .cmp(&ExactNum::from_u8(1, p)),
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&ExactNum::from_u8(1, p)),
             Some(0)
         );
         assert_eq!(
-            x.floor().get(0).unwrap().cmp(&ExactNum::from_u8(3, p)),
+            x.floor()
+                .get(0)
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&ExactNum::from_u8(3, p)),
             Some(0)
         );
+        Ok(())
     }
 
     #[test]
-    fn exact_array_sin_2x3_matches_scalar() {
+    fn exact_array_sin_2x3_matches_scalar() -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let n = |k: u8| ExactNum::from_u8(k, p);
         let vals = [n(1), n(2), n(3), n(4), n(5), n(6)];
-        let a = ExactNumArray::from_shape(p, 2, 3, &vals).unwrap();
+        let a = ExactNumArray::from_shape(p, 2, 3, &vals).ok_or(crate::Error::InvalidArgument)?;
         let s = a.sin(p, rm, &mut cc);
         assert_eq!(s.shape(), (2, 3));
         for i in 0..2 {
             for j in 0..3 {
                 let want = vals[i * 3 + j].sin(p, rm, &mut cc);
-                assert_eq!(s.get2(i, j).unwrap().cmp(&want), Some(0));
+                assert_eq!(
+                    s.get2(i, j)
+                        .ok_or(crate::Error::InvalidArgument)?
+                        .compare(&want),
+                    Some(0)
+                );
             }
         }
         let row = ExactNumArray::from_values(p, &[n(1), n(2)]);
-        assert!(a.add(&row).is_none());
+        assert!((a + &row).is_none());
+        Ok(())
     }
 
     #[test]
-    fn exact_array_bessel_j_nu_matches_scalar() {
+    fn exact_array_bessel_j_nu_matches_scalar() -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let xs = [ExactNum::from_u8(1, p), ExactNum::from_u8(2, p), ExactNum::from_u8(3, p)];
         let a = ExactNumArray::from_values(p, &xs);
         let out = a.bessel_j_nu(&half, p, rm, &mut cc);
         for (i, x) in xs.iter().enumerate() {
             let want = x.bessel_j_nu(&half, p, rm, &mut cc);
-            assert_eq!(out.get(i).unwrap().cmp(&want), Some(0));
+            assert_eq!(
+                out.get(i)
+                    .ok_or(crate::Error::InvalidArgument)?
+                    .compare(&want),
+                Some(0)
+            );
         }
         let nan_in = ExactNumArray::from_values(p, &[ExactNum::nan(None)]);
-        assert!(nan_in.sin(p, rm, &mut cc).get(0).unwrap().is_nan());
+        assert!(nan_in
+            .sin(p, rm, &mut cc)
+            .get(0)
+            .ok_or(crate::Error::InvalidArgument)?
+            .is_nan());
+        Ok(())
     }
 
     #[test]
-    fn exact_array_jacobi_sn_matches_scalar() {
+    fn exact_array_jacobi_sn_matches_scalar() -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm);
         let xs = [ExactNum::from_u8(0, p), ExactNum::from_u8(1, p), ExactNum::from_u8(2, p)];
         let a = ExactNumArray::from_values(p, &xs);
@@ -2586,15 +2816,27 @@ mod tests {
         let out_ns = a.jacobi_ns(&half, p, rm, &mut cc);
         for (i, x) in xs.iter().enumerate() {
             let want = x.jacobi_sn(&half, p, rm, &mut cc);
-            assert_eq!(out.get(i).unwrap().cmp(&want), Some(0));
+            assert_eq!(
+                out.get(i)
+                    .ok_or(crate::Error::InvalidArgument)?
+                    .compare(&want),
+                Some(0)
+            );
             if !x.is_zero() {
                 let want_ns = x.jacobi_ns(&half, p, rm, &mut cc);
-                assert_eq!(out_ns.get(i).unwrap().cmp(&want_ns), Some(0));
+                assert_eq!(
+                    out_ns
+                        .get(i)
+                        .ok_or(crate::Error::InvalidArgument)?
+                        .compare(&want_ns),
+                    Some(0)
+                );
             }
         }
+        Ok(())
     }
 
-    fn perm_rows(a: &ExactNumArray, perm: &[usize]) -> ExactNumArray {
+    fn perm_rows(a: &ExactNumArray, perm: &[usize]) -> Option<ExactNumArray> {
         let (n, m) = a.shape();
         let mut vals = Vec::with_capacity(n * m);
         for &r in perm {
@@ -2602,202 +2844,337 @@ mod tests {
                 vals.push(a.get2(r, c).unwrap().clone());
             }
         }
-        ExactNumArray::from_shape(a.precision(), n, m, &vals).unwrap()
+        ExactNumArray::from_shape(a.precision(), n, m, &vals)
     }
 
     #[test]
-    fn exact_lu_2x2_and_singular() {
+    fn exact_lu_2x2_and_singular() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
         let n = |k: u8| ExactNum::from_u8(k, p);
-        let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(4), n(3)]).unwrap();
-        let (l, u, perm) = a.lu_decomp(p, rm).expect("LU");
-        let pa = perm_rows(&a, &perm);
-        let lu = l.matmul(&u).expect("L*U");
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(4), n(3)])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let (l, u, perm) = a.lu_decomp(p, rm).ok_or(crate::Error::InvalidArgument)?;
+        let pa = perm_rows(&a, &perm).ok_or(crate::Error::InvalidArgument)?;
+        let lu = l.matmul(&u).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(lu.shape(), (2, 2));
         for i in 0..2 {
             for j in 0..2 {
                 assert_eq!(
-                    lu.get2(i, j).unwrap().cmp(pa.get2(i, j).unwrap()),
+                    lu.get2(i, j)
+                        .ok_or(crate::Error::InvalidArgument)?
+                        .compare(pa.get2(i, j).ok_or(crate::Error::InvalidArgument)?),
                     Some(0),
                     "PA=LU at {i},{j}"
                 );
             }
         }
-        let sing = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(2), n(4)]).unwrap();
+        let sing = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(2), n(4)])
+            .ok_or(crate::Error::InvalidArgument)?;
         assert!(sing.lu_decomp(p, rm).is_none());
+        Ok(())
     }
 
     fn near_num(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
-        let d = a.sub(b, p, RoundingMode::None).abs();
-        d.is_zero() || d.exponent().unwrap_or(0) < -((p as i32) - 40)
+        let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
+        d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) - 40)
     }
 
     #[test]
-    fn exact_qr_recon_orthog_rankdef() {
+    fn exact_qr_recon_orthog_rankdef() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
         let n = |k: u8| ExactNum::from_u8(k, p);
-        let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(4), n(3)]).unwrap();
-        let (q, r) = a.qr_decomp(p, rm).expect("QR");
-        let qr = q.matmul(&r).expect("Q*R");
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(4), n(3)])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let (q, r) = a.qr_decomp(p, rm).ok_or(crate::Error::InvalidArgument)?;
+        let qr = q.matmul(&r).ok_or(crate::Error::InvalidArgument)?;
         for i in 0..2 {
             for j in 0..2 {
                 assert!(
-                    near_num(qr.get2(i, j).unwrap(), a.get2(i, j).unwrap(), p),
+                    near_num(
+                        qr.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                        a.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                        p
+                    ),
                     "QR=A at {i},{j}"
                 );
             }
         }
-        let qtq = q.transpose().matmul(&q).expect("Q^T Q");
+        let qtq = q
+            .transpose()
+            .matmul(&q)
+            .ok_or(crate::Error::InvalidArgument)?;
         let one = n(1);
         let zero = n(0);
-        assert!(near_num(qtq.get2(0, 0).unwrap(), &one, p));
-        assert!(near_num(qtq.get2(1, 1).unwrap(), &one, p));
-        assert!(near_num(qtq.get2(0, 1).unwrap(), &zero, p));
-        assert!(near_num(qtq.get2(1, 0).unwrap(), &zero, p));
+        assert!(near_num(
+            qtq.get2(0, 0).ok_or(crate::Error::InvalidArgument)?,
+            &one,
+            p
+        ));
+        assert!(near_num(
+            qtq.get2(1, 1).ok_or(crate::Error::InvalidArgument)?,
+            &one,
+            p
+        ));
+        assert!(near_num(
+            qtq.get2(0, 1).ok_or(crate::Error::InvalidArgument)?,
+            &zero,
+            p
+        ));
+        assert!(near_num(
+            qtq.get2(1, 0).ok_or(crate::Error::InvalidArgument)?,
+            &zero,
+            p
+        ));
 
-        let def = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(2), n(4)]).unwrap();
-        let (qd, rd) = def.qr_decomp(p, rm).expect("rank-def QR");
+        let def = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(2), n(4)])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let (qd, rd) = def.qr_decomp(p, rm).ok_or(crate::Error::InvalidArgument)?;
         let _ = qd;
-        assert!(rd.get2(1, 1).unwrap().is_zero() || near_num(rd.get2(1, 1).unwrap(), &zero, p));
-        let recon = qd.matmul(&rd).expect("Qd Rd");
+        assert!(
+            rd.get2(1, 1)
+                .ok_or(crate::Error::InvalidArgument)?
+                .is_zero()
+                || near_num(
+                    rd.get2(1, 1).ok_or(crate::Error::InvalidArgument)?,
+                    &zero,
+                    p
+                )
+        );
+        let recon = qd.matmul(&rd).ok_or(crate::Error::InvalidArgument)?;
         for i in 0..2 {
             for j in 0..2 {
                 assert!(near_num(
-                    recon.get2(i, j).unwrap(),
-                    def.get2(i, j).unwrap(),
+                    recon.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                    def.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
                     p
                 ));
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn exact_svd_diag_3_2() {
+    fn exact_svd_diag_3_2() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
         let n = |k: u8| ExactNum::from_u8(k, p);
-        let a = ExactNumArray::from_shape(p, 2, 2, &[n(3), n(0), n(0), n(2)]).unwrap();
-        let (u, s, vt) = a.svd_decomp(p, rm).expect("SVD");
-        assert_eq!(s.get2(0, 0).unwrap().cmp(&n(3)), Some(0));
-        assert_eq!(s.get2(1, 1).unwrap().cmp(&n(2)), Some(0));
-        assert!(near_num(s.get2(0, 1).unwrap(), &n(0), p));
-        assert!(near_num(s.get2(1, 0).unwrap(), &n(0), p));
-        let us = u.matmul(&s).expect("U Σ");
-        let recon = us.matmul(&vt).expect("U Σ V^T");
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(3), n(0), n(0), n(2)])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let (u, s, vt) = a.svd_decomp(p, rm).ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(
+            s.get2(0, 0)
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&n(3)),
+            Some(0)
+        );
+        assert_eq!(
+            s.get2(1, 1)
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&n(2)),
+            Some(0)
+        );
+        assert!(near_num(
+            s.get2(0, 1).ok_or(crate::Error::InvalidArgument)?,
+            &n(0),
+            p
+        ));
+        assert!(near_num(
+            s.get2(1, 0).ok_or(crate::Error::InvalidArgument)?,
+            &n(0),
+            p
+        ));
+        let us = u.matmul(&s).ok_or(crate::Error::InvalidArgument)?;
+        let recon = us.matmul(&vt).ok_or(crate::Error::InvalidArgument)?;
         for i in 0..2 {
             for j in 0..2 {
                 assert!(
-                    near_num(recon.get2(i, j).unwrap(), a.get2(i, j).unwrap(), p),
+                    near_num(
+                        recon.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                        a.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                        p
+                    ),
                     "UΣV^T=A at {i},{j}"
                 );
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn exact_svd_recon_orthog() {
+    fn exact_svd_recon_orthog() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
         let n = |k: u8| ExactNum::from_u8(k, p);
-        let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(4), n(3)]).unwrap();
-        let (u, s, vt) = a.svd_decomp(p, rm).expect("SVD");
-        let us = u.matmul(&s).expect("U Σ");
-        let recon = us.matmul(&vt).expect("U Σ V^T");
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(4), n(3)])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let (u, s, vt) = a.svd_decomp(p, rm).ok_or(crate::Error::InvalidArgument)?;
+        let us = u.matmul(&s).ok_or(crate::Error::InvalidArgument)?;
+        let recon = us.matmul(&vt).ok_or(crate::Error::InvalidArgument)?;
         for i in 0..2 {
             for j in 0..2 {
                 assert!(
-                    near_num(recon.get2(i, j).unwrap(), a.get2(i, j).unwrap(), p),
+                    near_num(
+                        recon.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                        a.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                        p
+                    ),
                     "UΣV^T=A at {i},{j}"
                 );
             }
         }
-        let utu = u.transpose().matmul(&u).expect("U^T U");
+        let utu = u
+            .transpose()
+            .matmul(&u)
+            .ok_or(crate::Error::InvalidArgument)?;
         let v = vt.transpose();
-        let vtv = vt.matmul(&v).expect("V^T V");
+        let vtv = vt.matmul(&v).ok_or(crate::Error::InvalidArgument)?;
         let one = n(1);
         let zero = n(0);
         for (name, g) in [("U^T U", &utu), ("V^T V", &vtv)] {
-            assert!(near_num(g.get2(0, 0).unwrap(), &one, p), "{name}[0,0]");
-            assert!(near_num(g.get2(1, 1).unwrap(), &one, p), "{name}[1,1]");
-            assert!(near_num(g.get2(0, 1).unwrap(), &zero, p), "{name}[0,1]");
-            assert!(near_num(g.get2(1, 0).unwrap(), &zero, p), "{name}[1,0]");
+            assert!(
+                near_num(g.get2(0, 0).ok_or(crate::Error::InvalidArgument)?, &one, p),
+                "{name}[0,0]"
+            );
+            assert!(
+                near_num(g.get2(1, 1).ok_or(crate::Error::InvalidArgument)?, &one, p),
+                "{name}[1,1]"
+            );
+            assert!(
+                near_num(g.get2(0, 1).ok_or(crate::Error::InvalidArgument)?, &zero, p),
+                "{name}[0,1]"
+            );
+            assert!(
+                near_num(g.get2(1, 0).ok_or(crate::Error::InvalidArgument)?, &zero, p),
+                "{name}[1,0]"
+            );
         }
         assert!(ExactNumArray::from_shape(p, 0, 0, &[])
-            .unwrap()
+            .ok_or(crate::Error::InvalidArgument)?
             .svd_decomp(p, rm)
             .is_none());
 
-        let wide =
-            ExactNumArray::from_shape(p, 2, 3, &[n(1), n(0), n(0), n(0), n(2), n(0)]).unwrap();
-        let (uw, sw, vtw) = wide.svd_decomp(p, rm).expect("wide SVD");
-        assert_eq!(sw.get2(0, 0).unwrap().cmp(&n(2)), Some(0));
-        assert_eq!(sw.get2(1, 1).unwrap().cmp(&n(1)), Some(0));
-        let usw = uw.matmul(&sw).expect("Uw Σw");
-        let recw = usw.matmul(&vtw).expect("wide recon");
+        let wide = ExactNumArray::from_shape(p, 2, 3, &[n(1), n(0), n(0), n(0), n(2), n(0)])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let (uw, sw, vtw) = wide
+            .svd_decomp(p, rm)
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(
+            sw.get2(0, 0)
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&n(2)),
+            Some(0)
+        );
+        assert_eq!(
+            sw.get2(1, 1)
+                .ok_or(crate::Error::InvalidArgument)?
+                .compare(&n(1)),
+            Some(0)
+        );
+        let usw = uw.matmul(&sw).ok_or(crate::Error::InvalidArgument)?;
+        let recw = usw.matmul(&vtw).ok_or(crate::Error::InvalidArgument)?;
         for i in 0..2 {
             for j in 0..3 {
                 assert!(near_num(
-                    recw.get2(i, j).unwrap(),
-                    wide.get2(i, j).unwrap(),
+                    recw.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                    wide.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
                     p
                 ));
             }
         }
+        Ok(())
     }
 
-    fn eigen_diag(evals: &ExactNumArray, p: usize) -> ExactNumArray {
+    fn eigen_diag(evals: &ExactNumArray, p: usize) -> Option<ExactNumArray> {
         let n = evals.cols;
         let mut vals = Vec::with_capacity(n * n);
-        let z = ExactNum::from_u8(0, p);
         for i in 0..n {
             for j in 0..n {
                 if i == j {
                     vals.push(evals.get(i).unwrap().clone());
                 } else {
-                    vals.push(z.clone());
+                    vals.push(ExactNum::from_u8(0, p));
                 }
             }
         }
-        ExactNumArray::from_shape(p, n, n, &vals).unwrap()
+        ExactNumArray::from_shape(p, n, n, &vals)
     }
 
     #[test]
-    fn exact_eigen_sym_2x2() {
+    fn exact_eigen_sym_2x2() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
         let n = |k: u8| ExactNum::from_u8(k, p);
-        let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(1), n(2)]).unwrap();
-        let (evals, v) = a.eigen_decomp(p, rm).expect("eigen");
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(2), n(1), n(1), n(2)])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let (evals, v) = a.eigen_decomp(p, rm).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(evals.shape(), (1, 2));
-        assert!(near_num(evals.get(0).unwrap(), &n(3), p));
-        assert!(near_num(evals.get(1).unwrap(), &n(1), p));
-        let vtv = v.transpose().matmul(&v).expect("V^T V");
+        assert!(near_num(
+            evals.get(0).ok_or(crate::Error::InvalidArgument)?,
+            &n(3),
+            p
+        ));
+        assert!(near_num(
+            evals.get(1).ok_or(crate::Error::InvalidArgument)?,
+            &n(1),
+            p
+        ));
+        let vtv = v
+            .transpose()
+            .matmul(&v)
+            .ok_or(crate::Error::InvalidArgument)?;
         let one = n(1);
         let zero = n(0);
-        assert!(near_num(vtv.get2(0, 0).unwrap(), &one, p));
-        assert!(near_num(vtv.get2(1, 1).unwrap(), &one, p));
-        assert!(near_num(vtv.get2(0, 1).unwrap(), &zero, p));
-        assert!(near_num(vtv.get2(1, 0).unwrap(), &zero, p));
-        let av = a.matmul(&v).expect("A V");
-        let lam = eigen_diag(&evals, p);
-        let vl = v.matmul(&lam).expect("V Λ");
+        assert!(near_num(
+            vtv.get2(0, 0).ok_or(crate::Error::InvalidArgument)?,
+            &one,
+            p
+        ));
+        assert!(near_num(
+            vtv.get2(1, 1).ok_or(crate::Error::InvalidArgument)?,
+            &one,
+            p
+        ));
+        assert!(near_num(
+            vtv.get2(0, 1).ok_or(crate::Error::InvalidArgument)?,
+            &zero,
+            p
+        ));
+        assert!(near_num(
+            vtv.get2(1, 0).ok_or(crate::Error::InvalidArgument)?,
+            &zero,
+            p
+        ));
+        let av = a.matmul(&v).ok_or(crate::Error::InvalidArgument)?;
+        let lam = eigen_diag(&evals, p).ok_or(crate::Error::InvalidArgument)?;
+        let vl = v.matmul(&lam).ok_or(crate::Error::InvalidArgument)?;
         for i in 0..2 {
             for j in 0..2 {
                 assert!(
-                    near_num(av.get2(i, j).unwrap(), vl.get2(i, j).unwrap(), p),
+                    near_num(
+                        av.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                        vl.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                        p
+                    ),
                     "Av=λv at {i},{j}"
                 );
             }
         }
-        let vlvt = vl.matmul(&v.transpose()).expect("V Λ V^T");
+        let vlvt = vl
+            .matmul(&v.transpose())
+            .ok_or(crate::Error::InvalidArgument)?;
         for i in 0..2 {
             for j in 0..2 {
-                assert!(near_num(vlvt.get2(i, j).unwrap(), a.get2(i, j).unwrap(), p));
+                assert!(near_num(
+                    vlvt.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                    a.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                    p
+                ));
             }
         }
-        let nosym = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(0), n(1)]).unwrap();
+        let nosym = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(0), n(1)])
+            .ok_or(crate::Error::InvalidArgument)?;
         assert!(nosym.eigen_decomp(p, rm).is_none());
 
         let a3 = ExactNumArray::from_shape(
@@ -2806,38 +3183,62 @@ mod tests {
             3,
             &[n(2), n(1), n(0), n(1), n(2), n(1), n(0), n(1), n(2)],
         )
-        .unwrap();
-        let (w3, v3) = a3.eigen_decomp(p, rm).expect("eigen 3");
+        .ok_or(crate::Error::InvalidArgument)?;
+        let (w3, v3) = a3
+            .eigen_decomp(p, rm)
+            .ok_or(crate::Error::InvalidArgument)?;
         let s2 = n(2).sqrt(p, rm);
         let want = [n(2).add(&s2, p, rm), n(2), n(2).sub(&s2, p, rm)];
         for (i, wi) in want.iter().enumerate() {
-            assert!(near_num(w3.get(i).unwrap(), wi, p), "λ[{i}]");
+            assert!(
+                near_num(w3.get(i).ok_or(crate::Error::InvalidArgument)?, wi, p),
+                "λ[{i}]"
+            );
         }
-        let av3 = a3.matmul(&v3).expect("A3 V");
-        let vl3 = v3.matmul(&eigen_diag(&w3, p)).expect("V3 Λ");
+        let av3 = a3.matmul(&v3).ok_or(crate::Error::InvalidArgument)?;
+        let vl3 = v3
+            .matmul(&eigen_diag(&w3, p).ok_or(crate::Error::InvalidArgument)?)
+            .ok_or(crate::Error::InvalidArgument)?;
         for i in 0..3 {
             for j in 0..3 {
                 assert!(near_num(
-                    av3.get2(i, j).unwrap(),
-                    vl3.get2(i, j).unwrap(),
+                    av3.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
+                    vl3.get2(i, j).ok_or(crate::Error::InvalidArgument)?,
                     p
                 ));
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn exact_fft_impulse_cosine_parseval() {
+    fn exact_fft_impulse_cosine_parseval() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::ToEven;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let n = |k: u8| ExactNum::from_u8(k, p);
         let impulse = ExactNumArray::from_values(p, &[n(1), n(0), n(0), n(0)]);
-        let spec = impulse.fft(p, rm, &mut cc).expect("FFT impulse");
+        let spec = impulse
+            .fft(p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(spec.shape(), (2, 4));
         for j in 0..4 {
-            assert!(near_num(spec.get2(0, j).unwrap(), &n(1), p), "re[{j}]");
-            assert!(near_num(spec.get2(1, j).unwrap(), &n(0), p), "im[{j}]");
+            assert!(
+                near_num(
+                    spec.get2(0, j).ok_or(crate::Error::InvalidArgument)?,
+                    &n(1),
+                    p
+                ),
+                "re[{j}]"
+            );
+            assert!(
+                near_num(
+                    spec.get2(1, j).ok_or(crate::Error::InvalidArgument)?,
+                    &n(0),
+                    p
+                ),
+                "im[{j}]"
+            );
         }
 
         let n8 = ExactNum::from_u8(8, p);
@@ -2845,16 +3246,18 @@ mod tests {
         let mut cos_vals = Vec::with_capacity(8);
         for k in 0..8u8 {
             let kn = ExactNum::from_u8(k, p);
-            let ang = two_pi.mul(&kn, p, rm).div(&n8, p, rm);
+            let ang = kn.mul(&two_pi, p, rm).div(&n8, p, rm);
             cos_vals.push(ang.cos(p, rm, &mut cc));
         }
         let cosine = ExactNumArray::from_values(p, &cos_vals);
-        let cspec = cosine.fft(p, rm, &mut cc).expect("FFT cos");
+        let cspec = cosine
+            .fft(p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
         let four = n(4);
         let zero = n(0);
         for j in 0..8 {
-            let re = cspec.get2(0, j).unwrap();
-            let im = cspec.get2(1, j).unwrap();
+            let re = cspec.get2(0, j).ok_or(crate::Error::InvalidArgument)?;
+            let im = cspec.get2(1, j).ok_or(crate::Error::InvalidArgument)?;
             if j == 1 || j == 7 {
                 assert!(near_num(re, &four, p), "cos bin {j} re");
             } else {
@@ -2863,31 +3266,36 @@ mod tests {
             assert!(near_num(im, &zero, p), "cos bin {j} im");
         }
 
-        let back = cspec.ifft(p, rm, &mut cc).expect("IFFT");
+        let back = cspec
+            .ifft(p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
         for j in 0..8 {
             assert!(near_num(
-                back.get2(0, j).unwrap(),
-                cosine.get(j).unwrap(),
+                back.get2(0, j).ok_or(crate::Error::InvalidArgument)?,
+                cosine.get(j).ok_or(crate::Error::InvalidArgument)?,
                 p
             ));
-            assert!(near_num(back.get2(1, j).unwrap(), &zero, p));
+            assert!(near_num(
+                back.get2(1, j).ok_or(crate::Error::InvalidArgument)?,
+                &zero,
+                p
+            ));
         }
 
         let mut e_t = ExactNum::from_u8(0, p);
         let mut e_f = ExactNum::from_u8(0, p);
         for j in 0..8 {
-            let x = cosine.get(j).unwrap();
-            e_t = e_t.add(&x.mul(x, p, rm), p, rm);
-            let xr = cspec.get2(0, j).unwrap();
-            let xi = cspec.get2(1, j).unwrap();
-            e_f = e_f
-                .add(&xr.mul(xr, p, rm), p, rm)
-                .add(&xi.mul(xi, p, rm), p, rm);
+            let x = cosine.get(j).ok_or(crate::Error::InvalidArgument)?;
+            e_t = e_t.add(&x.sqr(p, rm), p, rm);
+            let xr = cspec.get2(0, j).ok_or(crate::Error::InvalidArgument)?;
+            let xi = cspec.get2(1, j).ok_or(crate::Error::InvalidArgument)?;
+            e_f = e_f.add(&xr.sqr(p, rm), p, rm).add(&xi.sqr(p, rm), p, rm);
         }
         let parseval = e_f.div(&n8, p, rm);
         assert!(near_num(&parseval, &e_t, p));
         assert!(ExactNumArray::from_values(p, &[n(1), n(2), n(3)])
             .fft(p, rm, &mut cc)
             .is_none());
+        Ok(())
     }
 }

@@ -1,0 +1,1 @@
+- `ExactNum::from_words` / `ExactNumNumber::from_words` (R13 follow-up fix): an exponent outside `[EXPONENT_MIN, EXPONENT_MAX]` = `±(2^62 − 1)` is now rejected (NaN / `InvalidArgument`), as documented; it used to build an out-of-range number.

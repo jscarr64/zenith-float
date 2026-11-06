@@ -2,12 +2,14 @@
 //!
 //! [`kronrod_pair`], [`gauss_kronrod_interval`], [`integrate_adaptive_gk`],
 //! and [`wynn_epsilon`] are the (7, 15) rule: Laurie’s Jacobi–Kronrod
-//! recurrence, a `|K−G|` estimate, and Wynn’s ε table. The adaptive idea
+//! recurrence, a conservative error estimate of the Kronrod value, validated
+//! against oracles, and Wynn’s ε table. The adaptive idea
 //! follows Piessens, de Doncker-Kapenga, Überhuber, and Kahaner, *QUADPACK*
 //! (Springer, 1983). The Fortran is not transcribed.
 
 pub use crate::gauss_kronrod::gauss_kronrod_interval;
 pub use crate::gauss_kronrod::integrate_adaptive_gk;
+pub use crate::gauss_kronrod::integrate_adaptive_gk_infinite;
 pub use crate::gauss_kronrod::kronrod_pair;
 pub use crate::gauss_kronrod::wynn_epsilon;
 pub use crate::gauss_kronrod::GkResult;
@@ -16,11 +18,13 @@ pub use crate::gauss_kronrod::GK_GAUSS_ORDER;
 pub use crate::gauss_kronrod::GK_KRONROD_ORDER;
 pub use crate::gauss_kronrod::GK_SUBINTERVAL_MAX;
 
+use crate::defs::Exponent;
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
 use crate::ExactNum;
 use crate::RoundingMode;
 use alloc::vec::Vec;
+use core::ops::Neg;
 
 /// Maximum number of Gauss nodes. Larger `n` is `None`.
 pub const QUADRATURE_MAX_NODES: usize = 64;
@@ -40,27 +44,39 @@ const QUADRATURE_BISECT_STEPS: usize = 16;
 /// Hard cap on tanh–sinh sample index `|k|`.
 const TANH_SINH_K_MAX: usize = 512;
 
+/// Destination width, rounded up to a word, plus two guard words.
+///
+/// The same guard as the (7, 15) rule. One extra word rounds Gauss nodes in
+/// the same place the weighted sum is formed.
 fn work_p(p: usize) -> usize {
-    p.saturating_add(WORD_BIT_SIZE)
+    let stored = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
+    stored.saturating_add(WORD_BIT_SIZE.saturating_mul(2))
 }
 
 /// Extra word so `1-x²` stays nonzero at tanh–sinh nodes until the Jacobian
-/// is smaller than a unit in the last place of a `p`-bit result.
+/// is smaller than a unit in the last place of a `p`-bit result. Never
+/// narrower than [`work_p`].
 fn work_p_de(p: usize) -> usize {
-    p.saturating_mul(2).saturating_add(WORD_BIT_SIZE)
+    let doubled = p.saturating_mul(2).saturating_add(WORD_BIT_SIZE);
+    work_p(p).max(doubled)
 }
 
 fn finite(x: &ExactNum) -> bool {
     !x.is_nan() && !x.is_inf()
 }
 
-fn tiny(p: usize, extra: i32) -> ExactNum {
-    let e = (p as i32).saturating_sub(extra).saturating_neg();
+fn tiny(p: usize, extra: Exponent) -> ExactNum {
+    let e = (p as Exponent).saturating_sub(extra).saturating_neg();
     ExactNum::from_u8(1, p).ldexp(e, p, RoundingMode::ToEven)
 }
 
-fn below(x: &ExactNum, bound: &ExactNum) -> bool {
-    x.is_zero() || x.cmp(bound) == Some(-1)
+fn below(x: &ExactNum, limit: &ExactNum) -> bool {
+    x.is_zero() || x.compare(limit) == Some(-1)
+}
+
+/// `below(|x|, limit)` without forming `|x|`.
+fn below_abs(x: &ExactNum, limit: &ExactNum) -> bool {
+    x.is_zero() || matches!(x.abs_cmp(limit), Some(-1))
 }
 
 fn factorial(n: usize, p: usize, rm: RoundingMode) -> ExactNum {
@@ -131,7 +147,7 @@ where
     }
     let two = ExactNum::from_u8(2, p);
     for _ in 0..QUADRATURE_BISECT_STEPS {
-        let m = a.add(&b, p, rm).div(&two, p, rm);
+        let m = ExactNum::add_ref(&a, &b, p, rm).div(&two, p, rm);
         let fm = f(&m, p, rm, cc);
         if !finite(&fm) {
             return None;
@@ -166,9 +182,7 @@ where
     let n_grid = want
         .saturating_mul(QUADRATURE_BRACKET_MUL)
         .saturating_add(4);
-    let step = hi
-        .sub(lo, p, rm)
-        .div(&ExactNum::from_u32(n_grid as u32, p), p, rm);
+    let step = ExactNum::sub_ref(hi, lo, p, rm).div(&ExactNum::from_u32(n_grid as u32, p), p, rm);
     let mut prev_x = lo.clone();
     let mut prev_f = f(lo, p, rm, cc);
     if !finite(&prev_f) {
@@ -179,7 +193,9 @@ where
         let x = if i == n_grid {
             hi.clone()
         } else {
-            lo.add(&step.mul(&ExactNum::from_u32(i as u32, p), p, rm), p, rm)
+            ExactNum::from_u32(i as u32, p)
+                .mul(&step, p, rm)
+                .add(lo, p, rm)
         };
         let y = f(&x, p, rm, cc);
         if !finite(&y) {
@@ -205,8 +221,8 @@ where
 
 fn map_ab(xi: &ExactNum, a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
     let two = ExactNum::from_u8(2, p);
-    let mid = a.add(b, p, rm).div(&two, p, rm);
-    let half = b.sub(a, p, rm).div(&two, p, rm);
+    let mid = ExactNum::add_ref(a, b, p, rm).div(&two, p, rm);
+    let half = ExactNum::sub_ref(b, a, p, rm).div(&two, p, rm);
     mid.add(&half.mul(xi, p, rm), p, rm)
 }
 
@@ -225,12 +241,11 @@ fn gauss_legendre_nodes(
     let den = ExactNum::from_u32((4 * n + 2) as u32, wrk);
     let n_f = ExactNum::from_u32(nu, wrk);
     let one = ExactNum::from_u8(1, wrk);
-    let two = ExactNum::from_u8(2, wrk);
     let mut nodes = Vec::with_capacity(n);
     for k in 1..=n {
         let num = ExactNum::from_u32((4 * k - 1) as u32, wrk);
-        let theta = pi
-            .mul(&num, wrk, RoundingMode::None)
+        let theta = num
+            .mul(&pi, wrk, RoundingMode::None)
             .div(&den, wrk, RoundingMode::None);
         let x0 = theta.cos(wrk, RoundingMode::None, cc);
         let x = newton(
@@ -238,8 +253,9 @@ fn gauss_legendre_nodes(
             |x, p, rm, _cc| {
                 let pn = x.legendre_p(nu, p, rm);
                 let pnm = if nu == 0 { ExactNum::new(p) } else { x.legendre_p(nu - 1, p, rm) };
-                let d = one.sub(&x.mul(x, p, rm), p, rm);
-                n_f.mul(&pnm.sub(&x.mul(&pn, p, rm), p, rm), p, rm)
+                let d = x.sqr(p, rm).neg().add(&one, p, rm);
+                pnm.sub(&pn.mul(x, p, rm), p, rm)
+                    .mul(&n_f, p, rm)
                     .div(&d, p, rm)
             },
             x0,
@@ -253,11 +269,14 @@ fn gauss_legendre_nodes(
         } else {
             x.legendre_p(nu - 1, wrk, RoundingMode::None)
         };
-        let d = one.sub(&x.mul(&x, wrk, RoundingMode::None), wrk, RoundingMode::None);
-        let dp = n_f
+        let d = x
+            .sqr(wrk, RoundingMode::None)
+            .neg()
+            .add(&one, wrk, RoundingMode::None);
+        let dp = ExactNum::from_u32(nu, wrk)
             .mul(
                 &pnm.sub(
-                    &x.mul(&pn, wrk, RoundingMode::None),
+                    &pn.mul(&x, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                 ),
@@ -265,12 +284,8 @@ fn gauss_legendre_nodes(
                 RoundingMode::None,
             )
             .div(&d, wrk, RoundingMode::None);
-        let w = two.div(
-            &d.mul(
-                &dp.mul(&dp, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            ),
+        let w = ExactNum::from_u8(2, wrk).div(
+            &d.mul(&dp.sqr(wrk, RoundingMode::None), wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
@@ -300,15 +315,13 @@ pub fn gauss_legendre<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !finite(a) || !finite(b) || a.cmp(b) != Some(-1) {
+    if !finite(a) || !finite(b) || a.compare(b) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
     let nodes = gauss_legendre_nodes(n, wrk, RoundingMode::None, cc)?;
     let two = ExactNum::from_u8(2, wrk);
-    let half = b
-        .sub(a, wrk, RoundingMode::None)
-        .div(&two, wrk, RoundingMode::None);
+    let half = ExactNum::sub_ref(b, a, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
     let mut acc = ExactNum::new(wrk);
     for (xi, wi) in &nodes {
         let x = map_ab(xi, a, b, wrk, RoundingMode::None);
@@ -316,11 +329,7 @@ where
         if !finite(&y) {
             return None;
         }
-        acc = acc.add(
-            &wi.mul(&y, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
+        acc = acc.add(&y.mul(wi, wrk, RoundingMode::None), wrk, RoundingMode::None);
     }
     let mut out = half.mul(&acc, wrk, RoundingMode::None);
     let _ = out.set_precision(p, rm);
@@ -341,39 +350,35 @@ where
 {
     let wrk = work_p_de(p);
     let two = ExactNum::from_u8(2, wrk);
-    let half = b
-        .sub(a, wrk, RoundingMode::None)
-        .div(&two, wrk, RoundingMode::None);
-    let mid = a
-        .add(b, wrk, RoundingMode::None)
-        .div(&two, wrk, RoundingMode::None);
+    let half = ExactNum::sub_ref(b, a, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
+    let mid = ExactNum::add_ref(a, b, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
     let pi = cc.pi(wrk, RoundingMode::None);
     let half_pi = pi.div(&two, wrk, RoundingMode::None);
     let wmin = tiny(wrk, 8);
     let mut acc = ExactNum::new(wrk);
     for k in 0..TANH_SINH_K_MAX {
-        let t = h.mul(&ExactNum::from_u32(k as u32, wrk), wrk, RoundingMode::None);
+        let t = ExactNum::from_u32(k as u32, wrk).mul(h, wrk, RoundingMode::None);
         let (sh, ch) = t.sinh_cosh(wrk, RoundingMode::None, cc);
-        let u = half_pi.mul(&sh, wrk, RoundingMode::None);
+        let u = sh.mul(&half_pi, wrk, RoundingMode::None);
         let (su, cu) = u.sinh_cosh(wrk, RoundingMode::None, cc);
         if !finite(&cu) || cu.is_zero() {
             break;
         }
         let xi = su.div(&cu, wrk, RoundingMode::None);
-        let w = half_pi.mul(&ch, wrk, RoundingMode::None).div(
-            &cu.mul(&cu, wrk, RoundingMode::None),
+        let w = ch.mul(&half_pi, wrk, RoundingMode::None).div(
+            &cu.sqr(wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
         if !finite(&w) {
             break;
         }
-        if k > 0 && below(&w.abs(), &wmin) {
+        if k > 0 && below_abs(&w, &wmin) {
             break;
         }
         let mut eval = |s: &ExactNum| {
-            let x = mid.add(
-                &half.mul(s, wrk, RoundingMode::None),
+            let x = ExactNum::mul_ref(&half, s, wrk, RoundingMode::None).add(
+                &mid,
                 wrk,
                 RoundingMode::None,
             );
@@ -387,7 +392,7 @@ where
             break;
         }
         acc = acc.add(
-            &w.mul(&y0, wrk, RoundingMode::None),
+            &y0.mul(&w, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
@@ -425,7 +430,7 @@ pub fn tanh_sinh<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !finite(a) || !finite(b) || a.cmp(b) != Some(-1) {
+    if !finite(a) || !finite(b) || a.compare(b) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
@@ -449,7 +454,7 @@ where
         }
         let s = tanh_sinh_sum(&mut f, a, b, &h, p, rm, cc)?;
         if let Some(pr) = &prev {
-            let err = s.sub(pr, p, rm).abs();
+            let err = ExactNum::sub_ref(&s, pr, p, rm).abs();
             if below(&err, &guard) {
                 return Some(s);
             }
@@ -484,7 +489,7 @@ fn gauss_laguerre_nodes(
     )?;
     let n_f = ExactNum::from_u32(nu, wrk);
     let np1 = ExactNum::from_u32((n + 1) as u32, wrk);
-    let np1sq = np1.mul(&np1, wrk, RoundingMode::None);
+    let np1sq = ExactNum::from_u32((n + 1) as u32, wrk).mul(&np1, wrk, RoundingMode::None);
     let mut nodes = Vec::with_capacity(n);
     for (a, b) in brackets {
         let x0 = bisect_zero(
@@ -503,7 +508,7 @@ fn gauss_laguerre_nodes(
                 }
                 let ln = x.laguerre(n, p, rm);
                 let lnm = if n == 0 { ExactNum::new(p) } else { x.laguerre(n - 1, p, rm) };
-                n_f.mul(&ln.sub(&lnm, p, rm), p, rm).div(x, p, rm)
+                ln.sub(&lnm, p, rm).mul(&n_f, p, rm).div(x, p, rm)
             },
             x0,
             wrk,
@@ -511,12 +516,10 @@ fn gauss_laguerre_nodes(
             cc,
         )?;
         let ln1 = x.laguerre(n + 1, wrk, RoundingMode::None);
-        let w = x.div(
-            &np1sq.mul(
-                &ln1.mul(&ln1, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            ),
+        let w = ExactNum::div_ref(
+            &x,
+            &ln1.sqr(wrk, RoundingMode::None)
+                .mul(&np1sq, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         );
@@ -550,11 +553,7 @@ where
         if !finite(&y) {
             return None;
         }
-        acc = acc.add(
-            &wi.mul(&y, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
+        acc = acc.add(&y.mul(wi, wrk, RoundingMode::None), wrk, RoundingMode::None);
     }
     let _ = acc.set_precision(p, rm);
     Some(acc)
@@ -571,7 +570,6 @@ fn gauss_hermite_nodes(
     }
     let wrk = work_p(p);
     let nu = n as u32;
-    let two = ExactNum::from_u8(2, wrk);
     let hi = ExactNum::from_u32((4 * n + 2) as u32, wrk).sqrt(wrk, RoundingMode::None);
     let zero = ExactNum::new(wrk);
     let want_pos = n / 2;
@@ -585,11 +583,11 @@ fn gauss_hermite_nodes(
         cc,
     )?;
     let n_f = ExactNum::from_u32(nu, wrk);
-    let nsq = n_f.mul(&n_f, wrk, RoundingMode::None);
+    let nsq = ExactNum::from_u32(nu, wrk).mul(&n_f, wrk, RoundingMode::None);
     let fact = factorial(n, wrk, RoundingMode::None);
     let pi = cc.pi(wrk, RoundingMode::None);
     let sqrt_pi = pi.sqrt(wrk, RoundingMode::None);
-    let two_pow = ExactNum::from_u8(1, wrk).ldexp((n as i32) - 1, wrk, RoundingMode::None);
+    let two_pow = ExactNum::from_u8(1, wrk).ldexp((n as Exponent) - 1, wrk, RoundingMode::None);
     let scale = two_pow
         .mul(&fact, wrk, RoundingMode::None)
         .mul(&sqrt_pi, wrk, RoundingMode::None);
@@ -599,12 +597,10 @@ fn gauss_hermite_nodes(
         } else {
             x.hermite_h(n - 1, wrk, RoundingMode::None)
         };
-        scale.div(
-            &nsq.mul(
-                &hm.mul(&hm, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            ),
+        ExactNum::div_ref(
+            &scale,
+            &hm.sqr(wrk, RoundingMode::None)
+                .mul(&nsq, wrk, RoundingMode::None),
             wrk,
             RoundingMode::None,
         )
@@ -632,7 +628,9 @@ fn gauss_hermite_nodes(
                 if n == 0 {
                     return ExactNum::new(p);
                 }
-                two.mul(&n_f, p, rm).mul(&x.hermite_h(n - 1, p, rm), p, rm)
+                ExactNum::from_u8(2, p)
+                    .mul(&n_f, p, rm)
+                    .mul(&x.hermite_h(n - 1, p, rm), p, rm)
             },
             x0,
             wrk,
@@ -675,11 +673,7 @@ where
         if !finite(&y) {
             return None;
         }
-        acc = acc.add(
-            &wi.mul(&y, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
+        acc = acc.add(&y.mul(wi, wrk, RoundingMode::None), wrk, RoundingMode::None);
     }
     let _ = acc.set_precision(p, rm);
     Some(acc)
@@ -695,18 +689,18 @@ mod tests {
     }
 
     #[test]
-    fn quadrature_gl_tanh_laguerre_hermite() {
+    fn quadrature_gl_tanh_laguerre_hermite() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let a = ExactNum::from_i64(-1, p);
         let b = ExactNum::from_u8(1, p);
         let two = ExactNum::from_u8(2, p);
         let three = ExactNum::from_u8(3, p);
 
-        let gl = gauss_legendre(|x, p, rm, _cc| x.mul(x, p, rm), &a, &b, 10, p, rm, &mut cc)
-            .expect("gl x^2");
-        let two_thirds = two.div(&three, p, rm);
-        assert_eq!(gl.cmp(&two_thirds), Some(0));
+        let gl = gauss_legendre(|x, p, rm, _cc| x.sqr(p, rm), &a, &b, 10, p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        let two_thirds = ExactNum::from_u8(2, p).div(&three, p, rm);
+        assert_eq!(gl.compare(&two_thirds), Some(0));
 
         const GL_EXACT_DEG: u32 = 38;
         const GL_EXACT_NODES: usize = 20;
@@ -725,17 +719,15 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("gl x^38");
+        .ok_or(crate::Error::InvalidArgument)?;
         let thirty_nine = ExactNum::from_u32(GL_EXACT_DEG + 1, p);
-        let two_over = two.div(&thirty_nine, p, rm);
-        assert_eq!(gl38.cmp(&two_over), Some(0));
+        let two_over = ExactNum::from_u8(2, p).div(&thirty_nine, p, rm);
+        assert_eq!(gl38.compare(&two_over), Some(0));
 
         let ts = tanh_sinh(
             |x, p, rm, _cc| {
                 let one = ExactNum::from_u8(1, p);
-                one.sub(&x.mul(x, p, rm), p, rm)
-                    .sqrt(p, rm)
-                    .reciprocal(p, rm)
+                one.sub(&x.sqr(p, rm), p, rm).sqrt(p, rm).reciprocal(p, rm)
             },
             &a,
             &b,
@@ -743,20 +735,39 @@ mod tests {
             rm,
             &mut cc,
         )
-        .expect("tanh-sinh arcsine");
+        .ok_or(crate::Error::InvalidArgument)?;
         let pi = cc.pi(p, rm);
-        assert_eq!(ts.cmp(&pi), Some(0));
+        assert_eq!(ts.compare(&pi), Some(0));
 
-        let lag = gauss_laguerre(|x, p, rm, _cc| x.mul(x, p, rm), 10, p, rm, &mut cc)
-            .expect("laguerre x^2");
-        assert_eq!(lag.cmp(&two), Some(0));
+        let lag = gauss_laguerre(|x, p, rm, _cc| x.sqr(p, rm), 10, p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(lag.compare(&two), Some(0));
 
         let gh = gauss_hermite(|_x, p, _rm, _cc| ExactNum::from_u8(1, p), 1, p, rm, &mut cc)
-            .expect("hermite 1");
+            .ok_or(crate::Error::InvalidArgument)?;
         let sqrt_pi = pi.sqrt(p, rm);
-        assert_eq!(gh.cmp(&sqrt_pi), Some(0));
+        assert_eq!(gh.compare(&sqrt_pi), Some(0));
 
-        assert!(gauss_legendre(|x, _p, _rm, _cc| x.clone(), &b, &a, 4, p, rm, &mut cc).is_none());
-        assert!(gauss_legendre(|x, _p, _rm, _cc| x.clone(), &a, &b, 0, p, rm, &mut cc).is_none());
+        assert!(gauss_legendre(
+            |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
+            &b,
+            &a,
+            4,
+            p,
+            rm,
+            &mut cc
+        )
+        .is_none());
+        assert!(gauss_legendre(
+            |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
+            &a,
+            &b,
+            0,
+            p,
+            rm,
+            &mut cc
+        )
+        .is_none());
+        Ok(())
     }
 }

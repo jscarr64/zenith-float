@@ -47,9 +47,11 @@ impl ExactNumNumber {
         }
 
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len());
+        // The retry budget counts from the working start: an argument wider than `p` must not exhaust it at once.
+        let p_base = p.max(self.mantissa_max_bit_len());
+        let mut p_wrk = p_base;
 
-        compute_small_exp!(self, self.exponent() as isize * 2 - 2, false, p_wrk, p, rm);
+        compute_small_exp!(self, self.exponent() * 2 - 2, false, p_wrk, p, rm);
 
         let mut additional_prec = 8;
         if self.exponent() == 0 {
@@ -78,7 +80,7 @@ impl ExactNumNumber {
                 break Ok(ret);
             }
 
-            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p_base)?;
         }
     }
 }
@@ -91,15 +93,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_arcsine() {
-        let mut cc = Consts::new().unwrap();
+    fn test_arcsine() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
 
         let rm = RoundingMode::ToEven;
         let p = 64;
-        let mut n1 = ExactNumNumber::from_word(4294967295, p).unwrap();
+        let mut n1 = ExactNumNumber::from_word(4294967295, p)?;
         n1.set_exponent(0);
         //println!("{}", n1.format(crate::Radix::Dec, RoundingMode::None).unwrap());
-        let _n2 = n1.asin(p, rm, &mut cc).unwrap();
+        let _n2 = n1.asin(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Dec, rm).unwrap());
 
         // asymptotic & extrema testing
@@ -110,46 +112,39 @@ mod tests {
             p,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
-        let n2 = n1.asin(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A200000000000000004D3C337F7C8D419EBBFC39B4BEC14AF6_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        )?;
+        let n2 = n1.asin(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A200000000000000004D3C337F7C8D419EBBFC39B4BEC14AF6_e+0", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         assert!(n2.cmp(&n3) == 0);
 
         // near zero
-        let n1 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A200000000000000004D3C337F7C8D419EBBFC39B4BEC14AF6_e-10", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let n2 = n1.asin(p, rm, &mut cc).unwrap();
-        let n3 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A2A55DE7312DF295F5AB0362F0A77F89C5756A9380CF056D90_e-10", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let n1 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A200000000000000004D3C337F7C8D419EBBFC39B4BEC14AF6_e-10", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let n2 = n1.asin(p, rm, &mut cc)?;
+        let n3 = ExactNumNumber::parse("1.921FB54442D18469898CC51701B839A2A55DE7312DF295F5AB0362F0A77F89C5756A9380CF056D90_e-10", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         //println!("{:?}", n2.format(crate::Radix::Hex, rm).unwrap());
 
         assert!(n2.cmp(&n3) == 0);
 
-        let d1 = ExactNumNumber::max_value(p).unwrap();
-        let d2 = ExactNumNumber::min_value(p).unwrap();
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
+        let d1 = ExactNumNumber::max_value(p)?;
+        let d2 = ExactNumNumber::min_value(p)?;
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
 
-        let mut half_pi = cc.pi_num(p, RoundingMode::ToEven).unwrap();
+        let mut half_pi = cc.pi_num(p, RoundingMode::ToEven)?;
         half_pi.set_exponent(1);
 
         assert!(d1.asin(p, rm, &mut cc).is_err());
         assert!(d2.asin(p, rm, &mut cc).is_err());
-        assert!(d3.asin(p, rm, &mut cc).unwrap().cmp(&d3) == 0);
-        assert!(zero.asin(p, rm, &mut cc).unwrap().is_zero());
-        assert!(ONE.asin(p, rm, &mut cc).unwrap().cmp(&half_pi) == 0);
-        assert!(
-            ONE.neg()
-                .unwrap()
-                .asin(p, rm, &mut cc)
-                .unwrap()
-                .cmp(&half_pi.neg().unwrap())
-                == 0
-        );
+        assert!(d3.asin(p, rm, &mut cc)?.cmp(&d3) == 0);
+        assert!(zero.asin(p, rm, &mut cc)?.is_zero());
+        assert!(ONE.asin(p, rm, &mut cc)?.cmp(&half_pi) == 0);
+        assert!(ONE.neg()?.asin(p, rm, &mut cc)?.cmp(&half_pi.neg()?) == 0);
 
         // subnormal arg
-        let n1 = random_subnormal(p);
-        assert!(n1.asin(p, rm, &mut cc).unwrap().cmp(&n1) == 0);
+        let n1 = random_subnormal(p)?;
+        assert!(n1.asin(p, rm, &mut cc)?.cmp(&n1) == 0);
+        Ok(())
     }
 }

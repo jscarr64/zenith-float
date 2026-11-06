@@ -52,25 +52,36 @@ pub enum ErrAlgo<'a> {
 pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
     match algo {
         ErrAlgo::Log(arg, c, emin) => {
-            if arg.inexact() && arg.is_positive() {
+            if arg.inexact_accumulated() && arg.is_positive() {
                 c + compute_added_err_near_one(arg, emin)
             } else {
                 0
             }
         }
         ErrAlgo::Log2(base, arg, emin) => {
-            if (arg.inexact() || base.inexact()) && arg.is_positive() && base.is_positive() {
-                let y = if base.inexact() { compute_added_err_near_one(base, emin) } else { 0 };
-                let x = if arg.inexact() { compute_added_err_near_one(arg, emin) } else { 0 };
+            if (arg.inexact_accumulated() || base.inexact_accumulated())
+                && arg.is_positive()
+                && base.is_positive()
+            {
+                let y = if base.inexact_accumulated() {
+                    compute_added_err_near_one(base, emin)
+                } else {
+                    0
+                };
+                let x = if arg.inexact_accumulated() {
+                    compute_added_err_near_one(arg, emin)
+                } else {
+                    0
+                };
                 5 + x.max(y)
             } else {
                 0
             }
         }
         ErrAlgo::Pow(base, arg, emin) => {
-            if arg.inexact() || base.inexact() {
+            if arg.inexact_accumulated() || base.inexact_accumulated() {
                 if let Some(earg) = arg.exponent() {
-                    let v = if !base.inexact() || earg <= 0 {
+                    let v = if !base.inexact_accumulated() || earg <= 0 {
                         0
                     } else {
                         let n = compute_added_err_near_one(base, emin);
@@ -89,7 +100,7 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
             }
         }
         ErrAlgo::Trig(arg, p, fun, cc, emin) => {
-            if arg.inexact() {
+            if arg.inexact_accumulated() {
                 if let Some(e) = arg.exponent() {
                     let err = if e < 1 {
                         0
@@ -182,15 +193,15 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
             }
         }
         ErrAlgo::Asin(arg, emin) => {
-            if arg.inexact() && arg.exponent().unwrap_or(1) < 1 {
+            if arg.inexact_accumulated() && arg.exponent().unwrap_or(1) < 1 {
                 let n = compute_added_err_near_one(arg, emin);
-                2 + (n + 1) / 2
+                2 + n.div_ceil(2)
             } else {
                 0
             }
         }
         ErrAlgo::Acos(arg, emin) => {
-            if arg.inexact() && arg.exponent().unwrap_or(1) < 1 {
+            if arg.inexact_accumulated() && arg.exponent().unwrap_or(1) < 1 {
                 let n = compute_added_err_near_one(arg, emin);
                 2 + if arg.is_positive() { n } else { n / 2 }
             } else {
@@ -198,14 +209,14 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
             }
         }
         ErrAlgo::Acosh(arg, emin) => {
-            if arg.inexact() && arg.is_positive() && arg.exponent().unwrap_or(0) >= 1 {
+            if arg.inexact_accumulated() && arg.is_positive() && arg.exponent().unwrap_or(0) >= 1 {
                 2 + compute_added_err_near_one(arg, emin)
             } else {
                 0
             }
         }
         ErrAlgo::Atanh(arg, emin) => {
-            if arg.inexact() && arg.exponent().unwrap_or(1) < 1 {
+            if arg.inexact_accumulated() && arg.exponent().unwrap_or(1) < 1 {
                 2 + compute_added_err_near_one(arg, emin)
             } else {
                 0
@@ -245,29 +256,44 @@ pub fn check_complex_exponent_range(
     emin: Exponent,
     emax: Exponent,
 ) -> crate::ExactComplex {
+    let (re, im) = z.into_parts();
     crate::ExactComplex::new(
-        check_exponent_range(z.re().clone(), emin, emax),
-        check_exponent_range(z.im().clone(), emin, emax),
+        check_exponent_range(re, emin, emax),
+        check_exponent_range(im, emin, emax),
     )
 }
 
-fn part_cancel(a: &ExactNum, b: &ExactNum, r: &ExactNum, is_add: bool) -> Option<usize> {
+/// `Ok(None)`: no cancellation. `Err(InvalidArgument)`: the cancelled-bit count is not a representable
+/// working precision (32-bit `usize`), so the result cannot be retried and must not be accepted.
+fn part_cancel(
+    a: &ExactNum,
+    b: &ExactNum,
+    r: &ExactNum,
+    is_add: bool,
+) -> Result<Option<usize>, crate::Error> {
     let (Some(e1), Some(e2), Some(e3)) = (a.exponent(), b.exponent(), r.exponent()) else {
-        return None;
+        return Ok(None);
     };
     let (Some(s1), Some(s2)) = (a.sign(), b.sign()) else {
-        return None;
+        return Ok(None);
     };
     let opp = if is_add { s1 != s2 } else { s1 == s2 };
-    if (e1 as isize - e2 as isize).abs() <= 1 && opp {
-        Some((e1.max(e2) as isize - e3 as isize).unsigned_abs() + 1)
+    if (e1 - e2).abs() <= 1 && opp {
+        // A zero result has exponent 0, so the gap can exceed a 32-bit `usize`: that is an error.
+        e1.max(e2)
+            .checked_sub(e3)
+            .and_then(|gap| usize::try_from(gap.unsigned_abs()).ok())
+            .and_then(|g| g.checked_add(1))
+            .map(Some)
+            .ok_or(crate::Error::InvalidArgument)
     } else {
-        None
+        Ok(None)
     }
 }
 
 /// Extra working bits from cancellation in the **real** and **imaginary** parts,
-/// independently. Either side may be `None` when that part did not cancel.
+/// independently. Either side may be `None` when that part did not cancel. An error means a count that
+/// is not a representable working precision; `cexpr!` then returns NaN with that error.
 ///
 /// `cexpr!` stores these in two `errs[]` slots so a large imaginary cancellation
 /// cannot hide a smaller real one (or the reverse).
@@ -277,22 +303,26 @@ pub fn complex_cancel_bits(
     arg2: &crate::ExactComplex,
     ret: &crate::ExactComplex,
     is_add: bool,
-) -> (Option<usize>, Option<usize>) {
+) -> Result<(Option<usize>, Option<usize>), crate::Error> {
     if !arg1.inexact() && !arg2.inexact() {
-        return (None, None);
+        return Ok((None, None));
     }
-    (
-        part_cancel(arg1.re(), arg2.re(), ret.re(), is_add),
-        part_cancel(arg1.im(), arg2.im(), ret.im(), is_add),
-    )
+    Ok((
+        part_cancel(arg1.re(), arg2.re(), ret.re(), is_add)?,
+        part_cancel(arg1.im(), arg2.im(), ret.im(), is_add)?,
+    ))
 }
 
 #[cfg(test)]
 mod tests {
 
+    fn one() -> crate::ExactNum {
+        crate::ExactNum::from_word(1, crate::defs::DEFAULT_P)
+    }
+
     use crate::{
-        ext::ONE, mantissa::Mantissa, num::ExactNumNumber, Consts, Exponent, RoundingMode, Sign,
-        Word, EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS, NAN, WORD_BIT_SIZE, WORD_MAX,
+        mantissa::Mantissa, num::ExactNumNumber, Consts, Exponent, RoundingMode, Sign, Word,
+        EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS, NAN, WORD_BIT_SIZE, WORD_MAX,
         WORD_SIGNIFICANT_BIT,
     };
 
@@ -363,7 +393,9 @@ mod tests {
 
         if m2.add_ulp() {
             assert!(e < EXPONENT_MAX);
-            *m2.digits_mut().iter_mut().last().unwrap() = WORD_SIGNIFICANT_BIT;
+            if let Some(top) = m2.digits_mut().iter_mut().last() {
+                *top = WORD_SIGNIFICANT_BIT;
+            }
             e += 1;
         }
 
@@ -372,8 +404,12 @@ mod tests {
         (n1.into(), n2.into())
     }
 
-    fn gen_num_pair(p: usize, e: Exponent, near1: i32) -> (ExactNum, ExactNum) {
-        let mut m1 = Mantissa::random_normal(p).unwrap();
+    fn gen_num_pair(
+        p: usize,
+        e: Exponent,
+        near1: i32,
+    ) -> Result<(ExactNum, ExactNum), crate::Error> {
+        let mut m1 = Mantissa::random_normal(p)?;
 
         if near1 != 0 {
             let mut bits = crate::common::test_rng::random::<usize>() % (p - 1) + 1;
@@ -381,25 +417,29 @@ mod tests {
 
             while bits >= WORD_BIT_SIZE {
                 if near1.is_negative() {
-                    *iter.next().unwrap() = WORD_MAX;
+                    *iter.next().ok_or(crate::Error::InvalidArgument)? = WORD_MAX;
                 } else {
-                    *iter.next().unwrap() = 0;
+                    *iter.next().ok_or(crate::Error::InvalidArgument)? = 0;
                 }
                 bits -= WORD_BIT_SIZE;
             }
 
             if bits > 0 {
                 if near1.is_negative() {
-                    *iter.next().unwrap() |= WORD_MAX << (WORD_BIT_SIZE - bits);
+                    *iter.next().ok_or(crate::Error::InvalidArgument)? |=
+                        WORD_MAX << (WORD_BIT_SIZE - bits);
                 } else {
-                    *iter.next().unwrap() &= WORD_MAX >> bits;
+                    *iter.next().ok_or(crate::Error::InvalidArgument)? &= WORD_MAX >> bits;
                 }
             }
 
-            *m1.digits_mut().iter_mut().last().unwrap() |= WORD_SIGNIFICANT_BIT;
+            *m1.digits_mut()
+                .iter_mut()
+                .last()
+                .ok_or(crate::Error::InvalidArgument)? |= WORD_SIGNIFICANT_BIT;
         }
 
-        gen_pair(m1, e)
+        Ok(gen_pair(m1, e))
     }
 
     fn gen_num_pair_trig(
@@ -408,8 +448,8 @@ mod tests {
         near_pi: i32,
         cc: &mut Consts,
         add_half_pi: bool,
-    ) -> (ExactNum, ExactNum) {
-        let mut m1 = Mantissa::random_normal(p).unwrap();
+    ) -> Result<(ExactNum, ExactNum), crate::Error> {
+        let mut m1 = Mantissa::random_normal(p)?;
 
         if near_pi != 0 {
             let bits = crate::common::test_rng::random::<usize>() % (p - 1) + 1;
@@ -419,7 +459,10 @@ mod tests {
             let mut pi = cc.pi(p, pirm);
             pi.set_exponent(0);
             let pi_rounded = pi.round(bits, pirm);
-            let pi_digits = pi_rounded.mantissa_digits().unwrap();
+            let mut pi = cc.pi(p, pirm);
+            let pi_digits = pi_rounded
+                .mantissa_digits()
+                .ok_or(crate::Error::InvalidArgument)?;
 
             let l = m1.len();
             m1.digits_mut()[l - pi_digits.len() + 1..].copy_from_slice(&pi_digits[1..]);
@@ -433,16 +476,16 @@ mod tests {
                 let n = ExactNumNumber::from_raw_unchecked(m1, Sign::Pos, e, true);
                 pi.set_exponent(1);
                 let n = pi.add(&n.into(), p, RoundingMode::ToZero);
-                let w = n.as_raw_parts().unwrap().0;
-                m1 = Mantissa::from_words(w.len() * WORD_BIT_SIZE, w).unwrap();
+                let w = n.value_parts().ok_or(crate::Error::InvalidArgument)?.0;
+                m1 = Mantissa::from_words(w.len() * WORD_BIT_SIZE, w)?;
             }
         }
 
-        gen_pair(m1, e)
+        Ok(gen_pair(m1, e))
     }
 
-    fn calc_err(mut d1: ExactNum, mut d2: ExactNum, p: usize) -> usize {
-        if d1 == d2 {
+    fn calc_err(mut d1: ExactNum, mut d2: ExactNum, p: usize) -> Result<usize, crate::Error> {
+        Ok(if d1 == d2 {
             0
         } else {
             if let (Some(e1), Some(e2)) = (d1.exponent(), d2.exponent()) {
@@ -452,13 +495,13 @@ mod tests {
                 let a = d1
                     .sub(&d2, p, RoundingMode::None)
                     .exponent()
-                    .unwrap()
+                    .ok_or(crate::Error::InvalidArgument)?
                     .unsigned_abs() as usize;
                 p.saturating_sub(a)
             } else {
                 0
             }
-        }
+        })
     }
 
     fn err_exp_samples(ernd: Exponent) -> [Exponent; 5] {
@@ -474,8 +517,12 @@ mod tests {
     const ERR_TEST_OUTER: usize = 10;
 
     #[test]
-    fn test_compute_added_err() {
-        let mut cc = Consts::new().unwrap();
+    fn test_compute_added_err() -> Result<(), crate::Error> {
+        // Own stream: random_dist tests reseed the shared generator in parallel.
+        crate::common::test_rng::reseed_random_this_thread(
+            crate::common::test_rng::DEFAULT_RANDOM_SEED,
+        );
+        let mut cc = Consts::new()?;
         let emin = EXPONENT_MIN;
 
         for _ in 0..ERR_TEST_OUTER {
@@ -491,7 +538,7 @@ mod tests {
                         let p =
                             (crate::common::test_rng::random::<usize>() % 10 + 1) * WORD_BIT_SIZE;
 
-                        let (n1, n2) = gen_num_pair(p, e, near1);
+                        let (n1, n2) = gen_num_pair(p, e, near1)?;
 
                         //println!("n1 {:?}", n1);
                         //println!("n2 {:?}", n2);
@@ -499,7 +546,7 @@ mod tests {
                         // reciprocal
                         let d1 = ExactNum::reciprocal(&n1, p, RoundingMode::None);
                         let d2 = ExactNum::reciprocal(&n2, p, RoundingMode::None);
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("recip {:?}", err);
                         assert!(err <= 2);
@@ -507,7 +554,7 @@ mod tests {
                         // sqrt
                         let d1 = ExactNum::sqrt(&n1, p, RoundingMode::None);
                         let d2 = ExactNum::sqrt(&n2, p, RoundingMode::None);
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("sqrt {:?}", err);
                         assert!(err <= 1);
@@ -515,7 +562,7 @@ mod tests {
                         // cbrt
                         let d1 = ExactNum::cbrt(&n1, p, RoundingMode::None);
                         let d2 = ExactNum::cbrt(&n2, p, RoundingMode::None);
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("cbrt {:?}", err);
                         assert!(err <= 1);
@@ -525,7 +572,7 @@ mod tests {
                         let d2 = ExactNum::ln(&n2, p, RoundingMode::None, &mut cc);
 
                         let err_estimate = compute_added_err(ErrAlgo::Log(&n1, 2, emin));
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("ln {:?} {:?}", err, err_estimate);
                         assert!(err <= err_estimate);
@@ -535,7 +582,7 @@ mod tests {
                         let d2 = ExactNum::log2(&n2, p, RoundingMode::None, &mut cc);
 
                         let err_estimate = compute_added_err(ErrAlgo::Log(&n1, 3, emin));
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("log2 {:?} {:?}", err, err_estimate);
                         assert!(err <= err_estimate);
@@ -545,7 +592,7 @@ mod tests {
                         let d2 = ExactNum::log10(&n2, p, RoundingMode::None, &mut cc);
 
                         let err_estimate = compute_added_err(ErrAlgo::Log(&n1, 6, emin));
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("log10 {:?} {:?}", err, err_estimate);
                         assert!(err <= err_estimate);
@@ -559,7 +606,7 @@ mod tests {
 
                                 for near12 in near1set2 {
                                     let e2 = e2 * esign2;
-                                    let (b1, b2) = gen_num_pair(p, e2, near12);
+                                    let (b1, b2) = gen_num_pair(p, e2, near12)?;
                                     let mut bc = [b1, b2];
 
                                     for (i1, i2) in [(0, 0), (0, 1), (1, 0), (1, 1)] {
@@ -602,7 +649,7 @@ mod tests {
 
                                             let err_estimate =
                                                 compute_added_err(ErrAlgo::Log2(b, n, emin));
-                                            let err = calc_err(d1, d2, p);
+                                            let err = calc_err(d1, d2, p)?;
 
                                             let err_estimate = 1.max(err_estimate);
 
@@ -621,10 +668,10 @@ mod tests {
 
                                             let err_estimate =
                                                 compute_added_err(ErrAlgo::Pow(b, n, emin));
-                                            let err = calc_err(d1, d2, p);
+                                            let err = calc_err(d1, d2, p)?;
 
-                                            if !(b.abs().cmp(&ONE) == Some(0)
-                                                || bb.abs().cmp(&ONE) == Some(0))
+                                            if !(b.abs_cmp(&one()) == Some(0)
+                                                || bb.abs_cmp(&one()) == Some(0))
                                             {
                                                 let err_estimate = 1.max(err_estimate);
                                                 //println!("pow {:?} {:?}", err, err_estimate);
@@ -640,7 +687,7 @@ mod tests {
                         let d1 = ExactNum::exp(&n1, p, RoundingMode::None, &mut cc);
                         let d2 = ExactNum::exp(&n2, p, RoundingMode::None, &mut cc);
 
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("exp {:?}", err);
                         assert!(err <= EXPONENT_BIT_SIZE + 1);
@@ -649,7 +696,7 @@ mod tests {
                         let d1 = ExactNum::sinh(&n1, p, RoundingMode::None, &mut cc);
                         let d2 = ExactNum::sinh(&n2, p, RoundingMode::None, &mut cc);
 
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("sinh {:?}", err);
                         assert!(err <= EXPONENT_BIT_SIZE + 1);
@@ -658,7 +705,7 @@ mod tests {
                         let d1 = ExactNum::cosh(&n1, p, RoundingMode::None, &mut cc);
                         let d2 = ExactNum::cosh(&n2, p, RoundingMode::None, &mut cc);
 
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("cosh {:?}", err);
                         assert!(err <= EXPONENT_BIT_SIZE + 1);
@@ -667,7 +714,7 @@ mod tests {
                         let d1 = ExactNum::tanh(&n1, p, RoundingMode::None, &mut cc);
                         let d2 = ExactNum::tanh(&n2, p, RoundingMode::None, &mut cc);
 
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("tanh {:?}", err);
                         assert!(err <= 2);
@@ -676,7 +723,7 @@ mod tests {
                         let d1 = ExactNum::asinh(&n1, p, RoundingMode::None, &mut cc);
                         let d2 = ExactNum::asinh(&n2, p, RoundingMode::None, &mut cc);
 
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("asinh {:?}", err);
                         assert!(err <= 2);
@@ -686,7 +733,7 @@ mod tests {
                         let d2 = ExactNum::acosh(&n2, p, RoundingMode::None, &mut cc);
 
                         let err_estimate = compute_added_err(ErrAlgo::Acosh(&n1, emin));
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("acosh {:?} {:?}", err, err_estimate);
                         assert!(err <= err_estimate);
@@ -696,7 +743,7 @@ mod tests {
                         let d2 = ExactNum::atanh(&n2, p, RoundingMode::None, &mut cc);
 
                         let err_estimate = compute_added_err(ErrAlgo::Atanh(&n1, emin));
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("atanh {:?} {:?}", err, err_estimate);
                         assert!(err <= err_estimate);
@@ -705,7 +752,7 @@ mod tests {
                         let d1 = ExactNum::atan(&n1, p, RoundingMode::None, &mut cc);
                         let d2 = ExactNum::atan(&n2, p, RoundingMode::None, &mut cc);
 
-                        let err = calc_err(d1, d2, p);
+                        let err = calc_err(d1, d2, p)?;
 
                         //println!("atan {:?}", err);
                         assert!(err <= 2);
@@ -722,7 +769,7 @@ mod tests {
                             let p = (crate::common::test_rng::random::<usize>() % 10 + 1)
                                 * WORD_BIT_SIZE;
 
-                            let (n1, n2) = gen_num_pair_trig(p, e, near_pi, &mut cc, add_half_pi);
+                            let (n1, n2) = gen_num_pair_trig(p, e, near_pi, &mut cc, add_half_pi)?;
 
                             // sin
                             let d1 = ExactNum::sin(&n1, p, RoundingMode::None, &mut cc);
@@ -734,7 +781,7 @@ mod tests {
                                 &mut cc,
                                 emin,
                             ));
-                            let err = calc_err(d1, d2, p);
+                            let err = calc_err(d1, d2, p)?;
 
                             //println!("sin {:?} {:?}", err, err_estimate);
                             assert!(err <= err_estimate);
@@ -749,7 +796,7 @@ mod tests {
                                 &mut cc,
                                 emin,
                             ));
-                            let err = calc_err(d1, d2, p);
+                            let err = calc_err(d1, d2, p)?;
 
                             //println!("cos {:?} {:?}", err, err_estimate);
                             assert!(err <= err_estimate);
@@ -765,7 +812,7 @@ mod tests {
                                 &mut cc,
                                 emin,
                             ));
-                            let err = calc_err(d1, d2, p);
+                            let err = calc_err(d1, d2, p)?;
 
                             //println!("tan {:?} {:?}", err, err_estimate);
                             assert!(err <= err_estimate);
@@ -781,14 +828,14 @@ mod tests {
                 for near1 in near1set {
                     let p = (crate::common::test_rng::random::<usize>() % 10 + 1) * WORD_BIT_SIZE;
 
-                    let (n1, n2) = gen_num_pair(p, e, near1);
+                    let (n1, n2) = gen_num_pair(p, e, near1)?;
 
                     // asin
                     let d1 = ExactNum::asin(&n1, p, RoundingMode::None, &mut cc);
                     let d2 = ExactNum::asin(&n2, p, RoundingMode::None, &mut cc);
 
                     let err_estimate = compute_added_err(ErrAlgo::Asin(&n1, emin));
-                    let err = calc_err(d1, d2, p);
+                    let err = calc_err(d1, d2, p)?;
 
                     //println!("asin {:?} {:?}", err, err_estimate);
                     assert!(err <= err_estimate);
@@ -798,53 +845,53 @@ mod tests {
                     let d2 = ExactNum::acos(&n2, p, RoundingMode::None, &mut cc);
 
                     let err_estimate = compute_added_err(ErrAlgo::Acos(&n1, emin));
-                    let err = calc_err(d1, d2, p);
+                    let err = calc_err(d1, d2, p)?;
 
                     //println!("acos {:?} {:?}", err, err_estimate);
                     assert!(err <= err_estimate);
                 }
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn test_complex_cancel_independent_parts() {
+    fn test_complex_cancel_independent_parts() -> Result<(), crate::Error> {
         let p = 256;
         let rm = RoundingMode::None;
-        let one = ExactNum::from_u8(1, p);
-        let two = ExactNum::from_u8(2, p);
-        let tiny = one.ldexp(-80, p, rm);
+        let mk_inexact = |n: u8| {
+            let mut v = ExactNum::from_u8(n, p);
+            v.set_inexact(true);
+            v
+        };
+        let tiny = ExactNum::from_u8(1, p).ldexp(-80, p, rm);
         let mut near_m1 = ExactNum::from_i8(-1, p).add(&tiny, p, rm);
-        let mut re_pos = one.clone();
-        re_pos.set_inexact(true);
+        let re_pos = mk_inexact(1);
         near_m1.set_inexact(true);
-        let mut im = two.clone();
-        im.set_inexact(true);
+        let im = mk_inexact(2);
 
-        let a = crate::ExactComplex::new(re_pos, im.clone());
+        let a = crate::ExactComplex::new(re_pos, mk_inexact(2));
         let b = crate::ExactComplex::new(near_m1, im);
-        let ret = a.add(&b, p, rm);
-        let (re_err, im_err) = complex_cancel_bits(&a, &b, &ret, true);
+        let ret = crate::ExactComplex::add_ref(&a, &b, p, rm);
+        let (re_err, im_err) = complex_cancel_bits(&a, &b, &ret, true)?;
         assert!(re_err.is_some(), "real part should report cancellation");
         assert!(
             im_err.is_none(),
             "imaginary part should not share the real slot"
         );
 
-        let mut im_pos = two.clone();
+        let im_pos = mk_inexact(2);
         let mut im_neg = ExactNum::from_i8(-2, p).add(&tiny, p, rm);
-        im_pos.set_inexact(true);
         im_neg.set_inexact(true);
-        let mut re = one.clone();
-        re.set_inexact(true);
-        let c = crate::ExactComplex::new(re.clone(), im_pos);
-        let d = crate::ExactComplex::new(re, im_neg);
-        let ret2 = c.add(&d, p, rm);
-        let (re_err2, im_err2) = complex_cancel_bits(&c, &d, &ret2, true);
+        let c = crate::ExactComplex::new(mk_inexact(1), im_pos);
+        let d = crate::ExactComplex::new(mk_inexact(1), im_neg);
+        let ret2 = crate::ExactComplex::add_ref(&c, &d, p, rm);
+        let (re_err2, im_err2) = complex_cancel_bits(&c, &d, &ret2, true)?;
         assert!(re_err2.is_none(), "real part should stay independent");
         assert!(
             im_err2.is_some(),
             "imaginary part should report cancellation"
         );
+        Ok(())
     }
 }

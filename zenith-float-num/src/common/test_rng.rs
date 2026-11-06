@@ -23,6 +23,18 @@ thread_local! {
         0,
         StdRng::seed_from_u64(DEFAULT_RANDOM_SEED),
     ));
+    // Set by `reseed_random_this_thread`: this thread keeps its own stream across global reseeds.
+    static PINNED: core::cell::Cell<bool> = const { core::cell::Cell::new(false) };
+}
+
+/// Gives the calling thread its own deterministic stream from `seed`. Later
+/// `reseed_random` calls from other threads no longer restart it, so tests that replay
+/// operands from a seed stay reproducible when the test harness runs them in parallel.
+#[cfg(any(test, feature = "random"))]
+pub fn reseed_random_this_thread(seed: u64) {
+    ensure_init();
+    PINNED.with(|p| p.set(true));
+    RNG.with(|cell| *cell.borrow_mut() = (0, StdRng::seed_from_u64(seed)));
 }
 
 fn env_seed() -> Option<u64> {
@@ -92,6 +104,9 @@ where
     rand::distributions::Standard: rand::distributions::Distribution<T>,
 {
     ensure_init();
+    if PINNED.with(|p| p.get()) {
+        return RNG.with(|cell| cell.borrow_mut().1.gen());
+    }
     if cfg!(test) || SEEDED.load(Ordering::Relaxed) {
         let epoch = EPOCH.load(Ordering::Relaxed);
         let seed = SEED.load(Ordering::Relaxed);
@@ -133,4 +148,23 @@ where
 fn test_rng_draws() {
     let _ = random::<u32>();
     let _ = random::<u64>();
+}
+
+/// A thread whose stream is pinned does not restart when another test thread calls
+/// `reseed_random` (the cause of the `test_compute_added_err` flake under `random`).
+#[cfg(all(test, feature = "std"))]
+#[test]
+fn test_pinned_stream_ignores_other_threads() -> Result<(), crate::Error> {
+    let expected: Vec<u64> = {
+        reseed_random_this_thread(42);
+        (0..8).map(|_| random::<u64>()).collect()
+    };
+    reseed_random_this_thread(42);
+    let mut got: Vec<u64> = (0..4).map(|_| random::<u64>()).collect();
+    std::thread::spawn(|| reseed_random(11))
+        .join()
+        .map_err(|_| crate::Error::InvalidArgument)?;
+    got.extend((0..4).map(|_| random::<u64>()));
+    assert_eq!(got, expected);
+    Ok(())
 }

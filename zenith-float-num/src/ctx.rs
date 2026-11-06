@@ -3,7 +3,6 @@
 //! Context is used in expressions returning `ExactNum`.
 
 use crate::Consts;
-use crate::Error;
 use crate::ExactNum;
 use crate::Exponent;
 use crate::RoundingMode;
@@ -145,23 +144,6 @@ impl Context {
         let out = f(self);
         self.rm = old;
         out
-    }
-
-    /// Clones `self` and returns the cloned context.
-    ///
-    /// # Errors
-    ///
-    /// - MemoryAllocation: failed to allocate memory for the constants cache.
-    #[allow(clippy::should_implement_trait)]
-    pub fn clone(&self) -> Result<Self, Error> {
-        let cc = Consts::new()?;
-        Ok(Context {
-            p: self.p,
-            rm: self.rm,
-            cc,
-            emin: self.emin,
-            emax: self.emax,
-        })
     }
 }
 
@@ -376,16 +358,11 @@ mod tests {
     use crate::RoundingMode;
 
     #[test]
-    fn with_rounding_mode_restores() {
-        let mut ctx = Context::new(
-            128,
-            RoundingMode::ToEven,
-            Consts::new().unwrap(),
-            -1000,
-            1000,
-        );
+    fn with_rounding_mode_restores() -> Result<(), crate::Error> {
+        let mut ctx = Context::new(128, RoundingMode::ToEven, Consts::new()?, -1000, 1000);
         let inner = ctx.with_rounding_mode(RoundingMode::Down, |c| c.rounding_mode());
         assert_eq!(inner, RoundingMode::Down);
         assert_eq!(ctx.rounding_mode(), RoundingMode::ToEven);
+        Ok(())
     }
 }

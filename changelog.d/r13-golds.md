@@ -1,0 +1,1 @@
+- R13 golds: `tests/r13_div_hypot_golds.rs` checks 3171 mpmath rows (p+256/p+512 agree, or exact) for div, reciprocal, hypot in all directed modes and div_exact, p 24..65536, full i64 exponent range; `scripts/gen_r13_goldens.py` rejects arguments the format cannot hold exactly.

@@ -62,16 +62,16 @@ fn bits(got: &ExactNum, want: &ExactNum, p: usize) -> i32 {
     if got.is_nan() {
         return i32::MIN;
     }
-    let d = got.sub(want, 2 * p, RoundingMode::None);
+    let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
     if d.is_zero() {
         return i32::MAX;
     }
-    want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)
+    i32::try_from(want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)).unwrap_or(i32::MAX)
 }
 
 #[test]
-fn jacobi_p_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn jacobi_p_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let parse = |s: &str, p: usize, cc: &mut Consts| ExactNum::parse(s, Radix::Dec, p, RM, cc);
     let mut failures = Vec::new();
     for &(n, a, b, x, re) in CASES {
@@ -95,7 +95,7 @@ fn jacobi_p_mpmath() {
         let one = ExactNum::from_u8(1, p);
         let three = ExactNum::from_u8(3, p);
         let four = ExactNum::from_u8(4, p);
-        let alpha = one.div(&three, p, RM);
+        let alpha = ExactNum::from_u8(1, p).div(&three, p, RM);
         let beta = ExactNum::from_u8(2, p).div(&three, p, RM);
         let x = one.div(&four, p, RM);
         let want = parse(
@@ -110,4 +110,5 @@ fn jacobi_p_mpmath() {
         }
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
+    Ok(())
 }

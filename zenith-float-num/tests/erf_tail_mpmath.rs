@@ -6,6 +6,14 @@
 
 use zenith_float_num::{Consts, ExactNum, Radix, RoundingMode};
 
+/// `-x` for an operand that stays borrowed: fresh `-1` times `x` at `x`'s own precision.
+fn neg_of(x: &ExactNum) -> ExactNum {
+    let p = x
+        .mantissa_max_bit_len()
+        .unwrap_or(zenith_float_num::WORD_BIT_SIZE);
+    ExactNum::from_i8(-1, p).mul(x, p, RoundingMode::None)
+}
+
 const RM: RoundingMode = RoundingMode::ToEven;
 
 /// (op, precision, x, reference with 50 significant digits)
@@ -1338,8 +1346,8 @@ const CASES: &[(&str, usize, &str, &str)] = &[
     ),
 ];
 
-fn eval(op: &str, p: usize, x: &ExactNum, cc: &mut Consts) -> ExactNum {
-    match op {
+fn eval(op: &str, p: usize, x: &ExactNum, cc: &mut Consts) -> Result<ExactNum, String> {
+    Ok(match op {
         "erf" => x.erf(p, RM, cc),
         "erfc" => x.erfc(p, RM, cc),
         "normal_cdf" => {
@@ -1347,8 +1355,8 @@ fn eval(op: &str, p: usize, x: &ExactNum, cc: &mut Consts) -> ExactNum {
             let sigma = ExactNum::from_u8(1, p);
             x.normal_cdf(&mu, &sigma, p, RM, cc)
         }
-        _ => unreachable!("{op}"),
-    }
+        _ => return Err(format!("unknown op {op}")),
+    })
 }
 
 /// Correct bits of `got` against `want` (relative), capped at `cap`.
@@ -1357,7 +1365,7 @@ fn bits(got: &ExactNum, want: &ExactNum, cap: usize) -> usize {
         return 0;
     }
     let wp = cap + 64;
-    let err = got.sub(want, wp, RoundingMode::None);
+    let err = ExactNum::sub_ref(got, want, wp, RoundingMode::None);
     if err.is_zero() {
         return cap;
     }
@@ -1368,12 +1376,12 @@ fn bits(got: &ExactNum, want: &ExactNum, cap: usize) -> usize {
 }
 
 #[test]
-fn erf_erfc_tail_mpmath() {
-    let mut cc = Consts::new().unwrap();
+fn erf_erfc_tail_mpmath() -> Result<(), Box<dyn std::error::Error>> {
+    let mut cc = Consts::new()?;
     let mut failures = Vec::new();
     for &(op, p, x, want) in CASES {
         let xv = ExactNum::parse(x, Radix::Dec, p, RM, &mut cc);
-        let got = eval(op, p, &xv, &mut cc);
+        let got = eval(op, p, &xv, &mut cc)?;
         let need = (p - 2).min(160);
         let want = ExactNum::parse(want, Radix::Dec, need + 64, RM, &mut cc);
         let b = bits(&got, &want, need);
@@ -1389,21 +1397,23 @@ fn erf_erfc_tail_mpmath() {
         failures.len(),
         failures.join("\n")
     );
+    Ok(())
 }
 
 #[test]
-fn erf_erfc_tail_symmetry() {
+fn erf_erfc_tail_symmetry() -> Result<(), Box<dyn std::error::Error>> {
     // erf(-x) = -erf(x) exactly; erfc(-x) = 2 - erfc(x).
-    let mut cc = Consts::new().unwrap();
+    let mut cc = Consts::new()?;
     for x in ["4", "4.2", "10", "12.5", "30"] {
         let p = 256;
         let xv = ExactNum::parse(x, Radix::Dec, p, RM, &mut cc);
         let a = xv.erf(p, RM, &mut cc);
-        let b = xv.neg().erf(p, RM, &mut cc);
+        let b = neg_of(&xv).erf(p, RM, &mut cc);
         assert!(a.add(&b, p, RoundingMode::None).is_zero(), "erf odd at {x}");
         let two = ExactNum::from_u8(2, p);
-        let c = xv.neg().erfc(p, RM, &mut cc);
+        let c = neg_of(&xv).erfc(p, RM, &mut cc);
         let d = two.sub(&xv.erfc(p, RM, &mut cc), p, RM);
         assert!(bits(&c, &d, 250) >= 250, "erfc reflection at {x}");
     }
+    Ok(())
 }

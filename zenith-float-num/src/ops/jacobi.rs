@@ -40,7 +40,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |am, _sn, _cn, _dn, _px| am.clone())
+        self.jacobi_ziv(m, p, rm, cc, |am, _sn, _cn, _dn, _px| Ok(am))
     }
 
     /// \(\operatorname{sn}(u|m)=\sin\operatorname{am}(u|m)\).
@@ -51,7 +51,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, _dn, _px| sn.clone())
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, _dn, _px| Ok(sn))
     }
 
     /// \(\operatorname{cn}(u|m)=\cos\operatorname{am}(u|m)\).
@@ -62,7 +62,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, _dn, _px| cn.clone())
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, _dn, _px| Ok(cn))
     }
 
     /// \(\operatorname{dn}(u|m)=\sqrt{1-m\,\operatorname{sn}^2(u|m)}\).
@@ -73,7 +73,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, _cn, dn, _px| dn.clone())
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, _cn, dn, _px| Ok(dn))
     }
 
     /// \(\operatorname{cd}(u|m)=\operatorname{cn}(u|m)/\operatorname{dn}(u|m)\).
@@ -87,7 +87,7 @@ impl ExactNumNumber {
         if let Some(one) = jacobi_ratio_m_one(m, p)? {
             return Ok(one);
         }
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(cn, dn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(&cn, &dn, px))
     }
 
     /// \(\operatorname{ns}(u|m)=1/\operatorname{sn}(u|m)\).
@@ -98,7 +98,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, _dn, px| rec_nz(sn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, _dn, px| rec_nz(&sn, px))
     }
 
     /// \(\operatorname{nc}(u|m)=1/\operatorname{cn}(u|m)\).
@@ -109,7 +109,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, _dn, px| rec_nz(cn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, _dn, px| rec_nz(&cn, px))
     }
 
     /// \(\operatorname{nd}(u|m)=1/\operatorname{dn}(u|m)\).
@@ -120,7 +120,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, _cn, dn, px| rec_nz(dn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, _cn, dn, px| rec_nz(&dn, px))
     }
 
     /// \(\operatorname{sc}(u|m)=\operatorname{sn}/\operatorname{cn}\).
@@ -131,7 +131,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, cn, _dn, px| div_nz(sn, cn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, cn, _dn, px| div_nz(&sn, &cn, px))
     }
 
     /// \(\operatorname{sd}(u|m)=\operatorname{sn}/\operatorname{dn}\).
@@ -142,7 +142,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, dn, px| div_nz(sn, dn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, dn, px| div_nz(&sn, &dn, px))
     }
 
     /// \(\operatorname{cs}(u|m)=\operatorname{cn}/\operatorname{sn}\).
@@ -153,7 +153,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, cn, _dn, px| div_nz(cn, sn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, cn, _dn, px| div_nz(&cn, &sn, px))
     }
 
     /// \(\operatorname{ds}(u|m)=\operatorname{dn}/\operatorname{sn}\).
@@ -164,7 +164,7 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Self, Error> {
-        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, dn, px| div_nz(dn, sn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, sn, _cn, dn, px| div_nz(&dn, &sn, px))
     }
 
     /// \(\operatorname{dc}(u|m)=\operatorname{dn}/\operatorname{cn}\).
@@ -178,7 +178,7 @@ impl ExactNumNumber {
         if let Some(one) = jacobi_ratio_m_one(m, p)? {
             return Ok(one);
         }
-        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(dn, cn, px))
+        self.jacobi_ziv(m, p, rm, cc, |_am, _sn, cn, dn, px| div_nz(&dn, &cn, px))
     }
 
     fn jacobi_ziv<F>(
@@ -190,7 +190,7 @@ impl ExactNumNumber {
         pick: F,
     ) -> Result<Self, Error>
     where
-        F: Fn(&Self, &Self, &Self, &Self, usize) -> Result<Self, Error>,
+        F: Fn(Self, Self, Self, Self, usize) -> Result<Self, Error>,
     {
         let p = round_p(p);
         Self::p_assertion(p)?;
@@ -203,7 +203,7 @@ impl ExactNumNumber {
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE * 2;
             let (am, sn, cn, dn) = self.jacobi_sncndn_at(m, p_x, cc)?;
-            let mut ret = pick(&am, &sn, &cn, &dn, p_x)?;
+            let mut ret = pick(am, sn, cn, dn, p_x)?;
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact() | m.inexact());
                 return Ok(ret);
@@ -221,10 +221,20 @@ impl ExactNumNumber {
         let zero = Self::new2(p, Sign::Pos, false)?;
         let one = Self::from_word(1, p)?;
         if self.is_zero() {
-            return Ok((zero.clone()?, zero, one.clone()?, one));
+            // rebuilt from the literals, one owner each
+            return Ok((
+                zero,
+                Self::new2(p, Sign::Pos, false)?,
+                Self::from_word(1, p)?,
+                one,
+            ));
         }
         if m.is_zero() {
+            // am(u|0) = u, carried at the working precision like the other three results; a narrower value
+            // makes the caller's roundability check (which assumes `p` working bits) overflow.
             let am = self.clone()?;
+            let mut am = am;
+            am.set_precision(p, RoundingMode::None)?;
             let sn = self.sin(p, RoundingMode::None, cc)?;
             let cn = self.cos(p, RoundingMode::None, cc)?;
             return Ok((am, sn, cn, one));
@@ -233,9 +243,11 @@ impl ExactNumNumber {
             let sn = self.tanh(p, RoundingMode::None, cc)?;
             let ch = self.cosh(p, RoundingMode::None, cc)?;
             let cn = one.div(&ch, p, RoundingMode::None)?;
+            // dn(u|1) = cn(u|1): the same quotient formed again, one owner each.
+            let dn = one.div(&ch, p, RoundingMode::None)?;
             let sh = self.sinh(p, RoundingMode::None, cc)?;
             let am = sh.atan(p, RoundingMode::None, cc)?;
-            return Ok((am, sn, cn.clone()?, cn));
+            return Ok((am, sn, cn, dn));
         }
         let u = self.jacobi_reduce_period(m, p, cc)?;
         jacobi_agm(&u, m, p, cc)
@@ -298,7 +310,7 @@ fn agm_small(c: &ExactNumNumber, a: &ExactNumNumber, p: usize) -> Result<bool, E
         return Ok(false);
     }
     let rel = c.abs()?.div(&a.abs()?, p, RoundingMode::None)?;
-    let thresh = -((p as i32) / 2 + 16);
+    let thresh = -((p as Exponent) / 2 + 16);
     Ok(rel.exponent() < thresh)
 }
 
@@ -363,7 +375,7 @@ fn jacobi_agm(
     }
     let last = aa.len() - 1;
     let shift = Exponent::try_from(last).map_err(|_| Error::InvalidArgument)?;
-    let twon = one.ldexp(shift, p, RoundingMode::None)?;
+    let twon = ExactNumNumber::from_word(1, p)?.ldexp(shift, p, RoundingMode::None)?;
     let mut phi = twon
         .mul(&aa[last], p, RoundingMode::None)?
         .mul(u, p, RoundingMode::None)?;
@@ -398,10 +410,16 @@ mod tests {
     use super::*;
     use crate::defs::RoundingMode;
 
-    fn bits_agree(a: &ExactNumNumber, b: &ExactNumNumber, p: usize, min_bits: i32, label: &str) {
-        let d = a.sub(b, p, RoundingMode::None).unwrap().abs().unwrap();
+    fn bits_agree(
+        a: &ExactNumNumber,
+        b: &ExactNumNumber,
+        p: usize,
+        min_bits: Exponent,
+        label: &str,
+    ) -> Result<(), crate::Error> {
+        let d = a.sub(b, p, RoundingMode::None)?.abs()?;
         if d.is_zero() {
-            return;
+            return Ok(());
         }
         let rel = d.exponent() - a.exponent();
         assert!(
@@ -410,146 +428,120 @@ mod tests {
             a.exponent(),
             b.exponent()
         );
+        Ok(())
     }
 
     #[test]
-    fn test_jacobi_identities() {
+    fn test_jacobi_identities() -> Result<(), crate::Error> {
         let p = 256;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let one = ExactNumNumber::from_word(1, p).unwrap();
-        let zero = ExactNumNumber::new(p).unwrap();
-        let two = ExactNumNumber::from_word(2, p).unwrap();
-        let mut half = one.clone().unwrap();
+        let one = ExactNumNumber::from_word(1, p)?;
+        let zero = ExactNumNumber::new(p)?;
+        let two = ExactNumNumber::from_word(2, p)?;
+        let mut half = ExactNumNumber::from_word(1, p)?;
         half.div_by_2(RoundingMode::None);
 
-        let sn0 = zero.jacobi_sn(&half, p, rm, &mut cc).unwrap();
+        let sn0 = zero.jacobi_sn(&half, p, rm, &mut cc)?;
         assert!(sn0.is_zero(), "sn(0)");
-        let cn0 = zero.jacobi_cn(&half, p, rm, &mut cc).unwrap();
-        bits_agree(&cn0, &one, p, 80, "cn(0)");
-        let dn0 = zero.jacobi_dn(&half, p, rm, &mut cc).unwrap();
-        bits_agree(&dn0, &one, p, 80, "dn(0)");
-        let am0 = zero.jacobi_am(&half, p, rm, &mut cc).unwrap();
+        let cn0 = zero.jacobi_cn(&half, p, rm, &mut cc)?;
+        bits_agree(&cn0, &one, p, 80, "cn(0)")?;
+        let dn0 = zero.jacobi_dn(&half, p, rm, &mut cc)?;
+        bits_agree(&dn0, &one, p, 80, "dn(0)")?;
+        let am0 = zero.jacobi_am(&half, p, rm, &mut cc)?;
         assert!(am0.is_zero(), "am(0)");
 
-        let u = one.clone().unwrap();
-        let sn_m0 = u.jacobi_sn(&zero, p, rm, &mut cc).unwrap();
-        let sinu = u.sin(p, rm, &mut cc).unwrap();
-        bits_agree(&sn_m0, &sinu, p, 80, "sn(u|0)=sin u");
-        let cn_m0 = u.jacobi_cn(&zero, p, rm, &mut cc).unwrap();
-        let cosu = u.cos(p, rm, &mut cc).unwrap();
-        bits_agree(&cn_m0, &cosu, p, 80, "cn(u|0)=cos u");
-        let dn_m0 = u.jacobi_dn(&zero, p, rm, &mut cc).unwrap();
-        bits_agree(&dn_m0, &one, p, 80, "dn(u|0)=1");
+        let u = ExactNumNumber::from_word(1, p)?;
+        let sn_m0 = u.jacobi_sn(&zero, p, rm, &mut cc)?;
+        let sinu = u.sin(p, rm, &mut cc)?;
+        bits_agree(&sn_m0, &sinu, p, 80, "sn(u|0)=sin u")?;
+        let cn_m0 = u.jacobi_cn(&zero, p, rm, &mut cc)?;
+        let cosu = u.cos(p, rm, &mut cc)?;
+        bits_agree(&cn_m0, &cosu, p, 80, "cn(u|0)=cos u")?;
+        let dn_m0 = u.jacobi_dn(&zero, p, rm, &mut cc)?;
+        bits_agree(&dn_m0, &one, p, 80, "dn(u|0)=1")?;
 
-        let sn_m1 = u.jacobi_sn(&one, p, rm, &mut cc).unwrap();
-        let tanhu = u.tanh(p, rm, &mut cc).unwrap();
-        bits_agree(&sn_m1, &tanhu, p, 80, "sn(u|1)=tanh u");
-        let cn_m1 = u.jacobi_cn(&one, p, rm, &mut cc).unwrap();
-        let sech = one
-            .div(&u.cosh(p, rm, &mut cc).unwrap(), p, RoundingMode::None)
-            .unwrap();
-        bits_agree(&cn_m1, &sech, p, 80, "cn(u|1)=sech u");
-        let dn_m1 = u.jacobi_dn(&one, p, rm, &mut cc).unwrap();
-        bits_agree(&dn_m1, &sech, p, 80, "dn(u|1)=sech u");
+        let sn_m1 = u.jacobi_sn(&one, p, rm, &mut cc)?;
+        let tanhu = u.tanh(p, rm, &mut cc)?;
+        bits_agree(&sn_m1, &tanhu, p, 80, "sn(u|1)=tanh u")?;
+        let cn_m1 = u.jacobi_cn(&one, p, rm, &mut cc)?;
+        let sech = one.div(&u.cosh(p, rm, &mut cc)?, p, RoundingMode::None)?;
+        bits_agree(&cn_m1, &sech, p, 80, "cn(u|1)=sech u")?;
+        let dn_m1 = u.jacobi_dn(&one, p, rm, &mut cc)?;
+        bits_agree(&dn_m1, &sech, p, 80, "dn(u|1)=sech u")?;
 
-        let sn = u.jacobi_sn(&half, p, rm, &mut cc).unwrap();
-        let cn = u.jacobi_cn(&half, p, rm, &mut cc).unwrap();
-        let dn = u.jacobi_dn(&half, p, rm, &mut cc).unwrap();
-        let s2c2 = sn
-            .mul(&sn, p, RoundingMode::None)
-            .unwrap()
-            .add(
-                &cn.mul(&cn, p, RoundingMode::None).unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        bits_agree(&s2c2, &one, p, 80, "sn²+cn²=1");
-        let d2ms = dn
-            .mul(&dn, p, RoundingMode::None)
-            .unwrap()
-            .add(
-                &half
-                    .mul(
-                        &sn.mul(&sn, p, RoundingMode::None).unwrap(),
-                        p,
-                        RoundingMode::None,
-                    )
-                    .unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        bits_agree(&d2ms, &one, p, 80, "dn²+m sn²=1");
+        let sn = u.jacobi_sn(&half, p, rm, &mut cc)?;
+        let cn = u.jacobi_cn(&half, p, rm, &mut cc)?;
+        let dn = u.jacobi_dn(&half, p, rm, &mut cc)?;
+        let s2c2 = sn.mul(&sn, p, RoundingMode::None)?.add(
+            &cn.mul(&cn, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        bits_agree(&s2c2, &one, p, 80, "sn²+cn²=1")?;
+        let d2ms = dn.mul(&dn, p, RoundingMode::None)?.add(
+            &half.mul(&sn.mul(&sn, p, RoundingMode::None)?, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        bits_agree(&d2ms, &one, p, 80, "dn²+m sn²=1")?;
 
-        let k = half.elliptic_k(p, rm, &mut cc).unwrap();
-        let mut kh = k.clone().unwrap();
+        let k = half.elliptic_k(p, rm, &mut cc)?;
+        let mut kh = half.elliptic_k(p, rm, &mut cc)?;
         kh.div_by_2(RoundingMode::None);
-        let snkh = kh.jacobi_sn(&half, p, rm, &mut cc).unwrap();
+        let snkh = kh.jacobi_sn(&half, p, rm, &mut cc)?;
         let kp = one
-            .sub(&half, p, RoundingMode::None)
-            .unwrap()
-            .sqrt(p, RoundingMode::None)
-            .unwrap();
-        let want = one
-            .div(
-                &one.add(&kp, p, RoundingMode::None)
-                    .unwrap()
-                    .sqrt(p, RoundingMode::None)
-                    .unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        bits_agree(&snkh, &want, p, 40, "sn(K/2|1/2)");
+            .sub(&half, p, RoundingMode::None)?
+            .sqrt(p, RoundingMode::None)?;
+        let want = one.div(
+            &one.add(&kp, p, RoundingMode::None)?
+                .sqrt(p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        bits_agree(&snkh, &want, p, 40, "sn(K/2|1/2)")?;
 
-        let four_k = four_word(p).mul(&k, p, RoundingMode::None).unwrap();
-        let u4 = u.add(&four_k, p, RoundingMode::None).unwrap();
-        let sn_per = u4.jacobi_sn(&half, p, rm, &mut cc).unwrap();
-        bits_agree(&sn_per, &sn, p, 40, "sn(u+4K)=sn(u)");
+        let four_k = four_word(p)?.mul(&k, p, RoundingMode::None)?;
+        let u4 = u.add(&four_k, p, RoundingMode::None)?;
+        let sn_per = u4.jacobi_sn(&half, p, rm, &mut cc)?;
+        bits_agree(&sn_per, &sn, p, 40, "sn(u+4K)=sn(u)")?;
 
-        let mut h = one.clone().unwrap();
+        let mut h = ExactNumNumber::from_word(1, p)?;
         for _ in 0..20 {
             h.div_by_2(RoundingMode::None);
         }
-        let up = u.add(&h, p, RoundingMode::None).unwrap();
-        let um = u.sub(&h, p, RoundingMode::None).unwrap();
-        let snp = up.jacobi_sn(&half, p, rm, &mut cc).unwrap();
-        let snm = um.jacobi_sn(&half, p, rm, &mut cc).unwrap();
-        let fd = snp
-            .sub(&snm, p, RoundingMode::None)
-            .unwrap()
-            .div(
-                &two.mul(&h, p, RoundingMode::None).unwrap(),
-                p,
-                RoundingMode::None,
-            )
-            .unwrap();
-        let deriv = cn.mul(&dn, p, RoundingMode::None).unwrap();
-        bits_agree(&fd, &deriv, p, 20, "d(sn)/du = cn dn");
+        let up = u.add(&h, p, RoundingMode::None)?;
+        let um = u.sub(&h, p, RoundingMode::None)?;
+        let snp = up.jacobi_sn(&half, p, rm, &mut cc)?;
+        let snm = um.jacobi_sn(&half, p, rm, &mut cc)?;
+        let fd = snp.sub(&snm, p, RoundingMode::None)?.div(
+            &two.mul(&h, p, RoundingMode::None)?,
+            p,
+            RoundingMode::None,
+        )?;
+        let deriv = cn.mul(&dn, p, RoundingMode::None)?;
+        bits_agree(&fd, &deriv, p, 20, "d(sn)/du = cn dn")?;
 
-        let sn_none = u
-            .jacobi_sn(&half, 512, RoundingMode::None, &mut cc)
-            .unwrap();
-        bits_agree(&sn_none, &sn, p, 20, "sn None 512 vs ToEven 256");
+        let sn_none = u.jacobi_sn(&half, 512, RoundingMode::None, &mut cc)?;
+        bits_agree(&sn_none, &sn, p, 20, "sn None 512 vs ToEven 256")?;
 
-        assert!(u.jacobi_sn(&one.neg().unwrap(), p, rm, &mut cc).is_err());
+        assert!(u.jacobi_sn(&one.neg()?, p, rm, &mut cc).is_err());
         assert!(u.jacobi_sn(&two, p, rm, &mut cc).is_err());
-        let cd = u.jacobi_cd(&half, p, rm, &mut cc).unwrap();
-        let want_cd = cn.div(&dn, p, RoundingMode::None).unwrap();
-        bits_agree(&cd, &want_cd, p, 80, "cd=cn/dn");
-        let ns = u.jacobi_ns(&half, p, rm, &mut cc).unwrap();
-        let nssn = ns.mul(&sn, p, RoundingMode::None).unwrap();
-        bits_agree(&nssn, &one, p, 80, "ns·sn=1");
+        let cd = u.jacobi_cd(&half, p, rm, &mut cc)?;
+        let want_cd = cn.div(&dn, p, RoundingMode::None)?;
+        bits_agree(&cd, &want_cd, p, 80, "cd=cn/dn")?;
+        let ns = u.jacobi_ns(&half, p, rm, &mut cc)?;
+        let nssn = ns.mul(&sn, p, RoundingMode::None)?;
+        bits_agree(&nssn, &one, p, 80, "ns·sn=1")?;
         assert!(zero.jacobi_ns(&half, p, rm, &mut cc).is_err());
 
         // Inverse of sn is incomplete F: F(sn(u|m)|m)=u for |u|<K(m).
-        let back = sn.elliptic_f(&half, p, rm, &mut cc).unwrap();
-        bits_agree(&back, &u, p, 40, "F(sn(u|m)|m)=u");
+        let back = sn.elliptic_f(&half, p, rm, &mut cc)?;
+        bits_agree(&back, &u, p, 40, "F(sn(u|m)|m)=u")?;
+        Ok(())
     }
 
-    fn four_word(p: usize) -> ExactNumNumber {
-        ExactNumNumber::from_word(4, p).unwrap()
+    fn four_word(p: usize) -> Result<ExactNumNumber, crate::Error> {
+        ExactNumNumber::from_word(4, p)
     }
 }

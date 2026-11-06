@@ -13,7 +13,7 @@ use core::ops::{Deref, DerefMut};
 use alloc::string::String;
 
 /// A floating-point value with an associated parse/format radix.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct RadixFloat {
     value: ExactNum,
     radix: Radix,
@@ -90,15 +90,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_radix_float_roundtrip() {
-        let mut cc = Consts::new().unwrap();
-        let rdx = Radix::try_new(12).unwrap();
+    fn test_radix_float_roundtrip() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let rdx = Radix::try_new(12)?;
         let p = 128;
         let rm = RoundingMode::ToEven;
         let n = ExactNum::parse("10.5", Radix::Dec, p, rm, &mut cc);
-        let rf = RadixFloat::with_radix(n.clone(), rdx);
-        let s = rf.format(rm, &mut cc).unwrap();
-        let g = RadixFloat::parse(&s, rdx, p, rm, &mut cc).unwrap();
-        assert_eq!(n.cmp(g.value()), Some(0));
+        let rf = RadixFloat::with_radix(ExactNum::parse("10.5", Radix::Dec, p, rm, &mut cc), rdx);
+        let s = rf.format(rm, &mut cc)?;
+        let g = RadixFloat::parse(&s, rdx, p, rm, &mut cc)?;
+        assert_eq!(n.compare(g.value()), Some(0));
+        Ok(())
     }
 }

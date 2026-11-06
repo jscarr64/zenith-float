@@ -1,8 +1,11 @@
 //! Gauss–Kronrod quadrature and Wynn’s ε table on [`ExactNum`].
 //!
 //! The (7, 15) pair is the fixed rule QUADPACK uses inside `QAG` / `QAGS`:
-//! a 7-point Gauss–Legendre estimate embedded in a 15-point Kronrod estimate,
-//! with absolute error `|K − G|`. Endpoint singularities are accelerated by
+//! a 7-point Gauss–Legendre estimate embedded in a 15-point Kronrod estimate.
+//! The returned error is a conservative error estimate of the Kronrod value,
+//! validated against oracles: at least `|K − G|` plus one unit in the last
+//! place of the rounded estimate.
+//! Endpoint singularities are accelerated by
 //! Wynn’s ε-algorithm on the sequence of partial sums, the same device
 //! Piessens, de Doncker-Kapenga, Überhuber, and Kahaner describe for `QAGS`
 //! (*QUADPACK*, Springer, 1983; the SLATEC port of that design is public
@@ -14,15 +17,19 @@
 //! followed by Golub–Welsch weights (the squared first component of the
 //! normalized eigenvector). The matrix is symmetric, so the diagonal is zero
 //! and only the squared sub-diagonals `β_j = j² / (4j² − 1)` are stored.
-//! Everything is evaluated at `p + WORD_BIT_SIZE` bits and then rounded to `p`.
+//! Everything is evaluated two words above the destination width (that width
+//! rounded up to a multiple of 64, plus 128 bits) and then rounded to `p`.
+//!
+//! Half-lines and the whole line use [`integrate_adaptive_gk_infinite`].
 //!
 //! # Not in this slice
 //!
-//! Infinite intervals (`QAGI`), oscillatory weights (`QAWO` / `QAWF`),
+//! Oscillatory weights (`QAWO` / `QAWF`),
 //! algebraic endpoint weights (`QAWS`), Cauchy principal values (`QAWC`),
 //! Kronrod pairs other than (7, 15), and the full `QAGS` heap with its
 //! four-way split and roundoff flags.
 
+use crate::defs::Exponent;
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
 use crate::ExactNum;
@@ -30,6 +37,7 @@ use crate::RoundingMode;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
+use core::ops::Neg;
 
 /// Gauss order of the supported Kronrod pair. Only this order is built.
 pub const GK_GAUSS_ORDER: usize = 7;
@@ -52,7 +60,7 @@ const GK_BISECT_STEPS: usize = 48;
 /// Why a Kronrod call stopped.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum QuadratureError {
-    /// Non-finite bounds, an empty interval, a bad tolerance or precision,
+    /// Non-finite endpoints, an empty interval, a bad tolerance or precision,
     /// an unsupported setting, or a non-finite integrand sample.
     InvalidArgument,
     /// The panel budget or the ε table ran out before the tolerance was met,
@@ -74,17 +82,45 @@ impl core::fmt::Display for QuadratureError {
 impl std::error::Error for QuadratureError {}
 
 /// One (7, 15) panel, or the value accepted by [`integrate_adaptive_gk`].
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct GkResult {
     /// Kronrod sum `K`. When [`integrate_adaptive_gk`] accepts an ε value,
     /// this field is that extrapolation rather than the raw panel sum.
     pub estimate_kronrod: ExactNum,
     /// Embedded Gauss sum `G` on the same nodes (not extrapolated).
     pub estimate_gauss: ExactNum,
-    /// Absolute error estimate. A single panel reports `|K − G|` after the
-    /// factor `(b − a) / 2`. An accepted ε value reports the difference of
-    /// the last two even-order ε entries.
+    /// A conservative error estimate for `estimate_kronrod`, validated against oracles.
+    ///
+    /// On one panel the estimate is at least `|K − G|` after the factor
+    /// `(b − a) / 2`. When an ε value is accepted, the stopping test is still
+    /// the difference of the last two even-order ε entries, but the estimate is
+    /// at least the sum of the local `|K − G|` on the panels that produced
+    /// that value. One unit in the last place of the rounded estimate is
+    /// added, and the estimate is rounded away from zero. It can be larger than
+    /// `|K − G|`, and it can be larger than the tolerance that stopped the
+    /// iteration. Callers that want `|K − G|` itself should subtract
+    /// `estimate_kronrod` and `estimate_gauss`.
+    ///
+    /// Accuracy: enclosure
     pub abs_err_est: ExactNum,
+}
+
+impl GkResult {
+    /// A panel or an accepted adaptive value.
+    ///
+    /// `abs_err_est` is a conservative error estimate, validated against oracles.
+    /// It is not recomputed from the two sums.
+    pub fn new(
+        estimate_kronrod: ExactNum,
+        estimate_gauss: ExactNum,
+        abs_err_est: ExactNum,
+    ) -> Self {
+        Self {
+            estimate_kronrod,
+            estimate_gauss,
+            abs_err_est,
+        }
+    }
 }
 
 struct Panel {
@@ -101,21 +137,62 @@ struct WynnValue {
     order: usize,
 }
 
+/// Destination width, rounded up to a word, plus two guard words.
+///
+/// One extra word leaves a 53-bit request at 117 bits. Laurie and Golub–Welsch
+/// then round the nodes where the sums are formed, so `K` and `G` share the
+/// error and `|K − G|` collapses under the true remainder. Two guard words
+/// keep that remainder visible.
 fn work_p(p: usize) -> usize {
-    p.saturating_add(WORD_BIT_SIZE)
+    let stored = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
+    stored.saturating_add(WORD_BIT_SIZE.saturating_mul(2))
+}
+
+/// One unit in the last place of a `p`-bit rounding of `x`.
+///
+/// `set_precision(p)` keeps `p` significant bits, so the unit is `2^{e-p}`
+/// of the value’s exponent, not the unit of the wider stored word.
+fn result_ulp(x: &ExactNum, p: usize) -> ExactNum {
+    let width = p.max(GK_MIN_PREC);
+    let e = x.exponent().unwrap_or(0);
+    let shift = e.saturating_sub(p as Exponent);
+    ExactNum::from_u8(1, width).ldexp(shift, width, RoundingMode::Up)
+}
+
+/// `|raw|` plus one destination ulp, rounded away from zero.
+fn err_estimate(raw: ExactNum, result: &ExactNum, p: usize, wrk: usize) -> ExactNum {
+    let ulp = result_ulp(result, p);
+    let mut gap = raw.abs();
+    let _ = gap.set_precision(wrk, RoundingMode::Up);
+    let sum = gap.add(&ulp, wrk, RoundingMode::Up);
+    round_out(sum, p, RoundingMode::Up)
+}
+
+fn gk_result(
+    k: ExactNum,
+    g: ExactNum,
+    raw_err: ExactNum,
+    p: usize,
+    rm: RoundingMode,
+    wrk: usize,
+) -> GkResult {
+    let estimate_kronrod = round_out(k, p, rm);
+    let estimate_gauss = round_out(g, p, rm);
+    let abs_err_est = err_estimate(raw_err, &estimate_kronrod, p, wrk);
+    GkResult::new(estimate_kronrod, estimate_gauss, abs_err_est)
 }
 
 fn finite(x: &ExactNum) -> bool {
     !x.is_nan() && !x.is_inf()
 }
 
-fn tiny(p: usize, extra: i32) -> ExactNum {
-    let e = (p as i32).saturating_sub(extra).saturating_neg();
+fn tiny(p: usize, extra: Exponent) -> ExactNum {
+    let e = (p as Exponent).saturating_sub(extra).saturating_neg();
     ExactNum::from_u8(1, p).ldexp(e, p, RoundingMode::ToEven)
 }
 
-fn leq(x: &ExactNum, bound: &ExactNum) -> bool {
-    matches!(x.cmp(bound), Some(-1) | Some(0))
+fn leq(x: &ExactNum, limit: &ExactNum) -> bool {
+    matches!(x.compare(limit), Some(-1) | Some(0))
 }
 
 fn round_out(mut x: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
@@ -124,7 +201,7 @@ fn round_out(mut x: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
 }
 
 fn ord_num(a: &ExactNum, b: &ExactNum) -> Ordering {
-    match a.cmp(b) {
+    match a.compare(b) {
         Some(c) if c < 0 => Ordering::Less,
         Some(c) if c > 0 => Ordering::Greater,
         _ => Ordering::Equal,
@@ -135,12 +212,11 @@ fn ord_num(a: &ExactNum, b: &ExactNum) -> Ordering {
 fn legendre_beta_sq(count: usize, p: usize) -> Option<Vec<ExactNum>> {
     let rm = RoundingMode::None;
     let one = ExactNum::from_u8(1, p);
-    let four = ExactNum::from_u8(4, p);
     let mut b = Vec::with_capacity(count);
     for j in 1..=count {
         let jf = ExactNum::from_u32(j as u32, p);
-        let js = jf.mul(&jf, p, rm);
-        let den = four.mul(&js, p, rm).sub(&one, p, rm);
+        let js = ExactNum::from_u32(j as u32, p).mul(&jf, p, rm);
+        let den = ExactNum::from_u8(4, p).mul(&js, p, rm).sub(&one, p, rm);
         let beta = js.div(&den, p, rm);
         if !finite(&beta) || !beta.is_positive() {
             return None;
@@ -157,7 +233,7 @@ fn legendre_beta_sq(count: usize, p: usize) -> Option<Vec<ExactNum>> {
 /// to `a_k = 0` (symmetric Legendre weight): the diagonal corrections drop out
 /// and only the `β` updates remain.
 fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
-    let known = (3 * n + 1) / 2;
+    let known = (3 * n).div_ceil(2);
     let mut b = legendre_beta_sq(known, p)?;
     b.resize(2 * n, ExactNum::new(p));
     let slen = n / 2 + 2;
@@ -168,11 +244,11 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
 
     for m in 0..n.saturating_sub(1) {
         let mut u = ExactNum::new(p);
-        let k_hi = (m + 1) / 2;
+        let k_hi = m.div_ceil(2);
         for k in (0..=k_hi).rev() {
-            let mut term = b[k + n].mul(&s[k], p, rm);
+            let mut term = ExactNum::mul_ref(&b[k + n], &s[k], p, rm);
             if m > k {
-                let bl = b[m - k - 1].mul(&s[k + 1], p, rm);
+                let bl = ExactNum::mul_ref(&b[m - k - 1], &s[k + 1], p, rm);
                 term = term.sub(&bl, p, rm);
             }
             if !finite(&term) {
@@ -198,8 +274,8 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
                 let j = n as i32 - (m as i32 - k as i32) - 1;
                 let sj = s_at(&s, j + 1)?;
                 let sj1 = s_at(&s, j + 2)?;
-                let bk = b[k + n].mul(&sj, p, rm);
-                let bl = b[m - k - 1].mul(&sj1, p, rm);
+                let bk = sj.mul(&b[k + n], p, rm);
+                let bl = sj1.mul(&b[m - k - 1], p, rm);
                 let piece = bk.sub(&bl, p, rm);
                 if !finite(&piece) {
                     return None;
@@ -208,7 +284,7 @@ fn laurie_legendre_beta(n: usize, p: usize) -> Option<Vec<ExactNum>> {
                 s_set(&mut s, j + 1, u.clone())?;
             }
         }
-        let k = (m + 1) / 2;
+        let k = m.div_ceil(2);
         let j = n as i32 - (m as i32 - k as i32 + 2);
         if 2 * k != m {
             let num = s_at(&s, j + 1)?;
@@ -261,10 +337,11 @@ fn char_poly(lam: &ExactNum, beta: &[ExactNum], p: usize) -> Option<(ExactNum, E
         return None;
     }
     for b in beta {
-        let p_new = lam.mul(&p1, p, rm).sub(&b.mul(&p0, p, rm), p, rm);
-        let d_new = p1
-            .add(&lam.mul(&d1, p, rm), p, rm)
-            .sub(&b.mul(&d0, p, rm), p, rm);
+        let p_new = ExactNum::mul_ref(lam, &p1, p, rm).sub(&p0.mul(b, p, rm), p, rm);
+        let d_new =
+            ExactNum::mul_ref(lam, &d1, p, rm)
+                .add(&p1, p, rm)
+                .sub(&d0.mul(b, p, rm), p, rm);
         if !finite(&p_new) || !finite(&d_new) {
             return None;
         }
@@ -289,7 +366,7 @@ fn polish_root(
         return Some(lo);
     }
     for _ in 0..GK_BISECT_STEPS {
-        let mid = lo.add(&hi, p, rm).div(&two, p, rm);
+        let mid = ExactNum::add_ref(&lo, &hi, p, rm).div(&two, p, rm);
         let (fm, _) = char_poly(&mid, beta, p)?;
         if fm.is_zero() {
             return Some(mid);
@@ -312,7 +389,7 @@ fn polish_root(
         if !finite(&step) {
             break;
         }
-        let next = x.sub(&step, p, rm);
+        let next = ExactNum::sub_ref(&x, &step, p, rm);
         if !finite(&next) {
             break;
         }
@@ -372,14 +449,14 @@ fn isolate_roots(beta: &[ExactNum], want: usize, steps: usize, p: usize) -> Opti
     let mut roots = Vec::with_capacity(want);
     for (lo, hi) in brackets {
         let root = polish_root(beta, lo, hi, p)?;
-        if !root.is_positive() || root.cmp(&one) != Some(-1) {
+        if !root.is_positive() || root.compare(&one) != Some(-1) {
             return None;
         }
         roots.push(root);
     }
     roots.sort_by(ord_num);
     for w in roots.windows(2) {
-        if w[0].cmp(&w[1]) != Some(-1) {
+        if w[0].compare(&w[1]) != Some(-1) {
             return None;
         }
     }
@@ -411,27 +488,26 @@ fn jacobi_weight(
     }
     let mut v_prev2 = ExactNum::from_u8(1, p);
     let mut sumsq = ExactNum::from_u8(1, p);
-    let mut v_prev = lam.div(&off[0], p, rm);
+    let mut v_prev = ExactNum::div_ref(lam, &off[0], p, rm);
     if !finite(&v_prev) {
         return None;
     }
-    sumsq = sumsq.add(&v_prev.mul(&v_prev, p, rm), p, rm);
+    sumsq = sumsq.add(&v_prev.sqr(p, rm), p, rm);
     for i in 2..m {
-        let numer = lam
-            .mul(&v_prev, p, rm)
-            .sub(&off[i - 2].mul(&v_prev2, p, rm), p, rm);
+        let numer =
+            ExactNum::mul_ref(lam, &v_prev, p, rm).sub(&v_prev2.mul(&off[i - 2], p, rm), p, rm);
         let v = numer.div(&off[i - 1], p, rm);
         if !finite(&v) {
             return None;
         }
-        sumsq = sumsq.add(&v.mul(&v, p, rm), p, rm);
+        sumsq = sumsq.add(&v.sqr(p, rm), p, rm);
         v_prev2 = v_prev;
         v_prev = v;
     }
     if !finite(&sumsq) || !sumsq.is_positive() {
         return None;
     }
-    let w = mu0.div(&sumsq, p, rm);
+    let w = ExactNum::div_ref(mu0, &sumsq, p, rm);
     if finite(&w) && w.is_positive() {
         Some(w)
     } else {
@@ -448,7 +524,7 @@ fn weight_sum_ok(weights: &[ExactNum], target: &ExactNum, p: usize) -> bool {
     let err = acc.sub(target, p, rm).abs();
     // Working precision is `p`. Losing a quarter of those bits still leaves
     // the caller's destination (`p - WORD_BIT_SIZE`) intact.
-    let slack_bits = (p as i32) / 4;
+    let slack_bits = (p as Exponent) / 4;
     leq(&err, &tiny(p, slack_bits))
 }
 
@@ -462,6 +538,9 @@ fn kronrod_legendre_at(
         return None;
     }
     let beta = laurie_legendre_beta(n, p)?;
+    // The nodes are the roots and their negatives. Each half is its own computation:
+    // the roots are deterministic, so both vectors are bit-identical and nothing is copied.
+    let negative_half = positive_roots(&beta, n, p)?;
     let positive = positive_roots(&beta, n, p)?;
     let two = ExactNum::from_u8(2, p);
     let gbeta = legendre_beta_sq(n - 1, p)?;
@@ -470,16 +549,16 @@ fn kronrod_legendre_at(
     let mut w_gauss = vec![ExactNum::new(p); 2 * n + 1];
     let zero = ExactNum::new(p);
     let w0 = jacobi_weight(&zero, &beta, &two, p)?;
-    for r in positive.iter().rev() {
-        let w = jacobi_weight(r, &beta, &two, p)?;
+    for r in negative_half.into_iter().rev() {
+        let w = jacobi_weight(&r, &beta, &two, p)?;
         nodes.push(r.neg());
         w_kronrod.push(w);
     }
     nodes.push(zero);
     w_kronrod.push(w0);
-    for r in &positive {
-        let w = jacobi_weight(r, &beta, &two, p)?;
-        nodes.push(r.clone());
+    for r in positive {
+        let w = jacobi_weight(&r, &beta, &two, p)?;
+        nodes.push(r);
         w_kronrod.push(w);
     }
     if nodes.len() != GK_KRONROD_ORDER {
@@ -501,9 +580,10 @@ fn kronrod_legendre_at(
 /// right. `w_gauss[i]` is zero when `nodes[i]` is a Kronrod-only abscissa
 /// (every even 0-based index). The embedded Gauss nodes are the odd indices.
 ///
-/// Nodes and weights are computed at `p + WORD_BIT_SIZE` and rounded to `p`
-/// with `rm`. Returns `None` when `n_gauss` is not 7, `p` is below 32, or the
-/// Jacobi–Kronrod matrix does not yield a positive-weight rule.
+/// Nodes and weights are computed two words above the destination width and
+/// rounded to `p` with `rm`. Returns `None` when `n_gauss` is not 7, `p` is
+/// below 32, or the Jacobi–Kronrod matrix does not yield a positive-weight
+/// rule.
 pub fn kronrod_pair(
     n_gauss: usize,
     p: usize,
@@ -535,32 +615,32 @@ where
 {
     let rm = RoundingMode::None;
     let two = ExactNum::from_u8(2, p);
-    let half = b.sub(a, p, rm).div(&two, p, rm);
-    let mid = a.add(b, p, rm).div(&two, p, rm);
+    let half = ExactNum::sub_ref(b, a, p, rm).div(&two, p, rm);
+    let mid = ExactNum::add_ref(a, b, p, rm).div(&two, p, rm);
     if !finite(&half) || !finite(&mid) || !half.is_positive() {
         return Err(QuadratureError::InvalidArgument);
     }
     let mut sk = ExactNum::new(p);
     let mut sg = ExactNum::new(p);
     for i in 0..nodes.len() {
-        let x = mid.add(&half.mul(&nodes[i], p, rm), p, rm);
+        let x = ExactNum::mul_ref(&half, &nodes[i], p, rm).add(&mid, p, rm);
         let y = f(&x, p, rm, cc);
         if !finite(&y) {
             return Err(QuadratureError::InvalidArgument);
         }
-        sk = sk.add(&w_kronrod[i].mul(&y, p, rm), p, rm);
+        sk = sk.add(&ExactNum::mul_ref(&w_kronrod[i], &y, p, rm), p, rm);
         if !w_gauss[i].is_zero() {
-            sg = sg.add(&w_gauss[i].mul(&y, p, rm), p, rm);
+            sg = sg.add(&y.mul(&w_gauss[i], p, rm), p, rm);
         }
         if !finite(&sk) || !finite(&sg) {
             return Err(QuadratureError::NotConverged);
         }
     }
-    Ok((half.mul(&sk, p, rm), half.mul(&sg, p, rm)))
+    Ok((sk.mul(&half, p, rm), half.mul(&sg, p, rm)))
 }
 
 fn interval_ok(a: &ExactNum, b: &ExactNum) -> bool {
-    finite(a) && finite(b) && a.cmp(b) == Some(-1)
+    finite(a) && finite(b) && a.compare(b) == Some(-1)
 }
 
 /// Integrate `f` on the finite interval `[a, b]` with one (7, 15) panel.
@@ -568,9 +648,11 @@ fn interval_ok(a: &ExactNum, b: &ExactNum) -> bool {
 /// # Precision
 ///
 /// `p` is the destination precision in bits. The rule and the weighted sum
-/// run at `p + WORD_BIT_SIZE`, then `estimate_kronrod`, `estimate_gauss`, and
-/// `abs_err_est = |K − G|` are rounded with `rm`. There is no tolerance
-/// argument: a single panel always returns if every sample is finite.
+/// run two words above the destination width. `estimate_kronrod` and
+/// `estimate_gauss` are rounded with `rm`. `abs_err_est` is a conservative
+/// error estimate, validated against oracles: `|K − G|` plus one unit in the
+/// last place of the rounded Kronrod value, rounded away from zero. There is
+/// no tolerance argument: a single panel always returns if every sample is finite.
 ///
 /// # Errors
 ///
@@ -599,15 +681,15 @@ where
     let _ = aa.set_precision(wrk, RoundingMode::None);
     let _ = bb.set_precision(wrk, RoundingMode::None);
     let (k, g) = eval_panel(&mut f, &aa, &bb, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
-    let err = k.sub(&g, wrk, RoundingMode::None).abs();
+    let err = ExactNum::sub_ref(&k, &g, wrk, RoundingMode::None).abs();
     if !finite(&k) || !finite(&g) || !finite(&err) {
         return Err(QuadratureError::NotConverged);
     }
-    Ok(GkResult {
-        estimate_kronrod: round_out(k, p, rm),
-        estimate_gauss: round_out(g, p, rm),
-        abs_err_est: round_out(err, p, rm),
-    })
+    let result = gk_result(k, g, err, p, rm, wrk);
+    if !finite(&result.abs_err_est) {
+        return Err(QuadratureError::NotConverged);
+    }
+    Ok(result)
 }
 
 fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
@@ -622,7 +704,7 @@ fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
         let mut next = Vec::with_capacity(cols[k].len() - 1);
         let mut broke = false;
         for i in 0..cols[k].len() - 1 {
-            let diff = cols[k][i + 1].sub(&cols[k][i], p, rm);
+            let diff = ExactNum::sub_ref(&cols[k][i + 1], &cols[k][i], p, rm);
             if !finite(&diff) || diff.is_zero() {
                 broke = true;
                 break;
@@ -665,7 +747,8 @@ fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
 /// so a pure geometric series still returns its limit after the column that
 /// found it. `None` if `seq` is empty, any entry is non-finite, or `p < 32`.
 ///
-/// The table is built at `p + WORD_BIT_SIZE` and rounded to `p` with `rm`.
+/// The table is built two words above the destination width and rounded to
+/// `p` with `rm`.
 pub fn wynn_epsilon(seq: &[ExactNum], p: usize, rm: RoundingMode) -> Option<ExactNum> {
     if p < GK_MIN_PREC {
         return None;
@@ -688,11 +771,18 @@ fn abs_tolerance(tol_rel: &ExactNum, estimate: &ExactNum, p: usize) -> ExactNum 
     let rm = RoundingMode::None;
     let floor = tiny(p, 1);
     let one = ExactNum::from_u8(1, p);
-    let mut scale = estimate.abs();
-    if leq(&scale, &one) {
-        scale = one;
-    }
-    let rel = tol_rel.mul(&scale, p, rm);
+    let negated;
+    let est: &ExactNum = if estimate.is_negative() {
+        negated = estimate.neg_via_mul();
+        &negated
+    } else {
+        estimate
+    };
+    let rel = if leq(est, &one) {
+        one.mul(tol_rel, p, rm)
+    } else {
+        ExactNum::mul_ref(tol_rel, est, p, rm)
+    };
     if !finite(&rel) || leq(&rel, &floor) {
         floor
     } else {
@@ -718,8 +808,12 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 /// The panel with the largest `|K − G|` is bisected until the sum of those
 /// estimates meets the tolerance, or until two successive even-order ε
 /// values on the sequence of global Kronrod sums agree to the tolerance.
-/// This is the QUADPACK error idea (local `|K − G|`, global ε) without the
-/// `QAGS` heap, four-way split, or roundoff flags.
+/// The ε difference is only a stopping test. The returned `abs_err_est` is
+/// a conservative error estimate, validated against oracles: the sum of the
+/// local `|K − G|` when that test accepts, otherwise the sum that met the
+/// tolerance, plus one unit in the last place of the rounded estimate. This
+/// is the QUADPACK error idea (local `|K − G|`,
+/// global ε) without the `QAGS` heap, four-way split, or roundoff flags.
 ///
 /// # Arguments
 ///
@@ -732,12 +826,13 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 ///   performs at most `15 * (2 * max_subintervals − 1)` evaluations, because
 ///   each bisection discards one panel and samples two new ones.
 /// * `p` — destination precision in bits (at least 32). Nodes, weights, and
-///   panel sums use `p + WORD_BIT_SIZE` guard bits.
-/// * `rm` — rounding mode for the three returned fields.
+///   panel sums use two guard words above the destination width.
+/// * `rm` — rounding mode for `estimate_kronrod` and `estimate_gauss`.
+///   `abs_err_est` is always rounded away from zero.
 ///
 /// # Errors
 ///
-/// [`QuadratureError::InvalidArgument`] if bounds are non-finite or not
+/// [`QuadratureError::InvalidArgument`] if endpoints are non-finite or not
 /// `a < b`, `tol_rel` is non-finite or negative, `p < 32`,
 /// `max_subintervals` is outside `1..=GK_SUBINTERVAL_MAX`, or any integrand
 /// sample is non-finite.
@@ -775,7 +870,7 @@ where
     let mut tol_work = tol_rel.clone();
     let _ = tol_work.set_precision(wrk, RoundingMode::None);
     let (k0, g0) = eval_panel(&mut f, &aa, &bb, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
-    let err0 = k0.sub(&g0, wrk, RoundingMode::None).abs();
+    let err0 = ExactNum::sub_ref(&k0, &g0, wrk, RoundingMode::None).abs();
     let mut panels = vec![Panel {
         a: aa,
         b: bb,
@@ -794,23 +889,25 @@ where
         seq.push(total_k.clone());
         let tol = abs_tolerance(&tol_work, &total_k, wrk);
         if leq(&total_err, &tol) {
-            return Ok(GkResult {
-                estimate_kronrod: round_out(total_k, p, rm),
-                estimate_gauss: round_out(total_g, p, rm),
-                abs_err_est: round_out(total_err, p, rm),
-            });
+            let result = gk_result(total_k, total_g, total_err, p, rm, wrk);
+            if !finite(&result.abs_err_est) {
+                return Err(QuadratureError::NotConverged);
+            }
+            return Ok(result);
         }
         if seq.len() >= 3 {
             if let Some(ex) = wynn_table(&seq, wrk) {
                 if ex.order >= 2 {
                     if let Some(prev) = &prev_eps {
-                        let de = ex.value.sub(prev, wrk, RoundingMode::None).abs();
+                        let de = ExactNum::sub_ref(&ex.value, prev, wrk, RoundingMode::None).abs();
                         if finite(&de) && leq(&de, &tol) {
-                            return Ok(GkResult {
-                                estimate_kronrod: round_out(ex.value, p, rm),
-                                estimate_gauss: round_out(total_g, p, rm),
-                                abs_err_est: round_out(de, p, rm),
-                            });
+                            let raw =
+                                if de.compare(&total_err) == Some(1) { de } else { total_err };
+                            let result = gk_result(ex.value, total_g, raw, p, rm, wrk);
+                            if !finite(&result.abs_err_est) {
+                                return Err(QuadratureError::NotConverged);
+                            }
+                            return Ok(result);
                         }
                     }
                     prev_eps = Some(ex.value);
@@ -822,25 +919,27 @@ where
         }
         let mut worst = 0usize;
         for i in 1..panels.len() {
-            if panels[i].err.cmp(&panels[worst].err) == Some(1) {
+            if panels[i].err.compare(&panels[worst].err) == Some(1) {
                 worst = i;
             }
         }
         let left_a = panels[worst].a.clone();
         let right_b = panels[worst].b.clone();
         let two = ExactNum::from_u8(2, wrk);
-        let mid = left_a
-            .add(&right_b, wrk, RoundingMode::None)
-            .div(&two, wrk, RoundingMode::None);
-        if mid.cmp(&left_a) != Some(1) || mid.cmp(&right_b) != Some(-1) {
+        let mid = ExactNum::add_ref(&left_a, &right_b, wrk, RoundingMode::None).div(
+            &two,
+            wrk,
+            RoundingMode::None,
+        );
+        if mid.compare(&left_a) != Some(1) || mid.compare(&right_b) != Some(-1) {
             return Err(QuadratureError::NotConverged);
         }
         let (k1, g1) = eval_panel(&mut f, &left_a, &mid, &nodes, &w_gauss, &w_kronrod, wrk, cc)?;
         let (k2, g2) = eval_panel(
             &mut f, &mid, &right_b, &nodes, &w_gauss, &w_kronrod, wrk, cc,
         )?;
-        let e1 = k1.sub(&g1, wrk, RoundingMode::None).abs();
-        let e2 = k2.sub(&g2, wrk, RoundingMode::None).abs();
+        let e1 = ExactNum::sub_ref(&k1, &g1, wrk, RoundingMode::None).abs();
+        let e2 = ExactNum::sub_ref(&k2, &g2, wrk, RoundingMode::None).abs();
         panels[worst] = Panel {
             a: left_a,
             b: mid.clone(),
@@ -858,6 +957,174 @@ where
     }
 }
 
+/// Sample `f(x) * jac`. A non-finite image, or a product that overflows after
+/// `f` has underflowed, contributes zero.
+fn weighted_sample<F>(
+    f: &mut F,
+    x: ExactNum,
+    jac: ExactNum,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> ExactNum
+where
+    F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    if !finite(&x) || !finite(&jac) || jac.is_zero() {
+        return ExactNum::new(p);
+    }
+    let y = f(&x, p, rm, cc);
+    if !finite(&y) {
+        return y;
+    }
+    if y.is_zero() {
+        return ExactNum::new(p);
+    }
+    let z = y.mul(&jac, p, rm);
+    if finite(&z) {
+        z
+    } else {
+        ExactNum::new(p)
+    }
+}
+
+fn at_prec(mut x: ExactNum, p: usize) -> ExactNum {
+    let _ = x.set_precision(p, RoundingMode::None);
+    x
+}
+
+/// `x = end + sign * t/(1-t)` and `dx/dt = 1/(1-t)^2` for `t ∈ (0, 1)`.
+fn semi_infinite_sample<F>(
+    f: &mut F,
+    end: &ExactNum,
+    positive: bool,
+    t: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> ExactNum
+where
+    F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    let one = ExactNum::from_u8(1, p);
+    let den = ExactNum::sub_ref(&one, t, p, rm);
+    if !finite(&den) || !den.is_positive() {
+        return ExactNum::new(p);
+    }
+    let step = ExactNum::div_ref(t, &den, p, rm);
+    if !finite(&step) {
+        return ExactNum::new(p);
+    }
+    let end = at_prec(end.clone(), p);
+    let x = if positive { end.add(&step, p, rm) } else { end.sub(&step, p, rm) };
+    let jac = one.div(&den.sqr(p, rm), p, rm);
+    weighted_sample(f, x, jac, p, rm, cc)
+}
+
+/// `x = t/(1-t^2)` and `dx/dt = (1+t^2)/(1-t^2)^2` for `t ∈ (-1, 1)`.
+fn whole_line_sample<F>(
+    f: &mut F,
+    t: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> ExactNum
+where
+    F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    let one = ExactNum::from_u8(1, p);
+    let t2 = t.sqr(p, rm);
+    let den = ExactNum::sub_ref(&one, &t2, p, rm);
+    if !finite(&den) || den.is_zero() || den.is_negative() {
+        return ExactNum::new(p);
+    }
+    let x = ExactNum::div_ref(t, &den, p, rm);
+    let num = one.add(&t2, p, rm);
+    let jac = num.div(&den.sqr(p, rm), p, rm);
+    weighted_sample(f, x, jac, p, rm, cc)
+}
+
+/// Adaptive (7, 15) integration of `f` on a half-line or the whole line.
+///
+/// The finite-interval rule is applied after a rational map. One infinite
+/// endpoint uses `x = c ± t/(1-t)` on `t ∈ (0, 1)`. Both infinite endpoints
+/// use `x = t/(1-t^2)` on `t ∈ (-1, 1)`. `abs_err_est` is the same
+/// conservative error estimate the finite rule returns, validated against
+/// oracles.
+///
+/// A mapped abscissa past the exponent range contributes zero. That is the
+/// tail of an integrand which has already underflowed. A divergent integrand
+/// still returns [`QuadratureError::NotConverged`] when the panel budget
+/// runs out.
+///
+/// # Errors
+///
+/// [`QuadratureError::InvalidArgument`] when neither endpoint is infinite,
+/// the endpoints are out of order, or the finite rule rejects the tolerance,
+/// precision, or a non-finite sample.
+pub fn integrate_adaptive_gk_infinite<F>(
+    mut f: F,
+    a: &ExactNum,
+    b: &ExactNum,
+    tol_rel: &ExactNum,
+    max_subintervals: usize,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Result<GkResult, QuadratureError>
+where
+    F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    let a_pos = a.is_inf_pos();
+    let a_neg = a.is_inf_neg();
+    let b_pos = b.is_inf_pos();
+    let b_neg = b.is_inf_neg();
+    if a_pos || b_neg {
+        return Err(QuadratureError::InvalidArgument);
+    }
+    let zero = ExactNum::new(p);
+    let one = ExactNum::from_u8(1, p);
+    if a_neg && b_pos {
+        return integrate_adaptive_gk(
+            |t, wp, wrm, cc| whole_line_sample(&mut f, t, wp, wrm, cc),
+            &ExactNum::from_i8(-1, p),
+            &one,
+            tol_rel,
+            max_subintervals,
+            p,
+            rm,
+            cc,
+        );
+    }
+    if b_pos && finite(a) {
+        let end = a.clone();
+        return integrate_adaptive_gk(
+            |t, wp, wrm, cc| semi_infinite_sample(&mut f, &end, true, t, wp, wrm, cc),
+            &zero,
+            &one,
+            tol_rel,
+            max_subintervals,
+            p,
+            rm,
+            cc,
+        );
+    }
+    if a_neg && finite(b) {
+        let end = b.clone();
+        return integrate_adaptive_gk(
+            |t, wp, wrm, cc| semi_infinite_sample(&mut f, &end, false, t, wp, wrm, cc),
+            &zero,
+            &one,
+            tol_rel,
+            max_subintervals,
+            p,
+            rm,
+            cc,
+        );
+    }
+    Err(QuadratureError::InvalidArgument)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -870,26 +1137,27 @@ mod tests {
         if got.is_nan() {
             return i32::MIN;
         }
-        let d = got.sub(want, 2 * p, RoundingMode::None);
+        let d = ExactNum::sub_ref(got, want, 2 * p, RoundingMode::None);
         if d.is_zero() {
             return i32::MAX;
         }
-        want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)
+        i32::try_from(want.exponent().unwrap_or(0) - d.exponent().unwrap_or(0)).unwrap_or(i32::MAX)
     }
 
     #[test]
-    fn gk715_x22_exact_and_weights_symmetric() {
+    fn gk715_x22_exact_and_weights_symmetric() -> Result<(), Box<dyn std::error::Error>> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
-        let (nodes, w_g, w_k) = kronrod_pair(GK_GAUSS_ORDER, p, rm, &mut cc).expect("pair");
+        let mut cc = Consts::new()?;
+        let (nodes, w_g, w_k) =
+            kronrod_pair(GK_GAUSS_ORDER, p, rm, &mut cc).ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(nodes.len(), GK_KRONROD_ORDER);
         assert_eq!(w_g.len(), GK_KRONROD_ORDER);
         assert_eq!(w_k.len(), GK_KRONROD_ORDER);
         assert!(nodes[GK_GAUSS_ORDER].is_zero());
         for i in 0..GK_GAUSS_ORDER {
             let mirror = nodes.len() - 1 - i;
-            assert_eq!(nodes[i].cmp(&nodes[mirror].neg()), Some(0));
-            assert_eq!(w_k[i].cmp(&w_k[mirror]), Some(0));
+            assert_eq!(nodes[i].compare(&nodes[mirror].neg_via_mul()), Some(0));
+            assert_eq!(w_k[i].compare(&w_k[mirror]), Some(0));
         }
         for (i, w) in w_g.iter().enumerate() {
             if i % 2 == 0 {
@@ -915,8 +1183,7 @@ mod tests {
             p,
             rm,
             &mut cc,
-        )
-        .expect("x^22");
+        )?;
         let two = ExactNum::from_u8(2, p);
         let twenty_three = ExactNum::from_u8(23, p);
         let want = two.div(&twenty_three, p, rm);
@@ -926,23 +1193,35 @@ mod tests {
             "x^22 bits {correct} estimate {}",
             got.estimate_kronrod
         );
+        let gap = got
+            .estimate_kronrod
+            .sub(&want, 2 * p, RoundingMode::None)
+            .abs();
+        assert!(
+            gap.compare(&got.abs_err_est) != Some(1),
+            "x^22 error {} does not cover {gap}",
+            got.abs_err_est
+        );
+        Ok(())
     }
 
     #[test]
-    fn wynn_geometric_series_hits_two() {
+    fn wynn_geometric_series_hits_two() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
         // Partial sums of Σ (1/2)^k from k = 0. One geometric component, so
         // the even ε column of order 2 is the limit 2 in exact arithmetic.
-        let mut seq = Vec::new();
-        let mut acc = ExactNum::new(p);
         let half = ExactNum::from_u8(1, p).ldexp(-1, p, rm);
-        let mut term = ExactNum::from_u8(1, p);
-        for _ in 0..4 {
-            acc = acc.add(&term, p, rm);
-            seq.push(acc.clone());
-            term = term.mul(&half, p, rm);
-        }
-        let got = wynn_epsilon(&seq, p, rm).expect("wynn");
+        let partial = |n: usize| {
+            let mut acc = ExactNum::new(p);
+            let mut term = ExactNum::from_u8(1, p);
+            for _ in 0..n {
+                acc = acc.add(&term, p, rm);
+                term = term.mul(&half, p, rm);
+            }
+            acc
+        };
+        let seq: Vec<ExactNum> = (1..=4).map(partial).collect();
+        let got = wynn_epsilon(&seq, p, rm).ok_or(crate::Error::InvalidArgument)?;
         let two = ExactNum::from_u8(2, p);
         let correct = bits(&got, &two, p);
         assert!(
@@ -952,16 +1231,24 @@ mod tests {
         assert!(wynn_epsilon(&[], p, rm).is_none());
         let nan = ExactNum::nan(None);
         assert!(wynn_epsilon(&[nan], p, rm).is_none());
+        Ok(())
     }
 
     #[test]
-    fn gk_rejects_bad_interval_and_nonfinite_sample() {
+    fn gk_rejects_bad_interval_and_nonfinite_sample() -> Result<(), crate::Error> {
         let (p, rm) = gold_p();
-        let mut cc = Consts::new().expect("consts");
+        let mut cc = Consts::new()?;
         let a = ExactNum::from_u8(0, p);
         let b = ExactNum::from_u8(1, p);
-        let swapped = gauss_kronrod_interval(|x, _p, _rm, _cc| x.clone(), &b, &a, p, rm, &mut cc);
-        assert_eq!(swapped.unwrap_err(), QuadratureError::InvalidArgument);
+        let swapped = gauss_kronrod_interval(
+            |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
+            &b,
+            &a,
+            p,
+            rm,
+            &mut cc,
+        );
+        assert!(matches!(swapped, Err(QuadratureError::InvalidArgument)));
         let nan_f = gauss_kronrod_interval(
             |_x, _p, _rm, _cc| ExactNum::nan(None),
             &a,
@@ -970,7 +1257,7 @@ mod tests {
             rm,
             &mut cc,
         );
-        assert_eq!(nan_f.unwrap_err(), QuadratureError::InvalidArgument);
+        assert!(matches!(nan_f, Err(QuadratureError::InvalidArgument)));
         assert!(kronrod_pair(10, p, rm, &mut cc).is_none());
         let tol = ExactNum::from_u8(1, p).ldexp(-8, p, rm);
         let tight = integrate_adaptive_gk(
@@ -983,6 +1270,108 @@ mod tests {
             rm,
             &mut cc,
         );
-        assert_eq!(tight.unwrap_err(), QuadratureError::NotConverged);
+        assert!(matches!(tight, Err(QuadratureError::NotConverged)));
+        Ok(())
+    }
+
+    #[test]
+    fn gk_infinite_exp_and_gaussian_cover_the_truth() -> Result<(), Box<dyn std::error::Error>> {
+        let mut cc = Consts::new()?;
+        for (p, rm) in [
+            (53usize, RoundingMode::ToEven),
+            (53, RoundingMode::Up),
+            (128, RoundingMode::ToEven),
+        ] {
+            let tol = ExactNum::parse("1e-8", crate::Radix::Dec, p, rm, &mut cc);
+            let panels = 24;
+            let zero = ExactNum::from_u8(0, p);
+            let one = ExactNum::from_u8(1, p);
+            let pos = ExactNum::parse("inf", crate::Radix::Dec, p, rm, &mut cc);
+            let neg = ExactNum::parse("-inf", crate::Radix::Dec, p, rm, &mut cc);
+            let exp_tail = integrate_adaptive_gk_infinite(
+                |x, p, rm, cc| x.neg_via_mul().exp(p, rm, cc),
+                &zero,
+                &pos,
+                &tol,
+                panels,
+                p,
+                rm,
+                &mut cc,
+            )?;
+            let want_one = ExactNum::from_u8(1, p);
+            let gap = ExactNum::sub_ref(
+                &exp_tail.estimate_kronrod,
+                &want_one,
+                2 * p,
+                RoundingMode::None,
+            )
+            .abs();
+            assert!(
+                gap.compare(&exp_tail.abs_err_est) != Some(1),
+                "p={p} exp gap {gap} est {} err {}",
+                exp_tail.estimate_kronrod,
+                exp_tail.abs_err_est
+            );
+            assert!(gap.compare(&tol) != Some(1), "p={p} exp estimate {gap}");
+            let alg = integrate_adaptive_gk_infinite(
+                |x, p, rm, _cc| x.sqr(p, rm).reciprocal(p, rm),
+                &one,
+                &pos,
+                &tol,
+                panels,
+                p,
+                rm,
+                &mut cc,
+            )?;
+            let gap =
+                ExactNum::sub_ref(&alg.estimate_kronrod, &want_one, 2 * p, RoundingMode::None)
+                    .abs();
+            assert!(
+                gap.compare(&alg.abs_err_est) != Some(1),
+                "p={p} invsq gap {gap} est {}",
+                alg.estimate_kronrod
+            );
+            let gauss = integrate_adaptive_gk_infinite(
+                |x, p, rm, cc| {
+                    let y = x.sqr(p, rm);
+                    y.neg().exp(p, rm, cc)
+                },
+                &neg,
+                &pos,
+                &tol,
+                panels,
+                p,
+                rm,
+                &mut cc,
+            )?;
+            let pi = cc.pi(p, rm).sqrt(p, rm);
+            let gap =
+                ExactNum::sub_ref(&gauss.estimate_kronrod, &pi, 2 * p, RoundingMode::None).abs();
+            assert!(
+                gap.compare(&gauss.abs_err_est) != Some(1),
+                "p={p} gauss gap {gap} est {} err {}",
+                gauss.estimate_kronrod,
+                gauss.abs_err_est
+            );
+            assert!(gap.compare(&tol) != Some(1), "p={p} gauss estimate {gap}");
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn kronrod_nodes_are_exactly_symmetric_and_ordered() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let (nodes, w_gauss, w_kronrod) = kronrod_legendre_at(GK_GAUSS_ORDER, 256, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        let n = nodes.len();
+        assert_eq!(n, GK_KRONROD_ORDER);
+        for i in 0..n / 2 {
+            assert_eq!(nodes[i].compare(&nodes[n - 1 - i].neg_via_mul()), Some(0));
+            assert_eq!(w_kronrod[i].compare(&w_kronrod[n - 1 - i]), Some(0));
+            assert_eq!(nodes[i].compare(&nodes[i + 1]), Some(-1));
+        }
+        assert!(nodes[n / 2].is_zero());
+        assert_eq!(w_gauss.len(), n);
+        Ok(())
     }
 }

@@ -12,6 +12,8 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+# shellcheck source=use_rust_1_99.sh
+source "$root/scripts/use_rust_1_99.sh"
 
 baseline="${REGRESSION_FILE:-doc/bench-baselines.tsv}"
 regression_pct="${REGRESSION_PCT:-10}"

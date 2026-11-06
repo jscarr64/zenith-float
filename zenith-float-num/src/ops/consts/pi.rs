@@ -163,17 +163,18 @@ mod tests {
     use crate::{Consts, RoundingMode, Sign};
 
     #[test]
-    fn test_pi_precision_overflow() {
-        let mut cc = Consts::new().expect("Constants cache initialized");
+    fn test_pi_precision_overflow() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
         let pi = cc.pi(u64::MAX as usize, RoundingMode::None);
         assert!(pi.is_nan());
+        Ok(())
     }
 
     #[test]
     #[cfg(target_pointer_width = "32")]
-    fn test_pi_const() {
-        let mut pi = PiCache::new().unwrap();
-        let c = pi.for_prec(320, RoundingMode::ToEven).unwrap();
+    fn test_pi_const() -> Result<(), crate::Error> {
+        let mut pi = PiCache::new()?;
+        let c = pi.for_prec(320, RoundingMode::ToEven)?;
         //println!("pi {:?}", c);
         let r = ExactNumNumber::from_raw_parts(
             &[
@@ -184,16 +185,16 @@ mod tests {
             Sign::Pos,
             2,
             false,
-        )
-        .unwrap();
+        )?;
         assert!(c.cmp(&r) == 0);
+        Ok(())
     }
 
     #[test]
     #[cfg(not(target_pointer_width = "32"))]
-    fn test_pi_const() {
-        let mut pi = PiCache::new().unwrap();
-        let c = pi.for_prec(320, RoundingMode::ToEven).unwrap();
+    fn test_pi_const() -> Result<(), crate::Error> {
+        let mut pi = PiCache::new()?;
+        let c = pi.for_prec(320, RoundingMode::ToEven)?;
         //println!("pi {:?}", c);
         let r = ExactNumNumber::from_raw_parts(
             &[
@@ -207,8 +208,8 @@ mod tests {
             Sign::Pos,
             2,
             false,
-        )
-        .unwrap();
+        )?;
         assert!(c.cmp(&r) == 0);
+        Ok(())
     }
 }

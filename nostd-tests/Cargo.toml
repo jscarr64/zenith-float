@@ -2,6 +2,7 @@
 name = "zenith-float-nostd-tests"
 version = "0.0.0"
 edition = "2021"
+rust-version = "1.99"
 publish = false
 description = "no_std reference-value test harness for zenith-float-num (not published)."
 license = "MIT OR Apache-2.0"

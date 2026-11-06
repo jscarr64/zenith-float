@@ -4,11 +4,13 @@
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
+# shellcheck source=use_rust_1_99.sh
+source "$root/scripts/use_rust_1_99.sh"
 ref="$root/golds/hex/reference.txt"
 [[ -f "$ref" ]] || { echo "error: missing $ref" >&2; exit 1; }
 tmp="$(mktemp)"
 trap 'rm -f "$tmp" "${tmp}.ref"' EXIT
-cargo run -p zenith-float --release --bin hex_golds "$@" | sed '/^#/d' | grep -E '^[a-z]' >"$tmp"
+cargo run -q -p zenith-float --release --bin hex_golds "$@" | sed '/^#/d' | grep -E '^[a-z]' >"$tmp"
 sed '/^#/d' "$ref" | grep -E '^[a-z]' >"${tmp}.ref"
 if ! diff -u "${tmp}.ref" "$tmp"; then
   echo "error: hex limb gold mismatch" >&2

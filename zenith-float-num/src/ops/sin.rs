@@ -34,9 +34,9 @@ impl ArgReductionEstimator for SinArgReductionEstimator {
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
     #[inline]
-    fn reduction_effect(n: usize, m: isize) -> usize {
+    fn reduction_effect(n: usize, m: i64) -> usize {
         // n*log2(3) + m
-        ((n as isize) * 1000 / 631 + m) as usize
+        ((n as i64) * 1000 / 631 + m) as usize
     }
 }
 
@@ -57,9 +57,11 @@ impl ExactNumNumber {
         }
 
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len());
+        // The retry budget counts from the working start: an argument wider than `p` must not exhaust it at once.
+        let p_base = p.max(self.mantissa_max_bit_len());
+        let mut p_wrk = p_base;
 
-        compute_small_exp!(self, self.exponent() as isize * 2 - 2, true, p_wrk, p, rm);
+        compute_small_exp!(self, self.exponent() * 2 - 2, true, p_wrk, p, rm);
 
         p_wrk += p_inc;
 
@@ -83,7 +85,7 @@ impl ExactNumNumber {
                     break Ok(ret);
                 }
 
-                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p_base)?;
             }
         }
     }
@@ -98,7 +100,7 @@ impl ExactNumNumber {
         let (reduction_times, niter, e_eff) = series_cost_optimize::<SinArgReductionEstimator>(
             p,
             &polycoeff_gen,
-            -(self.exponent() as isize),
+            -self.exponent(),
             2,
             false,
         );
@@ -107,7 +109,7 @@ impl ExactNumNumber {
         // Restore gives 2^(-p+6) per iteration.
         // First terms of the series for any e_eff >= 0 give 2^(-p+6) at most.
         // The error of the remaining terms of the series is compensated.
-        let add_prec = reduction_times as isize * 6 + 9 - e_eff as isize;
+        let add_prec = reduction_times as i64 * 6 + 9 - e_eff as i64;
         let p_arg = p + if add_prec > 0 { add_prec as usize } else { 0 };
         self.set_precision(p_arg, rm)?;
 
@@ -117,9 +119,9 @@ impl ExactNumNumber {
             self
         };
 
-        let acc = arg.clone()?; // x
         let x_step = arg.mul(&arg, p_arg, rm)?; // x^2
         let x_first = arg.mul(&x_step, p_arg, rm)?; // x^3
+        let acc = arg; // x (moved: the powers above are the last borrows of it)
 
         let ret = series_run(acc, x_first, x_step, niter, &mut polycoeff_gen)?;
 
@@ -134,7 +136,7 @@ impl ExactNumNumber {
     // cost: n * O(add)
     fn sin_arg_reduce(&self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
         // sin(3*x) = 3*sin(x) - 4*sin(x)^3
-        let mut d = THREE.clone()?;
+        let mut d = ExactNumNumber::small_const(3);
         for _ in 1..n {
             d = d.mul_full_prec(&THREE)?;
         }
@@ -143,9 +145,9 @@ impl ExactNumNumber {
 
     // restore value for the argument reduced n times.
     // cost: n * (4*O(mul) + O(add))
-    fn sin_arg_restore(&self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
+    fn sin_arg_restore(self, n: usize, rm: RoundingMode) -> Result<Self, Error> {
         // sin(3*x) = 3*sin(x) - 4*sin(x)^3
-        let mut sin = self.clone()?;
+        let mut sin = self;
         let p = sin.mantissa_max_bit_len();
 
         for _ in 0..n {
@@ -168,43 +170,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sine() {
+    fn test_sine() -> Result<(), crate::Error> {
         let p = 320;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let mut n1 = ExactNumNumber::from_word(5, p).unwrap();
+        let mut n1 = ExactNumNumber::from_word(5, p)?;
         n1.set_exponent(0);
-        let _n2 = n1.sin(p, rm, &mut cc).unwrap();
+        let _n2 = n1.sin(p, rm, &mut cc)?;
         //println!("{:?}", n2.format(crate::Radix::Dec, rm).unwrap());
 
         // asymptotic & extrema testing
-        let mut half_pi = cc.pi_num(128, RoundingMode::None).unwrap();
+        let mut half_pi = cc.pi_num(128, RoundingMode::None)?;
         half_pi.set_exponent(1);
-        half_pi.set_precision(p, RoundingMode::None).unwrap();
+        half_pi.set_precision(p, RoundingMode::None)?;
 
-        let n2 = half_pi.sin(p, rm, &mut cc).unwrap();
+        let n2 = half_pi.sin(p, rm, &mut cc)?;
         let n3 = ExactNumNumber::parse(
             "F.FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF2DC85F7E77EC487_e-1",
             crate::Radix::Hex,
             640,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
+        )?;
 
         assert!(n2.cmp(&n3) == 0);
 
         // large exponent
         half_pi.set_exponent(256);
-        let n2 = half_pi.sin(p, rm, &mut cc).unwrap();
+        let n2 = half_pi.sin(p, rm, &mut cc)?;
         let n3 = ExactNumNumber::parse(
             "F.AE195882CABDC16FAF2A733AB99159AF50C47E8B9ED8BA42C5872FF88A52726061B4231170F1BE8_e-1",
             crate::Radix::Hex,
             640,
             RoundingMode::None,
             &mut cc,
-        )
-        .unwrap();
+        )?;
 
         //println!("{:?}", n2.format(crate::Radix::Hex, rm).unwrap());
 
@@ -212,21 +212,22 @@ mod tests {
 
         // small exponent
         let p = 384;
-        let d1 = ExactNumNumber::parse("-4.6C7B4339E519CAFC9C58869B348D66FD510B4E74F0A6476126B55FD73F5533C7B84C5733C34BB312677AE7C015A666D0_e-17", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
-        let d2 = d1.sin(p, RoundingMode::ToEven, &mut cc).unwrap();
-        let d3 = ExactNumNumber::parse("-4.6C7B4339E519CAFC9C58869B348D66FD510B4E74F0A638F3725423CE43E0D375A6FEE810D77915E6EA2D8EE32EBCF618_e-17", crate::Radix::Hex, p, RoundingMode::None, &mut cc).unwrap();
+        let d1 = ExactNumNumber::parse("-4.6C7B4339E519CAFC9C58869B348D66FD510B4E74F0A6476126B55FD73F5533C7B84C5733C34BB312677AE7C015A666D0_e-17", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
+        let d2 = d1.sin(p, RoundingMode::ToEven, &mut cc)?;
+        let d3 = ExactNumNumber::parse("-4.6C7B4339E519CAFC9C58869B348D66FD510B4E74F0A638F3725423CE43E0D375A6FEE810D77915E6EA2D8EE32EBCF618_e-17", crate::Radix::Hex, p, RoundingMode::None, &mut cc)?;
 
         // println!("{:?}", d1.format(crate::Radix::Bin, RoundingMode::None).unwrap());
         // println!("{:?}", d2.format(crate::Radix::Hex, RoundingMode::None).unwrap());
 
         assert!(d2.cmp(&d3) == 0);
 
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
-        let n1 = random_subnormal(p);
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
+        let n1 = random_subnormal(p)?;
 
-        assert!(d3.sin(p, rm, &mut cc).unwrap().cmp(&d3) == 0);
-        assert!(zero.sin(p, rm, &mut cc).unwrap().is_zero());
-        assert!(n1.sin(p, rm, &mut cc).unwrap().cmp(&n1) == 0);
+        assert!(d3.sin(p, rm, &mut cc)?.cmp(&d3) == 0);
+        assert!(zero.sin(p, rm, &mut cc)?.is_zero());
+        assert!(n1.sin(p, rm, &mut cc)?.cmp(&n1) == 0);
+        Ok(())
     }
 }

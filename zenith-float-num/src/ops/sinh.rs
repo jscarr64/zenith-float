@@ -29,9 +29,11 @@ impl ExactNumNumber {
         }
 
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p.max(self.mantissa_max_bit_len());
+        // The retry budget counts from the working start: an argument wider than `p` must not exhaust it at once.
+        let p_base = p.max(self.mantissa_max_bit_len());
+        let mut p_wrk = p_base;
 
-        compute_small_exp!(self, self.exponent() as isize * 2 - 2, false, p_wrk, p, rm);
+        compute_small_exp!(self, self.exponent() * 2 - 2, false, p_wrk, p, rm);
 
         p_wrk += p_inc;
 
@@ -87,7 +89,7 @@ impl ExactNumNumber {
                 break Ok(ret);
             }
 
-            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p_base)?;
         }
     }
 }
@@ -100,41 +102,48 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_sinh() {
+    fn test_sinh() -> Result<(), crate::Error> {
         let p = 32000;
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
-        let mut n1 = ExactNumNumber::from_word(1, 1).unwrap();
+        let mut n1 = ExactNumNumber::from_word(1, 1)?;
         n1.set_exponent(0);
-        let _n2 = n1.sinh(p, rm, &mut cc).unwrap();
+        let _n2 = n1.sinh(p, rm, &mut cc)?;
         //println!("{:?}", n2.fp3(crate::Radix::Dec, rm).unwrap());
 
-        let d1 = ExactNumNumber::max_value(p).unwrap();
-        let d2 = ExactNumNumber::min_value(p).unwrap();
+        let d1 = ExactNumNumber::max_value(p)?;
+        let d2 = ExactNumNumber::min_value(p)?;
 
-        assert!(d1.sinh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Pos));
-        assert!(d2.sinh(p, rm, &mut cc).unwrap_err() == Error::ExponentOverflow(Sign::Neg));
+        assert!(matches!(
+            d1.sinh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
+        assert!(matches!(
+            d2.sinh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Neg))
+        ));
 
-        let d3 = ExactNumNumber::min_positive(p).unwrap();
-        let zero = ExactNumNumber::new(1).unwrap();
-        let n1 = random_subnormal(p);
+        let d3 = ExactNumNumber::min_positive(p)?;
+        let zero = ExactNumNumber::new(1)?;
+        let n1 = random_subnormal(p)?;
 
-        assert!(d3.sinh(p, rm, &mut cc).unwrap().cmp(&d3) == 0);
-        assert!(zero.sinh(p, rm, &mut cc).unwrap().is_zero());
-        assert!(n1.sinh(p, rm, &mut cc).unwrap().cmp(&n1) == 0);
+        assert!(d3.sinh(p, rm, &mut cc)?.cmp(&d3) == 0);
+        assert!(zero.sinh(p, rm, &mut cc)?.is_zero());
+        assert!(n1.sinh(p, rm, &mut cc)?.cmp(&n1) == 0);
 
-        let mut large_pos = ExactNumNumber::from_word(1, 256).unwrap();
+        let mut large_pos = ExactNumNumber::from_word(1, 256)?;
         large_pos.set_exponent(150);
-        assert_eq!(
-            large_pos.sinh(p, rm, &mut cc).unwrap_err(),
-            Error::ExponentOverflow(Sign::Pos)
-        );
-        let mut large_neg = ExactNumNumber::from_word(1, 256).unwrap();
+        assert!(matches!(
+            large_pos.sinh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Pos))
+        ));
+        let mut large_neg = ExactNumNumber::from_word(1, 256)?;
         large_neg.set_exponent(150);
         large_neg.set_sign(Sign::Neg);
-        assert_eq!(
-            large_neg.sinh(p, rm, &mut cc).unwrap_err(),
-            Error::ExponentOverflow(Sign::Neg)
-        );
+        assert!(matches!(
+            large_neg.sinh(p, rm, &mut cc),
+            Err(Error::ExponentOverflow(Sign::Neg))
+        ));
+        Ok(())
     }
 }

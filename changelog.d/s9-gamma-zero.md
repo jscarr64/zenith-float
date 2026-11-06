@@ -1,0 +1,1 @@
+- `gamma(-0)` now returns -Inf (was +Inf); `gamma(+0)` stays +Inf. Exact, sign of the zero, as MPFR. special.rs:253.

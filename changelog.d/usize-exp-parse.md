@@ -1,0 +1,1 @@
+- Decimal parse: the decimal exponent magnitude is split into chunks in `u64`, so on 32-bit targets `1e±N` with `|N|` beyond `u32` is no longer saturated. No change on 64-bit.

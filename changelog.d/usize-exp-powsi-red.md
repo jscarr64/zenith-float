@@ -1,0 +1,1 @@
+- Tests (red, 32-bit): `tests/usize_exponent_32bit.rs` pins `powsi` for `|n| > u32::MAX` (`2^(2^32 + 1)`, `2^-(2^40)`, the sign of `(-2)^n` by parity) as exact powers of two. On `i686-unknown-linux-musl` the positive power truncates `n as usize` and the negative one saturates `|n|` to `usize::MAX`.

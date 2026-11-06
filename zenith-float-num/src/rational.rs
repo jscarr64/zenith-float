@@ -10,13 +10,14 @@ use crate::NAN;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::cmp::Ordering;
+use core::ops::Neg;
 
 /// Exact rational `num/den`. Distinct from [`ExactNum`], which is floating-point.
 ///
 /// Both parts are integer-valued `ExactNum`s after [`Self::new`]. The
 /// denominator is positive. A zero denominator or a non-finite part is stored
 /// as `NaN/1`.
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ExactRational {
     num: ExactNum,
     den: ExactNum,
@@ -40,7 +41,7 @@ fn is_int(x: &ExactNum) -> bool {
     if x.is_nan() || x.is_inf() {
         return false;
     }
-    x.fract().is_zero()
+    x.is_int()
 }
 
 fn gcd_int(mut a: ExactNum, mut b: ExactNum) -> ExactNum {
@@ -71,7 +72,7 @@ fn reduce(mut num: ExactNum, mut den: ExactNum) -> ExactRational {
     }
     if is_int(&num) && is_int(&den) {
         let g = gcd_int(num.clone(), den.clone());
-        if !g.is_zero() && g.cmp(&rat_one()) != Some(0) {
+        if !g.is_zero() && g.compare(&rat_one()) != Some(0) {
             let p = work_p(&[&num, &den, &g]);
             num = num.div(&g, p, RoundingMode::ToEven);
             den = den.div(&g, p, RoundingMode::ToEven);
@@ -112,26 +113,31 @@ impl ExactRational {
 
     /// True if the denominator is `1`.
     pub fn is_integer(&self) -> bool {
-        !self.is_nan() && self.den.cmp(&rat_one()) == Some(0)
+        !self.is_nan() && self.den.compare(&rat_one()) == Some(0)
     }
 
     /// `self + rhs` as an exact rational.
     pub fn add(&self, rhs: &Self) -> Self {
+        self.add_signed(rhs, false)
+    }
+
+    /// `self - rhs`.
+    pub fn sub(&self, rhs: &Self) -> Self {
+        self.add_signed(rhs, true)
+    }
+
+    /// `self + rhs`, or `self - rhs` when `subtract` is set: `ad ± bc` over `bd`.
+    fn add_signed(&self, rhs: &Self, subtract: bool) -> Self {
         if self.is_nan() || rhs.is_nan() {
             return Self::new(NAN, rat_one());
         }
         let p = work_p(&[&self.num, &self.den, &rhs.num, &rhs.den]);
         let rm = RoundingMode::None;
-        let ad = self.num.mul(&rhs.den, p, rm);
-        let bc = rhs.num.mul(&self.den, p, rm);
-        let num = ad.add(&bc, p, rm);
-        let den = self.den.mul(&rhs.den, p, rm);
+        let ad = ExactNum::mul_ref(&self.num, &rhs.den, p, rm);
+        let bc = ExactNum::mul_ref(&rhs.num, &self.den, p, rm);
+        let num = if subtract { ad.sub(&bc, p, rm) } else { ad.add(&bc, p, rm) };
+        let den = ExactNum::mul_ref(&self.den, &rhs.den, p, rm);
         Self::new(num, den)
-    }
-
-    /// `self - rhs`.
-    pub fn sub(&self, rhs: &Self) -> Self {
-        self.add(&Self::new(rhs.num.neg(), rhs.den.clone()))
     }
 
     /// `self * rhs`.
@@ -141,7 +147,10 @@ impl ExactRational {
         }
         let p = work_p(&[&self.num, &self.den, &rhs.num, &rhs.den]);
         let rm = RoundingMode::None;
-        Self::new(self.num.mul(&rhs.num, p, rm), self.den.mul(&rhs.den, p, rm))
+        Self::new(
+            ExactNum::mul_ref(&self.num, &rhs.num, p, rm),
+            ExactNum::mul_ref(&self.den, &rhs.den, p, rm),
+        )
     }
 
     /// `self / rhs`. Zero `rhs` is `NaN`.
@@ -151,7 +160,10 @@ impl ExactRational {
         }
         let p = work_p(&[&self.num, &self.den, &rhs.num, &rhs.den]);
         let rm = RoundingMode::None;
-        Self::new(self.num.mul(&rhs.den, p, rm), self.den.mul(&rhs.num, p, rm))
+        Self::new(
+            ExactNum::mul_ref(&self.num, &rhs.den, p, rm),
+            ExactNum::mul_ref(&self.den, &rhs.num, p, rm),
+        )
     }
 
     /// Convert to an `ExactNum` at `(p, rm)`.
@@ -159,12 +171,12 @@ impl ExactRational {
         if self.is_nan() {
             return NAN;
         }
-        self.num.div(&self.den, p, rm)
+        ExactNum::div_ref(&self.num, &self.den, p, rm)
     }
 
     fn quot(&self) -> ExactNum {
         let p = work_p(&[&self.num, &self.den]);
-        self.num.div(&self.den, p, RoundingMode::None)
+        ExactNum::div_ref(&self.num, &self.den, p, RoundingMode::None)
     }
 
     /// Greatest integer `≤ self` as a rational with denominator `1`.
@@ -272,9 +284,9 @@ impl ExactRational {
         }
         let p = work_p(&[&self.num, &self.den, &other.num, &other.den]);
         let rm = RoundingMode::None;
-        let left = self.num.mul(&other.den, p, rm);
-        let right = other.num.mul(&self.den, p, rm);
-        match left.cmp(&right) {
+        let left = ExactNum::mul_ref(&self.num, &other.den, p, rm);
+        let right = ExactNum::mul_ref(&other.num, &self.den, p, rm);
+        match left.compare(&right) {
             Some(c) if c > 0 => Some(Ordering::Greater),
             Some(c) if c < 0 => Some(Ordering::Less),
             Some(_) => Some(Ordering::Equal),
@@ -408,10 +420,12 @@ fn exact_num_to_rational(x: &ExactNum) -> Option<ExactRational> {
     if x.is_zero() {
         return Some(ExactRational::from_i64(0, 1));
     }
-    let (m, _n, s, e, _) = x.as_raw_parts()?;
+    let raw = x.as_raw_parts();
+    let (m, e) = (raw.words, raw.exponent);
+    let s = if raw.negative { crate::Sign::Neg } else { crate::Sign::Pos };
     let pbuf = m.len() * WORD_BIT_SIZE;
     let mut num = ExactInt::from_le_words(s, m);
-    let shift = e as i64 - pbuf as i64;
+    let shift = e - pbuf as i64;
     if shift >= 0 {
         num = num.shl(shift as usize);
         Some(ExactRational::from_ints(num, ExactInt::one()))
@@ -468,18 +482,18 @@ mod tests {
     }
 
     #[test]
-    fn rational_reduce_add_sign_to_float() {
+    fn rational_reduce_add_sign_to_float() -> Result<(), crate::Error> {
         let half = r(1, 2);
         let two_four = r(2, 4);
         assert_eq!(two_four, half);
         assert_eq!(ExactRational::from_i64(2, 4), ExactRational::from_i64(1, 2));
         assert!(!two_four.is_integer());
         assert_eq!(
-            two_four.num().cmp(&ExactNum::from_u8(1, DEFAULT_P)),
+            two_four.num().compare(&ExactNum::from_u8(1, DEFAULT_P)),
             Some(0)
         );
         assert_eq!(
-            two_four.den().cmp(&ExactNum::from_u8(2, DEFAULT_P)),
+            two_four.den().compare(&ExactNum::from_u8(2, DEFAULT_P)),
             Some(0)
         );
 
@@ -495,8 +509,8 @@ mod tests {
         let rm = RoundingMode::ToEven;
         let got = ExactRational::from_i64(1, 3).to_exact_num(p, rm);
         let want_f = ExactNum::from_i64(1, p).div(&ExactNum::from_i64(3, p), p, rm);
-        assert_eq!(got.cmp(&want_f), Some(0));
-        let mut cc = Consts::new().unwrap();
+        assert_eq!(got.compare(&want_f), Some(0));
+        let mut cc = Consts::new()?;
         let parsed = ExactNum::parse(
             "0.33333333333333333333333333333333333333333333333333333333333333333333333333333333",
             Radix::Dec,
@@ -504,7 +518,7 @@ mod tests {
             rm,
             &mut cc,
         );
-        assert_eq!(got.cmp(&parsed), Some(0));
+        assert_eq!(got.compare(&parsed), Some(0));
 
         assert!(ExactRational::from_i64(1, 3).partial_cmp(&half) == Some(Ordering::Less));
         assert!(ExactRational::from_i64(2, 2).is_integer());
@@ -517,42 +531,57 @@ mod tests {
             ExactRational::from_i64(2, 1)
         );
         assert!(ExactRational::from_i64(1, 0).is_nan());
+        Ok(())
     }
 
     #[test]
-    fn parse_exact_tenth_half_eighth_sci() {
-        let tenth = ExactRational::parse_exact("0.1").unwrap();
+    fn parse_exact_tenth_half_eighth_sci() -> Result<(), crate::Error> {
+        let tenth = ExactRational::parse_exact("0.1").ok_or(crate::Error::InvalidArgument)?;
         assert_eq!(
             tenth.mul(&ExactRational::from_i64(10, 1)),
             ExactRational::from_i64(1, 1)
         );
 
-        let half = ExactNum::parse_exact("0.5").unwrap();
-        let p = half.precision().unwrap();
+        let half = ExactNum::parse_exact("0.5").ok_or(crate::Error::InvalidArgument)?;
+        let p = half.precision().ok_or(crate::Error::InvalidArgument)?;
         let want = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::ToEven);
-        assert_eq!(half.cmp(&want), Some(0));
+        assert_eq!(half.compare(&want), Some(0));
         assert_eq!(half.ilogb(), Some(-1));
-        let (_m, _n, s, _e, _) = half.as_raw_parts().unwrap();
-        assert_eq!(s, crate::Sign::Pos);
+        assert!(!half.as_raw_parts().negative);
 
         assert_eq!(
             ExactRational::parse_exact("0.125")
-                .unwrap()
+                .ok_or(crate::Error::InvalidArgument)?
                 .format_exact(Radix::Dec)
                 .as_deref(),
             Some("0.125")
         );
         assert_eq!(
             ExactNum::parse_exact("0.125")
-                .unwrap()
+                .ok_or(crate::Error::InvalidArgument)?
                 .format_exact(Radix::Dec)
                 .as_deref(),
             Some("0.125")
         );
         assert!(ExactNum::parse_exact("0.1").is_none());
 
-        let mut cc = Consts::new().unwrap();
+        let mut cc = Consts::new()?;
         let sci = ExactNum::parse("1.5e3", Radix::Dec, 256, RoundingMode::ToEven, &mut cc);
-        assert_eq!(sci.cmp(&ExactNum::from_i32(1500, 256)), Some(0));
+        assert_eq!(sci.compare(&ExactNum::from_i32(1500, 256)), Some(0));
+        Ok(())
+    }
+
+    #[test]
+    fn sub_matches_add_of_the_negation() {
+        let d = r(1, 2).sub(&r(1, 3));
+        assert!(d.num().compare(&ExactNum::from_i64(1, DEFAULT_P)) == Some(0));
+        assert!(d.den().compare(&ExactNum::from_i64(6, DEFAULT_P)) == Some(0));
+        let z = r(5, 7).sub(&r(5, 7));
+        assert!(z.num().is_zero());
+        let n = r(-3, 4).sub(&r(1, 4));
+        assert!(n.num().compare(&ExactNum::from_i64(-1, DEFAULT_P)) == Some(0));
+        assert!(r(1, 2)
+            .sub(&ExactRational::new(NAN, ExactNum::from_i64(1, DEFAULT_P)))
+            .is_nan());
     }
 }

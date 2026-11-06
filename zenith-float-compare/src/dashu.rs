@@ -10,7 +10,7 @@ use dashu_float::FBig;
 use dashu_int::{IBig, Sign, UBig};
 use rand::random;
 
-use crate::backend::{convert_exp, BenchFloat, BenchState};
+use crate::backend::{convert_exp, BenchError, BenchFloat, BenchState};
 use crate::task::{task_for_one_arg, task_for_two_args};
 
 type FBin = FBig<HalfEven, 2>;
@@ -44,8 +44,8 @@ fn word_count(precision: usize) -> usize {
 impl BenchFloat for DashuFloat {
     type State = DashuState;
 
-    fn state(precision: usize) -> Self::State {
-        DashuState { precision }
+    fn state(precision: usize) -> Result<Self::State, BenchError> {
+        Ok(DashuState { precision })
     }
 
     fn rand_normal(
@@ -88,7 +88,11 @@ impl BenchFloat for DashuFloat {
         out
     }
 
-    fn run_task(_state: &Self::State, task: &str, values: &[Self]) -> (Self, std::time::Duration) {
+    fn run_task(
+        _state: &Self::State,
+        task: &str,
+        values: &[Self],
+    ) -> Result<(Self, std::time::Duration), BenchError> {
         let start = Instant::now();
         let result = match task {
             "add" => task_for_two_args(values, |a, b| Self::new(a.inner() + b.inner())),
@@ -112,8 +116,8 @@ impl BenchFloat for DashuFloat {
             "acosh" => task_for_one_arg(values, |_a, b| Self::new(FBin::acosh(b.inner()))),
             "tanh" => task_for_one_arg(values, |_a, b| Self::new(FBin::tanh(b.inner()))),
             "atanh" => task_for_one_arg(values, |_a, b| Self::new(FBin::atanh(b.inner()))),
-            _ => panic!("unknown task: {task}"),
+            _ => return Err(BenchError::UnknownTask(String::from(task))),
         };
-        (result, start.elapsed())
+        Ok((result, start.elapsed()))
     }
 }

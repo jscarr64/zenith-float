@@ -3,7 +3,7 @@
 //! Division algos.
 
 use crate::common::buf::WordBuf;
-use crate::common::int::SliceWithSign;
+use crate::common::int::{SliceMut, SliceRef, SliceWithSign};
 use crate::common::util::add_carry;
 use crate::common::util::log2_ceil;
 use crate::defs::DoubleWord;
@@ -45,7 +45,9 @@ impl Mantissa {
             if val < d {
                 rh = val;
                 val = *iter.next().unwrap_or(&0) as DoubleWord;
-                *m3iter.next().unwrap() = 0; // m3 is at least 1 word long.
+                if let Some(q) = m3iter.next() {
+                    *q = 0; // m3 is at least 1 word long
+                }
                 rem[0] = rh as Word;
                 j -= 1;
             }
@@ -72,18 +74,20 @@ impl Mantissa {
             // normalize: buf1 = d1 * d, buf2 = d2 * d
             let d = WORD_BASE / (m2[n] as DoubleWord + 1); // factor d: d * m2[most significant] is close to WORD_MAX
 
-            if d == 1 {
+            // The normalized divisor is only read: with d == 1 it is m2 itself, borrowed. Its top word
+            // (index l2) is 0 in both cases (d * (m2[n] + 1) <= WORD_BASE), supplied by `once(&0)`.
+            let dv: &[Word] = if d == 1 {
                 buf1[..l1].clone_from_slice(m1);
-                buf2[..l2].clone_from_slice(m2);
                 buf1[l1] = 0;
-                buf2[l2] = 0;
+                m2
             } else {
                 Self::mul_by_word(m1, d, buf1);
                 Self::mul_by_word(m2, d, buf2);
-            }
+                buf2
+            };
 
-            let v1 = buf2[n] as DoubleWord;
-            let v2 = buf2[n - 1] as DoubleWord;
+            let v1 = dv[n] as DoubleWord;
+            let v2 = dv[n - 1] as DoubleWord;
 
             j = m - n;
             let mut m3iter = m3.iter_mut().rev();
@@ -111,7 +115,12 @@ impl Mantissa {
                 // n1_j = n1_j - n2 * qh
                 c = 0;
                 k = 0;
-                for (a, b) in buf2[..n + 2].iter().zip(buf1[j..j + n + 2].iter_mut()) {
+                for (a, b) in dv
+                    .iter()
+                    .chain(core::iter::once(&0))
+                    .take(n + 2)
+                    .zip(buf1[j..j + n + 2].iter_mut())
+                {
                     k = *a as DoubleWord * qh + k / WORD_BASE;
                     let val = k % WORD_BASE + c;
                     if (*b as DoubleWord) < val {
@@ -127,7 +136,12 @@ impl Mantissa {
                     // compensate
                     qh -= 1;
                     c = 0;
-                    for (a, b) in buf2[..n + 2].iter().zip(buf1[j..j + n + 2].iter_mut()) {
+                    for (a, b) in dv
+                        .iter()
+                        .chain(core::iter::once(&0))
+                        .take(n + 2)
+                        .zip(buf1[j..j + n + 2].iter_mut())
+                    {
                         c = add_carry(*a, *b, c as Word, b) as DoubleWord;
                     }
                     debug_assert!(c > 0);
@@ -164,7 +178,9 @@ impl Mantissa {
                 if val < d {
                     rh = val;
                     val = *iter.next().unwrap_or(&0) as DoubleWord;
-                    *remiter.next().unwrap() = 0; // rem is at least 1 word long.
+                    if let Some(r) = remiter.next() {
+                        *r = 0; // rem is at least 1 word long
+                    }
                     j -= 1;
                 }
 
@@ -193,11 +209,16 @@ impl Mantissa {
     }
 
     // recursive division correction
-    fn div_correction(a: &mut SliceWithSign, q: &mut SliceWithSign, step: SliceWithSign) {
+    fn div_correction(
+        a: &mut SliceMut<'_>,
+        q: &mut SliceMut<'_>,
+        step: SliceRef<'_>,
+    ) -> Result<(), Error> {
         while a.sign() < 0 && !a.is_zero() {
-            q.decrement_abs();
+            q.decrement_abs()?;
             a.add_assign(&step);
         }
+        Ok(())
     }
 
     // Recursive integer division divides m1 by m2, returns quotinent and remainder.
@@ -257,7 +278,7 @@ impl Mantissa {
                 tmpbuf[k + m2.len()..].fill(0);
                 tmpbuf[k..k + m2.len()].copy_from_slice(m2);
                 let b = SliceWithSign::new(&tmpbuf, 1);
-                Self::div_correction(&mut a3, &mut q1, b);
+                Self::div_correction(&mut a3, &mut q1, b)?;
             }
 
             let mut ub = a3.len();
@@ -289,7 +310,7 @@ impl Mantissa {
 
                 if a4.sign() < 0 {
                     // correction
-                    Self::div_correction(&mut a4, &mut q0, b);
+                    Self::div_correction(&mut a4, &mut q0, b)?;
                 }
 
                 // quot = q1 * 2^k + q0;
@@ -383,7 +404,7 @@ mod tests {
     use alloc::vec::Vec;
 
     #[test]
-    fn test_div_unbalanced() {
+    fn test_div_unbalanced() -> Result<(), crate::Error> {
         const MAX_BUF: usize = 300;
         let mut wb = [0; MAX_BUF];
         let mut buf = [0; MAX_BUF];
@@ -391,7 +412,7 @@ mod tests {
             let s1 = random_normalized_slice(1, MAX_BUF);
             let s2 = random_normalized_slice(s1.len(), MAX_BUF);
 
-            let (q, r) = Mantissa::div_unbalanced(&s2, &s1).unwrap();
+            let (q, r) = Mantissa::div_unbalanced(&s2, &s1)?;
 
             buf[..s1.len()].copy_from_slice(&s1);
             buf[s1.len()..].fill(0);
@@ -402,6 +423,7 @@ mod tests {
             d1.add_assign(&d3);
             assert!(s2 == d1[..s2.len()]);
         }
+        Ok(())
     }
 
     fn random_normalized_slice(min_len: usize, max_len: usize) -> Vec<Word> {

@@ -1,0 +1,1 @@
+- Tests (R13 follow-up, red): `div_exact` pins `Inf / Inf` (all four sign pairs) to `InvalidArgument`, and pins `x / 0` at `p = 0` to `InvalidArgument` (precision is checked before the zero divisor).

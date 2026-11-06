@@ -194,7 +194,7 @@ fn nan_from_flag(flag: u8) -> Result<ExactNum, Error> {
         BINARY_FLAG_NAN_OOM => Ok(ExactNum::nan(Some(Error::MemoryAllocation))),
         BINARY_FLAG_NAN_OVF_POS => Ok(ExactNum::nan(Some(Error::ExponentOverflow(Sign::Pos)))),
         BINARY_FLAG_NAN_OVF_NEG => Ok(ExactNum::nan(Some(Error::ExponentOverflow(Sign::Neg)))),
-        BINARY_FLAG_NAN_BARE => Ok(NAN.clone()),
+        BINARY_FLAG_NAN_BARE => Ok(NAN),
         _ => Err(Error::InvalidArgument),
     }
 }
@@ -237,9 +237,14 @@ fn write_inline(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     if x.is_inf_neg() {
         return write_special(BINARY_FLAG_INF_NEG, dest);
     }
-    let Some((m, n_sig, sign, exp, inexact)) = x.as_raw_parts() else {
-        return Err(Error::InvalidArgument);
-    };
+    let raw = x.as_raw_parts();
+    let (m, n_sig, exp, inexact) = (
+        raw.words,
+        raw.significant_bits()?,
+        raw.exponent,
+        raw.inexact,
+    );
+    let sign = if raw.negative { Sign::Neg } else { Sign::Pos };
     let n_u32 = u32_count(m.len());
     if n_u32 > BINARY_INLINE_U32_WORDS {
         return Err(Error::MemoryAllocation);
@@ -249,7 +254,7 @@ fn write_inline(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     dest[1] = BINARY_FORMAT_VERSION;
     dest[2] = u8::try_from(n_sig).map_err(|_| Error::InvalidArgument)?;
     dest[3] = u8::from(inexact);
-    dest[4..8].copy_from_slice(&exp.to_be_bytes());
+    dest[4..8].copy_from_slice(&exp_field(exp)?.to_be_bytes());
     let mut tmp = [0u32; BINARY_INLINE_U32_WORDS];
     words_to_u32(m, &mut tmp)?;
     put_u32_be(&mut dest[8..12], tmp[0]);
@@ -261,9 +266,7 @@ fn encoded_len(x: &ExactNum) -> Result<usize, Error> {
     if x.is_nan() || x.is_inf() {
         return Ok(BINARY_INLINE_LEN);
     }
-    let Some((m, _, _, _, _)) = x.as_raw_parts() else {
-        return Err(Error::InvalidArgument);
-    };
+    let m = x.as_raw_parts().words;
     let n_u32 = u32_count(m.len());
     if n_u32 <= BINARY_INLINE_U32_WORDS {
         Ok(BINARY_INLINE_LEN)
@@ -286,9 +289,14 @@ fn write_num(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     if x.is_nan() || x.is_inf() {
         return write_inline(x, dest);
     }
-    let Some((m, n_sig, sign, exp, inexact)) = x.as_raw_parts() else {
-        return Err(Error::InvalidArgument);
-    };
+    let raw = x.as_raw_parts();
+    let (m, n_sig, exp, inexact) = (
+        raw.words,
+        raw.significant_bits()?,
+        raw.exponent,
+        raw.inexact,
+    );
+    let sign = if raw.negative { Sign::Neg } else { Sign::Pos };
     let n_u32 = u32_count(m.len());
     if n_u32 <= BINARY_INLINE_U32_WORDS {
         return write_inline(x, dest);
@@ -301,7 +309,7 @@ fn write_num(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     dest[0] = if sign == Sign::Neg { BINARY_FLAG_HEAP_NEG } else { BINARY_FLAG_HEAP_POS };
     dest[1] = BINARY_FORMAT_VERSION;
     dest[3] = u8::from(inexact);
-    dest[4..8].copy_from_slice(&exp.to_be_bytes());
+    dest[4..8].copy_from_slice(&exp_field(exp)?.to_be_bytes());
     put_u32_be(&mut dest[8..12], u32_from_usize(n_sig)?);
     put_u32_be(&mut dest[12..16], u32_from_usize(n_u32)?);
     let mut limb = [0u32; 2];
@@ -332,8 +340,8 @@ fn decode_num(bytes: &[u8]) -> Result<(ExactNum, usize), Error> {
             return Err(Error::InvalidArgument);
         }
         let v = match flag {
-            BINARY_FLAG_INF_POS => INF_POS.clone(),
-            BINARY_FLAG_INF_NEG => INF_NEG.clone(),
+            BINARY_FLAG_INF_POS => INF_POS,
+            BINARY_FLAG_INF_NEG => INF_NEG,
             _ => nan_from_flag(flag)?,
         };
         return Ok((v, BINARY_INLINE_LEN));
@@ -363,7 +371,7 @@ fn decode_inline_finite(bytes: &[u8], flag: u8) -> Result<(ExactNum, usize), Err
             .map_err(|_| Error::InvalidArgument)?,
     );
     let sign = if flag == BINARY_FLAG_NEG { Sign::Neg } else { Sign::Pos };
-    let x = finite_from_u32(&[u0, u1], n_sig, sign, exp, inexact)?;
+    let x = finite_from_u32(&[u0, u1], n_sig, sign, Exponent::from(exp), inexact)?;
     Ok((x, BINARY_INLINE_LEN))
 }
 
@@ -401,8 +409,13 @@ fn decode_heap(bytes: &[u8], flag: u8) -> Result<(ExactNum, usize), Error> {
         off += U32_BYTES;
     }
     let sign = if flag == BINARY_FLAG_HEAP_NEG { Sign::Neg } else { Sign::Pos };
-    let x = finite_from_u32(&u32s, n_sig, sign, exp, inexact)?;
+    let x = finite_from_u32(&u32s, n_sig, sign, Exponent::from(exp), inexact)?;
     Ok((x, need))
+}
+
+/// Format v1 stores the exponent as a 4-byte field; exponents outside `i32` cannot be encoded.
+fn exp_field(exp: Exponent) -> Result<i32, Error> {
+    i32::try_from(exp).map_err(|_| Error::InvalidArgument)
 }
 
 fn finite_from_u32(
@@ -412,7 +425,7 @@ fn finite_from_u32(
     exp: Exponent,
     inexact: bool,
 ) -> Result<ExactNum, Error> {
-    if u32s.len() % WORD_U32 != 0 {
+    if !u32s.len().is_multiple_of(WORD_U32) {
         return Err(Error::InvalidArgument);
     }
     if n_sig > u32s.len() * 32 {
@@ -424,11 +437,16 @@ fn finite_from_u32(
     for i in 0..n_words {
         words.push(word_from_u32s(&u32s[i * WORD_U32..(i + 1) * WORD_U32]));
     }
-    let x = ExactNum::from_raw_parts(&words, n_sig, sign, exp, inexact);
-    if x.is_nan() {
-        return Err(x.err().unwrap_or(Error::InvalidArgument));
-    }
-    Ok(x)
+    ExactNum::from_raw_parts(&crate::RawParts {
+        kind: if n_sig == 0 { crate::RawKind::Zero } else { crate::RawKind::Finite },
+        words: &words,
+        precision: words.len() * crate::WORD_BIT_SIZE,
+        negative: sign == Sign::Neg,
+        exponent: exp,
+        inexact,
+        // The binary format stores one flag; decoded values report it as both.
+        op_inexact: inexact,
+    })
 }
 
 fn encoded_array_len(a: &ExactNumArray) -> Result<usize, Error> {
@@ -550,17 +568,23 @@ fn u32_from_usize(v: usize) -> Result<u32, Error> {
 mod tests {
     use super::*;
     use crate::RoundingMode;
+    use core::ops::Neg;
 
     fn p64() -> usize {
         64
     }
 
     fn raw_eq(a: &ExactNum, b: &ExactNum) -> bool {
-        a.as_raw_parts() == b.as_raw_parts()
+        let (x, y) = (a.as_raw_parts(), b.as_raw_parts());
+        x.kind == y.kind
+            && x.words == y.words
+            && x.negative == y.negative
+            && x.exponent == y.exponent
+            && x.inexact == y.inexact
     }
 
     #[test]
-    fn binary_inline_roundtrip_finite() {
+    fn binary_inline_roundtrip_finite() -> Result<(), crate::Error> {
         let p = p64();
         let vals = [
             ExactNum::from_u8(0, p),
@@ -570,116 +594,134 @@ mod tests {
             ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, RoundingMode::ToEven),
         ];
         for x in &vals {
-            let buf = x.to_inline_bytes().unwrap();
+            let buf = x.to_inline_bytes()?;
             assert_eq!(buf.as_bytes().len(), BINARY_INLINE_LEN);
             assert_eq!(buf.as_bytes()[1], BINARY_FORMAT_VERSION);
-            let y = ExactNum::from_inline_bytes(buf.as_bytes()).unwrap();
+            let y = ExactNum::from_inline_bytes(buf.as_bytes())?;
             assert!(raw_eq(x, &y), "inline limbs");
-            assert_eq!(x.cmp(&y), Some(0));
-            let v = x.to_bytes().unwrap();
+            assert_eq!(x.compare(&y), Some(0));
+            let v = x.to_bytes()?;
             assert_eq!(v.len(), BINARY_INLINE_LEN);
-            let z = ExactNum::from_bytes(&v).unwrap();
+            let z = ExactNum::from_bytes(&v)?;
             assert!(raw_eq(x, &z));
         }
+        Ok(())
     }
 
     #[test]
-    fn binary_nan_flag_is_recognizable() {
-        let buf = NAN.to_inline_bytes().unwrap();
+    fn binary_nan_flag_is_recognizable() -> Result<(), crate::Error> {
+        let buf = NAN.to_inline_bytes()?;
         assert_eq!(buf.as_bytes()[0], BINARY_FLAG_NAN_BARE);
         assert_eq!(buf.as_bytes()[1], BINARY_FORMAT_VERSION);
-        let y = ExactNum::from_inline_bytes(buf.as_bytes()).unwrap();
+        let y = ExactNum::from_inline_bytes(buf.as_bytes())?;
         assert!(y.is_nan());
         let div = ExactNum::nan(Some(Error::DivisionByZero));
-        let d = div.to_bytes().unwrap();
+        let d = div.to_bytes()?;
         assert_eq!(d[0], BINARY_FLAG_NAN_DIV0);
-        let back = ExactNum::from_bytes(&d).unwrap();
+        let back = ExactNum::from_bytes(&d)?;
         assert!(back.is_nan());
         assert_eq!(back.err(), Some(Error::DivisionByZero));
+        Ok(())
     }
 
     #[test]
-    fn binary_inf_roundtrip() {
-        let p = INF_POS.to_bytes().unwrap();
-        let n = INF_NEG.to_bytes().unwrap();
+    fn binary_inf_roundtrip() -> Result<(), crate::Error> {
+        let p = INF_POS.to_bytes()?;
+        let n = INF_NEG.to_bytes()?;
         assert_eq!(p[0], BINARY_FLAG_INF_POS);
         assert_eq!(n[0], BINARY_FLAG_INF_NEG);
-        assert!(ExactNum::from_bytes(&p).unwrap().is_inf_pos());
-        assert!(ExactNum::from_bytes(&n).unwrap().is_inf_neg());
+        assert!(ExactNum::from_bytes(&p)?.is_inf_pos());
+        assert!(ExactNum::from_bytes(&n)?.is_inf_neg());
+        Ok(())
     }
 
     #[test]
-    fn binary_heap_roundtrip_p256() {
+    fn binary_heap_roundtrip_p256() -> Result<(), crate::Error> {
         let p = 256;
         let x = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, RoundingMode::ToEven);
-        assert!(x.mantissa_max_bit_len().unwrap() > BINARY_INLINE_MANT_BITS);
+        assert!(
+            x.mantissa_max_bit_len()
+                .ok_or(crate::Error::InvalidArgument)?
+                > BINARY_INLINE_MANT_BITS
+        );
         assert!(x.to_inline_bytes().is_err());
-        let v = x.to_bytes().unwrap();
+        let v = x.to_bytes()?;
         assert!(v.len() > BINARY_INLINE_LEN);
         assert_eq!(v[0], BINARY_FLAG_HEAP_POS);
-        let y = ExactNum::from_bytes(&v).unwrap();
+        let y = ExactNum::from_bytes(&v)?;
         assert!(raw_eq(&x, &y));
-        assert_eq!(x.cmp(&y), Some(0));
+        assert_eq!(x.compare(&y), Some(0));
+        Ok(())
     }
 
     #[test]
-    fn binary_array_roundtrip_and_shape_err() {
+    fn binary_array_roundtrip_and_shape_err() -> Result<(), crate::Error> {
         let p = p64();
         let n = |k: u8| ExactNum::from_u8(k, p);
-        let a = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(3), n(4)]).unwrap();
-        let v = a.to_bytes().unwrap();
+        let a = ExactNumArray::from_shape(p, 2, 2, &[n(1), n(2), n(3), n(4)])
+            .ok_or(crate::Error::InvalidArgument)?;
+        let v = a.to_bytes()?;
         assert_eq!(v[0], BINARY_FLAG_ARRAY);
-        let b = ExactNumArray::from_bytes(&v).unwrap();
+        let b = ExactNumArray::from_bytes(&v)?;
         assert_eq!(b.shape(), (2, 2));
         assert_eq!(b.precision(), p);
         for i in 0..4 {
-            assert_eq!(a.get(i).unwrap().cmp(b.get(i).unwrap()), Some(0));
-            assert!(raw_eq(a.get(i).unwrap(), b.get(i).unwrap()));
+            assert_eq!(
+                a.get(i)
+                    .ok_or(crate::Error::InvalidArgument)?
+                    .compare(b.get(i).ok_or(crate::Error::InvalidArgument)?),
+                Some(0)
+            );
+            assert!(raw_eq(
+                a.get(i).ok_or(crate::Error::InvalidArgument)?,
+                b.get(i).ok_or(crate::Error::InvalidArgument)?
+            ));
         }
-        let mut bad = v.clone();
+        let mut bad = v;
         // rows = 3, cols = 2, but still four payloads → leftover or short read
         bad[4..8].copy_from_slice(&3u32.to_be_bytes());
         assert!(ExactNumArray::from_bytes(&bad).is_err());
+        Ok(())
     }
 
     #[test]
-    fn binary_invalid_bytes_are_err() {
+    fn binary_invalid_bytes_are_err() -> Result<(), crate::Error> {
         assert!(ExactNum::from_bytes(&[]).is_err());
         assert!(ExactNum::from_bytes(&[0]).is_err());
         assert!(ExactNum::from_bytes(&[BINARY_FLAG_POS, 0]).is_err());
         assert!(ExactNum::from_bytes(&[0x7F, BINARY_FORMAT_VERSION]).is_err());
-        let mut short = NAN.to_bytes().unwrap();
+        let mut short = NAN.to_bytes()?;
         short.pop();
         assert!(ExactNum::from_bytes(&short).is_err());
-        let mut extra = ExactNum::from_u8(1, p64()).to_bytes().unwrap();
+        let mut extra = ExactNum::from_u8(1, p64()).to_bytes()?;
         extra.push(0);
         assert!(ExactNum::from_bytes(&extra).is_err());
         assert!(ExactNumArray::from_bytes(&[BINARY_FLAG_ARRAY, BINARY_FORMAT_VERSION]).is_err());
+        Ok(())
     }
 
     #[test]
-    fn binary_write_bytes_zero_alloc_inline() {
+    fn binary_write_bytes_zero_alloc_inline() -> Result<(), crate::Error> {
         let x = ExactNum::from_u8(2, p64());
         let mut dest = [0u8; BINARY_INLINE_LEN];
-        let n = x.write_inline_bytes(&mut dest).unwrap();
+        let n = x.write_inline_bytes(&mut dest)?;
         assert_eq!(n, BINARY_INLINE_LEN);
-        assert_eq!(dest, x.to_inline_bytes().unwrap().into_bytes());
+        assert_eq!(dest, x.to_inline_bytes()?.into_bytes());
         assert!(x.write_inline_bytes(&mut dest[..8]).is_err());
+        Ok(())
     }
 
     #[test]
-    fn u32_word_boundary_add_is_2_pow_32() {
+    fn u32_word_boundary_add_is_2_pow_32() -> Result<(), crate::Error> {
         let p = p64();
         let a = ExactNum::from_u32(u32::MAX, p);
         let b = ExactNum::from_u8(1, p);
         let s = a.add(&b, p, RoundingMode::ToEven);
         let expect = ExactNum::from_u64(1u64 << 32, p);
-        assert_eq!(s.cmp(&expect), Some(0));
+        assert_eq!(s.compare(&expect), Some(0));
         assert!(s.err().is_none());
-        let buf = s.to_inline_bytes().unwrap();
-        assert!(raw_eq(
-            &s,
-            &ExactNum::from_inline_bytes(buf.as_bytes()).unwrap()
-        ));
+        let buf = s.to_inline_bytes()?;
+        assert!(raw_eq(&s, &ExactNum::from_inline_bytes(buf.as_bytes())?));
+        Ok(())
     }
 }
