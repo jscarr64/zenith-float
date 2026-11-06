@@ -2603,6 +2603,42 @@ Accuracy: correctly-rounded",
         { NAN },
         { NAN },
     );
+
+    /// MP18 integer getters and fits predicates (red-test stubs, Batch 2): these
+    /// always refuse / report false so the MP18 tests compile and fail on value.
+    /// The green implementation replaces these bodies.
+    /// Red-test stub for MP18 `to_i64`.
+    pub fn to_i64(&self, _rm: RoundingMode) -> Result<i64, Error> {
+        Err(Error::InvalidArgument)
+    }
+    /// Red-test stub for MP18 `to_u64`.
+    pub fn to_u64(&self, _rm: RoundingMode) -> Result<u64, Error> {
+        Err(Error::InvalidArgument)
+    }
+    /// Red-test stub for MP18 `to_i32`.
+    pub fn to_i32(&self, _rm: RoundingMode) -> Result<i32, Error> {
+        Err(Error::InvalidArgument)
+    }
+    /// Red-test stub for MP18 `to_u32`.
+    pub fn to_u32(&self, _rm: RoundingMode) -> Result<u32, Error> {
+        Err(Error::InvalidArgument)
+    }
+    /// Red-test stub for MP18 `fits_i64`.
+    pub fn fits_i64(&self, _rm: RoundingMode) -> bool {
+        false
+    }
+    /// Red-test stub for MP18 `fits_u64`.
+    pub fn fits_u64(&self, _rm: RoundingMode) -> bool {
+        false
+    }
+    /// Red-test stub for MP18 `fits_i32`.
+    pub fn fits_i32(&self, _rm: RoundingMode) -> bool {
+        false
+    }
+    /// Red-test stub for MP18 `fits_u32`.
+    pub fn fits_u32(&self, _rm: RoundingMode) -> bool {
+        false
+    }
     gen_wrapper_own!(
         "Returns the smallest integer greater than or equal to `self`.
 Accuracy: correctly-rounded",
