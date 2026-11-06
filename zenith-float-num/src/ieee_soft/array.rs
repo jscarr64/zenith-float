@@ -2267,6 +2267,13 @@ fn fft_bitrev(mut i: usize, logn: u32) -> usize {
     r
 }
 
+impl ExactNumArray {
+    /// The row-major values, moved out (no copy).
+    pub(crate) fn into_vals(self) -> Vec<ExactNum> {
+        self.vals
+    }
+}
+
 /// Refuse a buffer of `count` `ExactNum` values whose byte size overflows `usize` or exceeds
 /// `isize::MAX` (the most any allocation may hold). Called before the FFT / DSP working
 /// buffers are reserved, so an oversized request (for example a huge per-call `max_points`)

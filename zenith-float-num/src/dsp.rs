@@ -489,10 +489,10 @@ pub fn ifft_real_with_max_points(
         return None;
     }
     let spec = spectrum.ifft_with_max_points(max_points, p, rm, cc)?;
-    let mut re = try_vec(cols)?;
-    for j in 0..cols {
-        re.push(copy_p(spec.get2(0, j)?, p, rm));
-    }
+    // Row-major `(2, cols)`: the first `cols` values are the real row; the imaginary
+    // residuals are dropped without copying.
+    let mut re = spec.into_vals();
+    re.truncate(cols);
     to_row(p, rm, &re)
 }
 
