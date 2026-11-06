@@ -140,3 +140,36 @@ Goal: show zf works at its real type limits, not only at the ~10^±120 that cosm
 - [ ] (c) Accumath cosmology against the 2.0 candidate: run the existing FLRW tests in /tmp/acc-or (engine_core/src/geometry.rs: flrw_scale :1547, flrw_flat :1556, static_redshift :743, tests flrw_friedmann_constraint :3427, flrw_dust_and_exponential :3549) with Accumath pinned to the 2.0 candidate SHA. NOTE: these are symbolic (metric) functions. I found no numeric comoving/luminosity distance-redshift function in Accumath (rg 'comoving|luminosity_distance' only hits geometry.rs/lib.rs). Either add a numeric D_C(z)/D_L(z) check through SoftFloat at z up to 10^4 and parameter ratios of 10^±120 (and 10^±400), or record that the numeric cosmology path does not exist yet.
 - [ ] (d) zenith-bound wide-range: run zenith-bound's wide-range suite against the 2.0 candidate at the same exponent extremes and the same p ladder as (a)/(b). Repo path to confirm; not located under /tmp/acc-or.
 - [ ] (e) Before the API freeze, decide on the limits flagged in the limits audit (MAX_DEC_SCALE is test-only and should be renamed or hidden; the u32 term-count clamps; whether 1M-bit+ precision is a supported claim).
+
+## P-FP16 — FP16/BF16 ExactNum bridges + FFT/DCT caps (Paul / Rusty, 2026-11-06)
+
+Status: **APPROVED RULES DOC** (Jeff landing sequence 2026-11-06). Implementation owner: Rusty
+(Slice 1 then Slice 2 on tip `1f6fc856`). `zenith-bound` untouched.
+
+Companion: SoftFloat UBO split `#419a–c` / `#437a–d` (Spence `spence/ubo-419-437-native-airgap`)
+and `~/paul-work/land-seq-2026-11-06/` copies of the split proposal.
+
+### Rules (normative for 2.0)
+
+| # | Rule | Pass criterion |
+|---|---|---|
+| FP16.1 | `Ieee16` / FP16 bit-pattern ↔ `ExactNum` | Lossless `u16` ↔ `ExactNum` round-trip for every finite/NaN/Inf encoding; test-first |
+| FP16.2 | `Bfloat16` / BF16 bit-pattern ↔ `ExactNum` | Same for BF16 `u16` encodings; test-first |
+| FP16.3 | No IEEE host float in conversion path | No `f32`/`f64` in the bridge; SoftFloat / ExactNum only |
+| FFT.1 | Default per-call FFT length cap | `FFT_DEFAULT_MAX = 65536` (reject larger unless explicit opt-in API) |
+| DCT.1 | Default per-call DCT length cap | `DCT_DEFAULT_MAX = 16384` |
+| AIR.1 | Native air-gap mandate for SoftFloat classical ops | `#419`/`#437` split: no `ort`, no IEEE-ML, no AGPL YOLO in AccuMath SoftFloat path |
+
+### Ownership
+
+- Rusty Slice 1: FP16.1 + FP16.2 (+ FP16.3) on `zenith-float` off `1f6fc856`.
+- Rusty Slice 2: FFT.1 + DCT.1.
+- Spence: UBO `#419a–c` / `#437a–d` text + exact-SHA reviews.
+- Paul: this checklist section + landing coordination.
+
+### Evidence expected before RC
+
+- Red/green tests naming every encoding class.
+- CHANGELOG 2.0.0 bullets for FP16/BF16 bridges and FFT/DCT caps.
+- Gate: fmt / clippy / workspace tests / MPFR suite as required by existing Stage A.
+
