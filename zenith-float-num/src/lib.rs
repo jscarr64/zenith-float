@@ -129,7 +129,7 @@ pub use crate::hash::hmac_sha256;
 pub use crate::hash::sha256;
 pub use crate::hash::sha512;
 pub use crate::ieee_soft::{
-    ExactNumArray, Ieee32, Ieee32Array, Ieee64, Ieee64Array, IEEE_SIMD_LANE_WIDTH,
+    Bfloat16, ExactNumArray, Ieee16, Ieee32, Ieee32Array, Ieee64, Ieee64Array, IEEE_SIMD_LANE_WIDTH,
 };
 pub use crate::integer::ExactInt;
 pub use crate::modular::miller_rabin;
