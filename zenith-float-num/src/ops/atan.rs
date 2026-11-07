@@ -285,10 +285,7 @@ mod cost_overflow_tests {
     use super::AtanArgReductionEstimator;
 
     fn widen_usize(n: usize) -> u128 {
-        match u128::try_from(n) {
-            Ok(v) => v,
-            Err(_) => u128::MAX,
-        }
+        crate::common::util::wide(n)
     }
 
     fn clamp_to_u64(v: u128) -> u128 {
@@ -350,13 +347,7 @@ mod cost_overflow_tests {
 
     fn scale_cost(n: usize, per: Option<u128>) -> u64 {
         let prod = per.and_then(|v| widen_usize(n).checked_mul(v));
-        match prod {
-            Some(v) => match u64::try_from(v) {
-                Ok(c) => c,
-                Err(_) => u64::MAX,
-            },
-            None => u64::MAX,
-        }
+        crate::common::util::cost_from_u128(prod)
     }
 
     /// `n * (2 * (mul + add) + sqrt)`.
@@ -385,10 +376,9 @@ mod cost_overflow_tests {
             return;
         }
         let n_below = cap / per;
-        let exact = match n_below.checked_mul(per) {
-            Some(v) => v,
-            None => u128::MAX,
-        };
+        // `n_below = cap / per`, so `n_below * per <= cap`: the product fits
+        // in `u128` and needs no checked form.
+        let exact = n_below * per;
         assert!(exact <= cap, "p={p}");
         let crossed = match n_below.checked_add(1).and_then(|n| n.checked_mul(per)) {
             Some(v) => v > cap,

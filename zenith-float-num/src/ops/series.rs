@@ -737,14 +737,11 @@ mod cost_overflow_tests {
         let mut rounds = 0usize;
         loop {
             rounds += 1;
-            assert!(
-                rounds <= p.checked_add(2).unwrap_or(usize::MAX),
-                "model_optimize did not stop p={p}"
-            );
+            assert!(rounds <= add_cap(p, 2), "model_optimize did not stop p={p}");
             let Some(next_times) = reduction_times.checked_add(step) else {
                 return (reduction_times, niter, m_eff);
             };
-            let limit = p.checked_add(step).unwrap_or(usize::MAX);
+            let limit = add_cap(p, step);
             if next_times > limit {
                 return (reduction_times, niter, m_eff);
             }
@@ -782,12 +779,22 @@ mod cost_overflow_tests {
     impl ArgReductionEstimator for StepCost {
         fn reduction_cost(n: usize, _p: usize) -> u64 {
             let n_u = u64::try_from(n).unwrap_or(u64::MAX);
-            n_u.checked_mul(1u64 << 32).unwrap_or(u64::MAX)
+            if n_u > u64::MAX >> 32 {
+                u64::MAX
+            } else {
+                n_u * (1u64 << 32)
+            }
         }
 
         fn reduction_effect(n: usize, m: i64) -> usize {
             let n_i = i64::try_from(n).unwrap_or(i64::MAX);
-            let sum = n_i.checked_add(m).unwrap_or(i64::MAX);
+            // Either overflow direction falls back to `i64::MAX`, matching the
+            // previous `checked_add(...).unwrap_or(i64::MAX)`.
+            let sum = if (m >= 0 && n_i > i64::MAX - m) || (m < 0 && n_i < i64::MIN - m) {
+                i64::MAX
+            } else {
+                n_i + m
+            };
             if sum < 3 {
                 3
             } else {
@@ -796,11 +803,22 @@ mod cost_overflow_tests {
         }
     }
 
+    /// `a + b`, or `usize::MAX` if the sum overflows. (No `saturating_add`:
+    /// the pack bans it, and `checked_add(...).unwrap_or(...)` is the manual
+    /// saturating-arithmetic pattern clippy rejects.)
+    fn add_cap(a: usize, b: usize) -> usize {
+        if a > usize::MAX - b {
+            usize::MAX
+        } else {
+            a + b
+        }
+    }
+
     /// `m_eff = 64 + n`. At `p = 64` the series denominator is `m_eff + 2 > 64`, so `niter` is 0
     /// and the capped cost is exactly `reduction_cost`. The offset still changes with `n`, so a
     /// swapped `(count, m_eff)` pair fails.
     fn offset_effect(n: usize) -> usize {
-        n.checked_add(64).unwrap_or(usize::MAX)
+        add_cap(n, 64)
     }
 
     /// Costs 100, 50, 10 at counts 3, 6, 9, then 40. Two strict improvements, then a rise.
@@ -830,7 +848,10 @@ mod cost_overflow_tests {
     impl ArgReductionEstimator for DecreaseForever {
         fn reduction_cost(n: usize, _p: usize) -> u64 {
             let n_u = u64::try_from(n).unwrap_or(u64::MAX);
-            1_000_000_000u64.checked_sub(n_u).unwrap_or(0)
+            // `1_000_000_000 - n_u` floored at 0. `min` keeps the subtrahend
+            // at or below the minuend, so the subtraction cannot underflow.
+            // (No `saturating_sub`: the pack bans it.)
+            1_000_000_000u64 - n_u.min(1_000_000_000u64)
         }
 
         fn reduction_effect(n: usize, _m: i64) -> usize {
@@ -847,7 +868,7 @@ mod cost_overflow_tests {
         }
 
         fn reduction_effect(n: usize, _m: i64) -> usize {
-            n.checked_add(8).unwrap_or(usize::MAX)
+            add_cap(n, 8)
         }
     }
 
@@ -895,9 +916,7 @@ mod cost_overflow_tests {
 
     impl ArgReductionEstimator for EqualThenRise {
         fn reduction_cost(n: usize, _p: usize) -> u64 {
-            if n == 3 {
-                40
-            } else if n == 6 {
+            if n == 3 || n == 6 {
                 40
             } else {
                 90
@@ -995,7 +1014,7 @@ mod cost_overflow_tests {
         let (got, exp) = optimize_pair::<DecreaseForever>(p, 1, 0, 1, false);
         assert_eq!(exp, (66, 0, 130));
         assert_eq!(got, (66, 0, 130));
-        assert!(66 > 0);
+        assert!(got.0 > 0);
         let step = 3usize;
         assert!(66 <= p + step);
         assert!(66 + step > p + step);
