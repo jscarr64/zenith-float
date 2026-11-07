@@ -714,3 +714,89 @@ mod retry_budget_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod cost_overflow_tests {
+    #[cfg(not(feature = "std"))]
+    use alloc::vec::Vec;
+
+    /// Exact `f(p)` in `u128`, then `min(f(p), u64::MAX)`.
+    /// `p < 1625` uses `p^3` (`p^3 < 2^32`); `p >= 1625` uses `isqrt(p)^3` (`<= 2^90` for `p <= 2^60`).
+    fn mul_cost_oracle(p: u128) -> u128 {
+        let f = if p < 70 {
+            p * p
+        } else if p < 1625 {
+            (p * p * p).isqrt()
+        } else {
+            let q = p.isqrt();
+            q * q * q
+        };
+        f.min(u128::from(u64::MAX))
+    }
+
+    fn precisions() -> Vec<usize> {
+        let mut ps = Vec::new();
+        // 1: smallest accepted precision; schoolbook branch, f(1) = 1*1 = 1.
+        ps.push(1);
+        // 69: last p of the schoolbook branch (p < 70); 69*69 = 4_761.
+        ps.push(69);
+        // 70: first p of the isqrt(p^3) branch; 70^3 = 343_000.
+        ps.push(70);
+        // 1624^3 = 4_283_098_624 < 2^32: last p of the isqrt(p^3) branch.
+        ps.push(1624);
+        // 1625: first p of the isqrt(p)^3 branch; 40^2 = 1_600 <= 1625 < 1_681 = 41^2.
+        ps.push(1625);
+        // 2_643_875 = 1626^2 - 1, so isqrt = 1625; 1625^3 = 4_291_015_625 <= u32::MAX: last p before the u32 cube overflow.
+        ps.push(2_643_875);
+        // 1626^3 = 4_298_942_376 > u32::MAX: first 32-bit overflow.
+        ps.push(2_643_876);
+        // 2^30 - 2 = usize::MAX / 4 - 1: equals MAX_PRECISION on 32-bit targets. isqrt = 32_767; 32_767^3 = 35_181_150_961_663 > u32::MAX and fits u64.
+        ps.push((1_usize << 30) - 2);
+        #[cfg(target_pointer_width = "64")]
+        {
+            // 2^32 + 1: low 32 bits are 1, so a u32 truncation of p is 1; first listed p above 2^32.
+            ps.push((1_usize << 32) + 1);
+            // 2^42: isqrt = 2^21 = 2_097_152, cube = 2^63 < u64::MAX: last listed power of two below the clamp.
+            ps.push(1_usize << 42);
+            // 2^43: isqrt = 2_965_820, cube ~2^64.4: first clamped value region.
+            ps.push(1_usize << 43);
+            // 2^60 - 1: MAX_PRECISION on 64-bit; isqrt = 2^30 - 1, and (2^30 - 1)^3 > u64::MAX, so f(p) clamps.
+            ps.push(crate::defs::MAX_PRECISION);
+        }
+        let max_p = crate::defs::MAX_PRECISION;
+        ps.retain(|&p| p <= max_p);
+        // (1 << 30) - 2 equals MAX_PRECISION on 32-bit and is already listed; on 64-bit MAX_PRECISION was pushed above. isqrt(2^30 - 2) = 32_767; 32_767^3 = 35_181_150_961_663 > u32::MAX.
+        if !ps.contains(&max_p) {
+            ps.push(max_p);
+        }
+        ps
+    }
+
+    #[test]
+    fn calc_mul_cost_matches_integer_oracle() {
+        for p in precisions() {
+            assert_eq!(
+                u128::try_from(super::calc_mul_cost(p)).unwrap(),
+                mul_cost_oracle(u128::try_from(p).unwrap()),
+                "p = {p}"
+            );
+        }
+    }
+
+    #[test]
+    fn calc_sqrt_cost_matches_integer_oracle() {
+        for p in precisions() {
+            let m = super::calc_mul_cost(p);
+            let a = super::calc_add_cost(p);
+            let p_u = u128::try_from(p).unwrap();
+            let log3 = u128::try_from((super::log2_floor(p) * 41349) >> 16).unwrap();
+            let oracle =
+                (log3 * (5 * mul_cost_oracle(p_u) + 2 * p_u) / 2).min(u128::from(u64::MAX));
+            assert_eq!(
+                u128::try_from(super::calc_sqrt_cost(p, m, a)).unwrap(),
+                oracle,
+                "p = {p}"
+            );
+        }
+    }
+}

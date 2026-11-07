@@ -435,3 +435,69 @@ fn series_horner<T: PolycoeffGen>(
 
     add.add(&acc, p, RoundingMode::None)
 }
+
+#[cfg(test)]
+mod cost_overflow_tests {
+    /// Fixed iter cost. `next` is never called by the cost code.
+    struct FixedCost(usize);
+
+    impl super::PolycoeffGen for FixedCost {
+        fn next(
+            &mut self,
+            _rm: crate::RoundingMode,
+        ) -> Result<&crate::num::ExactNumNumber, crate::defs::Error> {
+            Err(crate::defs::Error::InvalidArgument)
+        }
+
+        fn iter_cost(&self) -> usize {
+            self.0
+        }
+    }
+
+    /// Unclamped `f(p)`: `p*p` for `p < 70`, `isqrt(p^3)` for `p < 1625`, `isqrt(p)^3` otherwise.
+    fn f(p: u128) -> u128 {
+        if p < 70 {
+            p * p
+        } else if p < 1625 {
+            (p * p * p).isqrt()
+        } else {
+            let q = p.isqrt();
+            q * q * q
+        }
+    }
+
+    #[test]
+    fn series_cost_matches_integer_oracle() {
+        // RECT_ITER_THRESHOLD - 1: MAX_CACHE = 128, threshold = 128/10*9 = 108, so 107 is the last base-only niter.
+        // RECT_ITER_THRESHOLD: 108, first niter that adds isqrt(niter)*f(p) + (niter/10)*(2*f(p) + p + 2p).
+        // 1_000_000 = 10^6 <= 2^20: rectangular; isqrt = 10^3 and niter/10 = 10^5. f(p) <= 2^90, so the product fits in u128.
+        let niters = [super::RECT_ITER_THRESHOLD - 1, super::RECT_ITER_THRESHOLD, 1_000_000_usize];
+        // 1625: first p of the isqrt(p)^3 branch; 40^2 = 1_600 <= 1625 < 1_681 = 41^2; <= MAX_PRECISION on every target.
+        // 2_643_876 = 1626^2: isqrt = 1626, 1626^3 = 4_298_942_376 > u32::MAX; still <= 2^30 - 2.
+        // MAX_PRECISION: 2^30 - 2 on 32-bit (isqrt = 32_767, cube > u32::MAX) and 2^60 - 1 on 64-bit (isqrt = 2^30 - 1, cube > u64::MAX).
+        let ps = [1625_usize, 2_643_876_usize, crate::defs::MAX_PRECISION];
+        for niter in niters {
+            for p in ps {
+                // 2p: add cost of two numbers (`calc_add_cost` returns p).
+                let gen = FixedCost(2 * p);
+                let n_u = u128::try_from(niter).unwrap();
+                let p_u = u128::try_from(p).unwrap();
+                let f_p = f(p_u);
+                let base = n_u * (f_p + p_u + 2 * p_u);
+                let raw = if niter >= super::RECT_ITER_THRESHOLD {
+                    let sqrt_n = n_u.isqrt();
+                    base + sqrt_n * f_p + (n_u / 10) * (2 * f_p + p_u + 2 * p_u)
+                } else {
+                    base
+                };
+                // Clamp the finished cost. f(p) stays unclamped.
+                let oracle = raw.min(u128::from(u64::MAX));
+                assert_eq!(
+                    u128::from(super::series_cost(niter, p, &gen)),
+                    oracle,
+                    "niter {niter} p {p}"
+                );
+            }
+        }
+    }
+}

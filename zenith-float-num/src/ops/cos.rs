@@ -392,3 +392,80 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod cost_overflow_tests {
+    use crate::ops::series::ArgReductionEstimator;
+
+    use super::CosArgReductionEstimator;
+
+    /// Unclamped `f(p)`. The `u64` clamp is applied to `n * (f(p) + p)`, not to `f`.
+    fn f_mul(p: u128) -> u128 {
+        if p < 70 {
+            p * p
+        } else if p < 1625 {
+            (p * p * p).isqrt()
+        } else {
+            let q = p.isqrt();
+            q * q * q
+        }
+    }
+
+    #[test]
+    fn reduction_cost_matches_integer_oracle() {
+        // 1: one reduction; the product is f(p) + p before the clamp.
+        // 15: fifteen reductions; the product is 15 * (f(p) + p) before the clamp.
+        let ns = [1_usize, 15_usize];
+        // 1625: first p of the isqrt(p)^3 branch; 40^2 = 1_600 <= 1625 < 1_681 = 41^2; <= MAX_PRECISION on every target.
+        // 2_643_876 = 1626^2: isqrt = 1626, 1626^3 = 4_298_942_376 > u32::MAX; still <= 2^30 - 2.
+        // MAX_PRECISION: 2^30 - 2 on 32-bit (isqrt = 32_767, 32_767^3 > u32::MAX) and 2^60 - 1 on 64-bit (isqrt = 2^30 - 1, cube > u64::MAX).
+        let ps = [1625_usize, 2_643_876_usize, crate::defs::MAX_PRECISION];
+        for n in ns {
+            for p in ps {
+                let n_u = u128::try_from(n).unwrap();
+                let p_u = u128::try_from(p).unwrap();
+                let oracle = (n_u * (f_mul(p_u) + p_u)).min(u128::from(u64::MAX));
+                let result = CosArgReductionEstimator::reduction_cost(n, p);
+                assert_eq!(u128::from(result), oracle, "n = {n}, p = {p}");
+            }
+        }
+    }
+
+    /// Fixed iter cost. `next` is never called by `series_cost_optimize`.
+    struct FixedCostGen(usize);
+
+    impl crate::ops::series::PolycoeffGen for FixedCostGen {
+        fn next(
+            &mut self,
+            _rm: crate::RoundingMode,
+        ) -> Result<&crate::num::ExactNumNumber, crate::defs::Error> {
+            Err(crate::defs::Error::InvalidArgument)
+        }
+
+        fn iter_cost(&self) -> usize {
+            self.0
+        }
+    }
+
+    #[test]
+    fn series_cost_optimize_terminates_at_max_precision() {
+        // On 64-bit the cost plateau (all costs clamped at u64::MAX) must stop the loop via `cost2 < cost1` being false.
+        let p = crate::defs::MAX_PRECISION;
+        // 2 * MAX_PRECISION: add cost of two numbers. 2*(2^60 - 1) and 2*(2^30 - 2) both fit in usize.
+        let gen = FixedCostGen(2 * p);
+        // m = 0: negative exponent is zero, so the first candidate reduction count is floor(log2(p))/2.
+        // pwr_step = 2: cosine powers advance by x^2, the same arguments `cos_series` passes.
+        // ext = false: the series part is `series_cost`.
+        let (reduction_times, niter, _) = crate::ops::series::series_cost_optimize::<
+            CosArgReductionEstimator,
+        >(p, &gen, 0, 2, false);
+        // floor(log2(p))/2 is the optimizer step; a finished count stays <= p plus that step.
+        let step = crate::common::util::log2_floor(p) / 2;
+        assert!(
+            reduction_times <= p + step,
+            "reduction_times {reduction_times} p {p}"
+        );
+        // niter > 0: the plateau stop happens while `reduction_effect` is still below p. The guard at p + step returns niter == 0.
+        assert!(niter > 0, "niter {niter} p {p}");
+    }
+}
