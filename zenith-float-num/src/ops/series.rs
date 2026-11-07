@@ -889,6 +889,26 @@ mod cost_overflow_tests {
         }
     }
 
+    /// Equal costs at counts 3 and 6, then a rise. `reduction_effect` is the
+    /// existing `offset_effect` (`n + 64`).
+    struct EqualThenRise;
+
+    impl ArgReductionEstimator for EqualThenRise {
+        fn reduction_cost(n: usize, _p: usize) -> u64 {
+            if n == 3 {
+                40
+            } else if n == 6 {
+                40
+            } else {
+                90
+            }
+        }
+
+        fn reduction_effect(n: usize, _m: i64) -> usize {
+            offset_effect(n)
+        }
+    }
+
     fn sweep_step_cost(iter_cost: u64) {
         for p in 1..=2048usize {
             for m in -3i64..=20 {
@@ -989,6 +1009,59 @@ mod cost_overflow_tests {
         let held = candidate_ref::<DecreaseForever>(&inp, 66).2;
         let rejected = candidate_ref::<DecreaseForever>(&inp, 69).2;
         assert!(rejected < held, "held {held} rejected {rejected}");
+    }
+
+    #[test]
+    fn series_cost_optimize_decreasing_cost_includes_exact_p_plus_step() {
+        // p = 32, step = 2, m = 0: first count 2, limit `p + step` = 34.
+        // Counts 2, 4, ..., 34 are on the grid, so 34 is visited exactly.
+        // The cost falls by 1 per count, so 34 is strictly cheaper than 32
+        // and must be adopted; the guard stops the loop at 36 > 34.
+        // With `>=` the guard returns at 34 without evaluating it, so the
+        // returned triple is (32, 0, 96) instead of (34, 0, 98).
+        let p = 32usize;
+        assert_eq!(log2_floor_ref(p) / 2, 2, "p={p}");
+        let (got, exp) = optimize_pair::<DecreaseForever>(p, 1, 0, 1, false);
+        assert_eq!(exp, (34, 0, 98));
+        assert_eq!(got, (34, 0, 98));
+        let inp = Cand {
+            p,
+            iter_cost: 1,
+            m: 0,
+            div: 1,
+            ext: false,
+        };
+        assert_eq!(candidate_ref::<DecreaseForever>(&inp, 34).2, 999_999_966);
+        assert_eq!(candidate_ref::<DecreaseForever>(&inp, 32).2, 999_999_968);
+        assert!(
+            candidate_ref::<DecreaseForever>(&inp, 34).2
+                < candidate_ref::<DecreaseForever>(&inp, 32).2
+        );
+    }
+
+    #[test]
+    fn series_cost_optimize_equal_cost_plateau_keeps_the_earlier_count() {
+        // p = 64, step = 3, m = 0: first count 3, then 6, then 9.
+        // Costs at 3, 6, 9 are 40, 40, 90. The series term is 0
+        // (`m_eff = 64 + n >= 67`, denominator `m_eff + 2 > 64`).
+        // The second candidate costs the same as the first, so strict `<`
+        // does not adopt it and the loop returns (3, 0, 67).
+        // With `==` or `<=` the equal candidate is adopted, the loop walks
+        // on to 9, and returns (6, 0, 70).
+        let p = 64usize;
+        let (got, exp) = optimize_pair::<EqualThenRise>(p, 1, 0, 1, false);
+        assert_eq!(exp, (3, 0, 67));
+        assert_eq!(got, (3, 0, 67));
+        let inp = Cand {
+            p,
+            iter_cost: 1,
+            m: 0,
+            div: 1,
+            ext: false,
+        };
+        assert_eq!(candidate_ref::<EqualThenRise>(&inp, 3).2, 40);
+        assert_eq!(candidate_ref::<EqualThenRise>(&inp, 6).2, 40);
+        assert_eq!(candidate_ref::<EqualThenRise>(&inp, 9).2, 90);
     }
 
     #[test]
