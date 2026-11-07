@@ -38,6 +38,9 @@ tag=${1:?usage: tools/full_gate.sh TAG}; : > "$T/$tag.rc"
 # removed only when this run created it (owner marker = this pid + start time), every leaf is reaped, no process is
 # left in a leaf's process group, no popslot scope named in a leaf log is still active and no process has its cwd or
 # an fd under it; otherwise it is kept and reported. ZF_GATE_KEEP_TARGETS=1 always keeps it.
+# Leaves share one worktree, so a step that writes a tracked file gets a per-leaf path instead: COMPARE_OUT (prepublish's
+# compare-bench timings, normally doc/compare-results.tsv) goes to $T/LEAF. A leaf's prepublish starts from an empty target and
+# shares the CPUs, so its timeout is PREPUBLISH_STEP_TIMEOUT (default 40m in leaves, like mpfr; the serial gate keeps STEP_TIMEOUT).
 ZF_GATE_LEAVES_DEFAULT='debug:target-dir golden-sums arm-tests-release qemu-time-factor build-debug zero-test build-nostd build-thumbv7em features-random-serde rules-scan no-clone-progress fmt clippy-x86_64 clippy-i686 audit no-intrinsics hex-32bit unsafe-scan
 release:target-dir build-release
 mpfr:target-dir mpfr-tests-build oracle-fast oracle-deep mpfr
@@ -111,7 +114,7 @@ zfp_main() {
       mkdir -p "$T/$l"
       setsid env -u POPLOG_FILE -u POPLOG_STATE_DIR -u POPLOG_PID -u POPLOG_PROGRESS_FILE -u POPLOG_STEP \
         -u POPLOG_OUTER_LOG -u POPLOG_OUTER_PID -u POPLOG_OUTER_DEPTH -u POPLOG_OUTER_START -u POPLOG_OUTER_AGENT \
-        -u ZF_GATE_PARALLEL ZF_GATE_ONLY="${lsteps_of[$l]}" CARGO_TARGET_DIR="$root/$l" T="$T/$l" REPO="$PWD" POPLOG_AGENT="$agent" \
+        -u ZF_GATE_PARALLEL ZF_GATE_ONLY="${lsteps_of[$l]}" CARGO_TARGET_DIR="$root/$l" T="$T/$l" COMPARE_OUT="$T/$l/compare-results.tsv" PREPUBLISH_STEP_TIMEOUT="${PREPUBLISH_STEP_TIMEOUT:-40m}" REPO="$PWD" POPLOG_AGENT="$agent" \
         "$bin/poprun" --agent "$agent" --job "$job-$l" --repo "$PWD" -- "$bin/popslot" --agent "$agent" -- bash "$self" "$tag-$l" \
         > "$T/$l.leaf.out" 2>&1 < /dev/null &
       p=$!; pid_of[$l]=$p; t0_of[$l]=$(date +%s); live+=("$l"); zfp_say "leaf $l started pid/pgid $p steps: ${lsteps_of[$l]}"
@@ -138,6 +141,8 @@ zfp_main() {
   local fail=0 f got
   for l in "${names[@]}"; do
     f=$T/$l/$tag-$l.rc
+    log_of[$l]=$(grep -oE 'log [^ ]+\.log' "$T/$l.leaf.out" 2>/dev/null | tail -1 | cut -d' ' -f2)
+    [[ -n ${log_of[$l]} ]] && zfp_say "leaf $l poplog ${log_of[$l]}"
     if [[ ${rc_of[$l]:-x} != 0 ]]; then zfp_say "LEAF FAIL $l exit=${rc_of[$l]:-none} ${why_of[$l]:-}"; fail=1; continue; fi
     got=$(grep -E '^[A-Za-z0-9_-]+=[0-9]+$' "$f" 2>/dev/null | tr '\n' ' ')
     local exp=''; for s in ${lsteps_of[$l]}; do exp+="$s=0 "; done
@@ -145,8 +150,6 @@ zfp_main() {
     if [[ "$(tr ' ' '\n' <<<"$got" | sed '/^$/d' | sort)" != "$(tr ' ' '\n' <<<"$exp" | sed '/^$/d' | sort)" ]] || ! grep -qx done "$f" 2>/dev/null; then
       zfp_say "LEAF FAIL $l: rc file $f has [${got}] (want [${exp}] and done)"; fail=1
     else zfp_say "leaf $l PASS: ${got}"; fi
-    log_of[$l]=$(grep -oE 'log [^ ]+\.log' "$T/$l.leaf.out" 2>/dev/null | tail -1 | cut -d' ' -f2)
-    [[ -n ${log_of[$l]} ]] && zfp_say "leaf $l poplog ${log_of[$l]}"
   done
   # cleanup only what this run made, only when nothing can still write into it
   local keep=''
@@ -196,7 +199,7 @@ run() {
   name=$1; shift; echo "start $name $(date +%T)" >> "$T/$tag.rc"
   rm -f "$(_pl_out)"  # the last step left it a symlink to its log; log_step_start truncates it
   log_step_start "$name"; ln -sf "$T/$tag-$name.log" "$(_pl_out)"  # nested: own out file, never the parent's
-  to=${STEP_TIMEOUT:-20m}; [[ $name == mpfr ]] && to=${MPFR_STEP_TIMEOUT:-40m}  # mpfr: integration_tests alone is ~1090 s
+  to=${STEP_TIMEOUT:-20m}; [[ $name == mpfr ]] && to=${MPFR_STEP_TIMEOUT:-40m}; [[ $name == prepublish ]] && to=${PREPUBLISH_STEP_TIMEOUT:-$to}  # mpfr: integration_tests alone is ~1090 s
   timeout "$to" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1 &
   POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"
   wait "$POPLOG_CHILD_PID"; rc=$?; POPLOG_CHILD_PID=""
