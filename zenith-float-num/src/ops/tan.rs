@@ -8,7 +8,11 @@ use crate::common::consts::TWO;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::calc_add_cost;
 use crate::common::util::calc_mul_cost;
+use crate::common::util::cost_from_u128;
+use crate::common::util::cost_product;
+use crate::common::util::cost_sum;
 use crate::common::util::round_p;
+use crate::common::util::wide;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
@@ -23,13 +27,21 @@ use crate::WORD_BIT_SIZE;
 
 // Polynomial coefficient generator (for tan it only used for cost estmation).
 struct TanPolycoeffGen {
-    iter_cost: usize,
+    iter_cost: u64,
 }
 
 impl TanPolycoeffGen {
     fn new(p: usize) -> Result<Self, Error> {
-        let iter_cost =
-            9 * calc_mul_cost(p) + 2 * (calc_add_cost(p) + calc_add_cost(WORD_BIT_SIZE));
+        let iter_cost = cost_from_u128(cost_sum(&[
+            cost_product(Some(9), Some(u128::from(calc_mul_cost(p)))),
+            cost_product(
+                Some(2),
+                cost_sum(&[
+                    Some(u128::from(calc_add_cost(p))),
+                    Some(u128::from(calc_add_cost(WORD_BIT_SIZE))),
+                ]),
+            ),
+        ]));
 
         Ok(TanPolycoeffGen { iter_cost })
     }
@@ -41,7 +53,7 @@ impl PolycoeffGen for TanPolycoeffGen {
     }
 
     #[inline]
-    fn iter_cost(&self) -> usize {
+    fn iter_cost(&self) -> u64 {
         self.iter_cost
     }
 }
@@ -51,9 +63,10 @@ struct TanArgReductionEstimator {}
 impl ArgReductionEstimator for TanArgReductionEstimator {
     /// Estimates cost of reduction n times for number with precision p.
     fn reduction_cost(n: usize, p: usize) -> u64 {
-        let cost_mul = calc_mul_cost(p);
-        let cost_add = calc_add_cost(p);
-        n as u64 * (2 * cost_mul + cost_add) as u64
+        let cost_mul = u128::from(calc_mul_cost(p));
+        let cost_add = u128::from(calc_add_cost(p));
+        let per_reduction = cost_sum(&[cost_product(Some(2), Some(cost_mul)), Some(cost_add)]);
+        cost_from_u128(cost_product(Some(wide(n)), per_reduction))
     }
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.

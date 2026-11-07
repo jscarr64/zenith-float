@@ -8,7 +8,11 @@ use crate::common::consts::TWO;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::calc_add_cost;
 use crate::common::util::calc_mul_cost;
+use crate::common::util::cost_from_u128;
+use crate::common::util::cost_product;
+use crate::common::util::cost_sum;
 use crate::common::util::round_p;
+use crate::common::util::wide;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::defs::EXPONENT_MIN;
@@ -28,9 +32,9 @@ impl ArgReductionEstimator for CosArgReductionEstimator {
     /// Estimates cost of reduction n times for number with precision p.
     fn reduction_cost(n: usize, p: usize) -> u64 {
         // n * (cost(add) + cost(mul))
-        let cost_mul = calc_mul_cost(p);
-        let cost_add = calc_add_cost(p);
-        n as u64 * (cost_mul + cost_add) as u64
+        let per_reduction =
+            cost_sum(&[Some(u128::from(calc_mul_cost(p))), Some(u128::from(calc_add_cost(p)))]);
+        cost_from_u128(cost_product(Some(wide(n)), per_reduction))
     }
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
@@ -422,8 +426,8 @@ mod cost_overflow_tests {
         let ps = [1625_usize, 2_643_876_usize, crate::defs::MAX_PRECISION];
         for n in ns {
             for p in ps {
-                let n_u = u128::try_from(n).unwrap();
-                let p_u = u128::try_from(p).unwrap();
+                let n_u = crate::common::util::wide(n);
+                let p_u = crate::common::util::wide(p);
                 let oracle = (n_u * (f_mul(p_u) + p_u)).min(u128::from(u64::MAX));
                 let result = CosArgReductionEstimator::reduction_cost(n, p);
                 assert_eq!(u128::from(result), oracle, "n = {n}, p = {p}");
@@ -432,7 +436,7 @@ mod cost_overflow_tests {
     }
 
     /// Fixed iter cost. `next` is never called by `series_cost_optimize`.
-    struct FixedCostGen(usize);
+    struct FixedCostGen(u64);
 
     impl crate::ops::series::PolycoeffGen for FixedCostGen {
         fn next(
@@ -442,7 +446,7 @@ mod cost_overflow_tests {
             Err(crate::defs::Error::InvalidArgument)
         }
 
-        fn iter_cost(&self) -> usize {
+        fn iter_cost(&self) -> u64 {
             self.0
         }
     }
@@ -452,7 +456,8 @@ mod cost_overflow_tests {
         // On 64-bit the cost plateau (all costs clamped at u64::MAX) must stop the loop via `cost2 < cost1` being false.
         let p = crate::defs::MAX_PRECISION;
         // 2 * MAX_PRECISION: add cost of two numbers. 2*(2^60 - 1) and 2*(2^30 - 2) both fit in usize.
-        let gen = FixedCostGen(2 * p);
+        // 2 * p <= 2^61 always fits u64 on every target.
+        let gen = FixedCostGen(u64::try_from(2 * p).unwrap_or(u64::MAX));
         // m = 0: negative exponent is zero, so the first candidate reduction count is floor(log2(p))/2.
         // pwr_step = 2: cosine powers advance by x^2, the same arguments `cos_series` passes.
         // ext = false: the series part is `series_cost`.

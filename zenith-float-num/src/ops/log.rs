@@ -9,9 +9,13 @@ use crate::common::util::bump_prec_retry;
 use crate::common::util::calc_add_cost;
 use crate::common::util::calc_mul_cost;
 use crate::common::util::calc_sqrt_cost;
+use crate::common::util::cost_from_u128;
+use crate::common::util::cost_product;
+use crate::common::util::cost_sum;
 use crate::common::util::count_leading_ones;
 use crate::common::util::count_leading_zeroes_skip_first;
 use crate::common::util::round_p;
+use crate::common::util::wide;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
@@ -30,7 +34,7 @@ struct AtanhPolycoeffGen {
     acc: ExactNumNumber,
     one_full_p: ExactNumNumber,
     val: ExactNumNumber,
-    iter_cost: usize,
+    iter_cost: u64,
 }
 
 impl AtanhPolycoeffGen {
@@ -39,7 +43,10 @@ impl AtanhPolycoeffGen {
         let one_full_p = ExactNumNumber::from_word(1, p)?;
         let val = ExactNumNumber::from_word(1, p)?;
 
-        let iter_cost = calc_add_cost(p) + calc_add_cost(acc.mantissa_max_bit_len());
+        let iter_cost = cost_from_u128(cost_sum(&[
+            Some(u128::from(calc_add_cost(p))),
+            Some(u128::from(calc_add_cost(acc.mantissa_max_bit_len()))),
+        ]));
 
         Ok(AtanhPolycoeffGen {
             acc,
@@ -61,7 +68,7 @@ impl PolycoeffGen for AtanhPolycoeffGen {
     }
 
     #[inline]
-    fn iter_cost(&self) -> usize {
+    fn iter_cost(&self) -> u64 {
         self.iter_cost
     }
 }
@@ -74,9 +81,9 @@ impl ArgReductionEstimator for LnArgReductionEstimator {
         // cost(shift) + n*cost(sqrt)
         let cost_mul = calc_mul_cost(p);
         let cost_add = calc_add_cost(p);
-        let sqrt_cost = calc_sqrt_cost(p, cost_mul, cost_add);
+        let sqrt_cost = u128::from(calc_sqrt_cost(p, cost_mul, cost_add));
 
-        n as u64 * sqrt_cost as u64
+        cost_from_u128(cost_product(Some(wide(n)), Some(sqrt_cost)))
     }
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.

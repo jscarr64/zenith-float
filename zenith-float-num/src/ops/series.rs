@@ -5,8 +5,12 @@
 use crate::common::consts::ONE;
 use crate::common::util::calc_add_cost;
 use crate::common::util::calc_mul_cost;
+use crate::common::util::cost_from_u128;
+use crate::common::util::cost_product;
+use crate::common::util::cost_sum;
 use crate::common::util::log2_floor;
 use crate::common::util::sqrt_int;
+use crate::common::util::wide;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
@@ -28,7 +32,7 @@ pub(crate) trait PolycoeffGen {
     fn next(&mut self, rm: RoundingMode) -> Result<&ExactNumNumber, Error>;
 
     /// Returns the cost of one call to next if numbers have precision p.
-    fn iter_cost(&self) -> usize;
+    fn iter_cost(&self) -> u64;
 
     /// Returns true if coefficient is divizor.
     fn is_div(&self) -> bool {
@@ -43,7 +47,7 @@ pub(crate) struct FactPolycoeffGen {
     fct: ExactNumNumber,
     sign: i8,
     flip_sign: bool,
-    iter_cost: usize,
+    iter_cost: u64,
 }
 
 impl FactPolycoeffGen {
@@ -67,8 +71,14 @@ impl FactPolycoeffGen {
         };
         let fct = ExactNumNumber::from_word(1, p)?;
         let one_full_p = ExactNumNumber::from_word(1, p)?;
-        let iter_cost =
-            (calc_mul_cost(p) + calc_add_cost(p) + calc_add_cost(inc.mantissa_max_bit_len())) * 2;
+        let iter_cost = cost_from_u128(cost_product(
+            cost_sum(&[
+                Some(u128::from(calc_mul_cost(p))),
+                Some(u128::from(calc_add_cost(p))),
+                Some(u128::from(calc_add_cost(inc.mantissa_max_bit_len()))),
+            ]),
+            Some(2),
+        ));
         Ok(Self {
             one_full_p,
             inc,
@@ -106,7 +116,7 @@ impl PolycoeffGen for FactPolycoeffGen {
     }
 
     #[inline]
-    fn iter_cost(&self) -> usize {
+    fn iter_cost(&self) -> u64 {
         self.iter_cost
     }
 }
@@ -152,11 +162,18 @@ pub(crate) fn series_cost_optimize<S: ArgReductionEstimator>(
     loop {
         let m_eff = S::reduction_effect(reduction_times, m);
         let niter = series_niter(p, m_eff) / pwr_step.max(1);
-        let cost2 = if ext {
-            polycoeff_gen.iter_cost() as u64 * niter as u64
+        let series_part = if ext {
+            cost_product(
+                Some(u128::from(polycoeff_gen.iter_cost())),
+                Some(wide(niter)),
+            )
         } else {
-            series_cost(niter, p, polycoeff_gen)
-        } + S::reduction_cost(reduction_times, p);
+            Some(u128::from(series_cost(niter, p, polycoeff_gen)))
+        };
+        let cost2 = cost_from_u128(cost_sum(&[
+            series_part,
+            Some(u128::from(S::reduction_cost(reduction_times, p))),
+        ]));
 
         if cost2 < cost1 {
             cost1 = cost2;
@@ -210,19 +227,28 @@ fn series_niter(p: usize, m: usize) -> usize {
 /// p is the numbers precision
 /// polycoeff_gen is the coefficient generator
 fn series_cost<T: PolycoeffGen>(niter: usize, p: usize, polycoeff_gen: &T) -> u64 {
-    let cost_mul = calc_mul_cost(p);
-    let cost_add = calc_add_cost(p);
-    let cost = niter as u64 * (cost_mul + cost_add + polycoeff_gen.iter_cost()) as u64;
+    let cost_mul = u128::from(calc_mul_cost(p));
+    let cost_add = u128::from(calc_add_cost(p));
+    let iter_cost = u128::from(polycoeff_gen.iter_cost());
+    let n = Some(wide(niter));
+    // niter * (cost(mul) + cost(add) + cost(polycoeff_gen.next))
+    let base = cost_product(
+        n,
+        cost_sum(&[Some(cost_mul), Some(cost_add), Some(iter_cost)]),
+    );
 
-    if niter >= RECT_ITER_THRESHOLD {
-        // niter * (cost(mul) + cost(add) + cost(polcoeff_gen.next)) + sqrt(niter) * cost(mul)
-        // + niter / 10 * (2 * cost(mul) + cost(add) + cost(polcoeff_gen.next))
-        cost + sqrt_int(niter as u32) as u64 * cost_mul as u64
-            + niter as u64 / 10 * ((cost_mul << 1) + cost_add + polycoeff_gen.iter_cost()) as u64
+    let total = if niter >= RECT_ITER_THRESHOLD {
+        // + isqrt(niter) * cost(mul)
+        // + (niter / 10) * (2 * cost(mul) + cost(add) + cost(polycoeff_gen.next))
+        let sqrt_term = cost_product(n.map(|v| v.isqrt()), Some(cost_mul));
+        let rect_step =
+            cost_sum(&[cost_product(Some(2), Some(cost_mul)), Some(cost_add), Some(iter_cost)]);
+        let rect_term = cost_product(n.map(|v| v / 10), rect_step);
+        cost_sum(&[base, sqrt_term, rect_term])
     } else {
-        // niter * (cost(mul) + cost(add) + cost(polycoeff_gen.next))
-        cost
-    }
+        base
+    };
+    cost_from_u128(total)
 }
 
 // x_first or x_step is zero
@@ -439,7 +465,7 @@ fn series_horner<T: PolycoeffGen>(
 #[cfg(test)]
 mod cost_overflow_tests {
     /// Fixed iter cost. `next` is never called by the cost code.
-    struct FixedCost(usize);
+    struct FixedCost(u64);
 
     impl super::PolycoeffGen for FixedCost {
         fn next(
@@ -449,7 +475,7 @@ mod cost_overflow_tests {
             Err(crate::defs::Error::InvalidArgument)
         }
 
-        fn iter_cost(&self) -> usize {
+        fn iter_cost(&self) -> u64 {
             self.0
         }
     }
@@ -466,6 +492,22 @@ mod cost_overflow_tests {
         }
     }
 
+    /// Series cost for `FixedCost(2 * p)`. `f(p)` stays unclamped; the finished total is clamped.
+    fn series_cost_oracle(niter: usize, p: usize) -> u128 {
+        let n_u = crate::common::util::wide(niter);
+        let p_u = crate::common::util::wide(p);
+        let f_p = f(p_u);
+        let base = n_u * (f_p + p_u + 2 * p_u);
+        let raw = if niter >= super::RECT_ITER_THRESHOLD {
+            let sqrt_n = n_u.isqrt();
+            base + sqrt_n * f_p + (n_u / 10) * (2 * f_p + p_u + 2 * p_u)
+        } else {
+            base
+        };
+        // Clamp the finished cost. f(p) stays unclamped.
+        raw.min(u128::from(u64::MAX))
+    }
+
     #[test]
     fn series_cost_matches_integer_oracle() {
         // RECT_ITER_THRESHOLD - 1: MAX_CACHE = 128, threshold = 128/10*9 = 108, so 107 is the last base-only niter.
@@ -479,25 +521,41 @@ mod cost_overflow_tests {
         for niter in niters {
             for p in ps {
                 // 2p: add cost of two numbers (`calc_add_cost` returns p).
-                let gen = FixedCost(2 * p);
-                let n_u = u128::try_from(niter).unwrap();
-                let p_u = u128::try_from(p).unwrap();
-                let f_p = f(p_u);
-                let base = n_u * (f_p + p_u + 2 * p_u);
-                let raw = if niter >= super::RECT_ITER_THRESHOLD {
-                    let sqrt_n = n_u.isqrt();
-                    base + sqrt_n * f_p + (n_u / 10) * (2 * f_p + p_u + 2 * p_u)
-                } else {
-                    base
-                };
-                // Clamp the finished cost. f(p) stays unclamped.
-                let oracle = raw.min(u128::from(u64::MAX));
+                // 2 * p <= 2^61 always fits u64 on every target.
+                let gen = FixedCost(u64::try_from(2 * p).unwrap_or(u64::MAX));
                 assert_eq!(
                     u128::from(super::series_cost(niter, p, &gen)),
-                    oracle,
+                    series_cost_oracle(niter, p),
                     "niter {niter} p {p}"
                 );
             }
         }
+    }
+
+    #[test]
+    fn series_cost_exact_below_cap() {
+        // RECT_ITER_THRESHOLD = 108. p = 1625 is the first isqrt(p)^3 precision: 40^2 = 1_600 <= 1625 < 41^2, f(p) = 40^3 = 64_000.
+        // niter * f(p) and the rectangular terms finish far below u64::MAX, so the oracle clamp does not apply.
+        let niter = super::RECT_ITER_THRESHOLD;
+        let p = 1625_usize;
+        // 2p: add cost of two numbers (`calc_add_cost` returns p).
+        // 2 * p <= 2^61 always fits u64 on every target.
+        let gen = FixedCost(u64::try_from(2 * p).unwrap_or(u64::MAX));
+        assert_eq!(
+            u128::from(super::series_cost(niter, p, &gen)),
+            series_cost_oracle(niter, p)
+        );
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn series_cost_past_u128_is_capped() {
+        let p = crate::defs::MAX_PRECISION;
+        // 2p: add cost of two numbers (`calc_add_cost` returns p).
+        // 2 * p <= 2^61 always fits u64 on every target.
+        let gen = FixedCost(u64::try_from(2 * p).unwrap_or(u64::MAX));
+        // on 64-bit f(p) = isqrt(2^60 - 1)^3 = (2^30 - 1)^3 ~ 2^90, so niter * f(p) ~ 2^130 does not fit u128
+        let niter = 1_usize << 40;
+        assert_eq!(super::series_cost(niter, p, &gen), u64::MAX);
     }
 }

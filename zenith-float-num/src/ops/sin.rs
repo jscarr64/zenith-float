@@ -8,7 +8,11 @@ use crate::common::consts::TRIG_EXP_THRES;
 use crate::common::util::bump_prec_retry;
 use crate::common::util::calc_add_cost;
 use crate::common::util::calc_mul_cost;
+use crate::common::util::cost_from_u128;
+use crate::common::util::cost_product;
+use crate::common::util::cost_sum;
 use crate::common::util::round_p;
+use crate::common::util::wide;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
@@ -25,11 +29,15 @@ struct SinArgReductionEstimator {}
 impl ArgReductionEstimator for SinArgReductionEstimator {
     /// Estimates cost of reduction n times for number with precision p.
     fn reduction_cost(n: usize, p: usize) -> u64 {
-        let cost_mul = calc_mul_cost(p);
-        let cost_add = calc_add_cost(p);
-        let cost_mul2 = calc_mul_cost(THREE.mantissa_max_bit_len());
-
-        n as u64 * (2 * cost_mul + 3 * cost_add + cost_mul2) as u64
+        let cost_mul = u128::from(calc_mul_cost(p));
+        let cost_add = u128::from(calc_add_cost(p));
+        let cost_mul2 = u128::from(calc_mul_cost(THREE.mantissa_max_bit_len()));
+        let per_reduction = cost_sum(&[
+            cost_product(Some(2), Some(cost_mul)),
+            cost_product(Some(3), Some(cost_add)),
+            Some(cost_mul2),
+        ]);
+        cost_from_u128(cost_product(Some(wide(n)), per_reduction))
     }
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.

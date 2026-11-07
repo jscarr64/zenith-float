@@ -8,7 +8,11 @@ use crate::common::util::bump_prec_retry;
 use crate::common::util::calc_add_cost;
 use crate::common::util::calc_mul_cost;
 use crate::common::util::calc_sqrt_cost;
+use crate::common::util::cost_from_u128;
+use crate::common::util::cost_product;
+use crate::common::util::cost_sum;
 use crate::common::util::round_p;
+use crate::common::util::wide;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
@@ -24,7 +28,7 @@ use crate::WORD_BIT_SIZE;
 // Polynomial coefficient generator.
 struct AtanPolycoeffGen {
     f: ExactNumNumber,
-    iter_cost: usize,
+    iter_cost: u64,
 }
 
 impl AtanPolycoeffGen {
@@ -52,7 +56,7 @@ impl PolycoeffGen for AtanPolycoeffGen {
     }
 
     #[inline]
-    fn iter_cost(&self) -> usize {
+    fn iter_cost(&self) -> u64 {
         self.iter_cost
     }
 
@@ -70,7 +74,9 @@ impl ArgReductionEstimator for AtanArgReductionEstimator {
         let cost_mul = calc_mul_cost(p);
         let cost_add = calc_add_cost(p);
         let sqrt_cost = calc_sqrt_cost(p, cost_mul, cost_add);
-        n as u64 * (2 * (cost_mul + cost_add) + sqrt_cost) as u64
+        let pair = cost_sum(&[Some(u128::from(cost_mul)), Some(u128::from(cost_add))]);
+        let per_reduction = cost_sum(&[cost_product(Some(2), pair), Some(u128::from(sqrt_cost))]);
+        cost_from_u128(cost_product(Some(wide(n)), per_reduction))
     }
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.

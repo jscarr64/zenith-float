@@ -51,25 +51,71 @@ pub fn sqrt_int(a: u32) -> u32 {
     x as u32
 }
 
-// cost of multiplication of two numbers with precision p.
-pub fn calc_mul_cost(p: usize) -> usize {
-    if p < 70 {
-        p * p
-    } else {
-        // toom-3
-        if p < 1625 {
-            sqrt_int((p * p * p) as u32) as usize
-        } else {
-            let q = sqrt_int(p as u32) as usize;
-            q * q * q
-        }
-    }
+/// Clamp a cost computed in `u128` to `u64`.
+///
+/// This is the single place where an exact cost that does not fit `u64` (or `u128`,
+/// passed as `None`) becomes `u64::MAX`, which every comparison treats as larger than
+/// any representable cost. Every cost formula is monotone non-decreasing in its cost
+/// inputs and, at the precisions where an input is already `u64::MAX`, multiplies that
+/// input by a factor of at least 1, so an input clamped at `u64::MAX` stays clamped.
+#[inline]
+pub(crate) fn cost_from_u128(x: Option<u128>) -> u64 {
+    x.and_then(|v| u64::try_from(v).ok()).unwrap_or(u64::MAX)
 }
 
-// cost of addition/subtraction of two numbers with precision p.
+/// Widen a `usize` cost input to `u128`.
+///
+/// `usize` is at most 64 bits, so every value fits in `u128` and the conversion keeps it
+/// unchanged. `unwrap_or(u128::MAX)` is the conversion fallback.
 #[inline]
-pub fn calc_add_cost(p: usize) -> usize {
-    p
+pub(crate) fn wide(x: usize) -> u128 {
+    u128::try_from(x).unwrap_or(u128::MAX)
+}
+
+/// Sum cost parts with `checked_add`.
+///
+/// `None` if any part is `None` or the sum overflows `u128`.
+#[inline]
+pub(crate) fn cost_sum(parts: &[Option<u128>]) -> Option<u128> {
+    parts.iter().try_fold(0u128, |acc, part| -> Option<u128> {
+        acc.checked_add((*part)?)
+    })
+}
+
+/// Multiply two cost factors with `checked_mul`.
+///
+/// `None` means the exact value does not fit `u128`.
+#[inline]
+pub(crate) fn cost_product(a: Option<u128>, b: Option<u128>) -> Option<u128> {
+    a?.checked_mul(b?)
+}
+
+/// Cost of multiplying two numbers of precision `p`.
+///
+/// Schoolbook `p * p` for `p < 70`. Toom-3 beyond that: `isqrt(p^3)` for `p < 1625`
+/// (`p^3 < 2^32`), and `isqrt(p)^3` otherwise (`<= 2^90` for an accepted precision,
+/// `p <= 2^60`). The exact integer is then clamped with `cost_from_u128`.
+pub fn calc_mul_cost(p: usize) -> u64 {
+    let p = wide(p);
+    let cost = if p < 70 {
+        cost_product(Some(p), Some(p))
+    } else if p < 1625 {
+        // toom-3
+        cost_product(cost_product(Some(p), Some(p)), Some(p)).map(|v| v.isqrt())
+    } else {
+        // toom-3
+        let q = p.isqrt();
+        cost_product(cost_product(Some(q), Some(q)), Some(q))
+    };
+    cost_from_u128(cost)
+}
+
+/// Cost of adding or subtracting two numbers of precision `p`: the value `p` itself.
+///
+/// `usize` is at most 64 bits, so `p` fits in `u64`.
+#[inline]
+pub fn calc_add_cost(p: usize) -> u64 {
+    cost_from_u128(Some(wide(p)))
 }
 
 /// Fixed part of the extra-precision budget of a correct-rounding retry loop, in words.
@@ -136,11 +182,20 @@ pub fn test_loop_count(full: usize) -> usize {
     full.min(200)
 }
 
-// Estimate of sqrt op cost.
+/// Estimate of a square root at precision `p`.
+///
+/// The estimate is `log3 * (5 * cost_mul + 2 * cost_add) / 2`, where `log3` is
+/// `(floor(log2(p)) * 41349) >> 16`. `cost_mul` and `cost_add` may already be clamped
+/// at `u64::MAX`; see `cost_from_u128`. The product is computed in `u128` with checked
+/// arithmetic and clamped once.
 #[inline]
-pub fn calc_sqrt_cost(p: usize, cost_mul: usize, cost_add: usize) -> usize {
-    let log3_estimate = (log2_floor(p) * 41349) >> 16;
-    log3_estimate * (5 * cost_mul + 2 * cost_add) / 2
+pub fn calc_sqrt_cost(p: usize, cost_mul: u64, cost_add: u64) -> u64 {
+    let log3 = cost_product(Some(wide(log2_floor(p))), Some(41349)).map(|v| v >> 16);
+    let weighted = cost_sum(&[
+        cost_product(Some(5), Some(u128::from(cost_mul))),
+        cost_product(Some(2), Some(u128::from(cost_add))),
+    ]);
+    cost_from_u128(cost_product(log3, weighted).map(|v| v / 2))
 }
 
 /// `a + b + c`. The low limb is written to `r`. The returned carry is the high limb.
@@ -718,6 +773,8 @@ mod retry_budget_tests {
 #[cfg(test)]
 mod cost_overflow_tests {
     #[cfg(not(feature = "std"))]
+    use alloc::vec;
+    #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
 
     /// Exact `f(p)` in `u128`, then `min(f(p), u64::MAX)`.
@@ -735,23 +792,24 @@ mod cost_overflow_tests {
     }
 
     fn precisions() -> Vec<usize> {
-        let mut ps = Vec::new();
-        // 1: smallest accepted precision; schoolbook branch, f(1) = 1*1 = 1.
-        ps.push(1);
-        // 69: last p of the schoolbook branch (p < 70); 69*69 = 4_761.
-        ps.push(69);
-        // 70: first p of the isqrt(p^3) branch; 70^3 = 343_000.
-        ps.push(70);
-        // 1624^3 = 4_283_098_624 < 2^32: last p of the isqrt(p^3) branch.
-        ps.push(1624);
-        // 1625: first p of the isqrt(p)^3 branch; 40^2 = 1_600 <= 1625 < 1_681 = 41^2.
-        ps.push(1625);
-        // 2_643_875 = 1626^2 - 1, so isqrt = 1625; 1625^3 = 4_291_015_625 <= u32::MAX: last p before the u32 cube overflow.
-        ps.push(2_643_875);
-        // 1626^3 = 4_298_942_376 > u32::MAX: first 32-bit overflow.
-        ps.push(2_643_876);
-        // 2^30 - 2 = usize::MAX / 4 - 1: equals MAX_PRECISION on 32-bit targets. isqrt = 32_767; 32_767^3 = 35_181_150_961_663 > u32::MAX and fits u64.
-        ps.push((1_usize << 30) - 2);
+        let mut ps = vec![
+            // 1: smallest accepted precision; schoolbook branch, f(1) = 1*1 = 1.
+            1,
+            // 69: last p of the schoolbook branch (p < 70); 69*69 = 4_761.
+            69,
+            // 70: first p of the isqrt(p^3) branch; 70^3 = 343_000.
+            70,
+            // 1624^3 = 4_283_098_624 < 2^32: last p of the isqrt(p^3) branch.
+            1624,
+            // 1625: first p of the isqrt(p)^3 branch; 40^2 = 1_600 <= 1625 < 1_681 = 41^2.
+            1625,
+            // 2_643_875 = 1626^2 - 1, so isqrt = 1625; 1625^3 = 4_291_015_625 <= u32::MAX: last p before the u32 cube overflow.
+            2_643_875,
+            // 1626^3 = 4_298_942_376 > u32::MAX: first 32-bit overflow.
+            2_643_876,
+            // 2^30 - 2 = usize::MAX / 4 - 1: equals MAX_PRECISION on 32-bit targets. isqrt = 32_767; 32_767^3 = 35_181_150_961_663 > u32::MAX and fits u64.
+            (1_usize << 30) - 2,
+        ];
         #[cfg(target_pointer_width = "64")]
         {
             // 2^32 + 1: low 32 bits are 1, so a u32 truncation of p is 1; first listed p above 2^32.
@@ -776,8 +834,8 @@ mod cost_overflow_tests {
     fn calc_mul_cost_matches_integer_oracle() {
         for p in precisions() {
             assert_eq!(
-                u128::try_from(super::calc_mul_cost(p)).unwrap(),
-                mul_cost_oracle(u128::try_from(p).unwrap()),
+                u128::from(super::calc_mul_cost(p)),
+                mul_cost_oracle(crate::common::util::wide(p)),
                 "p = {p}"
             );
         }
@@ -788,15 +846,54 @@ mod cost_overflow_tests {
         for p in precisions() {
             let m = super::calc_mul_cost(p);
             let a = super::calc_add_cost(p);
-            let p_u = u128::try_from(p).unwrap();
-            let log3 = u128::try_from((super::log2_floor(p) * 41349) >> 16).unwrap();
+            let p_u = crate::common::util::wide(p);
+            let log3 = crate::common::util::wide((super::log2_floor(p) * 41349) >> 16);
             let oracle =
                 (log3 * (5 * mul_cost_oracle(p_u) + 2 * p_u) / 2).min(u128::from(u64::MAX));
             assert_eq!(
-                u128::try_from(super::calc_sqrt_cost(p, m, a)).unwrap(),
+                u128::from(super::calc_sqrt_cost(p, m, a)),
                 oracle,
                 "p = {p}"
             );
         }
+    }
+
+    #[test]
+    fn cost_overflow_sentinel_at_the_u64_and_u128_bounds() {
+        // u128::from(u64::MAX) fits in u64: the largest exact value is kept.
+        assert_eq!(super::cost_from_u128(Some(u128::from(u64::MAX))), u64::MAX);
+        // u128::from(u64::MAX) - 1 is exact and below the cap.
+        assert_eq!(
+            super::cost_from_u128(Some(u128::from(u64::MAX) - 1)),
+            u64::MAX - 1
+        );
+        // u128::from(u64::MAX) + 1 is the first value past u64, so it is capped.
+        assert_eq!(
+            super::cost_from_u128(Some(u128::from(u64::MAX) + 1)),
+            u64::MAX
+        );
+        // None does not fit in u128, so it is capped.
+        assert_eq!(super::cost_from_u128(None), u64::MAX);
+        // 2^64 * (2^64 - 1) = 2^128 - 2^64 = u128::MAX - 2^64 + 1, and 2^128 - 2^64 fits.
+        assert_eq!(
+            super::cost_product(Some(1u128 << 64), Some((1u128 << 64) - 1)),
+            Some(u128::MAX - (1u128 << 64) + 1)
+        );
+        // 2^64 * 2^64 = 2^128, which does not fit in u128.
+        assert_eq!(
+            super::cost_product(Some(1u128 << 64), Some(1u128 << 64)),
+            None
+        );
+        // None propagates even through a zero factor.
+        assert_eq!(super::cost_product(None, Some(0)), None);
+        // u128::MAX + 0 = u128::MAX, which fits.
+        assert_eq!(
+            super::cost_sum(&[Some(u128::MAX), Some(0)]),
+            Some(u128::MAX)
+        );
+        // u128::MAX + 1 does not fit in u128.
+        assert_eq!(super::cost_sum(&[Some(u128::MAX), Some(1)]), None);
+        // A None summand does not fit, so the sum is None.
+        assert_eq!(super::cost_sum(&[Some(1), None]), None);
     }
 }
