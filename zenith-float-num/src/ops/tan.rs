@@ -297,3 +297,215 @@ mod tests {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod cost_overflow_tests {
+    use crate::ops::series::ArgReductionEstimator;
+    use crate::ops::series::PolycoeffGen;
+
+    use super::TanArgReductionEstimator;
+    use super::TanPolycoeffGen;
+
+    fn widen_usize(n: usize) -> u128 {
+        match u128::try_from(n) {
+            Ok(v) => v,
+            Err(_) => u128::MAX,
+        }
+    }
+
+    fn clamp_to_u64(v: u128) -> u128 {
+        let cap = u128::from(u64::MAX);
+        if v > cap {
+            cap
+        } else {
+            v
+        }
+    }
+
+    fn mul_cost(p: usize) -> u128 {
+        let p_u = widen_usize(p);
+        let raw = if p_u < 70 {
+            p_u.checked_mul(p_u)
+        } else if p_u < 1625 {
+            p_u.checked_mul(p_u)
+                .and_then(|s| s.checked_mul(p_u))
+                .map(|v| v.isqrt())
+        } else {
+            let q = p_u.isqrt();
+            q.checked_mul(q).and_then(|s| s.checked_mul(q))
+        };
+        match raw {
+            Some(v) => clamp_to_u64(v),
+            None => u128::from(u64::MAX),
+        }
+    }
+
+    fn add_cost(p: usize) -> u128 {
+        clamp_to_u64(widen_usize(p))
+    }
+
+    fn scale_cost(n: usize, per: Option<u128>) -> u64 {
+        let prod = per.and_then(|v| widen_usize(n).checked_mul(v));
+        match prod {
+            Some(v) => match u64::try_from(v) {
+                Ok(c) => c,
+                Err(_) => u64::MAX,
+            },
+            None => u64::MAX,
+        }
+    }
+
+    fn clamp_cost(v: Option<u128>) -> u64 {
+        match v {
+            Some(x) => match u64::try_from(x) {
+                Ok(c) => c,
+                Err(_) => u64::MAX,
+            },
+            None => u64::MAX,
+        }
+    }
+
+    /// `n * (2 * mul(p) + add(p))`.
+    fn tan_per(p: usize) -> Option<u128> {
+        mul_cost(p)
+            .checked_mul(2)
+            .and_then(|v| v.checked_add(add_cost(p)))
+    }
+
+    /// `9 * mul(p) + 2 * (add(p) + add(word bits))`.
+    fn tan_iter_oracle(p: usize) -> u64 {
+        let word = add_cost(crate::defs::WORD_BIT_SIZE);
+        let adds = add_cost(p).checked_add(word).and_then(|v| v.checked_mul(2));
+        let muls = mul_cost(p).checked_mul(9);
+        let sum = match (muls, adds) {
+            (Some(a), Some(b)) => a.checked_add(b),
+            (None, _) | (_, None) => None,
+        };
+        clamp_cost(sum)
+    }
+
+    fn assert_cap(p: usize, per: Option<u128>, cost: impl Fn(usize) -> u64) {
+        let cap = u128::from(u64::MAX);
+        let Some(per) = per else {
+            assert_eq!(cost(0), u64::MAX, "none per p={p}");
+            assert_eq!(cost(1), u64::MAX, "none per p={p}");
+            return;
+        };
+        if per == 0 {
+            assert_eq!(cost(0), 0, "p={p}");
+            assert_eq!(cost(1), 0, "p={p}");
+            return;
+        }
+        if per > cap {
+            assert_eq!(cost(0), 0, "p={p}");
+            assert_eq!(cost(1), u64::MAX, "per above u64 p={p}");
+            return;
+        }
+        let n_below = cap / per;
+        let exact = match n_below.checked_mul(per) {
+            Some(v) => v,
+            None => u128::MAX,
+        };
+        assert!(exact <= cap, "p={p}");
+        let crossed = match n_below.checked_add(1).and_then(|n| n.checked_mul(per)) {
+            Some(v) => v > cap,
+            None => true,
+        };
+        assert!(crossed, "successor crosses u64 p={p}");
+        match usize::try_from(n_below) {
+            Ok(n) => {
+                assert_eq!(u128::from(cost(n)), exact, "below cap p={p} n={n}");
+                match n.checked_add(1) {
+                    Some(n_hi) => assert_eq!(cost(n_hi), u64::MAX, "at cap p={p} n={n_hi}"),
+                    None => assert!(crossed, "successor is not a usize p={p}"),
+                }
+            }
+            Err(_) => match widen_usize(usize::MAX).checked_mul(per) {
+                Some(v) => {
+                    assert!(v <= cap, "unreachable cap still below u64 p={p}");
+                    assert_eq!(u128::from(cost(usize::MAX)), v, "p={p}");
+                }
+                None => assert_eq!(cost(usize::MAX), u64::MAX, "p={p}"),
+            },
+        }
+    }
+
+    fn assert_iter(p: usize) {
+        let expect = tan_iter_oracle(p);
+        match TanPolycoeffGen::new(p) {
+            Ok(gen) => assert_eq!(gen.iter_cost(), expect, "p={p}"),
+            Err(_) => {
+                assert!(
+                    p > crate::defs::MAX_PRECISION,
+                    "tan iter cost does not allocate p={p}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn reduction_cost_grid_matches_integer_oracle() {
+        let ns = [0usize, 1, 2, 1usize << 20];
+        let ps = [
+            1usize,
+            2,
+            69,
+            70,
+            1624,
+            1625,
+            2_643_876,
+            1usize << 28,
+            crate::defs::MAX_PRECISION,
+        ];
+        for p in ps {
+            let per = tan_per(p);
+            for n in ns {
+                assert_eq!(
+                    TanArgReductionEstimator::reduction_cost(n, p),
+                    scale_cost(n, per),
+                    "n={n} p={p}"
+                );
+            }
+            assert_cap(p, per, |n| TanArgReductionEstimator::reduction_cost(n, p));
+        }
+    }
+
+    #[test]
+    fn iter_cost_matches_integer_oracle() {
+        let ps = [
+            1usize,
+            2,
+            69,
+            70,
+            1624,
+            1625,
+            2_643_876,
+            1usize << 28,
+            crate::defs::MAX_PRECISION,
+        ];
+        for p in ps {
+            assert_iter(p);
+        }
+        // Smallest precision whose clamped iter cost is `u64::MAX`, when one exists.
+        let max_p = crate::defs::MAX_PRECISION;
+        if tan_iter_oracle(max_p) == u64::MAX && tan_iter_oracle(1) != u64::MAX {
+            let mut lo = 1usize;
+            let mut hi = max_p;
+            while lo.checked_add(1).is_some_and(|n| n < hi) {
+                let mid = lo + (hi - lo) / 2;
+                if tan_iter_oracle(mid) == u64::MAX {
+                    hi = mid;
+                } else {
+                    lo = mid;
+                }
+            }
+            assert!(tan_iter_oracle(lo) != u64::MAX, "lo={lo}");
+            assert_eq!(tan_iter_oracle(hi), u64::MAX, "hi={hi}");
+            assert_iter(lo);
+            assert_iter(hi);
+        } else {
+            // On 32-bit, `9 * isqrt(MAX_PRECISION)^3` stays below `u64::MAX`.
+            assert!(tan_iter_oracle(max_p) != u64::MAX, "cap not reachable");
+        }
+    }
+}

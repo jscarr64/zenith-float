@@ -582,4 +582,522 @@ mod cost_overflow_tests {
         let niter = 1_usize << 40;
         assert_eq!(super::series_cost(niter, p, &gen), u64::MAX);
     }
+
+    use super::ArgReductionEstimator;
+    use super::PolycoeffGen;
+
+    type Triple = (usize, usize, usize);
+
+    /// Floor log2, copied so the model does not call `log2_floor`.
+    fn log2_floor_ref(mut n: usize) -> usize {
+        let mut ret = 0usize;
+        while n > 1 {
+            ret += 1;
+            n >>= 1;
+        }
+        ret
+    }
+
+    /// Schoolbook / Toom-3 multiply cost, already clamped to `u64` and widened.
+    /// `p < 70`: `p^2`. `p < 1625`: `isqrt(p^3)` (`p^3 < 2^32`). Otherwise `isqrt(p)^3`
+    /// (`<= 2^96` for a `usize` precision).
+    fn mul_clamped(p: usize) -> u128 {
+        let p_u = u128::try_from(p).unwrap_or(u128::MAX);
+        let raw = if p_u < 70 {
+            p_u * p_u
+        } else if p_u < 1625 {
+            (p_u * p_u * p_u).isqrt()
+        } else {
+            let q = p_u.isqrt();
+            q * q * q
+        };
+        raw.min(u128::from(u64::MAX))
+    }
+
+    fn add_clamped(p: usize) -> u128 {
+        u128::from(u64::try_from(p).unwrap_or(u64::MAX))
+    }
+
+    fn pwr_div(pwr_step: usize) -> usize {
+        if pwr_step == 0 {
+            1
+        } else {
+            pwr_step
+        }
+    }
+
+    /// `p / (floor(log2(p)) - floor(log2(floor(log2(p)))) + m - 2)`.
+    /// A zero or overflowing denominator is outside the cases these tests build;
+    /// the fallback is not a series length the production division would return.
+    fn series_niter_ref(p: usize, m_eff: usize) -> usize {
+        let ln = log2_floor_ref(p);
+        let lln = log2_floor_ref(ln);
+        match ln
+            .checked_sub(lln)
+            .and_then(|v| v.checked_add(m_eff))
+            .and_then(|v| v.checked_sub(2))
+        {
+            Some(d) if d > 0 => p / d,
+            Some(_) | None => usize::MAX,
+        }
+    }
+
+    /// Independent `series_cost`: clamped mul and add, then the base or rectangular total, clamped once.
+    fn series_cost_ref(niter: usize, p: usize, iter_cost: u64) -> u64 {
+        let cost_mul = mul_clamped(p);
+        let cost_add = add_clamped(p);
+        let iter = u128::from(iter_cost);
+        let n_u = u128::try_from(niter).unwrap_or(u128::MAX);
+        let per = cost_mul
+            .checked_add(cost_add)
+            .and_then(|s| s.checked_add(iter));
+        let base = per.and_then(|v| n_u.checked_mul(v));
+        let total = if niter >= super::RECT_ITER_THRESHOLD {
+            let sqrt_term = n_u.isqrt().checked_mul(cost_mul);
+            let rect_step = cost_mul
+                .checked_mul(2)
+                .and_then(|s| s.checked_add(cost_add))
+                .and_then(|s| s.checked_add(iter));
+            let rect_term = rect_step.and_then(|step| (n_u / 10).checked_mul(step));
+            match (base, sqrt_term, rect_term) {
+                (Some(b), Some(s), Some(r)) => b.checked_add(s).and_then(|v| v.checked_add(r)),
+                (None, _, _) | (_, None, _) | (_, _, None) => None,
+            }
+        } else {
+            base
+        };
+        match total {
+            Some(v) => u64::try_from(v).unwrap_or(u64::MAX),
+            None => u64::MAX,
+        }
+    }
+
+    struct Cand {
+        p: usize,
+        iter_cost: u64,
+        m: i64,
+        div: usize,
+        ext: bool,
+    }
+
+    /// One candidate: `(niter, m_eff, capped cost)`. Does not call `series_cost` or `series_candidate_cost`.
+    fn candidate_ref<S: ArgReductionEstimator>(
+        inp: &Cand,
+        reduction_times: usize,
+    ) -> (usize, usize, u64) {
+        let m_eff = S::reduction_effect(reduction_times, inp.m);
+        let niter = series_niter_ref(inp.p, m_eff) / inp.div;
+        let series_part = if inp.ext {
+            u128::from(inp.iter_cost).checked_mul(u128::try_from(niter).unwrap_or(u128::MAX))
+        } else {
+            Some(u128::from(series_cost_ref(niter, inp.p, inp.iter_cost)))
+        };
+        let red = u128::from(S::reduction_cost(reduction_times, inp.p));
+        let cost = match series_part.and_then(|s| s.checked_add(red)) {
+            Some(v) => u64::try_from(v).unwrap_or(u64::MAX),
+            None => u64::MAX,
+        };
+        (niter, m_eff, cost)
+    }
+
+    fn initial_times(step: usize, m: i64) -> usize {
+        let step_i = i64::try_from(step).unwrap_or(i64::MAX);
+        if step_i > m {
+            let diff = step_i.checked_sub(m).unwrap_or(i64::MAX);
+            usize::try_from(diff).unwrap_or(usize::MAX)
+        } else {
+            0
+        }
+    }
+
+    /// Reference search. First candidate is held. A later one replaces it only when its
+    /// capped cost is strictly lower. The next count is not considered once it passes `p + step`.
+    fn model_optimize<S: ArgReductionEstimator>(
+        p: usize,
+        iter_cost: u64,
+        m: i64,
+        pwr_step: usize,
+        ext: bool,
+    ) -> Triple {
+        let inp = Cand {
+            p,
+            iter_cost,
+            m,
+            div: pwr_div(pwr_step),
+            ext,
+        };
+        let step = log2_floor_ref(p) / 2;
+        if step == 0 {
+            let m_eff = S::reduction_effect(0, m);
+            let niter = series_niter_ref(p, m_eff) / inp.div;
+            return (0, niter, m_eff);
+        }
+        let mut reduction_times = initial_times(step, m);
+        let (mut niter, mut m_eff, mut cost) = candidate_ref::<S>(&inp, reduction_times);
+        let mut rounds = 0usize;
+        loop {
+            rounds += 1;
+            assert!(
+                rounds <= p.checked_add(2).unwrap_or(usize::MAX),
+                "model_optimize did not stop p={p}"
+            );
+            let Some(next_times) = reduction_times.checked_add(step) else {
+                return (reduction_times, niter, m_eff);
+            };
+            let limit = p.checked_add(step).unwrap_or(usize::MAX);
+            if next_times > limit {
+                return (reduction_times, niter, m_eff);
+            }
+            let (next_niter, next_m_eff, next_cost) = candidate_ref::<S>(&inp, next_times);
+            if next_cost < cost {
+                reduction_times = next_times;
+                niter = next_niter;
+                m_eff = next_m_eff;
+                cost = next_cost;
+            } else {
+                return (reduction_times, niter, m_eff);
+            }
+        }
+    }
+
+    fn optimize_pair<S: ArgReductionEstimator>(
+        p: usize,
+        iter_cost: u64,
+        m: i64,
+        pwr_step: usize,
+        ext: bool,
+    ) -> (Triple, Triple) {
+        let gen = FixedCost(iter_cost);
+        let got = super::series_cost_optimize::<S>(p, &gen, m, pwr_step, ext);
+        let exp = model_optimize::<S>(p, iter_cost, m, pwr_step, ext);
+        (got, exp)
+    }
+
+    /// Reduction cost grows by at least `2^32` per step. For `p <= 2048` and an iter cost of
+    /// 1 or 1000 the whole series term is below `2^32`, so the first candidate is always kept.
+    /// `reduction_effect` is `max(3, n + m)`. The floor keeps `series_niter`'s denominator at least 1
+    /// for every `p >= 1` (`floor(log2(p)) - floor(log2(floor(log2(p))))` is 0 at `p = 1`).
+    struct StepCost;
+
+    impl ArgReductionEstimator for StepCost {
+        fn reduction_cost(n: usize, _p: usize) -> u64 {
+            let n_u = u64::try_from(n).unwrap_or(u64::MAX);
+            n_u.checked_mul(1u64 << 32).unwrap_or(u64::MAX)
+        }
+
+        fn reduction_effect(n: usize, m: i64) -> usize {
+            let n_i = i64::try_from(n).unwrap_or(i64::MAX);
+            let sum = n_i.checked_add(m).unwrap_or(i64::MAX);
+            if sum < 3 {
+                3
+            } else {
+                usize::try_from(sum).unwrap_or(usize::MAX)
+            }
+        }
+    }
+
+    /// `m_eff = 64 + n`. At `p = 64` the series denominator is `m_eff + 2 > 64`, so `niter` is 0
+    /// and the capped cost is exactly `reduction_cost`. The offset still changes with `n`, so a
+    /// swapped `(count, m_eff)` pair fails.
+    fn offset_effect(n: usize) -> usize {
+        n.checked_add(64).unwrap_or(usize::MAX)
+    }
+
+    /// Costs 100, 50, 10 at counts 3, 6, 9, then 40. Two strict improvements, then a rise.
+    struct DropTwoThenRise;
+
+    impl ArgReductionEstimator for DropTwoThenRise {
+        fn reduction_cost(n: usize, _p: usize) -> u64 {
+            if n == 3 {
+                100
+            } else if n == 6 {
+                50
+            } else if n == 9 {
+                10
+            } else {
+                40
+            }
+        }
+
+        fn reduction_effect(n: usize, _m: i64) -> usize {
+            offset_effect(n)
+        }
+    }
+
+    /// `1_000_000_000 - n`, strictly decreasing for every count this search can reach.
+    struct DecreaseForever;
+
+    impl ArgReductionEstimator for DecreaseForever {
+        fn reduction_cost(n: usize, _p: usize) -> u64 {
+            let n_u = u64::try_from(n).unwrap_or(u64::MAX);
+            1_000_000_000u64.checked_sub(n_u).unwrap_or(0)
+        }
+
+        fn reduction_effect(n: usize, _m: i64) -> usize {
+            offset_effect(n)
+        }
+    }
+
+    /// Iter cost `u64::MAX` with `niter >= 2` caps every candidate. `m_eff = 8 + n`.
+    struct AllCapped;
+
+    impl ArgReductionEstimator for AllCapped {
+        fn reduction_cost(_n: usize, _p: usize) -> u64 {
+            0
+        }
+
+        fn reduction_effect(n: usize, _m: i64) -> usize {
+            n.checked_add(8).unwrap_or(usize::MAX)
+        }
+    }
+
+    /// First count costs `u64::MAX`, the next is 50, the one after is 80.
+    struct CapThenLower;
+
+    impl ArgReductionEstimator for CapThenLower {
+        fn reduction_cost(n: usize, _p: usize) -> u64 {
+            if n == 3 {
+                u64::MAX
+            } else if n == 6 {
+                50
+            } else {
+                80
+            }
+        }
+
+        fn reduction_effect(n: usize, _m: i64) -> usize {
+            offset_effect(n)
+        }
+    }
+
+    /// 500, then 100, then `u64::MAX` for every later count.
+    struct ImproveThenCap;
+
+    impl ArgReductionEstimator for ImproveThenCap {
+        fn reduction_cost(n: usize, _p: usize) -> u64 {
+            if n == 3 {
+                500
+            } else if n == 6 {
+                100
+            } else {
+                u64::MAX
+            }
+        }
+
+        fn reduction_effect(n: usize, _m: i64) -> usize {
+            offset_effect(n)
+        }
+    }
+
+    fn sweep_step_cost(iter_cost: u64) {
+        for p in 1..=2048usize {
+            for m in -3i64..=20 {
+                for pwr_step in [1usize, 2] {
+                    for ext in [false, true] {
+                        let (got, exp) = optimize_pair::<StepCost>(p, iter_cost, m, pwr_step, ext);
+                        assert_eq!(
+                            got, exp,
+                            "p={p} m={m} pwr={pwr_step} ext={ext} iter={iter_cost}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn series_cost_optimize_matches_model_iter_cost_1() {
+        sweep_step_cost(1);
+    }
+
+    #[test]
+    fn series_cost_optimize_matches_model_iter_cost_1000() {
+        sweep_step_cost(1000);
+    }
+
+    #[test]
+    fn series_cost_optimize_step_zero_returns_zero_reductions() {
+        // `floor(log2(p)) / 2` is 0 for `p < 4`. The search returns immediately:
+        // count 0, `m_eff = reduction_effect(0, m)`, `niter = series_niter / pwr_step`.
+        // `ext` is not read on this path.
+        // p = 1, m = 5: effect = 5, denom = 5 - 2 = 3, niter = 1 / 3 = 0.
+        // p = 1, m = -3: effect floors at 3, denom = 1, niter = 1.
+        // p = 2, m = -3, pwr 1: denom = 1 - 0 + 3 - 2 = 2, niter = 2 / 2 = 1.
+        // p = 2, m = -3, pwr 2: niter = 1 / 2 = 0.
+        // p = 3, m = 0: effect floors at 3, denom = 1 + 3 - 2 = 2, niter = 3 / 2 = 1.
+        // p = 3, m = 20: effect = 20, denom = 19, niter = 0.
+        let rows = [
+            (1usize, 5i64, 1usize, false, (0usize, 0usize, 5usize)),
+            (1, -3, 1, true, (0, 1, 3)),
+            (2, -3, 1, false, (0, 1, 3)),
+            (2, -3, 2, true, (0, 0, 3)),
+            (3, 0, 1, false, (0, 1, 3)),
+            (3, 20, 2, true, (0, 0, 20)),
+        ];
+        for (p, m, pwr, ext, expect) in rows {
+            assert_eq!(log2_floor_ref(p) / 2, 0, "p={p}");
+            let (got, exp) = optimize_pair::<StepCost>(p, 1, m, pwr, ext);
+            assert_eq!(exp, expect, "p={p} m={m} pwr={pwr} ext={ext}");
+            assert_eq!(got, expect, "p={p} m={m} pwr={pwr} ext={ext}");
+        }
+    }
+
+    #[test]
+    fn series_cost_optimize_two_advances_keeps_the_last_improvement() {
+        // p = 64: floor(log2) = 6, step = 3, m = 0, so the first count is 3.
+        // Costs at 3, 6, 9, 12 are 100, 50, 10, 40. The series term is 0
+        // (`m_eff = 64 + n >= 67`, denominator `m_eff + 2 > 64`).
+        // Two strict improvements select count 9, which is the first count plus two steps.
+        let p = 64usize;
+        let (got, exp) = optimize_pair::<DropTwoThenRise>(p, 1, 0, 1, false);
+        assert_eq!(exp, (9, 0, 73));
+        assert_eq!(got, (9, 0, 73));
+        let inp = Cand {
+            p,
+            iter_cost: 1,
+            m: 0,
+            div: 1,
+            ext: false,
+        };
+        assert_eq!(candidate_ref::<DropTwoThenRise>(&inp, 3).2, 100);
+        assert_eq!(candidate_ref::<DropTwoThenRise>(&inp, 6).2, 50);
+        assert_eq!(candidate_ref::<DropTwoThenRise>(&inp, 9).2, 10);
+        assert_eq!(candidate_ref::<DropTwoThenRise>(&inp, 12).2, 40);
+    }
+
+    #[test]
+    fn series_cost_optimize_decreasing_cost_stops_at_p_plus_step() {
+        // The reduction cost falls by 1 for each extra reduction, and the series term stays 0.
+        // p = 64, step = 3, m = 0: first count 3, limit `p + step` = 67.
+        // Counts 3, 6, ..., 66 are inside the guard. 66 + 3 = 69 is past it.
+        // The rejected count 69 would have been strictly cheaper, so the guard is what stops the loop.
+        let p = 64usize;
+        let (got, exp) = optimize_pair::<DecreaseForever>(p, 1, 0, 1, false);
+        assert_eq!(exp, (66, 0, 130));
+        assert_eq!(got, (66, 0, 130));
+        assert!(66 > 0);
+        let step = 3usize;
+        assert!(66 <= p + step);
+        assert!(66 + step > p + step);
+        let inp = Cand {
+            p,
+            iter_cost: 1,
+            m: 0,
+            div: 1,
+            ext: false,
+        };
+        let held = candidate_ref::<DecreaseForever>(&inp, 66).2;
+        let rejected = candidate_ref::<DecreaseForever>(&inp, 69).2;
+        assert!(rejected < held, "held {held} rejected {rejected}");
+    }
+
+    #[test]
+    fn series_cost_optimize_first_candidate_capped() {
+        // p = 64, step = 3, first count = 3.
+        // AllCapped: ext series part is `u64::MAX * niter`. m_eff = 11 gives
+        // denom = 6 - 2 + 11 - 2 = 13, niter = 64 / 13 = 4. The same niter at the next
+        // count is also 4 (`m_eff = 14`, denom = 16). Both costs are the cap, so the
+        // first candidate is kept. Equal caps are not a strict improvement, and the count
+        // is not backed up from 3 to 0.
+        let (got, exp) = optimize_pair::<AllCapped>(64, u64::MAX, 0, 1, true);
+        assert_eq!(exp, (3, 4, 11));
+        assert_eq!(got, (3, 4, 11));
+        let inp = Cand {
+            p: 64,
+            iter_cost: u64::MAX,
+            m: 0,
+            div: 1,
+            ext: true,
+        };
+        assert_eq!(candidate_ref::<AllCapped>(&inp, 3).2, u64::MAX);
+        assert_eq!(candidate_ref::<AllCapped>(&inp, 6).2, u64::MAX);
+
+        // The first cost is the cap and the next exact cost is 50, then 80.
+        // The cap is a real held cost: the search advances to count 6 and stops.
+        // m_eff = 64 + 6 = 70 and niter is 0, so the cost is the reduction cost alone.
+        let (got, exp) = optimize_pair::<CapThenLower>(64, 1, 0, 1, false);
+        assert_eq!(exp, (6, 0, 70));
+        assert_eq!(got, (6, 0, 70));
+    }
+
+    #[test]
+    fn series_cost_optimize_capped_plateau_after_an_improvement() {
+        // Counts 3, 6, 9 cost 500, 100, and `u64::MAX`. The search takes the improvement
+        // to 6 and stops on the cap. Every later count is that same cap.
+        let (got, exp) = optimize_pair::<ImproveThenCap>(64, 1, 0, 1, false);
+        assert_eq!(exp, (6, 0, 70));
+        assert_eq!(got, (6, 0, 70));
+        let inp = Cand {
+            p: 64,
+            iter_cost: 1,
+            m: 0,
+            div: 1,
+            ext: false,
+        };
+        assert_eq!(candidate_ref::<ImproveThenCap>(&inp, 3).2, 500);
+        assert_eq!(candidate_ref::<ImproveThenCap>(&inp, 6).2, 100);
+        assert_eq!(candidate_ref::<ImproveThenCap>(&inp, 9).2, u64::MAX);
+        assert_eq!(candidate_ref::<ImproveThenCap>(&inp, 12).2, u64::MAX);
+    }
+
+    #[test]
+    fn series_cost_optimize_negative_m_sets_the_first_count() {
+        // p = 32: floor(log2) = 5, step = 2. m = -3, so the first count is 2 - (-3) = 5.
+        // effect(5, -3) floors at 3. denom = 5 - 2 + 3 - 2 = 4, niter = 32 / 4 = 8.
+        // The next count adds at least `2^32` of reduction cost, more than the series term, so the first count is kept.
+        let (got, exp) = optimize_pair::<StepCost>(32, 1, -3, 1, false);
+        assert_eq!(exp, (5, 8, 3));
+        assert_eq!(got, (5, 8, 3));
+        // p = 8: floor(log2) = 3, step = 1. First count = 1 - (-3) = 4.
+        // effect floors 4 + (-3) = 1 up to 3. denom = 3 - 1 + 3 - 2 = 3, niter = 8 / 3 = 2.
+        let (got, exp) = optimize_pair::<StepCost>(8, 1000, -3, 2, true);
+        assert_eq!(exp, (4, 1, 3));
+        assert_eq!(got, (4, 1, 3));
+    }
+
+    /// `2 * (mul(p) + add(p) + add(WORD_BIT_SIZE))`, then the `u64` clamp.
+    /// `inc` is built at precision 1. `bit_len_to_word_len(1)` is one word, so
+    /// `mantissa_max_bit_len` is `WORD_BIT_SIZE` for both `from_word(1, 1)` (sin, sinh)
+    /// and `new(1)` (cos).
+    fn fact_iter_oracle(p: usize) -> u128 {
+        let word = add_clamped(crate::defs::WORD_BIT_SIZE);
+        let per = mul_clamped(p) + add_clamped(p) + word;
+        (per * 2).min(u128::from(u64::MAX))
+    }
+
+    fn check_fact(p: usize, built: Result<super::FactPolycoeffGen, crate::defs::Error>) {
+        let expect = fact_iter_oracle(p);
+        match built {
+            Ok(gen) => assert_eq!(u128::from(gen.iter_cost()), expect, "p={p}"),
+            Err(err) => {
+                // `for_sin` / `for_cos` / `for_sinh` allocate two `p`-bit mantissas.
+                // `p = 1 << 28` is 32 MiB and must succeed. A wider precision (64-bit
+                // `MAX_PRECISION`) is refused with `MemoryAllocation` before `iter_cost` exists.
+                assert!(p > (1usize << 28), "p={p} should allocate");
+                assert!(matches!(err, crate::defs::Error::MemoryAllocation), "p={p}");
+                if mul_clamped(p) == u128::from(u64::MAX) {
+                    assert_eq!(expect, u128::from(u64::MAX), "p={p}");
+                }
+            }
+        }
+    }
+
+    fn each_fact_precision(mut f: impl FnMut(usize)) {
+        for p in [1usize, 2, 69, 70, 1624, 1625, 2_643_875, 2_643_876, 1usize << 28] {
+            f(p);
+        }
+        f(crate::defs::MAX_PRECISION);
+    }
+
+    #[test]
+    fn fact_iter_cost_matches_integer_oracle() {
+        // The `u64` cap of `2 * (mul(p) + p + word)` needs `mul(p)` near `2^63`, which starts
+        // around `p > 2^42`. That mantissa cannot be allocated, so the cap is checked on the
+        // oracle when construction returns `MemoryAllocation` and `mul` is already clamped.
+        each_fact_precision(|p| {
+            check_fact(p, super::FactPolycoeffGen::for_sin(p));
+            check_fact(p, super::FactPolycoeffGen::for_cos(p));
+            check_fact(p, super::FactPolycoeffGen::for_sinh(p));
+        });
+    }
 }

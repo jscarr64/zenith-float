@@ -896,4 +896,145 @@ mod cost_overflow_tests {
         // A None summand does not fit, so the sum is None.
         assert_eq!(super::cost_sum(&[Some(1), None]), None);
     }
+
+    /// Floor log2, copied so the sqrt oracle does not call `log2_floor`.
+    fn log2_floor_ref(mut n: usize) -> usize {
+        let mut ret = 0usize;
+        while n > 1 {
+            ret += 1;
+            n >>= 1;
+        }
+        ret
+    }
+
+    /// `calc_add_cost` is `p` widened to `u128` and clamped to `u64`.
+    /// Every `usize` fits in `u64`, so the clamp does not change `p`.
+    fn add_cost_oracle(p: usize) -> u64 {
+        u64::try_from(p).unwrap_or(u64::MAX)
+    }
+
+    /// `log3 * (5 * cost_mul + 2 * cost_add) / 2`, then the `u64` clamp.
+    /// `log3` is `(floor(log2(p)) * 41349) >> 16`. The product fits in `u128`:
+    /// `floor(log2)` is at most 63 and the weighted sum is at most `7 * (2^64 - 1)`.
+    fn sqrt_cost_oracle(p: usize, cost_mul: u64, cost_add: u64) -> u64 {
+        // `log2_floor_ref` returns `usize`. `From<usize>` is not implemented for `u128`.
+        let log2 = match u128::try_from(log2_floor_ref(p)) {
+            Ok(v) => v,
+            Err(_) => return u64::MAX,
+        };
+        let log3 = match log2.checked_mul(41_349) {
+            Some(v) => v >> 16,
+            None => return u64::MAX,
+        };
+        let weighted = 5u128 * u128::from(cost_mul) + 2u128 * u128::from(cost_add);
+        u64::try_from(log3 * weighted / 2).unwrap_or(u64::MAX)
+    }
+
+    fn assert_mul_add_sqrt(p: usize) {
+        let p_u = u128::try_from(p).unwrap_or(u128::MAX);
+        let mul = mul_cost_oracle(p_u);
+        let add = add_cost_oracle(p);
+        let mul_u = u64::try_from(mul).unwrap_or(u64::MAX);
+        assert_eq!(u128::from(super::calc_mul_cost(p)), mul, "mul p={p}");
+        assert_eq!(super::calc_add_cost(p), add, "add p={p}");
+        assert_eq!(
+            super::calc_sqrt_cost(p, mul_u, add),
+            sqrt_cost_oracle(p, mul_u, add),
+            "sqrt p={p}"
+        );
+    }
+
+    fn each_listed_precision(mut f: impl FnMut(usize)) {
+        // 0: empty mantissa width; schoolbook product is 0 and log2 is 0.
+        // 1, 2: smallest positive precisions.
+        // 63, 64, 65: neighbors of a 64-bit word. Add cost is still the identity.
+        // 69: last schoolbook `p * p`. 70: first `isqrt(p^3)`.
+        // 1624: last `isqrt(p^3)` (`1624^3 < 2^32`). 1625: first `isqrt(p)^3` (`40^3 = 64_000`).
+        // 2_643_875 = 1626^2 - 1: `isqrt = 1625`, `1625^3 = 4_291_015_625 <= u32::MAX`.
+        // 2_643_876 = 1626^2: `1626^3 = 4_298_942_376 > u32::MAX`.
+        for p in [0usize, 1, 2, 63, 64, 65, 69, 70, 1624, 1625, 2_643_875, 2_643_876] {
+            f(p);
+        }
+        let max_p = crate::defs::MAX_PRECISION;
+        f(max_p);
+        if let Some(prev) = max_p.checked_sub(1) {
+            f(prev);
+        }
+        // `u32::MAX` fits in `usize` on every supported target. The next value is `1 << 32`,
+        // which exists only when `usize` is wider than 32 bits.
+        if let Ok(u32_max) = usize::try_from(u32::MAX) {
+            if let Some(prev) = u32_max.checked_sub(1) {
+                f(prev);
+            }
+            f(u32_max);
+            if let Some(next) = u32_max.checked_add(1) {
+                f(next);
+            }
+        }
+    }
+
+    #[test]
+    fn calc_add_cost_matches_integer_oracle_at_the_listed_precisions() {
+        each_listed_precision(assert_mul_add_sqrt);
+    }
+
+    #[test]
+    fn calc_mul_add_sqrt_match_integer_oracle_for_every_p_through_4096() {
+        for p in 0..=4096usize {
+            assert_mul_add_sqrt(p);
+        }
+    }
+
+    #[test]
+    fn cost_sum_empty_single_and_u128_edges() {
+        // `try_fold` on an empty slice returns the accumulator, which starts at 0.
+        let empty: [Option<u128>; 0] = [];
+        assert_eq!(super::cost_sum(&empty), Some(0));
+        assert_eq!(super::cost_sum(&[Some(0u128)]), Some(0));
+        assert_eq!(super::cost_sum(&[None]), None);
+        // A `None` anywhere in the slice, including between exact parts, makes the sum `None`.
+        assert_eq!(super::cost_sum(&[Some(4u128), None, Some(9u128)]), None);
+        assert_eq!(super::cost_sum(&[None, Some(4u128), Some(9u128)]), None);
+        assert_eq!(super::cost_sum(&[Some(4u128), Some(9u128), None]), None);
+        // `u128::MAX + 0` fits. `u128::MAX + 1` does not.
+        assert_eq!(
+            super::cost_sum(&[Some(u128::MAX), Some(0)]),
+            Some(u128::MAX)
+        );
+        assert_eq!(super::cost_sum(&[Some(u128::MAX), Some(1)]), None);
+    }
+
+    #[test]
+    fn cost_product_zero_identity_and_u128_edges() {
+        // `cost_product` is `a?.checked_mul(b?)`.
+        // `Some(0) * Some(x)` and `Some(x) * Some(0)` are `Some(0)`.
+        // `Some(1) * Some(x)` is `Some(x)`.
+        // `None` on either side is `None`, including when the other side is `Some(0)`:
+        // zero does not absorb `None`, and the `?` runs before the multiply.
+        let x = 41u128;
+        assert_eq!(super::cost_product(Some(0), Some(x)), Some(0));
+        assert_eq!(super::cost_product(Some(x), Some(0)), Some(0));
+        assert_eq!(super::cost_product(Some(1), Some(x)), Some(x));
+        assert_eq!(super::cost_product(Some(x), Some(1)), Some(x));
+        assert_eq!(super::cost_product(Some(0), None), None);
+        assert_eq!(super::cost_product(None, Some(0)), None);
+        assert_eq!(super::cost_product(None, Some(x)), None);
+        assert_eq!(super::cost_product(Some(x), None), None);
+        assert_eq!(super::cost_product(None, None), None);
+        // `u128::MAX * 1` fits. `u128::MAX * 2 = 2^128 - 2` does not.
+        assert_eq!(
+            super::cost_product(Some(u128::MAX), Some(1)),
+            Some(u128::MAX)
+        );
+        assert_eq!(super::cost_product(Some(u128::MAX), Some(2)), None);
+    }
+
+    #[test]
+    fn wide_zero_and_usize_max_keep_their_values() {
+        // `usize` is at most 64 bits, so both values fit in `u128` and `wide` does not
+        // take the `u128::MAX` fallback.
+        assert_eq!(super::wide(0), 0u128);
+        let got = super::wide(usize::MAX);
+        assert!(matches!(u128::try_from(usize::MAX), Ok(v) if v == got));
+    }
 }

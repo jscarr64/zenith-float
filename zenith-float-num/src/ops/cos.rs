@@ -571,4 +571,140 @@ mod cost_overflow_tests {
         // m = 1, ext: m_eff and niter match m = 0, so u64::MAX * niter does not fit in u64.
         assert_evaluated_candidate(p_max, 1, true, &gen_max);
     }
+
+    fn widen_usize(n: usize) -> u128 {
+        match u128::try_from(n) {
+            Ok(v) => v,
+            Err(_) => u128::MAX,
+        }
+    }
+
+    fn clamp_to_u64(v: u128) -> u128 {
+        let cap = u128::from(u64::MAX);
+        if v > cap {
+            cap
+        } else {
+            v
+        }
+    }
+
+    /// Schoolbook `p^2`, then `isqrt(p^3)`, then `isqrt(p)^3`, then the `u64` clamp.
+    /// Matches `calc_mul_cost` without calling it.
+    fn mul_cost(p: usize) -> u128 {
+        let p_u = widen_usize(p);
+        let raw = if p_u < 70 {
+            p_u.checked_mul(p_u)
+        } else if p_u < 1625 {
+            p_u.checked_mul(p_u)
+                .and_then(|s| s.checked_mul(p_u))
+                .map(|v| v.isqrt())
+        } else {
+            let q = p_u.isqrt();
+            q.checked_mul(q).and_then(|s| s.checked_mul(q))
+        };
+        match raw {
+            Some(v) => clamp_to_u64(v),
+            None => u128::from(u64::MAX),
+        }
+    }
+
+    fn add_cost(p: usize) -> u128 {
+        clamp_to_u64(widen_usize(p))
+    }
+
+    /// `n * per`, with `None` and `u128` overflow both becoming `u64::MAX`. `n = 0` and `per = Some` is 0.
+    fn scale_cost(n: usize, per: Option<u128>) -> u64 {
+        let prod = per.and_then(|v| widen_usize(n).checked_mul(v));
+        match prod {
+            Some(v) => match u64::try_from(v) {
+                Ok(c) => c,
+                Err(_) => u64::MAX,
+            },
+            None => u64::MAX,
+        }
+    }
+
+    /// Cosine reduction: `n * (mul(p) + add(p))`.
+    fn cos_per(p: usize) -> Option<u128> {
+        mul_cost(p).checked_add(add_cost(p))
+    }
+
+    fn assert_cap(p: usize, per: Option<u128>, cost: impl Fn(usize) -> u64) {
+        let cap = u128::from(u64::MAX);
+        let Some(per) = per else {
+            assert_eq!(cost(0), u64::MAX, "none per p={p}");
+            assert_eq!(cost(1), u64::MAX, "none per p={p}");
+            return;
+        };
+        if per == 0 {
+            assert_eq!(cost(0), 0, "p={p}");
+            assert_eq!(cost(1), 0, "p={p}");
+            return;
+        }
+        if per > cap {
+            // One step already exceeds `u64`. Zero reductions stay exact.
+            assert_eq!(cost(0), 0, "p={p}");
+            assert_eq!(cost(1), u64::MAX, "per above u64 p={p}");
+            return;
+        }
+        let n_below = cap / per;
+        let exact = match n_below.checked_mul(per) {
+            Some(v) => v,
+            None => u128::MAX,
+        };
+        assert!(exact <= cap, "p={p}");
+        let crossed = match n_below.checked_add(1).and_then(|n| n.checked_mul(per)) {
+            Some(v) => v > cap,
+            None => true,
+        };
+        assert!(crossed, "successor crosses u64 p={p}");
+        match usize::try_from(n_below) {
+            Ok(n) => {
+                assert_eq!(u128::from(cost(n)), exact, "below cap p={p} n={n}");
+                match n.checked_add(1) {
+                    Some(n_hi) => assert_eq!(cost(n_hi), u64::MAX, "at cap p={p} n={n_hi}"),
+                    None => assert!(crossed, "successor is not a usize p={p}"),
+                }
+            }
+            Err(_) => {
+                // The first capped count does not fit in `usize`, so the cap is unreachable.
+                match widen_usize(usize::MAX).checked_mul(per) {
+                    Some(v) => {
+                        assert!(v <= cap, "unreachable cap still below u64 p={p}");
+                        assert_eq!(u128::from(cost(usize::MAX)), v, "p={p}");
+                    }
+                    None => assert_eq!(cost(usize::MAX), u64::MAX, "p={p}"),
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn reduction_cost_grid_matches_integer_oracle() {
+        // Counts: 0 (empty product), 1, 2, and 2^20. The cap pair is the last `n` whose
+        // product fits in `u64` and the next `n`, when that `n` fits in `usize`.
+        let ns = [0usize, 1, 2, 1usize << 20];
+        let ps = [
+            1usize,
+            2,
+            69,
+            70,
+            1624,
+            1625,
+            2_643_876,
+            1usize << 28,
+            crate::defs::MAX_PRECISION,
+        ];
+        for p in ps {
+            let per = cos_per(p);
+            for n in ns {
+                assert_eq!(
+                    CosArgReductionEstimator::reduction_cost(n, p),
+                    scale_cost(n, per),
+                    "n={n} p={p}"
+                );
+            }
+            assert_cap(p, per, |n| CosArgReductionEstimator::reduction_cost(n, p));
+        }
+    }
 }
