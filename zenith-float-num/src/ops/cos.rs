@@ -473,4 +473,102 @@ mod cost_overflow_tests {
         // niter > 0: the plateau stop happens while `reduction_effect` is still below p. The guard at p + step returns niter == 0.
         assert!(niter > 0, "niter {niter} p {p}");
     }
+
+    /// The returned triple must be a candidate the loop evaluated.
+    ///
+    /// `initial` is the first reduction count: `step - m` when `step > m`, else 0.
+    /// Evaluated counts are `initial + k * step`. `m_eff` is that count plus `m`,
+    /// and `niter` is the series length at that `m_eff`.
+    fn assert_evaluated_candidate(p: usize, m: i64, ext: bool, gen: &FixedCostGen) {
+        let step = crate::common::util::log2_floor(p) / 2;
+        assert!(step > 0, "reduction_num_step p {p}");
+        let (rt, niter, m_eff) =
+            crate::ops::series::series_cost_optimize::<CosArgReductionEstimator>(p, gen, m, 2, ext);
+        // step fits in i64 for every accepted precision (log2_floor(p) / 2 <= 30).
+        let step_i = i64::try_from(step).unwrap_or(i64::MAX);
+        let initial =
+            if step_i > m { usize::try_from(step_i - m).unwrap_or(usize::MAX) } else { 0 };
+        assert!(
+            rt >= initial,
+            "rt {rt} initial {initial} p {p} m {m} ext {ext}"
+        );
+        let advanced = rt.checked_sub(initial);
+        assert!(
+            advanced.is_some(),
+            "rt {rt} initial {initial} p {p} m {m} ext {ext}"
+        );
+        assert!(
+            advanced.is_some_and(|delta| delta.is_multiple_of(step)),
+            "rt {rt} initial {initial} step {step} p {p} m {m} ext {ext}"
+        );
+        let m_usize = usize::try_from(m).unwrap_or(usize::MAX);
+        assert_eq!(
+            rt.checked_add(m_usize),
+            Some(m_eff),
+            "m_eff {m_eff} rt {rt} m {m} p {p} ext {ext}"
+        );
+        let ln = crate::common::util::log2_floor(p);
+        let lln = crate::common::util::log2_floor(ln);
+        let denom = ln
+            .checked_sub(lln)
+            .and_then(|v| v.checked_add(m_eff))
+            .and_then(|v| v.checked_sub(2));
+        assert!(
+            denom.is_some_and(|d| d > 0),
+            "denom ln {ln} lln {lln} m_eff {m_eff} p {p}"
+        );
+        assert_eq!(
+            denom.filter(|d| *d > 0).map(|d| p / d / 2),
+            Some(niter),
+            "niter {niter} m_eff {m_eff} p {p} m {m} ext {ext}"
+        );
+        assert!(
+            p.checked_add(step).is_some_and(|limit| rt <= limit),
+            "rt {rt} p {p} step {step} m {m} ext {ext}"
+        );
+    }
+
+    #[test]
+    fn series_cost_optimize_first_candidate_capped_does_not_underflow() {
+        // p = 1 << 28 = 268_435_456, accepted on 32- and 64-bit. log2_floor(p) = 28, so reduction_num_step = 14.
+        // For m = 14 the initial reduction_times is 0, m_eff = 14,
+        // niter = 268_435_456 / (28 - 4 + 14 - 2) / 2 = 3_728_270,
+        // calc_mul_cost(p) = (2^14)^3 = 2^42,
+        // exact series cost 19_688_316_708_440_768_512 > u64::MAX, so the first candidate is capped.
+        let p = 1_usize << 28;
+        assert_eq!(p, 268_435_456);
+        assert_eq!(crate::common::util::log2_floor(p) / 2, 14);
+        // 2 * p = 2^29: add cost of two numbers. It fits in u64.
+        let gen = FixedCostGen(u64::try_from(2 * p).unwrap_or(u64::MAX));
+        // m = 1: initial = 13, m_eff = 14, niter = 3_728_270, series cost 19_688_316_708_440_768_512 > u64::MAX.
+        assert_evaluated_candidate(p, 1, false, &gen);
+        // m = 13: initial = 1, m_eff = 14, same niter 3_728_270 and the same series cost above u64::MAX.
+        assert_evaluated_candidate(p, 13, false, &gen);
+        // m = 14: initial = 0, m_eff = 14, niter = 3_728_270, series cost 19_688_316_708_440_768_512 > u64::MAX.
+        assert_evaluated_candidate(p, 14, false, &gen);
+        // m = 15: initial = 0, m_eff = 15, niter = 268_435_456 / 37 / 2 = 3_627_506, series cost 19_156_310_110_238_670_848 > u64::MAX.
+        assert_evaluated_candidate(p, 15, false, &gen);
+        // ext: series part is iter_cost * niter with iter_cost = u64::MAX, capped whenever niter > 1.
+        let gen_max = FixedCostGen(u64::MAX);
+        // m = 1, ext: m_eff = 14, niter = 3_728_270, and u64::MAX * 3_728_270 does not fit in u64.
+        assert_evaluated_candidate(p, 1, true, &gen_max);
+        // m = 13, ext: m_eff = 14, niter = 3_728_270, and u64::MAX * 3_728_270 does not fit in u64.
+        assert_evaluated_candidate(p, 13, true, &gen_max);
+        // m = 14, ext: m_eff = 14, niter = 3_728_270, and u64::MAX * 3_728_270 does not fit in u64.
+        assert_evaluated_candidate(p, 14, true, &gen_max);
+        // m = 15, ext: m_eff = 15, niter = 3_627_506, and u64::MAX * 3_627_506 does not fit in u64.
+        assert_evaluated_candidate(p, 15, true, &gen_max);
+
+        let p_max = crate::defs::MAX_PRECISION;
+        // 2 * MAX_PRECISION fits u64: 2*(2^30 - 2) on 32-bit and 2*(2^60 - 1) on 64-bit.
+        let gen_max_p = FixedCostGen(u64::try_from(2 * p_max).unwrap_or(u64::MAX));
+        // m = 0: initial = step. 32-bit step = 14, m_eff = 14, niter = (2^30 - 2) / 37 / 2 = 14_510_024, and 14_510_024 * 32_767^3 = 510_479_344_801_353_209_912 > u64::MAX. 64-bit step = 29, m_eff = 29, denom = 81, niter = (2^60 - 1) / 81 / 2 > 1, and (2^30 - 1)^3 > u64::MAX so calc_mul_cost is already capped.
+        assert_evaluated_candidate(p_max, 0, false, &gen_max_p);
+        // m = 1: initial = step - 1, m_eff = step, the series cost matches the capped m = 0 cost on both widths.
+        assert_evaluated_candidate(p_max, 1, false, &gen_max_p);
+        // m = 0, ext: niter > 1 on both widths (14_510_024 on 32-bit; (2^60 - 1) / 81 / 2 on 64-bit), so u64::MAX * niter does not fit in u64.
+        assert_evaluated_candidate(p_max, 0, true, &gen_max);
+        // m = 1, ext: m_eff and niter match m = 0, so u64::MAX * niter does not fit in u64.
+        assert_evaluated_candidate(p_max, 1, true, &gen_max);
+    }
 }
