@@ -1,6 +1,6 @@
 # zenith-float
 
-Part of the Accumath project family — developed for Accumath, the pure-Rust, correct-by-construction math engine. This crate is open source; Accumath itself is a separate product.
+Part of the Accumath project family — developed in conjunction with [Accumath](https://www.accumath.net), the pure-Rust, correct-by-construction math engine. This crate is open source; Accumath itself is a separate product. Learn more at [www.accumath.net](https://www.accumath.net).
 
 > **2.0.0 is a breaking release.** It raises the MSRV to Rust 1.99, makes
 > `parse` consume the whole string, tags invalid operations
