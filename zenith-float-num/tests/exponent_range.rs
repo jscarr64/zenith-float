@@ -173,3 +173,45 @@ fn arithmetic_at_the_bottom_of_the_range() {
         }
     }
 }
+
+/// `rem` of the largest finite number by the smallest subnormal is exactly zero.
+///
+/// At precision `p` the mantissa represents `0.m * 2^e`, with the last bit worth
+/// `2^(e - p)`. `max_value(p) = (2^p - 1) * 2^(EXPONENT_MAX - p)` and
+/// `min_positive(p) = 2^(EXPONENT_MIN - p)` (only the last bit set, exponent
+/// `EXPONENT_MIN`). Their ratio is `(2^p - 1) * 2^(EXPONENT_MAX - EXPONENT_MIN)`,
+/// an integer, so `|x| mod |y| = 0` exactly. The result carries the sign of `self`
+/// (`+`), so it is `+0`, not NaN, and exact. Negating the dividend yields `-0`.
+///
+/// Before the fix a debug build panics at `zenith-float-num/src/num.rs:670`
+/// ("attempt to subtract with overflow", `e1eff - e2eff` in `i64`), and a release
+/// build returned a nonzero value with exponent `EXPONENT_MIN`.
+#[test]
+fn rem_of_max_value_by_min_positive_is_exact_zero() {
+    for p in [WORD_BIT_SIZE, 2 * WORD_BIT_SIZE, 64 * WORD_BIT_SIZE] {
+        let x = ExactNum::max_value(p);
+        let y = ExactNum::min_positive(p);
+        assert_eq!(x.exponent(), Some(EXPONENT_MAX), "p = {p}");
+        assert_eq!(y.exponent(), Some(EXPONENT_MIN), "p = {p}");
+
+        let r = x.rem(&y);
+        assert!(!r.is_nan(), "p = {p}: rem returned NaN");
+        assert!(
+            r.is_zero(),
+            "p = {p}: rem returned {:?}, expected exact +0",
+            r.exponent()
+        );
+        assert!(!r.is_negative(), "p = {p}: rem of +max must be +0");
+        assert!(!r.inexact(), "p = {p}: rem must be exact");
+
+        let r_neg = x.neg().rem(&y);
+        assert!(!r_neg.is_nan(), "p = {p}: rem of -max returned NaN");
+        assert!(
+            r_neg.is_zero(),
+            "p = {p}: rem of -max returned {:?}, expected exact -0",
+            r_neg.exponent()
+        );
+        assert!(r_neg.is_negative(), "p = {p}: rem of -max must be -0");
+        assert!(!r_neg.inexact(), "p = {p}: rem of -max must be exact");
+    }
+}
