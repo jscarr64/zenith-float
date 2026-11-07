@@ -136,6 +136,8 @@ pub trait ArgReductionEstimator {
 /// m is the negative exponent of the number.
 /// pwr_step - increment of power of x in each iteration
 /// ext - if true use series step cost directly
+///
+/// The returned `(reduction_times, niter, m_eff)` always belong to the same evaluated candidate.
 pub(crate) fn series_cost_optimize<S: ArgReductionEstimator>(
     p: usize,
     polycoeff_gen: &impl PolycoeffGen,
@@ -157,32 +159,28 @@ pub(crate) fn series_cost_optimize<S: ArgReductionEstimator>(
         0
     };
 
-    let mut cost1 = u64::MAX;
+    // The first candidate is selected before any comparison. `u64::MAX` is a real capped
+    // cost, so it cannot stand in for "no candidate yet".
+    let (mut niter, mut m_eff, mut cost) =
+        series_candidate_cost::<S>(p, polycoeff_gen, m, pwr_step, ext, reduction_times);
 
     loop {
-        let m_eff = S::reduction_effect(reduction_times, m);
-        let niter = series_niter(p, m_eff) / pwr_step.max(1);
-        let series_part = if ext {
-            cost_product(
-                Some(u128::from(polycoeff_gen.iter_cost())),
-                Some(wide(niter)),
-            )
-        } else {
-            Some(u128::from(series_cost(niter, p, polycoeff_gen)))
+        // A sum that does not fit in `usize` is past the limit checked below.
+        let Some(next_times) = reduction_times.checked_add(reduction_num_step) else {
+            return (reduction_times, niter, m_eff);
         };
-        let cost2 = cost_from_u128(cost_sum(&[
-            series_part,
-            Some(u128::from(S::reduction_cost(reduction_times, p))),
-        ]));
-
-        if cost2 < cost1 {
-            cost1 = cost2;
-            reduction_times += reduction_num_step;
-            if reduction_times > p.saturating_add(reduction_num_step) {
-                return (reduction_times - reduction_num_step, niter, m_eff);
-            }
+        if next_times > p.saturating_add(reduction_num_step) {
+            return (reduction_times, niter, m_eff);
+        }
+        let (next_niter, next_m_eff, next_cost) =
+            series_candidate_cost::<S>(p, polycoeff_gen, m, pwr_step, ext, next_times);
+        if next_cost < cost {
+            reduction_times = next_times;
+            niter = next_niter;
+            m_eff = next_m_eff;
+            cost = next_cost;
         } else {
-            return (reduction_times - reduction_num_step, niter, m_eff);
+            return (reduction_times, niter, m_eff);
         }
     }
 }
@@ -212,6 +210,32 @@ pub(crate) fn series_run<T: PolycoeffGen>(
 //
 // Private part
 //
+
+/// `(niter, m_eff, cost)` for one reduction count in `series_cost_optimize`.
+fn series_candidate_cost<S: ArgReductionEstimator>(
+    p: usize,
+    polycoeff_gen: &impl PolycoeffGen,
+    m: i64,
+    pwr_step: usize,
+    ext: bool,
+    reduction_times: usize,
+) -> (usize, usize, u64) {
+    let m_eff = S::reduction_effect(reduction_times, m);
+    let niter = series_niter(p, m_eff) / pwr_step.max(1);
+    let series_part = if ext {
+        cost_product(
+            Some(u128::from(polycoeff_gen.iter_cost())),
+            Some(wide(niter)),
+        )
+    } else {
+        Some(u128::from(series_cost(niter, p, polycoeff_gen)))
+    };
+    let cost = cost_from_u128(cost_sum(&[
+        series_part,
+        Some(u128::from(S::reduction_cost(reduction_times, p))),
+    ]));
+    (niter, m_eff, cost)
+}
 
 /// Estimate of the number of series iterations.
 /// p is the precision, m is the negative power of x
