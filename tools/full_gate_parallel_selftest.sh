@@ -76,7 +76,19 @@ coord() { # NAME env...
   ( env FAKE_STATE="$S" T="$W/T-$c" REPO="$W" ZF_GATE_POPBIN="$W/bin" ZF_GATE_SELF="$W/fakegate" ZF_GATE_TARGET_ROOT="$W/troot" \
       ZF_GATE_AGENT=harper ZF_GATE_JOB="job-$c" ZF_GATE_KILL_GRACE=2 FAKE_SLEEP=2 "$@" bash "$W/tools/full_gate.sh" "t$c" > "$W/out-$c" 2>&1 )
 }
-leftover() { pgrep -f "$W/fakegate" >/dev/null || pgrep -f 'sleep 300' -u "$(id -u)" >/dev/null; }
+# leftover(): a fake leaf is still running. The `sleep 300` match is scoped to processes
+# whose cwd is under this run's workdir: poplog's heartbeat also runs `sleep 300`
+# (POPLOG_HEARTBEAT, default 300s) as a child of the poprun shell, with the invocation
+# dir as its cwd, and an unscoped match false-positives on it under poprun. A fake leaf's
+# `sleep 300` runs with cwd in the workdir (the leaf runs there), so it is still caught.
+leftover() {
+  pgrep -f "$W/fakegate" >/dev/null && return 0
+  local p
+  for p in $(pgrep -f 'sleep 300' -u "$(id -u)" 2>/dev/null); do
+    [[ $(readlink "/proc/$p/cwd" 2>/dev/null) == "$W"* ]] && return 0
+  done
+  return 1
+}
 # 1 all pass, 4 default leaves
 coord pass ZF_GATE_PARALLEL=4; rc=$?
 [[ $rc == 0 ]] && ok "all leaves pass -> exit 0" || bad "pass exit $rc"
