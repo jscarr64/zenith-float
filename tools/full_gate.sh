@@ -28,7 +28,7 @@ tag=${1:?usage: tools/full_gate.sh TAG}; : > "$T/$tag.rc"
 # (inherited POPLOG_FILE/STATE_DIR/OUTER_* logger state is not passed on, so no leaf shares the coordinator's out/step/
 # child files), its own CARGO_TARGET_DIR=$ZF_GATE_TARGET_ROOT/A-JOB/LEAF and T=$T/LEAF. Slot-holder variables are
 # never cleared: inside a live slot holder (POPSLOT_HELD / live POPSLOT_HOLDER_PID) it refuses (exit 2); run it outside
-# a slot. Unset (default), the gate is the unchanged serial gate, also off Pop.
+# a slot. Unset/empty ZF_GATE_PARALLEL defaults to 4 on Pop (poprun/popslot present) and to the serial gate off Pop; 0 is an explicit serial opt-out; a leaf (ZF_GATE_ONLY set) never takes the default.
 # Fails closed: the leaves must cover every `run` step of this file exactly once (target-dir: in every leaf, it claims
 # that leaf's target); every leaf's rc file must list exactly its steps, each =0, plus `done`; every leaf's exit code
 # is collected with `if wait PID` (a failed leaf never hides behind another). At most N leaves run at once.
@@ -76,7 +76,7 @@ zfp_main() {
     zfp_say "REFUSING: called inside a held popslot (POPSLOT_HELD=${POPSLOT_HELD:-} POPSLOT_HOLDER_PID=${POPSLOT_HOLDER_PID:-}); leaves would reuse that one slot. Run the coordinator outside popslot: poprun --agent $agent --job JOB -- env ZF_GATE_PARALLEL=$n tools/full_gate.sh TAG"
     return 2
   fi
-  [[ -x $bin/poprun && -x $bin/popslot ]] || { zfp_say "REFUSING: no poprun/popslot in $bin (parallel mode is Pop-only; unset ZF_GATE_PARALLEL for the serial gate)"; return 2; }
+  [[ -x $bin/poprun && -x $bin/popslot ]] || { zfp_say "REFUSING: no poprun/popslot in $bin (parallel mode is Pop-only; set ZF_GATE_PARALLEL=0 for the serial gate)"; return 2; }
   [[ -d $troot ]] || { zfp_say "REFUSING: target root $troot is not a directory"; return 2; }
   local job=${ZF_GATE_JOB:-zfgate-$tag-$(date +%Y%m%d-%H%M%S)-$$}
   [[ $job =~ ^[A-Za-z0-9._-]+$ && $tag =~ ^[A-Za-z0-9._-]+$ ]] || { zfp_say "REFUSING: job '$job' / tag '$tag' must be [A-Za-z0-9._-]"; return 2; }
@@ -167,7 +167,12 @@ zfp_main() {
   if (( fail )); then zfp_say "RESULT: FAIL"; return 1; fi
   zfp_say "RESULT: PASS (${#names[@]} leaves)"; return 0
 }
-if [[ -n ${ZF_GATE_PARALLEL:-} ]]; then zfp_main "$tag"; exit $?; fi
+# Parallel is the default on Pop (Jeff 2026-11-07): unset/empty ZF_GATE_PARALLEL means 4 when
+# poprun/popslot exist, serial otherwise; 0 is an explicit serial opt-out. A leaf (ZF_GATE_ONLY
+# set) never takes the default, or it would re-enter the coordinator (POPSLOT_HELD refuses there,
+# but the leaf must stay serial on its own terms).
+if [[ -z ${ZF_GATE_PARALLEL:-} && -z ${ZF_GATE_ONLY:-} && -x ${ZF_GATE_POPBIN:-$HOME/pop-logs/bin}/poprun && -x ${ZF_GATE_POPBIN:-$HOME/pop-logs/bin}/popslot ]]; then ZF_GATE_PARALLEL=4; fi
+if [[ -n ${ZF_GATE_PARALLEL:-} && ${ZF_GATE_PARALLEL:-} != 0 ]]; then zfp_main "$tag"; exit $?; fi
 # shellcheck disable=SC1091
 if [[ -f "$HOME/pop-logs/bin/poplog.sh" ]]; then source "$HOME/pop-logs/bin/poplog.sh"; else source "$gate_dir/../scripts/poplog.sh"; fi
 poplog_init "${POPLOG_AGENT:-rusty}" "full_gate-$tag" "$PWD" "tools/full_gate.sh $tag"
