@@ -277,17 +277,20 @@ fn rem_extreme_spread_odd_divisor_is_exact() {
     for p in [WORD_BIT_SIZE, 2 * WORD_BIT_SIZE] {
         let x = ExactNum::max_value(p);
         let y = ExactNum::from_u8(7, p).mul(&ExactNum::min_positive(p), p, RoundingMode::None);
-        let p_sub_1 = match u64::try_from(p - 1) {
-            Ok(v) => v,
-            Err(_) => 0,
-        };
-        let (expected_mant, expected_exp) = rem_oracle_u128(
-            u128::MAX >> (128 - p),
-            i128::from(EXPONENT_MAX) - i128::from(p_sub_1),
-            7,
-            i128::from(EXPONENT_MIN),
-        );
-        assert_eq!(expected_exp, i128::from(EXPONENT_MIN), "p = {p}");
+        // p is 64 or 128 here, so this conversion cannot fail; the default
+        // only keeps the binding total without an unwrap.
+        let mut p_sub_1 = u64::MAX;
+        if let Ok(v) = u64::try_from(p - 1) {
+            p_sub_1 = v;
+        }
+        // Values are mantissa * 2^(e - max_bit_len), so max_value(p) is
+        // (2^p - 1) * 2^(EXPONENT_MAX - p) and the divisor is
+        // 7 * 2^(EXPONENT_MIN - p). The gap is EXPONENT_MAX - EXPONENT_MIN.
+        let p128 = i128::from(p_sub_1) + 1;
+        let ex = i128::from(EXPONENT_MAX) - p128;
+        let ey = i128::from(EXPONENT_MIN) - p128;
+        let (expected_mant, expected_exp) = rem_oracle_u128(u128::MAX >> (128 - p), ex, 7, ey);
+        assert_eq!(expected_exp, ey, "p = {p}");
         let expected = match u8::try_from(expected_mant) {
             Ok(v) => ExactNum::from_u8(v, p).mul(&ExactNum::min_positive(p), p, RoundingMode::None),
             Err(_) => ExactNum::from_u8(0, p),

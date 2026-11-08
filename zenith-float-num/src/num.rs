@@ -665,13 +665,25 @@ impl ExactNumNumber {
 
         if e1eff > e2eff {
             // (m1 * 2^(e1eff - e2eff)) mod m2 = ((m1 mod m2) * ( 2^(e1eff - e2eff) mod m2 )) mod m2
+            // The gap e1eff - e2eff can exceed i64 at extreme exponents, so it
+            // is computed wide (i128) and 2^gap is reduced modulo m2 without
+            // ever materialising the gap as a narrower integer.
 
+            let ediff = exp::wide(e1eff) - exp::wide(e2eff);
             let mut two = Mantissa::from_raw_parts(&[2], 2)?;
-            let powm = if (e1eff - e2eff) as usize >= m2_normalized.max_bit_len() {
-                two.pow_mod((e1eff - e2eff) as usize, m2_normalized)?
+            let powm = if ediff >= exp::wide_u(m2_normalized.max_bit_len()) {
+                match usize::try_from(ediff) {
+                    Ok(d) => two.pow_mod(d, m2_normalized)?,
+                    Err(_) => pow2_mod_gap(ediff, m2_normalized)?,
+                }
             } else {
-                two.pow2((e1eff - e2eff - 1) as usize)?;
-                two // m3 still becomes 0 in rare case when two == m2_normalized
+                match usize::try_from(ediff - 1) {
+                    Ok(d) => {
+                        two.pow2(d)?;
+                        two // m3 still becomes 0 in rare case when two == m2_normalized
+                    }
+                    Err(_) => pow2_mod_gap(ediff - 1, m2_normalized)?,
+                }
             };
 
             let m3 = self.m.rem(m2_normalized)?;
@@ -1919,6 +1931,29 @@ impl ExactNumNumber {
         self.inexact = rounded || inputs;
         self.op_inexact = if per_op { Some(rounded) } else { None };
     }
+}
+
+/// `2^d mod n` by square-and-multiply over the bits of the `i128` gap `d`.
+///
+/// Used by [`ExactNumNumber::rem`] when the exponent gap does not fit in
+/// `usize`: on 32-bit targets the true gap can exceed `usize::MAX`, and a
+/// saturated exponent would silently return a wrong remainder. `n` must be
+/// normalized and greater than 1 (as `rem` guarantees for its divisor);
+/// `d == 0` returns 1, which is `1 mod n` under that precondition.
+fn pow2_mod_gap(d: i128, n: &Mantissa) -> Result<Mantissa, Error> {
+    let mut result = Mantissa::from_raw_parts(&[1], 1)?;
+    let mut base = Mantissa::from_raw_parts(&[2], 2)?;
+    let mut d = d;
+    while d > 0 {
+        if d & 1 == 1 {
+            result = result.mul_mod(&base, n)?;
+        }
+        d >>= 1;
+        if d > 0 {
+            base = base.mul_mod(&base, n)?;
+        }
+    }
+    Ok(result)
 }
 
 macro_rules! impl_int_conv {
@@ -3555,6 +3590,94 @@ mod tests {
         assert!(!d1.inexact());
         let d2 = d1.round(1, RoundingMode::None)?;
         assert!(d2.inexact());
+        Ok(())
+    }
+
+    #[test]
+    fn pow2_mod_gap_matches_pow_mod_and_u128_oracle() -> Result<(), crate::Error> {
+        // u128 oracle: 2^d mod m by square-and-multiply. The products stay
+        // below 2^128 because every modulus here fits in one word.
+        fn powmod_u128(mut base: u128, mut exp: i128, modulus: u128) -> u128 {
+            if modulus == 1 {
+                return 0;
+            }
+            let mut result: u128 = 1;
+            base %= modulus;
+            while exp > 0 {
+                if exp & 1 == 1 {
+                    result = result * base % modulus;
+                }
+                exp >>= 1;
+                if exp > 0 {
+                    base = base * base % modulus;
+                }
+            }
+            result
+        }
+        // A mantissa as a u128. Results here are below a one-word modulus,
+        // so only the low words can be nonzero.
+        fn mantissa_to_u128(m: &Mantissa) -> u128 {
+            let (words, _n) = m.as_raw_parts();
+            let mut v: u128 = 0;
+            for (i, w) in words.iter().enumerate() {
+                if *w != 0 {
+                    v += u128::from(*w) << (i * WORD_BIT_SIZE);
+                }
+            }
+            v
+        }
+        // The gaps at and above 2^63 pin the top bit: pow_mod used to shift
+        // the top bit out before checking it, so 2^(2^63 + 61) came back as
+        // 2^61. Gaps above usize::MAX exercise only the helper and the u128
+        // oracle below; pow_mod is compared where it is defined.
+        let gaps: [i128; 22] = [
+            0,
+            1,
+            2,
+            3,
+            31,
+            32,
+            63,
+            64,
+            65,
+            100,
+            4096,
+            4_294_967_295,
+            4_294_967_296,
+            4_294_967_297,
+            9_223_372_036_854_775_806,
+            9_223_372_036_854_775_807,
+            9_223_372_036_854_775_808,
+            9_223_372_036_854_775_809,
+            9_223_372_036_854_775_869,
+            18_446_744_073_709_551_615,
+            18_446_744_073_709_551_616,
+            170_141_183_460_469_231_731_687_303_715_884_105_727,
+        ];
+        let lows: [Word; 3] = [3, 7, 97];
+        for low in lows {
+            let modulus_word = WORD_SIGNIFICANT_BIT | low;
+            let n = Mantissa::from_raw_parts(&[modulus_word], WORD_BIT_SIZE)?;
+            let m128 = u128::from(modulus_word);
+            for d in gaps {
+                let got = pow2_mod_gap(d, &n)?;
+                let expected = powmod_u128(2, d, m128);
+                assert_eq!(mantissa_to_u128(&got), expected, "2^{d} mod {m128}");
+                // Against pow_mod where it is defined (d fits usize and
+                // d > 0; pow_mod(0) returns the base, a pre-existing quirk
+                // this helper does not share).
+                if let Ok(du) = usize::try_from(d) {
+                    if du > 0 {
+                        let via_pow_mod = Mantissa::from_raw_parts(&[2], 2)?.pow_mod(du, &n)?;
+                        assert_eq!(
+                            mantissa_to_u128(&via_pow_mod),
+                            expected,
+                            "pow_mod 2^{d} mod {m128}"
+                        );
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }

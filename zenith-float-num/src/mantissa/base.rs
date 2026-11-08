@@ -665,17 +665,19 @@ impl Mantissa {
 
     /// `self` to power of `i` mod `n`
     pub fn pow_mod(&self, mut i: usize, n: &Self) -> Result<Self, Error> {
-        // first non-zero bit in i
+        // First non-zero bit in i. The top bit is checked before shifting:
+        // shifting first would drop a set top bit (i >= 2^(WORD_BIT_SIZE - 1))
+        // and silently compute a smaller power instead.
         let mut bit_pos = WORD_BIT_SIZE;
 
         while bit_pos > 0 {
-            bit_pos -= 1;
-            i <<= 1;
             if i & WORD_SIGNIFICANT_BIT as usize != 0 {
                 bit_pos -= 1;
                 i <<= 1;
                 break;
             }
+            bit_pos -= 1;
+            i <<= 1;
         }
 
         let mut x = self.clone()?;
