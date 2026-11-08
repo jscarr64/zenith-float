@@ -8,7 +8,11 @@ use crate::common::util::bump_prec_retry;
 use crate::common::util::calc_add_cost;
 use crate::common::util::calc_mul_cost;
 use crate::common::util::calc_sqrt_cost;
+use crate::common::util::cost_from_u128;
+use crate::common::util::cost_product;
+use crate::common::util::cost_sum;
 use crate::common::util::round_p;
+use crate::common::util::wide;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
 use crate::num::ExactNumNumber;
@@ -24,7 +28,7 @@ use crate::WORD_BIT_SIZE;
 // Polynomial coefficient generator.
 struct AtanPolycoeffGen {
     f: ExactNumNumber,
-    iter_cost: usize,
+    iter_cost: u64,
 }
 
 impl AtanPolycoeffGen {
@@ -52,7 +56,7 @@ impl PolycoeffGen for AtanPolycoeffGen {
     }
 
     #[inline]
-    fn iter_cost(&self) -> usize {
+    fn iter_cost(&self) -> u64 {
         self.iter_cost
     }
 
@@ -70,7 +74,9 @@ impl ArgReductionEstimator for AtanArgReductionEstimator {
         let cost_mul = calc_mul_cost(p);
         let cost_add = calc_add_cost(p);
         let sqrt_cost = calc_sqrt_cost(p, cost_mul, cost_add);
-        n as u64 * (2 * (cost_mul + cost_add) + sqrt_cost) as u64
+        let pair = cost_sum(&[Some(u128::from(cost_mul)), Some(u128::from(cost_add))]);
+        let per_reduction = cost_sum(&[cost_product(Some(2), pair), Some(u128::from(sqrt_cost))]);
+        cost_from_u128(cost_product(Some(wide(n)), per_reduction))
     }
 
     /// Given m, the negative power of 2 of a number, returns the negative power of 2 if reduction is applied n times.
@@ -269,5 +275,158 @@ mod tests {
         let n1 = random_subnormal(p)?;
         assert!(n1.atan(p, rm, &mut cc)?.cmp(&n1) == 0);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod cost_overflow_tests {
+    use crate::ops::series::ArgReductionEstimator;
+
+    use super::AtanArgReductionEstimator;
+
+    fn widen_usize(n: usize) -> u128 {
+        crate::common::util::wide(n)
+    }
+
+    fn clamp_to_u64(v: u128) -> u128 {
+        let cap = u128::from(u64::MAX);
+        if v > cap {
+            cap
+        } else {
+            v
+        }
+    }
+
+    fn mul_cost(p: usize) -> u128 {
+        let p_u = widen_usize(p);
+        let raw = if p_u < 70 {
+            p_u.checked_mul(p_u)
+        } else if p_u < 1625 {
+            p_u.checked_mul(p_u)
+                .and_then(|s| s.checked_mul(p_u))
+                .map(|v| v.isqrt())
+        } else {
+            let q = p_u.isqrt();
+            q.checked_mul(q).and_then(|s| s.checked_mul(q))
+        };
+        match raw {
+            Some(v) => clamp_to_u64(v),
+            None => u128::from(u64::MAX),
+        }
+    }
+
+    fn add_cost(p: usize) -> u128 {
+        clamp_to_u64(widen_usize(p))
+    }
+
+    fn log2_ref(mut n: usize) -> usize {
+        let mut ret = 0usize;
+        while n > 1 {
+            ret += 1;
+            n >>= 1;
+        }
+        ret
+    }
+
+    /// `(floor(log2(p)) * 41349) >> 16` times `(5 * mul + 2 * add) / 2`, then the `u64` clamp.
+    fn sqrt_cost(p: usize) -> u128 {
+        let mul = mul_cost(p);
+        let add = add_cost(p);
+        let log3 = match widen_usize(log2_ref(p)).checked_mul(41_349) {
+            Some(v) => v >> 16,
+            None => return u128::from(u64::MAX),
+        };
+        let weighted = mul
+            .checked_mul(5)
+            .and_then(|m| add.checked_mul(2).and_then(|a| m.checked_add(a)));
+        match weighted.and_then(|w| log3.checked_mul(w)) {
+            Some(prod) => clamp_to_u64(prod / 2),
+            None => u128::from(u64::MAX),
+        }
+    }
+
+    fn scale_cost(n: usize, per: Option<u128>) -> u64 {
+        let prod = per.and_then(|v| widen_usize(n).checked_mul(v));
+        crate::common::util::cost_from_u128(prod)
+    }
+
+    /// `n * (2 * (mul + add) + sqrt)`.
+    fn atan_per(p: usize) -> Option<u128> {
+        mul_cost(p)
+            .checked_add(add_cost(p))
+            .and_then(|pair| pair.checked_mul(2))
+            .and_then(|doubled| doubled.checked_add(sqrt_cost(p)))
+    }
+
+    fn assert_cap(p: usize, per: Option<u128>, cost: impl Fn(usize) -> u64) {
+        let cap = u128::from(u64::MAX);
+        let Some(per) = per else {
+            assert_eq!(cost(0), u64::MAX, "none per p={p}");
+            assert_eq!(cost(1), u64::MAX, "none per p={p}");
+            return;
+        };
+        if per == 0 {
+            assert_eq!(cost(0), 0, "p={p}");
+            assert_eq!(cost(1), 0, "p={p}");
+            return;
+        }
+        if per > cap {
+            assert_eq!(cost(0), 0, "p={p}");
+            assert_eq!(cost(1), u64::MAX, "per above u64 p={p}");
+            return;
+        }
+        let n_below = cap / per;
+        // `n_below = cap / per`, so `n_below * per <= cap`: the product fits
+        // in `u128` and needs no checked form.
+        let exact = n_below * per;
+        assert!(exact <= cap, "p={p}");
+        let crossed = match n_below.checked_add(1).and_then(|n| n.checked_mul(per)) {
+            Some(v) => v > cap,
+            None => true,
+        };
+        assert!(crossed, "successor crosses u64 p={p}");
+        match usize::try_from(n_below) {
+            Ok(n) => {
+                assert_eq!(u128::from(cost(n)), exact, "below cap p={p} n={n}");
+                match n.checked_add(1) {
+                    Some(n_hi) => assert_eq!(cost(n_hi), u64::MAX, "at cap p={p} n={n_hi}"),
+                    None => assert!(crossed, "successor is not a usize p={p}"),
+                }
+            }
+            Err(_) => match widen_usize(usize::MAX).checked_mul(per) {
+                Some(v) => {
+                    assert!(v <= cap, "unreachable cap still below u64 p={p}");
+                    assert_eq!(u128::from(cost(usize::MAX)), v, "p={p}");
+                }
+                None => assert_eq!(cost(usize::MAX), u64::MAX, "p={p}"),
+            },
+        }
+    }
+
+    #[test]
+    fn reduction_cost_grid_matches_integer_oracle() {
+        let ns = [0usize, 1, 2, 1usize << 20];
+        let ps = [
+            1usize,
+            2,
+            69,
+            70,
+            1624,
+            1625,
+            2_643_876,
+            1usize << 28,
+            crate::defs::MAX_PRECISION,
+        ];
+        for p in ps {
+            let per = atan_per(p);
+            for n in ns {
+                assert_eq!(
+                    AtanArgReductionEstimator::reduction_cost(n, p),
+                    scale_cost(n, per),
+                    "n={n} p={p}"
+                );
+            }
+            assert_cap(p, per, |n| AtanArgReductionEstimator::reduction_cost(n, p));
+        }
     }
 }

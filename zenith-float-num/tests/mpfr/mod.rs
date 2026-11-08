@@ -23,4 +23,5 @@ pub mod rng_isolation;
 pub mod shifted;
 pub mod subnormal_odd;
 pub mod subnormal_ops;
+pub mod transcendental_grid;
 pub mod wide_primitives;
