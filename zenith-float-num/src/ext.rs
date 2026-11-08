@@ -6694,6 +6694,39 @@ mod grid_digest_tests {
         }
     }
 
+    /// Re-chunk mantissa words to 64-bit words, so a value's representation is the
+    /// same on every platform: on a 32-bit target a value is stored in twice as
+    /// many words. The words are little-endian (index 0 is least significant) and
+    /// left-aligned in the buffer, so when the word count is odd the top word must
+    /// move into the high half of a 64-bit word (the mantissa is shifted left by
+    /// 32 bits); the returned adjustment is added to `n`, which counts the bit
+    /// length of the mantissa. On a 64-bit target this is the identity. A zero
+    /// mantissa is never shifted and keeps `n` 0.
+    fn words_64(words: &[&str]) -> Result<(Vec<String>, usize), crate::Error> {
+        if crate::defs::WORD_BIT_SIZE == 64 {
+            return Ok((words.iter().map(|w| (*w).to_string()).collect(), 0));
+        }
+        let nonzero = words.iter().any(|w| *w != "0");
+        let shift = if nonzero && words.len() % 2 == 1 { 32 } else { 0 };
+        let mut src: Vec<&str> = Vec::with_capacity(words.len() + 1);
+        if shift == 32 {
+            src.push("0");
+        }
+        src.extend_from_slice(words);
+        let mut out = Vec::with_capacity(src.len().div_ceil(2));
+        let mut chunks = src.chunks_exact(2);
+        for c in &mut chunks {
+            let lo: u64 = c[0].parse().map_err(|_| crate::Error::InvalidArgument)?;
+            let hi: u64 = c[1].parse().map_err(|_| crate::Error::InvalidArgument)?;
+            out.push((lo | (hi << 32)).to_string());
+        }
+        if let Some(&last) = chunks.remainder().first() {
+            let lo: u64 = last.parse().map_err(|_| crate::Error::InvalidArgument)?;
+            out.push(lo.to_string());
+        }
+        Ok((out, shift))
+    }
+
     /// `{r:?}` without the storage representation: inline capacity and heap buffers print differently for the
     /// same words, and which one a result lives in is not part of its value.
     fn value_repr(r: &ExactNum) -> Result<String, crate::Error> {
@@ -6703,6 +6736,7 @@ mod grid_digest_tests {
         while let Some(i) = rest.find("inner: ") {
             let (head, tail) = rest.split_at(i + "inner: ".len());
             out.push_str(head);
+            let mut shift = 0usize;
             if let Some(t) = tail.strip_prefix("Inline { data: [") {
                 let close = t.find("], len: ").ok_or(crate::Error::InvalidArgument)?;
                 let words: Vec<&str> = t[..close].split(", ").collect();
@@ -6713,15 +6747,34 @@ mod grid_digest_tests {
                 let len: usize = after[..digits]
                     .parse()
                     .map_err(|_| crate::Error::InvalidArgument)?;
-                out.push_str(&format!("{:?}", &words[..len]));
+                let (w64, s) = words_64(&words[..len])?;
+                shift = s;
+                out.push_str(&format!("{w64:?}"));
                 rest = &after[digits + " }".len()..];
             } else if let Some(t) = tail.strip_prefix("Heap([") {
                 let close = t.find("])").ok_or(crate::Error::InvalidArgument)?;
                 let words: Vec<&str> = t[..close].split(", ").collect();
-                out.push_str(&format!("{words:?}"));
+                let (w64, s) = words_64(&words)?;
+                shift = s;
+                out.push_str(&format!("{w64:?}"));
                 rest = &t[close + "])".len()..];
             } else {
                 rest = tail;
+            }
+            if shift != 0 {
+                // The mantissa bit length `n` follows the buffer close (`, n: <digits> }`);
+                // it grows by the same shift the words did.
+                let j = rest.find(", n: ").ok_or(crate::Error::InvalidArgument)?;
+                let after_n = &rest[j + ", n: ".len()..];
+                let dlen = after_n
+                    .find(|c: char| !c.is_ascii_digit())
+                    .ok_or(crate::Error::InvalidArgument)?;
+                let n: usize = after_n[..dlen]
+                    .parse()
+                    .map_err(|_| crate::Error::InvalidArgument)?;
+                out.push_str(&rest[..j + ", n: ".len()]);
+                out.push_str(&(n + shift).to_string());
+                rest = &after_n[dlen..];
             }
         }
         out.push_str(rest);
@@ -6821,7 +6874,16 @@ mod grid_digest_tests {
         }
         assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
         println!("ldexp grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 1_196_293_272_222_150_608);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            11_902_906_969_918_091_797
+        } else {
+            1_196_293_272_222_150_608
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
@@ -7163,6 +7225,18 @@ mod grid_digest_tests {
         Ok(())
     }
 
+    /// The grid digests pin the 64-bit form of a value's representation, so `value_repr`
+    /// must print the same 64-bit words on a 32-bit target too: the words a value is
+    /// stored in are not part of its value.
+    #[test]
+    fn value_repr_uses_64_bit_words_on_every_platform() -> Result<(), Box<dyn std::error::Error>> {
+        assert_eq!(
+            value_repr(&operand(4))?,
+            r#"ExactNum { inner: Value(ExactNumNumber { e: -1, s: Pos, m: Mantissa { m: WordBuf { inner: ["12297829382473034411"] }, n: 64 }, inexact: true, op_inexact: Some(true) }) }"#
+        );
+        Ok(())
+    }
+
     /// `mul` and `div` over every pair of grid operands, all precisions and rounding modes. Pinned on the
     /// code before `mul`/`div` took `self` and before `mul_ref`/`div_ref` existed.
     #[test]
@@ -7208,7 +7282,16 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
         println!("mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            5_401_717_333_753_312_603
+        } else {
+            8_827_555_224_262_690_728
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
@@ -7307,7 +7390,16 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            5_401_717_333_753_312_603
+        } else {
+            8_827_555_224_262_690_728
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
@@ -7337,7 +7429,16 @@ mod grid_digest_tests {
         }
         assert_eq!(count, PAIR_OPERANDS * 9 * 6);
         println!("square grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            7_492_381_820_025_326_941
+        } else {
+            17_269_539_713_433_390_012
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
@@ -7364,7 +7465,16 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, PAIR_OPERANDS * 9 * 6);
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            7_492_381_820_025_326_941
+        } else {
+            17_269_539_713_433_390_012
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
@@ -7435,7 +7545,16 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 17 * 3 * 6 * 7);
         println!("trig hyperbolic grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_882_922_101_969_868_672);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            14_932_445_793_572_091_126
+        } else {
+            2_882_922_101_969_868_672
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
@@ -8180,7 +8299,16 @@ mod grid_digest_tests {
             h.finish(),
             count
         );
-        assert_eq!(h.finish(), 2_640_369_975_324_367_864);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            10_503_809_173_707_585_589
+        } else {
+            2_640_369_975_324_367_864
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
