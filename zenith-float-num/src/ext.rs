@@ -6714,13 +6714,13 @@ mod grid_digest_tests {
         }
         src.extend_from_slice(words);
         let mut out = Vec::with_capacity(src.len().div_ceil(2));
-        let mut chunks = src.chunks_exact(2);
-        for c in &mut chunks {
+        let (chunks, remainder) = src.as_chunks::<2>();
+        for c in chunks {
             let lo: u64 = c[0].parse().map_err(|_| crate::Error::InvalidArgument)?;
             let hi: u64 = c[1].parse().map_err(|_| crate::Error::InvalidArgument)?;
             out.push((lo | (hi << 32)).to_string());
         }
-        if let Some(&last) = chunks.remainder().first() {
+        if let Some(&last) = remainder.first() {
             let lo: u64 = last.parse().map_err(|_| crate::Error::InvalidArgument)?;
             out.push(lo.to_string());
         }
