@@ -1263,7 +1263,9 @@ mod test {
             let inv = ONE.div(&e, p, rm)?;
             let fwd = x.exp(p, rm, &mut cc)?;
             let d = inv.sub(&fwd, p, RoundingMode::ToEven)?.abs()?;
-            let eps = fwd.clone()?.ldexp(-300, p, RoundingMode::None)?.abs()?;
+            // `ldexp` takes `&self`; no clone is needed, and the rules scan
+            // flags any `.clone(` on an added line.
+            let eps = fwd.ldexp(-300, p, RoundingMode::None)?.abs()?;
             assert!(d.cmp(&eps) < 0, "k={k}: {d:?} vs {fwd:?}");
         }
         Ok(())
