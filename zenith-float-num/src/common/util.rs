@@ -33,6 +33,9 @@ pub fn log2_ceil(mut n: usize) -> usize {
 /// Same as [`log2_ceil`], but an `i64` exponent magnitude must not go through
 /// `usize`: past `u32` it truncates on a 32-bit target (an exponent near
 /// `EXPONENT_MAX` reads as `u32::MAX` and the ceiling drops from 62 to 32).
+/// Test-only: the only user is the `test_logarithm` eps computation, so a
+/// non-test build would reject it under `#![deny(unused)]`.
+#[cfg(test)]
 pub fn log2_ceil_u64(mut n: u64) -> usize {
     let mut ret = 0;
     let mut sticky = 0;
