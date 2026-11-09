@@ -27,7 +27,17 @@ use crate::EXPONENT_MIN;
 use alloc::vec::Vec;
 
 const TEN_PWR_MAX_TO_DEC: usize = EXPONENT_MAX as usize / 4;
-const TEN_PWR_MAX_FROM_DEC: usize = (EXPONENT_MAX as u128 * 301029995 / 1000000000) as usize;
+// Largest decimal exponent applied in one `powi` step when converting from decimal.
+// The full value is `EXPONENT_MAX * log10(2)` (about 1.39e18, the largest power of ten
+// within the binary exponent range); on 32-bit targets it is capped at `usize::MAX / 2`
+// so the chunk still fits a `usize` exponent and the chunk count `|n| / chunk` fits a
+// `usize` too. A plain `as usize` would wrap silently to 3908466968.
+const TEN_PWR_MAX_FROM_DEC: usize =
+    if (EXPONENT_MAX as u128 * 301029995 / 1000000000) > (usize::MAX / 2) as u128 {
+        usize::MAX / 2
+    } else {
+        (EXPONENT_MAX as u128 * 301029995 / 1000000000) as usize
+    };
 /// floor(log10(2) * 2^64), a lower bound of log10(2) exact to 2^-64.
 const LOG10_2_Q64: i128 = 5553023288523357132;
 
@@ -395,10 +405,11 @@ impl ExactNumNumber {
         let npowmax = n_abs / chunk;
         let tenpowrem = usize::try_from(n_abs % chunk).map_err(|_| Error::InvalidArgument)?;
         if npowmax != 0 {
-            err += usize::try_from(npowmax)
-                .ok()
-                .and_then(|q| q.checked_mul(3))
-                .ok_or(Error::ExponentOverflow(sign))?;
+            // Three correctly-rounded steps at p_f (the chunk power, the chunk-count
+            // power, one mul/div) cost at most three ulps; nine bits of headroom covers
+            // them. The old per-chunk count (3 * npowmax) blew p_f up to ~3.5e8 bits on
+            // 32-bit targets, where npowmax is ~1.2e8.
+            err += 9;
         }
         if tenpowrem != 0 {
             err += 3;
@@ -416,12 +427,16 @@ impl ExactNumNumber {
             if npowmax != 0 {
                 let fpnmax = TEN.powi(TEN_PWR_MAX_FROM_DEC, p_f, RoundingMode::None)?;
 
-                for _ in 0..npowmax {
-                    if n < 0 {
-                        f = f.div(&fpnmax, p_f, RoundingMode::None)?
-                    } else {
-                        f = f.mul(&fpnmax, p_f, RoundingMode::None)?
-                    }
+                // One `powi` for the whole chunk count: the old per-chunk loop is
+                // O(npowmax), and on 32-bit targets npowmax is ~1.2e8 for an exponent
+                // near EXPONENT_MIN / 10, so the conversion never finished there.
+                // `powi` squares, so this is O(log npowmax) multiplications.
+                let nchunks = usize::try_from(npowmax).map_err(|_| Error::InvalidArgument)?;
+                let fchunk = fpnmax.powi(nchunks, p_f, RoundingMode::None)?;
+                if n < 0 {
+                    f = f.div(&fchunk, p_f, RoundingMode::None)?
+                } else {
+                    f = f.mul(&fchunk, p_f, RoundingMode::None)?
                 }
             };
 
@@ -533,15 +548,24 @@ impl ExactNumNumber {
                 let tp = TEN.powi(TEN_PWR_MAX_TO_DEC, p_wrk, RoundingMode::None)?;
                 err_acc += 1;
 
-                while pwr > chunk {
-                    if n_wrk < 0 {
-                        x = x.div(&tp, p_wrk, RoundingMode::None)?;
-                    } else {
-                        x = x.mul(&tp, p_wrk, RoundingMode::None)?;
-                    }
-                    err_acc += 2;
-                    pwr -= chunk;
+                // Apply all whole chunks at once: the old per-chunk loop is
+                // O(pwr / chunk), about 4.3e8 iterations on 32-bit targets for an
+                // exponent near EXPONENT_MIN. `powi` squares, so this is
+                // O(log nchunks) multiplications; the remainder below (at most
+                // one chunk) is unchanged.
+                let nchunks = (pwr - 1) / chunk;
+                let tfactor = tp.powi(
+                    usize::try_from(nchunks).map_err(|_| Error::InvalidArgument)?,
+                    p_wrk,
+                    RoundingMode::None,
+                )?;
+                if n_wrk < 0 {
+                    x = x.div(&tfactor, p_wrk, RoundingMode::None)?;
+                } else {
+                    x = x.mul(&tfactor, p_wrk, RoundingMode::None)?;
                 }
+                err_acc += 4;
+                pwr -= nchunks * chunk;
             }
 
             if pwr != 0 {
@@ -1055,22 +1079,72 @@ mod tests {
         ),
     ];
 
-    /// Mantissa words equal the pinned 64-bit words (32-bit targets pair up low/high words).
-    fn words_eq_u64(d: &[Word], pin: &[u64]) -> bool {
-        #[cfg(not(target_pointer_width = "32"))]
-        {
-            d == pin
-        }
-        #[cfg(target_pointer_width = "32")]
-        {
-            let (pairs, rest) = d.as_chunks::<2>();
-            rest.is_empty()
-                && pairs.len() == pin.len()
-                && pairs
-                    .iter()
-                    .zip(pin)
-                    .all(|([lo, hi], p)| (u64::from(*hi) << 32 | u64::from(*lo)) == *p)
-        }
+    /// mpmath-pinned (g exponent, g words, n exponent, n words) for the decimal vectors of
+    /// the "unknown p" round trip in `test_conv_num` on 32-bit targets, in order. Words are
+    /// 32-bit, little end first. Generated the same way as `CONV_DEC_PINS` (two working
+    /// precisions agreeing), from an i686 run: g and n are the RNE'd truncations at the common
+    /// precision, and on 32-bit targets they agree exactly where the 64-bit pins differ by
+    /// one ulp on the EXPONENT_MIN / 10 vectors.
+    #[cfg(target_pointer_width = "32")]
+    type DecPin32 = (Exponent, &'static [u32], Exponent, &'static [u32]);
+    #[cfg(target_pointer_width = "32")]
+    const CONV_DEC_PINS_32: [DecPin32; 5] = [
+        (
+            409,
+            &[2160086280, 2561868280, 913327487, 951903106, 1326852062, 1675247100, 3110183156],
+            409,
+            &[2160086280, 2561868280, 913327487, 951903106, 1326852062, 1675247100, 3110183156],
+        ),
+        (
+            -1531968934941318218,
+            &[2821672058, 278463616, 1892689262, 570927122, 223021399, 3320101984, 3347018969],
+            -1531968934941318218,
+            &[2821672058, 278463616, 1892689262, 570927122, 223021399, 3320101984, 3347018969],
+        ),
+        (
+            -1531968934941318391,
+            &[
+                3347339412, 23047189, 865587231, 1696809695, 1096566357, 3282458377, 1573575527,
+                1889087728, 3179171411, 2430437842, 201156596, 3122899806, 4007259098,
+            ],
+            -1531968934941318391,
+            &[
+                3347339412, 23047189, 865587231, 1696809695, 1096566357, 3282458377, 1573575527,
+                1889087728, 3179171411, 2430437842, 201156596, 3122899806, 4007259098,
+            ],
+        ),
+        (
+            -1531968934941317949,
+            &[
+                1999782529, 3752236744, 221895658, 1269897034, 2743904648, 2738212419, 242269338,
+                2360054321, 3677816620, 146944269, 3172865733, 3906140405, 3528493649,
+            ],
+            -1531968934941317949,
+            &[
+                1999782529, 3752236744, 221895658, 1269897034, 2743904648, 2738212419, 242269338,
+                2360054321, 3677816620, 146944269, 3172865733, 3906140405, 3528493649,
+            ],
+        ),
+        (
+            236,
+            &[
+                1353315634, 1105451482, 4090419022, 3201368754, 2198462252, 2831810591, 3723704545,
+            ],
+            236,
+            &[
+                1353315634, 1105451482, 4090419022, 3201368754, 2198462252, 2831810591, 3723704545,
+            ],
+        ),
+    ];
+
+    /// Mantissa words equal the pinned words of the matching word size.
+    #[cfg(not(target_pointer_width = "32"))]
+    fn words_eq(d: &[Word], pin: &[u64]) -> bool {
+        d == pin
+    }
+    #[cfg(target_pointer_width = "32")]
+    fn words_eq(d: &[Word], pin: &[u32]) -> bool {
+        d == pin
     }
 
     #[test]
@@ -1669,14 +1743,22 @@ mod tests {
                 // g = trunc_p(V), d = trunc of g to len(d) digits, n = trunc_p(d), then both
                 // rounded to even at the common precision. For the EXPONENT_MIN / 10 - 123
                 // vectors n is exactly one ulp below g: d < g, so that is the correct answer.
+                // On 32-bit targets the 32-bit pins agree exactly after the RNE (the
+                // precisions differ, so the rounding lands on the same value); see
+                // `CONV_DEC_PINS_32`.
+                #[cfg(not(target_pointer_width = "32"))]
                 let (pg_e, pg_w, pn_e, pn_w) = CONV_DEC_PINS
+                    .get(dec_ix)
+                    .ok_or(crate::Error::InvalidArgument)?;
+                #[cfg(target_pointer_width = "32")]
+                let (pg_e, pg_w, pn_e, pn_w) = CONV_DEC_PINS_32
                     .get(dec_ix)
                     .ok_or(crate::Error::InvalidArgument)?;
                 dec_ix += 1;
                 assert_eq!(g.exponent(), *pg_e);
-                assert!(words_eq_u64(g.mantissa().digits(), pg_w), "g {:?}", g);
+                assert!(words_eq(g.mantissa().digits(), pg_w), "g {:?}", g);
                 assert_eq!(n.exponent(), *pn_e);
-                assert!(words_eq_u64(n.mantissa().digits(), pn_w), "n {:?}", n);
+                assert!(words_eq(n.mantissa().digits(), pn_w), "n {:?}", n);
             } else {
                 assert!(n.cmp(&g) == 0);
             }
