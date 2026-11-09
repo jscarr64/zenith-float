@@ -107,7 +107,7 @@ pub const MAX_DEC_SCALE: usize = 1_000_000;
 /// Number of working bits a correct-rounding retry loop may add to `p` before it gives up.
 ///
 /// This is `max(WORD_BIT_SIZE * MAX_PREC_RETRY, 2 * p)`, so the loop may work at up to `3p` bits
-/// (never fewer than `p + 16384`).
+/// (never fewer than `p + WORD_BIT_SIZE * MAX_PREC_RETRY`).
 ///
 /// Why `2p`: when the exact result lies within `2^-(2p+c)` (relative) of a rounding boundary, the
 /// working value has to carry about `2p + c` correct bits to fall on one side of it. Two arguments
@@ -122,7 +122,7 @@ pub const MAX_DEC_SCALE: usize = 1_000_000;
 /// (`p_inc` starts at one word and is `round_p(p_wrk / 5)`, never below one word, afterwards), and
 /// the limit is a finite number computed from `p` alone, so a loop that never certifies its result
 /// (for example an exactly representable result that no finite precision can separate from its
-/// boundary) fails with `PrecisionRetryExhausted` after at most `limit / 64` iterations.
+/// boundary) fails with `PrecisionRetryExhausted` after at most `limit / WORD_BIT_SIZE` iterations.
 #[inline]
 pub fn prec_retry_budget(p: usize) -> usize {
     WORD_BIT_SIZE
@@ -679,16 +679,24 @@ mod carry_tests {
 
 #[cfg(test)]
 mod retry_budget_tests {
-    use super::{bump_prec_retry, prec_retry_budget, prec_retry_exhausted, round_p};
+    use super::{
+        bump_prec_retry, prec_retry_budget, prec_retry_exhausted, round_p, MAX_PREC_RETRY,
+    };
     use crate::defs::{Error, WORD_BIT_SIZE};
 
     #[test]
     fn budget_is_the_larger_of_the_fixed_part_and_twice_p() {
-        // 64 * 256 = 16384 extra bits up to p = 8192, then 2p
-        assert_eq!(prec_retry_budget(64), 16384);
+        // fixed = WORD_BIT_SIZE * 256 extra bits up to p = fixed / 2, then 2p
+        let fixed = WORD_BIT_SIZE * MAX_PREC_RETRY;
+        assert_eq!(prec_retry_budget(0), fixed);
+        assert_eq!(prec_retry_budget(1), fixed);
+        assert_eq!(prec_retry_budget(64), fixed);
+        assert_eq!(prec_retry_budget(fixed / 2), fixed);
+        assert_eq!(prec_retry_budget(fixed / 2 + 1), fixed + 2);
         assert_eq!(prec_retry_budget(8192), 16384);
         assert_eq!(prec_retry_budget(8256), 16512);
         assert_eq!(prec_retry_budget(100_032), 200_064);
+        assert_eq!(prec_retry_budget(usize::MAX / 2), usize::MAX - 1);
         assert_eq!(prec_retry_budget(usize::MAX), usize::MAX);
     }
 
@@ -704,8 +712,9 @@ mod retry_budget_tests {
     #[test]
     fn small_p_keeps_the_fixed_budget() {
         let p = 128;
-        assert!(!prec_retry_exhausted(p + 16384, p));
-        assert!(prec_retry_exhausted(p + 16385, p));
+        let fixed = WORD_BIT_SIZE * MAX_PREC_RETRY;
+        assert!(!prec_retry_exhausted(p + fixed, p));
+        assert!(prec_retry_exhausted(p + fixed + 1, p));
     }
 
     #[test]
