@@ -2945,6 +2945,54 @@ mod tests {
         Ok(())
     }
 
+    /// `int_as_u64` is exact on both branches, on every target: the
+    /// short-mantissa branch (`n < e`, an exact power of two or a short
+    /// integer) and the top-bits branch, including an unaligned shift that
+    /// reads across word boundaries. Each value distinguishes the shift
+    /// and the subtraction the branch computes, so a wrong `<<`, `e - n`,
+    /// or per-word `take` fails the exact assertion. `exp` only reaches
+    /// these helpers through quotients with full mantissas, so no `exp`
+    /// test covers them.
+    #[test]
+    fn int_as_u64_exact_both_branches() -> Result<(), crate::Error> {
+        let p = 128;
+        let rm = RoundingMode::None;
+        // Short mantissa (`n < e`): the whole mantissa shifted left by `e - n`.
+        let v = ExactNumNumber::from_word(1, p)?.ldexp(63, p, rm)?;
+        assert_eq!(v.int_as_u64()?, 1u64 << 63);
+        let v = ExactNumNumber::from_word(3, p)?.ldexp(61, p, rm)?;
+        assert_eq!(v.int_as_u64()?, 3u64 << 61);
+        let v = ExactNumNumber::from_word(1, p)?.ldexp(10, p, rm)?;
+        assert_eq!(v.int_as_u64()?, 1024);
+        // Top bits (`n >= e`), unaligned shift across word boundaries:
+        // 2^63 + 2^54 + 2^40 + 2^-10 has a 74-bit mantissa, so the top 64
+        // bits start 10 bits in.
+        let a = ExactNumNumber::from_word(1, p)?.ldexp(63, p, rm)?;
+        let b = ExactNumNumber::from_word(1, p)?.ldexp(54, p, rm)?;
+        let c = ExactNumNumber::from_word(1, p)?.ldexp(40, p, rm)?;
+        let d = ExactNumNumber::from_word(1, p)?.ldexp(-10, p, rm)?;
+        let v = a.add(&b, p, rm)?.add(&c, p, rm)?.add(&d, p, rm)?;
+        assert_eq!(v.int_as_u64()?, (1u64 << 63) + (1u64 << 54) + (1u64 << 40));
+        // Aligned top bits: 2^63 + 2^40 + 1 is an exact 64-bit integer.
+        let a = ExactNumNumber::from_word(1, p)?.ldexp(63, p, rm)?;
+        let b = ExactNumNumber::from_word(1, p)?.ldexp(40, p, rm)?;
+        let v = a
+            .add(&b, p, rm)?
+            .add(&ExactNumNumber::from_word(1, p)?, p, rm)?;
+        assert_eq!(v.int_as_u64()?, (1u64 << 63) + (1u64 << 40) + 1);
+        // 7.5 floors to 7; 5 is exact; fractions and zero give 0.
+        let v = ExactNumNumber::from_word(15, p)?.ldexp(-1, p, rm)?;
+        assert_eq!(v.int_as_u64()?, 7);
+        let v = ExactNumNumber::from_word(5, p)?;
+        assert_eq!(v.int_as_u64()?, 5);
+        let v = ExactNumNumber::from_word(1, p)?.ldexp(-1, p, rm)?;
+        assert_eq!(v.int_as_u64()?, 0);
+        // Past the range: exponent 65 does not fit in a u64.
+        let v = ExactNumNumber::from_word(1, p)?.ldexp(64, p, rm)?;
+        assert!(matches!(v.int_as_u64(), Err(crate::Error::InvalidArgument)));
+        Ok(())
+    }
+
     #[test]
     fn test_rounding() -> Result<(), crate::Error> {
         // trailing bits
