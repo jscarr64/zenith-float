@@ -84,11 +84,17 @@ pub fn compute_added_err(algo: ErrAlgo<'_>) -> usize {
                     let v = if !base.inexact_accumulated() || earg <= 0 {
                         0
                     } else {
+                        // `earg` and `emin` are exponent magnitudes up to ~2^62; on 32-bit,
+                        // `as usize` truncates them, and `+ EXPONENT_BIT_SIZE` then overflows.
+                        // Compare in u64; the min only reaches usize when it is below n.
                         let n = compute_added_err_near_one(base, emin);
-                        if earg as usize > emin.unsigned_abs() as usize + EXPONENT_BIT_SIZE {
+                        let earg_u = earg.unsigned_abs();
+                        if earg_u > emin.unsigned_abs() + EXPONENT_BIT_SIZE as u64 {
                             0
+                        } else if earg_u >= n as u64 {
+                            n
                         } else {
-                            n.min(earg as usize)
+                            earg_u as usize
                         }
                     };
                     5 + v + EXPONENT_BIT_SIZE
@@ -515,6 +521,23 @@ mod tests {
     }
 
     const ERR_TEST_OUTER: usize = 10;
+
+    #[test]
+    fn compute_added_err_pow_huge_earg_no_overflow() -> Result<(), crate::Error> {
+        // The Pow arm compares `earg as usize` against
+        // `emin.unsigned_abs() as usize + EXPONENT_BIT_SIZE`; on 32-bit the
+        // latter overflows usize (2^62 - 1 truncates to u32::MAX, + 64 wraps).
+        let emin = EXPONENT_MIN;
+        let p = 2 * WORD_BIT_SIZE;
+        let m = Mantissa::from_words(p, &[WORD_MAX, WORD_SIGNIFICANT_BIT])?;
+        let base_num = ExactNumNumber::from_raw_unchecked(m, Sign::Pos, 0, true);
+        let base: ExactNum = base_num.into();
+        let arg: ExactNum = ExactNumNumber::max_value(p)?.into();
+        let n = compute_added_err_near_one(&base, emin);
+        let err = compute_added_err(ErrAlgo::Pow(&base, &arg, emin));
+        assert_eq!(err, 5 + n + EXPONENT_BIT_SIZE);
+        Ok(())
+    }
 
     #[test]
     fn test_compute_added_err() -> Result<(), crate::Error> {
