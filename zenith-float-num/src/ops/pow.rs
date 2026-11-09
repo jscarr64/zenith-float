@@ -108,8 +108,12 @@ impl ExactNumNumber {
     /// applied once by `place_scaled`, which rounds onto the subnormal grid (or flushes) with `rm`.
     fn exp_neg_scaled(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         let far = i128::from(EXPONENT_MIN) * 2;
-        // `Word::BITS - 1` (63 for 64-bit words) as an `Exponent`, converted losslessly.
-        let top = Exponent::from(Word::BITS) - 1;
+        // The argument is past the range when |x| >= 2^63. The exponent range is
+        // `i64` on every target, so this threshold is 63 on every target: the old
+        // `Word::BITS - 1` is 31 on a 32-bit target and misclassifies |x| in
+        // [2^32, 2^63) — whose exponential is a representable subnormal — as past
+        // the range.
+        let top: Exponent = 63;
         if self.exponent() > top {
             // |x| >= 2^63: e^x < 2^-(2^63), far below the smallest subnormal. A positive sticky unit.
             let unit = Self::from_word(1, p + WORD_BIT_SIZE)?;
@@ -126,13 +130,13 @@ impl ExactNumNumber {
             let ln2 = cc.ln_2_num(p_l, RoundingMode::None)?;
             let mut t = self.div(&ln2, p_l, RoundingMode::None)?;
             t.set_sign(Sign::Pos);
-            let n = t.int_as_usize()?;
+            let n = t.int_as_u64()?;
             let n1 = n.checked_add(1).ok_or(Error::ExponentOverflow(Sign::Neg))?;
-            let shift = Self::from_usize(n1)?.mul(&ln2, p_l, RoundingMode::None)?;
+            let shift = Self::from_u64_internal(n1, 64)?.mul(&ln2, p_l, RoundingMode::None)?;
             let r = self.add(&shift, p_l, RoundingMode::None)?;
             let mut y = r.exp(p_wrk, RoundingMode::None, cc)?;
             if y.try_set_precision(q, RoundingMode::ToZero, p_wrk - WORD_BIT_SIZE)? {
-                let n1 = i128::try_from(n1).map_err(|_| Error::ExponentOverflow(Sign::Neg))?;
+                let n1 = i128::from(n1);
                 let at = i128::from(y.exponent()) - n1;
                 let mut ret = y.place_scaled(at, true, p, rm)?;
                 ret.set_inexact(true);
@@ -168,14 +172,17 @@ impl ExactNumNumber {
     fn exp_positive_arg(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         debug_assert!(!self.is_zero());
 
-        if self.exponent() > WORD_BIT_SIZE as i64 {
+        // The integer part must fit in a `u64`: the exponent range is `i64` on
+        // every target, so a 32-bit `usize` cannot hold it past exponent 32.
+        // `powi_internal` already takes a `u64` on every target.
+        if self.exponent() > 64 {
             return Err(Error::ExponentOverflow(self.sign()));
         }
 
         let p_work = p + 4;
 
         // compute separately for int and fract parts, then combine the results.
-        let int = self.int_as_usize().map_err(|e| {
+        let int = self.int_as_u64().map_err(|e| {
             if matches!(e, Error::InvalidArgument) {
                 Error::ExponentOverflow(Sign::Pos)
             } else {
@@ -185,13 +192,13 @@ impl ExactNumNumber {
         let e_int = if int > 0 {
             let e_const = cc.e_num(p_work, RoundingMode::None)?;
 
-            e_const.powi(int, p_work, RoundingMode::None)
+            e_const.powi_internal(int, p_work, RoundingMode::None, true, false)
         } else {
             Ok(ExactNumNumber::small_const(1))
         }?;
 
         // |fract(self)| = |self| - int, computed from the integer part found above.
-        let int_num = Self::from_usize(int)?;
+        let int_num = Self::from_u64_internal(int, 64)?;
         let mut fract = if self.is_negative() {
             self.add_full_prec(&int_num)
         } else {
@@ -1207,6 +1214,93 @@ mod test {
             let r = x.pow(&y, p, rm, &mut cc)?;
             assert!(r.cmp(&lo) > 0 && r.cmp(&hi) < 0, "{rm:?}: {r:?}");
         }
+        Ok(())
+    }
+
+    /// `exp` of an argument whose exponent is above the 32-bit word size must
+    /// work on every target: the exponent range is `i64`, so a 32-bit `usize`
+    /// cannot hold the integer part past exponent 32. The round-trip through
+    /// `ln` certifies the value on every target.
+    #[test]
+    fn exp_argument_above_32_bit_word() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 320;
+        let rm = RoundingMode::ToEven;
+        // 3 * 2^32 and 3 * 2^59: exponents 34 and 61, both with a finite
+        // exponential. The 32-bit `usize` path stops at exponent 32.
+        for k in [32, 59] {
+            let x = ExactNumNumber::from_word(3, p)?.ldexp(k, p, RoundingMode::None)?;
+            let e = x.exp(p, rm, &mut cc)?;
+            assert!(e.is_positive() && !e.is_zero(), "k={k}: {e:?}");
+            let back = e.ln(p, rm, &mut cc)?;
+            let d = back.sub(&x, p, RoundingMode::ToEven)?.abs()?;
+            let eps = ExactNumNumber::from_word(1, p)?.ldexp(-240, p, RoundingMode::None)?;
+            assert!(d.cmp(&eps) < 0, "k={k}: {d:?} vs {x:?}");
+        }
+        // 3 * 2^61 has exponent 63: its exponential is past the range.
+        let x = ExactNumNumber::from_word(3, p)?.ldexp(61, p, RoundingMode::None)?;
+        assert!(matches!(
+            x.exp(p, rm, &mut cc),
+            Err(crate::Error::ExponentOverflow(_))
+        ));
+        Ok(())
+    }
+
+    /// `exp` of a large-magnitude negative argument whose result is a
+    /// representable subnormal: the scaled path must not mistake it for past
+    /// the range (its threshold is 2^63 on every target, not the word size).
+    /// The reciprocal round-trip certifies the value on every target.
+    #[test]
+    fn exp_negative_large_magnitude_subnormal() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 320;
+        let rm = RoundingMode::ToEven;
+        for k in [32, 59] {
+            let x = ExactNumNumber::from_word(3, p)?.ldexp(k, p, RoundingMode::None)?;
+            let neg = x.neg()?;
+            let e = neg.exp(p, rm, &mut cc)?;
+            assert!(e.is_positive() && !e.is_zero(), "k={k}: {e:?}");
+            let inv = ONE.div(&e, p, rm)?;
+            let fwd = x.exp(p, rm, &mut cc)?;
+            let d = inv.sub(&fwd, p, RoundingMode::ToEven)?.abs()?;
+            // `ldexp` takes `self` by value, so the clone the rules scan
+            // flags is avoided by consuming `fwd` here, last: the assert
+            // only needs the difference and the bound.
+            let eps = fwd.ldexp(-300, p, RoundingMode::None)?.abs()?;
+            assert!(d.cmp(&eps) < 0, "k={k}: {d:?} vs {eps:?}");
+        }
+        Ok(())
+    }
+
+    /// `pow` and `nth_root` of the extreme subnormal are finite on every
+    /// target: their logarithm path goes through `exp` of a large negative
+    /// argument, whose scaled path must return the representable subnormal
+    /// instead of a flushed unit that lets Newton diverge to infinity.
+    #[test]
+    fn pow_nth_root_extreme_subnormal_finite() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 320;
+        let rm = RoundingMode::ToEven;
+        // Operand 21 of the grid digests: 3 * 2^(EXPONENT_MIN - 19).
+        let x = ExactNumNumber::from_word(3, p)?
+            .ldexp(EXPONENT_MIN + 1, p, RoundingMode::None)?
+            .ldexp(-20, p, RoundingMode::None)?;
+        // x^(1/2) by the logarithm path, certified by squaring back to x.
+        let half = ExactNumNumber::from_word(1, p)?.ldexp(-1, p, RoundingMode::None)?;
+        let r = x.pow(&half, p, rm, &mut cc)?;
+        assert!(r.is_positive() && !r.is_zero(), "pow half: {r:?}");
+        let back = r.mul(&r, p, rm)?;
+        let q = back.div(&x, p, rm)?;
+        let dq = q.sub(&ONE, p, rm)?.abs()?;
+        let eps = ExactNumNumber::from_word(1, p)?.ldexp(-300, p, RoundingMode::None)?;
+        assert!(dq.cmp(&eps) < 0, "pow half round-trip: {dq:?}");
+        // 5th root, certified by raising back to the 5th power.
+        let r5 = x.nth_root(5, p, rm)?;
+        assert!(r5.is_positive() && !r5.is_zero(), "nth_root 5: {r5:?}");
+        let back5 = r5.powi(5, p, rm)?;
+        let q5 = back5.div(&x, p, rm)?;
+        let dq5 = q5.sub(&ONE, p, rm)?.abs()?;
+        assert!(dq5.cmp(&eps) < 0, "nth_root 5 round-trip: {dq5:?}");
         Ok(())
     }
 }

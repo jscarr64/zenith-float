@@ -1410,6 +1410,56 @@ impl ExactNumNumber {
         }
     }
 
+    /// Integer part of a number as a `u64`.
+    ///
+    /// Same contract as [`int_as_usize`](Self::int_as_usize) — `InvalidArgument`
+    /// when the integer part does not fit — but word-size independent: a 32-bit
+    /// `usize` cannot hold the integer part of a value whose exponent is above
+    /// 32, while the exponent range itself is `i64` on every target. Reads the
+    /// top bits of the mantissa directly, so it is exact whether or not the
+    /// mantissa length is a multiple of the word size.
+    pub(super) fn int_as_u64(&self) -> Result<u64, Error> {
+        if self.e <= 0 {
+            return Ok(0);
+        }
+        if self.e > 64 {
+            return Err(Error::InvalidArgument);
+        }
+        let e = self.e as usize; // 1..=64
+        let n = self.m.bit_len();
+        if n >= e {
+            // floor(self) is the top `e` bits of the mantissa.
+            Ok(self.mantissa_bits_u64(n - e, e))
+        } else {
+            // floor(self) is the whole mantissa shifted left by `e - n`.
+            Ok(self.mantissa_bits_u64(0, n) << (e - n))
+        }
+    }
+
+    /// The `count` bits of the mantissa starting at bit `shift`, as a `u64`.
+    /// Caller guarantees `count <= 64`; bits past the mantissa read as zero.
+    fn mantissa_bits_u64(&self, shift: usize, count: usize) -> u64 {
+        debug_assert!(count <= 64);
+        let digits = self.m.digits();
+        // The intermediate is u128: `Word as u64` is an identity cast (and a
+        // clippy error) on a 64-bit target, while `Word as u128` widens on
+        // every target. The result still fits in 64 bits (`count <= 64`).
+        let mut out: u128 = 0;
+        let mut filled = 0usize;
+        let mut wi = shift / WORD_BIT_SIZE;
+        let mut off = shift % WORD_BIT_SIZE;
+        while filled < count {
+            let w = digits.get(wi).copied().unwrap_or(0) as u128;
+            let take = (WORD_BIT_SIZE - off).min(count - filled);
+            let mask = (1u128 << take) - 1;
+            out |= ((w >> off) & mask) << filled;
+            filled += take;
+            wi += 1;
+            off = 0;
+        }
+        out as u64
+    }
+
     /// Sets the exponent of `self`.
     /// Note that if `self` is subnormal, the exponent may not change, but the mantissa will shift instead.
     /// `e` will be clamped to the range from EXPONENT_MIN to EXPONENT_MAX if it's outside of the range.
@@ -2892,6 +2942,69 @@ mod tests {
         assert_eq!(d1.precision(), WORD_BIT_SIZE * 2);
         assert_eq!(d1.mantissa_max_bit_len(), WORD_BIT_SIZE * 2);
         assert_eq!(d1.sign(), Sign::Pos);
+        Ok(())
+    }
+
+    /// Direct coverage of the word-size-independent `int_as_u64` and its
+    /// `mantissa_bits_u64` walk. The stored mantissa is left-aligned at
+    /// the construction precision, so `bit_len()` is the storage width,
+    /// not the significant-bit count: on a 64-bit target `int_as_u64`
+    /// always takes one `mantissa_bits_u64` iteration and never the
+    /// `n < e` branch (n >= 64 >= e). The 32-bit target is where the
+    /// short-mantissa branch and the multi-word walk are exercised, so
+    /// the short cases build at p = 32 (a 32-bit stored mantissa on
+    /// i686, taking `n < e`) and the wide cases at p = 128 (two 32-bit
+    /// words on i686, so the walk reads a second word). `exp` only
+    /// reaches these helpers through quotients with full mantissas, so
+    /// no `exp` test covers them.
+    #[test]
+    fn int_as_u64_exact_both_branches() -> Result<(), crate::Error> {
+        let p = 128;
+        let rm = RoundingMode::None;
+        // Short mantissa (`n < e` on i686): the whole mantissa shifted
+        // left by `e - n`. 2^63 at p = 32 has n = 32, e = 64.
+        let v = ExactNumNumber::from_word(1, 32)?.ldexp(63, 32, rm)?;
+        assert_eq!(v.int_as_u64()?, 1u64 << 63);
+        let v = ExactNumNumber::from_word(3, 32)?.ldexp(61, 32, rm)?;
+        assert_eq!(v.int_as_u64()?, 3u64 << 61);
+        let v = ExactNumNumber::from_word(1, 32)?.ldexp(10, 32, rm)?;
+        assert_eq!(v.int_as_u64()?, 1024);
+        // Top bits (`n >= e`): 2^63 + 2^54 + 2^40 + 2^-10. At p = 128
+        // the top 64 bits are one word on x64 and two words on i686,
+        // so the i686 walk reads a second word.
+        let a = ExactNumNumber::from_word(1, p)?.ldexp(63, p, rm)?;
+        let b = ExactNumNumber::from_word(1, p)?.ldexp(54, p, rm)?;
+        let c = ExactNumNumber::from_word(1, p)?.ldexp(40, p, rm)?;
+        let d = ExactNumNumber::from_word(1, p)?.ldexp(-10, p, rm)?;
+        let v = a.add(&b, p, rm)?.add(&c, p, rm)?.add(&d, p, rm)?;
+        assert_eq!(v.int_as_u64()?, (1u64 << 63) + (1u64 << 54) + (1u64 << 40));
+        // Aligned top bits: 2^63 + 2^40 + 1 is an exact 64-bit integer.
+        let a = ExactNumNumber::from_word(1, p)?.ldexp(63, p, rm)?;
+        let b = ExactNumNumber::from_word(1, p)?.ldexp(40, p, rm)?;
+        let v = a
+            .add(&b, p, rm)?
+            .add(&ExactNumNumber::from_word(1, p)?, p, rm)?;
+        assert_eq!(v.int_as_u64()?, (1u64 << 63) + (1u64 << 40) + 1);
+        // Unaligned top bits with an exponent past one word: 2^39 + 2^30 + 1
+        // has e = 40, so on i686 the walk starts 24 bits into a word and
+        // must take two words; a `take` that added the offset instead of
+        // subtracting it would swallow the whole count in the first word.
+        let a = ExactNumNumber::from_word(1, p)?.ldexp(39, p, rm)?;
+        let b = ExactNumNumber::from_word(1, p)?.ldexp(30, p, rm)?;
+        let v = a
+            .add(&b, p, rm)?
+            .add(&ExactNumNumber::from_word(1, p)?, p, rm)?;
+        assert_eq!(v.int_as_u64()?, (1u64 << 39) + (1u64 << 30) + 1);
+        // 7.5 floors to 7; 5 is exact; fractions and zero give 0.
+        let v = ExactNumNumber::from_word(15, p)?.ldexp(-1, p, rm)?;
+        assert_eq!(v.int_as_u64()?, 7);
+        let v = ExactNumNumber::from_word(5, p)?;
+        assert_eq!(v.int_as_u64()?, 5);
+        let v = ExactNumNumber::from_word(1, p)?.ldexp(-1, p, rm)?;
+        assert_eq!(v.int_as_u64()?, 0);
+        // Past the range: exponent 65 does not fit in a u64.
+        let v = ExactNumNumber::from_word(1, p)?.ldexp(64, p, rm)?;
+        assert!(matches!(v.int_as_u64(), Err(crate::Error::InvalidArgument)));
         Ok(())
     }
 

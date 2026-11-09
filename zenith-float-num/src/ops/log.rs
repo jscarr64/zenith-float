@@ -516,7 +516,7 @@ mod tests {
     use crate::{
         common::{
             consts::TEN,
-            util::{log2_ceil, random_subnormal},
+            util::{log2_ceil_u64, random_subnormal},
         },
         WORD_BIT_SIZE,
     };
@@ -572,7 +572,7 @@ mod tests {
         eps.set_exponent(
             d1.exponent() - prec as Exponent
                 + 1
-                + log2_ceil(d1.exponent().unsigned_abs() as usize) as Exponent,
+                + log2_ceil_u64(d1.exponent().unsigned_abs()) as Exponent,
         );
 
         assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
@@ -582,7 +582,7 @@ mod tests {
             Ok(d3) => {
                 eps.set_exponent(
                     d1.exponent() - prec as Exponent
-                        + log2_ceil(d1.exponent().unsigned_abs() as usize) as Exponent,
+                        + log2_ceil_u64(d1.exponent().unsigned_abs()) as Exponent,
                 );
 
                 assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);
@@ -597,7 +597,7 @@ mod tests {
             Ok(d3) => {
                 eps.set_exponent(
                     d1.exponent() - prec as Exponent
-                        + log2_ceil(d1.exponent().unsigned_abs() as usize) as Exponent,
+                        + log2_ceil_u64(d1.exponent().unsigned_abs()) as Exponent,
                 );
 
                 assert!(d1.sub(&d3, prec, RoundingMode::ToEven)?.abs()?.cmp(&eps) < 0);

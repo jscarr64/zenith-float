@@ -7635,7 +7635,16 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 13 * 3 * 6 * 13);
         println!("exp pow grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_398_075_299_501_098_093);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            4_786_055_782_914_357_510
+        } else {
+            2_398_075_299_501_098_093
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
@@ -8350,7 +8359,17 @@ mod grid_digest_tests {
         // Re-recorded for `nth_root` of a negative number with `Up`/`Down` (swapped for odd n >= 5; old value
         // 1_369_146_293_907_659_395): only the n = 5 and 7 entries of negative operands in those modes differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
-        assert_eq!(h.finish(), 2_411_520_695_892_384_189);
+        // The 64-bit golden moved with the Newton working-precision fix (old value 2_411_520_695_892_384_189):
+        // the reciprocal of the 320-bit `1/3` at p = 200, `None`, was exactly 3.0, one ulp above the
+        // correctly-truncated division result, confirmed against the exact division. On a 32-bit target the
+        // storage precision is 32-bit words, so `RoundingMode::None` computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            492_566_237_117_727_446
+        } else {
+            1_986_933_809_373_034_559
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
