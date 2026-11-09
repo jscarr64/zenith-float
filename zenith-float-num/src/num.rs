@@ -2945,28 +2945,33 @@ mod tests {
         Ok(())
     }
 
-    /// `int_as_u64` is exact on both branches, on every target: the
-    /// short-mantissa branch (`n < e`, an exact power of two or a short
-    /// integer) and the top-bits branch, including an unaligned shift that
-    /// reads across word boundaries. Each value distinguishes the shift
-    /// and the subtraction the branch computes, so a wrong `<<`, `e - n`,
-    /// or per-word `take` fails the exact assertion. `exp` only reaches
-    /// these helpers through quotients with full mantissas, so no `exp`
-    /// test covers them.
+    /// Direct coverage of the word-size-independent `int_as_u64` and its
+    /// `mantissa_bits_u64` walk. The stored mantissa is left-aligned at
+    /// the construction precision, so `bit_len()` is the storage width,
+    /// not the significant-bit count: on a 64-bit target `int_as_u64`
+    /// always takes one `mantissa_bits_u64` iteration and never the
+    /// `n < e` branch (n >= 64 >= e). The 32-bit target is where the
+    /// short-mantissa branch and the multi-word walk are exercised, so
+    /// the short cases build at p = 32 (a 32-bit stored mantissa on
+    /// i686, taking `n < e`) and the wide cases at p = 128 (two 32-bit
+    /// words on i686, so the walk reads a second word). `exp` only
+    /// reaches these helpers through quotients with full mantissas, so
+    /// no `exp` test covers them.
     #[test]
     fn int_as_u64_exact_both_branches() -> Result<(), crate::Error> {
         let p = 128;
         let rm = RoundingMode::None;
-        // Short mantissa (`n < e`): the whole mantissa shifted left by `e - n`.
-        let v = ExactNumNumber::from_word(1, p)?.ldexp(63, p, rm)?;
+        // Short mantissa (`n < e` on i686): the whole mantissa shifted
+        // left by `e - n`. 2^63 at p = 32 has n = 32, e = 64.
+        let v = ExactNumNumber::from_word(1, 32)?.ldexp(63, 32, rm)?;
         assert_eq!(v.int_as_u64()?, 1u64 << 63);
-        let v = ExactNumNumber::from_word(3, p)?.ldexp(61, p, rm)?;
+        let v = ExactNumNumber::from_word(3, 32)?.ldexp(61, 32, rm)?;
         assert_eq!(v.int_as_u64()?, 3u64 << 61);
-        let v = ExactNumNumber::from_word(1, p)?.ldexp(10, p, rm)?;
+        let v = ExactNumNumber::from_word(1, 32)?.ldexp(10, 32, rm)?;
         assert_eq!(v.int_as_u64()?, 1024);
-        // Top bits (`n >= e`), unaligned shift across word boundaries:
-        // 2^63 + 2^54 + 2^40 + 2^-10 has a 74-bit mantissa, so the top 64
-        // bits start 10 bits in.
+        // Top bits (`n >= e`): 2^63 + 2^54 + 2^40 + 2^-10. At p = 128
+        // the top 64 bits are one word on x64 and two words on i686,
+        // so the i686 walk reads a second word.
         let a = ExactNumNumber::from_word(1, p)?.ldexp(63, p, rm)?;
         let b = ExactNumNumber::from_word(1, p)?.ldexp(54, p, rm)?;
         let c = ExactNumNumber::from_word(1, p)?.ldexp(40, p, rm)?;
@@ -2980,6 +2985,16 @@ mod tests {
             .add(&b, p, rm)?
             .add(&ExactNumNumber::from_word(1, p)?, p, rm)?;
         assert_eq!(v.int_as_u64()?, (1u64 << 63) + (1u64 << 40) + 1);
+        // Unaligned top bits with an exponent past one word: 2^39 + 2^30 + 1
+        // has e = 40, so on i686 the walk starts 24 bits into a word and
+        // must take two words; a `take` that added the offset instead of
+        // subtracting it would swallow the whole count in the first word.
+        let a = ExactNumNumber::from_word(1, p)?.ldexp(39, p, rm)?;
+        let b = ExactNumNumber::from_word(1, p)?.ldexp(30, p, rm)?;
+        let v = a
+            .add(&b, p, rm)?
+            .add(&ExactNumNumber::from_word(1, p)?, p, rm)?;
+        assert_eq!(v.int_as_u64()?, (1u64 << 39) + (1u64 << 30) + 1);
         // 7.5 floors to 7; 5 is exact; fractions and zero give 0.
         let v = ExactNumNumber::from_word(15, p)?.ldexp(-1, p, rm)?;
         assert_eq!(v.int_as_u64()?, 7);
