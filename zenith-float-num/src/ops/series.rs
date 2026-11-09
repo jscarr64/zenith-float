@@ -202,7 +202,12 @@ pub(crate) fn series_run<T: PolycoeffGen>(
 fn series_niter(p: usize, m: usize) -> usize {
     let ln = log2_floor(p);
     let lln = log2_floor(ln);
-    p / (ln - lln + m - 2)
+    // `m` is an exponent magnitude; on 32-bit it can be near usize::MAX (a 64-bit
+    // exponent magnitude truncated to 32 bits), and `ln - lln + m - 2` overflows
+    // usize. Compute the denominator in u64; the result is at most p, so the
+    // cast back to usize is exact.
+    let denom = (ln - lln) as u64 + m as u64 - 2;
+    (p as u64 / denom) as usize
 }
 
 /// Estimate cost of execution for series.
@@ -434,4 +439,18 @@ fn series_horner<T: PolycoeffGen>(
     acc = acc.mul(&x_first, p, RoundingMode::None)?;
 
     add.add(&acc, p, RoundingMode::None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn series_niter_large_m_does_not_overflow() {
+        // `m` is an exponent magnitude; on 32-bit it can be near usize::MAX
+        // (a 64-bit exponent magnitude truncated to 32 bits), and
+        // `ln - lln + m - 2` overflows usize.
+        assert_eq!(series_niter(320, u32::MAX as usize), 0);
+        assert_eq!(series_niter(320, 100), 3);
+    }
 }

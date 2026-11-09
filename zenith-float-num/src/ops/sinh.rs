@@ -41,7 +41,10 @@ impl ExactNumNumber {
         x.set_inexact(false);
         x.set_sign(Sign::Pos);
 
-        let ethres = (x.exponent().unsigned_abs().max(1) as usize - 1) * 2;
+        // The exponent magnitude is up to |EXPONENT_MAX| ~ 2^62; on 32-bit,
+        // `as usize` truncates it, and the `* 2` then overflows. Keep it in u64;
+        // it is only compared against the mantissa bit length.
+        let ethres = (x.exponent().unsigned_abs().max(1) - 1) * 2;
 
         loop {
             let p_x = p_wrk + 4;
@@ -50,7 +53,7 @@ impl ExactNumNumber {
             let mut ret = if x.exponent() <= 0 {
                 Self::sinh_series(x.clone()?, p_x, RoundingMode::None)?
             } else {
-                let mut val = if ethres > x.mantissa_max_bit_len() + 2 {
+                let mut val = if ethres > (x.mantissa_max_bit_len() + 2) as u64 {
                     // e^|x| / 2 * signum(self)
 
                     x.exp(p_x, RoundingMode::None, cc)

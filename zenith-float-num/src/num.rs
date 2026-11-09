@@ -1514,10 +1514,14 @@ impl ExactNumNumber {
         let max_bits = self.mantissa_max_bit_len();
         let e = max_bits as i64 - self.e;
 
-        if e > 0 && e as usize > n && !self.is_zero() {
-            let m = e as usize - n;
+        // `e` is an exponent magnitude (up to |EXPONENT_MIN| ~ 2^62); on 32-bit,
+        // `e as usize` truncates it, silently mis-rounding subnormal values.
+        // Keep `e` and `m` in u64; `m` only reaches round_mantissa when it is
+        // below max_bits, so the `as usize` there is exact.
+        if e > 0 && e as u64 > n as u64 && !self.is_zero() {
+            let m = e as u64 - n as u64;
 
-            if m >= max_bits {
+            if m >= max_bits as u64 {
                 let is_positive = self.is_positive();
                 let msb_set = self.m.most_significant_word() & WORD_SIGNIFICANT_BIT != 0;
                 let below_half =
@@ -1528,7 +1532,7 @@ impl ExactNumNumber {
                 if rm == RoundingMode::FromZero
                     || (is_positive && rm == RoundingMode::Up)
                     || (!is_positive && rm == RoundingMode::Down)
-                    || (m == max_bits
+                    || (m == max_bits as u64
                         && ((msb_set && rm == RoundingMode::ToOdd)
                             || (rm == RoundingMode::ToEven && msb_set && below_half)))
                 {
@@ -1557,7 +1561,7 @@ impl ExactNumNumber {
                 let mut inexact = false;
 
                 let ovf = self.m.round_mantissa(
-                    m,
+                    m as usize,
                     rm,
                     self.is_positive(),
                     &mut false,
@@ -3367,7 +3371,8 @@ mod tests {
         }
 
         // special cases
-        let testset = [
+        #[cfg_attr(target_pointer_width = "32", allow(unused_mut))]
+        let mut testset = vec![
             (
                 [0, WORD_SIGNIFICANT_BIT],
                 Sign::Pos,
@@ -3467,6 +3472,14 @@ mod tests {
                 [0, WORD_SIGNIFICANT_BIT],
                 -98,
             ),
+        ];
+
+        // The six cases below round a subnormal at n = |EXPONENT_MIN| + WORD_BIT_SIZE - 1
+        // (~2^62), which cannot be represented as usize on 32-bit. They run on 64-bit
+        // only; the 32-bit analogue (a huge exponent gap with a representable n) is
+        // covered by test_round_huge_exponent_small_n.
+        #[cfg(not(target_pointer_width = "32"))]
+        testset.extend([
             (
                 [1, 1],
                 Sign::Pos,
@@ -3521,7 +3534,7 @@ mod tests {
                 [0, 2],
                 EXPONENT_MIN,
             ),
-        ];
+        ]);
         for (m1, s, e1, n, rm, m2, e2) in testset {
             //println!("{:?}", (m1, s, e1, n, rm, m2, e2));
             let d1 = ExactNumNumber::from_words(&m1, s, e1)?;
@@ -3535,6 +3548,98 @@ mod tests {
             assert_eq!(d2.exponent(), e2);
             assert!(!d1_inexact);
             assert!(d2.inexact());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_round_huge_exponent_small_n() -> Result<(), crate::Error> {
+        // Rounding a subnormal with exponent EXPONENT_MIN to a small n: e = max_bits - e
+        // is ~2^62, and `e as usize` truncates on 32-bit, silently mis-rounding
+        // (the `e as usize > n` check goes false, so the value is returned unrounded).
+        // The flush branch (m >= max_bits) applies: directed modes keep the top bit
+        // at exponent -(n - 1), the rest flush to zero.
+        for (m1, rm, m2, e2) in [
+            ([1, 1], RoundingMode::Up, [0, WORD_SIGNIFICANT_BIT], -99),
+            (
+                [1, 1],
+                RoundingMode::FromZero,
+                [0, WORD_SIGNIFICANT_BIT],
+                -99,
+            ),
+            ([1, 1], RoundingMode::Down, [0, 0], 0),
+            ([1, 1], RoundingMode::ToEven, [0, 0], 0),
+            ([1, 1], RoundingMode::ToOdd, [0, 0], 0),
+        ] {
+            let d1 = ExactNumNumber::from_words(&m1, Sign::Pos, EXPONENT_MIN)?;
+            let d2 = d1.round(100, rm)?;
+            let m2m = Mantissa::from_words(m2.len() * WORD_BIT_SIZE, &m2)?;
+            assert_eq!(d2.mantissa().digits(), m2m.digits(), "rm={:?}", rm);
+            assert_eq!(d2.exponent(), e2, "rm={:?}", rm);
+            assert!(d2.inexact(), "rm={:?}", rm);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_round_boundary_guards_noop() -> Result<(), crate::Error> {
+        // The `round` guard is `e > 0 && e > n` (e = max_bits - self.e). At the
+        // boundaries e == 0 and e == n the branch must be skipped and the value
+        // returned unchanged: e == 0 makes `e > n` false for every n, and e == n
+        // leaves m = 0, which round_mantissa treats as a no-op. A mutant flipping
+        // either `>` to `>=` must not change the result.
+        // (Values are rebuilt with from_words for each mode: round takes self by
+        // value, and ExactNumNumber::clone is off-limits to tests.)
+        // e == n, normal value: exponent 0, n = max_bits.
+        let p = 2 * WORD_BIT_SIZE;
+        for rm in [RoundingMode::None, RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down] {
+            let d1 = ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT, 0], Sign::Pos, 0)?;
+            let d2 = d1.round(p, rm)?;
+            let want = ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT, 0], Sign::Pos, 0)?;
+            assert_eq!(
+                d2.mantissa().digits(),
+                want.mantissa().digits(),
+                "rm={:?}",
+                rm
+            );
+            assert_eq!(d2.exponent(), want.exponent(), "rm={:?}", rm);
+            assert!(!d2.inexact(), "rm={:?}", rm);
+        }
+        // e == n, subnormal value (64-bit only: n = max_bits - EXPONENT_MIN ~ 2^62).
+        // The mutant enters the branch and calls update_bit_len() on the subnormal;
+        // the value must still come back unchanged.
+        #[cfg(not(target_pointer_width = "32"))]
+        {
+            let nsub = (2 * WORD_BIT_SIZE) as i64 - EXPONENT_MIN;
+            for rm in [RoundingMode::None, RoundingMode::ToEven, RoundingMode::Up] {
+                let dsub = ExactNumNumber::from_words(&[1, 1], Sign::Pos, EXPONENT_MIN)?;
+                let dsub2 = dsub.round(nsub as usize, rm)?;
+                let want = ExactNumNumber::from_words(&[1, 1], Sign::Pos, EXPONENT_MIN)?;
+                assert_eq!(
+                    dsub2.mantissa().digits(),
+                    want.mantissa().digits(),
+                    "rm={:?}",
+                    rm
+                );
+                assert_eq!(dsub2.exponent(), want.exponent(), "rm={:?}", rm);
+                assert_eq!(dsub2.inexact(), want.inexact(), "rm={:?}", rm);
+            }
+        }
+        // e == 0: exponent == max_bits, any n.
+        for rm in [RoundingMode::None, RoundingMode::ToEven, RoundingMode::Up] {
+            let d3 =
+                ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT, 0], Sign::Pos, p as Exponent)?;
+            let d4 = d3.round(1, rm)?;
+            let want =
+                ExactNumNumber::from_words(&[WORD_SIGNIFICANT_BIT, 0], Sign::Pos, p as Exponent)?;
+            assert_eq!(
+                d4.mantissa().digits(),
+                want.mantissa().digits(),
+                "rm={:?}",
+                rm
+            );
+            assert_eq!(d4.exponent(), want.exponent(), "rm={:?}", rm);
+            assert!(!d4.inexact(), "rm={:?}", rm);
         }
         Ok(())
     }
