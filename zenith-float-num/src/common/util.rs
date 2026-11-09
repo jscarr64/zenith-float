@@ -294,7 +294,7 @@ pub fn count_leading_ones(m: &[Word]) -> usize {
     ret
 }
 
-/// Round precision to word bounday.
+/// Round precision to word boundary.
 pub fn round_p(p: usize) -> usize {
     ((p.saturating_add(WORD_BIT_SIZE - 1)) / WORD_BIT_SIZE) * WORD_BIT_SIZE
 }
