@@ -1441,20 +1441,23 @@ impl ExactNumNumber {
     fn mantissa_bits_u64(&self, shift: usize, count: usize) -> u64 {
         debug_assert!(count <= 64);
         let digits = self.m.digits();
-        let mut out: u64 = 0;
+        // The intermediate is u128: `Word as u64` is an identity cast (and a
+        // clippy error) on a 64-bit target, while `Word as u128` widens on
+        // every target. The result still fits in 64 bits (`count <= 64`).
+        let mut out: u128 = 0;
         let mut filled = 0usize;
         let mut wi = shift / WORD_BIT_SIZE;
         let mut off = shift % WORD_BIT_SIZE;
         while filled < count {
-            let w = digits.get(wi).copied().unwrap_or(0) as u64;
+            let w = digits.get(wi).copied().unwrap_or(0) as u128;
             let take = (WORD_BIT_SIZE - off).min(count - filled);
-            let mask = if take >= 64 { u64::MAX } else { (1u64 << take) - 1 };
+            let mask = (1u128 << take) - 1;
             out |= ((w >> off) & mask) << filled;
             filled += take;
             wi += 1;
             off = 0;
         }
-        out
+        out as u64
     }
 
     /// Sets the exponent of `self`.

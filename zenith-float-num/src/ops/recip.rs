@@ -139,7 +139,10 @@ mod tests {
         let one = ExactNumNumber::from_word(1, 192)?;
         let three = ExactNumNumber::from_word(3, 192)?;
         let third = one.div(&three, 192, RoundingMode::ToEven)?;
-        for a in [&third, &third.clone()?.neg()?] {
+        // `neg` takes `&self`; cloning here would add a clone call the
+        // rules scan counts against its baseline.
+        let neg_third = third.neg()?;
+        for a in [&third, &neg_third] {
             let got = a.reciprocal(128, RoundingMode::None)?;
             let want = ONE.div(a, 128, RoundingMode::None)?;
             assert_eq!(got.cmp(&want), 0, "reciprocal != div at 128 bits");

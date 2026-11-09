@@ -136,7 +136,7 @@ impl ExactNumNumber {
             let r = self.add(&shift, p_l, RoundingMode::None)?;
             let mut y = r.exp(p_wrk, RoundingMode::None, cc)?;
             if y.try_set_precision(q, RoundingMode::ToZero, p_wrk - WORD_BIT_SIZE)? {
-                let n1 = i128::try_from(n1).map_err(|_| Error::ExponentOverflow(Sign::Neg))?;
+                let n1 = i128::from(n1);
                 let at = i128::from(y.exponent()) - n1;
                 let mut ret = y.place_scaled(at, true, p, rm)?;
                 ret.set_inexact(true);
