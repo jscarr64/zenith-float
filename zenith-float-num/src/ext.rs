@@ -7037,7 +7037,16 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
         println!("complex add/sub grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 18_040_698_040_155_693_760);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            7_530_666_970_578_001_097
+        } else {
+            18_040_698_040_155_693_760
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
@@ -7101,7 +7110,16 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 45_030);
-        assert_eq!(h.finish(), 8_129_670_429_050_627_241);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            9_666_328_484_995_355_115
+        } else {
+            8_129_670_429_050_627_241
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
@@ -7155,7 +7173,16 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
-        assert_eq!(h.finish(), 18_040_698_040_155_693_760);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            7_530_666_970_578_001_097
+        } else {
+            18_040_698_040_155_693_760
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
@@ -7221,7 +7248,16 @@ mod grid_digest_tests {
         println!("add/sub grid digest = {}", h.finish());
         // Differs from the digest pinned on the pre-kernel-branch code in exactly 40 results: full-precision
         // sums with a zero operand (see `full_prec_with_zero_operand_is_the_other_operand`).
-        assert_eq!(h.finish(), 8_129_670_429_050_627_241);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            9_666_328_484_995_355_115
+        } else {
+            8_129_670_429_050_627_241
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
@@ -7343,7 +7379,16 @@ mod grid_digest_tests {
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
         println!("complex mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_266_967_239_943_518_429);
+        // On a 32-bit target the storage precision is 32-bit words, so `RoundingMode::None`
+        // (which keeps the storage precision) computes at fewer bits than on a 64-bit
+        // target for precisions that are not multiples of 64; the digest pins the
+        // 32-bit result there.
+        let expected: u64 = if cfg!(target_pointer_width = "32") {
+            874_229_651_268_078_933
+        } else {
+            11_266_967_239_943_518_429
+        };
+        assert_eq!(h.finish(), expected);
         Ok(())
     }
 
