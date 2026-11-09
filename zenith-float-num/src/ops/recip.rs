@@ -34,7 +34,15 @@ impl ExactNumNumber {
         }
 
         let mut p_inc = WORD_BIT_SIZE;
-        let mut p_wrk = p + p_inc;
+        // The working precision must cover the operand: the Newton iteration
+        // stalls at a fixed point of the truncated arithmetic when the operand
+        // carries more precision than the working precision (the residual
+        // `a*x - 1` falls below the working ulp), and the result can come out
+        // one ulp off when the true reciprocal sits within that of a rounding
+        // boundary. `try_set_precision` cannot catch it: the iterate's bits
+        // look exact. (A 192-bit `1/3` at p = 128 on a 32-bit target came out
+        // as exactly 3.0, one ulp above the correctly-truncated division.)
+        let mut p_wrk = (p + p_inc).max(round_p(self.mantissa_max_bit_len()) + WORD_BIT_SIZE);
 
         loop {
             // The Newton step runs on |self|; an overflow there has the sign of `self`.
@@ -120,6 +128,24 @@ mod tests {
     use crate::common::consts::ONE;
     use crate::defs::WORD_BIT_SIZE;
     use crate::{Consts, RoundingMode};
+
+    /// Newton must see the operand exactly: a 192-bit `1/3` reciprocal at 128
+    /// bits used to come out as exactly 3.0 on a 32-bit target, one ulp above
+    /// the correctly-truncated division result. Truncating the operand to the
+    /// Newton working precision (160 bits there) moves the fixed point across
+    /// the boundary; the exact division is the reference.
+    #[test]
+    fn reciprocal_newton_keeps_operand_exact() -> Result<(), crate::Error> {
+        let one = ExactNumNumber::from_word(1, 192)?;
+        let three = ExactNumNumber::from_word(3, 192)?;
+        let third = one.div(&three, 192, RoundingMode::ToEven)?;
+        for a in [&third, &third.clone()?.neg()?] {
+            let got = a.reciprocal(128, RoundingMode::None)?;
+            let want = ONE.div(a, 128, RoundingMode::None)?;
+            assert_eq!(got.cmp(&want), 0, "reciprocal != div at 128 bits");
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_reciprocal_newton_matches_div() -> Result<(), crate::Error> {

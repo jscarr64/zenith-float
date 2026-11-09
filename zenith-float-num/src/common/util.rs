@@ -28,6 +28,24 @@ pub fn log2_ceil(mut n: usize) -> usize {
     ret + sticky
 }
 
+/// integer logarithm base 2 of a `u64`.
+///
+/// Same as [`log2_ceil`], but an `i64` exponent magnitude must not go through
+/// `usize`: past `u32` it truncates on a 32-bit target (an exponent near
+/// `EXPONENT_MAX` reads as `u32::MAX` and the ceiling drops from 62 to 32).
+pub fn log2_ceil_u64(mut n: u64) -> usize {
+    let mut ret = 0;
+    let mut sticky = 0;
+    while n > 1 {
+        if n & 1 != 0 {
+            sticky = 1;
+        }
+        ret += 1;
+        n >>= 1;
+    }
+    ret + sticky
+}
+
 /// integer logarithm base 2 of a number.
 pub fn log2_floor(mut n: usize) -> usize {
     let mut ret = 0;
@@ -712,5 +730,22 @@ mod retry_budget_tests {
                 "p = {p}: stopped at {p_wrk}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod log2_ceil_tests {
+    use super::log2_ceil_u64;
+
+    /// An exponent magnitude past `u32` must keep its ceiling: through `usize`
+    /// it would truncate and read 32 instead of 62.
+    #[test]
+    fn log2_ceil_u64_exponent_beyond_u32() {
+        assert_eq!(log2_ceil_u64((1u64 << 62) - 1), 62);
+        assert_eq!(log2_ceil_u64(u32::MAX as u64), 32);
+        assert_eq!(log2_ceil_u64(0), 0);
+        assert_eq!(log2_ceil_u64(1), 0);
+        assert_eq!(log2_ceil_u64(2), 1);
+        assert_eq!(log2_ceil_u64(3), 2);
     }
 }

@@ -1410,6 +1410,53 @@ impl ExactNumNumber {
         }
     }
 
+    /// Integer part of a number as a `u64`.
+    ///
+    /// Same contract as [`int_as_usize`](Self::int_as_usize) — `InvalidArgument`
+    /// when the integer part does not fit — but word-size independent: a 32-bit
+    /// `usize` cannot hold the integer part of a value whose exponent is above
+    /// 32, while the exponent range itself is `i64` on every target. Reads the
+    /// top bits of the mantissa directly, so it is exact whether or not the
+    /// mantissa length is a multiple of the word size.
+    pub(super) fn int_as_u64(&self) -> Result<u64, Error> {
+        if self.e <= 0 {
+            return Ok(0);
+        }
+        if self.e > 64 {
+            return Err(Error::InvalidArgument);
+        }
+        let e = self.e as usize; // 1..=64
+        let n = self.m.bit_len();
+        if n >= e {
+            // floor(self) is the top `e` bits of the mantissa.
+            Ok(self.mantissa_bits_u64(n - e, e))
+        } else {
+            // floor(self) is the whole mantissa shifted left by `e - n`.
+            Ok(self.mantissa_bits_u64(0, n) << (e - n))
+        }
+    }
+
+    /// The `count` bits of the mantissa starting at bit `shift`, as a `u64`.
+    /// Caller guarantees `count <= 64`; bits past the mantissa read as zero.
+    fn mantissa_bits_u64(&self, shift: usize, count: usize) -> u64 {
+        debug_assert!(count <= 64);
+        let digits = self.m.digits();
+        let mut out: u64 = 0;
+        let mut filled = 0usize;
+        let mut wi = shift / WORD_BIT_SIZE;
+        let mut off = shift % WORD_BIT_SIZE;
+        while filled < count {
+            let w = digits.get(wi).copied().unwrap_or(0) as u64;
+            let take = (WORD_BIT_SIZE - off).min(count - filled);
+            let mask = if take >= 64 { u64::MAX } else { (1u64 << take) - 1 };
+            out |= ((w >> off) & mask) << filled;
+            filled += take;
+            wi += 1;
+            off = 0;
+        }
+        out
+    }
+
     /// Sets the exponent of `self`.
     /// Note that if `self` is subnormal, the exponent may not change, but the mantissa will shift instead.
     /// `e` will be clamped to the range from EXPONENT_MIN to EXPONENT_MAX if it's outside of the range.
