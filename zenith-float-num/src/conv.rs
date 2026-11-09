@@ -1770,6 +1770,50 @@ mod tests {
         Ok(())
     }
 
+    #[test]
+    fn test_conv_num_huge_positive_dec_exponent_roundtrip() -> Result<(), crate::Error> {
+        // 10^1.2e18 has a decimal exponent above TEN_PWR_MAX_TO_DEC on both
+        // targets (about 1.15e18 on 64-bit, about 1.07e9 on 32-bit), so
+        // conv_to_dec must take the chunk path with n_wrk < 0 (the div
+        // branch). Replacing `<` with `==` there multiplies instead of
+        // dividing, and the decimal exponent comes back ~2.4e18.
+        // The parsed value is the truncation of 10^1.2e18 to the automatic
+        // precision, so it sits just below the power of ten: the decimal
+        // form is 0.999... * 10^1.2e18, hence first digit 9 and exponent
+        // 1200000000000000000 (not 1200000000000000001).
+        let mut cc = Consts::new()?;
+
+        let mut g = ExactNumNumber::convert_from_radix(
+            Sign::Pos,
+            &[1],
+            1_200_000_000_000_000_001,
+            Radix::Dec,
+            usize::MAX,
+            RoundingMode::None,
+            &mut cc,
+        )?;
+        let (s, d, e) = g.convert_to_radix(Radix::Dec, RoundingMode::None, &mut cc)?;
+        assert_eq!(s, Sign::Pos);
+        assert_eq!(d.first(), Some(&9));
+        assert_eq!(e, 1_200_000_000_000_000_000);
+        let mut n = ExactNumNumber::convert_from_radix(
+            s,
+            &d,
+            e,
+            Radix::Dec,
+            usize::MAX,
+            RoundingMode::None,
+            &mut cc,
+        )?;
+        if g.mantissa_max_bit_len() < n.mantissa_max_bit_len() {
+            n.set_precision(g.mantissa_max_bit_len(), RoundingMode::ToEven)?;
+        } else {
+            g.set_precision(n.mantissa_max_bit_len(), RoundingMode::ToEven)?;
+        }
+        assert!(n.cmp(&g) == 0);
+        Ok(())
+    }
+
     fn random_radix() -> Radix {
         match random::<usize>() % 4 {
             0 => Radix::Bin,
