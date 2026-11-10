@@ -90,7 +90,9 @@ impl Mag {
 
     /// `self` against `|a - b|`, decided exactly (16.S2.2). Operands within [`EXACT_GAP`] binades are subtracted
     /// exactly; otherwise the exponents decide unless the radius is within a factor 2 of the larger operand, and then
-    /// only the exact `|big| - self` and one short exact sum are formed (16.S2.3). `None` when an operand is NaN or
+    /// `|big| - self` is formed exactly (at radius exponent `e + 1` with mantissa `TOP`, as two exact halves of
+    /// `2^(e-1)`, never converting a radius above `EXPONENT_MAX`) and, when needed, one short exact sum with the
+    /// smaller operand (16.S2.3). `None` when an operand is NaN or
     /// infinite, or when zenith-float reports an exact operation inexact or returns NaN (an allocation failure).
     pub fn cmp_exact_diff(&self, a: &ExactNum, b: &ExactNum) -> Option<Ordering> {
         if not_finite(a) || not_finite(b) {
@@ -131,10 +133,12 @@ impl Mag {
             return Some(Ordering::Less);
         }
         let me = self.exp()?;
+        let e_plus_1 = e.checked_add(1)?;
         if me <= e.checked_sub(1)? {
             return Some(Ordering::Less);
         }
-        if me >= e.checked_add(2)? {
+        // me > e+1 is the same as me >= e+2 for i64 exponents (e <= EXPONENT_MAX so e+1 never overflows).
+        if me > e_plus_1 {
             return Some(Ordering::Greater);
         }
         // a - b = tb + ts with tb = ±big, ts = ±small; |a - b| = sb (a - b) where sb is the sign of tb.
@@ -142,7 +146,7 @@ impl Mag {
         let tb_pos = big_neg != a_big;
         let u_keep = a_big;
         // u = tb - sb m, kept as u = (u_pos ? +1 : -1) * ur with ur = big - m (big >= 0) or big + m (big < 0).
-        let ur = if me == e.checked_add(1)? {
+        let ur = if me == e_plus_1 {
             // self in [2^e, 2^(e+1)), possibly above EXPONENT_MAX (16.S2.1), so it is never converted here. A mantissa
             // above TOP gives self >= 2^e + 2^(e-63) > 2^e + 2^(e-129) > |a - b|.
             if self.mant()? != TOP {

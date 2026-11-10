@@ -174,20 +174,63 @@ fn s2_goldens_cmp_exact_num_rows() -> Result<(), String> {
     verdict("N", &bad)
 }
 
-// Red: the 8 opposite-sign near-EMAX rows (lines 540, 541, 546, 547, 594, 595, 600, 601; harper_s2_diff_overflow.rs) get None.
+// Expected-red exception set (CONTRACT 16.S2.2, FIXLIST ZB-34; the bug is FIXLIST ZB-35, harper_s2_diff_overflow.rs): these 8
+// opposite-sign near-EMAX D rows return None instead of Less because `a.sub_full_prec(b)` overflows (src/bridge.rs:113/117).
+// Each is matched by its row content and must still return None at its line, so the test goes red when the bug is fixed and
+// the exception is not removed. Every other D row must match the oracle.
+const D_EXPECTED_NONE: [(usize, &str); 8] = [
+    (540, "0 -ffffffffffffffff^4611686018427387839 +ffffffffffffffff^4611686018427387839 lt"),
+    (541, "8000000000000000:1 -ffffffffffffffff^4611686018427387839 +ffffffffffffffff^4611686018427387839 lt"),
+    (546, "0 -ffffffffffffffff^4611686018427387839 +1ffffffffffffffff^4611686018427387838 lt"),
+    (547, "8000000000000000:1 -ffffffffffffffff^4611686018427387839 +1ffffffffffffffff^4611686018427387838 lt"),
+    (594, "0 -1ffffffffffffffff^4611686018427387838 +ffffffffffffffff^4611686018427387839 lt"),
+    (595, "8000000000000000:1 -1ffffffffffffffff^4611686018427387838 +ffffffffffffffff^4611686018427387839 lt"),
+    (600, "0 -1ffffffffffffffff^4611686018427387838 +1ffffffffffffffff^4611686018427387838 lt"),
+    (601, "8000000000000000:1 -1ffffffffffffffff^4611686018427387838 +1ffffffffffffffff^4611686018427387838 lt"),
+];
+
 #[test]
-#[ignore = "red: CONTRACT 16.S2.2: cmp_exact_diff returns None when |a-b| exceeds zf EXPONENT_MAX (opposite-sign near-EMAX operands)"]
 fn s2_goldens_cmp_exact_diff_rows() -> Result<(), String> {
     let mut bad = Vec::new();
+    let mut hit = Vec::new();
+    let mut passed: usize = 0;
     for (line, row) in rows("D", 1028)? {
         let f: Vec<&str> = row.split(' ').collect();
         let [r, a, b, o] = f.as_slice() else {
             return Err(format!("line {}: bad D row", line));
         };
         let got = mag(r)?.cmp_exact_diff(&exact(a)?, &exact(b)?);
-        if got != ord(o)? {
-            bad.push(format!("line {}: D {} got {:?}", line, row, got));
+        match D_EXPECTED_NONE
+            .iter()
+            .find(|(_, text)| *text == row.as_str())
+        {
+            Some((at, _)) => {
+                hit.push(line);
+                if *at != line || got.is_some() {
+                    bad.push(format!("line {}: D {} is a CONTRACT 16.S2.2 / FIXLIST ZB-34 exception (listed at line {}) but got {:?}, want None: remove the exception", line, row, at, got));
+                }
+            }
+            None => {
+                if got == ord(o)? {
+                    passed = passed.checked_add(1).ok_or("D pass count overflow")?;
+                } else {
+                    bad.push(format!("line {}: D {} got {:?}", line, row, got));
+                }
+            }
         }
+    }
+    let listed: Vec<usize> = D_EXPECTED_NONE.iter().map(|(at, _)| *at).collect();
+    if hit != listed {
+        bad.push(format!(
+            "D exceptions seen at lines {:?}, listed {:?}",
+            hit, listed
+        ));
+    }
+    if passed != 1020 {
+        bad.push(format!(
+            "D rows matching the oracle: {}, want 1020 (1028 - 8 exceptions)",
+            passed
+        ));
     }
     verdict("D", &bad)
 }

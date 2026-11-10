@@ -1025,3 +1025,5 @@ mod harper_s2_wide;
 
 // Harper S2 (2026-10-29): every row of bridge_wide.txt (2048 to 100_000 bits, cosmology binades) asserted exactly.
 mod harper_s2_wide_goldens;
+// Harper S2 f3 (2026-11-05, ZB-32): the far-halves arm of cmp_far_diff, Rusty edge rows I L M N and P3 (128..1024 bits).
+mod harper_s2_far_halves;

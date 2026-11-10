@@ -26,7 +26,7 @@ fn operand(is_y: bool, negative: bool) -> Result<ExactNum, String> {
 }
 
 #[test]
-#[ignore = "red: CONTRACT 16.S2.2: cmp_exact_diff returns None when |a-b| exceeds zf EXPONENT_MAX (opposite-sign near-EMAX operands)"]
+#[ignore = "red: CONTRACT 16.S2.2: FIXLIST ZB-35: cmp_exact_diff returns None when |a-b| exceeds zf EXPONENT_MAX (opposite-sign near-EMAX operands)"]
 fn s2_diff_overflow_opposite_sign_near_emax_is_less() -> Result<(), String> {
     let one = Mag::finite(TOP, 1).map_err(|e| format!("Mag 1: {:?}", e))?;
     let zero = Mag::zero();

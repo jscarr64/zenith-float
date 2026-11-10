@@ -214,7 +214,7 @@ def fixed_x():
     out = ["nan", "+inf", "-inf", (0, 0, 0), (1, 0, 0)]
     for s in (0, 1):
         out += [xnum(s, 1, 0), xnum(s, (1 << 64) - 1, EXPONENT_MAX - 64), xnum(s, 1, EXPONENT_MIN - 1),
-                                xnum(s, (1 << 65) - 1, EXPONENT_MAX - 65), xnum(s, (1 << 64) + 1, EXPONENT_MIN - 1)]
+                xnum(s, (1 << 65) - 1, EXPONENT_MAX - 65), xnum(s, (1 << 64) + 1, EXPONENT_MIN - 1)]
     return out
 
 
