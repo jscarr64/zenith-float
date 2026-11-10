@@ -24,11 +24,7 @@ fn precision_limits_match_zf() -> Result<(), String> {
     if MIN_PRECISION != one {
         return Err(format!("MIN_PRECISION {}", MIN_PRECISION));
     }
-    let want = if usize::BITS >= 64 {
-        (1usize << 60) - 1
-    } else {
-        usize::MAX / 4 - 1
-    };
+    let want = (1usize << 60) - 1;
     if MAX_PRECISION != want {
         return Err(format!("MAX_PRECISION {} want {}", MAX_PRECISION, want));
     }
@@ -37,11 +33,7 @@ fn precision_limits_match_zf() -> Result<(), String> {
 
 #[test]
 fn constructors_accept_precisions_past_u32() -> Result<(), String> {
-    let big: Precision = if usize::BITS >= 64 {
-        1usize << 40
-    } else {
-        1usize << 28
-    };
+    let big: Precision = 1usize << 40;
     for p in [1, 53, 16384, 65536, big, MAX_PRECISION] {
         let b =
             Ball::exact(ExactNum::from(3i64), p).map_err(|e| format!("exact {}: {:?}", p, e))?;

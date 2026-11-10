@@ -8,6 +8,10 @@
     clippy::arithmetic_side_effects
 )]
 
+// P6 (Jeff, 2026-10-30): 64-bit targets only.
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("zenith-float-bound requires a 64-bit target (target_pointer_width = 64); 32-bit targets are not supported.");
+
 pub mod array;
 pub mod ball;
 pub mod enclosure;

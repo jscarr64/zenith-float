@@ -11,6 +11,7 @@ not be established.
 
 - 100% Rust, `#![forbid(unsafe_code)]`, no IEEE `f32`/`f64` in the math.
 - MSRV: Rust 1.99 (frozen pin; changes only in a release that says so).
+- 64-bit targets only (`target_pointer_width = "64"`: x86_64 and aarch64, any OS); 32-bit targets fail to compile.
 - The plan lives in [`docs/PLAN.md`](docs/PLAN.md). Contributing:
   [`CONTRIBUTING.md`](CONTRIBUTING.md). Security: [`SECURITY.md`](SECURITY.md).
 
