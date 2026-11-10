@@ -1,9 +1,9 @@
 //! Slice S6 harness rows (`src/matrix.rs`). Owned by slice S6 alone. RED: the API is a stub until the green unit lands.
 //! Goldens: tests/goldens/slices/matrix/ (its own SHA256SUMS and GENERATORS). Mutants: tools/mutants/manifest.d/matrix.txt, ids 900..=999.
 //! Golden file headers for this slice are declared here, not in tests/common/goldens.rs.
-//! CONTRACT 16.S6.0 to 16.S6.11. Oracle: exact Fraction golds from scripts/gen_matrix_goldens.py (gate file matrix_rows.txt; the heavy
+//! CONTRACT 16.S6.0 to 16.S6.12 (16.S6.12 triangular solves: rows `tri.*`). Oracle: exact Fraction golds from scripts/gen_matrix_goldens.py (gate file matrix_rows.txt; the heavy
 //! file matrix_rows_heavy.txt is replayed by the ignored heavy test when ZB_MATRIX_HEAVY points at it), plus hand rows below.
-//! COVERS: MagArray::from_mags, MagArray::get, MagArray::shape, MagArray::rank, MagArray::len, MagArray::is_empty, MagArray::as_slice, MagArray::into_parts, BallArray::add, BallArray::sub, BallArray::mid_rad, BallArray::from_mid_rad, BallVec::dot, BallVec::norm_inf, BallVec::norm_1, BallVec::norm_2_up, BallMat::matvec, BallMat::matmul, BallMat::norm_inf, BallMat::norm_1, BallMat::norm_frob_up, BallVec::add, BallVec::sub, BallMat::add, BallMat::sub
+//! COVERS: MagArray::from_mags, MagArray::get, MagArray::shape, MagArray::rank, MagArray::len, MagArray::is_empty, MagArray::as_slice, MagArray::into_parts, BallArray::add, BallArray::sub, BallArray::mid_rad, BallArray::from_mid_rad, BallVec::dot, BallVec::norm_inf, BallVec::norm_1, BallVec::norm_2_up, BallMat::matvec, BallMat::matmul, BallMat::norm_inf, BallMat::norm_1, BallMat::norm_frob_up, BallVec::add, BallVec::sub, BallMat::add, BallMat::sub, BallMat::solve_lower, BallMat::solve_upper, BallMat::solve_lower_mat, BallMat::solve_upper_mat
 
 use crate::common::goldens::golden_dir;
 use zenith_float_bound::array::{BallArray, BallMat, BallVec};
@@ -1019,3 +1019,435 @@ fn s6_ballmat_add_sub_hand_rows() -> Result<(), String> {
 
 // Harper cosmology-range rows (2026-10-29).
 mod harper_cosmo_range;
+// ---- tri.*: triangular solves (CONTRACT 16.S6.12, LA0) --------------------------------------------------------------------
+type TriSolve = fn(&BallMat, &BallVec, bool, usize) -> Result<BallVec, BoundError>;
+type TriSolveMat = fn(&BallMat, &BallMat, bool, usize) -> Result<BallMat, BoundError>;
+
+fn tri_lower(t: &BallMat, b: &BallVec, u: bool, p: usize) -> Result<BallVec, BoundError> {
+    t.solve_lower(b, u, p)
+}
+fn tri_upper(t: &BallMat, b: &BallVec, u: bool, p: usize) -> Result<BallVec, BoundError> {
+    t.solve_upper(b, u, p)
+}
+fn tri_lower_mat(t: &BallMat, b: &BallMat, u: bool, p: usize) -> Result<BallMat, BoundError> {
+    t.solve_lower_mat(b, u, p)
+}
+fn tri_upper_mat(t: &BallMat, b: &BallMat, u: bool, p: usize) -> Result<BallMat, BoundError> {
+    t.solve_upper_mat(b, u, p)
+}
+
+const TRI_VEC: [(&str, TriSolve); 2] = [("solve_lower", tri_lower), ("solve_upper", tri_upper)];
+const TRI_MAT: [(&str, TriSolveMat); 2] = [
+    ("solve_lower_mat", tri_lower_mat),
+    ("solve_upper_mat", tri_upper_mat),
+];
+
+/// The ball is exactly the integer `v` (radius 0) at `prec`.
+fn tri_want_exact(what: &str, b: &Ball, v: i64, prec: usize) -> Result<(), String> {
+    if sign_of(b.mid(), &num(v)) != 0 || !b.rad().is_zero() || b.prec() != prec {
+        return Err(format!(
+            "{what}: want exactly {v} at prec {prec}, got {b:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn tri_want_exact_all(what: &str, x: &[Ball], want: &[i64], prec: usize) -> Result<(), String> {
+    if x.len() != want.len() {
+        return Err(format!("{what}: length {} want {}", x.len(), want.len()));
+    }
+    for (i, (b, v)) in x.iter().zip(want).enumerate() {
+        tri_want_exact(&format!("{what}[{i}]"), b, *v, prec)?;
+    }
+    Ok(())
+}
+
+/// The rational `p/q` (`q > 0`) lies in `b`, decided exactly: `q·(m − r) ≤ p ≤ q·(m + r)` with full-precision zenith-float ops.
+fn tri_contains_ratio(what: &str, b: &Ball, p: i64, q: i64) -> Result<(), String> {
+    let r = b
+        .rad()
+        .to_exact_num()
+        .map_err(|e| format!("{what}: radius not finite: {e:?}"))?;
+    let lo = num(q).mul_full_prec(&b.mid().sub_full_prec(&r));
+    let hi = num(q).mul_full_prec(&b.mid().add_full_prec(&r));
+    if sign_of(&lo, &num(p)) > 0 || sign_of(&num(p), &hi) > 0 {
+        return Err(format!("{what}: {b:?} does not contain {p}/{q}"));
+    }
+    Ok(())
+}
+
+/// The radius is nonzero (non-dyadic) and at most `2^-40` (a rounding-sized enclosure at prec 53).
+fn tri_small_rad(what: &str, b: &Ball) -> Result<(), String> {
+    if b.rad().is_zero() {
+        return Err(format!(
+            "{what}: a non-dyadic quotient cannot have radius 0: {b:?}"
+        ));
+    }
+    within_slack(what, b.rad(), &pow2(-40)?)
+}
+
+fn tri_want_singular<T: core::fmt::Debug>(
+    what: &str,
+    r: Result<T, BoundError>,
+) -> Result<(), String> {
+    match r {
+        Err(BoundError::Singular {
+            detail: "singular", ..
+        }) => Ok(()),
+        other => Err(format!("{what}: want Singular \"singular\", got {other:?}")),
+    }
+}
+
+fn tri_want_b_len<T: core::fmt::Debug>(what: &str, r: Result<T, BoundError>) -> Result<(), String> {
+    match r {
+        Err(BoundError::DimensionMismatch {
+            detail: "b_len", ..
+        }) => Ok(()),
+        other => Err(format!(
+            "{what}: want DimensionMismatch \"b_len\", got {other:?}"
+        )),
+    }
+}
+
+fn tri_want_invalid<T: core::fmt::Debug>(
+    what: &str,
+    r: Result<T, BoundError>,
+) -> Result<(), String> {
+    match r {
+        Err(BoundError::InvalidArgument { .. }) => Ok(()),
+        other => Err(format!("{what}: want InvalidArgument, got {other:?}")),
+    }
+}
+
+/// A square `n x n` matrix of balls, row-major.
+fn tri_mat_balls(n: usize, balls: Vec<Ball>) -> Result<BallMat, String> {
+    ok("BallMat::from_balls", BallMat::from_balls(n, n, balls))
+}
+
+#[test]
+fn s6_tri_dyadic_exact_lower_and_upper() -> Result<(), String> {
+    // x = [1, 2, -1]; the other triangle holds 100s that must never be read (mutant 916).
+    let lower = mat(3, 3, &[2, 100, 100, 1, 4, 100, -3, 2, 8])?;
+    let x = ok(
+        "solve_lower",
+        lower.solve_lower(&vec_of(&[2, 9, -7])?, false, 53),
+    )?;
+    tri_want_exact_all("tri.lower", x.as_array().as_slice(), &[1, 2, -1], 53)?;
+    let upper = mat(3, 3, &[2, 1, -3, 100, 4, 2, 100, 100, 8])?;
+    let x = ok(
+        "solve_upper",
+        upper.solve_upper(&vec_of(&[7, 6, -8])?, false, 53),
+    )?;
+    tri_want_exact_all("tri.upper", x.as_array().as_slice(), &[1, 2, -1], 53)?;
+    // 1x1: 4·x = 2 gives exactly 1/2.
+    for (name, f) in TRI_VEC {
+        let x = ok(name, f(&mat(1, 1, &[4])?, &vec_of(&[2])?, false, 53))?;
+        let b = x.get(0).ok_or("1x1 result is empty")?;
+        if sign_of(b.mid(), &pow2(-1)?) != 0 || !b.rad().is_zero() {
+            return Err(format!("tri.1x1 {name}: want exactly 1/2, got {b:?}"));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn s6_tri_unit_diag() -> Result<(), String> {
+    // diagonal 7 is ignored with unit_diag: x = [1, 2]
+    let lower = mat(2, 2, &[7, 0, 3, 7])?;
+    let x = ok(
+        "solve_lower unit",
+        lower.solve_lower(&vec_of(&[1, 5])?, true, 53),
+    )?;
+    tri_want_exact_all("tri.lower_unit", x.as_array().as_slice(), &[1, 2], 53)?;
+    let upper = mat(2, 2, &[7, 3, 0, 7])?;
+    let x = ok(
+        "solve_upper unit",
+        upper.solve_upper(&vec_of(&[7, 2])?, true, 53),
+    )?;
+    tri_want_exact_all("tri.upper_unit", x.as_array().as_slice(), &[1, 2], 53)?;
+    // a zero diagonal is not read with unit_diag, so it is not Singular
+    for (name, f) in TRI_VEC {
+        let x = ok(
+            name,
+            f(&mat(2, 2, &[0, 0, 0, 0])?, &vec_of(&[3, 4])?, true, 53),
+        )?;
+        tri_want_exact_all(
+            &format!("tri.unit_zero_diag {name}"),
+            x.as_array().as_slice(),
+            &[3, 4],
+            53,
+        )?;
+    }
+    // unit_diag = false divides by the diagonal 2
+    for (name, f) in TRI_VEC {
+        let x = ok(
+            name,
+            f(&mat(2, 2, &[2, 0, 0, 2])?, &vec_of(&[6, 8])?, false, 53),
+        )?;
+        tri_want_exact_all(
+            &format!("tri.diag2 {name}"),
+            x.as_array().as_slice(),
+            &[3, 4],
+            53,
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn s6_tri_non_dyadic_exact_rational() -> Result<(), String> {
+    // [[3,0],[1,3]] x = [1,1]: x = [1/3, 2/9]
+    let lower = mat(2, 2, &[3, 0, 1, 3])?;
+    let x = ok(
+        "solve_lower",
+        lower.solve_lower(&vec_of(&[1, 1])?, false, 53),
+    )?;
+    let s = x.as_array().as_slice();
+    let (x0, x1) = (s.first().ok_or("x0")?, s.get(1).ok_or("x1")?);
+    tri_contains_ratio("tri.lower3 x0", x0, 1, 3)?;
+    tri_contains_ratio("tri.lower3 x1", x1, 2, 9)?;
+    tri_small_rad("tri.lower3 x0", x0)?;
+    tri_small_rad("tri.lower3 x1", x1)?;
+    // [[3,1],[0,3]] x = [1,1]: x = [2/9, 1/3]
+    let upper = mat(2, 2, &[3, 1, 0, 3])?;
+    let x = ok(
+        "solve_upper",
+        upper.solve_upper(&vec_of(&[1, 1])?, false, 53),
+    )?;
+    let s = x.as_array().as_slice();
+    let (x0, x1) = (s.first().ok_or("x0")?, s.get(1).ok_or("x1")?);
+    tri_contains_ratio("tri.upper3 x0", x0, 2, 9)?;
+    tri_contains_ratio("tri.upper3 x1", x1, 1, 3)?;
+    tri_small_rad("tri.upper3 x0", x0)?;
+    tri_small_rad("tri.upper3 x1", x1)
+}
+
+#[test]
+fn s6_tri_radii_propagate() -> Result<(), String> {
+    let one = || Mag::from_exact_num(&num(1));
+    for (name, f) in TRI_VEC {
+        // 1x1 [1]: b = 1 ± 1 gives x ∋ 0 and 2
+        let b = BallVec::from_balls(vec![ball(1, one(), 53)?]);
+        let x = ok(name, f(&mat(1, 1, &[1])?, &b, false, 53))?;
+        let x0 = x.get(0).ok_or("x0")?;
+        want_contains(&format!("tri.brad {name}"), x0, &num(0))?;
+        want_contains(&format!("tri.brad {name}"), x0, &num(2))?;
+    }
+    // lower [[1,0],[1,1]], b = [0 ± 1, 0]: x1 = -x0 must contain ±1
+    let b = BallVec::from_balls(vec![ball(0, one(), 53)?, pt(0)?]);
+    let x = ok(
+        "solve_lower",
+        mat(2, 2, &[1, 0, 1, 1])?.solve_lower(&b, false, 53),
+    )?;
+    let x1 = x.get(1).ok_or("x1")?;
+    want_contains("tri.xrad lower", x1, &num(1))?;
+    want_contains("tri.xrad lower", x1, &num(-1))?;
+    // upper [[1,1],[0,1]], b = [0, 0 ± 1]: x0 = -x1 must contain ±1
+    let b = BallVec::from_balls(vec![pt(0)?, ball(0, one(), 53)?]);
+    let x = ok(
+        "solve_upper",
+        mat(2, 2, &[1, 1, 0, 1])?.solve_upper(&b, false, 53),
+    )?;
+    let x0 = x.get(0).ok_or("x0")?;
+    want_contains("tri.xrad upper", x0, &num(1))?;
+    want_contains("tri.xrad upper", x0, &num(-1))
+}
+
+#[test]
+fn s6_tri_empty_system() -> Result<(), String> {
+    for (name, f) in TRI_VEC {
+        let x = ok(name, f(&mat(0, 0, &[])?, &vec_of(&[])?, false, 53))?;
+        if !x.is_empty() {
+            return Err(format!("tri.empty {name}: want empty, got {x:?}"));
+        }
+    }
+    for (name, f) in TRI_MAT {
+        let x = ok(name, f(&mat(0, 0, &[])?, &mat(0, 2, &[])?, false, 53))?;
+        if x.nrows() != 0 || x.ncols() != 2 {
+            return Err(format!("tri.empty {name}: want 0x2, got {x:?}"));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn s6_tri_errors_in_order() -> Result<(), String> {
+    for (name, f) in TRI_VEC {
+        let sq = mat(2, 2, &[1, 0, 0, 1])?;
+        // prec out of range, below and above
+        tri_want_invalid(
+            &format!("tri.prec0 {name}"),
+            f(&sq, &vec_of(&[1, 1])?, false, 0),
+        )?;
+        tri_want_invalid(
+            &format!("tri.precmax {name}"),
+            f(
+                &sq,
+                &vec_of(&[1, 1])?,
+                false,
+                zenith_float_bound::MAX_PRECISION
+                    .checked_add(1)
+                    .ok_or("max+1")?,
+            ),
+        )?;
+        // prec comes before shape (mutant 927)
+        tri_want_invalid(
+            &format!("tri.prec_first {name}"),
+            f(&mat(2, 3, &[1, 0, 0, 0, 1, 0])?, &vec_of(&[1])?, false, 0),
+        )?;
+        // non-square
+        want_dim_mismatch(
+            &format!("tri.nonsquare {name}"),
+            f(
+                &mat(2, 3, &[1, 0, 0, 0, 1, 0])?,
+                &vec_of(&[1, 1])?,
+                false,
+                53,
+            ),
+        )?;
+        // b too long and too short (mutant 925)
+        tri_want_b_len(
+            &format!("tri.b_long {name}"),
+            f(&sq, &vec_of(&[1, 1, 1])?, false, 53),
+        )?;
+        tri_want_b_len(
+            &format!("tri.b_short {name}"),
+            f(&sq, &vec_of(&[1])?, false, 53),
+        )?;
+        // shape comes before Singular
+        tri_want_b_len(
+            &format!("tri.b_len_before_singular {name}"),
+            f(&mat(2, 2, &[0, 0, 0, 0])?, &vec_of(&[1])?, false, 53),
+        )?;
+    }
+    for (name, f) in TRI_MAT {
+        let sq = mat(2, 2, &[1, 0, 0, 1])?;
+        tri_want_invalid(
+            &format!("tri.prec0 {name}"),
+            f(&sq, &mat(2, 1, &[1, 1])?, false, 0),
+        )?;
+        want_dim_mismatch(
+            &format!("tri.nonsquare {name}"),
+            f(
+                &mat(2, 3, &[1, 0, 0, 0, 1, 0])?,
+                &mat(2, 1, &[1, 1])?,
+                false,
+                53,
+            ),
+        )?;
+        tri_want_b_len(
+            &format!("tri.b_rows {name}"),
+            f(&sq, &mat(3, 1, &[1, 1, 1])?, false, 53),
+        )?;
+        tri_want_b_len(
+            &format!("tri.b_rows1 {name}"),
+            f(&sq, &mat(1, 2, &[1, 1])?, false, 53),
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn s6_tri_singular_diagonal() -> Result<(), String> {
+    // diagonal entry 1 (index 1) is the test ball `m ± r` (`None` = Infinity); the other diagonal is 1.
+    let rad = |r: Option<i64>| r.map_or_else(Mag::infinity, |k| Mag::from_exact_num(&num(k)));
+    let cases: [(&str, i64, Option<i64>); 4] = [
+        ("exact_zero", 0, Some(0)),
+        ("straddle", 1, Some(2)), // 1 ± 2: contains 0 but is not 0 ± 0 (mutants 920, 929)
+        ("touch", 1, Some(1)),    // 1 ± 1: |m| = r (mutant 921)
+        ("all_reals", 5, None),   // an Infinity radius contains 0
+    ];
+    for (case, m, r) in cases {
+        for (name, f) in TRI_VEC {
+            let t = tri_mat_balls(2, vec![pt(1)?, pt(0)?, pt(0)?, ball(m, rad(r), 53)?])?;
+            tri_want_singular(
+                &format!("tri.{case} {name}"),
+                f(&t, &vec_of(&[1, 1])?, false, 53),
+            )?;
+        }
+        for (name, f) in TRI_MAT {
+            let t = tri_mat_balls(2, vec![pt(1)?, pt(0)?, pt(0)?, ball(m, rad(r), 53)?])?;
+            tri_want_singular(
+                &format!("tri.{case} {name}"),
+                f(&t, &mat(2, 1, &[1, 1])?, false, 53),
+            )?;
+        }
+    }
+    // a diagonal ball that excludes 0 by a hair (2 ± 1) is solved, Ok
+    for (name, f) in TRI_VEC {
+        let t = tri_mat_balls(1, vec![ball(2, Mag::from_exact_num(&num(1)), 53)?])?;
+        let x = ok(name, f(&t, &vec_of(&[2])?, false, 53))?;
+        let x0 = x.get(0).ok_or("x0")?;
+        want_contains(&format!("tri.excl {name}"), x0, &num(1))?;
+        want_contains(&format!("tri.excl {name}"), x0, &num(2))?;
+    }
+    Ok(())
+}
+
+#[test]
+fn s6_tri_infinity_in_b_is_all_reals_ok() -> Result<(), String> {
+    // lower: b0 all reals → x0 and x1 (which reads x0) all reals
+    let b = BallVec::from_balls(vec![ball(0, Mag::infinity(), 53)?, pt(1)?]);
+    let x = ok(
+        "solve_lower Infinity b",
+        mat(2, 2, &[1, 0, 1, 1])?.solve_lower(&b, false, 53),
+    )?;
+    for (i, e) in x.as_array().as_slice().iter().enumerate() {
+        if !e.rad().is_infinity() {
+            return Err(format!("tri.inf_b lower x{i}: want all reals, got {e:?}"));
+        }
+    }
+    // upper: b1 all reals → x1 and x0 all reals
+    let b = BallVec::from_balls(vec![pt(1)?, ball(0, Mag::infinity(), 53)?]);
+    let x = ok(
+        "solve_upper Infinity b",
+        mat(2, 2, &[1, 1, 0, 1])?.solve_upper(&b, false, 53),
+    )?;
+    for (i, e) in x.as_array().as_slice().iter().enumerate() {
+        if !e.rad().is_infinity() {
+            return Err(format!("tri.inf_b upper x{i}: want all reals, got {e:?}"));
+        }
+    }
+    Ok(())
+}
+
+#[test]
+fn s6_tri_mat_matches_vec_columns() -> Result<(), String> {
+    let lower = mat(3, 3, &[3, 0, 0, 1, 3, 0, -2, 5, 7])?;
+    let upper = mat(3, 3, &[3, 1, -2, 0, 3, 5, 0, 0, 7])?;
+    // 3x2 right-hand side (k != n so a row/column mix-up shows, mutant 928)
+    let bvals = [1, 4, -2, 0, 5, 3];
+    let bm = mat(3, 2, &bvals)?;
+    let bcols: [[i64; 3]; 2] = [[1, -2, 5], [4, 0, 3]]; // the columns of bvals
+    for unit in [false, true] {
+        for ((vname, fv), (mname, _)) in TRI_VEC.into_iter().zip(TRI_MAT) {
+            // direct public calls (not the fn table) so the _mat methods are exercised by name
+            let (t, xm) = if vname == "solve_lower" {
+                (&lower, lower.solve_lower_mat(&bm, unit, 53))
+            } else {
+                (&upper, upper.solve_upper_mat(&bm, unit, 53))
+            };
+            let xm = ok(mname, xm)?;
+            if xm.nrows() != 3 || xm.ncols() != 2 {
+                return Err(format!(
+                    "tri.mat {mname}: want 3x2, got {}x{}",
+                    xm.nrows(),
+                    xm.ncols()
+                ));
+            }
+            for (j, col) in bcols.iter().enumerate() {
+                let xv = ok(vname, fv(t, &vec_of(col)?, unit, 53))?;
+                for i in 0..3 {
+                    let a = xm.get(i, j).ok_or("mat entry")?;
+                    let b = xv.get(i).ok_or("vec entry")?;
+                    if a.mid() != b.mid() || a.rad() != b.rad() || a.prec() != b.prec() {
+                        return Err(format!(
+                            "tri.mat {mname} unit={unit} ({i},{j}): {a:?} != {b:?}"
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}

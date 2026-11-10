@@ -6,6 +6,9 @@
 //! `Mag` primitives: sequential accumulation at `w = prec + ceil(log2(K + 1)) + 2`, one final rounding to `prec`, and a rounding
 //! term for every inexact step (16.S6.7, 16.S6.9).
 
+use core::cmp::Ordering;
+use core::ops::Neg;
+
 use zenith_float_num::{Error, ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
 
 use crate::array::{BallArray, BallMat, BallVec};
@@ -606,69 +609,322 @@ impl BallMat {
     }
 }
 
-/// The skeleton refusal of an LA op whose algorithm has not landed yet.
-fn not_implemented(op: &'static str) -> BoundError {
-    BoundError::Resource {
-        op,
-        detail: "not_implemented",
+/// The triangle a 16.S6.12 solve reads.
+enum Triangle {
+    Lower,
+    Upper,
+}
+
+/// "Contains 0" as the exact test `|m| ≤ r` (16.S6.12.2); an `Infinity` radius contains 0.
+fn contains_zero(b: &Ball) -> bool {
+    match b.rad().cmp_exact_num(b.mid()) {
+        Some(Ordering::Less) => false,
+        Some(Ordering::Equal | Ordering::Greater) | None => true,
     }
 }
 
+/// The 16.S6.12.2 shape checks: `self` square, then `b` with `n` entries (rows). Returns `n`.
+fn tri_shape(op: &'static str, t: &BallMat, b_rows: usize) -> BoundResult<usize> {
+    let n = t.nrows();
+    if t.ncols() != n {
+        return Err(mismatch(op, "rectangular"));
+    }
+    if b_rows != n {
+        return Err(mismatch(op, "b_len"));
+    }
+    Ok(n)
+}
+
+/// The diagonal entry `t_ii` of a row-major `n x n` matrix.
+fn diag_of<'a>(op: &'static str, t: &'a [Ball], n: usize, i: usize) -> BoundResult<&'a Ball> {
+    row_of(op, t, i, n)?
+        .get(i)
+        .ok_or_else(|| resource(op, "row out of range"))
+}
+
+/// The certified refusal of 16.S6.12.2: with `unit_diag = false`, the first diagonal ball (lowest index) that contains 0 is
+/// `Singular "singular"`.
+fn tri_diag_check(op: &'static str, t: &[Ball], n: usize, unit_diag: bool) -> BoundResult<()> {
+    if unit_diag {
+        return Ok(());
+    }
+    for i in 0..n {
+        if contains_zero(diag_of(op, t, n, i)?) {
+            return Err(BoundError::Singular {
+                op,
+                detail: "singular",
+            });
+        }
+    }
+    Ok(())
+}
+
+/// `Σ_j t_ij·x_j − b_i = −u_i` as one 16.S6.7 product entry at `w` over `k` terms: `(b_i, −1)` then the `(t_ij, x_j)` pairs.
+/// This is the 16.S6.12.3 entry `(1, b_i)`, `(−t_ij, x_j)` with every sign flipped: each R1 term and each round-to-nearest-even
+/// step is the mirror image, so the ball is exactly `−u_i`.
+fn tri_neg_numerator<'a, I>(
+    op: &'static str,
+    b_i: &'a Ball,
+    off: I,
+    k: usize,
+    w: Precision,
+) -> BoundResult<Ball>
+where
+    I: Iterator<Item = (&'a Ball, &'a Ball)>,
+{
+    let neg_one = ExactNum::from(-1i64);
+    let zero = Mag::zero();
+    let terms = core::iter::once((b_i.mid(), b_i.rad(), &neg_one, &zero))
+        .chain(off.map(|(t, x)| (t.mid(), t.rad(), x.mid(), x.rad())));
+    product_entry(op, terms, k, w)
+}
+
+/// One validated triangular system of 16.S6.12: `t` is the row-major `n x n` matrix.
+struct TriSys<'t> {
+    op: &'static str,
+    t: &'t [Ball],
+    n: usize,
+    side: Triangle,
+    unit_diag: bool,
+    prec: Precision,
+}
+
+/// Solves one column (16.S6.12.3): forward substitution for `Lower`, the mirror with `i` descending for `Upper`. `xw` holds
+/// the solutions at the working precision `w` in solve order; each is rounded outward to `prec` once into `out`, in index order.
+fn tri_column<'b, F>(
+    sys: &TriSys<'_>,
+    b_at: F,
+    xw: &mut Vec<Ball>,
+    out: &mut Vec<Ball>,
+) -> BoundResult<()>
+where
+    F: Fn(usize) -> Option<&'b Ball>,
+{
+    let TriSys {
+        op,
+        t,
+        n,
+        ref side,
+        unit_diag,
+        prec,
+    } = *sys;
+    let range = || resource(op, "index out of range");
+    let w = la_work_prec(prec, n);
+    xw.clear();
+    for s in 0..n {
+        let i = match side {
+            Triangle::Lower => s,
+            Triangle::Upper => n
+                .checked_sub(s)
+                .and_then(|v| v.checked_sub(1))
+                .ok_or_else(range)?,
+        };
+        let row = row_of(op, t, i, n)?;
+        let b_i = b_at(i).ok_or_else(range)?;
+        let k = s.checked_add(1).ok_or_else(range)?;
+        let neg_u = match side {
+            Triangle::Lower => {
+                let off = row.get(..i).ok_or_else(range)?;
+                tri_neg_numerator(op, b_i, off.iter().zip(xw.iter()), k, w)?
+            }
+            Triangle::Upper => {
+                let start = i.checked_add(1).ok_or_else(range)?;
+                let off = row.get(start..).ok_or_else(range)?;
+                tri_neg_numerator(op, b_i, off.iter().rev().zip(xw.iter()), k, w)?
+            }
+        };
+        let u = Neg::neg(neg_u);
+        let x = if unit_diag {
+            u
+        } else {
+            u.div(row.get(i).ok_or_else(range)?, w)?
+        };
+        xw.push(x);
+    }
+    match side {
+        Triangle::Lower => {
+            for x in xw.drain(..) {
+                out.push(x.mul_2exp(0, prec)?);
+            }
+        }
+        Triangle::Upper => {
+            for x in xw.drain(..).rev() {
+                out.push(x.mul_2exp(0, prec)?);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The vector form of 16.S6.12 in the error order of 16.S6.12.2.
+fn tri_solve_vec(
+    op: &'static str,
+    t: &BallMat,
+    b: &BallVec,
+    side: Triangle,
+    unit_diag: bool,
+    prec: Precision,
+) -> BoundResult<BallVec> {
+    check_prec(op, prec)?;
+    let n = tri_shape(op, t, b.len())?;
+    let mut xw = reserve(op, n)?;
+    let mut out = reserve(op, n)?;
+    let a = t.as_array().as_slice();
+    tri_diag_check(op, a, n, unit_diag)?;
+    let bs = b.as_array().as_slice();
+    let sys = TriSys {
+        op,
+        t: a,
+        n,
+        side,
+        unit_diag,
+        prec,
+    };
+    tri_column(&sys, |i| bs.get(i), &mut xw, &mut out)?;
+    Ok(BallVec::from_balls(out))
+}
+
+/// The many-RHS form of 16.S6.12: column `j` of the result is the vector form on column `j` of `b`.
+fn tri_solve_mat(
+    op: &'static str,
+    t: &BallMat,
+    b: &BallMat,
+    side: Triangle,
+    unit_diag: bool,
+    prec: Precision,
+) -> BoundResult<BallMat> {
+    check_prec(op, prec)?;
+    let n = tri_shape(op, t, b.nrows())?;
+    let k = b.ncols();
+    let count = n
+        .checked_mul(k)
+        .ok_or_else(|| resource(op, "result size overflows usize"))?;
+    let mut xw = reserve(op, n)?;
+    let mut cols: Vec<Vec<Ball>> = reserve(op, k)?;
+    for _ in 0..k {
+        cols.push(reserve(op, n)?);
+    }
+    let mut iters: Vec<std::vec::IntoIter<Ball>> = reserve(op, k)?;
+    let mut out = reserve(op, count)?;
+    let a = t.as_array().as_slice();
+    tri_diag_check(op, a, n, unit_diag)?;
+    let bs = b.as_array().as_slice();
+    let sys = TriSys {
+        op,
+        t: a,
+        n,
+        side,
+        unit_diag,
+        prec,
+    };
+    for (j, col) in cols.iter_mut().enumerate() {
+        let b_at = |i: usize| {
+            i.checked_mul(k)
+                .and_then(|p| p.checked_add(j))
+                .and_then(|p| bs.get(p))
+        };
+        tri_column(&sys, b_at, &mut xw, col)?;
+    }
+    for col in cols {
+        iters.push(col.into_iter());
+    }
+    for _ in 0..n {
+        for it in &mut iters {
+            out.push(
+                it.next()
+                    .ok_or_else(|| resource(op, "column shorter than n"))?,
+            );
+        }
+    }
+    BallMat::from_balls(n, k, out)
+}
+
 impl BallMat {
-    /// Forward substitution `T⁻¹b` on the lower triangle (CONTRACT 16.S6.12.1).
-    /// Not implemented yet: returns Resource "not_implemented".
+    /// Forward substitution: `T⁻¹b` for the lower triangle of `self` (CONTRACT 16.S6.12). Only the entries on and below the
+    /// diagonal are read; with `unit_diag` the diagonal is taken as exactly 1 and not read. Works at the 16.LA.6 precision and
+    /// rounds each entry outward to `prec` once.
     ///
     /// # Errors
-    /// `Resource` "not_implemented" (16.S6.12.2 errors once implemented).
+    /// In order (16.S6.12.2): `InvalidArgument` for a bad `prec`; `DimensionMismatch` `"rectangular"` for a non-square `self`,
+    /// `"b_len"` when `b.len() != n`; `Resource` on allocation failure; with `unit_diag = false`, `Singular` `"singular"` for
+    /// the first diagonal ball that contains 0. An `Infinity` term or overflow gives all-reals entries, `Ok`.
     pub fn solve_lower(
         &self,
-        _b: &BallVec,
-        _unit_diag: bool,
-        _prec: Precision,
+        b: &BallVec,
+        unit_diag: bool,
+        prec: Precision,
     ) -> BoundResult<BallVec> {
-        Err(not_implemented("BallMat::solve_lower"))
+        tri_solve_vec(
+            "BallMat::solve_lower",
+            self,
+            b,
+            Triangle::Lower,
+            unit_diag,
+            prec,
+        )
     }
 
-    /// Backward substitution `T⁻¹b` on the upper triangle (CONTRACT 16.S6.12.1).
-    /// Not implemented yet: returns Resource "not_implemented".
+    /// Backward substitution: `T⁻¹b` for the upper triangle of `self` (CONTRACT 16.S6.12), the mirror of
+    /// [`Self::solve_lower`] with `i` descending. Only the entries on and above the diagonal are read.
     ///
     /// # Errors
-    /// `Resource` "not_implemented" (16.S6.12.2 errors once implemented).
+    /// As [`Self::solve_lower`].
     pub fn solve_upper(
         &self,
-        _b: &BallVec,
-        _unit_diag: bool,
-        _prec: Precision,
+        b: &BallVec,
+        unit_diag: bool,
+        prec: Precision,
     ) -> BoundResult<BallVec> {
-        Err(not_implemented("BallMat::solve_upper"))
+        tri_solve_vec(
+            "BallMat::solve_upper",
+            self,
+            b,
+            Triangle::Upper,
+            unit_diag,
+            prec,
+        )
     }
 
-    /// Many-RHS forward substitution, column by column (CONTRACT 16.S6.12.1).
-    /// Not implemented yet: returns Resource "not_implemented".
+    /// Many-RHS forward substitution (CONTRACT 16.S6.12.1): column `j` of the result is [`Self::solve_lower`] on column `j`
+    /// of `b`.
     ///
     /// # Errors
-    /// `Resource` "not_implemented" (16.S6.12.2 errors once implemented).
+    /// As [`Self::solve_lower`], with `"b_len"` when `b.nrows() != n`.
     pub fn solve_lower_mat(
         &self,
-        _b: &BallMat,
-        _unit_diag: bool,
-        _prec: Precision,
+        b: &BallMat,
+        unit_diag: bool,
+        prec: Precision,
     ) -> BoundResult<BallMat> {
-        Err(not_implemented("BallMat::solve_lower_mat"))
+        tri_solve_mat(
+            "BallMat::solve_lower_mat",
+            self,
+            b,
+            Triangle::Lower,
+            unit_diag,
+            prec,
+        )
     }
 
-    /// Many-RHS backward substitution, column by column (CONTRACT 16.S6.12.1).
-    /// Not implemented yet: returns Resource "not_implemented".
+    /// Many-RHS backward substitution (CONTRACT 16.S6.12.1): column `j` of the result is [`Self::solve_upper`] on column `j`
+    /// of `b`.
     ///
     /// # Errors
-    /// `Resource` "not_implemented" (16.S6.12.2 errors once implemented).
+    /// As [`Self::solve_lower`], with `"b_len"` when `b.nrows() != n`.
     pub fn solve_upper_mat(
         &self,
-        _b: &BallMat,
-        _unit_diag: bool,
-        _prec: Precision,
+        b: &BallMat,
+        unit_diag: bool,
+        prec: Precision,
     ) -> BoundResult<BallMat> {
-        Err(not_implemented("BallMat::solve_upper_mat"))
+        tri_solve_mat(
+            "BallMat::solve_upper_mat",
+            self,
+            b,
+            Triangle::Upper,
+            unit_diag,
+            prec,
+        )
     }
 }
 

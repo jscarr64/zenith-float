@@ -20,3 +20,35 @@ src/matrix.rs:BallVec::norm_inf	914-VNINF	matrix/914-VNINF.patch	harness
 src/matrix.rs:BallVec::norm_2_up	915-N2R	matrix/915-N2R.patch	harness
 src/matrix.rs:product_entry	916-PRODEPS	matrix/916-PRODEPS.patch	harness
 src/matrix.rs:work_prec	917-GUARD0	matrix/917-GUARD0.patch	harness
+# Triangular solves (16.S6.12, LA0, Spence 2026-10-29): CONTRACT 16.S6.12.5 numbers them 916-930, but 916 and 917 were already taken
+# (PRODEPS, GUARD0) and ids sharing a number are duplicates, so they are 918-932 here, in the contract order (id = contract number + 2).
+# 918 = 16.S6.12.5 mutant 916: solve_lower reads the upper triangle (uses t_ji)
+# 919 = 16.S6.12.5 mutant 917: solve_upper iterates i ascending
+# 920 = 16.S6.12.5 mutant 918: unit_diag = true still divides by t_ii
+# 921 = 16.S6.12.5 mutant 919: unit_diag = false skips the division
+# 922 = 16.S6.12.5 mutant 920: the zero-diagonal test uses m == 0 instead of |m| <= r
+# 923 = 16.S6.12.5 mutant 921: the zero test fires on |m| < r only (misses |m| = r)
+# 924 = 16.S6.12.5 mutant 922: the numerator drops the b_i radius
+# 925 = 16.S6.12.5 mutant 923: the numerator drops the x_j radius
+# 926 = 16.S6.12.5 mutant 924: the division is u_i.mul(t_ii)
+# 927 = 16.S6.12.5 mutant 925: b.len() > n truncates instead of DimensionMismatch
+# 928 = 16.S6.12.5 mutant 926: a non-square self is accepted
+# 929 = 16.S6.12.5 mutant 927: the prec check comes after the shape check
+# 930 = 16.S6.12.5 mutant 928: the _mat form solves row j of b instead of column j
+# 931 = 16.S6.12.5 mutant 929: a straddling diagonal returns Resource instead of Singular
+# 932 = 16.S6.12.5 mutant 930: an Infinity radius in b returns Singular
+src/matrix.rs:tri_column	918-TRIUPREAD	matrix/918-TRIUPREAD.patch	harness
+src/matrix.rs:tri_column	919-TRIUPASC	matrix/919-TRIUPASC.patch	harness
+src/matrix.rs:tri_column	920-TRIUNITDIV	matrix/920-TRIUNITDIV.patch	harness
+src/matrix.rs:tri_column	921-TRINODIV	matrix/921-TRINODIV.patch	harness
+src/matrix.rs:contains_zero	922-TRIZEROEQ	matrix/922-TRIZEROEQ.patch	harness
+src/matrix.rs:contains_zero	923-TRISTRICT	matrix/923-TRISTRICT.patch	harness
+src/matrix.rs:tri_neg_numerator	924-TRIBRAD	matrix/924-TRIBRAD.patch	harness
+src/matrix.rs:tri_neg_numerator	925-TRIXRAD	matrix/925-TRIXRAD.patch	harness
+src/matrix.rs:tri_column	926-TRIMUL	matrix/926-TRIMUL.patch	harness
+src/matrix.rs:tri_shape	927-TRITRUNC	matrix/927-TRITRUNC.patch	harness
+src/matrix.rs:tri_shape	928-TRINONSQ	matrix/928-TRINONSQ.patch	harness
+src/matrix.rs:tri_solve_vec	929-TRIPRECORDER	matrix/929-TRIPRECORDER.patch	harness
+src/matrix.rs:tri_solve_mat	930-TRIMATROW	matrix/930-TRIMATROW.patch	harness
+src/matrix.rs:tri_diag_check	931-TRIRESOURCE	matrix/931-TRIRESOURCE.patch	harness
+src/matrix.rs:tri_column	932-TRIINFB	matrix/932-TRIINFB.patch	harness

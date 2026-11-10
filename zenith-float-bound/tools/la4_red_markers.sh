@@ -22,13 +22,14 @@ if [ -n "$missing" ]; then
 fi
 # Harper (2026-10-29): `red: CONTRACT <id>: ...` markers name a slice clause id 16.<SLICE>.<n> (e.g. 16.S2.1). The id must be well-formed
 # and have a `- **<id> <title>.**` entry in docs/CONTRACT.md (the form the 16.x clauses use; a prose mention is not an entry).
+# Spence (2026-10-29, LA0): sub-clause ids such as 16.S6.12.2 are accepted too, and their entry may be a nested list item (`  - **<id> ...`).
 cmarkers=$(grep -rn --include='*.rs' -F 'red: CONTRACT ' "$root/tests" 2> /dev/null)
-cbad=$(printf '%s\n' "$cmarkers" | grep -vE 'red: CONTRACT 16\.[A-Z]+[0-9]*\.[0-9]+: ' | grep -v '^$')
+cbad=$(printf '%s\n' "$cmarkers" | grep -vE 'red: CONTRACT 16\.[A-Z]+[0-9]*(\.[0-9]+)+: ' | grep -v '^$')
 if [ -n "$cbad" ]; then echo "la4_red_markers: FAIL malformed 'red: CONTRACT' marker id (want 'red: CONTRACT 16.<SLICE>.<n>: ...'):"; echo "$cbad"; exit 1; fi
 cmissing=""
-for m in $(printf '%s\n' "$cmarkers" | grep -oE 'red: CONTRACT 16\.[A-Z]+[0-9]*\.[0-9]+:' | awk '{ print $3 }' | sort -u); do
+for m in $(printf '%s\n' "$cmarkers" | grep -oE 'red: CONTRACT 16\.[A-Z]+[0-9]*(\.[0-9]+)+:' | awk '{ print $3 }' | sort -u); do
   id=${m%:}
-  grep -qE "^- \*\*${id//./\\.}[ *]" "$contract" || cmissing="$cmissing $id"
+  grep -qE "^ *- \*\*${id//./\\.}[ *]" "$contract" || cmissing="$cmissing $id"
 done
 if [ -n "$cmissing" ]; then
   for id in $cmissing; do echo "la4_red_markers: FAIL CONTRACT $id has no entry in docs/CONTRACT.md (want a '- **$id <title>.**' line):"; printf '%s\n' "$cmarkers" | grep -F "CONTRACT $id:"; done; exit 1

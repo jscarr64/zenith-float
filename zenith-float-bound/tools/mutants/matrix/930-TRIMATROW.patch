@@ -1,0 +1,14 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -730,8 +730,8 @@
+     };
+     for (j, col) in cols.iter_mut().enumerate() {
+         let b_at = |i: usize| {
+-            i.checked_mul(k)
+-                .and_then(|p| p.checked_add(j))
++            j.checked_mul(k)
++                .and_then(|p| p.checked_add(i))
+                 .and_then(|p| bs.get(p))
+         };
+         tri_column(&sys, b_at, &mut xw, col)?;
