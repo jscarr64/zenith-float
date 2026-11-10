@@ -3,7 +3,7 @@
 //! Goldens: tests/goldens/slices/lu/ (its own SHA256SUMS and GENERATORS). Mutants: tools/mutants/manifest.d/lu.txt, ids 1100..=1199.
 //! Golden file headers for this slice are declared here, not in tests/common/goldens.rs.
 //! CONTRACT 16.LA2.1 to 16.LA2.7, 16.LA1.4, 16.LA1.6, 16.LA1.7, 16.LA.2 to 16.LA.6, LA4.2. Every replay runs at the precisions
-//! {53, 113, 192} (16.LA1.7; the gold files have no prec column). The logdet replay covers all 51 rows of
+//! {53, 113, 192} (16.LA1.7; the gold files have no prec column). The logdet replay covers every gate row (the `# rows:` header) of
 //! tests/goldens/slices/cholesky/la_logdet.txt, not only cosmo_*. (LA4.2 names slice_cholesky.rs for the logdet replay;
 //! the logdet API is LA2's, so its replay lives here.)
 //! COVERS: BallMat::lu, BallMat::logdet, BallMat::solve, BallMat::solve_mat, BallLu::perm, BallLu::l, BallLu::u, BallLu::perm_sign, BallLu::det, BallLu::solve, LogDet::sign, LogDet::det, LogDet::ln_abs_det
@@ -409,8 +409,12 @@ fn logdet_row<'a>(toks: &'a [&'a str]) -> Result<LogdetRow<'a>, String> {
 fn la2_det_and_sign_enclose_every_logdet_gold_row() -> Result<(), String> {
     let text = read_gold("cholesky", "la_logdet.txt")?;
     let rows = data_rows(&text)?;
-    if rows.len() != 51 {
-        return Err(format!("want all 51 logdet rows, got {}", rows.len()));
+    let want = header_rows(&text)?;
+    if rows.len() != want {
+        return Err(format!(
+            "want all {want} logdet rows (`# rows:` header), got {}",
+            rows.len()
+        ));
     }
     for prec in PRECS {
         for toks in &rows {
