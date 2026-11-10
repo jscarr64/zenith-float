@@ -7,6 +7,10 @@ follows commented out with a leading `// `. No `mod` line, `#[path]` or Cargo ta
 not run. Held code and held tests are never counted as passing or as ported. `tools/fold_pr1_selftest.sh` rows HOLD
 and HOLDIDX check this index against the headers both ways.
 
+Rules (Jeff, 2026-11-10 15:37 addendum): before writing code, check this file first; if a held block fits the work,
+take it live, with its tests, instead of writing new code. When zenith-float 2.0 is 100% finished, every block still
+held is deleted, and this file with it; that closing step is the LAST item of RELEASE-2.0-CHECKLIST.md (6.16).
+
 To take a block live: uncomment the file whole (drop the two header lines and the leading `// `), restore its
 `mod` line, and run the crate tests. To delete one: remove its files, its `mod` line and its row here, in one commit.
 
