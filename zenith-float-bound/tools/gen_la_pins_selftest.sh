@@ -2,7 +2,7 @@
 # Self-test of the regular-gate heavy check of scripts/gen_la_goldens.py (Spence, 2026-10-24): `--check DIR --skip-heavy` never
 # recomputes heavy rows; it logs `check: heavy mode=pins` and verifies each slice's HEAVY.SHA256 by pin/sha only: every entry is a
 # strict `<64 hex>  <name>` line and the entry names are exactly the heavy files the generator defines (none missing, none stale).
-# A full `--check` (no --skip-heavy) logs `check: heavy mode=recompute`; tools/goldens_regen.sh runs it only at merge points.
+# `--check DIR` without --heavy is the same pins check (case 6); `--check DIR --heavy HDIR` logs `check: heavy mode=recompute`; tools/goldens_regen.sh runs it only at merge points.
 # Runs on a copy of scripts/ and tests/goldens/slices/ under $(zb_scratch). Needs the oracle venv and a popslot scope; run via poprun/popslot.
 # shellcheck source=tools/runlog.sh
 . "${BASH_SOURCE[0]%/*}/runlog.sh"; runlog_wrap gen_la_pins_selftest "$@"   # run log (tools/runlog.sh)
@@ -39,5 +39,12 @@ grep -v '  la_solve.txt$' "$t/lu.want" > "$s"
 ck; "$py" "$t/r/scripts/gen_la_goldens.py" --skip-heavy > "$t/out" 2>&1 || fail "write mode failed: $(tail -5 "$t/out")"
 ck; grep -q '  la_lstsq.txt$' "$s" || fail "foreign line la_lstsq.txt dropped: $(cat "$s")"
 ck; cmp -s "$t/lu.want" "$s" || fail "SHA256SUMS not merged in place: $(diff "$t/lu.want" "$s")"
-st_done gen_la_pins 13   # WANT: cases this script runs (tools/selftest_cases.sh)
+# 6. a plain `--check DIR` (no --skip-heavy, no --heavy) must be passable (Cassie, 2026-10-29: on d9cfacb it recomputed
+#    logdet.cosmo_spread.p2e100000_lowrank32 for 2877 s against the 1800 s case budget): it checks heavy rows by HEAVY.SHA256
+#    pin only; recompute needs an explicit --heavy DIR. --case-budget 30 makes a recompute fail fast (exit 5) instead of hanging.
+cp "$t/gls.orig" "$h"
+ck; "$py" "$t/r/scripts/gen_la_goldens.py" --check "$t/c6" --case-budget 30 > "$t/out" 2>&1; r=$?; [ "$r" = 0 ] || fail "plain --check exited $r: $(grep -m3 -i 'heavy\|budget' "$t/out")"
+ck; grep -qx 'check: heavy mode=pins (HEAVY.SHA256 pin/sha check only, no recompute)' "$t/out" || fail "plain --check not in pins mode: $(head -1 "$t/out")"
+ck; grep -q '^check: OK pin gls/la_gls_heavy.txt ' "$t/out" || fail "plain --check did not check the gls pin"
+st_done gen_la_pins 16   # WANT: cases this script runs (tools/selftest_cases.sh)
 echo "gen_la_pins selftest: ok"
