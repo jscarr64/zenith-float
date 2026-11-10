@@ -114,6 +114,10 @@ check_NOCYCLE() {
 }
 check_E() {
   local out
+  # Explicitly listed in [workspace] members (cargo would also auto-add the facade's path dep inside the workspace
+  # dir, so metadata alone cannot tell an explicit member from an implicit one), and a member per cargo metadata.
+  awk '/^\[workspace\]/{w=1; next} /^\[/{w=0} w && /^members[[:space:]]*=/{m=1} m && w {print} m && /\]/{exit}' "$1/Cargo.toml" \
+    | grep -qE "^[[:space:]]*(members[[:space:]]*=[[:space:]]*\[)?[[:space:]]*\"$PFX\"" || { echo "  E: $PFX not in [workspace] members"; return 1; }
   out=$(cd "$1" && cargo metadata --offline --no-deps --format-version 1 2> /dev/null) || return 1
   # Cargo ids: `path+file:///DIR#NAME@VER`, shortened to `path+file:///DIR#VER` when DIR's last part is NAME.
   printf '%s\n' "$out" | grep -qE "\"workspace_members\":\[[^]]*/$PFX#($PFX@)?[0-9]"
