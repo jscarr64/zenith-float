@@ -21,7 +21,7 @@ ck; "${fe[@]}" T="$t/logs" PATH="$t/bin" "$t/bin/bash" "$root/tools/full_gate.sh
 ck; grep -q '^failed$' "$t/logs/stripped.rc" || fail "stripped run did not finish with 'failed': $(cat "$t/stripped.out")"
 ck; grep -q '^done$' "$t/logs/stripped.rc" && fail "stripped run wrote 'done' although steps failed"
 steps=$(sed -n 's/^\([a-z0-9-]*\)=[0-9]*$/\1/p' "$t/logs/stripped.rc")
-ck; [ "$(echo "$steps" | wc -w)" -eq 29 ] || fail "stripped run reported $(echo "$steps" | wc -w) steps, want exactly 29 (bump this with every tools/full_gate.sh step): $steps"
+ck; [ "$(echo "$steps" | wc -w)" -eq 30 ] || fail "stripped run reported $(echo "$steps" | wc -w) steps, want exactly 30 (bump this with every tools/full_gate.sh step): $steps"
 for need in gen-la-guard gen-la-heavy la4-red-markers; do ck; grep -qx "$need" <<< "$steps" || fail "gate step $need missing from tools/full_gate.sh"; done
 for s in $steps; do
   ck; [ "$(rcof stripped "$s")" != 0 ] || fail "step $s PASSED with its tools missing (vacuous pass)"
