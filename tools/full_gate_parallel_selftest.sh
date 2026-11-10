@@ -9,8 +9,10 @@
 # usage: tools/full_gate_parallel_selftest.sh [GATE] [WORKDIR]
 #   GATE defaults to the full_gate.sh beside this script; WORKDIR defaults to a mktemp dir
 #   (removed on exit). Fake poprun/popslot and a fake leaf gate are generated under WORKDIR;
-#   no real gate steps run in the coordinator checks; the serial checks run the real gate's
-#   preflight and first step only, in a fixture repo, with contained poplog state and no slot.
+#   no real gate steps run in the coordinator checks; the serial checks and the leaf-order
+#   check run the real gate's preflight and selected steps only, in a fixture, with contained
+#   poplog state and no slot. On Pop, a fixture-repo poprun exercises the clean-tree check, and
+#   a brief real popslot is taken only when this process does not already hold a slot.
 #   Run on Pop (the serial checks need the gate's toolchain). Fast (minutes).
 set -u
 gate=${1:-$(cd "$(dirname "$0")" && pwd)/full_gate.sh}
@@ -20,13 +22,15 @@ mkdir -p "$W/bin" "$W/tools" "$W/troot"
 cat > "$W/bin/poprun" <<'FIXTURE_POPRUN_EOF'
 #!/usr/bin/env bash
 job=?; while [[ $# -gt 0 && $1 != -- ]]; do [[ $1 == --job ]] && job=$2; shift; done; shift
-echo "poprun: log $FAKE_STATE/fake-$job.log" >&2; : > "$FAKE_STATE/fake-$job.log"
+echo "poprun: log $FAKE_STATE/fake-$job.log" >&2
+echo "OOM guard: MemoryMax=6G MemorySwapMax=0 (own systemd --user scope popslot-1-2.scope)" >&2
+: > "$FAKE_STATE/fake-$job.log"
 exec "$@"
 FIXTURE_POPRUN_EOF
 cat > "$W/bin/popslot" <<'FIXTURE_POPSLOT_EOF'
 #!/usr/bin/env bash
 while [[ $# -gt 0 && $1 != -- ]]; do shift; done; shift
-[[ -n ${POPSLOT_HOLDER_PID:-} ]] && echo "inherited holder" >> "$FAKE_STATE/holder-leak"
+[[ -n ${POPSLOT_HOLDER_PID:-}${POPSLOT_SLOT:-}${POPSLOT_FD:-}${POPSLOT_HELD:-} ]] && echo "inherited holder=${POPSLOT_HOLDER_PID-} slot=${POPSLOT_SLOT-} fd=${POPSLOT_FD-} held=${POPSLOT_HELD-}" >> "$FAKE_STATE/holder-leak"
 exec "$@"
 FIXTURE_POPSLOT_EOF
 chmod +x "$W/bin/"*
@@ -63,18 +67,26 @@ fails=0; n=0
 ok() { n=$((n+1)); echo "ok   $n $*"; }
 bad() { n=$((n+1)); fails=$((fails+1)); echo "FAIL $n $*"; }
 grep -q zfp_main "$gate" || { echo "FAIL 0 gate has no parallel mode (ZF_GATE_PARALLEL coordinator)"; exit 1; }
-SIX='a:target-dir golden-sums arm-tests-release qemu-time-factor build-debug zero-test
+SIX='a:target-dir golden-sums arm-tests-release qemu-time-factor parallel-selftest build-debug zero-test
 b:target-dir build-nostd build-thumbv7em features-random-serde rules-scan no-clone-progress
 c:target-dir fmt clippy-x86_64 clippy-i686 audit no-intrinsics hex-32bit unsafe-scan
 release:target-dir build-release
 mpfr:target-dir mpfr-tests-build oracle-fast oracle-deep mpfr
 prepublish:target-dir prepublish'
-# case: fresh state dir, run coordinator; extra env as args
+# case: fresh state dir, run coordinator; extra env as args.
+# Fixture poplog (A1): the coordinator now refuses without a live top-level poplog. Slot-holder
+# vars from an outer poprun/popslot are unset so a gate-step run of this selftest does not
+# trip the live-holder refusal or leak a slot into the fakes. Tests that need a holder set it
+# again in "$@".
 coord() { # NAME env...
   local c=$1; shift
-  S=$W/state-$c; mkdir -p "$S/active"; : > "$S/targets"; : > "$S/logger-leak"
-  ( env FAKE_STATE="$S" T="$W/T-$c" REPO="$W" ZF_GATE_POPBIN="$W/bin" ZF_GATE_SELF="$W/fakegate" ZF_GATE_TARGET_ROOT="$W/troot" \
-      ZF_GATE_AGENT=harper ZF_GATE_JOB="job-$c" ZF_GATE_KILL_GRACE=2 FAKE_SLEEP=2 "$@" bash "$W/tools/full_gate.sh" "t$c" > "$W/out-$c" 2>&1 )
+  S=$W/state-$c; mkdir -p "$S/active" "$S/plogstate"; : > "$S/targets"; : > "$S/logger-leak"; : > "$S/plog.log"
+  ( env -u POPSLOT_HELD -u POPSLOT_HOLDER_PID -u POPSLOT_SLOT -u POPSLOT_FD -u POPSLOT_SCOPE \
+      -u POPLOG_FILE -u POPLOG_STATE_DIR -u POPLOG_PID -u POPLOG_NESTED -u POPLOG_OUTER_LOG -u POPLOG_OUTER_PID \
+      FAKE_STATE="$S" T="$W/T-$c" REPO="$W" ZF_GATE_POPBIN="$W/bin" ZF_GATE_SELF="$W/fakegate" ZF_GATE_TARGET_ROOT="$W/troot" \
+      ZF_GATE_AGENT=harper ZF_GATE_JOB="job-$c" ZF_GATE_KILL_GRACE=2 FAKE_SLEEP=2 \
+      POPLOG_FILE="$S/plog.log" POPLOG_STATE_DIR="$S/plogstate" POPLOG_NESTED=0 \
+      "$@" bash "$W/tools/full_gate.sh" "t$c" > "$W/out-$c" 2>&1 )
 }
 # leftover(): a fake leaf is still running. The `sleep 300` match is scoped to processes
 # whose cwd is under this run's workdir: poplog's heartbeat also runs `sleep 300`
@@ -98,6 +110,8 @@ grep -vq "^$W/troot/harper-job-pass/" "$S/targets" && bad "target outside run ro
 [[ ! -s $S/logger-leak ]] && ok "no inherited poplog state in leaves" || bad "logger leak: $(cat "$S/logger-leak")"
 [[ ! -e $S/holder-leak ]] && ok "no slot holder inherited" || bad "holder leaked into leaf"
 [[ $(cat "$S/max") -le 4 ]] && ok "max concurrent $(cat "$S/max") <= 4" || bad "max $(cat "$S/max")"
+grep -q 'ROLE: parallel-coordinator' "$S/plog.log" && ok "coordinator wrote ROLE into its poplog" || bad "no coordinator ROLE in poplog"
+grep -q 'RESULT: PASS' "$S/plog.log" && ok "coordinator poplog has RESULT: PASS" || bad "no coordinator RESULT in poplog"
 # 2 cap 2 with six leaves
 coord cap ZF_GATE_PARALLEL=2 "ZF_GATE_LEAVES=$SIX"; rc=$?
 [[ $rc == 0 && $(cat "$S/max") == 2 ]] && ok "6 leaves, cap 2: max concurrent exactly 2" || bad "cap: rc $rc max $(cat "$S/max" 2>/dev/null)"
@@ -121,9 +135,12 @@ coord timeout ZF_GATE_PARALLEL=4 FAKE_prepublish=sleep ZF_GATE_LEAF_TIMEOUT=5; r
 leftover && bad "processes left after timeout" || ok "no process left after timeout"
 [[ ! -e $W/troot/harper-job-timeout ]] && ok "root removed after timeout" || bad "root kept after timeout"
 # 6 cancellation
-S=$W/state-cancel; mkdir -p "$S/active"; : > "$S/targets"; : > "$S/logger-leak"
-env FAKE_STATE="$S" T="$W/T-cancel" REPO="$W" ZF_GATE_POPBIN="$W/bin" ZF_GATE_SELF="$W/fakegate" ZF_GATE_TARGET_ROOT="$W/troot" \
+S=$W/state-cancel; mkdir -p "$S/active" "$S/plogstate"; : > "$S/targets"; : > "$S/logger-leak"; : > "$S/plog.log"
+env -u POPSLOT_HELD -u POPSLOT_HOLDER_PID -u POPSLOT_SLOT -u POPSLOT_FD -u POPSLOT_SCOPE \
+  -u POPLOG_FILE -u POPLOG_STATE_DIR -u POPLOG_PID -u POPLOG_NESTED \
+  FAKE_STATE="$S" T="$W/T-cancel" REPO="$W" ZF_GATE_POPBIN="$W/bin" ZF_GATE_SELF="$W/fakegate" ZF_GATE_TARGET_ROOT="$W/troot" \
   ZF_GATE_AGENT=harper ZF_GATE_JOB=job-cancel ZF_GATE_KILL_GRACE=2 ZF_GATE_PARALLEL=2 "ZF_GATE_LEAVES=$SIX" FAKE_a=sleep FAKE_b=sleep \
+  POPLOG_FILE="$S/plog.log" POPLOG_STATE_DIR="$S/plogstate" POPLOG_NESTED=0 \
   bash "$W/tools/full_gate.sh" tcancel > "$W/out-cancel" 2>&1 &
 cp=$!; sleep 4; kill -TERM "$cp"; wait "$cp"; rc=$?
 [[ $rc == 143 ]] && ok "TERM -> exit 143" || bad "cancel exit $rc"
@@ -161,9 +178,13 @@ coord nobin ZF_GATE_PARALLEL=4 ZF_GATE_POPBIN=/nonexistent; rc=$?
 # run the gate with ZF_GATE_PARALLEL unset, like a bare `tools/full_gate.sh TAG` on Pop
 coord_unset() { # NAME env...
   local c=$1; shift
-  S=$W/state-$c; mkdir -p "$S/active"; : > "$S/targets"; : > "$S/logger-leak"
-  ( env -u ZF_GATE_PARALLEL FAKE_STATE="$S" T="$W/T-$c" REPO="$W" ZF_GATE_POPBIN="$W/bin" ZF_GATE_SELF="$W/fakegate" ZF_GATE_TARGET_ROOT="$W/troot" \
-      ZF_GATE_AGENT=harper ZF_GATE_JOB="job-$c" ZF_GATE_KILL_GRACE=2 FAKE_SLEEP=2 "$@" bash "$W/tools/full_gate.sh" "t$c" > "$W/out-$c" 2>&1 )
+  S=$W/state-$c; mkdir -p "$S/active" "$S/plogstate"; : > "$S/targets"; : > "$S/logger-leak"; : > "$S/plog.log"
+  ( env -u ZF_GATE_PARALLEL -u POPSLOT_HELD -u POPSLOT_HOLDER_PID -u POPSLOT_SLOT -u POPSLOT_FD -u POPSLOT_SCOPE \
+      -u POPLOG_FILE -u POPLOG_STATE_DIR -u POPLOG_PID -u POPLOG_NESTED \
+      FAKE_STATE="$S" T="$W/T-$c" REPO="$W" ZF_GATE_POPBIN="$W/bin" ZF_GATE_SELF="$W/fakegate" ZF_GATE_TARGET_ROOT="$W/troot" \
+      ZF_GATE_AGENT=harper ZF_GATE_JOB="job-$c" ZF_GATE_KILL_GRACE=2 FAKE_SLEEP=2 \
+      POPLOG_FILE="$S/plog.log" POPLOG_STATE_DIR="$S/plogstate" POPLOG_NESTED=0 \
+      "$@" bash "$W/tools/full_gate.sh" "t$c" > "$W/out-$c" 2>&1 )
 }
 # run the gate directly (no coordinator) with contained poplog state, for the dispatch
 # checks that must NOT enter the coordinator. POPSLOT_HELD=1 skips slot acquisition;
@@ -201,6 +222,147 @@ serial leafguard ZF_GATE_ONLY="target-dir"; rc=$?
 [[ $(ls "$S"/fake-*.log 2>/dev/null | wc -l) == 0 ]] && ok "leaf -> poprun never invoked" || bad "leafguard poprun invoked"
 grep -q 'REFUSING' "$W/out-leafguard" && bad "leaf -> coordinator refused instead of serial" || ok "leaf -> no coordinator refusal"
 grep -q '^start target-dir' "$W/T-leafguard/tleafguard.rc" && ok "leaf -> serial path ran target-dir" || bad "leafguard -> no serial target-dir step"
-# 11 leaf filter keeps canonical order and only its steps (run() with ZF_GATE_ONLY): exercised by the real-gate run
+# 11 leaf filter keeps canonical order and only its steps (run() with ZF_GATE_ONLY)
+# Use the real copied gate (not the fakegate) on the serial path with a fixture poplog.
+order() {
+  local c=order
+  S=$W/state-$c; mkdir -p "$S/active" "$S/popstate"; : > "$S/targets"; : > "$S/logger-leak"; : > "$S/poplog.log"
+  ( env -u ZF_GATE_PARALLEL FAKE_STATE="$S" T="$W/T-$c" REPO="$W" ZF_GATE_POPBIN="$W/bin" ZF_GATE_SELF="$W/fakegate" ZF_GATE_TARGET_ROOT="$W/troot" \
+      ZF_GATE_AGENT=harper ZF_GATE_JOB="job-$c" POPSLOT_HELD=1 POPLOG_FILE="$S/poplog.log" POPLOG_STATE_DIR="$S/popstate" POPLOG_OUTER_LOG= \
+      ZF_GATE_ONLY="fmt audit target-dir" bash "$W/tools/full_gate.sh" "t$c" > "$W/out-$c" 2>&1 )
+}
+order; rc=$?
+rcf=$W/T-order/torder.rc
+got=$(grep -E '^(start |[A-Za-z0-9_-]+=|done$)' "$rcf" 2>/dev/null | tr '\n' '|')
+[[ $got == start\ target-dir\ *\|target-dir=*\|start\ fmt\ *\|fmt=*\|start\ audit\ *\|audit=*\|done\| ]] \
+  && ok "leaf filter keeps canonical order (target-dir, fmt, audit) and only those steps" \
+  || bad "leaf order rc=$rc got [$got]"
+grep -q 'start build-debug' "$rcf" 2>/dev/null && bad "leaf order ran a step not in ZF_GATE_ONLY" || ok "leaf filter skipped steps not in ZF_GATE_ONLY"
+grep -q 'ROLE: parallel-leaf' "$S/poplog.log" && grep -q 'NOT A GATE: this is a parallel leaf log' "$S/poplog.log" \
+  && ok "leaf poplog is marked NOT A GATE / ROLE: parallel-leaf" \
+  || bad "leaf poplog missing evidence marker"
+
+# A1: a bare coordinator (no live poplog) is refused and launches nothing
+coord_nolog() {
+  local c=nolog
+  S=$W/state-$c; mkdir -p "$S/active"; : > "$S/targets"; : > "$S/logger-leak"
+  ( env -u POPLOG_FILE -u POPLOG_STATE_DIR -u POPLOG_PID -u POPLOG_NESTED \
+      -u POPSLOT_HELD -u POPSLOT_HOLDER_PID -u POPSLOT_SLOT -u POPSLOT_FD -u POPSLOT_SCOPE \
+      FAKE_STATE="$S" T="$W/T-$c" REPO="$W" ZF_GATE_POPBIN="$W/bin" ZF_GATE_SELF="$W/fakegate" ZF_GATE_TARGET_ROOT="$W/troot" \
+      ZF_GATE_AGENT=harper ZF_GATE_JOB="job-$c" ZF_GATE_PARALLEL=4 FAKE_SLEEP=1 \
+      bash "$W/tools/full_gate.sh" "t$c" > "$W/out-$c" 2>&1 )
+}
+coord_nolog; rc=$?
+[[ $rc == 2 && ! -s $S/targets ]] && grep -q 'no live top-level poplog' "$W/out-nolog" \
+  && ok "bare coordinator (no poplog) refused, nothing launched" || bad "nolog rc $rc targets=$(tr '\n' ' ' < "$S/targets")"
+
+# A1: a nested sub-run is refused
+coord nested POPLOG_NESTED=1; rc=$?
+[[ $rc == 2 && ! -s $S/targets ]] && grep -q 'not a nested sub-run' "$W/out-nested" \
+  && ok "coordinator inside a nested sub-run refused" || bad "nested rc $rc"
+
+# A2: a stale dead POPSLOT_HOLDER_PID/SLOT/FD (HELD unset, so the coordinator does not refuse)
+# must not be inherited by leaves
+coord staleholder ZF_GATE_PARALLEL=4 POPSLOT_HOLDER_PID=999999 POPSLOT_SLOT=3 POPSLOT_FD=99; rc=$?
+[[ $rc == 0 && ! -e $S/holder-leak ]] && ok "stale dead POPSLOT_HOLDER_PID/SLOT/FD not inherited by leaves" \
+  || bad "staleholder rc $rc leak=$(tr '\n' ' ' < "$S/holder-leak" 2>/dev/null)"
+grep -q 'REFUSING: called inside a held popslot' "$W/out-staleholder" && bad "stale dead holder refused the coordinator" || ok "stale dead holder did not refuse the coordinator"
+
+# A3: systemctl error is not treated as 'scope inactive'
+printf '#!/bin/sh\nexit 1\n' > "$W/bin/systemctl"; chmod +x "$W/bin/systemctl"
+coord syserr ZF_GATE_PARALLEL=4 PATH="$W/bin:$PATH"; rc=$?
+[[ $rc == 0 ]] && grep -q 'status-unknown (systemctl exit 1)' "$W/out-syserr" && [[ -d $W/troot/harper-job-syserr ]] \
+  && ok "systemctl error keeps the target root (fail closed)" \
+  || bad "syserr rc $rc out=$(grep -E 'KEEPING|removed' "$W/out-syserr")"
+rm -f "$W/bin/systemctl"
+# the kept root must not block later jobs; leave it (unique job name)
+
+# A4: traps are still installed when cleanup runs (trap - comes after KEEPING/removed)
+# and zfp_kill_leaf requires a recorded start time before signaling
+awk_ord=$(awk '
+  /zfp_kill_leaf\(\)/ {k=1}
+  k && /zfp_start/ {ks=1}
+  k && /kill -TERM/ {if(!ks) {print "kill-before-start-check"; exit}}
+  /^  trap - HUP INT TERM$/ {if (c==0) early=1; t=NR}
+  /KEEPING \$root/ {c=NR}
+  END {if(t==0||c==0) print "missing"; else if(early) print "trap-cleared-before-cleanup"; else print "ok"}
+' "$gate")
+[[ $awk_ord == ok ]] && ok "traps stay until after cleanup; kill guards start time" || bad "script order: $awk_ord"
+
+# A5: the selftest is a required run step of the gate, in the debug leaf, after qemu-time-factor
+grep -q '^run parallel-selftest ' "$gate" && ok "full_gate.sh has run parallel-selftest" || bad "parallel-selftest is not a run step"
+grep -A1 '^run qemu-time-factor ' "$gate" | grep -q '^run parallel-selftest ' \
+  || grep -A2 '^run qemu-time-factor ' "$gate" | grep -q '^run parallel-selftest ' \
+  && ok "parallel-selftest is after qemu-time-factor (not between build-debug and mpfr-tests-build)" \
+  || bad "parallel-selftest placement"
+grep -qE "^ZF_GATE_LEAVES_DEFAULT=.*parallel-selftest" "$gate" && ok "debug leaf lists parallel-selftest" || bad "leaves default missing parallel-selftest"
+
+# Real poprun clean-tree check and real popslot, only when the real binaries exist.
+# Clean-tree uses a fixture git repo (never the zenith-float worktree). poprun is invoked
+# with POPLOG_* unset so it is a top-level log, and without popslot (no extra slot).
+real_bin=${ZF_GATE_REAL_POPBIN:-$HOME/pop-logs/bin}
+if [[ -x $real_bin/poprun && -x $real_bin/popslot ]]; then
+  fix=$W/fixrepo
+  mkdir -p "$fix"
+  git -C "$fix" init -q
+  git -C "$fix" config user.email harper@local
+  git -C "$fix" config user.name Harper
+  printf 'fixture\n' > "$fix/README"
+  git -C "$fix" add README
+  git -C "$fix" commit -q -m "fixture"
+  fixsha=$(git -C "$fix" rev-parse HEAD)
+  jobct=zfpr34-ct-$$
+  ( env -u POPLOG_FILE -u POPLOG_STATE_DIR -u POPLOG_PID -u POPLOG_PROGRESS_FILE -u POPLOG_STEP \
+      -u POPLOG_OUTER_LOG -u POPLOG_OUTER_PID -u POPLOG_OUTER_DEPTH -u POPLOG_OUTER_START -u POPLOG_OUTER_AGENT \
+      -u POPSLOT_HELD -u POPSLOT_HOLDER_PID -u POPSLOT_SLOT -u POPSLOT_FD -u POPSLOT_SCOPE \
+      "$real_bin/poprun" --agent harper --job "$jobct" --repo "$fix" -- true > "$W/out-ct-clean" 2>&1 )
+  ctlog=$(grep -oE 'log [^ ]+\.log' "$W/out-ct-clean" | awk 'END{print $2}')
+  if [[ -n $ctlog && -f $ctlog ]] && grep -q '^RESULT: PASS' "$ctlog" && grep -q "gate-commit: $fixsha" "$ctlog"; then
+    ok "real poprun clean-tree on a clean fixture: RESULT PASS gate-commit=$fixsha"
+  else
+    bad "real poprun clean fixture: log=$ctlog out=$(tr '\n' ' ' < "$W/out-ct-clean")"
+  fi
+  printf 'dirty\n' >> "$fix/README"
+  jobdt=zfpr34-dt-$$
+  ( env -u POPLOG_FILE -u POPLOG_STATE_DIR -u POPLOG_PID -u POPLOG_PROGRESS_FILE -u POPLOG_STEP \
+      -u POPLOG_OUTER_LOG -u POPLOG_OUTER_PID -u POPLOG_OUTER_DEPTH -u POPLOG_OUTER_START -u POPLOG_OUTER_AGENT \
+      -u POPSLOT_HELD -u POPSLOT_HOLDER_PID -u POPSLOT_SLOT -u POPSLOT_FD -u POPSLOT_SCOPE \
+      "$real_bin/poprun" --agent harper --job "$jobdt" --repo "$fix" -- true > "$W/out-ct-dirty" 2>&1 ) || true
+  dtlog=$(grep -oE 'log [^ ]+\.log' "$W/out-ct-dirty" | awk 'END{print $2}')
+  if [[ -n $dtlog && -f $dtlog ]] && grep -q 'NOT A GATE (tree dirty' "$dtlog"; then
+    ok "real poprun clean-tree on a dirty fixture: NOT A GATE"
+  else
+    bad "real poprun dirty fixture: log=$dtlog"
+  fi
+  git -C "$fix" checkout -- README
+  # Real popslot: a stale dead holder must not produce SLOT REUSED. This acquires one
+  # slot briefly; skip when a slot is already held (this selftest as a gate step) so we
+  # do not wait on a fifth Harper slot during a 4-leaf gate.
+  if [[ -z ${POPSLOT_HELD:-} ]] && { [[ -z ${POPSLOT_HOLDER_PID:-} ]] || ! kill -0 "$POPSLOT_HOLDER_PID" 2>/dev/null; }; then
+    ( env -u POPSLOT_HELD -u POPSLOT_SLOT -u POPSLOT_FD -u POPSLOT_SCOPE -u POPSLOT_HOLDER_PID \
+        POPSLOT_HOLDER_PID=999999 POPSLOT_SLOT=3 \
+        "$real_bin/popslot" --agent harper -- sh -c 'echo SLOT_NOW=$POPSLOT_SLOT HOLDER_NOW=$POPSLOT_HOLDER_PID' \
+        > "$W/out-real-slot" 2>&1 )
+    if grep -q 'SLOT REUSED' "$W/out-real-slot"; then
+      bad "real popslot reused a stale dead holder: $(tr '\n' ' ' < "$W/out-real-slot")"
+    elif grep -q 'SLOT TAKEN' "$W/out-real-slot"; then
+      ok "real popslot with a stale dead holder took a fresh slot (not REUSED)"
+    else
+      bad "real popslot unexpected: $(tr '\n' ' ' < "$W/out-real-slot")"
+    fi
+  else
+    # already inside a slot: confirm the launch line unsets holder vars (static, always)
+    ok "skip real popslot acquire (a slot is already held); launch-line unset is checked below"
+  fi
+else
+  ok "skip real poprun/popslot (not on Pop or ZF_GATE_REAL_POPBIN unset)"
+  ok "skip real poprun dirty-tree (not on Pop)"
+  ok "skip real popslot acquire (not on Pop)"
+fi
+# always: the leaf launch unsets leftover holder variables
+grep -q -- '-u POPSLOT_HOLDER_PID -u POPSLOT_SLOT -u POPSLOT_FD -u POPSLOT_HELD -u POPSLOT_SCOPE' "$gate" \
+  && ok "leaf launch unsets POPSLOT_HOLDER_PID/SLOT/FD/HELD/SCOPE" \
+  || bad "leaf launch missing POPSLOT unsets"
+
 echo "selftest: $n checks, $fails failed"
 [[ $fails == 0 ]]

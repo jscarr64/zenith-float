@@ -24,7 +24,7 @@ exit 0
 SH
 printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/rustup"
 chmod +x "$tmp/bin/cargo" "$tmp/bin/rustup"
-export CARGO_TARGET_DIR="$tmp/target" POPSLOT_PREFIX="$tmp/slot" POPLOG_ROOT="$tmp/pop" T="$tmp/gate" POPLOG_AGENT=gate-selftest STEP_TIMEOUT=60s
+export CARGO_TARGET_DIR="$tmp/target" POPSLOT_PREFIX="$tmp/slot" POPLOG_ROOT="$tmp/pop" T="$tmp/gate" POPLOG_AGENT=gate-selftest STEP_TIMEOUT=60s ZF_GATE_PARALLEL=0
 # HOME points at the tmp dir so the vendored scripts/poplog.sh fallback (used by CI) is exercised.
 rc=0; HOME="$tmp" PATH="$tmp/bin:$PATH" bash "$root/tools/full_gate.sh" redtest > /dev/null 2>&1 || rc=$?
 log=$(find "$tmp/pop" -name '*.log' 2>/dev/null | head -1 || true)
