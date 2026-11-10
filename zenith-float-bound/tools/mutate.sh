@@ -115,10 +115,10 @@ while IFS=$'\t' read -r _ cid _ _; do
   [ -z "$owner" ] || { echo "mutate: FAIL $manifest: id $cid is inside the range of manifest.d/$owner (owned by slice ${owner%.txt}); move it there"; exit 1; }
 done <<< "$(grep -v -E '^[[:space:]]*(#|$)' "$manifest" || true)"
 # manifest integrity, before any mutant runs: every id exactly once, every referenced patch file present
-dups=$(printf '%s\n' "$rows" | cut -f2 | grep -v '^$' | sort | uniq -d)
+dups=$(printf '%s\n' "$rows" | cut -f2 | grep -v '^$' | sort | uniq -d) || [ $? = 1 ]   # rc 1: no rows (grep -v selected nothing); any other rc still trips the ERR trap
 if [ -n "$dups" ]; then printf 'mutate: FAIL duplicate manifest id %s\n' $dups; exit 1; fi
 # ... and every id NUMBER exactly once: suffixed ids (205-a, 205-b) must not slip past the full-id check
-ndups=$(printf '%s\n' "$rows" | cut -f2 | grep -v '^$' | sed -E 's/-.*//; s/^0+([0-9])/\1/' | sort | uniq -d)
+ndups=$(printf '%s\n' "$rows" | cut -f2 | grep -v '^$' | sed -E 's/-.*//; s/^0+([0-9])/\1/' | sort | uniq -d) || [ $? = 1 ]   # rc 1: no rows (grep -v selected nothing); any other rc still trips the ERR trap
 if [ -n "$ndups" ]; then printf 'mutate: FAIL duplicate manifest id number %s (ids sharing a number, e.g. a suffix, count as duplicates)\n' $ndups; exit 1; fi
 missing=0
 while IFS=$'\t' read -r _ mid mpatch _; do

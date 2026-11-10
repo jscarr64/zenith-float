@@ -1742,3 +1742,6 @@ fn borrowed_ops_reuse_the_same_ball() -> Result<(), String> {
     // `a` and `b` are still owned here: the by-value ops consume them last.
     want_contains("add after", &ok("add", a.add(&b, p))?, &num(7))
 }
+
+// Harper S1 (2026-10-29): arith_wide_rows.txt, 10^5 and 10^6 bits on cosmology-scale decimal inputs.
+mod harper_cosmo_wide;

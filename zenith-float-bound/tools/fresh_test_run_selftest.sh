@@ -25,6 +25,10 @@ ck; fake "$t/target/debug/deps/stale-1" 0; ftr || fail "an old binary inside CAR
 ck; fake "$t/elsewhere/other-1" 0; ftr && fail "a binary outside CARGO_TARGET_DIR was accepted"
 ck; grep -q "FOREIGN" "$t/out" || fail "foreign binary not named: $(cat "$t/out")"
 ck; fake "$t/target/debug/deps/fresh-1" 101; ftr && fail "a failing test command was accepted"
+# the failing-command path itself (Spence, 96bdd2c review): a valid in-target binary line, CMD exit 101 -> fresh_test_run exits 101 and says so.
+# Depends on pipefail at fresh_test_run.sh:29-30 (without it tee's rc 0 wins and a failing cargo test passes silently).
+ck; fake "$t/target/debug/deps/fresh-1" 101; ftr && rc=0 || rc=$?; [ "$rc" = 101 ] || fail "failing test command: want exit 101, got $rc: $(cat "$t/out")"
+ck; grep -qx "fresh_test_run: test command failed (exit 101)" "$t/out" || fail "failing test command not reported as 'test command failed (exit 101)': $(cat "$t/out")"
 ck; printf 'echo "no binaries"\n' > "$t/fake.sh"; ftr && fail "a run with no test binary was accepted"
 # target dir ownership: the first worktree to use a target dir owns it (marker file in the dir); a second worktree on it fails
 ck; [ "$(cat "$t/target/.worktree-owner" 2> /dev/null)" = "$(cd "$t/wa" && pwd -P)" ] || fail "no owner marker naming worktree wa in the target dir"
@@ -51,5 +55,5 @@ ck; [ "$(cat "$t/empty/.worktree-owner" 2> /dev/null)" = "$(cd "$t/wa" && pwd -P
 mkdir -p "$t/foreign/debug"; printf '/some/other/worktree\n' > "$t/foreign/.worktree-owner"
 ck; claim "$t/wa" "$t/foreign" && fail "--claim of a dir with a foreign marker was accepted: $(cat "$t/out")"
 ck; grep -q "SHARED" "$t/out" || fail "foreign marker not named SHARED: $(cat "$t/out")"
-st_done fresh_test_run 26   # WANT: cases this script runs (tools/selftest_cases.sh)
+st_done fresh_test_run 28   # WANT: cases this script runs (tools/selftest_cases.sh)
 echo "fresh_test_run selftest: ok"

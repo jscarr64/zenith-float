@@ -74,7 +74,7 @@ ck; grep -q '^unsafe-scan=' "$t/logs/plainnomark.rc" 2>/dev/null && fail "a step
 mk tc; mkdir -p "$t/tc/tools"; cp "$root/tools/toolchain_check.sh" "$root/tools/toolchain_check_selftest.sh" "$t/tc/tools/"; printf '[toolchain]\nchannel = "1.99"\n' > "$t/tc/rust-toolchain.toml"
 for v in 1.95.0 1.99.1; do
   mkdir -p "$t/fake-$v"; for c in rustc cargo; do printf '#!/bin/sh\necho "%s %s (x 2026-01-01)"\n' "$c" "$v" > "$t/fake-$v/$c"; chmod +x "$t/fake-$v/$c"; done
-  "${fe[@]}" GATE_STEPS=toolchain T="$t/logs" REPO="$t/tc" PATH="$t/fake-$v:$PATH" "$root/tools/full_gate.sh" "tc-$v" > /dev/null 2>&1
+  "${fe[@]}" GATE_STEPS=toolchain T="$t/logs" REPO="$t/tc" PATH="$t/fake-$v:$PATH" "$root/tools/full_gate.sh" "tc-$v" > /dev/null 2>&1 || :   # the 1.95.0 fixture fails on purpose; its rc is read from the .rc file below
 done
 ck; [ "$(rcof tc-1.95.0 toolchain)" = 1 ] || fail "toolchain step passed with rustc 1.95.0 for channel 1.99 ($(rcof tc-1.95.0 toolchain))"
 ck; grep -q 'TOOLCHAIN MISMATCH' "$t/logs/tc-1.95.0-toolchain.log" || fail "toolchain step does not name the mismatch"
@@ -188,7 +188,20 @@ ck; grep -q 'TIMEOUT' "$t/d-oom.out" && miss+="[oom: reported as TIMEOUT: $(grep
 ck; tag=mu-slicesbad; mu env FAKE_MUT=slicesbad && miss+="[slicesbad: gate exited 0] "
 ck; grep -q 'the --slices cause' "$t/logs/mu-slicesbad-mutants.log" 2>/dev/null || miss+="[slicesbad: step log lost the cause: $(cat "$t/logs/mu-slicesbad-mutants.log" 2>/dev/null)] "
 [ -z "$miss" ] || fail "mutants step did not catch: $miss"
-st_done full_gate 150   # WANT: cases this script runs (tools/selftest_cases.sh)
+# 11. the gate-selftest step under a real poplog (throwaway POPLOG_ROOT) logs no `ERR rc=` line from an expected non-zero probe (gate
+# zb-popguard-quiet-selftest, 2026-10-29: 8 such lines). Allowed: mutate.sh's deliberate `(exit "$rc")` re-raise of an unexpected suite rc
+# (its mutate_selftest INVALID fixture). The nested run's own full_gate_selftest counts this case but does not recurse.
+ck; if [ -z "${FULL_GATE_SELFTEST_INNER:-}" ]; then
+  plr="$t/nested-pop-logs"; mkdir -p "$plr" "$t/nested-logs"
+  ( for v in $(compgen -v POPLOG_) $(compgen -v RUNLOG_); do unset "$v"; done
+    FULL_GATE_SELFTEST_INNER=1 POPLOG_ROOT="$plr" RUNLOG_AGENT=selftest GATE_STEPS=gate-selftest T="$t/nested-logs" \
+      "$root/tools/full_gate.sh" nested-gate-selftest > "$t/nested.out" 2>&1 ) && nrc=0 || nrc=$?
+  nlog=$(find "$plr/selftest" -name '*-full_gate.log' 2> /dev/null | head -1)
+  [ "$nrc" = 0 ] && [ -n "$nlog" ] || fail "nested gate-selftest failed (rc $nrc, log '$nlog'): $(tail -20 "$t/nested.out")"
+  ! grep 'ERR rc=' "$nlog" | grep -v 'ERR rc=[0-9]* line=[0-9]* cmd=( exit "\$rc" ) (in .*/tools/mutate\.sh)$' \
+    || fail "expected-failure probes tripped poplog's ERR trap (lines above): $nlog"
+fi
+st_done full_gate 151   # WANT: cases this script runs (tools/selftest_cases.sh)
 # the gate's real mutation run must not inherit MUTATE_FLOOR_ZERO_OK=1 (only the selftest fixture may use a 0 floor), nor the selftest-only
 # MUTANT_TIMEOUT_S / MUTANT_BUDGET_S / MUTATE_SETUP_S / MUTATE_SH, nor any env mutate.sh reads (MUTATE_REPO MUTATE_MANIFEST MUTATE_EQUIVALENT MUTATE_FLOOR MUTATE_TIMEOUT MUTATE_BUILD_TIMEOUT MUTATE_TMP MUTATE_PERSIST), in its --all run or in its --step-timeout computation
 u='env -u MUTATE_FLOOR_ZERO_OK -u MUTANT_TIMEOUT_S -u MUTANT_BUDGET_S -u MUTATE_SETUP_S -u MUTATE_SH -u MUTATE_REPO -u MUTATE_MANIFEST -u MUTATE_EQUIVALENT -u MUTATE_FLOOR -u MUTATE_TIMEOUT -u MUTATE_BUILD_TIMEOUT -u MUTATE_TMP -u MUTATE_PERSIST tools/mutate_slice\.sh'

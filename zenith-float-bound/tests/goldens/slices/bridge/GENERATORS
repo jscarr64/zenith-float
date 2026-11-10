@@ -1,3 +1,4 @@
 # Slice S2 golden generators, one per line: `scripts/<gen>.py` (writes with --check DIR, like the central GENERATORS list in tools/goldens_regen.sh).
 scripts/gen_bridge_const_goldens.py
 scripts/gen_bridge_cmp_goldens.py
+scripts/gen_bridge_wide_goldens.py

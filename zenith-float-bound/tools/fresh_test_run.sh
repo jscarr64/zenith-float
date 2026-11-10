@@ -26,7 +26,8 @@ else
 fi
 [ "$1" = --claim ] && { echo "fresh_test_run: target dir $td belongs to worktree $wt"; exit 0; }
 out=$(mktemp "$(zb_scratch)"/zb-fresh.XXXXXX) || exit 2
-"$@" 2>&1 | tee "$out"; rc=${PIPESTATUS[0]}
+set -o pipefail   # NEEDED by the next line: without it tee's rc 0 wins and a failing CMD passes silently (runlog_wrap sets it too, tools/runlog.sh:36; local so it cannot drift)
+rc=0; "$@" 2>&1 | tee "$out" || rc=${PIPESTATUS[0]}   # pipefail (above) is what makes CMD's rc reach `||`; handled at line 40
 bad=0 n=0
 while IFS= read -r p; do
   n=$((n + 1))

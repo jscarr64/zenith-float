@@ -131,7 +131,7 @@ fn run(op: &str, prec: usize, k: i64, a: Ball, b: &Ball, bmid: &ExactNum) -> Res
     }
 }
 
-fn check_row(line: &str) -> Result<(), String> {
+pub(super) fn check_row(line: &str) -> Result<(), String> {
     let v: Vec<&str> = line.split_whitespace().collect();
     if v.len() != 25 {
         return Err(format!("{} fields", v.len()));

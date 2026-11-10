@@ -155,5 +155,5 @@ case ${1:-} in
     if [ "$frc" = 0 ]; then echo "mutate_slice: all slices ok ($ng results for $na manifest ids)"; else echo "mutate_slice: FAIL slices:$failed ($ng results for $na manifest ids)"; fi
     exit "$frc" ;;
   ''|-*) echo "usage: tools/mutate_slice.sh SLICE [ID_REGEX] | --all | --step-timeout"; exit 2 ;;
-  *) [ $# -le 2 ] || { echo "usage: tools/mutate_slice.sh SLICE [ID_REGEX] | --all | --step-timeout"; exit 2; }; one "$@"; exit $? ;;
+  *) [ $# -le 2 ] || { echo "usage: tools/mutate_slice.sh SLICE [ID_REGEX] | --all | --step-timeout"; exit 2; }; one "$@" && rc=0 || rc=$?; exit "$rc" ;;   # masked: a failing slice is a verdict, not an ERR (popguard-quiet err-quiet; mutate_selftest no-verdict probe)
 esac

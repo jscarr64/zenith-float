@@ -1,3 +1,3 @@
 # Slice S1 share of the test floors (added to ../test_floor.txt by tools/test_floor.sh). Raise it with the slice's tests.
-build-debug	49
-build-release	49
+build-debug	50
+build-release	50

@@ -16,7 +16,7 @@ printf 'a\nb\nc\n' > "$r/src/x.rs"
 printf -- '--- a/src/x.rs\n+++ b/src/x.rs\n@@ -1,3 +1,3 @@\n a\n-gone\n+B\n c\n' > "$r/tools/mutants/s/002-STALE.patch"
 printf '# c\nsrc/x.rs:f\t001-OK\ts/001-OK.patch\tharness\n' > "$r/tools/mutants/manifest.txt"
 printf 'src/x.rs:f\t002-STALE\ts/002-STALE.patch\tharness\n' > "$r/tools/mutants/manifest.d/s.txt"
-out=$("$here/mutants_apply_check.sh" "$r" 2>&1); rc=$?
+out=$("$here/mutants_apply_check.sh" "$r" 2>&1) && rc=0 || rc=$?
 [ "$rc" -ne 0 ] || fail "stale patch not flagged (rc 0): $out"
 grep -qx 'STALE 002-STALE: s/002-STALE.patch does not apply' <<<"$out" || fail "stale id not named: $out"
 ! grep -q '001-OK' <<<"$out" || fail "good patch flagged: $out"

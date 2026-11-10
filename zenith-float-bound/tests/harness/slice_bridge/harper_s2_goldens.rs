@@ -16,15 +16,23 @@ use crate::common::goldens::golden_dir;
 
 const HEADER: &str = "# zenith-float-bound S2 cmp/conversion rows, scripts/gen_bridge_cmp_goldens.py v2 (see its docstring)";
 
-/// The rows of one kind (`N`, `D`, `U` or `T`) with their 1-based line numbers; fails unless exactly `want` rows.
+/// The bridge_cmp.txt rows of one kind; see [`rows_in`].
 fn rows(kind: &str, want: usize) -> Result<Vec<(usize, String)>, String> {
-    let path = golden_dir()
-        .join("slices")
-        .join("bridge")
-        .join("bridge_cmp.txt");
+    rows_in("bridge_cmp.txt", HEADER, kind, want)
+}
+
+/// The rows of one kind (`N`, `D`, `U` or `T`) of slices/bridge/`file` with their 1-based line numbers; fails unless the
+/// first line is `header` and there are exactly `want` rows.
+pub(super) fn rows_in(
+    file: &str,
+    header: &str,
+    kind: &str,
+    want: usize,
+) -> Result<Vec<(usize, String)>, String> {
+    let path = golden_dir().join("slices").join("bridge").join(file);
     let text = std::fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))?;
-    if text.lines().next() != Some(HEADER) {
-        return Err(format!("{}: header is not {:?}", path.display(), HEADER));
+    if text.lines().next() != Some(header) {
+        return Err(format!("{}: header is not {:?}", path.display(), header));
     }
     let mut out = Vec::new();
     for (i, line) in text.lines().enumerate() {
@@ -55,7 +63,7 @@ fn flip(x: &ExactNum) -> Result<ExactNum, String> {
 }
 
 /// An ExactNum token: `nan`, `+inf`, `-inf`, `+0`, `-0` or `[+-]HEX^E` = +-HEX * 2^E.
-fn exact(tok: &str) -> Result<ExactNum, String> {
+pub(super) fn exact(tok: &str) -> Result<ExactNum, String> {
     match tok {
         "nan" => Ok(ExactNum::from(0i64).div(&ExactNum::from(0i64), 64, RoundingMode::ToEven)),
         "+inf" => Ok(ExactNum::from(1i64).div(&ExactNum::from(0i64), 64, RoundingMode::ToEven)),
@@ -110,7 +118,7 @@ fn t_value(tok: &str) -> Result<ExactNum, String> {
 }
 
 /// A Mag token: `0`, `inf` or `HEX16:E` = 0.HEX * 2^E.
-fn mag(tok: &str) -> Result<Mag, String> {
+pub(super) fn mag(tok: &str) -> Result<Mag, String> {
     match tok {
         "inf" => Ok(Mag::infinity()),
         "0" => Ok(Mag::zero()),
@@ -125,7 +133,7 @@ fn mag(tok: &str) -> Result<Mag, String> {
     }
 }
 
-fn ord(tok: &str) -> Result<Option<Ordering>, String> {
+pub(super) fn ord(tok: &str) -> Result<Option<Ordering>, String> {
     match tok {
         "lt" => Ok(Some(Ordering::Less)),
         "eq" => Ok(Some(Ordering::Equal)),
@@ -136,7 +144,7 @@ fn ord(tok: &str) -> Result<Option<Ordering>, String> {
 }
 
 /// Collects mismatches (every row is checked) and fails naming the first few.
-fn verdict(kind: &str, bad: &[String]) -> Result<(), String> {
+pub(super) fn verdict(kind: &str, bad: &[String]) -> Result<(), String> {
     if bad.is_empty() {
         Ok(())
     } else {

@@ -1019,3 +1019,9 @@ mod harper_s2_goldens;
 
 // Harper S2 red (2026-10-29): cmp_exact_diff None when |a - b| leaves zf range (16.S2.2).
 mod harper_s2_diff_overflow;
+
+/// Harper S2 rows above 1028 bits at the zf edges.
+mod harper_s2_wide;
+
+// Harper S2 (2026-10-29): every row of bridge_wide.txt (2048 to 100_000 bits, cosmology binades) asserted exactly.
+mod harper_s2_wide_goldens;

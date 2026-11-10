@@ -1016,3 +1016,6 @@ fn s6_ballmat_add_sub_hand_rows() -> Result<(), String> {
     let d = ok("BallMat::sub Infinity", inf()?.sub(&w, 53))?;
     want_all_reals_first_only("BallMat::sub", d.as_array().as_slice())
 }
+
+// Harper cosmology-range rows (2026-10-29).
+mod harper_cosmo_range;

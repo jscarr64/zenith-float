@@ -25,13 +25,13 @@ root="$t/r"; d="$root/tests/goldens/slices/x"; mkdir -p "$d"; printf 'gen_x.py\n
 stub="$t/stubpy"; printf '#!/bin/sh\ntouch "%s/ran"\n' "$t" > "$stub"; chmod +x "$stub"
 gr() { GOLDENS_ROOT="$root" GOLDENS_PYTHON="$stub" RUNLOG_PLAIN=1 RUNLOG_SELFTEST=1 "$@" "$here/goldens_regen.sh" --slices-only --regen 2>&1; }   # --regen: python runs every call (an unchanged key would skip it, mode=cached)
 inscope() { local u="popslot-zbselftest-$$-$RANDOM.scope"; POPSLOT_SCOPE=$u systemd-run --user --scope -q --collect "--unit=$u" -p MemoryMax=256M -p MemorySwapMax=0 -- "$@"; }
-ck; rm -f "$t/ran"; out=$(gr env -u POPSLOT_SCOPE); rc=$?; [ "$rc" = 3 ] || fail "bare goldens_regen: want exit 3, got $rc: $out"
+ck; rm -f "$t/ran"; out=$(gr env -u POPSLOT_SCOPE) && rc=0 || rc=$?; [ "$rc" = 3 ] || fail "bare goldens_regen: want exit 3, got $rc: $out"
 ck; printf '%s\n' "$out" | grep -q "REFUSING.*goldens_regen.*popslot" || fail "bare goldens_regen: unclear refusal: $out"
 ck; [ ! -e "$t/ran" ] || fail "bare goldens_regen still started a generator"
-ck; out=$(gr env POPSLOT_SCOPE=popslot-forged.scope); rc=$?; [ "$rc" = 3 ] || fail "forged POPSLOT_SCOPE accepted (rc $rc): $out"
+ck; out=$(gr env POPSLOT_SCOPE=popslot-forged.scope) && rc=0 || rc=$?; [ "$rc" = 3 ] || fail "forged POPSLOT_SCOPE accepted (rc $rc): $out"
 ck; rm -f "$t/ran"; out=$(gr inscope env); rc=$?; [ "$rc" = 0 ] && [ -e "$t/ran" ] || fail "goldens_regen inside a popslot scope did not run (rc $rc): $out"
 # a scope named popslot-*.scope but without a memory cap is refused (popguard.sh checks the scope's memory.max)
-ck; rm -f "$t/ran"; u="popslot-zbnocap-$$-$RANDOM.scope"; out=$(gr env POPSLOT_SCOPE=$u systemd-run --user --scope -q --collect "--unit=$u" -p MemorySwapMax=0 -- env); rc=$?
+ck; rm -f "$t/ran"; u="popslot-zbnocap-$$-$RANDOM.scope"; out=$(gr env POPSLOT_SCOPE=$u systemd-run --user --scope -q --collect "--unit=$u" -p MemorySwapMax=0 -- env) && rc=0 || rc=$?
   [ "$rc" = 3 ] && [ ! -e "$t/ran" ] || fail "uncapped popslot-*.scope accepted (rc $rc): $out"
 # POPGUARD pointing nowhere must not switch the guard off (Spence, 2026-10-24): sandbox HOMEs simulate the two hosts.
 hpg="$t/hpg"; mkdir -p "$hpg/pop-logs/bin"; cp "$PG" "$hpg/pop-logs/bin/popguard.sh"; chmod +x "$hpg/pop-logs/bin/popguard.sh"   # Pop
@@ -41,11 +41,11 @@ hno="$t/hno"; mkdir -p "$hno/.local"                                            
 [ -x "$HOME/team-env/oracle-2026-10-30/bin/python" ] || fail "team env $HOME/team-env/oracle-2026-10-30 missing: cannot build the no-guard host stand-in"
 ln -s "$HOME/team-env" "$hno/team-env"
 sbx() { HOME="$1" ZB_SCRATCH="$t/scr" "${@:2}"; }; mkdir -p "$t/scr"
-ck; rm -f "$t/ran"; out=$(gr sbx "$hpg" env -u POPSLOT_SCOPE POPGUARD="$t/none"); rc=$?
+ck; rm -f "$t/ran"; out=$(gr sbx "$hpg" env -u POPSLOT_SCOPE POPGUARD="$t/none") && rc=0 || rc=$?
   [ "$rc" = 2 ] && [ ! -e "$t/ran" ] && printf '%s\n' "$out" | grep -q "REFUSING.*POPGUARD" || fail "Pop host, POPGUARD=/nonexistent: goldens_regen must refuse exit 2 (rc $rc): $out"
 ck; rm -f "$t/ran"; out=$(gr sbx "$hno" env -u POPSLOT_SCOPE -u POPGUARD); rc=$?
   [ "$rc" = 0 ] && [ -e "$t/ran" ] && printf '%s\n' "$out" | grep -q "WARNING.*popguard" || fail "no popguard.sh host: goldens_regen must WARN and run (rc $rc): $out"
-ck; out=$(cd "$repo" && sbx "$hpg" env -u POPSLOT_SCOPE POPGUARD="$t/none" PYTHONNOUSERSITE=1 /usr/bin/python3 scripts/goldlib.py --selftest 2>&1); rc=$?
+ck; out=$(cd "$repo" && sbx "$hpg" env -u POPSLOT_SCOPE POPGUARD="$t/none" PYTHONNOUSERSITE=1 /usr/bin/python3 scripts/goldlib.py --selftest 2>&1) && rc=0 || rc=$?
   [ "$rc" = 2 ] && printf '%s\n' "$out" | grep -q "REFUSING.*POPGUARD" || fail "Pop host, POPGUARD=/nonexistent: goldlib must refuse exit 2 (rc $rc): $out"
 ck; out=$(cd "$repo" && sbx "$hno" env -u POPSLOT_SCOPE -u POPGUARD PYTHONNOUSERSITE=1 "$hno/team-env/oracle-2026-10-30/bin/python" scripts/goldlib.py --selftest 2>&1); rc=$?
   [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q "^goldlib: WARNING: no popguard.sh on this host ($hno/pop-logs/bin/popguard.sh): running WITHOUT the Pop memory guard$" \
@@ -54,12 +54,22 @@ ck; out=$(cd "$repo" && sbx "$hno" env -u POPSLOT_SCOPE -u POPGUARD PYTHONNOUSER
 st() { ( unset POPLOG_FILE POPLOG_PID POPLOG_STATE_DIR POPLOG_PROGRESS_FILE POPLOG_RUNNING RUNLOG_INNER RUNLOG_ACTIVE
          RUNLOG_PLAIN=1 RUNLOG_SELFTEST=1 "$@" "$here/popguard_selftest.sh" 2>&1 ); }
 mkdir -p "$t/hpop/pop-logs/bin"   # Pop, but popguard.sh gone
-ck; out=$(st sbx "$t/hpop" env -u POPGUARD); rc=$?; [ "$rc" != 0 ] && printf '%s\n' "$out" | grep -q "SELFTEST FAIL.*refusing to skip" || fail "selftest on Pop without popguard.sh skipped with rc $rc: $out"
-ck; out=$(st env POPGUARD="$t/none"); rc=$?; [ "$rc" != 0 ] || fail "selftest with POPGUARD=/nonexistent skipped with rc 0: $out"
+ck; out=$(st sbx "$t/hpop" env -u POPGUARD) && rc=0 || rc=$?; [ "$rc" != 0 ] && printf '%s\n' "$out" | grep -q "SELFTEST FAIL.*refusing to skip" || fail "selftest on Pop without popguard.sh skipped with rc $rc: $out"
+ck; out=$(st env POPGUARD="$t/none") && rc=0 || rc=$?; [ "$rc" != 0 ] || fail "selftest with POPGUARD=/nonexistent skipped with rc 0: $out"
 ck; out=$(st sbx "$hno" env -u POPGUARD); rc=$?; [ "$rc" = 0 ] && printf '%s\n' "$out" | grep -q skipped || fail "selftest off Pop should skip (rc $rc): $out"
-ck; out=$(cd "$repo" && env -u POPSLOT_SCOPE PYTHONNOUSERSITE=1 /usr/bin/python3 scripts/goldlib.py --selftest 2>&1); rc=$?
+ck; out=$(cd "$repo" && env -u POPSLOT_SCOPE PYTHONNOUSERSITE=1 /usr/bin/python3 scripts/goldlib.py --selftest 2>&1) && rc=0 || rc=$?
   [ "$rc" = 3 ] && printf '%s\n' "$out" | grep -q REFUSING || fail "bare goldlib import: want popguard refusal exit 3, got $rc: $out"
-ck; out=$(cd "$repo" && inscope env PYTHONNOUSERSITE=1 /usr/bin/python3 scripts/goldlib.py --selftest 2>&1); rc=$?
+ck; out=$(cd "$repo" && inscope env PYTHONNOUSERSITE=1 /usr/bin/python3 scripts/goldlib.py --selftest 2>&1) && rc=0 || rc=$?
   printf '%s\n' "$out" | grep -q REFUSING && fail "goldlib refused inside a popslot scope: $out"
+# a full run under a real poplog (throwaway POPLOG_ROOT): expected-failure probes must not trip poplog's ERR trap (2026-10-29 gate
+# zb-cosmo-t2 logged 9 spurious "ERR rc=" lines from this script). The inner run counts this case but does not recurse.
+ck; if [ -z "${POPGUARD_SELFTEST_INNER:-}" ]; then
+  plr="$t/pop-logs"; mkdir -p "$plr"
+  out=$( ( for v in $(compgen -v POPLOG_) RUNLOG_INNER RUNLOG_ACTIVE RUNLOG_PLAIN RUNLOG_SELFTEST; do unset "$v"; done
+           POPGUARD_SELFTEST_INNER=1 POPLOG_ROOT="$plr" RUNLOG_AGENT=selftest "$here/popguard_selftest.sh" 2>&1 ) ) && rc=0 || rc=$?
+  log=$(find "$plr/selftest" -name '*-popguard_selftest.log' 2> /dev/null | head -1)
+  [ "$rc" = 0 ] && [ -n "$log" ] || fail "selftest under a real poplog failed (rc $rc, log '${log}'): $out"
+  ! grep 'ERR rc=' "$log" || fail "expected-failure probes tripped poplog's ERR trap (lines above): $log"
+fi
 echo "popguard selftest: ok"
-st_done popguard 15   # WANT: cases this script runs (tools/selftest_cases.sh)
+st_done popguard 16   # WANT: cases this script runs (tools/selftest_cases.sh)
