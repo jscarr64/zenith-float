@@ -13,7 +13,7 @@ use zenith_float_num::{Consts, ExactNum, Exponent, RoundingMode, WORD_BIT_SIZE};
 
 pub const PRECISIONS: [usize; 11] = [24, 53, 64, 65, 100, 113, 127, 128, 130, 200, 255];
 
-/// zenith-bound P14: the 256- and 512-bit sets every unary kernel is also swept at (all six modes, so `Up` and
+/// zenith-float-bound P14: the 256- and 512-bit sets every unary kernel is also swept at (all six modes, so `Up` and
 /// `Down` included), exact cases too.
 pub const P14_PRECISIONS: [usize; 2] = [256, 512];
 

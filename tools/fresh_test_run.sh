@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One target dir per worktree (Paul, 2026-10-23; ported from zenith-bound 9791ccc). A gate run uses its own
+# One target dir per worktree (Paul, 2026-10-23; ported from zenith-float-bound 9791ccc). A gate run uses its own
 # CARGO_TARGET_DIR (/tmp/target-<agent>-<worktree>) and runs only test binaries built inside it.
 # usage: tools/fresh_test_run.sh --claim
 #          CARGO_TARGET_DIR must be set and the cwd inside a git worktree; the first worktree to use the dir is

@@ -1,5 +1,5 @@
 //! `leading_bit_exponent`, `top_u64_mantissa_and_sticky`, `from_mag_parts` and `pow2` (the prerequisites P1 to P3 of
-//! zenith-bound) over the whole exponent range, subnormals included, and widths from one word to 313 words
+//! zenith-float-bound) over the whole exponent range, subnormals included, and widths from one word to 313 words
 //! (20 000 bits). The oracle is exact integer arithmetic (`rug::Integer`) on the words of the operand, and MPFR
 //! (`Float`) for the powers of two that MPFR can hold.
 

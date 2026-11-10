@@ -4,7 +4,7 @@
 
 Implementation inventory baseline: `origin/main` at `8c7f9729a47bd1af86381f408f648aa7c6cf5d7a`, inspected for this docs update. No whole-library release gate on one exact SHA is established here. Zero verified items does not mean 66 failed tests or 66 missing implementations.
 
-The bound layer is integral to zenith-float 2.0: one library, one version, one release checklist, and one release gate. The legacy `zenith-bound` repository is a historical code source only, not a source of current status, versions, or a separate release/dependency pair. Integration work in P3/P4 is still part of this library's release.
+The bound layer is integral to zenith-float 2.0: one library, one version, one release checklist, and one release gate. The legacy standalone bound-layer repository (history now imported under `zenith-float-bound/`) is a historical code source only, not a source of current status, versions, or a separate release/dependency pair. Integration work in P3/P4 is still part of this library's release.
 
 Status keys:
 - **MERGED / UNVERIFIED**: implementation is present at the pinned baseline, but whole-library release evidence is missing.
@@ -77,7 +77,7 @@ For 2.2, retain the constants/documentation review scope: exponent and precision
 
 ## P3 - bound layers L0a..L4 of zenith-float 2.0 on the frozen API (build: Spence; harness: Harper)
 
-Historical code/design sources: `/tmp/zb-stageb/docs/{PLAN,CONTRACT,TEST_PLAN,REPLAN-2026-10-16,SPLIT-STAGE-B-PROPOSAL}.md` and the legacy `zenith-bound` repository. These locate source material only. Neither a legacy main tip nor its gate is a status source for this release. The baseline workspace has no integrated bound member; P3 implementations must be integrated and gated within zenith-float 2.0, not released as another library.
+Historical code/design sources: `/tmp/zb-stageb/docs/{PLAN,CONTRACT,TEST_PLAN,REPLAN-2026-10-16,SPLIT-STAGE-B-PROPOSAL}.md` and the legacy standalone bound-layer repository. These locate source material only. Neither a legacy main tip nor its gate is a status source for this release. The baseline workspace has no integrated bound member; P3 implementations must be integrated and gated within zenith-float 2.0, not released as another library.
 
 | # | Layer | Status | Pass criterion | Evidence |
 |---|---|---|---|---|

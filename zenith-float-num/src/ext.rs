@@ -1792,7 +1792,7 @@ impl ExactNum {
         Some(((norm >> 64) as u64, sticky, exp))
     }
 
-    /// The exact number `0.mant * 2^exp = mant * 2^(exp - 64)` (positive), the `Mag` convention of zenith-bound:
+    /// The exact number `0.mant * 2^exp = mant * 2^(exp - 64)` (positive), the `Mag` convention of zenith-float-bound:
     /// `mant` in `[2^63, 2^64)` gives a value in `[2^(exp - 1), 2^exp)`, as `exponent()` reads it. Any nonzero
     /// `mant` is accepted; `mant == 0` gives positive zero whatever `exp` is. The result has the precision `p`
     /// (rounded up to the word size, at least 64 bits) and is never rounded.

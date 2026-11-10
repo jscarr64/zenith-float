@@ -249,7 +249,7 @@ fn exact_bit_hypot_wide_spread() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// zenith-bound P14: `add_full_prec` and `sub_full_prec` never round. The result equals the exact MPFR sum or
+/// zenith-float-bound P14: `add_full_prec` and `sub_full_prec` never round. The result equals the exact MPFR sum or
 /// difference (computed wide enough to be exact) bit for bit, and `inexact()` is false.
 #[test]
 fn add_sub_full_prec_are_exact() -> Result<(), Box<dyn std::error::Error>> {

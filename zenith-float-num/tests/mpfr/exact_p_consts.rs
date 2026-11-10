@@ -73,7 +73,7 @@ fn consts_round_at_exactly_p_bits() -> Res {
     Ok(())
 }
 
-/// `from_mag_parts` is an exact constructor (zenith-bound P1 to P3): it never rounds, stores the word-rounded
+/// `from_mag_parts` is an exact constructor (zenith-float-bound P1 to P3): it never rounds, stores the word-rounded
 /// precision, puts the grid at `2^(EXPONENT_MIN - word_p)`, and its value round-trips exactly against MPFR.
 #[test]
 fn from_mag_parts_keeps_its_exact_contract() -> Res {
