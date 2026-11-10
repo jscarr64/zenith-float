@@ -1,16 +1,20 @@
 [package]
 name = "zenith-float-bound"
-version = "0.0.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 rust-version = "1.99"
-license = "MIT OR Apache-2.0"
-description = "Guaranteed-bounds (ball arithmetic) on zenith-float. Pre-release: nothing is guaranteed yet."
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Bound layer (ball arithmetic) of zenith-float 2.0, re-exported as zenith_float::bound. Pre-release: nothing is guaranteed yet."
+# Part of the one zenith-float 2.0 library, reached through the facade's `bound` feature; never released on its own.
 publish = false
 
 [dependencies]
-# zenith-float pin: zf main 627fedd (2026-10-25; contains rusty/zf-r14 0c242b8: R14 RawParts op_inexact, Consts::get_exact_prec, as_raw_parts/from_raw_parts; and zf-r13 829f112: R13 directed div/reciprocal/hypot, div_exact; i64 Exponent). Pinned by rev, not branch.
-# ExactNum lives in zenith-float-num. No std feature: zb does not need it. No other dependency is allowed.
-zenith-float-num = { git = "https://github.com/jscarr64/zenith-float", rev = "627fedd11d5176a4299b0972e5aa723019e6377d", default-features = false }
+# Intra-library dependency: path only (Jeff 2026-11-10 3:28 PM CT; no crates.io pin, git rev or version key).
+# ExactNum lives in zenith-float-num. No std feature: the bound layer does not need it. No other dependency is allowed.
+zenith-float-num = { path = "../zenith-float-num", default-features = false }
 
 # Applies to every target (lib, tests/, benches/, examples/): Jeff's rules hold in test code too.
 [lints.rust]

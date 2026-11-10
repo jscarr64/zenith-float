@@ -3,6 +3,7 @@ members = [
     "zenith-float-num",
     "zenith-float-macro",
     "zenith-float-compare",
+    "zenith-float-bound",
 ]
 exclude = ["nostd-tests"]
 resolver = "2"
@@ -32,6 +33,7 @@ exclude = [
     "zenith-float-num",
     "zenith-float-macro",
     "zenith-float-compare",
+    "zenith-float-bound",
     "scripts",
     "golds",
     "nostd-tests",
@@ -44,6 +46,8 @@ categories = ["mathematics", "no-std", "science"]
 [dependencies]
 zenith-float-num = { path = "zenith-float-num", version = "2.0.0", default-features = false }
 zenith-float-macro = { path = "zenith-float-macro", version = "2.0.0" }
+# Bound layer (ball arithmetic), part of this library; path only, re-exported as `zenith_float::bound`.
+zenith-float-bound = { path = "zenith-float-bound", optional = true }
 
 # hex_golds prints golds with std I/O; a --no-default-features build skips it.
 [[bin]]
@@ -52,8 +56,10 @@ path = "src/bin/hex_golds.rs"
 required-features = ["std"]
 
 [features]
-default = ["std"]
+default = ["std", "bound"]
 std = ["zenith-float-num/std"]
+# The bound layer needs std today (it is not no_std); --no-default-features leaves it out.
+bound = ["std", "dep:zenith-float-bound"]
 random = ["zenith-float-num/random"]
 serde = ["std", "zenith-float-num/serde"]
 # Optional MPFR golden tests (Linux x86_64; enable with --features mpfr-tests).

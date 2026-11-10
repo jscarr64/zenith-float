@@ -1266,7 +1266,15 @@ name = "zenith-float"
 version = "2.0.0"
 dependencies = [
  "trybuild",
+ "zenith-float-bound",
  "zenith-float-macro",
+ "zenith-float-num",
+]
+
+[[package]]
+name = "zenith-float-bound"
+version = "2.0.0"
+dependencies = [
  "zenith-float-num",
 ]
 

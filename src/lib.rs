@@ -327,6 +327,12 @@ pub use zenith_float_macro::{cexpr, exact, expr, fbig};
 
 pub use zenith_float_num::*;
 
+/// The bound layer (ball arithmetic with `Mag` radii: `Mag`, `Ball`, `CBall`, containers, matrices, enclosures).
+/// Its `Ball` is `zenith_float::bound::ball::Ball`; `zenith_float::Ball` stays the zenith-float-num ball.
+/// On by default; needs `std`.
+#[cfg(feature = "bound")]
+pub use zenith_float_bound as bound;
+
 #[cfg(test)]
 mod facade_smoke_tests {
     use crate::{ExactNum, RoundingMode};
