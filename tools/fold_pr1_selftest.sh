@@ -68,7 +68,8 @@ check_B() {
 }
 check_P() {
   local c last commits
-  commits=$(git rev-list "$BASE..$1" "^$ZB_TIP" 2> /dev/null) || return 1
+  # First-parent only: the second parents of the import and topic-tip merges are imported zb history, kept as is.
+  commits=$(git rev-list --first-parent "$BASE..$1" 2> /dev/null) || return 1
   [ -n "$commits" ] || return 1
   for c in $commits; do
     last=$(git log -1 --format=%B "$c" | sed '/^[[:space:]]*$/d' | tail -n 1)
@@ -114,7 +115,8 @@ check_NOCYCLE() {
 check_E() {
   local out
   out=$(cd "$1" && cargo metadata --offline --no-deps --format-version 1 2> /dev/null) || return 1
-  printf '%s\n' "$out" | grep -qE "\"workspace_members\":\[[^]]*#$PFX@"
+  # Cargo ids: `path+file:///DIR#NAME@VER`, shortened to `path+file:///DIR#VER` when DIR's last part is NAME.
+  printf '%s\n' "$out" | grep -qE "\"workspace_members\":\[[^]]*/$PFX#($PFX@)?[0-9]"
 }
 check_F() {
   local out
