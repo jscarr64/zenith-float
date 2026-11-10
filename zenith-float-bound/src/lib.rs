@@ -25,16 +25,18 @@ pub mod tri;
 // two slices edit the same file; this list is final.
 pub mod arith; // S1
 pub mod bridge; // S2
-// HOLD H05: pub mod carlson; // S4b
 pub mod cball; // CB
+pub mod lu; // LA2
+pub mod matrix; // S6
+pub mod qr; // LA3
+
+// Held slices (HOLD.md at the repo root): not compiled; the mod line stays here, commented.
+// HOLD H05: pub mod carlson; // S4b
 // HOLD H06: pub mod cholesky; // LA1
 // HOLD H08: pub mod eigen; // LA5
 // HOLD H01: pub mod elementary; // S3
 // HOLD H07: pub mod gls; // LA4
 // HOLD H02: pub mod hypergeom; // S4a
-pub mod lu; // LA2
-pub mod matrix; // S6
-pub mod qr; // LA3
 // HOLD H04: pub mod quadrature; // S5
 // HOLD H03: pub mod zf_special; // S4c
 

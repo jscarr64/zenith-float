@@ -30,16 +30,18 @@ mod w1_translation;
 // Per-slice harness files (S0, 2026-10-24): each belongs to its slice alone; this list is final.
 mod slice_arith;
 mod slice_bridge;
-// HOLD H05: mod slice_carlson;
 mod slice_cball;
 mod slice_cball_s1_cover;
+mod slice_lu;
+mod slice_matrix;
+mod slice_qr;
+
+// Held slices (HOLD.md at the repo root): not compiled; the mod line stays here, commented.
+// HOLD H05: mod slice_carlson;
 // HOLD H06: mod slice_cholesky;
 // HOLD H08: mod slice_eigen;
 // HOLD H01: mod slice_elementary;
 // HOLD H07: mod slice_gls;
 // HOLD H02: mod slice_hypergeom;
-mod slice_lu;
-mod slice_matrix;
-mod slice_qr;
 // HOLD H04: mod slice_quadrature;
 // HOLD H03: mod slice_zf_special;
