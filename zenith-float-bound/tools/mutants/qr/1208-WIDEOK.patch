@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -336,7 +336,7 @@
+         const OP: &str = "BallMat::qr";
+         check_prec(OP, prec)?;
+         let (m, p) = (self.nrows(), self.ncols());
+-        if p > m {
++        if p > m + m {
+             return Err(mismatch(OP, "wide"));
+         }
+         let w = la_work_prec(prec, m);

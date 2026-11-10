@@ -6,11 +6,11 @@
 #   TIMEOUT     the slice ran past its budget: names every id that never ran
 #   INCOMPLETE  a manifest id produced no result line (e.g. 257 results for 268 ids): names the missing ids
 #   INVALID     an INVALID mutant
-#   SURVIVED    a survivor with no equivalent entry (mutate.sh prints SURVIVED-EQUIVALENT for documented ones)
+#   SURVIVED    a survivor with no equivalent or pending entry (mutate.sh prints SURVIVED-EQUIVALENT / SURVIVED-PENDING for listed ones)
 #   BELOW floor the slice's KILLED / KILLED+SURVIVED-EQUIVALENT counts are under its floor (mutate.sh --floor --slice)
 # and on a duplicate result id, a result for an id other than the run's --only id, an unreadable id list or floor, or a nonzero runner exit.
 # Before a full slice run it clears that slice's logdir of stale *.out files once (clear_outs below; mutate.sh --only keeps other ids' files).
-# A result is an UNINDENTED line `KILLED|SURVIVED-EQUIVALENT|SURVIVED|INVALID <id>` (mutate.sh echoes suite output indented; that never counts).
+# A result is an UNINDENTED line `KILLED|SURVIVED-EQUIVALENT|SURVIVED-PENDING|SURVIVED|INVALID <id>` (mutate.sh echoes suite output indented; that never counts).
 #   TIMEOUT <id> one mutant ran past MUTANT_TIMEOUT_S (each id runs as its own `mutate.sh --slice S --only ID` under that limit)
 #   KILLED-OOM <id> the run was SIGKILLed (exit 137) before its limit: not timeout's own -k kill, so the OOM killer or another SIGKILL
 # usage: tools/mutate_slice.sh SLICE     one slice (central, or a manifest.d/<slice>.txt name)
@@ -83,7 +83,7 @@ one() {
       t1=$SECONDS; irc=0; timeout -k 30 "$lim" "$M" --slice "$s" --only "$id" > "$out.1" 2>&1 < /dev/null || irc=$?; el=$((SECONDS - t1))
       cat "$out.1"; cat "$out.1" >> "$out"
       # results of this run: unindented lines only, and only for the --only id (anything else is named and fails the slice)
-      awk -v want="$id" -v res="$w/$s.res" -v oth="$w/$s.oth" '/^(KILLED|SURVIVED-EQUIVALENT|SURVIVED|INVALID) / { r = $2; sub(/:$/, "", r)
+      awk -v want="$id" -v res="$w/$s.res" -v oth="$w/$s.oth" '/^(KILLED|SURVIVED-EQUIVALENT|SURVIVED-PENDING|SURVIVED|INVALID) / { r = $2; sub(/:$/, "", r)
         if (r == want) print $1, r >> res; else print want, r >> oth }' "$out.1"
       # timeout exits 124 at the limit, or 137 when its -k 30 KILL follows (so not before the limit); a 137 before it is another SIGKILL
       if [ "$irc" = 124 ] || { [ "$irc" = 137 ] && [ "$el" -ge "$lim" ]; }; then
@@ -123,6 +123,7 @@ one() {
   [ -z "$inv" ] || { echo "mutate_slice: FAIL INVALID: $(words "$inv") (slice $s)"; bad=1; }
   [ -z "$sur" ] || { echo "mutate_slice: FAIL SURVIVED (no equivalent entry): $(words "$sur") (slice $s)"; bad=1; }
   nk=$(printf '%s\n' "$res" | awk '$1 == "KILLED"' | wc -l); ne=$(printf '%s\n' "$res" | awk '$1 == "SURVIVED-EQUIVALENT"' | wc -l)
+  np=$(printf '%s\n' "$res" | awk '$1 == "SURVIVED-PENDING"' | wc -l)
   if [ "$partial" = 0 ] && { [ "$nk" -lt "$fk" ] || [ "$((nk + ne))" -lt "$fke" ]; }; then
     echo "mutate_slice: FAIL BELOW floor: slice $s: $nk killed (floor $fk), $((nk + ne)) killed+equivalent (floor $fke)"; bad=1
   fi
@@ -133,7 +134,7 @@ one() {
     echo "mutate_slice: slice $s PARTIAL: $nres results for $n matching ids, $nk killed, $ne survived-equivalent, max per-mutant time $tmax (limit ${mto}s) -> $([ "$bad" = 0 ] && echo 'PARTIAL, not a gate pass' || echo FAIL)"
     return "$bad"
   fi
-  echo "mutate_slice: slice $s: $nres/$n results, $nk killed, $ne survived-equivalent, max per-mutant time $tmax (budget ${budget}s) -> $([ "$bad" = 0 ] && echo ok || echo FAIL)"
+  echo "mutate_slice: slice $s: $nres/$n results, $nk killed, $ne survived-equivalent, $np survived-pending, max per-mutant time $tmax (budget ${budget}s) -> $([ "$bad" = 0 ] && echo ok || echo FAIL)"
   return "$bad"
 }
 case ${1:-} in

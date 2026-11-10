@@ -9,7 +9,7 @@ export LC_ALL=C
 root=$(cd "$(dirname "$0")/.." && pwd)
 fail() { echo "full_gate selftest FAIL: $*"; exit 1; }
 t=$(mktemp -d "$(zb_scratch)"/zb-gate-selftest.XXXXXX); runlog_on_exit "rm -rf \"$t\""; . "${BASH_SOURCE[0]%/*}/selftest_cases.sh"; st_init "$t"
-SCANS="unsafe-scan no-float-scan no-panic-scan no-clone-scan derive-scan manifest-scan"
+SCANS="unsafe-scan no-float-scan no-panic-scan no-clone-scan derive-scan manifest-scan src-arith-ffi-scan"
 # The fixture gates run outside this self-test's own run log (their planted failures must not fail it), with no poplog at all.
 fe=(env -u GATE_STEPS -u POPLOG_FILE -u POPLOG_STATE_DIR -u POPLOG_PID -u POPLOG_PROGRESS_FILE RUNLOG_POPLOG=/nonexistent RUNLOG_PLAIN=1 RUNLOG_SELFTEST=1)
 rcof() { sed -n "s/^$2=//p" "$t/logs/$1.rc"; }
@@ -47,6 +47,17 @@ plant no-panic-scan 'pub fn g(x: Option<u8>) -> u8 { x.unwrap() }'
 plant no-clone-scan 'pub fn g(x: &[u8]) -> Vec<u8> { x.to_vec() }'
 plant derive-scan '#[derive(Clone)]'
 plant manifest-scan 'pub fn g() -> &'"'"'static str { env!("CARGO_MANIFEST_DIR") }'
+plant src-arith-ffi-scan 'pub fn g(x: u8) -> u8 { x.saturating_add(1) }'
+plant src-arith-ffi-scan 'pub fn g(x: u8) -> u8 { x.wrapping_add(1) }'
+plant src-arith-ffi-scan 'pub fn g(x: u8) -> u8 { x.unchecked_add(1) }'
+plant src-arith-ffi-scan 'pub fn g(x: u8) -> (u8, bool) { x.overflowing_add(1) }'
+plant src-arith-ffi-scan '#[expect(dead_code)]'
+plant src-arith-ffi-scan 'extern "C" { fn h(); }'
+plant src-arith-ffi-scan '#[link(name = "m")]'
+# src-arith-ffi-scan is non-test src only: the same constructs under tests/ (tests/model/rng.rs splitmix64 wrapping_mul) pass
+mk tpath; printf 'fn r(x: u64) -> u64 { x.wrapping_mul(3).saturating_add(1) }\n#[expect(dead_code)]\nfn q() {}\n' > "$t/tpath/tests/t.rs"
+ck; "${fe[@]}" GATE_STEPS=src-arith-ffi-scan T="$t/logs" REPO="$t/tpath" "$root/tools/full_gate.sh" tpath > /dev/null 2>&1 || fail "src-arith-ffi-scan flagged tests/: $(cat "$t/logs/tpath-src-arith-ffi-scan.log")"
+ck; [ "$(rcof tpath src-arith-ffi-scan)" = 0 ] || fail "src-arith-ffi-scan step not 0 on a tests-only hit"
 # GATE_STEPS is honoured: only the named step ran
 ck; [ "$(grep -c '^[a-z-]*=' "$t/logs/p-unsafe-scan.rc")" = 1 ] || fail "GATE_STEPS ran other steps"
 # missing poplog: a hard failure (exit non-zero, nothing runs), not a warning; only RUNLOG_PLAIN=1 (self-test fixtures) runs without it
@@ -177,7 +188,7 @@ ck; grep -q 'TIMEOUT' "$t/d-oom.out" && miss+="[oom: reported as TIMEOUT: $(grep
 ck; tag=mu-slicesbad; mu env FAKE_MUT=slicesbad && miss+="[slicesbad: gate exited 0] "
 ck; grep -q 'the --slices cause' "$t/logs/mu-slicesbad-mutants.log" 2>/dev/null || miss+="[slicesbad: step log lost the cause: $(cat "$t/logs/mu-slicesbad-mutants.log" 2>/dev/null)] "
 [ -z "$miss" ] || fail "mutants step did not catch: $miss"
-st_done full_gate 119   # WANT: cases this script runs (tools/selftest_cases.sh)
+st_done full_gate 150   # WANT: cases this script runs (tools/selftest_cases.sh)
 # the gate's real mutation run must not inherit MUTATE_FLOOR_ZERO_OK=1 (only the selftest fixture may use a 0 floor), nor the selftest-only
 # MUTANT_TIMEOUT_S / MUTANT_BUDGET_S / MUTATE_SETUP_S / MUTATE_SH, nor any env mutate.sh reads (MUTATE_REPO MUTATE_MANIFEST MUTATE_EQUIVALENT MUTATE_FLOOR MUTATE_TIMEOUT MUTATE_BUILD_TIMEOUT MUTATE_TMP MUTATE_PERSIST), in its --all run or in its --step-timeout computation
 u='env -u MUTATE_FLOOR_ZERO_OK -u MUTANT_TIMEOUT_S -u MUTANT_BUDGET_S -u MUTATE_SETUP_S -u MUTATE_SH -u MUTATE_REPO -u MUTATE_MANIFEST -u MUTATE_EQUIVALENT -u MUTATE_FLOOR -u MUTATE_TIMEOUT -u MUTATE_BUILD_TIMEOUT -u MUTATE_TMP -u MUTATE_PERSIST tools/mutate_slice\.sh'

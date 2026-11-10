@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -274,7 +274,7 @@
+         let c = idx
+             .checked_rem(p)
+             .ok_or_else(|| resource(op, "column out of range"))?;
+-        let flip = hs.get(c).is_some_and(|h| h.s_pos);
++        let flip = hs.get(c).is_some_and(|h| !h.s_pos);
+         out.push(if flip { b.negated() } else { b });
+     }
+     Ok(out)

@@ -410,6 +410,31 @@ for bad in 'pub fn f(prec: u32) {}' 'pub fn f(x: u8, mid_prec: usize) {}' 'struc
 done
 printf 'fn a() {}\n' > src/x.rs
 ck; scan --count-only >/dev/null || fail "tree not clean after the prec fixtures: $(scan --count-only)"
+# Non-test src only (Cassie/Spence 2026-10-29): integer arithmetic that saturates, wraps, skips the check or returns an
+# overflow flag, lint expectations and FFI are flagged on added lines under src/ (all of src/, #[cfg(test)] blocks included);
+# tests/, benches/ and examples/ keep their own rules (e.g. tests/model/rng.rs splitmix64 wrapping_mul is not flagged).
+while IFS='|' read -r name line; do
+  mkdiff $LIB "$line" > "$t/d.diff"
+  ck; out="$(scan --diff-file "$t/d.diff")" && fail "not flagged in src: $name: $line"
+  ck; echo "$out" | grep -c "\[$name\]" > /dev/null || fail "wrong pattern label for $name: $out"
+  mkdiff tests/props.rs "$line" > "$t/d.diff"
+  out="$(scan --diff-file "$t/d.diff")"
+  ck; echo "$out" | grep -c "\[$name\]" > /dev/null && fail "src-only pattern $name flagged in tests/: $out"
+done <<'CASES'
+saturating|let y = x.saturating_mul(2);
+saturating|let y = i64::saturating_add(a, b);
+wrapping|let y = x.wrapping_add(1);
+wrapping|let y = u64::wrapping_neg(x);
+unchecked|let y = x.unchecked_sub(1);
+overflowing|let (y, o) = x.overflowing_mul(3);
+expect_attr|#[expect(dead_code)]
+expect_attr|#![expect(clippy::all)]
+ffi|extern "C" { fn f(); }
+ffi|pub extern "C" fn g() {}
+ffi|#[link(name = "m")]
+CASES
+mkdiff $LIB 'let y = x.checked_add(1);' '// x.saturating_add(1) wrapping_mul extern "C"' 'let s = "overflowing_add #[expect(x)]";' 'extern crate alloc;' 'let w = Wrapping(1);' 'let v = r.get_unchecked_x;' > "$t/ok.diff"
+ck; scan --diff-file "$t/ok.diff" >/dev/null || fail "clean overflow/ffi forms flagged in src: $(scan --diff-file "$t/ok.diff")"
 # no vacuous pass: --working and --staged outside a git repo (git diff fails) must exit nonzero, not report "0 flagged"
 nogit=$(mktemp -d "$(zb_scratch)"/rules-nogit.XXXXXX)
 for mode in --working --staged; do
@@ -417,5 +442,5 @@ for mode in --working --staged; do
   ck; echo "$out" | grep -c "git diff .*failed" > /dev/null || { rm -rf "$nogit"; fail "$mode: no git failure message: $out"; }
 done
 rm -rf "$nogit"
-st_done rules_scan 284   # WANT: cases this script runs (tools/selftest_cases.sh)
+st_done rules_scan 318   # WANT: cases this script runs (tools/selftest_cases.sh)
 echo "rules_scan selftest: ok"

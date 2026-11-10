@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -128,7 +128,7 @@
+         let v = (0..rows)
+             .map(|i| v_at(op, &v1, level, i, cols))
+             .collect::<BoundResult<Vec<&Ball>>>()?;
+-        let vtv = dot_pairs(op, v.iter().map(|b| (*b, *b)), rows, w)?;
++        let vtv = Ball::exact(dot_pairs(op, v.iter().map(|b| (*b, *b)), rows, w)?.into_parts().0, w)?;
+         // f_j = 2·(vᵀa_j)/(vᵀv) for the trailing columns j ≥ 1.
+         let mut f = reserve::<Ball>(op, cols)?;
+         for j in 1..cols {

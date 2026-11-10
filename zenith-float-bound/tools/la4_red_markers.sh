@@ -39,4 +39,5 @@ done_line=$(awk '/^### Slice LA4([^0-9]|$)/ { f = 1; next } /^##/ { f = 0 } f &&
 if [ -n "$done_line" ] && [ "$n" -gt 0 ]; then
   echo "la4_red_markers: FAIL LA4 is marked done ($done_line) but $n 'red: not implemented' LA4 test(s) remain:"; echo "$la4"; exit 1
 fi
-echo "la4_red_markers: ok ($n LA4 red marker(s); LA4 marked done: $([ -n "$done_line" ] && echo yes || echo no))"
+nc=$(printf '%s\n' "$cmarkers" | grep -c .)
+echo "la4_red_markers: ok ($n LA4 red marker(s); $nc 'red: CONTRACT 16.x' marker(s); LA4 marked done: $([ -n "$done_line" ] && echo yes || echo no))"

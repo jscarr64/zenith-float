@@ -25,6 +25,8 @@ Flagged on added lines only (comments and string literals are ignored):
   unimplemented!  type X = ..Mag|MagV|Dy..  Mag|MagV|Dy as X  f32  f64  core::arch / std::arch / target_feature / mul_add / is_x86_feature_detected
   neg_sub_method  `.sub(..).neg()` (also .sub_ref)       neg_sub_call  `neg(..sub(..))`       neg_sub_op  `-(b - a)`, `-a.sub(b)`
     (any a - b written as the negation of b - a: the sign and the directed rounding of the result go wrong, TEST_PLAN section 12; write a.sub(b))
+Flagged under src/ only (non-test src; tests/ benches/ examples/ build.rs are not checked for these):
+  saturating_*  wrapping_*  unchecked_*  overflowing_*  #[expect / #![expect  extern "C" / extern {  / extern fn  #[link
 (`assert!`, `assert_eq!`, `assert_ne!`, `assert_matches!` and their `debug_` forms ARE flagged, as are `unwrap_or_default(`, `unwrap_unchecked(`, `unwrap_err(`, `unwrap_err_unchecked(` and `expect_err(`. A `#[derive(` that spans several lines is flagged when a following added line of the same block names Clone or Copy.)
 
 ALLOWLIST: tools/rules_allowlist.txt, one `path:hash<TAB>reason` per line; the key is printed as allow-key=
@@ -113,6 +115,17 @@ PATTERNS = [
     ("neg_sub_call", re.compile(r"\bneg\(" + BAL + r"\bsub(?:_ref)?\(")),
     ("neg_sub_op", re.compile(r"(?:^|[(\[{,;=<>!&|+*/%^~?:-]|\breturn)\s*-\s*(?:\(\s*[^()]*[\w\]]\s*-\s*[^()]+\)|\(?\s*[\w.:&*]+\.sub(?:_ref)?\()")),
 ]
+# Non-test src only (Cassie/Spence 2026-10-29): applied to added lines of files under src/ (all of src/, #[cfg(test)] blocks
+# included), not to tests/ benches/ examples/ build.rs. Strings are stripped first, so `extern "C"` is seen as `extern ""`.
+SRC_PATTERNS = [
+    ("saturating", re.compile(r"\bsaturating_\w")),
+    ("wrapping", re.compile(r"\bwrapping_\w")),
+    ("unchecked", re.compile(r"\bunchecked_\w")),
+    ("overflowing", re.compile(r"\boverflowing_\w")),
+    ("expect_attr", re.compile(r"#!?\[\s*expect\b")),
+    ("ffi", re.compile(r'\bextern\s*(?:""|\{|fn\b)|#!?\[\s*link\b')),
+]
+SRC = re.compile(r"^src/.*\.rs$")
 # Aliases and renames of the model/library types, matched on the joined (comment/string-stripped) text so rustfmt wrapping cannot
 # hide them: `type X<..> = ..Mag..;` (where-clause allowed) and `Mag as X` / `{MagV as Mv}` / `pub use ..::Dy as D`.
 TYPE_NAMES = r"\b(?:Mag|MagV|Dy)\b"
@@ -192,6 +205,9 @@ def scan_diff(text):
             derive_path = path
             derive_next = n + 1
         for label, rx in PATTERNS:
+            if rx.search(code) and key not in allow:
+                hits.append((path, n, label, " ".join(content.split()), key))
+        for label, rx in (SRC_PATTERNS if SRC.match(path) else ()):
             if rx.search(code) and key not in allow:
                 hits.append((path, n, label, " ".join(content.split()), key))
     hits.extend(multi_line_hits(text, allow))

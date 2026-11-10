@@ -31,5 +31,13 @@ ck; grep -q '^check: HEAVY.SHA256 malformed line gls: ' "$t/out" || fail "malfor
 { cat "$t/gls.orig"; printf '%064d  la_gls_old_heavy.txt\n' 0; } > "$h"
 ck; [ "$(run 4)" = 1 ] || fail "stale pin passed"
 ck; grep -q '^check: HEAVY.SHA256 pin STALE gls/la_gls_old_heavy.txt' "$t/out" || fail "stale pin not named: $(grep -i heavy "$t/out")"
-st_done gen_la_pins 10   # WANT: cases this script runs (tools/selftest_cases.sh)
+# 5. write mode keeps foreign SHA256SUMS lines (e.g. Rusty's la_lstsq.txt) byte-identical and in place, rewrites only the
+#    lines for files it generates, and inserts a missing owned line in sorted position (here: la_solve.txt after la_lstsq.txt)
+s="$t/r/tests/goldens/slices/lu/SHA256SUMS"
+{ grep '^#' "$s"; grep '  la_lu.txt$' "$s"; printf '%064d  la_lstsq.txt\n' 7; grep '  la_solve.txt$' "$s"; echo '# foreign trailer kept'; printf '%064d  zz_rusty.txt\n' 9; } > "$t/lu.want"
+grep -v '  la_solve.txt$' "$t/lu.want" > "$s"
+ck; "$py" "$t/r/scripts/gen_la_goldens.py" --skip-heavy > "$t/out" 2>&1 || fail "write mode failed: $(tail -5 "$t/out")"
+ck; grep -q '  la_lstsq.txt$' "$s" || fail "foreign line la_lstsq.txt dropped: $(cat "$s")"
+ck; cmp -s "$t/lu.want" "$s" || fail "SHA256SUMS not merged in place: $(diff "$t/lu.want" "$s")"
+st_done gen_la_pins 13   # WANT: cases this script runs (tools/selftest_cases.sh)
 echo "gen_la_pins selftest: ok"

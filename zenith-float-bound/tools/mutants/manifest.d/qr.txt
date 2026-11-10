@@ -1,3 +1,17 @@
 # range: 1200-1299
 # Slice LA3 (src/qr.rs) mutants, owned by LA3 alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
 # ids NNN-<name> with NNN in 1200..=1299; patches go in tools/mutants/qr/ and the patch column reads qr/NNN-<name>.patch.
+src/qr.rs:factor	1200-SIGNBALL	qr/1200-SIGNBALL.patch	harness
+src/qr.rs:accumulate_q	1201-QNOFLIP	qr/1201-QNOFLIP.patch	harness
+src/qr.rs:factor	1202-STRADDLESING	qr/1202-STRADDLESING.patch	harness
+src/qr.rs:factor	1203-ZERORES	qr/1203-ZERORES.patch	harness
+src/qr.rs:factor	1204-VTVNORAD	qr/1204-VTVNORAD.patch	harness
+src/qr.rs:factor	1205-NOTWO	qr/1205-NOTWO.patch	harness
+src/qr.rs:accumulate_q	1206-QORDER	qr/1206-QORDER.patch	harness
+src/qr.rs:BallMat::qr	1207-FULLQ	qr/1207-FULLQ.patch	harness
+src/qr.rs:BallMat::qr	1208-WIDEOK	qr/1208-WIDEOK.patch	harness
+src/qr.rs:solve_from	1209-QB	qr/1209-QB.patch	harness
+src/qr.rs:solve_from	1210-SOLVELOWER	qr/1210-SOLVELOWER.patch	harness
+src/qr.rs:BallMat::lstsq	1211-BLENTRUNC	qr/1211-BLENTRUNC.patch	harness
+src/qr.rs:factor	1212-SQRTMID	qr/1212-SQRTMID.patch	harness
+src/qr.rs:factor	1213-SIGNINV	qr/1213-SIGNINV.patch	harness

@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -121,7 +121,7 @@
+         }
+         let x1 = x.first().ok_or_else(|| resource(op, "empty column"))?;
+         // s = sign(mid(x_1)), +1 at 0, chosen on the midpoint (16.LA3.2).
+-        let s_pos = !x1.mid().is_negative() || x1.mid().is_zero();
++        let s_pos = excludes_zero(x1) && !x1.mid().is_negative();
+         let sign = if s_pos { &minus_one } else { &one };
+         // v_1 = x_1 + s·σ = x_1 − σ·(−s).
+         let v1 = sub_pairs(op, x1, std::iter::once((&sigma, sign)), 1, w)?;

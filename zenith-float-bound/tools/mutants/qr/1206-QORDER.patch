@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -212,7 +212,7 @@
+             y.push(exact(i64::from(i == c), w)?);
+         }
+     }
+-    for k in (0..p).rev() {
++    for k in 0..p {
+         let h = hs
+             .get(k)
+             .ok_or_else(|| resource(op, "reflector out of range"))?;

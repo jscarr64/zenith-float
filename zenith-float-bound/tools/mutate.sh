@@ -14,6 +14,9 @@
 #                             Each row's patch must be under <slice>/ (the slice owns it); a central-manifest id may not sit in any slice's
 #                             range; ids sharing a NUMBER (205-a, 205-b) are duplicates; a row without 4 tab-separated columns FAILS.
 #   equivalent.d/<slice>.txt  more EQUIVALENT.txt entries (same format: ID<TAB>REASON; the id must be in the manifest and in the slice's range).
+#   pending.d/<slice>.txt    (Rusty, 2026-10-29) expected survivors waiting on named unbuilt work (same ID<TAB>REASON format and checks as
+#                             equivalent.d). A listed survivor prints SURVIVED-PENDING (not a failure, not counted toward the floor); a
+#                             listed id that is KILLED prints STALE-PENDING and fails, so the entry is removed once the work lands.
 #   floor.d/<slice>.txt       (needs manifest.d/<slice>.txt; keys killed and killed+equivalent, each exactly once) the slice's share of the floor (same KEY<TAB>MIN rows as floor.txt; 0 allowed here). The floor checked is
 #                             floor.txt plus every share. A slice raises its own share, never floor.txt.
 #   env: MUTATE_REPO=DIR            repo to mutate (default: the parent of tools/). Mutants apply to its COMMITTED HEAD.
@@ -126,9 +129,11 @@ ids=$(printf '%s\n' "$rows" | cut -f2)
 equivs=()
 [ -f "$equiv" ] && equivs+=("$equiv")
 for e in "$mdir"/equivalent.d/*.txt; do [ -f "$e" ] && equivs+=("$e"); done
+pends=()
+for e in "$mdir"/pending.d/*.txt; do [ -f "$e" ] && pends+=("$e"); done
 # equivalent entries: ID<TAB>REASON, a known id, a non-empty reason; an equivalent.d/<slice>.txt needs manifest.d/<slice>.txt and only
 # lists ids in that slice's range
-for e in "${equivs[@]}"; do
+for e in "${equivs[@]}" "${pends[@]}"; do
   eslice=""; erange=""
   if [ "$e" != "$equiv" ]; then
     eslice=$(basename "$e" .txt)
@@ -245,7 +250,7 @@ if [ -n "$only" ]; then [[ $only =~ ^[A-Za-z0-9._-]+$ && $only != *..* ]] || { e
 else find "$logdir" -mindepth 1 -maxdepth 1 -type f -name '*.out' -delete || { echo "mutate: cannot clear stale .out files in $logdir"; exit 2; }; fi
 # failnames FILE: the failing test names in a cargo test log, at most 5, then `+N more`
 failnames() { awk '/^---- .* stdout ----$/ { n++; if (n <= 5) s = s (s == "" ? "" : " ") $2 } END { if (n > 5) s = s " +" (n - 5) " more"; print (n ? s : "(none parsed)") }' "$1"; }
-nk=0; ns=0; ne=0; ni=0; total=0
+nk=0; ns=0; ne=0; np=0; nst=0; ni=0; total=0
 newtgt
 if [ -n "$rows" ]; then
 while IFS="$(printf '\t')" read -r fnpath id patch suite; do
@@ -269,6 +274,8 @@ while IFS="$(printf '\t')" read -r fnpath id patch suite; do
     if [ "$rc" = 0 ]; then
       if [ "${#equivs[@]}" -gt 0 ] && awk -F'\t' -v id="$id" '!/^[[:space:]]*(#|$)/ && $1 == id { f = 1 } END { exit !f }' "${equivs[@]}"; then
         echo "SURVIVED-EQUIVALENT $id ($fnpath, suite $suite): documented in EQUIVALENT.txt or equivalent.d"; ne=$((ne + 1))
+      elif [ "${#pends[@]}" -gt 0 ] && awk -F'\t' -v id="$id" '!/^[[:space:]]*(#|$)/ && $1 == id { f = 1 } END { exit !f }' "${pends[@]}"; then
+        echo "SURVIVED-PENDING $id ($fnpath, suite $suite): expected survivor in pending.d: $(awk -F'\t' -v id="$id" '$1 == id { print $2; exit }' "${pends[@]}")"; np=$((np + 1))
       else
         echo "SURVIVED $id ($fnpath, suite $suite): the suite passed on the mutant"; ns=$((ns + 1))
       fi
@@ -278,6 +285,8 @@ while IFS="$(printf '\t')" read -r fnpath id patch suite; do
     # network, lock, I/O error) proves nothing about the mutant.
     elif grep -q '^error: test failed, to rerun pass' "$tgt/run.log"; then echo "KILLED $id ($fnpath, suite $suite): suite failed (rc $rc)"; nk=$((nk + 1))
       echo "    failing tests: $(failnames "$tgt/run.log") (output: $logdir/$id.out)"
+      if [ "${#pends[@]}" -gt 0 ] && awk -F'\t' -v id="$id" '!/^[[:space:]]*(#|$)/ && $1 == id { f = 1 } END { exit !f }' "${pends[@]}"; then
+        echo "STALE-PENDING $id: killed but listed in pending.d; remove the entry"; nst=$((nst + 1)); fi
     else (exit "$rc")   # unexpected: re-raise rc so the ERR trap still records it
       echo "INVALID $id: suite run failed without a test failure (rc $rc; see: first lines below)"; head -5 "$tgt/run.log" | sed 's/^/    /'; ni=$((ni + 1)); fi
   fi
@@ -286,9 +295,9 @@ while IFS="$(printf '\t')" read -r fnpath id patch suite; do
 done <<< "$rows"
 fi
 if [ -n "$only" ] && [ "$total" = 0 ]; then echo "mutate: no mutant with id $only"; exit 2; fi
-echo "mutate: $total mutants: $nk killed, $ns survived, $ne survived-equivalent, $ni invalid"
+echo "mutate: $total mutants: $nk killed, $ns survived, $ne survived-equivalent, $np survived-pending, $ni invalid"
 [ "$total" -gt 0 ] || [ -n "$slice" ] || { echo "mutate: FAIL 0 mutants ran (an empty manifest proves nothing)"; exit 1; }
-[ "$ns" = 0 ] && [ "$ni" = 0 ] || exit 1
+[ "$ns" = 0 ] && [ "$ni" = 0 ] && [ "$nst" = 0 ] || exit 1
 # Mutant floor (Paul, 2026-10-23): a full run must kill at least the checked-in number, so a manifest that loses rows, or a suite that
 # stops killing, cannot pass. --only runs one row by design and skips it (it still needs its one mutant run, above). Fails closed.
 [ -n "$only" ] && exit 0

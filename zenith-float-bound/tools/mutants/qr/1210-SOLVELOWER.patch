@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -318,7 +318,7 @@
+             w,
+         )?);
+     }
+-    r.solve_upper(&BallVec::from_balls(qtb), false, prec)
++    r.solve_lower(&BallVec::from_balls(qtb), false, prec)
+ }
+ 
+ fn into_mat(rows: usize, cols: usize, v: Vec<Ball>) -> BoundResult<BallMat> {

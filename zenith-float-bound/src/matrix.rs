@@ -20,7 +20,7 @@ const MID_RM: RoundingMode = RoundingMode::ToEven;
 const GUARD_EXTRA: Precision = 2;
 
 /// `prec` outside `MIN_PRECISION..=MAX_PRECISION` is `InvalidArgument` (16.S6.3), checked first in every op.
-fn check_prec(op: &'static str, prec: Precision) -> BoundResult<()> {
+pub(crate) fn check_prec(op: &'static str, prec: Precision) -> BoundResult<()> {
     if (MIN_PRECISION..=MAX_PRECISION).contains(&prec) {
         Ok(())
     } else {
@@ -31,16 +31,16 @@ fn check_prec(op: &'static str, prec: Precision) -> BoundResult<()> {
     }
 }
 
-fn mismatch(op: &'static str, detail: &'static str) -> BoundError {
+pub(crate) fn mismatch(op: &'static str, detail: &'static str) -> BoundError {
     BoundError::DimensionMismatch { op, detail }
 }
 
-fn resource(op: &'static str, detail: &'static str) -> BoundError {
+pub(crate) fn resource(op: &'static str, detail: &'static str) -> BoundError {
     BoundError::Resource { op, detail }
 }
 
 /// An empty vector with room for `n` elements, or `Resource` (16.S6.3, clause 15.5).
-fn reserve<T>(op: &'static str, n: usize) -> BoundResult<Vec<T>> {
+pub(crate) fn reserve<T>(op: &'static str, n: usize) -> BoundResult<Vec<T>> {
     let mut v = Vec::new();
     v.try_reserve_exact(n)
         .map_err(|_e| resource(op, "result storage cannot be reserved"))?;
@@ -120,9 +120,39 @@ fn product_entry<'a, I>(op: &'static str, terms: I, k: usize, prec: Precision) -
 where
     I: Iterator<Item = (&'a ExactNum, &'a Mag, &'a ExactNum, &'a Mag)>,
 {
+    entry_core(op, None, terms, false, k, prec)
+}
+
+/// The 16.S6.7 accumulation shared by `product_entry` and the LA helpers: `base ± Σ a_k·b_k`, every step rounded at
+/// `w = work_prec(prec, k)` with its rounding term added to the radius, then rounded once to `prec`. `base` (when given) is
+/// read by borrow and counts as one of the `k` items. `subtract` selects `base − Σ` (16.LA3.2 reflector updates).
+fn entry_core<'a, I>(
+    op: &'static str,
+    base: Option<&Ball>,
+    terms: I,
+    subtract: bool,
+    k: usize,
+    prec: Precision,
+) -> BoundResult<Ball>
+where
+    I: Iterator<Item = (&'a ExactNum, &'a Mag, &'a ExactNum, &'a Mag)>,
+{
     let w = work_prec(prec, k);
     let mut s = ExactNum::from(0i64);
     let mut rad = Mag::zero();
+    if let Some(b) = base {
+        rad = rad.add_up(b.rad());
+        if rad.is_infinity() {
+            return Ball::all_reals(prec);
+        }
+        s = match rounded(op, ExactNum::from(0i64).add(b.mid(), w, MID_RM), w)? {
+            Step::Value(v, e) => {
+                rad = rad.add_up(&e);
+                v
+            }
+            Step::Overflow => return Ball::all_reals(prec),
+        };
+    }
     for (ma, ra, mb, rb) in terms {
         // R1 term: |m(a)|·r(b) + r(a)·(|m(b)| + r(b))
         let mb_up = Mag::from_exact_num(mb);
@@ -140,7 +170,12 @@ where
             }
             Step::Overflow => return Ball::all_reals(prec),
         };
-        s = match rounded(op, s.add(&p, w, MID_RM), w)? {
+        let next = if subtract {
+            s.sub(&p, w, MID_RM)
+        } else {
+            s.add(&p, w, MID_RM)
+        };
+        s = match rounded(op, next, w)? {
             Step::Value(v, e) => {
                 rad = rad.add_up(&e);
                 v
@@ -151,6 +186,76 @@ where
     match rounded(op, s.ldexp(0, prec, MID_RM), prec)? {
         Step::Value(m, e) => Ball::from_mid_rad(m, rad.add_up(&e), prec),
         Step::Overflow => Ball::all_reals(prec),
+    }
+}
+
+/// The parts of a pair of borrowed balls, as `entry_core` reads them.
+fn pair_parts<'a>((a, b): (&'a Ball, &'a Ball)) -> (&'a ExactNum, &'a Mag, &'a ExactNum, &'a Mag) {
+    (a.mid(), a.rad(), b.mid(), b.rad())
+}
+
+/// `Σ a_k·b_k` over borrowed ball pairs as one 16.S6.7 product entry at `prec`; `k` is the number of pairs (LA helper).
+pub(crate) fn dot_pairs<'a, I>(
+    op: &'static str,
+    pairs: I,
+    k: usize,
+    prec: Precision,
+) -> BoundResult<Ball>
+where
+    I: Iterator<Item = (&'a Ball, &'a Ball)>,
+{
+    entry_core(op, None, pairs.map(pair_parts), false, k, prec)
+}
+
+/// `base − Σ a_k·b_k` over borrowed balls as one 16.S6.7 entry at `prec`; `k` counts the pairs (LA helper, 16.LA3.2).
+pub(crate) fn sub_pairs<'a, I>(
+    op: &'static str,
+    base: &Ball,
+    pairs: I,
+    k: usize,
+    prec: Precision,
+) -> BoundResult<Ball>
+where
+    I: Iterator<Item = (&'a Ball, &'a Ball)>,
+{
+    let items = k
+        .checked_add(1)
+        .ok_or_else(|| resource(op, "term count overflows usize"))?;
+    entry_core(op, Some(base), pairs.map(pair_parts), true, items, prec)
+}
+
+/// `b` rounded outward to `prec` once (16.LA.6): the midpoint to nearest at `prec`, its rounding term added to the radius.
+pub(crate) fn round_out(op: &'static str, b: Ball, prec: Precision) -> BoundResult<Ball> {
+    let (mid, rad, _) = b.into_parts();
+    if rad.is_infinity() {
+        return Ball::all_reals(prec);
+    }
+    match rounded(op, mid.ldexp(0, prec, MID_RM), prec)? {
+        Step::Value(m, e) => Ball::from_mid_rad(m, rad.add_up(&e), prec),
+        Step::Overflow => Ball::all_reals(prec),
+    }
+}
+
+/// True when the ball certainly excludes 0: `r < |m|` with `|m|` rounded down (an `Infinity` radius never excludes 0).
+pub(crate) fn excludes_zero(b: &Ball) -> bool {
+    !b.rad().is_infinity() && Mag::from_exact_num_lower(b.mid()) > *b.rad()
+}
+
+/// True when the ball is exactly `0 ± 0` (the certified-refusal test of 16.LA.2).
+pub(crate) fn is_exact_zero(b: &Ball) -> bool {
+    b.rad().is_zero() && b.mid().is_zero()
+}
+
+/// 16.LA.6: `w = prec + 64 + 2·⌈log2(n + 1)⌉`, capped at `MAX_PRECISION`; `⌈log2(n + 1)⌉` is the bit length of `n`.
+pub(crate) fn la_work_prec(prec: Precision, n: usize) -> Precision {
+    let bits = usize::BITS.checked_sub(n.leading_zeros());
+    let guard = bits
+        .and_then(|b| Precision::try_from(b).ok())
+        .and_then(|b| b.checked_mul(2))
+        .and_then(|b| b.checked_add(64));
+    match guard.and_then(|g| prec.checked_add(g)) {
+        Some(w) => w.min(MAX_PRECISION),
+        None => MAX_PRECISION,
     }
 }
 
@@ -501,6 +606,72 @@ impl BallMat {
     }
 }
 
+/// The skeleton refusal of an LA op whose algorithm has not landed yet.
+fn not_implemented(op: &'static str) -> BoundError {
+    BoundError::Resource {
+        op,
+        detail: "not_implemented",
+    }
+}
+
+impl BallMat {
+    /// Forward substitution `T⁻¹b` on the lower triangle (CONTRACT 16.S6.12.1).
+    /// Not implemented yet: returns Resource "not_implemented".
+    ///
+    /// # Errors
+    /// `Resource` "not_implemented" (16.S6.12.2 errors once implemented).
+    pub fn solve_lower(
+        &self,
+        _b: &BallVec,
+        _unit_diag: bool,
+        _prec: Precision,
+    ) -> BoundResult<BallVec> {
+        Err(not_implemented("BallMat::solve_lower"))
+    }
+
+    /// Backward substitution `T⁻¹b` on the upper triangle (CONTRACT 16.S6.12.1).
+    /// Not implemented yet: returns Resource "not_implemented".
+    ///
+    /// # Errors
+    /// `Resource` "not_implemented" (16.S6.12.2 errors once implemented).
+    pub fn solve_upper(
+        &self,
+        _b: &BallVec,
+        _unit_diag: bool,
+        _prec: Precision,
+    ) -> BoundResult<BallVec> {
+        Err(not_implemented("BallMat::solve_upper"))
+    }
+
+    /// Many-RHS forward substitution, column by column (CONTRACT 16.S6.12.1).
+    /// Not implemented yet: returns Resource "not_implemented".
+    ///
+    /// # Errors
+    /// `Resource` "not_implemented" (16.S6.12.2 errors once implemented).
+    pub fn solve_lower_mat(
+        &self,
+        _b: &BallMat,
+        _unit_diag: bool,
+        _prec: Precision,
+    ) -> BoundResult<BallMat> {
+        Err(not_implemented("BallMat::solve_lower_mat"))
+    }
+
+    /// Many-RHS backward substitution, column by column (CONTRACT 16.S6.12.1).
+    /// Not implemented yet: returns Resource "not_implemented".
+    ///
+    /// # Errors
+    /// `Resource` "not_implemented" (16.S6.12.2 errors once implemented).
+    pub fn solve_upper_mat(
+        &self,
+        _b: &BallMat,
+        _unit_diag: bool,
+        _prec: Precision,
+    ) -> BoundResult<BallMat> {
+        Err(not_implemented("BallMat::solve_upper_mat"))
+    }
+}
+
 /// zf NaN error kinds from a product step map as in S1 (`arith::classify`, CONTRACT O2): `DivisionByZero` is `Domain`,
 /// `InvalidArgument` is `InvalidArgument`, a NaN without an error kind is `Representation`.
 #[cfg(test)]
@@ -536,5 +707,108 @@ mod slice_matrix_nan_map {
             return Err(format!("kindless NaN mapped to {e:?}"));
         }
         Ok(())
+    }
+}
+
+/// The pub(crate) LA helpers (16.LA.6, 16.S6.7 split for 16.LA3.2), each checked on exact inputs.
+#[cfg(test)]
+mod la_helpers {
+    use super::{dot_pairs, excludes_zero, is_exact_zero, la_work_prec, round_out, sub_pairs};
+    use crate::ball::Ball;
+    use crate::mag::Mag;
+    use crate::precision::MAX_PRECISION;
+    use zenith_float_num::ExactNum;
+
+    fn pt(v: i64) -> Result<Ball, String> {
+        Ball::exact(ExactNum::from(v), 64).map_err(|e| format!("{e:?}"))
+    }
+
+    fn is_point(b: &Ball, v: i64) -> bool {
+        b.rad().is_zero() && b.mid().sub_full_prec(&ExactNum::from(v)).is_zero()
+    }
+
+    #[test]
+    fn la_work_prec_follows_16_la_6() -> Result<(), String> {
+        // n = 0: 0 bits; n = 1: 1; n = 3: 2; n = 4: 3; n = 12: 4.
+        for (n, want) in [(0usize, 117usize), (1, 119), (3, 121), (4, 123), (12, 125)] {
+            if la_work_prec(53, n) != want {
+                return Err(format!("w(53, {n}) = {}, want {want}", la_work_prec(53, n)));
+            }
+        }
+        if la_work_prec(MAX_PRECISION, 5) != MAX_PRECISION {
+            return Err("w is not capped at MAX_PRECISION".to_string());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn dot_pairs_is_exact_on_small_integers() -> Result<(), String> {
+        let (a, b, c, d) = (pt(3)?, pt(4)?, pt(-2)?, pt(5)?);
+        let s = dot_pairs("t", [(&a, &b), (&c, &d)].into_iter(), 2, 53)
+            .map_err(|e| format!("{e:?}"))?;
+        if !is_point(&s, 2) {
+            return Err(format!("3·4 + (−2)·5 = {s:?}"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn sub_pairs_subtracts_from_the_base_and_keeps_its_radius() -> Result<(), String> {
+        let base = Ball::from_mid_rad(
+            ExactNum::from(10i64),
+            Mag::from_exact_num(&ExactNum::from(1i64)),
+            64,
+        )
+        .map_err(|e| format!("{e:?}"))?;
+        let (a, b) = (pt(2)?, pt(3)?);
+        let s =
+            sub_pairs("t", &base, [(&a, &b)].into_iter(), 1, 53).map_err(|e| format!("{e:?}"))?;
+        if !s.mid().sub_full_prec(&ExactNum::from(4i64)).is_zero() || *s.rad() < *base.rad() {
+            return Err(format!("10±1 − 2·3 = {s:?}"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn round_out_encloses_and_keeps_exact_points() -> Result<(), String> {
+        let third = pt(1)?.div(&pt(3)?, 200).map_err(|e| format!("{e:?}"))?;
+        let r = round_out("t", third, 53).map_err(|e| format!("{e:?}"))?;
+        // r must cover 1/3: |3·mid − 1| ≤ 3·rad.
+        let err = r
+            .mid()
+            .mul_full_prec(&ExactNum::from(3i64))
+            .sub_full_prec(&ExactNum::from(1i64));
+        if Mag::from_exact_num(&err) > Mag::from_exact_num(&ExactNum::from(3i64)).mul_up(r.rad())
+            || r.rad().is_zero()
+        {
+            return Err(format!("round_out(1/3) = {r:?}"));
+        }
+        let seven = round_out("t", pt(7)?, 53).map_err(|e| format!("{e:?}"))?;
+        if !is_point(&seven, 7) {
+            return Err(format!("round_out(7) = {seven:?}"));
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn zero_tests_separate_certified_and_undecided() -> Result<(), String> {
+        let one = Mag::from_exact_num(&ExactNum::from(1i64));
+        let straddle =
+            Ball::from_mid_rad(ExactNum::from(1i64), one, 64).map_err(|e| format!("{e:?}"))?;
+        let zero = pt(0)?;
+        let away = pt(-2)?;
+        let all = Ball::all_reals(64).map_err(|e| format!("{e:?}"))?;
+        let ok = !excludes_zero(&straddle)
+            && !excludes_zero(&zero)
+            && excludes_zero(&away)
+            && !excludes_zero(&all)
+            && is_exact_zero(&zero)
+            && !is_exact_zero(&straddle)
+            && !is_exact_zero(&all);
+        if ok {
+            Ok(())
+        } else {
+            Err("excludes_zero / is_exact_zero misclassify".to_string())
+        }
     }
 }

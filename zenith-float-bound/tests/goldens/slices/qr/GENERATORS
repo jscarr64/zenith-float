@@ -1,3 +1,4 @@
 # Slice LA3 golden generators, one per line: `scripts/<gen>.py` (writes with --check DIR, like the central GENERATORS list in tools/goldens_regen.sh).
 # Exact golds: Cassie (owns the zb LA exact golds, 2026-10-24).
 # LA golds for this slice are generated and checked by scripts/gen_la_goldens.py, listed once in slices/cholesky/GENERATORS (one run covers LA1-LA5a).
+scripts/gen_la_lstsq_goldens.py

@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -309,7 +309,7 @@
+     let mut qtb = reserve::<Ball>(op, p)?;
+     for c in 0..p {
+         let col = (0..m)
+-            .map(|i| at(op, q, i, c, p))
++            .map(|i| at(op, q, c, i, p))
+             .collect::<BoundResult<Vec<&Ball>>>()?;
+         qtb.push(dot_pairs(
+             op,
