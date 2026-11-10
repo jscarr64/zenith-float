@@ -25,17 +25,17 @@ pub mod tri;
 // two slices edit the same file; this list is final.
 pub mod arith; // S1
 pub mod bridge; // S2
-pub mod carlson; // S4b
+// HOLD H05: pub mod carlson; // S4b
 pub mod cball; // CB
-pub mod cholesky; // LA1
-pub mod eigen; // LA5
-pub mod elementary; // S3
-pub mod gls; // LA4
-pub mod hypergeom; // S4a
+// HOLD H06: pub mod cholesky; // LA1
+// HOLD H08: pub mod eigen; // LA5
+// HOLD H01: pub mod elementary; // S3
+// HOLD H07: pub mod gls; // LA4
+// HOLD H02: pub mod hypergeom; // S4a
 pub mod lu; // LA2
 pub mod matrix; // S6
 pub mod qr; // LA3
-pub mod quadrature; // S5
-pub mod zf_special; // S4c
+// HOLD H04: pub mod quadrature; // S5
+// HOLD H03: pub mod zf_special; // S4c
 
 pub use precision::{Precision, MAX_PRECISION, MIN_PRECISION};
