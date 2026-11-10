@@ -18,9 +18,9 @@ $hits"
 mkdir -p "$t/fx"; printf '#!/usr/bin/env bash\n# a comment naming /tmp is fine\nd=$CARGO_TARGET_DIR/tmp/x\n' > "$t/fx/ok.sh"
 ck; scan "$t/fx" > /dev/null && fail "the scan flagged a comment line or a \$dir/tmp path"
 printf 'x=$(mktemp -d /tmp/foo.XXXXXX)\n' > "$t/fx/bad.sh"
-ck; scan "$t/fx" | grep -q '^'"$t"'/fx/bad.sh:1:' || fail "the scan missed a hardcoded /tmp"
+ck; grep -q '^'"$t"'/fx/bad.sh:1:' <<< "$(scan "$t/fx")" || fail "the scan missed a hardcoded /tmp"
 printf 'y=$(mktemp -d "${TMPDIR:-/tmp}/foo.XXXXXX")\n' > "$t/fx/bad2.sh"   # e83631d goldens_regen: /tmp then } was not matched
-ck; scan "$t/fx" | grep -q '^'"$t"'/fx/bad2.sh:1:' || fail "the scan missed \${TMPDIR:-/tmp}"
+ck; grep -q '^'"$t"'/fx/bad2.sh:1:' <<< "$(scan "$t/fx")" || fail "the scan missed \${TMPDIR:-/tmp}"
 ck; [ "$(ZB_SCRATCH="$t/s" zb_scratch)" = "$t/s" ] && [ -d "$t/s" ] || fail "zb_scratch ignores ZB_SCRATCH or does not create it"
 ck; case "$(env -u ZB_SCRATCH HOME="$t/h" bash -c ". '$here/scratch.sh'; zb_scratch")" in "$t/h/"*) ;; *) fail "zb_scratch default is not under \$HOME" ;; esac
 st_done no_tmp 6   # WANT: cases this script runs (tools/selftest_cases.sh)

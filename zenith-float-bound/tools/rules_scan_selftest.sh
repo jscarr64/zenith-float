@@ -22,7 +22,7 @@ ck; scan --diff-file "$t/clean.diff" >/dev/null || fail "clean diff flagged"
 while IFS='|' read -r name line; do
   mkdiff $LIB "$line" > "$t/d.diff"
   ck; out="$(scan --diff-file "$t/d.diff")" && fail "not flagged: $name"
-  ck; echo "$out" | grep -c "\[$name\]" > /dev/null || fail "wrong pattern label for $name: $out"
+  ck; grep -c "\[$name\]" <<< "$out" > /dev/null || fail "wrong pattern label for $name: $out"
 done <<'CASES'
 clone|let y = x.clone();
 clone_from|y.clone_from(&x);
@@ -75,10 +75,10 @@ CASES
 for p in tests/props.rs tests/model/mod.rs; do
   mkdiff $p 'let d = a.sub(&b).neg();' > "$t/p.diff"
   ck; out="$(scan --diff-file "$t/p.diff")" && fail "neg_sub_method not flagged in test path: $p"
-  ck; echo "$out" | grep -c "\[neg_sub_method\]" > /dev/null || fail "wrong pattern label for neg_sub_method in $p: $out"
+  ck; grep -c "\[neg_sub_method\]" <<< "$out" > /dev/null || fail "wrong pattern label for neg_sub_method in $p: $out"
   mkdiff $p 'let d = -(b - a);' > "$t/p.diff"
   ck; out="$(scan --diff-file "$t/p.diff")" && fail "neg_sub_op not flagged in test path: $p"
-  ck; echo "$out" | grep -c "\[neg_sub_op\]" > /dev/null || fail "wrong pattern label for neg_sub_op in $p: $out"
+  ck; grep -c "\[neg_sub_op\]" <<< "$out" > /dev/null || fail "wrong pattern label for neg_sub_op in $p: $out"
 done
 mkdiff $LIB 'let d = a.sub(&b, p, rm);' 'let d = x - (a - b);' 'let d = -1 - (a - b);' 'let d = a.sub_lower(&b);' 'let n = x.neg();' 'let d = a.sub(&b).abs();' 'let d = -a;' 'let d = -(a + b);' 'let d = a - -b;' 'fn f(x: u8) -> (u8, u8) { (x - 1, x) }' 'let d = (a - b).neg();' 'let d = neg(a).sub(b);' 'let s = "-(b - a) and a.sub(b).neg()";' '// -(b - a)' 'let d = x.neg().sub(y);' > "$t/negok.diff"
 ck; scan --diff-file "$t/negok.diff" >/dev/null || fail "clean subtraction forms flagged: $(scan --diff-file "$t/negok.diff")"
@@ -87,39 +87,39 @@ ck; scan --diff-file "$t/negok.diff" >/dev/null || fail "clean subtraction forms
 for p in tests/props.rs tests/model/mod.rs benches/b.rs examples/e.rs; do
   mkdiff $p 'let v = r.unwrap();' > "$t/p.diff"
   ck; out="$(scan --diff-file "$t/p.diff")" && fail "unwrap not flagged in test/bench/example path: $p"
-  ck; echo "$out" | grep -c "\[unwrap\]" > /dev/null || fail "wrong pattern label for unwrap in $p: $out"
+  ck; grep -c "\[unwrap\]" <<< "$out" > /dev/null || fail "wrong pattern label for unwrap in $p: $out"
 done
 
 mkdiff tests/props.rs 'let y = x.clone();' > "$t/p.diff"
 ck; out="$(scan --diff-file "$t/p.diff")" && fail "clone not flagged in test path: tests/props.rs"
-ck; echo "$out" | grep -c "\[clone\]" > /dev/null || fail "wrong pattern label for clone in tests/props.rs: $out"
+ck; grep -c "\[clone\]" <<< "$out" > /dev/null || fail "wrong pattern label for clone in tests/props.rs: $out"
 
 # the assert family and the unwrap variants are banned in test code too
 for p in tests/props.rs tests/model/mod.rs benches/b.rs examples/e.rs; do
   mkdiff $p 'assert!(x);' > "$t/p.diff"
   ck; out="$(scan --diff-file "$t/p.diff")" && fail "assert not flagged in test/bench/example path: $p"
-  ck; echo "$out" | grep -c "\[assert\]" > /dev/null || fail "wrong pattern label for assert in $p: $out"
+  ck; grep -c "\[assert\]" <<< "$out" > /dev/null || fail "wrong pattern label for assert in $p: $out"
   mkdiff $p 'let v = r.unwrap_or_default();' > "$t/p.diff"
   ck; out="$(scan --diff-file "$t/p.diff")" && fail "unwrap_or_default not flagged in test/bench/example path: $p"
-  ck; echo "$out" | grep -c "\[unwrap_variant\]" > /dev/null || fail "wrong pattern label for unwrap_or_default in $p: $out"
+  ck; grep -c "\[unwrap_variant\]" <<< "$out" > /dev/null || fail "wrong pattern label for unwrap_or_default in $p: $out"
 done
 
 # a derive spanning several lines is flagged when a following line of the block names Clone or Copy
 for names in 'Clone,' 'Copy,' 'Debug, Clone,'; do
   mkdiff tests/props.rs '#[derive(' '    Debug,' "    $names" ')]' 'struct A;' > "$t/p.diff"
   ck; out="$(scan --diff-file "$t/p.diff")" && fail "multi-line derive with $names not flagged"
-  ck; echo "$out" | grep -c "\[derive_clone\]" > /dev/null || fail "wrong pattern label for multi-line derive with $names: $out"
+  ck; grep -c "\[derive_clone\]" <<< "$out" > /dev/null || fail "wrong pattern label for multi-line derive with $names: $out"
 done
 mkdiff tests/props.rs '#[derive(' '    Debug,' '    PartialEq,' ')]' 'struct A;' 'let c = Clone;' > "$t/p.diff"
 ck; scan --diff-file "$t/p.diff" >/dev/null || fail "multi-line derive without Clone/Copy flagged: $(scan --diff-file "$t/p.diff")"
 
 mkdiff tests/props.rs 'let a: f64 = 1.0;' > "$t/p.diff"
 ck; out="$(scan --diff-file "$t/p.diff")" && fail "f64 not flagged in test path: tests/props.rs"
-ck; echo "$out" | grep -c "\[f64\]" > /dev/null || fail "wrong pattern label for f64 in tests/props.rs: $out"
+ck; grep -c "\[f64\]" <<< "$out" > /dev/null || fail "wrong pattern label for f64 in tests/props.rs: $out"
 
 mkdiff tests/props.rs 'panic!("x");' > "$t/p.diff"
 ck; out="$(scan --diff-file "$t/p.diff")" && fail "panic not flagged in test path: tests/props.rs"
-ck; echo "$out" | grep -c "\[panic\]" > /dev/null || fail "wrong pattern label for panic in tests/props.rs: $out"
+ck; grep -c "\[panic\]" <<< "$out" > /dev/null || fail "wrong pattern label for panic in tests/props.rs: $out"
 
 # not flagged: comment, string, removed line, context line, deny attr, unwrap_or, unwrap_or_else, expect_err_x, assertion helpers without the macro bang
 mkdiff $LIB '// x.clone() unsafe unwrap() f64' '/// doc: panic! #[allow]' 'let s = "x.clone() unwrap() f32";' '#![forbid(unsafe_code)]' 'let v = r.unwrap_or(0);' 'let v = r.expect_err_x;' 'let v = r.unwrap_or_else(f);' 'let r = assert_eq_x(a, b);' 'let s = "assert!(x) unwrap_or_default()";' > "$t/ok.diff"
@@ -144,7 +144,7 @@ hidden() { RULES_SCAN_ROOT="$hc" "$here/rules_scan.sh" --hidden-copies; }
 flagged_hc() { # flagged_hc <label> <rust source>: exactly one site expected
   printf '%s\n' "$2" > "$hc/src/x.rs"
   ck; out="$(hidden)" && fail "hidden copy not flagged: $1"
-  ck; echo "$out" | grep -c "hidden_copy_count 1\$" > /dev/null || fail "hidden copy count is not 1 for $1: $out"
+  ck; grep -c "hidden_copy_count 1\$" <<< "$out" > /dev/null || fail "hidden copy count is not 1 for $1: $out"
 }
 clean_hc() { # clean_hc <label> <rust source>
   printf '%s\n' "$2" > "$hc/src/x.rs"
@@ -172,8 +172,8 @@ ck; : > "$hc/src/x.rs"; hidden >/dev/null || fail "empty tree flagged"
 flagged_hc_at() { # flagged_hc_at <path> <label> <rust source>: exactly one site expected
   mkdir -p "$(dirname "$hc/$1")"; printf '%s\n' "$3" > "$hc/$1"
   ck; out="$(hidden)" && fail "hidden copy not flagged in $1: $2"
-  ck; echo "$out" | grep -c "hidden_copy_count 1\$" > /dev/null || fail "hidden copy count is not 1 in $1 for $2: $out"
-  ck; echo "$out" | grep -c "^$1:" > /dev/null || fail "hidden copy site is not reported under $1 for $2: $out"
+  ck; grep -c "hidden_copy_count 1\$" <<< "$out" > /dev/null || fail "hidden copy count is not 1 in $1 for $2: $out"
+  ck; grep -c "^$1:" <<< "$out" > /dev/null || fail "hidden copy site is not reported under $1 for $2: $out"
   rm -f "$hc/$1"
 }
 clean_hc_at() { # clean_hc_at <path> <label> <rust source>
@@ -207,7 +207,7 @@ soft() { echo "SELFTEST FAIL: $*"; SOFT=$((SOFT + 1)); }
 plant_hc() { # plant_hc <id> <path> <rust source>: exactly one hidden-copy site expected at <path>
   mkdir -p "$(dirname "$hc/$2")"; printf '%s\n' "$3" > "$hc/$2"
   out="$(hidden)"; rc=$?
-  if [ $rc -eq 0 ] || ! echo "$out" | grep -c "hidden_copy_count 1\$" > /dev/null || ! echo "$out" | grep -c "^$2:" > /dev/null; then
+  if [ $rc -eq 0 ] || ! grep -c "hidden_copy_count 1\$" <<< "$out" > /dev/null || ! grep -c "^$2:" <<< "$out" > /dev/null; then
     soft "plant $1 not flagged by the hidden-copy count: $(echo "$out" | tr '\n' ' ')"
   fi
   rm -f "$hc/$2"
@@ -228,7 +228,7 @@ plant_hc T3 tests/mag/zz.rs 'pub fn conv(m: &MagV) -> Result<Pair, String> { mat
 while IFS='|' read -r name line; do
   mkdiff src/mag/zz.rs "$line" > "$t/d.diff"
   out="$(scan --diff-file "$t/d.diff")" && { soft "not flagged: $name: $line"; continue; }
-  echo "$out" | grep -c "\[$name\]" > /dev/null || soft "wrong pattern label for $name: $out"
+  grep -c "\[$name\]" <<< "$out" > /dev/null || soft "wrong pattern label for $name: $out"
 done <<'CASES'
 type_alias|type M2 = Mag;
 type_alias|pub type V = MagV;
@@ -249,7 +249,7 @@ wrapped() { # wrapped <label> <added line>...: the lines form ONE statement; the
   local name="$1"; shift
   mkdiff src/mag/zz.rs "$@" > "$t/d.diff"
   out="$(scan --diff-file "$t/d.diff")" && { soft "wrapped form not flagged: $name: $*"; return; }
-  echo "$out" | grep -c "\[$name\]" > /dev/null || soft "wrong pattern label for wrapped $name: $out"
+  grep -c "\[$name\]" <<< "$out" > /dev/null || soft "wrong pattern label for wrapped $name: $out"
 }
 wrapped type_alias 'type X =' '    Option<' '        Mag>;'
 wrapped type_rename 'use super::{Mag' '    as M3};'
@@ -357,7 +357,7 @@ impl Mag {
 EOF
 git add -A; git commit -qm rb2
 echo 2 > tools/sanctioned_rebuild_count_baseline.txt
-ck; out="$(rb)"; echo "$out" | grep -c "sanctioned_rebuild_count 2\$" > /dev/null || fail "sanctioned rebuilds should be 2 (definition, computed and constant args, comment, string not counted; multi-line call counted): $out"
+ck; out="$(rb)"; grep -c "sanctioned_rebuild_count 2\$" <<< "$out" > /dev/null || fail "sanctioned rebuilds should be 2 (definition, computed and constant args, comment, string not counted; multi-line call counted): $out"
 ck; { scan --count-only || true; } | grep -c "sanctioned-rebuild count 2 == baseline" > /dev/null || fail "sanctioned-rebuild count should equal baseline 2: $(scan --count-only)"
 cat >> src/x.rs <<'EOF'
 impl Mag { pub fn third(&self) -> Mag { match self.nonzero() { Some((e, m)) => Mag::from_canonical(e, m.get()), None => Mag::zero() } } }
@@ -378,13 +378,13 @@ printf 'use super::Mag;\ntype Word = u64;\n// type M2 = Mag; and Mag as M\nfn s(
 ck; scan --count-only >/dev/null || fail "alias-free tree flagged: $(scan --count-only)"
 printf 'type X =\n    Option<\n        Mag>;\n' > src/x.rs
 ck; out="$(scan --count-only)" && fail "wrapped type alias in the tree passed --count-only"
-ck; echo "$out" | grep -c "src/x.rs:1 \[type_alias\]" > /dev/null || fail "wrapped type alias not reported with its first line: $out"
+ck; grep -c "src/x.rs:1 \[type_alias\]" <<< "$out" > /dev/null || fail "wrapped type alias not reported with its first line: $out"
 printf 'use super::{Mag\n    as M3};\n' > src/x.rs
 ck; out="$(scan --count-only)" && fail "wrapped rename in the tree passed --count-only"
-ck; echo "$out" | grep -c "src/x.rs:1 \[type_rename\]" > /dev/null || fail "wrapped rename not reported: $out"
+ck; grep -c "src/x.rs:1 \[type_rename\]" <<< "$out" > /dev/null || fail "wrapped rename not reported: $out"
 mkdir -p tests; printf 'pub use crate::model::dyadic::{\n    MagV,\n    Dy\n        as D,\n};\n' > tests/y.rs; printf 'fn a() {}\n' > src/x.rs
 ck; out="$(scan --count-only)" && fail "wrapped pub use rename under tests/ passed --count-only"
-ck; echo "$out" | grep -c "tests/y.rs:3 \[type_rename\]" > /dev/null || fail "rename under tests/ not reported at its line: $out"
+ck; grep -c "tests/y.rs:3 \[type_rename\]" <<< "$out" > /dev/null || fail "rename under tests/ not reported at its line: $out"
 rm -rf tests; printf 'fn a() {}\n' > src/x.rs
 ck; scan --count-only >/dev/null || fail "tree not clean after the alias fixtures: $(scan --count-only)"
 
@@ -393,7 +393,7 @@ printf 'pub fn e(&self) -> Option<i64> { None }\npub(crate) fn p(x: i32) {}\nfn 
 ck; scan --count-only >/dev/null || fail "i64 / private i32 flagged as narrow exponent: $(scan --count-only)"
 printf 'impl A {\n    pub fn exp(\n        &self,\n    ) -> Option<Exponent> { None }\n}\n' > src/x.rs
 ck; out="$(scan --count-only)" && fail "pub fn returning Exponent passed"
-ck; echo "$out" | grep -q "src/x.rs:2 \[pub_sig_narrow_exponent\]" || fail "wrapped Exponent signature not reported at its line: $out"
+ck; grep -q "src/x.rs:2 \[pub_sig_narrow_exponent\]" <<< "$out" || fail "wrapped Exponent signature not reported at its line: $out"
 ck; printf 'pub fn s(e: i32) {}\n' > src/x.rs; scan --count-only >/dev/null && fail "pub fn taking i32 passed"
 ck; printf 'pub struct S { pub e: i32 }\n' > src/x.rs; scan --count-only >/dev/null && fail "pub field of type i32 passed"
 ck; printf 'pub const E: zenith_float_num::Exponent = 0;\npub type T = i32;\n' > src/x.rs; scan --count-only >/dev/null && fail "pub const/type naming Exponent/i32 passed"
@@ -406,7 +406,7 @@ ck; scan --count-only >/dev/null || fail "Precision alias flagged: $(scan --coun
 for bad in 'pub fn f(prec: u32) {}' 'pub fn f(x: u8, mid_prec: usize) {}' 'struct B { prec: u64 }' 'pub trait E { fn prec(&self) -> u32; }' 'pub fn prec(\n    &self,\n) -> i64 { 0 }' 'fn f(prec: core::primitive::u128) {}'; do
   printf "$bad\n" > src/x.rs
   ck; out="$(scan --count-only)" && fail "concrete prec width passed: $bad"
-  ck; echo "$out" | grep -q "src/x.rs:1 \[prec_concrete_width\]" || fail "concrete prec width not reported at line 1: $bad: $out"
+  ck; grep -q "src/x.rs:1 \[prec_concrete_width\]" <<< "$out" || fail "concrete prec width not reported at line 1: $bad: $out"
 done
 printf 'fn a() {}\n' > src/x.rs
 ck; scan --count-only >/dev/null || fail "tree not clean after the prec fixtures: $(scan --count-only)"
@@ -439,7 +439,7 @@ ck; scan --diff-file "$t/ok.diff" >/dev/null || fail "clean overflow/ffi forms f
 nogit=$(mktemp -d "$(zb_scratch)"/rules-nogit.XXXXXX)
 for mode in --working --staged; do
   ck; out="$(RULES_SCAN_ROOT="$nogit" python3 "$here/rules_scan.py" $mode 2>&1)" && { rm -rf "$nogit"; fail "$mode passed although git diff failed: $out"; }
-  ck; echo "$out" | grep -c "git diff .*failed" > /dev/null || { rm -rf "$nogit"; fail "$mode: no git failure message: $out"; }
+  ck; grep -c "git diff .*failed" <<< "$out" > /dev/null || { rm -rf "$nogit"; fail "$mode: no git failure message: $out"; }
 done
 rm -rf "$nogit"
 st_done rules_scan 318   # WANT: cases this script runs (tools/selftest_cases.sh)

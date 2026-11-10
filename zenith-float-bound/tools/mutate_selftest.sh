@@ -66,20 +66,20 @@ setm() { cp "$r/$1" "$r/tools/mutants/manifest.txt"; cm; }   # committed: mutate
 
 # manifest integrity (checked before any mutant runs): an id listed twice, or a patch file that does not exist, FAILS the whole run
 printf 'src/lib.rs:add\t001-add-mul\t001-add-mul.patch\ttoy\nsrc/lib.rs:add\t001-add-mul\t002-add-commute.patch\ttoy\n' > "$r/tools/mutants/manifest.txt"; cm
-out="$(run)" && fail "duplicate manifest id passed: $out"; echo "$out" | grep -c "^mutate: FAIL duplicate manifest id 001-add-mul" > /dev/null || fail "duplicate id: wrong message: $out"
+out="$(run)" && fail "duplicate manifest id passed: $out"; grep -c "^mutate: FAIL duplicate manifest id 001-add-mul" <<< "$out" > /dev/null || fail "duplicate id: wrong message: $out"
 printf 'src/lib.rs:add\t001-add-mul\t001-add-mul.patch\ttoy\nsrc/lib.rs:add\t006-gone\t006-gone.patch\ttoy\n' > "$r/tools/mutants/manifest.txt"; cm
-out="$(run)" && fail "missing patch file passed: $out"; echo "$out" | grep -c "^mutate: FAIL manifest id 006-gone names missing patch 006-gone.patch" > /dev/null || fail "missing patch: wrong message: $out"
+out="$(run)" && fail "missing patch file passed: $out"; grep -c "^mutate: FAIL manifest id 006-gone names missing patch 006-gone.patch" <<< "$out" > /dev/null || fail "missing patch: wrong message: $out"
 
 # 0 mutants: a header-only manifest FAILS (Spence review: the gate's mutants step must run at least one mutant)
 printf '# empty\n' > "$r/tools/mutants/manifest.txt"; cm
-out="$(run)" && fail "empty manifest passed (0 mutants proves nothing): $out"; echo "$out" | grep -c "0 mutants ran" > /dev/null || fail "empty manifest: wrong message: $out"
+out="$(run)" && fail "empty manifest passed (0 mutants proves nothing): $out"; grep -c "0 mutants ran" <<< "$out" > /dev/null || fail "empty manifest: wrong message: $out"
 
 # a real mutant must be KILLED
 setm m.killed; out="$(run)" || fail "killable mutant not accepted: $out"
-echo "$out" | grep -c "^KILLED 001-add-mul" > /dev/null || fail "killed: wrong report: $out"
+grep -c "^KILLED 001-add-mul" <<< "$out" > /dev/null || fail "killed: wrong report: $out"
 # per-ID output (Harper, 2026-10-29): the KILLED line is followed by an indented line naming the failing test, and the mutant's
 # own cargo test output is kept as <logdir>/<slice>/<id>.out (it used to be one run.log the next mutant overwrote)
-grep -A1 <<< "$out" "^KILLED 001-add-mul" | grep -q "^    failing tests: add_works (output: " || fail "killed: no failing-test line naming add_works: $out"
+grep -q "^    failing tests: add_works (output: " <<< "$(grep -A1 "^KILLED 001-add-mul" <<< "$out")" || fail "killed: no failing-test line naming add_works: $out"
 grep -q "panicked" "$t/mutate-out/all/001-add-mul.out" 2>/dev/null || fail "killed: no per-ID output $t/mutate-out/all/001-add-mul.out"
 # Spence review (2026-10-29): a full run first clears its slice logdir of .out files (stale ones from an earlier HEAD must not look
 # current); --only removes just its own id.out (mutate_slice.sh runs a slice one --only id at a time). Nothing else is touched.
@@ -103,36 +103,36 @@ rm -rf "$t/mutate-out/central" "$t/mutate-out/other"
 
 # a surviving mutant makes the runner exit nonzero and is reported as SURVIVED
 setm m.surv; out="$(run)" && fail "surviving mutant passed (runner exited 0)"
-echo "$out" | grep -c "^SURVIVED 002-add-commute" > /dev/null || fail "survivor: wrong report: $out"
+grep -c "^SURVIVED 002-add-commute" <<< "$out" > /dev/null || fail "survivor: wrong report: $out"
 # ... unless it is documented as equivalent (reported differently, exit 0)
 printf '002-add-commute\taddition commutes\n' > "$r/tools/mutants/EQUIVALENT.txt"; cm
 out="$(run)" || fail "documented-equivalent survivor failed the run: $out"
-echo "$out" | grep -c "^SURVIVED-EQUIVALENT 002-add-commute" > /dev/null || fail "equivalent: wrong report: $out"
+grep -c "^SURVIVED-EQUIVALENT 002-add-commute" <<< "$out" > /dev/null || fail "equivalent: wrong report: $out"
 printf '# header only\n' > "$r/tools/mutants/EQUIVALENT.txt"; cm
 
 # a mutant that does not build and a patch that does not apply are INVALID (nonzero)
-setm m.nobuild; out="$(run)" && fail "non-building mutant passed"; echo "$out" | grep -c "^INVALID 003-nobuild" > /dev/null || fail "nobuild: wrong report: $out"
-setm m.bad; out="$(run)" && fail "non-applying patch passed"; echo "$out" | grep -c "^INVALID 005-badpatch" > /dev/null || fail "badpatch: wrong report: $out"
+setm m.nobuild; out="$(run)" && fail "non-building mutant passed"; grep -c "^INVALID 003-nobuild" <<< "$out" > /dev/null || fail "nobuild: wrong report: $out"
+setm m.bad; out="$(run)" && fail "non-applying patch passed"; grep -c "^INVALID 005-badpatch" <<< "$out" > /dev/null || fail "badpatch: wrong report: $out"
 
 # a hang is killed by the timeout
 setm m.hang; out="$(MUTATE_TIMEOUT=5s run)" || fail "hanging mutant not accepted as killed: $out"
-echo "$out" | grep -c "^KILLED 004-hang.*timed out" > /dev/null || fail "hang: wrong report: $out"
+grep -c "^KILLED 004-hang.*timed out" <<< "$out" > /dev/null || fail "hang: wrong report: $out"
 # Spence review (2026-10-29): a timeout KILLED is followed by the same indented failing-tests line, `(timed out)` for the names
-grep -A1 <<< "$out" "^KILLED 004-hang" | grep -q "^    failing tests: (timed out) (output: $t/mutate-out/all/004-hang.out)$" || fail "hang: no failing-tests (timed out) line after KILLED: $out"
+grep -q "^    failing tests: (timed out) (output: $t/mutate-out/all/004-hang.out)$" <<< "$(grep -A1 "^KILLED 004-hang" <<< "$out")" || fail "hang: no failing-tests (timed out) line after KILLED: $out"
 
 # --only selects one row; an unknown id is an error
 cat m.killed m.surv > "$r/tools/mutants/manifest.txt"; cm
-out="$(run --only 001-add-mul)" || fail "--only killed row failed: $out"; echo "$out" | grep -c "1 mutants" > /dev/null || fail "--only: wrong count: $out"
+out="$(run --only 001-add-mul)" || fail "--only killed row failed: $out"; grep -c "1 mutants" <<< "$out" > /dev/null || fail "--only: wrong count: $out"
 run --only nope >/dev/null 2>&1 && fail "unknown --only id passed"
 
 # MUTATE_TARGET: a persistent target dir is reused and kept (same verdicts), the fixed worktree is still removed; bad values are refused
 pt="$t/persist-target"; setm m.killed
 out="$(MUTATE_TARGET="$pt" run)" || fail "persistent target: killable mutant not accepted: $out"
-echo "$out" | grep -c "^KILLED 001-add-mul" > /dev/null || fail "persistent target: wrong report: $out"
+grep -c "^KILLED 001-add-mul" <<< "$out" > /dev/null || fail "persistent target: wrong report: $out"
 [ -d "$pt/debug" ] || fail "persistent target: $pt/debug was not kept"
 touch "$pt/marker"
 setm m.surv; out="$(MUTATE_TARGET="$pt" run)" && fail "persistent target: surviving mutant passed"
-echo "$out" | grep -c "^SURVIVED 002-add-commute" > /dev/null || fail "persistent target: survivor wrong report: $out"
+grep -c "^SURVIVED 002-add-commute" <<< "$out" > /dev/null || fail "persistent target: survivor wrong report: $out"
 [ -f "$pt/marker" ] || fail "persistent target: the dir was not reused (marker gone)"
 [ -e "$t/zb-mutate.persist" ] && fail "persistent target: fixed worktree left behind"
 MUTATE_TARGET="relative/dir" run >/dev/null 2>&1 && fail "relative MUTATE_TARGET accepted"
@@ -173,11 +173,11 @@ grep -q "^mutate: FAIL BADCOUNT.*CRLF" <<< "$out" || fail "CRLF floor: wrong mes
 out="$(MZERO= run)" && fail "a 0 mutant floor without MUTATE_FLOOR_ZERO_OK passed: $out"
 grep -q "^mutate: FAIL BADCOUNT.*must be 1 or more" <<< "$out" || fail "0 floor: wrong message: $out"
 printf '# empty\n' > "$r/tools/mutants/manifest.txt"; cm
-out="$(MFLOOR="$t/f.at" run)" && fail "0 mutants with a floor passed: $out"; echo "$out" | grep -c "0 mutants ran" > /dev/null || fail "0 mutants: wrong message: $out"
+out="$(MFLOOR="$t/f.at" run)" && fail "0 mutants with a floor passed: $out"; grep -c "0 mutants ran" <<< "$out" > /dev/null || fail "0 mutants: wrong message: $out"
 # 0934-zb-slice-a-full-gate3: Cargo.lock is gitignored, so the mutant worktree had none; every cargo call re-resolved the git dependency
 # over the network (DNS retries per mutant: the 20m budget ran out) and a resolve error in the test run (rc 101) was counted as KILLED.
 # mutate.sh must copy the repo's Cargo.lock into the worktree, run cargo --offline --frozen, and call only a real test failure a kill.
-lockok() { [ "$(grep -c '|fetch$' "$1")" = 1 ] && ! grep -qvE '^samelock\|(fetch$|.*--offline.*--frozen)' "$1"; }
+lockok() { [ "$(grep -c '|fetch$' "$1")" = 1 ] && ! grep -q . <<< "$(grep -vE '^samelock\|(fetch$|.*--offline.*--frozen)' "$1")"; }
 realcargo=$(command -v cargo); sh="$t/shim"; mkdir -p "$sh"
 cat > "$sh/cargo" <<SHIM
 #!/usr/bin/env bash

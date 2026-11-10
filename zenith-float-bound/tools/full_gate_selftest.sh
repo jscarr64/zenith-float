@@ -21,8 +21,8 @@ ck; "${fe[@]}" T="$t/logs" PATH="$t/bin" "$t/bin/bash" "$root/tools/full_gate.sh
 ck; grep -q '^failed$' "$t/logs/stripped.rc" || fail "stripped run did not finish with 'failed': $(cat "$t/stripped.out")"
 ck; grep -q '^done$' "$t/logs/stripped.rc" && fail "stripped run wrote 'done' although steps failed"
 steps=$(sed -n 's/^\([a-z0-9-]*\)=[0-9]*$/\1/p' "$t/logs/stripped.rc")
-ck; [ "$(echo "$steps" | wc -w)" -eq 28 ] || fail "stripped run reported $(echo "$steps" | wc -w) steps, want exactly 28 (bump this with every tools/full_gate.sh step): $steps"
-for need in gen-la-guard gen-la-heavy la4-red-markers; do ck; echo "$steps" | grep -qx "$need" || fail "gate step $need missing from tools/full_gate.sh"; done
+ck; [ "$(echo "$steps" | wc -w)" -eq 29 ] || fail "stripped run reported $(echo "$steps" | wc -w) steps, want exactly 29 (bump this with every tools/full_gate.sh step): $steps"
+for need in gen-la-guard gen-la-heavy la4-red-markers; do ck; grep -qx "$need" <<< "$steps" || fail "gate step $need missing from tools/full_gate.sh"; done
 for s in $steps; do
   ck; [ "$(rcof stripped "$s")" != 0 ] || fail "step $s PASSED with its tools missing (vacuous pass)"
 done
@@ -163,7 +163,7 @@ ck; grep -qE -- '-> ok$|all slices ok' "$t/rx.out" && miss+="[regex: printed a f
 ck; ms "$t/mu/tools/mutate_slice.sh" central 'nomatch' > "$t/rx0.out" 2>&1 && miss+="[regex: a regex matching nothing exited 0] "
 ck; grep -q 'matches no id' "$t/rx0.out" || miss+="[regex: no-match not named] "
 ck; ms "$t/mu/tools/mutate_slice.sh" --all '^001' > "$t/rxa.out" 2>&1 && miss+="[regex: --all accepted a regex] "
-ck; grep -E '^run mutants ' "$root/tools/full_gate.sh" | grep -qE 'mutate_slice\.sh --all"$' || miss+="[full_gate passes something after --all] "
+ck; grep -qE 'mutate_slice\.sh --all"$' <<< "$(grep -E '^run mutants ' "$root/tools/full_gate.sh")" || miss+="[full_gate passes something after --all] "
 # 8. mutate_slice.sh on its own (the selftest-only budget env is honoured there, never through the gate): a slice past its budget
 # (2 ids x 1s + 0s setup; 002-b sleeps 6s) is TIMEOUT and names the id that never ran
 ck; ms env FAKE_MUT=timeout MUTANT_BUDGET_S=1 MUTATE_SETUP_S=0 "$t/mu/tools/mutate_slice.sh" central > "$t/to.out" 2>&1 && miss+="[timeout: exited 0] "
@@ -201,10 +201,10 @@ ck; if [ -z "${FULL_GATE_SELFTEST_INNER:-}" ]; then
   ! grep 'ERR rc=' "$nlog" | grep -v 'ERR rc=[0-9]* line=[0-9]* cmd=( exit "\$rc" ) (in .*/tools/mutate\.sh)$' \
     || fail "expected-failure probes tripped poplog's ERR trap (lines above): $nlog"
 fi
-st_done full_gate 153   # WANT: cases this script runs (tools/selftest_cases.sh)
+st_done full_gate 154   # WANT: cases this script runs (tools/selftest_cases.sh)
 # the gate's real mutation run must not inherit MUTATE_FLOOR_ZERO_OK=1 (only the selftest fixture may use a 0 floor), nor the selftest-only
 # MUTANT_TIMEOUT_S / MUTANT_BUDGET_S / MUTATE_SETUP_S / MUTATE_SH, nor any env mutate.sh reads (MUTATE_REPO MUTATE_MANIFEST MUTATE_EQUIVALENT MUTATE_FLOOR MUTATE_TIMEOUT MUTATE_BUILD_TIMEOUT MUTATE_TMP MUTATE_PERSIST), in its --all run or in its --step-timeout computation
 u='env -u MUTATE_FLOOR_ZERO_OK -u MUTANT_TIMEOUT_S -u MUTANT_BUDGET_S -u MUTATE_SETUP_S -u MUTATE_SH -u MUTATE_REPO -u MUTATE_MANIFEST -u MUTATE_EQUIVALENT -u MUTATE_FLOOR -u MUTATE_TIMEOUT -u MUTATE_BUILD_TIMEOUT -u MUTATE_TMP -u MUTATE_PERSIST tools/mutate_slice\.sh'
-grep -E '^run mutants ' "$root/tools/full_gate.sh" | grep -q "$u --all\"$" || fail "mutants step runs tools/mutate_slice.sh --all without $u"
+grep -q "$u --all\"\$" <<< "$(grep -E '^run mutants ' "$root/tools/full_gate.sh")" || fail "mutants step runs tools/mutate_slice.sh --all without $u"
 [ "$(grep -c "$u --step-timeout" "$root/tools/full_gate.sh")" = 1 ] || fail "the mutants step timeout is computed without $u --step-timeout"
 echo "full_gate selftest: ok ($(grep -c x "$ST_CASES") cases)"

@@ -118,7 +118,7 @@ e="$t/emptyex"; mkfix "$e"; printf '# only a comment\n\n' > "$e/tools/pubfn_cove
 before=$(wc -l < "$POPLOG_FILE")
 ck; out="$(export POPLOG_FILE POPLOG_STATE_DIR POPLOG_PID POPLOG_PROGRESS_FILE; chk "$e")" || fail "empty exempt list failed: $out"
 ck; echo "$out" | grep -c "exempt list is empty" > /dev/null || fail "empty exempt: not reported explicitly: $out"
-ck; if tail -n "+$((before + 1))" "$POPLOG_FILE" | grep "ERR rc=" | grep -q "pubfn_coverage.sh"; then fail "empty exempt: ERR line logged: $(tail -n "+$((before + 1))" "$POPLOG_FILE" | grep "ERR rc=")"; fi
+ck; errs=$(tail -n "+$((before + 1))" "$POPLOG_FILE" | grep "ERR rc="); if grep -q "pubfn_coverage.sh" <<< "$errs"; then fail "empty exempt: ERR line logged: $(tail -n "+$((before + 1))" "$POPLOG_FILE" | grep "ERR rc=")"; fi
 # 8. STALE-EXEMPT: an exempt entry that names no public item must FAIL (a clean, fully covered tree otherwise)
 q="$t/staleexempt"; mkfix "$q"; printf 'Foo::ghost\tno such item\n' > "$q/tools/pubfn_coverage_exempt.txt"
 ck; out="$(chk "$q")" && fail "stale exempt entry passed: $out"
