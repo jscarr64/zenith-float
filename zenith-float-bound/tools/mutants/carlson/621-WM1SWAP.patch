@@ -1,0 +1,14 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -200,8 +200,8 @@
+                 return unbounded(op, prec, strict);
+             }
+             if lo_in {
+-                let l = w_bound(op, branch, hi, &Side::Below, prec, &mut cc)?;
+-                (l, w_bound(op, branch, lo, &Side::Above, prec, &mut cc)?)
++                let l = w_bound(op, branch, lo, &Side::Below, prec, &mut cc)?;
++                (l, w_bound(op, branch, hi, &Side::Above, prec, &mut cc)?)
+             } else if strict || !inside(hi, cap, &mut cc) {
+                 return Err(domain(op));
+             } else {

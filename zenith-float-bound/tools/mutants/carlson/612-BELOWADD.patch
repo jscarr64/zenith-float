@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -341,7 +341,7 @@
+     let shift = i64::try_from(prec).ok()?.checked_add(BRACKET_SHIFT)?;
+     let delta = pow2(w.exponent()?.checked_sub(shift)?)?;
+     let c = match side {
+-        Side::Below => round(w, wp, RoundingMode::Down).sub(&delta, wp, RoundingMode::Down),
++        Side::Below => round(w, wp, RoundingMode::Down).add(&delta, wp, RoundingMode::Down),
+         Side::Above => round(w, wp, RoundingMode::Up).add(&delta, wp, RoundingMode::Up),
+     };
+     let minus_one = num(-1);

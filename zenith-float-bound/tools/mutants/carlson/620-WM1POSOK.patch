@@ -1,0 +1,13 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -196,9 +196,6 @@
+             }
+         }
+         Branch::Lower => {
+-            if hi.is_zero() || hi.is_positive() {
+-                return unbounded(op, prec, strict);
+-            }
+             if lo_in {
+                 let l = w_bound(op, branch, hi, &Side::Below, prec, &mut cc)?;
+                 (l, w_bound(op, branch, lo, &Side::Above, prec, &mut cc)?)

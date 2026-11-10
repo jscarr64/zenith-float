@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -534,7 +534,7 @@
+         .ok_or_else(|| resource(op, "midpoint precision"))?;
+     let mid = round(l, wide, MID_RM)
+         .add(h, wide, MID_RM)
+-        .ldexp(-1, prec, MID_RM);
++        .ldexp(0, prec, MID_RM);
+     if !finite(&mid) {
+         return Ball::all_reals(prec);
+     }

@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -281,7 +281,7 @@
+     if x.is_zero() && *branch == Branch::Principal {
+         return Ok(num(0));
+     }
+-    let log_form = *branch == Branch::Lower || cmp(x, &num(4)) == Some(Ordering::Greater);
++    let log_form = *branch == Branch::Lower;
+     let cap = wp_cap(op, prec)?;
+     let mut wp = wp_start(op, prec)?;
+     while wp <= cap {
