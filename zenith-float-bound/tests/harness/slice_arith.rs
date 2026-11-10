@@ -408,7 +408,9 @@ fn prec_out_of_range_is_invalid_argument() -> Result<(), String> {
         pt(1, 53)?.sqrt(0, &DomainPolicy::Strict),
         pt(1, 53)?.add(
             &pt(1, 53)?,
-            zenith_float_bound::MAX_PRECISION.checked_add(1).ok_or("max+1")?,
+            zenith_float_bound::MAX_PRECISION
+                .checked_add(1)
+                .ok_or("max+1")?,
         ),
     ];
     for (i, r) in checks.into_iter().enumerate() {
