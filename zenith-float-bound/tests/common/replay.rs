@@ -3,7 +3,7 @@
 //!   `suite=<name> seed=<hex> case=<n> op=<name> prec=<p> rm=<mode> a=<enc> b=<enc>`
 //!
 //! `seed` is the BASE seed of the run (16 hex digits) and `case` the case index; the case stream is `case_seed(seed, case)`.
-//! Environment (read through `std::env::var`, no unsafe; a malformed value is an `Err`, never a panic or a silent default):
+//! Environment (read through `std::env::var` only, a safe std API; a malformed value is an `Err`, never a panic or a silent default):
 //!   ZB_FUZZ_SEED=<hex, optional 0x>   base seed                         (fallback: ZB_PROP_SEED, the builder's name, `0x...` hex or decimal)
 //!   ZB_FUZZ_CASES=<count>             number of cases, at least 1       (fallback: ZB_PROP_CASES)
 //!   ZB_REPLAY=<seed>:<case>           run exactly that case: seed hex (optional 0x), case decimal; overrides seed and cases
