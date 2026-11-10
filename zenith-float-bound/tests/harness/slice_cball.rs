@@ -11,12 +11,12 @@
 use std::fs;
 
 use crate::common::goldens::golden_dir;
-use zenith_bound::ball::Ball;
-use zenith_bound::cball::CBall;
-use zenith_bound::enclosure::Enclosure;
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
-use zenith_bound::tri::Tri;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::cball::CBall;
+use zenith_float_bound::enclosure::Enclosure;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::tri::Tri;
 use zenith_float_num::ExactNum;
 
 const TOP: u64 = 0x8000_0000_0000_0000;

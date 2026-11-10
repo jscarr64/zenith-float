@@ -96,7 +96,7 @@ impl ReplayLine {
         let prec = next()?
             .parse::<usize>()
             .map_err(|_| String::from("prec is not a decimal number"))
-            .and_then(|p| match p <= zenith_bound::MAX_PRECISION {
+            .and_then(|p| match p <= zenith_float_bound::MAX_PRECISION {
                 true => Ok(p),
                 false => Err(String::from("prec is above MAX_PRECISION")),
             })?;

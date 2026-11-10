@@ -1,8 +1,8 @@
 //! CONTRACT 2.1, 15.4; oracle: the clauses (exact expected values); Mag has private fields and is built only through its constructors
 //! COVERS: BoundError::Representation, Mag::exp, Mag::finite, Mag::infinity, Mag::is_infinity, Mag::is_zero, Mag::mant, Mag::zero, Eq for Mag, PartialEq for Mag
 
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
 
 fn made(mant: u64, exp: i64) -> Result<Mag, String> {
     Mag::finite(mant, exp).map_err(|e| format!("Mag::finite({}, {}) failed: {:?}", mant, exp, e))

@@ -67,9 +67,9 @@ impl Mag {
     /// # Examples
     ///
     /// ```
-    /// use zenith_bound::mag::Mag;
+    /// use zenith_float_bound::mag::Mag;
     ///
-    /// fn main() -> Result<(), zenith_bound::error::BoundError> {
+    /// fn main() -> Result<(), zenith_float_bound::error::BoundError> {
     ///     let m = Mag::finite(0x8000_0000_0000_0000, 1)?;
     ///     assert_eq!(m.mant(), Some(0x8000_0000_0000_0000));
     ///     assert_eq!(m.exp(), Some(1));

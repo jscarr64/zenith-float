@@ -16,7 +16,7 @@ expect_rc() { # expect_rc <rc> <label> <cmd...>
   out=$("$@" 2>&1); rc=$?
   ck; [ "$rc" = "$want" ] || fail "$label: exit $rc, want $want: $out"
 }
-RESULTS_TEXT='# zenith-bound tightness results (S12), written by the tightness sets; ratio = rad / R_ref in units of 1/65536 (q16), rounded up
+RESULTS_TEXT='# zenith-float-bound tightness results (S12), written by the tightness sets; ratio = rad / R_ref in units of 1/65536 (q16), rounded up
 # columns: OP PREC COUNT MIN MEDIAN P99 MAX
 add 24 3 65536 65536 98304 98304
 add 53 2 0 0 131072 131072

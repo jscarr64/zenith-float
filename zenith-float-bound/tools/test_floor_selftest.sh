@@ -15,7 +15,7 @@ chk() { printf 'x\n' >> "$t/cases"; TEST_FLOOR_FILE="$t/floor.txt" "$here/test_f
 bin() { # bin <name> <passed>: one test binary's output
   printf '     Running unittests src/lib.rs (target/debug/deps/%s-0123)\n\nrunning %s tests\n' "$1" "$2"
   printf 'test result: ok. %s passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s\n\n' "$2"; }
-{ bin a 10; bin b 15; printf '   Doc-tests zenith_bound\n\nrunning 5 tests\n'
+{ bin a 10; bin b 15; printf '   Doc-tests zenith_float_bound\n\nrunning 5 tests\n'
   printf 'test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s\n'; } > "$t/full.log"
 chk build-debug "$t/full.log" || fail "a complete 30-test log at floor 30 must PASS"
 head -n 9 "$t/full.log" > "$t/trunc.log"          # cut after binary b's Running line: 10 counted, b and doc-tests lost

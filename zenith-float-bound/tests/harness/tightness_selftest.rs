@@ -9,7 +9,7 @@ use crate::common::tightness::{
     check_tight, p99_rank, parse_results, slack_q16, CellStat, TightnessLog, Q16_ONE,
 };
 
-const PINNED: &str = "# zenith-bound tightness results (S12), written by the tightness sets; ratio = rad / R_ref in units of 1/65536 (q16), rounded up\n# columns: OP PREC COUNT MIN MEDIAN P99 MAX\nadd 24 3 65536 65536 98304 98304\nadd 53 2 0 0 131072 131072\nmul 24 4 10 20 40 40\n";
+const PINNED: &str = "# zenith-float-bound tightness results (S12), written by the tightness sets; ratio = rad / R_ref in units of 1/65536 (q16), rounded up\n# columns: OP PREC COUNT MIN MEDIAN P99 MAX\nadd 24 3 65536 65536 98304 98304\nadd 53 2 0 0 131072 131072\nmul 24 4 10 20 40 40\n";
 
 fn fixture_log() -> Result<TightnessLog, String> {
     let mut log = TightnessLog::empty();

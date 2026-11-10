@@ -5,7 +5,7 @@ use crate::model::oracle::{check_up, cmp_dy, succ};
 use crate::model::sets::{extreme_exponents, magv_set, mid_exponents};
 use crate::support::{ctx, dcmp, dy_of, from_magv, to_magv};
 use core::cmp::Ordering;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 pub fn verify(a: &MagV, b: &MagV, r: &MagV) -> Result<(), String> {
     let da = dy_of(a)?;

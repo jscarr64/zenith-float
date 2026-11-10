@@ -9,7 +9,7 @@
 
 use core::cmp::Ordering;
 
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 use zenith_float_num::{ExactNum, EXPONENT_MAX};
 
 const TOP: u64 = 0x8000_0000_0000_0000;

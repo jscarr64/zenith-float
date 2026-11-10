@@ -2,9 +2,9 @@
 //! checked constructors; BallVec/BallMat thin newtypes. Oracle: shapes and indices built by hand.
 //! COVERS: BallArray::from_balls, BallArray::zeros, BallArray::shape, BallArray::rank, BallArray::len, BallArray::is_empty, BallArray::get, BallArray::as_slice, BallArray::into_parts, BallVec::from_balls, BallVec::from_array, BallVec::len, BallVec::is_empty, BallVec::get, BallVec::as_array, BallVec::into_array, BallMat::from_balls, BallMat::from_array, BallMat::nrows, BallMat::ncols, BallMat::get, BallMat::as_array, BallMat::into_array
 
-use zenith_bound::array::{BallArray, BallMat, BallVec};
-use zenith_bound::ball::Ball;
-use zenith_bound::error::BoundError;
+use zenith_float_bound::array::{BallArray, BallMat, BallVec};
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::error::BoundError;
 use zenith_float_num::ExactNum;
 
 fn balls(n: i64) -> Result<Vec<Ball>, String> {

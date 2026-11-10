@@ -7,12 +7,12 @@
 //! enclosure rows tests/goldens/ball_enclosure_rows.txt (exact images rounded outward by scripts/gen_ball_enclosure.py).
 //! COVERS: Ball::add, Ball::sub, Ball::mul, Ball::mul_exact, Ball::sqr, Ball::powi, Ball::sqrt, Neg for Ball, Ball::div, Ball::inv, Ball::hypot
 
-use zenith_bound::ball::Ball;
-use zenith_bound::enclosure::Enclosure;
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
-use zenith_bound::policy::DomainPolicy;
-use zenith_bound::tri::Tri;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::enclosure::Enclosure;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::policy::DomainPolicy;
+use zenith_float_bound::tri::Tri;
 use zenith_float_num::{ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
 
 use crate::common::goldens::golden_dir;
@@ -408,7 +408,7 @@ fn prec_out_of_range_is_invalid_argument() -> Result<(), String> {
         pt(1, 53)?.sqrt(0, &DomainPolicy::Strict),
         pt(1, 53)?.add(
             &pt(1, 53)?,
-            zenith_bound::MAX_PRECISION.checked_add(1).ok_or("max+1")?,
+            zenith_float_bound::MAX_PRECISION.checked_add(1).ok_or("max+1")?,
         ),
     ];
     for (i, r) in checks.into_iter().enumerate() {

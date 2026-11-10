@@ -3,9 +3,9 @@
 //! True error: for exact inputs, rad ≥ |mid − exact| (containment), rad == 0 iff mid == exact (P6), and a single
 //! nearest rounding costs exactly half_ulp(e, prec) (16.S1.2).
 
-use zenith_bound::ball::Ball;
-use zenith_bound::mag::Mag;
-use zenith_bound::policy::DomainPolicy;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::policy::DomainPolicy;
 use zenith_float_num::ExactNum;
 
 use super::harper_edges::cm;
@@ -65,7 +65,7 @@ fn apply(op: usize, a: Ball, other: &Ball, prec: usize) -> Result<Option<Ball>, 
     };
     match r {
         Ok(b) => Ok(Some(b)),
-        Err(zenith_bound::error::BoundError::Domain { .. }) if op == 7 || op == 9 => Ok(None),
+        Err(zenith_float_bound::error::BoundError::Domain { .. }) if op == 7 || op == 9 => Ok(None),
         Err(e) => Err(format!("op {}: {:?}", op, e)),
     }
 }

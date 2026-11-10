@@ -9,7 +9,7 @@
 
 use core::cmp::Ordering;
 
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 use zenith_float_num::{ExactNum, EXPONENT_MAX};
 
 use super::raw;

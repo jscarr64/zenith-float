@@ -3,10 +3,10 @@
 //! Oracles: hand-verified exact rows (worked in the comment beside each). The S1 mutants 250..=282 are the strong check.
 //! COVERS: Ball::abs, Ball::mul_2exp, Ball::lt, Ball::le, Ball::gt, Ball::ge, Ball::eq, Ball::ne, Ball::overlaps
 
-use zenith_bound::ball::Ball;
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
-use zenith_bound::tri::Tri;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::tri::Tri;
 use zenith_float_num::ExactNum;
 
 const TOP: u64 = 0x8000_0000_0000_0000;

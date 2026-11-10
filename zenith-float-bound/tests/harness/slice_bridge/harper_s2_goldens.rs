@@ -7,14 +7,14 @@
 
 use core::cmp::Ordering;
 
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
 use zenith_float_num::{ExactNum, RawParts, RoundingMode, EXPONENT_MIN};
 
 use super::{golden_value, raw};
 use crate::common::goldens::golden_dir;
 
-const HEADER: &str = "# zenith-bound S2 cmp/conversion rows, scripts/gen_bridge_cmp_goldens.py v2 (see its docstring)";
+const HEADER: &str = "# zenith-float-bound S2 cmp/conversion rows, scripts/gen_bridge_cmp_goldens.py v2 (see its docstring)";
 
 /// The rows of one kind (`N`, `D`, `U` or `T`) with their 1-based line numbers; fails unless exactly `want` rows.
 fn rows(kind: &str, want: usize) -> Result<Vec<(usize, String)>, String> {

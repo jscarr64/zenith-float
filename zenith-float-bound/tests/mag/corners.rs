@@ -4,7 +4,7 @@ use crate::model::dyadic::MagV;
 use crate::model::oracle::{max_mag, min_pos_mag, zero_mag};
 use crate::model::sets::{magv_set, mid_exponents};
 use crate::support::{from_magv, to_magv};
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 fn check_is(op: &str, args: &[&MagV], got: &Mag, want: &MagV) -> Result<(), String> {
     if to_magv(got)? == *want {

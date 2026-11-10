@@ -407,7 +407,7 @@ def selftest():
     _check(oracle_problems(good, venv, "/usr/local", vpath + ["/home/u/.local/lib/python3.12/site-packages"], venv, "/home/u/.local") != [], "~/.local on sys.path not reported")
     # team env only (Jeff 10:01 AM CT 2026-10-30: the team never uses ~/.local/oracle-venv). require_team_env(prefix) returns the env
     # name or raises SystemExit (nonzero) with a typed 'goldlib: REFUSED[...]' message; write_lines records the name in DIR/PROVENANCE.
-    st = os.path.join(os.environ.get("ZB_SCRATCH") or os.path.expanduser("~/.cache/zenith-bound/scratch"), "goldlib-selftest")
+    st = os.path.join(os.environ.get("ZB_SCRATCH") or os.path.expanduser("~/.cache/zenith-float-bound/scratch"), "goldlib-selftest")
     os.makedirs(st, exist_ok=True)
     def _refused(prefix, root, tag):
         try:

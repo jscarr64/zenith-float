@@ -63,7 +63,7 @@ pub struct TightnessLog {
     cells: BTreeMap<(String, u32), Vec<u64>>,
 }
 
-const HEADER: &str = "# zenith-bound tightness results (S12), written by the tightness sets; ratio = rad / R_ref in units of 1/65536 (q16), rounded up\n# columns: OP PREC COUNT MIN MEDIAN P99 MAX\n";
+const HEADER: &str = "# zenith-float-bound tightness results (S12), written by the tightness sets; ratio = rad / R_ref in units of 1/65536 (q16), rounded up\n# columns: OP PREC COUNT MIN MEDIAN P99 MAX\n";
 
 impl TightnessLog {
     pub fn empty() -> TightnessLog {

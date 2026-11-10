@@ -2,8 +2,8 @@
 //! the `0.mant * 2^exp` convention shared by `Mag` (CONTRACT 1.2) and zenith-float `exponent()`; round trips are exact.
 //! COVERS: Mag::from_exact_num, Mag::from_exact_num_lower, Mag::to_exact_num
 
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
 use zenith_float_num::{ExactNum, RoundingMode, EXPONENT_MAX, EXPONENT_MIN, INF_NEG, INF_POS, NAN};
 
 const TOP: u64 = 1u64 << 63;

@@ -24,7 +24,7 @@ use crate::common::rng::splitmix64;
 use crate::common::rng::SplitMix64;
 use crate::common::seeds::{seed_for, CASE_CLASS_DEEP, CASE_CLASS_GATE};
 use crate::common::shrink::{shrink, ShrinkCase, SHRINK_STEP_CAP};
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 /// Cases of the gate run (override with `ZB_FUZZ_CASES`).
 const GATE_CASES: u64 = 1_000_000;

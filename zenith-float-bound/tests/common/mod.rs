@@ -1,4 +1,4 @@
-//! Shared test support for zenith-bound (checklist item S1): deterministic generator and fixed seeds. Integer-only, no dependencies.
+//! Shared test support for zenith-float-bound (checklist item S1): deterministic generator and fixed seeds. Integer-only, no dependencies.
 //!
 //! RULE: tests/common is included ONLY by the single harness target (tests/harness/main.rs), as
 //! `#[path = "../common/mod.rs"] mod common;`. No other test target may include it. The crate denies `unused` and `#[allow]` is banned,

@@ -1,10 +1,10 @@
 //! Harper L0b: adversarial edge table for slice S1 (CONTRACT 2.2–2.4, 3.2, 6.3, 16.S1.1–9). Every row is worked by hand
 //! in its comment or checked by containment of an exact image built with zf's exact `*_full_prec` arithmetic.
 
-use zenith_bound::ball::Ball;
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
-use zenith_bound::policy::DomainPolicy;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::policy::DomainPolicy;
 use zenith_float_num::{ExactNum, EXPONENT_MAX, EXPONENT_MIN};
 
 use super::{ball, mag, num, ok, pow2, pt, want_contains, want_exact, TOP};
@@ -409,7 +409,7 @@ fn overflow_and_error_paths_answer() -> Result<(), String> {
     // bad precisions are InvalidArgument for every op (0 and MAX + 1).
     for bad in [
         0usize,
-        zenith_bound::precision::MAX_PRECISION
+        zenith_float_bound::precision::MAX_PRECISION
             .checked_add(1)
             .ok_or("max")?,
     ] {
@@ -593,7 +593,7 @@ fn div_inv_hypot_edges() -> Result<(), String> {
     }
     for bad in [
         0usize,
-        zenith_bound::precision::MAX_PRECISION
+        zenith_float_bound::precision::MAX_PRECISION
             .checked_add(1)
             .ok_or("max")?,
     ] {

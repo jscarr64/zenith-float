@@ -3,11 +3,11 @@
 //! signed zero on both sides, round-to-even ties of the midpoint, |m| = r exactly, touching endpoints, and every
 //! precision error path.
 
-use zenith_bound::ball::Ball;
-use zenith_bound::enclosure::Enclosure;
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
-use zenith_bound::tri::Tri;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::enclosure::Enclosure;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::tri::Tri;
 use zenith_float_num::ExactNum;
 
 use super::{
@@ -35,7 +35,7 @@ fn exact_at(x: ExactNum, prec: usize) -> Result<Ball, String> {
 }
 
 fn max1() -> Result<usize, String> {
-    zenith_bound::MAX_PRECISION
+    zenith_float_bound::MAX_PRECISION
         .checked_add(1)
         .ok_or_else(|| "MAX_PRECISION + 1".to_string())
 }

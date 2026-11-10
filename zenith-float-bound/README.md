@@ -1,10 +1,10 @@
-# zenith-bound
+# zenith-float-bound
 
 **Pre-release (0.0.0). Nothing is guaranteed yet.** No enclosure, rounding or
 determinism property described anywhere in this repository holds until the
 release that states it, together with its tests. Do not rely on this crate.
 
-zenith-bound will be a guaranteed-bounds (ball arithmetic) crate built on
+zenith-float-bound will be a guaranteed-bounds (ball arithmetic) crate built on
 [zenith-float](https://github.com/jscarr64/zenith-float). Every result will
 either carry a defensible enclosure or say explicitly that the guarantee could
 not be established.
@@ -46,7 +46,7 @@ path is not ported.
 FLINT/Arb (via python-flint), MPFR and mpmath are used only as development test
 oracles. They are never dependencies and never shipped, and goldens derived
 from them are dev-only test data. FLINT/Arb and MPFR are LGPL-licensed, so
-zenith-bound implements algorithms from published papers only, never from
+zenith-float-bound implements algorithms from published papers only, never from
 their source (see `CONTRIBUTING.md` and `NOTICE`).
 
 ## License

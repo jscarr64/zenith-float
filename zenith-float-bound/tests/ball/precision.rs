@@ -3,11 +3,11 @@
 //! COVERS: Ball::exact, Ball::all_reals, Ball::from_mid_rad, BallArray::zeros
 //! (Precision, MIN_PRECISION and MAX_PRECISION are a type alias and consts, which pubfn_coverage does not list.)
 
-use zenith_bound::array::BallArray;
-use zenith_bound::ball::Ball;
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
-use zenith_bound::{Precision, MAX_PRECISION, MIN_PRECISION};
+use zenith_float_bound::array::BallArray;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::{Precision, MAX_PRECISION, MIN_PRECISION};
 use zenith_float_num::ExactNum;
 
 fn invalid<T>(r: Result<T, BoundError>, what: &str) -> Result<(), String> {

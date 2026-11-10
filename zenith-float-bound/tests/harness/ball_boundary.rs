@@ -10,8 +10,8 @@
 //! Ball::is_exact
 
 use crate::common::generators::{TOP, ZF_EXPONENT_MAX, ZF_EXPONENT_MIN};
-use zenith_bound::ball::Ball;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::mag::Mag;
 use zenith_float_num::ExactNum;
 
 fn bound(base: i64, step: i64) -> Result<i64, String> {

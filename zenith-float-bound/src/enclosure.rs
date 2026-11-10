@@ -1,7 +1,7 @@
 //! The sealed `Enclosure` trait (PLAN C5, 2026-10-23): what every enclosure type answers.
 //!
 //! Implemented by [`Ball`]; `ComplexBall` implements it when it lands (L2a). The trait is sealed:
-//! no type outside zenith-bound can implement it, so methods may be added in a minor release.
+//! no type outside zenith-float-bound can implement it, so methods may be added in a minor release.
 
 use zenith_float_num::{ExactNum, RoundingMode};
 
@@ -11,7 +11,7 @@ use crate::precision::Precision;
 use crate::tri::Tri;
 
 mod sealed {
-    /// Only zenith-bound types implement `Enclosure`.
+    /// Only zenith-float-bound types implement `Enclosure`.
     pub trait Sealed {}
 }
 

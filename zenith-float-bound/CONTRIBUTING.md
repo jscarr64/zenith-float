@@ -1,17 +1,17 @@
-# Contributing to zenith-bound
+# Contributing to zenith-float-bound
 
-zenith-bound is pre-release. Every rule below is enforced in review, and the ones marked **(gate)** are also enforced by `tools/full_gate.sh`. The plan is [`docs/PLAN.md`](docs/PLAN.md); the correctness contract is [`docs/CONTRACT.md`](docs/CONTRACT.md) (if they disagree, the contract wins).
+zenith-float-bound is pre-release. Every rule below is enforced in review, and the ones marked **(gate)** are also enforced by `tools/full_gate.sh`. The plan is [`docs/PLAN.md`](docs/PLAN.md); the correctness contract is [`docs/CONTRACT.md`](docs/CONTRACT.md) (if they disagree, the contract wins).
 
 ## Hard rules
 
 These apply to every line of Rust in the crate: `src/`, `tests/`, `benches/`, `examples/`, `build.rs`, test helpers, `#[cfg(test)]` items and generator output that is Rust source. **There is no test-code exemption.**
 
-1. **100% Rust, no `unsafe`. (gate)** `#![forbid(unsafe_code)]` stays in `src/lib.rs`, and `[lints.rust] unsafe_code = "forbid"` in `Cargo.toml` covers every target. The only `unsafe` the project may ever contain is the FPU-rounding behaviour test in a separate dev-only crate `fpu-check/` (`publish = false`, planned, not yet present), which zenith-bound never depends on.
+1. **100% Rust, no `unsafe`. (gate)** `#![forbid(unsafe_code)]` stays in `src/lib.rs`, and `[lints.rust] unsafe_code = "forbid"` in `Cargo.toml` covers every target. The only `unsafe` the project may ever contain is the FPU-rounding behaviour test in a separate dev-only crate `fpu-check/` (`publish = false`, planned, not yet present), which zenith-float-bound never depends on.
 2. **No IEEE floats. (gate)** No `f32`/`f64` anywhere (not in tests, not in generated Rust), no float literals typed as such, no `as f64`, no `mul_add`/FMA, no FPU rounding-mode control, no `core::arch`/`std::arch`, no `#[target_feature]`, no CPU-feature detection. Directed rounding comes only from zenith-float's `RoundingMode::Up`/`Down`, and radii come from the integer-only `Mag` type. Python generators under `scripts/` may use floats internally only to run the oracle, and their outputs are data files (integers and decimal strings), never Rust source with floats.
 3. **Zero clone. (gate)** No `.clone()`, `.clone_from()`, `Clone::clone`, `.to_vec()`, `.cloned()`, `.to_owned()`, no `impl Clone`, and no `#[derive(Clone)]`. **`Copy` is not approved either** (`derive(Copy)` needs `Clone`, and `impl Copy` is flagged): `Mag`, `Tri` and every other type are used through references, and `Mag` methods take `&Mag`. If a design seems to need a copy, consume the value, restructure, or ask. An exception needs a concrete proof and Jeff's approval, and is recorded in `tools/rules_allowlist.txt`, which only Jeff edits.
 4. **Zero `unwrap`, `expect`, `panic!`, `unreachable!`, `todo!`, `unimplemented!`. (gate)** Banned in library code **and in tests, test helpers and benches**. Tests are written as `fn name() -> Result<(), String>` functions that return `Err(...)` with a message (a small helper such as `check(cond, msg) -> Result<(), String>` and `?`), never with `unwrap`/`expect`. The only exception is an `unwrap` that is **absolutely necessary**: it is listed in `tools/rules_allowlist.txt` with its reason, for Jeff, who alone approves and edits that file. Library code also has no slice/array indexing that can fail and no unchecked `+ - * <<` on exponents (use `checked_*`); every `Option`/`Result` is propagated into `BoundError`/`Indeterminate`. `assert!`, `assert_eq!`, `assert_ne!`, `assert_matches!` and their `debug_` forms are banned everywhere (a failed check returns `Err`, never panics), as are `unwrap_or_default(`, `unwrap_unchecked(`, `unwrap_err(` and `expect_err(`; `tools/rules_scan.py` and the gate's `no-panic-scan` flag them.
 5. **No `#[allow]` and no `#[expect]`, no dead code, no commented-out code. (gate)** Lints are denied for every target in `Cargo.toml` `[lints]` and `clippy.toml`; the gate runs `cargo clippy --all-targets -- -D warnings`.
-6. **No new dependencies without Rusty's approval.** Any pin of zenith-float is a git revision in its own commit, filled in by Rusty once the final zenith-float 2.0.0 commit exists (`publish = false` stays). zenith-bound makes **no zenith-float call sites** until that commit exists.
+6. **No new dependencies without Rusty's approval.** Any pin of zenith-float is a git revision in its own commit, filled in by Rusty once the final zenith-float 2.0.0 commit exists (`publish = false` stays). zenith-float-bound makes **no zenith-float call sites** until that commit exists.
 7. **zenith-float ownership forms.** Prefer consuming operands (`self`) and other zero-clone forms. `add_ref`/`sub_ref` are allowed only at sites where both operands are still live. `mul_ref`/`div_ref` are approved **only if absolutely necessary, when everything else fails**, and every use is listed with its reason, for Jeff. `sqr(&self)` is fine. The scan counts every use of `add_ref(`, `sub_ref(`, `mul_ref(`, `div_ref(` against `tools/ref_sum_count_baseline.txt`, which starts at 0 and only goes down (a raise needs Jeff, as a change to a protected file). **(gate)**
 8. **MSRV is the frozen pin, Rust 1.99** (`rust-toolchain.toml` with `clippy` and `rustfmt`, `rust-version = "1.99"`). Do not use features newer than 1.99. The pin moves only by a deliberate decision, in a minor (0.x) or major release, named in `CHANGELOG.md`.
 9. **License:** contributions are accepted under `MIT OR Apache-2.0`. Files ported from puremp (MIT, KarpelesLab) keep an SPDX header naming the puremp commit and the MIT notice with credit to KarpelesLab (see `NOTICE-puremp`).
@@ -32,7 +32,7 @@ Every run on Pop gets a run log (`~/pop-logs/`): `tools/*.sh` scripts log themse
 
 Arb/FLINT and MPFR are licensed under the **LGPL**. We use them (and mpmath) only as **dev-only test oracles**.
 
-- Implement algorithms **from the published papers and textbooks only** (for example Johansson's Arb papers, Petras, Rump, Lohner, Olver, Carlson). **Never read, copy, translate or paraphrase Arb/FLINT or MPFR source code** while working on zenith-bound, and don't paste their code into prompts for coding models.
+- Implement algorithms **from the published papers and textbooks only** (for example Johansson's Arb papers, Petras, Rump, Lohner, Olver, Carlson). **Never read, copy, translate or paraphrase Arb/FLINT or MPFR source code** while working on zenith-float-bound, and don't paste their code into prompts for coding models.
 - Cite the paper in the module doc of anything that implements a published bound.
 - Oracles are never a dependency in any `Cargo.toml` of the published crate, and they are never shipped. `cargo-deny` (planned) will reject LGPL licenses in the dependency graph.
 - Goldens derived from oracle output live under `tests/` and `scripts/` and are excluded from the published package (see `NOTICE`).
@@ -55,7 +55,7 @@ Arb/FLINT and MPFR are licensed under the **LGPL**. We use them (and mpmath) onl
 
 Use the isolated oracle venv `~/.local/oracle-venv/bin/python` (mpmath 1.3.0, sympy 1.14.0, gmpy2 2.3.2, python-flint 0.9.0; `scripts/requirements.lock`). `scripts/goldlib.py` refuses any other interpreter at startup: exact versions, `sys.prefix` is the venv, no `~/.local` on `sys.path`. Never import oracle packages from `~/.local` outside the venv. The output is deterministic, so regenerating must leave `tests/goldens/mag_ops.txt` byte-identical.
 
-MPFR is reached only through zenith-float's own test suite (via `rug`); zenith-bound has no MPFR dependency. Goldens are regenerated only in a commit that says why, and a byte-golden change also needs an `op_ver` bump.
+MPFR is reached only through zenith-float's own test suite (via `rug`); zenith-float-bound has no MPFR dependency. Goldens are regenerated only in a commit that says why, and a byte-golden change also needs an `op_ver` bump.
 
 ## Review
 

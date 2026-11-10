@@ -6,7 +6,7 @@ use crate::model::oracle::{min_pos_mag, TWO63};
 use crate::model::sets::mantissas;
 use crate::support::{dcmp, dy_of, from_magv, to_magv};
 use core::cmp::Ordering;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 /// A `Precision` as `i64` / `i128` for the oracle formulas (every prec in this file fits both).
 fn p64(p: usize) -> i64 {

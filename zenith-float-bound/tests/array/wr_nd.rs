@@ -2,9 +2,9 @@
 //! axis, shape-product overflow => InvalidArgument. Oracle: row-major offsets computed by hand.
 //! COVERS: BallArray::from_balls, BallArray::zeros, BallArray::get, BallArray::rank, BallArray::len
 
-use zenith_bound::array::BallArray;
-use zenith_bound::ball::Ball;
-use zenith_bound::error::BoundError;
+use zenith_float_bound::array::BallArray;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::error::BoundError;
 use zenith_float_num::ExactNum;
 
 const DIMS: [usize; 6] = [2, 3, 1, 4, 2, 3];

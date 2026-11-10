@@ -4,7 +4,7 @@
 use crate::model::dyadic::MagV;
 use crate::support::{from_magv, to_magv};
 use core::str::SplitWhitespace;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 const ROWS: &str = include_str!("../goldens/mag_ops_review.txt");
 

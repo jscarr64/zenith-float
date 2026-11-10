@@ -305,7 +305,7 @@ def main(path=None, name=GOLDEN_NAME):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     
     with open(path, "w") as f:
-        f.write("# zenith-bound Mag operation goldens%s, generated" % (" (L0a-1: i64 +-3 neighbours, exponent gaps, sqrt parity)" if l0a1 else "") + " by scripts/gen_goldens.py (mpmath.libmp directed rounding to 64 bits)\n")
+        f.write("# zenith-float-bound Mag operation goldens%s, generated" % (" (L0a-1: i64 +-3 neighbours, exponent gaps, sqrt parity)" if l0a1 else "") + " by scripts/gen_goldens.py (mpmath.libmp directed rounding to 64 bits)\n")
         f.write("# binary: OP EA MA EB MB R ; unary: OP E M R ; R is 'ER MR' or the word inf\n")
         f.write("# value = mant * 2^(exp - 64); zero is '0 0'\n")
         f.write("# generated in the oracle venv (mpmath 1.3.0, sympy 1.14.0, gmpy2 2.3.2, python-flint 0.9.0); see scripts/README.md\n")

@@ -6,13 +6,13 @@
 //! COVERS: MagArray::from_mags, MagArray::get, MagArray::shape, MagArray::rank, MagArray::len, MagArray::is_empty, MagArray::as_slice, MagArray::into_parts, BallArray::add, BallArray::sub, BallArray::mid_rad, BallArray::from_mid_rad, BallVec::dot, BallVec::norm_inf, BallVec::norm_1, BallVec::norm_2_up, BallMat::matvec, BallMat::matmul, BallMat::norm_inf, BallMat::norm_1, BallMat::norm_frob_up, BallVec::add, BallVec::sub, BallMat::add, BallMat::sub
 
 use crate::common::goldens::golden_dir;
-use zenith_bound::array::{BallArray, BallMat, BallVec};
-use zenith_bound::ball::Ball;
-use zenith_bound::enclosure::Enclosure;
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
-use zenith_bound::matrix::MagArray;
-use zenith_bound::tri::Tri;
+use zenith_float_bound::array::{BallArray, BallMat, BallVec};
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::enclosure::Enclosure;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::matrix::MagArray;
+use zenith_float_bound::tri::Tri;
 use zenith_float_num::{ExactNum, RoundingMode};
 
 const GATE_ROWS: usize = 150;
@@ -219,7 +219,7 @@ fn check_entry(what: &str, c: &Ball, cur: &mut Cursor) -> Result<(), String> {
     within_twice(&format!("{what} rad"), c.rad(), &tref)
 }
 
-/// Replays one gold row through zenith-bound; Ok(()) when every check holds.
+/// Replays one gold row through zenith-float-bound; Ok(()) when every check holds.
 fn replay_row(line: &str) -> Result<(), String> {
     let mut cur = Cursor {
         toks: line.split(' ').collect(),

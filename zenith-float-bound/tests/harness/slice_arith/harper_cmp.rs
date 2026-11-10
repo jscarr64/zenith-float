@@ -3,11 +3,11 @@
 //! all-reals and out-of-range radii, mul_2exp near EXPONENT_MIN / EXPONENT_MAX, and bad precision.
 //! COVERS: Ball::abs, Ball::mul_2exp, Ball::lt, Ball::le, Ball::gt, Ball::ge, Ball::eq, Ball::ne, Ball::overlaps
 
-use zenith_bound::ball::Ball;
-use zenith_bound::enclosure::Enclosure;
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
-use zenith_bound::tri::Tri;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::enclosure::Enclosure;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::tri::Tri;
 use zenith_float_num::{ExactNum, EXPONENT_MAX, EXPONENT_MIN};
 
 use super::{ball, mag, num, ok, pow2, pt, want_contains, want_exact, TOP};
@@ -250,7 +250,7 @@ fn mul_2exp_rows() -> Result<(), String> {
 
 #[test]
 fn abs_mul_2exp_bad_prec() -> Result<(), String> {
-    let max1 = zenith_bound::MAX_PRECISION.checked_add(1).ok_or("max+1")?;
+    let max1 = zenith_float_bound::MAX_PRECISION.checked_add(1).ok_or("max+1")?;
     let checks: [Result<Ball, BoundError>; 4] = [
         pt(1, P)?.abs(0),
         pt(1, P)?.abs(max1),

@@ -9,7 +9,7 @@
 
 use crate::common::expect_eq;
 use crate::common::generators::{TOP, ZF_EXPONENT_MAX};
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 /// The exponents the rows run at: an ordinary one, one below the zf bound, the zf bound, and the top of `i64`.
 const CARRY_EXPONENTS: [i64; 5] = [

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Self-test for tools/rules_scan.sh (zenith-bound): every banned pattern is flagged on ADDED lines in src/, tests/, benches/ and examples/ alike (there is no test-code exemption), removed/context lines, comments, strings and non-Rust paths are not flagged, the allowlist works, git modes work, and both count baselines only go down.
+# Self-test for tools/rules_scan.sh (zenith-float-bound): every banned pattern is flagged on ADDED lines in src/, tests/, benches/ and examples/ alike (there is no test-code exemption), removed/context lines, comments, strings and non-Rust paths are not flagged, the allowlist works, git modes work, and both count baselines only go down.
 # shellcheck source=tools/runlog.sh
 . "${BASH_SOURCE[0]%/*}/runlog.sh"; runlog_wrap rules_scan_selftest "$@"   # run log (tools/runlog.sh)
 runlog_detach_children
@@ -240,7 +240,7 @@ type_alias|type V<'a> = &'a MagV;
 type_rename|use super::Mag as M;
 type_rename|use crate::model::dyadic::{Dy as D, MagV};
 type_rename|use crate::model::dyadic::{MagV, Dy as D};
-type_rename|use zenith_bound::mag::Mag as Magnitude;
+type_rename|use zenith_float_bound::mag::Mag as Magnitude;
 CASES
 mkdiff src/mag/zz.rs 'type Pair = (u8, u8);' 'use std::fmt::Result as FmtResult;' 'use super::Mag;' 'let m = Mag::zero(); // type M2 = Mag; use x::Mag as M' 'let s = "type M2 = Mag; Mag as M";' 'type Word = u64;' 'impl Magnitude for X {}' > "$t/ok.diff"
 scan --diff-file "$t/ok.diff" >/dev/null || soft "alias-free lines flagged: $(scan --diff-file "$t/ok.diff")"

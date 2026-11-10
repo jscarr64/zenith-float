@@ -1,4 +1,4 @@
-# zenith-bound clippy config. Jeff's rules apply to test code too: no unwrap/expect/panic/indexing escape in tests.
+# zenith-float-bound clippy config. Jeff's rules apply to test code too: no unwrap/expect/panic/indexing escape in tests.
 allow-unwrap-in-tests = false
 allow-expect-in-tests = false
 allow-panic-in-tests = false

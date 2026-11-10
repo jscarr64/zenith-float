@@ -300,7 +300,7 @@ def rows(limit):
 def write(path, limit):
     count = 0
     with open(path, "wb") as fh:
-        fh.write(("# zenith-bound S2 cmp/conversion rows, scripts/gen_bridge_cmp_goldens.py v%d (see its docstring)\n" % GENERATOR_VERSION).encode())
+        fh.write(("# zenith-float-bound S2 cmp/conversion rows, scripts/gen_bridge_cmp_goldens.py v%d (see its docstring)\n" % GENERATOR_VERSION).encode())
         for row in rows(limit):
             fh.write((row + "\n").encode("ascii"))
             count += 1

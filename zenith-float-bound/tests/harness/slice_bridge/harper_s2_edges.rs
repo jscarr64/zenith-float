@@ -6,9 +6,9 @@
 
 use core::cmp::Ordering;
 
-use zenith_bound::bridge::Constant;
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::bridge::Constant;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
 use zenith_float_num::{ExactNum, RawKind, RawParts, RoundingMode, EXPONENT_MAX, EXPONENT_MIN};
 
 const TOP: u64 = 0x8000_0000_0000_0000;

@@ -6,7 +6,7 @@ Wall seconds are the `time` of the already-built test binary (compile time exclu
 
 ## What could NOT be timed
 
-`src/mag` does not exist at this head, so `cargo test --test mag` does not compile (8 errors, all `unresolved import zenith_bound::mag`). No Mag op, no property test and no `mag_ops_match_mpmath_goldens` could be timed. Nothing below is a time of a real Mag implementation.
+`src/mag` does not exist at this head, so `cargo test --test mag` does not compile (8 errors, all `unresolved import zenith_float_bound::mag`). No Mag op, no property test and no `mag_ops_match_mpmath_goldens` could be timed. Nothing below is a time of a real Mag implementation.
 
 ## Model / golden families (model only; scratch stand-in for Mag)
 

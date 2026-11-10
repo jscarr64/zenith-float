@@ -7,7 +7,7 @@ use crate::model::dyadic::MagV;
 use crate::model::oracle::succ;
 use crate::model::rng::run_cases;
 use crate::support::{from_magv, to_magv};
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 const CASES: u64 = 3000;
 

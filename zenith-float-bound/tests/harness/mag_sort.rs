@@ -9,7 +9,7 @@
 use crate::common::expect_eq;
 use crate::common::generators::{TOP, ZF_EXPONENT_MAX, ZF_EXPONENT_MIN};
 use crate::common::rng::SplitMix64;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 /// How one element is built; listed in ascending order, so the list order is the oracle.
 enum Spec {

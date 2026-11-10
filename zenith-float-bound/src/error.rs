@@ -1,4 +1,4 @@
-//! Error type of zenith-bound (variant set: CONTRACT O11-W; struct form and the two
+//! Error type of zenith-float-bound (variant set: CONTRACT O11-W; struct form and the two
 //! linear-algebra variants: 2026-10-23 rulings a and b; DimensionMismatch: S0, 2026-10-24; NotSymmetric: LA plan, 2026-10-24).
 
 use core::fmt;
@@ -138,5 +138,5 @@ impl fmt::Display for BoundError {
 
 impl core::error::Error for BoundError {}
 
-/// Result of a zenith-bound operation (CONTRACT 15.3).
+/// Result of a zenith-float-bound operation (CONTRACT 15.3).
 pub type BoundResult<T> = Result<T, BoundError>;

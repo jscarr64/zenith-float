@@ -7,7 +7,7 @@ use crate::model::dyadic::Dy;
 use crate::model::rng::run_cases;
 use crate::support::{dcmp, from_magv};
 use core::cmp::Ordering;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 const CASES: u64 = 3000;
 

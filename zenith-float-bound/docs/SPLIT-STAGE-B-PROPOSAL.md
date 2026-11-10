@@ -15,7 +15,7 @@ L1 starts on B1. Every B1 function still gets its P14 finding and a green gate o
 
 ## 2. The function list (derived from PLAN L1)
 
-Source: PLAN:342 ("Functions: sqrt (from L0), exp, exp2, expm1, log, log2, log10, log1p, sin, cos, tan, asin, acos, atan, atan2, sinh, cosh, tanh, asinh, acosh, atanh, pow; constants pi, e, ln2, ln10") [F]; radius rules PLAN:343-349; P14 scope PLAN:195 (the same list and the constants; `sqrt` is not in it) [F]. A zf function is on the list if an L1 v1 kernel needs it for a midpoint or an enclosed constant. Radius arithmetic in `Mag` (`div_up`, `sub_lower`, Mag `sqrt`, `min(r, 2)`) is zenith-bound code and needs no zf function [F: PLAN:344-348]. **The list is agreed [R]: 22 functions plus the constants; `ln` is the natural log; `sin_cos`/`sinh_cosh` are not needed; zf `powi` is not used; `fma` is not needed.**
+Source: PLAN:342 ("Functions: sqrt (from L0), exp, exp2, expm1, log, log2, log10, log1p, sin, cos, tan, asin, acos, atan, atan2, sinh, cosh, tanh, asinh, acosh, atanh, pow; constants pi, e, ln2, ln10") [F]; radius rules PLAN:343-349; P14 scope PLAN:195 (the same list and the constants; `sqrt` is not in it) [F]. A zf function is on the list if an L1 v1 kernel needs it for a midpoint or an enclosed constant. Radius arithmetic in `Mag` (`div_up`, `sub_lower`, Mag `sqrt`, `min(r, 2)`) is zenith-float-bound code and needs no zf function [F: PLAN:344-348]. **The list is agreed [R]: 22 functions plus the constants; `ln` is the natural log; `sin_cos`/`sinh_cosh` are not needed; zf `powi` is not used; `fma` is not needed.**
 
 Signatures are from `wip/option-a` @ `fe5c15d` [F]. Single-argument functions are `(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum`. **Rusty's recommendation 2026-10-16, Paul to confirm: every function below keeps its current public signature; consuming `self` is not needed.**
 
@@ -30,7 +30,7 @@ Signatures are from `wip/option-a` @ `fe5c15d` [F]. Single-argument functions ar
 | 10 | `log1p` (:1323) | `log1p` | B | as #2 |
 | 11-15 | `sin`, `cos`, `tan`, `asin`, `acos` (`gen_wrapper_arg_rm_cc`, :2209) | same names; `sin(0)` exact case | B | as #2 |
 | 16 | `atan` (:1209) | `atan`; also uses the constant π in the radius (`min(r, π)`) | B | as #2 |
-| 17 | `atan2(&self, x: &Self, p, rm, cc)` (:1228) | `atan2` (quadrant logic and the (0,0) `Domain` are zenith-bound code) | B; W1 value fixes are Stage A [F] | as #2; second operand already borrowed |
+| 17 | `atan2(&self, x: &Self, p, rm, cc)` (:1228) | `atan2` (quadrant logic and the (0,0) `Domain` are zenith-float-bound code) | B; W1 value fixes are Stage A [F] | as #2; second operand already borrowed |
 | 18 | `tanh` (:1372) | `tanh` | B | as #2 |
 | 19-21 | `asinh`, `acosh`, `atanh` (`gen_wrapper_arg_rm_cc`) | same names | B | as #2 |
 | 22 | `pow(&self, n: &Self, p, rm, cc)` (:761) | `pow` with a non-integer or ball exponent; integer exponents are L0b `powi` built from Ball mul/sqr, not zf `powi` [I] | B | as #2; exact-case trap `pow(x, 0)` (PLAN:195); zf `pow(0,0)` is exactly 1, `inexact()` false on `wip/option-a` and 1.0.12 [F: `/tmp/zf-logs/zf-pow-zero-zero.md`] |
@@ -63,7 +63,7 @@ From `/tmp/zf-logs/option-a-evidence.md` §4.1 and `zf-pin-items-extract.md` §0
 3. *More than one pin SHA* (A, B1, final). Pin changes can change grid digests (TEST_PLAN 15 end) [F]; each pin change bumps the op-version per PLAN Part J.
 4. *A later layer wants a different shape for a B1 function.* Mitigated by **[R]**: B2 may not change B1 public items, and B1 keeps today's signatures.
 5. *L1 stays red on real kernels until B1's P14 findings and MPFR sets are green* (TEST_PLAN 15) [F]. Stub-backed L1 code is useful for parallelism and early API feedback only.
-6. *Accuracy-contract change on a frozen signature.* If P14 finds a kernel not rigorous, its contract becomes `ToEven` plus a proven 1 ulp bound (PLAN:195, 349), a documented change that does not alter the signature **[R]**; zenith-bound's radius adds 1 ulp for it.
+6. *Accuracy-contract change on a frozen signature.* If P14 finds a kernel not rigorous, its contract becomes `ToEven` plus a proven 1 ulp bound (PLAN:195, 349), a documented change that does not alter the signature **[R]**; zenith-float-bound's radius adds 1 ulp for it.
 
 ## 6. Order inside B1 (dependencies only)
 

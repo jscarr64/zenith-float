@@ -9,11 +9,11 @@
 
 use core::cmp::Ordering;
 
-use zenith_bound::ball::Ball;
-use zenith_bound::bridge::{constant_ball, Constant};
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
-use zenith_bound::MAX_PRECISION;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::bridge::{constant_ball, Constant};
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::MAX_PRECISION;
 use zenith_float_num::{
     Consts, ExactNum, RawKind, RawParts, RoundingMode, EXPONENT_MAX, EXPONENT_MIN,
 };
@@ -883,7 +883,7 @@ fn bridge_export_round_trip() -> Result<(), String> {
                 }
                 want_up_lo("subnormal to/from", &x, &m, &m)?;
             }
-            (Err(zenith_bound::error::BoundError::Representation { .. }), false) => {}
+            (Err(zenith_float_bound::error::BoundError::Representation { .. }), false) => {}
             (r, _) => {
                 return Err(format!(
                     "{:#x}@{}: want ok={}, got {:?}",

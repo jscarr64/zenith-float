@@ -15,7 +15,7 @@ use crate::common::generators::{
 use crate::common::goldens::golden_dir;
 use crate::common::rng::SplitMix64;
 use crate::common::seeds::{seed_for, CASE_CLASS_GATE};
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 const EXPS: [i64; 25] = [
     i64::MIN,
@@ -342,7 +342,7 @@ fn grid_digests_write_the_digest_file_for_the_script() -> Result<(), String> {
     let rows = rows_sequential()?;
     let path = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("grid_digests.txt");
     let text = format!(
-        "# zenith-bound grid digests (S13); arch={} pointer_width={} (these two lines are not compared)\n# columns: SUITE WORDS FNV1A64\n{}",
+        "# zenith-float-bound grid digests (S13); arch={} pointer_width={} (these two lines are not compared)\n# columns: SUITE WORDS FNV1A64\n{}",
         std::env::consts::ARCH,
         usize::BITS,
         rows

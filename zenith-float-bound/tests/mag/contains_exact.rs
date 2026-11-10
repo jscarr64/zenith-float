@@ -5,10 +5,10 @@
 use crate::model::nat::Nat;
 use crate::model::rng::{run_cases, SplitMix64};
 use core::cmp::Ordering;
-use zenith_bound::ball::Ball;
-use zenith_bound::enclosure::Enclosure;
-use zenith_bound::mag::Mag;
-use zenith_bound::tri::Tri;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::enclosure::Enclosure;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::tri::Tri;
 use zenith_float_num::{ExactNum, RoundingMode};
 
 const CASES: u64 = 3000;

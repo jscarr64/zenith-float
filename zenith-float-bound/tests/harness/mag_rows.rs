@@ -8,7 +8,7 @@
 
 use crate::common::expect_eq;
 use crate::common::generators::TOP;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 /// `isqrt(2^127)`: the `sqrt(2)` mantissa, rounded down.
 const SQRT2_LOWER: u64 = 0xb504_f333_f9de_6484;

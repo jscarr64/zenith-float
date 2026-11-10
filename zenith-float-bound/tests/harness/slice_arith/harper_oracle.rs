@@ -6,9 +6,9 @@
 
 use core::cmp::Ordering;
 
-use zenith_bound::ball::Ball;
-use zenith_bound::mag::Mag;
-use zenith_bound::policy::DomainPolicy;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::policy::DomainPolicy;
 use zenith_float_num::{ExactNum, EXPONENT_MIN};
 
 use super::{num, ok, pow2, row_val, want_contains};

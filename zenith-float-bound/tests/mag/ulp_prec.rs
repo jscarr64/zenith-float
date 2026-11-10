@@ -6,8 +6,8 @@ use crate::model::dyadic::{Dy, MagV};
 use crate::model::oracle::TWO63;
 use crate::support::{dcmp, dy_of, to_magv};
 use core::cmp::Ordering;
-use zenith_bound::mag::Mag;
-use zenith_bound::MAX_PRECISION;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::MAX_PRECISION;
 
 const PRECS: [usize; 10] = [
     0,

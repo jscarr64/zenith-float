@@ -1,13 +1,13 @@
-# zenith-bound plan review: suggested additions
+# zenith-float-bound plan review: suggested additions
 
-Review of `zenith-bound_PLAN_2026-10-14.md` (revision 2026-10-14). Prepared 2026-10-14.
+Review of `zenith-float-bound_PLAN_2026-10-14.md` (revision 2026-10-14). Prepared 2026-10-14.
 
 The design is sound. The additions below fall into five groups: inconsistencies in the plan, missing rules that affect soundness, missing scope, testing, and open-source readiness.
 
 ## 1. Inconsistencies in the plan
 
 - **Part G total.** The 10-14 column sums to 175–**315**, but the headline says 175–335. Either a row is off by 20 or the headline is stale. The "5 → 11 items" for zf 2.1 also doesn't match the 13 items (P1–P13) listed in C1.
-- **Directed rounding of transcendentals is unaudited.** K4 only audited add, sub, mul, div and sqrt. Part H says to make Up/Down MPFR coverage "for every kernel zenith-bound uses" a C1 gate, but P1–P13 has no such item. Add a **P14**. Directed-mode Ziv loops also have a known trap: exact cases like `exp(0)` never terminate unless special-cased. The alternative is to use `ToEven` with a proven ≤1 ulp bound.
+- **Directed rounding of transcendentals is unaudited.** K4 only audited add, sub, mul, div and sqrt. Part H says to make Up/Down MPFR coverage "for every kernel zenith-float-bound uses" a C1 gate, but P1–P13 has no such item. Add a **P14**. Directed-mode Ziv loops also have a known trap: exact cases like `exp(0)` never terminate unless special-cased. The alternative is to use `ToEven` with a proven ≤1 ulp bound.
 - **Three exponent conventions.** zf uses 0.m×2^e, Part I says value = m·2^e, and `Mag` uses mant·2^(exp−63). The `zf-ball-enc` layout never says which one `exp i64` means. Pin one in `CONTRACT.md`.
 - **The encoding has a NaN tag.** `tag 3 nan` contradicts "never store NaN". The decoder should reject it.
 - **Negative zero.** K2 says exact cancellation under `Down` gives −0. Normalize −0 to +0 at the ball boundary, or byte-equality breaks.
@@ -59,7 +59,7 @@ The design is sound. The additions below fall into five groups: inconsistencies 
 | 1.5 | Encoding tag 3 = nan contradicts the no-stored-NaN rule | **Accepted.** Tags 2 and 3 are reserved and the decoder rejects them; the whole line is mid +0 with `rad = Infinity`. Trace `nan`/`inf` mids are gone too | L 1, I, J |
 | 1.6 | −0 from exact cancellation under Down | **Accepted.** −0 is normalized to +0 at the ball boundary; the encoding rejects sign = 1 on zero | K2, L 1, J |
 | 1.7 | BLAKE3 pure feature | **Accepted.** `default-features = false, features = ["pure"]`: no SIMD, no asm, no CPU detection | I |
-| 1.8 | op_ver example should be 0.x | **Accepted.** `"0.1.0"`; op_ver is defined as the zenith-bound version | I, J |
+| 1.8 | op_ver example should be 0.x | **Accepted.** `"0.1.0"`; op_ver is defined as the zenith-float-bound version | I, J |
 
 ### R2. Soundness
 | # | Item | Disposition | Where |
@@ -95,9 +95,9 @@ The design is sound. The additions below fall into five groups: inconsistencies 
 | 5.3 | SECURITY.md: containment failures are security-grade | **Accepted** | SECURITY.md |
 | 5.4 | CONTRIBUTING: no-float rule, red-first, the single-exact-input-test ban, oracle setup | **Accepted** | CONTRIBUTING.md |
 | 5.5 | Reuse lint, cargo-deny, cargo-semver-checks, encoding-freeze promise | **Accepted** | C3 |
-| 5.6 | Check whether `zenith-bound` is free on crates.io | **Accepted.** On 2026-10-14 the API returned HTTP 404, "crate `zenith-bound` does not exist", so the name was free. Nothing was reserved (`publish = false`) | C3 |
+| 5.6 | Check whether `zenith-float-bound` is free on crates.io | **Accepted.** On 2026-10-14 the API returned HTTP 404, "crate `zenith-float-bound` does not exist", so the name was free. Nothing was reserved (`publish = false`) | C3 |
 | 5.7 | MSRV policy: the frozen Rust 1.99 pin | **Accepted** | C3, CONTRIBUTING.md |
-| 5.8 | The unsafe fesetround test goes in a separate dev crate | **Accepted.** `fpu-check/` (`publish = false`); zenith-bound keeps `forbid(unsafe_code)` | B.4 |
+| 5.8 | The unsafe fesetround test goes in a separate dev crate | **Accepted.** `fpu-check/` (`publish = false`); zenith-float-bound keeps `forbid(unsafe_code)` | B.4 |
 
 
 **Update 2026-10-14:** Jeff approved item 1.4. The Mag exponent convention `0.mant·2^exp`, with the redone `mul_up` and half-ulp boundaries from `ee5dbd59`, is LOCKED (docs/CONTRACT.md clause 1).

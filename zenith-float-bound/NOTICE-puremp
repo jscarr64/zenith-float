@@ -1,4 +1,4 @@
-zenith-bound contains portions derived from puremp
+zenith-float-bound contains portions derived from puremp
 (https://github.com/KarpelesLab/puremp), used under the MIT License.
 puremp revision consulted: 283471d226e5ae799a431f77c18d7bb5e1eb7940 (HEAD on 2026-10-14).
 Record the exact commit SHA in each ported file's header when porting.

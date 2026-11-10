@@ -1,7 +1,7 @@
 //! CONTRACT 15.2, O15-W, D14; oracle: the clauses (three variants; comparison logic is a later unit)
 //! COVERS: Tri::True, Tri::False, Tri::Unknown
 
-use zenith_bound::tri::Tri;
+use zenith_float_bound::tri::Tri;
 
 fn name(t: &Tri) -> &'static str {
     match t {

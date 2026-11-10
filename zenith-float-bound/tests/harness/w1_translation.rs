@@ -28,7 +28,7 @@ use crate::common::generators::{
 use crate::common::replay::{config_from_env, FuzzConfig, ReplayLine};
 use crate::common::rng::{splitmix64, SplitMix64};
 use crate::common::seeds::{seed_for, CASE_CLASS_GATE};
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 /// Cases per operation at the gate tier.
 const GATE_CASES: u64 = 20_000;

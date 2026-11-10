@@ -2,7 +2,7 @@
 
 use crate::model::dyadic::{Dy, MagV};
 use core::cmp::Ordering;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 pub fn to_magv(m: &Mag) -> Result<MagV, String> {
     match (m.exp(), m.mant()) {

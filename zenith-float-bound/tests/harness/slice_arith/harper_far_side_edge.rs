@@ -9,7 +9,7 @@
 //! returns None, so zb answers Unknown.
 //! COVERS: Ball::gt, Ball::overlaps
 
-use zenith_bound::tri::Tri;
+use zenith_float_bound::tri::Tri;
 use zenith_float_num::{EXPONENT_MAX, EXPONENT_MIN};
 
 use super::{ball, mag, num, pow2, TOP};

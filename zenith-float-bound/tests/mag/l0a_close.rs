@@ -5,7 +5,7 @@ use crate::model::direct;
 use crate::model::dyadic::MagV;
 use crate::support::{from_magv, to_magv};
 use core::cmp::Ordering;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 use zenith_float_num::{ExactNum, RoundingMode};
 
 const TOP: u64 = 1 << 63;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Canonical full gate for zenith-bound. usage: tools/full_gate.sh TAG
+# Canonical full gate for zenith-float-bound. usage: tools/full_gate.sh TAG
 # Goldens: goldens-regen skips python when its input key is unchanged (mode=cached), else checks heavy rows by HEAVY.SHA256 pin only.
 # A merge-point gate runs with ZB_GATE_MODE=merge GOLDENS_REGEN_ARGS=--regen (full regen, heavy rows recomputed); merge without --regen fails.
 # Every step runs under `timeout` (STEP_TIMEOUT, default 20m); the rc of each step is written to $T/TAG.rc and its

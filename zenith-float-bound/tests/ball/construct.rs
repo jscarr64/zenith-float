@@ -2,9 +2,9 @@
 //! (degenerate and all-reals). Oracle: the values are built by hand from small integers and powers of two.
 //! COVERS: Ball::exact, Ball::from_mid_rad, Ball::all_reals, Ball::mid, Ball::rad, Ball::prec, Ball::is_informative, Ball::is_exact, Ball::into_parts
 
-use zenith_bound::ball::Ball;
-use zenith_bound::error::BoundError;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::error::BoundError;
+use zenith_float_bound::mag::Mag;
 use zenith_float_num::{ExactNum, INF_NEG, INF_POS, NAN};
 
 const TOP: u64 = 1u64 << 63;
@@ -196,7 +196,7 @@ fn prec_is_stored_as_requested() -> Result<(), String> {
         4096,
         0xFFFF_FFFF,
         1 << 32,
-        zenith_bound::MAX_PRECISION,
+        zenith_float_bound::MAX_PRECISION,
     ] {
         let b = ok("exact(1, p)", Ball::exact(num(1), p))?;
         if b.prec() != p {

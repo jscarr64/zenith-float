@@ -4,9 +4,9 @@
 //! disagree, e.g. matmul, solve, GLS; reserved up front so no later slice edits the enum); NotSymmetric (LA plan, 2026-10-24: LA5a).
 //! COVERS: BoundError::Representation, BoundError::InvalidArgument, BoundError::Domain, BoundError::Resource, BoundError::NotPositiveDefinite, BoundError::Singular, BoundError::NotConverged, BoundError::DimensionMismatch, BoundError::NotSymmetric, BoundError::op, BoundError::detail, Display for BoundError, Error for BoundError
 
-use zenith_bound::ball::Ball;
-use zenith_bound::error::{BoundError, BoundResult};
-use zenith_bound::mag::Mag;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::error::{BoundError, BoundResult};
+use zenith_float_bound::mag::Mag;
 use zenith_float_num::ExactNum;
 
 fn all() -> [BoundError; 9] {

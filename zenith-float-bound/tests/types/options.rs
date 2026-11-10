@@ -2,7 +2,7 @@
 //! EigOpts { max_sweeps, cluster }, both #[non_exhaustive] + Default; DomainPolicy #[non_exhaustive] { Strict, Clip })
 //! COVERS: DomainPolicy::Strict, DomainPolicy::Clip, Default for SolveOpts, Default for EigOpts
 
-use zenith_bound::policy::{DomainPolicy, EigOpts, SolveOpts};
+use zenith_float_bound::policy::{DomainPolicy, EigOpts, SolveOpts};
 
 /// The policy source, read to check the `#[non_exhaustive]` markers (a removed marker still compiles in this crate's tests
 /// only where they match exhaustively, which these tests deliberately do not).

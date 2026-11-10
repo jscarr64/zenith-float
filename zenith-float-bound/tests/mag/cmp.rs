@@ -5,7 +5,7 @@ use crate::model::dyadic::MagV;
 use crate::model::sets::{extreme_exponents, magv_set, mid_exponents};
 use crate::support::{ctx, dcmp, dy_of, from_magv};
 use core::cmp::Ordering;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 fn check_pair(a: &MagV, b: &MagV) -> Result<(), String> {
     let got = from_magv(a)?.cmp(&from_magv(b)?);

@@ -2,10 +2,10 @@
 //! CONTRACT 6.5 b (identical includes prec), O20. Oracle: hand-built balls of small dyadics.
 //! COVERS: Enclosure for Ball, Sealed for Ball
 
-use zenith_bound::ball::Ball;
-use zenith_bound::enclosure::Enclosure;
-use zenith_bound::mag::Mag;
-use zenith_bound::tri::Tri;
+use zenith_float_bound::ball::Ball;
+use zenith_float_bound::enclosure::Enclosure;
+use zenith_float_bound::mag::Mag;
+use zenith_float_bound::tri::Tri;
 use zenith_float_num::{ExactNum, INF_POS, NAN};
 
 const TOP: u64 = 1u64 << 63;

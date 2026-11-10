@@ -1,7 +1,7 @@
 //! CONTRACT 10.1, 15.1, O6; oracle: the clauses (two variants, Strict is Default)
 //! COVERS: DomainPolicy::Strict, DomainPolicy::Clip
 
-use zenith_bound::policy::DomainPolicy;
+use zenith_float_bound::policy::DomainPolicy;
 
 // DomainPolicy is #[non_exhaustive] (options unit), so these tests compare instead of matching exhaustively.
 fn name(p: &DomainPolicy) -> &'static str {

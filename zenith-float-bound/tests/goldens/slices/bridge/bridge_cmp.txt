@@ -1,4 +1,4 @@
-# zenith-bound S2 cmp/conversion rows, scripts/gen_bridge_cmp_goldens.py v2 (see its docstring)
+# zenith-float-bound S2 cmp/conversion rows, scripts/gen_bridge_cmp_goldens.py v2 (see its docstring)
 U nan inf 0
 N inf nan none
 N 0 nan none

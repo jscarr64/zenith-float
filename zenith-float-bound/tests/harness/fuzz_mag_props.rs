@@ -20,7 +20,7 @@ use crate::common::generators::{
 };
 use crate::common::rng::SplitMix64;
 use core::cmp::Ordering;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 // ---- the operations under test (swappable, so the self-tests can plant a wrong one) -----------------------------------------
 

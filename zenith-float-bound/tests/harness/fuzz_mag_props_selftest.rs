@@ -15,7 +15,7 @@ use crate::fuzz_mag_props::{
     cmp_sqrt, cmp_sub, draw_case, next_down, next_up, Bad, Mono, Ops, Out, Rel, Src,
 };
 use core::cmp::Ordering;
-use zenith_bound::mag::Mag;
+use zenith_float_bound::mag::Mag;
 
 const GOLDEN: &str = include_str!("../goldens/mag_ops.txt");
 

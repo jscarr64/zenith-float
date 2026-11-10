@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""rules_scan: scan the ADDED lines of a diff for banned constructs in ALL Rust code of zenith-bound.
+"""rules_scan: scan the ADDED lines of a diff for banned constructs in ALL Rust code of zenith-float-bound.
 
-Derived from zenith-float tools/rules_scan.py (commit d12a156), adapted for zenith-bound. Run on EVERY
+Derived from zenith-float tools/rules_scan.py (commit d12a156), adapted for zenith-float-bound. Run on EVERY
 model-written diff before review, and in tools/full_gate.sh (step `rules-scan`).
 
 Usage:

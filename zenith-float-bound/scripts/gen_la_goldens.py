@@ -1,5 +1,5 @@
 #!/home/jsc64/team-env/oracle-2026-10-30/bin/python
-"""Exact linear-algebra reference goldens for zenith-bound (zenith-float 2.0).
+"""Exact linear-algebra reference goldens for zenith-float-bound (zenith-float 2.0).
 
 Pinned oracle: sympy 1.14.0, mpmath 1.3.0. Run it with ~/team-env/oracle-2026-10-30/bin/python
 (the shebang is the team env; the version check below rejects other pins).
@@ -19,7 +19,7 @@ incrementally; run every invocation under poprun/popslot, /usr/bin/time -v and a
 Slices (S0, tests/goldens/slices/<slice>/): LA1 cholesky, LA2 lu (+ solve, logdet), LA3 qr, LA4 gls, LA5a eigen (symmetric), LA5b eigen (general, stub: pending complex Ball).
 Gate = every case with all dims <= 12 and every input integer < 2^(10^4+64) in size; heavy = the rest
 (n = 16..32, 2^+-10^6 scales). case_ids are fixed strings; the random streams are drawn in the same order for
-gate and heavy, so splitting never changes a row. The generator is a pure exact oracle and never calls zenith-bound.
+gate and heavy, so splitting never changes a row. The generator is a pure exact oracle and never calls zenith-float-bound.
 
 All arithmetic is exact (gmpy2.mpq / sympy QQ / Python ints). Irrational
 outputs are emitted as rigorous dyadic enclosures computed by exact integer square
