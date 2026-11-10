@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -179,7 +179,7 @@
+             for i in (k..n).skip(1) {
+                 let ik = at(OP, i, n, k)?;
+                 let aik = core::mem::replace(slot(OP, &mut a, ik)?, zero(w)?);
+-                let lik = aik.div(&pivot, w)?;
++                let lik = Ball::exact(aik.div(&pivot, w)?.into_parts().0, w)?;
+                 for j in (k..n).skip(1) {
+                     let prod = widen(entry(OP, &a, at(OP, k, n, j)?)?, w)?.mul(&lik, w)?;
+                     let s = slot(OP, &mut a, at(OP, i, n, j)?)?;

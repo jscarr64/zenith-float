@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -173,7 +173,7 @@
+                 for j in 0..k {
+                     l.swap(at(OP, k, n, j)?, at(OP, p, n, j)?);
+                 }
+-                perm.swap(k, p);
++                let t = perm[k]; perm[k] = p; perm[p] = t;
+             }
+             let pivot = widen(entry(OP, &a, kk)?, w)?;
+             for i in (k..n).skip(1) {

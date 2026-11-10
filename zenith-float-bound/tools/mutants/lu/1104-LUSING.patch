@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -164,7 +164,7 @@
+             }
+             let kk = at(OP, k, n, k)?;
+             if is_exact_zero(entry(OP, &a, at(OP, p, n, k)?)?) {
+-                continue; // the whole column is exactly zero: no swap, no elimination (16.LA2.3)
++                return Err(BoundError::Singular { op: OP, detail: "singular" }); // the whole column is exactly zero: no swap, no elimination (16.LA2.3)
+             }
+             if p != k {
+                 for j in 0..n {

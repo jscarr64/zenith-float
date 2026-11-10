@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -342,7 +342,7 @@
+         for k in 0..n {
+             acc = acc.mul(diag(OP, &self.u, k)?, w)?;
+         }
+-        if self.perm_sign() < 0 {
++        if false && self.perm_sign() < 0 {
+             acc = zero(w)?.sub(&acc, w)?;
+         }
+         round(acc, prec)

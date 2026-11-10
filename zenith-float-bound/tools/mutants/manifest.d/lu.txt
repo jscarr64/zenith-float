@@ -1,3 +1,24 @@
 # range: 1100-1199
 # Slice LA2 (src/lu.rs) mutants, owned by LA2 alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
 # ids NNN-<name> with NNN in 1100..=1199; patches go in tools/mutants/lu/ and the patch column reads lu/NNN-<name>.patch.
+src/lu.rs:beats	1100-FIRSTNZ	lu/1100-FIRSTNZ.patch	harness
+src/lu.rs:beats	1101-TIEHI	lu/1101-TIEHI.patch	harness
+src/lu.rs:lu	1102-ZEROSWAP	lu/1102-ZEROSWAP.patch	harness
+src/lu.rs:lu	1103-ZERODIV	lu/1103-ZERODIV.patch	harness
+src/lu.rs:lu	1104-LUSING	lu/1104-LUSING.patch	harness
+src/lu.rs:det	1105-DETPERM	lu/1105-DETPERM.patch	harness
+src/lu.rs:det	1106-DETSKIP	lu/1106-DETSKIP.patch	harness
+src/lu.rs:lu	1107-UPDRAD	lu/1107-UPDRAD.patch	harness
+src/lu.rs:solve	1108-SOLVEPRE	lu/1108-SOLVEPRE.patch	harness
+src/lu.rs:solve	1109-SOLVERES	lu/1109-SOLVERES.patch	harness
+src/lu.rs:solve	1110-SOLVENOP	lu/1110-SOLVENOP.patch	harness
+src/lu.rs:solve	1111-UNITDIAG	lu/1111-UNITDIAG.patch	harness
+src/lu.rs:lu	1112-RECTOK	lu/1112-RECTOK.patch	harness
+src/lu.rs:lu	1113-PERMOUT	lu/1113-PERMOUT.patch	harness
+src/lu.rs:logdet	1114-LDSIGN	lu/1114-LDSIGN.patch	harness
+src/lu.rs:classify_pivots	1115-SINGASUND	lu/1115-SINGASUND.patch	harness
+src/lu.rs:classify_pivots	1116-UNDASSING	lu/1116-UNDASSING.patch	harness
+src/lu.rs:det	1117-OVFERR	lu/1117-OVFERR.patch	harness
+src/lu.rs:work_prec	1118-WORKPREC	lu/1118-WORKPREC.patch	harness
+src/lu.rs:round	1119-ROUNDRAD	lu/1119-ROUNDRAD.patch	harness
+src/lu.rs:det	1120-DETPREC	lu/1120-DETPREC.patch	harness

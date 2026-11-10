@@ -1,3 +1,3 @@
 # Slice LA2 share of the test floors (added to ../test_floor.txt by tools/test_floor.sh). Raise it with the slice's tests.
-build-debug	0
-build-release	0
+build-debug	14
+build-release	14

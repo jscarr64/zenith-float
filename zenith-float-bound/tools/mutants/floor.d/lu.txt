@@ -1,3 +1,3 @@
 # Slice LA2 share of the mutant floor (added to ../floor.txt by tools/mutate.sh). Raise it with the slice's mutants.
-killed	0
-killed+equivalent	0
+killed	18
+killed+equivalent	21

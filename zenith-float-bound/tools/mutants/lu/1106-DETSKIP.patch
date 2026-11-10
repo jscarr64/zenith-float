@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -334,7 +334,7 @@
+         let n = self.u.nrows();
+         for k in 0..n {
+             if is_exact_zero(diag(OP, &self.u, k)?) {
+-                return zero(prec);
++                return Ball::all_reals(prec);
+             }
+         }
+         let w = work_prec(prec, n);
