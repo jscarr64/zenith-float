@@ -59,7 +59,7 @@ export -f require no_hits
 gate_rc=0
 run() { name=$1; shift
   case " ${GATE_STEPS:-$name} " in *" $name "*) ;; *) return 0 ;; esac
-  local tf=() rc to=${STEP_TIMEOUT:-20m}; case $name in build-debug|build-release) tf=(--tests) ;; esac   # a test step that runs zero tests fails (runlog_step)
+  local tf=() rc to=${STEP_TIMEOUT:-20m}; case $name in build-debug|build-release|matrix-heavy) tf=(--tests) ;; esac   # a test step that runs zero tests fails (runlog_step)
   echo "start $name $(date +%T)" >> "$T/$tag.rc"
   if [ "$name" = mutants ]; then   # the mutants step's timeout comes from the slice budgets; no silent fallback to STEP_TIMEOUT
     # the selftest-only MUTANT_TIMEOUT_S / MUTANT_BUDGET_S / MUTATE_SETUP_S / MUTATE_SH (and MUTATE_FLOOR_ZERO_OK) never reach the gate's
@@ -91,7 +91,7 @@ run no-clone-scan "no_hits ':[0-9]+:\s*(//|\*)' -rn --include='*.rs' -E '\.clone
 run derive-scan "no_hits '' -rPzl --include='*.rs' '#\\[derive\\([^)]*\\b(Clone|Copy)\\b'"
 run src-arith-ffi-scan "no_hits '^(tests|benches|examples)/|^build\.rs:|:[0-9]+:\s*(//|\*)' -rn --include='*.rs' -E '\b(saturating|wrapping|unchecked|overflowing)_[A-Za-z0-9_]|#!?\[\s*(expect|link)\b|\bextern\s*(\"C\"|\{|fn\b)'"   # non-test src only (Cassie/Spence 2026-10-29); rules_scan SRC_PATTERNS is the diff twin
 run manifest-scan "no_hits ':[0-9]+:\s*(//|\*|//!)' -rn --include='*.rs' -F 'env!(\"CARGO_MANIFEST_DIR\")'"
-run gate-selftest "require mktemp ln sed grep wc stat tee touch cargo git timeout && tools/full_gate_selftest.sh && tools/fresh_test_run_selftest.sh && tools/no_tmp_selftest.sh && tools/runlog_selftest.sh && tools/mutate_selftest.sh && tools/mutants_apply_check_selftest.sh"
+run gate-selftest "require mktemp ln sed grep wc stat tee touch cargo git timeout && tools/full_gate_selftest.sh && tools/heavy_check_selftest.sh && tools/fresh_test_run_selftest.sh && tools/no_tmp_selftest.sh && tools/runlog_selftest.sh && tools/mutate_selftest.sh && tools/mutants_apply_check_selftest.sh"
 run pubfn-coverage "require awk grep git && tools/pubfn_coverage_selftest.sh && tools/pubfn_coverage.sh"
 run gen-la-guard "require python3 env && tools/gen_la_guard_selftest.sh"
 run gen-la-heavy "require python3 && tools/gen_la_progress_selftest.sh && tools/gen_la_pins_selftest.sh && tools/gen_la_cond_selftest.sh"
@@ -101,5 +101,9 @@ run wildcard-enum "require cargo awk grep && tools/wildcard_enum_selftest.sh"
 run tightness "require /usr/bin/python3 && tools/tightness_selftest.sh && tools/tightness_check.sh"
 run digests "require cargo grep && tools/digests_selftest.sh && tools/digests.sh all"
 run mutants "require cargo git timeout grep awk && mt=\${MUTATE_TARGET:-\${CARGO_TARGET_DIR:?}/mutate} && CARGO_TARGET_DIR=\$mt tools/fresh_test_run.sh --claim && tools/mutate_selftest.sh && MUTATE_TARGET=\$mt env -u MUTATE_FLOOR_ZERO_OK -u MUTANT_TIMEOUT_S -u MUTANT_BUDGET_S -u MUTATE_SETUP_S -u MUTATE_SH -u MUTATE_REPO -u MUTATE_MANIFEST -u MUTATE_EQUIVALENT -u MUTATE_FLOOR -u MUTATE_TIMEOUT -u MUTATE_BUILD_TIMEOUT -u MUTATE_TMP -u MUTATE_PERSIST tools/mutate_slice.sh --all"
+# matrix-heavy (ZB-P03): ZB_MATRIX_HEAVY is required (unset FAILS, never skips), pinned by HEAVY.SHA256, and the log needs rows run=30 passed=30.
+run matrix-heavy "require cargo sha256sum grep awk tee && hf=\${ZB_MATRIX_HEAVY:?matrix-heavy needs ZB_MATRIX_HEAVY (NOT-RUN)} && tools/heavy_check.sh --pin tests/goldens/slices/matrix/HEAVY.SHA256 \"\$hf\" && set -o pipefail && cargo test --release --test harness slice_matrix::s6_heavy_rows_replay_through_zb -- --ignored --exact --nocapture 2>&1 | tee \"$T/$tag-matrix-heavy.out\" && tools/heavy_check.sh --heavy \"$T/$tag-matrix-heavy.out\""
+# skip-scan (last): a SKIP line in any step log of this gate is NOT-RUN, a FAIL.
+run skip-scan "require grep awk && tools/heavy_check.sh --logs \"$T\" \"$tag\" skip-scan"
 if [ "$gate_rc" = 0 ]; then echo "done" >> "$T/$tag.rc"; else echo "failed" >> "$T/$tag.rc"; fi
 exit "$gate_rc"

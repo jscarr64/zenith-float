@@ -21,7 +21,7 @@ ck; "${fe[@]}" T="$t/logs" PATH="$t/bin" "$t/bin/bash" "$root/tools/full_gate.sh
 ck; grep -q '^failed$' "$t/logs/stripped.rc" || fail "stripped run did not finish with 'failed': $(cat "$t/stripped.out")"
 ck; grep -q '^done$' "$t/logs/stripped.rc" && fail "stripped run wrote 'done' although steps failed"
 steps=$(sed -n 's/^\([a-z0-9-]*\)=[0-9]*$/\1/p' "$t/logs/stripped.rc")
-ck; [ "$(echo "$steps" | wc -w)" -eq 26 ] || fail "stripped run reported $(echo "$steps" | wc -w) steps, want exactly 26 (bump this with every tools/full_gate.sh step): $steps"
+ck; [ "$(echo "$steps" | wc -w)" -eq 28 ] || fail "stripped run reported $(echo "$steps" | wc -w) steps, want exactly 28 (bump this with every tools/full_gate.sh step): $steps"
 for need in gen-la-guard gen-la-heavy la4-red-markers; do ck; echo "$steps" | grep -qx "$need" || fail "gate step $need missing from tools/full_gate.sh"; done
 for s in $steps; do
   ck; [ "$(rcof stripped "$s")" != 0 ] || fail "step $s PASSED with its tools missing (vacuous pass)"
@@ -201,7 +201,7 @@ ck; if [ -z "${FULL_GATE_SELFTEST_INNER:-}" ]; then
   ! grep 'ERR rc=' "$nlog" | grep -v 'ERR rc=[0-9]* line=[0-9]* cmd=( exit "\$rc" ) (in .*/tools/mutate\.sh)$' \
     || fail "expected-failure probes tripped poplog's ERR trap (lines above): $nlog"
 fi
-st_done full_gate 151   # WANT: cases this script runs (tools/selftest_cases.sh)
+st_done full_gate 153   # WANT: cases this script runs (tools/selftest_cases.sh)
 # the gate's real mutation run must not inherit MUTATE_FLOOR_ZERO_OK=1 (only the selftest fixture may use a 0 floor), nor the selftest-only
 # MUTANT_TIMEOUT_S / MUTANT_BUDGET_S / MUTATE_SETUP_S / MUTATE_SH, nor any env mutate.sh reads (MUTATE_REPO MUTATE_MANIFEST MUTATE_EQUIVALENT MUTATE_FLOOR MUTATE_TIMEOUT MUTATE_BUILD_TIMEOUT MUTATE_TMP MUTATE_PERSIST), in its --all run or in its --step-timeout computation
 u='env -u MUTATE_FLOOR_ZERO_OK -u MUTANT_TIMEOUT_S -u MUTANT_BUDGET_S -u MUTATE_SETUP_S -u MUTATE_SH -u MUTATE_REPO -u MUTATE_MANIFEST -u MUTATE_EQUIVALENT -u MUTATE_FLOOR -u MUTATE_TIMEOUT -u MUTATE_BUILD_TIMEOUT -u MUTATE_TMP -u MUTATE_PERSIST tools/mutate_slice\.sh'
