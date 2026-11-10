@@ -273,7 +273,7 @@ row A check_A "$ZB_TIP" -- check_A 0000000000000000000000000000000000000001
 row B check_B "$HEAD_SHA" "$REMOVED" -- check_B "$HEAD_SHA" "rust-toolchain.toml"
 row C check_C "$real" -- plant_file "$PFX/Cargo.toml" '/^zenith-float-num[[:space:]]*=/a zenith-float = { path = ".." }' check_C "$plant"
 row D check_D "$real" -- plant_file "$PFX/Cargo.toml" 's|path = "../zenith-float-num"|git = "https://example.invalid/zf", rev = "0"|' check_D "$plant"
-row E check_E "$real" -- plant_file Cargo.toml "s|^exclude = \[\"nostd-tests\"\]|exclude = [\"nostd-tests\", \"$PFX\"]|" check_E "$plant"
+row E check_E "$real" -- plant_file Cargo.toml "/^[[:space:]]*\"$PFX\",\$/d" check_E "$plant"
 row F check_F "$real" "$B" -- plant_file Cargo.toml "/^$PFX[[:space:]]*=/s/, optional = true//" check_F "$plant" nobuild
 row G check_G "$real" "$B" -- plant_file Cargo.toml 's/^default = .*/default = ["std"]/' check_G "$plant" nobuild
 row K check_C "$real" -- plant_file "$PFX/Cargo.toml" '/^zenith-float-num[[:space:]]*=/a zenith-float = { path = "..", default-features = false }' check_C "$plant"
