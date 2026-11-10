@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -246,7 +246,7 @@
+     pub fn add(self, other: &BallArray, prec: Precision) -> BoundResult<BallArray> {
+         const OP: &str = "BallArray::add";
+         check_prec(OP, prec)?;
+-        if self.shape() != other.shape() {
++        if self.len() != other.len() {
+             return Err(mismatch(OP, "shapes differ"));
+         }
+         let (shape, data) = self.into_parts();

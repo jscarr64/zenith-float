@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 5817ee4..210baaa 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -479,7 +479,7 @@ fn far_side(r1: &Mag, r2: &Mag, d: &ExactNum) -> Option<Ordering> {
+             if d.is_negative() {
+                 sn.inv_sign();
+             }
+-            Some(r1.cmp_exact_diff(d, &sn)?.reverse())
++            Some(r1.cmp_exact_diff(d, &sn)?)
+         }
+     }
+ }

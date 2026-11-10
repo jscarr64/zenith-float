@@ -1,0 +1,12 @@
+diff --git a/src/array.rs b/src/array.rs
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -93,7 +93,7 @@
+         }
+         let mut offset: usize = 0;
+         for (&i, &dim) in index.iter().zip(self.shape.iter()) {
+-            if i >= dim {
++            if i > dim {
+                 return None;
+             }
+             offset = offset.checked_mul(dim)?.checked_add(i)?;

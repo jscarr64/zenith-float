@@ -1,0 +1,13 @@
+diff --git a/src/mag/div.rs b/src/mag/div.rs
+index 4ae9f19..7c7fb92 100644
+--- a/src/mag/div.rs
++++ b/src/mag/div.rs
+@@ -37,7 +37,7 @@ fn div_parts(num: &Mag, den: &Mag, up: bool) -> Mag {
+         // A zero divisor is decided before a zero numerator (CONTRACT 14.6): 0 / 0 is Infinity up.
+         (_, None) => loose(up),
+         (None, Some(_)) => Mag::zero(),
+-        (Some((ea, ma)), Some((eb, mb))) => settle(div_checked(ea, ma, eb, mb, up), up),
++        (Some((ea, ma)), Some((_eb, _mb))) => settle(div_checked(ea, ma, ea, ma, up), up),
+     }
+ }
+ 

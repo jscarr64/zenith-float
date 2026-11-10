@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 11b06b8..c42eef3 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -146,7 +146,7 @@ impl Mag {
+             // self in [2^e, 2^(e+1)), possibly above EXPONENT_MAX (16.S2.1), so it is never converted here. A mantissa
+             // above TOP gives self >= 2^e + 2^(e-63) > 2^e + 2^(e-129) > |a - b|.
+             if self.mant()? != TOP {
+-                return Some(Ordering::Greater);
++                return Some(Ordering::Less);
+             }
+             // self = 2^e = h + h with h = 2^(e-1) = Mag(TOP, e), in range since big has exponent e.
+             let h = Mag::finite(TOP, e).ok()?.to_exact_num().ok()?;

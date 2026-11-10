@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..beae61d 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -345,7 +345,7 @@ impl Ball {
+         let (m, r, _) = self.into_parts();
+         finish(
+             OP,
+-            m.ldexp(k, prec, MID_RM),
++            m.ldexp(0, prec, MID_RM),
+             &mag_mul_2exp_up(&r, k),
+             prec,
+             false,

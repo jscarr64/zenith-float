@@ -1,0 +1,12 @@
+diff --git a/src/policy.rs b/src/policy.rs
+--- a/src/policy.rs
++++ b/src/policy.rs
+@@ -38,7 +38,7 @@
+ impl Default for EigOpts {
+     fn default() -> Self {
+         EigOpts {
+-            max_sweeps: 64,
++            max_sweeps: 63,
+             cluster: true,
+         }
+     }

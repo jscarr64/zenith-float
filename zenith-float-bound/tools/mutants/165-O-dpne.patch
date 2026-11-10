@@ -1,0 +1,11 @@
+diff --git a/src/policy.rs b/src/policy.rs
+--- a/src/policy.rs
++++ b/src/policy.rs
+@@ -1,7 +1,6 @@
+ //! Domain policy and solver options (CONTRACT 10.1, 15.1, O6; options unit, Paul's rulings 2026-10-23).
+ 
+ /// How a restricted-domain operation treats input outside its domain (CONTRACT 10.2).
+-#[non_exhaustive]
+ #[derive(Debug, PartialEq, Eq, Default)]
+ pub enum DomainPolicy {
+     /// `Domain` if any point of the input lies outside the domain.

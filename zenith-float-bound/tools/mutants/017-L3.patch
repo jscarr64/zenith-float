@@ -1,0 +1,13 @@
+diff --git a/src/mag/lower.rs b/src/mag/lower.rs
+index d225a6c..f064a2b 100644
+--- a/src/mag/lower.rs
++++ b/src/mag/lower.rs
+@@ -45,7 +45,7 @@ fn sub_checked(ea: i64, ma: NonZeroU64, eb: i64, mb: NonZeroU64) -> Option<Mag>
+     // |ea - eb| < 2^65, so the checked subtraction cannot fail.
+     let gap = i128::from(ea).checked_sub(i128::from(eb))?;
+     match u32::try_from(gap) {
+-        Ok(gap) if gap < 64 => {
++        Ok(gap) if gap < 62 => {
+             // `ma << gap < 2^127`. `checked_sub` is `None` for a < b, and a zero difference is
+             // a == b: both mean the exact difference is zero or less, so the answer is zero.
+             let shifted = u128::from(ma.get()) << gap;

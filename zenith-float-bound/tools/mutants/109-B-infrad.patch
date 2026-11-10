@@ -1,0 +1,12 @@
+diff --git a/src/ball/mod.rs b/src/ball/mod.rs
+--- a/src/ball/mod.rs
++++ b/src/ball/mod.rs
+@@ -44,7 +44,7 @@
+                 detail: "NaN or infinite midpoint",
+             });
+         }
+-        if rad.is_infinity() {
++        if rad.is_infinity() && mid.is_nan() {
+             return Ball::all_reals(prec);
+         }
+         Ok(Ball {

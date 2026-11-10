@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 67b8452..968333f 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -81,7 +81,7 @@ impl Mag {
+         let Some((mant, sticky, exp)) = top_of(x, true) else {
+             return Mag::zero();
+         };
+-        if !sticky {
++        if !sticky || mant > 0 {
+             return Mag::from_canonical(exp, mant);
+         }
+         match mant.checked_add(1) {

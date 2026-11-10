@@ -1,0 +1,12 @@
+diff --git a/src/error.rs b/src/error.rs
+--- a/src/error.rs
++++ b/src/error.rs
+@@ -72,7 +72,7 @@
+         match self {
+             BoundError::Representation { detail, .. } => detail,
+             BoundError::InvalidArgument { detail, .. } => detail,
+-            BoundError::Domain { detail, .. } => detail,
++            BoundError::Domain { detail: _, .. } => "",
+             BoundError::Resource { detail, .. } => detail,
+             BoundError::NotPositiveDefinite { detail, .. } => detail,
+             BoundError::Singular { detail, .. } => detail,

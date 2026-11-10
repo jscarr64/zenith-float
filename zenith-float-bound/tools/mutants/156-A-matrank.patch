@@ -1,0 +1,12 @@
+diff --git a/src/array.rs b/src/array.rs
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -185,7 +185,7 @@
+     /// `InvalidArgument` when the array's rank is not 2.
+     pub fn from_array(a: BallArray) -> BoundResult<BallMat> {
+         match a.rank() {
+-            2 => Ok(BallMat(a)),
++            1 | 2 => Ok(BallMat(a)),
+             _ => Err(BoundError::InvalidArgument {
+                 op: "BallMat::from_array",
+                 detail: "rank must be 2",

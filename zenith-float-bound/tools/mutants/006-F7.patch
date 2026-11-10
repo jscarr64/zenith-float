@@ -1,0 +1,13 @@
+diff --git a/src/mag/mod.rs b/src/mag/mod.rs
+index 746cd54..3d6eecc 100644
+--- a/src/mag/mod.rs
++++ b/src/mag/mod.rs
+@@ -119,7 +119,7 @@ impl Mag {
+     }
+ 
+     fn max_finite() -> Mag {
+-        Mag::from_canonical(i64::MAX, u64::MAX)
++        Mag::from_canonical(i64::MAX, u64::MAX - 1)
+     }
+ 
+     /// `(exp, mant)` when this value is finite and nonzero; the type carries the nonzero mantissa.

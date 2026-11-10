@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 67b8452..a6e7704 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -65,7 +65,7 @@ fn top_of_words(words: &[u64], exponent: i64) -> Result<Option<(u64, bool, i64)>
+     let shift = i64::try_from(skipped)
+         .ok()
+         .and_then(|s| s.checked_mul(64))
+-        .and_then(|s| s.checked_add(i64::from(lz)));
++        .and_then(|s| s.checked_add(0));
+     match shift.and_then(|s| exponent.checked_sub(s)) {
+         Some(exp) => Ok(Some((mant, sticky, exp))),
+         None => Err(()),

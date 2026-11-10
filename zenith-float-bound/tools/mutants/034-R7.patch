@@ -1,0 +1,16 @@
+diff --git a/src/mag/round.rs b/src/mag/round.rs
+index 904ec82..36c0abe 100644
+--- a/src/mag/round.rs
++++ b/src/mag/round.rs
+@@ -51,9 +51,9 @@ fn pack(exp: i128, mant: u64, up: bool) -> Mag {
+                     Mag::max_finite()
+                 }
+             } else if up {
+-                Mag::min_pos()
+-            } else {
+                 Mag::zero()
++            } else {
++                Mag::min_pos()
+             }
+         }
+     }

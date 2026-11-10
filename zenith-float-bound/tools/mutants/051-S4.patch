@@ -1,0 +1,13 @@
+diff --git a/src/mag/sqrt.rs b/src/mag/sqrt.rs
+index 6f35fb4..d2bfbf2 100644
+--- a/src/mag/sqrt.rs
++++ b/src/mag/sqrt.rs
+@@ -53,7 +53,7 @@ fn sqrt_checked(exp: i64, mant: NonZeroU64, up: bool) -> Option<Mag> {
+     // N = mant * 2^63 with scale exp - 127. Either way `scale` is even, so `scale / 2` is exact.
+     // |exp| < 2^63, so the checked steps cannot fail.
+     let (factor, scale) = if exp.checked_rem_euclid(2)? == 0 {
+-        (p64(), exp.checked_sub(128)?)
++        (p64(), exp.checked_sub(127)?)
+     } else {
+         (p63(), exp.checked_sub(127)?)
+     };

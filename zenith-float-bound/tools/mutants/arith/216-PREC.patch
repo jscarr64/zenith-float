@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index deeda66..a5d5722 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -244,7 +244,7 @@ fn domain(op: &'static str, detail: &'static str) -> BoundError {
+ }
+ 
+ fn check_prec(op: &'static str, prec: Precision) -> BoundResult<()> {
+-    if (MIN_PRECISION..=MAX_PRECISION).contains(&prec) {
++    if (MIN_PRECISION..=MAX_PRECISION).contains(&prec) || prec == 0 {
+         Ok(())
+     } else {
+         Err(BoundError::InvalidArgument {

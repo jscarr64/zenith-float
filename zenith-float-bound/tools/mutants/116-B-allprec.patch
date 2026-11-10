@@ -1,0 +1,12 @@
+diff --git a/src/ball/mod.rs b/src/ball/mod.rs
+--- a/src/ball/mod.rs
++++ b/src/ball/mod.rs
+@@ -63,7 +63,7 @@
+         Ok(Ball {
+             mid: ExactNum::new(ZERO_PREC),
+             rad: Mag::infinity(),
+-            prec,
++            prec: MIN_PRECISION,
+         })
+     }
+ 

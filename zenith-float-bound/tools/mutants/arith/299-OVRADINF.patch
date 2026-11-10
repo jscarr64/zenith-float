@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4a73525..fc11874 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -406,7 +406,7 @@ impl Ball {
+     /// Whether the two closed balls share a point (CONTRACT 15.2, O20, 16.S1.11); an `Infinity` radius overlaps
+     /// everything.
+     pub fn overlaps(&self, other: &Ball) -> Tri {
+-        if self.rad().is_infinity() || other.rad().is_infinity() {
++        if self.rad().is_infinity() && other.rad().is_infinity() {
+             return Tri::True;
+         }
+         match endpoint_signs(self, other) {

@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 1f8372d..af6fb1f 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -406,7 +406,7 @@ impl Ball {
+             Some((Ordering::Equal | Ordering::Greater, Ordering::Equal | Ordering::Less)) => {
+                 Tri::True
+             }
+-            None => Tri::Unknown,
++            None => Tri::False,
+         }
+     }
+ }

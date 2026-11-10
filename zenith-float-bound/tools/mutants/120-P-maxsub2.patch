@@ -1,0 +1,12 @@
+diff --git a/src/precision.rs b/src/precision.rs
+--- a/src/precision.rs
++++ b/src/precision.rs
+@@ -26,7 +26,7 @@
+     } else {
+         by_size
+     };
+-    if let Some(v) = lim.checked_sub(1) {
++    if let Some(v) = lim.checked_sub(2) {
+         v
+     } else {
+         0

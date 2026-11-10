@@ -1,0 +1,2 @@
+# Slice CB golden generators, one per line: `scripts/<gen>.py` (writes with --check DIR, like the central GENERATORS list in tools/goldens_regen.sh).
+scripts/gen_cball_goldens.py

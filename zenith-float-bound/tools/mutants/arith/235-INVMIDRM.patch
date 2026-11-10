@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..0c88e28 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -271,7 +271,7 @@ impl Ball {
+             return Ball::all_reals(prec);
+         };
+         let rad = s.div_up(&n_lo.mul_lower(&n_lo.sub_lower(s)));
+-        finish(OP, n.reciprocal(prec, MID_RM), &rad, prec, false)
++        finish(OP, n.reciprocal(prec, RoundingMode::ToZero), &rad, prec, false)
+     }
+ 
+     /// Monotone enclosure (16.S1.8): hypot is increasing in `|x|` and `|y|`, so the result lies in

@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4a73525..12ead88 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -428,7 +428,7 @@ fn endpoint_signs(a: &Ball, b: &Ball) -> Option<(Ordering, Ordering)> {
+     if r1.is_infinity() || r2.is_infinity() {
+         return None;
+     }
+-    let d = a.mid().sub_full_prec(b.mid());
++    let d = b.mid().sub_full_prec(a.mid());
+     if d.inexact() || d.is_nan() {
+         return None;
+     }

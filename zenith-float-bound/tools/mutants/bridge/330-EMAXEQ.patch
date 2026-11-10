@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 67b8452..ce0cb24 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -119,7 +119,7 @@ impl Mag {
+         if mant == 0 {
+             return Ok(ExactNum::new(EXACT_PREC));
+         }
+-        if exp > EXPONENT_MAX {
++        if exp >= EXPONENT_MAX {
+             return Err(BoundError::Representation {
+                 op: OP,
+                 detail: "exponent above zf EXPONENT_MAX",

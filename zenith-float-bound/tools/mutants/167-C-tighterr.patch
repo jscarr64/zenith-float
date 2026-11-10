@@ -1,0 +1,13 @@
+diff --git a/src/enclosure.rs b/src/enclosure.rs
+index 07fca48..ba4dfa6 100644
+--- a/src/enclosure.rs
++++ b/src/enclosure.rs
+@@ -79,7 +79,7 @@ impl Enclosure for Ball {
+         // rounding is monotone and fixes representable values, so hi > rad (or lo < -rad) decides |mid - x| > rad.
+         match self.rad().to_exact_num() {
+             Ok(_) => Tri::False,
+-            Err(_) => Tri::Unknown,
++            Err(_) => Tri::False,
+         }
+     }
+ }

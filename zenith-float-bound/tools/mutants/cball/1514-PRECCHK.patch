@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -21,7 +21,7 @@
+ impl CBall {
+     /// `re + i·im`. `InvalidArgument` when the parts' precs differ (I2).
+     pub fn new(re: Ball, im: Ball) -> BoundResult<CBall> {
+-        if re.prec() != im.prec() {
++        if false && re.prec() != im.prec() {
+             return Err(BoundError::InvalidArgument {
+                 op: "cball_new",
+                 detail: "re and im must have the same prec",

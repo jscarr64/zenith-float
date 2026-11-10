@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4a73525..68a415a 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -460,7 +460,7 @@ fn endpoint_signs(a: &Ball, b: &Ball) -> Option<(Ordering, Ordering)> {
+     let hi = if sd == Ordering::Greater {
+         Ordering::Greater
+     } else {
+-        c.reverse()
++        c
+     };
+     Some((hi, lo))
+ }

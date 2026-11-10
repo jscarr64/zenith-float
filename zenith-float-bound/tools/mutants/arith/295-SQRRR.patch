@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 0a4bf3b..b5f40e9 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -119,7 +119,7 @@ impl Ball {
+         check_prec("Ball::sqr", prec)?;
+         let (m, r) = (self.mid(), self.rad());
+         let t = Mag::from_exact_num(m).mul_up(r);
+-        let rad = t.add_up(&t).add_up(&r.mul_up(r));
++        let rad = t.add_up(&t);
+         // The exact square, then one rounding to `prec`. `inexact()` of a product is its own per-operation flag, so it
+         // reports only a real dropped bit inside the square, which forces ε (16.S1.5). Since zf 0cfee92 a square below the
+         // range keeps every bit (up to MAX_PRECISION), so `lost` is false there and ε comes from round_to's own flag.

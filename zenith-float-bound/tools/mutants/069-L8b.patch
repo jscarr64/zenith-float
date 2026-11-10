@@ -1,0 +1,12 @@
+diff --git a/src/mag/lower.rs b/src/mag/lower.rs
+--- a/src/mag/lower.rs
++++ b/src/mag/lower.rs
+@@ -86,7 +86,7 @@ fn sub_wide(ea: i64, ma: NonZeroU64, gap: i128, mb: NonZeroU64) -> Option<Mag> {
+     // wide >= 2^126 and subtrahend < 2^64, so both checked subtractions cannot fail.
+     let diff = wide
+         .checked_sub(subtrahend)?
+-        .checked_sub(u128::from(frac))?;
++        .checked_sub(u128::from(!frac))?;
+     let scale = i128::from(ea).checked_sub(127)?;
+     // Range proof that `diff` is nonzero: ma >= 2^63 (canonical form), so wide >= 2^126. shift >= 1,
+     // so subtrahend = mb >> shift < 2^63 (or 0), and frac <= 1. Hence diff >= 2^126 - 2^63 > 0 and

@@ -1,0 +1,13 @@
+diff --git a/src/mag/round.rs b/src/mag/round.rs
+index 904ec82..cdd261c 100644
+--- a/src/mag/round.rs
++++ b/src/mag/round.rs
+@@ -64,7 +64,7 @@ pub(super) fn norm(m: NonZeroU128, scale: i128, sticky: bool, up: bool) -> Optio
+     // `lz` is in 0..=127. A value with more than 64 bits drops `drop` low bits (at most 64);
+     // a shorter one is shifted left by `add` (at most 63). Both arms of the match are reachable.
+     let lz = m.leading_zeros();
+-    let (drop, add) = match 64u32.checked_sub(lz) {
++    let (drop, add) = match 65u32.checked_sub(lz) {
+         Some(drop) => (drop, 0),
+         None => (0, lz.abs_diff(64)),
+     };

@@ -1,0 +1,12 @@
+diff --git a/src/array.rs b/src/array.rs
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -96,7 +96,7 @@
+             if i >= dim {
+                 return None;
+             }
+-            offset = offset.checked_mul(dim)?.checked_add(i)?;
++            offset = offset.checked_add(i)?;
+         }
+         self.data.get(offset)
+     }

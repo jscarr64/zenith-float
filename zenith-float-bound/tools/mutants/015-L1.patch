@@ -1,0 +1,13 @@
+diff --git a/src/mag/lower.rs b/src/mag/lower.rs
+index d225a6c..2612707 100644
+--- a/src/mag/lower.rs
++++ b/src/mag/lower.rs
+@@ -30,7 +30,7 @@ impl Mag {
+     pub fn sub_lower(&self, other: &Mag) -> Mag {
+         match (self.nonzero(), other.nonzero()) {
+             (Some((ea, ma)), Some((eb, mb))) => sub_parts(ea, ma, eb, mb),
+-            (Some((e, m)), None) if !other.is_infinity() => Mag::from_canonical(e, m.get()),
++            (Some((e, m)), None) => Mag::from_canonical(e, m.get()),
+             _ => Mag::zero(),
+         }
+     }

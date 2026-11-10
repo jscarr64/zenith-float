@@ -1,0 +1,13 @@
+# generator: scripts/gen_la_goldens.py
+# sympy: 1.14.0
+# mpmath: 1.3.0
+# seed: 20261024 (python random.Random('20261024:eig_general'))
+# slice: LA5b (eigen)
+# tier: gate (gate: all dims <= 12 and input integers <= 10064 bits; heavy: the rest, checked by sha256 at merge points, file not committed)
+# rows: 0
+# op: eig_general
+# status: pending (needs complex Ball, L2-1). This file is a stub: header only, zero rows. Rows land once zb has complex Ball enclosures.
+# canonical (planned): general real (nonsymmetric) A; complex eigenvalues with algebraic multiplicity; charpoly = det(xI - A), monic, exact rational coefficients, highest degree first.
+# scope: slice LA5b (general). Symmetric A is covered by la_eig.txt (LA5a).
+# numbers: every exact entry is p/q in lowest terms, q > 0, arbitrary-size signed integers; dyadics are m*2^e with m odd (or 0*2^0); fields are single-space separated; no floats.
+# case_id: <op>.<family>.<variant>, stable across regenerations; inputs are always listed before outputs; dims gives every matrix size, so a row's field count is fixed by dims; refusal rows end in 'ERR <variant> <detail>' (variant = zb BoundError variant).

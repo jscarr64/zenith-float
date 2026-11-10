@@ -1,0 +1,3 @@
+# range: 1100-1199
+# Slice LA2 (src/lu.rs) mutants, owned by LA2 alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
+# ids NNN-<name> with NNN in 1100..=1199; patches go in tools/mutants/lu/ and the patch column reads lu/NNN-<name>.patch.

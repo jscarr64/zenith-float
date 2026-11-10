@@ -1,0 +1,12 @@
+diff --git a/src/mag/ulp.rs b/src/mag/ulp.rs
+--- a/src/mag/ulp.rs
++++ b/src/mag/ulp.rs
+@@ -39,7 +39,7 @@
+         // |mid_exp - prec| < 2^64, so the checked step cannot fail. `Infinity` is the one fallback.
+         match i128::try_from(prec)
+             .ok()
+-            .and_then(|p| i128::from(mid_exp).checked_sub(p))
++            .and_then(|p| i128::from(mid_exp).checked_add(p))
+         {
+             Some(mag_exp) => place_pow2(mag_exp),
+             None => Mag::infinity(),

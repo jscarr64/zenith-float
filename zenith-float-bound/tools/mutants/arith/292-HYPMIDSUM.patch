@@ -1,0 +1,12 @@
+diff --git a/src/arith.rs b/src/arith.rs
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -297,7 +297,7 @@
+         let (Mid::Value(lo), Mid::Value(hi)) = (classify(OP, lo)?, classify(OP, hi)?) else {
+             return Ball::all_reals(prec);
+         };
+-        let Mid::Value(mid) = classify(OP, lo.add_full_prec(&hi).ldexp(-1, prec, MID_RM))? else {
++        let Mid::Value(mid) = classify(OP, lo.add_full_prec(&hi).ldexp(0, prec, MID_RM))? else {
+             return Ball::all_reals(prec);
+         };
+         let rad = Mag::from_exact_num(&hi.sub_full_prec(&mid))

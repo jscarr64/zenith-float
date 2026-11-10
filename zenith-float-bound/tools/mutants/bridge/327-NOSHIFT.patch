@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 67b8452..6c98629 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -54,7 +54,7 @@ fn top_of_words(words: &[u64], exponent: i64) -> Result<Option<(u64, bool, i64)>
+         .is_some_and(|ws| ws.iter().any(|w| *w != 0));
+     let lz = hi.leading_zeros();
+     let window = (u128::from(hi).checked_shl(64).unwrap_or(0) | u128::from(lo))
+-        .checked_shl(lz)
++        .checked_shl(0)
+         .unwrap_or(0);
+     let mant = window
+         .checked_shr(64)

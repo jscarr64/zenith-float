@@ -1,0 +1,22 @@
+# zenith-bound clippy config. Jeff's rules apply to test code too: no unwrap/expect/panic/indexing escape in tests.
+allow-unwrap-in-tests = false
+allow-expect-in-tests = false
+allow-panic-in-tests = false
+allow-indexing-slicing-in-tests = false
+
+# Portable integer code only (same entries as zenith-float's clippy.toml).
+disallowed-macros = [
+    { path = "core::arch::asm", reason = "no inline assembly" },
+    { path = "std::arch::asm", reason = "no inline assembly" },
+    { path = "core::arch::global_asm", reason = "no global assembly" },
+    { path = "std::arch::global_asm", reason = "no global assembly" },
+]
+
+# Zero-clone rule (the .to_vec() form is covered by tools/rules_scan.py, clippy cannot name it).
+disallowed-methods = [
+    { path = "core::clone::Clone::clone", reason = "zero-clone rule (Jeff)" },
+    { path = "core::clone::Clone::clone_from", reason = "zero-clone rule (Jeff)" },
+    { path = "alloc::borrow::ToOwned::to_owned", reason = "zero-clone rule (Jeff)" },
+    { path = "core::iter::Iterator::cloned", reason = "zero-clone rule (Jeff)" },
+    { path = "core::option::Option::cloned", reason = "zero-clone rule (Jeff)" },
+]

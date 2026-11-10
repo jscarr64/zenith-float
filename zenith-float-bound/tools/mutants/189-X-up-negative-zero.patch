@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 67b8452..4d26ce8 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -78,7 +78,7 @@ impl Mag {
+         if x.is_nan() || x.is_inf() {
+             return Mag::infinity();
+         }
+-        let Some((mant, sticky, exp)) = top_of(x, true) else {
++        let Some((mant, sticky, exp)) = top_of(x, true).filter(|_| !x.is_negative()) else {
+             return Mag::zero();
+         };
+         if !sticky {

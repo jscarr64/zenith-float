@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..40f070f 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -270,7 +270,7 @@ impl Ball {
+         let Some(n_lo) = clear_of_zero(n, s) else {
+             return Ball::all_reals(prec);
+         };
+-        let rad = s.div_up(&n_lo.mul_lower(&n_lo.sub_lower(s)));
++        let rad = s.div_lower(&n_lo.mul_lower(&n_lo.sub_lower(s)));
+         finish(OP, n.reciprocal(prec, MID_RM), &rad, prec, false)
+     }
+ 

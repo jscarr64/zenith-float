@@ -1,0 +1,13 @@
+diff --git a/src/mag/add.rs b/src/mag/add.rs
+index 8bcd057..fdf356a 100644
+--- a/src/mag/add.rs
++++ b/src/mag/add.rs
+@@ -21,7 +21,7 @@ impl Mag {
+             Mag::infinity()
+         } else {
+             match (self.nonzero(), other.nonzero()) {
+-                (Some((ea, ma)), Some((eb, mb))) => add_parts(ea, ma, eb, mb),
++                (Some((ea, ma)), Some((_eb, _mb))) => add_parts(ea, ma, ea, ma),
+                 (Some((e, m)), None) | (None, Some((e, m))) => Mag::from_canonical(e, m.get()),
+                 (None, None) => Mag::zero(),
+             }

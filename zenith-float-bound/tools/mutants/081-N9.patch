@@ -1,0 +1,11 @@
+diff --git a/src/mag/div.rs b/src/mag/div.rs
+index 4ae9f19..8c12365 100644
+--- a/src/mag/div.rs
++++ b/src/mag/div.rs
+@@ -52,5 +52,5 @@ fn div_checked(ea: i64, ma: NonZeroU64, eb: i64, mb: NonZeroU64, up: bool) -> Op
+     let scale = i128::from(ea)
+         .checked_sub(i128::from(eb))?
+         .checked_sub(64)?;
+-    norm(quot, scale, sticky, up)
++    norm(quot, scale, sticky, up || true)
+ }

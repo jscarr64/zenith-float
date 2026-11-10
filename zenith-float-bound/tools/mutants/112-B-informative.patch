@@ -1,0 +1,12 @@
+diff --git a/src/ball/mod.rs b/src/ball/mod.rs
+--- a/src/ball/mod.rs
++++ b/src/ball/mod.rs
+@@ -84,7 +84,7 @@
+ 
+     /// False iff the radius is `Infinity` (CONTRACT 6.4, 15.3).
+     pub fn is_informative(&self) -> bool {
+-        !self.rad.is_infinity()
++        self.rad.is_infinity()
+     }
+ 
+     /// True iff the radius is zero, so the ball is the single point `mid`.

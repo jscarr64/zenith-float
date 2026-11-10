@@ -1,0 +1,2 @@
+# Slice S6 golden checksums (sha256sum format), checked by tools/goldens_regen.sh. Every *.txt in this directory must be listed.
+13d3c9de43bdccc64c3453e5eece54b9eeaebe6b884314933956726c162f224a  matrix_rows.txt

@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..6e7bf07 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -324,7 +324,7 @@ impl Ball {
+                 // round(|m|) as one product (-1 or 1)·m, so `m` is borrowed, not consumed (O14-W).
+                 let sign = if m.is_negative() { -1i64 } else { 1i64 };
+                 let am = ExactNum::from(sign).mul(m, prec, MID_RM);
+-                finish(OP, am, r, prec, false)
++                finish(OP, am, &Mag::zero(), prec, false)
+             }
+             Some(Ordering::Less) | None => {
+                 let u = Mag::from_exact_num(m).add_up(r);

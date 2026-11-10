@@ -1,0 +1,13 @@
+diff --git a/src/mag/mul.rs b/src/mag/mul.rs
+index ad2f4d9..1fa2eab 100644
+--- a/src/mag/mul.rs
++++ b/src/mag/mul.rs
+@@ -19,7 +19,7 @@ impl Mag {
+             Mag::infinity()
+         } else {
+             match (self.nonzero(), other.nonzero()) {
+-                (Some((ea, ma)), Some((eb, mb))) => mul_parts(ea, ma, eb, mb, true),
++                (Some((ea, ma)), Some((_eb, _mb))) => mul_parts(ea, ma, ea, ma, true),
+                 _ => Mag::zero(),
+             }
+         }

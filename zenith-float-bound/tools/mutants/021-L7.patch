@@ -1,0 +1,12 @@
+diff --git a/src/mag/lower.rs b/src/mag/lower.rs
+--- a/src/mag/lower.rs
++++ b/src/mag/lower.rs
+@@ -79,7 +79,7 @@ fn sub_wide(ea: i64, ma: NonZeroU64, gap: i128, mb: NonZeroU64) -> Option<Mag> {
+     let (subtrahend, frac) = match u32::try_from(gap.checked_sub(63)?) {
+         Ok(shift) if shift < 64 => {
+             let mb = u128::from(mb.get());
+-            (mb >> shift, (mb & !(u128::MAX << shift)) != 0)
++            (mb >> shift, (mb & !(u128::MAX << shift)) > 1)
+         }
+         _ => (0, true),
+     };

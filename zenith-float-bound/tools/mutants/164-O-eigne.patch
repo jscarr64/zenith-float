@@ -1,0 +1,11 @@
+diff --git a/src/policy.rs b/src/policy.rs
+--- a/src/policy.rs
++++ b/src/policy.rs
+@@ -26,7 +26,6 @@
+ }
+ 
+ /// Options of the eigensolvers (CONTRACT 10.1). Start from `EigOpts::default()` and set fields.
+-#[non_exhaustive]
+ #[derive(Debug, PartialEq, Eq)]
+ pub struct EigOpts {
+     /// Maximum number of Jacobi sweeps before giving up (default 64).

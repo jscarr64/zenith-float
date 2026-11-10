@@ -1,0 +1,12 @@
+diff --git a/src/mag/ulp.rs b/src/mag/ulp.rs
+--- a/src/mag/ulp.rs
++++ b/src/mag/ulp.rs
+@@ -57,7 +57,7 @@
+         let Some(threshold) = i128::try_from(prec)
+             .ok()
+             .and_then(|p| i128::from(mid_exp).checked_sub(p))
+-            .and_then(|diff| diff.checked_sub(1))
++            .and_then(|diff| diff.checked_sub(0))
+         else {
+             return false;
+         };

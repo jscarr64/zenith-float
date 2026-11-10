@@ -1,0 +1,14 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -307,8 +307,8 @@
+         let (shape, data) = mids.into_parts();
+         let mut out = reserve(OP, data.len())?;
+         for (b, r) in data.into_vec().into_iter().zip(rads.as_slice()) {
+-            let (m, s, _) = b.into_parts();
+-            out.push(Ball::from_mid_rad(m, s.add_up(r), prec)?.mul_2exp(0, prec)?);
++            let (m, _s, _) = b.into_parts();
++            out.push(Ball::from_mid_rad(m, r.add_up(&Mag::zero()), prec)?.mul_2exp(0, prec)?);
+         }
+         BallArray::from_balls(shape, out)
+     }

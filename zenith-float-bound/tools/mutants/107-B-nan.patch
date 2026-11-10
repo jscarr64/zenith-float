@@ -1,0 +1,12 @@
+diff --git a/src/ball/mod.rs b/src/ball/mod.rs
+--- a/src/ball/mod.rs
++++ b/src/ball/mod.rs
+@@ -38,7 +38,7 @@
+     /// `InvalidArgument` when `prec == 0`; `Representation` when `mid` is NaN or infinite.
+     pub fn from_mid_rad(mid: ExactNum, rad: Mag, prec: Precision) -> BoundResult<Ball> {
+         check_prec("Ball::from_mid_rad", prec)?;
+-        if mid.is_nan() || mid.is_inf() {
++        if mid.is_inf() {
+             return Err(BoundError::Representation {
+                 op: "Ball::from_mid_rad",
+                 detail: "NaN or infinite midpoint",

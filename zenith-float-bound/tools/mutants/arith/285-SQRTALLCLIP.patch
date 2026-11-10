@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4a73525..abeb144 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -182,7 +182,7 @@ impl Ball {
+             return if strict {
+                 Err(domain(OP, "the all-reals ball reaches below 0"))
+             } else {
+-                Ball::all_reals(prec)
++                Err(domain(OP, "mutant"))
+             };
+         }
+         let Some(ord) = r.cmp_exact_num(m).map(Ordering::reverse) else {

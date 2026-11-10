@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 1f8372d..55a5933 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -373,7 +373,7 @@ impl Ball {
+ 
+     /// `self ≥ other`, i.e. `other ≤ self` (CONTRACT 15.2, 16.S1.11).
+     pub fn ge(&self, other: &Ball) -> Tri {
+-        other.le(self)
++        self.le(other)
+     }
+ 
+     /// Value equality: `True` only for two exact equal points, `False` for disjoint balls (CONTRACT 15.2, 16.S1.11).

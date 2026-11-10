@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index f86eb99..dd6c9d8 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -430,7 +430,7 @@ fn eps(mid: &ExactNum, prec: Precision, lost: bool) -> Mag {
+     }
+     match mid.exponent() {
+         Some(e) if e > EXPONENT_MIN && !mid.is_zero() => Mag::half_ulp(e, prec),
+-        Some(_) | None => Mag::ulp_mag(EXPONENT_MIN, 0),
++        Some(_) | None => Mag::zero(),
+     }
+ }
+ 

@@ -1,0 +1,7 @@
+# expected grid digests (S13): rows SUITE WORDS FNV1A64, produced by tests/harness/grid_digests.rs; every target, profile and thread count must give exactly these rows.
+# splitmix and ball_rows were also recomputed independently in Python (goldlib.SplitMix64, FNV-1a over little-endian bytes); generators and mag_grid are drift pins.
+# Change only for a reviewed reason (a deliberate generator or Mag-semantics change): CODEOWNERS-protected like the other baselines.
+splitmix 65536 824ce7a05302bb45
+generators 160000 c17d3bec691a2d3f
+mag_grid 5288814 923017e7fb7370da
+ball_rows 3824433 0cd9e03b19629d8a

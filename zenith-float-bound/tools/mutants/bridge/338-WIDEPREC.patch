@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 8fff0d2..0832aac 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -263,7 +263,7 @@ pub fn constant_ball(cc: &mut Consts, c: &Constant, prec: Precision) -> BoundRes
+     if half.inexact() || !half.is_positive() {
+         return Err(not_one_ulp);
+     }
+-    let wide = prec.checked_add(1).ok_or(BoundError::InvalidArgument {
++    let wide = prec.checked_add(0).ok_or(BoundError::InvalidArgument {
+         op: OP,
+         detail: "precision + 1 overflows",
+     })?;

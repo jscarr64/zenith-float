@@ -1,0 +1,3 @@
+# range: 500-599
+# Slice S4a (src/hypergeom.rs) mutants, owned by S4a alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
+# ids NNN-<name> with NNN in 500..=599; patches go in tools/mutants/hypergeom/ and the patch column reads hypergeom/NNN-<name>.patch.

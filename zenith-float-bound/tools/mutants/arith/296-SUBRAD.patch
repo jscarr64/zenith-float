@@ -1,0 +1,12 @@
+diff --git a/src/arith.rs b/src/arith.rs
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -67,7 +67,7 @@
+     pub fn sub(self, other: &Ball, prec: Precision) -> BoundResult<Ball> {
+         check_prec("Ball::sub", prec)?;
+         let (m, r, _) = self.into_parts();
+-        let rad = r.add_up(other.rad());
++        let rad = r;
+         finish(
+             "Ball::sub",
+             m.sub(other.mid(), prec, MID_RM),

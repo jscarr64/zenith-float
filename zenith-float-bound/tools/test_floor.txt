@@ -1,0 +1,6 @@
+# Test-count floors for the gate's cargo test steps (tools/test_floor.sh; Paul, 2026-10-23).
+# Format: STEP<TAB>MIN_TESTS (sum of `passed` over every `test result:` summary in the step log).
+# UPDATE: after a gate passes with more tests, RAISE the floor to the new run= count in the same commit as the tests.
+# LOWERING a floor (tests deleted or merged) needs a CHANGELOG.md note saying which tests went and why.
+build-debug	386
+build-release	386

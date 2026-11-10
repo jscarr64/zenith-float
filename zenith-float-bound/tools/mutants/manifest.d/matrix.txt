@@ -1,0 +1,22 @@
+# range: 900-999
+# Slice S6 (src/matrix.rs) mutants, owned by S6 alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
+# ids NNN-<name> with NNN in 900..=999; patches go in tools/mutants/matrix/ and the patch column reads matrix/NNN-<name>.patch.
+# Products: 900-905, 912, 913, 916, 917 (product_entry via dot/matvec/matmul; 917 work_prec guard bits); norms 906-908, 914, 915; elementwise and mid/rad 909-911.
+src/matrix.rs:product_entry	900-R1MB	matrix/900-R1MB.patch	harness
+src/matrix.rs:product_entry	901-FINEPS	matrix/901-FINEPS.patch	harness
+src/matrix.rs:product_entry	902-SUMEPS	matrix/902-SUMEPS.patch	harness
+src/matrix.rs:BallMat::matmul	903-MMCOL	matrix/903-MMCOL.patch	harness
+src/matrix.rs:BallMat::matmul	904-MMDIM	matrix/904-MMDIM.patch	harness
+src/matrix.rs:BallMat::matvec	905-MVRB0	matrix/905-MVRB0.patch	harness
+src/matrix.rs:BallMat::norm_inf	906-MNINF	matrix/906-MNINF.patch	harness
+src/matrix.rs:BallMat::norm_1	907-MN1MID	matrix/907-MN1MID.patch	harness
+src/matrix.rs:BallMat::norm_frob_up	908-FROBLO	matrix/908-FROBLO.patch	harness
+src/matrix.rs:BallArray::add	909-SHAPELEN	matrix/909-SHAPELEN.patch	harness
+src/matrix.rs:BallArray::from_mid_rad	910-FMRR	matrix/910-FMRR.patch	harness
+src/matrix.rs:MagArray::get	911-MAGRANK	matrix/911-MAGRANK.patch	harness
+src/matrix.rs:product_entry	912-INFRAD	matrix/912-INFRAD.patch	harness
+src/matrix.rs:product_entry	913-K0	matrix/913-K0.patch	harness
+src/matrix.rs:BallVec::norm_inf	914-VNINF	matrix/914-VNINF.patch	harness
+src/matrix.rs:BallVec::norm_2_up	915-N2R	matrix/915-N2R.patch	harness
+src/matrix.rs:product_entry	916-PRODEPS	matrix/916-PRODEPS.patch	harness
+src/matrix.rs:work_prec	917-GUARD0	matrix/917-GUARD0.patch	harness

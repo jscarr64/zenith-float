@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -115,7 +115,7 @@
+         let mb_up = Mag::from_exact_num(mb);
+         let first = Mag::from_exact_num(ma)
+             .mul_up(rb)
+-            .add_up(&ra.mul_up(&mb_up.add_up(rb)));
++            .add_up(&ra.mul_up(&mb_up));
+         rad = rad.add_up(&first);
+         if rad.is_infinity() {
+             return Ball::all_reals(prec);

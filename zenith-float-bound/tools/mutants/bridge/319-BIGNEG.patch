@@ -1,0 +1,16 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 11b06b8..a62a2de 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -167,9 +167,9 @@ impl Mag {
+             // me == e: self < 2^e, in range since big has exponent e.
+             let m = self.to_exact_num().ok()?;
+             if big_neg {
+-                big.add_full_prec(&m)
+-            } else {
+                 big.sub_full_prec(&m)
++            } else {
++                big.add_full_prec(&m)
+             }
+         };
+         if ur.inexact() || ur.is_nan() {

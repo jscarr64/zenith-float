@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -32,7 +32,7 @@
+ 
+     /// `re + 0i`, the imaginary part exact zero at `re`'s prec.
+     pub fn from_real(re: Ball) -> BoundResult<CBall> {
+-        let im = Ball::exact(ExactNum::from(0i64), re.prec())?;
++        let im = Ball::exact(ExactNum::from(1i64), re.prec())?;
+         Ok(CBall { re, im })
+     }
+ 

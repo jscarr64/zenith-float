@@ -1,0 +1,12 @@
+diff --git a/src/ball/mod.rs b/src/ball/mod.rs
+--- a/src/ball/mod.rs
++++ b/src/ball/mod.rs
+@@ -117,7 +117,7 @@
+ 
+ /// A −0 midpoint becomes +0 (CONTRACT 6.3); every other value is returned unchanged.
+ fn positive_zero(mid: ExactNum) -> ExactNum {
+-    if mid.is_zero() && mid.is_negative() {
++    if mid.is_zero() {
+         ExactNum::new(ZERO_PREC)
+     } else {
+         mid

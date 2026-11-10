@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..0b794fa 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -135,7 +135,7 @@ impl Ball {
+     /// `InvalidArgument` when `prec` is outside `MIN_PRECISION..=MAX_PRECISION`. A midpoint overflow is `Ok(all reals)`.
+     pub fn powi(&self, n: u64, prec: Precision) -> BoundResult<Ball> {
+         check_prec("Ball::powi", prec)?;
+-        if n == 0 {
++        if n <= 1 {
+             return Ball::exact(ExactNum::from(1i64), prec);
+         }
+         let wp = match prec.checked_add(POWI_GUARD_BITS) {
