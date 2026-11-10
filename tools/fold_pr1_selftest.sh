@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Fold PR 1 selftest: the bound layer joins zenith-float as the workspace crate zenith-float-bound
-# (RELEASE-2.0-CHECKLIST 4.1, 4.3, 4.5, 4.6; Rusty fold plan 2026-11-10 section 2.4, rows A..Y plus NOSTR and NOCYCLE).
+# (RELEASE-2.0-CHECKLIST 4.1, 4.3, 4.5, 4.6; Rusty fold plan 2026-11-10 section 2.4, rows A..Y plus NOSTR, NOCYCLE, HOLD and HOLDIDX).
 # usage: tools/fold_pr1_selftest.sh [BASE_REF]      (BASE_REF defaults to origin/main)
 # Every row runs its real check on the COMMITTED HEAD tree (git archive into a scratch dir, never the working tree) and
 # must PASS; then the row's planted defect is applied to a second copy and the same check must FAIL on it (DETECTED).
@@ -52,14 +52,19 @@ check_Y() {
   find_import "$1" > /dev/null
 }
 # B (adapted to the new prefix): the import merge holds the zb tip tree byte-for-byte under $PFX/, and at the checked
-# ref the set of paths under $PFX/ is the zb tip's set minus exactly the removed files ($2).
+# ref every zb tip path is still under $PFX/ except exactly the removed files ($2), which are gone. Later commits may add
+# paths (topic-tip merges, the crate rustfmt.toml); a held file (HOLD.md) keeps its path, so it still counts.
 check_B() {
-  local m want have
+  local m want have missing f
   m=$(find_import "$1") || return 1
   [ "$(git rev-parse "$m:$PFX" 2> /dev/null)" = "$(git rev-parse "$ZB_TIP^{tree}")" ] || return 1
   want=$(git ls-tree -r --name-only "$ZB_TIP" | grep -vxF -f <(printf '%s\n' $2)) || return 1
   have=$(git ls-tree -r --name-only "$1:$PFX" 2> /dev/null) || return 1
-  [ "$want" = "$have" ]
+  missing=$(comm -23 <(printf '%s\n' "$want" | sort) <(printf '%s\n' "$have" | sort))
+  [ -z "$missing" ] || { printf '  B missing: %s\n' "$missing" | head -n 20; return 1; }
+  for f in $2; do
+    if printf '%s\n' "$have" | grep -qxF "$f"; then echo "  B: removed file $f is back"; return 1; fi
+  done
 }
 check_P() {
   local c last commits
@@ -180,6 +185,49 @@ check_NOSTR() {
   [ -z "$hits" ] || { printf '  NOSTR: %s\n' "$hits" | head -n 20; return 1; }
 }
 
+# HOLD (Jeff 2026-11-10 15:36): held code lives commented out under a `// HOLD <id>:` first line, indexed in the one
+# repo-root HOLD.md (table rows `| <id> | `path`, ... | ...`). Every held file's id has an index row naming that file,
+# every index path exists and starts with its row's header, and no live (uncommented) `mod` line or Cargo target path
+# names a held file.
+check_HOLD() {
+  local d=$1 idx ids id paths f hid stem dir hits
+  idx="$d/HOLD.md"
+  [ -f "$idx" ] || { echo "  HOLD: no HOLD.md at the repo root"; return 1; }
+  ids=$(grep -oE '^\| H[0-9]+ \|' "$idx" | grep -oE 'H[0-9]+')
+  [ -n "$ids" ] || { echo "  HOLD: HOLD.md has no index rows"; return 1; }
+  [ "$(printf '%s\n' "$ids" | sort | uniq -d)" = "" ] || { echo "  HOLD: duplicate index ids"; return 1; }
+  for id in $ids; do
+    paths=$(grep -E "^\| $id \|" "$idx" | awk -F'|' '{print $3}' | grep -oE '`[^`]+`' | tr -d '`')
+    [ -n "$paths" ] || { echo "  HOLD: $id names no path"; return 1; }
+    for f in $paths; do
+      [ -f "$d/$f" ] || { echo "  HOLD: $id path $f missing"; return 1; }
+      head -n 1 "$d/$f" | grep -qE "^// HOLD $id:" || { echo "  HOLD: $f has no '// HOLD $id:' first line"; return 1; }
+    done
+  done
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    hid=$(head -n 1 "$d/$f" | grep -oE '^// HOLD H[0-9]+' | awk '{print $3}')
+    grep -E "^\| $hid \|" "$idx" | awk -F'|' '{print $3}' | grep -qF "\`$f\`" || { echo "  HOLD: $f ($hid) has no index row"; return 1; }
+    case $f in
+      *.rs)
+        stem=$(basename "$f" .rs); dir=$(dirname "$f")
+        hits=$(grep -rnE --include='*.rs' "^[[:space:]]*(pub(\([a-z]+\))?[[:space:]]+)?mod[[:space:]]+$stem[[:space:]]*;" "$d/$dir" "$d/$(dirname "$dir")" 2> /dev/null | sed "s|^$d/||")
+        [ -z "$hits" ] || { echo "  HOLD: live mod line for held $f: $hits"; return 1; }
+        hits=$(grep -rnE --include='*.rs' "#\[path[[:space:]]*=.*$(basename "$f")" "$d" 2> /dev/null | sed "s|^$d/||")
+        [ -z "$hits" ] || { echo "  HOLD: #[path] names held $f: $hits"; return 1; }
+        ;;
+    esac
+    hits=$(grep -rnE --include='Cargo.toml' "^[^#]*path[[:space:]]*=.*$(basename "$f")" "$d" 2> /dev/null | sed "s|^$d/||")
+    [ -z "$hits" ] || { echo "  HOLD: Cargo target names held $f: $hits"; return 1; }
+  done < <(cd "$d" && grep -rlE --exclude-dir=target --exclude=HOLD.md '^// HOLD H[0-9]+:' . | sed 's|^\./||' | while IFS= read -r g; do head -n 1 "$g" | grep -qE '^// HOLD H[0-9]+:' && echo "$g"; done)
+}
+plant_hold_orphan() {  # a held-looking file with no index row
+  local f="$PFX/src/fold_pr1_plant.rs" rc
+  printf '// HOLD H999: plant\n// pub fn x() {}\n' > "$plant/$f"
+  check_HOLD "$plant"; rc=$?
+  restore "$f"; return $rc
+}
+
 # --- driver ------------------------------------------------------------------------------------------------------
 bad=0
 row() {   # row ID REAL_CMD... -- PLANT_CMD...   (plant side runs with the planted copy in place)
@@ -236,6 +284,8 @@ row S check_S "$real" -- plant_add_line Cargo.lock $'\n[[package]]\nname = "fold
 row T check_T "$real" -- plant_file "$PFX/Cargo.toml" 's|^zenith-float-num[[:space:]]*=.*|&\n# zenith-float-num rev 627fedd11d5176a4299b0972e5aa723019e6377d|' check_T "$plant"
 row Y check_Y "$HEAD_SHA" -- check_Y "$BASE"
 row NOSTR check_NOSTR "$real" -- plant_add_line README.md "Formerly $OLD_NAME." check_NOSTR "$plant"
+row HOLD check_HOLD "$real" -- plant_add_line "$PFX/src/lib.rs" 'pub mod carlson;' check_HOLD "$plant"
+row HOLDIDX check_HOLD "$real" -- plant_hold_orphan
 row NOCYCLE check_NOCYCLE "$real" -- plant_add_line zenith-float-num/src/lib.rs 'use zenith_float_bound as _;' check_NOCYCLE "$plant"
 
 if [ $bad = 0 ]; then echo "fold-pr1: RESULT PASS (every row PASS + DETECTED) head=$HEAD_SHA"; exit 0; fi
