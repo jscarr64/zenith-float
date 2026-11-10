@@ -12,9 +12,9 @@ fail() { echo "GITATTRIBUTES SELFTEST FAIL: $*"; exit 1; }
 [ -f "$here/.gitattributes" ] || fail "no .gitattributes at repo root"
 attr() { git -C "$here" check-attr -a -- "$1"; }
 golden="$(attr tests/goldens/mag_ops.txt)"
-echo "$golden" | grep -q "text: unset" || fail "mag_ops.txt check-attr: $golden"
+grep -q "text: unset" <<< "$golden" || fail "mag_ops.txt check-attr: $golden"
 text="$(attr README.md)"
-echo "$text" | grep -q "eol: lf" || fail "README.md check-attr: $text"
+grep -q "eol: lf" <<< "$text" || fail "README.md check-attr: $text"
 # Spence review of PR #13 (gate fix, 2026-11-05): the scratch dir lives under
 # $(zb_scratch) from tools/scratch.sh, like every other selftest — no $TMPDIR
 # fallback, so the no_tmp gate (tools/no_tmp_selftest.sh) passes.
