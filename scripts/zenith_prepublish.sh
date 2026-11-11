@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-publish gate. Exits 0 only when all 12 checks pass.
+# Pre-publish gate. Exits 0 only when all 11 checks pass (thumbv7em step dropped, 64-bit only).
 # Usage: CARGO_TARGET_DIR=/tmp/target-<agent>-<worktree> ./scripts/zenith_prepublish.sh
 # Every cargo test runs through tools/fresh_test_run.sh (one target dir per worktree; the test binaries are checked
 # before any test runs), so CARGO_TARGET_DIR must be set and owned by this worktree.
@@ -10,13 +10,13 @@ cd "$root"
 source "$root/scripts/use_rust_1_99.sh"
 
 n=0
-ok() { echo "ok  [$n/12] $*"; }
-fail() { echo "error: [$n/12] $*" >&2; exit 1; }
-step() { n=$((n + 1)); echo "== [$n/12] $* =="; }
+ok() { echo "ok  [$n/11] $*"; }
+fail() { echo "error: [$n/11] $*" >&2; exit 1; }
+step() { n=$((n + 1)); echo "== [$n/11] $* =="; }
 
 # --all-features includes mpfr-tests. Check 1 covers std/random/serde (and
 # compare-crate features). Check 2 is the MPFR oracle in release, single-threaded.
-step "cargo test --all-features (workspace random,serde; mpfr-tests is [2/12])"
+step "cargo test --all-features (workspace random,serde; mpfr-tests is [2/11])"
 "$root/tools/fresh_test_run.sh" cargo test --workspace --features random,serde
 ok "workspace tests with random,serde"
 
@@ -74,4 +74,4 @@ step "no TODO/FIXME/HACK; unwrap() has a proof comment"
 python3 "$root/scripts/prepublish_lib.py" hygiene
 ok "source hygiene"
 
-echo "zenith-float prepublish ok (12/12)"
+echo "zenith-float prepublish ok (11/11)"
