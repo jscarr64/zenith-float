@@ -95,7 +95,7 @@ run manifest-scan "no_hits ':[0-9]+:\s*(//|\*|//!)' -rn --include='*.rs' -F 'env
 run gate-selftest "require mktemp ln sed grep wc stat tee touch cargo git timeout && tools/full_gate_selftest.sh && tools/heavy_check_selftest.sh && tools/fresh_test_run_selftest.sh && tools/no_tmp_selftest.sh && tools/runlog_selftest.sh && tools/mutate_selftest.sh && tools/mutants_apply_check_selftest.sh"
 run pubfn-coverage "require awk grep git && tools/pubfn_coverage_selftest.sh && tools/pubfn_coverage.sh"
 run gen-la-guard "require python3 env && tools/gen_la_guard_selftest.sh"
-run gen-la-heavy "require python3 && tools/gen_la_progress_selftest.sh && tools/gen_la_pins_selftest.sh && tools/gen_la_cond_selftest.sh"
+run gen-la-heavy "require python3 && tools/gen_la_progress_selftest.sh && tools/gen_la_pins_selftest.sh && tools/gen_la_cond_selftest.sh && tools/gen_la_rowcache_selftest.sh && tools/gen_la_jobs_selftest.sh"
 run la4-red-markers "require grep awk && tools/la4_red_markers_selftest.sh && tools/la4_red_markers.sh"
 run goldens-regen "require sha256sum grep cmp && tools/goldens_regen_selftest.sh && tools/popguard_selftest.sh && tools/goldens_regen.sh \${GOLDENS_REGEN_ARGS:-}"
 run wildcard-enum "require cargo awk grep && tools/wildcard_enum_selftest.sh"
