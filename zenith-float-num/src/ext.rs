@@ -8551,7 +8551,8 @@ mod grid_digest_tests {
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 18_016_007_569_384_113_393);
         // Re-pinned (F9d-3): was 2_411_520_695_892_384_189, with the None F-17 cell in.
-        assert_eq!(h.finish(), 2_925_947_817_663_390_226);
+        // Re-pinned (F9d-4): was 2_925_947_817_663_390_226, with the 12 None F-B overflow cells in.
+        assert_eq!(h.finish(), 1_241_375_420_610_093_665);
         Ok(())
     }
 
