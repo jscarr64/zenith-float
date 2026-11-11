@@ -15,7 +15,7 @@
 //! is exact, and against hand-computed results at the subnormal floor and beyond both ends.
 
 use crate::mpfr::common::{
-    exact_mpfr_shifted, mpfr_reference_shifted, mpfr_reference_with, show_mp, BinOp,
+    exact_mpfr_shifted, mpfr_reference_shifted, mpfr_reference_with, show_mp, storage_bits, BinOp,
 };
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::float::Round;
@@ -151,6 +151,17 @@ fn nan() -> Want {
     }
 }
 
+/// `RoundingMode::None` is toward zero at the storage precision rp(p, 64) (FIXLIST ZF-M27, the result keeps the
+/// storage precision): every reference here works at that precision in `ToZero`, so its sticky bits and its stand-in
+/// grids sit below rp(p, 64), not below `p`.
+fn none_as_storage(p: u32, rm: RoundingMode) -> Res<(u32, RoundingMode)> {
+    if rm == RoundingMode::None {
+        Ok((storage_bits(p)?, RoundingMode::ToZero))
+    } else {
+        Ok((p, rm))
+    }
+}
+
 /// Rounds `eval` (the result times `2^r`) to `p` bits in the zenith range scaled by `2^r`. `e_est` is the
 /// result's top exponent to within two places: a result more than four places above `EXPONENT_MAX` (or below
 /// the subnormal grid `EXPONENT_MIN - p`) overflows (underflows) like any other one that far out, and is
@@ -164,6 +175,7 @@ pub fn round_scaled(
     r: i128,
     eval: impl Fn(&mut Float, rnd_t) -> i32,
 ) -> Res<Want> {
+    let (p, rm) = none_as_storage(p, rm)?;
     let pi = i128::from(p);
     let stand_in_shift = if e_est > MAX + 4 {
         Some(-(MAX + 8))
@@ -235,6 +247,7 @@ fn with_sticky(f: &Float, p: u32, negative: bool) -> Res<Float> {
 /// below the value's lowest bit, so a sticky bit of its sign below `p` and below that bit rounds the same.
 /// An all-zero sum is `+0` (`-0` in `Down`), as an exact cancellation of nonzero terms.
 pub fn ref_sum(terms: &[Term], p: u32, rm: RoundingMode) -> Res<Want> {
+    let (p, rm) = none_as_storage(p, rm)?;
     let mut ts: Vec<&Term> = terms.iter().filter(|t| !t.is_zero()).collect();
     ts.sort_by_key(|t| std::cmp::Reverse(t.top()));
     let mut groups: Vec<Vec<&Term>> = Vec::new();
@@ -272,6 +285,7 @@ pub fn ref_sum(terms: &[Term], p: u32, rm: RoundingMode) -> Res<Want> {
 
 /// `a / b`: both operands scaled to `[1/2, 1)`, the quotient by the difference of the two scalings.
 pub fn ref_div(a: &Term, b: &Term, p: u32, rm: RoundingMode) -> Res<Want> {
+    let (p, rm) = none_as_storage(p, rm)?;
     if b.is_zero() {
         return Err("ref_div: zero divisor".into());
     }
@@ -291,12 +305,14 @@ pub fn ref_div(a: &Term, b: &Term, p: u32, rm: RoundingMode) -> Res<Want> {
 }
 
 pub fn ref_recip(x: &Term, p: u32, rm: RoundingMode) -> Res<Want> {
+    let (p, rm) = none_as_storage(p, rm)?;
     ref_div(&Term::new(1, 0, false), x, p, rm)
 }
 
 /// The `n`-th root of `x`: `x * 2^(n u)` (exact, near one) has the root `root * 2^u`. An even root of a negative
 /// number is NaN.
 pub fn ref_root(x: &Term, n: u32, p: u32, rm: RoundingMode) -> Res<Want> {
+    let (p, rm) = none_as_storage(p, rm)?;
     if x.is_zero() {
         return Ok(zero(x.is_negative()));
     }
@@ -318,6 +334,7 @@ pub fn ref_root(x: &Term, n: u32, p: u32, rm: RoundingMode) -> Res<Want> {
 /// `hypot(a, b)` under the shift that puts the larger operand at one; operands more than [`GAP`] places apart
 /// give `|big| (1 + small^2 / (2 big^2))`, the larger magnitude with a positive sticky bit ([`ref_sum`]).
 pub fn ref_hypot(a: &Term, b: &Term, p: u32, rm: RoundingMode) -> Res<Want> {
+    let (p, rm) = none_as_storage(p, rm)?;
     let (big, small) = if a.top() >= b.top() { (a, b) } else { (b, a) };
     if small.is_zero() || big.top() - small.top() > GAP {
         return ref_sum(&[big.abs(), small.abs()], p, rm);
@@ -418,6 +435,7 @@ pub fn ref_log(
     rm: RoundingMode,
     mp_fn: &impl Fn(&mut Float, &Float, Round) -> Ordering,
 ) -> Res<Want> {
+    let (p, rm) = none_as_storage(p, rm)?;
     if x.is_zero() || x.is_negative() {
         return Err("ref_log: operand must be positive".into());
     }
@@ -490,6 +508,7 @@ pub fn term_of(x: &ExactNum) -> Res<Term> {
 
 /// `a op b` exactly rounded at `p` in the zenith range.
 pub fn ref_binop(a: &Term, b: &Term, op: BinOp, p: u32, rm: RoundingMode) -> Res<Want> {
+    let (p, rm) = none_as_storage(p, rm)?;
     match op {
         BinOp::Add => ref_sum(&[a.ldexp(0), b.ldexp(0)], p, rm),
         BinOp::Sub => ref_sum(&[a.ldexp(0), b.neg()], p, rm),
@@ -513,6 +532,7 @@ pub fn ref_pow(
     p: u32,
     rm: RoundingMode,
 ) -> Res<Want> {
+    let (p, rm) = none_as_storage(p, rm)?;
     // an integer power up to 64 is exact on the frame (the enclosure of an exact result never closes)
     if let Some(e) = y
         .is_integer()

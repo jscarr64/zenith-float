@@ -39,7 +39,8 @@ const ROUNDS: [(RoundingMode, rnd_t); 5] = [
     (RoundingMode::ToZero, rnd_t::RNDZ),
 ];
 
-/// Every mode with a bit-exact reference, `ToOdd` included (emulated in `mpfr_reference`).
+/// All 7 modes, each with a bit-exact reference: `ToOdd` is emulated in `mpfr_reference`, and `None` is MPFR toward zero at the
+/// storage precision rp(p, 64) (FIXLIST ZF-M27).
 const ALL_MODES: [RoundingMode; 7] = [
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
