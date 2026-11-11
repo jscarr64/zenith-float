@@ -197,15 +197,21 @@ if [ "$list" = 2 ]; then
   printf 'killed %s\nkilled+equivalent %s\n' "$fk" "$fke"; exit 0
 fi
 
-base=${MUTATE_TMP:-$(zb_scratch)}; case "$base" in /home/jsc64/MathWorks*|"$repo"*) echo "mutate: MUTATE_TMP must be outside the repo"; exit 2 ;; esac
+# K11: scratch dirs must be outside the repo and outside ANY git checkout (a hard-coded home checkout dir was here before);
+# a path that does not exist yet is judged by its nearest existing ancestor.
+in_checkout() { local d=$1; while [ ! -e "$d" ] && [ "$d" != / ]; do d=$(dirname "$d"); done; env -u GIT_DIR -u GIT_WORK_TREE git -C "$d" rev-parse --is-inside-work-tree > /dev/null 2>&1; }
+base=${MUTATE_TMP:-$(zb_scratch)}; case "$base" in "$repo"*) echo "mutate: MUTATE_TMP must be outside the repo"; exit 2 ;; esac
+in_checkout "$base" && { echo "mutate: MUTATE_TMP must be outside any git checkout: $base"; exit 2; }
 persist=${MUTATE_TARGET:-}
 if [ -n "$persist" ]; then
   case "$persist" in /*) ;; *) echo "mutate: MUTATE_TARGET must be an absolute path"; exit 2 ;; esac
-  case "$persist" in /home/jsc64/MathWorks*|"$repo"|"$repo"/*) echo "mutate: MUTATE_TARGET must be outside the repo"; exit 2 ;; esac
+  case "$persist" in "$repo"|"$repo"/*) echo "mutate: MUTATE_TARGET must be outside the repo"; exit 2 ;; esac
+  in_checkout "$persist" && { echo "mutate: MUTATE_TARGET must be outside any git checkout: $persist"; exit 2; }
   mkdir -p "$persist" || { echo "mutate: cannot create MUTATE_TARGET $persist"; exit 2; }
   pbase=${MUTATE_PERSIST:-$(dirname "$persist")}
   case "$pbase" in /*) ;; *) echo "mutate: MUTATE_PERSIST must be an absolute path"; exit 2 ;; esac
-  case "$pbase" in /home/jsc64/MathWorks*|"$repo"|"$repo"/*) echo "mutate: MUTATE_PERSIST must be outside the repo"; exit 2 ;; esac
+  case "$pbase" in "$repo"|"$repo"/*) echo "mutate: MUTATE_PERSIST must be outside the repo"; exit 2 ;; esac
+  in_checkout "$pbase" && { echo "mutate: MUTATE_PERSIST must be outside any git checkout: $pbase"; exit 2; }
   mkdir -p "$pbase" || { echo "mutate: cannot create MUTATE_PERSIST $pbase"; exit 2; }
 fi
 newtgt() { if [ -n "$persist" ]; then tgt=$persist; else tgt=$(mktemp -d "$base/zb-mutate-target.XXXXXX"); fi; }
