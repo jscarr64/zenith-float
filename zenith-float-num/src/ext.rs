@@ -8161,7 +8161,8 @@ mod grid_digest_tests {
         // representable `t` than half an ulp, and a value just below a representable number rounds to it
         // to nearest; the roundability check had treated that as undecidable. Oracle: mpmath, see the CHANGELOG.
         // Re-pinned (F9d-1): was 8_344_934_497_909_943_058, with the 62 Down F-21 cells in.
-        assert_eq!(h.finish(), 13_316_780_591_086_104_024);
+        // Re-pinned (F9d-5): was 13_316_780_591_086_104_024, with the 24 Down +overflow cells in.
+        assert_eq!(h.finish(), 14_091_997_015_206_208_250);
         Ok(())
     }
 
