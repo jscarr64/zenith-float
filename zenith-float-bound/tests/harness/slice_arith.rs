@@ -1747,3 +1747,5 @@ fn borrowed_ops_reuse_the_same_ball() -> Result<(), String> {
 mod harper_cosmo_wide;
 // Rusty (2026-11-10): Ball::powi guard at the top of the precision range (edgegate MISSED arith.rs:145).
 mod rusty_powi_guard_edges;
+// Rusty (2026-11-10): Ball::hypot guard bits, tightness and the top of the precision range (edgegate MISSED arith.rs:297).
+mod rusty_hypot_guard_edges;
