@@ -7933,10 +7933,8 @@ mod grid_digest_tests {
                 for rm in
                     [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down, RoundingMode::None]
                 {
-                    digest(
-                        &ExactNum::parse(s, crate::Radix::Dec, p, rm, &mut cc),
-                        &mut h,
-                    )?;
+                    let r = ExactNum::parse(s, crate::Radix::Dec, p, rm, &mut cc);
+                    dd(&mut h, &format!("parse:{s}"), &[], &[], p, rm, &r)?;
                     count += 1;
                 }
             }
@@ -8353,7 +8351,7 @@ mod grid_digest_tests {
                     if let Some(w) = &want {
                         assert!(ExactNum::sub_ref(&got, w, 64, RoundingMode::ToEven).is_zero());
                     }
-                    digest(&got, &mut h)?;
+                    dd(&mut h, "logb", &[&x, &b], &[], p, rm, &got)?;
                     count += 1;
                 }
             }
