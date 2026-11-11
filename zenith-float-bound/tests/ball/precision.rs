@@ -1,5 +1,5 @@
 //! API-freeze unit 5 (Paul/Rusty 2026-10-23): every public prec is `Precision` (= zf's `usize` alias), validated
-//! at the constructors against `MIN_PRECISION..=MAX_PRECISION` (`min(2^60, usize::MAX/4) - 1`, zf w6 defs.rs).
+//! at the constructors against `MIN_PRECISION..=MAX_PRECISION` (the fixed `2^60 - 1`, zf defs.rs, re-exported).
 //! COVERS: Ball::exact, Ball::all_reals, Ball::from_mid_rad, BallArray::zeros
 //! (Precision, MIN_PRECISION and MAX_PRECISION are a type alias and consts, which pubfn_coverage does not list.)
 
@@ -66,6 +66,23 @@ fn constructors_reject_out_of_range_precision() -> Result<(), String> {
             BallArray::zeros(vec![2].into_boxed_slice(), p),
             &format!("zeros {}", p),
         )?;
+    }
+    Ok(())
+}
+
+// Order 3 (2026-11-10): one definition. The bound crate's precision items are zenith_float_num's, re-exported: a
+// different type would not unify with `zenith_float_num::Precision`, and the values are the same consts.
+#[test]
+fn precision_items_are_zf_items() -> Result<(), String> {
+    let p: zenith_float_num::Precision = MAX_PRECISION;
+    if p != zenith_float_num::MAX_PRECISION || MIN_PRECISION != zenith_float_num::MIN_PRECISION {
+        return Err(format!(
+            "bound {} {} vs zf {} {}",
+            MIN_PRECISION,
+            MAX_PRECISION,
+            zenith_float_num::MIN_PRECISION,
+            zenith_float_num::MAX_PRECISION
+        ));
     }
     Ok(())
 }

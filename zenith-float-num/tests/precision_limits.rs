@@ -65,3 +65,10 @@ fn precision_alias_reports_precisions() {
         "{p:?} {m:?}"
     );
 }
+
+// Order 3 (2026-11-10, 64-bit only): MAX_PRECISION is the fixed 2^60 - 1, not derived from usize::MAX.
+#[test]
+fn max_precision_is_fixed_2_pow_60_minus_1() {
+    assert_eq!(MAX_PRECISION, 1_152_921_504_606_846_975);
+    assert_eq!(MAX_PRECISION.checked_add(1), Some(1usize << 60));
+}

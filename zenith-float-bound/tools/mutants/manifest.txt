@@ -131,13 +131,12 @@ src/ball/mod.rs:Ball::is_exact	113-B-isexact	113-B-isexact.patch	ball
 src/ball/mod.rs:Ball::exact	114-B-exactrad	114-B-exactrad.patch	ball
 src/ball/mod.rs:Ball::exact	115-B-exactop	115-B-exactop.patch	ball
 src/ball/mod.rs:Ball::all_reals	116-B-allprec	116-B-allprec.patch	ball
-src/precision.rs:MIN_PRECISION	117-P-min2	117-P-min2.patch	ball
-src/precision.rs:MIN_PRECISION	118-P-min0	118-P-min0.patch	ball
-src/precision.rs:max_precision	119-P-maxsub	119-P-maxsub.patch	ball
-src/precision.rs:max_precision	120-P-maxsub2	120-P-maxsub2.patch	ball
-src/precision.rs:max_precision	121-P-shl61	121-P-shl61.patch	ball
-src/precision.rs:max_precision	122-P-shl59	122-P-shl59.patch	ball
-src/precision.rs:max_precision	123-P-cmp	123-P-cmp.patch	ball
+# 117-P-min2 .. 123-P-cmp retired (2026-11-10, Paul order 3): they mutated src/precision.rs (MIN_PRECISION and the max_precision
+# min(2^60, usize::MAX / 4) - 1 cap). That file now only re-exports zenith-float-num's Precision, MIN_PRECISION and MAX_PRECISION, the one
+# definition (zenith-float-num/src/defs.rs, the fixed 2^60 - 1, no usize-width cap), and this tool cannot mutate it: git apply run in this
+# crate directory SKIPS a ../zenith-float-num path, so such a row would "apply" without mutating anything. The same six mutations (MIN 1 -> 2,
+# 1 -> 0; MAX - 1 -> - 0, - 2; 1 << 60 -> 61, 59), applied at the zf root, are each KILLED by zenith-float-num tests/precision_limits.rs and by
+# this crate's ball suite (pop-logs/rusty/2026-11-10/fold-pr1-36-maxprec-green.log). 123 (equivalent) mutated a comparison that no longer exists.
 src/enclosure.rs:Ball::identical	124-C-idprec	124-C-idprec.patch	enclosure
 src/enclosure.rs:Ball::identical	125-C-idrad	125-C-idrad.patch	enclosure
 src/enclosure.rs:Ball::identical	126-C-idmid	126-C-idmid.patch	enclosure
