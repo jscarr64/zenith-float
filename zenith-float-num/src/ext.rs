@@ -6819,8 +6819,9 @@ mod grid_digest_tests {
     /// NONE-GAP F-B: a `None` result of finite operands that is +-Inf is an overflow cell, and Jeff ruled
     /// (2026-11-11 12:03 and 12:15 PM CT) that a `None` overflow saturates to +-MAX (toward zero at rp(p, 64)). Today it
     /// gives +-Inf, a known-wrong bit, so the cell is counted and left out of the digest. It is fixed red-first in the
-    /// ZF-M27 PR, which re-pins this digest with the cells back in. A division by zero is a pole, not an overflow, and
-    /// stays hashed. The cells are listed by dump line in `fold-pr1-162-grid-wrong-cells.tsv` (PR #39 body).
+    /// ZF-M27 PR, which re-pins this digest with the cells back in. A division by zero (or the reciprocal of zero) is a
+    /// pole, not an overflow, and stays hashed. The cells are listed by dump line in
+    /// `fold-pr1-162-grid-wrong-cells.tsv` (PR #39 body).
     #[allow(clippy::too_many_arguments)]
     fn dd_none_gap(
         h: &mut DefaultHasher,
@@ -6833,7 +6834,8 @@ mod grid_digest_tests {
         r: &ExactNum,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let finite = args.iter().all(|a| !a.is_inf() && !a.is_nan());
-        let pole = op == "div" && args.get(1).is_some_and(|d| d.is_zero());
+        let pole = (op == "div" && args.get(1).is_some_and(|d| d.is_zero()))
+            || (op == "reciprocal" && args.first().is_some_and(|d| d.is_zero()));
         if rm == RoundingMode::None && r.is_inf() && finite && !pole {
             *gap += 1;
             return Ok(());
@@ -8492,6 +8494,7 @@ mod grid_digest_tests {
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut held_f17 = 0usize;
+        let mut gap = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 53, 64, 128, 200, 320] {
                 for rm in RMS {
@@ -8499,17 +8502,22 @@ mod grid_digest_tests {
                     // F-17 (N-2): reciprocal(third(320)) at p = 200 under None is exactly 3; toward zero at
                     // rp(200, 64) is below 3.
                     let f17 = rm == RoundingMode::None && i == 6 && p == 200;
-                    dd_held(
-                        &mut *hh,
-                        &mut held_f17,
-                        f17,
-                        "reciprocal",
-                        &[&operand(i)],
-                        &[],
-                        p,
-                        rm,
-                        &operand(i).reciprocal(p, rm),
-                    )?;
+                    let r = operand(i).reciprocal(p, rm);
+                    if f17 {
+                        held_f17 += 1;
+                    } else {
+                        // NONE-GAP F-B: a None overflow (+-Inf, the ruling is +-MAX) is counted, not hashed
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
+                            "reciprocal",
+                            &[&operand(i)],
+                            &[],
+                            p,
+                            rm,
+                            &r,
+                        )?;
+                    }
                     count += 1;
                     for n in [2usize, 3, 4, 5, 7] {
                         dd(
@@ -8529,6 +8537,9 @@ mod grid_digest_tests {
         assert_eq!(count, PAIR_OPERANDS * 6 * 6 * RMS.len());
         // F-17 (N-2, ZF-M27): the None reciprocal(third(320)) cell at p = 200 (exactly 3) is not hashed
         assert_eq!(held_f17, 1);
+        // NONE-GAP F-B: the None overflow cells (reciprocal of the two subnormals, +-Inf where the ruling is +-MAX)
+        // are not hashed (ZF-M27)
+        assert_eq!(gap, 12);
         println!("reciprocal nth_root grid digest = {}", h.finish());
         // Re-recorded for `nth_root` of a negative number with `Up`/`Down` (swapped for odd n >= 5; old value
         // 1_369_146_293_907_659_395): only the n = 5 and 7 entries of negative operands in those modes differ,
