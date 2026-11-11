@@ -8393,7 +8393,8 @@ mod grid_digest_tests {
         // Re-recorded again for `nth_root` of a negative number with `Up`/`Down` (they were swapped for odd n >= 5):
         // the old value was 6_378_838_253_543_692_452; only `nth_root(5)` entries of negative operands differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
-        assert_eq!(h.finish(), 15_733_382_221_161_312_340);
+        // Re-pinned (F9d-7): was 15_733_382_221_161_312_340, with the 2 F-20 logb(x, x) cells in.
+        assert_eq!(h.finish(), 7_247_571_894_832_860_161);
         Ok(())
     }
 
@@ -8467,7 +8468,8 @@ mod grid_digest_tests {
         // F-20 (N-5, ZF-M27): the five exact cases at p = 64 and 128 in ToEven (flagged inexact) are not hashed
         assert_eq!(held_f20, 10);
         println!("log exact digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_246_996_610_564_981_343);
+        // Re-pinned (F9d-7): was 11_246_996_610_564_981_343, with the 10 F-20 cells in.
+        assert_eq!(h.finish(), 4_476_836_513_075_177_053);
         Ok(())
     }
 
