@@ -6893,7 +6893,8 @@ mod grid_digest_tests {
         println!("ldexp grid digest = {}", h.finish());
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 378);
-        assert_eq!(h.finish(), 1_196_293_272_222_150_608);
+        // Re-pinned (F9a-4): was 1_196_293_272_222_150_608, with the None overflow cells in (NONE-GAP F-B).
+        assert_eq!(h.finish(), 14_437_472_841_843_974_673);
         Ok(())
     }
 
@@ -7285,7 +7286,8 @@ mod grid_digest_tests {
         println!("mul/div grid digest = {}", h.finish());
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 448);
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
+        assert_eq!(h.finish(), 6_854_509_046_823_660_977);
         Ok(())
     }
 
@@ -7389,7 +7391,8 @@ mod grid_digest_tests {
         assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 448);
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
+        assert_eq!(h.finish(), 6_854_509_046_823_660_977);
         Ok(())
     }
 
@@ -7423,7 +7426,8 @@ mod grid_digest_tests {
         println!("square grid digest = {}", h.finish());
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 36);
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        // Re-pinned (F9a-4): was 17_269_539_713_433_390_012, with the None overflow cells in (NONE-GAP F-B).
+        assert_eq!(h.finish(), 6_265_526_590_754_367_528);
         Ok(())
     }
 
@@ -7454,7 +7458,8 @@ mod grid_digest_tests {
         assert_eq!(count, PAIR_OPERANDS * 9 * 6);
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 36);
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        // Re-pinned (F9a-4): was 17_269_539_713_433_390_012, with the None overflow cells in (NONE-GAP F-B).
+        assert_eq!(h.finish(), 6_265_526_590_754_367_528);
         Ok(())
     }
 
