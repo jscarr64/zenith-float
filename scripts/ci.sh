@@ -45,7 +45,7 @@ debug_slew() {
 }
 
 mpfr_slew() {
-  cargo test -p zenith-float-num --features mpfr-tests --release -- --test-threads=1
+  cargo test -p zenith-float-num --features mpfr-tests --release -- --test-threads="${RUST_TEST_THREADS:-$(nproc)}"
 }
 
 run_budget debug "${DEBUG_BUDGET}" debug_slew

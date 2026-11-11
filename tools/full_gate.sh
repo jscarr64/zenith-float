@@ -30,9 +30,11 @@ echo "poplog: $POPLOG_FILE" | tee -a "$T/$tag.rc" >&2
 # Pop scheduling (Paul, 2026-10-23): heavy gates share 3 counting-lock slots (/tmp/pop-gate.slot1..3, replaces the
 # single flock /tmp/pop-gate.lock), 8 jobs each (24 of 32 cores). The slot is held on an fd until this script exits;
 # waiting shows as WAITING in ~/pop-logs/RUNNING.tsv. Skipped when a caller already holds a slot (POPSLOT_HELD).
-# CARGO_BUILD_JOBS / RUST_TEST_THREADS default to the slot value POPSLOT_JOBS (4) (pop_slot_acquire) unless the caller sets them.
+# CARGO_BUILD_JOBS / RUST_TEST_THREADS default to the slot value POPSLOT_JOBS (pop_slot_acquire) unless the caller sets them;
+# with no slot value they fall back to the host's core count (P14). No test step is pinned to one thread
+# (tools/test_full_gate_threads.sh).
 if [[ -z "${POPSLOT_HELD:-}" ]]; then pop_slot_acquire "${POPSLOT_SLOTS:-8}"; fi
-export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-4}} RUST_TEST_THREADS=${RUST_TEST_THREADS:-${POPSLOT_JOBS:-4}}
+export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-$(nproc)}} RUST_TEST_THREADS=${RUST_TEST_THREADS:-${POPSLOT_JOBS:-$(nproc)}}
 TT="-- --test-threads=$RUST_TEST_THREADS"
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".
@@ -87,11 +89,11 @@ run zero-test "bash scripts/check_zero_test_targets.sh"
 run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
 run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
-run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
-run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
+run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
+run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
 # MPFR_TIER selects the MPFR tier (tests/mpfr/common.rs): the gate runs `full` (every run count, the
 # 100032-bit tests) unless the caller sets MPFR_TIER=fast.
-run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests -- --test-threads=1"
+run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $TT"
 # ratchet mode: the clone ratchet started at c74e834 (first commit with rules_scan + baseline); older added lines are tracked by no-clone-progress, not flagged here
 run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BASE:-c74e834^}..HEAD"
 # informational: remaining violations are a tracked count (must only go down; hard fail is for the final step)
@@ -100,7 +102,7 @@ run fmt "cargo fmt --all -- --check"
 run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
-run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
+run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_full_gate_threads.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
 run prepublish "bash scripts/zenith_prepublish.sh"
 echo "done" >> "$T/$tag.rc"
 poplog_finish

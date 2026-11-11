@@ -15,14 +15,14 @@ fail() { echo "error: [$n/11] $*" >&2; exit 1; }
 step() { n=$((n + 1)); echo "== [$n/11] $* =="; }
 
 # --all-features includes mpfr-tests. Check 1 covers std/random/serde (and
-# compare-crate features). Check 2 is the MPFR oracle in release, single-threaded.
+# compare-crate features). Check 2 is the MPFR oracle in release, on every core (P14).
 step "cargo test --all-features (workspace random,serde; mpfr-tests is [2/11])"
 "$root/tools/fresh_test_run.sh" cargo test --workspace --features random,serde
 ok "workspace tests with random,serde"
 
 step "cargo test --features mpfr-tests"
 if [[ "$(uname -s)" == Linux && "$(uname -m)" == x86_64 ]]; then
-  "$root/tools/fresh_test_run.sh" cargo test -p zenith-float-num --features mpfr-tests --release -- --test-threads=1
+  "$root/tools/fresh_test_run.sh" cargo test -p zenith-float-num --features mpfr-tests --release -- --test-threads="${RUST_TEST_THREADS:-$(nproc)}"
   ok "mpfr-tests"
 else
   fail "mpfr-tests require Linux x86_64"
@@ -71,7 +71,7 @@ if "pub const PROPTEST_CASES: u32 = 1000;" not in text:
     raise SystemExit("error: PROPTEST_CASES is not 1000 in defs.rs")
 print("PROPTEST_CASES = 1000")
 PY
-"$root/tools/fresh_test_run.sh" cargo test -p zenith-float-num --test proptest_props -- --test-threads=1
+"$root/tools/fresh_test_run.sh" cargo test -p zenith-float-num --test proptest_props -- --test-threads="${RUST_TEST_THREADS:-$(nproc)}"
 ok "proptest"
 
 step "no TODO/FIXME/HACK; unwrap() has a proof comment"
