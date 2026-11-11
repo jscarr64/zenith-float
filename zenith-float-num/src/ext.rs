@@ -7391,6 +7391,8 @@ mod grid_digest_tests {
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held = 0usize;
+        let mut held_f18 = 0usize;
         for a in parts {
             for b in parts {
                 for c in parts {
@@ -7410,24 +7412,26 @@ mod grid_digest_tests {
                                     .into_iter()
                                     .enumerate()
                                 {
-                                    dd(
-                                        &mut *hh,
-                                        COP,
-                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
-                                        &[i128::try_from(k)?, 0],
-                                        p,
-                                        rm,
-                                        r.re(),
-                                    )?;
-                                    dd(
-                                        &mut *hh,
-                                        COP,
-                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
-                                        &[i128::try_from(k)?, 1],
-                                        p,
-                                        rm,
-                                        r.im(),
-                                    )?;
+                                    let x = [operand(a), operand(b), operand(c), operand(d)];
+                                    let finite = x.iter().all(|v| !v.is_inf() && !v.is_nan());
+                                    let div_nonzero = k == 1 && !(x[2].is_zero() && x[3].is_zero());
+                                    for (part, v) in [r.re(), r.im()].into_iter().enumerate() {
+                                        // F-18 (N-3): a quotient of finite parts by a nonzero divisor with a subnormal
+                                        // part (operand 21) is NaN(InvalidArgument), not the quotient.
+                                        let f18 = div_nonzero && finite && v.is_nan();
+                                        held_f18 += usize::from(f18);
+                                        dd_held(
+                                            &mut *hh,
+                                            &mut held,
+                                            f18,
+                                            COP,
+                                            &[&x[0], &x[1], &x[2], &x[3]],
+                                            &[i128::try_from(k)?, i128::try_from(part)?],
+                                            p,
+                                            rm,
+                                            v,
+                                        )?;
+                                    }
                                     count += 1;
                                 }
                             }
@@ -7437,6 +7441,9 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * (RMS.len() - 1) * 2);
+        // F-18 (N-3, ZF-M27): the NaN quotients of finite parts by a nonzero divisor are not hashed (495 per mode)
+        assert_eq!(held_f18, 495 * (RMS.len() - 1));
+        assert_eq!(held, held_f18);
         println!("complex mul/div grid digest = {}", h.finish());
         assert_eq!(h.finish(), 11_266_967_239_943_518_429);
         Ok(())
