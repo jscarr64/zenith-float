@@ -7683,7 +7683,8 @@ mod grid_digest_tests {
         );
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 2_643_728_162_804_407_485);
-        assert_eq!(h.finish(), 2_882_922_101_969_868_672);
+        // Re-pinned (F9d-2): was 2_882_922_101_969_868_672, with the 6 None F-16 tanh cells in.
+        assert_eq!(h.finish(), 4_473_217_349_629_320_125);
         Ok(())
     }
 
