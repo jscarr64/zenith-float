@@ -8313,6 +8313,7 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f20 = 0usize;
         for i in (0..11).chain(21..23) {
             for p in [64usize, 200] {
                 // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
@@ -8362,14 +8363,19 @@ mod grid_digest_tests {
                     )?;
                     count += 8;
                     for b in [2usize, 4, 6] {
-                        dd(
+                        let r = operand(i).log(&operand(b), p, rm, &mut cc);
+                        // F-20 (N-5): log(x, x) = 1 is exact, but ToEven at p = 64 flags it inexact.
+                        let f20 = i == b && r.inexact();
+                        dd_held(
                             &mut h,
+                            &mut held_f20,
+                            f20,
                             "logb",
                             &[&operand(i), &operand(b)],
                             &[],
                             p,
                             rm,
-                            &operand(i).log(&operand(b), p, rm, &mut cc),
+                            &r,
                         )?;
                         count += 1;
                     }
@@ -8377,6 +8383,9 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 13 * 2 * 2 * 11);
+        // F-20 (N-5, ZF-M27): logb(third(64), third(64)) and logb(third(320), third(320)) at p = 64 ToEven (exactly 1,
+        // flagged inexact) are not hashed
+        assert_eq!(held_f20, 2);
         println!("ziv entry points digest = {}", h.finish());
         // Re-recorded: the old value (2_735_357_469_467_868_262) pinned a wrong `log1p` result for the positive
         // subnormal operand 21 with `Down` (the argument itself instead of the argument minus one grid unit);
@@ -8396,6 +8405,7 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f20 = 0usize;
         // (x, base, expected exact result or None when the result is not exact)
         let cases: [(ExactNum, ExactNum, Option<ExactNum>); 8] = [
             (
@@ -8436,12 +8446,26 @@ mod grid_digest_tests {
                     if let Some(w) = &want {
                         assert!(ExactNum::sub_ref(&got, w, 64, RoundingMode::ToEven).is_zero());
                     }
-                    dd(&mut h, "logb", &[&x, &b], &[], p, rm, &got)?;
+                    // F-20 (N-5): an exact result flagged inexact (ToEven at p = 64 and 128) is a known-wrong flag.
+                    let f20 = want.is_some() && got.inexact();
+                    dd_held(
+                        &mut h,
+                        &mut held_f20,
+                        f20,
+                        "logb",
+                        &[&x, &b],
+                        &[],
+                        p,
+                        rm,
+                        &got,
+                    )?;
                     count += 1;
                 }
             }
         }
         assert_eq!(count, 8 * 4 * 3);
+        // F-20 (N-5, ZF-M27): the five exact cases at p = 64 and 128 in ToEven (flagged inexact) are not hashed
+        assert_eq!(held_f20, 10);
         println!("log exact digest = {}", h.finish());
         assert_eq!(h.finish(), 11_246_996_610_564_981_343);
         Ok(())
