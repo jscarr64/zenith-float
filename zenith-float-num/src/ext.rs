@@ -6682,9 +6682,13 @@ mod grid_digest_tests {
     use core::ops::Neg;
     use std::collections::hash_map::DefaultHasher;
 
-    const RMS: [RoundingMode; 6] = [
+    /// All 7 modes. The digests pinned before ToOdd joined (Q2) hash the six others into `h`, in their old order, and
+    /// ToOdd into its own new digest `h_odd`: ToOdd is nearest with ties to odd, so like ToEven it overflows to +-Inf,
+    /// and its overflow cells are correct to pin. Each ToOdd cell was checked by `scripts/verify_grid_digests.py`.
+    const RMS: [RoundingMode; 7] = [
         RoundingMode::None,
         RoundingMode::ToEven,
+        RoundingMode::ToOdd,
         RoundingMode::ToZero,
         RoundingMode::Up,
         RoundingMode::Down,
@@ -6858,14 +6862,16 @@ mod grid_digest_tests {
             EXPONENT_MIN + 1,
         ];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut gap = 0usize;
         for i in 0..OPERANDS {
             for n in shifts {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                         dd_none_gap(
-                            &mut h,
+                            &mut *hh,
                             &mut gap,
                             "ldexp",
                             &[&operand(i)],
@@ -6875,7 +6881,7 @@ mod grid_digest_tests {
                             &operand(i).ldexp(n, p, rm),
                         )?;
                         dd_none_gap(
-                            &mut h,
+                            &mut *hh,
                             &mut gap,
                             "ldexp",
                             &[&operand(i)],
@@ -6889,11 +6895,17 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
+        assert_eq!(count, OPERANDS * 16 * 7 * RMS.len() * 2);
         println!("ldexp grid digest = {}", h.finish());
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 378);
         // Re-pinned (F9a-4): was 1_196_293_272_222_150_608, with the None overflow cells in (NONE-GAP F-B).
+        println!(
+            "ldexp_and_scalb_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 3_256_206_381_344_692_312);
         assert_eq!(h.finish(), 14_437_472_841_843_974_673);
         Ok(())
     }
@@ -6904,12 +6916,14 @@ mod grid_digest_tests {
         let huge = 1usize << (usize::BITS - 24);
         let positions = [0usize, 1, 5, 63, 64, 65, 100, 200, 1 << 20, huge, usize::MAX / 2];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..OPERANDS {
             for n in positions {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "round",
                         &[&operand(i)],
                         &[i128::try_from(n)?],
@@ -6921,10 +6935,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, OPERANDS * 11 * 6);
+        assert_eq!(count, OPERANDS * 11 * RMS.len());
         println!("round grid digest = {}", h.finish());
         // pinned on a 64-bit target; a narrower `usize` has a different position grid
         if cfg!(target_pointer_width = "64") {
+            println!("round_grid_digest ToOdd digest = {}", h_odd.finish());
+            // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+            assert_eq!(h_odd.finish(), 6_694_869_305_830_813_196);
             assert_eq!(h.finish(), 10_921_324_020_573_550_304);
         }
         Ok(())
@@ -7007,6 +7024,7 @@ mod grid_digest_tests {
         const COP: &str = "cplx_as";
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for a in parts {
             for b in parts {
@@ -7014,6 +7032,8 @@ mod grid_digest_tests {
                     for d in parts {
                         for p in [1usize, 64, 128] {
                             for rm in RMS {
+                                let hh =
+                                    if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                                 let z1 = || ExactComplex::new(operand(a), operand(b));
                                 let z2 = || ExactComplex::new(operand(c), operand(d));
                                 for (k, r) in [z1().add(&z2(), p, rm), z1().sub(&z2(), p, rm)]
@@ -7021,7 +7041,7 @@ mod grid_digest_tests {
                                     .enumerate()
                                 {
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 0],
@@ -7030,7 +7050,7 @@ mod grid_digest_tests {
                                         r.re(),
                                     )?;
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 1],
@@ -7046,8 +7066,14 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * RMS.len() * 2);
         println!("complex add/sub grid digest = {}", h.finish());
+        println!(
+            "complex_add_sub_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_151_091_260_857_281_420);
         assert_eq!(h.finish(), 18_040_698_040_155_693_760);
         Ok(())
     }
@@ -7057,13 +7083,15 @@ mod grid_digest_tests {
     #[test]
     fn add_ref_sub_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "add",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7072,7 +7100,7 @@ mod grid_digest_tests {
                             &ExactNum::add_ref(&operand(i), &operand(j), p, rm),
                         )?;
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "sub",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7111,7 +7139,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 45_030);
+        assert_eq!(count, 52_436);
+        println!(
+            "add_ref_sub_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 5_924_280_179_230_656_575);
         assert_eq!(h.finish(), 8_129_670_429_050_627_241);
         Ok(())
     }
@@ -7123,6 +7157,7 @@ mod grid_digest_tests {
         const COP: &str = "cplx_as";
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for a in parts {
             for b in parts {
@@ -7130,6 +7165,8 @@ mod grid_digest_tests {
                     for d in parts {
                         for p in [1usize, 64, 128] {
                             for rm in RMS {
+                                let hh =
+                                    if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                                 let z1 = ExactComplex::new(operand(a), operand(b));
                                 let z2 = ExactComplex::new(operand(c), operand(d));
                                 for (k, r) in [
@@ -7140,7 +7177,7 @@ mod grid_digest_tests {
                                 .enumerate()
                                 {
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 0],
@@ -7149,7 +7186,7 @@ mod grid_digest_tests {
                                         r.re(),
                                     )?;
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 1],
@@ -7165,7 +7202,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * RMS.len() * 2);
+        println!(
+            "complex_add_ref_sub_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_151_091_260_857_281_420);
         assert_eq!(h.finish(), 18_040_698_040_155_693_760);
         Ok(())
     }
@@ -7173,13 +7216,15 @@ mod grid_digest_tests {
     #[test]
     fn add_sub_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "add",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7188,7 +7233,7 @@ mod grid_digest_tests {
                             &operand(i).add(&operand(j), p, rm),
                         )?;
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "sub",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7228,10 +7273,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 45_030);
+        assert_eq!(count, 52_436);
         println!("add/sub grid digest = {}", h.finish());
         // Differs from the digest pinned on the pre-kernel-branch code in exactly 40 results: full-precision
         // sums with a zero operand (see `full_prec_with_zero_operand_is_the_other_operand`).
+        println!("add_sub_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 5_924_280_179_230_656_575);
         assert_eq!(h.finish(), 8_129_670_429_050_627_241);
         Ok(())
     }
@@ -7241,14 +7289,16 @@ mod grid_digest_tests {
     #[test]
     fn mul_div_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut gap = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                         dd_none_gap(
-                            &mut h,
+                            &mut *hh,
                             &mut gap,
                             "mul",
                             &[&operand(i), &operand(j)],
@@ -7258,7 +7308,7 @@ mod grid_digest_tests {
                             &operand(i).mul(&operand(j), p, rm),
                         )?;
                         dd_none_gap(
-                            &mut h,
+                            &mut *hh,
                             &mut gap,
                             "div",
                             &[&operand(i), &operand(j)],
@@ -7282,11 +7332,17 @@ mod grid_digest_tests {
                 count += 1;
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
+        assert_eq!(
+            count,
+            PAIR_OPERANDS * PAIR_OPERANDS * (7 * RMS.len() * 2 + 1)
+        );
         println!("mul/div grid digest = {}", h.finish());
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 448);
         // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
+        println!("mul_div_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 14_444_849_080_303_762_465);
         assert_eq!(h.finish(), 6_854_509_046_823_660_977);
         Ok(())
     }
@@ -7305,6 +7361,13 @@ mod grid_digest_tests {
                     for d in parts {
                         for p in [1usize, 64, 128] {
                             for rm in RMS {
+                                // HELD (new finding N-3, no id yet): (0 + s i) / (0 + s i), s subnormal, gives NaN,
+                                // not 1, in every mode: a ToOdd digest would pin known-wrong bits. ToOdd gets its own
+                                // digest after the fix.
+                                if rm == RoundingMode::ToOdd {
+                                    continue;
+                                }
+                                let hh = &mut h;
                                 let z1 = || ExactComplex::new(operand(a), operand(b));
                                 let z2 = || ExactComplex::new(operand(c), operand(d));
                                 for (k, r) in [z1().mul(&z2(), p, rm), z1().div(&z2(), p, rm)]
@@ -7312,7 +7375,7 @@ mod grid_digest_tests {
                                     .enumerate()
                                 {
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 0],
@@ -7321,7 +7384,7 @@ mod grid_digest_tests {
                                         r.re(),
                                     )?;
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 1],
@@ -7337,7 +7400,7 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * (RMS.len() - 1) * 2);
         println!("complex mul/div grid digest = {}", h.finish());
         assert_eq!(h.finish(), 11_266_967_239_943_518_429);
         Ok(())
@@ -7347,14 +7410,16 @@ mod grid_digest_tests {
     #[test]
     fn mul_ref_div_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut gap = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                         dd_none_gap(
-                            &mut h,
+                            &mut *hh,
                             &mut gap,
                             "mul",
                             &[&operand(i), &operand(j)],
@@ -7364,7 +7429,7 @@ mod grid_digest_tests {
                             &ExactNum::mul_ref(&operand(i), &operand(j), p, rm),
                         )?;
                         dd_none_gap(
-                            &mut h,
+                            &mut *hh,
                             &mut gap,
                             "div",
                             &[&operand(i), &operand(j)],
@@ -7388,28 +7453,39 @@ mod grid_digest_tests {
                 count += 1;
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
+        assert_eq!(
+            count,
+            PAIR_OPERANDS * PAIR_OPERANDS * (7 * RMS.len() * 2 + 1)
+        );
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 448);
         // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
+        println!(
+            "mul_ref_div_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 14_444_849_080_303_762_465);
         assert_eq!(h.finish(), 6_854_509_046_823_660_977);
         Ok(())
     }
 
     /// Squares through `mul_ref(&x, &x)`: the 23 grid operands (NaN of both kinds, +-Inf, +-0, the subnormal
-    /// band, the exponent extremes) at 7 precisions in all 6 rounding modes. Pinned on the code before
-    /// `sqr` existed; `sqr_grid_digest` below must hash to the same value.
+    /// band, the exponent extremes) at 9 precisions in every mode: the six pinned before ToOdd in `h`, ToOdd in its own
+    /// digest. Pinned on the code before `sqr` existed; `sqr_grid_digest` below must hash to the same values.
     #[test]
     fn square_via_mul_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut gap = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     let x = operand(i);
                     dd_none_gap(
-                        &mut h,
+                        &mut *hh,
                         &mut gap,
                         "sqr",
                         &[&x],
@@ -7422,11 +7498,17 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * 9 * 6);
+        assert_eq!(count, PAIR_OPERANDS * 9 * RMS.len());
         println!("square grid digest = {}", h.finish());
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 36);
         // Re-pinned (F9a-4): was 17_269_539_713_433_390_012, with the None overflow cells in (NONE-GAP F-B).
+        println!(
+            "square_via_mul_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_177_630_421_833_126_124);
         assert_eq!(h.finish(), 6_265_526_590_754_367_528);
         Ok(())
     }
@@ -7436,13 +7518,15 @@ mod grid_digest_tests {
     #[test]
     fn sqr_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut gap = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     dd_none_gap(
-                        &mut h,
+                        &mut *hh,
                         &mut gap,
                         "sqr",
                         &[&operand(i)],
@@ -7455,10 +7539,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * 9 * 6);
+        assert_eq!(count, PAIR_OPERANDS * 9 * RMS.len());
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 36);
         // Re-pinned (F9a-4): was 17_269_539_713_433_390_012, with the None overflow cells in (NONE-GAP F-B).
+        println!("sqr_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_177_630_421_833_126_124);
         assert_eq!(h.finish(), 6_265_526_590_754_367_528);
         Ok(())
     }
@@ -7480,16 +7567,42 @@ mod grid_digest_tests {
                 .ldexp(-4, 64, RoundingMode::None),
         };
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for i in (0..11).chain(21..23).chain(100..104) {
             for p in [53usize, 128, 200] {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     let x = || if i < 100 { operand(i) } else { extra(i - 100) };
-                    dd(&mut h, "sin", &[&x()], &[], p, rm, &x().sin(p, rm, &mut cc))?;
-                    dd(&mut h, "cos", &[&x()], &[], p, rm, &x().cos(p, rm, &mut cc))?;
-                    dd(&mut h, "tan", &[&x()], &[], p, rm, &x().tan(p, rm, &mut cc))?;
                     dd(
-                        &mut h,
+                        &mut *hh,
+                        "sin",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().sin(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut *hh,
+                        "cos",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().cos(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut *hh,
+                        "tan",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().tan(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut *hh,
                         "atan",
                         &[&x()],
                         &[],
@@ -7498,7 +7611,7 @@ mod grid_digest_tests {
                         &x().atan(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "sinh",
                         &[&x()],
                         &[],
@@ -7507,7 +7620,7 @@ mod grid_digest_tests {
                         &x().sinh(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "cosh",
                         &[&x()],
                         &[],
@@ -7516,7 +7629,7 @@ mod grid_digest_tests {
                         &x().cosh(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "tanh",
                         &[&x()],
                         &[],
@@ -7528,8 +7641,14 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 17 * 3 * 6 * 7);
+        assert_eq!(count, 17 * 3 * RMS.len() * 7);
         println!("trig hyperbolic grid digest = {}", h.finish());
+        println!(
+            "trig_hyperbolic_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 2_643_728_162_804_407_485);
         assert_eq!(h.finish(), 2_882_922_101_969_868_672);
         Ok(())
     }
@@ -7540,6 +7659,7 @@ mod grid_digest_tests {
     fn exp_pow_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let exps = || {
             [
@@ -7554,8 +7674,9 @@ mod grid_digest_tests {
         for i in (0..11).chain(21..23) {
             for p in [53usize, 128, 200] {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "exp",
                         &[&operand(i)],
                         &[],
@@ -7564,7 +7685,7 @@ mod grid_digest_tests {
                         &operand(i).exp(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "exp2",
                         &[&operand(i)],
                         &[],
@@ -7573,7 +7694,7 @@ mod grid_digest_tests {
                         &operand(i).exp2(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "exp10",
                         &[&operand(i)],
                         &[],
@@ -7583,7 +7704,7 @@ mod grid_digest_tests {
                     )?;
                     for e in exps() {
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "pow",
                             &[&operand(i), &e],
                             &[],
@@ -7595,7 +7716,7 @@ mod grid_digest_tests {
                     }
                     for n in [0usize, 1, 2, 3, 7, 12] {
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "powi",
                             &[&operand(i)],
                             &[i128::try_from(n)?],
@@ -7609,8 +7730,11 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 13 * 3 * 6 * 13);
+        assert_eq!(count, 13 * 3 * RMS.len() * 13);
         println!("exp pow grid digest = {}", h.finish());
+        println!("exp_pow_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 5_249_983_578_669_938_622);
         assert_eq!(h.finish(), 2_398_075_299_501_098_093);
         Ok(())
     }
@@ -8243,12 +8367,14 @@ mod grid_digest_tests {
     /// Loop-conversion pin for `ln`, `log2`, `log10` (the per-pass working copy becomes `ziv_pass_operand`): the 23
     /// grid operands (NaN kinds, +-Inf, +-0, the subnormal band, the exponent extremes), exact powers 2^k and 10^n over
     /// a wide exponent range, 1 +- 2^-j near the cancellation point, and inexact-flagged inputs (including an
-    /// inexact-flagged exact power of ten for the log10 exact branch), at 7 precisions in all 6 rounding modes.
+    /// inexact-flagged exact power of ten for the log10 exact branch), at 7 precisions in every mode: the six pinned
+    /// before ToOdd in `h`, ToOdd in its own digest.
     /// Recorded on the code that still clones the input.
     #[test]
     fn ln_log2_log10_conversion_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut xs: Vec<ExactNum> = (0..PAIR_OPERANDS).map(operand).collect();
         for k in [1i64, 7, 64, 1000, 100_000, 1_000_000_000, -1, -64, -100_000, -1_000_000_000] {
@@ -8284,19 +8410,34 @@ mod grid_digest_tests {
         for x in &xs {
             for p in [1usize, 24, 53, 64, 100, 200, 1024] {
                 for rm in RMS {
-                    dd(&mut h, "ln", &[x], &[], p, rm, &x.ln(p, rm, &mut cc))?;
-                    dd(&mut h, "log2", &[x], &[], p, rm, &x.log2(p, rm, &mut cc))?;
-                    dd(&mut h, "log10", &[x], &[], p, rm, &x.log10(p, rm, &mut cc))?;
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                    dd(&mut *hh, "ln", &[x], &[], p, rm, &x.ln(p, rm, &mut cc))?;
+                    dd(&mut *hh, "log2", &[x], &[], p, rm, &x.log2(p, rm, &mut cc))?;
+                    dd(
+                        &mut *hh,
+                        "log10",
+                        &[x],
+                        &[],
+                        p,
+                        rm,
+                        &x.log10(p, rm, &mut cc),
+                    )?;
                     count += 3;
                 }
             }
         }
-        assert_eq!(count, nx * 7 * 6 * 3);
+        assert_eq!(count, nx * 7 * RMS.len() * 3);
         println!(
             "ln/log2/log10 conversion digest = {} over {} entries",
             h.finish(),
             count
         );
+        println!(
+            "ln_log2_log10_conversion_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 17_271_334_150_709_268_122);
         assert_eq!(h.finish(), 2_640_369_975_324_367_864);
         Ok(())
     }
@@ -8305,12 +8446,14 @@ mod grid_digest_tests {
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 53, 64, 128, 200, 320] {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "reciprocal",
                         &[&operand(i)],
                         &[],
@@ -8321,7 +8464,7 @@ mod grid_digest_tests {
                     count += 1;
                     for n in [2usize, 3, 4, 5, 7] {
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "nth_root",
                             &[&operand(i)],
                             &[i128::try_from(n)?],
@@ -8334,11 +8477,17 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * 6 * 6 * 6);
+        assert_eq!(count, PAIR_OPERANDS * 6 * 6 * RMS.len());
         println!("reciprocal nth_root grid digest = {}", h.finish());
         // Re-recorded for `nth_root` of a negative number with `Up`/`Down` (swapped for odd n >= 5; old value
         // 1_369_146_293_907_659_395): only the n = 5 and 7 entries of negative operands in those modes differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
+        println!(
+            "reciprocal_nth_root_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 18_016_007_569_384_113_393);
         assert_eq!(h.finish(), 2_411_520_695_892_384_189);
         Ok(())
     }
@@ -8445,7 +8594,7 @@ mod grid_digest_tests {
         Ok(())
     }
 
-    /// All seven rounding modes, `ToOdd` included (the pinned grids above use six).
+    /// All seven rounding modes, `ToOdd` included (the pinned grids above hash ToOdd into a digest of its own).
     const ALL_RMS: [RoundingMode; 7] = [
         RoundingMode::None,
         RoundingMode::ToEven,
