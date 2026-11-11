@@ -7,7 +7,7 @@ The interchange format uses big-endian `u32` limbs, so the bytes are identical o
 Locked file: `golds/hex/reference.txt`.
 
 ```bash
-./scripts/ci_hex_32bit.sh   # i686-unknown-linux-musl, static
+./scripts/ci_hex_32bit.sh   # i686-unknown-linux-musl, static (not a 2.0 gate step: 64-bit only, P6)
 ./scripts/ci_hex_wasm.sh    # wasm32-wasip1 + wasmtime
 ./scripts/ci_hex_arm.sh     # aarch64-unknown-linux-musl + qemu-user
 ```

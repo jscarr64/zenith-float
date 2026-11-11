@@ -33,11 +33,7 @@ cargo build --no-default-features
 cargo build -p zenith-float-num --no-default-features
 ok "no_std host"
 
-step "cargo build --no-default-features --target thumbv7em-none-eabihf"
-rustup target add --toolchain 1.99 thumbv7em-none-eabihf >/dev/null
-cargo build --no-default-features --target thumbv7em-none-eabihf
-cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf
-ok "thumbv7em-none-eabihf"
+# No 32-bit target build (thumbv7em dropped): 2.0 is 64-bit only (P6; Jeff 2026-11-10 19:15 CT).
 
 step "scripts/compare-bench.sh --quick"
 bash "$root/scripts/compare-bench.sh" --quick

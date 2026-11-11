@@ -46,6 +46,8 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 - as a `#![no_std]`/`#![no_main]` binary on x86_64 Linux that links only libc;
 - bare-metal on `thumbv7em-none-eabihf` (Cortex-M4F, 32-bit limbs) under `qemu-system-arm -machine mps2-an386` with semihosting.
 
+The 2.0 release gate is 64-bit only (P6; Jeff 2026-11-10): the thumbv7em run above is kept as a script but is not a gate step.
+
 Both pass 77/77. There is no separate `alloc` feature: `alloc` is always required.
 
 ---

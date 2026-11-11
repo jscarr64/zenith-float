@@ -102,7 +102,7 @@ At the pinned baseline, `Cargo.toml` lists num, macro and compare; bound integra
 | 4.5 | CODEOWNERS paths for bound | NOT STARTED / UNVERIFIED: unified integration absent at baseline | file lists paths, scan's exception check honours it |
 | 4.6 | fold historical bound code into this library with --allow-unrelated-histories, keeping its SHAs | NOT STARTED / UNVERIFIED: unified integration absent at baseline | `git log` shows the imported source's original SHAs (including the selected historical harper/spence tips) reachable |
 | 4.7 | lints per crate (forbid unsafe, deny unwrap/expect/wildcard) | NOT STARTED / UNVERIFIED: unified integration absent at baseline | clippy 0 per crate |
-| 4.8 | no_std builds with and without `bound` (host + thumbv7em + i686) | NOT STARTED / UNVERIFIED: unified integration absent at baseline | all build |
+| 4.8 | no_std builds with and without `bound` on the 64-bit host (thumbv7em and i686 parts VOID: P6, Jeff 2026-11-10 19:15 CT "Yes 64 bit only please") | 64-bit host part: `build-nostd` gate step (bound needs std, so `--no-default-features` builds the facade without it); 32-bit parts VOID | host no_std build green |
 
 ## P5 - whole-workspace gate with a bound tier (owner: Harper, Rusty for zf steps)
 
@@ -114,7 +114,7 @@ At the pinned baseline, `Cargo.toml` lists num, macro and compare; bound integra
 | 5.4 | scoped cargo-mutants on the rounding/arithmetic core (cloud agent) plus bound-layer code | UNKNOWN / UNVERIFIED: candidate mutation results not established | every surviving mutant triaged (killed by a new test or justified) |
 | 5.5 | per-package pubfn coverage | UNKNOWN / UNVERIFIED: no whole-library per-package coverage established | 100% of pub fns tested per package |
 | 5.6 | MSRV + rust-toolchain file (rust-version 1.99; CI accepts 1.99.x, 194c3c5) | MERGED / UNVERIFIED: rust-version and rust-toolchain.toml are present; exact-MSRV candidate run still required | build on exact MSRV; toolchain file consistent across crates |
-| 5.7 | Retained 32-bit targets: i686 and armv7 Linux; existing thumbv7em no_std checks | REQUIRED / UNVERIFIED: retained target support and CI acceptance are requirements, not passing claims. Historical fe5c15d-r2 clippy-i686, build-thumbv7em and hex-32bit rc=0 is not release-SHA evidence | Keep existing i686 builds, clippy-i686, hex-32bit, and host/thumbv7em no_std requirements, including with and without bound in 4.8. CI must execute i686 tests with positive test counts, not only cross-compile. CI must build armv7 Linux and execute a smoke test with positive counts on a recorded native or validated target runner. armv7 Linux is distinct from the thumbv7em bare-metal no_std checks; neither substitutes for the other. Require rc=0 and reproducible logs on the same exact candidate SHA. wasm32 and web targets are outside the 2.0 target scope and have no required CI build or test. This scope statement does not require code removal or a compile-time ban |
+| 5.7 | ~~Retained 32-bit targets: i686 and armv7 Linux; existing thumbv7em no_std checks~~ | VOID: P6, Jeff 2026-11-10 19:15 CT "Yes 64 bit only please". The gate no longer builds, lints or tests a 32-bit target (tools/test_full_gate_64bit_only.sh) | - |
 
 ## P6 - release checklist over the whole workspace
 
