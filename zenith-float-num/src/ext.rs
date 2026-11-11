@@ -8095,6 +8095,7 @@ mod grid_digest_tests {
         let mut held = 0usize;
         let mut held_f21 = 0usize;
         let mut held_tzud = 0usize;
+        let mut held_f22 = 0usize;
         let ms = || {
             [
                 ExactNum::new(64),
@@ -8124,12 +8125,18 @@ mod grid_digest_tests {
                                 && !u.is_inf()
                                 && !u.is_nan()
                                 && tz_overflow(rm, &r);
+                            // F-22 rider (N-7, dn/nd exact flag): at u21 and m = 1/2, 3/8, dn and nd are 1 flagged exact in
+                            // ToEven (the value is not exactly 1), and Down dn is 1 where the value is below 1.
+                            let f22 = (JNAMES[fi] == "dn" || JNAMES[fi] == "nd")
+                                && i == 21
+                                && (mi == 2 || mi == 3);
                             held_f21 += usize::from(f21);
                             held_tzud += usize::from(tzud);
+                            held_f22 += usize::from(f22);
                             dd_held(
                                 &mut h,
                                 &mut held,
-                                f21 || tzud,
+                                f21 || tzud || f22,
                                 JNAMES[fi],
                                 &[&operand(i), &m[mi]],
                                 &[],
@@ -8148,7 +8155,9 @@ mod grid_digest_tests {
         assert_eq!(held_f21, 62);
         // M27-TZ/UD (finding id pending): the Down +overflow cells (+Inf, the ruling is +MAX) are not hashed
         assert_eq!(held_tzud, 24);
-        assert_eq!(held, held_f21 + held_tzud);
+        // F-22 rider (N-7, ZF-M27): dn and nd at u21, m = 1/2 and 3/8, both modes, are not hashed
+        assert_eq!(held_f22, 16);
+        assert_eq!(held, held_f21 + held_tzud + held_f22);
         // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
         let u = operand(5);
         let zero_m = ExactNum::new(64);
