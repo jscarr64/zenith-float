@@ -378,7 +378,7 @@ fn zenith_binop_uses_both_operands_mpfr_mul_p24() -> Result<(), Box<dyn std::err
         ((f3.to_f64() - want) / want).abs() < 1e-8,
         "MPFR product {f3}"
     );
-    for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::Up] {
+    for rm in ALL_MODES {
         let f3 = mpfr_reference(&f1, &f2, BinOp::Mul, p as u32, rm)?;
         let n3 = zenith_binop(&n1, &n2, BinOp::Mul, p, rm);
         assert_exact_eq(&n3, &f3, p, &format!("mul {rm:?}"), &mut cc)?;

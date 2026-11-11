@@ -881,7 +881,15 @@ mod tests {
             -1,
         );
         let z = ExactComplex::from_real(x, p);
-        for rm in [RoundingMode::ToZero, RoundingMode::FromZero, RoundingMode::ToEven] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let e = z.erf(p, rm, &mut cc);
             assert!(e.im().is_zero() && !e.re().is_nan(), "erf {rm:?}: {e:?}");
             let c = z.erfc(p, rm, &mut cc);

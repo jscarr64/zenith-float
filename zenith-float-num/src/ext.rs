@@ -5698,6 +5698,7 @@ mod tests {
             RoundingMode::FromZero,
             RoundingMode::ToEven,
             RoundingMode::ToOdd,
+            RoundingMode::None,
         ] {
             assert!(INF_NEG.round(0, rm).is_inf_neg());
             assert!(INF_POS.round(0, rm).is_inf_pos());
@@ -6270,7 +6271,15 @@ mod special_arg_tests {
             .sqrt(64, RoundingMode::ToEven);
         assert!(finite.is_nan());
         assert_eq!(finite.err(), Some(Error::InvalidArgument));
-        for rm in [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let inf = INF_NEG.sqrt(64, rm);
             assert!(inf.is_nan());
             assert_eq!(inf.err(), finite.err(), "sqrt(-Inf) NaN kind");
@@ -7562,6 +7571,8 @@ mod grid_digest_tests {
         let mut count = 0usize;
         for i in [2usize, 3, 4, 5, 21] {
             for p in [1024usize, 4096] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Up] {
                     dd(
                         &mut h,
@@ -7621,6 +7632,8 @@ mod grid_digest_tests {
                 for c in 0..OPERANDS {
                     for shift in [-3000i32, 0, 3000] {
                         for p in [64usize, 200] {
+                            // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                            // digest; the old pin does not move)
                             for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                                 let cs = operand(c).ldexp(
                                     shift as crate::Exponent,
@@ -7676,6 +7689,8 @@ mod grid_digest_tests {
             for b in [2usize, 3, 9, 21] {
                 for shift in [-3000i32, -200, 0, 3000] {
                     for p in [64usize, 200] {
+                        // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                        // digest; the old pin does not move)
                         for rm in [RoundingMode::ToEven, RoundingMode::Up] {
                             let bs = operand(b).ldexp(
                                 shift as crate::Exponent,
@@ -7736,6 +7751,8 @@ mod grid_digest_tests {
         ];
         for s in inputs {
             for p in [53usize, 64, 128, 500] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in
                     [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down, RoundingMode::None]
                 {
@@ -7775,6 +7792,8 @@ mod grid_digest_tests {
         };
         for i in 0..zeros().len() {
             for p in [53usize, 64, 128, 300] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                     let z = zeros();
                     dd(
@@ -7792,6 +7811,8 @@ mod grid_digest_tests {
         }
         for i in 0..OPERANDS {
             for p in [64usize, 200] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                     dd(
                         &mut h,
@@ -7860,6 +7881,8 @@ mod grid_digest_tests {
             for i in [0usize, 1, 2, 3, 5, 7, 21] {
                 for mi in 0..5 {
                     for p in [64usize, 128] {
+                        // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                        // digest; the old pin does not move)
                         for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                             let m = ms();
                             dd(
@@ -7962,6 +7985,8 @@ mod grid_digest_tests {
             _ => ExactNum::from_u8(9, 64).ldexp(-1, 64, RoundingMode::None),
         };
         for p in [64usize, 128] {
+            // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+            // digest; the old pin does not move)
             for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                 for i in (0..11).chain(21..23) {
                     let x = operand(i);
@@ -7996,6 +8021,8 @@ mod grid_digest_tests {
         for i in [2usize, 3, 4, 5, 6] {
             for n in [7usize, 255, 1000, 65537, 1_000_003] {
                 for p in [64usize, 200] {
+                    // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                    // digest; the old pin does not move)
                     for rm in [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down] {
                         dd(
                             &mut h,
@@ -8028,6 +8055,8 @@ mod grid_digest_tests {
         let mut count = 0usize;
         for i in (0..11).chain(21..23) {
             for p in [64usize, 200] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                     dd(
                         &mut h,
@@ -8140,6 +8169,8 @@ mod grid_digest_tests {
         ];
         for (x, b, want) in cases {
             for p in [53usize, 64, 128, 200] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down, RoundingMode::Up] {
                     let got = x.log(&b, p, rm, &mut cc);
                     if let Some(w) = &want {
@@ -8608,7 +8639,15 @@ mod round_op_flag_tests {
     fn round_reports_its_own_rounding() -> Result<(), crate::Error> {
         let x = ExactNum::from_mag_parts(0xC000_0000_0000_0000, -1, 64)?; // 0.375, exact
         assert!(!x.inexact());
-        for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::Up] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let y = ExactNum::from_mag_parts(0xC000_0000_0000_0000, -1, 64)?.round(0, rm);
             assert!(y.inexact(), "{rm:?}");
             assert!(y.inexact_accumulated(), "{rm:?}");
@@ -8616,7 +8655,13 @@ mod round_op_flag_tests {
             assert!(!z.inexact(), "{rm:?}");
             assert!(z.inexact_accumulated(), "{rm:?}");
         }
-        for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::None] {
+        // MODE-SUBSET mode-specific: Up, FromZero and ToOdd round a positive subnormal up to 1, not to 0
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToZero,
+            RoundingMode::Down,
+            RoundingMode::None,
+        ] {
             // a subnormal operand rounded to an integer is an inexact zero
             let t = ExactNum::from_mag_parts(0xC000_0000_0000_0000, crate::EXPONENT_MIN + 5, 64)?
                 .round(0, rm);
