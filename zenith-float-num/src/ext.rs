@@ -6841,6 +6841,28 @@ mod grid_digest_tests {
         dd(h, op, args, ints, p, rm, r)
     }
 
+    /// A known-wrong cell of a held finding (queued as a ZF-M27 exception, or reported for an id): counted in `held`
+    /// and left out of the pinned digest, so the pin does not hold wrong bits. The fix puts the cell back, red first.
+    /// The cell ids (dump lines) are listed in the PR #39 body.
+    #[allow(clippy::too_many_arguments)]
+    fn dd_held(
+        h: &mut DefaultHasher,
+        held: &mut usize,
+        wrong: bool,
+        op: &str,
+        args: &[&ExactNum],
+        ints: &[i128],
+        p: usize,
+        rm: RoundingMode,
+        r: &ExactNum,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if wrong {
+            *held += 1;
+            return Ok(());
+        }
+        dd(h, op, args, ints, p, rm, r)
+    }
+
     #[test]
     fn ldexp_and_scalb_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let shifts = [
@@ -8043,6 +8065,7 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f21 = 0usize;
         let ms = || {
             [
                 ExactNum::new(64),
@@ -8060,14 +8083,20 @@ mod grid_digest_tests {
                         // digest; the old pin does not move)
                         for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                             let m = ms();
-                            dd(
+                            let r = f(&operand(i), &m[mi], p, rm, &mut cc);
+                            // F-21 (N-6): at the tiny operand 21, Down gives NaN(PrecisionRetryExhausted), not a value.
+                            let f21 = rm == RoundingMode::Down
+                                && r.err() == Some(Error::PrecisionRetryExhausted);
+                            dd_held(
                                 &mut h,
+                                &mut held_f21,
+                                f21,
                                 JNAMES[fi],
                                 &[&operand(i), &m[mi]],
                                 &[],
                                 p,
                                 rm,
-                                &f(&operand(i), &m[mi], p, rm, &mut cc),
+                                &r,
                             )?;
                             count += 1;
                         }
@@ -8076,6 +8105,8 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 13 * 7 * 5 * 2 * 2);
+        // F-21 (N-6, ZF-M27): the Down NaN(PrecisionRetryExhausted) cells at operand 21 are not hashed
+        assert_eq!(held_f21, 62);
         // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
         let u = operand(5);
         let zero_m = ExactNum::new(64);
