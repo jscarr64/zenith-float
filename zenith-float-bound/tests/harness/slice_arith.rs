@@ -1745,3 +1745,5 @@ fn borrowed_ops_reuse_the_same_ball() -> Result<(), String> {
 
 // Harper S1 (2026-10-29): arith_wide_rows.txt, 10^5 and 10^6 bits on cosmology-scale decimal inputs.
 mod harper_cosmo_wide;
+// Rusty (2026-11-10): Ball::powi guard at the top of the precision range (edgegate MISSED arith.rs:145).
+mod rusty_powi_guard_edges;
