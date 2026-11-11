@@ -45,6 +45,11 @@ def _popguard():
         print(f"gen_la_goldens: popguard refused (rc {rc}); not running outside a popslot memory scope.", file=_sys.stderr)
         _sys.exit(rc if rc > 0 else 3)
 _popguard()
+# Oracle env (K11, Paul 2026-11-10): the shebang is #!/usr/bin/env python3, so the env is decided here, before any import
+# of the oracle: goldlib.require_oracle (at import) refuses anything but a verified team env with the four pins, including
+# ~/.local/oracle-venv (Jeff 2026-10-30). The version checks below stay as a second, local check.
+_sys.path.insert(0, _os.path.dirname(_os.path.abspath(__file__)))
+import goldlib  # noqa: E402,F401  (require_popslot_scope + require_oracle run at import)
 
 import sys, os, re, random, hashlib, argparse, difflib, tempfile, signal, time
 # Exact rationals are gmpy2.mpq (GMP, lowest terms like fractions.Fraction, same str of numerator/denominator), not

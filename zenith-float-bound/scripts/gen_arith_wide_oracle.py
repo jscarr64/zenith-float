@@ -3,9 +3,9 @@
 Generates tests/goldens/slices/arith/arith_wide_rows.txt: slice S1 Ball rows at PREC 100_000 and 1_000_000 bits on
 cosmology-scale inputs given as exact decimal strings (CONSTS below), read by tests/harness/slice_arith/harper_cosmo_wide.rs
 through harper_oracle.rs check_row (containment of [LO, HI], tight rad <= tau*RREF, loose rad <= 2^10*RREF).
-    ~/.local/oracle-venv/bin/python scripts/gen_arith_wide_oracle.py              write the golden (inside popslot/poprun only)
-    ~/.local/oracle-venv/bin/python scripts/gen_arith_wide_oracle.py --check DIR [--skip-heavy]
-    ~/.local/oracle-venv/bin/python scripts/gen_arith_wide_oracle.py --sample DIR N   only the first N rows (the RSS proof run)
+    ~/team-env/oracle-2026-10-30/bin/python scripts/gen_arith_wide_oracle.py              write the golden (inside popslot/poprun only)
+    ~/team-env/oracle-2026-10-30/bin/python scripts/gen_arith_wide_oracle.py --check DIR [--skip-heavy]
+    ~/team-env/oracle-2026-10-30/bin/python scripts/gen_arith_wide_oracle.py --sample DIR N   only the first N rows (the RSS proof run)
 ROW: the arith_oracle_rows.txt format (scripts/gen_arith_oracle.py docstring), 25 fields. INPUTS: each decimal is rounded
 DOWN to a dyadic of SHORT_BITS (128) bits ("short") or, at PREC 100_000 only, of PREC bits ("wide", exact ops only); the
 radius is 0 or 2^(EXP-200) (relative 2^-200). TRUTH: exact ops (add sub mul mul_exact sqr neg abs) use gen_arith_oracle's

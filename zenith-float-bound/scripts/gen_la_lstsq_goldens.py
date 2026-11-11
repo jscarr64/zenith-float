@@ -2,8 +2,8 @@
 """LA3 lstsq golds: tests/goldens/slices/qr/la_lstsq.txt, in the la_qr.txt format (Rusty, slice LA3 owner, 2026-10-29).
 
 Usage (oracle venv, under popslot/poprun like gen_la_goldens.py):
-    ~/.local/oracle-venv/bin/python scripts/gen_la_lstsq_goldens.py            # writes la_lstsq.txt and its SHA256SUMS line
-    ~/.local/oracle-venv/bin/python scripts/gen_la_lstsq_goldens.py --check DIR # writes DIR/qr/la_lstsq.txt, compares sha256 with the committed file
+    ~/team-env/oracle-2026-10-30/bin/python scripts/gen_la_lstsq_goldens.py            # writes la_lstsq.txt and its SHA256SUMS line
+    ~/team-env/oracle-2026-10-30/bin/python scripts/gen_la_lstsq_goldens.py --check DIR # writes DIR/qr/la_lstsq.txt, compares sha256 with the committed file
     --small: the 10-row smoke corpus to stdout-dir only (never committed)
 
 Reuses scripts/gen_la_goldens.py (popguard, oracle pins, exact mpq, Rows spool-to-disk streaming,
@@ -16,7 +16,7 @@ Spence 2026-10-29: b.len() != m -> ERR DimensionMismatch b_len (checked before n
 import os, sys
 REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 sys.path.insert(0, os.path.join(REPO, "scripts"))
-import gen_la_goldens as G          # runs popguard + oracle-venv pin checks on import
+import gen_la_goldens as G          # runs popguard + goldlib.require_oracle (team env, pins) on import
 import mpmath, hashlib
 G.GEN = "scripts/gen_la_lstsq_goldens.py"
 F = G.F

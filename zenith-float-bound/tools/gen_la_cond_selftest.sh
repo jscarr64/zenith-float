@@ -10,7 +10,7 @@ set -u
 here=$(cd "$(dirname "$0")" && pwd)
 fail() { echo "gen_la_cond selftest FAIL: $*"; exit 1; }
 . "$here/scratch.sh"; t=$(mktemp -d "$(zb_scratch)/gen-la-cond-selftest.XXXXXX") || fail "mktemp"; runlog_on_exit "rm -rf \"$t\""; . "${BASH_SOURCE[0]%/*}/selftest_cases.sh"; st_init "$t"
-py=${ZB_ORACLE_PY:-$HOME/.local/oracle-venv/bin/python}; [[ -x $py ]] || fail "oracle python missing: $py"
+py=${ZB_ORACLE_PY:-$HOME/team-env/oracle-2026-10-30/bin/python}; [[ -x $py ]] || fail "oracle python missing: $py"
 s="$here/../scripts"
 pyc() { (cd "$t" && "$py" -c "import sys; sys.path.insert(0, '$s'); $1") > "$t/out" 2>&1; echo $?; }
 G="import gen_la_goldens as g; F = g.F"

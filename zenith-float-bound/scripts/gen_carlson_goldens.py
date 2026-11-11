@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Generates tests/goldens/slices/carlson/lambertw_rows.txt (CONTRACT 16.S4b.3): rigorous Lambert W brackets for Ball::lambert_w0 and
-Ball::lambert_wm1 (16.S4b.1, 16.S4b.2). Run with ~/.local/oracle-venv/bin/python inside a popslot memory scope:
+Ball::lambert_wm1 (16.S4b.1, 16.S4b.2). Run with ~/team-env/oracle-2026-10-30/bin/python inside a popslot memory scope:
     scripts/gen_carlson_goldens.py              write tests/goldens/slices/carlson/lambertw_rows.txt
     scripts/gen_carlson_goldens.py --check DIR  regenerate into DIR (never tests/goldens) and compare byte for byte
     scripts/gen_carlson_goldens.py --selftest   the generator's own checks
