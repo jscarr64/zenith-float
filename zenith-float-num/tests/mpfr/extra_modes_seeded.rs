@@ -37,8 +37,10 @@ pub fn extra_mode_reference<F>(
 where
     F: Fn(&mut Float, rnd_t) -> i32,
 {
-    let _ = (p, f, mpfr_reference_with::<fn(&mut Float, rnd_t) -> i32>);
-    Err(format!("RED stub: no reference for {rm:?}").into())
+    match rm {
+        RoundingMode::ToOdd | RoundingMode::None => mpfr_reference_with(u32::try_from(p)?, rm, f),
+        _ => Err(format!("{rm:?} has an MPFR rnd_t: use get_random_rnd_pair").into()),
+    }
 }
 
 /// `m / d` as MPFR computes it, for the helper tests (exact when `d` is a power of two).
