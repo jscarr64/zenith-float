@@ -1,4 +1,4 @@
-#!/home/jsc64/team-env/oracle-2026-10-30/bin/python
+#!/usr/bin/env python3
 """
 Generates tests/goldens/mag_ops.txt; run with ~/team-env/oracle-2026-10-30/bin/python (goldlib.require_oracle checks the four pinned versions at import).
 """

@@ -1,4 +1,4 @@
-#!/home/jsc64/team-env/oracle-2026-10-30/bin/python
+#!/usr/bin/env python3
 """
 Generates tests/goldens/ball_exact_ops.txt (TEST_PLAN section 9, L0b exact-input rows): the exact result of add, sub, mul, div and sqrt on exact
 dyadic inputs, rounded to PREC bits under each of the six modes. Run with ~/team-env/oracle-2026-10-30/bin/python (goldlib.require_oracle):

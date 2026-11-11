@@ -1,4 +1,4 @@
-#!/home/jsc64/.local/oracle-venv/bin/python
+#!/usr/bin/env python3
 """
 Generates tests/goldens/slices/arith/arith_wide_rows.txt: slice S1 Ball rows at PREC 100_000 and 1_000_000 bits on
 cosmology-scale inputs given as exact decimal strings (CONSTS below), read by tests/harness/slice_arith/harper_cosmo_wide.rs

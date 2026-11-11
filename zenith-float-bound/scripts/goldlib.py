@@ -1,4 +1,4 @@
-#!/home/jsc64/team-env/oracle-2026-10-30/bin/python
+#!/usr/bin/env python3
 """
 goldlib: shared helpers for the golden generators (TEST_PLAN section 9). Run self-tests with:  ~/team-env/oracle-2026-10-30/bin/python scripts/goldlib.py --selftest
 Rules: the oracle venv only (require_oracle: mpmath 1.3.0, sympy 1.14.0, gmpy2 2.3.2, python-flint 0.9.0), no Python `random` (its algorithms changed across 3.x), integer-only arithmetic or Fraction,

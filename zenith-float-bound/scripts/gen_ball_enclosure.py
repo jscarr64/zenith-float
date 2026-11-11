@@ -1,4 +1,4 @@
-#!/home/jsc64/team-env/oracle-2026-10-30/bin/python
+#!/usr/bin/env python3
 """
 Generates tests/goldens/ball_enclosure_rows.txt (TEST_PLAN section 9 enclosure rows, checklist L0b-7 "enclosure rows at PS"): for add, sub, mul,
 div and sqrt on BALL inputs (mid, rad) at every precision of the full schedule PS (41 values), the TRUTH INTERVAL [LO, HI] of the exact image of

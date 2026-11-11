@@ -1,4 +1,4 @@
-#!/home/jsc64/team-env/oracle-2026-10-30/bin/python
+#!/usr/bin/env python3
 """Generate tests/goldens/mag_ops_review.txt: boundary rows for the Mag operations.
 
 The expected values come from an independent big-integer oracle written for the L0a review

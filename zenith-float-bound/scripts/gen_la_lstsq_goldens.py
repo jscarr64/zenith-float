@@ -1,4 +1,4 @@
-#!/home/jsc64/.local/oracle-venv/bin/python
+#!/usr/bin/env python3
 """LA3 lstsq golds: tests/goldens/slices/qr/la_lstsq.txt, in the la_qr.txt format (Rusty, slice LA3 owner, 2026-10-29).
 
 Usage (oracle venv, under popslot/poprun like gen_la_goldens.py):

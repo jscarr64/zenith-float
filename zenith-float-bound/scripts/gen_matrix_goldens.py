@@ -1,4 +1,4 @@
-#!/home/jsc64/team-env/oracle-2026-10-30/bin/python
+#!/usr/bin/env python3
 """
 Exact golds for slice S6 (src/matrix.rs, CONTRACT 16.S6.6 to 16.S6.10): dot, matvec, matmul, norm_inf, norm_1, norm_frob.
 Truth is exact: Python ints and fractions.Fraction only (no floats, no mpmath values); the generator never calls zenith-float-bound.

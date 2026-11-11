@@ -1,4 +1,4 @@
-#!/home/jsc64/team-env/oracle-2026-10-30/bin/python
+#!/usr/bin/env python3
 """Exact linear-algebra reference goldens for zenith-float-bound (zenith-float 2.0).
 
 Pinned oracle: sympy 1.14.0, mpmath 1.3.0, gmpy2 2.3.2, python-flint 0.9.0 (Arb cross-check of every ln enclosure). Run it with

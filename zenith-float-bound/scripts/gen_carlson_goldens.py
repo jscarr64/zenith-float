@@ -1,4 +1,4 @@
-#!/home/jsc64/.local/oracle-venv/bin/python
+#!/usr/bin/env python3
 """
 Generates tests/goldens/slices/carlson/lambertw_rows.txt (CONTRACT 16.S4b.3): rigorous Lambert W brackets for Ball::lambert_w0 and
 Ball::lambert_wm1 (16.S4b.1, 16.S4b.2). Run with ~/.local/oracle-venv/bin/python inside a popslot memory scope:

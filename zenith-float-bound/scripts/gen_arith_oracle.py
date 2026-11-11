@@ -1,4 +1,4 @@
-#!/home/jsc64/team-env/oracle-2026-10-30/bin/python
+#!/usr/bin/env python3
 """
 Generates tests/goldens/slices/arith/arith_oracle_rows.txt: slice S1 (src/arith.rs) oracle rows for the Ball ops that exist in src
 (add, sub, mul, mul_exact, sqr, powi, sqrt, neg; div/inv/hypot wait for zf R13, CONTRACT 16.S1.8) at 26 precisions from 1 to 4096 bits.

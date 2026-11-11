@@ -20,7 +20,7 @@ while IFS= read -r f; do
   first=$(head -1 "$f")
   case "$first" in '#!'*python*) n=$((n + 1)); [ "$first" = "#!/usr/bin/env python3" ] || bad "$f shebang is '$first', want '#!/usr/bin/env python3'";; esac
 done < <(git ls-files '*.py')
-hits=$(git grep -nE '/home/jsc64|/mnt/hub' -- '*.py' '*.sh' '*.rs' '*.toml' || true)
+hits=$(git grep -nE '/home/jsc64|/mnt/hub' -- '*.py' '*.sh' '*.rs' '*.toml' ':!tools/oracle_env_selftest.sh' || true)   # this file names the pattern itself
 [ -z "$hits" ] || bad "machine paths in shipped scripts:
 $hits"
 

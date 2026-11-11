@@ -1,4 +1,4 @@
-#!/home/jsc64/team-env/oracle-2026-10-30/bin/python
+#!/usr/bin/env python3
 """
 Generates tests/goldens/slices/bridge/bridge_consts.txt (slice S2, CONTRACT 16.S2.6): for the seven zenith-float constants
 (ConstantId Pi E Ln2 Ln10 Sqrt2 Phi EulerGamma) at every precision of PS, the two p-bit neighbours DOWN < c < UP and a truth

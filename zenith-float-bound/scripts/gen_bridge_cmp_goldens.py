@@ -1,4 +1,4 @@
-#!/home/jsc64/team-env/oracle-2026-10-30/bin/python
+#!/usr/bin/env python3
 """
 Consumer: tests/harness/slice_bridge/harper_s2_goldens.rs (every row asserted exactly). Listed in tests/goldens/slices/bridge/GENERATORS and SHA256SUMS (checked by tools/goldens_regen.sh).
 Generates tests/goldens/slices/bridge/bridge_cmp.txt: S2 rows for Mag::cmp_exact_num, Mag::cmp_exact_diff,

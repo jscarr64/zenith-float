@@ -1,4 +1,4 @@
-#!/home/jsc64/team-env/oracle-2026-10-30/bin/python
+#!/usr/bin/env python3
 """
 Generates tests/goldens/slices/cball/cball_rows.txt (CONTRACT 16.CB.10): mpmath.mpc POINT references for the CBall ops add, sub, mul, sqr, abs
 and div, plus per-part first-order radii RREF for the tightness factors. Run with ~/team-env/oracle-2026-10-30/bin/python:

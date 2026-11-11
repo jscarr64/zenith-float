@@ -1,4 +1,4 @@
-#!/home/jsc64/.local/oracle-venv/bin/python
+#!/usr/bin/env python3
 """
 Consumer: tests/harness/slice_bridge/harper_s2_wide_goldens.rs (every row asserted exactly). Listed in
 tests/goldens/slices/bridge/GENERATORS and SHA256SUMS.
