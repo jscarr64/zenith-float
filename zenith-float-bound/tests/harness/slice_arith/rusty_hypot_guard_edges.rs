@@ -8,7 +8,8 @@
 //! midpoint is a tie, ToEven keeps `lo` (even at 53 bits), radius `hi - lo = 2^-52`. All four sign combinations agree.
 //! Top of the range: a valid `prec` is never `InvalidArgument` (only `Resource` here, zf cannot allocate the mantissa);
 //! guard dropped at `prec + 64 = MAX_PRECISION + 1`, kept at `MAX_PRECISION - 63`. The exact boundary `prec + 64 ==
-//! MAX_PRECISION` and `prec = MAX_PRECISION` are the ignored red (the zf-num InvalidArgument bug, see the powi file).
+//! MAX_PRECISION` and one either side, and `prec = MAX_PRECISION - 1, MAX_PRECISION`, are checked too (zenith-float-num
+//! used to report `InvalidArgument` there; see the powi file).
 //! COVERS: Ball::hypot
 
 use zenith_float_bound::ball::Ball;
@@ -96,11 +97,10 @@ fn hypot_prec_out_of_range_is_invalid() -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "red: zf-num: ExactNum mul/add at a valid prec in (MAX_PRECISION - 64, MAX_PRECISION] that is not a multiple of 64, and at MAX_PRECISION - 64, return InvalidArgument, so Ball::hypot reports InvalidArgument for a valid prec; un-ignore when zf-num reports Resource there"]
 fn hypot_valid_prec_at_the_top_is_not_invalid() -> Result<(), String> {
-    for d in [64usize, 1, 0] {
+    for d in [65usize, 64, 63, 2, 1, 0] {
         let prec = MAX_PRECISION.checked_sub(d).ok_or("prec")?;
-        for (sx, sy) in [(1i64, 1i64), (-1, -1)] {
+        for (sx, sy) in [(1i64, 1i64), (-1, 1), (1, -1), (-1, -1)] {
             valid_prec_row(sx, sy, prec)?;
         }
     }

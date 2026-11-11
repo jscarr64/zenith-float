@@ -64,10 +64,7 @@ impl ExactNum {
     /// Returns a new number with value of 0 and precision of `p` bits. Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn new(p: usize) -> Self {
-        if p < crate::defs::MIN_PRECISION {
-            return Self::nan(Some(Error::InvalidArgument));
-        }
-        Self::result_to_ext(ExactNumNumber::new(p), false, true)
+        Self::result_to_ext(with_prec(p, || ExactNumNumber::new(p)), false, true)
     }
 
     /// Positive or negative infinity, built fresh (no copy of an existing value).
@@ -650,7 +647,7 @@ impl ExactNum {
     ///
     /// Accuracy: exact
     pub fn div_exact(&self, d2: &Self, p: usize) -> Result<Option<Self>, Error> {
-        ExactNumNumber::p_assertion(round_p(p))?;
+        ExactNumNumber::prec_assertion(p)?;
         if let Flavor::NaN(err) = &self.inner {
             return Err(err.unwrap_or(Error::InvalidArgument));
         }
@@ -1157,6 +1154,14 @@ impl ExactNum {
     /// assert!(n.is_nan());
     /// ```
     pub fn parse(s: &str, rdx: Radix, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if p == usize::MAX {
+            // The precision of the numeral itself: nothing to round to, so no precision to check.
+            let mut r = Self::parse_word(s, rdx, p, rm, cc);
+            if let Flavor::Value(v) = &mut r.inner {
+                v.finish_flags(false, true);
+            }
+            return r;
+        }
         Self::round_exact(false, p, rm, |q, r| Self::parse_word(s, rdx, q, r, cc))
     }
 
@@ -1302,7 +1307,7 @@ impl ExactNum {
     #[cfg(feature = "random")]
     pub fn random_normal(p: usize, exp_from: Exponent, exp_to: Exponent) -> Self {
         Self::result_to_ext(
-            ExactNumNumber::random_normal(p, exp_from, exp_to),
+            with_prec(p, || ExactNumNumber::random_normal(p, exp_from, exp_to)),
             false,
             true,
         )
@@ -1533,11 +1538,13 @@ impl ExactNum {
     where
         F: FnMut(usize, RoundingMode) -> Self,
     {
-        // Every public entry point that goes through here rejects `p = 0` (2.0: `MIN_PRECISION` is 1).
-        if p < crate::defs::MIN_PRECISION {
-            return Self::nan(Some(Error::InvalidArgument));
+        // The caller's precision is checked here, before any rounding: `MIN_PRECISION..=MAX_PRECISION`. The
+        // kernels below work at that precision rounded up to whole words (or a word wider), which may lie
+        // above `MAX_PRECISION` and is accepted there.
+        if let Err(e) = ExactNumNumber::prec_assertion(p) {
+            return Self::nan(Some(e));
         }
-        let direct = rm == RoundingMode::None || p >= usize::MAX / 4;
+        let direct = rm == RoundingMode::None;
         let mut r = if direct {
             f(p, rm)
         } else if p.is_multiple_of(WORD_BIT_SIZE) {
@@ -1564,7 +1571,10 @@ impl ExactNum {
     where
         F: FnMut(usize, RoundingMode) -> Self,
     {
-        let wide = f(round_p(p) + WORD_BIT_SIZE, RoundingMode::ToZero);
+        let Some(wide_p) = round_p(p).checked_add(WORD_BIT_SIZE) else {
+            return Self::nan(Some(Error::MemoryAllocation));
+        };
+        let wide = f(wide_p, RoundingMode::ToZero);
         match wide.inner {
             Flavor::Value(v) => {
                 if v.is_zero() && !v.inexact() {
@@ -1882,13 +1892,13 @@ impl ExactNum {
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn max_value(p: usize) -> Self {
-        Self::result_to_ext(ExactNumNumber::max_value(p), false, true)
+        Self::result_to_ext(with_prec(p, || ExactNumNumber::max_value(p)), false, true)
     }
 
     /// Returns the minimum value for the specified precision `p`: all bits of the mantissa are set to 1, the exponent has the maximum possible value, and the sign is negative. Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn min_value(p: usize) -> Self {
-        Self::result_to_ext(ExactNumNumber::min_value(p), false, true)
+        Self::result_to_ext(with_prec(p, || ExactNumNumber::min_value(p)), false, true)
     }
 
     /// Returns the minimum positive subnormal value for the specified precision `p`:
@@ -1897,7 +1907,11 @@ impl ExactNum {
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn min_positive(p: usize) -> Self {
-        Self::result_to_ext(ExactNumNumber::min_positive(p), false, true)
+        Self::result_to_ext(
+            with_prec(p, || ExactNumNumber::min_positive(p)),
+            false,
+            true,
+        )
     }
 
     /// Returns the minimum positive normal value for the specified precision `p`:
@@ -1906,16 +1920,21 @@ impl ExactNum {
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn min_positive_normal(p: usize) -> Self {
-        Self::result_to_ext(ExactNumNumber::min_positive_normal(p), false, true)
+        Self::result_to_ext(
+            with_prec(p, || ExactNumNumber::min_positive_normal(p)),
+            false,
+            true,
+        )
     }
 
     /// Returns a new number with value `d` and the precision `p`. Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
     pub fn from_word(d: Word, p: usize) -> Self {
-        if p < crate::defs::MIN_PRECISION {
-            return Self::nan(Some(Error::InvalidArgument));
-        }
-        Self::result_to_ext(ExactNumNumber::from_word(d, p), false, true)
+        Self::result_to_ext(
+            with_prec(p, || ExactNumNumber::from_word(d, p)),
+            false,
+            true,
+        )
     }
 
     /// `-self` for an operand that has to stay borrowed: fresh `-1` times `self` through the
@@ -2098,7 +2117,7 @@ impl ExactNum {
     /// Accuracy: correctly-rounded
     pub fn set_precision(&mut self, p: usize, rm: RoundingMode) -> Result<(), Error> {
         if let Flavor::Value(v) = &mut self.inner {
-            v.set_precision(p, rm)
+            with_prec(p, || v.set_precision(p, rm))
         } else {
             Ok(())
         }
@@ -2194,8 +2213,11 @@ impl ExactNum {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Self {
+        // `usize::MAX` takes the precision from the digits; any other `p` is a public precision.
+        let checked = if p == usize::MAX { Ok(()) } else { ExactNumNumber::prec_assertion(p) };
         Self::result_to_ext(
-            ExactNumNumber::convert_from_radix(sign, digits, e, rdx, p, rm, cc),
+            checked
+                .and_then(|()| ExactNumNumber::convert_from_radix(sign, digits, e, rdx, p, rm, cc)),
             false,
             true,
         )
@@ -2286,7 +2308,7 @@ impl ExactNum {
     /// If the precision `p` is incorrect `self` will be set to NaN.
     pub fn try_set_precision(&mut self, p: usize, rm: RoundingMode, s: usize) -> bool {
         if let Flavor::Value(v) = &mut self.inner {
-            v.try_set_precision(p, rm, s).unwrap_or_else(|e| {
+            with_prec(p, || v.try_set_precision(p, rm, s)).unwrap_or_else(|e| {
                 self.inner = Flavor::NaN(Some(e));
                 true
             })
@@ -2317,6 +2339,9 @@ impl ExactNum {
             Flavor::Inf(s) => Self::inf_with_sign(s.is_positive()),
             Flavor::NaN(err) => Self::nan(err),
             Flavor::Value(mut v) => {
+                if let Err(e) = ExactNumNumber::prec_assertion(p) {
+                    return Self::nan(Some(e));
+                }
                 v.set_inexact(false);
                 Self::ldexp_value(v, inputs, n, p, rm)
             }
@@ -2335,11 +2360,12 @@ impl ExactNum {
         rm: RoundingMode,
     ) -> Self {
         let zero = v.is_zero();
-        let direct = rm == RoundingMode::None || p == 0 || p >= usize::MAX / 4;
+        // `p` is a public precision here (`ldexp` checked it), so `wp` cannot overflow.
+        let direct = rm == RoundingMode::None;
+        let wide_p = round_p(p).checked_add(WORD_BIT_SIZE);
         let mut r = if direct || zero {
             Self::result_to_ext_rm(v.ldexp(n, p, rm), zero, true, p, rm)
-        } else {
-            let wp = round_p(p) + WORD_BIT_SIZE;
+        } else if let Some(wp) = wide_p {
             let wide = Self::result_to_ext_rm(
                 v.ldexp(n, wp, RoundingMode::ToZero),
                 false,
@@ -2354,6 +2380,8 @@ impl ExactNum {
                 }
                 other => ExactNum { inner: other },
             }
+        } else {
+            Self::nan(Some(Error::MemoryAllocation))
         };
         if let Flavor::Value(v) = &mut r.inner {
             v.finish_flags(inputs, true);
@@ -2551,15 +2579,17 @@ impl ExactNum {
         }
         let sign_num = match &sign.inner {
             Flavor::Value(v) => v.clone(),
-            Flavor::Inf(s) => ExactNumNumber::from_i8(s.to_int(), p),
-            Flavor::NaN(_) => ExactNumNumber::new(p),
+            Flavor::Inf(s) => with_prec(p, || ExactNumNumber::from_i8(s.to_int(), p)),
+            Flavor::NaN(_) => with_prec(p, || ExactNumNumber::new(p)),
         };
         let sign_num = match sign_num {
             Ok(v) => v,
             Err(e) => return Self::nan(Some(e)),
         };
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.copysign(&sign_num, p, rm), false, true),
+            Flavor::Value(v) => {
+                Self::result_to_ext(with_prec(p, || v.copysign(&sign_num, p, rm)), false, true)
+            }
             Flavor::Inf(_) => {
                 if sign.is_negative() || (sign.is_zero() && sign_num.is_negative()) {
                     INF_NEG
@@ -2582,7 +2612,7 @@ impl ExactNum {
         }
         match (&self.inner, &toward.inner) {
             (Flavor::Value(v), Flavor::Value(t)) => {
-                Self::result_to_ext(v.next_after(t, p, rm), false, true)
+                Self::result_to_ext(with_prec(p, || v.next_after(t, p, rm)), false, true)
             }
             (Flavor::Inf(_), _) | (_, Flavor::Inf(_)) => self.clone(),
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
@@ -4761,7 +4791,7 @@ macro_rules! impl_int_conv {
             /// Precision is rounded upwards to the word size.
             /// The function returns NaN if the precision `p` is incorrect.
             pub fn $from_s(i: $s, p: usize) -> Self {
-                Self::result_to_ext(ExactNumNumber::$from_s(i, p), false, true)
+                Self::result_to_ext(with_prec(p, || ExactNumNumber::$from_s(i, p)), false, true)
             }
         }
     };
@@ -8783,4 +8813,13 @@ impl RawParts<'_> {
             None => Ok(0),
         }
     }
+}
+
+/// `f()` behind the public precision check: `Err(InvalidArgument)` when `p` is outside
+/// `MIN_PRECISION..=MAX_PRECISION`. The internal kernels accept working widths above the ceiling
+/// (see `ExactNumNumber::p_assertion`), so a public entry that hands the caller's `p` straight to
+/// one checks it here first.
+fn with_prec<T>(p: usize, f: impl FnOnce() -> Result<T, Error>) -> Result<T, Error> {
+    ExactNumNumber::prec_assertion(p)?;
+    f()
 }

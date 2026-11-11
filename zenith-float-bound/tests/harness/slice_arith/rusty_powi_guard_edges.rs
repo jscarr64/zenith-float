@@ -4,8 +4,9 @@
 //! `MIN_PRECISION..=MAX_PRECISION` is). At these precisions zenith-float cannot allocate a mantissa, so the honest result is
 //! `Resource` (or, were it possible, an enclosing ball). Rows: guard dropped (`prec + 64 = MAX_PRECISION + 1`), guard
 //! kept (`prec + 64 = MAX_PRECISION - 63`), out of range on both sides, `n` = 0 to 3, both signs of the midpoint.
-//! The guard-kept boundary `prec + 64 == MAX_PRECISION` and `prec = MAX_PRECISION` itself are the ignored red below:
-//! zenith-float-num reports `InvalidArgument` there (a zf-num bug, not this guard).
+//! The guard-kept boundary `prec + 64 == MAX_PRECISION` and one either side, and `prec = MAX_PRECISION - 1, MAX_PRECISION`:
+//! zenith-float-num used to report `InvalidArgument` there (it rounded the precision to whole words, or a word wider, and
+//! then checked the result against the ceiling); fixed in zenith-float-num with this test turned on.
 //! COVERS: Ball::powi
 
 use zenith_float_bound::ball::Ball;
@@ -49,7 +50,7 @@ fn valid_prec_row(v: i64, n: u32, prec: usize) -> Result<(), String> {
 
 #[test]
 fn powi_guard_dropped_above_max_precision() -> Result<(), String> {
-    // prec + 64 = MAX_PRECISION + 1: the guard must be dropped (a word-multiple prec, which zf-num accepts).
+    // prec + 64 = MAX_PRECISION + 1: the guard must be dropped .
     let prec = MAX_PRECISION.checked_sub(63).ok_or("prec")?;
     for v in [3i64, -3] {
         for n in 0..=3u32 {
@@ -85,13 +86,13 @@ fn powi_prec_out_of_range_is_invalid() -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "red: zf-num: ExactNum mul/add at a valid prec in (MAX_PRECISION - 64, MAX_PRECISION] that is not a multiple of 64, and at MAX_PRECISION - 64, return InvalidArgument (Ball::mul maps it), so Ball::powi reports InvalidArgument for a valid prec; un-ignore when zf-num reports Resource there"]
 fn powi_valid_prec_at_the_top_is_not_invalid() -> Result<(), String> {
-    // prec + 64 == MAX_PRECISION (guard kept at the exact boundary), prec = MAX_PRECISION - 1 and MAX_PRECISION.
-    for d in [64usize, 1, 0] {
+    // prec + 64 == MAX_PRECISION (guard kept at the exact boundary) and one bit either side; MAX_PRECISION - 1 and
+    // MAX_PRECISION. Each is an enclosure of v^n or Resource, never InvalidArgument.
+    for d in [65usize, 64, 63, 2, 1, 0] {
         let prec = MAX_PRECISION.checked_sub(d).ok_or("prec")?;
         for v in [3i64, -3] {
-            for n in 1..=2u32 {
+            for n in 0..=3u32 {
                 valid_prec_row(v, n, prec)?;
             }
         }

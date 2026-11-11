@@ -17,6 +17,7 @@ pub mod i64_edges;
 pub mod mag_parts;
 pub mod overflow_modes;
 pub mod pow_specials;
+pub mod precision_boundaries;
 pub mod rem_exact;
 pub mod retry_budget;
 pub mod rng_isolation;

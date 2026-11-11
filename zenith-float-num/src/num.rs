@@ -51,13 +51,35 @@ impl ExactNumNumber {
         (m_slice, n, self.s, self.e, self.inexact)
     }
 
-    // Check the precision so it does not cause arithmetic overflows anywhere.
-    pub(super) fn p_assertion(p: usize) -> Result<(), Error> {
-        // Exponent arithmetic is done in i64; sizes in usize, which is 32 bits wide on some targets.
+    /// A precision passed to the public API: `MIN_PRECISION..=MAX_PRECISION`, `InvalidArgument` otherwise.
+    /// The public entry points (`ExactNum`) check the caller's precision with this, before any rounding.
+    pub(crate) fn prec_assertion(p: usize) -> Result<(), Error> {
         if p == 0 || p > crate::defs::MAX_PRECISION {
             Err(Error::InvalidArgument)
         } else {
             Ok(())
+        }
+    }
+
+    /// A working width: the precision a kernel of this type computes at. It is not the caller's precision
+    /// (that one is checked by [`Self::prec_assertion`] at the public entry): a kernel works at that precision
+    /// rounded up to whole words, or some words wider for one correct rounding, so near the top of the public
+    /// range a working width lies above `MAX_PRECISION`, and it must be accepted there. What a width must keep
+    /// is the exponent arithmetic: an exponent plus or minus twice a width stays inside `i64`. A wider mantissa
+    /// is more memory than any machine has, so it is `MemoryAllocation`; only a width of 0 is `InvalidArgument`.
+    pub(super) fn p_assertion(p: usize) -> Result<(), Error> {
+        if p == 0 {
+            return Err(Error::InvalidArgument);
+        }
+        let room = i128::from(i64::MAX) - i128::from(EXPONENT_MAX);
+        let fits = i128::try_from(p)
+            .ok()
+            .and_then(|w| w.checked_mul(2))
+            .is_some_and(|twice| twice <= room);
+        if fits {
+            Ok(())
+        } else {
+            Err(Error::MemoryAllocation)
         }
     }
 
@@ -80,11 +102,9 @@ impl ExactNumNumber {
 
     /// Like [`Self::new`], but also accepts `p = 0` (an empty mantissa). Crate-private: the full-precision
     /// kernels (`add_full_prec`, `sub_full_prec`, `mul_full_prec`) use `p = 0` to mean "as wide as the exact
-    /// result", and the constants cache builds on them. Public entry points reject `p = 0`.
+    /// result", and the constants cache builds on them. Public entry points reject `p = 0`. The callers pass
+    /// a working width they have already checked with [`Self::p_assertion`] (or 0), so it is not checked again.
     pub(crate) fn new_internal(p: usize) -> Result<Self, Error> {
-        if p > crate::defs::MAX_PRECISION {
-            return Err(Error::InvalidArgument);
-        }
         Ok(ExactNumNumber {
             m: Mantissa::new(p)?,
             e: 0,
@@ -1623,7 +1643,7 @@ impl ExactNumNumber {
     where
         F: FnMut(usize, RoundingMode) -> Result<Self, Error>,
     {
-        Self::p_assertion(p)?;
+        Self::prec_assertion(p)?;
         if rm == RoundingMode::None {
             return op(p, rm);
         }
@@ -1635,7 +1655,10 @@ impl ExactNumNumber {
                 return Ok(r);
             }
         }
-        let wide = op(round_p(p) + WORD_BIT_SIZE, RoundingMode::ToZero)?;
+        let wide_p = round_p(p)
+            .checked_add(WORD_BIT_SIZE)
+            .ok_or(Error::MemoryAllocation)?;
+        let wide = op(wide_p, RoundingMode::ToZero)?;
         if wide.is_zero() && !wide.op_inexact() {
             // Exact zero: its sign depends on the rounding mode.
             return op(p, rm);
@@ -1973,6 +1996,50 @@ mod tests {
 
     #[cfg(not(feature = "std"))]
     use alloc::format;
+
+    // Rusty (2026-11-10): the working-width check is bounded by the exponent arithmetic, not by
+    // MAX_PRECISION: twice a width fits the room i64 leaves above EXPONENT_MAX. room = 2^63 - 1 - (2^62 - 1)
+    // = 2^62, so the widest width is exactly room / 2 = 2^61 (2 * 2^61 == room), and one more bit is out.
+    #[test]
+    fn working_width_is_bounded_by_the_exponent_arithmetic() -> Result<(), String> {
+        let room = i128::from(i64::MAX) - i128::from(EXPONENT_MAX);
+        assert_eq!(room, 1i128 << 62);
+        let top = usize::try_from(room / 2).map_err(|e| format!("{e:?}"))?;
+        let over = top.checked_add(1).ok_or("top + 1")?;
+        assert_eq!(ExactNumNumber::p_assertion(0), Err(Error::InvalidArgument));
+        assert_eq!(ExactNumNumber::p_assertion(1), Ok(()));
+        assert_eq!(
+            ExactNumNumber::p_assertion(top.checked_sub(1).ok_or("top - 1")?),
+            Ok(())
+        );
+        assert_eq!(ExactNumNumber::p_assertion(top), Ok(()));
+        assert_eq!(
+            ExactNumNumber::p_assertion(over),
+            Err(Error::MemoryAllocation)
+        );
+        assert_eq!(
+            ExactNumNumber::p_assertion(usize::MAX),
+            Err(Error::MemoryAllocation)
+        );
+        // The working widths of the top public precision: rounded up to whole words, and one word wider.
+        let rounded = round_p(MAX_PRECISION);
+        assert_eq!(ExactNumNumber::p_assertion(rounded), Ok(()));
+        let wide = rounded.checked_add(WORD_BIT_SIZE).ok_or("wide")?;
+        assert_eq!(ExactNumNumber::p_assertion(wide), Ok(()));
+        // The public check is the caller's precision before any rounding.
+        assert_eq!(
+            ExactNumNumber::prec_assertion(0),
+            Err(Error::InvalidArgument)
+        );
+        assert_eq!(ExactNumNumber::prec_assertion(1), Ok(()));
+        assert_eq!(ExactNumNumber::prec_assertion(MAX_PRECISION), Ok(()));
+        let past = MAX_PRECISION.checked_add(1).ok_or("MAX + 1")?;
+        assert_eq!(
+            ExactNumNumber::prec_assertion(past),
+            Err(Error::InvalidArgument)
+        );
+        Ok(())
+    }
 
     #[test]
     fn test_number() -> Result<(), crate::Error> {
