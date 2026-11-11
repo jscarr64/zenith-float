@@ -124,6 +124,11 @@ parse_bench_log "$tmp_log" > "$tmp_tsv"
 count="$(tail -n +2 "$tmp_tsv" | wc -l | tr -d ' ')"
 echo "Parsed $count benchmark rows." >&2
 
+if [[ "$count" -eq 0 ]]; then
+  echo "error: no Criterion benchmark rows parsed from the bench log; refusing to ${mode} (baseline $baseline left unchanged)" >&2
+  exit 1
+fi
+
 if [[ "$mode" == "update" || "$mode" == "update-only" ]]; then
   cp "$tmp_tsv" "$baseline"
   echo "Updated $baseline"
