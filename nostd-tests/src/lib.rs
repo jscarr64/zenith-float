@@ -3,12 +3,13 @@
 //! This crate is `#![no_std]` (core + alloc only) and depends on `zenith-float-num` with
 //! `default-features = false`, so neither the library nor the harness links `std`. The cases in
 //! [`cases`] carry mpmath references; [`run`] evaluates each one and reports the number of
-//! correct bits through a caller-supplied sink. Two runners use it:
+//! correct bits through a caller-supplied sink. One runner uses it:
 //!
 //! - `nostd-host`: a `#![no_std]` / `#![no_main]` binary for hosted Linux targets that links only
 //!   libc (allocator via `malloc`, output via `write`).
-//! - `nostd-qemu`: a bare-metal `thumbv7em-none-eabihf` binary (Cortex-M4F) run under
-//!   `qemu-system-arm -machine mps2-an386` with semihosting.
+//!
+//! The former bare-metal `nostd-qemu` runner (thumbv7em-none-eabihf, Cortex-M4F, 32-bit limbs) was
+//! removed: zenith-float 2.0 is 64-bit only (P6/P8; Jeff 2026-11-10 "Yes 64 bit only please").
 //!
 //! See `scripts/ci_nostd.sh`.
 #![no_std]

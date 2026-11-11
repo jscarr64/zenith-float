@@ -146,7 +146,6 @@
 //! zenith-float = { version = "1.0.1", default-features = false }
 //! ```
 //!
-
 #![deny(missing_docs)]
 #![deny(unused)]
 #![deny(clippy::suspicious)]
@@ -161,6 +160,10 @@
     )
 )]
 #![cfg_attr(not(feature = "std"), no_std)]
+
+// P6/P8 (Jeff 2026-11-10 "Yes 64 bit only please"): 64-bit targets only.
+#[cfg(not(target_pointer_width = "64"))]
+compile_error!("zenith-float requires a 64-bit target (target_pointer_width = 64); 32-bit targets are not supported.");
 
 /// Computes an expression with the specified precision and rounding mode.
 ///
