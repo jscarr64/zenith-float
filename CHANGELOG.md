@@ -8,6 +8,8 @@ Problems in one program led to a forensic audit of the others. This 2.0.0 sectio
 
 - `tools/test_fail_closed.sh` (new, ZF-T04 red): self-test that stubs git, rg and grep at rc 0/1/2/127 against `ci_no_intrinsics.sh` and `ci_no_name.sh`, and that `scripts/bench-compare.sh --update-from` refuses a zero-row log (empty or non-Criterion) and leaves the baseline byte-for-byte unchanged. A one-row Criterion log still refreshes it. Not wired into `tools/full_gate.sh` yet (that line waits for #39 to land and the #34 rebase).
 
+- `tools/test_fail_closed.sh` (ZF-T04, Spence nit): also covers zero-row input in `scripts/bench-compare.sh` compare mode (stub cargo, no bench run) and `--check` mode; both must refuse and leave the baseline byte-for-byte unchanged. A one-row log that matches the baseline still passes.
+
 - qemu-aarch64 `ZF_TIME_FACTOR` pin: `tools/qemu_aarch64_zf_time_factor.txt` is 6.50 (s9_erf median qemu/native ratio 6.25 measured on Pop 2026-11-05 with the time limit off at factor 8, plus a 0.25 margin; logs `~/pop-logs/harper/2026-11-05/1236-zf-qemu-tf.log`, `1237-zf-qemu-tf.log`). The old 4.27 pin from the 2026-10-30 four-binary sum was too low for s9_erf alone. `tools/test_qemu_aarch64_time_factor.sh` fails closed if the pin drops below 6.50. The gate runs it as the `qemu-time-factor` step of `tools/full_gate.sh`. Time budgets only; no math or rounding change.
 - CI: arm-tests.yml now runs the workspace tests with `--release`, matching the local gate's build-release step; `tools/test_arm_tests_release.sh` fails closed if the flag goes missing. The gate runs it as the `arm-tests-release` step of `tools/full_gate.sh`.
 
