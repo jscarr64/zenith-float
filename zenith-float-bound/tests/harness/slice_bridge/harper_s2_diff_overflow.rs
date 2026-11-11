@@ -1,4 +1,4 @@
-//! Harper S2 red: cmp_exact_diff on opposite-sign operands at zf EXPONENT_MAX, where |a - b| is above the range
+//! Harper S2 (red until Mag::cmp_overflow_diff, FIXLIST ZB-35): cmp_exact_diff on opposite-sign operands at zf EXPONENT_MAX, where |a - b| is above the range
 //! (CONTRACT 16.S2.2: it must return Some for finite a, b and a finite r). The 8 D rows of bridge_cmp.txt (lines 540,
 //! 541, 546, 547, 594, 595, 600, 601) as literals. E = EXPONENT_MAX, x = (2^64 - 1) 2^(E-64) (golden
 //! `ffffffffffffffff^4611686018427387839`) and y = (2^65 - 1) 2^(E-65) (`1ffffffffffffffff^4611686018427387838`), both in
@@ -26,7 +26,6 @@ fn operand(is_y: bool, negative: bool) -> Result<ExactNum, String> {
 }
 
 #[test]
-#[ignore = "red: CONTRACT 16.S2.2: FIXLIST ZB-35: cmp_exact_diff returns None when |a-b| exceeds zf EXPONENT_MAX (opposite-sign near-EMAX operands)"]
 fn s2_diff_overflow_opposite_sign_near_emax_is_less() -> Result<(), String> {
     let one = Mag::finite(TOP, 1).map_err(|e| format!("Mag 1: {:?}", e))?;
     let zero = Mag::zero();

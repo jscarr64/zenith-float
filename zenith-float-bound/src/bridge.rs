@@ -7,7 +7,7 @@
 
 use core::cmp::Ordering;
 
-use zenith_float_num::{ConstantId, Consts, Error, ExactNum, RoundingMode};
+use zenith_float_num::{ConstantId, Consts, Error, ExactNum, RoundingMode, EXPONENT_MAX};
 
 use crate::ball::Ball;
 use crate::error::{BoundError, BoundResult};
@@ -116,9 +116,44 @@ impl Mag {
             if d.inexact() {
                 return None;
             }
+            if d.is_inf() {
+                return self.cmp_overflow_diff(a, b);
+            }
             return self.cmp_exact_num(&d);
         }
         self.cmp_far_diff(a, b, ea >= eb)
+    }
+
+    /// The overflow case of [`Mag::cmp_exact_diff`] (16.S2.2): the exact `a - b` is above zenith-float's range. Both
+    /// operands are below `2^E` (`E = EXPONENT_MAX`), so they have opposite signs and `|a - b| = |a| + |b|` lies in
+    /// `[2^E, 2^(E+1))`. The exponents decide unless `self` has exponent `E + 1`; then `self = 2 s` with `s = Mag(mant, E)`
+    /// in range, and `|a - b| - self = sa ((a - sa s) - (b + sa s))` (`sa` the sign of `a`) is formed exactly in range.
+    fn cmp_overflow_diff(&self, a: &ExactNum, b: &ExactNum) -> Option<Ordering> {
+        if self.is_zero() {
+            return Some(Ordering::Less);
+        }
+        let me = self.exp()?;
+        if me <= EXPONENT_MAX {
+            return Some(Ordering::Less);
+        }
+        if me >= EXPONENT_MAX.checked_add(2)? {
+            return Some(Ordering::Greater);
+        }
+        let s = Mag::finite(self.mant()?, EXPONENT_MAX)
+            .ok()?
+            .to_exact_num()
+            .ok()?;
+        let a_pos = !a.is_negative();
+        let (u, v) = if a_pos {
+            (a.sub_full_prec(&s), b.add_full_prec(&s))
+        } else {
+            (a.add_full_prec(&s), b.sub_full_prec(&s))
+        };
+        let z = u.sub_full_prec(&v);
+        if [&u, &v, &z].iter().any(|x| x.inexact() || not_finite(x)) {
+            return None;
+        }
+        Some(signed(sign(&z), a_pos).reverse())
     }
 
     /// The wide-gap case of [`Mag::cmp_exact_diff`]: `a_big` says whether `a` is the operand of larger magnitude.

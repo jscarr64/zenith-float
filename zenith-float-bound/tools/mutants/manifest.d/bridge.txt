@@ -57,3 +57,9 @@ src/bridge.rs:Mag::cmp_far_diff	353-TOPDEL	bridge/353-TOPDEL.patch	harness
 src/bridge.rs:Mag::cmp_far_diff	354-HALVES	bridge/354-HALVES.patch	harness
 src/bridge.rs:Mag::cmp_far_diff	355-ONCENAN	bridge/355-ONCENAN.patch	harness
 src/bridge.rs:Mag::cmp_far_diff	356-TOPGT	bridge/356-TOPGT.patch	harness
+src/bridge.rs:Mag::cmp_exact_diff	357-OVFINF	bridge/357-OVFINF.patch	harness
+src/bridge.rs:Mag::cmp_overflow_diff	358-OVFLE	bridge/358-OVFLE.patch	harness
+src/bridge.rs:Mag::cmp_overflow_diff	359-OVFGE	bridge/359-OVFGE.patch	harness
+src/bridge.rs:Mag::cmp_overflow_diff	360-OVFSIGN	bridge/360-OVFSIGN.patch	harness
+src/bridge.rs:Mag::cmp_overflow_diff	361-OVFZERO	bridge/361-OVFZERO.patch	harness
+src/bridge.rs:Mag::cmp_overflow_diff	362-OVFREV	bridge/362-OVFREV.patch	harness

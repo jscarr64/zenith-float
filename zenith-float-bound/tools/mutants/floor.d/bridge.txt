@@ -1,3 +1,3 @@
 # Slice S2 share of the mutant floor (added to ../floor.txt by tools/mutate.sh). Raise it with the slice's mutants.
-killed	48
-killed+equivalent	56
+killed	54
+killed+equivalent	62

@@ -1,0 +1,11 @@
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -151,7 +151,7 @@
+         if [&u, &v, &z].iter().any(|x| x.inexact() || not_finite(x)) {
+             return None;
+         }
+-        Some(signed(sign(&z), a_pos).reverse())
++        Some(signed(sign(&z), a_pos))
+     }
+ 
+     /// The wide-gap case of [`Mag::cmp_exact_diff`]: `a_big` says whether `a` is the operand of larger magnitude.

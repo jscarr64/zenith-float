@@ -1027,3 +1027,5 @@ mod harper_s2_wide;
 mod harper_s2_wide_goldens;
 // Harper S2 f3 (2026-11-05, ZB-32): the far-halves arm of cmp_far_diff, Rusty edge rows I L M N and P3 (128..1024 bits).
 mod harper_s2_far_halves;
+// Spence: cmp_exact_diff overflow case at EXPONENT_MAX, radii at exponents E, E+1, E+2 (CONTRACT 16.S2.2).
+mod spence_s2_diff_overflow_edge;
