@@ -12,7 +12,7 @@ set -u
 root=$(cd "$(dirname "$0")/.." && pwd)
 PAT='thumbv[0-9]|i686|i586|armv7|arm-unknown|wasm32|hex-32bit|ci_hex_32bit|--target'
 PAT32='thumbv[0-9]|i686|i586|armv7|arm-unknown|wasm|hex-32bit|ci_hex_32bit'  # targets, not the --target flag
-WANT="target-dir golden-sums arm-tests-release qemu-time-factor build-debug mpfr-tests-build zero-test build-release ignored build-nostd features-random-serde oracle-fast oracle-deep mpfr rules-scan no-clone-progress fmt clippy-x86_64 audit no-intrinsics unsafe-scan prepublish"
+WANT="target-dir golden-sums arm-tests-release qemu-time-factor build-debug mpfr-tests-build zero-test build-release ignored small-p-counts build-nostd features-random-serde oracle-fast oracle-deep mpfr rules-scan no-clone-progress fmt clippy-x86_64 audit no-intrinsics unsafe-scan prepublish"
 fail=0; bad() { echo "FAIL: $*"; fail=1; }
 check() {  # DIR -> 0 when 64-bit only
   local d=$1 r=0 hits steps

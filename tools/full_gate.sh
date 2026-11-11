@@ -89,6 +89,8 @@ run zero-test "bash scripts/check_zero_test_targets.sh"
 run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
 # ACCEPTANCE-pr39 E6 (P12): every #[ignore]d test must pass when run; this step runs them all (heavy tiers SKIP visibly without their env).
 run ignored "tools/fresh_test_run.sh cargo test --workspace --release $TT --ignored"
+# ACCEPTANCE-pr39 I10 (T3): the exhaustive small-p enumeration prints its point counts into this step log (--nocapture).
+run small-p-counts "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --test small_p_exhaustive $TT --nocapture"
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
 run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
 run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
