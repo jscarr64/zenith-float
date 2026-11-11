@@ -723,7 +723,18 @@ fn pair_at(p: &[&str], k: usize) -> Result<(ExactNum, ExactNum), String> {
 #[test]
 #[ignore = "heavy tier (16.LA.5): set ZB_QR_HEAVY_DIR to the dir with la_qr_enc4096_heavy.txt (scripts/gen_la_goldens.py --heavy DIR; sha256 in HEAVY.SHA256) and optionally la_qr_enc16384_heavy.txt"]
 fn la3_qr_hilbert_256_contains_by_heavy_tier() -> Result<(), String> {
-    let dir = std::env::var("ZB_QR_HEAVY_DIR").map_err(|e| format!("ZB_QR_HEAVY_DIR: {e}"))?;
+    // As s6_heavy_rows_replay_through_zb (ZB-P03): with ZB_QR_HEAVY_DIR unset this ignored test skips with a visible
+    // SKIP line, so a `--ignored` run without the heavy files is not red; it runs nothing and says so.
+    let dir = match std::env::var("ZB_QR_HEAVY_DIR") {
+        Ok(d) => d,
+        Err(std::env::VarError::NotPresent) => {
+            println!("SKIP la3_qr_hilbert_256_contains_by_heavy_tier: ZB_QR_HEAVY_DIR unset, no heavy rows run");
+            return Ok(());
+        }
+        Err(std::env::VarError::NotUnicode(v)) => {
+            return Err(format!("ZB_QR_HEAVY_DIR is not unicode: {v:?}"))
+        }
+    };
     let e4 = heavy_rows(&dir, "la_qr_enc4096_heavy.txt")?.ok_or("no la_qr_enc4096_heavy.txt")?;
     let e16 = heavy_rows(&dir, "la_qr_enc16384_heavy.txt")?;
     let text = gold_text("la_qr.txt")?;
