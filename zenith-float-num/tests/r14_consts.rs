@@ -241,7 +241,9 @@ fn golds_cover_every_constant_mode_and_edge() -> Result<(), String> {
                 if rm == RoundingMode::None {
                     refuses_none(&mut cc, name, p)?;
                     assert!(
-                        !rows.iter().any(|(n, q, r, _)| n == name && *q == p && *r == m),
+                        !rows
+                            .iter()
+                            .any(|(n, q, r, _)| n == name && *q == p && *r == m),
                         "{name} p={p} None has no golds"
                     );
                     continue;
@@ -356,7 +358,9 @@ fn bit_identical_whatever_the_cache_and_order() -> Result<(), String> {
 fn refuses_none(cc: &mut Consts, name: &str, p: usize) -> Result<(), String> {
     match cc.get_exact_prec(id_of(name)?, p, RoundingMode::None) {
         Err(Error::InvalidArgument) => Ok(()),
-        other => Err(format!("{name} p={p} None: want Err(InvalidArgument), got {other:?}")),
+        other => Err(format!(
+            "{name} p={p} None: want Err(InvalidArgument), got {other:?}"
+        )),
     }
 }
 

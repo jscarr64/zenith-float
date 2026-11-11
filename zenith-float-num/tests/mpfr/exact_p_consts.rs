@@ -1,5 +1,5 @@
-//! 2.0: the constants round at exactly `p` bits, as MPFR does, in all six modes (not at `p` rounded up to the
-//! word size). `from_mag_parts` keeps its exact, never-rounding contract.
+//! 2.0: the constants round at exactly `p` bits, as MPFR does, in every rounding mode but `None` (not at `p` rounded up to the
+//! word size); under `None` they are cut toward zero at the storage precision rp(p, 64), MPFR toward zero there. `from_mag_parts` keeps its exact, never-rounding contract.
 
 use crate::mpfr::common::{assert_exact_eq, mpfr_reference_with};
 use crate::mpfr::exact_bit_functions::MODES;

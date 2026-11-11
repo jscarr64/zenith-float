@@ -6533,12 +6533,15 @@ mod add_sub_zero_tests {
     use crate::{Error, ExactNum, INF_NEG, INF_POS};
     use core::ops::Neg;
 
-    const RMS: [RoundingMode; 5] = [
+    /// All 7 modes (`None` keeps the storage precision, FIXLIST ZF-M27).
+    const RMS: [RoundingMode; 7] = [
         RoundingMode::ToEven,
         RoundingMode::ToZero,
         RoundingMode::Up,
         RoundingMode::Down,
         RoundingMode::FromZero,
+        RoundingMode::ToOdd,
+        RoundingMode::None,
     ];
 
     fn zero(neg: bool) -> ExactNum {

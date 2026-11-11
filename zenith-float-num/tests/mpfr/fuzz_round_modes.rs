@@ -437,7 +437,8 @@ fn fuzz_mpfr_sqr_all_round_modes() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    // 9 precisions x 4 bands x 40 operands x 6 modes, less ToOdd in the low band
+    // 9 precisions x 4 bands x 40 operands x the loop's modes (ToEven, ToOdd, Up, Down, ToZero, FromZero), less ToOdd in
+    // the low band
     assert_eq!(checked, 9 * 40 * (3 * 6 + 5));
     Ok(())
 }

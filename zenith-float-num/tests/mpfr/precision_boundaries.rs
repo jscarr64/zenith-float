@@ -1,9 +1,9 @@
 //! Rusty (2026-11-10): add, sub, mul and div at every precision from 1 to 130 and at the word
 //! boundaries 191..=193, 255..=257, 511..=513 and 1023..=1025 (a multiple of the word size, one
-//! either side; this covers 32, 64, 128, 256, 512 and 1024), in the six rounding modes, both signs,
-//! against MPFR bit for bit with the per-operation flag. The seventh mode, `None` (no final
-//! rounding: the result keeps the storage precision), is checked for all four against MPFR cut
-//! toward zero at the storage precision. These are the
+//! either side; this covers 32, 64, 128, 256, 512 and 1024), in all 7 rounding modes, both signs,
+//! against MPFR bit for bit with the per-operation flag. `None` (no final rounding: the result keeps
+//! the storage precision) is checked against MPFR cut toward zero at the storage precision, both in the
+//! 7-mode sweep and in its own rows below. These are the
 //! branches of the exact-rounding helper (`p` a multiple of the word size: one call at `p`; otherwise a
 //! word-wider pass toward zero and a round-to-odd step) whose width computation changed.
 

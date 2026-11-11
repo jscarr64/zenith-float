@@ -22,7 +22,22 @@ use zenith_float_num::{
 
 type Res = Result<(), Box<dyn std::error::Error>>;
 
-const MODES: [RoundingMode; 6] = [
+/// All 7 modes: `None` is checked against MPFR toward zero at the storage precision rp(p, 64) (FIXLIST ZF-M27).
+const MODES: [RoundingMode; 7] = [
+    RoundingMode::ToEven,
+    RoundingMode::ToOdd,
+    RoundingMode::Up,
+    RoundingMode::Down,
+    RoundingMode::ToZero,
+    RoundingMode::FromZero,
+    RoundingMode::None,
+];
+
+/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
+/// Up, Down, ToZero, FromZero), for the families that fail the strict None oracle. NONE-GAP F-A: an exact `pow` /
+/// `nth_root` result comes back as its predecessor at rp(p, 64), flagged inexact. NONE-GAP F-B: a `None` overflow gives
+/// +-Inf; Jeff ruled +-MAX.
+const NONE_GAP_MODES: [RoundingMode; 6] = [
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
     RoundingMode::Up,
@@ -202,6 +217,7 @@ struct Sweep<'a> {
     operands: &'a [(u64, i64)],
     signs: &'a [bool],
     precisions: &'a [usize],
+    modes: &'a [RoundingMode],
     flags: bool,
     skip: Skip,
 }
@@ -220,6 +236,7 @@ fn unary(
         operands,
         signs,
         precisions,
+        modes,
         flags,
         skip,
     } = sweep;
@@ -232,7 +249,7 @@ fn unary(
                 if skip(m, k, neg, p) {
                     continue;
                 }
-                for rm in MODES {
+                for &rm in modes {
                     let got = zf_fn(&x, p, rm);
                     let info = format!("{what}({m:#x} 2^{k}, neg {neg})");
                     run.check_want(&got, p, rm, &info, || reference(&tx, p as u32, rm));
@@ -254,6 +271,7 @@ fn sqrt_over_the_whole_range() -> Res {
             precisions: &PRECISIONS,
             flags: true,
             skip: no_skip,
+            modes: &MODES,
         },
         |x, p, rm| x.sqrt(p, rm),
         |x, p, rm| sh::ref_root(x, 2, p, rm),
@@ -270,6 +288,7 @@ fn cbrt_over_the_whole_range() -> Res {
             precisions: &PRECISIONS,
             flags: true,
             skip: no_skip,
+            modes: &MODES,
         },
         |x, p, rm| x.cbrt(p, rm),
         |x, p, rm| sh::ref_root(x, 3, p, rm),
@@ -292,6 +311,8 @@ fn reciprocal_over_the_whole_range() -> Res {
             precisions: &RECIPROCAL_PRECISIONS,
             flags: true,
             skip: no_skip,
+            // NONE-GAP F-B: reciprocal overflows at the top of the range (ZF-M27)
+            modes: &NONE_GAP_MODES,
         },
         |x, p, rm| x.reciprocal(p, rm),
         sh::ref_recip,
@@ -317,6 +338,7 @@ fn exact_roots_and_reciprocals_at_the_ends() -> Res {
             precisions: &[1, 2, 24, 53, 64, 128],
             flags: true,
             skip: no_skip,
+            modes: &MODES,
         },
         |x, p, rm| x.sqrt(p, rm),
         |x, p, rm| sh::ref_root(x, 2, p, rm),
@@ -334,6 +356,7 @@ fn exact_roots_and_reciprocals_at_the_ends() -> Res {
             precisions: &[1, 2, 24, 53, 64, 128],
             flags: true,
             skip: no_skip,
+            modes: &MODES,
         },
         |x, p, rm| x.cbrt(p, rm),
         |x, p, rm| sh::ref_root(x, 3, p, rm),
@@ -352,6 +375,8 @@ fn nth_root_over_the_whole_range() -> Res {
                 precisions: &[1, 3, 24, 64, 65, 128],
                 flags: true,
                 skip: no_skip,
+                // NONE-GAP F-A: exact nth_root results in the grid (ZF-M27)
+                modes: &NONE_GAP_MODES,
             },
             |x, p, rm| x.nth_root(n, p, rm),
             |x, p, rm| sh::ref_root(x, n as u32, p, rm),
@@ -374,6 +399,8 @@ fn nth_root_over_the_whole_range() -> Res {
             precisions: &[1, 2, 24, 64, 128],
             flags: true,
             skip: no_skip,
+            // NONE-GAP F-A: exact nth_root results (ZF-M27)
+            modes: &NONE_GAP_MODES,
         },
         |x, p, rm| x.nth_root(5, p, rm),
         |x, p, rm| sh::ref_root(x, 5, p, rm),
@@ -394,6 +421,8 @@ fn nth_root_exact_result_is_not_inexact() -> Res {
             precisions: &[24, 64, 65, 128, 200],
             flags: true,
             skip: no_skip,
+            // NONE-GAP F-A: exact nth_root results (ZF-M27)
+            modes: &NONE_GAP_MODES,
         },
         |x, p, rm| x.nth_root(7, p, rm),
         |x, p, rm| sh::ref_root(x, 7, p, rm),
@@ -404,6 +433,7 @@ fn binary(
     what: &str,
     operands: &[(u64, i64)],
     precisions: &[usize],
+    modes: &[RoundingMode],
     skip_pair: fn((u64, i64), (u64, i64)) -> bool,
     zf_fn: impl Fn(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
     reference: impl Fn(&Term, &Term, u32, RoundingMode) -> Result<Want, Box<dyn std::error::Error>>,
@@ -418,7 +448,7 @@ fn binary(
                 let (a, b) = (zf(m1, k1, n1), zf(m2, k2, n2));
                 let (ta, tb) = (Term::new(m1, k1, n1), Term::new(m2, k2, n2));
                 for &p in precisions {
-                    for rm in MODES {
+                    for &rm in modes {
                         let got = zf_fn(&a, &b, p, rm, &mut run.cc);
                         let info =
                             format!("{what}({m1:#x} 2^{k1} neg {n1}, {m2:#x} 2^{k2} neg {n2})");
@@ -442,6 +472,8 @@ fn hypot_over_the_whole_range() -> Res {
         "hypot",
         &binary_operands(),
         &PRECISIONS,
+        // NONE-GAP F-B: hypot of huge operands overflows (ZF-M27)
+        &NONE_GAP_MODES,
         no_pair_skipped,
         |a, b, p, rm, _| a.hypot(b, p, rm),
         sh::ref_hypot,
@@ -458,6 +490,7 @@ fn atan2_over_the_whole_range() -> Res {
         "atan2",
         &binary_operands(),
         &[1, 3, 24, 64, 128],
+        &MODES,
         no_pair_skipped,
         |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
         sh::ref_atan2,
@@ -592,6 +625,7 @@ fn primitives_at_20000_bits() -> Res {
             precisions: &[20_000],
             flags: true,
             skip: no_skip,
+            modes: &MODES,
         },
         |x, p, rm| x.sqrt(p, rm),
         |x, p, rm| sh::ref_root(x, 2, p, rm),
@@ -604,6 +638,8 @@ fn primitives_at_20000_bits() -> Res {
             precisions: &[20_000],
             flags: true,
             skip: no_skip,
+            // NONE-GAP F-B: reciprocal of a tiny operand overflows (ZF-M27)
+            modes: &NONE_GAP_MODES,
         },
         |x, p, rm| x.reciprocal(p, rm),
         sh::ref_recip,
@@ -616,6 +652,7 @@ fn primitives_at_20000_bits() -> Res {
             precisions: &[20_000],
             flags: true,
             skip: no_skip,
+            modes: &MODES,
         },
         |x, p, rm| x.cbrt(p, rm),
         |x, p, rm| sh::ref_root(x, 3, p, rm),
@@ -625,7 +662,8 @@ fn primitives_at_20000_bits() -> Res {
 // ---- W1b: regressions for four wrong answers found in published 1.0.12 --------------------------------------------
 //
 // 1.0.12 returned a wrong value for each of these; the branch's exact-`p`-bit kernels were expected to be right, and
-// these tests keep them so (each is checked against MPFR in the six modes, flags included).
+// these tests keep them so (each is checked against MPFR in every mode, flags included; None too, except the queued
+// NONE-GAP rows).
 
 /// Operands of the composite-`n` root sweep: the end-of-range grid plus ordinary operands (the 1.0.12 error was at
 /// ordinary exponents: it rounded after each square or cube root).
@@ -655,6 +693,8 @@ fn nth_root_with_a_composite_n() -> Res {
                 precisions: &[1, 2, 3, 5, 24, 53, 64, 65, 128, 200],
                 flags: true,
                 skip: no_skip,
+                // NONE-GAP F-A: exact nth_root results in the grid (ZF-M27)
+                modes: &NONE_GAP_MODES,
             },
             |x, p, rm| x.nth_root(n, p, rm),
             |x, p, rm| sh::ref_root(x, n as u32, p, rm),
@@ -679,6 +719,8 @@ fn nth_root_with_a_composite_n() -> Res {
                 precisions: &[1, 2, 24, 64, 128],
                 flags: true,
                 skip: no_skip,
+                // NONE-GAP F-A: exact nth_root results (ZF-M27)
+                modes: &NONE_GAP_MODES,
             },
             |x, p, rm| x.nth_root(n, p, rm),
             |x, p, rm| sh::ref_root(x, n as u32, p, rm),
@@ -736,6 +778,8 @@ fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
             precisions: &[24, 64, 128, 129, 192, 200, 256, 512],
             flags: true,
             skip: no_skip,
+            // NONE-GAP F-B: reciprocal of a tiny operand overflows (ZF-M27)
+            modes: &NONE_GAP_MODES,
         },
         |x, p, rm| x.reciprocal(p, rm),
         sh::ref_recip,
@@ -810,6 +854,7 @@ fn atan2_at_the_scales_users_reach() -> Res {
         "atan2 user scales",
         &grid(&[1, 0xdead_beef_1234_5677], &[K, -K, 9_966, -9_966, 0]),
         &[24, 64, 128, 256],
+        &MODES,
         no_pair_skipped,
         |y, x, p, rm, cc| y.atan2(x, p, rm, cc),
         sh::ref_atan2,
@@ -919,6 +964,7 @@ fn log_sweep(
             precisions: &PRECISIONS,
             flags: true,
             skip: no_skip,
+            modes: &MODES,
         },
         |x, p, rm| zf_fn(x, p, rm, &mut cc.borrow_mut()),
         |x, p, rm| sh::ref_log(x, p, rm, &mp_fn),
@@ -997,14 +1043,20 @@ fn pow_exponents() -> Vec<Operand> {
     v
 }
 
-fn pow_sweep(run: &mut Run, bases: &[Operand], exponents: &[Operand], precisions: &[usize]) {
+fn pow_sweep(
+    run: &mut Run,
+    bases: &[Operand],
+    exponents: &[Operand],
+    precisions: &[usize],
+    modes: &[RoundingMode],
+) {
     use rug::ops::Pow;
     for &(bm, bk, bneg) in bases {
         for &(em, ek, eneg) in exponents {
             let (x, n) = (zf(bm, bk, bneg), zf(em, ek, eneg));
             let (fx, fn_) = (mp(bm, bk, bneg), mp(em, ek, eneg));
             for &p in precisions {
-                for rm in MODES {
+                for &rm in modes {
                     let got = x.pow(&n, p, rm, &mut run.cc);
                     let info = format!(
                         "pow({}{bm} 2^{bk}, {}{em} 2^{ek})",
@@ -1026,7 +1078,14 @@ fn pow_sweep(run: &mut Run, bases: &[Operand], exponents: &[Operand], precisions
 fn pow_of_exact_and_small_cases() -> Res {
     let mut run = Run::new(true)?;
     let precisions = [1usize, 2, 3, 5, 24, 53, 64, 65, 128, 200, 256];
-    pow_sweep(&mut run, &POW_BASES, &pow_exponents(), &precisions);
+    pow_sweep(
+        &mut run,
+        &POW_BASES,
+        &pow_exponents(),
+        &precisions,
+        // NONE-GAP F-A: exact pow results (ZF-M27)
+        &NONE_GAP_MODES,
+    );
     run.finish("pow small exact", 1000);
     Ok(())
 }
@@ -1047,7 +1106,8 @@ fn pow_of_exact_and_small_cases_at_large_precision() -> Res {
         (3, -1, false),
         (3, -2, false),
     ];
-    pow_sweep(&mut run, &bases, &exps, &[1024, 4096]);
+    // NONE-GAP F-A: exact pow results (ZF-M27)
+    pow_sweep(&mut run, &bases, &exps, &[1024, 4096], &NONE_GAP_MODES);
     run.finish("pow large precision", 100);
     Ok(())
 }
@@ -1061,7 +1121,14 @@ fn pow_of_a_negative_base_with_an_integer_exponent() -> Res {
         .into_iter()
         .filter(|&(_, k, _)| k == 0)
         .collect();
-    pow_sweep(&mut run, &bases, &exps, &[1, 24, 64, 65, 128, 256]);
+    pow_sweep(
+        &mut run,
+        &bases,
+        &exps,
+        &[1, 24, 64, 65, 128, 256],
+        // NONE-GAP F-A: exact pow results flagged inexact (ZF-M27)
+        &NONE_GAP_MODES,
+    );
     run.finish("pow negative base", 500);
     Ok(())
 }
@@ -1071,7 +1138,7 @@ fn pow_of_a_negative_base_with_an_integer_exponent() -> Res {
 fn pow_of_two_to_small_integers() -> Res {
     let mut run = Run::new(true)?;
     let exps: Vec<Operand> = vec![(2, 0, false), (2, 0, true), (3, 0, false), (3, 0, true)];
-    pow_sweep(&mut run, &[POW_BASES[0]], &exps, &[64, 256]);
+    pow_sweep(&mut run, &[POW_BASES[0]], &exps, &[64, 256], &MODES);
     run.finish("pow 2^n", 40);
     Ok(())
 }
@@ -1093,6 +1160,8 @@ fn pow_of_exact_quarter_powers() -> Res {
         &bases,
         &exps,
         &[1, 2, 3, 24, 53, 64, 65, 128, 256],
+        // NONE-GAP F-A: exact pow results (ZF-M27)
+        &NONE_GAP_MODES,
     );
     run.finish("pow exact quarter powers", 2000);
     Ok(())
