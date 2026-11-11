@@ -25,7 +25,7 @@ start=$(date +%s)
 {
   echo "deep_mag start $(date '+%F %T %Z') cases=$ZB_FUZZ_CASES head=$(git rev-parse --short HEAD) target=$CARGO_TARGET_DIR"
   cargo test --release --test harness "fuzz_mag::" -- --nocapture --test-threads="${DEEP_JOBS:-7}"
-  echo "cargo_rc=$?" 
+  echo "cargo_rc=$?"
   echo "deep_mag wall=$(( $(date +%s) - start ))s"
 } > "$log" 2>&1
 rc=$(grep -o 'cargo_rc=[0-9]*' "$log" | tail -1 | cut -d= -f2)
