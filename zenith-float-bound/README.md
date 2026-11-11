@@ -1,5 +1,7 @@
 # zenith-float-bound
 
+Part of the Accumath project family — developed for Accumath, the pure-Rust, correct-by-construction math engine. This crate is open source; Accumath itself is a separate product.
+
 **Pre-release (0.0.0). Nothing is guaranteed yet.** No enclosure, rounding or
 determinism property described anywhere in this repository holds until the
 release that states it, together with its tests. Do not rely on this crate.
