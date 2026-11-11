@@ -1,6 +1,8 @@
 # zenith-float-bound test plan: wide-range testing, build plan and checklist
 
 > **Superseded 2026-10-23 (Paul; CONTRACT O19, O20).** Ball operations take no `RoundingMode`: the midpoint rounds to nearest (`ToEven`) and the radius rounds outward. Wherever this file gives a Ball op an `rm` argument or runs a Ball row "per mode" / "under each mode" / "all modes", read: one call at `ToEven`; per-mode rows apply only to internal `ulp`/`half_ulp` helpers and the zenith-float scalar level, where `RoundingMode::None` is still rejected. `identical` returns `bool`; `contains` and `overlaps` return `Tri`. CONTRACT wins on any remaining conflict.
+>
+> **64-bit only (2026-11-10; P6/P8, Jeff "Yes 64 bit only please").** zenith-float 2.0, this crate included, supports 64-bit targets only; a 32-bit target fails to compile. Every i686, armv7, thumbv6m/thumbv7em, wasm32 or 32-bit cell below is historical: dropped, not required.
 
 
 **Status: working build plan (2026-10-15).** This is the document the tests get built against. It is not a proposal waiting on sign-off: Jeff's instruction (2026-10-15 10:45 PM CT) is "on all our crates we need wide range testing not just narrow testing... we need to make sure it handles all edges; not sure how we go about testing zenith-float-bound but we need to be very thorough." Items still open are technical choices for Rusty (section 17); they have a default stated here and the build starts on the default.
@@ -100,7 +102,7 @@ P1 to P10 are Rusty's `[R]`. Each is a reusable checker in `tests/common/props.r
 | P7 | add/mul **midpoint commutes bit-for-bit, radius symmetric** | `identical(add(a,b), add(b,a))`, same for mul, all modes, ball inputs included. **Note (Cassie other problem 5, Cassie, unverified by me):** the radius commutes bit-for-bit only if `add_up` is associated as `((T1 + T2) + T3) + eps`; CONTRACT 9.3 says every term and sum uses `add_up`/`mul_up` but does not pin the association (I read it at `a577e67`), so if a different association is used assert the midpoint bit-for-bit and the radius within the stated bound | add, mul, hypot, sum order is NOT commutative (sequential index order, PLAN L0) so do not assert it there |
 | P8 | `a - a` **contains 0** and `a / a` **contains 1** (dependency may widen, never exclude) | all `a` in the sets incl. balls straddling 0 (`a/a` then returns `Domain`, which is the correct answer) | L0b, L1+ compounds |
 | P9 | `from_exact_num` then enclosure **contains the original** | Mag: `from_exact_num(x) >= abs(x)`; Ball: `from_integer/from_rational/decimal parse` enclose the exact value | L0 |
-| P10 | **Determinism:** identical bits on x86_64, i686 and thumbv7em `[R]` | byte digests of every golden/grid run compared across targets and across debug/release, 1 vs N threads (PLAN Part J). Note PLAN Part B/J names `thumbv6m-none-eabi`; Rusty names `thumbv7em`. Which target(s) run is open item D8 | all, via grid digests |
+| P10 | **Determinism:** identical bits on x86_64 and aarch64 (i686 and thumbv7em DROPPED: 64-bit only) `[R]` | byte digests of every golden/grid run compared across targets and across debug/release, 1 vs N threads (PLAN Part J). Note PLAN Part B/J names `thumbv6m-none-eabi`; Rusty names `thumbv7em`. Which target(s) run is open item D8 | all, via grid digests |
 
 **Additional wide-range properties (mine, `[NV]` until built):**
 

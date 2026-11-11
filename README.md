@@ -11,7 +11,7 @@ Part of the Accumath project family — developed in conjunction with [Accumath]
 > precision, an overflow rounded toward
 > zero returns the largest finite value, `inexact()` describes the last operation
 > only (`inexact_accumulated()` keeps the old meaning), `from_raw_parts` validates
-> its parts, and the exponent range is `i32::MIN..=i32::MAX` on 32-bit targets too.
+> its parts, and the exponent range is the same on every target. 2.0 supports 64-bit targets only; 32-bit targets were dropped and fail to compile.
 > See [CHANGELOG.md](CHANGELOG.md) for each change and its
 > migration. 2.0.0 is not yet published; the current crates.io release is 1.0.12.
 
@@ -78,7 +78,7 @@ zenith-float = "2.0"
 zenith-float = { version = "2.0", default-features = false }
 ```
 
-`no_std` is tested: `scripts/ci_nostd.sh` runs the mpmath reference cases in a `#![no_std]` harness (`nostd-tests/`) on a libc-only Linux binary and bare-metal on `thumbv7em-none-eabihf` under QEMU. The 2.0 release gate is 64-bit only (P6): this 32-bit run is not part of it.
+`no_std` is tested: `scripts/ci_nostd.sh` builds the libraries for the bare-metal 64-bit targets `x86_64-unknown-none` and `aarch64-unknown-none` and runs the mpmath reference cases in a `#![no_std]` harness (`nostd-tests/`) on a libc-only Linux binary. zenith-float 2.0 is 64-bit only (P6/P8): a 32-bit target fails to compile, and the former 32-bit QEMU run (`thumbv7em-none-eabihf`) was dropped.
 
 ## Known issues
 

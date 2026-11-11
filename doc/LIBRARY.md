@@ -38,12 +38,12 @@ A finite `ExactNum` is a **sign**, a **binary mantissa** stored as an array of w
 
 | Item | Value |
 | --- | --- |
-| `Word` | `u64` except on 32-bit targets, where it is `u32` |
+| `Word` | `u64` (2.0 is 64-bit only; 32-bit targets were dropped) |
 | `WORD_BIT_SIZE` | 64 or 32 accordingly |
 | `WORD_MAX` | `Word::MAX` |
 | `WORD_BASE` | `WORD_MAX + 1` as a double-width integer |
 | `WORD_SIGNIFICANT_BIT` | high bit of a word |
-| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE`: 2 with a 64-bit `Word`, 4 with a 32-bit `Word`; small mantissas stored inline |
+| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE`: 2; small mantissas stored inline |
 | `EXPONENT_BIT_SIZE` | 32 |
 | `EXPONENT_MAX` | `i32::MAX` on every target (2.0.0; was `i32::MAX / 4` on 32-bit) |
 | `EXPONENT_MIN` | `i32::MIN` on every target (2.0.0; was `i32::MIN / 4` on 32-bit) |
@@ -220,7 +220,7 @@ There is **no** `%` operator trait; remainder is `rem` or `expr!` `%`.
 
 | Method | Meaning |
 | --- | --- |
-| `cmp` | `Option<SignedWord>` — negative / zero / positive; `None` if unordered (NaN). `SignedWord` is `i128` on 64-bit targets and `i64` on 32-bit; it is the return type of `cmp`/`abs_cmp` even though it is not re-exported at the crate root. |
+| `cmp` | `Option<SignedWord>` — negative / zero / positive; `None` if unordered (NaN). `SignedWord` is `i128`; it is the return type of `cmp`/`abs_cmp` even though it is not re-exported at the crate root. |
 | `abs_cmp` | compare absolute values |
 | `min` / `max` | |
 | `clamp` | |

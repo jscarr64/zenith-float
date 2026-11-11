@@ -41,14 +41,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 
 `no_std` is supported when a global allocator is available (`default-features = false`). Formatting traits require `std`.
 
-`no_std` is **built and tested** (1.0.5). `scripts/ci_nostd.sh` builds `zenith-float` and `zenith-float-num` with `--no-default-features --target thumbv7em-none-eabihf`. It then runs the `nostd-tests` harness, a `#![no_std]` crate (core + alloc only) with 77 mpmath reference cases, in two ways:
-
-- as a `#![no_std]`/`#![no_main]` binary on x86_64 Linux that links only libc;
-- bare-metal on `thumbv7em-none-eabihf` (Cortex-M4F, 32-bit limbs) under `qemu-system-arm -machine mps2-an386` with semihosting.
-
-The 2.0 release gate is 64-bit only (P6; Jeff 2026-11-10): the thumbv7em run above is kept as a script but is not a gate step.
-
-Both pass 77/77. There is no separate `alloc` feature: `alloc` is always required.
+`no_std` is **built and tested**. zenith-float 2.0 is **64-bit only** (P6/P8; Jeff 2026-11-10 "Yes 64 bit only please"): every crate root has `compile_error!` for a target whose pointer width is not 64. `scripts/ci_nostd.sh` builds `zenith-float` and `zenith-float-num` with `--no-default-features` for `x86_64-unknown-none` and `aarch64-unknown-none`, then runs the `nostd-tests` harness, a `#![no_std]` crate (core + alloc only) with 77 mpmath reference cases, as a `#![no_std]`/`#![no_main]` binary on x86_64 Linux that links only libc. It passes 77/77. The former 32-bit runs (bare-metal `thumbv7em-none-eabihf` under QEMU, i686, wasm32) were dropped. There is no separate `alloc` feature: `alloc` is always required.
 
 ---
 
@@ -56,9 +49,9 @@ Both pass 77/77. There is no separate `alloc` feature: `alloc` is always require
 
 | Item | Value |
 | --- | --- |
-| `Word` | `u64` on 64-bit targets; `u32` on 32-bit |
-| `WORD_BIT_SIZE` | 64 or 32 accordingly |
-| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE` (2 on 64-bit, 4 on 32-bit) — mantissas of ≤ 128 bits live on the stack |
+| `Word` | `u64` (64-bit targets only) |
+| `WORD_BIT_SIZE` | 64 |
+| `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE` (2) — mantissas of ≤ 128 bits live on the stack |
 | `EXPONENT_MAX` | `i32::MAX` on every target |
 | `EXPONENT_MIN` | `i32::MIN` on every target |
 | Default operator precision | 128 bits, `ToEven` — used by `+` `−` `×` `÷` operator traits only |

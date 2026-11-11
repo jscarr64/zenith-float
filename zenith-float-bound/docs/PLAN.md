@@ -1,6 +1,8 @@
 # Plan: zenith-float-bound, rigorous ball arithmetic on zenith-float (revision 2026-10-14)
 
 > **Superseded 2026-10-23 (Paul; CONTRACT O19, O20).** Ball operations take no `RoundingMode`: the midpoint rounds to nearest (`ToEven`) and the radius rounds outward. Wherever this file gives a Ball op an `rm` argument or runs a Ball row "per mode" / "under each mode" / "all modes", read: one call at `ToEven`; per-mode rows apply only to internal `ulp`/`half_ulp` helpers and the zenith-float scalar level, where `RoundingMode::None` is still rejected. `identical` returns `bool`; `contains` and `overlaps` return `Tri`. CONTRACT wins on any remaining conflict.
+>
+> **64-bit only (2026-11-10; P6/P8, Jeff "Yes 64 bit only please").** zenith-float 2.0, this crate included, supports 64-bit targets only; a 32-bit target fails to compile. Every i686, armv7, thumbv6m/thumbv7em, wasm32 or 32-bit cell below is historical: dropped, not required.
 
 
 - **Branch under review:** `jscarr64/zenith-float` `cursor/oracle-step1-2-0-0-79c6`, head `508a40039fcb6118d4eb07f14596f0153639298f` (committed 2026-10-14 10:57 CT; `04ba6a8` is in its history). Read through the GitHub connector only. No clone, no push, no PR.
@@ -591,9 +593,9 @@ Jeff discounts AI timeline estimates, so this table gives **relative runs only**
 | aarch64-unknown-linux-gnu | GitHub arm64 Linux runner, or qemu-user | required |
 | aarch64-apple-darwin | GitHub macOS runner | required if minutes allow, otherwise nightly |
 | x86_64-pc-windows-msvc | GitHub Windows | nightly (feasible; integer-only code) |
-| i686-unknown-linux-gnu | cross / multilib on Linux | required (32-bit `usize`) |
-| wasm32-wasip1 | wasmtime | required (32-bit, no SIMD) |
-| thumbv6m-none-eabi (no FPU) | qemu, existing `nostd-qemu` | required (Part B) |
+| ~~i686-unknown-linux-gnu~~ | cross / multilib on Linux | DROPPED (64-bit only, P6/P8) |
+| ~~wasm32-wasip1~~ | wasmtime | DROPPED (64-bit only, P6/P8) |
+| ~~thumbv6m-none-eabi (no FPU)~~ | qemu | DROPPED (64-bit only, P6/P8) |
 
 **Cross-check.**
 - Every matrix job uploads its `ball_bytes.out` (the full encoded outputs, not only hashes) as an artifact.

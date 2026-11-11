@@ -523,7 +523,7 @@ let back = sn.elliptic_f(&half, p, rm, &mut cc);
 
 **Is HDF5 supported?** No. This crate does not read or write that format. CSV and `to_bytes` remain.
 
-**`no_std`?** Allocator required. Formatting traits and `SharedConsts` need `std`. Thumb (`thumbv7em-none-eabihf`) compiles with `default-features = false`, and `scripts/ci_nostd.sh` runs the mpmath reference cases there under QEMU and in a libc-only host binary. The 2.0 release gate is 64-bit only (P6): this 32-bit run is not part of it.
+**`no_std`?** Allocator required. Formatting traits and `SharedConsts` need `std`. 64-bit bare-metal targets (`x86_64-unknown-none`, `aarch64-unknown-none`) compile with `default-features = false`, and `scripts/ci_nostd.sh` runs the mpmath reference cases in a libc-only host binary. 2.0 is 64-bit only: 32-bit targets (the former thumbv7em QEMU run among them) were dropped and fail to compile.
 
 **Can I plot?** Not in this crate. Format a string or pack bits in another crate.
 
