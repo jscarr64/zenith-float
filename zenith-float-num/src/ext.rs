@@ -7401,9 +7401,9 @@ mod grid_digest_tests {
                     for d in parts {
                         for p in [1usize, 64, 128] {
                             for rm in RMS {
-                                // HELD (new finding N-3, no id yet): (0 + s i) / (0 + s i), s subnormal, gives NaN,
-                                // not 1, in every mode: a ToOdd digest would pin known-wrong bits. ToOdd gets its own
-                                // digest after the fix.
+                                // HELD F-18 (N-3): (0 + s i) / (0 + s i), s subnormal, gives NaN, not 1, in every
+                                // mode, and the ToOdd cells are not checked (no single-rounding oracle for complex
+                                // mul/div). ToOdd gets its own digest after the ZF-M27 fix.
                                 if rm == RoundingMode::ToOdd {
                                     continue;
                                 }

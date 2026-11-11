@@ -370,7 +370,7 @@ fn jacobi_all_seven_modes() -> Res {
     let mut cc = Consts::new()?;
     let (mut fails, mut n) = (Vec::new(), 0usize);
     for (name, f) in fns {
-        // HELD N-6, N-7: the digest's tiny operand 21 (u = 3 * 2^(EXPONENT_MIN - 19)) is left out. At that u, ToZero,
+        // HELD F-21 (N-6), F-22 (N-7): the digest's tiny operand 21 (u = 3 * 2^(EXPONENT_MIN - 19)) is left out. At that u, ToZero,
         // FromZero, Up and Down return NaN(PrecisionRetryExhausted) for am (m != 0), sn, cn, cd, sc and sd, and Down is
         // in the digest pin (N-6). None returns exactly 1 for cn(u|1) and dn(u|m > 0), whose values are below 1, and
         // dn and nd at m = 1/2 and 3/8 come back flagged exact (N-7). Neither is F-A/F-B/F-C shaped. ns, cs and ds
