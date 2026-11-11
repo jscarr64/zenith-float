@@ -637,6 +637,68 @@ def logdet_cond(A):
     perm, L, U = lu_pp(A)
     return cond_tokens(la_cond_cols(A, perm, L, U, scale_row_ln(), "logdet"))
 
+# ---------------------------------------------------------------- logdet row cache (Paul 2026-11-11: heavy cosmo cases in parallel)
+# One cosmo_* logdet case gives one row per part: "main" (la_logdet[_heavy].txt) and "enc<b>" (la_logdet_enc<b>_heavy.txt).
+# `--logdet-unit CASE:PART --row-cache DIR` computes only that case's part(s), with the same code and the same rng stream as the
+# serial run, and writes DIR/logdet.<case>.<part>.row; a normal run given --row-cache DIR reads a present row instead of
+# recomputing it. A cached row must start with the case's own "case_id dims A..." fields (else exit 7); its value fields are
+# then checked like any row by --check / the sha256 pins. Selftest: tools/gen_la_rowcache_selftest.sh.
+ROW_CACHE = None
+LOGDET_PARTS = ("main",) + tuple(f"enc{b}" for b in LOGDET_EXT_BITS)
+
+def cache_path(cid, part): return os.path.join(ROW_CACHE, f"logdet.{cid}.{part}.row")
+
+class CosmoUnit:
+    """The row texts of one cosmo_* logdet case, computed exactly as the serial loop did (main first, then each ext width)."""
+    def __init__(self, cid, A, dk, heavy):
+        self.cid, self.A, self.dk, self.heavy, self.d = cid, A, dk, heavy, None
+    def det(self):
+        if self.d is None:
+            if self.dk is None or not self.heavy:
+                d = det(self.A); assert self.dk is None or d == self.dk, self.cid   # gate: identity re-checked against the LU determinant
+            else: d = self.dk                              # heavy: exact identity (prod D, Sylvester, block product, KMS closed form)
+            self.d = d
+        return self.d
+    def compute(self, part):
+        d = self.det(); cid = "logdet." + self.cid
+        if d == 0: return row(cid, dims_sq(self.A), self.A, err("Singular", "singular"), True)[0]
+        if part == "main":
+            return row(cid, dims_sq(self.A), self.A, [str(1 if d > 0 else -1), q(d), pair(*enclose_log(d, BITS))] + logdet_cond(self.A), self.heavy)[0]
+        return row(cid, dims_sq(self.A), self.A, [pair(*enclose_log(d, int(part[3:])))], True)[0]
+    def text(self, part):
+        p = cache_path(self.cid, part) if ROW_CACHE is not None else None
+        if p is None or not os.path.exists(p): return self.compute(part)
+        with open(p, encoding="utf-8", newline="\n") as f: t = f.read()
+        lead = " ".join(["logdet." + self.cid, dims_sq(self.A)] + [q(x) for x in flat(self.A)]) + " "
+        if not t.endswith("\n") or "\n" in t[:-1] or not t.startswith(lead):
+            print(f"gen_la_goldens: row-cache MISMATCH logdet.{self.cid} {part}: {p} is not a row of this case's inputs", file=sys.stderr, flush=True)
+            sys.exit(7)
+        print(f"row-cache: hit logdet.{self.cid} {part} {p}", flush=True)
+        return t[:-1]
+
+def logdet_unit(spec):
+    """--logdet-unit CASE:PART (PART all|main|enc4096|enc16384): computes one cosmo_* logdet case's part(s) and writes them to
+    the row cache. The rng stream is replayed exactly as render() + gen_logdet() draw it (only corpus constructors draw)."""
+    global rng, OP, CASE
+    cid, _, part = spec.partition(":")
+    parts = LOGDET_PARTS if part == "all" else (part,)
+    if not cid.startswith("cosmo_") or any(x not in LOGDET_PARTS for x in parts):
+        print(f"gen_la_goldens: --logdet-unit {spec}: want cosmo_<case>:all|{'|'.join(LOGDET_PARTS)}", file=sys.stderr); sys.exit(2)
+    rng = random.Random(f"{SEED}:logdet"); OP, CASE = "logdet", "logdet.(corpus-setup)"; _arm()
+    square_corpus("logdet")                                # draws the gate corpus' rng values, as gen_logdet does first
+    for c, A, dk in logdet_cosmo_corpus():
+        if c != cid: continue
+        begin("logdet." + cid)
+        u = CosmoUnit(cid, A, dk, is_heavy(A)); os.makedirs(ROW_CACHE, exist_ok=True)
+        for x in parts:
+            t = u.compute(x); p = cache_path(cid, x)
+            with open(p + ".tmp", "w", encoding="utf-8", newline="\n") as f: f.write(t + "\n"); f.flush(); os.fsync(f.fileno())
+            os.replace(p + ".tmp", p)
+            print(f"progress: op=logdet unit={cid}:{x} wrote {p} elapsed_s={time.monotonic() - T0:.3f}", file=sys.stderr, flush=True)
+            _arm()
+        return
+    print(f"gen_la_goldens: --logdet-unit {spec}: no such cosmo logdet case", file=sys.stderr); sys.exit(2)
+
 def gen_logdet():
     rows = Rows(); ext = {b: Rows() for b in LOGDET_EXT_BITS}
     for cid, A in square_corpus("logdet"):
@@ -652,14 +714,10 @@ def gen_logdet():
         begin("logdet." + cid)
         heavy = is_heavy(A)
         if heavy and SKIP_HEAVY: continue                  # --skip-heavy: heavy cosmo rows are never computed
-        if dk is None or not heavy:
-            d = det(A); assert dk is None or d == dk, cid   # gate: identity re-checked against the LU determinant
-        else: d = dk                                       # heavy: exact identity (prod D, Sylvester, block product, KMS closed form)
-        if d == 0: outs = err("Singular", "singular")
-        else: outs = [str(1 if d > 0 else -1), q(d), pair(*enclose_log(d, BITS))] + logdet_cond(A)
-        rows.append(row("logdet." + cid, dims_sq(A), A, outs, heavy))
+        u = CosmoUnit(cid, A, dk, heavy)
+        rows.append((u.text("main"), heavy))
         for b in LOGDET_EXT_BITS:
-            ext[b].append(row("logdet." + cid, dims_sq(A), A, outs if d == 0 else [pair(*enclose_log(d, b))], True)[0])
+            ext[b].append(u.text(f"enc{b}"))
     hdr = ["op: logdet",
            "canonical: sign = sign(det A) in {1,-1}; det = exact rational determinant; logabsdet = ln|det A| (irrational unless det = +-1). det = 0 -> refusal 'ERR Singular singular'.",
            "exact form: ln(det) with det the exact rational in the row (sympy: log(Rational(det))).",
@@ -1048,11 +1106,17 @@ def main():
         return x
     ap.add_argument("--case-budget", type=positive, default=1800.0, metavar="SECONDS",
                     help="per-case wall budget; exceeding it exits 5 naming the op and case_id (default 1800)")
+    ap.add_argument("--row-cache", metavar="DIR", help="logdet row cache (read by a normal run, written by --logdet-unit)")
+    ap.add_argument("--logdet-unit", metavar="CASE:PART", help="compute one cosmo_* logdet case (PART all|main|enc4096|enc16384) into --row-cache")
     a = ap.parse_args()
-    global BUDGET
+    global BUDGET, ROW_CACHE
+    if a.logdet_unit is not None and a.row_cache is None:
+        print("gen_la_goldens: --logdet-unit needs --row-cache DIR", file=sys.stderr); sys.exit(2)
+    ROW_CACHE = a.row_cache
     BUDGET = a.case_budget; signal.signal(signal.SIGALRM, _on_alarm)
     try:
-        run(a)
+        if a.logdet_unit is not None: logdet_unit(a.logdet_unit)
+        else: run(a)
     except CaseBudget:
         print(f"gen_la_goldens: CASE BUDGET exceeded ({a.case_budget:g} s): op={OP} case={CASE} "
               f"elapsed_s={time.monotonic() - T0:.3f}; no row finished within the budget. Not a pass.", file=sys.stderr, flush=True)
