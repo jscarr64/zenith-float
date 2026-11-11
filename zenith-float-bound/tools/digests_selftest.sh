@@ -18,12 +18,12 @@ ball_rows 3824433 0cd9e03b19629d8a'
 mkrun() { mkdir -p "$1"; printf '# header arch=%s\n# columns\n%s\n' "${3:-x86_64}" "$2" > "$1/$4"; }
 printf '# expected\n%s\n' "$ROWS" > "$t/expected.txt"
 # 1. identical runs (different arch comments): pass
-mkdir -p "$t/ok"; printf '# header arch=x86_64\n%s\n' "$ROWS" > "$t/ok/host-debug-t1.txt"; printf '# header arch=x86\n# more\n%s\n' "$ROWS" > "$t/ok/i686-release-t7.txt"
+mkdir -p "$t/ok"; printf '# header arch=x86_64\n%s\n' "$ROWS" > "$t/ok/host-debug-t1.txt"; printf '# header arch=aarch64\n# more\n%s\n' "$ROWS" > "$t/ok/aarch64-release-t7.txt"
 ck; "$d" compare "$t/ok" "$t/expected.txt" >/dev/null 2>&1 || fail "identical runs were rejected"
 # 2. a changed digest: fail, naming the file and the line
-mkdir -p "$t/bad1"; cp "$t/ok/host-debug-t1.txt" "$t/bad1/"; sed 's/^mag_grid 5288814 923017e7fb7370da$/mag_grid 5288814 923017e7fb7370db/' "$t/ok/i686-release-t7.txt" > "$t/bad1/i686-release-t7.txt"
+mkdir -p "$t/bad1"; cp "$t/ok/host-debug-t1.txt" "$t/bad1/"; sed 's/^mag_grid 5288814 923017e7fb7370da$/mag_grid 5288814 923017e7fb7370db/' "$t/ok/aarch64-release-t7.txt" > "$t/bad1/aarch64-release-t7.txt"
 ck; out=$("$d" compare "$t/bad1" "$t/expected.txt" 2>&1); [ $? -ne 0 ] || fail "a changed digest was accepted"
-ck; echo "$out" | grep -c 'i686-release-t7.txt' > /dev/null || fail "the differing run is not named: $out"
+ck; echo "$out" | grep -c 'aarch64-release-t7.txt' > /dev/null || fail "the differing run is not named: $out"
 ck; echo "$out" | grep -c 'mag_grid 5288814 923017e7fb7370db' > /dev/null || fail "the first differing line is not shown: $out"
 # 3. a changed word count
 mkdir -p "$t/bad2"; sed 's/^splitmix 65536 /splitmix 65535 /' "$t/ok/host-debug-t1.txt" > "$t/bad2/host-debug-t1.txt"
@@ -51,12 +51,12 @@ mkdir -p "$DIGESTS_TMP"; printf '# fake\n%s\n' "$FAKE_ROWS" > "$DIGESTS_TMP/grid
 exit 0
 FC
 chmod +x "$t/fakecargo"
-printf '# manifest\nhost\ni686-unknown-linux-musl\n' > "$t/manifest.txt"
+printf '# manifest\nhost\naarch64-unknown-linux-gnu\n' > "$t/manifest.txt"
 export DIGESTS_CARGO="$t/fakecargo" DIGESTS_TMP="$t/tmp" FAKE_LOG="$t/log" FAKE_ROWS="$ROWS"
 ck; "$d" run "$t/manifest.txt" "$t/runs" >/dev/null 2>&1 || fail "run failed with a working fake cargo"
 ck; [ "$(ls "$t/runs"/*.txt | wc -l)" = 8 ] || fail "run did not collect 2 targets x 2 profiles x 2 thread counts: $(ls "$t/runs")"
 ck; [ "$(wc -l < "$t/log")" = 8 ] || fail "run made $(wc -l < "$t/log") cargo calls, want 8"
-ck; grep -q -- '--release .*--target i686-unknown-linux-musl' "$t/log" || grep -c -- '--target i686-unknown-linux-musl.*--release' "$t/log" > /dev/null || fail "no release run for the cross target: $(cat "$t/log")"
+ck; grep -q -- '--release .*--target aarch64-unknown-linux-gnu' "$t/log" || grep -c -- '--target aarch64-unknown-linux-gnu.*--release' "$t/log" > /dev/null || fail "no release run for the cross target: $(cat "$t/log")"
 ck; [ "$(grep -c -- '--target' "$t/log")" = 4 ] || fail "the host runs must not pass --target"
 ck; [ "$(grep -c -- '--test-threads=1' "$t/log")" = 4 ] && [ "$(grep -c -- '--test-threads=7' "$t/log")" = 4 ] || fail "thread counts 1 and 7 are not both run for every cell"
 ck; "$d" compare "$t/runs" "$t/expected.txt" >/dev/null 2>&1 || fail "the collected fake runs do not compare equal"
