@@ -928,7 +928,8 @@ impl RoundingMode {
     }
 }
 
-/// A rounding mode or the deliberate `None` marker: kept apart from `RoundingMode` so tests can assert that an op rejects `None`.
+/// A rounding mode or the `None` marker, kept apart from `RoundingMode` so `RoundingMode::all()` stays the six valid modes. Bound has no
+/// public fn that takes a mode, so no test passes `None` to an op; `None` only labels replay lines that carry no mode (w1_translation).
 #[derive(Debug, PartialEq, Eq)]
 pub enum ModeOrNone {
     Valid(RoundingMode),
