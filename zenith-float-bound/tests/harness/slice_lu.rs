@@ -1167,3 +1167,6 @@ fn la2_results_carry_prec_and_exact_rows_stay_exact() -> Result<(), String> {
     }
     Ok(())
 }
+
+// Held child module (HOLD.md at the repo root): not compiled; the mod line stays here, commented.
+// HOLD H09: mod harper_la_fact;
