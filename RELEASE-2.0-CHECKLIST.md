@@ -135,7 +135,7 @@ At the pinned baseline, `Cargo.toml` lists num, macro and compare; bound integra
 | 6.13 | Version and dates (workspace 2.0.0 already; CHANGELOG date, CAPABILITIES history row) | Rusty | MERGED / UNVERIFIED (version only): workspace is 2.0.0; release dates and history still need review | match release day |
 | 6.14 | Final read-only re-audit after fixes | outside agent | UNKNOWN / UNVERIFIED: candidate result or approval not established | no finding |
 | 6.15 | Jeff's go + pre-publish check shown to him | Jeff | UNKNOWN / UNVERIFIED: candidate result or approval not established | explicit go |
-| 6.16 | LAST item, after everything else is 100% done: delete every block still held in HOLD.md, then delete HOLD.md itself (Jeff, 2026-11-10 15:37 HOLD rule addendum) | Rusty | NOT STARTED: HOLD.md lists H01-H08 | no `// HOLD` file, no `// HOLD <id>:` mod line and no HOLD.md in the tree |
+| 6.16 | LAST item, after everything else is 100% done: delete every block still held in HOLD.md, then delete HOLD.md itself (Jeff, 2026-11-10 15:37 HOLD rule addendum) | Rusty | NOT STARTED: HOLD.md lists H01-H09 | no `// HOLD` file, no `// HOLD <id>:` mod line and no HOLD.md in the tree |
 
 ### Historical 6.11 read-only evidence: Accumath zf call sites (accumath @ 830e781a, 2026-10-21)
 At that historical Accumath SHA, all zf use goes through `SoftFloat` in crates/engine_core/src/soft.rs (const RM = ToEven at soft.rs:24); SoftFloat::inf()/neg_inf() exist (soft.rs:55-61), so Inf, and -0 from negation/underflow, can reach every wrapper; subnormals reach any op whose input came from an underflowing chain.
