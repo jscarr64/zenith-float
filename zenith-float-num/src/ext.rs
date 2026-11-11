@@ -8118,7 +8118,8 @@ mod grid_digest_tests {
         // are `u` and the other nine functions are 1, because `f(u|m) = t (1 - O(u^2))` is far closer to the
         // representable `t` than half an ulp, and a value just below a representable number rounds to it
         // to nearest; the roundability check had treated that as undecidable. Oracle: mpmath, see the CHANGELOG.
-        assert_eq!(h.finish(), 8_344_934_497_909_943_058);
+        // Re-pinned (F9d-1): was 8_344_934_497_909_943_058, with the 62 Down F-21 cells in.
+        assert_eq!(h.finish(), 13_316_780_591_086_104_024);
         Ok(())
     }
 
