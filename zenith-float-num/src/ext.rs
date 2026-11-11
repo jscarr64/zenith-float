@@ -6843,6 +6843,18 @@ mod grid_digest_tests {
         dd(h, op, args, ints, p, rm, r)
     }
 
+    /// An overflow in a toward-zero direction: +-Inf where the 12:15 PM CT ruling (Jeff, 2026-11-11) gives +-MAX. That is
+    /// None and ToZero either way, Down for +overflow and Up for -overflow (M27-TZ/UD). The caller rules out poles.
+    fn tz_overflow(rm: RoundingMode, r: &ExactNum) -> bool {
+        r.is_inf()
+            && match rm {
+                RoundingMode::None | RoundingMode::ToZero => true,
+                RoundingMode::Down => r.is_positive(),
+                RoundingMode::Up => r.is_negative(),
+                _ => false,
+            }
+    }
+
     /// A known-wrong cell of a held finding (queued as a ZF-M27 exception, or reported for an id): counted in `held`
     /// and left out of the pinned digest, so the pin does not hold wrong bits. The fix puts the cell back, red first.
     /// The cell ids (dump lines) are listed in the PR #39 body.
@@ -8080,7 +8092,9 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held = 0usize;
         let mut held_f21 = 0usize;
+        let mut held_tzud = 0usize;
         let ms = || {
             [
                 ExactNum::new(64),
@@ -8102,10 +8116,20 @@ mod grid_digest_tests {
                             // F-21 (N-6): at the tiny operand 21, Down gives NaN(PrecisionRetryExhausted), not a value.
                             let f21 = rm == RoundingMode::Down
                                 && r.err() == Some(Error::PrecisionRetryExhausted);
+                            // M27-TZ/UD (finding id pending): ns, cs and ds of the tiny nonzero u overflow upward; Down
+                            // gives +Inf where the ruling is +MAX. u = 0 is a pole and stays hashed.
+                            let u = operand(i);
+                            let tzud = !f21
+                                && !u.is_zero()
+                                && !u.is_inf()
+                                && !u.is_nan()
+                                && tz_overflow(rm, &r);
+                            held_f21 += usize::from(f21);
+                            held_tzud += usize::from(tzud);
                             dd_held(
                                 &mut h,
-                                &mut held_f21,
-                                f21,
+                                &mut held,
+                                f21 || tzud,
                                 JNAMES[fi],
                                 &[&operand(i), &m[mi]],
                                 &[],
@@ -8122,6 +8146,9 @@ mod grid_digest_tests {
         assert_eq!(count, 13 * 7 * 5 * 2 * 2);
         // F-21 (N-6, ZF-M27): the Down NaN(PrecisionRetryExhausted) cells at operand 21 are not hashed
         assert_eq!(held_f21, 62);
+        // M27-TZ/UD (finding id pending): the Down +overflow cells (+Inf, the ruling is +MAX) are not hashed
+        assert_eq!(held_tzud, 24);
+        assert_eq!(held, held_f21 + held_tzud);
         // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
         let u = operand(5);
         let zero_m = ExactNum::new(64);
