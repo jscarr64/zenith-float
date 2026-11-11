@@ -7,8 +7,11 @@
 # NONE_GAP_MODES holding exactly the 6 other modes. Such an array may exist only in a listed file. Its doc comment names
 # every finding id listed for that file (`NONE-GAP F-A`...). Every use (`in NONE_GAP_MODES`, `&NONE_GAP_MODES`) carries a
 # `NONE-GAP F-x:` comment within the 3 lines above it. A listed file without the array is a stale entry and fails, so the
-# ZF-M27 conformance PR has to delete each entry when it fixes the family. Inline mode loops and golden-backed mode sets
-# are outside this check. The check also runs on a planted copy and must catch it.
+# ZF-M27 conformance PR has to delete each entry when it fixes the family. Every inline mode loop
+# (`in [RoundingMode::A, ...]`) lists all 7 modes or carries, in the 3 lines above it, a label
+# `MODE-SUBSET mode-specific: <why>` (the expected value holds only for these modes; Spence's C13 loop ruling) or
+# `MODE-SUBSET gap F-x: <why>` (a queued None gap). Golden-backed mode sets (generators) are outside this check.
+# The check also runs on a planted copy and must catch it.
 # usage: tools/test_rounding_mode_matrices.sh
 set -u
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -38,6 +41,8 @@ arr = re.compile(r"((?:[ \t]*///[^\n]*\n)*)[^\n]*?\b(\w+): \[RoundingMode;\s*(\d
 text = re.compile(r"\b(6|six) (rounding )?modes", re.I)
 use = re.compile(r"(\bin\s+|&)" + GAP + r"\b")
 label = re.compile(r"NONE-GAP (F-[ABC]): \S")
+inline = re.compile(r"\bin\s*\[\s*((?:RoundingMode::\w+\s*,?\s*)+)\]")
+subset = re.compile(r"MODE-SUBSET (mode-specific|gap F-[ABC]): \S")
 bad = 0
 seen = set()
 for top, _dirs, files in os.walk(os.path.join(d, "zenith-float-num")):
@@ -73,6 +78,15 @@ for top, _dirs, files in os.walk(os.path.join(d, "zenith-float-num")):
                     continue
                 if n != 7 or len(modes) != 7 or set(modes) != want:
                     print(f"  {rel}:{line}: [RoundingMode; {n}] has {sorted(modes)}, missing {sorted(want - set(modes))}")
+                    bad = 1
+            for m in inline.finditer(s):
+                modes = re.findall(r"RoundingMode::(\w+)", m.group(1))
+                if len(modes) == 7 and set(modes) == want:
+                    continue
+                line = s.count("\n", 0, m.start()) + 1
+                above = "\n".join(lines[max(0, line - 4):line])
+                if not subset.search(above):
+                    print(f"  {rel}:{line}: inline loop over {modes} has no 'MODE-SUBSET mode-specific|gap F-x: why' label")
                     bad = 1
             for m in use.finditer(s):
                 line = s.count("\n", 0, m.start()) + 1
@@ -122,6 +136,13 @@ check "$t" > /dev/null && bad "a gap array that is not exactly the 6 non-None mo
 mv "$g" "$t/zenith-float-num/tests/unlisted.rs"
 check "$t" > /dev/null && bad "a NONE_GAP_MODES array in an unlisted file was not caught"
 rm "$t/zenith-float-num/tests/unlisted.rs"
+printf 'fn f() {\n    for rm in [RoundingMode::Up, RoundingMode::Down] {\n        g(rm);\n    }\n}\n' > "$t/zenith-float-num/tests/loop.rs"
+check "$t" > /dev/null && bad "an unlabelled 2-mode inline loop was not caught"
+printf 'fn f() {\n    // MODE-SUBSET mode-specific: Up and Down bracket the value\n    for rm in [RoundingMode::Up, RoundingMode::Down] {\n        g(rm);\n    }\n}\n' > "$t/zenith-float-num/tests/loop.rs"
+check "$t" > /dev/null || bad "a labelled inline loop was flagged"
+sed -i 's/MODE-SUBSET mode-specific:/MODE-SUBSET because/' "$t/zenith-float-num/tests/loop.rs"
+check "$t" > /dev/null && bad "an inline loop with a malformed label was not caught"
+rm "$t/zenith-float-num/tests/loop.rs"
 mkdir "$t/.git"
 check "$t" > /dev/null && bad "a stale KNOWN-GAP entry (listed file without the array) was not caught"
 [ $fail = 0 ] && { echo "test_rounding_mode_matrices: ok"; exit 0; }
