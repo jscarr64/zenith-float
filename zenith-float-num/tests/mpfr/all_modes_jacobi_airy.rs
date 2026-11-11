@@ -86,7 +86,7 @@ pub fn bracket_expect(
     p: usize,
     cc: &mut Consts,
 ) -> Result<Bracket, E> {
-    let _ = (f, p, cc, all, to_mpfr, set_from);
+    let _ = (f, p, cc);
     Err("RED stub: no bracket".into())
 }
 
