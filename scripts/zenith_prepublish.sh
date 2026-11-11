@@ -36,7 +36,11 @@ ok "no_std host"
 # No 32-bit target build (thumbv7em dropped): 2.0 is 64-bit only (P6; Jeff 2026-11-10 19:15 CT).
 
 step "scripts/compare-bench.sh --quick"
-bash "$root/scripts/compare-bench.sh" --quick
+# The gate never rewrites a tracked file: the comparison goes to scratch under CARGO_TARGET_DIR (outside the worktree),
+# not to the tracked doc/compare-results.tsv (refresh that by hand with scripts/compare-bench.sh and commit it).
+mkdir -p "${CARGO_TARGET_DIR:?}/prepublish"
+case "$(cd "$CARGO_TARGET_DIR/prepublish" && pwd -P)/" in "$(cd "$root" && pwd -P)/"*) fail "CARGO_TARGET_DIR is inside the worktree; the compare output must go outside it" ;; esac
+COMPARE_OUT="$CARGO_TARGET_DIR/prepublish/compare-results.tsv" bash "$root/scripts/compare-bench.sh" --quick
 ok "compare-bench --quick"
 
 step "kernel purity grep (no f32/f64, no arch intrinsics, no kernel unsafe)"
