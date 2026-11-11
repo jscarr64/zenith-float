@@ -678,13 +678,14 @@ pub fn check(got: &ExactNum, want: &Want, flags: bool, info: &str) -> Res<()> {
 mod self_test {
     use super::*;
 
-    const MODES: [RoundingMode; 6] = [
+    const MODES: [RoundingMode; 7] = [
         RoundingMode::ToEven,
         RoundingMode::ToOdd,
         RoundingMode::Up,
         RoundingMode::Down,
         RoundingMode::ToZero,
         RoundingMode::FromZero,
+        RoundingMode::None,
     ];
     const PRECISIONS: [u32; 8] = [1, 2, 3, 24, 64, 65, 128, 200];
 

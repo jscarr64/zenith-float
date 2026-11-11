@@ -40,13 +40,14 @@ const ROUNDS: [(RoundingMode, rnd_t); 5] = [
 ];
 
 /// Every mode with a bit-exact reference, `ToOdd` included (emulated in `mpfr_reference`).
-const ALL_MODES: [RoundingMode; 6] = [
+const ALL_MODES: [RoundingMode; 7] = [
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
     RoundingMode::Up,
     RoundingMode::Down,
     RoundingMode::ToZero,
     RoundingMode::FromZero,
+    RoundingMode::None,
 ];
 
 #[test]
