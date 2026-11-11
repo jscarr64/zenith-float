@@ -20,6 +20,8 @@ PFX=zenith-float-bound
 OLD_PAT='zenith[-_]bound'
 OLD_NAME="zenith""-bound"
 REMOVED="rust-toolchain.toml .github/CODEOWNERS"
+# Retired in d15bb37 (order 3, MAX_PRECISION one zf definition): the bound precision mutants 117-123 have no code left to mutate.
+REMOVED="$REMOVED $(printf 'tools/mutants/%s.patch ' 117-P-min2 118-P-min0 119-P-maxsub 120-P-maxsub2 121-P-shl61 122-P-shl59 123-P-cmp)"
 HEAD_SHA=$(git rev-parse HEAD) || exit 2
 NO_BUILD=${FOLD_PR1_NO_BUILD:-0}
 scratch=${FOLD_PR1_SCRATCH:-$HOME/.cache/zenith-float/fold-pr1}
