@@ -2,6 +2,7 @@
 # Red test (Jeff 2026-11-10 19:15 CT, "Yes 64 bit only please"; P6): the release gate and its helpers build, lint and test
 # only on the 64-bit host. tools/full_gate.sh has no step for a 32-bit target, scripts/zenith_prepublish.sh and scripts/ci.sh
 # build no 32-bit target, and the step list is exactly the 64-bit list below (a step added or dropped must update it).
+# ACCEPTANCE-pr39 E6 (P12): step 'ignored' runs every #[ignore]d test (cargo test --ignored) so none can be a hidden red.
 # Each check also runs on a planted copy (a 32-bit step put back) and must catch it.
 # ACCEPTANCE-pr39 F1/F5/F6 (Spence 2026-11-10): every library crate root (facade, num, bound) refuses a non-64-bit
 # target with compile_error!, no script under scripts/ builds or runs a 32-bit or wasm target (comments excepted),
@@ -11,7 +12,7 @@ set -u
 root=$(cd "$(dirname "$0")/.." && pwd)
 PAT='thumbv[0-9]|i686|i586|armv7|arm-unknown|wasm32|hex-32bit|ci_hex_32bit|--target'
 PAT32='thumbv[0-9]|i686|i586|armv7|arm-unknown|wasm|hex-32bit|ci_hex_32bit'  # targets, not the --target flag
-WANT="target-dir golden-sums arm-tests-release qemu-time-factor build-debug mpfr-tests-build zero-test build-release build-nostd features-random-serde oracle-fast oracle-deep mpfr rules-scan no-clone-progress fmt clippy-x86_64 audit no-intrinsics unsafe-scan prepublish"
+WANT="target-dir golden-sums arm-tests-release qemu-time-factor build-debug mpfr-tests-build zero-test build-release ignored build-nostd features-random-serde oracle-fast oracle-deep mpfr rules-scan no-clone-progress fmt clippy-x86_64 audit no-intrinsics unsafe-scan prepublish"
 fail=0; bad() { echo "FAIL: $*"; fail=1; }
 check() {  # DIR -> 0 when 64-bit only
   local d=$1 r=0 hits steps
