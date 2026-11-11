@@ -8857,9 +8857,11 @@ mod round_op_flag_tests {
             assert!(!z.inexact(), "{rm:?}");
             assert!(z.inexact_accumulated(), "{rm:?}");
         }
-        // MODE-SUBSET mode-specific: Up, FromZero and ToOdd round a positive subnormal up to 1, not to 0
+        // MODE-SUBSET mode-specific: these round a positive subnormal to an inexact 0 (ToOdd is nearest with ties to
+        // odd, like ToEven); Up and FromZero round it up to an inexact 1, asserted below
         for rm in [
             RoundingMode::ToEven,
+            RoundingMode::ToOdd,
             RoundingMode::ToZero,
             RoundingMode::Down,
             RoundingMode::None,
@@ -8868,6 +8870,13 @@ mod round_op_flag_tests {
             let t = ExactNum::from_mag_parts(0xC000_0000_0000_0000, crate::EXPONENT_MIN + 5, 64)?
                 .round(0, rm);
             assert!(t.is_zero() && t.inexact(), "{rm:?}");
+        }
+        // MODE-SUBSET mode-specific: the two modes that round a positive subnormal up, to an inexact 1
+        for rm in [RoundingMode::Up, RoundingMode::FromZero] {
+            let t = ExactNum::from_mag_parts(0xC000_0000_0000_0000, crate::EXPONENT_MIN + 5, 64)?
+                .round(0, rm);
+            assert_eq!(t.compare(&ExactNum::from_u8(1, 64)), Some(0), "{rm:?}");
+            assert!(t.inexact() && t.inexact_accumulated(), "{rm:?}");
         }
         let w =
             ExactNum::from_mag_parts(0xC000_0000_0000_0000, 2, 64)?.round(1, RoundingMode::ToEven); // 3.0 exact

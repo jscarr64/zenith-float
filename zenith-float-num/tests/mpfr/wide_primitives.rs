@@ -791,7 +791,8 @@ fn reciprocal_of_a_tiny_negative_operand_keeps_its_sign() -> Res {
     for k in [MIN - 1, MIN] {
         let x = zf(1, k, true);
         for p in [129usize, 192, 256] {
-            // MODE-SUBSET mode-specific: the modes that give -Inf for 1/-2^k; Up and ToZero give -MAX (checked in the sweep above)
+            // MODE-SUBSET mode-specific: the modes that give -Inf for 1/-2^k; Up and ToZero give -MAX (sweep above). None
+            // is NONE-GAP F-B: today -Inf where the ruling is -MAX, queued for ZF-M27 (no row here, nothing pinned)
             for rm in [
                 RoundingMode::ToEven,
                 RoundingMode::ToOdd,
