@@ -7445,7 +7445,8 @@ mod grid_digest_tests {
         assert_eq!(held_f18, 495 * (RMS.len() - 1));
         assert_eq!(held, held_f18);
         println!("complex mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_266_967_239_943_518_429);
+        // Re-pinned (F9d-8): was 11_266_967_239_943_518_429, with the 2970 F-18 NaN cells in.
+        assert_eq!(h.finish(), 5_139_542_158_601_803_449);
         Ok(())
     }
 
