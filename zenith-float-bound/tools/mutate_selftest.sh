@@ -137,6 +137,12 @@ grep -c "^SURVIVED 002-add-commute" <<< "$out" > /dev/null || fail "persistent t
 [ -e "$t/zb-mutate.persist" ] && fail "persistent target: fixed worktree left behind"
 MUTATE_TARGET="relative/dir" run >/dev/null 2>&1 && fail "relative MUTATE_TARGET accepted"
 MUTATE_TARGET="$r/target" run >/dev/null 2>&1 && fail "MUTATE_TARGET inside the repo accepted"
+# any other git checkout is refused too (K11: the guard names no machine path; it was a hard-coded home checkout dir)
+oc="$t/other-checkout"; git init -q "$oc"
+out="$(MUTATE_TMP="$oc/tmp" run)" && fail "MUTATE_TMP inside another git checkout accepted"; grep -q "outside any git checkout" <<< "$out" || fail "MUTATE_TMP in a checkout: wrong refusal: $out"
+out="$(MUTATE_TARGET="$oc/tgt" run)" && fail "MUTATE_TARGET inside another git checkout accepted"; grep -q "outside any git checkout" <<< "$out" || fail "MUTATE_TARGET in a checkout: wrong refusal: $out"
+out="$(MUTATE_PERSIST="$oc/p" MUTATE_TARGET="$t/pt-oc" run)" && fail "MUTATE_PERSIST inside another git checkout accepted"; grep -q "outside any git checkout" <<< "$out" || fail "MUTATE_PERSIST in a checkout: wrong refusal: $out"
+rm -rf "$oc" "$t/pt-oc"
 # the fixed persistent worktree lives beside the persistent target (or under MUTATE_PERSIST), never under MUTATE_TMP, whose default was
 # /tmp (wiped on reboot): an unwritable MUTATE_TMP must not matter in persistent mode
 ro="$t/ro"; mkdir -p "$ro"; chmod 555 "$ro"; setm m.killed
@@ -256,6 +262,6 @@ grep -q ' ERR ' "$lg" && fail "err-quiet zf_special: --list --slice zf_special l
 rm -rf "$r/tools/mutants/manifest.d"; cm
 # every worktree and target dir was removed, in every case above
 n="$(leftovers)"; [ "$(printf '%s' "$n" | tr -d '\n 0')" = "" ] || fail "leftover worktrees or dirs: $n"
-want_cases=40; ncases=$(grep -c x "$t/cases" 2>/dev/null || echo 0)
+want_cases=43; ncases=$(grep -c x "$t/cases" 2>/dev/null || echo 0)
 [ "$ncases" = "$want_cases" ] || fail "ran $ncases cases, expected $want_cases (a case was skipped or added without updating want_cases)"
 echo "mutate selftest: ok ($ncases cases)"
