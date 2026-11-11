@@ -11,7 +11,7 @@ for them).
 | where | branch | tip | disposition |
 |---|---|---|---|
 | local | `harper/zb-cosmo-range` | `ca02c8ad` | (a) folded by merge: the tip is an ancestor of the #39 head (`git merge-base --is-ancestor`) |
-| local | `harper/zb-goldlib-teamenv` | `d5a19346` | UNDISPOSED, blocked on access: local-only in a checkout agents may not touch (/home/jsc64/MathWorks). Needs a Jeff or Paul export, then (b) or (e). |
+| local | `harper/zb-goldlib-teamenv` | `d5a19346` | UNDISPOSED, blocked on access: local-only in a checkout agents may not touch (Jeff's MathWorks checkouts). Needs a Jeff or Paul export, then (b) or (e). |
 | local | `harper/zb-grepq` | `a544b204` | (a) folded by merge: the tip is an ancestor of the #39 head (`git merge-base --is-ancestor`) |
 | local | `harper/zb-la-golds` | `58b5eb5c` | (a) folded by merge: the tip is an ancestor of the #39 head (`git merge-base --is-ancestor`) |
 | local | `harper/zb-la-rows` | `ed3c6c97` | (a) folded by merge: the tip is an ancestor of the #39 head (`git merge-base --is-ancestor`) |

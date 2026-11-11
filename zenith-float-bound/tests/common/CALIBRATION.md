@@ -10,7 +10,7 @@ Wall seconds are the `time` of the already-built test binary (compile time exclu
 
 ## Model / golden families (model only; scratch stand-in for Mag)
 
-The model/golden checks live in the `mag` target, which does not compile. To time them anyway, a scratch copy was built in /tmp/zb-harper-scratch/calib (outside this repo and outside /home/jsc64/MathWorks): this crate's tests/mag, tests/model and tests/goldens plus a stub `src/mag.rs` whose ops return Infinity (so `Mag`-dependent tests fail there; they were not timed). The filters below run only tests that do not call a Mag op.
+The model/golden checks live in the `mag` target, which does not compile. To time them anyway, a scratch copy was built in /tmp/zb-harper-scratch/calib (outside this repo and outside Jeff's MathWorks checkouts): this crate's tests/mag, tests/model and tests/goldens plus a stub `src/mag.rs` whose ops return Infinity (so `Mag`-dependent tests fail there; they were not timed). The filters below run only tests that do not call a Mag op.
 
 | Family (filter) | Tests | Profile | Wall seconds (3 runs) |
 |---|---|---|---|

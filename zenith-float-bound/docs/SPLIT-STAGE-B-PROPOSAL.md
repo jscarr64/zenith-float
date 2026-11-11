@@ -4,7 +4,7 @@
 
 Status: **PROPOSAL, with Rusty's answers folded in as provisional recommendations.** Everything labelled "Rusty's recommendation 2026-10-16, Paul to confirm" is provisional and not frozen. Written 2026-10-16 (CT) on branch `spence/zb-stageb-docs`, docs only. It is lever 4 of `docs/REPLAN-2026-10-16.md` section 6, and follows the staged pin Paul ruled (DECIDED 2026-10-16, Paul under Jeff's delegation; PLAN C1 and the L0/L1 gates say so).
 
-**Marks.** **[F: file:line]** read from a file or git. **[I]** my inference. **[R]** Rusty's recommendation 2026-10-16, Paul to confirm (provisional). zenith-float (zf) was read only, through `git show` on `/home/jsc64/MathWorks/zenith-float` (`wip/option-a` @ `fe5c15d`, local, 2026-10-16 07:56; `main` @ `abb2d5a` = 1.0.12); the checkout itself was not touched. zf line numbers are `zenith-float-num/src/ext.rs` at `fe5c15d`.
+**Marks.** **[F: file:line]** read from a file or git. **[I]** my inference. **[R]** Rusty's recommendation 2026-10-16, Paul to confirm (provisional). zenith-float (zf) was read only, through `git show` on Jeff's MathWorks zenith-float checkout (`wip/option-a` @ `fe5c15d`, local, 2026-10-16 07:56; `main` @ `abb2d5a` = 1.0.12); the checkout itself was not touched. zf line numbers are `zenith-float-num/src/ext.rs` at `fe5c15d`.
 
 ## 1. What is proposed
 
