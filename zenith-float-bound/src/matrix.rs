@@ -377,7 +377,7 @@ impl BallArray {
         }
         let (shape, data) = self.into_parts();
         let mut out = reserve(OP, data.len())?;
-        for (x, y) in data.into_vec().into_iter().zip(other.as_slice()) {
+        for (x, y) in IntoIterator::into_iter(data).zip(other.as_slice()) {
             out.push(x.add(y, prec)?);
         }
         BallArray::from_balls(shape, out)
@@ -395,7 +395,7 @@ impl BallArray {
         }
         let (shape, data) = self.into_parts();
         let mut out = reserve(OP, data.len())?;
-        for (x, y) in data.into_vec().into_iter().zip(other.as_slice()) {
+        for (x, y) in IntoIterator::into_iter(data).zip(other.as_slice()) {
             out.push(x.sub(y, prec)?);
         }
         BallArray::from_balls(shape, out)
@@ -411,7 +411,7 @@ impl BallArray {
         let (shape, data) = self.into_parts();
         let mut mids = reserve(OP, data.len())?;
         let mut rads = reserve(OP, data.len())?;
-        for b in data.into_vec() {
+        for b in data {
             let (m, r, p) = b.into_parts();
             mids.push(Ball::exact(m, p)?);
             rads.push(r);
@@ -439,7 +439,7 @@ impl BallArray {
         }
         let (shape, data) = mids.into_parts();
         let mut out = reserve(OP, data.len())?;
-        for (b, r) in data.into_vec().into_iter().zip(rads.as_slice()) {
+        for (b, r) in IntoIterator::into_iter(data).zip(rads.as_slice()) {
             let (m, s, _) = b.into_parts();
             out.push(Ball::from_mid_rad(m, s.add_up(r), prec)?.mul_2exp(0, prec)?);
         }
