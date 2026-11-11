@@ -12,6 +12,7 @@ pub mod compare_special_test;
 pub mod exact_bit_binary;
 pub mod exact_bit_functions;
 pub mod exact_p_consts;
+pub mod extra_modes_seeded;
 pub mod fuzz_round_modes;
 pub mod i64_edges;
 pub mod mag_parts;
