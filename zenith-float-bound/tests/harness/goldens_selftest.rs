@@ -59,7 +59,10 @@ fn golden_table_matches_the_directory_and_sha256sums_list() -> Result<(), String
     let entries = std::fs::read_dir(golden_dir()).map_err(|e| format!("read_dir: {}", e))?;
     for entry in entries {
         let entry = entry.map_err(|e| format!("dir entry: {}", e))?;
-        let name = entry.file_name().to_string_lossy().into_owned();
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|n| format!("non-UTF-8 golden file name {n:?}"))?;
         if name.ends_with(".txt") {
             on_disk.push(name);
         }

@@ -704,12 +704,16 @@ fn heavy_rows(dir: &str, name: &str) -> Result<Option<String>, String> {
 
 /// The lo/hi pairs of row `id` in a heavy enc file: `case_id dims A[m*n] Q_lohi[2mn] R_lohi[2nn]`.
 fn enc_pairs<'a>(text: &'a str, id: &str, mn: usize) -> Result<Vec<&'a str>, String> {
-    let toks = data_rows(text)
+    let mut toks = data_rows(text)
         .find(|t| t.first() == Some(&id))
         .ok_or_else(|| format!("{id}: no row in the heavy enc file"))?;
-    toks.get(add(2, mn)?..)
-        .map(<[&str]>::to_vec)
-        .ok_or_else(|| format!("{id}: short heavy row"))
+    let start = add(2, mn)?;
+    if toks.len() < start {
+        return Err(format!("{id}: short heavy row"));
+    }
+    // Drop the leading case_id, dims and A entries in place: the row's own Vec is returned, nothing is copied.
+    toks.drain(..start);
+    Ok(toks)
 }
 
 fn pair_at(p: &[&str], k: usize) -> Result<(ExactNum, ExactNum), String> {
