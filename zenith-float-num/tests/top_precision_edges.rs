@@ -26,7 +26,7 @@ const MODES: [RoundingMode; 7] = [
     RoundingMode::ToOdd,
 ];
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 enum Bin {
     Add,
     Sub,
@@ -54,7 +54,7 @@ fn n(v: i64) -> ExactNum {
 }
 
 /// `a op b` through the public form named by `op` (the owned forms consume a fresh operand).
-fn bin(op: Bin, a: i64, b: i64, p: usize, rm: RoundingMode) -> ExactNum {
+fn bin(op: &Bin, a: i64, b: i64, p: usize, rm: RoundingMode) -> ExactNum {
     match op {
         Bin::Add => n(a).add(&n(b), p, rm),
         Bin::Sub => n(a).sub(&n(b), p, rm),
@@ -68,7 +68,7 @@ fn bin(op: Bin, a: i64, b: i64, p: usize, rm: RoundingMode) -> ExactNum {
 }
 
 /// The exact value of `a op b`, for operands where it is an integer.
-fn bin_want(op: Bin, a: i64, b: i64) -> Result<i64, String> {
+fn bin_want(op: &Bin, a: i64, b: i64) -> Result<i64, String> {
     let r = match op {
         Bin::Add | Bin::AddRef => a.checked_add(b),
         Bin::Sub | Bin::SubRef => a.checked_sub(b),
@@ -159,7 +159,7 @@ const SIGNED: [(i64, i64); 4] = [(12, 4), (-12, 4), (12, -4), (-12, -4)];
 fn binary_ops_at_the_top_of_the_precision_range_are_never_invalid() -> Result<(), String> {
     for p in top_precisions()? {
         let d = MAX_PRECISION.checked_sub(p).ok_or("d")?;
-        for op in BINS {
+        for op in &BINS {
             for (a, b) in SIGNED.into_iter().chain([(0, 4), (12, 0), (0, 0)]) {
                 for rm in MODES {
                     let what = format!("{op:?}({a}, {b}) p=MAX-{d} {rm:?}");
@@ -228,7 +228,7 @@ fn sqr_div_exact_and_siblings_at_the_top_are_never_invalid() -> Result<(), Strin
             let what = format!("div_exact({a}, {b}) p=MAX-{d}");
             let r = n(a).div_exact(&n(b), p);
             if let Ok(Some(q)) = &r {
-                valid(&what, q, &n(bin_want(Bin::Div, a, b)?))?;
+                valid(&what, q, &n(bin_want(&Bin::Div, a, b)?))?;
             } else if r != Err(Error::MemoryAllocation) {
                 return Err(format!("{what}: got {r:?}"));
             }
@@ -251,7 +251,7 @@ fn precisions_outside_the_range_are_invalid() -> Result<(), String> {
     for p in bad_precisions()? {
         for rm in MODES {
             let at = format!("p={p} {rm:?}");
-            for op in BINS {
+            for op in &BINS {
                 for (a, b) in SIGNED {
                     invalid(&format!("{op:?}({a}, {b}) {at}"), &bin(op, a, b, p, rm))?;
                 }
@@ -288,7 +288,7 @@ fn binary_ops_at_small_precisions_around_word_boundaries_are_exact() -> Result<(
         ps.extend([m.checked_sub(1).ok_or("m - 1")?, m, m.checked_add(1).ok_or("m + 1")?]);
     }
     for p in ps {
-        for op in BINS {
+        for op in &BINS {
             let pairs: &[(i64, i64)] =
                 if p >= 6 { &SIGNED } else { &[(2, 2), (-2, 2), (2, -2), (-2, -2)] };
             for &(a, b) in pairs {

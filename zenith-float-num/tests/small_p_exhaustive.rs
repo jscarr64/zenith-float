@@ -37,7 +37,7 @@ fn p_max() -> u32 {
     }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug)]
 enum Op {
     Add,
     Sub,
@@ -46,7 +46,7 @@ enum Op {
 }
 
 /// An exact operand: (-1)^neg * n * 2^e (n = 0 is a signed zero).
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug)]
 struct Val {
     neg: bool,
     n: u128,
@@ -86,7 +86,7 @@ fn operands(p: u32) -> Vec<Val> {
     v
 }
 
-fn to_num(x: Val, shift: i64) -> Result<ExactNum, String> {
+fn to_num(x: &Val, shift: i64) -> Result<ExactNum, String> {
     let lo = u64::try_from(x.n).map_err(|e| format!("mantissa {e}"))?;
     let r = ExactNum::from_u64(lo, 64).ldexp(x.e + shift, 64, RoundingMode::ToZero);
     Ok(if x.neg { r.neg() } else { r })
@@ -141,10 +141,10 @@ fn round(
 }
 
 /// Exact result of `op` as (neg, n, e, sticky); `None` for x/0.
-fn exact(op: Op, a: Val, b: Val) -> Option<(bool, u128, i64, bool)> {
+fn exact(op: &Op, a: &Val, b: &Val) -> Option<(bool, u128, i64, bool)> {
     match op {
         Op::Add | Op::Sub => {
-            let bneg = if op == Op::Sub { !b.neg } else { b.neg };
+            let bneg = if *op == Op::Sub { !b.neg } else { b.neg };
             if a.n == 0 && b.n == 0 {
                 return Some((a.neg && bneg, 0, 0, false));
             }
@@ -181,9 +181,9 @@ fn exact(op: Op, a: Val, b: Val) -> Option<(bool, u128, i64, bool)> {
 
 /// The oracle: exact result rounded at p (`None`: at the 64-bit storage, toward zero), `shift` added to the exponent.
 fn want(
-    op: Op,
-    a: Val,
-    b: Val,
+    op: &Op,
+    a: &Val,
+    b: &Val,
     p: u32,
     rm: RoundingMode,
     shift: i64,
@@ -199,7 +199,7 @@ fn want(
                 if neg {
                     true
                 } else {
-                    let bneg = if op == Op::Sub { !b.neg } else { b.neg };
+                    let bneg = if *op == Op::Sub { !b.neg } else { b.neg };
                     a.neg != bneg && rm == RoundingMode::Down
                 }
             }
@@ -226,7 +226,7 @@ fn toward_zero(rm: RoundingMode, neg: bool) -> bool {
     }
 }
 
-fn run(op: Op, a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
+fn run(op: &Op, a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
     match op {
         Op::Add => ExactNum::add_ref(a, b, p, rm),
         Op::Sub => ExactNum::sub_ref(a, b, p, rm),
@@ -237,9 +237,9 @@ fn run(op: Op, a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode) -> ExactN
 
 /// Ok(None): x/0 (not counted); Ok(Some(overflowed)) on a match.
 fn check(
-    op: Op,
-    a: Val,
-    b: Val,
+    op: &Op,
+    a: &Val,
+    b: &Val,
     p: u32,
     rm: RoundingMode,
     shift: (i64, i64),
@@ -264,7 +264,7 @@ fn check(
                 // The largest finite value at exactly p bits: (2^p - 1) * 2^(EXPONENT_MAX - p).
                 let n = (1u128 << p) - 1;
                 let max = to_num(
-                    Val {
+                    &Val {
                         neg,
                         n,
                         e: EXPONENT_MAX - i64::from(p),
@@ -277,7 +277,7 @@ fn check(
             }
         }
         Want::Finite { neg, n, e } => {
-            let exp = to_num(Val { neg, n, e }, total)?;
+            let exp = to_num(&Val { neg, n, e }, total)?;
             !got.is_inf() && !got.is_nan() && got == exp && got.is_negative() == neg
         }
     };
@@ -293,9 +293,9 @@ fn sweep(shift: (i64, i64), ops: &[Op], label: &str, want_overflow: bool) -> Res
     let mut overflows: u64 = 0;
     for p in 1..=p_max() {
         let v = operands(p);
-        for &op in ops {
-            for &a in &v {
-                for &b in &v {
+        for op in ops {
+            for a in &v {
+                for b in &v {
                     for rm in MODES {
                         if let Some(o) = check(op, a, b, p, rm, shift)? {
                             points += 1;
