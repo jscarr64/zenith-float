@@ -9,3 +9,6 @@
 Families covered: ops, special_fn (positive arguments; `ln_gamma` is documented for positive arguments only), const,
 special values, and complex add. The complex flag is checked as value-wide. copysign is left out because of new
 finding N-4: at a precision that is not a word multiple, it rounds at rp(p, 64) in every mode.
+
+Each extra-mode loop is an inline `[ToOdd, None]` loop with a `MODE-SUBSET mode-specific` label, not a named 2-mode
+array. The structural check refuses named arrays that are not all 7 modes (fold-pr1-174).

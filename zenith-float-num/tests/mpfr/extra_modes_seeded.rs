@@ -24,9 +24,6 @@ use zenith_float_num::{Consts, ExactNum, RoundingMode};
 
 type Res = Result<(), Box<dyn std::error::Error>>;
 
-/// The modes this file adds: the two `get_random_rnd_pair` never draws.
-const EXTRA_MODES: [RoundingMode; 2] = [RoundingMode::ToOdd, RoundingMode::None];
-
 /// `f(result, rnd)` rounded as `rm` at `p` bits for a mode with no MPFR `rnd_t` (`ToOdd`, `None`), with whether it is
 /// inexact. Any other mode is an error: the five MPFR modes go through `get_random_rnd_pair`.
 pub fn extra_mode_reference<F>(
@@ -59,7 +56,8 @@ fn is_val(f: &Float, m: u64, d: u64) -> bool {
 
 #[test]
 fn helper_exact_is_exact_in_both_modes() -> Res {
-    for rm in EXTRA_MODES {
+    // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+    for rm in [RoundingMode::ToOdd, RoundingMode::None] {
         let (f, ix) = extra_mode_reference(4, rm, ratio(3, 4))?;
         assert!(is_val(&f, 3, 4) && !ix, "{rm:?}: {f}");
     }
@@ -167,7 +165,8 @@ fn pass(
             conv_to_mpfr(po, &n1, &mut cc)?,
             conv_to_mpfr(po, &n2, &mut cc)?,
         );
-        for rm in EXTRA_MODES {
+        // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+        for rm in [RoundingMode::ToOdd, RoundingMode::None] {
             for (name, zf, mp) in un {
                 let r = extra_mode_reference(p, rm, |r, d| mp(r, &f1, d))?;
                 let msg = format!("{name} p={p} {rm:?} x={n1:?}");
@@ -305,7 +304,8 @@ fn const_family_extra_modes() -> Res {
     let mut cc = Consts::new()?;
     for _ in 0..60 {
         let p = draw_p();
-        for rm in EXTRA_MODES {
+        // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+        for rm in [RoundingMode::ToOdd, RoundingMode::None] {
             let r =
                 extra_mode_reference(p, rm, |r, d| unsafe { mpfr::const_pi(r.as_raw_mut(), d) })?;
             check_exact(&cc.pi(p, rm), &r, p, &format!("pi p={p} {rm:?}"), &mut cc)?;
@@ -355,7 +355,8 @@ fn special_values_family_extra_modes() -> Res {
                         conv_to_mpfr(po, &x, &mut cc)?,
                         conv_to_mpfr(po, &y, &mut cc)?,
                     );
-                    for rm in EXTRA_MODES {
+                    // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+                    for rm in [RoundingMode::ToOdd, RoundingMode::None] {
                         let msg = |op: &str| format!("{op} p={p} {rm:?} i={i} j={j}");
                         let r = extra_mode_reference(p, rm, |r, d| unsafe {
                             mpfr::add(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), d)
@@ -401,7 +402,8 @@ fn special_values_family_extra_modes() -> Res {
                 }
                 let x = mk(i, po);
                 let fx = conv_to_mpfr(po, &x, &mut cc)?;
-                for rm in EXTRA_MODES {
+                // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+                for rm in [RoundingMode::ToOdd, RoundingMode::None] {
                     let r = extra_mode_reference(p, rm, |r, d| unsafe {
                         mpfr::log(r.as_raw_mut(), fx.as_raw(), d)
                     })?;
@@ -432,7 +434,8 @@ fn complex_add_family_extra_modes() -> Res {
         let f: Vec<Float> = (0..4)
             .map(|k| conv_to_mpfr(128, &part(k), &mut cc))
             .collect::<Result<_, _>>()?;
-        for rm in EXTRA_MODES {
+        // MODE-SUBSET mode-specific: no MPFR rnd_t; the rest use get_random_rnd_pair
+        for rm in [RoundingMode::ToOdd, RoundingMode::None] {
             let a = ExactComplex::new(part(0), part(1));
             let b = ExactComplex::new(part(2), part(3));
             let c = ExactComplex::add_ref(&a, &b, p, rm);
