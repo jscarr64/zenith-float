@@ -83,7 +83,7 @@ if gmpy2.version() != GMPY2_PIN or flint.__version__ != FLINT_PIN:
     raise SystemExit(f"gen_la_goldens.py: oracle pin mismatch: gmpy2 {gmpy2.version()} (need {GMPY2_PIN}), "
                      f"python-flint {flint.__version__} (need {FLINT_PIN}); run with ~/team-env/oracle-2026-10-30/bin/python")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from la_cond_cols import la_cond_cols, cond_tokens, scale_row_ln, scale_row_solve, FORMAT_LINES as COND_FORMAT
+from la_cond_cols import la_cond_cols, cond_tokens, scale_row_ln, scale_row_solve, par_map, FORMAT_LINES as COND_FORMAT
 
 GEN = "scripts/gen_la_goldens.py"
 SEED = 20261024
@@ -199,8 +199,9 @@ def tr(A): return [list(r) for r in zip(*A)]
 def flat(A): return [x for r in A for x in r]
 def issym(A): return all(A[i][j] == A[j][i] for i in range(len(A)) for j in range(len(A)))
 
-def lu_pp(A):
-    """Partial pivoting: pivot = max |U[i][k]| over i >= k, ties -> smallest i; zero column -> no step."""
+def lu_pp(A, jobs=1):
+    """Partial pivoting: pivot = max |U[i][k]| over i >= k, ties -> smallest i; zero column -> no step.
+    jobs > 1 checks L U == P A row by row in forked workers (la_cond_cols.par_map); the factors do not depend on jobs."""
     n = len(A); U = [list(map(F, r)) for r in A]; L = ident(n); perm = list(range(n))
     for k in range(n):
         p = max(range(k, n), key=lambda i: (abs(U[i][k]), -i))
@@ -214,7 +215,7 @@ def lu_pp(A):
                 L[i][k] = l
                 U[i] = [U[i][j] - l * U[k][j] for j in range(n)]
     PA = [list(map(F, A[perm[i]])) for i in range(n)]
-    assert mm(L, U) == PA
+    assert (mm(L, U) if jobs == 1 else par_map(lambda i: mm([L[i]], U)[0], n, jobs)) == PA
     return perm, L, U
 
 def perm_sign(perm):
@@ -634,8 +635,8 @@ def gen_solve():
 
 def logdet_cond(A):
     """format-2 cond columns of a nonsingular logdet row (scale_row = 1: ln output)."""
-    perm, L, U = lu_pp(A)
-    return cond_tokens(la_cond_cols(A, perm, L, U, scale_row_ln(), "logdet"))
+    perm, L, U = lu_pp(A, JOBS)
+    return cond_tokens(la_cond_cols(A, perm, L, U, scale_row_ln(), "logdet", jobs=JOBS))
 
 # ---------------------------------------------------------------- logdet row cache (Paul 2026-11-11: heavy cosmo cases in parallel)
 # One cosmo_* logdet case gives one row per part: "main" (la_logdet[_heavy].txt) and "enc<b>" (la_logdet_enc<b>_heavy.txt).
@@ -930,6 +931,7 @@ SPOOL_DIR = os.path.join(ROOT, "target", "la-goldens-spool")   # /target is giti
 # to stderr after it is on disk; with --heavy DIR heavy rows also go to DIR/<slice>/la_<op>.rows<k>.partial, flushed and
 # fsynced per row (removed once the final file is written; left behind if the run dies). A per-case wall budget
 # (--case-budget, SIGALRM, re-armed at every case start and row) exits 5 naming the op and the case_id being computed.
+JOBS = 1   # --jobs N: forked workers for the logdet cond columns (lu_pp check, |L||U|, A^-1, |A^-1| G); same bytes
 OP = ""; CASE = ""; PROGRESS = False; PARTIAL_DIR = None; BUDGET = 0.0; T0 = time.monotonic(); T_ROW = T0; N_ROWS_OBJ = 0
 
 class CaseBudget(Exception):
@@ -1107,12 +1109,18 @@ def main():
     ap.add_argument("--case-budget", type=positive, default=1800.0, metavar="SECONDS",
                     help="per-case wall budget; exceeding it exits 5 naming the op and case_id (default 1800)")
     ap.add_argument("--row-cache", metavar="DIR", help="logdet row cache (read by a normal run, written by --logdet-unit)")
+    def jobs_arg(v):
+        if not re.fullmatch(r"[1-9][0-9]*", v): raise argparse.ArgumentTypeError(f"must be an integer >= 1, got {v}")
+        return int(v)
+    ap.add_argument("--jobs", type=jobs_arg, default=1, metavar="N",
+                    help="forked workers for the logdet cond columns (default 1 = serial); the output bytes do not depend on N")
     ap.add_argument("--logdet-unit", metavar="CASE:PART", help="compute one cosmo_* logdet case (PART all|main|enc4096|enc16384) into --row-cache")
     a = ap.parse_args()
-    global BUDGET, ROW_CACHE
+    global BUDGET, ROW_CACHE, JOBS
     if a.logdet_unit is not None and a.row_cache is None:
         print("gen_la_goldens: --logdet-unit needs --row-cache DIR", file=sys.stderr); sys.exit(2)
     ROW_CACHE = a.row_cache
+    JOBS = a.jobs
     BUDGET = a.case_budget; signal.signal(signal.SIGALRM, _on_alarm)
     try:
         if a.logdet_unit is not None: logdet_unit(a.logdet_unit)

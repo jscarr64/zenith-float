@@ -31,6 +31,24 @@ Replay tightness rule (tests/harness): rad <= 2^(k_row - prec) * max(|v|, scale_
 """
 from collections import namedtuple
 from gmpy2 import mpq as F
+import multiprocessing as _mp
+
+# ---- parallel map (Paul/Jeff 2026-11-11, P15 use all cores; selftest tools/gen_la_jobs_selftest.sh) ----
+# par_map(fn, n, jobs) == [fn(i) for i in range(n)]. jobs = 1 runs that list comprehension; jobs > 1 forks min(jobs, n) workers
+# that inherit fn and the data it reads (nothing is pickled on the way in) and returns their results in index order. All
+# callers do exact gmpy2.mpq arithmetic per index, so the result does not depend on jobs.
+_WORK = None
+
+def _work(i): return _WORK(i)
+
+def par_map(fn, n, jobs):
+    global _WORK
+    if isinstance(jobs, bool) or not isinstance(jobs, int) or jobs < 1: raise ValueError(f"jobs must be an integer >= 1, got {jobs!r}")
+    if jobs == 1 or n < 2: return [fn(i) for i in range(n)]
+    _WORK = fn
+    try:
+        with _mp.get_context("fork").Pool(min(jobs, n)) as pool: return pool.map(_work, range(n), chunksize=1)
+    finally: _WORK = None
 
 PRECS = (53, 113, 192)
 COLUMNS = ("cond_row", "k_row", "scale_row", "containment_only", "reason", "rref")
@@ -70,32 +88,37 @@ def scale_row_lstsq(x):
     """lstsq wrapper (LA3, Rusty): scale_row = ||x||_inf of the exact least-squares solution x."""
     return scale_row_solve(x)
 
-def _inverse(perm, L, U):
-    n = len(L); inv = [[F(0)] * n for _ in range(n)]
-    for c in range(n):
+def _inverse(perm, L, U, jobs=1):
+    n = len(L)
+    def col(c):
         y = []
         for i in range(n): y.append(F(int(perm[i] == c)) - sum((F(L[i][j]) * y[j] for j in range(i)), F(0)))
         x = [F(0)] * n
         for i in reversed(range(n)):
             x[i] = (y[i] - sum((F(U[i][j]) * x[j] for j in range(i + 1, n)), F(0))) / F(U[i][i])
-        for i in range(n): inv[i][c] = x[i]
-    return inv
+        return x
+    cols = par_map(col, n, jobs)                  # column c of A^-1: independent forward/back substitution
+    return [[cols[c][i] for c in range(n)] for i in range(n)]
 
-def la_cond_cols(A, perm, L, U, scale_row, rref_kind, x=None):
+def la_cond_cols(A, perm, L, U, scale_row, rref_kind, x=None, jobs=1):
+    """jobs > 1 computes the |L||U| rows, the A^-1 columns and the |A^-1| G rows in forked workers (par_map); same values."""
     n = len(A); assert n > 0 and all(F(U[i][i]) != 0 for i in range(n)), "la_cond_cols: singular input"
-    LU = [[sum((abs(F(L[i][k])) * abs(F(U[k][j])) for k in range(n)), F(0)) for j in range(n)] for i in range(n)]
+    if rref_kind not in ("logdet", "solve"): raise ValueError(f"la_cond_cols: rref_kind {rref_kind!r}")
+    if rref_kind == "solve": assert x is not None
+    LU = par_map(lambda i: [sum((abs(F(L[i][k])) * abs(F(U[k][j])) for k in range(n)), F(0)) for j in range(n)], n, jobs)
     G = [None] * n
     for i in range(n): G[perm[i]] = LU[i]
     for i in range(n):
         for j in range(n): assert abs(F(A[i][j])) <= G[i][j]
-    Ai = [[abs(v) for v in r] for r in _inverse(perm, L, U)]
-    M = [[sum((Ai[i][k] * G[k][j] for k in range(n)), F(0)) for j in range(n)] for i in range(n)]
-    cond = max(sum(r, F(0)) for r in M)
-    if rref_kind == "logdet": rref = F(n) * sum((M[i][i] for i in range(n)), F(0))
-    elif rref_kind == "solve":
-        assert x is not None
-        rref = F(n) * max(sum((M[i][j] * abs(F(x[j])) for j in range(n)), F(0)) for i in range(n))
-    else: raise ValueError(f"la_cond_cols: rref_kind {rref_kind!r}")
+    Ai = [[abs(v) for v in r] for r in _inverse(perm, L, U, jobs)]
+    ax = None if x is None else [abs(F(v)) for v in x]
+    def mrow(i):                                  # row i of M = |A^-1| G, reduced to what the columns use
+        r = [sum((Ai[i][k] * G[k][j] for k in range(n)), F(0)) for j in range(n)]
+        return sum(r, F(0)), r[i], (None if ax is None else sum((r[j] * ax[j] for j in range(n)), F(0)))
+    red = par_map(mrow, n, jobs)
+    cond = max(s for s, _, _ in red)
+    if rref_kind == "logdet": rref = F(n) * sum((d for _, d, _ in red), F(0))
+    else: rref = F(n) * max(v for _, _, v in red)
     return make_cond_cols(cond, n, scale_row, rref)
 
 def make_cond_cols(cond_row, dim, scale_row, rref):
