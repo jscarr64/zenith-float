@@ -28,7 +28,7 @@ exit 0
 SH
 printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/rustup"; chmod +x "$tmp/bin/cargo" "$tmp/bin/rustup"
 out=$(cd "$root" && HOME="$tmp" PATH="$tmp/bin:$PATH" CARGO_TARGET_DIR="$tmp/target" POPSLOT_PREFIX="$tmp/slot" \
-  POPLOG_ROOT="$tmp/pop" T="$tmp/gate" POPLOG_AGENT=gate-selftest STEP_TIMEOUT=60s \
+  POPLOG_ROOT="$tmp/pop" T="$tmp/gate" POPLOG_AGENT=gate-selftest STEP_TIMEOUT=60s ZF_GATE_PARALLEL=0 \
   "$wrap" bash tools/full_gate.sh freshtest 2>&1) || true
 fail=0; [[ -n "${DEBUG:-}" ]] && echo "$out" | tail -15
 grep -q 'no test binary ran' <<<"$out" && { echo "FAIL: fresh_test_run saw no test binary (full_gate kept Running lines in \$T only)"; fail=1; }
