@@ -7394,6 +7394,7 @@ mod grid_digest_tests {
         let mut held = 0usize;
         let mut held_f18 = 0usize;
         let mut held_spur = 0usize;
+        let mut held_tzud = 0usize;
         for a in parts {
             for b in parts {
                 for c in parts {
@@ -7430,11 +7431,18 @@ mod grid_digest_tests {
                                             && c == 21
                                             && d == 21;
                                         held_f18 += usize::from(f18);
+                                        // NONE-GAP F-B / M27-TZ/UD: an overflow of finite parts (not a division by zero)
+                                        // in a toward-zero direction is +-Inf where the 12:15 PM CT ruling is +-MAX.
+                                        let tzud = finite
+                                            && (k == 0 || div_nonzero)
+                                            && !spur
+                                            && tz_overflow(rm, v);
                                         held_spur += usize::from(spur);
+                                        held_tzud += usize::from(tzud);
                                         dd_held(
                                             &mut *hh,
                                             &mut held,
-                                            f18 || spur,
+                                            f18 || spur || tzud,
                                             COP,
                                             &[&x[0], &x[1], &x[2], &x[3]],
                                             &[i128::try_from(k)?, i128::try_from(part)?],
@@ -7456,7 +7464,9 @@ mod grid_digest_tests {
         assert_eq!(held_f18, 495 * (RMS.len() - 1));
         // Spurious overflow (finding id pending): the finite re parts given as +-Inf are not hashed (6 per mode)
         assert_eq!(held_spur, 6 * (RMS.len() - 1));
-        assert_eq!(held, held_f18 + held_spur);
+        // NONE-GAP F-B / M27-TZ/UD (ZF-M27): None 579, ToZero 579, Up 342 (-overflow), Down 237 (+overflow)
+        assert_eq!(held_tzud, 579 + 579 + 342 + 237);
+        assert_eq!(held, held_f18 + held_spur + held_tzud);
         println!("complex mul/div grid digest = {}", h.finish());
         // Re-pinned (F9d-8): was 11_266_967_239_943_518_429, with the 2970 F-18 NaN cells in.
         // Re-pinned (F9d-9): was 5_139_542_158_601_803_449, with the 36 spurious-overflow cells in.
