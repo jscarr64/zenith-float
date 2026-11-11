@@ -7395,6 +7395,11 @@ mod grid_digest_tests {
         let mut held_f18 = 0usize;
         let mut held_spur = 0usize;
         let mut held_tzud = 0usize;
+        // F-25: complex cancellation. Cells (1-based position in this loop) whose part is not the correctly rounded
+        // value against an exact rational oracle (`scripts/gen_grid_held_cells.py`), per mode in `RMS` order.
+        const F25_NORMAL: &[u32] = &include!("grid_held/f25_normal.in");
+        let mut cell = 0u32;
+        let mut held_f25n = [0usize; 7];
         for a in parts {
             for b in parts {
                 for c in parts {
@@ -7418,6 +7423,7 @@ mod grid_digest_tests {
                                     let finite = x.iter().all(|v| !v.is_inf() && !v.is_nan());
                                     let div_nonzero = k == 1 && !(x[2].is_zero() && x[3].is_zero());
                                     for (part, v) in [r.re(), r.im()].into_iter().enumerate() {
+                                        cell += 1;
                                         // F-18 (N-3): a quotient of finite parts by a nonzero divisor with a subnormal
                                         // part (operand 21) is NaN(InvalidArgument), not the quotient.
                                         let f18 = div_nonzero && finite && v.is_nan();
@@ -7439,10 +7445,24 @@ mod grid_digest_tests {
                                             && tz_overflow(rm, v);
                                         held_spur += usize::from(spur);
                                         held_tzud += usize::from(tzud);
+                                        // F-25 (complex cancellation): a finite part that is not the correctly rounded
+                                        // value, e.g. im of (-7 - 7i)(1/3 - i/3) at p = 1 is -6.3e-20, but Up gives 2.
+                                        let f25 = F25_NORMAL.binary_search(&cell).is_ok();
+                                        assert!(
+                                            !f25 || (finite
+                                                && !v.is_nan()
+                                                && !v.is_inf()
+                                                && !(f18 || tzud))
+                                        );
+                                        if f25 {
+                                            let m =
+                                                RMS.iter().position(|&q| q == rm).ok_or("mode")?;
+                                            held_f25n[m] += 1;
+                                        }
                                         dd_held(
                                             &mut *hh,
                                             &mut held,
-                                            f18 || spur || tzud,
+                                            f18 || spur || tzud || f25,
                                             COP,
                                             &[&x[0], &x[1], &x[2], &x[3]],
                                             &[i128::try_from(k)?, i128::try_from(part)?],
@@ -7466,7 +7486,13 @@ mod grid_digest_tests {
         assert_eq!(held_spur, 6 * (RMS.len() - 1));
         // NONE-GAP F-B / M27-TZ/UD (ZF-M27): None 579, ToZero 579, Up 342 (-overflow), Down 237 (+overflow)
         assert_eq!(held_tzud, 579 + 579 + 342 + 237);
-        assert_eq!(held, held_f18 + held_spur + held_tzud);
+        // F-25 (ZF-M27): normal-range cancellation cells, None, ToEven, ToOdd, ToZero, Up, Down, FromZero
+        assert_eq!(held_f25n, [488, 128, 0, 406, 937, 894, 468]);
+        assert_eq!(cell, 294_912);
+        assert_eq!(
+            held,
+            held_f18 + held_spur + held_tzud + held_f25n.iter().sum::<usize>()
+        );
         println!("complex mul/div grid digest = {}", h.finish());
         // Re-pinned (F9d-8): was 11_266_967_239_943_518_429, with the 2970 F-18 NaN cells in.
         // Re-pinned (F9d-9): was 5_139_542_158_601_803_449, with the 36 spurious-overflow cells in.
