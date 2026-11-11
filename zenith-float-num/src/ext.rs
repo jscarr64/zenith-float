@@ -7591,6 +7591,7 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f16 = 0usize;
         for i in (0..11).chain(21..23).chain(100..104) {
             for p in [53usize, 128, 200] {
                 for rm in RMS {
@@ -7650,20 +7651,31 @@ mod grid_digest_tests {
                         rm,
                         &x().cosh(p, rm, &mut cc),
                     )?;
-                    dd(
+                    let t = x().tanh(p, rm, &mut cc);
+                    // F-16 (N-1): under None, tanh of a large argument (1e5, -192) is exactly +-1 flagged inexact;
+                    // |tanh| < 1, so toward zero at rp(p, 64) is below 1 in magnitude.
+                    let one = ExactNum::from_u8(1, 64);
+                    let unit = ExactNum::sub_ref(&t, &one, 64, RoundingMode::ToEven).is_zero()
+                        || ExactNum::add_ref(&t, &one, 64, RoundingMode::ToEven).is_zero();
+                    let f16 = rm == RoundingMode::None && t.inexact() && unit;
+                    dd_held(
                         &mut *hh,
+                        &mut held_f16,
+                        f16,
                         "tanh",
                         &[&x()],
                         &[],
                         p,
                         rm,
-                        &x().tanh(p, rm, &mut cc),
+                        &t,
                     )?;
                     count += 7;
                 }
             }
         }
         assert_eq!(count, 17 * 3 * RMS.len() * 7);
+        // F-16 (N-1, ZF-M27): the None tanh cells that are exactly +-1 (flagged inexact) are not hashed
+        assert_eq!(held_f16, 6);
         println!("trig hyperbolic grid digest = {}", h.finish());
         println!(
             "trig_hyperbolic_grid_digest ToOdd digest = {}",
