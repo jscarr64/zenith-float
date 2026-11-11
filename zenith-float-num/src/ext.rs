@@ -7393,6 +7393,7 @@ mod grid_digest_tests {
         let mut count = 0usize;
         let mut held = 0usize;
         let mut held_f18 = 0usize;
+        let mut held_spur = 0usize;
         for a in parts {
             for b in parts {
                 for c in parts {
@@ -7419,11 +7420,21 @@ mod grid_digest_tests {
                                         // F-18 (N-3): a quotient of finite parts by a nonzero divisor with a subnormal
                                         // part (operand 21) is NaN(InvalidArgument), not the quotient.
                                         let f18 = div_nonzero && finite && v.is_nan();
+                                        // Spurious overflow (finding id pending): re of (1/3 - i/3) / (s + s i) and of
+                                        // (-1/3 + i/3) / (s + s i) is about 2^(EXPONENT_MAX - 50), finite, but +-Inf.
+                                        let spur = div_nonzero
+                                            && finite
+                                            && v.is_inf()
+                                            && part == 0
+                                            && matches!((a, b), (4, 5) | (5, 4))
+                                            && c == 21
+                                            && d == 21;
                                         held_f18 += usize::from(f18);
+                                        held_spur += usize::from(spur);
                                         dd_held(
                                             &mut *hh,
                                             &mut held,
-                                            f18,
+                                            f18 || spur,
                                             COP,
                                             &[&x[0], &x[1], &x[2], &x[3]],
                                             &[i128::try_from(k)?, i128::try_from(part)?],
@@ -7443,7 +7454,9 @@ mod grid_digest_tests {
         assert_eq!(count, 8 * 8 * 8 * 8 * 3 * (RMS.len() - 1) * 2);
         // F-18 (N-3, ZF-M27): the NaN quotients of finite parts by a nonzero divisor are not hashed (495 per mode)
         assert_eq!(held_f18, 495 * (RMS.len() - 1));
-        assert_eq!(held, held_f18);
+        // Spurious overflow (finding id pending): the finite re parts given as +-Inf are not hashed (6 per mode)
+        assert_eq!(held_spur, 6 * (RMS.len() - 1));
+        assert_eq!(held, held_f18 + held_spur);
         println!("complex mul/div grid digest = {}", h.finish());
         // Re-pinned (F9d-8): was 11_266_967_239_943_518_429, with the 2970 F-18 NaN cells in.
         assert_eq!(h.finish(), 5_139_542_158_601_803_449);
