@@ -821,7 +821,6 @@ fn la2_solve_refusal_rows_replay_through_zb() -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "red: CONTRACT 16.S6.12: BallLu::solve calls solve_lower/solve_upper (spence/zb-la0-trisolve), which are Resource not_implemented stubs on this base; un-ignore when LA0 merges"]
 fn la2_solve_gate_value_rows_replay_through_zb() -> Result<(), String> {
     let text = read_gold("lu", "la_solve.txt")?;
     for prec in PRECS {

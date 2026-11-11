@@ -651,9 +651,8 @@ fn stops_before_solve(toks: &[&str], prec: usize) -> bool {
         || toks.first().is_some_and(|id| is_pinned(id, prec))
 }
 
-/// Every lstsq row: red until 16.S6.12 `solve_upper` (LA0) is implemented.
+/// Every lstsq row (16.S6.12 `solve_upper`, LA0, is implemented).
 #[test]
-#[ignore = "red: CONTRACT 16.S6.12: lstsq value rows reach BallMat::solve_upper (LA0), Resource not_implemented"]
 fn la3_lstsq_gate_rows_replay_through_zb() -> Result<(), String> {
     replay_all(&gold_text("la_lstsq.txt")?, replay_lstsq).map(|_| ())
 }
@@ -831,7 +830,6 @@ fn la3_qr_into_parts_3_4_5() -> Result<(), String> {
 
 /// `BallQr::lstsq` and `BallMat::lstsq` on A = [3; 4], b = [3; 4]: the exact fit x = 1 (A·1 = b), contained at every replay prec.
 #[test]
-#[ignore = "red: CONTRACT 16.S6.12: lstsq value rows reach BallMat::solve_upper (LA0), Resource not_implemented"]
 fn la3_factored_and_direct_lstsq_on_3_4_5() -> Result<(), String> {
     let e = |n: i64| ExactNum::from(n);
     for prec in PRECS {
