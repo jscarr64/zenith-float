@@ -86,8 +86,71 @@ pub fn bracket_expect(
     p: usize,
     cc: &mut Consts,
 ) -> Result<Bracket, E> {
-    let _ = (f, p, cc);
-    Err("RED stub: no bracket".into())
+    let ph = p.div_ceil(64) * 64 + 128;
+    let (lo, hi) = (f(ph, RoundingMode::Down, cc), f(ph, RoundingMode::Up, cc));
+    if lo.is_nan() || hi.is_nan() || lo.is_inf() || hi.is_inf() {
+        if lo.is_nan() && hi.is_nan() {
+            return Ok(all(|| Expect::Special(None)));
+        }
+        if lo.is_inf() && hi.is_inf() && lo.is_negative() == hi.is_negative() {
+            let neg = lo.is_negative();
+            return Ok(all(|| Expect::Special(Some(neg))));
+        }
+        return Err(format!("bracket at {ph} bits is not finite: Down {lo:?}, Up {hi:?}").into());
+    }
+    if lo.compare(&hi) == Some(0) {
+        if lo.inexact() || hi.inexact() {
+            return Err(format!("bracket at {ph} bits is one value but inexact: {lo:?}").into());
+        }
+        let Some(v) = to_mpfr(&lo, cc)? else {
+            // an exact subnormal is on the one subnormal grid, so it is the value at every p
+            return Ok(Bracket {
+                grid: Some((lo, hi)),
+                ..all(|| Expect::Grid)
+            });
+        };
+        let mut out = Vec::new();
+        for rm in MODES {
+            let (w, ix) = mpfr_reference_with(u32::try_from(p)?, rm, set_from(&v))?;
+            out.push(Expect::Strict(w, ix));
+        }
+        return Ok(Bracket {
+            want: out,
+            grid: None,
+        });
+    }
+    if lo.compare(&hi) != Some(-1) {
+        return Err(format!("bracket at {ph} bits is reversed: Down {lo:?}, Up {hi:?}").into());
+    }
+    match (to_mpfr(&lo, cc)?, to_mpfr(&hi, cc)?) {
+        (Some(a), Some(b)) => {
+            let mut next = Float::with_val(u32::try_from(ph)?, &a);
+            next.next_up();
+            if next != b {
+                return Err(
+                    format!("bracket at {ph} bits is not adjacent: Down {a}, Up {b}").into(),
+                );
+            }
+            let mut mid = Float::with_val(u32::try_from(ph + 1)?, &a + &b);
+            mid /= 2;
+            let mut out = Vec::new();
+            for rm in MODES {
+                let (w, ix) = mpfr_reference_with(u32::try_from(p)?, rm, set_from(&mid))?;
+                if !ix {
+                    return Err(format!("the bracket midpoint {mid} is exact at {p} bits").into());
+                }
+                out.push(Expect::Strict(w, true));
+            }
+            Ok(Bracket {
+                want: out,
+                grid: None,
+            })
+        }
+        _ => Ok(Bracket {
+            grid: Some((lo, hi)),
+            ..all(|| Expect::Grid)
+        }),
+    }
 }
 
 /// `got` against `want` for mode `rm`; `None` if it matches, else what differs.
