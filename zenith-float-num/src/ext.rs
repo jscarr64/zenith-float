@@ -8491,12 +8491,18 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f17 = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 53, 64, 128, 200, 320] {
                 for rm in RMS {
                     let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
-                    dd(
+                    // F-17 (N-2): reciprocal(third(320)) at p = 200 under None is exactly 3; toward zero at
+                    // rp(200, 64) is below 3.
+                    let f17 = rm == RoundingMode::None && i == 6 && p == 200;
+                    dd_held(
                         &mut *hh,
+                        &mut held_f17,
+                        f17,
                         "reciprocal",
                         &[&operand(i)],
                         &[],
@@ -8521,6 +8527,8 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, PAIR_OPERANDS * 6 * 6 * RMS.len());
+        // F-17 (N-2, ZF-M27): the None reciprocal(third(320)) cell at p = 200 (exactly 3) is not hashed
+        assert_eq!(held_f17, 1);
         println!("reciprocal nth_root grid digest = {}", h.finish());
         // Re-recorded for `nth_root` of a negative number with `Up`/`Down` (swapped for odd n >= 5; old value
         // 1_369_146_293_907_659_395): only the n = 5 and 7 entries of negative operands in those modes differ,
