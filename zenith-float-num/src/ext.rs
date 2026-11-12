@@ -8391,6 +8391,8 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
         let mut held_f20 = 0usize;
+        let mut held_f26 = 0usize;
+        let mut held_logb = 0usize;
         for i in (0..11).chain(21..23) {
             for p in [64usize, 200] {
                 // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
@@ -8443,10 +8445,21 @@ mod grid_digest_tests {
                         let r = operand(i).log(&operand(b), p, rm, &mut cc);
                         // F-20 (N-5): log(x, x) = 1 is exact, but ToEven at p = 64 flags it inexact.
                         let f20 = i == b && r.inexact();
+                        // F-26: logb(x, 1) for 0 < x < 1 is +Inf; the signed pole gives -Inf (P20, POLE-01, MPFR).
+                        // Operand 2 is 1. logb(1, 1) -> NaN is right and stays hashed.
+                        let x = operand(i);
+                        let f26 = b == 2
+                            && r.is_inf()
+                            && r.is_positive()
+                            && !x.is_inf()
+                            && x.is_positive()
+                            && x < operand(2);
+                        held_f20 += usize::from(f20);
+                        held_f26 += usize::from(f26);
                         dd_held(
                             &mut h,
-                            &mut held_f20,
-                            f20,
+                            &mut held_logb,
+                            f20 || f26,
                             "logb",
                             &[&operand(i), &operand(b)],
                             &[],
@@ -8463,6 +8476,10 @@ mod grid_digest_tests {
         // F-20 (N-5, ZF-M27): logb(third(64), third(64)) and logb(third(320), third(320)) at p = 64 ToEven (exactly 1,
         // flagged inexact) are not hashed
         assert_eq!(held_f20, 2);
+        // F-26 (ZF-M27): logb(x, 1) = +Inf for x in {third(64), third(320), operand 21}, p = 64 and 200, ToEven and
+        // Down (the modes this loop runs), not hashed
+        assert_eq!(held_f26, 12);
+        assert_eq!(held_logb, held_f20 + held_f26);
         println!("ziv entry points digest = {}", h.finish());
         // Re-recorded: the old value (2_735_357_469_467_868_262) pinned a wrong `log1p` result for the positive
         // subnormal operand 21 with `Down` (the argument itself instead of the argument minus one grid unit);
