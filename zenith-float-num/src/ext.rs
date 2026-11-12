@@ -7398,7 +7398,8 @@ mod grid_digest_tests {
         // F-25: complex cancellation. Cells (1-based position in this loop) whose part is not the correctly rounded
         // value against an exact rational oracle (`scripts/gen_grid_held_cells.py`), per mode in `RMS` order.
         const F25_NORMAL: &[u32] = &include!("grid_held/f25_normal.in");
-        // F-25, subnormal range: true value below 2^(EXPONENT_MIN - 1), library part wrong under any subnormal grid.
+        // F-25, subnormal range: true value below 2^(EXPONENT_MIN - 1), library part not the correctly rounded value on
+        // the gradual grid 2^(EXPONENT_MIN - p), and wrong under the ruled target contract (P20 / UFL-01, no subnormals).
         const F25_SUBNORMAL: &[u32] = &include!("grid_held/f25_subnormal.in");
         let mut cell = 0u32;
         let mut held_f25n = [0usize; 7];
@@ -7498,8 +7499,10 @@ mod grid_digest_tests {
         assert_eq!(held_tzud, 579 + 579 + 342 + 237);
         // F-25 (ZF-M27): normal-range cancellation cells, None, ToEven, ToOdd, ToZero, Up, Down, FromZero
         assert_eq!(held_f25n, [488, 128, 0, 406, 937, 894, 468]);
-        // F-25 (ZF-M27): subnormal-range cells wrong under any subnormal grid (60 model-dependent cells stay hashed)
-        assert_eq!(held_f25s, [64, 0, 0, 44, 429, 400, 221]);
+        // F-25 (ZF-M27): subnormal-range cells, None, ToEven, ToOdd, ToZero, Up, Down, FromZero. 1158 are outside the
+        // interval any grid allows; 60 more (Up 18, Down 8, FromZero 34; p = 64 and 128) overshoot the gradual-grid value
+        // by one grid unit (each product is rounded before the sum) and are also wrong under P20 / UFL-01.
+        assert_eq!(held_f25s, [64, 0, 0, 44, 447, 408, 255]);
         assert_eq!(cell, 294_912);
         assert_eq!(
             held,
