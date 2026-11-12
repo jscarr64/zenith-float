@@ -8502,7 +8502,8 @@ mod grid_digest_tests {
         // each confirmed by an exact integer root. See the CHANGELOG.
         // Re-pinned (F9d-7): was 15_733_382_221_161_312_340, with the 2 F-20 logb(x, x) cells in.
         // Re-pinned (F9d-14): was 7_247_571_894_832_860_161, with the 12 F-26 logb(x, 1) = +Inf cells in.
-        assert_eq!(h.finish(), 16_270_962_408_906_483_201);
+        // Re-pinned (F9d-16): was 16_270_962_408_906_483_201, with the 24 F-27 logb(+-0, b) = NaN cells in.
+        assert_eq!(h.finish(), 14_118_851_892_563_545_474);
         Ok(())
     }
 
