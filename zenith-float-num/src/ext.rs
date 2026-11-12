@@ -8397,6 +8397,7 @@ mod grid_digest_tests {
         let mut count = 0usize;
         let mut held_f20 = 0usize;
         let mut held_f26 = 0usize;
+        let mut held_f27 = 0usize;
         let mut held_logb = 0usize;
         for i in (0..11).chain(21..23) {
             for p in [64usize, 200] {
@@ -8459,12 +8460,16 @@ mod grid_digest_tests {
                             && !x.is_inf()
                             && x.is_positive()
                             && x < operand(2);
+                        // F-27: logb(+-0, b) is NaN; the pole rule (P20 POLE-04, ln(+-0) = -Inf, read as
+                        // ln(x) / ln(b) as for F-26) gives +Inf for 0 < b < 1 and -Inf for b = 1 (MPFR, mpmath).
+                        let f27 = x.is_zero() && r.is_nan();
                         held_f20 += usize::from(f20);
                         held_f26 += usize::from(f26);
+                        held_f27 += usize::from(f27);
                         dd_held(
                             &mut h,
                             &mut held_logb,
-                            f20 || f26,
+                            f20 || f26 || f27,
                             "logb",
                             &[&operand(i), &operand(b)],
                             &[],
@@ -8484,7 +8489,10 @@ mod grid_digest_tests {
         // F-26 (ZF-M27): logb(x, 1) = +Inf for x in {third(64), third(320), operand 21}, p = 64 and 200, ToEven and
         // Down (the modes this loop runs), not hashed
         assert_eq!(held_f26, 12);
-        assert_eq!(held_logb, held_f20 + held_f26);
+        // F-27 (ZF-M27): logb(x, b) = NaN for x = +0 and -0, b in {1, third(64), third(320)}, p = 64 and 200, ToEven
+        // and Down, not hashed. logb(1, 1) -> NaN stays hashed.
+        assert_eq!(held_f27, 24);
+        assert_eq!(held_logb, held_f20 + held_f26 + held_f27);
         println!("ziv entry points digest = {}", h.finish());
         // Re-recorded: the old value (2_735_357_469_467_868_262) pinned a wrong `log1p` result for the positive
         // subnormal operand 21 with `Down` (the argument itself instead of the argument minus one grid unit);
