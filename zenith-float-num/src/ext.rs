@@ -8220,6 +8220,7 @@ mod grid_digest_tests {
         let mut held_tzud = 0usize;
         let mut held_f22 = 0usize;
         let mut held_f28 = 0usize;
+        let mut held_f29 = 0usize;
         let ms = || {
             [
                 ExactNum::new(64),
@@ -8263,14 +8264,25 @@ mod grid_digest_tests {
                                 && u.is_zero()
                                 && mi <= 3
                                 && r.is_nan();
+                            // F-29 (ZF-M27): am, sn, sc and sd are odd in u (am(u|0) = u, sn(u|0) = sin u,
+                            // sn(u|1) = tanh u), so at u = -0 for 0 <= m <= 1 the value is -0 (P20 keeps signed
+                            // zeros, NAN-04). Today they return +0 (the ops/jacobi.rs u = 0 short-circuit behind F-28
+                            // ignores the sign of u), known-wrong, so they are held. m = 3 (mi = 4) stays hashed.
+                            let f29 = matches!(JNAMES[fi], "am" | "sn" | "sc" | "sd")
+                                && u.is_zero()
+                                && u.is_negative()
+                                && mi <= 3
+                                && r.is_zero()
+                                && r.is_positive();
                             held_f21 += usize::from(f21);
                             held_tzud += usize::from(tzud);
                             held_f22 += usize::from(f22);
                             held_f28 += usize::from(f28);
+                            held_f29 += usize::from(f29);
                             dd_held(
                                 &mut h,
                                 &mut held,
-                                f21 || tzud || f22 || f28,
+                                f21 || tzud || f22 || f28 || f29,
                                 JNAMES[fi],
                                 &[&operand(i), &m[mi]],
                                 &[],
@@ -8294,7 +8306,10 @@ mod grid_digest_tests {
         // F-28 (ZF-M27): ns, cs and ds at u = +-0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are
         // NaN(InvalidArgument) where the ruled pole value is signed +-Inf; they are not hashed
         assert_eq!(held_f28, 96);
-        assert_eq!(held, held_f21 + held_tzud + held_f22 + held_f28);
+        // F-29 (ZF-M27): am, sn, sc and sd at u = -0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are +0
+        // where the ruled value is -0 (odd functions); they are not hashed
+        assert_eq!(held_f29, 64);
+        assert_eq!(held, held_f21 + held_tzud + held_f22 + held_f28 + held_f29);
         // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
         let u = operand(5);
         let zero_m = ExactNum::new(64);
