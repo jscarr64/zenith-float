@@ -7902,9 +7902,12 @@ mod grid_digest_tests {
         assert_eq!(held_f12_odd, 12);
         println!("exp pow grid digest = {}", h.finish());
         println!("exp_pow_grid_digest ToOdd digest = {}", h_odd.finish());
-        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
-        assert_eq!(h_odd.finish(), 5_249_983_578_669_938_622);
-        assert_eq!(h.finish(), 2_398_075_299_501_098_093);
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168); that oracle passed
+        // NaN in -> NaN out, so the 12 ToOdd F-12 cells were in it.
+        // Re-pinned (F9d-19): was 5_249_983_578_669_938_622, with the 12 ToOdd F-12 pow/powi(NaN, 0) NaN cells in.
+        assert_eq!(h_odd.finish(), 5_999_117_382_857_039_356);
+        // Re-pinned (F9d-19): was 2_398_075_299_501_098_093, with the 72 F-12 pow/powi(NaN, 0) NaN cells in.
+        assert_eq!(h.finish(), 6_643_330_963_557_222_099);
         Ok(())
     }
 
