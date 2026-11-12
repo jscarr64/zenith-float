@@ -7806,6 +7806,9 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        // F-12 (POW-01, ZF-M27): held cells, counted per hasher (h: six modes, h_odd: ToOdd)
+        let mut held_f12 = 0usize;
+        let mut held_f12_odd = 0usize;
         let exps = || {
             [
                 ExactNum::from_u8(3, 64),
@@ -7819,7 +7822,11 @@ mod grid_digest_tests {
         for i in (0..11).chain(21..23) {
             for p in [53usize, 128, 200] {
                 for rm in RMS {
-                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                    let (hh, held) = if rm == RoundingMode::ToOdd {
+                        (&mut h_odd, &mut held_f12_odd)
+                    } else {
+                        (&mut h, &mut held_f12)
+                    };
                     dd(
                         &mut *hh,
                         "exp",
@@ -7848,26 +7855,38 @@ mod grid_digest_tests {
                         &operand(i).exp10(p, rm, &mut cc),
                     )?;
                     for e in exps() {
-                        dd(
+                        let r = operand(i).pow(&e, p, rm, &mut cc);
+                        // F-12 (ZF-M27): pow(x, +-0) = 1 for any x, including NaN (P20, POW-01,
+                        // answers-group1.md:390). Today pow(NaN, +0) is NaN, known-wrong, so it is held.
+                        let f12 = operand(i).is_nan() && e.is_zero() && r.is_nan();
+                        dd_held(
                             &mut *hh,
+                            &mut *held,
+                            f12,
                             "pow",
                             &[&operand(i), &e],
                             &[],
                             p,
                             rm,
-                            &operand(i).pow(&e, p, rm, &mut cc),
+                            &r,
                         )?;
                         count += 1;
                     }
                     for n in [0usize, 1, 2, 3, 7, 12] {
-                        dd(
+                        let r = operand(i).powi(n, p, rm);
+                        // F-12 widened (ZF-M27): powi(x, 0) = x^0 = 1 for any x, including NaN (POW-01; the
+                        // Inf and 0 arms already give 1). Today powi(NaN, 0) is NaN, known-wrong, so it is held.
+                        let f12 = operand(i).is_nan() && n == 0 && r.is_nan();
+                        dd_held(
                             &mut *hh,
+                            &mut *held,
+                            f12,
                             "powi",
                             &[&operand(i)],
                             &[i128::try_from(n)?],
                             p,
                             rm,
-                            &operand(i).powi(n, p, rm),
+                            &r,
                         )?;
                         count += 1;
                     }
@@ -7876,6 +7895,11 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 13 * 3 * RMS.len() * 13);
+        // F-12 (POW-01, ZF-M27): pow(NaN, +0) and powi(NaN, 0) for both NaN operands, p in {53, 128, 200}, all
+        // seven modes, are NaN where the ruled value is 1; they are not hashed (72 six-mode cells in h, 12 ToOdd
+        // cells in h_odd)
+        assert_eq!(held_f12, 72);
+        assert_eq!(held_f12_odd, 12);
         println!("exp pow grid digest = {}", h.finish());
         println!("exp_pow_grid_digest ToOdd digest = {}", h_odd.finish());
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
