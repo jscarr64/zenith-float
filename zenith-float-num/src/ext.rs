@@ -7385,7 +7385,8 @@ mod grid_digest_tests {
         println!("mul_div_grid_digest ToOdd digest = {}", h_odd.finish());
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 14_444_849_080_303_762_465);
-        assert_eq!(h.finish(), 6_854_509_046_823_660_977);
+        // Re-pinned (F9d-17): was 6_854_509_046_823_660_977, with the 18 `mul_full_prec` None-overflow cells in.
+        assert_eq!(h.finish(), 12_397_414_023_097_760_287);
         Ok(())
     }
 
@@ -7596,7 +7597,8 @@ mod grid_digest_tests {
         );
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 14_444_849_080_303_762_465);
-        assert_eq!(h.finish(), 6_854_509_046_823_660_977);
+        // Re-pinned (F9d-17): was 6_854_509_046_823_660_977, with the 18 `mul_full_prec` None-overflow cells in.
+        assert_eq!(h.finish(), 12_397_414_023_097_760_287);
         Ok(())
     }
 
