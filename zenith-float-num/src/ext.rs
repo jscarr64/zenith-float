@@ -7514,7 +7514,8 @@ mod grid_digest_tests {
         // Re-pinned (F9d-9): was 5_139_542_158_601_803_449, with the 36 spurious-overflow cells in.
         // Re-pinned (F9d-10): was 4_063_330_108_896_008_404, with the 1737 toward-zero overflow cells in.
         // Re-pinned (F9d-12): was 3_646_187_200_225_722_925, with the 3321 F-25 normal-range cancellation cells in.
-        assert_eq!(h.finish(), 15_402_253_497_317_085_552);
+        // Re-pinned (F9d-13): was 15_402_253_497_317_085_552, with the 1158 F-25 subnormal-range cells in.
+        assert_eq!(h.finish(), 16_907_990_978_326_668_517);
         Ok(())
     }
 
