@@ -7328,6 +7328,7 @@ mod grid_digest_tests {
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut gap = 0usize;
+        let mut held_fb_full = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
@@ -7356,8 +7357,11 @@ mod grid_digest_tests {
                         count += 2;
                     }
                 }
-                dd(
+                // NONE-GAP F-B (F9d-17): `mul_full_prec` always runs in None, so a true overflow gives +-Inf
+                // where the 12:03 / 12:15 PM CT rulings give +-MAX (ZF-M27). Counted in `held_fb_full`, not hashed.
+                dd_none_gap(
                     &mut h,
+                    &mut held_fb_full,
                     "mul_full",
                     &[&operand(i), &operand(j)],
                     &[],
@@ -7375,6 +7379,8 @@ mod grid_digest_tests {
         println!("mul/div grid digest = {}", h.finish());
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 448);
+        // NONE-GAP F-B (F9d-17): the 18 `mul_full_prec` true-overflow cells (+-Inf, ruling +-MAX) are not hashed
+        assert_eq!(held_fb_full, 18);
         // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
         println!("mul_div_grid_digest ToOdd digest = {}", h_odd.finish());
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
@@ -7531,6 +7537,7 @@ mod grid_digest_tests {
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut gap = 0usize;
+        let mut held_fb_full = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
@@ -7559,8 +7566,11 @@ mod grid_digest_tests {
                         count += 2;
                     }
                 }
-                dd(
+                // NONE-GAP F-B (F9d-17): `mul_full_prec` always runs in None, so a true overflow gives +-Inf
+                // where the 12:03 / 12:15 PM CT rulings give +-MAX (ZF-M27). Counted in `held_fb_full`, not hashed.
+                dd_none_gap(
                     &mut h,
+                    &mut held_fb_full,
                     "mul_full",
                     &[&operand(i), &operand(j)],
                     &[],
@@ -7577,6 +7587,8 @@ mod grid_digest_tests {
         );
         // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
         assert_eq!(gap, 448);
+        // NONE-GAP F-B (F9d-17): the 18 `mul_full_prec` true-overflow cells (+-Inf, ruling +-MAX) are not hashed
+        assert_eq!(held_fb_full, 18);
         // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
         println!(
             "mul_ref_div_ref_grid_digest ToOdd digest = {}",
