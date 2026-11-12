@@ -7806,7 +7806,7 @@ mod grid_digest_tests {
         let mut h = DefaultHasher::new();
         let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
-        // F-12 (POW-01, ZF-M27): held cells, counted per hasher (h: six modes, h_odd: ToOdd)
+        // F-12 (POW-01, ZF-M27): held cells, counted per hasher (h: every mode but ToOdd, h_odd: ToOdd)
         let mut held_f12 = 0usize;
         let mut held_f12_odd = 0usize;
         let exps = || {
