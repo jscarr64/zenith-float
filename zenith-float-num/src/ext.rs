@@ -8192,6 +8192,7 @@ mod grid_digest_tests {
         let mut held_f21 = 0usize;
         let mut held_tzud = 0usize;
         let mut held_f22 = 0usize;
+        let mut held_f28 = 0usize;
         let ms = || {
             [
                 ExactNum::new(64),
@@ -8214,7 +8215,8 @@ mod grid_digest_tests {
                             let f21 = rm == RoundingMode::Down
                                 && r.err() == Some(Error::PrecisionRetryExhausted);
                             // M27-TZ/UD (finding id pending): ns, cs and ds of the tiny nonzero u overflow upward; Down
-                            // gives +Inf where the ruling is +MAX. u = 0 is a pole and stays hashed.
+                            // gives +Inf where the ruling is +MAX. u = 0 is a pole whose ruled value is +-Inf by the
+                            // sign of u; today's NaN there is held (F-28 below).
                             let u = operand(i);
                             let tzud = !f21
                                 && !u.is_zero()
@@ -8226,13 +8228,22 @@ mod grid_digest_tests {
                             let f22 = (JNAMES[fi] == "dn" || JNAMES[fi] == "nd")
                                 && i == 21
                                 && (mi == 2 || mi == 3);
+                            // F-28 (ZF-M27): u = +-0 is a simple real pole of ns, cs and ds for 0 <= m <= 1 (sn has a
+                            // simple zero there). The ruled value is signed +-Inf by the sign of u (P20, DOM-07,
+                            // POLE-01), in every mode; today's NaN(InvalidArgument) is known-wrong and is held.
+                            // m = 3 (mi = 4) is out of range and its NaN stays hashed.
+                            let f28 = matches!(JNAMES[fi], "ns" | "cs" | "ds")
+                                && u.is_zero()
+                                && mi <= 3
+                                && r.is_nan();
                             held_f21 += usize::from(f21);
                             held_tzud += usize::from(tzud);
                             held_f22 += usize::from(f22);
+                            held_f28 += usize::from(f28);
                             dd_held(
                                 &mut h,
                                 &mut held,
-                                f21 || tzud || f22,
+                                f21 || tzud || f22 || f28,
                                 JNAMES[fi],
                                 &[&operand(i), &m[mi]],
                                 &[],
@@ -8253,7 +8264,10 @@ mod grid_digest_tests {
         assert_eq!(held_tzud, 24);
         // F-22 rider (N-7, ZF-M27): dn and nd at u21, m = 1/2 and 3/8, both modes, are not hashed
         assert_eq!(held_f22, 16);
-        assert_eq!(held, held_f21 + held_tzud + held_f22);
+        // F-28 (ZF-M27): ns, cs and ds at u = +-0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are
+        // NaN(InvalidArgument) where the ruled pole value is signed +-Inf; they are not hashed
+        assert_eq!(held_f28, 96);
+        assert_eq!(held, held_f21 + held_tzud + held_f22 + held_f28);
         // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
         let u = operand(5);
         let zero_m = ExactNum::new(64);
