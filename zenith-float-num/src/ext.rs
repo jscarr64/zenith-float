@@ -7398,8 +7398,11 @@ mod grid_digest_tests {
         // F-25: complex cancellation. Cells (1-based position in this loop) whose part is not the correctly rounded
         // value against an exact rational oracle (`scripts/gen_grid_held_cells.py`), per mode in `RMS` order.
         const F25_NORMAL: &[u32] = &include!("grid_held/f25_normal.in");
+        // F-25, subnormal range: true value below 2^(EXPONENT_MIN - 1), library part wrong under any subnormal grid.
+        const F25_SUBNORMAL: &[u32] = &include!("grid_held/f25_subnormal.in");
         let mut cell = 0u32;
         let mut held_f25n = [0usize; 7];
+        let mut held_f25s = [0usize; 7];
         for a in parts {
             for b in parts {
                 for c in parts {
@@ -7447,7 +7450,10 @@ mod grid_digest_tests {
                                         held_tzud += usize::from(tzud);
                                         // F-25 (complex cancellation): a finite part that is not the correctly rounded
                                         // value, e.g. im of (-7 - 7i)(1/3 - i/3) at p = 1 is -6.3e-20, but Up gives 2.
-                                        let f25 = F25_NORMAL.binary_search(&cell).is_ok();
+                                        let f25n = F25_NORMAL.binary_search(&cell).is_ok();
+                                        let f25s = F25_SUBNORMAL.binary_search(&cell).is_ok();
+                                        assert!(!(f25n && f25s));
+                                        let f25 = f25n || f25s;
                                         assert!(
                                             !f25 || (finite
                                                 && !v.is_nan()
@@ -7457,7 +7463,11 @@ mod grid_digest_tests {
                                         if f25 {
                                             let m =
                                                 RMS.iter().position(|&q| q == rm).ok_or("mode")?;
-                                            held_f25n[m] += 1;
+                                            if f25n {
+                                                held_f25n[m] += 1;
+                                            } else {
+                                                held_f25s[m] += 1;
+                                            }
                                         }
                                         dd_held(
                                             &mut *hh,
@@ -7488,10 +7498,16 @@ mod grid_digest_tests {
         assert_eq!(held_tzud, 579 + 579 + 342 + 237);
         // F-25 (ZF-M27): normal-range cancellation cells, None, ToEven, ToOdd, ToZero, Up, Down, FromZero
         assert_eq!(held_f25n, [488, 128, 0, 406, 937, 894, 468]);
+        // F-25 (ZF-M27): subnormal-range cells wrong under any subnormal grid (60 model-dependent cells stay hashed)
+        assert_eq!(held_f25s, [64, 0, 0, 44, 429, 400, 221]);
         assert_eq!(cell, 294_912);
         assert_eq!(
             held,
-            held_f18 + held_spur + held_tzud + held_f25n.iter().sum::<usize>()
+            held_f18
+                + held_spur
+                + held_tzud
+                + held_f25n.iter().sum::<usize>()
+                + held_f25s.iter().sum::<usize>()
         );
         println!("complex mul/div grid digest = {}", h.finish());
         // Re-pinned (F9d-8): was 11_266_967_239_943_518_429, with the 2970 F-18 NaN cells in.
