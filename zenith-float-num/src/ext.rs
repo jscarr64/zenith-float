@@ -8488,7 +8488,8 @@ mod grid_digest_tests {
         // the old value was 6_378_838_253_543_692_452; only `nth_root(5)` entries of negative operands differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
         // Re-pinned (F9d-7): was 15_733_382_221_161_312_340, with the 2 F-20 logb(x, x) cells in.
-        assert_eq!(h.finish(), 7_247_571_894_832_860_161);
+        // Re-pinned (F9d-14): was 7_247_571_894_832_860_161, with the 12 F-26 logb(x, 1) = +Inf cells in.
+        assert_eq!(h.finish(), 16_270_962_408_906_483_201);
         Ok(())
     }
 
