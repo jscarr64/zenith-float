@@ -19,7 +19,7 @@ fail=0; bad() { echo "FAIL: $*"; fail=1; }
 command -v python3 > /dev/null || { echo "FAIL: python3 not found"; exit 2; }
 check() {  # DIR (a git checkout or a planted copy with the same layout) -> 0 when every named matrix has all 7 modes
   local d=$1 r=0
-  python3 - "$d" <<'PY' || r=1
+  python3 -B - "$d" <<'PY' || r=1
 import os, re, sys
 d = sys.argv[1]
 want = {"None", "Up", "Down", "ToZero", "FromZero", "ToEven", "ToOdd"}

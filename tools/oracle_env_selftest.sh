@@ -36,7 +36,7 @@ mkenv() {  # mkenv MPMATH_VERSION [VENV_DIR]  (default: the pinned team env name
   printf 'def version():\n    return "2.3.2"\n__version__ = "2.3.2"\nmpq = object\n' > "$sp/gmpy2.py"
   printf '__version__ = "0.9.0"\narb = object\n' > "$sp/flint.py"
 }
-run_forged() { env -i HOME="$t" PATH="$ENVBIN:/usr/bin:/bin" PYTHONNOUSERSITE=1 "$@" 2>&1; }
+run_forged() { env -i HOME="$t" PATH="$ENVBIN:/usr/bin:/bin" PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1 "$@" 2>&1; }   # no __pycache__ in the tree (poplog dirty check)
 
 sweep() {  # sweep REGEX LABEL: every generator must exit nonzero with output matching REGEX
 for s in zenith-float-bound/scripts/*.py; do
