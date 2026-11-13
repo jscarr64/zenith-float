@@ -6231,7 +6231,10 @@ mod rand_tests {
         std::thread::spawn(|| -> Result<(), crate::Error> {
             let (exp_from, exp_to) = (-8, 8);
             let mut seen_sign = [false; 2];
-            for (i, p) in [64usize, 65, 127, 128, 129, 192, 256, 320].into_iter().enumerate() {
+            for (i, p) in [64usize, 65, 127, 128, 129, 192, 256, 320]
+                .into_iter()
+                .enumerate()
+            {
                 let seed = 0x5EED_0000_u64 + i as u64;
                 crate::common::test_rng::reseed_random_this_thread(seed);
                 let n = ExactNum::random_normal(p, exp_from, exp_to);
