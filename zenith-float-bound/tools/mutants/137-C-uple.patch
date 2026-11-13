@@ -1,0 +1,13 @@
+diff --git a/src/enclosure.rs b/src/enclosure.rs
+index 07fca48..e335c2d 100644
+--- a/src/enclosure.rs
++++ b/src/enclosure.rs
+@@ -72,7 +72,7 @@ impl Enclosure for Ball {
+             return Tri::Unknown;
+         }
+         let upper = Mag::from_exact_num(&hi).max(Mag::from_exact_num(&lo));
+-        if upper <= *self.rad() {
++        if upper < *self.rad() {
+             return Tri::True;
+         }
+         // Tight: a rad zenith-float can hold is exact at p (64-bit mantissa, p >= MIN_PREC + GUARD_BITS), and directed

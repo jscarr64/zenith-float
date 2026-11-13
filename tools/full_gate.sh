@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Canonical full gate. usage: tools/full_gate.sh TAG
+# 64-bit host only (P6; Jeff 2026-11-10 19:15 CT): no 32-bit target is built, linted or tested here
+# (tools/test_full_gate_64bit_only.sh, run in the unsafe-scan step, keeps it that way).
 # Every step runs under `timeout` (STEP_TIMEOUT, default 20m; the mpfr step uses MPFR_STEP_TIMEOUT, default 40m); the rc of each step is written to $T/TAG.rc and its
 # output to $T/TAG-<step>.log (T, else ZF_GATE_LOG_DIR, else $HOME/rusty-work/logs/zf-gate/<sha>-<time>; never /tmp). REPO selects the checkout (default: this one).
 # CARGO_TARGET_DIR is REQUIRED and belongs to one worktree (Paul, 2026-10-23: /tmp/target-<agent>-<worktree>). The first
@@ -28,9 +30,11 @@ echo "poplog: $POPLOG_FILE" | tee -a "$T/$tag.rc" >&2
 # Pop scheduling (Paul, 2026-10-23): heavy gates share 3 counting-lock slots (/tmp/pop-gate.slot1..3, replaces the
 # single flock /tmp/pop-gate.lock), 8 jobs each (24 of 32 cores). The slot is held on an fd until this script exits;
 # waiting shows as WAITING in ~/pop-logs/RUNNING.tsv. Skipped when a caller already holds a slot (POPSLOT_HELD).
-# CARGO_BUILD_JOBS / RUST_TEST_THREADS default to the slot value POPSLOT_JOBS (4) (pop_slot_acquire) unless the caller sets them.
+# CARGO_BUILD_JOBS / RUST_TEST_THREADS default to the slot value POPSLOT_JOBS (pop_slot_acquire) unless the caller sets them;
+# with no slot value they fall back to the host's core count (P14). No test step is pinned to one thread
+# (tools/test_full_gate_threads.sh).
 if [[ -z "${POPSLOT_HELD:-}" ]]; then pop_slot_acquire "${POPSLOT_SLOTS:-8}"; fi
-export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-4}} RUST_TEST_THREADS=${RUST_TEST_THREADS:-${POPSLOT_JOBS:-4}}
+export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-$(nproc)}} RUST_TEST_THREADS=${RUST_TEST_THREADS:-${POPSLOT_JOBS:-$(nproc)}}
 TT="-- --test-threads=$RUST_TEST_THREADS"
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".
@@ -65,7 +69,7 @@ run() {
 ORACLES="--test oracle --test specials_oracle --test methods_oracle --test accuracy_table --test elliptic_phi"
 run target-dir "tools/fresh_test_run_selftest.sh && tools/fresh_test_run.sh --claim"
 # goldens pinned by SHA256SUMS next to them (fails closed: missing/empty sums, unlisted golden, drift)
-run golden-sums "tools/golden_sums_selftest.sh && tools/golden_sums_check.sh zenith-float-num/tests/oracle/goldens borrow_ops.jsonl"
+run golden-sums "bash tools/test_gate_tool_checks.sh && tools/golden_sums_selftest.sh && tools/golden_sums_check.sh zenith-float-num/tests/oracle/goldens borrow_ops.jsonl"
 # arm-tests.yml must run the workspace tests with --release, like build-release below (fails closed: missing workflow, step or flag)
 run arm-tests-release "tools/test_arm_tests_release.sh"
 # the qemu-aarch64 ZF_TIME_FACTOR pin must stay at or above the measured s9_erf ratio + margin (fails closed)
@@ -83,25 +87,28 @@ run mpfr-tests-build "tools/fresh_test_run.sh cargo test -p zenith-float-num --r
 # build-release for the same reason.
 run zero-test "bash scripts/check_zero_test_targets.sh"
 run build-release "tools/fresh_test_run.sh cargo test --workspace --release $TT"
+# ACCEPTANCE-pr39 E6 (P12): every #[ignore]d test must pass when run; this step runs them all (heavy tiers SKIP visibly without their env).
+run ignored "tools/fresh_test_run.sh cargo test --workspace --release $TT --ignored"
+# ACCEPTANCE-pr39 I10 (T3): the exhaustive small-p enumeration prints its point counts into this step log (--nocapture).
+run small-p-counts "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --test small_p_exhaustive $TT --nocapture"
 run build-nostd "cargo build --no-default-features && cargo build -p zenith-float-num --no-default-features"
-run build-thumbv7em "cargo build --no-default-features --target thumbv7em-none-eabihf && cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf"
 run features-random-serde "tools/fresh_test_run.sh cargo test --workspace --features random,serde $TT"
-run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
-run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES -- --test-threads=1"
+run oracle-fast "tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
+run oracle-deep "ORACLE_TIER=deep tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $ORACLES $TT"
 # MPFR_TIER selects the MPFR tier (tests/mpfr/common.rs): the gate runs `full` (every run count, the
 # 100032-bit tests) unless the caller sets MPFR_TIER=fast.
-run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests -- --test-threads=1"
+run mpfr "MPFR_TIER=${MPFR_TIER:-full} tools/fresh_test_run.sh cargo test -p zenith-float-num --release --features mpfr-tests $TT"
 # ratchet mode: the clone ratchet started at c74e834 (first commit with rules_scan + baseline); older added lines are tracked by no-clone-progress, not flagged here
 run rules-scan "tools/rules_scan_selftest.sh && tools/rules_scan.sh ${RATCHET_BASE:-c74e834^}..HEAD"
+# K11 (Paul 2026-11-10): no machine path in shipped scripts; every oracle generator refuses a forged wrong-pin env
+run oracle-env "tools/oracle_env_selftest.sh"
 # informational: remaining violations are a tracked count (must only go down; hard fail is for the final step)
 run no-clone-progress "tools/no_clone_selftest.sh && { tools/no_clone.sh | tail -1; tools/no_clone.sh --helpers | tail -1; true; }"
 run fmt "cargo fmt --all -- --check"
 run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
-run clippy-i686 "cargo clippy -p zenith-float-num --all-targets --target i686-unknown-linux-musl -- -D warnings"
 run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
-run hex-32bit "bash scripts/ci_hex_32bit.sh"
-run unsafe-scan "bash tools/gate_unsafe_scan.sh"
+run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
 run prepublish "bash scripts/zenith_prepublish.sh"
 echo "done" >> "$T/$tag.rc"
 poplog_finish

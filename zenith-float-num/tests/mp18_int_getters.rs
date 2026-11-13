@@ -15,11 +15,11 @@
 //!    to_u32(-1) Err; to_i64(-1)=-1; to_i32(-1)=-1.
 //! G. Huge values: 2^63 -> to_i64 Err, to_u64 Ok(2^63); 2^64 -> to_u64 Err; 2^100 ->
 //!    Err in every getter; fits_* false for all of them.
-//! H. Tiny values: 2^-1000 -> 0 in every getter in ToZero/Down/ToEven (rounds to +0),
-//!    and 1 in Up/FromZero (rounds to +1); -2^-1000 -> 0 in ToZero/Up/ToEven, -1 in
-//!    Down/FromZero, and to_u64 gives 0 in ToZero/Up/ToEven but Err in Down/FromZero
-//!    (the rounded value is -1, which does not fit an unsigned type). -0.5 to u64:
-//!    0 in ToEven/ToZero/Up, Err in Down/ToOdd/FromZero.
+//! H. Tiny values: 2^-1000 -> 0 in every getter in ToZero/Down/ToEven/ToOdd (rounds to +0),
+//!    and 1 in Up/FromZero (rounds to +1); -2^-1000 -> 0 in ToZero/Up/ToEven/ToOdd, -1 in
+//!    Down/FromZero; None refuses both (J). to_u64 gives 0 in ToZero/Up/ToEven/ToOdd but Err in
+//!    Down/FromZero (the rounded value is -1, which does not fit an unsigned type). -0.5 to u64:
+//!    0 in ToEven/ToZero/Up, Err in Down/ToOdd/FromZero, Err in None (J).
 //! I. Out-of-domain: 0.5 in each mode (fits in down, not in up — the pack's
 //!    i64::MAX+0.5 row generalised): to_i64(i64::MAX+0.5) at ToOdd -> i64::MAX (tie
 //!    to odd: i64::MAX is odd), at Down/ToZero -> i64::MAX, at Up/FromZero/ToEven ->
@@ -297,19 +297,44 @@ fn int_getters_huge_and_tiny() -> Result<(), Error> {
         Error::InvalidArgument,
         "to_u32(2^100)",
     );
-    // Tiny: 2^-1000 rounds to +0 in ToZero/Down/ToEven, to +1 in Up/FromZero.
+    // Tiny: 2^-1000 rounds to +0 in ToZero/Down/ToEven/ToOdd (ToOdd rounds to nearest, ties to odd), to +1 in
+    // Up/FromZero; None refuses a non-integer (J).
     let tiny = ExactNum::pow2(-1000, p)?;
-    for rm in [RoundingMode::ToZero, RoundingMode::Down, RoundingMode::ToEven] {
+    // MODE-SUBSET mode-specific: 2^-1000 rounds to 0 in these; to 1 in Up/FromZero; None refuses
+    for rm in [
+        RoundingMode::ToZero,
+        RoundingMode::Down,
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+    ] {
         assert_eq!(tiny.to_i64(rm)?, 0, "to_i64(2^-1000) down modes");
         assert_eq!(tiny.to_u64(rm)?, 0, "to_u64(2^-1000) down modes");
     }
+    // MODE-SUBSET mode-specific: 2^-1000 rounds to 1 in these
     for rm in [RoundingMode::Up, RoundingMode::FromZero] {
         assert_eq!(tiny.to_i64(rm)?, 1, "to_i64(2^-1000) up modes");
         assert_eq!(tiny.to_u64(rm)?, 1, "to_u64(2^-1000) up modes");
     }
+    // None does not round to an integer: a non-integer input is refused (J)
+    expect_i64_err(
+        tiny.to_i64(RoundingMode::None),
+        Error::InvalidArgument,
+        "to_i64(2^-1000) None",
+    );
+    expect_u64_err(
+        tiny.to_u64(RoundingMode::None),
+        Error::InvalidArgument,
+        "to_u64(2^-1000) None",
+    );
     let neg_tiny =
         ExactNum::pow2(-1000, p)?.mul(&ExactNum::from_i8(-1, p), p, RoundingMode::ToEven);
-    for rm in [RoundingMode::ToZero, RoundingMode::Up, RoundingMode::ToEven] {
+    // MODE-SUBSET mode-specific: -2^-1000 rounds to -0 in these; to -1 in Down/FromZero; None refuses
+    for rm in [
+        RoundingMode::ToZero,
+        RoundingMode::Up,
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+    ] {
         assert_eq!(
             neg_tiny.to_i64(rm)?,
             0,
@@ -321,6 +346,17 @@ fn int_getters_huge_and_tiny() -> Result<(), Error> {
             "to_u64(-2^-1000) toward-zero modes"
         );
     }
+    expect_i64_err(
+        neg_tiny.to_i64(RoundingMode::None),
+        Error::InvalidArgument,
+        "to_i64(-2^-1000) None",
+    );
+    expect_u64_err(
+        neg_tiny.to_u64(RoundingMode::None),
+        Error::InvalidArgument,
+        "to_u64(-2^-1000) None",
+    );
+    // MODE-SUBSET mode-specific: -2^-1000 rounds to -1 in these
     for rm in [RoundingMode::Down, RoundingMode::FromZero] {
         assert_eq!(neg_tiny.to_i64(rm)?, -1, "to_i64(-2^-1000) away modes");
         expect_u64_err(
@@ -379,10 +415,21 @@ fn int_getters_max_plus_half_and_rounding_modes() -> Result<(), Error> {
     // -0.5 to u64 by mode: 0 in ToEven/ToZero/Up (tie to even is 0, toward zero is 0,
     // toward +inf is 0); Err in Down/ToOdd/FromZero (all round to -1).
     let neg_half = parse("-0.5", p, &mut cc);
+    // MODE-SUBSET mode-specific: -0.5 rounds to -0 (to_u64 gives 0) in these; to -1 in the next loop; None refuses
     for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::Up] {
         assert_eq!(neg_half.to_u64(rm)?, 0, "to_u64(-0.5) zero modes");
         assert!(neg_half.fits_u64(rm), "fits_u64(-0.5) zero modes");
     }
+    expect_u64_err(
+        neg_half.to_u64(RoundingMode::None),
+        Error::InvalidArgument,
+        "to_u64(-0.5) None",
+    );
+    assert!(
+        !neg_half.fits_u64(RoundingMode::None),
+        "fits_u64(-0.5) None false"
+    );
+    // MODE-SUBSET mode-specific: -0.5 rounds to -1 in these, which no unsigned type holds
     for rm in [RoundingMode::Down, RoundingMode::ToOdd, RoundingMode::FromZero] {
         expect_u64_err(
             neg_half.to_u64(rm),

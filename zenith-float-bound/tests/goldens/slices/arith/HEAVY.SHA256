@@ -1,0 +1,2 @@
+# Slice S1 heavy goldens (sha256sum format): large or slow-to-regenerate files kept out of the default regen. Nothing reads this file yet.
+# EMPTY: no heavy goldens yet (delete this line with the first entry)

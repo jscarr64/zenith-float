@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -136,7 +136,7 @@
+         };
+     }
+     match rounded(op, s.ldexp(0, prec, MID_RM), prec)? {
+-        Step::Value(m, e) => Ball::from_mid_rad(m, rad.add_up(&e), prec),
++        Step::Value(m, _e) => Ball::from_mid_rad(m, rad, prec),
+         Step::Overflow => Ball::all_reals(prec),
+     }
+ }

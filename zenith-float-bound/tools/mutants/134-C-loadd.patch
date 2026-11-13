@@ -1,0 +1,12 @@
+diff --git a/src/enclosure.rs b/src/enclosure.rs
+--- a/src/enclosure.rs
++++ b/src/enclosure.rs
+@@ -67,7 +67,7 @@
+         let lo =
+             ExactNum::new(p)
+                 .sub(x, p, RoundingMode::Down)
+-                .add(self.mid(), p, RoundingMode::Down);
++                .add(self.mid(), p, RoundingMode::Up);
+         if hi.is_nan() || lo.is_nan() {
+             return Tri::Unknown;
+         }

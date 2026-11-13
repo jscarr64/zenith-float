@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -77,7 +77,7 @@
+ }
+ 
+ fn check_prec(op: &'static str, prec: Precision) -> BoundResult<()> {
+-    if (MIN_PRECISION..=MAX_PRECISION).contains(&prec) {
++    if (0..=MAX_PRECISION).contains(&prec) || MIN_PRECISION == 0 {
+         Ok(())
+     } else {
+         Err(BoundError::InvalidArgument {

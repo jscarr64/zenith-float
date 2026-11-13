@@ -1,0 +1,13 @@
+diff --git a/src/mag/ulp.rs b/src/mag/ulp.rs
+index 24bc080..4337c54 100644
+--- a/src/mag/ulp.rs
++++ b/src/mag/ulp.rs
+@@ -77,7 +77,7 @@ fn place_pow2(mag_exp: i128) -> Mag {
+             if mag_exp > i128::from(i64::MAX) {
+                 Mag::infinity()
+             } else {
+-                Mag::min_pos()
++                Mag::zero()
+             }
+         }
+     }

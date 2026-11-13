@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index deeda66..174c8c0 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -291,7 +291,7 @@ fn classify(op: &'static str, raw: ExactNum) -> BoundResult<Mid> {
+ /// `e > EXPONENT_MIN`; and `2^EXPONENT_MIN` for a zero or bottom-binade (subnormal) result, which bounds any nearest
+ /// rounding there (both the exact value and the result lie in `[-2^EXPONENT_MIN, 2^EXPONENT_MIN]` with one sign).
+ fn eps(mid: &ExactNum, prec: Precision, lost: bool) -> Mag {
+-    if !mid.inexact() && !lost {
++    if !mid.inexact() || !lost {
+         return Mag::zero();
+     }
+     match mid.exponent() {

@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 8fff0d2..359cfd8 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -245,7 +245,7 @@ pub fn constant_ball(cc: &mut Consts, c: &Constant, prec: Precision) -> BoundRes
+         });
+     }
+     let down = cc
+-        .get_exact_prec(c.zf_id(), prec, RoundingMode::Down)
++        .get_exact_prec(c.zf_id(), prec, RoundingMode::Up)
+         .map_err(constant_error)?;
+     let up = cc
+         .get_exact_prec(c.zf_id(), prec, RoundingMode::Up)

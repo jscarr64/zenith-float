@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 67b8452..99dee10 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -75,7 +75,7 @@ fn top_of_words(words: &[u64], exponent: i64) -> Result<Option<(u64, bool, i64)>
+ impl Mag {
+     /// Least `Mag` at or above `|x|` (CONTRACT 3.3). NaN and ±Inf give `Infinity`; zero gives zero.
+     pub fn from_exact_num(x: &ExactNum) -> Mag {
+-        if x.is_nan() || x.is_inf() {
++        if x.is_nan() {
+             return Mag::infinity();
+         }
+         let Some((mant, sticky, exp)) = top_of(x, true) else {

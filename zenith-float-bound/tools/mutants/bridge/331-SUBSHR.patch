@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 67b8452..278acc7 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -128,7 +128,7 @@ impl Mag {
+         let word = match EXPONENT_MIN.checked_sub(exp).filter(|d| *d > 0) {
+             None => mant,
+             Some(d) => match u32::try_from(d) {
+-                Ok(d) if d < 64 && mant.trailing_zeros() >= d => mant.checked_shr(d).unwrap_or(0),
++                Ok(d) if d < 64 && mant.trailing_zeros() >= d => mant.checked_shr(d - 1).unwrap_or(0),
+                 Ok(_) | Err(_) => {
+                     return Err(BoundError::Representation {
+                         op: OP,

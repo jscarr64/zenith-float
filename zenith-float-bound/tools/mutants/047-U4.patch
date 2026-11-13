@@ -1,0 +1,13 @@
+diff --git a/src/mag/lower.rs b/src/mag/lower.rs
+index d225a6c..f736f8b 100644
+--- a/src/mag/lower.rs
++++ b/src/mag/lower.rs
+@@ -16,7 +16,7 @@ impl Mag {
+     pub fn mul_lower(&self, other: &Mag) -> Mag {
+         // `nonzero()` is `None` for `Infinity`, so an `Infinity` operand falls to zero.
+         match (self.nonzero(), other.nonzero()) {
+-            (Some((ea, ma)), Some((eb, mb))) => mul_parts(ea, ma, eb, mb, false),
++            (Some((ea, ma)), Some((eb, mb))) => mul_parts(ea, ma, eb, mb, true),
+             _ => Mag::zero(),
+         }
+     }

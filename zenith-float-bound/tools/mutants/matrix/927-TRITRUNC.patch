@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -540,7 +540,7 @@
+     if t.ncols() != n {
+         return Err(mismatch(op, "rectangular"));
+     }
+-    if b_rows != n {
++    if b_rows < n {
+         return Err(mismatch(op, "b_len"));
+     }
+     Ok(n)

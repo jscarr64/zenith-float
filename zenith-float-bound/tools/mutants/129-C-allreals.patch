@@ -1,0 +1,12 @@
+diff --git a/src/enclosure.rs b/src/enclosure.rs
+--- a/src/enclosure.rs
++++ b/src/enclosure.rs
+@@ -54,7 +54,7 @@
+             return Tri::False;
+         }
+         if self.rad().is_infinity() {
+-            return Tri::True;
++            return Tri::Unknown;
+         }
+         let p = match working_prec(self.mid(), x) {
+             Some(p) => p,

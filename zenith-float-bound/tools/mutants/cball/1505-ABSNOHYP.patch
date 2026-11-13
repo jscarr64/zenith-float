@@ -1,0 +1,13 @@
+diff --git a/src/cball.rs b/src/cball.rs
+index 8f1c022..c8e4bae 100644
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -92,7 +92,7 @@ impl CBall {
+ 
+     /// `|a|` as a real ball: `Ball::hypot(re, im)` as is (16.CB.6).
+     pub fn abs(self, prec: Precision) -> BoundResult<Ball> {
+-        self.re.hypot(&self.im, prec)
++        self.re.add(&self.im, prec)
+     }
+ 
+     /// `a²` (16.CB.5): `re = sqr(re) − sqr(im)` by `Ball::sqr`, `im = 2·re·im` by one `Ball::mul` and an exact

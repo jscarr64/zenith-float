@@ -1,0 +1,12 @@
+diff --git a/src/arith.rs b/src/arith.rs
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -221,7 +221,7 @@
+             (Ordering::Less, false, Ordering::Less) => {
+                 Err(domain(OP, "m + r < 0: the ball misses [0, inf)"))
+             }
+-            (Ordering::Less, false, Ordering::Equal) => Ball::exact(ExactNum::from(0i64), prec),
++            (Ordering::Less, false, Ordering::Equal) => Err(domain(OP, "mutant")),
+         }
+     }
+     /// `(m ± r) / (n ± s) = round(m / n) ± ((|m| s + |n| r) / (|n| (|n| - s)) + ε)` when `|n| > s` (16.S1.8). The

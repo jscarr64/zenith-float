@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -223,7 +223,7 @@
+         classify_pivots(OP, &lu.u, "undecided_det")?;
+         let mut sign = lu.perm_sign();
+         for k in 0..lu.u.nrows() {
+-            if diag(OP, &lu.u, k)?.mid().is_negative() {
++            if false && diag(OP, &lu.u, k)?.mid().is_negative() {
+                 sign = sign.checked_neg().ok_or_else(|| resource(OP, "sign"))?;
+             }
+         }

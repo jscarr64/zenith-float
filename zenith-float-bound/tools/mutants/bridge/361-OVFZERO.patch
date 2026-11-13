@@ -1,0 +1,11 @@
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -128,7 +128,7 @@
+     /// in range, and `|a - b| - self = sa ((a - sa s) - (b + sa s))` (`sa` the sign of `a`) is formed exactly in range.
+     fn cmp_overflow_diff(&self, a: &ExactNum, b: &ExactNum) -> Option<Ordering> {
+         if self.is_zero() {
+-            return Some(Ordering::Less);
++            return Some(Ordering::Greater);
+         }
+         let me = self.exp()?;
+         if me <= EXPONENT_MAX {

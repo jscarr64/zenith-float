@@ -13,6 +13,10 @@ printf 'fn a() {}\n#[cfg(all(test, feature = "std"))]\n#[test]\nfn t() { let y =
 printf 'fn a() {}\n' > "$t/src/a.rs"; mkdir -p "$t/src/ops" "$t/zenith-float-num/tests"
 printf 'fn t() { let y = x.clone(); }\n' > "$t/src/ops/tests.rs"; run >/dev/null && fail "ops/tests.rs clone not counted"; rm "$t/src/ops/tests.rs"
 printf 'fn t() { let y = x.clone(); }\n' > "$t/zenith-float-num/tests/it.rs"; run >/dev/null && fail "integration-test clone not counted"; rm "$t/zenith-float-num/tests/it.rs"
+# P16 (Jeff 2026-11-10 23:06 CT): the folded zenith-float-bound crate is scanned too (src and tests).
+mkdir -p "$t/zenith-float-bound/src" "$t/zenith-float-bound/tests"
+printf 'fn t() { let y = x.clone(); }\n' > "$t/zenith-float-bound/src/b.rs"; run >/dev/null && fail "zenith-float-bound/src clone not counted"; rm "$t/zenith-float-bound/src/b.rs"
+printf 'fn t() { let y = s.to_vec(); }\n' > "$t/zenith-float-bound/tests/b.rs"; run >/dev/null && fail "zenith-float-bound/tests to_vec not counted"; rm "$t/zenith-float-bound/tests/b.rs"
 printf 'fn clean() {}\n' > "$t/src/a.rs"
 for body in 'let y = x.clone();' 'let y = s.to_vec();' 'let y = it.cloned();' 'let y = Clone::clone(&x);' 'y.clone_from(&x);'; do
   printf 'fn f() { %s }\n' "$body" > "$t/src/a.rs"; run >/dev/null && fail "missed: $body"

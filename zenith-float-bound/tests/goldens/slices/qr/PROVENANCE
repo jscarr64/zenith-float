@@ -1,0 +1,11 @@
+# Slice LA3 golds ledger (Rusty, 2026-10-30). One block per gold file.
+la_lstsq.txt
+  generator: scripts/gen_la_lstsq_goldens.py (committed; condition columns from scripts/la_cond_cols.py), write mode, no args
+  env: ~/team-env/oracle-2026-10-30 (verify_env.sh OK against oracle-2026-10-30.lock: mpmath 1.3.0, python-flint 0.9.0, gmpy2 2.3.2, sympy 1.14.0)
+  run: popslot/poprun job la3-lstsq-gen-env-oracle-2026-10-30, log pop-logs/rusty/2026-10-30/1138-la3-lstsq-gen-env-oracle-2026-10-30.log
+  sha256: 097c6d725cf2e6278fac5738c6f499622e4c44d55a523ae8f822992faa20f05e (also in SHA256SUMS)
+  published spot-check sample:
+    lstsq.hilbert.05: b = ones, so x = H_5^-1 * 1 = the row sums of the inverse Hilbert matrix. The gold x is 5, -120, 630, -1120, 630.
+    The entries sum to 25 = n^2, matching the published identity that the entries of H_n^-1 sum to n^2
+    (M.-D. Choi, "Tricks or Treats with the Hilbert Matrix", Amer. Math. Monthly 90 (1983) 301-312).
+    lstsq.x_zero.3x2: b is orthogonal to range(A), so x = 0. It emits reason code 2 lstsq_x_zero from the closed REASONS set.

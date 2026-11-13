@@ -1,0 +1,3 @@
+# Exemptions from the public-function coverage check (tools/pubfn_coverage.sh). One item per line: `Type::name<TAB>reason`.
+# An exempt item still counts as existing (a COVERS line naming it is not stale); it just does not need a COVERS line.
+# STARTS EMPTY. Same protection as tools/rules_allowlist.txt: only Jeff extends it (see .github/CODEOWNERS).

@@ -1,0 +1,13 @@
+diff --git a/src/array.rs b/src/array.rs
+index 925bfdd..555fe7e 100644
+--- a/src/array.rs
++++ b/src/array.rs
+@@ -227,7 +227,7 @@ fn element_count(op: &'static str, shape: &[usize]) -> BoundResult<usize> {
+     }
+     shape
+         .iter()
+-        .try_fold(1usize, |acc, &d| acc.checked_mul(d))
++        .try_fold(1usize, |acc, &d| Some(acc.wrapping_mul(d)))
+         .ok_or(BoundError::InvalidArgument {
+             op,
+             detail: "shape product overflows usize",

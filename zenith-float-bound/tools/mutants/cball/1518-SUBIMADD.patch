@@ -1,0 +1,12 @@
+diff --git a/src/cball.rs b/src/cball.rs
+--- a/src/cball.rs
++++ b/src/cball.rs
+@@ -92,7 +92,7 @@
+     pub fn sub(self, other: &CBall, prec: Precision) -> BoundResult<CBall> {
+         Ok(CBall {
+             re: self.re.sub(&other.re, prec)?,
+-            im: self.im.sub(&other.im, prec)?,
++            im: self.im.add(&other.im, prec)?,
+         })
+     }
+ 

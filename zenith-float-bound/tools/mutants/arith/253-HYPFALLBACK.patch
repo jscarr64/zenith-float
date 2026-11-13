@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..da39481 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -286,7 +286,7 @@ impl Ball {
+         check_prec(OP, prec)?;
+         let (m, r) = (self.mid(), self.rad());
+         let (n, s) = (other.mid(), other.rad());
+-        let (Ok(rn), Ok(sn)) = (r.to_exact_num(), s.to_exact_num()) else {
++        let (Ok(rn), Ok(sn)) = (r.to_exact_num(), Mag::infinity().to_exact_num()) else {
+             let rad = r.add_up(s);
+             return finish(OP, m.hypot(n, prec, MID_RM), &rad, prec, false);
+         };

@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -118,7 +118,7 @@
+             });
+         }
+         if has_zero(ukk) {
+-            return Err(resource(op, undecided));
++            return Err(BoundError::Singular { op, detail: [undecided, "singular"][1] });
+         }
+     }
+     Ok(())

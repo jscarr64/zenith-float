@@ -1,0 +1,13 @@
+diff --git a/src/mag/convert.rs b/src/mag/convert.rs
+index 130a321..1b5de05 100644
+--- a/src/mag/convert.rs
++++ b/src/mag/convert.rs
+@@ -162,7 +162,7 @@ impl Mag {
+ /// zf errors in zb terms (CONTRACT O2 table; PLAN: `PrecisionRetryExhausted` is `Resource`).
+ fn map_zf_error(op: &'static str, e: Error) -> BoundError {
+     match e {
+-        Error::ExponentOverflow(_) => BoundError::Representation {
++        Error::ExponentOverflow(_) => BoundError::Domain {
+             op,
+             detail: "zf exponent overflow",
+         },

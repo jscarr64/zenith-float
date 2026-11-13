@@ -654,7 +654,26 @@ fn push_range(out: &mut String, start: usize, end: usize) {
     }
 }
 
+/// M27-POLE08 (held): `riemann_zeta(1)` rows in `specials/zeta.jsonl` (p in {53, 64, 113, 128, 256}, both tiers).
+/// The golden expects NaN(InvalidArgument); POLE-08 rules zeta(1) = +Inf, divideByZero, exact. The library still
+/// returns NaN, so the rows are left out by id (no golden regen in #39); `zeta` asserts all 7 were found. ZF-M27
+/// fixes them red-first.
+const POLE08_ZETA_HELD: &[&str] = &[
+    "riemann_zeta-53-ToEven-29",
+    "riemann_zeta-53-Up-30",
+    "riemann_zeta-113-ToEven-31",
+    "riemann_zeta-113-Up-32",
+    "riemann_zeta-64-ToEven-33",
+    "riemann_zeta-128-ToEven-34",
+    "riemann_zeta-256-ToEven-35",
+];
+
 fn run_file(name: &str) -> Result<(), String> {
+    run_file_holding(name, &[]).map(|_| ())
+}
+
+/// Runs `name`, leaving out the rows whose id is in `held` (every tier); returns how many held rows it found.
+fn run_file_holding(name: &str, held: &[&str]) -> Result<usize, String> {
     let path = format!(
         "{}/tests/oracle/goldens/specials/{name}.jsonl",
         env!("CARGO_MANIFEST_DIR")
@@ -668,22 +687,27 @@ fn run_file(name: &str) -> Result<(), String> {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(12usize);
+    let mut held_found = 0usize;
     for (idx, line) in text.lines().enumerate() {
         if line.is_empty() {
             continue;
         }
         let row: serde_json::Value =
             serde_json::from_str(line).map_err(|err| format!("json {name}: {err}"))?;
-        let tier = row.get("tier").and_then(|v| v.as_str()).unwrap_or("fast");
-        if !tier_selected(tier) {
-            continue;
-        }
-        ran += 1;
         let id = row
             .get("id")
             .and_then(|v| v.as_str())
             .unwrap_or("?")
             .to_string();
+        if held.contains(&id.as_str()) {
+            held_found += 1;
+            continue;
+        }
+        let tier = row.get("tier").and_then(|v| v.as_str()).unwrap_or("fast");
+        if !tier_selected(tier) {
+            continue;
+        }
+        ran += 1;
         let line_no = idx + 1;
         let budget = row
             .get("budget_s")
@@ -723,8 +747,8 @@ fn run_file(name: &str) -> Result<(), String> {
             samples.join("\n")
         ));
     }
-    eprintln!("{name}.jsonl passed {ran}");
-    Ok(())
+    eprintln!("{name}.jsonl passed {ran}, held {held_found}");
+    Ok(held_found)
 }
 
 #[test]
@@ -799,7 +823,10 @@ fn clausen() -> Result<(), String> {
 
 #[test]
 fn zeta() -> Result<(), String> {
-    run_file("zeta")
+    let held = run_file_holding("zeta", POLE08_ZETA_HELD)?;
+    // M27-POLE08: the 7 riemann_zeta(1) NaN rows are held, not asserted
+    assert_eq!(held, 7);
+    Ok(())
 }
 
 #[test]

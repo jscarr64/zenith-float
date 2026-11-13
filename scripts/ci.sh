@@ -41,13 +41,11 @@ debug_slew() {
   cargo test -p zenith-float-num --lib --no-default-features --features std
   cargo test --workspace --features random,serde
   cargo build -p zenith-float-num --no-default-features
-  rustup target add --toolchain 1.99 thumbv7em-none-eabihf >/dev/null
-  cargo build -p zenith-float-num --no-default-features --target thumbv7em-none-eabihf
-  cargo build --no-default-features --target thumbv7em-none-eabihf
+  # no 32-bit target build: 2.0 is 64-bit only (P6; Jeff 2026-11-10 19:15 CT)
 }
 
 mpfr_slew() {
-  cargo test -p zenith-float-num --features mpfr-tests --release -- --test-threads=1
+  cargo test -p zenith-float-num --features mpfr-tests --release -- --test-threads="${RUST_TEST_THREADS:-$(nproc)}"
 }
 
 run_budget debug "${DEBUG_BUDGET}" debug_slew

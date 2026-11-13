@@ -22,7 +22,9 @@ DIRS = ["zenith-float-num/src", "zenith-float-macro/src", "src", "zenith-float-c
 # Test code outside src/ is counted too (the integration tests, benches and the no_std test crate). DIRS stays the
 # library set: rules_scan.py scopes the add_ref/sub_ref/mul_ref/div_ref ratchets to it.
 TEST_DIRS = ["zenith-float-num/tests", "zenith-float-num/benches", "zenith-float-num/examples", "zenith-float-num/fuzz",
-             "tests", "benches", "examples", "nostd-tests"]
+             "tests", "benches", "examples", "nostd-tests",
+             # P16 (Jeff 2026-11-10 23:06 CT): the folded bound crate, library and tests.
+             "zenith-float-bound/src", "zenith-float-bound/tests"]
 ALL_DIRS = DIRS + TEST_DIRS
 TOKENS = [
     ("clone()", re.compile(r"\.clone\(\)")),

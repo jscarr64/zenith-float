@@ -1,0 +1,14 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -529,8 +529,8 @@
+ /// "Contains 0" as the exact test `|m| ≤ r` (16.S6.12.2); an `Infinity` radius contains 0.
+ fn contains_zero(b: &Ball) -> bool {
+     match b.rad().cmp_exact_num(b.mid()) {
+-        Some(Ordering::Less) => false,
+-        Some(Ordering::Equal | Ordering::Greater) | None => true,
++        Some(Ordering::Less | Ordering::Equal) => false,
++        Some(Ordering::Greater) | None => true,
+     }
+ }
+ 

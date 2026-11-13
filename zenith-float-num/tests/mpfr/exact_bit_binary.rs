@@ -5,7 +5,7 @@ use crate::mpfr::common::assert_exact_eq;
 use crate::mpfr::common::conv_to_mpfr;
 use crate::mpfr::common::reset_test_rng;
 use crate::mpfr::exact_bit_functions::{
-    check, exact_input, input, MODES, P14_PRECISIONS, PRECISIONS,
+    check, exact_input, input, MODES, NONE_GAP_MODES, P14_PRECISIONS, PRECISIONS,
 };
 use gmp_mpfr_sys::mpfr;
 use rug::Float;
@@ -119,12 +119,15 @@ fn exact_bit_pow_atan2() -> Result<(), Box<dyn std::error::Error>> {
                 conv_to_mpfr(storage(p), &x, &mut cc)?,
                 conv_to_mpfr(storage(p), &y, &mut cc)?,
             );
-            for rm in MODES {
+            // NONE-GAP F-A: exact pow results, e.g. pow(4, 1/2) (ZF-M27)
+            for rm in NONE_GAP_MODES {
                 let got = x.pow(&y, p, rm, &mut cc);
                 let info = format!("pow p={p} {rm:?} {x:?} {y:?}");
                 check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
                     mpfr::pow(r.as_raw_mut(), fx.as_raw(), fy.as_raw(), rnd)
                 })?;
+            }
+            for rm in MODES {
                 let got = y.atan2(&x, p, rm, &mut cc);
                 let info = format!("atan2 p={p} {rm:?} {y:?} {x:?}");
                 check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
@@ -169,6 +172,9 @@ fn exact_bit_powi_root_reciprocal() -> Result<(), Box<dyn std::error::Error>> {
                 check(&got, p, rm, &info, &mut cc, |r, rnd| unsafe {
                     mpfr::ui_div(r.as_raw_mut(), 1, fx.as_raw(), rnd)
                 })?;
+            }
+            // NONE-GAP F-A: exact nth_root results, e.g. nth_root(16, 4) (ZF-M27)
+            for rm in NONE_GAP_MODES {
                 if !x.is_negative() {
                     for n in [4usize, 5] {
                         let got = x.nth_root(n, p, rm);
@@ -249,7 +255,7 @@ fn exact_bit_hypot_wide_spread() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// zenith-bound P14: `add_full_prec` and `sub_full_prec` never round. The result equals the exact MPFR sum or
+/// zenith-float-bound P14: `add_full_prec` and `sub_full_prec` never round. The result equals the exact MPFR sum or
 /// difference (computed wide enough to be exact) bit for bit, and `inexact()` is false.
 #[test]
 fn add_sub_full_prec_are_exact() -> Result<(), Box<dyn std::error::Error>> {

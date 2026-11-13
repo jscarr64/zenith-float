@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..81b271e 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -264,7 +264,7 @@ impl Ball {
+         const OP: &str = "Ball::inv";
+         check_prec(OP, prec)?;
+         let (n, s) = (self.mid(), self.rad());
+-        if n.is_zero() && s.is_zero() {
++        if n.is_zero() || s.is_zero() {
+             return Err(domain(OP, "inverse of the exact zero ball"));
+         }
+         let Some(n_lo) = clear_of_zero(n, s) else {

@@ -1,5 +1,5 @@
-//! 2.0: the constants round at exactly `p` bits, as MPFR does, in all six modes (not at `p` rounded up to the
-//! word size). `from_mag_parts` keeps its exact, never-rounding contract.
+//! 2.0: the constants round at exactly `p` bits, as MPFR does, in every rounding mode but `None` (not at `p` rounded up to the
+//! word size); under `None` they are cut toward zero at the storage precision rp(p, 64), MPFR toward zero there. `from_mag_parts` keeps its exact, never-rounding contract.
 
 use crate::mpfr::common::{assert_exact_eq, mpfr_reference_with};
 use crate::mpfr::exact_bit_functions::MODES;
@@ -73,7 +73,7 @@ fn consts_round_at_exactly_p_bits() -> Res {
     Ok(())
 }
 
-/// `from_mag_parts` is an exact constructor (zenith-bound P1 to P3): it never rounds, stores the word-rounded
+/// `from_mag_parts` is an exact constructor (zenith-float-bound P1 to P3): it never rounds, stores the word-rounded
 /// precision, puts the grid at `2^(EXPONENT_MIN - word_p)`, and its value round-trips exactly against MPFR.
 #[test]
 fn from_mag_parts_keeps_its_exact_contract() -> Res {

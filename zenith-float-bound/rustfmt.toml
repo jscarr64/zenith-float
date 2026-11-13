@@ -1,0 +1,2 @@
+# The bound layer keeps rustfmt defaults (it had no rustfmt.toml before the fold); this file stops the
+# root rustfmt.toml (array_width, single_line_if_else_max_width) from reformatting it and moving mutants context.

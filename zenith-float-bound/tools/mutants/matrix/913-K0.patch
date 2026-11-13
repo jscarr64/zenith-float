@@ -1,0 +1,10 @@
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -120,6 +120,7 @@
+ where
+     I: Iterator<Item = (&'a ExactNum, &'a Mag, &'a ExactNum, &'a Mag)>,
+ {
++    if k == 0 { return Err(resource(op, "k == 0")); }
+     entry_core(op, None, terms, false, k, prec)
+ }
+ 

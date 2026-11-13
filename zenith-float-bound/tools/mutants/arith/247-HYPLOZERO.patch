@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4a73525..4a15569 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -321,7 +321,7 @@ impl Ball {
+         const OP: &str = "Ball::abs";
+         check_prec(OP, prec)?;
+         let (m, r) = (self.mid(), self.rad());
+-        match r.cmp_exact_num(m).map(Ordering::reverse) {
++        match r.cmp_exact_num(m).map(Ordering::reverse).map(|_| Ordering::Less) {
+             Some(Ordering::Greater | Ordering::Equal) => {
+                 // round(|m|) as one product (-1 or 1)·m, so `m` is borrowed, not consumed (O14-W).
+                 let sign = if m.is_negative() { -1i64 } else { 1i64 };

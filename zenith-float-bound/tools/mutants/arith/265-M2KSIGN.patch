@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 5995d15..e2e9f0f 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -443,7 +443,7 @@ fn mag_mul_2exp_up(r: &Mag, k: i64) -> Mag {
+     };
+     let shifted = match e.checked_add(k) {
+         Some(ne) => Mag::finite(mant, ne),
+-        None if k < 0 => Mag::finite(HALF_MANT, i64::MIN),
++        None if k > 0 => Mag::finite(HALF_MANT, i64::MIN),
+         None => return Mag::infinity(),
+     };
+     // The Err arm is unreachable: `r` is a canonical Mag (from_canonical keeps the mantissa's top bit set), so

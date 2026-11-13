@@ -1,0 +1,12 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -44,7 +44,7 @@
+         .and_then(|b| b.checked_mul(2))
+         .and_then(|b| b.checked_add(GUARD_FIXED));
+     match guard.and_then(|g| prec.checked_add(g)) {
+-        Some(w) => w.min(MAX_PRECISION),
++        Some(_) => prec,
+         None => MAX_PRECISION,
+     }
+ }

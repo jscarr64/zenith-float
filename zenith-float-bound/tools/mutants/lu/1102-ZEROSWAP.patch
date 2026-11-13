@@ -1,0 +1,11 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -164,6 +164,7 @@
+             }
+             let kk = at(OP, k, n, k)?;
+             if is_exact_zero(entry(OP, &a, at(OP, p, n, k)?)?) {
++                if p == k && k + 1 < n { for j in 0..n { a.swap(k * n + j, (n - 1) * n + j); } perm.swap(k, n - 1); }
+                 continue; // the whole column is exactly zero: no swap, no elimination (16.LA2.3)
+             }
+             if p != k {

@@ -1,0 +1,12 @@
+diff --git a/src/mag/mul.rs b/src/mag/mul.rs
+index ad2f4d9..a9dfb5e 100644
+--- a/src/mag/mul.rs
++++ b/src/mag/mul.rs
+@@ -37,6 +37,6 @@ fn mul_checked(ea: i64, ma: NonZeroU64, eb: i64, mb: NonZeroU64, up: bool) -> Op
+     let prod = NonZeroU128::from(ma).checked_mul(NonZeroU128::from(mb))?;
+     let scale = i128::from(ea)
+         .checked_add(i128::from(eb))?
+-        .checked_sub(128)?;
++        .checked_sub(127)?;
+     norm(prod, scale, false, up)
+ }

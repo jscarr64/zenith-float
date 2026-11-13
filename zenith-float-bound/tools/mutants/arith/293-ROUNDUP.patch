@@ -1,0 +1,12 @@
+diff --git a/src/arith.rs b/src/arith.rs
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -506,7 +506,7 @@
+ 
+ /// `x` rounded once to `prec`, `ToEven`; `inexact()` reports this rounding only.
+ fn round_to(x: &ExactNum, prec: Precision) -> ExactNum {
+-    ExactNum::from(1i64).mul(x, prec, MID_RM)
++    ExactNum::from(1i64).mul(x, prec, RoundingMode::Up)
+ }
+ 
+ fn domain(op: &'static str, detail: &'static str) -> BoundError {

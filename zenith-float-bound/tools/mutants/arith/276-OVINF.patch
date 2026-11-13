@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4a73525..3f4347b 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -407,7 +407,7 @@ impl Ball {
+     /// everything.
+     pub fn overlaps(&self, other: &Ball) -> Tri {
+         if self.rad().is_infinity() || other.rad().is_infinity() {
+-            return Tri::True;
++            return Tri::Unknown;
+         }
+         match endpoint_signs(self, other) {
+             Some((Ordering::Less, _) | (_, Ordering::Greater)) => Tri::False,

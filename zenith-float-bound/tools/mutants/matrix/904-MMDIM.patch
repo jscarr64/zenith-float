@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -416,7 +416,7 @@
+         const OP: &str = "BallMat::matmul";
+         check_prec(OP, prec)?;
+         let (m, k, n) = (self.nrows(), self.ncols(), other.ncols());
+-        if other.nrows() != k {
++        if false {
+             return Err(mismatch(OP, "self.ncols() != other.nrows()"));
+         }
+         let count = m

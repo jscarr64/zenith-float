@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -537,7 +537,7 @@
+ /// The 16.S6.12.2 shape checks: `self` square, then `b` with `n` entries (rows). Returns `n`.
+ fn tri_shape(op: &'static str, t: &BallMat, b_rows: usize) -> BoundResult<usize> {
+     let n = t.nrows();
+-    if t.ncols() != n {
++    if t.ncols() != n && t.ncols() == n {
+         return Err(mismatch(op, "rectangular"));
+     }
+     if b_rows != n {

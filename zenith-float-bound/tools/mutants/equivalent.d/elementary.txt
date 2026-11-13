@@ -1,0 +1,1 @@
+# Slice S3 documented equivalent mutants (format as ../EQUIVALENT.txt). Starts empty.

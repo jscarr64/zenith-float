@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..1bb5b9b 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -136,7 +136,7 @@ impl Ball {
+     pub fn powi(&self, n: u64, prec: Precision) -> BoundResult<Ball> {
+         check_prec("Ball::powi", prec)?;
+         if n == 0 {
+-            return Ball::exact(ExactNum::from(1i64), prec);
++            return self.sqr(prec);
+         }
+         let wp = match prec.checked_add(POWI_GUARD_BITS) {
+             Some(w) if w <= MAX_PRECISION => w,

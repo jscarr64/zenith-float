@@ -1,0 +1,20 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -136,7 +136,7 @@
+                 .map(|i| at(op, level, i, j, cols))
+                 .collect::<BoundResult<Vec<&Ball>>>()?;
+             let tau = dot_pairs(op, v.iter().zip(col.iter()).map(|(a, c)| (*a, *c)), rows, w)?;
+-            f.push(tau.mul_2exp(1, w)?.div(&vtv, w)?);
++            f.push(tau.mul_2exp(0, w)?.div(&vtv, w)?);
+         }
+         // Row k of R: σ on the diagonal (−s·σ after the sign fix), then a_kj − f_j·v_1, negated when s = +1.
+         let mut row = reserve::<Ball>(op, cols)?;
+@@ -238,7 +238,7 @@
+                 .map(|i| at(op, &y, i, c, p))
+                 .collect::<BoundResult<Vec<&Ball>>>()?;
+             let tau = dot_pairs(op, v.iter().zip(col.iter()).map(|(a, c)| (*a, *c)), rows, w)?;
+-            f.push(tau.mul_2exp(1, w)?.div(&h.vtv, w)?);
++            f.push(tau.mul_2exp(0, w)?.div(&h.vtv, w)?);
+         }
+         let mut upd = reserve::<Ball>(op, size(op, rows, p)?)?;
+         for (i, vi) in (k..m).zip(v.iter()) {

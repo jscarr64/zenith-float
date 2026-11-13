@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..812eb6d 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -70,7 +70,7 @@ impl Ball {
+         let rad = r.add_up(other.rad());
+         finish(
+             "Ball::sub",
+-            m.sub(other.mid(), prec, MID_RM),
++            m.add(other.mid(), prec, MID_RM),
+             &rad,
+             prec,
+             false,

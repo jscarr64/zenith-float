@@ -1,33 +1,27 @@
 #!/usr/bin/env bash
-# no_std gate for zenith-float-num.
+# no_std gate for zenith-float-num (64-bit only: P6/P8; Jeff 2026-11-10 "Yes 64 bit only please").
 #
-# 1. The library builds with --no-default-features for a bare-metal target (no std at all).
-# 2. nostd-tests (a #![no_std] crate: core + alloc only) runs the mpmath reference cases
-#    - on the host as a #![no_std]/#![no_main] binary linking only libc, and
-#    - on thumbv7em-none-eabihf (Cortex-M4F, 32-bit limbs) under qemu-system-arm mps2-an386
-#      with semihosting.
-# Each runner exits non-zero if any case misses its bit target.
+# 1. The library builds with --no-default-features for bare-metal 64-bit targets (no std at all):
+#    x86_64-unknown-none and aarch64-unknown-none.
+# 2. nostd-tests (a #![no_std] crate: core + alloc only) runs the mpmath reference cases on the host as a
+#    #![no_std]/#![no_main] binary linking only libc. It exits non-zero if any case misses its bit target.
+# The former thumbv7em-none-eabihf (32-bit) builds and its QEMU runner were removed with the 32-bit targets.
 #
-# Needs: rustup target thumbv7em-none-eabihf; qemu-system-arm on PATH (or QEMU=/path/to/it).
+# Needs: rustup targets x86_64-unknown-none and aarch64-unknown-none.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 # shellcheck source=use_rust_1_99.sh
 source "$root/scripts/use_rust_1_99.sh"
-rustup target add --toolchain 1.99 thumbv7em-none-eabihf >/dev/null
-QEMU="${QEMU:-qemu-system-arm}"
-
-echo "== cargo build -p zenith-float-num --no-default-features --lib --target thumbv7em-none-eabihf"
-cargo build -p zenith-float-num --no-default-features --lib --target thumbv7em-none-eabihf
-echo "== cargo build -p zenith-float --no-default-features --lib --target thumbv7em-none-eabihf"
-cargo build -p zenith-float --no-default-features --lib --target thumbv7em-none-eabihf
+for t in x86_64-unknown-none aarch64-unknown-none; do
+  rustup target add --toolchain 1.99 "$t" >/dev/null
+  echo "== cargo build -p zenith-float-num --no-default-features --lib --target $t"
+  cargo build -p zenith-float-num --no-default-features --lib --target "$t"
+  echo "== cargo build -p zenith-float --no-default-features --lib --target $t"
+  cargo build -p zenith-float --no-default-features --lib --target "$t"
+done
 
 cd nostd-tests
 echo "== nostd-host (x86_64-unknown-linux-gnu, #![no_std] + libc)"
 cargo build --release --features host --bin nostd-host
 "${CARGO_TARGET_DIR:-target}/release/nostd-host"
-
-echo "== nostd-qemu (thumbv7em-none-eabihf, Cortex-M4F under QEMU)"
-cargo build --release --features qemu --bin nostd-qemu --target thumbv7em-none-eabihf
-"$QEMU" -machine mps2-an386 -cpu cortex-m4 -nographic -semihosting-config enable=on,target=native \
-  -kernel "${CARGO_TARGET_DIR:-target}/thumbv7em-none-eabihf/release/nostd-qemu"

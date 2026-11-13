@@ -1,0 +1,13 @@
+diff --git a/src/mag/round.rs b/src/mag/round.rs
+index 904ec82..0c6a445 100644
+--- a/src/mag/round.rs
++++ b/src/mag/round.rs
+@@ -66,7 +66,7 @@ pub(super) fn norm(m: NonZeroU128, scale: i128, sticky: bool, up: bool) -> Optio
+     let lz = m.leading_zeros();
+     let (drop, add) = match 64u32.checked_sub(lz) {
+         Some(drop) => (drop, 0),
+-        None => (0, lz.abs_diff(64)),
++        None => (0, lz.abs_diff(63)),
+     };
+     let m = m.get();
+     let lost = (m & !(u128::MAX << drop)) != 0;

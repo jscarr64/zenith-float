@@ -7,7 +7,7 @@
 
 use crate::mpfr::common::{emulated_range_ok, exact_mpfr_shifted, mpfr_reference_shifted};
 use crate::mpfr::common::{show_mp, with_full_range};
-use crate::mpfr::exact_bit_functions::MODES;
+use crate::mpfr::exact_bit_functions::{MODES, NONE_GAP_MODES};
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::Float;
 use std::ops::Neg;
@@ -131,9 +131,8 @@ fn limits_are_62_bit_and_match_mpfr() {
     assert_eq!(EXPONENT_MAX as i128, (1i128 << 62) - 1);
     assert_eq!(EXPONENT_MIN as i128, -((1i128 << 62) - 1));
     assert_eq!(size_of::<Exponent>(), 8);
-    let by_size = (usize::MAX / 4) as u128;
-    let lim = (1u128 << 60).min(by_size);
-    assert_eq!(MAX_PRECISION as u128, lim - 1);
+    // The fixed 2^60 - 1, no usize-width cap (order 3, 2026-11-10).
+    assert_eq!(MAX_PRECISION, (1usize << 60) - 1);
     unsafe {
         assert_eq!(mpfr::get_emax_max() as i128, EXPONENT_MAX as i128);
         assert_eq!(mpfr::get_emin_min() as i128, EXPONENT_MIN as i128);
@@ -156,7 +155,8 @@ fn top_edge_carry_out_and_overflow() -> Res {
                 let (x, h) = if neg { (x.neg(), half_ulp.neg()) } else { (x, half_ulp) };
                 let fx = with_full_range(|| exact_mpfr_shifted(&x, 0))?;
                 let fh = with_full_range(|| exact_mpfr_shifted(&h, 0))?;
-                for rm in MODES {
+                // NONE-GAP F-B: x+x and x*2 overflow at the top edge (ZF-M27)
+                for rm in NONE_GAP_MODES {
                     let pu = p as u32;
                     let cases: [EdgeCase; 4] = [
                         (

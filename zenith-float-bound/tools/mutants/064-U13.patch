@@ -1,0 +1,13 @@
+diff --git a/src/mag/ulp.rs b/src/mag/ulp.rs
+index 94fed1e..80fecf2 100644
+--- a/src/mag/ulp.rs
++++ b/src/mag/ulp.rs
+@@ -21,7 +21,7 @@ impl Mag {
+             .and_then(|diff| diff.checked_add(1))
+         {
+             Some(mag_exp) => place_pow2(mag_exp),
+-            None => Mag::infinity(),
++            None => Mag::zero(),
+         }
+     }
+ 

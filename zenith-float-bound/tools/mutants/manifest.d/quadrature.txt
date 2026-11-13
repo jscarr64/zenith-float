@@ -1,0 +1,3 @@
+# range: 800-899
+# Slice S5 (src/quadrature.rs) mutants, owned by S5 alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
+# ids NNN-<name> with NNN in 800..=899; patches go in tools/mutants/quadrature/ and the patch column reads quadrature/NNN-<name>.patch.

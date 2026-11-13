@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..3f9ab3b 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -249,7 +249,7 @@ impl Ball {
+             .add_up(&Mag::from_exact_num(n).mul_up(&r));
+         let rad = num.div_up(&n_lo.mul_lower(&n_lo.sub_lower(s)));
+         let q = match m.div_exact(n, prec) {
+-            Ok(Some(q)) => q,
++            Ok(Some(q)) => q.neg(),
+             Ok(None) | Err(_) => m.div(n, prec, MID_RM),
+         };
+         finish(OP, q, &rad, prec, false)

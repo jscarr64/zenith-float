@@ -1,0 +1,11 @@
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -114,7 +114,7 @@
+             if d.inexact() {
+                 return None;
+             }
+-            if d.is_inf() {
++            if d.is_nan() {
+                 return self.cmp_overflow_diff(a, b);
+             }
+             return self.cmp_exact_num(&d);

@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -113,7 +113,7 @@
+         }
+         let sigma2 = dot_pairs(op, x.iter().map(|b| (*b, *b)), rows, w)?;
+         if !excludes_zero(&sigma2) {
+-            return Err(resource(op, "undecided_rank"));
++            return Err(singular(op, "rank_deficient"));
+         }
+         let sigma = sigma2.sqrt(w, &DomainPolicy::Strict)?;
+         if !excludes_zero(&sigma) {

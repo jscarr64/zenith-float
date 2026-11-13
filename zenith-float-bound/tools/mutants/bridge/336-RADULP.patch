@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 8fff0d2..9307044 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -271,7 +271,7 @@ pub fn constant_ball(cc: &mut Consts, c: &Constant, prec: Precision) -> BoundRes
+     if mid.inexact() || !mid.is_positive() {
+         return Err(not_one_ulp);
+     }
+-    let rad = Mag::from_exact_num(&half);
++    let rad = Mag::from_exact_num(&half.add_full_prec(&half));
+     Ball::from_mid_rad(mid, rad, prec)
+ }
+ 

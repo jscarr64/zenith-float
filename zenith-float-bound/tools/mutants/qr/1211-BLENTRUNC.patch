@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -367,7 +367,7 @@
+         if p > m {
+             return Err(mismatch(OP, "wide"));
+         }
+-        if b.len() != m {
++        if b.len() < m {
+             return Err(mismatch(OP, "b_len"));
+         }
+         if p == 0 {

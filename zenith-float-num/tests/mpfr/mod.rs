@@ -1,5 +1,6 @@
 // Derived from astro-float (https://github.com/stencillogic/astro-float),
 // Copyright (c) 2022 stencillogic, MIT License.
+pub mod all_modes_jacobi_airy;
 mod common;
 pub mod compare_complex_test;
 pub mod compare_const_test;
@@ -12,11 +13,13 @@ pub mod compare_special_test;
 pub mod exact_bit_binary;
 pub mod exact_bit_functions;
 pub mod exact_p_consts;
+pub mod extra_modes_seeded;
 pub mod fuzz_round_modes;
 pub mod i64_edges;
 pub mod mag_parts;
 pub mod overflow_modes;
 pub mod pow_specials;
+pub mod precision_boundaries;
 pub mod rem_exact;
 pub mod retry_budget;
 pub mod rng_isolation;

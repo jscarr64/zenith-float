@@ -1,0 +1,19 @@
+# range: 1500-1599
+# Slice CB (src/cball.rs) mutants, owned by CB alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite); S3 keeps the 400s.
+# Only rows whose patch exists are listed; the mul/div rows (1506-1512, 1515, 1516) stay planned until those ops land.
+src/cball.rs:CBall::sqr	1500-SQRREADD	cball/1500-SQRREADD.patch	harness
+src/cball.rs:CBall::sqr	1501-SQRIMNO2	cball/1501-SQRIMNO2.patch	harness
+src/cball.rs:CBall::sqr	1502-SQRRESWAP	cball/1502-SQRRESWAP.patch	harness
+src/cball.rs:CBall::sqr	1503-SQRIM4	cball/1503-SQRIM4.patch	harness
+src/cball.rs:CBall::sqr	1504-SQRREONLY	cball/1504-SQRREONLY.patch	harness
+src/cball.rs:CBall::abs	1505-ABSNOHYP	cball/1505-ABSNOHYP.patch	harness
+src/cball.rs:CBall::conj	1513-CONJRE	cball/1513-CONJRE.patch	harness
+src/cball.rs:CBall::new	1514-PRECCHK	cball/1514-PRECCHK.patch	harness
+src/cball.rs:CBall::add	1517-ADDSUB	cball/1517-ADDSUB.patch	harness
+src/cball.rs:CBall::sub	1518-SUBIMADD	cball/1518-SUBIMADD.patch	harness
+src/cball.rs:Neg for CBall	1519-NEGIM	cball/1519-NEGIM.patch	harness
+src/cball.rs:CBall::from_real	1520-FROMREALIM	cball/1520-FROMREALIM.patch	harness
+src/cball.rs:CBall::identical	1521-IDENTIM	cball/1521-IDENTIM.patch	harness
+src/cball.rs:CBall::sqr	1522-SQRREWIDE	cball/1522-SQRREWIDE.patch	harness
+tests/harness/slice_cball.rs:sqr_ref	1523-SQRREFNOIM	cball/1523-SQRREFNOIM.patch	harness
+tests/harness/slice_cball.rs:sqr_ref	1524-SQRREFNOXY	cball/1524-SQRREFNOXY.patch	harness

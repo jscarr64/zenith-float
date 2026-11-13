@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4a73525..5b23b56 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -520,7 +520,7 @@ fn clear_of_zero(n: &ExactNum, s: &Mag) -> Option<Mag> {
+         return None;
+     }
+     match s.cmp_exact_num(n).map(Ordering::reverse) {
+-        Some(Ordering::Greater) => Some(Mag::from_exact_num_lower(n)),
++        Some(Ordering::Greater) => Some(Mag::from_exact_num(n)),
+         Some(Ordering::Equal | Ordering::Less) | None => None,
+     }
+ }

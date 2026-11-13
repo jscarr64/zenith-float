@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 1f8372d..9b819c7 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -368,7 +368,7 @@ impl Ball {
+ 
+     /// `self > other`, i.e. `other < self` (CONTRACT 15.2, 16.S1.11).
+     pub fn gt(&self, other: &Ball) -> Tri {
+-        other.lt(self)
++        self.lt(other)
+     }
+ 
+     /// `self ≥ other`, i.e. `other ≤ self` (CONTRACT 15.2, 16.S1.11).

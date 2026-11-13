@@ -1,0 +1,13 @@
+diff --git a/src/bridge.rs b/src/bridge.rs
+index 0ce786b..4abacb0 100644
+--- a/src/bridge.rs
++++ b/src/bridge.rs
+@@ -94,7 +94,7 @@ impl Mag {
+         }
+         let (ea, eb) = match (exp_of(a), exp_of(b)) {
+             (Some(ea), Some(eb)) => (ea, eb),
+-            (None, _) => return self.cmp_exact_num(b),
++            (None, _) => return self.cmp_exact_num(a),
+             (_, None) => return self.cmp_exact_num(a),
+         };
+         let gap = if ea >= eb {

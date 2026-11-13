@@ -19,7 +19,22 @@ const P: usize = 100_032;
 /// Precision of the tests whose retry steps are the most expensive (`ln`, `log`, `nth_root`).
 const PM: usize = 40_064;
 
-const MODES: [RoundingMode; 6] = [
+/// All 7 modes: `None` is checked against MPFR toward zero at the storage precision rp(p, 64) (FIXLIST ZF-M27).
+const MODES: [RoundingMode; 7] = [
+    RoundingMode::ToEven,
+    RoundingMode::ToOdd,
+    RoundingMode::Up,
+    RoundingMode::Down,
+    RoundingMode::ToZero,
+    RoundingMode::FromZero,
+    RoundingMode::None,
+];
+
+/// KNOWN GAP, queued for the ZF-M27 conformance PR (#39 final rule, 2026-11-11): every mode but `None` (ToEven, ToOdd,
+/// Up, Down, ToZero, FromZero), for the families that fail the strict None oracle. NONE-GAP F-A: an exact `nth_root`
+/// result comes back as its predecessor at rp(p, 64), flagged inexact (`log` of an exact power of its base too).
+/// NONE-GAP F-C: `log` with a base near a grid point is 1 ulp below the toward-zero cut.
+const NONE_GAP_MODES: [RoundingMode; 6] = [
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
     RoundingMode::Up,
@@ -392,7 +407,8 @@ fn log_with_base_near_a_grid_point_at_40064_bits() -> Res {
     let x = one_plus_pow2(PM, 2 - PM as Exponent);
     let fb = conv_to_mpfr(PM, &b, &mut cc)?;
     let fx = conv_to_mpfr(PM, &x, &mut cc)?;
-    for rm in MODES {
+    // NONE-GAP F-C: 1 ulp below the toward-zero cut under None (ZF-M27)
+    for rm in NONE_GAP_MODES {
         let got = x.log(&b, PM, rm, &mut cc);
         check(
             &got,
@@ -540,7 +556,7 @@ const ALL_NAMES: [&str; 10] =
     ["exp", "expm1", "sinh", "cosh", "tanh", "sin", "cos", "tan", "atan", "log1p"];
 
 /// From the bottom of the exponent range to 2, around `-p/2` and `-p` where the result changes from "1 plus a
-/// tail below the last bit" to "1 plus a tail the rounding has to see": all six modes, `p = 20032`.
+/// tail below the last bit" to "1 plus a tail the rounding has to see": all 7 modes, `p = 20032`.
 #[test]
 fn wide_exponent_range_at_20032_bits() -> Res {
     const W: usize = 20_032;
@@ -785,9 +801,10 @@ fn exact_results_of_other_shapes(cc: &mut Consts) -> Res {
         let run = |name: &str,
                    got: &dyn Fn(RoundingMode) -> ExactNum,
                    want: &dyn Fn(&mut Float, Round) -> std::cmp::Ordering,
+                   modes: &[RoundingMode],
                    cc: &mut Consts|
          -> Res {
-            for rm in MODES {
+            for &rm in modes {
                 check(&got(rm), p, rm, &format!("{name} {tag}"), cc, |r, rnd| {
                     ternary(want(r, round_of(rnd)))
                 })?;
@@ -802,6 +819,7 @@ fn exact_results_of_other_shapes(cc: &mut Consts) -> Res {
                 &format!("reciprocal(2^{k})"),
                 &|rm| x.reciprocal(p, rm),
                 &|r, rd| r.assign_round(fx.recip_ref(), rd),
+                &MODES,
                 cc,
             )?;
         }
@@ -816,6 +834,7 @@ fn exact_results_of_other_shapes(cc: &mut Consts) -> Res {
                 &format!("hypot({a},{b})2^{k}"),
                 &|rm| x.hypot(&y, p, rm),
                 &|r, rd| r.assign_round(fx.hypot_ref(&fy), rd),
+                &MODES,
                 cc,
             )?;
         }
@@ -827,6 +846,8 @@ fn exact_results_of_other_shapes(cc: &mut Consts) -> Res {
                 &format!("nth_root({base}^{n},{n})"),
                 &|rm| v.nth_root(n, p, rm),
                 &|r, rd| r.assign_round(fv.root_ref(n as u32), rd),
+                // NONE-GAP F-A: nth_root(2^4, 4) at p=64 is the predecessor of 2, flagged inexact (ZF-M27)
+                &NONE_GAP_MODES,
                 cc,
             )?;
         }
@@ -835,7 +856,8 @@ fn exact_results_of_other_shapes(cc: &mut Consts) -> Res {
             let v = int(b.pow(j), p);
             let base = int(b, p);
             let want = Float::with_val(p as u32, j);
-            for rm in MODES {
+            // NONE-GAP F-A: log(2^5, 2) = 5 at p=64 is the predecessor of 5, flagged inexact (ZF-M27)
+            for rm in NONE_GAP_MODES {
                 let got = v.log(&base, p, rm, cc);
                 check(
                     &got,
@@ -853,6 +875,7 @@ fn exact_results_of_other_shapes(cc: &mut Consts) -> Res {
             "fma(3,4,5)",
             &|rm| a.fma(&b, &c, p, rm),
             &|r, rd| r.assign_round(&want, rd),
+            &MODES,
             cc,
         )?;
     }

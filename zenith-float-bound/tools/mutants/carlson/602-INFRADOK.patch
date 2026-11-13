@@ -1,0 +1,13 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -159,9 +159,6 @@
+     let mut cc = Consts::new().map_err(|_| resource(op, "zf constants cache"))?;
+     let m = x.mid();
+     let r = x.rad();
+-    if r.is_infinity() {
+-        return unbounded(op, prec, strict);
+-    }
+     let (lo_own, hi_own) = if r.is_zero() {
+         (None, None)
+     } else {

@@ -1,0 +1,4 @@
+# Slice S2 golden checksums (sha256sum format), checked by tools/goldens_regen.sh. Every *.txt in this directory must be listed.
+56ad36ca1fd655112e436488e835fb3fdbf7b0ae54a12522317b5ccee51a9c92  bridge_consts.txt
+e882810d3ebb77f2f2def2ed9110db8c5c0af4d881d2344127ab0017abcbda87  bridge_cmp.txt
+1650b8aee0fdd7873cb26e9700c6980a9dfb1ec5856ca5273dff205e89116b19  bridge_wide.txt

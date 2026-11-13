@@ -1,0 +1,11 @@
+diff --git a/src/policy.rs b/src/policy.rs
+--- a/src/policy.rs
++++ b/src/policy.rs
+@@ -12,7 +12,6 @@
+ }
+ 
+ /// Options of the linear solvers (CONTRACT 10.1). Start from `SolveOpts::default()` and set fields.
+-#[non_exhaustive]
+ #[derive(Debug, PartialEq, Eq)]
+ pub struct SolveOpts {
+     /// Iterative-refinement steps after the first solve (default 2).

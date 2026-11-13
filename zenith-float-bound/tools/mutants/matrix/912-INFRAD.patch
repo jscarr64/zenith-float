@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -124,7 +124,7 @@
+             .add_up(&ra.mul_up(&mb_up.add_up(rb)));
+         rad = rad.add_up(&first);
+         if rad.is_infinity() {
+-            return Ball::all_reals(prec);
++            return Ball::from_mid_rad(s, Mag::zero(), prec);
+         }
+         let p = match rounded(op, ma.mul_full_prec(mb).ldexp(0, w, MID_RM), w)? {
+             Step::Value(v, e) => {

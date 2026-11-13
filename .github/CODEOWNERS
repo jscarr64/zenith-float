@@ -16,3 +16,13 @@
 /tools/ziv_shape_a_sites.txt @jscarr64
 /tools/clone_helper_combined_baseline.txt @jscarr64
 /tools/helper_copy_rule_base.txt @jscarr64
+# Bound layer (zenith-float-bound/, folded 2026-11-10 from the zb tree at fcaf135; its CODEOWNERS moved here with the
+# new prefix): everything under it, plus the protected gate, scan, digest and tightness files and the manifest.
+/zenith-float-bound/ @jscarr64
+/zenith-float-bound/Cargo.toml @jscarr64
+/zenith-float-bound/tools/full_gate.sh @jscarr64
+/zenith-float-bound/tools/digests.sh @jscarr64
+/zenith-float-bound/tools/digest_expected.txt @jscarr64
+/zenith-float-bound/tools/digest_targets.txt @jscarr64
+/zenith-float-bound/tools/tightness_report.py @jscarr64
+/zenith-float-bound/tools/tightness_baseline.txt @jscarr64

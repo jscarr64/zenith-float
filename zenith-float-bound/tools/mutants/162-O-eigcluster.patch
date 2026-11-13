@@ -1,0 +1,12 @@
+diff --git a/src/policy.rs b/src/policy.rs
+--- a/src/policy.rs
++++ b/src/policy.rs
+@@ -39,7 +39,7 @@
+     fn default() -> Self {
+         EigOpts {
+             max_sweeps: 64,
+-            cluster: true,
++            cluster: false,
+         }
+     }
+ }

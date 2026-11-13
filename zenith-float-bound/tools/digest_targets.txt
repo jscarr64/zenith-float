@@ -1,0 +1,5 @@
+# S13 cross-target manifest: one target triple per line, or `host`. Every listed target is run in debug and release with 1 and 7 test threads.
+# Host only. zenith-float 2.0 is 64-bit only (P6/P8; Jeff 2026-11-10 "Yes 64 bit only please"): the 32-bit and wasm
+#   candidates of the former D8 question (i686, thumbv6m/thumbv7em, wasm32) were dropped. A 64-bit target (e.g. aarch64)
+#   may be added with its std installed and a way to execute its binaries.
+host

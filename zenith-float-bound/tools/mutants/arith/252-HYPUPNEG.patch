@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index f86eb99..195859b 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -323,7 +323,7 @@ fn abs_lower(m: &ExactNum, r: &Mag, rn: &ExactNum, wp: Precision) -> ExactNum {
+ /// An upper bound on `max |m ± r|` at `wp` bits: `|m| + r` rounded away from 0.
+ fn abs_upper(m: &ExactNum, rn: &ExactNum, wp: Precision) -> ExactNum {
+     let x = ExactNum::from(1i64).mul(m, wp, RoundingMode::FromZero);
+-    if m.is_negative() {
++    if !m.is_negative() {
+         x.sub(rn, wp, RoundingMode::FromZero)
+     } else {
+         x.add(rn, wp, RoundingMode::FromZero)

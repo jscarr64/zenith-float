@@ -1,0 +1,11 @@
+diff --git a/src/lu.rs b/src/lu.rs
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -342,6 +342,7 @@
+         for k in 0..n {
+             acc = acc.mul(diag(OP, &self.u, k)?, w)?;
+         }
++        if !acc.is_informative() { return Err(resource(OP, "overflow")); }
+         if self.perm_sign() < 0 {
+             acc = zero(w)?.sub(&acc, w)?;
+         }

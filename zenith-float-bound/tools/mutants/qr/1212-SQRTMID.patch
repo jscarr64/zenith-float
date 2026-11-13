@@ -1,0 +1,11 @@
+--- a/src/qr.rs
++++ b/src/qr.rs
+@@ -115,7 +115,7 @@
+         if !excludes_zero(&sigma2) {
+             return Err(resource(op, "undecided_rank"));
+         }
+-        let sigma = sigma2.sqrt(w, &DomainPolicy::Strict)?;
++        let sigma = Ball::exact(sigma2.sqrt(w, &DomainPolicy::Strict)?.into_parts().0, w)?;
+         if !excludes_zero(&sigma) {
+             return Err(resource(op, "undecided_rank"));
+         }

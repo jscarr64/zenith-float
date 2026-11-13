@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -354,7 +354,7 @@
+             .as_slice()
+             .iter()
+             .map(entry_up)
+-            .fold(Mag::zero(), Ord::max)
++            .fold(Mag::zero(), |a, b| a.add_up(&b))
+     }
+ 
+     /// Upper bound of the sum of `|m| + r` over the entries (CONTRACT 16.S6.6, BallVec norms); 0 for the empty vector.

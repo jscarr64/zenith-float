@@ -1,0 +1,23 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -676,8 +676,8 @@
+     unit_diag: bool,
+     prec: Precision,
+ ) -> BoundResult<BallVec> {
+-    check_prec(op, prec)?;
+     let n = tri_shape(op, t, b.len())?;
++    check_prec(op, prec)?;
+     let mut xw = reserve(op, n)?;
+     let mut out = reserve(op, n)?;
+     let a = t.as_array().as_slice();
+@@ -704,8 +704,8 @@
+     unit_diag: bool,
+     prec: Precision,
+ ) -> BoundResult<BallMat> {
+-    check_prec(op, prec)?;
+     let n = tri_shape(op, t, b.nrows())?;
++    check_prec(op, prec)?;
+     let k = b.ncols();
+     let count = n
+         .checked_mul(k)

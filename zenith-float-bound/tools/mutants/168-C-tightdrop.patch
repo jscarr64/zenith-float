@@ -1,0 +1,16 @@
+diff --git a/src/enclosure.rs b/src/enclosure.rs
+index 07fca48..226724d 100644
+--- a/src/enclosure.rs
++++ b/src/enclosure.rs
+@@ -77,10 +77,7 @@ impl Enclosure for Ball {
+         }
+         // Tight: a rad zenith-float can hold is exact at p (64-bit mantissa, p >= MIN_PREC + GUARD_BITS), and directed
+         // rounding is monotone and fixes representable values, so hi > rad (or lo < -rad) decides |mid - x| > rad.
+-        match self.rad().to_exact_num() {
+-            Ok(_) => Tri::False,
+-            Err(_) => Tri::Unknown,
+-        }
++        Tri::Unknown
+     }
+ }
+ 

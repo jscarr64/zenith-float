@@ -1,0 +1,11 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -463,6 +463,6 @@
+ 
+     /// Upper bound of the Frobenius norm of every matrix in the ball (CONTRACT 16.S6.6).
+     pub fn norm_frob_up(&self) -> Mag {
+-        sum_sq_up(self.as_array().as_slice().iter()).sqrt_up()
++        sum_sq_up(self.as_array().as_slice().iter()).sqrt_lower()
+     }
+ }

@@ -1,0 +1,11 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -135,6 +135,7 @@
+ fn wp_cap(op: &'static str, prec: Precision) -> BoundResult<Precision> {
+     prec.checked_mul(CAP_FACTOR)
+         .and_then(|p| p.checked_add(CAP_EXTRA))
++        .map(|c| c.min(prec))
+         .ok_or_else(|| resource(op, "precision cap"))
+ }
+ 

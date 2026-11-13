@@ -1,0 +1,13 @@
+diff --git a/src/arith.rs b/src/arith.rs
+index 4ed7629..bbd73a3 100644
+--- a/src/arith.rs
++++ b/src/arith.rs
+@@ -204,7 +204,7 @@ impl Ball {
+         };
+         match (lo, strict, hi) {
+             (Ordering::Greater, _, _) => {
+-                let root_lower = Mag::from_exact_num_lower(m).sqrt_lower();
++                let root_lower = Mag::from_exact_num_lower(m).sqrt_up();
+                 let rad = r.div_up(&root_lower);
+                 finish(OP, m.sqrt(prec, MID_RM), &rad, prec, false)
+             }

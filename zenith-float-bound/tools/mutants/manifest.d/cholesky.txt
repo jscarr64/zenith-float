@@ -1,0 +1,3 @@
+# range: 1000-1099
+# Slice LA1 (src/cholesky.rs) mutants, owned by LA1 alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
+# ids NNN-<name> with NNN in 1000..=1099; patches go in tools/mutants/cholesky/ and the patch column reads cholesky/NNN-<name>.patch.

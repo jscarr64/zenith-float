@@ -1,0 +1,12 @@
+diff --git a/src/mag/lower.rs b/src/mag/lower.rs
+--- a/src/mag/lower.rs
++++ b/src/mag/lower.rs
+@@ -77,7 +77,7 @@ fn sub_wide(ea: i64, ma: NonZeroU64, gap: i128, mb: NonZeroU64) -> Option<Mag> {
+     // the low `shift >= 64` bits and mb is a nonzero value below 2^64, `frac == true`, i.e. exactly
+     // the `(0, true)` of the other arm. So the guard `< 64` is the tightest exact one.
+     let (subtrahend, frac) = match u32::try_from(gap.checked_sub(63)?) {
+-        Ok(shift) if shift < 64 => {
++        Ok(shift) if shift < 65 => {
+             let mb = u128::from(mb.get());
+             (mb >> shift, (mb & !(u128::MAX << shift)) != 0)
+         }

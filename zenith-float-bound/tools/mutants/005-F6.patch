@@ -1,0 +1,13 @@
+diff --git a/src/mag/mod.rs b/src/mag/mod.rs
+index 746cd54..bf1794c 100644
+--- a/src/mag/mod.rs
++++ b/src/mag/mod.rs
+@@ -115,7 +115,7 @@ impl Mag {
+     }
+ 
+     fn min_pos() -> Mag {
+-        Mag::from_canonical(i64::MIN, TOP)
++        Mag::from_canonical(i64::MIN + 1, TOP)
+     }
+ 
+     fn max_finite() -> Mag {

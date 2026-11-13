@@ -1,0 +1,12 @@
+diff --git a/src/enclosure.rs b/src/enclosure.rs
+--- a/src/enclosure.rs
++++ b/src/enclosure.rs
+@@ -50,7 +50,7 @@
+     }
+ 
+     fn contains(&self, x: &ExactNum) -> Tri {
+-        if x.is_nan() || x.is_inf() {
++        if x.is_nan() {
+             return Tri::False;
+         }
+         if self.rad().is_infinity() {

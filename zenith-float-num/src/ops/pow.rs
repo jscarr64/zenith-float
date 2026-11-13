@@ -1185,7 +1185,15 @@ mod test {
         let tiny = ExactNumNumber::from_word(1, p)?.ldexp(-10, p, RoundingMode::None)?;
         // y = 1 - 2^-10: x^y = x x^(-2^-10) ~ 2^(EXPONENT_MIN + 2^52), normal
         let y = ONE.sub(&tiny, p, RoundingMode::None)?;
-        for rm in [RoundingMode::ToZero, RoundingMode::FromZero, RoundingMode::ToEven] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let r = x.pow(&y, p, rm, &mut cc)?;
             let e = i128::from(r.exponent()) - i128::from(EXPONENT_MIN);
             assert!(
@@ -1203,7 +1211,15 @@ mod test {
             ExactNumNumber::from_word(1, p)?.ldexp(EXPONENT_MIN - 34, p, RoundingMode::None)?;
         let hi =
             ExactNumNumber::from_word(1, p)?.ldexp(EXPONENT_MIN - 32, p, RoundingMode::None)?;
-        for rm in [RoundingMode::ToZero, RoundingMode::FromZero, RoundingMode::ToEven] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let r = x.pow(&y, p, rm, &mut cc)?;
             assert!(r.cmp(&lo) > 0 && r.cmp(&hi) < 0, "{rm:?}: {r:?}");
         }

@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -350,7 +350,7 @@
+         // W0 >= -1 and W-1 <= -1 always: these clamps need no test.
+         (Branch::Principal, Side::Below, Ordering::Less)
+         | (Branch::Lower, Side::Above, Ordering::Greater | Ordering::Equal) => {
+-            return Some(minus_one);
++            return Some(num(0));
+         }
+         (Branch::Principal, Side::Above, Ordering::Less)
+         | (Branch::Lower, Side::Below, Ordering::Greater) => minus_one,

@@ -1,0 +1,13 @@
+diff --git a/src/mag/round.rs b/src/mag/round.rs
+index 904ec82..207a518 100644
+--- a/src/mag/round.rs
++++ b/src/mag/round.rs
+@@ -76,7 +76,7 @@ pub(super) fn norm(m: NonZeroU128, scale: i128, sticky: bool, up: bool) -> Optio
+     let exp = scale
+         .checked_add(i128::from(drop))?
+         .checked_sub(i128::from(add))?
+-        .checked_add(64)?;
++        .checked_add(63)?;
+     if up && (sticky || lost) {
+         match mant.checked_add(1) {
+             Some(next) => Some(pack(exp, next, up)),

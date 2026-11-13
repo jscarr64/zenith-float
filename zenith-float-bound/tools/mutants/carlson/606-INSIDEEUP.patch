@@ -1,0 +1,12 @@
+diff --git a/src/carlson.rs b/src/carlson.rs
+--- a/src/carlson.rs
++++ b/src/carlson.rs
+@@ -257,7 +257,7 @@
+         if cmp(&x.mul_full_prec(&e_hi), &minus_one).is_some_and(|o| o != Ordering::Less) {
+             return true;
+         }
+-        let e_lo = cc.e(wp, RoundingMode::Down);
++        let e_lo = cc.e(wp, RoundingMode::Up);
+         if cmp(&x.mul_full_prec(&e_lo), &minus_one).is_some_and(|o| o != Ordering::Greater) {
+             return false;
+         }

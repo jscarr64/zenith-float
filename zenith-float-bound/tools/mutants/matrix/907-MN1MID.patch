@@ -1,0 +1,12 @@
+diff --git a/src/matrix.rs b/src/matrix.rs
+--- a/src/matrix.rs
++++ b/src/matrix.rs
+@@ -457,7 +457,7 @@
+         }
+         let data = self.as_array().as_slice();
+         (0..n)
+-            .map(|j| sum_up(data.iter().skip(j).step_by(n)))
++            .map(|j| data.iter().skip(j).step_by(n).fold(Mag::zero(), |a, b| a.add_up(&Mag::from_exact_num(b.mid()))))
+             .fold(Mag::zero(), Ord::max)
+     }
+ 

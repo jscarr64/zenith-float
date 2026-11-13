@@ -1,0 +1,11 @@
+--- a/src/lu.rs
++++ b/src/lu.rs
+@@ -387,7 +387,7 @@
+                 .ok_or_else(|| resource(OP, "index out of range"))?;
+             pb.push(widen(x, w)?);
+         }
+-        let y = self.l.solve_lower(&BallVec::from_balls(pb), true, w)?;
++        let y = self.l.solve_lower(&BallVec::from_balls(pb), false, w)?;
+         let x = self.u.solve_upper(&y, false, w)?;
+         let (_shape, xs) = x.into_array().into_parts();
+         let mut out: Vec<Ball> = reserve(OP, n)?;

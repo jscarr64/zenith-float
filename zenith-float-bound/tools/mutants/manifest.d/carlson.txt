@@ -1,0 +1,30 @@
+# range: 600-699
+# Slice S4b (src/carlson.rs) mutants, owned by S4b alone. Rows as in ../manifest.txt (fn_path<TAB>mutant_id<TAB>patch<TAB>suite);
+# ids NNN-<name> with NNN in 600..=699; patches go in tools/mutants/carlson/ and the patch column reads carlson/NNN-<name>.patch.
+src/carlson.rs:Ball::lambert_w0	600-PRECNOCHECK	carlson/600-PRECNOCHECK.patch	harness
+src/carlson.rs:Ball::lambert_w0	601-STRICTOFF	carlson/601-STRICTOFF.patch	harness
+src/carlson.rs:Ball::lambert_w0	602-INFRADOK	carlson/602-INFRADOK.patch	harness
+src/carlson.rs:Ball::lambert_w0	603-ENDLOADD	carlson/603-ENDLOADD.patch	harness
+src/carlson.rs:Ball::lambert_w0	604-ENDFARIN	carlson/604-ENDFARIN.patch	harness
+src/carlson.rs:Ball::lambert_w0	605-INSIDEALL	carlson/605-INSIDEALL.patch	harness
+src/carlson.rs:Ball::lambert_w0	606-INSIDEEUP	carlson/606-INSIDEEUP.patch	harness
+src/carlson.rs:Ball::lambert_w0	607-INSIDECAP	carlson/607-INSIDECAP.patch	harness
+src/carlson.rs:Ball::lambert_w0	608-ZEROONE	carlson/608-ZEROONE.patch	harness
+src/carlson.rs:Ball::lambert_w0	609-LOGNEVER	carlson/609-LOGNEVER.patch	harness
+src/carlson.rs:Ball::lambert_w0	610-FLATOFF	carlson/610-FLATOFF.patch	harness
+src/carlson.rs:Ball::lambert_w0	611-DELTAWIDE	carlson/611-DELTAWIDE.patch	harness
+src/carlson.rs:Ball::lambert_w0	612-BELOWADD	carlson/612-BELOWADD.patch	harness
+src/carlson.rs:Ball::lambert_w0	613-CLAMPZERO	carlson/613-CLAMPZERO.patch	harness
+src/carlson.rs:Ball::lambert_w0	616-NONEWTON	carlson/616-NONEWTON.patch	harness
+src/carlson.rs:Ball::lambert_w0	617-MIDNOHALF	carlson/617-MIDNOHALF.patch	harness
+src/carlson.rs:Ball::lambert_w0	618-RADABOVEONLY	carlson/618-RADABOVEONLY.patch	harness
+src/carlson.rs:Ball::lambert_w0	619-CAPLOW	carlson/619-CAPLOW.patch	harness
+src/carlson.rs:Ball::lambert_wm1	620-WM1POSOK	carlson/620-WM1POSOK.patch	harness
+src/carlson.rs:Ball::lambert_wm1	621-WM1SWAP	carlson/621-WM1SWAP.patch	harness
+src/carlson.rs:Ball::lambert_wm1	622-WM1CLIPHI	carlson/622-WM1CLIPHI.patch	harness
+src/carlson.rs:Ball::lambert_w0	623-W0CLIPLO	carlson/623-W0CLIPLO.patch	harness
+src/carlson.rs:Ball::lambert_wm1	624-BRANCHSEED	carlson/624-BRANCHSEED.patch	harness
+# Dropped (Spence review): 625. Kept as patches but not run by mutate.sh (it runs only --test suites): 614-PRODBELOWGT,
+# 615-LOGABOVELT and 626-RADBELOW64 are killed only by the in-module lib tests (slice_carlson_unit), log
+# ~/pop-logs/cassie/2026-10-30/1130-s4b-r4-kill3-env-oracle-2026-10-30.log; the harness passes under all three. Re-add when
+# mutate.sh supports a lib suite. 624-BRANCHSEED is KILLED (~/pop-logs/cassie/2026-10-30/1025-s4b-r3-mut-env-oracle-venv.log), so it stays.

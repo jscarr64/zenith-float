@@ -610,6 +610,13 @@ pub fn mpfr_reference_shifted<F>(
 where
     F: Fn(&mut Float, rnd_t) -> i32,
 {
+    // `RoundingMode::None` skips the final rounding and keeps the storage precision: the result is the value cut
+    // toward zero at rp(p, 64) bits (FIXLIST ZF-M27, Jeff 2026-10-30; 64-bit only, so rp(p, word) = rp(p, 64);
+    // num.rs set_precision_internal: no rounding, then `set_length(p)` truncates to whole words). The strict
+    // oracle is MPFR toward zero at that precision, with the same subnormal grid rule at that precision.
+    if rm == RoundingMode::None {
+        return mpfr_reference_shifted(storage_bits(p)?, RoundingMode::ToZero, shift, f);
+    }
     let (old_min, old_max) = unsafe { (mpfr::get_emin(), mpfr::get_emax()) };
     let (emin, emax) = emulated_range(p, shift);
     unsafe {
@@ -624,11 +631,12 @@ where
         RoundingMode::FromZero => Some(rnd_t::RNDA),
         RoundingMode::ToOdd => None,
         RoundingMode::None => {
+            // handled at the top (toward zero at the storage precision)
             unsafe {
                 mpfr::set_emin(old_min);
                 mpfr::set_emax(old_max);
             }
-            return Err(format!("no MPFR reference for {rm:?}").into());
+            return Err(format!("no MPFR reference for {rm:?} at {p} bits").into());
         }
     };
     let out = if let Some(rnd) = rnd {
@@ -750,6 +758,13 @@ where
         mpfr::set_emax(old_max);
     }
     Ok(out)
+}
+
+/// rp(p, 64): `p` rounded up to whole 64-bit words, the storage precision a `RoundingMode::None` result keeps.
+pub fn storage_bits(p: u32) -> Result<u32, Box<dyn std::error::Error>> {
+    p.div_ceil(64)
+        .checked_mul(64)
+        .ok_or_else(|| format!("storage precision of {p} bits overflows u32").into())
 }
 
 /// MPFR `(emin, emax)` that emulates the zenith range scaled by `2^shift` at precision `p`, clamped to
