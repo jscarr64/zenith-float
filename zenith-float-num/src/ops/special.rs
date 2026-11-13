@@ -3811,14 +3811,19 @@ fn shift_up<S>(
 where
     S: FnMut(&mut ExactNumNumber) -> Result<(), Error>,
 {
-    let _ = (p, EXPONENT_MAX);
-    let mut shifts = 0usize;
-    while z.exponent() < e_min && shifts < shift_max {
-        step(z)?;
-        shifts += 1;
-    }
-    if z.exponent() < e_min {
+    let mut target = ExactNumNumber::from_word(1, p)?;
+    target.set_exponent(e_min.min(EXPONENT_MAX));
+    let need = target.sub(z, p, RoundingMode::None)?;
+    if need.cmp(&from_usize_p(shift_max, p)?) > 0 {
         return Err(Error::PrecisionRetryExhausted);
+    }
+    let mut left = shift_max;
+    while z.exponent() < e_min {
+        if left == 0 {
+            return Err(Error::PrecisionRetryExhausted);
+        }
+        left -= 1;
+        step(z)?;
     }
     Ok(())
 }

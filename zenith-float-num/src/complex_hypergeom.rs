@@ -153,8 +153,18 @@ fn hypergeom_series(
 /// flag (the per-operation flag falls back to it), so every later operation gives the same result, but a product or quotient with it costs by its
 /// significant words instead of by the working precision. Zero, Inf and NaN come back unchanged.
 fn trim_zero_words(mut x: ExactNum) -> ExactNum {
-    let _ = (&mut x, WORD_BIT_SIZE);
-    x
+    let Some((words, ..)) = x.value_parts() else {
+        return x;
+    };
+    let zeros = words.iter().take_while(|w| **w == 0).count();
+    if zeros == 0 || zeros >= words.len() {
+        return x;
+    }
+    let q = (words.len() - zeros) * WORD_BIT_SIZE;
+    match x.set_precision(q, RoundingMode::ToZero) {
+        Ok(()) => x,
+        Err(e) => ExactNum::nan(Some(e)),
+    }
 }
 
 /// Both parts of `z` through [`trim_zero_words`].
@@ -189,8 +199,11 @@ const ABS_LEAD_BITS: usize = 128;
 /// `|z|` unless `|z|` lies within `2^-126` above a power of two. `hypot` reads every input bit, so
 /// on the full-width term and sum this check cost more than the series step it guards.
 fn abs_lead(z: &ExactComplex) -> ExactNum {
-    let _ = ABS_LEAD_BITS;
-    z.abs(64, rm())
+    let mut c = z.exact_copy();
+    match c.set_precision(ABS_LEAD_BITS, RoundingMode::ToZero) {
+        Ok(()) => c.abs(64, rm()),
+        Err(e) => ExactNum::nan(Some(e)),
+    }
 }
 
 /// `|t| < 2^-p |s|` (or `t = 0`).

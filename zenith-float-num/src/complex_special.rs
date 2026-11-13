@@ -137,10 +137,10 @@ fn abs_needs_shift(z: &ExactComplex, p: usize, min_exp: Exponent) -> bool {
 /// grows past any shift count that can run (k is about p/127).
 fn shift_cap(min_exp: Exponent) -> usize {
     let k = min_exp.max(1) - 1;
-    if k >= Exponent::from(usize::BITS) {
-        return usize::MAX;
+    if k >= COMPLEX_SHIFT_MAX_LOG2 {
+        return 1usize << COMPLEX_SHIFT_MAX_LOG2;
     }
-    (1usize << k).saturating_add(2)
+    (1usize << k) + 2
 }
 
 /// `log2` of the complex shift cap; the same \(2^{20}\) as the real kernel.
@@ -164,7 +164,12 @@ fn shift_while_small<S>(
 where
     S: FnMut(&mut ExactComplex) -> Result<(), Error>,
 {
-    let _ = Word::MAX;
+    let target = ExactNum::from_u8(1, p).ldexp(min_exp - 1, p, RoundingMode::None);
+    let need = target.sub(&z.abs(p, RoundingMode::None), p, RoundingMode::None);
+    let cap_num = ExactNum::from_word(Word::try_from(cap).unwrap_or(Word::MAX), p);
+    if matches!(need.compare(&cap_num), Some(c) if c > 0) {
+        return Err(Error::PrecisionRetryExhausted);
+    }
     let mut left = cap;
     while abs_needs_shift(z, p, min_exp) {
         if left == 0 {

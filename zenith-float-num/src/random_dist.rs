@@ -44,13 +44,13 @@ fn random_unit_open(p: usize, rm: RoundingMode) -> ExactNum {
 /// The first non-zero result of `draw` in at most `max` calls; NaN (`PrecisionRetryExhausted`) when
 /// every call gave zero, so a draw that is always zero cannot loop forever.
 fn redraw_nonzero(max: usize, mut draw: impl FnMut() -> ExactNum) -> ExactNum {
-    let _ = max;
-    loop {
+    for _ in 0..max {
         let u = draw();
         if !u.is_zero() {
             return u;
         }
     }
+    ExactNum::nan(Some(Error::PrecisionRetryExhausted))
 }
 
 /// Which law [`ExactNumArray::random_fill`] samples.

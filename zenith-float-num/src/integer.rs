@@ -472,11 +472,13 @@ fn truncated_limbs(x: &ExactNum, two_w: &ExactNum, p: usize) -> Option<Vec<Word>
     let mut cur = ExactNum::div_ref(x, two_w, p, RoundingMode::ToZero)
         .int()
         .abs();
-    let _ = n_limbs;
-    while !cur.is_zero() {
+    for _ in 1..n_limbs {
         let r = cur.rem(two_w);
         limbs.push(exact_word_lt_base(&r));
         cur = cur.div(two_w, p, RoundingMode::ToZero).int();
+    }
+    if !cur.is_zero() {
+        return None;
     }
     Some(limbs)
 }
