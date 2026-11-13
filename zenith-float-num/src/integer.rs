@@ -563,7 +563,7 @@ mod tests {
     }
 
     /// `from_exact_num` at the limb boundaries: 2^64 − 1 is one limb, 2^64 two, 2^128 − 1 two,
-    /// 2^128 three, 3·2^190 four; each with and without a fraction ½ and with either sign, against
+    /// 2^128 three, 3·2^190 (< 2^192) three, 2^192 four; each with and without a fraction ½ and with either sign, against
     /// the `ExactInt` it came from.
     #[test]
     fn from_exact_num_limb_count_boundaries() -> Result<(), crate::Error> {
@@ -574,9 +574,10 @@ mod tests {
             1 => ExactInt::from_u128(1u128 << 64),
             2 => ExactInt::from_u128(u128::MAX),
             3 => ExactInt::from_u128(1u128 << 127).mul(&two()),
-            _ => ExactInt::from_i64(3).mul(&two().pow(190)),
+            4 => ExactInt::from_i64(3).mul(&two().pow(190)),
+            _ => two().pow(192),
         };
-        let limbs = [1usize, 2, 2, 3, 4];
+        let limbs = [1usize, 2, 2, 3, 3, 4];
         for (i, &want_limbs) in limbs.iter().enumerate() {
             for neg in [false, true] {
                 for frac in [false, true] {

@@ -1,0 +1,1 @@
+- zenith-float-num (tests): `from_exact_num_limb_count_boundaries` from the previous commit expected 4 limbs for 3·2^190, which is below 2^192 and has 3 limbs (the test failed on correct code). It now expects 3 there and adds 2^192 as the 4-limb case.
