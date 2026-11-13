@@ -132,20 +132,14 @@ fn abs_needs_shift(z: &ExactComplex, p: usize, min_exp: Exponent) -> bool {
 /// Most integer shifts \(z\to z+1\) the gamma-family loops take to reach
 /// \(\lvert z\rvert\ge 2^{k-1}\) for the shift target `k` (`min_exp`). The loops start from
 /// \(\mathrm{Re}\,z\ge 0\) and each shift adds 1 to \(\mathrm{Re}\,z\), so \(2^{k-1}\) shifts are
-/// enough; 2 more cover rounding of \(\lvert z\rvert\). Never more than
-/// \(2^{20}\), the real kernel's `STIRLING_SHIFT_MAX`: at high precision the target \(2^{k-1}\)
-/// grows past any shift count that can run (k is about p/127).
+/// enough; 2 more cover rounding of \(\lvert z\rvert\). `usize::MAX` once \(2^{k-1}\) does not fit.
 fn shift_cap(min_exp: Exponent) -> usize {
     let k = min_exp.max(1) - 1;
-    if k >= COMPLEX_SHIFT_MAX_LOG2 {
-        return 1usize << COMPLEX_SHIFT_MAX_LOG2;
+    if k >= Exponent::from(usize::BITS) {
+        return usize::MAX;
     }
-    (1usize << k) + 2
+    (1usize << k).saturating_add(2)
 }
-
-/// `log2` of the complex shift cap; the same \(2^{20}\) as the real kernel.
-const COMPLEX_SHIFT_MAX_LOG2: Exponent = 20;
-const _: () = assert!(1usize << COMPLEX_SHIFT_MAX_LOG2 == crate::ops::special::STIRLING_SHIFT_MAX);
 
 /// Applies `step` (in the callers: \(z\to z+1\) plus their accumulator update) while
 /// [`abs_needs_shift`], at most `cap` times.

@@ -3791,7 +3791,7 @@ const BETA_INT_MAX: usize = 1 << 12;
 const HALF_INTEGER_MAX: usize = 1 << 12;
 
 /// Upper bound on argument shifts before the Stirling / asymptotic series.
-pub(crate) const STIRLING_SHIFT_MAX: usize = 1 << 20;
+const STIRLING_SHIFT_MAX: usize = 1 << 20;
 
 /// Applies `step` (in the callers: `z → z+1` plus their accumulator update) while
 /// `z.exponent() < e_min`, i.e. until `z ≥ 2^(e_min−1)`; `z > 0`.
