@@ -4,7 +4,9 @@
 //!
 //! `tests/oracle/goldens/r14_consts.jsonl` comes from `scripts/gen_r14_const_goldens.py`:
 //! mpmath at p+256 and p+512 bits, each error interval settled to one p-bit result and the
-//! two agreeing, for p in 1..=65536 (1, 2, 63, 64, 65 and 65536 included) and six modes.
+//! two agreeing, for p in 1..=65536 (1, 2, 63, 64, 65 and 65536 included) and the modes that round (ToEven, ToOdd,
+//! Up, Down, ToZero, FromZero). The seventh mode, `None`, has no gold: `get_exact_prec` refuses it with
+//! `InvalidArgument` (ops/consts/exact.rs: a correctly rounded constant needs a rounding), checked at every p below.
 
 use serde_json::Value;
 use zenith_float_num::{
@@ -13,7 +15,9 @@ use zenith_float_num::{
 
 const GOLDS: &str = include_str!("oracle/goldens/r14_consts.jsonl");
 const NAMES: [&str; 7] = ["Pi", "E", "Ln2", "Ln10", "Sqrt2", "Phi", "EulerGamma"];
-const MODES: [RoundingMode; 6] = [
+/// All 7 modes; [`GOLD_MODES`] of them have golds, `None` is a refusal row.
+const MODES: [RoundingMode; 7] = [
+    RoundingMode::None,
     RoundingMode::ToEven,
     RoundingMode::ToOdd,
     RoundingMode::Up,
@@ -21,6 +25,8 @@ const MODES: [RoundingMode; 6] = [
     RoundingMode::ToZero,
     RoundingMode::FromZero,
 ];
+/// The modes with golds: every mode but `None`.
+const GOLD_MODES: usize = MODES.len() - 1;
 const EDGE_P: [usize; 6] = [1, 2, 63, 64, 65, 65536];
 const SHOW: usize = 8;
 
@@ -226,11 +232,22 @@ fn check_brackets(
 #[test]
 fn golds_cover_every_constant_mode_and_edge() -> Result<(), String> {
     let rows = rows()?;
-    assert_eq!(rows.len(), NAMES.len() * 25 * MODES.len(), "gold row count");
+    assert_eq!(rows.len(), NAMES.len() * 25 * GOLD_MODES, "gold row count");
+    let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
     for name in NAMES {
         for p in EDGE_P.into_iter().chain(FAST_P) {
             for rm in MODES {
                 let m = format!("{rm:?}");
+                if rm == RoundingMode::None {
+                    refuses_none(&mut cc, name, p)?;
+                    assert!(
+                        !rows
+                            .iter()
+                            .any(|(n, q, r, _)| n == name && *q == p && *r == m),
+                        "{name} p={p} None has no golds"
+                    );
+                    continue;
+                }
                 assert!(
                     rows.iter()
                         .any(|(n, q, r, _)| n == name && *q == p && *r == m),
@@ -249,7 +266,7 @@ fn golds_fast_tier_every_constant_every_mode() -> Result<(), String> {
     let (bad, checked, _) = check_golds(&mut cc, &rows, |p| FAST_P.contains(&p))?;
     assert_eq!(
         checked,
-        NAMES.len() * FAST_P.len() * MODES.len(),
+        NAMES.len() * FAST_P.len() * GOLD_MODES,
         "fast rows"
     );
     report(&bad, checked, "fast-tier gold rows")
@@ -289,6 +306,15 @@ fn bit_identical_whatever_the_cache_and_order() -> Result<(), String> {
     let mut checked = 0;
     for name in NAMES {
         for rm in MODES {
+            if rm == RoundingMode::None {
+                // the refusal does not depend on the cache or the order either
+                let mut a = Consts::new().map_err(|e| format!("{e:?}"))?;
+                for p in [1000, 64].into_iter().chain(EDGE_P) {
+                    refuses_none(&mut a, name, p)?;
+                    checked += 1;
+                }
+                continue;
+            }
             // 1000 then 64 against 64 then 1000, each on a fresh cache, and a cache warmed by
             // the word-precision entry points first.
             let mut a = Consts::new().map_err(|e| format!("{e:?}"))?;
@@ -326,6 +352,16 @@ fn bit_identical_whatever_the_cache_and_order() -> Result<(), String> {
         }
     }
     report(&bad, checked, "order checks")
+}
+
+/// `get_exact_prec(c, p, None)` is the refusal `Err(InvalidArgument)` (not a NaN, not a value).
+fn refuses_none(cc: &mut Consts, name: &str, p: usize) -> Result<(), String> {
+    match cc.get_exact_prec(id_of(name)?, p, RoundingMode::None) {
+        Err(Error::InvalidArgument) => Ok(()),
+        other => Err(format!(
+            "{name} p={p} None: want Err(InvalidArgument), got {other:?}"
+        )),
+    }
 }
 
 #[test]

@@ -9,12 +9,15 @@ use zenith_float_num::{
     INF_POS, NAN, PROPTEST_CASES, WORD_BIT_SIZE,
 };
 
-const MODES: [RoundingMode; 5] = [
+/// All 7 modes (`None` keeps the storage precision rp(p, 64), FIXLIST ZF-M27).
+const MODES: [RoundingMode; 7] = [
     RoundingMode::ToEven,
     RoundingMode::Up,
     RoundingMode::Down,
     RoundingMode::ToZero,
     RoundingMode::FromZero,
+    RoundingMode::ToOdd,
+    RoundingMode::None,
 ];
 
 /// A binary operation at a precision and rounding mode.
@@ -52,7 +55,8 @@ fn check_identical(x: &ExactNum) -> Result<(), String> {
     Ok(())
 }
 
-/// `1/3` rounded at `p` bits (64-bit operands): inexact, with the low `round_p(p) - p` bits clear.
+/// `1/3` rounded at `p` bits (64-bit operands): inexact, with the low `round_p(p) - p` bits clear (under `None`, cut
+/// toward zero at `round_p(p)` bits instead).
 fn third(p: usize, rm: RoundingMode) -> ExactNum {
     ExactNum::from_i64(1, 64).div(&ExactNum::from_i64(3, 64), p, rm)
 }
@@ -187,7 +191,7 @@ proptest! {
 
     #[test]
     fn round_trip_every_kind_bit_identical(
-        s in (0u8..=8, any::<i64>(), 1i64..1_000_000, exponent(), 0usize..5, any::<bool>(), 1..Word::MAX >> 1, any::<bool>()),
+        s in (0u8..=8, any::<i64>(), 1i64..1_000_000, exponent(), 0usize..MODES.len(), any::<bool>(), 1..Word::MAX >> 1, any::<bool>()),
         p in 1usize..=4096,
     ) {
         let x = build(&s, p);

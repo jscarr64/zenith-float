@@ -34,6 +34,10 @@ Operand sets come from `goldlib.SplitMix64` streams of suite `l0b_ball` (same BA
     ~/team-env/oracle-2026-10-30/bin/python scripts/gen_ball_goldens.py --check DIR # regenerates and compares with DIR/ball_exact_ops.txt
     ~/team-env/oracle-2026-10-30/bin/python scripts/gen_ball_goldens.py --selftest
 
+`ball_exact_ops.txt` is a table of exactly rounded `add`, `sub`, `mul`, `div` and `sqrt` over the 6 valid rounding modes; it has no
+`None` rows. `RoundingMode::None` does not apply to zenith-float-bound: no public bound fn takes `rm: RoundingMode`, because bound
+picks its own rounding (ToEven for mids, directed modes for radii and enclosure edges), so there is no caller-chosen mode to test.
+
 The Rust side (`tests/common/ballrows.rs`, `tests/harness/ball_goldens_selftest.rs`) re-verifies every row with an independent exact-integer checker: full recomputation for `PREC <= 64` (u128), structural checks only above.
 
 The gate wrappers (`tools/full_gate.sh`, `tools/goldens_regen.sh`) export `PYTHONNOUSERSITE=1` and call the oracle venv (`GOLDENS_PYTHON` may override it, but the startup check still applies). `tools/goldens_regen.sh` also regenerates `mag_ops_review.txt` and compares it byte for byte.

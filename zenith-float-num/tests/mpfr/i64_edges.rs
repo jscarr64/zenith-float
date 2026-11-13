@@ -7,7 +7,7 @@
 
 use crate::mpfr::common::{emulated_range_ok, exact_mpfr_shifted, mpfr_reference_shifted};
 use crate::mpfr::common::{show_mp, with_full_range};
-use crate::mpfr::exact_bit_functions::MODES;
+use crate::mpfr::exact_bit_functions::{MODES, NONE_GAP_MODES};
 use gmp_mpfr_sys::mpfr::{self, rnd_t};
 use rug::Float;
 use std::ops::Neg;
@@ -155,7 +155,8 @@ fn top_edge_carry_out_and_overflow() -> Res {
                 let (x, h) = if neg { (x.neg(), half_ulp.neg()) } else { (x, half_ulp) };
                 let fx = with_full_range(|| exact_mpfr_shifted(&x, 0))?;
                 let fh = with_full_range(|| exact_mpfr_shifted(&h, 0))?;
-                for rm in MODES {
+                // NONE-GAP F-B: x+x and x*2 overflow at the top edge (ZF-M27)
+                for rm in NONE_GAP_MODES {
                     let pu = p as u32;
                     let cases: [EdgeCase; 4] = [
                         (

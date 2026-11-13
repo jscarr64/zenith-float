@@ -1202,8 +1202,15 @@ mod tests {
     fn div_rounds_the_exact_quotient_once() {
         // (-7i) / (-7i) = 1 exactly; rounding the numerator 49 to one bit first gave 32/49.
         let m7i = || ExactComplex::new(ExactNum::new(64), -ExactNum::from_u8(7, 64));
-        for rm in [RoundingMode::ToZero, RoundingMode::Down, RoundingMode::Up, RoundingMode::ToEven]
-        {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let q = m7i().div(&m7i(), 1, rm);
             assert_eq!(q.re().compare(&ExactNum::from_u8(1, 64)), Some(0), "{rm:?}");
             assert!(q.im().is_zero(), "{rm:?}");

@@ -23,7 +23,15 @@ fn is_invalid(n: &ExactNum) -> bool {
 
 #[test]
 fn one_tenth_round_trips_directed() -> Result<(), Box<dyn std::error::Error>> {
-    for rm in [RoundingMode::Up, RoundingMode::ToZero, RoundingMode::ToEven] {
+    for rm in [
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::ToZero,
+        RoundingMode::FromZero,
+        RoundingMode::None,
+    ] {
         let mut consts = cc()?;
         let n = ExactNum::parse("0.1", Radix::Dec, 53, rm, &mut consts);
         let spelled = n.format(Radix::Dec, rm, &mut consts)?;

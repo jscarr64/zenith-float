@@ -5643,10 +5643,10 @@ mod tests {
         assert!(INF_NEG.log(&INF_POS, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_NEG.log(&INF_NEG, rand_p(), rm, &mut cc).is_nan());
         assert!(TWO.log(&ONE, rand_p(), rm, &mut cc).is_inf_pos());
-        assert!(half.log(&ONE, rand_p(), rm, &mut cc).is_inf_pos());
+        // F-26 (ZF-M27, held): log base 1 of 1/2 is ruled -Inf; the library gives +Inf today, so it is not asserted.
         assert!(ONE.log(&ONE, rand_p(), rm, &mut cc).is_nan());
 
-        assert!(ONE.pow(&NAN, rand_p(), rm, &mut cc).is_nan());
+        // M27-F12 (held): pow(1, NaN) is ruled 1 (IEEE 754, POW-01); the library gives NaN today, not asserted.
         assert!(NAN.pow(&ONE, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_POS.pow(&NAN, rand_p(), rm, &mut cc).is_nan());
         assert!(NAN.pow(&INF_POS, rand_p(), rm, &mut cc).is_nan());
@@ -5655,7 +5655,7 @@ mod tests {
         assert!(NAN.pow(&NAN, rand_p(), rm, &mut cc).is_nan());
 
         assert!(NAN.powi(2, rand_p(), rm).is_nan());
-        assert!(NAN.powi(0, rand_p(), rm).is_nan());
+        // M27-F12 (held): powi(NaN, 0) is ruled 1 (F-12 widened); the library gives NaN today, so it is not asserted.
         assert!(INF_POS.powi(2, rand_p(), rm).is_inf_pos());
         assert!(INF_POS.powi(3, rand_p(), rm).is_inf_pos());
         assert!(INF_NEG.powi(4, rand_p(), rm).is_inf_pos());
@@ -5698,6 +5698,7 @@ mod tests {
             RoundingMode::FromZero,
             RoundingMode::ToEven,
             RoundingMode::ToOdd,
+            RoundingMode::None,
         ] {
             assert!(INF_NEG.round(0, rm).is_inf_neg());
             assert!(INF_POS.round(0, rm).is_inf_pos());
@@ -6270,7 +6271,15 @@ mod special_arg_tests {
             .sqrt(64, RoundingMode::ToEven);
         assert!(finite.is_nan());
         assert_eq!(finite.err(), Some(Error::InvalidArgument));
-        for rm in [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let inf = INF_NEG.sqrt(64, rm);
             assert!(inf.is_nan());
             assert_eq!(inf.err(), finite.err(), "sqrt(-Inf) NaN kind");
@@ -6533,12 +6542,15 @@ mod add_sub_zero_tests {
     use crate::{Error, ExactNum, INF_NEG, INF_POS};
     use core::ops::Neg;
 
-    const RMS: [RoundingMode; 5] = [
+    /// All 7 modes (`None` keeps the storage precision, FIXLIST ZF-M27).
+    const RMS: [RoundingMode; 7] = [
         RoundingMode::ToEven,
         RoundingMode::ToZero,
         RoundingMode::Up,
         RoundingMode::Down,
         RoundingMode::FromZero,
+        RoundingMode::ToOdd,
+        RoundingMode::None,
     ];
 
     fn zero(neg: bool) -> ExactNum {
@@ -6670,9 +6682,13 @@ mod grid_digest_tests {
     use core::ops::Neg;
     use std::collections::hash_map::DefaultHasher;
 
-    const RMS: [RoundingMode; 6] = [
+    /// All 7 modes. The digests pinned before ToOdd joined (Q2) hash the six others into `h`, in their old order, and
+    /// ToOdd into its own new digest `h_odd`: ToOdd is nearest with ties to odd, so like ToEven it overflows to +-Inf,
+    /// and its overflow cells are correct to pin. Each ToOdd cell was checked by `scripts/verify_grid_digests.py`.
+    const RMS: [RoundingMode; 7] = [
         RoundingMode::None,
         RoundingMode::ToEven,
+        RoundingMode::ToOdd,
         RoundingMode::ToZero,
         RoundingMode::Up,
         RoundingMode::Down,
@@ -6800,6 +6816,67 @@ mod grid_digest_tests {
         digest(r, h)
     }
 
+    /// NONE-GAP F-B: a `None` result of finite operands that is +-Inf is an overflow cell, and Jeff ruled
+    /// (2026-11-11 12:03 and 12:15 PM CT) that a `None` overflow saturates to +-MAX (toward zero at rp(p, 64)). Today it
+    /// gives +-Inf, a known-wrong bit, so the cell is counted and left out of the digest. It is fixed red-first in the
+    /// ZF-M27 PR, which re-pins this digest with the cells back in. A division by zero (or the reciprocal of zero) is a
+    /// pole, not an overflow, and stays hashed. The cells are listed by dump line in
+    /// `fold-pr1-162-grid-wrong-cells.tsv` (PR #39 body).
+    #[allow(clippy::too_many_arguments)]
+    fn dd_none_gap(
+        h: &mut DefaultHasher,
+        gap: &mut usize,
+        op: &str,
+        args: &[&ExactNum],
+        ints: &[i128],
+        p: usize,
+        rm: RoundingMode,
+        r: &ExactNum,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let finite = args.iter().all(|a| !a.is_inf() && !a.is_nan());
+        let pole = (op == "div" && args.get(1).is_some_and(|d| d.is_zero()))
+            || (op == "reciprocal" && args.first().is_some_and(|d| d.is_zero()));
+        if rm == RoundingMode::None && r.is_inf() && finite && !pole {
+            *gap += 1;
+            return Ok(());
+        }
+        dd(h, op, args, ints, p, rm, r)
+    }
+
+    /// An overflow in a toward-zero direction: +-Inf where the 12:15 PM CT ruling (Jeff, 2026-11-11) gives +-MAX. That is
+    /// None and ToZero either way, Down for +overflow and Up for -overflow (M27-TZ/UD). The caller rules out poles.
+    fn tz_overflow(rm: RoundingMode, r: &ExactNum) -> bool {
+        r.is_inf()
+            && match rm {
+                RoundingMode::None | RoundingMode::ToZero => true,
+                RoundingMode::Down => r.is_positive(),
+                RoundingMode::Up => r.is_negative(),
+                _ => false,
+            }
+    }
+
+    /// A known-wrong cell of a held finding (queued as a ZF-M27 exception, or reported for an id): counted in `held`
+    /// and left out of the pinned digest, so the pin does not hold wrong bits. The fix puts the cell back, red first.
+    /// The cell ids (dump lines) are listed in the PR #39 body.
+    #[allow(clippy::too_many_arguments)]
+    fn dd_held(
+        h: &mut DefaultHasher,
+        held: &mut usize,
+        wrong: bool,
+        op: &str,
+        args: &[&ExactNum],
+        ints: &[i128],
+        p: usize,
+        rm: RoundingMode,
+        r: &ExactNum,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        if wrong {
+            *held += 1;
+            return Ok(());
+        }
+        dd(h, op, args, ints, p, rm, r)
+    }
+
     #[test]
     fn ldexp_and_scalb_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let shifts = [
@@ -6821,13 +6898,17 @@ mod grid_digest_tests {
             EXPONENT_MIN + 1,
         ];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut gap = 0usize;
         for i in 0..OPERANDS {
             for n in shifts {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        dd(
-                            &mut h,
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
                             "ldexp",
                             &[&operand(i)],
                             &[i128::from(n)],
@@ -6835,8 +6916,9 @@ mod grid_digest_tests {
                             rm,
                             &operand(i).ldexp(n, p, rm),
                         )?;
-                        dd(
-                            &mut h,
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
                             "ldexp",
                             &[&operand(i)],
                             &[i128::from(n)],
@@ -6849,9 +6931,18 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, OPERANDS * 16 * 7 * 6 * 2);
+        assert_eq!(count, OPERANDS * 16 * 7 * RMS.len() * 2);
         println!("ldexp grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 1_196_293_272_222_150_608);
+        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
+        assert_eq!(gap, 378);
+        // Re-pinned (F9a-4): was 1_196_293_272_222_150_608, with the None overflow cells in (NONE-GAP F-B).
+        println!(
+            "ldexp_and_scalb_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 3_256_206_381_344_692_312);
+        assert_eq!(h.finish(), 14_437_472_841_843_974_673);
         Ok(())
     }
 
@@ -6861,12 +6952,14 @@ mod grid_digest_tests {
         let huge = 1usize << (usize::BITS - 24);
         let positions = [0usize, 1, 5, 63, 64, 65, 100, 200, 1 << 20, huge, usize::MAX / 2];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..OPERANDS {
             for n in positions {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "round",
                         &[&operand(i)],
                         &[i128::try_from(n)?],
@@ -6878,10 +6971,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, OPERANDS * 11 * 6);
+        assert_eq!(count, OPERANDS * 11 * RMS.len());
         println!("round grid digest = {}", h.finish());
         // pinned on a 64-bit target; a narrower `usize` has a different position grid
         if cfg!(target_pointer_width = "64") {
+            println!("round_grid_digest ToOdd digest = {}", h_odd.finish());
+            // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+            assert_eq!(h_odd.finish(), 6_694_869_305_830_813_196);
             assert_eq!(h.finish(), 10_921_324_020_573_550_304);
         }
         Ok(())
@@ -6964,6 +7060,7 @@ mod grid_digest_tests {
         const COP: &str = "cplx_as";
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for a in parts {
             for b in parts {
@@ -6971,6 +7068,8 @@ mod grid_digest_tests {
                     for d in parts {
                         for p in [1usize, 64, 128] {
                             for rm in RMS {
+                                let hh =
+                                    if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                                 let z1 = || ExactComplex::new(operand(a), operand(b));
                                 let z2 = || ExactComplex::new(operand(c), operand(d));
                                 for (k, r) in [z1().add(&z2(), p, rm), z1().sub(&z2(), p, rm)]
@@ -6978,7 +7077,7 @@ mod grid_digest_tests {
                                     .enumerate()
                                 {
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 0],
@@ -6987,7 +7086,7 @@ mod grid_digest_tests {
                                         r.re(),
                                     )?;
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 1],
@@ -7003,8 +7102,14 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * RMS.len() * 2);
         println!("complex add/sub grid digest = {}", h.finish());
+        println!(
+            "complex_add_sub_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_151_091_260_857_281_420);
         assert_eq!(h.finish(), 18_040_698_040_155_693_760);
         Ok(())
     }
@@ -7014,13 +7119,15 @@ mod grid_digest_tests {
     #[test]
     fn add_ref_sub_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "add",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7029,7 +7136,7 @@ mod grid_digest_tests {
                             &ExactNum::add_ref(&operand(i), &operand(j), p, rm),
                         )?;
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "sub",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7068,7 +7175,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 45_030);
+        assert_eq!(count, 52_436);
+        println!(
+            "add_ref_sub_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 5_924_280_179_230_656_575);
         assert_eq!(h.finish(), 8_129_670_429_050_627_241);
         Ok(())
     }
@@ -7080,6 +7193,7 @@ mod grid_digest_tests {
         const COP: &str = "cplx_as";
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for a in parts {
             for b in parts {
@@ -7087,6 +7201,8 @@ mod grid_digest_tests {
                     for d in parts {
                         for p in [1usize, 64, 128] {
                             for rm in RMS {
+                                let hh =
+                                    if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                                 let z1 = ExactComplex::new(operand(a), operand(b));
                                 let z2 = ExactComplex::new(operand(c), operand(d));
                                 for (k, r) in [
@@ -7097,7 +7213,7 @@ mod grid_digest_tests {
                                 .enumerate()
                                 {
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 0],
@@ -7106,7 +7222,7 @@ mod grid_digest_tests {
                                         r.re(),
                                     )?;
                                     dd(
-                                        &mut h,
+                                        &mut *hh,
                                         COP,
                                         &[&operand(a), &operand(b), &operand(c), &operand(d)],
                                         &[i128::try_from(k)?, 1],
@@ -7122,7 +7238,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * RMS.len() * 2);
+        println!(
+            "complex_add_ref_sub_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_151_091_260_857_281_420);
         assert_eq!(h.finish(), 18_040_698_040_155_693_760);
         Ok(())
     }
@@ -7130,13 +7252,15 @@ mod grid_digest_tests {
     #[test]
     fn add_sub_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "add",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7145,7 +7269,7 @@ mod grid_digest_tests {
                             &operand(i).add(&operand(j), p, rm),
                         )?;
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "sub",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7185,10 +7309,13 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 45_030);
+        assert_eq!(count, 52_436);
         println!("add/sub grid digest = {}", h.finish());
         // Differs from the digest pinned on the pre-kernel-branch code in exactly 40 results: full-precision
         // sums with a zero operand (see `full_prec_with_zero_operand_is_the_other_operand`).
+        println!("add_sub_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 5_924_280_179_230_656_575);
         assert_eq!(h.finish(), 8_129_670_429_050_627_241);
         Ok(())
     }
@@ -7198,13 +7325,18 @@ mod grid_digest_tests {
     #[test]
     fn mul_div_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut gap = 0usize;
+        let mut held_fb_full = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        dd(
-                            &mut h,
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
                             "mul",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7212,8 +7344,9 @@ mod grid_digest_tests {
                             rm,
                             &operand(i).mul(&operand(j), p, rm),
                         )?;
-                        dd(
-                            &mut h,
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
                             "div",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7224,8 +7357,11 @@ mod grid_digest_tests {
                         count += 2;
                     }
                 }
-                dd(
+                // NONE-GAP F-B (F9d-17): `mul_full_prec` always runs in None, so a true overflow gives +-Inf
+                // where the 12:03 / 12:15 PM CT rulings give +-MAX (ZF-M27). Counted in `held_fb_full`, not hashed.
+                dd_none_gap(
                     &mut h,
+                    &mut held_fb_full,
                     "mul_full",
                     &[&operand(i), &operand(j)],
                     &[],
@@ -7236,9 +7372,21 @@ mod grid_digest_tests {
                 count += 1;
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
+        assert_eq!(
+            count,
+            PAIR_OPERANDS * PAIR_OPERANDS * (7 * RMS.len() * 2 + 1)
+        );
         println!("mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
+        assert_eq!(gap, 448);
+        // NONE-GAP F-B (F9d-17): the 18 `mul_full_prec` true-overflow cells (+-Inf, ruling +-MAX) are not hashed
+        assert_eq!(held_fb_full, 18);
+        // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
+        println!("mul_div_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 14_444_849_080_303_762_465);
+        // Re-pinned (F9d-17): was 6_854_509_046_823_660_977, with the 18 `mul_full_prec` None-overflow cells in.
+        assert_eq!(h.finish(), 12_397_414_023_097_760_287);
         Ok(())
     }
 
@@ -7250,36 +7398,97 @@ mod grid_digest_tests {
         let parts = [0usize, 1, 3, 4, 5, 7, 9, 21];
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held = 0usize;
+        let mut held_f18 = 0usize;
+        let mut held_spur = 0usize;
+        let mut held_tzud = 0usize;
+        // F-25: complex cancellation. Cells (1-based position in this loop) whose part is not the correctly rounded
+        // value against an exact rational oracle (`scripts/gen_grid_held_cells.py`), per mode in `RMS` order.
+        const F25_NORMAL: &[u32] = &include!("grid_held/f25_normal.in");
+        // F-25, subnormal range: true value below 2^(EXPONENT_MIN - 1), library part not the correctly rounded value on
+        // the gradual grid 2^(EXPONENT_MIN - p), and wrong under the ruled target contract (P20 / UFL-01, no subnormals).
+        const F25_SUBNORMAL: &[u32] = &include!("grid_held/f25_subnormal.in");
+        let mut cell = 0u32;
+        let mut held_f25n = [0usize; 7];
+        let mut held_f25s = [0usize; 7];
         for a in parts {
             for b in parts {
                 for c in parts {
                     for d in parts {
                         for p in [1usize, 64, 128] {
                             for rm in RMS {
+                                // HELD F-18 (N-3): (0 + s i) / (0 + s i), s subnormal, gives NaN, not 1, in every
+                                // mode, and the ToOdd cells are not checked (no single-rounding oracle for complex
+                                // mul/div). ToOdd gets its own digest after the ZF-M27 fix.
+                                if rm == RoundingMode::ToOdd {
+                                    continue;
+                                }
+                                let hh = &mut h;
                                 let z1 = || ExactComplex::new(operand(a), operand(b));
                                 let z2 = || ExactComplex::new(operand(c), operand(d));
                                 for (k, r) in [z1().mul(&z2(), p, rm), z1().div(&z2(), p, rm)]
                                     .into_iter()
                                     .enumerate()
                                 {
-                                    dd(
-                                        &mut h,
-                                        COP,
-                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
-                                        &[i128::try_from(k)?, 0],
-                                        p,
-                                        rm,
-                                        r.re(),
-                                    )?;
-                                    dd(
-                                        &mut h,
-                                        COP,
-                                        &[&operand(a), &operand(b), &operand(c), &operand(d)],
-                                        &[i128::try_from(k)?, 1],
-                                        p,
-                                        rm,
-                                        r.im(),
-                                    )?;
+                                    let x = [operand(a), operand(b), operand(c), operand(d)];
+                                    let finite = x.iter().all(|v| !v.is_inf() && !v.is_nan());
+                                    let div_nonzero = k == 1 && !(x[2].is_zero() && x[3].is_zero());
+                                    for (part, v) in [r.re(), r.im()].into_iter().enumerate() {
+                                        cell += 1;
+                                        // F-18 (N-3): a quotient of finite parts by a nonzero divisor with a subnormal
+                                        // part (operand 21) is NaN(InvalidArgument), not the quotient.
+                                        let f18 = div_nonzero && finite && v.is_nan();
+                                        // Spurious overflow (finding id pending): re of (1/3 - i/3) / (s + s i) and of
+                                        // (-1/3 + i/3) / (s + s i) is about 2^(EXPONENT_MAX - 50), finite, but +-Inf.
+                                        let spur = div_nonzero
+                                            && finite
+                                            && v.is_inf()
+                                            && part == 0
+                                            && matches!((a, b), (4, 5) | (5, 4))
+                                            && c == 21
+                                            && d == 21;
+                                        held_f18 += usize::from(f18);
+                                        // NONE-GAP F-B / M27-TZ/UD: an overflow of finite parts (not a division by zero)
+                                        // in a toward-zero direction is +-Inf where the 12:15 PM CT ruling is +-MAX.
+                                        let tzud = finite
+                                            && (k == 0 || div_nonzero)
+                                            && !spur
+                                            && tz_overflow(rm, v);
+                                        held_spur += usize::from(spur);
+                                        held_tzud += usize::from(tzud);
+                                        // F-25 (complex cancellation): a finite part that is not the correctly rounded
+                                        // value, e.g. im of (-7 - 7i)(1/3 - i/3) at p = 1 is -6.3e-20, but Up gives 2.
+                                        let f25n = F25_NORMAL.binary_search(&cell).is_ok();
+                                        let f25s = F25_SUBNORMAL.binary_search(&cell).is_ok();
+                                        assert!(!(f25n && f25s));
+                                        let f25 = f25n || f25s;
+                                        assert!(
+                                            !f25 || (finite
+                                                && !v.is_nan()
+                                                && !v.is_inf()
+                                                && !(f18 || tzud))
+                                        );
+                                        if f25 {
+                                            let m =
+                                                RMS.iter().position(|&q| q == rm).ok_or("mode")?;
+                                            if f25n {
+                                                held_f25n[m] += 1;
+                                            } else {
+                                                held_f25s[m] += 1;
+                                            }
+                                        }
+                                        dd_held(
+                                            &mut *hh,
+                                            &mut held,
+                                            f18 || spur || tzud || f25,
+                                            COP,
+                                            &[&x[0], &x[1], &x[2], &x[3]],
+                                            &[i128::try_from(k)?, i128::try_from(part)?],
+                                            p,
+                                            rm,
+                                            v,
+                                        )?;
+                                    }
                                     count += 1;
                                 }
                             }
@@ -7288,9 +7497,37 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * 6 * 2);
+        assert_eq!(count, 8 * 8 * 8 * 8 * 3 * (RMS.len() - 1) * 2);
+        // F-18 (N-3, ZF-M27): the NaN quotients of finite parts by a nonzero divisor are not hashed (495 per mode)
+        assert_eq!(held_f18, 495 * (RMS.len() - 1));
+        // Spurious overflow (finding id pending): the finite re parts given as +-Inf are not hashed (6 per mode)
+        assert_eq!(held_spur, 6 * (RMS.len() - 1));
+        // NONE-GAP F-B / M27-TZ/UD (ZF-M27): None 579, ToZero 579, Up 342 (-overflow), Down 237 (+overflow)
+        assert_eq!(held_tzud, 579 + 579 + 342 + 237);
+        // F-25 (ZF-M27): normal-range cancellation cells, None, ToEven, ToOdd, ToZero, Up, Down, FromZero
+        assert_eq!(held_f25n, [488, 128, 0, 406, 937, 894, 468]);
+        // F-25 (ZF-M27): subnormal-range cells, None, ToEven, ToOdd, ToZero, Up, Down, FromZero. 1158 are outside the
+        // interval any grid allows; 60 more (Up 18, Down 8, FromZero 34; p = 64 and 128) overshoot the gradual-grid value
+        // by one grid unit (each product is rounded before the sum) and are also wrong under P20 / UFL-01.
+        assert_eq!(held_f25s, [64, 0, 0, 44, 447, 408, 255]);
+        assert_eq!(cell, 294_912);
+        assert_eq!(
+            held,
+            held_f18
+                + held_spur
+                + held_tzud
+                + held_f25n.iter().sum::<usize>()
+                + held_f25s.iter().sum::<usize>()
+        );
         println!("complex mul/div grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_266_967_239_943_518_429);
+        // Re-pinned (F9d-8): was 11_266_967_239_943_518_429, with the 2970 F-18 NaN cells in.
+        // Re-pinned (F9d-9): was 5_139_542_158_601_803_449, with the 36 spurious-overflow cells in.
+        // Re-pinned (F9d-10): was 4_063_330_108_896_008_404, with the 1737 toward-zero overflow cells in.
+        // Re-pinned (F9d-12): was 3_646_187_200_225_722_925, with the 3321 F-25 normal-range cancellation cells in.
+        // Re-pinned (F9d-13): was 15_402_253_497_317_085_552, with the 1158 F-25 subnormal-range cells in.
+        // Re-pinned (F9d-15): was 16_907_990_978_326_668_517, with the 60 F-25 subnormal-range cells one gradual grid
+        // unit off in.
+        assert_eq!(h.finish(), 9_830_385_385_956_693_375);
         Ok(())
     }
 
@@ -7298,13 +7535,18 @@ mod grid_digest_tests {
     #[test]
     fn mul_ref_div_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut gap = 0usize;
+        let mut held_fb_full = 0usize;
         for i in 0..PAIR_OPERANDS {
             for j in 0..PAIR_OPERANDS {
                 for p in [1usize, 53, 64, 65, 128, 192, 200] {
                     for rm in RMS {
-                        dd(
-                            &mut h,
+                        let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
                             "mul",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7312,8 +7554,9 @@ mod grid_digest_tests {
                             rm,
                             &ExactNum::mul_ref(&operand(i), &operand(j), p, rm),
                         )?;
-                        dd(
-                            &mut h,
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
                             "div",
                             &[&operand(i), &operand(j)],
                             &[],
@@ -7324,8 +7567,11 @@ mod grid_digest_tests {
                         count += 2;
                     }
                 }
-                dd(
+                // NONE-GAP F-B (F9d-17): `mul_full_prec` always runs in None, so a true overflow gives +-Inf
+                // where the 12:03 / 12:15 PM CT rulings give +-MAX (ZF-M27). Counted in `held_fb_full`, not hashed.
+                dd_none_gap(
                     &mut h,
+                    &mut held_fb_full,
                     "mul_full",
                     &[&operand(i), &operand(j)],
                     &[],
@@ -7336,24 +7582,43 @@ mod grid_digest_tests {
                 count += 1;
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * PAIR_OPERANDS * (7 * 6 * 2 + 1));
-        assert_eq!(h.finish(), 8_827_555_224_262_690_728);
+        assert_eq!(
+            count,
+            PAIR_OPERANDS * PAIR_OPERANDS * (7 * RMS.len() * 2 + 1)
+        );
+        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
+        assert_eq!(gap, 448);
+        // NONE-GAP F-B (F9d-17): the 18 `mul_full_prec` true-overflow cells (+-Inf, ruling +-MAX) are not hashed
+        assert_eq!(held_fb_full, 18);
+        // Re-pinned (F9a-4): was 8_827_555_224_262_690_728, with the None overflow cells in (NONE-GAP F-B).
+        println!(
+            "mul_ref_div_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 14_444_849_080_303_762_465);
+        // Re-pinned (F9d-17): was 6_854_509_046_823_660_977, with the 18 `mul_full_prec` None-overflow cells in.
+        assert_eq!(h.finish(), 12_397_414_023_097_760_287);
         Ok(())
     }
 
     /// Squares through `mul_ref(&x, &x)`: the 23 grid operands (NaN of both kinds, +-Inf, +-0, the subnormal
-    /// band, the exponent extremes) at 7 precisions in all 6 rounding modes. Pinned on the code before
-    /// `sqr` existed; `sqr_grid_digest` below must hash to the same value.
+    /// band, the exponent extremes) at 9 precisions in every mode: the six pinned before ToOdd in `h`, ToOdd in its own
+    /// digest. Pinned on the code before `sqr` existed; `sqr_grid_digest` below must hash to the same values.
     #[test]
     fn square_via_mul_ref_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut gap = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     let x = operand(i);
-                    dd(
-                        &mut h,
+                    dd_none_gap(
+                        &mut *hh,
+                        &mut gap,
                         "sqr",
                         &[&x],
                         &[],
@@ -7365,9 +7630,18 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * 9 * 6);
+        assert_eq!(count, PAIR_OPERANDS * 9 * RMS.len());
         println!("square grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
+        assert_eq!(gap, 36);
+        // Re-pinned (F9a-4): was 17_269_539_713_433_390_012, with the None overflow cells in (NONE-GAP F-B).
+        println!(
+            "square_via_mul_ref_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_177_630_421_833_126_124);
+        assert_eq!(h.finish(), 6_265_526_590_754_367_528);
         Ok(())
     }
 
@@ -7376,12 +7650,16 @@ mod grid_digest_tests {
     #[test]
     fn sqr_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut gap = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 24, 53, 64, 65, 128, 192, 200, 320] {
                 for rm in RMS {
-                    dd(
-                        &mut h,
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                    dd_none_gap(
+                        &mut *hh,
+                        &mut gap,
                         "sqr",
                         &[&operand(i)],
                         &[],
@@ -7393,8 +7671,14 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * 9 * 6);
-        assert_eq!(h.finish(), 17_269_539_713_433_390_012);
+        assert_eq!(count, PAIR_OPERANDS * 9 * RMS.len());
+        // NONE-GAP F-B: the None overflow cells (+-Inf where the ruling is +-MAX) are not hashed (ZF-M27)
+        assert_eq!(gap, 36);
+        // Re-pinned (F9a-4): was 17_269_539_713_433_390_012, with the None overflow cells in (NONE-GAP F-B).
+        println!("sqr_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 6_177_630_421_833_126_124);
+        assert_eq!(h.finish(), 6_265_526_590_754_367_528);
         Ok(())
     }
 
@@ -7415,16 +7699,43 @@ mod grid_digest_tests {
                 .ldexp(-4, 64, RoundingMode::None),
         };
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f16 = 0usize;
         for i in (0..11).chain(21..23).chain(100..104) {
             for p in [53usize, 128, 200] {
                 for rm in RMS {
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
                     let x = || if i < 100 { operand(i) } else { extra(i - 100) };
-                    dd(&mut h, "sin", &[&x()], &[], p, rm, &x().sin(p, rm, &mut cc))?;
-                    dd(&mut h, "cos", &[&x()], &[], p, rm, &x().cos(p, rm, &mut cc))?;
-                    dd(&mut h, "tan", &[&x()], &[], p, rm, &x().tan(p, rm, &mut cc))?;
                     dd(
-                        &mut h,
+                        &mut *hh,
+                        "sin",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().sin(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut *hh,
+                        "cos",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().cos(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut *hh,
+                        "tan",
+                        &[&x()],
+                        &[],
+                        p,
+                        rm,
+                        &x().tan(p, rm, &mut cc),
+                    )?;
+                    dd(
+                        &mut *hh,
                         "atan",
                         &[&x()],
                         &[],
@@ -7433,7 +7744,7 @@ mod grid_digest_tests {
                         &x().atan(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "sinh",
                         &[&x()],
                         &[],
@@ -7442,7 +7753,7 @@ mod grid_digest_tests {
                         &x().sinh(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "cosh",
                         &[&x()],
                         &[],
@@ -7450,22 +7761,40 @@ mod grid_digest_tests {
                         rm,
                         &x().cosh(p, rm, &mut cc),
                     )?;
-                    dd(
-                        &mut h,
+                    let t = x().tanh(p, rm, &mut cc);
+                    // F-16 (N-1): under None, tanh of a large argument (1e5, -192) is exactly +-1 flagged inexact;
+                    // |tanh| < 1, so toward zero at rp(p, 64) is below 1 in magnitude.
+                    let one = ExactNum::from_u8(1, 64);
+                    let unit = ExactNum::sub_ref(&t, &one, 64, RoundingMode::ToEven).is_zero()
+                        || ExactNum::add_ref(&t, &one, 64, RoundingMode::ToEven).is_zero();
+                    let f16 = rm == RoundingMode::None && t.inexact() && unit;
+                    dd_held(
+                        &mut *hh,
+                        &mut held_f16,
+                        f16,
                         "tanh",
                         &[&x()],
                         &[],
                         p,
                         rm,
-                        &x().tanh(p, rm, &mut cc),
+                        &t,
                     )?;
                     count += 7;
                 }
             }
         }
-        assert_eq!(count, 17 * 3 * 6 * 7);
+        assert_eq!(count, 17 * 3 * RMS.len() * 7);
+        // F-16 (N-1, ZF-M27): the None tanh cells that are exactly +-1 (flagged inexact) are not hashed
+        assert_eq!(held_f16, 6);
         println!("trig hyperbolic grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_882_922_101_969_868_672);
+        println!(
+            "trig_hyperbolic_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 2_643_728_162_804_407_485);
+        // Re-pinned (F9d-2): was 2_882_922_101_969_868_672, with the 6 None F-16 tanh cells in.
+        assert_eq!(h.finish(), 4_473_217_349_629_320_125);
         Ok(())
     }
 
@@ -7475,7 +7804,11 @@ mod grid_digest_tests {
     fn exp_pow_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        // F-12 (POW-01, ZF-M27): held cells, counted per hasher (h: every mode but ToOdd, h_odd: ToOdd)
+        let mut held_f12 = 0usize;
+        let mut held_f12_odd = 0usize;
         let exps = || {
             [
                 ExactNum::from_u8(3, 64),
@@ -7489,8 +7822,13 @@ mod grid_digest_tests {
         for i in (0..11).chain(21..23) {
             for p in [53usize, 128, 200] {
                 for rm in RMS {
+                    let (hh, held) = if rm == RoundingMode::ToOdd {
+                        (&mut h_odd, &mut held_f12_odd)
+                    } else {
+                        (&mut h, &mut held_f12)
+                    };
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "exp",
                         &[&operand(i)],
                         &[],
@@ -7499,7 +7837,7 @@ mod grid_digest_tests {
                         &operand(i).exp(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "exp2",
                         &[&operand(i)],
                         &[],
@@ -7508,7 +7846,7 @@ mod grid_digest_tests {
                         &operand(i).exp2(p, rm, &mut cc),
                     )?;
                     dd(
-                        &mut h,
+                        &mut *hh,
                         "exp10",
                         &[&operand(i)],
                         &[],
@@ -7517,26 +7855,38 @@ mod grid_digest_tests {
                         &operand(i).exp10(p, rm, &mut cc),
                     )?;
                     for e in exps() {
-                        dd(
-                            &mut h,
+                        let r = operand(i).pow(&e, p, rm, &mut cc);
+                        // F-12 (ZF-M27): pow(x, +-0) = 1 for any x, including NaN (P20, POW-01,
+                        // answers-group1.md:390). Today pow(NaN, +0) is NaN, known-wrong, so it is held.
+                        let f12 = operand(i).is_nan() && e.is_zero() && r.is_nan();
+                        dd_held(
+                            &mut *hh,
+                            &mut *held,
+                            f12,
                             "pow",
                             &[&operand(i), &e],
                             &[],
                             p,
                             rm,
-                            &operand(i).pow(&e, p, rm, &mut cc),
+                            &r,
                         )?;
                         count += 1;
                     }
                     for n in [0usize, 1, 2, 3, 7, 12] {
-                        dd(
-                            &mut h,
+                        let r = operand(i).powi(n, p, rm);
+                        // F-12 widened (ZF-M27): powi(x, 0) = x^0 = 1 for any x, including NaN (POW-01; the
+                        // Inf and 0 arms already give 1). Today powi(NaN, 0) is NaN, known-wrong, so it is held.
+                        let f12 = operand(i).is_nan() && n == 0 && r.is_nan();
+                        dd_held(
+                            &mut *hh,
+                            &mut *held,
+                            f12,
                             "powi",
                             &[&operand(i)],
                             &[i128::try_from(n)?],
                             p,
                             rm,
-                            &operand(i).powi(n, p, rm),
+                            &r,
                         )?;
                         count += 1;
                     }
@@ -7544,9 +7894,20 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, 13 * 3 * 6 * 13);
+        assert_eq!(count, 13 * 3 * RMS.len() * 13);
+        // F-12 (POW-01, ZF-M27): pow(NaN, +0) and powi(NaN, 0) for both NaN operands, p in {53, 128, 200}, all
+        // seven modes, are NaN where the ruled value is 1; they are not hashed (72 six-mode cells in h, 12 ToOdd
+        // cells in h_odd)
+        assert_eq!(held_f12, 72);
+        assert_eq!(held_f12_odd, 12);
         println!("exp pow grid digest = {}", h.finish());
-        assert_eq!(h.finish(), 2_398_075_299_501_098_093);
+        println!("exp_pow_grid_digest ToOdd digest = {}", h_odd.finish());
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168); that oracle passed
+        // NaN in -> NaN out, so the 12 ToOdd F-12 cells were in it.
+        // Re-pinned (F9d-19): was 5_249_983_578_669_938_622, with the 12 ToOdd F-12 pow/powi(NaN, 0) NaN cells in.
+        assert_eq!(h_odd.finish(), 5_999_117_382_857_039_356);
+        // Re-pinned (F9d-19): was 2_398_075_299_501_098_093, with the 72 F-12 pow/powi(NaN, 0) NaN cells in.
+        assert_eq!(h.finish(), 6_643_330_963_557_222_099);
         Ok(())
     }
 
@@ -7559,6 +7920,8 @@ mod grid_digest_tests {
         let mut count = 0usize;
         for i in [2usize, 3, 4, 5, 21] {
             for p in [1024usize, 4096] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Up] {
                     dd(
                         &mut h,
@@ -7618,6 +7981,8 @@ mod grid_digest_tests {
                 for c in 0..OPERANDS {
                     for shift in [-3000i32, 0, 3000] {
                         for p in [64usize, 200] {
+                            // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                            // digest; the old pin does not move)
                             for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                                 let cs = operand(c).ldexp(
                                     shift as crate::Exponent,
@@ -7673,6 +8038,8 @@ mod grid_digest_tests {
             for b in [2usize, 3, 9, 21] {
                 for shift in [-3000i32, -200, 0, 3000] {
                     for p in [64usize, 200] {
+                        // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                        // digest; the old pin does not move)
                         for rm in [RoundingMode::ToEven, RoundingMode::Up] {
                             let bs = operand(b).ldexp(
                                 shift as crate::Exponent,
@@ -7733,13 +8100,13 @@ mod grid_digest_tests {
         ];
         for s in inputs {
             for p in [53usize, 64, 128, 500] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in
                     [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down, RoundingMode::None]
                 {
-                    digest(
-                        &ExactNum::parse(s, crate::Radix::Dec, p, rm, &mut cc),
-                        &mut h,
-                    )?;
+                    let r = ExactNum::parse(s, crate::Radix::Dec, p, rm, &mut cc);
+                    dd(&mut h, &format!("parse:{s}"), &[], &[], p, rm, &r)?;
                     count += 1;
                 }
             }
@@ -7772,6 +8139,8 @@ mod grid_digest_tests {
         };
         for i in 0..zeros().len() {
             for p in [53usize, 64, 128, 300] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                     let z = zeros();
                     dd(
@@ -7789,6 +8158,8 @@ mod grid_digest_tests {
         }
         for i in 0..OPERANDS {
             for p in [64usize, 200] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                     dd(
                         &mut h,
@@ -7844,6 +8215,13 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held = 0usize;
+        let mut held_f21 = 0usize;
+        let mut held_tzud = 0usize;
+        let mut held_f22 = 0usize;
+        let mut held_f28 = 0usize;
+        let mut held_f29 = 0usize;
+        let mut held_f30 = 0usize;
         let ms = || {
             [
                 ExactNum::new(64),
@@ -7857,16 +8235,67 @@ mod grid_digest_tests {
             for i in [0usize, 1, 2, 3, 5, 7, 21] {
                 for mi in 0..5 {
                     for p in [64usize, 128] {
+                        // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                        // digest; the old pin does not move)
                         for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                             let m = ms();
-                            dd(
+                            let r = f(&operand(i), &m[mi], p, rm, &mut cc);
+                            // F-21 (N-6): at the tiny operand 21, Down gives NaN(PrecisionRetryExhausted), not a value.
+                            let f21 = rm == RoundingMode::Down
+                                && r.err() == Some(Error::PrecisionRetryExhausted);
+                            // M27-TZ/UD (finding id pending): ns, cs and ds of the tiny nonzero u overflow upward; Down
+                            // gives +Inf where the ruling is +MAX. u = 0 is a pole whose ruled value is +-Inf by the
+                            // sign of u; today's NaN there is held (F-28 below).
+                            let u = operand(i);
+                            let tzud = !f21
+                                && !u.is_zero()
+                                && !u.is_inf()
+                                && !u.is_nan()
+                                && tz_overflow(rm, &r);
+                            // F-22 rider (N-7, dn/nd exact flag): at u21 and m = 1/2, 3/8, dn and nd are 1 flagged exact in
+                            // ToEven (the value is not exactly 1), and Down dn is 1 where the value is below 1.
+                            let f22 = (JNAMES[fi] == "dn" || JNAMES[fi] == "nd")
+                                && i == 21
+                                && (mi == 2 || mi == 3);
+                            // F-28 (ZF-M27): u = +-0 is a simple real pole of ns, cs and ds for 0 <= m <= 1 (sn has a
+                            // simple zero there). The ruled value is signed +-Inf by the sign of u (P20, DOM-07,
+                            // POLE-01), in every mode; today's NaN(InvalidArgument) is known-wrong and is held.
+                            // m = 3 (mi = 4) is out of range and its NaN stays hashed.
+                            let f28 = matches!(JNAMES[fi], "ns" | "cs" | "ds")
+                                && u.is_zero()
+                                && mi <= 3
+                                && r.is_nan();
+                            // F-29 (ZF-M27): am, sn, sc and sd are odd in u (am(u|0) = u, sn(u|0) = sin u,
+                            // sn(u|1) = tanh u), so at u = -0 for 0 <= m <= 1 the value is -0 (P20 keeps signed
+                            // zeros, NAN-04). Today they return +0 (the ops/jacobi.rs u = 0 short-circuit behind F-28
+                            // ignores the sign of u), known-wrong, so they are held. m = 3 (mi = 4) stays hashed.
+                            let f29 = matches!(JNAMES[fi], "am" | "sn" | "sc" | "sd")
+                                && u.is_zero()
+                                && u.is_negative()
+                                && mi <= 3
+                                && r.is_zero()
+                                && r.is_positive();
+                            // F-30 (ZF-M27): am(u+4K|m) = am(u|m) + 2π; ops/jacobi.rs:252/256-276 reduces u mod 4K
+                            // for |u| > 2K and drops the 2π·n, so am(-7|1/2) and am(-7|3/8) are off by +2π; held.
+                            // Operand 3 is u = -7; mi = 2, 3 are m = 1/2, 3/8, the only m in (0, 1) on this grid,
+                            // and |u| = 7 > 2K(m) there. m = 0, 1 take their own closed forms; m = 3 stays hashed.
+                            let f30 = JNAMES[fi] == "am" && i == 3 && (mi == 2 || mi == 3);
+                            held_f21 += usize::from(f21);
+                            held_tzud += usize::from(tzud);
+                            held_f22 += usize::from(f22);
+                            held_f28 += usize::from(f28);
+                            held_f29 += usize::from(f29);
+                            held_f30 += usize::from(f30);
+                            dd_held(
                                 &mut h,
+                                &mut held,
+                                f21 || tzud || f22 || f28 || f29 || f30,
                                 JNAMES[fi],
                                 &[&operand(i), &m[mi]],
                                 &[],
                                 p,
                                 rm,
-                                &f(&operand(i), &m[mi], p, rm, &mut cc),
+                                &r,
                             )?;
                             count += 1;
                         }
@@ -7875,6 +8304,25 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 13 * 7 * 5 * 2 * 2);
+        // F-21 (N-6, ZF-M27): the Down NaN(PrecisionRetryExhausted) cells at operand 21 are not hashed
+        assert_eq!(held_f21, 62);
+        // M27-TZ/UD (finding id pending): the Down +overflow cells (+Inf, the ruling is +MAX) are not hashed
+        assert_eq!(held_tzud, 24);
+        // F-22 rider (N-7, ZF-M27): dn and nd at u21, m = 1/2 and 3/8, both modes, are not hashed
+        assert_eq!(held_f22, 16);
+        // F-28 (ZF-M27): ns, cs and ds at u = +-0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are
+        // NaN(InvalidArgument) where the ruled pole value is signed +-Inf; they are not hashed
+        assert_eq!(held_f28, 96);
+        // F-29 (ZF-M27): am, sn, sc and sd at u = -0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are +0
+        // where the ruled value is -0 (odd functions); they are not hashed
+        assert_eq!(held_f29, 64);
+        // F-30 (ZF-M27): am at u = -7, m in {1/2, 3/8}, p in {64, 128}, both modes, is am(u|m) + 2π (the 4K period
+        // reduction drops the 2π·n); they are not hashed
+        assert_eq!(held_f30, 8);
+        assert_eq!(
+            held,
+            held_f21 + held_tzud + held_f22 + held_f28 + held_f29 + held_f30
+        );
         // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
         let u = operand(5);
         let zero_m = ExactNum::new(64);
@@ -7886,7 +8334,13 @@ mod grid_digest_tests {
         // are `u` and the other nine functions are 1, because `f(u|m) = t (1 - O(u^2))` is far closer to the
         // representable `t` than half an ulp, and a value just below a representable number rounds to it
         // to nearest; the roundability check had treated that as undecidable. Oracle: mpmath, see the CHANGELOG.
-        assert_eq!(h.finish(), 8_344_934_497_909_943_058);
+        // Re-pinned (F9d-1): was 8_344_934_497_909_943_058, with the 62 Down F-21 cells in.
+        // Re-pinned (F9d-5): was 13_316_780_591_086_104_024, with the 24 Down +overflow cells in.
+        // Re-pinned (F9d-6): was 14_091_997_015_206_208_250, with the 16 dn/nd F-22 rider cells in.
+        // Re-pinned (F9d-18): was 3_754_090_377_808_634_531, with the 96 F-28 ns/cs/ds(+-0|m) pole NaN cells in.
+        // Re-pinned (F9d-20): was 8_207_647_167_930_223_000, with the 64 F-29 am/sn/sc/sd(-0|m) +0 cells in.
+        // Re-pinned (F9d-21): was 6_388_409_464_529_934_111, with the 8 F-30 am(-7|m) period-shift cells in.
+        assert_eq!(h.finish(), 295_760_852_189_530_323);
         Ok(())
     }
 
@@ -7959,6 +8413,8 @@ mod grid_digest_tests {
             _ => ExactNum::from_u8(9, 64).ldexp(-1, 64, RoundingMode::None),
         };
         for p in [64usize, 128] {
+            // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+            // digest; the old pin does not move)
             for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                 for i in (0..11).chain(21..23) {
                     let x = operand(i);
@@ -7993,6 +8449,8 @@ mod grid_digest_tests {
         for i in [2usize, 3, 4, 5, 6] {
             for n in [7usize, 255, 1000, 65537, 1_000_003] {
                 for p in [64usize, 200] {
+                    // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                    // digest; the old pin does not move)
                     for rm in [RoundingMode::ToEven, RoundingMode::Up, RoundingMode::Down] {
                         dd(
                             &mut h,
@@ -8023,8 +8481,14 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f20 = 0usize;
+        let mut held_f26 = 0usize;
+        let mut held_f27 = 0usize;
+        let mut held_logb = 0usize;
         for i in (0..11).chain(21..23) {
             for p in [64usize, 200] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down] {
                     dd(
                         &mut h,
@@ -8070,14 +8534,34 @@ mod grid_digest_tests {
                     )?;
                     count += 8;
                     for b in [2usize, 4, 6] {
-                        dd(
+                        let r = operand(i).log(&operand(b), p, rm, &mut cc);
+                        // F-20 (N-5): log(x, x) = 1 is exact, but ToEven at p = 64 flags it inexact.
+                        let f20 = i == b && r.inexact();
+                        // F-26: logb(x, 1) for 0 < x < 1 is +Inf; the signed pole gives -Inf (P20, POLE-01, MPFR).
+                        // Operand 2 is 1. logb(1, 1) -> NaN is right and stays hashed.
+                        let x = operand(i);
+                        let f26 = b == 2
+                            && r.is_inf()
+                            && r.is_positive()
+                            && !x.is_inf()
+                            && x.is_positive()
+                            && x < operand(2);
+                        // F-27: logb(+-0, b) is NaN; the pole rule (P20 POLE-04, ln(+-0) = -Inf, read as
+                        // ln(x) / ln(b) as for F-26) gives +Inf for 0 < b < 1 and -Inf for b = 1 (MPFR, mpmath).
+                        let f27 = x.is_zero() && r.is_nan();
+                        held_f20 += usize::from(f20);
+                        held_f26 += usize::from(f26);
+                        held_f27 += usize::from(f27);
+                        dd_held(
                             &mut h,
+                            &mut held_logb,
+                            f20 || f26 || f27,
                             "logb",
                             &[&operand(i), &operand(b)],
                             &[],
                             p,
                             rm,
-                            &operand(i).log(&operand(b), p, rm, &mut cc),
+                            &r,
                         )?;
                         count += 1;
                     }
@@ -8085,6 +8569,16 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 13 * 2 * 2 * 11);
+        // F-20 (N-5, ZF-M27): logb(third(64), third(64)) and logb(third(320), third(320)) at p = 64 ToEven (exactly 1,
+        // flagged inexact) are not hashed
+        assert_eq!(held_f20, 2);
+        // F-26 (ZF-M27): logb(x, 1) = +Inf for x in {third(64), third(320), operand 21}, p = 64 and 200, ToEven and
+        // Down (the modes this loop runs), not hashed
+        assert_eq!(held_f26, 12);
+        // F-27 (ZF-M27): logb(x, b) = NaN for x = +0 and -0, b in {1, third(64), third(320)}, p = 64 and 200, ToEven
+        // and Down, not hashed. logb(1, 1) -> NaN stays hashed.
+        assert_eq!(held_f27, 24);
+        assert_eq!(held_logb, held_f20 + held_f26 + held_f27);
         println!("ziv entry points digest = {}", h.finish());
         // Re-recorded: the old value (2_735_357_469_467_868_262) pinned a wrong `log1p` result for the positive
         // subnormal operand 21 with `Down` (the argument itself instead of the argument minus one grid unit);
@@ -8092,7 +8586,10 @@ mod grid_digest_tests {
         // Re-recorded again for `nth_root` of a negative number with `Up`/`Down` (they were swapped for odd n >= 5):
         // the old value was 6_378_838_253_543_692_452; only `nth_root(5)` entries of negative operands differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
-        assert_eq!(h.finish(), 15_733_382_221_161_312_340);
+        // Re-pinned (F9d-7): was 15_733_382_221_161_312_340, with the 2 F-20 logb(x, x) cells in.
+        // Re-pinned (F9d-14): was 7_247_571_894_832_860_161, with the 12 F-26 logb(x, 1) = +Inf cells in.
+        // Re-pinned (F9d-16): was 16_270_962_408_906_483_201, with the 24 F-27 logb(+-0, b) = NaN cells in.
+        assert_eq!(h.finish(), 14_118_851_892_563_545_474);
         Ok(())
     }
 
@@ -8104,6 +8601,7 @@ mod grid_digest_tests {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f20 = 0usize;
         // (x, base, expected exact result or None when the result is not exact)
         let cases: [(ExactNum, ExactNum, Option<ExactNum>); 8] = [
             (
@@ -8137,31 +8635,50 @@ mod grid_digest_tests {
         ];
         for (x, b, want) in cases {
             for p in [53usize, 64, 128, 200] {
+                // MODE-SUBSET mode-specific: the pinned digest below holds only for these modes (Q2: a new mode gets its own new
+                // digest; the old pin does not move)
                 for rm in [RoundingMode::ToEven, RoundingMode::Down, RoundingMode::Up] {
                     let got = x.log(&b, p, rm, &mut cc);
                     if let Some(w) = &want {
                         assert!(ExactNum::sub_ref(&got, w, 64, RoundingMode::ToEven).is_zero());
                     }
-                    digest(&got, &mut h)?;
+                    // F-20 (N-5): an exact result flagged inexact (ToEven at p = 64 and 128) is a known-wrong flag.
+                    let f20 = want.is_some() && got.inexact();
+                    dd_held(
+                        &mut h,
+                        &mut held_f20,
+                        f20,
+                        "logb",
+                        &[&x, &b],
+                        &[],
+                        p,
+                        rm,
+                        &got,
+                    )?;
                     count += 1;
                 }
             }
         }
         assert_eq!(count, 8 * 4 * 3);
+        // F-20 (N-5, ZF-M27): the five exact cases at p = 64 and 128 in ToEven (flagged inexact) are not hashed
+        assert_eq!(held_f20, 10);
         println!("log exact digest = {}", h.finish());
-        assert_eq!(h.finish(), 11_246_996_610_564_981_343);
+        // Re-pinned (F9d-7): was 11_246_996_610_564_981_343, with the 10 F-20 cells in.
+        assert_eq!(h.finish(), 4_476_836_513_075_177_053);
         Ok(())
     }
 
     /// Loop-conversion pin for `ln`, `log2`, `log10` (the per-pass working copy becomes `ziv_pass_operand`): the 23
     /// grid operands (NaN kinds, +-Inf, +-0, the subnormal band, the exponent extremes), exact powers 2^k and 10^n over
     /// a wide exponent range, 1 +- 2^-j near the cancellation point, and inexact-flagged inputs (including an
-    /// inexact-flagged exact power of ten for the log10 exact branch), at 7 precisions in all 6 rounding modes.
+    /// inexact-flagged exact power of ten for the log10 exact branch), at 7 precisions in every mode: the six pinned
+    /// before ToOdd in `h`, ToOdd in its own digest.
     /// Recorded on the code that still clones the input.
     #[test]
     fn ln_log2_log10_conversion_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut cc = crate::Consts::new()?;
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
         let mut xs: Vec<ExactNum> = (0..PAIR_OPERANDS).map(operand).collect();
         for k in [1i64, 7, 64, 1000, 100_000, 1_000_000_000, -1, -64, -100_000, -1_000_000_000] {
@@ -8197,19 +8714,34 @@ mod grid_digest_tests {
         for x in &xs {
             for p in [1usize, 24, 53, 64, 100, 200, 1024] {
                 for rm in RMS {
-                    dd(&mut h, "ln", &[x], &[], p, rm, &x.ln(p, rm, &mut cc))?;
-                    dd(&mut h, "log2", &[x], &[], p, rm, &x.log2(p, rm, &mut cc))?;
-                    dd(&mut h, "log10", &[x], &[], p, rm, &x.log10(p, rm, &mut cc))?;
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                    dd(&mut *hh, "ln", &[x], &[], p, rm, &x.ln(p, rm, &mut cc))?;
+                    dd(&mut *hh, "log2", &[x], &[], p, rm, &x.log2(p, rm, &mut cc))?;
+                    dd(
+                        &mut *hh,
+                        "log10",
+                        &[x],
+                        &[],
+                        p,
+                        rm,
+                        &x.log10(p, rm, &mut cc),
+                    )?;
                     count += 3;
                 }
             }
         }
-        assert_eq!(count, nx * 7 * 6 * 3);
+        assert_eq!(count, nx * 7 * RMS.len() * 3);
         println!(
             "ln/log2/log10 conversion digest = {} over {} entries",
             h.finish(),
             count
         );
+        println!(
+            "ln_log2_log10_conversion_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 17_271_334_150_709_268_122);
         assert_eq!(h.finish(), 2_640_369_975_324_367_864);
         Ok(())
     }
@@ -8218,23 +8750,37 @@ mod grid_digest_tests {
     #[test]
     fn reciprocal_nth_root_grid_digest() -> Result<(), Box<dyn std::error::Error>> {
         let mut h = DefaultHasher::new();
+        let mut h_odd = DefaultHasher::new();
         let mut count = 0usize;
+        let mut held_f17 = 0usize;
+        let mut gap = 0usize;
         for i in 0..PAIR_OPERANDS {
             for p in [1usize, 53, 64, 128, 200, 320] {
                 for rm in RMS {
-                    dd(
-                        &mut h,
-                        "reciprocal",
-                        &[&operand(i)],
-                        &[],
-                        p,
-                        rm,
-                        &operand(i).reciprocal(p, rm),
-                    )?;
+                    let hh = if rm == RoundingMode::ToOdd { &mut h_odd } else { &mut h };
+                    // F-17 (N-2): reciprocal(third(320)) at p = 200 under None is exactly 3; toward zero at
+                    // rp(200, 64) is below 3.
+                    let f17 = rm == RoundingMode::None && i == 6 && p == 200;
+                    let r = operand(i).reciprocal(p, rm);
+                    if f17 {
+                        held_f17 += 1;
+                    } else {
+                        // NONE-GAP F-B: a None overflow (+-Inf, the ruling is +-MAX) is counted, not hashed
+                        dd_none_gap(
+                            &mut *hh,
+                            &mut gap,
+                            "reciprocal",
+                            &[&operand(i)],
+                            &[],
+                            p,
+                            rm,
+                            &r,
+                        )?;
+                    }
                     count += 1;
                     for n in [2usize, 3, 4, 5, 7] {
                         dd(
-                            &mut h,
+                            &mut *hh,
                             "nth_root",
                             &[&operand(i)],
                             &[i128::try_from(n)?],
@@ -8247,12 +8793,25 @@ mod grid_digest_tests {
                 }
             }
         }
-        assert_eq!(count, PAIR_OPERANDS * 6 * 6 * 6);
+        assert_eq!(count, PAIR_OPERANDS * 6 * 6 * RMS.len());
+        // F-17 (N-2, ZF-M27): the None reciprocal(third(320)) cell at p = 200 (exactly 3) is not hashed
+        assert_eq!(held_f17, 1);
+        // NONE-GAP F-B: the None overflow cells (reciprocal of the two subnormals, +-Inf where the ruling is +-MAX)
+        // are not hashed (ZF-M27)
+        assert_eq!(gap, 12);
         println!("reciprocal nth_root grid digest = {}", h.finish());
         // Re-recorded for `nth_root` of a negative number with `Up`/`Down` (swapped for odd n >= 5; old value
         // 1_369_146_293_907_659_395): only the n = 5 and 7 entries of negative operands in those modes differ,
         // each confirmed by an exact integer root. See the CHANGELOG.
-        assert_eq!(h.finish(), 2_411_520_695_892_384_189);
+        println!(
+            "reciprocal_nth_root_grid_digest ToOdd digest = {}",
+            h_odd.finish()
+        );
+        // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
+        assert_eq!(h_odd.finish(), 18_016_007_569_384_113_393);
+        // Re-pinned (F9d-3): was 2_411_520_695_892_384_189, with the None F-17 cell in.
+        // Re-pinned (F9d-4): was 2_925_947_817_663_390_226, with the 12 None F-B overflow cells in.
+        assert_eq!(h.finish(), 1_241_375_420_610_093_665);
         Ok(())
     }
 
@@ -8358,7 +8917,7 @@ mod grid_digest_tests {
         Ok(())
     }
 
-    /// All seven rounding modes, `ToOdd` included (the pinned grids above use six).
+    /// All seven rounding modes, `ToOdd` included (the pinned grids above hash ToOdd into a digest of its own).
     const ALL_RMS: [RoundingMode; 7] = [
         RoundingMode::None,
         RoundingMode::ToEven,
@@ -8605,7 +9164,15 @@ mod round_op_flag_tests {
     fn round_reports_its_own_rounding() -> Result<(), crate::Error> {
         let x = ExactNum::from_mag_parts(0xC000_0000_0000_0000, -1, 64)?; // 0.375, exact
         assert!(!x.inexact());
-        for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::Up] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let y = ExactNum::from_mag_parts(0xC000_0000_0000_0000, -1, 64)?.round(0, rm);
             assert!(y.inexact(), "{rm:?}");
             assert!(y.inexact_accumulated(), "{rm:?}");
@@ -8613,11 +9180,26 @@ mod round_op_flag_tests {
             assert!(!z.inexact(), "{rm:?}");
             assert!(z.inexact_accumulated(), "{rm:?}");
         }
-        for rm in [RoundingMode::ToEven, RoundingMode::ToZero, RoundingMode::None] {
+        // MODE-SUBSET mode-specific: these round a positive subnormal to an inexact 0 (ToOdd is nearest with ties to
+        // odd, like ToEven); Up and FromZero round it up to an inexact 1, asserted below
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::ToZero,
+            RoundingMode::Down,
+            RoundingMode::None,
+        ] {
             // a subnormal operand rounded to an integer is an inexact zero
             let t = ExactNum::from_mag_parts(0xC000_0000_0000_0000, crate::EXPONENT_MIN + 5, 64)?
                 .round(0, rm);
             assert!(t.is_zero() && t.inexact(), "{rm:?}");
+        }
+        // MODE-SUBSET mode-specific: the two modes that round a positive subnormal up, to an inexact 1
+        for rm in [RoundingMode::Up, RoundingMode::FromZero] {
+            let t = ExactNum::from_mag_parts(0xC000_0000_0000_0000, crate::EXPONENT_MIN + 5, 64)?
+                .round(0, rm);
+            assert_eq!(t.compare(&ExactNum::from_u8(1, 64)), Some(0), "{rm:?}");
+            assert!(t.inexact() && t.inexact_accumulated(), "{rm:?}");
         }
         let w =
             ExactNum::from_mag_parts(0xC000_0000_0000_0000, 2, 64)?.round(1, RoundingMode::ToEven); // 3.0 exact

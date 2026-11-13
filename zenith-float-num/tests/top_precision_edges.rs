@@ -393,7 +393,15 @@ fn every_public_entry_accepts_a_top_precision() -> Result<(), String> {
     let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
     for p in top_precisions()? {
         let d = MAX_PRECISION.checked_sub(p).ok_or("d")?;
-        for rm in [RoundingMode::None, RoundingMode::ToEven, RoundingMode::Down] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             for (name, r) in public_results(p, rm, &mut cc) {
                 // A value cannot be built at this size on a real machine; with a lower ceiling it would be.
                 if r.is_nan() && r.err() != Some(Error::MemoryAllocation) {
@@ -412,7 +420,15 @@ fn every_public_entry_accepts_a_top_precision() -> Result<(), String> {
 fn every_public_entry_rejects_a_precision_outside_the_range() -> Result<(), String> {
     let mut cc = Consts::new().map_err(|e| format!("{e:?}"))?;
     for p in bad_precisions()? {
-        for rm in [RoundingMode::None, RoundingMode::ToEven, RoundingMode::Down] {
+        for rm in [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ] {
             let mut all = public_results(p, rm, &mut cc);
             all.extend(composite_results(p, rm, &mut cc));
             for (name, r) in all {
