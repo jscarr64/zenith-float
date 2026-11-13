@@ -602,7 +602,7 @@ mod tests {
                             RoundingMode::None,
                         );
                     }
-                    let x = if neg { x.neg_via_mul() } else { x };
+                    let x = if neg { -x } else { x };
                     let want = if neg { mk(i).neg() } else { mk(i) };
                     let got = ExactInt::from_exact_num(&x).ok_or(crate::Error::InvalidArgument)?;
                     assert_eq!(

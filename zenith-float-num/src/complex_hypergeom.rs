@@ -199,11 +199,16 @@ const ABS_LEAD_BITS: usize = 128;
 /// `|z|` unless `|z|` lies within `2^-126` above a power of two. `hypot` reads every input bit, so
 /// on the full-width term and sum this check cost more than the series step it guards.
 fn abs_lead(z: &ExactComplex) -> ExactNum {
-    let mut c = z.exact_copy();
-    match c.set_precision(ABS_LEAD_BITS, RoundingMode::ToZero) {
-        Ok(()) => c.abs(64, rm()),
-        Err(e) => ExactNum::nan(Some(e)),
-    }
+    // `x + 0` at ABS_LEAD_BITS toward zero is `x` cut to its leading bits, as a new value.
+    let lead = |x: &ExactNum| {
+        ExactNum::add_ref(
+            x,
+            &ExactNum::new(ABS_LEAD_BITS),
+            ABS_LEAD_BITS,
+            RoundingMode::ToZero,
+        )
+    };
+    ExactComplex::new(lead(z.re()), lead(z.im())).abs(64, rm())
 }
 
 /// `|t| < 2^-p |s|` (or `t = 0`).
