@@ -841,6 +841,105 @@ mod tests {
         assert!(term_small_rel(&below, &one, 256));
     }
 
+    /// Exponent of `|z|` from exact arithmetic: `|z|^2 = re^2 + im^2` exactly, and
+    /// `2^(e-1) <= |z| < 2^e` iff `2^(2e-2) <= |z|^2 < 2^(2e)`, so `e = ceil(e2 / 2)` for the
+    /// exponent `e2` of `|z|^2`.
+    fn exact_abs_exponent(z: &ExactComplex) -> Option<Exponent> {
+        let (r, w) = (RoundingMode::None, 8192);
+        let re2 = ExactNum::mul_ref(z.re(), z.re(), w, r);
+        let im2 = ExactNum::mul_ref(z.im(), z.im(), w, r);
+        let e2 = re2.add(&im2, w, r).exponent()?;
+        Some(e2.div_euclid(2) + e2.rem_euclid(2))
+    }
+
+    /// `abs_lead` keeps the leading 128 bits of each part: its exponent equals the exact one of
+    /// `|z|` just below, at and just above a power of two `2^m` (real and complex, both signs,
+    /// m = 0, 1, 63, 64, 65, -64, 200, p = 256 and 1024), except when `|z|` lies within `2^-126`
+    /// above `2^m` with a part that loses bits, where it may be one below (the documented
+    /// deviation). Oracle: exact arithmetic (`exact_abs_exponent`).
+    #[test]
+    fn abs_lead_exponent_near_a_power_of_two() {
+        let r = RoundingMode::None;
+        for p in [256usize, 1024] {
+            for m in [0i64, 1, 63, 64, 65, -64, 200] {
+                let pow = |e: i64| ExactNum::from_u8(1, p).ldexp(e, p, r);
+                for neg in [false, true] {
+                    let s = |x: ExactNum| if neg { x.neg() } else { x };
+                    let zero = || ExactNum::new(p);
+                    // (value, may the lead exponent be one below the exact one?)
+                    let cases = [
+                        // just below 2^m: 2^m - 2^(m-200)
+                        (
+                            ExactComplex::new(s(pow(m).sub(&pow(m - 200), p, r)), zero()),
+                            false,
+                        ),
+                        // at 2^m
+                        (ExactComplex::new(s(pow(m)), zero()), false),
+                        // just above 2^m, real: the cut never goes below 2^m
+                        (
+                            ExactComplex::new(s(pow(m).add(&pow(m - 200), p, r)), zero()),
+                            false,
+                        ),
+                        // just above 2^m from exact parts: |z|^2 = 4^m + 4^(m-100)
+                        (ExactComplex::new(s(pow(m)), s(pow(m - 100))), false),
+                        // just above 2^m with a re part that loses bits in the cut:
+                        // re = 2^m - 2^(m-150), im = 2^(m-70): |z|^2 = 4^m (1 - 2^-149 + 2^-140 + ...)
+                        (
+                            ExactComplex::new(s(pow(m).sub(&pow(m - 150), p, r)), s(pow(m - 70))),
+                            true,
+                        ),
+                        // on the diagonal: re = im = 2^(m-1), |z| = 2^(m-1) sqrt 2
+                        (ExactComplex::new(s(pow(m - 1)), s(pow(m - 1))), false),
+                    ];
+                    for (z, may_dip) in cases {
+                        let lead = abs_lead(&z).exponent();
+                        let exact = exact_abs_exponent(&z);
+                        if may_dip {
+                            assert!(
+                                lead == exact
+                                    || lead.zip(exact).map(|(l, e)| l + 1 == e) == Some(true),
+                                "p={p} m={m} neg={neg}: lead {lead:?} exact {exact:?}"
+                            );
+                        } else {
+                            assert_eq!(lead, exact, "p={p} m={m} neg={neg}: {z:?}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// `term_small_rel(t, s, p)` is `|t| < 2^-p |s|` (exact for powers of two): with t = ±2^a and
+    /// s = ±2^b it holds for b = a + p + 1 and fails for b = a + p and a + p - 1; t = 0 always holds.
+    /// p = 64, 128, 256; a = 0, -64, 100. Oracle: exact (powers of two).
+    #[test]
+    fn term_small_rel_at_the_exponent_boundary() {
+        let r = RoundingMode::None;
+        let w = 512;
+        for p in [64usize, 128, 256] {
+            for a in [0i64, -64, 100] {
+                let pt = |e: i64, neg: bool| {
+                    let x = ExactNum::from_u8(1, w).ldexp(e, w, r);
+                    ExactComplex::new(if neg { x.neg() } else { x }, ExactNum::new(w))
+                };
+                let pi = p as i64;
+                for (nt, ns) in [(false, false), (true, false), (false, true), (true, true)] {
+                    let t = pt(a, nt);
+                    assert!(
+                        term_small_rel(&t, &pt(a + pi + 1, ns), p),
+                        "p={p} a={a} b=a+p+1"
+                    );
+                    assert!(!term_small_rel(&t, &pt(a + pi, ns), p), "p={p} a={a} b=a+p");
+                    assert!(
+                        !term_small_rel(&t, &pt(a + pi - 1, ns), p),
+                        "p={p} a={a} b=a+p-1"
+                    );
+                }
+                assert!(term_small_rel(&ExactComplex::zero(w), &pt(a, false), p));
+            }
+        }
+    }
+
     #[test]
     fn complex_hypergeom_2f1_golds() -> Result<(), crate::Error> {
         let p = 256;

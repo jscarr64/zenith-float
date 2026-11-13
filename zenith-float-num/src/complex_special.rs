@@ -941,8 +941,8 @@ mod tests {
         Ok(())
     }
 
-    /// `shift_cap(k)` is 2^(k-1) + 2, with k clamped to at least 1, and never more than 2^20
-    /// (the real kernel's `STIRLING_SHIFT_MAX`): 2^20 from k = 21 on.
+    /// `shift_cap(k)` is 2^(k-1) + 2, with k clamped to at least 1, and `usize::MAX` once 2^(k-1)
+    /// does not fit a `usize`. No other limit: from dest p 1984 (k = 22) the cap is past 2^20.
     #[test]
     fn shift_cap_is_two_to_the_k_minus_one_plus_two() -> Result<(), crate::Error> {
         assert_eq!(shift_cap(6), 34);
@@ -952,14 +952,15 @@ mod tests {
         assert_eq!(shift_cap(0), 3);
         assert_eq!(shift_cap(-5), 3);
         assert_eq!(shift_cap(20), (1usize << 19) + 2);
-        assert_eq!(shift_cap(21), 1usize << 20);
-        assert_eq!(shift_cap(22), 1usize << 20);
-        assert_eq!(shift_cap(Exponent::from(usize::BITS) + 1), 1usize << 20);
-        assert_eq!(shift_cap(Exponent::MAX), 1usize << 20);
+        assert_eq!(shift_cap(21), (1usize << 20) + 2);
+        assert_eq!(shift_cap(22), (1usize << 21) + 2);
+        assert_eq!(shift_cap(23), (1usize << 22) + 2);
+        let bits = Exponent::from(usize::BITS);
+        assert_eq!(shift_cap(bits), (1usize << (usize::BITS - 1)) + 2);
+        assert_eq!(shift_cap(bits + 1), usize::MAX);
+        assert_eq!(shift_cap(Exponent::MAX), usize::MAX);
         assert_eq!(shift_cap(gamma_shift_exp(256)), 34);
         assert_eq!(shift_cap(digamma_shift_exp(256)), 130);
-        // At p = 4096 the shift target is far past what 2^20 shifts reach.
-        assert_eq!(shift_cap(gamma_shift_exp(4096)), 1usize << 20);
         Ok(())
     }
 
@@ -987,6 +988,73 @@ mod tests {
             Ok(())
         });
         (r, steps)
+    }
+
+    /// Dest p 1920 works at p_x = 1920 + 192 = 2112 bits on its first Ziv pass (`ziv_complex`:
+    /// round_p(p) + 64, plus 2 words), where the Γ shift target is k = 21; dest p 1984 works at
+    /// 2176, where it is k = 22. `gamma_shift_exp(p) = ceil((p + 372) / 127) + 1` steps from 21 to
+    /// 22 between p = 2168 and 2169, `digamma_shift_exp(p) = ceil((p + 379) / 128) + 1` between
+    /// 2181 and 2182. The shift cap 2^(k-1) + 2 follows: 2^20 + 2 at k = 21, 2^21 + 2 at k = 22.
+    /// Oracle: exact integer arithmetic.
+    #[test]
+    fn shift_target_steps_at_the_dest_p_1920_1984_threshold() -> Result<(), crate::Error> {
+        assert_eq!(gamma_shift_exp(1920 + 192), 21);
+        assert_eq!(gamma_shift_exp(1984 + 192), 22);
+        assert_eq!(gamma_shift_exp(2167), 21);
+        assert_eq!(gamma_shift_exp(2168), 21);
+        assert_eq!(gamma_shift_exp(2169), 22);
+        assert_eq!(gamma_shift_exp(2170), 22);
+        assert_eq!(digamma_shift_exp(2181), 21);
+        assert_eq!(digamma_shift_exp(2182), 22);
+        assert_eq!(shift_cap(gamma_shift_exp(2168)), (1usize << 20) + 2);
+        assert_eq!(shift_cap(gamma_shift_exp(2169)), (1usize << 21) + 2);
+        assert_eq!(shift_cap(digamma_shift_exp(2182)), (1usize << 21) + 2);
+        Ok(())
+    }
+
+    /// Exact shift counts at the shift bound for k = 11 (target |z| >= 2^10 = 1024), from the first
+    /// to the last iteration: Re z = 1023, 1024, 1025 (and with Im z = 1/2) take 1, 0, 0 steps;
+    /// Re z = 2^-42 takes 1024 (the most, inside the cap 2^10 + 2 = 1026); a step that does not
+    /// move z stops after exactly 1026 steps. The early refusal: from z = 1 the target is 1023
+    /// steps away, so cap 1023 just reaches it and cap 1022 just misses (refused, no step).
+    /// Oracle: exact integer arithmetic (|n + x + i/2| >= 1024 iff n + x >= 1024 for x + n
+    /// integer, since (1023)^2 + 1/4 < 1024^2).
+    #[test]
+    fn shift_while_small_at_the_shift_bound() -> Result<(), crate::Error> {
+        let p = 64;
+        let k: Exponent = 11;
+        let cap = shift_cap(k);
+        assert_eq!(cap, 1026);
+        let re = |n: u32| ExactNum::from_word(Word::from(n), p);
+        let half = || ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
+        for (x, steps) in [(1023u32, 1usize), (1024, 0), (1025, 0)] {
+            assert_eq!(
+                count_shifts(ExactComplex::from_real(re(x), p), k, cap, false),
+                (Ok(()), steps),
+                "x = {x}"
+            );
+            assert_eq!(
+                count_shifts(ExactComplex::new(re(x), half()), k, cap, false),
+                (Ok(()), steps),
+                "x = {x} + i/2"
+            );
+        }
+        let tiny =
+            ExactComplex::from_real(ExactNum::from_u8(1, p).ldexp(-42, p, RoundingMode::None), p);
+        assert_eq!(count_shifts(tiny, k, cap, false), (Ok(()), 1024));
+        assert_eq!(
+            count_shifts(ExactComplex::one(p), k, cap, true),
+            (Err(Error::PrecisionRetryExhausted), cap)
+        );
+        assert_eq!(
+            count_shifts(ExactComplex::one(p), k, 1023, false),
+            (Ok(()), 1023)
+        );
+        assert_eq!(
+            count_shifts(ExactComplex::one(p), k, 1022, false),
+            (Err(Error::PrecisionRetryExhausted), 0)
+        );
+        Ok(())
     }
 
     /// `shift_while_small` steps only while |z| < 2^(k-1): from a tiny Re z the real z -> z+1 step
