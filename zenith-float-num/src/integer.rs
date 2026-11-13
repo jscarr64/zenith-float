@@ -562,6 +562,47 @@ mod tests {
         assert!(ExactInt::from_exact_num(&crate::INF_POS).is_none());
     }
 
+    /// `from_exact_num` at the limb boundaries: 2^64 − 1 is one limb, 2^64 two, 2^128 − 1 two,
+    /// 2^128 three, 3·2^190 four; each with and without a fraction ½ and with either sign, against
+    /// the `ExactInt` it came from.
+    #[test]
+    fn from_exact_num_limb_count_boundaries() -> Result<(), crate::Error> {
+        let p = 320;
+        let two = || ExactInt::from_i64(2);
+        let mk = |i: usize| match i {
+            0 => ExactInt::from_u128(u128::from(u64::MAX)),
+            1 => ExactInt::from_u128(1u128 << 64),
+            2 => ExactInt::from_u128(u128::MAX),
+            3 => ExactInt::from_u128(1u128 << 127).mul(&two()),
+            _ => ExactInt::from_i64(3).mul(&two().pow(190)),
+        };
+        let limbs = [1usize, 2, 2, 3, 4];
+        for (i, &want_limbs) in limbs.iter().enumerate() {
+            for neg in [false, true] {
+                for frac in [false, true] {
+                    let mut x = mk(i).to_exact_num(p, RoundingMode::ToEven);
+                    if frac {
+                        x = x.add(
+                            &ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None),
+                            p,
+                            RoundingMode::None,
+                        );
+                    }
+                    let x = if neg { x.neg_via_mul() } else { x };
+                    let want = if neg { mk(i).neg() } else { mk(i) };
+                    let got = ExactInt::from_exact_num(&x).ok_or(crate::Error::InvalidArgument)?;
+                    assert_eq!(
+                        got.limbs.len(),
+                        want_limbs,
+                        "case {i} neg={neg} frac={frac}"
+                    );
+                    assert_eq!(got, want, "case {i} neg={neg} frac={frac}");
+                }
+            }
+        }
+        Ok(())
+    }
+
     #[test]
     fn exact_int_fact20_gcd_pow2_divrem() -> Result<(), crate::Error> {
         let mut fact = ExactInt::one();
