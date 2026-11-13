@@ -1,0 +1,1 @@
+- zenith-float-num (tests): `tests/complex_gamma_high_p_mpmath.rs` names its case tuple with `type Case` / `type Input`, so `cargo clippy --all-targets -D warnings` passes (it flagged `clippy::type_complexity` on the `CASES` table). Cases and values are unchanged.
