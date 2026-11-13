@@ -8339,7 +8339,8 @@ mod grid_digest_tests {
         // Re-pinned (F9d-6): was 14_091_997_015_206_208_250, with the 16 dn/nd F-22 rider cells in.
         // Re-pinned (F9d-18): was 3_754_090_377_808_634_531, with the 96 F-28 ns/cs/ds(+-0|m) pole NaN cells in.
         // Re-pinned (F9d-20): was 8_207_647_167_930_223_000, with the 64 F-29 am/sn/sc/sd(-0|m) +0 cells in.
-        assert_eq!(h.finish(), 6_388_409_464_529_934_111);
+        // Re-pinned (F9d-21): was 6_388_409_464_529_934_111, with the 8 F-30 am(-7|m) period-shift cells in.
+        assert_eq!(h.finish(), 295_760_852_189_530_323);
         Ok(())
     }
 
