@@ -5643,10 +5643,10 @@ mod tests {
         assert!(INF_NEG.log(&INF_POS, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_NEG.log(&INF_NEG, rand_p(), rm, &mut cc).is_nan());
         assert!(TWO.log(&ONE, rand_p(), rm, &mut cc).is_inf_pos());
-        assert!(half.log(&ONE, rand_p(), rm, &mut cc).is_inf_pos());
+        // F-26 (ZF-M27, held): log base 1 of 1/2 is ruled -Inf; the library gives +Inf today, so it is not asserted.
         assert!(ONE.log(&ONE, rand_p(), rm, &mut cc).is_nan());
 
-        assert!(ONE.pow(&NAN, rand_p(), rm, &mut cc).is_nan());
+        // M27-F12 (held): pow(1, NaN) is ruled 1 (IEEE 754, POW-01); the library gives NaN today, not asserted.
         assert!(NAN.pow(&ONE, rand_p(), rm, &mut cc).is_nan());
         assert!(INF_POS.pow(&NAN, rand_p(), rm, &mut cc).is_nan());
         assert!(NAN.pow(&INF_POS, rand_p(), rm, &mut cc).is_nan());
@@ -5655,7 +5655,7 @@ mod tests {
         assert!(NAN.pow(&NAN, rand_p(), rm, &mut cc).is_nan());
 
         assert!(NAN.powi(2, rand_p(), rm).is_nan());
-        assert!(NAN.powi(0, rand_p(), rm).is_nan());
+        // M27-F12 (held): powi(NaN, 0) is ruled 1 (F-12 widened); the library gives NaN today, so it is not asserted.
         assert!(INF_POS.powi(2, rand_p(), rm).is_inf_pos());
         assert!(INF_POS.powi(3, rand_p(), rm).is_inf_pos());
         assert!(INF_NEG.powi(4, rand_p(), rm).is_inf_pos());
