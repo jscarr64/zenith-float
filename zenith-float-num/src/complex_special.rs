@@ -868,6 +868,48 @@ mod tests {
         Ok(())
     }
 
+    /// A tiny `Re z > 0` takes the most integer shifts before Stirling (about 2^(k-1) for the
+    /// shift target k), and `Re z = 0` goes straight into the shift loop: both must still finish
+    /// with the right value. Checked against the real kernel on the axis (x·Γ(x), ln Γ(x)),
+    /// with x·Γ(x) = Γ(1+x), with z·(ψ(z+1) − ψ(z)) = 1, and on the imaginary axis.
+    #[test]
+    fn gamma_family_tiny_argument_takes_the_most_shifts() -> Result<(), crate::Error> {
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        for p in [64usize, 256, 1024] {
+            let one = ExactNum::from_u8(1, p);
+            let mk_x = || ExactNum::from_u8(3, p).ldexp(-42, p, RoundingMode::None);
+            let x = mk_x();
+            let z = ExactComplex::from_real(mk_x(), p);
+
+            let gz = z.gamma(p, rm, &mut cc);
+            let xg_c = ExactNum::mul_ref(gz.re(), &x, p, RoundingMode::None);
+            let xg_r = x.gamma(p, rm, &mut cc).mul(&x, p, RoundingMode::None);
+            let g1px = one.add(&x, p, RoundingMode::None).gamma(p, rm, &mut cc);
+            assert!(near(&xg_c, &xg_r, p), "p={p}: x*gamma(x) {xg_c:?} vs real {xg_r:?}");
+            assert!(near(&xg_c, &g1px, p), "p={p}: x*gamma(x) {xg_c:?} vs gamma(1+x) {g1px:?}");
+            assert!(tiny(gz.im(), p), "p={p}: im gamma(x) {:?}", gz.im());
+
+            let lgz = z.ln_gamma(p, rm, &mut cc);
+            let lgx = x.ln_gamma(p, rm, &mut cc);
+            assert!(near(lgz.re(), &lgx, p), "p={p}: ln_gamma {:?} vs real {lgx:?}", lgz.re());
+            assert!(tiny(lgz.im(), p), "p={p}: im ln_gamma(x) {:?}", lgz.im());
+
+            let zp1 = ExactComplex::one(p).add(&z, p, rm);
+            let dpsi = zp1
+                .digamma(p, rm, &mut cc)
+                .sub(&z.digamma(p, rm, &mut cc), p, rm);
+            let unit = dpsi.mul(&z, p, RoundingMode::None);
+            assert!(cnear(&unit, &ExactComplex::one(p), p), "p={p}: z*dpsi {unit:?}");
+
+            let w = ExactComplex::new(ExactNum::new(p), mk_x());
+            let wg = w.gamma(p, rm, &mut cc).mul(&w, p, RoundingMode::None);
+            let g1pw = ExactComplex::one(p).add(&w, p, rm).gamma(p, rm, &mut cc);
+            assert!(cnear(&wg, &g1pw, p), "p={p}: w*gamma(w) {wg:?} vs gamma(1+w) {g1pw:?}");
+        }
+        Ok(())
+    }
+
     /// `erf` / `erfc` of a real `z` (an `mpfr_compare_complex_real_axis` case): the imaginary part is exactly
     /// zero, so it must come out zero instead of exhausting the retry budget on rounding noise.
     #[test]

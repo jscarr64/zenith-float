@@ -1304,7 +1304,7 @@ impl ExactNum {
     /// Function does not follow any specific distribution law.
     /// The intended use of this function is for testing.
     /// The function returns NaN if the precision `p` is incorrect or when `exp_from` is less than EXPONENT_MIN or `exp_to` is greater than EXPONENT_MAX.
-    #[cfg(feature = "random")]
+    #[cfg(any(test, feature = "random"))]
     pub fn random_normal(p: usize, exp_from: Exponent, exp_to: Exponent) -> Self {
         Self::result_to_ext(
             with_prec(p, || ExactNumNumber::random_normal(p, exp_from, exp_to)),
@@ -6213,12 +6213,46 @@ mod tests {
     }
 }
 
-#[cfg(feature = "random")]
 #[cfg(test)]
 mod rand_tests {
 
     use super::*;
     use crate::common::util::TEST_EXP_BOUND;
+
+    /// `ExactNum::random_normal` from a fixed seed: the same value the core
+    /// `ExactNumNumber::random_normal` draws from that seed, a non-zero normal number whose
+    /// precision is `p` rounded up to whole words and whose exponent is in range, with both signs
+    /// over the seeds. A bad precision is NaN. Runs on its own thread so the pinned stream does not
+    /// leak into other tests.
+    #[cfg(feature = "std")]
+    #[test]
+    fn random_normal_seeded_is_the_core_draw_nonzero_normal_at_word_precision(
+    ) -> Result<(), crate::Error> {
+        std::thread::spawn(|| -> Result<(), crate::Error> {
+            let (exp_from, exp_to) = (-8, 8);
+            let mut seen_sign = [false; 2];
+            for (i, p) in [64usize, 65, 127, 128, 129, 192, 256, 320].into_iter().enumerate() {
+                let seed = 0x5EED_0000_u64 + i as u64;
+                crate::common::test_rng::reseed_random_this_thread(seed);
+                let n = ExactNum::random_normal(p, exp_from, exp_to);
+                crate::common::test_rng::reseed_random_this_thread(seed);
+                let gold = ExactNum::from(ExactNumNumber::random_normal(p, exp_from, exp_to)?);
+                assert_eq!(n.classify(), FpCategory::Normal, "p={p}: {n:?}");
+                assert!(!n.is_zero() && !n.is_nan(), "p={p}: {n:?}");
+                assert_eq!(n.precision(), Some(round_p(p)), "p={p}");
+                let e = n.exponent().ok_or(crate::Error::InvalidArgument)?;
+                assert!((exp_from..=exp_to).contains(&e), "p={p} e={e}");
+                assert_eq!(n.compare(&gold), Some(0), "p={p}: {n:?} vs {gold:?}");
+                assert_eq!(n.is_negative(), gold.is_negative(), "p={p}");
+                seen_sign[usize::from(n.is_negative())] = true;
+            }
+            assert_eq!(seen_sign, [true, true], "both signs over the fixed seeds");
+            assert!(ExactNum::random_normal(0, exp_from, exp_to).is_nan());
+            Ok(())
+        })
+        .join()
+        .map_err(|_| crate::Error::InvalidArgument)?
+    }
 
     #[test]
     fn test_rand() -> Result<(), crate::Error> {
