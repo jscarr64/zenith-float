@@ -329,7 +329,7 @@ fn bracket_expect_matches_mpfr() -> Res {
                         *b == d && *bix == dix,
                         "{name} p={p} {rm:?}: {b} {bix} vs MPFR {d} {dix}"
                     ),
-                    other => panic!("{name} p={p} {rm:?}: {other:?}"),
+                    other => return Err(format!("{name} p={p} {rm:?}: {other:?}").into()),
                 }
                 n += 1;
             }
