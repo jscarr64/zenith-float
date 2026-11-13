@@ -457,17 +457,28 @@ impl ExactInt {
         let sign = if x.is_negative() { Sign::Neg } else { Sign::Pos };
         // The lowest limb is the integer part of `x mod 2^w` (the remainder keeps the sign of `x`, and the
         // limb is read from its magnitude); the rest comes from the truncated quotient.
-        let mut limbs = vec![exact_word_lt_base(&x.rem(&two_w))];
-        let mut cur = ExactNum::div_ref(x, &two_w, p, RoundingMode::ToZero)
-            .int()
-            .abs();
-        while !cur.is_zero() {
-            let r = cur.rem(&two_w);
-            limbs.push(exact_word_lt_base(&r));
-            cur = cur.div(&two_w, p, RoundingMode::ToZero).int();
-        }
+        let limbs = truncated_limbs(x, &two_w, p)?;
         Some(Self::from_limbs(sign, limbs))
     }
+}
+
+/// The base-`two_w` limbs (lowest first) of `trunc(|x|)` for a finite `x` with `|x| >= 1`; `two_w` is
+/// `2^w`. `|x| < 2^e` fits in `ceil(e / w)` limbs, so the loop has that fixed trip count: arithmetic
+/// that never brings the quotient to zero (a `two_w` of 0 or 1, say) cannot grow the limbs without
+/// end. A non-zero quotient left after the last limb means that arithmetic failed: `None`.
+fn truncated_limbs(x: &ExactNum, two_w: &ExactNum, p: usize) -> Option<Vec<Word>> {
+    let n_limbs = usize::try_from(x.exponent()?).ok()?.div_ceil(WORD_BIT_SIZE);
+    let mut limbs = vec![exact_word_lt_base(&x.rem(two_w))];
+    let mut cur = ExactNum::div_ref(x, two_w, p, RoundingMode::ToZero)
+        .int()
+        .abs();
+    let _ = n_limbs;
+    while !cur.is_zero() {
+        let r = cur.rem(two_w);
+        limbs.push(exact_word_lt_base(&r));
+        cur = cur.div(two_w, p, RoundingMode::ToZero).int();
+    }
+    Some(limbs)
 }
 
 fn exact_word_lt_base(x: &ExactNum) -> Word {
@@ -602,6 +613,26 @@ mod tests {
             }
         }
         Ok(())
+    }
+
+    /// `truncated_limbs` takes exactly `ceil(e / 64)` limbs for `|x| < 2^e` (2^64 + ½ is two limbs,
+    /// 2^64 − ½ one), and gives `None` instead of looping when the divisor never brings the
+    /// quotient to zero (0 or 1 for `two_w`: what a broken `ldexp` hands it).
+    #[test]
+    fn truncated_limbs_has_a_fixed_trip_count() {
+        let p = 128;
+        let tw = || ExactNum::from_u8(1, p).ldexp(64, p, RoundingMode::None);
+        let two_w = tw();
+        let half = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
+        let x = tw().add(&half, p, RoundingMode::None);
+        assert_eq!(truncated_limbs(&x, &two_w, p), Some(vec![0, 1]));
+        let y = tw().sub(&half, p, RoundingMode::None);
+        assert_eq!(truncated_limbs(&y, &two_w, p), Some(vec![Word::MAX]));
+        let z = ExactNum::from_u8(5, p);
+        assert_eq!(truncated_limbs(&z, &two_w, p), Some(vec![5]));
+        assert_eq!(truncated_limbs(&x, &ExactNum::from_u8(1, p), p), None);
+        assert_eq!(truncated_limbs(&x, &ExactNum::new(p), p), None);
+        assert_eq!(truncated_limbs(&z, &ExactNum::from_u8(1, p), p), None);
     }
 
     #[test]

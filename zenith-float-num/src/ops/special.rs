@@ -5,6 +5,7 @@ use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::Exponent;
 use crate::defs::RoundingMode;
+use crate::defs::EXPONENT_MAX;
 use crate::defs::EXPONENT_MIN;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
@@ -710,21 +711,16 @@ impl ExactNumNumber {
         let one = Self::from_word(1, pw)?;
         let mut z = self.clone()?;
         let mut acc = Self::from_word(1, pw)?;
-        let mut shifts = 0usize;
 
         // Raise the argument until the last (64th) Stirling term, B₁₂₈/(128·127·z¹²⁷)
         // ≈ 2^363.8 / z¹²⁷, is below 2^-(p+8).
         // Bound at `pw`, the precision ln_gamma_stirling checks its stop rule against.
         let e_min = stirling_min_exponent(pw, 372, 127, 6);
-        while z.exponent() < e_min && shifts < shift_max {
-            acc = acc.mul(&z, pw, RoundingMode::None)?;
-            z = z.add(&one, pw, RoundingMode::None)?;
-            shifts += 1;
-        }
-        // Shift cap hit: z is outside the tail's proven bound.
-        if z.exponent() < e_min {
-            return Err(Error::PrecisionRetryExhausted);
-        }
+        shift_up(&mut z, e_min, shift_max, pw, |z| {
+            acc = acc.mul(z, pw, RoundingMode::None)?;
+            *z = z.add(&one, pw, RoundingMode::None)?;
+            Ok(())
+        })?;
 
         let lg = z.ln_gamma_stirling(pw, cc)?;
         let g = lg.exp(pw, RoundingMode::None, cc)?;
@@ -895,22 +891,17 @@ impl ExactNumNumber {
         let mut z = self.clone()?;
         z.set_inexact(false);
         let mut acc = Self::from_word(0, pw)?;
-        let mut shifts = 0usize;
         // Raise until the last asymptotic term (K = digamma_terms(p) Bernoulli numbers)
         // is below 2^-(p+8). More terms at higher p keep the shift count small.
         let terms = digamma_terms(p);
         // Bound at `pw`, the precision digamma_asymp checks its stop rule against.
         let e_min = asymp_min_exponent(pw, terms);
-        while z.exponent() < e_min && shifts < shift_max {
-            let rec = one.div(&z, pw, RoundingMode::None)?;
+        shift_up(&mut z, e_min, shift_max, pw, |z| {
+            let rec = one.div(z, pw, RoundingMode::None)?;
             acc = acc.sub(&rec, pw, RoundingMode::None)?;
-            z = z.add(&one, pw, RoundingMode::None)?;
-            shifts += 1;
-        }
-        // Shift cap hit: z is outside the tail's proven bound.
-        if z.exponent() < e_min {
-            return Err(Error::PrecisionRetryExhausted);
-        }
+            *z = z.add(&one, pw, RoundingMode::None)?;
+            Ok(())
+        })?;
         acc.add(&z.digamma_asymp(pw, terms, cc)?, p, RoundingMode::None)
     }
 
@@ -3800,7 +3791,37 @@ const BETA_INT_MAX: usize = 1 << 12;
 const HALF_INTEGER_MAX: usize = 1 << 12;
 
 /// Upper bound on argument shifts before the Stirling / asymptotic series.
-const STIRLING_SHIFT_MAX: usize = 1 << 20;
+pub(crate) const STIRLING_SHIFT_MAX: usize = 1 << 20;
+
+/// Applies `step` (in the callers: `z → z+1` plus their accumulator update) while
+/// `z.exponent() < e_min`, i.e. until `z ≥ 2^(e_min−1)`; `z > 0`.
+///
+/// Each step adds 1, so at least `2^(e_min−1) − z` steps are needed. When that is above `shift_max`
+/// it returns `PrecisionRetryExhausted` at once, without doing the steps (before, a high precision
+/// ran all `shift_max` multiplications at full width and then failed). Otherwise it stops with the
+/// same error after `shift_max` steps, so a step that does not move `z` up cannot loop forever.
+/// An `Err` from `step` is returned as is.
+fn shift_up<S>(
+    z: &mut ExactNumNumber,
+    e_min: Exponent,
+    shift_max: usize,
+    p: usize,
+    mut step: S,
+) -> Result<(), Error>
+where
+    S: FnMut(&mut ExactNumNumber) -> Result<(), Error>,
+{
+    let _ = (p, EXPONENT_MAX);
+    let mut shifts = 0usize;
+    while z.exponent() < e_min && shifts < shift_max {
+        step(z)?;
+        shifts += 1;
+    }
+    if z.exponent() < e_min {
+        return Err(Error::PrecisionRetryExhausted);
+    }
+    Ok(())
+}
 
 /// Smallest binary exponent `e` (so `z ≥ 2^(e-1)`) for which a 64-term Stirling-type tail
 /// `≈ 2^c / z^slope` (with `c` already including the 8 guard bits) is below `2^-p`;
@@ -5340,6 +5361,71 @@ mod tests {
         assert!(exhausted(
             quarters(5, p)?.digamma_positive_capped(p, &mut cc, 2)
         ));
+        Ok(())
+    }
+
+    /// Runs `shift_up` from `z` (target exponent 6, i.e. z >= 32) with the real z -> z+1 step,
+    /// or a step that does not move z when `stuck`; returns the result and the steps taken. Bails
+    /// out with `InvalidArgument` after 1000 steps so a missing cap fails instead of hanging.
+    fn count_shift_up(z: Word, cap: usize, stuck: bool) -> (Result<(), crate::Error>, usize) {
+        let p = 64;
+        let mut steps = 0usize;
+        let mut z = match ExactNumNumber::from_word(z, p) {
+            Ok(z) => z,
+            Err(e) => return (Err(e), 0),
+        };
+        let r = shift_up(&mut z, 6, cap, p, |z| {
+            steps += 1;
+            if steps > 1000 {
+                return Err(crate::Error::InvalidArgument);
+            }
+            if !stuck {
+                *z = z.add(&ExactNumNumber::from_word(1, p)?, p, RoundingMode::None)?;
+            }
+            Ok(())
+        });
+        (r, steps)
+    }
+
+    /// `shift_up` fails at once, with no steps, when 2^(e_min-1) - z is above the cap; runs at
+    /// exactly the cap; takes no step once z >= 2^(e_min-1); stops a step that does not move z
+    /// after `cap` steps; and returns a step error as is. Before, a high precision ran all
+    /// 2^20 full-width shifts before failing.
+    #[test]
+    fn test_shift_up_bounds() -> Result<(), crate::Error> {
+        let px = crate::Error::PrecisionRetryExhausted;
+        assert_eq!(count_shift_up(1, 10, false), (Err(px), 0));
+        assert_eq!(count_shift_up(22, 10, false), (Ok(()), 10));
+        assert_eq!(count_shift_up(22, 9, false), (Err(px), 0));
+        assert_eq!(count_shift_up(31, 1, false), (Ok(()), 1));
+        assert_eq!(count_shift_up(32, 0, false), (Ok(()), 0));
+        assert_eq!(count_shift_up(40, 0, false), (Ok(()), 0));
+        assert_eq!(count_shift_up(22, 10, true), (Err(px), 10));
+        let mut z = ExactNumNumber::from_word(1, 64)?;
+        let r = shift_up(&mut z, 6, 100, 64, |_| Err(crate::Error::MemoryAllocation));
+        assert_eq!(r, Err(crate::Error::MemoryAllocation));
+        // A target past the exponent range fails without stepping.
+        let mut z = ExactNumNumber::from_word(1, 64)?;
+        let r = shift_up(&mut z, Exponent::MAX, usize::MAX, 64, |_| {
+            Err(crate::Error::InvalidArgument)
+        });
+        assert_eq!(r, Err(px));
+        Ok(())
+    }
+
+    /// The Γ kernel at p = 1 << 14 needs z >= 2^129 (stirling_min_exponent), far more than
+    /// 2^20 shifts from z = 0.75, so it must fail at once rather than run 2^20 shifts at full
+    /// width: the bail-out in `shift_up` is what makes this test fast. (ψ uses up to 1024
+    /// Bernoulli terms, so its shift target stays reachable at this precision.)
+    #[test]
+    fn test_capped_loops_fail_fast_at_high_precision() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 1 << 14;
+        assert!(exhausted(quarters(3, p)?.gamma_positive_capped(
+            p,
+            &mut cc,
+            STIRLING_SHIFT_MAX
+        )));
         Ok(())
     }
 

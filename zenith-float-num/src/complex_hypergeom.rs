@@ -15,6 +15,7 @@ use crate::Error;
 use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
+use crate::WORD_BIT_SIZE;
 
 /// Series term cap (named; same order as the real kernel).
 const HYPERGEOM_SERIES_MAX_TERMS: u32 = 10_000;
@@ -125,19 +126,15 @@ fn hypergeom_series(
             break;
         }
         let nn = ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p);
-        let den = ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p)
-            .add(c, p, rm())
-            .mul(&ExactComplex::one(p).add(&nn, p, rm()), p, rm());
+        let n_plus_c = int_plus(n as u32, c, p);
+        let n_plus_1 = trim_c(ExactComplex::one(p).add(&nn, p, rm()));
+        let den = trim_c(n_plus_c.mul(&n_plus_1, p, rm()));
         if matches!(den.abs(p, rm()).compare(&tiny), Some(c) if c < 0) {
             return nan_pair(Error::InvalidArgument);
         }
         term = term
-            .mul(
-                &ExactComplex::from_real(ExactNum::from_u32(n as u32, p), p).add(a, p, rm()),
-                p,
-                rm(),
-            )
-            .mul(&nn.add(b, p, rm()), p, rm())
+            .mul(&int_plus(n as u32, a, p), p, rm())
+            .mul(&int_plus(n as u32, b, p), p, rm())
             .div(&den, p, rm())
             .mul(z, p, rm());
         sum = sum.add(&term, p, rm());
@@ -152,6 +149,27 @@ fn hypergeom_series(
     sum
 }
 
+/// `x` stored without the all-zero low words of its mantissa: the same value, sign and accumulated
+/// flag (the per-operation flag falls back to it), so every later operation gives the same result, but a product or quotient with it costs by its
+/// significant words instead of by the working precision. Zero, Inf and NaN come back unchanged.
+fn trim_zero_words(mut x: ExactNum) -> ExactNum {
+    let _ = (&mut x, WORD_BIT_SIZE);
+    x
+}
+
+/// Both parts of `z` through [`trim_zero_words`].
+fn trim_c(z: ExactComplex) -> ExactComplex {
+    let (re, im) = z.into_parts();
+    ExactComplex::new(trim_zero_words(re), trim_zero_words(im))
+}
+
+/// `n + a` at `p` bits, trimmed ([`trim_c`]). For the short parameters of a series (and small `n`)
+/// the sum is exact in a few words, which keeps the per-term products and quotient of the
+/// `p`-bit term cheap at a high working precision.
+fn int_plus(n: u32, a: &ExactComplex, p: usize) -> ExactComplex {
+    trim_c(ExactComplex::from_real(ExactNum::from_u32(n, p), p).add(a, p, rm()))
+}
+
 /// Upper bound on `max(|a|, |b|, |c|)` as an integer (saturating).
 fn max_abs_param(v: &[&ExactComplex], p: usize) -> u64 {
     v.iter()
@@ -163,13 +181,25 @@ fn max_abs_param(v: &[&ExactComplex], p: usize) -> u64 {
         .unwrap_or(1)
 }
 
+/// Bits of each part [`abs_lead`] keeps.
+const ABS_LEAD_BITS: usize = 128;
+
+/// `|z|` at 64 bits from the parts cut (toward zero) to their leading [`ABS_LEAD_BITS`] bits:
+/// within a relative `2^-126` below `|z|`. Only its exponent is used, and that matches the one of
+/// `|z|` unless `|z|` lies within `2^-126` above a power of two. `hypot` reads every input bit, so
+/// on the full-width term and sum this check cost more than the series step it guards.
+fn abs_lead(z: &ExactComplex) -> ExactNum {
+    let _ = ABS_LEAD_BITS;
+    z.abs(64, rm())
+}
+
 /// `|t| < 2^-p |s|` (or `t = 0`).
 fn term_small_rel(t: &ExactComplex, s: &ExactComplex, p: usize) -> bool {
-    let at = t.abs(64, rm());
+    let at = abs_lead(t);
     if at.is_zero() {
         return true;
     }
-    let as_ = s.abs(64, rm());
+    let as_ = abs_lead(s);
     match (at.exponent(), as_.exponent()) {
         (Some(et), Some(es)) => et + (p as i64) < es,
         _ => term_negligible(t, p),
@@ -718,6 +748,81 @@ mod tests {
         x.is_zero() || x.exponent().unwrap_or(0) < -((p as Exponent) / 4)
     }
 
+    /// `trim_zero_words` drops only all-zero low words: 5 at 1024 bits keeps one word, 1/3 at
+    /// 256 bits plus 7 at 1024 bits keeps the five words of the exact sum, a value with a non-zero
+    /// lowest word keeps all of them, and zero, NaN and the values themselves are unchanged.
+    #[test]
+    fn trim_zero_words_keeps_the_value() {
+        let r = RoundingMode::None;
+        let five = trim_zero_words(ExactNum::from_u8(5, 1024));
+        assert_eq!(five.mantissa_max_bit_len(), Some(64));
+        assert_eq!(five.compare(&ExactNum::from_u8(5, 64)), Some(0));
+
+        let third = ExactNum::from_u8(1, 256).div(&ExactNum::from_u8(3, 256), 256, r);
+        let sum = ExactNum::from_u8(7, 1024).add(&third, 1024, r);
+        let want = ExactNum::from_u8(7, 1024).add(&third, 1024, r);
+        let t = trim_zero_words(sum);
+        // 7 + 1/3 spans 2^2 down to 2^-257: 260 bits, five words.
+        assert_eq!(t.mantissa_max_bit_len(), Some(320));
+        assert_eq!(t.compare(&want), Some(0));
+        assert_eq!(t.is_negative(), want.is_negative());
+
+        let dense = ExactNum::from_u8(1, 1024).div(&ExactNum::from_u8(3, 1024), 1024, r);
+        let d = trim_zero_words(dense);
+        assert_eq!(d.mantissa_max_bit_len(), Some(1024));
+
+        let neg = trim_zero_words(ExactNum::from_i8(-3, 512));
+        assert_eq!(neg.mantissa_max_bit_len(), Some(64));
+        assert_eq!(neg.compare(&ExactNum::from_i8(-3, 64)), Some(0));
+
+        let z = trim_zero_words(ExactNum::new(512));
+        assert!(z.is_zero());
+        assert!(trim_zero_words(crate::NAN).is_nan());
+    }
+
+    /// `int_plus(n, a, p)` is `n + a` at `p` bits, both parts trimmed to their exact words.
+    #[test]
+    fn int_plus_is_the_trimmed_sum() {
+        let p = 2048;
+        let r = RoundingMode::None;
+        let a = ExactComplex::new(
+            ExactNum::from_u8(1, 256).div(&ExactNum::from_u8(3, 256), 256, r),
+            ExactNum::from_u8(1, 128).div(&ExactNum::from_u8(7, 128), 128, r),
+        );
+        let s = int_plus(9, &a, p);
+        let want = ExactComplex::from_real(ExactNum::from_u32(9, p), p).add(&a, p, r);
+        assert_eq!(s.re().compare(want.re()), Some(0));
+        assert_eq!(s.im().compare(want.im()), Some(0));
+        assert_eq!(s.re().mantissa_max_bit_len(), Some(320));
+        assert_eq!(s.im().mantissa_max_bit_len(), Some(128));
+    }
+
+    /// `abs_lead` is `|z|` from the leading 128 bits of each part: |3 + 4i| = 5 exactly, and on a
+    /// 4096-bit 1/3 + i/7 its exponent is that of the full-width `abs`. `term_small_rel` against 1
+    /// at p = 256: 2^-256 is not small, 2^-257 is.
+    #[test]
+    fn abs_lead_matches_abs() {
+        let r = RoundingMode::None;
+        let z = ExactComplex::new(ExactNum::from_u8(3, 64), ExactNum::from_u8(4, 64));
+        assert_eq!(abs_lead(&z).compare(&ExactNum::from_u8(5, 64)), Some(0));
+        let p = 4096;
+        let w = ExactComplex::new(
+            ExactNum::from_u8(1, p).div(&ExactNum::from_u8(3, p), p, r),
+            ExactNum::from_u8(1, p).div(&ExactNum::from_u8(7, p), p, r),
+        );
+        let lead = abs_lead(&w);
+        assert_eq!(lead.exponent(), w.abs(64, r).exponent());
+        assert_eq!(lead.mantissa_max_bit_len(), Some(64));
+        let tiny = ExactComplex::new(ExactNum::from_u8(1, p).ldexp(-300, p, r), ExactNum::new(p));
+        let one = ExactComplex::one(p);
+        assert!(term_small_rel(&tiny, &one, 256));
+        assert!(!term_small_rel(&one, &tiny, 256));
+        let edge = ExactComplex::new(ExactNum::from_u8(1, p).ldexp(-256, p, r), ExactNum::new(p));
+        assert!(!term_small_rel(&edge, &one, 256));
+        let below = ExactComplex::new(ExactNum::from_u8(1, p).ldexp(-257, p, r), ExactNum::new(p));
+        assert!(term_small_rel(&below, &one, 256));
+    }
+
     #[test]
     fn complex_hypergeom_2f1_golds() -> Result<(), crate::Error> {
         let p = 256;
@@ -768,6 +873,7 @@ mod tests {
             ExactNum::from_u8(1, p).div(&ExactNum::from_u8(10, p), p, r),
         );
         let lhs = a.hypergeom_2f1(&b, &c, &z, p, r, &mut cc);
+        assert!(!lhs.is_nan(), "Euler lhs defined");
         let cab = ExactComplex::sub_ref(&c, &a, p, r).sub(&b, p, r);
         let pref = ExactComplex::one(p).sub(&z, p, r).pow(&cab, p, r, &mut cc);
         let rhs = pref.mul(

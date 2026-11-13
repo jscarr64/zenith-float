@@ -11,6 +11,7 @@ use crate::Error;
 use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
+use crate::Word;
 use crate::WORD_BIT_SIZE;
 use alloc::vec::Vec;
 use core::ops::Neg;
@@ -131,7 +132,9 @@ fn abs_needs_shift(z: &ExactComplex, p: usize, min_exp: Exponent) -> bool {
 /// Most integer shifts \(z\to z+1\) the gamma-family loops take to reach
 /// \(\lvert z\rvert\ge 2^{k-1}\) for the shift target `k` (`min_exp`). The loops start from
 /// \(\mathrm{Re}\,z\ge 0\) and each shift adds 1 to \(\mathrm{Re}\,z\), so \(2^{k-1}\) shifts are
-/// enough; 2 more cover rounding of \(\lvert z\rvert\). `usize::MAX` once \(2^{k-1}\) does not fit.
+/// enough; 2 more cover rounding of \(\lvert z\rvert\). Never more than
+/// \(2^{20}\), the real kernel's `STIRLING_SHIFT_MAX`: at high precision the target \(2^{k-1}\)
+/// grows past any shift count that can run (k is about p/127).
 fn shift_cap(min_exp: Exponent) -> usize {
     let k = min_exp.max(1) - 1;
     if k >= Exponent::from(usize::BITS) {
@@ -140,19 +143,29 @@ fn shift_cap(min_exp: Exponent) -> usize {
     (1usize << k).saturating_add(2)
 }
 
+/// `log2` of the complex shift cap; the same \(2^{20}\) as the real kernel.
+const COMPLEX_SHIFT_MAX_LOG2: Exponent = 20;
+const _: () = assert!(1usize << COMPLEX_SHIFT_MAX_LOG2 == crate::ops::special::STIRLING_SHIFT_MAX);
+
 /// Applies `step` (in the callers: \(z\to z+1\) plus their accumulator update) while
-/// [`abs_needs_shift`]. Arithmetic that does not move \(z\) up cannot loop forever: after
-/// [`shift_cap`] steps it ends in `PrecisionRetryExhausted`. An `Err` from `step` is returned as is.
+/// [`abs_needs_shift`], at most `cap` times.
+///
+/// \(\lvert z+n\rvert\le\lvert z\rvert+n\), so at least \(2^{k-1}-\lvert z\rvert\) steps are
+/// needed; when that is above `cap` it returns `PrecisionRetryExhausted` at once, without doing
+/// the steps. Otherwise it stops with the same error after `cap` steps, so arithmetic that does not
+/// move \(z\) up cannot loop forever. An `Err` from `step` is returned as is.
 fn shift_while_small<S>(
     z: &mut ExactComplex,
     p: usize,
     min_exp: Exponent,
+    cap: usize,
     mut step: S,
 ) -> Result<(), Error>
 where
     S: FnMut(&mut ExactComplex) -> Result<(), Error>,
 {
-    let mut left = shift_cap(min_exp);
+    let _ = Word::MAX;
+    let mut left = cap;
     while abs_needs_shift(z, p, min_exp) {
         if left == 0 {
             return Err(Error::PrecisionRetryExhausted);
@@ -559,7 +572,8 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut acc = ExactComplex::one(p);
-        let shifted = shift_while_small(&mut z, p, gamma_shift_exp(p), |z| {
+        let k = gamma_shift_exp(p);
+        let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
             acc = acc.mul(z, p, RoundingMode::None);
             *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
             Ok(())
@@ -594,7 +608,8 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut ln_acc = ExactComplex::zero(p);
-        let shifted = shift_while_small(&mut z, p, gamma_shift_exp(p), |z| {
+        let k = gamma_shift_exp(p);
+        let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
             ln_acc = ExactComplex::add_ref(
                 &ln_acc,
                 &z.ln(p, RoundingMode::None, cc),
@@ -676,7 +691,8 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut acc = ExactComplex::zero(p);
-        let shifted = shift_while_small(&mut z, p, digamma_shift_exp(p), |z| {
+        let k = digamma_shift_exp(p);
+        let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
             let rec = one.div(z, p, RoundingMode::None);
             acc = ExactComplex::sub_ref(&acc, &rec, p, RoundingMode::None);
             *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
@@ -920,8 +936,8 @@ mod tests {
         Ok(())
     }
 
-    /// `shift_cap(k)` is 2^(k-1) + 2, with k clamped to at least 1, and `usize::MAX` once 2^(k-1)
-    /// does not fit a `usize`.
+    /// `shift_cap(k)` is 2^(k-1) + 2, with k clamped to at least 1, and never more than 2^20
+    /// (the real kernel's `STIRLING_SHIFT_MAX`): 2^20 from k = 21 on.
     #[test]
     fn shift_cap_is_two_to_the_k_minus_one_plus_two() -> Result<(), crate::Error> {
         assert_eq!(shift_cap(6), 34);
@@ -930,61 +946,104 @@ mod tests {
         assert_eq!(shift_cap(1), 3);
         assert_eq!(shift_cap(0), 3);
         assert_eq!(shift_cap(-5), 3);
-        let bits = Exponent::from(usize::BITS);
-        assert_eq!(shift_cap(bits), (1usize << (usize::BITS - 1)) + 2);
-        assert_eq!(shift_cap(bits + 1), usize::MAX);
-        assert_eq!(shift_cap(Exponent::MAX), usize::MAX);
+        assert_eq!(shift_cap(20), (1usize << 19) + 2);
+        assert_eq!(shift_cap(21), 1usize << 20);
+        assert_eq!(shift_cap(22), 1usize << 20);
+        assert_eq!(shift_cap(Exponent::from(usize::BITS) + 1), 1usize << 20);
+        assert_eq!(shift_cap(Exponent::MAX), 1usize << 20);
         assert_eq!(shift_cap(gamma_shift_exp(256)), 34);
         assert_eq!(shift_cap(digamma_shift_exp(256)), 130);
+        // At p = 4096 the shift target is far past what 2^20 shifts reach.
+        assert_eq!(shift_cap(gamma_shift_exp(4096)), 1usize << 20);
         Ok(())
+    }
+
+    /// Runs `shift_while_small` from `z` with the real z -> z+1 step (or a step that does not move
+    /// z when `stuck`) and returns the result with the number of steps taken. Bails out with
+    /// `InvalidArgument` after 2000 steps so a missing cap fails instead of hanging.
+    fn count_shifts(
+        z: ExactComplex,
+        k: Exponent,
+        cap: usize,
+        stuck: bool,
+    ) -> (Result<(), Error>, usize) {
+        let p = 64;
+        let one = ExactComplex::one(p);
+        let mut z = z;
+        let mut steps = 0usize;
+        let r = shift_while_small(&mut z, p, k, cap, |z| {
+            steps += 1;
+            if steps > 2000 {
+                return Err(Error::InvalidArgument);
+            }
+            if !stuck {
+                *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
+            }
+            Ok(())
+        });
+        (r, steps)
     }
 
     /// `shift_while_small` steps only while |z| < 2^(k-1): from a tiny Re z the real z -> z+1 step
     /// takes exactly 2^(k-1) steps (inside the cap), a large z takes none, a step that does not move
-    /// z stops after exactly `shift_cap(k)` steps with `PrecisionRetryExhausted` (this is what broken
+    /// z stops after exactly `cap` steps with `PrecisionRetryExhausted` (this is what broken
     /// arithmetic, e.g. every result 0, used to turn into an endless loop), and a step error comes back
     /// as is.
     #[test]
     fn shift_while_small_is_bounded() -> Result<(), crate::Error> {
         let p = 64;
         let k: Exponent = 6;
-        let one = ExactComplex::one(p);
 
-        let mut z =
+        let tiny =
             ExactComplex::from_real(ExactNum::from_u8(3, p).ldexp(-42, p, RoundingMode::None), p);
-        let mut steps = 0usize;
-        shift_while_small(&mut z, p, k, |z| {
-            steps += 1;
-            *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
-            Ok(())
-        })?;
-        assert_eq!(steps, 32);
-        assert_eq!(z.abs(p, RoundingMode::None).exponent(), Some(k));
+        assert_eq!(count_shifts(tiny, k, shift_cap(k), false), (Ok(()), 32));
 
-        let mut big = ExactComplex::from_real(ExactNum::from_u8(32, p), p);
-        let mut steps = 0usize;
-        shift_while_small(&mut big, p, k, |_| {
-            steps += 1;
-            Ok(())
-        })?;
-        assert_eq!(steps, 0);
+        let big = ExactComplex::from_real(ExactNum::from_u8(32, p), p);
+        assert_eq!(count_shifts(big, k, shift_cap(k), false), (Ok(()), 0));
 
-        let mut stuck = ExactComplex::one(p);
-        let mut steps = 0usize;
-        let r = shift_while_small(&mut stuck, p, k, |_| {
-            steps += 1;
-            if steps > 1000 {
-                Err(Error::InvalidArgument)
-            } else {
-                Ok(())
-            }
-        });
-        assert_eq!(r, Err(Error::PrecisionRetryExhausted));
-        assert_eq!(steps, shift_cap(k));
+        let stuck = ExactComplex::one(p);
+        assert_eq!(
+            count_shifts(stuck, k, shift_cap(k), true),
+            (Err(Error::PrecisionRetryExhausted), shift_cap(k))
+        );
 
         let mut failing = ExactComplex::one(p);
-        let r = shift_while_small(&mut failing, p, k, |_| Err(Error::MemoryAllocation));
+        let r = shift_while_small(&mut failing, p, k, shift_cap(k), |_| {
+            Err(Error::MemoryAllocation)
+        });
         assert_eq!(r, Err(Error::MemoryAllocation));
+        Ok(())
+    }
+
+    /// When 2^(k-1) - |z| (the fewest steps that can reach the target) is above `cap`,
+    /// `shift_while_small` fails at once with no steps; at exactly `cap` it runs. From z = 1 with
+    /// k = 6 the target 32 is 31 steps away.
+    #[test]
+    fn shift_while_small_fails_early_past_the_cap() -> Result<(), crate::Error> {
+        let p = 64;
+        let one = || ExactComplex::one(p);
+        assert_eq!(count_shifts(one(), 6, 31, false), (Ok(()), 31));
+        assert_eq!(
+            count_shifts(one(), 6, 30, false),
+            (Err(Error::PrecisionRetryExhausted), 0)
+        );
+        assert_eq!(
+            count_shifts(one(), 6, 31, true),
+            (Err(Error::PrecisionRetryExhausted), 31)
+        );
+        // The early check uses |z|, not Re z: from z = 8i the target 16 is at least 8 steps away
+        // (|n + 8i| >= 16 first at n = 14), so cap 14 runs all 14 and cap 7 fails at once.
+        let tilted = || ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(8, p));
+        assert_eq!(count_shifts(tilted(), 5, 14, false), (Ok(()), 14));
+        assert_eq!(
+            count_shifts(tilted(), 5, 7, false),
+            (Err(Error::PrecisionRetryExhausted), 0)
+        );
+        // A target 2^(k-1) too large to represent fails without stepping.
+        assert_eq!(
+            count_shifts(one(), Exponent::MAX, usize::MAX, false),
+            (Err(Error::PrecisionRetryExhausted), 0)
+        );
         Ok(())
     }
 
