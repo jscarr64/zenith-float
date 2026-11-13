@@ -8221,6 +8221,7 @@ mod grid_digest_tests {
         let mut held_f22 = 0usize;
         let mut held_f28 = 0usize;
         let mut held_f29 = 0usize;
+        let mut held_f30 = 0usize;
         let ms = || {
             [
                 ExactNum::new(64),
@@ -8274,15 +8275,21 @@ mod grid_digest_tests {
                                 && mi <= 3
                                 && r.is_zero()
                                 && r.is_positive();
+                            // F-30 (ZF-M27): am(u+4K|m) = am(u|m) + 2π; ops/jacobi.rs:252/256-276 reduces u mod 4K
+                            // for |u| > 2K and drops the 2π·n, so am(-7|1/2) and am(-7|3/8) are off by +2π; held.
+                            // Operand 3 is u = -7; mi = 2, 3 are m = 1/2, 3/8, the only m in (0, 1) on this grid,
+                            // and |u| = 7 > 2K(m) there. m = 0, 1 take their own closed forms; m = 3 stays hashed.
+                            let f30 = JNAMES[fi] == "am" && i == 3 && (mi == 2 || mi == 3);
                             held_f21 += usize::from(f21);
                             held_tzud += usize::from(tzud);
                             held_f22 += usize::from(f22);
                             held_f28 += usize::from(f28);
                             held_f29 += usize::from(f29);
+                            held_f30 += usize::from(f30);
                             dd_held(
                                 &mut h,
                                 &mut held,
-                                f21 || tzud || f22 || f28 || f29,
+                                f21 || tzud || f22 || f28 || f29 || f30,
                                 JNAMES[fi],
                                 &[&operand(i), &m[mi]],
                                 &[],
@@ -8309,7 +8316,13 @@ mod grid_digest_tests {
         // F-29 (ZF-M27): am, sn, sc and sd at u = -0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are +0
         // where the ruled value is -0 (odd functions); they are not hashed
         assert_eq!(held_f29, 64);
-        assert_eq!(held, held_f21 + held_tzud + held_f22 + held_f28 + held_f29);
+        // F-30 (ZF-M27): am at u = -7, m in {1/2, 3/8}, p in {64, 128}, both modes, is am(u|m) + 2π (the 4K period
+        // reduction drops the 2π·n); they are not hashed
+        assert_eq!(held_f30, 8);
+        assert_eq!(
+            held,
+            held_f21 + held_tzud + held_f22 + held_f28 + held_f29 + held_f30
+        );
         // oracle: am(u|0) = u. A 192-bit inexact `u` made the working-precision check overflow before the fix.
         let u = operand(5);
         let zero_m = ExactNum::new(64);
