@@ -483,7 +483,7 @@ def counts_at(rev, tmp):
     if t.returncode != 0:
         return None
     env = dict(os.environ, RULES_SCAN_ROOT=d, NO_CLONE_ROOT=d)
-    r = subprocess.run([sys.executable, os.path.abspath(__file__), "--print-counts"], env=env, capture_output=True, text=True)
+    r = subprocess.run([sys.executable, "-B", os.path.abspath(__file__), "--print-counts"], env=env, capture_output=True, text=True)
     f = r.stdout.split()
     if r.returncode != 0 or len(f) != 2:
         return None

@@ -7,4 +7,5 @@
   `env -i`, so it now sets `PYTHONDONTWRITEBYTECODE=1` itself; every other python call reachable from
   `tools/full_gate.sh` (rules_scan.sh, no_clone.sh, rules_scan_selftest.sh, no_clone_selftest.sh, fresh_test_run.sh,
   test_rounding_mode_matrices.sh, scripts/zenith_prepublish.sh, check_leaves.sh, check_precision_docs.sh) runs
-  `python3 -B`, and `tools/full_gate.sh` exports `PYTHONDONTWRITEBYTECODE=1` as a backstop. No check changed what it tests.
+  `python3 -B` (including the per-commit `--print-counts` child that `tools/rules_scan.py` starts with
+  `sys.executable`, which re-imported `tools/no_clone.py`), and `tools/full_gate.sh` exports `PYTHONDONTWRITEBYTECODE=1` as a backstop. No check changed what it tests.
