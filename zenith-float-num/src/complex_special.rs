@@ -1121,6 +1121,20 @@ mod tests {
     #[test]
     fn gamma_family_tiny_argument_takes_the_most_shifts() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToEven;
+        // Each Ziv pass below takes up to 2^(k-1)+2 shifts, and the passes only stop once
+        // `ExactNum::try_set_precision` certifies. Check that it certifies an exact, plainly
+        // roundable value (1 + 2^-127 to 64 bits is 1) before the loops, so a broken
+        // certification fails here at once instead of running the loops to their budget.
+        let mut probe = ExactNum::from_words(&[1, 0x8000_0000_0000_0000], crate::Sign::Pos, 1);
+        assert!(
+            probe.try_set_precision(64, rm, 128),
+            "try_set_precision does not certify 1 + 2^-127 at 64 bits: {probe:?}"
+        );
+        assert_eq!(
+            probe.compare(&ExactNum::from_u8(1, 64)),
+            Some(0),
+            "{probe:?}"
+        );
         let mut cc = Consts::new()?;
         for p in [64usize, 256, 1024] {
             let one = ExactNum::from_u8(1, p);
