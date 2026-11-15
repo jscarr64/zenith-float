@@ -18,6 +18,16 @@ use zenith_float::{
 
 const ROWS: &str = include_str!("tier1/rows.tsv");
 
+const MODES: [RoundingMode; 7] = [
+    RoundingMode::Up,
+    RoundingMode::Down,
+    RoundingMode::ToZero,
+    RoundingMode::FromZero,
+    RoundingMode::ToEven,
+    RoundingMode::ToOdd,
+    RoundingMode::None,
+];
+
 fn hex_to_words(h: &str) -> Option<Vec<u64>> {
     let h = h.trim_start_matches('0');
     let mut words = Vec::new();
@@ -515,6 +525,47 @@ fn tier1_boundary_matrix() {
                 Some(0),
                 "from_i128(17) p={p}"
             );
+        }
+    }
+}
+
+// ---- Harper ZF bug regressions (Jeff 2026-11-15 11:14 CT: every ZF fixed for every input in its rows, or BROKEN).
+
+/// ZF-05: a decimal numeral below the least subnormal rounds by mode (Up away from zero for +, Down for -): the
+/// least subnormal or a signed zero, never a silent +0 in a direction that must not reach zero.
+#[test]
+fn zf_05_parse_below_least_subnormal_rounds_by_mode() {
+    use zenith_float::Radix;
+    let mut cc = Consts::new().expect("Consts");
+    for p in [64usize, 128, 256, 1024, 2048] {
+        for s in ["1e-4611686018427387904", "1e-4611686018427387903", "7e-9000000000000000000"] {
+            for neg in [false, true] {
+                let txt = if neg { format!("-{s}") } else { s.to_string() };
+                for rm in MODES {
+                    let v = ExactNum::parse(&txt, Radix::Dec, p, rm, &mut cc);
+                    let away = match rm {
+                        RoundingMode::Up => !neg,
+                        RoundingMode::Down => neg,
+                        RoundingMode::FromZero => true,
+                        _ => false,
+                    };
+                    if away {
+                        let mut want = ExactNum::min_positive(p);
+                        if neg {
+                            want.set_sign(Sign::Neg);
+                        }
+                        assert_eq!(
+                            v.compare(&want),
+                            Some(0),
+                            "{txt} p={p} {rm:?}: {}",
+                            fmt_real(&v)
+                        );
+                    } else {
+                        assert!(v.is_zero(), "{txt} p={p} {rm:?}: {}", fmt_real(&v));
+                        assert_eq!(v.is_negative(), neg, "{txt} p={p} {rm:?} sign");
+                    }
+                }
+            }
         }
     }
 }

@@ -412,6 +412,13 @@ impl ExactNumNumber {
                 Some(x) => x,
                 None => Self::dec_mantissa_number(sign, &digits[leadzeroes..], cc.tenpowers(k)?)?,
             };
+            // The power-of-ten steps keep `f` near 1 and carry its binary exponent in `shift` (i128), so no
+            // intermediate under- or overflows: a numeral below the subnormals is placed and rounded once by
+            // `rm` at the end (ZF-05), instead of an intermediate quotient flushing to +0. Dividing, `f` sits at
+            // 2^2 (quotient exponent >= 2 - EXPONENT_MAX); multiplying, at 2^-2 (product <= EXPONENT_MAX - 1).
+            let park: Exponent = if n < 0 { 2 } else { -2 };
+            let mut shift = i128::from(f.exponent()) - i128::from(park);
+            f.set_exponent(park);
 
             if npowmax != 0 {
                 let fpnmax = TEN.powi(TEN_PWR_MAX_FROM_DEC, p_f, RoundingMode::None)?;
@@ -422,6 +429,8 @@ impl ExactNumNumber {
                     } else {
                         f = f.mul(&fpnmax, p_f, RoundingMode::None)?
                     }
+                    shift += i128::from(f.exponent()) - i128::from(park);
+                    f.set_exponent(park);
                 }
             };
 
@@ -435,15 +444,37 @@ impl ExactNumNumber {
             }
 
             f.set_sign(sign);
+            let at = shift + i128::from(f.exponent());
+            if at > i128::from(EXPONENT_MAX) {
+                return Err(Error::ExponentOverflow(sign));
+            }
+            let below = at < i128::from(EXPONENT_MIN);
+            if !below {
+                // In range: the exponent fits, so this is the value itself.
+                f.set_exponent(Exponent::try_from(at).map_err(|_| Error::ExponentOverflow(sign))?);
+            }
+            // Below the range the significand is truncated (toward zero, `p + 2` bits) and placed on the
+            // subnormal grid by `place_scaled`, which rounds once by `rm`.
+            let (q, qrm) = if below { (p + 2, RoundingMode::ToZero) } else { (p, rm) };
 
-            if f.try_set_precision(p, rm, p_wrk)? {
-                return Ok(f);
+            if f.try_set_precision(q, qrm, p_wrk)? {
+                return if below {
+                    let dropped = f.inexact();
+                    f.place_scaled(at, dropped, p, rm)
+                } else {
+                    Ok(f)
+                };
             }
 
             retries += 1;
             if retries > MAX_PREC_RETRY {
-                f.set_precision(p, rm)?;
-                return Ok(f);
+                f.set_precision(q, qrm)?;
+                return if below {
+                    let dropped = f.inexact();
+                    f.place_scaled(at, dropped, p, rm)
+                } else {
+                    Ok(f)
+                };
             }
 
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
