@@ -9,3 +9,4 @@
   commits, U7), with pre-rule imports exempt. Plants cover missing/unknown/empty/extra-word/not-last/repeated trailers;
   this supersedes 11377ab's weaker any-name regex. Row B includes the deliberately removed .gitignore files; row S
   accepts exactly b0afcb1's rustix 1.1.6 RUSTSEC-2026-0486 lock delta (R6/R7).
+- CONTRACT 16.CB.4, 16.CB.7 and 16.CB.11 mark `CBall::mul`/`div` and their rows as held (H11), not exported (Spence A1).
