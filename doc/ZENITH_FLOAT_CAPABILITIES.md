@@ -52,8 +52,8 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `Word` | `u64` (64-bit targets only) |
 | `WORD_BIT_SIZE` | 64 |
 | `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE` (2) — mantissas of ≤ 128 bits live on the stack |
-| `EXPONENT_MAX` | `i32::MAX` on every target |
-| `EXPONENT_MIN` | `i32::MIN` on every target |
+| `EXPONENT_MAX` | `2^62 − 1` on every target |
+| `EXPONENT_MIN` | `−(2^62 − 1)` on every target |
 | Default operator precision | 128 bits, `ToEven` — used by `+` `−` `×` `÷` operator traits only |
 | `MAX_PREC_RETRY` | `256` — extra word-sized retry steps beyond `p` for correct-rounding loops |
 | `SVD_ITER_MAX` | `64` — QR sweeps per singular value in `svd_decomp`; then `None` |
@@ -71,7 +71,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `ODE_MIN_STEP` | `−256` — minimum RK45 step exponent (`h_min = 2^{ODE_MIN_STEP}`) |
 | `DSP_MAX_POINTS` | `16384` — default max real length for `dct`/`idct`/`dst`/`idst` and windows (was `2048`; `2N`-point FFT sized by this cap); per call: `*_with_max_points` |
 | `IEEE_SIMD_LANE_WIDTH` | `4` — `u32` lanes per integer SIMD vector; binary64 uses 2 `u64` lanes |
-| `BINARY_INLINE_LEN` | `16` — stack record: flags, version, `n_sig`, inexact, `i32` exponent BE, two `u32` limbs BE |
+| `BINARY_INLINE_LEN` | `16` — stack record: flags, version, `n_sig`, inexact, `i32` exponent BE, two `u32` limbs BE; `\|exponent\| ≥ 2^31` uses the wide-exponent records `0x0C`/`0x0D` (inline, top 40 mantissa bits) and `0x12`/`0x13` (heap, 8-byte exponent) |
 | `BINARY_INLINE_MANT_BITS` | `64` — max mantissa bits for [`ExactNum::to_inline_bytes`]; wider → `MemoryAllocation` |
 | `BINARY_FORMAT_VERSION` | `1` — first version byte of every record |
 | `BINARY_MAX_U32` | `65536` — max `u32` limbs in a heap record |

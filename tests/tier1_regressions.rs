@@ -2126,3 +2126,60 @@ fn zf_11_wide_argument_ln_gamma_and_zeta_sign() {
         }
     }
 }
+
+/// ZF-08: to_bytes / to_inline_bytes refused finite values with |exponent| ≥ 2^31 (the
+/// exponent field was an i32; EXPONENT_MAX is 2^62 − 1). New records in format v1: a
+/// wide-exponent heap record (flag 0x12/0x13, 8-byte exponent after the header) encodes every
+/// finite value, and a wide-exponent inline record (0x0C/0x0D) holds the top 40 mantissa
+/// bits. A full 64-bit mantissa beside a 63-bit exponent cannot fit 16 bytes, so the inline
+/// form refuses it with MemoryAllocation, as it does a wide mantissa. Rows: Harper's 5227f77
+/// T2-bytes-format-v1 values (exact round trip judged by the raw parts).
+#[test]
+fn zf_08_bytes_wide_exponent_round_trip() {
+    let vals = [
+        "1p1099511627776",
+        "1p-1099511627776",
+        "-1p1099511627776",
+        "3p-4611686018427387000",
+        "maxv:P",
+        "-maxv:P",
+        "minnorm:P",
+        "-minnorm:P",
+        "minpos:P",
+    ];
+    for p in [64usize, 128, 256, 1024, 2048] {
+        let ps = p.to_string();
+        let mut xs = Vec::new();
+        for v in vals {
+            let mut x = parse_real(&v.replace('P', &ps)).expect("parse");
+            if !v.contains(':') {
+                let _ = x.set_precision(p, RoundingMode::ToEven);
+            }
+            let b = x.to_bytes().unwrap_or_else(|e| panic!("to_bytes {v} p={p}: {e:?}"));
+            let y = ExactNum::from_bytes(&b).unwrap_or_else(|e| panic!("from_bytes {v} p={p}: {e:?}"));
+            assert_eq!(fmt_real(&y), fmt_real(&x), "bytes {v} p={p}");
+            assert_eq!(y.inexact(), x.inexact(), "bytes inexact {v} p={p}");
+            let small = x.as_raw_parts().words.len() == 1;
+            let top40 = small && x.as_raw_parts().words[0] & ((1u64 << 24) - 1) == 0;
+            match x.to_inline_bytes() {
+                Ok(buf) => {
+                    assert!(top40 || i32::try_from(x.as_raw_parts().exponent).is_ok(), "inline accepted {v} p={p}");
+                    let y = ExactNum::from_inline_bytes(buf.as_bytes()).expect("from_inline");
+                    assert_eq!(fmt_real(&y), fmt_real(&x), "inline {v} p={p}");
+                }
+                Err(e) => {
+                    assert_eq!(e, zenith_float::Error::MemoryAllocation, "inline {v} p={p}");
+                    assert!(!top40, "inline refused a value that fits: {v} p={p}");
+                }
+            }
+            xs.push(x);
+        }
+        let a = zenith_float::ExactNumArray::from_values(p, &xs);
+        let b = a.to_bytes().expect("array to_bytes");
+        let c = zenith_float::ExactNumArray::from_bytes(&b).expect("array from_bytes");
+        assert_eq!(c.len(), xs.len());
+        for (x, y) in xs.iter().zip(c.as_slice()) {
+            assert_eq!(fmt_real(y), fmt_real(x), "array p={p}");
+        }
+    }
+}

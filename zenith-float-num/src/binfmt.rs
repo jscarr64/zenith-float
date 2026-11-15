@@ -66,6 +66,20 @@ pub const BINARY_FLAG_HEAP_POS: u8 = 0x10;
 pub const BINARY_FLAG_HEAP_NEG: u8 = 0x11;
 /// [`ExactNumArray`] record.
 pub const BINARY_FLAG_ARRAY: u8 = 0x20;
+/// Inline finite, positive, with a 64-bit exponent (`|exponent| ≥ 2^31`, ZF-08).
+pub const BINARY_FLAG_INLINE_WIDE_POS: u8 = 0x0C;
+/// Inline finite, negative, with a 64-bit exponent.
+pub const BINARY_FLAG_INLINE_WIDE_NEG: u8 = 0x0D;
+/// Heap finite, positive, with a 64-bit exponent.
+pub const BINARY_FLAG_HEAP_WIDE_POS: u8 = 0x12;
+/// Heap finite, negative, with a 64-bit exponent.
+pub const BINARY_FLAG_HEAP_WIDE_NEG: u8 = 0x13;
+
+/// Header bytes of a wide-exponent heap record: the heap header plus an 8-byte exponent.
+pub const BINARY_WIDE_HEADER_LEN: usize = BINARY_HEADER_LEN + 8;
+
+/// Mantissa bits the wide-exponent inline record holds (the top 40 bits; the rest must be 0).
+pub const BINARY_INLINE_WIDE_MANT_BITS: usize = 40;
 
 const U32_BYTES: usize = 4;
 const WORD_U32: usize = WORD_BIT_SIZE / 32;
@@ -92,7 +106,11 @@ impl ExactNum {
     /// Encode an inlined value into a stack buffer.
     ///
     /// Specials always succeed. A finite mantissa wider than
-    /// [`BINARY_INLINE_MANT_BITS`] returns [`Error::MemoryAllocation`].
+    /// [`BINARY_INLINE_MANT_BITS`] returns [`Error::MemoryAllocation`]. A value with
+    /// `|exponent| ≥ 2^31` uses the wide-exponent inline record, which holds the top
+    /// [`BINARY_INLINE_WIDE_MANT_BITS`] mantissa bits: 16 bytes cannot carry a 63-bit exponent
+    /// and a full 64-bit mantissa, so such a value with nonzero lower bits returns
+    /// [`Error::MemoryAllocation`]; [`ExactNum::to_bytes`] encodes every finite value.
     pub fn to_inline_bytes(&self) -> Result<InlineBinaryBuffer, Error> {
         let mut bytes = [0u8; BINARY_INLINE_LEN];
         write_inline(self, &mut bytes)?;
@@ -249,6 +267,9 @@ fn write_inline(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     if n_u32 > BINARY_INLINE_U32_WORDS {
         return Err(Error::MemoryAllocation);
     }
+    if i32::try_from(exp).is_err() {
+        return write_inline_wide(m, n_u32, sign, exp, inexact, dest);
+    }
     dest[..BINARY_INLINE_LEN].fill(0);
     dest[0] = if sign == Sign::Neg { BINARY_FLAG_NEG } else { BINARY_FLAG_POS };
     dest[1] = BINARY_FORMAT_VERSION;
@@ -262,12 +283,95 @@ fn write_inline(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     Ok(BINARY_INLINE_LEN)
 }
 
+/// The 16-byte record for `|exponent| ≥ 2^31`: flag, version, `n_u32 << 1 | inexact`, the
+/// exponent as a big-endian `i64` (bytes 3..11), and the top 40 bits of the left-aligned
+/// 64-bit mantissa (bytes 11..16). A mantissa with nonzero bits below those 40 does not fit
+/// 16 bytes next to a 63-bit exponent: [`Error::MemoryAllocation`], as for a wide mantissa.
+fn write_inline_wide(
+    m: &[Word],
+    n_u32: usize,
+    sign: Sign,
+    exp: Exponent,
+    inexact: bool,
+    dest: &mut [u8],
+) -> Result<usize, Error> {
+    let mut tmp = [0u32; BINARY_INLINE_U32_WORDS];
+    words_to_u32(m, &mut tmp)?;
+    let full: u64 = match n_u32 {
+        1 => u64::from(tmp[0]) << 32,
+        2 => (u64::from(tmp[1]) << 32) | u64::from(tmp[0]),
+        _ => return Err(Error::InvalidArgument),
+    };
+    let drop = 64 - BINARY_INLINE_WIDE_MANT_BITS;
+    if full & ((1u64 << drop) - 1) != 0 {
+        return Err(Error::MemoryAllocation);
+    }
+    let top = full >> drop;
+    dest[..BINARY_INLINE_LEN].fill(0);
+    dest[0] = if sign == Sign::Neg {
+        BINARY_FLAG_INLINE_WIDE_NEG
+    } else {
+        BINARY_FLAG_INLINE_WIDE_POS
+    };
+    dest[1] = BINARY_FORMAT_VERSION;
+    dest[2] = (u8::try_from(n_u32).map_err(|_| Error::InvalidArgument)? << 1) | u8::from(inexact);
+    dest[3..11].copy_from_slice(&i64::from(exp).to_be_bytes());
+    dest[11..16].copy_from_slice(&top.to_be_bytes()[3..8]);
+    Ok(BINARY_INLINE_LEN)
+}
+
+fn decode_inline_wide(bytes: &[u8], flag: u8) -> Result<(ExactNum, usize), Error> {
+    if bytes.len() < BINARY_INLINE_LEN {
+        return Err(Error::InvalidArgument);
+    }
+    let n_u32 = usize::from(bytes[2] >> 1);
+    let inexact = bytes[2] & 1 != 0;
+    if bytes[2] & !0x07 != 0 || !(1..=BINARY_INLINE_U32_WORDS).contains(&n_u32) {
+        return Err(Error::InvalidArgument);
+    }
+    let exp = i64::from_be_bytes(
+        bytes[3..11]
+            .try_into()
+            .map_err(|_| Error::InvalidArgument)?,
+    );
+    if i32::try_from(exp).is_ok() {
+        return Err(Error::InvalidArgument);
+    }
+    let mut t = [0u8; 8];
+    t[3..8].copy_from_slice(&bytes[11..16]);
+    let full = u64::from_be_bytes(t) << (64 - BINARY_INLINE_WIDE_MANT_BITS);
+    if full >> 63 == 0 {
+        return Err(Error::InvalidArgument);
+    }
+    // Rebuild the writer's limb count, widened to whole reader words.
+    let mut u32s = [0u32; 2];
+    let n: usize = if n_u32 == 1 {
+        u32s[0] = (full >> 32) as u32;
+        1
+    } else {
+        u32s[0] = full as u32;
+        u32s[1] = (full >> 32) as u32;
+        2
+    };
+    let (u32s, n) = if !n.is_multiple_of(WORD_U32) { ([0, u32s[0]], 2) } else { (u32s, n) };
+    let sign = if flag == BINARY_FLAG_INLINE_WIDE_NEG { Sign::Neg } else { Sign::Pos };
+    let n_sig = n * 32;
+    let x = finite_from_u32(&u32s[..n], n_sig, sign, Exponent::from(exp), inexact)?;
+    Ok((x, BINARY_INLINE_LEN))
+}
+
 fn encoded_len(x: &ExactNum) -> Result<usize, Error> {
     if x.is_nan() || x.is_inf() {
         return Ok(BINARY_INLINE_LEN);
     }
-    let m = x.as_raw_parts().words;
+    let raw = x.as_raw_parts();
+    let m = raw.words;
     let n_u32 = u32_count(m.len());
+    if i32::try_from(raw.exponent).is_err() {
+        return heap_len(n_u32)?
+            .checked_add(BINARY_WIDE_HEADER_LEN - BINARY_HEADER_LEN)
+            .ok_or(Error::InvalidArgument);
+    }
     if n_u32 <= BINARY_INLINE_U32_WORDS {
         Ok(BINARY_INLINE_LEN)
     } else {
@@ -298,22 +402,35 @@ fn write_num(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     );
     let sign = if raw.negative { Sign::Neg } else { Sign::Pos };
     let n_u32 = u32_count(m.len());
-    if n_u32 <= BINARY_INLINE_U32_WORDS {
+    let wide = i32::try_from(exp).is_err();
+    if n_u32 <= BINARY_INLINE_U32_WORDS && !wide {
         return write_inline(x, dest);
     }
-    let need = heap_len(n_u32)?;
+    let hdr = if wide { BINARY_WIDE_HEADER_LEN } else { BINARY_HEADER_LEN };
+    let need = heap_len(n_u32)?
+        .checked_add(hdr - BINARY_HEADER_LEN)
+        .ok_or(Error::InvalidArgument)?;
     if dest.len() < need {
         return Err(Error::InvalidArgument);
     }
     dest[..need].fill(0);
-    dest[0] = if sign == Sign::Neg { BINARY_FLAG_HEAP_NEG } else { BINARY_FLAG_HEAP_POS };
+    dest[0] = match (wide, sign == Sign::Neg) {
+        (false, false) => BINARY_FLAG_HEAP_POS,
+        (false, true) => BINARY_FLAG_HEAP_NEG,
+        (true, false) => BINARY_FLAG_HEAP_WIDE_POS,
+        (true, true) => BINARY_FLAG_HEAP_WIDE_NEG,
+    };
     dest[1] = BINARY_FORMAT_VERSION;
     dest[3] = u8::from(inexact);
-    dest[4..8].copy_from_slice(&exp_field(exp)?.to_be_bytes());
+    if wide {
+        dest[16..24].copy_from_slice(&i64::from(exp).to_be_bytes());
+    } else {
+        dest[4..8].copy_from_slice(&exp_field(exp)?.to_be_bytes());
+    }
     put_u32_be(&mut dest[8..12], u32_from_usize(n_sig)?);
     put_u32_be(&mut dest[12..16], u32_from_usize(n_u32)?);
     let mut limb = [0u32; 2];
-    let mut off = BINARY_HEADER_LEN;
+    let mut off = hdr;
     for &w in m {
         words_to_u32(core::slice::from_ref(&w), &mut limb[..WORD_U32])?;
         for &u in limb.iter().take(WORD_U32) {
@@ -349,6 +466,10 @@ fn decode_num(bytes: &[u8]) -> Result<(ExactNum, usize), Error> {
     match flag {
         BINARY_FLAG_POS | BINARY_FLAG_NEG => decode_inline_finite(bytes, flag),
         BINARY_FLAG_HEAP_POS | BINARY_FLAG_HEAP_NEG => decode_heap(bytes, flag),
+        BINARY_FLAG_HEAP_WIDE_POS | BINARY_FLAG_HEAP_WIDE_NEG => decode_heap(bytes, flag),
+        BINARY_FLAG_INLINE_WIDE_POS | BINARY_FLAG_INLINE_WIDE_NEG => {
+            decode_inline_wide(bytes, flag)
+        }
         _ => Err(Error::InvalidArgument),
     }
 }
@@ -380,7 +501,27 @@ fn decode_heap(bytes: &[u8], flag: u8) -> Result<(ExactNum, usize), Error> {
         return Err(Error::InvalidArgument);
     }
     let inexact = bytes[3] != 0;
-    let exp = i32::from_be_bytes(bytes[4..8].try_into().map_err(|_| Error::InvalidArgument)?);
+    let wide = matches!(flag, BINARY_FLAG_HEAP_WIDE_POS | BINARY_FLAG_HEAP_WIDE_NEG);
+    let hdr = if wide { BINARY_WIDE_HEADER_LEN } else { BINARY_HEADER_LEN };
+    if bytes.len() < hdr {
+        return Err(Error::InvalidArgument);
+    }
+    let exp = if wide {
+        let e = i64::from_be_bytes(
+            bytes[16..24]
+                .try_into()
+                .map_err(|_| Error::InvalidArgument)?,
+        );
+        // A wide record holds only exponents the narrow one cannot (one encoding per value).
+        if i32::try_from(e).is_ok() {
+            return Err(Error::InvalidArgument);
+        }
+        Exponent::from(e)
+    } else {
+        Exponent::from(i32::from_be_bytes(
+            bytes[4..8].try_into().map_err(|_| Error::InvalidArgument)?,
+        ))
+    };
     let n_sig = u32::from_be_bytes(
         bytes[8..12]
             .try_into()
@@ -394,13 +535,15 @@ fn decode_heap(bytes: &[u8], flag: u8) -> Result<(ExactNum, usize), Error> {
     if n_u32 == 0 || n_u32 > BINARY_MAX_U32 {
         return Err(Error::InvalidArgument);
     }
-    let need = heap_len(n_u32)?;
+    let need = heap_len(n_u32)?
+        .checked_add(hdr - BINARY_HEADER_LEN)
+        .ok_or(Error::InvalidArgument)?;
     if bytes.len() < need {
         return Err(Error::InvalidArgument);
     }
     let mut u32s = Vec::new();
     u32s.try_reserve_exact(n_u32)?;
-    let mut off = BINARY_HEADER_LEN;
+    let mut off = hdr;
     for _ in 0..n_u32 {
         let chunk: [u8; 4] = bytes[off..off + U32_BYTES]
             .try_into()
@@ -408,12 +551,14 @@ fn decode_heap(bytes: &[u8], flag: u8) -> Result<(ExactNum, usize), Error> {
         u32s.push(u32::from_be_bytes(chunk));
         off += U32_BYTES;
     }
-    let sign = if flag == BINARY_FLAG_HEAP_NEG { Sign::Neg } else { Sign::Pos };
-    let x = finite_from_u32(&u32s, n_sig, sign, Exponent::from(exp), inexact)?;
+    let neg = matches!(flag, BINARY_FLAG_HEAP_NEG | BINARY_FLAG_HEAP_WIDE_NEG);
+    let sign = if neg { Sign::Neg } else { Sign::Pos };
+    let x = finite_from_u32(&u32s, n_sig, sign, exp, inexact)?;
     Ok((x, need))
 }
 
-/// Format v1 stores the exponent as a 4-byte field; exponents outside `i32` cannot be encoded.
+/// The narrow records store the exponent as a 4-byte field; exponents outside `i32` use the
+/// wide-exponent records ([`BINARY_FLAG_HEAP_WIDE_POS`], [`BINARY_FLAG_INLINE_WIDE_POS`]).
 fn exp_field(exp: Exponent) -> Result<i32, Error> {
     i32::try_from(exp).map_err(|_| Error::InvalidArgument)
 }

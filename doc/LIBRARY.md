@@ -34,7 +34,7 @@ License: MIT OR Apache-2.0.
 
 ## 3. Numeric model
 
-A finite `ExactNum` is a **sign**, a **binary mantissa** stored as an array of words, and an **`Exponent` (`i32`)**. Precision is a bit count, always rounded **up to the word size**.
+A finite `ExactNum` is a **sign**, a **binary mantissa** stored as an array of words, and an **`Exponent` (`i64`, range ±(2^62 − 1))**. Precision is a bit count, always rounded **up to the word size**.
 
 | Item | Value |
 | --- | --- |
@@ -45,8 +45,8 @@ A finite `ExactNum` is a **sign**, a **binary mantissa** stored as an array of w
 | `WORD_SIGNIFICANT_BIT` | high bit of a word |
 | `INLINE_WORDS` | `DEFAULT_P / WORD_BIT_SIZE`: 2; small mantissas stored inline |
 | `EXPONENT_BIT_SIZE` | 32 |
-| `EXPONENT_MAX` | `i32::MAX` on every target (2.0.0; was `i32::MAX / 4` on 32-bit) |
-| `EXPONENT_MIN` | `i32::MIN` on every target (2.0.0; was `i32::MIN / 4` on 32-bit) |
+| `EXPONENT_MAX` | `2^62 − 1` on every target (2.0.0) |
+| `EXPONENT_MIN` | `−(2^62 − 1)` on every target (2.0.0) |
 | Default operator precision | 128 bits (`ToEven`) for `+ − × ÷` on `ExactNum` (internal default; not a public constant) |
 | `MAX_PREC_RETRY` | `256` — extra-precision budget for correct-rounding retries (`try_set_precision`, `ziv_round`, transcendentals) |
 
@@ -570,7 +570,7 @@ Used by `expr!` to lift variables and literals.
 
 ## 24. Binary interchange
 
-Network byte order. Inline record is 16 bytes: flag, version, `n_sig`, inexact, `i32` exponent, two `u32` limbs (least-significant first, matching kernel word order). Specials use flags `0x02`–`0x0A`. Mantissas wider than 64 bits use flag `0x10`/`0x11` plus `u32` limbs. Arrays use flag `0x20` and a shape/`p` header.
+Network byte order. Inline record is 16 bytes: flag, version, `n_sig`, inexact, `i32` exponent, two `u32` limbs (least-significant first, matching kernel word order). Specials use flags `0x02`–`0x0A`. Mantissas wider than 64 bits use flag `0x10`/`0x11` plus `u32` limbs. Exponents outside `i32` use the wide-exponent records: heap `0x12`/`0x13` (the heap header, then the exponent as an 8-byte `i64`, then the limbs; encodes every finite value), and inline `0x0C`/`0x0D` (flag, version, `n_u32 << 1 | inexact`, 8-byte exponent, top 40 mantissa bits). A full 64-bit mantissa next to a 63-bit exponent cannot fit 16 bytes, so `to_inline_bytes` returns `MemoryAllocation` for it, as for a wide mantissa; `to_bytes` always succeeds. Each value has one encoding: a wide record with an exponent that fits `i32` is rejected. Arrays use flag `0x20` and a shape/`p` header.
 
 ---
 
