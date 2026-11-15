@@ -1168,17 +1168,139 @@ impl ExactNumNumber {
             .max(self.mantissa_max_bit_len())
             .max(x.mantissa_max_bit_len())
             + p_inc;
+        if x.is_zero() {
+            let mut r = self.gamma(p, rm, cc)?;
+            r.set_inexact(r.inexact() | self.inexact() | x.inexact());
+            return Ok(r);
+        }
+        // Γ(s) − γ(s, x) cancels about log2(Γ(s) / Γ(s, x)) bits (≈ x / ln 2 for large x):
+        // that loss is measured and added to the working precision (ZF-25), and for x > s the
+        // asymptotic series (DLMF 8.11.2, remainder bounded by the first omitted term once
+        // n ≥ s − 1, 8.11(ii)) avoids the cancellation altogether.
+        // Γ(n) = (n−1)! for integer 1 <= n <= 64 is exact at 320 bits (63! < 2^296). Then the
+        // difference's error is only γ's, which can be far below 2^-p_wrk of Γ(s): the
+        // claimed accuracy below uses that, so Γ(n, tiny x) just under (n−1)! still rounds.
+        let g_exact = self.is_int() && self.cmp(&Self::from_word(64, WORD_BIT_SIZE)?) <= 0;
+        let mut extra: usize = 0;
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE * 2;
-            let g = self.gamma_at(p_x, cc)?;
-            let lo = self.gammainc_at(x, p_x, cc)?;
-            let mut ret = g.sub(&lo, p_x, RoundingMode::None)?;
-            if ret.try_set_precision(p, rm, p_wrk)? {
+            let (mut ret, acc) = match self.gammainc_upper_asymptotic(x, p_x, cc)? {
+                Some(v) => (v, p_wrk),
+                None => loop {
+                    let pe = round_p(p_x + extra);
+                    let g = self.gamma_at(if g_exact { pe.max(320) } else { pe }, cc)?;
+                    let lo = self.gammainc_at(x, pe, cc)?;
+                    // Keep γ(s, x) ≪ Γ(s) visible: subtract at a width covering the gap, with
+                    // a lower part beyond 2^-limit of Γ(s) replaced by that bound (same side
+                    // of Γ(s), inside the error budget), so directed modes see the tail.
+                    let limit = pe + WORD_BIT_SIZE;
+                    let gap = usize::try_from((g.exponent() - lo.exponent()).max(0))
+                        .unwrap_or(usize::MAX);
+                    let v = if lo.is_zero() {
+                        g.clone()?
+                    } else if gap > limit {
+                        let mut t = Self::from_word(1, WORD_BIT_SIZE)?;
+                        t.set_exponent(g.exponent() - limit as Exponent + 1);
+                        t.set_sign(lo.sign());
+                        g.sub(
+                            &t,
+                            round_p(g.mantissa_max_bit_len() + limit),
+                            RoundingMode::None,
+                        )?
+                    } else {
+                        g.sub(
+                            &lo,
+                            round_p(g.mantissa_max_bit_len() + gap + pe),
+                            RoundingMode::None,
+                        )?
+                    };
+                    let top = g.exponent().max(lo.exponent());
+                    let lost = if v.is_zero() {
+                        usize::try_from(pe).unwrap_or(usize::MAX)
+                    } else {
+                        usize::try_from((top - v.exponent()).max(0)).unwrap_or(usize::MAX)
+                    };
+                    // p_x carries 128 guard bits over p_wrk; up to 56 of them may absorb the loss.
+                    if lost <= extra.saturating_add(56) {
+                        let acc = if g_exact && lost == 0 {
+                            if gap >= WORD_BIT_SIZE {
+                                pe
+                            } else {
+                                pe - WORD_BIT_SIZE
+                            }
+                        } else {
+                            p_wrk
+                        };
+                        break (v, acc.max(p_wrk));
+                    }
+                    if lost > HYPERGEOM_LOSS_MAX {
+                        return Err(Error::PrecisionRetryExhausted);
+                    }
+                    extra = lost.saturating_add(WORD_BIT_SIZE);
+                },
+            };
+            if ret.try_set_precision(p, rm, acc)? {
                 ret.set_inexact(ret.inexact() | self.inexact() | x.inexact());
                 return Ok(ret);
             }
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
+    }
+
+    /// `Γ(s, x) = x^(s−1) e^(−x) (Σ_{k<n} u_k / x^k + R_n)`, `u_k = (s−1)(s−2)…(s−k)`
+    /// (DLMF 8.11.2). For real `s` and `x > 0`, once `n ≥ s − 1` the remainder `R_n` has the
+    /// sign of, and is at most, the first omitted term (DLMF 8.11(ii)); an exact zero `u_n`
+    /// (integer `s`) ends the sum exactly. `None` when the terms start growing before they
+    /// fall below `2^-(p+8)` of the sum, or when `x <= s`.
+    fn gammainc_upper_asymptotic(
+        &self,
+        x: &Self,
+        p: usize,
+        cc: &mut Consts,
+    ) -> Result<Option<Self>, Error> {
+        let nr = RoundingMode::None;
+        if x.exponent() < 4 || x.cmp(self) <= 0 {
+            return Ok(None);
+        }
+        let one = Self::from_word(1, WORD_BIT_SIZE)?;
+        let sm1 = self.sub(&one, p, nr)?;
+        let mut term = Self::from_word(1, p)?;
+        let mut sum = term.clone()?;
+        let mut a = sm1.clone()?;
+        let mut done = false;
+        let n_max = 4 * p + 64;
+        for k in 1..=n_max {
+            // term_k = term_{k-1} (s − k) / x; `a` = s − k.
+            let next = term.mul(&a, p, nr)?.div(x, p, nr)?;
+            let past = Self::from_word(k as Word, WORD_BIT_SIZE)?.cmp(&sm1) >= 0;
+            if next.is_zero() {
+                done = true;
+                break;
+            }
+            if past && next.exponent().saturating_add(p as Exponent + 8) < sum.exponent() {
+                done = true;
+                break;
+            }
+            if past && next.exponent() > term.exponent() {
+                break;
+            }
+            sum = sum.add(&next, p, nr)?;
+            term = next;
+            a = a.sub(&one, p, nr)?;
+        }
+        if !done || sum.is_zero() {
+            return Ok(None);
+        }
+        // x^(s−1) e^(−x) = exp((s−1) ln x − x); the argument's absolute error becomes the
+        // result's relative error, so carry its exponent in extra bits.
+        let mag = x
+            .exponent()
+            .max(0)
+            .saturating_add(WORD_BIT_SIZE as Exponent);
+        let pa = round_p(p + usize::try_from(mag).unwrap_or(0));
+        let arg = sm1.mul(&x.ln(pa, nr, cc)?, pa, nr)?.sub(x, pa, nr)?;
+        let pre = arg.exp(p, nr, cc)?;
+        Ok(Some(pre.mul(&sum, p, nr)?))
     }
 
     fn gammainc_at(&self, x: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {

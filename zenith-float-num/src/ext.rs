@@ -3503,7 +3503,9 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: `Γ(self) - γ(self, x)` at working precision; `+∞` in `x` returns 0.
+    /// - Algorithm: for `x > self`, the asymptotic series (DLMF 8.11.2) with the first-omitted-term
+    ///   remainder bound (8.11(ii)); otherwise `Γ(self) − γ(self, x)` with the measured
+    ///   cancellation added to the working precision. `+∞` in `x` returns 0.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: yes, `mpfr_gamma_inc` under `mpfr-tests`.
     ///
