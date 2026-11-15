@@ -112,7 +112,10 @@ impl ExactNumNumber {
         cc: &mut Consts,
         inexact: bool,
     ) -> Result<Self, Error> {
-        let mut h = cc.pi_num(p, if s.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm })?;
+        let mut h = cc.pi_num(
+            p,
+            if s.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm },
+        )?;
         h.set_exponent(1);
         h.set_sign(s);
         h.set_inexact(h.inexact() | inexact);
@@ -126,7 +129,10 @@ impl ExactNumNumber {
         cc: &mut Consts,
         inexact: bool,
     ) -> Result<Self, Error> {
-        let mut pi = cc.pi_num(p, if s.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm })?;
+        let mut pi = cc.pi_num(
+            p,
+            if s.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm },
+        )?;
         pi.set_sign(s);
         pi.set_inexact(pi.inexact() | inexact);
         Ok(pi)

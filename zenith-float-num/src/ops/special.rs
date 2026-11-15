@@ -788,7 +788,7 @@ impl ExactNumNumber {
         s = s.add(&ln_two_pi, p, RoundingMode::None)?;
 
         let mut zpow = self.clone()?; // z^{1} for k=1 term z^{2k-1}
-        // Cap or divergence without meeting the bound: never use the partial sum.
+                                      // Cap or divergence without meeting the bound: never use the partial sum.
         let mut done = false;
         for (i, b) in bern.iter().enumerate() {
             let k = i + 1;
@@ -4932,7 +4932,13 @@ fn bessel_cancel_bits(x: &ExactNumNumber, num: usize, den: usize) -> Result<usiz
 /// `= (-1)^m (+1 if t > 1/2 else -1)`, where `m = floor(-nu)` and `t = -nu - m`.
 /// Infinities are returned as `ExponentOverflow` so the wrapper maps them to signed Inf.
 fn bessel_y_at_zero(nu: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Error> {
-    let inf = |pos: bool| Err(Error::ExponentOverflow(if pos { Sign::Pos } else { Sign::Neg }));
+    let inf = |pos: bool| {
+        Err(Error::ExponentOverflow(if pos {
+            Sign::Pos
+        } else {
+            Sign::Neg
+        }))
+    };
     if nu.is_zero() || nu.is_positive() {
         return inf(false);
     }
@@ -4944,7 +4950,11 @@ fn bessel_y_at_zero(nu: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Err
     if t.is_zero() {
         return inf(m_odd);
     }
-    let half = ExactNumNumber::from_word(1, WORD_BIT_SIZE)?.ldexp(-1, WORD_BIT_SIZE, RoundingMode::None)?;
+    let half = ExactNumNumber::from_word(1, WORD_BIT_SIZE)?.ldexp(
+        -1,
+        WORD_BIT_SIZE,
+        RoundingMode::None,
+    )?;
     let c = t.cmp(&half);
     if c == 0 {
         return ExactNumNumber::new2(p, if m_odd { Sign::Neg } else { Sign::Pos }, false);

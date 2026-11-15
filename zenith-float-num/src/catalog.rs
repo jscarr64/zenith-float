@@ -1203,12 +1203,18 @@ impl ExactNum {
         // moves the sum above z for the directed modes (G(z) > z for every real z ≠ 0 here).
         if matches!(self.exponent(), Some(e) if e < -((p / 2) as crate::defs::Exponent) - 4) {
             let up = RoundingMode::Up;
-            let two_pi = ExactNum::from_u8(2, wrk).mul(&cc.pi(wrk, RoundingMode::None), wrk, RoundingMode::None);
+            let two_pi = ExactNum::from_u8(2, wrk).mul(
+                &cc.pi(wrk, RoundingMode::None),
+                wrk,
+                RoundingMode::None,
+            );
             let half_ln = two_pi
                 .ln(wrk, RoundingMode::None, cc)
                 .sub(&ExactNum::from_u8(1, wrk), wrk, RoundingMode::None)
                 .ldexp(-1, wrk, RoundingMode::None);
-            let c = cc.euler_gamma(wrk, RoundingMode::None).add(&half_ln, wrk, RoundingMode::None);
+            let c = cc
+                .euler_gamma(wrk, RoundingMode::None)
+                .add(&half_ln, wrk, RoundingMode::None);
             let z2c = self.sqr(wrk, up).mul(&c, wrk, up);
             return finish(ExactNum::add_ref(self, &z2c, wrk, up), p, rm);
         }

@@ -204,7 +204,12 @@ impl ExactRational {
         let p = work_p(&[&self.num, &self.den]);
         let a = self.num.clone().abs();
         let r = a.rem(&self.den);
-        let mut q = ExactNum::div_ref(&ExactNum::sub_ref(&a, &r, p, RoundingMode::None), &self.den, p, RoundingMode::None);
+        let mut q = ExactNum::div_ref(
+            &ExactNum::sub_ref(&a, &r, p, RoundingMode::None),
+            &self.den,
+            p,
+            RoundingMode::None,
+        );
         let two_r = ExactNum::add_ref(&r, &r, p, RoundingMode::None);
         if matches!(two_r.compare(&self.den), Some(c) if c >= 0) {
             q = ExactNum::add_ref(&q, &rat_one(), p, RoundingMode::None);

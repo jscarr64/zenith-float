@@ -108,7 +108,10 @@ impl ExactNumNumber {
         Self::p_assertion(p)?;
         let mut x = self.clone()?;
         x.set_inexact(false);
-        x.set_precision(p, if upward { RoundingMode::Up } else { RoundingMode::Down })?;
+        x.set_precision(
+            p,
+            if upward { RoundingMode::Up } else { RoundingMode::Down },
+        )?;
         if x.inexact() || x.cmp(self) != 0 {
             // Rounding in the step direction already moved strictly past `self`.
             x.set_inexact(true);

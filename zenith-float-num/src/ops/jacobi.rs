@@ -6,9 +6,9 @@ use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::Exponent;
-use crate::defs::EXPONENT_MIN;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
+use crate::defs::EXPONENT_MIN;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::WORD_BIT_SIZE;
@@ -261,7 +261,10 @@ impl ExactNumNumber {
         let (mut am, sn, cn, dn) = jacobi_agm(&u, m, p, cc)?;
         if let Some(n) = turns {
             // am(u + 4nK) = am(u) + 2nπ; sn, cn, dn have period 4K.
-            let pe = round_p(p + usize::try_from(n.exponent().max(0)).map_err(|_| Error::InvalidArgument)? + WORD_BIT_SIZE);
+            let pe = round_p(
+                p + usize::try_from(n.exponent().max(0)).map_err(|_| Error::InvalidArgument)?
+                    + WORD_BIT_SIZE,
+            );
             let mut two_pi = cc.pi_num(pe, RoundingMode::None)?;
             two_pi.set_exponent(two_pi.exponent() + 1);
             let off = n.mul(&two_pi, pe, RoundingMode::None)?;

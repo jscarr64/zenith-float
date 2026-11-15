@@ -374,7 +374,10 @@ impl ExactNum {
             // finite operands whose exact result is past the range: `hi` follows the mode
             // (MAX toward zero, Inf otherwise), as a rounded add/mul does; `lo` is zero.
             let s = if exact.is_negative() { Sign::Neg } else { Sign::Pos };
-            return (Self::result_to_ext_rm(Err(Error::ExponentOverflow(s)), false, true, p, rm), Self::new(p));
+            return (
+                Self::result_to_ext_rm(Err(Error::ExponentOverflow(s)), false, true, p, rm),
+                Self::new(p),
+            );
         }
         let mut hi = exact.clone();
         if let Err(err) = hi.set_precision(p, rm) {
@@ -415,7 +418,10 @@ impl ExactNum {
             // finite operands whose exact result is past the range: `hi` follows the mode
             // (MAX toward zero, Inf otherwise), as a rounded add/mul does; `lo` is zero.
             let s = if exact.is_negative() { Sign::Neg } else { Sign::Pos };
-            return (Self::result_to_ext_rm(Err(Error::ExponentOverflow(s)), false, true, p, rm), Self::new(p));
+            return (
+                Self::result_to_ext_rm(Err(Error::ExponentOverflow(s)), false, true, p, rm),
+                Self::new(p),
+            );
         }
         let mut hi = exact.clone();
         if let Err(err) = hi.set_precision(p, rm) {
@@ -1403,7 +1409,8 @@ impl ExactNum {
 
         match (&self.inner, &x.inner) {
             (Flavor::Inf(sy), Flavor::Inf(sx)) => {
-                let mag_rm = if sy.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm };
+                let mag_rm =
+                    if sy.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm };
                 let mut q = cc.pi(p, mag_rm);
                 q = q.div(&ExactNum::from_word(4, p), p, mag_rm);
                 if sx.is_negative() {
@@ -1423,7 +1430,11 @@ impl ExactNum {
                 if sx.is_positive() {
                     Self::result_to_ext(ExactNumNumber::new2(p, y.sign(), y.inexact()), false, true)
                 } else {
-                    let mag_rm = if y.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm };
+                    let mag_rm = if y.is_negative() {
+                        crate::common::util::invert_rm_for_sign(rm)
+                    } else {
+                        rm
+                    };
                     let mut pi = cc.pi(p, mag_rm);
                     pi.set_sign(y.sign());
                     pi
@@ -1546,7 +1557,10 @@ impl ExactNum {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<ExactNumNumber, Error> {
-        let mut half_pi = cc.pi_num(p, if s.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm })?;
+        let mut half_pi = cc.pi_num(
+            p,
+            if s.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm },
+        )?;
 
         half_pi.set_exponent(1);
         half_pi.set_sign(s);
@@ -3729,7 +3743,9 @@ Accuracy: correctly-rounded",
     /// Word-precision implementation of [`Self::bi_prime`].
     fn bi_prime_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext_rm(v.bi_prime(p, rm, cc), v.is_zero(), true, p, rm),
+            Flavor::Value(v) => {
+                Self::result_to_ext_rm(v.bi_prime(p, rm, cc), v.is_zero(), true, p, rm)
+            }
             Flavor::Inf(s) => {
                 if s.is_positive() {
                     INF_POS

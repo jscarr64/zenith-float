@@ -453,11 +453,8 @@ pub(super) fn fma_add(psign: bool, pe: i32, prod: u128, uc: Unp, f: Format) -> u
             m << (d as u32 + 1)
         } else {
             let d = (-d) as u32;
-            let (q, lost) = if d >= 128 {
-                (0, m != 0)
-            } else {
-                (m >> d, (m & ((1u128 << d) - 1)) != 0)
-            };
+            let (q, lost) =
+                if d >= 128 { (0, m != 0) } else { (m >> d, (m & ((1u128 << d) - 1)) != 0) };
             (q << 1) | u128::from(lost)
         }
     };

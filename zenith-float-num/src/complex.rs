@@ -296,7 +296,12 @@ impl ExactComplex {
             // directed sum would then miss the least subnormal. Only then, round each product at
             // (p, rm) first (the per-product path below), so the directed step survives.
             let underflow = |x: &ExactNum, y: &ExactNum, xy: &ExactNum| {
-                !x.is_zero() && !y.is_zero() && !x.is_inf() && !y.is_inf() && !x.is_nan() && !y.is_nan()
+                !x.is_zero()
+                    && !y.is_zero()
+                    && !x.is_inf()
+                    && !y.is_inf()
+                    && !x.is_nan()
+                    && !y.is_nan()
                     && (xy.is_zero() || xy.inexact())
             };
             if !(underflow(&self.re, &rhs.re, &ac)
@@ -366,9 +371,7 @@ impl ExactComplex {
         if !finite_nonzero(&er) {
             return self.exp_parts(p, rm, cc);
         }
-        crate::complex_special::ziv_complex(p, rm, |pw| {
-            self.exp_parts(pw, RoundingMode::None, cc)
-        })
+        crate::complex_special::ziv_complex(p, rm, |pw| self.exp_parts(pw, RoundingMode::None, cc))
     }
 
     /// `exp(re)·cos(im) + i exp(re)·sin(im)` with the factors at `p` and the products at `(p, rm)`.
@@ -453,9 +456,7 @@ impl ExactComplex {
         if !self.trig_ziv_ok(p, cc) {
             return self.sin_parts(p, rm, cc);
         }
-        crate::complex_special::ziv_complex(p, rm, |pw| {
-            self.sin_parts(pw, RoundingMode::None, cc)
-        })
+        crate::complex_special::ziv_complex(p, rm, |pw| self.sin_parts(pw, RoundingMode::None, cc))
     }
 
     fn sin_parts(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -490,9 +491,7 @@ impl ExactComplex {
         if !self.trig_ziv_ok(p, cc) {
             return self.cos_parts(p, rm, cc);
         }
-        crate::complex_special::ziv_complex(p, rm, |pw| {
-            self.cos_parts(pw, RoundingMode::None, cc)
-        })
+        crate::complex_special::ziv_complex(p, rm, |pw| self.cos_parts(pw, RoundingMode::None, cc))
     }
 
     fn cos_parts(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -1069,7 +1068,9 @@ impl ExactComplex {
             Some(c) if c > 0 => {
                 let neg = self.re.is_negative();
                 Some(crate::complex_special::ziv_complex(p, rm, |pw| {
-                    let mut h = cc.pi(pw, RoundingMode::None).ldexp(-1, pw, RoundingMode::None);
+                    let mut h = cc
+                        .pi(pw, RoundingMode::None)
+                        .ldexp(-1, pw, RoundingMode::None);
                     if neg {
                         h = h.neg();
                     }
