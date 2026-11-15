@@ -9,6 +9,11 @@ use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
 use core::ops::Neg;
 
+/// True for a finite nonzero value (the factors the complex Ziv loops can refine).
+fn finite_nonzero(x: &ExactNum) -> bool {
+    !x.is_nan() && !x.is_inf() && !x.is_zero()
+}
+
 fn abs_part(x: ExactNum) -> ExactNum {
     if x.is_negative() {
         x.neg()
@@ -333,6 +338,19 @@ impl ExactComplex {
 
     /// Implementation of [`Self::exp`] on operands without inexact history.
     fn exp_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        // Each part is a product of two rounded factors, so rounding it once at `p` can land
+        // one ulp off in a directed mode: run the parts through the Ziv loop instead.
+        let er = self.re.exp(p, RoundingMode::None, cc);
+        if !finite_nonzero(&er) {
+            return self.exp_parts(p, rm, cc);
+        }
+        crate::complex_special::ziv_complex(p, rm, |pw| {
+            self.exp_parts(pw, RoundingMode::None, cc)
+        })
+    }
+
+    /// `exp(re)·cos(im) + i exp(re)·sin(im)` with the factors at `p` and the products at `(p, rm)`.
+    fn exp_parts(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let er = self.re.exp(p, RoundingMode::None, cc);
         let (s, c) = self.im.sin_cos(p, RoundingMode::None, cc);
         Self::new(ExactNum::mul_ref(&er, &c, p, rm), er.mul(&s, p, rm))
@@ -409,9 +427,30 @@ impl ExactComplex {
 
     /// Implementation of [`Self::sin`] on operands without inexact history.
     fn sin_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        // Products of rounded factors: Ziv loop on the parts (see exp_word).
+        if !self.trig_ziv_ok(p, cc) {
+            return self.sin_parts(p, rm, cc);
+        }
+        crate::complex_special::ziv_complex(p, rm, |pw| {
+            self.sin_parts(pw, RoundingMode::None, cc)
+        })
+    }
+
+    fn sin_parts(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let (sn, cs) = self.re.sin_cos(p, RoundingMode::None, cc);
         let (sh, ch) = self.im.sinh_cosh(p, RoundingMode::None, cc);
         Self::new(sn.mul(&ch, p, rm), cs.mul(&sh, p, rm))
+    }
+
+    /// The Ziv loop applies when cosh(im) is finite and the inputs are finite; Inf/NaN and
+    /// overflow keep the direct formula and its special-value results.
+    fn trig_ziv_ok(&self, p: usize, cc: &mut Consts) -> bool {
+        let finite = |x: &ExactNum| !x.is_nan() && !x.is_inf();
+        if !finite(&self.re) || !finite(&self.im) {
+            return false;
+        }
+        let (_, ch) = self.im.sinh_cosh(p, RoundingMode::None, cc);
+        finite_nonzero(&ch)
     }
 
     /// `cos(self)` via `cos(re)cosh(im) - i sin(re)sinh(im)`.
@@ -425,6 +464,16 @@ impl ExactComplex {
 
     /// Implementation of [`Self::cos`] on operands without inexact history.
     fn cos_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        // Products of rounded factors: Ziv loop on the parts (see exp_word).
+        if !self.trig_ziv_ok(p, cc) {
+            return self.cos_parts(p, rm, cc);
+        }
+        crate::complex_special::ziv_complex(p, rm, |pw| {
+            self.cos_parts(pw, RoundingMode::None, cc)
+        })
+    }
+
+    fn cos_parts(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let (sn, cs) = self.re.sin_cos(p, RoundingMode::None, cc);
         let (sh, ch) = self.im.sinh_cosh(p, RoundingMode::None, cc);
         Self::new(cs.mul(&ch, p, rm), sn.mul(&sh, p, rm).neg())
