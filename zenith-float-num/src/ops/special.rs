@@ -1026,6 +1026,19 @@ impl ExactNumNumber {
         if !self.is_positive() || x.is_negative() {
             return Err(Error::InvalidArgument);
         }
+        // Γ(0, x) = E₁(x) = −Ei(−x); Γ(0) itself is a pole, so Γ(s) − γ(s, x) cannot be used.
+        if self.is_zero() {
+            if x.is_zero() {
+                return Err(Error::ExponentOverflow(Sign::Pos));
+            }
+            let mut nx = x.clone()?;
+            nx.set_sign(Sign::Neg);
+            let mut r = nx
+                .ei(p, crate::common::util::invert_rm_for_sign(rm), cc)?
+                .neg()?;
+            r.set_inexact(r.inexact() | self.inexact() | x.inexact());
+            return Ok(r);
+        }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
             .max(self.mantissa_max_bit_len())
