@@ -534,7 +534,7 @@ fn kronrod_legendre_at(
     p: usize,
     _cc: &mut Consts,
 ) -> Option<(Vec<ExactNum>, Vec<ExactNum>, Vec<ExactNum>)> {
-    if n != GK_GAUSS_ORDER || p < GK_MIN_PREC {
+    if n != GK_GAUSS_ORDER || !(GK_MIN_PREC..=crate::defs::MAX_PRECISION.saturating_sub(3 * WORD_BIT_SIZE)).contains(&p) {
         return None;
     }
     let beta = laurie_legendre_beta(n, p)?;
@@ -590,7 +590,7 @@ pub fn kronrod_pair(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<(Vec<ExactNum>, Vec<ExactNum>, Vec<ExactNum>)> {
-    if n_gauss != GK_GAUSS_ORDER || p < GK_MIN_PREC {
+    if n_gauss != GK_GAUSS_ORDER || !(GK_MIN_PREC..=crate::defs::MAX_PRECISION.saturating_sub(3 * WORD_BIT_SIZE)).contains(&p) {
         return None;
     }
     let (nodes, w_gauss, w_kronrod) = kronrod_legendre_at(n_gauss, work_p(p), cc)?;
@@ -670,7 +670,7 @@ pub fn gauss_kronrod_interval<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if p < GK_MIN_PREC || !interval_ok(a, b) {
+    if !(GK_MIN_PREC..=crate::defs::MAX_PRECISION.saturating_sub(3 * WORD_BIT_SIZE)).contains(&p) || !interval_ok(a, b) {
         return Err(QuadratureError::InvalidArgument);
     }
     let wrk = work_p(p);
@@ -750,7 +750,7 @@ fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
 /// The table is built two words above the destination width and rounded to
 /// `p` with `rm`.
 pub fn wynn_epsilon(seq: &[ExactNum], p: usize, rm: RoundingMode) -> Option<ExactNum> {
-    if p < GK_MIN_PREC {
+    if !(GK_MIN_PREC..=crate::defs::MAX_PRECISION.saturating_sub(3 * WORD_BIT_SIZE)).contains(&p) {
         return None;
     }
     let wrk = work_p(p);
@@ -851,7 +851,7 @@ pub fn integrate_adaptive_gk<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if p < GK_MIN_PREC
+    if !(GK_MIN_PREC..=crate::defs::MAX_PRECISION.saturating_sub(3 * WORD_BIT_SIZE)).contains(&p)
         || max_subintervals == 0
         || max_subintervals > GK_SUBINTERVAL_MAX
         || !interval_ok(a, b)

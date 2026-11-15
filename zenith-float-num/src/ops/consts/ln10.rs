@@ -100,7 +100,7 @@ impl Ln10Cache {
         let mut p_wrk = round_p(k) + p_inc;
 
         loop {
-            let kext = k * 1728 / 1000 + 4;
+            let kext = k.checked_mul(1728).ok_or(Error::InvalidArgument)? / 1000 + 4;
 
             if self.b > kext {
                 let mut ret = self.val.clone()?;
