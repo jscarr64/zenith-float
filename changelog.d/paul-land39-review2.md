@@ -10,3 +10,9 @@
   this supersedes 11377ab's weaker any-name regex. Row B includes the deliberately removed .gitignore files; row S
   accepts exactly b0afcb1's rustix 1.1.6 RUSTSEC-2026-0486 lock delta (R6/R7).
 - CONTRACT 16.CB.4, 16.CB.7 and 16.CB.11 mark `CBall::mul`/`div` and their rows as held (H11), not exported (Spence A1).
+- ln 10 sizes its series in 128-bit arithmetic and probes the working allocation, so a valid top precision is
+  `MemoryAllocation`, not `InvalidArgument` (B3 follow-on).
+- tests/tier1_regressions.rs: 561 judged rows over 24 Tier 1 families (FLINT first, mpmath where FLINT lacks the function,
+  exact elsewhere) plus rem, top-precision, past-the-old-trig-cap and 7-mode/signed-zero/Inf/NaN/subnormal/p 32-1024
+  boundary tests; red on 5227f77, green here (B2). Test target count 68 -> 69.
+- paul-tier1-fixes.md now marks ZF-16, ZF-60 and Γ p ≥ 2048 partial with their remaining row counts (R8).
