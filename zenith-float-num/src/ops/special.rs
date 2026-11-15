@@ -753,6 +753,15 @@ impl ExactNumNumber {
         if !self.is_int_when_doubled() {
             return Ok(None);
         }
+        // This is only the finite-sum fast path: an index too large for usize belongs in the
+        // asymptotic kernel, not InvalidArgument.
+        if self.cmp(&from_usize_p(
+            HALF_INTEGER_MAX + 1,
+            self.mantissa_max_bit_len(),
+        )?) >= 0
+        {
+            return Ok(None);
+        }
         let n = self.int_as_usize()?;
         Ok(if n <= HALF_INTEGER_MAX { Some(n) } else { None })
     }
@@ -871,7 +880,14 @@ impl ExactNumNumber {
             let omz = one.sub(&z, p, RoundingMode::None)?;
             let psi = omz.digamma_positive(p, cc)?;
             let pi = cc.pi_num(p, RoundingMode::None)?;
-            let piz = pi.mul(&z, p, RoundingMode::None)?;
+            // cot(πz) has period 1: reduce with the exact fractional part of z. π·z itself at
+            // `p` bits keeps only `p - exponent(z)` fraction bits, a large absolute error in
+            // the cot argument once z has many integer bits.
+            let fz = z.clone()?.fract()?;
+            if fz.is_zero() {
+                return Err(Error::InvalidArgument);
+            }
+            let piz = pi.mul(&fz, p, RoundingMode::None)?;
             let cot = piz.cos(p, RoundingMode::None, cc)?.div(
                 &piz.sin(p, RoundingMode::None, cc)?,
                 p,
