@@ -9,12 +9,12 @@
 - Complex mul forms the four products exactly and rounds each part once; when an exact product of nonzero operands
   underflows, the directed modes keep the per-product rounding so the least subnormal is reached. Complex exp/sin/cos
   round each part through the Ziv loop (ZF-18).
-- Gamma at p ≥ 2048 scales the Stirling term count with p so it stays under the shift cap (partial: 361 of 385 r.gamma
+- Gamma at p ≥ 2048 scales the Stirling term count with p so it stays under the shift cap (BROKEN: 361 of 385 r.gamma
   rows at p ≥ 2048 pass; 24 still return NaN(PrecisionRetryExhausted), and the Γ family has 1,047 of 9,057 rows still
   failing, deferred to Tier 2); sin/cos/tan carry the full argument exponent in π with no cap, the width limited only by
-  representability and allocation (ZF-16 partial: 222 of 588 rows still fail, in rem_pi and Clausen, deferred);
+  representability and allocation (ZF-16 BROKEN: 222 of 588 rows still fail, in rem_pi and Clausen, deferred);
   atan/atan2 invert directed rounding before negating π (ZF-17, ZF-36).
-- Jacobi: K reduction carries the argument exponent bits with no cap (ZF-60 partial: 317 of 590 rows still fail, in cd,
+- Jacobi: K reduction carries the argument exponent bits with no cap (ZF-60 BROKEN: 317 of 590 rows still fail, in cd,
   dc, sn, ns, dn; deferred) and am keeps its 2π quasi-period (ZF-23); arccn for
   x < 0 (ZF-62); m = 1 far out of range (ZF-59).
 - Special values: distribution zero scale/shape is NaN (ZF-45); bessel_y at x = 0 (ZF-26); elliptic_pi at x = ±1
