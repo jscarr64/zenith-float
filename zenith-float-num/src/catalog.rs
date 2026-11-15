@@ -108,6 +108,162 @@ pub(crate) fn small_int(x: &ExactNum, p: usize, lo: i32, hi: i32) -> Option<i32>
     (lo..=hi).find(|&n| x.compare(&ExactNum::from_i32(n, p)) == Some(0))
 }
 
+/// `x` is 0, -1, -2, ... (any size).
+fn nonpositive_int(x: &ExactNum) -> bool {
+    x.is_int() && (x.is_zero() || x.is_negative())
+}
+
+/// Upper bound (64-bit, rounded up) on `|x|`.
+fn abs_up(x: &ExactNum) -> ExactNum {
+    let mut y = x.clone().abs();
+    let _ = y.set_precision(64, RoundingMode::Up);
+    y
+}
+
+/// Direct \({}_pF_q\) series with a proven truncation bound and working precision
+/// raised until rounding error is below the result (Ziv on the cancellation).
+///
+/// No term cap (ZF-39, ZF-73): after the index `K` exceeds every `|b_j|`, the term ratio
+/// `|z| Π|K+a_j| / ((K+1) Π|K+b_j|)` is bounded for all later `k` by
+/// `B(K) = |z| Π pair(K)`, where each `(K+|a_j|)/(K-|b_j|)` (and `(K+|a_0|)/(K+1)`,
+/// taken as at least 1) does not increase. Once `B(K) < 1` the tail is at most
+/// `|t_K| B/(1-B)`. Accumulated rounding is at most `(n+1) 2^{e_max - wrk + 2}`. When
+/// that plus the tail is not `2^{-(p+8)}` relative to the sum, the sum is redone wider.
+/// Callers make the series convergent: `p <= q`, or `p = q+1` with `|z| < 1`, or a
+/// terminating parameter.
+fn pfq_series(z: &ExactNum, a: &[ExactNum], b: &[ExactNum], p: usize) -> ExactNum {
+    let lo = RoundingMode::Down;
+    let up = RoundingMode::Up;
+    let n = RoundingMode::None;
+    let az = abs_up(z);
+    let aa: Vec<ExactNum> = a.iter().map(abs_up).collect();
+    let ab: Vec<ExactNum> = b.iter().map(abs_up).collect();
+    let bmax = ab.iter().fold(ExactNum::new(64), |m, x| {
+        if x.compare(&m) == Some(1) {
+            x.clone()
+        } else {
+            m
+        }
+    });
+    // For p = q+1 one a pairs with (K+1) (the largest |a|); the rest pair with b's.
+    let pair_first = a.len() == b.len() + 1;
+    let mut wrk = work_p(p);
+    let one_lp = ExactNum::from_u8(1, 64);
+    loop {
+        let mut term = ExactNum::from_u8(1, wrk);
+        let mut sum = term.clone();
+        let mut emax: i128 = 1;
+        let mut nterms: u64 = 1;
+        let mut km1 = ExactNum::new(128); // k - 1, exact
+        let tail: ExactNum;
+        loop {
+            let kf = km1.clone().add(&ExactNum::from_u8(1, 128), 128, n);
+            let mut num = ExactNum::from_u8(1, wrk);
+            for aj in a {
+                num = num.mul(&ExactNum::add_ref(&km1, aj, wrk, n), wrk, n);
+            }
+            let mut den = kf.clone();
+            let _ = den.set_precision(wrk, n);
+            for bj in b {
+                den = den.mul(&ExactNum::add_ref(&km1, bj, wrk, n), wrk, n);
+            }
+            term = term.mul(&num, wrk, n).div(&den, wrk, n).mul(z, wrk, n);
+            km1 = kf;
+            if term.is_zero() {
+                tail = ExactNum::new(64);
+                break;
+            }
+            if !finite(&term) {
+                return cat_nan();
+            }
+            sum = sum.add(&term, wrk, n);
+            nterms = nterms.saturating_add(1);
+            if let Some(e) = term.exponent() {
+                emax = emax.max(i128::from(e));
+            }
+            // Ratio bound for every step after this index K = km1 (= k).
+            let kk = &km1;
+            if kk.compare(&bmax.clone().add(&one_lp, 64, up)) != Some(1) {
+                continue;
+            }
+            let mut bound = az.clone();
+            if pair_first {
+                // Largest |a| pairs with K+1.
+                let mut idx = 0usize;
+                for (i, x) in aa.iter().enumerate() {
+                    if x.compare(&aa[idx]) == Some(1) {
+                        idx = i;
+                    }
+                }
+                let f = ExactNum::add_ref(kk, &aa[idx], 64, up).div(
+                    &ExactNum::add_ref(kk, &one_lp, 64, lo),
+                    64,
+                    up,
+                );
+                bound = bound.mul(
+                    if f.compare(&one_lp) == Some(1) { &f } else { &one_lp },
+                    64,
+                    up,
+                );
+                let rest = aa
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != idx)
+                    .map(|(_, x)| x);
+                for (x, y) in rest.zip(ab.iter()) {
+                    let f = ExactNum::add_ref(kk, x, 64, up).div(
+                        &ExactNum::sub_ref(kk, y, 64, lo),
+                        64,
+                        up,
+                    );
+                    bound = bound.mul(&f, 64, up);
+                }
+            } else {
+                // p <= q: pair a_j with b_j, then (K+1) and the remaining b's divide.
+                for (j, y) in ab.iter().enumerate() {
+                    let d = ExactNum::sub_ref(kk, y, 64, lo);
+                    let f = match aa.get(j) {
+                        Some(x) => ExactNum::add_ref(kk, x, 64, up).div(&d, 64, up),
+                        None => one_lp.clone().div(&d, 64, up),
+                    };
+                    bound = bound.mul(&f, 64, up);
+                }
+                bound = bound.div(&ExactNum::add_ref(kk, &one_lp, 64, lo), 64, up);
+            }
+            if bound.compare(&one_lp) == Some(-1) {
+                // tail <= |t| B/(1-B)
+                let gap = ExactNum::sub_ref(&one_lp, &bound, 64, lo);
+                let t = abs_up(&term).mul(&bound, 64, up).div(&gap, 64, up);
+                let lim = sum.exponent().map(|e| i128::from(e) - p as i128 - 16);
+                let small = t.is_zero()
+                    || match (t.exponent(), lim) {
+                        (Some(te), Some(l)) => i128::from(te) < l,
+                        _ => false,
+                    };
+                if small {
+                    tail = t;
+                    break;
+                }
+            }
+        }
+        if sum.is_zero() {
+            return sum;
+        }
+        let es = i128::from(sum.exponent().unwrap_or(0));
+        // log2(nterms + 1) <= 64
+        let ln = 64 - i128::from((nterms.saturating_add(1)).leading_zeros());
+        let round_e = emax - wrk as i128 + 2 + ln;
+        let tail_e = tail.exponent().map(i128::from).unwrap_or(i128::MIN / 2);
+        let need = es - p as i128 - 8;
+        if round_e < need && (tail.is_zero() || tail_e < need) {
+            return sum;
+        }
+        let deficit = (round_e - need).max(0) as usize;
+        let next = wrk.saturating_add(deficit).saturating_add(WORD_BIT_SIZE);
+        wrk = next.max(wrk.saturating_add(wrk / 2));
+    }
+}
+
 /// \(\zeta(2k)=(-1)^{k-1}B_{2k}(2\pi)^{2k}/(2\,(2k)!)\).
 fn zeta_even(k: usize, p: usize, cc: &mut Consts) -> ExactNum {
     if k == 0 {
@@ -1418,7 +1574,9 @@ impl ExactNum {
 
     /// Generalized \({}_pF_q(a_1,\ldots,a_p;b_1,\ldots,b_q;z)\) with `self = z`.
     ///
-    /// Direct series. Divergent when \(p>q+1\) unless \(z=0\). Poles in any \(b_j\in\{0,-1,\ldots\}\).
+    /// Direct series with a geometric tail bound; no fixed term cap. Nonterminating
+    /// `p > q+1` or `p = q+1, |z| >= 1` is `NaN(InvalidArgument)` (analytic continuation
+    /// is not implemented in this kernel). Poles in any `b_j = 0, -1, ...`.
     ///
     /// Accuracy: unspecified
     pub fn hypergeom_pfq(
@@ -1455,47 +1613,25 @@ impl ExactNum {
         if !finite(self) || a.iter().any(|x| !finite(x)) || b.iter().any(|x| !finite(x)) {
             return cat_nan();
         }
-        if a.len() > b.len() + 1 && !self.is_zero() {
-            return cat_nan();
+        let terminating = a.iter().any(nonpositive_int);
+        if !terminating && !self.is_zero() {
+            if a.len() > b.len() + 1 {
+                return cat_nan();
+            }
+            if a.len() == b.len() + 1
+                && self.abs_cmp(&ExactNum::from_u8(1, WORD_BIT_SIZE)) != Some(-1)
+            {
+                // This kernel is only the direct disk series, not analytic continuation.
+                // Never enter an unbounded divergent sum, or return its last term (ZF-38).
+                return cat_nan();
+            }
         }
-        let wrk = work_p(p);
         for bj in b {
-            if let Some(n) = small_int(bj, wrk, -64, 0) {
-                if n <= 0 {
-                    return cat_nan();
-                }
+            if nonpositive_int(bj) {
+                return cat_nan();
             }
         }
-        let mut term = ExactNum::from_u8(1, wrk);
-        let mut sum = term.clone();
-        for k in 1..=series_cap(wrk) {
-            let kf = ExactNum::from_u32(k as u32, wrk);
-            let mut num = ExactNum::from_u8(1, wrk);
-            for aj in a {
-                num = num.mul(
-                    &ExactNum::from_u32((k - 1) as u32, wrk).add(aj, wrk, RoundingMode::None),
-                    wrk,
-                    RoundingMode::None,
-                );
-            }
-            let mut den = kf;
-            for bj in b {
-                den = den.mul(
-                    &ExactNum::from_u32((k - 1) as u32, wrk).add(bj, wrk, RoundingMode::None),
-                    wrk,
-                    RoundingMode::None,
-                );
-            }
-            term = term
-                .mul(&num, wrk, RoundingMode::None)
-                .div(&den, wrk, RoundingMode::None)
-                .mul(self, wrk, RoundingMode::None);
-            sum = sum.add(&term, wrk, RoundingMode::None);
-            if under_word_rel(&term, &sum, p) {
-                break;
-            }
-        }
-        finish(sum, p, rm)
+        finish(pfq_series(self, a, b, p), p, rm)
     }
 
     /// Principal Lambert \(W_0(\mathrm{self})\). Domain \([-1/e,\infty)\).
