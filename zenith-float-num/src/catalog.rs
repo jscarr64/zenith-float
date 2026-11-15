@@ -1837,7 +1837,10 @@ impl ExactNum {
 fn barnes_g_reflect(w: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
     let nr = RoundingMode::None;
     let wrk = work_p(p);
-    let exact_w = word_p(wrk.max(w.precision().unwrap_or(0)).saturating_add(2 * WORD_BIT_SIZE));
+    let exact_w = word_p(
+        wrk.max(w.precision().unwrap_or(0))
+            .saturating_add(2 * WORD_BIT_SIZE),
+    );
     let z = ExactNum::from_u8(1, exact_w).sub(w, exact_w, nr);
     let ez = z.exponent().unwrap_or(0).max(0) as usize;
     // ln G(1+z) ≈ z² ln z / 2: carry its magnitude in extra bits.
