@@ -2090,7 +2090,12 @@ fn zf_11_wide_argument_ln_gamma_and_zeta_sign() {
             for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
                 let g = x.ln_gamma(p, rm, &mut cc);
                 let w = cr_ref(want, p, rm, &mut cc);
-                assert_eq!(g.compare(&w), Some(0), "ln_gamma({x}) p={p} {rm:?}: {g} {:?} want {w}", g.err());
+                assert_eq!(
+                    g.compare(&w),
+                    Some(0),
+                    "ln_gamma({x}) p={p} {rm:?}: {g} {:?} want {w}",
+                    g.err()
+                );
             }
         }
     }
@@ -2120,7 +2125,12 @@ fn zf_11_wide_argument_ln_gamma_and_zeta_sign() {
                     (false, true) => INF_NEG,
                     (false, false) => INF_POS,
                 };
-                assert_eq!(z.compare(&want), Some(0), "zeta({s}) p={p} {rm:?}: {z} {:?}", z.err());
+                assert_eq!(
+                    z.compare(&want),
+                    Some(0),
+                    "zeta({s}) p={p} {rm:?}: {z} {:?}",
+                    z.err()
+                );
                 assert_eq!(z.is_negative(), neg, "sign zeta({s}) p={p} {rm:?}");
             }
         }
@@ -2155,15 +2165,21 @@ fn zf_08_bytes_wide_exponent_round_trip() {
             if !v.contains(':') {
                 let _ = x.set_precision(p, RoundingMode::ToEven);
             }
-            let b = x.to_bytes().unwrap_or_else(|e| panic!("to_bytes {v} p={p}: {e:?}"));
-            let y = ExactNum::from_bytes(&b).unwrap_or_else(|e| panic!("from_bytes {v} p={p}: {e:?}"));
+            let b = x
+                .to_bytes()
+                .unwrap_or_else(|e| panic!("to_bytes {v} p={p}: {e:?}"));
+            let y =
+                ExactNum::from_bytes(&b).unwrap_or_else(|e| panic!("from_bytes {v} p={p}: {e:?}"));
             assert_eq!(fmt_real(&y), fmt_real(&x), "bytes {v} p={p}");
             assert_eq!(y.inexact(), x.inexact(), "bytes inexact {v} p={p}");
             let small = x.as_raw_parts().words.len() == 1;
             let top40 = small && x.as_raw_parts().words[0] & ((1u64 << 24) - 1) == 0;
             match x.to_inline_bytes() {
                 Ok(buf) => {
-                    assert!(top40 || i32::try_from(x.as_raw_parts().exponent).is_ok(), "inline accepted {v} p={p}");
+                    assert!(
+                        top40 || i32::try_from(x.as_raw_parts().exponent).is_ok(),
+                        "inline accepted {v} p={p}"
+                    );
                     let y = ExactNum::from_inline_bytes(buf.as_bytes()).expect("from_inline");
                     assert_eq!(fmt_real(&y), fmt_real(&x), "inline {v} p={p}");
                 }
@@ -2230,10 +2246,19 @@ fn zf_70_complex_exact_parts() {
                 };
                 for (name, got, want) in [("re", w.re(), wr), ("im", w.im(), wi)] {
                     let r = cr_ref(want, p, rm, &mut cc);
-                    assert_eq!(got.compare(&r), Some(0), "{name} {f}({re},{im}), n={n} p={p} {rm:?}: {} want {r}", fmt_c(&w));
+                    assert_eq!(
+                        got.compare(&r),
+                        Some(0),
+                        "{name} {f}({re},{im}), n={n} p={p} {rm:?}: {} want {r}",
+                        fmt_c(&w)
+                    );
                     if matches!(want, "0" | "-0" | "0.0") {
                         assert!(got.is_zero(), "{name} {f}({re},{im}) zero p={p} {rm:?}");
-                        assert_eq!(got.is_negative(), want == "-0", "{name} {f}({re},{im}) zero sign p={p} {rm:?}");
+                        assert_eq!(
+                            got.is_negative(),
+                            want == "-0",
+                            "{name} {f}({re},{im}) zero sign p={p} {rm:?}"
+                        );
                     }
                 }
             }
@@ -2263,10 +2288,20 @@ fn zf_70_hypergeom_2f1_terminating_exact() {
     for p in [64usize, 128, 256, 1024, 8192] {
         for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
             for &(a, b, c, z, want) in rows {
-                let (a, b, c, z) = (parse_real(a).expect("a"), parse_real(b).expect("b"), parse_real(c).expect("c"), parse_real(z).expect("z"));
+                let (a, b, c, z) = (
+                    parse_real(a).expect("a"),
+                    parse_real(b).expect("b"),
+                    parse_real(c).expect("c"),
+                    parse_real(z).expect("z"),
+                );
                 let v = a.hypergeom_2f1(&b, &c, &z, p, rm, &mut cc);
                 let w = cr_ref(want, p, rm, &mut cc);
-                assert_eq!(v.compare(&w), Some(0), "2F1({a},{b};{c};{z}) p={p} {rm:?}: {v} {:?} want {w}", v.err());
+                assert_eq!(
+                    v.compare(&w),
+                    Some(0),
+                    "2F1({a},{b};{c};{z}) p={p} {rm:?}: {v} {:?} want {w}",
+                    v.err()
+                );
             }
         }
     }
@@ -2312,9 +2347,17 @@ fn zf_30_ln_gamma_small_and_near_one_two() {
             for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
                 let g = x.ln_gamma(p, rm, &mut cc);
                 let w = cr_ref(want, p, rm, &mut cc);
-                assert_eq!(g.compare(&w), Some(0), "ln_gamma({xs}) p={p} {rm:?}: {g} {:?} want {w}", g.err());
+                assert_eq!(
+                    g.compare(&w),
+                    Some(0),
+                    "ln_gamma({xs}) p={p} {rm:?}: {g} {:?} want {w}",
+                    g.err()
+                );
                 if want == "0" {
-                    assert!(!g.is_negative() && !g.inexact(), "ln_gamma({xs}) p={p} {rm:?} must be exact +0");
+                    assert!(
+                        !g.is_negative() && !g.inexact(),
+                        "ln_gamma({xs}) p={p} {rm:?} must be exact +0"
+                    );
                 }
             }
         }
