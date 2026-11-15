@@ -169,6 +169,7 @@ fn isolate_positive<F>(
     lo: &ExactNum,
     hi: &ExactNum,
     want: usize,
+    sqrt_grid: bool,
     p: usize,
     rm: RoundingMode,
     cc: &mut Consts,
@@ -192,6 +193,14 @@ where
     for i in 1..=n_grid {
         let x = if i == n_grid {
             hi.clone()
+        } else if sqrt_grid {
+            // Uniform in sqrt(x - lo): Laguerre zeros sit near j_k^2 / (4n+2)
+            // (Bessel zeros j_k), i.e. evenly spaced in sqrt(x), clustered at 0.
+            let t =
+                ExactNum::from_u32(i as u32, p).div(&ExactNum::from_u32(n_grid as u32, p), p, rm);
+            ExactNum::sub_ref(hi, lo, p, rm)
+                .mul(&t.sqr(p, rm), p, rm)
+                .add(lo, p, rm)
         } else {
             ExactNum::from_u32(i as u32, p)
                 .mul(&step, p, rm)
@@ -484,6 +493,7 @@ fn gauss_laguerre_nodes(
         &zero,
         &hi,
         n,
+        true,
         wrk,
         RoundingMode::None,
         cc,
@@ -579,6 +589,7 @@ fn gauss_hermite_nodes(
         &zero,
         &hi,
         want_pos,
+        false,
         wrk,
         RoundingMode::None,
         cc,

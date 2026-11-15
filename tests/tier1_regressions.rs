@@ -996,3 +996,29 @@ fn zf_49_gauss_hermite_odd_n_exact_on_polynomials() {
         }
     }
 }
+
+/// ZF-48: Gauss–Laguerre refused n >= 15. The uniform isolation grid on [0, 4n+4]
+/// was far coarser than the clustered small zeros of L_n (x_1 ~ 1.4/(4n+2)), so
+/// sign changes were missed and the root count fell short. The rule is exact for
+/// degree <= 2n-1: 1 -> 1, x^2 -> 2, x^5 -> 120 (integer values, exact).
+#[test]
+fn zf_48_gauss_laguerre_large_n_exact_on_polynomials() {
+    use zenith_float::gauss_laguerre;
+    let mut cc = Consts::new().expect("Consts");
+    let cases: &[(usize, &[usize])] =
+        &[(64, &[5, 14, 15, 16, 20, 30, 32, 48, 64]), (256, &[15, 30, 64]), (1024, &[30])];
+    for &(p, ns) in cases {
+        for &n in ns {
+            let rm = RoundingMode::ToEven;
+            for (k, want) in [(0u32, "1"), (2, "2"), (5, "120")] {
+                let g = gauss_laguerre(|x, q, r, _| x.powi(k as usize, q, r), n, p, rm, &mut cc)
+                    .unwrap_or_else(|| panic!("n={n} p={p} k={k} refused"));
+                assert!(
+                    quad_near(&g, want, p, 6, &mut cc),
+                    "x^{k} n={n} p={p}: {}",
+                    fmt_real(&g)
+                );
+            }
+        }
+    }
+}
