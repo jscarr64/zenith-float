@@ -960,6 +960,8 @@ impl ExactNum {
     /// This function requires constants cache `cc` for computing the result.
     /// Precision is rounded upwards to the word size.
     /// The function returns NaN if the precision `p` is incorrect.
+    /// Base 0 follows `ln x / ln n` with IEEE division by `ln 0 = -Inf`: `-0` for `x >= 1`,
+    /// `+0` for `0 < x < 1`, and NaN for `x <= 0` and `x = +Inf`.
     ///
     /// Accuracy: correctly-rounded
     pub fn log(&self, n: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -986,7 +988,17 @@ impl ExactNum {
                 match &n.inner {
                     Flavor::Value(v2) => {
                         if v2.is_zero() {
-                            return INF_NEG;
+                            // log_0(x) = ln x / ln 0 = ln x / (-Inf) with IEEE division: -0 for
+                            // x >= 1 (ln 1 = +0 gives -0 too), +0 for 0 < x < 1, NaN for x <= 0.
+                            if v1.is_zero() || v1.is_negative() {
+                                return NAN;
+                            }
+                            let ge_one = match ExactNumNumber::from_word(1, WORD_BIT_SIZE) {
+                                Ok(one) => v1.cmp(&one) >= 0,
+                                Err(e) => return Self::nan(Some(e)),
+                            };
+                            let z = Self::new(p);
+                            return if ge_one { z.neg() } else { z };
                         }
                         Self::result_to_ext(
                             ExactNumNumber::exact_bits(p, rm, |q, r| v1.log(v2, q, r, cc)).map(
@@ -1019,8 +1031,10 @@ impl ExactNum {
                 } else {
                     match &n.inner {
                         Flavor::Value(v2) => {
-                            // +inf.log(v2)
-                            if v2.exponent() <= 0 {
+                            // +inf.log(v2); base 0: ln(+Inf) / ln 0 = Inf / -Inf is NaN
+                            if v2.is_zero() {
+                                NAN
+                            } else if v2.exponent() <= 0 {
                                 INF_NEG
                             } else {
                                 INF_POS
