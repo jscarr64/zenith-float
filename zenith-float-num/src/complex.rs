@@ -1042,10 +1042,155 @@ impl ExactComplex {
     /// Implementation of [`Self::pow`] on operands without inexact history.
     fn pow_word(&self, rhs: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let p_x = Self::work_p(p);
+        if let Some(v) = self.pow_int_exact(rhs, p_x) {
+            return v.finish(p, rm);
+        }
+        if let Some(v) = self.pow_real_axis(rhs, p_x, cc) {
+            return v.finish(p, rm);
+        }
         let ln = self.ln(p_x, RoundingMode::None, cc);
         rhs.mul(&ln, p_x, RoundingMode::None)
             .exp(p_x, RoundingMode::None, cc)
             .finish(p, rm)
+    }
+
+    /// `x^y` for a nonzero real-axis base `x ± 0i` and a real exponent `y` (ZF-44/67):
+    /// `|x|^y (cos πt, ±sin πt)` for `x < 0`, `t = y rem 2` exactly, with the side of the cut
+    /// from the sign of the zero imaginary part (C99 `clog`). A part that is exactly zero
+    /// (`t` an integer or half-integer, or `x > 0`) is an exact zero, not the rounding noise of
+    /// `exp(y·ln x)` at `θ = π`.
+    /// `w^n` for an integer `n` when the exact power fits in a few times `p` bits: binary
+    /// powering with exact products, then for `n < 0` one correctly rounded division per part
+    /// by the exact `|w^|n||²` (ZF-44/67). Exact results stay exact (no inexact flag), so a
+    /// Ziv caller can round them in every mode; `(1−z)^{−1}` at `z = (1+i)/2` is `1 + i`.
+    fn pow_int_exact(&self, rhs: &Self, p: usize) -> Option<Self> {
+        let n = RoundingMode::None;
+        if !rhs.im.is_zero() || !rhs.re.is_int() || !finite_val(&self.re) || !finite_val(&self.im) {
+            return None;
+        }
+        if self.re.is_zero() && self.im.is_zero() {
+            return None;
+        }
+        let k = rhs.re.to_i64(RoundingMode::ToZero).ok()?;
+        let mut e = k.unsigned_abs();
+        let limit = p.saturating_mul(4);
+        let width = |z: &Self| {
+            z.re.precision()
+                .unwrap_or(0)
+                .max(z.im.precision().unwrap_or(0))
+        };
+        let mut base = self.clone();
+        let mut acc = Self::one(WORD_BIT_SIZE);
+        while e > 0 {
+            if e & 1 == 1 {
+                let w = width(&acc) + width(&base) + WORD_BIT_SIZE;
+                if w > limit {
+                    return None;
+                }
+                acc = acc.mul(&base, w, n);
+            }
+            e >>= 1;
+            if e > 0 {
+                let w = 2 * width(&base) + WORD_BIT_SIZE;
+                if w > limit {
+                    return None;
+                }
+                base = base.mul(&base, w, n);
+            }
+        }
+        if acc.re.inexact() || acc.im.inexact() {
+            return None;
+        }
+        if k >= 0 {
+            return Some(acc);
+        }
+        let w = 2 * width(&acc) + WORD_BIT_SIZE;
+        if w > limit {
+            return None;
+        }
+        let d = ExactNum::add_ref(
+            &ExactNum::mul_ref(&acc.re, &acc.re, w, n),
+            &ExactNum::mul_ref(&acc.im, &acc.im, w, n),
+            w + 1,
+            n,
+        );
+        let re = ExactNum::div_ref(&acc.re, &d, p, RoundingMode::ToEven);
+        let im = ExactNum::div_ref(&acc.im, &d, p, RoundingMode::ToEven).neg_via_mul();
+        Some(Self::new(re, im))
+    }
+
+    fn pow_real_axis(&self, rhs: &Self, p: usize, cc: &mut Consts) -> Option<Self> {
+        let n = RoundingMode::None;
+        if !rhs.im.is_zero()
+            || !finite_val(&rhs.re)
+            || !finite_val(&self.re)
+            || !finite_val(&self.im)
+        {
+            return None;
+        }
+        let y = &rhs.re;
+        let imag_axis = self.re.is_zero() && !self.im.is_zero();
+        if !imag_axis && (!self.im.is_zero() || self.re.is_zero()) {
+            return None;
+        }
+        let below = self.im.is_negative();
+        let r = if imag_axis { self.im.clone().abs() } else { self.re.clone().abs() };
+        let mag = r.pow(y, p, n, cc);
+        if !finite_val(&mag) {
+            return None;
+        }
+        if !imag_axis && self.re.is_positive() {
+            // Arg = ±0: the imaginary part is a zero signed as sin(y·(±0)).
+            let neg_im = below != y.is_negative() && !y.is_zero();
+            let im = if neg_im { -ExactNum::new(p) } else { ExactNum::new(p) };
+            return Some(Self::new(mag, im));
+        }
+        // Arg/π: ±1/2 on the imaginary axis, 1 on the negative real axis (the sign of the
+        // side is applied to sin below).
+        let yu = if imag_axis {
+            let h = y.clone().ldexp(-1, y.precision().unwrap_or(p) + 2, n);
+            if below {
+                -h
+            } else {
+                h
+            }
+        } else {
+            y.clone()
+        };
+        let t = yu.rem(&ExactNum::from_u8(2, WORD_BIT_SIZE));
+        let two_t = t.clone().ldexp(1, p.max(t.precision().unwrap_or(p)) + 2, n);
+        let (sn, cs) = if two_t.is_int() {
+            // t ∈ {0, ±1/2, ±1, ±3/2}: exact cos πt and sin πt.
+            let k = two_t.to_i64(RoundingMode::ToZero).ok()?.rem_euclid(4);
+            let (one, zero) = (ExactNum::from_u8(1, p), ExactNum::new(p));
+            match k {
+                0 => (zero.clone(), one),
+                1 => (one, zero.clone()),
+                2 => (zero.clone(), -one),
+                _ => (-one, zero.clone()),
+            }
+        } else {
+            let pi = cc.pi(p, n);
+            ExactNum::mul_ref(&pi, &t, p, n).sin_cos(p, n, cc)
+        };
+        let sn = if below && !imag_axis { -sn } else { sn };
+        let up = |pos: bool| if pos { ExactNum::new(p) } else { -ExactNum::new(p) };
+        // On the cut an exact zero part takes the sign of its limit: θ = π − δ above and
+        // −π + δ below, so dθ is −1 above and +1 below; d sin(yθ) = y cos(yθ) dθ and
+        // d cos(yθ) = −y sin(yθ) dθ. Off the cut (imaginary axis) the function is
+        // continuous and an exact zero is +0.
+        let dtheta_pos = below;
+        let re = if cs.is_zero() {
+            up(imag_axis || (y.is_negative() ^ sn.is_negative() ^ !dtheta_pos))
+        } else {
+            ExactNum::mul_ref(&mag, &cs, p, n)
+        };
+        let im = if sn.is_zero() {
+            up(imag_axis || !(y.is_negative() ^ cs.is_negative() ^ !dtheta_pos))
+        } else {
+            ExactNum::mul_ref(&mag, &sn, p, n)
+        };
+        Some(Self::new(re, im))
     }
 
     /// Principal `asin`: `-i ln(i z + √(1 − z²))`.
@@ -1613,4 +1758,8 @@ mod tests {
         assert!(l.im().is_positive());
         Ok(())
     }
+}
+
+fn finite_val(x: &ExactNum) -> bool {
+    !x.is_nan() && !x.is_inf()
 }

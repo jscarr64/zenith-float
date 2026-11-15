@@ -27,6 +27,13 @@ fn rm() -> RoundingMode {
     RoundingMode::None
 }
 
+/// `1 − z` computed as `−(z − 1)`, so a signed zero imaginary part of `z` keeps its side of the
+/// cut: `z = 2 + 0i` (the limit from above) gives `−1 − 0i`, as the limit `1 − (2 + iε)` does.
+/// `ExactComplex::one(p).sub(z, ..)` gives `0 − 0 = +0` for both signs and loses the side.
+fn one_minus(z: &ExactComplex, p: usize) -> ExactComplex {
+    neg_c(ExactComplex::sub_ref(z, &ExactComplex::one(p), p, rm()))
+}
+
 fn is_c_zero(z: &ExactComplex) -> bool {
     z.re().is_zero() && z.im().is_zero()
 }
@@ -239,12 +246,13 @@ fn kummer_z_one(
     }
     let gc = gamma_fixed(c, p, cc);
     let gcab = gamma_fixed(&cab, p, cc);
-    let gca = gamma_fixed(&ExactComplex::sub_ref(c, a, p, rm()), p, cc);
-    let gcb = gamma_fixed(&ExactComplex::sub_ref(c, b, p, rm()), p, cc);
-    if gc.is_nan() || gcab.is_nan() || gca.is_nan() || gcb.is_nan() {
+    if gc.is_nan() || gcab.is_nan() {
         return nan_pair(Error::InvalidArgument);
     }
-    gc.mul(&gcab, p, rm()).div(&gca.mul(&gcb, p, rm()), p, rm())
+    let rgca = rgamma_c(&ExactComplex::sub_ref(c, a, p, rm()), p, cc);
+    let rgcb = rgamma_c(&ExactComplex::sub_ref(c, b, p, rm()), p, cc);
+    gc.mul(&gcab, p, rm())
+        .mul(&rgca.mul(&rgcb, p, rm()), p, rm())
 }
 
 /// \({}_2F_1(1,1;2;z)=-\ln(1-z)/z\).
@@ -255,8 +263,7 @@ fn is_112(a: &ExactComplex, b: &ExactComplex, c: &ExactComplex, p: usize) -> boo
 }
 
 fn f112(z: &ExactComplex, p: usize, cc: &mut Consts) -> ExactComplex {
-    let one = ExactComplex::one(p);
-    let omz = one.sub(z, p, rm());
+    let omz = one_minus(z, p);
     neg_c(omz.ln(p, rm(), cc)).div(z, p, rm())
 }
 
@@ -275,7 +282,7 @@ fn pfaff(
         return nan_pair(Error::InvalidArgument);
     }
     let w = z.div(&zm1, p, rm());
-    let pref = one.sub(z, p, rm()).pow(&a.neg_via_mul(), p, rm(), cc);
+    let pref = one_minus(z, p).pow(&a.neg_via_mul(), p, rm(), cc);
     let cb = ExactComplex::sub_ref(c, b, p, rm());
     pref.mul(&hypergeom_at(a, &cb, c, &w, p, cc, left), p, rm())
 }
@@ -291,31 +298,28 @@ fn transform_1mz(
     left: u32,
 ) -> ExactComplex {
     let one = ExactComplex::one(p);
-    let omz = ExactComplex::one(p).sub(z, p, rm());
+    let omz = one_minus(z, p);
     let cab = ExactComplex::sub_ref(c, a, p, rm()).sub(b, p, rm());
     if is_nonpos_integer(&cab) || is_nonpos_integer(&cab.neg_via_mul()) {
         return nan_pair(Error::InvalidArgument);
     }
     let gc = gamma_fixed(c, p, cc);
     let gcab = gamma_fixed(&cab, p, cc);
-    let gca = gamma_fixed(&ExactComplex::sub_ref(c, a, p, rm()), p, cc);
-    let gcb = gamma_fixed(&ExactComplex::sub_ref(c, b, p, rm()), p, cc);
     let abc = ExactComplex::add_ref(a, b, p, rm()).sub(c, p, rm());
     let gabc = gamma_fixed(&abc, p, cc);
-    let ga = gamma_fixed(a, p, cc);
-    let gb = gamma_fixed(b, p, cc);
-    if gc.is_nan()
-        || gcab.is_nan()
-        || gca.is_nan()
-        || gcb.is_nan()
-        || gabc.is_nan()
-        || ga.is_nan()
-        || gb.is_nan()
-    {
+    if gc.is_nan() || gcab.is_nan() || gabc.is_nan() {
         return nan_pair(Error::InvalidArgument);
     }
-    let a_pref = gc.mul(&gcab, p, rm()).div(&gca.mul(&gcb, p, rm()), p, rm());
-    let b_pref = gc.mul(&gabc, p, rm()).div(&ga.mul(&gb, p, rm()), p, rm());
+    // Denominator Γs as 1/Γ: a pole there (c − a, c − b, a or b a non-positive integer) makes
+    // that term exactly zero, not NaN.
+    let rgca = rgamma_c(&ExactComplex::sub_ref(c, a, p, rm()), p, cc);
+    let rgcb = rgamma_c(&ExactComplex::sub_ref(c, b, p, rm()), p, cc);
+    let rga = rgamma_c(a, p, cc);
+    let rgb = rgamma_c(b, p, cc);
+    let a_pref = gc
+        .mul(&gcab, p, rm())
+        .mul(&rgca.mul(&rgcb, p, rm()), p, rm());
+    let b_pref = gc.mul(&gabc, p, rm()).mul(&rga.mul(&rgb, p, rm()), p, rm());
     let cap1 = ExactComplex::add_ref(a, b, p, rm())
         .sub(c, p, rm())
         .add(&one, p, rm());
@@ -385,7 +389,7 @@ fn log_case_sum(
     cc: &mut Consts,
 ) -> Option<(ExactComplex, Exponent)> {
     let one = ExactComplex::one(p);
-    let w = ExactComplex::one(p).sub(z, p, rm());
+    let w = one_minus(z, p);
     let re = |v: u32| ExactComplex::from_real(ExactNum::from_u32(v, p), p);
     let mf = re(m);
     let gc = c.gamma_at(p, cc);
@@ -490,7 +494,7 @@ fn transform_1mz_log(
 ) -> ExactComplex {
     if m < 0 {
         let one = ExactComplex::one(p);
-        let w = ExactComplex::one(p).sub(z, p, rm());
+        let w = one_minus(z, p);
         let wm = one.div(&powi_c(&w, m.unsigned_abs(), p), p, rm());
         let f = hypergeom_at(
             &ExactComplex::sub_ref(c, a, p, rm()),
@@ -594,17 +598,188 @@ fn inv_term(
     let one = ExactComplex::one(p);
     let gc = gamma_fixed(c, p, cc);
     let gbma = gamma_fixed(&ExactComplex::sub_ref(b, a, p, rm()), p, cc);
-    let gb = gamma_fixed(b, p, cc);
-    let gcma = gamma_fixed(&ExactComplex::sub_ref(c, a, p, rm()), p, cc);
-    if gc.is_nan() || gbma.is_nan() || gb.is_nan() || gcma.is_nan() {
+    if gc.is_nan() || gbma.is_nan() {
         return nan_pair(Error::InvalidArgument);
     }
-    let pref = gc.mul(&gbma, p, rm()).div(&gb.mul(&gcma, p, rm()), p, rm());
+    // 1/Γ(b) and 1/Γ(c − a): zero at a pole (the term vanishes), never NaN.
+    let rgb = rgamma_c(b, p, cc);
+    let rgcma = rgamma_c(&ExactComplex::sub_ref(c, a, p, rm()), p, cc);
+    if is_c_zero(&rgb) || is_c_zero(&rgcma) {
+        return ExactComplex::zero(p);
+    }
+    let pref = gc
+        .mul(&gbma, p, rm())
+        .mul(&rgb.mul(&rgcma, p, rm()), p, rm());
     let pow = mz.pow(&a.neg_via_mul(), p, rm(), cc);
     let ac1 = ExactComplex::sub_ref(a, c, p, rm()).add(&one, p, rm());
     let ab1 = ExactComplex::sub_ref(a, b, p, rm()).add(&one, p, rm());
     pref.mul(&pow, p, rm())
         .mul(&hypergeom_at(a, &ac1, &ab1, inv, p, cc, left), p, rm())
+}
+
+/// `(lo, hi, m)` with `hi = lo + m`, `m` a non-negative integer, if `a − b` is an integer.
+fn int_ab<'x>(
+    a: &'x ExactComplex,
+    b: &'x ExactComplex,
+    p: usize,
+) -> Option<(&'x ExactComplex, &'x ExactComplex, u32)> {
+    let d = as_i32_real_int(&ExactComplex::sub_ref(b, a, p, rm()), p)?;
+    if d >= 0 {
+        Some((a, b, d.unsigned_abs()))
+    } else {
+        Some((b, a, d.unsigned_abs()))
+    }
+}
+
+/// Degenerate \(1/z\) connection, \(b=a+m\) with integer \(m\ge 0\), \(\lvert z\rvert>1\)
+/// (DLMF 15.8.8):
+///
+/// \[\frac{F}{\Gamma(c)}=\frac{(-z)^{-a}}{\Gamma(a+m)}\sum_{k<m}\frac{(a)_k(m-k-1)!}{k!\,\Gamma(c-a-k)}z^{-k}
+///   +\frac{(-z)^{-a}}{\Gamma(a)}\sum_{k\ge0}\frac{(a+m)_k(-1)^k z^{-k-m}}{k!(k+m)!}
+///   \Bigl[\frac{\ln(-z)+\psi(1+m+k)+\psi(1+k)-\psi(a+m+k)}{\Gamma(c-a-m-k)}-\frac{\psi(c-a-m-k)}{\Gamma(c-a-m-k)}\Bigr].\]
+///
+/// At \(x=c-a-m-k=-n\) (a non-positive integer) \(1/\Gamma(x)=0\) and \(\psi(x)/\Gamma(x)=(-1)^{n+1}n!\).
+/// Returns the value and the largest binary exponent among the summed parts; `None` if the
+/// series does not converge within the term cap.
+fn inv_log_sum(
+    a: &ExactComplex,
+    c: &ExactComplex,
+    z: &ExactComplex,
+    m: u32,
+    p: usize,
+    cc: &mut Consts,
+) -> Option<(ExactComplex, Exponent)> {
+    let re = |v: u32| ExactComplex::from_real(ExactNum::from_u32(v, p), p);
+    let one = ExactComplex::one(p);
+    let mz = z.neg_via_mul();
+    let lnmz = mz.ln(p, rm(), cc);
+    let pw = mz.pow(&a.neg_via_mul(), p, rm(), cc);
+    let zinv = one.div(z, p, rm());
+    let am = re(m).add(a, p, rm());
+    let ca = ExactComplex::sub_ref(c, a, p, rm());
+    let mut max_e = Exponent::MIN;
+    let mut total = ExactComplex::zero(p);
+    if m >= 1 {
+        let pref1 = pw.mul(&rgamma_c(&am, p, cc), p, rm());
+        let mut poch = ExactComplex::one(p);
+        let mut rg = rgamma_c(&ca, p, cc);
+        let mut zk = ExactComplex::one(p);
+        let mut s1 = ExactComplex::zero(p);
+        for k in 0..m {
+            let t = poch
+                .mul(&factorial_c(m - k - 1, p), p, rm())
+                .div(&factorial_c(k, p), p, rm())
+                .mul(&rg, p, rm())
+                .mul(&zk, p, rm());
+            max_e = max_e.max(cexp(&t.mul(&pref1, p, rm())));
+            s1 = s1.add(&t, p, rm());
+            poch = poch.mul(&re(k).add(a, p, rm()), p, rm());
+            // 1/Γ(x − 1) = (x − 1)/Γ(x): exact zero once x passes a pole.
+            rg = rg.mul(&ExactComplex::sub_ref(&ca, &re(k + 1), p, rm()), p, rm());
+            zk = zk.mul(&zinv, p, rm());
+        }
+        total = pref1.mul(&s1, p, rm());
+    }
+    let rga = rgamma_c(a, p, cc);
+    if is_c_zero(&rga) {
+        return Some((total, max_e));
+    }
+    let pref2 = pw.mul(&rga, p, rm());
+    // x = c − a − m − k, with r = 1/Γ(x) and q = ψ(x)/Γ(x).
+    let mut x = ExactComplex::sub_ref(&ca, &re(m), p, rm());
+    let mut pole_n: Option<u32> = None;
+    let mut r = rgamma_c(&x, p, cc);
+    let mut psi_x = ExactComplex::zero(p);
+    let mut q;
+    if let Some(n0) = as_i32_real_int(&x, p).filter(|&n| n <= 0) {
+        pole_n = Some(n0.unsigned_abs());
+        q = factorial_c(n0.unsigned_abs(), p);
+        if n0 % 2 == 0 {
+            q = neg_c(q);
+        }
+    } else {
+        psi_x = x.digamma_at(p, cc);
+        q = psi_x.mul(&r, p, rm());
+    }
+    let mut coef = powi_c(&zinv, m, p).div(&factorial_c(m, p), p, rm());
+    let mut psi1m = re(m + 1).digamma_at(p, cc);
+    let mut psi1 = one.digamma_at(p, cc);
+    let mut psiam = am.digamma_at(p, cc);
+    let mzinv = zinv.neg_via_mul();
+    let big = max_abs_param(&[a, c], p) + u64::from(m);
+    let mut sum = ExactComplex::zero(p);
+    for k in 0..HYPERGEOM_SERIES_MAX_TERMS {
+        let bracket = r
+            .mul(
+                &ExactComplex::add_ref(&lnmz, &psi1m, p, rm())
+                    .add(&psi1, p, rm())
+                    .sub(&psiam, p, rm()),
+                p,
+                rm(),
+            )
+            .sub(&q, p, rm());
+        let term = coef.mul(&bracket, p, rm());
+        sum = sum.add(&term, p, rm());
+        max_e = max_e.max(cexp(&term.mul(&pref2, p, rm())));
+        if u64::from(k) > big && term_small_rel(&term, &sum, p) {
+            let v = total.add(&pref2.mul(&sum, p, rm()), p, rm());
+            return Some((v, max_e));
+        }
+        let amk = re(k).add(&am, p, rm());
+        coef = coef
+            .mul(&amk, p, rm())
+            .div(&re(k + 1).mul(&re(k + m + 1), p, rm()), p, rm())
+            .mul(&mzinv, p, rm());
+        psi1m = psi1m.add(&one.div(&re(m + k + 1), p, rm()), p, rm());
+        psi1 = psi1.add(&one.div(&re(k + 1), p, rm()), p, rm());
+        psiam = psiam.add(&one.div(&amk, p, rm()), p, rm());
+        let xm1 = ExactComplex::sub_ref(&x, &one, p, rm());
+        match pole_n {
+            Some(n) => {
+                // ψ(−n−1)/Γ(−n−1) = −(n+1)·ψ(−n)/Γ(−n).
+                q = neg_c(q.mul(&re(n + 1), p, rm()));
+                pole_n = Some(n + 1);
+            }
+            None if is_c_zero(&xm1) => {
+                // x = 1 → 0: 1/Γ(0) = 0, ψ(0)/Γ(0) = −1.
+                r = ExactComplex::zero(p);
+                q = neg_c(ExactComplex::one(p));
+                pole_n = Some(0);
+            }
+            None => {
+                psi_x = psi_x.sub(&one.div(&xm1, p, rm()), p, rm());
+                r = r.mul(&xm1, p, rm());
+                q = psi_x.mul(&r, p, rm());
+            }
+        }
+        x = xm1;
+    }
+    None
+}
+
+/// [`inv_log_sum`] times \(\Gamma(c)\), re-evaluated with the bits lost to cancellation.
+fn transform_inv_log(
+    a: &ExactComplex,
+    c: &ExactComplex,
+    z: &ExactComplex,
+    m: u32,
+    p: usize,
+    cc: &mut Consts,
+) -> ExactComplex {
+    let mut pw = p + 32;
+    for _ in 0..3 {
+        let Some((v, max_e)) = inv_log_sum(a, c, z, m, pw, cc) else {
+            return nan_pair(Error::InvalidArgument);
+        };
+        let ve = cexp(&v);
+        let lost = if ve == Exponent::MIN { 0 } else { max_e.saturating_sub(ve).max(0) as usize };
+        if ve == Exponent::MIN || lost + 16 <= pw - p {
+            let gc = gamma_fixed(c, pw, cc);
+            return gc.mul(&v, pw, rm());
+        }
+        pw = p + lost + 48;
+    }
+    nan_pair(Error::PrecisionRetryExhausted)
 }
 
 fn hypergeom_at(
@@ -633,6 +808,13 @@ fn hypergeom_at(
     }
     if terminating_neg_int(a, p) || terminating_neg_int(b, p) {
         return hypergeom_series(a, b, c, z, p);
+    }
+    // c = b: F(a, b; b; z) = (1 − z)^(−a) on the whole cut plane (and c = a likewise).
+    if c_eq(c, b) {
+        return one_minus(z, p).pow(&a.neg_via_mul(), p, rm(), cc);
+    }
+    if c_eq(c, a) {
+        return one_minus(z, p).pow(&b.neg_via_mul(), p, rm(), cc);
     }
     // Integer c − a − b near z = 1: the direct series converges too slowly (or not at all for
     // |z| ≥ 1) and the generic 1 − z transform is singular, so use the logarithmic connection.
@@ -674,7 +856,12 @@ fn hypergeom_at(
         return transform_1mz_guarded(a, b, c, z, p, cc, next);
     }
     let inv = one.div(z, p, rm());
-    if abs_lt_one(&inv, p) && !c_eq(a, b) {
+    if abs_lt_one(&inv, p) {
+        // Integer a − b: the two 1/z terms have Γ(b − a) and Γ(a − b) poles; use the
+        // logarithmic connection.
+        if let Some((lo, _hi, m)) = int_ab(a, b, p) {
+            return transform_inv_log(lo, c, z, m, p, cc);
+        }
         return transform_inv(a, b, c, z, p, cc, next);
     }
     if !is_c_zero(&zm1) {
@@ -684,6 +871,36 @@ fn hypergeom_at(
         }
     }
     nan_pair(Error::InvalidArgument)
+}
+
+/// `z = 1` with real `a, b, c`, `c − a − b ≤ 0` and a non-terminating series: the sum diverges,
+/// `F → ±∞` as `z → 1⁻` (DLMF 15.4(ii)): the sign of `Γ(c)Γ(a+b−c)/(Γ(a)Γ(b))` for `c − a − b < 0`,
+/// of `Γ(c)/(Γ(a)Γ(b))` for `c − a − b = 0` (`F ~ −Γ(c)/(Γ(a)Γ(b))·ln(1 − z)`). Imaginary part +0.
+fn divergent_at_one(
+    a: &ExactComplex,
+    b: &ExactComplex,
+    c: &ExactComplex,
+    z: &ExactComplex,
+    p: usize,
+    cc: &mut Consts,
+) -> Option<ExactComplex> {
+    if !is_c_one(z, p)
+        || !a.im().is_zero()
+        || !b.im().is_zero()
+        || !c.im().is_zero()
+        || terminating_neg_int(a, p)
+        || terminating_neg_int(b, p)
+    {
+        return None;
+    }
+    let cab = ExactNum::sub_ref(c.re(), a.re(), p, rm()).sub(b.re(), p, rm());
+    if cab.is_positive() && !cab.is_zero() {
+        return None;
+    }
+    let neg = |x: &ExactNum, cc: &mut Consts| x.gamma(64, rm(), cc).is_negative();
+    let flip = neg(c.re(), cc) ^ neg(a.re(), cc) ^ neg(b.re(), cc);
+    let inf = if flip { crate::INF_NEG } else { crate::INF_POS };
+    Some(ExactComplex::new(inf, ExactNum::new(p)))
 }
 
 impl ExactComplex {
@@ -745,6 +962,9 @@ impl ExactComplex {
             if !r.is_nan() {
                 return ExactComplex::new(r, ExactNum::new(dest));
             }
+        }
+        if let Some(inf) = divergent_at_one(self, b, c, z, dest, cc) {
+            return inf;
         }
         ziv_complex(dest, rm, |pw| {
             hypergeom_at(self, b, c, z, pw, cc, HYPERGEOM_TRANSFORM_MAX)
