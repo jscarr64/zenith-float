@@ -622,3 +622,36 @@ fn zf_71_powsi_huge_negative_exponent_underflows_by_mode() {
     let v = ExactNum::from_i64(2, 64).powsi(-(1i64 << 61), 64, RoundingMode::ToEven);
     assert_eq!(v.exponent(), Some(1 - (1i64 << 61)), "{}", fmt_real(&v));
 }
+
+/// ZF-06: format(±MAX) is a finite numeral in every mode and radix, never "Inf": a directed mode that rounds the
+/// decimal past MAX gets the other spelling, and the text parses back to ±MAX in the same mode and in ToEven.
+#[test]
+fn zf_06_format_max_is_finite_and_round_trips() {
+    let mut cc = Consts::new().expect("Consts");
+    for p in [64usize, 128, 256, 1024, 2048] {
+        for neg in [false, true] {
+            let mut x = ExactNum::max_value(p);
+            if neg {
+                x.set_sign(Sign::Neg);
+            }
+            for rdx in [Radix::Bin, Radix::Oct, Radix::Dec, Radix::Hex] {
+                for rm in MODES {
+                    let s = x.format(rdx, rm, &mut cc).expect("format");
+                    assert!(
+                        !s.contains("Inf") && s != "Err",
+                        "p={p} neg={neg} {rdx:?} {rm:?}: {s}"
+                    );
+                    for prm in [rm, RoundingMode::ToEven] {
+                        let y = ExactNum::parse(&s, rdx, p, prm, &mut cc);
+                        assert_eq!(
+                            y.compare(&x),
+                            Some(0),
+                            "p={p} {rdx:?} {rm:?} parse {prm:?} {s}: {}",
+                            fmt_real(&y)
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

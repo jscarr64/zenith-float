@@ -153,7 +153,10 @@ impl ExactNumNumber {
             return Ok(false);
         }
         let (digits, sign, exp) = ps.raw_parts();
-        let back = Self::convert_from_radix(
+        // A directed spelling of ±MAX lies past MAX, so it parses in `rm` to an
+        // overflow: that text does not round-trip, and the next attempt rounds the
+        // decimal back inside the range.
+        let back = match Self::convert_from_radix(
             sign,
             digits,
             exp,
@@ -161,7 +164,11 @@ impl ExactNumNumber {
             self.mantissa_max_bit_len(),
             rm,
             cc,
-        )?;
+        ) {
+            Ok(back) => back,
+            Err(Error::ExponentOverflow(_)) => return Ok(false),
+            Err(e) => return Err(e),
+        };
         Ok(self.cmp(&back) == 0 && self.sign() == back.sign())
     }
 
