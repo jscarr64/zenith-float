@@ -25,7 +25,7 @@ impl ExactNumNumber {
     /// Reduce `self` to interval (-2*pi; 2*pi)
     pub(crate) fn reduce_trig_arg(self, cc: &mut Consts, rm: RoundingMode) -> Result<Self, Error> {
         if self.exponent() > 2 {
-            let extra = trig_reduce_extra(self.exponent());
+            let extra = trig_reduce_extra(self.exponent())?;
             let mut pi = cc.pi_num(self.mantissa_max_bit_len().saturating_add(extra), rm)?;
 
             pi.set_exponent(pi.exponent() + 1);
@@ -88,22 +88,33 @@ macro_rules! compute_small_exp {
 
 pub(super) use compute_small_exp;
 
-/// Extra bits of pi for reducing an argument with exponent `e` (`e > 2`), capped at 2^16.
-fn trig_reduce_extra(e: crate::Exponent) -> usize {
-    // `e > 2`; an exponent past `usize` saturates to the cap instead of truncating on 32-bit.
-    usize::try_from(e).map_or(1 << 16, |x| x.min(1 << 16))
+/// Largest argument exponent the trig reduction carries in π (2^22 extra bits of π, about
+/// 4 million). Beyond it the reduction returns `PrecisionRetryExhausted` instead of a value.
+pub(crate) const TRIG_REDUCE_EXP_MAX: usize = 1 << 22;
+
+/// Extra bits of pi for reducing an argument with exponent `e` (`e > 2`): `e` bits, so the
+/// remainder keeps every bit of the argument's precision. A 2^16 cap here left arguments
+/// past 2^65536 with no correct bits.
+fn trig_reduce_extra(e: crate::Exponent) -> Result<usize, Error> {
+    match usize::try_from(e) {
+        Ok(x) if x <= TRIG_REDUCE_EXP_MAX => Ok(x),
+        _ => Err(Error::PrecisionRetryExhausted),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::trig_reduce_extra;
 
-    /// An exponent past `u32` must hit the 2^16 cap; a 32-bit `usize` truncation would give 5.
+    /// The extra bits follow the exponent up to the documented maximum; past it (including an
+    /// exponent past `u32`, where a 32-bit `usize` truncation would give 5) the reduction refuses.
     #[test]
     fn trig_reduce_extra_exponent_beyond_u32() {
-        assert_eq!(trig_reduce_extra((1i64 << 32) + 5), 1 << 16);
-        assert_eq!(trig_reduce_extra(3), 3);
-        assert_eq!(trig_reduce_extra(1i64 << 16), 1 << 16);
-        assert_eq!(trig_reduce_extra(crate::EXPONENT_MAX), 1 << 16);
+        let refused = Err(crate::Error::PrecisionRetryExhausted);
+        assert_eq!(trig_reduce_extra((1i64 << 32) + 5), refused);
+        assert_eq!(trig_reduce_extra(3), Ok(3));
+        assert_eq!(trig_reduce_extra(1i64 << 16), Ok(1 << 16));
+        assert_eq!(trig_reduce_extra(100_000), Ok(100_000));
+        assert_eq!(trig_reduce_extra(crate::EXPONENT_MAX), refused);
     }
 }

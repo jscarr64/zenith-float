@@ -289,9 +289,11 @@ fn ln_glaisher(p: usize, cc: &mut Consts) -> ExactNum {
 }
 
 fn reduce_clausen_angle(theta: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
+    // Use the same exponent-aware π reduction as sin/cos; a p-bit 2π loses all bits of the
+    // remainder when the argument's exponent is much larger than p.
+    let mut t = theta.rem_pi(p, RoundingMode::None, cc);
     let pi = cc.pi(p, RoundingMode::None);
     let two_pi = ExactNum::from_u8(2, p).mul(&pi, p, RoundingMode::None);
-    let mut t = theta.rem(&two_pi);
     if matches!(t.compare(&pi), Some(c) if c > 0) {
         t = t.sub(&two_pi, p, RoundingMode::None);
     } else if matches!(t.compare(&pi.neg()), Some(c) if c < 0) {
