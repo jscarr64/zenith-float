@@ -1477,3 +1477,91 @@ fn zf_73_hypergeom_0f1_1f1_large_arguments() {
         }
     }
 }
+
+/// ZF-51: integrate_adaptive_gk reported Ok when two successive Wynn ε values agreed,
+/// although the estimate missed the requested tolerance by up to 10^100. Harper's
+/// rows: an Ok result must now lie within its own abs_err_est of the truth, and that
+/// bound must meet the requested tolerance. Otherwise the call must be NotConverged.
+/// References: FLINT arb at 1400 bits.
+#[test]
+fn zf_51_gk_adapt_success_meets_tolerance() {
+    use zenith_float::{integrate_adaptive_gk, QuadratureError};
+    let mut cc = Consts::new().expect("Consts");
+    let e1 = "1.71828182845904523536028747135266249775724709369995957496696762772407663035354759457138217852516642742746639193200305992181741359662904357290033429526059563073813232862794349076323382988075319525101901157383418793070215408914993488416750924476146066808226480016847741185374234544243710753907774499206955170276183860626133138458300";
+    let s50 = "-0.00524749707407857571828787293825245091773331929942477045887871184828917905179901503577847382570704739317198027405306417222213647304310017250348792583103888631908764942515594820929406369254832813980963530228047177295338223389756335547195140623093431833416637568940168458545776033945301316421969951103154288667798249064536349136985842";
+    let rows: &[(u32, usize, i64, usize, &str)] = &[
+        (3, 256, -128, 8, "0.6666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666666667"),
+        (3, 256, -128, 32, ""),
+        (8, 256, -128, 32, ""),
+        (0, 1024, -512, 32, ""),
+        (3, 1024, -512, 8, ""),
+        (3, 1024, -512, 32, ""),
+        (8, 1024, -512, 32, ""),
+        (0, 64, -50, 8, ""),
+    ];
+    let mut ok = 0;
+    for &(id, p, tl, maxsub, _) in rows {
+        let want = match id {
+            0 => e1,
+            8 => s50,
+            _ => rows[0].4,
+        };
+        let rm = RoundingMode::ToEven;
+        let a = ExactNum::new(p);
+        let b = ExactNum::from_u8(1, p);
+        let tol = ExactNum::from_u8(1, p).ldexp(tl, p, rm);
+        match integrate_adaptive_gk(
+            |x, q, r, c| harper_integrand(id, x, q, r, c),
+            &a,
+            &b,
+            &tol,
+            maxsub,
+            p,
+            rm,
+            &mut cc,
+        ) {
+            Ok(g) => {
+                ok += 1;
+                let w = ExactNum::parse(want, Radix::Dec, 1152, rm, &mut cc);
+                let d = ExactNum::sub_ref(&g.estimate_kronrod, &w, 1152, rm).abs();
+                assert!(
+                    matches!(d.compare(&g.abs_err_est), Some(o) if o <= 0),
+                    "f{id} p={p} n={maxsub}: error above abs_err_est"
+                );
+                let lim = tol.clone().mul(&w.abs(), 1152, RoundingMode::Up);
+                let floor = ExactNum::from_u8(1, p).ldexp(1 - p as i64, p, rm);
+                assert!(
+                    matches!(d.compare(&lim), Some(o) if o <= 0)
+                        || matches!(d.compare(&floor), Some(o) if o <= 0),
+                    "f{id} p={p} n={maxsub}: Ok but error misses tolerance 2^{tl}"
+                );
+            }
+            Err(QuadratureError::NotConverged) => {}
+            Err(e) => panic!("f{id} p={p}: {e:?}"),
+        }
+    }
+    assert!(ok >= 1, "smooth p=64 control must still converge");
+    // The _estimate form keeps the extrapolated value: within its own bound, flagged unmet.
+    use zenith_float::integrate_adaptive_gk_estimate;
+    let p = 256;
+    let rm = RoundingMode::ToEven;
+    let tol = ExactNum::from_u8(1, p).ldexp(-128, p, rm);
+    let (g, met) = integrate_adaptive_gk_estimate(
+        |x, q, r, c| harper_integrand(3, x, q, r, c),
+        &ExactNum::new(p),
+        &ExactNum::from_u8(1, p),
+        &tol,
+        8,
+        p,
+        rm,
+        &mut cc,
+    )
+    .expect("estimate");
+    assert!(!met, "f3 8 panels cannot meet 2^-128");
+    let w = ExactNum::parse(rows[0].4, Radix::Dec, 1152, rm, &mut cc);
+    let d = ExactNum::sub_ref(&g.estimate_kronrod, &w, 1152, rm).abs();
+    assert!(
+        matches!(d.compare(&g.abs_err_est), Some(o) if o <= 0),
+        "estimate outside its bound"
+    );
+}

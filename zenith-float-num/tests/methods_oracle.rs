@@ -15,8 +15,9 @@
 use std::ops::Neg;
 use zenith_float_num::{
     euler, gauss_hermite, gauss_kronrod_interval, gauss_laguerre, gauss_legendre,
-    integrate_adaptive_gk, integrate_adaptive_gk_infinite, rk4, rk45_adaptive, tanh_sinh,
-    wynn_epsilon, Ball, Consts, ExactNum, QuadratureError, Radix, RoundingMode,
+    integrate_adaptive_gk, integrate_adaptive_gk_estimate, integrate_adaptive_gk_infinite,
+    integrate_adaptive_gk_infinite_estimate, rk4, rk45_adaptive, tanh_sinh, wynn_epsilon, Ball,
+    Consts, ExactNum, QuadratureError, Radix, RoundingMode,
 };
 
 /// `|x|` for an operand that stays borrowed: fresh `±1` times `x` at `x`'s own precision.
@@ -185,7 +186,9 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
             let b = parse_at(row["b"].as_str().unwrap_or("1"), p, rm, &mut cc);
             let tol = parse_at(row["tol"].as_str().unwrap_or("1e-6"), p, rm, &mut cc);
             let panels = row.get("panels").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
-            let got = integrate_adaptive_gk(
+            // ZF-51: the value and its bound come from the _estimate form; the strict
+            // form returns Ok only when that bound meets the tolerance.
+            let (got, met) = integrate_adaptive_gk_estimate(
                 |x, p, rm, cc| sample(integ, x, p, rm, cc),
                 &a,
                 &b,
@@ -196,6 +199,22 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
                 &mut cc,
             )
             .map_err(|e| format!("{e:?}"))?;
+            let strict = integrate_adaptive_gk(
+                |x, p, rm, cc| sample(integ, x, p, rm, cc),
+                &a,
+                &b,
+                &tol,
+                panels,
+                p,
+                rm,
+                &mut cc,
+            );
+            if strict.is_ok() != met {
+                return Err(format!(
+                    "strict Ok={} but tolerance_met={met}",
+                    strict.is_ok()
+                ));
+            }
             (got.estimate_kronrod, got.abs_err_est)
         }
         "gk_infinite" => {
@@ -203,7 +222,7 @@ fn run_quad(row: &serde_json::Value) -> Result<(), String> {
             let b = parse_at(row["b"].as_str().unwrap_or("inf"), p, rm, &mut cc);
             let tol = parse_at(row["tol"].as_str().unwrap_or("1e-6"), p, rm, &mut cc);
             let panels = row.get("panels").and_then(|v| v.as_u64()).unwrap_or(8) as usize;
-            let got = integrate_adaptive_gk_infinite(
+            let (got, _met) = integrate_adaptive_gk_infinite_estimate(
                 |x, p, rm, cc| sample(integ, x, p, rm, cc),
                 &a,
                 &b,

@@ -5,7 +5,7 @@
 //! also be covered: `|true − estimate| ≤ abs_err_est` and the estimate within
 //! `1e-6 · max(|true|, 1)`. Settings match the `gk-eps-*` rows in quad.jsonl.
 
-use zenith_float_num::{integrate_adaptive_gk, Consts, ExactNum, Radix, RoundingMode};
+use zenith_float_num::{integrate_adaptive_gk_estimate, Consts, ExactNum, Radix, RoundingMode};
 
 const WIDTH: usize = 1088;
 
@@ -83,7 +83,8 @@ fn gk_eps_candidates() -> Result<(), Box<dyn std::error::Error>> {
         for (name, truth_text) in CASES {
             let truth =
                 ExactNum::parse(truth_text, Radix::Dec, WIDTH, RoundingMode::ToEven, &mut cc);
-            let got = integrate_adaptive_gk(
+            // ZF-51: Wynn acceptance is an estimate (tolerance flag false), not Ok.
+            let got = integrate_adaptive_gk_estimate(
                 |x, wp, wrm, cc| eval(name, x, wp, wrm, cc),
                 &a,
                 &b,
@@ -92,7 +93,8 @@ fn gk_eps_candidates() -> Result<(), Box<dyn std::error::Error>> {
                 p,
                 rm,
                 &mut cc,
-            );
+            )
+            .map(|(r, _met)| r);
             let chosen = CHOSEN.contains(&name);
             match got {
                 Ok(r) => {

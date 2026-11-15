@@ -5,8 +5,8 @@
 //! (`e - 1`, `2`, `2/3`). SymPy is not an oracle.
 
 use zenith_float_num::{
-    gauss_kronrod_interval, gauss_legendre, integrate_adaptive_gk, Consts, ExactNum,
-    QuadratureError, Radix, RoundingMode,
+    gauss_kronrod_interval, gauss_legendre, integrate_adaptive_gk, integrate_adaptive_gk_estimate,
+    Consts, ExactNum, QuadratureError, Radix, RoundingMode,
 };
 
 const RM: RoundingMode = RoundingMode::ToEven;
@@ -89,7 +89,7 @@ fn gk_mild_endpoint_sqrt_matches_two_thirds() -> Result<(), Box<dyn std::error::
     let a = ExactNum::from_u8(0, P);
     let b = ExactNum::from_u8(1, P);
     let rel = tol(40);
-    let got = integrate_adaptive_gk(
+    let got = integrate_adaptive_gk_estimate(
         |x, p, rm, _cc| x.sqrt(p, rm),
         &a,
         &b,
@@ -98,7 +98,8 @@ fn gk_mild_endpoint_sqrt_matches_two_thirds() -> Result<(), Box<dyn std::error::
         P,
         RM,
         &mut cc,
-    )?;
+    )?
+    .0;
     check(
         "int_0^1 sqrt(x)",
         &got.estimate_kronrod,
@@ -129,7 +130,7 @@ fn gk_epsilon_beats_plain_gauss_on_invsqrt() -> Result<(), Box<dyn std::error::E
     )
     .ok_or("none value")?;
     let rel = tol(40);
-    let adaptive = integrate_adaptive_gk(
+    let adaptive = integrate_adaptive_gk_estimate(
         |x, p, rm, _cc| x.sqrt(p, rm).reciprocal(p, rm),
         &a,
         &b,
@@ -138,7 +139,8 @@ fn gk_epsilon_beats_plain_gauss_on_invsqrt() -> Result<(), Box<dyn std::error::E
         P,
         RM,
         &mut cc,
-    )?;
+    )?
+    .0;
     let two = parse("2", 4 * P, &mut cc);
     let plain_bits = bits(&plain, &two, P);
     let adapt_bits = bits(&adaptive.estimate_kronrod, &two, P);

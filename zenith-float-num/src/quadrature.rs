@@ -9,7 +9,9 @@
 
 pub use crate::gauss_kronrod::gauss_kronrod_interval;
 pub use crate::gauss_kronrod::integrate_adaptive_gk;
+pub use crate::gauss_kronrod::integrate_adaptive_gk_estimate;
 pub use crate::gauss_kronrod::integrate_adaptive_gk_infinite;
+pub use crate::gauss_kronrod::integrate_adaptive_gk_infinite_estimate;
 pub use crate::gauss_kronrod::kronrod_pair;
 pub use crate::gauss_kronrod::wynn_epsilon;
 pub use crate::gauss_kronrod::GkResult;
