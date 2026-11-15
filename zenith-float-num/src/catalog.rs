@@ -1194,6 +1194,24 @@ impl ExactNum {
             return cat_nan();
         }
         let wrk = work_p(p);
+        // Zeros at every non-positive integer, however large.
+        if self.is_int() && (self.is_zero() || self.is_negative()) {
+            return finish(ExactNum::new(wrk), p, rm);
+        }
+        // Tiny |z|: G(z) = z + c z² + O(z³), c = γ + (ln 2π − 1)/2 > 0; exp(ln G) would underflow.
+        // The z² term is formed rounding up so that, when it is below z's last bit, it still
+        // moves the sum above z for the directed modes (G(z) > z for every real z ≠ 0 here).
+        if matches!(self.exponent(), Some(e) if e < -((p / 2) as crate::defs::Exponent) - 4) {
+            let up = RoundingMode::Up;
+            let two_pi = ExactNum::from_u8(2, wrk).mul(&cc.pi(wrk, RoundingMode::None), wrk, RoundingMode::None);
+            let half_ln = two_pi
+                .ln(wrk, RoundingMode::None, cc)
+                .sub(&ExactNum::from_u8(1, wrk), wrk, RoundingMode::None)
+                .ldexp(-1, wrk, RoundingMode::None);
+            let c = cc.euler_gamma(wrk, RoundingMode::None).add(&half_ln, wrk, RoundingMode::None);
+            let z2c = self.sqr(wrk, up).mul(&c, wrk, up);
+            return finish(ExactNum::add_ref(self, &z2c, wrk, up), p, rm);
+        }
         if let Some(n) = small_int(self, wrk, -64, 64) {
             if n <= 0 {
                 return finish(ExactNum::new(wrk), p, rm);
