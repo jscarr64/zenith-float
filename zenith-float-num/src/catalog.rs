@@ -1740,7 +1740,7 @@ impl ExactNum {
 
     /// Principal Lambert \(W_0(\mathrm{self})\). Domain \([-1/e,\infty)\).
     ///
-    /// Accuracy: unspecified
+    /// Accuracy: correctly-rounded
     pub fn lambert_w0(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
@@ -1755,7 +1755,7 @@ impl ExactNum {
 
     /// Lambert \(W_{-1}(\mathrm{self})\). Domain \([-1/e,0)\).
     ///
-    /// Accuracy: unspecified
+    /// Accuracy: correctly-rounded
     pub fn lambert_wm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
@@ -1769,85 +1769,7 @@ impl ExactNum {
     }
 
     fn lambert_w_branch(&self, minus1: bool, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !finite(self) {
-            return cat_nan();
-        }
-        let wrk = work_p(p);
-        let e = ExactNum::from_u8(1, wrk).exp(wrk, RoundingMode::None, cc);
-        let inv_e = ExactNum::from_u8(1, wrk)
-            .div(&e, wrk, RoundingMode::None)
-            .neg();
-        let gap = ExactNum::sub_ref(self, &inv_e, wrk, RoundingMode::None);
-        if gap.exponent().is_some_and(|e| e + ((p as i64) / 2) < 0)
-            || self.compare(&inv_e) == Some(0)
-        {
-            return finish(ExactNum::from_i8(-1, wrk), p, rm);
-        }
-        if matches!(self.compare(&inv_e), Some(c) if c < 0) {
-            return cat_nan();
-        }
-        if minus1 && (!self.is_negative() || self.is_zero()) {
-            return cat_nan();
-        }
-        if self.is_zero() {
-            return finish(ExactNum::new(wrk), p, rm);
-        }
-        let mut w = if minus1 {
-            let two = ExactNum::from_u8(2, wrk);
-            let d = two
-                .mul(&e, wrk, RoundingMode::None)
-                .mul(
-                    &inv_e.neg().add(self, wrk, RoundingMode::None),
-                    wrk,
-                    RoundingMode::None,
-                )
-                .sqrt(wrk, RoundingMode::None);
-            ExactNum::from_i8(-1, wrk).sub(&d, wrk, RoundingMode::None)
-        } else if matches!(self.compare(&ExactNum::from_u8(1, wrk)), Some(c) if c > 0) {
-            let l = self.ln(wrk, RoundingMode::None, cc);
-            l.ln(wrk, RoundingMode::None, cc)
-                .neg()
-                .add(&l, wrk, RoundingMode::None)
-        } else {
-            self.clone()
-        };
-        for _ in 0..(8 + p / 16) {
-            let ew = w.exp(wrk, RoundingMode::None, cc);
-            let wew = ExactNum::mul_ref(&w, &ew, wrk, RoundingMode::None);
-            let num = wew.sub(self, wrk, RoundingMode::None);
-            let den = ew
-                .mul(
-                    &ExactNum::from_u8(1, wrk).add(&w, wrk, RoundingMode::None),
-                    wrk,
-                    RoundingMode::None,
-                )
-                .sub(
-                    &ExactNum::from_u8(2, wrk)
-                        .add(&w, wrk, RoundingMode::None)
-                        .mul(&num, wrk, RoundingMode::None)
-                        .div(
-                            &ExactNum::from_u8(2, wrk).mul(
-                                &ExactNum::from_u8(1, wrk).add(&w, wrk, RoundingMode::None),
-                                wrk,
-                                RoundingMode::None,
-                            ),
-                            wrk,
-                            RoundingMode::None,
-                        ),
-                    wrk,
-                    RoundingMode::None,
-                );
-            let nxt = num
-                .div(&den, wrk, RoundingMode::None)
-                .neg()
-                .add(&w, wrk, RoundingMode::None);
-            let err = w.neg().add(&nxt, wrk, RoundingMode::None).abs();
-            w = nxt;
-            if under_word(&err, p) {
-                break;
-            }
-        }
-        finish(w, p, rm)
+        self.lambert_w_word(minus1, p, rm, cc)
     }
 
     /// Polylogarithm \(\mathrm{Li}_n(\mathrm{self})\) for integer \(n\ge 2\) and \(\lvert x\rvert\le 1\).
@@ -2034,9 +1956,10 @@ mod tests {
 
         let w0 = zero.lambert_w0(p, rm, &mut cc);
         assert!(w0.is_zero() || near(&w0, &zero, p));
+        // −1/e rounded toward zero stays inside the domain (a value below −1/e is NaN).
         let inv_e = ExactNum::from_u8(1, p)
-            .exp(p, rm, &mut cc)
-            .reciprocal(p, rm)
+            .exp(p, RoundingMode::Up, &mut cc)
+            .reciprocal(p, RoundingMode::ToZero)
             .neg();
         let wm = inv_e.lambert_w0(p, rm, &mut cc);
         assert!(near(&wm, &ExactNum::from_i8(-1, p), p));

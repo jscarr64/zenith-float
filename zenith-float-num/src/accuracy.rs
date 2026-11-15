@@ -247,8 +247,8 @@ pub const ACCURACY: &[(&str, Accuracy)] = &[
         "ExactNum::laguerre",
         Accuracy::WorkingPrecision { lost_bits: 32 },
     ),
-    ("ExactNum::lambert_w0", Accuracy::Unspecified),
-    ("ExactNum::lambert_wm1", Accuracy::Unspecified),
+    ("ExactNum::lambert_w0", Accuracy::CorrectlyRounded),
+    ("ExactNum::lambert_wm1", Accuracy::CorrectlyRounded),
     ("ExactNum::ldexp", Accuracy::CorrectlyRounded),
     (
         "ExactNum::legendre_p",

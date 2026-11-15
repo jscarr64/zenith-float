@@ -3521,6 +3521,24 @@ Accuracy: correctly-rounded",
         )
     }
 
+    /// Correctly rounded Lambert W dispatch for [`Self::lambert_w0`] / [`Self::lambert_wm1`].
+    pub(crate) fn lambert_w_word(
+        &self,
+        minus1: bool,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        match &self.inner {
+            Flavor::Value(v) => {
+                Self::result_to_ext_rm(v.lambert_w(minus1, p, rm, cc), v.is_zero(), true, p, rm)
+            }
+            Flavor::Inf(sign) if !minus1 && sign.is_positive() => INF_POS,
+            Flavor::NaN(err) => Self::nan(*err),
+            Flavor::Inf(_) => NAN,
+        }
+    }
+
     /// Word-precision implementation of [`Self::gammainc_upper`].
     fn gammainc_upper_word(&self, x: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &x.inner) {

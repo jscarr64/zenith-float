@@ -379,7 +379,7 @@ fn accuracy_labels_cover_public_numeric_functions() -> Result<(), Box<dyn std::e
     );
     assert_eq!(
         accuracy_of("ExactNum::lambert_w0"),
-        Some(Accuracy::Unspecified)
+        Some(Accuracy::CorrectlyRounded)
     );
     assert_eq!(
         accuracy_of("ExactNum::hermite_h"),

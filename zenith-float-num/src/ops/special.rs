@@ -1105,6 +1105,70 @@ impl ExactNumNumber {
         })
     }
 
+    /// Lambert `W₀(self)` (`minus1 = false`, `self ≥ −1/e`) or `W₋₁(self)` (`minus1 = true`,
+    /// `−1/e ≤ self < 0`), correctly rounded (ZF-31).
+    ///
+    /// Newton on `w e^w = x`, or on `w + ln|w| = ln|x|` away from the branch point and the
+    /// origin (no overflow or underflow of `e^w` for huge `|w|`), then a rigorous bracket: the
+    /// equation is monotone on each branch, so opposite signs at `w ± δ` (each sign certified
+    /// against a bound on its own rounding error) put `W` within `δ` and Ziv rounds. Near
+    /// `−1/e` the working precision grows by `log2(1/|1 + w|)`. Dyadic `x ≠ 0` never gives a
+    /// dyadic `W` (`e^w` is transcendental for dyadic `w ≠ 0`), so only `W(0) = 0` is exact.
+    pub fn lambert_w(
+        &self,
+        minus1: bool,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
+        if self.is_zero() {
+            if minus1 {
+                return Err(Error::InvalidArgument);
+            }
+            return Self::new2(p, self.sign(), self.inexact());
+        }
+        if minus1 && self.is_positive() {
+            return Err(Error::InvalidArgument);
+        }
+        let mut x = self.clone()?;
+        x.set_inexact(false);
+        // Domain: 1 + e x >= 0. x is dyadic and −1/e is not, so the sign is never 0; widen e
+        // until the sign of 1 + e x is certain.
+        let one = Self::from_word(1, WORD_BIT_SIZE)?;
+        if x.is_negative() {
+            let mut pp = round_p(p.max(x.mantissa_max_bit_len()) + 2 * WORD_BIT_SIZE);
+            loop {
+                let e = cc.e_num(pp, RoundingMode::None)?;
+                let t = one.add(&e.mul(&x, pp, RoundingMode::None)?, pp, RoundingMode::None)?;
+                // |error| <= 2^(2 - pp) (e and the product each within 2^-pp relative, |e x| < 2)
+                if !t.is_zero() && t.exponent() > 3 - pp as Exponent {
+                    if t.is_negative() {
+                        return Err(Error::InvalidArgument);
+                    }
+                    break;
+                }
+                pp = pp.checked_mul(2).ok_or(Error::PrecisionRetryExhausted)?;
+                if pp > p.saturating_mul(64).max(1 << 16) {
+                    return Err(Error::PrecisionRetryExhausted);
+                }
+            }
+        }
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p.max(x.mantissa_max_bit_len()) + p_inc;
+        let guess = lambert_w_guess(&x, minus1, cc)?;
+        loop {
+            if let Some(mut ret) = lambert_w_bracketed(&x, minus1, &guess, p_wrk, cc)? {
+                if ret.try_set_precision(p, rm, p_wrk)? {
+                    ret.set_inexact(true);
+                    return Ok(ret);
+                }
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
     /// Lower incomplete gamma \(\gamma(s=\mathrm{self}, x)\) for `self > 0`, `x >= 0`.
     pub fn gammainc(
         &self,
@@ -7122,4 +7186,148 @@ impl Hyp2f1Split<'_> {
         let t = exact_add_num(&exact_mul_num(&t1, &q2)?, &exact_mul_num(&p1, &t2)?)?;
         Ok((exact_mul_num(&p1, &p2)?, exact_mul_num(&q1, &q2)?, t))
     }
+}
+
+/// A 64-bit starting value for Lambert W: branch-point series `−1 ± q − q²/3 ± 11q³/72`,
+/// `q = √(2(1 + e x))` (DLMF 4.13.6), for `x < −1/4`; Winitzki's `l (1 − ln(1+l)/(2+l))`,
+/// `l = ln(1 + x)`, for `W₀` up to 3; `L₁ − L₂ + L₂/L₁` (DLMF 4.13.10) otherwise.
+fn lambert_w_guess(
+    x: &ExactNumNumber,
+    minus1: bool,
+    cc: &mut Consts,
+) -> Result<ExactNumNumber, Error> {
+    type N = ExactNumNumber;
+    let p = 2 * WORD_BIT_SIZE;
+    let nr = RoundingMode::None;
+    let one = N::from_word(1, p)?;
+    let quarter = {
+        let mut q = N::from_word(1, p)?;
+        q.set_exponent(-1);
+        q.neg()?
+    };
+    if x.cmp(&quarter) < 0 {
+        let e = cc.e_num(p, nr)?;
+        let mut t = one.add(&e.mul(x, p, nr)?, p, nr)?;
+        if t.is_negative() {
+            t = N::new(p)?;
+        }
+        let q = N::from_word(2, p)?.mul(&t, p, nr)?.sqrt(p, nr)?;
+        let q2 = q.mul(&q, p, nr)?.div(&N::from_word(3, p)?, p, nr)?;
+        let q3 = q
+            .mul(&q, p, nr)?
+            .mul(&q, p, nr)?
+            .mul(&N::from_word(11, p)?, p, nr)?;
+        let q3 = q3.div(&N::from_word(72, p)?, p, nr)?;
+        let m1 = one.neg()?;
+        return if minus1 {
+            m1.sub(&q, p, nr)?.sub(&q2, p, nr)?.sub(&q3, p, nr)
+        } else {
+            m1.add(&q, p, nr)?.sub(&q2, p, nr)?.add(&q3, p, nr)
+        };
+    }
+    if !minus1 && x.cmp(&N::from_word(3, p)?) <= 0 {
+        let l = x.log1p(p, nr, cc)?;
+        if l.is_zero() {
+            return x.clone();
+        }
+        let num = l.log1p(p, nr, cc)?;
+        let den = N::from_word(2, p)?.add(&l, p, nr)?;
+        return l.mul(&one.sub(&num.div(&den, p, nr)?, p, nr)?, p, nr);
+    }
+    let l1 = x.abs()?.ln(p, nr, cc)?;
+    let l2 = l1.abs()?.ln(p, nr, cc)?;
+    l1.sub(&l2, p, nr)?.add(&l2.div(&l1, p, nr)?, p, nr)
+}
+
+/// Lambert W to `p_wrk + 64` bits, then certify `|W − w| < 2^(exponent(w) − p_wrk − 64)`
+/// by a sign change of the (monotone) defining equation; `None` when the bracket cannot be
+/// certified at this precision.
+fn lambert_w_bracketed(
+    x: &ExactNumNumber,
+    minus1: bool,
+    guess: &ExactNumNumber,
+    p_wrk: usize,
+    cc: &mut Consts,
+) -> Result<Option<ExactNumNumber>, Error> {
+    type N = ExactNumNumber;
+    let nr = RoundingMode::None;
+    let one = N::from_word(1, WORD_BIT_SIZE)?;
+    // Log form w + ln|w| = ln|x| for W₀(x > 1) and W₋₁(x >= −1/4): no e^w over/underflow.
+    let log_form = if minus1 {
+        let mut q = N::from_word(1, WORD_BIT_SIZE)?;
+        q.set_exponent(-1);
+        x.cmp(&q.neg()?) >= 0
+    } else {
+        x.cmp(&one) > 0
+    };
+    let opw = one.add(guess, 2 * WORD_BIT_SIZE, nr)?;
+    let cond = if opw.is_zero() {
+        0
+    } else {
+        usize::try_from((-opw.exponent()).max(0)).unwrap_or(0)
+    };
+    let pp = round_p(p_wrk + 2 * WORD_BIT_SIZE + cond + WORD_BIT_SIZE);
+    let lnx = if log_form { Some(x.abs()?.ln(pp, nr, cc)?) } else { None };
+    // f(w) and a bound on its evaluation error.
+    let eval = |w: &N, cc: &mut Consts| -> Result<(N, N), Error> {
+        let mut bound = N::from_word(1, WORD_BIT_SIZE)?;
+        if let Some(l) = &lnx {
+            let lw = w.abs()?.ln(pp, nr, cc)?;
+            let f = w.add(&lw, pp, nr)?.sub(l, pp, nr)?;
+            let mag = max_exp(&[w, &lw, l]);
+            bound.set_exponent(mag + 4 - pp as Exponent);
+            Ok((f, bound))
+        } else {
+            let ew = w.exp(pp, nr, cc)?;
+            let wew = w.mul(&ew, pp, nr)?;
+            let f = wew.sub(x, pp, nr)?;
+            let mag = max_exp(&[&wew, x]);
+            bound.set_exponent(mag + 4 - pp as Exponent);
+            Ok((f, bound))
+        }
+    };
+    let mut w = guess.clone()?;
+    let mut converged = false;
+    for _ in 0..(64 + 4 * usize::BITS as usize) {
+        let (f, _) = eval(&w, cc)?;
+        if f.is_zero() {
+            converged = true;
+            break;
+        }
+        let d = if lnx.is_some() {
+            one.add(&one.div(&w, pp, nr)?, pp, nr)?
+        } else {
+            w.exp(pp, nr, cc)?.mul(&one.add(&w, pp, nr)?, pp, nr)?
+        };
+        if d.is_zero() {
+            break;
+        }
+        let step = f.div(&d, pp, nr)?;
+        w = w.sub(&step, pp, nr)?;
+        if step.is_zero() || step.exponent() < w.exponent() - (pp as Exponent) + 8 {
+            converged = true;
+            break;
+        }
+    }
+    if !converged || w.is_zero() {
+        return Ok(None);
+    }
+    let mut delta = N::from_word(1, WORD_BIT_SIZE)?;
+    delta.set_exponent(w.exponent() - (p_wrk + WORD_BIT_SIZE) as Exponent + 1);
+    let lo = w.sub(&delta, pp, nr)?;
+    let hi = w.add(&delta, pp, nr)?;
+    let sign_of = |v: &N, cc: &mut Consts| -> Result<Option<bool>, Error> {
+        let (f, b) = eval(v, cc)?;
+        if f.is_zero() || f.abs()?.cmp(&b) <= 0 {
+            return Ok(None);
+        }
+        Ok(Some(f.is_positive()))
+    };
+    let (Some(sl), Some(sh)) = (sign_of(&lo, cc)?, sign_of(&hi, cc)?) else {
+        return Ok(None);
+    };
+    if sl == sh {
+        return Ok(None);
+    }
+    Ok(Some(w))
 }
