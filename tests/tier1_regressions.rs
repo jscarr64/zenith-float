@@ -1717,3 +1717,58 @@ fn zf_11_riemann_zeta_large_negative() {
         }
     }
 }
+
+/// ZF-53 (Jeff's 11:54 ruling): primality is proven, like FLINT's `fmpz_is_prime`, and
+/// `pollard_rho` has no iteration cap. Before, `pollard_rho(M89)` spent 2^20 · 32 steps
+/// (144 s in release) and its `None` meant only "cap hit"; a composite whose factors are
+/// past the cap also came back `None`. Primality and factors from FLINT (`fmpz.is_prime`,
+/// `fmpz.factor`). 3317044064679887385961981 is the least strong pseudoprime to the first
+/// 13 prime bases (Sorenson–Webster), so it exercises the Pocklington path.
+#[test]
+fn zf_53_pollard_rho_proven_primality_uncapped() {
+    use zenith_float::{is_prime, pollard_rho};
+    let int = ExactInt::from_u128;
+    let primes: [u128; 6] = [
+        (1u128 << 89) - 1,
+        (1u128 << 127) - 1,
+        18446744073709551629,
+        4835703278458516698824713,
+        1_000_000_007,
+        2,
+    ];
+    for &n in &primes {
+        assert!(is_prime(&int(n)), "{n} is prime");
+        if n > 2 {
+            assert!(pollard_rho(&int(n)).is_none(), "rho({n}) on a prime");
+        }
+    }
+    let composites: [(u128, &[u128]); 4] = [
+        (3317044064679887385961981, &[1287836182261, 2575672364521]),
+        ((1u128 << 67) - 1, &[193707721, 761838257287]),
+        (561, &[3, 11, 17]),
+        (1_000_000_007u128 * 1_000_000_007, &[1_000_000_007]),
+    ];
+    for &(n, fs) in &composites {
+        assert!(!is_prime(&int(n)), "{n} is composite");
+        let f = pollard_rho(&int(n)).unwrap_or_else(|| panic!("rho({n}) found no factor"));
+        let (q, r) = int(n).div_rem(&f).expect("div");
+        assert!(
+            r.is_zero() && f != int(1) && f != int(n),
+            "rho({n}) = {f:?}"
+        );
+        // The factor is a product of the listed primes.
+        let mut g = f.clone();
+        for &p in fs {
+            while let Some((d, r)) = g.div_rem(&int(p)) {
+                if !r.is_zero() {
+                    break;
+                }
+                g = d;
+            }
+        }
+        assert!(g == int(1), "rho({n}) = {f:?}, cofactor {q:?}");
+    }
+    for n in [0u128, 1, 4, 9, 15] {
+        assert!(!is_prime(&int(n)), "{n}");
+    }
+}

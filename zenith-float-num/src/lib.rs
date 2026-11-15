@@ -143,6 +143,7 @@ pub use crate::ieee_soft::{
     FFT_MAX_POINTS, IEEE_SIMD_LANE_WIDTH,
 };
 pub use crate::integer::ExactInt;
+pub use crate::modular::is_prime;
 pub use crate::modular::miller_rabin;
 pub use crate::modular::mod_inv;
 pub use crate::modular::mod_pow;

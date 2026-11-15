@@ -1,9 +1,13 @@
 //! Modular exponentiation, inverses, Miller–Rabin, and Pollard–Brent on [`ExactInt`].
 
 use crate::ExactInt;
+use alloc::vec;
+use alloc::vec::Vec;
 use core::cmp::Ordering;
 
-/// Maximum `f` evaluations in one [`pollard_rho`] run before `None`.
+/// Former cap on `f` evaluations in one [`pollard_rho`] run. No longer used (ZF-53): a
+/// composite always yields a factor, and a prime is recognised by [`is_prime`] first.
+/// Kept for API compatibility.
 pub const POLLARD_RHO_ITER_MAX: usize = 1_048_576;
 
 /// Brent inner-loop product batch.
@@ -165,22 +169,17 @@ fn pollard_f(x: &ExactInt, c: &ExactInt, n: &ExactInt) -> Option<ExactInt> {
     add_mod(&mul_mod(x, x, n)?, c, n)
 }
 
-fn brent_once(n: &ExactInt, c: &ExactInt, max_f: usize) -> Option<ExactInt> {
+fn brent_once(n: &ExactInt, c: &ExactInt) -> Option<ExactInt> {
     let mut y = ExactInt::zero();
     let mut g = ExactInt::one();
     let mut r = 1usize;
     let mut q = ExactInt::one();
-    let mut f_used = 0usize;
     let mut x = ExactInt::zero();
     let mut ys = ExactInt::zero();
     while g.is_one() {
         x = y.clone();
         for _ in 0..r {
             y = pollard_f(&y, c, n)?;
-            f_used += 1;
-            if f_used >= max_f {
-                return None;
-            }
         }
         let mut k = 0usize;
         while k < r && g.is_one() {
@@ -188,28 +187,17 @@ fn brent_once(n: &ExactInt, c: &ExactInt, max_f: usize) -> Option<ExactInt> {
             let steps = POLLARD_BRENT_M.min(r - k);
             for _ in 0..steps {
                 y = pollard_f(&y, c, n)?;
-                f_used += 1;
-                if f_used >= max_f {
-                    return None;
-                }
                 let diff = abs_int(&x.sub(&y));
                 q = mul_mod(&q, &diff, n)?;
             }
             g = q.gcd(n);
             k += steps;
         }
-        if r > usize::MAX / 2 {
-            return None;
-        }
         r = r.saturating_mul(2);
     }
     if g == *n {
         loop {
             ys = pollard_f(&ys, c, n)?;
-            f_used += 1;
-            if f_used >= max_f {
-                return None;
-            }
             g = abs_int(&x.sub(&ys)).gcd(n);
             if !g.is_one() {
                 break;
@@ -223,7 +211,10 @@ fn brent_once(n: &ExactInt, c: &ExactInt, max_f: usize) -> Option<ExactInt> {
     }
 }
 
-/// Brent Pollard ρ. A proper factor of `|n|`, or `None` if prime / cap hit.
+/// Brent Pollard ρ. A proper factor of `|n|`, or `None` when `|n| ≤ 2` or `|n|` is prime.
+///
+/// Primality is proven first ([`is_prime`]), so `None` never means "gave up": there is no
+/// iteration cap, and a composite always yields a factor (ZF-53).
 pub fn pollard_rho(n: &ExactInt) -> Option<ExactInt> {
     let n = abs_int(n);
     if n.soft_cmp(&two()) != Ordering::Greater {
@@ -232,14 +223,178 @@ pub fn pollard_rho(n: &ExactInt) -> Option<ExactInt> {
     if is_even(&n) {
         return Some(two());
     }
-    for c in 1u64..=32 {
-        if let Some(f) = brent_once(&n, &ExactInt::from_u64(c), POLLARD_RHO_ITER_MAX) {
-            if !f.is_one() && f != n {
-                return Some(f);
+    if is_prime(&n) {
+        return None;
+    }
+    Some(split_composite(&n))
+}
+
+/// A proper factor of the odd composite `n` (Brent ρ over `c = 1, 2, …`, uncapped). A
+/// perfect power or a cycle that closes on `n` moves on to the next `c`; every odd
+/// composite has a `c` for which the cycle separates a factor.
+fn split_composite(n: &ExactInt) -> ExactInt {
+    let mut c = 1u64;
+    loop {
+        if let Some(f) = brent_once(n, &ExactInt::from_u64(c)) {
+            if !f.is_one() && f != *n {
+                return f;
             }
         }
+        // A cycle that never separates for every c below 2^64 would need n's prime
+        // factors to share every orbit; trial division settles it before c wraps.
+        c = match c.checked_add(1) {
+            Some(v) => v,
+            None => return trial_factor(n),
+        };
     }
-    None
+}
+
+/// Smallest prime factor of the composite `n` by trial division (the last resort of
+/// [`split_composite`]; never reached in practice).
+fn trial_factor(n: &ExactInt) -> ExactInt {
+    let mut d = ExactInt::from_u64(3);
+    let two = two();
+    loop {
+        if rem_nonneg(n, &d).is_some_and(|r| r.is_zero()) {
+            return d;
+        }
+        d = d.add(&two);
+    }
+}
+
+/// Small primes for trial division and the deterministic Miller–Rabin set.
+const SMALL_PRIMES: [u64; 13] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41];
+
+/// Miller–Rabin with the first 13 primes is deterministic for `n < 3 317 044 064 679 887
+/// 385 961 981` (Sorenson & Webster, Math. Comp. 86 (2017)), which covers `2^64`.
+const MR13_BOUND: u128 = 3_317_044_064_679_887_385_961_981;
+
+/// Proven primality of `|n|`, like FLINT's `fmpz_is_prime` (ZF-53).
+///
+/// - `|n| < 3.3·10^24` (past `2^64`): Miller–Rabin with the first 13 prime bases, which is
+///   deterministic there.
+/// - Larger: a strong probable-prime test with those bases rejects composites, then a
+///   Pocklington–Lehmer `n − 1` certificate proves primality. `n − 1` is factored (trial
+///   division, then [`is_prime`] and Brent ρ on the cofactors, recursively) until the
+///   proven part `F` satisfies `F² > n`. Each prime `q | F` then needs a witness `a` with
+///   `a^(n−1) ≡ 1` and `gcd(a^((n−1)/q) − 1, n) = 1`. Witnesses are tried from `a = 2` up,
+///   and an `a` sharing a factor with `n` proves it composite, so the search terminates.
+///
+/// No step is capped. The answer is a proof either way.
+pub fn is_prime(n: &ExactInt) -> bool {
+    let n = abs_int(n);
+    if n.soft_cmp(&two()) == Ordering::Less {
+        return false;
+    }
+    for &q in SMALL_PRIMES.iter() {
+        let qi = ExactInt::from_u64(q);
+        if n == qi {
+            return true;
+        }
+        if rem_nonneg(&n, &qi).is_some_and(|r| r.is_zero()) {
+            return false;
+        }
+    }
+    let wits: Vec<ExactInt> = SMALL_PRIMES
+        .iter()
+        .map(|&q| ExactInt::from_u64(q))
+        .collect();
+    if !miller_rabin(&n, &wits) {
+        return false;
+    }
+    if n.soft_cmp(&ExactInt::from_u128(MR13_BOUND)) == Ordering::Less {
+        return true;
+    }
+    pocklington(&n)
+}
+
+/// Distinct proven prime factors `q` of `n − 1` whose product with multiplicity, `F`,
+/// divides `n − 1` and satisfies `F² > n` (the Pocklington bound). Factoring stops as soon
+/// as the bound holds, so a hard cofactor of `n − 1` left over is never split.
+fn certified_part(nm1: &ExactInt, n: &ExactInt) -> Vec<ExactInt> {
+    let mut f = ExactInt::one();
+    let mut qs: Vec<ExactInt> = Vec::new();
+    let done = |f: &ExactInt| f.mul(f).soft_cmp(n) == Ordering::Greater;
+    let mut m = nm1.clone();
+    for &q in SMALL_PRIMES.iter() {
+        let qi = ExactInt::from_u64(q);
+        while let Some((d, r)) = m.div_rem(&qi) {
+            if !r.is_zero() {
+                break;
+            }
+            if !qs.contains(&qi) {
+                qs.push(qi.clone());
+            }
+            f = f.mul(&qi);
+            m = d;
+        }
+    }
+    let mut stack = vec![m];
+    while let Some(x) = stack.pop() {
+        if done(&f) {
+            break;
+        }
+        if x.is_one() || x.is_zero() {
+            continue;
+        }
+        if is_prime(&x) {
+            f = f.mul(&x);
+            if !qs.contains(&x) {
+                qs.push(x);
+            }
+            continue;
+        }
+        let d = if is_even(&x) { two() } else { split_composite(&x) };
+        let g = x.div_rem(&d).map(|(q, _)| q).unwrap_or_else(ExactInt::one);
+        // The smaller part first: it is cheaper to certify.
+        if d.soft_cmp(&g) == Ordering::Less {
+            stack.push(g);
+            stack.push(d);
+        } else {
+            stack.push(d);
+            stack.push(g);
+        }
+    }
+    qs
+}
+
+/// Pocklington–Lehmer proof for an odd strong probable prime `n` (see [`is_prime`]):
+/// `F | n − 1`, `F² > n`, and for each prime `q | F` some `a` with `a^(n−1) ≡ 1 (mod n)`
+/// and `gcd(a^((n−1)/q) − 1, n) = 1` (Crandall & Pomerance, Thm 4.1.3).
+fn pocklington(n: &ExactInt) -> bool {
+    let one = ExactInt::one();
+    let nm1 = n.sub(&one);
+    for q in &certified_part(&nm1, n) {
+        let e = match nm1.div_rem(q) {
+            Some((e, _)) => e,
+            None => return false,
+        };
+        let mut a = two();
+        loop {
+            // An `a` sharing a factor with n proves n composite; it also bounds the search
+            // by n's least prime factor.
+            if !a.gcd(n).is_one() {
+                return false;
+            }
+            match mod_pow(&a, &nm1, n) {
+                Some(x) if x.is_one() => {}
+                _ => return false,
+            }
+            let t = match mod_pow(&a, &e, n) {
+                Some(t) => t,
+                None => return false,
+            };
+            let h = abs_int(&t.sub(&one)).gcd(n);
+            if h.is_one() {
+                break;
+            }
+            if h != *n {
+                return false;
+            }
+            a = a.add(&one);
+        }
+    }
+    true
 }
 
 #[cfg(test)]
