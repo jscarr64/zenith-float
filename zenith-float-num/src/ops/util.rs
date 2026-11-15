@@ -7,19 +7,43 @@ use crate::common::util::{reduction_width, round_p};
 use crate::{num::ExactNumNumber, Consts, Error, RoundingMode};
 
 impl ExactNumNumber {
-    /// Reduce `self` to the interval `(-2π, 2π)` for trigonometric evaluation.
-    ///
-    /// Uses the same working precision as `sin`/`cos`/`tan` before modular reduction.
-    pub fn rem_pi(&self, p: usize, _rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
+    /// Reduce `self` modulo `2π` to the interval `(-2π, 2π)` (the sign of `self`), correctly rounded to `p`
+    /// bits with `rm`. π carries `exponent(self)` extra bits, and the width grows until the remainder's own
+    /// leading bits (it may lie close to a multiple of 2π) are certain.
+    pub fn rem_pi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Result<Self, Error> {
         if p < crate::defs::MIN_PRECISION {
             return Err(Error::InvalidArgument);
         }
         let p = round_p(p);
+        if self.is_zero() || self.exponent() <= 2 {
+            let mut x = self.clone()?;
+            x.set_precision(p, rm)?;
+            return Ok(x);
+        }
         let add_p = (3 - TRIG_EXP_THRES) as usize;
-        let p_x = p.max(self.mantissa_max_bit_len()).saturating_add(add_p);
-        let mut x = self.clone()?;
-        x.set_precision(p_x, RoundingMode::None)?;
-        x.reduce_trig_arg(cc, RoundingMode::None)
+        let mut p_x = p.max(self.mantissa_max_bit_len()).saturating_add(add_p);
+        loop {
+            let mut x = self.clone()?;
+            x.set_precision(p_x, RoundingMode::None)?;
+            let mut r = x.reduce_trig_arg(cc, RoundingMode::None)?;
+            if r.is_zero() {
+                p_x = round_p(p_x.saturating_mul(2));
+                continue;
+            }
+            // |error| <= 2^(4 - p_x) absolute (|self| / 2π multiples of a p_x + e(self) bit 2π).
+            let lost = (4 - r.exponent()).max(0) as usize;
+            if let Some(s) = p_x.checked_sub(lost + 4) {
+                let s = s / crate::defs::WORD_BIT_SIZE * crate::defs::WORD_BIT_SIZE;
+                if s > p && r.try_set_precision(p, rm, s)? {
+                    return Ok(r);
+                }
+            }
+            p_x = round_p(
+                p_x.saturating_add(lost)
+                    .saturating_add(p_x / 4)
+                    .saturating_add(64),
+            );
+        }
     }
 
     /// Reduce `self` to interval (-2*pi; 2*pi)

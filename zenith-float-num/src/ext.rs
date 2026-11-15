@@ -3271,8 +3271,10 @@ Accuracy: correctly-rounded",
         usize
     );
     gen_wrapper_word_rm_cc!(
-        "Reduces `self` modulo `2π` into the interval `(-2π, 2π)` using precision `p` and rounding mode `rm`.
-        This function requires constants cache `cc` for computing the result.",
+        "Reduces `self` modulo `2π` into the interval `(-2π, 2π)` (`self − 2πk`, `k` rounded toward zero), rounded
+        to precision `p` with rounding mode `rm`, however close `self` lies to a multiple of 2π.
+        This function requires constants cache `cc` for computing the result.
+Accuracy: correctly-rounded",
         rem_pi,
         Self,
         { NAN },
