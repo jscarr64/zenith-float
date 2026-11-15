@@ -2778,3 +2778,34 @@ fn zf_31_lambert_wm1_zero_is_neg_inf() {
         }
     }
 }
+
+/// ZF-35: the Clausen Bernoulli series stopped at 80 terms (~173 bits at π); near ±π its absolute error swamped the
+/// tiny Cl2 value. The same error corrupted Barnes G at negative half-integers through the reflection formula.
+/// FLINT polylog(exp(iθ)), acb.barnes_g; all reference balls certify >8700 relative bits. Logs: land39/zf35.
+#[test]
+fn zf_35_clausen_relative_accuracy_and_barnes_half_integers() {
+    let mut cc = Consts::new().expect("Consts");
+    for l in include_str!("tier1/zf35.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let x = parse_real(t[1]).expect("x");
+        for p in t[2].split(',').map(|p| p.parse::<usize>().expect("p")) {
+            for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+                let v = match t[0] {
+                    "cl2" => x.clausen_cl2(p, rm, &mut cc),
+                    "cl3" => x.clausen_cl3(p, rm, &mut cc),
+                    "bg" => x.barnes_g(p, rm, &mut cc),
+                    _ => panic!("function"),
+                };
+                let w = cr_ref(t[3], p, rm, &mut cc);
+                assert_eq!(
+                    v.compare(&w),
+                    Some(0),
+                    "{}({}) p={p} {rm:?}: {v} {:?} want {w}",
+                    t[0],
+                    t[1],
+                    v.err()
+                );
+            }
+        }
+    }
+}
