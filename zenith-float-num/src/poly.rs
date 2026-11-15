@@ -275,12 +275,26 @@ impl ExactNumPoly {
         Self::from_coeffs(p, rm, &xs)
     }
 
-    /// Euclidean GCD with integer content removal, returned monic.
+    /// GCD, returned monic.
     ///
-    /// Both zero → zero. One zero → monic of the other.
+    /// Both zero → zero. One zero → monic of the other. With finite coefficients the GCD is exact:
+    /// each finite value is dyadic, so both inputs are scaled to integer polynomials and reduced by
+    /// a primitive pseudo-remainder sequence over the integers (no rounded remainders). Only the
+    /// final monic coefficients are rounded, once each, to `(p, rm)`. A scale that cannot be
+    /// represented gives a NaN coefficient. Non-finite coefficients take the Euclidean path below.
     pub fn gcd(&self, other: &Self, p: usize, rm: RoundingMode) -> Self {
         if self.is_zero() && other.is_zero() {
             return Self::zero(p, rm);
+        }
+        if self.all_finite() && other.all_finite() {
+            return match (self.scaled_int_coeffs(), other.scaled_int_coeffs()) {
+                (Some(a), Some(b)) => Self::monic_from_int(&int_poly_gcd(a, b), p, rm),
+                _ => Self::from_coeffs(
+                    p,
+                    rm,
+                    &[ExactNum::nan(Some(crate::Error::MemoryAllocation))],
+                ),
+            };
         }
         let mut a = self.primitive_monic(p, rm);
         let mut b = other.primitive_monic(p, rm);
@@ -295,6 +309,49 @@ impl ExactNumPoly {
             b = r.primitive_monic(p, rm);
         }
         a.primitive_monic(p, rm)
+    }
+
+    /// The coefficients times one common `2^k` (`k ≥ 0`) that makes every one an integer.
+    fn scaled_int_coeffs(&self) -> Option<Vec<ExactInt>> {
+        let mut k: i128 = 0;
+        for c in self.coeffs.iter().filter(|c| !c.is_zero()) {
+            let e = i128::from(c.exponent()?);
+            let m = i128::try_from(c.mantissa_max_bit_len()?).ok()?;
+            k = k.max(m - e);
+        }
+        let k = crate::defs::Exponent::try_from(k).ok()?;
+        self.coeffs
+            .iter()
+            .map(|c| {
+                if c.is_zero() {
+                    return Some(ExactInt::zero());
+                }
+                let w = c.mantissa_max_bit_len()?;
+                let x = c.clone().ldexp(k, w, RoundingMode::None);
+                if !x.is_int() {
+                    return None;
+                }
+                ExactInt::from_exact_num(&x)
+            })
+            .collect()
+    }
+
+    /// Monic form of an integer polynomial: each coefficient divided by the leading one, rounded
+    /// once to `(p, rm)` (the leading coefficient is exactly 1).
+    fn monic_from_int(v: &[ExactInt], p: usize, rm: RoundingMode) -> Self {
+        let Some(lc) = v.last() else {
+            return Self::zero(p, rm);
+        };
+        let exact = |x: &ExactInt| {
+            let w = x.bit_length().max(1).div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
+            x.to_exact_num(w, RoundingMode::None)
+        };
+        let lcn = exact(lc);
+        let xs: Vec<ExactNum> = v
+            .iter()
+            .map(|c| ExactNum::div_ref(&exact(c), &lcn, p, rm))
+            .collect();
+        Self::from_coeffs(p, rm, &xs)
     }
 
     /// Composition `self(g(x))` by Horner at precision `p`.
@@ -546,4 +603,66 @@ mod tests {
         assert_eq!(roots[0].compare(&ExactNum::from_i8(-1, p)), Some(0));
         Ok(())
     }
+}
+
+fn int_strip(v: &mut Vec<ExactInt>) {
+    while v.last().is_some_and(|c| c.is_zero()) {
+        v.pop();
+    }
+}
+
+/// Primitive part with a positive leading coefficient (empty for the zero polynomial).
+fn int_primitive(mut v: Vec<ExactInt>) -> Vec<ExactInt> {
+    int_strip(&mut v);
+    let Some(last) = v.last() else {
+        return v;
+    };
+    let mut g = ExactInt::zero();
+    for c in &v {
+        g = g.gcd(c);
+    }
+    if last.is_negative() {
+        g = g.neg();
+    }
+    v.iter()
+        .map(|c| c.div_rem(&g).map_or_else(|| c.clone(), |(q, _)| q))
+        .collect()
+}
+
+/// A pseudo-remainder of `a` by `b` (`b` nonzero): `lc(b)^j·a mod b` over the integers, exact.
+fn int_prem(a: &[ExactInt], b: &[ExactInt]) -> Vec<ExactInt> {
+    let mut r = a.to_vec();
+    int_strip(&mut r);
+    let Some(lb) = b.last() else {
+        return r;
+    };
+    let db = b.len() - 1;
+    while r.len() > db {
+        let dr = r.len() - 1;
+        let lr = r[dr].clone();
+        let sh = dr - db;
+        for c in r.iter_mut() {
+            *c = c.mul(lb);
+        }
+        for (i, bi) in b.iter().enumerate() {
+            r[i + sh] = r[i + sh].sub(&lr.mul(bi));
+        }
+        int_strip(&mut r);
+    }
+    r
+}
+
+/// Primitive GCD of two integer polynomials (positive leading coefficient).
+fn int_poly_gcd(a: Vec<ExactInt>, b: Vec<ExactInt>) -> Vec<ExactInt> {
+    let mut a = int_primitive(a);
+    let mut b = int_primitive(b);
+    if a.len() < b.len() {
+        core::mem::swap(&mut a, &mut b);
+    }
+    while !b.is_empty() {
+        let r = int_primitive(int_prem(&a, &b));
+        a = b;
+        b = r;
+    }
+    a
 }

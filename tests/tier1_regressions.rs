@@ -698,3 +698,35 @@ fn zf_76_c_erf_imaginary_axis_real_part_exact() {
         }
     }
 }
+
+/// ZF-10: gcd over integer polynomials must not use rounded remainders. FLINT fmpz_poly gives x−1 for
+/// (x−1)(x−2)(x−3)(x−4) and x⁴−1, and for Harper's x⁴−10x³+23x²−38x+24 and x⁴−1: division by a nonunit leading coefficient creates rational
+/// remainders, whose rounding used to turn the exact common factor into a nonzero constant.
+#[test]
+fn zf_10_poly_gcd_integer_remainders_exact() {
+    use zenith_float::ExactNumPoly;
+    for p in [64usize, 128, 256] {
+        for rm in MODES {
+            let poly = |v: &[i64]| {
+                ExactNumPoly::from_coeffs(
+                    p,
+                    rm,
+                    &v.iter()
+                        .map(|&x| ExactNum::from_i64(x, p))
+                        .collect::<Vec<_>>(),
+                )
+            };
+            for scale in [1i64, -7, 13] {
+                let a = poly(&[24 * scale, -50 * scale, 35 * scale, -10 * scale, scale]);
+                let h = poly(&[24 * scale, -38 * scale, 23 * scale, -10 * scale, scale]); // Harper d0228098
+                let b = poly(&[-1, 0, 0, 0, 1]);
+                for (a, b) in [(&a, &b), (&b, &a), (&h, &b), (&b, &h)] {
+                    let g = a.gcd(b, p, rm);
+                    assert_eq!(g.degree(), Some(1), "p={p} {rm:?} scale={scale}");
+                    assert_eq!(g.coeff(0).compare(&ExactNum::from_i8(-1, p)), Some(0));
+                    assert_eq!(g.coeff(1).compare(&ExactNum::from_u8(1, p)), Some(0));
+                }
+            }
+        }
+    }
+}
