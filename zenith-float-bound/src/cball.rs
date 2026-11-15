@@ -1,8 +1,8 @@
 //! Slice CB: complex balls `CBall { re, im }`, a closed rectangle of two independent real [`Ball`] parts (CONTRACT 16.CB).
 //! Built only on the public `Ball` API and S1; no radius arithmetic of its own. Ownership is O9 (16.CB.0): an op takes
 //! `self` and borrows its second operand; a part is consumed where the inner `Ball` op consumes it.
-//! `mul` and `div` wait on borrowing once-rounded zf ops (Rusty, after R9). Until
-//! then they return `Resource` with a `detail` naming the wait, and their tests are ignored red.
+//! `mul` and `div` wait on borrowing once-rounded zf ops (Rusty, after R9). Until then they are held (HOLD H11):
+//! not in the public API, and their value rows are held with them.
 
 use zenith_float_num::ExactNum;
 
@@ -106,21 +106,8 @@ impl CBall {
         CBall::new(re, im)
     }
 
-    /// 16.CB.4. Not implemented: waits on borrowing once-rounded zf ops (Rusty, after R9).
-    pub fn mul(self, _other: &CBall, _prec: Precision) -> BoundResult<CBall> {
-        Err(BoundError::Resource {
-            op: "cball_mul",
-            detail: "not implemented: waits zf borrowing ops",
-        })
-    }
-
-    /// 16.CB.7. Not implemented: waits on borrowing once-rounded zf ops (Rusty, after R9).
-    pub fn div(self, _other: &CBall, _prec: Precision) -> BoundResult<CBall> {
-        Err(BoundError::Resource {
-            op: "cball_div",
-            detail: "not implemented: waits zf borrowing ops",
-        })
-    }
+    // 16.CB.4 `mul` and 16.CB.7 `div` are held (HOLD H11): not in the public API until they are
+    // implemented on the borrowing once-rounded zf ops (Jeff 2026-11-15: stubs stay held, not exported).
 }
 
 impl Neg for CBall {

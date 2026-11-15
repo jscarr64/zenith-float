@@ -1,13 +1,13 @@
 //! Slice CB harness rows (`src/cball.rs`). Owned by slice CB alone.
 //! CONTRACT 16.CB.1 to 16.CB.11. Ownership is O9 (16.CB.0): a CB op takes `self` and borrows its second operand, so every
-//! use below builds its operands fresh. `mul` and `div` wait on borrowing zf ops (Rusty, after R9) and refuse until
-//! then: the green rows below assert the exact `Resource` refusal (E7); their value rows are red, so they are held
-//! (HOLD H11, `slice_cball/held_mul_div_reds.rs`; P12: no ignored reds in a PR).
+//! use below builds its operands fresh. `mul` and `div` wait on borrowing zf ops (Rusty, after R9) and are held
+//! out of the public API until then, with their value rows (HOLD H11, `slice_cball/held_mul_div_reds.rs`; P12: no
+//! ignored reds in a PR).
 //! Oracles: hand-verified exact rows (worked in the comment beside each) and containment of exact images computed with
 //! zenith-float's `add_full_prec`/`sub_full_prec`/`mul_full_prec` at sample points (corners and midpoints) of the inputs.
 //! The mpmath.mpc golden rows and the RREF tightness factors of 16.CB.10: tests/goldens/slices/cball/cball_rows.txt
 //! (scripts/gen_cball_goldens.py).
-//! COVERS: CBall::new, CBall::from_real, CBall::all_complex, CBall::re, CBall::im, CBall::prec, CBall::identical, Neg for CBall, CBall::conj, CBall::add, CBall::sub, CBall::mul, CBall::sqr, CBall::abs, CBall::div
+//! COVERS: CBall::new, CBall::from_real, CBall::all_complex, CBall::re, CBall::im, CBall::prec, CBall::identical, Neg for CBall, CBall::conj, CBall::add, CBall::sub, CBall::sqr, CBall::abs
 
 use std::fs;
 
@@ -185,28 +185,7 @@ fn cball_add_sub_neg_conj_rows() -> Result<(), String> {
     Ok(())
 }
 
-// ---- 16.CB.4 mul ---------------------------------------------------------------------------------------------
-
-/// `CBall::mul` refuses until it is implemented (16.CB.4): exactly `Resource { op: "cball_mul", detail }` for any
-/// operands and precision, so no caller can read a value from it.
-#[test]
-fn cball_mul_refuses_resource_until_implemented() -> Result<(), String> {
-    for prec in [53_usize, 64, 128] {
-        let got = cpt(1, 2, prec)?.mul(&cpt(3, 4, prec)?, prec);
-        match got {
-            Err(BoundError::Resource {
-                op: "cball_mul",
-                detail: "not implemented: waits zf borrowing ops",
-            }) => {}
-            other => {
-                return Err(format!(
-                    "mul @{prec}: want Resource cball_mul refusal, got {other:?}"
-                ))
-            }
-        }
-    }
-    Ok(())
-}
+// ---- 16.CB.4 mul: held (HOLD H11) -------------------------------------------------------------------------------
 
 // ---- 16.CB.5 sqr ---------------------------------------------------------------------------------------------
 
@@ -344,29 +323,6 @@ fn cball_r2_row_s1_sqr_reaches_zero() -> Result<(), String> {
     for &prec in PRECS.iter() {
         let d = ok("sqr", r2_divisor_re(prec)?.sqr(prec))?;
         want_contains("S1 sqr of 2^-40 ± 2^-41 reaches 0", &d, &num(0))?;
-    }
-    Ok(())
-}
-
-/// `CBall::div` refuses until it is implemented (16.CB.7): exactly `Resource { op: "cball_div", detail }`, also for a
-/// divisor that contains zero (no all-reals value is produced before the refusal).
-#[test]
-fn cball_div_refuses_resource_until_implemented() -> Result<(), String> {
-    for prec in [53_usize, 64, 128] {
-        for d in [cpt(3, 4, prec)?, cbox(0, 0, 1, prec)?] {
-            let got = cpt(1, 2, prec)?.div(&d, prec);
-            match got {
-                Err(BoundError::Resource {
-                    op: "cball_div",
-                    detail: "not implemented: waits zf borrowing ops",
-                }) => {}
-                other => {
-                    return Err(format!(
-                        "div @{prec}: want Resource cball_div refusal, got {other:?}"
-                    ))
-                }
-            }
-        }
     }
     Ok(())
 }
@@ -583,8 +539,8 @@ fn gold_eval(r: &GoldRow) -> Result<GoldOut, String> {
     Ok(match r.op.as_str() {
         "add" => GoldOut::C(ok("add", a.add(need_b()?, r.prec))?),
         "sub" => GoldOut::C(ok("sub", a.sub(need_b()?, r.prec))?),
-        "mul" => GoldOut::C(ok("mul", a.mul(need_b()?, r.prec))?),
-        "div" => GoldOut::C(ok("div", a.div(need_b()?, r.prec))?),
+        // CBall::mul / CBall::div are held (HOLD H11); held_mul_div_reds.rs restores these arms.
+        "mul" | "div" => return Err(format!("{}: CBall::{} is held (HOLD H11)", r.op, r.op)),
         "sqr" => GoldOut::C(ok("sqr", a.sqr(r.prec))?),
         "abs" => GoldOut::R(ok("abs", a.abs(r.prec))?),
         other => return Err(format!("unknown op {:?}", other)),
