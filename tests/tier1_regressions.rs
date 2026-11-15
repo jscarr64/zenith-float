@@ -2184,7 +2184,7 @@ fn zf_08_bytes_wide_exponent_round_trip() {
                     assert_eq!(fmt_real(&y), fmt_real(&x), "inline {v} p={p}");
                 }
                 Err(e) => {
-                    assert_eq!(e, zenith_float::Error::MemoryAllocation, "inline {v} p={p}");
+                    assert_eq!(e, zenith_float::Error::InvalidArgument, "inline {v} p={p}");
                     assert!(!top40, "inline refused a value that fits: {v} p={p}");
                 }
             }
@@ -2397,5 +2397,29 @@ fn zf_70_hypergeom_2f1_long_terminating_exact() {
                 }
             }
         }
+    }
+}
+
+/// ZF-08 (follow-up): values the 16-byte inline record cannot hold were refused with
+/// MemoryAllocation although nothing is allocated; it is a format limit, now InvalidArgument.
+/// Both cases: a mantissa wider than BINARY_INLINE_MANT_BITS, and |exponent| >= 2^31 with
+/// bits below the top BINARY_INLINE_WIDE_MANT_BITS. to_bytes still encodes both.
+#[test]
+fn zf_08_inline_refusal_is_format_limit() {
+    let mut buf = [0u8; 32];
+    for v in ["10000000000000001p0", "maxv:64", "-ffffffffffffffffp-3000000000"] {
+        let x = parse_real(v).expect("x");
+        assert_eq!(
+            x.to_inline_bytes().err(),
+            Some(zenith_float::Error::InvalidArgument),
+            "to_inline_bytes {v}"
+        );
+        assert_eq!(
+            x.write_inline_bytes(&mut buf).err(),
+            Some(zenith_float::Error::InvalidArgument),
+            "write_inline_bytes {v}"
+        );
+        let y = ExactNum::from_bytes(&x.to_bytes().expect("to_bytes")).expect("from_bytes");
+        assert_eq!(fmt_real(&y), fmt_real(&x), "to_bytes round trip {v}");
     }
 }

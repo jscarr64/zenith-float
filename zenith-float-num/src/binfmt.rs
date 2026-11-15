@@ -105,12 +105,12 @@ impl InlineBinaryBuffer {
 impl ExactNum {
     /// Encode an inlined value into a stack buffer.
     ///
-    /// Specials always succeed. A finite mantissa wider than
-    /// [`BINARY_INLINE_MANT_BITS`] returns [`Error::MemoryAllocation`]. A value with
-    /// `|exponent| ≥ 2^31` uses the wide-exponent inline record, which holds the top
-    /// [`BINARY_INLINE_WIDE_MANT_BITS`] mantissa bits: 16 bytes cannot carry a 63-bit exponent
-    /// and a full 64-bit mantissa, so such a value with nonzero lower bits returns
-    /// [`Error::MemoryAllocation`]; [`ExactNum::to_bytes`] encodes every finite value.
+    /// Specials always succeed. The 16-byte record is a format limit, reported as
+    /// [`Error::InvalidArgument`] (the value is valid; this format cannot hold it, and nothing
+    /// is allocated): a finite mantissa wider than [`BINARY_INLINE_MANT_BITS`], or a value with
+    /// `|exponent| ≥ 2^31` (wide-exponent inline record, top [`BINARY_INLINE_WIDE_MANT_BITS`]
+    /// mantissa bits) with nonzero bits below those, since 16 bytes cannot carry a 63-bit
+    /// exponent and a full 64-bit mantissa. [`ExactNum::to_bytes`] encodes every finite value.
     pub fn to_inline_bytes(&self) -> Result<InlineBinaryBuffer, Error> {
         let mut bytes = [0u8; BINARY_INLINE_LEN];
         write_inline(self, &mut bytes)?;
@@ -120,8 +120,8 @@ impl ExactNum {
     /// Write the 16-byte inline record into `dest`.
     ///
     /// Returns [`Error::InvalidArgument`] if `dest` is shorter than
-    /// [`BINARY_INLINE_LEN`]. Wider finite mantissas return
-    /// [`Error::MemoryAllocation`].
+    /// [`BINARY_INLINE_LEN`]. Values the 16-byte record cannot hold return
+    /// [`Error::InvalidArgument`], as for [`ExactNum::to_inline_bytes`].
     pub fn write_inline_bytes(&self, dest: &mut [u8]) -> Result<usize, Error> {
         if dest.len() < BINARY_INLINE_LEN {
             return Err(Error::InvalidArgument);
@@ -265,7 +265,7 @@ fn write_inline(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     let sign = if raw.negative { Sign::Neg } else { Sign::Pos };
     let n_u32 = u32_count(m.len());
     if n_u32 > BINARY_INLINE_U32_WORDS {
-        return Err(Error::MemoryAllocation);
+        return Err(Error::InvalidArgument);
     }
     if i32::try_from(exp).is_err() {
         return write_inline_wide(m, n_u32, sign, exp, inexact, dest);
@@ -286,7 +286,8 @@ fn write_inline(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
 /// The 16-byte record for `|exponent| ≥ 2^31`: flag, version, `n_u32 << 1 | inexact`, the
 /// exponent as a big-endian `i64` (bytes 3..11), and the top 40 bits of the left-aligned
 /// 64-bit mantissa (bytes 11..16). A mantissa with nonzero bits below those 40 does not fit
-/// 16 bytes next to a 63-bit exponent: [`Error::MemoryAllocation`], as for a wide mantissa.
+/// 16 bytes next to a 63-bit exponent: [`Error::InvalidArgument`] (format limit), as for a
+/// wide mantissa.
 fn write_inline_wide(
     m: &[Word],
     n_u32: usize,
@@ -304,7 +305,7 @@ fn write_inline_wide(
     };
     let drop = 64 - BINARY_INLINE_WIDE_MANT_BITS;
     if full & ((1u64 << drop) - 1) != 0 {
-        return Err(Error::MemoryAllocation);
+        return Err(Error::InvalidArgument);
     }
     let top = full >> drop;
     dest[..BINARY_INLINE_LEN].fill(0);

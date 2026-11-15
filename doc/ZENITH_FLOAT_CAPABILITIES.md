@@ -72,7 +72,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `DSP_MAX_POINTS` | `16384` — default max real length for `dct`/`idct`/`dst`/`idst` and windows (was `2048`; `2N`-point FFT sized by this cap); per call: `*_with_max_points` |
 | `IEEE_SIMD_LANE_WIDTH` | `4` — `u32` lanes per integer SIMD vector; binary64 uses 2 `u64` lanes |
 | `BINARY_INLINE_LEN` | `16` — stack record: flags, version, `n_sig`, inexact, `i32` exponent BE, two `u32` limbs BE; `\|exponent\| ≥ 2^31` uses the wide-exponent records `0x0C`/`0x0D` (inline, top 40 mantissa bits) and `0x12`/`0x13` (heap, 8-byte exponent) |
-| `BINARY_INLINE_MANT_BITS` | `64` — max mantissa bits for [`ExactNum::to_inline_bytes`]; wider → `MemoryAllocation` |
+| `BINARY_INLINE_MANT_BITS` | `64` — max mantissa bits for [`ExactNum::to_inline_bytes`]; wider (or `|exponent| ≥ 2^31` with more than `BINARY_INLINE_WIDE_MANT_BITS` = 40 significant bits) → `InvalidArgument` (format limit); `to_bytes` encodes every finite value |
 | `BINARY_FORMAT_VERSION` | `1` — first version byte of every record |
 | `BINARY_MAX_U32` | `65536` — max `u32` limbs in a heap record |
 | `BINARY_MAX_ELEMS` | `1048576` — max array elements in `from_bytes` |
