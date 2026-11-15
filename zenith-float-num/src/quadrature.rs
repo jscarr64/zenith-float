@@ -41,9 +41,6 @@ const QUADRATURE_BRACKET_MUL: usize = 8;
 /// Bisection steps inside a sign-change bracket before Newton.
 const QUADRATURE_BISECT_STEPS: usize = 16;
 
-/// Hard cap on tanh–sinh sample index `|k|`.
-const TANH_SINH_K_MAX: usize = 512;
-
 /// Destination width, rounded up to a word, plus two guard words.
 ///
 /// The same guard as the (7, 15) rule. One extra word rounds Gauss nodes in
@@ -351,13 +348,16 @@ fn tanh_sinh_sum<F>(
     a: &ExactNum,
     b: &ExactNum,
     h: &ExactNum,
+    odd_only: bool,
     p: usize,
-    rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<ExactNum>
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
+    // Unscaled weighted sum Σ w_k (f(x_k) + f(-x_k)) over k = 0, 1, 2, ... (or odd k
+    // only), at working precision. No index cap: the loop ends when the weight
+    // falls below the working grid or the abscissa reaches the endpoint.
     let wrk = work_p_de(p);
     let two = ExactNum::from_u8(2, wrk);
     let half = ExactNum::sub_ref(b, a, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
@@ -366,8 +366,15 @@ where
     let half_pi = pi.div(&two, wrk, RoundingMode::None);
     let wmin = tiny(wrk, 8);
     let mut acc = ExactNum::new(wrk);
-    for k in 0..TANH_SINH_K_MAX {
-        let t = ExactNum::from_u32(k as u32, wrk).mul(h, wrk, RoundingMode::None);
+    let mut k: u64 = u64::from(odd_only);
+    let k_step: u64 = if odd_only { 2 } else { 1 };
+    loop {
+        let kk = k;
+        k += k_step;
+        let k = kk;
+        // k·h stays below ~ln(wrk) before the weight underflows the grid, so k fits.
+        let k32 = u32::try_from(k).ok()?;
+        let t = ExactNum::from_u32(k32, wrk).mul(h, wrk, RoundingMode::None);
         let (sh, ch) = t.sinh_cosh(wrk, RoundingMode::None, cc);
         let u = sh.mul(&half_pi, wrk, RoundingMode::None);
         let (su, cu) = u.sinh_cosh(wrk, RoundingMode::None, cc);
@@ -417,18 +424,16 @@ where
             }
         }
     }
-    let mut out = half
-        .mul(h, wrk, RoundingMode::None)
-        .mul(&acc, wrk, RoundingMode::None);
-    let _ = out.set_precision(p, rm);
-    Some(out)
+    Some(acc)
 }
 
 /// Tanh–sinh (double-exponential) quadrature of `f` on `[a, b]`.
 ///
 /// `x = tanh((π/2) sinh t)`, step `h = 2π / (p ln 2)` then up to
-/// [`TANH_SINH_LEVELS_MAX`] successive halvings until successive sums
-/// agree to working precision. `None` if the interval is not a finite `a < b`.
+/// [`TANH_SINH_LEVELS_MAX`] successive halvings (each adds only the new odd
+/// abscissae) until successive estimates agree to working precision. `None` if
+/// the interval is not a finite `a < b`, or if the estimates have not agreed after
+/// the last halving. An unconverged sum is never returned as a value.
 pub fn tanh_sinh<F>(
     mut f: F,
     a: &ExactNum,
@@ -454,25 +459,43 @@ where
         RoundingMode::None,
     );
     let guard = tiny(p, 8);
-    let mut prev: Option<ExactNum> = None;
-    let mut best = None;
+    let wde = work_p_de(p);
+    let half_len = ExactNum::sub_ref(b, a, wde, RoundingMode::None).div(
+        &ExactNum::from_u8(2, wde),
+        wde,
+        RoundingMode::None,
+    );
     let two_wrk = ExactNum::from_u8(2, wrk);
     let mut h = h0;
-    for level in 0..TANH_SINH_LEVELS_MAX {
-        if level > 0 {
-            h = h.div(&two_wrk, wrk, RoundingMode::None);
+    let mut acc = tanh_sinh_sum(&mut f, a, b, &h, false, p, cc)?;
+    let estimate = |acc: &ExactNum, h: &ExactNum| {
+        half_len
+            .clone()
+            .mul(h, wde, RoundingMode::None)
+            .mul(acc, wde, RoundingMode::None)
+    };
+    let mut prev = estimate(&acc, &h);
+    for _ in 0..TANH_SINH_LEVELS_MAX {
+        h = h.div(&two_wrk, wrk, RoundingMode::None);
+        let odd = tanh_sinh_sum(&mut f, a, b, &h, true, p, cc)?;
+        acc = acc.add(&odd, wde, RoundingMode::None);
+        let s = estimate(&acc, &h);
+        let err = ExactNum::sub_ref(&s, &prev, wde, RoundingMode::None).abs();
+        // Agreement to 2^-(p-8) relative to max(|s|, 1).
+        let sa = s.clone().abs();
+        let lim = if sa.compare(&ExactNum::from_u8(1, wde)) == Some(1) {
+            guard.clone().mul(&sa, wde, RoundingMode::None)
+        } else {
+            guard.clone()
+        };
+        if below(&err, &lim) {
+            let mut out = s;
+            let _ = out.set_precision(p, rm);
+            return Some(out);
         }
-        let s = tanh_sinh_sum(&mut f, a, b, &h, p, rm, cc)?;
-        if let Some(pr) = &prev {
-            let err = ExactNum::sub_ref(&s, pr, p, rm).abs();
-            if below(&err, &guard) {
-                return Some(s);
-            }
-        }
-        prev = Some(s.clone());
-        best = Some(s);
+        prev = s;
     }
-    best
+    None
 }
 
 fn gauss_laguerre_nodes(
