@@ -2069,3 +2069,60 @@ fn zf_44_67_c_hypergeom_2f1_outside_unit_disc() {
         );
     }
 }
+
+/// ZF-11 follow-up (large-|s| spot check, 2026-11-15): with a wide-mantissa argument the
+/// working precision follows the input width, and `ln_gamma` sent z ≈ 2^62 to Γ(z), which
+/// overflows although ln Γ(z) ≈ 2^67.4 is finite. The ζ reflection then returned an
+/// ExponentOverflow with the wrong sign: ζ(−(2^62+1)) came back +Inf / +MAX (FLINT: negative).
+/// Now large z always takes the Stirling series with enough terms. References: FLINT arb
+/// lgamma at 1200 bits; ζ signs from FLINT arb zeta (the value overflows EXPONENT_MAX).
+#[test]
+fn zf_11_wide_argument_ln_gamma_and_zeta_sign() {
+    let mut cc = Consts::new().expect("Consts");
+    let lg: &[(&str, &str)] = &[
+        ("4611686018427387905", "193576097982213774845.13027697657098014944313953265391747471882753939795149052818771495315937924339432188369712088602790649758523644844215971"),
+        ("216172782113783808", "8412332341206235586.0881246231845805591580605550737661624681615854095037107394831826491636613235279472084371792054678902369170253322419789864"),
+        ("281474976710663", "9083497175537599.9941806189084721115639498679731370425980111174612984549371271696075125087720783022347650839764140646196196702565384594329106"),
+    ];
+    for &(x, want) in lg {
+        let x = ExactNum::parse(x, Radix::Dec, 4096, RoundingMode::ToEven, &mut cc);
+        for p in [64usize, 128, 256] {
+            for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+                let g = x.ln_gamma(p, rm, &mut cc);
+                let w = cr_ref(want, p, rm, &mut cc);
+                assert_eq!(g.compare(&w), Some(0), "ln_gamma({x}) p={p} {rm:?}: {g} {:?} want {w}", g.err());
+            }
+        }
+    }
+    // (numerator, halve, negative result)
+    for (n, half, neg) in [
+        ("-4611686018427387905", false, true),
+        ("-9223372036854775809", true, true),
+        ("-9223372036854775813", true, false),
+    ] {
+        let mut s = ExactNum::parse(n, Radix::Dec, 4096, RoundingMode::ToEven, &mut cc);
+        if half {
+            s = s.ldexp(-1, 4096, RoundingMode::ToEven);
+        }
+        for p in [64usize, 128] {
+            for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+                let z = s.riemann_zeta(p, rm, &mut cc);
+                let toward = match rm {
+                    RoundingMode::ToZero => true,
+                    RoundingMode::Up => neg,
+                    RoundingMode::Down => !neg,
+                    _ => false,
+                };
+                let m = ExactNum::max_value(p);
+                let want = match (toward, neg) {
+                    (true, true) => -m,
+                    (true, false) => m,
+                    (false, true) => INF_NEG,
+                    (false, false) => INF_POS,
+                };
+                assert_eq!(z.compare(&want), Some(0), "zeta({s}) p={p} {rm:?}: {z} {:?}", z.err());
+                assert_eq!(z.is_negative(), neg, "sign zeta({s}) p={p} {rm:?}");
+            }
+        }
+    }
+}

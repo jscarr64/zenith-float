@@ -695,11 +695,28 @@ impl ExactNumNumber {
     /// `ln Γ(self)` for positive `self` at working precision `p`.
     fn ln_gamma_positive_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         // Large arguments go straight to Stirling: Γ itself would overflow.
-        if self.exponent() >= stirling_min_exponent(p, 372, 127, 6) {
-            self.ln_gamma_stirling(p, cc)
-        } else {
-            self.gamma_at(p, cc)?.ln(p, RoundingMode::None, cc)
+        let e = self.exponent();
+        if e >= stirling_min_exponent(p, 372, 127, 6) {
+            return self.ln_gamma_stirling(p, cc);
         }
+        // ZF-11: the 64-term threshold grows like p/127, so a wide working precision (a
+        // caller's wide-mantissa argument such as the exact `1 − s` of the ζ reflection)
+        // sent z ≈ 2^62 to Γ(z), which overflows although ln Γ(z) ≈ 2^67.6 is finite. With
+        // more terms the Stirling tail meets 2^-(p+8) at a smaller exponent: use the
+        // digamma term count when it suffices, and for z ≥ 2^47 (where Γ can overflow at
+        // EXPONENT_MAX) double the count until it does; never fall back to Γ there.
+        let pw = p + WORD_BIT_SIZE;
+        let mut terms = digamma_terms(p);
+        if terms > 64 && e >= asymp_min_exponent(pw, terms) {
+            return with_even_bernoulli(terms, p, |bern| self.ln_gamma_stirling_with(p, bern, cc));
+        }
+        if e >= 48 {
+            while e < asymp_min_exponent(pw, terms) {
+                terms = terms.checked_mul(2).ok_or(Error::MemoryAllocation)?;
+            }
+            return with_even_bernoulli(terms, p, |bern| self.ln_gamma_stirling_with(p, bern, cc));
+        }
+        self.gamma_at(p, cc)?.ln(p, RoundingMode::None, cc)
     }
 
     fn gamma_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
