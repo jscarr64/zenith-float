@@ -1391,11 +1391,12 @@ impl ExactNum {
 
         match (&self.inner, &x.inner) {
             (Flavor::Inf(sy), Flavor::Inf(sx)) => {
-                let mut q = cc.pi(p, rm);
-                q = q.div(&ExactNum::from_word(4, p), p, rm);
+                let mag_rm = if sy.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm };
+                let mut q = cc.pi(p, mag_rm);
+                q = q.div(&ExactNum::from_word(4, p), p, mag_rm);
                 if sx.is_negative() {
                     let three = ExactNum::from_word(3, p);
-                    q = three.mul(&q, p, rm);
+                    q = three.mul(&q, p, mag_rm);
                 }
                 if sy.is_negative() {
                     q.neg()
@@ -1410,7 +1411,8 @@ impl ExactNum {
                 if sx.is_positive() {
                     Self::result_to_ext(ExactNumNumber::new2(p, y.sign(), y.inexact()), false, true)
                 } else {
-                    let mut pi = cc.pi(p, rm);
+                    let mag_rm = if y.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm };
+                    let mut pi = cc.pi(p, mag_rm);
                     pi.set_sign(y.sign());
                     pi
                 }
@@ -1532,7 +1534,7 @@ impl ExactNum {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<ExactNumNumber, Error> {
-        let mut half_pi = cc.pi_num(p, rm)?;
+        let mut half_pi = cc.pi_num(p, if s.is_negative() { crate::common::util::invert_rm_for_sign(rm) } else { rm })?;
 
         half_pi.set_exponent(1);
         half_pi.set_sign(s);
