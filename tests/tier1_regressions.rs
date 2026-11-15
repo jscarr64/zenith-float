@@ -1772,3 +1772,39 @@ fn zf_53_pollard_rho_proven_primality_uncapped() {
         assert!(!is_prime(&int(n)), "{n}");
     }
 }
+
+/// ZF-51 (standard reading): the reported bound includes the final rounding ulp, and `Ok`
+/// requires that whole bound to meet the tolerance. ∫_0^1 1 dx at p = 64 has Σ|K−G| = 0,
+/// but the result's rounding ulp 2^-63 exceeds a requested 2^-70, so no p = 64 result can
+/// carry that guarantee. At 2^-60 it is met.
+#[test]
+fn zf_51_reported_bound_includes_final_rounding() {
+    use zenith_float::{integrate_adaptive_gk, integrate_adaptive_gk_estimate, QuadratureError};
+    let mut cc = Consts::new().expect("Consts");
+    let p = 64;
+    let rm = RoundingMode::ToEven;
+    let (a, b) = (ExactNum::new(p), ExactNum::from_u8(1, p));
+    let one = |_x: &ExactNum, q: usize, _r: RoundingMode, _c: &mut Consts| ExactNum::from_u8(1, q);
+    let tight = ExactNum::from_u8(1, p).ldexp(-70, p, rm);
+    let r = integrate_adaptive_gk(one, &a, &b, &tight, 4, p, rm, &mut cc);
+    assert!(
+        matches!(r, Err(QuadratureError::NotConverged)),
+        "2^-70 at p=64: {r:?}"
+    );
+    let (g, met) =
+        integrate_adaptive_gk_estimate(one, &a, &b, &tight, 4, p, rm, &mut cc).expect("estimate");
+    assert!(
+        !met && g.estimate_kronrod.compare(&b) == Some(0),
+        "estimate {g:?}"
+    );
+    assert!(
+        g.abs_err_est.compare(&tight) == Some(1),
+        "bound above 2^-70"
+    );
+    let loose = ExactNum::from_u8(1, p).ldexp(-60, p, rm);
+    let g = integrate_adaptive_gk(one, &a, &b, &loose, 4, p, rm, &mut cc).expect("2^-60 met");
+    assert!(
+        g.abs_err_est.compare(&loose) != Some(1),
+        "bound meets 2^-60"
+    );
+}

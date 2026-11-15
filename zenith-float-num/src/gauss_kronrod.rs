@@ -97,8 +97,8 @@ pub struct GkResult {
     /// at least the sum of the local `|K − G|` on the panels that produced
     /// that value. One unit in the last place of the rounded estimate is
     /// added, and the estimate is rounded away from zero. It can be larger than
-    /// `|K − G|`. [`integrate_adaptive_gk`] returns `Ok` only when the bound before
-    /// that ulp meets the tolerance. An extrapolated value whose bound misses it is
+    /// `|K − G|`. [`integrate_adaptive_gk`] returns `Ok` only when this whole bound,
+    /// that ulp included, meets the tolerance. An extrapolated value whose bound misses it is
     /// available only from [`integrate_adaptive_gk_estimate`] (ZF-51). Callers that want `|K − G|` itself should subtract
     /// `estimate_kronrod` and `estimate_gauss`.
     ///
@@ -851,8 +851,8 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 /// # Returns
 ///
 /// `(result, tolerance_met)`. `tolerance_met` holds only when the reported
-/// error bound, before the one-ulp allowance for rounding the estimate to `p`,
-/// meets the absolute tolerance. A Wynn ε acceptance, or a spent
+/// error bound `abs_err_est`, including the one-ulp allowance for rounding the
+/// estimate to `p`, meets the absolute tolerance. A Wynn ε acceptance, or a spent
 /// panel budget, returns the best estimate with its honest bound and `false`
 /// (QUADPACK's `ier != 0`, ZF-51). [`integrate_adaptive_gk`] keeps only `true`.
 pub fn integrate_adaptive_gk_estimate<F>(
@@ -906,12 +906,23 @@ where
         seq.push(total_k.clone());
         let tol = abs_tolerance(&tol_work, &total_k, wrk);
         if leq(&total_err, &tol) {
-            let result = gk_result(total_k, total_g, total_err, p, rm, wrk);
+            let result = gk_result(
+                total_k.clone(),
+                total_g.clone(),
+                total_err.clone(),
+                p,
+                rm,
+                wrk,
+            );
             if !finite(&result.abs_err_est) {
                 return Err(QuadratureError::NotConverged);
             }
-            // Σ|K−G| met the tolerance; abs_err_est adds only the final rounding ulp.
-            return Ok((result, true));
+            // The reported bound includes the final rounding ulp; the tolerance is met only
+            // when that whole bound meets it (ZF-51). Otherwise keep refining: Σ|K−G| can
+            // still shrink, and the panel budget ends the run with `false`.
+            if leq(&result.abs_err_est, &tol) {
+                return Ok((result, true));
+            }
         }
         if seq.len() >= 3 {
             if let Some(ex) = wynn_table(&seq, wrk) {
@@ -921,14 +932,14 @@ where
                         if finite(&de) && leq(&de, &tol) {
                             let raw =
                                 if de.compare(&total_err) == Some(1) { de } else { total_err };
-                            let met = leq(&raw, &tol);
                             let result = gk_result(ex.value, total_g, raw, p, rm, wrk);
                             if !finite(&result.abs_err_est) {
                                 return Err(QuadratureError::NotConverged);
                             }
                             // QUADPACK ier: the extrapolated value is returned, but the
-                            // tolerance is met only if its reported bound (before the final
-                            // rounding ulp) meets it (ZF-51).
+                            // tolerance is met only if its whole reported bound, final
+                            // rounding ulp included, meets it (ZF-51).
+                            let met = leq(&result.abs_err_est, &tol);
                             return Ok((result, met));
                         }
                     }
