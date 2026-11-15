@@ -569,3 +569,56 @@ fn zf_05_parse_below_least_subnormal_rounds_by_mode() {
         }
     }
 }
+
+/// ZF-71: x^-k with k > 2^62 underflows (it is not an overflow): 2^-(2^62 + 1000) is below every subnormal, so it
+/// rounds by mode to a signed zero or the least subnormal; i64::MIN and powers of a non-power-of-two base too.
+#[test]
+fn zf_71_powsi_huge_negative_exponent_underflows_by_mode() {
+    let n = -((1i64 << 62) + 1000);
+    for p in [64usize, 256, 1024] {
+        for base in [2i64, 3, -2, -3] {
+            for k in [n, n - 1, i64::MIN, i64::MIN + 1] {
+                if base.abs() == 2 && p == 1024 && k > i64::MIN + 1 {
+                    continue; // 2^-(2^62 + 1000) is a 1024-bit subnormal: checked exactly below
+                }
+                let neg = base < 0 && k & 1 == 1;
+                for rm in MODES {
+                    let v = ExactNum::from_i64(base, p).powsi(k, p, rm);
+                    let away = match rm {
+                        RoundingMode::Up => !neg,
+                        RoundingMode::Down => neg,
+                        RoundingMode::FromZero => true,
+                        _ => false,
+                    };
+                    let tag = format!("{base}^{k} p={p} {rm:?}: {}", fmt_real(&v));
+                    if away {
+                        let mut want = ExactNum::min_positive(p);
+                        if neg {
+                            want.set_sign(Sign::Neg);
+                        }
+                        assert_eq!(v.compare(&want), Some(0), "{tag}");
+                    } else {
+                        assert!(v.is_zero(), "{tag}");
+                        assert_eq!(v.is_negative(), neg, "{tag} sign");
+                    }
+                }
+            }
+        }
+    }
+    // 2^-(2^62 + 1000) = 2^(EXPONENT_MIN - 1001) and its half are exact 1024-bit subnormals: minpos * 2^23, 2^22.
+    for (k, up) in [(n, 23i64), (n - 1, 22)] {
+        for rm in MODES {
+            let v = ExactNum::from_i64(2, 1024).powsi(k, 1024, rm);
+            let want = ExactNum::min_positive(1024).ldexp(up, 1024, RoundingMode::None);
+            assert_eq!(
+                v.compare(&want),
+                Some(0),
+                "2^{k} p=1024 {rm:?}: {}",
+                fmt_real(&v)
+            );
+        }
+    }
+    // Still in range: 2^-(2^61) is a normal value, exactly.
+    let v = ExactNum::from_i64(2, 64).powsi(-(1i64 << 61), 64, RoundingMode::ToEven);
+    assert_eq!(v.exponent(), Some(1 - (1i64 << 61)), "{}", fmt_real(&v));
+}

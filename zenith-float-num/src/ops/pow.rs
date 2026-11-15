@@ -25,6 +25,10 @@ const POWI_EXP_BITS: usize = 64;
 /// The top bit of the `powi_internal` exponent integer.
 const POWI_EXP_TOP: u64 = 1 << 63;
 
+/// Largest exponent part in `powsi`'s negative path: x0^part with x0 in [1/2, 1) stays >= 2^-(2^61), inside
+/// the normal range, and so does its reciprocal.
+const POWSI_PART_MAX: u64 = 1 << 61;
+
 struct SinhArgReductionEstimator {}
 
 impl ArgReductionEstimator for SinhArgReductionEstimator {
@@ -253,22 +257,42 @@ impl ExactNumNumber {
             let mut p_wrk = q.max(self.mantissa_max_bit_len()) + p_inc;
 
             loop {
-                let p_x = p_wrk + 2;
+                // Up to four factors (k <= 2^63, each part <= 2^61) can add a few units of error: 8 guard bits.
+                let p_x = p_wrk + 8;
 
-                let y = self.powi_internal(k, p_x, RoundingMode::None, false, true)?;
-                if y.is_zero() || y.is_subnormal() {
-                    // x0^k below the range needs k > 2^62; the reciprocal is then past every finite value.
-                    return Err(Error::ExponentOverflow(y.sign()));
+                // x0^k itself leaves the range once k > 2^62 (ZF-71: 2^-(2^62 + 1000) came back +Inf). Form
+                // 1 / x0^k as a product of 1 / x0^part with part <= 2^61, so each factor is normal; the factors
+                // and the product are kept at exponent 0, their binary exponents summed in `carry` (i128).
+                let mut carry: i128 = 0;
+                let mut acc: Option<Self> = None;
+                let mut left = k;
+                while left > 0 {
+                    let part = left.min(POWSI_PART_MAX);
+                    left -= part;
+                    let y = self.powi_internal(part, p_x, RoundingMode::None, false, true)?;
+                    let mut f = ONE.div(&y, p_x, RoundingMode::None)?;
+                    carry += i128::from(f.exponent());
+                    f.set_exponent(0);
+                    acc = Some(match acc {
+                        None => f,
+                        Some(a) => {
+                            let mut m = a.mul(&f, p_x, RoundingMode::None)?;
+                            carry += i128::from(m.exponent());
+                            m.set_exponent(0);
+                            m
+                        }
+                    });
                 }
-
-                let mut r = ONE.div(&y, p_x, RoundingMode::None)?;
+                let Some(mut r) = acc else {
+                    return Err(Error::InvalidArgument); // k >= 2 here
+                };
                 let rounded = r.inexact();
                 if !rounded || r.try_set_precision(q, RoundingMode::ToZero, p_wrk)? {
                     if !rounded {
                         r.set_precision(q, RoundingMode::ToZero)?;
                     }
                     let rounded = r.inexact();
-                    let e = i128::from(r.exponent()) + scale;
+                    let e = i128::from(r.exponent()) + carry + scale;
                     let mut ret = r.place_scaled(e, rounded, p, rm)?;
                     ret.set_inexact(ret.inexact() | self.inexact());
                     return Ok(ret);
