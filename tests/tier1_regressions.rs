@@ -1694,3 +1694,26 @@ fn zf_11_bessel_j_at_min_exponent() {
         }
     }
 }
+
+/// ZF-11 riemann_zeta row: ζ(s) for s = -0xc4eea7fd3d243a17·2^-39 ≈ -2.58·10^7 reflects to
+/// ζ(1-s), whose Euler–Maclaurin cut grew as 2(1-s): ~5·10^7 trial-divided terms, hours,
+/// then NaN(MemoryAllocation). Reference: FLINT arb zeta at 900 bits (mpmath agrees to 60
+/// digits), rounded once per mode.
+#[test]
+fn zf_11_riemann_zeta_large_negative() {
+    let mut cc = Consts::new().expect("Consts");
+    let want = "1.621596734986527778777610221795721975338643829734992759188335692762124964237794899915069460092625623907760252390890221657635590894413672477676035983145507405973e+159503325";
+    let s = parse_real("-c4eea7fd3d243a17p-39").expect("s");
+    for p in [64usize, 128] {
+        for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+            let z = s.riemann_zeta(p, rm, &mut cc);
+            let w = cr_ref(want, p, rm, &mut cc);
+            assert_eq!(
+                z.compare(&w),
+                Some(0),
+                "p={p} {rm:?}: {z} {:?} want {w}",
+                z.err()
+            );
+        }
+    }
+}

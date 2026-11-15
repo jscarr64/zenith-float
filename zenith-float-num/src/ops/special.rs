@@ -566,6 +566,18 @@ impl ExactNumNumber {
     /// Euler–Maclaurin `ζ(s)` for `s ≥ 1/2`, `s ≠ 1`, at working precision `p`:
     /// `Σ_{n<N} n^-s + N^(1-s)/(s-1) + N^-s/2 + Σ_k B_2k/(2k)! · s(s+1)…(s+2k-2) · N^(-s-2k+1)`.
     fn zeta_em(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        // ZF-11: the cut below grows as 2s (about 5·10^7 trial-divided terms for the reflected
+        // ζ(2.6·10^7)). For s ≥ p + 16 the direct sum needs two terms: the tail after 2^-s is
+        // Σ_{n≥3} n^-s ≤ 3^-s (1 + 3/(s-1)) ≤ 2·3^-s < 2^-(p+16).
+        let big = Self::from_usize(p + 16)?;
+        if self.cmp(&big) >= 0 {
+            let two_ms = Self::from_word(2, p)?
+                .ln(p, RoundingMode::None, cc)?
+                .mul(self, p, RoundingMode::None)?
+                .neg()?
+                .exp(p, RoundingMode::None, cc)?;
+            return Self::from_word(1, p)?.add(&two_ms, p, RoundingMode::None);
+        }
         let s_int = self.int_as_usize()?;
         let n_cut = p / 4 + 2 * s_int + 8;
         let k_max = p / 8 + 8;
