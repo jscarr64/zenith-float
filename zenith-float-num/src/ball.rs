@@ -350,9 +350,19 @@ impl ComplexBall {
         let mid = self.mid.ln(p, rm, cc);
         let den = am.sub(&self.rad, p, RoundingMode::Down);
         let lip = ExactNum::from_u8(1, p).div(&den, p, RoundingMode::Up);
-        let rad =
+        let mut rad =
             lip.mul(&self.rad, p, RoundingMode::Up)
                 .add(&Self::slack(&mid, p), p, RoundingMode::Up);
+        // A disk that meets the cut (-inf, 0] has points on both sides of the 2*pi*i jump: each
+        // is within the Lipschitz bound of the analytic continuation of ln(mid), which differs
+        // from the principal value by at most 2*pi in the imaginary part.
+        let crosses = !self.rad.is_zero()
+            && !(self.mid.re().is_positive() && !self.mid.re().is_zero())
+            && matches!(self.mid.im().abs_cmp(&self.rad), Some(c) if c <= 0);
+        if crosses {
+            let two_pi = cc.pi(p, RoundingMode::Up).ldexp(1, p, RoundingMode::Up);
+            rad = rad.add(&two_pi, p, RoundingMode::Up);
+        }
         ComplexBall { mid, rad }
     }
 

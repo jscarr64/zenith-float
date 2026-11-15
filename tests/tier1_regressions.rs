@@ -774,3 +774,86 @@ fn zf_47_ball_exp_encloses_endpoints() {
         }
     }
 }
+
+/// ZF-46: a disk that meets the cut (−∞, 0] of the principal log has an image on both sides of the jump
+/// (imaginary parts near +π and −π), so its log disk must cover both. Points: the disk's lowest and highest
+/// points straight above/below the center, and the center. Principal values agree with mpmath/FLINT log.
+#[test]
+fn zf_46_cball_ln_disk_across_cut_encloses_both_sides() {
+    use zenith_float::ComplexBall;
+    let mut cc = Consts::new().expect("Consts");
+    for p in [64usize, 128, 256] {
+        for (re, im, r) in [
+            ("-1p0", "0", -60i64),
+            ("-1p0", "-0", -8),
+            ("-1p0", "0", -8),
+            ("-1p0", "1p-10", -8),
+            ("-3p0", "-1p-20", -4),
+        ] {
+            let mid = parse_complex(&format!("{re},{im}")).expect("mid");
+            let rad = ExactNum::from_u8(1, p).ldexp(r, p, RoundingMode::None);
+            let b = ComplexBall::new(mid.clone(), rad.clone());
+            let w = b.ln(p, RoundingMode::ToEven, &mut cc);
+            for s in [-1i8, 1] {
+                // a point of the disk on the far side of the cut, inside by a quarter of the radius
+                let dy = ExactNum::from_i8(s, p)
+                    .mul(&rad, p, RoundingMode::None)
+                    .ldexp(-1, p, RoundingMode::None);
+                let pt = ExactComplex::new(
+                    mid.re().clone(),
+                    ExactNum::add_ref(mid.im(), &dy, p, RoundingMode::None),
+                );
+                assert!(b.contains(&pt, p), "point not in source disk");
+                let v = pt.ln(p + 64, RoundingMode::ToEven, &mut cc);
+                assert!(
+                    w.contains(&v, p),
+                    "p={p} {re},{im} r=2^{r} s={s}: ln point {} not in {} ± {}",
+                    fmt_c(&v),
+                    fmt_c(w.mid()),
+                    fmt_real(w.rad())
+                );
+            }
+        }
+        // A disk away from the cut keeps a small radius.
+        let mid = parse_complex("-1p0,1p-4").expect("mid");
+        let b = ComplexBall::new(
+            mid,
+            ExactNum::from_u8(1, p).ldexp(-8, p, RoundingMode::None),
+        );
+        let w = b.ln(p, RoundingMode::ToEven, &mut cc);
+        assert!(
+            matches!(w.rad().compare(&ExactNum::from_u8(1, p)), Some(o) if o < 0),
+            "{}",
+            fmt_real(w.rad())
+        );
+    }
+}
+
+/// Every original ZF-46 source disk, sampled at the cardinal and diagonal boundary points.
+#[test]
+fn zf_46_cball_ln_all_harper_disks() {
+    use zenith_float::ComplexBall;
+    let mut cc = Consts::new().expect("Consts");
+    for row in include_str!("tier1/zf46.tsv").lines() {
+        let t: Vec<_> = row.split('\t').collect();
+        let p: usize = t[1].parse().expect("p");
+        let mid = parse_complex(t[2]).expect("mid");
+        let rad = parse_real(t[3]).expect("rad");
+        let b = ComplexBall::new(mid.clone(), rad.clone());
+        let w = b.ln(p, RoundingMode::ToEven, &mut cc);
+        for (dx, dy) in [(0i8, 1i8), (0, -1), (1, 0), (-1, 0), (1, 1), (-1, -1), (1, -1), (-1, 1)] {
+            let offset = |d: i8| {
+                ExactNum::from_i8(d, p)
+                    .mul(&rad, p, RoundingMode::None)
+                    .ldexp(-1, p, RoundingMode::None)
+            };
+            let pt = ExactComplex::new(
+                ExactNum::add_ref(mid.re(), &offset(dx), p, RoundingMode::None),
+                ExactNum::add_ref(mid.im(), &offset(dy), p, RoundingMode::None),
+            );
+            assert!(b.contains(&pt, p), "{} point not in source", t[0]);
+            let v = pt.ln(p + 64, RoundingMode::ToEven, &mut cc);
+            assert!(w.contains(&v, p), "{} dx={dx} dy={dy}", t[0]);
+        }
+    }
+}
