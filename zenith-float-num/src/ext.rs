@@ -370,6 +370,12 @@ impl ExactNum {
             return (self.add(b, p, rm), Self::new(p));
         }
         let exact = self.add_full_prec(b);
+        if exact.is_inf() {
+            // finite operands whose exact result is past the range: `hi` follows the mode
+            // (MAX toward zero, Inf otherwise), as a rounded add/mul does; `lo` is zero.
+            let s = if exact.is_negative() { Sign::Neg } else { Sign::Pos };
+            return (Self::result_to_ext_rm(Err(Error::ExponentOverflow(s)), false, true, p, rm), Self::new(p));
+        }
         let mut hi = exact.clone();
         if let Err(err) = hi.set_precision(p, rm) {
             return (Self::nan(Some(err)), Self::nan(Some(err)));
@@ -405,6 +411,12 @@ impl ExactNum {
             return (ExactNum::mul_ref(self, b, p, rm), Self::new(p));
         }
         let exact = self.mul_full_prec(b);
+        if exact.is_inf() {
+            // finite operands whose exact result is past the range: `hi` follows the mode
+            // (MAX toward zero, Inf otherwise), as a rounded add/mul does; `lo` is zero.
+            let s = if exact.is_negative() { Sign::Neg } else { Sign::Pos };
+            return (Self::result_to_ext_rm(Err(Error::ExponentOverflow(s)), false, true, p, rm), Self::new(p));
+        }
         let mut hi = exact.clone();
         if let Err(err) = hi.set_precision(p, rm) {
             return (Self::nan(Some(err)), Self::nan(Some(err)));
@@ -3385,7 +3397,7 @@ Accuracy: correctly-rounded",
         p,
         usize
     );
-    gen_wrapper_arg_rm_cc!(
+    gen_wrapper_ovf_rm_cc!(
         "Digamma `ψ(self)`. Poles at non-positive integers. Reflection for z < 0.
 
 # Precision
@@ -3655,7 +3667,7 @@ Accuracy: correctly-rounded",
     /// Word-precision implementation of [`Self::bi`].
     fn bi_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.bi(p, rm, cc), v.is_zero(), true),
+            Flavor::Value(v) => Self::result_to_ext_rm(v.bi(p, rm, cc), v.is_zero(), true, p, rm),
             Flavor::Inf(s) => {
                 if s.is_positive() {
                     INF_POS
@@ -3717,7 +3729,7 @@ Accuracy: correctly-rounded",
     /// Word-precision implementation of [`Self::bi_prime`].
     fn bi_prime_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match &self.inner {
-            Flavor::Value(v) => Self::result_to_ext(v.bi_prime(p, rm, cc), v.is_zero(), true),
+            Flavor::Value(v) => Self::result_to_ext_rm(v.bi_prime(p, rm, cc), v.is_zero(), true, p, rm),
             Flavor::Inf(s) => {
                 if s.is_positive() {
                     INF_POS
