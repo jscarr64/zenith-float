@@ -712,10 +712,23 @@ impl ExactNumNumber {
         let mut acc = Self::from_word(1, pw)?;
         let mut shifts = 0usize;
 
-        // Raise the argument until the last (64th) Stirling term, B₁₂₈/(128·127·z¹²⁷)
-        // ≈ 2^363.8 / z¹²⁷, is below 2^-(p+8).
+        // Raise the argument until the last Stirling term is below 2^-(p+8). With the fixed
+        // 64 terms (B₁₂₈/(128·127·z¹²⁷) ≈ 2^363.8 / z¹²⁷) the shift count grows like
+        // 2^(p/127) and hits STIRLING_SHIFT_MAX from p ≈ 2048, so at high p use more terms,
+        // scaled with p as digamma does; the extra 64 bits in the bound cover the factor
+        // z/(2K-1) between a Stirling term and the digamma term asymp_min_exponent measures.
         // Bound at `pw`, the precision ln_gamma_stirling checks its stop rule against.
-        let e_min = stirling_min_exponent(pw, 372, 127, 6);
+        let e64 = stirling_min_exponent(pw, 372, 127, 6);
+        let mut terms = 64;
+        let mut e_min = e64;
+        let k = digamma_terms(p);
+        if k > 64 {
+            let ek = asymp_min_exponent(pw + WORD_BIT_SIZE, k);
+            if ek < e64 {
+                terms = k;
+                e_min = ek;
+            }
+        }
         while z.exponent() < e_min && shifts < shift_max {
             acc = acc.mul(&z, pw, RoundingMode::None)?;
             z = z.add(&one, pw, RoundingMode::None)?;
@@ -726,7 +739,11 @@ impl ExactNumNumber {
             return Err(Error::PrecisionRetryExhausted);
         }
 
-        let lg = z.ln_gamma_stirling(pw, cc)?;
+        let lg = if terms == 64 {
+            z.ln_gamma_stirling(pw, cc)?
+        } else {
+            with_even_bernoulli(terms, pw, |bern| z.ln_gamma_stirling_with(pw, bern, cc))?
+        };
         let g = lg.exp(pw, RoundingMode::None, cc)?;
         g.div(&acc, p, RoundingMode::None)
     }
@@ -744,6 +761,18 @@ impl ExactNumNumber {
     }
 
     fn ln_gamma_stirling(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let bern = even_bernoulli(64, p)?;
+        self.ln_gamma_stirling_with(p, &bern, cc)
+    }
+
+    /// Stirling series for `ln Γ(self)` with the even Bernoulli numbers `bern` (B₂, B₄, …):
+    /// as many terms as `bern` holds, `PrecisionRetryExhausted` if none falls below 2^-p.
+    fn ln_gamma_stirling_with(
+        &self,
+        p: usize,
+        bern: &[Self],
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
         // (z-1/2) ln z - z + (1/2) ln(2π) + ∑ B_{2k} / (2k(2k-1) z^{2k-1})
         let ln_z = self.ln(p, RoundingMode::None, cc)?;
         let two = Self::from_word(2, p)?;
@@ -759,11 +788,10 @@ impl ExactNumNumber {
         s = s.add(&ln_two_pi, p, RoundingMode::None)?;
 
         let mut zpow = self.clone()?; // z^{1} for k=1 term z^{2k-1}
-        let bern = even_bernoulli(64, p)?;
         // Cap or divergence without meeting the bound: never use the partial sum.
         let mut done = false;
-        for k in 1..=64 {
-            let b = &bern[k - 1];
+        for (i, b) in bern.iter().enumerate() {
+            let k = i + 1;
             let two_k = Self::from_word((2 * k) as Word, p)?;
             let two_k_m1 = Self::from_word((2 * k - 1) as Word, p)?;
             let den =
