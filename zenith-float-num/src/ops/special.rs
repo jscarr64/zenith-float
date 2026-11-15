@@ -1837,6 +1837,9 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
+        if self.is_zero() {
+            return bessel_y_at_zero(nu, p);
+        }
         if !self.is_positive() {
             return Err(Error::InvalidArgument);
         }
@@ -4895,6 +4898,32 @@ fn bessel_cancel_bits(x: &ExactNumNumber, num: usize, den: usize) -> Result<usiz
         return Err(Error::InvalidArgument);
     }
     Ok(g)
+}
+
+/// \(Y_\nu(0^+)\): `-Inf` for `nu >= 0`; for `nu = -m` it is `(-1)^m Y_m(0^+) = (-1)^{m+1} Inf`;
+/// for `nu = -(m + 1/2)` it is `(-1)^m J_{m+1/2}(0) = (-1)^m 0`; otherwise the
+/// `J_nu cot(nu pi)` term dominates, with sign `sgn Gamma(nu+1) sgn cot(nu pi)`
+/// `= (-1)^m (+1 if t > 1/2 else -1)`, where `m = floor(-nu)` and `t = -nu - m`.
+/// Infinities are returned as `ExponentOverflow` so the wrapper maps them to signed Inf.
+fn bessel_y_at_zero(nu: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Error> {
+    let inf = |pos: bool| Err(Error::ExponentOverflow(if pos { Sign::Pos } else { Sign::Neg }));
+    if nu.is_zero() || nu.is_positive() {
+        return inf(false);
+    }
+    let a = nu.abs()?;
+    let pe = round_p(a.mantissa_max_bit_len().max(WORD_BIT_SIZE) + WORD_BIT_SIZE);
+    let m = a.clone()?.floor()?;
+    let m_odd = !m.is_zero() && !m.clone()?.ldexp(-1, pe, RoundingMode::None)?.is_int();
+    let t = a.sub(&m, pe, RoundingMode::None)?;
+    if t.is_zero() {
+        return inf(m_odd);
+    }
+    let half = ExactNumNumber::from_word(1, WORD_BIT_SIZE)?.ldexp(-1, WORD_BIT_SIZE, RoundingMode::None)?;
+    let c = t.cmp(&half);
+    if c == 0 {
+        return ExactNumNumber::new2(p, if m_odd { Sign::Neg } else { Sign::Pos }, false);
+    }
+    inf((c > 0) != m_odd)
 }
 
 fn as_i32_exact(x: &ExactNumNumber, p: usize) -> Result<Option<i32>, Error> {
