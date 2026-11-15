@@ -687,10 +687,12 @@ impl ExactNumNumber {
             // (m1 * 2^(e1eff - e2eff)) mod m2 = ((m1 mod m2) * ( 2^(e1eff - e2eff) mod m2 )) mod m2
 
             let mut two = Mantissa::from_raw_parts(&[2], 2)?;
-            let powm = if (e1eff - e2eff) as usize >= m2_normalized.max_bit_len() {
-                two.pow_mod((e1eff - e2eff) as usize, m2_normalized)?
+            // The gap can exceed i64 (e.g. MAX rem the least subnormal); it is positive here.
+            let gap = e1eff.abs_diff(e2eff) as usize;
+            let powm = if gap >= m2_normalized.max_bit_len() {
+                two.pow_mod(gap, m2_normalized)?
             } else {
-                two.pow2((e1eff - e2eff - 1) as usize)?;
+                two.pow2(gap - 1)?;
                 two // m3 still becomes 0 in rare case when two == m2_normalized
             };
 
