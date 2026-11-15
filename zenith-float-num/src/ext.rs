@@ -7571,7 +7571,10 @@ mod grid_digest_tests {
         // Re-pinned (F9d-13): was 15_402_253_497_317_085_552, with the 1158 F-25 subnormal-range cells in.
         // Re-pinned (F9d-15): was 16_907_990_978_326_668_517, with the 60 F-25 subnormal-range cells one gradual grid
         // unit off in.
-        assert_eq!(h.finish(), 9_830_385_385_956_693_375);
+        // Re-pinned (Tier 1 ZF-18 c.mul): was 9_830_385_385_956_693_375. Directed modes form the four products exactly
+        // and round each part once (3400 cells change, every one checked against the exact single-rounding model, none
+        // worse than before); a product of nonzero operands that underflows keeps the per-product rounding.
+        assert_eq!(h.finish(), 518_216_661_662_630_842);
         Ok(())
     }
 
@@ -7838,7 +7841,9 @@ mod grid_digest_tests {
         // New ToOdd digest (F9a-5), every cell checked against the oracle (fold-pr1-168)
         assert_eq!(h_odd.finish(), 2_643_728_162_804_407_485);
         // Re-pinned (F9d-2): was 2_882_922_101_969_868_672, with the 6 None F-16 tanh cells in.
-        assert_eq!(h.finish(), 4_473_217_349_629_320_125);
+        // Re-pinned (Tier 1 ZF-17/36): was 4_473_217_349_629_320_125. atan(-Inf) in Up/Down at p = 53, 128 now rounds
+        // -pi/2 in the requested direction (6 cells).
+        assert_eq!(h.finish(), 4_503_911_867_076_179_483);
         Ok(())
     }
 
@@ -8350,8 +8355,9 @@ mod grid_digest_tests {
         assert_eq!(count, 13 * 7 * 5 * 2 * 2);
         // F-21 (N-6, ZF-M27): the Down NaN(PrecisionRetryExhausted) cells at operand 21 are not hashed
         assert_eq!(held_f21, 62);
-        // M27-TZ/UD (finding id pending): the Down +overflow cells (+Inf, the ruling is +MAX) are not hashed
-        assert_eq!(held_tzud, 24);
+        // M27-TZ/UD: the 24 Down +overflow cells now give +MAX (Tier 1 ZF-59 wrappers map overflow by mode) and are
+        // hashed again; none is held.
+        assert_eq!(held_tzud, 0);
         // F-22 rider (N-7, ZF-M27): dn and nd at u21, m = 1/2 and 3/8, both modes, are not hashed
         assert_eq!(held_f22, 16);
         // F-28 (ZF-M27): ns, cs and ds at u = +-0, m in {0, 1, 1/2, 3/8}, p in {64, 128}, both modes, are
@@ -8384,7 +8390,8 @@ mod grid_digest_tests {
         // Re-pinned (F9d-18): was 3_754_090_377_808_634_531, with the 96 F-28 ns/cs/ds(+-0|m) pole NaN cells in.
         // Re-pinned (F9d-20): was 8_207_647_167_930_223_000, with the 64 F-29 am/sn/sc/sd(-0|m) +0 cells in.
         // Re-pinned (F9d-21): was 6_388_409_464_529_934_111, with the 8 F-30 am(-7|m) period-shift cells in.
-        assert_eq!(h.finish(), 295_760_852_189_530_323);
+        // Re-pinned (Tier 1): was 295_760_852_189_530_323, without the 24 Down cs/ds/ns +MAX cells (+Inf before).
+        assert_eq!(h.finish(), 2_202_397_902_195_068_300);
         Ok(())
     }
 

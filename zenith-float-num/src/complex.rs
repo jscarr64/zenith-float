@@ -286,12 +286,26 @@ impl ExactComplex {
     /// Implementation of [`Self::mul`] on operands without inexact history.
     fn mul_word(self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
         if rm != RoundingMode::None {
-            // Rounding the products first and then their sum rounded twice (1 ulp off).
+            // Rounding the products first and then their sum rounded twice (1 ulp off), so the
+            // products are formed exactly and each part is rounded once.
             let ac = self.re.mul_full_prec(&rhs.re);
             let bd = self.im.mul_full_prec(&rhs.im);
             let ad = self.re.mul_full_prec(&rhs.im);
             let bc = self.im.mul_full_prec(&rhs.re);
-            return Self::new(ac.sub(&bd, p, rm), ad.add(&bc, p, rm));
+            // An exact product below the exponent range comes back as zero or with bits lost, and a
+            // directed sum would then miss the least subnormal. Only then, round each product at
+            // (p, rm) first (the per-product path below), so the directed step survives.
+            let underflow = |x: &ExactNum, y: &ExactNum, xy: &ExactNum| {
+                !x.is_zero() && !y.is_zero() && !x.is_inf() && !y.is_inf() && !x.is_nan() && !y.is_nan()
+                    && (xy.is_zero() || xy.inexact())
+            };
+            if !(underflow(&self.re, &rhs.re, &ac)
+                || underflow(&self.im, &rhs.im, &bd)
+                || underflow(&self.re, &rhs.im, &ad)
+                || underflow(&self.im, &rhs.re, &bc))
+            {
+                return Self::new(ac.sub(&bd, p, rm), ad.add(&bc, p, rm));
+            }
         }
         let ac = ExactNum::mul_ref(&self.re, &rhs.re, p, rm);
         let bd = ExactNum::mul_ref(&self.im, &rhs.im, p, rm);
