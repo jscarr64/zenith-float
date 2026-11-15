@@ -16,8 +16,9 @@ fn work_p(p: usize) -> usize {
     p.saturating_add(WORD_BIT_SIZE)
 }
 
+/// Strictly positive and finite: `+0` is not a valid scale or shape parameter.
 fn finite_pos(x: &ExactNum) -> bool {
-    x.is_positive() && !x.is_inf()
+    x.is_positive() && !x.is_zero() && !x.is_inf()
 }
 
 fn nn_int(x: &ExactNum) -> bool {
