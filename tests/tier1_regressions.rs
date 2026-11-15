@@ -954,3 +954,45 @@ fn zf_52_roots_default_tolerance_converge() {
         }
     }
 }
+
+/// `|got - want| < 2^(e(want) - p + slack)`; `want` parsed at 1152 bits.
+fn quad_near(got: &ExactNum, want: &str, p: usize, slack: i64, cc: &mut Consts) -> bool {
+    let w = ExactNum::parse(want, Radix::Dec, 1152, RoundingMode::ToEven, cc);
+    let d = ExactNum::sub_ref(got, &w, 1152, RoundingMode::ToEven).abs();
+    let lim = w.abs().ldexp(slack - p as i64, 1152, RoundingMode::ToEven);
+    matches!(d.compare(&lim), Some(o) if o < 0)
+}
+
+const SQRT_PI_HALF: &str = "0.886226925452758013649083741670572591398774728061193564106903894926455642295516090687475328369272332708113411812141285333118076432862211301262546854801393534231018849326552561424962586514475413114466047689633981400087319507675739860258350095092617009292723487247456320156960887762953108202709666250453199203806866738737576716833995";
+const SQRT_PI_3_4: &str = "1.32934038817913702047362561250585888709816209209179034616035584238968346344327413603121299255390849906217011771821192799967711464929331695189382028220209030134652827398982884213744387977171311967169907153445097210013097926151360979038752514263892551393908523087118448023544133164442966230406449937567979880571030010810636507525099";
+
+/// ZF-49: odd-n Gauss–Hermite counted the origin twice (H_n(0)=0 opened a bracket at
+/// the left end of the positive search), dropping the outermost pair. The rule is
+/// exact for degree <= 2n-1: x^2 -> sqrt(pi)/2 (n >= 2), x^4 -> 3 sqrt(pi)/4 (n >= 3).
+/// References: FLINT arb at 1400 bits.
+#[test]
+fn zf_49_gauss_hermite_odd_n_exact_on_polynomials() {
+    use zenith_float::gauss_hermite;
+    let mut cc = Consts::new().expect("Consts");
+    for p in [64usize, 128, 256, 1024] {
+        for n in 2usize..=13 {
+            let rm = RoundingMode::ToEven;
+            let x2 = gauss_hermite(|x, q, r, _| x.sqr(q, r), n, p, rm, &mut cc)
+                .unwrap_or_else(|| panic!("n={n} p={p} refused"));
+            assert!(
+                quad_near(&x2, SQRT_PI_HALF, p, 4, &mut cc),
+                "x^2 n={n} p={p}: {}",
+                fmt_real(&x2)
+            );
+            if n >= 3 {
+                let x4 = gauss_hermite(|x, q, r, _| x.sqr(q, r).sqr(q, r), n, p, rm, &mut cc)
+                    .unwrap_or_else(|| panic!("n={n} p={p} refused"));
+                assert!(
+                    quad_near(&x4, SQRT_PI_3_4, p, 4, &mut cc),
+                    "x^4 n={n} p={p}: {}",
+                    fmt_real(&x4)
+                );
+            }
+        }
+    }
+}

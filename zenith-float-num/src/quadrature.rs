@@ -201,9 +201,10 @@ where
         if !finite(&y) {
             return None;
         }
-        if prev_f.is_zero() {
-            out.push((prev_x.clone(), x.clone()));
-        } else if y.is_zero() || prev_f.is_positive() != y.is_positive() {
+        // Roots strictly above `lo` only: a zero at `lo` itself (H_n(0) for odd n) is
+        // the caller's to handle. A zero at a grid point is counted once, in the
+        // interval it closes, never again in the interval it opens.
+        if !prev_f.is_zero() && (y.is_zero() || prev_f.is_positive() != y.is_positive()) {
             out.push((prev_x, x.clone()));
         }
         if out.len() == want {
