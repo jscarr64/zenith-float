@@ -716,7 +716,52 @@ impl ExactNumNumber {
             }
             return with_even_bernoulli(terms, p, |bern| self.ln_gamma_stirling_with(p, bern, cc));
         }
-        self.gamma_at(p, cc)?.ln(p, RoundingMode::None, cc)
+        self.ln_gamma_small_at(p, cc)
+    }
+
+    /// `ln Γ(x)` for `0 < x < 2^48` off the Stirling range (ZF-30). `ln(Γ(x))` at `p` bits
+    /// has absolute error `2^-p`, which is a large relative error where `ln Γ` is small (near
+    /// `x = 1` and `x = 2`), and `Γ(x) ≈ 1/x` overflows for the tiniest `x`. So:
+    /// - `x < 2^-(2p+64)`: `ln Γ(x) = −ln x − γx` (next term `ζ(2)x²/2`, below `2^-2p` relative);
+    /// - `x < 1/2`: `ln Γ(x) = ln Γ(1 + x) − ln x` with `1 + x` exact (no cancellation);
+    /// - `|x − 1|` or `|x − 2| < 2^-(2p+64)`: `−γ(x−1)` resp. `(1−γ)(x−2)`;
+    /// - otherwise `ln Γ(x)` from `Γ(x)` at `p + log2(1/|x−1|, 1/|x−2|) + 64` bits.
+    fn ln_gamma_small_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let nr = RoundingMode::None;
+        let e = self.exponent();
+        let tiny = -Exponent::try_from(2 * p + 64).map_err(|_| Error::InvalidArgument)?;
+        if e < tiny {
+            let g = cc.euler_gamma_num(p, nr)?;
+            let lx = self.ln(p, nr, cc)?;
+            return lx.neg()?.sub(&g.mul(self, p, nr)?, p, nr);
+        }
+        let mant = self.mantissa_max_bit_len();
+        if e <= -1 {
+            let w = round_p(mant + usize::try_from(-e).unwrap_or(0) + 2 * WORD_BIT_SIZE);
+            let y = Self::from_word(1, WORD_BIT_SIZE)?.add(self, w, nr)?;
+            let pw = p + WORD_BIT_SIZE;
+            let v = y.ln_gamma_small_at(pw, cc)?;
+            return v.sub(&self.ln(pw, nr, cc)?, p, nr);
+        }
+        let w = round_p(mant + usize::try_from(e.max(0)).unwrap_or(0) + 2 * WORD_BIT_SIZE);
+        let t1 = self.sub(&Self::from_word(1, WORD_BIT_SIZE)?, w, nr)?;
+        let t2 = self.sub(&Self::from_word(2, WORD_BIT_SIZE)?, w, nr)?;
+        if t1.is_zero() || t2.is_zero() {
+            return Self::new(p);
+        }
+        let g = cc.euler_gamma_num(p + WORD_BIT_SIZE, nr)?;
+        if t1.exponent() < tiny {
+            return g.mul(&t1, p, nr)?.neg();
+        }
+        if t2.exponent() < tiny {
+            let c = Self::from_word(1, WORD_BIT_SIZE)?.sub(&g, p + WORD_BIT_SIZE, nr)?;
+            return c.mul(&t2, p, nr);
+        }
+        let ext = usize::try_from((-t1.exponent()).max(-t2.exponent()).max(0)).unwrap_or(0);
+        let pp = round_p(p + ext + WORD_BIT_SIZE);
+        let mut v = self.gamma_at(pp, cc)?.ln(pp, nr, cc)?;
+        v.set_precision(p, nr)?;
+        Ok(v)
     }
 
     fn gamma_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
