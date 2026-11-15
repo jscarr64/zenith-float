@@ -14,6 +14,27 @@ use crate::{num::ExactNumNumber, Sign, EXPONENT_MIN};
 #[cfg(not(feature = "std"))]
 use alloc::vec::Vec;
 
+/// The width (in bits) of a constant that reduces an argument of exponent `e` (`e > 0`) with no
+/// loss: `base` bits plus `e` extra bits, so the remainder keeps every bit of `base`. There is no
+/// limit on `e`: the width is checked, never capped. A width the exponent arithmetic cannot hold
+/// (see `p_assertion`), or that this machine cannot reserve, is `MemoryAllocation`; the reservation
+/// is a probe only (nothing is written), so a refusal costs no memory.
+pub(crate) fn reduction_width(base: usize, e: crate::defs::Exponent) -> Result<usize, Error> {
+    let extra = usize::try_from(e.max(0)).map_err(|_| Error::MemoryAllocation)?;
+    let width = base.checked_add(extra).ok_or(Error::MemoryAllocation)?;
+    reserve_probe(width)?;
+    Ok(width)
+}
+
+/// `Ok` when a `width`-bit mantissa is representable (`p_assertion`) and this machine can reserve it; otherwise
+/// `MemoryAllocation`, before any series work starts at that width. Nothing is written, so the probe costs no memory.
+pub(crate) fn reserve_probe(width: usize) -> Result<(), Error> {
+    crate::num::ExactNumNumber::p_assertion(width)?;
+    let mut probe: alloc::vec::Vec<Word> = alloc::vec::Vec::new();
+    probe.try_reserve_exact(width.div_ceil(WORD_BIT_SIZE))?;
+    Ok(())
+}
+
 /// integer logarithm base 2 of a number.
 pub fn log2_ceil(mut n: usize) -> usize {
     let mut ret = 0;

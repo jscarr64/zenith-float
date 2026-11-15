@@ -3,6 +3,7 @@
 use alloc::vec::Vec;
 
 use crate::common::util::bump_prec_retry;
+use crate::common::util::reduction_width;
 use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::Exponent;
@@ -31,10 +32,6 @@ fn jacobi_ratio_m_one(m: &ExactNumNumber, p: usize) -> Result<Option<ExactNumNum
 
 /// AGM / descending Landen steps for `am`, `sn`, `cn`, `dn`.
 pub const JACOBI_AGM_MAX: u32 = 128;
-
-/// Largest `exponent(u)` the period reduction carries as extra bits of K (beyond it the
-/// reduction would need more than a million-bit K; the result is PrecisionRetryExhausted).
-const JACOBI_REDUCE_EXTRA_MAX: usize = 1 << 20;
 
 impl ExactNumNumber {
     /// Jacobi amplitude \(\operatorname{am}(u|m)\). Parameter \(m=k^2\in[0,1]\).
@@ -346,11 +343,9 @@ impl ExactNumNumber {
         if self.abs()?.cmp(&pi) < 0 {
             return Ok(None);
         }
-        let extra = usize::try_from(self.exponent().max(0)).map_err(|_| Error::InvalidArgument)?;
-        if extra > JACOBI_REDUCE_EXTRA_MAX {
-            return Err(Error::PrecisionRetryExhausted);
-        }
-        let pk = round_p(p + extra + WORD_BIT_SIZE);
+        // K carries exponent(u) extra bits (checked, never capped: `MemoryAllocation` past what
+        // the machine holds).
+        let pk = round_p(reduction_width(p + WORD_BIT_SIZE, self.exponent())?);
         let k = m.elliptic_k_at(pk, cc)?;
         // |u| ≤ 2K as |u|/2 ≤ K (the exponent shift is exact; |u| ≥ π here).
         let mut half_u = self.abs()?;

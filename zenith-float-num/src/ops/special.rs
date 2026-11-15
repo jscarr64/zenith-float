@@ -5523,11 +5523,71 @@ mod tests {
         let mut cc = Consts::new()?;
         let p = 1 << 14;
         let x = quarters(3, p)?;
-        assert!(x
-            .gamma_positive_capped(p, &mut cc, STIRLING_SHIFT_MAX)
-            .is_ok());
+        // The value, not just Ok: Γ(3/4) at p = 2^14 against the FLINT (Arb) floor of
+        // Γ(3/4)·2^16639 (16640 bits, error < 2^-16639; python-flint 0.9.0). A refusal or a wrong
+        // value both fail here.
+        let g = x.gamma_positive_capped(p, &mut cc, STIRLING_SHIFT_MAX)?;
+        let reference = gamma_3_4_flint()?;
+        let diff = g.sub(&reference, 2 * p, RoundingMode::None)?;
+        let bound = 1 - Exponent::try_from(p).map_err(|_| crate::Error::InvalidArgument)? + 4;
+        assert!(
+            diff.is_zero() || diff.exponent() <= bound,
+            "Γ(3/4) at p = 2^14 off by 2^{} (bound 2^{bound})",
+            diff.exponent()
+        );
         assert!(exhausted(x.gamma_positive_capped(p, &mut cc, 1)));
         Ok(())
+    }
+
+    /// FLINT `floor(Γ(3/4)·2^16639)` as hex (16640 bits; Γ(3/4) ∈ [1, 2), so exponent 1).
+    fn gamma_3_4_flint() -> Result<ExactNumNumber, crate::Error> {
+        const HEX: [&str; 33] = [
+        "9cda745a87b16013d7a9256698c602bbb7a79f91e7e526fd3294e130ed0bb0ffa823fffd6e9fcd25e50324be1b46ec4920dd2eac284104f194ca9180f09ebb02",
+        "4313dee21938a703ec222d56b9e89d61e6f3d18ca14b9392576f3029bbc750cff48e75a5a96c658b1db227d86afab1cafeeaf49ffc1d6872cef621be9c1f1198",
+        "276666d6b33e03c26bb78d76de369837a13034ee3498c7543aaa70576dde701476953e0e343620abdb49c6b128dcfc512a0be1ec75ec79bc0f191c7099ed0ad8",
+        "3839c218103575089a9f42567a4c298d5f0329dec90d162e1d2dd2a968e434d4bd03df078f548de971e474f1db48dff571303ff0b49cd5000339bb10c86a7b76",
+        "a6e3270e8a33addd82dc1be2dc0ff82dfc8ed76895db5fb2a9be35860f56a7fc8a5f68b09e54756ddee6907f4fe1aad39fae1d3369f2597fe5bba677c0ad72cf",
+        "4ab3b6b715c449247ff4b84b9ab9d1466bf4fd09fcba4c91cc17d713697fc3849ffa1ea3ae427212fba7128c2706f99ab86c5df97b4a92cbc3d89e8c797a7b95",
+        "669d325342170a7ae4d7049d865c74ba6523df0b87e500dd041e5d9a5f7211e56bd15ebd52336d2e13f6eed11c62690abf3e49d196d653c04ce4214b2fdee37f",
+        "6bedafb128dc60ed83bbff264a35d8003ad16ca6eda32a5bc82b90fdf626430e44f141aa576adb0919f88844dc43a746eb1d8ac7132340e3c88ce18568c37532",
+        "1e36f4a53359e77b829cab4378e32a36d4eb14088a30762b3e005045d880955f4dfef91b9bee6826d329c55799b07fe0b136c5e4fec81661de012c0341687b20",
+        "e3e2c6adea4a7ad206c89cc142429440f26edcbd4f74b8a8b621024ece979821794d5741c07d091ca54eae139c54b061ab3dc5ab460e241356d34355330b252a",
+        "7915e9d9d27a3b9a9112264632a1bec429297c586bdc80bb3ef4ce5b14729b5b064ded5f2b2130c9b4c62fb13e68dff3a57bddd195264a91b3e403f3b55ea837",
+        "4dd57152b150146e1fe023be4d0d22191ed90fae06c062cb450044a044abd86d57082b5b8744259b48eac3919a8b95bd87af8626cd9babb4b076cc79e3fa22c7",
+        "7e6fb365778710392efb11d215c0423d556a3cba415eaddb12de398e98f4a6b9f081e0cbd681eb9a35c6539a54759d7456933ef44142c5e71814c9231cb5dc46",
+        "b37e981faf3cb603fe407e16d92fc164a965f48f9ca7da756a68f9f9a5d71714cad01260390f3b8af4587103071cf8a179bd3ee7f0f33768a7300e47d369a137",
+        "f7761a4e64728708f44634afbbae9acdb5a90a293480070b6fce07b27dde8b2bf61762125a34ec423fa48715bb3d64488a1765efd149fe033caf52f99102dbe1",
+        "2f6b11619ce1535f01ccde7d74c09ba0edc1471922305eb3da713ab45acf4b2e6fb786d461c56460a784b739508893e06fcc0f5e04304376d88dac9de0f4713b",
+        "f554a260dd6b063d0ee8a94f032bb2c1d2abd4d7ee8e3c4054e5b2a434d45e1c2e2b1c43fd569921180e14e0c157539fbb55b88ef9ea632dbd854b0cf92ddaf2",
+        "9736972845a1a9a094b937178700013de039e2045c9897dc8c0191ddb4c5b5ebed6535a9d82a1e688658b3fb00a7d54bd2189ff7e5ddccde5c78b236f29128db",
+        "820602a73dd1f577fa518dd19ed2bb067c3792e0f7e479993efd28c3ddac13586877548e92e7c36701cf7511381641a22cd3fe05a9d517dd090a53cb0d1a071d",
+        "76b9d4b7f5882dc665d8588363c10dd7820923bace586fe8b6a79a37464bd4f5842f7f95f3397386cfa229d0856f5ef051100c0809fab65964c6cb110e9b9b79",
+        "bc9dbd1012f801c506c2143d1b4d9ff4416e2b09d6ad98aed22d336a4250311d1d0284058f801050b28af932fe102e7e606175baf946393e4dadc8a0cb86e0ee",
+        "1d02d65852cae3b294223e8cf0abe0fcc690c580cd94ccd54944887c6f95f90faaf7d2810c5a0708e266a5fb614ce4fdf3656eff495a24158e06f06ce82840d4",
+        "7c45e7fd5a59557f35c6c0e003971a4dd647163774d66ba51d71e2de66642be69809bdaa1bf99fd7b7bcfba1b93d307f7a45abbfc1a0491fc77212a7a1f2ec3e",
+        "b278f9f2d0caaf3186d3ce98fef71e4053caa24a68d883a3f651fbf059d72ccb2f69c2e70b94332f655eb1a122d91a6f877632801dbd3a0731a882f5b880648b",
+        "456b7aa0d94d6068a46c89d48a2f249b136c353ffb85d118bb61a65fc021126fc2528832e5d0b859eabc6c9355353d4b856869f7f3687a87b451b6f56db8a7aa",
+        "28cb6911bb2657b8a05b1430727c01a728b929e7d3fb5297cb1e858fe4ed4d490736845a607282f4a87ea0c320c989563c76cb9170c435c85cb4187129be935a",
+        "d27000e043bba9e5f5f4e24d5c57169ef3a1f5965dd2d7379d4fcb63aeb6167dde65aa6aa3366facf3b479f4503041d84278f0c4400e8fe4788745d9c2b1bd3b",
+        "261438dbe50176c6cd3cb20ec98f6d53200007230b40b702f87443d3dd6cbd0d421e15ec0f487224147c56c8b94b67f223b31fb84c7add0be06856d66609e6d9",
+        "7d8248211785982e4c45f577b9f19660786de513ab70b0e2d5d667592129c151750f5b76e9799fc8e37598474240cc1abf7d151ee4a87b4b8e92c0d0854e7978",
+        "e5c814a738e58ffb8b500b74efcb061c6a15ece6f5464dbb72a75656af003d32e85103529fee2c9cf96d1845cdda482aa8f2d871375769ad4c9d18c0b1e85644",
+        "3b0d1c7c556a29fa0650cb40ad276e9c82107e46169dab16eb7b44191c592bce5eb06090124762c70d41f2f5cfcfb8ed8f198bbe83d8db2169a670070ad0ff59",
+        "d40200342319b093a74ab4fb2609b1361c6247571f1adfb90512c957aea9c999089dbdd3be38d6e12febf5b40a7ab66d08db2138746aa9dcd2dc6aeef00b1bae",
+        "48bc36315a250833c87f7d1d87a13c60a4aeaef30ffc55eb56a9d91eadc55ce3",
+        ];
+        let h: alloc::string::String = HEX.concat();
+        let mut words: Vec<Word> = Vec::new();
+        let mut end = h.len();
+        while end > 0 {
+            let start = end.saturating_sub(16);
+            words.push(
+                Word::from_str_radix(&h[start..end], 16)
+                    .map_err(|_| crate::Error::InvalidArgument)?,
+            );
+            end = start;
+        }
+        ExactNumNumber::from_raw_parts(&words, 16640, crate::Sign::Pos, 1, false)
     }
 
     #[test]

@@ -143,6 +143,13 @@ struct WynnValue {
 /// then round the nodes where the sums are formed, so `K` and `G` share the
 /// error and `|K − G|` collapses under the true remainder. Two guard words
 /// keep that remainder visible.
+/// A precision these rules accept: the whole public range `GK_MIN_PREC..=MAX_PRECISION`, with no
+/// margin taken off the top. The working widths above it (a few words wider) are checked where they
+/// are allocated (`MemoryAllocation` / `None`), not refused here.
+fn gk_prec_ok(p: usize) -> bool {
+    (GK_MIN_PREC..=crate::defs::MAX_PRECISION).contains(&p)
+}
+
 fn work_p(p: usize) -> usize {
     let stored = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
     stored.saturating_add(WORD_BIT_SIZE.saturating_mul(2))
@@ -534,10 +541,7 @@ fn kronrod_legendre_at(
     p: usize,
     _cc: &mut Consts,
 ) -> Option<(Vec<ExactNum>, Vec<ExactNum>, Vec<ExactNum>)> {
-    if n != GK_GAUSS_ORDER
-        || !(GK_MIN_PREC..=crate::defs::MAX_PRECISION.saturating_sub(3 * WORD_BIT_SIZE))
-            .contains(&p)
-    {
+    if n != GK_GAUSS_ORDER || !gk_prec_ok(p) {
         return None;
     }
     let beta = laurie_legendre_beta(n, p)?;
@@ -593,10 +597,7 @@ pub fn kronrod_pair(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<(Vec<ExactNum>, Vec<ExactNum>, Vec<ExactNum>)> {
-    if n_gauss != GK_GAUSS_ORDER
-        || !(GK_MIN_PREC..=crate::defs::MAX_PRECISION.saturating_sub(3 * WORD_BIT_SIZE))
-            .contains(&p)
-    {
+    if n_gauss != GK_GAUSS_ORDER || !gk_prec_ok(p) {
         return None;
     }
     let (nodes, w_gauss, w_kronrod) = kronrod_legendre_at(n_gauss, work_p(p), cc)?;
@@ -676,9 +677,7 @@ pub fn gauss_kronrod_interval<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !(GK_MIN_PREC..=crate::defs::MAX_PRECISION.saturating_sub(3 * WORD_BIT_SIZE)).contains(&p)
-        || !interval_ok(a, b)
-    {
+    if !gk_prec_ok(p) || !interval_ok(a, b) {
         return Err(QuadratureError::InvalidArgument);
     }
     let wrk = work_p(p);
@@ -758,7 +757,7 @@ fn wynn_table(seq: &[ExactNum], p: usize) -> Option<WynnValue> {
 /// The table is built two words above the destination width and rounded to
 /// `p` with `rm`.
 pub fn wynn_epsilon(seq: &[ExactNum], p: usize, rm: RoundingMode) -> Option<ExactNum> {
-    if !(GK_MIN_PREC..=crate::defs::MAX_PRECISION.saturating_sub(3 * WORD_BIT_SIZE)).contains(&p) {
+    if !gk_prec_ok(p) {
         return None;
     }
     let wrk = work_p(p);
@@ -859,7 +858,7 @@ pub fn integrate_adaptive_gk<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !(GK_MIN_PREC..=crate::defs::MAX_PRECISION.saturating_sub(3 * WORD_BIT_SIZE)).contains(&p)
+    if !gk_prec_ok(p)
         || max_subintervals == 0
         || max_subintervals > GK_SUBINTERVAL_MAX
         || !interval_ok(a, b)

@@ -663,35 +663,22 @@ impl Mantissa {
         d3[d1.len()] = (m / WORD_BASE) as Word;
     }
 
-    /// `self` to power of `i` mod `n`
-    pub fn pow_mod(&self, mut i: usize, n: &Self) -> Result<Self, Error> {
-        // first non-zero bit in i
-        let mut bit_pos = WORD_BIT_SIZE;
-
-        while bit_pos > 0 {
-            bit_pos -= 1;
-            i <<= 1;
-            if i & WORD_SIGNIFICANT_BIT as usize != 0 {
-                bit_pos -= 1;
-                i <<= 1;
-                break;
-            }
+    /// `self` to the power `i` mod `n` (`i ≥ 1`; `i = 0` is `InvalidArgument`), by left-to-right
+    /// square-and-multiply over every bit of `i`. The scan starts at the top set bit found with
+    /// `leading_zeros`: the old scan shifted before testing, so it dropped bit 63 and an exponent
+    /// at or past 2^63 (the gap of `MAX rem minpos`) was reduced mod 2^63 — a silent wrong remainder.
+    pub fn pow_mod(&self, i: usize, n: &Self) -> Result<Self, Error> {
+        if i == 0 {
+            return Err(Error::InvalidArgument);
         }
-
+        let top = usize::BITS - 1 - i.leading_zeros();
         let mut x = self.clone()?;
-
-        while bit_pos > 0 {
-            bit_pos -= 1;
-
+        for b in (0..top).rev() {
             x = x.mul_mod(&x, n)?;
-
-            if i & WORD_SIGNIFICANT_BIT as usize != 0 {
+            if (i >> b) & 1 != 0 {
                 x = x.mul_mod(self, n)?;
             }
-
-            i <<= 1;
         }
-
         Ok(x)
     }
 

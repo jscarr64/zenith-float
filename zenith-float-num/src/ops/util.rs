@@ -3,7 +3,7 @@
 //! Auxiliary items.
 
 use crate::common::consts::TRIG_EXP_THRES;
-use crate::common::util::round_p;
+use crate::common::util::{reduction_width, round_p};
 use crate::{num::ExactNumNumber, Consts, Error, RoundingMode};
 
 impl ExactNumNumber {
@@ -25,8 +25,10 @@ impl ExactNumNumber {
     /// Reduce `self` to interval (-2*pi; 2*pi)
     pub(crate) fn reduce_trig_arg(self, cc: &mut Consts, rm: RoundingMode) -> Result<Self, Error> {
         if self.exponent() > 2 {
-            let extra = trig_reduce_extra(self.exponent())?;
-            let mut pi = cc.pi_num(self.mantissa_max_bit_len().saturating_add(extra), rm)?;
+            // π carries exponent(self) extra bits, so the remainder keeps every bit of `self`;
+            // the width is checked (`MemoryAllocation` past what the machine holds), never capped.
+            let width = reduction_width(self.mantissa_max_bit_len(), self.exponent())?;
+            let mut pi = cc.pi_num(width, rm)?;
 
             pi.set_exponent(pi.exponent() + 1);
 
@@ -88,33 +90,32 @@ macro_rules! compute_small_exp {
 
 pub(super) use compute_small_exp;
 
-/// Largest argument exponent the trig reduction carries in π (2^22 extra bits of π, about
-/// 4 million). Beyond it the reduction returns `PrecisionRetryExhausted` instead of a value.
-pub(crate) const TRIG_REDUCE_EXP_MAX: usize = 1 << 22;
-
-/// Extra bits of pi for reducing an argument with exponent `e` (`e > 2`): `e` bits, so the
-/// remainder keeps every bit of the argument's precision. A 2^16 cap here left arguments
-/// past 2^65536 with no correct bits.
-fn trig_reduce_extra(e: crate::Exponent) -> Result<usize, Error> {
-    match usize::try_from(e) {
-        Ok(x) if x <= TRIG_REDUCE_EXP_MAX => Ok(x),
-        _ => Err(Error::PrecisionRetryExhausted),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::trig_reduce_extra;
+    use crate::common::util::reduction_width;
+    use crate::Error;
 
-    /// The extra bits follow the exponent up to the documented maximum; past it (including an
-    /// exponent past `u32`, where a 32-bit `usize` truncation would give 5) the reduction refuses.
+    /// The π width follows the argument exponent with no limit: 2^16 (main's old silent cap),
+    /// 2^22 (Tier 1's old refusal) and one past each are all carried in full. Only a width the
+    /// exponent arithmetic cannot hold is refused, and as `MemoryAllocation`, not a precision limit.
     #[test]
-    fn trig_reduce_extra_exponent_beyond_u32() {
-        let refused = Err(crate::Error::PrecisionRetryExhausted);
-        assert_eq!(trig_reduce_extra((1i64 << 32) + 5), refused);
-        assert_eq!(trig_reduce_extra(3), Ok(3));
-        assert_eq!(trig_reduce_extra(1i64 << 16), Ok(1 << 16));
-        assert_eq!(trig_reduce_extra(100_000), Ok(100_000));
-        assert_eq!(trig_reduce_extra(crate::EXPONENT_MAX), refused);
+    fn trig_reduction_width_has_no_cap() {
+        for e in [
+            3i64,
+            (1 << 16) - 1,
+            1 << 16,
+            (1 << 16) + 1,
+            (1 << 22) - 1,
+            1 << 22,
+            (1 << 22) + 1,
+            (1i64 << 32) + 5,
+        ] {
+            assert_eq!(reduction_width(128, e), Ok(128 + e as usize), "e = {e}");
+        }
+        assert_eq!(
+            reduction_width(128, crate::EXPONENT_MAX),
+            Err(Error::MemoryAllocation)
+        );
+        assert_eq!(reduction_width(usize::MAX, 1), Err(Error::MemoryAllocation));
     }
 }
