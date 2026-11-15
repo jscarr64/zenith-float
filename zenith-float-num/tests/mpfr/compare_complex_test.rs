@@ -49,10 +49,12 @@ fn mpfr_compare_complex() -> Result<(), Box<dyn std::error::Error>> {
         let pr = a.mul(&b, p, rm);
         let mut fre = Float::with_val(p as u32, 1);
         let mut fim = Float::with_val(p as u32, 1);
-        let mut fac = Float::with_val(p as u32, 1);
-        let mut fbd = Float::with_val(p as u32, 1);
-        let mut fad = Float::with_val(p as u32, 1);
-        let mut fbc = Float::with_val(p as u32, 1);
+        // ExactComplex::mul forms the four products exactly and rounds each part once (Tier 1,
+        // ZF-18 c.mul): a p-bit by p-bit product is exact at 2p bits, so only the sub/add round.
+        let mut fac = Float::with_val(2 * p as u32, 1);
+        let mut fbd = Float::with_val(2 * p as u32, 1);
+        let mut fad = Float::with_val(2 * p as u32, 1);
+        let mut fbc = Float::with_val(2 * p as u32, 1);
         unsafe {
             mpfr::mul(fac.as_raw_mut(), far.as_raw(), fbr.as_raw(), rnd);
             mpfr::mul(fbd.as_raw_mut(), fai.as_raw(), fbi.as_raw(), rnd);
