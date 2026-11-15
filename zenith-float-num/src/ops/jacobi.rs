@@ -6,6 +6,7 @@ use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::Exponent;
+use crate::defs::EXPONENT_MIN;
 use crate::defs::RoundingMode;
 use crate::defs::Sign;
 use crate::num::ExactNumNumber;
@@ -199,6 +200,9 @@ impl ExactNumNumber {
         let p = round_p(p);
         Self::p_assertion(p)?;
         jacobi_m_in_unit(m, p)?;
+        if let Some(r) = self.jacobi_m1_far(m, p, rm, cc, &pick)? {
+            return Ok(r);
+        }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
             .max(self.mantissa_max_bit_len())
@@ -264,6 +268,58 @@ impl ExactNumNumber {
             am = am.add(&off, p, RoundingMode::None)?;
         }
         Ok((am, sn, cn, dn))
+    }
+
+    /// `m = 1` with `cosh u` above the range: `sech u = 2e^{-|u|}` is below every subnormal,
+    /// so `cn = dn` underflow, `sn = tanh u = ±(1 - tiny)` and `am = gd u = ±(π/2 - tiny)`.
+    /// The four values are formed with `cn = dn` at the least normal (any quotient by them
+    /// overflows, as the true one does) and the picked result is rounded once: an underflowed
+    /// pick goes to zero or the least subnormal by the mode, an overflowed one is returned as
+    /// `ExponentOverflow` for the caller to map by the mode. `None` when the regular path applies.
+    fn jacobi_m1_far<F>(
+        &self,
+        m: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+        pick: &F,
+    ) -> Result<Option<Self>, Error>
+    where
+        F: Fn(Self, Self, Self, Self, usize) -> Result<Self, Error>,
+    {
+        if self.is_zero() || m.cmp(&Self::from_word(1, WORD_BIT_SIZE)?) != 0 {
+            return Ok(None);
+        }
+        match self.cosh(WORD_BIT_SIZE, RoundingMode::None, cc) {
+            Err(Error::ExponentOverflow(_)) => {}
+            Ok(_) => return Ok(None),
+            Err(e) => return Err(e),
+        }
+        let sign = if self.is_negative() { Sign::Neg } else { Sign::Pos };
+        let p_x = round_p(p + 2 * WORD_BIT_SIZE);
+        let mut am = cc.pi_num(p_x, RoundingMode::None)?;
+        am.set_exponent(am.exponent() - 1);
+        am.set_sign(sign);
+        let one = Self::from_word(1, p_x)?;
+        let mut eps = Self::from_word(1, p_x)?;
+        eps.set_exponent(1 - p_x as Exponent);
+        let mut sn = one.sub(&eps, p_x, RoundingMode::None)?;
+        sn.set_sign(sign);
+        let mut tiny = Self::from_word(1, p_x)?;
+        tiny.set_exponent(EXPONENT_MIN);
+        let cn = tiny.clone()?;
+        let mut r = pick(am, sn, cn, tiny, p_x)?;
+        if !r.is_zero() && r.exponent() <= EXPONENT_MIN + 2 {
+            let neg = r.is_negative();
+            r = Self::from_word(1, p)?;
+            r.set_sign(if neg { Sign::Neg } else { Sign::Pos });
+            r.set_exponent(EXPONENT_MIN);
+            r.subnormalize(2 * EXPONENT_MIN, rm);
+        } else {
+            r.set_precision(p, rm)?;
+        }
+        r.set_inexact(true);
+        Ok(Some(r))
     }
 
     /// `u` reduced into `[-2K, 2K]` and the number of whole periods `n` removed

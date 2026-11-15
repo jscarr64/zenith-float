@@ -4264,7 +4264,7 @@ Accuracy: correctly-rounded",
     fn jacobi_am_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_am(mv, p, rm, cc), u.is_zero(), true)
+                Self::result_to_ext_rm(u.jacobi_am(mv, p, rm, cc), u.is_zero(), true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4295,7 +4295,7 @@ Accuracy: correctly-rounded",
     fn jacobi_sn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_sn(mv, p, rm, cc), u.is_zero(), true)
+                Self::result_to_ext_rm(u.jacobi_sn(mv, p, rm, cc), u.is_zero(), true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4325,7 +4325,7 @@ Accuracy: correctly-rounded",
     fn jacobi_cn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_cn(mv, p, rm, cc), u.is_zero(), true)
+                Self::result_to_ext_rm(u.jacobi_cn(mv, p, rm, cc), u.is_zero(), true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4355,7 +4355,7 @@ Accuracy: correctly-rounded",
     fn jacobi_dn_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_dn(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_dn(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4385,7 +4385,7 @@ Accuracy: correctly-rounded",
     fn jacobi_cd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_cd(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_cd(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4415,7 +4415,7 @@ Accuracy: correctly-rounded",
     fn jacobi_ns_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_ns(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_ns(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4445,7 +4445,7 @@ Accuracy: correctly-rounded",
     fn jacobi_nc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_nc(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_nc(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4475,7 +4475,7 @@ Accuracy: correctly-rounded",
     fn jacobi_nd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_nd(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_nd(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4505,7 +4505,7 @@ Accuracy: correctly-rounded",
     fn jacobi_sc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_sc(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_sc(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4535,7 +4535,7 @@ Accuracy: correctly-rounded",
     fn jacobi_sd_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_sd(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_sd(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4565,7 +4565,7 @@ Accuracy: correctly-rounded",
     fn jacobi_cs_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_cs(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_cs(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4595,7 +4595,7 @@ Accuracy: correctly-rounded",
     fn jacobi_ds_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_ds(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_ds(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
@@ -4625,7 +4625,7 @@ Accuracy: correctly-rounded",
     fn jacobi_dc_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {
             (Flavor::Value(u), Flavor::Value(mv)) => {
-                Self::result_to_ext(u.jacobi_dc(mv, p, rm, cc), false, true)
+                Self::result_to_ext_rm(u.jacobi_dc(mv, p, rm, cc), false, true, p, rm)
             }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
             _ => NAN,
