@@ -2630,7 +2630,7 @@ fn zf_31_lambert_w_correctly_rounded() {
             }
         }
     }
-    for (m1, xs) in [(false, "-3p-3"), (true, "-3p-3"), (true, "1p0"), (true, "0")] {
+    for (m1, xs) in [(false, "-3p-3"), (true, "-3p-3"), (true, "1p0")] {
         let x = parse_real(xs).expect("x");
         let v = if m1 {
             x.lambert_wm1(64, RoundingMode::ToEven, &mut cc)
@@ -2752,6 +2752,26 @@ fn zf_72_no_abort_si_barnes_g_zeta() {
                     v.compare(&w),
                     Some(0),
                     "zeta({ss}) p={p} {rm:?}: {v} {:?} want {w}",
+                    v.err()
+                );
+            }
+        }
+    }
+}
+
+/// lambert_wm1(±0) is −∞, the x → 0⁻ limit of W₋₁ (Jeff ruling 2026-11-15 3:57 PM), exactly, in every mode and
+/// precision (like ln(0) = −∞); it was NaN(InvalidArgument).
+#[test]
+fn zf_31_lambert_wm1_zero_is_neg_inf() {
+    let mut cc = Consts::new().expect("Consts");
+    for xs in ["0", "-0"] {
+        let x = parse_real(xs).expect("x");
+        for p in [64usize, 128, 1024] {
+            for rm in MODES {
+                let v = x.lambert_wm1(p, rm, &mut cc);
+                assert!(
+                    v.is_inf() && v.is_negative() && !v.inexact(),
+                    "W-1({xs}) p={p} {rm:?}: {v} {:?}",
                     v.err()
                 );
             }

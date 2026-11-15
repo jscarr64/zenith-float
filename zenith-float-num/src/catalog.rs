@@ -1758,6 +1758,7 @@ impl ExactNum {
     }
 
     /// Lambert \(W_{-1}(\mathrm{self})\). Domain \([-1/e,0)\).
+    /// At \(\pm 0\) it returns \(-\infty\) exactly, the \(x\to 0^-\) limit; \(x>0\) and \(x<-1/e\) give NaN.
     ///
     /// Accuracy: correctly-rounded
     pub fn lambert_wm1(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
