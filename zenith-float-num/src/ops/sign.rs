@@ -1,31 +1,59 @@
 //! Sign manipulation and successor operations.
 
 use crate::common::util::{round_p, sub_borrow};
-use crate::defs::{Error, Word, WORD_MAX, WORD_SIGNIFICANT_BIT};
+use crate::defs::{Error, Word, EXPONENT_MAX, EXPONENT_MIN, WORD_MAX, WORD_SIGNIFICANT_BIT};
 use crate::num::ExactNumNumber;
 use crate::{RoundingMode, Sign};
 
 impl ExactNumNumber {
-    fn bump_up(x: &mut Self) {
+    /// One ulp up in magnitude. `ExponentOverflow` past the largest finite magnitude.
+    fn bump_up(x: &mut Self) -> Result<(), Error> {
+        let was_subnormal = x.is_subnormal();
         if x.mantissa_mut().add_ulp() {
+            if x.exponent() >= EXPONENT_MAX {
+                return Err(Error::ExponentOverflow(x.sign()));
+            }
             let ml = x.mantissa_mut().len() - 1;
             x.mantissa_mut().digits_mut()[ml] = WORD_SIGNIFICANT_BIT;
             x.set_exponent(x.exponent() + 1);
         }
+        if was_subnormal {
+            // The step can carry into the leading bit (largest subnormal -> least normal).
+            x.mantissa_mut().update_bit_len();
+        }
+        Ok(())
     }
 
-    fn bump_down(x: &mut Self) {
+    /// One ulp down in magnitude, on the p-bit grid of `x`'s exponent; a nonzero `x` steps to
+    /// zero (same sign) only from the least subnormal.
+    fn bump_down(x: &mut Self, p: usize) -> Result<(), Error> {
         let mut borrow: Word = 1;
         for v in x.mantissa_mut().digits_mut().iter_mut() {
             borrow = sub_borrow(*v, 0, borrow, v);
             if borrow == 0 {
-                return;
+                break;
             }
         }
         let ml = x.mantissa_mut().len() - 1;
-        x.mantissa_mut().digits_mut().fill(WORD_MAX);
-        x.mantissa_mut().digits_mut()[ml] = WORD_SIGNIFICANT_BIT;
-        x.set_exponent(x.exponent() - 1);
+        if x.mantissa_mut().digits_mut()[ml] & WORD_SIGNIFICANT_BIT != 0 {
+            return Ok(());
+        }
+        if x.exponent() > EXPONENT_MIN && !x.is_subnormal() {
+            // From a power of two 2^(e-1) the predecessor is 0.11…1 · 2^(e-1): all p bits set
+            // one binade lower, not the unnormalized 0.011…1 · 2^e.
+            x.mantissa_mut().digits_mut().fill(WORD_MAX);
+            x.set_exponent(x.exponent() - 1);
+            return Ok(());
+        }
+        // On the subnormal grid (exponent field EXPONENT_MIN): fewer significant bits, or zero.
+        if x.mantissa_mut().is_all_zero() {
+            let s = x.sign();
+            *x = Self::new(p)?;
+            x.set_sign(s);
+        } else {
+            x.mantissa_mut().update_bit_len();
+        }
+        Ok(())
     }
 
     /// Returns a value with the magnitude of `self` and the sign of `sign`.
@@ -58,36 +86,48 @@ impl ExactNumNumber {
     ///
     ///  - MemoryAllocation: failed to allocate memory.
     ///  - InvalidArgument: the precision is incorrect.
-    pub fn next_after(&self, toward: &Self, p: usize, _rm: RoundingMode) -> Result<Self, Error> {
+    pub fn next_after(&self, toward: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
+        // Compare the exact values: rounding both to p first could make distinct values equal.
+        match self.cmp(toward) {
+            0 => {
+                let mut x = self.clone()?;
+                x.set_precision(p, rm)?;
+                Ok(x)
+            }
+            c => self.next_toward(c < 0, p),
+        }
+    }
 
+    /// The next p-bit value after `self` going up (`upward`) or down. A `self` that is not
+    /// representable at `p` goes to the nearest p-bit value strictly beyond it in that
+    /// direction; past the largest finite magnitude the result is `ExponentOverflow` (±Inf).
+    pub(crate) fn next_toward(&self, upward: bool, p: usize) -> Result<Self, Error> {
+        let p = round_p(p);
+        Self::p_assertion(p)?;
         let mut x = self.clone()?;
-        x.set_precision(p, RoundingMode::None)?;
-
-        let mut t = toward.clone()?;
-        t.set_precision(p, RoundingMode::None)?;
-
-        if x.cmp(&t) == 0 {
+        x.set_inexact(false);
+        x.set_precision(p, if upward { RoundingMode::Up } else { RoundingMode::Down })?;
+        if x.inexact() || x.cmp(self) != 0 {
+            // Rounding in the step direction already moved strictly past `self`.
+            x.set_inexact(true);
             return Ok(x);
         }
-
-        let upward = x.cmp(&t) < 0;
-
         if x.is_zero() {
             let mut v = Self::min_positive(p)?;
             if !upward {
                 v.set_sign(Sign::Neg);
             }
+            v.set_inexact(true);
             return Ok(v);
         }
-
-        if upward {
-            Self::bump_up(&mut x);
+        // Up for a negative value (or down for a positive one) shrinks the magnitude.
+        if upward == x.is_positive() {
+            Self::bump_up(&mut x)?;
         } else {
-            Self::bump_down(&mut x);
+            Self::bump_down(&mut x, p)?;
         }
-
         x.set_inexact(true);
         Ok(x)
     }

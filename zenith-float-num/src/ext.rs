@@ -2614,7 +2614,23 @@ impl ExactNum {
             (Flavor::Value(v), Flavor::Value(t)) => {
                 Self::result_to_ext(with_prec(p, || v.next_after(t, p, rm)), false, true)
             }
-            (Flavor::Inf(_), _) | (_, Flavor::Inf(_)) => self.clone(),
+            // A finite value steps toward ±Inf (from ±MAX onto ±Inf).
+            (Flavor::Value(v), Flavor::Inf(s)) => Self::result_to_ext(
+                with_prec(p, || v.next_toward(s.is_positive(), p)),
+                false,
+                true,
+            ),
+            // ±Inf toward anything else steps onto ±MAX at precision p.
+            (Flavor::Inf(a), Flavor::Inf(b)) if a == b => self.clone(),
+            (Flavor::Inf(a), _) => {
+                let r = with_prec(p, || {
+                    let mut m = ExactNumNumber::max_value(p)?;
+                    m.set_sign(*a);
+                    m.set_inexact(true);
+                    Ok(m)
+                });
+                Self::result_to_ext(r, false, true)
+            }
             (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
         }
     }
