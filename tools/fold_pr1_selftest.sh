@@ -75,7 +75,8 @@ check_P() {
   [ -n "$commits" ] || return 1
   for c in $commits; do
     last=$(git log -1 --format=%B "$c" | sed '/^[[:space:]]*$/d' | tail -n 1)
-    [ "$last" = "Agent: rusty" ] || { echo "  P: $c has no final 'Agent: rusty' line"; return 1; }
+    # A10: a non-empty Agent trailer as the last line (the fold lands Rusty's and Paul's commits together).
+    [[ "$last" =~ ^Agent:\ [a-z][a-z0-9-]*$ ]] || { echo "  P: $c has no final 'Agent: <name>' line"; return 1; }
   done
 }
 check_O() {
