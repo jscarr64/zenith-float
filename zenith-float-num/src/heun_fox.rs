@@ -34,11 +34,13 @@ fn pairs_finite(xs: &[(ExactNum, ExactNum)]) -> bool {
 
 fn pow_real(z: &ExactNum, e: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     if z.is_zero() {
-        if e.is_positive() {
-            return ExactNum::new(p);
-        }
+        // 0^0 = 1 first: `is_positive` is true for +0, so testing it first made 0^(+0) = 0
+        // and dropped the b = 0 residue of every G / H at z = 0 (ZF-40).
         if e.is_zero() {
             return ExactNum::from_u8(1, p);
+        }
+        if e.is_positive() {
+            return ExactNum::new(p);
         }
         return cat_nan();
     }

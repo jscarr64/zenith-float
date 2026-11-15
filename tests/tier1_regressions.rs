@@ -1291,3 +1291,45 @@ fn zf_69_c_tan_tanh_small_parts_not_lost() {
         }
     }
 }
+
+/// ZF-40: pow_real(0, +0) returned 0 because the positive-sign check preceded
+/// is_zero. At z=0, the b=0 residue is multiplied by 0 rather than 1.
+/// Exact identities: G( ; ; 0 ; | 0) = 1;
+/// G( ; ; 0, 1/2 ; | 0) = sqrt(pi), H((0,1/2) | 0) = 2.
+/// mpmath meijerg for the nontrivial identity; sqrt(pi) from FLINT.
+#[test]
+fn zf_40_meijer_fox_at_zero() {
+    let mut cc = Consts::new().expect("Consts");
+    for p in [64usize, 128, 256, 1024, 2048] {
+        for rm in [RoundingMode::ToEven] {
+            let z = ExactNum::new(p);
+            let one = ExactNum::from_u8(1, p);
+            let half = ExactNum::from_u8(1, p).ldexp(-1, p, rm);
+            let two = ExactNum::from_u8(2, p);
+            let sp = cc.pi(p + 128, RoundingMode::ToEven).sqrt(p, rm);
+            let g = z.meijer_g(&[], &[], &[z.clone()], &[], p, rm, &mut cc);
+            assert_eq!(fmt_real(&g), fmt_real(&one), "G exp(-z) at 0 p={p}");
+            let f = z.fox_h(&[], &[], &[(z.clone(), one.clone())], &[], p, rm, &mut cc);
+            assert_eq!(fmt_real(&f), fmt_real(&one), "H exp(-z) at 0 p={p}");
+            let g = z.meijer_g(&[], &[], &[z.clone(), half.clone()], &[], p, rm, &mut cc);
+            let d = ExactNum::sub_ref(&g, &sp, p + 128, rm).abs();
+            assert!(
+                matches!(d.compare(&ExactNum::from_u8(1,p).ldexp(4-p as i64,p,rm)),Some(o) if o<0),
+                "G sqrt pi at 0 p={p}: {}",
+                fmt_real(&g)
+            );
+            let f = z.fox_h(
+                &[],
+                &[],
+                &[(z.clone(), one.clone()), (half.clone(), one.clone())],
+                &[],
+                p,
+                rm,
+                &mut cc,
+            );
+            assert_eq!(fmt_real(&f), fmt_real(&g), "H sqrt pi at 0 p={p}");
+            let f = z.fox_h(&[], &[], &[(z.clone(), half)], &[], p, rm, &mut cc);
+            assert_eq!(fmt_real(&f), fmt_real(&two), "H at 0 scale 1/2 p={p}");
+        }
+    }
+}
