@@ -1762,11 +1762,16 @@ impl ExactNumNumber {
         // S = 1/2 − f cos(πx²/2) − g sin(πx²/2)
         // C = 1/2 + f sin(πx²/2) − g cos(πx²/2)
         let (f, g) = self.fresnel_aux_fg(p, cc)?;
+        // sin/cos(πx²/2) has period 4 in x², and x² is an exact dyadic: reduce it exactly mod 4
+        // first (ZF-32). Rounding x² or πx²/2 to p bits leaves an absolute error of
+        // 2^(2·exponent(x) − p) in the angle, i.e. no correct bits once x² ≳ 2^p.
         let pi = cc.pi_num(p, RoundingMode::None)?;
         let two = Self::from_word(2, p)?;
         let pi2 = pi.div(&two, p, RoundingMode::None)?;
-        let x2 = self.mul(self, p, RoundingMode::None)?;
-        let arg = pi2.mul(&x2, p, RoundingMode::None)?;
+        let w2 = round_p(2 * self.mantissa_max_bit_len() + WORD_BIT_SIZE);
+        let x2 = self.mul(self, w2, RoundingMode::None)?;
+        let t = x2.rem(&Self::from_word(4, WORD_BIT_SIZE)?)?;
+        let arg = pi2.mul(&t, p, RoundingMode::None)?;
         let s = arg.sin(p, RoundingMode::None, cc)?;
         let c = arg.cos(p, RoundingMode::None, cc)?;
         let half = one_half(p)?;
