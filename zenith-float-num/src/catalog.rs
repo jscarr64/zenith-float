@@ -1292,7 +1292,15 @@ impl ExactNum {
         let s = one
             .sub(&self.sqr(wrk, RoundingMode::None), wrk, RoundingMode::None)
             .sqrt(wrk, RoundingMode::None);
-        finish(s.elliptic_f(m, wrk, RoundingMode::None, cc), p, rm)
+        let f = s.elliptic_f(m, wrk, RoundingMode::None, cc);
+        if self.is_negative() && !self.is_zero() {
+            // cn(2K - u) = -cn(u): for x < 0 the inverse on [0, 2K] is 2K - F(sqrt(1-x^2)|m).
+            let two_k = m
+                .elliptic_k(wrk, RoundingMode::None, cc)
+                .ldexp(1, wrk, RoundingMode::None);
+            return finish(two_k.sub(&f, wrk, RoundingMode::None), p, rm);
+        }
+        finish(f, p, rm)
     }
 
     /// Inverse Jacobi \(\mathrm{arcdn}(x|m)=F(\sqrt{(1-x^2)/m}|m)\) for \(m>0\).
