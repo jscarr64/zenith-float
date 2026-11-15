@@ -1852,11 +1852,14 @@ impl ExactNumNumber {
     pub fn from_u128(mut v: u128, p: usize) -> Result<Self, Error> {
         const SZ: usize = core::mem::size_of::<u128>() * 8;
 
-        if p < SZ {
-            return Err(Error::InvalidArgument);
-        }
-
         Self::p_assertion(p)?;
+
+        if p < SZ {
+            // Build at the full 128 bits, then round once to `p` (to nearest, ties to even).
+            let mut ret = Self::from_u128(v, SZ)?;
+            ret.set_precision(p, RoundingMode::ToEven)?;
+            return Ok(ret);
+        }
 
         if v == 0 {
             Self::new(p)
