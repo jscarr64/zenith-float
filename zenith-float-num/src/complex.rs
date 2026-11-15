@@ -564,6 +564,14 @@ impl ExactComplex {
 
     /// Implementation of [`Self::tan`] on operands without inexact history.
     fn tan_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if Self::finite_pair(self) {
+            // tan(x+iy) = -i tanh(-y + ix): with tanh(-y+ix) = A + iB, tan = B - iA.
+            let (x, y) = (&self.re, &self.im);
+            return crate::complex_special::ziv_complex(p, rm, |pw| {
+                let (a, b) = Self::tanh_parts(&y.clone().neg(), x, pw, cc);
+                Self::new(b, a.neg())
+            });
+        }
         let p_x = Self::work_p(p);
         self.sin(p_x, RoundingMode::None, cc)
             .div(
@@ -616,6 +624,59 @@ impl ExactComplex {
         .finish(p, rm)
     }
 
+    fn finite_pair(z: &Self) -> bool {
+        let f = |x: &ExactNum| !x.is_nan() && !x.is_inf();
+        f(&z.re) && f(&z.im)
+    }
+
+    /// `(Re, Im)` of `tanh(x + iy)` at width `pw`, each part relatively accurate.
+    /// The direct form is `(sinh 2x + i sin 2y) / (cosh 2x + cos 2y)`. A sinh/cosh
+    /// complex quotient instead cancels the small part to 0 (ZF-69). For
+    /// `|x| > pw`, use `e = e^{-2|x|}`, `d = 1 + 2e cos 2y + e²`,
+    /// `Re = sgn(x)(1 - 2e(cos 2y + e)/d)`, `Im = 2e sin 2y/d`. That avoids
+    /// overflowing cosh 2x, while retaining the sign of the distance from ±1.
+    fn tanh_parts(x: &ExactNum, y: &ExactNum, pw: usize, cc: &mut Consts) -> (ExactNum, ExactNum) {
+        let n = RoundingMode::None;
+        let x2 = x.clone().ldexp(1, pw, n);
+        let y2 = y.clone().ldexp(1, pw, n);
+        let (s2y, c2y) = y2.sin_cos(pw, n, cc);
+        let big = matches!(
+            x.abs_cmp(&ExactNum::from_u32(u32::try_from(pw).unwrap_or(u32::MAX), WORD_BIT_SIZE)),
+            Some(o) if o > 0
+        );
+        if big {
+            let e = x2.clone().abs().neg().exp(pw, n, cc);
+            let two_e = e.clone().ldexp(1, pw, n);
+            let e2 = e.sqr(pw, n);
+            let den = ExactNum::from_u8(1, pw)
+                .add(&c2y.clone().mul(&two_e, pw, n), pw, n)
+                .add(&e2, pw, n);
+            let delta = c2y.add(&e, pw, n).mul(&two_e, pw, n).div(&den, pw, n);
+            // When delta is below the pw grid around 1, keep only its sign: 1 - sgn·2^-(pw+4)
+            // (exact at pw + 8 bits) rounds to p < pw exactly as 1 - delta does.
+            let tiny = delta
+                .exponent()
+                .is_some_and(|e| i128::from(e) < -(i128::try_from(pw).unwrap_or(i128::MAX)) - 4);
+            let mut re = if tiny && !delta.is_zero() {
+                let pe = pw.saturating_add(8);
+                let mut t = ExactNum::from_u8(1, pe).ldexp(-(pw as Exponent) - 4, pe, n);
+                if delta.is_negative() {
+                    t = t.neg();
+                }
+                ExactNum::from_u8(1, pe).sub(&t, pe, n)
+            } else {
+                ExactNum::from_u8(1, pw).sub(&delta, pw, n)
+            };
+            if x.is_negative() {
+                re = re.neg();
+            }
+            return (re, s2y.mul(&two_e, pw, n).div(&den, pw, n));
+        }
+        let (sh, ch) = x2.sinh_cosh(pw, n, cc);
+        let den = ch.add(&c2y, pw, n);
+        (sh.div(&den, pw, n), s2y.div(&den, pw, n))
+    }
+
     /// `tanh(self) = sinh(self) / cosh(self)`.
     ///
     /// Accuracy: correctly-rounded
@@ -627,6 +688,13 @@ impl ExactComplex {
 
     /// Implementation of [`Self::tanh`] on operands without inexact history.
     fn tanh_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if Self::finite_pair(self) {
+            let (x, y) = (&self.re, &self.im);
+            return crate::complex_special::ziv_complex(p, rm, |pw| {
+                let (a, b) = Self::tanh_parts(x, y, pw, cc);
+                Self::new(a, b)
+            });
+        }
         let p_x = Self::work_p(p);
         self.sinh(p_x, RoundingMode::None, cc)
             .div(
