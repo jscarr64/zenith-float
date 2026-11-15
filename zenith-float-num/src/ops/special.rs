@@ -3668,6 +3668,10 @@ impl ExactNumNumber {
             one.set_inexact(self.inexact() | b.inexact() | c.inexact() | z.inexact());
             return Ok(one);
         }
+        if let Some(mut v) = self.hyp2f1_terminating_exact(b, c, z, p, rm)? {
+            v.set_inexact(v.inexact() | self.inexact() | b.inexact() | c.inexact() | z.inexact());
+            return Ok(v);
+        }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
             .max(self.mantissa_max_bit_len())
@@ -3686,6 +3690,86 @@ impl ExactNumNumber {
             }
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
+    }
+
+    /// Terminating ₂F₁ (ZF-70): with `a` or `b = −N`, the value is the polynomial
+    /// `Σ_{k≤N} (a)_k (b)_k / ((c)_k k!) z^k`, a rational number. It is summed exactly by
+    /// Horner (`H ← 1 + r_k z H`, `r_k = (a+k−1)(b+k−1)/((c+k−1) k)`) as one numerator over
+    /// one denominator and rounded once, so dyadic results such as ₂F₁(−3, −½; 2; 2) = 21/16
+    /// are exact in every mode. `None` (the floating path decides) for a pole `c + k − 1 = 0`
+    /// or when the exact numerator would pass `EXACT_POLY_BITS`; that path is correctly
+    /// rounded for every inexact value.
+    fn hyp2f1_terminating_exact(
+        &self,
+        b: &Self,
+        c: &Self,
+        z: &Self,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Option<Self>, Error> {
+        const EXACT_POLY_BITS: usize = 1 << 20;
+        let degree = |x: &Self| -> Option<usize> {
+            if x.is_zero() || x.is_positive() || !x.is_int() || x.exponent() > 40 {
+                return None;
+            }
+            x.neg().ok()?.int_as_usize().ok()
+        };
+        let (n_a, n_b) = (degree(self), degree(b));
+        let n = match (n_a, n_b) {
+            (Some(x), Some(y)) => x.min(y),
+            (Some(x), None) | (None, Some(x)) => x,
+            (None, None) => return Ok(None),
+        };
+        let w0 = self
+            .mantissa_max_bit_len()
+            .max(b.mantissa_max_bit_len())
+            .max(c.mantissa_max_bit_len())
+            .max(z.mantissa_max_bit_len());
+        // Each Horner step multiplies by factors of about w0 + 64 bits.
+        let per = 3 * (w0 + 2 * WORD_BIT_SIZE);
+        if n.saturating_mul(per) > EXACT_POLY_BITS {
+            return Ok(None);
+        }
+        let nr = RoundingMode::None;
+        let w_of = |x: &Self| x.mantissa_max_bit_len();
+        let exact_mul = |x: &Self, y: &Self| -> Result<Self, Error> {
+            let w = round_p(w_of(x) + w_of(y) + WORD_BIT_SIZE);
+            x.mul(y, w, nr)
+        };
+        let exact_add = |x: &Self, y: &Self| -> Result<Self, Error> {
+            let ex = x.exponent().max(y.exponent());
+            let lo = (x.exponent() - Exponent::try_from(w_of(x)).unwrap_or(0))
+                .min(y.exponent() - Exponent::try_from(w_of(y)).unwrap_or(0));
+            let w = round_p(usize::try_from(ex - lo).unwrap_or(0) + 2 * WORD_BIT_SIZE);
+            x.add(y, w, nr)
+        };
+        let one = Self::from_word(1, WORD_BIT_SIZE)?;
+        let (mut hn, mut hd) = (one.clone()?, one.clone()?);
+        for k in (1..=n).rev() {
+            let km1 = Self::from_usize(k - 1)?;
+            let kk = Self::from_usize(k)?;
+            let fa = exact_add(self, &km1)?;
+            let fb = exact_add(b, &km1)?;
+            let fc = exact_add(c, &km1)?;
+            if fc.is_zero() {
+                return Ok(None);
+            }
+            // r_k z = rn / rd
+            let rn = exact_mul(&exact_mul(&fa, &fb)?, z)?;
+            let rd = exact_mul(&fc, &kk)?;
+            // H = 1 + (rn/rd)(hn/hd) = (rd hd + rn hn) / (rd hd)
+            let d = exact_mul(&rd, &hd)?;
+            let t = exact_mul(&rn, &hn)?;
+            hn = exact_add(&d, &t)?;
+            hd = d;
+            if hn.inexact() || hd.inexact() {
+                return Ok(None);
+            }
+        }
+        if hn.is_zero() {
+            return Ok(Some(Self::new2(p, Sign::Pos, false)?));
+        }
+        Ok(Some(hn.div(&hd, p, rm)?))
     }
 
     fn hypergeom_2f1_at(

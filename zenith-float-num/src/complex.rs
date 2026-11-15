@@ -722,6 +722,12 @@ impl ExactComplex {
         if let Some(z) = self.sqrt_exact(p_x) {
             return z.finish(p, rm);
         }
+        // ZF-70: on an axis the angle is exact (sqrt(−1) = +i, not +2^-129 + i in Up).
+        if (self.re.is_zero() || self.im.is_zero()) && !(self.re.is_zero() && self.im.is_zero()) {
+            if let Some(z) = self.nth_root_finite(2, p, rm, cc) {
+                return z;
+            }
+        }
         let r = self.abs(p_x, RoundingMode::None);
         let th = self.arg(p_x, RoundingMode::None, cc);
         let sr = r.sqrt(p_x, RoundingMode::None);
@@ -745,6 +751,9 @@ impl ExactComplex {
 
     /// Implementation of [`Self::log2`] on operands without inexact history.
     fn log2_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if let Some(z) = self.log_base_parts(false, p, rm, cc) {
+            return z;
+        }
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
         let base = Self::from_real(cc.ln_2(p_x, RoundingMode::None), p_x);
@@ -762,6 +771,9 @@ impl ExactComplex {
 
     /// Implementation of [`Self::log10`] on operands without inexact history.
     fn log10_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if let Some(z) = self.log_base_parts(true, p, rm, cc) {
+            return z;
+        }
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
         let base = Self::from_real(cc.ln_10(p_x, RoundingMode::None), p_x);
@@ -815,6 +827,9 @@ impl ExactComplex {
 
     /// Implementation of [`Self::exp2`] on operands without inexact history.
     fn exp2_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if let Some(z) = self.exp_base_axis(false, p, rm, cc) {
+            return z;
+        }
         let p_x = Self::work_p(p);
         let ln2 = Self::from_real(cc.ln_2(p_x, RoundingMode::None), p_x);
         self.mul(&ln2, p_x, RoundingMode::None)
@@ -833,6 +848,9 @@ impl ExactComplex {
 
     /// Implementation of [`Self::exp10`] on operands without inexact history.
     fn exp10_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if let Some(z) = self.exp_base_axis(true, p, rm, cc) {
+            return z;
+        }
         let p_x = Self::work_p(p);
         let ln10 = Self::from_real(cc.ln_10(p_x, RoundingMode::None), p_x);
         self.mul(&ln10, p_x, RoundingMode::None)
@@ -937,6 +955,9 @@ impl ExactComplex {
         }
         if n == 2 {
             return self.sqrt(p, rm, cc);
+        }
+        if let Some(z) = self.nth_root_finite(n, p, rm, cc) {
+            return z;
         }
         let p_x = Self::work_p(p);
         let ln = self.ln(p_x, RoundingMode::None, cc);
@@ -1059,6 +1080,176 @@ impl ExactComplex {
     /// from the sign of the zero imaginary part (C99 `clog`). A part that is exactly zero
     /// (`t` an integer or half-integer, or `x > 0`) is an exact zero, not the rounding noise of
     /// `exp(y·ln x)` at `θ = π`.
+    /// `2^z` / `10^z` for finite `z` (ZF-70, ZF-18). On the real axis (`im = ±0`) the value is
+    /// the real `exp2` / `exp10` (exact for integer `x`) and `±0` with the sign of `im`;
+    /// elsewhere `b^x (cos(y ln b) + i sin(y ln b))` under Ziv. `y ln b` is transcendental for
+    /// a nonzero dyadic `y`, so neither part is exact off the axis.
+    fn exp_base_axis(
+        &self,
+        ten: bool,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Option<Self> {
+        let (x, y) = (&self.re, &self.im);
+        if !finite_val(x) || !finite_val(y) {
+            return None;
+        }
+        if y.is_zero() {
+            let re = if ten { x.exp10(p, rm, cc) } else { x.exp2(p, rm, cc) };
+            if !finite_val(&re) {
+                return None;
+            }
+            let mut im = y.clone();
+            im.set_precision(p, rm).ok()?;
+            return Some(Self::new(re, im));
+        }
+        Some(crate::complex_special::ziv_complex(p, rm, |pw| {
+            let n = RoundingMode::None;
+            let lb = if ten { cc.ln_10(pw, n) } else { cc.ln_2(pw, n) };
+            let m = if ten { x.exp10(pw, n, cc) } else { x.exp2(pw, n, cc) };
+            let (sn, cs) = ExactNum::mul_ref(y, &lb, pw, n).sin_cos(pw, n, cc);
+            Self::new(ExactNum::mul_ref(&m, &cs, pw, n), m.mul(&sn, pw, n))
+        }))
+    }
+
+    /// `log2(z)` / `log10(z)` for finite nonzero `z` under Ziv (ZF-70): the real part is
+    /// `½ log_b(x² + y²)` with `x² + y²` exact, so it is exact whenever that is (for example
+    /// `log2|2^-60 i| = −60`, `log2|1 + i| = ½`); the imaginary part is `atan2(y, x) / ln b`
+    /// (`±0` exactly on the positive real axis).
+    fn log_base_parts(
+        &self,
+        ten: bool,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Option<Self> {
+        let (x, y) = (&self.re, &self.im);
+        if !finite_val(x) || !finite_val(y) || (x.is_zero() && y.is_zero()) {
+            return None;
+        }
+        let n = RoundingMode::None;
+        let wx = x.precision().unwrap_or(0).max(y.precision().unwrap_or(0));
+        let w = 2 * wx + 2 * WORD_BIT_SIZE;
+        let nn = ExactNum::add_ref(
+            &ExactNum::mul_ref(x, x, w, n),
+            &ExactNum::mul_ref(y, y, w, n),
+            w,
+            n,
+        );
+        if !finite_val(&nn) || nn.is_zero() || nn.inexact() {
+            return None;
+        }
+        Some(crate::complex_special::ziv_complex(p, rm, |pw| {
+            let re = if ten { nn.log10(pw, n, cc) } else { nn.log2(pw, n, cc) }.ldexp(-1, pw, n);
+            let lb = if ten { cc.ln_10(pw, n) } else { cc.ln_2(pw, n) };
+            let im = y.atan2(x, pw, n, cc).div(&lb, pw, n);
+            Self::new(re, im)
+        }))
+    }
+
+    /// Principal `z^(1/n)`, `n ≥ 3`, for finite nonzero `z` (ZF-70, ZF-18). An exact root is
+    /// found by rounding a close approximation to `p` bits and checking `c^n = z` with exact
+    /// arithmetic (`exact_pow_within`); otherwise `exp(ln z / n)` under Ziv.
+    fn nth_root_finite(
+        &self,
+        n: usize,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Option<Self> {
+        let (x, y) = (&self.re, &self.im);
+        if !finite_val(x) || !finite_val(y) || (x.is_zero() && y.is_zero()) {
+            return None;
+        }
+        // On the positive real axis all n-th roots are real. For cube roots on the
+        // other axes cos(π/3) = sin(π/6) = ½ exactly; never compute that component via π.
+        if y.is_zero() && !x.is_negative() {
+            let re = x.nth_root(n, p, rm);
+            return Some(Self::new(re, y.clone()).finish(p, rm));
+        }
+        if x.is_zero() || y.is_zero() {
+            // z on an axis: arg z = π k/2 exactly (k ∈ {1, ±2, −1}), so the root's angle is
+            // π q with q = k/(2n). cos(πq), sin(πq) ∈ {0, ±½, ±1} are taken exactly (for
+            // example cbrt(i) = √3/2 + i/2 and cbrt(−8) = 1 + i√3); the rest under Ziv.
+            let k: i64 = if x.is_zero() {
+                if y.is_negative() {
+                    -1
+                } else {
+                    1
+                }
+            } else if y.is_negative() {
+                -2
+            } else {
+                2
+            };
+            let den0 = i64::try_from(n).ok()?.checked_mul(2)?;
+            let g = gcd_i64(k.abs(), den0);
+            let (num, den) = (k / g, den0 / g);
+            let mag = if x.is_zero() { y.clone().abs() } else { x.clone().abs() };
+            let cos_x2 = trig_exact_x2(num, den);
+            let sin_x2 = trig_exact_x2(den - 2 * num, 2 * den);
+            return Some(crate::complex_special::ziv_complex(p, rm, |pw| {
+                let nr = RoundingMode::None;
+                let m = mag.nth_root(n, pw, nr);
+                let pi_q = cc.pi(pw, nr).mul(&ExactNum::from_i64(num, pw), pw, nr).div(
+                    &ExactNum::from_i64(den, pw),
+                    pw,
+                    nr,
+                );
+                let part = |ex: Option<i64>, cc: &mut Consts, sin: bool| match ex {
+                    Some(v) => {
+                        ExactNum::mul_ref(&m, &ExactNum::from_i64(v, pw), pw, nr).ldexp(-1, pw, nr)
+                    }
+                    None => {
+                        let t = if sin { pi_q.sin(pw, nr, cc) } else { pi_q.cos(pw, nr, cc) };
+                        ExactNum::mul_ref(&m, &t, pw, nr)
+                    }
+                };
+                let re = part(cos_x2, cc, false);
+                let im = part(sin_x2, cc, true);
+                Self::new(re, im)
+            }));
+        }
+        let nr = RoundingMode::None;
+        let n_u32 = u32::try_from(n).ok()?;
+        let root = |pw: usize, cc: &mut Consts| {
+            let ninv = ExactNum::from_u32(1, pw).div(&ExactNum::from_u32(n_u32, pw), pw, nr);
+            let l = self.ln(pw, nr, cc);
+            Self::new(l.re.mul(&ninv, pw, nr), l.im.mul(&ninv, pw, nr)).exp(pw, nr, cc)
+        };
+        let pa = round_p(p) + 2 * WORD_BIT_SIZE;
+        let a = root(pa, cc);
+        let snap = |v: &ExactNum, o: &ExactNum| {
+            let (Some(ev), Some(eo)) = (v.exponent(), o.exponent()) else {
+                return v.clone();
+            };
+            if ev < eo - Exponent::try_from(round_p(p) + WORD_BIT_SIZE).unwrap_or(Exponent::MAX) {
+                let mut z = ExactNum::from_u8(0, WORD_BIT_SIZE);
+                if let Some(sg) = v.sign() {
+                    z.set_sign(sg);
+                }
+                z
+            } else {
+                v.clone()
+            }
+        };
+        let mut c = Self::new(snap(&a.re, &a.im), snap(&a.im, &a.re));
+        if c.set_precision(p, RoundingMode::ToEven).is_ok() {
+            let (sz, _) = span_c(self)?;
+            if let Some(v) = exact_pow_within(&c, n, sz + 8) {
+                if v.re.compare(x) == Some(0) && v.im.compare(y) == Some(0) {
+                    c.re.set_inexact(false);
+                    c.im.set_inexact(false);
+                    return Some(c);
+                }
+            }
+        }
+        Some(crate::complex_special::ziv_complex(p, rm, |pw| {
+            root(pw, cc)
+        }))
+    }
+
     /// `w^n` for an integer `n` when the exact power fits in a few times `p` bits: binary
     /// powering with exact products, then for `n < 0` one correctly rounded division per part
     /// by the exact `|w^|n||²` (ZF-44/67). Exact results stay exact (no inexact flag), so a
@@ -1762,4 +1953,94 @@ mod tests {
 
 fn finite_val(x: &ExactNum) -> bool {
     !x.is_nan() && !x.is_inf()
+}
+
+/// Bit positions `(top, low)` of a finite nonzero part: `|x| < 2^top`, lowest set bit `2^low`.
+fn span_bits(x: &ExactNum) -> Option<(Exponent, Exponent)> {
+    if !finite_val(x) || x.is_zero() {
+        return None;
+    }
+    let raw = x.as_raw_parts();
+    let mut tz: Exponent = 0;
+    for w in raw.words {
+        if *w == 0 {
+            tz += Exponent::from(crate::WORD_BIT_SIZE as u32);
+        } else {
+            tz += Exponent::from(w.trailing_zeros());
+            break;
+        }
+    }
+    let len = Exponent::try_from(raw.words.len() * crate::WORD_BIT_SIZE).ok()?;
+    Some((raw.exponent, raw.exponent - len + tz))
+}
+
+/// Joint bit span `top − low` of both parts, and the joint low bit.
+fn span_c(z: &ExactComplex) -> Option<(usize, Exponent)> {
+    let parts = [span_bits(&z.re), span_bits(&z.im)];
+    let top = parts.iter().flatten().map(|t| t.0).max()?;
+    let low = parts.iter().flatten().map(|t| t.1).min()?;
+    Some((usize::try_from(top - low).ok()?, low))
+}
+
+/// `c^n` computed exactly, or `None` as soon as an intermediate power spans more than
+/// `max_span` bits. If `c^n = z` then every `c^k`, `k ≤ n`, spans at most `span(z) + 2`
+/// bits: write `c = 2^e (1+i)^j g` with `j ∈ {0,1}` and `g` a Gaussian integer prime to
+/// `1+i`; then `g^k` has one odd part and `log2|g|^k − ½ ≤ span(g^k) ≤ log2|g|^k + 1`.
+fn exact_pow_within(c: &ExactComplex, n: usize, max_span: usize) -> Option<ExactComplex> {
+    let nr = RoundingMode::None;
+    let w_of = |a: &ExactComplex| span_c(a).map(|(s, _)| s).unwrap_or(0) + 1;
+    let mul = |a: &ExactComplex, b: &ExactComplex| -> Option<ExactComplex> {
+        let w = round_p(w_of(a) + w_of(b) + 2 * WORD_BIT_SIZE);
+        let r = a.mul(b, w, nr);
+        if r.re.inexact() || r.im.inexact() || !finite_val(&r.re) || !finite_val(&r.im) {
+            return None;
+        }
+        if span_c(&r).map(|(s, _)| s).unwrap_or(0) > max_span {
+            return None;
+        }
+        Some(r)
+    };
+    let mut e = n;
+    let mut base = c.clone();
+    let mut acc: Option<ExactComplex> = None;
+    while e > 0 {
+        if e & 1 == 1 {
+            acc = Some(match acc {
+                None => base.clone(),
+                Some(a) => mul(&a, &base)?,
+            });
+        }
+        e >>= 1;
+        if e > 0 {
+            base = mul(&base, &base)?;
+        }
+    }
+    acc
+}
+
+fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
+    while b != 0 {
+        let t = a % b;
+        a = b;
+        b = t;
+    }
+    a.abs().max(1)
+}
+
+/// `2 cos(π num/den)` when it is an integer (`den ∈ {1, 2, 3}` after reduction), else `None`.
+fn trig_exact_x2(num: i64, den: i64) -> Option<i64> {
+    let g = gcd_i64(num.abs(), den.abs());
+    let (num, den) = (num / g, den / g);
+    let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
+    // cos(π num/den) depends on num mod 2den.
+    let r = num.rem_euclid(2 * den);
+    match den {
+        1 => Some(if r == 0 { 2 } else { -2 }),
+        2 => Some(0),
+        3 => Some(match r {
+            1 | 5 => 1,
+            _ => -1,
+        }),
+        _ => None,
+    }
 }
