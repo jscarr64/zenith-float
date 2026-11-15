@@ -202,7 +202,8 @@ impl ExactRational {
         }
         // Exact integer division |num| = q·den + r; round up when 2r ≥ den (ties away from zero).
         let p = work_p(&[&self.num, &self.den]);
-        let a = self.num.clone().abs();
+        // |num| at p bits (exact): copysign with +1, a borrowing op.
+        let a = self.num.copysign(&rat_one(), p, RoundingMode::None);
         let r = a.rem(&self.den);
         let mut q = ExactNum::div_ref(
             &ExactNum::sub_ref(&a, &r, p, RoundingMode::None),

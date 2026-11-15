@@ -91,11 +91,8 @@ impl ExactNumNumber {
         Self::p_assertion(p)?;
         // Compare the exact values: rounding both to p first could make distinct values equal.
         match self.cmp(toward) {
-            0 => {
-                let mut x = self.clone()?;
-                x.set_precision(p, rm)?;
-                Ok(x)
-            }
+            // self rounded to p (copysign with its own sign: a borrowing op, no copy).
+            0 => self.copysign(self, p, rm),
             c => self.next_toward(c < 0, p),
         }
     }

@@ -257,9 +257,13 @@ impl ExactNumNumber {
             let am = sh.atan(p, RoundingMode::None, cc)?;
             return Ok((am, sn, cn, dn));
         }
-        let (u, turns) = self.jacobi_reduce_period(m, p, cc)?;
-        let (mut am, sn, cn, dn) = jacobi_agm(&u, m, p, cc)?;
-        if let Some(n) = turns {
+        let reduced = self.jacobi_reduce_period(m, p, cc)?;
+        let u = match &reduced {
+            Some((r, _)) => r,
+            None => self,
+        };
+        let (mut am, sn, cn, dn) = jacobi_agm(u, m, p, cc)?;
+        if let Some((_, Some(n))) = reduced {
             // am(u + 4nK) = am(u) + 2nπ; sn, cn, dn have period 4K.
             let pe = round_p(
                 p + usize::try_from(n.exponent().max(0)).map_err(|_| Error::InvalidArgument)?
@@ -311,7 +315,8 @@ impl ExactNumNumber {
         sn.set_sign(sign);
         let mut tiny = Self::from_word(1, p_x)?;
         tiny.set_exponent(EXPONENT_MIN);
-        let cn = tiny.clone()?;
+        let mut cn = Self::from_word(1, p_x)?;
+        cn.set_exponent(EXPONENT_MIN);
         let mut r = pick(am, sn, cn, tiny, p_x)?;
         if !r.is_zero() && r.exponent() <= EXPONENT_MIN + 2 {
             let neg = r.is_negative();
@@ -327,18 +332,19 @@ impl ExactNumNumber {
     }
 
     /// `u` reduced into `[-2K, 2K]` and the number of whole periods `n` removed
-    /// (`u = r + 4nK`; `None` when nothing was removed). K is computed with `exponent(u)` extra
+    /// (`u = r + 4nK`; `n` is `None` when it rounds to zero). `None` when `|u| ≤ 2K` already, so
+    /// the caller uses `u` itself. K is computed with `exponent(u)` extra
     /// bits, as the trig reduction does for π, so the reduced argument keeps all `p` bits.
     fn jacobi_reduce_period(
         &self,
         m: &Self,
         p: usize,
         cc: &mut Consts,
-    ) -> Result<(Self, Option<Self>), Error> {
+    ) -> Result<Option<(Self, Option<Self>)>, Error> {
         // \(K(m)\ge\pi/2\), so \(2K\ge\pi\). Skip \(K\) (and a nested Ziv) when \(\lvert u\rvert<\pi\).
         let pi = cc.pi_num(p, RoundingMode::None)?;
         if self.abs()?.cmp(&pi) < 0 {
-            return Ok((self.clone()?, None));
+            return Ok(None);
         }
         let extra = usize::try_from(self.exponent().max(0)).map_err(|_| Error::InvalidArgument)?;
         if extra > JACOBI_REDUCE_EXTRA_MAX {
@@ -346,17 +352,28 @@ impl ExactNumNumber {
         }
         let pk = round_p(p + extra + WORD_BIT_SIZE);
         let k = m.elliptic_k_at(pk, cc)?;
-        let mut two_k = k.clone()?;
-        two_k.set_exponent(two_k.exponent() + 1);
-        if self.abs()?.cmp(&two_k) <= 0 {
-            return Ok((self.clone()?, None));
+        // |u| ≤ 2K as |u|/2 ≤ K (the exponent shift is exact; |u| ≥ π here).
+        let mut half_u = self.abs()?;
+        half_u.set_exponent(half_u.exponent() - 1);
+        if half_u.cmp(&k) <= 0 {
+            return Ok(None);
         }
         let mut four_k = k;
         four_k.set_exponent(four_k.exponent() + 2);
+        // x > 2K as 2x > 4K (exact exponent shift, undone after the compare).
+        let above_two_k = |x: &mut Self| -> bool {
+            if x.is_zero() {
+                return false;
+            }
+            x.set_exponent(x.exponent() + 1);
+            let above = x.cmp(&four_k) > 0;
+            x.set_exponent(x.exponent() - 1);
+            above
+        };
         let mut r = self.rem(&four_k)?;
-        if r.cmp(&two_k) > 0 {
+        if above_two_k(&mut r) {
             r = r.sub(&four_k, pk, RoundingMode::None)?;
-        } else if r.is_negative() && r.abs()?.cmp(&two_k) > 0 {
+        } else if r.is_negative() && above_two_k(&mut r.abs()?) {
             r = r.add(&four_k, pk, RoundingMode::None)?;
         }
         // n = (u - r) / 4K is an integer up to the rounding error of r at pk bits.
@@ -365,7 +382,7 @@ impl ExactNumNumber {
             .div(&four_k, pk, RoundingMode::None)?
             .round(0, RoundingMode::ToEven)?;
         r.set_precision(p, RoundingMode::None)?;
-        Ok((r, if n.is_zero() { None } else { Some(n) }))
+        Ok(Some((r, if n.is_zero() { None } else { Some(n) })))
     }
 }
 

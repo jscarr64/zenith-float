@@ -1023,8 +1023,8 @@ impl ExactNumNumber {
             if x.is_zero() {
                 return Err(Error::ExponentOverflow(Sign::Pos));
             }
-            let mut nx = x.clone()?;
-            nx.set_sign(Sign::Neg);
+            // x > 0 here, so -x is x with the sign set negative.
+            let nx = x.neg()?;
             let mut r = nx
                 .ei(p, crate::common::util::invert_rm_for_sign(rm), cc)?
                 .neg()?;
@@ -4971,8 +4971,9 @@ fn bessel_y_at_zero(nu: &ExactNumNumber, p: usize) -> Result<ExactNumNumber, Err
     }
     let a = nu.abs()?;
     let pe = round_p(a.mantissa_max_bit_len().max(WORD_BIT_SIZE) + WORD_BIT_SIZE);
-    let m = a.clone()?.floor()?;
-    let m_odd = !m.is_zero() && !m.clone()?.ldexp(-1, pe, RoundingMode::None)?.is_int();
+    let m = nu.abs()?.floor()?;
+    let two = ExactNumNumber::from_word(2, WORD_BIT_SIZE)?;
+    let m_odd = !m.is_zero() && !m.div(&two, pe, RoundingMode::None)?.is_int();
     let t = a.sub(&m, pe, RoundingMode::None)?;
     if t.is_zero() {
         return inf(m_odd);

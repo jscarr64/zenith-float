@@ -1056,15 +1056,23 @@ impl ExactComplex {
         if !finite(&self.re) || !finite(&self.im) {
             return None;
         }
+        // The exact zero part, built fresh with its sign (no copy of the operand).
+        let signed_zero = |x: &ExactNum| {
+            let mut z = ExactNum::new(p);
+            if x.is_negative() {
+                z.set_sign(crate::Sign::Neg);
+            }
+            z
+        };
         if self.im.is_zero() {
-            return Some(Self::new(self.re.atan(p, rm, cc), self.im.clone()));
+            return Some(Self::new(self.re.atan(p, rm, cc), signed_zero(&self.im)));
         }
         if !self.re.is_zero() {
             return None;
         }
         let one = ExactNum::from_u8(1, WORD_BIT_SIZE);
         match self.im.abs_cmp(&one) {
-            Some(c) if c < 0 => Some(Self::new(self.re.clone(), self.im.atanh(p, rm, cc))),
+            Some(c) if c < 0 => Some(Self::new(signed_zero(&self.re), self.im.atanh(p, rm, cc))),
             Some(c) if c > 0 => {
                 let neg = self.re.is_negative();
                 Some(crate::complex_special::ziv_complex(p, rm, |pw| {
@@ -1074,7 +1082,7 @@ impl ExactComplex {
                     if neg {
                         h = h.neg();
                     }
-                    let inv = one.clone().div(&self.im, pw, RoundingMode::None);
+                    let inv = ExactNum::div_ref(&one, &self.im, pw, RoundingMode::None);
                     Self::new(h, inv.atanh(pw, RoundingMode::None, cc))
                 }))
             }

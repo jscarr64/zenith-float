@@ -2663,7 +2663,7 @@ impl ExactNum {
                 true,
             ),
             // ±Inf toward anything else steps onto ±MAX at precision p.
-            (Flavor::Inf(a), Flavor::Inf(b)) if a == b => self.clone(),
+            (Flavor::Inf(a), Flavor::Inf(b)) if a == b => Self::inf_with_sign(a.is_positive()),
             (Flavor::Inf(a), _) => {
                 let r = with_prec(p, || {
                     let mut m = ExactNumNumber::max_value(p)?;
