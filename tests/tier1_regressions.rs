@@ -2363,3 +2363,39 @@ fn zf_30_ln_gamma_small_and_near_one_two() {
         }
     }
 }
+
+/// ZF-70 (follow-up): the exact terminating-2F1 path stopped at 2^20 numerator bits and sent
+/// longer polynomials to the floating path, where an exactly representable value could not be
+/// certified in directed modes. It is now exact at any degree (binary splitting). Rows use
+/// 2F1(−N, b; b; z) = (1 − z)^N: z = 1/2 gives 2^-N, z = 2 gives (−1)^N, z = 3 gives (−2)^N,
+/// all exact, so every mode must return the value itself with the inexact flag clear.
+#[test]
+fn zf_70_hypergeom_2f1_long_terminating_exact() {
+    let mut cc = Consts::new().expect("Consts");
+    let b = parse_real("3p-2").expect("b");
+    for n in [2000i64, 3001, 20000] {
+        let a = parse_real(&format!("-{n:x}p0")).expect("a");
+        for (z, e, neg) in [("1p-1", -n, false), ("1p1", 0, n % 2 == 1), ("3p0", n, n % 2 == 1)] {
+            let zz = parse_real(z).expect("z");
+            let mut want = parse_real(&format!("1p{e}")).expect("want");
+            if neg {
+                want = -want;
+            }
+            for p in [64usize, 256] {
+                for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+                    let v = a.hypergeom_2f1(&b, &b, &zz, p, rm, &mut cc);
+                    assert_eq!(
+                        v.compare(&want),
+                        Some(0),
+                        "2F1(-{n},3/4;3/4;{z}) p={p} {rm:?}: {v} {:?}",
+                        v.err()
+                    );
+                    assert!(
+                        !v.inexact(),
+                        "2F1(-{n},3/4;3/4;{z}) p={p} {rm:?} flagged inexact"
+                    );
+                }
+            }
+        }
+    }
+}

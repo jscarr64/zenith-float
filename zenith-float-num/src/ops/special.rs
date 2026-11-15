@@ -3738,12 +3738,13 @@ impl ExactNumNumber {
     }
 
     /// Terminating ₂F₁ (ZF-70): with `a` or `b = −N`, the value is the polynomial
-    /// `Σ_{k≤N} (a)_k (b)_k / ((c)_k k!) z^k`, a rational number. It is summed exactly by
-    /// Horner (`H ← 1 + r_k z H`, `r_k = (a+k−1)(b+k−1)/((c+k−1) k)`) as one numerator over
-    /// one denominator and rounded once, so dyadic results such as ₂F₁(−3, −½; 2; 2) = 21/16
-    /// are exact in every mode. `None` (the floating path decides) for a pole `c + k − 1 = 0`
-    /// or when the exact numerator would pass `EXACT_POLY_BITS`; that path is correctly
-    /// rounded for every inexact value.
+    /// `Σ_{k≤N} (a)_k (b)_k / ((c)_k k!) z^k`, a rational number. It is summed exactly, at
+    /// whatever width the exact rational needs, by binary splitting over
+    /// `r_k z = (a+k−1)(b+k−1) z / ((c+k−1) k)` (one numerator over one denominator), and rounded
+    /// once, so dyadic results such as ₂F₁(−3, −½; 2; 2) = 21/16 are exact in every mode and no
+    /// size threshold sends an exactly representable value to the floating path. `None` (the
+    /// floating path decides) only for a pole `c + k − 1 = 0`. A degree whose exact rational
+    /// cannot be stored (more than `2^46` bits) is `Err(MemoryAllocation)`.
     fn hyp2f1_terminating_exact(
         &self,
         b: &Self,
@@ -3752,12 +3753,12 @@ impl ExactNumNumber {
         p: usize,
         rm: RoundingMode,
     ) -> Result<Option<Self>, Error> {
-        const EXACT_POLY_BITS: usize = 1 << 20;
         let degree = |x: &Self| -> Option<usize> {
-            if x.is_zero() || x.is_positive() || !x.is_int() || x.exponent() > 40 {
+            if x.is_zero() || x.is_positive() || !x.is_int() {
                 return None;
             }
-            x.neg().ok()?.int_as_usize().ok()
+            // A degree past usize is past any memory: report it below as allocation failure.
+            Some(x.neg().ok()?.int_as_usize().unwrap_or(usize::MAX))
         };
         let (n_a, n_b) = (degree(self), degree(b));
         let n = match (n_a, n_b) {
@@ -3765,56 +3766,47 @@ impl ExactNumNumber {
             (Some(x), None) | (None, Some(x)) => x,
             (None, None) => return Ok(None),
         };
+        // Pole c + k − 1 = 0 for some 1 <= k <= n: c a non-positive integer with −c < n.
+        if c.is_int() && !c.is_positive() {
+            let mc = if c.is_zero() { 0 } else { c.neg()?.int_as_usize().unwrap_or(usize::MAX) };
+            if mc < n {
+                return Ok(None);
+            }
+        }
         let w0 = self
             .mantissa_max_bit_len()
             .max(b.mantissa_max_bit_len())
             .max(c.mantissa_max_bit_len())
             .max(z.mantissa_max_bit_len());
-        // Each Horner step multiplies by factors of about w0 + 64 bits.
+        // Each step contributes factors of about 3 (w0 + 128) bits; beyond 2^46 bits the exact
+        // rational does not fit in memory, which is an allocation failure, not a value.
         let per = 3 * (w0 + 2 * WORD_BIT_SIZE);
-        if n.saturating_mul(per) > EXACT_POLY_BITS {
-            return Ok(None);
+        if n.checked_mul(per).is_none_or(|b| b > 1usize << 46) {
+            return Err(Error::MemoryAllocation);
         }
-        let nr = RoundingMode::None;
-        let w_of = |x: &Self| x.mantissa_max_bit_len();
-        let exact_mul = |x: &Self, y: &Self| -> Result<Self, Error> {
-            let w = round_p(w_of(x) + w_of(y) + WORD_BIT_SIZE);
-            x.mul(y, w, nr)
-        };
-        let exact_add = |x: &Self, y: &Self| -> Result<Self, Error> {
-            let ex = x.exponent().max(y.exponent());
-            let lo = (x.exponent() - Exponent::try_from(w_of(x)).unwrap_or(0))
-                .min(y.exponent() - Exponent::try_from(w_of(y)).unwrap_or(0));
-            let w = round_p(usize::try_from(ex - lo).unwrap_or(0) + 2 * WORD_BIT_SIZE);
-            x.add(y, w, nr)
-        };
-        let one = Self::from_word(1, WORD_BIT_SIZE)?;
-        let (mut hn, mut hd) = (one.clone()?, one.clone()?);
-        for k in (1..=n).rev() {
-            let km1 = Self::from_usize(k - 1)?;
-            let kk = Self::from_usize(k)?;
-            let fa = exact_add(self, &km1)?;
-            let fb = exact_add(b, &km1)?;
-            let fc = exact_add(c, &km1)?;
-            if fc.is_zero() {
-                return Ok(None);
-            }
-            // r_k z = rn / rd
-            let rn = exact_mul(&exact_mul(&fa, &fb)?, z)?;
-            let rd = exact_mul(&fc, &kk)?;
-            // H = 1 + (rn/rd)(hn/hd) = (rd hd + rn hn) / (rd hd)
-            let d = exact_mul(&rd, &hd)?;
-            let t = exact_mul(&rn, &hn)?;
-            hn = exact_add(&d, &t)?;
-            hd = d;
-            if hn.inexact() || hd.inexact() {
-                return Ok(None);
-            }
+        if n == 0 {
+            return Ok(Some(Self::from_word(1, p)?));
         }
-        if hn.is_zero() {
+        // The stored inputs are exact values; their inexact flags are ORed in by the caller.
+        let exact = |x: &Self| -> Result<Self, Error> {
+            let mut v = x.clone()?;
+            v.set_inexact(false);
+            Ok(v)
+        };
+        let (ea, eb, ec, ez) = (exact(self)?, exact(b)?, exact(c)?, exact(z)?);
+        let ctx = Hyp2f1Split {
+            a: &ea,
+            b: &eb,
+            c: &ec,
+            z: &ez,
+        };
+        let (_, q, t) = ctx.split(1, n + 1)?;
+        // F = 1 + T/Q = (Q + T) / Q
+        let num = exact_add_num(&q, &t)?;
+        if num.is_zero() {
             return Ok(Some(Self::new2(p, Sign::Pos, false)?));
         }
-        Ok(Some(hn.div(&hd, p, rm)?))
+        Ok(Some(num.div(&q, p, rm)?))
     }
 
     fn hypergeom_2f1_at(
@@ -6910,5 +6902,83 @@ mod tests {
 
     fn four_word(p: usize) -> Result<ExactNumNumber, crate::Error> {
         ExactNumNumber::from_word(4, p)
+    }
+}
+
+fn exact_mul_num(x: &ExactNumNumber, y: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
+    let w = round_p(x.mantissa_max_bit_len() + y.mantissa_max_bit_len() + WORD_BIT_SIZE);
+    let v = x.mul(y, w, RoundingMode::None)?;
+    if v.inexact() {
+        return Err(Error::InvalidArgument);
+    }
+    trim_low_zero_words(v)
+}
+
+fn exact_add_num(x: &ExactNumNumber, y: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
+    if x.is_zero() {
+        return y.clone();
+    }
+    if y.is_zero() {
+        return x.clone();
+    }
+    let w_of = |v: &ExactNumNumber| Exponent::try_from(v.mantissa_max_bit_len()).unwrap_or(0);
+    let ex = x.exponent().max(y.exponent());
+    let lo = (x.exponent() - w_of(x)).min(y.exponent() - w_of(y));
+    let w = round_p(usize::try_from(ex - lo).unwrap_or(0) + 2 * WORD_BIT_SIZE);
+    let v = x.add(y, w, RoundingMode::None)?;
+    if v.inexact() {
+        return Err(Error::InvalidArgument);
+    }
+    trim_low_zero_words(v)
+}
+
+/// Drop all-zero low mantissa words (exact), so exact products cost by significant words.
+fn trim_low_zero_words(mut v: ExactNumNumber) -> Result<ExactNumNumber, Error> {
+    if v.is_zero() {
+        return Ok(v);
+    }
+    let words = v.mantissa().digits();
+    let zeros = words.iter().take_while(|w| **w == 0).count();
+    if zeros == 0 || zeros >= words.len() {
+        return Ok(v);
+    }
+    let q = (words.len() - zeros) * WORD_BIT_SIZE;
+    v.set_precision(q, RoundingMode::ToZero)?;
+    Ok(v)
+}
+
+/// Binary splitting for the terminating ₂F₁ sum `Σ_{k=lo}^{hi−1} Π_{j=lo}^{k} p_j / q_j`,
+/// `p_j = (a+j−1)(b+j−1) z`, `q_j = (c+j−1) j`, all exact.
+struct Hyp2f1Split<'a> {
+    a: &'a ExactNumNumber,
+    b: &'a ExactNumNumber,
+    c: &'a ExactNumNumber,
+    z: &'a ExactNumNumber,
+}
+
+impl Hyp2f1Split<'_> {
+    /// `(P, Q, T)` with `P = Π p_j`, `Q = Π q_j`, `T / Q` = the partial sum over `[lo, hi)`.
+    fn split(
+        &self,
+        lo: usize,
+        hi: usize,
+    ) -> Result<(ExactNumNumber, ExactNumNumber, ExactNumNumber), Error> {
+        if hi - lo == 1 {
+            let jm1 = ExactNumNumber::from_usize(lo - 1)?;
+            let j = ExactNumNumber::from_usize(lo)?;
+            let fa = exact_add_num(self.a, &jm1)?;
+            let fb = exact_add_num(self.b, &jm1)?;
+            let fc = exact_add_num(self.c, &jm1)?;
+            let pj = exact_mul_num(&exact_mul_num(&fa, &fb)?, self.z)?;
+            let qj = exact_mul_num(&fc, &j)?;
+            let t = pj.clone()?;
+            return Ok((pj, qj, t));
+        }
+        let mid = lo + (hi - lo) / 2;
+        let (p1, q1, t1) = self.split(lo, mid)?;
+        let (p2, q2, t2) = self.split(mid, hi)?;
+        // T = T1 Q2 + P1 T2
+        let t = exact_add_num(&exact_mul_num(&t1, &q2)?, &exact_mul_num(&p1, &t2)?)?;
+        Ok((exact_mul_num(&p1, &p2)?, exact_mul_num(&q1, &q2)?, t))
     }
 }
