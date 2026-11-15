@@ -316,7 +316,7 @@ fn write_inline_wide(
     };
     dest[1] = BINARY_FORMAT_VERSION;
     dest[2] = (u8::try_from(n_u32).map_err(|_| Error::InvalidArgument)? << 1) | u8::from(inexact);
-    dest[3..11].copy_from_slice(&i64::from(exp).to_be_bytes());
+    dest[3..11].copy_from_slice(&exp.to_be_bytes());
     dest[11..16].copy_from_slice(&top.to_be_bytes()[3..8]);
     Ok(BINARY_INLINE_LEN)
 }
@@ -424,7 +424,7 @@ fn write_num(x: &ExactNum, dest: &mut [u8]) -> Result<usize, Error> {
     dest[1] = BINARY_FORMAT_VERSION;
     dest[3] = u8::from(inexact);
     if wide {
-        dest[16..24].copy_from_slice(&i64::from(exp).to_be_bytes());
+        dest[16..24].copy_from_slice(&exp.to_be_bytes());
     } else {
         dest[4..8].copy_from_slice(&exp_field(exp)?.to_be_bytes());
     }

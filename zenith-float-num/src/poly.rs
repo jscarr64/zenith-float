@@ -505,6 +505,68 @@ impl PartialEq for ExactNumPoly {
     }
 }
 
+fn int_strip(v: &mut Vec<ExactInt>) {
+    while v.last().is_some_and(|c| c.is_zero()) {
+        v.pop();
+    }
+}
+
+/// Primitive part with a positive leading coefficient (empty for the zero polynomial).
+fn int_primitive(mut v: Vec<ExactInt>) -> Vec<ExactInt> {
+    int_strip(&mut v);
+    let Some(last) = v.last() else {
+        return v;
+    };
+    let mut g = ExactInt::zero();
+    for c in &v {
+        g = g.gcd(c);
+    }
+    if last.is_negative() {
+        g = g.neg();
+    }
+    v.iter()
+        .map(|c| c.div_rem(&g).map_or_else(|| c.clone(), |(q, _)| q))
+        .collect()
+}
+
+/// A pseudo-remainder of `a` by `b` (`b` nonzero): `lc(b)^j·a mod b` over the integers, exact.
+fn int_prem(a: &[ExactInt], b: &[ExactInt]) -> Vec<ExactInt> {
+    let mut r = a.to_vec();
+    int_strip(&mut r);
+    let Some(lb) = b.last() else {
+        return r;
+    };
+    let db = b.len() - 1;
+    while r.len() > db {
+        let dr = r.len() - 1;
+        let lr = r[dr].clone();
+        let sh = dr - db;
+        for c in r.iter_mut() {
+            *c = c.mul(lb);
+        }
+        for (i, bi) in b.iter().enumerate() {
+            r[i + sh] = r[i + sh].sub(&lr.mul(bi));
+        }
+        int_strip(&mut r);
+    }
+    r
+}
+
+/// Primitive GCD of two integer polynomials (positive leading coefficient).
+fn int_poly_gcd(a: Vec<ExactInt>, b: Vec<ExactInt>) -> Vec<ExactInt> {
+    let mut a = int_primitive(a);
+    let mut b = int_primitive(b);
+    if a.len() < b.len() {
+        core::mem::swap(&mut a, &mut b);
+    }
+    while !b.is_empty() {
+        let r = int_primitive(int_prem(&a, &b));
+        a = b;
+        b = r;
+    }
+    a
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -603,66 +665,4 @@ mod tests {
         assert_eq!(roots[0].compare(&ExactNum::from_i8(-1, p)), Some(0));
         Ok(())
     }
-}
-
-fn int_strip(v: &mut Vec<ExactInt>) {
-    while v.last().is_some_and(|c| c.is_zero()) {
-        v.pop();
-    }
-}
-
-/// Primitive part with a positive leading coefficient (empty for the zero polynomial).
-fn int_primitive(mut v: Vec<ExactInt>) -> Vec<ExactInt> {
-    int_strip(&mut v);
-    let Some(last) = v.last() else {
-        return v;
-    };
-    let mut g = ExactInt::zero();
-    for c in &v {
-        g = g.gcd(c);
-    }
-    if last.is_negative() {
-        g = g.neg();
-    }
-    v.iter()
-        .map(|c| c.div_rem(&g).map_or_else(|| c.clone(), |(q, _)| q))
-        .collect()
-}
-
-/// A pseudo-remainder of `a` by `b` (`b` nonzero): `lc(b)^j·a mod b` over the integers, exact.
-fn int_prem(a: &[ExactInt], b: &[ExactInt]) -> Vec<ExactInt> {
-    let mut r = a.to_vec();
-    int_strip(&mut r);
-    let Some(lb) = b.last() else {
-        return r;
-    };
-    let db = b.len() - 1;
-    while r.len() > db {
-        let dr = r.len() - 1;
-        let lr = r[dr].clone();
-        let sh = dr - db;
-        for c in r.iter_mut() {
-            *c = c.mul(lb);
-        }
-        for (i, bi) in b.iter().enumerate() {
-            r[i + sh] = r[i + sh].sub(&lr.mul(bi));
-        }
-        int_strip(&mut r);
-    }
-    r
-}
-
-/// Primitive GCD of two integer polynomials (positive leading coefficient).
-fn int_poly_gcd(a: Vec<ExactInt>, b: Vec<ExactInt>) -> Vec<ExactInt> {
-    let mut a = int_primitive(a);
-    let mut b = int_primitive(b);
-    if a.len() < b.len() {
-        core::mem::swap(&mut a, &mut b);
-    }
-    while !b.is_empty() {
-        let r = int_primitive(int_prem(&a, &b));
-        a = b;
-        b = r;
-    }
-    a
 }

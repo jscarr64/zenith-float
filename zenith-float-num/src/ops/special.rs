@@ -1280,7 +1280,7 @@ impl ExactNumNumber {
                     };
                     let top = g.exponent().max(lo.exponent());
                     let lost = if v.is_zero() {
-                        usize::try_from(pe).unwrap_or(usize::MAX)
+                        pe
                     } else {
                         usize::try_from((top - v.exponent()).max(0)).unwrap_or(usize::MAX)
                     };
@@ -5859,6 +5859,228 @@ pub(crate) fn euler_mascheroni(p: usize, ln2: &ExactNumNumber) -> Result<ExactNu
     ab.sub(&ln_n, pw, RoundingMode::None)
 }
 
+fn exact_mul_num(x: &ExactNumNumber, y: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
+    let w = round_p(x.mantissa_max_bit_len() + y.mantissa_max_bit_len() + WORD_BIT_SIZE);
+    let v = x.mul(y, w, RoundingMode::None)?;
+    if v.inexact() {
+        return Err(Error::InvalidArgument);
+    }
+    trim_low_zero_words(v)
+}
+
+fn exact_add_num(x: &ExactNumNumber, y: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
+    if x.is_zero() {
+        return y.clone();
+    }
+    if y.is_zero() {
+        return x.clone();
+    }
+    let w_of = |v: &ExactNumNumber| Exponent::try_from(v.mantissa_max_bit_len()).unwrap_or(0);
+    let ex = x.exponent().max(y.exponent());
+    let lo = (x.exponent() - w_of(x)).min(y.exponent() - w_of(y));
+    let w = round_p(usize::try_from(ex - lo).unwrap_or(0) + 2 * WORD_BIT_SIZE);
+    let v = x.add(y, w, RoundingMode::None)?;
+    if v.inexact() {
+        return Err(Error::InvalidArgument);
+    }
+    trim_low_zero_words(v)
+}
+
+/// Drop all-zero low mantissa words (exact), so exact products cost by significant words.
+fn trim_low_zero_words(mut v: ExactNumNumber) -> Result<ExactNumNumber, Error> {
+    if v.is_zero() {
+        return Ok(v);
+    }
+    let words = v.mantissa().digits();
+    let zeros = words.iter().take_while(|w| **w == 0).count();
+    if zeros == 0 || zeros >= words.len() {
+        return Ok(v);
+    }
+    let q = (words.len() - zeros) * WORD_BIT_SIZE;
+    v.set_precision(q, RoundingMode::ToZero)?;
+    Ok(v)
+}
+
+/// Binary splitting for the terminating ₂F₁ sum `Σ_{k=lo}^{hi−1} Π_{j=lo}^{k} p_j / q_j`,
+/// `p_j = (a+j−1)(b+j−1) z`, `q_j = (c+j−1) j`, all exact.
+struct Hyp2f1Split<'a> {
+    a: &'a ExactNumNumber,
+    b: &'a ExactNumNumber,
+    c: &'a ExactNumNumber,
+    z: &'a ExactNumNumber,
+}
+
+impl Hyp2f1Split<'_> {
+    /// `(P, Q, T)` with `P = Π p_j`, `Q = Π q_j`, `T / Q` = the partial sum over `[lo, hi)`.
+    fn split(
+        &self,
+        lo: usize,
+        hi: usize,
+    ) -> Result<(ExactNumNumber, ExactNumNumber, ExactNumNumber), Error> {
+        if hi - lo == 1 {
+            let jm1 = ExactNumNumber::from_usize(lo - 1)?;
+            let j = ExactNumNumber::from_usize(lo)?;
+            let fa = exact_add_num(self.a, &jm1)?;
+            let fb = exact_add_num(self.b, &jm1)?;
+            let fc = exact_add_num(self.c, &jm1)?;
+            let pj = exact_mul_num(&exact_mul_num(&fa, &fb)?, self.z)?;
+            let qj = exact_mul_num(&fc, &j)?;
+            let t = pj.clone()?;
+            return Ok((pj, qj, t));
+        }
+        let mid = lo + (hi - lo) / 2;
+        let (p1, q1, t1) = self.split(lo, mid)?;
+        let (p2, q2, t2) = self.split(mid, hi)?;
+        // T = T1 Q2 + P1 T2
+        let t = exact_add_num(&exact_mul_num(&t1, &q2)?, &exact_mul_num(&p1, &t2)?)?;
+        Ok((exact_mul_num(&p1, &p2)?, exact_mul_num(&q1, &q2)?, t))
+    }
+}
+
+/// A 64-bit starting value for Lambert W: branch-point series `−1 ± q − q²/3 ± 11q³/72`,
+/// `q = √(2(1 + e x))` (DLMF 4.13.6), for `x < −1/4`; Winitzki's `l (1 − ln(1+l)/(2+l))`,
+/// `l = ln(1 + x)`, for `W₀` up to 3; `L₁ − L₂ + L₂/L₁` (DLMF 4.13.10) otherwise.
+fn lambert_w_guess(
+    x: &ExactNumNumber,
+    minus1: bool,
+    cc: &mut Consts,
+) -> Result<ExactNumNumber, Error> {
+    type N = ExactNumNumber;
+    let p = 2 * WORD_BIT_SIZE;
+    let nr = RoundingMode::None;
+    let one = N::from_word(1, p)?;
+    let quarter = {
+        let mut q = N::from_word(1, p)?;
+        q.set_exponent(-1);
+        q.neg()?
+    };
+    if x.cmp(&quarter) < 0 {
+        let e = cc.e_num(p, nr)?;
+        let mut t = one.add(&e.mul(x, p, nr)?, p, nr)?;
+        if t.is_negative() {
+            t = N::new(p)?;
+        }
+        let q = N::from_word(2, p)?.mul(&t, p, nr)?.sqrt(p, nr)?;
+        let q2 = q.mul(&q, p, nr)?.div(&N::from_word(3, p)?, p, nr)?;
+        let q3 = q
+            .mul(&q, p, nr)?
+            .mul(&q, p, nr)?
+            .mul(&N::from_word(11, p)?, p, nr)?;
+        let q3 = q3.div(&N::from_word(72, p)?, p, nr)?;
+        let m1 = one.neg()?;
+        return if minus1 {
+            m1.sub(&q, p, nr)?.sub(&q2, p, nr)?.sub(&q3, p, nr)
+        } else {
+            m1.add(&q, p, nr)?.sub(&q2, p, nr)?.add(&q3, p, nr)
+        };
+    }
+    if !minus1 && x.cmp(&N::from_word(3, p)?) <= 0 {
+        let l = x.log1p(p, nr, cc)?;
+        if l.is_zero() {
+            return x.clone();
+        }
+        let num = l.log1p(p, nr, cc)?;
+        let den = N::from_word(2, p)?.add(&l, p, nr)?;
+        return l.mul(&one.sub(&num.div(&den, p, nr)?, p, nr)?, p, nr);
+    }
+    let l1 = x.abs()?.ln(p, nr, cc)?;
+    let l2 = l1.abs()?.ln(p, nr, cc)?;
+    l1.sub(&l2, p, nr)?.add(&l2.div(&l1, p, nr)?, p, nr)
+}
+
+/// Lambert W to `p_wrk + 64` bits, then certify `|W − w| < 2^(exponent(w) − p_wrk − 64)`
+/// by a sign change of the (monotone) defining equation; `None` when the bracket cannot be
+/// certified at this precision.
+fn lambert_w_bracketed(
+    x: &ExactNumNumber,
+    minus1: bool,
+    guess: &ExactNumNumber,
+    p_wrk: usize,
+    cc: &mut Consts,
+) -> Result<Option<ExactNumNumber>, Error> {
+    type N = ExactNumNumber;
+    let nr = RoundingMode::None;
+    let one = N::from_word(1, WORD_BIT_SIZE)?;
+    // Log form w + ln|w| = ln|x| for W₀(x > 1) and W₋₁(x >= −1/4): no e^w over/underflow.
+    let log_form = if minus1 {
+        let mut q = N::from_word(1, WORD_BIT_SIZE)?;
+        q.set_exponent(-1);
+        x.cmp(&q.neg()?) >= 0
+    } else {
+        x.cmp(&one) > 0
+    };
+    let opw = one.add(guess, 2 * WORD_BIT_SIZE, nr)?;
+    let cond = if opw.is_zero() {
+        0
+    } else {
+        usize::try_from((-opw.exponent()).max(0)).unwrap_or(0)
+    };
+    let pp = round_p(p_wrk + 2 * WORD_BIT_SIZE + cond + WORD_BIT_SIZE);
+    let lnx = if log_form { Some(x.abs()?.ln(pp, nr, cc)?) } else { None };
+    // f(w) and a bound on its evaluation error.
+    let eval = |w: &N, cc: &mut Consts| -> Result<(N, N), Error> {
+        let mut bound = N::from_word(1, WORD_BIT_SIZE)?;
+        if let Some(l) = &lnx {
+            let lw = w.abs()?.ln(pp, nr, cc)?;
+            let f = w.add(&lw, pp, nr)?.sub(l, pp, nr)?;
+            let mag = max_exp(&[w, &lw, l]);
+            bound.set_exponent(mag + 4 - pp as Exponent);
+            Ok((f, bound))
+        } else {
+            let ew = w.exp(pp, nr, cc)?;
+            let wew = w.mul(&ew, pp, nr)?;
+            let f = wew.sub(x, pp, nr)?;
+            let mag = max_exp(&[&wew, x]);
+            bound.set_exponent(mag + 4 - pp as Exponent);
+            Ok((f, bound))
+        }
+    };
+    let mut w = guess.clone()?;
+    let mut converged = false;
+    for _ in 0..(64 + 4 * usize::BITS as usize) {
+        let (f, _) = eval(&w, cc)?;
+        if f.is_zero() {
+            converged = true;
+            break;
+        }
+        let d = if lnx.is_some() {
+            one.add(&one.div(&w, pp, nr)?, pp, nr)?
+        } else {
+            w.exp(pp, nr, cc)?.mul(&one.add(&w, pp, nr)?, pp, nr)?
+        };
+        if d.is_zero() {
+            break;
+        }
+        let step = f.div(&d, pp, nr)?;
+        w = w.sub(&step, pp, nr)?;
+        if step.is_zero() || step.exponent() < w.exponent() - (pp as Exponent) + 8 {
+            converged = true;
+            break;
+        }
+    }
+    if !converged || w.is_zero() {
+        return Ok(None);
+    }
+    let mut delta = N::from_word(1, WORD_BIT_SIZE)?;
+    delta.set_exponent(w.exponent() - (p_wrk + WORD_BIT_SIZE) as Exponent + 1);
+    let lo = w.sub(&delta, pp, nr)?;
+    let hi = w.add(&delta, pp, nr)?;
+    let sign_of = |v: &N, cc: &mut Consts| -> Result<Option<bool>, Error> {
+        let (f, b) = eval(v, cc)?;
+        if f.is_zero() || f.abs()?.cmp(&b) <= 0 {
+            return Ok(None);
+        }
+        Ok(Some(f.is_positive()))
+    };
+    let (Some(sl), Some(sh)) = (sign_of(&lo, cc)?, sign_of(&hi, cc)?) else {
+        return Ok(None);
+    };
+    if sl == sh {
+        return Ok(None);
+    }
+    Ok(Some(w))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -7108,226 +7330,4 @@ mod tests {
     fn four_word(p: usize) -> Result<ExactNumNumber, crate::Error> {
         ExactNumNumber::from_word(4, p)
     }
-}
-
-fn exact_mul_num(x: &ExactNumNumber, y: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
-    let w = round_p(x.mantissa_max_bit_len() + y.mantissa_max_bit_len() + WORD_BIT_SIZE);
-    let v = x.mul(y, w, RoundingMode::None)?;
-    if v.inexact() {
-        return Err(Error::InvalidArgument);
-    }
-    trim_low_zero_words(v)
-}
-
-fn exact_add_num(x: &ExactNumNumber, y: &ExactNumNumber) -> Result<ExactNumNumber, Error> {
-    if x.is_zero() {
-        return y.clone();
-    }
-    if y.is_zero() {
-        return x.clone();
-    }
-    let w_of = |v: &ExactNumNumber| Exponent::try_from(v.mantissa_max_bit_len()).unwrap_or(0);
-    let ex = x.exponent().max(y.exponent());
-    let lo = (x.exponent() - w_of(x)).min(y.exponent() - w_of(y));
-    let w = round_p(usize::try_from(ex - lo).unwrap_or(0) + 2 * WORD_BIT_SIZE);
-    let v = x.add(y, w, RoundingMode::None)?;
-    if v.inexact() {
-        return Err(Error::InvalidArgument);
-    }
-    trim_low_zero_words(v)
-}
-
-/// Drop all-zero low mantissa words (exact), so exact products cost by significant words.
-fn trim_low_zero_words(mut v: ExactNumNumber) -> Result<ExactNumNumber, Error> {
-    if v.is_zero() {
-        return Ok(v);
-    }
-    let words = v.mantissa().digits();
-    let zeros = words.iter().take_while(|w| **w == 0).count();
-    if zeros == 0 || zeros >= words.len() {
-        return Ok(v);
-    }
-    let q = (words.len() - zeros) * WORD_BIT_SIZE;
-    v.set_precision(q, RoundingMode::ToZero)?;
-    Ok(v)
-}
-
-/// Binary splitting for the terminating ₂F₁ sum `Σ_{k=lo}^{hi−1} Π_{j=lo}^{k} p_j / q_j`,
-/// `p_j = (a+j−1)(b+j−1) z`, `q_j = (c+j−1) j`, all exact.
-struct Hyp2f1Split<'a> {
-    a: &'a ExactNumNumber,
-    b: &'a ExactNumNumber,
-    c: &'a ExactNumNumber,
-    z: &'a ExactNumNumber,
-}
-
-impl Hyp2f1Split<'_> {
-    /// `(P, Q, T)` with `P = Π p_j`, `Q = Π q_j`, `T / Q` = the partial sum over `[lo, hi)`.
-    fn split(
-        &self,
-        lo: usize,
-        hi: usize,
-    ) -> Result<(ExactNumNumber, ExactNumNumber, ExactNumNumber), Error> {
-        if hi - lo == 1 {
-            let jm1 = ExactNumNumber::from_usize(lo - 1)?;
-            let j = ExactNumNumber::from_usize(lo)?;
-            let fa = exact_add_num(self.a, &jm1)?;
-            let fb = exact_add_num(self.b, &jm1)?;
-            let fc = exact_add_num(self.c, &jm1)?;
-            let pj = exact_mul_num(&exact_mul_num(&fa, &fb)?, self.z)?;
-            let qj = exact_mul_num(&fc, &j)?;
-            let t = pj.clone()?;
-            return Ok((pj, qj, t));
-        }
-        let mid = lo + (hi - lo) / 2;
-        let (p1, q1, t1) = self.split(lo, mid)?;
-        let (p2, q2, t2) = self.split(mid, hi)?;
-        // T = T1 Q2 + P1 T2
-        let t = exact_add_num(&exact_mul_num(&t1, &q2)?, &exact_mul_num(&p1, &t2)?)?;
-        Ok((exact_mul_num(&p1, &p2)?, exact_mul_num(&q1, &q2)?, t))
-    }
-}
-
-/// A 64-bit starting value for Lambert W: branch-point series `−1 ± q − q²/3 ± 11q³/72`,
-/// `q = √(2(1 + e x))` (DLMF 4.13.6), for `x < −1/4`; Winitzki's `l (1 − ln(1+l)/(2+l))`,
-/// `l = ln(1 + x)`, for `W₀` up to 3; `L₁ − L₂ + L₂/L₁` (DLMF 4.13.10) otherwise.
-fn lambert_w_guess(
-    x: &ExactNumNumber,
-    minus1: bool,
-    cc: &mut Consts,
-) -> Result<ExactNumNumber, Error> {
-    type N = ExactNumNumber;
-    let p = 2 * WORD_BIT_SIZE;
-    let nr = RoundingMode::None;
-    let one = N::from_word(1, p)?;
-    let quarter = {
-        let mut q = N::from_word(1, p)?;
-        q.set_exponent(-1);
-        q.neg()?
-    };
-    if x.cmp(&quarter) < 0 {
-        let e = cc.e_num(p, nr)?;
-        let mut t = one.add(&e.mul(x, p, nr)?, p, nr)?;
-        if t.is_negative() {
-            t = N::new(p)?;
-        }
-        let q = N::from_word(2, p)?.mul(&t, p, nr)?.sqrt(p, nr)?;
-        let q2 = q.mul(&q, p, nr)?.div(&N::from_word(3, p)?, p, nr)?;
-        let q3 = q
-            .mul(&q, p, nr)?
-            .mul(&q, p, nr)?
-            .mul(&N::from_word(11, p)?, p, nr)?;
-        let q3 = q3.div(&N::from_word(72, p)?, p, nr)?;
-        let m1 = one.neg()?;
-        return if minus1 {
-            m1.sub(&q, p, nr)?.sub(&q2, p, nr)?.sub(&q3, p, nr)
-        } else {
-            m1.add(&q, p, nr)?.sub(&q2, p, nr)?.add(&q3, p, nr)
-        };
-    }
-    if !minus1 && x.cmp(&N::from_word(3, p)?) <= 0 {
-        let l = x.log1p(p, nr, cc)?;
-        if l.is_zero() {
-            return x.clone();
-        }
-        let num = l.log1p(p, nr, cc)?;
-        let den = N::from_word(2, p)?.add(&l, p, nr)?;
-        return l.mul(&one.sub(&num.div(&den, p, nr)?, p, nr)?, p, nr);
-    }
-    let l1 = x.abs()?.ln(p, nr, cc)?;
-    let l2 = l1.abs()?.ln(p, nr, cc)?;
-    l1.sub(&l2, p, nr)?.add(&l2.div(&l1, p, nr)?, p, nr)
-}
-
-/// Lambert W to `p_wrk + 64` bits, then certify `|W − w| < 2^(exponent(w) − p_wrk − 64)`
-/// by a sign change of the (monotone) defining equation; `None` when the bracket cannot be
-/// certified at this precision.
-fn lambert_w_bracketed(
-    x: &ExactNumNumber,
-    minus1: bool,
-    guess: &ExactNumNumber,
-    p_wrk: usize,
-    cc: &mut Consts,
-) -> Result<Option<ExactNumNumber>, Error> {
-    type N = ExactNumNumber;
-    let nr = RoundingMode::None;
-    let one = N::from_word(1, WORD_BIT_SIZE)?;
-    // Log form w + ln|w| = ln|x| for W₀(x > 1) and W₋₁(x >= −1/4): no e^w over/underflow.
-    let log_form = if minus1 {
-        let mut q = N::from_word(1, WORD_BIT_SIZE)?;
-        q.set_exponent(-1);
-        x.cmp(&q.neg()?) >= 0
-    } else {
-        x.cmp(&one) > 0
-    };
-    let opw = one.add(guess, 2 * WORD_BIT_SIZE, nr)?;
-    let cond = if opw.is_zero() {
-        0
-    } else {
-        usize::try_from((-opw.exponent()).max(0)).unwrap_or(0)
-    };
-    let pp = round_p(p_wrk + 2 * WORD_BIT_SIZE + cond + WORD_BIT_SIZE);
-    let lnx = if log_form { Some(x.abs()?.ln(pp, nr, cc)?) } else { None };
-    // f(w) and a bound on its evaluation error.
-    let eval = |w: &N, cc: &mut Consts| -> Result<(N, N), Error> {
-        let mut bound = N::from_word(1, WORD_BIT_SIZE)?;
-        if let Some(l) = &lnx {
-            let lw = w.abs()?.ln(pp, nr, cc)?;
-            let f = w.add(&lw, pp, nr)?.sub(l, pp, nr)?;
-            let mag = max_exp(&[w, &lw, l]);
-            bound.set_exponent(mag + 4 - pp as Exponent);
-            Ok((f, bound))
-        } else {
-            let ew = w.exp(pp, nr, cc)?;
-            let wew = w.mul(&ew, pp, nr)?;
-            let f = wew.sub(x, pp, nr)?;
-            let mag = max_exp(&[&wew, x]);
-            bound.set_exponent(mag + 4 - pp as Exponent);
-            Ok((f, bound))
-        }
-    };
-    let mut w = guess.clone()?;
-    let mut converged = false;
-    for _ in 0..(64 + 4 * usize::BITS as usize) {
-        let (f, _) = eval(&w, cc)?;
-        if f.is_zero() {
-            converged = true;
-            break;
-        }
-        let d = if lnx.is_some() {
-            one.add(&one.div(&w, pp, nr)?, pp, nr)?
-        } else {
-            w.exp(pp, nr, cc)?.mul(&one.add(&w, pp, nr)?, pp, nr)?
-        };
-        if d.is_zero() {
-            break;
-        }
-        let step = f.div(&d, pp, nr)?;
-        w = w.sub(&step, pp, nr)?;
-        if step.is_zero() || step.exponent() < w.exponent() - (pp as Exponent) + 8 {
-            converged = true;
-            break;
-        }
-    }
-    if !converged || w.is_zero() {
-        return Ok(None);
-    }
-    let mut delta = N::from_word(1, WORD_BIT_SIZE)?;
-    delta.set_exponent(w.exponent() - (p_wrk + WORD_BIT_SIZE) as Exponent + 1);
-    let lo = w.sub(&delta, pp, nr)?;
-    let hi = w.add(&delta, pp, nr)?;
-    let sign_of = |v: &N, cc: &mut Consts| -> Result<Option<bool>, Error> {
-        let (f, b) = eval(v, cc)?;
-        if f.is_zero() || f.abs()?.cmp(&b) <= 0 {
-            return Ok(None);
-        }
-        Ok(Some(f.is_positive()))
-    };
-    let (Some(sl), Some(sh)) = (sign_of(&lo, cc)?, sign_of(&hi, cc)?) else {
-        return Ok(None);
-    };
-    if sl == sh {
-        return Ok(None);
-    }
-    Ok(Some(w))
 }

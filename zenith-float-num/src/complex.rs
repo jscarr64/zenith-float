@@ -1732,6 +1732,100 @@ where
     }
 }
 
+fn finite_val(x: &ExactNum) -> bool {
+    !x.is_nan() && !x.is_inf()
+}
+
+/// Bit positions `(top, low)` of a finite nonzero part: `|x| < 2^top`, lowest set bit `2^low`.
+fn span_bits(x: &ExactNum) -> Option<(Exponent, Exponent)> {
+    if !finite_val(x) || x.is_zero() {
+        return None;
+    }
+    let raw = x.as_raw_parts();
+    let mut tz: Exponent = 0;
+    for w in raw.words {
+        if *w == 0 {
+            tz += Exponent::from(crate::WORD_BIT_SIZE as u32);
+        } else {
+            tz += Exponent::from(w.trailing_zeros());
+            break;
+        }
+    }
+    let len = Exponent::try_from(raw.words.len() * crate::WORD_BIT_SIZE).ok()?;
+    Some((raw.exponent, raw.exponent - len + tz))
+}
+
+/// Joint bit span `top − low` of both parts, and the joint low bit.
+fn span_c(z: &ExactComplex) -> Option<(usize, Exponent)> {
+    let parts = [span_bits(&z.re), span_bits(&z.im)];
+    let top = parts.iter().flatten().map(|t| t.0).max()?;
+    let low = parts.iter().flatten().map(|t| t.1).min()?;
+    Some((usize::try_from(top - low).ok()?, low))
+}
+
+/// `c^n` computed exactly, or `None` as soon as an intermediate power spans more than
+/// `max_span` bits. If `c^n = z` then every `c^k`, `k ≤ n`, spans at most `span(z) + 2`
+/// bits: write `c = 2^e (1+i)^j g` with `j ∈ {0,1}` and `g` a Gaussian integer prime to
+/// `1+i`; then `g^k` has one odd part and `log2|g|^k − ½ ≤ span(g^k) ≤ log2|g|^k + 1`.
+fn exact_pow_within(c: &ExactComplex, n: usize, max_span: usize) -> Option<ExactComplex> {
+    let nr = RoundingMode::None;
+    let w_of = |a: &ExactComplex| span_c(a).map(|(s, _)| s).unwrap_or(0) + 1;
+    let mul = |a: &ExactComplex, b: &ExactComplex| -> Option<ExactComplex> {
+        let w = round_p(w_of(a) + w_of(b) + 2 * WORD_BIT_SIZE);
+        let r = a.mul(b, w, nr);
+        if r.re.inexact() || r.im.inexact() || !finite_val(&r.re) || !finite_val(&r.im) {
+            return None;
+        }
+        if span_c(&r).map(|(s, _)| s).unwrap_or(0) > max_span {
+            return None;
+        }
+        Some(r)
+    };
+    let mut e = n;
+    let mut base = c.clone();
+    let mut acc: Option<ExactComplex> = None;
+    while e > 0 {
+        if e & 1 == 1 {
+            acc = Some(match acc {
+                None => base.clone(),
+                Some(a) => mul(&a, &base)?,
+            });
+        }
+        e >>= 1;
+        if e > 0 {
+            base = mul(&base, &base)?;
+        }
+    }
+    acc
+}
+
+fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
+    while b != 0 {
+        let t = a % b;
+        a = b;
+        b = t;
+    }
+    a.abs().max(1)
+}
+
+/// `2 cos(π num/den)` when it is an integer (`den ∈ {1, 2, 3}` after reduction), else `None`.
+fn trig_exact_x2(num: i64, den: i64) -> Option<i64> {
+    let g = gcd_i64(num.abs(), den.abs());
+    let (num, den) = (num / g, den / g);
+    let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
+    // cos(π num/den) depends on num mod 2den.
+    let r = num.rem_euclid(2 * den);
+    match den {
+        1 => Some(if r == 0 { 2 } else { -2 }),
+        2 => Some(0),
+        3 => Some(match r {
+            1 | 5 => 1,
+            _ => -1,
+        }),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1948,99 +2042,5 @@ mod tests {
         assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) / 2));
         assert!(l.im().is_positive());
         Ok(())
-    }
-}
-
-fn finite_val(x: &ExactNum) -> bool {
-    !x.is_nan() && !x.is_inf()
-}
-
-/// Bit positions `(top, low)` of a finite nonzero part: `|x| < 2^top`, lowest set bit `2^low`.
-fn span_bits(x: &ExactNum) -> Option<(Exponent, Exponent)> {
-    if !finite_val(x) || x.is_zero() {
-        return None;
-    }
-    let raw = x.as_raw_parts();
-    let mut tz: Exponent = 0;
-    for w in raw.words {
-        if *w == 0 {
-            tz += Exponent::from(crate::WORD_BIT_SIZE as u32);
-        } else {
-            tz += Exponent::from(w.trailing_zeros());
-            break;
-        }
-    }
-    let len = Exponent::try_from(raw.words.len() * crate::WORD_BIT_SIZE).ok()?;
-    Some((raw.exponent, raw.exponent - len + tz))
-}
-
-/// Joint bit span `top − low` of both parts, and the joint low bit.
-fn span_c(z: &ExactComplex) -> Option<(usize, Exponent)> {
-    let parts = [span_bits(&z.re), span_bits(&z.im)];
-    let top = parts.iter().flatten().map(|t| t.0).max()?;
-    let low = parts.iter().flatten().map(|t| t.1).min()?;
-    Some((usize::try_from(top - low).ok()?, low))
-}
-
-/// `c^n` computed exactly, or `None` as soon as an intermediate power spans more than
-/// `max_span` bits. If `c^n = z` then every `c^k`, `k ≤ n`, spans at most `span(z) + 2`
-/// bits: write `c = 2^e (1+i)^j g` with `j ∈ {0,1}` and `g` a Gaussian integer prime to
-/// `1+i`; then `g^k` has one odd part and `log2|g|^k − ½ ≤ span(g^k) ≤ log2|g|^k + 1`.
-fn exact_pow_within(c: &ExactComplex, n: usize, max_span: usize) -> Option<ExactComplex> {
-    let nr = RoundingMode::None;
-    let w_of = |a: &ExactComplex| span_c(a).map(|(s, _)| s).unwrap_or(0) + 1;
-    let mul = |a: &ExactComplex, b: &ExactComplex| -> Option<ExactComplex> {
-        let w = round_p(w_of(a) + w_of(b) + 2 * WORD_BIT_SIZE);
-        let r = a.mul(b, w, nr);
-        if r.re.inexact() || r.im.inexact() || !finite_val(&r.re) || !finite_val(&r.im) {
-            return None;
-        }
-        if span_c(&r).map(|(s, _)| s).unwrap_or(0) > max_span {
-            return None;
-        }
-        Some(r)
-    };
-    let mut e = n;
-    let mut base = c.clone();
-    let mut acc: Option<ExactComplex> = None;
-    while e > 0 {
-        if e & 1 == 1 {
-            acc = Some(match acc {
-                None => base.clone(),
-                Some(a) => mul(&a, &base)?,
-            });
-        }
-        e >>= 1;
-        if e > 0 {
-            base = mul(&base, &base)?;
-        }
-    }
-    acc
-}
-
-fn gcd_i64(mut a: i64, mut b: i64) -> i64 {
-    while b != 0 {
-        let t = a % b;
-        a = b;
-        b = t;
-    }
-    a.abs().max(1)
-}
-
-/// `2 cos(π num/den)` when it is an integer (`den ∈ {1, 2, 3}` after reduction), else `None`.
-fn trig_exact_x2(num: i64, den: i64) -> Option<i64> {
-    let g = gcd_i64(num.abs(), den.abs());
-    let (num, den) = (num / g, den / g);
-    let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
-    // cos(π num/den) depends on num mod 2den.
-    let r = num.rem_euclid(2 * den);
-    match den {
-        1 => Some(if r == 0 { 2 } else { -2 }),
-        2 => Some(0),
-        3 => Some(match r {
-            1 | 5 => 1,
-            _ => -1,
-        }),
-        _ => None,
     }
 }
