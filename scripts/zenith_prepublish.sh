@@ -52,7 +52,7 @@ bash "$root/scripts/check_precision_docs.sh"
 ok "precision rustdoc"
 
 step "CAPABILITIES version matches Cargo.toml"
-python3 "$root/scripts/prepublish_lib.py" version
+python3 -B "$root/scripts/prepublish_lib.py" version
 ok "version"
 
 step "scripts/check_leaves.sh"
@@ -60,11 +60,11 @@ bash "$root/scripts/check_leaves.sh"
 ok "expr!/cexpr! leaves"
 
 step "no <!-- verify --> in doc/"
-python3 "$root/scripts/prepublish_lib.py" verify
+python3 -B "$root/scripts/prepublish_lib.py" verify
 ok "no verify markers"
 
 step "proptest PROPTEST_CASES=1000"
-python3 - <<'PY'
+python3 -B - <<'PY'
 from pathlib import Path
 text = Path("zenith-float-num/src/defs.rs").read_text()
 if "pub const PROPTEST_CASES: u32 = 1000;" not in text:
@@ -75,7 +75,7 @@ PY
 ok "proptest"
 
 step "no TODO/FIXME/HACK; unwrap() has a proof comment"
-python3 "$root/scripts/prepublish_lib.py" hygiene
+python3 -B "$root/scripts/prepublish_lib.py" hygiene
 ok "source hygiene"
 
 echo "zenith-float prepublish ok (11/11)"

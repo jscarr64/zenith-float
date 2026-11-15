@@ -3,7 +3,7 @@
 set -u
 here="$(cd "$(dirname "$0")" && pwd)"; t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
 mkdir -p "$t/src" "$t/tools"
-run() { NO_CLONE_ROOT="$t" python3 "$here/no_clone.py" "$@"; }
+run() { NO_CLONE_ROOT="$t" python3 -B "$here/no_clone.py" "$@"; }
 fail() { echo "SELFTEST FAIL: $*"; exit 1; }
 printf 'fn clean() { let a = 1; }\n#[derive(Clone, Copy)]\nstruct S;\n' > "$t/src/a.rs"
 run >/dev/null || fail "clean tree reported violations"

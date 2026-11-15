@@ -35,6 +35,9 @@ echo "poplog: $POPLOG_FILE" | tee -a "$T/$tag.rc" >&2
 # (tools/test_full_gate_threads.sh).
 if [[ -z "${POPSLOT_HELD:-}" ]]; then pop_slot_acquire "${POPSLOT_SLOTS:-8}"; fi
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-$(nproc)}} RUST_TEST_THREADS=${RUST_TEST_THREADS:-${POPSLOT_JOBS:-$(nproc)}}
+# No python bytecode cache in the tree: a leftover __pycache__ makes the poplog footer NOT A GATE (tree dirty at end).
+# Steps that clear the environment (env -i) set it again themselves (tools/oracle_env_selftest.sh run_forged).
+export PYTHONDONTWRITEBYTECODE=1
 TT="-- --test-threads=$RUST_TEST_THREADS"
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".

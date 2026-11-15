@@ -412,7 +412,7 @@ printf 'fn r(c: &Rc<X>) { let a = Rc::clone(c); }\n' > zenith-float-num/src/y.rs
 echo 0 > tools/clone_count_baseline.txt
 echo 9 > tools/helper_copy_count_baseline.txt   # 6 uses + 1 in cfg(test) + Rc::clone + Arc::clone
 scan --count-only | grep -q "helper-copy count 9 == baseline" || fail "helper-copy count should be 9: $(scan --count-only)"
-NO_CLONE_ROOT="$g" python3 "$here/no_clone.py" --helpers | grep -q "^helper_copies: 9 " || fail "no_clone.py --helpers disagrees: $(NO_CLONE_ROOT="$g" python3 "$here/no_clone.py" --helpers)"
+NO_CLONE_ROOT="$g" python3 -B "$here/no_clone.py" --helpers | grep -q "^helper_copies: 9 " || fail "no_clone.py --helpers disagrees: $(NO_CLONE_ROOT="$g" python3 -B "$here/no_clone.py" --helpers)"
 echo 8 > tools/helper_copy_count_baseline.txt; scan --count-only | grep -q "helper-copy count 9 is ABOVE" || fail "helper count above baseline not reported"
 scan --count-only >/dev/null && fail "helper count above baseline passed"
 echo 12 > tools/helper_copy_count_baseline.txt; scan --count-only | grep -qi "helper-copy count 9 is below baseline 12: lower the baseline" || fail "no hint to lower helper baseline"
@@ -422,7 +422,7 @@ rm -f tools/helper_copy_count_baseline.txt; scan --count-only >/dev/null && fail
 rm -f zenith-float-compare/src/a.rs zenith-float-num/src/y.rs; echo 0 > tools/helper_copy_count_baseline.txt
 
 # ---- named exception for the constant caches (tools/clone_allowlist.txt) ----
-nc() { NO_CLONE_ROOT="$g" python3 "$here/no_clone.py" "$@"; }
+nc() { NO_CLONE_ROOT="$g" python3 -B "$here/no_clone.py" "$@"; }
 mkdir -p zenith-float-num/src/ops/consts
 printf '## Exception: constant caches\n' > tools/NO_CLONE_RULES.md
 CC=zenith-float-num/src/ops/consts/pi.rs

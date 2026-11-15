@@ -83,7 +83,7 @@ w=$(mktemp -d); trap 'rm -rf "$w"' EXIT
 echo "fresh_test_run: build: cargo test ${pre[*]} --no-run --message-format=json"
 rc=0; cargo test "${pre[@]}" --no-run --message-format=json-render-diagnostics > "$w/build.json" || rc=$?
 [[ $rc == 0 ]] || die "build failed (exit $rc)"
-python3 -c '
+python3 -B -c '
 import json, sys
 for line in open(sys.argv[1]):
     try:
