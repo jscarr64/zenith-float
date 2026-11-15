@@ -302,7 +302,8 @@ impl ExactNumNumber {
         am.set_sign(sign);
         let one = Self::from_word(1, p_x)?;
         let mut eps = Self::from_word(1, p_x)?;
-        eps.set_exponent(1 - p_x as Exponent);
+        // 2^-(p+64): below every ulp at p, yet visible to the p_x-bit quotients 1/sn, sn/dn.
+        eps.set_exponent(1 - (p + WORD_BIT_SIZE) as Exponent);
         let mut sn = one.sub(&eps, p_x, RoundingMode::None)?;
         sn.set_sign(sign);
         let mut tiny = Self::from_word(1, p_x)?;
