@@ -1627,3 +1627,70 @@ fn zf_11_two_sum_wide_exact_sum() {
     );
     assert!(lo.inexact(), "lo inexact -MAX+1 Up");
 }
+
+/// ZF-11 bessel_j rows: `J_1` at the minimum exponent (`minpos`, the other subnormals, the
+/// least normal) returned NaN(MemoryAllocation) because the series widened by the result's
+/// ~2^62-bit exponent; `J_0` there skipped the tiny-argument branch. Exact semantics (C99
+/// correctly rounded, the library's subnormal grid): `J_1(x) = x/2 − δ`, `J_0(x) = 1 − δ`
+/// with `δ` far below an ulp. Harper's mpmath refs are not rounded to the subnormal grid,
+/// so the expected values are derived from exact `ExactNum` arithmetic instead.
+#[test]
+fn zf_11_bessel_j_at_min_exponent() {
+    let mut cc = Consts::new().expect("Consts");
+    for p in [64usize, 128, 256, 1024, 2048] {
+        let zero = ExactNum::new(p);
+        let one = ExactNum::from_u8(1, p);
+        let mp = ExactNum::min_positive(p);
+        let mn = ExactNum::min_positive_normal(p);
+        let two_mp = ExactNum::add_ref(&mp, &mp, p, RoundingMode::None);
+        let half_mn = mn.clone().ldexp(-1, p, RoundingMode::None);
+        assert!(
+            !half_mn.is_zero() && !half_mn.inexact(),
+            "minnorm/2 on grid p={p}"
+        );
+        let below = |v: &ExactNum| v.next_after(&zero, p, RoundingMode::None);
+        for rm in MODES {
+            let away = matches!(rm, RoundingMode::Up | RoundingMode::FromZero);
+            // `None` truncates the excess bits, as the library's tiny-argument branches do.
+            let toward = matches!(
+                rm,
+                RoundingMode::Down | RoundingMode::ToZero | RoundingMode::None
+            );
+            // minpos/2 is the midpoint between 0 and minpos.
+            let want = if away { mp.clone() } else { zero.clone() };
+            let j = mp.bessel_j(1, p, rm, &mut cc);
+            assert_eq!(
+                j.compare(&want),
+                Some(0),
+                "J1(minpos) p={p} {rm:?}: {j} {:?}",
+                j.err()
+            );
+            assert!(
+                j.is_zero() == want.is_zero() && !j.is_negative(),
+                "J1(minpos) sign p={p} {rm:?}"
+            );
+            // -minpos: odd function; Down is away from zero for a negative result.
+            let away_n = matches!(rm, RoundingMode::Down | RoundingMode::FromZero);
+            let want = if away_n { -mp.clone() } else { -zero.clone() };
+            let j = (-mp.clone()).bessel_j(1, p, rm, &mut cc);
+            assert_eq!(j.compare(&want), Some(0), "J1(-minpos) p={p} {rm:?}: {j}");
+            assert!(j.is_negative(), "J1(-minpos) sign p={p} {rm:?}: {j}");
+            // 2·minpos and minnorm: x/2 is on the grid.
+            for (x, h) in [(&two_mp, &mp), (&mn, &half_mn)] {
+                let want = if toward { below(h) } else { h.clone() };
+                let j = x.bessel_j(1, p, rm, &mut cc);
+                assert_eq!(
+                    j.compare(&want),
+                    Some(0),
+                    "J1({x}) p={p} {rm:?}: {j} want {want}"
+                );
+            }
+            // J0 = 1 − δ.
+            let want = if toward { below(&one) } else { one.clone() };
+            for x in [&mp, &mn] {
+                let j = x.bessel_j(0, p, rm, &mut cc);
+                assert_eq!(j.compare(&want), Some(0), "J0({x}) p={p} {rm:?}: {j}");
+            }
+        }
+    }
+}

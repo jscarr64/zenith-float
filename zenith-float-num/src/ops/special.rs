@@ -1679,7 +1679,12 @@ impl ExactNumNumber {
         // Tiny |x|: J0 = 1 - x²/4 + …, J1 = x/2 - x³/16 + …; the correction is far below
         // half an ulp, so round the exact leading term once toward it.
         let tiny_exp = -Exponent::try_from(p / 2 + 4).map_err(|_| Error::InvalidArgument)?;
-        if n <= 1 && self.exponent() < tiny_exp && self.exponent() > EXPONENT_MIN {
+        if n == 1 && self.exponent() == EXPONENT_MIN {
+            // ZF-11: x/2 lies on the subnormal grid or exactly midway between two of its points
+            // (one bit is dropped), and the series would widen by the ~2^62-bit exponent.
+            return Self::bessel_j1_at_min_exponent(self, p, rm);
+        }
+        if n <= 1 && self.exponent() < tiny_exp && (n == 0 || self.exponent() > EXPONENT_MIN) {
             let mut r = if n == 0 {
                 Self::round_offset(&Self::from_word(1, p)?, Sign::Neg, p, rm)?
             } else {
@@ -1736,6 +1741,42 @@ impl ExactNumNumber {
             }
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
+    }
+
+    /// `J_1(x) = x/2 − x³/16 + …` for `x` at the minimum exponent: the result is `x/2 − δ`
+    /// (magnitude) with `δ` far below the subnormal spacing, rounded once in `rm`.
+    fn bessel_j1_at_min_exponent(x: &Self, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        let neg = x.is_negative();
+        let mut xa = x.abs()?;
+        xa.set_inexact(false);
+        let mut half = Self::from_word(1, WORD_BIT_SIZE)?;
+        half.set_exponent(0);
+        let h = xa.mul(&half, p, RoundingMode::ToZero)?;
+        let two = Self::from_word(2, WORD_BIT_SIZE)?;
+        let on_grid = h
+            .mul(&two, p.max(xa.mantissa_max_bit_len()), RoundingMode::None)?
+            .cmp(&xa)
+            == 0;
+        let away = match rm {
+            RoundingMode::FromZero => Some(true),
+            // `None` drops the excess bits (as `round_offset` does for `J_0`): toward zero.
+            RoundingMode::ToZero | RoundingMode::None => Some(false),
+            RoundingMode::Up => Some(!neg),
+            RoundingMode::Down => Some(neg),
+            _ => None,
+        };
+        let mut r = match (away, on_grid) {
+            // Toward zero from an on-grid x/2: the next value below it.
+            (Some(false), true) => h.next_after(&Self::new(p)?, p, RoundingMode::None)?,
+            // Away from zero from a midpoint: the grid point above.
+            (Some(true), false) => xa.mul(&half, p, RoundingMode::FromZero)?,
+            // On grid and away, or toward zero from a midpoint, or nearest (a midpoint minus δ
+            // rounds down; an on-grid x/2 minus δ rounds to x/2).
+            _ => h,
+        };
+        r.set_sign(if neg { Sign::Neg } else { Sign::Pos });
+        r.set_inexact(true);
+        Ok(r)
     }
 
     fn bessel_j_series(&self, n: usize, p: usize) -> Result<Self, Error> {
