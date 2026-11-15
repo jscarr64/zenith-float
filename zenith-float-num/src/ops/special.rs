@@ -2896,6 +2896,19 @@ impl ExactNumNumber {
         if self.is_zero() {
             return x.elliptic_f(m, p, rm, cc);
         }
+        // x = ±1 is φ = ±π/2: the complete integral, odd in x. The incomplete path
+        // divides by sqrt(1 - x²) = 0 there.
+        if x.abs()?.cmp(&one) == 0 {
+            let inexact = x.inexact();
+            let mut r = if x.is_negative() {
+                self.elliptic_pi_complete(m, p, crate::common::util::invert_rm_for_sign(rm), cc)?
+                    .neg()?
+            } else {
+                self.elliptic_pi_complete(m, p, rm, cc)?
+            };
+            r.set_inexact(r.inexact() | inexact);
+            return Ok(r);
+        }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
             .max(self.mantissa_max_bit_len())
