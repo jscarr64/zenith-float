@@ -157,6 +157,10 @@ impl ExactNum {
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer addition.
     ///
+    /// Errors (NaN carrying the error, as for every `ExactNum` operation):
+    /// `MemoryAllocation` when the exact result is too wide to store, for example `1 + MAX`,
+    /// whose exact value needs about 2^62 bits. No rounded value is substituted (ZF-11).
+    ///
     /// Accuracy: correctly-rounded
     pub fn add_full_prec(&self, d2: &Self) -> Self {
         self.add_op(d2, 0, RoundingMode::None, true)
@@ -213,6 +217,9 @@ impl ExactNum {
     /// Subtracts `d2` from `self` and returns the result of the operation.
     /// The resulting precision is equal to the full precision of the result.
     /// This operation can be used to emulate integer subtraction.
+    ///
+    /// Errors: as [`Self::add_full_prec`] (`MemoryAllocation` when the exact result is too
+    /// wide to store; ZF-11).
     ///
     /// Accuracy: correctly-rounded
     pub fn sub_full_prec(&self, d2: &Self) -> Self {
@@ -379,11 +386,39 @@ impl ExactNum {
                 Self::new(p),
             );
         }
+        if exact.err() == Some(Error::MemoryAllocation) {
+            // ZF-11: the exact sum is too wide to store (1 + MAX needs ~2^62 bits). Neither
+            // part needs it: `hi` is the correctly rounded sum, and `lo` is `a + b − hi`
+            // correctly rounded to `p` bits in `rm`, inexact-flagged when that rounding
+            // loses bits (Jeff's 11:54 ruling). `hi + lo` is then the exact sum whenever `lo` fits in `p` bits.
+            return self.two_sum_rounded(b, p, rm);
+        }
         let mut hi = exact.clone();
         if let Err(err) = hi.set_precision(p, rm) {
             return (Self::nan(Some(err)), Self::nan(Some(err)));
         }
         let lo = exact.sub_full_prec(&hi);
+        (hi, Self::normalize_eft_lo(lo, p))
+    }
+
+    /// [`Self::two_sum`] without the full-width exact sum (ZF-11).
+    fn two_sum_rounded(&self, b: &Self, p: usize, rm: RoundingMode) -> (Self, Self) {
+        let hi = ExactNum::add_ref(self, b, p, rm);
+        if hi.is_nan() {
+            return (hi.clone(), hi);
+        }
+        if hi.is_inf() {
+            return (hi, Self::new(p));
+        }
+        // The exact sum is wide only when the exponents are far apart, so `hi` is within an ulp
+        // of the larger operand and `big − hi` is narrow and exact. Then `lo = (big − hi) + small`
+        // exactly, and one rounded add gives it correctly rounded.
+        let (big, small) = if self.abs_cmp(b) == Some(-1) { (b, self) } else { (self, b) };
+        let d = big.sub_full_prec(&hi);
+        if d.is_nan() {
+            return (Self::nan(d.err()), Self::nan(d.err()));
+        }
+        let lo = ExactNum::add_ref(&d, small, p, rm);
         (hi, Self::normalize_eft_lo(lo, p))
     }
 

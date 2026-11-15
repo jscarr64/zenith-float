@@ -1565,3 +1565,65 @@ fn zf_51_gk_adapt_success_meets_tolerance() {
         "estimate outside its bound"
     );
 }
+
+/// ZF-11 (Jeff's 11:54 ruling): `1 + MAX` has an exact value too wide to store (~2^62 bits).
+/// `add_full_prec` / `sub_full_prec` refuse with `MemoryAllocation` (no substituted value);
+/// `two_sum` still returns `hi` = the correctly rounded sum (MAX, or +Inf in Up/FromZero, as
+/// Harper's 2x-checked refs) and `lo` = `a + b − hi` rounded to `p` in `rm`, inexact-flagged
+/// when that rounding drops bits. Exact values: lo = 1 for 1 + MAX; for MAX + (1 + 2^-200)
+/// at p = 64, lo = 1 + 2^-200 rounded (1 + 2^-63 Up, else 1); for -MAX + 1 in Up,
+/// hi = -(MAX − ulp) and lo = 1 − ulp(MAX) rounded up.
+#[test]
+fn zf_11_two_sum_wide_exact_sum() {
+    for p in [64usize, 128, 256, 1024, 2048, 4096, 8192] {
+        let one = ExactNum::from_u8(1, p);
+        let max = ExactNum::max_value(p);
+        let s = one.add_full_prec(&max);
+        assert_eq!(
+            s.err(),
+            Some(zenith_float::Error::MemoryAllocation),
+            "add_full_prec p={p}"
+        );
+        let s = one.sub_full_prec(&max);
+        assert_eq!(
+            s.err(),
+            Some(zenith_float::Error::MemoryAllocation),
+            "sub_full_prec p={p}"
+        );
+        for rm in MODES {
+            let (hi, lo) = one.clone().two_sum(&max, p, rm);
+            let up = matches!(rm, RoundingMode::Up | RoundingMode::FromZero);
+            if up {
+                assert!(hi.is_inf() && hi.is_positive(), "hi p={p} {rm:?}: {hi}");
+                assert!(lo.is_zero(), "lo p={p} {rm:?}: {lo}");
+            } else {
+                assert_eq!(hi.compare(&max), Some(0), "hi p={p} {rm:?}: {hi}");
+                assert_eq!(lo.compare(&one), Some(0), "lo p={p} {rm:?}: {lo}");
+                assert!(!lo.inexact(), "lo exact p={p} {rm:?}");
+            }
+        }
+    }
+    let p = 64usize;
+    let max = ExactNum::max_value(p);
+    let one = ExactNum::from_u8(1, p);
+    let tiny = ExactNum::from_u8(1, 256).ldexp(-200, 256, RoundingMode::None);
+    let b = ExactNum::add_ref(&ExactNum::from_u8(1, 256), &tiny, 256, RoundingMode::None);
+    for rm in [RoundingMode::Down, RoundingMode::ToZero, RoundingMode::ToEven] {
+        let (hi, lo) = max.clone().two_sum(&b, p, rm);
+        assert_eq!(hi.compare(&max), Some(0), "hi {rm:?}");
+        assert_eq!(lo.compare(&one), Some(0), "lo {rm:?}: {lo}");
+        assert!(lo.inexact(), "lo inexact {rm:?}");
+    }
+    let nmax = -max.clone();
+    let (hi, lo) = nmax.clone().two_sum(&one, p, RoundingMode::Up);
+    let want_hi = nmax.next_after(&INF_POS, p, RoundingMode::None);
+    assert_eq!(hi.compare(&want_hi), Some(0), "hi -MAX+1 Up: {hi}");
+    let ulp = ExactNum::sub_ref(&want_hi, &nmax, p, RoundingMode::None);
+    let want_lo = ExactNum::sub_ref(&one, &ulp, p, RoundingMode::Up);
+    assert_eq!(
+        lo.compare(&want_lo),
+        Some(0),
+        "lo -MAX+1 Up: {lo} want {want_lo}"
+    );
+    assert!(lo.inexact(), "lo inexact -MAX+1 Up");
+}
