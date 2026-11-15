@@ -11,7 +11,16 @@ impl ExactNumNumber {
         if self.is_zero() {
             return Ok((self, 0));
         }
-        let e = self.exponent();
+        let mut e = self.exponent();
+        if self.is_subnormal() {
+            // A subnormal keeps the exponent field at EXPONENT_MIN with leading zero bits in
+            // the mantissa; the true exponent is lower by that count. Raising the field by
+            // that count shifts the zeros out (the field stays at EXPONENT_MIN), so the call
+            // below then puts the now-normal mantissa at exponent 0, in [0.5, 1).
+            let lz = self.subnormal_leading_zeros();
+            e -= lz;
+            self.set_exponent(EXPONENT_MIN + lz);
+        }
         self.set_exponent(0);
         Ok((self, e))
     }
@@ -23,6 +32,13 @@ impl ExactNumNumber {
         if self.is_zero() {
             self.set_precision(p, rm)?;
             return Ok(self);
+        }
+        let mut n = n;
+        if self.is_subnormal() {
+            // Normalize first so the range check below sees the true exponent.
+            let lz = self.subnormal_leading_zeros();
+            self.set_exponent(EXPONENT_MIN + lz);
+            n = n.saturating_sub(lz);
         }
         let e = self.exponent();
         let sum = crate::exp::wide(e) + crate::exp::wide(n);
@@ -58,7 +74,10 @@ impl ExactNumNumber {
         if self.is_zero() {
             return Err(Error::ExponentOverflow(crate::Sign::Neg));
         }
-        let e = self.exponent().saturating_sub(1);
+        let e = self
+            .exponent()
+            .saturating_sub(1)
+            .saturating_sub(self.subnormal_leading_zeros());
         let mut v = Self::from_word(e.unsigned_abs() as crate::Word, p)?;
         if e < 0 {
             v.set_sign(Sign::Neg);
@@ -72,7 +91,20 @@ impl ExactNumNumber {
         if self.is_zero() {
             return Err(Error::InvalidArgument);
         }
-        Ok(self.exponent().saturating_sub(1))
+        Ok(self
+            .exponent()
+            .saturating_sub(1)
+            .saturating_sub(self.subnormal_leading_zeros()))
+    }
+
+    /// Leading zero bits of a subnormal mantissa (0 for a normal number): the stored exponent
+    /// field minus this count is the true exponent.
+    fn subnormal_leading_zeros(&self) -> Exponent {
+        if self.is_subnormal() {
+            (self.mantissa_max_bit_len() - self.precision()) as Exponent
+        } else {
+            0
+        }
     }
 }
 
