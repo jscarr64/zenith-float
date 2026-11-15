@@ -1336,7 +1336,7 @@ impl ExactNum {
     /// Function does not follow any specific distribution law.
     /// The intended use of this function is for testing.
     /// The function returns NaN if the precision `p` is incorrect or when `exp_from` is less than EXPONENT_MIN or `exp_to` is greater than EXPONENT_MAX.
-    #[cfg(feature = "random")]
+    #[cfg(any(test, feature = "random"))]
     pub fn random_normal(p: usize, exp_from: Exponent, exp_to: Exponent) -> Self {
         Self::result_to_ext(
             with_prec(p, || ExactNumNumber::random_normal(p, exp_from, exp_to)),
@@ -6271,14 +6271,126 @@ mod tests {
             .is_nan());
         Ok(())
     }
+
+    /// `ExactNum::try_set_precision` at its roundability boundaries, at 64-bit precision from
+    /// 128- and 192-bit operands. Golds are mpmath 1.3.0 rounded to 64 bits (words below, low word
+    /// first). Certifiable inputs return `true` with the correctly rounded value; a known tail of
+    /// `1000…0` or `0111…1` on an inexact operand cannot be rounded from `s` bits and returns
+    /// `false`; Inf and NaN return `true`; a bad precision gives NaN and `true`. This is the
+    /// certification step of the Ziv loops (`ball::ziv_round`, complex `ziv_complex`); if it never
+    /// certifies they run to their budget, so it is checked here directly, in microseconds.
+    #[test]
+    fn try_set_precision_certifies_at_its_roundability_boundaries() {
+        const ONE_HI: Word = 0x8000_0000_0000_0000;
+        let pos = Sign::Pos;
+        let try_set = |m: &[Word], inexact: bool, rm: RoundingMode, s: usize| {
+            let mut x = ExactNum::from_words(m, pos, 1);
+            x.set_inexact(inexact);
+            let ok = x.try_set_precision(64, rm, s);
+            (ok, x)
+        };
+        let gold = |w: Word| ExactNum::from_words(&[w], pos, 1);
+
+        // sqrt(2) truncated to 192 bits, marked inexact, 128 bits claimed correct: the tail after
+        // bit 64 is mixed, so every mode certifies. mpmath: RN/RZ 0xb504f333f9de6484, RU ...85.
+        let sqrt2 = [0x1d6f_60ba_893b_a84c, 0x597d_89b3_754a_be9f, 0xb504_f333_f9de_6484];
+        for (rm, w) in [
+            (RoundingMode::ToEven, 0xb504_f333_f9de_6484),
+            (RoundingMode::ToZero, 0xb504_f333_f9de_6484),
+            (RoundingMode::Down, 0xb504_f333_f9de_6484),
+            (RoundingMode::Up, 0xb504_f333_f9de_6485),
+            (RoundingMode::FromZero, 0xb504_f333_f9de_6485),
+        ] {
+            let (ok, x) = try_set(&sqrt2, true, rm, 128);
+            assert!(ok, "sqrt2 {rm:?}: not certified: {x:?}");
+            assert_eq!(x.compare(&gold(w)), Some(0), "sqrt2 {rm:?}: {x:?}");
+            assert_eq!(x.precision(), Some(64), "sqrt2 {rm:?}");
+        }
+
+        // 1 + 2^-64 (the tie at 64 bits). Exact: certified, ties to even -> 1 (mpmath RN64 1).
+        let tie = [ONE_HI, ONE_HI];
+        let (ok, x) = try_set(&tie, false, RoundingMode::ToEven, 128);
+        assert!(ok, "exact tie: {x:?}");
+        assert_eq!(x.compare(&gold(ONE_HI)), Some(0), "exact tie: {x:?}");
+        // Inexact with 128 bits known: the unknown bits decide the tie -> not certified.
+        assert!(
+            !try_set(&tie, true, RoundingMode::ToEven, 128).0,
+            "inexact tie"
+        );
+
+        // 1 + 2^-64 + 2^-127: a known one below the round bit -> certified, up to 1 + 2^-63
+        // (mpmath RN64 0x8000000000000001), exact or not.
+        let above = [ONE_HI | 1, ONE_HI];
+        for inexact in [false, true] {
+            let (ok, x) = try_set(&above, inexact, RoundingMode::ToEven, 128);
+            assert!(ok, "above tie inexact={inexact}: {x:?}");
+            assert_eq!(x.compare(&gold(ONE_HI | 1)), Some(0), "above tie: {x:?}");
+        }
+
+        // 1 + 2^-64 - 2^-127 (round bit 0, then ones to bit 128). Exact: certified, down to 1
+        // (mpmath RN64 1). Inexact: the unknown bits may carry it to the tie -> not certified.
+        let below = [ONE_HI - 1, ONE_HI];
+        let (ok, x) = try_set(&below, false, RoundingMode::ToEven, 128);
+        assert!(ok, "exact below tie: {x:?}");
+        assert_eq!(x.compare(&gold(ONE_HI)), Some(0), "exact below tie: {x:?}");
+        assert!(
+            !try_set(&below, true, RoundingMode::ToEven, 128).0,
+            "inexact below tie"
+        );
+
+        // Inf and NaN certify as they are; a bad precision is NaN (input error) and certifies.
+        for mut special in [INF_POS, INF_NEG, ExactNum::nan(None)] {
+            assert!(special.try_set_precision(64, RoundingMode::ToEven, 128));
+        }
+        let mut bad = ExactNum::from_words(&sqrt2, pos, 1);
+        assert!(bad.try_set_precision(0, RoundingMode::ToEven, 128));
+        assert!(bad.is_nan(), "p=0: {bad:?}");
+    }
 }
 
-#[cfg(feature = "random")]
 #[cfg(test)]
 mod rand_tests {
 
     use super::*;
     use crate::common::util::TEST_EXP_BOUND;
+
+    /// `ExactNum::random_normal` from a fixed seed: the same value the core
+    /// `ExactNumNumber::random_normal` draws from that seed, a non-zero normal number whose
+    /// precision is `p` rounded up to whole words and whose exponent is in range, with both signs
+    /// over the seeds. A bad precision is NaN. Runs on its own thread so the pinned stream does not
+    /// leak into other tests.
+    #[cfg(feature = "std")]
+    #[test]
+    fn random_normal_seeded_is_the_core_draw_nonzero_normal_at_word_precision(
+    ) -> Result<(), crate::Error> {
+        std::thread::spawn(|| -> Result<(), crate::Error> {
+            let (exp_from, exp_to) = (-8, 8);
+            let mut seen_sign = [false; 2];
+            for (i, p) in [64usize, 65, 127, 128, 129, 192, 256, 320]
+                .into_iter()
+                .enumerate()
+            {
+                let seed = 0x5EED_0000_u64 + i as u64;
+                crate::common::test_rng::reseed_random_this_thread(seed);
+                let n = ExactNum::random_normal(p, exp_from, exp_to);
+                crate::common::test_rng::reseed_random_this_thread(seed);
+                let gold = ExactNum::from(ExactNumNumber::random_normal(p, exp_from, exp_to)?);
+                assert_eq!(n.classify(), FpCategory::Normal, "p={p}: {n:?}");
+                assert!(!n.is_zero() && !n.is_nan(), "p={p}: {n:?}");
+                assert_eq!(n.precision(), Some(round_p(p)), "p={p}");
+                let e = n.exponent().ok_or(crate::Error::InvalidArgument)?;
+                assert!((exp_from..=exp_to).contains(&e), "p={p} e={e}");
+                assert_eq!(n.compare(&gold), Some(0), "p={p}: {n:?} vs {gold:?}");
+                assert_eq!(n.is_negative(), gold.is_negative(), "p={p}");
+                seen_sign[usize::from(n.is_negative())] = true;
+            }
+            assert_eq!(seen_sign, [true, true], "both signs over the fixed seeds");
+            assert!(ExactNum::random_normal(0, exp_from, exp_to).is_nan());
+            Ok(())
+        })
+        .join()
+        .map_err(|_| crate::Error::InvalidArgument)?
+    }
 
     #[test]
     fn test_rand() -> Result<(), crate::Error> {

@@ -11,6 +11,7 @@ use crate::Error;
 use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
+use crate::Word;
 use crate::WORD_BIT_SIZE;
 use alloc::vec::Vec;
 use core::ops::Neg;
@@ -126,6 +127,52 @@ fn abs_needs_shift(z: &ExactComplex, p: usize, min_exp: Exponent) -> bool {
         Some(e) => e < min_exp,
         None => false,
     }
+}
+
+/// Most integer shifts \(z\to z+1\) the gamma-family loops take to reach
+/// \(\lvert z\rvert\ge 2^{k-1}\) for the shift target `k` (`min_exp`). The loops start from
+/// \(\mathrm{Re}\,z\ge 0\) and each shift adds 1 to \(\mathrm{Re}\,z\), so \(2^{k-1}\) shifts are
+/// enough; 2 more cover rounding of \(\lvert z\rvert\). `usize::MAX` once \(2^{k-1}\) does not fit.
+fn shift_cap(min_exp: Exponent) -> usize {
+    let k = min_exp.max(1) - 1;
+    if k >= Exponent::from(usize::BITS) {
+        return usize::MAX;
+    }
+    (1usize << k).saturating_add(2)
+}
+
+/// Applies `step` (in the callers: \(z\to z+1\) plus their accumulator update) while
+/// [`abs_needs_shift`], at most `cap` times.
+///
+/// \(\lvert z+n\rvert\le\lvert z\rvert+n\), so at least \(2^{k-1}-\lvert z\rvert\) steps are
+/// needed; when that is above `cap` it returns `PrecisionRetryExhausted` at once, without doing
+/// the steps. Otherwise it stops with the same error after `cap` steps, so arithmetic that does not
+/// move \(z\) up cannot loop forever. An `Err` from `step` is returned as is.
+fn shift_while_small<S>(
+    z: &mut ExactComplex,
+    p: usize,
+    min_exp: Exponent,
+    cap: usize,
+    mut step: S,
+) -> Result<(), Error>
+where
+    S: FnMut(&mut ExactComplex) -> Result<(), Error>,
+{
+    let target = ExactNum::from_u8(1, p).ldexp(min_exp - 1, p, RoundingMode::None);
+    let need = target.sub(&z.abs(p, RoundingMode::None), p, RoundingMode::None);
+    let cap_num = ExactNum::from_word(Word::try_from(cap).unwrap_or(Word::MAX), p);
+    if matches!(need.compare(&cap_num), Some(c) if c > 0) {
+        return Err(Error::PrecisionRetryExhausted);
+    }
+    let mut left = cap;
+    while abs_needs_shift(z, p, min_exp) {
+        if left == 0 {
+            return Err(Error::PrecisionRetryExhausted);
+        }
+        left -= 1;
+        step(z)?;
+    }
+    Ok(())
 }
 
 pub(crate) fn series_term_cap(p: usize) -> usize {
@@ -524,9 +571,14 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut acc = ExactComplex::one(p);
-        while abs_needs_shift(&z, p, gamma_shift_exp(p)) {
-            acc = acc.mul(&z, p, RoundingMode::None);
-            z = z.add(&one, p, RoundingMode::None);
+        let k = gamma_shift_exp(p);
+        let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
+            acc = acc.mul(z, p, RoundingMode::None);
+            *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
+            Ok(())
+        });
+        if let Err(e) = shifted {
+            return nan_pair(e);
         }
         let lg = z.ln_gamma_stirling(p, cc);
         let g = lg.exp(p, RoundingMode::None, cc);
@@ -555,9 +607,19 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut ln_acc = ExactComplex::zero(p);
-        while abs_needs_shift(&z, p, gamma_shift_exp(p)) {
-            ln_acc = ln_acc.add(&z.ln(p, RoundingMode::None, cc), p, RoundingMode::None);
-            z = z.add(&one, p, RoundingMode::None);
+        let k = gamma_shift_exp(p);
+        let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
+            ln_acc = ExactComplex::add_ref(
+                &ln_acc,
+                &z.ln(p, RoundingMode::None, cc),
+                p,
+                RoundingMode::None,
+            );
+            *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
+            Ok(())
+        });
+        if let Err(e) = shifted {
+            return nan_pair(e);
         }
         z.ln_gamma_stirling(p, cc)
             .sub(&ln_acc, p, RoundingMode::None)
@@ -628,10 +690,15 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut acc = ExactComplex::zero(p);
-        while abs_needs_shift(&z, p, digamma_shift_exp(p)) {
-            let rec = one.div(&z, p, RoundingMode::None);
-            acc = acc.sub(&rec, p, RoundingMode::None);
-            z = z.add(&one, p, RoundingMode::None);
+        let k = digamma_shift_exp(p);
+        let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
+            let rec = one.div(z, p, RoundingMode::None);
+            acc = ExactComplex::sub_ref(&acc, &rec, p, RoundingMode::None);
+            *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
+            Ok(())
+        });
+        if let Err(e) = shifted {
+            return nan_pair(e);
         }
         acc.add(&z.digamma_asymp(p, cc), p, RoundingMode::None)
     }
@@ -865,6 +932,257 @@ mod tests {
 
         let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
         assert!(nan.gamma(p, rm, &mut cc).is_nan());
+        Ok(())
+    }
+
+    /// `shift_cap(k)` is 2^(k-1) + 2, with k clamped to at least 1, and `usize::MAX` once 2^(k-1)
+    /// does not fit a `usize`. No other limit: from dest p 1984 (k = 22) the cap is past 2^20.
+    #[test]
+    fn shift_cap_is_two_to_the_k_minus_one_plus_two() -> Result<(), crate::Error> {
+        assert_eq!(shift_cap(6), 34);
+        assert_eq!(shift_cap(8), 130);
+        assert_eq!(shift_cap(2), 4);
+        assert_eq!(shift_cap(1), 3);
+        assert_eq!(shift_cap(0), 3);
+        assert_eq!(shift_cap(-5), 3);
+        assert_eq!(shift_cap(20), (1usize << 19) + 2);
+        assert_eq!(shift_cap(21), (1usize << 20) + 2);
+        assert_eq!(shift_cap(22), (1usize << 21) + 2);
+        assert_eq!(shift_cap(23), (1usize << 22) + 2);
+        let bits = Exponent::from(usize::BITS);
+        assert_eq!(shift_cap(bits), (1usize << (usize::BITS - 1)) + 2);
+        assert_eq!(shift_cap(bits + 1), usize::MAX);
+        assert_eq!(shift_cap(Exponent::MAX), usize::MAX);
+        assert_eq!(shift_cap(gamma_shift_exp(256)), 34);
+        assert_eq!(shift_cap(digamma_shift_exp(256)), 130);
+        Ok(())
+    }
+
+    /// Runs `shift_while_small` from `z` with the real z -> z+1 step (or a step that does not move
+    /// z when `stuck`) and returns the result with the number of steps taken. Bails out with
+    /// `InvalidArgument` after 2000 steps so a missing cap fails instead of hanging.
+    fn count_shifts(
+        z: ExactComplex,
+        k: Exponent,
+        cap: usize,
+        stuck: bool,
+    ) -> (Result<(), Error>, usize) {
+        let p = 64;
+        let one = ExactComplex::one(p);
+        let mut z = z;
+        let mut steps = 0usize;
+        let r = shift_while_small(&mut z, p, k, cap, |z| {
+            steps += 1;
+            if steps > 2000 {
+                return Err(Error::InvalidArgument);
+            }
+            if !stuck {
+                *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
+            }
+            Ok(())
+        });
+        (r, steps)
+    }
+
+    /// Dest p 1920 works at p_x = 1920 + 192 = 2112 bits on its first Ziv pass (`ziv_complex`:
+    /// round_p(p) + 64, plus 2 words), where the Γ shift target is k = 21; dest p 1984 works at
+    /// 2176, where it is k = 22. `gamma_shift_exp(p) = ceil((p + 372) / 127) + 1` steps from 21 to
+    /// 22 between p = 2168 and 2169, `digamma_shift_exp(p) = ceil((p + 379) / 128) + 1` between
+    /// 2181 and 2182. The shift cap 2^(k-1) + 2 follows: 2^20 + 2 at k = 21, 2^21 + 2 at k = 22.
+    /// Oracle: exact integer arithmetic.
+    #[test]
+    fn shift_target_steps_at_the_dest_p_1920_1984_threshold() -> Result<(), crate::Error> {
+        assert_eq!(gamma_shift_exp(1920 + 192), 21);
+        assert_eq!(gamma_shift_exp(1984 + 192), 22);
+        assert_eq!(gamma_shift_exp(2167), 21);
+        assert_eq!(gamma_shift_exp(2168), 21);
+        assert_eq!(gamma_shift_exp(2169), 22);
+        assert_eq!(gamma_shift_exp(2170), 22);
+        assert_eq!(digamma_shift_exp(2181), 21);
+        assert_eq!(digamma_shift_exp(2182), 22);
+        assert_eq!(shift_cap(gamma_shift_exp(2168)), (1usize << 20) + 2);
+        assert_eq!(shift_cap(gamma_shift_exp(2169)), (1usize << 21) + 2);
+        assert_eq!(shift_cap(digamma_shift_exp(2182)), (1usize << 21) + 2);
+        Ok(())
+    }
+
+    /// Exact shift counts at the shift bound for k = 11 (target |z| >= 2^10 = 1024), from the first
+    /// to the last iteration: Re z = 1023, 1024, 1025 (and with Im z = 1/2) take 1, 0, 0 steps;
+    /// Re z = 2^-42 takes 1024 (the most, inside the cap 2^10 + 2 = 1026); a step that does not
+    /// move z stops after exactly 1026 steps. The early refusal: from z = 1 the target is 1023
+    /// steps away, so cap 1023 just reaches it and cap 1022 just misses (refused, no step).
+    /// Oracle: exact integer arithmetic (|n + x + i/2| >= 1024 iff n + x >= 1024 for x + n
+    /// integer, since (1023)^2 + 1/4 < 1024^2).
+    #[test]
+    fn shift_while_small_at_the_shift_bound() -> Result<(), crate::Error> {
+        let p = 64;
+        let k: Exponent = 11;
+        let cap = shift_cap(k);
+        assert_eq!(cap, 1026);
+        let re = |n: u32| ExactNum::from_word(Word::from(n), p);
+        let half = || ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
+        for (x, steps) in [(1023u32, 1usize), (1024, 0), (1025, 0)] {
+            assert_eq!(
+                count_shifts(ExactComplex::from_real(re(x), p), k, cap, false),
+                (Ok(()), steps),
+                "x = {x}"
+            );
+            assert_eq!(
+                count_shifts(ExactComplex::new(re(x), half()), k, cap, false),
+                (Ok(()), steps),
+                "x = {x} + i/2"
+            );
+        }
+        let tiny =
+            ExactComplex::from_real(ExactNum::from_u8(1, p).ldexp(-42, p, RoundingMode::None), p);
+        assert_eq!(count_shifts(tiny, k, cap, false), (Ok(()), 1024));
+        assert_eq!(
+            count_shifts(ExactComplex::one(p), k, cap, true),
+            (Err(Error::PrecisionRetryExhausted), cap)
+        );
+        assert_eq!(
+            count_shifts(ExactComplex::one(p), k, 1023, false),
+            (Ok(()), 1023)
+        );
+        assert_eq!(
+            count_shifts(ExactComplex::one(p), k, 1022, false),
+            (Err(Error::PrecisionRetryExhausted), 0)
+        );
+        Ok(())
+    }
+
+    /// `shift_while_small` steps only while |z| < 2^(k-1): from a tiny Re z the real z -> z+1 step
+    /// takes exactly 2^(k-1) steps (inside the cap), a large z takes none, a step that does not move
+    /// z stops after exactly `cap` steps with `PrecisionRetryExhausted` (this is what broken
+    /// arithmetic, e.g. every result 0, used to turn into an endless loop), and a step error comes back
+    /// as is.
+    #[test]
+    fn shift_while_small_is_bounded() -> Result<(), crate::Error> {
+        let p = 64;
+        let k: Exponent = 6;
+
+        let tiny =
+            ExactComplex::from_real(ExactNum::from_u8(3, p).ldexp(-42, p, RoundingMode::None), p);
+        assert_eq!(count_shifts(tiny, k, shift_cap(k), false), (Ok(()), 32));
+
+        let big = ExactComplex::from_real(ExactNum::from_u8(32, p), p);
+        assert_eq!(count_shifts(big, k, shift_cap(k), false), (Ok(()), 0));
+
+        let stuck = ExactComplex::one(p);
+        assert_eq!(
+            count_shifts(stuck, k, shift_cap(k), true),
+            (Err(Error::PrecisionRetryExhausted), shift_cap(k))
+        );
+
+        let mut failing = ExactComplex::one(p);
+        let r = shift_while_small(&mut failing, p, k, shift_cap(k), |_| {
+            Err(Error::MemoryAllocation)
+        });
+        assert_eq!(r, Err(Error::MemoryAllocation));
+        Ok(())
+    }
+
+    /// When 2^(k-1) - |z| (the fewest steps that can reach the target) is above `cap`,
+    /// `shift_while_small` fails at once with no steps; at exactly `cap` it runs. From z = 1 with
+    /// k = 6 the target 32 is 31 steps away.
+    #[test]
+    fn shift_while_small_fails_early_past_the_cap() -> Result<(), crate::Error> {
+        let p = 64;
+        let one = || ExactComplex::one(p);
+        assert_eq!(count_shifts(one(), 6, 31, false), (Ok(()), 31));
+        assert_eq!(
+            count_shifts(one(), 6, 30, false),
+            (Err(Error::PrecisionRetryExhausted), 0)
+        );
+        assert_eq!(
+            count_shifts(one(), 6, 31, true),
+            (Err(Error::PrecisionRetryExhausted), 31)
+        );
+        // The early check uses |z|, not Re z: from z = 8i the target 16 is at least 8 steps away
+        // (|n + 8i| >= 16 first at n = 14), so cap 14 runs all 14 and cap 7 fails at once.
+        let tilted = || ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(8, p));
+        assert_eq!(count_shifts(tilted(), 5, 14, false), (Ok(()), 14));
+        assert_eq!(
+            count_shifts(tilted(), 5, 7, false),
+            (Err(Error::PrecisionRetryExhausted), 0)
+        );
+        // A target 2^(k-1) too large to represent fails without stepping.
+        assert_eq!(
+            count_shifts(one(), Exponent::MAX, usize::MAX, false),
+            (Err(Error::PrecisionRetryExhausted), 0)
+        );
+        Ok(())
+    }
+
+    /// A tiny `Re z > 0` takes the most integer shifts before Stirling (about 2^(k-1) for the
+    /// shift target k), and `Re z = 0` goes straight into the shift loop: both must still finish
+    /// with the right value. Checked against the real kernel on the axis (x·Γ(x), ln Γ(x)),
+    /// with x·Γ(x) = Γ(1+x), with z·(ψ(z+1) − ψ(z)) = 1, and on the imaginary axis.
+    #[test]
+    fn gamma_family_tiny_argument_takes_the_most_shifts() -> Result<(), crate::Error> {
+        let rm = RoundingMode::ToEven;
+        // Each Ziv pass below takes up to 2^(k-1)+2 shifts, and the passes only stop once
+        // `ExactNum::try_set_precision` certifies. Check that it certifies an exact, plainly
+        // roundable value (1 + 2^-127 to 64 bits is 1) before the loops, so a broken
+        // certification fails here at once instead of running the loops to their budget.
+        let mut probe = ExactNum::from_words(&[1, 0x8000_0000_0000_0000], crate::Sign::Pos, 1);
+        assert!(
+            probe.try_set_precision(64, rm, 128),
+            "try_set_precision does not certify 1 + 2^-127 at 64 bits: {probe:?}"
+        );
+        assert_eq!(
+            probe.compare(&ExactNum::from_u8(1, 64)),
+            Some(0),
+            "{probe:?}"
+        );
+        let mut cc = Consts::new()?;
+        for p in [64usize, 256, 1024] {
+            let one = ExactNum::from_u8(1, p);
+            let mk_x = || ExactNum::from_u8(3, p).ldexp(-42, p, RoundingMode::None);
+            let x = mk_x();
+            let z = ExactComplex::from_real(mk_x(), p);
+
+            let gz = z.gamma(p, rm, &mut cc);
+            let xg_c = ExactNum::mul_ref(gz.re(), &x, p, RoundingMode::None);
+            let xg_r = x.gamma(p, rm, &mut cc).mul(&x, p, RoundingMode::None);
+            let g1px = one.add(&x, p, RoundingMode::None).gamma(p, rm, &mut cc);
+            assert!(
+                near(&xg_c, &xg_r, p),
+                "p={p}: x*gamma(x) {xg_c:?} vs real {xg_r:?}"
+            );
+            assert!(
+                near(&xg_c, &g1px, p),
+                "p={p}: x*gamma(x) {xg_c:?} vs gamma(1+x) {g1px:?}"
+            );
+            assert!(tiny(gz.im(), p), "p={p}: im gamma(x) {:?}", gz.im());
+
+            let lgz = z.ln_gamma(p, rm, &mut cc);
+            let lgx = x.ln_gamma(p, rm, &mut cc);
+            assert!(
+                near(lgz.re(), &lgx, p),
+                "p={p}: ln_gamma {:?} vs real {lgx:?}",
+                lgz.re()
+            );
+            assert!(tiny(lgz.im(), p), "p={p}: im ln_gamma(x) {:?}", lgz.im());
+
+            let zp1 = ExactComplex::one(p).add(&z, p, rm);
+            let dpsi = zp1
+                .digamma(p, rm, &mut cc)
+                .sub(&z.digamma(p, rm, &mut cc), p, rm);
+            let unit = dpsi.mul(&z, p, RoundingMode::None);
+            assert!(
+                cnear(&unit, &ExactComplex::one(p), p),
+                "p={p}: z*dpsi {unit:?}"
+            );
+
+            let w = ExactComplex::new(ExactNum::new(p), mk_x());
+            let wg = w.gamma(p, rm, &mut cc).mul(&w, p, RoundingMode::None);
+            let g1pw = ExactComplex::one(p).add(&w, p, rm).gamma(p, rm, &mut cc);
+            assert!(
+                cnear(&wg, &g1pw, p),
+                "p={p}: w*gamma(w) {wg:?} vs gamma(1+w) {g1pw:?}"
+            );
+        }
         Ok(())
     }
 
