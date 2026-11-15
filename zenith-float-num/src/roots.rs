@@ -7,7 +7,9 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use core::ops::Neg;
 
-/// Maximum iterations for every method in this module.
+/// Former fixed iteration limit, kept for API compatibility. The bracketing methods
+/// stop on their tolerance or at working resolution, and Newton honours only the caller's
+/// `max_iter`; no method uses this as a hidden cap.
 pub const ROOT_MAX_ITER: usize = 256;
 
 /// Default absolute tolerance exponent: `tol = 2^{ROOT_DEFAULT_TOL}`.
@@ -59,7 +61,9 @@ where
         return None;
     }
     let two = ExactNum::from_u8(2, wrk);
-    for k in 1..=ROOT_MAX_ITER {
+    let mut k = 0usize;
+    loop {
+        k += 1;
         let mid =
             ExactNum::add_ref(&a, &b, wrk, RoundingMode::None).div(&two, wrk, RoundingMode::None);
         if !strictly_inside(&mid, &a, &b) {
@@ -91,7 +95,6 @@ where
         }
         let _ = fb;
     }
-    None
 }
 
 /// Bisection on `[a, b]`. `None` if `f(a)` and `f(b)` do not have opposite signs.
@@ -124,7 +127,7 @@ where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
     D: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !finite(&x0) || !finite(tol) || max_iter == 0 || max_iter > ROOT_MAX_ITER {
+    if !finite(&x0) || !finite(tol) || max_iter == 0 {
         return None;
     }
     let wrk = work_p(p);
@@ -141,7 +144,13 @@ where
         if !finite(&x) {
             return None;
         }
-        if y_zero || below_tol(&step.abs(), tol) {
+        // A step below 2^-(p+8) relative to x is beneath the output grid: further
+        // iterations cannot change the rounded result, even if `tol` is finer.
+        let at_resolution = !x.is_zero()
+            && step.exponent().zip(x.exponent()).is_some_and(|(es, ex)| {
+                i128::from(es) + i128::try_from(p).unwrap_or(i128::MAX) + 8 <= i128::from(ex)
+            });
+        if y_zero || at_resolution || below_tol(&step.abs(), tol) {
             let _ = x.set_precision(p, rm);
             return Some((x, k));
         }
@@ -189,7 +198,9 @@ where
     if !opposite_signs(&fa, &fb) {
         return None;
     }
-    for k in 1..=ROOT_MAX_ITER {
+    let mut k = 0usize;
+    loop {
+        k += 1;
         let den = ExactNum::sub_ref(&fb, &fa, wrk, RoundingMode::None);
         if den.is_zero() {
             return None;
@@ -231,7 +242,6 @@ where
             fb = fb.div(&two, wrk, RoundingMode::None);
         }
     }
-    None
 }
 
 /// Illinois (modified regula falsi) on `[a, b]`.
@@ -306,7 +316,9 @@ where
     let mut fc = fa.clone();
     let mut d = ExactNum::sub_ref(&b, &a, wrk, none);
     let mut e = d.clone();
-    for k in 1..=ROOT_MAX_ITER {
+    let mut k = 0usize;
+    loop {
+        k += 1;
         if same_sign(&fb, &fc) {
             c = a.clone();
             fc = fa.clone();
@@ -400,7 +412,6 @@ where
             return None;
         }
     }
-    None
 }
 
 /// Brent's method (bisection + secant + inverse quadratic) on `[a, b]`.

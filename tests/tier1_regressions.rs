@@ -891,3 +891,66 @@ fn zf_64_digamma_large_negative_reduces_exactly() {
         }
     }
 }
+
+/// ZF-52: default tolerance below the working grid must not make Newton reject a converged point;
+/// bisection must be allowed enough halvings for the requested tolerance. References: mpmath roots
+/// at 1200 bits; sqrt(2) and ln(3) cross-checked with FLINT arb.
+#[test]
+fn zf_52_roots_default_tolerance_converge() {
+    use zenith_float::{bisect, newton, root_default_tol};
+    let mut cc = Consts::new().expect("Consts");
+    let refs = [
+        "1.41421356237309504880168872420969807856967187537694807317667973799073247846210703885038753432764157273501384623091229702492483605585073721264412149709993583141322266592750559275579995050115278206057147010955997160597027453459686201472851741864088919860955232923048430871432145083976260362799525140798968725339654633180882964062062",
+        "0.739085133215160641655312087673873404013411758900757464965680635773284654883547594599376106931766531849801246643987163027714903691308420315780440574620778688524903891539289438845095234801335631276772231580956353776572451204373419936433512538409780034340646700479402143478080271801883771136138204206631633503727799169673122323006139",
+        "1.32471795724474602596090885447809734073440405690173336453401505030282785124554759405469934798178728032991092099474220742510890263904589779559431475709672347175416683903886741875173693158425354990824662235453372735045898799095681506277455098024862130121698941575245745486250756265246103689389048399322699520749759628288685569081507",
+        "1.09861228866810969139524523692252570464749055782274945173469433363749429321860896687361575481373208878797002906595786574236800422593051982105280187076727741060316276918338136717937369884436095990374257031679591152114559191775067134705494016677558022220317025294689756069010652150564286813803631737329857778236699165479213181814902",
+    ];
+    for p in [64usize, 128, 256, 1024] {
+        let rm = RoundingMode::ToEven;
+        let tol = root_default_tol(p, rm);
+        for (id, txt) in refs.iter().enumerate() {
+            let f = |x: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| match id {
+                0 => x.sqr(q, r).sub(&ExactNum::from_u8(2, q), q, r),
+                1 => x.cos(q, r, c).sub(x, q, r),
+                2 => x
+                    .powi(3, q, r)
+                    .sub(x, q, r)
+                    .sub(&ExactNum::from_u8(1, q), q, r),
+                _ => x.exp(q, r, c).sub(&ExactNum::from_u8(3, q), q, r),
+            };
+            let df = |x: &ExactNum, q: usize, r: RoundingMode, c: &mut Consts| match id {
+                0 => ExactNum::from_u8(2, q).mul(x, q, r),
+                1 => -x.sin(q, r, c).add(&ExactNum::from_u8(1, q), q, r),
+                2 => ExactNum::from_u8(3, q).mul(&x.sqr(q, r), q, r).sub(
+                    &ExactNum::from_u8(1, q),
+                    q,
+                    r,
+                ),
+                _ => x.exp(q, r, c),
+            };
+            let x0 = ExactNum::from_u8(1, p);
+            let want = ExactNum::parse(txt, Radix::Dec, 1152, rm, &mut cc);
+            for got in [
+                newton(f, df, &x0, &tol, 200, p, rm, &mut cc),
+                bisect(
+                    f,
+                    &ExactNum::new(p),
+                    &ExactNum::from_u8(2, p),
+                    &tol,
+                    p,
+                    rm,
+                    &mut cc,
+                ),
+            ] {
+                let got = got.unwrap_or_else(|| panic!("root {id} p={p} refused"));
+                let diff = ExactNum::sub_ref(&got, &want, 1152, rm).abs();
+                let allowed = ExactNum::from_u8(1, p).ldexp(-((p.min(256) - 4) as i64), p, rm);
+                assert!(
+                    matches!(diff.compare(&allowed),Some(o) if o < 0),
+                    "root {id} p={p}: {}",
+                    fmt_real(&got)
+                );
+            }
+        }
+    }
+}
