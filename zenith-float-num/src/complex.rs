@@ -1021,6 +1021,9 @@ impl ExactComplex {
 
     /// Implementation of [`Self::atan`] on operands without inexact history.
     fn atan_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if let Some(r) = self.atan_axis(p, rm, cc) {
+            return r;
+        }
         let p_x = Self::work_p(p);
         let num = Self::i(p_x).add(self, p_x, RoundingMode::None);
         let den = Self::i(p_x).sub(self, p_x, RoundingMode::None);
@@ -1029,6 +1032,39 @@ impl ExactComplex {
             .ln(p_x, RoundingMode::None, cc);
         let half_i = Self::i(p_x).ldexp_parts(-1, p_x, RoundingMode::None);
         half_i.mul(&ln, p_x, RoundingMode::None).finish(p, rm)
+    }
+
+    /// `atan` on the real and imaginary axes, where the log formula loses the zero part's sign
+    /// or the branch cut's side. C99 Annex G (`catan`): `atan(x ± 0i) = atan(x) ± 0i`;
+    /// `atan(±0 + iy)` is `±0 + i atanh(y)` for `|y| < 1` and, on the cuts `|y| > 1`,
+    /// `copysign(π/2, re) + i atanh(1/y)`. `None` off the axes, at `y = ±1`, and for Inf/NaN.
+    fn atan_axis(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Option<Self> {
+        let finite = |x: &ExactNum| !x.is_nan() && !x.is_inf();
+        if !finite(&self.re) || !finite(&self.im) {
+            return None;
+        }
+        if self.im.is_zero() {
+            return Some(Self::new(self.re.atan(p, rm, cc), self.im.clone()));
+        }
+        if !self.re.is_zero() {
+            return None;
+        }
+        let one = ExactNum::from_u8(1, WORD_BIT_SIZE);
+        match self.im.abs_cmp(&one) {
+            Some(c) if c < 0 => Some(Self::new(self.re.clone(), self.im.atanh(p, rm, cc))),
+            Some(c) if c > 0 => {
+                let neg = self.re.is_negative();
+                Some(crate::complex_special::ziv_complex(p, rm, |pw| {
+                    let mut h = cc.pi(pw, RoundingMode::None).ldexp(-1, pw, RoundingMode::None);
+                    if neg {
+                        h = h.neg();
+                    }
+                    let inv = one.clone().div(&self.im, pw, RoundingMode::None);
+                    Self::new(h, inv.atanh(pw, RoundingMode::None, cc))
+                }))
+            }
+            _ => None,
+        }
     }
 
     /// Principal `asinh`: `ln(z + √(z² + 1))`.
