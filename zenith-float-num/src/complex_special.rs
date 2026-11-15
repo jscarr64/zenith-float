@@ -389,6 +389,17 @@ impl ExactComplex {
         if self.im().is_zero() {
             return ExactComplex::from_real(self.re().erf(work_p, RoundingMode::None, cc), work_p);
         }
+        // On the imaginary axis erf(±0 + iy) = ±0 + i·erfi(y) (erf is odd and real on the real
+        // axis): the real part is that exact signed zero, not the rounding noise of 1 − erfc.
+        if self.re().is_zero() {
+            let v = self.erf_off_axis(work_p, dest_p, cc);
+            let (_, im) = v.into_parts();
+            return ExactComplex::new(self.re().clone(), im);
+        }
+        self.erf_off_axis(work_p, dest_p, cc)
+    }
+
+    fn erf_off_axis(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         if use_faddeeva_series(self, dest_p) {
             Self::erf_power_series(self, work_p, cc)
         } else {
@@ -403,6 +414,11 @@ impl ExactComplex {
     fn erfc_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         if self.im().is_zero() {
             return ExactComplex::from_real(self.re().erfc(work_p, RoundingMode::None, cc), work_p);
+        }
+        // erfc(±0 + iy) = 1 − i·erfi(y): the real part is exactly 1.
+        if self.re().is_zero() {
+            let (_, im) = self.erf_off_axis(work_p, dest_p, cc).into_parts();
+            return ExactComplex::new(ExactNum::from_u8(1, work_p), im.neg());
         }
         if use_faddeeva_series(self, dest_p) {
             ExactComplex::one(work_p).sub(

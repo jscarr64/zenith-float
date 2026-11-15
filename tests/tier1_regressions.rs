@@ -655,3 +655,46 @@ fn zf_06_format_max_is_finite_and_round_trips() {
         }
     }
 }
+
+/// ZF-76: on the imaginary axis erf(±0 + iy) = ±0 + i·erfi(y) and erfc(±0 + iy) = 1 − i·erfi(y): the real parts
+/// are exact (a signed zero carrying the sign of Re z, and exactly 1), in every mode; the imaginary part is
+/// erfi(y) rounded by mode (FLINT acb erf, mpmath erfi agree to 130 digits).
+#[test]
+fn zf_76_c_erf_imaginary_axis_real_part_exact() {
+    let mut cc = Consts::new().expect("Consts");
+    let erfi: [(&str, &str); 5] = [
+        ("5p1", "1.524307422708669699360546614726544062463812074698857310557201311229700714271763759939487330097258173455013441042776677333802311927e+42"),
+        ("3p0", "1.629994622601565651061647952076274162778889910915259988647982150695656826775680269243153186081103257149596077135803271842564204772e+3"),
+        ("1p-1", "6.149520946965109808396811856236413930513456178954035723266386934995887895613341957110356633853898031990244274675974500382667930578e-1"),
+        ("fp1", "1.379047205635398320143951493011934592102794303811758758732511651393839606187768538637067194569236345548044800918610209213444574807e+389"),
+        ("1p-4", "7.061563338595019687242633333808628245633743337566627759223830419468093689378912767943556359155055522339060979687785301946058337896e-2"),
+    ];
+    for p in [64usize, 256] {
+        for (y, val) in erfi {
+            for yneg in [false, true] {
+                for reneg in [false, true] {
+                    let ys = if yneg { format!("-{y}") } else { y.to_string() };
+                    let rs = if reneg { "-0" } else { "0" };
+                    let z = parse_complex(&format!("{rs},{ys}")).expect("z");
+                    for rm in MODES {
+                        if rm == RoundingMode::None {
+                            continue;
+                        }
+                        let w = z.erf(p, rm, &mut cc);
+                        let txt = if yneg { format!("-{val}") } else { val.to_string() };
+                        let want = ExactNum::parse(&txt, Radix::Dec, p, rm, &mut cc);
+                        let tag = format!("erf({rs}+i{ys}) p={p} {rm:?}: {}", fmt_c(&w));
+                        assert!(w.re().is_zero() && w.re().is_negative() == reneg, "{tag}");
+                        assert_eq!(w.im().compare(&want), Some(0), "{tag}");
+                        let c = z.erfc(p, rm, &mut cc);
+                        let ntxt = if yneg { val.to_string() } else { format!("-{val}") };
+                        let nwant = ExactNum::parse(&ntxt, Radix::Dec, p, rm, &mut cc);
+                        let tag = format!("erfc({rs}+i{ys}) p={p} {rm:?}: {}", fmt_c(&c));
+                        assert_eq!(c.re().compare(&ExactNum::from_u8(1, p)), Some(0), "{tag}");
+                        assert_eq!(c.im().compare(&nwant), Some(0), "{tag}");
+                    }
+                }
+            }
+        }
+    }
+}
