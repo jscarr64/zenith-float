@@ -120,6 +120,47 @@ fn abs_up(x: &ExactNum) -> ExactNum {
     y
 }
 
+/// DLMF 16.18.1: F(a;b;z) = ΠΓ(b)/ΠΓ(a) · G(-z | 1-a; ; 0; 1-b).
+/// For p = q+1, |z| > 1, the type-2 G residue series is in 1/z, inside the disk.
+/// Negative G arguments (the cut z > 1) are refused unless every power is integer.
+fn pfq_continued(
+    z: &ExactNum,
+    a: &[ExactNum],
+    b: &[ExactNum],
+    p: usize,
+    cc: &mut Consts,
+) -> ExactNum {
+    let wrk = work_p(p).saturating_add(WORD_BIT_SIZE);
+    let n = RoundingMode::None;
+    let one = ExactNum::from_u8(1, wrk);
+    let an: Vec<ExactNum> = a
+        .iter()
+        .map(|x| ExactNum::sub_ref(&one, x, wrk, n))
+        .collect();
+    let bq: Vec<ExactNum> = b
+        .iter()
+        .map(|x| ExactNum::sub_ref(&one, x, wrk, n))
+        .collect();
+    let mz = z.clone().neg();
+    let g = mz.meijer_g(&an, &[], &[ExactNum::new(wrk)], &bq, wrk, n, cc);
+    if !finite(&g) {
+        return cat_nan();
+    }
+    let mut c = one;
+    for x in b {
+        c = c.mul(&x.gamma(wrk, n, cc), wrk, n);
+    }
+    for x in a {
+        c = c.div(&x.gamma(wrk, n, cc), wrk, n);
+    }
+    let v = c.mul(&g, wrk, n);
+    if finite(&v) {
+        v
+    } else {
+        cat_nan()
+    }
+}
+
 /// Direct \({}_pF_q\) series with a proven truncation bound and working precision
 /// raised until rounding error is below the result (Ziv on the cancellation).
 ///
@@ -1575,8 +1616,9 @@ impl ExactNum {
     /// Generalized \({}_pF_q(a_1,\ldots,a_p;b_1,\ldots,b_q;z)\) with `self = z`.
     ///
     /// Direct series with a geometric tail bound; no fixed term cap. Nonterminating
-    /// `p > q+1` or `p = q+1, |z| >= 1` is `NaN(InvalidArgument)` (analytic continuation
-    /// is not implemented in this kernel). Poles in any `b_j = 0, -1, ...`.
+    /// `p > q+1` is `NaN(InvalidArgument)`. `p = q+1, |z| > 1` is continued through Meijer
+    /// G (complex values on the cut `z > 1` are NaN). `|z| = 1` is `NaN` for now.
+    /// Poles in any `b_j = 0, -1, ...`.
     ///
     /// Accuracy: unspecified
     pub fn hypergeom_pfq(
@@ -1618,12 +1660,12 @@ impl ExactNum {
             if a.len() > b.len() + 1 {
                 return cat_nan();
             }
-            if a.len() == b.len() + 1
-                && self.abs_cmp(&ExactNum::from_u8(1, WORD_BIT_SIZE)) != Some(-1)
-            {
-                // This kernel is only the direct disk series, not analytic continuation.
-                // Never enter an unbounded divergent sum, or return its last term (ZF-38).
-                return cat_nan();
+            if a.len() == b.len() + 1 {
+                match self.abs_cmp(&ExactNum::from_u8(1, WORD_BIT_SIZE)) {
+                    Some(c) if c > 0 => return finish(pfq_continued(self, a, b, p, cc), p, rm),
+                    Some(0) => return cat_nan(),
+                    _ => {}
+                }
             }
         }
         for bj in b {
