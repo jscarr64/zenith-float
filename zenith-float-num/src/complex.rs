@@ -783,6 +783,25 @@ impl ExactComplex {
 
     /// Implementation of [`Self::expm1`] on operands without inexact history.
     fn expm1_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        let finite = |x: &ExactNum| !x.is_nan() && !x.is_inf();
+        if finite(&self.re) && finite(&self.im) {
+            // exp(x+iy) - 1 = (expm1(x) cos y - 2 sin²(y/2)) + i e^x sin y. Every term is
+            // relatively accurate, so the only cancellation is the real-part difference,
+            // and Ziv raises the width until that rounding is decided. The old
+            // exp(z) - 1 at one fixed width lost the real part for small |z| (ZF-20).
+            let (x, y) = (&self.re, &self.im);
+            return crate::complex_special::ziv_complex(p, rm, |pw| {
+                let n = RoundingMode::None;
+                let em1 = x.expm1(pw, n, cc);
+                let half_y = y.clone().ldexp(-1, pw, n);
+                let s2 = half_y.sin(pw, n, cc);
+                let re =
+                    em1.mul(&y.cos(pw, n, cc), pw, n)
+                        .sub(&s2.sqr(pw, n).ldexp(1, pw, n), pw, n);
+                let im = x.exp(pw, n, cc).mul(&y.sin(pw, n, cc), pw, n);
+                Self::new(re, im)
+            });
+        }
         let p_x = Self::work_p(p);
         self.exp(p_x, RoundingMode::None, cc)
             .sub(&Self::one(p_x), p_x, RoundingMode::None)
