@@ -271,9 +271,9 @@ impl ExactComplex {
 
     /// `self * rhs` at precision `p`.
     ///
-    /// Each of `ac`, `bd`, `ad`, `bc` is rounded at `(p, rm)`, then `ac−bd` and
-    /// `ad+bc` are rounded at `(p, rm)`. That matches the MPFR componentwise gold.
-    /// Callers that pass [`RoundingMode::None`] still keep full products (series paths).
+    /// The products `ac`, `bd`, `ad`, `bc` are formed exactly, and `ac−bd` and `ad+bc` are each
+    /// rounded once at `(p, rm)`, so each part is correctly rounded. Callers that pass
+    /// [`RoundingMode::None`] keep the products rounded at `p` (series paths).
     ///
     /// Accuracy: correctly-rounded
     pub fn mul(&self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
@@ -285,6 +285,14 @@ impl ExactComplex {
 
     /// Implementation of [`Self::mul`] on operands without inexact history.
     fn mul_word(self, rhs: &Self, p: usize, rm: RoundingMode) -> Self {
+        if rm != RoundingMode::None {
+            // Rounding the products first and then their sum rounded twice (1 ulp off).
+            let ac = self.re.mul_full_prec(&rhs.re);
+            let bd = self.im.mul_full_prec(&rhs.im);
+            let ad = self.re.mul_full_prec(&rhs.im);
+            let bc = self.im.mul_full_prec(&rhs.re);
+            return Self::new(ac.sub(&bd, p, rm), ad.add(&bc, p, rm));
+        }
         let ac = ExactNum::mul_ref(&self.re, &rhs.re, p, rm);
         let bd = ExactNum::mul_ref(&self.im, &rhs.im, p, rm);
         let ad = self.re.mul(&rhs.im, p, rm);
