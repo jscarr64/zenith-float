@@ -345,12 +345,16 @@ pub(super) fn div_bits(a: u64, b: u64, f: Format) -> u64 {
             }
         }
         _ => {
+            // Normalize subnormal significands to the hidden-bit position first, so the
+            // quotient always carries frac + 4 bits (a subnormal dividend gave too few).
+            let lead = |u: &Unp| (u.sig.leading_zeros() - (63 - f.frac)) as i32;
+            let (la, lb) = (lead(&ua), lead(&ub));
             let extra = f.frac + 4;
-            let num = (ua.sig as u128) << extra;
-            let den = ub.sig as u128;
+            let num = ((ua.sig as u128) << la) << extra;
+            let den = (ub.sig as u128) << lb;
             let q = num / den;
             let r = num % den;
-            let scale = ua.exp - ub.exp - extra as i32;
+            let scale = (ua.exp - la) - (ub.exp - lb) - extra as i32;
             pack_mag(sign, scale, q, r != 0, f)
         }
     }
@@ -409,7 +413,11 @@ pub(super) fn fma_bits(a: u64, b: u64, c: u64, f: Format) -> u64 {
             }
             return pack_inf(psign, f);
         }
-        (Class::Zero, _) | (_, Class::Zero) => return c,
+        // Exact zero product: (±0) + c is c, except that zeros of opposite sign sum to +0
+        // in round-to-nearest.
+        (Class::Zero, _) | (_, Class::Zero) => {
+            return if uc.class == Class::Zero && uc.sign != psign { 0 } else { c };
+        }
         _ => {}
     }
     if uc.class == Class::Inf {
