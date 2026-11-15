@@ -108,13 +108,27 @@ impl ExactComplex {
         let dest = round_p(p);
         // Si is odd with real Taylor coefficients: Si(iy) is purely imaginary and Si(x) is real.
         // Pin the exactly-zero part so the Ziv test does not chase rounding noise.
+        // The pinned zero carries the sign of the limit: Re Si(x + iy) ≈ x sinh(y)/y, so it is
+        // the sign of x; Im Si(x + iy) ≈ y sin(x)/x, so it is sign(y) · sign(sin x / x).
         let re_zero = self.re().is_zero();
         let im_zero = self.im().is_zero();
+        let im_zero_neg = im_zero && !re_zero && {
+            let sx = self.re().sin(WORD_BIT_SIZE, RoundingMode::ToEven, cc);
+            self.im().is_negative() ^ (sx.is_negative() ^ self.re().is_negative())
+        };
+        let zero = |neg: bool, pw: usize| {
+            let mut z = ExactNum::new(pw);
+            if neg {
+                z = z.neg();
+            }
+            z
+        };
+        let re_neg = self.re().is_negative();
         ziv_complex(dest, rm, |pw| {
             let v = self.si_at(pw, dest, cc);
             match (re_zero, im_zero) {
-                (true, false) => ExactComplex::new(ExactNum::new(pw), v.im().clone()),
-                (false, true) => ExactComplex::new(v.re().clone(), ExactNum::new(pw)),
+                (true, false) => ExactComplex::new(zero(re_neg, pw), v.im().clone()),
+                (false, true) => ExactComplex::new(v.re().clone(), zero(im_zero_neg, pw)),
                 _ => v,
             }
         })
@@ -311,7 +325,11 @@ impl ExactComplex {
         }
         // \(\mathrm{Si}\) is odd; the \(\mathrm{Ei}\) combination minus \(\pi/2\) is the
         // principal value for \(\mathrm{Re}\,z\ge 0\).
-        if self.re().is_negative() || (self.re().is_zero() && self.im().is_negative()) {
+        // Si is odd and entire. Decide the half-plane by value, not by the zero's sign: with
+        // re = −0 the old test negated to re = −0 again (−1 · +0 is −0 under neg_via_mul) and
+        // recursed until the stack overflowed (ZF-72).
+        let re_neg = !self.re().is_zero() && self.re().is_negative();
+        if re_neg || (self.re().is_zero() && self.im().is_negative()) {
             return neg_c(self.neg_via_mul().si_at(work_p, dest_p, cc));
         }
         let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);

@@ -1478,8 +1478,12 @@ impl ExactNum {
             }
             return finish(g, p, rm);
         }
+        if !self.is_positive() && self.compare(&ExactNum::from_i32(-64, wrk)) == Some(-1) {
+            return barnes_g_reflect(self, p, rm, cc);
+        }
         if !self.is_positive() {
-            // Recur up to a positive argument: G(z) = G(z+1)/Γ(z).
+            // Recur up to a positive argument: G(z) = G(z+1)/Γ(z) (at most 64 levels; below
+            // −64 the reflection formula is used, so the depth never grows with |z|).
             let zp = ExactNum::from_u8(1, wrk).add(self, wrk, RoundingMode::None);
             let g1 = zp.barnes_g(wrk, RoundingMode::None, cc);
             let gz = self.gamma(wrk, RoundingMode::None, cc);
@@ -1819,6 +1823,49 @@ impl ExactNum {
         let _ = cc;
         finish(sum, p, rm)
     }
+}
+
+/// Barnes G at a non-integer `w < −64` by reflection (ZF-72), with `z = 1 − w > 65`:
+/// `ln|G(1−z)| = ln G(1+z) − z ln 2π + z ln|2 sin πz| + Cl₂(2πz)/(2π)`, from
+/// `ln G(1−z) − ln G(1+z) = −z ln 2π + ∫₀^z πt cot πt dt` (DLMF 5.17) and
+/// `∫₀^z πt cot πt dt = z ln|2 sin πz| + Cl₂(2πz)/(2π)` (both sides have derivative πz cot πz
+/// and agree on every interval; checked against mpmath barnesg). sin and Cl₂ take the
+/// exactly reduced `z mod 2` and `2π (z mod 1)`. Sign: with `n = ⌊z⌋`, `G(w)` has the sign
+/// `(−1)^(n(n+1)/2)` (product of the Γ signs on the way up), negative iff `z mod 4 ∈ [1, 3)`.
+/// The former one-step-per-unit recursion `G(z) = G(z+1)/Γ(z)` overflowed the stack and grew
+/// the working precision by a word per level.
+fn barnes_g_reflect(w: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
+    let nr = RoundingMode::None;
+    let wrk = work_p(p);
+    let exact_w = word_p(wrk.max(w.precision().unwrap_or(0)).saturating_add(2 * WORD_BIT_SIZE));
+    let z = ExactNum::from_u8(1, exact_w).sub(w, exact_w, nr);
+    let ez = z.exponent().unwrap_or(0).max(0) as usize;
+    // ln G(1+z) ≈ z² ln z / 2: carry its magnitude in extra bits.
+    let pw = word_p(wrk.saturating_add(2 * ez).saturating_add(2 * WORD_BIT_SIZE));
+    let t2 = z.rem(&ExactNum::from_u8(2, exact_w));
+    let f1 = z.rem(&ExactNum::from_u8(1, exact_w));
+    let t4 = z.rem(&ExactNum::from_u8(4, exact_w));
+    let neg = matches!(t4.compare(&ExactNum::from_u8(1, exact_w)), Some(c) if c >= 0)
+        && matches!(t4.compare(&ExactNum::from_u8(3, exact_w)), Some(c) if c < 0);
+    let pi = cc.pi(pw, nr);
+    let two_pi = ExactNum::from_u8(2, pw).mul(&pi, pw, nr);
+    let s = pi.mul(&t2, pw, nr).sin(pw, nr, cc).abs();
+    let ln2s = ExactNum::from_u8(2, pw).mul(&s, pw, nr).ln(pw, nr, cc);
+    let cl = ExactNum::mul_ref(&two_pi, &f1, pw, nr)
+        .clausen_cl2(pw, nr, cc)
+        .div(&two_pi, pw, nr);
+    let lng1 = barnes_ln_g_plus1(&z, pw, cc);
+    let ln2pi = ExactNum::clone(&two_pi).ln(pw, nr, cc);
+    let a = lng1
+        .sub(&ExactNum::mul_ref(&z, &ln2pi, pw, nr), pw, nr)
+        .add(&ExactNum::mul_ref(&z, &ln2s, pw, nr), pw, nr)
+        .add(&cl, pw, nr);
+    let mag_rm = if neg { crate::common::util::invert_rm_for_sign(rm) } else { rm };
+    let mut g = a.exp(p, mag_rm, cc);
+    if neg {
+        g = g.neg();
+    }
+    g
 }
 
 fn barnes_ln_g_plus1(z: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
