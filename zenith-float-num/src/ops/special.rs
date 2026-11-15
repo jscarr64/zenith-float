@@ -1471,7 +1471,10 @@ impl ExactNumNumber {
         let ret = if x.expint_use_asymptotic(p) {
             x.si_asymptotic(p, cc)?
         } else {
-            x.si_series(p)?
+            let pe = p + Self::si_ci_series_guard(x.exponent());
+            let mut r = x.si_series(pe)?;
+            r.set_precision(p, RoundingMode::None)?;
+            r
         };
         if neg {
             ret.neg()
@@ -1547,8 +1550,19 @@ impl ExactNumNumber {
         if self.expint_use_asymptotic(p) {
             self.ci_asymptotic(p, cc)
         } else {
-            self.ci_series(p, cc)
+            let pe = p + Self::si_ci_series_guard(self.exponent());
+            let mut r = self.ci_series(pe, cc)?;
+            r.set_precision(p, RoundingMode::None)?;
+            Ok(r)
         }
+    }
+
+    /// Guard bits for the Si/Ci power series (ZF-24): its alternating terms peak near
+    /// `e^x / √x` while the result is O(1), so about `x log2 e < 1.5 · 2^exponent(x)` bits
+    /// cancel. The series is only used below `2^20`.
+    fn si_ci_series_guard(e: Exponent) -> usize {
+        let cancel = if e > 0 { (3usize << (e as u32).min(40)) / 2 } else { 0 };
+        round_p(cancel + 2 * WORD_BIT_SIZE)
     }
 
     fn ci_series(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
