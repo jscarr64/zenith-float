@@ -223,7 +223,7 @@ fn meijer_g_series(
                 }
             }
             let f = hz.hypergeom_pfq(&hn, &hd, p, RoundingMode::None, cc);
-            if !finite(&f) {
+            if f.is_nan() {
                 return GEval::Singular;
             }
             let expn_div;
@@ -236,6 +236,21 @@ fn meijer_g_series(
             let zp = pow_real(z, expn, p, cc);
             if !finite(&zp) {
                 return GEval::Bad;
+            }
+            if f.is_inf() {
+                // ZF-41: the pFq diverges at |z| = 1 (e.g. ln(1+z) at z = −1 is
+                // −z·₂F₁(1,1;2;1)): a pole, so this residue term is a signed infinity.
+                // Two opposite infinities are not a value; that goes to the limit path.
+                if ratio.is_zero() || zp.is_zero() {
+                    return GEval::Singular;
+                }
+                let neg = ratio.is_negative() ^ zp.is_negative() ^ f.is_negative();
+                let term = if neg { crate::ext::INF_NEG } else { crate::ext::INF_POS };
+                sum = sum.add(&term, p, RoundingMode::None);
+                if sum.is_nan() {
+                    return GEval::Singular;
+                }
+                continue;
             }
             sum = sum.add(
                 &ratio

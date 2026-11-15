@@ -1919,3 +1919,55 @@ fn zf_38_hypergeom_2f1_unit_argument() {
         }
     }
 }
+
+/// ZF-41: G^{1,2}_{2,2}(z | 1,1; 1,0) = ln(1+z) was ~10 bits at z = 1 (the residue series
+/// was a perturbed limit around the refused ₂F₁ at |z| = 1) and finite garbage at z = −1.
+/// With ₂F₁ at ±1 computed (5a29121), z = 1 is ln 2 and z = −1 is the pole −Inf (a
+/// divergent ₂F₁(1,1;2;1) residue term is now a signed infinity, not a limit). Fox H with
+/// unit scales is the same function. ln 2 from FLINT arb at 3000 bits.
+#[test]
+fn zf_41_meijer_fox_ln1pz_at_unit() {
+    let mut cc = Consts::new().expect("Consts");
+    let ln2 = "0.6931471805599453094172321214581765680755001343602552541206800094933936219696947156058633269964186875420014810205706857336855202357581305570326707516350759619307275708283714351903070386238916734711233501153644979552391204751726815749320651555247341395258829504530070953263666426541042391578149520437404303855008019441706416715186447128399681717845469570262716310645461502572074024816377733896385506952606683411372738737229289564935470257626520988596932019650585547647033067936544325476327449512504060694381471046899465062201677204245245296126879465461931651746813926725041038025462596568691441928716082938031727143677826548775664850856740776484514644399404614226031930967354025744460703080960850474866385231381816767514386674766478908814371419854942315199735488037516586127535291661000710535582498794147295092931138971559982056543928717000721808576103";
+    for p in [64usize, 128, 256, 1024, 2048] {
+        let one = ExactNum::from_u8(1, p);
+        let zero = ExactNum::new(p);
+        for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+            for z in [one.clone(), -one.clone()] {
+                let g = z.meijer_g(
+                    &[one.clone(), one.clone()],
+                    &[],
+                    &[one.clone()],
+                    &[zero.clone()],
+                    p,
+                    rm,
+                    &mut cc,
+                );
+                let h = z.fox_h(
+                    &[(one.clone(), one.clone()), (one.clone(), one.clone())],
+                    &[],
+                    &[(one.clone(), one.clone())],
+                    &[(zero.clone(), one.clone())],
+                    p,
+                    rm,
+                    &mut cc,
+                );
+                for (name, v) in [("G", &g), ("H", &h)] {
+                    if z.is_negative() {
+                        assert!(
+                            v.is_inf() && v.is_negative(),
+                            "{name}(-1) p={p} {rm:?}: {v}"
+                        );
+                    } else {
+                        let w = cr_ref(ln2, p, rm, &mut cc);
+                        assert_eq!(
+                            v.compare(&w),
+                            Some(0),
+                            "{name}(1) p={p} {rm:?}: {v} want {w}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
