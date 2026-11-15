@@ -123,6 +123,59 @@ fn abs_up(x: &ExactNum) -> ExactNum {
 /// DLMF 16.18.1: F(a;b;z) = ΠΓ(b)/ΠΓ(a) · G(-z | 1-a; ; 0; 1-b).
 /// For p = q+1, |z| > 1, the type-2 G residue series is in 1/z, inside the disk.
 /// Negative G arguments (the cut z > 1) are refused unless every power is integer.
+/// Real \({}_2F_1(a_0, a_1; c; z)\) at `z = ±1`, nonterminating, `c` not a pole.
+///
+/// - `z = −1`: Pfaff (DLMF 15.8.1), `2^{−a_0} ₂F₁(a_0, c−a_1; c; 1/2)`, a convergent
+///   series, so the analytic value is computed whether or not the series at −1 converges.
+/// - `z = 1`, `s = c − a_0 − a_1 > 0`: Gauss (DLMF 15.4.20),
+///   `Γ(c)Γ(s)/(Γ(c−a_0)Γ(c−a_1))`, with a pole of a denominator Γ giving exactly 0.
+/// - `z = 1`, `s ≤ 0`: the series diverges to ±∞ with the sign of
+///   `Γ(c)/(Γ(a_0)Γ(a_1))`, the sign of its terms for large `k` (Jeff's ruling: mpmath's
+///   ±Inf). An exact infinity, as for a pole.
+fn hyp2f1_unit(z: &ExactNum, a: &[ExactNum], c: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
+    let wrk = work_p(p).saturating_add(WORD_BIT_SIZE);
+    let n = RoundingMode::None;
+    let wide = |x: &ExactNum| x.precision().unwrap_or(0).max(wrk) + WORD_BIT_SIZE;
+    if z.is_negative() {
+        let cma1 = ExactNum::sub_ref(c, &a[1], wide(c).max(wide(&a[1])) + 64, n);
+        let half = ExactNum::from_u8(1, wrk).ldexp(-1, wrk, n);
+        let f = pfq_series(&half, &[a[0].clone(), cma1], core::slice::from_ref(c), wrk);
+        if !finite(&f) {
+            return cat_nan();
+        }
+        let ln2 = ExactNum::from_u8(2, wrk).ln(wrk, n, cc);
+        let scale = a[0].clone().neg_via_mul().mul(&ln2, wrk, n).exp(wrk, n, cc);
+        return f.mul(&scale, wrk, n);
+    }
+    let w = wide(c).max(wide(&a[0])).max(wide(&a[1])) + 64;
+    let cma0 = ExactNum::sub_ref(c, &a[0], w, n);
+    let cma1 = ExactNum::sub_ref(c, &a[1], w, n);
+    let s = ExactNum::sub_ref(&cma0, &a[1], w, n);
+    if s.is_zero() || s.is_negative() {
+        let g = c
+            .gamma(wrk, n, cc)
+            .div(&a[0].gamma(wrk, n, cc), wrk, n)
+            .div(&a[1].gamma(wrk, n, cc), wrk, n);
+        if !finite(&g) || g.is_zero() {
+            return cat_nan();
+        }
+        return if g.is_negative() { crate::ext::INF_NEG } else { crate::ext::INF_POS };
+    }
+    if nonpositive_int(&cma0) || nonpositive_int(&cma1) {
+        return ExactNum::new(wrk);
+    }
+    let v = c
+        .gamma(wrk, n, cc)
+        .mul(&s.gamma(wrk, n, cc), wrk, n)
+        .div(&cma0.gamma(wrk, n, cc), wrk, n)
+        .div(&cma1.gamma(wrk, n, cc), wrk, n);
+    if finite(&v) {
+        v
+    } else {
+        cat_nan()
+    }
+}
+
 fn pfq_continued(
     z: &ExactNum,
     a: &[ExactNum],
@@ -1617,7 +1670,10 @@ impl ExactNum {
     ///
     /// Direct series with a geometric tail bound; no fixed term cap. Nonterminating
     /// `p > q+1` is `NaN(InvalidArgument)`. `p = q+1, |z| > 1` is continued through Meijer
-    /// G (complex values on the cut `z > 1` are NaN). `|z| = 1` is `NaN` for now.
+    /// G. On the cut `z > 1` the value is not real (the limits from above and below are
+    /// complex conjugates), so the real function is undefined there and returns NaN, as
+    /// FLINT's real `arb_hypgeom_pfq` and C99 domain errors do. `₂F₁` at `z = ±1` is
+    /// computed ([`hyp2f1_unit`]); `q ≥ 2` at `|z| = 1` is still `NaN`.
     /// Poles in any `b_j = 0, -1, ...`.
     ///
     /// Accuracy: unspecified
@@ -1663,6 +1719,12 @@ impl ExactNum {
             if a.len() == b.len() + 1 {
                 match self.abs_cmp(&ExactNum::from_u8(1, WORD_BIT_SIZE)) {
                     Some(c) if c > 0 => return finish(pfq_continued(self, a, b, p, cc), p, rm),
+                    Some(0) if a.len() == 2 => {
+                        if nonpositive_int(&b[0]) {
+                            return cat_nan();
+                        }
+                        return finish(hyp2f1_unit(self, a, &b[0], p, cc), p, rm);
+                    }
                     Some(0) => return cat_nan(),
                     _ => {}
                 }
