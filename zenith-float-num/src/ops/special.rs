@@ -532,35 +532,77 @@ impl ExactNumNumber {
     }
 
     /// `ζ(s) = 2^s π^(s-1) sin(πs/2) Γ(1-s) ζ(1-s)` for `s < 1/2`, at working precision `p`.
+    ///
+    /// Every factor is formed at `p + g` bits with `g ≈ log2|s| + log2 log2|s|` (ZF-11): an
+    /// error ε in an argument of size `|s|` moves `2^s`, `π^(s−1)` and `Γ(1−s)` by about
+    /// `|s| ln|s| ε`. `1 − s` is kept exact, and `sin(πs/2)` is taken of `s mod 4` (exact),
+    /// so no factor sees the rounding of a large argument. Past `|s| = 2^20` the product is
+    /// formed as `exp` of the summed logarithms, so no factor under- or overflows when the
+    /// result does not; for `|s| ≥ 2^64` the result is beyond `EXPONENT_MAX` and overflows
+    /// with the sign of `sin(πs/2)`.
     fn zeta_reflect(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        // 1 - s exactly: s carries at most p + 4 fractional bits below the binary point here.
+        let es = usize::try_from(Exponent::max(0, self.exponent()))
+            .map_err(|_| Error::InvalidArgument)?;
+        let g = es + (usize::BITS - es.leading_zeros()) as usize + 8;
+        let pg = round_p(p + g);
+        // 1 - s exactly.
         let frac = Exponent::max(0, -self.exponent());
         let frac_bits = usize::try_from(frac).map_err(|_| Error::InvalidArgument)?;
-        let pw = p + self.mantissa_max_bit_len() + frac_bits + WORD_BIT_SIZE;
+        let pw = pg + self.mantissa_max_bit_len() + frac_bits + WORD_BIT_SIZE;
         let one = Self::from_word(1, pw)?;
-        let mut omz = one.sub(self, pw, RoundingMode::None)?;
-        // Γ and ζ only need 1 - s to the working precision, not the operand's full width.
-        omz.set_precision(p, RoundingMode::ToEven)?;
+        let omz = one.sub(self, pw, RoundingMode::None)?;
 
-        let pi = cc.pi_num(p, RoundingMode::None)?;
-        let ln2 = Self::from_word(2, p)?.ln(p, RoundingMode::None, cc)?;
-        let two_s = self
-            .mul(&ln2, p, RoundingMode::None)?
-            .exp(p, RoundingMode::None, cc)?;
-        let sm1 = omz.neg()?;
-        let pi_s = sm1
-            .mul(&pi.ln(p, RoundingMode::None, cc)?, p, RoundingMode::None)?
-            .exp(p, RoundingMode::None, cc)?;
-        let mut arg = pi.mul(self, p, RoundingMode::None)?;
+        // sin(πs/2) = sin(π t/2), t = s rem 4 exactly (|t| < 4).
+        let t = self.rem(&Self::from_word(4, WORD_BIT_SIZE)?)?;
+        let pi = cc.pi_num(pg, RoundingMode::None)?;
+        let mut arg = pi.mul(&t, pg, RoundingMode::None)?;
         arg.div_by_2(RoundingMode::None);
-        let sn = arg.sin(p, RoundingMode::None, cc)?;
-        let g = omz.gamma(p, RoundingMode::None, cc)?;
-        let z = omz.zeta_em(p, cc)?;
+        let sn = arg.sin(pg, RoundingMode::None, cc)?;
+        if es >= 64 {
+            // log2|ζ(s)| ≥ |s|(log2|s| − 5) > EXPONENT_MAX = 2^62 − 1.
+            return Err(Error::ExponentOverflow(sn.sign()));
+        }
+        let ln2 = Self::from_word(2, pg)?.ln(pg, RoundingMode::None, cc)?;
+        let ln_pi = pi.ln(pg, RoundingMode::None, cc)?;
+        let sm1 = omz.neg()?;
+        let z = omz.zeta_em(pg, cc)?;
+        if es > 20 {
+            let mut l = self.mul(&ln2, pg, RoundingMode::None)?;
+            l = l.add(
+                &sm1.mul(&ln_pi, pg, RoundingMode::None)?,
+                pg,
+                RoundingMode::None,
+            )?;
+            l = l.add(
+                &sn.abs()?.ln(pg, RoundingMode::None, cc)?,
+                pg,
+                RoundingMode::None,
+            )?;
+            l = l.add(
+                &omz.ln_gamma(pg, RoundingMode::None, cc)?,
+                pg,
+                RoundingMode::None,
+            )?;
+            l = l.add(&z.ln(pg, RoundingMode::None, cc)?, pg, RoundingMode::None)?;
+            let mut r = match l.exp(pg, RoundingMode::None, cc) {
+                Err(Error::ExponentOverflow(_)) => return Err(Error::ExponentOverflow(sn.sign())),
+                other => other?,
+            };
+            r.set_sign(sn.sign());
+            return Ok(r);
+        }
+        let two_s = self
+            .mul(&ln2, pg, RoundingMode::None)?
+            .exp(pg, RoundingMode::None, cc)?;
+        let pi_s = sm1
+            .mul(&ln_pi, pg, RoundingMode::None)?
+            .exp(pg, RoundingMode::None, cc)?;
+        let gm = omz.gamma(pg, RoundingMode::None, cc)?;
         two_s
-            .mul(&pi_s, p, RoundingMode::None)?
-            .mul(&sn, p, RoundingMode::None)?
-            .mul(&g, p, RoundingMode::None)?
-            .mul(&z, p, RoundingMode::None)
+            .mul(&pi_s, pg, RoundingMode::None)?
+            .mul(&sn, pg, RoundingMode::None)?
+            .mul(&gm, pg, RoundingMode::None)?
+            .mul(&z, pg, RoundingMode::None)
     }
 
     /// Euler–Maclaurin `ζ(s)` for `s ≥ 1/2`, `s ≠ 1`, at working precision `p`:

@@ -1808,3 +1808,68 @@ fn zf_51_reported_bound_includes_final_rounding() {
         "bound meets 2^-60"
     );
 }
+
+/// ZF-11 follow-up: ζ(s) by reflection for large |s|. The factors were formed at the Ziv
+/// precision from rounded arguments (π·s, 1 − s), so an error ε grew by |s| ln|s|, which is
+/// silent for |s| ≥ 2^100 when the margin is 128 guard bits. Now the arguments are exact
+/// (s mod 4, exact 1 − s), the precision gains log2|s| + log2 log2|s| bits, large |s|
+/// uses the log-domain product, and |s| ≥ 2^64 overflows with the sign of sin(πs/2).
+/// References: FLINT arb zeta at 1200 bits, rounded once per mode.
+#[test]
+fn zf_11_riemann_zeta_reflection_large_s() {
+    let mut cc = Consts::new().expect("Consts");
+    let rows: &[(&str, &str)] = &[
+        ("-10001p-1", "-2.5807773263234762242686736608678069832777872362024525369031599519101624469532782025158025749453974044076352582365374318350339094757241552377e+107580"),
+        ("-100000001p-2", "-7.3149691613544282365887632717126612596241972256522213841379695897846438755602988516562540871499607097550476731729235225593151515339289066546e+8373495647"),
+        ("-40000000003p-2", "-3.3449479113386980706833361499789638222658442499664767958603353568195491386477465027405858952472906904914675684466536870028970604744879109652e+11884319342642"),
+        ("-20000000000003p-3", "-5.3110969919362335732524370696865304216932764417203059129646495388257533981727632915420429572230056423795400428108870223719625509067451511160e+15558839447600412"),
+    ];
+    for p in [64usize, 128, 256] {
+        for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+            for &(s, want) in rows {
+                let s = parse_real(s).expect("s");
+                let z = s.riemann_zeta(p, rm, &mut cc);
+                let w = cr_ref(want, p, rm, &mut cc);
+                assert_eq!(
+                    z.compare(&w),
+                    Some(0),
+                    "zeta({s}) p={p} {rm:?}: {z} {:?} want {w}",
+                    z.err()
+                );
+            }
+        }
+    }
+    // Overflow: s = -(2^k + 1/2) has sin(πs/2) < 0, s = -(2^k + 5/2) has sin > 0.
+    for (s, neg) in [
+        ("-8000000000000001p-1", true),
+        ("-8000000000000005p-1", false),
+        ("-20000000000000000000000001p-1", true),
+    ] {
+        let s = parse_real(s).expect("s");
+        for p in [128usize, 256] {
+            for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+                let z = s.riemann_zeta(p, rm, &mut cc);
+                let toward = match rm {
+                    RoundingMode::ToZero => true,
+                    RoundingMode::Up => neg,
+                    RoundingMode::Down => !neg,
+                    _ => false,
+                };
+                let m = ExactNum::max_value(p);
+                let want = match (toward, neg) {
+                    (true, true) => -m,
+                    (true, false) => m,
+                    (false, true) => INF_NEG,
+                    (false, false) => INF_POS,
+                };
+                assert_eq!(
+                    z.compare(&want),
+                    Some(0),
+                    "zeta({s}) p={p} {rm:?}: {z} {:?}",
+                    z.err()
+                );
+                assert_eq!(z.is_negative(), neg, "sign zeta({s}) p={p} {rm:?}");
+            }
+        }
+    }
+}
