@@ -31,6 +31,10 @@ fn jacobi_ratio_m_one(m: &ExactNumNumber, p: usize) -> Result<Option<ExactNumNum
 /// AGM / descending Landen steps for `am`, `sn`, `cn`, `dn`.
 pub const JACOBI_AGM_MAX: u32 = 128;
 
+/// Largest `exponent(u)` the period reduction carries as extra bits of K (beyond it the
+/// reduction would need more than a million-bit K; the result is PrecisionRetryExhausted).
+const JACOBI_REDUCE_EXTRA_MAX: usize = 1 << 20;
+
 impl ExactNumNumber {
     /// Jacobi amplitude \(\operatorname{am}(u|m)\). Parameter \(m=k^2\in[0,1]\).
     pub fn jacobi_am(
@@ -249,31 +253,59 @@ impl ExactNumNumber {
             let am = sh.atan(p, RoundingMode::None, cc)?;
             return Ok((am, sn, cn, dn));
         }
-        let u = self.jacobi_reduce_period(m, p, cc)?;
-        jacobi_agm(&u, m, p, cc)
+        let (u, turns) = self.jacobi_reduce_period(m, p, cc)?;
+        let (mut am, sn, cn, dn) = jacobi_agm(&u, m, p, cc)?;
+        if let Some(n) = turns {
+            // am(u + 4nK) = am(u) + 2nπ; sn, cn, dn have period 4K.
+            let pe = round_p(p + usize::try_from(n.exponent().max(0)).map_err(|_| Error::InvalidArgument)? + WORD_BIT_SIZE);
+            let mut two_pi = cc.pi_num(pe, RoundingMode::None)?;
+            two_pi.set_exponent(two_pi.exponent() + 1);
+            let off = n.mul(&two_pi, pe, RoundingMode::None)?;
+            am = am.add(&off, p, RoundingMode::None)?;
+        }
+        Ok((am, sn, cn, dn))
     }
 
-    fn jacobi_reduce_period(&self, m: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+    /// `u` reduced into `[-2K, 2K]` and the number of whole periods `n` removed
+    /// (`u = r + 4nK`; `None` when nothing was removed). K is computed with `exponent(u)` extra
+    /// bits, as the trig reduction does for π, so the reduced argument keeps all `p` bits.
+    fn jacobi_reduce_period(
+        &self,
+        m: &Self,
+        p: usize,
+        cc: &mut Consts,
+    ) -> Result<(Self, Option<Self>), Error> {
         // \(K(m)\ge\pi/2\), so \(2K\ge\pi\). Skip \(K\) (and a nested Ziv) when \(\lvert u\rvert<\pi\).
         let pi = cc.pi_num(p, RoundingMode::None)?;
         if self.abs()?.cmp(&pi) < 0 {
-            return self.clone();
+            return Ok((self.clone()?, None));
         }
-        let k = m.elliptic_k_at(p, cc)?;
-        let two = Self::from_word(2, p)?;
-        let four = Self::from_word(4, p)?;
-        let two_k = two.mul(&k, p, RoundingMode::None)?;
+        let extra = usize::try_from(self.exponent().max(0)).map_err(|_| Error::InvalidArgument)?;
+        if extra > JACOBI_REDUCE_EXTRA_MAX {
+            return Err(Error::PrecisionRetryExhausted);
+        }
+        let pk = round_p(p + extra + WORD_BIT_SIZE);
+        let k = m.elliptic_k_at(pk, cc)?;
+        let mut two_k = k.clone()?;
+        two_k.set_exponent(two_k.exponent() + 1);
         if self.abs()?.cmp(&two_k) <= 0 {
-            return self.clone();
+            return Ok((self.clone()?, None));
         }
-        let four_k = four.mul(&k, p, RoundingMode::None)?;
+        let mut four_k = k;
+        four_k.set_exponent(four_k.exponent() + 2);
         let mut r = self.rem(&four_k)?;
         if r.cmp(&two_k) > 0 {
-            r = r.sub(&four_k, p, RoundingMode::None)?;
+            r = r.sub(&four_k, pk, RoundingMode::None)?;
         } else if r.is_negative() && r.abs()?.cmp(&two_k) > 0 {
-            r = r.add(&four_k, p, RoundingMode::None)?;
+            r = r.add(&four_k, pk, RoundingMode::None)?;
         }
-        Ok(r)
+        // n = (u - r) / 4K is an integer up to the rounding error of r at pk bits.
+        let n = self
+            .sub(&r, pk, RoundingMode::None)?
+            .div(&four_k, pk, RoundingMode::None)?
+            .round(0, RoundingMode::ToEven)?;
+        r.set_precision(p, RoundingMode::None)?;
+        Ok((r, if n.is_zero() { None } else { Some(n) }))
     }
 }
 
