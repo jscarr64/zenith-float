@@ -20,6 +20,9 @@ PFX=zenith-float-bound
 OLD_PAT='zenith[-_]bound'
 OLD_NAME="zenith""-bound"
 REMOVED="rust-toolchain.toml .github/CODEOWNERS"
+# Dropped from the zb subtree on purpose: 0c23d9f (the nested .gitignore; the root .gitignore covers it) and 3aa7292
+# (tests/goldens/slices/.gitignore; its heavy-golds rule moved to the root .gitignore).
+REMOVED="$REMOVED .gitignore tests/goldens/slices/.gitignore"
 # Retired in d15bb37 (order 3, MAX_PRECISION one zf definition): the bound precision mutants 117-123 have no code left to mutate.
 REMOVED="$REMOVED $(printf 'tools/mutants/%s.patch ' 117-P-min2 118-P-min0 119-P-maxsub 120-P-maxsub2 121-P-shl61 122-P-shl59 123-P-cmp)"
 HEAD_SHA=$(git rev-parse HEAD) || exit 2
@@ -68,16 +71,27 @@ check_B() {
     if printf '%s\n' "$have" | grep -qxF "$f"; then echo "  B: removed file $f is back"; return 1; fi
   done
 }
+# P (U7, Jeff 2026-10-30 12:13 PM CT): every commit in BASE..ref, merges and second parents included, carries exactly one
+# `Agent: <name>` trailer, as git parses trailers (the last paragraph of the message), whose name is in ghact's agent list
+# (`~/pop-logs/bin/ghact` line 7, copied here so the check needs nothing outside the repo) or `vera` (Vera's GitHub
+# commits), compared case-insensitively. Commits made before 2026-10-30 12:30 PM CDT (committer date; the imported zb
+# history) are exempt: they predate the rule and are never rewritten. A missing, empty, unknown, extra-word, repeated or
+# not-in-the-last-paragraph trailer fails.
+AGENTS=" paul spence dana cassie rusty eugene harper laney tessa casey grok jeff vera "
+AGENT_CUTOFF=1793381400 # 2026-10-30 12:30:00 CDT
 check_P() {
-  local c last commits
-  # First-parent only: the second parents of the import and topic-tip merges are imported zb history, kept as is.
-  commits=$(git rev-list --first-parent "$BASE..$1" 2> /dev/null) || return 1
-  [ -n "$commits" ] || return 1
-  for c in $commits; do
-    last=$(git log -1 --format=%B "$c" | sed '/^[[:space:]]*$/d' | tail -n 1)
-    # A10: a non-empty Agent trailer as the last line (the fold lands Rusty's and Paul's commits together).
-    [[ "$last" =~ ^Agent:\ [a-z][a-z0-9-]*$ ]] || { echo "  P: $c has no final 'Agent: <name>' line"; return 1; }
-  done
+  local c ct v n=0
+  while IFS=$'\t' read -r c ct v; do
+    [ -n "$c" ] || continue
+    [ "$ct" -ge "$AGENT_CUTOFF" ] || continue
+    n=$((n + 1))
+    v=${v,,}
+    if [ -z "$v" ] || [[ "$AGENTS" != *" $v "* ]]; then
+      echo "  P: $c Agent trailer '${v}' is not one ghact agent name"
+      return 1
+    fi
+  done < <(git log --format='%H%x09%ct%x09%(trailers:key=Agent,valueonly,separator=%x2C)' "$BASE..$1" 2> /dev/null)
+  [ "$n" -gt 0 ] || { echo "  P: no post-cutoff commits in $BASE..$1"; return 1; }
 }
 check_O() {
   local f found=0
@@ -178,15 +192,26 @@ lockfacts() {
     indeps             { d = $0; gsub(/[",]/, "", d); gsub(/^[[:space:]]+|[[:space:]]+$/, "", d); deps[++nd] = d; next }
     END { flush() }' | sort
 }
+# S: Cargo.lock differs from BASE by exactly the fold (zenith-float-bound and its two dependency edges) and the rustix
+# 1.1.4 -> 1.1.6 bump of b0afcb1 (RUSTSEC-2026-0486). That bump drops windows-sys 0.61.2, so the windows-sys edges lose
+# their version suffix (only 0.60.2 is left) and windows-sys's own windows-link edge goes with it.
 check_S() {
-  local added removed want
+  local added removed want_added want_removed
   git show "$BASE:Cargo.lock" | lockfacts > "$work/lock.base" || return 1
   lockfacts < "$1/Cargo.lock" > "$work/lock.head" || return 1
   added=$(comm -13 "$work/lock.base" "$work/lock.head")
   removed=$(comm -23 "$work/lock.base" "$work/lock.head")
-  want=$(printf '%s\n' "D zenith-float $PFX" "D $PFX zenith-float-num" "P $PFX 2.0.0 -" | sort)
-  [ -z "$removed" ] || { printf '  S removed: %s\n' "$removed"; return 1; }
-  [ "$added" = "$want" ] || { printf '  S added: %s\n' "$added"; return 1; }
+  local reg=registry+https://github.com/rust-lang/crates.io-index ws
+  want_added=$( {
+    printf '%s\n' "D zenith-float $PFX" "D $PFX zenith-float-num" "P $PFX 2.0.0 -" "P rustix 1.1.6 $reg"
+    for ws in anstyle-query anstyle-wincon errno gmp-mpfr-sys is-terminal rustix tempfile winapi-util; do echo "D $ws windows-sys"; done
+  } | sort)
+  want_removed=$( {
+    printf '%s\n' "P rustix 1.1.4 $reg" "P windows-sys 0.61.2 $reg" "D windows-sys windows-link" "D gmp-mpfr-sys windows-sys 0.60.2"
+    for ws in anstyle-query anstyle-wincon errno is-terminal rustix tempfile winapi-util; do echo "D $ws windows-sys 0.61.2"; done
+  } | sort)
+  [ "$removed" = "$want_removed" ] || { printf '  S removed: %s\n' "$removed"; return 1; }
+  [ "$added" = "$want_added" ] || { printf '  S added: %s\n' "$added"; return 1; }
 }
 check_NOSTR() {
   local hits
@@ -269,11 +294,18 @@ plant_new_file() {  # FILE CHECK ARGS...
   "$@"; rc=$?
   restore "$f"; return $rc
 }
-plant_P() {
+# One planted commit per malformed trailer, on top of HEAD; each must be DETECTED.
+plant_P_msg() {
   local c
-  c=$(git commit-tree "$HEAD_SHA^{tree}" -p "$HEAD_SHA" -m "fold-pr1 plant: commit without the agent trailer") || return 1
+  c=$(git commit-tree "$HEAD_SHA^{tree}" -p "$HEAD_SHA" -m "$1") || return 1
   check_P "$c"
 }
+plant_P() { plant_P_msg "fold-pr1 plant: commit without the agent trailer"; }
+plant_P_nobody() { plant_P_msg $'fold-pr1 plant: unknown agent\n\nAgent: nobody'; }
+plant_P_empty() { plant_P_msg $'fold-pr1 plant: empty agent\n\nAgent:'; }
+plant_P_word() { plant_P_msg $'fold-pr1 plant: trailing word\n\nAgent: paul extra'; }
+plant_P_notlast() { plant_P_msg $'fold-pr1 plant: trailer not in the last paragraph\n\nAgent: paul\n\nA later paragraph of prose.'; }
+plant_P_two() { plant_P_msg $'fold-pr1 plant: two agents\n\nAgent: paul\nAgent: rusty'; }
 B=build; [ "$NO_BUILD" = 1 ] && B=nobuild
 
 row A check_A "$ZB_TIP" -- check_A 0000000000000000000000000000000000000001
@@ -287,6 +319,11 @@ row K check_C "$real" -- plant_file "$PFX/Cargo.toml" '/^zenith-float-num[[:spac
 row L check_L "$real" "$B" -- plant_add_line src/lib.rs 'pub use zenith_float_bound::ball::Ball as BoundBall;' check_L "$plant" nobuild
 row O check_O "$HEAD_SHA" -- check_O "$BASE"
 row P check_P "$HEAD_SHA" -- plant_P
+row P-NOBODY check_P "$HEAD_SHA" -- plant_P_nobody
+row P-EMPTY check_P "$HEAD_SHA" -- plant_P_empty
+row P-WORD check_P "$HEAD_SHA" -- plant_P_word
+row P-NOTLAST check_P "$HEAD_SHA" -- plant_P_notlast
+row P-TWO check_P "$HEAD_SHA" -- plant_P_two
 row Q check_Q "$real" -- plant_new_file "$PFX/rust-toolchain.toml" check_Q "$plant"
 row R check_R "$real" -- plant_file .github/CODEOWNERS "\\|^/$PFX/tools/digests.sh|d" check_R "$plant"
 row S check_S "$real" -- plant_add_line Cargo.lock $'\n[[package]]\nname = "fold-pr1-plant"\nversion = "0.0.1"' check_S "$plant"
