@@ -5513,19 +5513,20 @@ mod tests {
         Ok(())
     }
 
-    /// The Γ kernel at p = 1 << 14 needs z >= 2^129 (stirling_min_exponent), far more than
-    /// 2^20 shifts from z = 0.75, so it must fail at once rather than run 2^20 shifts at full
-    /// width: the bail-out in `shift_up` is what makes this test fast. (ψ uses up to 1024
-    /// Bernoulli terms, so its shift target stays reachable at this precision.)
+    /// The Γ kernel at p = 1 << 14. With the Stirling term count scaled with p (as ψ scales its
+    /// Bernoulli terms, 85b1964), the shift target from z = 0.75 is reachable under
+    /// STIRLING_SHIFT_MAX, so Γ answers. With a cap below the shifts that target needs, the
+    /// bail-out in `shift_up` refuses before the first step instead of running the loop at
+    /// full width: that is what keeps a hopeless call fast.
     #[test]
     fn test_capped_loops_fail_fast_at_high_precision() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
         let p = 1 << 14;
-        assert!(exhausted(quarters(3, p)?.gamma_positive_capped(
-            p,
-            &mut cc,
-            STIRLING_SHIFT_MAX
-        )));
+        let x = quarters(3, p)?;
+        assert!(x
+            .gamma_positive_capped(p, &mut cc, STIRLING_SHIFT_MAX)
+            .is_ok());
+        assert!(exhausted(x.gamma_positive_capped(p, &mut cc, 1)));
         Ok(())
     }
 

@@ -16,8 +16,8 @@
 # chatter) fails, so an error cannot be swallowed between header and count.
 #
 # Expected counts on this branch (default features, no mpfr-tests): the
-# workspace list has 67 targets. The mpfr-tests pass below is only for
-# zenith-float-num, which has 52 targets with mpfr-tests on x86_64-linux,
+# workspace list has 68 targets. The mpfr-tests pass below is only for
+# zenith-float-num, which has 53 targets with mpfr-tests on x86_64-linux,
 # including integration_tests.
 #
 # The counts moved 52 -> 53 (46 -> 47 for mpfr-tests) when main brought in
@@ -29,7 +29,8 @@
 # its 6 integration test targets (array, ball, enclosure, harness, mag, types), plus the facade's
 # tests/fold_pr1_facade.rs, then 65 -> 66 (50 -> 51) with zenith-float-num/tests/top_precision_edges.rs
 # (8da300e, a valid precision near the top is never InvalidArgument), then 66 -> 67 (51 -> 52) with
-# zenith-float-num/tests/small_p_exhaustive.rs (ACCEPTANCE-pr39 I10); the count moves in the
+# zenith-float-num/tests/small_p_exhaustive.rs (ACCEPTANCE-pr39 I10), then 67 -> 68 (52 -> 53) with
+# zenith-float-num/tests/complex_gamma_high_p_mpmath.rs (e363348, Spence F1/F3); the count moves in the
 # same PR that adds or removes a target; a count change without a target
 # change is a failure, not a pass).
 # integration_tests minor (Spence review of PR #18): that target's tests live
@@ -45,8 +46,8 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-EXPECTED_TARGETS=67
-EXPECTED_MPFR_TARGETS=52
+EXPECTED_TARGETS=68
+EXPECTED_MPFR_TARGETS=53
 
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
