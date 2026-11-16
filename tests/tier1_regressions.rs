@@ -3584,3 +3584,41 @@ fn zf_57_scorer_bounded_series_and_watson() {
     }
     assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// ZF-37 (re-check): J_ν(0) for non-integer ν > 0 went through the series, whose sum is an
+/// exact zero; the cancellation claim (0 bits for a zero sum, 19cff72) never certified it
+/// and the Ziv loop ran to PrecisionRetryExhausted (8-39 s at p >= 2048). Real I_ν(0) and
+/// K_ν(0) refused poles and I_{-n}(0) = 0. Now x = ±0 is decided before any series:
+/// 1 at ν = 0; a signed zero for integer orders (J_n(-x) = (-1)^n J_n(x), J_{-n} = (-1)^n J_n,
+/// I_{-n} = I_n); +0 for non-integer ν > 0; ±Inf for non-integer ν < 0 signed by Γ(ν+1), and
+/// +Inf for K (C99 7.12.1 poles, as Y_ν(0)). Expected strings from the limits, pole and zero
+/// signs cross-checked with mpmath at x = 2^-200 (land39/zf37z/zgen.py).
+#[test]
+fn zf_37_bessel_j_i_k_at_zero() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf37-zero.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let x = parse_real(t[1]).expect("x");
+        let nu = parse_real(t[2]).expect("nu");
+        let p = t[3].parse::<usize>().expect("p");
+        let rm = mode(t[4]).expect("mode");
+        let v = match t[0] {
+            "r.bessel_j_nu" => x.bessel_j_nu(&nu, p, rm, &mut cc),
+            "r.bessel_i" => x.bessel_i(&nu, p, rm, &mut cc),
+            "r.bessel_k" => x.bessel_k(&nu, p, rm, &mut cc),
+            _ => panic!("function"),
+        };
+        if fmt_real(&v) != t[5] {
+            bad.push(format!(
+                "{}({}, ν={}) p={p} {rm:?}: {} want {}",
+                t[0],
+                t[1],
+                t[2],
+                fmt_real(&v),
+                t[5]
+            ));
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+}

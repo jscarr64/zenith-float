@@ -3874,6 +3874,9 @@ Accuracy: correctly-rounded",
     ///
     /// - Algorithm: series in `x`; integer `ν` delegates to [`Self::bessel_j`];
     ///   Hankel expansion (same switch as [`Self::bessel_j`]) for large `|x|`.
+    /// - Zero: `x = ±0` is decided before any series: 1 at `ν = 0`, a signed zero for
+    ///   integer `ν` and non-integer `ν > 0`, and a signed infinity (sign of \(Γ(ν+1)\))
+    ///   for non-integer `ν < 0` (C99 7.12.1 pole).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (identity golds).
     ///
@@ -3925,6 +3928,9 @@ Accuracy: correctly-rounded",
     /// # Precision
     ///
     /// - Algorithm: series; \(I_ν(z) = i^{-ν} J_ν(iz)\) for the complex path.
+    /// - Zero: `x = ±0` is decided before any series: 1 at `ν = 0`, a signed zero for
+    ///   integer `ν` (\(I_{-n} = I_n\)) and non-integer `ν > 0`, and a signed infinity (sign of \(Γ(ν+1)\))
+    ///   for non-integer `ν < 0` (C99 7.12.1 pole).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -3950,6 +3956,7 @@ Accuracy: correctly-rounded",
     /// # Precision
     ///
     /// - Algorithm: series / Temme; large-`|x|` asymptotic `k_asymptotic`.
+    /// - Zero: `K_ν(±0) = +∞` (C99 7.12.1 pole, as `Y_ν(0)`).
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///

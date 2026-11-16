@@ -2282,6 +2282,8 @@ impl ExactNumNumber {
                 self.bessel_j(an, p, crate::common::util::invert_rm_for_sign(rm), cc)?
                     .neg()
             }
+        } else if self.is_zero() {
+            bessel_ji_at_zero(self, nu, p, false)
         } else if !self.is_positive() {
             Err(Error::InvalidArgument)
         } else if use_bessel_hankel_real(self, nu, p) {
@@ -2365,13 +2367,7 @@ impl ExactNumNumber {
         let p = round_p(p);
         Self::p_assertion(p)?;
         if self.is_zero() {
-            if nu.is_zero() {
-                return Self::from_word(1, p);
-            }
-            if nu.is_positive() {
-                return Self::new2(p, Sign::Pos, self.inexact() | nu.inexact());
-            }
-            return Err(Error::InvalidArgument);
+            return bessel_ji_at_zero(self, nu, p, true);
         }
         if let Some(n) = as_i32_exact(nu, p)? {
             let an = Self::from_word(n.unsigned_abs() as Word, p)?;
@@ -2407,6 +2403,10 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
+        if self.is_zero() {
+            // K_ν(x) → +∞ as x → 0 for every real ν: a pole (C99 7.12.1), +Inf like Y_ν(0).
+            return Err(Error::ExponentOverflow(Sign::Pos));
+        }
         if !self.is_positive() {
             return Err(Error::InvalidArgument);
         }
@@ -6009,6 +6009,45 @@ fn bessel_cancel_bits(x: &ExactNumNumber, num: usize, den: usize) -> Result<usiz
         return Err(Error::InvalidArgument);
     }
     Ok(g)
+}
+
+/// \(J_\nu(\pm0)\) (`i = false`) or \(I_\nu(\pm0)\). The power series' only surviving term is
+/// \((x/2)^\nu/\Gamma(\nu+1)\) (DLMF 10.2.2, 10.25.2), so its sum is an exact zero or a pole and the
+/// cancellation claim of [`ExactNumNumber::bessel_series`] (0 bits for a zero sum) must not see it.
+/// - \(\nu=0\): \(1\).
+/// - integer \(n\ne0\): a zero, \(J_n(-x)=(-1)^nJ_n(x)\), \(J_{-n}=(-1)^nJ_n\), \(I_{-n}=I_n\).
+/// - non-integer \(\nu>0\): \(+0\) (\(\pm0\) alike, as C99 `pow(±0, ν)`).
+/// - non-integer \(\nu<0\): a pole, signed \(\mathrm{sgn}\,\Gamma(\nu+1)=(-1)^m\), \(m=\lfloor-\nu\rfloor\),
+///   returned as `ExponentOverflow` so the wrapper gives signed Inf (C99 7.12.1, as for \(Y_\nu(0)\)).
+fn bessel_ji_at_zero(
+    x: &ExactNumNumber,
+    nu: &ExactNumNumber,
+    p: usize,
+    i: bool,
+) -> Result<ExactNumNumber, Error> {
+    let inexact = x.inexact() | nu.inexact();
+    if nu.is_zero() {
+        let mut one = ExactNumNumber::from_word(1, p)?;
+        one.set_inexact(inexact);
+        return Ok(one);
+    }
+    let a = nu.abs()?;
+    let pe = round_p(a.mantissa_max_bit_len().max(WORD_BIT_SIZE) + WORD_BIT_SIZE);
+    let m = a.floor()?;
+    let two = ExactNumNumber::from_word(2, WORD_BIT_SIZE)?;
+    let m_odd = !m.is_zero() && !m.div(&two, pe, RoundingMode::None)?.is_int();
+    if nu.is_int() {
+        let neg = (x.is_negative() && m_odd) != (!i && nu.is_negative() && m_odd);
+        return ExactNumNumber::new2(p, if neg { Sign::Neg } else { Sign::Pos }, inexact);
+    }
+    if nu.is_positive() {
+        return ExactNumNumber::new2(p, Sign::Pos, inexact);
+    }
+    Err(Error::ExponentOverflow(if m_odd {
+        Sign::Neg
+    } else {
+        Sign::Pos
+    }))
 }
 
 /// \(Y_\nu(0^+)\): `-Inf` for `nu >= 0`; for `nu = -m` it is `(-1)^m Y_m(0^+) = (-1)^{m+1} Inf`;
