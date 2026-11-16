@@ -6118,6 +6118,46 @@ fn scale_in_rm(
 /// `L` is exact (`ν ∈ {0, 1, 2}`: `1`, `x/2`, `x²/8`), the value is `L(1+δ)` with `δ` of the
 /// sign of `t_1` and `|δ| < 2^-(W+2)`; it rounds as `L ± 2^(e(L)−W−1)` (no rounding
 /// boundary of `W ≥ p+2` bits lies strictly between them).
+/// Cheap estimate of the exponent `n` in `L = g · 2^n = (x/2)^ν / Γ(ν+1)`.
+/// `a` is ν (signed when non-integer). ν and x are first rounded to 4 words so an
+/// 8192-bit order does not run `ln_gamma` at working precision just to discover
+/// that `L` is a normal (J/I at x = 2^{-30}, p = 8192, ν ≈ 1/3 were 1.36 s vs
+/// 0.07 s; K at the same point, which calls `I_ν` and `I_{-ν}`, was 5.8 s vs 0.29 s).
+fn estimate_log2_leading_ji(
+    x: &ExactNumNumber,
+    a: &ExactNumNumber,
+    cc: &mut Consts,
+) -> Result<Option<i128>, Error> {
+    type N = ExactNumNumber;
+    let q = 4 * WORD_BIT_SIZE;
+    let mut aq = a.clone()?;
+    aq.set_precision(q, RoundingMode::ToEven)?;
+    aq.set_inexact(false);
+    let mut xq = x.abs()?;
+    xq.set_precision(q, RoundingMode::ToEven)?;
+    xq.set_inexact(false);
+    let ln2 = cc.ln_2_num(q, RoundingMode::None)?;
+    let la = xq.ln(q, RoundingMode::None, cc)?;
+    let al = aq.mul(&la, q, RoundingMode::None)?;
+    let one = N::from_word(1, q)?;
+    let ap1 = aq.add(&one, q, RoundingMode::None)?;
+    let lg = ap1.ln_gamma(q, RoundingMode::None, cc)?;
+    if (lg.exponent() as i128).unsigned_abs() > 60 {
+        return Ok(None);
+    }
+    let d = al.sub(&lg, q, RoundingMode::None)?;
+    let lam = d
+        .div(&ln2, q, RoundingMode::None)?
+        .sub(&aq, q, RoundingMode::None)?;
+    if lam.exponent() > 62 {
+        let n = if lam.is_negative() { -(1i128 << 100) } else { 1i128 << 100 };
+        return Ok(Some(n));
+    }
+    let fl = lam.clone()?.floor()?;
+    let nf = if fl.is_zero() { 0 } else { fl.abs()?.int_as_usize()? as i128 };
+    Ok(Some(if fl.is_negative() { -nf } else { nf }))
+}
+
 fn bessel_ji_scaled(
     x: &ExactNumNumber,
     nu: &ExactNumNumber,
@@ -6175,6 +6215,20 @@ fn bessel_ji_scaled(
     } else {
         None
     };
+
+    // Series path is preferred when L is a comfortable normal and we are not
+    // on the tiny-x exact-leading path. Decide from a short estimate of n so
+    // we do not compute ln_gamma(ν+1) at p bits first.
+    if small_int.is_none() && !tiny && a.exponent() <= 16 {
+        let lo = EXPONENT_MIN as i128 + 2 * p as i128 + 256;
+        let hi = EXPONENT_MAX as i128 - 256;
+        let margin = 1i128 << 20;
+        if let Some(n_est) = estimate_log2_leading_ji(x, &a, cc)? {
+            if n_est > lo + margin && n_est < hi - margin {
+                return Ok(None);
+            }
+        }
+    }
 
     let mut w = round_p(p + 2 * WORD_BIT_SIZE);
     let mut w_inc = WORD_BIT_SIZE;
