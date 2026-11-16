@@ -5,6 +5,10 @@
 
 use crate::common::util::bump_prec_retry;
 use crate::common::util::round_p;
+use crate::complex_ball::ziv_complex_ball;
+use crate::complex_ball::Mag;
+use crate::complex_ball::CB;
+use crate::complex_ball::RB;
 use crate::defs::Exponent;
 use crate::Consts;
 use crate::Error;
@@ -79,6 +83,10 @@ fn erf_series_guard_bits(u: &ExactComplex) -> usize {
         Some(e) if e > 0 && !a2.is_zero() => (3usize << (e as u32).min(40)) / 2 + 16,
         _ => 16,
     }
+}
+
+fn finite_parts(z: &ExactComplex) -> bool {
+    !z.re().is_nan() && !z.im().is_nan() && !z.re().is_inf() && !z.im().is_inf()
 }
 
 pub(crate) fn term_negligible(t: &ExactComplex, p: usize) -> bool {
@@ -249,17 +257,29 @@ impl ExactComplex {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
         let dest = round_p(p);
+        if !finite_parts(self) {
+            return ziv_complex(dest, rm, |pw| self.erf_at_plain(pw, dest, cc));
+        }
+        // On the real axis the value is the real erf (correctly rounded, with its own
+        // treatment of ±1 − δ). The imaginary part is a zero with the sign of the limit
+        // Im erf(x + iε) = ε·(2/√π)e^{−x²}: the sign of Im z (erf(z̄) = conj erf(z)).
+        if self.im().is_zero() {
+            return ExactComplex::new(self.re().erf(dest, rm, cc), self.im().clone());
+        }
         if let Some(v) = self.erf_near_unit(dest, rm, cc) {
             return v;
         }
-        ziv_complex(dest, rm, |pw| self.erf_at(pw, dest, cc))
+        // The parts are only absolutely accurate (a tiny Im next to Re ≈ ±1, e^{-z²} phase,
+        // asymptotic remainders): the ball loop carries an error bound for each part and
+        // rounds a part only when the bound certifies it (ZF-68).
+        ziv_complex_ball(dest, rm, |q| self.erf_ball(q, dest, cc))
     }
 
     /// ZF-37: far from the imaginary axis erf(z) = ±1 ∓ erfc(±z) with |erfc(±z)| below half an
     /// ulp of 1 (e.g. z = 100001 + i/2, |erfc| ≈ 2^-1.4e10). The real part is then `±1 + δ`
     /// for a nonzero δ of known sign, which no Ziv loop can decide; it is rounded once by
     /// `round_offset` from the sign of the (correctly rounded) Re erfc. The imaginary part is
-    /// ∓Im erfc(±z), a normal value, under Ziv. `None` everywhere else.
+    /// ∓Im erfc(±z), a normal value, under the ball loop. `None` everywhere else.
     fn erf_near_unit(&self, dest: usize, rm: RoundingMode, cc: &mut Consts) -> Option<Self> {
         if self.re().is_zero() || self.im().is_zero() || use_faddeeva_series(self, dest) {
             return None;
@@ -284,11 +304,47 @@ impl ExactComplex {
             Ok(v) => ExactNum::from(v),
             Err(err) => return Some(nan_pair(err)),
         };
-        let im = ziv_complex(dest, rm, |pw| {
-            let v = self.erf_off_axis(pw, dest, cc);
-            ExactComplex::new(ExactNum::from_u8(1, pw), v.im().clone())
+        let im = ziv_complex_ball(dest, rm, |q| {
+            let v = self.erf_off_axis_ball(q, dest, cc)?;
+            Some(CB::from_parts(
+                RB::exact(ExactNum::from_u8(1, WORD_BIT_SIZE)),
+                v.im,
+            ))
         });
         Some(ExactComplex::new(re, im.im().clone()))
+    }
+
+    /// For `Re z < 0` past the series switch, `erfc(z) = 2 − erfc(−z)` with `|erfc(−z)|` below
+    /// half an ulp of 2: the real part is `2 − δ` with δ of known sign, rounded once by
+    /// `round_offset`; the imaginary part is `−Im erfc(−z)`, relatively accurate with no
+    /// cancellation, rounded with the mirrored mode. Mirrors [`Self::erf_near_unit`]; without it the loop had to widen to
+    /// |log2 δ| bits to see the real part (ZF-68; erfc(−76) took 60 s).
+    fn erfc_near_two(&self, dest: usize, rm: RoundingMode, cc: &mut Consts) -> Option<Self> {
+        if !self.re().is_negative() || self.re().is_zero() || use_faddeeva_series(self, dest) {
+            return None;
+        }
+        let w = neg_c(self.clone());
+        let er = w.erfc_word(dest, RoundingMode::ToEven, cc).re().clone();
+        if er.is_nan() || er.is_zero() {
+            return None;
+        }
+        if er.exponent()? >= -(dest as Exponent) - 2 {
+            return None;
+        }
+        let toward = if er.is_negative() { crate::Sign::Pos } else { crate::Sign::Neg };
+        let re = match crate::num::ExactNumNumber::from_i8(2, WORD_BIT_SIZE)
+            .and_then(|b| crate::num::ExactNumNumber::round_offset(&b, toward, dest, rm))
+        {
+            Ok(v) => ExactNum::from(v),
+            Err(err) => return Some(nan_pair(err)),
+        };
+        let mirrored = match rm {
+            RoundingMode::Up => RoundingMode::Down,
+            RoundingMode::Down => RoundingMode::Up,
+            other => other,
+        };
+        let im = w.erfc_word(dest, mirrored, cc).im().clone().neg();
+        Some(ExactComplex::new(re, im))
     }
 
     /// Complementary error function via Faddeeva: \(\mathrm{erfc}(z)=e^{-z^2}w(iz)\).
@@ -313,7 +369,18 @@ impl ExactComplex {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
         let dest = round_p(p);
-        ziv_complex(dest, rm, |pw| self.erfc_at(pw, dest, cc))
+        if !finite_parts(self) {
+            return ziv_complex(dest, rm, |pw| self.erfc_at_plain(pw, dest, cc));
+        }
+        // Real axis: the real erfc (correctly rounded, including 2 − δ). The imaginary part
+        // is a zero signed by the limit Im erfc(x + iε) = −ε·(2/√π)e^{−x²}: opposite to Im z.
+        if self.im().is_zero() {
+            return ExactComplex::new(self.re().erfc(dest, rm, cc), self.im().clone().neg());
+        }
+        if let Some(v) = self.erfc_near_two(dest, rm, cc) {
+            return v;
+        }
+        ziv_complex_ball(dest, rm, |q| self.erfc_ball(q, dest, cc))
     }
 
     /// Gamma \(\Gamma(z)\). Poles at non-positive integers → NaN.
@@ -422,7 +489,9 @@ impl ExactComplex {
         ziv_complex(round_p(p), rm, |pw| self.digamma_at(pw, cc))
     }
 
-    fn erf_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+    // One-shot forms kept for non-finite operands only (their NaN kinds are the contract there);
+    // finite operands use the ball forms below.
+    fn erf_at_plain(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         // On the real axis the imaginary part is exactly zero: the complex path only leaves rounding noise
         // there, which never rounds.
         if self.im().is_zero() {
@@ -431,60 +500,60 @@ impl ExactComplex {
         // On the imaginary axis erf(±0 + iy) = ±0 + i·erfi(y) (erf is odd and real on the real
         // axis): the real part is that exact signed zero, not the rounding noise of 1 − erfc.
         if self.re().is_zero() {
-            let v = self.erf_off_axis(work_p, dest_p, cc);
+            let v = self.erf_off_axis_plain(work_p, dest_p, cc);
             let (_, im) = v.into_parts();
             return ExactComplex::new(self.re().clone(), im);
         }
-        self.erf_off_axis(work_p, dest_p, cc)
+        self.erf_off_axis_plain(work_p, dest_p, cc)
     }
 
-    fn erf_off_axis(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+    fn erf_off_axis_plain(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         if use_faddeeva_series(self, dest_p) {
-            Self::erf_power_series(self, work_p, cc)
+            Self::erf_power_series_plain(self, work_p, cc)
         } else {
             ExactComplex::one(work_p).sub(
-                &self.erfc_via_faddeeva(work_p, dest_p, cc),
+                &self.erfc_via_faddeeva_plain(work_p, dest_p, cc),
                 work_p,
                 RoundingMode::None,
             )
         }
     }
 
-    fn erfc_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+    fn erfc_at_plain(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         if self.im().is_zero() {
             return ExactComplex::from_real(self.re().erfc(work_p, RoundingMode::None, cc), work_p);
         }
         // erfc(±0 + iy) = 1 − i·erfi(y): the real part is exactly 1.
         if self.re().is_zero() {
-            let (_, im) = self.erf_off_axis(work_p, dest_p, cc).into_parts();
+            let (_, im) = self.erf_off_axis_plain(work_p, dest_p, cc).into_parts();
             return ExactComplex::new(ExactNum::from_u8(1, work_p), im.neg());
         }
         if use_faddeeva_series(self, dest_p) {
             ExactComplex::one(work_p).sub(
-                &Self::erf_power_series(self, work_p, cc),
+                &Self::erf_power_series_plain(self, work_p, cc),
                 work_p,
                 RoundingMode::None,
             )
         } else {
-            self.erfc_via_faddeeva(work_p, dest_p, cc)
+            self.erfc_via_faddeeva_plain(work_p, dest_p, cc)
         }
     }
 
     /// `erfc(z) = e^{-z²} w(iz)`, with the reflection form when `Re(z) ≤ 0`.
-    fn erfc_via_faddeeva(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+    fn erfc_via_faddeeva_plain(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         let z2 = self.mul(self, work_p, RoundingMode::None);
         let em = neg_c(z2).exp(work_p, RoundingMode::None, cc);
         let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);
         if re_positive(self) {
             em.mul(
-                &Self::faddeeva(&iz, work_p, dest_p, cc),
+                &Self::faddeeva_plain(&iz, work_p, dest_p, cc),
                 work_p,
                 RoundingMode::None,
             )
         } else {
             two_c(work_p).sub(
                 &em.mul(
-                    &Self::faddeeva(&neg_c(iz), work_p, dest_p, cc),
+                    &Self::faddeeva_plain(&neg_c(iz), work_p, dest_p, cc),
                     work_p,
                     RoundingMode::None,
                 ),
@@ -495,7 +564,7 @@ impl ExactComplex {
     }
 
     /// Faddeeva \(w(z)=e^{-z^2}\mathrm{erfc}(-iz)\). Reduces to \(\mathrm{Im}\,z\ge 0\).
-    fn faddeeva(z: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+    fn faddeeva_plain(z: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         if im_negative_or_neg_real(z) {
             let z2 = z.mul(z, work_p, RoundingMode::None);
             let two_exp = two_c(work_p).mul(
@@ -504,26 +573,26 @@ impl ExactComplex {
                 RoundingMode::None,
             );
             return two_exp.sub(
-                &Self::faddeeva_upper(&z.neg_via_mul(), work_p, dest_p, cc),
+                &Self::faddeeva_upper_plain(&z.neg_via_mul(), work_p, dest_p, cc),
                 work_p,
                 RoundingMode::None,
             );
         }
-        Self::faddeeva_upper(z, work_p, dest_p, cc)
+        Self::faddeeva_upper_plain(z, work_p, dest_p, cc)
     }
 
-    fn faddeeva_upper(z: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+    fn faddeeva_upper_plain(z: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         if use_faddeeva_series(z, dest_p) {
-            Self::faddeeva_series(z, work_p, cc)
+            Self::faddeeva_series_plain(z, work_p, cc)
         } else {
-            Self::faddeeva_asymp(z, work_p, cc)
+            Self::faddeeva_asymp_plain(z, work_p, cc)
         }
     }
 
     /// Poppe–Wijers power series: \(w(z)=e^{-z^2}(1-\mathrm{erf}(-iz))\).
-    fn faddeeva_series(z: &Self, p: usize, cc: &mut Consts) -> Self {
+    fn faddeeva_series_plain(z: &Self, p: usize, cc: &mut Consts) -> Self {
         let u = neg_c(ExactComplex::i(p)).mul(z, p, RoundingMode::None);
-        let erf_u = Self::erf_power_series(&u, p, cc);
+        let erf_u = Self::erf_power_series_plain(&u, p, cc);
         let erfc_u = ExactComplex::one(p).sub(&erf_u, p, RoundingMode::None);
         let z2 = z.mul(z, p, RoundingMode::None);
         neg_c(z2)
@@ -535,7 +604,7 @@ impl ExactComplex {
     ///
     /// Terms reach \(\approx e^{\lvert u\rvert^2}\) while the sum can be \(O(1)\), so the series
     /// runs with `1.5·bound(|u|²) + 16` guard bits (\(\log_2 e<1.5\)).
-    fn erf_power_series(u: &Self, dest_p: usize, cc: &mut Consts) -> Self {
+    fn erf_power_series_plain(u: &Self, dest_p: usize, cc: &mut Consts) -> Self {
         let p = dest_p + erf_series_guard_bits(u);
         let pi = cc.pi(p, RoundingMode::None);
         let sqrt_pi = pi.sqrt(p, RoundingMode::None);
@@ -562,7 +631,7 @@ impl ExactComplex {
     }
 
     /// \(w(z)\sim i/(z\sqrt\pi)\sum(2m-1)!!/(2z^2)^m\) for \(\mathrm{Im}\,z\ge 0\).
-    fn faddeeva_asymp(z: &Self, p: usize, cc: &mut Consts) -> Self {
+    fn faddeeva_asymp_plain(z: &Self, p: usize, cc: &mut Consts) -> Self {
         let z2 = z.mul(z, p, RoundingMode::None);
         let two_z2 = two_c(p).mul(&z2, p, RoundingMode::None);
         let mut term = ExactComplex::one(p);
@@ -592,6 +661,227 @@ impl ExactComplex {
         ExactComplex::i(p)
             .div(&den, p, RoundingMode::None)
             .mul(&s, p, RoundingMode::None)
+    }
+
+    /// `erf` of a ball `w`: the library `erf` at the center (each part within 4 ulps at `q`)
+    /// plus the propagated radius \(\max|\mathrm{erf}'|\cdot|\delta|\) with
+    /// \(|\mathrm{erf}'(W)| = \tfrac{2}{\sqrt\pi}|e^{-W^2}| \le \tfrac{2}{\sqrt\pi}e^{-\mathrm{Re}\,w^2}
+    /// e^{2|w||\delta|+|\delta|^2} < 4e^{-\mathrm{Re}\,w^2}\) for \(|w||\delta| \le 1/8\),
+    /// \(|\delta| \le 1/4\). `None` when the ball is too wide for that bound.
+    pub(crate) fn erf_of_ball(w: &CB, q: usize, cc: &mut Consts) -> Option<CB> {
+        let c = ExactComplex::new(w.re.v.clone(), w.im.v.clone());
+        let v = c.erf(q, RoundingMode::None, cc);
+        let re = RB::rounded(v.re().clone(), q)?;
+        let im = RB::rounded(v.im().clone(), q)?;
+        let d = w.re.r.add(w.im.r);
+        if d.is_zero() {
+            return Some(CB::from_parts(re, im));
+        }
+        let de = d.ub_exp()?;
+        let we = w.abs_ub().ub_exp().unwrap_or(Exponent::MIN / 2);
+        if de > -2 || de.saturating_add(we) > -3 {
+            return None;
+        }
+        // e^{-Re w²} = e^{im² − re²}, bounded from a 64-bit ball.
+        let wr = RB::exact(c.re().clone());
+        let wi = RB::exact(c.im().clone());
+        let g = wi.sqr(64)?.sub(&wr.sqr(64)?, 64)?;
+        let eg = g.exp(64, cc)?.abs_ub();
+        Some(CB::from_parts(re, im).widen(eg.mul(d).mul_pow2(2)))
+    }
+
+    fn erf_ball(&self, q: usize, dest_p: usize, cc: &mut Consts) -> Option<CB> {
+        // On the real axis the imaginary part is exactly zero (+0, as `from_real`).
+        if self.im().is_zero() {
+            return Some(CB::from_real(RB::rounded(
+                self.re().erf(q, RoundingMode::None, cc),
+                q,
+            )?));
+        }
+        // On the imaginary axis erf(±0 + iy) = ±0 + i·erfi(y) (erf is odd and real on the real
+        // axis): the real part is that exact signed zero.
+        if self.re().is_zero() {
+            let v = self.erf_off_axis_ball(q, dest_p, cc)?;
+            return Some(CB::from_parts(RB::exact(self.re().clone()), v.im));
+        }
+        self.erf_off_axis_ball(q, dest_p, cc)
+    }
+
+    fn erf_off_axis_ball(&self, q: usize, dest_p: usize, cc: &mut Consts) -> Option<CB> {
+        if use_faddeeva_series(self, dest_p) {
+            Self::erf_series_ball(self, q, cc)
+        } else {
+            CB::int(1).sub(&self.erfc_via_faddeeva_ball(q, dest_p, cc)?, q)
+        }
+    }
+
+    fn erfc_ball(&self, q: usize, dest_p: usize, cc: &mut Consts) -> Option<CB> {
+        if self.im().is_zero() {
+            return Some(CB::from_real(RB::rounded(
+                self.re().erfc(q, RoundingMode::None, cc),
+                q,
+            )?));
+        }
+        // erfc(±0 + iy) = 1 − i·erfi(y): the real part is exactly 1.
+        if self.re().is_zero() {
+            let v = self.erf_off_axis_ball(q, dest_p, cc)?;
+            return Some(CB::from_parts(
+                RB::exact(ExactNum::from_u8(1, WORD_BIT_SIZE)),
+                v.im.neg(),
+            ));
+        }
+        if use_faddeeva_series(self, dest_p) {
+            CB::int(1).sub(&Self::erf_series_ball(self, q, cc)?, q)
+        } else {
+            self.erfc_via_faddeeva_ball(q, dest_p, cc)
+        }
+    }
+
+    /// `erfc(z) = e^{-z²} w(iz)`, with the reflection form when `Re(z) ≤ 0`.
+    fn erfc_via_faddeeva_ball(&self, q: usize, dest_p: usize, cc: &mut Consts) -> Option<CB> {
+        let z = CB::exact(self);
+        let em = z.mul(&z, q)?.neg().exp(q, cc)?;
+        let iz = ExactComplex::new(self.im().clone().neg(), self.re().clone());
+        if re_positive(self) {
+            em.mul(&Self::faddeeva_ball(&iz, q, dest_p, cc)?, q)
+        } else {
+            let w = Self::faddeeva_ball(&neg_c(iz), q, dest_p, cc)?;
+            CB::int(2).sub(&em.mul(&w, q)?, q)
+        }
+    }
+
+    /// Faddeeva \(w(z)=e^{-z^2}\mathrm{erfc}(-iz)\). Reduces to \(\mathrm{Im}\,z\ge 0\) by
+    /// \(w(z) = 2e^{-z^2} - w(-z)\). `z` is exact.
+    fn faddeeva_ball(z: &Self, q: usize, dest_p: usize, cc: &mut Consts) -> Option<CB> {
+        if im_negative_or_neg_real(z) {
+            let zb = CB::exact(z);
+            let two_exp = zb.mul(&zb, q)?.neg().exp(q, cc)?.scale2(1)?;
+            return two_exp.sub(
+                &Self::faddeeva_upper_ball(&neg_c(z.clone()), q, dest_p, cc)?,
+                q,
+            );
+        }
+        Self::faddeeva_upper_ball(z, q, dest_p, cc)
+    }
+
+    fn faddeeva_upper_ball(z: &Self, q: usize, dest_p: usize, cc: &mut Consts) -> Option<CB> {
+        if !use_faddeeva_series(z, dest_p) {
+            if let Some(w) = Self::faddeeva_asymp_ball(z, q, cc) {
+                return Some(w);
+            }
+        }
+        Self::faddeeva_series_ball(z, q, cc)
+    }
+
+    /// Poppe–Wijers power series: \(w(z)=e^{-z^2}(1-\mathrm{erf}(-iz))\).
+    fn faddeeva_series_ball(z: &Self, q: usize, cc: &mut Consts) -> Option<CB> {
+        let u = ExactComplex::new(z.im().clone(), z.re().clone().neg());
+        let erfc_u = CB::int(1).sub(&Self::erf_series_ball(&u, q, cc)?, q)?;
+        let zb = CB::exact(z);
+        zb.mul(&zb, q)?.neg().exp(q, cc)?.mul(&erfc_u, q)
+    }
+
+    /// Entire power series \(\mathrm{erf}(u)=\frac{2}{\sqrt\pi}\sum a_n\),
+    /// \(a_n=(-1)^n u^{2n+1}/(n!(2n+1))\), `u` exact, as a ball.
+    ///
+    /// Terms reach \(\approx e^{\lvert u\rvert^2}\) while the sum can be \(O(1)\), so the series
+    /// runs with `1.5·bound(|u|²) + 16` guard bits (\(\log_2 e<1.5\)); the radius records the
+    /// rounding of every term. It stops at a term below \(2^{-p}\) once \(n+1 \ge 2|u|^2\):
+    /// from there \(|a_{k+1}/a_k| \le |u|^2/(k+1) \le 1/2\), so the tail is at most
+    /// \(|a_n|\), which is added to the radius. A sum that has not stopped within the term
+    /// limit is `None` (never a truncation).
+    fn erf_series_ball(u: &Self, dest_p: usize, cc: &mut Consts) -> Option<CB> {
+        let guard = erf_series_guard_bits(u);
+        let p = dest_p + guard;
+        let pi = RB::rounded(cc.pi(p, RoundingMode::None), p)?;
+        let scale = RB::exact(ExactNum::from_u8(2, WORD_BIT_SIZE)).div(&pi.sqrt(p)?, p)?;
+        let ub = CB::exact(u);
+        let mu2 = ub.mul(&ub, p)?.neg();
+        let u_abs = ub.abs_ub();
+        let two_u2 = u_abs.mul(u_abs).mul_pow2(1);
+        let mut term = ub.clone();
+        let mut sum = ub;
+        let cap = series_term_cap(p).saturating_add(guard.saturating_mul(3));
+        for n in 1..=cap {
+            let n32 = u32::try_from(n).ok()?;
+            let k2 = n32.checked_mul(2)?.checked_add(1)?;
+            term = term
+                .mul(&mu2, p)?
+                .div_real(&RB::exact(ExactNum::from_u32(n32, WORD_BIT_SIZE)), p)?;
+            let a = term.div_real(&RB::exact(ExactNum::from_u32(k2, WORD_BIT_SIZE)), p)?;
+            sum = sum.add(&a, p)?;
+            let am = a.abs_ub();
+            let small = am
+                .ub_exp()
+                .is_none_or(|e| e.saturating_add(p as Exponent) < 0);
+            // 2|u|² ≤ n + 1: 2|u|² < 2^k ≤ n + 1 with k = floor(log2(n + 1)).
+            let k = Exponent::from(63 - ((n as u64) + 1).leading_zeros());
+            let ratio_ok = two_u2.ub_exp().is_none_or(|e| e <= k);
+            if small && ratio_ok {
+                return sum.widen(am).mul_real(&scale, p);
+            }
+        }
+        None
+    }
+
+    /// \(w(z)\sim i/(z\sqrt\pi)\sum_m(2m-1)!!/(2z^2)^m\) for \(\mathrm{Im}\,z > 0\), `z` exact,
+    /// as a ball. This is DLMF 7.12.1 for \(\mathrm{erfc}\,\zeta\), \(\zeta=-iz\); the remainder
+    /// after the last summed term is bounded by the first neglected term when
+    /// \(|\mathrm{ph}\,\zeta|\le\pi/4\) (\(\mathrm{Im}\,z\ge|\mathrm{Re}\,z|\)) and by
+    /// \(\csc(2|\mathrm{ph}\,\zeta|)=|z|^2/(2|\mathrm{Re}\,z|\,\mathrm{Im}\,z)\) times it for
+    /// \(\pi/4\le|\mathrm{ph}\,\zeta|<\pi/2\) (DLMF 7.12(i)); that bound is added to the radius.
+    /// `None` on the real axis (no bound), when the terms grow before one falls below
+    /// \(2^{-q}\) (the expansion's smallest term is about \(e^{-|z|^2}\); ZF-68), or when the
+    /// term limit is reached.
+    fn faddeeva_asymp_ball(z: &Self, q: usize, cc: &mut Consts) -> Option<CB> {
+        if z.im().is_zero() || z.im().is_negative() {
+            return None;
+        }
+        let zb = CB::exact(z);
+        let two_z2 = zb.mul(&zb, q)?.scale2(1)?;
+        let lo2 = match (two_z2.re.lo_exp(), two_z2.im.lo_exp()) {
+            (Some(a), Some(b)) => a.max(b),
+            (Some(a), None) | (None, Some(a)) => a,
+            (None, None) => return None,
+        };
+        let mut term = CB::int(1);
+        let mut s = CB::int(1);
+        let mut prev_e: Option<Exponent> = None;
+        for m in 1..=series_term_cap(q) {
+            let odd = u32::try_from(2 * m - 1).ok()?;
+            term = term
+                .mul_real(&RB::exact(ExactNum::from_u32(odd, WORD_BIT_SIZE)), q)?
+                .div(&two_z2, q)?;
+            s = s.add(&term, q)?;
+            let tm = term.abs_ub();
+            let e = tm.ub_exp()?;
+            if e.saturating_add(q as Exponent) < 0 {
+                // First neglected term: |term|·(2m+1)/|2z²|.
+                let next = tm.mul_u64(2 * m as u64 + 1).mul_pow2(-lo2);
+                let k = Self::asymp_csc_bound(z)?;
+                s = s.widen(next.mul(k));
+                let sqrt_pi = RB::rounded(cc.pi(q, RoundingMode::None), q)?.sqrt(q)?;
+                let den = zb.mul_real(&sqrt_pi, q)?;
+                return CB::i().div(&den, q)?.mul(&s, q);
+            }
+            if prev_e.is_some_and(|pe| e > pe) {
+                return None;
+            }
+            prev_e = Some(e);
+        }
+        None
+    }
+
+    /// Upper bound of the DLMF 7.12(i) remainder factor for `z` (`Im z > 0`): 1 when
+    /// `Im z ≥ |Re z|`, else `csc(2|ph ζ|) = |z|²/(2|Re z| Im z) < 2^(2e_max − e_re − e_im + 2)`.
+    fn asymp_csc_bound(z: &Self) -> Option<Mag> {
+        if z.re().is_zero() || matches!(z.im().abs_cmp(z.re()), Some(c) if c >= 0) {
+            return Some(Mag::pow2(0));
+        }
+        let er = z.re().exponent()?;
+        let ei = z.im().exponent()?;
+        let emax = er.max(ei);
+        Some(Mag::pow2(2 * emax - er - ei + 2))
     }
 
     pub(crate) fn gamma_at(&self, p: usize, cc: &mut Consts) -> Self {

@@ -3202,3 +3202,68 @@ fn zf_58_kelvin_and_complex_bessel_large_order() {
         assert!(same(&v, &want(exp)), "{what}: {v} want {exp}");
     }
 }
+
+/// ZF-18 / ZF-68: complex functions whose parts were certified by two approximations agreeing
+/// (`ziv_complex_agree`), which is not a bound: tiny parts beside large ones, cancellation in
+/// ln/atan/acos formulas, the e^{-z²} phase in erf/erfc/Fresnel. Each part now carries a
+/// rigorous error bound (midpoint-radius balls, analytic series-tail and DLMF 7.12(i)
+/// remainder bounds) and is rounded only when the bound certifies it. Also: the C99 sign of
+/// the imaginary part of acos on the cut, log(z, z) = 1 + 0i exactly, Fresnel zero parts on
+/// the axes signed by the limit rule, and erf/erfc on the real axis through the real
+/// functions (erfc(−76) took about 60 s). Expected values are FLINT-certified for nonzero
+/// parts (2p+64 bits; land39/zf18, zf18r, zf68, zf18t); zero parts follow C99 (acos) or were
+/// checked against mpmath at z ± 2^-300 (Fresnel); log(z, z) and ±1 − δ / 2 − δ rows are
+/// exact by construction.
+#[test]
+fn zf_18_68_complex_parts_carry_error_bounds() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf18.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let (f, p, rm) = (
+            t[0],
+            t[1].parse::<usize>().expect("p"),
+            mode(t[2]).expect("mode"),
+        );
+        let want = t[t.len() - 1];
+        let z = parse_complex(t[3]).expect("z");
+        let c = |i: usize| parse_complex(t[i]).expect("arg");
+        let v = match f {
+            "c.acos" => z.acos(p, rm, &mut cc),
+            "c.asin" => z.asin(p, rm, &mut cc),
+            "c.atan" => z.atan(p, rm, &mut cc),
+            "c.acosh" => z.acosh(p, rm, &mut cc),
+            "c.asinh" => z.asinh(p, rm, &mut cc),
+            "c.atanh" => z.atanh(p, rm, &mut cc),
+            "c.cosh" => z.cosh(p, rm, &mut cc),
+            "c.log1p" => z.log1p(p, rm, &mut cc),
+            "c.log" => z.log(&c(4), p, rm, &mut cc),
+            "c.pow" => z.pow(&c(4), p, rm, &mut cc),
+            "c.erf" => z.erf(p, rm, &mut cc),
+            "c.erfc" => z.erfc(p, rm, &mut cc),
+            "c.fresnel_s" => z.fresnel_s(p, rm, &mut cc),
+            "c.fresnel_c" => z.fresnel_c(p, rm, &mut cc),
+            "c.elliptic_k" => z.elliptic_k(p, rm, &mut cc),
+            "c.elliptic_e_complete" => z.elliptic_e_complete(p, rm, &mut cc),
+            "c.elliptic_pi_complete" => z.elliptic_pi_complete(&c(4), p, rm, &mut cc),
+            _ => panic!("function {f}"),
+        };
+        let got = fmt_c(&v);
+        // log(z, z) is exactly 1 + 0i: no inexact flag on either part.
+        if f == "c.log" && (v.re().inexact() || v.im().inexact()) {
+            bad.push(format!("{f}({}) p={p} {rm:?}: flagged inexact", t[3]));
+        }
+        if got != want {
+            bad.push(format!(
+                "{f}({}) p={p} {rm:?}\n    want {want}\n    got  {got}",
+                t[3..t.len() - 1].join(", ")
+            ));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "{} rows wrong:\n{}",
+        bad.len(),
+        bad.join("\n")
+    );
+}

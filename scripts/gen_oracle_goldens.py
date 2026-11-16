@@ -837,7 +837,10 @@ def complex_expect(op: str, p: int, rm: str, args: list[str]) -> dict:
         ax = abs(re)
         if not (ax > 1 and im == 0):
             raise ValueError(f"asin oracle is the real cut {args}")
+        # C99 G.6.2.2 / GNU MPC / glibc: casin(x + i0) = sgn(x)·π/2 + i·acosh|x| above the cut
+        # (+0), the conjugate below (-0). mpmath has no signed zero; take only |Im| from it.
         w = mp.asin(re)
+        w = mp.mpc(w.real, abs(w.imag))
         if below:
             w = mp.conj(w)
         return {"k": "c", "re": round_mpf(w.real, p, rm), "im": round_mpf(w.imag, p, rm)}

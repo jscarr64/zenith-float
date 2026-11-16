@@ -450,8 +450,10 @@ impl ExactComplex {
             return ExactComplex::from_real(INF_POS.clone(), dest);
         }
         if is_c_zero(self) {
-            let hp = pi_c(dest, cc);
-            return hp.div(&c_u32(2, dest), dest, rm);
+            // π/2 + 0i: π rounded once at (dest, rm), halved exactly. Rounding π at dest and
+            // then dividing at rm rounded twice (K(0) Up was 1 ulp low, ZF-18).
+            let hp = cc.pi(dest, rm).ldexp(-1, dest, rm);
+            return ExactComplex::from_real(hp, dest);
         }
         ziv_complex(dest, rm, |pw| self.elliptic_k_at(pw, cc))
     }
@@ -485,8 +487,10 @@ impl ExactComplex {
         }
         let dest = round_p(p);
         if is_c_zero(self) {
-            let hp = pi_c(dest, cc);
-            return hp.div(&c_u32(2, dest), dest, rm);
+            // π/2 + 0i: π rounded once at (dest, rm), halved exactly. Rounding π at dest and
+            // then dividing at rm rounded twice (K(0) Up was 1 ulp low, ZF-18).
+            let hp = cc.pi(dest, rm).ldexp(-1, dest, rm);
+            return ExactComplex::from_real(hp, dest);
         }
         if is_c_one(self, dest) {
             return ExactComplex::one(dest);

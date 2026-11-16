@@ -32,6 +32,7 @@ mod chebyshev;
 mod common;
 mod complex;
 mod complex_airy;
+mod complex_ball;
 mod complex_bessel;
 mod complex_ei;
 mod complex_elliptic;

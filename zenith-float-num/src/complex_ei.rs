@@ -1,6 +1,8 @@
 //! Complex `Ei`, `Si`, `Ci`, `li`, and Fresnel integrals.
 
 use crate::common::util::round_p;
+use crate::complex_ball::CB;
+use crate::complex_ball::RB;
 use crate::complex_special::half_c;
 use crate::complex_special::nan_pair;
 use crate::complex_special::neg_c;
@@ -220,7 +222,21 @@ impl ExactComplex {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
         let dest = round_p(p);
-        ziv_complex(dest, rm, |pw| self.fresnel_s_at(pw, cc))
+        if !finite_parts(self) {
+            let pw = dest + WORD_BIT_SIZE;
+            let mut v = self.fresnel_pair_plain(pw, cc).0;
+            let (mut re, mut im) = (v.re().clone(), v.im().clone());
+            let _ = re.set_precision(dest, rm);
+            let _ = im.set_precision(dest, rm);
+            v = ExactComplex::new(re, im);
+            return v;
+        }
+        if let Some(v) = self.fresnel_axis(true, dest, rm, cc) {
+            return v;
+        }
+        crate::complex_ball::ziv_complex_ball(dest, rm, |q| {
+            self.fresnel_pair_ball(q, cc).map(|pair| pair.0)
+        })
     }
 
     /// Fresnel cosine integral \(C(z)\). Entire.
@@ -243,7 +259,21 @@ impl ExactComplex {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
         let dest = round_p(p);
-        ziv_complex(dest, rm, |pw| self.fresnel_c_at(pw, cc))
+        if !finite_parts(self) {
+            let pw = dest + WORD_BIT_SIZE;
+            let mut v = self.fresnel_pair_plain(pw, cc).1;
+            let (mut re, mut im) = (v.re().clone(), v.im().clone());
+            let _ = re.set_precision(dest, rm);
+            let _ = im.set_precision(dest, rm);
+            v = ExactComplex::new(re, im);
+            return v;
+        }
+        if let Some(v) = self.fresnel_axis(false, dest, rm, cc) {
+            return v;
+        }
+        crate::complex_ball::ziv_complex_ball(dest, rm, |q| {
+            self.fresnel_pair_ball(q, cc).map(|pair| pair.1)
+        })
     }
 
     fn ei_at(&self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -389,7 +419,8 @@ impl ExactComplex {
             .ei_at(work_p, dest_p, cc)
     }
 
-    fn fresnel_pair(&self, p: usize, cc: &mut Consts) -> (Self, Self) {
+    /// One-shot `(S, C)` from complex `erf` (non-finite operands keep its NaN results).
+    fn fresnel_pair_plain(&self, p: usize, cc: &mut Consts) -> (Self, Self) {
         let sqrt_pi =
             ExactComplex::from_real(cc.pi(p, RoundingMode::None).sqrt(p, RoundingMode::None), p);
         let scale = sqrt_pi
@@ -428,13 +459,129 @@ impl ExactComplex {
         (s, c)
     }
 
-    fn fresnel_s_at(&self, p: usize, cc: &mut Consts) -> Self {
-        self.fresnel_pair(p, cc).0
+    /// Fresnel `S`/`C` on an axis, from the real functions (DLMF 7.4.7–7.4.8: `S(iy) = −i S(y)`,
+    /// `C(iy) = i C(y)`). The zero part is signed as its limit from the side of the operand's
+    /// signed zero: `Im S(x ± iε) = ±ε sin(πx²/2) + O(ε³)` (and `∓ε³π cos(πx²/2)/6` where the sine
+    /// vanishes), and likewise for `C` with `cos`/`sin` and for the imaginary axis.
+    /// `None` off the axes and for non-finite parts.
+    fn fresnel_axis(
+        &self,
+        sine: bool,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Option<Self> {
+        let (re, im) = (self.re(), self.im());
+        if re.is_nan() || im.is_nan() || re.is_inf() || im.is_inf() {
+            return None;
+        }
+        let real_fn = |x: &ExactNum, rm: RoundingMode, cc: &mut Consts| {
+            if sine {
+                x.fresnel_s(p, rm, cc)
+            } else {
+                x.fresnel_c(p, rm, cc)
+            }
+        };
+        let zero = |neg: bool| if neg { ExactNum::new(p).neg() } else { ExactNum::new(p) };
+        if im.is_zero() {
+            let (s, c) = pi_half_sq_signs(re)?;
+            let sigma = if im.is_negative() { -1 } else { 1 };
+            let sgn = if sine {
+                if s != 0 {
+                    sigma * s
+                } else {
+                    -sigma * c
+                }
+            } else if c != 0 {
+                sigma * c
+            } else {
+                sigma * s
+            };
+            return Some(ExactComplex::new(real_fn(re, rm, cc), zero(sgn < 0)));
+        }
+        if re.is_zero() {
+            let (s, c) = pi_half_sq_signs(im)?;
+            let sigma = if re.is_negative() { -1 } else { 1 };
+            let sgn = if sine {
+                if s != 0 {
+                    -sigma * s
+                } else {
+                    sigma * c
+                }
+            } else if c != 0 {
+                sigma * c
+            } else {
+                sigma * s
+            };
+            let v = if sine {
+                let mirrored = match rm {
+                    RoundingMode::Up => RoundingMode::Down,
+                    RoundingMode::Down => RoundingMode::Up,
+                    other => other,
+                };
+                real_fn(im, mirrored, cc).neg()
+            } else {
+                real_fn(im, rm, cc)
+            };
+            return Some(ExactComplex::new(zero(sgn < 0), v));
+        }
+        None
     }
 
-    fn fresnel_c_at(&self, p: usize, cc: &mut Consts) -> Self {
-        self.fresnel_pair(p, cc).1
+    /// `(S, C)` as balls: `S ± iC`-type combinations of `erf((1 ∓ i)√π z/2)` (DLMF 7.5.7),
+    /// with the erf arguments' rounding carried by [`ExactComplex::erf_of_ball`].
+    fn fresnel_pair_ball(&self, q: usize, cc: &mut Consts) -> Option<(CB, CB)> {
+        let sqrt_pi = RB::rounded(cc.pi(q, RoundingMode::None), q)?.sqrt(q)?;
+        let scale = CB::exact(self).mul_real(&sqrt_pi, q)?.scale2(-1)?;
+        let one = || RB::exact(ExactNum::from_u8(1, WORD_BIT_SIZE));
+        let one_p_i = CB::from_parts(one(), one());
+        let one_m_i = CB::from_parts(one(), one().neg());
+        let erf_m = ExactComplex::erf_of_ball(&one_m_i.mul(&scale, q)?, q, cc)?;
+        let erf_p = ExactComplex::erf_of_ball(&one_p_i.mul(&scale, q)?, q, cc)?;
+        let c_plus_is = one_p_i.scale2(-1)?.mul(&erf_m, q)?;
+        let c_minus_is = one_m_i.scale2(-1)?.mul(&erf_p, q)?;
+        // S = (c+ − c−)/(2i) = −i (c+ − c−)/2, C = (c+ + c−)/2.
+        let s = c_plus_is.sub(&c_minus_is, q)?.mul_neg_i().scale2(-1)?;
+        let c = c_plus_is.add(&c_minus_is, q)?.scale2(-1)?;
+        Some((s, c))
     }
+}
+
+fn finite_parts(z: &ExactComplex) -> bool {
+    !z.re().is_nan() && !z.im().is_nan() && !z.re().is_inf() && !z.im().is_inf()
+}
+
+/// Signs (−1, 0, 1) of `sin(πx²/2)` and `cos(πx²/2)`, exactly, from `t = x²/2 mod 2`.
+fn pi_half_sq_signs(x: &ExactNum) -> Option<(i32, i32)> {
+    let t = x.mul_full_prec(x).ldexp(
+        -1,
+        x.mantissa_max_bit_len()?.saturating_mul(2) + WORD_BIT_SIZE,
+        RoundingMode::None,
+    );
+    let r = t.rem(&ExactNum::from_u8(2, WORD_BIT_SIZE));
+    let at = |k: u8, d: i64| {
+        let v = ExactNum::from_u8(k, WORD_BIT_SIZE).ldexp(d, WORD_BIT_SIZE, RoundingMode::None);
+        r.compare(&v)
+    };
+    let c0 = r.compare(&ExactNum::new(WORD_BIT_SIZE))?; // r ≥ 0
+    let c_half = at(1, -1)?;
+    let c_one = at(1, 0)?;
+    let c_3half = at(3, -1)?;
+    let sin = if c0 == 0 || c_one == 0 {
+        0
+    } else if c_one < 0 {
+        1
+    } else {
+        -1
+    };
+    let cos = if c_half == 0 || c_3half == 0 {
+        0
+    } else if c_half < 0 || c_3half > 0 {
+        1
+    } else {
+        -1
+    };
+    Some((sin, cos))
 }
 
 #[cfg(test)]
