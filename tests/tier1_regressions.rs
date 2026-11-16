@@ -3734,3 +3734,43 @@ fn zf_37_bessel_y_k_tiny_and_extreme_x() {
     }
     assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// ZF-56: Anger \(\mathbf{J}_\nu\), Weber \(\mathbf{E}_\nu\), and Struve
+/// \(\mathbf{H}_\nu\). The 11.6.1 path for \(\mathbf{H}_0(100)\) had a relative
+/// error of 2.7e-5 because the term recurrence divided by \((\nu-k-1/2)\) instead
+/// of multiplying; at this argument that is exactly the factor-of-four error in
+/// \(t_1\). \(A_\nu\) at large \(z\) uses the Laplace / Watson expansion
+/// (DLMF 11.11.4) with a Cauchy remainder (panels otherwise). Expected values
+/// are dual-precision mpmath (4096 and 8192 bits) that agree after rounding in
+/// every mode (land39/zf56/gen.py), except \(\mathbf{H}_{-3/2}(0)\) and
+/// \(\mathbf{H}_{-5/2}(0)\), which are 0 by the closed form in RC-4 (mpmath
+/// reports ±Inf).
+#[test]
+fn zf_56_anger_weber_struve_correctly_rounded() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf56.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let z = parse_real(t[1]).expect("z");
+        let nu = parse_real(t[2]).expect("nu");
+        let p = t[3].parse::<usize>().expect("p");
+        let rm = mode(t[4]).expect("mode");
+        let v = match t[0] {
+            "r.struve_h" => z.struve_h(&nu, p, rm, &mut cc),
+            "r.anger_j" => z.anger_j(&nu, p, rm, &mut cc),
+            "r.weber_e" => z.weber_e(&nu, p, rm, &mut cc),
+            _ => panic!("function"),
+        };
+        if fmt_real(&v) != t[5] {
+            bad.push(format!(
+                "{}(z={}, ν={}) p={p} {rm:?}: {} want {}",
+                t[0],
+                t[1],
+                t[2],
+                fmt_real(&v),
+                t[5]
+            ));
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+}

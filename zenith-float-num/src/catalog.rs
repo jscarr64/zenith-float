@@ -5,7 +5,6 @@
 //! Meijer \(G\), Fox \(H\), and Heun live in `heun_fox`.
 
 use crate::defs::WORD_BIT_SIZE;
-use crate::quadrature::tanh_sinh;
 use crate::Consts;
 use crate::Error;
 use crate::ExactComplex;
@@ -13,6 +12,9 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use alloc::vec::Vec;
 use core::ops::Neg;
+
+#[path = "catalog_aws.rs"]
+mod catalog_aws;
 
 pub(crate) fn work_p(p: usize) -> usize {
     p.saturating_add(WORD_BIT_SIZE.saturating_mul(2))
@@ -73,10 +75,6 @@ fn factorial_n(n: usize, p: usize) -> ExactNum {
         acc = acc.mul(&ExactNum::from_u32(k as u32, p), p, RoundingMode::None);
     }
     acc
-}
-
-fn abs_lt(x: &ExactNum, bound: u32, p: usize) -> bool {
-    matches!(x.abs_cmp(&ExactNum::from_u32(bound, p)), Some(c) if c < 0)
 }
 
 pub(crate) fn small_int(x: &ExactNum, p: usize, lo: i32, hi: i32) -> Option<i32> {
@@ -798,26 +796,6 @@ fn clausen_cl3_series(theta_abs: &ExactNum, p: usize, bits: usize, cc: &mut Cons
     z3.sub(&integ, p, RoundingMode::None)
 }
 
-/// \(\mathbf{E}_0(z)=-(4/\pi)\sum_{k\ge0} J_{2k+1}(z)/(2k+1)\).
-fn weber_e0(z: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
-    let pi = cc.pi(p, RoundingMode::None);
-    let scale = ExactNum::from_u8(4, p).div(&pi, p, RoundingMode::None);
-    let mut sum = ExactNum::new(p);
-    for k in 0..series_cap(p) {
-        let n = 2 * k + 1;
-        let term = z.bessel_j(n, p, RoundingMode::None, cc).div(
-            &ExactNum::from_u32(n as u32, p),
-            p,
-            RoundingMode::None,
-        );
-        sum = sum.add(&term, p, RoundingMode::None);
-        if under_word(&term, p) {
-            break;
-        }
-    }
-    scale.mul(&sum, p, RoundingMode::None).neg()
-}
-
 /// Ziv loop for a catalog kernel. `f(wp)` returns a value and its correct bits `s`
 /// (`|error| < 2^(e(v) - s - 1)`); `f` is retried with more precision until the value
 /// rounds to `p` bits with certainty. Past `8p + 16384` bits the answer is NaN, never a guess.
@@ -1301,7 +1279,9 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: power series (DLMF 11.2.1). For large `|x|` uses \(Y_\nu+(2/\pi)\) particular.
+    /// - Algorithm: power series (DLMF 11.2.1) with a tail bound and cancellation guard;
+    ///   DLMF 11.6.1 (\(Y_\nu+K_\nu\)) only when \(z>0\) and \(m\ge\nu-1/2\), so the remainder
+    ///   is of the same sign as and no larger than the first omitted term.
     ///
     /// Accuracy: unspecified
     pub fn struve_h(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -1317,86 +1297,17 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::struve_h`].
     fn struve_h_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !finite(self) || !finite(nu) {
-            return cat_nan();
-        }
-        let wrk = work_p(p);
-        if !abs_lt(self, 16, wrk) && self.is_positive() {
-            let y = self.bessel_y(nu, wrk, RoundingMode::None, cc);
-            let two = ExactNum::from_u8(2, wrk);
-            let pi = cc.pi(wrk, RoundingMode::None);
-            let half = ExactNum::from_u8(1, wrk).div(&two, wrk, RoundingMode::None);
-            let pref = ExactNum::div_ref(self, &two, wrk, RoundingMode::None)
-                .pow(
-                    &ExactNum::from_u8(1, wrk)
-                        .div(&two, wrk, RoundingMode::None)
-                        .neg()
-                        .add(nu, wrk, RoundingMode::None),
-                    wrk,
-                    RoundingMode::None,
-                    cc,
-                )
-                .mul(&two, wrk, RoundingMode::None)
-                .div(
-                    &pi.mul(
-                        &ExactNum::from_u8(1, wrk)
-                            .div(&two, wrk, RoundingMode::None)
-                            .add(nu, wrk, RoundingMode::None)
-                            .gamma(wrk, RoundingMode::None, cc),
-                        wrk,
-                        RoundingMode::None,
-                    )
-                    .mul(
-                        &half.gamma(wrk, RoundingMode::None, cc),
-                        wrk,
-                        RoundingMode::None,
-                    ),
-                    wrk,
-                    RoundingMode::None,
-                );
-            return finish(y.add(&pref, wrk, RoundingMode::None), p, rm);
-        }
-        let two = ExactNum::from_u8(2, wrk);
-        let half = ExactNum::div_ref(self, &two, wrk, RoundingMode::None);
-        let z2 = half.sqr(wrk, RoundingMode::None);
-        let three_half = ExactNum::from_u8(3, wrk).div(&two, wrk, RoundingMode::None);
-        let mut sum = ExactNum::new(wrk);
-        let mut zk = ExactNum::from_u8(1, wrk);
-        let mut sign = 1i32;
-        for k in 0..=series_cap(wrk) {
-            let gk1 = ExactNum::from_u32(k as u32, wrk)
-                .add(&three_half, wrk, RoundingMode::None)
-                .gamma(wrk, RoundingMode::None, cc);
-            let gk2 = ExactNum::from_u32(k as u32, wrk)
-                .add(nu, wrk, RoundingMode::None)
-                .add(&three_half, wrk, RoundingMode::None)
-                .gamma(wrk, RoundingMode::None, cc);
-            let mut term = ExactNum::div_ref(
-                &zk,
-                &gk1.mul(&gk2, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            );
-            if sign < 0 {
-                term = term.neg();
-            }
-            sum = sum.add(&term, wrk, RoundingMode::None);
-            if under_word_rel(&term, &sum, p) {
-                break;
-            }
-            zk = zk.mul(&z2, wrk, RoundingMode::None);
-            sign = -sign;
-        }
-        let pref = half.pow(
-            &ExactNum::from_u8(1, wrk).add(nu, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-            cc,
-        );
-        finish(pref.mul(&sum, wrk, RoundingMode::None), p, rm)
+        catalog_aws::struve_h_word(self, nu, p, rm, cc)
     }
 
     /// Anger \(\mathbf{J}_\nu(\mathrm{self})\). Integer \(\nu\) reduces to Bessel \(J\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Maclaurin series (DLMF 11.10.8–11) with a tail bound and cancellation
+    ///   guard; for large \(z>0\), DLMF 11.10.15 with \(A_\nu\) from the Laplace / Watson
+    ///   expansion (DLMF 11.11.4) and a Cauchy remainder, else Taylor panels.
+    ///   Negative \(z\) uses DLMF 11.10.12. \(z=0\) uses the closed form \(\sin(\nu\pi)/(\nu\pi)\).
     ///
     /// Accuracy: unspecified
     pub fn anger_j(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -1412,37 +1323,18 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::anger_j`].
     fn anger_j_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !finite(self) || !finite(nu) {
-            return cat_nan();
-        }
-        let wrk = work_p(p);
-        if let Some(n) = small_int(nu, wrk, -64, 64) {
-            let j = self.bessel_j(n.unsigned_abs() as usize, wrk, RoundingMode::None, cc);
-            return finish(if n < 0 && n % 2 != 0 { j.neg() } else { j }, p, rm);
-        }
-        let z = self.clone();
-        let n = nu.clone();
-        let pi = cc.pi(wrk, RoundingMode::None);
-        let zero = ExactNum::new(wrk);
-        let q = tanh_sinh(
-            |th, pw, r, c| {
-                let inner =
-                    ExactNum::mul_ref(&n, th, pw, r).sub(&th.sin(pw, r, c).mul(&z, pw, r), pw, r);
-                inner.cos(pw, r, c)
-            },
-            &zero,
-            &pi,
-            wrk,
-            RoundingMode::None,
-            cc,
-        );
-        match q {
-            Some(v) => finish(v.div(&pi, wrk, RoundingMode::None), p, rm),
-            None => cat_nan(),
-        }
+        catalog_aws::anger_j_word(self, nu, p, rm, cc)
     }
 
     /// Weber \(\mathbf{E}_\nu(\mathrm{self})\).
+    ///
+    /// # Precision
+    ///
+    /// - Algorithm: Maclaurin series (DLMF 11.10.8–11) with a tail bound and cancellation
+    ///   guard; for large \(z>0\), DLMF 11.10.16 with \(A_\nu\) from the Laplace / Watson
+    ///   expansion (DLMF 11.11.4) and a Cauchy remainder, else Taylor panels.
+    ///   Negative \(z\) uses DLMF 11.10.12. \(z=0\) uses the closed form
+    ///   \((1-\cos(\nu\pi))/(\nu\pi)\).
     ///
     /// Accuracy: unspecified
     pub fn weber_e(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -1458,33 +1350,7 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::weber_e`].
     fn weber_e_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !finite(self) || !finite(nu) {
-            return cat_nan();
-        }
-        let wrk = work_p(p);
-        if small_int(nu, wrk, 0, 0) == Some(0) && abs_lt(self, 8, wrk) {
-            return finish(weber_e0(self, wrk, cc), p, rm);
-        }
-        let z = self.clone();
-        let n = nu.clone();
-        let pi = cc.pi(wrk, RoundingMode::None);
-        let zero = ExactNum::new(wrk);
-        let q = tanh_sinh(
-            |th, pw, r, c| {
-                let inner =
-                    ExactNum::mul_ref(&n, th, pw, r).sub(&th.sin(pw, r, c).mul(&z, pw, r), pw, r);
-                inner.sin(pw, r, c)
-            },
-            &zero,
-            &pi,
-            wrk,
-            RoundingMode::None,
-            cc,
-        );
-        match q {
-            Some(v) => finish(v.div(&pi, wrk, RoundingMode::None), p, rm),
-            None => cat_nan(),
-        }
+        catalog_aws::weber_e_word(self, nu, p, rm, cc)
     }
 
     /// Clausen \(\mathrm{Cl}_2(\mathrm{self})=\sum_{k\ge1}\sin(k\theta)/k^2=-\int_0^\theta\ln\lvert 2\sin(t/2)\rvert\,dt\).
