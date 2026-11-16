@@ -2810,6 +2810,55 @@ fn zf_35_clausen_relative_accuracy_and_barnes_half_integers() {
     }
 }
 
+/// ZF-19: complex asin/acos/asinh/atanh on the real and imaginary axes (off the cuts) went through the log
+/// formulas and returned rounding noise such as 2^-191 where the exact part is a signed zero; elliptic_pi(0, x, 0)
+/// inherits it through asin. z^k for a diagonal base |re z| = |im z| fell to exp(k ln z) whenever the exact
+/// power path's width limit tripped (at p = 64 already for (1+i)^-2), with the same noise in the zero part.
+/// Now: the axis cases are the real function of the nonzero part plus a zero signed by the C99 Annex G
+/// symmetries, and diagonal powers are r^k 2^⌊k/2⌋ placed by k·arg mod 2π. `*0` is a zero of either sign
+/// (C99 leaves cpow's unspecified). c.sqrt off the axes took cos(θ/2) at θ ≈ π and lost the small part
+/// (sqrt(−4 + 2^-200 i) re = 2^-202(1 + 2^-117) at p = 256); now the Kahan form under Ziv.
+/// FLINT, >3000 relative bits. Logs: land39/zf19.
+#[test]
+fn zf_19_exact_zero_parts_are_signed_zeros() {
+    let mut cc = Consts::new().expect("Consts");
+    let cx = |t: &str| {
+        let (a, b) = t.split_once(',').expect("re,im");
+        ExactComplex::new(parse_real(a).expect("re"), parse_real(b).expect("im"))
+    };
+    for l in include_str!("tier1/zf19.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let a: Vec<ExactComplex> = t[2].split(';').map(cx).collect();
+        for p in t[1].split(',').map(|p| p.parse::<usize>().expect("p")) {
+            for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+                let v = match t[0] {
+                    "c.sqrt" => a[0].sqrt(p, rm, &mut cc),
+                    "c.asin" => a[0].asin(p, rm, &mut cc),
+                    "c.acos" => a[0].acos(p, rm, &mut cc),
+                    "c.asinh" => a[0].asinh(p, rm, &mut cc),
+                    "c.atanh" => a[0].atanh(p, rm, &mut cc),
+                    "c.pow" => a[0].pow(&a[1], p, rm, &mut cc),
+                    "c.elliptic_pi" => a[0].elliptic_pi(&a[1], &a[2], p, rm, &mut cc),
+                    _ => panic!("function"),
+                };
+                for (part, want, name) in [(v.re(), t[3], "re"), (v.im(), t[4], "im")] {
+                    let ok = match want {
+                        "+0" => part.is_zero() && !part.is_negative(),
+                        "-0" => part.is_zero() && part.is_negative(),
+                        "*0" => part.is_zero(),
+                        _ => part.compare(&cr_ref(want, p, rm, &mut cc)) == Some(0),
+                    };
+                    assert!(
+                        ok,
+                        "{}({}) p={p} {rm:?} {name}: {part} want {:.40}",
+                        t[0], t[2], want
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// ZF-16 (rem_pi): the reduction was exact enough but returned the full working width (about p + exponent bits)
 /// and ignored `rm`. It is now x − 2πk (k toward zero) correctly rounded to `p`, with the width grown when x is
 /// close to a multiple of 2π. FLINT, >8700 relative bits; the near-multiples are the 128-bit dyadics just above

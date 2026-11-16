@@ -728,16 +728,46 @@ impl ExactComplex {
                 return z;
             }
         }
-        let r = self.abs(p_x, RoundingMode::None);
-        let th = self.arg(p_x, RoundingMode::None, cc);
-        let sr = r.sqrt(p_x, RoundingMode::None);
-        let half_th = th.ldexp(-1, p_x, RoundingMode::None);
-        let (s, c) = half_th.sin_cos(p_x, RoundingMode::None, cc);
-        Self::new(
-            ExactNum::mul_ref(&sr, &c, p_x, RoundingMode::None),
-            sr.mul(&s, p_x, RoundingMode::None),
-        )
-        .finish(p, rm)
+        // ZF-19: √r·cis(θ/2) lost the small part to cancellation (cos(θ/2) with θ ≈ π, e.g.
+        // sqrt(−4 + 2^-200 i) was 2^-202(1 + 2^-117) at p = 256). The Kahan form below adds
+        // only like-signed terms: h = (|z| + |x|)/2, t = √h, the other part |y|/(2t); each part
+        // is a few-ulp relative approximation, rounded under Ziv.
+        if !finite_val(&self.re) || !finite_val(&self.im) {
+            let r = self.abs(p_x, RoundingMode::None);
+            let th = self.arg(p_x, RoundingMode::None, cc);
+            let sr = r.sqrt(p_x, RoundingMode::None);
+            let half_th = th.ldexp(-1, p_x, RoundingMode::None);
+            let (s, c) = half_th.sin_cos(p_x, RoundingMode::None, cc);
+            return Self::new(
+                ExactNum::mul_ref(&sr, &c, p_x, RoundingMode::None),
+                sr.mul(&s, p_x, RoundingMode::None),
+            )
+            .finish(p, rm);
+        }
+        if self.re.is_zero() && self.im.is_zero() {
+            // C99 csqrt(±0 ± 0i) = +0 ± 0i.
+            let im = if self.im.is_negative() { -ExactNum::new(p) } else { ExactNum::new(p) };
+            return Self::new(ExactNum::new(p), im);
+        }
+        crate::complex_special::ziv_complex(p, rm, |pw| self.sqrt_kahan(pw))
+    }
+
+    /// `√z` by the Kahan form at working width `pw` for finite `z` off the axes.
+    fn sqrt_kahan(&self, pw: usize) -> Self {
+        let n = RoundingMode::None;
+        let a = self.re.hypot(&self.im, pw, n);
+        let ax = self.re.clone().abs();
+        let h = a.add(&ax, pw, n).ldexp(-1, pw, n);
+        let t = h.sqrt(pw, n);
+        let t2 = ExactNum::mul_ref(&t, &ExactNum::from_u8(2, WORD_BIT_SIZE), pw, n);
+        let ay = self.im.clone().abs();
+        let u = ay.div(&t2, pw, n);
+        let neg_im = self.im.is_negative();
+        if self.re.is_negative() {
+            Self::new(u, if neg_im { t.neg() } else { t })
+        } else {
+            Self::new(t, if neg_im { u.neg() } else { u })
+        }
     }
 
     /// `log2(self) = ln(self) / ln 2` (principal branch).
@@ -1062,6 +1092,9 @@ impl ExactComplex {
 
     /// Implementation of [`Self::pow`] on operands without inexact history.
     fn pow_word(&self, rhs: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if let Some(v) = self.pow_diagonal(rhs, p, rm, cc) {
+            return v;
+        }
         let p_x = Self::work_p(p);
         if let Some(v) = self.pow_int_exact(rhs, p_x) {
             return v.finish(p, rm);
@@ -1073,6 +1106,64 @@ impl ExactComplex {
         rhs.mul(&ln, p_x, RoundingMode::None)
             .exp(p_x, RoundingMode::None, cc)
             .finish(p, rm)
+    }
+
+    /// `z^k` for an integer `k` (`im k = ±0`) and a diagonal base `|re z| = |im z| = r ≠ 0`
+    /// (ZF-19): `z = r√2·cis(mπ/4)` with `m` odd, so `z^k = r^k 2^{k/2} cis(kmπ/4)`. Each part
+    /// is `0` or `±r^k 2^{⌊k/2⌋}` by `j = km mod 8`, so a part that is exactly zero (`k` even
+    /// with `km ≡ 2 mod 4`, e.g. `(1+i)^{-2} = 0 − i/2`) is `+0` and the other parts are one
+    /// correctly rounded real power and an exact scaling, with no size limit on `r^k`.
+    /// `None` for other bases, non-integer or non-finite exponents, and `|k| ≥ 2^63`.
+    fn pow_diagonal(
+        &self,
+        rhs: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Option<Self> {
+        let (x, y) = (&self.re, &self.im);
+        if !rhs.im.is_zero() || !finite_val(&rhs.re) || !rhs.re.is_int() {
+            return None;
+        }
+        if !finite_val(x) || !finite_val(y) || x.is_zero() || x.abs_cmp(y) != Some(0) {
+            return None;
+        }
+        let k = rhs.re.to_i64(RoundingMode::ToZero).ok()?;
+        let m: i128 = match (x.is_negative(), y.is_negative()) {
+            (false, false) => 1,
+            (true, false) => 3,
+            (true, true) => 5,
+            (false, true) => 7,
+        };
+        let j = (i128::from(k) * m).rem_euclid(8);
+        // cis(jπ/4) up to the factor 2^{-1/2} on odd j: signs of (re, im), 0 for a zero part.
+        let (sr, si): (i8, i8) = match j {
+            0 => (1, 0),
+            1 => (1, 1),
+            2 => (0, 1),
+            3 => (-1, 1),
+            4 => (-1, 0),
+            5 => (-1, -1),
+            6 => (0, -1),
+            _ => (1, -1),
+        };
+        let r = x.clone().abs();
+        let shift = k.div_euclid(2);
+        let mut part = |sg: i8| -> Option<ExactNum> {
+            if sg == 0 {
+                return Some(ExactNum::new(p));
+            }
+            let mode = if sg < 0 { crate::common::util::invert_rm_for_sign(rm) } else { rm };
+            let mag = r.pow(&rhs.re, p, mode, cc);
+            if mag.is_nan() {
+                return None;
+            }
+            let v = mag.ldexp(crate::Exponent::try_from(shift).ok()?, p, mode);
+            Some(if sg < 0 { -v } else { v })
+        };
+        let re = part(sr)?;
+        let im = part(si)?;
+        Some(Self::new(re, im))
     }
 
     /// `x^y` for a nonzero real-axis base `x ± 0i` and a real exponent `y` (ZF-44/67):
@@ -1398,6 +1489,9 @@ impl ExactComplex {
 
     /// Implementation of [`Self::asin`] on operands without inexact history.
     fn asin_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if let Some(r) = self.inv_axis(InvFn::Asin, p, rm, cc) {
+            return r;
+        }
         let prec = round_p(p);
         let p_x = prec.saturating_add(WORD_BIT_SIZE);
         let z2 = self.mul(self, p_x, RoundingMode::None);
@@ -1436,6 +1530,9 @@ impl ExactComplex {
 
     /// Implementation of [`Self::acos`] on operands without inexact history.
     fn acos_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if let Some(r) = self.inv_axis(InvFn::Acos, p, rm, cc) {
+            return r;
+        }
         let p_x = Self::work_p(p);
         let half_pi = cc
             .pi(p_x, RoundingMode::None)
@@ -1444,6 +1541,55 @@ impl ExactComplex {
         Self::new(half_pi, ExactNum::new(p_x))
             .sub(&asinv, p_x, RoundingMode::None)
             .finish(p, rm)
+    }
+
+    /// `asin`, `acos`, `asinh`, `atanh` where one part of the result is exactly zero (ZF-19):
+    /// the operand lies on the real or imaginary axis, off the branch cuts, so the value is a
+    /// real function of the nonzero part and the other part is a zero signed by the C99
+    /// Annex G symmetries (`f(conj z) = conj f(z)`, and `f(-z) = -f(z)` for all but `acos`):
+    ///
+    /// - `asin(x ± 0i) = asin x ± 0i` (`|x| ≤ 1`), `asin(±0 + iy) = ±0 + i asinh y`;
+    /// - `acos(x ± 0i) = acos x ∓ 0i` (`|x| ≤ 1`);
+    /// - `asinh(x ± 0i) = asinh x ± 0i`, `asinh(±0 + iy) = ±0 + i asin y` (`|y| ≤ 1`);
+    /// - `atanh(x ± 0i) = atanh x ± 0i` (`|x| < 1`), `atanh(±0 + iy) = ±0 + i atan y`.
+    ///
+    /// The log formulas leave rounding noise (e.g. `2^-191`) where the part is exactly zero.
+    /// `None` off the axes, on the cuts, and for Inf/NaN.
+    fn inv_axis(&self, f: InvFn, p: usize, rm: RoundingMode, cc: &mut Consts) -> Option<Self> {
+        if !finite_val(&self.re) || !finite_val(&self.im) {
+            return None;
+        }
+        let zero = |neg: bool| {
+            let z = ExactNum::new(p);
+            if neg {
+                -z
+            } else {
+                z
+            }
+        };
+        let one = ExactNum::from_u8(1, WORD_BIT_SIZE);
+        let le1 = |x: &ExactNum, strict: bool| matches!(x.abs_cmp(&one), Some(c) if c < 0 || (!strict && c == 0));
+        let (x, y) = (&self.re, &self.im);
+        if y.is_zero() {
+            let neg = y.is_negative();
+            return match f {
+                InvFn::Asin if le1(x, false) => Some(Self::new(x.asin(p, rm, cc), zero(neg))),
+                InvFn::Acos if le1(x, false) => Some(Self::new(x.acos(p, rm, cc), zero(!neg))),
+                InvFn::Asinh => Some(Self::new(x.asinh(p, rm, cc), zero(neg))),
+                InvFn::Atanh if le1(x, true) => Some(Self::new(x.atanh(p, rm, cc), zero(neg))),
+                _ => None,
+            };
+        }
+        if !x.is_zero() {
+            return None;
+        }
+        let neg = x.is_negative();
+        match f {
+            InvFn::Asin => Some(Self::new(zero(neg), y.asinh(p, rm, cc))),
+            InvFn::Asinh if le1(y, false) => Some(Self::new(zero(neg), y.asin(p, rm, cc))),
+            InvFn::Atanh => Some(Self::new(zero(neg), y.atan(p, rm, cc))),
+            _ => None,
+        }
     }
 
     /// Principal `atan`: `(i/2) ln((i+z)/(i−z))`.
@@ -1524,6 +1670,9 @@ impl ExactComplex {
 
     /// Implementation of [`Self::asinh`] on operands without inexact history.
     fn asinh_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if let Some(r) = self.inv_axis(InvFn::Asinh, p, rm, cc) {
+            return r;
+        }
         let p_x = Self::work_p(p);
         let z2 = self.mul(self, p_x, RoundingMode::None);
         let rad =
@@ -1615,6 +1764,9 @@ impl ExactComplex {
                 return Self::new(crate::ext::INF_NEG, im0());
             }
         }
+        if let Some(r) = self.inv_axis(InvFn::Atanh, p, rm, cc) {
+            return r;
+        }
         let num = Self::one(p_x).add(self, p_x, RoundingMode::None);
         let den = Self::one(p_x).sub(self, p_x, RoundingMode::None);
         num.div(&den, p_x, RoundingMode::None)
@@ -1635,6 +1787,15 @@ impl ExactComplex {
     pub(crate) fn neg_via_mul(&self) -> Self {
         Self::new(self.re.neg_via_mul(), self.im.neg_via_mul())
     }
+}
+
+/// The inverse functions sharing [`ExactComplex::inv_axis`].
+#[derive(Clone, Copy)]
+enum InvFn {
+    Asin,
+    Acos,
+    Asinh,
+    Atanh,
 }
 
 macro_rules! impl_cplx_binop {
