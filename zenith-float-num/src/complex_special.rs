@@ -249,7 +249,46 @@ impl ExactComplex {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
         let dest = round_p(p);
+        if let Some(v) = self.erf_near_unit(dest, rm, cc) {
+            return v;
+        }
         ziv_complex(dest, rm, |pw| self.erf_at(pw, dest, cc))
+    }
+
+    /// ZF-37: far from the imaginary axis erf(z) = ±1 ∓ erfc(±z) with |erfc(±z)| below half an
+    /// ulp of 1 (e.g. z = 100001 + i/2, |erfc| ≈ 2^-1.4e10). The real part is then `±1 + δ`
+    /// for a nonzero δ of known sign, which no Ziv loop can decide; it is rounded once by
+    /// `round_offset` from the sign of the (correctly rounded) Re erfc. The imaginary part is
+    /// ∓Im erfc(±z), a normal value, under Ziv. `None` everywhere else.
+    fn erf_near_unit(&self, dest: usize, rm: RoundingMode, cc: &mut Consts) -> Option<Self> {
+        if self.re().is_zero() || self.im().is_zero() || use_faddeeva_series(self, dest) {
+            return None;
+        }
+        let pos = re_positive(self);
+        let w = if pos { self.clone() } else { neg_c(self.clone()) };
+        let e = w.erfc_word(dest, RoundingMode::ToEven, cc);
+        let er = e.re();
+        if er.is_nan() || er.is_zero() {
+            return None;
+        }
+        let ex = er.exponent()?;
+        if ex >= -(dest as Exponent) - 2 {
+            return None;
+        }
+        // erf = 1 − erfc(z) (Re z > 0) or −1 + erfc(−z) (Re z < 0).
+        let toward = if er.is_negative() == pos { crate::Sign::Pos } else { crate::Sign::Neg };
+        let base = if pos { 1 } else { -1 };
+        let re = match crate::num::ExactNumNumber::from_i8(base, WORD_BIT_SIZE)
+            .and_then(|b| crate::num::ExactNumNumber::round_offset(&b, toward, dest, rm))
+        {
+            Ok(v) => ExactNum::from(v),
+            Err(err) => return Some(nan_pair(err)),
+        };
+        let im = ziv_complex(dest, rm, |pw| {
+            let v = self.erf_off_axis(pw, dest, cc);
+            ExactComplex::new(ExactNum::from_u8(1, pw), v.im().clone())
+        });
+        Some(ExactComplex::new(re, im.im().clone()))
     }
 
     /// Complementary error function via Faddeeva: \(\mathrm{erfc}(z)=e^{-z^2}w(iz)\).

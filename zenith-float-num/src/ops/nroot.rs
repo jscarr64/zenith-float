@@ -80,7 +80,13 @@ impl ExactNumNumber {
         if t > 1 && (t - 1).saturating_mul(n) >= Self::significant_bits(abs_self) {
             return Ok(None);
         }
-        let bits = t.saturating_mul(n).saturating_add(WORD_BIT_SIZE);
+        // ZF-37: a radicand below the normal range (min_positive(2048) = 2^(EXPONENT_MIN - 2048))
+        // has its value spread over its whole mantissa; the power must be formed at that width
+        // too, or it underflows and the exact root (2^((EXPONENT_MIN - 2048) / 7)) is never seen.
+        let bits = t
+            .saturating_mul(n)
+            .max(abs_self.mantissa_max_bit_len())
+            .saturating_add(WORD_BIT_SIZE);
         // A candidate rounded up past the largest number whose power fits (the root of a number near the top of
         // the range) has a power above the range: it is not the exact root.
         let pw = match r.powi(n, bits, RoundingMode::None) {

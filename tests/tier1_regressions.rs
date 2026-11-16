@@ -2896,3 +2896,82 @@ fn zf_16_rem_pi_correctly_rounded() {
         }
     }
 }
+
+/// ZF-37 (PrecisionRetryExhausted on valid inputs): each root cause was a value Ziv can never
+/// certify or a series that gave up early, not a precision shortage. Exact or ±1/x-plus-tiny
+/// results are now rounded once (expm1(x≪0) = −1 + tiny, si/C(x) = x ∓ tiny, si(maxv) = π/2,
+/// erf(2^20+1 + i/2) = 1 − tiny, I_x(a, b) = 1 − tiny near x = 1); exact closed forms are summed
+/// exactly (nth_root of a subnormal, Γ(n) for any n, B(a, n), I_x(a, n), Gauss and Euler ₂F₁);
+/// ei/li and γ(s, x) series lost their term caps and the wrong Γ(s) shortcut; K_ν(x) at ν ≈ x
+/// falls back from the Hankel series; Ci(x ± 0i) pins the zero imaginary part. Expected values
+/// are FLINT-certified (rjudge/cjudge/erfbig, 2p+64 bits) except I_{1−2^-256}(½, 100), whose
+/// complement I_{2^-256}(100, ½) < 2^-25000 is far below an ulp (land39/zf37).
+#[test]
+fn zf_37_valid_inputs_do_not_exhaust_precision() {
+    let mut cc = Consts::new().expect("Consts");
+    let mode = |s: &str| match s {
+        "up" => RoundingMode::Up,
+        "down" => RoundingMode::Down,
+        "tozero" => RoundingMode::ToZero,
+        "fromzero" => RoundingMode::FromZero,
+        "toeven" => RoundingMode::ToEven,
+        "toodd" => RoundingMode::ToOdd,
+        _ => RoundingMode::None,
+    };
+    let cx = |t: &str| {
+        let (a, b) = t.split_once(',').expect("re,im");
+        ExactComplex::new(parse_real(a).expect("re"), parse_real(b).expect("im"))
+    };
+    // Runner format: F:sign:exponent:hex (value 0.hex · 2^exponent) or Z:sign.
+    let check = |v: &ExactNum, want: &str, what: &str| {
+        let k: Vec<&str> = want.split(':').collect();
+        match k[0] {
+            "Z" => assert!(
+                v.is_zero() && v.is_negative() == (k[1] == "-"),
+                "{what}: {v} want {want}"
+            ),
+            "F" => {
+                let e: i64 = k[2].parse().expect("exp");
+                let w = parse_real(&format!("{}{}p{}", k[1], k[3], e - 4 * k[3].len() as i64))
+                    .expect("want");
+                assert_eq!(v.compare(&w), Some(0), "{what}: {v} want {want}");
+            }
+            _ => panic!("expected kind {want}"),
+        }
+    };
+    for l in include_str!("tier1/zf37.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let (f, p, rm) = (t[0], t[1].parse::<usize>().expect("p"), mode(t[2]));
+        let a: Vec<&str> = t[3].split('|').collect();
+        let r = |i: usize| parse_real(a[i]).expect("arg");
+        let what = format!("{f}({}) p={p} {rm:?}", t[3]);
+        if let Some(cf) = f.strip_prefix("c.") {
+            let z = cx(a[0]);
+            let v = match cf {
+                "erf" => z.erf(p, rm, &mut cc),
+                "ci" => z.ci(p, rm, &mut cc),
+                _ => panic!("function {f}"),
+            };
+            let (wr, wi) = t[4].split_once(';').expect("re;im");
+            check(v.re(), wr, &format!("{what} re"));
+            check(v.im(), wi, &format!("{what} im"));
+            continue;
+        }
+        let v = match f {
+            "r.expm1" => r(0).expm1(p, rm, &mut cc),
+            "r.nth_root" => r(0).nth_root(a[1].parse().expect("n"), p, rm),
+            "r.si" => r(0).si(p, rm, &mut cc),
+            "r.fresnel_c" => r(0).fresnel_c(p, rm, &mut cc),
+            "r.ei" => r(0).ei(p, rm, &mut cc),
+            "r.li" => r(0).li(p, rm, &mut cc),
+            "r.gamma" => r(0).gamma(p, rm, &mut cc),
+            "r.gammainc" => r(0).gammainc(&r(1), p, rm, &mut cc),
+            "r.bessel_k" => r(0).bessel_k(&r(1), p, rm, &mut cc),
+            "r.hypergeom_2f1" => r(0).hypergeom_2f1(&r(1), &r(2), &r(3), p, rm, &mut cc),
+            "r.betainc" => r(0).betainc(&r(1), &r(2), p, rm, &mut cc),
+            "r.beta" => zenith_float::beta(&r(0), &r(1), p, rm, &mut cc),
+            _ => panic!("function {f}"),
+        };
+        check(&v, t[4], &what);
+    }
+}

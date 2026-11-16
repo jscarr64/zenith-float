@@ -9,6 +9,7 @@ use crate::defs::EXPONENT_MAX;
 use crate::defs::EXPONENT_MIN;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
+use crate::ops::util::compute_small_exp;
 use crate::ExactNum;
 use crate::Sign;
 use crate::Word;
@@ -324,6 +325,32 @@ impl ExactNumNumber {
                 r.set_inexact(r.inexact() | inexact);
                 return Ok(r);
             }
+        }
+
+        // ZF-37: one positive integer n gives the rational B(a, n) = (n−1)! / (a (a+1) ⋯ (a+n−1))
+        // for any non-pole a (DLMF 5.12.1 with Γ(a+n) = (a)_n Γ(a)), e.g. B(−½, 2) = −4, which
+        // the Ziv loop over the Γ ratio cannot certify. Exact product, one division; past 2^22
+        // bits of work the floating path decides.
+        for (x, y) in [(self, b), (b, self)] {
+            if !y.is_positive() || !y.is_int() {
+                continue;
+            }
+            let Ok(n) = y.int_as_usize() else { continue };
+            let per = x.mantissa_max_bit_len().saturating_add(2 * WORD_BIT_SIZE);
+            if n.checked_mul(per).is_none_or(|w| w > 1 << 22) {
+                continue;
+            }
+            let mut ex = x.clone()?;
+            ex.set_inexact(false);
+            let num = exact_product(1, n - 1)?;
+            let mut den = ex.clone()?;
+            for k in 1..n {
+                let t = exact_add_num(&ex, &Self::from_word(k as Word, WORD_BIT_SIZE)?)?;
+                den = exact_mul_num(&den, &t)?;
+            }
+            let mut r = num.div(&den, p, rm)?;
+            r.set_inexact(r.inexact() | inexact);
+            return Ok(r);
         }
 
         // Positive integers: B(m, n) = (n−1)! / (m (m+1) ⋯ (m+n−1)), both sides exact.
@@ -794,14 +821,20 @@ impl ExactNumNumber {
         cc: &mut Consts,
         shift_max: usize,
     ) -> Result<Self, Error> {
-        if self.is_int() && self.is_positive() {
-            for n in 1u32..=64 {
-                let w = Self::from_word(n as Word, p)?;
-                if self.cmp(&w) == 0 {
-                    let mut f = factorial((n - 1) as usize, p)?;
-                    f.set_inexact(false);
-                    return Ok(f);
-                }
+        // Γ(n) = (n−1)! exactly whenever the factorial is at most 4p + 4096 bits wide (ZF-37:
+        // the old 1..=64 limit left e.g. Γ(171) = 170!, 852 significant bits and exactly
+        // representable at p = 1024, to the Stirling path, whose Ziv loop can never certify an
+        // exact value and exhausted after ~5 s). Wider factorials go to Stirling under Ziv.
+        if self.is_int() && self.is_positive() && self.exponent() <= 32 {
+            let n = self.int_as_usize()?;
+            let m = n.saturating_sub(1);
+            let bitlen = (usize::BITS - m.leading_zeros()) as usize;
+            let bits = m.saturating_mul(bitlen);
+            if bits <= p.saturating_mul(4).saturating_add(4096) {
+                let w = round_p(bits.max(p) + WORD_BIT_SIZE);
+                let mut f = factorial(m, w)?;
+                f.set_inexact(false);
+                return Ok(f);
             }
         }
 
@@ -1192,6 +1225,35 @@ impl ExactNumNumber {
             + p_inc;
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE * 2;
+            // ZF-37: for x > s, γ(s, x) = Γ(s) − Γ(s, x) with the asymptotic Γ(s, x) (DLMF
+            // 8.11.2) whenever it converges; Γ(s, x) ≤ Γ(s)/2 there, so at most a bit or two
+            // cancel. The power series alone needs about x terms (γ(125, 2^20) exhausted its
+            // ~2p-term cap). If Γ(s) is exact (integer s) and Γ(s, x) is below half an ulp
+            // of it, only the side is left to decide.
+            if x.cmp(self) > 0 {
+                let up = match self.gammainc_upper_asymptotic(x, p_x, cc) {
+                    Ok(v) => v,
+                    Err(Error::ExponentOverflow(Sign::Neg)) => Some(Self::new(p_x)?),
+                    Err(e) => return Err(e),
+                };
+                if let Some(up) = up {
+                    let g = self.gamma_at(p_x, cc)?;
+                    let below = up.is_zero()
+                        || up.exponent() < g.exponent().saturating_sub(p_x as Exponent + 2);
+                    if !g.inexact() && below {
+                        let mut r = Self::round_offset(&g, Sign::Neg, p, rm)?;
+                        r.set_inexact(true);
+                        return Ok(r);
+                    }
+                    let mut ret = g.sub(&up, p_x, RoundingMode::None)?;
+                    if ret.try_set_precision(p, rm, p_wrk)? {
+                        ret.set_inexact(true);
+                        return Ok(ret);
+                    }
+                    bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+                    continue;
+                }
+            }
             let mut ret = self.gammainc_at(x, p_x, cc)?;
             if ret.try_set_precision(p, rm, p_wrk)? {
                 ret.set_inexact(ret.inexact() | self.inexact() | x.inexact());
@@ -1368,9 +1430,19 @@ impl ExactNumNumber {
     }
 
     fn gammainc_at(&self, x: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        // e^{-x} x^s underflows → γ(s,x) = Γ(s).
-        if x.exponent().saturating_mul(2) > p as i64 + 8 {
-            return self.gamma_at(p, cc);
+        // ZF-37: the old shortcut here returned Γ(s) whenever 2·exponent(x) > p + 8, which is
+        // wrong for s > x (γ(2^300, 2^200) ≪ Γ(2^300)); x > s is now taken by the
+        // complement in `gammainc`, so the series is always summed.
+        // The work limit is decided before any term: about max(0, x − s) + 4√((x+s)p) terms
+        // are needed, so refuse at once when either part alone passes 2^28.
+        let lim = GAMMAINC_SERIES_TERMS_MAX.trailing_zeros() as Exponent;
+        let d = x.sub(self, WORD_BIT_SIZE, RoundingMode::None)?;
+        let sum_e = x.add(self, WORD_BIT_SIZE, RoundingMode::None)?.exponent();
+        let p_bits = (usize::BITS - p.leading_zeros()) as Exponent;
+        if (d.is_positive() && !d.is_zero() && d.exponent() > lim)
+            || sum_e.saturating_add(p_bits) > 2 * (lim - 2)
+        {
+            return Err(Error::PrecisionRetryExhausted);
         }
         // γ(s,x) = x^s e^{-x} Σ_{k=0} x^k / (s)_{k+1}
         let xs = x.pow(self, p, RoundingMode::None, cc)?;
@@ -1382,20 +1454,25 @@ impl ExactNumNumber {
         let mut term = Self::from_word(1, p)?.div(&poch, p, RoundingMode::None)?;
         let mut sum = term.clone()?;
         let one = Self::from_word(1, p)?;
-        // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
-        for _k in 1..=series_n_max(p, x.exponent()) {
+        // ZF-37: no p-based term cap. All terms are positive and the ratio x/(s+k) falls
+        // below 1 once k > x − s, so the relative stop is met after about
+        // max(0, x − s) + O(√((x+s)p)) terms; while the terms still grow it cannot fire
+        // (sum ≤ k·term). Only a sum past 2^28 terms (x ≈ s ≳ 2^40, where the uniform
+        // Temme expansion DLMF 8.12 is needed) gives up, with PrecisionRetryExhausted: a
+        // resource refusal, never a truncated value.
+        let mut k: usize = 0;
+        loop {
+            k += 1;
+            if k > GAMMAINC_SERIES_TERMS_MAX {
+                return Err(Error::PrecisionRetryExhausted);
+            }
             poch = poch.add(&one, p, RoundingMode::None)?;
             term = term.mul(x, p, RoundingMode::None)?;
             term = term.div(&poch, p, RoundingMode::None)?;
             sum = sum.add(&term, p, RoundingMode::None)?;
             if series_negligible(&term, &sum, p) {
-                done = true;
                 break;
             }
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
         }
         pre.mul(&sum, p, RoundingMode::None)
     }
@@ -1422,7 +1499,12 @@ impl ExactNumNumber {
 
     fn ei_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         if self.expint_use_asymptotic(p) {
-            return self.ei_asymptotic(p, cc);
+            // ZF-37: near the switch (|x| ≈ 2p/3) the smallest asymptotic term e^-|x| can exceed
+            // 2^-p; then the (uncapped) series below is used instead of giving up.
+            match self.ei_asymptotic(p, cc) {
+                Err(Error::PrecisionRetryExhausted) => {}
+                r => return r,
+            }
         }
         // The series cancels: for x < 0 its terms reach e^{|x|} while Ei(x) ≈ e^{-|x|}/|x|, and
         // near the root x₀ ≈ 0.3725 the parts γ + ln x and Σ cancel. Measure the loss and
@@ -1455,22 +1537,24 @@ impl ExactNumNumber {
         let mut term = self.clone()?;
         let mut sum = term.clone()?;
         let mut top = max_exp(&[&g, &lnx, &sum]);
-        // Cap or divergence without meeting the bound: never use the partial sum.
-        let mut done = false;
-        for n in 2..=series_n_max(p, self.exponent()) {
-            let nw = Self::from_word(n as Word, p)?;
+        // ZF-37: no term cap and a stop relative to the largest part. The terms x^n/(n·n!)
+        // fall monotonically once n > |x| and reach 2^-p of the largest part after about
+        // e|x| + p terms; the old absolute stop 2^-p with a cap of ~2p terms exhausted for
+        // Ei(105) at p=128 (sum ~2^144). The caller measures cancellation against `top`.
+        let ax = self.abs()?;
+        let mut n: Word = 1;
+        loop {
+            n = n.checked_add(1).ok_or(Error::MemoryAllocation)?;
+            let nw = Self::from_word(n, p)?;
             term = term.mul(self, p, RoundingMode::None)?;
             term = term.div(&nw, p, RoundingMode::None)?;
             let piece = term.div(&nw, p, RoundingMode::None)?;
             sum = sum.add(&piece, p, RoundingMode::None)?;
             top = top.max(max_exp(&[&piece]));
-            if piece.is_zero() || piece.exponent() + (p as i64) < 0 {
-                done = true;
+            let past = nw.cmp(&ax) > 0;
+            if piece.is_zero() || (past && piece.exponent().saturating_add(p as Exponent) < top) {
                 break;
             }
-        }
-        if !done {
-            return Err(Error::PrecisionRetryExhausted);
         }
         let v = g
             .add(&lnx, p, RoundingMode::None)?
@@ -1516,6 +1600,16 @@ impl ExactNumNumber {
         }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        // ZF-37: Si(x) = x(1 − x²/18 + …); below 2^-(p_wrk+1) relative the correction only
+        // decides the side (toward zero). Ziv cannot see it (Si(2^-2^40) is x − 2^-3·2^40/18).
+        compute_small_exp!(
+            self,
+            self.exponent().saturating_mul(2).saturating_sub(4),
+            true,
+            p_wrk,
+            p,
+            rm
+        );
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE;
             let mut ret = self.si_at(p_x, cc)?;
@@ -1532,8 +1626,17 @@ impl ExactNumNumber {
         x.set_inexact(false);
         let neg = x.is_negative();
         x.set_sign(Sign::Pos);
-        let ret = if x.expint_use_asymptotic(p) {
-            x.si_asymptotic(p, cc)?
+        let asym = if x.expint_use_asymptotic(p) {
+            // ZF-37: fall back to the series when the asymptotic terms turn before 2^-p.
+            match x.si_asymptotic(p, cc) {
+                Err(Error::PrecisionRetryExhausted) => None,
+                r => Some(r?),
+            }
+        } else {
+            None
+        };
+        let ret = if let Some(v) = asym {
+            v
         } else {
             let pe = p + Self::si_ci_series_guard(x.exponent());
             let mut r = x.si_series(pe)?;
@@ -1580,6 +1683,12 @@ impl ExactNumNumber {
         let pi = cc.pi_num(p, RoundingMode::None)?;
         let mut half_pi = pi.clone()?;
         half_pi.div_by_2(RoundingMode::None);
+        // ZF-37: 0 < f < 1/x and 0 < g < 1/x² (DLMF 6.12(ii)), so for x ≥ 2^(p+4) the
+        // correction is below 2^-(p+2) of π/2 and cos x, sin x (reduction of a huge x, e.g.
+        // the largest finite value) are not needed.
+        if self.exponent() > p as Exponent + 4 {
+            return Ok(half_pi);
+        }
         let (f, g) = self.si_ci_aux_fg(p)?;
         let c = self.cos(p, RoundingMode::None, cc)?;
         let s = self.sin(p, RoundingMode::None, cc)?;
@@ -1612,8 +1721,13 @@ impl ExactNumNumber {
 
     fn ci_at(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
         if self.expint_use_asymptotic(p) {
-            self.ci_asymptotic(p, cc)
-        } else {
+            // ZF-37: as in `si_at`, the series is the fallback when the asymptotic one turns.
+            match self.ci_asymptotic(p, cc) {
+                Err(Error::PrecisionRetryExhausted) => {}
+                r => return r,
+            }
+        }
+        {
             let pe = p + Self::si_ci_series_guard(self.exponent());
             let mut r = self.ci_series(pe, cc)?;
             r.set_precision(p, RoundingMode::None)?;
@@ -1774,6 +1888,17 @@ impl ExactNumNumber {
         }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        if !sine {
+            // ZF-37: C(x) = x(1 − (π²/40)x⁴ + …), π²/40 < 1/4: the same side-only case as Si.
+            compute_small_exp!(
+                self,
+                self.exponent().saturating_mul(4).saturating_sub(2),
+                true,
+                p_wrk,
+                p,
+                rm
+            );
+        }
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE;
             let mut ret = self.fresnel_sc_at(sine, p_x, cc)?;
@@ -2355,7 +2480,14 @@ impl ExactNumNumber {
             Err(e) => return Err(e),
         };
         if two_x_bits >= p + 16 && self.exponent() >= 3 {
-            return self.k_asymptotic(&nu, p, cc);
+            // ZF-37: the Hankel series turns early when ν is comparable to x (its terms grow
+            // like (4ν²)/(8xk) until k ≈ ν²/(2x)); then the I-based formula below, with its
+            // 2.885x cancellation guard, gives the value instead of PrecisionRetryExhausted
+            // (K_100(100) at p = 64).
+            match self.k_asymptotic(&nu, p, cc) {
+                Err(Error::PrecisionRetryExhausted) => {}
+                r => return r,
+            }
         }
         let pe = p + two_x_bits;
         let v = if let Some(n) = as_i32_exact(&nu, pe)? {
@@ -3922,6 +4054,10 @@ impl ExactNumNumber {
             v.set_inexact(v.inexact() | self.inexact() | b.inexact() | c.inexact() | z.inexact());
             return Ok(v);
         }
+        if let Some(mut v) = self.hyp2f1_closed_exact(b, c, z, p, rm, cc)? {
+            v.set_inexact(v.inexact() | self.inexact() | b.inexact() | c.inexact() | z.inexact());
+            return Ok(v);
+        }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
             .max(self.mantissa_max_bit_len())
@@ -3958,6 +4094,23 @@ impl ExactNumNumber {
         p: usize,
         rm: RoundingMode,
     ) -> Result<Option<Self>, Error> {
+        let Some((num, q)) = self.hyp2f1_terminating_ratio(b, c, z)? else {
+            return Ok(None);
+        };
+        if num.is_zero() {
+            return Ok(Some(Self::new2(p, Sign::Pos, false)?));
+        }
+        Ok(Some(num.div(&q, p, rm)?))
+    }
+
+    /// The exact terminating ₂F₁ of [`Self::hyp2f1_terminating_exact`] as `(numerator,
+    /// denominator)`.
+    fn hyp2f1_terminating_ratio(
+        &self,
+        b: &Self,
+        c: &Self,
+        z: &Self,
+    ) -> Result<Option<(Self, Self)>, Error> {
         let degree = |x: &Self| -> Option<usize> {
             if x.is_zero() || x.is_positive() || !x.is_int() {
                 return None;
@@ -3990,7 +4143,8 @@ impl ExactNumNumber {
             return Err(Error::MemoryAllocation);
         }
         if n == 0 {
-            return Ok(Some(Self::from_word(1, p)?));
+            let one = Self::from_word(1, WORD_BIT_SIZE)?;
+            return Ok(Some((one.clone()?, one)));
         }
         // The stored inputs are exact values; their inexact flags are ORed in by the caller.
         let exact = |x: &Self| -> Result<Self, Error> {
@@ -4007,7 +4161,152 @@ impl ExactNumNumber {
         };
         let (_, q, t) = ctx.split(1, n + 1)?;
         // F = 1 + T/Q = (Q + T) / Q
-        let num = exact_add_num(&q, &t)?;
+        Ok(Some((exact_add_num(&q, &t)?, q)))
+    }
+
+    /// ZF-37: closed forms of a non-terminating ₂F₁ whose value is often an exact dyadic that
+    /// the Ziv loop can never certify; each is one exact rational rounded once.
+    /// - z = 1 with `a = m` (or `b = m`) a positive integer and `c − a − b > 0` (Gauss,
+    ///   DLMF 15.4.20): `F = (c−m)_m / (c−b−m)_m`, e.g. ₂F₁(1, 1; 10; 1) = 9/8.
+    /// - z < 1 with `c − a` (or `c − b`) a non-positive integer (Euler, DLMF 15.8.1):
+    ///   `F = (1−z)^{c−a−b} ₂F₁(c−a, c−b; c; z)`, a terminating polynomial times a power;
+    ///   used when the power is exact, e.g. ₂F₁(10, ½; 10; 1 − 2^-20) = 2^10 (c = a is the
+    ///   degree-0 case `(1−z)^{−b}`).
+    ///
+    /// `None` (the floating path decides) otherwise, or when the exact work would pass 2^22
+    /// bits (then the value is computed by the series and Ziv reports exhaustion rather
+    /// than a wrong value if it is exact).
+    fn hyp2f1_closed_exact(
+        &self,
+        b: &Self,
+        c: &Self,
+        z: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Option<Self>, Error> {
+        const WORK_BITS_MAX: usize = 1 << 22;
+        let exact = |v: &Self| -> Result<Self, Error> {
+            let mut v = v.clone()?;
+            v.set_inexact(false);
+            Ok(v)
+        };
+        let (ea, eb, ec, ez) = (exact(self)?, exact(b)?, exact(c)?, exact(z)?);
+        let one = Self::from_word(1, WORD_BIT_SIZE)?;
+        let sub = |x: &Self, y: &Self| -> Result<Self, Error> { exact_add_num(x, &y.neg()?) };
+        let vs_one = ez.cmp(&one);
+        if vs_one > 0 {
+            return Ok(None);
+        }
+        if vs_one == 0 {
+            let s = sub(&sub(&ec, &ea)?, &eb)?;
+            if !s.is_positive() || (ec.is_int() && !ec.is_positive()) {
+                return Ok(None);
+            }
+            for (m_src, other) in [(&ea, &eb), (&eb, &ea)] {
+                if !m_src.is_positive() || !m_src.is_int() {
+                    continue;
+                }
+                let Ok(m) = m_src.int_as_usize() else {
+                    continue;
+                };
+                let per = ec
+                    .mantissa_max_bit_len()
+                    .max(other.mantissa_max_bit_len())
+                    .saturating_add(3 * WORD_BIT_SIZE);
+                if m.checked_mul(per).is_none_or(|w| w > WORK_BITS_MAX) {
+                    continue;
+                }
+                let n0 = sub(&ec, m_src)?;
+                let d0 = sub(&n0, other)?;
+                let (mut num, mut den) = (one.clone()?, one.clone()?);
+                for k in 0..m {
+                    let kw = Self::from_word(k as Word, WORD_BIT_SIZE)?;
+                    num = exact_mul_num(&num, &exact_add_num(&n0, &kw)?)?;
+                    den = exact_mul_num(&den, &exact_add_num(&d0, &kw)?)?;
+                }
+                if num.is_zero() {
+                    return Ok(Some(Self::new2(p, Sign::Pos, false)?));
+                }
+                return Ok(Some(num.div(&den, p, rm)?));
+            }
+            return Ok(None);
+        }
+        let (ca, cb) = (sub(&ec, &ea)?, sub(&ec, &eb)?);
+        let nonpos_int = |v: &Self| v.is_zero() || (v.is_int() && v.is_negative());
+        if !nonpos_int(&ca) && !nonpos_int(&cb) {
+            return Ok(None);
+        }
+        let ze = usize::try_from(ez.exponent().unsigned_abs()).unwrap_or(usize::MAX);
+        let w_omz = ez
+            .mantissa_max_bit_len()
+            .saturating_add(ze)
+            .saturating_add(WORD_BIT_SIZE);
+        if w_omz > WORK_BITS_MAX {
+            return Ok(None);
+        }
+        let omz = one.sub(&ez, round_p(w_omz), RoundingMode::None)?;
+        let deg = |v: &Self| -> usize {
+            if nonpos_int(v) {
+                v.neg()
+                    .ok()
+                    .and_then(|n| n.int_as_usize().ok())
+                    .unwrap_or(usize::MAX)
+            } else {
+                usize::MAX
+            }
+        };
+        let n = deg(&ca).min(deg(&cb));
+        let per = 3
+            * (ca
+                .mantissa_max_bit_len()
+                .max(cb.mantissa_max_bit_len())
+                .max(ec.mantissa_max_bit_len())
+                .max(ez.mantissa_max_bit_len())
+                + 2 * WORD_BIT_SIZE);
+        if n.checked_mul(per).is_none_or(|w| w > WORK_BITS_MAX) {
+            return Ok(None);
+        }
+        let (num, q) = if n == 0 {
+            (one.clone()?, one.clone()?)
+        } else {
+            let Some(r) = ca.hyp2f1_terminating_ratio(&cb, &ec, &ez)? else {
+                return Ok(None);
+            };
+            r
+        };
+        let d = sub(&sub(&ec, &ea)?, &eb)?;
+        let pw = if d.is_zero() {
+            one.clone()?
+        } else {
+            let d_up = if d.exponent() <= 0 {
+                1
+            } else if d.exponent() < 32 {
+                1usize << d.exponent()
+            } else {
+                return Ok(None);
+            };
+            let wa = omz
+                .mantissa_max_bit_len()
+                .saturating_mul(d_up)
+                .saturating_add(WORD_BIT_SIZE);
+            // As in `betainc_exact`: a breakpoint value v = pw·num/q bounds pw's odd part by
+            // p + 2 + bits(q); a power inexact there is not such a value.
+            let wl = p
+                .saturating_add(2)
+                .saturating_add(q.mantissa_max_bit_len())
+                .saturating_add(2 * WORD_BIT_SIZE)
+                .min(wa);
+            if wl > WORK_BITS_MAX {
+                return Ok(None);
+            }
+            let v = omz.pow(&d, round_p(wl), RoundingMode::ToZero, cc)?;
+            if v.inexact() {
+                return Ok(None);
+            }
+            v
+        };
+        let num = exact_mul_num(&pw, &num)?;
         if num.is_zero() {
             return Ok(Some(Self::new2(p, Sign::Pos, false)?));
         }
@@ -4041,7 +4340,7 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
-        if !self.is_positive() || !b.is_positive() {
+        if !self.is_positive() || !b.is_positive() || self.is_zero() || b.is_zero() {
             return Err(Error::InvalidArgument);
         }
         if x.is_negative() || x.cmp(&Self::from_word(1, p)?) > 0 {
@@ -4061,6 +4360,29 @@ impl ExactNumNumber {
             half.set_inexact(self.inexact() | b.inexact() | x.inexact());
             return Ok(half);
         }
+        if let Some(mut v) = self.betainc_exact(b, x, p, rm, cc)? {
+            v.set_inexact(v.inexact() | self.inexact() | b.inexact() | x.inexact());
+            return Ok(v);
+        }
+        // ZF-37: near x = 1, I_x(a,b) = 1 − I_{1−x}(b,a) with the complement below a quarter
+        // ulp of 1 (e.g. I_{1−2^-256}(½, 100) = 1 − O(2^-25600)): a value 1 − δ, δ > 0, that
+        // Ziv cannot decide; rounded once by `round_offset`. The complement comes from the
+        // direct (relative-accuracy) evaluation at 1 − x, which is exact here.
+        if x.cmp(&one_half(p)?) > 0 {
+            let xe = usize::try_from(x.exponent().unsigned_abs()).unwrap_or(usize::MAX);
+            let w = x
+                .mantissa_max_bit_len()
+                .saturating_add(xe)
+                .saturating_add(WORD_BIT_SIZE);
+            let one = Self::from_word(1, WORD_BIT_SIZE)?;
+            let mut ox = one.sub(x, round_p(w), RoundingMode::None)?;
+            ox.set_inexact(false);
+            let q = round_p(p + 2 * WORD_BIT_SIZE);
+            let t = b.betainc_direct(self, &ox, q, cc)?;
+            if t.is_positive() && t.exponent() < -(p as Exponent) - 4 {
+                return Self::round_offset(&one, Sign::Neg, p, rm);
+            }
+        }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
             .max(self.mantissa_max_bit_len())
@@ -4076,6 +4398,123 @@ impl ExactNumNumber {
             }
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
         }
+    }
+
+    /// ZF-37: an integer parameter makes I_x a closed form (DLMF 8.17.5):
+    /// `I_x(a, n) = x^a Σ_{k<n} (a)_k/k! (1−x)^k` and `I_x(n, b) = 1 − I_{1−x}(b, n)`. When the
+    /// power (`x^a`, resp. `(1−x)^b`) is an exact dyadic, the value is the rational
+    /// `x^a W / (n−1)!`, with `W` summed exactly by the division-free Horner recurrence
+    /// `P_k = k P_{k+1}`, `W_k = P_k + (a+k−1) y W_{k+1}` (`P_n = W_n = 1`), and rounded once:
+    /// exact results such as `I_{1/2}(100, 1) = 2^-100` or `I_{2^-30}(½, 1) = 2^-15`, which no
+    /// Ziv loop can certify, come out correctly rounded in every mode. `None` (the floating
+    /// path decides; its values are irrational there or Ziv reports exhaustion, never a
+    /// wrong value) when the power is inexact or the exact sum would pass 2^22 bits of work.
+    fn betainc_exact(
+        &self,
+        b: &Self,
+        x: &Self,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Option<Self>, Error> {
+        const WORK_BITS_MAX: usize = 1 << 22;
+        let exact = |v: &Self| -> Result<Self, Error> {
+            let mut v = v.clone()?;
+            v.set_inexact(false);
+            Ok(v)
+        };
+        let (ea, eb, ex) = (exact(self)?, exact(b)?, exact(x)?);
+        let one = Self::from_word(1, WORD_BIT_SIZE)?;
+        // 1 − x exactly (x ∈ (0, 1)).
+        let xe = usize::try_from(ex.exponent().unsigned_abs()).unwrap_or(usize::MAX);
+        let w_omx = ex
+            .mantissa_max_bit_len()
+            .saturating_add(xe)
+            .saturating_add(WORD_BIT_SIZE);
+        if w_omx > WORK_BITS_MAX {
+            return Ok(None);
+        }
+        let omx = one.sub(&ex, round_p(w_omx), RoundingMode::None)?;
+        for complement in [false, true] {
+            // I_base-form: alpha = the non-integer side's parameter, n the integer one,
+            // power base^alpha, series variable y.
+            let (alpha, n_src, base, y) =
+                if complement { (&eb, &ea, &omx, &ex) } else { (&ea, &eb, &ex, &omx) };
+            if !n_src.is_int() {
+                continue;
+            }
+            let Ok(n) = n_src.int_as_usize() else {
+                continue;
+            };
+            let per = alpha
+                .mantissa_max_bit_len()
+                .saturating_add(y.mantissa_max_bit_len())
+                .saturating_add(2 * WORD_BIT_SIZE);
+            if n.checked_mul(per).is_none_or(|w| w > WORK_BITS_MAX) {
+                continue;
+            }
+            let alpha_up = if alpha.exponent() <= 0 {
+                1
+            } else if alpha.exponent() < 32 {
+                1usize << alpha.exponent()
+            } else {
+                continue;
+            };
+            let wa = base
+                .mantissa_max_bit_len()
+                .saturating_mul(alpha_up)
+                .saturating_add(WORD_BIT_SIZE);
+            let mut pk = one.clone()?;
+            let mut wk = one.clone()?;
+            for k in (1..n).rev() {
+                let kw = Self::from_word(k as Word, WORD_BIT_SIZE)?;
+                pk = exact_mul_num(&pk, &kw)?;
+                let akm1 = exact_add_num(alpha, &Self::from_word((k - 1) as Word, WORD_BIT_SIZE)?)?;
+                let t = exact_mul_num(&exact_mul_num(&akm1, y)?, &wk)?;
+                wk = exact_add_num(&pk, &t)?;
+            }
+            // Only a value with at most p + 2 significant bits can sit on a rounding
+            // breakpoint (the case Ziv cannot certify). With v = base^α W / P that bounds the
+            // odd part of base^α by p + 2 + bits(P) bits; for the complement v = 1 − v′ the
+            // bound grows by the exponent gap −log₂ v, estimated at 128 bits (+ slack). A
+            // power inexact at that width means v is not a breakpoint value: the floating
+            // path certifies it.
+            let lp = pk.mantissa_max_bit_len();
+            let mut gap = 0usize;
+            if complement {
+                let q = round_p(2 * WORD_BIT_SIZE);
+                let approx = base
+                    .pow(alpha, q, RoundingMode::None, cc)?
+                    .mul(&wk, q, RoundingMode::None)?
+                    .div(&pk, q, RoundingMode::None)?;
+                let v = one.sub(&approx, q, RoundingMode::None)?;
+                gap = if v.is_positive() && v.exponent() > -(WORD_BIT_SIZE as Exponent) {
+                    usize::try_from(-v.exponent()).unwrap_or(0)
+                } else {
+                    usize::MAX
+                };
+            }
+            let wl = p
+                .saturating_add(2)
+                .saturating_add(lp)
+                .saturating_add(gap)
+                .saturating_add(2 * WORD_BIT_SIZE)
+                .min(wa);
+            if wl > WORK_BITS_MAX {
+                continue;
+            }
+            let xa = base.pow(alpha, round_p(wl), RoundingMode::ToZero, cc)?;
+            if xa.inexact() {
+                continue;
+            }
+            let num = exact_mul_num(&xa, &wk)?;
+            let num = if complement { exact_add_num(&pk, &num.neg()?)? } else { num };
+            if num.is_zero() {
+                return Ok(Some(Self::new2(p, Sign::Pos, false)?));
+            }
+            return Ok(Some(num.div(&pk, p, rm)?));
+        }
+        Ok(None)
     }
 
     fn betainc_at(&self, b: &Self, x: &Self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -4218,6 +4657,9 @@ fn betainc_cf(
 }
 
 const BETAINC_CF_MAX: u32 = 100_000;
+/// Work limit of the γ(s, x) power series (see `gammainc_at`): a resource refusal for
+/// x ≈ s ≳ 2^40, not an accuracy cap; every sum that stops earlier is complete to 2^-p.
+const GAMMAINC_SERIES_TERMS_MAX: usize = 1 << 28;
 /// Term cap for the `erf` Maclaurin series (it only runs for `x² < 0.7·p`).
 const ERF_SERIES_MAX: usize = 1 << 20;
 
@@ -6292,7 +6734,13 @@ mod tests {
         // x = 2^20: every power series peaks near k ~ x, past its p-sized term cap.
         let big = pow2(20, p)?;
         let nu0 = ExactNumNumber::from_word(0, p)?;
-        assert!(exhausted(big.ei_series(p, &mut cc)));
+        // ZF-37: the Ei series has no term cap (all terms positive; it stops once k > x and the
+        // term is below 2^-p of the largest). At x = 2^9 it needs ~1400 terms, past the old
+        // ~2p cap, and now completes and agrees with Ei.
+        let mid = pow2(9, p)?;
+        let (series, _) = mid.ei_series(p + 64, &mut cc)?;
+        let ei = mid.ei(p, RoundingMode::ToEven, &mut cc)?;
+        bits_agree(&series, &ei, p, 56, "Ei(2^9) series")?;
         assert!(exhausted(big.si_series(p)));
         assert!(exhausted(big.ci_series(p, &mut cc)));
         assert!(exhausted(big.fresnel_sc_series(false, p, &mut cc)));

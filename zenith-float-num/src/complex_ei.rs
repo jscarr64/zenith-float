@@ -159,6 +159,17 @@ impl ExactComplex {
             return nan_pair(Error::InvalidArgument);
         }
         let dest = round_p(p);
+        // ZF-37: on the positive real axis Ci(x ± 0i) = Ci(x) ± 0i (real Taylor coefficients
+        // off the cut); the exactly-zero imaginary part is pinned, as in `si_word`, so Ziv does
+        // not chase rounding noise. Its sign is the limit's: Im Ci(x + iy) ≈ y cos(x)/x.
+        if self.im().is_zero() && self.re().is_positive() {
+            let cx = self.re().cos(WORD_BIT_SIZE, RoundingMode::ToEven, cc);
+            let mut z = ExactNum::new(dest);
+            if self.im().is_negative() ^ cx.is_negative() {
+                z = z.neg();
+            }
+            return ExactComplex::new(self.re().ci(dest, rm, cc), z);
+        }
         ziv_complex(dest, rm, |pw| self.ci_at(pw, dest, cc))
     }
 
