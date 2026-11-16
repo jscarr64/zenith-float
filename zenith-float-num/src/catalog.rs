@@ -868,7 +868,9 @@ fn scorer_taylor(x: &ExactNum, hi: bool, wp: usize, cc: &mut Consts) -> Option<(
         .bi(wp, nr, cc)
         .mul(&scale, wp, nr)
         .div(&three, wp, nr);
-    if x.is_zero() {
+    // |x| < 2^-(wp+8): the rest is below |a1 x| + |a2| x^2 < 2^(ex-1), under a0's own error.
+    // (Forming x^2 or a1 x would also drag the arithmetic through the subnormal range.)
+    if x.is_zero() || x.exponent().is_some_and(|e| e < -(wp as i64) - 8) {
         return Some((a0, wp as i64 - 8));
     }
     let a1 = ExactNum::new(wp)
@@ -893,7 +895,10 @@ fn scorer_taylor(x: &ExactNum, hi: bool, wp: usize, cc: &mut Consts) -> Option<(
     loop {
         // q = |x|^3 / (n(n+1)) < 2^(3 ex - bitlen(n(n+1)) + 1).
         let nn = n.checked_mul(n + 1)?;
-        let qexp = 3 * ex - bitlen(nn) + 1;
+        let qexp = ex
+            .saturating_mul(3)
+            .saturating_sub(bitlen(nn))
+            .saturating_add(1);
         let emax = last[0].max(last[1]).max(last[2]);
         if qexp <= -1 && emax + 2 < peak - wp as i64 {
             break;
@@ -930,6 +935,10 @@ fn scorer_taylor(x: &ExactNum, hi: bool, wp: usize, cc: &mut Consts) -> Option<(
 fn scorer_watson(y: &ExactNum, alt: bool, wp: usize, cc: &mut Consts) -> Option<(ExactNum, i64)> {
     let nr = RoundingMode::None;
     let ey = y.exponent()?;
+    if ey < 2 {
+        // y < 2: c_1/c_0 = 2/y^3 > 1/4, the bound cannot reach working precision.
+        return None;
+    }
     let inv_pi = ExactNum::from_u8(1, wp).div(&cc.pi(wp, nr), wp, nr);
     if ey > wp as i64 + 8 {
         // K = 1: |R_1| <= c_1 (2/sqrt 3)^4 < 3.6 c_0 / y^3 < 2^(2 - 3(ey - 1)) c_0, far below 2^-wp.

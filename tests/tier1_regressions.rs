@@ -3548,6 +3548,8 @@ fn zf_63_bessel_j_integer_order_large_x() {
 /// stopped before the minimum, and 1/(pi x) directly for huge x. References: mpmath
 /// scorergi/scorerhi at 6000 and 9000 bits (agree to 2^-5000 relative); maxv on its
 /// subnormal grid (q = 2^p/(pi (1-2^-p))), overflow C99 7.12.1. All modes CR.
+/// Follow-up: at |x| = minnorm / minpos, x^3 in the tail test wrapped and the loop
+/// never stopped; those rows are Gi(0) / Hi(0) rounded (|x| far below one ulp).
 #[test]
 fn zf_57_scorer_bounded_series_and_watson() {
     let mut cc = Consts::new().expect("Consts");
