@@ -8516,7 +8516,7 @@ mod grid_digest_tests {
                             // Operand 3 is u = -7; mi = 2, 3 are m = 1/2, 3/8, the only m in (0, 1) on this grid,
                             // and |u| = 7 > 2K(m) there. m = 0, 1 take their own closed forms; m = 3 stays hashed.
                             let f30 = JNAMES[fi] == "am" && i == 3 && (mi == 2 || mi == 3);
-                            held_f21 += usize::from(f21);
+                            held_f21 += usize::from(f21 && !f22);
                             held_tzud += usize::from(tzud);
                             held_f22 += usize::from(f22);
                             held_f28 += usize::from(f28);
@@ -8540,7 +8540,9 @@ mod grid_digest_tests {
             }
         }
         assert_eq!(count, 13 * 7 * 5 * 2 * 2);
-        // F-21 (N-6, ZF-M27): the Down NaN(PrecisionRetryExhausted) cells at operand 21 are not hashed
+        // F-21 (N-6, ZF-M27): the Down NaN(PrecisionRetryExhausted) cells at operand 21 are not hashed.
+        // Counted apart from the F-22 cells: since ZF-60 the 8 Down dn/nd cells at m = 1/2, 3/8 refuse
+        // (they returned 1, a wrong value: dn = 1 - m u^2/2 + ... < 1), and stay held under F-22.
         assert_eq!(held_f21, 62);
         // M27-TZ/UD: the 24 Down +overflow cells now give +MAX (Tier 1 ZF-59 wrappers map overflow by mode) and are
         // hashed again; none is held.

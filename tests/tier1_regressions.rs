@@ -3040,3 +3040,53 @@ fn zf_65_complex_bessel_negative_order_and_zero_argument() {
         );
     }
 }
+
+/// ZF-60: Jacobi functions for large u and m near 1. The AGM / descending Landen evaluation
+/// claimed the full working precision, but cn and dn near their zeros (and asin near ±1 in the
+/// recurrence) lose hundreds of bits, and dn = sqrt(1 - m sn^2) cancelled. The recurrence now carries
+/// an error bound that the Ziv loop uses, and dn = sqrt(cn^2 + m' sn^2). Expected values are
+/// FLINT-certified (am as the root of acb.elliptic_f, Newton; 2p+64 bits; land39/zf60; ToEven and Up
+/// rows of the 590, all 590 judged), except
+/// sn(1000 | 1) below 1 in Down/ToZero (tanh 1000 = 1 - 2e^-2000, verified by hand).
+#[test]
+fn zf_60_jacobi_large_argument_m_near_one() {
+    let mut cc = Consts::new().expect("Consts");
+    let mode = |s: &str| match s {
+        "up" => RoundingMode::Up,
+        "down" => RoundingMode::Down,
+        "tozero" => RoundingMode::ToZero,
+        "fromzero" => RoundingMode::FromZero,
+        "toeven" => RoundingMode::ToEven,
+        "toodd" => RoundingMode::ToOdd,
+        _ => RoundingMode::None,
+    };
+    for l in include_str!("tier1/zf60.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let (f, p, rm) = (t[0], t[1].parse::<usize>().expect("p"), mode(t[2]));
+        let a: Vec<&str> = t[3].split('|').collect();
+        let (u, m) = (parse_real(a[0]).expect("u"), parse_real(a[1]).expect("m"));
+        let what = format!("{f}({}) p={p} {rm:?}", t[3]);
+        let v = match f {
+            "r.jacobi_am" => u.jacobi_am(&m, p, rm, &mut cc),
+            "r.jacobi_sn" => u.jacobi_sn(&m, p, rm, &mut cc),
+            "r.jacobi_cn" => u.jacobi_cn(&m, p, rm, &mut cc),
+            "r.jacobi_dn" => u.jacobi_dn(&m, p, rm, &mut cc),
+            "r.jacobi_cd" => u.jacobi_cd(&m, p, rm, &mut cc),
+            "r.jacobi_ns" => u.jacobi_ns(&m, p, rm, &mut cc),
+            "r.jacobi_nc" => u.jacobi_nc(&m, p, rm, &mut cc),
+            "r.jacobi_nd" => u.jacobi_nd(&m, p, rm, &mut cc),
+            "r.jacobi_sc" => u.jacobi_sc(&m, p, rm, &mut cc),
+            "r.jacobi_sd" => u.jacobi_sd(&m, p, rm, &mut cc),
+            "r.jacobi_cs" => u.jacobi_cs(&m, p, rm, &mut cc),
+            "r.jacobi_ds" => u.jacobi_ds(&m, p, rm, &mut cc),
+            "r.jacobi_dc" => u.jacobi_dc(&m, p, rm, &mut cc),
+            _ => panic!("function {f}"),
+        };
+        let k: Vec<&str> = t[4].split(':').collect();
+        assert_eq!(k[0], "F", "{what}: expected kind {}", t[4]);
+        let e: i64 = k[2].parse().expect("exp");
+        let w =
+            parse_real(&format!("{}{}p{}", k[1], k[3], e - 4 * k[3].len() as i64)).expect("want");
+        assert_eq!(v.compare(&w), Some(0), "{what}: {v} want {}", t[4]);
+    }
+}
