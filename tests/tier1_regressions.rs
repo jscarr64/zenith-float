@@ -3661,6 +3661,39 @@ fn zf_37_bessel_j_i_tiny_and_extreme_x() {
     assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
 }
 
+/// ZF-37: boundary rows for the 4-word `bessel_ji_scaled` skip. `x = 2^{-30}`
+/// is the point that was 1.36 s at p = 8192; `ν = -1 + 2^{-300}` is mapped
+/// onto a pole of `Γ(ν+1)` by 256-bit rounding and must not leak that pole.
+/// Golds from FLINT/Arb unique-rounding enclosures (`tgen_ji_edge.py`).
+#[test]
+fn zf_37_bessel_j_i_estimate_boundaries() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf37-ji-edge.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let x = parse_real(t[1]).expect("x");
+        let nu = parse_real(t[2]).expect("nu");
+        let p = t[3].parse::<usize>().expect("p");
+        let rm = mode(t[4]).expect("mode");
+        let v = match t[0] {
+            "r.bessel_j_nu" => x.bessel_j_nu(&nu, p, rm, &mut cc),
+            "r.bessel_i" => x.bessel_i(&nu, p, rm, &mut cc),
+            _ => panic!("function"),
+        };
+        if fmt_real(&v) != t[5] {
+            bad.push(format!(
+                "{}({}, ν={}) p={p} {rm:?}: {} want {}",
+                t[0],
+                t[1],
+                t[2],
+                fmt_real(&v),
+                t[5]
+            ));
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+}
+
 /// ZF-37 (tiny-x Y_ν, K_ν): Y_ν(minpos) for ν ≠ 0 overflowed as +Inf (the
 /// dominant term is −(1/π) Γ(ν) (x/2)^{-ν} for ν > 0, or a signed multiple for
 /// ν < 0; Y_{-(n+1/2)}(minpos) underflows with the sign of (−1)^n J_{n+1/2}).

@@ -6123,6 +6123,17 @@ fn scale_in_rm(
 /// 8192-bit order does not run `ln_gamma` at working precision just to discover
 /// that `L` is a normal (J/I at x = 2^{-30}, p = 8192, ν ≈ 1/3 were 1.36 s vs
 /// 0.07 s; K at the same point, which calls `I_ν` and `I_{-ν}`, was 5.8 s vs 0.29 s).
+///
+/// The estimate is accepted only away from poles of Γ(ν+1). Then, with
+/// `|ν| < 2^{16}` and `x` in the representable range, the ToEven 4-word
+/// rounding plus a 4-word `ln_gamma` shift `Λ` by well under one unit
+/// (`|δν| ≤ 2^{16-256}`, `|dΛ/dν|` is moderate), so `|n_est − n| ≤ 4`.
+/// The skip uses a `2^{20}` margin around the already-padded `lo`/`hi`
+/// (`EMIN + 2p + 256`, `EMAX − 256`), which cannot shrink enough for a
+/// wrong skip. Near a pole, or if `ln_gamma` overflows, the estimate is
+/// refused (`None`) and the precise path runs. Rounding a high-bit ν onto
+/// a non-positive integer must not leak `ExponentOverflow` / `DivisionByZero`
+/// from this helper — those would turn a finite `J_ν`/`I_ν` into a NaN.
 fn estimate_log2_leading_ji(
     x: &ExactNumNumber,
     a: &ExactNumNumber,
@@ -6136,12 +6147,19 @@ fn estimate_log2_leading_ji(
     let mut xq = x.abs()?;
     xq.set_precision(q, RoundingMode::ToEven)?;
     xq.set_inexact(false);
+    let one = N::from_word(1, q)?;
+    let ap1 = aq.add(&one, q, RoundingMode::None)?;
+    if gamma_arg_too_close_to_nonpos_int(&ap1, q)? {
+        return Ok(None);
+    }
     let ln2 = cc.ln_2_num(q, RoundingMode::None)?;
     let la = xq.ln(q, RoundingMode::None, cc)?;
     let al = aq.mul(&la, q, RoundingMode::None)?;
-    let one = N::from_word(1, q)?;
-    let ap1 = aq.add(&one, q, RoundingMode::None)?;
-    let lg = ap1.ln_gamma(q, RoundingMode::None, cc)?;
+    let lg = match ap1.ln_gamma(q, RoundingMode::None, cc) {
+        Ok(v) => v,
+        Err(Error::ExponentOverflow(_)) | Err(Error::DivisionByZero) => return Ok(None),
+        Err(e) => return Err(e),
+    };
     if (lg.exponent() as i128).unsigned_abs() > 60 {
         return Ok(None);
     }
@@ -6154,8 +6172,31 @@ fn estimate_log2_leading_ji(
         return Ok(Some(n));
     }
     let fl = lam.clone()?.floor()?;
-    let nf = if fl.is_zero() { 0 } else { fl.abs()?.int_as_usize()? as i128 };
+    let nf = if fl.is_zero() {
+        0
+    } else {
+        match fl.abs()?.int_as_usize() {
+            Ok(u) => u as i128,
+            Err(_) => return Ok(None),
+        }
+    };
     Ok(Some(if fl.is_negative() { -nf } else { nf }))
+}
+
+/// `true` if `z` is within `2^{-80}` of an integer `≤ 0` (a pole of `Γ`).
+fn gamma_arg_too_close_to_nonpos_int(z: &ExactNumNumber, q: usize) -> Result<bool, Error> {
+    type N = ExactNumNumber;
+    if z.is_zero() {
+        return Ok(true);
+    }
+    let fl = z.clone()?.floor()?;
+    let one = N::from_word(1, q)?;
+    let ceil = if z.is_int() { fl.clone()? } else { fl.add(&one, q, RoundingMode::None)? };
+    let d_fl = z.sub(&fl, q, RoundingMode::None)?.abs()?;
+    let d_ce = ceil.sub(z, q, RoundingMode::None)?.abs()?;
+    let (d, n) = if d_fl.cmp(&d_ce) <= 0 { (d_fl, fl) } else { (d_ce, ceil) };
+    let close = d.is_zero() || d.exponent() <= -80;
+    Ok(close && !n.is_positive())
 }
 
 fn bessel_ji_scaled(
@@ -6218,7 +6259,10 @@ fn bessel_ji_scaled(
 
     // Series path is preferred when L is a comfortable normal and we are not
     // on the tiny-x exact-leading path. Decide from a short estimate of n so
-    // we do not compute ln_gamma(ν+1) at p bits first.
+    // we do not compute ln_gamma(ν+1) at p bits first. `margin` is 2^{20};
+    // a accepted estimate is accurate to a few units (see
+    // [`estimate_log2_leading_ji`]), so this cannot skip when the true `n`
+    // is outside `[lo, hi]`.
     if small_int.is_none() && !tiny && a.exponent() <= 16 {
         let lo = EXPONENT_MIN as i128 + 2 * p as i128 + 256;
         let hi = EXPONENT_MAX as i128 - 256;
@@ -8708,5 +8752,148 @@ mod tests {
             .map(|h| h.join().unwrap_or(usize::MAX))
             .sum();
         assert_eq!(fails, 0, "with_even_bernoulli lost its slot {fails} times");
+    }
+
+    fn n_at(
+        x: &ExactNumNumber,
+        a: &ExactNumNumber,
+        q: usize,
+        cc: &mut Consts,
+    ) -> Result<i128, crate::Error> {
+        let ln2 = cc.ln_2_num(q, RoundingMode::None)?;
+        let la = x.abs()?.ln(q, RoundingMode::None, cc)?;
+        let al = a.mul(&la, q, RoundingMode::None)?;
+        let one = ExactNumNumber::from_word(1, q)?;
+        let ap1 = a.add(&one, q, RoundingMode::None)?;
+        let lg = ap1.ln_gamma(q, RoundingMode::None, cc)?;
+        let lam = al
+            .sub(&lg, q, RoundingMode::None)?
+            .div(&ln2, q, RoundingMode::None)?
+            .sub(a, q, RoundingMode::None)?;
+        if lam.exponent() > 62 {
+            return Ok(if lam.is_negative() { -(1i128 << 100) } else { 1i128 << 100 });
+        }
+        let fl = lam.clone()?.floor()?;
+        let nf = if fl.is_zero() { 0 } else { fl.abs()?.int_as_usize()? as i128 };
+        Ok(if fl.is_negative() { -nf } else { nf })
+    }
+
+    fn check_skip_is_conservative(
+        x: &ExactNumNumber,
+        nu: &ExactNumNumber,
+        p: usize,
+        cc: &mut Consts,
+        label: &str,
+    ) -> Result<(), crate::Error> {
+        let a = nu.clone()?;
+        let n_est = super::estimate_log2_leading_ji(x, &a, cc)?;
+        let q = (16 * WORD_BIT_SIZE)
+            .max(a.mantissa_max_bit_len() + 4 * WORD_BIT_SIZE)
+            .max(x.mantissa_max_bit_len() + 4 * WORD_BIT_SIZE);
+        let n_true = n_at(x, &a, q, cc)?;
+        let lo = EXPONENT_MIN as i128 + 2 * p as i128 + 256;
+        let hi = EXPONENT_MAX as i128 - 256;
+        let margin = 1i128 << 20;
+        if let Some(n_est) = n_est {
+            if n_est > lo + margin && n_est < hi - margin {
+                assert!(
+                    (lo..=hi).contains(&n_true),
+                    "{label}: estimate skipped (n_est={n_est}) but precise n={n_true} is outside [{lo}, {hi}]"
+                );
+                let err = (n_est - n_true).abs();
+                assert!(
+                    err <= 4,
+                    "{label}: |n_est-n|={err} (n_est={n_est}, n={n_true}); bound is 4"
+                );
+            }
+        }
+        Ok(())
+    }
+
+    /// The 4-word skip must never fire when the true leading exponent is outside
+    /// the padded normal window, including ν that 256-bit rounding maps onto a pole.
+    #[test]
+    fn zf_37_ji_scaled_estimate_never_skips_near_edges() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p64 = 64;
+        let x30 = pow2(-30, p64)?;
+        let one = ExactNumNumber::from_word(1, p64)?;
+        let two = ExactNumNumber::from_word(2, p64)?;
+        let three = ExactNumNumber::from_word(3, p64)?;
+        let half = one.div(&two, p64, RoundingMode::ToEven)?;
+        let third = one.div(&three, p64, RoundingMode::ToEven)?;
+        let five_two = ExactNumNumber::from_word(5, p64)?.div(&two, p64, RoundingMode::ToEven)?;
+
+        // ν = -1 + 2^{-300}: 256-bit rounding of ν+1 is 0, a pole of Γ.
+        let eps = pow2(-300, 384)?;
+        let mut nu_pole = one.clone()?;
+        nu_pole.set_precision(384, RoundingMode::None)?;
+        nu_pole = eps.sub(&nu_pole, 384, RoundingMode::None)?; // 2^{-300} - 1
+
+        let third_wide = ExactNumNumber::from_word(1, 8192)?.div(
+            &ExactNumNumber::from_word(3, 8192)?,
+            8192,
+            RoundingMode::ToEven,
+        )?;
+
+        let cases: [(&str, ExactNumNumber, ExactNumNumber, usize); 11] = [
+            ("J-shape 1/2 p64", x30.clone()?, half.clone()?, p64),
+            ("-1/2 p64", x30.clone()?, half.neg()?, p64),
+            ("5/2 p64", x30.clone()?, five_two.clone()?, p64),
+            ("1/3 p64", x30.clone()?, third.clone()?, p64),
+            ("1/3 8192-bit p64", x30.clone()?, third_wide.clone()?, p64),
+            (
+                "1/3 8192-bit p8192",
+                x30.clone()?,
+                third_wide.clone()?,
+                8192,
+            ),
+            ("pole-adjacent p64", x30.clone()?, nu_pole.clone()?, p64),
+            ("pole-adjacent p2048", x30.clone()?, nu_pole.clone()?, 2048),
+            ("2^{-4} 1/2", pow2(-4, p64)?, half.clone()?, p64),
+            (
+                "2^{-40} 201/2",
+                pow2(-40, p64)?,
+                {
+                    let mut v = ExactNumNumber::from_word(201, p64)?;
+                    v = v.div(&two, p64, RoundingMode::ToEven)?;
+                    v
+                },
+                p64,
+            ),
+            (
+                "2^{-40} -201/2",
+                pow2(-40, p64)?,
+                {
+                    let mut v = ExactNumNumber::from_word(201, p64)?;
+                    v = v.div(&two, p64, RoundingMode::ToEven)?.neg()?;
+                    v
+                },
+                p64,
+            ),
+        ];
+        for (label, x, nu, p) in cases {
+            check_skip_is_conservative(&x, &nu, p, &mut cc, label)?;
+        }
+
+        // The pole-adjacent order must not leak ExponentOverflow / DivisionByZero
+        // from the 4-word estimate (that would be a NaN at the ExactNum wrapper).
+        let j = x30.bessel_j_nu(&nu_pole, p64, RoundingMode::ToEven, &mut cc)?;
+        assert!(
+            !j.is_zero(),
+            "J of -1 plus 2^-300 at 2^-30 should be finite nonzero"
+        );
+        let i = x30.bessel_i(&nu_pole, p64, RoundingMode::ToEven, &mut cc)?;
+        assert!(
+            !i.is_zero(),
+            "I of -1 plus 2^-300 at 2^-30 should be finite nonzero"
+        );
+        // Estimate itself must refuse (ν+1 rounds to 0 at 4 words).
+        assert_eq!(
+            super::estimate_log2_leading_ji(&x30, &nu_pole, &mut cc)?,
+            None,
+            "estimate should refuse a pole after 256-bit rounding"
+        );
+        Ok(())
     }
 }
