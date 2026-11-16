@@ -2320,11 +2320,13 @@ impl ExactNumNumber {
         Self::p_assertion(p)?;
         if let Some(n) = as_i32_exact(nu, p)? {
             let an = n.unsigned_abs() as usize;
-            let j = self.bessel_j(an, p, rm, cc)?;
+            // J_{−n} = (−1)^n J_n: when the sign flips, round J_n in the mirrored direction
+            // so that −J_n is rounded in `rm` (Up of −v is −(Down of v)).
             if n >= 0 || n % 2 == 0 {
-                Ok(j)
+                self.bessel_j(an, p, rm, cc)
             } else {
-                j.neg()
+                self.bessel_j(an, p, crate::common::util::invert_rm_for_sign(rm), cc)?
+                    .neg()
             }
         } else if !self.is_positive() {
             Err(Error::InvalidArgument)
@@ -2421,11 +2423,18 @@ impl ExactNumNumber {
             let an = Self::from_word(n.unsigned_abs() as Word, p)?;
             let mut ax = self.clone()?;
             ax.set_sign(Sign::Pos);
-            let i = ax.bessel_series(&an, p, rm, cc, false)?;
+            // I_n(−x) = (−1)^n I_n(x): a flipped sign rounds I_n(|x|) in the mirrored direction.
             if self.is_negative() && n.unsigned_abs() % 2 == 1 {
-                i.neg()
+                ax.bessel_series(
+                    &an,
+                    p,
+                    crate::common::util::invert_rm_for_sign(rm),
+                    cc,
+                    false,
+                )?
+                .neg()
             } else {
-                Ok(i)
+                ax.bessel_series(&an, p, rm, cc, false)
             }
         } else if !self.is_positive() {
             Err(Error::InvalidArgument)

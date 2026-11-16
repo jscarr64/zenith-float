@@ -3267,3 +3267,31 @@ fn zf_18_68_complex_parts_carry_error_bounds() {
         bad.join("\n")
     );
 }
+
+/// ZF-36: J_{−n}(x) = (−1)^n J_n(x), I_n(−x) = (−1)^n I_n(x). A negation after rounding
+/// must mirror Up/Down, not reuse the same direction. Expected values: FLINT >2p+64 bits.
+#[test]
+fn zf_36_bessel_reflection_directed_rounding() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf36-reflect.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let p = t[1].parse::<usize>().expect("p");
+        let got = run(t[0], p, mode(t[2]).expect("rm"), &t[3..5], &mut cc).expect("dispatch");
+        if got != t[5] {
+            bad.push(format!(
+                "{} p={p} {} args={:?} want {} got {got}",
+                t[0],
+                t[2],
+                &t[3..5],
+                t[5]
+            ));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "{} wrong rows:\n{}",
+        bad.len(),
+        bad.join("\n")
+    );
+}
