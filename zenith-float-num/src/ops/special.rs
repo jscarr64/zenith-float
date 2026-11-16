@@ -2157,18 +2157,17 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let extra = extra_bits_for_degree(n as u32);
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc + extra;
-        // The power series (and Miller's normalization sum) cancel: terms reach ≈ e^{|x|}
+        // The power series cancels: terms reach ≈ e^{|x|}
         // while |J_n(x)| ≈ (π|x|/2)^{-1/2}.
         let guard = bessel_cancel_bits(self, 3, 2)?;
         let mut lost_done = 0;
 
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE + extra + guard;
-            let mut ret = if n > 48 {
-                self.bessel_j_miller(n, p_x)?
-            } else {
-                self.bessel_j_series(n, p_x)?
-            };
+            // ZF-63: the power series for every n. Miller's recurrence started at n + p/2 + 8
+            // whatever x was, below x for x > 4n + 2p + 256 (J_100(1000) at 64 bits), where the
+            // backward recurrence has not settled and the normalized value is wrong.
+            let mut ret = self.bessel_j_series(n, p_x)?;
             // Near a zero of J_n the series sum cancels: its error is absolute (≈ 2^-p_x),
             // so a result of exponent -k has k fewer correct bits. Widen once by k.
             let lost = if ret.exponent() < 0 {
@@ -2261,51 +2260,6 @@ impl ExactNumNumber {
             return Err(Error::PrecisionRetryExhausted);
         }
         Ok(sum)
-    }
-
-    /// Miller backward recurrence. Normalize with \(J_0+2\sum_{k\ge 1}J_{2k}=1\).
-    fn bessel_j_miller(&self, n: usize, p: usize) -> Result<Self, Error> {
-        if self.is_zero() {
-            return if n == 0 { Self::from_word(1, p) } else { Self::new2(p, Sign::Pos, false) };
-        }
-        let extra = (p / 2).saturating_add(8).max(16);
-        let nstart = n.saturating_add(extra);
-        let two = Self::from_word(2, p)?;
-        let mut jp1 = Self::from_word(0, p)?;
-        let mut jp = Self::from_word(1, p)?;
-        let mut jn = Self::from_word(0, p)?;
-        let mut even_sum = Self::from_word(0, p)?;
-        let mut j0 = Self::from_word(0, p)?;
-        for m in (1..=nstart).rev() {
-            let two_m = Self::from_word((2 * m) as Word, p)?;
-            let jm1 = two_m
-                .div(self, p, RoundingMode::None)?
-                .mul(&jp, p, RoundingMode::None)?
-                .sub(&jp1, p, RoundingMode::None)?;
-            if m == n {
-                jn = jp.clone()?;
-            }
-            if m == 1 {
-                j0 = jm1.clone()?;
-            }
-            if m % 2 == 0 {
-                even_sum = even_sum.add(&jp, p, RoundingMode::None)?;
-            }
-            jp1 = jp;
-            jp = jm1;
-        }
-        if n == 0 {
-            jn = j0.clone()?;
-        }
-        let scale = j0.add(
-            &two.mul(&even_sum, p, RoundingMode::None)?,
-            p,
-            RoundingMode::None,
-        )?;
-        if scale.is_zero() {
-            return Err(Error::InvalidArgument);
-        }
-        jn.div(&scale, p, RoundingMode::None)
     }
 
     /// \(J_\nu(\mathrm{self})\) for real order `nu`. Negative `self` only for integer `nu`.

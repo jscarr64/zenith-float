@@ -3513,3 +3513,30 @@ fn zf_43_heun_series_rigorous_tail() {
     }
     assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// ZF-63: integer-order J_n for n > 48 used Miller's backward recurrence started at
+/// n + p/2 + 8 whatever x was. For x past that start (x > 4n + 2p + 256, e.g.
+/// J_100(1000) at 64 bits) the recurrence had not settled and the normalized value
+/// was wrong from about bit 60 on. Now the power series covers every n (its guard
+/// bits cover the e^{|x|} cancellation). References: FLINT arb bessel_j at 9400 bits.
+/// Every mode correctly rounded.
+#[test]
+fn zf_63_bessel_j_integer_order_large_x() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf63.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let x = parse_real(t[0]).expect("x");
+        let nu = parse_real(t[1]).expect("nu");
+        for p in t[2].split(',').map(|p| p.parse::<usize>().expect("p")) {
+            for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+                let v = x.bessel_j_nu(&nu, p, rm, &mut cc);
+                let w = cr_ref(t[3], p, rm, &mut cc);
+                if v.compare(&w) != Some(0) {
+                    bad.push(format!("J_{}({}) p={p} {rm:?}: {v} want {w}", t[1], t[0]));
+                }
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+}

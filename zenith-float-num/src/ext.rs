@@ -3820,7 +3820,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: power series; Miller recurrence for large `n` (`n ≤ 1024`);
+    /// - Algorithm: power series (every `n`; guard bits cover its `e^{|x|}` cancellation);
     ///   Hankel expansion (DLMF 10.17, stopped at its smallest term) when
     ///   `|x| ≥ max(16, 0.35(p+112))` and `|n|² < 2|x|`, and whenever the series
     ///   guard would exceed `BESSEL_GUARD_MAX` under that order condition.
