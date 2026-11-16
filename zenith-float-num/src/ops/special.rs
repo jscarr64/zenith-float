@@ -2528,8 +2528,21 @@ impl ExactNumNumber {
         let guard = if alternating { bessel_cancel_bits(self, 3, 2)? } else { 0 };
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE + guard;
-            let mut ret = self.bessel_jn_series(nu, p_x, cc, alternating)?;
-            if ret.try_set_precision(p, rm, p_wrk)? {
+            let (mut ret, peak, terms) = self.bessel_jn_series_peak(nu, p_x, cc, alternating)?;
+            // Near a zero of J_ν the sum is far below its largest term. Term k comes from
+            // term k−1 by a few roundings, so its relative error is at most (4k+4) ulps at
+            // p_x, and the T additions add T ulps of the peak: the absolute error is below
+            // (4T² + 5T)·2^(peak − p_x) < 2^(peak − p_x + 2·bitlen(T) + 3). The sum is good
+            // to p_x − (peak − e(sum)) − 2·bitlen(T) − 5 bits. Claim no more than that.
+            let claim = if ret.is_zero() {
+                0
+            } else {
+                let loss = peak.saturating_sub(ret.exponent()).max(0) as usize;
+                let acc = 2 * (usize::BITS - terms.leading_zeros()) as usize + 5;
+                // Word-aligned, as `try_set_precision` requires.
+                p_x.saturating_sub(loss + acc).min(p_wrk) / WORD_BIT_SIZE * WORD_BIT_SIZE
+            };
+            if claim > p && ret.try_set_precision(p, rm, claim)? {
                 ret.set_inexact(ret.inexact() | self.inexact() | nu.inexact());
                 return Ok(ret);
             }
@@ -2544,6 +2557,18 @@ impl ExactNumNumber {
         cc: &mut Consts,
         alternating: bool,
     ) -> Result<Self, Error> {
+        Ok(self.bessel_jn_series_peak(nu, p, cc, alternating)?.0)
+    }
+
+    /// [`Self::bessel_jn_series`] with the largest term exponent and the number of terms,
+    /// for the cancellation-aware claim in [`Self::bessel_series`].
+    fn bessel_jn_series_peak(
+        &self,
+        nu: &Self,
+        p: usize,
+        cc: &mut Consts,
+        alternating: bool,
+    ) -> Result<(Self, Exponent, usize), Error> {
         let two = Self::from_word(2, p)?;
         let half = self.div(&two, p, RoundingMode::None)?;
         let one = Self::from_word(1, p)?;
@@ -2552,6 +2577,8 @@ impl ExactNumNumber {
             .pow(nu, p, RoundingMode::None, cc)?
             .div(&g0, p, RoundingMode::None)?;
         let mut sum = term.clone()?;
+        let mut peak = if term.is_zero() { Exponent::MIN } else { term.exponent() };
+        let mut terms = 1usize;
         let hh = half.mul(&half, p, RoundingMode::None)?;
         // `series_n_max` is O(p) once the exponent is ≥ 16, which stops I_ν before the
         // peak at k ≈ |x|/2 (I_1(20000) never reached k ≈ 10000). J/Y keep the old cap:
@@ -2575,6 +2602,10 @@ impl ExactNumNumber {
                 term = term.neg()?;
             }
             sum = sum.add(&term, p, RoundingMode::None)?;
+            terms += 1;
+            if !term.is_zero() {
+                peak = peak.max(term.exponent());
+            }
             if series_negligible(&term, &sum, p) {
                 done = true;
                 break;
@@ -2583,7 +2614,7 @@ impl ExactNumNumber {
         if !done {
             return Err(Error::PrecisionRetryExhausted);
         }
-        Ok(sum)
+        Ok((sum, peak, terms))
     }
 
     /// Large-|x| Hankel expansion of `J_n` on `|self|`, then `J_n(-x)=(-1)^n J_n(x)`.

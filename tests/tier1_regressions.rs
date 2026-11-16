@@ -3295,3 +3295,18 @@ fn zf_36_bessel_reflection_directed_rounding() {
         bad.join("\n")
     );
 }
+
+/// ZF-36: the J_ν power series near a zero of J_ν (J_{1/2}(π) at 256 bits) certified p_wrk
+/// bits although the sum was ~2^64 below its largest term: 64 wrong bits returned as correctly
+/// rounded. The claim now subtracts the cancellation (peak term vs sum) and the accumulated
+/// per-term rounding. Expected value: FLINT (2p+64 bits).
+#[test]
+fn zf_36_bessel_series_cancellation_not_certified() {
+    let mut cc = Consts::new().expect("Consts");
+    for l in include_str!("tier1/zf36-cancel.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let p = t[1].parse::<usize>().expect("p");
+        let got = run(t[0], p, mode(t[2]).expect("rm"), &t[3..5], &mut cc).expect("dispatch");
+        assert_eq!(got, t[5], "{} p={p} {} args={:?}", t[0], t[2], &t[3..5]);
+    }
+}
