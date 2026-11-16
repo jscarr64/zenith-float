@@ -6389,6 +6389,14 @@ fn bessel_yk_scaled(
     if lr > -3 {
         return Ok(None);
     }
+    // Remainder after t_1 is O((x/2)^4) ~ 2^{2 lr}; after the μ=1 log term,
+    // O(x^4 ln x) ~ 2^{4(ex-1)}. If that is still on the p-bit grid, leave
+    // this path: the regular series is fast (Y_ν(2^{-30}) at p=2048 is
+    // 0.007 s there; spinning the retry budget here was ~29 s).
+    let rem_est = if int && a.cmp(&one) <= 0 { 4 * (ex as i128 - 1) + 16 } else { 2 * lr + 16 };
+    if rem_est > -(p as i128) - 16 {
+        return Ok(None);
+    }
 
     // Sign of the leading term.
     let mut sign = if is_k { Sign::Pos } else { Sign::Neg };
