@@ -22,6 +22,8 @@ use crate::mantissa::AddSubSpec;
 use crate::mantissa::Mantissa;
 
 // The one approved Ziv working-copy helper (see its file); used only at the pinned sites in tools/ziv_shape_a_sites.txt.
+#[cfg(test)]
+mod zfn01;
 mod ziv_operand;
 
 /// A finite floating point number with mantissa of an arbitrary size, an exponent, and the sign.
@@ -467,6 +469,30 @@ impl ExactNumNumber {
         self.div_general_case(d2, p, rm, true)
     }
 
+    /// Exponent of the leading bit of `self` plus one: a normal number's `exponent()`, or
+    /// `EXPONENT_MIN` minus the leading-zero count of a subnormal.
+    fn true_exponent(&self) -> i128 {
+        exp::wide(self.e) - (self.mantissa_max_bit_len() as i128 - self.precision() as i128)
+    }
+
+    /// The exact product may have exponent below `EXPONENT_MIN` (including a 1-unit margin for
+    /// the mantissa product of two values just above a power of two).
+    fn product_may_underflow(a: &Self, b: &Self) -> bool {
+        a.true_exponent() + b.true_exponent() < exp::wide(EXPONENT_MIN) + 2
+    }
+
+    /// The exact quotient may have exponent below `EXPONENT_MIN`.
+    fn quot_may_underflow(num: &Self, den: &Self) -> bool {
+        num.true_exponent() - den.true_exponent() < exp::wide(EXPONENT_MIN) + 2
+    }
+
+    /// Either operand's last bit sits below the minimum normal, so the exact sum or difference
+    /// can land on the subnormal grid (or below it).
+    fn sum_may_underflow(a: &Self, b: &Self) -> bool {
+        let ulp = |x: &Self| exp::wide(x.e) - x.mantissa_max_bit_len() as i128;
+        ulp(a).min(ulp(b)) < exp::wide(EXPONENT_MIN) - 1
+    }
+
     fn mul_general_case(
         &self,
         d2: &Self,
@@ -494,11 +520,47 @@ impl ExactNumNumber {
         let inputs = self.inexact || d2.inexact;
         let mut inexact = false;
 
-        let (e_shift, m3) = self
-            .m
-            .mul(&d2.m, p, rm, s == Sign::Pos, full_prec, &mut inexact)?;
+        // A product that may fall below the normal range is computed toward zero a word
+        // wider than `p`, then rounded once by `place_scaled`. Rounding to `p` bits first
+        // and then again in `subnormalize` loses sticky bits (ZF-N01). An exact `full_prec`
+        // product is not used here: it drops trailing zeros, so the mantissa width and the
+        // exponent would disagree in `place_scaled`.
+        let use_wide = !full_prec && Self::product_may_underflow(self, d2);
+        let (e_shift, m3) = if use_wide {
+            let wp = p.saturating_add(WORD_BIT_SIZE);
+            let wp = if wp > MAX_PRECISION { p } else { wp };
+            self.m.mul(
+                &d2.m,
+                wp,
+                RoundingMode::ToZero,
+                s == Sign::Pos,
+                false,
+                &mut inexact,
+            )?
+        } else {
+            self.m
+                .mul(&d2.m, p, rm, s == Sign::Pos, full_prec, &mut inexact)?
+        };
 
-        let e = exp::narrow(exp::wide(self.e) + exp::wide(d2.e) - exp::wide(e_shift));
+        let e_wide = exp::wide(self.e) + exp::wide(d2.e) - exp::wide(e_shift);
+
+        if use_wide {
+            if e_wide > exp::wide(EXPONENT_MAX) {
+                return Err(Error::ExponentOverflow(s));
+            }
+            let ret = ExactNumNumber {
+                m: m3,
+                s,
+                e: 0,
+                inexact,
+                op_inexact: Some(inexact),
+            };
+            let mut ret = ret.place_scaled(e_wide, inexact, p, rm)?;
+            ret.finish_flags(inputs, per_op);
+            return Ok(ret);
+        }
+
+        let e = exp::narrow(e_wide);
 
         if e > EXPONENT_MAX {
             return Err(Error::ExponentOverflow(s));
@@ -577,6 +639,34 @@ impl ExactNumNumber {
         // zero bits itself), so no operand is cloned.
         let inputs = self.inexact || d2.inexact;
         let mut inexact = false;
+
+        // Same double-rounding hole as multiplication: a quotient rounded to `p` bits and then
+        // again by `subnormalize` can treat a value just above half of minpos as a tie.
+        if Self::quot_may_underflow(self, d2) {
+            let wp = p.saturating_add(WORD_BIT_SIZE);
+            let wp = if wp > MAX_PRECISION { p } else { wp };
+            let (e_shift, m3) = self.m.div(
+                &d2.m,
+                wp,
+                RoundingMode::ToZero,
+                s == Sign::Pos,
+                &mut inexact,
+            )?;
+            let e_wide = exp::wide(self.e) - exp::wide(d2.e) + exp::wide(e_shift);
+            if e_wide > exp::wide(EXPONENT_MAX) {
+                return Err(Error::ExponentOverflow(s));
+            }
+            let ret = ExactNumNumber {
+                m: m3,
+                s,
+                e: 0,
+                inexact,
+                op_inexact: Some(inexact),
+            };
+            let mut ret = ret.place_scaled(e_wide, inexact, p, rm)?;
+            ret.finish_flags(inputs, per_op);
+            return Ok(ret);
+        }
 
         let (e_shift, m3) = self.m.div(&d2.m, p, rm, s == Sign::Pos, &mut inexact)?;
 
@@ -802,6 +892,20 @@ impl ExactNumNumber {
             Self::p_assertion(p)?;
         }
 
+        // When the exact sum or difference can land on the subnormal grid, the kernel rounds
+        // toward zero a word wider and `place` finishes with one rounding by `rm`. Rounding to
+        // `p` bits first and then again in `subnormalize` is the same ZF-N01 hole as in mul/div.
+        let place = !full_prec && Self::sum_may_underflow(self, d2);
+        let (ker_p, ker_rm) = if place {
+            let wp = p.saturating_add(WORD_BIT_SIZE);
+            (
+                if wp > MAX_PRECISION { p } else { wp },
+                RoundingMode::ToZero,
+            )
+        } else {
+            (p, rm)
+        };
+
         let mut d3 = Self::new_internal(0)?;
 
         // Both operands are zero: the result is a zero of precision `p`, signed by the rules for zeros.
@@ -831,16 +935,26 @@ impl ExactNumNumber {
             let (shift, m3) = m0.abs_add(
                 &zero,
                 AddSubSpec {
-                    p,
+                    p: ker_p,
                     m2_shift: 1,
-                    rm,
+                    rm: ker_rm,
                     is_positive: d3.is_positive(),
                     full_prec,
                 },
                 &mut inexact,
             )?;
-            let mut ret =
-                Self::finish_sum(d3, e0 - shift, m3, (inexact, inputs), rm, per_op, full_prec)?;
+            let mut ret = Self::finish_sum(
+                d3,
+                e0 - shift,
+                m3,
+                (inexact, inputs),
+                ker_rm,
+                per_op,
+                full_prec,
+            )?;
+            if place {
+                ret = ret.round_odd_to(p, rm)?;
+            }
             if ret.is_zero() {
                 // A subnormal operand rounded to zero keeps the minimal exponent, as `set_precision` left it.
                 ret.e = EXPONENT_MIN;
@@ -866,9 +980,9 @@ impl ExactNumNumber {
                 m1.abs_sub(
                     m2,
                     AddSubSpec {
-                        p,
+                        p: ker_p,
                         m2_shift: exp::abs_diff_shift(e1, e2),
-                        rm,
+                        rm: ker_rm,
                         is_positive: d3.is_positive(),
                         full_prec,
                     },
@@ -880,9 +994,9 @@ impl ExactNumNumber {
                 m2.abs_sub(
                     m1,
                     AddSubSpec {
-                        p,
+                        p: ker_p,
                         m2_shift: exp::abs_diff_shift(e2, e1),
-                        rm,
+                        rm: ker_rm,
                         is_positive: d3.is_positive(),
                         full_prec,
                     },
@@ -905,9 +1019,9 @@ impl ExactNumNumber {
                 m1.abs_add(
                     m2,
                     AddSubSpec {
-                        p,
+                        p: ker_p,
                         m2_shift: exp::abs_diff_shift(e1, e2),
-                        rm,
+                        rm: ker_rm,
                         is_positive: d3.is_positive(),
                         full_prec,
                     },
@@ -918,9 +1032,9 @@ impl ExactNumNumber {
                 m2.abs_add(
                     m1,
                     AddSubSpec {
-                        p,
+                        p: ker_p,
                         m2_shift: exp::abs_diff_shift(e2, e1),
-                        rm,
+                        rm: ker_rm,
                         is_positive: d3.is_positive(),
                         full_prec,
                     },
@@ -933,15 +1047,19 @@ impl ExactNumNumber {
         {
             debug_assert!(shift <= i64::MAX / 2 && e >= -exp::WIDE_LIMIT);
         }
-        Self::finish_sum(
+        let mut ret = Self::finish_sum(
             d3,
             exp::narrow(exp::wide(e) - exp::wide(shift)),
             m3,
             (inexact, inputs),
-            rm,
+            ker_rm,
             per_op,
             full_prec,
-        )
+        )?;
+        if place {
+            ret = ret.round_odd_to(p, rm)?;
+        }
+        Ok(ret)
     }
 
     /// Writes the exponent and mantissa of a finished sum into `d3` (sign already set) and sets the flags.
@@ -1651,9 +1769,11 @@ impl ExactNumNumber {
         }
         if p.is_multiple_of(WORD_BIT_SIZE) {
             let r = op(p, rm)?;
-            // A rounded subnormal result was rounded twice (at `p` bits, then onto the
-            // subnormal grid); recompute it through the round-to-odd path.
-            if r.e != EXPONENT_MIN || !r.op_inexact() {
+            // A rounded subnormal, or a value flushed to zero by a second rounding, is
+            // recomputed through the round-to-odd path. An inexact zero at exponent 0 is the
+            // flush-to-zero case; a correctly rounded underflow of the same kind is idempotent
+            // under that path.
+            if !r.op_inexact() || (r.e != EXPONENT_MIN && !r.is_zero()) {
                 return Ok(r);
             }
         }
@@ -1692,6 +1812,12 @@ impl ExactNumNumber {
 
         self.inexact = acc || rounded_again;
         self.op_inexact = Some(rounded || rounded_again);
+        if self.m.is_zero() {
+            // Canonical zero: exponent 0. A flushed sticky unit can leave e = EXPONENT_MIN
+            // after set_precision in RoundingMode::None, which is the same value with a
+            // different representation and would shift grid digests.
+            self.e = 0;
+        }
         Ok(self)
     }
 
