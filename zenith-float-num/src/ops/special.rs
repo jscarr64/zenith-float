@@ -6174,11 +6174,12 @@ pub(crate) fn with_even_bernoulli<R>(
                 return f(v);
             }
         }
-        BERNOULLI
-            .write()
-            .map_err(|_| Error::InvalidArgument)?
-            .grow_rounded(n, p)?;
-        let g = BERNOULLI.read().map_err(|_| Error::InvalidArgument)?;
+        // Use the grown slot under the same write guard: between releasing it and taking a
+        // read guard another thread may evict this precision (more than
+        // `BERNOULLI_P_SLOTS` in use), which returned `InvalidArgument` for a valid request.
+        // Only a miss runs `f` under the write lock; hits share the read lock as before.
+        let mut g = BERNOULLI.write().map_err(|_| Error::InvalidArgument)?;
+        g.grow_rounded(n, p)?;
         f(g.rounded_slice(n, p).ok_or(Error::InvalidArgument)?)
     }
     #[cfg(not(feature = "std"))]
@@ -7777,5 +7778,33 @@ mod tests {
 
     fn four_word(p: usize) -> Result<ExactNumNumber, crate::Error> {
         ExactNumNumber::from_word(4, p)
+    }
+
+    /// More precisions than `BERNOULLI_P_SLOTS` requested from many threads: a slot grown
+    /// under the write lock must still be there when the caller reads it. Before the fix
+    /// another thread could evict it between the write and the read, and the call returned
+    /// `InvalidArgument` for a valid request (seen as a NaN Cl3 in tier1 under load).
+    #[cfg(feature = "std")]
+    #[test]
+    fn bernoulli_cache_slot_survives_concurrent_eviction() {
+        let handles: Vec<_> = (0..16usize)
+            .map(|t| {
+                std::thread::spawn(move || {
+                    let mut fails = 0usize;
+                    for i in 0..400usize {
+                        let p = WORD_BIT_SIZE * (1 + (t + i) % (3 * BERNOULLI_P_SLOTS));
+                        if with_even_bernoulli(24, p, |v| Ok(v.len())) != Ok(24) {
+                            fails += 1;
+                        }
+                    }
+                    fails
+                })
+            })
+            .collect();
+        let fails: usize = handles
+            .into_iter()
+            .map(|h| h.join().unwrap_or(usize::MAX))
+            .sum();
+        assert_eq!(fails, 0, "with_even_bernoulli lost its slot {fails} times");
     }
 }
