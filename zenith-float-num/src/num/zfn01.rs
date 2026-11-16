@@ -1,6 +1,6 @@
 //! ZF-N01: a subnormal result is rounded once, not first to `p` bits and then onto the grid.
 use super::ExactNumNumber;
-use crate::defs::{Error, RoundingMode, Sign, EXPONENT_MIN, WORD_BIT_SIZE};
+use crate::defs::{Error, Exponent, RoundingMode, Sign, EXPONENT_MIN, WORD_BIT_SIZE};
 use crate::ext::{ExactNum, RawKind, RawParts};
 
 fn half_plus_2_pow_neg(k: u32) -> Result<ExactNumNumber, Error> {
@@ -230,5 +230,184 @@ fn zfn01_mul_none_underflow_is_canonical_zero() -> Result<(), Error> {
         got.inexact()
     );
     assert!(got.inexact() || got.op_inexact());
+    Ok(())
+}
+
+fn words_of(sig: u128, wbits: usize, shift: i128) -> Vec<u64> {
+    let nwords = wbits.div_ceil(64);
+    let mut v = sig;
+    if shift > 0 {
+        v <<= shift;
+    } else if shift < 0 {
+        v >>= (-shift) as u32;
+    }
+    let mut out = vec![0u64; nwords];
+    for (i, item) in out.iter_mut().enumerate() {
+        *item = (v >> (64 * i)) as u64;
+    }
+    out
+}
+
+fn bit_len_words(w: &[u64]) -> usize {
+    for (i, &x) in w.iter().enumerate().rev() {
+        if x != 0 {
+            return i * 64 + (64 - x.leading_zeros() as usize);
+        }
+    }
+    0
+}
+
+fn from_ae(sign: Sign, sig: u128, e: i128, p: usize) -> Result<ExactNumNumber, Error> {
+    if sig == 0 {
+        return ExactNumNumber::new(p);
+    }
+    let b = 128 - sig.leading_zeros() as i128;
+    let lead = e + b;
+    let width = p.max(b as usize).div_ceil(64) * 64;
+    if lead >= i128::from(EXPONENT_MIN) {
+        let w = words_of(sig, width, width as i128 - b);
+        ExactNumNumber::from_raw_parts(&w, width, sign, lead as Exponent, false)
+    } else {
+        let sh = e - i128::from(EXPONENT_MIN) + width as i128;
+        let w = words_of(sig, width, sh);
+        let n = bit_len_words(&w);
+        ExactNumNumber::from_raw_parts(&w, n, sign, EXPONENT_MIN, false)
+    }
+}
+
+fn fmt_hypot(v: &ExactNumNumber) -> String {
+    let s = if v.is_negative() { "-" } else { "+" };
+    if v.is_zero() {
+        return format!("Z:{s}");
+    }
+    let p = v.mantissa_max_bit_len();
+    let (words, _n, _sg, e, _ix) = v.as_raw_parts();
+    let nibbles = p / 4;
+    let nwords = p.div_ceil(64);
+    let mut hex = String::new();
+    for i in (0..nwords).rev() {
+        hex.push_str(&format!("{:016x}", words.get(i).copied().unwrap_or(0)));
+    }
+    format!("F:{s}:{e}:{}", &hex[hex.len() - nibbles..])
+}
+
+/// Independent one-rounding hypot: same scaling as `hypot`, then sqrt toward zero
+/// one word wide and `place_scaled` once. The 594_432-pair search below locks
+/// `hypot` to this path.
+fn hypot_one_round(
+    x: &ExactNumNumber,
+    y: &ExactNumNumber,
+    p: usize,
+    mode: RoundingMode,
+) -> Result<ExactNumNumber, Error> {
+    let p = crate::common::util::round_p(p);
+    let mut ax = x.abs()?;
+    let mut ay = y.abs()?;
+    if ax.abs_cmp(&ay) < 0 {
+        core::mem::swap(&mut ax, &mut ay);
+    }
+    if ax.is_zero() {
+        return ExactNumNumber::new2(p, Sign::Pos, x.inexact() | y.inexact());
+    }
+    if ay.is_zero() {
+        ax.set_precision(p, mode)?;
+        return Ok(ax);
+    }
+    let ax_exp = ax.exponent();
+    let mut sx = ax;
+    let ex = ax_exp - sx.normalize2() as i64;
+    let ay_exp = ay.exponent();
+    let mut sy = ay;
+    let ey = ay_exp - sy.normalize2() as i64;
+    let wx = sx.mantissa_max_bit_len() as i64;
+    sx.set_exponent(0);
+    let lim = wx.max(p as i64 / 2 + 1) + WORD_BIT_SIZE as i64;
+    let gap = crate::exp::wide(ex) - crate::exp::wide(ey);
+    let dy = if gap > crate::exp::wide(lim + WORD_BIT_SIZE as i64) { -lim } else { ey - ex };
+    sy.set_exponent(dy as Exponent);
+    let s2 = sx
+        .mul_full_prec(&sx)?
+        .add_full_prec(&sy.mul_full_prec(&sy)?)?;
+    let wide = s2.sqrt(p + WORD_BIT_SIZE, RoundingMode::ToZero)?;
+    let at = i128::from(wide.exponent()) + i128::from(ex);
+    let dropped = wide.inexact() || wide.op_inexact();
+    wide.place_scaled(at, dropped, p, mode)
+}
+
+/// 594_432 subnormal-band pairs (p=64, all six modes, A,B = 0..=128) against the
+/// one-rounding reference. This is the regression check for hypot's ZF-N01 fix.
+#[test]
+fn zfn01_hypot_one_rounding_search() -> Result<(), Error> {
+    let q = i128::from(EXPONENT_MIN) - 64;
+    let mut bad = 0u32;
+    let mut checked = 0u32;
+    let modes = [
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::ToZero,
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::FromZero,
+    ];
+    let p = 64usize;
+    for mode in modes {
+        for e1 in [q, q + 1, q + 8] {
+            for e2 in [q, e1] {
+                for a in 1u128..=128 {
+                    for b in 0u128..=128 {
+                        let x = from_ae(Sign::Pos, a, e1, p)?;
+                        let y = from_ae(Sign::Pos, b, e2, p)?;
+                        let got = x.hypot(&y, p, mode)?;
+                        let want = hypot_one_round(&x, &y, p, mode)?;
+                        checked += 1;
+                        if fmt_hypot(&got) != fmt_hypot(&want) {
+                            bad += 1;
+                            if bad <= 8 {
+                                eprintln!(
+                                    "BAD {mode:?} hypot({a}p{e1},{b}p{e2}) got {} want {}",
+                                    fmt_hypot(&got),
+                                    fmt_hypot(&want)
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert_eq!(checked, 594_432, "search size changed: {checked}");
+    assert_eq!(bad, 0, "{bad} hypot mismatches vs one-rounding reference");
+    Ok(())
+}
+
+/// Exact 3-4-5 at the subnormal scale: hypot(3 minpos, 4 minpos) is 5 minpos.
+#[test]
+fn zfn01_hypot_345_minpos_is_exact() -> Result<(), Error> {
+    let p = WORD_BIT_SIZE;
+    let q = i128::from(EXPONENT_MIN) - p as i128;
+    let x = from_ae(Sign::Pos, 3, q, p)?;
+    let y = from_ae(Sign::Pos, 4, q, p)?;
+    let want = from_ae(Sign::Pos, 5, q, p)?;
+    for rm in [
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::ToZero,
+        RoundingMode::Up,
+        RoundingMode::Down,
+        RoundingMode::FromZero,
+    ] {
+        let got = x.hypot(&y, p, rm)?;
+        assert_eq!(
+            fmt_hypot(&got),
+            fmt_hypot(&want),
+            "3-4-5 minpos {rm:?}: got {} want {}",
+            fmt_hypot(&got),
+            fmt_hypot(&want)
+        );
+        assert!(
+            !got.inexact() && !got.op_inexact(),
+            "3-4-5 should be exact, {rm:?}"
+        );
+    }
     Ok(())
 }
