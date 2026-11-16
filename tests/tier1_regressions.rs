@@ -3090,3 +3090,43 @@ fn zf_60_jacobi_large_argument_m_near_one() {
         assert_eq!(v.compare(&w), Some(0), "{what}: {v} want {}", t[4]);
     }
 }
+
+/// ZF-28: Ai, Bi, Ai', Bi' at large negative x. The oscillatory expansion formed the phase
+/// χ = ζ + π/4, ζ = (2/3)|x|^{3/2}, at the working precision only, so for x = -2^1000
+/// (ζ ~ 2^1500) the phase was off by far more than 2π; and near a zero of the combination
+/// (sin χ P - cos χ Q, or c1 f - c2 g in the series) the cancelled bits were still certified.
+/// ζ and π now carry exponent(ζ) extra bits, and the Ziv claim drops the cancelled bits.
+/// Expected values are FLINT-certified (2p+64 bits; land39/zf28: the 156 ZF-28 rows and the 91
+/// sample rows that changed, all wrong before).
+#[test]
+fn zf_28_airy_large_negative_argument() {
+    let mut cc = Consts::new().expect("Consts");
+    let mode = |s: &str| match s {
+        "up" => RoundingMode::Up,
+        "down" => RoundingMode::Down,
+        "tozero" => RoundingMode::ToZero,
+        "fromzero" => RoundingMode::FromZero,
+        "toeven" => RoundingMode::ToEven,
+        "toodd" => RoundingMode::ToOdd,
+        _ => RoundingMode::None,
+    };
+    for l in include_str!("tier1/zf28.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let (f, p, rm) = (t[0], t[1].parse::<usize>().expect("p"), mode(t[2]));
+        let x = parse_real(t[3]).expect("x");
+        let what = format!("{f}({}) p={p} {rm:?}", t[3]);
+        let v = match f {
+            "r.ai" => x.ai(p, rm, &mut cc),
+            "r.bi" => x.bi(p, rm, &mut cc),
+            "r.ai_prime" => x.ai_prime(p, rm, &mut cc),
+            "r.bi_prime" => x.bi_prime(p, rm, &mut cc),
+            _ => panic!("function {f}"),
+        };
+        let k: Vec<&str> = t[4].split(':').collect();
+        assert_eq!(k[0], "F", "{what}: expected kind {}", t[4]);
+        let e: i64 = k[2].parse().expect("exp");
+        let w =
+            parse_real(&format!("{}{}p{}", k[1], k[3], e - 4 * k[3].len() as i64)).expect("want");
+        assert_eq!(v.compare(&w), Some(0), "{what}: {v} want {}", t[4]);
+    }
+}

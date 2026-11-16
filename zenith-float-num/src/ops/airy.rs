@@ -1,6 +1,8 @@
 //! Airy \(\mathrm{Ai}\) / \(\mathrm{Bi}\) and their first derivatives.
 
 use crate::common::util::bump_prec_retry;
+use crate::common::util::prec_retry_exhausted;
+use crate::common::util::reduction_width;
 use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
@@ -47,36 +49,66 @@ impl ExactNumNumber {
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
 
+        let mut first_lost: Option<usize> = None;
         loop {
             let p_x = p_wrk + WORD_BIT_SIZE;
-            let mut ret = self.airy_at(which, p_x, cc)?;
-            if ret.try_set_precision(p, rm, p_wrk)? {
+            let (mut ret, scale) = self.airy_at(which, p_x, cc)?;
+            // The value is a combination of terms of size `scale` (each good to the working
+            // precision): near a zero of Ai, Bi or their derivatives the cancellation costs
+            // exponent(scale) - exponent(value) bits, which the roundability claim must not include.
+            let lost = if ret.is_zero() {
+                p_wrk
+            } else {
+                usize::try_from((scale.exponent() - ret.exponent()).max(0))
+                    .map_err(|_| Error::InvalidArgument)?
+                    .saturating_add(2)
+            };
+            let acc = p_wrk.saturating_sub(lost) / WORD_BIT_SIZE * WORD_BIT_SIZE;
+            if acc > p && ret.try_set_precision(p, rm, acc)? {
                 ret.set_inexact(ret.inexact() | self.inexact());
                 return Ok(ret);
             }
-            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            // Restore the cancelled bits in one step; the retry budget is measured past the
+            // loss seen at the first evaluation (fixed), so the loop still ends.
+            let allow = *first_lost.get_or_insert(lost);
+            let gap = p.saturating_add(WORD_BIT_SIZE).saturating_sub(acc);
+            if lost > WORD_BIT_SIZE && !ret.is_zero() {
+                let next = round_p(p_wrk + gap.max(WORD_BIT_SIZE));
+                if prec_retry_exhausted(next, p.saturating_add(allow)) {
+                    return Err(Error::PrecisionRetryExhausted);
+                }
+                p_wrk = next;
+            } else if prec_retry_exhausted(p_wrk, p.saturating_add(allow)) {
+                return Err(Error::PrecisionRetryExhausted);
+            } else {
+                bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+            }
         }
     }
 
-    fn airy_at(&self, which: AiryWhich, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+    /// The picked value at `p` bits and the size of the terms it was combined from.
+    fn airy_at(&self, which: AiryWhich, p: usize, cc: &mut Consts) -> Result<(Self, Self), Error> {
         let mut x = self.clone()?;
         x.set_inexact(false);
-        let (ai, bi, aip, bip) = x.airy_all(p, cc)?;
+        let ([ai, bi, aip, bip], [sai, sbi, saip, sbip]) = x.airy_all(p, cc)?;
         Ok(match which {
-            AiryWhich::Ai => ai,
-            AiryWhich::Bi => bi,
-            AiryWhich::AiPrime => aip,
-            AiryWhich::BiPrime => bip,
+            AiryWhich::Ai => (ai, sai),
+            AiryWhich::Bi => (bi, sbi),
+            AiryWhich::AiPrime => (aip, saip),
+            AiryWhich::BiPrime => (bip, sbip),
         })
     }
 
-    fn airy_all(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self, Self, Self), Error> {
+    /// Ai, Bi, Ai', Bi' and, for each, the size of the terms it is combined from.
+    #[allow(clippy::type_complexity)]
+    fn airy_all(&self, p: usize, cc: &mut Consts) -> Result<([Self; 4], [Self; 4]), Error> {
         let (c1, c2, sqrt3) = airy_cs(p, cc)?;
         if self.is_zero() {
             let bi0 = sqrt3.mul(&c1, p, RoundingMode::None)?;
             let aip0 = c2.neg()?;
             let bip0 = sqrt3.mul(&c2, p, RoundingMode::None)?;
-            return Ok((c1, bi0, aip0, bip0));
+            let scales = [c1.clone()?, bi0.clone()?, aip0.clone()?, bip0.clone()?];
+            return Ok(([c1, bi0, aip0, bip0], scales));
         }
         // The asymptotic expansions stop at a smallest term of about e^{-2ξ}, ξ = (2/3)|x|^{3/2};
         // use them only once that is below 2^-p. Otherwise sum the Taylor pair, whose terms
@@ -92,7 +124,10 @@ impl ExactNumNumber {
             return combine_fg(&c1, &c2, &sqrt3, &f, &g, &fp, &gp, pw);
         }
         if self.is_positive() {
-            self.airy_asymp_pos(p, cc)
+            // Every term has the sign of the leading one: no cancellation.
+            let (ai, bi, aip, bip) = self.airy_asymp_pos(p, cc)?;
+            let scales = [ai.clone()?, bi.clone()?, aip.clone()?, bip.clone()?];
+            Ok(([ai, bi, aip, bip], scales))
         } else {
             self.airy_asymp_neg(p, cc)
         }
@@ -176,14 +211,20 @@ impl ExactNumNumber {
         ))
     }
 
-    fn airy_asymp_neg(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self, Self, Self), Error> {
+    #[allow(clippy::type_complexity)]
+    fn airy_asymp_neg(&self, p: usize, cc: &mut Consts) -> Result<([Self; 4], [Self; 4]), Error> {
         let mut z = self.clone()?;
         z.set_sign(Sign::Pos);
-        let (zeta, z14, z_m14, pi_m12) = z.airy_xi_scales(p, cc)?;
-        let pi = cc.pi_num(p, RoundingMode::None)?;
-        let four = Self::from_word(4, p)?;
-        let pi4 = pi.div(&four, p, RoundingMode::None)?;
-        let chi = zeta.add(&pi4, p, RoundingMode::None)?;
+        let (zeta_p, z14, z_m14, pi_m12) = z.airy_xi_scales(p, cc)?;
+        // The phase χ = ζ + π/4 enters sin/cos with an absolute error, so ζ = (2/3) z^{3/2} and
+        // π carry exponent(ζ) extra bits (as the trig reduction does): at p bits alone ζ ~ 2^1500
+        // for z = 2^1000 is off by far more than 2π.
+        let wz = round_p(reduction_width(p + WORD_BIT_SIZE, zeta_p.exponent())?);
+        let zeta = if wz > p { z.airy_xi_scales(wz, cc)?.0 } else { zeta_p };
+        let pi = cc.pi_num(wz, RoundingMode::None)?;
+        let four = Self::from_word(4, wz)?;
+        let pi4 = pi.div(&four, wz, RoundingMode::None)?;
+        let chi = zeta.add(&pi4, wz, RoundingMode::None)?;
         let (s, c) = chi.sin_cos(p, RoundingMode::None, cc)?;
         let (p_even, q_odd) = airy_pq_sums(&zeta, p, false)?;
         let (r_even, s_odd) = airy_pq_sums(&zeta, p, true)?;
@@ -231,7 +272,10 @@ impl ExactNumNumber {
             p,
             RoundingMode::None,
         )?;
-        Ok((ai, bi, aip, bip))
+        // Each value is amp·(±sin χ P ± cos χ Q) with |P|, |Q| ≤ 1-ish: the term size is the
+        // prefactor; near a zero of the combination the loss is measured against it.
+        let scales = [amp.clone()?, amp, amp_p.clone()?, amp_p];
+        Ok(([ai, bi, aip, bip], scales))
     }
 
     /// \(\xi=(2/3)x^{3/2}\), \(x^{1/4}\), \(x^{-1/4}\), \(\pi^{-1/2}\) for \(x>0\).
@@ -292,6 +336,7 @@ fn airy_cs(
     Ok((c1, c2, sqrt3))
 }
 
+#[allow(clippy::type_complexity)]
 fn combine_fg(
     c1: &ExactNumNumber,
     c2: &ExactNumNumber,
@@ -301,15 +346,7 @@ fn combine_fg(
     fp: &ExactNumNumber,
     gp: &ExactNumNumber,
     p: usize,
-) -> Result<
-    (
-        ExactNumNumber,
-        ExactNumNumber,
-        ExactNumNumber,
-        ExactNumNumber,
-    ),
-    Error,
-> {
+) -> Result<([ExactNumNumber; 4], [ExactNumNumber; 4]), Error> {
     let c1f = c1.mul(f, p, RoundingMode::None)?;
     let c2g = c2.mul(g, p, RoundingMode::None)?;
     let c1fp = c1.mul(fp, p, RoundingMode::None)?;
@@ -326,7 +363,20 @@ fn combine_fg(
         p,
         RoundingMode::None,
     )?;
-    Ok((ai, bi, aip, bip))
+    // Ai = c1 f - c2 g cancels near its zeros (and at negative x the terms grow like e^{ξ}):
+    // the term size is the larger of the two products.
+    let big = |a: &ExactNumNumber, b: &ExactNumNumber| -> Result<ExactNumNumber, Error> {
+        if a.abs_cmp(b) >= 0 {
+            a.abs()
+        } else {
+            b.abs()
+        }
+    };
+    let s_f = big(&c1f, &c2g)?;
+    let s_fp = big(&c1fp, &c2gp)?;
+    let s_bi = sqrt3.mul(&s_f, p, RoundingMode::None)?;
+    let s_bip = sqrt3.mul(&s_fp, p, RoundingMode::None)?;
+    Ok(([ai, bi, aip, bip], [s_f, s_bi, s_fp, s_bip]))
 }
 
 /// \(\sum u_k\xi^{-k}\) and \(\sum v_k\xi^{-k}\). `alt` applies \((-1)^k\).
