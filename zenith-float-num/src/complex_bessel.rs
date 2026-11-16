@@ -37,6 +37,14 @@ const BESSEL_SERIES_THRESHOLD: u32 = 16;
 /// Integers \(\lvert n\rvert\) recognized exactly for \(Y_n\) recurrence and \(z=0\).
 const BESSEL_INTEGER_MAX: i32 = 64;
 
+/// Largest Hankel-expansion term exponent accepted: a larger peak cancels in \(P,Q\) by more
+/// than the four bits the Ziv margin absorbs here, so the expansion is declined instead.
+const HANKEL_PEAK_EXP_MAX: Exponent = 4;
+
+/// Work limit on the \(K_\nu\) forward recurrence (steps). Past it `bessel_k` returns
+/// `PrecisionRetryExhausted`; it never returns a truncated value.
+const BESSEL_K_RECUR_MAX: u32 = 1 << 22;
+
 fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
     let a = z.abs(p, RoundingMode::None);
     let b = ExactNum::from_u32(bound, p);
@@ -180,66 +188,6 @@ fn cpx_tiny(z: &ExactComplex, p: usize) -> bool {
     a.is_zero() || a.exponent().is_some_and(|e| e + (p as i64) < 0)
 }
 
-fn term_near_one(delta: &ExactComplex, p: usize) -> bool {
-    let one = ExactComplex::one(p.max(64));
-    let d = one.neg().add(delta, 64, RoundingMode::None);
-    cpx_tiny(&d, p)
-}
-
-/// Modified Lentz for \({}_2F_0(a,b;;w)=1+\alpha_1/(1+\alpha_2/(1+\cdots))\),
-/// \(\alpha_k=(a+k-1)(b+k-1)w/k\).
-fn hypergeom_2f0_lentz(
-    a: &ExactComplex,
-    b: &ExactComplex,
-    w: &ExactComplex,
-    work_p: usize,
-    dest_p: usize,
-) -> Option<ExactComplex> {
-    let one = ExactComplex::one(work_p);
-    let tiny = ExactComplex::from_real(
-        ExactNum::from_u8(2, work_p).powsi(-(work_p as i64), work_p, RoundingMode::None),
-        work_p,
-    );
-    let mut f = one.clone();
-    let mut c = f.clone();
-    let mut d = ExactComplex::zero(work_p);
-    let cap = series_term_cap(work_p).saturating_mul(4).max(64);
-    for k in 1..=cap {
-        let km1 = ExactComplex::from_real(ExactNum::from_u32((k - 1) as u32, work_p), work_p);
-        let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, work_p), work_p);
-        let ak = ExactComplex::from_real(ExactNum::from_u32((k - 1) as u32, work_p), work_p)
-            .add(a, work_p, RoundingMode::None)
-            .mul(
-                &km1.add(b, work_p, RoundingMode::None),
-                work_p,
-                RoundingMode::None,
-            )
-            .mul(w, work_p, RoundingMode::None)
-            .div(&kk, work_p, RoundingMode::None);
-        d = ExactComplex::one(work_p).add(
-            &ak.mul(&d, work_p, RoundingMode::None),
-            work_p,
-            RoundingMode::None,
-        );
-        if cpx_tiny(&d, dest_p) {
-            d = tiny.clone();
-        }
-        c = ak
-            .div(&c, work_p, RoundingMode::None)
-            .add(&one, work_p, RoundingMode::None);
-        if cpx_tiny(&c, dest_p) {
-            c = tiny.clone();
-        }
-        d = one.div(&d, work_p, RoundingMode::None);
-        let delta = c.mul(&d, work_p, RoundingMode::None);
-        f = f.mul(&delta, work_p, RoundingMode::None);
-        if term_near_one(&delta, dest_p) {
-            return Some(f);
-        }
-    }
-    None
-}
-
 fn eight_c(p: usize) -> ExactComplex {
     ExactComplex::from_real(ExactNum::from_u8(8, p), p)
 }
@@ -361,6 +309,24 @@ fn real_part_only(v: ExactComplex, p: usize) -> ExactComplex {
 fn reflect_phase(nu: &ExactComplex, upper: bool, p: usize, cc: &mut Consts) -> ExactComplex {
     let pi_i = ExactComplex::new(ExactNum::new(p), cc.pi(p, RoundingMode::None));
     let a = nu.mul(&pi_i, p, RoundingMode::None);
+    let a = if upper { a } else { neg_c(a) };
+    a.exp(p, RoundingMode::None, cc)
+}
+
+/// \(e^{\pm\nu\pi i/2}\) (upper sign when `upper`). The product \(\nu\pi/2\) is formed with
+/// `exponent(ν)` extra bits so its absolute error stays near \(2^{-p}\) for large \(|\nu|\).
+fn quarter_turn_phase(nu: &ExactComplex, upper: bool, p: usize, cc: &mut Consts) -> ExactComplex {
+    let e = nu
+        .abs(64, RoundingMode::None)
+        .exponent()
+        .map_or(0, |e| usize::try_from(e.max(0)).unwrap_or(usize::MAX));
+    let wp = round_p(p.saturating_add(e).saturating_add(16));
+    let half_pi_i = ExactComplex::new(
+        ExactNum::new(wp),
+        cc.pi(wp, RoundingMode::None)
+            .ldexp(-1, wp, RoundingMode::None),
+    );
+    let a = nu.mul(&half_pi_i, wp, RoundingMode::None);
     let a = if upper { a } else { neg_c(a) };
     a.exp(p, RoundingMode::None, cc)
 }
@@ -498,10 +464,10 @@ impl ExactComplex {
     ///
     /// - Algorithm: for non-integer \(\nu\) and \(\mathrm{Re}\,z>0\) inside the series regime,
     ///   DLMF 10.27.4, \(K_\nu=\pi(I_{-\nu}-I_\nu)/(2\sin\nu\pi)\), with the guard set by the
-    ///   \(e^{2\mathrm{Re}\,z}\) cancellation. Temme \({}_2F_0\) (DLMF 10.32.10) when
-    ///   \(\mathrm{Re}\,z>0\) and \(|z|\) is past the series/Hankel switch. Otherwise
+    ///   \(e^{2\mathrm{Re}\,z}\) cancellation. Otherwise
     ///   \(H^{(1)}_\nu(iz)\) or \(H^{(2)}_\nu(-iz)\) by the sign of \(\mathrm{Im}\,z\)
-    ///   (DLMF 10.27.8).
+    ///   (DLMF 10.27.8). Where that expansion diverges (\(|\nu|^2\gtrsim|z|\)), forward
+    ///   recurrence in \(\nu\) (DLMF 10.29.1) from \(\nu-\lfloor\mathrm{Re}\,\nu\rfloor\).
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -529,8 +495,7 @@ impl ExactComplex {
         if real_positive_axis(self, nu) {
             // K_ν(x) is real for x > 0 and real ν (see `bessel_i`).
             // Past the series/Hankel switch the real kernel (asymptotic, or the I-connection
-            // with a 2.885|x| guard) is used. Complex Temme 2F0 stays the fallback; its Lentz
-            // step compares δ−1 at 64 bits, which is not enough for a 128/256-bit result.
+            // with a 2.885|x| guard) is used; the complex path is the fallback.
             return ziv_complex(dest, rm, |pw| {
                 if !use_bessel_series(self, dest) {
                     let k = self.re().bessel_k(nu.re(), pw, RoundingMode::None, cc);
@@ -636,16 +601,37 @@ impl ExactComplex {
             };
         }
         if use_bessel_series(self, dest_p) {
-            self.bessel_j_series(nu, work_p + series_guard_bits(self), cc)
-        } else if self.re().is_negative() && !self.re().is_zero() {
+            return self.bessel_j_series(nu, work_p + series_guard_bits(self), cc);
+        }
+        let hankel = if self.re().is_negative() && !self.re().is_zero() {
             // The Hankel expansion holds only for |arg z| < π; for Re z < 0 continue from −z
             // (DLMF 10.11.1): J_ν(z) = e^{±νπi} J_ν(−z), upper sign for Im z ≥ 0.
             let upper = !self.im().is_negative() || self.im().is_zero();
-            let j = self.neg_via_mul().bessel_hankel_j(nu, work_p, cc);
-            reflect_phase(nu, upper, work_p, cc).mul(&j, work_p, RoundingMode::None)
+            self.neg_via_mul()
+                .bessel_hankel_j(nu, work_p, cc)
+                .map(|j| reflect_phase(nu, upper, work_p, cc).mul(&j, work_p, RoundingMode::None))
         } else {
             self.bessel_hankel_j(nu, work_p, cc)
+        };
+        match hankel {
+            Some(j) => j,
+            None => self.bessel_j_via_i(nu, work_p, dest_p, cc),
         }
+    }
+
+    /// DLMF 10.27.6 read backwards: \(J_\nu(z)=e^{\pm\nu\pi i/2}I_\nu(\mp iz)\), upper sign
+    /// for \(\mathrm{Im}\,z\ge0\). The rotated argument has \(\mathrm{Re}\ge0\), and the
+    /// \(I\) series measures its own cancellation (peak term against the sum), so this holds
+    /// where the Hankel expansion diverges (\(|\nu|^2\gtrsim|z|\)).
+    fn bessel_j_via_i(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+        let upper = !self.im().is_negative() || self.im().is_zero();
+        let rot = if upper { neg_c(ExactComplex::i(work_p)) } else { ExactComplex::i(work_p) };
+        let w = rot.mul(self, work_p, RoundingMode::None);
+        let iv = w.bessel_i_series(nu, work_p, dest_p, cc);
+        if iv.is_nan() {
+            return iv;
+        }
+        quarter_turn_phase(nu, upper, work_p, cc).mul(&iv, work_p, RoundingMode::None)
     }
 
     fn bessel_y_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -656,20 +642,23 @@ impl ExactComplex {
             self.bessel_y_nonint(nu, work_p, dest_p, cc)
         } else {
             self.bessel_hankel_y_any(nu, work_p, cc)
+                .unwrap_or_else(|| nan_pair(Error::PrecisionRetryExhausted))
         }
     }
 
     /// Hankel-regime \(Y_\nu\) for any \(\arg z\). For \(\mathrm{Re}\,z<0\) (DLMF 10.11.2 with
     /// \(m=\pm1\)): \(Y_\nu(z)=e^{\mp\nu\pi i}Y_\nu(-z)\pm2i\cos(\nu\pi)J_\nu(-z)\), upper sign for
     /// \(\mathrm{Im}\,z\ge0\).
-    fn bessel_hankel_y_any(&self, nu: &Self, work_p: usize, cc: &mut Consts) -> Self {
+    ///
+    /// `None` when the Hankel expansion does not converge (see [`Self::hankel_pq`]).
+    fn bessel_hankel_y_any(&self, nu: &Self, work_p: usize, cc: &mut Consts) -> Option<Self> {
         if !self.re().is_negative() || self.re().is_zero() {
             return self.bessel_hankel_y(nu, work_p, cc);
         }
         let upper = !self.im().is_negative() || self.im().is_zero();
         let w = self.neg_via_mul();
-        let y = w.bessel_hankel_y(nu, work_p, cc);
-        let j = w.bessel_hankel_j(nu, work_p, cc);
+        let y = w.bessel_hankel_y(nu, work_p, cc)?;
+        let j = w.bessel_hankel_j(nu, work_p, cc)?;
         let pi = pi_c(work_p, cc);
         let cos_nu_pi = nu
             .mul(&pi, work_p, RoundingMode::None)
@@ -680,9 +669,11 @@ impl ExactComplex {
                 .mul(&cos_nu_pi, work_p, RoundingMode::None)
                 .mul(&j, work_p, RoundingMode::None);
         let corr = if upper { corr } else { neg_c(corr) };
-        reflect_phase(nu, !upper, work_p, cc)
-            .mul(&y, work_p, RoundingMode::None)
-            .add(&corr, work_p, RoundingMode::None)
+        Some(
+            reflect_phase(nu, !upper, work_p, cc)
+                .mul(&y, work_p, RoundingMode::None)
+                .add(&corr, work_p, RoundingMode::None),
+        )
     }
 
     fn bessel_i_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -788,23 +779,20 @@ impl ExactComplex {
                 peak_exp = Some(peak_exp.map_or(e, |p| p.max(e)));
             }
             sum = sum.add(&term, wp, RoundingMode::None);
-            if term_small_rel(&term, &sum, dest_p) {
-                break;
+            if sum.is_nan() || term_small_rel(&term, &sum, dest_p) {
+                let sum_exp = term_mag_exp(&sum);
+                return (sum, peak_exp, sum_exp);
             }
         }
-        let sum_exp = term_mag_exp(&sum);
-        (sum, peak_exp, sum_exp)
+        // Cap reached with terms still above 2^-dest_p of the sum: refuse, never truncate.
+        (nan_pair(Error::PrecisionRetryExhausted), None, None)
     }
 
     fn bessel_k_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
-        if !self.re().is_negative() && !self.re().is_zero() {
-            if use_bessel_series(self, dest_p) {
-                // J±iY cancels ~3|z| bits here and builds both J_±ν. The I connection
-                // is a direct 0F1; only the final subtraction needs the e^{2 Re z} guard.
-                if let Some(k) = self.bessel_k_from_i(nu, work_p, cc) {
-                    return k;
-                }
-            } else if let Some(k) = self.bessel_k_temme(nu, work_p, dest_p, cc) {
+        if !self.re().is_negative() && !self.re().is_zero() && use_bessel_series(self, dest_p) {
+            // J±iY cancels ~3|z| bits here and builds both J_±ν. The I connection
+            // is a direct 0F1; only the final subtraction needs the e^{2 Re z} guard.
+            if let Some(k) = self.bessel_k_from_i(nu, work_p, cc) {
                 return k;
             }
         }
@@ -828,17 +816,18 @@ impl ExactComplex {
                 j.add(&iy, wp, RoundingMode::None)
             }
         } else {
-            w.bessel_hankel_h(nu, !second, work_p, cc)
+            match w.bessel_hankel_h(nu, !second, work_p, cc) {
+                Some(h) => h,
+                None => return self.bessel_k_recur(nu, work_p, dest_p, cc),
+            }
         };
         let half_pi_i = ExactComplex::new(
             ExactNum::new(work_p),
             cc.pi(work_p, RoundingMode::None)
                 .ldexp(-1, work_p, RoundingMode::None),
         );
-        let e = nu.mul(&half_pi_i, work_p, RoundingMode::None);
-        let e = if second { neg_c(e) } else { e };
         let pre = half_pi_i.mul(
-            &e.exp(work_p, RoundingMode::None, cc),
+            &quarter_turn_phase(nu, !second, work_p, cc),
             work_p,
             RoundingMode::None,
         );
@@ -846,38 +835,79 @@ impl ExactComplex {
         pre.mul(&h, work_p, RoundingMode::None)
     }
 
-    /// DLMF 10.32.10: \(K_\nu(z)=\sqrt{\pi/(2z)}\,e^{-z}\,{}_2F_0(\tfrac12+\nu,\tfrac12-\nu;;-1/(2z))\).
-    fn bessel_k_temme(
-        &self,
-        nu: &Self,
-        work_p: usize,
-        dest_p: usize,
-        cc: &mut Consts,
-    ) -> Option<Self> {
-        let two = two_c(work_p);
-        let half = half_c(work_p);
-        let w = neg_c(ExactComplex::one(work_p).div(
-            &two.mul(self, work_p, RoundingMode::None),
-            work_p,
-            RoundingMode::None,
-        ));
-        let a = half_c(work_p).add(nu, work_p, RoundingMode::None);
-        let b = ExactComplex::sub_ref(&half, nu, work_p, RoundingMode::None);
-        let f = hypergeom_2f0_lentz(&a, &b, &w, work_p, dest_p)?;
-        let pi = pi_c(work_p, cc);
-        let omega = pi
-            .div(
-                &two.mul(self, work_p, RoundingMode::None),
-                work_p,
-                RoundingMode::None,
-            )
-            .sqrt(work_p, RoundingMode::None, cc);
-        let ez = self.neg_via_mul().exp(work_p, RoundingMode::None, cc);
-        Some(
-            omega
-                .mul(&ez, work_p, RoundingMode::None)
-                .mul(&f, work_p, RoundingMode::None),
-        )
+    /// \(K_\nu\) where the Hankel expansion at order \(\nu\) diverges (\(|\nu|^2\gtrsim|z|\)):
+    /// forward recurrence DLMF 10.29.1, \(K_{\mu+1}=K_{\mu-1}+(2\mu/z)K_\mu\), from
+    /// \(\mu_0=\nu-n\), \(n=\lfloor\mathrm{Re}\,\nu\rfloor\ge2\). \(K\) is the dominant
+    /// solution in \(\mu\) (the other is \(I_\mu\), which falls), so each step adds a
+    /// rounding of relative size \(2^{-wp}\) and earlier errors do not grow against \(K\);
+    /// \(\log_2 n+16\) guard bits cover the \(n\) steps. The start orders have
+    /// \(\mathrm{Re}\,\mu<2\), where the expansion converges past the series switch.
+    fn bessel_k_recur(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+        if self.re().is_negative() && !self.re().is_zero() {
+            // For Re z < 0, K_ν(z) carries a large I_ν part and the recurrence is not stable
+            // against it. DLMF 10.34.2 with m = ±1 and w = −z (Re w > 0):
+            // K_ν(z) = e^{∓νπi} K_ν(w) ∓ πi I_ν(w), upper sign for Im z ≥ 0.
+            let upper = !self.im().is_negative() || self.im().is_zero();
+            let w = self.neg_via_mul();
+            let kw = w.bessel_k_recur(nu, work_p, dest_p, cc);
+            let iw = w.bessel_i_series(nu, work_p, dest_p, cc);
+            if kw.is_nan() {
+                return kw;
+            }
+            if iw.is_nan() {
+                return iw;
+            }
+            let e = nu
+                .abs(64, RoundingMode::None)
+                .exponent()
+                .map_or(0, |e| usize::try_from(e.max(0)).unwrap_or(usize::MAX));
+            let phase = reflect_phase(nu, !upper, round_p(work_p.saturating_add(e) + 16), cc);
+            let pi_i = ExactComplex::new(ExactNum::new(work_p), cc.pi(work_p, RoundingMode::None));
+            let corr = pi_i.mul(&iw, work_p, RoundingMode::None);
+            let kpart = phase.mul(&kw, work_p, RoundingMode::None);
+            return if upper {
+                kpart.sub(&corr, work_p, RoundingMode::None)
+            } else {
+                kpart.add(&corr, work_p, RoundingMode::None)
+            };
+        }
+        let Ok(n) = nu.re().to_u32(RoundingMode::Down) else {
+            return nan_pair(Error::PrecisionRetryExhausted);
+        };
+        if !(2..=BESSEL_K_RECUR_MAX).contains(&n) {
+            return nan_pair(Error::PrecisionRetryExhausted);
+        }
+        let wp = round_p(work_p + (u32::BITS - n.leading_zeros()) as usize + 16);
+        let np = nu
+            .re()
+            .precision()
+            .unwrap_or(wp)
+            .max(nu.im().precision().unwrap_or(wp))
+            .max(wp)
+            .saturating_add(64);
+        let nn = ExactComplex::from_real(ExactNum::from_u32(n, np), np);
+        let nu0 = ExactComplex::sub_ref(nu, &nn, np, RoundingMode::None);
+        let one = ExactComplex::one(np);
+        let mut mu = nu0.clone().add(&one, np, RoundingMode::None);
+        let mut km = self.bessel_k_at(&nu0, wp, dest_p, cc);
+        let mut k = self.bessel_k_at(&mu, wp, dest_p, cc);
+        if km.is_nan() {
+            return km;
+        }
+        if k.is_nan() {
+            return k;
+        }
+        let two_over_z = two_c(wp).div(self, wp, RoundingMode::None);
+        for _ in 1..n {
+            let step = two_over_z
+                .mul(&mu, wp, RoundingMode::None)
+                .mul(&k, wp, RoundingMode::None);
+            let next = km.add(&step, wp, RoundingMode::None);
+            km = k;
+            k = next;
+            mu = mu.add(&one, np, RoundingMode::None);
+        }
+        k
     }
 
     /// DLMF 10.27.4. `None` for integer \(\nu\) (the \(Y\) recurrence is the stable form)
@@ -949,7 +979,10 @@ impl ExactComplex {
         let mut term = pow.div(&g, p, RoundingMode::None);
         let mut sum = term.clone();
         let hh = half.mul(&half, p, RoundingMode::None);
-        for k in 1..=series_term_cap(p) {
+        // The terms peak near k ≈ |z|/2 and fall as a Gaussian after it: allow 2·bound(|z|)
+        // past the precision cap, and refuse (never truncate) if that is not enough.
+        let cap = i_series_term_cap(self, p);
+        for k in 1..=cap {
             let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p);
             let den = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p)
                 .add(nu, p, RoundingMode::None)
@@ -959,11 +992,11 @@ impl ExactComplex {
                 .div(&den, p, RoundingMode::None);
             term = neg_c(term);
             sum = sum.add(&term, p, RoundingMode::None);
-            if term_small_rel(&term, &sum, p) {
-                break;
+            if sum.is_nan() || term_small_rel(&term, &sum, p) {
+                return sum;
             }
         }
-        sum
+        nan_pair(Error::PrecisionRetryExhausted)
     }
 
     fn bessel_y_nonint(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
@@ -991,7 +1024,10 @@ impl ExactComplex {
             }
         } else {
             let nu = ExactComplex::from_real(ExactNum::from_u32(an, work_p), work_p);
-            self.bessel_hankel_y_any(&nu, work_p, cc)
+            match self.bessel_hankel_y_any(&nu, work_p, cc) {
+                Some(y) => y,
+                None => return nan_pair(Error::PrecisionRetryExhausted),
+            }
         };
         if n < 0 && an % 2 == 1 {
             neg_c(y)
@@ -1149,7 +1185,11 @@ impl ExactComplex {
         (chi, omega)
     }
 
-    fn hankel_pq(&self, nu: &Self, p: usize) -> (Self, Self) {
+    /// \(P,Q\) of DLMF 10.17.3, or `None` when the expansion does not reach \(2^{-p}\):
+    /// the terms must fall below \(2^{-p}\) before they grow and never exceed
+    /// \(2^{4}\). For \(|\nu|^2\gtrsim|z|\) they grow from the first term; the loop used to
+    /// stop at the first growing term and return that truncation as the value.
+    fn hankel_pq(&self, nu: &Self, p: usize) -> Option<(Self, Self)> {
         let two_nu = two_c(p).mul(nu, p, RoundingMode::None);
         let mu = two_nu.mul(&two_nu, p, RoundingMode::None);
         let eight_z = eight_c(p).mul(self, p, RoundingMode::None);
@@ -1188,31 +1228,34 @@ impl ExactComplex {
                     qsum.add(&term, p, RoundingMode::None)
                 };
             }
-            if term_negligible(&term, p) {
-                break;
+            if term.is_nan() {
+                // Non-finite z: hand the NaN (and its error kind) to the caller.
+                return Some((term.clone(), term));
             }
-            // Asymptotic: stop once the terms start growing.
+            if term_negligible(&term, p) {
+                return Some((psum, qsum));
+            }
             let e = term
                 .abs(64, RoundingMode::None)
                 .exponent()
                 .unwrap_or(Exponent::MIN);
-            if k > 2 && e > prev_e {
-                break;
+            if e > HANKEL_PEAK_EXP_MAX || (k > 2 && e > prev_e) {
+                return None;
             }
             prev_e = e;
         }
-        (psum, qsum)
+        None
     }
 
-    fn bessel_hankel_j(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
+    fn bessel_hankel_j(&self, nu: &Self, p: usize, cc: &mut Consts) -> Option<Self> {
         let (chi, omega) = self.hankel_chi_omega(nu, p, cc);
-        let (pp, qq) = self.hankel_pq(nu, p);
+        let (pp, qq) = self.hankel_pq(nu, p)?;
         let (sn, cs) = {
             let s = chi.sin(p, RoundingMode::None, cc);
             let c = chi.cos(p, RoundingMode::None, cc);
             (s, c)
         };
-        omega.mul(
+        Some(omega.mul(
             &pp.mul(&cs, p, RoundingMode::None).sub(
                 &qq.mul(&sn, p, RoundingMode::None),
                 p,
@@ -1220,14 +1263,14 @@ impl ExactComplex {
             ),
             p,
             RoundingMode::None,
-        )
+        ))
     }
 
     /// Hankel function from the large-argument expansion: `H⁽¹⁾ = ω e^{iχ}(P + iQ)` when `first`,
     /// else `H⁽²⁾ = ω e^{−iχ}(P − iQ)` (DLMF 10.17.5–6).
-    fn bessel_hankel_h(&self, nu: &Self, first: bool, p: usize, cc: &mut Consts) -> Self {
+    fn bessel_hankel_h(&self, nu: &Self, first: bool, p: usize, cc: &mut Consts) -> Option<Self> {
         let (chi, omega) = self.hankel_chi_omega(nu, p, cc);
-        let (pp, qq) = self.hankel_pq(nu, p);
+        let (pp, qq) = self.hankel_pq(nu, p)?;
         let i = ExactComplex::i(p);
         let ichi = i.mul(&chi, p, RoundingMode::None);
         let iq = i.mul(&qq, p, RoundingMode::None);
@@ -1242,17 +1285,19 @@ impl ExactComplex {
                 pp.sub(&iq, p, RoundingMode::None),
             )
         };
-        omega
-            .mul(&e, p, RoundingMode::None)
-            .mul(&pq, p, RoundingMode::None)
+        Some(
+            omega
+                .mul(&e, p, RoundingMode::None)
+                .mul(&pq, p, RoundingMode::None),
+        )
     }
 
-    fn bessel_hankel_y(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
+    fn bessel_hankel_y(&self, nu: &Self, p: usize, cc: &mut Consts) -> Option<Self> {
         let (chi, omega) = self.hankel_chi_omega(nu, p, cc);
-        let (pp, qq) = self.hankel_pq(nu, p);
+        let (pp, qq) = self.hankel_pq(nu, p)?;
         let s = chi.sin(p, RoundingMode::None, cc);
         let c = chi.cos(p, RoundingMode::None, cc);
-        omega.mul(
+        Some(omega.mul(
             &pp.mul(&s, p, RoundingMode::None).add(
                 &qq.mul(&c, p, RoundingMode::None),
                 p,
@@ -1260,7 +1305,7 @@ impl ExactComplex {
             ),
             p,
             RoundingMode::None,
-        )
+        ))
     }
 }
 

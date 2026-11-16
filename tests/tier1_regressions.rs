@@ -3130,3 +3130,75 @@ fn zf_28_airy_large_negative_argument() {
         assert_eq!(v.compare(&w), Some(0), "{what}: {v} want {}", t[4]);
     }
 }
+
+/// ZF-58: Kelvin functions at large order (ν = 100, 498.5 at x = 1000) and the complex
+/// \(J_\nu, I_\nu, K_\nu\) under them. The Hankel expansion diverges from its first term when
+/// \(|\nu|^2\gtrsim|z|\), and `hankel_pq` used to stop at the first growing term and return
+/// that truncation (errors up to \(2^{148}\) relative). \(K\) past the switch also went through
+/// a \({}_2F_0\) Lentz step good to about 13 bits. Expected values are FLINT-certified
+/// (land39/zf58: all 224 ZF-58 rows, the 60-row complex probe, and the 25 sample rows that
+/// changed, 24 of them wrong before).
+#[test]
+fn zf_58_kelvin_and_complex_bessel_large_order() {
+    let mut cc = Consts::new().expect("Consts");
+    let mode = |s: &str| match s {
+        "up" => RoundingMode::Up,
+        "down" => RoundingMode::Down,
+        "tozero" => RoundingMode::ToZero,
+        "fromzero" => RoundingMode::FromZero,
+        "toeven" => RoundingMode::ToEven,
+        "toodd" => RoundingMode::ToOdd,
+        _ => RoundingMode::None,
+    };
+    let want = |s: &str| -> ExactNum {
+        let k: Vec<&str> = s.split(':').collect();
+        if k[0] == "Z" {
+            let z = ExactNum::new(64);
+            return if k[1] == "-" { std::ops::Neg::neg(z) } else { z };
+        }
+        assert_eq!(k[0], "F", "expected kind {s}");
+        let e: i64 = k[2].parse().expect("exp");
+        parse_real(&format!("{}{}p{}", k[1], k[3], e - 4 * k[3].len() as i64)).expect("want")
+    };
+    let same = |v: &ExactNum, w: &ExactNum| {
+        v.compare(w) == Some(0) && (!v.is_zero() || v.is_negative() == w.is_negative())
+    };
+    let cpx = |s: &str| {
+        let (a, b) = s.split_once(',').expect("re,im");
+        ExactComplex::new(parse_real(a).expect("re"), parse_real(b).expect("im"))
+    };
+    for l in include_str!("tier1/zf58.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let (f, p, rm) = (t[0], t[1].parse::<usize>().expect("p"), mode(t[2]));
+        let what = format!("{f}({}) p={p} {rm:?}", t[3..t.len() - 1].join(", "));
+        let exp = t[t.len() - 1];
+        if let Some(cf) = f.strip_prefix("c.") {
+            let (z, nu) = (cpx(t[3]), cpx(t[4]));
+            let v = match cf {
+                "bessel_j_nu" => z.bessel_j_nu(&nu, p, rm, &mut cc),
+                "bessel_i" => z.bessel_i(&nu, p, rm, &mut cc),
+                "bessel_k" => z.bessel_k(&nu, p, rm, &mut cc),
+                _ => panic!("function {f}"),
+            };
+            let (a, b) = exp.split_once(';').expect("re;im");
+            assert!(same(v.re(), &want(a)), "{what}: re {} want {a}", v.re());
+            assert!(same(v.im(), &want(b)), "{what}: im {} want {b}", v.im());
+            continue;
+        }
+        let x = parse_real(t[3]).expect("x");
+        let v = match f {
+            "r.kelvin_ker" => x.kelvin_ker(p, rm, &mut cc),
+            _ => {
+                let nu = parse_real(t[4]).expect("nu");
+                match f {
+                    "r.kelvin_ber_nu" => x.kelvin_ber_nu(&nu, p, rm, &mut cc),
+                    "r.kelvin_bei_nu" => x.kelvin_bei_nu(&nu, p, rm, &mut cc),
+                    "r.kelvin_ker_nu" => x.kelvin_ker_nu(&nu, p, rm, &mut cc),
+                    "r.kelvin_kei_nu" => x.kelvin_kei_nu(&nu, p, rm, &mut cc),
+                    _ => panic!("function {f}"),
+                }
+            }
+        };
+        assert!(same(&v, &want(exp)), "{what}: {v} want {exp}");
+    }
+}
