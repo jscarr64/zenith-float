@@ -2318,6 +2318,9 @@ impl ExactNumNumber {
         if !self.is_positive() {
             return Err(Error::InvalidArgument);
         }
+        if let Some(v) = bessel_yk_scaled(self, nu, p, rm, cc, false)? {
+            return Ok(v);
+        }
         if use_bessel_hankel_real(self, nu, p) {
             return self.bessel_jy_hankel(nu, p, rm, cc, false);
         }
@@ -2427,6 +2430,9 @@ impl ExactNumNumber {
         }
         if !self.is_positive() {
             return Err(Error::InvalidArgument);
+        }
+        if let Some(v) = bessel_yk_scaled(self, nu, p, rm, cc, true)? {
+            return Ok(v);
         }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
@@ -6319,6 +6325,328 @@ fn bessel_ji_scaled(
             _ => {}
         }
         bump_prec_retry(&mut w, &mut w_inc, p)?;
+    }
+}
+
+/// ZF-37: `Y_ν(x)` (`is_k = false`) or `K_ν(x)` for tiny `x > 0`. The leading
+/// factor `Γ(μ) (x/2)^{-μ}`, `μ = |ν| > 0`, is held as `g · 2^N` (`N` unbounded)
+/// and rounded once through [`scale_in_rm`] / [`overflow_in_rm`]. `None` when
+/// the first-correction ratio is not small (`ν = 0` stays on the existing log
+/// series, which is already right).
+///
+/// - `K_ν = K_μ ∼ (1/2) Γ(μ) (x/2)^{-μ} S` (DLMF 10.30.2 / 10.31).
+/// - `Y_μ ∼ -(1/π) Γ(μ) (x/2)^{-μ} S` (DLMF 10.7.4). `Y_{-n} = (-1)^n Y_n`.
+/// - `Y_{-μ}` for non-integer `μ` carries an extra `cos(μπ)`, except at
+///   half-odd-integer `μ = n + 1/2` where that term vanishes and
+///   `Y_{-(n+1/2)} = (-1)^n J_{n+1/2}` (delegated to [`bessel_ji_scaled`]).
+fn bessel_yk_scaled(
+    x: &ExactNumNumber,
+    nu: &ExactNumNumber,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+    is_k: bool,
+) -> Result<Option<ExactNumNumber>, Error> {
+    type N = ExactNumNumber;
+    if !x.is_positive() || nu.is_zero() {
+        return Ok(None);
+    }
+    // Y_{-(n+1/2)}(x) = (-1)^n J_{n+1/2}(x): the huge term is exactly zero.
+    if !is_k && nu.is_negative() {
+        if let Some(n) = half_integer_n(&nu.abs()?, p)? {
+            let mu = nu.abs()?;
+            let rm_j = if n % 2 == 1 { crate::common::util::invert_rm_for_sign(rm) } else { rm };
+            if let Some(j) = bessel_ji_scaled(x, &mu, p, rm_j, cc, false)? {
+                return Ok(Some(if n % 2 == 0 { j } else { j.neg()? }));
+            }
+            // ji_scaled is None when the leading J term is already in the normal
+            // range (e.g. x = 2^{-1000}, p = 2048). The identity still holds:
+            // evaluate J_μ itself and apply (−1)^n. Never fall through to Y.
+            let j = x.bessel_j_nu(&mu, p, rm_j, cc)?;
+            return Ok(Some(if n % 2 == 0 { j } else { j.neg()? }));
+        }
+    }
+
+    let mut a = nu.abs()?;
+    a.set_inexact(false);
+    let pa = round_p(a.mantissa_max_bit_len().max(WORD_BIT_SIZE) + 2 * WORD_BIT_SIZE);
+    let one = N::from_word(1, WORD_BIT_SIZE)?;
+    let two = N::from_word(2, WORD_BIT_SIZE)?;
+    let int = a.is_int();
+    let den = if int {
+        // |1 - μ|; μ ≥ 1 integer: μ - 1.
+        if a.cmp(&one) <= 0 {
+            // μ = 1: relative next term is O(x^2 log x), still ~ 2^(2 ex).
+            one.clone()?
+        } else {
+            a.sub(&one, pa, RoundingMode::None)?
+        }
+    } else {
+        one.sub(&a, pa, RoundingMode::None)?.abs()?
+    };
+    let (m, ex) = x.abs()?.frexp()?;
+    let lr = 2 * (ex as i128 - 1) - (den.exponent() as i128 - 1);
+    if lr > -3 {
+        return Ok(None);
+    }
+
+    // Sign of the leading term.
+    let mut sign = if is_k { Sign::Pos } else { Sign::Neg };
+    if !is_k && nu.is_negative() {
+        if int {
+            // Y_{-n} = (-1)^n Y_n, Y_n < 0 for small x: flip when n is odd? Y_n
+            // leading is negative; (-1)^n * (negative) is positive iff n is odd.
+            let odd = !a.is_zero() && !a.div(&two, pa, RoundingMode::None)?.is_int();
+            if odd {
+                sign = Sign::Pos;
+            }
+        } else {
+            // Y_{-μ} ∼ -(1/π) Γ(μ) (x/2)^{-μ} cos(μπ): flip when cos(μπ) < 0.
+            let pi = cc.pi_num(pa, RoundingMode::None)?;
+            let c = a
+                .mul(&pi, pa, RoundingMode::None)?
+                .cos(pa, RoundingMode::None, cc)?;
+            if c.is_negative() {
+                sign = Sign::Pos;
+            }
+            // |cos| extremely small would have been a half-odd-integer, above.
+        }
+    }
+
+    let mb = m.mantissa_max_bit_len();
+    let small_int = if int && a.exponent() <= 16 {
+        let k = if a.is_zero() { 0 } else { a.int_as_usize()? };
+        (k >= 1 && k.saturating_mul(mb) <= 1 << 16).then_some(k)
+    } else {
+        None
+    };
+
+    let mut w = round_p(p + 2 * WORD_BIT_SIZE);
+    let mut w_inc = WORD_BIT_SIZE;
+    loop {
+        // g · 2^n = Γ(μ) (x/2)^{-μ}.
+        let (mut g, n, g_exact) = if let Some(k) = small_int {
+            let pm = round_p(k * mb + WORD_BIT_SIZE);
+            let mut mk = N::from_word(1, pm)?;
+            for _ in 0..k {
+                mk = mk.mul(&m, pm, RoundingMode::None)?;
+            }
+            let bl = (usize::BITS - (k.saturating_sub(1)).leading_zeros()) as usize;
+            let fk = factorial(k - 1, round_p((k - 1) * bl.max(1) + WORD_BIT_SIZE))?;
+            let pq = pm.max(w + WORD_BIT_SIZE);
+            let mut g = fk.div(&mk, pq, RoundingMode::None)?;
+            let exact = !g.inexact();
+            g.set_inexact(false);
+            let k = k as i128;
+            (g, -k * (ex as i128 - 1), exact)
+        } else {
+            let mut q = w + 4 * WORD_BIT_SIZE;
+            let lam = loop {
+                let ln2 = cc.ln_2_num(q, RoundingMode::None)?;
+                let lx = x.ln(q, RoundingMode::None, cc)?;
+                let lg = a.ln_gamma(q, RoundingMode::None, cc)?;
+                // Λ = log2(Γ(μ)) - μ (log2(x) - 1) = lnΓ(μ)/ln2 - μ log2(x) + μ
+                let lam = lg
+                    .div(&ln2, q, RoundingMode::None)?
+                    .sub(
+                        &a.mul(&lx, q, RoundingMode::None)?
+                            .div(&ln2, q, RoundingMode::None)?,
+                        q,
+                        RoundingMode::None,
+                    )?
+                    .add(&a, q, RoundingMode::None)?;
+                let e_max = [lg.exponent(), a.exponent(), lam.exponent(), 1]
+                    .into_iter()
+                    .max()
+                    .unwrap_or(1)
+                    .max(0) as usize;
+                if e_max + 4 + w + 12 <= q {
+                    break lam;
+                }
+                q = round_p(w + e_max + 4 * WORD_BIT_SIZE);
+            };
+            if lam.exponent() > 62 {
+                let n = if lam.is_negative() { -(1i128 << 100) } else { 1i128 << 100 };
+                (one.clone()?, n, false)
+            } else {
+                let fl = lam.clone()?.floor()?;
+                let fr = lam.sub(&fl, q, RoundingMode::None)?;
+                let nf = if fl.is_zero() { 0 } else { fl.abs()?.int_as_usize()? as i128 };
+                let nf = if fl.is_negative() { -nf } else { nf };
+                let ln2 = cc.ln_2_num(w + WORD_BIT_SIZE, RoundingMode::None)?;
+                let g = fr.mul(&ln2, w + WORD_BIT_SIZE, RoundingMode::None)?.exp(
+                    w + WORD_BIT_SIZE,
+                    RoundingMode::None,
+                    cc,
+                )?;
+                (g, nf, false)
+            }
+        };
+        // K: × 1/2; Y: × 1/π. |cos(μπ)| for non-integer ν < 0 is absorbed in
+        // the lo/hi interval (a factor in [0, 1] cannot un-overflow a minpos
+        // leading term, and the half-odd case was already dispatched).
+        if is_k {
+            g = g.div(&two, w + WORD_BIT_SIZE, RoundingMode::None)?;
+        } else {
+            let pi = cc.pi_num(w + WORD_BIT_SIZE, RoundingMode::None)?;
+            g = g.div(&pi, w + WORD_BIT_SIZE, RoundingMode::None)?;
+        }
+        let g_exact = g_exact && is_k && !g.inexact();
+
+        let wp = round_p(g.mantissa_max_bit_len().max(p) + WORD_BIT_SIZE);
+        if g_exact && lr < -(wp as i128) - 2 {
+            // Integer K_n, n ≥ 1: the first correction is negative (K_1's log
+            // term, and t_1 for n ≥ 2), so the exact leading term is an upper
+            // bound. A downward tick smaller than 2^{-(p+2)} decides directed
+            // rounding when the leading term is a p-bit dyadic.
+            let mut d = N::from_word(1, WORD_BIT_SIZE)?;
+            d.set_exponent(g.exponent() - wp as Exponent);
+            let mut v = g.sub(&d, wp + 2 * WORD_BIT_SIZE, RoundingMode::None)?;
+            v.set_sign(sign);
+            let mut r = scale_in_rm(v, n, p, rm)?;
+            r.set_inexact(true);
+            return Ok(Some(r));
+        }
+
+        let wp = w + 2 * WORD_BIT_SIZE;
+        // S = 1 only when every correction (t_1 and, for non-integer μ, the
+        // opposite-power term (x/2)^{2μ}) sits below the working precision.
+        let opp_maybe = !int && a.exponent() <= 16;
+        let (s, s_err) = if lr <= -(w as i128) - 16 && !opp_maybe {
+            (one.clone()?, lr + 1)
+        } else if int && a.cmp(&one) <= 0 {
+            // μ = 1: K_1 has S = 1 + (x^2/2)(ln(x/2) + γ − 1/2); Y_1 has S = 1 − that
+            // (the log term increases |Y_1|). Remainder O(x^4 ln x).
+            let ws = w + WORD_BIT_SIZE;
+            let e_m1 = ex as i128 - 1;
+            if e_m1.unsigned_abs() > Word::MAX as u128 {
+                (one.clone()?, lr + 1)
+            } else {
+                let ln2 = cc.ln_2_num(ws, RoundingMode::None)?;
+                let lm = m.ln(ws, RoundingMode::None, cc)?;
+                let mut ev = N::from_word(e_m1.unsigned_abs() as Word, ws)?;
+                if e_m1 < 0 {
+                    ev = ev.neg()?;
+                }
+                let lxd2 =
+                    ev.mul(&ln2, ws, RoundingMode::None)?
+                        .add(&lm, ws, RoundingMode::None)?;
+                let gam = cc.euler_gamma_num(ws, RoundingMode::None)?;
+                let half = one.div(&two, ws, RoundingMode::None)?;
+                let paren =
+                    lxd2.add(&gam, ws, RoundingMode::None)?
+                        .sub(&half, ws, RoundingMode::None)?;
+                let mut xx2 = m.mul(&m, ws, RoundingMode::None)?;
+                xx2 = xx2
+                    .ldexp(ex, ws, RoundingMode::None)?
+                    .ldexp(ex, ws, RoundingMode::None)?
+                    .div(&two, ws, RoundingMode::None)?;
+                let t = xx2.mul(&paren, ws, RoundingMode::None)?;
+                let s = if is_k {
+                    one.add(&t, ws, RoundingMode::None)?
+                } else {
+                    one.sub(&t, ws, RoundingMode::None)?
+                };
+                let rem = 4 * e_m1 + (e_m1.unsigned_abs().max(1).ilog2() as i128) + 8;
+                (s, rem)
+            }
+        } else {
+            // t_1 / t_0 = (x/2)^2 / (μ − 1); K: S = 1 − t_1, Y: S = 1 + t_1.
+            // For non-integer μ, also subtract the opposite-power term
+            // (x/2)^{2μ} Γ(1−μ)/Γ(1+μ) (times cos(μπ) for Y), which is O(x^{2μ})
+            // and sits inside a 2048-bit grid when μ is a fraction and x = 2^{-1000}.
+            let ws = w + WORD_BIT_SIZE;
+            let half = m.div(&two, ws, RoundingMode::None)?;
+            let mut hh = half.mul(&half, ws, RoundingMode::None)?;
+            hh = hh
+                .ldexp(ex, ws, RoundingMode::None)?
+                .ldexp(ex, ws, RoundingMode::None)?;
+            let t1 = hh.div(
+                &a.sub(&one, pa + ws, RoundingMode::None)?,
+                ws,
+                RoundingMode::None,
+            )?;
+            let mut s = if is_k {
+                one.sub(&t1, ws, RoundingMode::None)?
+            } else {
+                one.add(&t1, ws, RoundingMode::None)?
+            };
+            let mut rem = 2 * lr + 8;
+            if opp_maybe {
+                let q = ws + WORD_BIT_SIZE;
+                let ln2 = cc.ln_2_num(q, RoundingMode::None)?;
+                let lm = m.ln(q, RoundingMode::None, cc)?;
+                let e_m1 = ex as i128 - 1;
+                if e_m1.unsigned_abs() <= Word::MAX as u128 {
+                    let mut ev = N::from_word(e_m1.unsigned_abs() as Word, q)?;
+                    if e_m1 < 0 {
+                        ev = ev.neg()?;
+                    }
+                    let lxd2 =
+                        ev.mul(&ln2, q, RoundingMode::None)?
+                            .add(&lm, q, RoundingMode::None)?;
+                    let two_mu_lx =
+                        a.mul(&lxd2, q, RoundingMode::None)?
+                            .mul(&two, q, RoundingMode::None)?;
+                    let lg_m =
+                        one.sub(&a, q, RoundingMode::None)?
+                            .ln_gamma(q, RoundingMode::None, cc)?;
+                    let lg_p =
+                        one.add(&a, q, RoundingMode::None)?
+                            .ln_gamma(q, RoundingMode::None, cc)?;
+                    let lam = two_mu_lx.add(&lg_m, q, RoundingMode::None)?.sub(
+                        &lg_p,
+                        q,
+                        RoundingMode::None,
+                    )?;
+                    let rterm = lam.exp(q, RoundingMode::None, cc)?;
+                    if is_k {
+                        s = s.sub(&rterm, q, RoundingMode::None)?;
+                    } else {
+                        let pi = cc.pi_num(q, RoundingMode::None)?;
+                        let c =
+                            a.mul(&pi, q, RoundingMode::None)?
+                                .cos(q, RoundingMode::None, cc)?;
+                        s = s.sub(
+                            &rterm.mul(&c, q, RoundingMode::None)?,
+                            q,
+                            RoundingMode::None,
+                        )?;
+                    }
+                    // leftover r · (x/2)^2
+                    rem = rem.max(rterm.exponent() as i128 + 2 * (ex as i128 - 1) + 8);
+                }
+            }
+            (s, rem)
+        };
+        let pv = g.mul(&s, wp, RoundingMode::None)?;
+        let c = (s_err.max(-(w as i128) - 10) + 2).max(-(wp as i128) + 4);
+        let mut eps = N::from_word(1, WORD_BIT_SIZE)?;
+        eps.set_exponent(c as Exponent + 1);
+        let up = N::from_word(1, WORD_BIT_SIZE)?.add(&eps, wp, RoundingMode::Up)?;
+        let dn = N::from_word(1, WORD_BIT_SIZE)?.sub(&eps, wp, RoundingMode::Down)?;
+        let mut lo = pv.mul(&dn, wp, RoundingMode::Down)?;
+        let mut hi = pv.mul(&up, wp, RoundingMode::Up)?;
+        lo.set_sign(sign);
+        hi.set_sign(sign);
+        let rl = scale_in_rm(lo, n, p, rm);
+        let rh = scale_in_rm(hi, n, p, rm);
+        match (rl, rh) {
+            (Err(Error::ExponentOverflow(a1)), Err(Error::ExponentOverflow(a2))) if a1 == a2 => {
+                return overflow_in_rm(a1, p, rm).map(Some);
+            }
+            (Ok(mut u), Ok(v)) if u.cmp(&v) == 0 && u.sign() == v.sign() => {
+                u.set_inexact(true);
+                return Ok(Some(u));
+            }
+            (Err(e), _) | (_, Err(e)) if !matches!(e, Error::ExponentOverflow(_)) => return Err(e),
+            _ => {}
+        }
+        match bump_prec_retry(&mut w, &mut w_inc, p) {
+            Ok(()) => {}
+            Err(Error::PrecisionRetryExhausted) => return Ok(None),
+            Err(e) => return Err(e),
+        }
     }
 }
 

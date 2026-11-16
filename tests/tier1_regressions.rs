@@ -3660,3 +3660,44 @@ fn zf_37_bessel_j_i_tiny_and_extreme_x() {
     }
     assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// ZF-37 (tiny-x Y_ν, K_ν): Y_ν(minpos) for ν ≠ 0 overflowed as +Inf (the
+/// dominant term is −(1/π) Γ(ν) (x/2)^{-ν} for ν > 0, or a signed multiple for
+/// ν < 0; Y_{-(n+1/2)}(minpos) underflows with the sign of (−1)^n J_{n+1/2}).
+/// K_ν(minpos) overflowed as +Inf in every mode, including down / tozero, which
+/// must return +MAX (C99 7.12.1). K_n(2^{-100000}) hit PrecisionRetryExhausted
+/// in the directed modes (the value is a tiny correction to an exact dyadic
+/// leading term, which Ziv could not certify). Now `bessel_yk_scaled` places
+/// Γ(|ν|) (x/2)^{-|ν|} as a significand times a power of two and rounds once.
+/// Expected strings from the small-x leading term (FLINT when it forms a tight
+/// ball; L(1+t_1) certified when t_2 is below 2^{-(p+200)}; `tgen_yk.py`).
+/// On d3bc81f, Y_1 / Y_{5/2} / Y_{-3/2}(minpos) and K_1(minpos) down / K_n(2^{-100000})
+/// directed were wrong.
+#[test]
+fn zf_37_bessel_y_k_tiny_and_extreme_x() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf37-yk-tiny.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let x = parse_real(t[1]).expect("x");
+        let nu = parse_real(t[2]).expect("nu");
+        let p = t[3].parse::<usize>().expect("p");
+        let rm = mode(t[4]).expect("mode");
+        let v = match t[0] {
+            "r.bessel_y" => x.bessel_y(&nu, p, rm, &mut cc),
+            "r.bessel_k" => x.bessel_k(&nu, p, rm, &mut cc),
+            _ => panic!("function"),
+        };
+        if fmt_real(&v) != t[5] {
+            bad.push(format!(
+                "{}({}, ν={}) p={p} {rm:?}: {} want {}",
+                t[0],
+                t[1],
+                t[2],
+                fmt_real(&v),
+                t[5]
+            ));
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+}
