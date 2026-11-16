@@ -3341,3 +3341,36 @@ fn zf_33_75_elliptic_amplitude_and_inverse_jacobi() {
     }
     assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// CAPS: `hurwitz_em` capped its Bernoulli tail at 48 terms (`clamp(4, 48)`), so the
+/// Euler–Maclaurin remainder stayed near 2^-500 and `hurwitz_zeta` and `polygamma`
+/// (n ≥ 1) were silently wrong past about 500 bits (e.g. ψ'(1) at p = 1344 had 610
+/// correct bits). The tail length now comes from the remainder bound.
+/// References: FLINT acb zeta(s, a) / polygamma at 9400 bits.
+#[test]
+fn caps_hurwitz_zeta_and_polygamma_above_500_bits() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/caps-hurwitz.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let k = t[1].parse::<usize>().expect("order");
+        let x = parse_real(t[2]).expect("x");
+        for p in t[3].split(',').map(|p| p.parse::<usize>().expect("p")) {
+            for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+                let v = match t[0] {
+                    "pg" => x.polygamma(k, p, rm, &mut cc),
+                    "hz" => ExactNum::from_u32(k as u32, 64).hurwitz_zeta(&x, p, rm, &mut cc),
+                    _ => panic!("function"),
+                };
+                let w = cr_ref(t[4], p, rm, &mut cc);
+                if v.compare(&w) != Some(0) {
+                    bad.push(format!(
+                        "{}({k}, {}) p={p} {rm:?}: {v} want {w}",
+                        t[0], t[2]
+                    ));
+                }
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+}

@@ -360,13 +360,58 @@ fn zeta_even(k: usize, p: usize, cc: &mut Consts) -> ExactNum {
     z
 }
 
+/// Front length \(N\) and Bernoulli count \(M\) for [`hurwitz_em`] (any \(a\ge0\)),
+/// from the remainder ratio \(r_M\) evaluated with upward rounding, \(2\pi\ge 6\)
+/// and \(N+a\ge N\). \(N\) doubles when the terms of \(r_M\) start growing first.
+fn hurwitz_em_lengths(s: u32, p: usize) -> Option<(usize, usize)> {
+    let up = RoundingMode::Up;
+    let target = i64::try_from(p).ok()?.checked_add(8)?;
+    let mut n_front = (16 + p / 4).max(24);
+    while n_front <= (1 << 28) {
+        let den = ExactNum::from_u64(6 * n_front as u64, 64);
+        let mut prod = ExactNum::from_u32(4 * (s - 1), 64);
+        let mut m = 0usize;
+        loop {
+            let i = 2 * m as u64;
+            let f0 = ExactNum::from_u64(u64::from(s) + i, 64);
+            let f1 = ExactNum::from_u64(u64::from(s) + i + 1, 64);
+            if !matches!(f1.compare(&den), Some(c) if c < 0) {
+                break;
+            }
+            prod = prod
+                .mul(&f0, 64, up)
+                .div(&den, 64, up)
+                .mul(&f1, 64, up)
+                .div(&den, 64, up);
+            m += 1;
+            let r = prod.clone().div(
+                &ExactNum::from_u64(u64::from(s) + 2 * m as u64 - 1, 64),
+                64,
+                up,
+            );
+            if r.is_zero() || r.exponent().is_some_and(|e| e < -target) {
+                return Some((n_front, m.max(1)));
+            }
+        }
+        n_front = n_front.saturating_mul(2);
+    }
+    None
+}
+
 /// Euler–Maclaurin for \(\zeta(s,a)=\sum_{k=0}^\infty(k+a)^{-s}\), integer \(s\ge 2\), \(a>0\).
 fn hurwitz_em(s: u32, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     if s < 2 || !finite(a) || a.is_negative() || a.is_zero() {
         return cat_nan();
     }
-    let n_front = (16 + p / 4).max(24);
-    let m_bern = (8 + p / 16).clamp(4, 48);
+    // The former `m_bern = clamp(4, 48)` stopped the Bernoulli tail near 2^-500, so
+    // ψ^{(n)} and ζ(s, a) were silently wrong past about 500 bits. The tail length now
+    // comes from the remainder bound (Johansson 2015, Thm 1, real s):
+    // |R_M| ≤ 4 (s)_{2M} / ((2π)^{2M} (s+2M−1) (N+a)^{s+2M−1}). Against the lower bound
+    // ζ(s,a) ≥ (N+a)^{1−s}/(s−1) that is
+    // r_M = 4 (s−1)/(s+2M−1) · Π_{i<2M} (s+i)/(2π(N+a)), required below 2^{−p−8}.
+    let Some((n_front, m_bern)) = hurwitz_em_lengths(s, p) else {
+        return cat_nan();
+    };
     let mut sum = ExactNum::new(p);
     for k in 0..n_front {
         let t = ExactNum::from_u32(k as u32, p).add(a, p, RoundingMode::None);
