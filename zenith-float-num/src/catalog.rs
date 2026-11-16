@@ -440,22 +440,28 @@ fn hurwitz_em(s: u32, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
         .add(&tail_int, p, RoundingMode::None)
         .add(&tail_half, p, RoundingMode::None);
     let bs = even_bernoulli_ext(m_bern, p);
+    // Term j: B_2j (s)_{2j-1} / ((2j)! (N+a)^{s+2j-1}), built incrementally (the former
+    // per-j rising product, factorial and power were O(M^2) multiplies).
+    let nr = RoundingMode::None;
+    let inv_na = ExactNum::from_u8(1, p).div(&n_a, p, nr);
+    let inv_na2 = ExactNum::mul_ref(&inv_na, &inv_na, p, nr);
+    let mut coef = ExactNum::from_u32(s, p).div(&ExactNum::from_u8(2, p), p, nr);
+    let mut inv_pow = inv_na.powsi(i64::from(s) + 1, p, nr);
     for j in 1..=m_bern {
-        let b2j = &bs[j - 1];
-        let mut rising = ExactNum::from_u8(1, p);
-        for i in 0..(2 * j - 1) {
-            rising = rising.mul(&ExactNum::from_u32(s + i as u32, p), p, RoundingMode::None);
+        if j > 1 {
+            let j2 = 2 * j as u64;
+            let num = (u64::from(s) + j2 - 3) * (u64::from(s) + j2 - 2);
+            coef = coef.mul(&ExactNum::from_u64(num, p), p, nr).div(
+                &ExactNum::from_u64((j2 - 1) * j2, p),
+                p,
+                nr,
+            );
+            inv_pow = inv_pow.mul(&inv_na2, p, nr);
         }
-        let fact = factorial_n(2 * j, p);
-        let pow = n_a.powsi((s + 2 * j as u32 - 1) as i64, p, RoundingMode::None);
-        let term = rising.mul(b2j, p, RoundingMode::None).div(
-            &fact.mul(&pow, p, RoundingMode::None),
-            p,
-            RoundingMode::None,
-        );
-        sum = sum.add(&term, p, RoundingMode::None);
-        let _ = cc;
+        let term = ExactNum::mul_ref(&bs[j - 1], &coef, p, nr).mul(&inv_pow, p, nr);
+        sum = sum.add(&term, p, nr);
     }
+    let _ = cc;
     sum
 }
 
