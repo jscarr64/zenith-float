@@ -153,6 +153,40 @@ fn int(s: &str) -> Result<ExactInt, String> {
     ExactInt::from_dec_string(s).ok_or_else(|| format!("bad int {s}"))
 }
 
+/// `r.meijer_g` / `r.fox_h` rows: z, |an|, |ap|, |bm|, |bq|, then the values
+/// (fox_h: (value, scale) pairs).
+fn meijer_fox(
+    func: &str,
+    p: usize,
+    rm: RoundingMode,
+    a: &[&str],
+    cc: &mut Consts,
+) -> Result<ExactNum, String> {
+    let fox = func == "r.fox_h";
+    let z = real(a, 0)?;
+    let mut k = 5;
+    let mut groups: Vec<Vec<(ExactNum, ExactNum)>> = Vec::new();
+    for i in 1..5 {
+        let c: usize = arg(a, i)?.parse().map_err(|_| "count")?;
+        let mut g = Vec::new();
+        for _ in 0..c {
+            let s = if fox { real(a, k + 1)? } else { ExactNum::from_u8(1, 64) };
+            g.push((real(a, k)?, s));
+            k += if fox { 2 } else { 1 };
+        }
+        groups.push(g);
+    }
+    Ok(if fox {
+        z.fox_h(&groups[0], &groups[1], &groups[2], &groups[3], p, rm, cc)
+    } else {
+        let v: Vec<Vec<ExactNum>> = groups
+            .into_iter()
+            .map(|g| g.into_iter().map(|x| x.0).collect())
+            .collect();
+        z.meijer_g(&v[0], &v[1], &v[2], &v[3], p, rm, cc)
+    })
+}
+
 fn run(
     func: &str,
     p: usize,
@@ -210,6 +244,7 @@ fn run(
         "r.elliptic_f_phi" => real(a, 0)?.elliptic_f_phi(&real(a, 1)?, p, rm, cc),
         "r.elliptic_e_phi" => real(a, 0)?.elliptic_e_phi(&real(a, 1)?, p, rm, cc),
         "r.elliptic_pi_phi" => real(a, 0)?.elliptic_pi_phi(&real(a, 1)?, &real(a, 2)?, p, rm, cc),
+        "r.meijer_g" | "r.fox_h" => meijer_fox(func, p, rm, a, cc)?,
         "r.log" => real(a, 0)?.log(&real(a, 1)?, p, rm, cc),
         "r.logb" => real(a, 0)?.logb(p, rm),
         "r.rem" => real(a, 0)?.rem(&real(a, 1)?),
@@ -3369,6 +3404,61 @@ fn caps_hurwitz_zeta_and_polygamma_above_500_bits() {
                         t[0], t[2]
                     ));
                 }
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+}
+
+/// ZF-42: coincident poles of the Meijer G / Fox H residue sum went through a
+/// hypercomb limit (three parameter shifts at most, two had to agree, 12,000-bit
+/// cap), and at z = 0 every such row came back +0. Now: a non-removable pole
+/// (a_k - b_h a positive integer, k <= n, h <= m; DLMF 16.17) is NaN; z = 0 is the
+/// limit from the leftmost Mellin-Barnes pole (G^{2,0}_{1,2}(z|;1/2|0,0) ~ -ln z/sqrt(pi)
+/// -> +inf); z != 0 is the constant term of the Laurent expansion in the parameter
+/// shift (polygamma jets, rigorous pFq tail). See RC-3.
+/// References: mpmath meijerg at 4p+512 bits, agreeing with 2p+256 to 2^-(2p+64);
+/// z = 0 rows analytic. Every mode must be within 1 ulp.
+#[test]
+fn zf_42_meijer_fox_coincident_poles() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf42.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let n = t.len();
+        let p = t[1].parse::<usize>().expect("p");
+        let want = t[n - 1];
+        for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+            let g = match meijer_fox(t[0], p, rm, &t[2..n - 1], &mut cc) {
+                Ok(g) => g,
+                Err(e) => panic!("dispatch {e}"),
+            };
+            let v = fmt_real(&g);
+            let ok = match want {
+                "nan" => v == "N:Some(InvalidArgument)",
+                "+inf" => v == "I:+",
+                "+0" => v == "Z:+",
+                _ => {
+                    let w = ExactNum::parse(want, Radix::Dec, 8960, RoundingMode::ToEven, &mut cc);
+                    if g.is_nan() || g.is_inf() || g.is_zero() {
+                        false
+                    } else {
+                        let d = ExactNum::sub_ref(&g, &w, p + 512, RoundingMode::None).abs();
+                        let ulp = ExactNum::from_u8(1, 64).ldexp(
+                            g.exponent().expect("exp") - p as i64,
+                            64,
+                            RoundingMode::None,
+                        );
+                        matches!(d.compare(&ulp), Some(c) if c <= 0)
+                    }
+                }
+            };
+            if !ok {
+                bad.push(format!(
+                    "{} p={p} {rm:?} args={:?} got {v} want {want}",
+                    t[0],
+                    &t[2..n - 1]
+                ));
             }
         }
     }

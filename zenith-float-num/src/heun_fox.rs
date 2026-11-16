@@ -1,6 +1,6 @@
 //! Meijer \(G\), Fox \(H\), and local / confluent Heun on [`ExactNum`].
 //!
-//! SoftFloat only. Residue \(G\) follows DLMF 16.17 / mpmath `hypercomb`; Fox \(H\)
+//! SoftFloat only. Residue \(G\) follows DLMF 16.17; Fox \(H\)
 //! with positive rational \(A,B\) reduces through the Gauss multiplication formula
 //! (mpmath `foxh`). Local Heun is DLMF 31.3; confluent Heun is the \(z=0\)
 //! Frobenius solution of DLMF 31.12.1.
@@ -20,8 +20,9 @@ const SCALE_MAX: i32 = 12;
 /// Max expanded Meijer length after the Fox–Gauss lift.
 const TILDE_MAX: usize = 16;
 
+/// \(x\in\{0,-1,-2,\dots\}\). `is_positive` is true for `+0`, so zero is tested first.
 fn gamma_pole(x: &ExactNum) -> bool {
-    x.is_int() && !x.is_positive()
+    x.is_int() && (x.is_zero() || !x.is_positive())
 }
 
 fn all_finite(xs: &[ExactNum]) -> bool {
@@ -358,90 +359,736 @@ fn meijer_g_inner(
     match meijer_g_series(z, an, ap, bm, bq, r, p, cc) {
         GEval::Val(v) => v,
         GEval::Bad => cat_nan(),
-        GEval::Singular => meijer_log_limit(z, an, ap, bm, bq, r, p, cc),
+        GEval::Singular => meijer_removable_limit(z, an, ap, bm, bq, r, p, cc),
     }
 }
 
-fn max_int_cluster(xs: &[ExactNum], p: usize) -> usize {
-    let n = xs.len();
-    if n <= 1 {
-        return 1;
-    }
-    let mut seen = alloc::vec![false; n];
-    let mut best = 1usize;
-    for i in 0..n {
-        if seen[i] {
-            continue;
+/// Order window, working precision, and the largest intermediate magnitude
+/// (`mag`, an exponent) seen by any [`Jet`] operation of one evaluation.
+struct JetW {
+    lo: i32,
+    hi: i32,
+    wp: usize,
+    mag: core::cell::Cell<i64>,
+    ops: core::cell::Cell<u64>,
+}
+
+/// Truncated Laurent series in \(\varepsilon\): `c[i]` is the coefficient of
+/// \(\varepsilon^{i+\mathrm{lo}}\).
+#[derive(Clone)]
+struct Jet {
+    c: Vec<ExactNum>,
+}
+
+impl JetW {
+    fn new(lo: i32, hi: i32, wp: usize) -> Self {
+        JetW {
+            lo,
+            hi,
+            wp,
+            mag: core::cell::Cell::new(i64::MIN / 4),
+            ops: core::cell::Cell::new(0),
         }
-        let mut stack = alloc::vec![i];
-        seen[i] = true;
-        let mut cnt = 0usize;
-        while let Some(u) = stack.pop() {
-            cnt += 1;
-            for v in 0..n {
-                if seen[v] {
+    }
+    fn len(&self) -> usize {
+        (self.hi - self.lo + 1) as usize
+    }
+    fn idx(&self, o: i32) -> Option<usize> {
+        if o < self.lo || o > self.hi {
+            None
+        } else {
+            Some((o - self.lo) as usize)
+        }
+    }
+    fn note(&self, x: &ExactNum) {
+        self.ops.set(self.ops.get().saturating_add(1));
+        if let (false, Some(e)) = (x.is_zero(), x.exponent()) {
+            if e > self.mag.get() {
+                self.mag.set(e);
+            }
+        }
+    }
+    fn mul_n(&self, x: &ExactNum, y: &ExactNum) -> ExactNum {
+        let r = ExactNum::mul_ref(x, y, self.wp, RoundingMode::None);
+        self.note(&r);
+        r
+    }
+    fn add_n(&self, x: ExactNum, y: &ExactNum) -> ExactNum {
+        self.note(y);
+        x.add(y, self.wp, RoundingMode::None)
+    }
+    fn zero(&self) -> Jet {
+        Jet {
+            c: (0..self.len()).map(|_| ExactNum::new(self.wp)).collect(),
+        }
+    }
+    fn scalar(&self, x: &ExactNum) -> Jet {
+        let mut j = self.zero();
+        if let Some(i) = self.idx(0) {
+            j.c[i] = x.clone();
+        }
+        j
+    }
+    /// \(x + c\varepsilon\).
+    fn lin(&self, x: &ExactNum, c: i32) -> Jet {
+        let mut j = self.scalar(x);
+        if let Some(i) = self.idx(1) {
+            j.c[i] = ExactNum::from_i32(c, self.wp);
+        }
+        j
+    }
+    fn add(&self, a: &Jet, b: &Jet) -> Jet {
+        Jet {
+            c: a.c
+                .iter()
+                .zip(&b.c)
+                .map(|(x, y)| self.add_n(x.clone(), y))
+                .collect(),
+        }
+    }
+    fn scale(&self, a: &Jet, x: &ExactNum) -> Jet {
+        Jet {
+            c: a.c.iter().map(|y| self.mul_n(y, x)).collect(),
+        }
+    }
+    fn mul(&self, a: &Jet, b: &Jet) -> Jet {
+        let mut r = self.zero();
+        for (i, x) in a.c.iter().enumerate() {
+            if x.is_zero() {
+                continue;
+            }
+            for (j, y) in b.c.iter().enumerate() {
+                if y.is_zero() {
                     continue;
                 }
-                if ExactNum::sub_ref(&xs[u], &xs[v], p, RoundingMode::None).is_int() {
-                    seen[v] = true;
-                    stack.push(v);
+                let o = i as i32 + j as i32 + 2 * self.lo;
+                if let Some(k) = self.idx(o) {
+                    let t = self.mul_n(x, y);
+                    r.c[k] = self.add_n(core::mem::take(&mut r.c[k]), &t);
                 }
             }
         }
-        best = best.max(cnt);
+        r
     }
-    best
-}
-
-fn lift_num(x: &ExactNum, wp: usize) -> Option<ExactNum> {
-    let mut y = x.clone();
-    y.set_precision(wp, RoundingMode::None).ok()?;
-    if finite(&y) {
-        Some(y)
-    } else {
-        None
+    /// Lowest order with a nonzero coefficient. Every divisor is built from exact
+    /// linear factors or Γ values, so a structural zero is an exact zero.
+    fn val(&self, a: &Jet) -> Option<i32> {
+        a.c.iter()
+            .position(|x| !x.is_zero())
+            .map(|i| i as i32 + self.lo)
     }
-}
-
-fn perturb_row(xs: &[ExactNum], h: &mut ExactNum, wp: usize, k: &mut u32) -> Option<Vec<ExactNum>> {
-    let mut row = Vec::with_capacity(xs.len());
-    for x in xs {
-        let y = lift_num(x, wp)?;
-        let shifted = y.add(h, wp, RoundingMode::None);
-        if !finite(&shifted) {
+    fn div(&self, a: &Jet, b: &Jet) -> Option<Jet> {
+        let v = self.val(b)?;
+        let u: Vec<&ExactNum> = b.c.iter().skip((v - self.lo) as usize).collect();
+        let n = self.len();
+        let mut inv: Vec<ExactNum> = Vec::with_capacity(n);
+        let u0 = u[0];
+        inv.push(ExactNum::from_u8(1, self.wp).div(u0, self.wp, RoundingMode::None));
+        self.note(&inv[0]);
+        for k in 1..n {
+            let mut s = ExactNum::new(self.wp);
+            for i in 1..=k {
+                if let Some(ui) = u.get(i) {
+                    let t = self.mul_n(ui, &inv[k - i]);
+                    s = self.add_n(s, &t);
+                }
+            }
+            let q = s.neg().div(u0, self.wp, RoundingMode::None);
+            self.note(&q);
+            inv.push(q);
+        }
+        let mut r = self.zero();
+        for (i, x) in a.c.iter().enumerate() {
+            if x.is_zero() {
+                continue;
+            }
+            for (k, y) in inv.iter().enumerate() {
+                let o = i as i32 + self.lo + k as i32 - v;
+                if let Some(t) = self.idx(o) {
+                    let pr = self.mul_n(x, y);
+                    r.c[t] = self.add_n(core::mem::take(&mut r.c[t]), &pr);
+                }
+            }
+        }
+        Some(r)
+    }
+    /// \(\exp(s)\) for `s` with no terms below order 1.
+    fn exp0(&self, s: &Jet) -> Jet {
+        let mut r = self.scalar(&ExactNum::from_u8(1, self.wp));
+        let mut t = r.clone();
+        for n in 1..=self.hi.max(0) {
+            let inv_n = ExactNum::from_u8(1, self.wp).div(
+                &ExactNum::from_i32(n, self.wp),
+                self.wp,
+                RoundingMode::None,
+            );
+            t = self.scale(&self.mul(&t, s), &inv_n);
+            r = self.add(&r, &t);
+        }
+        r
+    }
+    /// \(\Gamma(x + c\varepsilon)\). At \(x=-n\) this is
+    /// \(\Gamma(1+c\varepsilon)/\bigl(c\varepsilon\prod_{i=1}^{n}(c\varepsilon-i)\bigr)\);
+    /// elsewhere \(\Gamma(x)\exp\sum_{j\ge1}\psi^{(j-1)}(x)(c\varepsilon)^j/j!\) (DLMF 5.7.3 / 5.15).
+    fn gamma(&self, x: &ExactNum, c: i32, cc: &mut Consts) -> Option<Jet> {
+        if gamma_pole(x) {
+            let n = x.clone().neg().to_u32(RoundingMode::None).ok()?;
+            if n > 4096 {
+                return None;
+            }
+            let g1 = self.gamma(&ExactNum::from_u8(1, self.wp), c, cc)?;
+            let mut den = self.lin(&ExactNum::new(self.wp), c);
+            for i in 1..=n {
+                den = self.mul(&den, &self.lin(&ExactNum::from_u32(i, self.wp).neg(), c));
+            }
+            return self.div(&g1, &den);
+        }
+        let g = x.gamma(self.wp, RoundingMode::None, cc);
+        if !finite(&g) || g.is_zero() {
             return None;
         }
-        row.push(shifted);
-        *k = k.saturating_add(1);
-        let den = ExactNum::from_u32(*k + 1, wp);
-        let bump = ExactNum::div_ref(h, &den, wp, RoundingMode::None);
-        *h = bump.add(h, wp, RoundingMode::None);
+        let mut s = self.zero();
+        let mut ck = ExactNum::from_u8(1, self.wp);
+        let mut fact = ExactNum::from_u8(1, self.wp);
+        for j in 1..=self.hi.max(0) {
+            ck = ck.mul(&ExactNum::from_i32(c, self.wp), self.wp, RoundingMode::None);
+            fact = fact.mul(&ExactNum::from_i32(j, self.wp), self.wp, RoundingMode::None);
+            let psi = x.polygamma((j - 1) as usize, self.wp, RoundingMode::None, cc);
+            if !finite(&psi) {
+                return None;
+            }
+            if let Some(i) = self.idx(j) {
+                s.c[i] = psi.mul(&ck, self.wp, RoundingMode::None).div(
+                    &fact,
+                    self.wp,
+                    RoundingMode::None,
+                );
+                self.note(&s.c[i]);
+            }
+        }
+        Some(self.scale(&self.exp0(&s), &g))
     }
-    Some(row)
 }
 
-fn values_agree(a: &ExactNum, b: &ExactNum, bits: usize) -> bool {
-    if !finite(a) || !finite(b) {
-        return false;
+/// `|x|` rounded up to 64 bits.
+fn up64(x: &ExactNum) -> ExactNum {
+    let mut y = x.clone().abs();
+    let _ = y.set_precision(64, RoundingMode::Up);
+    y
+}
+
+/// `|x|` rounded down to 64 bits.
+fn dn64(x: &ExactNum) -> ExactNum {
+    let mut y = x.clone().abs();
+    let _ = y.set_precision(64, RoundingMode::Down);
+    y
+}
+
+fn lt(a: &ExactNum, b: &ExactNum) -> bool {
+    matches!(a.compare(b), Some(c) if c < 0)
+}
+
+/// Bits that hold every parameter and every difference or `1 - x` of them exactly.
+fn exact_span(xs: &[&ExactNum]) -> Option<usize> {
+    let mut hi: i64 = 1;
+    let mut lo: i64 = 0;
+    for x in xs {
+        if x.is_zero() {
+            continue;
+        }
+        let e = x.exponent()?;
+        let mb = x.mantissa_max_bit_len()? as i64;
+        hi = hi.max(e);
+        lo = lo.min(e - mb);
     }
-    let wp = bits.saturating_mul(2).max(128);
-    let d = ExactNum::sub_ref(a, b, wp, RoundingMode::None).abs();
-    if d.is_zero() {
-        return true;
+    usize::try_from(hi - lo + 4).ok()
+}
+
+/// Smallest nonzero \(|b+k|\) over integers \(k\ge0\), as a 64-bit lower bound.
+fn min_shift_gap(b: &ExactNum, wp: usize) -> ExactNum {
+    let one = ExactNum::from_u8(1, 64);
+    if !b.is_negative() {
+        return if b.is_zero() { one } else { dn64(b) };
     }
-    // |a| and |b| have the exponent and the zero-ness of a and b.
-    let scale = if matches!(a.abs_cmp(b), Some(c) if c > 0) { a } else { b };
-    let Some(de) = d.exponent() else {
-        return false;
+    let f = ExactNum::sub_ref(b, &b.clone().floor(), wp, RoundingMode::None);
+    if f.is_zero() {
+        return one;
+    }
+    let g = ExactNum::sub_ref(&ExactNum::from_u8(1, wp), &f, wp, RoundingMode::None);
+    if lt(&f, &g) {
+        dn64(&f)
+    } else {
+        dn64(&g)
+    }
+}
+
+/// \({}_pF_q(x)\) with parameters \(v_i + c_i\varepsilon\), as a [`Jet`].
+///
+/// Terms are added until a Cauchy majorant on \(|\varepsilon|=\rho\) bounds the
+/// tail's contribution to \(\sum_o W_{-o}F_o\) by \(2^{\mathrm{tol}}\), where
+/// `weights[o - lo]` \(\ge|W_{-o}|\). \(\rho\le 1/4\) is a power of two with every
+/// root \(-(b+k)/c\) of a lower parameter at distance at least \(4\rho\), so the
+/// tail is analytic on \(0<|\varepsilon|\le\rho\) and its order-\(o\) coefficient is
+/// at most \(\sup_{|\varepsilon|=\rho}|\text{tail}|\,\rho^{-o}\).
+fn pfq_jet(
+    hn: &[(ExactNum, i32)],
+    hd: &[(ExactNum, i32)],
+    x: &ExactNum,
+    w: &JetW,
+    weights: &[ExactNum],
+    tol: i64,
+) -> Option<Jet> {
+    let wp = w.wp;
+    let up = RoundingMode::Up;
+    let dn = RoundingMode::Down;
+    let one64 = ExactNum::from_u8(1, 64);
+    let ax = up64(x);
+    if hn.len() > hd.len() + 1 || (hn.len() == hd.len() + 1 && !lt(&ax, &one64)) {
+        return None;
+    }
+    let mut rho = ExactNum::from_u8(1, 64).ldexp(-2, 64, dn);
+    for (b, c) in hd {
+        let ac = ExactNum::from_i32(c.abs().max(1), 64);
+        let r1 = min_shift_gap(b, wp).div(&ac, 64, dn).ldexp(-2, 64, dn);
+        if lt(&r1, &rho) {
+            rho = r1;
+        }
+    }
+    let re = rho.exponent()? - 1;
+    let rho = ExactNum::from_u8(1, 64).ldexp(re, 64, RoundingMode::None);
+    let crho = |c: i32| ExactNum::from_i32(c.abs(), 64).mul(&rho, 64, up);
+    let amax = hn
+        .iter()
+        .chain(hd.iter())
+        .fold(ExactNum::new(64), |m, (v, _)| {
+            let a = up64(v);
+            if lt(&m, &a) {
+                a
+            } else {
+                m
+            }
+        });
+    let kmin = amax
+        .add(&ExactNum::from_u8(2, 64), 64, up)
+        .to_u64(RoundingMode::Up)
+        .ok()?;
+    let mut t = w.scalar(&ExactNum::from_u8(1, wp));
+    let mut sum = t.clone();
+    let mut mk = ExactNum::from_u8(1, 64);
+    let mut k: u64 = 0;
+    loop {
+        if k > 20_000_000 {
+            return None;
+        }
+        let kk = ExactNum::from_u64(k, wp);
+        let mut num = w.scalar(&ExactNum::from_u8(1, wp));
+        let mut nb = ax.clone();
+        for (a, c) in hn {
+            let v = ExactNum::add_ref(a, &kk, wp, RoundingMode::None);
+            nb = nb.mul(&up64(&v).add(&crho(*c), 64, up), 64, up);
+            num = w.mul(&num, &w.lin(&v, *c));
+        }
+        let mut den = w.scalar(&ExactNum::from_u64(k + 1, wp));
+        let mut db = ExactNum::from_u64(k + 1, 64);
+        for (b, c) in hd {
+            let v = ExactNum::add_ref(b, &kk, wp, RoundingMode::None);
+            let inf = if v.is_zero() {
+                ExactNum::from_i32(c.abs(), 64).mul(&rho, 64, dn)
+            } else {
+                dn64(&v).sub(&crho(*c), 64, dn)
+            };
+            if !inf.is_positive() || inf.is_zero() {
+                return None;
+            }
+            db = db.mul(&inf, 64, dn);
+            den = w.mul(&den, &w.lin(&v, *c));
+        }
+        mk = mk.mul(&nb, 64, up).div(&db, 64, up);
+        t = w.scale(&w.div(&w.mul(&t, &num), &den)?, x);
+        sum = w.add(&sum, &t);
+        k += 1;
+        if k < kmin {
+            continue;
+        }
+        // Ratio bound for every step j >= k: |x| prod (j + max(|a|+|c|rho, 1)) /
+        // ((j+1) prod (j - |b| - |c|rho)); each factor is non-increasing in j.
+        let kk = ExactNum::from_u64(k, 64);
+        let mut bnd = ax.clone();
+        for (a, c) in hn {
+            let al = up64(a).add(&crho(*c), 64, up);
+            let al = if lt(&al, &one64) { one64.clone() } else { al };
+            bnd = bnd.mul(&ExactNum::add_ref(&kk, &al, 64, up), 64, up);
+        }
+        let mut d = ExactNum::from_u64(k + 1, 64);
+        for (b, c) in hd {
+            let q = ExactNum::sub_ref(&kk, &up64(b), 64, dn).sub(&crho(*c), 64, dn);
+            if !q.is_positive() || q.is_zero() {
+                return None;
+            }
+            d = d.mul(&q, 64, dn);
+        }
+        let bnd = bnd.div(&d, 64, up);
+        if !lt(&bnd, &one64) {
+            continue;
+        }
+        let gap = ExactNum::sub_ref(&one64, &bnd, 64, dn);
+        let tail = ExactNum::mul_ref(&mk, &bnd, 64, up).div(&gap, 64, up);
+        let mut err = ExactNum::new(64);
+        for o in w.lo..=w.hi {
+            let wt = &weights[(o - w.lo) as usize];
+            if wt.is_zero() {
+                continue;
+            }
+            err = err.add(
+                &ExactNum::mul_ref(&tail, wt, 64, up).ldexp(-i64::from(o) * re, 64, up),
+                64,
+                up,
+            );
+        }
+        if err.is_zero() || err.exponent().is_some_and(|e| e < tol) {
+            return Some(sum);
+        }
+    }
+}
+
+/// \(G^{m,n}_{p,q}\) at a removable coincident pole of the residue sum, for
+/// \(w = z^{1/r} > 0\) (or \(1/w\) when `invert`, with the parameters already
+/// reflected by DLMF 16.19.1).
+///
+/// Every parameter moves to \(x_i + c_i\varepsilon\) with distinct \(c_i\). The
+/// perturbed residue sum (DLMF 16.17.2) is analytic in \(\varepsilon\) with value
+/// \(G\) at \(\varepsilon=0\), so \(G\) is the constant term of its Laurent
+/// expansion: Γ jets from \(\psi^{(j)}\) (the digamma / derivative-of-Gamma form of
+/// the logarithmic residue), \(z^{b_h+c\varepsilon}=z^{b_h}e^{c\varepsilon\ln z}\), and
+/// \({}_pF_q\) jets with a rigorous tail. No step size and no agreement test.
+/// The working precision grows with the largest intermediate magnitude against
+/// \(|G|\); a precision past `16p + 2^{15}` refuses with NaN.
+fn meijer_jet_limit(
+    z: &ExactNum,
+    r: &ExactNum,
+    invert: bool,
+    an: &[ExactNum],
+    ap: &[ExactNum],
+    bm: &[ExactNum],
+    bq: &[ExactNum],
+    p: usize,
+    cc: &mut Consts,
+) -> ExactNum {
+    if !z.is_positive() || z.is_zero() || bm.is_empty() {
+        return cat_nan();
+    }
+    let n = an.len();
+    let m = bm.len();
+    let a: Vec<&ExactNum> = an.iter().chain(ap.iter()).collect();
+    let b: Vec<&ExactNum> = bm.iter().chain(bq.iter()).collect();
+    let ca: Vec<i32> = (0..a.len()).map(|i| i as i32 + 1).collect();
+    let cb: Vec<i32> = (0..b.len()).map(|i| (a.len() + i) as i32 + 1).collect();
+    let all: Vec<&ExactNum> = a.iter().chain(b.iter()).copied().collect();
+    let Some(span) = exact_span(&all) else {
+        return cat_nan();
     };
-    let mag = if scale.is_zero() { 0 } else { scale.exponent().unwrap_or(0).max(0) };
-    de + (bits as i64) < mag + 8
+    let one_r = ExactNum::from_u8(1, p);
+    let r_is_one = r.compare(&one_r) == Some(0);
+    let mut extra = 4 * crate::defs::WORD_BIT_SIZE;
+    loop {
+        let wp = p.max(span).saturating_add(extra);
+        if wp > 16 * p + 32_768 {
+            return cat_nan();
+        }
+        let one = ExactNum::from_u8(1, wp);
+        // w and ln w at wp.
+        let lnz = z.ln(wp, RoundingMode::None, cc);
+        let lnw0 = if r_is_one { lnz } else { lnz.div(r, wp, RoundingMode::None) };
+        let lnw = if invert { lnw0.neg() } else { lnw0 };
+        let w = lnw.exp(wp, RoundingMode::None, cc);
+        let w = if r_is_one && !invert { z.clone() } else { w };
+        if !finite(&w) || !finite(&lnw) {
+            return cat_nan();
+        }
+        let x = if odd_i(a.len() as i32 - m as i32 - n as i32) {
+            w.clone().neg()
+        } else {
+            w.clone()
+        };
+        let mut g = ExactNum::new(wp);
+        let mut mag = i64::MIN / 4;
+        let mut ops: u64 = 0;
+        let mut tol_used = i64::MIN / 4;
+        let d1 = |u: &ExactNum, v: &ExactNum| ExactNum::sub_ref(u, v, wp, RoundingMode::None);
+        let d2 = |u: &ExactNum, v: &ExactNum| {
+            ExactNum::sub_ref(&one, u, wp, RoundingMode::None).add(v, wp, RoundingMode::None)
+        };
+        for h in 0..m {
+            let bh = b[h];
+            let mut gn: Vec<(ExactNum, i32)> = Vec::new();
+            for j in 0..m {
+                if j != h {
+                    gn.push((d1(b[j], bh), cb[j] - cb[h]));
+                }
+            }
+            for j in 0..n {
+                gn.push((d2(a[j], bh), cb[h] - ca[j]));
+            }
+            let mut gd: Vec<(ExactNum, i32)> = Vec::new();
+            for j in n..a.len() {
+                gd.push((d1(a[j], bh), ca[j] - cb[h]));
+            }
+            for j in m..b.len() {
+                gd.push((d2(b[j], bh), cb[h] - cb[j]));
+            }
+            let hn: Vec<(ExactNum, i32)> = (0..a.len())
+                .map(|j| (d2(a[j], bh), cb[h] - ca[j]))
+                .collect();
+            let hd: Vec<(ExactNum, i32)> = (0..b.len())
+                .filter(|&j| j != h)
+                .map(|j| (d2(b[j], bh), cb[h] - cb[j]))
+                .collect();
+            let poles = gn
+                .iter()
+                .chain(gd.iter())
+                .chain(hd.iter())
+                .filter(|(v, _)| gamma_pole(v))
+                .count() as i32;
+            let hi = 4 * poles + 4;
+            if hi > 63 {
+                return cat_nan();
+            }
+            let jw = JetW::new(-poles - 1, hi, wp);
+            let mut num = jw.scalar(&one);
+            for (v, c) in &gn {
+                let Some(gj) = jw.gamma(v, *c, cc) else {
+                    return cat_nan();
+                };
+                num = jw.mul(&num, &gj);
+            }
+            let mut den = jw.scalar(&one);
+            for (v, c) in &gd {
+                let Some(gj) = jw.gamma(v, *c, cc) else {
+                    return cat_nan();
+                };
+                den = jw.mul(&den, &gj);
+            }
+            let Some(ratio) = jw.div(&num, &den) else {
+                return cat_nan();
+            };
+            let wb = pow_real(&w, bh, wp, cc);
+            if !finite(&wb) {
+                return cat_nan();
+            }
+            let mut s = jw.zero();
+            if let Some(i) = jw.idx(1) {
+                s.c[i] = ExactNum::from_i32(cb[h], wp).mul(&lnw, wp, RoundingMode::None);
+            }
+            let wj = jw.scale(&jw.mul(&ratio, &jw.exp0(&s)), &wb);
+            let weights: Vec<ExactNum> = (jw.lo..=jw.hi)
+                .map(|o| {
+                    jw.idx(-o)
+                        .map_or_else(|| ExactNum::new(64), |i| up64(&wj.c[i]))
+                })
+                .collect();
+            let wmax =
+                wj.c.iter()
+                    .filter(|c| !c.is_zero())
+                    .filter_map(|c| c.exponent())
+                    .max()
+                    .unwrap_or(0);
+            let tol = wmax.min(0) - wp as i64 - 8;
+            tol_used = tol_used.max(tol);
+            let Some(f) = pfq_jet(&hn, &hd, &x, &jw, &weights, tol) else {
+                return cat_nan();
+            };
+            for o in jw.lo..=jw.hi {
+                if let (Some(i), Some(k)) = (jw.idx(-o), jw.idx(o)) {
+                    let pr = jw.mul_n(&wj.c[i], &f.c[k]);
+                    g = jw.add_n(g, &pr);
+                }
+            }
+            mag = mag.max(jw.mag.get());
+            ops = ops.saturating_add(jw.ops.get());
+        }
+        if !finite(&g) {
+            return cat_nan();
+        }
+        if !g.is_zero() {
+            let eg = g.exponent().unwrap_or(0);
+            // First-order rounding bound: each of `ops` roundings errs by at most
+            // 2^{mag - wp}; ask for p + 64 clean bits plus the tail tolerance.
+            let ob = 64 - i64::from(ops.leading_zeros());
+            let loss = mag.saturating_sub(eg).max(0).saturating_add(ob);
+            if loss.saturating_add(p as i64 + 64) <= wp as i64 && tol_used <= eg - p as i64 - 64 {
+                return g;
+            }
+            extra = extra
+                .saturating_add(usize::try_from(loss.clamp(64, 1 << 20)).unwrap_or(64))
+                .saturating_add(64);
+        } else {
+            extra = extra.saturating_mul(2);
+        }
+    }
 }
 
-/// Hypercomb limit: shift every parameter by a distinct \(O(2^{-\mathrm{hmag}})\)
-/// and raise the working precision by the pole order times `hmag`. Two step sizes
-/// must agree, which is the finite part of a logarithmic (or higher) residue.
-fn meijer_log_limit(
+/// \(\lim_{z\to0^+}G\) at a coincident pole, from the leftmost pole \(s^*\) of the
+/// Mellin–Barnes integrand (DLMF 16.17.1), of order \(d+1\ge1\):
+/// \(G\sim-Cz^{s^*}(\ln z)^d/d!\), \(C\) the product of the factors' leading Laurent
+/// coefficients. \(s^*>0\): signed zero; \(s^*<0\) or \(d\ge1\): signed infinity;
+/// \(s^*=0,d=0\): \(-C\). No pole at all: \(+0\).
+fn meijer_zero_limit(
+    an: &[ExactNum],
+    ap: &[ExactNum],
+    bm: &[ExactNum],
+    bq: &[ExactNum],
+    p: usize,
+    cc: &mut Consts,
+) -> ExactNum {
+    let all: Vec<&ExactNum> = an
+        .iter()
+        .chain(ap.iter())
+        .chain(bm.iter())
+        .chain(bq.iter())
+        .collect();
+    let Some(span) = exact_span(&all) else {
+        return cat_nan();
+    };
+    let wp = p.max(span).saturating_add(4 * crate::defs::WORD_BIT_SIZE);
+    let one = ExactNum::from_u8(1, wp);
+    let int_diff =
+        |x: &ExactNum, y: &ExactNum| ExactNum::sub_ref(x, y, wp, RoundingMode::None).is_int();
+    let le = |x: &ExactNum, y: &ExactNum| matches!(x.compare(y), Some(c) if c <= 0);
+    let order = |s: &ExactNum| -> i64 {
+        let nb = bm.iter().filter(|b| int_diff(s, b) && le(b, s)).count() as i64;
+        let na = ap.iter().filter(|a| int_diff(s, a) && le(a, s)).count() as i64;
+        let nq = bq
+            .iter()
+            .filter(|b| {
+                int_diff(s, b) && le(s, &ExactNum::sub_ref(b, &one, wp, RoundingMode::None))
+            })
+            .count() as i64;
+        nb - na - nq
+    };
+    let mut best: Option<(ExactNum, i64)> = None;
+    for b0 in bm {
+        let mut cands: Vec<ExactNum> = bm
+            .iter()
+            .chain(ap.iter())
+            .chain(bq.iter())
+            .filter(|x| int_diff(x, b0))
+            .cloned()
+            .collect();
+        cands.sort_by(|x, y| {
+            x.compare(y)
+                .map_or(core::cmp::Ordering::Equal, |c| c.cmp(&0))
+        });
+        for s in cands {
+            let f = order(&s);
+            if f >= 1 {
+                if best.as_ref().is_none_or(|(bs, _)| lt(&s, bs)) {
+                    best = Some((s, f));
+                }
+                break;
+            }
+        }
+    }
+    let Some((s, f)) = best else {
+        return ExactNum::new(p);
+    };
+    let d = f - 1;
+    let fact = |k: &ExactNum, cc: &mut Consts| {
+        ExactNum::add_ref(k, &one, wp, RoundingMode::None).gamma(wp, RoundingMode::None, cc)
+    };
+    let even = |k: &ExactNum| k.clone().ldexp(-1, wp, RoundingMode::None).is_int();
+    let mut c = ExactNum::from_u8(1, wp);
+    for bj in bm {
+        // Γ(b - s) near s*: argument -k gives -(-1)^k/k! per unit of (s - s*).
+        let v = ExactNum::sub_ref(bj, &s, wp, RoundingMode::None);
+        let t = if gamma_pole(&v) {
+            let k = v.clone().neg();
+            let q = one.clone().div(&fact(&k, cc), wp, RoundingMode::None);
+            if even(&k) {
+                q.neg()
+            } else {
+                q
+            }
+        } else {
+            v.gamma(wp, RoundingMode::None, cc)
+        };
+        c = c.mul(&t, wp, RoundingMode::None);
+    }
+    for aj in an {
+        let v = ExactNum::sub_ref(&one, aj, wp, RoundingMode::None).add(&s, wp, RoundingMode::None);
+        if gamma_pole(&v) {
+            return cat_nan();
+        }
+        c = c.mul(&v.gamma(wp, RoundingMode::None, cc), wp, RoundingMode::None);
+    }
+    for aj in ap {
+        // 1/Γ(a - s): argument -k gives -(-1)^k k!.
+        let v = ExactNum::sub_ref(aj, &s, wp, RoundingMode::None);
+        let t = if gamma_pole(&v) {
+            let k = v.clone().neg();
+            let q = fact(&k, cc);
+            if even(&k) {
+                q.neg()
+            } else {
+                q
+            }
+        } else {
+            one.clone()
+                .div(&v.gamma(wp, RoundingMode::None, cc), wp, RoundingMode::None)
+        };
+        c = c.mul(&t, wp, RoundingMode::None);
+    }
+    for bj in bq {
+        // 1/Γ(1 - b + s): argument -k gives (-1)^k k!.
+        let v = ExactNum::sub_ref(&one, bj, wp, RoundingMode::None).add(&s, wp, RoundingMode::None);
+        let t = if gamma_pole(&v) {
+            let k = v.clone().neg();
+            let q = fact(&k, cc);
+            if even(&k) {
+                q
+            } else {
+                q.neg()
+            }
+        } else {
+            one.clone()
+                .div(&v.gamma(wp, RoundingMode::None, cc), wp, RoundingMode::None)
+        };
+        c = c.mul(&t, wp, RoundingMode::None);
+    }
+    if !finite(&c) || c.is_zero() {
+        return cat_nan();
+    }
+    if s.is_zero() && d == 0 {
+        return c.neg();
+    }
+    // sign of -C (ln z)^d with ln z -> -inf
+    let neg = c.is_positive() ^ (d % 2 == 1);
+    if s.is_positive() && !s.is_zero() {
+        let zr = ExactNum::new(p);
+        return if neg { zr.neg() } else { zr };
+    }
+    if neg {
+        crate::ext::INF_NEG
+    } else {
+        crate::ext::INF_POS
+    }
+}
+
+/// DLMF 16.17: the Mellin–Barnes contour exists only when no \(a_k-b_h\)
+/// (\(k\le n\), \(h\le m\)) is a positive integer.
+fn nonremovable(an: &[ExactNum], bm: &[ExactNum], wp: usize) -> bool {
+    an.iter().any(|a| {
+        bm.iter().any(|b| {
+            let d = ExactNum::sub_ref(a, b, wp, RoundingMode::None);
+            d.is_int() && d.is_positive() && !d.is_zero()
+        })
+    })
+}
+
+/// A coincident pole of the residue sum. Non-removable parameters are
+/// `NaN(InvalidArgument)`; \(z=0\) is the \(z\to0^+\) limit; otherwise the analytic
+/// constant term ([`meijer_jet_limit`]) of type 1 at \(w=z^{1/r}\), or of type 2 via
+/// \(G^{m,n}_{p,q}(w\mid a;b)=G^{n,m}_{q,p}(1/w\mid1-b;1-a)\) (DLMF 16.19.1).
+fn meijer_removable_limit(
     z: &ExactNum,
     an: &[ExactNum],
     ap: &[ExactNum],
@@ -451,55 +1098,58 @@ fn meijer_log_limit(
     p: usize,
     cc: &mut Consts,
 ) -> ExactNum {
-    let series = choose_series(an.len(), ap.len(), bm.len(), bq.len(), z, p);
-    let cluster = if series == 1 { max_int_cluster(bm, p) } else { max_int_cluster(an, p) };
-    let mult = cluster.max(2).saturating_sub(1).max(1);
-    let mut prev: Option<ExactNum> = None;
-    for attempt in 0..3u32 {
-        let hmag = p
-            .saturating_add(8)
-            .saturating_add((attempt as usize).saturating_mul(24));
-        let wp = p
-            .saturating_add(hmag.saturating_mul(mult))
-            .saturating_add(64);
-        if wp > 12_000 {
-            break;
-        }
-        let Ok(hmag_i) = Exponent::try_from(hmag) else {
-            break;
-        };
-        let h0 = ExactNum::from_u8(1, wp).ldexp(-hmag_i, wp, RoundingMode::None);
-        if !finite(&h0) {
-            continue;
-        }
-        let mut h = h0;
-        let mut k = 0u32;
-        let Some(an_p) = perturb_row(an, &mut h, wp, &mut k) else {
-            continue;
-        };
-        let Some(ap_p) = perturb_row(ap, &mut h, wp, &mut k) else {
-            continue;
-        };
-        let Some(bm_p) = perturb_row(bm, &mut h, wp, &mut k) else {
-            continue;
-        };
-        let Some(bq_p) = perturb_row(bq, &mut h, wp, &mut k) else {
-            continue;
-        };
-        let Some(z_p) = lift_num(z, wp) else { continue };
-        let Some(r_p) = lift_num(r, wp) else { continue };
-        let v = match meijer_g_series(&z_p, &an_p, &ap_p, &bm_p, &bq_p, &r_p, wp, cc) {
-            GEval::Val(v) if finite(&v) => v,
-            _ => continue,
-        };
-        if let Some(prev_v) = &prev {
-            if values_agree(prev_v, &v, p) {
-                return v;
-            }
-        }
-        prev = Some(v);
+    let all: Vec<&ExactNum> = an
+        .iter()
+        .chain(ap.iter())
+        .chain(bm.iter())
+        .chain(bq.iter())
+        .collect();
+    let Some(span) = exact_span(&all) else {
+        return cat_nan();
+    };
+    let wp = p.max(span).saturating_add(64);
+    if nonremovable(an, bm, wp) {
+        return cat_nan();
     }
-    cat_nan()
+    if z.is_zero() {
+        return meijer_zero_limit(an, ap, bm, bq, p, cc);
+    }
+    if !z.is_positive() {
+        return cat_nan();
+    }
+    let one = ExactNum::from_u8(1, p);
+    let w = if r.compare(&one) == Some(0) {
+        z.clone()
+    } else {
+        pow_real(
+            z,
+            &ExactNum::from_u8(1, p).div(r, p, RoundingMode::None),
+            p,
+            cc,
+        )
+    };
+    if !finite(&w) {
+        return cat_nan();
+    }
+    if choose_series(an.len(), ap.len(), bm.len(), bq.len(), &w, p) == 1 {
+        return meijer_jet_limit(z, r, false, an, ap, bm, bq, p, cc);
+    }
+    let refl = |xs: &[ExactNum]| -> Vec<ExactNum> {
+        xs.iter()
+            .map(|x| ExactNum::sub_ref(&ExactNum::from_u8(1, wp), x, wp, RoundingMode::None))
+            .collect()
+    };
+    meijer_jet_limit(
+        z,
+        r,
+        true,
+        &refl(bm),
+        &refl(bq),
+        &refl(an),
+        &refl(ap),
+        p,
+        cc,
+    )
 }
 
 fn gcd_i(mut a: i32, mut b: i32) -> i32 {
@@ -582,12 +1232,16 @@ impl ExactNum {
     /// # Limitations
     ///
     /// - Real line only. \(\mathrm{self}<0\) is `NaN` unless every used power is an integer.
-    ///   The logarithmic limit perturbs parameters, so a negative argument whose
-    ///   unperturbed powers were integers can still be `NaN`.
+    ///   At a coincident pole a negative argument is always `NaN`.
     /// - Coincident poles (integer differences among the active \(b_1,\ldots,b_m\) or
-    ///   \(a_1,\ldots,a_n\), and cancelling numerator \(\Gamma\) poles) use the
-    ///   hypercomb limit: two parameter shifts must agree. A non-removable pole stays
-    ///   `NaN(InvalidArgument)`.
+    ///   \(a_1,\ldots,a_n\), and cancelling numerator \(\Gamma\) poles): if some
+    ///   \(a_k-b_h\) (\(k\le n\), \(h\le m\)) is a positive integer the Mellin–Barnes
+    ///   contour does not exist and the result is `NaN(InvalidArgument)` (DLMF 16.17).
+    ///   Otherwise \(z=0\) is the \(z\to0^+\) limit from the leftmost pole (signed
+    ///   zero, finite, or signed infinity for a logarithmic or negative-power pole),
+    ///   and \(z>0\) is the constant term of the Laurent expansion in a parameter
+    ///   shift: \(\Gamma\) jets from \(\psi^{(j)}\), \({}_pF_q\) jets with a rigorous
+    ///   tail bound. Pole orders above 14 are `NaN`.
     /// - At most 8 parameters in \(a\) and in \(b\).
     ///
     /// Accuracy: unspecified
@@ -651,7 +1305,7 @@ impl ExactNum {
     ///
     /// - \(A_i,B_j\) must be positive rationals with small numerator/denominator
     ///   (denominators \(\le 16\), cleared scales \(\le 12\)). Otherwise `NaN`.
-    /// - Coincident poles after the lift use the same logarithmic limit as [`meijer_g`].
+    /// - Coincident poles after the lift use the same limit as [`meijer_g`].
     /// - Real \(\mathrm{self}>0\) when a scale is not 1 (fractional \(z^{1/r}\)).
     ///
     /// Accuracy: unspecified
@@ -1171,7 +1825,7 @@ fn exactly_equal(a: &ExactNum, b: &ExactNum) -> bool {
 
 /// Agreement to one ulp of `p`, measured at precision `2p`.
 ///
-/// `values_agree` allows about eight bits (`mag + 8`). That slack treated a
+/// A looser test (about eight bits of slack) once treated a
 /// near-miss as the exact Kummer / \({}_2F_1\) reduction.
 fn agrees_tight(a: &ExactNum, b: &ExactNum, p: usize) -> bool {
     if !finite(a) || !finite(b) {
