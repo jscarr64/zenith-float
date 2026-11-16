@@ -2145,6 +2145,10 @@ impl ExactNumNumber {
         }
 
         let nu_ord = from_usize_p(n, p)?;
+        // ZF-37: a leading term (x/2)^n/n! outside the range, or a correction below the precision.
+        if let Some(v) = bessel_ji_scaled(self, &nu_ord, p, rm, cc, false)? {
+            return Ok(v);
+        }
         if use_bessel_hankel_real(self, &nu_ord, p) {
             // Hankel's accuracy is capped by its smallest term (≈ e^{-2|x|}); once the Ziv
             // precision passes it the expansion reports exhaustion and the series takes over.
@@ -2284,8 +2288,13 @@ impl ExactNumNumber {
             }
         } else if self.is_zero() {
             bessel_ji_at_zero(self, nu, p, false)
+        } else if self.is_negative() && nu.is_int() {
+            // ZF-37: an integer order past i32: J_ν(−x) = (−1)^ν J_ν(x).
+            bessel_int_order_neg_x(self, nu, p, rm, cc, ExactNumNumber::bessel_j_nu)
         } else if !self.is_positive() {
             Err(Error::InvalidArgument)
+        } else if let Some(v) = bessel_ji_scaled(self, nu, p, rm, cc, false)? {
+            Ok(v)
         } else if use_bessel_hankel_real(self, nu, p) {
             self.bessel_jy_hankel(nu, p, rm, cc, true)
         } else {
@@ -2369,6 +2378,12 @@ impl ExactNumNumber {
         if self.is_zero() {
             return bessel_ji_at_zero(self, nu, p, true);
         }
+        // ZF-37: integer orders take any sign of x; non-integer ones only x > 0 (below).
+        if nu.is_int() || self.is_positive() {
+            if let Some(v) = bessel_ji_scaled(self, nu, p, rm, cc, true)? {
+                return Ok(v);
+            }
+        }
         if let Some(n) = as_i32_exact(nu, p)? {
             let an = Self::from_word(n.unsigned_abs() as Word, p)?;
             let mut ax = self.clone()?;
@@ -2386,6 +2401,9 @@ impl ExactNumNumber {
             } else {
                 ax.bessel_series(&an, p, rm, cc, false)
             }
+        } else if self.is_negative() && nu.is_int() {
+            // ZF-37: an integer order past i32: I_ν(−x) = (−1)^ν I_ν(x).
+            bessel_int_order_neg_x(self, nu, p, rm, cc, ExactNumNumber::bessel_i)
         } else if !self.is_positive() {
             Err(Error::InvalidArgument)
         } else {
@@ -6009,6 +6027,299 @@ fn bessel_cancel_bits(x: &ExactNumNumber, num: usize, den: usize) -> Result<usiz
         return Err(Error::InvalidArgument);
     }
     Ok(g)
+}
+
+/// `f(−|x|) = (−1)^ν f(|x|)` for an integer order `ν` (J and I, DLMF 10.4.1, 10.27.1): a flipped
+/// sign rounds `f(|x|)` in the mirrored direction.
+fn bessel_int_order_neg_x(
+    x: &ExactNumNumber,
+    nu: &ExactNumNumber,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+    f: fn(
+        &ExactNumNumber,
+        &ExactNumNumber,
+        usize,
+        RoundingMode,
+        &mut Consts,
+    ) -> Result<ExactNumNumber, Error>,
+) -> Result<ExactNumNumber, Error> {
+    let pe = round_p(nu.mantissa_max_bit_len().max(WORD_BIT_SIZE) + WORD_BIT_SIZE);
+    let two = ExactNumNumber::from_word(2, WORD_BIT_SIZE)?;
+    let odd = !nu.is_zero() && !nu.div(&two, pe, RoundingMode::None)?.is_int();
+    let ax = x.abs()?;
+    if odd {
+        match f(&ax, nu, p, crate::common::util::invert_rm_for_sign(rm), cc) {
+            Ok(v) => v.neg(),
+            Err(Error::ExponentOverflow(s)) => Err(Error::ExponentOverflow(s.invert())),
+            Err(e) => Err(e),
+        }
+    } else {
+        f(&ax, nu, p, rm, cc)
+    }
+}
+
+/// `±max` for a finite overflow when `rm` rounds toward zero for its sign, else `ExponentOverflow`
+/// (C99 7.12.1 / IEEE 754 7.4: a genuine overflow, not a pole, follows the rounding direction).
+fn overflow_in_rm(s: Sign, p: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
+    let toward_zero = matches!(
+        (s.is_positive(), rm),
+        (_, RoundingMode::ToZero) | (true, RoundingMode::Down) | (false, RoundingMode::Up)
+    );
+    if !toward_zero {
+        return Err(Error::ExponentOverflow(s));
+    }
+    let mut m = ExactNumNumber::max_value(p)?;
+    m.set_precision(p, RoundingMode::ToZero)?;
+    m.set_sign(s);
+    m.set_inexact(true);
+    Ok(m)
+}
+
+/// `v · 2^n` rounded once in `rm` for any `n` (saturated far outside the range: the value is
+/// then below the subnormal grid by far more than `p` bits, or an overflow).
+fn scale_in_rm(
+    v: ExactNumNumber,
+    n: i128,
+    p: usize,
+    rm: RoundingMode,
+) -> Result<ExactNumNumber, Error> {
+    let lo = 2 * (EXPONENT_MIN as i128);
+    if n > EXPONENT_MAX as i128 + 8 {
+        return overflow_in_rm(v.sign(), p, rm);
+    }
+    let s = v.sign();
+    match v.ldexp(n.max(lo) as Exponent, p, rm) {
+        Err(Error::ExponentOverflow(_)) => overflow_in_rm(s, p, rm),
+        r => r,
+    }
+}
+
+/// ZF-37: `J_ν(x)` / `I_ν(x)` (`i`) as `L · S` with the leading term
+/// `L = (x/2)^ν / Γ(ν+1)` (DLMF 10.2.2, 10.25.2) held as `g · 2^N` (`N` unbounded) and
+/// `S = Σ_k t_k`, `t_0 = 1`, `t_k = t_{k−1} (∓x²/4) / (k (k+ν))`. Used when `|t_k/t_{k−1}|`
+/// is below `r ≤ 2^lr ≤ 1/8` and either `L` is near or past the exponent range (the series
+/// in `x` then underflows to an exact zero sum, which certifies 0 bits, or overflows with
+/// the wrong sign), or `r` is below the precision (the correction is invisible: a dyadic
+/// `L` such as `I_0(2^-100000) = 1 + 2^-200002` would never round in Ziv). `None` otherwise.
+///
+/// Bounds: `k |k+ν| ≥ b` (`b = 1+ν` for `ν ≥ 0`, else the distance of `ν` to the integers),
+/// so `|t_k| ≤ r^k`, the tail after term `K` is below `|t_K| / 7`, and `S ∈ [6/7, 8/7]`.
+/// Each `t_k` carries at most `4k` ulps; with the additions `|S − Ŝ| ≤ (K+5) 2^-w`.
+/// `ln|x|`, `ln|Γ(ν+1)|` and `ln 2` are faithful at `q` bits, so `Λ = log₂|L|` is good to
+/// `2^(eΛ − q + 4)`; `q` is raised until that is below `2^-(w+12)`. When `r` is negligible and
+/// `L` is exact (`ν ∈ {0, 1, 2}`: `1`, `x/2`, `x²/8`), the value is `L(1+δ)` with `δ` of the
+/// sign of `t_1` and `|δ| < 2^-(W+2)`; it rounds as `L ± 2^(e(L)−W−1)` (no rounding
+/// boundary of `W ≥ p+2` bits lies strictly between them).
+fn bessel_ji_scaled(
+    x: &ExactNumNumber,
+    nu: &ExactNumNumber,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+    i: bool,
+) -> Result<Option<ExactNumNumber>, Error> {
+    type N = ExactNumNumber;
+    let int = nu.is_int();
+    let mut a = if int { nu.abs()? } else { nu.clone()? };
+    a.set_inexact(false);
+    let pa = round_p(a.mantissa_max_bit_len().max(WORD_BIT_SIZE) + 2 * WORD_BIT_SIZE);
+    let two = N::from_word(2, WORD_BIT_SIZE)?;
+    let one = N::from_word(1, WORD_BIT_SIZE)?;
+    let is_odd = |v: &N| -> Result<bool, Error> {
+        Ok(!v.is_zero() && !v.div(&two, pa, RoundingMode::None)?.is_int())
+    };
+    // Sign of L (and of the result: S > 0).
+    let neg = if int {
+        let odd = is_odd(&a)?;
+        (x.is_negative() && odd) != (!i && nu.is_negative() && odd)
+    } else if a.is_negative() {
+        // sgn Γ(ν+1) = (−1)^m, m = ⌊−ν⌋.
+        is_odd(&a.abs()?.floor()?)?
+    } else {
+        false
+    };
+    let (mut m, ex) = x.abs()?.frexp()?;
+    m.set_inexact(false);
+    let b = if a.is_negative() {
+        let f = a.sub(&a.clone()?.floor()?, pa, RoundingMode::None)?;
+        let g = one.sub(&f, pa, RoundingMode::None)?;
+        if f.cmp(&g) < 0 {
+            f
+        } else {
+            g
+        }
+    } else {
+        a.add(&one, WORD_BIT_SIZE, RoundingMode::Down)?
+    };
+    let lr = 2 * ex as i128 - 2 - (b.exponent() as i128 - 1);
+    if lr > -3 {
+        return Ok(None);
+    }
+    let xb = x.mantissa_max_bit_len();
+    let w_big = round_p(p.max(2 * xb + WORD_BIT_SIZE) + 3 * WORD_BIT_SIZE);
+    let tiny = lr <= -(w_big as i128 + 8);
+    // Integer order of moderate size: L = m^a 2^(a·ex) / (2^a a!) from exact m^a and a!, so a
+    // dyadic L (J_3(3·2^-2000) = −(9/16)·2^-6000 (1 − δ)) is recognised as exact.
+    let mb = m.mantissa_max_bit_len();
+    let small_int = if int && a.exponent() <= 16 {
+        let k = if a.is_zero() { 0 } else { a.int_as_usize()? };
+        (k.saturating_mul(mb) <= 1 << 16).then_some(k)
+    } else {
+        None
+    };
+
+    let mut w = round_p(p + 2 * WORD_BIT_SIZE);
+    let mut w_inc = WORD_BIT_SIZE;
+    let mut first = true;
+    loop {
+        // g · 2^n = |L|; `g_exact` when g carries no rounding error.
+        let (g, n, g_exact) = if let Some(k) = small_int {
+            let pm = round_p(k * mb + WORD_BIT_SIZE);
+            let mut mk = N::from_word(1, pm)?;
+            for _ in 0..k {
+                mk = mk.mul(&m, pm, RoundingMode::None)?;
+            }
+            let bl = (usize::BITS - k.leading_zeros()) as usize;
+            let fk = factorial(k, round_p(k * bl + WORD_BIT_SIZE))?;
+            let pq = pm.max(w + WORD_BIT_SIZE);
+            let mut g = mk.div(&fk, pq, RoundingMode::None)?;
+            let exact = !g.inexact();
+            g.set_inexact(false);
+            let k = k as i128;
+            (g, k * ex as i128 - k, exact)
+        } else {
+            let mut q = w + 4 * WORD_BIT_SIZE;
+            let lam = loop {
+                let ln2 = cc.ln_2_num(q, RoundingMode::None)?;
+                let la = x.abs()?.ln(q, RoundingMode::None, cc)?;
+                let al = a.mul(&la, q, RoundingMode::None)?;
+                let ap1 = a.add(&one, pa + q, RoundingMode::None)?;
+                let lg = ap1.ln_gamma(q, RoundingMode::None, cc)?;
+                let d = al.sub(&lg, q, RoundingMode::None)?;
+                let lam = d
+                    .div(&ln2, q, RoundingMode::None)?
+                    .sub(&a, q, RoundingMode::None)?;
+                let e_max = [al.exponent(), lg.exponent(), a.exponent(), lam.exponent(), 1]
+                    .into_iter()
+                    .max()
+                    .unwrap_or(1)
+                    .max(0) as usize;
+                if e_max + 4 + w + 12 <= q {
+                    break lam;
+                }
+                q = round_p(w + e_max + 4 * WORD_BIT_SIZE);
+            };
+            if lam.exponent() > 62 {
+                // |Λ| ≥ 2^62: certainly outside the range whatever g is.
+                let n = if lam.is_negative() { -(1i128 << 100) } else { 1i128 << 100 };
+                (one.clone()?, n, false)
+            } else {
+                let fl = lam.clone()?.floor()?;
+                let fr = lam.sub(&fl, q, RoundingMode::None)?;
+                let nf = if fl.is_zero() { 0 } else { fl.abs()?.int_as_usize()? as i128 };
+                let nf = if fl.is_negative() { -nf } else { nf };
+                let ln2 = cc.ln_2_num(w + WORD_BIT_SIZE, RoundingMode::None)?;
+                let g = fr.mul(&ln2, w + WORD_BIT_SIZE, RoundingMode::None)?.exp(
+                    w + WORD_BIT_SIZE,
+                    RoundingMode::None,
+                    cc,
+                )?;
+                (g, nf, false)
+            }
+        };
+        // Large orders (|ν| ≥ 2^16) always come here: the x-series path forms Γ(ν+1) and
+        // (x/2)^ν directly (J_{2^28}(2^-40) at 64 bits ran for minutes).
+        if first && !tiny && a.exponent() <= 16 {
+            first = false;
+            let lo = EXPONENT_MIN as i128 + 2 * p as i128 + 256;
+            let hi = EXPONENT_MAX as i128 - 256;
+            if (lo..=hi).contains(&n) {
+                return Ok(None);
+            }
+        }
+        // S and its relative error 2^s_err: S = 1 while the whole correction (< 2^(lr+1)) is
+        // below the working precision, else the series.
+        let (s, s_err) = if lr <= -(w as i128) - 16 {
+            (one.clone()?, lr + 1)
+        } else {
+            let ws = w + WORD_BIT_SIZE;
+            let half = m.div(&two, ws, RoundingMode::None)?;
+            // (x/2)² = (m/2)² · 2^(2ex), scaled in two steps (2ex can pass the exponent type).
+            let mut hh = half.mul(&half, ws, RoundingMode::None)?;
+            hh = hh
+                .ldexp(ex, ws, RoundingMode::None)?
+                .ldexp(ex, ws, RoundingMode::None)?;
+            if hh.is_zero() || hh.is_subnormal() {
+                // ν within ~2^EXPONENT_MIN of an integer: t_1 would lose bits; refuse.
+                return Err(Error::PrecisionRetryExhausted);
+            }
+            if !i {
+                hh = hh.neg()?;
+            }
+            let mut t = N::from_word(1, ws)?;
+            let mut s = t.clone()?;
+            let mut k = 0usize;
+            let stop = -(ws as i64) - 4;
+            loop {
+                k += 1;
+                let kk = from_usize_p(k, ws)?;
+                let den =
+                    kk.add(&a, pa + ws, RoundingMode::None)?
+                        .mul(&kk, ws, RoundingMode::None)?;
+                t = t
+                    .mul(&hh, ws, RoundingMode::None)?
+                    .div(&den, ws, RoundingMode::None)?;
+                s = s.add(&t, ws, RoundingMode::None)?;
+                if t.is_zero() || t.exponent() < stop {
+                    break;
+                }
+            }
+            let kb = (usize::BITS - (k + 5).leading_zeros()) as i128;
+            (s, kb + 1 - ws as i128)
+        };
+        let sign = if neg { Sign::Neg } else { Sign::Pos };
+        let wp = round_p(g.mantissa_max_bit_len().max(p) + WORD_BIT_SIZE);
+        if g_exact && lr < -(wp as i128) - 2 {
+            // δ has the sign of t_1: − for J, + for I (an integer order ν ≥ 0 here).
+            let mut d = N::from_word(1, WORD_BIT_SIZE)?;
+            d.set_exponent(g.exponent() - wp as Exponent);
+            if !i {
+                d = d.neg()?;
+            }
+            let mut v = g.add(&d, wp + 2 * WORD_BIT_SIZE, RoundingMode::None)?;
+            v.set_sign(sign);
+            let mut r = scale_in_rm(v, n, p, rm)?;
+            r.set_inexact(true);
+            return Ok(Some(r));
+        }
+        let wp = w + 2 * WORD_BIT_SIZE;
+        let pv = g.mul(&s, wp, RoundingMode::None)?;
+        let c = (s_err.max(-(w as i128) - 10) + 2).max(-(wp as i128) + 4);
+        let mut eps = N::from_word(1, WORD_BIT_SIZE)?;
+        eps.set_exponent(c as Exponent + 1);
+        let up = N::from_word(1, WORD_BIT_SIZE)?.add(&eps, wp, RoundingMode::Up)?;
+        let dn = N::from_word(1, WORD_BIT_SIZE)?.sub(&eps, wp, RoundingMode::Down)?;
+        let mut lo = pv.mul(&dn, wp, RoundingMode::Down)?;
+        let mut hi = pv.mul(&up, wp, RoundingMode::Up)?;
+        lo.set_sign(sign);
+        hi.set_sign(sign);
+        let rl = scale_in_rm(lo, n, p, rm);
+        let rh = scale_in_rm(hi, n, p, rm);
+        match (rl, rh) {
+            (Err(Error::ExponentOverflow(a1)), Err(Error::ExponentOverflow(a2))) if a1 == a2 => {
+                return Err(Error::ExponentOverflow(a1));
+            }
+            (Ok(mut u), Ok(v)) if u.cmp(&v) == 0 && u.sign() == v.sign() => {
+                u.set_inexact(true);
+                return Ok(Some(u));
+            }
+            (Err(e), _) | (_, Err(e)) if !matches!(e, Error::ExponentOverflow(_)) => return Err(e),
+            _ => {}
+        }
+        bump_prec_retry(&mut w, &mut w_inc, p)?;
+    }
 }
 
 /// \(J_\nu(\pm0)\) (`i = false`) or \(I_\nu(\pm0)\). The power series' only surviving term is

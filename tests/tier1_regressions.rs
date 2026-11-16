@@ -3622,3 +3622,41 @@ fn zf_37_bessel_j_i_k_at_zero() {
     }
     assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// ZF-37 (tiny-x): J_ν and I_ν at minpos, minnorm, ±2^{-100000}, and other tiny x took the
+/// power series. For |ν| ≥ 1 the leading term (x/2)^ν / Γ(ν+1) underflows or the Ziv loop
+/// hits PrecisionRetryExhausted (I_2(minpos), J_{5/2}(minpos), I_n(2^{-100000})). I_{±1}(±minpos)
+/// ToEven flushed to a signed zero instead of minpos; J_2(minpos) up flushed to +0; I_0(minpos)
+/// up missed the ulp above 1; J_{-3/2}(minpos) overflowed with the wrong sign. Now the leading
+/// term is placed as a significand times a power of two (`bessel_ji_scaled`) so those rows
+/// finish in one rounding. Expected strings from FLINT (python-flint 0.9.0); mpmath agrees
+/// (`land39/zf37t/tgen.py`). On 0bca621, before the scaled path, 8 I_{±1}(±minpos) ToEven rows
+/// and 18 of a 36-row minpos sample were wrong (signed zero, exhaustion, wrong-sign Inf).
+#[test]
+fn zf_37_bessel_j_i_tiny_and_extreme_x() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf37-tiny.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let x = parse_real(t[1]).expect("x");
+        let nu = parse_real(t[2]).expect("nu");
+        let p = t[3].parse::<usize>().expect("p");
+        let rm = mode(t[4]).expect("mode");
+        let v = match t[0] {
+            "r.bessel_j_nu" => x.bessel_j_nu(&nu, p, rm, &mut cc),
+            "r.bessel_i" => x.bessel_i(&nu, p, rm, &mut cc),
+            _ => panic!("function"),
+        };
+        if fmt_real(&v) != t[5] {
+            bad.push(format!(
+                "{}({}, ν={}) p={p} {rm:?}: {} want {}",
+                t[0],
+                t[1],
+                t[2],
+                fmt_real(&v),
+                t[5]
+            ));
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+}
