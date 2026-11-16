@@ -365,6 +365,15 @@ fn reflect_phase(nu: &ExactComplex, upper: bool, p: usize, cc: &mut Consts) -> E
     a.exp(p, RoundingMode::None, cc)
 }
 
+/// Rounding mode for negation: round(−x, rm) = −round(x, neg_rounding(rm)).
+fn neg_rounding(rm: RoundingMode) -> RoundingMode {
+    match rm {
+        RoundingMode::Up => RoundingMode::Down,
+        RoundingMode::Down => RoundingMode::Up,
+        _ => rm,
+    }
+}
+
 impl ExactComplex {
     /// \(J_\nu(z)\). Entire for integer \(\nu\); cut on \((-\infty,0]\) otherwise.
     /// \(z=0\) with non-integer \(\nu\) → NaN. On the cut \(\operatorname{Im} z=0\),
@@ -385,6 +394,20 @@ impl ExactComplex {
             return nan_pair(Error::InvalidArgument);
         }
         let dest = round_p(p);
+        // DLMF 10.4.1: J_{−n}(z) = (−1)^n J_n(z). The generic series starts with 1/Γ(1−n),
+        // a removable zero times a pole; reflect the integer order before evaluating it.
+        if nu.im().is_zero() && nu.re().is_int() && nu.re().is_negative() && !nu.re().is_zero() {
+            let pos = neg_c(nu.clone());
+            let w = nu.re().precision().unwrap_or(dest).max(dest) + 64;
+            let odd = !nu.re().clone().ldexp(-1, w, RoundingMode::None).is_int();
+            let r = if odd { neg_rounding(rm) } else { rm };
+            let v = self.bessel_j_nu_word(&pos, dest, r, cc);
+            return if odd { neg_c(v) } else { v };
+        }
+        if self.re().is_zero() && self.im().is_zero() && nu.re().is_positive() && !nu.re().is_zero()
+        {
+            return ExactComplex::zero(dest);
+        }
         if real_negative_axis(self, nu) {
             return ziv_complex(dest, rm, |pw| self.bessel_neg_real_j(nu, pw, cc));
         }
@@ -445,6 +468,14 @@ impl ExactComplex {
             return nan_pair(Error::InvalidArgument);
         }
         let dest = round_p(p);
+        // DLMF 10.27.1: I_{−n}(z) = I_n(z) for any integer n.
+        if nu.im().is_zero() && nu.re().is_int() && nu.re().is_negative() && !nu.re().is_zero() {
+            return self.bessel_i_word(&neg_c(nu.clone()), dest, rm, cc);
+        }
+        if self.re().is_zero() && self.im().is_zero() && nu.re().is_positive() && !nu.re().is_zero()
+        {
+            return ExactComplex::zero(dest);
+        }
         if real_positive_axis(self, nu) {
             // I_ν(x) is real for x > 0 and real ν; the rotation through J_ν(−ix) leaves a rounding
             // residue in the imaginary part that Ziv can never certify as zero.
@@ -491,6 +522,10 @@ impl ExactComplex {
             return nan_pair(Error::InvalidArgument);
         }
         let dest = round_p(p);
+        // DLMF 10.27.3: K_{−ν}(z) = K_ν(z), for arbitrary complex ν; canonicalize to Re ν ≥ 0.
+        if nu.re().is_negative() && !nu.re().is_zero() {
+            return self.bessel_k_word(&neg_c(nu.clone()), dest, rm, cc);
+        }
         if real_positive_axis(self, nu) {
             // K_ν(x) is real for x > 0 and real ν (see `bessel_i`).
             // Past the series/Hankel switch the real kernel (asymptotic, or the I-connection
@@ -1326,7 +1361,12 @@ mod tests {
 
         let half = half_c(p);
         let z0 = ExactComplex::zero(p);
-        assert!(z0.bessel_j_nu(&half, p, rm, &mut cc).is_nan());
+        // J_ν(0) = 0 for Re ν > 0 (DLMF 10.2.2); the pole is at Re ν < 0, ν ∉ ℤ.
+        let j0 = z0.bessel_j_nu(&half, p, rm, &mut cc);
+        assert!(j0.re().is_zero() && j0.im().is_zero());
+        assert!(z0
+            .bessel_j_nu(&neg_c(half.clone()), p, rm, &mut cc)
+            .is_nan());
 
         let eps = ExactNum::from_u8(2, p).powsi(-((p as i64) / 8), p, rm);
         let below = ExactComplex::new(

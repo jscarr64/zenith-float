@@ -2975,3 +2975,68 @@ fn zf_37_valid_inputs_do_not_exhaust_precision() {
         check(&v, t[4], &what);
     }
 }
+
+/// ZF-65: complex J_ν / I_ν at a real negative integer order use J_{−n} = (−1)^n J_n and
+/// I_{−n} = I_n (DLMF 10.4.1, 10.27.1); K_ν with Re ν < 0 uses K_{−ν} = K_ν (DLMF 10.27.3);
+/// J_ν(0) = I_ν(0) = 0 for Re ν > 0 (DLMF 10.2.2). Expected values are FLINT-certified
+/// (cjudge, 2p+64 bits; land39/zf65). J/I_{−1/2}(0) is a pole and stays InvalidArgument.
+#[test]
+fn zf_65_complex_bessel_negative_order_and_zero_argument() {
+    let mut cc = Consts::new().expect("Consts");
+    let mode = |s: &str| match s {
+        "up" => RoundingMode::Up,
+        "down" => RoundingMode::Down,
+        "tozero" => RoundingMode::ToZero,
+        "fromzero" => RoundingMode::FromZero,
+        "toeven" => RoundingMode::ToEven,
+        "toodd" => RoundingMode::ToOdd,
+        _ => RoundingMode::None,
+    };
+    let cx = |t: &str| {
+        let (a, b) = t.split_once(',').expect("re,im");
+        ExactComplex::new(parse_real(a).expect("re"), parse_real(b).expect("im"))
+    };
+    let check = |v: &ExactNum, want: &str, what: &str| {
+        let k: Vec<&str> = want.split(':').collect();
+        match k[0] {
+            "Z" => assert!(
+                v.is_zero() && v.is_negative() == (k[1] == "-"),
+                "{what}: {v} want {want}"
+            ),
+            "F" => {
+                let e: i64 = k[2].parse().expect("exp");
+                let w = parse_real(&format!("{}{}p{}", k[1], k[3], e - 4 * k[3].len() as i64))
+                    .expect("want");
+                assert_eq!(v.compare(&w), Some(0), "{what}: {v} want {want}");
+            }
+            _ => panic!("expected kind {want}"),
+        }
+    };
+    for l in include_str!("tier1/zf65.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let (f, p, rm) = (t[0], t[1].parse::<usize>().expect("p"), mode(t[2]));
+        let a: Vec<&str> = t[3].split('|').collect();
+        let (z, nu) = (cx(a[0]), cx(a[1]));
+        let what = format!("{f}({}) p={p} {rm:?}", t[3]);
+        let v = match f {
+            "c.bessel_j_nu" => z.bessel_j_nu(&nu, p, rm, &mut cc),
+            "c.bessel_i" => z.bessel_i(&nu, p, rm, &mut cc),
+            "c.bessel_k" => z.bessel_k(&nu, p, rm, &mut cc),
+            _ => panic!("function {f}"),
+        };
+        let (wr, wi) = t[4].split_once(';').expect("re;im");
+        check(v.re(), wr, &format!("{what} re"));
+        check(v.im(), wi, &format!("{what} im"));
+    }
+    let half = cx("-1p-1,0");
+    let zero = cx("0,0");
+    for v in [
+        zero.bessel_j_nu(&half, 64, RoundingMode::ToEven, &mut cc),
+        zero.bessel_i(&half, 64, RoundingMode::ToEven, &mut cc),
+    ] {
+        assert!(
+            v.re().is_nan() && v.im().is_nan(),
+            "pole at z = 0 must refuse"
+        );
+    }
+}
