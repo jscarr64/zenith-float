@@ -1418,7 +1418,9 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: DLMF 31.3 power series inside \(\lvert z\rvert<\min(1,\lvert a\rvert)\).
+    /// - Algorithm: DLMF 31.3 power series inside \(\lvert z\rvert<\min(1,\lvert a\rvert)\),
+    ///   summed until a majorant of the three-term recurrence (roots \(1\), \(1/a\))
+    ///   bounds the tail; the working precision grows with the largest term.
     ///   Outside that disk, Taylor steps of the ODE along the real segment from a
     ///   seed in the disk, each step half the distance to \(\{0,1,a\}\). Extra word
     ///   of working precision.
@@ -1521,83 +1523,7 @@ impl ExactNum {
         if matches!(self.abs_cmp(rad), Some(c) if c >= 0) {
             return heun_g_outside(self, a, q, alpha, beta, gamma, delta, p, rm);
         }
-        let eps = ExactNum::add_ref(alpha, beta, wrk, RoundingMode::None)
-            .sub(gamma, wrk, RoundingMode::None)
-            .sub(delta, wrk, RoundingMode::None)
-            .add(&one, wrk, RoundingMode::None);
-        let mut c_prev = ExactNum::from_u8(1, wrk);
-        let mut c = ExactNum::div_ref(
-            q,
-            &ExactNum::mul_ref(a, gamma, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
-        let mut zp = self.clone();
-        let mut sum = ExactNum::from_u8(1, wrk).add(
-            &ExactNum::mul_ref(&c, &zp, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
-        for j in 1..=series_cap(wrk) {
-            let jf = ExactNum::from_u32(j as u32, wrk);
-            let jm1 = ExactNum::from_u32((j - 1) as u32, wrk);
-            let jp1 = ExactNum::from_u32((j + 1) as u32, wrk);
-            let pj = ExactNum::from_u32((j - 1) as u32, wrk)
-                .add(alpha, wrk, RoundingMode::None)
-                .mul(
-                    &ExactNum::from_u32((j - 1) as u32, wrk).add(beta, wrk, RoundingMode::None),
-                    wrk,
-                    RoundingMode::None,
-                );
-            // Q_j = j((j-1+γ)(1+a) + aδ + ε)
-            let qj = ExactNum::from_u32(j as u32, wrk).mul(
-                &jm1.add(gamma, wrk, RoundingMode::None)
-                    .mul(
-                        &ExactNum::from_u8(1, wrk).add(a, wrk, RoundingMode::None),
-                        wrk,
-                        RoundingMode::None,
-                    )
-                    .add(
-                        &ExactNum::mul_ref(a, delta, wrk, RoundingMode::None),
-                        wrk,
-                        RoundingMode::None,
-                    )
-                    .add(&eps, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            );
-            let rj = jp1.mul(a, wrk, RoundingMode::None).mul(
-                &jf.add(gamma, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            );
-            if rj.is_zero() || !finite(&rj) {
-                return cat_nan();
-            }
-            let c_next = qj
-                .add(q, wrk, RoundingMode::None)
-                .mul(&c, wrk, RoundingMode::None)
-                .sub(
-                    &pj.mul(&c_prev, wrk, RoundingMode::None),
-                    wrk,
-                    RoundingMode::None,
-                )
-                .div(&rj, wrk, RoundingMode::None);
-            zp = zp.mul(self, wrk, RoundingMode::None);
-            let term = ExactNum::mul_ref(&zp, &c_next, wrk, RoundingMode::None);
-            sum = sum.add(&term, wrk, RoundingMode::None);
-            if term.is_zero()
-                || term
-                    .abs()
-                    .exponent()
-                    .is_some_and(|e| e + (p as i64) < sum.exponent().unwrap_or(0))
-            {
-                break;
-            }
-            c_prev = c;
-            c = c_next;
-        }
-        finish(sum, p, rm)
+        heun_g_series(self, a, q, alpha, beta, gamma, delta, p, rm)
     }
 
     /// Confluent Heun: the \(y(0)=1\) Frobenius solution of DLMF 31.12.1,
@@ -1614,7 +1540,8 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Frobenius series of DLMF 31.12.1 about \(z=0\) for \(\lvert z\rvert<1\).
+    /// - Algorithm: Frobenius series of DLMF 31.12.1 about \(z=0\) for \(\lvert z\rvert<1\),
+    ///   summed until a majorant of the recurrence (roots \(1\), \(0\)) bounds the tail.
     ///   For real \(z<1\) outside that disk, Taylor steps along \((-\infty,1)\), each
     ///   step half the distance to \(\{0,1\}\). Extra word of working precision.
     /// - Bound: working precision `p + 2 WORD_BIT_SIZE`; not Ziv-certified.
@@ -1670,63 +1597,367 @@ impl ExactNum {
         if matches!(self.abs_cmp(&one), Some(c) if c >= 0) {
             return heun_c_outside(self, alpha, gamma, delta, eps, q, p, rm);
         }
-        let mut b_prev = ExactNum::from_u8(1, wrk);
-        let mut b = q.neg_via_mul().div(gamma, wrk, RoundingMode::None);
-        let mut zp = self.clone();
-        let mut sum = ExactNum::from_u8(1, wrk).add(
-            &ExactNum::mul_ref(&b, &zp, wrk, RoundingMode::None),
-            wrk,
-            RoundingMode::None,
-        );
-        for n in 1..=series_cap(wrk) {
-            let nf = ExactNum::from_u32(n as u32, wrk);
-            let nm1 = ExactNum::from_u32((n - 1) as u32, wrk);
-            let np1 = ExactNum::from_u32((n + 1) as u32, wrk);
-            let left = np1.mul(
-                &ExactNum::from_u32(n as u32, wrk).add(gamma, wrk, RoundingMode::None),
-                wrk,
-                RoundingMode::None,
-            );
-            if left.is_zero() || !finite(&left) {
-                return cat_nan();
-            }
-            // n(n-1+γ+δ-ε)-q
-            let coef_n = nf
-                .mul(
-                    &ExactNum::from_u32((n - 1) as u32, wrk)
-                        .add(gamma, wrk, RoundingMode::None)
-                        .add(delta, wrk, RoundingMode::None)
-                        .sub(eps, wrk, RoundingMode::None),
-                    wrk,
-                    RoundingMode::None,
-                )
-                .sub(q, wrk, RoundingMode::None);
-            let coef_nm1 =
-                nm1.mul(eps, wrk, RoundingMode::None)
-                    .add(alpha, wrk, RoundingMode::None);
-            let b_next = coef_n
-                .mul(&b, wrk, RoundingMode::None)
-                .add(
-                    &coef_nm1.mul(&b_prev, wrk, RoundingMode::None),
-                    wrk,
-                    RoundingMode::None,
-                )
-                .div(&left, wrk, RoundingMode::None);
-            zp = zp.mul(self, wrk, RoundingMode::None);
-            let term = ExactNum::mul_ref(&zp, &b_next, wrk, RoundingMode::None);
-            sum = sum.add(&term, wrk, RoundingMode::None);
-            if term.is_zero()
-                || term
-                    .abs()
-                    .exponent()
-                    .is_some_and(|e| e + (p as i64) < sum.exponent().unwrap_or(0))
-            {
-                break;
-            }
-            b_prev = b;
-            b = b_next;
+        heun_c_series(self, alpha, gamma, delta, eps, q, p, rm)
+    }
+}
+
+/// Rigorous tail data for a power series \(\sum c_j z^j\) whose coefficients obey
+/// \(c_{j+1}=A_jc_j+B_jc_{j-1}\) with \(A_j\to\lambda_d+\lambda_s\), \(B_j\to-\lambda_d\lambda_s\),
+/// \(\lvert\lambda_s\rvert\le\lvert\lambda_d\rvert\), and
+/// \(A_j-A_\infty=(\ell_1j+\ell_0)/D_j\), \((A_j-A_\infty)\lambda_s+(B_j-B_\infty)=(k_1j+k_0)/D_j\),
+/// \(\lvert D_j\rvert\ge s\,j\,(j-g)\) for \(j>g\). All fields are 64-bit upper bounds
+/// (`s` a lower bound).
+struct RecTail {
+    lam_d: ExactNum,
+    lam_s: ExactNum,
+    /// \(\lambda_s\) itself at the working precision (signed), for \(d_j\).
+    lam_s_v: ExactNum,
+    /// Constant part of \(\kappa_j\) from rounding \(\lambda_s\) to the working precision.
+    k_c: ExactNum,
+    l1: ExactNum,
+    l0: ExactNum,
+    k1: ExactNum,
+    k0: ExactNum,
+    s: ExactNum,
+    g: ExactNum,
+}
+
+/// `|x|` as a 64-bit upper bound with slack for the rounding of `x` itself.
+fn ub64(x: &ExactNum) -> ExactNum {
+    let up = RoundingMode::Up;
+    let mut y = x.clone().abs();
+    let _ = y.set_precision(64, up);
+    let slack = y
+        .clone()
+        .add(&ExactNum::from_u8(1, 64), 64, up)
+        .ldexp(-60, 64, up);
+    y.add(&slack, 64, up)
+}
+
+impl RecTail {
+    /// For \(r\) and every \(j\ge J\): with \(d_j=c_j-\lambda_sc_{j-1}\),
+    /// \(\max(\lvert d_j\rvert r^j, w\lvert c_{j-1}\rvert r^{j-1})\) does not increase, where
+    /// \(w=(1-\lvert\lambda_s\rvert r)/r\). Returns `w` when that holds.
+    ///
+    /// Rows: \(\lvert d_{j+1}\rvert r^{j+1}\le(\lvert\lambda_d\rvert+\lvert\alpha_j\rvert)r\cdot\lvert d_j\rvert r^j
+    /// +\lvert\kappa_j\rvert r^2\cdot\lvert c_{j-1}\rvert r^{j-1}\) and
+    /// \(\lvert c_j\rvert r^j\le r\lvert d_j\rvert r^j+\lvert\lambda_s\rvert r\cdot\lvert c_{j-1}\rvert r^{j-1}\),
+    /// with \(\sup_{j\ge J}\lvert\alpha_j\rvert\le(\ell_1+\ell_0/J)/(s(J-g))\) and the same for \(\kappa\).
+    fn weight(&self, r: &ExactNum, jj: u64) -> Option<ExactNum> {
+        let up = RoundingMode::Up;
+        let dn = RoundingMode::Down;
+        let j = ExactNum::from_u64(jj, 64);
+        let jg = ExactNum::sub_ref(&j, &self.g, 64, dn);
+        if !jg.is_positive() || jg.is_zero() {
+            return None;
         }
-        finish(sum, p, rm)
+        let den = ExactNum::mul_ref(&self.s, &jg, 64, dn);
+        if !den.is_positive() || den.is_zero() {
+            return None;
+        }
+        let sup = |c1: &ExactNum, c0: &ExactNum| {
+            ExactNum::div_ref(c0, &j, 64, up)
+                .add(c1, 64, up)
+                .div(&den, 64, up)
+        };
+        let alpha = sup(&self.l1, &self.l0);
+        let kappa = sup(&self.k1, &self.k0).add(&self.k_c, 64, up);
+        let one = ExactNum::from_u8(1, 64);
+        let ls_r = ExactNum::mul_ref(&self.lam_s, r, 64, up);
+        let wn = ExactNum::sub_ref(&one, &ls_r, 64, dn);
+        if !wn.is_positive() || wn.is_zero() {
+            return None;
+        }
+        let w = wn.div(r, 64, dn);
+        let row1 = ExactNum::add_ref(&self.lam_d, &alpha, 64, up)
+            .mul(r, 64, up)
+            .add(&kappa.mul(r, 64, up).mul(r, 64, up).div(&w, 64, up), 64, up);
+        if matches!(row1.compare(&one), Some(c) if c <= 0) {
+            Some(w)
+        } else {
+            None
+        }
+    }
+}
+
+/// \(\sum_j c_jz^j\) for the three-term recurrence `step(j) = (A_j, B_j)`, \(c_0=1\),
+/// \(c_1\) given, \(\lvert z\rvert<1/\lvert\lambda_d\rvert\). Terms are added until the
+/// [`RecTail`] majorant bounds the rest below \(2^{-(\mathrm{wp}+8)}\) of the sum:
+/// with \(r=(\lvert z\rvert+1/\lvert\lambda_d\rvert)/2\), \(t=\lvert z\rvert/r\) and \(M_N\) the
+/// weighted norm at the last index, \(\sum_{k>N}\lvert c_kz^k\rvert\le(M_N/w)\,t^{N+1}/(1-t)\).
+/// There is no term cap. Returns the sum and the rounding loss in bits (largest
+/// term against the sum, plus the term count and the majorant's amplification),
+/// or `None` when the bound cannot be formed.
+fn rec_series<F>(
+    z: &ExactNum,
+    c1: &ExactNum,
+    tail: &RecTail,
+    wp: usize,
+    mut step: F,
+) -> Option<(ExactNum, i64)>
+where
+    F: FnMut(u64, usize) -> Option<(ExactNum, ExactNum)>,
+{
+    let up = RoundingMode::Up;
+    let dn = RoundingMode::Down;
+    let nr = RoundingMode::None;
+    let one64 = ExactNum::from_u8(1, 64);
+    let az = ub64(z);
+    let rho = one64.clone().div(&tail.lam_d, 64, dn);
+    let r = ExactNum::add_ref(&az, &rho, 64, dn).ldexp(-1, 64, dn);
+    if !matches!(az.compare(&r), Some(c) if c < 0) {
+        return None;
+    }
+    let t = ExactNum::div_ref(&az, &r, 64, up);
+    let geo = ExactNum::sub_ref(&one64, &t, 64, dn);
+    if !geo.is_positive() || geo.is_zero() {
+        return None;
+    }
+    let lam_s_wp = &tail.lam_s_v;
+    let mut c_prev = ExactNum::from_u8(1, wp);
+    let mut c = c1.clone();
+    let mut zp = z.clone();
+    let mut sum = ExactNum::from_u8(1, wp).add(&ExactNum::mul_ref(c1, z, wp, nr), wp, nr);
+    let mut peak = sum.exponent().unwrap_or(0).max(0);
+    // log2 r^j and t^j tracked through exponents of 64-bit powers.
+    let mut rj = r.clone(); // r^j for j = 1
+    let mut tj = t.clone();
+    let mut j: u64 = 1;
+    let mut w_ok: Option<ExactNum> = None;
+    loop {
+        if j > 50_000_000 {
+            return None;
+        }
+        // c holds c_j, c_prev c_{j-1}; rj = r^j, tj = t^j.
+        if w_ok.is_none() {
+            w_ok = tail.weight(&r, j);
+        }
+        if let Some(w) = &w_ok {
+            // |d_j| from the working-precision difference plus its rounding.
+            let ls_c = ExactNum::mul_ref(lam_s_wp, &c_prev, wp, nr);
+            let d = ExactNum::sub_ref(&c, &ls_c, wp, nr);
+            let rnd = ub64(&c)
+                .add(&ub64(&ls_c), 64, up)
+                .ldexp(4 - wp as i64, 64, up);
+            let dn_ = ub64(&d).add(&rnd, 64, up).mul(&rj, 64, up);
+            let cp = ub64(&c_prev)
+                .mul(&rj, 64, up)
+                .div(&r, 64, up)
+                .mul(w, 64, up);
+            let m = if matches!(dn_.compare(&cp), Some(o) if o > 0) { dn_ } else { cp };
+            let bound = m
+                .div(w, 64, up)
+                .mul(&tj, 64, up)
+                .mul(&t, 64, up)
+                .div(&geo, 64, up);
+            let es = sum.exponent().unwrap_or(0);
+            if bound.is_zero()
+                || (!sum.is_zero() && bound.exponent().is_some_and(|e| e < es - wp as i64 - 8))
+            {
+                let n_bits = 64 - i64::from(j.leading_zeros());
+                let amp = ExactNum::div_ref(&one64, w, 64, up)
+                    .add(w, 64, up)
+                    .div(&geo, 64, up);
+                let loss = (peak - es).max(0) + n_bits + amp.exponent().unwrap_or(0).max(0) + 4;
+                return Some((sum, loss));
+            }
+        }
+        let (aj, bj) = step(j, wp)?;
+        let c_next = ExactNum::mul_ref(&aj, &c, wp, nr).add(
+            &ExactNum::mul_ref(&bj, &c_prev, wp, nr),
+            wp,
+            nr,
+        );
+        if !finite(&c_next) {
+            return None;
+        }
+        zp = zp.mul(z, wp, nr);
+        let term = ExactNum::mul_ref(&c_next, &zp, wp, nr);
+        if let (false, Some(e)) = (term.is_zero(), term.exponent()) {
+            peak = peak.max(e);
+        }
+        sum = sum.add(&term, wp, nr);
+        c_prev = c;
+        c = c_next;
+        rj = rj.mul(&r, 64, up);
+        tj = tj.mul(&t, 64, up);
+        j += 1;
+        if rj.is_zero() || tj.is_zero() {
+            // 64-bit powers underflow only far past any useful length.
+            return None;
+        }
+    }
+}
+
+/// Retry `f(wp)` with more precision until its reported loss leaves `p + 16` bits.
+fn with_loss<F>(p: usize, mut f: F) -> Option<ExactNum>
+where
+    F: FnMut(usize) -> Option<(ExactNum, i64)>,
+{
+    let mut wp = work_p(p);
+    loop {
+        if wp > 8 * p + 16_384 {
+            return None;
+        }
+        let (v, loss) = f(wp)?;
+        let need = i64::try_from(p)
+            .ok()?
+            .saturating_add(16)
+            .saturating_add(loss);
+        if need <= i64::try_from(wp).ok()? {
+            return Some(v);
+        }
+        wp = usize::try_from(need)
+            .ok()?
+            .saturating_add(crate::defs::WORD_BIT_SIZE);
+    }
+}
+
+/// DLMF 31.3 series of \(\mathrm{Hl}\) for \(\lvert z\rvert<\min(1,\lvert a\rvert)\) with the
+/// [`rec_series`] tail bound (characteristic roots \(1\) and \(1/a\)).
+fn heun_g_series(
+    z: &ExactNum,
+    a: &ExactNum,
+    q: &ExactNum,
+    alpha: &ExactNum,
+    beta: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+) -> ExactNum {
+    let nr = RoundingMode::None;
+    let v = with_loss(p, |wp| {
+        let one = ExactNum::from_u8(1, wp);
+        let eps = heun_eps(alpha, beta, gamma, delta, wp);
+        let opa = ExactNum::add_ref(&one, a, wp, nr);
+        let inv_a = ExactNum::div_ref(&one, a, wp, nr);
+        let big_a = matches!(a.abs_cmp(&one), Some(c) if c >= 0);
+        let (lam_d, lam_s) = if big_a { (one.clone(), inv_a) } else { (inv_a, one.clone()) };
+        // n1 j + n0 = Q_j + q - (1+a)(j+1)(j+γ); m1 j + m0 = P_j - (j+1)(j+γ).
+        let n1 = ExactNum::mul_ref(a, delta, wp, nr).add(&eps, wp, nr).sub(
+            &opa.clone().ldexp(1, wp, nr),
+            wp,
+            nr,
+        );
+        let n0 = ExactNum::sub_ref(q, &ExactNum::mul_ref(&opa, gamma, wp, nr), wp, nr);
+        let m1 = ExactNum::add_ref(alpha, beta, wp, nr)
+            .sub(&ExactNum::from_u8(3, wp), wp, nr)
+            .sub(gamma, wp, nr);
+        let m0 = ExactNum::sub_ref(alpha, &one, wp, nr)
+            .mul(&ExactNum::sub_ref(beta, &one, wp, nr), wp, nr)
+            .sub(gamma, wp, nr);
+        let k1 = ExactNum::mul_ref(&lam_s, &n1, wp, nr).sub(&m1, wp, nr);
+        let k0 = ExactNum::mul_ref(&lam_s, &n0, wp, nr).sub(&m0, wp, nr);
+        let mut s = a.clone().abs();
+        let _ = s.set_precision(64, RoundingMode::Down);
+        let tail = RecTail {
+            lam_d: ub64(&lam_d),
+            lam_s: ub64(&lam_s),
+            k_c: ub64(&lam_d)
+                .add(&ub64(&lam_s), 64, RoundingMode::Up)
+                .add(&ub64(&n1), 64, RoundingMode::Up)
+                .add(&ub64(&n0), 64, RoundingMode::Up)
+                .ldexp(8 - wp as i64, 64, RoundingMode::Up),
+            lam_s_v: lam_s,
+            l1: ub64(&n1),
+            l0: ub64(&n0),
+            k1: ub64(&k1),
+            k0: ub64(&k0),
+            s,
+            g: ub64(gamma),
+        };
+        let c1 = ExactNum::div_ref(q, &ExactNum::mul_ref(a, gamma, wp, nr), wp, nr);
+        if !finite(&c1) {
+            return None;
+        }
+        rec_series(z, &c1, &tail, wp, |j, wp| {
+            let jf = ExactNum::from_u64(j, wp);
+            let jm1 = ExactNum::from_u64(j - 1, wp);
+            let pj = ExactNum::add_ref(&jm1, alpha, wp, nr).mul(
+                &ExactNum::add_ref(&jm1, beta, wp, nr),
+                wp,
+                nr,
+            );
+            let qj = ExactNum::add_ref(&jm1, gamma, wp, nr)
+                .mul(&opa, wp, nr)
+                .add(&ExactNum::mul_ref(a, delta, wp, nr), wp, nr)
+                .add(&eps, wp, nr)
+                .mul(&jf, wp, nr);
+            let rj = ExactNum::from_u64(j + 1, wp).mul(a, wp, nr).mul(
+                &ExactNum::add_ref(&jf, gamma, wp, nr),
+                wp,
+                nr,
+            );
+            if rj.is_zero() || !finite(&rj) {
+                return None;
+            }
+            let aj = qj.add(q, wp, nr).div(&rj, wp, nr);
+            let bj = pj.div(&rj, wp, nr).neg();
+            Some((aj, bj))
+        })
+    });
+    match v {
+        Some(v) => finish(v, p, rm),
+        None => cat_nan(),
+    }
+}
+
+/// DLMF 31.12.1 Frobenius series of confluent Heun for \(\lvert z\rvert<1\) with the
+/// [`rec_series`] tail bound (characteristic roots \(1\) and \(0\)).
+fn heun_c_series(
+    z: &ExactNum,
+    alpha: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    eps: &ExactNum,
+    q: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+) -> ExactNum {
+    let nr = RoundingMode::None;
+    let v = with_loss(p, |wp| {
+        let one = ExactNum::from_u8(1, wp);
+        // l1 n + l0 = n(n-1+γ+δ-ε) - q - (n+1)(n+γ); κ_n = B_n = (ε n + α - ε)/((n+1)(n+γ)).
+        let l1 = ExactNum::sub_ref(delta, eps, wp, nr).sub(&ExactNum::from_u8(2, wp), wp, nr);
+        let l0 = ExactNum::add_ref(q, gamma, wp, nr);
+        let k0 = ExactNum::sub_ref(alpha, eps, wp, nr);
+        let tail = RecTail {
+            lam_d: ub64(&one),
+            lam_s: ExactNum::new(64),
+            lam_s_v: ExactNum::new(wp),
+            k_c: ExactNum::new(64),
+            l1: ub64(&l1),
+            l0: ub64(&l0),
+            k1: ub64(eps),
+            k0: ub64(&k0),
+            s: ExactNum::from_u8(1, 64),
+            g: ub64(gamma),
+        };
+        let b1 = q.neg_via_mul().div(gamma, wp, nr);
+        if !finite(&b1) {
+            return None;
+        }
+        rec_series(z, &b1, &tail, wp, |n, wp| {
+            let nf = ExactNum::from_u64(n, wp);
+            let nm1 = ExactNum::from_u64(n - 1, wp);
+            let left =
+                ExactNum::from_u64(n + 1, wp).mul(&ExactNum::add_ref(&nf, gamma, wp, nr), wp, nr);
+            if left.is_zero() || !finite(&left) {
+                return None;
+            }
+            let coef_n = ExactNum::add_ref(&nm1, gamma, wp, nr)
+                .add(delta, wp, nr)
+                .sub(eps, wp, nr)
+                .mul(&nf, wp, nr)
+                .sub(q, wp, nr);
+            let coef_nm1 = ExactNum::mul_ref(&nm1, eps, wp, nr).add(alpha, wp, nr);
+            Some((coef_n.div(&left, wp, nr), coef_nm1.div(&left, wp, nr)))
+        })
+    });
+    match v {
+        Some(v) => finish(v, p, rm),
+        None => cat_nan(),
     }
 }
 

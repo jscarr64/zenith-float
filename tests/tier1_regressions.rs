@@ -3464,3 +3464,52 @@ fn zf_42_meijer_fox_coincident_poles() {
     }
     assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// ZF-43: the inside-disk Heun series (heun_g, heun_c) stopped after `series_cap`
+/// = p + 160 terms, or when one term fell below 2^-p of the sum. At z = 3/4 with
+/// radius 1 the terms shrink like (3/4)^j, so the sum kept about p/2 bits. Now the
+/// three-term recurrence's tail is bounded by a majorant (characteristic roots 1 and
+/// 1/a, or 1 and 0) and summing stops only below that bound; no term cap.
+/// References: the same series in mpmath at 3p+256 and 4p+512 bits with N and 2N
+/// terms, all four agreeing to 2^-(2p+64); cross-checked by mpmath odefun.
+/// Every mode within 1 ulp.
+#[test]
+fn zf_43_heun_series_rigorous_tail() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf43.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let n = t.len();
+        let p = t[1].parse::<usize>().expect("p");
+        let x: Vec<ExactNum> = t[2..n - 1]
+            .iter()
+            .map(|s| parse_real(s).expect("arg"))
+            .collect();
+        let w = ExactNum::parse(t[n - 1], Radix::Dec, 8960, RoundingMode::ToEven, &mut cc);
+        for rm in MODES.iter().copied().filter(|m| *m != RoundingMode::None) {
+            let v = match t[0] {
+                "r.heun_g" => x[0].heun_g(&x[1], &x[2], &x[3], &x[4], &x[5], &x[6], p, rm, &mut cc),
+                "r.heun_c" => x[0].heun_c(&x[1], &x[2], &x[3], &x[4], &x[5], p, rm, &mut cc),
+                _ => panic!("function"),
+            };
+            let ok = !v.is_nan() && !v.is_inf() && !v.is_zero() && {
+                let d = ExactNum::sub_ref(&v, &w, p + 512, RoundingMode::None).abs();
+                let ulp = ExactNum::from_u8(1, 64).ldexp(
+                    v.exponent().expect("exp") - p as i64,
+                    64,
+                    RoundingMode::None,
+                );
+                matches!(d.compare(&ulp), Some(c) if c <= 0)
+            };
+            if !ok {
+                bad.push(format!(
+                    "{} p={p} {rm:?} args={:?} got {}",
+                    t[0],
+                    &t[2..n - 1],
+                    fmt_real(&v)
+                ));
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+}
