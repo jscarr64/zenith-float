@@ -4216,6 +4216,29 @@ Accuracy: correctly-rounded",
         )
     }
 
+    /// Word-precision [`Self::jacobi_arccn`] (`arcdn` when `dn`) on finite values.
+    pub(crate) fn jacobi_arc_cd_word(
+        &self,
+        m: &Self,
+        dn: bool,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Self {
+        match (&self.inner, &m.inner) {
+            (Flavor::Value(x), Flavor::Value(mv)) => {
+                let r = if dn {
+                    x.jacobi_arcdn_num(mv, p, rm, cc)
+                } else {
+                    x.jacobi_arccn_num(mv, p, rm, cc)
+                };
+                Self::result_to_ext(r, false, true)
+            }
+            (Flavor::NaN(err), _) | (_, Flavor::NaN(err)) => Self::nan(*err),
+            _ => Self::nan(Some(Error::InvalidArgument)),
+        }
+    }
+
     /// Word-precision implementation of [`Self::elliptic_f_phi`].
     fn elliptic_f_phi_word(&self, m: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         match (&self.inner, &m.inner) {

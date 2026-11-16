@@ -1633,20 +1633,7 @@ impl ExactNum {
         if !finite(self) || !finite(m) {
             return cat_nan();
         }
-        let wrk = work_p(p);
-        let one = ExactNum::from_u8(1, wrk);
-        let s = one
-            .sub(&self.sqr(wrk, RoundingMode::None), wrk, RoundingMode::None)
-            .sqrt(wrk, RoundingMode::None);
-        let f = s.elliptic_f(m, wrk, RoundingMode::None, cc);
-        if self.is_negative() && !self.is_zero() {
-            // cn(2K - u) = -cn(u): for x < 0 the inverse on [0, 2K] is 2K - F(sqrt(1-x^2)|m).
-            let two_k = m
-                .elliptic_k(wrk, RoundingMode::None, cc)
-                .ldexp(1, wrk, RoundingMode::None);
-            return finish(two_k.sub(&f, wrk, RoundingMode::None), p, rm);
-        }
-        finish(f, p, rm)
+        self.jacobi_arc_cd_word(m, false, p, rm, cc)
     }
 
     /// Inverse Jacobi \(\mathrm{arcdn}(x|m)=F(\sqrt{(1-x^2)/m}|m)\) for \(m>0\).
@@ -1668,13 +1655,7 @@ impl ExactNum {
         if !finite(self) || !finite(m) || !m.is_positive() {
             return cat_nan();
         }
-        let wrk = work_p(p);
-        let one = ExactNum::from_u8(1, wrk);
-        let s = one
-            .sub(&self.sqr(wrk, RoundingMode::None), wrk, RoundingMode::None)
-            .div(m, wrk, RoundingMode::None)
-            .sqrt(wrk, RoundingMode::None);
-        finish(s.elliptic_f(m, wrk, RoundingMode::None, cc), p, rm)
+        self.jacobi_arc_cd_word(m, true, p, rm, cc)
     }
 
     /// \({}_0F_1(;b;z)\) with `self = z`.

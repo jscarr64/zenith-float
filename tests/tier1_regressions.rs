@@ -206,6 +206,10 @@ fn run(
         "r.jacobi_sc" => real(a, 0)?.jacobi_sc(&real(a, 1)?, p, rm, cc),
         "r.jacobi_sd" => real(a, 0)?.jacobi_sd(&real(a, 1)?, p, rm, cc),
         "r.jacobi_arccn" => real(a, 0)?.jacobi_arccn(&real(a, 1)?, p, rm, cc),
+        "r.jacobi_arcdn" => real(a, 0)?.jacobi_arcdn(&real(a, 1)?, p, rm, cc),
+        "r.elliptic_f_phi" => real(a, 0)?.elliptic_f_phi(&real(a, 1)?, p, rm, cc),
+        "r.elliptic_e_phi" => real(a, 0)?.elliptic_e_phi(&real(a, 1)?, p, rm, cc),
+        "r.elliptic_pi_phi" => real(a, 0)?.elliptic_pi_phi(&real(a, 1)?, &real(a, 2)?, p, rm, cc),
         "r.log" => real(a, 0)?.log(&real(a, 1)?, p, rm, cc),
         "r.logb" => real(a, 0)?.logb(p, rm),
         "r.rem" => real(a, 0)?.rem(&real(a, 1)?),
@@ -3309,4 +3313,31 @@ fn zf_36_bessel_series_cancellation_not_certified() {
         let got = run(t[0], p, mode(t[2]).expect("rm"), &t[3..5], &mut cc).expect("dispatch");
         assert_eq!(got, t[5], "{} p={p} {} args={:?}", t[0], t[2], &t[3..5]);
     }
+}
+
+/// ZF-33 / ZF-75 / ZF-36 (elliptic): amplitude-form F, E, Pi and inverse Jacobi
+/// cn, dn. A rounded π/2 is not π/2; `1 - sin²` from a rounded sine drops the
+/// cosine near π/2; claims ignored cancellation and the conditioning of a
+/// reduced angle; arccn/arcdn formed `sqrt(1 - x²)` once at a fixed width.
+/// Every expected value is FLINT-checked (2p+64 bits).
+#[test]
+fn zf_33_75_elliptic_amplitude_and_inverse_jacobi() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf33-ell.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let n = t.len();
+        let p = t[1].parse::<usize>().expect("p");
+        let got = run(t[0], p, mode(t[2]).expect("rm"), &t[3..n - 1], &mut cc).expect("dispatch");
+        if got != t[n - 1] {
+            bad.push(format!(
+                "{} p={p} {} args={:?} got {got} want {}",
+                t[0],
+                t[2],
+                &t[3..n - 1],
+                t[n - 1]
+            ));
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
 }

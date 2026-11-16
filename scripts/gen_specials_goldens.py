@@ -443,27 +443,16 @@ def eval_phi(op: str, raw_args: list[str], p: int, rm: str) -> dict:
     if identity:
         tok = raw_args[1] if op == "elliptic_pi_phi" else raw_args[0]
         return g.finalize(g.parse_dec(tok), p, "ToEven")
-    half = mpf_arg(HALF_PI, p)
-    one = mp.mpf(1)
+    # HALF_PI parsed at p bits is the rational fl_p(pi/2), never pi/2 itself, so
+    # it gets no K/E/Pi-complete shortcut: the integral is taken at that rational
+    # (ZF-33). At p=256 fl(pi/2) is below pi/2, so F(.|1) and Pi(1; .|m) are finite.
     sign = -1 if phi < 0 else 1
-    if phi == half or phi == -half:
-        if op == "elliptic_f_phi":
-            if m > 1:
-                return nan()
-            if m == 1:
-                return g.inf("-" if sign < 0 else "+")
-            val = sign * mp.ellipk(m)
-        elif op == "elliptic_e_phi":
-            if m > 1:
-                return nan()
-            val = sign * mp.ellipe(m)
-        else:
-            # Π(n|m) in this crate is InvalidArgument for n >= 1 or m >= 1,
-            # including the pole mpmath reports as +inf.
-            if m >= 1 or n >= 1:
-                return nan()
-            val = sign * mp.ellippi(n, mp.pi / 2, m)
-        return pack(val, p, rm)
+    # Near an odd multiple of pi/2, 1 - sin^2 and 1 - m sin^2 cancel: about
+    # 2*log2(1/|cos phi|) bits go (squared), and Pi(1; .) adds 1/cos^2 again.
+    # Widen mpmath by that loss so the packed value is not cancellation noise.
+    c = abs(mp.cos(phi))
+    if c != 0 and c < mp.mpf(2) ** -32:
+        mp.mp.prec += 4 * int(-mp.log(c, 2)) + 128
     k = round_half_even(phi / mp.pi)
     if op == "elliptic_f_phi":
         if m == 1 and k != 0:
@@ -686,7 +675,7 @@ def phi_cases() -> list[dict]:
     # real only while the path stays inside |sin t| < 1/√m.
     f_rows = [
         (["0.5", "0.5"], "F(0.5|0.5); phi inside (0, pi/2)"),
-        ([HALF_PI, "0.5"], "F(pi/2|0.5) = K(0.5)"),
+        ([HALF_PI, "0.5"], "F(fl(pi/2)|0.5): the rounded amplitude, not K(0.5)"),
         (["2", "0.5"], "F(2|0.5); phi past pi/2"),
         ([THREE_PI_OVER_4, "0.5"], "F(3pi/4|0.5) = 2K - F(pi/4)"),
         (["5", "0.3"], "F(5|0.3)"),
@@ -703,16 +692,16 @@ def phi_cases() -> list[dict]:
         (["0.2", "1.5"], "m > 1, small phi, real"),
         (["1", "1.5"], "m > 1, path not real"),
         (["2", "1"], "F(2|1) = +inf"),
-        ([HALF_PI, "1"], "F(pi/2|1) = +inf, same as K(1)"),
+        ([HALF_PI, "1"], "F(fl(pi/2)|1): finite where fl(pi/2) < pi/2, +inf past it"),
         ([HALF_PI, "1.5"], "F(pi/2|m>1) is not real"),
-        ([neg_half, "0.5"], "F(-pi/2|0.5) = -K(0.5)"),
+        ([neg_half, "0.5"], "F(-fl(pi/2)|0.5) = -F(fl(pi/2)|0.5)"),
         (["inf", "0.5"], "infinity is InvalidArgument"),
     ]
     for args, note in f_rows:
         add("elliptic_f_phi", args, note)
     e_rows = [
         (["0.5", "0.5"], "E(0.5|0.5)"),
-        ([HALF_PI, "0.5"], "E(pi/2|0.5) = E(0.5)"),
+        ([HALF_PI, "0.5"], "E(fl(pi/2)|0.5): the rounded amplitude, not E(0.5)"),
         (["2", "0.5"], "E(2|0.5)"),
         ([THREE_PI_OVER_4, "0.5"], "E(3pi/4|0.5)"),
         (["5", "0.3"], "E(5|0.3)"),
@@ -726,9 +715,9 @@ def phi_cases() -> list[dict]:
         (["0.2", "1.5"], "m > 1, small phi, real"),
         (["1", "1.5"], "m > 1, path not real"),
         (["2", "1"], "E(2|1) stays real"),
-        ([HALF_PI, "1"], "E(pi/2|1) = 1"),
+        ([HALF_PI, "1"], "E(fl(pi/2)|1) = sin(fl(pi/2)) below pi/2"),
         ([HALF_PI, "1.5"], "E(pi/2|m>1) is not real"),
-        ([neg_half, "0.5"], "E(-pi/2|0.5) = -E(0.5)"),
+        ([neg_half, "0.5"], "E(-fl(pi/2)|0.5) = -E(fl(pi/2)|0.5)"),
         (["inf", "0.5"], "infinity is InvalidArgument"),
     ]
     for args, note in e_rows:
@@ -737,7 +726,7 @@ def phi_cases() -> list[dict]:
     # (the complete integral rejects n >= 1; mpmath's +inf is not used).
     p_rows = [
         (["0.2", "0.4", "0.3"], "Pi(0.2; 0.4|0.3)"),
-        (["0.2", HALF_PI, "0.3"], "Pi(0.2; pi/2|0.3) = Pi(0.2|0.3)"),
+        (["0.2", HALF_PI, "0.3"], "Pi(0.2; fl(pi/2)|0.3): the rounded amplitude, not Pi(0.2|0.3)"),
         (["0.2", "2", "0.3"], "Pi past pi/2"),
         (["0.2", "-0.4", "0.3"], "odd in phi"),
         (["0.2", "0", "0.5"], "Pi(n; 0|m) = 0"),
@@ -745,7 +734,7 @@ def phi_cases() -> list[dict]:
         (["-0.5", "2", "0.5"], "negative n, phi past pi/2"),
         (["2", "0.3", "0.5"], "n > 1, path still real"),
         (["1", "0.4", "0.3"], "n = 1 inside (0, pi/2), real"),
-        (["1", HALF_PI, "0.3"], "n = 1 at pi/2 is the pole"),
+        (["1", HALF_PI, "0.3"], "n = 1 at fl(pi/2): finite below pi/2, the pole is at pi/2 itself"),
         (["2", "1", "0.5"], "n > 1, path reaches 1/sqrt(n)"),
         (["0.2", "100", "0.5"], "large phi"),
         (["0.3", "0.5", "-0.25"], "negative m"),
@@ -753,7 +742,7 @@ def phi_cases() -> list[dict]:
         (["0.2", "1.2", M_NEAR_ONE], "m = 1-2^{-30}, phi past pi/2"),
         (["0.2", "0.2", "1.5"], "m > 1, small phi, real"),
         (["0.2", "1", "1.5"], "m > 1, path not real"),
-        (["0.2", neg_half, "0.3"], "Pi(n; -pi/2|m) = -Pi(n|m)"),
+        (["0.2", neg_half, "0.3"], "Pi(n; -fl(pi/2)|m) = -Pi(n; fl(pi/2)|m)"),
         (["0.2", "inf", "0.5"], "infinity is InvalidArgument"),
     ]
     for args, note in p_rows:
@@ -790,7 +779,7 @@ def shortcut_cases() -> list[dict]:
         add(op, ["0", "0"], "shortcut phi=0 and m=0")
     # n = 0 is F. phi = 0 is 0. n = 0 and m = 0 is the amplitude.
     add("elliptic_pi_phi", ["0", "0.7", "0.4"], "shortcut n=0: Pi equals F")
-    add("elliptic_pi_phi", ["0", HALF_PI, "0.25"], "shortcut n=0 and phi=pi/2: Pi equals K")
+    add("elliptic_pi_phi", ["0", HALF_PI, "0.25"], "shortcut n=0 at phi=fl(pi/2): Pi equals F(fl(pi/2)|m)")
     add("elliptic_pi_phi", ["0", "0.8", "0"], "shortcut n=0 and m=0: Pi equals the input rounded once")
     add("elliptic_pi_phi", ["0", "0", "0.3"], "shortcut phi=0")
     # Sine form. m = 0 is one arcsin. n = 0 is F. x = 0 is 0.
@@ -1030,11 +1019,11 @@ def main() -> None:
     if abs(integral - printed) > mp.mpf("1e-20"):
         raise SystemExit(f"cubic integral is not 0.90960424263889577391: {integral}")
     half_inf = eval_row("elliptic_f_phi", [HALF_PI, "1"], 256, "ToEven", {})
-    if half_inf.get("k") != "inf" or half_inf.get("s") != "+":
-        raise SystemExit(f"F(pi/2|1) golden is not +inf: {half_inf}")
+    if half_inf.get("k") != "f":
+        raise SystemExit(f"F(fl256(pi/2)|1) golden is not finite: {half_inf}")
     pole = eval_row("elliptic_pi_phi", ["1", HALF_PI, "0.3"], 256, "ToEven", {})
-    if pole.get("k") != "nan":
-        raise SystemExit(f"Pi(1; pi/2|0.3) golden is not nan: {pole}")
+    if pole.get("k") != "f":
+        raise SystemExit(f"Pi(1; fl256(pi/2)|0.3) golden is not finite: {pole}")
     cases = base_cases() + fixture_rows() + phi_cases() + shortcut_cases()
     files = expand(cases)
     OUT.mkdir(parents=True, exist_ok=True)

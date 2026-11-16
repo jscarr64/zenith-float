@@ -74,7 +74,9 @@ fn sine_form_matches_through_asin() -> Result<(), Box<dyn std::error::Error>> {
             gap <= 1,
             "f_phi(asin({text})) and elliptic_f({text}) differ by {gap} ulps"
         );
-        if text == "0" || text == "1" || text == "-1" {
+        // asin(±1) rounds to fl(±π/2), a rational a little above π/2 in magnitude, so
+        // F there is not K(m) (FLINT: one ulp above at 64 bits). Only 0 is exact.
+        if text == "0" {
             assert!(
                 same_bits(&by_angle, &by_sine),
                 "endpoint {text} must be limb-identical"
@@ -105,21 +107,22 @@ fn angle_two_is_not_the_sine_form() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-fn half_pi_matches_complete() -> Result<(), Box<dyn std::error::Error>> {
+fn rounded_half_pi_is_not_a_quarter_period() -> Result<(), Box<dyn std::error::Error>> {
+    // fl64(π/2) - π/2 ≈ 2.508e-20 (FLINT). The amplitude is that rational, not π/2:
+    // FLINT gives F and E one ulp above K(m) and E(m) at 64 bits; Π rounds to Π(n|m).
     let mut consts = cc()?;
     let p = 64;
     let rm = RoundingMode::ToEven;
     let phi = parse(HALF_PI, p, rm, &mut consts);
     let m = parse("0.5", p, rm, &mut consts);
     let n = parse("0.2", p, rm, &mut consts);
-    assert!(same_bits(
-        &phi.elliptic_f_phi(&m, p, rm, &mut consts),
-        &m.elliptic_k(p, rm, &mut consts)
-    ));
-    assert!(same_bits(
-        &phi.elliptic_e_phi(&m, p, rm, &mut consts),
-        &m.elliptic_e_complete(p, rm, &mut consts)
-    ));
+    let f = phi.elliptic_f_phi(&m, p, rm, &mut consts);
+    let e = phi.elliptic_e_phi(&m, p, rm, &mut consts);
+    assert_eq!(ulp_gap(&f, &m.elliptic_k(p, rm, &mut consts), p), 1);
+    assert_eq!(
+        ulp_gap(&e, &m.elliptic_e_complete(p, rm, &mut consts), p),
+        1
+    );
     assert!(same_bits(
         &n.elliptic_pi_phi(&phi, &m, p, rm, &mut consts),
         &n.elliptic_pi_complete(&m, p, rm, &mut consts)
