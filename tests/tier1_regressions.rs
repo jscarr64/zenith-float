@@ -3540,3 +3540,45 @@ fn zf_63_bessel_j_integer_order_large_x() {
     }
     assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// ZF-57: Scorer's large-|x| asymptotics had the wrong coefficients and added terms
+/// past the minimum; at x=+-10, p>=1024 they returned numbers near 2^453 / 2^697.
+/// At +-maxv, x^3 overflowed and the representable 1/(pi x) was lost. Now: Taylor
+/// with a geometric bound and cancellation-aware Ziv, Watson with a remainder bound
+/// stopped before the minimum, and 1/(pi x) directly for huge x. References: mpmath
+/// scorergi/scorerhi at 6000 and 9000 bits (agree to 2^-5000 relative); maxv on its
+/// subnormal grid (q = 2^p/(pi (1-2^-p))), overflow C99 7.12.1. All modes CR.
+#[test]
+fn zf_57_scorer_bounded_series_and_watson() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf57.tsv").lines() {
+        let t: Vec<&str> = l.split('\t').collect();
+        let x = parse_real(t[1]).expect("x");
+        for p in t[2].split(',').map(|p| p.parse::<usize>().expect("p")) {
+            for rm in MODES.iter().copied().filter(|m| {
+                if t[3] == "*" {
+                    *m != RoundingMode::None
+                } else {
+                    *m == mode(t[3]).expect("mode")
+                }
+            }) {
+                let v = match t[0] {
+                    "r.scorer_gi" => x.scorer_gi(p, rm, &mut cc),
+                    "r.scorer_hi" => x.scorer_hi(p, rm, &mut cc),
+                    _ => panic!("function"),
+                };
+                let ok = if let Some(w) = t[4].strip_prefix('=') {
+                    fmt_real(&v) == w
+                } else {
+                    let w = cr_ref(t[4], p, rm, &mut cc);
+                    v.compare(&w) == Some(0)
+                };
+                if !ok {
+                    bad.push(format!("{}({}) p={p} {rm:?}: {}", t[0], t[1], fmt_real(&v)));
+                }
+            }
+        }
+    }
+    assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+}

@@ -818,89 +818,165 @@ fn weber_e0(z: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     scale.mul(&sum, p, RoundingMode::None).neg()
 }
 
-/// Inhomogeneous Airy series for Scorer \(Gi\) (shared \(a_2=1/(2\pi)\)).
-fn scorer_gi_series(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
-    let bi0 = ExactNum::new(p).bi(p, RoundingMode::None, cc);
-    let bip0 = ExactNum::new(p).bi_prime(p, RoundingMode::None, cc);
-    let three = ExactNum::from_u8(3, p);
-    let a0 = bi0.div(&three, p, RoundingMode::None);
-    let a1 = bip0.div(&three, p, RoundingMode::None);
-    let pi = cc.pi(p, RoundingMode::None);
-    let two = ExactNum::from_u8(2, p);
-    // Gi'' − z Gi = −1/π ⇒ 2 a₂ = −1/π.
-    let a2 = ExactNum::from_u8(1, p)
-        .div(&two.mul(&pi, p, RoundingMode::None), p, RoundingMode::None)
-        .neg();
-    let mut am3 = a0.clone();
-    let mut am2 = a1.clone();
-    let mut am1 = a2.clone();
-    let mut xn = ExactNum::from_u8(1, p);
-    let mut sum = a0.clone();
-    xn = xn.mul(x, p, RoundingMode::None);
-    sum = sum.add(&a1.mul(&xn, p, RoundingMode::None), p, RoundingMode::None);
-    xn = xn.mul(x, p, RoundingMode::None);
-    sum = sum.add(&a2.mul(&xn, p, RoundingMode::None), p, RoundingMode::None);
-    for n in 3..=series_cap(p) {
-        let nf = ExactNum::from_u32(n as u32, p);
-        let nm1 = ExactNum::from_u32((n - 1) as u32, p);
-        let an = am3.div(&nf.mul(&nm1, p, RoundingMode::None), p, RoundingMode::None);
-        xn = xn.mul(x, p, RoundingMode::None);
-        let term = ExactNum::mul_ref(&an, &xn, p, RoundingMode::None);
-        sum = sum.add(&term, p, RoundingMode::None);
-        if term.is_zero()
-            || term
-                .exponent()
-                .is_some_and(|e| e + (p as i64) < sum.exponent().unwrap_or(0))
-        {
-            break;
+/// Ziv loop for a catalog kernel. `f(wp)` returns a value and its correct bits `s`
+/// (`|error| < 2^(e(v) - s - 1)`); `f` is retried with more precision until the value
+/// rounds to `p` bits with certainty. Past `8p + 16384` bits the answer is NaN, never a guess.
+fn ziv_round<F>(p: usize, rm: RoundingMode, mut f: F) -> ExactNum
+where
+    F: FnMut(usize) -> Option<(ExactNum, i64)>,
+{
+    let w = WORD_BIT_SIZE as i64;
+    let limit = p.saturating_mul(8).saturating_add(16_384);
+    let mut wp = work_p(p);
+    loop {
+        let Some((mut v, good)) = f(wp) else {
+            return cat_nan();
+        };
+        if !finite(&v) {
+            return cat_nan();
         }
-        am3 = am2;
-        am2 = am1;
-        am1 = an;
+        let s = good.div_euclid(w).saturating_mul(w);
+        if !v.is_zero() && s > p as i64 && v.try_set_precision(p, rm, s as usize) {
+            return v;
+        }
+        let short = (p as i64).saturating_add(2 * w).saturating_sub(good).max(w);
+        let next = (wp as i64).saturating_add(short.max(wp as i64 / 2));
+        wp = word_p(usize::try_from(next).unwrap_or(usize::MAX));
+        if wp > limit {
+            return cat_nan();
+        }
     }
-    sum
 }
 
-/// \(Gi(x)\sim(\pi x)^{-1}\sum (3k+1)^{\overline{\times}}/x^{3k}\) for \(x\to+\infty\).
-fn scorer_gi_asymp_plus(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
-    let pi = cc.pi(p, RoundingMode::None);
-    let x3 = x.sqr(p, RoundingMode::None).mul(x, p, RoundingMode::None);
-    let mut term = ExactNum::from_u8(1, p);
-    let mut sum = term.clone();
-    for k in 0..=series_cap(p) {
-        let fac = ExactNum::from_u32((3 * k + 1) as u32, p);
-        term = term
-            .mul(&fac, p, RoundingMode::None)
-            .div(&x3, p, RoundingMode::None);
-        sum = sum.add(&term, p, RoundingMode::None);
-        if term.is_zero() || term.exponent().is_some_and(|e| e + (p as i64) < 0) {
-            break;
-        }
-    }
-    sum.div(&pi.mul(x, p, RoundingMode::None), p, RoundingMode::None)
+/// Bits in `n` (`0` for `0`).
+fn bitlen(n: usize) -> i64 {
+    (usize::BITS - n.leading_zeros()) as i64
 }
 
-/// \(Hi(x)\sim-(\pi x)^{-1}\sum (-1)^k(3k+1)^{\overline{\times}}/x^{3k}\) as \(x\to-\infty\).
-fn scorer_hi_asymp_minus(x: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
-    let pi = cc.pi(p, RoundingMode::None);
-    let x3 = x.sqr(p, RoundingMode::None).mul(x, p, RoundingMode::None);
-    let mut term = ExactNum::from_u8(1, p);
-    let mut sum = term.clone();
-    let mut sign = -1i32;
-    for k in 0..=series_cap(p) {
-        let fac = ExactNum::from_u32((3 * k + 1) as u32, p);
-        term = term
-            .mul(&fac, p, RoundingMode::None)
-            .div(&x3, p, RoundingMode::None);
-        let t = if sign < 0 { term.clone().neg() } else { term.clone() };
-        sum = sum.add(&t, p, RoundingMode::None);
-        sign = -sign;
-        if term.is_zero() || term.exponent().is_some_and(|e| e + (p as i64) < 0) {
+/// Taylor series of Scorer \(Gi\) (`hi = false`) or \(Hi\) at `x`: \(w''=xw\mp1/\pi\) gives
+/// \(a_n=a_{n-3}/(n(n-1))\) with \(a_0, a_1 = (1\text{ or }2)\,\mathrm{Bi}(0)/3,\ (1\text{ or }2)\,\mathrm{Bi}'(0)/3\)
+/// and \(a_2=\mp1/(2\pi)\) (DLMF 9.12.1, 9.12.4-7). Once \(q=|x|^3/(n(n+1))\le1/2\) each residue class
+/// mod 3 is dominated by a geometric series of ratio \(q\), so the tail is below
+/// \(3\cdot2^{e_{\max}}\) for the last three terms. Summing stops when that is under
+/// \(2^{\mathrm{peak}-wp}\); every term carries at most \(2n+6\) ulps and each addition one ulp
+/// of at most \(n\) times the peak, so the error is below \(2^{\mathrm{peak}-wp+2\,\mathrm{bitlen}(n)+3}\).
+fn scorer_taylor(x: &ExactNum, hi: bool, wp: usize, cc: &mut Consts) -> Option<(ExactNum, i64)> {
+    let nr = RoundingMode::None;
+    let three = ExactNum::from_u8(3, wp);
+    let scale = ExactNum::from_u8(if hi { 2 } else { 1 }, wp);
+    let a0 = ExactNum::new(wp)
+        .bi(wp, nr, cc)
+        .mul(&scale, wp, nr)
+        .div(&three, wp, nr);
+    if x.is_zero() {
+        return Some((a0, wp as i64 - 8));
+    }
+    let a1 = ExactNum::new(wp)
+        .bi_prime(wp, nr, cc)
+        .mul(&scale, wp, nr)
+        .div(&three, wp, nr);
+    let pi = cc.pi(wp, nr);
+    let mut a2 = ExactNum::from_u8(1, wp).div(&ExactNum::from_u8(2, wp).mul(&pi, wp, nr), wp, nr);
+    if !hi {
+        a2 = a2.neg();
+    }
+    let ex = x.exponent()?;
+    let t1 = ExactNum::mul_ref(&a1, x, wp, nr);
+    let mut xn = ExactNum::mul_ref(x, x, wp, nr);
+    let t2 = ExactNum::mul_ref(&a2, &xn, wp, nr);
+    let exp_of = |t: &ExactNum| t.exponent().unwrap_or(i64::MIN / 4);
+    let mut last = [exp_of(&a0), exp_of(&t1), exp_of(&t2)];
+    let mut peak = last[0].max(last[1]).max(last[2]);
+    let mut sum = ExactNum::add_ref(&a0, &t1, wp, nr).add(&t2, wp, nr);
+    let mut a = [a0, a1, a2];
+    let mut n = 2usize;
+    loop {
+        // q = |x|^3 / (n(n+1)) < 2^(3 ex - bitlen(n(n+1)) + 1).
+        let nn = n.checked_mul(n + 1)?;
+        let qexp = 3 * ex - bitlen(nn) + 1;
+        let emax = last[0].max(last[1]).max(last[2]);
+        if qexp <= -1 && emax + 2 < peak - wp as i64 {
             break;
         }
+        n += 1;
+        let den = ExactNum::from_u32(u32::try_from(n).ok()?, wp).mul(
+            &ExactNum::from_u32(u32::try_from(n - 1).ok()?, wp),
+            wp,
+            nr,
+        );
+        let an = ExactNum::div_ref(&a[n % 3], &den, wp, nr);
+        xn = xn.mul(x, wp, nr);
+        let t = ExactNum::mul_ref(&an, &xn, wp, nr);
+        a[n % 3] = an;
+        last[n % 3] = exp_of(&t);
+        peak = peak.max(last[n % 3]);
+        sum = sum.add(&t, wp, nr);
     }
-    sum.div(&pi.mul(x, p, RoundingMode::None), p, RoundingMode::None)
-        .neg()
+    if sum.is_zero() {
+        return Some((sum, i64::MIN / 4));
+    }
+    let good = exp_of(&sum) - peak + wp as i64 - 2 * bitlen(n) - 6;
+    Some((sum, good))
+}
+
+/// Watson's lemma for \(y>0\): \(\pi\,\mathrm{Hi}(-y)=\int_0^\infty e^{-yt-t^3/3}dt\) (`alt`) and
+/// \(\pi\,\mathrm{Gi}(y)=\operatorname{Im}\int_0^\infty e^{i(yt+t^3/3)}dt\) both equal
+/// \(\sum_{k<K}(\pm1)^k c_k+R_K\), \(c_k=(3k)!/(3^kk!\,y^{3k+1})\) (DLMF 9.12.20, 9.12.27, 9.12.29).
+/// For \(\mathrm{Hi}\) the alternating Taylor remainder of \(e^{-u}\), \(u\ge0\), gives \(|R_K|\le c_K\).
+/// For \(\mathrm{Gi}\) the contour is turned to \(\arg t=\pi/3\), where \(e^{-is^3/3}\) has
+/// \(|R|\le(s^3/3)^K/K!\) and \(e^{-\lambda s}\) has \(\operatorname{Re}\lambda=y\sqrt3/2\), so
+/// \(|R_K|\le c_K(2/\sqrt3)^{3K+1}<c_K2^{0.21(3K+1)}\). Summing stops at the first \(K\) with that
+/// bound under \(2^{e(\mathrm{sum})-wp-2}\); `None` when the bound stops shrinking first.
+fn scorer_watson(y: &ExactNum, alt: bool, wp: usize, cc: &mut Consts) -> Option<(ExactNum, i64)> {
+    let nr = RoundingMode::None;
+    let ey = y.exponent()?;
+    let inv_pi = ExactNum::from_u8(1, wp).div(&cc.pi(wp, nr), wp, nr);
+    if ey > wp as i64 + 8 {
+        // K = 1: |R_1| <= c_1 (2/sqrt 3)^4 < 3.6 c_0 / y^3 < 2^(2 - 3(ey - 1)) c_0, far below 2^-wp.
+        // 1/pi first: pi * y would overflow for y near the largest value.
+        return Some((inv_pi.div(y, wp, nr), wp as i64 - 4));
+    }
+    let y3 = ExactNum::mul_ref(y, y, wp, nr).mul(y, wp, nr);
+    let mut c = ExactNum::from_u8(1, wp).div(y, wp, nr);
+    let e0 = c.exponent()?;
+    let mut sum = c.clone();
+    let mut k = 0usize;
+    loop {
+        let f = ExactNum::from_word(((3 * k + 1) as u64) * ((3 * k + 2) as u64), wp);
+        let cn = c.mul(&f, wp, nr).div(&y3, wp, nr);
+        let kk = 3 * (k + 1) + 1;
+        let gb = if alt { 0 } else { (kk * 21).div_ceil(100) as i64 + 1 };
+        let bexp = cn.exponent().unwrap_or(i64::MIN / 4).saturating_add(gb);
+        if bexp < sum.exponent().unwrap_or(0) - wp as i64 - 2 {
+            k += 1;
+            break;
+        }
+        // The bound's next ratio, (3k+4)(3k+5)/y^3 (times 1.54 for Gi), must stay below 1.
+        let m = ((3 * k + 4) as u64) * ((3 * k + 5) as u64);
+        let m = if alt { m } else { (m * 154).div_ceil(100) };
+        if !matches!(ExactNum::from_word(m, 64).compare(&y3), Some(o) if o < 0) {
+            return None;
+        }
+        sum = if alt && k.is_multiple_of(2) {
+            sum.sub(&cn, wp, nr)
+        } else {
+            sum.add(&cn, wp, nr)
+        };
+        c = cn;
+        k += 1;
+    }
+    let es = sum.exponent()?;
+    let good = es - e0 + wp as i64 - 2 * bitlen(k) - 8;
+    Some((sum.mul(&inv_pi, wp, nr), good))
+}
+
+/// `a - b` with absolute errors below `2^ea` and `2^eb`: the difference and its correct bits.
+fn diff_good(a: &ExactNum, ea: i64, b: &ExactNum, eb: i64, wp: usize) -> (ExactNum, i64) {
+    let v = ExactNum::sub_ref(a, b, wp, RoundingMode::None);
+    let err = ea.max(eb) + 1;
+    let e = v.exponent().unwrap_or(i64::MIN / 4);
+    // The subtraction itself adds one ulp at wp.
+    (v, e - err.max(e - wp as i64) - 2)
 }
 
 fn kelvin_j_arg(x: &ExactNum, p: usize, _cc: &mut Consts) -> ExactComplex {
@@ -926,11 +1002,14 @@ impl ExactNum {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Taylor (\(w''-zw=1/\pi\)) for `|x| < 8`; \(1/(\pi x)\) asymptotic for
-    ///   large `+x`; \(\mathrm{Hi}_\mathrm{asymp}-\mathrm{Bi}/3\) for large `-x`.
-    /// - Bound: extra word of working precision.
+    /// - Algorithm: Taylor series of \(w''-xw=-1/\pi\) with a geometric tail bound and guard
+    ///   bits for its cancellation; Watson's lemma (DLMF 9.12.27, remainder below
+    ///   \(c_K(2/\sqrt3)^{3K+1}\)) for large `+x`, stopped where that bound is smallest;
+    ///   \(\mathrm{Bi}-\mathrm{Hi}\) with Watson's \(\mathrm{Hi}(-y)\) (DLMF 9.12.29) for large `-x`;
+    ///   \(1/(\pi x)\) directly once \(x^3\) passes the working precision.
+    /// - Bound: Ziv correct-rounding; NaN past `8p + 16384` working bits.
     ///
-    /// Accuracy: unspecified
+    /// Accuracy: correctly-rounded
     pub fn scorer_gi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
@@ -943,22 +1022,40 @@ impl ExactNum {
         if !finite(self) {
             return if self.is_nan() { self.clone() } else { cat_nan() };
         }
-        let wrk = work_p(p);
-        let y = if abs_lt(self, 8, wrk) {
-            scorer_gi_series(self, wrk, cc)
-        } else if self.is_positive() {
-            scorer_gi_asymp_plus(self, wrk, cc)
-        } else {
-            let hi = scorer_hi_asymp_minus(self, wrk, cc);
-            let bi = self.bi(wrk, RoundingMode::None, cc);
-            bi.sub(&hi, wrk, RoundingMode::None)
-        };
-        finish(y, p, rm)
+        let x = self.clone();
+        ziv_round(p, rm, |wp| {
+            if !x.is_negative() {
+                if !x.is_zero() {
+                    if let Some(r) = scorer_watson(&x, false, wp, cc) {
+                        return Some(r);
+                    }
+                }
+                return scorer_taylor(&x, false, wp, cc);
+            }
+            let y = x.clone().neg();
+            match scorer_watson(&y, true, wp, cc) {
+                Some((h, gh)) => {
+                    let bi = x.bi(wp, RoundingMode::None, cc);
+                    let eb = bi.exponent()? - wp as i64 + 1;
+                    let eh = h.exponent()? - gh - 1;
+                    Some(diff_good(&bi, eb, &h, eh, wp))
+                }
+                None => scorer_taylor(&x, false, wp, cc),
+            }
+        })
     }
 
     /// Scorer \(\mathrm{Hi}(\mathrm{self})=\mathrm{Bi}(\mathrm{self})-\mathrm{Gi}(\mathrm{self})\).
     ///
-    /// Accuracy: unspecified
+    /// # Precision
+    ///
+    /// - Algorithm: Taylor series of \(w''-xw=1/\pi\) (tail bound, cancellation guard);
+    ///   Watson's lemma (DLMF 9.12.29, alternating remainder) for large `-x`;
+    ///   \(\mathrm{Bi}-\mathrm{Gi}\) with Watson's \(\mathrm{Gi}\) for large `+x`; overflow
+    ///   follows \(\mathrm{Bi}\).
+    /// - Bound: Ziv correct-rounding; NaN past `8p + 16384` working bits.
+    ///
+    /// Accuracy: correctly-rounded
     pub fn scorer_hi(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
@@ -971,15 +1068,36 @@ impl ExactNum {
         if !finite(self) {
             return if self.is_nan() { self.clone() } else { cat_nan() };
         }
-        let wrk = work_p(p);
-        let y = if self.is_negative() && !abs_lt(self, 8, wrk) {
-            scorer_hi_asymp_minus(self, wrk, cc)
-        } else {
-            let gi = self.scorer_gi(wrk, RoundingMode::None, cc);
-            let bi = self.bi(wrk, RoundingMode::None, cc);
-            bi.sub(&gi, wrk, RoundingMode::None)
-        };
-        finish(y, p, rm)
+        if self.is_positive() {
+            // Hi = Bi - Gi with 0 < Gi < 1/(pi x): when Bi overflows, so does Hi.
+            let b = self.bi(p, rm, cc);
+            if b.is_inf() || b.exponent() == Some(crate::defs::EXPONENT_MAX) {
+                return b;
+            }
+        }
+        let x = self.clone();
+        ziv_round(p, rm, |wp| {
+            if !x.is_positive() {
+                if !x.is_zero() {
+                    if let Some(r) = scorer_watson(&x.clone().neg(), true, wp, cc) {
+                        return Some(r);
+                    }
+                }
+                return scorer_taylor(&x, true, wp, cc);
+            }
+            match scorer_watson(&x, false, wp, cc) {
+                Some((g, gg)) => {
+                    let bi = x.bi(wp, RoundingMode::None, cc);
+                    if !finite(&bi) {
+                        return None;
+                    }
+                    let eb = bi.exponent()? - wp as i64 + 1;
+                    let eg = g.exponent()? - gg - 1;
+                    Some(diff_good(&bi, eb, &g, eg, wp))
+                }
+                None => scorer_taylor(&x, true, wp, cc),
+            }
+        })
     }
 
     /// Kelvin \(\mathrm{ber}_\nu(\mathrm{self})=\mathrm{Re}\,J_\nu(x e^{3\pi i/4})\).
