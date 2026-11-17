@@ -4654,4 +4654,49 @@ fn zf_78_elliptic_cut_signed_zeros_body() {
         let im_dn = zf_78_neg_dec(im_up);
         zf_78_assert_elliptic_gold(name, &dn, re, &im_dn, p, rm, &mut cc);
     }
+
+    // The on-cut RF/RD path must stay near the off-cut cost at dest p=8192
+    // (the survey cap is 16s). Extra work of 2p+128, needed only for R_J,
+    // made E(-2±0i | 2) time out. Check finite, sides differ, and the
+    // p=8192 value rounds to the p=64 FLINT gold. Debug is too slow for
+    // this dest (the 20s child budget is for release / verify.sh).
+    if cfg!(debug_assertions) {
+        return;
+    }
+    let p8 = 8192usize;
+    let m2 = parse_complex("1p1,0").expect("m=2");
+    let up8 = parse_complex("-1p1,0")
+        .expect("x")
+        .elliptic_e(&m2, p8, rm, &mut cc);
+    let dn8 = parse_complex("-1p1,-0")
+        .expect("x")
+        .elliptic_e(&m2, p8, rm, &mut cc);
+    assert!(
+        !up8.is_nan() && !dn8.is_nan() && !up8.re().is_inf() && !dn8.re().is_inf(),
+        "ZF-78 elliptic E(-2±0i | 2) at p=8192 must be finite, got {up8:?} / {dn8:?}"
+    );
+    assert!(
+        up8.re().compare(dn8.re()) != Some(0) || up8.im().compare(dn8.im()) != Some(0),
+        "ZF-78 elliptic E(-2+0i | 2) and E(-2-0i | 2) at p=8192 must differ, both {up8:?}"
+    );
+    for (name, v, re, im) in [
+        (
+            "E(-2+0i | 2) p=8192",
+            up8,
+            "-2.63669247722547559233620709360741588042513526117868563359698996500171402407",
+            "-0.5990701173677961037199599826009051310508626225268478439922876726089812428",
+        ),
+        (
+            "E(-2-0i | 2) p=8192",
+            dn8,
+            "-2.63669247722547559233620709360741588042513526117868563359698996500171402407",
+            "0.5990701173677961037199599826009051310508626225268478439922876726089812428",
+        ),
+    ] {
+        let mut rounded = v.clone();
+        rounded
+            .set_precision(p, rm)
+            .expect("set_precision 8192 -> 64");
+        zf_78_assert_elliptic_gold(name, &rounded, re, im, p, rm, &mut cc);
+    }
 }

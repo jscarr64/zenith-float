@@ -851,7 +851,8 @@ impl ExactComplex {
     fn elliptic_k_at(&self, p: usize, dest: usize, cc: &mut Consts) -> Self {
         let om_tmp = one_minus(self, p);
         let on_cut = is_real_c(&om_tmp) && om_tmp.re().is_negative();
-        let wp = if on_cut { rj_cut_work(dest, p) } else { p };
+        // R_F / R_D only: no R_C(1,1+e_m) cancellation, so no extra work.
+        let wp = p;
         let zero = ExactComplex::zero(wp);
         let one = ExactComplex::one(wp);
         let om = leave_cut(&one_minus(self, wp), dest);
@@ -899,7 +900,8 @@ impl ExactComplex {
     fn elliptic_e_complete_at(&self, p: usize, dest: usize, cc: &mut Consts) -> Self {
         let om_tmp = one_minus(self, p);
         let on_cut = is_real_c(&om_tmp) && om_tmp.re().is_negative();
-        let wp = if on_cut { rj_cut_work(dest, p) } else { p };
+        // R_F / R_D only: no R_C(1,1+e_m) cancellation, so no extra work.
+        let wp = p;
         let zero = ExactComplex::zero(wp);
         let one = ExactComplex::one(wp);
         let three = c_u32(3, wp);
@@ -958,7 +960,8 @@ impl ExactComplex {
         let cut_a = on_nonpos_real(&a_tmp);
         let cut_b = on_nonpos_real(&b_tmp);
         let on_cut = cut_a || cut_b;
-        let wp = if on_cut { rj_cut_work(dest, p) } else { p };
+        // R_F / R_D only: no R_C(1,1+e_m) cancellation, so no extra work.
+        let wp = p;
         // If 1−x² is on the cut, only bump x: that first-order imag
         // already places 1−m x² (and 1−n x²) on the same side. Bumping
         // m or n as well can overpower x. If 1−x² is off the cut, bump
@@ -1021,7 +1024,8 @@ impl ExactComplex {
         let cut_a = on_nonpos_real(&a_tmp);
         let cut_b = on_nonpos_real(&b_tmp);
         let on_cut = cut_a || cut_b;
-        let wp = if on_cut { rj_cut_work(dest, p) } else { p };
+        // R_F / R_D only: no R_C(1,1+e_m) cancellation, so no extra work.
+        let wp = p;
         let x = if cut_a && is_real_c(self) { bump_real(self, dest) } else { self.clone() };
         let mm = if !cut_a && cut_b && is_real_c(m) { bump_real(m, dest) } else { m.clone() };
         let one = ExactComplex::one(wp);
