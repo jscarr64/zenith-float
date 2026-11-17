@@ -5,7 +5,7 @@
 //! Meijer \(G\), Fox \(H\), and Heun live in `heun_fox`.
 
 use crate::common::util::bump_prec_retry;
-use crate::defs::WORD_BIT_SIZE;
+use crate::defs::{MAX_PRECISION, WORD_BIT_SIZE};
 use crate::Consts;
 use crate::Error;
 use crate::ExactComplex;
@@ -1256,17 +1256,28 @@ fn kelvin_k_at_zero_int(neg_nu: bool, m: u8, which: KelvinWhich) -> ExactNum {
     signed_inf(next_neg)
 }
 
-/// True when x/√2 exceeds 2^{63}, so e^{-x/√2} is far below the subnormal grid
-/// and e^{x/√2} is far above `EXPONENT_MAX` (DLMF 10.67).
-fn kelvin_xi_past_exp_range(x: &ExactNum) -> bool {
+/// True when e^{±x/√2} is past the exponent range (DLMF 10.67): e^{-ξ} is below
+/// `min_positive` and e^{ξ} is above `EXPONENT_MAX`. That happens once
+/// ξ > ((1<<62)−1) ln 2 ≈ 2^{61.47}. `x ≥ 2^{62}` (exponent field ≥ 63) is
+/// already past; in the binade `[2^{61}, 2^{62})` the comparison is made
+/// against the exact threshold, rounded so the short-circuit fires only when
+/// underflow/overflow is certain.
+fn kelvin_xi_past_exp_range(x: &ExactNum, cc: &mut Consts) -> bool {
     match x.exponent() {
-        Some(e) if e >= 64 => true,
-        Some(e) if e < 61 => false,
+        Some(e) if e >= 63 => true,
+        Some(e) if e < 62 => false,
         Some(_) => {
-            let p = WORD_BIT_SIZE;
-            let sqrt2 = ExactNum::from_u8(2, p).sqrt(p, RoundingMode::None);
-            let xi = ExactNum::div_ref(x, &sqrt2, p, RoundingMode::None);
-            xi.exponent().is_some_and(|e| e > 63)
+            let wrk = 128;
+            let ln2 = cc.ln_2(wrk, RoundingMode::None);
+            let sqrt2 = ExactNum::from_u8(2, wrk).sqrt(wrk, RoundingMode::None);
+            // (2^62 − 1) via 2^62 − 1, both exact at this width.
+            let two62 = ExactNum::from_u8(1, wrk).ldexp(62, wrk, RoundingMode::None);
+            let two62m1 = two62.sub(&ExactNum::from_u8(1, wrk), wrk, RoundingMode::None);
+            let thresh =
+                sqrt2
+                    .mul(&ln2, wrk, RoundingMode::Up)
+                    .mul(&two62m1, wrk, RoundingMode::Up);
+            matches!(x.compare(&thresh), Some(ord) if ord > 0)
         }
         None => false,
     }
@@ -1312,7 +1323,15 @@ fn kelvin_asymp_trig_neg(
     cc: &mut Consts,
 ) -> Option<bool> {
     let xe = x.exponent().unwrap_or(0).max(0) as usize;
+    // Sign of cos(x/√2 + ·) at |x| ~ 2^{EXPONENT_MAX} needs ~2^62 bits of 1/π,
+    // which is not feasible (and `word_p(xe+256)` would exceed MAX_PRECISION).
+    if xe > 200_000 || xe.saturating_add(256) > MAX_PRECISION {
+        return None;
+    }
     let wrk = word_p(xe.saturating_add(256).max(256));
+    if wrk > MAX_PRECISION {
+        return None;
+    }
     let sqrt2 = ExactNum::from_u8(2, wrk).sqrt(wrk, RoundingMode::None);
     let xi = ExactNum::div_ref(x, &sqrt2, wrk, RoundingMode::None);
     let pi = cc.pi(wrk, RoundingMode::None);
@@ -1359,14 +1378,69 @@ fn kelvin_past_exp_range(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<ExactNum> {
-    if !kelvin_xi_past_exp_range(x) {
+    if !kelvin_xi_past_exp_range(x, cc) {
         return None;
     }
-    let neg = kelvin_asymp_trig_neg(x, nu, which, cc)?;
-    Some(match which {
-        KelvinWhich::Ber | KelvinWhich::Bei => kelvin_overflow(neg),
-        KelvinWhich::Ker | KelvinWhich::Kei => kelvin_underflow(neg, p, rm),
-    })
+    match kelvin_asymp_trig_neg(x, nu, which, cc) {
+        Some(neg) => Some(match which {
+            KelvinWhich::Ber | KelvinWhich::Bei => kelvin_overflow(neg),
+            KelvinWhich::Ker | KelvinWhich::Kei => kelvin_underflow(neg, p, rm),
+        }),
+        None => match which {
+            // Magnitude underflow is certain. Do not return InvalidArgument and
+            // do not invent a sign for a directed min_positive.
+            KelvinWhich::Ker | KelvinWhich::Kei => {
+                let mut z = plus_zero(p);
+                z.set_inexact(true);
+                Some(z)
+            }
+            KelvinWhich::Ber | KelvinWhich::Bei => None,
+        },
+    }
+}
+
+/// Order-zero small-`x` leading terms (DLMF 10.31.2 / 10.61). The remainder is
+/// `O(x² |ln x|)` for ker/kei and `O(x²)` for ber/bei, which is below a quarter
+/// ulp of the leading term once `x.exponent() < −(p/2) − 32`.
+fn kelvin_small_x(
+    x: &ExactNum,
+    nu: &ExactNum,
+    which: KelvinWhich,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNum> {
+    if !nu.is_zero() {
+        return None;
+    }
+    let e = x.exponent()?;
+    let thresh = -((p as i64) / 2) - 32;
+    if e >= 0 || e > thresh {
+        return None;
+    }
+    let wp = word_p(p.saturating_add(256));
+    let mut v = match which {
+        KelvinWhich::Ker => {
+            let half = ExactNum::from_u8(1, wp).ldexp(-1, wp, RoundingMode::None);
+            let arg = x.clone().mul(&half, wp, RoundingMode::None);
+            let ln = arg.ln(wp, RoundingMode::None, cc);
+            let g = cc.euler_gamma(wp, RoundingMode::None);
+            (-ln).sub(&g, wp, RoundingMode::None)
+        }
+        KelvinWhich::Kei => {
+            let q = cc
+                .pi(wp, RoundingMode::None)
+                .ldexp(-2, wp, RoundingMode::None);
+            -q
+        }
+        KelvinWhich::Ber => ExactNum::from_u8(1, wp),
+        KelvinWhich::Bei => ExactNum::new(wp),
+    };
+    if v.is_nan() {
+        return None;
+    }
+    let _ = v.set_precision(p, rm);
+    Some(v)
 }
 
 fn kelvin_eval_1061(
@@ -1426,6 +1500,9 @@ fn kelvin_positive(
     cc: &mut Consts,
 ) -> ExactNum {
     if let Some(v) = kelvin_past_exp_range(x, nu, which, p, rm, cc) {
+        return v;
+    }
+    if let Some(v) = kelvin_small_x(x, nu, which, p, rm, cc) {
         return v;
     }
     let mut p_inc = WORD_BIT_SIZE;

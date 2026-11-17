@@ -5021,3 +5021,125 @@ fn zf_kelvin_in_domain_large_x_exp_range() {
         }
     }
 }
+
+/// The 10.31.2 / 10.61 small-z leading term for ker(x): −ln(x/2) − γ.
+/// The remainder is O(x² ln x), which for x = min_positive is far below any
+/// destination ulp at a magnitude of ~2^62.
+fn ker0_small_z_leading(x: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Consts) -> ExactNum {
+    let wp = p + 256;
+    let half = ExactNum::from_u8(1, wp).ldexp(-1, wp, RoundingMode::None);
+    let arg = x.clone().mul(&half, wp, RoundingMode::None);
+    let ln = arg.ln(wp, RoundingMode::None, cc);
+    let g = cc.euler_gamma(wp, RoundingMode::None);
+    let mut v = (-ln).sub(&g, wp, RoundingMode::None);
+    let _ = v.set_precision(p, rm);
+    v
+}
+
+/// maxv ker/kei: |e^{−x/√2}| underflows the exponent range (DLMF 10.67).
+/// The result is a signed zero, never InvalidArgument, and never a min_positive
+/// whose sign was not certified (the argument of the leading trig factor at
+/// x = max_value needs ~2^62 bits of 1/π, which is not feasible).
+#[test]
+fn zf_kelvin_ker_kei_maxv_underflow() {
+    let mut cc = Consts::new().expect("Consts");
+    for p in [64usize, 2048, 4096] {
+        let x = ExactNum::max_value(p);
+        for rm in MODES {
+            for (name, v) in
+                [("ker", x.kelvin_ker(p, rm, &mut cc)), ("kei", x.kelvin_kei(p, rm, &mut cc))]
+            {
+                assert!(
+                    !v.is_nan(),
+                    "{name}(maxv) p={p} {rm:?}: {v} {:?} want a signed underflow, not NaN",
+                    v.err()
+                );
+                let nearest = matches!(
+                    rm,
+                    RoundingMode::ToZero
+                        | RoundingMode::ToEven
+                        | RoundingMode::ToOdd
+                        | RoundingMode::None
+                );
+                if nearest {
+                    assert!(v.is_zero(), "{name}(maxv) p={p} {rm:?}: {v} want 0");
+                } else {
+                    // Sign is uncertified: do not invent a directed min_positive.
+                    assert!(
+                        v.is_zero(),
+                        "{name}(maxv) p={p} {rm:?}: {v} want 0 (sign of the 10.67 trig factor is uncertified)"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// ker(min_positive) is correctly rounded from the 10.31.2 leading term
+/// (leftover: only ~253 bits agreed at p=2048 ToZero and at p=4096 every mode).
+#[test]
+fn zf_kelvin_ker_minpos_cr() {
+    let mut cc = Consts::new().expect("Consts");
+    let cases: &[(usize, RoundingMode)] = &[
+        (2048, RoundingMode::ToZero),
+        (4096, RoundingMode::ToEven),
+        (4096, RoundingMode::Up),
+        (4096, RoundingMode::Down),
+    ];
+    for &(p, rm) in cases {
+        let x = ExactNum::min_positive(p);
+        let got = x.kelvin_ker(p, rm, &mut cc);
+        let want = ker0_small_z_leading(&x, p, rm, &mut cc);
+        assert!(
+            !got.is_nan() && got.compare(&want) == Some(0),
+            "ker(minpos) p={p} {rm:?}: got {} want {}",
+            fmt_real(&got),
+            fmt_real(&want)
+        );
+    }
+}
+
+/// kei(x) for x in [2^62, 2^63): e^{−x/√2} already underflows, even though
+/// x/√2 has not passed 2^63. The 10.67 path must give a signed underflow,
+/// not an unsigned flush to +0 (leftover: six p=2048 modes of a 2048-bit x).
+#[test]
+fn zf_kelvin_kei_just_below_old_1067_threshold() {
+    let mut cc = Consts::new().expect("Consts");
+    let x = parse_real("1p62").expect("2^62");
+    let p = 64usize;
+    // Sign of −sin(x/√2 + π/8), certified at a modest working precision.
+    let wrk = 512usize;
+    let sqrt2 = ExactNum::from_u8(2, wrk).sqrt(wrk, RoundingMode::None);
+    let xi = ExactNum::div_ref(&x, &sqrt2, wrk, RoundingMode::None);
+    let eighth = cc
+        .pi(wrk, RoundingMode::None)
+        .ldexp(-3, wrk, RoundingMode::None);
+    let t = -xi
+        .add(&eighth, wrk, RoundingMode::None)
+        .sin(wrk, RoundingMode::None, &mut cc);
+    assert!(
+        !t.is_nan() && !t.is_zero(),
+        "sign of kei 10.67 factor at 2^62 must be certifiable, got {t}"
+    );
+    let neg = t.is_negative();
+    for rm in MODES {
+        let v = x.kelvin_kei(p, rm, &mut cc);
+        let away = if neg {
+            matches!(rm, RoundingMode::Down | RoundingMode::FromZero)
+        } else {
+            matches!(rm, RoundingMode::Up | RoundingMode::FromZero)
+        };
+        if away {
+            let want = if neg { -ExactNum::min_positive(p) } else { ExactNum::min_positive(p) };
+            assert!(
+                v.compare(&want) == Some(0) && v.is_negative() == neg,
+                "kei(2^62) p={p} {rm:?}: {v} want signed min_positive (neg={neg})"
+            );
+        } else {
+            assert!(
+                v.is_zero() && v.is_negative() == neg,
+                "kei(2^62) p={p} {rm:?}: {v} want signed 0 (neg={neg})"
+            );
+        }
+    }
+}
