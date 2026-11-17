@@ -72,9 +72,17 @@ fn even_bernoulli_ext(n: usize, p: usize) -> Vec<ExactNum> {
 fn factorial_n(n: usize, p: usize) -> ExactNum {
     let mut acc = ExactNum::from_u8(1, p);
     for k in 2..=n {
-        acc = acc.mul(&ExactNum::from_u32(k as u32, p), p, RoundingMode::None);
+        acc = acc.mul(&ExactNum::from_u64(k as u64, p), p, RoundingMode::None);
     }
     acc
+}
+
+/// Positive integer value of `x` when it is an exact integer in `1..=u64::MAX`.
+fn positive_int_u64(x: &ExactNum) -> Option<u64> {
+    if !x.is_int() || !x.is_positive() {
+        return None;
+    }
+    x.to_u64(RoundingMode::None).ok()
 }
 
 pub(crate) fn small_int(x: &ExactNum, p: usize, lo: i32, hi: i32) -> Option<i32> {
@@ -361,18 +369,18 @@ fn zeta_even(k: usize, p: usize, cc: &mut Consts) -> ExactNum {
 /// Front length \(N\) and Bernoulli count \(M\) for [`hurwitz_em`] (any \(a\ge0\)),
 /// from the remainder ratio \(r_M\) evaluated with upward rounding, \(2\pi\ge 6\)
 /// and \(N+a\ge N\). \(N\) doubles when the terms of \(r_M\) start growing first.
-fn hurwitz_em_lengths(s: u32, p: usize) -> Option<(usize, usize)> {
+fn hurwitz_em_lengths(s: u64, p: usize) -> Option<(usize, usize)> {
     let up = RoundingMode::Up;
     let target = i64::try_from(p).ok()?.checked_add(8)?;
     let mut n_front = (16 + p / 4).max(24);
     while n_front <= (1 << 28) {
         let den = ExactNum::from_u64(6 * n_front as u64, 64);
-        let mut prod = ExactNum::from_u32(4 * (s - 1), 64);
+        let mut prod = ExactNum::from_u64(s - 1, 64).mul(&ExactNum::from_u8(4, 64), 64, up);
         let mut m = 0usize;
         loop {
             let i = 2 * m as u64;
-            let f0 = ExactNum::from_u64(u64::from(s) + i, 64);
-            let f1 = ExactNum::from_u64(u64::from(s) + i + 1, 64);
+            let f0 = ExactNum::from_u64(s.checked_add(i)?, 64);
+            let f1 = ExactNum::from_u64(s.checked_add(i + 1)?, 64);
             if !matches!(f1.compare(&den), Some(c) if c < 0) {
                 break;
             }
@@ -383,7 +391,7 @@ fn hurwitz_em_lengths(s: u32, p: usize) -> Option<(usize, usize)> {
                 .div(&den, 64, up);
             m += 1;
             let r = prod.clone().div(
-                &ExactNum::from_u64(u64::from(s) + 2 * m as u64 - 1, 64),
+                &ExactNum::from_u64(s.checked_add(2 * m as u64 - 1)?, 64),
                 64,
                 up,
             );
@@ -397,7 +405,7 @@ fn hurwitz_em_lengths(s: u32, p: usize) -> Option<(usize, usize)> {
 }
 
 /// Euler–Maclaurin for \(\zeta(s,a)=\sum_{k=0}^\infty(k+a)^{-s}\), integer \(s\ge 2\), \(a>0\).
-fn hurwitz_em(s: u32, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
+fn hurwitz_em(s: u64, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     if s < 2 || !finite(a) || a.is_negative() || a.is_zero() {
         return cat_nan();
     }
@@ -410,27 +418,30 @@ fn hurwitz_em(s: u32, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     let Some((n_front, m_bern)) = hurwitz_em_lengths(s, p) else {
         return cat_nan();
     };
+    let Some(s_i) = i64::try_from(s).ok() else {
+        return cat_nan();
+    };
     let mut sum = ExactNum::new(p);
     for k in 0..n_front {
-        let t = ExactNum::from_u32(k as u32, p).add(a, p, RoundingMode::None);
+        let t = ExactNum::from_u64(k as u64, p).add(a, p, RoundingMode::None);
         let term = ExactNum::from_u8(1, p).div(
-            &t.powsi(s as i64, p, RoundingMode::None),
+            &t.powsi(s_i, p, RoundingMode::None),
             p,
             RoundingMode::None,
         );
         sum = sum.add(&term, p, RoundingMode::None);
     }
-    let n_a = ExactNum::from_u32(n_front as u32, p).add(a, p, RoundingMode::None);
-    let sm1 = ExactNum::from_u32(s - 1, p);
+    let n_a = ExactNum::from_u64(n_front as u64, p).add(a, p, RoundingMode::None);
+    let sm1 = ExactNum::from_u64(s - 1, p);
     let tail_int = ExactNum::from_u8(1, p).div(
-        &n_a.powsi((s - 1) as i64, p, RoundingMode::None)
+        &n_a.powsi(s_i - 1, p, RoundingMode::None)
             .mul(&sm1, p, RoundingMode::None),
         p,
         RoundingMode::None,
     );
     let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None);
     let tail_half = half.div(
-        &n_a.powsi(s as i64, p, RoundingMode::None),
+        &n_a.powsi(s_i, p, RoundingMode::None),
         p,
         RoundingMode::None,
     );
@@ -443,13 +454,18 @@ fn hurwitz_em(s: u32, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
     let nr = RoundingMode::None;
     let inv_na = ExactNum::from_u8(1, p).div(&n_a, p, nr);
     let inv_na2 = ExactNum::mul_ref(&inv_na, &inv_na, p, nr);
-    let mut coef = ExactNum::from_u32(s, p).div(&ExactNum::from_u8(2, p), p, nr);
-    let mut inv_pow = inv_na.powsi(i64::from(s) + 1, p, nr);
+    let mut coef = ExactNum::from_u64(s, p).div(&ExactNum::from_u8(2, p), p, nr);
+    let Some(sp1) = s_i.checked_add(1) else {
+        return cat_nan();
+    };
+    let mut inv_pow = inv_na.powsi(sp1, p, nr);
     for j in 1..=m_bern {
         if j > 1 {
             let j2 = 2 * j as u64;
-            let num = (u64::from(s) + j2 - 3) * (u64::from(s) + j2 - 2);
-            coef = coef.mul(&ExactNum::from_u64(num, p), p, nr).div(
+            // (s+2j-3)(s+2j-2) as ExactNum, so large s cannot overflow u64.
+            let t0 = ExactNum::from_u64(s, p).add(&ExactNum::from_u64(j2 - 3, p), p, nr);
+            let t1 = ExactNum::from_u64(s, p).add(&ExactNum::from_u64(j2 - 2, p), p, nr);
+            coef = coef.mul(&t0.mul(&t1, p, nr), p, nr).div(
                 &ExactNum::from_u64((j2 - 1) * j2, p),
                 p,
                 nr,
@@ -1476,9 +1492,11 @@ impl ExactNum {
             return cat_nan();
         }
         let wrk = work_p(p);
-        let s = match small_int(self, wrk, 2, 64) {
-            Some(n) => n as u32,
-            None => return cat_nan(),
+        let Some(s) = positive_int_u64(self).filter(|&s| s >= 2) else {
+            return cat_nan();
+        };
+        let Some(s_i) = i64::try_from(s).ok() else {
+            return cat_nan();
         };
         let mut aa = a.clone();
         let mut extra = ExactNum::new(wrk);
@@ -1488,7 +1506,7 @@ impl ExactNum {
             }
             extra = extra.add(
                 &ExactNum::from_u8(1, wrk).div(
-                    &aa.powsi(s as i64, wrk, RoundingMode::None),
+                    &aa.powsi(s_i, wrk, RoundingMode::None),
                     wrk,
                     RoundingMode::None,
                 ),
@@ -1538,7 +1556,8 @@ impl ExactNum {
         self.zeta_real_word(p, rm, cc)
     }
 
-    /// Polygamma \(\psi^{(n)}(\mathrm{self})\). \(n=0\) is digamma; \(n\ge1\) uses Hurwitz.
+    /// Polygamma \(\psi^{(n)}(\mathrm{self})\). \(n=0\) is digamma; \(n\ge1\) uses
+    /// \(\psi^{(n)}(z)=(-1)^{n+1}n!\,\zeta(n+1,z)\).
     ///
     /// Accuracy: unspecified
     pub fn polygamma(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -1556,12 +1575,11 @@ impl ExactNum {
         if n == 0 {
             return self.digamma(p, rm, cc);
         }
-        if n > 62 {
-            return cat_nan();
-        }
         let wrk = work_p(p);
-        let z =
-            ExactNum::from_u32((n + 1) as u32, wrk).hurwitz_zeta(self, wrk, RoundingMode::None, cc);
+        let Some(s) = u64::try_from(n).ok().and_then(|n| n.checked_add(1)) else {
+            return cat_nan();
+        };
+        let z = ExactNum::from_u64(s, wrk).hurwitz_zeta(self, wrk, RoundingMode::None, cc);
         let fact = factorial_n(n, wrk);
         let mut y = fact.mul(&z, wrk, RoundingMode::None);
         // ψ^{(n)} = (-1)^{n+1} n! ζ(n+1, z)
@@ -2214,6 +2232,85 @@ mod tests {
         let sn = u.jacobi_sn(&mpar, p, rm, &mut cc);
         let back = sn.jacobi_arcsn(&mpar, p, rm, &mut cc);
         assert!(near(&back, &u, p));
+        Ok(())
+    }
+
+    /// The former `n > 62` refusal (and `hurwitz_zeta`'s `small_int(..., 2, 64)`
+    /// range that made `n = 64` impossible) is gone. `n = 63` uses
+    /// `ζ(64, z)`; `n = 64` needs `ζ(65, z)`.
+    ///
+    /// Golds: mpmath `polygamma` / `zeta` at 260 dps (no limit), agreeing with
+    /// FLINT `acb` (`z.polygamma(63)` at z=1, `acb.zeta(65, 3/2)`).
+    #[test]
+    fn caps_polygamma_order_above_62() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ];
+        fn dec(s: &str, wp: usize, cc: &mut Consts) -> ExactNum {
+            ExactNum::parse(s, crate::Radix::Dec, wp, RoundingMode::ToEven, cc)
+        }
+        let half3 = |wp: usize, rm: RoundingMode| {
+            ExactNum::from_u8(3, wp).div(&ExactNum::from_u8(2, wp), wp, rm)
+        };
+        // (kind, n, z-tag, gold)
+        let rows: &[(&str, u64, &str, &str)] = &[
+            (
+                "pg",
+                63,
+                "1",
+                "1.982608315404440064223624120499941542539576696683473298878843684608867521539038300839454224920286282265801298832647262360747899047118665117470397350554297883462598454622584527035715463837940718445621638691808802548235194e+87",
+            ),
+            (
+                "pg",
+                63,
+                "3/2",
+                "1.065114614704354774083764694179462660512011471463142372110324241059047586063749768088287670860477432803596786010891101003768290121765596839008910161155155849918185055881767138602262546860427719705762614570805628259383470e+76",
+            ),
+            (
+                "pg",
+                64,
+                "3/2",
+                "-4.544489022738568855454557905100303452821656239017902378244380322112111447056476691735435395961717998511182663752882031613632858590970875789831817123311242573234578925986576826574896117772306508619996501460057888470552830e+77",
+            ),
+            (
+                "hz",
+                65,
+                "3/2",
+                "3.581526438105602847926440864063557031949546716502448624191871882983324210396937084017395540706111037533681084763596594639820758387295454430614404409367941426177117392975198825398343054876253866376732416947990863959777414e-12",
+            ),
+        ];
+        let mut bad = Vec::new();
+        for &(kind, n, ztag, gold_s) in rows {
+            for &p in &[64usize, 256] {
+                for &rm in &modes {
+                    let wp = 1024;
+                    let want = finish(dec(gold_s, wp, &mut cc), p, rm);
+                    let z = if ztag == "1" {
+                        ExactNum::from_u8(1, wp)
+                    } else {
+                        half3(wp, RoundingMode::None)
+                    };
+                    let got = if kind == "pg" {
+                        z.polygamma(n as usize, p, rm, &mut cc)
+                    } else {
+                        ExactNum::from_u64(n, wp).hurwitz_zeta(&z, p, rm, &mut cc)
+                    };
+                    if got.compare(&want) != Some(0) {
+                        bad.push(format!(
+                            "{kind}({n}, {ztag}) p={p} {rm:?} got {got} want {want}"
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
         Ok(())
     }
 }
