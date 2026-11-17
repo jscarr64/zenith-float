@@ -249,6 +249,17 @@ def call_mp(op: str, args: list, extra: dict):
     if op == "hurwitz_zeta":
         return mp.hurwitz(a[0], a[1])
     if op == "barnes_g":
+        # G(1)=G(2)=1 and G(n)=∏_{k=1}^{n-2} k! for integers n≥3 (G(4)=2).
+        # mp.barnesg leaves a residual that shrinks with precision; at high
+        # dps the fixed packer would Up-sticky G(1) and G(2) to 1+ulp.
+        z = a[0]
+        zr = z.real if hasattr(z, "real") else z
+        if zr == int(zr) and zr >= 1:
+            n = int(zr)
+            gval = mp.mpf(1)
+            for k in range(2, n):
+                gval *= mp.factorial(k - 1)
+            return gval
         return mp.barnesg(a[0])
     if op == "anger_j":
         return mp.angerj(a[1], a[0])
@@ -337,7 +348,13 @@ def call_complex(op: str, a: list):
     if name == "bi":
         return mp.airybi(z(0))
     if name == "bessel_j":
-        return mp.besselj(z(2), z(0))
+        # J_ν(z) is real when z and ν are real and either z≥0 or ν is an
+        # integer. The complex mpmath path at dest p+2048 bits left a ghost
+        # imag (~2^{-2401} at p=256) on J_1(-20000) and J_{-3}(-20000).
+        zz, nu = z(0), z(2)
+        if zz.imag == 0 and nu.imag == 0 and (zz.real >= 0 or nu.real == int(nu.real)):
+            return mp.mpc(mp.besselj(nu.real, zz.real), 0)
+        return mp.besselj(nu, zz)
     if name == "bessel_y":
         return mp.bessely(z(2), z(0))
     if name == "bessel_i":
