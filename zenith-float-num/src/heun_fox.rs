@@ -1450,12 +1450,15 @@ impl ExactNum {
     /// - Algorithm: DLMF 31.3 power series inside \(\lvert z\rvert<\min(1,\lvert a\rvert)\),
     ///   summed until a majorant of the three-term recurrence (roots \(1\), \(1/a\))
     ///   bounds the tail; the working precision grows with the largest term.
-    ///   Outside that disk, a seed value and derivative in the disk use the same
-    ///   majorant tail; then Taylor steps of the ODE along the real segment, each
-    ///   step at most half the distance to \(\{0,1,a\}\), stopped by a majorant
-    ///   remainder on the disk of radius \((\lvert h\rvert+R)/2\). Extra word of
-    ///   working precision.
-    /// - Bound: working precision `p + 2 WORD_BIT_SIZE`; not Ziv-certified.
+    ///   Outside that disk, a seed jet in the disk uses the same majorant; then
+    ///   Taylor steps of the ODE along the real segment, each step at most half
+    ///   the distance to \(\{0,1,a\}\). Each step carries a midpoint and a
+    ///   radius from the 2×2 local transition and a majorant remainder. Working
+    ///   precision is raised until that enclosure uniquely determines the dest-p
+    ///   rounding in the requested mode. A walk that meets a cut is `NaN`.
+    /// - Bound (inside the disk): working precision `p + 2 WORD_BIT_SIZE`; not
+    ///   Ziv-certified. Bound (outside the disk): the ball enclosure; Ziv on
+    ///   working precision until unique rounding.
     ///
     /// # Limitations
     ///
@@ -1473,7 +1476,7 @@ impl ExactNum {
     ///   abscissa, or a remainder bound cannot be formed) is `NaN(InvalidArgument)`.
     /// - \(a=0\) or \(\gamma\in\{0,-1,-2,\ldots\}\) (recurrence pole) is `NaN`.
     ///
-    /// Accuracy: unspecified
+    /// Accuracy: correctly rounded outside the disk; unspecified inside the disk
     pub fn heun_g(
         &self,
         a: &Self,
@@ -1575,10 +1578,14 @@ impl ExactNum {
     /// - Algorithm: Frobenius series of DLMF 31.12.1 about \(z=0\) for \(\lvert z\rvert<1\),
     ///   summed until a majorant of the recurrence (roots \(1\), \(0\)) bounds the tail.
     ///   For real \(z<1\) outside that disk, a seed jet in the disk uses the same
-    ///   majorant; then Taylor steps along \((-\infty,1)\), each step at most half the
-    ///   distance to \(\{0,1\}\), stopped by a majorant remainder. Extra word of
-    ///   working precision.
-    /// - Bound: working precision `p + 2 WORD_BIT_SIZE`; not Ziv-certified.
+    ///   majorant; then Taylor steps along \((-\infty,1)\), each step at most half
+    ///   the distance to \(\{0,1\}\). Each step carries a midpoint and a radius
+    ///   from the 2×2 local transition and a majorant remainder. Working precision
+    ///   is raised until that enclosure uniquely determines the dest-p rounding
+    ///   in the requested mode. A walk that meets a cut is `NaN`.
+    /// - Bound (inside the disk): working precision `p + 2 WORD_BIT_SIZE`; not
+    ///   Ziv-certified. Bound (outside the disk): the ball enclosure; Ziv on
+    ///   working precision until unique rounding.
     ///
     /// # Limitations
     ///
@@ -1597,7 +1604,7 @@ impl ExactNum {
     ///   and the \(z=0\) series is not unique (triconfluent) or not regular
     ///   (double-confluent).
     ///
-    /// Accuracy: unspecified
+    /// Accuracy: correctly rounded outside the disk; unspecified inside the disk
     pub fn heun_c(
         &self,
         alpha: &Self,
@@ -3684,18 +3691,25 @@ mod tests {
                 x
             }
         }
+        // Parameters are built at a width far above dest p. A dest-p rounding
+        // of a non-dyadic parameter (1/3, 1/5, …) is a different exact Heun
+        // problem; on a long walk that 2^{-p} perturbation can move the dest-p
+        // value by one ulp relative to the exact-rational gold. z in these
+        // rows is a small dyadic and is built at dest p. The walk enclosure is
+        // for the values actually passed.
+        const PARAM_WP: usize = 1024;
         let mut bad = Vec::new();
         for p in [64usize, 256] {
             for rm in modes {
                 for (z, a, q, al, be, ga, de, gold) in rows_g {
                     let w = dec(gold, 8960, &mut cc);
                     let v = rat(z, p, rm).heun_g(
-                        &rat(a, p, rm),
-                        &rat(q, p, rm),
-                        &rat(al, p, rm),
-                        &rat(be, p, rm),
-                        &rat(ga, p, rm),
-                        &rat(de, p, rm),
+                        &rat(a, PARAM_WP, RoundingMode::ToEven),
+                        &rat(q, PARAM_WP, RoundingMode::ToEven),
+                        &rat(al, PARAM_WP, RoundingMode::ToEven),
+                        &rat(be, PARAM_WP, RoundingMode::ToEven),
+                        &rat(ga, PARAM_WP, RoundingMode::ToEven),
+                        &rat(de, PARAM_WP, RoundingMode::ToEven),
                         p,
                         rm,
                         &mut cc,
@@ -3711,11 +3725,11 @@ mod tests {
                 for (z, al, ga, de, eps, q, gold) in rows_c {
                     let w = dec(gold, 8960, &mut cc);
                     let v = rat(z, p, rm).heun_c(
-                        &rat(al, p, rm),
-                        &rat(ga, p, rm),
-                        &rat(de, p, rm),
-                        &rat(eps, p, rm),
-                        &rat(q, p, rm),
+                        &rat(al, PARAM_WP, RoundingMode::ToEven),
+                        &rat(ga, PARAM_WP, RoundingMode::ToEven),
+                        &rat(de, PARAM_WP, RoundingMode::ToEven),
+                        &rat(eps, PARAM_WP, RoundingMode::ToEven),
+                        &rat(q, PARAM_WP, RoundingMode::ToEven),
                         p,
                         rm,
                         &mut cc,
