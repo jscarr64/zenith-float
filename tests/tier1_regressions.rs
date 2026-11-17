@@ -4075,9 +4075,18 @@ fn zf_78_bessel_kelvin_high_prec_body() {
         x.kelvin_kei_nu(&n, p, rm, &mut cc),
     );
 
+    // x < 0 is outside the real ker/kei domain (DLMF 10.61(iii) / DOM-07).
     let x = ExactNum::from_i64(-700, p);
-    check("r.kelvin_ker(-700)", x.kelvin_ker(p, rm, &mut cc));
-    check("r.kelvin_kei(-700)", x.kelvin_kei(p, rm, &mut cc));
+    for (name, v) in [
+        ("r.kelvin_ker(-700)", x.kelvin_ker(p, rm, &mut cc)),
+        ("r.kelvin_kei(-700)", x.kelvin_kei(p, rm, &mut cc)),
+    ] {
+        assert!(
+            v.is_nan() && v.err() == Some(Error::InvalidArgument),
+            "ZF-78 {name} at p={p}: {v:?} {:?}",
+            v.err()
+        );
+    }
 }
 
 /// FLINT gold for a Bessel value on the cut: mid of a 1024-bit Arb ball for the
@@ -4786,6 +4795,157 @@ fn zf_arccn_m1_negative_is_invalid() {
                     v.err()
                 );
             }
+        }
+    }
+}
+
+/// Real Kelvin domain at 0, x<0, and +Inf, from the recommended inventory in
+/// `q-rulings.md` C-kelvin-domain (P20 / DOM-07 / DLMF 10.61; Jeff 2026-11-17).
+/// `kei(0) = −π/4`, `ker(0) = +Inf`, `ker_1(0) = kei_1(0) = −∞`, integer
+/// `ber_n(−x) = (−1)^n ber_n(x)` (and the same for `bei`); otherwise a negative
+/// argument is `NaN(InvalidArgument)`. `ker_ν(+Inf) = kei_ν(+Inf) = +0`; `ber`/`bei`
+/// at `+Inf` have no limit.
+#[test]
+fn zf_kelvin_domain_inventory() {
+    let mut cc = Consts::new().expect("Consts");
+    let invalid = |v: &ExactNum, what: &str| {
+        assert!(
+            v.is_nan() && v.err() == Some(Error::InvalidArgument),
+            "{what}: {v} {:?}",
+            v.err()
+        );
+    };
+    let plus_zero = |v: &ExactNum, what: &str| {
+        assert!(v.is_zero() && !v.is_negative(), "{what}: {v}");
+    };
+    let plus_inf = |v: &ExactNum, what: &str| {
+        assert!(v.is_inf() && v.is_positive(), "{what}: {v}");
+    };
+    let minus_inf = |v: &ExactNum, what: &str| {
+        assert!(v.is_inf() && v.is_negative(), "{what}: {v}");
+    };
+    let zeros = [signed_zero(false), signed_zero(true)];
+    for p in [64usize, 128, 1024] {
+        for rm in MODES {
+            let one = ExactNum::from_u8(1, p);
+            let half = parse_real("1p-1").expect("1/2");
+            let nu1 = ExactNum::from_u8(1, p);
+            let nu_m3 = parse_real("-3p0").expect("-3");
+            let nu_mhalf = parse_real("-1p-1").expect("-1/2");
+            // −π/4 correctly rounded: not −(π rounded)/4, which is 1 ulp off in directed modes.
+            let wp = p + 128;
+            let mut minus_pi4 = -cc
+                .pi(wp, RoundingMode::None)
+                .ldexp(-2, wp, RoundingMode::None);
+            minus_pi4.set_precision(p, rm).expect("round -pi/4");
+
+            for (zx, ztag) in [(&zeros[0], "+0"), (&zeros[1], "-0")] {
+                let ber = zx.kelvin_ber(p, rm, &mut cc);
+                assert!(
+                    ber.compare(&one) == Some(0),
+                    "ber({ztag}) p={p} {rm:?}: {ber}"
+                );
+                plus_zero(
+                    &zx.kelvin_bei(p, rm, &mut cc),
+                    &format!("bei({ztag}) p={p} {rm:?}"),
+                );
+                plus_inf(
+                    &zx.kelvin_ker(p, rm, &mut cc),
+                    &format!("ker({ztag}) p={p} {rm:?}"),
+                );
+                let kei = zx.kelvin_kei(p, rm, &mut cc);
+                assert!(
+                    kei.compare(&minus_pi4) == Some(0),
+                    "kei({ztag}) p={p} {rm:?}: {kei} want {minus_pi4}"
+                );
+                minus_inf(
+                    &zx.kelvin_ker_nu(&nu1, p, rm, &mut cc),
+                    &format!("ker_1({ztag}) p={p} {rm:?}"),
+                );
+                minus_inf(
+                    &zx.kelvin_kei_nu(&nu1, p, rm, &mut cc),
+                    &format!("kei_1({ztag}) p={p} {rm:?}"),
+                );
+                plus_zero(
+                    &zx.kelvin_ber_nu(&nu_m3, p, rm, &mut cc),
+                    &format!("ber_{{-3}}({ztag}) p={p} {rm:?}"),
+                );
+                plus_zero(
+                    &zx.kelvin_bei_nu(&nu_m3, p, rm, &mut cc),
+                    &format!("bei_{{-3}}({ztag}) p={p} {rm:?}"),
+                );
+                plus_inf(
+                    &zx.kelvin_ber_nu(&nu_mhalf, p, rm, &mut cc),
+                    &format!("ber_{{-1/2}}({ztag}) p={p} {rm:?}"),
+                );
+                minus_inf(
+                    &zx.kelvin_bei_nu(&nu_mhalf, p, rm, &mut cc),
+                    &format!("bei_{{-1/2}}({ztag}) p={p} {rm:?}"),
+                );
+                plus_zero(
+                    &zx.kelvin_ber_nu(&half, p, rm, &mut cc),
+                    &format!("ber_{{1/2}}({ztag}) p={p} {rm:?}"),
+                );
+            }
+
+            let xpos = ExactNum::from_u8(1, p);
+            let xneg = -xpos.clone();
+            invalid(
+                &xneg.kelvin_ker(p, rm, &mut cc),
+                &format!("ker(-1) p={p} {rm:?}"),
+            );
+            invalid(
+                &xneg.kelvin_kei(p, rm, &mut cc),
+                &format!("kei(-1) p={p} {rm:?}"),
+            );
+            invalid(
+                &xneg.kelvin_ber_nu(&half, p, rm, &mut cc),
+                &format!("ber_{{1/2}}(-1) p={p} {rm:?}"),
+            );
+            invalid(
+                &xneg.kelvin_kei_nu(&nu_m3, p, rm, &mut cc),
+                &format!("kei_{{-3}}(-1) p={p} {rm:?}"),
+            );
+
+            // DLMF 10.61.5: integer-order ber/bei at x<0.
+            let ber_pos = xpos.kelvin_ber(p, rm, &mut cc);
+            let ber_neg = xneg.kelvin_ber(p, rm, &mut cc);
+            assert!(
+                ber_pos.compare(&ber_neg) == Some(0),
+                "ber(-1)=ber(1) p={p} {rm:?}: {ber_neg} vs {ber_pos}"
+            );
+            let ber1_pos = xpos.kelvin_ber_nu(&nu1, p, rm, &mut cc);
+            let ber1_neg = xneg.kelvin_ber_nu(&nu1, p, rm, &mut cc);
+            assert!(
+                (-ber1_pos.clone()).compare(&ber1_neg) == Some(0),
+                "ber_1(-1)=-ber_1(1) p={p} {rm:?}: {ber1_neg} vs -{ber1_pos}"
+            );
+
+            let inf = INF_POS;
+            plus_zero(
+                &inf.kelvin_ker(p, rm, &mut cc),
+                &format!("ker(+Inf) p={p} {rm:?}"),
+            );
+            plus_zero(
+                &inf.kelvin_kei(p, rm, &mut cc),
+                &format!("kei(+Inf) p={p} {rm:?}"),
+            );
+            plus_zero(
+                &inf.kelvin_ker_nu(&nu1, p, rm, &mut cc),
+                &format!("ker_1(+Inf) p={p} {rm:?}"),
+            );
+            invalid(
+                &inf.kelvin_ber(p, rm, &mut cc),
+                &format!("ber(+Inf) p={p} {rm:?}"),
+            );
+            invalid(
+                &inf.kelvin_bei(p, rm, &mut cc),
+                &format!("bei(+Inf) p={p} {rm:?}"),
+            );
+            invalid(
+                &inf.kelvin_ber_nu(&half, p, rm, &mut cc),
+                &format!("ber_{{1/2}}(+Inf) p={p} {rm:?}"),
+            );
         }
     }
 }

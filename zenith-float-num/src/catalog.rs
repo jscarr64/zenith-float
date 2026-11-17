@@ -1000,6 +1000,261 @@ fn kelvin_k_arg(x: &ExactNum, p: usize, _cc: &mut Consts) -> ExactComplex {
     ExactComplex::new(h.clone(), h)
 }
 
+#[derive(Clone, Copy)]
+enum KelvinWhich {
+    Ber,
+    Bei,
+    Ker,
+    Kei,
+}
+
+fn signed_inf(neg: bool) -> ExactNum {
+    if neg {
+        crate::ext::INF_NEG
+    } else {
+        crate::ext::INF_POS
+    }
+}
+
+fn plus_zero(p: usize) -> ExactNum {
+    ExactNum::new(p)
+}
+
+fn is_odd_integer(n: &ExactNum) -> bool {
+    if !n.is_int() {
+        return false;
+    }
+    let two = ExactNum::from_u8(2, 64);
+    !n.clone().abs().rem(&two).is_zero()
+}
+
+/// `|n| mod 8` for an integer `n`.
+fn int_abs_mod8(n: &ExactNum) -> Option<u8> {
+    if !n.is_int() {
+        return None;
+    }
+    let eight = ExactNum::from_u8(8, 64);
+    n.clone()
+        .abs()
+        .rem(&eight)
+        .to_u64(RoundingMode::ToZero)
+        .ok()
+        .map(|u| u as u8)
+}
+
+/// Sign of a clearly nonzero value: `None` if it is zero.
+fn nz_sign_neg(x: &ExactNum) -> Option<bool> {
+    if x.is_zero() {
+        None
+    } else {
+        Some(x.is_negative())
+    }
+}
+
+/// Origin, infinity, and out-of-domain edges. `None` means evaluate 10.61 at a
+/// positive argument (`x > 0`, or integer-order `ber`/`bei` at `|x|`).
+fn kelvin_edge(
+    x: &ExactNum,
+    nu: &ExactNum,
+    which: KelvinWhich,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNum> {
+    if !finite(nu) || x.is_nan() {
+        return Some(cat_nan());
+    }
+    if x.is_inf() {
+        if x.is_negative() {
+            return Some(cat_nan());
+        }
+        return Some(match which {
+            KelvinWhich::Ker | KelvinWhich::Kei => plus_zero(p),
+            KelvinWhich::Ber | KelvinWhich::Bei => cat_nan(),
+        });
+    }
+    if x.is_zero() {
+        return Some(kelvin_at_zero(nu, which, p, rm, cc));
+    }
+    if x.is_negative() {
+        match which {
+            KelvinWhich::Ker | KelvinWhich::Kei => return Some(cat_nan()),
+            KelvinWhich::Ber | KelvinWhich::Bei => {
+                if !nu.is_int() {
+                    return Some(cat_nan());
+                }
+                return None;
+            }
+        }
+    }
+    None
+}
+
+fn kelvin_at_zero(
+    nu: &ExactNum,
+    which: KelvinWhich,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> ExactNum {
+    match which {
+        KelvinWhich::Ber | KelvinWhich::Bei => kelvin_jb_at_zero(nu, which, p, rm, cc),
+        KelvinWhich::Ker | KelvinWhich::Kei => kelvin_k_at_zero(nu, which, p, rm, cc),
+    }
+}
+
+fn kelvin_jb_at_zero(
+    nu: &ExactNum,
+    which: KelvinWhich,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> ExactNum {
+    let _ = rm;
+    if nu.is_zero() {
+        return if matches!(which, KelvinWhich::Ber) {
+            ExactNum::from_u8(1, p)
+        } else {
+            plus_zero(p)
+        };
+    }
+    if nu.is_int() || nu.is_positive() {
+        return plus_zero(p);
+    }
+    // ν < 0, non-integer: (z/2)^ν / Γ(ν+1) with z = x e^{3πi/4} → ±Inf.
+    let wrk = work_p(p);
+    let theta = nu
+        .clone()
+        .mul(&ExactNum::from_u8(3, wrk), wrk, RoundingMode::None)
+        .mul(&cc.pi(wrk, RoundingMode::None), wrk, RoundingMode::None)
+        .ldexp(-2, wrk, RoundingMode::None);
+    let mut c = theta.cos(wrk, RoundingMode::None, cc);
+    let mut s = theta.sin(wrk, RoundingMode::None, cc);
+    let g = nu
+        .clone()
+        .add(&ExactNum::from_u8(1, wrk), wrk, RoundingMode::None)
+        .gamma(wrk, RoundingMode::None, cc);
+    if g.is_nan() {
+        return cat_nan();
+    }
+    if g.is_negative() {
+        c = c.neg();
+        s = s.neg();
+    }
+    let part = if matches!(which, KelvinWhich::Ber) { c } else { s };
+    match nz_sign_neg(&part) {
+        None => plus_zero(p),
+        Some(neg) => signed_inf(neg),
+    }
+}
+
+fn kelvin_k_at_zero(
+    nu: &ExactNum,
+    which: KelvinWhich,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> ExactNum {
+    if nu.is_zero() {
+        return if matches!(which, KelvinWhich::Ker) {
+            crate::ext::INF_POS
+        } else {
+            finish(
+                cc.pi(work_p(p), RoundingMode::None)
+                    .ldexp(-2, work_p(p), RoundingMode::None)
+                    .neg(),
+                p,
+                rm,
+            )
+        };
+    }
+    if let Some(m) = int_abs_mod8(nu) {
+        return kelvin_k_at_zero_int(nu.is_negative(), m, which);
+    }
+    let wrk = work_p(p);
+    let pi = cc.pi(wrk, RoundingMode::None);
+    let (c, s) = if nu.is_positive() {
+        // ker ~ cos(3νπ/4), kei ~ −sin(3νπ/4)
+        let theta = nu
+            .clone()
+            .mul(&ExactNum::from_u8(3, wrk), wrk, RoundingMode::None)
+            .mul(&pi, wrk, RoundingMode::None)
+            .ldexp(-2, wrk, RoundingMode::None);
+        let c = theta.cos(wrk, RoundingMode::None, cc);
+        let s = theta.sin(wrk, RoundingMode::None, cc).neg();
+        (c, s)
+    } else {
+        // ν = −μ: ker ~ cos(μπ/4), kei ~ sin(μπ/4)
+        let mu = nu.clone().abs();
+        let theta = mu
+            .mul(&pi, wrk, RoundingMode::None)
+            .ldexp(-2, wrk, RoundingMode::None);
+        let c = theta.cos(wrk, RoundingMode::None, cc);
+        let s = theta.sin(wrk, RoundingMode::None, cc);
+        (c, s)
+    };
+    let part = if matches!(which, KelvinWhich::Ker) { c } else { s };
+    match nz_sign_neg(&part) {
+        None => plus_zero(p),
+        Some(neg) => signed_inf(neg),
+    }
+}
+
+/// Leading (and, when that part vanishes, k=1) signs of ker_n(0), kei_n(0)
+/// for integer n ≠ 0. `m = |n| mod 8`. A `true` sign is negative infinity.
+fn kelvin_k_at_zero_int(neg_nu: bool, m: u8, which: KelvinWhich) -> ExactNum {
+    let (lead_ker, lead_kei) = if !neg_nu {
+        // ker ~ cos(3nπ/4), kei ~ −sin(3nπ/4)
+        match m {
+            0 => (Some(false), None),
+            1 => (Some(true), Some(true)),
+            2 => (None, Some(false)),
+            3 => (Some(false), Some(true)),
+            4 => (Some(true), None),
+            5 => (Some(false), Some(false)),
+            6 => (None, Some(true)),
+            7 => (Some(true), Some(false)),
+            _ => return cat_nan(),
+        }
+    } else {
+        // ν = −μ: ker ~ cos(μπ/4), kei ~ sin(μπ/4)
+        match m {
+            0 => (Some(false), None),
+            1 => (Some(false), Some(false)),
+            2 => (None, Some(false)),
+            3 => (Some(true), Some(false)),
+            4 => (Some(true), None),
+            5 => (Some(true), Some(true)),
+            6 => (None, Some(true)),
+            7 => (Some(false), Some(true)),
+            _ => return cat_nan(),
+        }
+    };
+    let lead = if matches!(which, KelvinWhich::Ker) { lead_ker } else { lead_kei };
+    if let Some(neg) = lead {
+        return signed_inf(neg);
+    }
+    // The k=1 term of K_|n| is rotated by π/2 and carries a minus from (−z²/4).
+    let next_neg = if !neg_nu {
+        match (which, m) {
+            (KelvinWhich::Kei, 0) => true,
+            (KelvinWhich::Kei, 4) => false,
+            (KelvinWhich::Ker, 2) => true,
+            (KelvinWhich::Ker, 6) => false,
+            _ => return plus_zero(64),
+        }
+    } else {
+        match (which, m) {
+            (KelvinWhich::Kei, 0) => true,
+            (KelvinWhich::Kei, 4) => false,
+            (KelvinWhich::Ker, 2) => false,
+            (KelvinWhich::Ker, 6) => true,
+            _ => return plus_zero(64),
+        }
+    };
+    signed_inf(next_neg)
+}
+
 impl ExactNum {
     /// Scorer \(\mathrm{Gi}(\mathrm{self})\). Entire; NaN in → NaN out.
     ///
@@ -1103,7 +1358,14 @@ impl ExactNum {
         })
     }
 
-    /// Kelvin \(\mathrm{ber}_\nu(\mathrm{self})=\mathrm{Re}\,J_\nu(x e^{3\pi i/4})\).
+    /// Kelvin \(\mathrm{ber}_\nu(\mathrm{self})=\mathrm{Re}\,J_\nu(x e^{3\pi i/4})\) (DLMF 10.61.1).
+    ///
+    /// The real API follows DLMF 10.61 (`x ≥ 0`) and P20 / DOM-07. At `x = ±0`:
+    /// `ber(0) = 1`, `ber_n(0) = 0` for integer `n ≠ 0`, `ber_ν(0) = 0` for `ν > 0`,
+    /// and a signed infinity for non-integer `ν < 0` from the small-`z` limit of `J_ν`.
+    /// For `x < 0`, the integer reflection `ber_n(−x) = (−1)^n ber_n(x)` (10.61.5);
+    /// otherwise `NaN(InvalidArgument)`. `ber_ν(+∞)` has no limit → `NaN(InvalidArgument)`.
+    /// In-domain values use complex `J_ν` at the 10.61 argument (Arb `acb_hypgeom_bessel_j`).
     ///
     /// Accuracy: unspecified
     pub fn kelvin_ber_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -1119,20 +1381,34 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::kelvin_ber_nu`].
     fn kelvin_ber_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !finite(self) || !finite(nu) {
-            return cat_nan();
+        if let Some(v) = kelvin_edge(self, nu, KelvinWhich::Ber, p, rm, cc) {
+            return v;
         }
+        let (arg, flip) = if self.is_negative() {
+            (self.clone().abs(), is_odd_integer(nu))
+        } else {
+            (self.clone(), false)
+        };
         let wrk = work_p(p);
-        let z = kelvin_j_arg(self, wrk, cc);
+        let z = kelvin_j_arg(&arg, wrk, cc);
         let n = ExactComplex::from_real(nu.clone(), wrk);
-        finish(
+        let y = finish(
             z.bessel_j_nu(&n, wrk, RoundingMode::None, cc).re().clone(),
             p,
             rm,
-        )
+        );
+        if flip {
+            y.neg()
+        } else {
+            y
+        }
     }
 
-    /// Kelvin \(\mathrm{bei}_\nu(\mathrm{self})=\mathrm{Im}\,J_\nu(x e^{3\pi i/4})\).
+    /// Kelvin \(\mathrm{bei}_\nu(\mathrm{self})=\mathrm{Im}\,J_\nu(x e^{3\pi i/4})\) (DLMF 10.61.1).
+    ///
+    /// Domain as [`Self::kelvin_ber_nu`]: `bei(0) = 0`, integer `bei_n(0) = 0`, signed
+    /// infinities for non-integer `ν < 0`, the reflection `bei_n(−x) = (−1)^n bei_n(x)`,
+    /// and `NaN(InvalidArgument)` for a non-integer negative argument or at `+∞`.
     ///
     /// Accuracy: unspecified
     pub fn kelvin_bei_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -1148,20 +1424,36 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::kelvin_bei_nu`].
     fn kelvin_bei_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !finite(self) || !finite(nu) {
-            return cat_nan();
+        if let Some(v) = kelvin_edge(self, nu, KelvinWhich::Bei, p, rm, cc) {
+            return v;
         }
+        let (arg, flip) = if self.is_negative() {
+            (self.clone().abs(), is_odd_integer(nu))
+        } else {
+            (self.clone(), false)
+        };
         let wrk = work_p(p);
-        let z = kelvin_j_arg(self, wrk, cc);
+        let z = kelvin_j_arg(&arg, wrk, cc);
         let n = ExactComplex::from_real(nu.clone(), wrk);
-        finish(
+        let y = finish(
             z.bessel_j_nu(&n, wrk, RoundingMode::None, cc).im().clone(),
             p,
             rm,
-        )
+        );
+        if flip {
+            y.neg()
+        } else {
+            y
+        }
     }
 
-    /// Kelvin \(\mathrm{ker}_\nu(\mathrm{self})=\mathrm{Re}\,e^{-\nu\pi i/2}K_\nu(x e^{\pi i/4})\).
+    /// Kelvin \(\mathrm{ker}_\nu(\mathrm{self})=\mathrm{Re}\,e^{-\nu\pi i/2}K_\nu(x e^{\pi i/4})\)
+    /// (DLMF 10.61.2).
+    ///
+    /// The real API follows DLMF 10.61 and P20 / DOM-07. `ker(0) = +∞` (a simple pole);
+    /// the sign of `ker_ν(0)` is the small-`z` limit of 10.61.2 (`ker_1(0) = −∞`).
+    /// `x < 0` is outside the real domain → `NaN(InvalidArgument)`. `ker_ν(+∞) = +0`.
+    /// In-domain values use complex `K_ν` at the 10.61 argument (Arb `acb_hypgeom_bessel_k`).
     ///
     /// Accuracy: unspecified
     pub fn kelvin_ker_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -1177,8 +1469,8 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::kelvin_ker_nu`].
     fn kelvin_ker_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !finite(self) || !finite(nu) || self.is_zero() {
-            return if self.is_zero() { crate::ext::INF_POS } else { cat_nan() };
+        if let Some(v) = kelvin_edge(self, nu, KelvinWhich::Ker, p, rm, cc) {
+            return v;
         }
         let wrk = work_p(p);
         let z = kelvin_k_arg(self, wrk, cc);
@@ -1196,7 +1488,11 @@ impl ExactNum {
         finish(phase.mul(&k, wrk, RoundingMode::None).re().clone(), p, rm)
     }
 
-    /// Kelvin \(\mathrm{kei}_\nu(\mathrm{self})=\mathrm{Im}\,e^{-\nu\pi i/2}K_\nu(x e^{\pi i/4})\).
+    /// Kelvin \(\mathrm{kei}_\nu(\mathrm{self})=\mathrm{Im}\,e^{-\nu\pi i/2}K_\nu(x e^{\pi i/4})\)
+    /// (DLMF 10.61.2).
+    ///
+    /// Domain as [`Self::kelvin_ker_nu`], except `kei(0) = −π/4` (finite, not a pole) and
+    /// `kei_1(0) = −∞`. `x < 0` → `NaN(InvalidArgument)`. `kei_ν(+∞) = +0`.
     ///
     /// Accuracy: unspecified
     pub fn kelvin_kei_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -1212,8 +1508,8 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::kelvin_kei_nu`].
     fn kelvin_kei_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
-        if !finite(self) || !finite(nu) || self.is_zero() {
-            return cat_nan();
+        if let Some(v) = kelvin_edge(self, nu, KelvinWhich::Kei, p, rm, cc) {
+            return v;
         }
         let wrk = work_p(p);
         let z = kelvin_k_arg(self, wrk, cc);
