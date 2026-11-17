@@ -335,17 +335,32 @@ fn struve_series(
             }
         }
     };
-    let mut peak = exp_of(&term);
+    // Only non-zero terms update `peak`. A zero k=0 value must not seed
+    // peak at exponent 0, or cancellation looks like 10^3 bits and the
+    // series returns good=1 (Ziv then climbs forever-ish).
+    let mut peak = i64::MIN / 4;
     // If the k=0 gamma in (ν+3/2) is a pole, term is 0; recurrence would divide
     // by zero, so each term is formed from the closed factor when needed.
-    let mut formed = 0usize;
+    // If ν+3/2 = −m is a non-positive integer, terms 0..=m vanish identically
+    // (Γ(k+ν+3/2) is a pole). Start at the first k that can be non-zero.
+    // An index that does not fit in usize is an index-type limit, not a cap.
+    let nu_p0 = ExactNum::add_ref(nu, &three_half, wp, N);
+    if nonpos_int(&nu_p0) {
+        let m = nu_p0.neg().to_u64(RoundingMode::None).ok()?;
+        let k0 = m.checked_add(1)?;
+        k = usize::try_from(k0).ok()?;
+    }
     loop {
         if k > 0 {
-            // t_k / t_{k-1} = -(z/2)^2 / ((k+1/2)(k+ν+1/2))
-            let half = half(wp);
-            let kp = ExactNum::from_u64(k as u64, wp).add(&half, wp, N);
-            let kpn = ExactNum::add_ref(&kp, nu, wp, N);
-            if nonpos_int(&kp) || nonpos_int(&kpn) {
+            // t_k vanishes iff Γ(k+3/2) or Γ(k+ν+3/2) is a pole. The
+            // recurrence den (k+1/2)(k+ν+1/2) is zero at the first
+            // non-zero term (k+ν+1/2=0), so a zero den is not "this term
+            // is zero"; rebuild from the closed form when the previous
+            // term vanished.
+            let kk = ExactNum::from_u64(k as u64, wp);
+            let a = ExactNum::add_ref(&kk, &three_half, wp, N);
+            let b = ExactNum::add_ref(&a, nu, wp, N);
+            if nonpos_int(&a) || nonpos_int(&b) {
                 term = ExactNum::new(wp);
             } else if term.is_zero() {
                 // Rebuild the full 11.2.1 term, including (z/2)^{ν+1},
@@ -403,6 +418,8 @@ fn struve_series(
                     ExactNum::new(wp)
                 };
             } else {
+                let kp = ExactNum::add_ref(&kk, &half(wp), wp, N);
+                let kpn = ExactNum::add_ref(&kp, nu, wp, N);
                 let den = ExactNum::mul_ref(&kp, &kpn, wp, N);
                 if den.is_zero() || !finite(&den) {
                     term = ExactNum::new(wp);
@@ -414,7 +431,6 @@ fn struve_series(
         if finite(&term) && !term.is_zero() {
             peak = peak.max(exp_of(&term));
             sum = sum.add(&term, wp, N);
-            formed += 1;
             // Geometric tail once |t_{k+1}/t_k| ≤ 1/2, i.e.
             // |(z/2)^2| / |(k+3/2)(k+ν+3/2)| ≤ 1/2.
             let kp = ExactNum::from_u64(k as u64, wp).add(&three_half, wp, N);
@@ -457,12 +473,6 @@ fn struve_series(
             }
         }
         k = k.checked_add(1)?;
-        if formed == 0 && k > 64 {
-            // All early terms vanished; keep scanning a little, then give up.
-            if k > 1024 {
-                return None;
-            }
-        }
     }
 }
 
@@ -2359,6 +2369,55 @@ mod aws_bounds {
                 None => panic!("anger_a_laplace returned None at wp={wp}"),
             }
         }
+        Ok(())
+    }
+
+    /// `H_{-1025.5}(1)`: ν+3/2 = −1024, so 11.2.1 terms 0..=1024 vanish
+    /// identically. The old `k>1024` scan returned `None`, and 11.5.2 also
+    /// refuses (Γ(ν+1/2) is a pole), so the public value was NaN. The series
+    /// now starts at the first non-zero term.
+    #[test]
+    fn caps_struve_series_after_1024_vanished_terms() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ];
+        // Independent 11.2.1 sum from k=1025, 90 dps (agrees with 80 dps).
+        let gold_s = "-1.10536995406974503201807788717614141252071148946912627924035095025067311025439568808170491e-2953";
+        let gold = ExactNum::parse(
+            gold_s,
+            crate::Radix::Dec,
+            1024,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        let mut bad = Vec::new();
+        for &p in &[64usize, 256] {
+            let z = one(p);
+            let nu = ExactNum::from_i32(-2051, p).div(&two(p), p, N);
+            // The kernel itself must return a value (the old cap was None here).
+            if p == 64 {
+                let (h, good) = struve_series(&z, &nu, work_p(p), &mut cc)
+                    .expect("series must start after the vanished run");
+                assert!(finite(&h) && good > 64, "series good={good} h={h}");
+            }
+            for &rm in &modes {
+                let got = z.struve_h(&nu, p, rm, &mut cc);
+                let want = finish(gold.clone(), p, rm);
+                if got.compare(&want) != Some(0) {
+                    bad.push(format!(
+                        "H_{{-1025.5}}(1) p={p} {rm:?} got {got} want {want}"
+                    ));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
         Ok(())
     }
 }
