@@ -677,9 +677,9 @@ fn pfq_jet(
     let mut mk = ExactNum::from_u8(1, 64);
     let mut k: u64 = 0;
     loop {
-        if k > 20_000_000 {
+        let Some(k_next) = k.checked_add(1) else {
             return None;
-        }
+        };
         let kk = ExactNum::from_u64(k, wp);
         let mut num = w.scalar(&ExactNum::from_u8(1, wp));
         let mut nb = ax.clone();
@@ -688,8 +688,8 @@ fn pfq_jet(
             nb = nb.mul(&up64(&v).add(&crho(*c), 64, up), 64, up);
             num = w.mul(&num, &w.lin(&v, *c));
         }
-        let mut den = w.scalar(&ExactNum::from_u64(k + 1, wp));
-        let mut db = ExactNum::from_u64(k + 1, 64);
+        let mut den = w.scalar(&ExactNum::from_u64(k_next, wp));
+        let mut db = ExactNum::from_u64(k_next, 64);
         for (b, c) in hd {
             let v = ExactNum::add_ref(b, &kk, wp, RoundingMode::None);
             let inf = if v.is_zero() {
@@ -706,12 +706,15 @@ fn pfq_jet(
         mk = mk.mul(&nb, 64, up).div(&db, 64, up);
         t = w.scale(&w.div(&w.mul(&t, &num), &den)?, x);
         sum = w.add(&sum, &t);
-        k += 1;
+        k = k_next;
         if k < kmin {
             continue;
         }
         // Ratio bound for every step j >= k: |x| prod (j + max(|a|+|c|rho, 1)) /
         // ((j+1) prod (j - |b| - |c|rho)); each factor is non-increasing in j.
+        let Some(k_bound) = k.checked_add(1) else {
+            return None;
+        };
         let kk = ExactNum::from_u64(k, 64);
         let mut bnd = ax.clone();
         for (a, c) in hn {
@@ -719,7 +722,7 @@ fn pfq_jet(
             let al = if lt(&al, &one64) { one64.clone() } else { al };
             bnd = bnd.mul(&ExactNum::add_ref(&kk, &al, 64, up), 64, up);
         }
-        let mut d = ExactNum::from_u64(k + 1, 64);
+        let mut d = ExactNum::from_u64(k_bound, 64);
         for (b, c) in hd {
             let q = ExactNum::sub_ref(&kk, &up64(b), 64, dn).sub(&crho(*c), 64, dn);
             if !q.is_positive() || q.is_zero() {
@@ -762,7 +765,9 @@ fn pfq_jet(
 /// the logarithmic residue), \(z^{b_h+c\varepsilon}=z^{b_h}e^{c\varepsilon\ln z}\), and
 /// \({}_pF_q\) jets with a rigorous tail. No step size and no agreement test.
 /// The working precision grows with the largest intermediate magnitude against
-/// \(|G|\); a precision past `16p + 2^{15}` refuses with NaN.
+/// \(|G|\). If the first-order slack `wp - loss` stops improving, the result is
+/// NaN. A jet that evaluates to zero is returned as zero once the same bound
+/// certifies \(|G| < 2^{-(p+64)}\).
 fn meijer_jet_limit(
     z: &ExactNum,
     r: &ExactNum,
@@ -790,11 +795,9 @@ fn meijer_jet_limit(
     let one_r = ExactNum::from_u8(1, p);
     let r_is_one = r.compare(&one_r) == Some(0);
     let mut extra = 4 * crate::defs::WORD_BIT_SIZE;
+    let mut prev_slack: Option<i64> = None;
     loop {
         let wp = p.max(span).saturating_add(extra);
-        if wp > 16 * p + 32_768 {
-            return cat_nan();
-        }
         let one = ExactNum::from_u8(1, wp);
         // w and ln w at wp.
         let lnz = z.ln(wp, RoundingMode::None, cc);
@@ -850,9 +853,6 @@ fn meijer_jet_limit(
                 .filter(|(v, _)| gamma_pole(v))
                 .count() as i32;
             let hi = 4 * poles + 4;
-            if hi > 63 {
-                return cat_nan();
-            }
             let jw = JetW::new(-poles - 1, hi, wp);
             let mut num = jw.scalar(&one);
             for (v, c) in &gn {
@@ -918,11 +918,26 @@ fn meijer_jet_limit(
             if loss.saturating_add(p as i64 + 64) <= wp as i64 && tol_used <= eg - p as i64 - 64 {
                 return g;
             }
+            let slack = (wp as i64).saturating_sub(loss);
+            if prev_slack.is_some_and(|prev| slack <= prev) {
+                return cat_nan();
+            }
+            prev_slack = Some(slack);
             extra = extra
                 .saturating_add(usize::try_from(loss.clamp(64, 1 << 20)).unwrap_or(64))
                 .saturating_add(64);
         } else {
-            extra = extra.saturating_mul(2);
+            // Certified zero: ops * 2^{mag - wp} < 2^{-(p+64)}.
+            let ob = 64 - i64::from(ops.leading_zeros());
+            let bound_exp = mag.saturating_add(ob).saturating_sub(wp as i64);
+            if bound_exp < -(p as i64) - 64 {
+                return g;
+            }
+            let next = extra.saturating_mul(2);
+            if next <= extra {
+                return cat_nan();
+            }
+            extra = next;
         }
     }
 }
@@ -1241,7 +1256,7 @@ impl ExactNum {
     ///   zero, finite, or signed infinity for a logarithmic or negative-power pole),
     ///   and \(z>0\) is the constant term of the Laurent expansion in a parameter
     ///   shift: \(\Gamma\) jets from \(\psi^{(j)}\), \({}_pF_q\) jets with a rigorous
-    ///   tail bound. Pole orders above 14 are `NaN`.
+    ///   tail bound.
     /// - At most 8 parameters in \(a\) and in \(b\).
     ///
     /// Accuracy: unspecified
@@ -3353,6 +3368,51 @@ mod tests {
                             "heun_c({z}; α={al}, γ={ga}, δ={de}, ε={eps}, q={q}) p={p} {rm:?} got {v}"
                         ));
                     }
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+        Ok(())
+    }
+
+    /// `G^{16,0}_{0,16}(1/2 | ; 0^{16})` has 15 counted gamma poles, so
+    /// `hi = 4*15 + 4 = 64` used to refuse (`hi > 63`). Public `meijer_g` still
+    /// hits `PARAM_MAX = 8`; the same-module path is the case the cap refused.
+    #[test]
+    fn caps_meijer_pole_order_above_14() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ];
+        // mpmath 95 dps, agrees with 90 dps to 94 digits.
+        let gold_s = "3.8637998573893274293136670187237271567980851122233596666791557290041543018069486541266016024764e-2";
+        let gold = ExactNum::parse(
+            gold_s,
+            crate::Radix::Dec,
+            1024,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        let mut bad = Vec::new();
+        // One jet at dest width 256 has enough bits for both dest widths.
+        let z = ExactNum::from_u8(1, 256).div(&ExactNum::from_u8(2, 256), 256, RoundingMode::None);
+        let r = ExactNum::from_u8(1, 256);
+        let bm: Vec<ExactNum> = (0..16).map(|_| ExactNum::new(256)).collect();
+        let g = meijer_jet_limit(&z, &r, false, &[], &[], &bm, &[], 256, &mut cc);
+        for &p in &[64usize, 256] {
+            for &rm in &modes {
+                let got = finish(g.clone(), p, rm);
+                let want = finish(gold.clone(), p, rm);
+                if got.compare(&want) != Some(0) {
+                    bad.push(format!(
+                        "G^{{16,0}}_{{0,16}}(1/2) p={p} {rm:?} got {got} want {want}"
+                    ));
                 }
             }
         }
