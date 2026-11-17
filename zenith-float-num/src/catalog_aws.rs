@@ -1184,6 +1184,19 @@ pub(super) fn struve_h_word(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> ExactNum {
+    // DLMF 11.6.1 + 10.7.8: H_ν(+∞) is 0, 2/π, or +∞ according as
+    // ν<1, ν=1, or ν>1. Non-finite ν still refuses.
+    if z.is_inf() && z.is_positive() && finite(nu) {
+        let d = ExactNum::sub_ref(nu, &one(work_p(p)), work_p(p), N);
+        if d.is_zero() {
+            let wrk = work_p(p);
+            return finish(two(wrk).div(&cc.pi(wrk, N), wrk, N), p, rm);
+        }
+        if d.is_negative() {
+            return finish(signed_zero(false, p), p, rm);
+        }
+        return crate::ext::INF_POS;
+    }
     if !finite(z) || !finite(nu) {
         return cat_nan();
     }
@@ -2012,6 +2025,16 @@ fn anger_a(nu: &ExactNum, z: &ExactNum, wp: usize, cc: &mut Consts) -> Option<(E
             return Some((v, g));
         }
     }
+    // Laplace's true remainder is only O(z) bits (DLMF 11.11.4). At
+    // moderate |z| and high p it is not tight, and the Taylor-panel
+    // integrator of A_ν can hang past the sweep wall. 11.10.8–11
+    // Maclaurin is entire; returning None here lets the caller use it
+    // whenever the term count is not itself a hang. Panels stay as the
+    // last resort when k_est is missing or past 16384 (e.g. z = 2^20
+    // still uses a tight Laplace expansion).
+    if maclaurin_k_est(z).is_some_and(|k| k <= 16_384) {
+        return None;
+    }
     let (i, good) = anger_a_integral(nu, z, wp, cc)?;
     let pi = cc.pi(wp, N);
     let a = i.div(&pi, wp, N);
@@ -2147,6 +2170,11 @@ fn anger_weber_word(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> ExactNum {
+    // DLMF 11.11 / 10.7.8: J_ν(±∞) = E_ν(±∞) = 0. The ±∞ case of
+    // 11.10.12 is the same limit. Non-finite ν still refuses.
+    if z.is_inf() && finite(nu) {
+        return finish(signed_zero(false, p), p, rm);
+    }
     if !finite(z) || !finite(nu) {
         return cat_nan();
     }
@@ -2415,6 +2443,110 @@ mod aws_bounds {
                         "H_{{-1025.5}}(1) p={p} {rm:?} got {got} want {want}"
                     ));
                 }
+            }
+        }
+        assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+        Ok(())
+    }
+
+    /// +Inf limits: J and E go to 0 (DLMF 11.11); H_ν goes to 0, 2/π, or +Inf
+    /// according as ν<1, ν=1, or ν>1 (DLMF 11.6.1 + 10.7.8). The public
+    /// functions used to return InvalidArgument.
+    #[test]
+    fn aws_anger_weber_struve_plus_inf_limits() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ];
+        let mut bad = Vec::new();
+        for &p in &[64usize, 256] {
+            let z = crate::ext::INF_POS.clone();
+            let zero = signed_zero(false, p);
+            for &rm in &modes {
+                let want0 = finish(zero.clone(), p, rm);
+                let got_j = z.anger_j(&ExactNum::new(p), p, rm, &mut cc);
+                if got_j.compare(&want0) != Some(0) {
+                    bad.push(format!("J_0(+Inf) p={p} {rm:?} got {got_j} want {want0}"));
+                }
+                let got_e = z.weber_e(&ExactNum::new(p), p, rm, &mut cc);
+                if got_e.compare(&want0) != Some(0) {
+                    bad.push(format!("E_0(+Inf) p={p} {rm:?} got {got_e} want {want0}"));
+                }
+                let got_h0 = z.struve_h(&ExactNum::new(p), p, rm, &mut cc);
+                if got_h0.compare(&want0) != Some(0) {
+                    bad.push(format!("H_0(+Inf) p={p} {rm:?} got {got_h0} want {want0}"));
+                }
+                let want_pi = finish(
+                    two(work_p(p)).div(&cc.pi(work_p(p), N), work_p(p), N),
+                    p,
+                    rm,
+                );
+                let got_h1 = z.struve_h(&one(p), p, rm, &mut cc);
+                if got_h1.compare(&want_pi) != Some(0) {
+                    bad.push(format!(
+                        "H_1(+Inf) p={p} {rm:?} got {got_h1} want {want_pi}"
+                    ));
+                }
+                let got_h2 = z.struve_h(&two(p), p, rm, &mut cc);
+                if !(got_h2.is_inf() && got_h2.is_positive()) {
+                    bad.push(format!("H_2(+Inf) p={p} {rm:?} got {got_h2} want +Inf"));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+        Ok(())
+    }
+
+    /// J_{{1/2}}(100) and E_0(100) at p=1024 must be correctly rounded and
+    /// finish without hanging in the A_ν panel integrator. Golds are
+    /// independent 400 dps mpmath values, rounded with `ExactNum::parse`.
+    #[test]
+    fn aws_anger_weber_z100_p1024_correctly_rounded() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let p = 1024usize;
+        let z = ExactNum::from_u32(100, p);
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ];
+        let gold_j = ExactNum::parse(
+            "-0.03723518191381801588380524319409055658711424991018291651324201638105238795013658333026868692436561948877429785985283828979341016528280090757054221625331402946535973941997104732107127653881572553376606549667141274917010800559497455079977547304591908476650510104774103356590468719590924463799864680358939644354155669821718616737529174879562731606633016022218253914168942656093868701906831518884099013266",
+            crate::Radix::Dec,
+            2048,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        let gold_e = ExactNum::parse(
+            "0.07087875168964734320403197807819362649839529196834556757885257608130784317047219728852723554786582595108368011053042097631036326140508536614611715683968800067865019395930827753295262722507645511888948737556366128003488016690355734639273036681251817981480783786142079490046834640477585796935531401020524218926863758550700933721332008399674356645520385204140413226921322632093063059523655678502445325836",
+            crate::Radix::Dec,
+            2048,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        let mut bad = Vec::new();
+        for &rm in &modes {
+            let want_j = finish(gold_j.clone(), p, rm);
+            let got_j = z.anger_j(&half(p), p, rm, &mut cc);
+            if got_j.compare(&want_j) != Some(0) {
+                bad.push(format!(
+                    "J_{{1/2}}(100) p={p} {rm:?} got {got_j} want {want_j}"
+                ));
+            }
+            let want_e = finish(gold_e.clone(), p, rm);
+            let got_e = z.weber_e(&ExactNum::new(p), p, rm, &mut cc);
+            if got_e.compare(&want_e) != Some(0) {
+                bad.push(format!("E_0(100) p={p} {rm:?} got {got_e} want {want_e}"));
             }
         }
         assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
