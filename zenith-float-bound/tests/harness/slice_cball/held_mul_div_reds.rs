@@ -129,7 +129,7 @@ fn cball_div_rectangle_containing_zero_is_all_reals() -> Result<(), String> {
     // corners of [1, 3] × [−2, 0]; every corner is nonzero.
     for re in [num(1), num(2), num(3)] {
         for im in [num(-2), num(-1), num(0)] {
-            let (tr, ti) = cdiv_refs(&num(1), &num(1), &re, &im);
+            let (tr, ti) = cdiv_refs(&num(1), &num(1), &re, &im)?;
             want_contains("clear re", q.re(), &tr)?;
             want_contains("clear im", q.im(), &ti)?;
         }

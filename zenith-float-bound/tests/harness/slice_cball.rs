@@ -107,19 +107,28 @@ fn want_finite_both(what: &str, z: &CBall) -> Result<(), String> {
 }
 
 /// High-precision corner probe of (ar+ai i)/(br+bi i) for containment checks.
-fn cdiv_refs(ar: &ExactNum, ai: &ExactNum, br: &ExactNum, bi: &ExactNum) -> (ExactNum, ExactNum) {
+fn exact_from_parts(x: &ExactNum) -> Result<ExactNum, String> {
+    Ok(x.add_full_prec(&ExactNum::from(0i64)))
+}
+
+fn cdiv_refs(
+    ar: &ExactNum,
+    ai: &ExactNum,
+    br: &ExactNum,
+    bi: &ExactNum,
+) -> Result<(ExactNum, ExactNum), String> {
     let wp = 1024;
     let rm = RoundingMode::ToEven;
     let den = br.sqr(wp, rm).add(&bi.sqr(wp, rm), wp, rm);
-    let num_re = ar
-        .clone()
-        .mul(br, wp, rm)
-        .add(&ai.clone().mul(bi, wp, rm), wp, rm);
-    let num_im = ai
-        .clone()
-        .mul(br, wp, rm)
-        .sub(&ar.clone().mul(bi, wp, rm), wp, rm);
-    (num_re.div(&den, wp, rm), num_im.div(&den, wp, rm))
+    let num_re =
+        exact_from_parts(ar)?
+            .mul(br, wp, rm)
+            .add(&exact_from_parts(ai)?.mul(bi, wp, rm), wp, rm);
+    let num_im =
+        exact_from_parts(ai)?
+            .mul(br, wp, rm)
+            .sub(&exact_from_parts(ar)?.mul(bi, wp, rm), wp, rm);
+    Ok((num_re.div(&den, wp, rm), num_im.div(&den, wp, rm)))
 }
 
 /// Sample points (corners and midpoint) of `m ± 2^-k` for integer `m`.

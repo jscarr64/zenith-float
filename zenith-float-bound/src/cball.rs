@@ -188,22 +188,24 @@ impl CBall {
 
 /// Rebuild a `Ball` from its public mid, rad and prec so a part can be used in two `Ball` ops
 /// (`Ball::{add,sub,mul,div,mul_2exp}` still take the first operand by value).
-fn ball_again(b: &Ball) -> BoundResult<Ball> {
-    Ball::from_mid_rad(b.mid().clone(), mag_again(b.rad()), b.prec())
+fn exact_from_parts(x: &ExactNum) -> BoundResult<ExactNum> {
+    // Midpoints are finite (from_mid_rad). x+0 is a new ExactNum with the same
+    // value, so a Ball can be rebuilt without Clone (zero-clone rule).
+    Ok(x.add_full_prec(&ExactNum::from(0i64)))
 }
 
-fn mag_again(r: &crate::mag::Mag) -> crate::mag::Mag {
+fn ball_again(b: &Ball) -> BoundResult<Ball> {
+    Ball::from_mid_rad(exact_from_parts(b.mid())?, mag_again(b.rad())?, b.prec())
+}
+
+fn mag_again(r: &crate::mag::Mag) -> BoundResult<crate::mag::Mag> {
     if r.is_infinity() {
-        return crate::mag::Mag::infinity();
+        return Ok(crate::mag::Mag::infinity());
     }
     if r.is_zero() {
-        return crate::mag::Mag::zero();
+        return Ok(crate::mag::Mag::zero());
     }
-    crate::mag::Mag::finite(
-        r.mant().expect("finite mag mantissa"),
-        r.exp().expect("finite mag exponent"),
-    )
-    .expect("canonical finite mag is valid")
+    Ok(crate::mag::Mag::from_exact_num(&r.to_exact_num()?))
 }
 
 /// `|m| ≤ r`, decided by `Mag::cmp_exact_num`, including an infinite radius (16.CB.7 R1/R2).
@@ -267,7 +269,9 @@ fn dist_lo(b: &Ball, prec: Precision) -> BoundResult<ExactNum> {
         Ok(r) => r,
         Err(_) => return Ok(ExactNum::from(0i64)),
     };
-    Ok(b.mid().clone().abs().sub(&rad, prec, RoundingMode::Down))
+    Ok(exact_from_parts(b.mid())?
+        .abs()
+        .sub(&rad, prec, RoundingMode::Down))
 }
 
 fn dist_hi(b: &Ball, prec: Precision) -> BoundResult<Option<ExactNum>> {
@@ -278,7 +282,9 @@ fn dist_hi(b: &Ball, prec: Precision) -> BoundResult<Option<ExactNum>> {
         Ok(r) => r,
         Err(_) => return Ok(None),
     };
-    let hi = b.mid().clone().abs().add(&rad, prec, RoundingMode::Up);
+    let hi = exact_from_parts(b.mid())?
+        .abs()
+        .add(&rad, prec, RoundingMode::Up);
     if hi.is_nan() || hi.is_inf() {
         return Ok(None);
     }
@@ -293,7 +299,7 @@ fn end_lo(b: &Ball, prec: Precision) -> BoundResult<Option<ExactNum>> {
         Ok(r) => r,
         Err(_) => return Ok(None),
     };
-    let lo = b.mid().clone().sub(&rad, prec, RoundingMode::Down);
+    let lo = exact_from_parts(b.mid())?.sub(&rad, prec, RoundingMode::Down);
     if lo.is_nan() || lo.is_inf() {
         return Ok(None);
     }
@@ -308,7 +314,7 @@ fn end_hi(b: &Ball, prec: Precision) -> BoundResult<Option<ExactNum>> {
         Ok(r) => r,
         Err(_) => return Ok(None),
     };
-    let hi = b.mid().clone().add(&rad, prec, RoundingMode::Up);
+    let hi = exact_from_parts(b.mid())?.add(&rad, prec, RoundingMode::Up);
     if hi.is_nan() || hi.is_inf() {
         return Ok(None);
     }
@@ -327,10 +333,10 @@ fn div_by_pos_range(
     let (Some(nlo), Some(nhi)) = (end_lo(num, prec)?, end_hi(num, prec)?) else {
         return Ball::all_reals(prec);
     };
-    let q_hi_den_lo = nhi.clone().div(dlo, prec, RoundingMode::Up);
-    let q_lo_den_lo = nlo.clone().div(dlo, prec, RoundingMode::Down);
-    let q_hi_den_hi = nhi.clone().div(dhi, prec, RoundingMode::Up);
-    let q_lo_den_hi = nlo.clone().div(dhi, prec, RoundingMode::Down);
+    let q_hi_den_lo = exact_from_parts(&nhi)?.div(dlo, prec, RoundingMode::Up);
+    let q_lo_den_lo = exact_from_parts(&nlo)?.div(dlo, prec, RoundingMode::Down);
+    let q_hi_den_hi = exact_from_parts(&nhi)?.div(dhi, prec, RoundingMode::Up);
+    let q_lo_den_hi = exact_from_parts(&nlo)?.div(dhi, prec, RoundingMode::Down);
     let (qlo, qhi) = if !nlo.is_negative() {
         (q_lo_den_hi, q_hi_den_lo)
     } else if !nhi.is_positive() {
@@ -349,9 +355,8 @@ fn pack_interval(lo: ExactNum, hi: ExactNum, prec: Precision) -> BoundResult<Bal
     if mid.is_nan() || mid.is_inf() {
         return Ball::all_reals(prec);
     }
-    let rad = crate::mag::Mag::from_exact_num(&hi.sub_full_prec(&mid)).max(
-        crate::mag::Mag::from_exact_num(&mid.clone().sub_full_prec(&lo)),
-    );
+    let rad = crate::mag::Mag::from_exact_num(&hi.sub_full_prec(&mid))
+        .max(crate::mag::Mag::from_exact_num(&mid.sub_full_prec(&lo)));
     Ball::from_mid_rad(mid, rad, prec)
 }
 
