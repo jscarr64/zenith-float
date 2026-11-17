@@ -21,10 +21,9 @@ use alloc::vec::Vec;
 /// Same cap as the real Carlson kernels.
 const CARLSON_DUPE_MAX: u32 = 128;
 
-/// Cap on Taylor terms in a panel of the \(R_J\) shift integral.
-const RJ_JET_MAX: usize = 4096;
-/// Cap on panels for the finite shift integral along a path to \(N\).
-const RJ_PANEL_MAX: u32 = 4096;
+/// \(R_J\) shift-integral jets and panels stop when the path is covered
+/// or the remaining distance stops shrinking; there is no pre-set term
+/// or panel refusal.
 
 /// Duplication-step cap: each step shrinks the spread 4×, and the series needs a spread of
 /// about 2^-(p/3+16), so high precisions need more than [`CARLSON_DUPE_MAX`] steps.
@@ -38,6 +37,10 @@ fn rm() -> RoundingMode {
 
 fn c_u32(n: u32, p: usize) -> ExactComplex {
     ExactComplex::from_real(ExactNum::from_u32(n, p), p)
+}
+
+fn c_u64(n: u64, p: usize) -> ExactComplex {
+    ExactComplex::from_real(ExactNum::from_u64(n, p), p)
 }
 
 fn is_c_zero(z: &ExactComplex) -> bool {
@@ -531,9 +534,9 @@ fn inv_sqrt_series(
     s.push(c_u32(1, p).div(&shift.sqrt(p, rm(), cc), p, rm()));
     for k in 0..kmax.saturating_sub(1) {
         // a_{k+1} = a_k * (−(2k+1)/2) / ((k+1) shift)
-        let odd = c_u32(2 * (k as u32) + 1, p);
+        let odd = c_u64((k as u64).saturating_mul(2).saturating_add(1), p);
         let num = c_neg(&odd.div(&c_u32(2, p), p, rm()), p);
-        let den = c_u32((k as u32) + 1, p).mul(shift, p, rm());
+        let den = c_u64((k as u64).saturating_add(1), p).mul(shift, p, rm());
         s.push(s[k].mul(&num, p, rm()).div(&den, p, rm()));
     }
     s
@@ -577,7 +580,7 @@ fn rj_panel(
     let rho = rj_sing_dist(&c, x, y, z, pv, p);
     let wabs = c_abs(&half, p);
     // r = |h/2| / (9/10 ρ); the caller should have |h/2| ≤ ρ/2 so r ≤ 5/9.
-    let kmax = (p + 32).clamp(16, RJ_JET_MAX);
+    let kmax = (p + 32).max(16);
     let sx = inv_sqrt_series(&ExactComplex::add_ref(&c, x, p, rm()), p, cc, kmax);
     let sy = inv_sqrt_series(&ExactComplex::add_ref(&c, y, p, rm()), p, cc, kmax);
     let sz = inv_sqrt_series(&ExactComplex::add_ref(&c, z, p, rm()), p, cc, kmax);
@@ -589,7 +592,7 @@ fn rj_panel(
     for (k, fk) in f.iter().enumerate() {
         if k % 2 == 0 {
             let term = fk.mul(&c_u32(2, p), p, rm()).mul(&wpow, p, rm()).div(
-                &c_u32((k as u32) + 1, p),
+                &c_u64((k as u64).saturating_add(1), p),
                 p,
                 rm(),
             );
@@ -614,17 +617,25 @@ fn rj_line_integral(
     let mut a = from.clone();
     let mut acc = ExactComplex::zero(p);
     let tiny = ExactNum::from_u8(1, p).ldexp(-((p as Exponent) + 16), p, rm());
-    for _ in 0..RJ_PANEL_MAX {
+    let mut prev_abs: Option<ExactNum> = None;
+    loop {
         let rem = to.clone().sub(&a, p, rm());
-        if matches!(c_abs(&rem, p).compare(&tiny), Some(c) if c < 0) {
-            break;
+        let rem_abs = c_abs(&rem, p);
+        if matches!(rem_abs.compare(&tiny), Some(c) if c < 0) {
+            return acc;
         }
+        // Stall: the remaining distance is not strictly shrinking.
+        if let Some(prev) = &prev_abs {
+            if rem_abs.compare(prev) != Some(-1) {
+                return nan_pair(Error::InvalidArgument);
+            }
+        }
+        prev_abs = Some(rem_abs.clone());
         // Midpoint of the remaining segment, used to size the next panel.
         let mid = ExactComplex::add_ref(&a, &rem.div(&c_u32(2, p), p, rm()), p, rm());
         let rho = rj_sing_dist(&mid, x, y, z, pv, p);
         // |h| = min(|rem|, ρ) so |h/2| ≤ ρ/2 when we use the mid of *this* panel
         // (conservative if the mid of the remaining stretch is used for ρ).
-        let rem_abs = c_abs(&rem, p);
         let scale_num = min_num(&rem_abs, &rho);
         let h = if matches!(rem_abs.compare(&rho), Some(c) if c <= 0)
             || rho.is_zero()
@@ -639,7 +650,6 @@ fn rj_line_integral(
         acc = acc.add(&rj_panel(&a, &h, x, y, z, pv, p, cc), p, rm());
         a = a.add(&h, p, rm());
     }
-    acc
 }
 
 fn carlson_rj_dupe(
