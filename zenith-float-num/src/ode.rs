@@ -429,13 +429,40 @@ where
     Some((y5, y4))
 }
 
+fn step_scale(
+    atol: &ExactNum,
+    rtol: &ExactNum,
+    y: &ExactNum,
+    y5: &ExactNum,
+    wrk: usize,
+) -> ExactNum {
+    let big = if y.abs_cmp(y5) == Some(1) { y } else { y5 };
+    let negated;
+    let ymax: &ExactNum = if big.is_negative() {
+        negated = big.neg_via_mul();
+        &negated
+    } else {
+        big
+    };
+    ExactNum::mul_ref(rtol, ymax, wrk, RoundingMode::None).add(atol, wrk, RoundingMode::None)
+}
+
+fn step_ok(err: &ExactNum, scale: &ExactNum) -> bool {
+    scale.is_zero()
+        || err.is_zero()
+        || err.compare(scale) == Some(-1)
+        || err.compare(scale) == Some(0)
+}
+
 /// Dormand–Prince RK5(4) with absolute / relative step control.
 ///
 /// Accepts a step when `|y₅−y₄| ≤ atol + rtol max(|y|,|y₅|)`. Step size is
 /// updated by `(atol_scale / err)^{1/5}` with safety `9/10`, growth cap 5,
 /// shrink cap `1/5`. `None` if `t1 ≤ t0`, a value is non-finite, the step
 /// falls below [`ode_min_step`], or [`ODE_MAX_STEPS`] accepted steps are
-/// exhausted before `t1`.
+/// exhausted before `t1`. Also `None` when a probe step of size
+/// `(t1-t0)/`[`ODE_MAX_STEPS`] already misses the tolerance, since smaller
+/// accepted steps cannot finish inside the cap (ZF-54).
 pub fn rk45_adaptive<F>(
     mut f: F,
     t0: &ExactNum,
@@ -466,12 +493,31 @@ where
     let mut y = y0.clone();
     let _ = t.set_precision(wrk, RoundingMode::None);
     let _ = y.set_precision(wrk, RoundingMode::None);
-    let mut h =
-        ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None).ldexp(-4, wrk, RoundingMode::None);
+    let span = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None);
+    // Coarsest step that can still reach t1 in ODE_MAX_STEPS accepted steps.
+    // If a Dormand–Prince step of that size already misses the tolerance,
+    // smaller accepted steps cannot finish in the cap either (local error
+    // shrinks like h^5). ZF-54: atol=2^{-512} on [0,1] at p=1024.
+    let cap_n = ExactNum::from_u32(ODE_MAX_STEPS as u32, wrk);
+    let h_budget = span.clone().div(&cap_n, wrk, RoundingMode::None);
+    if h_budget.compare(&hmin) == Some(-1) || h_budget.is_zero() || h_budget.is_negative() {
+        return None;
+    }
+    let mut h = span.ldexp(-4, wrk, RoundingMode::None);
     let mut ts = Vec::new();
     let mut ys = Vec::new();
     if !push_pair(&mut ts, &mut ys, t.clone(), y.clone(), ODE_MAX_STEPS + 1) {
         return None;
+    }
+    // Probe at h_budget: if this step fails the error test, the cap will be
+    // exhausted before t1.
+    {
+        let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h_budget, wrk, RoundingMode::None, cc)?;
+        let err = ExactNum::sub_ref(&y5, &y4, wrk, RoundingMode::None).abs();
+        let scale = step_scale(atol, rtol, &y, &y5, wrk);
+        if !step_ok(&err, &scale) {
+            return None;
+        }
     }
     let mut accepted = 0usize;
     let mut attempts = 0usize;
@@ -489,23 +535,8 @@ where
         }
         let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h, wrk, RoundingMode::None, cc)?;
         let err = ExactNum::sub_ref(&y5, &y4, wrk, RoundingMode::None).abs();
-        let big = if y.abs_cmp(&y5) == Some(1) { &y } else { &y5 };
-        let negated;
-        let ymax: &ExactNum = if big.is_negative() {
-            negated = big.neg_via_mul();
-            &negated
-        } else {
-            big
-        };
-        let scale = ExactNum::mul_ref(rtol, ymax, wrk, RoundingMode::None).add(
-            atol,
-            wrk,
-            RoundingMode::None,
-        );
-        let ok = scale.is_zero()
-            || err.is_zero()
-            || err.compare(&scale) == Some(-1)
-            || err.compare(&scale) == Some(0);
+        let scale = step_scale(atol, rtol, &y, &y5, wrk);
+        let ok = step_ok(&err, &scale);
         if ok {
             t = t.add(&h, wrk, RoundingMode::None);
             y = y5;
@@ -535,6 +566,21 @@ where
         h = h.mul(&ratio, wrk, RoundingMode::None);
         if !ok && !finite(&h) {
             return None;
+        }
+        let leftover = ODE_MAX_STEPS.saturating_sub(accepted);
+        if leftover == 0 {
+            return None;
+        }
+        let remain = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
+        if remain.is_positive() {
+            let reach = h.clone().mul(
+                &ExactNum::from_u32(leftover as u32, wrk),
+                wrk,
+                RoundingMode::None,
+            );
+            if remain.compare(&reach) == Some(1) {
+                return None;
+            }
         }
     }
     Some((to_row(p, rm, &ts)?, to_row(p, rm, &ys)?))
@@ -656,6 +702,41 @@ mod tests {
             &mut cc
         )
         .is_none());
+        Ok(())
+    }
+
+    /// ZF-54: atol=rtol=2^{-512} on [0,1] at p=1024 cannot finish inside
+    /// [`ODE_MAX_STEPS`] (a 5th-order step of size 1/`ODE_MAX_STEPS` still
+    /// misses the tolerance). The solver must return `None` without running
+    /// the cap (65536 Dormand–Prince steps, historically ~67 s).
+    #[test]
+    fn zf_54_rk45_impossible_tol_refuses_early() -> Result<(), crate::Error> {
+        let p = 1024;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let zero = ExactNum::new(p);
+        let one = ExactNum::from_u8(1, p);
+        let tol = ExactNum::from_u8(1, p).ldexp(-512, p, rm);
+        let mut evals = 0u32;
+        let got = rk45_adaptive(
+            |t, _y, q, r, cc| {
+                evals += 1;
+                t.cos(q, r, cc)
+            },
+            &zero,
+            &one,
+            &one,
+            &tol,
+            &tol,
+            p,
+            rm,
+            &mut cc,
+        );
+        assert!(got.is_none(), "impossible tol must refuse");
+        assert!(
+            evals <= 16,
+            "refused only after {evals} f-evals; cap would be ~7*65536"
+        );
         Ok(())
     }
 }
