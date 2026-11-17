@@ -4732,3 +4732,38 @@ fn zf_78_elliptic_cut_signed_zeros_body() {
         zf_78_assert_elliptic_gold(name, &rounded, re, im, p, rm, &mut cc);
     }
 }
+
+/// Ai(x) for huge positive x. DLMF 9.7.15: 0 < Ai(x) < exp(-(2/3) x^{3/2}).
+/// For x > 2^{64} that upper bound underflows the exponent range, so the correctly
+/// rounded value is +0 in every mode that rounds toward zero (Down, ToZero, ToEven,
+/// ToOdd, None) and min_positive(p) in Up / FromZero. The large-positive path used
+/// to evaluate exp(+ξ) for Bi in the same call; that overflow was mapped to +Inf
+/// and poisoned Ai.
+#[test]
+fn zf_airy_large_positive_underflow() {
+    let mut cc = Consts::new().expect("Consts");
+    for p in [4096usize, 8192] {
+        let xs = [parse_real("1p100").expect("2^100"), ExactNum::max_value(p)];
+        for x in xs {
+            for rm in MODES {
+                let v = x.ai(p, rm, &mut cc);
+                let away = matches!(rm, RoundingMode::Up | RoundingMode::FromZero);
+                if away {
+                    let want = ExactNum::min_positive(p);
+                    assert_eq!(
+                        v.compare(&want),
+                        Some(0),
+                        "Ai(x) p={p} {rm:?}: {} want min_positive",
+                        fmt_real(&v)
+                    );
+                } else {
+                    assert!(
+                        v.is_zero() && !v.is_negative(),
+                        "Ai(x) p={p} {rm:?}: {} want +0",
+                        fmt_real(&v)
+                    );
+                }
+            }
+        }
+    }
+}

@@ -6,6 +6,7 @@ use crate::common::util::reduction_width;
 use crate::common::util::round_p;
 use crate::defs::Error;
 use crate::defs::RoundingMode;
+use crate::defs::EXPONENT_MIN;
 use crate::num::ExactNumNumber;
 use crate::ops::consts::Consts;
 use crate::Sign;
@@ -45,6 +46,19 @@ impl ExactNumNumber {
     ) -> Result<Self, Error> {
         let p = round_p(p);
         Self::p_assertion(p)?;
+
+        // DLMF 9.7.15: 0 < Ai(x) < exp(-ζ) for x > 0, ζ = (2/3) x^{3/2}.
+        // The same ζ governs Bi ~ π^{-1/2} x^{-1/4} exp(+ζ) (9.7.7) and the
+        // derivatives (9.7.6, 9.7.8). When ζ is past 2^{63}, exp(-ζ) is far
+        // below the subnormal grid and exp(+ζ) is far above EXPONENT_MAX.
+        // Handle each component alone so Bi's overflow cannot poison Ai.
+        if self.is_positive() {
+            if let Some(v) = self.airy_pos_past_exp_range(which, p, rm)? {
+                let mut v = v;
+                v.set_inexact(true | self.inexact());
+                return Ok(v);
+            }
+        }
 
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
@@ -90,6 +104,12 @@ impl ExactNumNumber {
     fn airy_at(&self, which: AiryWhich, p: usize, cc: &mut Consts) -> Result<(Self, Self), Error> {
         let mut x = self.clone()?;
         x.set_inexact(false);
+        // Large-positive asymptotic: compute only the requested function
+        // (DLMF 9.7.5–9.7.8). The four-way path also evaluates exp(+ζ) for Bi,
+        // which overflows while Ai is an underflow or a tiny exp(-ζ) term.
+        if !x.is_zero() && x.is_positive() && !x.airy_prefer_series(p, cc)? {
+            return x.airy_asymp_pos_one(which, p, cc);
+        }
         let ([ai, bi, aip, bip], [sai, sbi, saip, sbip]) = x.airy_all(p, cc)?;
         Ok(match which {
             AiryWhich::Ai => (ai, sai),
@@ -97,6 +117,55 @@ impl ExactNumNumber {
             AiryWhich::AiPrime => (aip, saip),
             AiryWhich::BiPrime => (bip, sbip),
         })
+    }
+
+    /// The Taylor pair is used while a smallest asymptotic term e^{-2ζ} is still
+    /// above 2^{-p} (the same cutoff as `airy_all`).
+    fn airy_prefer_series(&self, p: usize, cc: &mut Consts) -> Result<bool, Error> {
+        let mut ax = self.clone()?;
+        ax.set_sign(Sign::Pos);
+        let xi = ax.airy_xi_scales(p, cc)?.0;
+        if xi.exponent() >= 24 {
+            return Ok(false);
+        }
+        let n = xi.int_as_usize()?;
+        Ok(n < (p + 16) * 7 / 20)
+    }
+
+    /// Proven overflow / underflow when ζ is past the exponent range.
+    fn airy_pos_past_exp_range(
+        &self,
+        which: AiryWhich,
+        p: usize,
+        rm: RoundingMode,
+    ) -> Result<Option<Self>, Error> {
+        if !self.airy_zeta_past_exp_range()? {
+            return Ok(None);
+        }
+        match which {
+            AiryWhich::Ai | AiryWhich::AiPrime => Ok(Some(airy_underflow_pos(p, rm)?)),
+            AiryWhich::Bi | AiryWhich::BiPrime => Err(Error::ExponentOverflow(Sign::Pos)),
+        }
+    }
+
+    /// True when ζ = (2/3) x^{3/2} exceeds 2^{63}, so e^{-ζ} is far below the
+    /// smallest subnormal and e^{ζ} is far above EXPONENT_MAX (DLMF 9.7.15).
+    fn airy_zeta_past_exp_range(&self) -> Result<bool, Error> {
+        if self.exponent() >= 64 {
+            return Ok(true);
+        }
+        if self.exponent() < 42 {
+            return Ok(false);
+        }
+        let p = WORD_BIT_SIZE;
+        let two = Self::from_word(2, p)?;
+        let three = Self::from_word(3, p)?;
+        let sx = self.sqrt(p, RoundingMode::None)?;
+        let x32 = self.mul(&sx, p, RoundingMode::None)?;
+        let xi = two
+            .div(&three, p, RoundingMode::None)?
+            .mul(&x32, p, RoundingMode::None)?;
+        Ok(xi.exponent() > 63)
     }
 
     /// Ai, Bi, Ai', Bi' and, for each, the size of the terms it is combined from.
@@ -211,6 +280,59 @@ impl ExactNumNumber {
         ))
     }
 
+    /// One of Ai, Bi, Ai', Bi' from the x → +∞ expansions (DLMF 9.7.5–9.7.8),
+    /// with the remainder controlled by stopping at the first growing term
+    /// (Arb-style: the truncated tail is smaller than the last included term,
+    /// which itself is below 2^{-p} when this path is selected).
+    fn airy_asymp_pos_one(
+        &self,
+        which: AiryWhich,
+        p: usize,
+        cc: &mut Consts,
+    ) -> Result<(Self, Self), Error> {
+        let (xi, x14, x_m14, pi_m12) = self.airy_xi_scales(p, cc)?;
+        let half = one_half_airy(p)?;
+        match which {
+            AiryWhich::Ai | AiryWhich::AiPrime => {
+                let mut nxi = xi.clone()?;
+                nxi.set_sign(Sign::Neg);
+                let exp_m = nxi.exp(p, RoundingMode::None, cc)?;
+                let (su, sv) = airy_uv_sums(&xi, p, true)?;
+                let val = if matches!(which, AiryWhich::Ai) {
+                    half.mul(&pi_m12, p, RoundingMode::None)?
+                        .mul(&x_m14, p, RoundingMode::None)?
+                        .mul(&exp_m, p, RoundingMode::None)?
+                        .mul(&su, p, RoundingMode::None)?
+                } else {
+                    half.mul(&pi_m12, p, RoundingMode::None)?
+                        .mul(&x14, p, RoundingMode::None)?
+                        .mul(&exp_m, p, RoundingMode::None)?
+                        .neg()?
+                        .mul(&sv, p, RoundingMode::None)?
+                };
+                let scale = val.clone()?;
+                Ok((val, scale))
+            }
+            AiryWhich::Bi | AiryWhich::BiPrime => {
+                let exp_p = xi.exp(p, RoundingMode::None, cc)?;
+                let (tu, tv) = airy_uv_sums(&xi, p, false)?;
+                let val = if matches!(which, AiryWhich::Bi) {
+                    pi_m12
+                        .mul(&x_m14, p, RoundingMode::None)?
+                        .mul(&exp_p, p, RoundingMode::None)?
+                        .mul(&tu, p, RoundingMode::None)?
+                } else {
+                    pi_m12
+                        .mul(&x14, p, RoundingMode::None)?
+                        .mul(&exp_p, p, RoundingMode::None)?
+                        .mul(&tv, p, RoundingMode::None)?
+                };
+                let scale = val.clone()?;
+                Ok((val, scale))
+            }
+        }
+    }
+
     #[allow(clippy::type_complexity)]
     fn airy_asymp_neg(&self, p: usize, cc: &mut Consts) -> Result<([Self; 4], [Self; 4]), Error> {
         let mut z = self.clone()?;
@@ -308,6 +430,16 @@ fn one_half_airy(p: usize) -> Result<ExactNumNumber, Error> {
     let mut h = ExactNumNumber::from_word(1, p)?;
     h.div_by_2(RoundingMode::None);
     Ok(h)
+}
+
+/// IEEE underflow of a positive value far below half of `min_positive(p)`:
+/// +0 in every mode that rounds toward zero, `min_positive` in Up / FromZero.
+fn airy_underflow_pos(p: usize, rm: RoundingMode) -> Result<ExactNumNumber, Error> {
+    let mut ret = ExactNumNumber::from_word(1, p)?;
+    ret.set_sign(Sign::Pos);
+    ret.set_exponent(EXPONENT_MIN);
+    ret.subnormalize(2 * EXPONENT_MIN, rm);
+    Ok(ret)
 }
 
 fn airy_cs(
