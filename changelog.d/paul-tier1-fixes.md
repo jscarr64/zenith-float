@@ -52,4 +52,15 @@
   already did. Integer-order complex K uses the K_0 series instead of J±iY
   (ker/kei of 700). Real Y_n uses Hankel Y_0/Y_1 plus recurrence when |x| is in
   the Hankel range but |ν|² ≥ 2|x| (Y_100(1000)). Test
-  zf_78_bessel_kelvin_high_prec. The 2F1 cluster remains open.
+  zf_78_bessel_kelvin_high_prec. I_{2+i}(-2±0i) and J/K/Y of the same cut
+  were NaN(PrecisionRetryExhausted): complex pow of a real or imaginary
+  axis base with a non-real exponent went through exp(w Log z) and could
+  not certify an exact-axis result ((-1)^{2+i}=e^{-π}, i^{2+i}=-e^{-π/2}).
+  pow_real_axis now uses the exact argument θ=mπ/2 and forces exact zero
+  parts. kei_100(2^{-30}) was NaN(InvalidArgument) because
+  BESSEL_INTEGER_MAX=64 refused a computable order (P9); integer orders
+  that fit in i32 are recognized, and the K recurrence shares
+  BESSEL_K_RECUR_MAX. ker/kei of −700 hung because integer-order K of a
+  left-half argument skipped the K_0 series; Re z<0 now uses DLMF 10.34.2
+  to reduce to K and I of −z. Tests zf_78_bessel_cut_and_large_integer_order
+  and zf_78_bessel_kelvin_high_prec. The 2F1 cluster remains open.

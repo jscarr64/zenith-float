@@ -35,8 +35,6 @@ fn term_small_rel(t: &ExactComplex, s: &ExactComplex, p: usize) -> bool {
 const BESSEL_SERIES_THRESHOLD: u32 = 16;
 
 /// Integers \(\lvert n\rvert\) recognized exactly for \(Y_n\) recurrence and \(z=0\).
-const BESSEL_INTEGER_MAX: i32 = 64;
-
 /// Largest Hankel-expansion term exponent accepted: a larger peak cancels in \(P,Q\) by more
 /// than the four bits the Ziv margin absorbs here, so the expansion is declined instead.
 const HANKEL_PEAK_EXP_MAX: Exponent = 4;
@@ -156,17 +154,12 @@ fn term_mag_exp(t: &ExactComplex) -> Option<Exponent> {
     }
 }
 
-fn integer_nu(nu: &ExactComplex, p: usize) -> Option<i32> {
+fn integer_nu(nu: &ExactComplex, _p: usize) -> Option<i32> {
     if !nu.im().is_zero() || !nu.re().is_int() {
         return None;
     }
-    for n in -BESSEL_INTEGER_MAX..=BESSEL_INTEGER_MAX {
-        let w = ExactNum::from_i32(n, p);
-        if nu.re().compare(&w) == Some(0) {
-            return Some(n);
-        }
-    }
-    None
+    // Any integer that fits in i32. A fixed cap of 64 refused kei_100 (P9).
+    nu.re().to_i32(RoundingMode::ToZero).ok()
 }
 
 fn harmonic(k: usize, p: usize) -> ExactNum {
@@ -266,12 +259,11 @@ fn real_negative_axis(z: &ExactComplex, nu: &ExactComplex) -> bool {
 }
 
 /// Exact integer in \([-64,64]\).
-fn real_small_int(x: &ExactNum, p: usize) -> Option<i32> {
+fn real_small_int(x: &ExactNum, _p: usize) -> Option<i32> {
     if !x.is_int() {
         return None;
     }
-    (-BESSEL_INTEGER_MAX..=BESSEL_INTEGER_MAX)
-        .find(|&n| x.compare(&ExactNum::from_i32(n, p)) == Some(0))
+    x.to_i32(RoundingMode::ToZero).ok()
 }
 
 /// \(\cos(\nu\pi),\sin(\nu\pi)\) with exact zeros for integer / half-odd-integer \(\nu\).
@@ -789,7 +781,10 @@ impl ExactComplex {
     }
 
     fn bessel_k_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
-        if !self.re().is_negative() && !self.re().is_zero() && use_bessel_series(self, dest_p) {
+        if self.re().is_negative() && !self.re().is_zero() {
+            return self.bessel_k_left_half(nu, work_p, dest_p, cc);
+        }
+        if use_bessel_series(self, dest_p) {
             // J±iY cancels ~3|z| bits here and builds both J_±ν. The I connection
             // is a direct 0F1; only the final subtraction needs the e^{2 Re z} guard.
             // Integer ν cannot use the I connection (sin(νπ)=0); use the K_0 series
@@ -849,34 +844,40 @@ impl ExactComplex {
     /// rounding of relative size \(2^{-wp}\) and earlier errors do not grow against \(K\);
     /// \(\log_2 n+16\) guard bits cover the \(n\) steps. The start orders have
     /// \(\mathrm{Re}\,\mu<2\), where the expansion converges past the series switch.
+    /// DLMF 10.34.2 with `m = ±1` and `w = −z` (`Re w > 0`):
+    /// `K_ν(z) = e^{∓νπi} K_ν(w) ∓ πi I_ν(w)`, upper sign for `Im z ≥ 0`.
+    /// Used whenever `Re z < 0`, including in the series regime: integer-order
+    /// `K` of a left-half argument (ker/kei of −700) used to skip the `K_0`
+    /// series and form `J±iY` with a `3|z|`-bit guard, which hung at p=2048.
+    fn bessel_k_left_half(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+        let upper = !self.im().is_negative() || self.im().is_zero();
+        let w = self.neg_via_mul();
+        let kw = w.bessel_k_at(nu, work_p, dest_p, cc);
+        let iw = w.bessel_i_series(nu, work_p, dest_p, cc);
+        if kw.is_nan() {
+            return kw;
+        }
+        if iw.is_nan() {
+            return iw;
+        }
+        let e = nu
+            .abs(64, RoundingMode::None)
+            .exponent()
+            .map_or(0, |e| usize::try_from(e.max(0)).unwrap_or(usize::MAX));
+        let phase = reflect_phase(nu, !upper, round_p(work_p.saturating_add(e) + 16), cc);
+        let pi_i = ExactComplex::new(ExactNum::new(work_p), cc.pi(work_p, RoundingMode::None));
+        let corr = pi_i.mul(&iw, work_p, RoundingMode::None);
+        let kpart = phase.mul(&kw, work_p, RoundingMode::None);
+        if upper {
+            kpart.sub(&corr, work_p, RoundingMode::None)
+        } else {
+            kpart.add(&corr, work_p, RoundingMode::None)
+        }
+    }
+
     fn bessel_k_recur(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         if self.re().is_negative() && !self.re().is_zero() {
-            // For Re z < 0, K_ν(z) carries a large I_ν part and the recurrence is not stable
-            // against it. DLMF 10.34.2 with m = ±1 and w = −z (Re w > 0):
-            // K_ν(z) = e^{∓νπi} K_ν(w) ∓ πi I_ν(w), upper sign for Im z ≥ 0.
-            let upper = !self.im().is_negative() || self.im().is_zero();
-            let w = self.neg_via_mul();
-            let kw = w.bessel_k_recur(nu, work_p, dest_p, cc);
-            let iw = w.bessel_i_series(nu, work_p, dest_p, cc);
-            if kw.is_nan() {
-                return kw;
-            }
-            if iw.is_nan() {
-                return iw;
-            }
-            let e = nu
-                .abs(64, RoundingMode::None)
-                .exponent()
-                .map_or(0, |e| usize::try_from(e.max(0)).unwrap_or(usize::MAX));
-            let phase = reflect_phase(nu, !upper, round_p(work_p.saturating_add(e) + 16), cc);
-            let pi_i = ExactComplex::new(ExactNum::new(work_p), cc.pi(work_p, RoundingMode::None));
-            let corr = pi_i.mul(&iw, work_p, RoundingMode::None);
-            let kpart = phase.mul(&kw, work_p, RoundingMode::None);
-            return if upper {
-                kpart.sub(&corr, work_p, RoundingMode::None)
-            } else {
-                kpart.add(&corr, work_p, RoundingMode::None)
-            };
+            return self.bessel_k_left_half(nu, work_p, dest_p, cc);
         }
         let Ok(n) = nu.re().to_u32(RoundingMode::Down) else {
             return nan_pair(Error::PrecisionRetryExhausted);
@@ -925,6 +926,9 @@ impl ExactComplex {
     /// cancellation).
     fn bessel_k_integer_series(&self, n: i32, work_p: usize, cc: &mut Consts) -> Option<Self> {
         let n = n.unsigned_abs();
+        if n > BESSEL_K_RECUR_MAX {
+            return None;
+        }
         let guard = re_pair_cancel_bits(self).saturating_add(48);
         if guard > BESSEL_GUARD_MAX {
             return None;
@@ -944,7 +948,10 @@ impl ExactComplex {
         let mut km2 = k0;
         let mut km1 = k1;
         for m in 1..n {
-            let two_m = ExactComplex::from_real(ExactNum::from_u32(2 * m, acc), acc);
+            let two_m = ExactComplex::from_real(
+                ExactNum::from_u32(m, acc).mul(&ExactNum::from_u8(2, acc), acc, RoundingMode::None),
+                acc,
+            );
             let km = two_m
                 .div(self, acc, RoundingMode::None)
                 .mul(&km1, acc, RoundingMode::None)

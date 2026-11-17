@@ -1678,14 +1678,206 @@ impl ExactComplex {
         Some(Self::new(re, im))
     }
 
+    /// `θ/(π/2)` for a finite nonzero base on the real or imaginary axis:
+    /// `0` on the positive-real axis, `±1` on the imaginary axis, `±2` on the
+    /// negative-real cut (the sign of the side, including a signed-zero imag).
+    fn axis_half_turns(&self) -> Option<i32> {
+        let imag_axis = self.re.is_zero() && !self.im.is_zero();
+        if !imag_axis && (!self.im.is_zero() || self.re.is_zero()) {
+            return None;
+        }
+        let below = self.im.is_negative();
+        Some(if imag_axis {
+            if below {
+                -1
+            } else {
+                1
+            }
+        } else if self.re.is_positive() {
+            0
+        } else if below {
+            -2
+        } else {
+            2
+        })
+    }
+
+    /// `(sin(π yu), cos(π yu))`, with exact `0, ±1` when `2 yu` is an integer.
+    fn cos_sin_pi_times(yu: &ExactNum, p: usize, cc: &mut Consts) -> Option<(ExactNum, ExactNum)> {
+        let n = RoundingMode::None;
+        let t = yu.rem(&ExactNum::from_u8(2, WORD_BIT_SIZE));
+        let two_t = t.clone().ldexp(1, p.max(t.precision().unwrap_or(p)) + 2, n);
+        if two_t.is_int() {
+            let k = two_t.to_i64(RoundingMode::ToZero).ok()?.rem_euclid(4);
+            let (one, zero) = (ExactNum::from_u8(1, p), ExactNum::new(p));
+            Some(match k {
+                0 => (zero.clone(), one),
+                1 => (one, zero.clone()),
+                2 => (zero.clone(), -one),
+                _ => (-one, zero.clone()),
+            })
+        } else {
+            let pi = cc.pi(p, n);
+            Some(ExactNum::mul_ref(&pi, &t, p, n).sin_cos(p, n, cc))
+        }
+    }
+
+    /// `z^{a+ib}` for a real or imaginary axis base. Uses the exact argument
+    /// `θ = m π/2` so a result that lies on an axis (`(-1)^{2+i} = e^{-π}`,
+    /// `i^{2+i} = -e^{-π/2}`) has an exact zero part and Ziv can certify it.
+    /// The general `exp((a+ib) Log z)` path leaves a residue that shrinks with
+    /// the working precision and never certifies.
+    fn pow_axis_complex_exp(&self, rhs: &Self, p: usize, cc: &mut Consts) -> Option<Self> {
+        let n = RoundingMode::None;
+        let a = &rhs.re;
+        let b = &rhs.im;
+        let m = self.axis_half_turns()?;
+        let imag_axis = self.re.is_zero() && !self.im.is_zero();
+        let r = if imag_axis { self.im.clone().abs() } else { self.re.clone().abs() };
+        let one = ExactNum::from_u8(1, p);
+        let r_is_one = r.compare(&one) == Some(0);
+        let ra = r.pow(a, p, n, cc);
+        if !finite_val(&ra) {
+            return None;
+        }
+        let pi = cc.pi(p, n);
+        let theta = pi
+            .clone()
+            .ldexp(-1, p, n)
+            .mul(&ExactNum::from_i32(m, p), p, n);
+        let mag = if m == 0 || b.is_zero() {
+            ra
+        } else {
+            let em = (-ExactNum::mul_ref(b, &theta, p, n)).exp(p, n, cc);
+            if !finite_val(&em) {
+                return None;
+            }
+            if r_is_one {
+                em
+            } else {
+                ExactNum::mul_ref(&ra, &em, p, n)
+            }
+        };
+        if r_is_one {
+            let yu = match m {
+                0 => return Some(Self::new(mag, ExactNum::new(p))),
+                2 => a.clone(),
+                -2 => -a.clone(),
+                1 => a.clone().ldexp(-1, a.precision().unwrap_or(p) + 2, n),
+                _ => -a.clone().ldexp(-1, a.precision().unwrap_or(p) + 2, n),
+            };
+            let (sn, cs) = Self::cos_sin_pi_times(&yu, p, cc)?;
+            let below = self.im.is_negative();
+            let dtheta_pos = below;
+            let up = |pos: bool| if pos { ExactNum::new(p) } else { -ExactNum::new(p) };
+            let re = if cs.is_zero() {
+                up(imag_axis || (a.is_negative() ^ sn.is_negative() ^ !dtheta_pos))
+            } else {
+                ExactNum::mul_ref(&mag, &cs, p, n)
+            };
+            let im = if sn.is_zero() {
+                up(imag_axis || !(a.is_negative() ^ cs.is_negative() ^ !dtheta_pos))
+            } else {
+                ExactNum::mul_ref(&mag, &sn, p, n)
+            };
+            return Some(Self::new(re, im));
+        }
+        let ln_r = r.ln(p, n, cc);
+        if !finite_val(&ln_r) {
+            return None;
+        }
+        let phi = ExactNum::mul_ref(b, &ln_r, p, n).add(&ExactNum::mul_ref(a, &theta, p, n), p, n);
+        let (sn, cs) = phi.sin_cos(p, n, cc);
+        Some(Self::new(
+            ExactNum::mul_ref(&mag, &cs, p, n),
+            ExactNum::mul_ref(&mag, &sn, p, n),
+        ))
+    }
+
+    /// Ball form of [`Self::pow_axis_complex_exp`] (exact zero parts stay exact).
+    fn pow_axis_complex_exp_ball(&self, rhs: &Self, p: usize, cc: &mut Consts) -> Option<CB> {
+        let n = RoundingMode::None;
+        let a = &rhs.re;
+        let b = &rhs.im;
+        let m = self.axis_half_turns()?;
+        let imag_axis = self.re.is_zero() && !self.im.is_zero();
+        let r = if imag_axis { self.im.clone().abs() } else { self.re.clone().abs() };
+        let one = ExactNum::from_u8(1, p);
+        let r_is_one = r.compare(&one) == Some(0);
+        // Enclose π (and ln r) in a ball so exp(-b m π/2) and the angle
+        // contain the exact values; RB::rounded(exp(-π_q)) is too tight and
+        // can sit one ulp off e^{-π}.
+        let pi_b = RB::rounded(cc.pi(p, n), p)?;
+        let theta_b = pi_b
+            .scale2(-1)?
+            .mul(&RB::exact(ExactNum::from_i32(m, p)), p)?;
+        let ra = if r_is_one {
+            RB::exact(one.clone())
+        } else {
+            RB::exact(r.clone())
+                .ln(p, cc)?
+                .mul(&RB::exact(a.clone()), p)?
+                .exp(p, cc)?
+        };
+        let mag = if m == 0 || b.is_zero() {
+            ra
+        } else {
+            let em = RB::exact(b.clone()).mul(&theta_b, p)?.neg().exp(p, cc)?;
+            if r_is_one {
+                em
+            } else {
+                ra.mul(&em, p)?
+            }
+        };
+        if r_is_one {
+            let yu = match m {
+                0 => {
+                    return Some(CB::from_parts(mag, RB::exact(ExactNum::new(p))));
+                }
+                2 => a.clone(),
+                -2 => -a.clone(),
+                1 => a.clone().ldexp(-1, a.precision().unwrap_or(p) + 2, n),
+                _ => -a.clone().ldexp(-1, a.precision().unwrap_or(p) + 2, n),
+            };
+            let (sn, cs) = Self::cos_sin_pi_times(&yu, p, cc)?;
+            let below = self.im.is_negative();
+            let dtheta_pos = below;
+            let up = |pos: bool| if pos { ExactNum::new(p) } else { -ExactNum::new(p) };
+            let re = if cs.is_zero() {
+                RB::exact(up(
+                    imag_axis || (a.is_negative() ^ sn.is_negative() ^ !dtheta_pos)
+                ))
+            } else {
+                mag.mul(&RB::rounded(cs.clone(), p)?, p)?
+            };
+            let im = if sn.is_zero() {
+                RB::exact(up(
+                    imag_axis || !(a.is_negative() ^ cs.is_negative() ^ !dtheta_pos)
+                ))
+            } else {
+                mag.mul(&RB::rounded(sn, p)?, p)?
+            };
+            return Some(CB::from_parts(re, im));
+        }
+        let ln_r = RB::exact(r.clone()).ln(p, cc)?;
+        let phi = RB::exact(b.clone())
+            .mul(&ln_r, p)?
+            .add(&RB::exact(a.clone()).mul(&theta_b, p)?, p)?;
+        let (sn, cs) = phi.sin_cos(p, cc)?;
+        Some(CB::from_parts(mag.mul(&cs, p)?, mag.mul(&sn, p)?))
+    }
+
     fn pow_real_axis(&self, rhs: &Self, p: usize, cc: &mut Consts) -> Option<Self> {
         let n = RoundingMode::None;
-        if !rhs.im.is_zero()
-            || !finite_val(&rhs.re)
+        if !finite_val(&rhs.re)
+            || !finite_val(&rhs.im)
             || !finite_val(&self.re)
             || !finite_val(&self.im)
         {
             return None;
+        }
+        if !rhs.im.is_zero() {
+            return self.pow_axis_complex_exp(rhs, p, cc);
         }
         let y = &rhs.re;
         let imag_axis = self.re.is_zero() && !self.im.is_zero();
@@ -1755,12 +1947,15 @@ impl ExactComplex {
     /// Ball form of [`Self::pow_real_axis`] (same cases; exact zero parts stay exact).
     fn pow_real_axis_ball(&self, rhs: &Self, p: usize, cc: &mut Consts) -> Option<CB> {
         let n = RoundingMode::None;
-        if !rhs.im.is_zero()
-            || !finite_val(&rhs.re)
+        if !finite_val(&rhs.re)
+            || !finite_val(&rhs.im)
             || !finite_val(&self.re)
             || !finite_val(&self.im)
         {
             return None;
+        }
+        if !rhs.im.is_zero() {
+            return self.pow_axis_complex_exp_ball(rhs, p, cc);
         }
         let y = &rhs.re;
         let imag_axis = self.re.is_zero() && !self.im.is_zero();
@@ -2696,6 +2891,44 @@ mod tests {
         let d = ln5.neg().add(l.re(), p, RoundingMode::None).abs();
         assert!(d.is_zero() || d.exponent().unwrap_or(0) < -((p as Exponent) / 2));
         assert!(l.im().is_positive());
+        Ok(())
+    }
+
+    /// `z^w` for a real or imaginary axis base and a non-real exponent used to go
+    /// through `exp(w ln z)` and then fail Ziv whenever the result is exactly real
+    /// (e.g. `(-1)^{2+i} = e^{-π}`, `i^{2+i} = -e^{-π/2}`).
+    #[test]
+    fn pow_of_axis_base_with_complex_exponent_is_exact_on_the_axis() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 64usize;
+        let rm = RoundingMode::ToEven;
+        let w = ExactComplex::new(ExactNum::from_u8(2, p), ExactNum::from_u8(1, p));
+        let m1 = ExactComplex::from_real(-ExactNum::from_u8(1, p), p);
+        let v = m1.pow(&w, p, rm, &mut cc);
+        assert!(!v.is_nan(), "(-1)^{{2+i}} was {v:?}");
+        assert!(
+            v.im().is_zero(),
+            "(-1)^{{2+i}} imag must be exact 0, got {v:?}"
+        );
+        // exp(round(π)) is not a correctly rounded e^{-π} (it can be one ulp low).
+        let hi = 256usize;
+        let want = (-cc.pi(hi, RoundingMode::None))
+            .exp(hi, RoundingMode::None, &mut cc)
+            .mul(&ExactNum::from_u8(1, hi), p, rm);
+        assert_eq!(v.re().compare(&want), Some(0), "(-1)^{{2+i}} real");
+
+        let v = ExactComplex::i(p).pow(&w, p, rm, &mut cc);
+        assert!(!v.is_nan(), "i^{{2+i}} was {v:?}");
+        assert!(
+            v.im().is_zero(),
+            "i^{{2+i}} imag must be exact 0, got {v:?}"
+        );
+        let want = -(-cc
+            .pi(hi, RoundingMode::None)
+            .ldexp(-1, hi, RoundingMode::None))
+        .exp(hi, RoundingMode::None, &mut cc)
+        .mul(&ExactNum::from_u8(1, hi), p, rm);
+        assert_eq!(v.re().compare(&want), Some(0), "i^{{2+i}} real");
         Ok(())
     }
 }

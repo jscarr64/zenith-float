@@ -4023,4 +4023,103 @@ fn zf_78_bessel_kelvin_high_prec_body() {
     let x = ExactNum::from_i64(1000, p);
     let nu = ExactNum::from_i64(100, p);
     check("r.bessel_y(1000, 100)", x.bessel_y(&nu, p, rm, &mut cc));
+
+    let nu = ExactComplex::new(ExactNum::from_i64(2, p), ExactNum::from_i64(1, p));
+    for below in [false, true] {
+        let z = zf_78_neg_real(-2, p, below);
+        let tag = if below { "-0" } else { "+0" };
+        checkc(
+            &format!("c.bessel_i(-2{tag}i, 2+i)"),
+            z.bessel_i(&nu, p, rm, &mut cc),
+        );
+        checkc(
+            &format!("c.bessel_j_nu(-2{tag}i, 2+i)"),
+            z.bessel_j_nu(&nu, p, rm, &mut cc),
+        );
+        checkc(
+            &format!("c.bessel_k(-2{tag}i, 2+i)"),
+            z.bessel_k(&nu, p, rm, &mut cc),
+        );
+        if below {
+            checkc(
+                &format!("c.bessel_y(-2{tag}i, 2+i)"),
+                z.bessel_y(&nu, p, rm, &mut cc),
+            );
+        }
+    }
+
+    let x = ExactNum::from_u8(1, p).ldexp(-30, p, RoundingMode::None);
+    let n = ExactNum::from_i64(100, p);
+    check(
+        "r.kelvin_kei_nu(2^-30, 100)",
+        x.kelvin_kei_nu(&n, p, rm, &mut cc),
+    );
+
+    let x = ExactNum::from_i64(-700, p);
+    check("r.kelvin_ker(-700)", x.kelvin_ker(p, rm, &mut cc));
+    check("r.kelvin_kei(-700)", x.kelvin_kei(p, rm, &mut cc));
+}
+
+/// `-re + 0i` or `-re - 0i`.
+fn zf_78_neg_real(re: i64, p: usize, below: bool) -> ExactComplex {
+    let mut im = ExactNum::new(p);
+    if below {
+        im.set_sign(Sign::Neg);
+    }
+    ExactComplex::new(ExactNum::from_i64(re, p), im)
+}
+
+/// I_{2+i}(-2±0i) at p=64 was NaN(PrecisionRetryExhausted): complex pow of an axis
+/// base with a non-real exponent (the J series evaluates (z/2)^ν = (-1)^{2+i} or
+/// i^{2+i}) could not certify an exact-axis result. kei_100(2^{-30}) was
+/// NaN(InvalidArgument) because BESSEL_INTEGER_MAX=64 refused a computable order.
+#[test]
+fn zf_78_bessel_cut_and_large_integer_order() {
+    let mut cc = Consts::new().expect("Consts");
+    let p = 64usize;
+    let rm = RoundingMode::ToEven;
+    let nu = ExactComplex::new(ExactNum::from_i64(2, p), ExactNum::from_i64(1, p));
+
+    let m1 = ExactComplex::from_real(-ExactNum::from_u8(1, p), p);
+    let pr = m1.pow(&nu, p, rm, &mut cc);
+    assert!(
+        !pr.is_nan() && pr.im().is_zero(),
+        "(-1)^{{2+i}} must be finite and exactly real, got {pr:?}"
+    );
+    let i = ExactComplex::i(p);
+    let pr = i.pow(&nu, p, rm, &mut cc);
+    assert!(
+        !pr.is_nan() && pr.im().is_zero(),
+        "i^{{2+i}} must be finite and exactly real, got {pr:?}"
+    );
+
+    for below in [false, true] {
+        let z = zf_78_neg_real(-2, p, below);
+        for (name, v) in [
+            ("bessel_i", z.bessel_i(&nu, p, rm, &mut cc)),
+            ("bessel_j_nu", z.bessel_j_nu(&nu, p, rm, &mut cc)),
+            ("bessel_k", z.bessel_k(&nu, p, rm, &mut cc)),
+        ] {
+            assert!(
+                !v.is_nan() && !v.re().is_inf() && !v.im().is_inf(),
+                "ZF-78 {name}(-2{}i, 2+i) at p=64: {v:?}",
+                if below { "-0" } else { "+0" }
+            );
+        }
+        if below {
+            let v = z.bessel_y(&nu, p, rm, &mut cc);
+            assert!(
+                !v.is_nan() && !v.re().is_inf() && !v.im().is_inf(),
+                "ZF-78 bessel_y(-2-0i, 2+i) at p=64: {v:?}"
+            );
+        }
+    }
+
+    let x = ExactNum::from_u8(1, p).ldexp(-30, p, RoundingMode::None);
+    let n = ExactNum::from_i64(100, p);
+    let v = x.kelvin_kei_nu(&n, p, rm, &mut cc);
+    assert!(
+        !v.is_nan() && !v.is_inf(),
+        "ZF-78 kelvin_kei_nu(2^-30, 100) at p=64: {v:?}"
+    );
 }
