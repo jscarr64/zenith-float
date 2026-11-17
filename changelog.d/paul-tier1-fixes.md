@@ -63,8 +63,10 @@
   BESSEL_K_RECUR_MAX. ker/kei of −700 hung because integer-order K of a
   left-half argument skipped the K_0 series; Re z<0 now uses DLMF 10.34.2
   to reduce to K and I of −z. Tests zf_78_bessel_cut_and_large_integer_order
-  and zf_78_bessel_kelvin_high_prec. On the cut, J and Y with Im z = −0
-  now take the principal value from above, as I and K already did (the
-  series had used Arg = −π). BESSEL_K_RECUR_MAX=1<<22 is removed: the
-  K recurrence scales with ν (K_{2^{22}+1}(1) at p=64 in ~3.4s). Test
-  zf_78_k_recur_scales_with_nu. The 2F1 cluster remains open.
+  and zf_78_bessel_kelvin_high_prec. BESSEL_K_RECUR_MAX=1<<22 is removed:
+  the K recurrence scales with ν (K_{2^{22}+1}(1) at p=64 in ~3.4s).
+  Test zf_78_k_recur_scales_with_nu. On the cut, J, Y, I, and K follow
+  C99: Im z = +0 is the limit from above (Arg = +π), Im z = −0 from
+  below (Arg = −π). FLINT's principal value is the +0 side; −0 is
+  judged against the DLMF 10.11 / 10.27 / 10.34 continuation. Test
+  zf_78_bessel_cut_and_large_integer_order. The 2F1 cluster remains open.

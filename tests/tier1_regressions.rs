@@ -4060,6 +4060,38 @@ fn zf_78_bessel_kelvin_high_prec_body() {
     check("r.kelvin_kei(-700)", x.kelvin_kei(p, rm, &mut cc));
 }
 
+/// FLINT gold for a Bessel value on the cut: mid of a 1024-bit Arb ball for the
+/// DLMF continuation (or the principal value, which agrees with it from above),
+/// parsed at dest p and `rm`.
+fn zf_78_assert_flint_gold(
+    name: &str,
+    below: bool,
+    got: &ExactComplex,
+    re: &str,
+    im: &str,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) {
+    let want_re = ExactNum::parse(re, Radix::Dec, p, rm, cc);
+    let want_im = ExactNum::parse(im, Radix::Dec, p, rm, cc);
+    let tag = if below { "-0" } else { "+0" };
+    assert_eq!(
+        got.re().compare(&want_re),
+        Some(0),
+        "ZF-78 {name}_{{2+i}}(-2{tag}i) re got {:?} want {:?}",
+        got.re(),
+        want_re
+    );
+    assert_eq!(
+        got.im().compare(&want_im),
+        Some(0),
+        "ZF-78 {name}_{{2+i}}(-2{tag}i) im got {:?} want {:?}",
+        got.im(),
+        want_im
+    );
+}
+
 /// `-re + 0i` or `-re - 0i`.
 fn zf_78_neg_real(re: i64, p: usize, below: bool) -> ExactComplex {
     let mut im = ExactNum::new(p);
@@ -4123,33 +4155,70 @@ fn zf_78_bessel_cut_and_large_integer_order() {
         "ZF-78 kelvin_kei_nu(2^-30, 100) at p=64: {v:?}"
     );
 
-    // On the cut, either sign of zero is the principal value (from above), as for I and K.
+    // C99: the sign of a zero imag selects the side. +0 is Arg = +π (FLINT
+    // principal); −0 is Arg = −π (DLMF 10.11 / 10.27 / 10.34 continuation,
+    // computed in FLINT). Both must be finite, they must differ, and each
+    // part must match the FLINT gold at p=64, ToEven.
     let z_up = zf_78_neg_real(-2, p, false);
     let z_dn = zf_78_neg_real(-2, p, true);
-    let j_up = z_up.bessel_j_nu(&nu, p, rm, &mut cc);
-    let j_dn = z_dn.bessel_j_nu(&nu, p, rm, &mut cc);
-    assert_eq!(
-        j_dn.re().compare(j_up.re()),
-        Some(0),
-        "J_{{2+i}}(-2-0i) must equal the principal J_{{2+i}}(-2+0i), got {j_dn:?} vs {j_up:?}"
-    );
-    assert_eq!(
-        j_dn.im().compare(j_up.im()),
-        Some(0),
-        "J_{{2+i}}(-2-0i) imag must match J_{{2+i}}(-2+0i), got {j_dn:?} vs {j_up:?}"
-    );
-    let y_up = z_up.bessel_y(&nu, p, rm, &mut cc);
-    let y_dn = z_dn.bessel_y(&nu, p, rm, &mut cc);
-    assert_eq!(
-        y_dn.re().compare(y_up.re()),
-        Some(0),
-        "Y_{{2+i}}(-2-0i) must equal the principal Y_{{2+i}}(-2+0i), got {y_dn:?} vs {y_up:?}"
-    );
-    assert_eq!(
-        y_dn.im().compare(y_up.im()),
-        Some(0),
-        "Y_{{2+i}}(-2-0i) imag must match Y_{{2+i}}(-2+0i), got {y_dn:?} vs {y_up:?}"
-    );
+    let cases: [(&str, ExactComplex, ExactComplex, [&str; 4]); 4] = [
+        (
+            "J",
+            z_up.bessel_j_nu(&nu, p, rm, &mut cc),
+            z_dn.bessel_j_nu(&nu, p, rm, &mut cc),
+            [
+                "0.01289969292761315243851446812712015859682302002749544162683870",
+                "-0.01430184864595774337140776114452022311739960572981015521554012",
+                "6.907677921568666159196563207501494876492990721647332611063157",
+                "-7.658520608488526894222929735809437183625240906142614899680370",
+            ],
+        ),
+        (
+            "Y",
+            z_up.bessel_y(&nu, p, rm, &mut cc),
+            z_dn.bessel_y(&nu, p, rm, &mut cc),
+            [
+                "-7.749291772708986615068442909890537724203549729903309683446119",
+                "0.06337691413685817313114306027523968820442896394198164109011553",
+                "-7.701622372260576175622524266260842865391746735056883430167623",
+                "-6.933383044104028443121702084924531502095861823516815494963442",
+            ],
+        ),
+        (
+            "I",
+            z_up.bessel_i(&nu, p, rm, &mut cc),
+            z_dn.bessel_i(&nu, p, rm, &mut cc),
+            [
+                "0.01780419567714751260293720585820168400046382551450928538466223",
+                "-0.03025478149847086275393487467602418024589508504774901062635675",
+                "9.533998218442581256047246609482398876981936003884589403597782",
+                "-16.20118303215618470638483804891152037276873886144499266690323",
+            ],
+        ),
+        (
+            "K",
+            z_up.bessel_k(&nu, p, rm, &mut cc),
+            z_dn.bessel_k(&nu, p, rm, &mut cc),
+            [
+                "1.300877352591998256865287720150978803539513694735036658853111",
+                "2.206017884177394529560202667673656632668947708363570896773199",
+                "2.206017884177394529560202667673656632668947708363570896773199",
+                "1.300877352591998256865287720150978803539513694735036658853111",
+            ],
+        ),
+    ];
+    for (name, up, dn, golds) in cases {
+        assert!(
+            !up.is_nan() && !dn.is_nan(),
+            "ZF-78 {name}_{{2+i}}(-2±0i) must be finite, got {up:?} / {dn:?}"
+        );
+        assert!(
+            up.re().compare(dn.re()) != Some(0) || up.im().compare(dn.im()) != Some(0),
+            "ZF-78 {name}_{{2+i}}(-2+0i) and (-2-0i) must differ, both {up:?}"
+        );
+        zf_78_assert_flint_gold(name, false, &up, golds[0], golds[1], p, rm, &mut cc);
+        zf_78_assert_flint_gold(name, true, &dn, golds[2], golds[3], p, rm, &mut cc);
+    }
 }
 
 /// BESSEL_K_RECUR_MAX=1<<22 refused a computable K_{2^{22}+1}(1) (P9).

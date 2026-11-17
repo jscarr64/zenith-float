@@ -254,6 +254,20 @@ fn real_negative_axis(z: &ExactComplex, nu: &ExactComplex) -> bool {
     z.im().is_zero() && nu.im().is_zero() && z.re().is_negative()
 }
 
+/// C99: on a negative-real cut, the sign of a zero imaginary part selects the
+/// side. `true` for the limit from above (Im z > 0, or Im z = +0 on the cut,
+/// Arg → +π); `false` for the limit from below (Im z < 0, or Im z = −0 on
+/// the cut, Arg → −π). Off the cut the two signed-zero limits agree, so a
+/// zero imag with Re z ≥ 0 uses the from-above formula (the identities that
+/// rotate by ±π/2 stay off the cut they would otherwise land on).
+fn from_above(z: &ExactComplex) -> bool {
+    if z.im().is_zero() {
+        !z.im().is_negative() || !z.re().is_negative() || z.re().is_zero()
+    } else {
+        !z.im().is_negative()
+    }
+}
+
 /// Exact integer in \([-64,64]\).
 fn real_small_int(x: &ExactNum, _p: usize) -> Option<i32> {
     if !x.is_int() {
@@ -330,11 +344,12 @@ fn neg_rounding(rm: RoundingMode) -> RoundingMode {
 
 impl ExactComplex {
     /// \(J_\nu(z)\). Entire for integer \(\nu\); cut on \((-\infty,0]\) otherwise.
-    /// \(z=0\) with non-integer \(\nu\) → NaN. On the cut \(\operatorname{Im} z=0\)
-    /// (either sign of zero) and \(\operatorname{Re} z<0\), the principal value is the
-    /// limit from above, as for \(I_\nu\) and \(K_\nu\). With real \(\nu\), that value
-    /// is formed from the real kernels (\(J_\nu(-x+0i)=e^{i\nu\pi}J_\nu(x)\)) so
-    /// algebraically zero parts stay zero.
+    /// \(z=0\) with non-integer \(\nu\) → NaN. On the cut \(\operatorname{Re} z<0\),
+    /// \(\operatorname{Im} z=0\), the sign of that zero selects the side (C99):
+    /// \(+0\) is the limit from above (\(\operatorname{Arg}=+\pi\)), \(−0\) from
+    /// below (\(\operatorname{Arg}=−\pi\)). With real \(\nu\), those values are
+    /// formed from the real kernels (\(J_\nu(-x+0i)=e^{i\nu\pi}J_\nu(x)\),
+    /// \(J_\nu(-x-0i)=e^{-i\nu\pi}J_\nu(x)\)) so algebraically zero parts stay zero.
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -370,7 +385,8 @@ impl ExactComplex {
         ziv_complex(dest, rm, |pw| self.bessel_j_at(nu, pw, dest, cc))
     }
 
-    /// \(Y_\nu(z)\). Cut on \((-\infty,0]\); \(z=0\) → NaN.
+    /// \(Y_\nu(z)\). Cut on \((-\infty,0]\); \(z=0\) → NaN. On the cut, the sign of a
+    /// zero imaginary part selects the side (C99), as for \(J_\nu\).
     ///
     /// # Precision
     ///
@@ -402,7 +418,8 @@ impl ExactComplex {
         ziv_complex(dest, rm, |pw| self.bessel_y_at(nu, pw, dest, cc))
     }
 
-    /// \(I_\nu(z)=i^{-\nu}J_\nu(iz)\). Same cut rules as \(J_\nu\).
+    /// \(I_\nu(z)=i^{-\nu}J_\nu(iz)\). Same cut rules as \(J_\nu\) (C99: the sign of a
+    /// zero imaginary part selects the side).
     ///
     /// # Precision
     ///
@@ -445,10 +462,12 @@ impl ExactComplex {
         ziv_complex(dest, rm, |pw| self.bessel_i_at(nu, pw, dest, cc))
     }
 
-    /// \(K_\nu(z)=(\pi/2)\,i^{\nu+1}H_\nu^{(1)}(iz)\). Cut on \((-\infty,0]\) (value from above
-    /// when \(\mathrm{Im}\,z=0\)); \(z=0\) → NaN. Real \(z>0\) with real \(\nu\) gives an exact
-    /// zero imaginary part (likewise [`Self::bessel_i`]). On the cut with real \(\nu\),
-    /// \(K_\nu(-x+0i)=e^{-i\nu\pi}K_\nu(x)-i\pi I_\nu(x)\).
+    /// \(K_\nu(z)=(\pi/2)\,i^{\nu+1}H_\nu^{(1)}(iz)\). Cut on \((-\infty,0]\); \(z=0\) → NaN.
+    /// On the cut, the sign of a zero imaginary part selects the side (C99), as for
+    /// \(J_\nu\) and \(I_\nu\). Real \(z>0\) with real \(\nu\) gives an exact zero
+    /// imaginary part (likewise [`Self::bessel_i`]). On the cut with real \(\nu\),
+    /// \(K_\nu(-x+0i)=e^{-i\nu\pi}K_\nu(x)-i\pi I_\nu(x)\) and
+    /// \(K_\nu(-x-0i)=e^{i\nu\pi}K_\nu(x)+i\pi I_\nu(x)\).
     ///
     /// # Precision
     ///
@@ -502,7 +521,7 @@ impl ExactComplex {
         ziv_complex(dest, rm, |pw| self.bessel_k_at(nu, pw, dest, cc))
     }
 
-    /// Principal value on \(x<0\): \(J_\nu(-x+0i)=e^{i\nu\pi}J_\nu(x)\).
+    /// On the cut: \(J_\nu(-x+0i)=e^{i\nu\pi}J_\nu(x)\), \(J_\nu(-x-0i)=e^{-i\nu\pi}J_\nu(x)\).
     fn bessel_neg_real_j(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
         let negated;
         let x = if self.re().is_negative() {
@@ -514,13 +533,15 @@ impl ExactComplex {
         let nure = nu.re();
         let jx = x.bessel_j_nu(nure, p, RoundingMode::None, cc);
         let (c, s) = cos_sin_nu_pi(nure, p, cc);
+        let s = if from_above(self) { s } else { s.neg() };
         ExactComplex::new(
             c.mul(&jx, p, RoundingMode::None),
             s.mul(&jx, p, RoundingMode::None),
         )
     }
 
-    /// \(Y_\nu(-x+0i)=e^{-i\nu\pi}Y_\nu(x)+2i\cos(\nu\pi)J_\nu(x)\).
+    /// On the cut: \(Y_\nu(-x+0i)=e^{-i\nu\pi}Y_\nu(x)+2i\cos(\nu\pi)J_\nu(x)\),
+    /// \(Y_\nu(-x-0i)=e^{i\nu\pi}Y_\nu(x)-2i\cos(\nu\pi)J_\nu(x)\).
     fn bessel_neg_real_y(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
         let negated;
         let x = if self.re().is_negative() {
@@ -538,11 +559,12 @@ impl ExactComplex {
             .mul(&c, p, RoundingMode::None)
             .mul(&jx, p, RoundingMode::None)
             .sub(&s.mul(&yx, p, RoundingMode::None), p, RoundingMode::None);
+        let im = if from_above(self) { im } else { im.neg() };
         let re = c.mul(&yx, p, RoundingMode::None);
         ExactComplex::new(re, im)
     }
 
-    /// \(I_\nu(-x+0i)=e^{i\nu\pi}I_\nu(x)\).
+    /// On the cut: \(I_\nu(-x+0i)=e^{i\nu\pi}I_\nu(x)\), \(I_\nu(-x-0i)=e^{-i\nu\pi}I_\nu(x)\).
     fn bessel_neg_real_i(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
         let negated;
         let x = if self.re().is_negative() {
@@ -554,13 +576,15 @@ impl ExactComplex {
         let nure = nu.re();
         let ix = x.bessel_i(nure, p, RoundingMode::None, cc);
         let (c, s) = cos_sin_nu_pi(nure, p, cc);
+        let s = if from_above(self) { s } else { s.neg() };
         ExactComplex::new(
             c.mul(&ix, p, RoundingMode::None),
             s.mul(&ix, p, RoundingMode::None),
         )
     }
 
-    /// \(K_\nu(-x+0i)=e^{-i\nu\pi}K_\nu(x)-i\pi I_\nu(x)\).
+    /// On the cut: \(K_\nu(-x+0i)=e^{-i\nu\pi}K_\nu(x)-i\pi I_\nu(x)\),
+    /// \(K_\nu(-x-0i)=e^{i\nu\pi}K_\nu(x)+i\pi I_\nu(x)\).
     fn bessel_neg_real_k(&self, nu: &Self, p: usize, cc: &mut Consts) -> Self {
         let negated;
         let x = if self.re().is_negative() {
@@ -579,6 +603,7 @@ impl ExactComplex {
             .mul(&ix, p, RoundingMode::None)
             .add(&s.mul(&kx, p, RoundingMode::None), p, RoundingMode::None)
             .neg();
+        let im = if from_above(self) { im } else { im.neg() };
         ExactComplex::new(re, im)
     }
 
@@ -590,25 +615,14 @@ impl ExactComplex {
                 None => nan_pair(Error::InvalidArgument),
             };
         }
-        // On the cut, either sign of zero is the principal value (from above),
-        // as for I and K. The J series would otherwise go through (z/2)^ν with
-        // Arg = −π when Im is −0 (DLMF 10.11.1, upper sign for Im z ≥ 0, and
-        // `im.is_zero()` includes −0).
-        if self.re().is_negative()
-            && !self.re().is_zero()
-            && self.im().is_zero()
-            && self.im().is_negative()
-        {
-            return ExactComplex::new(self.re().clone(), ExactNum::new(work_p))
-                .bessel_j_at(nu, work_p, dest_p, cc);
-        }
         if use_bessel_series(self, dest_p) {
             return self.bessel_j_series(nu, work_p + series_guard_bits(self), cc);
         }
         let hankel = if self.re().is_negative() && !self.re().is_zero() {
             // The Hankel expansion holds only for |arg z| < π; for Re z < 0 continue from −z
-            // (DLMF 10.11.1): J_ν(z) = e^{±νπi} J_ν(−z), upper sign for Im z ≥ 0.
-            let upper = !self.im().is_negative() || self.im().is_zero();
+            // (DLMF 10.11.1): J_ν(z) = e^{±νπi} J_ν(−z), upper sign from above
+            // (Im z > 0 or Im z = +0). C99: Im z = −0 takes the lower sign.
+            let upper = from_above(self);
             self.neg_via_mul()
                 .bessel_hankel_j(nu, work_p, cc)
                 .map(|j| reflect_phase(nu, upper, work_p, cc).mul(&j, work_p, RoundingMode::None))
@@ -622,11 +636,12 @@ impl ExactComplex {
     }
 
     /// DLMF 10.27.6 read backwards: \(J_\nu(z)=e^{\pm\nu\pi i/2}I_\nu(\mp iz)\), upper sign
-    /// for \(\mathrm{Im}\,z\ge0\). The rotated argument has \(\mathrm{Re}\ge0\), and the
-    /// \(I\) series measures its own cancellation (peak term against the sum), so this holds
-    /// where the Hankel expansion diverges (\(|\nu|^2\gtrsim|z|\)).
+    /// from above (Im z > 0 or Im z = +0). C99: Im z = −0 takes the lower sign. The
+    /// rotated argument has \(\mathrm{Re}\ge0\), and the \(I\) series measures its own
+    /// cancellation (peak term against the sum), so this holds where the Hankel
+    /// expansion diverges (\(|\nu|^2\gtrsim|z|\)).
     fn bessel_j_via_i(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
-        let upper = !self.im().is_negative() || self.im().is_zero();
+        let upper = from_above(self);
         let rot = if upper { neg_c(ExactComplex::i(work_p)) } else { ExactComplex::i(work_p) };
         let w = rot.mul(self, work_p, RoundingMode::None);
         let iv = w.bessel_i_series(nu, work_p, dest_p, cc);
@@ -637,14 +652,6 @@ impl ExactComplex {
     }
 
     fn bessel_y_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
-        if self.re().is_negative()
-            && !self.re().is_zero()
-            && self.im().is_zero()
-            && self.im().is_negative()
-        {
-            return ExactComplex::new(self.re().clone(), ExactNum::new(work_p))
-                .bessel_y_at(nu, work_p, dest_p, cc);
-        }
         if let Some(n) = integer_nu(nu, work_p) {
             return self.bessel_y_int(n, work_p, dest_p, cc);
         }
@@ -657,15 +664,15 @@ impl ExactComplex {
     }
 
     /// Hankel-regime \(Y_\nu\) for any \(\arg z\). For \(\mathrm{Re}\,z<0\) (DLMF 10.11.2 with
-    /// \(m=\pm1\)): \(Y_\nu(z)=e^{\mp\nu\pi i}Y_\nu(-z)\pm2i\cos(\nu\pi)J_\nu(-z)\), upper sign for
-    /// \(\mathrm{Im}\,z\ge0\).
+    /// \(m=\pm1\)): \(Y_\nu(z)=e^{\mp\nu\pi i}Y_\nu(-z)\pm2i\cos(\nu\pi)J_\nu(-z)\), upper sign
+    /// from above (Im z > 0 or Im z = +0). C99: Im z = −0 takes the lower sign.
     ///
     /// `None` when the Hankel expansion does not converge (see [`Self::hankel_pq`]).
     fn bessel_hankel_y_any(&self, nu: &Self, work_p: usize, cc: &mut Consts) -> Option<Self> {
         if !self.re().is_negative() || self.re().is_zero() {
             return self.bessel_hankel_y(nu, work_p, cc);
         }
-        let upper = !self.im().is_negative() || self.im().is_zero();
+        let upper = from_above(self);
         let w = self.neg_via_mul();
         let y = w.bessel_hankel_y(nu, work_p, cc)?;
         let j = w.bessel_hankel_j(nu, work_p, cc)?;
@@ -698,10 +705,12 @@ impl ExactComplex {
             return self.bessel_i_series(nu, work_p, dest_p, cc);
         }
         // DLMF 10.27.6: I_ν(z) = e^{∓νπi/2} J_ν(z e^{±πi/2}), the upper sign for
-        // −π < arg z ≤ π/2 and the lower for −π/2 < arg z ≤ π. Picking by the sign of Im z keeps
-        // the rotated argument off the J cut (the old code used the upper sign everywhere, which
-        // is wrong for π/2 < arg z ≤ π, e.g. z = −2 + i).
-        let upper = self.im().is_negative() && !self.im().is_zero();
+        // −π < arg z ≤ π/2 and the lower for −π/2 < arg z ≤ π. C99: Im z = −0 is
+        // arg = −π, approached from the lower half-plane, so the upper sign
+        // (valid as arg → −π+). Im z = +0 is arg = +π, lower sign. Picking by
+        // the sign of Im z, including a signed zero, keeps the rotated argument
+        // off the J cut.
+        let upper = self.im().is_negative();
         let rot = if upper { ExactComplex::i(work_p) } else { neg_c(ExactComplex::i(work_p)) };
         let w = rot.mul(self, work_p, RoundingMode::None);
         let j = w.bessel_j_at(nu, work_p, dest_p, cc);
@@ -820,9 +829,9 @@ impl ExactComplex {
         // K_ν(z) = −(πi/2) e^{−νπi/2} H⁽²⁾_ν(−iz) for −π/2 < arg z ≤ π; chosen by the sign of Im z.
         // In the series regime J and Y are ≈ e^{|z|} while K ≈ e^{−Re z}: add 3|z| guard bits.
         // In the Hankel regime H⁽¹,²⁾ are formed directly (no J ± iY cancellation).
-        // Im z = 0 (either sign of zero) takes the second form, valid up to arg z = π: on the cut
-        // (−∞, 0) that is the value from above, as for `bessel_i` / `bessel_j_nu`.
-        let second = !self.im().is_negative() || self.im().is_zero();
+        // C99: Im z > 0 or Im z = +0 takes the second form (valid up to arg z = π);
+        // Im z < 0 or Im z = −0 takes the first form (arg → −π).
+        let second = from_above(self);
         let rot = if second { neg_c(ExactComplex::i(work_p)) } else { ExactComplex::i(work_p) };
         let w = rot.mul(self, work_p, RoundingMode::None);
         let h = if use_bessel_series(&w, dest_p) {
@@ -863,12 +872,13 @@ impl ExactComplex {
     /// \(\log_2 n+16\) guard bits cover the \(n\) steps. The start orders have
     /// \(\mathrm{Re}\,\mu<2\), where the expansion converges past the series switch.
     /// DLMF 10.34.2 with `m = ±1` and `w = −z` (`Re w > 0`):
-    /// `K_ν(z) = e^{∓νπi} K_ν(w) ∓ πi I_ν(w)`, upper sign for `Im z ≥ 0`.
+    /// `K_ν(z) = e^{∓νπi} K_ν(w) ∓ πi I_ν(w)`, upper sign from above
+    /// (Im z > 0 or Im z = +0). C99: Im z = −0 takes the lower sign.
     /// Used whenever `Re z < 0`, including in the series regime: integer-order
     /// `K` of a left-half argument (ker/kei of −700) used to skip the `K_0`
     /// series and form `J±iY` with a `3|z|`-bit guard, which hung at p=2048.
     fn bessel_k_left_half(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
-        let upper = !self.im().is_negative() || self.im().is_zero();
+        let upper = from_above(self);
         let w = self.neg_via_mul();
         let kw = w.bessel_k_at(nu, work_p, dest_p, cc);
         let iw = w.bessel_i_series(nu, work_p, dest_p, cc);
