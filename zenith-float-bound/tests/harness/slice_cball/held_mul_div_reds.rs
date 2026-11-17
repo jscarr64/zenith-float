@@ -118,30 +118,37 @@ fn cball_div_rectangle_containing_zero_is_all_reals() -> Result<(), String> {
     )?;
     want_all_reals_both("edge", &ok("div", cpt(1, 1, 53)?.div(&edge, 53))?)?;
     // just clear on one axis: 2 ± 1 excludes 0, so R1 does not hold. Mid-rad
-    // d = sqr(2±1)+sqr(−1±1) still reaches 0 (sqr(2±1) encloses 0), the same
-    // S1 looseness as the measured R2 row, so both parts are all reals (16.CB.7 R2).
-    // The true |b|² over the rectangle is at least 1; a tighter |b|² is out of
-    // scope (CB adds no radius arithmetic of its own).
+    // d = sqr(2±1)+sqr(−1±1) still reaches 0, but the rectangle itself excludes 0
+    // (min |b|² = 1), so the quotient must be a finite enclosure.
     let clear = ok(
         "new",
         CBall::new(ball(2, mag(TOP, 1)?, 53)?, ball(-1, mag(TOP, 1)?, 53)?),
     )?;
-    want_all_reals_both(
-        "clear on re (R2 mid-rad)",
-        &ok("div", cpt(1, 1, 53)?.div(&clear, 53))?,
-    )
+    let q = ok("div", cpt(1, 1, 53)?.div(&clear, 53))?;
+    want_finite_both("clear on re", &q)?;
+    // corners of [1, 3] × [−2, 0]; every corner is nonzero.
+    for re in [num(1), num(2), num(3)] {
+        for im in [num(-2), num(-1), num(0)] {
+            let (tr, ti) = cdiv_refs(&num(1), &num(1), &re, &im);
+            want_contains("clear re", q.re(), &tr)?;
+            want_contains("clear im", q.im(), &ti)?;
+        }
+    }
+    Ok(())
 }
 
 #[test]
-fn cball_div_mid_rad_sqr_widening_is_all_reals() -> Result<(), String> {
-    // R2 (16.CB.7), kept as a defensive check: R1 does not hold, but d = sqr(b.re) + sqr(b.im) reaches 0 because S1's
-    // sqr is mid-rad (see cball_r2_row_s1_sqr_reaches_zero). Observed behavior: both parts all reals, at every prec.
+fn cball_div_excludes_zero_is_finite() -> Result<(), String> {
+    // The measured R2 row: b.re = 2^-40 ± 2^-41 excludes 0, b.im = 0, mid-rad sqr(b.re)
+    // reaches 0 (see cball_r2_row_s1_sqr_reaches_zero). The rectangle still excludes 0
+    // (|b|² ≥ 2^-82), so the quotient must be a finite enclosure of 1/b, not all reals.
     for &prec in PRECS.iter() {
         let b = ok("new", CBall::new(r2_divisor_re(prec)?, pt(0, prec)?))?;
-        want_all_reals_both(
-            "R2 mid-rad row",
-            &ok("div", cpt(1, 0, prec)?.div(&b, prec))?,
-        )?;
+        let q = ok("div", cpt(1, 0, prec)?.div(&b, prec))?;
+        want_finite_both("R2 mid-rad row", &q)?;
+        want_contains("1/mid = 2^40", q.re(), &pow2(40)?)?;
+        want_contains("1/lo = 2^41", q.re(), &pow2(41)?)?;
+        want_contains("im of a real reciprocal", q.im(), &num(0))?;
     }
     Ok(())
 }
@@ -243,4 +250,24 @@ fn cball_tightness_factors_mul_div() -> Result<(), String> {
         return Err("no mul/div gold rows".into());
     }
     Ok(())
+}
+
+#[test]
+fn cball_div_thin_strip_away_from_zero() -> Result<(), String> {
+    // d0013292-shaped: b.re = 0 ± 2^{-64} (reaches 0), b.im = 2^{-1000} exact.
+    // The rectangle excludes 0; 1/|b| ≈ 2^{1000} does not overflow.
+    let p = 64;
+    let a = ok(
+        "new",
+        CBall::new(ball(0, mag(TOP, -10)?, p)?, ball(0, mag(TOP, -64)?, p)?),
+    )?;
+    let b = ok(
+        "new",
+        CBall::new(
+            ball(0, mag(TOP, -64)?, p)?,
+            ok("exact", Ball::exact(pow2(-1000)?, p))?,
+        ),
+    )?;
+    let q = ok("div", a.div(&b, p))?;
+    want_finite_both("thin strip 2^{-1000}", &q)
 }

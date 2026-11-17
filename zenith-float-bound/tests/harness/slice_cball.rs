@@ -19,6 +19,7 @@ use zenith_float_bound::error::BoundError;
 use zenith_float_bound::mag::Mag;
 use zenith_float_bound::tri::Tri;
 use zenith_float_num::ExactNum;
+use zenith_float_num::RoundingMode;
 
 const TOP: u64 = 0x8000_0000_0000_0000;
 const PRECS: [usize; 7] = [1, 2, 53, 64, 113, 256, 1024];
@@ -103,6 +104,22 @@ fn want_finite_both(what: &str, z: &CBall) -> Result<(), String> {
         return Err(format!("{}: want both parts finite, got {:?}", what, z));
     }
     Ok(())
+}
+
+/// High-precision corner probe of (ar+ai i)/(br+bi i) for containment checks.
+fn cdiv_refs(ar: &ExactNum, ai: &ExactNum, br: &ExactNum, bi: &ExactNum) -> (ExactNum, ExactNum) {
+    let wp = 1024;
+    let rm = RoundingMode::ToEven;
+    let den = br.sqr(wp, rm).add(&bi.sqr(wp, rm), wp, rm);
+    let num_re = ar
+        .clone()
+        .mul(br, wp, rm)
+        .add(&ai.clone().mul(bi, wp, rm), wp, rm);
+    let num_im = ai
+        .clone()
+        .mul(br, wp, rm)
+        .sub(&ar.clone().mul(bi, wp, rm), wp, rm);
+    (num_re.div(&den, wp, rm), num_im.div(&den, wp, rm))
 }
 
 /// Sample points (corners and midpoint) of `m ± 2^-k` for integer `m`.
