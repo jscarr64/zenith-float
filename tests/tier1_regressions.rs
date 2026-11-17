@@ -3775,3 +3775,43 @@ fn zf_56_anger_weber_struve_correctly_rounded() {
     }
     assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
 }
+
+/// ZF-66: complex complete Π(n,m) = R_F(0,1-m,1)+(n/3)R_J(0,1-m,1,1-n).
+/// The R_J duplication follows Carlson 1995 (22)–(32) (d_m form, series in
+/// E_2..E_5). On the open cut (−∞,0) a dest-sized leave-cut (Im→0+) plus
+/// extra work precision evaluates the Im(m)→0− limit; O(ε) leakage is
+/// flushed. Golds are dual-prec official R_J of the 238 Harper T3 rows,
+/// including Π(1+i,0) = π/(2√(1-n)) and Π(1+i, 2) (y=1-m=-1).
+#[test]
+fn zf_66_complex_elliptic_pi_complete() {
+    let mut cc = Consts::new().expect("Consts");
+    let mut bad = Vec::new();
+    for l in include_str!("tier1/zf66.tsv").lines() {
+        if l.is_empty() {
+            continue;
+        }
+        let t: Vec<&str> = l.split('\t').collect();
+        let (f, p, rm) = (
+            t[0],
+            t[1].parse::<usize>().expect("p"),
+            mode(t[2]).expect("mode"),
+        );
+        let want = t[t.len() - 1];
+        let n = parse_complex(t[3]).expect("n");
+        let m = parse_complex(t[4]).expect("m");
+        assert_eq!(f, "c.elliptic_pi_complete");
+        let got = fmt_c(&n.elliptic_pi_complete(&m, p, rm, &mut cc));
+        if got != want {
+            bad.push(format!(
+                "{f}({}) p={p} {rm:?}\n    want {want}\n    got  {got}",
+                t[3..t.len() - 1].join(", ")
+            ));
+        }
+    }
+    assert!(
+        bad.is_empty(),
+        "{} rows wrong:\n{}",
+        bad.len(),
+        bad.join("\n")
+    );
+}
