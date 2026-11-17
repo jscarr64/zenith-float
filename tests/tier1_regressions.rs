@@ -4767,3 +4767,25 @@ fn zf_airy_large_positive_underflow() {
         }
     }
 }
+
+/// Jeff 2026-11-17 12:59 PM CT: arccn(x|1) for x < 0 is NaN(InvalidArgument).
+/// cn(u|1) = sech(u) never takes a non-positive value (DLMF 22.5.4). The guard
+/// landed in 6bc4bcb; this pins x in {-1, -3/4} and is not a library change.
+#[test]
+fn zf_arccn_m1_negative_is_invalid() {
+    let mut cc = Consts::new().expect("Consts");
+    let m = parse_real("1p0").expect("m=1");
+    for xs in ["-1p0", "-3p-2"] {
+        let x = parse_real(xs).expect("x");
+        for p in [64usize, 128, 1024, 4096] {
+            for rm in MODES {
+                let v = x.jacobi_arccn(&m, p, rm, &mut cc);
+                assert!(
+                    v.is_nan() && v.err() == Some(Error::InvalidArgument),
+                    "arccn({xs}|1) p={p} {rm:?}: {v} {:?}",
+                    v.err()
+                );
+            }
+        }
+    }
+}
