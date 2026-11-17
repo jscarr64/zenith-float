@@ -2,7 +2,7 @@
 # Canonical full gate. usage: tools/full_gate.sh TAG
 # 64-bit host only (P6; Jeff 2026-11-10 19:15 CT): no 32-bit target is built, linted or tested here
 # (tools/test_full_gate_64bit_only.sh, run in the unsafe-scan step, keeps it that way).
-# Every step runs under `timeout` (STEP_TIMEOUT, default 20m; build-debug defaults to 40m as headroom for the heavier post-985b100 debug suite; the mpfr step uses MPFR_STEP_TIMEOUT, default 40m); the rc of each step is written to $T/TAG.rc and its
+# Every step runs under `timeout` (STEP_TIMEOUT, default 20m; build-debug and features-random-serde default to 40m as headroom for the heavier post-985b100 debug workspace suite; the mpfr step uses MPFR_STEP_TIMEOUT, default 40m); the rc of each step is written to $T/TAG.rc and its
 # output to $T/TAG-<step>.log (T, else ZF_GATE_LOG_DIR, else $HOME/rusty-work/logs/zf-gate/<sha>-<time>; never /tmp). REPO selects the checkout (default: this one).
 # CARGO_TARGET_DIR is REQUIRED and belongs to one worktree (Paul, 2026-10-23: /tmp/target-<agent>-<worktree>). The first
 # step, target-dir, runs the tools/fresh_test_run.sh selftest and --claim: it fails if CARGO_TARGET_DIR is unset or owned
@@ -59,8 +59,10 @@ run() {
   log_step_start "$name"; ln -sf "$T/$tag-$name.log" "$(_pl_out)"  # nested: own out file, never the parent's
   to=${STEP_TIMEOUT:-20m}
   [[ $name == mpfr ]] && to=${MPFR_STEP_TIMEOUT:-40m}  # mpfr: integration_tests alone is ~1090 s
-  # build-debug: post-985b100 debug tests are heavier; 20m was not enough at 6e2165e.
-  [[ $name == build-debug && -z "${STEP_TIMEOUT:-}" ]] && to=40m
+  # Debug workspace suites (no --release): post-985b100 tests are heavier;
+  # 20m was not enough for build-debug at 6e2165e, nor for
+  # features-random-serde at f17d6ee (exit 124, tests still passing).
+  [[ ( $name == build-debug || $name == features-random-serde ) && -z "${STEP_TIMEOUT:-}" ]] && to=40m
   timeout "$to" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1 &
   POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"
   wait "$POPLOG_CHILD_PID"; rc=$?; POPLOG_CHILD_PID=""
@@ -114,7 +116,7 @@ run fmt "cargo fmt --all -- --check"
 run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
-run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_full_gate_stable_libtest_flags.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
+run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_full_gate_stable_libtest_flags.sh && bash tools/test_full_gate_debug_suite_timeouts.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
 run prepublish "bash scripts/zenith_prepublish.sh"
 echo "done" >> "$T/$tag.rc"
 poplog_finish
