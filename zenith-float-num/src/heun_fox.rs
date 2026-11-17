@@ -13,8 +13,6 @@ use crate::RoundingMode;
 use alloc::vec::Vec;
 use core::ops::Neg;
 
-/// Max length of any one Meijer / Fox parameter group.
-const PARAM_MAX: usize = 8;
 /// Max positive integer scale \(A_i,B_j\) after clearing denominators.
 const SCALE_MAX: i32 = 12;
 /// Max expanded Meijer length after the Fox–Gauss lift.
@@ -125,9 +123,6 @@ fn meijer_g_series(
     p: usize,
     cc: &mut Consts,
 ) -> GEval {
-    if an.len() + ap.len() > PARAM_MAX || bm.len() + bq.len() > PARAM_MAX {
-        return GEval::Bad;
-    }
     if !finite(z)
         || !finite(r)
         || !r.is_positive()
@@ -1257,7 +1252,6 @@ impl ExactNum {
     ///   and \(z>0\) is the constant term of the Laurent expansion in a parameter
     ///   shift: \(\Gamma\) jets from \(\psi^{(j)}\), \({}_pF_q\) jets with a rigorous
     ///   tail bound.
-    /// - At most 8 parameters in \(a\) and in \(b\).
     ///
     /// Accuracy: unspecified
     pub fn meijer_g(
@@ -1383,9 +1377,6 @@ impl ExactNum {
         cc: &mut Consts,
     ) -> Self {
         let wrk = work_p(p);
-        if an.len() + ap.len() > PARAM_MAX || bm.len() + bq.len() > PARAM_MAX {
-            return cat_nan();
-        }
         if !finite(self)
             || !pairs_finite(an)
             || !pairs_finite(ap)
@@ -3375,9 +3366,50 @@ mod tests {
         Ok(())
     }
 
+    /// Public `meijer_g` used to refuse more than 8 parameters in `a` or in `b`.
+    /// `G^{9,0}_{0,9}(1/2 | ; 0^{9})` is 9 `b`-parameters; 0 ulp vs mpmath 95 dps.
+    #[test]
+    fn caps_meijer_param_count_above_8() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ];
+        // mpmath 95 dps, agrees with 90 dps to 93 digits.
+        let gold_s = "1.1747085653955017064263103776019618650648148969496353924236083981194706914930405850797897626190e-1";
+        let gold = ExactNum::parse(
+            gold_s,
+            crate::Radix::Dec,
+            1024,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        let mut bad = Vec::new();
+        for &p in &[64usize, 256] {
+            for &rm in &modes {
+                let z =
+                    ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None);
+                let bm: Vec<ExactNum> = (0..9).map(|_| ExactNum::new(p)).collect();
+                let got = z.meijer_g(&[], &[], &bm, &[], p, rm, &mut cc);
+                let want = finish(gold.clone(), p, rm);
+                if got.compare(&want) != Some(0) {
+                    bad.push(format!(
+                        "G^{{9,0}}_{{0,9}}(1/2) p={p} {rm:?} got {got} want {want}"
+                    ));
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+        Ok(())
+    }
+
     /// `G^{16,0}_{0,16}(1/2 | ; 0^{16})` has 15 counted gamma poles, so
-    /// `hi = 4*15 + 4 = 64` used to refuse (`hi > 63`). Public `meijer_g` still
-    /// hits `PARAM_MAX = 8`; the same-module path is the case the cap refused.
+    /// `hi = 4*15 + 4 = 64` used to refuse (`hi > 63`).
     #[test]
     fn caps_meijer_pole_order_above_14() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
