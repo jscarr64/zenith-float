@@ -1472,7 +1472,7 @@ impl ExactNum {
     ///   abscissa, or a remainder bound cannot be formed) is `NaN(InvalidArgument)`.
     /// - \(a=0\) or \(\gamma\in\{0,-1,-2,\ldots\}\) (recurrence pole) is `NaN`.
     ///
-    /// Accuracy: correctly rounded outside the disk; unspecified inside the disk
+    /// Accuracy: correctly-rounded outside the disk; unspecified inside the disk
     pub fn heun_g(
         &self,
         a: &Self,
@@ -1600,7 +1600,7 @@ impl ExactNum {
     ///   and the \(z=0\) series is not unique (triconfluent) or not regular
     ///   (double-confluent).
     ///
-    /// Accuracy: correctly rounded outside the disk; unspecified inside the disk
+    /// Accuracy: correctly-rounded outside the disk; unspecified inside the disk
     pub fn heun_c(
         &self,
         alpha: &Self,

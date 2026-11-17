@@ -616,7 +616,11 @@ fn verdict(got: &Canon, expect: &Canon, row: &serde_json::Value) -> Result<(), S
     // Unspecified, and functions outside the accuracy scan, use the two-digit smoke.
     if !matches!(
         class,
-        Some(Accuracy::Unspecified) | None | Some(Accuracy::Faithful) | Some(Accuracy::Enclosure)
+        Some(Accuracy::Unspecified)
+            | Some(Accuracy::CorrectlyRoundedOutsideDisk)
+            | None
+            | Some(Accuracy::Faithful)
+            | Some(Accuracy::Enclosure)
     ) {
         return Err(format!("unhandled class for {op}"));
     }

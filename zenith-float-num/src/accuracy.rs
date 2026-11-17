@@ -24,6 +24,8 @@ pub enum Accuracy {
     /// `Ball` radii and `GkResult::abs_err_est` are enclosures. The
     /// Gauss–Kronrod field is a conservative error estimate, validated against oracles.
     Enclosure,
+    /// Correctly rounded outside the disk of singularities; unspecified inside the disk.
+    CorrectlyRoundedOutsideDisk,
     /// Returns in time, stays in the documented domain, and has the right sign
     /// and at least two correct decimal digits. Not a rounding promise.
     Unspecified,
@@ -39,6 +41,9 @@ impl Accuracy {
                 format!("Accuracy: working-precision, {lost_bits} bits")
             }
             Accuracy::Enclosure => String::from("Accuracy: enclosure"),
+            Accuracy::CorrectlyRoundedOutsideDisk => String::from(
+                "Accuracy: correctly-rounded outside the disk; unspecified inside the disk",
+            ),
             Accuracy::Unspecified => String::from("Accuracy: unspecified"),
         }
     }
@@ -206,8 +211,8 @@ pub const ACCURACY: &[(&str, Accuracy)] = &[
         "ExactNum::hermite_he",
         Accuracy::WorkingPrecision { lost_bits: 32 },
     ),
-    ("ExactNum::heun_c", Accuracy::Unspecified),
-    ("ExactNum::heun_g", Accuracy::Unspecified),
+    ("ExactNum::heun_c", Accuracy::CorrectlyRoundedOutsideDisk),
+    ("ExactNum::heun_g", Accuracy::CorrectlyRoundedOutsideDisk),
     ("ExactNum::hurwitz_zeta", Accuracy::Unspecified),
     ("ExactNum::hypergeom_0f1", Accuracy::Unspecified),
     ("ExactNum::hypergeom_1f1", Accuracy::Unspecified),
