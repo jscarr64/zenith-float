@@ -5,7 +5,7 @@
 //! (mpmath `foxh`). Local Heun is DLMF 31.3; confluent Heun is the \(z=0\)
 //! Frobenius solution of DLMF 31.12.1.
 
-use crate::catalog::{cat_nan, finish, finite, series_cap, small_int, work_p};
+use crate::catalog::{cat_nan, finish, finite, small_int, work_p};
 use crate::defs::Exponent;
 use crate::Consts;
 use crate::ExactNum;
@@ -1421,9 +1421,11 @@ impl ExactNum {
     /// - Algorithm: DLMF 31.3 power series inside \(\lvert z\rvert<\min(1,\lvert a\rvert)\),
     ///   summed until a majorant of the three-term recurrence (roots \(1\), \(1/a\))
     ///   bounds the tail; the working precision grows with the largest term.
-    ///   Outside that disk, Taylor steps of the ODE along the real segment from a
-    ///   seed in the disk, each step half the distance to \(\{0,1,a\}\). Extra word
-    ///   of working precision.
+    ///   Outside that disk, a seed value and derivative in the disk use the same
+    ///   majorant tail; then Taylor steps of the ODE along the real segment, each
+    ///   step at most half the distance to \(\{0,1,a\}\), stopped by a majorant
+    ///   remainder on the disk of radius \((\lvert h\rvert+R)/2\). Extra word of
+    ///   working precision.
     /// - Bound: working precision `p + 2 WORD_BIT_SIZE`; not Ziv-certified.
     ///
     /// # Limitations
@@ -1542,8 +1544,10 @@ impl ExactNum {
     ///
     /// - Algorithm: Frobenius series of DLMF 31.12.1 about \(z=0\) for \(\lvert z\rvert<1\),
     ///   summed until a majorant of the recurrence (roots \(1\), \(0\)) bounds the tail.
-    ///   For real \(z<1\) outside that disk, Taylor steps along \((-\infty,1)\), each
-    ///   step half the distance to \(\{0,1\}\). Extra word of working precision.
+    ///   For real \(z<1\) outside that disk, a seed jet in the disk uses the same
+    ///   majorant; then Taylor steps along \((-\infty,1)\), each step at most half the
+    ///   distance to \(\{0,1\}\), stopped by a majorant remainder. Extra word of
+    ///   working precision.
     /// - Bound: working precision `p + 2 WORD_BIT_SIZE`; not Ziv-certified.
     ///
     /// # Limitations
@@ -1688,13 +1692,48 @@ impl RecTail {
 /// There is no term cap. Returns the sum and the rounding loss in bits (largest
 /// term against the sum, plus the term count and the majorant's amplification),
 /// or `None` when the bound cannot be formed.
+struct RecJet {
+    val: ExactNum,
+    deriv: ExactNum,
+    loss: i64,
+    poly: bool,
+    coefs: Vec<ExactNum>,
+}
+
 fn rec_series<F>(
     z: &ExactNum,
     c1: &ExactNum,
     tail: &RecTail,
     wp: usize,
-    mut step: F,
+    step: F,
 ) -> Option<(ExactNum, i64)>
+where
+    F: FnMut(u64, usize) -> Option<(ExactNum, ExactNum)>,
+{
+    rec_series_inner(z, c1, tail, wp, false, step).map(|s| (s.val, s.loss))
+}
+
+fn rec_series_jet<F>(
+    z: &ExactNum,
+    c1: &ExactNum,
+    tail: &RecTail,
+    wp: usize,
+    step: F,
+) -> Option<RecJet>
+where
+    F: FnMut(u64, usize) -> Option<(ExactNum, ExactNum)>,
+{
+    rec_series_inner(z, c1, tail, wp, true, step)
+}
+
+fn rec_series_inner<F>(
+    z: &ExactNum,
+    c1: &ExactNum,
+    tail: &RecTail,
+    wp: usize,
+    jet: bool,
+    mut step: F,
+) -> Option<RecJet>
 where
     F: FnMut(u64, usize) -> Option<(ExactNum, ExactNum)>,
 {
@@ -1703,6 +1742,13 @@ where
     let nr = RoundingMode::None;
     let one64 = ExactNum::from_u8(1, 64);
     let az = ub64(z);
+    let mut az_dn = z.clone().abs();
+    let _ = az_dn.set_precision(64, dn);
+    let slack = az_dn.clone().add(&one64, 64, up).ldexp(-60, 64, up);
+    az_dn = az_dn.sub(&slack, 64, dn);
+    if az_dn.is_negative() || az_dn.is_zero() {
+        az_dn = ExactNum::new(64);
+    }
     let rho = one64.clone().div(&tail.lam_d, 64, dn);
     let r = ExactNum::add_ref(&az, &rho, 64, dn).ldexp(-1, 64, dn);
     if !matches!(az.compare(&r), Some(c) if c < 0) {
@@ -1718,7 +1764,14 @@ where
     let mut c = c1.clone();
     let mut zp = z.clone();
     let mut sum = ExactNum::from_u8(1, wp).add(&ExactNum::mul_ref(c1, z, wp, nr), wp, nr);
+    let mut dsum = c1.clone();
     let mut peak = sum.exponent().unwrap_or(0).max(0);
+    let mut peak_d = dsum.exponent().unwrap_or(0).max(0);
+    let mut coefs = Vec::new();
+    if jet {
+        coefs.push(c_prev.clone());
+        coefs.push(c.clone());
+    }
     // log2 r^j and t^j tracked through exponents of 64-bit powers.
     let mut rj = r.clone(); // r^j for j = 1
     let mut tj = t.clone();
@@ -1751,15 +1804,41 @@ where
                 .mul(&t, 64, up)
                 .div(&geo, 64, up);
             let es = sum.exponent().unwrap_or(0);
-            if bound.is_zero()
-                || (!sum.is_zero() && bound.exponent().is_some_and(|e| e < es - wp as i64 - 8))
-            {
+            let val_ok = bound.is_zero()
+                || (!sum.is_zero() && bound.exponent().is_some_and(|e| e < es - wp as i64 - 8));
+            let deriv_ok = if !jet {
+                true
+            } else if az_dn.is_zero() || !finite(&dsum) {
+                false
+            } else {
+                // |tail of y'| ≤ bound/|z| · (j + 1/(1-t)); f(t)=j+1/(1-t) grows with t.
+                let fac = ExactNum::from_u64(j, 64).add(&one64.clone().div(&geo, 64, up), 64, up);
+                let db = bound.div(&az_dn, 64, up).mul(&fac, 64, up);
+                let ed = dsum.exponent().unwrap_or(0);
+                db.is_zero()
+                    || (!dsum.is_zero() && db.exponent().is_some_and(|e| e < ed - wp as i64 - 8))
+            };
+            if val_ok && deriv_ok {
                 let n_bits = 64 - i64::from(j.leading_zeros());
                 let amp = ExactNum::div_ref(&one64, w, 64, up)
                     .add(w, 64, up)
                     .div(&geo, 64, up);
-                let loss = (peak - es).max(0) + n_bits + amp.exponent().unwrap_or(0).max(0) + 4;
-                return Some((sum, loss));
+                let mut loss = (peak - es).max(0) + n_bits + amp.exponent().unwrap_or(0).max(0) + 4;
+                if jet {
+                    let ed = dsum.exponent().unwrap_or(0);
+                    let loss_d =
+                        (peak_d - ed).max(0) + n_bits + amp.exponent().unwrap_or(0).max(0) + 4;
+                    if loss_d > loss {
+                        loss = loss_d;
+                    }
+                }
+                return Some(RecJet {
+                    val: sum,
+                    deriv: dsum,
+                    loss,
+                    poly: false,
+                    coefs,
+                });
             }
         }
         let (aj, bj) = step(j, wp)?;
@@ -1771,12 +1850,32 @@ where
         if !finite(&c_next) {
             return None;
         }
+        if jet && c.is_zero() && c_next.is_zero() {
+            return Some(RecJet {
+                val: sum,
+                deriv: dsum,
+                loss: 0,
+                poly: true,
+                coefs,
+            });
+        }
         zp = zp.mul(z, wp, nr);
         let term = ExactNum::mul_ref(&c_next, &zp, wp, nr);
         if let (false, Some(e)) = (term.is_zero(), term.exponent()) {
             peak = peak.max(e);
         }
         sum = sum.add(&term, wp, nr);
+        if jet {
+            let dterm = ExactNum::from_u64(j + 1, wp).mul(&term.div(z, wp, nr), wp, nr);
+            if !finite(&dterm) {
+                return None;
+            }
+            if let (false, Some(e)) = (dterm.is_zero(), dterm.exponent()) {
+                peak_d = peak_d.max(e);
+            }
+            dsum = dsum.add(&dterm, wp, nr);
+            coefs.push(c_next.clone());
+        }
         c_prev = c;
         c = c_next;
         rj = rj.mul(&r, 64, up);
@@ -1806,6 +1905,32 @@ where
             .saturating_add(loss);
         if need <= i64::try_from(wp).ok()? {
             return Some(v);
+        }
+        wp = usize::try_from(need)
+            .ok()?
+            .saturating_add(crate::defs::WORD_BIT_SIZE);
+    }
+}
+
+fn with_loss_jet<F>(p: usize, mut f: F) -> Option<(ExactNum, ExactNum, bool, Vec<ExactNum>)>
+where
+    F: FnMut(usize) -> Option<RecJet>,
+{
+    let mut wp = work_p(p);
+    loop {
+        if wp > 8 * p + 16_384 {
+            return None;
+        }
+        let s = f(wp)?;
+        if s.poly {
+            return Some((s.val, s.deriv, true, s.coefs));
+        }
+        let need = i64::try_from(p)
+            .ok()?
+            .saturating_add(16)
+            .saturating_add(s.loss);
+        if need <= i64::try_from(wp).ok()? {
+            return Some((s.val, s.deriv, false, s.coefs));
         }
         wp = usize::try_from(need)
             .ok()?
@@ -1959,6 +2084,142 @@ fn heun_c_series(
         Some(v) => finish(v, p, rm),
         None => cat_nan(),
     }
+}
+
+/// Seed value and derivative of HeunG at a point inside the disk, using the
+/// same [`rec_series`] majorant as [`heun_g_series`]. A terminating series
+/// is returned as a polynomial.
+fn heun_g_jet(
+    z: &ExactNum,
+    a: &ExactNum,
+    q: &ExactNum,
+    alpha: &ExactNum,
+    beta: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    p: usize,
+) -> Option<(ExactNum, ExactNum, bool, Vec<ExactNum>)> {
+    let nr = RoundingMode::None;
+    with_loss_jet(p, |wp| {
+        let one = ExactNum::from_u8(1, wp);
+        let eps = heun_eps(alpha, beta, gamma, delta, wp);
+        let opa = ExactNum::add_ref(&one, a, wp, nr);
+        let inv_a = ExactNum::div_ref(&one, a, wp, nr);
+        let big_a = matches!(a.abs_cmp(&one), Some(c) if c >= 0);
+        let (lam_d, lam_s) = if big_a { (one.clone(), inv_a) } else { (inv_a, one.clone()) };
+        let n1 = ExactNum::mul_ref(a, delta, wp, nr).add(&eps, wp, nr).sub(
+            &opa.clone().ldexp(1, wp, nr),
+            wp,
+            nr,
+        );
+        let n0 = ExactNum::sub_ref(q, &ExactNum::mul_ref(&opa, gamma, wp, nr), wp, nr);
+        let m1 = ExactNum::add_ref(alpha, beta, wp, nr)
+            .sub(&ExactNum::from_u8(3, wp), wp, nr)
+            .sub(gamma, wp, nr);
+        let m0 = ExactNum::sub_ref(alpha, &one, wp, nr)
+            .mul(&ExactNum::sub_ref(beta, &one, wp, nr), wp, nr)
+            .sub(gamma, wp, nr);
+        let k1 = ExactNum::mul_ref(&lam_s, &n1, wp, nr).sub(&m1, wp, nr);
+        let k0 = ExactNum::mul_ref(&lam_s, &n0, wp, nr).sub(&m0, wp, nr);
+        let mut s = a.clone().abs();
+        let _ = s.set_precision(64, RoundingMode::Down);
+        let tail = RecTail {
+            lam_d: ub64(&lam_d),
+            lam_s: ub64(&lam_s),
+            k_c: ub64(&lam_d)
+                .add(&ub64(&lam_s), 64, RoundingMode::Up)
+                .add(&ub64(&n1), 64, RoundingMode::Up)
+                .add(&ub64(&n0), 64, RoundingMode::Up)
+                .ldexp(8 - wp as i64, 64, RoundingMode::Up),
+            lam_s_v: lam_s,
+            l1: ub64(&n1),
+            l0: ub64(&n0),
+            k1: ub64(&k1),
+            k0: ub64(&k0),
+            s,
+            g: ub64(gamma),
+        };
+        let c1 = ExactNum::div_ref(q, &ExactNum::mul_ref(a, gamma, wp, nr), wp, nr);
+        if !finite(&c1) {
+            return None;
+        }
+        rec_series_jet(z, &c1, &tail, wp, |j, wp| {
+            let jf = ExactNum::from_u64(j, wp);
+            let jm1 = ExactNum::from_u64(j - 1, wp);
+            let pj = ExactNum::add_ref(&jm1, alpha, wp, nr).mul(
+                &ExactNum::add_ref(&jm1, beta, wp, nr),
+                wp,
+                nr,
+            );
+            let qj = ExactNum::add_ref(&jm1, gamma, wp, nr)
+                .mul(&opa, wp, nr)
+                .add(&ExactNum::mul_ref(a, delta, wp, nr), wp, nr)
+                .add(&eps, wp, nr)
+                .mul(&jf, wp, nr);
+            let rj = ExactNum::from_u64(j + 1, wp).mul(a, wp, nr).mul(
+                &ExactNum::add_ref(&jf, gamma, wp, nr),
+                wp,
+                nr,
+            );
+            if rj.is_zero() || !finite(&rj) {
+                return None;
+            }
+            let aj = qj.add(q, wp, nr).div(&rj, wp, nr);
+            let bj = pj.div(&rj, wp, nr).neg();
+            Some((aj, bj))
+        })
+    })
+}
+
+/// Seed value and derivative of HeunC at a point inside the unit disk.
+fn heun_c_jet(
+    z: &ExactNum,
+    alpha: &ExactNum,
+    gamma: &ExactNum,
+    delta: &ExactNum,
+    eps: &ExactNum,
+    q: &ExactNum,
+    p: usize,
+) -> Option<(ExactNum, ExactNum, bool, Vec<ExactNum>)> {
+    let nr = RoundingMode::None;
+    with_loss_jet(p, |wp| {
+        let one = ExactNum::from_u8(1, wp);
+        let l1 = ExactNum::sub_ref(delta, eps, wp, nr).sub(&ExactNum::from_u8(2, wp), wp, nr);
+        let l0 = ExactNum::add_ref(q, gamma, wp, nr);
+        let k0 = ExactNum::sub_ref(alpha, eps, wp, nr);
+        let tail = RecTail {
+            lam_d: ub64(&one),
+            lam_s: ExactNum::new(64),
+            lam_s_v: ExactNum::new(wp),
+            k_c: ExactNum::new(64),
+            l1: ub64(&l1),
+            l0: ub64(&l0),
+            k1: ub64(eps),
+            k0: ub64(&k0),
+            s: ExactNum::from_u8(1, 64),
+            g: ub64(gamma),
+        };
+        let b1 = q.neg_via_mul().div(gamma, wp, nr);
+        if !finite(&b1) {
+            return None;
+        }
+        rec_series_jet(z, &b1, &tail, wp, |n, wp| {
+            let nf = ExactNum::from_u64(n, wp);
+            let nm1 = ExactNum::from_u64(n - 1, wp);
+            let left =
+                ExactNum::from_u64(n + 1, wp).mul(&ExactNum::add_ref(&nf, gamma, wp, nr), wp, nr);
+            if left.is_zero() || !finite(&left) {
+                return None;
+            }
+            let coef_n = ExactNum::add_ref(&nm1, gamma, wp, nr)
+                .add(delta, wp, nr)
+                .sub(eps, wp, nr)
+                .mul(&nf, wp, nr)
+                .sub(q, wp, nr);
+            let coef_nm1 = ExactNum::mul_ref(&nm1, eps, wp, nr).add(alpha, wp, nr);
+            Some((coef_n.div(&left, wp, nr), coef_nm1.div(&left, wp, nr)))
+        })
+    })
 }
 
 /// Taylor steps along one real segment. Each step is at most half the distance
@@ -2120,200 +2381,6 @@ fn heun_c_is_1f1(
 
 /// Power-series coefficients of local Heun about 0. `true` when two consecutive
 /// coefficients are exact zeros (a polynomial; later coefficients stay zero).
-fn heun_g_coefs(
-    a: &ExactNum,
-    q: &ExactNum,
-    alpha: &ExactNum,
-    beta: &ExactNum,
-    gamma: &ExactNum,
-    delta: &ExactNum,
-    p: usize,
-) -> Option<(Vec<ExactNum>, bool)> {
-    let one = ExactNum::from_u8(1, p);
-    let eps = heun_eps(alpha, beta, gamma, delta, p);
-    let c1 = ExactNum::div_ref(
-        q,
-        &ExactNum::mul_ref(a, gamma, p, RoundingMode::None),
-        p,
-        RoundingMode::None,
-    );
-    if !finite(&c1) {
-        return None;
-    }
-    let mut coefs = Vec::new();
-    coefs.push(one.clone());
-    coefs.push(c1);
-    let mut c_prev = one.clone();
-    let mut c = coefs[1].clone();
-    let mut poly = false;
-    for j in 1..=series_cap(p) {
-        let jf = un(j as u32, p);
-        let jm1 = un((j - 1) as u32, p);
-        let jp1 = un((j + 1) as u32, p);
-        let pj = un((j - 1) as u32, p).add(alpha, p, RoundingMode::None).mul(
-            &un((j - 1) as u32, p).add(beta, p, RoundingMode::None),
-            p,
-            RoundingMode::None,
-        );
-        let qj = un(j as u32, p).mul(
-            &jm1.add(gamma, p, RoundingMode::None)
-                .mul(
-                    &ExactNum::from_u8(1, p).add(a, p, RoundingMode::None),
-                    p,
-                    RoundingMode::None,
-                )
-                .add(
-                    &ExactNum::mul_ref(a, delta, p, RoundingMode::None),
-                    p,
-                    RoundingMode::None,
-                )
-                .add(&eps, p, RoundingMode::None),
-            p,
-            RoundingMode::None,
-        );
-        let rj = jp1.mul(a, p, RoundingMode::None).mul(
-            &jf.add(gamma, p, RoundingMode::None),
-            p,
-            RoundingMode::None,
-        );
-        if rj.is_zero() || !finite(&rj) {
-            return None;
-        }
-        let c_next = qj
-            .add(q, p, RoundingMode::None)
-            .mul(&c, p, RoundingMode::None)
-            .sub(
-                &pj.mul(&c_prev, p, RoundingMode::None),
-                p,
-                RoundingMode::None,
-            )
-            .div(&rj, p, RoundingMode::None);
-        if !finite(&c_next) {
-            return None;
-        }
-        if c.is_zero() && c_next.is_zero() {
-            poly = true;
-            break;
-        }
-        coefs.push(c_next.clone());
-        c_prev = c;
-        c = c_next;
-    }
-    Some((coefs, poly))
-}
-
-fn heun_c_coefs(
-    alpha: &ExactNum,
-    gamma: &ExactNum,
-    delta: &ExactNum,
-    eps: &ExactNum,
-    q: &ExactNum,
-    p: usize,
-) -> Option<(Vec<ExactNum>, bool)> {
-    let b1 = q.neg_via_mul().div(gamma, p, RoundingMode::None);
-    if !finite(&b1) {
-        return None;
-    }
-    let mut coefs = Vec::new();
-    coefs.push(ExactNum::from_u8(1, p));
-    coefs.push(b1);
-    let mut b_prev = coefs[0].clone();
-    let mut b = coefs[1].clone();
-    let mut poly = false;
-    for n in 1..=series_cap(p) {
-        let nf = un(n as u32, p);
-        let nm1 = un((n - 1) as u32, p);
-        let np1 = un((n + 1) as u32, p);
-        let left = np1.mul(
-            &un(n as u32, p).add(gamma, p, RoundingMode::None),
-            p,
-            RoundingMode::None,
-        );
-        if left.is_zero() || !finite(&left) {
-            return None;
-        }
-        let coef_n = nf
-            .mul(
-                &un((n - 1) as u32, p)
-                    .add(gamma, p, RoundingMode::None)
-                    .add(delta, p, RoundingMode::None)
-                    .sub(eps, p, RoundingMode::None),
-                p,
-                RoundingMode::None,
-            )
-            .sub(q, p, RoundingMode::None);
-        let coef_nm1 = nm1
-            .mul(eps, p, RoundingMode::None)
-            .add(alpha, p, RoundingMode::None);
-        let b_next = coef_n
-            .mul(&b, p, RoundingMode::None)
-            .add(
-                &coef_nm1.mul(&b_prev, p, RoundingMode::None),
-                p,
-                RoundingMode::None,
-            )
-            .div(&left, p, RoundingMode::None);
-        if !finite(&b_next) {
-            return None;
-        }
-        if b.is_zero() && b_next.is_zero() {
-            poly = true;
-            break;
-        }
-        coefs.push(b_next.clone());
-        b_prev = b;
-        b = b_next;
-    }
-    Some((coefs, poly))
-}
-
-fn eval_jet(
-    coefs: &[ExactNum],
-    z: &ExactNum,
-    p: usize,
-    bits: usize,
-) -> Option<(ExactNum, ExactNum)> {
-    if coefs.is_empty() || z.is_zero() || !finite(z) {
-        return None;
-    }
-    let mut zp = ExactNum::from_u8(1, p);
-    let mut y = ExactNum::new(p);
-    let mut yp = ExactNum::new(p);
-    let mut peak_y = Exponent::MIN;
-    let mut peak_d = Exponent::MIN;
-    let mut term_ok = false;
-    let mut deriv_ok = false;
-    for (n, c) in coefs.iter().enumerate() {
-        let term = ExactNum::mul_ref(c, &zp, p, RoundingMode::None);
-        if !finite(&term) {
-            return None;
-        }
-        y = y.add(&term, p, RoundingMode::None);
-        bump_peak(&mut peak_y, &term);
-        bump_peak(&mut peak_y, &y);
-        term_ok = rel_below(&term, peak_y, bits);
-        if n == 0 {
-            deriv_ok = true;
-        } else {
-            let dterm =
-                un(n as u32, p).mul(&term.div(z, p, RoundingMode::None), p, RoundingMode::None);
-            if !finite(&dterm) {
-                return None;
-            }
-            yp = yp.add(&dterm, p, RoundingMode::None);
-            bump_peak(&mut peak_d, &dterm);
-            bump_peak(&mut peak_d, &yp);
-            deriv_ok = rel_below(&dterm, peak_d, bits);
-        }
-        zp = zp.mul(z, p, RoundingMode::None);
-    }
-    if term_ok && deriv_ok && finite(&y) && finite(&yp) {
-        Some((y, yp))
-    } else {
-        None
-    }
-}
-
 fn heun_g_ode(
     z0: &ExactNum,
     a: &ExactNum,
@@ -2443,17 +2510,171 @@ fn heun_c_ode(
     })
 }
 
+/// An upper bound for \(e^x\) when \(x\ge 0\): \(e^x<2^{\lceil 3x/2\rceil+1}\).
+fn exp_up_bound(x: &ExactNum) -> Option<ExactNum> {
+    let up = RoundingMode::Up;
+    if !finite(x) {
+        return None;
+    }
+    if x.is_zero() || x.is_negative() {
+        return Some(ExactNum::from_u8(1, 64));
+    }
+    let t = ub64(x)
+        .mul(&ExactNum::from_u8(3, 64), 64, up)
+        .div(&ExactNum::from_u8(2, 64), 64, up);
+    let k = t.to_i64(up).ok()?.checked_add(1)?;
+    if k < 0 {
+        return Some(ExactNum::from_u8(1, 64));
+    }
+    Some(ExactNum::from_u8(1, 64).ldexp(k, 64, up))
+}
+
+/// Product \(\prod(\lvert z_c-s\rvert-\rho)\) (downward) — a lower bound for
+/// \(\lvert A(\zeta)\rvert\) on \(\lvert\zeta\rvert\le\rho\) when the leading
+/// coefficient vanishes only at `sings`.
+fn amin_on_disk(zc: &ExactNum, sings: &[ExactNum], rho: &ExactNum) -> Option<ExactNum> {
+    let dn = RoundingMode::Down;
+    let mut prod = ExactNum::from_u8(1, 64);
+    for s in sings {
+        let mut d = ExactNum::sub_ref(zc, s, 64, RoundingMode::None).abs();
+        let _ = d.set_precision(64, dn);
+        let gap = ExactNum::sub_ref(&d, rho, 64, dn);
+        if !gap.is_positive() || gap.is_zero() || !finite(&gap) {
+            return None;
+        }
+        prod = prod.mul(&gap, 64, dn);
+        if !prod.is_positive() || prod.is_zero() {
+            return None;
+        }
+    }
+    Some(prod)
+}
+
+/// Upper bounds for \(\lvert P\rvert=\lvert B/A\rvert\) and \(\lvert Q\rvert=\lvert C/A\rvert\)
+/// on the disk \(\lvert\zeta\rvert\le\rho\).
+fn pq_bounds(ode: &OdePoly, amin: &ExactNum, rho: &ExactNum) -> Option<(ExactNum, ExactNum)> {
+    let up = RoundingMode::Up;
+    let b = ub64(&ode.b0)
+        .add(&ub64(&ode.b1).mul(rho, 64, up), 64, up)
+        .add(&ub64(&ode.b2).mul(rho, 64, up).mul(rho, 64, up), 64, up);
+    let c = ub64(&ode.c0).add(&ub64(&ode.c1).mul(rho, 64, up), 64, up);
+    if amin.is_zero() || !amin.is_positive() {
+        return None;
+    }
+    Some((b.div(amin, 64, up), c.div(amin, 64, up)))
+}
+
+/// Majorant \(M\ge\max_{\lvert\zeta\rvert=\rho}\lvert y(z_c+\zeta)\rvert\) for the
+/// linear majorant \(u''=P_{\max}u'+Q_{\max}u\) with \(u(0)=\lvert y\rvert\),
+/// \(u'(0)=\lvert y'\rvert\).
+fn majorant_m(
+    y: &ExactNum,
+    yp: &ExactNum,
+    pmax: &ExactNum,
+    qmax: &ExactNum,
+    rho: &ExactNum,
+) -> Option<ExactNum> {
+    let up = RoundingMode::Up;
+    let y0 = ub64(y);
+    let yp0 = ub64(yp);
+    let pm = ub64(pmax);
+    let qm = ub64(qmax);
+    if qm.is_zero() && pm.is_zero() {
+        return Some(ExactNum::add_ref(
+            &y0,
+            &ExactNum::mul_ref(&yp0, rho, 64, up),
+            64,
+            up,
+        ));
+    }
+    if qm.is_zero() {
+        // u(t)=y0 + yp0 (e^{P t}-1)/P ≤ y0 + yp0 e^{P t}/P
+        let e = exp_up_bound(&ExactNum::mul_ref(&pm, rho, 64, up))?;
+        let term = ExactNum::mul_ref(&yp0, &e, 64, up).div(&pm, 64, up);
+        return Some(ExactNum::add_ref(&y0, &term, 64, up));
+    }
+    let disc = ExactNum::mul_ref(&pm, &pm, 64, up).add(&qm.ldexp(2, 64, up), 64, up);
+    let sd = disc.sqrt(64, up);
+    if !finite(&sd) {
+        return None;
+    }
+    let two = ExactNum::from_u8(2, 64);
+    let rp = ExactNum::add_ref(&pm, &sd, 64, up).div(&two, 64, up);
+    let rm = ExactNum::sub_ref(&pm, &sd, 64, RoundingMode::Down).div(&two, 64, RoundingMode::Down);
+    // r+ - r- = sqrt(disc)
+    if sd.is_zero() || !sd.is_positive() {
+        // repeated root r=P/2: u(t)=(y0+(yp0-r y0)t) e^{r t}
+        let coef = ExactNum::add_ref(&yp0, &ub64(&ExactNum::mul_ref(&rp, &y0, 64, up)), 64, up);
+        let e = exp_up_bound(&ExactNum::mul_ref(&rp, rho, 64, up))?;
+        return Some(
+            ExactNum::add_ref(&y0, &ExactNum::mul_ref(&coef, rho, 64, up), 64, up).mul(&e, 64, up),
+        );
+    }
+    let a = ExactNum::add_ref(&yp0, &ExactNum::mul_ref(&ub64(&rm), &y0, 64, up), 64, up)
+        .div(&sd, 64, up);
+    let b = ub64(&ExactNum::sub_ref(
+        &ExactNum::mul_ref(&rp, &y0, 64, up),
+        &yp0,
+        64,
+        RoundingMode::None,
+    ))
+    .div(&sd, 64, up);
+    let e = exp_up_bound(&ExactNum::mul_ref(&rp, rho, 64, up))?;
+    Some(ExactNum::mul_ref(&a, &e, 64, up).add(&b, 64, up))
+}
+
 fn taylor_step(
     ode: &OdePoly,
     y: &ExactNum,
     yp: &ExactNum,
     h: &ExactNum,
+    zc: &ExactNum,
+    sings: &[ExactNum],
     p: usize,
     bits: usize,
 ) -> Option<(ExactNum, ExactNum)> {
     if h.is_zero() {
         return Some((y.clone(), yp.clone()));
     }
+    let up = RoundingMode::Up;
+    let dn = RoundingMode::Down;
+    let mut ah = h.clone().abs();
+    let _ = ah.set_precision(64, up);
+    let mut radius = min_dist(zc, sings, 64);
+    let _ = radius.set_precision(64, dn);
+    if !radius.is_positive() || !finite(&radius) {
+        return None;
+    }
+    // ρ = (|h|+R)/2, with |h| < ρ < R (the step is at most R/2).
+    let mut rho = ExactNum::add_ref(&ah, &radius, 64, up).ldexp(-1, 64, up);
+    if !matches!(ah.compare(&rho), Some(c) if c < 0)
+        || !matches!(rho.compare(&radius), Some(c) if c < 0)
+    {
+        // Widen the midpoint slightly toward R if rounding collapsed the gap.
+        rho = ExactNum::add_ref(&ah, &radius, 64, dn)
+            .ldexp(-1, 64, dn)
+            .add(&radius.clone().ldexp(-4, 64, dn), 64, up);
+        if !matches!(ah.compare(&rho), Some(c) if c < 0)
+            || !matches!(rho.compare(&radius), Some(c) if c < 0)
+        {
+            return None;
+        }
+    }
+    let amin = amin_on_disk(zc, sings, &rho)?;
+    let (pmax, qmax) = pq_bounds(ode, &amin, &rho)?;
+    let m_bound = majorant_m(y, yp, &pmax, &qmax, &rho)?;
+    if !finite(&m_bound) {
+        return None;
+    }
+    let theta = ah.div(&rho, 64, up);
+    if !matches!(theta.compare(&ExactNum::from_u8(1, 64)), Some(c) if c < 0) {
+        return None;
+    }
+    let geo = ExactNum::from_u8(1, 64).sub(&theta, 64, dn);
+    if !geo.is_positive() || geo.is_zero() {
+        return None;
+    }
+
     let mut c_km1 = ExactNum::new(p);
     let mut c_k = y.clone();
     let mut c_kp1 = yp.clone();
@@ -2464,9 +2685,11 @@ fn taylor_step(
     let mut peak_d = Exponent::MIN;
     bump_peak(&mut peak_y, &sum);
     bump_peak(&mut peak_d, &dsum);
-    let cap = series_cap(p);
-    for k in 0..cap {
-        let ku = k as u32;
+    // After terms of degree n, rem_y ≤ M θ^{n+1}/(1-θ),
+    // rem_d ≤ (M/ρ) · ((n+1)θ^n - n θ^{n+1})/(1-θ)^2.
+    let mut tn = theta.clone(); // θ^n with n starting at 1 after the linear term
+    for k in 0..50_000_000u32 {
+        let ku = k;
         let kp1 = ku + 1;
         let kp2 = ku + 2;
         let left =
@@ -2544,8 +2767,33 @@ fn taylor_step(
         c_km1 = c_k;
         c_k = c_kp1;
         c_kp1 = c_kp2;
-        if rel_below(&term, peak_y, bits) && rel_below(&dterm, peak_d, bits) {
+        // n = k+2 after this term. tn was θ^{k+1}; update to θ^{k+2}=θ^n.
+        tn = tn.mul(&theta, 64, up);
+        let n = (k as u64) + 2;
+        // rem_y ≤ M θ^{n+1}/(1-θ) = M tn θ / geo
+        let rem_y = m_bound
+            .clone()
+            .mul(&tn, 64, up)
+            .mul(&theta, 64, up)
+            .div(&geo, 64, up);
+        // rem_d ≤ (M/ρ) ( (n+1) θ^n - n θ^{n+1} ) / (1-θ)^2
+        //        = (M/ρ) θ^n (n+1 - n θ) / geo^2
+        let np1 = ExactNum::from_u64(n + 1, 64);
+        let nn = ExactNum::from_u64(n, 64);
+        let num = np1.sub(&nn.mul(&theta, 64, dn), 64, up);
+        let rem_d = m_bound
+            .clone()
+            .div(&rho, 64, up)
+            .mul(&tn, 64, up)
+            .mul(&num, 64, up)
+            .div(&ExactNum::mul_ref(&geo, &geo, 64, dn), 64, up);
+        let y_ok = rem_y.is_zero() || rem_y.exponent().is_some_and(|e| e + (bits as i64) < peak_y);
+        let d_ok = rem_d.is_zero() || rem_d.exponent().is_some_and(|e| e + (bits as i64) < peak_d);
+        if y_ok && d_ok && finite(&sum) && finite(&dsum) {
             return Some((sum, dsum));
+        }
+        if tn.is_zero() {
+            return None;
         }
     }
     None
@@ -2596,7 +2844,7 @@ where
             return if finite(&y) { Some(y) } else { None };
         }
         let ode = ode_at(&zc)?;
-        let (yn, ypn) = taylor_step(&ode, &y, &yp, &h, p, acc)?;
+        let (yn, ypn) = taylor_step(&ode, &y, &yp, &h, &zc, sings, p, acc)?;
         let next = h.add(&zc, p, RoundingMode::None);
         if next.compare(&zc) == Some(0) {
             return if finite(&yn) { Some(yn) } else { None };
@@ -2629,16 +2877,7 @@ fn heun_g_outside(
     rm: RoundingMode,
 ) -> ExactNum {
     let wrk = work_p(p);
-    let Some((coefs, poly)) = heun_g_coefs(a, q, alpha, beta, gamma, delta, wrk) else {
-        return cat_nan();
-    };
-    if poly {
-        return finish(horner(&coefs, z, wrk), p, rm);
-    }
     let one = ExactNum::from_u8(1, wrk);
-    if segment_hits(z, &one) || segment_hits(z, a) {
-        return cat_nan();
-    }
     let seed = if matches!(a.abs_cmp(&one), Some(c) if c < 0) {
         // ±|a|/2 with the sign of z: scale -a (fresh, owned) and flip the sign when it differs.
         let mut half = a.neg_via_mul().ldexp(-1, wrk, RoundingMode::None);
@@ -2649,9 +2888,17 @@ fn heun_g_outside(
     } else {
         disk_seed(z, ExactNum::from_u8(1, wrk), wrk)
     };
-    let Some((y, yp)) = eval_jet(&coefs, &seed, wrk, p.saturating_add(32)) else {
+    let Some((y, yp, poly, coefs)) =
+        heun_g_jet(&seed, a, q, alpha, beta, gamma, delta, p.saturating_add(32))
+    else {
         return cat_nan();
     };
+    if poly {
+        return finish(horner(&coefs, z, wrk), p, rm);
+    }
+    if segment_hits(z, &one) || segment_hits(z, a) {
+        return cat_nan();
+    }
     let zero = ExactNum::new(wrk);
     let sings = [zero, one, a.clone()];
     match taylor_walk(seed, y, yp, z, &sings, wrk, p, |z0| {
@@ -2673,20 +2920,19 @@ fn heun_c_outside(
     rm: RoundingMode,
 ) -> ExactNum {
     let wrk = work_p(p);
-    let Some((coefs, poly)) = heun_c_coefs(alpha, gamma, delta, eps, q, wrk) else {
-        return cat_nan();
-    };
-    if poly {
-        return finish(horner(&coefs, z, wrk), p, rm);
-    }
     let one = ExactNum::from_u8(1, wrk);
     if !z.is_negative() {
         return cat_nan();
     }
     let seed = disk_seed(z, ExactNum::from_u8(1, wrk), wrk);
-    let Some((y, yp)) = eval_jet(&coefs, &seed, wrk, p.saturating_add(32)) else {
+    let Some((y, yp, poly, coefs)) =
+        heun_c_jet(&seed, alpha, gamma, delta, eps, q, p.saturating_add(32))
+    else {
         return cat_nan();
     };
+    if poly {
+        return finish(horner(&coefs, z, wrk), p, rm);
+    }
     let sings = [ExactNum::new(wrk), one];
     match taylor_walk(seed, y, yp, z, &sings, wrk, p, |z0| {
         heun_c_ode(z0, alpha, gamma, delta, eps, q, wrk)
@@ -2933,5 +3179,201 @@ mod tests {
             .is_nan());
         assert!(z.meijer_g(&[], &[], &[], &[], p, rm, &mut cc).is_nan());
         Ok(())
+    }
+
+    #[test]
+    fn caps_heun_outside_disk() -> Result<(), crate::Error> {
+        // Independent golds: high-dps seed series + Taylor walk (mpmath, 90
+        // decimals). Rows are real-analytic continuations along the component
+        // of R\{1,a} that contains 0. Every mode, 4 ulps at p=64 and p=256
+        // (the walk is not Ziv-certified; accuracy is unspecified).
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+        ];
+        // kind, z, params..., gold
+        // G: a,q,alpha,beta,gamma,delta; C: alpha,gamma,delta,eps,q
+        let rows_g: &[(&str, &str, &str, &str, &str, &str, &str, &str)] = &[
+            (
+                "-2",
+                "2",
+                "1/2",
+                "1/3",
+                "1/4",
+                "1/2",
+                "1/5",
+                "0.489531139762585335975564627741117594291665579108339509717535235713547166753031876516108640",
+            ),
+            (
+                "-10",
+                "2",
+                "1/2",
+                "1/3",
+                "1/4",
+                "1/2",
+                "1/5",
+                "0.0722608484365945565377386205725345690771598706286165174292745548539479051178652876978056262",
+            ),
+            (
+                "-1",
+                "2",
+                "1/2",
+                "1/3",
+                "1/4",
+                "1/2",
+                "1/5",
+                "0.665318669703791779022287903523602300823525459068884726095333766816505264741601700649182097",
+            ),
+            (
+                "-100",
+                "2",
+                "1/2",
+                "1/3",
+                "1/4",
+                "1/2",
+                "1/5",
+                "-0.213629016605290085507329077652964168387620909199819320666683535541853961748965422270344359",
+            ),
+            (
+                "3/4",
+                "-1/2",
+                "1/3",
+                "1/3",
+                "1/4",
+                "4/5",
+                "1/5",
+                "0.541109480341224921497926456318611001263606675253815533927604013369321946441540084169633511",
+            ),
+            (
+                "-2",
+                "2",
+                "1/2",
+                "20",
+                "20",
+                "1/2",
+                "1/5",
+                "-0.000000566423072895740360266964394373159162709548961058477664999987667492511361009333570878611491",
+            ),
+        ];
+        let rows_c: &[(&str, &str, &str, &str, &str, &str, &str)] = &[
+            (
+                "-2",
+                "1/3",
+                "1/2",
+                "1/4",
+                "1/5",
+                "1/2",
+                "3.59125837941479058712814911724782167694979476701259856800909417467855931362641846636120541",
+            ),
+            (
+                "-10",
+                "1/3",
+                "1/2",
+                "1/4",
+                "1/5",
+                "1/2",
+                "51.8835611416647192527759604682647386371500331599599686107185103964073371484675603452348090",
+            ),
+            (
+                "-1",
+                "1/3",
+                "1/2",
+                "1/4",
+                "1/5",
+                "1/2",
+                "2.12433591747382292256155153347925090856883937067446492672334734879491714563922844198420460",
+            ),
+        ];
+        fn dec(s: &str, wp: usize, cc: &mut Consts) -> ExactNum {
+            ExactNum::parse(s, crate::Radix::Dec, wp, RoundingMode::ToEven, cc)
+        }
+        fn rat(s: &str, wp: usize, rm: RoundingMode) -> ExactNum {
+            if let Some((ns, ds)) = s.split_once('/') {
+                let n: i32 = ns.parse().unwrap();
+                let d: i32 = ds.parse().unwrap();
+                let mut x = ExactNum::from_u32(n.unsigned_abs(), wp);
+                if n < 0 {
+                    x = x.neg();
+                }
+                if d == 1 {
+                    x
+                } else {
+                    x.div(&ExactNum::from_u32(d as u32, wp), wp, rm)
+                }
+            } else {
+                let n: i32 = s.parse().unwrap();
+                let mut x = ExactNum::from_u32(n.unsigned_abs(), wp);
+                if n < 0 {
+                    x = x.neg();
+                }
+                x
+            }
+        }
+        let mut bad = Vec::new();
+        for p in [64usize, 256] {
+            for rm in modes {
+                for (z, a, q, al, be, ga, de, gold) in rows_g {
+                    let w = dec(gold, 8960, &mut cc);
+                    let v = rat(z, p, rm).heun_g(
+                        &rat(a, p, rm),
+                        &rat(q, p, rm),
+                        &rat(al, p, rm),
+                        &rat(be, p, rm),
+                        &rat(ga, p, rm),
+                        &rat(de, p, rm),
+                        p,
+                        rm,
+                        &mut cc,
+                    );
+                    if !near_ulp(&v, &w, p) {
+                        bad.push(format!(
+                            "heun_g({z}; a={a}, q={q}, α={al}, β={be}, γ={ga}, δ={de}) p={p} {rm:?} got {v}"
+                        ));
+                    }
+                }
+                for (z, al, ga, de, eps, q, gold) in rows_c {
+                    let w = dec(gold, 8960, &mut cc);
+                    let v = rat(z, p, rm).heun_c(
+                        &rat(al, p, rm),
+                        &rat(ga, p, rm),
+                        &rat(de, p, rm),
+                        &rat(eps, p, rm),
+                        &rat(q, p, rm),
+                        p,
+                        rm,
+                        &mut cc,
+                    );
+                    if !near_ulp(&v, &w, p) {
+                        bad.push(format!(
+                            "heun_c({z}; α={al}, γ={ga}, δ={de}, ε={eps}, q={q}) p={p} {rm:?} got {v}"
+                        ));
+                    }
+                }
+            }
+        }
+        assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+        Ok(())
+    }
+
+    fn near_ulp(v: &ExactNum, w: &ExactNum, p: usize) -> bool {
+        if v.is_nan() || v.is_inf() || w.is_nan() {
+            return false;
+        }
+        let d = ExactNum::sub_ref(v, w, p + 512, RoundingMode::None).abs();
+        if d.is_zero() {
+            return true;
+        }
+        let Some(e) = v.exponent() else {
+            return false;
+        };
+        // Outside-disk walks are not Ziv-certified; lock a few ulps, not CR.
+        let ulp = ExactNum::from_u8(1, 64).ldexp(e - p as i64, 64, RoundingMode::None);
+        let tol = ulp.ldexp(2, 64, RoundingMode::None);
+        matches!(d.compare(&tol), Some(c) if c <= 0)
     }
 }
