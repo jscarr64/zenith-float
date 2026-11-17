@@ -2,7 +2,7 @@
 # Canonical full gate. usage: tools/full_gate.sh TAG
 # 64-bit host only (P6; Jeff 2026-11-10 19:15 CT): no 32-bit target is built, linted or tested here
 # (tools/test_full_gate_64bit_only.sh, run in the unsafe-scan step, keeps it that way).
-# Every step runs under `timeout` (STEP_TIMEOUT, default 20m; the mpfr step uses MPFR_STEP_TIMEOUT, default 40m); the rc of each step is written to $T/TAG.rc and its
+# Every step runs under `timeout` (STEP_TIMEOUT, default 20m; build-debug defaults to 40m as headroom for the heavier post-985b100 debug suite; the mpfr step uses MPFR_STEP_TIMEOUT, default 40m); the rc of each step is written to $T/TAG.rc and its
 # output to $T/TAG-<step>.log (T, else ZF_GATE_LOG_DIR, else $HOME/rusty-work/logs/zf-gate/<sha>-<time>; never /tmp). REPO selects the checkout (default: this one).
 # CARGO_TARGET_DIR is REQUIRED and belongs to one worktree (Paul, 2026-10-23: /tmp/target-<agent>-<worktree>). The first
 # step, target-dir, runs the tools/fresh_test_run.sh selftest and --claim: it fails if CARGO_TARGET_DIR is unset or owned
@@ -38,7 +38,7 @@ export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-$(nproc)}} RUST_TEST
 # No python bytecode cache in the tree: a leftover __pycache__ makes the poplog footer NOT A GATE (tree dirty at end).
 # Steps that clear the environment (env -i) set it again themselves (tools/oracle_env_selftest.sh run_forged).
 export PYTHONDONTWRITEBYTECODE=1
-TT="-- --test-threads=$RUST_TEST_THREADS"
+TT="-- --test-threads=$RUST_TEST_THREADS --fail-fast"
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".
 missing=()
@@ -57,7 +57,10 @@ run() {
   name=$1; shift; echo "start $name $(date +%T)" >> "$T/$tag.rc"
   rm -f "$(_pl_out)"  # the last step left it a symlink to its log; log_step_start truncates it
   log_step_start "$name"; ln -sf "$T/$tag-$name.log" "$(_pl_out)"  # nested: own out file, never the parent's
-  to=${STEP_TIMEOUT:-20m}; [[ $name == mpfr ]] && to=${MPFR_STEP_TIMEOUT:-40m}  # mpfr: integration_tests alone is ~1090 s
+  to=${STEP_TIMEOUT:-20m}
+  [[ $name == mpfr ]] && to=${MPFR_STEP_TIMEOUT:-40m}  # mpfr: integration_tests alone is ~1090 s
+  # build-debug: post-985b100 debug tests are heavier; 20m was not enough at 6e2165e.
+  [[ $name == build-debug && -z "${STEP_TIMEOUT:-}" ]] && to=40m
   timeout "$to" bash -o pipefail -c "$*" > "$T/$tag-$name.log" 2>&1 &
   POPLOG_CHILD_PID=$!; echo "$POPLOG_CHILD_PID" > "$POPLOG_STATE_DIR/child"
   wait "$POPLOG_CHILD_PID"; rc=$?; POPLOG_CHILD_PID=""
