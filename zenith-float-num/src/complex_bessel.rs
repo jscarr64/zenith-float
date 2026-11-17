@@ -39,10 +39,6 @@ const BESSEL_SERIES_THRESHOLD: u32 = 16;
 /// than the four bits the Ziv margin absorbs here, so the expansion is declined instead.
 const HANKEL_PEAK_EXP_MAX: Exponent = 4;
 
-/// Work limit on the \(K_\nu\) forward recurrence (steps). Past it `bessel_k` returns
-/// `PrecisionRetryExhausted`; it never returns a truncated value.
-const BESSEL_K_RECUR_MAX: u32 = 1 << 22;
-
 fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
     let a = z.abs(p, RoundingMode::None);
     let b = ExactNum::from_u32(bound, p);
@@ -334,9 +330,11 @@ fn neg_rounding(rm: RoundingMode) -> RoundingMode {
 
 impl ExactComplex {
     /// \(J_\nu(z)\). Entire for integer \(\nu\); cut on \((-\infty,0]\) otherwise.
-    /// \(z=0\) with non-integer \(\nu\) → NaN. On the cut \(\operatorname{Im} z=0\),
-    /// \(\operatorname{Re} z<0\) with real \(\nu\), the principal value is formed from the
-    /// real kernels (\(J_\nu(-x+0i)=e^{i\nu\pi}J_\nu(x)\)) so algebraically zero parts stay zero.
+    /// \(z=0\) with non-integer \(\nu\) → NaN. On the cut \(\operatorname{Im} z=0\)
+    /// (either sign of zero) and \(\operatorname{Re} z<0\), the principal value is the
+    /// limit from above, as for \(I_\nu\) and \(K_\nu\). With real \(\nu\), that value
+    /// is formed from the real kernels (\(J_\nu(-x+0i)=e^{i\nu\pi}J_\nu(x)\)) so
+    /// algebraically zero parts stay zero.
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -592,6 +590,18 @@ impl ExactComplex {
                 None => nan_pair(Error::InvalidArgument),
             };
         }
+        // On the cut, either sign of zero is the principal value (from above),
+        // as for I and K. The J series would otherwise go through (z/2)^ν with
+        // Arg = −π when Im is −0 (DLMF 10.11.1, upper sign for Im z ≥ 0, and
+        // `im.is_zero()` includes −0).
+        if self.re().is_negative()
+            && !self.re().is_zero()
+            && self.im().is_zero()
+            && self.im().is_negative()
+        {
+            return ExactComplex::new(self.re().clone(), ExactNum::new(work_p))
+                .bessel_j_at(nu, work_p, dest_p, cc);
+        }
         if use_bessel_series(self, dest_p) {
             return self.bessel_j_series(nu, work_p + series_guard_bits(self), cc);
         }
@@ -627,6 +637,14 @@ impl ExactComplex {
     }
 
     fn bessel_y_at(&self, nu: &Self, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
+        if self.re().is_negative()
+            && !self.re().is_zero()
+            && self.im().is_zero()
+            && self.im().is_negative()
+        {
+            return ExactComplex::new(self.re().clone(), ExactNum::new(work_p))
+                .bessel_y_at(nu, work_p, dest_p, cc);
+        }
         if let Some(n) = integer_nu(nu, work_p) {
             return self.bessel_y_int(n, work_p, dest_p, cc);
         }
@@ -882,7 +900,9 @@ impl ExactComplex {
         let Ok(n) = nu.re().to_u32(RoundingMode::Down) else {
             return nan_pair(Error::PrecisionRetryExhausted);
         };
-        if !(2..=BESSEL_K_RECUR_MAX).contains(&n) {
+        // The recurrence is n steps; no fixed work cap (P9). n is the order
+        // itself, as a u32 (same index type as the real kernel's k_integer).
+        if n < 2 {
             return nan_pair(Error::PrecisionRetryExhausted);
         }
         let wp = round_p(work_p + (u32::BITS - n.leading_zeros()) as usize + 16);
@@ -926,9 +946,6 @@ impl ExactComplex {
     /// cancellation).
     fn bessel_k_integer_series(&self, n: i32, work_p: usize, cc: &mut Consts) -> Option<Self> {
         let n = n.unsigned_abs();
-        if n > BESSEL_K_RECUR_MAX {
-            return None;
-        }
         let guard = re_pair_cancel_bits(self).saturating_add(48);
         if guard > BESSEL_GUARD_MAX {
             return None;

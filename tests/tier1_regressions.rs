@@ -4122,4 +4122,85 @@ fn zf_78_bessel_cut_and_large_integer_order() {
         !v.is_nan() && !v.is_inf(),
         "ZF-78 kelvin_kei_nu(2^-30, 100) at p=64: {v:?}"
     );
+
+    // On the cut, either sign of zero is the principal value (from above), as for I and K.
+    let z_up = zf_78_neg_real(-2, p, false);
+    let z_dn = zf_78_neg_real(-2, p, true);
+    let j_up = z_up.bessel_j_nu(&nu, p, rm, &mut cc);
+    let j_dn = z_dn.bessel_j_nu(&nu, p, rm, &mut cc);
+    assert_eq!(
+        j_dn.re().compare(j_up.re()),
+        Some(0),
+        "J_{{2+i}}(-2-0i) must equal the principal J_{{2+i}}(-2+0i), got {j_dn:?} vs {j_up:?}"
+    );
+    assert_eq!(
+        j_dn.im().compare(j_up.im()),
+        Some(0),
+        "J_{{2+i}}(-2-0i) imag must match J_{{2+i}}(-2+0i), got {j_dn:?} vs {j_up:?}"
+    );
+    let y_up = z_up.bessel_y(&nu, p, rm, &mut cc);
+    let y_dn = z_dn.bessel_y(&nu, p, rm, &mut cc);
+    assert_eq!(
+        y_dn.re().compare(y_up.re()),
+        Some(0),
+        "Y_{{2+i}}(-2-0i) must equal the principal Y_{{2+i}}(-2+0i), got {y_dn:?} vs {y_up:?}"
+    );
+    assert_eq!(
+        y_dn.im().compare(y_up.im()),
+        Some(0),
+        "Y_{{2+i}}(-2-0i) imag must match Y_{{2+i}}(-2+0i), got {y_dn:?} vs {y_up:?}"
+    );
+}
+
+/// BESSEL_K_RECUR_MAX=1<<22 refused a computable K_{2^{22}+1}(1) (P9).
+/// The forward recurrence scales with ν; this case is ~3.5s at p=64.
+#[test]
+fn zf_78_k_recur_scales_with_nu() {
+    const BUDGET: std::time::Duration = std::time::Duration::from_secs(20);
+    if std::env::var_os("ZF78_K_RECUR_CHILD").is_some() {
+        zf_78_k_recur_scales_with_nu_body();
+        return;
+    }
+    let exe = std::env::current_exe().expect("current_exe");
+    let mut child = std::process::Command::new(exe)
+        .arg("--exact")
+        .arg("zf_78_k_recur_scales_with_nu")
+        .env("ZF78_K_RECUR_CHILD", "1")
+        .env("RUST_TEST_THREADS", "1")
+        .spawn()
+        .expect("spawn ZF-78 K-recur child");
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait().expect("try_wait") {
+            Some(status) => {
+                assert!(
+                    status.success(),
+                    "ZF-78 K_{{2^22+1}}(1) child exited {status}: NaN or failed"
+                );
+                return;
+            }
+            None if start.elapsed() > BUDGET => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "ZF-78 K_{{2^22+1}}(1) at p=64 timed out after {}s",
+                    BUDGET.as_secs()
+                );
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    }
+}
+
+fn zf_78_k_recur_scales_with_nu_body() {
+    let mut cc = Consts::new().expect("Consts");
+    let p = 64usize;
+    let z = ExactComplex::from_real(ExactNum::from_u8(1, p), p);
+    let n = (1u32 << 22) + 1;
+    let nu = ExactComplex::from_real(ExactNum::from_u32(n, p), p);
+    let v = z.bessel_k(&nu, p, RoundingMode::ToEven, &mut cc);
+    assert!(
+        !v.is_nan() && !v.re().is_inf() && !v.im().is_inf(),
+        "ZF-78 K_{{2^22+1}}(1) at p=64: {v:?}"
+    );
 }
