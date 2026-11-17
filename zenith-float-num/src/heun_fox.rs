@@ -1,8 +1,9 @@
 //! Meijer \(G\), Fox \(H\), and local / confluent Heun on [`ExactNum`].
 //!
-//! SoftFloat only. Residue \(G\) follows DLMF 16.17; Fox \(H\)
-//! with positive rational \(A,B\) reduces through the Gauss multiplication formula
-//! (mpmath `foxh`). Local Heun is DLMF 31.3; confluent Heun is the \(z=0\)
+//! SoftFloat only. Residue \(G\) follows DLMF 16.17. Fox \(H\) uses the Gauss
+//! multiplication formula when every scale is an exact fraction whose lift
+//! fits in memory, and the Mellin–Barnes residue series at the exact scales
+//! otherwise. Local Heun is DLMF 31.3; confluent Heun is the \(z=0\)
 //! Frobenius solution of DLMF 31.12.1.
 
 use crate::catalog::{cat_nan, finish, finite, small_int, work_p};
@@ -1170,64 +1171,98 @@ fn lcm_u(a: u64, b: u64) -> Option<u64> {
     a.checked_div(g)?.checked_mul(b)
 }
 
-fn floor_u64(x: &ExactNum) -> Option<u64> {
-    if !finite(x) || x.is_negative() {
-        return None;
-    }
-    if x.is_zero() {
-        return Some(0);
-    }
-    x.to_u64(RoundingMode::Down).ok()
+/// The exact positive dyadic \(n/d = x\) in lowest terms, when both \(n\)
+/// and \(d\) fit in `u64`. No slack: a nearby rational is never accepted.
+/// A generic dest-\(p\) scale has a denominator \(2^{O(p)}\) and returns
+/// `None` here, so Fox \(H\) uses the residue series at the exact input.
+fn as_pos_rational(x: &ExactNum, _p: usize) -> Option<(u64, u64)> {
+    exact_pos_frac(x)
 }
 
-/// Unique positive rational \(n/d\) identifiable at precision `p`.
-/// Continued-fraction convergents, accepted when \(|d x - n| < 2^{-p/2}\)
-/// (the same slack as the old near-integer test, with no pre-set bound on
-/// \(n\) or \(d\)). A numerator or denominator that overflows `u64` is an
-/// index-type limit, not a size cap. If no such fraction exists at this
-/// `p`, the scale is not a uniquely identified positive rational and the
-/// Fox lift correctly returns `None`.
-fn as_pos_rational(x: &ExactNum, p: usize) -> Option<(u64, u64)> {
-    if !finite(x) || !x.is_positive() {
+/// Exact \(x = n/d\) in lowest terms with \(n,d\in\) `u64`. `None` if \(x\)
+/// is not a positive finite number or the reduced numerator or denominator
+/// does not fit in `u64`.
+fn exact_pos_frac(x: &ExactNum) -> Option<(u64, u64)> {
+    if !finite(x) || !x.is_positive() || x.is_zero() {
         return None;
     }
-    let mut n0: u64 = 0;
-    let mut n1: u64 = 1;
-    let mut d0: u64 = 1;
-    let mut d1: u64 = 0;
-    let mut a = x.clone();
-    // A `p`-bit number has a short continued fraction.
-    for _ in 0..=p.saturating_add(8) {
-        let ai = floor_u64(&a)?;
-        let n = ai.checked_mul(n1)?.checked_add(n0)?;
-        let d = ai.checked_mul(d1)?.checked_add(d0)?;
-        n0 = n1;
-        n1 = n;
-        d0 = d1;
-        d1 = d;
-        if d != 0 && n != 0 {
-            let nx = ExactNum::from_u64(n, p);
-            let dx = ExactNum::from_u64(d, p).mul(x, p, RoundingMode::None);
-            let err = nx.sub(&dx, p, RoundingMode::None).abs();
-            if err.is_zero() || err.exponent().is_some_and(|e| e + ((p as i64) / 2) < 0) {
-                let g = gcd_u(n, d);
-                return Some((n / g, d / g));
-            }
+    let words = x.mantissa_digits()?;
+    let e = x.exponent()?;
+    if words.is_empty() {
+        return None;
+    }
+    let mut tz_words = 0usize;
+    let mut first_nz = 0u64;
+    for &w in words {
+        if w == 0 {
+            tz_words += 1;
+        } else {
+            first_nz = w;
+            break;
         }
-        let frac = a.sub(&ExactNum::from_u64(ai, p), p, RoundingMode::None);
-        if !finite(&frac) || frac.is_zero() || !frac.is_positive() {
-            if n != 0 && d != 0 {
-                let g = gcd_u(n, d);
-                return Some((n / g, d / g));
-            }
+    }
+    if first_nz == 0 {
+        return None;
+    }
+    let tz = tz_words
+        .checked_mul(64)?
+        .checked_add(first_nz.trailing_zeros() as usize)?;
+    let n = shr_words_u64(words, tz)?;
+    let exp2 = e
+        .checked_sub((64 * words.len()) as i64)?
+        .checked_add(tz as i64)?;
+    if exp2 >= 0 {
+        if exp2 >= 64 {
             return None;
         }
-        a = ExactNum::from_u8(1, p).div(&frac, p, RoundingMode::None);
-        if !finite(&a) {
+        let n = n.checked_shl(exp2 as u32)?;
+        if n == 0 {
+            return None;
+        }
+        Some((n, 1))
+    } else {
+        let k = (-exp2) as u32;
+        if k >= 64 {
+            return None;
+        }
+        let d = 1u64.checked_shl(k)?;
+        if n == 0 || d == 0 {
+            return None;
+        }
+        let g = gcd_u(n, d);
+        Some((n / g, d / g))
+    }
+}
+
+/// Integer value of the little-endian word mantissa shifted right by `tz`
+/// bits, if it fits in `u64`.
+fn shr_words_u64(words: &[u64], tz: usize) -> Option<u64> {
+    let woff = tz / 64;
+    let b = tz % 64;
+    let rest = words.get(woff..)?;
+    if rest.is_empty() {
+        return None;
+    }
+    let lo = rest[0] >> b;
+    let hi = if b == 0 || rest.len() < 2 { 0 } else { rest[1] << (64 - b) };
+    let n = lo | hi;
+    if b == 0 {
+        if rest[1..].iter().any(|&w| w != 0) {
+            return None;
+        }
+    } else {
+        if rest.len() >= 2 && rest[1] >> b != 0 {
+            return None;
+        }
+        if rest.get(2..).is_some_and(|t| t.iter().any(|&w| w != 0)) {
             return None;
         }
     }
-    None
+    if n == 0 {
+        None
+    } else {
+        Some(n)
+    }
 }
 
 fn all_unit_scales(xs: &[(ExactNum, ExactNum)], p: usize) -> bool {
@@ -1317,24 +1352,30 @@ impl ExactNum {
     /// Fox \(H^{m,n}_{p,q}(\mathrm{self}\mid (a_i,A_i); (b_j,B_j))\).
     ///
     /// Each slice is pairs \((a,A)\) or \((b,B)\) in the same \(n,p,m,q\) grouping as
-    /// [`meijer_g`]. When every \(A_i=B_j=1\) this is Meijer \(G\). Positive rational
-    /// scales are lifted by the Gauss multiplication formula (mpmath `foxh`).
+    /// [`meijer_g`]. When every \(A_i=B_j=1\) this is Meijer \(G\).
     ///
     /// # Precision
     ///
-    /// - Algorithm: unit scales call [`ExactNum::meijer_g`]; otherwise Gauss
-    ///   multiplication to a larger \(G\) (mpmath `foxh`). Extra word of working
-    ///   precision.
-    /// - Bound: same as Meijer \(G\) after the lift.
+    /// - Algorithm: unit scales call [`ExactNum::meijer_g`]. If every scale is
+    ///   an exact fraction \(n/d\) (the reduced dyadic equals the input, with
+    ///   no slack) and the Gauss lift fits in `usize` and in memory, the lift
+    ///   is used. Every other case sums the Mellin–Barnes residue series at
+    ///   the exact scales (DLMF 16.17 generalizes in the obvious way to
+    ///   \(A_i,B_j\neq 1\)). Extra word of working precision.
+    /// - Bound: same as Meijer \(G\) after a lift; the residue series stops
+    ///   when the term is below a unit in the last place of the working
+    ///   precision, or stalls if the terms stop shrinking.
     ///
     /// # Limitations
     ///
-    /// - \(A_i,B_j\) must be positive rationals uniquely identifiable at the
-    ///   working precision (continued-fraction recovery). Otherwise `NaN`.
-    ///   A Gauss lift whose length does not fit in memory or in a `usize`
-    ///   index may fail in the allocator or return `NaN`.
-    /// - Coincident poles after the lift use the same limit as [`meijer_g`].
-    /// - Real \(\mathrm{self}>0\) when a scale is not 1 (fractional \(z^{1/r}\)).
+    /// - Scales may be any positive reals (exact dyadic inputs). There is no
+    ///   approximate or slack-based identification: a dest-\(p\) rounding of
+    ///   \(2/17\), or \(2/17+2^{-200}\), is evaluated at that exact value,
+    ///   not at \(2/17\). A Gauss lift that does not fit in memory or in a
+    ///   `usize` index is not attempted; the residue series is used instead.
+    /// - Coincident poles after a lift use the same limit as [`meijer_g`].
+    ///   Coincident poles of the residue series are `NaN`.
+    /// - Real \(\mathrm{self}>0\) when a scale is not 1 (fractional \(z^{1/B}\)).
     ///
     /// Accuracy: unspecified
     pub fn fox_h(
@@ -1431,9 +1472,13 @@ impl ExactNum {
                 rm,
             );
         }
-        fox_h_gauss(self, an, ap, bm, bq, wrk, cc)
-            .map(|y| finish(y, p, rm))
-            .unwrap_or_else(cat_nan)
+        if let Some(y) = fox_h_gauss(self, an, ap, bm, bq, wrk, cc) {
+            return finish(y, p, rm);
+        }
+        match fox_h_residue(self, an, ap, bm, bq, wrk, cc) {
+            GEval::Val(y) => finish(y, p, rm),
+            GEval::Bad | GEval::Singular => cat_nan(),
+        }
     }
 
     /// Local Heun \(\mathrm{Hl}(a,q;\alpha,\beta,\gamma,\delta;\mathrm{self})\) (DLMF 31.3).
@@ -3357,6 +3402,17 @@ fn fox_h_gauss(
         }
         b_int.push(bi);
     }
+    let mut lift_len: usize = 0;
+    for &ai in a_int.iter().chain(b_int.iter()) {
+        let n = usize::try_from(ai).ok()?;
+        lift_len = lift_len.checked_add(n)?;
+    }
+    // A dest-64 exact dyadic like 1085102592571150095/2^{63} fits in u64
+    // but must not attempt a ~2^{63}-parameter lift: fall back to the
+    // residue series when the allocation cannot be reserved.
+    if Vec::<ExactNum>::new().try_reserve(lift_len).is_err() {
+        return None;
+    }
     let mut a_tilde = Vec::new();
     for (ai, &ai_int) in a.iter().zip(a_int.iter()) {
         let ai_us = usize::try_from(ai_int).ok()?;
@@ -3449,6 +3505,334 @@ fn fox_h_gauss(
         return None;
     }
     Some(pre.mul(&g, p, RoundingMode::None))
+}
+
+fn all_scales_positive(
+    an: &[(ExactNum, ExactNum)],
+    ap: &[(ExactNum, ExactNum)],
+    bm: &[(ExactNum, ExactNum)],
+    bq: &[(ExactNum, ExactNum)],
+) -> bool {
+    an.iter()
+        .chain(ap.iter())
+        .chain(bm.iter())
+        .chain(bq.iter())
+        .all(|(_, s)| finite(s) && s.is_positive())
+}
+
+fn fox_choose_series(
+    an: &[(ExactNum, ExactNum)],
+    ap: &[(ExactNum, ExactNum)],
+    bm: &[(ExactNum, ExactNum)],
+    bq: &[(ExactNum, ExactNum)],
+    z: &ExactNum,
+    p: usize,
+    cc: &mut Consts,
+) -> u8 {
+    let mut delta = ExactNum::new(p);
+    for (_, s) in bm.iter().chain(bq.iter()) {
+        delta = delta.add(s, p, RoundingMode::None);
+    }
+    for (_, s) in an.iter().chain(ap.iter()) {
+        delta = delta.sub(s, p, RoundingMode::None);
+    }
+    let mut typ = if delta.is_zero() {
+        let mut beta = ExactNum::from_u8(1, p);
+        for (_, s) in an.iter().chain(ap.iter()) {
+            beta = beta.mul(&pow_real(s, s, p, cc), p, RoundingMode::None);
+        }
+        for (_, s) in bm.iter().chain(bq.iter()) {
+            let den = pow_real(s, s, p, cc);
+            if !finite(&den) || den.is_zero() {
+                return 1;
+            }
+            beta = beta.div(&den, p, RoundingMode::None);
+        }
+        if matches!(z.abs_cmp(&beta), Some(c) if c > 0) {
+            2u8
+        } else {
+            1
+        }
+    } else if delta.is_positive() {
+        1
+    } else {
+        2
+    };
+    if typ == 1 && bm.is_empty() {
+        typ = 2;
+    }
+    if typ == 2 && an.is_empty() {
+        typ = 1;
+    }
+    typ
+}
+
+fn lin_scale(c: &ExactNum, s: &ExactNum, slope: &ExactNum, p: usize) -> ExactNum {
+    ExactNum::add_ref(
+        c,
+        &ExactNum::mul_ref(s, slope, p, RoundingMode::None),
+        p,
+        RoundingMode::None,
+    )
+}
+
+fn fox_term_ratio(
+    gn: &[ExactNum],
+    gd: &[ExactNum],
+    pref: &ExactNum,
+    zp: &ExactNum,
+    p: usize,
+    cc: &mut Consts,
+) -> Result<Option<ExactNum>, ()> {
+    let ratio = match gamma_ratio(gn, gd, p, cc) {
+        Err(()) => return Err(()),
+        Ok(None) => return Ok(None),
+        Ok(Some(v)) => v,
+    };
+    if !finite(pref) || !finite(zp) || !finite(&ratio) {
+        return Err(());
+    }
+    Ok(Some(pref.clone().mul(&ratio, p, RoundingMode::None).mul(
+        zp,
+        p,
+        RoundingMode::None,
+    )))
+}
+
+/// Mellin–Barnes residue series at the exact scales. No term cap: the sum
+/// stops when a term is below a unit in the last place of `p`, or stalls if
+/// the terms stop shrinking. A `u64` term index overflow is an index-type
+/// limit.
+fn fox_h_residue(
+    z: &ExactNum,
+    an: &[(ExactNum, ExactNum)],
+    ap: &[(ExactNum, ExactNum)],
+    bm: &[(ExactNum, ExactNum)],
+    bq: &[(ExactNum, ExactNum)],
+    p: usize,
+    cc: &mut Consts,
+) -> GEval {
+    if !finite(z)
+        || !pairs_finite(an)
+        || !pairs_finite(ap)
+        || !pairs_finite(bm)
+        || !pairs_finite(bq)
+        || !all_scales_positive(an, ap, bm, bq)
+    {
+        return GEval::Bad;
+    }
+    if an.is_empty() && bm.is_empty() {
+        return GEval::Bad;
+    }
+    if !z.is_positive() && !z.is_zero() {
+        return GEval::Bad;
+    }
+    let typ = fox_choose_series(an, ap, bm, bq, z, p, cc);
+    let one = ExactNum::from_u8(1, p);
+    let mut sum = ExactNum::new(p);
+    let cutoff = -((p as i64).saturating_add(16));
+    if typ == 1 {
+        for h in 0..bm.len() {
+            let (bh, bh_s) = &bm[h];
+            if !bh_s.is_positive() {
+                return GEval::Bad;
+            }
+            let inv_b = one.clone().div(bh_s, p, RoundingMode::None);
+            if !finite(&inv_b) {
+                return GEval::Bad;
+            }
+            // s = -(b_h + k)/B_h, z^{-s} = z^{b_h/B_h} (z^{1/B_h})^k
+            let mut zp = pow_real(
+                z,
+                &ExactNum::mul_ref(bh, &inv_b, p, RoundingMode::None),
+                p,
+                cc,
+            );
+            let z_step = pow_real(z, &inv_b, p, cc);
+            if !finite(&zp) || !finite(&z_step) {
+                return GEval::Bad;
+            }
+            let mut pref = one.clone().div(bh_s, p, RoundingMode::None);
+            let mut k: u64 = 0;
+            let mut grew = 0u32;
+            let mut prev_exp: Option<i64> = None;
+            loop {
+                let s = ExactNum::add_ref(bh, &ExactNum::from_u64(k, p), p, RoundingMode::None)
+                    .neg()
+                    .div(bh_s, p, RoundingMode::None);
+                let mut gn = Vec::new();
+                let mut gd = Vec::new();
+                for (j, (bj, bj_s)) in bm.iter().enumerate() {
+                    if j == h {
+                        continue;
+                    }
+                    gn.push(lin_scale(bj, bj_s, &s, p));
+                }
+                for (ai, ai_s) in an {
+                    gn.push(lin_scale(
+                        &ExactNum::sub_ref(&one, ai, p, RoundingMode::None),
+                        &ai_s.clone().neg(),
+                        &s,
+                        p,
+                    ));
+                }
+                for (ai, ai_s) in ap {
+                    gd.push(lin_scale(ai, ai_s, &s, p));
+                }
+                for (bj, bj_s) in bq {
+                    gd.push(lin_scale(
+                        &ExactNum::sub_ref(&one, bj, p, RoundingMode::None),
+                        &bj_s.clone().neg(),
+                        &s,
+                        p,
+                    ));
+                }
+                match fox_term_ratio(&gn, &gd, &pref, &zp, p, cc) {
+                    Err(()) => return GEval::Singular,
+                    Ok(None) => {}
+                    Ok(Some(term)) => {
+                        if !finite(&term) {
+                            return GEval::Singular;
+                        }
+                        sum = sum.add(&term, p, RoundingMode::None);
+                        if !finite(&sum) {
+                            return GEval::Singular;
+                        }
+                        let te = term.abs().exponent();
+                        if k >= 4 {
+                            if let Some(e) = te {
+                                let se = sum.clone().abs().exponent().unwrap_or(0);
+                                if e - se < cutoff {
+                                    break;
+                                }
+                                if prev_exp.is_some_and(|pe| e >= pe) {
+                                    grew += 1;
+                                    if grew >= 4 {
+                                        return GEval::Bad;
+                                    }
+                                } else {
+                                    grew = 0;
+                                }
+                            }
+                        }
+                        prev_exp = te;
+                    }
+                }
+                let k_next = match k.checked_add(1) {
+                    Some(v) => v,
+                    None => return GEval::Bad,
+                };
+                pref = pref
+                    .neg()
+                    .div(&ExactNum::from_u64(k_next, p), p, RoundingMode::None);
+                zp = zp.mul(&z_step, p, RoundingMode::None);
+                k = k_next;
+            }
+        }
+    } else {
+        for k_idx in 0..an.len() {
+            let (ak, ak_s) = &an[k_idx];
+            if !ak_s.is_positive() {
+                return GEval::Bad;
+            }
+            let inv_a = one.clone().div(ak_s, p, RoundingMode::None);
+            if !finite(&inv_a) {
+                return GEval::Bad;
+            }
+            // s = (1 - a_k + ell)/A_k,  residue of Γ(1-a-A s) is -(-1)^ell/(ell! A)
+            // Closing to the right, the MB integral picks up + [(-1)^ell/(ell! A)] * rest * z^{-s}
+            // (the minus from dw = -A ds cancels the clockwise sign). z^{-s} starts
+            // at z^{-(1-a_k)/A_k} and multiplies by z^{-1/A_k} each step.
+            let s0 =
+                ExactNum::sub_ref(&one, ak, p, RoundingMode::None).div(ak_s, p, RoundingMode::None);
+            let mut zp = pow_real(z, &s0.neg(), p, cc);
+            let z_step = pow_real(z, &inv_a.neg(), p, cc);
+            if !finite(&zp) || !finite(&z_step) {
+                return GEval::Bad;
+            }
+            let mut pref = one.clone().div(ak_s, p, RoundingMode::None);
+            let mut ell: u64 = 0;
+            let mut grew = 0u32;
+            let mut prev_exp: Option<i64> = None;
+            loop {
+                let s = ExactNum::add_ref(
+                    &ExactNum::sub_ref(&one, ak, p, RoundingMode::None),
+                    &ExactNum::from_u64(ell, p),
+                    p,
+                    RoundingMode::None,
+                )
+                .div(ak_s, p, RoundingMode::None);
+                let mut gn = Vec::new();
+                let mut gd = Vec::new();
+                for (j, (ai, ai_s)) in an.iter().enumerate() {
+                    if j == k_idx {
+                        continue;
+                    }
+                    gn.push(lin_scale(
+                        &ExactNum::sub_ref(&one, ai, p, RoundingMode::None),
+                        &ai_s.clone().neg(),
+                        &s,
+                        p,
+                    ));
+                }
+                for (bj, bj_s) in bm {
+                    gn.push(lin_scale(bj, bj_s, &s, p));
+                }
+                for (bj, bj_s) in bq {
+                    gd.push(lin_scale(
+                        &ExactNum::sub_ref(&one, bj, p, RoundingMode::None),
+                        &bj_s.clone().neg(),
+                        &s,
+                        p,
+                    ));
+                }
+                for (ai, ai_s) in ap {
+                    gd.push(lin_scale(ai, ai_s, &s, p));
+                }
+                match fox_term_ratio(&gn, &gd, &pref, &zp, p, cc) {
+                    Err(()) => return GEval::Singular,
+                    Ok(None) => {}
+                    Ok(Some(term)) => {
+                        if !finite(&term) {
+                            return GEval::Singular;
+                        }
+                        sum = sum.add(&term, p, RoundingMode::None);
+                        if !finite(&sum) {
+                            return GEval::Singular;
+                        }
+                        let te = term.abs().exponent();
+                        if ell >= 4 {
+                            if let Some(e) = te {
+                                let se = sum.clone().abs().exponent().unwrap_or(0);
+                                if e - se < cutoff {
+                                    break;
+                                }
+                                if prev_exp.is_some_and(|pe| e >= pe) {
+                                    grew += 1;
+                                    if grew >= 4 {
+                                        return GEval::Bad;
+                                    }
+                                } else {
+                                    grew = 0;
+                                }
+                            }
+                        }
+                        prev_exp = te;
+                    }
+                }
+                let ell_next = match ell.checked_add(1) {
+                    Some(v) => v,
+                    None => return GEval::Bad,
+                };
+                pref = pref
+                    .neg()
+                    .div(&ExactNum::from_u64(ell_next, p), p, RoundingMode::None);
+                zp = zp.mul(&z_step, p, RoundingMode::None);
+                ell = ell_next;
+            }
+        }
+    }
+    GEval::Val(sum)
 }
 
 #[cfg(test)]
@@ -3829,14 +4213,17 @@ mod tests {
         Ok(())
     }
 
-    /// Public `fox_h` used to refuse scales that were not "small" rationals:
-    /// `as_pos_rational` denominator search `1..=16` (and numerator `1..=48`),
-    /// cleared integer scale `SCALE_MAX=12`, Gauss-lift length `TILDE_MAX=16`,
-    /// and cleared lcm `d>48`. Each row isolates one of those four refusals.
-    /// Golds are independent of the Gauss lift: \(H^{1,0}_{0,1}\) is the closed
-    /// form \((1/B) z^{b/B} \exp(-z^{1/B})\); \(H^{2,0}_{0,2}\) is the two-family
-    /// Mellin–Barnes residue series (mpmath, 95 dps, agrees with 120 dps to
-    /// 91 digits). 0 ulp, 7 modes, p=64 and 256.
+    /// Public `fox_h` at dest `p` (not work_p): hybrid of Jeff's 2026-11-17
+    /// 8:33 AM CST ruling, "Fox H: hybrid, lift exact fractions and use the
+    /// residue series for everything else." Inputs are built at the public
+    /// dest precision. Golds are independent and evaluated at the exact
+    /// dest-p dyadic: \(H^{1,0}_{0,1}\) is the closed form
+    /// \((1/B) z^{b/B} \exp(-z^{1/B})\); \(H^{2,0}_{0,2}\) is the two-family
+    /// Mellin–Barnes residue series (mpmath, 160 dps). 0 ulp, 7 modes,
+    /// p=64 and 256. Includes dest-64/256 2/17 and 1/3 (must not be NaN),
+    /// the dest-64 `RoundingMode::None` 2/17 dyadic (must not attempt a
+    /// \(2^{63}\)-parameter lift), and the \(2/17+2^{-200}\) trap at dest 256
+    /// (must be H of that dyadic, not H(2/17)).
     #[test]
     fn caps_fox_h_rational_scale_caps() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
@@ -3849,70 +4236,184 @@ mod tests {
             RoundingMode::FromZero,
             RoundingMode::None,
         ];
-        fn rat(n: i32, d: i32, wp: usize) -> ExactNum {
-            let mut x = ExactNum::from_u32(n.unsigned_abs(), wp);
-            if n < 0 {
-                x = x.neg();
-            }
+        fn rat(n: u32, d: u32, p: usize, rm: RoundingMode) -> ExactNum {
             if d == 1 {
-                x
+                ExactNum::from_u32(n, p)
             } else {
-                x.div(&ExactNum::from_u32(d as u32, wp), wp, RoundingMode::None)
+                ExactNum::from_u32(n, p).div(&ExactNum::from_u32(d, p), p, rm)
             }
         }
-        // Isolated cases at z=1/2, all previously NaN:
-        // den 1..=16:  H^{1,0}_{0,1}(1/2|(0, 2/17)) — d=17, ai=2, tilde=2
-        // SCALE_MAX:   H^{1,0}_{0,1}(1/2|(0, 13))    — den=1, d=1, ai=13, tilde=13
-        // TILDE_MAX:   H^{2,0}_{0,2}(1/2|(0,9),(1/2,9)) — den=1, ai=9,9, tilde=18
-        // d>48:        H^{2,0}_{0,2}(1/2|(0,1/7),(1/3,1/8)) — lcm=56, ai=8,7, tilde=15
-        let rows: &[(&str, &[(i32, i32, i32, i32)], &str)] = &[
+        fn parse_gold(s: &str, cc: &mut Consts) -> ExactNum {
+            ExactNum::parse(s, crate::Radix::Dec, 1024, RoundingMode::ToEven, cc)
+        }
+        // Independent golds at the exact dest-p input (see /tmp/fox_h_gold.py).
+        // name, p, input rm, bm as (b_n,b_d,B_n,B_d) plus optional trap flag, gold
+        type FoxRow<'a> = (
+            &'a str,
+            usize,
+            RoundingMode,
+            &'a [(u32, u32, u32, u32)],
+            bool,
+            &'a str,
+        );
+        let rows: &[FoxRow] = &[
             (
-                "H^{1,0}_{0,1}(1/2|(0,2/17)) den>16",
+                "H^{1,0}_{0,1}(1/2|(0,2/17)) dest-64 ToEven",
+                64,
+                RoundingMode::ToEven,
                 &[(0, 1, 2, 17)],
-                "8.4765542402492593615891435758535540954361606206614689367285702748218220092725274269990218721167",
+                false,
+                "8.4765542402492593615599565141120465009571342701261058065558072752501918028265430126284747993886851565936525932",
             ),
             (
-                "H^{1,0}_{0,1}(1/2|(0,13)) SCALE_MAX",
+                "H^{1,0}_{0,1}(1/2|(0,2/17)) dest-64 None",
+                64,
+                RoundingMode::None,
+                &[(0, 1, 2, 17)],
+                false,
+                "8.4765542402492593620561365637176756071266455746431292165652507766414790195273454744691924617201878164795150088",
+            ),
+            (
+                "H^{1,0}_{0,1}(1/2|(0,2/17)) dest-256 ToEven",
+                256,
+                RoundingMode::ToEven,
+                &[(0, 1, 2, 17)],
+                false,
+                "8.4765542402492593615891435758535540954361606206614689367285702748218220092725227772318248601952848693342698784",
+            ),
+            (
+                "H^{1,0}_{0,1}(1/2|(0,2/17)) dest-256 None",
+                256,
+                RoundingMode::None,
+                &[(0, 1, 2, 17)],
+                false,
+                "8.4765542402492593615891435758535540954361606206614689367285702748218220092726018232741740628599301144177862950",
+            ),
+            (
+                "H^{1,0}_{0,1}(1/2|(0,1/3)) dest-64 ToEven",
+                64,
+                RoundingMode::ToEven,
+                &[(0, 1, 1, 3)],
+                false,
+                "2.6474907077537862085042633610098426968418977610544813471244904302515056854204447016735489644196780419382603567",
+            ),
+            (
+                "H^{1,0}_{0,1}(1/2|(0,1/3)) dest-64 None",
+                64,
+                RoundingMode::None,
+                &[(0, 1, 1, 3)],
+                false,
+                "2.6474907077537862087755025670417712323292255651526123029758758310686775405528845871331853462801175748655703590",
+            ),
+            (
+                "H^{1,0}_{0,1}(1/2|(0,1/3)) dest-256 ToEven",
+                256,
+                RoundingMode::ToEven,
+                &[(0, 1, 1, 3)],
+                false,
+                "2.6474907077537862085946764296871522086660144749719522253109279576243278856339117866652283935228949345180793524",
+            ),
+            (
+                "H^{1,0}_{0,1}(1/2|(0,1/3)) dest-256 None",
+                256,
+                RoundingMode::None,
+                &[(0, 1, 1, 3)],
+                false,
+                "2.6474907077537862085946764296871522086660144749719522253109279576243278856339549975637395389237010787717529303",
+            ),
+            (
+                "H^{1,0}_{0,1}(1/2|(0,13)) exact integer",
+                64,
+                RoundingMode::ToEven,
                 &[(0, 1, 13, 1)],
-                "2.9806557128670610131633200033113069561999100194288326523783881499742055990273122848946489408177e-2",
+                false,
+                "0.029806557128670610131633200033113069561999100194288326523783881499742055990273122848946489408177306626787358014",
             ),
             (
-                "H^{2,0}_{0,2}(1/2|(0,9),(1/2,9)) TILDE_MAX",
+                "H^{1,0}_{0,1}(1/2|(0,13)) exact integer dest-256",
+                256,
+                RoundingMode::ToEven,
+                &[(0, 1, 13, 1)],
+                false,
+                "0.029806557128670610131633200033113069561999100194288326523783881499742055990273122848946489408177306626787358014",
+            ),
+            (
+                "H^{2,0}_{0,2}(1/2|(0,9),(1/2,9)) exact dest-64",
+                64,
+                RoundingMode::ToEven,
                 &[(0, 1, 9, 1), (1, 2, 9, 1)],
-                "2.8744543869538835816376707165363370283649562396805557031716529579208402034590765309492099504295e-2",
+                false,
+                "0.028744543869538835816376707165363370283649562396805557031716529579208402034590765308567248688101310048939276853",
             ),
             (
-                "H^{2,0}_{0,2}(1/2|(0,1/7),(1/3,1/8)) d>48",
+                "H^{2,0}_{0,2}(1/2|(0,9),(1/2,9)) exact dest-256",
+                256,
+                RoundingMode::ToEven,
+                &[(0, 1, 9, 1), (1, 2, 9, 1)],
+                false,
+                "0.028744543869538835816376707165363370283649562396805557031716529579208402034590765308567248688101310048939276853",
+            ),
+            (
+                "H^{2,0}_{0,2}(1/2|(0,1/7),(1/3,1/8)) dest-64 ToEven",
+                64,
+                RoundingMode::ToEven,
                 &[(0, 1, 1, 7), (1, 3, 1, 8)],
-                "1.4150861693701019943330055886306502206671506422108512889717862092656741324465827261805607323005e+1",
+                false,
+                "14.150861693701019943312221271756651817302063884367624916798395324859134509485433566869870699535918786680547826",
+            ),
+            (
+                "H^{2,0}_{0,2}(1/2|(0,1/7),(1/3,1/8)) dest-256 ToEven",
+                256,
+                RoundingMode::ToEven,
+                &[(0, 1, 1, 7), (1, 3, 1, 8)],
+                false,
+                "14.150861693701019943330055886306502206671506422108512889717862092656741324465824420587589908295954680378089541",
+            ),
+            (
+                "H^{1,0}_{0,1}(1/2|(0,2/17+2^{-200})) dest-256 trap",
+                256,
+                RoundingMode::ToEven,
+                &[(0, 1, 2, 17)],
+                true,
+                "8.4765542402492593615891435758535540954361606206614689367285247078807827796319787846512311293365979764113378273",
             ),
         ];
         let mut bad = Vec::new();
-        let wrk = work_p(256);
-        let z = ExactNum::from_u8(1, wrk).div(&ExactNum::from_u8(2, wrk), wrk, RoundingMode::None);
-        for (name, bms, gold_s) in rows {
-            let gold = ExactNum::parse(
-                gold_s,
-                crate::Radix::Dec,
-                1024,
-                RoundingMode::ToEven,
-                &mut cc,
-            );
+        for (name, p, in_rm, bms, trap, gold_s) in rows {
+            let gold = parse_gold(gold_s, &mut cc);
+            let z = ExactNum::from_u8(1, *p).ldexp(-1, *p, RoundingMode::None);
             let bm: Vec<(ExactNum, ExactNum)> = bms
                 .iter()
-                .map(|&(bn, bd, sn, sd)| (rat(bn, bd, wrk), rat(sn, sd, wrk)))
-                .collect();
-            let Some(y) = fox_h_gauss(&z, &[], &[], &bm, &[], wrk, &mut cc) else {
-                bad.push(format!("{name}: fox_h_gauss returned None"));
-                continue;
-            };
-            for &p in &[64usize, 256] {
-                for &rm in &modes {
-                    let got = finish(y.clone(), p, rm);
-                    let want = finish(gold.clone(), p, rm);
-                    if got.compare(&want) != Some(0) {
-                        bad.push(format!("{name} p={p} {rm:?} got {got} want {want}"));
+                .map(|&(bn, bd, sn, sd)| {
+                    let b = rat(bn, bd, *p, *in_rm);
+                    let mut s = rat(sn, sd, *p, *in_rm);
+                    if *trap {
+                        s = s.add(
+                            &ExactNum::from_u8(1, *p).ldexp(-200, *p, RoundingMode::None),
+                            *p,
+                            RoundingMode::None,
+                        );
                     }
+                    (b, s)
+                })
+                .collect();
+            // No slack identification of the trap as 2/17.
+            if *trap {
+                if let Some((n, d)) = exact_pos_frac(&bm[0].1) {
+                    if (n, d) == (2, 17) {
+                        bad.push(format!("{name}: exact_pos_frac identified 2/17"));
+                    }
+                }
+            }
+            for &rm in &modes {
+                let got = z.fox_h(&[], &[], &bm, &[], *p, rm, &mut cc);
+                if got.is_nan() {
+                    bad.push(format!("{name} p={p} {rm:?} got NaN"));
+                    continue;
+                }
+                let want = finish(gold.clone(), *p, rm);
+                if got.compare(&want) != Some(0) {
+                    bad.push(format!("{name} p={p} {rm:?} got {got} want {want}"));
                 }
             }
         }
