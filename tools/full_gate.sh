@@ -38,7 +38,7 @@ export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-${POPSLOT_JOBS:-$(nproc)}} RUST_TEST
 # No python bytecode cache in the tree: a leftover __pycache__ makes the poplog footer NOT A GATE (tree dirty at end).
 # Steps that clear the environment (env -i) set it again themselves (tools/oracle_env_selftest.sh run_forged).
 export PYTHONDONTWRITEBYTECODE=1
-TT="-- --test-threads=$RUST_TEST_THREADS --fail-fast"
+TT="-- --test-threads=$RUST_TEST_THREADS"
 # Preflight: every external tool a step needs must exist; a missing tool fails the gate loudly instead of
 # letting a step's check read "command not found" as "no matches".
 missing=()
@@ -114,7 +114,7 @@ run fmt "cargo fmt --all -- --check"
 run clippy-x86_64 "cargo clippy --workspace --all-targets --all-features -- -D warnings"
 run audit "cargo audit --deny warnings"
 run no-intrinsics "bash scripts/ci_no_intrinsics.sh"
-run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
+run unsafe-scan "bash tools/test_full_gate_64bit_only.sh && bash tools/test_rounding_mode_matrices.sh && bash tools/test_full_gate_threads.sh && bash tools/test_full_gate_stable_libtest_flags.sh && bash tools/test_max_precision_single_def.sh && bash tools/gate_unsafe_scan.sh"
 run prepublish "bash scripts/zenith_prepublish.sh"
 echo "done" >> "$T/$tag.rc"
 poplog_finish
