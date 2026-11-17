@@ -3741,10 +3741,11 @@ fn zf_37_bessel_y_k_tiny_and_extreme_x() {
 /// of multiplying; at this argument that is exactly the factor-of-four error in
 /// \(t_1\). \(A_\nu\) at large \(z\) uses the Laplace / Watson expansion
 /// (DLMF 11.11.4) with a Cauchy remainder (panels otherwise). Expected values
-/// are dual-precision mpmath (4096 and 8192 bits) that agree after rounding in
-/// every mode (land39/zf56/gen.py), except \(\mathbf{H}_{-3/2}(0)\) and
+/// are dual-precision mpmath that agree after rounding in every mode
+/// (land39/zf56/gen.py and gen_hangs.py), except \(\mathbf{H}_{-3/2}(0)\) and
 /// \(\mathbf{H}_{-5/2}(0)\), which are 0 by the closed form in RC-4 (mpmath
-/// reports ±Inf).
+/// reports ±Inf). The table includes the 16 s56 hangs at \(x=2^{20}\), the
+/// five InvalidArgument refusals, and the high-p extras.
 #[test]
 fn zf_56_anger_weber_struve_correctly_rounded() {
     let mut cc = Consts::new().expect("Consts");
