@@ -1049,6 +1049,27 @@ impl ExactComplex {
     }
 
     pub(crate) fn digamma_at(&self, p: usize, cc: &mut Consts) -> Self {
+        // ψ(n) = −γ + H_{n−1} for positive integers. The Stirling shift would
+        // otherwise walk from 1 to 2^{e_min−1} (≈ 2^{40} steps at p=65536).
+        if self.im().is_zero() && self.re().is_int() && self.re().is_positive() {
+            if let Ok(n) = self.re().to_u32(RoundingMode::ToZero) {
+                let g = cc.euler_gamma(p, RoundingMode::None);
+                let mut v = -g;
+                if n >= 2 {
+                    let mut h = ExactNum::new(p);
+                    for k in 1..n {
+                        let t = ExactNum::from_u8(1, p).div(
+                            &ExactNum::from_u32(k, p),
+                            p,
+                            RoundingMode::None,
+                        );
+                        h = h.add(&t, p, RoundingMode::None);
+                    }
+                    v = v.add(&h, p, RoundingMode::None);
+                }
+                return ExactComplex::from_real(v, p);
+            }
+        }
         if !re_positive(self) && !self.re().is_zero() {
             let one = ExactComplex::one(p);
             let omz = one.sub(self, p, RoundingMode::None);
@@ -1073,7 +1094,11 @@ impl ExactComplex {
         let mut z = self.clone();
         let mut acc = ExactComplex::zero(p);
         let (terms, k) = digamma_stirling_plan(p);
-        let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
+        // Bound the walk the same way the real kernel does (STIRLING_SHIFT_MAX = 2^20).
+        // shift_cap(k) is the mathematical step count to reach 2^{k-1}, which at
+        // high p is far larger than any feasible loop (2^40 steps at p=65536).
+        const STIRLING_SHIFT_MAX: usize = 1 << 20;
+        let shifted = shift_while_small(&mut z, p, k, shift_cap(k).min(STIRLING_SHIFT_MAX), |z| {
             let rec = one.div(z, p, RoundingMode::None);
             acc = ExactComplex::sub_ref(&acc, &rec, p, RoundingMode::None);
             *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
@@ -1627,6 +1652,27 @@ mod tests {
             let c = z.erfc(p, rm, &mut cc);
             assert!(c.im().is_zero() && !c.re().is_nan(), "erfc {rm:?}: {c:?}");
         }
+        Ok(())
+    }
+
+    /// ψ(1) = −γ must use the integer closed form. The Stirling walk from 1
+    /// to 2^{e_min−1} is ~2^{40} steps at p=65536 and does not finish.
+    #[test]
+    fn digamma_one_is_neg_euler_gamma_at_high_p() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 65536;
+        let z = ExactComplex::from_real(ExactNum::from_u8(1, p), p);
+        let t0 = std::time::Instant::now();
+        let psi = z.digamma_at(p, &mut cc);
+        assert!(
+            t0.elapsed().as_secs() < 5,
+            "digamma(1) at p=65536 took {:?}",
+            t0.elapsed()
+        );
+        assert!(!psi.is_nan(), "digamma(1) NaN: {:?}", psi);
+        assert!(psi.im().is_zero());
+        let g = cc.euler_gamma(p, RoundingMode::None);
+        assert_eq!(psi.re().compare(&g.neg()), Some(0));
         Ok(())
     }
 }

@@ -1002,8 +1002,10 @@ impl ExactComplex {
         let z = half.mul(&half, p, RoundingMode::None);
         let mut fact = ExactComplex::one(p);
         let mut zk = ExactComplex::one(p);
-        let mut psi = ExactComplex::one(p).digamma_at(p, cc);
-        if psi.is_nan() {
+        // ψ(1) = −γ. Do not go through digamma_at(1): that Stirling-shifts 1 up to
+        // 2^{e_min−1}, which at p=65536 is 2^{40} steps and does not finish.
+        let mut psi = ExactComplex::from_real(-cc.euler_gamma(p, RoundingMode::None), p);
+        if psi.re().is_nan() {
             return None;
         }
         let mut sum = psi.clone();
