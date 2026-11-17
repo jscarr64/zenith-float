@@ -292,7 +292,7 @@ fn fmt_hypot(v: &ExactNumNumber) -> String {
 }
 
 /// Independent one-rounding hypot: same scaling as `hypot`, then sqrt toward zero
-/// one word wide and `place_scaled` once. The 594_432-pair search below locks
+/// one word wide and `place_scaled` once. The 693_504-pair search below locks
 /// `hypot` to this path.
 fn hypot_one_round(
     x: &ExactNumNumber,
@@ -334,21 +334,24 @@ fn hypot_one_round(
     wide.place_scaled(at, dropped, p, mode)
 }
 
-/// 594_432 subnormal-band pairs (p=64, all six modes, A,B = 0..=128) against the
+/// 693_504 subnormal-band pairs (p=64, all seven modes, A,B = 0..=128) against the
 /// one-rounding reference. This is the regression check for hypot's ZF-N01 fix.
+const HYPOT_MODES: [RoundingMode; 7] = [
+    RoundingMode::None,
+    RoundingMode::Up,
+    RoundingMode::Down,
+    RoundingMode::ToZero,
+    RoundingMode::FromZero,
+    RoundingMode::ToEven,
+    RoundingMode::ToOdd,
+];
+
 #[test]
 fn zfn01_hypot_one_rounding_search() -> Result<(), Error> {
     let q = i128::from(EXPONENT_MIN) - 64;
     let mut bad = 0u32;
     let mut checked = 0u32;
-    let modes = [
-        RoundingMode::ToEven,
-        RoundingMode::ToOdd,
-        RoundingMode::ToZero,
-        RoundingMode::Up,
-        RoundingMode::Down,
-        RoundingMode::FromZero,
-    ];
+    let modes = HYPOT_MODES;
     let p = 64usize;
     for mode in modes {
         for e1 in [q, q + 1, q + 8] {
@@ -375,7 +378,7 @@ fn zfn01_hypot_one_rounding_search() -> Result<(), Error> {
             }
         }
     }
-    assert_eq!(checked, 594_432, "search size changed: {checked}");
+    assert_eq!(checked, 693_504, "search size changed: {checked}");
     assert_eq!(bad, 0, "{bad} hypot mismatches vs one-rounding reference");
     Ok(())
 }
@@ -388,14 +391,7 @@ fn zfn01_hypot_345_minpos_is_exact() -> Result<(), Error> {
     let x = from_ae(Sign::Pos, 3, q, p)?;
     let y = from_ae(Sign::Pos, 4, q, p)?;
     let want = from_ae(Sign::Pos, 5, q, p)?;
-    for rm in [
-        RoundingMode::ToEven,
-        RoundingMode::ToOdd,
-        RoundingMode::ToZero,
-        RoundingMode::Up,
-        RoundingMode::Down,
-        RoundingMode::FromZero,
-    ] {
+    for rm in HYPOT_MODES {
         let got = x.hypot(&y, p, rm)?;
         assert_eq!(
             fmt_hypot(&got),
