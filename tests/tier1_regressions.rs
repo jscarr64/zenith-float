@@ -4478,3 +4478,180 @@ fn zf_78_hypergeom_2f1_cluster_body() {
         );
     }
 }
+
+/// Incomplete F, E, Π and complete K, E inherit the Carlson cut (−∞,0] of
+/// 1−x², 1−m x², 1−n x², or 1−m. IEEE subtraction collapses the ±0 imag of
+/// those arguments to +0, so E(−2−0i | 2) (c0880554) used to return the +0
+/// (above-cut) value. C99: the sign of a zero imag selects the side. Each
+/// side must match the one-sided FLINT limit (ε=2^{−80}) at p=64 ToEven.
+/// FLINT at the exact real argument is NaN; the stock judge expected for
+/// c0880512 / c0880554 is not a one-sided limit (RC-8). There is no public
+/// elliptic_d; D = (F−E)/m or (x³/3) R_D and is covered by the same RF/RD
+/// arguments.
+#[test]
+fn zf_78_elliptic_cut_signed_zeros() {
+    const BUDGET: std::time::Duration = std::time::Duration::from_secs(20);
+    if std::env::var_os("ZF78_ELLIPTIC_CHILD").is_some() {
+        zf_78_elliptic_cut_signed_zeros_body();
+        return;
+    }
+    let exe = std::env::current_exe().expect("current_exe");
+    let mut child = std::process::Command::new(exe)
+        .arg("--exact")
+        .arg("zf_78_elliptic_cut_signed_zeros")
+        .env("ZF78_ELLIPTIC_CHILD", "1")
+        .env("RUST_TEST_THREADS", "1")
+        .spawn()
+        .expect("spawn ZF-78 elliptic-cut child");
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait().expect("try_wait") {
+            Some(status) => {
+                assert!(
+                    status.success(),
+                    "ZF-78 elliptic cut child exited {status}: a case returned a NaN or missed the FLINT gold"
+                );
+                return;
+            }
+            None if start.elapsed() > BUDGET => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "ZF-78 elliptic cut signed-zero cases at p=64 timed out after {}s",
+                    BUDGET.as_secs()
+                );
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    }
+}
+
+fn zf_78_assert_elliptic_gold(
+    name: &str,
+    got: &ExactComplex,
+    re: &str,
+    im: &str,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) {
+    let want_re = ExactNum::parse(re, Radix::Dec, p, rm, cc);
+    let want_im = ExactNum::parse(im, Radix::Dec, p, rm, cc);
+    assert_eq!(
+        got.re().compare(&want_re),
+        Some(0),
+        "ZF-78 elliptic {name} re got {:?} want {:?}",
+        got.re(),
+        want_re
+    );
+    assert_eq!(
+        got.im().compare(&want_im),
+        Some(0),
+        "ZF-78 elliptic {name} im got {:?} want {:?}",
+        got.im(),
+        want_im
+    );
+}
+
+fn zf_78_neg_dec(s: &str) -> String {
+    if let Some(rest) = s.strip_prefix('-') {
+        rest.to_string()
+    } else {
+        format!("-{s}")
+    }
+}
+
+fn zf_78_elliptic_cut_signed_zeros_body() {
+    let mut cc = Consts::new().expect("Consts");
+    let p = 64usize;
+    let rm = RoundingMode::ToEven;
+    let m2 = parse_complex("1p1,0").expect("m=2");
+    let n_half = parse_complex("1p-1,0").expect("n=1/2");
+    let m_half = parse_complex("1p-1,0").expect("m=1/2");
+
+    // (name, up, dn, re, im_up). The below-cut imag is −im_up in every case.
+    let cases: [(&str, ExactComplex, ExactComplex, &str, &str); 7] = [
+        (
+            "E(-2±0i | 2) c0880512/c0880554",
+            parse_complex("-1p1,0")
+                .expect("x")
+                .elliptic_e(&m2, p, rm, &mut cc),
+            parse_complex("-1p1,-0")
+                .expect("x")
+                .elliptic_e(&m2, p, rm, &mut cc),
+            "-2.63669247722547559233620709360741588042513526117868563359698996500171402407",
+            "-0.5990701173677961037199599826009051310508626225268478439922876726089812428",
+        ),
+        (
+            "F(-2±0i | 2)",
+            parse_complex("-1p1,0")
+                .expect("x")
+                .elliptic_f(&m2, p, rm, &mut cc),
+            parse_complex("-1p1,-0")
+                .expect("x")
+                .elliptic_f(&m2, p, rm, &mut cc),
+            "-0.37874246652437093562046128447701577951284771373622504753823190852372026605",
+            "1.31102877714605990523241961443995159140384266013281473353133230849122081297",
+        ),
+        (
+            "Pi(1/2; -2±0i | 2)",
+            n_half.elliptic_pi(&parse_complex("-1p1,0").expect("x"), &m2, p, rm, &mut cc),
+            n_half.elliptic_pi(&parse_complex("-1p1,-0").expect("x"), &m2, p, rm, &mut cc),
+            "0.0995915243930391820610697880792957204629788145473009342595312260467085250",
+            "0.8215835656063735014928681931220844436377086709437080027147165182805491517",
+        ),
+        (
+            "E(2±0i | 2)",
+            parse_complex("1p1,0")
+                .expect("x")
+                .elliptic_e(&m2, p, rm, &mut cc),
+            parse_complex("1p1,-0")
+                .expect("x")
+                .elliptic_e(&m2, p, rm, &mut cc),
+            "2.63669247722547559233620709360741588042513526117868563359698996500171402407",
+            "-0.5990701173677961037199599826009051310508626225268478439922876726089812428",
+        ),
+        (
+            "F(3/2±0i | 1/2)",
+            parse_complex("3p-1,0")
+                .expect("x")
+                .elliptic_f(&m_half, p, rm, &mut cc),
+            parse_complex("3p-1,-0")
+                .expect("x")
+                .elliptic_f(&m_half, p, rm, &mut cc),
+            "1.382085160391020806804427985499581068510236276318718233307052585290649564",
+            "1.854074677301371918433848254575442445549518350151002472692264583523955947",
+        ),
+        (
+            "K(2±0i)",
+            m2.elliptic_k(p, rm, &mut cc),
+            parse_complex("1p1,-0")
+                .expect("m")
+                .elliptic_k(p, rm, &mut cc),
+            "1.311028777146059905232419942175159783795596939280507209689025452359131603269",
+            "1.311028777146059905232419399946366306633275882577287003212506857059021323791",
+        ),
+        (
+            "E_complete(2±0i)",
+            m2.elliptic_e_complete(p, rm, &mut cc),
+            parse_complex("1p1,-0")
+                .expect("m")
+                .elliptic_e_complete(p, rm, &mut cc),
+            "0.59907011736779610371996164113935533932170792474625901822465827710326058245",
+            "-0.59907011736779610371996139336976201606782579517276645916851812891986794387",
+        ),
+    ];
+    for (name, up, dn, re, im_up) in cases {
+        assert!(
+            !up.is_nan() && !dn.is_nan() && !up.re().is_inf() && !dn.re().is_inf(),
+            "ZF-78 elliptic {name} must be finite, got {up:?} / {dn:?}"
+        );
+        assert!(
+            up.re().compare(dn.re()) != Some(0) || up.im().compare(dn.im()) != Some(0),
+            "ZF-78 elliptic {name} +0 and −0 must differ, both {up:?}"
+        );
+        zf_78_assert_elliptic_gold(name, &up, re, im_up, p, rm, &mut cc);
+        let im_dn = zf_78_neg_dec(im_up);
+        zf_78_assert_elliptic_gold(name, &dn, re, &im_dn, p, rm, &mut cc);
+    }
+}

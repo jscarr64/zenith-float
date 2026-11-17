@@ -89,26 +89,29 @@ fn any_nan(args: &[&ExactComplex]) -> bool {
 }
 
 /// \(R_C(x,y)=R_F(x,y,y)\).
-fn carlson_rc(x: &ExactComplex, y: &ExactComplex, p: usize, cc: &mut Consts) -> ExactComplex {
-    if any_nan(&[x, y]) {
-        return ExactComplex::new(x.re().clone(), y.im().clone());
+fn carlson_rc(x0: &ExactComplex, y0: &ExactComplex, p: usize, cc: &mut Consts) -> ExactComplex {
+    if any_nan(&[x0, y0]) {
+        return ExactComplex::new(x0.re().clone(), y0.im().clone());
     }
-    if is_c_zero(y) {
+    if is_c_zero(y0) {
         return nan_pair(Error::InvalidArgument);
     }
+    // Signed-zero negative reals take the C99 side of the principal-sqrt cut.
+    let x = leave_cut(x0, p);
+    let y = leave_cut(y0, p);
     // Shortcut 1/√x only when |x − y| < 2^-(p+8)|x| (first-order error (y − x)/(3x)); the
     // spread-based `close_enough` test (2^-(p/3+16)) was too loose for R_J's RC terms.
-    let dxy = ExactComplex::sub_ref(x, y, p, rm());
-    let rel = c_abs(x, p).ldexp(-((p as Exponent) + 8), p, rm());
-    if !is_c_zero(x) && matches!(c_abs(&dxy, p).compare(&rel), Some(o) if o < 0) {
+    let dxy = ExactComplex::sub_ref(&x, &y, p, rm());
+    let rel = c_abs(&x, p).ldexp(-((p as Exponent) + 8), p, rm());
+    if !is_c_zero(&x) && matches!(c_abs(&dxy, p).compare(&rel), Some(o) if o < 0) {
         return c_u32(1, p).div(&x.sqrt(p, rm(), cc), p, rm());
     }
-    if is_c_zero(x) {
+    if is_c_zero(&x) {
         let mut hp = pi_c(p, cc);
         hp = hp.div(&c_u32(2, p), p, rm());
         return hp.div(&y.sqrt(p, rm(), cc), p, rm());
     }
-    carlson_rf(x, y, y, p, cc)
+    carlson_rf(&x, &y, &y, p, cc)
 }
 
 /// Symmetric \(R_F(x,y,z)\). At most one argument may be \(0\).
@@ -129,9 +132,10 @@ fn carlson_rf(
     }
     let four = c_u32(4, p);
     let three = c_u32(3, p);
-    let mut x = x0.clone();
-    let mut y = y0.clone();
-    let mut z = z0.clone();
+    // Signed-zero negative reals take the C99 side of the principal-sqrt cut.
+    let mut x = leave_cut(x0, p);
+    let mut y = leave_cut(y0, p);
+    let mut z = leave_cut(z0, p);
     for _ in 0..carlson_dupe_cap(p) {
         let an = ExactComplex::add_ref(&x, &y, p, rm())
             .add(&z, p, rm())
@@ -217,9 +221,10 @@ fn carlson_rd(
     let four = c_u32(4, p);
     let three = c_u32(3, p);
     let five = c_u32(5, p);
-    let mut x = x0.clone();
-    let mut y = y0.clone();
-    let mut z = z0.clone();
+    // Signed-zero negative reals take the C99 side of the principal-sqrt cut.
+    let mut x = leave_cut(x0, p);
+    let mut y = leave_cut(y0, p);
+    let mut z = leave_cut(z0, p);
     let mut sum = ExactComplex::zero(p);
     let mut fac = c_u32(1, p);
     for _ in 0..carlson_dupe_cap(p) {
@@ -329,6 +334,26 @@ fn leave_cut(z: &ExactComplex, dest: usize) -> ExactComplex {
     } else {
         z.clone()
     }
+}
+
+/// If `z` is real, move it off the real axis by \(2^{-(\mathrm{dest}+16)}i\),
+/// taking the C99 side given by the sign of `Im z`. Products such as
+/// \(m x^2\) can otherwise collapse a −0 factor against a +0 factor to +0
+/// (IEEE `(−0)+(+0)=+0`), putting \(1-mx^2\) on the wrong side of the cut.
+fn bump_real(z: &ExactComplex, dest: usize) -> ExactComplex {
+    if is_real_c(z) {
+        let mut eps = ExactNum::from_u8(1, dest).ldexp(-((dest as Exponent) + 16), dest, rm());
+        if z.im().is_negative() {
+            eps.set_sign(Sign::Neg);
+        }
+        ExactComplex::new(z.re().clone(), eps)
+    } else {
+        z.clone()
+    }
+}
+
+fn on_nonpos_real(z: &ExactComplex) -> bool {
+    is_real_c(z) && !z.re().is_positive()
 }
 
 /// Work precision needed so \(1+e_m=O(2^{-(\mathrm{dest}+16)})\) keeps `dest`
@@ -820,14 +845,22 @@ impl ExactComplex {
             let hp = cc.pi(dest, rm).ldexp(-1, dest, rm);
             return ExactComplex::from_real(hp, dest);
         }
-        ziv_complex(dest, rm, |pw| self.elliptic_k_at(pw, cc))
+        ziv_complex(dest, rm, |pw| self.elliptic_k_at(pw, dest, cc))
     }
 
-    fn elliptic_k_at(&self, p: usize, cc: &mut Consts) -> Self {
-        let zero = ExactComplex::zero(p);
-        let one = ExactComplex::one(p);
-        let om = ExactComplex::one(p).sub(self, p, rm());
-        carlson_rf(&zero, &om, &one, p, cc)
+    fn elliptic_k_at(&self, p: usize, dest: usize, cc: &mut Consts) -> Self {
+        let om_tmp = one_minus(self, p);
+        let on_cut = is_real_c(&om_tmp) && om_tmp.re().is_negative();
+        let wp = if on_cut { rj_cut_work(dest, p) } else { p };
+        let zero = ExactComplex::zero(wp);
+        let one = ExactComplex::one(wp);
+        let om = leave_cut(&one_minus(self, wp), dest);
+        let v = carlson_rf(&zero, &om, &one, wp, cc);
+        if on_cut {
+            flush_cut_bias(v, dest)
+        } else {
+            v
+        }
     }
 
     /// Complete elliptic \(E(m)\). \(E(1)=1\). Cut of \(K\) inherited through \(1-m\).
@@ -860,17 +893,25 @@ impl ExactComplex {
         if is_c_one(self, dest) {
             return ExactComplex::one(dest);
         }
-        ziv_complex(dest, rm, |pw| self.elliptic_e_complete_at(pw, cc))
+        ziv_complex(dest, rm, |pw| self.elliptic_e_complete_at(pw, dest, cc))
     }
 
-    fn elliptic_e_complete_at(&self, p: usize, cc: &mut Consts) -> Self {
-        let zero = ExactComplex::zero(p);
-        let one = ExactComplex::one(p);
-        let three = c_u32(3, p);
-        let om = ExactComplex::one(p).sub(self, p, rm());
-        let rf = carlson_rf(&zero, &om, &one, p, cc);
-        let rd = carlson_rd(&zero, &om, &one, p, cc);
-        rf.sub(&self.div(&three, p, rm()).mul(&rd, p, rm()), p, rm())
+    fn elliptic_e_complete_at(&self, p: usize, dest: usize, cc: &mut Consts) -> Self {
+        let om_tmp = one_minus(self, p);
+        let on_cut = is_real_c(&om_tmp) && om_tmp.re().is_negative();
+        let wp = if on_cut { rj_cut_work(dest, p) } else { p };
+        let zero = ExactComplex::zero(wp);
+        let one = ExactComplex::one(wp);
+        let three = c_u32(3, wp);
+        let om = leave_cut(&one_minus(self, wp), dest);
+        let rf = carlson_rf(&zero, &om, &one, wp, cc);
+        let rd = carlson_rd(&zero, &om, &one, wp, cc);
+        let v = rf.sub(&self.div(&three, wp, rm()).mul(&rd, wp, rm()), wp, rm());
+        if on_cut {
+            flush_cut_bias(v, dest)
+        } else {
+            v
+        }
     }
 
     /// Incomplete \(F(x|m)\). `self` is \(x=\sin\varphi\), not the amplitude
@@ -907,16 +948,34 @@ impl ExactComplex {
         if is_c_one(m, dest) {
             return self.atanh(dest, rm, cc);
         }
-        ziv_complex(dest, rm, |pw| self.elliptic_f_at(m, pw, cc))
+        ziv_complex(dest, rm, |pw| self.elliptic_f_at(m, pw, dest, cc))
     }
 
-    fn elliptic_f_at(&self, m: &Self, p: usize, cc: &mut Consts) -> Self {
-        let one = ExactComplex::one(p);
-        let x2 = self.mul(self, p, rm());
-        let a = ExactComplex::one(p).sub(&x2, p, rm());
-        let b = ExactComplex::one(p).sub(&m.mul(&x2, p, rm()), p, rm());
-        let rf = carlson_rf(&a, &b, &one, p, cc);
-        self.mul(&rf, p, rm())
+    fn elliptic_f_at(&self, m: &Self, p: usize, dest: usize, cc: &mut Consts) -> Self {
+        let x2_tmp = self.mul(self, p, rm());
+        let a_tmp = one_minus(&x2_tmp, p);
+        let b_tmp = one_minus(&m.mul(&x2_tmp, p, rm()), p);
+        let cut_a = on_nonpos_real(&a_tmp);
+        let cut_b = on_nonpos_real(&b_tmp);
+        let on_cut = cut_a || cut_b;
+        let wp = if on_cut { rj_cut_work(dest, p) } else { p };
+        // If 1−x² is on the cut, only bump x: that first-order imag
+        // already places 1−m x² (and 1−n x²) on the same side. Bumping
+        // m or n as well can overpower x. If 1−x² is off the cut, bump
+        // m (and n) when their product term is on the cut.
+        let x = if cut_a && is_real_c(self) { bump_real(self, dest) } else { self.clone() };
+        let mm = if !cut_a && cut_b && is_real_c(m) { bump_real(m, dest) } else { m.clone() };
+        let one = ExactComplex::one(wp);
+        let x2 = x.mul(&x, wp, rm());
+        let a = leave_cut(&one_minus(&x2, wp), dest);
+        let b = leave_cut(&one_minus(&mm.mul(&x2, wp, rm()), wp), dest);
+        let rf = carlson_rf(&a, &b, &one, wp, cc);
+        let v = self.mul(&rf, wp, rm());
+        if on_cut {
+            flush_cut_bias(v, dest)
+        } else {
+            v
+        }
     }
 
     /// Incomplete \(E(x|m)\). Same convention as [`Self::elliptic_f`]:
@@ -952,25 +1011,42 @@ impl ExactComplex {
         if is_c_one(m, dest) {
             return self.clone();
         }
-        ziv_complex(dest, rm, |pw| self.elliptic_e_at(m, pw, cc))
+        ziv_complex(dest, rm, |pw| self.elliptic_e_at(m, pw, dest, cc))
     }
 
-    fn elliptic_e_at(&self, m: &Self, p: usize, cc: &mut Consts) -> Self {
-        let one = ExactComplex::one(p);
-        let three = c_u32(3, p);
-        let x2 = self.mul(self, p, rm());
-        let a = ExactComplex::one(p).sub(&x2, p, rm());
-        let b = ExactComplex::one(p).sub(&m.mul(&x2, p, rm()), p, rm());
-        let rf = carlson_rf(&a, &b, &one, p, cc);
-        let rd = carlson_rd(&a, &b, &one, p, cc);
-        self.mul(&rf, p, rm()).sub(
-            &m.mul(self, p, rm())
-                .mul(&x2, p, rm())
-                .div(&three, p, rm())
-                .mul(&rd, p, rm()),
-            p,
+    fn elliptic_e_at(&self, m: &Self, p: usize, dest: usize, cc: &mut Consts) -> Self {
+        let x2_tmp = self.mul(self, p, rm());
+        let a_tmp = one_minus(&x2_tmp, p);
+        let b_tmp = one_minus(&m.mul(&x2_tmp, p, rm()), p);
+        let cut_a = on_nonpos_real(&a_tmp);
+        let cut_b = on_nonpos_real(&b_tmp);
+        let on_cut = cut_a || cut_b;
+        let wp = if on_cut { rj_cut_work(dest, p) } else { p };
+        let x = if cut_a && is_real_c(self) { bump_real(self, dest) } else { self.clone() };
+        let mm = if !cut_a && cut_b && is_real_c(m) { bump_real(m, dest) } else { m.clone() };
+        let one = ExactComplex::one(wp);
+        let three = c_u32(3, wp);
+        let x2 = x.mul(&x, wp, rm());
+        let a = leave_cut(&one_minus(&x2, wp), dest);
+        let b = leave_cut(&one_minus(&mm.mul(&x2, wp, rm()), wp), dest);
+        let rf = carlson_rf(&a, &b, &one, wp, cc);
+        let rd = carlson_rd(&a, &b, &one, wp, cc);
+        // Prefactors use the original (unbumped) x and m; only the Carlson
+        // arguments need the first-order imag.
+        let x2_pref = self.mul(self, wp, rm());
+        let v = self.mul(&rf, wp, rm()).sub(
+            &m.mul(self, wp, rm())
+                .mul(&x2_pref, wp, rm())
+                .div(&three, wp, rm())
+                .mul(&rd, wp, rm()),
+            wp,
             rm(),
-        )
+        );
+        if on_cut {
+            flush_cut_bias(v, dest)
+        } else {
+            v
+        }
     }
 
     /// Complete \(\Pi(n,m)\). `self` is \(n\). \(\Pi(0,m)=K(m)\). Pole at \(n=1\).
@@ -1052,27 +1128,49 @@ impl ExactComplex {
         if is_c_zero(self) {
             return x.elliptic_f(m, dest, rm, cc);
         }
-        ziv_complex(dest, rm, |pw| self.elliptic_pi_at(x, m, pw, cc))
+        ziv_complex(dest, rm, |pw| self.elliptic_pi_at(x, m, pw, dest, cc))
     }
 
-    fn elliptic_pi_at(&self, x: &Self, m: &Self, p: usize, cc: &mut Consts) -> Self {
-        let one = ExactComplex::one(p);
-        let three = c_u32(3, p);
-        let x2 = x.mul(x, p, rm());
-        let a = ExactComplex::one(p).sub(&x2, p, rm());
-        let b = ExactComplex::one(p).sub(&m.mul(&x2, p, rm()), p, rm());
-        let pv = ExactComplex::one(p).sub(&self.mul(&x2, p, rm()), p, rm());
-        let rf = carlson_rf(&a, &b, &one, p, cc);
-        let rj = carlson_rj(&a, &b, &one, &pv, p, cc);
-        x.mul(&rf, p, rm()).add(
+    fn elliptic_pi_at(&self, x: &Self, m: &Self, p: usize, dest: usize, cc: &mut Consts) -> Self {
+        let x2_tmp = x.mul(x, p, rm());
+        let a_tmp = one_minus(&x2_tmp, p);
+        let b_tmp = one_minus(&m.mul(&x2_tmp, p, rm()), p);
+        let pv_tmp = one_minus(&self.mul(&x2_tmp, p, rm()), p);
+        let cut_a = on_nonpos_real(&a_tmp);
+        let cut_b = on_nonpos_real(&b_tmp);
+        let cut_n = on_nonpos_real(&pv_tmp);
+        let on_cut = cut_a || cut_b || cut_n;
+        let wp = if on_cut { rj_cut_work(dest, p) } else { p };
+        let xb = if cut_a && is_real_c(x) { bump_real(x, dest) } else { x.clone() };
+        let mm = if !cut_a && cut_b && is_real_c(m) { bump_real(m, dest) } else { m.clone() };
+        let nn = if !cut_a && cut_n && is_real_c(self) {
+            bump_real(self, dest)
+        } else {
+            self.clone()
+        };
+        let one = ExactComplex::one(wp);
+        let three = c_u32(3, wp);
+        let x2 = xb.mul(&xb, wp, rm());
+        let a = leave_cut(&one_minus(&x2, wp), dest);
+        let b = leave_cut(&one_minus(&mm.mul(&x2, wp, rm()), wp), dest);
+        let pv = leave_cut(&one_minus(&nn.mul(&x2, wp, rm()), wp), dest);
+        let rf = carlson_rf(&a, &b, &one, wp, cc);
+        let rj = carlson_rj(&a, &b, &one, &pv, wp, cc);
+        let x2_pref = x.mul(x, wp, rm());
+        let v = x.mul(&rf, wp, rm()).add(
             &self
-                .mul(x, p, rm())
-                .mul(&x2, p, rm())
-                .div(&three, p, rm())
-                .mul(&rj, p, rm()),
-            p,
+                .mul(x, wp, rm())
+                .mul(&x2_pref, wp, rm())
+                .div(&three, wp, rm())
+                .mul(&rj, wp, rm()),
+            wp,
             rm(),
-        )
+        );
+        if on_cut {
+            flush_cut_bias(v, dest)
+        } else {
+            v
+        }
     }
 }
 
