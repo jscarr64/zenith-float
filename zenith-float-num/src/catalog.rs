@@ -4,6 +4,7 @@
 //!
 //! Meijer \(G\), Fox \(H\), and Heun live in `heun_fox`.
 
+use crate::common::util::bump_prec_retry;
 use crate::defs::WORD_BIT_SIZE;
 use crate::Consts;
 use crate::Error;
@@ -1255,6 +1256,203 @@ fn kelvin_k_at_zero_int(neg_nu: bool, m: u8, which: KelvinWhich) -> ExactNum {
     signed_inf(next_neg)
 }
 
+/// True when x/√2 exceeds 2^{63}, so e^{-x/√2} is far below the subnormal grid
+/// and e^{x/√2} is far above `EXPONENT_MAX` (DLMF 10.67).
+fn kelvin_xi_past_exp_range(x: &ExactNum) -> bool {
+    match x.exponent() {
+        Some(e) if e >= 64 => true,
+        Some(e) if e < 61 => false,
+        Some(_) => {
+            let p = WORD_BIT_SIZE;
+            let sqrt2 = ExactNum::from_u8(2, p).sqrt(p, RoundingMode::None);
+            let xi = ExactNum::div_ref(x, &sqrt2, p, RoundingMode::None);
+            xi.exponent().is_some_and(|e| e > 63)
+        }
+        None => false,
+    }
+}
+
+/// Far-underflow of a signed value: signed `min_positive` when `rm` rounds
+/// away from zero, otherwise a signed zero.
+fn kelvin_underflow(neg: bool, p: usize, rm: RoundingMode) -> ExactNum {
+    let away = if neg {
+        matches!(rm, RoundingMode::Down | RoundingMode::FromZero)
+    } else {
+        matches!(rm, RoundingMode::Up | RoundingMode::FromZero)
+    };
+    if away {
+        let m = ExactNum::min_positive(p);
+        if neg {
+            m.neg()
+        } else {
+            m
+        }
+    } else {
+        let z = ExactNum::new(p);
+        if neg {
+            z.neg()
+        } else {
+            z
+        }
+    }
+}
+
+fn kelvin_overflow(neg: bool) -> ExactNum {
+    let mut v = signed_inf(neg);
+    v.set_inexact(true);
+    v
+}
+
+/// Sign of the DLMF 10.67 leading trigonometric factor, when that factor is
+/// clearly bounded away from zero. `None` if the sign cannot be certified.
+fn kelvin_asymp_trig_neg(
+    x: &ExactNum,
+    nu: &ExactNum,
+    which: KelvinWhich,
+    cc: &mut Consts,
+) -> Option<bool> {
+    let xe = x.exponent().unwrap_or(0).max(0) as usize;
+    let wrk = word_p(xe.saturating_add(256).max(256));
+    let sqrt2 = ExactNum::from_u8(2, wrk).sqrt(wrk, RoundingMode::None);
+    let xi = ExactNum::div_ref(x, &sqrt2, wrk, RoundingMode::None);
+    let pi = cc.pi(wrk, RoundingMode::None);
+    let half_pi_nu =
+        nu.clone()
+            .mul(&pi, wrk, RoundingMode::None)
+            .ldexp(-1, wrk, RoundingMode::None);
+    let eighth = pi.ldexp(-3, wrk, RoundingMode::None);
+    // ber/bei: x/√2 + (ν/2 − 1/8)π; ker/kei: x/√2 + (ν/2 + 1/8)π.
+    let theta =
+        match which {
+            KelvinWhich::Ber | KelvinWhich::Bei => xi
+                .add(&half_pi_nu, wrk, RoundingMode::None)
+                .sub(&eighth, wrk, RoundingMode::None),
+            KelvinWhich::Ker | KelvinWhich::Kei => xi
+                .add(&half_pi_nu, wrk, RoundingMode::None)
+                .add(&eighth, wrk, RoundingMode::None),
+        };
+    let c = theta.cos(wrk, RoundingMode::None, cc);
+    let s = theta.sin(wrk, RoundingMode::None, cc);
+    if c.is_nan() || s.is_nan() {
+        return None;
+    }
+    // Leading factor: ber ~ cos, bei ~ sin, ker ~ cos, kei ~ −sin.
+    let t = match which {
+        KelvinWhich::Ber | KelvinWhich::Ker => c,
+        KelvinWhich::Bei => s,
+        KelvinWhich::Kei => s.neg(),
+    };
+    // |t| > 2^{-16}: a reduction error cannot flip a clearly nonzero sign.
+    let bound = ExactNum::from_u8(1, wrk).ldexp(-16, wrk, RoundingMode::None);
+    let at = t.clone().abs();
+    if !matches!(at.compare(&bound), Some(ord) if ord > 0) {
+        return None;
+    }
+    Some(t.is_negative())
+}
+
+fn kelvin_past_exp_range(
+    x: &ExactNum,
+    nu: &ExactNum,
+    which: KelvinWhich,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Option<ExactNum> {
+    if !kelvin_xi_past_exp_range(x) {
+        return None;
+    }
+    let neg = kelvin_asymp_trig_neg(x, nu, which, cc)?;
+    Some(match which {
+        KelvinWhich::Ber | KelvinWhich::Bei => kelvin_overflow(neg),
+        KelvinWhich::Ker | KelvinWhich::Kei => kelvin_underflow(neg, p, rm),
+    })
+}
+
+fn kelvin_eval_1061(
+    x: &ExactNum,
+    nu: &ExactNum,
+    which: KelvinWhich,
+    wp: usize,
+    cc: &mut Consts,
+) -> ExactNum {
+    let mut xc = x.clone();
+    let _ = xc.set_precision(wp, RoundingMode::None);
+    let mut nc = nu.clone();
+    let _ = nc.set_precision(wp, RoundingMode::None);
+    match which {
+        KelvinWhich::Ber | KelvinWhich::Bei => {
+            let z = kelvin_j_arg(&xc, wp, cc);
+            let n = ExactComplex::from_real(nc, wp);
+            let j = z.bessel_j_nu(&n, wp, RoundingMode::None, cc);
+            if matches!(which, KelvinWhich::Ber) {
+                j.re().clone()
+            } else {
+                j.im().clone()
+            }
+        }
+        KelvinWhich::Ker | KelvinWhich::Kei => {
+            let z = kelvin_k_arg(&xc, wp, cc);
+            let n = ExactComplex::from_real(nc, wp);
+            let k = z.bessel_k(&n, wp, RoundingMode::None, cc);
+            let half_pi = ExactComplex::new(
+                ExactNum::new(wp),
+                cc.pi(wp, RoundingMode::None)
+                    .ldexp(-1, wp, RoundingMode::None)
+                    .neg(),
+            );
+            let phase = n
+                .mul(&half_pi, wp, RoundingMode::None)
+                .exp(wp, RoundingMode::None, cc);
+            let w = phase.mul(&k, wp, RoundingMode::None);
+            if matches!(which, KelvinWhich::Ker) {
+                w.re().clone()
+            } else {
+                w.im().clone()
+            }
+        }
+    }
+}
+
+/// In-domain (`x > 0`) correctly rounded 10.61 value. No precision or `|x|` cap:
+/// past the exponent range the 10.67 leading term is used; otherwise a Ziv
+/// loop around complex `J_ν` / `K_ν`, with the usual `2p` retry budget.
+fn kelvin_positive(
+    x: &ExactNum,
+    nu: &ExactNum,
+    which: KelvinWhich,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> ExactNum {
+    if let Some(v) = kelvin_past_exp_range(x, nu, which, p, rm, cc) {
+        return v;
+    }
+    let mut p_inc = WORD_BIT_SIZE;
+    let Some(mut p_wrk) = p.checked_add(WORD_BIT_SIZE) else {
+        return cat_nan();
+    };
+    p_wrk = word_p(p_wrk);
+    loop {
+        let Some(p_x) = p_wrk.checked_add(WORD_BIT_SIZE.saturating_mul(2)) else {
+            return ExactNum::nan(Some(Error::InvalidArgument));
+        };
+        let mut v = kelvin_eval_1061(x, nu, which, p_x, cc);
+        if v.is_nan() {
+            return v;
+        }
+        if !finite(&v) {
+            return v;
+        }
+        if v.try_set_precision(p, rm, p_wrk) {
+            return v;
+        }
+        if bump_prec_retry(&mut p_wrk, &mut p_inc, p).is_err() {
+            return ExactNum::nan(Some(Error::PrecisionRetryExhausted));
+        }
+    }
+}
+
 impl ExactNum {
     /// Scorer \(\mathrm{Gi}(\mathrm{self})\). Entire; NaN in → NaN out.
     ///
@@ -1367,7 +1565,13 @@ impl ExactNum {
     /// otherwise `NaN(InvalidArgument)`. `ber_ν(+∞)` has no limit → `NaN(InvalidArgument)`.
     /// In-domain values use complex `J_ν` at the 10.61 argument (Arb `acb_hypgeom_bessel_j`).
     ///
-    /// Accuracy: unspecified
+    /// # Precision
+    ///
+    /// - Algorithm: DLMF 10.61 via complex `J_ν`; DLMF 10.67 leading term when `x/√2`
+    ///   is past the exponent range.
+    /// - Bound: Ziv on the real part (`prec_retry_budget`; no domain or precision cap).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn kelvin_ber_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         let nu_c = nu.exact_copy_ext();
@@ -1389,14 +1593,7 @@ impl ExactNum {
         } else {
             (self.clone(), false)
         };
-        let wrk = work_p(p);
-        let z = kelvin_j_arg(&arg, wrk, cc);
-        let n = ExactComplex::from_real(nu.clone(), wrk);
-        let y = finish(
-            z.bessel_j_nu(&n, wrk, RoundingMode::None, cc).re().clone(),
-            p,
-            rm,
-        );
+        let y = kelvin_positive(&arg, nu, KelvinWhich::Ber, p, rm, cc);
         if flip {
             y.neg()
         } else {
@@ -1410,7 +1607,13 @@ impl ExactNum {
     /// infinities for non-integer `ν < 0`, the reflection `bei_n(−x) = (−1)^n bei_n(x)`,
     /// and `NaN(InvalidArgument)` for a non-integer negative argument or at `+∞`.
     ///
-    /// Accuracy: unspecified
+    /// # Precision
+    ///
+    /// - Algorithm: DLMF 10.61 via complex `J_ν`; DLMF 10.67 leading term when `x/√2`
+    ///   is past the exponent range.
+    /// - Bound: Ziv on the imaginary part (`prec_retry_budget`; no domain or precision cap).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn kelvin_bei_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         let nu_c = nu.exact_copy_ext();
@@ -1432,14 +1635,7 @@ impl ExactNum {
         } else {
             (self.clone(), false)
         };
-        let wrk = work_p(p);
-        let z = kelvin_j_arg(&arg, wrk, cc);
-        let n = ExactComplex::from_real(nu.clone(), wrk);
-        let y = finish(
-            z.bessel_j_nu(&n, wrk, RoundingMode::None, cc).im().clone(),
-            p,
-            rm,
-        );
+        let y = kelvin_positive(&arg, nu, KelvinWhich::Bei, p, rm, cc);
         if flip {
             y.neg()
         } else {
@@ -1455,7 +1651,13 @@ impl ExactNum {
     /// `x < 0` is outside the real domain → `NaN(InvalidArgument)`. `ker_ν(+∞) = +0`.
     /// In-domain values use complex `K_ν` at the 10.61 argument (Arb `acb_hypgeom_bessel_k`).
     ///
-    /// Accuracy: unspecified
+    /// # Precision
+    ///
+    /// - Algorithm: DLMF 10.61 via complex `K_ν`; DLMF 10.67 leading term when `x/√2`
+    ///   is past the exponent range.
+    /// - Bound: Ziv on the real part (`prec_retry_budget`; no domain or precision cap).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn kelvin_ker_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         let nu_c = nu.exact_copy_ext();
@@ -1472,20 +1674,7 @@ impl ExactNum {
         if let Some(v) = kelvin_edge(self, nu, KelvinWhich::Ker, p, rm, cc) {
             return v;
         }
-        let wrk = work_p(p);
-        let z = kelvin_k_arg(self, wrk, cc);
-        let n = ExactComplex::from_real(nu.clone(), wrk);
-        let k = z.bessel_k(&n, wrk, RoundingMode::None, cc);
-        let half_pi = ExactComplex::new(
-            ExactNum::new(wrk),
-            cc.pi(wrk, RoundingMode::None)
-                .ldexp(-1, wrk, RoundingMode::None)
-                .neg(),
-        );
-        let phase = n
-            .mul(&half_pi, wrk, RoundingMode::None)
-            .exp(wrk, RoundingMode::None, cc);
-        finish(phase.mul(&k, wrk, RoundingMode::None).re().clone(), p, rm)
+        kelvin_positive(self, nu, KelvinWhich::Ker, p, rm, cc)
     }
 
     /// Kelvin \(\mathrm{kei}_\nu(\mathrm{self})=\mathrm{Im}\,e^{-\nu\pi i/2}K_\nu(x e^{\pi i/4})\)
@@ -1494,7 +1683,13 @@ impl ExactNum {
     /// Domain as [`Self::kelvin_ker_nu`], except `kei(0) = −π/4` (finite, not a pole) and
     /// `kei_1(0) = −∞`. `x < 0` → `NaN(InvalidArgument)`. `kei_ν(+∞) = +0`.
     ///
-    /// Accuracy: unspecified
+    /// # Precision
+    ///
+    /// - Algorithm: DLMF 10.61 via complex `K_ν`; DLMF 10.67 leading term when `x/√2`
+    ///   is past the exponent range.
+    /// - Bound: Ziv on the imaginary part (`prec_retry_budget`; no domain or precision cap).
+    ///
+    /// Accuracy: correctly-rounded
     pub fn kelvin_kei_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         let nu_c = nu.exact_copy_ext();
@@ -1511,25 +1706,12 @@ impl ExactNum {
         if let Some(v) = kelvin_edge(self, nu, KelvinWhich::Kei, p, rm, cc) {
             return v;
         }
-        let wrk = work_p(p);
-        let z = kelvin_k_arg(self, wrk, cc);
-        let n = ExactComplex::from_real(nu.clone(), wrk);
-        let k = z.bessel_k(&n, wrk, RoundingMode::None, cc);
-        let half_pi = ExactComplex::new(
-            ExactNum::new(wrk),
-            cc.pi(wrk, RoundingMode::None)
-                .ldexp(-1, wrk, RoundingMode::None)
-                .neg(),
-        );
-        let phase = n
-            .mul(&half_pi, wrk, RoundingMode::None)
-            .exp(wrk, RoundingMode::None, cc);
-        finish(phase.mul(&k, wrk, RoundingMode::None).im().clone(), p, rm)
+        kelvin_positive(self, nu, KelvinWhich::Kei, p, rm, cc)
     }
 
     /// Order-0 Kelvin \(\mathrm{ber}(\mathrm{self})\).
     ///
-    /// Accuracy: unspecified
+    /// Accuracy: correctly-rounded
     pub fn kelvin_ber(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
@@ -1544,7 +1726,7 @@ impl ExactNum {
 
     /// Order-0 Kelvin \(\mathrm{bei}(\mathrm{self})\).
     ///
-    /// Accuracy: unspecified
+    /// Accuracy: correctly-rounded
     pub fn kelvin_bei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
@@ -1559,7 +1741,7 @@ impl ExactNum {
 
     /// Order-0 Kelvin \(\mathrm{ker}(\mathrm{self})\).
     ///
-    /// Accuracy: unspecified
+    /// Accuracy: correctly-rounded
     pub fn kelvin_ker(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {
@@ -1574,7 +1756,7 @@ impl ExactNum {
 
     /// Order-0 Kelvin \(\mathrm{kei}(\mathrm{self})\).
     ///
-    /// Accuracy: unspecified
+    /// Accuracy: correctly-rounded
     pub fn kelvin_kei(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         let this = self.exact_copy_ext();
         Self::round_exact(self.inexact_accumulated(), p, rm, |q, r| {

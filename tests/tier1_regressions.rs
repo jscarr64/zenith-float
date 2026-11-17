@@ -4949,3 +4949,75 @@ fn zf_kelvin_domain_inventory() {
         }
     }
 }
+
+/// In-domain Kelvin at x = 2^100 is past the exponent range (DLMF 10.67 leading
+/// term). ber/bei overflow with the sign of the leading trigonometric factor;
+/// ker/kei underflow with that sign. Today's single 10.61 evaluation returns
+/// NaN(InvalidArgument) for ber/bei and +0 for ker/kei.
+#[test]
+fn zf_kelvin_in_domain_large_x_exp_range() {
+    let mut cc = Consts::new().expect("Consts");
+    let x = parse_real("1p100").expect("2^100");
+    let half = parse_real("1p-1").expect("1/2");
+    let underflow_neg = |v: &ExactNum, p: usize, rm: RoundingMode, what: &str| {
+        let away = matches!(rm, RoundingMode::Down | RoundingMode::FromZero);
+        if away {
+            let want = -ExactNum::min_positive(p);
+            assert!(
+                v.compare(&want) == Some(0) && v.is_negative(),
+                "{what} p={p} {rm:?}: {v} want -min_positive"
+            );
+        } else {
+            assert!(
+                v.is_zero() && v.is_negative(),
+                "{what} p={p} {rm:?}: {v} want -0"
+            );
+        }
+    };
+    for p in [64usize, 128, 4096, 8192] {
+        for rm in MODES {
+            let ber = x.kelvin_ber(p, rm, &mut cc);
+            assert!(
+                ber.is_inf() && ber.is_negative(),
+                "ber(2^100) p={p} {rm:?}: {ber}"
+            );
+            let bei = x.kelvin_bei(p, rm, &mut cc);
+            assert!(
+                bei.is_inf() && bei.is_positive(),
+                "bei(2^100) p={p} {rm:?}: {bei}"
+            );
+            underflow_neg(&x.kelvin_ker(p, rm, &mut cc), p, rm, "ker(2^100)");
+            underflow_neg(&x.kelvin_kei(p, rm, &mut cc), p, rm, "kei(2^100)");
+            let ber_h = x.kelvin_ber_nu(&half, p, rm, &mut cc);
+            assert!(
+                ber_h.is_inf() && ber_h.is_negative(),
+                "ber_{{1/2}}(2^100) p={p} {rm:?}: {ber_h}"
+            );
+            let bei_h = x.kelvin_bei_nu(&half, p, rm, &mut cc);
+            assert!(
+                bei_h.is_inf() && bei_h.is_positive(),
+                "bei_{{1/2}}(2^100) p={p} {rm:?}: {bei_h}"
+            );
+            underflow_neg(
+                &x.kelvin_ker_nu(&half, p, rm, &mut cc),
+                p,
+                rm,
+                "ker_{1/2}(2^100)",
+            );
+            let kei_h = x.kelvin_kei_nu(&half, p, rm, &mut cc);
+            let away = matches!(rm, RoundingMode::Up | RoundingMode::FromZero);
+            if away {
+                let want = ExactNum::min_positive(p);
+                assert!(
+                    kei_h.compare(&want) == Some(0) && !kei_h.is_negative(),
+                    "kei_{{1/2}}(2^100) p={p} {rm:?}: {kei_h} want +min_positive"
+                );
+            } else {
+                assert!(
+                    kei_h.is_zero() && !kei_h.is_negative(),
+                    "kei_{{1/2}}(2^100) p={p} {rm:?}: {kei_h} want +0"
+                );
+            }
+        }
+    }
+}
