@@ -17,9 +17,6 @@ use crate::ExactNum;
 use crate::RoundingMode;
 use crate::WORD_BIT_SIZE;
 
-/// Series term cap (named; same order as the real kernel).
-const HYPERGEOM_SERIES_MAX_TERMS: u32 = 10_000;
-
 /// Linear-transform attempts before `NaN`.
 const HYPERGEOM_TRANSFORM_MAX: u32 = 8;
 
@@ -51,9 +48,37 @@ fn abs_lt_one(z: &ExactComplex, p: usize) -> bool {
     matches!(az.compare(&ExactNum::from_u8(1, p)), Some(c) if c < 0)
 }
 
-fn re_lt_half(z: &ExactComplex, p: usize) -> bool {
-    let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm());
-    matches!(z.re().compare(&half), Some(c) if c < 0)
+fn mag64(z: &ExactComplex) -> ExactNum {
+    z.abs(64, rm())
+}
+
+fn mag_lt(a: &ExactNum, b: &ExactNum) -> bool {
+    matches!(a.compare(b), Some(c) if c < 0)
+}
+
+/// Terms needed for a geometric series at `|z|` and precision `p`, plus `big` (the
+/// largest parameter, so the terms are already decreasing) and a 128-bit guard.
+/// For `|z| < 1`, `n ≲ (p + guard) / −log2(|z|) ≤ 2(p + guard) / (1 − |z|)`.
+fn series_term_budget(z: &ExactComplex, p: usize, big: u64) -> usize {
+    let base = p.saturating_add(128).saturating_add(big as usize).max(32);
+    let one = ExactNum::from_u8(1, 64);
+    let az = mag64(z);
+    if !mag_lt(&az, &one) {
+        return base;
+    }
+    let mut d = ExactNum::sub_ref(&one, &az, 64, RoundingMode::ToZero);
+    if d.is_zero() {
+        return base;
+    }
+    let mut shift = 0u32;
+    while shift < 62 && mag_lt(&d, &one) {
+        d = d.ldexp(1, 64, RoundingMode::ToZero);
+        shift += 1;
+    }
+    let scale = 1usize.checked_shl(shift).unwrap_or(usize::MAX);
+    base.saturating_mul(2)
+        .saturating_mul(scale)
+        .min(u32::MAX as usize)
 }
 
 fn re_positive_strict(z: &ExactComplex) -> bool {
@@ -126,8 +151,9 @@ fn hypergeom_series(
     // terms are decreasing). Hitting the cap means the series has not converged: NaN rather than
     // a silently truncated value.
     let big = max_abs_param(&[a, b, c], p);
+    let budget = series_term_budget(z, p, big);
     let mut converged = false;
-    for n in 0..HYPERGEOM_SERIES_MAX_TERMS as usize {
+    for n in 0..budget {
         if n > 0 && (n as u64) > big && term_small_rel(&term, &sum, p) {
             converged = true;
             break;
@@ -436,8 +462,9 @@ fn log_case_sum(
     let mut wn = ExactComplex::one(p);
     let mut sum = ExactComplex::zero(p);
     let big = max_abs_param(&[a, b, c], p);
+    let budget = series_term_budget(&w, p, big);
     let mut converged = false;
-    for n in 0..HYPERGEOM_SERIES_MAX_TERMS {
+    for n in 0..budget as u32 {
         let bracket = ExactComplex::sub_ref(&lnw, &psi_n1, p, rm())
             .sub(&psi_nm1, p, rm())
             .add(&psi_a, p, rm())
@@ -708,7 +735,8 @@ fn inv_log_sum(
     let mzinv = zinv.neg_via_mul();
     let big = max_abs_param(&[a, c], p) + u64::from(m);
     let mut sum = ExactComplex::zero(p);
-    for k in 0..HYPERGEOM_SERIES_MAX_TERMS {
+    let budget = series_term_budget(&zinv, p, big);
+    for k in 0..budget as u32 {
         let bracket = r
             .mul(
                 &ExactComplex::add_ref(&lnmz, &psi1m, p, rm())
@@ -825,52 +853,54 @@ fn hypergeom_at(
         if left > 0 && (near || (abs_lt_one(&omz, p) && !abs_lt_one(z, p))) {
             return transform_1mz_log(a, b, c, z, m, p, cc, left - 1);
         }
-    } else if left > 0 {
-        // Non-integer c − a − b with z close to 1 inside the unit disc: the series would need
-        // ≈ p / log2(1/|z|) terms, so use the 1 − z transform (guarded for near-integer c − a − b).
-        let omz = ExactComplex::one(p).sub(z, p, rm());
-        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm());
-        let nine_tenths = ExactNum::from_u8(9, p).div(&ExactNum::from_u8(10, p), p, rm());
-        let near = matches!(omz.abs(p, rm()).compare(&half), Some(o) if o <= 0);
-        let slow = matches!(z.abs(p, rm()).compare(&nine_tenths), Some(o) if o > 0);
-        if near && slow && abs_lt_one(z, p) {
-            return transform_1mz_guarded(a, b, c, z, p, cc, left - 1);
-        }
     }
-    if abs_lt_one(z, p) {
-        return hypergeom_series(a, b, c, z, p);
-    }
-    if left == 0 {
-        return nan_pair(Error::InvalidArgument);
-    }
-    let next = left - 1;
+
+    // Among the four maps with |w| < 1, use the smallest |w|. A fixed 10_000-term
+    // cap used to refuse a computable series (P9); the term budget now scales with
+    // p and 1 − |w|, and this picker prefers a cheaper map when one exists
+    // (e.g. 1/z over Pfaff at z = −10 + 3i).
     let one = ExactComplex::one(p);
-    let omz = ExactComplex::one(p).sub(z, p, rm());
+    let mut best_m: Option<ExactNum> = None;
+    let mut best: u8 = 0; // 1 series, 2 pfaff, 3 1-z, 4 1/z, 5 1/z log
+    let consider = |m: ExactNum, tag: u8, best_m: &mut Option<ExactNum>, best: &mut u8| {
+        if !mag_lt(&m, &ExactNum::from_u8(1, 64)) {
+            return;
+        }
+        if best_m.as_ref().is_none_or(|b| mag_lt(&m, b)) {
+            *best_m = Some(m);
+            *best = tag;
+        }
+    };
+    consider(mag64(z), 1, &mut best_m, &mut best);
     let zm1 = ExactComplex::sub_ref(z, &one, p, rm());
-    if re_lt_half(z, p) && !is_c_zero(&zm1) {
-        return pfaff(a, b, c, z, p, cc, next);
+    if !is_c_zero(&zm1) {
+        consider(mag64(&z.div(&zm1, p, rm())), 2, &mut best_m, &mut best);
     }
-    if abs_lt_one(&omz, p)
-        && !is_nonpos_integer(&ExactComplex::sub_ref(c, a, p, rm()).sub(b, p, rm()))
-    {
-        return transform_1mz_guarded(a, b, c, z, p, cc, next);
+    let cab = ExactComplex::sub_ref(c, a, p, rm()).sub(b, p, rm());
+    if int_cab(a, b, c, p).is_none() && !is_nonpos_integer(&cab) {
+        consider(mag64(&one_minus(z, p)), 3, &mut best_m, &mut best);
     }
     let inv = one.div(z, p, rm());
-    if abs_lt_one(&inv, p) {
-        // Integer a − b: the two 1/z terms have Γ(b − a) and Γ(a − b) poles; use the
-        // logarithmic connection.
-        if let Some((lo, _hi, m)) = int_ab(a, b, p) {
+    if let Some((lo, _hi, m)) = int_ab(a, b, p) {
+        consider(mag64(&inv), 5, &mut best_m, &mut best);
+        if best == 5 {
+            if left == 0 {
+                return nan_pair(Error::InvalidArgument);
+            }
             return transform_inv_log(lo, c, z, m, p, cc);
         }
-        return transform_inv(a, b, c, z, p, cc, next);
+    } else {
+        consider(mag64(&inv), 4, &mut best_m, &mut best);
     }
-    if !is_c_zero(&zm1) {
-        let w = z.div(&zm1, p, rm());
-        if abs_lt_one(&w, p) {
-            return pfaff(a, b, c, z, p, cc, next);
-        }
+    match best {
+        1 => hypergeom_series(a, b, c, z, p),
+        0 => nan_pair(Error::InvalidArgument),
+        _ if left == 0 => nan_pair(Error::InvalidArgument),
+        2 => pfaff(a, b, c, z, p, cc, left - 1),
+        3 => transform_1mz_guarded(a, b, c, z, p, cc, left - 1),
+        4 => transform_inv(a, b, c, z, p, cc, left - 1),
+        _ => nan_pair(Error::InvalidArgument),
     }
-    nan_pair(Error::InvalidArgument)
 }
 
 /// `z = 1` with real `a, b, c`, `c − a − b ≤ 0` and a non-terminating series: the sum diverges,
@@ -907,9 +937,9 @@ impl ExactComplex {
     /// Gaussian \({}_2F_1(a=\mathrm{self},b;c;z)\) in \(\mathbb{C}\).
     ///
     /// All-real arguments with \(z<1\) use the real [`ExactNum::hypergeom_2f1`].
-    /// Otherwise: series when \(\lvert z\rvert<1\) (converged to \(2^{-p}\) relative, NaN if not
-    /// converged within the term cap); Pfaff when \(\mathrm{Re}(z)<1/2\);
-    /// Euler / \(1-z\) and \(1/z\) linear transforms otherwise. Kummer at \(z=1\)
+    /// Otherwise: among the series (\(\lvert z\rvert<1\)), Pfaff, Euler / \(1-z\), and \(1/z\)
+    /// maps, the argument of smallest modulus is used (NaN if a series does not converge
+    /// within the \(p\)-scaled term bound). Kummer at \(z=1\)
     /// when \(\mathrm{Re}(c-a-b)>0\). Cut on \([1,+\infty)\) in \(z\) (principal
     /// value from above). Non-positive integer \(c\) (uncanceled) → NaN.
     ///
@@ -922,7 +952,7 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: series / Euler / Pfaff / Kummer / logarithmic \(1-z\) connection. Caps `HYPERGEOM_SERIES_MAX_TERMS = 10_000`, `HYPERGEOM_TRANSFORM_MAX = 8`.
+    /// - Algorithm: series / Euler / Pfaff / Kummer / logarithmic \(1-z\) connection. The series term bound scales with `p` and `1 − |z|` (P9); transform recursion is limited by `HYPERGEOM_TRANSFORM_MAX = 8`.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///

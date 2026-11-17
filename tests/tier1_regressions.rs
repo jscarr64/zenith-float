@@ -4273,3 +4273,208 @@ fn zf_78_k_recur_scales_with_nu_body() {
         "ZF-78 K_{{2^22+1}}(1) at p=64: {v:?}"
     );
 }
+
+/// The six unique ZF-78 \( {}_2F_1 \) rows, plus a series point whose term count
+/// at p=2048 exceeded the old `HYPERGEOM_SERIES_MAX_TERMS = 10_000` cap (P9).
+/// p=64 ToEven matches the FLINT mid (C99 +0 is the limit from above; FLINT at
+/// an exact real \( z>1 \) is the below-cut principal value, RC-7). p=2048 must
+/// finish in 20s, be finite, and round to the p=64 value.
+#[test]
+fn zf_78_hypergeom_2f1_cluster() {
+    const BUDGET: std::time::Duration = std::time::Duration::from_secs(20);
+    if std::env::var_os("ZF78_2F1_CHILD").is_some() {
+        zf_78_hypergeom_2f1_cluster_body();
+        return;
+    }
+    let exe = std::env::current_exe().expect("current_exe");
+    let mut child = std::process::Command::new(exe)
+        .arg("--exact")
+        .arg("zf_78_hypergeom_2f1_cluster")
+        .env("ZF78_2F1_CHILD", "1")
+        .env("RUST_TEST_THREADS", "1")
+        .spawn()
+        .expect("spawn ZF-78 2F1 child");
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait().expect("try_wait") {
+            Some(status) => {
+                assert!(
+                    status.success(),
+                    "ZF-78 2F1 child exited {status}: a case returned a NaN or missed the FLINT gold"
+                );
+                return;
+            }
+            None if start.elapsed() > BUDGET => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "ZF-78 2F1 cluster at p=2048 timed out after {}s",
+                    BUDGET.as_secs()
+                );
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    }
+}
+
+fn zf_78_assert_2f1_gold(
+    name: &str,
+    got: &ExactComplex,
+    re: &str,
+    im: &str,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) {
+    let want_re = ExactNum::parse(re, Radix::Dec, p, rm, cc);
+    let want_im = ExactNum::parse(im, Radix::Dec, p, rm, cc);
+    assert_eq!(
+        got.re().compare(&want_re),
+        Some(0),
+        "ZF-78 2F1 {name} re got {:?} want {:?}",
+        got.re(),
+        want_re
+    );
+    assert_eq!(
+        got.im().compare(&want_im),
+        Some(0),
+        "ZF-78 2F1 {name} im got {:?} want {:?}",
+        got.im(),
+        want_im
+    );
+}
+
+fn zf_78_hypergeom_2f1_cluster_body() {
+    let mut cc = Consts::new().expect("Consts");
+    let wide = include_str!("tier1/zf78-2f1-wide-z.txt").trim();
+    let rm = RoundingMode::ToEven;
+    // FLINT mid at 256 bits, one-sided limits for the cut (z = 2 ± 0i).
+    let cases: [(&str, &str, &str, &str, &str, &str, &str); 8] = [
+        (
+            "c0761826 F(1/2,1/2;2+i;-1)",
+            "1p-1,0",
+            "1p-1,0",
+            "1p1,1p0",
+            "-1p0,0",
+            "0.92072262708275837786712360805728628602799069219411548973238180029657339613",
+            "0.03235611082650910346536440749915671160351782362927500643352641950839688426",
+        ),
+        (
+            "c0761861 F(1/2,1/2;2+i;-10+3i)",
+            "1p-1,0",
+            "1p-1,0",
+            "1p1,1p0",
+            "-5p1,3p0",
+            "0.66681839428499363368129640978596526311968096669941884583066293640544022011",
+            "0.11984026591530631213159843424749347544401185206401276434360092219006987221",
+        ),
+        (
+            "c0761843 F(1/2,1/2;2+i;1)",
+            "1p-1,0",
+            "1p-1,0",
+            "1p1,1p0",
+            "1p0,0",
+            "1.127140861772219510746400137255872644156689401450758418015484299124369638697",
+            "-0.138385675471678180466555538286756565464739926118396650212084059792167987619",
+        ),
+        (
+            "c0761854 F(1/2,1/2;2+i;z~1)",
+            "1p-1,0",
+            "1p-1,0",
+            "1p1,1p0",
+            wide,
+            "1.127140911414630255855879582461655609150710095565160575502083986395663267282",
+            "-0.138385396885359943499287365770071517115573303013655895387859957146745433783",
+        ),
+        (
+            "c0762058 F(1/2,1;2+i;1)",
+            "1p-1,0",
+            "1p0,0",
+            "1p1,1p0",
+            "1p0,0",
+            "1.2",
+            "-0.4",
+        ),
+        (
+            "c0761974 F(1/2,1;3/2;2+0)",
+            "1p-1,0",
+            "1p0,0",
+            "3p-1,0",
+            "1p1,0",
+            "0.623225240140230513394020309942232395602743196240974504536684781385770235240",
+            "1.110720734539591561753969911840061311970824862924995003680889242810802882592",
+        ),
+        (
+            "c0761974 F(1/2,1;3/2;2-0)",
+            "1p-1,0",
+            "1p0,0",
+            "3p-1,0",
+            "1p1,-0",
+            "0.623225240140230513394020309942232395602743196240974504536684781385770235240",
+            "-1.110720734539591561753969911840061311970824862924995003680889242810802882592",
+        ),
+        (
+            "P9 F(1/2,1/2;1;1/2+3/4i)",
+            "1p-1,0",
+            "1p-1,0",
+            "1p0,0",
+            "1p-1,3p-2",
+            "1.01134360641644933657737508920502311133426764512561677104958460340215240502",
+            "0.25014127863591117960917551424098165809387102641562108318368164308968223889",
+        ),
+    ];
+
+    let p64 = 64usize;
+    let mut v64: Vec<ExactComplex> = Vec::with_capacity(cases.len());
+    for (name, a, b, c, z, re, im) in cases {
+        let a = parse_complex(a).expect("a");
+        let b = parse_complex(b).expect("b");
+        let c = parse_complex(c).expect("c");
+        let z = parse_complex(z).expect("z");
+        let v = a.hypergeom_2f1(&b, &c, &z, p64, rm, &mut cc);
+        assert!(
+            !v.is_nan() && !v.re().is_inf() && !v.im().is_inf(),
+            "ZF-78 2F1 {name} at p=64: {v:?}"
+        );
+        zf_78_assert_2f1_gold(name, &v, re, im, p64, rm, &mut cc);
+        v64.push(v);
+    }
+    assert!(
+        v64[5].re().compare(v64[6].re()) == Some(0)
+            && v64[5].im().compare(v64[6].im()) != Some(0),
+        "ZF-78 2F1 F(1/2,1;3/2;2±0i) must share a real part and differ in the imag sign, got {:?} / {:?}",
+        v64[5],
+        v64[6]
+    );
+
+    let p = 2048usize;
+    for ((name, a, b, c, z, _, _), want64) in cases.iter().zip(v64.iter()) {
+        let a = parse_complex(a).expect("a");
+        let b = parse_complex(b).expect("b");
+        let c = parse_complex(c).expect("c");
+        let z = parse_complex(z).expect("z");
+        let v = a.hypergeom_2f1(&b, &c, &z, p, rm, &mut cc);
+        assert!(
+            !v.is_nan() && !v.re().is_inf() && !v.im().is_inf(),
+            "ZF-78 2F1 {name} at p=2048: {v:?}"
+        );
+        let mut rounded = v.clone();
+        rounded
+            .set_precision(p64, rm)
+            .expect("set_precision 2048 -> 64");
+        assert_eq!(
+            rounded.re().compare(want64.re()),
+            Some(0),
+            "ZF-78 2F1 {name} p=2048 rounded to 64 re got {:?} want {:?}",
+            rounded.re(),
+            want64.re()
+        );
+        assert_eq!(
+            rounded.im().compare(want64.im()),
+            Some(0),
+            "ZF-78 2F1 {name} p=2048 rounded to 64 im got {:?} want {:?}",
+            rounded.im(),
+            want64.im()
+        );
+    }
+}
