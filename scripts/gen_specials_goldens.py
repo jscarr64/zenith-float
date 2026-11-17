@@ -105,12 +105,13 @@ CURRENT_OP = [""]
 def round_real(x, p: int, rm: str) -> dict:
     import mpmath as mp
 
-    mp.mp.dps = max(80, g.round_p(p) // 2 + 40)
+    # Do not lower working precision before the final rounding: a residue
+    # many bits past dest ulp still directs Up/FromZero (see round_mpf).
     if x == 0:
         return g.zero("-" if mp.sign(x) < 0 else "+", g.round_p(p))
     # Round 2: every real special function rounds at exactly p bits.
     sig = p if p >= 2 else None
-    return g.round_mpf(mp.mpf(x), p, rm, sig=sig)
+    return g.round_mpf(x, p, rm, sig=sig)
 
 
 def nan() -> dict:
@@ -355,7 +356,8 @@ def pack(value, p: int, rm: str) -> dict:
         return nan()
     if isinstance(value, tuple) and value[0] == "c":
         return value[1]
-    mp.mp.dps = max(80, g.round_p(p) // 2 + 40)
+    # Keep the incoming precision; pack used to drop dps here and hide a
+    # directed-mode residue (be63db9 elliptic_e_phi p=512 Up/FromZero).
     if isinstance(value, mp.mpc) or (hasattr(value, "imag") and value.imag != 0):
         w = mp.mpc(value)
         return {"k": "c", "re": round_real(w.real, p, rm), "im": round_real(w.imag, p, rm)}
@@ -446,6 +448,8 @@ def eval_phi(op: str, raw_args: list[str], p: int, rm: str) -> dict:
     # HALF_PI parsed at p bits is the rational fl_p(pi/2), never pi/2 itself, so
     # it gets no K/E/Pi-complete shortcut: the integral is taken at that rational
     # (ZF-33). At p=256 fl(pi/2) is below pi/2, so F(.|1) and Pi(1; .|m) are finite.
+    # At p=512 fl(pi/2) is above pi/2: F(.|1) is +inf and E(.|1) is slightly
+    # above 1 (Up/FromZero round to 1+ulp).
     sign = -1 if phi < 0 else 1
     # Near an odd multiple of pi/2, 1 - sin^2 and 1 - m sin^2 cancel: about
     # 2*log2(1/|cos phi|) bits go (squared), and Pi(1; .) adds 1/cos^2 again.

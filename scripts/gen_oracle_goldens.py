@@ -817,11 +817,15 @@ def round_mpf(x, p: int, rm: str, sign_hint: str | None = None, sig: int | None 
         sign = sign_hint or ("-" if mp.sign(x) < 0 else "+")
         return zero(sign, round_p(p))
     sign = "-" if x < 0 else "+"
-    bits = round_p(p) + 96
-    ax = abs(x)
-    m, e = mp.frexp(ax)
-    mant = int(mp.floor(m * mp.power(2, bits)))
-    return round_rational(sign, mant, 1, int(e) - bits, p, rm, sig_bits=sig)
+    # Use the input's own mantissa. Truncating to dest p plus a 96-bit guard
+    # drops a residue many bits past dest ulp, so Up/FromZero collapse to the
+    # same limb as Down. Official oracle-deep at be63db9: E(fl_512(π/2)|1) is
+    # 1 + ~2^{-1030}, which must pack to 1+ulp in those two modes, not 1.
+    ax = abs(mp.mpf(x))
+    _s, man, exp, _bc = ax._mpf_
+    if man == 0:
+        return zero(sign, round_p(p))
+    return round_rational(sign, int(man), 1, int(exp), p, rm, sig_bits=sig)
 
 
 def complex_expect(op: str, p: int, rm: str, args: list[str]) -> dict:

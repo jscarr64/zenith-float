@@ -131,6 +131,36 @@ fn rounded_half_pi_is_not_a_quarter_period() -> Result<(), Box<dyn std::error::E
 }
 
 #[test]
+fn e_phi_at_512_fl_half_pi_rounds_above_one_in_up_modes() -> Result<(), Box<dyn std::error::Error>>
+{
+    // Official oracle-deep at be63db9 failed elliptic_e_phi p=512 Up and
+    // FromZero on a "limbs" gold. At p=512, ToEven fl(π/2) is above π/2, so
+    // E(φ|1) is 1 + ~2^{-1030}: above 1 and far below one ulp (2^{-511}).
+    // Up and FromZero must be 1+ulp; the other five modes stay 1.
+    let mut consts = cc()?;
+    let p = 512;
+    let phi = parse(HALF_PI, p, RoundingMode::ToEven, &mut consts);
+    let m = parse("1", p, RoundingMode::ToEven, &mut consts);
+    let one = parse("1", p, RoundingMode::ToEven, &mut consts);
+    for rm in [RoundingMode::Up, RoundingMode::FromZero] {
+        let e = phi.elliptic_e_phi(&m, p, rm, &mut consts);
+        assert_eq!(ulp_gap(&e, &one, p), 1, "{rm:?} should be 1+ulp");
+        assert_eq!(e.compare(&one), Some(1), "{rm:?} should be above 1");
+    }
+    for rm in [
+        RoundingMode::ToEven,
+        RoundingMode::ToOdd,
+        RoundingMode::Down,
+        RoundingMode::ToZero,
+        RoundingMode::None,
+    ] {
+        let e = phi.elliptic_e_phi(&m, p, rm, &mut consts);
+        assert!(same_bits(&e, &one), "{rm:?} should be exact 1, got {e}");
+    }
+    Ok(())
+}
+
+#[test]
 fn periodicity_adds_two_complete_periods() -> Result<(), Box<dyn std::error::Error>> {
     let mut consts = cc()?;
     let p = 64;
