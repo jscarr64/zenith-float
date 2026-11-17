@@ -667,9 +667,7 @@ fn pfq_jet(
     let mut mk = ExactNum::from_u8(1, 64);
     let mut k: u64 = 0;
     loop {
-        let Some(k_next) = k.checked_add(1) else {
-            return None;
-        };
+        let k_next = k.checked_add(1)?;
         let kk = ExactNum::from_u64(k, wp);
         let mut num = w.scalar(&ExactNum::from_u8(1, wp));
         let mut nb = ax.clone();
@@ -702,9 +700,7 @@ fn pfq_jet(
         }
         // Ratio bound for every step j >= k: |x| prod (j + max(|a|+|c|rho, 1)) /
         // ((j+1) prod (j - |b| - |c|rho)); each factor is non-increasing in j.
-        let Some(k_bound) = k.checked_add(1) else {
-            return None;
-        };
+        let k_bound = k.checked_add(1)?;
         let kk = ExactNum::from_u64(k, 64);
         let mut bnd = ax.clone();
         for (a, c) in hn {
@@ -2283,7 +2279,6 @@ fn heun_c_jet(
 
 /// Taylor steps along one real segment. Each step is at most half the distance
 /// to the nearest point of `sings` (the local radius of the ODE).
-
 struct OdePoly {
     a0: ExactNum,
     a1: ExactNum,

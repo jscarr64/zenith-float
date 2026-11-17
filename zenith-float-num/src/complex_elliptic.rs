@@ -21,9 +21,9 @@ use alloc::vec::Vec;
 /// Same cap as the real Carlson kernels.
 const CARLSON_DUPE_MAX: u32 = 128;
 
-/// \(R_J\) shift-integral jets and panels stop when the path is covered
-/// or the remaining distance stops shrinking; there is no pre-set term
-/// or panel refusal.
+// R_J shift-integral jets and panels stop when the path is covered
+// or the remaining distance stops shrinking; there is no pre-set term
+// or panel refusal.
 
 /// Duplication-step cap: each step shrinks the spread 4×, and the series needs a spread of
 /// about 2^-(p/3+16), so high precisions need more than [`CARLSON_DUPE_MAX`] steps.

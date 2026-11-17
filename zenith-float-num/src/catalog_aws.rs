@@ -46,10 +46,10 @@ const N: RoundingMode = RoundingMode::None;
 const UP: RoundingMode = RoundingMode::Up;
 const DN: RoundingMode = RoundingMode::Down;
 
-/// Series, jets, and Taylor panels stop on a remainder bound or a stall
-/// (the bound stops improving, a term-index overflows, or a panel width
-/// is already below \(2^{-(wp+16)}\)). There is no pre-set term or panel
-/// refusal; a genuinely huge request may fail in the allocator.
+// Series, jets, and Taylor panels stop on a remainder bound or a stall
+// (the bound stops improving, a term-index overflows, or a panel width
+// is already below 2^-(wp+16)). There is no pre-set term or panel
+// refusal; a genuinely huge request may fail in the allocator.
 
 fn bitlen(n: usize) -> i64 {
     (usize::BITS - n.leading_zeros()) as i64
@@ -1873,7 +1873,7 @@ fn anger_a_laplace(
         if !finite(&zpow_term) || zpow_term.is_zero() {
             return None;
         }
-        let term = if n % 2 == 0 {
+        let term = if n.is_multiple_of(2) {
             // F_p / (π z^{2p+1})
             f.clone()
                 .div(&ExactNum::mul_ref(&pi, &zpow_term, wp, N), wp, N)
@@ -1896,7 +1896,7 @@ fn anger_a_laplace(
         prev_abs = term.abs();
 
         // Update F or G for the next pair.
-        if n % 2 == 0 {
+        if n.is_multiple_of(2) {
             // After even term 2p, prepare G already present; F_{p+1} is needed
             // after the following odd term. Nothing to do to F/G here except
             // after the odd term we step both.
