@@ -46,17 +46,10 @@ const N: RoundingMode = RoundingMode::None;
 const UP: RoundingMode = RoundingMode::Up;
 const DN: RoundingMode = RoundingMode::Down;
 
-/// Refusal: more series terms than this, or more Taylor panels, returns `None`
-/// so the Ziv loop can raise the working precision or the call becomes NaN.
-/// Hitting the cap never returns a guessed value.
-const TERM_REFUSE: usize = 8_000_000;
-const PANEL_REFUSE: usize = 262_144;
-const JET_MAX: usize = 80;
-const LAPLACE_TERM_MAX: usize = 2048;
-/// 11.5.2 amplitude-jet length (refusal only). A 2048-bit panel at the
-/// near-optimal width \(h\approx 9/(10 e)\) needs about \(0.7(p+16)\)
-/// terms; 4096 covers the 8192-bit extras with a slightly narrower panel.
-const K_JET_MAX: usize = 4096;
+/// Series, jets, and Taylor panels stop on a remainder bound or a stall
+/// (the bound stops improving, a term-index overflows, or a panel width
+/// is already below \(2^{-(wp+16)}\)). There is no pre-set term or panel
+/// refusal; a genuinely huge request may fail in the allocator.
 
 fn bitlen(n: usize) -> i64 {
     (usize::BITS - n.leading_zeros()) as i64
@@ -209,7 +202,7 @@ fn series_cheap(z: &ExactNum, nu: &ExactNum, p: usize) -> bool {
         return false;
     };
     // A hard cap: past a few dozen terms the connection / 11.5.2 paths
-    // are faster, and at |z| ~ 2^20 this would otherwise run to TERM_REFUSE.
+    // are faster than Maclaurin at large |z|.
     const K_MAX: u32 = 80;
     if k > K_MAX {
         return false;
@@ -347,13 +340,10 @@ fn struve_series(
     // by zero, so each term is formed from the closed factor when needed.
     let mut formed = 0usize;
     loop {
-        if k >= TERM_REFUSE {
-            return None;
-        }
         if k > 0 {
             // t_k / t_{k-1} = -(z/2)^2 / ((k+1/2)(k+ν+1/2))
             let half = half(wp);
-            let kp = ExactNum::from_u32(k as u32, wp).add(&half, wp, N);
+            let kp = ExactNum::from_u64(k as u64, wp).add(&half, wp, N);
             let kpn = ExactNum::add_ref(&kp, nu, wp, N);
             if nonpos_int(&kp) || nonpos_int(&kpn) {
                 term = ExactNum::new(wp);
@@ -361,19 +351,19 @@ fn struve_series(
                 // Rebuild the full 11.2.1 term, including (z/2)^{ν+1},
                 // after a skipped pole: (z/2)^{2k+ν+1} (-1)^k /
                 // (Γ(k+3/2) Γ(k+ν+3/2)).
-                let a = ExactNum::from_u32(k as u32, wp).add(&three_half, wp, N);
+                let a = ExactNum::from_u64(k as u64, wp).add(&three_half, wp, N);
                 let b = ExactNum::add_ref(&a, nu, wp, N);
                 let ga = match gamma_or_pole(&a, wp, cc) {
                     Some(g) => g,
                     None => {
-                        k += 1;
+                        k = k.checked_add(1)?;
                         continue;
                     }
                 };
                 let gb = match gamma_or_pole(&b, wp, cc) {
                     Some(g) => g,
                     None => {
-                        k += 1;
+                        k = k.checked_add(1)?;
                         continue;
                     }
                 };
@@ -381,10 +371,9 @@ fn struve_series(
                 let ln_ga = a.ln_gamma(wp, N, cc);
                 let ln_gb = b.ln_gamma(wp, N, cc);
                 term = if finite(&ln_h) && finite(&ln_ga) && finite(&ln_gb) {
-                    let two_k_nu1 =
-                        ExactNum::from_u32((2 * k) as u32, wp)
-                            .add(nu, wp, N)
-                            .add(&one(wp), wp, N);
+                    let two_k_nu1 = ExactNum::from_u64((k as u64).saturating_mul(2), wp)
+                        .add(nu, wp, N)
+                        .add(&one(wp), wp, N);
                     let ln = two_k_nu1
                         .mul(&ln_h, wp, N)
                         .sub(&ln_ga, wp, N)
@@ -397,7 +386,7 @@ fn struve_series(
                     }
                 } else if finite(&ga) && finite(&gb) && !gb.is_zero() {
                     let pow = halfz.pow(
-                        &ExactNum::from_u32((2 * k) as u32, wp)
+                        &ExactNum::from_u64((k as u64).saturating_mul(2), wp)
                             .add(nu, wp, N)
                             .add(&one(wp), wp, N),
                         wp,
@@ -428,7 +417,7 @@ fn struve_series(
             formed += 1;
             // Geometric tail once |t_{k+1}/t_k| ≤ 1/2, i.e.
             // |(z/2)^2| / |(k+3/2)(k+ν+3/2)| ≤ 1/2.
-            let kp = ExactNum::from_u32(k as u32, wp).add(&three_half, wp, N);
+            let kp = ExactNum::from_u64(k as u64, wp).add(&three_half, wp, N);
             let kpn = ExactNum::add_ref(&kp, nu, wp, N);
             let den = ExactNum::mul_ref(&kp, &kpn, wp, N);
             if finite(&den) && !den.is_zero() {
@@ -467,7 +456,7 @@ fn struve_series(
                 }
             }
         }
-        k += 1;
+        k = k.checked_add(1)?;
         if formed == 0 && k > 64 {
             // All early terms vanished; keep scanning a little, then give up.
             if k > 1024 {
@@ -493,32 +482,14 @@ fn asym_gate(z: &ExactNum, nu: &ExactNum, wp: usize) -> bool {
 
 fn ceil_m_min(nu: &ExactNum, wp: usize) -> Option<usize> {
     // m ≥ ν - 1/2, m ≥ 0. Compute ceil(ν-1/2) if positive.
+    // If that integer does not fit in usize, this path is unavailable
+    // (the caller falls back); that is an index-type limit, not a cap.
     let t = ExactNum::sub_ref(nu, &half(wp), wp, UP);
     if t.is_negative() || t.is_zero() {
         return Some(0);
     }
-    // If t is huge, refuse the asymptotic (too many terms).
-    let e = t.exponent()?;
-    if e > 24 {
-        return None;
-    }
-    // An upper bound on t, as a usize.
-    let mut u = t.clone();
-    let _ = u.set_precision(64, UP);
-    // t < 2^e, so 2^e is a cheap cap; walk up from floor.
-    // Parse via integer part: add 1-ulp and take floor by ... use from exponent.
-    // t < 2^{e} with e≤24, so t < 2^24. Multiply by 1 and compare against integers.
-    let cap = 1usize.checked_shl(e.max(0) as u32)?.saturating_add(2);
-    if cap > TERM_REFUSE {
-        return None;
-    }
-    for m in 0..=cap {
-        let mv = ExactNum::from_u32(m as u32, wp);
-        if mv.compare(&t) != Some(-1) {
-            return Some(m);
-        }
-    }
-    None
+    let u = t.to_u64(RoundingMode::Up).ok()?;
+    usize::try_from(u).ok()
 }
 
 /// DLMF 11.6.1: \(\mathbf{H}_\nu=Y_\nu+(1/\pi)\sum_{k=0}^{m-1}
@@ -546,9 +517,6 @@ fn struve_asym(z: &ExactNum, nu: &ExactNum, wp: usize, cc: &mut Consts) -> Optio
     let mut first_omitted;
     let mut terminated = false;
     loop {
-        if k >= TERM_REFUSE {
-            return None;
-        }
         if k >= m_min {
             // Candidate truncation: first omitted is the current `term` (not yet added).
             first_omitted = term.clone();
@@ -562,7 +530,7 @@ fn struve_asym(z: &ExactNum, nu: &ExactNum, wp: usize, cc: &mut Consts) -> Optio
         // after the terms already added (1/Γ = 0 from here on).
         let den_shift = ExactNum::sub_ref(
             nu,
-            &ExactNum::from_u32(k as u32, wp).add(&halfv, wp, N),
+            &ExactNum::from_u64(k as u64, wp).add(&halfv, wp, N),
             wp,
             N,
         );
@@ -577,7 +545,7 @@ fn struve_asym(z: &ExactNum, nu: &ExactNum, wp: usize, cc: &mut Consts) -> Optio
             sum = sum.add(&term, wp, N);
         }
         // t_{k+1} = t_k * (k+1/2) * 4 / z^2 * (ν-k-1/2)
-        let num = ExactNum::from_u32(k as u32, wp).add(&halfv, wp, N).mul(
+        let num = ExactNum::from_u64(k as u64, wp).add(&halfv, wp, N).mul(
             &ExactNum::from_u8(4, wp),
             wp,
             N,
@@ -598,7 +566,7 @@ fn struve_asym(z: &ExactNum, nu: &ExactNum, wp: usize, cc: &mut Consts) -> Optio
             return None;
         }
         term = next;
-        k += 1;
+        k = k.checked_add(1)?;
     }
     // Add more terms past m_min while they shrink and improve the bound, not
     // past the upturn and never without m ≥ m_min.
@@ -608,15 +576,12 @@ fn struve_asym(z: &ExactNum, nu: &ExactNum, wp: usize, cc: &mut Consts) -> Optio
         // Add terms k = m_min, m_min+1, ... as long as they decrease, and stop
         // when the omitted term is small or starts growing.
         loop {
-            if k >= TERM_REFUSE {
-                return None;
-            }
             if !finite(&term) {
                 return None;
             }
             let den_shift = ExactNum::sub_ref(
                 nu,
-                &ExactNum::from_u32(k as u32, wp).add(&halfv, wp, N),
+                &ExactNum::from_u64(k as u64, wp).add(&halfv, wp, N),
                 wp,
                 N,
             );
@@ -644,7 +609,7 @@ fn struve_asym(z: &ExactNum, nu: &ExactNum, wp: usize, cc: &mut Consts) -> Optio
             if !term.is_zero() {
                 sum = sum.add(&term, wp, N);
             }
-            let num = ExactNum::from_u32(k as u32, wp).add(&halfv, wp, N).mul(
+            let num = ExactNum::from_u64(k as u64, wp).add(&halfv, wp, N).mul(
                 &ExactNum::from_u8(4, wp),
                 wp,
                 N,
@@ -662,7 +627,7 @@ fn struve_asym(z: &ExactNum, nu: &ExactNum, wp: usize, cc: &mut Consts) -> Optio
                 .mul(&den_shift, wp, N)
                 .div(&z2, wp, N);
             first_omitted = term.clone();
-            k += 1;
+            k = k.checked_add(1)?;
             if k.saturating_sub(m_min) > 65_536 {
                 break;
             }
@@ -756,7 +721,7 @@ fn pick_k_t(z: &ExactNum, mu: &ExactNum, wp: usize, cc: &mut Consts) -> Option<E
     let target = one(wp).ldexp(-((wp as i64) + 8), wp, N);
     // T ≈ (wp+16) ln 2 / z, then bump until the tail is small.
     let ln2 = two(wp).ln(wp, N, cc);
-    let num = ExactNum::from_u32((wp as u32).saturating_add(16), wp).mul(&ln2, wp, N);
+    let num = ExactNum::from_u64((wp as u64).saturating_add(16), wp).mul(&ln2, wp, N);
     let mut t = num.div(z, wp, UP);
     if !finite(&t) || t.is_negative() || t.is_zero() {
         t = one(wp);
@@ -800,13 +765,13 @@ fn g_jet(
     let mut g: Vec<ExactNum> = vec![g0];
     for n in 1..=n_jet {
         // (1+t^2) g^{(n)} = 2t (μ-(n-1)) g^{(n-1)} + (n-1)(2μ-(n-2)) g^{(n-2)}
-        let nm1 = ExactNum::from_u32((n - 1) as u32, wp);
+        let nm1 = ExactNum::from_u64(n as u64 - 1, wp);
         let coef1 = two(wp)
             .mul(t, wp, rm)
             .mul(&ExactNum::sub_ref(mu, &nm1, wp, rm), wp, rm);
         let mut rhs = ExactNum::mul_ref(&coef1, &g[n - 1], wp, rm);
         if n >= 2 {
-            let nm2 = ExactNum::from_u32((n - 2) as u32, wp);
+            let nm2 = ExactNum::from_u64(n as u64 - 2, wp);
             let coef2 = nm1.mul(&two(wp).mul(mu, wp, rm).sub(&nm2, wp, rm), wp, rm);
             rhs = rhs.add(&coef2.mul(&g[n - 2], wp, rm), wp, rm);
         }
@@ -823,8 +788,7 @@ fn g_jet(
 fn k_n_jet(wp: usize) -> usize {
     let need = wp.saturating_add(16);
     // n ≈ (wp+16)/log2(e) at the near-optimal width h=ρ/e.
-    let n = ((need as u64 * 3) / 4).max(16) as usize;
-    K_JET_MAX.min(n)
+    ((need as u64 * 3) / 4).max(16) as usize
 }
 
 /// Panel width so a `k_n_jet`-term Cauchy remainder on the disk of
@@ -875,18 +839,16 @@ fn inc_exp_moments(
         if k as u64 + 1 > u32::MAX as u64 {
             return None;
         }
-        let kp1 = ExactNum::from_u32((k + 1) as u32, wp);
+        let kp1 = ExactNum::from_u64((k as u64).saturating_add(1), wp);
         let expo = kp1.clone().mul(ln_h, wp, N).sub(zh, wp, N);
         let mut term = expo.exp(wp, N, cc).div(&kp1, wp, N);
         if !finite(&term) {
             return None;
         }
         let mut sum = term.clone();
-        for j in 0..TERM_REFUSE {
-            if (k as u64) + 2 + (j as u64) > u32::MAX as u64 {
-                return None;
-            }
-            let den = ExactNum::from_u32((k + 2 + j) as u32, wp);
+        let mut j = 0usize;
+        loop {
+            let den = ExactNum::from_u64((k as u64).saturating_add(2).saturating_add(j as u64), wp);
             term = term.mul(zh, wp, N).div(&den, wp, N);
             if !finite(&term) {
                 return None;
@@ -905,6 +867,7 @@ fn inc_exp_moments(
             if small && j >= 2 {
                 break;
             }
+            j = j.checked_add(1)?;
         }
         if finite(&sum) {
             Some(sum)
@@ -915,10 +878,7 @@ fn inc_exp_moments(
     let mut out: Vec<ExactNum> = (0..=n).map(|_| ExactNum::new(wp)).collect();
     out[n] = lower(n, &zh, &ln_h, cc)?;
     for k in (1..=n).rev() {
-        if k as u64 > u32::MAX as u64 {
-            return None;
-        }
-        let expo = ExactNum::from_u32(k as u32, wp)
+        let expo = ExactNum::from_u64(k as u64, wp)
             .mul(&ln_h, wp, N)
             .sub(&zh, wp, N);
         let pow = expo.exp(wp, N, cc);
@@ -926,7 +886,7 @@ fn inc_exp_moments(
             return None;
         }
         let num = ExactNum::mul_ref(z, &out[k], wp, N).add(&pow, wp, N);
-        let ik = num.div(&ExactNum::from_u32(k as u32, wp), wp, N);
+        let ik = num.div(&ExactNum::from_u64(k as u64, wp), wp, N);
         if !finite(&ik) {
             return None;
         }
@@ -969,7 +929,7 @@ fn k_panel(
     let mut fac = one(wp);
     for k in 0..n {
         if k > 0 {
-            fac = fac.mul(&ExactNum::from_u32(k as u32, wp), wp, N);
+            fac = fac.mul(&ExactNum::from_u64(k as u64, wp), wp, N);
         }
         if fac.is_zero() || !finite(&fac) || !finite(&moments[k]) || !finite(&g[k]) {
             return None;
@@ -1018,8 +978,8 @@ fn k_panel(
     }
     let h_up = ExactNum::sub_ref(b, a, wp, UP);
     let h_over_rho = h_up.clone().div(&rho, wp, UP);
-    let pow = h_over_rho.pow(&ExactNum::from_u32(n as u32, wp), wp, UP, cc);
-    let np1 = ExactNum::from_u32((n + 1) as u32, wp);
+    let pow = h_over_rho.pow(&ExactNum::from_u64(n as u64, wp), wp, UP, cc);
+    let np1 = ExactNum::from_u64((n as u64).saturating_add(1), wp);
     let rem = e_up
         .mul(&m, wp, UP)
         .mul(&h_up, wp, UP)
@@ -1072,9 +1032,6 @@ fn struve_k_integral(
             right = t_end.clone();
         }
         stack.push((left.clone(), right.clone()));
-        if stack.len() > PANEL_REFUSE {
-            return None;
-        }
         if right.abs_cmp(&t_end) != Some(-1) {
             break;
         }
@@ -1084,10 +1041,7 @@ fn struve_k_integral(
     let mut rem_acc = tb.clone();
     let mut panels = 0usize;
     while let Some((a, b)) = stack.pop() {
-        panels += 1;
-        if panels > PANEL_REFUSE {
-            return None;
-        }
+        panels = panels.saturating_add(1);
         match k_panel(&a, &b, z, &mu, wp, cc) {
             Some((val, rem)) if rem.abs_cmp(&target) != Some(1) => {
                 acc = acc.add(&val, wp, N);
@@ -1207,8 +1161,7 @@ fn struve_h_positive(
             }
         }
         // 11.5.2 + Y is the bounded large-z path when 11.6.1 is not tight
-        // enough. Never fall through into Maclaurin at |z| where it would
-        // run toward TERM_REFUSE.
+        // enough. Never fall through into Maclaurin at large |z|.
         struve_via_k(&zc, &nuc, wp, cc)
     })
 }
@@ -1305,7 +1258,7 @@ fn maclaurin_s(
     let mut peak = i64::MIN / 4;
     // S1 term k=0: 1 / (Γ(1+ν/2) Γ(1-ν/2))
     let form_s1 = |k: usize, cc: &mut Consts| -> Option<ExactNum> {
-        let kk = ExactNum::from_u32(k as u32, wp);
+        let kk = ExactNum::from_u64(k as u64, wp);
         let a = ExactNum::add_ref(&kk, &half_nu, wp, N).add(&one(wp), wp, N);
         let b = ExactNum::sub_ref(&kk, &half_nu, wp, N).add(&one(wp), wp, N);
         let ga = gamma_or_pole(&a, wp, cc)?;
@@ -1320,7 +1273,7 @@ fn maclaurin_s(
         Some(zk.div(&ga.mul(&gb, wp, N), wp, N))
     };
     let form_s2 = |k: usize, cc: &mut Consts| -> Option<ExactNum> {
-        let kk = ExactNum::from_u32(k as u32, wp);
+        let kk = ExactNum::from_u64(k as u64, wp);
         let three_half = ExactNum::from_u8(3, wp).div(&two(wp), wp, N);
         let a = ExactNum::add_ref(&kk, &half_nu, wp, N).add(&three_half, wp, N);
         let b = ExactNum::sub_ref(&kk, &half_nu, wp, N).add(&three_half, wp, N);
@@ -1339,9 +1292,6 @@ fn maclaurin_s(
     let mut t2 = form_s2(0, cc).unwrap_or_else(|| ExactNum::new(wp));
     let mut k = 0usize;
     loop {
-        if k >= TERM_REFUSE {
-            return None;
-        }
         if finite(&t1) && !t1.is_zero() {
             peak = peak.max(exp_of(&t1));
             s1 = s1.add(&t1, wp, N);
@@ -1351,7 +1301,7 @@ fn maclaurin_s(
             s2 = s2.add(&t2, wp, N);
         }
         // Ratio for S1: |t_{k+1}/t_k| = (z/2)^2 / |((k+1+ν/2)(k+1-ν/2))|
-        let kp1 = ExactNum::from_u32((k + 1) as u32, wp);
+        let kp1 = ExactNum::from_u64((k as u64).saturating_add(1), wp);
         let d1 = ExactNum::add_ref(&kp1, &half_nu, wp, N).mul(
             &ExactNum::sub_ref(&kp1, &half_nu, wp, N),
             wp,
@@ -1379,7 +1329,7 @@ fn maclaurin_s(
                 return Some(((s1, s2), good.max(1)));
             }
         }
-        k += 1;
+        k = k.checked_add(1)?;
         t1 = form_s1(k, cc).unwrap_or_else(|| ExactNum::new(wp));
         t2 = form_s2(k, cc).unwrap_or_else(|| ExactNum::new(wp));
     }
@@ -1412,7 +1362,7 @@ fn anger_weber_maclaurin(
 fn factorial_rm(n: usize, p: usize, rm: RoundingMode) -> ExactNum {
     let mut acc = one(p);
     for k in 2..=n {
-        acc = acc.mul(&ExactNum::from_u32(k as u32, p), p, rm);
+        acc = acc.mul(&ExactNum::from_u64(k as u64, p), p, rm);
     }
     acc
 }
@@ -1424,8 +1374,8 @@ fn binom(n: usize, j: usize, p: usize, rm: RoundingMode) -> ExactNum {
     let j = j.min(n - j);
     let mut acc = one(p);
     for i in 0..j {
-        acc = acc.mul(&ExactNum::from_u32((n - i) as u32, p), p, rm).div(
-            &ExactNum::from_u32((i + 1) as u32, p),
+        acc = acc.mul(&ExactNum::from_u64((n - i) as u64, p), p, rm).div(
+            &ExactNum::from_u64((i as u64).saturating_add(1), p),
             p,
             rm,
         );
@@ -1500,7 +1450,7 @@ fn pick_t(nu: &ExactNum, z: &ExactNum, wp: usize, cc: &mut Consts) -> Option<Exa
     let target = one(wp).ldexp(-((wp as i64) + 8), wp, N);
     // T ≈ asinh((wp+16) ln2 / z) is a good start when z is not tiny.
     let ln2 = two(wp).ln(wp, N, cc);
-    let num = ExactNum::from_u32((wp as u32).saturating_add(16), wp).mul(&ln2, wp, N);
+    let num = ExactNum::from_u64((wp as u64).saturating_add(16), wp).mul(&ln2, wp, N);
     let mut t = num.div(z, wp, UP).asinh(wp, UP, cc);
     if !finite(&t) || t.is_negative() || t.is_zero() {
         t = one(wp);
@@ -1534,7 +1484,7 @@ fn panel_integral(
     let (f0, sh0, ch0, _) = f_and_gprime(&mid, nu, z, wp, cc)?;
     // Jet u_n = f^{(n)}(mid) via Leibniz: u_n = Σ_{j=0}^{n-1} C(n-1,j) a_{n-j} u_j
     // a_1 = -ν - z cosh(mid); a_k = -z sinh(mid) (k even ≥2); -z cosh(mid) (k odd ≥3).
-    let n_jet = JET_MAX.min(16 + wp / 16).max(12);
+    let n_jet = (16 + wp / 16).max(12);
     let mut jet: Vec<ExactNum> = vec![f0.clone()];
     let a1 = ExactNum::mul_ref(z, &ch0, wp, N).add(nu, wp, N).neg();
     for n in 1..=n_jet {
@@ -1562,7 +1512,12 @@ fn panel_integral(
         if !k.is_multiple_of(2) {
             continue;
         }
-        let pow = half_h.pow(&ExactNum::from_u32((k + 1) as u32, wp), wp, N, cc);
+        let pow = half_h.pow(
+            &ExactNum::from_u64((k as u64).saturating_add(1), wp),
+            wp,
+            N,
+            cc,
+        );
         let fac = factorial_rm(k + 1, wp, N);
         let term = jet[k]
             .clone()
@@ -1605,7 +1560,12 @@ fn panel_integral(
         major.push(un);
     }
     // |R| ≤ (h/2)^{n_jet+1} / (n_jet+1)! * U_{n_jet+1} * h  (bound the integral of the remainder)
-    let pow = half_h.pow(&ExactNum::from_u32((n_jet + 1) as u32, wp), wp, UP, cc);
+    let pow = half_h.pow(
+        &ExactNum::from_u64((n_jet as u64).saturating_add(1), wp),
+        wp,
+        UP,
+        cc,
+    );
     let fac = factorial_rm(n_jet + 1, wp, DN);
     if fac.is_zero() || !finite(&fac) || !finite(&pow) {
         return None;
@@ -1639,8 +1599,8 @@ fn anger_a_integral(
     let t_end = pick_t(nu, z, wp, cc)?;
     let tb = tail_bound(&t_end, nu, z, wp, cc)?;
     // Panels sized to the decay scale ~ 1/(ν+z), then bisect any whose
-    // remainder is still above the target. Starting from a single [0, T]
-    // panel at large z produced more than PANEL_REFUSE failed jets.
+    // remainder is still above the target. A single [0, T] panel at large
+    // z produces many failed jets, so the first grid follows the decay.
     let target = one(wp).ldexp(-((wp as i64) + 8), wp, N);
     let scale = ExactNum::add_ref(nu, z, wp, UP);
     let mut h = if scale.is_positive() && finite(&scale) {
@@ -1669,9 +1629,6 @@ fn anger_a_integral(
             right = t_end.clone();
         }
         stack.push((left.clone(), right.clone()));
-        if stack.len() > PANEL_REFUSE {
-            return None;
-        }
         if right.abs_cmp(&t_end) != Some(-1) {
             break;
         }
@@ -1681,10 +1638,7 @@ fn anger_a_integral(
     let mut rem_acc = tb.clone();
     let mut panels = 0usize;
     while let Some((a, b)) = stack.pop() {
-        panels += 1;
-        if panels > PANEL_REFUSE {
-            return None;
-        }
+        panels = panels.saturating_add(1);
         match panel_integral(&a, &b, nu, z, wp, cc) {
             Some((val, rem)) if rem.abs_cmp(&target) != Some(1) => {
                 acc = acc.add(&val, wp, N);
@@ -1778,7 +1732,7 @@ fn incgamma_tail_uk(
     for k in 1..=kmax {
         tau_pow = tau_pow.mul(tau, wp, UP);
         let term1 = tau_pow.clone().mul(&e_over_z, wp, UP);
-        let k_over_z = ExactNum::from_u32(k as u32, wp).div(&z_dn, wp, UP);
+        let k_over_z = ExactNum::from_u64(k as u64, wp).div(&z_dn, wp, UP);
         let nxt = term1.add(&k_over_z.mul(&out[k - 1], wp, UP), wp, UP);
         if !finite(&nxt) {
             return None;
@@ -1902,10 +1856,8 @@ fn anger_a_laplace(
     let mut r_poly = ExactNum::new(wp);
     let mut rho_k = one(wp); // ρ^k for the newest poly term
 
-    for n in 0..LAPLACE_TERM_MAX {
-        if n >= TERM_REFUSE {
-            return None;
-        }
+    let mut n = 0usize;
+    loop {
         let p = n / 2;
         zpow_term = zpow_term.mul(z, wp, N);
         if !finite(&zpow_term) || zpow_term.is_zero() {
@@ -1940,8 +1892,8 @@ fn anger_a_laplace(
             // after the odd term we step both.
         } else {
             // Finished the pair (F_p, G_p). Advance to p+1.
-            let odd = ExactNum::from_u32((2 * p + 1) as u32, wp);
-            let even = ExactNum::from_u32((2 * p + 2) as u32, wp);
+            let odd = ExactNum::from_u64((p as u64).saturating_mul(2).saturating_add(1), wp);
+            let even = ExactNum::from_u64((p as u64).saturating_mul(2).saturating_add(2), wp);
             f = f.mul(&ExactNum::sub_ref(&nu2, &odd.sqr(wp, N), wp, N), wp, N);
             g = g.mul(&ExactNum::sub_ref(&nu2, &even.sqr(wp, N), wp, N), wp, N);
             if !finite(&f) || !finite(&g) {
@@ -1954,7 +1906,7 @@ fn anger_a_laplace(
         // |R_poly tail| ≤ (M/π) Σ_{k=0}^{N-1} ρ^{-k} I_k
         // |R_h tail| ≤ h_tail / π
         let n_terms = n + 1;
-        fac = fac.mul(&ExactNum::from_u32(n_terms as u32, wp), wp, UP);
+        fac = fac.mul(&ExactNum::from_u64(n_terms as u64, wp), wp, UP);
         rho_pow = rho_pow.mul(&rho, wp, DN);
         zpow_rem = zpow_rem.mul(&z_dn, wp, DN);
         if !finite(&fac)
@@ -1992,16 +1944,20 @@ fn anger_a_laplace(
         if !finite(&rem) {
             break;
         }
-        match &best {
-            None => best = Some((sum.clone(), rem.clone(), n_terms)),
-            Some((_, brem, _)) => {
-                if rem.abs_cmp(brem) == Some(-1) {
-                    best = Some((sum.clone(), rem.clone(), n_terms));
-                }
+        let improved = match &best {
+            None => {
+                best = Some((sum.clone(), rem.clone(), n_terms));
+                true
             }
-        }
-        // Stop if the bound has started to grow and we already have a useful one,
-        // or if the remainder is far below the working precision relative to the sum.
+            Some((_, brem, _)) if rem.abs_cmp(brem) == Some(-1) => {
+                best = Some((sum.clone(), rem.clone(), n_terms));
+                true
+            }
+            Some(_) => false,
+        };
+        // Stop if the remainder is far below the working precision relative
+        // to the sum, or if the bound has stalled (asymptotic terms will
+        // start growing, or a tighter rem is not coming).
         if let Some((bs, brem, _)) = &best {
             if !bs.is_zero()
                 && brem.abs_cmp(&one(wp).ldexp(-((wp as i64) + 8), wp, N).mul(bs, wp, UP))
@@ -2009,6 +1965,13 @@ fn anger_a_laplace(
             {
                 break;
             }
+        }
+        if !improved {
+            break;
+        }
+        match n.checked_add(1) {
+            Some(n1) => n = n1,
+            None => break,
         }
     }
 
@@ -2031,10 +1994,9 @@ fn anger_a_laplace(
 
 fn anger_a(nu: &ExactNum, z: &ExactNum, wp: usize, cc: &mut Consts) -> Option<(ExactNum, i64)> {
     if let Some((v, g)) = anger_a_laplace(nu, z, wp, cc) {
-        // The Cauchy remainder has a floor at a fixed term cap, so a loose
-        // bound must not be fed to the Ziv loop (it would raise wp forever
-        // and never switch to panels). Use Laplace only when the rem meets
-        // this working precision.
+        // A loose remainder must not be fed to the Ziv loop (it would raise
+        // wp forever and never switch to panels). Use Laplace only when the
+        // rem meets this working precision.
         let tight = g >= (wp as i64).saturating_sub(64);
         if tight {
             return Some((v, g));
