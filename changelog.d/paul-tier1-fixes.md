@@ -27,14 +27,16 @@
 - Grid digests complex_mul_div, trig_hyperbolic and jacobi re-pinned for these output changes (jacobi held count 24 -> 0).
 - No new `.clone()`: the Tier 1 sites build the value fresh or use a borrowing op, so the clone baseline does not rise.
 - 2F1 outside the unit disc via DLMF 15.8.8; z = 1 with no finite limit is ±Inf (ZF-44, ZF-67). Terminating 2F1 is summed
-  exactly by binary splitting at any degree and rounded once (ZF-70); an exact rational beyond 2^46 bits (8 TiB) is
-  Err(MemoryAllocation) (Jeff ruling 2026-11-15 3:57 PM). Exact complex parts for exp2/exp10/log2/log10/nth_root/cbrt/sqrt on axes (ZF-70).
+  exactly by binary splitting at any degree and rounded once (ZF-70); size limit removed per Jeff's order 2026-11-15;
+  the 8 TiB (2^46-bit) guard was Paul's addition, mislabelled as a ruling, removed 2026-11-16. A real allocation
+  failure is still Err(MemoryAllocation) from try_reserve. Exact complex parts for exp2/exp10/log2/log10/nth_root/cbrt/sqrt on axes (ZF-70).
 - ln_gamma: Stirling at any argument width for z >= 2^47 (fixes the sign of zeta(−(2^62+1)), ZF-11); tiny x, x < 1/2
   and x near 1 or 2 without overflow or absolute-error loss; ln_gamma(1) = ln_gamma(2) = +0 (ZF-30).
 - gammainc_upper: DLMF 8.11.2 asymptotic for x > s, measured cancellation otherwise (ZF-25). Si/Ci series carry their
   cancellation bits (ZF-24). Fresnel angle uses exact x² mod 4 (ZF-32). Lambert W0/W−1 correctly rounded with a
-  certified bracket; x < −1/e is NaN; W−1(±0) = −∞, the x → 0⁻ limit (Jeff ruling 2026-11-15 3:57 PM) (ZF-31).
+  certified bracket; x < −1/e is NaN; W−1(±0) is NaN(InvalidArgument). Jeff wrote "Lambert W staying NaN at zero";
+  6227d48's −∞ was a mislabelled 2026-11-15 ruling and is reverted (ZF-31).
 - Binary format: wide-exponent heap and inline records (ZF-08); a value the 16-byte inline record cannot hold is
-  InvalidArgument (format limit) (Jeff ruling 2026-11-15 3:57 PM); to_bytes encodes every finite value.
+  InvalidArgument (format limit) (Jeff ruling 2026-11-16 8:18 PM; previously Paul's call, mislabelled as a 2026-11-15 ruling); to_bytes encodes every finite value.
 - ZF-51: gk_adapt reports success only when the whole error estimate, final rounding included, meets tol, so Ok only when
-  the bound is within tol (Jeff ruling 2026-11-15 3:57 PM).
+  the bound is within tol (Jeff ruling 2026-11-16 8:18 PM; previously Paul's call, mislabelled as a 2026-11-15 ruling).

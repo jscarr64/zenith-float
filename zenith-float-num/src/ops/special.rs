@@ -4270,8 +4270,9 @@ impl ExactNumNumber {
     /// `r_k z = (a+k−1)(b+k−1) z / ((c+k−1) k)` (one numerator over one denominator), and rounded
     /// once, so dyadic results such as ₂F₁(−3, −½; 2; 2) = 21/16 are exact in every mode and no
     /// size threshold sends an exactly representable value to the floating path. `None` (the
-    /// floating path decides) only for a pole `c + k − 1 = 0`. A degree whose exact rational
-    /// cannot be stored (more than `2^46` bits) is `Err(MemoryAllocation)`.
+    /// floating path decides) only for a pole `c + k − 1 = 0`. A real allocation failure
+    /// while storing the exact rational is `Err(MemoryAllocation)` from `try_reserve`; there
+    /// is no size cap (the 2^46-bit / 8 TiB guard was removed).
     fn hyp2f1_terminating_exact(
         &self,
         b: &Self,
@@ -4317,17 +4318,6 @@ impl ExactNumNumber {
                 return Ok(None);
             }
         }
-        let w0 = self
-            .mantissa_max_bit_len()
-            .max(b.mantissa_max_bit_len())
-            .max(c.mantissa_max_bit_len())
-            .max(z.mantissa_max_bit_len());
-        // Each step contributes factors of about 3 (w0 + 128) bits; beyond 2^46 bits the exact
-        // rational does not fit in memory, which is an allocation failure, not a value.
-        let per = 3 * (w0 + 2 * WORD_BIT_SIZE);
-        if n.checked_mul(per).is_none_or(|b| b > 1usize << 46) {
-            return Err(Error::MemoryAllocation);
-        }
         if n == 0 {
             let one = Self::from_word(1, WORD_BIT_SIZE)?;
             return Ok(Some((one.clone()?, one)));
@@ -4338,7 +4328,12 @@ impl ExactNumNumber {
             v.set_inexact(false);
             Ok(v)
         };
-        let (ea, eb, ec, ez) = (exact(self)?, exact(b)?, exact(c)?, exact(z)?);
+        let (ea, eb, ec, ez) = (
+            trim_low_zero_words(exact(self)?)?,
+            trim_low_zero_words(exact(b)?)?,
+            trim_low_zero_words(exact(c)?)?,
+            trim_low_zero_words(exact(z)?)?,
+        );
         let ctx = Hyp2f1Split {
             a: &ea,
             b: &eb,

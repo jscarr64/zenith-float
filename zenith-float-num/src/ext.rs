@@ -3532,8 +3532,6 @@ Accuracy: correctly-rounded",
         cc: &mut Consts,
     ) -> Self {
         match &self.inner {
-            // W₋₁(±0) = −∞, the x → 0⁻ limit, exact (as ln 0 = −∞).
-            Flavor::Value(v) if minus1 && v.is_zero() => INF_NEG,
             Flavor::Value(v) => {
                 Self::result_to_ext_rm(v.lambert_w(minus1, p, rm, cc), v.is_zero(), true, p, rm)
             }

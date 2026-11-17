@@ -12,8 +12,8 @@
 //! `~/pop-logs/paul/2026-11-15/land39/b2/`.
 
 use zenith_float::{
-    Consts, ExactComplex, ExactInt, ExactNum, ExactRational, Ieee32, Ieee64, Radix, RawKind,
-    RawParts, RoundingMode, Sign, INF_NEG, INF_POS, NAN,
+    Consts, Error, ExactComplex, ExactInt, ExactNum, ExactRational, Ieee32, Ieee64, Radix, RawKind,
+    RawParts, RoundingMode, Sign, INF_NEG, INF_POS, NAN, WORD_BIT_SIZE,
 };
 
 const ROWS: &str = include_str!("tier1/rows.tsv");
@@ -2440,6 +2440,42 @@ fn zf_70_hypergeom_2f1_long_terminating_exact() {
     }
 }
 
+/// ZF-70: no size-threshold refusal. The old 2^46-bit estimate (Paul's addition,
+/// mislabelled as a Jeff ruling) refused when `n * 3 * (w0 + 2*WORD_BIT_SIZE) > 2^46`.
+/// A degree just past that estimate, at high input precision, with small integer
+/// inputs: ₂F₁(−n, 1; 1; 1/2) = 2^{−n}, a tiny exact dyadic. It must compute, not
+/// return MemoryAllocation or NaN.
+#[test]
+fn zf_70_terminating_2f1_no_size_threshold() {
+    let mut cc = Consts::new().expect("Consts");
+    let p_in = 1 << 30;
+    let dest = 64usize;
+    let rm = RoundingMode::ToEven;
+    let one = ExactNum::from_u8(1, p_in);
+    let half = ExactNum::from_u8(1, p_in).ldexp(-1, p_in, rm);
+    let w0 = one
+        .mantissa_max_bit_len()
+        .expect("one")
+        .max(half.mantissa_max_bit_len().expect("half"));
+    let per = 3 * (w0 + 2 * WORD_BIT_SIZE);
+    let n = (1usize << 46) / per + 1;
+    let a = ExactNum::from_i64(-(n as i64), p_in);
+    let v = a.hypergeom_2f1(&one, &one, &half, dest, rm, &mut cc);
+    let want = ExactNum::from_u8(1, dest).ldexp(-(n as i64), dest, rm);
+    assert!(
+        !v.is_nan(),
+        "2F1(-{n},1;1;1/2) must compute, not error: {v} {:?}",
+        v.err()
+    );
+    assert_eq!(
+        v.compare(&want),
+        Some(0),
+        "2F1(-{n},1;1;1/2) p={dest}: {v} want {want} {:?}",
+        v.err()
+    );
+    assert!(!v.inexact(), "2F1(-{n},1;1;1/2) flagged inexact");
+}
+
 /// ZF-08 (follow-up): values the 16-byte inline record cannot hold were refused with
 /// MemoryAllocation although nothing is allocated; it is a format limit, now InvalidArgument.
 /// Both cases: a mantissa wider than BINARY_INLINE_MANT_BITS, and |exponent| >= 2^31 with
@@ -2669,7 +2705,7 @@ fn zf_31_lambert_w_correctly_rounded() {
             }
         }
     }
-    for (m1, xs) in [(false, "-3p-3"), (true, "-3p-3"), (true, "1p0")] {
+    for (m1, xs) in [(false, "-3p-3"), (true, "-3p-3"), (true, "1p0"), (true, "0")] {
         let x = parse_real(xs).expect("x");
         let v = if m1 {
             x.lambert_wm1(64, RoundingMode::ToEven, &mut cc)
@@ -2798,10 +2834,10 @@ fn zf_72_no_abort_si_barnes_g_zeta() {
     }
 }
 
-/// lambert_wm1(±0) is −∞, the x → 0⁻ limit of W₋₁ (Jeff ruling 2026-11-15 3:57 PM), exactly, in every mode and
-/// precision (like ln(0) = −∞); it was NaN(InvalidArgument).
+/// lambert_wm1(±0) is NaN(InvalidArgument). Jeff wrote "Lambert W staying NaN at
+/// zero" (2026-11-15); 6227d48's −∞ was a mislabelled ruling and is reverted.
 #[test]
-fn zf_31_lambert_wm1_zero_is_neg_inf() {
+fn zf_31_lambert_wm1_zero_is_nan() {
     let mut cc = Consts::new().expect("Consts");
     for xs in ["0", "-0"] {
         let x = parse_real(xs).expect("x");
@@ -2809,7 +2845,7 @@ fn zf_31_lambert_wm1_zero_is_neg_inf() {
             for rm in MODES {
                 let v = x.lambert_wm1(p, rm, &mut cc);
                 assert!(
-                    v.is_inf() && v.is_negative() && !v.inexact(),
+                    v.is_nan() && v.err() == Some(Error::InvalidArgument),
                     "W-1({xs}) p={p} {rm:?}: {v} {:?}",
                     v.err()
                 );
