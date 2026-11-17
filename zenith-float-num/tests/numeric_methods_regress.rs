@@ -137,7 +137,7 @@ fn ode_rtol_and_equal_exponent_span() -> Result<(), Box<dyn std::error::Error>> 
         RM,
         &mut cc,
     )
-    .ok_or("none value")?;
+    .map_err(|e| format!("{e}"))?;
     assert!(close(y.get(y.len() - 1).ok_or("none value")?, &e, 33));
     // Span [2, 3] (1.0.4: rejected as not t0 < t1): y' = y, y(2) = 1 → y(3) = e.
     let (_, y) = rk4(

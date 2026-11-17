@@ -157,8 +157,8 @@ fn method(op: &str, p: usize, cc: &mut Consts) -> ExactNum {
                 RM,
                 cc,
             ) {
-                Some((_, y)) => y.get(y.len() - 1).cloned().unwrap_or_else(nan),
-                None => nan(),
+                Ok((_, y)) => y.get(y.len() - 1).cloned().unwrap_or_else(nan),
+                Err(_) => nan(),
             }
         }
         _ => nan(),

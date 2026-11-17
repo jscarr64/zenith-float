@@ -371,6 +371,7 @@ fn run_ode(row: &serde_json::Value) -> Result<(), String> {
                 p,
                 rm,
             )
+            .ok_or_else(|| "solver returned None".to_string())?
         }
         "rk4" => {
             let steps = row.get("steps").and_then(|v| v.as_u64()).unwrap_or(40) as usize;
@@ -384,6 +385,7 @@ fn run_ode(row: &serde_json::Value) -> Result<(), String> {
                 rm,
                 &mut cc,
             )
+            .ok_or_else(|| "solver returned None".to_string())?
         }
         "rk45" => {
             let atol = parse_at(row["atol"].as_str().unwrap_or("1e-8"), p, rm, &mut cc);
@@ -399,10 +401,10 @@ fn run_ode(row: &serde_json::Value) -> Result<(), String> {
                 rm,
                 &mut cc,
             )
+            .map_err(|e| format!("solver: {e}"))?
         }
         other => return Err(format!("unknown ode {other}")),
-    }
-    .ok_or("solver returned None")?;
+    };
     let last = ys.1.get(ys.1.len().saturating_sub(1)).ok_or("empty y")?;
     let err = if let Some(tol) = row.get("tol").and_then(|v| v.as_str()) {
         parse_at(tol, stored(p).max(64), RoundingMode::Up, &mut cc)
