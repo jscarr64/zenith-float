@@ -159,8 +159,6 @@ pub use crate::ode::ode_min_step;
 pub use crate::ode::rk4;
 pub use crate::ode::rk45_adaptive;
 pub use crate::ode::OdeError;
-pub use crate::ode::ODE_MAX_STEPS;
-pub use crate::ode::ODE_MIN_STEP;
 pub use crate::ops::consts::CachedFBig;
 pub use crate::ops::consts::ConstCache;
 pub use crate::ops::consts::ConstCacheInfo;

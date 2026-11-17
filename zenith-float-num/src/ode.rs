@@ -7,12 +7,8 @@ use crate::ExactNumArray;
 use crate::RoundingMode;
 use alloc::vec::Vec;
 
-/// Maximum accepted steps for any solver in this module.
-pub const ODE_MAX_STEPS: usize = 65536;
-
-/// Default minimum step exponent: `h_min = 2^{ODE_MIN_STEP}`.
-pub const ODE_MIN_STEP: i32 = -256;
-
+/// Minimum step at working precision `p`: `h_min = 2^{-p}`, the unit in the
+/// last place of a unit-scale value. A step below this cannot be represented.
 /// Safety factor numerator for Dormand–Prince step updates (`9/10`).
 const ODE_FAC_NUM: i64 = 9;
 /// Safety factor denominator for Dormand–Prince step updates.
@@ -34,9 +30,10 @@ fn frac(n: i64, d: i64, p: usize, rm: RoundingMode) -> ExactNum {
     ExactNum::from_i64(n, p).div(&ExactNum::from_i64(d, p), p, rm)
 }
 
-/// Minimum step `2^{ODE_MIN_STEP}` at precision `p`.
+/// Minimum representable step `2^{-p}` at precision `p`.
 pub fn ode_min_step(p: usize, rm: RoundingMode) -> ExactNum {
-    ExactNum::from_u8(1, p).ldexp(crate::defs::Exponent::from(ODE_MIN_STEP), p, rm)
+    let exp = i64::try_from(p).ok().map(|n| -n).unwrap_or(i64::MIN / 4);
+    ExactNum::from_u8(1, p).ldexp(exp, p, rm)
 }
 
 /// Why an ODE call stopped.
@@ -47,10 +44,11 @@ pub enum OdeError {
     /// Non-finite values, `t1 ≤ t0`, a negative tolerance, a non-finite
     /// derivative or step, or a failed allocation of the output arrays.
     InvalidArgument,
-    /// A probe step of size `(t1-t0)/`[`ODE_MAX_STEPS`] already misses the
-    /// tolerance, or the accepted-step (or attempt) cap is hit before `t1`.
-    /// Jeff ruling 2026-11-16 8:12 PM CT: this must be a clear error, not
-    /// a silent `None` (ZF-54).
+    /// The step size has fallen below what the working precision can
+    /// represent, or the error estimate cannot decrease at the current
+    /// precision (for example a zero tolerance with a method whose
+    /// truncation term is nonzero). A clear error, not a silent `None`
+    /// (ZF-54).
     ToleranceUnreachable,
 }
 
@@ -79,25 +77,15 @@ fn to_row(p: usize, rm: RoundingMode, vals: &[ExactNum]) -> Option<ExactNumArray
     ExactNumArray::from_shape(p, 1, rounded.len(), &rounded)
 }
 
-fn push_pair(
-    ts: &mut Vec<ExactNum>,
-    ys: &mut Vec<ExactNum>,
-    t: ExactNum,
-    y: ExactNum,
-    cap: usize,
-) -> bool {
-    if ts.len() >= cap {
-        return false;
-    }
+fn push_pair(ts: &mut Vec<ExactNum>, ys: &mut Vec<ExactNum>, t: ExactNum, y: ExactNum) {
     ts.push(t);
     ys.push(y);
-    true
 }
 
 /// Classical RK4 for `y' = f(t, y)` on `[t0, t1]` with `n_steps` equal steps.
 ///
-/// Returns row arrays `(t, y)` of length `n_steps+1`. `None` if `n_steps` is 0
-/// or greater than [`ODE_MAX_STEPS`], `t1 ≤ t0`, or a value is non-finite.
+/// Returns row arrays `(t, y)` of length `n_steps+1`. `None` if `n_steps` is 0,
+/// `t1 ≤ t0`, or a value is non-finite. A huge `n_steps` may fail to allocate.
 pub fn rk4<F>(
     mut f: F,
     t0: &ExactNum,
@@ -111,14 +99,14 @@ pub fn rk4<F>(
 where
     F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if n_steps == 0 || n_steps > ODE_MAX_STEPS {
+    if n_steps == 0 {
         return None;
     }
     if !finite(t0) || !finite(y0) || !finite(t1) || t0.compare(t1) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
-    let n_f = ExactNum::from_u32(n_steps as u32, wrk);
+    let n_f = ExactNum::from_u64(n_steps as u64, wrk);
     let h = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None).div(&n_f, wrk, RoundingMode::None);
     let two = ExactNum::from_u8(2, wrk);
     let six = ExactNum::from_u8(6, wrk);
@@ -174,7 +162,7 @@ where
             wrk,
             RoundingMode::None,
         );
-        t = ExactNum::from_u32((k + 1) as u32, wrk)
+        t = ExactNum::from_u64((k + 1) as u64, wrk)
             .mul(&h, wrk, RoundingMode::None)
             .add(t0, wrk, RoundingMode::None);
         if !finite(&t) || !finite(&y) {
@@ -201,14 +189,14 @@ pub fn euler<F>(
 where
     F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode) -> ExactNum,
 {
-    if n_steps == 0 || n_steps > ODE_MAX_STEPS {
+    if n_steps == 0 {
         return None;
     }
     if !finite(t0) || !finite(y0) || !finite(t1) || t0.compare(t1) != Some(-1) {
         return None;
     }
     let wrk = work_p(p);
-    let n_f = ExactNum::from_u32(n_steps as u32, wrk);
+    let n_f = ExactNum::from_u64(n_steps as u64, wrk);
     let h = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None).div(&n_f, wrk, RoundingMode::None);
     let mut t = t0.clone();
     let mut y = y0.clone();
@@ -228,7 +216,7 @@ where
             wrk,
             RoundingMode::None,
         );
-        t = ExactNum::from_u32((k + 1) as u32, wrk)
+        t = ExactNum::from_u64((k + 1) as u64, wrk)
             .mul(&h, wrk, RoundingMode::None)
             .add(t0, wrk, RoundingMode::None);
         if !finite(&t) || !finite(&y) {
@@ -482,39 +470,29 @@ fn step_ok(err: &ExactNum, scale: &ExactNum) -> bool {
         || err.compare(scale) == Some(0)
 }
 
-/// Dormand–Prince RK5(4) with absolute / relative step control.
-///
-/// Accepts a step when `|y₅−y₄| ≤ atol + rtol max(|y|,|y₅|)`. Step size is
-/// updated by `(atol_scale / err)^{1/5}` with safety `9/10`, growth cap 5,
-/// shrink cap `1/5`.
-///
-/// Returns [`OdeError::InvalidArgument`] if `t1 ≤ t0`, a value is non-finite,
-/// a tolerance is negative, or the output arrays cannot be allocated.
-/// Returns [`OdeError::ToleranceUnreachable`] when a probe step of size
-/// `(t1-t0)/`[`ODE_MAX_STEPS`] already misses the tolerance, when the
-/// accepted-step or attempt cap is hit before `t1`, or when the step falls
-/// below [`ode_min_step`] (ZF-54; Jeff ruling 2026-11-16 8:12 PM CT).
-pub fn rk45_adaptive<F>(
+fn wrk_supports_tol(atol: &ExactNum, rtol: &ExactNum, y: &ExactNum, wrk: usize) -> bool {
+    let scale = step_scale(atol, rtol, y, y, wrk);
+    if scale.is_zero() || !finite(&scale) {
+        return false;
+    }
+    let floor = ode_min_step(wrk, RoundingMode::None);
+    let padded = floor.ldexp(8, wrk, RoundingMode::None);
+    matches!(padded.compare(&scale), Some(c) if c < 0)
+}
+
+fn rk45_at_prec<F>(
     mut f: F,
     t0: &ExactNum,
     y0: &ExactNum,
     t1: &ExactNum,
     atol: &ExactNum,
     rtol: &ExactNum,
-    p: usize,
-    rm: RoundingMode,
+    wrk: usize,
     cc: &mut Consts,
-) -> Result<(ExactNumArray, ExactNumArray), OdeError>
+) -> Result<(Vec<ExactNum>, Vec<ExactNum>), OdeError>
 where
     F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if !finite(t0) || !finite(y0) || !finite(t1) || !finite(atol) || !finite(rtol) {
-        return Err(OdeError::InvalidArgument);
-    }
-    if t0.compare(t1) != Some(-1) || atol.is_negative() || rtol.is_negative() {
-        return Err(OdeError::InvalidArgument);
-    }
-    let wrk = work_p(p);
     let tab = Dp45::new(wrk, RoundingMode::None);
     let hmin = ode_min_step(wrk, RoundingMode::None);
     let fac = frac(ODE_FAC_NUM, ODE_FAC_DEN, wrk, RoundingMode::None);
@@ -525,44 +503,36 @@ where
     let _ = t.set_precision(wrk, RoundingMode::None);
     let _ = y.set_precision(wrk, RoundingMode::None);
     let span = ExactNum::sub_ref(t1, t0, wrk, RoundingMode::None);
-    // Coarsest step that can still reach t1 in ODE_MAX_STEPS accepted steps.
-    // If a Dormand–Prince step of that size already misses the tolerance,
-    // smaller accepted steps cannot finish in the cap either (local error
-    // shrinks like h^5). ZF-54: atol=2^{-512} on [0,1] at p=1024.
-    let cap_n = ExactNum::from_u32(ODE_MAX_STEPS as u32, wrk);
-    let h_budget = span.clone().div(&cap_n, wrk, RoundingMode::None);
-    if h_budget.compare(&hmin) == Some(-1) || h_budget.is_zero() || h_budget.is_negative() {
-        return Err(OdeError::ToleranceUnreachable);
-    }
     let mut h = span.ldexp(-4, wrk, RoundingMode::None);
     let mut ts = Vec::new();
     let mut ys = Vec::new();
-    if !push_pair(&mut ts, &mut ys, t.clone(), y.clone(), ODE_MAX_STEPS + 1) {
-        return Err(OdeError::InvalidArgument);
-    }
-    // Probe at h_budget: if this step fails the error test, the cap will be
-    // exhausted before t1.
-    {
-        let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h_budget, wrk, RoundingMode::None, cc)
-            .ok_or(OdeError::InvalidArgument)?;
-        let err = ExactNum::sub_ref(&y5, &y4, wrk, RoundingMode::None).abs();
-        let scale = step_scale(atol, rtol, &y, &y5, wrk);
-        if !step_ok(&err, &scale) {
-            return Err(OdeError::ToleranceUnreachable);
-        }
-    }
-    let mut accepted = 0usize;
-    let mut attempts = 0usize;
+    push_pair(&mut ts, &mut ys, t.clone(), y.clone());
     while t.compare(t1) == Some(-1) {
-        if accepted >= ODE_MAX_STEPS || attempts >= ODE_MAX_STEPS.saturating_mul(4) {
-            return Err(OdeError::ToleranceUnreachable);
-        }
-        attempts += 1;
         let remain = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
         if h.compare(&remain) == Some(1) {
-            h = remain;
+            h = remain.clone();
         }
-        if h.compare(&hmin) == Some(-1) || h.is_zero() || h.is_negative() {
+        let t_try = ExactNum::add_ref(&t, &h, wrk, RoundingMode::None);
+        let no_progress = t_try.compare(&t) == Some(0)
+            || h.is_zero()
+            || h.is_negative()
+            || !finite(&h)
+            || h.compare(&hmin) == Some(-1);
+        if no_progress {
+            let yp = f(&t, &y, wrk, RoundingMode::None, cc);
+            if !finite(&yp) {
+                return Err(OdeError::InvalidArgument);
+            }
+            let leftover = remain.abs().mul(&yp.abs(), wrk, RoundingMode::None);
+            let scale = step_scale(atol, rtol, &y, &y, wrk);
+            if leftover.is_zero()
+                || leftover.compare(&scale) == Some(-1)
+                || leftover.compare(&scale) == Some(0)
+            {
+                t = t1.clone();
+                push_pair(&mut ts, &mut ys, t.clone(), y.clone());
+                break;
+            }
             return Err(OdeError::ToleranceUnreachable);
         }
         let (y5, y4) = dp45_step(&tab, &mut f, &t, &y, &h, wrk, RoundingMode::None, cc)
@@ -576,10 +546,23 @@ where
             if t.compare(t1) == Some(1) {
                 t = t1.clone();
             }
-            if !push_pair(&mut ts, &mut ys, t.clone(), y.clone(), ODE_MAX_STEPS + 1) {
+            if !finite(&t) || !finite(&y) {
                 return Err(OdeError::InvalidArgument);
             }
-            accepted += 1;
+            push_pair(&mut ts, &mut ys, t.clone(), y.clone());
+        } else {
+            // Error stuck at the rounding floor cannot be driven down at this wrk.
+            let floor = ode_min_step(wrk, RoundingMode::None).mul(
+                &ExactNum::from_u8(1, wrk).add(&y.clone().abs(), wrk, RoundingMode::None),
+                wrk,
+                RoundingMode::None,
+            );
+            if !err.is_zero()
+                && (err.compare(&floor) == Some(-1) || err.compare(&floor) == Some(0))
+                && err.compare(&scale) == Some(1)
+            {
+                return Err(OdeError::ToleranceUnreachable);
+            }
         }
         let ratio = if err.is_zero() {
             grow.clone()
@@ -600,25 +583,68 @@ where
         if !ok && !finite(&h) {
             return Err(OdeError::InvalidArgument);
         }
-        let leftover = ODE_MAX_STEPS.saturating_sub(accepted);
-        if leftover == 0 {
-            return Err(OdeError::ToleranceUnreachable);
-        }
-        let remain = ExactNum::sub_ref(t1, &t, wrk, RoundingMode::None);
-        if remain.is_positive() {
-            let reach = h.clone().mul(
-                &ExactNum::from_u32(leftover as u32, wrk),
-                wrk,
-                RoundingMode::None,
-            );
-            if remain.compare(&reach) == Some(1) {
-                return Err(OdeError::ToleranceUnreachable);
+    }
+    Ok((ts, ys))
+}
+
+/// Dormand–Prince RK5(4) with absolute / relative step control.
+///
+/// Accepts a step when `|y₅−y₄| ≤ atol + rtol max(|y|,|y₅|)`. Step size is
+/// updated by `(atol_scale / err)^{1/5}` with safety `9/10`, growth cap 5,
+/// shrink cap `1/5`.
+///
+/// Returns [`OdeError::InvalidArgument`] if `t1 ≤ t0`, a value is non-finite,
+/// a tolerance is negative, or the output arrays cannot be allocated.
+/// Returns [`OdeError::ToleranceUnreachable`] when the step falls below
+/// [`ode_min_step`] (what the working precision can represent), or when the
+/// error estimate cannot decrease at the current precision (ZF-54). When the
+/// tolerance is finer than the current working precision can support, the
+/// working precision is raised and the integration is retried.
+pub fn rk45_adaptive<F>(
+    mut f: F,
+    t0: &ExactNum,
+    y0: &ExactNum,
+    t1: &ExactNum,
+    atol: &ExactNum,
+    rtol: &ExactNum,
+    p: usize,
+    rm: RoundingMode,
+    cc: &mut Consts,
+) -> Result<(ExactNumArray, ExactNumArray), OdeError>
+where
+    F: FnMut(&ExactNum, &ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
+{
+    if !finite(t0) || !finite(y0) || !finite(t1) || !finite(atol) || !finite(rtol) {
+        return Err(OdeError::InvalidArgument);
+    }
+    if t0.compare(t1) != Some(-1) || atol.is_negative() || rtol.is_negative() {
+        return Err(OdeError::InvalidArgument);
+    }
+    if atol.is_zero() && rtol.is_zero() {
+        return Err(OdeError::ToleranceUnreachable);
+    }
+    let mut wrk = work_p(p);
+    loop {
+        match rk45_at_prec(&mut f, t0, y0, t1, atol, rtol, wrk, cc) {
+            Ok((ts, ys)) => {
+                let ts = to_row(p, rm, &ts).ok_or(OdeError::InvalidArgument)?;
+                let ys = to_row(p, rm, &ys).ok_or(OdeError::InvalidArgument)?;
+                return Ok((ts, ys));
+            }
+            Err(OdeError::InvalidArgument) => return Err(OdeError::InvalidArgument),
+            Err(OdeError::ToleranceUnreachable) => {
+                if wrk_supports_tol(atol, rtol, y0, wrk) {
+                    return Err(OdeError::ToleranceUnreachable);
+                }
+                let bump = crate::defs::WORD_BIT_SIZE.max(32);
+                let next = wrk.saturating_add(bump);
+                if next <= wrk {
+                    return Err(OdeError::InvalidArgument);
+                }
+                wrk = next;
             }
         }
     }
-    let ts = to_row(p, rm, &ts).ok_or(OdeError::InvalidArgument)?;
-    let ys = to_row(p, rm, &ys).ok_or(OdeError::InvalidArgument)?;
-    Ok((ts, ys))
 }
 
 #[cfg(test)]
@@ -632,7 +658,7 @@ mod tests {
 
     /// Global RK4 error on `y'=-y` with `h=10^{-3}` is `O(h^4) ≈ 10^{-12}`.
     const RK4_EXP_ERR_DIGITS: i64 = 12;
-    /// Adaptive gold the step cap can actually meet (plan `1e-50` needs ~10¹² steps).
+    /// Adaptive gold: 10^{-12} is well above the representable step at p=256.
     const RK45_ATOL_DIGITS: i64 = 12;
     const EULER_OH_STEPS: usize = 1000;
 
@@ -740,20 +766,17 @@ mod tests {
         Ok(())
     }
 
-    /// ZF-54: atol=rtol=2^{-512} on [0,1] at p=1024 cannot finish inside
-    /// [`ODE_MAX_STEPS`] (a 5th-order step of size 1/`ODE_MAX_STEPS` still
-    /// misses the tolerance). The solver must return
-    /// [`OdeError::ToleranceUnreachable`] without running the cap (65536
-    /// Dormand–Prince steps, historically ~67 s). Jeff ruling 2026-11-16
-    /// 8:12 PM CT: a clear error, not a silent `None`.
+    /// ZF-54: a zero tolerance cannot be met by Dormand–Prince (nonzero
+    /// truncation term). The solver returns
+    /// [`OdeError::ToleranceUnreachable`] immediately, a clear error, not a
+    /// silent `None`.
     #[test]
     fn zf_54_rk45_impossible_tol_refuses_early() -> Result<(), crate::Error> {
-        let p = 1024;
+        let p = 64;
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
-        let tol = ExactNum::from_u8(1, p).ldexp(-512, p, rm);
         let mut evals = 0u32;
         let got = rk45_adaptive(
             |t, _y, q, r, cc| {
@@ -763,56 +786,52 @@ mod tests {
             &zero,
             &one,
             &one,
-            &tol,
-            &tol,
+            &zero,
+            &zero,
             p,
             rm,
             &mut cc,
         );
         assert_eq!(got.err(), Some(OdeError::ToleranceUnreachable));
-        assert!(
-            evals <= 16,
-            "refused only after {evals} f-evals; cap would be ~7*65536"
-        );
+        assert_eq!(evals, 0, "zero tolerance refuses before any step");
         Ok(())
     }
 
-    /// ZF-54: after the opening probe succeeds, a later stiff region forces
-    /// the step below what the remaining budget can cover. That cap exit is
-    /// the same [`OdeError::ToleranceUnreachable`] as the up-front probe.
+    /// A caller-requested RK4 / Euler length above the old 65536 cap is a
+    /// computable grid, not a refusal.
     #[test]
-    fn zf_54_rk45_step_cap_is_tolerance_unreachable() -> Result<(), crate::Error> {
-        let p = 256;
+    fn caps_ode_fixed_step_no_length_cap() -> Result<(), crate::Error> {
+        let p = 64;
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
         let zero = ExactNum::new(p);
         let one = ExactNum::from_u8(1, p);
-        let half = ExactNum::from_u8(1, p).ldexp(-1, p, rm);
-        let tol = ExactNum::from_u8(1, p).ldexp(-20, p, rm);
-        let mut evals = 0u32;
-        let got = rk45_adaptive(
-            |t, y, q, r, _cc| {
-                evals += 1;
-                if t.compare(&half) == Some(-1) {
-                    ExactNum::new(q)
-                } else {
-                    y.clone().ldexp(64, q, r)
-                }
-            },
+        let n = 65_537usize;
+        let (t, y) = rk4(
+            |_t, y, _p, _rm, _cc| y.neg_via_mul(),
             &zero,
             &one,
             &one,
-            &tol,
-            &tol,
+            n,
             p,
             rm,
             &mut cc,
-        );
-        assert_eq!(got.err(), Some(OdeError::ToleranceUnreachable));
-        assert!(
-            evals <= 10_000,
-            "cap exit only after {evals} f-evals; must not run the full 65536 steps"
-        );
+        )
+        .ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(t.len(), n + 1);
+        assert_eq!(y.len(), n + 1);
+        let (te, ye) = euler(
+            |_t, y, _p, _rm| y.neg_via_mul(),
+            &zero,
+            &one,
+            &one,
+            n,
+            p,
+            rm,
+        )
+        .ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(te.len(), n + 1);
+        assert_eq!(ye.len(), n + 1);
         Ok(())
     }
 }

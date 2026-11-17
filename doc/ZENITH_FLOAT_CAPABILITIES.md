@@ -67,8 +67,7 @@ Depend on `zenith-float`, not `zenith-float-num`. The kernel crate is an impleme
 | `TANH_SINH_LEVELS_MAX` | `8` — max tanh–sinh step halvings after `h = 2π/(p ln 2)` |
 | `ROOT_MAX_ITER` | `256` — cap on bisection / Newton / Brent / Illinois steps |
 | `ROOT_DEFAULT_TOL` | `−256` — default absolute tolerance exponent (`2^{ROOT_DEFAULT_TOL}`) |
-| `ODE_MAX_STEPS` | `65536` — accepted-step cap for RK4 / RK45 / Euler |
-| `ODE_MIN_STEP` | `−256` — minimum RK45 step exponent (`h_min = 2^{ODE_MIN_STEP}`) |
+| `ode_min_step(p)` | `2^{-p}` — minimum representable RK45 step at the working precision |
 | `DSP_MAX_POINTS` | `16384` — default max real length for `dct`/`idct`/`dst`/`idst` and windows (was `2048`; `2N`-point FFT sized by this cap); per call: `*_with_max_points` |
 | `IEEE_SIMD_LANE_WIDTH` | `4` — `u32` lanes per integer SIMD vector; binary64 uses 2 `u64` lanes |
 | `BINARY_INLINE_LEN` | `16` — stack record: flags, version, `n_sig`, inexact, `i32` exponent BE, two `u32` limbs BE; `\|exponent\| ≥ 2^31` uses the wide-exponent records `0x0C`/`0x0D` (inline, top 40 mantissa bits) and `0x12`/`0x13` (heap, 8-byte exponent) |

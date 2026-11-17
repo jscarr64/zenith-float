@@ -121,7 +121,7 @@ From `zenith_float` / `zenith_float_num`:
 - Word/exponent constants listed in §3
 - `MAX_PREC_RETRY`, `INLINE_WORDS`
 - `NAN`, `INF_POS`, `INF_NEG`
-- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `ODE_MAX_STEPS`, `ODE_MIN_STEP`, `DSP_MAX_POINTS`, `FFT_MAX_POINTS`, `IEEE_SIMD_LANE_WIDTH`, `POLLARD_RHO_ITER_MAX`, `BINARY_INLINE_LEN`, `BINARY_INLINE_MANT_BITS`, `BINARY_FORMAT_VERSION`, `BINARY_MAX_U32`, `BINARY_MAX_ELEMS`, `CSV_MAX_ROWS`, `CSV_MAX_COLS`, `PROPTEST_CASES`
+- `POLY_COMPANION_CLOSED_DEG`, `CHEBYSHEV_MAX_DEGREE`, `ORTHOPOLY_N_MAX`, `QUADRATURE_MAX_NODES`, `TANH_SINH_LEVELS_MAX`, `ROOT_MAX_ITER`, `ROOT_DEFAULT_TOL`, `DSP_MAX_POINTS`, `FFT_MAX_POINTS`, `IEEE_SIMD_LANE_WIDTH`, `POLLARD_RHO_ITER_MAX`, `BINARY_INLINE_LEN`, `BINARY_INLINE_MANT_BITS`, `BINARY_FORMAT_VERSION`, `BINARY_MAX_U32`, `BINARY_MAX_ELEMS`, `CSV_MAX_ROWS`, `CSV_MAX_COLS`, `PROPTEST_CASES`
 - Feature `random`: `random_seed`, `reseed_random`, `seeded_random`, `DEFAULT_RANDOM_SEED`, `RandomDist`
 
 Module `ctx` is public. `macro_util` is `#[doc(hidden)]` and exists for `expr!` / `cexpr!` expansion (`check_exponent_range`, `check_complex_exponent_range`, `complex_cancel_bits`, `compute_added_err`, `ErrAlgo`, `TrigFun`, …). Do not treat it as application API.
@@ -147,7 +147,7 @@ Hardware floating-point is not used. `Ieee32` / `Ieee64` store IEEE-754 binary32
 | Catalog specials | Scorer `scorer_gi`/`scorer_hi`; Kelvin `kelvin_ber`/`bei`/`ker`/`kei` (+ `_nu`); Struve `struve_h`; Anger `anger_j`; Weber `weber_e`; Clausen `clausen_cl2`/`clausen_cl3`; Barnes `barnes_g`; `hurwitz_zeta` / `riemann_zeta` / `polygamma`; `hypergeom_0f1`/`1f1`/`pfq`; `lambert_w0`/`wm1`; `polylog`; Meijer `meijer_g`; Fox `fox_h`; local Heun `heun_g`; confluent Heun `heun_c` (DLMF 31.12.1). |
 | Quadrature | `gauss_legendre(f,a,b,n,…)`; `tanh_sinh(f,a,b,…)`; `gauss_laguerre(f,n,…)`; `gauss_hermite(f,n,…)`. `n ≤ QUADRATURE_MAX_NODES`. Tanh–sinh uses `h=2π/(p ln 2)` and up to `TANH_SINH_LEVELS_MAX` halvings. |
 | Root finding | `bisect`/`newton`/`brent`/`illinois` on `ExactNum`. Opposite signs required for bracket methods (`None` otherwise). `ROOT_MAX_ITER=256`; `root_default_tol` is `2^{ROOT_DEFAULT_TOL}`. |
-| ODE | `rk4`/`rk45_adaptive`/`euler` return `(t, y)` row `ExactNumArray`s. Dormand–Prince 5(4) with `atol`/`rtol`; `h_min=2^{ODE_MIN_STEP}`; cap `ODE_MAX_STEPS`. |
+| ODE | `rk4`/`rk45_adaptive`/`euler` return `(t, y)` row `ExactNumArray`s. Dormand–Prince 5(4) with `atol`/`rtol`; `h_min=2^{-p}` at the working precision. Unreachable tolerances return `OdeError::ToleranceUnreachable`. |
 | DSP | Type-II `dct`/`dst` via a `2N` FFT; type-III inverses (also via a `2N` FFT, `O(N log N)`) scaled so the round-trip is the identity. Each transform has a `*_with_max_points` form taking the length cap per call. `fft_real`/`ifft_real` wrap the radix-2 DFT. Symmetric Hann / Hamming / Blackman / Kaiser / rectangular windows. Real length a power of two ≤ `DSP_MAX_POINTS` (16,384) for transforms; windows allow any `n` in `1..=DSP_MAX_POINTS`. |
 | Modular `ExactInt` | `mod_pow` / `mod_inv` / `miller_rabin` / Brent `pollard_rho`. Zero modulus and non-units are `None`. Cap `POLLARD_RHO_ITER_MAX`. |
 | Hash | FIPS 180-4 `sha256`/`sha512`; HMAC-SHA-256; `constant_time_eq` always scans both slices. |
