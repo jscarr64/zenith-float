@@ -2324,6 +2324,14 @@ impl ExactNumNumber {
         if use_bessel_hankel_real(self, nu, p) {
             return self.bessel_jy_hankel(nu, p, rm, cc, false);
         }
+        // Integer |ν| can fail hankel_order_ok (|ν|² ≥ 2|x|) while |x| is still
+        // in the Hankel range for Y_0 and Y_1. Form those by Hankel and recur
+        // up (Y is dominant in ν, and ν < |x| in the cases this reaches).
+        if hankel_mag_ok(self, p) {
+            if let Some(n) = as_i32_exact(nu, p)? {
+                return self.bessel_y_int_via_hankel01(n, p, rm, cc);
+            }
+        }
         let mut p_inc = WORD_BIT_SIZE;
         let mut p_wrk = p
             .max(self.mantissa_max_bit_len())
@@ -2338,6 +2346,60 @@ impl ExactNumNumber {
                 return Ok(ret);
             }
             bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    /// \(Y_n\) from Hankel \(Y_0,Y_1\) and the forward recurrence, under Ziv.
+    fn bessel_y_int_via_hankel01(
+        &self,
+        n: i32,
+        p: usize,
+        rm: RoundingMode,
+        cc: &mut Consts,
+    ) -> Result<Self, Error> {
+        let mut p_inc = WORD_BIT_SIZE;
+        let mut p_wrk = p.max(self.mantissa_max_bit_len()) + p_inc;
+        loop {
+            let p_x = p_wrk + WORD_BIT_SIZE;
+            let mut ret = self.bessel_y_int_hankel_at(n, p_x, cc)?;
+            if ret.try_set_precision(p, rm, p_wrk)? {
+                ret.set_inexact(ret.inexact() | self.inexact());
+                return Ok(ret);
+            }
+            bump_prec_retry(&mut p_wrk, &mut p_inc, p)?;
+        }
+    }
+
+    fn bessel_y_int_hankel_at(&self, n: i32, p: usize, cc: &mut Consts) -> Result<Self, Error> {
+        let an = n.unsigned_abs();
+        let zero = Self::from_word(0, p)?;
+        let y0 = self.bessel_hankel_y(&zero, p, cc)?;
+        let y = if an == 0 {
+            y0
+        } else {
+            let one = Self::from_word(1, p)?;
+            let y1 = self.bessel_hankel_y(&one, p, cc)?;
+            if an == 1 {
+                y1
+            } else {
+                let mut ym2 = y0;
+                let mut ym1 = y1;
+                for m in 1..an {
+                    let two_m = Self::from_word((2 * m) as Word, p)?;
+                    let ym = two_m
+                        .div(self, p, RoundingMode::None)?
+                        .mul(&ym1, p, RoundingMode::None)?
+                        .sub(&ym2, p, RoundingMode::None)?;
+                    ym2 = ym1;
+                    ym1 = ym;
+                }
+                ym1
+            }
+        };
+        if n >= 0 || n % 2 == 0 {
+            Ok(y)
+        } else {
+            y.neg()
         }
     }
 
@@ -4879,14 +4941,14 @@ const ERFC_UNDERFLOW_EXPONENT: Exponent = 32;
 /// Bernoulli terms for the digamma asymptotic series at precision `p`: `p/8`, 64 to 1024.
 /// With the exact cache (B_2..B_2048 builds once in ~0.9 s release) a 1024 cap keeps the
 /// shift loop short: at p=8448 a 256 cap needs z ≥ 2^22 and hit STIRLING_SHIFT_MAX.
-fn digamma_terms(p: usize) -> usize {
+pub(crate) fn digamma_terms(p: usize) -> usize {
     (p / 8).clamp(64, 1024)
 }
 
 /// Smallest binary exponent `e` (`z ≥ 2^(e-1)`) for which the `k`-th term of a
 /// `terms`-term Stirling-type tail, `≈ (k/(πe·z))^{2k}`, is below `2^-(p+8)`:
 /// `e = ⌈(p+8)/(2k)⌉ + ⌈log2 k⌉ − 2`, never below 8.
-fn asymp_min_exponent(p: usize, terms: usize) -> Exponent {
+pub(crate) fn asymp_min_exponent(p: usize, terms: usize) -> Exponent {
     let mut lg = 0usize;
     while (1usize << lg) < terms {
         lg += 1;

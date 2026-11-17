@@ -3942,3 +3942,85 @@ fn zf_78_format_max_value_general_radix_body() {
         "format/parse 3 in radix 3: {s} -> {back}"
     );
 }
+
+/// ZF-78 Bessel/Kelvin at p=2048: Kelvin is Re/Im of complex J/K, and those
+/// call complex gamma. A child process enforces the budget so a hang fails
+/// verify instead of stalling it.
+#[test]
+fn zf_78_bessel_kelvin_high_prec() {
+    const BUDGET: std::time::Duration = std::time::Duration::from_secs(20);
+    if std::env::var_os("ZF78_BESSEL_CHILD").is_some() {
+        zf_78_bessel_kelvin_high_prec_body();
+        return;
+    }
+    let exe = std::env::current_exe().expect("current_exe");
+    let mut child = std::process::Command::new(exe)
+        .arg("--exact")
+        .arg("zf_78_bessel_kelvin_high_prec")
+        .env("ZF78_BESSEL_CHILD", "1")
+        .env("RUST_TEST_THREADS", "1")
+        .spawn()
+        .expect("spawn ZF-78 Bessel/Kelvin child");
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait().expect("try_wait") {
+            Some(status) => {
+                assert!(
+                    status.success(),
+                    "ZF-78 Bessel/Kelvin child exited {status}: a p=2048 case returned a NaN or failed"
+                );
+                return;
+            }
+            None if start.elapsed() > BUDGET => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "ZF-78 Bessel/Kelvin or complex gamma at p=2048 timed out after {}s",
+                    BUDGET.as_secs()
+                );
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    }
+}
+
+fn zf_78_bessel_kelvin_high_prec_body() {
+    let mut cc = Consts::new().expect("Consts");
+    let p = 2048usize;
+    let rm = RoundingMode::ToEven;
+    let check = |name: &str, v: ExactNum| {
+        assert!(!v.is_nan() && !v.is_inf(), "ZF-78 {name} at p=2048: {v:?}");
+    };
+    let checkc = |name: &str, v: ExactComplex| {
+        assert!(
+            !v.is_nan() && !v.re().is_inf() && !v.im().is_inf(),
+            "ZF-78 {name} at p=2048: {v:?}"
+        );
+    };
+
+    let z = ExactComplex::new(ExactNum::from_i64(3, p), ExactNum::from_i64(1, p));
+    checkc("c.gamma(3+i)", z.gamma(p, rm, &mut cc));
+    checkc("c.digamma(3+i)", z.digamma(p, rm, &mut cc));
+
+    let z = ExactComplex::new(ExactNum::from_i64(1, p), ExactNum::from_i64(1, p));
+    let nu = ExactComplex::new(ExactNum::from_i64(2, p), ExactNum::from_i64(1, p));
+    checkc(
+        "c.bessel_j_nu(1+i, 2+i)",
+        z.bessel_j_nu(&nu, p, rm, &mut cc),
+    );
+
+    let x = ExactNum::from_i64(100, p);
+    let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None);
+    check(
+        "r.kelvin_ber_nu(100, 1/2)",
+        x.kelvin_ber_nu(&half, p, rm, &mut cc),
+    );
+
+    let x = ExactNum::from_i64(700, p);
+    check("r.kelvin_ker(700)", x.kelvin_ker(p, rm, &mut cc));
+    check("r.kelvin_kei(700)", x.kelvin_kei(p, rm, &mut cc));
+
+    let x = ExactNum::from_i64(1000, p);
+    let nu = ExactNum::from_i64(100, p);
+    check("r.bessel_y(1000, 100)", x.bessel_y(&nu, p, rm, &mut cc));
+}

@@ -42,9 +42,37 @@ fn gamma_shift_exp(p: usize) -> Exponent {
     crate::ops::special::stirling_min_exponent(p, 372, 127, GAMMA_STIRLING_MIN_ABS_EXP)
 }
 
-/// Digamma analogue of [`gamma_shift_exp`].
+/// Digamma analogue of [`gamma_shift_exp`]. Kept for the shift-target unit tests;
+/// the runtime path uses [`digamma_stirling_plan`].
+#[allow(dead_code)]
 fn digamma_shift_exp(p: usize) -> Exponent {
     crate::ops::special::stirling_min_exponent(p, 379, 128, DIGAMMA_STIRLING_MIN_ABS_EXP)
+}
+
+/// Stirling term count and shift-target exponent at working precision `p`.
+///
+/// A fixed 64-term tail needs \(|z|\ge 2^{p/127}\), i.e. about a million
+/// \(z\to z+1\) steps at `p = 2048`, which is why complex `gamma` / `digamma`
+/// (and Bessel / Kelvin, which call them) hung there. The real kernel already
+/// raises the term count with `p` (`digamma_terms`) so the target stays near
+/// [`crate::ops::special::asymp_min_exponent`]. This is the same plan.
+fn gamma_stirling_plan(p: usize) -> (usize, Exponent) {
+    let e64 = gamma_shift_exp(p);
+    let k = crate::ops::special::digamma_terms(p);
+    if k > GAMMA_STIRLING_TERMS {
+        let ek = crate::ops::special::asymp_min_exponent(p + WORD_BIT_SIZE, k);
+        if ek < e64 {
+            return (k, ek);
+        }
+    }
+    (GAMMA_STIRLING_TERMS, e64)
+}
+
+/// Digamma plan: always `digamma_terms` / `asymp_min_exponent`, as in the real kernel.
+fn digamma_stirling_plan(p: usize) -> (usize, Exponent) {
+    let terms = crate::ops::special::digamma_terms(p);
+    let e_min = crate::ops::special::asymp_min_exponent(p, terms);
+    (terms, e_min)
 }
 
 /// Positive integers \(n\) for which \(\Gamma(n)=(n-1)!\) is evaluated by multiplying
@@ -218,11 +246,12 @@ where
 
 /// Even Bernoulli numbers \(B_2,\ldots,B_{2k_{\max}}\) (exact tangent numbers, one rounding each;
 /// see `ops::special::even_bernoulli`).
-fn even_bernoulli_numbers(kmax: usize, p: usize) -> Vec<ExactNum> {
-    match crate::ops::special::even_bernoulli(kmax, p) {
-        Ok(v) => v.into_iter().map(ExactNum::from).collect(),
-        Err(e) => (0..kmax).map(|_| ExactNum::nan(Some(e))).collect(),
-    }
+fn even_bernoulli_numbers(kmax: usize, p: usize) -> Result<Vec<ExactNum>, Error> {
+    crate::ops::special::with_even_bernoulli(kmax, p, |v| {
+        v.iter()
+            .map(|b| b.clone().map(ExactNum::from))
+            .collect::<Result<Vec<_>, _>>()
+    })
 }
 
 fn factorial_um1(n: u32, p: usize) -> ExactComplex {
@@ -916,7 +945,7 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut acc = ExactComplex::one(p);
-        let k = gamma_shift_exp(p);
+        let (terms, k) = gamma_stirling_plan(p);
         let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
             acc = acc.mul(z, p, RoundingMode::None);
             *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
@@ -925,7 +954,7 @@ impl ExactComplex {
         if let Err(e) = shifted {
             return nan_pair(e);
         }
-        let lg = z.ln_gamma_stirling(p, cc);
+        let lg = z.ln_gamma_stirling_with(p, terms, cc);
         let g = lg.exp(p, RoundingMode::None, cc);
         g.div(&acc, p, RoundingMode::None)
     }
@@ -952,7 +981,7 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut ln_acc = ExactComplex::zero(p);
-        let k = gamma_shift_exp(p);
+        let (terms, k) = gamma_stirling_plan(p);
         let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
             ln_acc = ExactComplex::add_ref(
                 &ln_acc,
@@ -966,11 +995,11 @@ impl ExactComplex {
         if let Err(e) = shifted {
             return nan_pair(e);
         }
-        z.ln_gamma_stirling(p, cc)
+        z.ln_gamma_stirling_with(p, terms, cc)
             .sub(&ln_acc, p, RoundingMode::None)
     }
 
-    fn ln_gamma_stirling(&self, p: usize, cc: &mut Consts) -> Self {
+    fn ln_gamma_stirling_with(&self, p: usize, terms: usize, cc: &mut Consts) -> Self {
         let ln_z = self.ln(p, RoundingMode::None, cc);
         let zmh = half_c(p).neg().add(self, p, RoundingMode::None);
         let mut s = zmh.mul(&ln_z, p, RoundingMode::None);
@@ -982,9 +1011,13 @@ impl ExactComplex {
             p,
             RoundingMode::None,
         );
-        let bs = even_bernoulli_numbers(GAMMA_STIRLING_TERMS, p);
+        let bs = match even_bernoulli_numbers(terms, p) {
+            Ok(v) => v,
+            Err(e) => return nan_pair(e),
+        };
         let mut zpow = self.clone();
         let mut prev_e = Exponent::MIN;
+        let mut done = false;
         for (k, b) in bs.iter().enumerate() {
             let k = k + 1;
             let two_k = ExactNum::from_u32((2 * k) as u32, p);
@@ -998,6 +1031,7 @@ impl ExactComplex {
                 .exponent()
                 .unwrap_or(Exponent::MIN);
             if term_negligible(&term, p) {
+                done = true;
                 break;
             }
             if k > 2 && e > prev_e {
@@ -1007,6 +1041,9 @@ impl ExactComplex {
             zpow = zpow
                 .mul(self, p, RoundingMode::None)
                 .mul(self, p, RoundingMode::None);
+        }
+        if !done {
+            return nan_pair(Error::PrecisionRetryExhausted);
         }
         s
     }
@@ -1035,7 +1072,7 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         let mut acc = ExactComplex::zero(p);
-        let k = digamma_shift_exp(p);
+        let (terms, k) = digamma_stirling_plan(p);
         let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
             let rec = one.div(z, p, RoundingMode::None);
             acc = ExactComplex::sub_ref(&acc, &rec, p, RoundingMode::None);
@@ -1045,18 +1082,22 @@ impl ExactComplex {
         if let Err(e) = shifted {
             return nan_pair(e);
         }
-        acc.add(&z.digamma_asymp(p, cc), p, RoundingMode::None)
+        acc.add(&z.digamma_asymp(p, terms, cc), p, RoundingMode::None)
     }
 
-    fn digamma_asymp(&self, p: usize, cc: &mut Consts) -> Self {
+    fn digamma_asymp(&self, p: usize, terms: usize, cc: &mut Consts) -> Self {
         let ln_z = self.ln(p, RoundingMode::None, cc);
         let two_z = two_c(p).mul(self, p, RoundingMode::None);
         let half_inv = ExactComplex::one(p).div(&two_z, p, RoundingMode::None);
         let mut s = ln_z.sub(&half_inv, p, RoundingMode::None);
         let z2 = self.mul(self, p, RoundingMode::None);
         let mut zp = ExactComplex::one(p);
-        let bs = even_bernoulli_numbers(GAMMA_STIRLING_TERMS, p);
+        let bs = match even_bernoulli_numbers(terms, p) {
+            Ok(v) => v,
+            Err(e) => return nan_pair(e),
+        };
         let mut prev_e = Exponent::MIN;
+        let mut done = false;
         for (k, b) in bs.iter().enumerate() {
             let k = k + 1;
             zp = zp.mul(&z2, p, RoundingMode::None);
@@ -1069,12 +1110,16 @@ impl ExactComplex {
                 .exponent()
                 .unwrap_or(Exponent::MIN);
             if term_negligible(&term, p) {
+                done = true;
                 break;
             }
             if k > 2 && e > prev_e {
                 break;
             }
             prev_e = e;
+        }
+        if !done {
+            return nan_pair(Error::PrecisionRetryExhausted);
         }
         s
     }
@@ -1349,6 +1394,30 @@ mod tests {
         assert_eq!(shift_cap(gamma_shift_exp(2169)), (1usize << 21) + 2);
         assert_eq!(shift_cap(digamma_shift_exp(2182)), (1usize << 21) + 2);
         Ok(())
+    }
+
+    /// A fixed 64-term tail at dest p = 2048 still has target k = 21 (~2^20 shifts).
+    /// The scaled plan must take more terms and a cap of a few thousand, not a million.
+    #[test]
+    fn gamma_stirling_plan_keeps_high_p_shifts_small() {
+        let (terms, k) = gamma_stirling_plan(2048);
+        assert!(
+            terms > GAMMA_STIRLING_TERMS && shift_cap(k) < (1 << 16),
+            "p=2048 terms={terms} k={k} cap={}",
+            shift_cap(k)
+        );
+        let (terms, k) = gamma_stirling_plan(2048 + 192);
+        assert!(
+            terms > GAMMA_STIRLING_TERMS && shift_cap(k) < (1 << 16),
+            "p=2240 terms={terms} k={k} cap={}",
+            shift_cap(k)
+        );
+        let (terms, k) = digamma_stirling_plan(2048);
+        assert!(
+            terms > GAMMA_STIRLING_TERMS && shift_cap(k) < (1 << 16),
+            "digamma p=2048 terms={terms} k={k} cap={}",
+            shift_cap(k)
+        );
     }
 
     /// Exact shift counts at the shift bound for k = 11 (target |z| >= 2^10 = 1024), from the first

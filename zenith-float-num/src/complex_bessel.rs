@@ -792,6 +792,13 @@ impl ExactComplex {
         if !self.re().is_negative() && !self.re().is_zero() && use_bessel_series(self, dest_p) {
             // J±iY cancels ~3|z| bits here and builds both J_±ν. The I connection
             // is a direct 0F1; only the final subtraction needs the e^{2 Re z} guard.
+            // Integer ν cannot use the I connection (sin(νπ)=0); use the K_0 series
+            // plus the wronskian / recurrence, same as the real kernel.
+            if let Some(n) = integer_nu(nu, work_p) {
+                if let Some(k) = self.bessel_k_integer_series(n, work_p, cc) {
+                    return k;
+                }
+            }
             if let Some(k) = self.bessel_k_from_i(nu, work_p, cc) {
                 return k;
             }
@@ -912,6 +919,115 @@ impl ExactComplex {
 
     /// DLMF 10.27.4. `None` for integer \(\nu\) (the \(Y\) recurrence is the stable form)
     /// or when \(\sin(\nu\pi)\) is too small to guard.
+    /// Integer-order \(K_n\) in the series regime: \(K_0\) from \(I_0\) and the
+    /// \(\psi\)-series (DLMF 10.31.2), \(K_1\) from the wronskian, then the
+    /// forward recurrence. Guard is [`re_pair_cancel_bits`] (the \(I_0\ln(z/2)\)
+    /// cancellation).
+    fn bessel_k_integer_series(&self, n: i32, work_p: usize, cc: &mut Consts) -> Option<Self> {
+        let n = n.unsigned_abs();
+        let guard = re_pair_cancel_bits(self).saturating_add(48);
+        if guard > BESSEL_GUARD_MAX {
+            return None;
+        }
+        let acc = work_p.saturating_add(guard);
+        if acc > work_p.saturating_add(BESSEL_GUARD_MAX) {
+            return None;
+        }
+        let k0 = self.k0_series_c(acc, cc)?;
+        if n == 0 {
+            return Some(k0);
+        }
+        let k1 = self.k1_from_wronskian_c(&k0, acc, cc)?;
+        if n == 1 {
+            return Some(k1);
+        }
+        let mut km2 = k0;
+        let mut km1 = k1;
+        for m in 1..n {
+            let two_m = ExactComplex::from_real(ExactNum::from_u32(2 * m, acc), acc);
+            let km = two_m
+                .div(self, acc, RoundingMode::None)
+                .mul(&km1, acc, RoundingMode::None)
+                .add(&km2, acc, RoundingMode::None);
+            if km.is_nan() {
+                return None;
+            }
+            km2 = km1;
+            km1 = km;
+        }
+        Some(km1)
+    }
+
+    fn k0_series_c(&self, p: usize, cc: &mut Consts) -> Option<Self> {
+        let nu0 = ExactComplex::zero(p);
+        let i0 = self.bessel_i_series(&nu0, p, p, cc);
+        if i0.is_nan() {
+            return None;
+        }
+        let half = self.mul(&half_c(p), p, RoundingMode::None);
+        let z = half.mul(&half, p, RoundingMode::None);
+        let mut fact = ExactComplex::one(p);
+        let mut zk = ExactComplex::one(p);
+        let mut psi = ExactComplex::one(p).digamma_at(p, cc);
+        if psi.is_nan() {
+            return None;
+        }
+        let mut sum = psi.clone();
+        let cap = i_series_term_cap(self, p);
+        let mut done = false;
+        for k in 1..=cap {
+            let kk = ExactComplex::from_real(ExactNum::from_u32(k as u32, p), p);
+            fact = fact.mul(&kk, p, RoundingMode::None);
+            zk = zk.mul(&z, p, RoundingMode::None);
+            let rec = ExactComplex::one(p).div(&kk, p, RoundingMode::None);
+            psi = psi.add(&rec, p, RoundingMode::None);
+            let term = psi
+                .div(
+                    &fact.mul(&fact, p, RoundingMode::None),
+                    p,
+                    RoundingMode::None,
+                )
+                .mul(&zk, p, RoundingMode::None);
+            sum = sum.add(&term, p, RoundingMode::None);
+            if term_negligible(&term, p) {
+                done = true;
+                break;
+            }
+        }
+        if !done || sum.is_nan() {
+            return None;
+        }
+        let v = half
+            .ln(p, RoundingMode::None, cc)
+            .neg_via_mul()
+            .mul(&i0, p, RoundingMode::None)
+            .add(&sum, p, RoundingMode::None);
+        if v.is_nan() {
+            None
+        } else {
+            Some(v)
+        }
+    }
+
+    fn k1_from_wronskian_c(&self, k0: &Self, p: usize, cc: &mut Consts) -> Option<Self> {
+        let nu0 = ExactComplex::zero(p);
+        let nu1 = ExactComplex::one(p);
+        let i0 = self.bessel_i_series(&nu0, p, p, cc);
+        let i1 = self.bessel_i_series(&nu1, p, p, cc);
+        if i0.is_nan() || i1.is_nan() || i0.re().is_zero() && i0.im().is_zero() {
+            return None;
+        }
+        let v = ExactComplex::one(p)
+            .div(self, p, RoundingMode::None)
+            .sub(&i1.mul(k0, p, RoundingMode::None), p, RoundingMode::None)
+            .div(&i0, p, RoundingMode::None);
+        if v.is_nan() {
+            None
+        } else {
+            Some(v)
+        }
+    }
+
     fn bessel_k_from_i(&self, nu: &Self, work_p: usize, cc: &mut Consts) -> Option<Self> {
         if integer_nu(nu, work_p).is_some() {
             return None;

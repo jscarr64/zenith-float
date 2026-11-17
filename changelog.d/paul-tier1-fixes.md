@@ -44,5 +44,12 @@
   estimates the radix exponent and scales with powsi instead of dividing once per unit
   (~10^18 iterations at EXPONENT_MAX). convert_from uses the same scale; format retries
   a short correctly rounded spelling so a directed parse round-trips. Test
-  zf_78_format_max_value_general_radix. Other ZF-78 clusters (Bessel/Kelvin, complex
-  gamma/digamma, 2F1) remain open.
+  zf_78_format_max_value_general_radix.
+- ZF-78 (partial): Bessel/Kelvin and complex gamma/digamma at p=2048 no longer hang.
+  Kelvin is Re/Im of complex J/K. Those (and the later gamma/digamma cluster) hung
+  because complex Stirling used a fixed 64-term tail, forcing ~2^{p/127} shifts
+  (about a million at p=2048). The term count now scales with p as the real kernel
+  already did. Integer-order complex K uses the K_0 series instead of J±iY
+  (ker/kei of 700). Real Y_n uses Hankel Y_0/Y_1 plus recurrence when |x| is in
+  the Hankel range but |ν|² ≥ 2|x| (Y_100(1000)). Test
+  zf_78_bessel_kelvin_high_prec. The 2F1 cluster remains open.
