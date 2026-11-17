@@ -117,7 +117,8 @@ impl ExactNumNumber {
     ///  - MemoryAllocation: failed to allocate memory for mantissa.
     ///  - ExponentOverflow: the resulting exponent becomes greater than the maximum allowed value for the exponent.
     pub fn format(&self, rdx: Radix, rm: RoundingMode, cc: &mut Consts) -> Result<String, Error> {
-        if rdx != Radix::Dec {
+        // Power-of-two radices convert by shifting, so the spelling is exact.
+        if rdx.value().is_power_of_two() {
             let (s, m, e) = self.convert_to_radix(rdx, rm, cc)?;
             return self.render(rdx, s, &m, e);
         }
@@ -125,11 +126,15 @@ impl ExactNumNumber {
         loop {
             // The first spelling uses `rm`. A directed mode can sit on the side of
             // the value that the same mode parses to a neighbor, so later attempts
-            // round the decimal the other way and add digits until it lands back.
+            // round the digits the other way and add digits until it lands back.
             let digit_rm = if extra == 0 { rm } else { decimal_digit_mode(rm, self.is_positive()) };
-            let (s, m, e) = self.convert_to_dec_extra(digit_rm, cc, extra)?;
+            let (s, m, e) = if rdx == Radix::Dec {
+                self.convert_to_dec_extra(digit_rm, cc, extra)?
+            } else {
+                self.convert_to_general_extra(rdx.value(), digit_rm, cc, extra)?
+            };
             let text = self.render(rdx, s, &m, e)?;
-            if self.decimal_round_trips(&text, rm, cc)? {
+            if self.spelling_round_trips(&text, rdx, rm, cc)? {
                 return Ok(text);
             }
             if extra >= 16 {
@@ -139,13 +144,14 @@ impl ExactNumNumber {
         }
     }
 
-    fn decimal_round_trips(
+    fn spelling_round_trips(
         &self,
         text: &str,
+        rdx: Radix,
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<bool, Error> {
-        let ps = match crate::parser::parse(text, Radix::Dec) {
+        let ps = match crate::parser::parse(text, rdx) {
             Ok(ps) => ps,
             Err(_) => return Ok(false),
         };
@@ -160,7 +166,7 @@ impl ExactNumNumber {
             sign,
             digits,
             exp,
-            Radix::Dec,
+            rdx,
             self.mantissa_max_bit_len(),
             rm,
             cc,

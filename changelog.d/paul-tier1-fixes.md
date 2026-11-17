@@ -40,3 +40,9 @@
   InvalidArgument (format limit) (Jeff ruling 2026-11-16 8:18 PM; previously Paul's call, mislabelled as a 2026-11-15 ruling); to_bytes encodes every finite value.
 - ZF-51: gk_adapt reports success only when the whole error estimate, final rounding included, meets tol, so Ok only when
   the bound is within tol (Jeff ruling 2026-11-16 8:18 PM; previously Paul's call, mislabelled as a 2026-11-15 ruling).
+- ZF-78 (partial): r.format of max_value in radix 3/36 no longer hangs. conv_to_general
+  estimates the radix exponent and scales with powsi instead of dividing once per unit
+  (~10^18 iterations at EXPONENT_MAX). convert_from uses the same scale; format retries
+  a short correctly rounded spelling so a directed parse round-trips. Test
+  zf_78_format_max_value_general_radix. Other ZF-78 clusters (Bessel/Kelvin, complex
+  gamma/digamma, 2F1) remain open.

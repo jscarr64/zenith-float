@@ -302,7 +302,15 @@ impl ExactNumNumber {
             p
         };
 
-        let p_wrk = p + WORD_BIT_SIZE;
+        // Hold every input digit plus a guard: a digit is at most ceil(log2(base)) bits,
+        // and a tight p_wrk (p + one word) used to drop the low digits of a long spelling
+        // of max_value before the scale.
+        let log2b = (u32::from(base).next_power_of_two().trailing_zeros().max(1)) as usize;
+        let p_wrk = round_p(
+            p.max(digits.len().saturating_mul(log2b))
+                .saturating_add(WORD_BIT_SIZE * 2),
+        );
+        Self::p_assertion(p_wrk)?;
         let b = Self::from_usize(base as usize)?;
 
         let mut acc = Self::new(p_wrk)?;
@@ -314,14 +322,11 @@ impl ExactNumNumber {
             }
         }
 
+        // `base.powi(|exp_adj|)` overflows intermediate powers when `|exp_adj|` is near
+        // EXPONENT_MAX (e.g. a spelling of max_value in radix 3 or 36). Scale with
+        // ldexp + exp2 of a fraction instead.
         let exp_adj = e - digits.len() as i64;
-        if exp_adj > 0 {
-            let pwr = b.powi(exp_adj as usize, p_wrk, RoundingMode::None)?;
-            acc = acc.mul(&pwr, p_wrk, RoundingMode::None)?;
-        } else if exp_adj < 0 {
-            let pwr = b.powi((-exp_adj) as usize, p_wrk, RoundingMode::None)?;
-            acc = acc.div(&pwr, p_wrk, RoundingMode::None)?;
-        }
+        acc = acc.mul_base_pow(base, exp_adj, p_wrk, RoundingMode::None)?;
 
         acc.set_sign(sign);
         acc.set_precision(p, rm)?;
@@ -503,7 +508,7 @@ impl ExactNumNumber {
             2 => self.conv_to_binary(),
             10 => self.conv_to_dec(rm, cc, 0),
             b if b.is_power_of_two() => self.conv_to_commensurable(b.trailing_zeros() as usize),
-            b => self.conv_to_general(b, rm, cc),
+            b => self.conv_to_general(b, rm, cc, 0),
         }
     }
 
@@ -890,11 +895,100 @@ impl ExactNumNumber {
         Ok((self.sign(), ret, e))
     }
 
+    /// Integer `floor` of a finite number whose magnitude is below `2^63`.
+    fn floor_to_i64(x: &Self) -> Result<i64, Error> {
+        if x.is_zero() {
+            return Ok(0);
+        }
+        let e = x.exponent();
+        if e <= 0 {
+            return Ok(if x.is_negative() { -1 } else { 0 });
+        }
+        if e > 63 {
+            return Err(Error::ExponentOverflow(x.sign()));
+        }
+        let mag = Self::top_bits_u64(x, e as usize);
+        if mag >= 1u64 << 63 {
+            if x.is_negative() && mag == 1u64 << 63 && x.is_int() {
+                return Ok(i64::MIN);
+            }
+            return Err(Error::ExponentOverflow(x.sign()));
+        }
+        let t = mag as i64;
+        if x.is_negative() {
+            if x.is_int() {
+                Ok(-t)
+            } else {
+                t.checked_neg()
+                    .and_then(|v| v.checked_sub(1))
+                    .ok_or(Error::ExponentOverflow(x.sign()))
+            }
+        } else {
+            Ok(t)
+        }
+    }
+
+    /// The leading `nbits` bits of a normalised mantissa, `nbits` in `1..=64`.
+    fn top_bits_u64(x: &Self, nbits: usize) -> u64 {
+        let words = x.mantissa().digits();
+        let mut acc: u128 = 0;
+        let mut got = 0usize;
+        for &w in words.iter().rev() {
+            acc = (acc << WORD_BIT_SIZE) | u128::from(w);
+            got += WORD_BIT_SIZE;
+            if got >= nbits {
+                break;
+            }
+        }
+        if got > nbits {
+            acc >>= got - nbits;
+        } else if got < nbits {
+            acc <<= nbits - got;
+        }
+        acc as u64
+    }
+
+    /// `self * base.powsi(exp)` for a general radix `base`. A large positive power is
+    /// formed as `self / base^{-exp}` so that `powsi` can use its zero-exponent path
+    /// (a direct `powi` overflows intermediate powers for e.g. 36^(~10^18)).
+    fn mul_base_pow(&self, base: u8, exp: i64, p: usize, rm: RoundingMode) -> Result<Self, Error> {
+        if self.is_zero() || exp == 0 {
+            let mut r = self.clone()?;
+            r.set_precision(p, rm)?;
+            return Ok(r);
+        }
+        let q = p.saturating_add(WORD_BIT_SIZE * 2);
+        let b = Self::from_usize(base as usize)?;
+        let mut r = if exp < 0 {
+            let pwr = b.powsi(exp, q, RoundingMode::None)?;
+            self.mul(&pwr, q, RoundingMode::None)?
+        } else {
+            let neg = exp
+                .checked_neg()
+                .ok_or(Error::ExponentOverflow(self.sign()))?;
+            let pwr = b.powsi(neg, q, RoundingMode::None)?;
+            self.div(&pwr, q, RoundingMode::None)?
+        };
+        r.set_precision(p, rm)?;
+        Ok(r)
+    }
+
+    pub(crate) fn convert_to_general_extra(
+        &self,
+        base: u8,
+        rm: RoundingMode,
+        cc: &mut Consts,
+        extra_digits: usize,
+    ) -> Result<(Sign, Vec<u8>, Exponent), Error> {
+        self.conv_to_general(base, rm, cc, extra_digits)
+    }
+
     fn conv_to_general(
         &self,
         base: u8,
-        _rm: RoundingMode,
-        _cc: &mut Consts,
+        rm: RoundingMode,
+        cc: &mut Consts,
+        extra_digits: usize,
     ) -> Result<(Sign, Vec<u8>, Exponent), Error> {
         if self.is_zero() {
             let mut zero = Vec::new();
@@ -903,20 +997,56 @@ impl ExactNumNumber {
             return Ok((self.sign(), zero, 0));
         }
 
-        let p = self.mantissa_max_bit_len() + WORD_BIT_SIZE * 2;
+        let p = self.mantissa_max_bit_len() + WORD_BIT_SIZE * 4;
         let b = Self::from_usize(base as usize)?;
         let one = Self::from_usize(1)?;
         let mut x = self.clone()?;
+        x.set_sign(Sign::Pos);
         x.set_precision(p, RoundingMode::None)?;
 
-        let mut e: Exponent = 0;
+        // e = floor(log_b(|x|)) + 1, so |x| / b^e is in [1/b, 1) after a few adjustments.
+        // The old loop divided by `base` once per unit of e (~10^18 times at EXPONENT_MAX).
+        let q_log = p + WORD_BIT_SIZE * 2;
+        let lb = b.log2(q_log, RoundingMode::None, cc)?;
+        let lx = x.log2(q_log, RoundingMode::None, cc)?;
+        let lxb = lx.div(&lb, q_log, RoundingMode::Down)?;
+        let mut e = Self::floor_to_i64(&lxb)?
+            .checked_add(1)
+            .ok_or(Error::ExponentOverflow(self.sign()))?;
+        let scale = e
+            .checked_neg()
+            .ok_or(Error::ExponentOverflow(self.sign()))?;
+        x = x.mul_base_pow(base, scale, p, RoundingMode::None)?;
+
+        let inv_base = one.div(&b, p, RoundingMode::None)?;
+        let mut adj = 0u32;
         while x.cmp(&one) >= 0 {
             x = x.div(&b, p, RoundingMode::None)?;
-            e = e.saturating_add(1);
+            e = e
+                .checked_add(1)
+                .ok_or(Error::ExponentOverflow(self.sign()))?;
+            adj += 1;
+            if adj > 32 {
+                return Err(Error::InvalidArgument);
+            }
+        }
+        while x.cmp(&inv_base) < 0 {
+            x = x.mul(&b, p, RoundingMode::None)?;
+            e = e
+                .checked_sub(1)
+                .ok_or(Error::ExponentOverflow(self.sign()))?;
+            adj += 1;
+            if adj > 32 {
+                return Err(Error::InvalidArgument);
+            }
         }
 
+        // Only as many radix digits as the working precision can support: one digit is at least
+        // log2(base) bits, and log2(base) >= trailing_zeros(next_power_of_two(base)). Emitting
+        // more than that writes noise, and convert_from then reconstructs a neighbor of `self`.
         let mut digits = Vec::new();
-        let max_digits = p * 2;
+        let log2b = (u32::from(base).next_power_of_two().trailing_zeros().max(1)) as usize;
+        let max_digits = p.saturating_sub(32).max(1) / log2b + 2;
         digits.try_reserve_exact(max_digits)?;
 
         for _ in 0..max_digits {
@@ -939,6 +1069,16 @@ impl ExactNumNumber {
             }
         }
 
+        // Short, correctly rounded spelling: about p_dest / log2(base) digits. A long
+        // truncated spelling sits just below the value, and a directed parse (ToZero)
+        // then lands on the predecessor.
+        let p_dest = self.mantissa_max_bit_len().saturating_add(extra_digits);
+        let nd = Self::from_usize(p_dest)?;
+        let qn = nd.div(&lb, 128, RoundingMode::Up)?;
+        let n_target = usize::try_from(Self::floor_to_i64(&qn)?.saturating_add(1))
+            .map_err(|_| Error::InvalidArgument)?;
+        Self::round_radix_digits(&mut digits, n_target, rm, self.sign(), &mut e, base)?;
+
         while digits.last() == Some(&0) {
             digits.pop();
         }
@@ -947,6 +1087,74 @@ impl ExactNumNumber {
         }
 
         Ok((self.sign(), digits, e))
+    }
+
+    /// Round `digits` to `n` places in `base`, possibly incrementing `e` on overflow.
+    fn round_radix_digits(
+        digits: &mut Vec<u8>,
+        n: usize,
+        rm: RoundingMode,
+        sign: Sign,
+        e: &mut Exponent,
+        base: u8,
+    ) -> Result<(), Error> {
+        if n == 0 {
+            return Err(Error::InvalidArgument);
+        }
+        if digits.len() <= n || rm == RoundingMode::None {
+            if digits.len() > n {
+                digits.truncate(n);
+            }
+            return Ok(());
+        }
+        let first = digits[n];
+        let rest_zero = digits[n + 1..].iter().all(|&d| d == 0);
+        let half = base / 2;
+        let odd_base = !base.is_multiple_of(2);
+        let mut inc = false;
+        match rm {
+            RoundingMode::None => {}
+            RoundingMode::ToZero => {}
+            RoundingMode::FromZero => {
+                inc = first > 0 || !rest_zero;
+            }
+            RoundingMode::Up => {
+                inc = sign.is_positive() && (first > 0 || !rest_zero);
+            }
+            RoundingMode::Down => {
+                inc = sign.is_negative() && (first > 0 || !rest_zero);
+            }
+            RoundingMode::ToEven | RoundingMode::ToOdd => {
+                // Odd bases have no exact halfway digit, so `first == half` is only a tie
+                // when `base` is even.
+                let tie = !odd_base && first == half && rest_zero;
+                let above = first > half || (!odd_base && first == half && !rest_zero);
+                if above {
+                    inc = true;
+                } else if tie {
+                    let even = digits[n - 1].is_multiple_of(2);
+                    inc = if rm == RoundingMode::ToEven { !even } else { even };
+                }
+            }
+        }
+        digits.truncate(n);
+        if inc {
+            let mut i = n - 1;
+            loop {
+                digits[i] += 1;
+                if digits[i] < base {
+                    break;
+                }
+                digits[i] = 0;
+                if i == 0 {
+                    digits[0] = 1;
+                    *e = e.checked_add(1).ok_or(Error::ExponentOverflow(sign))?;
+                    break;
+                }
+                i -= 1;
+            }
+        }
+        Ok(())
     }
 
     fn conv_to_binary(&self) -> Result<(Sign, Vec<u8>, Exponent), Error> {

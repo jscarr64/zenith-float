@@ -3852,3 +3852,93 @@ fn zf_66_complex_elliptic_pi_complete() {
         bad.join("\n")
     );
 }
+
+/// ZF-78: `r.format` of `max_value` in a non-power-of-two radix (3 and 36) hung in
+/// `conv_to_general`, which divided by the radix once per unit of the radix exponent
+/// (~10^18 iterations at `EXPONENT_MAX`). The child-process budget makes a hang fail
+/// this test (and verify.sh) instead of stalling it. The same scale is used on the way
+/// back, so the spelling must parse to the same value.
+#[test]
+fn zf_78_format_max_value_general_radix() {
+    const BUDGET: std::time::Duration = std::time::Duration::from_secs(20);
+    if std::env::var_os("ZF78_FORMAT_CHILD").is_some() {
+        zf_78_format_max_value_general_radix_body();
+        return;
+    }
+    let exe = std::env::current_exe().expect("current_exe");
+    let mut child = std::process::Command::new(exe)
+        .arg("--exact")
+        .arg("zf_78_format_max_value_general_radix")
+        .env("ZF78_FORMAT_CHILD", "1")
+        .env("RUST_TEST_THREADS", "1")
+        .spawn()
+        .expect("spawn ZF-78 format child");
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait().expect("try_wait") {
+            Some(status) => {
+                assert!(
+                    status.success(),
+                    "ZF-78 r.format child exited {status}: format or parse of max_value in radix 3/36 failed"
+                );
+                return;
+            }
+            None if start.elapsed() > BUDGET => {
+                let _ = child.kill();
+                let _ = child.wait();
+                panic!(
+                    "ZF-78 r.format of max_value in radix 3/36 timed out after {}s (hung in conv_to_general or convert_from)",
+                    BUDGET.as_secs()
+                );
+            }
+            None => std::thread::sleep(std::time::Duration::from_millis(20)),
+        }
+    }
+}
+
+fn zf_78_format_max_value_general_radix_body() {
+    let mut cc = Consts::new().expect("Consts");
+    let cases: [(usize, RoundingMode, u8); 4] = [
+        (64, RoundingMode::ToEven, 3),
+        (64, RoundingMode::ToEven, 36),
+        (128, RoundingMode::ToZero, 3),
+        (128, RoundingMode::ToEven, 36),
+    ];
+    for (p, rm, base) in cases {
+        let rdx = Radix::try_new(base).expect("radix");
+        let v = ExactNum::max_value(p);
+        let s = v
+            .format(rdx, rm, &mut cc)
+            .unwrap_or_else(|e| panic!("format max_value p={p} radix={base} {rm:?}: {e:?}"));
+        assert!(
+            !s.is_empty() && s.contains('e'),
+            "format max_value p={p} radix={base}: {s}"
+        );
+        let back = ExactNum::parse(&s, rdx, p, rm, &mut cc);
+        assert!(
+            !back.is_nan() && back.compare(&v) == Some(0) && back.sign() == v.sign(),
+            "round-trip max_value p={p} radix={base} {rm:?}: {s} -> {back}"
+        );
+        let n = ExactNum::min_value(p);
+        let sn = n
+            .format(rdx, rm, &mut cc)
+            .unwrap_or_else(|e| panic!("format min_value p={p} radix={base} {rm:?}: {e:?}"));
+        let backn = ExactNum::parse(&sn, rdx, p, rm, &mut cc);
+        assert!(
+            !backn.is_nan() && backn.compare(&n) == Some(0) && backn.sign() == n.sign(),
+            "round-trip min_value p={p} radix={base} {rm:?}: {sn} -> {backn}"
+        );
+    }
+    // Modest values still format and parse (the new scale must not break the old path).
+    let rdx = Radix::try_new(3).expect("radix 3");
+    let three = ExactNum::from_u8(3, 64);
+    let s = three
+        .format(rdx, RoundingMode::ToEven, &mut cc)
+        .expect("format 3");
+    let back = ExactNum::parse(&s, rdx, 64, RoundingMode::ToEven, &mut cc);
+    assert_eq!(
+        back.compare(&three),
+        Some(0),
+        "format/parse 3 in radix 3: {s} -> {back}"
+    );
+}
