@@ -14,6 +14,7 @@ use crate::Error;
 use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
+use crate::Sign;
 use crate::INF_POS;
 use alloc::vec::Vec;
 
@@ -299,15 +300,31 @@ fn is_real_c(z: &ExactComplex) -> bool {
     z.im().is_zero()
 }
 
-/// If `z` lies on the open cut (−∞,0), move it into the upper half-plane by
-/// \(2^{-(\mathrm{dest}+16)}i\). The Harper / mpmath value of Π(n, 2) is the
-/// Im(m)→0− side (Im(1−m)→0+). The perturbation is sized from the *destination*
-/// precision, not the Ziv work width: at (x,y,z,p)=(0,−1,1,−i) the first
-/// \(R_J\) increment has \(e_m\approx-1\) and \(1+e_m=O(\varepsilon)\), so
-/// \(\varepsilon=2^{-(p_{\mathrm{work}}+16)}\) underflows in \(1+e_m\).
+/// `1 - w`, with `Im(1-w) = -Im(w)` including signed zeros. IEEE 754
+/// `(+0) - (+0) = +0`, so a plain subtract would lose the C99 side of a
+/// real argument on a cut.
+fn one_minus(w: &ExactComplex, p: usize) -> ExactComplex {
+    let d = ExactComplex::one(p).sub(w, p, rm());
+    if !is_real_c(w) {
+        return d;
+    }
+    let mut im = w.im().clone();
+    im.set_sign(if w.im().is_negative() { Sign::Pos } else { Sign::Neg });
+    ExactComplex::new(d.re().clone(), im)
+}
+
+/// If `z` lies on the open cut (−∞,0), move it off the cut by
+/// \(2^{-(\mathrm{dest}+16)}i\), taking the side given by the sign of
+/// `Im z` (C99 / IEEE: `+0` is the upper side, `-0` the lower). At
+/// (x,y,z,p)=(0,−1,1,−i) the first \(R_J\) increment has \(e_m\approx-1\)
+/// and \(1+e_m=O(\varepsilon)\), so the perturbation is sized from the
+/// destination precision, not the Ziv work width.
 fn leave_cut(z: &ExactComplex, dest: usize) -> ExactComplex {
     if is_real_c(z) && z.re().is_negative() {
-        let eps = ExactNum::from_u8(1, dest).ldexp(-((dest as Exponent) + 16), dest, rm());
+        let mut eps = ExactNum::from_u8(1, dest).ldexp(-((dest as Exponent) + 16), dest, rm());
+        if z.im().is_negative() {
+            eps.set_sign(Sign::Neg);
+        }
         ExactComplex::new(z.re().clone(), eps)
     } else {
         z.clone()
@@ -985,16 +1002,16 @@ impl ExactComplex {
     }
 
     fn elliptic_pi_complete_at(&self, m: &Self, p: usize, dest: usize, cc: &mut Consts) -> Self {
-        let om_tmp = ExactComplex::one(p).sub(m, p, rm());
-        let on_tmp = ExactComplex::one(p).sub(self, p, rm());
+        let om_tmp = one_minus(m, p);
+        let on_tmp = one_minus(self, p);
         let on_cut = (is_real_c(&om_tmp) && om_tmp.re().is_negative())
             || (is_real_c(&on_tmp) && on_tmp.re().is_negative());
         let wp = if on_cut { rj_cut_work(dest, p) } else { p };
         let zero = ExactComplex::zero(wp);
         let one = ExactComplex::one(wp);
         let three = c_u32(3, wp);
-        let om = leave_cut(&ExactComplex::one(wp).sub(m, wp, rm()), dest);
-        let on = leave_cut(&ExactComplex::one(wp).sub(self, wp, rm()), dest);
+        let om = leave_cut(&one_minus(m, wp), dest);
+        let on = leave_cut(&one_minus(self, wp), dest);
         let rf = carlson_rf(&zero, &om, &one, wp, cc);
         let rj = carlson_rj(&zero, &om, &one, &on, wp, cc);
         let v = rf.add(&self.div(&three, wp, rm()).mul(&rj, wp, rm()), wp, rm());
@@ -1062,6 +1079,7 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Sign;
     use core::ops::Neg;
     use core::str::FromStr;
 
@@ -1199,29 +1217,58 @@ mod tests {
         Ok(())
     }
 
-    /// ZF-66: Π(1+i, 2) is finite (Harper / mpmath Im(m)→0−). Official
-    /// \(R_J\) at exact \(y=1-m=-1\) is all-bits-wrong; a dest-sized
-    /// leave-cut plus extra work precision is required so \(1+e_m\) does
-    /// not underflow.
+    fn signed_im(neg: bool, p: usize) -> ExactNum {
+        let mut z = ExactNum::new(p);
+        if neg {
+            z.set_sign(Sign::Neg);
+        }
+        z
+    }
+
+    fn m_on_cut(neg_im: bool, p: usize) -> ExactComplex {
+        ExactComplex::new(ExactNum::from_u8(2, p), signed_im(neg_im, p))
+    }
+
+    /// ZF-66: m on [1,+∞) is a cut. C99 / IEEE signed zeros pick the side:
+    /// m=2−0i is the Im(m)→0− limit (Harper / mpmath, ≈2.8818+0i);
+    /// m=2+0i is the Im(m)→0+ limit (≈0+1.3110i). Official R_J at exact
+    /// y=1-m=-1 is all-bits-wrong; a dest-sized leave-cut plus extra work
+    /// precision is required so 1+e_m does not underflow.
     #[test]
-    fn zf66_pi_complete_m_on_cut() -> Result<(), crate::Error> {
+    fn zf66_pi_complete_m_cut_signed_zeros() -> Result<(), crate::Error> {
         let p = 64;
         let r = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
         let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
-        let m = ExactComplex::from_real(ExactNum::from_u8(2, p), p);
-        let got = n.elliptic_pi_complete(&m, p, r, &mut cc);
-        let want_re = ExactNum::from_str("2.8818251039409565")?;
+        let plus = n.elliptic_pi_complete(&m_on_cut(false, p), p, r, &mut cc);
+        let minus = n.elliptic_pi_complete(&m_on_cut(true, p), p, r, &mut cc);
+        let want_minus_re = ExactNum::from_str("2.8818251039409565")?;
+        let want_plus_im = ExactNum::from_str("1.3110287771460599")?;
         assert!(
-            near(got.re(), &want_re, p, 16),
-            "Π(1+i,2) re got {:?} want {:?}",
-            got.re(),
-            want_re
+            near(minus.re(), &want_minus_re, p, 16),
+            "Π(1+i, 2-0i) re got {:?} want {:?}",
+            minus.re(),
+            want_minus_re
         );
         assert!(
-            tiny(got.im(), p),
-            "Π(1+i,2) im should be ~0, got {:?}",
-            got.im()
+            tiny(minus.im(), p),
+            "Π(1+i, 2-0i) im should be ~0, got {:?}",
+            minus.im()
+        );
+        assert!(
+            tiny(plus.re(), p),
+            "Π(1+i, 2+0i) re should be ~0, got {:?}",
+            plus.re()
+        );
+        assert!(
+            near(plus.im(), &want_plus_im, p, 16),
+            "Π(1+i, 2+0i) im got {:?} want {:?}",
+            plus.im(),
+            want_plus_im
+        );
+        assert!(
+            !near(plus.re(), minus.re(), p, 16) || !near(plus.im(), minus.im(), p, 16),
+            "signed zeros on the cut must select different limits"
         );
         Ok(())
     }
