@@ -1,7 +1,7 @@
 //! Slice CB harness rows (`src/cball.rs`). Owned by slice CB alone.
 //! CONTRACT 16.CB.1 to 16.CB.11. Ownership is O9 (16.CB.0): a CB op takes `self` and borrows its second operand, so every
 //! use below builds its operands fresh. `mul` and `div` wait on borrowing zf ops (Rusty, after R9) and are held
-//! out of the public API until then, with their value rows (HOLD H11, `slice_cball/held_mul_div_reds.rs`; P12: no
+//! `CBall::mul` / `CBall::div` (16.CB.4 / 16.CB.7) and their value rows (`slice_cball/held_mul_div_reds.rs`; P12: no
 //! ignored reds in a PR).
 //! Oracles: hand-verified exact rows (worked in the comment beside each) and containment of exact images computed with
 //! zenith-float's `add_full_prec`/`sub_full_prec`/`mul_full_prec` at sample points (corners and midpoints) of the inputs.
@@ -539,8 +539,8 @@ fn gold_eval(r: &GoldRow) -> Result<GoldOut, String> {
     Ok(match r.op.as_str() {
         "add" => GoldOut::C(ok("add", a.add(need_b()?, r.prec))?),
         "sub" => GoldOut::C(ok("sub", a.sub(need_b()?, r.prec))?),
-        // CBall::mul / CBall::div are held (HOLD H11); held_mul_div_reds.rs restores these arms.
-        "mul" | "div" => return Err(format!("{}: CBall::{} is held (HOLD H11)", r.op, r.op)),
+        "mul" => GoldOut::C(ok("mul", a.mul(need_b()?, r.prec))?),
+        "div" => GoldOut::C(ok("div", a.div(need_b()?, r.prec))?),
         "sqr" => GoldOut::C(ok("sqr", a.sqr(r.prec))?),
         "abs" => GoldOut::R(ok("abs", a.abs(r.prec))?),
         other => return Err(format!("unknown op {:?}", other)),
@@ -642,7 +642,7 @@ fn gold_part(p: &[ExactNum; 4], i: usize, prec: usize) -> Result<Ball, String> {
 }
 
 /// `a·a` for a gold sqr row in the 16.CB.4 four-product form (`Ball::mul` products, `Ball::sub`/`add`): what
-/// `CBall::mul(a, a)` computes, while `CBall::mul` waits on zf borrowing ops. Every operand is built fresh (O9).
+/// `CBall::mul(a, a)` computes. Every operand is built fresh (O9).
 fn gold_four_product_sq(r: &GoldRow) -> Result<(Ball, Ball), String> {
     let part = |i: usize| gold_part(&r.a, i, r.prec);
     let rr = ok("mul", part(0)?.mul(&part(0)?, r.prec))?;
@@ -658,7 +658,7 @@ fn gold_four_product_sq(r: &GoldRow) -> Result<(Ball, Ball), String> {
 #[test]
 fn cball_sqr_gold_not_wider_than_four_product() -> Result<(), String> {
     // 16.CB.5 on the 12 gold sqr rows: each part of sqr(a) is no wider than mul(a, a), in the four-product form until
-    // CBall::mul lands (cball_sqr_not_wider_than_mul keeps the direct comparison, ignored).
+    // CBall::mul (cball_sqr_not_wider_than_mul keeps the direct comparison).
     let mut m = 0;
     for r in gold_rows()?.iter().filter(|r| r.op == "sqr") {
         let s = ok("sqr", gold_box(&r.a, r.prec)?.sqr(r.prec))?;
@@ -721,4 +721,4 @@ fn cball_tightness_factors_sqr() -> Result<(), String> {
     Ok(())
 }
 
-// HOLD H11: mod held_mul_div_reds;
+mod held_mul_div_reds;
