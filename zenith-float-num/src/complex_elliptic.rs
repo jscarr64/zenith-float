@@ -34,12 +34,6 @@ fn c_u64(n: u64, p: usize) -> ExactComplex {
     ExactComplex::from_real(ExactNum::from_u64(n, p), p)
 }
 
-fn neg_one_re(p: usize) -> ExactNum {
-    let mut u = ExactNum::from_u8(1, p);
-    u.set_sign(Sign::Neg);
-    u
-}
-
 fn is_c_zero(z: &ExactComplex) -> bool {
     z.re().is_zero() && z.im().is_zero()
 }
@@ -1152,181 +1146,71 @@ fn carlson_rj(
     three_halves.mul(&integ, p, rm()).add(&rest, p, rm())
 }
 
-/// Tanh-sinh quadrature of a complex integrand on a real interval [a,b].
-/// Nodes t = k h, h = 1/(p+16), until the weight falls below 2^{-(p+16)}
-/// (proven tail of the double-exponential map; not a step cap).
-fn tanh_sinh_quad<F>(
-    a: &ExactNum,
-    b: &ExactNum,
-    p: usize,
-    cc: &mut Consts,
-    mut f: F,
-) -> ExactComplex
-where
-    F: FnMut(&ExactNum, &mut Consts) -> ExactComplex,
-{
-    let mid = a.clone().add(b, p, rm()).ldexp(-1, p, rm());
-    let half = b.clone().sub(a, p, rm()).ldexp(-1, p, rm());
-    let h = ExactNum::from_u8(1, p).div(
-        &ExactNum::from_u32((p as u32).saturating_add(16), p),
-        p,
-        rm(),
-    );
-    let pi_half = cc.pi(p, rm()).ldexp(-1, p, rm());
-    let tiny = ExactNum::from_u8(1, p).ldexp(-((p as Exponent) + 16), p, rm());
-    let w0 = half.clone().mul(&pi_half, p, rm());
-    let mut acc = f(&mid, cc).mul(&ExactComplex::from_real(w0, p), p, rm());
-    let mut k: u32 = 1;
-    loop {
-        let t = ExactNum::from_u32(k, p).mul(&h, p, rm());
-        let (sh, ch) = t.sinh_cosh(p, rm(), cc);
-        let u = pi_half.clone().mul(&sh, p, rm());
-        let (_shu, chu) = u.sinh_cosh(p, rm(), cc);
-        let chu2 = chu.clone().mul(&chu, p, rm());
-        if chu2.is_zero() {
-            break;
+/// Move a real negative argument off the cut by a bump that is visible at
+/// work width `p` (\(2^{-(p-16)}\), or half the width when `p` is small).
+/// `force_lower` puts real \(m\ge 1\) on the lower side regardless of the
+/// sign of \(\operatorname{Im} m = 0\).
+fn leave_cut_visible(z: &ExactComplex, p: usize, force_lower: bool) -> ExactComplex {
+    if is_real_c(z) && z.re().is_negative() {
+        let shift = if p > 32 { (p as Exponent) - 16 } else { (p as Exponent) / 2 + 2 };
+        let mut eps = ExactNum::from_u8(1, p).ldexp(-shift, p, rm());
+        // Lower side of the m-cut is Im(m)→0−, so Im(1-m)→0+.
+        if !force_lower && z.im().is_negative() {
+            eps.set_sign(Sign::Neg);
         }
-        let w = half
-            .clone()
-            .mul(&pi_half, p, rm())
-            .mul(&ch, p, rm())
-            .div(&chu2, p, rm());
-        if w.is_zero() || w.is_negative() || matches!(w.compare(&tiny), Some(c) if c < 0) {
-            break;
-        }
-        let tanh_u = u.tanh(p, rm(), cc);
-        let dx = half.clone().mul(&tanh_u, p, rm());
-        let xp = mid.clone().add(&dx, p, rm());
-        let xm = mid.clone().sub(&dx, p, rm());
-        let wc = ExactComplex::from_real(w, p);
-        acc = acc.add(&f(&xp, cc).mul(&wc, p, rm()), p, rm());
-        acc = acc.add(&f(&xm, cc).mul(&wc, p, rm()), p, rm());
-        k = match k.checked_add(1) {
-            Some(n) => n,
-            None => return nan_pair(Error::InvalidArgument),
-        };
-        if k > (p as u32).saturating_mul(8).saturating_add(64) {
-            return nan_pair(Error::InvalidArgument);
-        }
+        ExactComplex::new(z.re().clone(), eps)
+    } else {
+        z.clone()
     }
-    acc.mul(&ExactComplex::from_real(h, p), p, rm())
 }
 
-/// √(1 − m sin²θ) on the real θ-line. `plus = Some(true)` is the C99 0+
-/// branch (−i √|·| on the negative real axis); `Some(false)` is 0− (+i √|·|);
-/// `None` is the principal square root.
-fn pi_trig_sqrt_w(w: &ExactComplex, plus: Option<bool>, p: usize, cc: &mut Consts) -> ExactComplex {
-    if let Some(is_plus) = plus {
-        if w.im().is_zero() && w.re().is_negative() {
-            let mag = c_neg(w, p).sqrt(p, rm(), cc);
-            let unit_im = if is_plus { neg_one_re(p) } else { ExactNum::from_u8(1, p) };
-            return ExactComplex::new(ExactNum::new(p), unit_im).mul(&mag, p, rm());
-        }
-    }
-    w.sqrt(p, rm(), cc)
-}
-
-fn pi_trig_integrand(
-    theta: &ExactNum,
+/// Complete \(\Pi(n,m)\) when \(\operatorname{Re}(m)\ge 1\), via DLMF 19.21.6.
+/// Principal-sqrt \(R_J\) duplication is off-sheet for \(R_J(0,1-m,1,1-n)\),
+/// and the shift-integral / defining trig quadrature both miss `ZFS_WALL=120`
+/// at dest p≥4096. Express that \(R_J\) in \(R_F\) and \(R_D\) only:
+/// \((\sqrt{r}\sqrt{p}/z) R_J(0,y,z,p)=(r-1)R_F(0,y,z)R_D(p,rz,z)+R_D(0,y,z)R_F(p,rz,z)\),
+/// \(r=(y-p)/(y-z)\). The product of principal square roots (not \(\sqrt{rp}\))
+/// is the branch that matches \(R_J\) on the lower side of the \(m\)-cut.
+/// Real \(m\ge 1\), including \(m=2+0i\), is forced onto that lower side (Jeff / 3b5e5bd).
+fn pi_complete_via_rd(
     n: &ExactComplex,
     m: &ExactComplex,
-    plus: Option<bool>,
     p: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
-    let (s, _) = theta.sin_cos(p, rm(), cc);
-    let s2 = ExactComplex::from_real(s.clone().mul(&s, p, rm()), p);
-    let one = ExactComplex::one(p);
-    let den = one.clone().sub(&n.mul(&s2, p, rm()), p, rm());
-    let w = one.sub(&m.mul(&s2, p, rm()), p, rm());
-    let sw = pi_trig_sqrt_w(&w, plus, p, cc);
-    let d = den.mul(&sw, p, rm());
-    if is_c_zero(&d) || d.is_nan() {
+    let zero = ExactComplex::zero(p);
+    let three = c_u32(3, p);
+    // leave_cut's bump 2^{-(dest+16)} is below the ulp at work width p≈dest,
+    // so principal-sqrt R_F(0,1-m,1) landed on the upper side of K(2)
+    // (1.311+1.311i). Use a bump visible at width p; Ziv tightens the rest.
+    // Real m≥1, including m=2+0i, is forced onto the lower side (Jeff / 3b5e5bd).
+    let y = leave_cut_visible(&one_minus(m, p), p, is_real_c(m) && !m.re().is_negative());
+    let z = ExactComplex::one(p);
+    let pv = leave_cut_visible(&one_minus(n, p), p, false);
+    let yz = ExactComplex::sub_ref(&y, &z, p, rm());
+    if is_c_zero(&yz) {
         return nan_pair(Error::InvalidArgument);
     }
-    ExactComplex::one(p).div(&d, p, rm())
-}
-
-/// Stable m=2 u-integrand: 2u / ((1−n sin²θ) √(1−2 sin²θ))
-/// with θ=π/4±u². Using x=2u², 2u/√sin(x) = √2 / √(sin(x)/x),
-/// which stays finite at u=0 and at tanh-sinh nodes with tiny u
-/// (the raw 2u/√sin(2u²) form is 0/0 there and returns NaN).
-fn pi_trig_m2_stable(
-    u: &ExactNum,
-    n: &ExactComplex,
-    q: &ExactNum,
-    two: &ExactNum,
-    plus: Option<bool>,
-    right: bool,
-    p: usize,
-    cc: &mut Consts,
-) -> ExactComplex {
-    let u2 = u.clone().mul(u, p, rm());
-    let theta = if right { q.clone().add(&u2, p, rm()) } else { q.clone().sub(&u2, p, rm()) };
-    let (s, _) = theta.sin_cos(p, rm(), cc);
-    let s2 = ExactComplex::from_real(s.clone().mul(&s, p, rm()), p);
-    let den = ExactComplex::one(p).sub(&n.mul(&s2, p, rm()), p, rm());
-    let x = u2.ldexp(1, p, rm());
-    // sin(x)/x = 1 − x²/6 + O(x^4). When |x| < 2^{−(p+8)/2} the correction
-    // is below 2^{−(p+8)}, so sinc=1 is exact at dest.
-    let tiny_x = ExactNum::from_u8(1, p).ldexp(-(((p as Exponent) + 8) / 2), p, rm());
-    let sinc = if x.is_zero() || matches!(x.clone().abs().compare(&tiny_x), Some(c) if c < 0) {
-        ExactNum::from_u8(1, p)
-    } else {
-        let (sx, _) = x.sin_cos(p, rm(), cc);
-        sx.div(&x, p, rm())
-    };
-    let sqrt_sinc = ExactComplex::from_real(sinc, p).sqrt(p, rm(), cc);
-    if is_c_zero(&sqrt_sinc) || sqrt_sinc.is_nan() || is_c_zero(&den) || den.is_nan() {
+    let r = ExactComplex::sub_ref(&y, &pv, p, rm()).div(&yz, p, rm());
+    let fac = r
+        .sqrt(p, rm(), cc)
+        .mul(&pv.sqrt(p, rm(), cc), p, rm())
+        .div(&z, p, rm());
+    if is_c_zero(&fac) || fac.is_nan() {
         return nan_pair(Error::InvalidArgument);
     }
-    let rt2 = ExactComplex::from_real(two.clone(), p).sqrt(p, rm(), cc);
-    let body = rt2.div(&den.mul(&sqrt_sinc, p, rm()), p, rm());
-    if !right {
-        return body;
-    }
-    let unit = if plus == Some(true) {
-        ExactComplex::new(ExactNum::new(p), neg_one_re(p))
-    } else {
-        ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(1, p))
-    };
-    body.div(&unit, p, rm())
-}
-
-/// Defining integral Π(n,m) = ∫_0^{π/2} dθ / ((1−n sin²θ) √(1−m sin²θ)).
-/// For real m ≥ 1 the branch is the lower side of the cut (Im(m)→0−),
-/// like Arb, including m=2+0i; otherwise the principal square root is used.
-fn pi_complete_trig(n: &ExactComplex, m: &ExactComplex, p: usize, cc: &mut Consts) -> ExactComplex {
-    let plus = if is_real_c(m) && !m.re().is_negative() { Some(false) } else { None };
-    let pi = cc.pi(p, rm());
-    let half_pi = pi.clone().ldexp(-1, p, rm());
-    let zero = ExactNum::new(p);
-    // m = 2 + 0i (either sign of zero): 1−m sin²θ vanishes at π/4.
-    // Integrate in u, θ = π/4 ± u², so the 1/√|θ−π/4| is removable.
-    let two = ExactNum::from_u8(2, p);
-    let m_is_two = is_real_c(m) && m.re().compare(&two) == Some(0);
-    if m_is_two && plus.is_some() {
-        let q = pi.ldexp(-2, p, rm());
-        let umax = ExactComplex::from_real(q.clone(), p)
-            .sqrt(p, rm(), cc)
-            .re()
-            .clone();
-        let left = tanh_sinh_quad(&zero, &umax, p, cc, |u, cc| {
-            pi_trig_m2_stable(u, n, &q, &two, plus, false, p, cc)
-        });
-        let right = tanh_sinh_quad(&zero, &umax, p, cc, |u, cc| {
-            pi_trig_m2_stable(u, n, &q, &two, plus, true, p, cc)
-        });
-        return left.add(&right, p, rm());
-    }
-    let mid = half_pi.clone().ldexp(-1, p, rm());
-    let a = tanh_sinh_quad(&zero, &mid, p, cc, |th, cc| {
-        pi_trig_integrand(th, n, m, plus, p, cc)
-    });
-    let b = tanh_sinh_quad(&mid, &half_pi, p, cc, |th, cc| {
-        pi_trig_integrand(th, n, m, plus, p, cc)
-    });
-    a.add(&b, p, rm())
+    let rf0 = carlson_rf(&zero, &y, &z, p, cc);
+    let rd0 = carlson_rd(&zero, &y, &z, p, cc);
+    let rz = r.mul(&z, p, rm());
+    let rd1 = carlson_rd(&pv, &rz, &z, p, cc);
+    let rf1 = carlson_rf(&pv, &rz, &z, p, cc);
+    let right = r
+        .sub(&z, p, rm())
+        .mul(&rf0, p, rm())
+        .mul(&rd1, p, rm())
+        .add(&rd0.mul(&rf1, p, rm()), p, rm());
+    let rj = right.div(&fac, p, rm());
+    rf0.add(&n.div(&three, p, rm()).mul(&rj, p, rm()), p, rm())
 }
 
 impl ExactComplex {
@@ -1602,12 +1486,11 @@ impl ExactComplex {
         let on_cut = (is_real_c(&om_tmp) && om_tmp.re().is_negative())
             || (is_real_c(&on_tmp) && on_tmp.re().is_negative());
         // When Re(1-m) ≤ 0 (Re(m) ≥ 1), principal-sqrt R_J duplication
-        // is off-sheet and the shift-integral is too slow under ZFS_WALL
-        // at rj_cut_work precision. The defining trigonometric integral
-        // does not need the leave-cut bump, so it can run at the Ziv
-        // working precision `p`.
+        // is off-sheet and the shift-integral / trig quadrature miss
+        // ZFS_WALL at dest p≥4096. DLMF 19.21.6 writes that R_J in
+        // R_F and R_D, which stay fast at dest p=8192.
         if !om_tmp.re().is_positive() {
-            let v = pi_complete_trig(self, m, p, cc);
+            let v = pi_complete_via_rd(self, m, p, cc);
             return if on_cut { flush_cut_bias(v, dest) } else { v };
         }
         let wp = if on_cut { rj_cut_work(dest, p) } else { p };
@@ -1988,6 +1871,34 @@ mod tests {
             "lower-side im should be ~0, got {:?}",
             got.im()
         );
+        Ok(())
+    }
+
+    /// Harper T4 S2: complete Π(1+i, 2+0i) at dest p=4096 timed out under
+    /// ZFS_WALL=120 on the defining trigonometric integral. Must finish and
+    /// match the lower-side value (Jeff / 3b5e5bd): ≈ 2.8818 + 0i.
+    #[test]
+    fn zf_elliptic_pi_complete_m2_at_p4096_finishes() -> Result<(), crate::Error> {
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let want_re = ExactNum::from_str("2.8818251039409565")?;
+        for p in [64usize, 4096, 8192] {
+            let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+            let m = ExactComplex::from_real(ExactNum::from_u8(2, p), p);
+            let got = n.elliptic_pi_complete(&m, p, r, &mut cc);
+            assert!(!got.is_nan(), "Π(1+i, 2+0i) p={p} is NaN {:?}", got);
+            assert!(
+                near(got.re(), &want_re, 64, 16),
+                "p={p} lower-side re got {:?} want {:?}",
+                got.re(),
+                want_re
+            );
+            assert!(
+                tiny(got.im(), p),
+                "p={p} lower-side im should be ~0, got {:?}",
+                got.im()
+            );
+        }
         Ok(())
     }
 
