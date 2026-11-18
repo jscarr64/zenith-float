@@ -3826,11 +3826,9 @@ fn zf_56_anger_weber_struve_correctly_rounded() {
 
 /// ZF-66: complex complete Π(n,m) = R_F(0,1-m,1)+(n/3)R_J(0,1-m,1,1-n).
 /// The R_J duplication follows Carlson 1995 (22)–(32) (d_m form, series in
-/// E_2..E_5). On the open cut (−∞,0) a dest-sized leave-cut plus extra work
-/// precision takes the C99 side given by the signed imag zero of m (or n):
-/// m=2-0i is Im(m)→0− (Harper/mpmath), m=2+0i is Im(m)→0+. O(ε) leakage
-/// is flushed. Golds include both signs on the m=2 cut (RC-5 corrects the
-/// Harper +0 / mpmath rows).
+/// E_2..E_5). Complete Π at m=2+0i uses the lower side of the cut
+/// (Im(m)→0−), like Arb, the same sheet as m=2−0i. O(ε) leakage is
+/// flushed. Golds for m=2+0i are the 0− values.
 #[test]
 fn zf_66_complex_elliptic_pi_complete() {
     let mut cc = Consts::new().expect("Consts");

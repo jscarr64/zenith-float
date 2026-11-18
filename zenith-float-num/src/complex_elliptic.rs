@@ -1237,14 +1237,10 @@ fn pi_trig_m2_stable(
 }
 
 /// Defining integral Π(n,m) = ∫_0^{π/2} dθ / ((1−n sin²θ) √(1−m sin²θ)).
-/// For real m ≥ 1 the C99 signed-zero side of the cut selects the branch
-/// of the square root; otherwise the principal square root is used.
+/// For real m ≥ 1 the branch is the lower side of the cut (Im(m)→0−),
+/// like Arb, including m=2+0i; otherwise the principal square root is used.
 fn pi_complete_trig(n: &ExactComplex, m: &ExactComplex, p: usize, cc: &mut Consts) -> ExactComplex {
-    let plus = if is_real_c(m) && !m.re().is_negative() {
-        Some(!m.im().is_negative())
-    } else {
-        None
-    };
+    let plus = if is_real_c(m) && !m.re().is_negative() { Some(false) } else { None };
     let pi = cc.pi(p, rm());
     let half_pi = pi.clone().ldexp(-1, p, rm());
     let zero = ExactNum::new(p);
@@ -1802,11 +1798,10 @@ mod tests {
         ExactComplex::new(ExactNum::from_u8(2, p), signed_im(neg_im, p))
     }
 
-    /// ZF-66: m on [1,+∞) is a cut. C99 / IEEE signed zeros pick the side:
-    /// m=2−0i is the Im(m)→0− limit (Harper / mpmath, ≈2.8818+0i);
-    /// m=2+0i is the Im(m)→0+ limit (≈0+1.3110i). Official R_J at exact
-    /// y=1-m=-1 is all-bits-wrong; a dest-sized leave-cut plus extra work
-    /// precision is required so 1+e_m does not underflow.
+    /// ZF-66: m on [1,+∞) is a cut. Complete Π at m=2+0i uses the lower
+    /// side (Im(m)→0−), like Arb, the same value as m=2−0i
+    /// (≈2.8818+0i for n=1+i). Official R_J at exact y=1-m=-1 is
+    /// all-bits-wrong; the trigonometric integral takes the lower branch.
     #[test]
     fn zf66_pi_complete_m_cut_signed_zeros() -> Result<(), crate::Error> {
         let p = 64;
@@ -1815,13 +1810,12 @@ mod tests {
         let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
         let plus = n.elliptic_pi_complete(&m_on_cut(false, p), p, r, &mut cc);
         let minus = n.elliptic_pi_complete(&m_on_cut(true, p), p, r, &mut cc);
-        let want_minus_re = ExactNum::from_str("2.8818251039409565")?;
-        let want_plus_im = ExactNum::from_str("1.3110287771460599")?;
+        let want_re = ExactNum::from_str("2.8818251039409565")?;
         assert!(
-            near(minus.re(), &want_minus_re, p, 16),
+            near(minus.re(), &want_re, p, 16),
             "Π(1+i, 2-0i) re got {:?} want {:?}",
             minus.re(),
-            want_minus_re
+            want_re
         );
         assert!(
             tiny(minus.im(), p),
@@ -1829,28 +1823,23 @@ mod tests {
             minus.im()
         );
         assert!(
-            tiny(plus.re(), p),
-            "Π(1+i, 2+0i) re should be ~0, got {:?}",
-            plus.re()
+            near(plus.re(), &want_re, p, 16),
+            "Π(1+i, 2+0i) lower-side re got {:?} want {:?}",
+            plus.re(),
+            want_re
         );
         assert!(
-            near(plus.im(), &want_plus_im, p, 16),
-            "Π(1+i, 2+0i) im got {:?} want {:?}",
-            plus.im(),
-            want_plus_im
-        );
-        assert!(
-            !near(plus.re(), minus.re(), p, 16) || !near(plus.im(), minus.im(), p, 16),
-            "signed zeros on the cut must select different limits"
+            tiny(plus.im(), p),
+            "Π(1+i, 2+0i) lower-side im should be ~0, got {:?}",
+            plus.im()
         );
         Ok(())
     }
 
-    /// Pre-existing kernel bug: Π(10−3i, 2+0i) must be the C99 0+ limit
-    /// ≈ 0.110603558745367 − 0.776608988809512i (degree-5
-    /// extrapolation of Arb at m=2+2^{-k}i, k=6..11). The value matches neither side
-    /// (0− is ≈ −0.03226 − 0.37506i). Off-cut m=2+2^{-10}i is the
-    /// un-extrapolated Arb value used to isolate leave-cut vs. R_J.
+    /// Π(10−3i, 2+0i) uses the lower side of the cut, like Arb
+    /// (≈ −0.032260744 − 0.375062852i), not the C99 0+ limit. Off-cut
+    /// m=2+2^{-10}i is the un-extrapolated Arb value used to isolate
+    /// leave-cut vs. R_J.
     #[test]
     fn zf66_pi_complete_n10_minus_3i_m_two_plus_zero() -> Result<(), crate::Error> {
         let p = 64;
@@ -1879,18 +1868,18 @@ mod tests {
         );
 
         let got = n.elliptic_pi_complete(&m_on_cut(false, p), p, r, &mut cc);
-        let want_re = ExactNum::from_str("0.11060355874536699")?;
-        let want_im = ExactNum::from_str("-0.77660898880951171")?;
+        let want_re = ExactNum::from_str("-0.03226074424035563377376688819209160641")?;
+        let want_im = ExactNum::from_str("-0.37506285238448681531122676224843104364")?;
         assert!(!got.is_nan(), "Π(10-3i, 2+0i) is NaN");
         assert!(
             near(got.re(), &want_re, p, 8),
-            "C99 0+ re got {:?} want {:?}",
+            "lower-side re got {:?} want {:?}",
             got.re(),
             want_re
         );
         assert!(
             near(got.im(), &want_im, p, 8),
-            "C99 0+ im got {:?} want {:?}",
+            "lower-side im got {:?} want {:?}",
             got.im(),
             want_im
         );
@@ -1902,19 +1891,45 @@ mod tests {
         );
         let got128 = n128.elliptic_pi_complete(&m_on_cut(false, p128), p128, r, &mut cc);
         assert!(!got128.is_nan(), "Π(10-3i, 2+0i) p=128 is NaN {:?}", got128);
-        let want128_re = ExactNum::from_str("0.110603558745366993897130687706480738166")?;
-        let want128_im = ExactNum::from_str("-0.776608988809511710124026051804555288663")?;
+        let want128_re = ExactNum::from_str("-0.0322607442403556337750171956587330382258")?;
+        let want128_im = ExactNum::from_str("-0.3750628523844868153150179966420258747532")?;
         assert!(
             near(got128.re(), &want128_re, p128, 8),
-            "p=128 C99 0+ re got {:?} want {:?}",
+            "p=128 lower-side re got {:?} want {:?}",
             got128.re(),
             want128_re
         );
         assert!(
             near(got128.im(), &want128_im, p128, 8),
-            "p=128 C99 0+ im got {:?} want {:?}",
+            "p=128 lower-side im got {:?} want {:?}",
             got128.im(),
             want128_im
+        );
+        Ok(())
+    }
+
+    /// Jeff 2026-11-18 6:31 AM CT: Π(n, 2+0i) uses the lower side of the cut,
+    /// like Arb, not the C99 0+ sheet. Π(1+i, 2+0i) must match the 0− value
+    /// previously computed at m=2−0i.
+    #[test]
+    fn zf_pi_complete_m_two_plus_zero_uses_lower_side() -> Result<(), crate::Error> {
+        let p = 64;
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+        let got = n.elliptic_pi_complete(&m_on_cut(false, p), p, r, &mut cc);
+        let want_re = ExactNum::from_str("2.8818251039409565")?;
+        assert!(!got.is_nan(), "Π(1+i, 2+0i) is NaN");
+        assert!(
+            near(got.re(), &want_re, p, 16),
+            "lower-side re got {:?} want {:?}",
+            got.re(),
+            want_re
+        );
+        assert!(
+            tiny(got.im(), p),
+            "lower-side im should be ~0, got {:?}",
+            got.im()
         );
         Ok(())
     }
