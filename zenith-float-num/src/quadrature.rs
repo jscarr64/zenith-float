@@ -42,7 +42,8 @@ pub const TANH_SINH_LEVELS_MAX: usize = 8;
 #[allow(dead_code)]
 const QUADRATURE_NEWTON_MAX: usize = 64;
 
-/// Grid points per expected root when isolating Laguerre / Hermite zeros.
+/// Starting grid points per expected root when isolating Laguerre / Hermite
+/// zeros. If a pass finds fewer than n brackets the grid is doubled.
 const QUADRATURE_BRACKET_MUL: usize = 8;
 
 /// Bisection steps inside a sign-change bracket before Newton.
@@ -198,52 +199,70 @@ where
     if want == 0 {
         return Some(Vec::new());
     }
-    let n_grid = want
+    // Start at the historical oversampling, then double the grid if any
+    // of the `want` roots sit together in one cell. Stop when two successive
+    // sample points compare equal at the working precision (no finer grid).
+    let mut n_grid = want
         .saturating_mul(QUADRATURE_BRACKET_MUL)
         .saturating_add(4);
-    let step = ExactNum::sub_ref(hi, lo, p, rm).div(&ExactNum::from_u32(n_grid as u32, p), p, rm);
-    let mut prev_x = lo.clone();
-    let mut prev_f = f(lo, p, rm, cc);
-    if !finite(&prev_f) {
-        return None;
-    }
-    let mut out = Vec::new();
-    for i in 1..=n_grid {
-        let x = if i == n_grid {
-            hi.clone()
-        } else if sqrt_grid {
-            // Uniform in sqrt(x - lo): Laguerre zeros sit near j_k^2 / (4n+2)
-            // (Bessel zeros j_k), i.e. evenly spaced in sqrt(x), clustered at 0.
-            let t =
-                ExactNum::from_u32(i as u32, p).div(&ExactNum::from_u32(n_grid as u32, p), p, rm);
-            ExactNum::sub_ref(hi, lo, p, rm)
-                .mul(&t.sqr(p, rm), p, rm)
-                .add(lo, p, rm)
-        } else {
-            ExactNum::from_u32(i as u32, p)
-                .mul(&step, p, rm)
-                .add(lo, p, rm)
-        };
-        let y = f(&x, p, rm, cc);
-        if !finite(&y) {
+    loop {
+        if n_grid == 0 || n_grid > u32::MAX as usize {
             return None;
         }
-        // Roots strictly above `lo` only: a zero at `lo` itself (H_n(0) for odd n) is
-        // the caller's to handle. A zero at a grid point is counted once, in the
-        // interval it closes, never again in the interval it opens.
-        if !prev_f.is_zero() && (y.is_zero() || prev_f.is_positive() != y.is_positive()) {
-            out.push((prev_x, x.clone()));
+        let step =
+            ExactNum::sub_ref(hi, lo, p, rm).div(&ExactNum::from_u32(n_grid as u32, p), p, rm);
+        let mut prev_x = lo.clone();
+        let mut prev_f = f(lo, p, rm, cc);
+        if !finite(&prev_f) {
+            return None;
+        }
+        let mut out = Vec::new();
+        let mut resolved = false;
+        for i in 1..=n_grid {
+            let x = if i == n_grid {
+                hi.clone()
+            } else if sqrt_grid {
+                // Uniform in sqrt(x - lo): Laguerre zeros sit near j_k^2 / (4n+2)
+                // (Bessel zeros j_k), i.e. evenly spaced in sqrt(x), clustered at 0.
+                let t = ExactNum::from_u32(i as u32, p).div(
+                    &ExactNum::from_u32(n_grid as u32, p),
+                    p,
+                    rm,
+                );
+                ExactNum::sub_ref(hi, lo, p, rm)
+                    .mul(&t.sqr(p, rm), p, rm)
+                    .add(lo, p, rm)
+            } else {
+                ExactNum::from_u32(i as u32, p)
+                    .mul(&step, p, rm)
+                    .add(lo, p, rm)
+            };
+            if x.compare(&prev_x) == Some(0) {
+                resolved = true;
+            }
+            let y = f(&x, p, rm, cc);
+            if !finite(&y) {
+                return None;
+            }
+            // Roots strictly above `lo` only: a zero at `lo` itself (H_n(0) for odd n) is
+            // the caller's to handle. A zero at a grid point is counted once, in the
+            // interval it closes, never again in the interval it opens.
+            if !prev_f.is_zero() && (y.is_zero() || prev_f.is_positive() != y.is_positive()) {
+                out.push((prev_x, x.clone()));
+            }
+            if out.len() == want {
+                return Some(out);
+            }
+            prev_x = x;
+            prev_f = y;
         }
         if out.len() == want {
             return Some(out);
         }
-        prev_x = x;
-        prev_f = y;
-    }
-    if out.len() == want {
-        Some(out)
-    } else {
-        None
+        if resolved {
+            return None;
+        }
+        n_grid = n_grid.checked_mul(2)?;
     }
 }
 
@@ -844,6 +863,36 @@ mod tests {
         .ok_or(crate::Error::InvalidArgument)?;
         let two64 = ExactNum::from_u8(2, 64);
         assert_eq!(gl65.compare(&two64), Some(0));
+        Ok(())
+    }
+
+    /// Three roots inside one coarse-grid step: a single
+    /// `want * QUADRATURE_BRACKET_MUL + 4` uniform scan on [0, 1] sees only
+    /// one sign change in (0, 0.1) and would return None. Refine until all
+    /// five brackets are found.
+    #[test]
+    fn isolate_positive_refines_when_roots_cluster() -> Result<(), crate::Error> {
+        let (p, rm) = gold_p();
+        let mut cc = Consts::new()?;
+        let roots = [
+            ExactNum::from_u8(1, p).div(&ExactNum::from_u32(1000, p), p, rm),
+            ExactNum::from_u8(2, p).div(&ExactNum::from_u32(1000, p), p, rm),
+            ExactNum::from_u8(3, p).div(&ExactNum::from_u32(1000, p), p, rm),
+            ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm),
+            ExactNum::from_u8(9, p).div(&ExactNum::from_u8(10, p), p, rm),
+        ];
+        let f = |x: &ExactNum, p: usize, rm: RoundingMode, _cc: &mut Consts| {
+            let mut y = ExactNum::from_u8(1, p);
+            for r in &roots {
+                y = y.mul(&ExactNum::sub_ref(x, r, p, rm), p, rm);
+            }
+            y
+        };
+        let lo = ExactNum::new(p);
+        let hi = ExactNum::from_u8(1, p);
+        let brackets = isolate_positive(f, &lo, &hi, 5, false, p, rm, &mut cc)
+            .ok_or(crate::Error::InvalidArgument)?;
+        assert_eq!(brackets.len(), 5, "clustered roots were missed");
         Ok(())
     }
 }
