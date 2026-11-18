@@ -48,23 +48,15 @@ fn c_abs(z: &ExactComplex, p: usize) -> ExactNum {
     z.abs(p, rm())
 }
 
+#[path = "carlson_taylor.rs"]
+mod carlson_taylor;
+
 fn max_abs(a: &ExactNum, b: &ExactNum, _p: usize) -> ExactNum {
     if matches!(a.compare(b), Some(c) if c >= 0) {
         a.clone()
     } else {
         b.clone()
     }
-}
-
-fn tiny_spread(p: usize) -> ExactNum {
-    ExactNum::from_u8(1, p).ldexp(-((p as Exponent) / 3 + 16), p, rm())
-}
-
-fn close_enough(dev: &ExactNum, an: &ExactComplex, p: usize) -> bool {
-    let one = ExactNum::from_u8(1, p);
-    let scale = max_abs(&c_abs(an, p), &one, p);
-    let thresh = tiny_spread(p).mul(&scale, p, rm());
-    matches!(dev.compare(&thresh), Some(c) if c < 0)
 }
 
 fn max_dev3(
@@ -189,13 +181,31 @@ fn carlson_rf(
     let mut x = leave_cut(x0, p);
     let mut y = leave_cut(y0, p);
     let mut z = leave_cut(z0, p);
+    let real = is_real_c(&x) && is_real_c(&y) && is_real_c(&z);
+    let order = carlson_taylor::rf_order(p, real);
+    let mut prev_d: Option<ExactNum> = None;
+    let mut k = 0usize;
     loop {
         let an = ExactComplex::add_ref(&x, &y, p, rm())
             .add(&z, p, rm())
             .div(&three, p, rm());
-        if close_enough(&max_dev3(&an, &x, &y, &z, p), &an, p) {
-            return rf_series(&an, &x, &y, &z, p, cc);
+        let dmax = max_dev3(&an, &x, &y, &z, p);
+        let scale = max_abs(&c_abs(&an, p), &ExactNum::from_u8(1, p), p);
+        let no_improve = k > 2
+            && prev_d
+                .as_ref()
+                .is_some_and(|pd| matches!(dmax.compare(pd), Some(c) if c > 0));
+        if carlson_taylor::rel_pow_below_prec(&dmax, &scale, order, p, p) || no_improve || k >= p
+        {
+            let xx = ExactComplex::sub_ref(&an, &x, p, rm()).div(&an, p, rm());
+            let yy = ExactComplex::sub_ref(&an, &y, p, rm()).div(&an, p, rm());
+            let zz = ExactComplex::sub_ref(&an, &z, p, rm()).div(&an, p, rm());
+            let e2 = xx.mul(&yy, p, rm()).sub(&zz.mul(&zz, p, rm()), p, rm());
+            let e3 = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
+            let series = carlson_taylor::rf_taylor_sum(&e2, &e3, order, p);
+            return series.div(&an.sqrt(p, rm(), cc), p, rm());
         }
+        prev_d = Some(dmax);
         let sx = x.sqrt(p, rm(), cc);
         let sy = y.sqrt(p, rm(), cc);
         let sz = z.sqrt(p, rm(), cc);
@@ -206,54 +216,8 @@ fn carlson_rf(
         x = x.add(&lam, p, rm()).div(&four, p, rm());
         y = y.add(&lam, p, rm()).div(&four, p, rm());
         z = z.add(&lam, p, rm()).div(&four, p, rm());
+        k += 1;
     }
-}
-
-fn rf_series(
-    an: &ExactComplex,
-    x: &ExactComplex,
-    y: &ExactComplex,
-    z: &ExactComplex,
-    p: usize,
-    cc: &mut Consts,
-) -> ExactComplex {
-    let xx = ExactComplex::sub_ref(an, x, p, rm()).div(an, p, rm());
-    let yy = ExactComplex::sub_ref(an, y, p, rm()).div(an, p, rm());
-    let zz = ExactComplex::sub_ref(an, z, p, rm()).div(an, p, rm());
-    let e2 = xx.mul(&yy, p, rm()).sub(&zz.mul(&zz, p, rm()), p, rm());
-    let e3 = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
-    let e2s = e2.mul(&e2, p, rm());
-    let one = c_u32(1, p);
-    let w = |n: u32| c_u32(n, p);
-    let s = one
-        .sub(&e2.div(&w(10), p, rm()), p, rm())
-        .add(&e3.div(&w(14), p, rm()), p, rm())
-        .add(&e2s.div(&w(24), p, rm()), p, rm())
-        .sub(
-            &w(3)
-                .mul(&e2, p, rm())
-                .mul(&e3, p, rm())
-                .div(&w(44), p, rm()),
-            p,
-            rm(),
-        )
-        .sub(
-            &w(5)
-                .mul(&e2, p, rm())
-                .mul(&e2s, p, rm())
-                .div(&w(208), p, rm()),
-            p,
-            rm(),
-        )
-        .add(
-            &w(3)
-                .mul(&e2s, p, rm())
-                .mul(&e3, p, rm())
-                .div(&w(104), p, rm()),
-            p,
-            rm(),
-        );
-    s.div(&an.sqrt(p, rm(), cc), p, rm())
 }
 
 /// \(R_D(x,y,z)\). \(z\neq 0\); at most one of \(x,y\) may be \(0\).
@@ -279,16 +243,28 @@ fn carlson_rd(
     let mut z = leave_cut(z0, p);
     let mut sum = ExactComplex::zero(p);
     let mut fac = c_u32(1, p);
+    let real = is_real_c(&x) && is_real_c(&y) && is_real_c(&z);
+    let order = carlson_taylor::rd_order(p, real);
+    let mut prev_d: Option<ExactNum> = None;
+    let mut k = 0usize;
     loop {
         let an = ExactComplex::add_ref(&x, &y, p, rm())
             .add(&three.mul(&z, p, rm()), p, rm())
             .div(&five, p, rm());
-        if close_enough(&max_dev3(&an, &x, &y, &z, p), &an, p) {
-            let series = rd_series(&an, &x, &y, &z, p, cc);
+        let dmax = max_dev3(&an, &x, &y, &z, p);
+        let scale = max_abs(&c_abs(&an, p), &ExactNum::from_u8(1, p), p);
+        let no_improve = k > 2
+            && prev_d
+                .as_ref()
+                .is_some_and(|pd| matches!(dmax.compare(pd), Some(c) if c > 0));
+        if carlson_taylor::rel_pow_below_prec(&dmax, &scale, order, p, p) || no_improve || k >= p
+        {
+            let series = rd_series_arb(&an, &x, &y, &z, order, p, cc);
             return three
                 .mul(&sum, p, rm())
                 .add(&fac.mul(&series, p, rm()), p, rm());
         }
+        prev_d = Some(dmax);
         let sx = x.sqrt(p, rm(), cc);
         let sy = y.sqrt(p, rm(), cc);
         let sz = z.sqrt(p, rm(), cc);
@@ -302,54 +278,52 @@ fn carlson_rd(
         x = x.add(&lam, p, rm()).div(&four, p, rm());
         y = y.add(&lam, p, rm()).div(&four, p, rm());
         z = zl.div(&four, p, rm());
+        k += 1;
     }
 }
 
-fn rd_series(
+/// Remainder of \(R_D\) as the \(R_J\) Taylor sum with \(p=z\) (Arb).
+fn rd_series_arb(
     an: &ExactComplex,
     x: &ExactComplex,
     y: &ExactComplex,
     z: &ExactComplex,
+    order: usize,
     p: usize,
     cc: &mut Consts,
 ) -> ExactComplex {
+    let two = c_u32(2, p);
+    let four = c_u32(4, p);
     let xx = ExactComplex::sub_ref(an, x, p, rm()).div(an, p, rm());
     let yy = ExactComplex::sub_ref(an, y, p, rm()).div(an, p, rm());
     let zz = ExactComplex::sub_ref(an, z, p, rm()).div(an, p, rm());
-    let e2 = xx.mul(&yy, p, rm()).sub(&zz.mul(&zz, p, rm()), p, rm());
-    let e3 = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
-    let e2s = e2.mul(&e2, p, rm());
-    let one = c_u32(1, p);
-    let w = |n: u32| c_u32(n, p);
-    let s = one
-        .sub(&w(3).mul(&e2, p, rm()).div(&w(14), p, rm()), p, rm())
-        .add(&e3.div(&w(6), p, rm()), p, rm())
-        .add(&w(9).mul(&e2s, p, rm()).div(&w(88), p, rm()), p, rm())
-        .sub(
-            &w(3)
-                .mul(&e2, p, rm())
-                .mul(&e3, p, rm())
-                .div(&w(22), p, rm()),
-            p,
-            rm(),
-        )
+    let pp = zz.clone();
+    let e2 = xx
+        .mul(&yy, p, rm())
+        .add(&xx.mul(&zz, p, rm()), p, rm())
+        .add(&yy.mul(&zz, p, rm()), p, rm())
+        .sub(&c_u32(3, p).mul(&pp.mul(&pp, p, rm()), p, rm()), p, rm());
+    let xyz = xx.mul(&yy, p, rm()).mul(&zz, p, rm());
+    let e3 = xyz
+        .clone()
+        .add(&two.mul(&e2, p, rm()).mul(&pp, p, rm()), p, rm())
         .add(
-            &w(9)
-                .mul(&e3, p, rm())
-                .mul(&e3, p, rm())
-                .div(&w(52), p, rm()),
-            p,
-            rm(),
-        )
-        .sub(
-            &w(3)
-                .mul(&e2, p, rm())
-                .mul(&e2s, p, rm())
-                .div(&w(26), p, rm()),
+            &four.mul(&pp.mul(&pp, p, rm()).mul(&pp, p, rm()), p, rm()),
             p,
             rm(),
         );
-    s.div(&an.mul(&an.sqrt(p, rm(), cc), p, rm()), p, rm())
+    let e4 = two
+        .mul(&xyz, p, rm())
+        .add(&e2.mul(&pp, p, rm()), p, rm())
+        .add(
+            &c_u32(3, p).mul(&pp.mul(&pp, p, rm()).mul(&pp, p, rm()), p, rm()),
+            p,
+            rm(),
+        )
+        .mul(&pp, p, rm());
+    let e5 = xyz.mul(&pp.mul(&pp, p, rm()), p, rm());
+    let series = carlson_taylor::rj_taylor_sum(&e2, &e3, &e4, &e5, order, p);
+    series.div(&an.mul(&an.sqrt(p, rm(), cc), p, rm()), p, rm())
 }
 
 fn is_real_c(z: &ExactComplex) -> bool {
@@ -992,13 +966,23 @@ fn carlson_rj_dupe(
     let mut sum = ExactComplex::zero(p);
     let mut fac = c_u32(1, p);
     let mut pow4_cubed = c_u32(1, p); // 4^{-3m}
+    let real = is_real_c(&x) && is_real_c(&y) && is_real_c(&z) && is_real_c(&pv);
+    let order = carlson_taylor::rj_order(p, real);
+    let mut prev_d: Option<ExactNum> = None;
+    let mut k = 0usize;
     loop {
         let dmax = max_abs(
             &max_dev3(&am, &x, &y, &z, p),
             &c_abs(&ExactComplex::sub_ref(&am, &pv, p, rm()), p),
             p,
         );
-        if close_enough(&dmax, &am, p) {
+        let scale = max_abs(&c_abs(&am, p), &ExactNum::from_u8(1, p), p);
+        let no_improve = k > 2
+            && prev_d
+                .as_ref()
+                .is_some_and(|pd| matches!(dmax.compare(pd), Some(c) if c > 0));
+        if carlson_taylor::rel_pow_below_prec(&dmax, &scale, order, p, p) || no_improve || k >= p
+        {
             let t = fac.div(&am, p, rm());
             let xx = ExactComplex::sub_ref(&a0, x0, p, rm()).mul(&t, p, rm());
             let yy = ExactComplex::sub_ref(&a0, y0, p, rm()).mul(&t, p, rm());
@@ -1028,27 +1012,7 @@ fn carlson_rj_dupe(
                 )
                 .mul(&pp, p, rm());
             let e5 = xyz.mul(&pp.mul(&pp, p, rm()), p, rm());
-            let w = |n: u32| c_u32(n, p);
-            let series = c_u32(1, p)
-                .sub(&w(3).mul(&e2, p, rm()).div(&w(14), p, rm()), p, rm())
-                .add(&e3.div(&w(6), p, rm()), p, rm())
-                .add(
-                    &w(9)
-                        .mul(&e2.mul(&e2, p, rm()), p, rm())
-                        .div(&w(88), p, rm()),
-                    p,
-                    rm(),
-                )
-                .sub(&w(3).mul(&e4, p, rm()).div(&w(22), p, rm()), p, rm())
-                .sub(
-                    &w(9)
-                        .mul(&e2, p, rm())
-                        .mul(&e3, p, rm())
-                        .div(&w(52), p, rm()),
-                    p,
-                    rm(),
-                )
-                .add(&w(3).mul(&e5, p, rm()).div(&w(26), p, rm()), p, rm());
+            let series = carlson_taylor::rj_taylor_sum(&e2, &e3, &e4, &e5, order, p);
             // 4^{-n} A_n^{-3/2} series + 6 sum
             let ams = am.mul(&am.sqrt(p, rm(), cc), p, rm());
             return fac.mul(&series, p, rm()).div(&ams, p, rm()).add(
@@ -1057,6 +1021,7 @@ fn carlson_rj_dupe(
                 rm(),
             );
         }
+        prev_d = Some(dmax);
         let sx = x.sqrt(p, rm(), cc);
         let sy = y.sqrt(p, rm(), cc);
         let sz = z.sqrt(p, rm(), cc);
@@ -1087,6 +1052,7 @@ fn carlson_rj_dupe(
         y = yp;
         z = zp;
         pv = pp;
+        k += 1;
     }
 }
 
@@ -1174,6 +1140,74 @@ fn leave_cut_visible(z: &ExactComplex, p: usize, force_lower: bool) -> ExactComp
 /// \(r=(y-p)/(y-z)\). The product of principal square roots (not \(\sqrt{rp}\))
 /// is the branch that matches \(R_J\) on the lower side of the \(m\)-cut.
 /// Real \(m\ge 1\), including \(m=2+0i\), is forced onto that lower side (Jeff / 3b5e5bd).
+
+/// DLMF 19.8.7–19.8.8, domain −∞ < k² < 1 and −∞ < α² < 1.
+/// Π(n, m) = π / (4 M(1, √(1−m))) · (2 + n/(1−n) Σ Q_j),
+/// a₀=1, g₀=√(1−m), p₀=√(1−n), Q₀=1,
+/// p_{j+1}=(p_j² + a_j g_j)/(2 p_j), ε_j=(p_j² − a_j g_j)/(p_j² + a_j g_j),
+/// Q_{j+1}=ε_j Q_j / 2.
+fn pi_complete_agm_real(
+    n: &ExactComplex,
+    m: &ExactComplex,
+    p: usize,
+    _dest: usize,
+    cc: &mut Consts,
+) -> ExactComplex {
+    let one = ExactNum::from_u8(1, p);
+    let two = ExactNum::from_u8(2, p);
+    let mut a = one.clone();
+    let om = one.clone().sub(m.re(), p, rm());
+    if !om.is_positive() {
+        return nan_pair(Error::InvalidArgument);
+    }
+    let mut g = om.sqrt(p, rm());
+    let on = one.clone().sub(n.re(), p, rm());
+    if on.is_zero() {
+        return nan_pair(Error::InvalidArgument);
+    }
+    // p₀ = √(1−n). For n=−2, 1−n=3>0. If 1−n<0 (n>1) we would be in 19.8.9, not here.
+    if !on.is_positive() {
+        return nan_pair(Error::InvalidArgument);
+    }
+    let mut pn = on.sqrt(p, rm());
+    let mut q = one.clone();
+    let mut qsum = q.clone();
+    let thresh = one.ldexp(-((p as Exponent) + 32), p, rm());
+    // Quadratic AGM: well under p iterations.
+    for _ in 0..=p {
+        let ag = a.clone().mul(&g, p, rm());
+        let pn2 = pn.sqr(p, rm());
+        let den = pn2.clone().add(&ag, p, rm());
+        if den.is_zero() {
+            return nan_pair(Error::InvalidArgument);
+        }
+        let num = pn2.sub(&ag, p, rm());
+        let eps = num.div(&den, p, rm());
+        q = eps.mul(&q, p, rm()).div(&two, p, rm());
+        qsum = qsum.add(&q, p, rm());
+        let an = a.add(&g, p, rm()).div(&two, p, rm());
+        g = ag.sqrt(p, rm());
+        pn = den.div(&two, p, rm()).div(&pn, p, rm());
+        a = an;
+        let spread = a.clone().sub(&g, p, rm()).abs();
+        let qabs = q.clone().abs();
+        if matches!(spread.compare(&thresh), Some(c) if c < 0)
+            && matches!(qabs.compare(&thresh), Some(c) if c < 0)
+        {
+            break;
+        }
+    }
+    // M = a (or g); Π = π/(4M) * (2 + n/(1−n) * qsum)
+    let four = ExactNum::from_u8(4, p);
+    let pi = cc.pi(p, rm());
+    let pref = pi.div(&four, p, rm()).div(&a, p, rm());
+    let n_over = n.re().clone().div(&on, p, rm());
+    let inner = two.add(&n_over.mul(&qsum, p, rm()), p, rm());
+    let val = pref.mul(&inner, p, rm());
+    // Carry the signed-zero imaginary part of a real value.
+    ExactComplex::from_real(val, p)
+}
+
 fn pi_complete_via_rd(
     n: &ExactComplex,
     m: &ExactComplex,
@@ -1507,6 +1541,18 @@ impl ExactComplex {
                 .div(&c_u32(2, p), p, rm());
             return half_pi.div(&s, p, rm());
         }
+        // DLMF 19.8.7: complete Π(n, m) by AGM when n and m are real
+        // and −∞ < m < 1, −∞ < n < 1. Quadratic in the iterates.
+        if is_real_c(self) && is_real_c(m) {
+            let nre = self.re();
+            let mre = m.re();
+            let one = ExactNum::from_u8(1, p);
+            if matches!(mre.compare(&one), Some(c) if c < 0)
+                && matches!(nre.compare(&one), Some(c) if c < 0)
+            {
+                return pi_complete_agm_real(self, m, p, dest, cc);
+            }
+        }
         let om_tmp = one_minus(m, p);
         let on_tmp = one_minus(self, p);
         let on_cut = (is_real_c(&om_tmp) && om_tmp.re().is_negative())
@@ -1749,6 +1795,177 @@ mod tests {
             "Π(1+i,0) im got {:?} want {:?}",
             got.im(),
             want.im()
+        );
+        Ok(())
+    }
+
+
+
+    /// Official-family values against Arb midpoints at dest 64, 256, and 1024.
+    #[test]
+    fn zf_pi_family_matches_arb_midpoints() -> Result<(), crate::Error> {
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let check = |p: usize,
+                     got: ExactComplex,
+                     re: &str,
+                     im: &str,
+                     label: &str|
+         -> Result<(), crate::Error> {
+            let wr = ExactNum::from_str(re)?;
+            let wi = ExactNum::from_str(im)?;
+            // Golds are 34-digit midpoints; compare in a 64-bit window.
+            assert!(
+                near(got.re(), &wr, 64, 8) && near(got.im(), &wi, 64, 8),
+                "{label} p={p} got {:?} + {:?}i want {re} + {im}i",
+                got.re(),
+                got.im()
+            );
+            Ok(())
+        };
+        for p in [64usize, 256, 1024] {
+            let n = ExactComplex::from_real(ExactNum::from_u8(2, p).neg(), p);
+            let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
+            let m = ExactComplex::from_real(half, p);
+            let got = n.elliptic_pi_complete(&m, p, r, &mut cc);
+            check(p, got, "1.0226975086065923912210632881204494", "0", "Pi(-2,1/2)")?;
+
+            let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+            let m = ExactComplex::from_real(ExactNum::from_u8(1, p).neg(), p);
+            let got = n.elliptic_pi_complete(&m, p, r, &mut cc);
+            check(
+                p,
+                got,
+                "0.9894414586482923407135834361683811",
+                "0.8576009178956446444392334130940548",
+                "Pi(1+i,-1)",
+            )?;
+
+            let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
+            let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+            let m = ExactComplex::new(half.clone(), half.clone());
+            let got = n.elliptic_pi_complete(&m, p, r, &mut cc);
+            check(
+                p,
+                got,
+                "0.8493037644403146015738020272566064",
+                "1.3478039001871343637887723094489923",
+                "Pi(1+i,1/2+i/2)",
+            )?;
+
+            let n = ExactComplex::zero(p);
+            let x = ExactComplex::from_real(half.clone(), p);
+            let m = ExactComplex::new(half.clone(), half);
+            let got = n.elliptic_pi(&x, &m, p, r, &mut cc);
+            check(
+                p,
+                got,
+                "0.5348066320602228343305056081235160",
+                "0.0127136117099412408682670775585325",
+                "inc Pi(0;1/2|1/2+i/2)",
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Timing of official S5 Π rows after the Arb R_J / AGM port. Ignored;
+    /// run with --ignored when measuring.
+    #[test]
+    #[ignore]
+    fn zf_pi_family_official_row_timings() -> Result<(), crate::Error> {
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let mut run = |label: &str, p: usize, f: &dyn Fn(usize, &mut Consts) -> ExactComplex| {
+            let t0 = std::time::Instant::now();
+            let g = f(p, &mut cc);
+            let dt = t0.elapsed();
+            println!("{label} p={p} {dt:?} nan={}", g.is_nan());
+        };
+        let pi_nm = |nr: i32, ni: i32, mr: i32, mi: i32, md: i32, p: usize, cc: &mut Consts| {
+            let mk = |re: i32, im: i32, den: i32, p: usize| {
+                let to = |v: i32, p: usize| {
+                    if v < 0 {
+                        ExactNum::from_u8((-v) as u8, p).neg()
+                    } else {
+                        ExactNum::from_u8(v as u8, p)
+                    }
+                };
+                let mut re_n = to(re, p);
+                let mut im_n = to(im, p);
+                if den != 1 {
+                    let d = ExactNum::from_u8(den as u8, p);
+                    re_n = re_n.div(&d, p, RoundingMode::ToEven);
+                    im_n = im_n.div(&d, p, RoundingMode::ToEven);
+                }
+                ExactComplex::new(re_n, im_n)
+            };
+            mk(nr, ni, 1, p).elliptic_pi_complete(&mk(mr, mi, md, p), p, r, cc)
+        };
+        for p in [8192usize, 16384, 32768, 65536] {
+            run("Pi(-2,1/2)", p, &|p, cc| pi_nm(-2, 0, 1, 0, 2, p, cc));
+        }
+        for p in [8192usize, 16384, 32768, 65536] {
+            run("Pi(1+i,2)", p, &|p, cc| pi_nm(1, 1, 2, 0, 1, p, cc));
+        }
+        for p in [8192usize, 16384, 32768, 65536] {
+            run("Pi(0;1/2|1/2+i/2)", p, &|p, cc| {
+                let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
+                let n = ExactComplex::zero(p);
+                let x = ExactComplex::from_real(half.clone(), p);
+                let m = ExactComplex::new(half.clone(), half);
+                n.elliptic_pi(&x, &m, p, r, cc)
+            });
+        }
+        for p in [4096usize, 8192, 16384, 32768, 65536] {
+            run("Pi(1+i,-1)", p, &|p, cc| pi_nm(1, 1, -1, 0, 1, p, cc));
+            run("Pi(1+i,1/2+i/2)", p, &|p, cc| {
+                let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
+                let n = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+                let m = ExactComplex::new(half.clone(), half);
+                n.elliptic_pi_complete(&m, p, r, cc)
+            });
+        }
+        Ok(())
+    }
+
+    /// Π(−2, 1/2) is in the real DLMF 19.8.7 domain. The AGM path must
+    /// agree with dest 64 and finish quickly at dest 16384.
+    #[test]
+    fn zf_pi_complete_real_agm_n_m2_m_half() -> Result<(), crate::Error> {
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let p64 = 64usize;
+        let n64 = ExactComplex::from_real(ExactNum::from_u8(2, p64).neg(), p64);
+        let half64 = ExactNum::from_u8(1, p64).div(&ExactNum::from_u8(2, p64), p64, r);
+        let m64 = ExactComplex::from_real(half64, p64);
+        let low = n64.elliptic_pi_complete(&m64, p64, r, &mut cc);
+        assert!(!low.is_nan(), "Π(-2,1/2) p=64 NaN");
+        for p in [256usize, 1024, 8192] {
+            let n = ExactComplex::from_real(ExactNum::from_u8(2, p).neg(), p);
+            let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
+            let m = ExactComplex::from_real(half, p);
+            let got = n.elliptic_pi_complete(&m, p, r, &mut cc);
+            assert!(!got.is_nan(), "Π(-2,1/2) p={p} NaN");
+            assert!(
+                near(got.re(), low.re(), p64, 8) && near(got.im(), low.im(), p64, 8),
+                "Π(-2,1/2) p={p} disagree with dest 64"
+            );
+        }
+        let p = 16384usize;
+        let t0 = std::time::Instant::now();
+        let n = ExactComplex::from_real(ExactNum::from_u8(2, p).neg(), p);
+        let half = ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, r);
+        let m = ExactComplex::from_real(half, p);
+        let got = n.elliptic_pi_complete(&m, p, r, &mut cc);
+        let elapsed = t0.elapsed();
+        assert!(!got.is_nan(), "Π(-2,1/2) p=16384 NaN");
+        assert!(
+            near(got.re(), low.re(), p64, 8) && near(got.im(), low.im(), p64, 8),
+            "Π(-2,1/2) p=16384 disagree with dest 64"
+        );
+        assert!(
+            elapsed < std::time::Duration::from_secs(5),
+            "Π(-2,1/2) p=16384 took {elapsed:?}"
         );
         Ok(())
     }
