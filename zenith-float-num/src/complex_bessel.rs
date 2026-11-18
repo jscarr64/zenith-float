@@ -41,6 +41,15 @@ fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
 /// The Hankel expansion's smallest term is about \(e^{-2\lvert z\rvert}\) (2.885|z| bits), so it is
 /// used only when \(\lvert z\rvert \ge 0.35(p+112)\) (covering the Ziv guard bits); below that the
 /// power series is used with [`series_guard_bits`] extra precision.
+/// Integer-order `Y` uses Arb's `J + K(iz) + phase` path once it beats the
+/// `Y_0`/`Y_1` series. Official rustc 1.99.1 release, `Y_1(1+i)` on Pop:
+/// dest 1024 series 4.9 ms vs JK 12.1 ms; dest 8192 JK 0.41 s vs series 2.03 s.
+/// The switch is dest `≥ 4096`, between those two points. Below that the
+/// series stays in use so lower-p rows do not regress.
+fn use_y_int_jk(dest_p: usize) -> bool {
+    dest_p >= 4096
+}
+
 fn use_bessel_series(z: &ExactComplex, dest_p: usize) -> bool {
     if abs_below(z, BESSEL_SERIES_THRESHOLD, dest_p) {
         return true;
@@ -751,7 +760,7 @@ impl ExactComplex {
                 .mul(&j, work_p, RoundingMode::None);
         let corr = if upper { corr } else { neg_c(corr) };
         Some(
-            reflect_phase(nu, !upper, work_p, cc)
+            reflect_phase(&nu, !upper, work_p, cc)
                 .mul(&y, work_p, RoundingMode::None)
                 .add(&corr, work_p, RoundingMode::None),
         )
@@ -1228,9 +1237,114 @@ impl ExactComplex {
             .div(&s, work_p, RoundingMode::None)
     }
 
+    /// `i^n` for `n ≥ 0`, exact (cycle of length 4).
+    fn i_pow_u32(n: u32, p: usize) -> Self {
+        match n % 4 {
+            0 => ExactComplex::one(p),
+            1 => ExactComplex::i(p),
+            2 => ExactComplex::from_real(ExactNum::from_i8(-1, p), p),
+            _ => neg_c(ExactComplex::i(p)),
+        }
+    }
+
+    /// Arb `phase(z)` for integer-order `Y`: `1` if `Re z ≥ 0` or `Im z < 0`,
+    /// else `-3` (`Re z < 0` and `Im z ≥ 0`).
+    fn y_int_jk_phase(z: &Self, p: usize) -> Self {
+        if !z.re().is_negative() || z.im().is_negative() {
+            ExactComplex::one(p)
+        } else {
+            ExactComplex::from_real(ExactNum::from_i8(-3, p), p)
+        }
+    }
+
+    /// Integer-order `K_ν` that never calls `Y` (so the `Y` via `K(iz)` path
+    /// cannot recurse). Left-half arguments use DLMF 10.34.2 plus the
+    /// integer `K` series of `-z`.
+    fn bessel_k_int_no_y(
+        &self,
+        n: i32,
+        work_p: usize,
+        dest_p: usize,
+        cc: &mut Consts,
+    ) -> Option<Self> {
+        if self.re().is_negative() && !self.re().is_zero() {
+            let upper = from_above(self);
+            let w = self.neg_via_mul();
+            let kw = w.bessel_k_integer_series(n, work_p, cc)?;
+            let an = n.unsigned_abs();
+            let nu = ExactComplex::from_real(ExactNum::from_u32(an, work_p), work_p);
+            let iw = w.bessel_i_series(&nu, work_p, dest_p, cc);
+            if iw.is_nan() {
+                return None;
+            }
+            let e = nu
+                .abs(64, RoundingMode::None)
+                .exponent()
+                .map_or(0, |e| usize::try_from(e.max(0)).unwrap_or(usize::MAX));
+            let phase = reflect_phase(&nu, !upper, round_p(work_p.saturating_add(e) + 16), cc);
+            let pi_i = ExactComplex::new(ExactNum::new(work_p), cc.pi(work_p, RoundingMode::None));
+            let corr = pi_i.mul(&iw, work_p, RoundingMode::None);
+            let kpart = phase.mul(&kw, work_p, RoundingMode::None);
+            let k = if upper {
+                kpart.sub(&corr, work_p, RoundingMode::None)
+            } else {
+                kpart.add(&corr, work_p, RoundingMode::None)
+            };
+            if k.is_nan() {
+                None
+            } else {
+                Some(k)
+            }
+        } else {
+            self.bessel_k_integer_series(n, work_p, cc)
+        }
+    }
+
+    /// Arb `acb_hypgeom_bessel_jy` integer path: `Y_n(z) = t − i·phase·J_n(z)`
+    /// with `t = −2 K_n(i z) i^n / π`.
+    fn bessel_y_int_via_jk(
+        &self,
+        n: i32,
+        work_p: usize,
+        dest_p: usize,
+        cc: &mut Consts,
+    ) -> Option<Self> {
+        let an = n.unsigned_abs();
+        let nu = ExactComplex::from_real(ExactNum::from_u32(an, work_p), work_p);
+        let j = self.bessel_j_at(&nu, work_p, dest_p, cc);
+        if j.is_nan() {
+            return None;
+        }
+        let iz = ExactComplex::i(work_p).mul(self, work_p, RoundingMode::None);
+        let k = iz.bessel_k_int_no_y(n, work_p, dest_p, cc)?;
+        let two = ExactComplex::from_real(ExactNum::from_u8(2, work_p), work_p);
+        let t = neg_c(
+            two.mul(&k, work_p, RoundingMode::None)
+                .mul(&Self::i_pow_u32(an, work_p), work_p, RoundingMode::None)
+                .div(&pi_c(work_p, cc), work_p, RoundingMode::None),
+        );
+        let phase = Self::y_int_jk_phase(self, work_p);
+        let y = t.sub(
+            &ExactComplex::i(work_p)
+                .mul(&phase, work_p, RoundingMode::None)
+                .mul(&j, work_p, RoundingMode::None),
+            work_p,
+            RoundingMode::None,
+        );
+        if y.is_nan() {
+            return None;
+        }
+        Some(if n < 0 && an % 2 == 1 { neg_c(y) } else { y })
+    }
+
     fn bessel_y_int(&self, n: i32, work_p: usize, dest_p: usize, cc: &mut Consts) -> Self {
         let an = n.unsigned_abs();
         let y = if use_bessel_series(self, dest_p) {
+            if use_y_int_jk(dest_p) {
+                if let Some(y) = self.bessel_y_int_via_jk(n, work_p, dest_p, cc) {
+                    return y;
+                }
+            }
             let wp = work_p + series_guard_bits(self);
             match an {
                 0 => self.bessel_y0_series(wp, dest_p, cc),
@@ -1643,6 +1757,113 @@ mod tests {
         assert!(!cnear(&ja, &jb, p));
         assert!(cnear_bits(&ja, &jb.conj(), p, 8) || !tiny(ja.im(), p) || !tiny(jb.im(), p));
         Ok(())
+    }
+
+
+    /// Integer-order Y via J + K(iz) + phase agrees with the Y0/Y1 series at
+    /// modest p, and the Wronskian holds for Y_1(1+i) and the left-half
+    /// point Y_1(-1+i) (Arb phase = -3).
+    #[test]
+    fn zf_y_int_jk_matches_series_and_wronskian() -> Result<(), crate::Error> {
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        for p in [64usize, 256, 1024] {
+            let z = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+            let nu0 = ExactComplex::zero(p);
+            let nu1 = ExactComplex::one(p);
+            let y1 = z
+                .bessel_y_int_via_jk(1, p, p, &mut cc)
+                .expect("Y_1(1+i) JK");
+            assert!(!y1.is_nan(), "Y_1(1+i) p={p} NaN");
+            let y1s = z.bessel_y1_series(p + series_guard_bits(&z), p, &mut cc);
+            assert!(
+                cnear_bits(&y1, &y1s, p, 8),
+                "Y_1(1+i) p={p} JK vs series"
+            );
+            let y1pub = z.bessel_y(&nu1, p, rm, &mut cc);
+            assert!(
+                cnear_bits(&y1pub, &y1s, p, 8),
+                "Y_1(1+i) p={p} public vs series"
+            );
+            let y0 = z
+                .bessel_y_int_via_jk(0, p, p, &mut cc)
+                .expect("Y_0(1+i) JK");
+            let j0 = z.bessel_j_nu(&nu0, p, rm, &mut cc);
+            let j1 = z.bessel_j_nu(&nu1, p, rm, &mut cc);
+            let lhs = j0.mul(&y1, p, rm).sub(&j1.mul(&y0, p, rm), p, rm);
+            let rhs = neg_c(two_c(p)).div(&pi_c(p, &mut cc).mul(&z, p, rm), p, rm);
+            assert!(
+                cnear_bits(&lhs, &rhs, p, 8),
+                "Wronskian Y_1(1+i) p={p}"
+            );
+
+            let zl = ExactComplex::new(ExactNum::from_i8(-1, p), ExactNum::from_u8(1, p));
+            let yl1 = zl
+                .bessel_y_int_via_jk(1, p, p, &mut cc)
+                .expect("Y_1(-1+i) JK");
+            assert!(!yl1.is_nan(), "Y_1(-1+i) p={p} NaN");
+            let yl0 = zl
+                .bessel_y_int_via_jk(0, p, p, &mut cc)
+                .expect("Y_0(-1+i) JK");
+            let jl0 = zl.bessel_j_nu(&nu0, p, rm, &mut cc);
+            let jl1 = zl.bessel_j_nu(&nu1, p, rm, &mut cc);
+            let lhs = jl0.mul(&yl1, p, rm).sub(&jl1.mul(&yl0, p, rm), p, rm);
+            let rhs = neg_c(two_c(p)).div(&pi_c(p, &mut cc).mul(&zl, p, rm), p, rm);
+            assert!(
+                cnear_bits(&lhs, &rhs, p, 8),
+                "Wronskian Y_1(-1+i) p={p}"
+            );
+
+            let ym = z
+                .bessel_y_int_via_jk(-1, p, p, &mut cc)
+                .expect("Y_m1 JK");
+            assert!(cnear_bits(&ym, &neg_c(y1.clone()), p, 8), "Y_m1 p={p}");
+        }
+        Ok(())
+    }
+
+    /// Crossover: time the J+K(iz) path (the public `bessel_y`) against the
+    /// Y_1 series at modest p, and the public path at 16k/32k/64k. Ignored:
+    /// official rustc release timings.
+    #[test]
+    #[ignore]
+    fn zf_y1_1plusi_jk_crossover_and_high_p_timing() {
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().expect("Consts");
+        let z64 = ExactComplex::new(ExactNum::from_u8(1, 64), ExactNum::from_u8(1, 64));
+        let nu1 = ExactComplex::one(64);
+        let y64 = z64.bessel_y(&nu1, 64, rm, &mut cc);
+        assert!(!y64.is_nan());
+        for p in [64usize, 256, 1024, 8192, 16384] {
+            let z = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+            let nu = ExactComplex::one(p);
+            let t0 = std::time::Instant::now();
+            let y = z.bessel_y(&nu, p, rm, &mut cc);
+            let tjk = t0.elapsed();
+            assert!(!y.is_nan(), "Y_1(1+i) p={p} NaN");
+            assert!(cnear_bits(&y, &y64, 64, 4), "Y_1(1+i) p={p} vs p=64");
+            let t1 = std::time::Instant::now();
+            let ys = z.bessel_y1_series(p + series_guard_bits(&z), p, &mut cc);
+            let tser = t1.elapsed();
+            eprintln!("Y_1(1+i) p={p} jk={tjk:?} series={tser:?} nan={}", y.is_nan());
+            if p <= 8192 {
+                assert!(cnear_bits(&y, &ys, 64, 4), "Y_1(1+i) p={p} vs series");
+            }
+        }
+        for p in [32768usize, 65536] {
+            let z = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+            let nu = ExactComplex::one(p);
+            let t0 = std::time::Instant::now();
+            let y = z.bessel_y(&nu, p, rm, &mut cc);
+            let tjk = t0.elapsed();
+            eprintln!("Y_1(1+i) p={p} jk={tjk:?} nan={}", y.is_nan());
+            assert!(!y.is_nan(), "Y_1(1+i) p={p} NaN");
+            assert!(cnear_bits(&y, &y64, 64, 4), "Y_1(1+i) p={p} vs p=64");
+            assert!(
+                tjk < std::time::Duration::from_secs(60),
+                "Y_1(1+i) p={p} took {tjk:?}"
+            );
+        }
     }
 
     #[test]
