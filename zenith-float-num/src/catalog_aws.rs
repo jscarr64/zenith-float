@@ -859,7 +859,7 @@ fn pick_k_t(z: &ExactNum, mu: &ExactNum, wp: usize, cc: &mut Consts) -> Option<E
     if !finite(&t) || t.is_negative() || t.is_zero() {
         t = one(wp);
     }
-    for _ in 0..64 {
+    loop {
         if let Some(tb) = k_tail(&t, z, mu, wp, cc) {
             if tb.abs_cmp(&target) != Some(1) {
                 return Some(t);
@@ -870,7 +870,6 @@ fn pick_k_t(z: &ExactNum, mu: &ExactNum, wp: usize, cc: &mut Consts) -> Option<E
             return None;
         }
     }
-    None
 }
 
 /// Derivatives of \(g=(1+t^2)^\mu\) at `t`, via
@@ -1710,7 +1709,7 @@ fn pick_t(nu: &ExactNum, z: &ExactNum, wp: usize, cc: &mut Consts) -> Option<Exa
     if !finite(&t) || t.is_negative() || t.is_zero() {
         t = one(wp);
     }
-    for _ in 0..64 {
+    loop {
         let tb = tail_bound(&t, nu, z, wp, cc)?;
         if tb.abs_cmp(&target) != Some(1) {
             return Some(t);
@@ -1720,7 +1719,6 @@ fn pick_t(nu: &ExactNum, z: &ExactNum, wp: usize, cc: &mut Consts) -> Option<Exa
             return None;
         }
     }
-    None
 }
 
 /// Taylor-panel integral of \(f\) on `[a,b]` plus a majorant remainder.
@@ -2718,7 +2716,7 @@ fn pick_u_end(nu: &ExactNum, z: &ExactNum, wp: usize, cc: &mut Consts) -> Option
     if !finite(&u) || !u.is_positive() {
         u = half(wp);
     }
-    for _ in 0..64 {
+    loop {
         let tb = h_real_tail(nu, z, &u, wp, cc)?;
         if tb.abs_cmp(&target) != Some(1) {
             return Some(u);
@@ -2728,7 +2726,6 @@ fn pick_u_end(nu: &ExactNum, z: &ExactNum, wp: usize, cc: &mut Consts) -> Option
             return None;
         }
     }
-    None
 }
 
 fn anger_a_u_panel(

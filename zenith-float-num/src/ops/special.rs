@@ -1516,7 +1516,7 @@ impl ExactNumNumber {
         } else {
             16
         };
-        for _ in 0..8 {
+        loop {
             let (v, top) = self.ei_series(p + extra, cc)?;
             let lost = if v.is_zero() { usize::MAX } else { (top - v.exponent()).max(0) as usize };
             if lost.saturating_add(8) <= extra {
@@ -1524,10 +1524,12 @@ impl ExactNumNumber {
                 v.set_precision(p, RoundingMode::None)?;
                 return Ok(v);
             }
-            // Ziv: bump by the measured loss; the 8-attempt loop ends if still not tight.
-            extra = lost + 32;
+            let next = lost + 32;
+            if next <= extra {
+                return Err(Error::PrecisionRetryExhausted);
+            }
+            extra = next;
         }
-        Err(Error::InvalidArgument)
     }
 
     /// `γ + ln|x| + Σ_{n≥1} x^n / (n n!)` and the largest exponent among the parts.

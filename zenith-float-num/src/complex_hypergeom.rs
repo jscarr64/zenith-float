@@ -525,7 +525,7 @@ fn transform_1mz_log(
     }
     let m = m as u32;
     let mut pw = p + 32;
-    for _ in 0..3 {
+    loop {
         let Some((v, max_e)) = log_case_sum(a, b, c, z, m, pw, cc) else {
             return nan_pair(Error::InvalidArgument);
         };
@@ -537,9 +537,12 @@ fn transform_1mz_log(
         if lost + 16 <= pw - p {
             return v;
         }
-        pw = p + lost + 48;
+        let next = p + lost + 48;
+        if next <= pw {
+            return nan_pair(Error::PrecisionRetryExhausted);
+        }
+        pw = next;
     }
-    nan_pair(Error::PrecisionRetryExhausted)
 }
 
 /// Bits lost to cancellation in the generic \(1-z\) transform: \(\Gamma(\pm(c-a-b))\) grow like
@@ -785,7 +788,7 @@ fn transform_inv_log(
     cc: &mut Consts,
 ) -> ExactComplex {
     let mut pw = p + 32;
-    for _ in 0..3 {
+    loop {
         let Some((v, max_e)) = inv_log_sum(a, c, z, m, pw, cc) else {
             return nan_pair(Error::InvalidArgument);
         };
@@ -795,9 +798,12 @@ fn transform_inv_log(
             let gc = gamma_fixed(c, pw, cc);
             return gc.mul(&v, pw, rm());
         }
-        pw = p + lost + 48;
+        let next = p + lost + 48;
+        if next <= pw {
+            return nan_pair(Error::PrecisionRetryExhausted);
+        }
+        pw = next;
     }
-    nan_pair(Error::PrecisionRetryExhausted)
 }
 
 fn hypergeom_at(

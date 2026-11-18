@@ -739,7 +739,7 @@ impl ExactComplex {
             .saturating_mul(4)
             .saturating_add(work_p)
             .saturating_add(64);
-        for _ in 0..5 {
+        loop {
             let (sum, peak_exp, sum_exp) =
                 self.sum_bessel_i_series(nu, work_p.saturating_add(guard), dest_p, cap, cc);
             if sum.is_nan() || guard >= guard_limit {
@@ -754,10 +754,12 @@ impl ExactComplex {
             if need <= guard {
                 return sum;
             }
-            guard = need.min(guard_limit);
+            let next = need.min(guard_limit);
+            if next <= guard {
+                return sum;
+            }
+            guard = next;
         }
-        self.sum_bessel_i_series(nu, work_p.saturating_add(guard), dest_p, cap, cc)
-            .0
     }
 
     /// One pass of the \({}_0F_1\) series at working precision `wp`.
