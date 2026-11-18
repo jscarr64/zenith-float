@@ -653,8 +653,8 @@ fn inv_of_series(w: &[ExactComplex], p: usize, kmax: usize) -> Vec<ExactComplex>
     r.push(c_u32(1, p).div(&w0, p, rm()));
     for n in 1..kmax {
         let mut s = ExactComplex::zero(p);
-        for i in 0..n {
-            s = s.add(&r[i].mul(&series_coeff(w, n - i, p), p, rm()), p, rm());
+        for (i, ri) in r.iter().enumerate() {
+            s = s.add(&ri.mul(&series_coeff(w, n - i, p), p, rm()), p, rm());
         }
         r.push(c_neg(&s, p).div(&w0, p, rm()));
     }
@@ -676,8 +676,8 @@ fn inv_sqrt_of_series(
     rr.push(r[0].mul(&r[0], p, rm()));
     for n in 1..kmax {
         let mut known = ExactComplex::zero(p);
-        for i in 0..n {
-            known = known.add(&rr[i].mul(&series_coeff(w, n - i, p), p, rm()), p, rm());
+        for (i, rri) in rr.iter().enumerate() {
+            known = known.add(&rri.mul(&series_coeff(w, n - i, p), p, rm()), p, rm());
         }
         // rr_n = 2 r0 r_n + Q, Q = sum_{j=1}^{n-1} r_j r_{n-j}.
         // (rr w)_n = (2 r0 r_n + Q) w0 + known = 0.
@@ -1066,11 +1066,15 @@ fn carlson_rj(
     // sheet when every argument has nonnegative real part. Otherwise the
     // iterates can jump branch (Π(10−3i, 2+i) was all-bits-wrong) and
     // the value is recovered from the shift-and-integral identity instead.
-    let all_re_nonneg = !x.re().is_negative()
-        && !y.re().is_negative()
-        && !z.re().is_negative()
-        && !pv.re().is_negative();
-    if all_re_nonneg && !dupe.is_nan() {
+    // Principal-sqrt duplication is always on-sheet when every argument
+    // has Re ≥ 0. It can jump when one of x,y,z is 0 and another has
+    // Re < 0 (complete Π at m>1: x=0, y=1-m). Other Re < 0 patterns,
+    // including incomplete Π(1/2; −2 | 2) and complete Π(n, 0) with
+    // Re(1-n)<0, match the principal-sqrt sheet (ZF-78 / 1a8e251).
+    let has_zero_sqrt_arg = is_c_zero(&x) || is_c_zero(&y) || is_c_zero(&z);
+    let sqrt_arg_neg_re = x.re().is_negative() || y.re().is_negative() || z.re().is_negative();
+    let dupe_off_sheet = has_zero_sqrt_arg && sqrt_arg_neg_re;
+    if !dupe_off_sheet && !dupe.is_nan() {
         return dupe;
     }
     let (n_end, mid) = shift_n(&x, &y, &z, &pv, p);
