@@ -96,6 +96,31 @@ fn exact_sum(a: &ExactNum, b: &ExactNum, sub: bool, p: usize) -> ExactNum {
     }
 }
 
+/// Compact signed zero with no dest-sized mantissa.
+pub(crate) fn compact_signed_zero(neg: bool) -> ExactNum {
+    let mut z = ExactNum::from_word(0, DEFAULT_P);
+    if neg {
+        z.set_sign(crate::Sign::Neg);
+    }
+    z
+}
+
+/// Compact `±0 ± 0i`.
+pub(crate) fn compact_complex_zero(re_neg: bool, im_neg: bool) -> ExactComplex {
+    ExactComplex::new(compact_signed_zero(re_neg), compact_signed_zero(im_neg))
+}
+
+/// Compact `1 + 0i`.
+pub(crate) fn compact_one() -> ExactComplex {
+    ExactComplex::new(ExactNum::from_u8(1, DEFAULT_P), compact_signed_zero(false))
+}
+
+/// Compact `±∞ ± 0i`.
+pub(crate) fn compact_inf(re_neg: bool, im_neg: bool) -> ExactComplex {
+    let re = if re_neg { crate::INF_NEG } else { crate::INF_POS };
+    ExactComplex::new(re, compact_signed_zero(im_neg))
+}
+
 /// Complex value `re + i·im` with software-limb real and imaginary parts.
 #[derive(Debug, Clone)]
 pub struct ExactComplex {

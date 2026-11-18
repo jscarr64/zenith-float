@@ -106,6 +106,13 @@ impl ExactComplex {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
+        // Si(0) = 0, odd, with C99 signed zeros. Must not allocate dest.
+        if self.re().is_zero() && self.im().is_zero() {
+            return crate::complex::compact_complex_zero(
+                self.re().is_negative(),
+                self.im().is_negative(),
+            );
+        }
         let dest = round_p(p);
         // Si is odd with real Taylor coefficients: Si(iy) is purely imaginary and Si(x) is real.
         // Pin the exactly-zero part so the Ziv test does not chase rounding noise.
@@ -165,10 +172,8 @@ impl ExactComplex {
         // not chase rounding noise. Its sign is the limit's: Im Ci(x + iy) ≈ y cos(x)/x.
         if self.im().is_zero() && self.re().is_positive() {
             let cx = self.re().cos(WORD_BIT_SIZE, RoundingMode::ToEven, cc);
-            let mut z = ExactNum::new(dest);
-            if self.im().is_negative() ^ cx.is_negative() {
-                z = z.neg();
-            }
+            // The imaginary part is an exact signed zero; do not allocate dest for it.
+            let z = crate::complex::compact_signed_zero(self.im().is_negative() ^ cx.is_negative());
             return ExactComplex::new(self.re().ci(dest, rm, cc), z);
         }
         ziv_complex(dest, rm, |pw| self.ci_at(pw, dest, cc))
@@ -220,6 +225,14 @@ impl ExactComplex {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
+        // S(0) is an exact signed zero (C99 odd, conjugate-symmetric; Im(S)
+        // takes the opposite sign of Im(z)). Must not allocate dest.
+        if self.re().is_zero() && self.im().is_zero() {
+            return crate::complex::compact_complex_zero(
+                self.re().is_negative(),
+                !self.im().is_negative(),
+            );
+        }
         let dest = round_p(p);
         if !finite_parts(self) {
             let pw = dest + WORD_BIT_SIZE;
@@ -256,6 +269,14 @@ impl ExactComplex {
     fn fresnel_c_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() {
             return ExactComplex::new(self.re().clone(), self.im().clone());
+        }
+        // C(0) is an exact signed zero that copies the operand's signed zeros
+        // (C99 odd, conjugate-symmetric; C(z) ~ z). Must not allocate dest.
+        if self.re().is_zero() && self.im().is_zero() {
+            return crate::complex::compact_complex_zero(
+                self.re().is_negative(),
+                self.im().is_negative(),
+            );
         }
         let dest = round_p(p);
         if !finite_parts(self) {
@@ -698,5 +719,79 @@ mod tests {
         let nan = ExactComplex::new(crate::NAN, ExactNum::new(p));
         assert!(nan.ei(p, rm, &mut cc).is_nan());
         Ok(())
+    }
+    fn compact_signed_zero(neg: bool) -> ExactNum {
+        let mut z = ExactNum::from_word(0, crate::DEFAULT_P);
+        if neg {
+            z.set_sign(crate::Sign::Neg);
+        }
+        z
+    }
+
+    /// Exact signed zeros of S, C and Si at dest \(2^{59}\) must return immediately
+    /// with a compact mantissa. C99 oddness and conjugate symmetry fix the signs;
+    /// S takes the opposite imaginary sign from the operand (the existing p=64
+    /// axis convention).
+    #[test]
+    fn zf_fresnel_and_si_signed_zero_at_dest_2_59_returns_immediately() {
+        let p = 1usize << 59;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().expect("Consts");
+        for (re_neg, im_neg) in [(false, false), (false, true), (true, false), (true, true)] {
+            let z = ExactComplex::new(compact_signed_zero(re_neg), compact_signed_zero(im_neg));
+            let t0 = std::time::Instant::now();
+            let s = z.fresnel_s(p, rm, &mut cc);
+            assert!(
+                t0.elapsed().as_secs() < 1,
+                "fresnel_s at dest 2^59 took {:?}",
+                t0.elapsed()
+            );
+            assert!(
+                s.re().is_zero() && s.re().is_negative() == re_neg,
+                "S({z:?}) re {:?}",
+                s
+            );
+            assert!(
+                s.im().is_zero() && s.im().is_negative() == !im_neg,
+                "S({z:?}) im {:?}",
+                s
+            );
+
+            let t0 = std::time::Instant::now();
+            let c = z.fresnel_c(p, rm, &mut cc);
+            assert!(
+                t0.elapsed().as_secs() < 1,
+                "fresnel_c at dest 2^59 took {:?}",
+                t0.elapsed()
+            );
+            assert!(
+                c.re().is_zero() && c.re().is_negative() == re_neg,
+                "C({z:?}) re {:?}",
+                c
+            );
+            assert!(
+                c.im().is_zero() && c.im().is_negative() == im_neg,
+                "C({z:?}) im {:?}",
+                c
+            );
+
+            let t0 = std::time::Instant::now();
+            let si = z.si(p, rm, &mut cc);
+            assert!(
+                t0.elapsed().as_secs() < 1,
+                "si at dest 2^59 took {:?}",
+                t0.elapsed()
+            );
+            assert!(
+                si.re().is_zero() && si.re().is_negative() == re_neg,
+                "Si({z:?}) re {:?}",
+                si
+            );
+            assert!(
+                si.im().is_zero() && si.im().is_negative() == im_neg,
+                "Si({z:?}) im {:?}",
+                si
+            );
+        }
     }
 }
