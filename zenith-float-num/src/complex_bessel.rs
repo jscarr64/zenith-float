@@ -255,6 +255,23 @@ fn from_above(z: &ExactComplex) -> bool {
     }
 }
 
+
+/// Jeff 2026-11-18 10:37 CT: complex Bessel at a negative-real `z` with a
+/// signed-zero imaginary part follows Arb's principal value (the from-above
+/// sheet, Arg = +π). The sign of that zero is ignored on this cut only.
+/// Returns a `+0` twin when `z` is on the cut from below; `None` otherwise.
+/// Off-cut signed zeros and a nonzero imag are left alone, so `from_above`
+/// and the rotation identities keep their existing meaning there.
+fn principal_neg_real_cut(z: &ExactComplex) -> Option<ExactComplex> {
+    if z.im().is_zero() && z.im().is_negative() && z.re().is_negative() && !z.re().is_zero() {
+        let mut im = z.im().clone();
+        im.set_sign(crate::Sign::Pos);
+        Some(ExactComplex::new(z.re().clone(), im))
+    } else {
+        None
+    }
+}
+
 /// Exact integer in \([-64,64]\).
 fn real_small_int(x: &ExactNum, _p: usize) -> Option<i32> {
     if !x.is_int() {
@@ -332,11 +349,7 @@ fn neg_rounding(rm: RoundingMode) -> RoundingMode {
 impl ExactComplex {
     /// \(J_\nu(z)\). Entire for integer \(\nu\); cut on \((-\infty,0]\) otherwise.
     /// \(z=0\) with non-integer \(\nu\) → NaN. On the cut \(\operatorname{Re} z<0\),
-    /// \(\operatorname{Im} z=0\), the sign of that zero selects the side (C99):
-    /// \(+0\) is the limit from above (\(\operatorname{Arg}=+\pi\)), \(−0\) from
-    /// below (\(\operatorname{Arg}=−\pi\)). With real \(\nu\), those values are
-    /// formed from the real kernels (\(J_\nu(-x+0i)=e^{i\nu\pi}J_\nu(x)\),
-    /// \(J_\nu(-x-0i)=e^{-i\nu\pi}J_\nu(x)\)) so algebraically zero parts stay zero.
+    /// \(\operatorname{Im} z=0\), both signs of a zero imaginary part take Arb's principal value (the limit from above, Arg = +π; Jeff 2026-11-18 10:37 CT). With real ν, that value is formed from the real kernels so algebraically zero parts stay zero.
     ///
     /// Accuracy: correctly-rounded
     pub fn bessel_j_nu(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
@@ -350,6 +363,9 @@ impl ExactComplex {
     fn bessel_j_nu_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
+        }
+        if let Some(z) = principal_neg_real_cut(self) {
+            return z.bessel_j_nu_word(nu, p, rm, cc);
         }
         let dest = round_p(p);
         // DLMF 10.4.1: J_{−n}(z) = (−1)^n J_n(z). The generic series starts with 1/Γ(1−n),
@@ -372,8 +388,8 @@ impl ExactComplex {
         ziv_complex(dest, rm, |pw| self.bessel_j_at(nu, pw, dest, cc))
     }
 
-    /// \(Y_\nu(z)\). Cut on \((-\infty,0]\); \(z=0\) → NaN. On the cut, the sign of a
-    /// zero imaginary part selects the side (C99), as for \(J_\nu\).
+    /// \(Y_\nu(z)\). Cut on \((-\infty,0]\); \(z=0\) → NaN. On the cut, both signs of a zero imaginary part take Arb's principal
+    /// value, as for \(J_\nu\).
     ///
     /// # Precision
     ///
@@ -398,6 +414,9 @@ impl ExactComplex {
         if self.re().is_zero() && self.im().is_zero() {
             return nan_pair(Error::InvalidArgument);
         }
+        if let Some(z) = principal_neg_real_cut(self) {
+            return z.bessel_y_word(nu, p, rm, cc);
+        }
         let dest = round_p(p);
         if real_negative_axis(self, nu) {
             return ziv_complex(dest, rm, |pw| self.bessel_neg_real_y(nu, pw, cc));
@@ -405,8 +424,8 @@ impl ExactComplex {
         ziv_complex(dest, rm, |pw| self.bessel_y_at(nu, pw, dest, cc))
     }
 
-    /// \(I_\nu(z)=i^{-\nu}J_\nu(iz)\). Same cut rules as \(J_\nu\) (C99: the sign of a
-    /// zero imaginary part selects the side). For finite \(\nu\), \(z=+\infty\pm 0i\)
+    /// \(I_\nu(z)=i^{-\nu}J_\nu(iz)\). Same cut rules as \(J_\nu\) (on a negative-real cut, both signs of a
+    /// zero imaginary part take Arb's principal value). For finite \(\nu\), \(z=+\infty\pm 0i\)
     /// is \(+\infty\) (DLMF 10.30.4: \(|\arg z|<\pi/2\), leading term \(e^z/\sqrt{2\pi z}\)).
     ///
     /// # Precision
@@ -427,6 +446,9 @@ impl ExactComplex {
     fn bessel_i_word(&self, nu: &Self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if self.is_nan() || nu.is_nan() {
             return nan_pair(Error::InvalidArgument);
+        }
+        if let Some(z) = principal_neg_real_cut(self) {
+            return z.bessel_i_word(nu, p, rm, cc);
         }
         let dest = round_p(p);
         // DLMF 10.30.4: I_ν(z) ∼ e^z/√(2πz) as |z|→∞ in |arg z|<π/2. z = +∞±0i
@@ -457,11 +479,9 @@ impl ExactComplex {
     }
 
     /// \(K_\nu(z)=(\pi/2)\,i^{\nu+1}H_\nu^{(1)}(iz)\). Cut on \((-\infty,0]\); \(z=0\) → NaN.
-    /// On the cut, the sign of a zero imaginary part selects the side (C99), as for
+    /// On the cut, both signs of a zero imaginary part take Arb's principal value, as for
     /// \(J_\nu\) and \(I_\nu\). Real \(z>0\) with real \(\nu\) gives an exact zero
-    /// imaginary part (likewise [`Self::bessel_i`]). On the cut with real \(\nu\),
-    /// \(K_\nu(-x+0i)=e^{-i\nu\pi}K_\nu(x)-i\pi I_\nu(x)\) and
-    /// \(K_\nu(-x-0i)=e^{i\nu\pi}K_\nu(x)+i\pi I_\nu(x)\).
+    /// imaginary part (likewise [`Self::bessel_i`]). On the cut with real ν, both signs of a zero imag use the principal (from-above) formula.
     ///
     /// # Precision
     ///
@@ -489,6 +509,9 @@ impl ExactComplex {
         }
         if self.re().is_zero() && self.im().is_zero() {
             return nan_pair(Error::InvalidArgument);
+        }
+        if let Some(z) = principal_neg_real_cut(self) {
+            return z.bessel_k_word(nu, p, rm, cc);
         }
         let dest = round_p(p);
         // DLMF 10.27.3: K_{−ν}(z) = K_ν(z), for arbitrary complex ν; canonicalize to Re ν ≥ 0.
@@ -1659,16 +1682,14 @@ mod tests {
         z
     }
 
-    /// On the cut, `z = −x−0i` must take the lower sheet (DLMF 10.11.1 / 10.27).
-    /// `J_ν(−x−0i) = e^{−iνπ} J_ν(x)`, and likewise I; the +0 twin is `e^{+iνπ}` times
-    /// the positive-real value. Harper T4: z=−2−0i, ν=2+i, all of J/Y/I/K were WRONG
-    /// (the series path evaluated `(z/2)^ν` on the upper sheet; ratio ≈ e^{2π}).
+    /// Jeff 2026-11-18 10:37 CT: on the cut, complex Bessel at `z = −x−0i`
+    /// follows Arb's principal value (the from-above sheet, Arg = +π). The
+    /// sign of a zero imaginary part is ignored. Harper T4 S1: z=−2−0i,
+    /// ν=2+i, J/Y/I/K.
     #[test]
-    fn zf_bessel_neg_real_cut_signed_zero_uses_lower_sheet() -> Result<(), crate::Error> {
+    fn zf_bessel_neg_real_cut_signed_zero_uses_principal_sheet() -> Result<(), crate::Error> {
         let rm = RoundingMode::ToEven;
         let mut cc = Consts::new()?;
-        // Dest 64 already matches DLMF here. Harper WRONGs were dest 2048+
-        // with 64-bit argument tokens (same construction the harness uses).
         for p in [64usize, 2048] {
             let tok = 64;
             let x = ExactComplex::from_real(ExactNum::from_u8(2, tok), tok);
@@ -1678,77 +1699,80 @@ mod tests {
             assert!(z_minus.im().is_zero() && z_minus.im().is_negative());
 
             let i_pi = ExactComplex::new(ExactNum::new(p), cc.pi(p, RoundingMode::None));
-            let phase_minus = neg_c(nu.mul(&i_pi, p, rm)).exp(p, rm, &mut cc);
             let phase_plus = nu.mul(&i_pi, p, rm).exp(p, rm, &mut cc);
 
             let jx = x.bessel_j_nu(&nu, p, rm, &mut cc);
-            let want_j_minus = phase_minus.mul(&jx, p, rm);
-            let got_j = z_minus.bessel_j_nu(&nu, p, rm, &mut cc);
-            assert!(!got_j.is_nan(), "J_ν(−2−0i) is NaN");
-            assert!(
-                cnear_bits(&got_j, &want_j_minus, p, 8),
-                "J_ν(−2−0i) got {:?} want {:?}",
-                got_j,
-                want_j_minus
-            );
+            let want_j = phase_plus.mul(&jx, p, rm);
+            let got_j_minus = z_minus.bessel_j_nu(&nu, p, rm, &mut cc);
             let got_j_plus = z_plus.bessel_j_nu(&nu, p, rm, &mut cc);
-            let want_j_plus = phase_plus.mul(&jx, p, rm);
+            assert!(!got_j_minus.is_nan(), "J_ν(−2−0i) is NaN");
             assert!(
-                cnear_bits(&got_j_plus, &want_j_plus, p, 8),
-                "J_ν(−2+0i) got {:?} want {:?}",
+                cnear_bits(&got_j_minus, &want_j, p, 8),
+                "J_ν(−2−0i) p={p} got {:?} want principal {:?}",
+                got_j_minus,
+                want_j
+            );
+            assert!(
+                cnear_bits(&got_j_plus, &want_j, p, 8),
+                "J_ν(−2+0i) p={p} got {:?} want principal {:?}",
                 got_j_plus,
-                want_j_plus
+                want_j
+            );
+            assert!(
+                cnear_bits(&got_j_minus, &got_j_plus, p, 8),
+                "J_ν(−2−0i) and (−2+0i) must agree p={p}: {:?} vs {:?}",
+                got_j_minus,
+                got_j_plus
             );
 
             let ix = x.bessel_i(&nu, p, rm, &mut cc);
+            let want_i = phase_plus.mul(&ix, p, rm);
             let got_i = z_minus.bessel_i(&nu, p, rm, &mut cc);
-            let want_i = phase_minus.mul(&ix, p, rm);
             assert!(!got_i.is_nan(), "I_ν(−2−0i) is NaN");
             assert!(
                 cnear_bits(&got_i, &want_i, p, 8),
-                "I_ν(−2−0i) got {:?} want {:?}",
+                "I_ν(−2−0i) p={p} got {:?} want principal {:?}",
                 got_i,
                 want_i
             );
 
-            // Y and K: DLMF 10.11.2 / 10.27.8–10, lower sign for Im z = −0.
+            // Principal / from-above identities (DLMF 10.11.2 / 10.27.8–10).
             let yx = x.bessel_y(&nu, p, rm, &mut cc);
             let nupi = nu.mul(&pi_c(p, &mut cc), p, rm);
-            let two_i_cos = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(2, p)).mul(
-                &nupi.cos(p, rm, &mut cc),
-                p,
-                rm,
-            );
-            // Y(−x−0i) = e^{iνπ} Y(x) − 2i cos(νπ) J(x)
-            let want_y = phase_plus
+            let two_i_cos = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(2, p))
+                .mul(&nupi.cos(p, rm, &mut cc), p, rm);
+            let phase_minus = neg_c(nu.mul(&i_pi, p, rm)).exp(p, rm, &mut cc);
+            // Y(−x+0i) = e^{−iνπ} Y(x) + 2i cos(νπ) J(x)
+            let want_y = phase_minus
                 .mul(&yx, p, rm)
-                .sub(&two_i_cos.mul(&jx, p, rm), p, rm);
+                .add(&two_i_cos.mul(&jx, p, rm), p, rm);
             let got_y = z_minus.bessel_y(&nu, p, rm, &mut cc);
             assert!(!got_y.is_nan(), "Y_ν(−2−0i) is NaN");
             assert!(
                 cnear_bits(&got_y, &want_y, p, 8),
-                "Y_ν(−2−0i) got {:?} want {:?}",
+                "Y_ν(−2−0i) p={p} got {:?} want principal {:?}",
                 got_y,
                 want_y
             );
 
             let kx = x.bessel_k(&nu, p, rm, &mut cc);
-            // K(−x−0i) = e^{iνπ} K(x) + iπ I(x)
+            // K(−x+0i) = e^{−iνπ} K(x) − iπ I(x)
             let i_pi_i = ExactComplex::new(ExactNum::new(p), cc.pi(p, RoundingMode::None));
-            let want_k = phase_plus
+            let want_k = phase_minus
                 .mul(&kx, p, rm)
-                .add(&i_pi_i.mul(&ix, p, rm), p, rm);
+                .sub(&i_pi_i.mul(&ix, p, rm), p, rm);
             let got_k = z_minus.bessel_k(&nu, p, rm, &mut cc);
             assert!(!got_k.is_nan(), "K_ν(−2−0i) is NaN");
             assert!(
                 cnear_bits(&got_k, &want_k, p, 8),
-                "K_ν(−2−0i) p={p} got {:?} want {:?}",
+                "K_ν(−2−0i) p={p} got {:?} want principal {:?}",
                 got_k,
                 want_k
             );
-        } // dest p
+        }
         Ok(())
     }
+
 
     /// DLMF 10.30.4: `I_ν(z) ∼ e^z / √(2πz)` as `|z|→∞` in `|arg z|<π/2`.
     /// `z = +∞+0i` has arg 0, so `I_ν(+∞) = +∞` (imaginary part → 0), for any

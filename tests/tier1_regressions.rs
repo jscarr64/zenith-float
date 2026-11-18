@@ -4184,10 +4184,10 @@ fn zf_78_bessel_cut_and_large_integer_order() {
         "ZF-78 kelvin_kei_nu(2^-30, 100) at p=64: {v:?}"
     );
 
-    // C99: the sign of a zero imag selects the side. +0 is Arg = +π (FLINT
-    // principal); −0 is Arg = −π (DLMF 10.11 / 10.27 / 10.34 continuation,
-    // computed in FLINT). Both must be finite, they must differ, and each
-    // part must match the FLINT gold at p=64, ToEven.
+    // Jeff 2026-11-18 10:37 CT: both signs of a zero imag take Arb's
+    // principal value (Arg = +π, the from-above / FLINT-at-the-real-point
+    // sheet). Both must be finite, they must agree, and each part must
+    // match the principal FLINT gold at p=64, ToEven.
     let z_up = zf_78_neg_real(-2, p, false);
     let z_dn = zf_78_neg_real(-2, p, true);
     let cases: [(&str, ExactComplex, ExactComplex, [&str; 4]); 4] = [
@@ -4242,11 +4242,11 @@ fn zf_78_bessel_cut_and_large_integer_order() {
             "ZF-78 {name}_{{2+i}}(-2±0i) must be finite, got {up:?} / {dn:?}"
         );
         assert!(
-            up.re().compare(dn.re()) != Some(0) || up.im().compare(dn.im()) != Some(0),
-            "ZF-78 {name}_{{2+i}}(-2+0i) and (-2-0i) must differ, both {up:?}"
+            up.re().compare(dn.re()) == Some(0) && up.im().compare(dn.im()) == Some(0),
+            "ZF-78 {name}_{{2+i}}(-2+0i) and (-2-0i) must agree, got {up:?} / {dn:?}"
         );
         zf_78_assert_flint_gold(name, false, &up, golds[0], golds[1], p, rm, &mut cc);
-        zf_78_assert_flint_gold(name, true, &dn, golds[2], golds[3], p, rm, &mut cc);
+        zf_78_assert_flint_gold(name, true, &dn, golds[0], golds[1], p, rm, &mut cc);
     }
 }
 
