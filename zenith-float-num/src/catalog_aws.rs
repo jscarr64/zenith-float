@@ -88,7 +88,7 @@ fn work_or_refuse(p: usize) -> Result<usize, ExactNum> {
 }
 
 /// C99 7.12.1 overflow: MAX when the mode rounds toward zero, else signed Inf.
-fn overflow_signed(neg: bool, p: usize, rm: RoundingMode) -> ExactNum {
+pub(crate) fn overflow_signed(neg: bool, p: usize, rm: RoundingMode) -> ExactNum {
     let toward_zero = matches!(
         (!neg, rm),
         (_, RoundingMode::ToZero) | (true, RoundingMode::Down) | (false, RoundingMode::Up)

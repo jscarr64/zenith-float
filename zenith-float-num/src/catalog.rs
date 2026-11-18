@@ -2156,8 +2156,19 @@ impl ExactNum {
 
     /// Word-precision implementation of [`Self::barnes_g`].
     fn barnes_g_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        // G(+∞)=+∞ (the limit is exact, every mode). G(−∞) has no limit
+        // (zeros at every non-positive integer).
+        if self.is_inf_pos() {
+            return crate::ext::INF_POS;
+        }
         if !finite(self) {
             return cat_nan();
+        }
+        // Large positive z: G overflows the exponent range. C99 7.12.1 maps
+        // that by rounding mode (+MAX toward zero, +Inf otherwise), not a
+        // refusal and not +Inf in every mode.
+        if self.is_positive() && barnes_g_pos_overflows(self) {
+            return catalog_aws::overflow_signed(false, p, rm);
         }
         let wrk = work_p(p);
         // Zeros at every non-positive integer, however large.
@@ -2490,6 +2501,23 @@ impl ExactNum {
     }
 }
 
+/// Proven overflow of Barnes G at a positive `z`.
+///
+/// DLMF 5.17.5: `ln G(w+1) = (w²/2) ln w − 3w²/4 + (w/2) ln(2π) − (ln w)/12
+/// + ζ'(−1) + R(w)`. Hence `ln G(w+1) − ((w²/2) ln w − w²)` equals
+/// `w²/4 + (w/2) ln(2π) − (ln w)/12 + ζ'(−1) + R(w)`. For `w ≥ 2^{29}`,
+/// `|R(w)| ≤ 1/(120 w²)` and that difference is positive, so
+/// `ln G(w+1) > (w²/2) ln w − w²`. If `z ∈ [2^{lb}, 2^{lb+1})` with `lb ≥ 30`,
+/// then `w = z−1 ≥ 2^{30}−1 > 2^{29}` and `(w²/2) ln w − w² > EMAX ln 2`, so
+/// `G(z)` overflows the exponent range.
+fn barnes_g_pos_overflows(z: &ExactNum) -> bool {
+    let Some(e) = z.exponent() else {
+        return false;
+    };
+    // `exponent()` e means the value lies in [2^{e-1}, 2^e); lb = floor(log2 z) = e-1.
+    e.checked_sub(1).is_some_and(|lb| lb >= 30)
+}
+
 /// Barnes G at a non-integer `w < −64` by reflection (ZF-72), with `z = 1 − w > 65`:
 /// `ln|G(1−z)| = ln G(1+z) − z ln 2π + z ln|2 sin πz| + Cl₂(2πz)/(2π)`, from
 /// `ln G(1−z) − ln G(1+z) = −z ln 2π + ∫₀^z πt cot πt dt` (DLMF 5.17) and
@@ -2787,6 +2815,63 @@ mod tests {
         let sn = u.jacobi_sn(&mpar, p, rm, &mut cc);
         let back = sn.jacobi_arcsn(&mpar, p, rm, &mut cc);
         assert!(near(&back, &u, p));
+        Ok(())
+    }
+
+    /// G(2^{30}) overflows the exponent range (DLMF 5.17.5: log₂ G(z) ∼ (z²/2) log₂ z).
+    /// C99 7.12.1: Down/ToZero must return +MAX, not +Inf; Up returns +Inf.
+    /// G(+Inf) = +Inf in every mode; G(+MAX) overflows by the same rule (not InvalidArgument).
+    #[test]
+    fn zf_barnes_g_large_positive_overflows_by_mode() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 128;
+        let two_30 = ExactNum::from_u32(1u32 << 30, p);
+        let down = two_30.barnes_g(p, RoundingMode::Down, &mut cc);
+        let tozero = two_30.barnes_g(p, RoundingMode::ToZero, &mut cc);
+        let up = two_30.barnes_g(p, RoundingMode::Up, &mut cc);
+        let max = ExactNum::max_value(p);
+        assert!(
+            finite(&down) && !down.is_negative() && down.compare(&max) == Some(0),
+            "G(2^30) Down should be +MAX, got inf={} nan={}",
+            down.is_inf(),
+            down.is_nan()
+        );
+        assert!(
+            finite(&tozero) && !tozero.is_negative() && tozero.compare(&max) == Some(0),
+            "G(2^30) ToZero should be +MAX, got inf={} nan={}",
+            tozero.is_inf(),
+            tozero.is_nan()
+        );
+        assert!(
+            up.is_inf_pos(),
+            "G(2^30) Up should be +Inf, got nan={}",
+            up.is_nan()
+        );
+
+        let inf = crate::ext::INF_POS;
+        for rm in [RoundingMode::Down, RoundingMode::ToZero, RoundingMode::Up, RoundingMode::ToEven]
+        {
+            let g = inf.barnes_g(p, rm, &mut cc);
+            assert!(
+                g.is_inf_pos(),
+                "G(+Inf) should be +Inf in {rm:?}, nan={}",
+                g.is_nan()
+            );
+        }
+
+        let gmax_down = max.barnes_g(p, RoundingMode::Down, &mut cc);
+        let gmax_up = max.barnes_g(p, RoundingMode::Up, &mut cc);
+        assert!(
+            finite(&gmax_down) && !gmax_down.is_negative() && gmax_down.compare(&max) == Some(0),
+            "G(+MAX) Down should be +MAX, got inf={} nan={}",
+            gmax_down.is_inf(),
+            gmax_down.is_nan()
+        );
+        assert!(
+            gmax_up.is_inf_pos(),
+            "G(+MAX) Up should be +Inf, got nan={}",
+            gmax_up.is_nan()
+        );
         Ok(())
     }
 
