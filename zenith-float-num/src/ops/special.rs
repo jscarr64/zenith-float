@@ -7110,6 +7110,7 @@ fn euler_product_limit(s: usize, wp: usize) -> Result<usize, Error> {
     Ok((1usize << e).saturating_add(2))
 }
 
+#[cfg(test)]
 fn zeta_inv_euler_product(s: usize, wp: usize) -> Result<ExactNumNumber, Error> {
     let pmax = euler_product_limit(s, wp)?;
     let primes = primes_upto(pmax);
@@ -7127,6 +7128,7 @@ fn zeta_inv_euler_product(s: usize, wp: usize) -> Result<ExactNumNumber, Error> 
     Ok(inv)
 }
 
+#[cfg(test)]
 fn zeta_ui_asymp(s: usize, wp: usize) -> Result<ExactNumNumber, Error> {
     let one = ExactNumNumber::from_word(1, wp)?;
     let mut z = one.clone()?;
@@ -7163,6 +7165,7 @@ fn even_bernoulli_zeta_wp(k: usize, p: usize) -> Result<usize, Error> {
 }
 
 /// `F = 2 (2k)! ζ(2k) / (2π)^{2k}` at `wp`, then the sign of `B_{2k}`.
+#[cfg(test)]
 fn even_bernoulli_from_f(
     f: ExactNumNumber,
     k: usize,
@@ -7189,6 +7192,7 @@ fn even_bernoulli_from_f(
 /// `B_{2k}` at `p` bits ToEven, from
 /// `B_{2k} = (-1)^{k+1} 2 (2k)! ζ(2k) / (2π)^{2k}`
 /// (Arb `arb_bernoulli_ui_zeta`: Euler product, or the short tail when `2k > 0.7 wp`).
+#[cfg(test)]
 fn even_bernoulli_via_zeta(k: usize, p: usize) -> Result<ExactNumNumber, Error> {
     if k == 0 {
         return Err(Error::InvalidArgument);
