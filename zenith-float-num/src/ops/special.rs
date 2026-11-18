@@ -331,15 +331,17 @@ impl ExactNumNumber {
 
         // ZF-37: one positive integer n gives the rational B(a, n) = (n−1)! / (a (a+1) ⋯ (a+n−1))
         // for any non-pole a (DLMF 5.12.1 with Γ(a+n) = (a)_n Γ(a)), e.g. B(−½, 2) = −4, which
-        // the Ziv loop over the Γ ratio cannot certify. Exact product, one division; past 2^22
-        // bits of work the floating path decides.
+        // the Ziv loop over the Γ ratio cannot certify. Exact product, one division; if that width is unallocatable the floating path decides.
         for (x, y) in [(self, b), (b, self)] {
             if !y.is_positive() || !y.is_int() {
                 continue;
             }
             let Ok(n) = y.int_as_usize() else { continue };
             let per = x.mantissa_max_bit_len().saturating_add(2 * WORD_BIT_SIZE);
-            if n.checked_mul(per).is_none_or(|w| w > 1 << 22) {
+            let Some(w) = n.checked_mul(per) else {
+                continue;
+            };
+            if Self::p_assertion(round_p(w)).is_err() {
                 continue;
             }
             let mut ex = x.clone()?;
@@ -428,17 +430,18 @@ impl ExactNumNumber {
         self.is_zero() || (self.is_negative() && self.is_int())
     }
 
-    /// `Some(n)` when `self` is a positive integer `n ≤ BETA_INT_MAX`, else `None`.
+    /// `Some(n)` when `self` is a positive integer that fits in `usize`, else `None`.
+    /// Larger indices belong on the Γ / ln Γ path, not `InvalidArgument`.
     fn beta_int_index(&self) -> Result<Option<usize>, Error> {
-        if !self.is_positive()
-            || self.is_zero()
-            || !self.is_int()
-            || self.exponent() > BETA_RATIO_EXP + 2
-        {
+        if !self.is_positive() || self.is_zero() || !self.is_int() {
             return Ok(None);
         }
-        let n = self.int_as_usize()?;
-        Ok(if n <= BETA_INT_MAX { Some(n) } else { None })
+        match self.int_as_usize() {
+            Ok(n) if n >= 1 => Ok(Some(n)),
+            Ok(_) => Ok(None),
+            Err(Error::InvalidArgument) => Ok(None),
+            Err(e) => Err(e),
+        }
     }
 
     /// `ln Γ(self)` for positive `self` at precision `p`.
@@ -846,7 +849,7 @@ impl ExactNumNumber {
         }
 
         // Half-integers: Γ(n+½) = √π · ∏_{k=1}^{n} (2k−1)/2, with the product exact.
-        if let Some(n) = self.half_integer_index()? {
+        if let Some(n) = self.half_integer_index(p)? {
             let mut prod = Self::from_word(1, WORD_BIT_SIZE)?;
             for k in 1..=n {
                 let pb = round_p(prod.mantissa_max_bit_len() + 2 * WORD_BIT_SIZE);
@@ -889,25 +892,23 @@ impl ExactNumNumber {
         g.div(&acc, p, RoundingMode::None)
     }
 
-    /// `Some(n)` when `self = n + 1/2` with `n ≤ HALF_INTEGER_MAX`, else `None`.
-    fn half_integer_index(&self) -> Result<Option<usize>, Error> {
+    /// `Some(n)` when `self = n + 1/2` and the closed-form product or sum is
+    /// within the same bit-length / term bound as the integer factorial path
+    /// (`n ≤ 4p + 4096`). Larger half-integers use the Stirling / asymptotic kernel.
+    fn half_integer_index(&self, p: usize) -> Result<Option<usize>, Error> {
         if !self.is_positive() || self.is_zero() || self.is_int() {
             return Ok(None);
         }
         if !self.is_int_when_doubled() {
             return Ok(None);
         }
-        // This is only the finite-sum fast path: an index too large for usize belongs in the
-        // asymptotic kernel, not InvalidArgument.
-        if self.cmp(&from_usize_p(
-            HALF_INTEGER_MAX + 1,
-            self.mantissa_max_bit_len(),
-        )?) >= 0
-        {
-            return Ok(None);
-        }
-        let n = self.int_as_usize()?;
-        Ok(if n <= HALF_INTEGER_MAX { Some(n) } else { None })
+        let n = match self.int_as_usize() {
+            Ok(n) => n,
+            Err(Error::InvalidArgument) => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let cap = p.saturating_mul(4).saturating_add(4096);
+        Ok(if n <= cap { Some(n) } else { None })
     }
 
     fn ln_gamma_stirling(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
@@ -1063,7 +1064,7 @@ impl ExactNumNumber {
         let pw = p + WORD_BIT_SIZE;
         let one = Self::from_word(1, pw)?;
         // Half-integers: ψ(n+½) = −γ − 2 ln 2 + Σ_{k=1}^{n} 2/(2k−1).
-        if let Some(n) = self.half_integer_index()? {
+        if let Some(n) = self.half_integer_index(p)? {
             let g = cc.euler_gamma_num(pw, RoundingMode::None)?;
             let mut ln4 = cc.ln_2_num(pw, RoundingMode::None)?;
             ln4.set_exponent(ln4.exponent() + 1);
@@ -1360,9 +1361,8 @@ impl ExactNumNumber {
                         };
                         break (v, acc.max(p_wrk));
                     }
-                    if lost > HYPERGEOM_LOSS_MAX {
-                        return Err(Error::PrecisionRetryExhausted);
-                    }
+                    // Ziv: bump by the measured loss; stop only when bump_prec_retry
+                    // exhausts MAX_PREC_RETRY or the new width is unallocatable.
                     extra = lost.saturating_add(WORD_BIT_SIZE);
                 },
             };
@@ -1523,9 +1523,7 @@ impl ExactNumNumber {
                 v.set_precision(p, RoundingMode::None)?;
                 return Ok(v);
             }
-            if lost > HYPERGEOM_LOSS_MAX {
-                break;
-            }
+            // Ziv: bump by the measured loss; the 8-attempt loop ends if still not tight.
             extra = lost + 32;
         }
         Err(Error::InvalidArgument)
@@ -4418,9 +4416,7 @@ impl ExactNumNumber {
     ///   used when the power is exact, e.g. ₂F₁(10, ½; 10; 1 − 2^-20) = 2^10 (c = a is the
     ///   degree-0 case `(1−z)^{−b}`).
     ///
-    /// `None` (the floating path decides) otherwise, or when the exact work would pass 2^22
-    /// bits (then the value is computed by the series and Ziv reports exhaustion rather
-    /// than a wrong value if it is exact).
+    /// `None` (the floating path decides) otherwise, or when the exact work width is unallocatable (then the series / Ziv path decides).
     fn hyp2f1_closed_exact(
         &self,
         b: &Self,
@@ -4430,7 +4426,6 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Option<Self>, Error> {
-        const WORK_BITS_MAX: usize = 1 << 22;
         let exact = |v: &Self| -> Result<Self, Error> {
             let mut v = v.clone()?;
             v.set_inexact(false);
@@ -4459,7 +4454,10 @@ impl ExactNumNumber {
                     .mantissa_max_bit_len()
                     .max(other.mantissa_max_bit_len())
                     .saturating_add(3 * WORD_BIT_SIZE);
-                if m.checked_mul(per).is_none_or(|w| w > WORK_BITS_MAX) {
+                let Some(w) = m.checked_mul(per) else {
+                    continue;
+                };
+                if Self::p_assertion(round_p(w)).is_err() {
                     continue;
                 }
                 let n0 = sub(&ec, m_src)?;
@@ -4487,7 +4485,7 @@ impl ExactNumNumber {
             .mantissa_max_bit_len()
             .saturating_add(ze)
             .saturating_add(WORD_BIT_SIZE);
-        if w_omz > WORK_BITS_MAX {
+        if Self::p_assertion(round_p(w_omz)).is_err() {
             return Ok(None);
         }
         let omz = one.sub(&ez, round_p(w_omz), RoundingMode::None)?;
@@ -4509,7 +4507,10 @@ impl ExactNumNumber {
                 .max(ec.mantissa_max_bit_len())
                 .max(ez.mantissa_max_bit_len())
                 + 2 * WORD_BIT_SIZE);
-        if n.checked_mul(per).is_none_or(|w| w > WORK_BITS_MAX) {
+        let Some(w) = n.checked_mul(per) else {
+            return Ok(None);
+        };
+        if Self::p_assertion(round_p(w)).is_err() {
             return Ok(None);
         }
         let (num, q) = if n == 0 {
@@ -4542,7 +4543,7 @@ impl ExactNumNumber {
                 .saturating_add(q.mantissa_max_bit_len())
                 .saturating_add(2 * WORD_BIT_SIZE)
                 .min(wa);
-            if wl > WORK_BITS_MAX {
+            if Self::p_assertion(round_p(wl)).is_err() {
                 return Ok(None);
             }
             let v = omz.pow(&d, round_p(wl), RoundingMode::ToZero, cc)?;
@@ -4570,7 +4571,10 @@ impl ExactNumNumber {
         if lost <= WORD_BIT_SIZE {
             return Ok(v);
         }
-        let p_more = p + round_p(lost.min(HYPERGEOM_LOSS_MAX)) + WORD_BIT_SIZE;
+        let p_more = p + round_p(lost) + WORD_BIT_SIZE;
+        if Self::p_assertion(p_more).is_err() {
+            return Ok(v);
+        }
         Ok(hyp2f1_real(self, b, c, z, p_more, cc)?.0)
     }
 
@@ -4653,7 +4657,7 @@ impl ExactNumNumber {
     /// exact results such as `I_{1/2}(100, 1) = 2^-100` or `I_{2^-30}(½, 1) = 2^-15`, which no
     /// Ziv loop can certify, come out correctly rounded in every mode. `None` (the floating
     /// path decides; its values are irrational there or Ziv reports exhaustion, never a
-    /// wrong value) when the power is inexact or the exact sum would pass 2^22 bits of work.
+    /// wrong value) when the power is inexact or the exact work width is unallocatable.
     fn betainc_exact(
         &self,
         b: &Self,
@@ -4662,7 +4666,6 @@ impl ExactNumNumber {
         rm: RoundingMode,
         cc: &mut Consts,
     ) -> Result<Option<Self>, Error> {
-        const WORK_BITS_MAX: usize = 1 << 22;
         let exact = |v: &Self| -> Result<Self, Error> {
             let mut v = v.clone()?;
             v.set_inexact(false);
@@ -4676,7 +4679,7 @@ impl ExactNumNumber {
             .mantissa_max_bit_len()
             .saturating_add(xe)
             .saturating_add(WORD_BIT_SIZE);
-        if w_omx > WORK_BITS_MAX {
+        if Self::p_assertion(round_p(w_omx)).is_err() {
             return Ok(None);
         }
         let omx = one.sub(&ex, round_p(w_omx), RoundingMode::None)?;
@@ -4695,7 +4698,10 @@ impl ExactNumNumber {
                 .mantissa_max_bit_len()
                 .saturating_add(y.mantissa_max_bit_len())
                 .saturating_add(2 * WORD_BIT_SIZE);
-            if n.checked_mul(per).is_none_or(|w| w > WORK_BITS_MAX) {
+            let Some(w) = n.checked_mul(per) else {
+                continue;
+            };
+            if Self::p_assertion(round_p(w)).is_err() {
                 continue;
             }
             let alpha_up = if alpha.exponent() <= 0 {
@@ -4745,7 +4751,7 @@ impl ExactNumNumber {
                 .saturating_add(gap)
                 .saturating_add(2 * WORD_BIT_SIZE)
                 .min(wa);
-            if wl > WORK_BITS_MAX {
+            if Self::p_assertion(round_p(wl)).is_err() {
                 continue;
             }
             let xa = base.pow(alpha, round_p(wl), RoundingMode::ToZero, cc)?;
@@ -5003,11 +5009,6 @@ fn exact_product(lo: usize, hi: usize) -> Result<ExactNumNumber, Error> {
 
 /// Beta arguments up to 2^BETA_RATIO_EXP use the Γ ratio; larger ones the ln Γ sum.
 const BETA_RATIO_EXP: Exponent = 10;
-/// Largest integer argument of the exact integer beta path.
-const BETA_INT_MAX: usize = 1 << 12;
-
-pub(crate) const HALF_INTEGER_MAX: usize = 1 << 12;
-
 /// Fixed walk cap used only by tests that force a cap below the
 /// remainder-bound step count. Production Γ and ψ use
 /// [`stirling_shift_count`] (P9).
@@ -5068,9 +5069,6 @@ pub(crate) fn stirling_min_exponent(p: usize, c: usize, slope: usize, floor: Exp
     let need = (p + c).div_ceil(slope) + 1;
     Exponent::try_from(need).map_or(Exponent::MAX, |e| e.max(floor))
 }
-
-/// Cap on the extra bits a 2F1 re-evaluation may add for measured cancellation.
-const HYPERGEOM_LOSS_MAX: usize = 4096;
 
 fn fact_ratio_down(a: u32, b: u32, p: usize) -> Result<ExactNumNumber, Error> {
     let mut acc = ExactNumNumber::from_word(1, p)?;
@@ -8480,6 +8478,34 @@ mod tests {
             )?
             .neg()?;
         bits_agree(&wr, &want_w, p, 40, "J/Y Wronskian at 20000")?;
+        Ok(())
+    }
+
+    /// Γ(4097 + 1/2) used the old `HALF_INTEGER_MAX = 2^12` cutoff and went through
+    /// Stirling. The closed form `√π · (2n−1)!! / 2^n` is used when n ≤ 4p + 4096.
+    #[test]
+    fn test_gamma_half_integer_beyond_old_4096_cap() -> Result<(), crate::Error> {
+        let p = 64;
+        let mut cc = Consts::new()?;
+        let rm = RoundingMode::ToEven;
+        let n: usize = 4097;
+        let half = one_half(p)?;
+        let x = from_usize_p(n, p)?.add(&half, p, RoundingMode::None)?;
+        let got = x.gamma(p, rm, &mut cc)?;
+        let mut prod = ExactNumNumber::from_word(1, WORD_BIT_SIZE)?;
+        for k in 1..=n {
+            let pb = round_p(prod.mantissa_max_bit_len() + 2 * WORD_BIT_SIZE);
+            prod = prod.mul(&from_usize_p(2 * k - 1, pb)?, pb, RoundingMode::None)?;
+        }
+        let e =
+            prod.exponent() - Exponent::try_from(n).map_err(|_| crate::Error::InvalidArgument)?;
+        prod.set_exponent(e);
+        let pw = p + WORD_BIT_SIZE;
+        let rpi = cc
+            .pi_num(pw, RoundingMode::None)?
+            .sqrt(pw, RoundingMode::None)?;
+        let want = rpi.mul(&prod, p, RoundingMode::None)?;
+        bits_agree(&got, &want, p, 56, "Γ(4097.5)")?;
         Ok(())
     }
 

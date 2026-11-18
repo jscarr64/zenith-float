@@ -1079,9 +1079,9 @@ impl ExactComplex {
                     if let Ok(m) = twice.to_u32(RoundingMode::ToZero) {
                         if m % 2 == 1 {
                             let n = ((m - 1) / 2) as usize;
-                            // Same finite-sum cutoff as the real kernel:
-                            // larger half-integers use Stirling.
-                            if n <= crate::ops::special::HALF_INTEGER_MAX {
+                            // Same finite-sum cutoff as the real kernel
+                            // (n ≤ 4p + 4096); larger half-integers use Stirling.
+                            if n <= p.saturating_mul(4).saturating_add(4096) {
                                 let g = cc.euler_gamma(p, RoundingMode::None);
                                 let ln2 = cc.ln_2(p, RoundingMode::None);
                                 let two_ln2 = ln2.ldexp(1, p, RoundingMode::None);
