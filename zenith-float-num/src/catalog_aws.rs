@@ -117,11 +117,16 @@ mod aws_test_hooks {
     thread_local! {
         pub static GAMMA_OR_POLE_CALLS: Cell<u64> = const { Cell::new(0) };
         pub static MACLAURIN_K: Cell<usize> = const { Cell::new(0) };
+        pub static U_PATH_PANELS: Cell<u64> = const { Cell::new(0) };
+        pub static U_PATH_TRIPPED: Cell<bool> = const { Cell::new(false) };
         pub static COUNTING: Cell<bool> = const { Cell::new(false) };
     }
+    pub const U_PATH_TRIP: u64 = 64;
     pub fn reset() {
         GAMMA_OR_POLE_CALLS.with(|c| c.set(0));
         MACLAURIN_K.with(|c| c.set(0));
+        U_PATH_PANELS.with(|c| c.set(0));
+        U_PATH_TRIPPED.with(|c| c.set(false));
         COUNTING.with(|c| c.set(true));
     }
     pub fn stop() {
@@ -142,6 +147,30 @@ mod aws_test_hooks {
     }
     pub fn maclaurin_k() -> usize {
         MACLAURIN_K.with(|c| c.get())
+    }
+    pub fn note_u_panel() {
+        if COUNTING.with(|c| c.get()) {
+            U_PATH_PANELS.with(|c| c.set(c.get().saturating_add(1)));
+        }
+    }
+    pub fn u_panels() -> u64 {
+        U_PATH_PANELS.with(|c| c.get())
+    }
+    /// Test-only tripwire so a spinning bisection fails the red test
+    /// instead of hanging the process.
+    pub fn u_path_should_stop() -> bool {
+        if !COUNTING.with(|c| c.get()) {
+            return false;
+        }
+        if U_PATH_PANELS.with(|c| c.get()) >= U_PATH_TRIP {
+            U_PATH_TRIPPED.with(|c| c.set(true));
+            true
+        } else {
+            false
+        }
+    }
+    pub fn u_tripped() -> bool {
+        U_PATH_TRIPPED.with(|c| c.get())
     }
 }
 
@@ -1083,6 +1112,57 @@ fn k_panel(
     Some((integ, rem))
 }
 
+/// Midpoint of `[a, b]` if a split could still meet `target`; `None` if
+/// the method is not tight and must not spin. A panel whose remainder,
+/// even after shrinking proportionally to the width all the way down to
+/// 2^{-(wp+16)}, still misses `target` cannot be saved by bisection.
+/// `rem = None` means the panel could not be formed; a narrower width
+/// may still work, so only the minimum-width cutoff refuses.
+fn panel_mid_or_stall(
+    a: &ExactNum,
+    b: &ExactNum,
+    rem: Option<&ExactNum>,
+    target: &ExactNum,
+    wp: usize,
+) -> Option<ExactNum> {
+    let w = ExactNum::sub_ref(b, a, wp, N);
+    let wexp = w.exponent()?;
+    if wexp < -((wp as i64) + 16) {
+        return None;
+    }
+    let mid = ExactNum::add_ref(a, b, wp, N).ldexp(-1, wp, N);
+    if let Some(rem) = rem {
+        if !finite(rem) {
+            return None;
+        }
+        let remain = wexp.saturating_sub(-((wp as i64) + 16)).max(0);
+        if exp_of(rem).saturating_sub(remain) > exp_of(target) {
+            return None;
+        }
+    } else if mid.is_positive() {
+        // A narrower width only helps when the Cauchy disk does not yet
+        // fit (ρ ≲ half_h). If 0.9 mid already exceeds half_h, the
+        // geometry is valid and bisection will not fix a failed majorant
+        // or Taylor jet (the ν=100, z=1000 hang).
+        let half_h = w.ldexp(-1, wp, N);
+        let nine_tenth = ExactNum::from_u8(9, wp).div(&ExactNum::from_u8(10, wp), wp, DN);
+        let r1 = mid.clone().mul(&nine_tenth, wp, DN);
+        if r1.abs_cmp(&half_h) == Some(1) {
+            return None;
+        }
+    }
+    Some(mid)
+}
+
+/// A child's remainder stalled if it is not at least two bits smaller
+/// than the parent panel's remainder (the bound is not improving).
+fn rem_stalled(parent_re: Option<i64>, rem: Option<&ExactNum>) -> bool {
+    match (parent_re, rem) {
+        (Some(pe), Some(r)) if finite(r) => exp_of(r) >= pe.saturating_sub(1),
+        _ => false,
+    }
+}
+
 /// DLMF 11.5.2: \(K_\nu(z)=\dfrac{2(z/2)^\nu}{\sqrt{\pi}\,\Gamma(\nu+1/2)}
 /// \int_0^\infty e^{-z t}(1+t^2)^{\nu-1/2}\,dt\), \(\Re z>0\).
 /// Returns \(K_\nu\) and a good-bit count, or `None`.
@@ -1111,7 +1191,7 @@ fn struve_k_integral(
             h = t_end.clone().div(&ExactNum::from_u32(65_536, wp), wp, UP);
         }
     }
-    let mut stack: Vec<(ExactNum, ExactNum)> = Vec::new();
+    let mut stack: Vec<(ExactNum, ExactNum, Option<i64>)> = Vec::new();
     let mut left = ExactNum::new(wp);
     loop {
         if ExactNum::sub_ref(&t_end, &left, wp, DN).is_negative()
@@ -1123,7 +1203,7 @@ fn struve_k_integral(
         if right.abs_cmp(&t_end) != Some(-1) {
             right = t_end.clone();
         }
-        stack.push((left.clone(), right.clone()));
+        stack.push((left.clone(), right.clone(), None));
         if right.abs_cmp(&t_end) != Some(-1) {
             break;
         }
@@ -1132,20 +1212,30 @@ fn struve_k_integral(
     let mut acc = ExactNum::new(wp);
     let mut rem_acc = tb.clone();
     let mut panels = 0usize;
-    while let Some((a, b)) = stack.pop() {
+    while let Some((a, b, parent_re)) = stack.pop() {
         panels = panels.saturating_add(1);
+        if panels > wp.saturating_add(32).saturating_mul(4).saturating_add(1) {
+            return None;
+        }
         match k_panel(&a, &b, z, &mu, wp, cc) {
             Some((val, rem)) if rem.abs_cmp(&target) != Some(1) => {
                 acc = acc.add(&val, wp, N);
                 rem_acc = rem_acc.add(&rem, wp, UP);
             }
-            Some(_) | None => {
-                let mid = ExactNum::add_ref(&a, &b, wp, N).ldexp(-1, wp, N);
-                if ExactNum::sub_ref(&b, &a, wp, N).exponent()? < -((wp as i64) + 16) {
+            other => {
+                let rem_ref = match &other {
+                    Some((_, rem)) => Some(rem),
+                    None => None,
+                };
+                if rem_stalled(parent_re, rem_ref) {
                     return None;
                 }
-                stack.push((mid.clone(), b));
-                stack.push((a, mid));
+                let Some(mid) = panel_mid_or_stall(&a, &b, rem_ref, &target, wp) else {
+                    return None;
+                };
+                let child_re = rem_ref.map(exp_of);
+                stack.push((mid.clone(), b, child_re));
+                stack.push((a, mid, child_re));
             }
         }
     }
@@ -1768,7 +1858,7 @@ fn anger_a_integral(
             h = t_end.clone().div(&ExactNum::from_u32(65_536, wp), wp, UP);
         }
     }
-    let mut stack: Vec<(ExactNum, ExactNum)> = Vec::new();
+    let mut stack: Vec<(ExactNum, ExactNum, Option<i64>)> = Vec::new();
     let mut left = ExactNum::new(wp);
     loop {
         if ExactNum::sub_ref(&t_end, &left, wp, DN).is_negative()
@@ -1780,7 +1870,7 @@ fn anger_a_integral(
         if right.abs_cmp(&t_end) != Some(-1) {
             right = t_end.clone();
         }
-        stack.push((left.clone(), right.clone()));
+        stack.push((left.clone(), right.clone(), None));
         if right.abs_cmp(&t_end) != Some(-1) {
             break;
         }
@@ -1789,20 +1879,30 @@ fn anger_a_integral(
     let mut acc = ExactNum::new(wp);
     let mut rem_acc = tb.clone();
     let mut panels = 0usize;
-    while let Some((a, b)) = stack.pop() {
+    while let Some((a, b, parent_re)) = stack.pop() {
         panels = panels.saturating_add(1);
+        if panels > wp.saturating_add(32).saturating_mul(4).saturating_add(1) {
+            return None;
+        }
         match panel_integral(&a, &b, nu, z, wp, cc) {
             Some((val, rem)) if rem.abs_cmp(&target) != Some(1) => {
                 acc = acc.add(&val, wp, N);
                 rem_acc = rem_acc.add(&rem, wp, UP);
             }
-            Some(_) | None => {
-                let mid = ExactNum::add_ref(&a, &b, wp, N).ldexp(-1, wp, N);
-                if ExactNum::sub_ref(&b, &a, wp, N).exponent()? < -((wp as i64) + 16) {
+            other => {
+                let rem_ref = match &other {
+                    Some((_, rem)) => Some(rem),
+                    None => None,
+                };
+                if rem_stalled(parent_re, rem_ref) {
                     return None;
                 }
-                stack.push((mid.clone(), b));
-                stack.push((a, mid));
+                let Some(mid) = panel_mid_or_stall(&a, &b, rem_ref, &target, wp) else {
+                    return None;
+                };
+                let child_re = rem_ref.map(exp_of);
+                stack.push((mid.clone(), b, child_re));
+                stack.push((a, mid, child_re));
             }
         }
     }
@@ -2730,7 +2830,7 @@ fn anger_a_u_path(
     let mut panels = 0usize;
     if need_mid {
         let target = one(wp).ldexp(-((wp as i64) + 8), wp, N);
-        let mut stack: Vec<(ExactNum, ExactNum)> = Vec::new();
+        let mut stack: Vec<(ExactNum, ExactNum, Option<i64>)> = Vec::new();
         // Initial grid: width min(1/5, left) so mid > radius is possible.
         let fifth = one(wp).div(&ExactNum::from_u8(5, wp), wp, N);
         let mut h = if left.abs_cmp(&fifth) == Some(-1) { left.clone() } else { fifth.clone() };
@@ -2747,26 +2847,43 @@ fn anger_a_u_path(
             if right.abs_cmp(&u_end) != Some(-1) {
                 right = u_end.clone();
             }
-            stack.push((left.clone(), right.clone()));
+            stack.push((left.clone(), right.clone(), None));
             if right.abs_cmp(&u_end) != Some(-1) {
                 break;
             }
             left = right;
         }
-        while let Some((a, b)) = stack.pop() {
+        while let Some((a, b, parent_re)) = stack.pop() {
             panels = panels.saturating_add(1);
+            if panels > wp.saturating_add(32).saturating_mul(4).saturating_add(1) {
+                return None;
+            }
+            #[cfg(test)]
+            {
+                aws_test_hooks::note_u_panel();
+                if aws_test_hooks::u_path_should_stop() {
+                    return None;
+                }
+            }
             match anger_a_u_panel(nu, z, &a, &b, wp, cc) {
                 Some((val, rem)) if rem.abs_cmp(&target) != Some(1) => {
                     acc = acc.add(&val, wp, N);
                     rem_acc = rem_acc.add(&rem, wp, UP);
                 }
-                Some(_) | None => {
-                    let mid = ExactNum::add_ref(&a, &b, wp, N).ldexp(-1, wp, N);
-                    if ExactNum::sub_ref(&b, &a, wp, N).exponent()? < -((wp as i64) + 16) {
+                other => {
+                    let rem_ref = match &other {
+                        Some((_, rem)) => Some(rem),
+                        None => None,
+                    };
+                    if rem_stalled(parent_re, rem_ref) {
                         return None;
                     }
-                    stack.push((mid.clone(), b));
-                    stack.push((a, mid));
+                    let Some(mid) = panel_mid_or_stall(&a, &b, rem_ref, &target, wp) else {
+                        return None;
+                    };
+                    let child_re = rem_ref.map(exp_of);
+                    stack.push((mid.clone(), b, child_re));
+                    stack.push((a, mid, child_re));
                 }
             }
         }
@@ -3561,6 +3678,44 @@ mod aws_bounds {
             Some(0),
             "E_{{1/2}}(1) p={p} got {e} want {want_e}"
         );
+        Ok(())
+    }
+
+    /// The u-path must return (a tight value or None) without spinning.
+    /// At ν=100, z=1000, wp=work_p(256), Laplace is short of the tightness
+    /// cut, so `anger_a` starts the u-path. The Cauchy majorant of h is
+    /// huge ((mid−ρ)^{-ν}), every panel misses the rem target, and
+    /// unchecked bisection down to 2^{-(wp+16)} explores an exponential
+    /// tree (the T3 E_100(1000) hang). A tripwire at 64 panels turns that
+    /// spin into a failed assertion instead of a process hang.
+    #[test]
+    fn aws_anger_a_u_path_stalls_instead_of_hanging() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let p = 256usize;
+        let wp = work_p(p);
+        let z = ExactNum::from_u32(1000, wp);
+        let nu = ExactNum::from_u32(100, wp);
+        super::aws_test_hooks::reset();
+        let t0 = std::time::Instant::now();
+        let r = anger_a_u_path(&nu, &z, wp, &mut cc);
+        let n = super::aws_test_hooks::u_panels();
+        let tripped = super::aws_test_hooks::u_tripped();
+        super::aws_test_hooks::stop();
+        assert!(
+            t0.elapsed().as_secs() < 5,
+            "u-path took {:?}; a stall must return",
+            t0.elapsed()
+        );
+        assert!(
+            !tripped,
+            "u-path kept splitting past {} panels (n={n}, returned {r:?})",
+            super::aws_test_hooks::U_PATH_TRIP
+        );
+        assert!(
+            n <= 32,
+            "u-path used {n} panels at ν=100, z=1000, wp={wp}; it must stall or converge far sooner"
+        );
+        let _ = r;
         Ok(())
     }
 }
