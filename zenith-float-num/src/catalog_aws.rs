@@ -31,6 +31,7 @@
 use super::cat_nan;
 use super::finish;
 use super::finite;
+use super::word_p;
 use super::work_p;
 use super::ziv_round;
 use crate::defs::WORD_BIT_SIZE;
@@ -3026,6 +3027,37 @@ fn anger_weber_connection(
     }
 }
 
+/// Ziv loop starting at `start_wp` (at least `work_p(p)`). When the 11.10.10–11
+/// series has Bessel-like cancellation of about `|z|/ln 2` bits, beginning
+/// at `work_p(p)` climbs through many failed rounds (E_100(1000) at p=256
+/// took 48 s).
+fn ziv_round_from<F>(p: usize, rm: RoundingMode, start_wp: usize, mut f: F) -> ExactNum
+where
+    F: FnMut(usize) -> Option<(ExactNum, i64)>,
+{
+    let w = WORD_BIT_SIZE as i64;
+    let limit = p.saturating_mul(8).saturating_add(16_384);
+    let mut wp = word_p(start_wp.max(work_p(p)));
+    loop {
+        let Some((mut v, good)) = f(wp) else {
+            return cat_nan();
+        };
+        if !finite(&v) {
+            return cat_nan();
+        }
+        let s = good.div_euclid(w).saturating_mul(w);
+        if !v.is_zero() && s > p as i64 && v.try_set_precision(p, rm, s as usize) {
+            return v;
+        }
+        let short = (p as i64).saturating_add(2 * w).saturating_sub(good).max(w);
+        let next = (wp as i64).saturating_add(short.max(wp as i64 / 2));
+        wp = word_p(usize::try_from(next).unwrap_or(usize::MAX));
+        if wp > limit {
+            return cat_nan();
+        }
+    }
+}
+
 fn anger_weber_positive(
     weber: bool,
     z: &ExactNum,
@@ -3037,36 +3069,47 @@ fn anger_weber_positive(
     let zc = z.clone();
     let nuc = nu.clone();
     let cheap = series_cheap(&zc, &nuc, p);
-    ziv_round(p, rm, |wp| {
-        if !weber && nuc.is_int() {
+    if !weber && nuc.is_int() {
+        return ziv_round(p, rm, |wp| {
             let j = zc.bessel_j_nu(&nuc, wp, N, cc);
             if finite(&j) {
-                return Some((j, wp as i64 - 8));
+                Some((j, wp as i64 - 8))
+            } else {
+                None
             }
-            return None;
-        }
-        // Pick from (ν, z) before starting a kernel. Maclaurin only when
-        // ~|z|/2 terms plus cancellation bits are cheap; otherwise the
-        // 11.10.15–16 connection (Laplace if the bound is tight, else
-        // A_ν panels sized to 1/(ν+z)).
-        if cheap {
+        });
+    }
+    // Cheap Maclaurin, or the 11.10.15–16 connection (Laplace / u-path),
+    // at the usual work_p start. Do not raise that start by the |z|/ln 2
+    // cancellation budget: Laplace at z=1000, modest ν, is already tight.
+    if cheap {
+        return ziv_round(p, rm, |wp| {
             if let Some(r) = anger_weber_maclaurin(weber, &zc, &nuc, wp, cc) {
                 return Some(r);
             }
-            return anger_weber_connection(weber, &zc, &nuc, wp, cc);
-        }
-        if let Some(r) = anger_weber_connection(weber, &zc, &nuc, wp, cc) {
-            return Some(r);
-        }
-        // Connection refuses A_{-ν} when ν >= z (Weber). Maclaurin of
-        // 11.10.8–11 is entire; use it when the term count is not a hang.
-        let k_safe = maclaurin_k_est(&zc).is_some_and(|k| k <= 16_384);
-        if k_safe {
-            if let Some(r) = anger_weber_maclaurin(weber, &zc, &nuc, wp, cc) {
-                return Some(r);
-            }
-        }
-        None
+            anger_weber_connection(weber, &zc, &nuc, wp, cc)
+        });
+    }
+    let v = ziv_round(p, rm, |wp| anger_weber_connection(weber, &zc, &nuc, wp, cc));
+    if finite(&v) {
+        return v;
+    }
+    // Connection refused (A_{-ν} needs ν<z) or was not tight. The
+    // 11.10.8–11 series is entire; start Ziv with the Bessel-like
+    // cancellation of about |z|/ln 2 bits already in the working
+    // precision so it does not climb there from work_p(p).
+    let cancel = if nuc.abs_cmp(&zc.clone().abs()) != Some(-1) {
+        8i64
+    } else {
+        rem_bits_neg_exp(&zc).min(1 << 20)
+    };
+    let start_wp = work_p(p).saturating_add(usize::try_from(cancel.max(0)).unwrap_or(0));
+    let k_safe = maclaurin_k_est(&zc).is_some_and(|k| k <= 16_384);
+    if !k_safe {
+        return v;
+    }
+    ziv_round_from(p, rm, start_wp, |wp| {
+        anger_weber_maclaurin(weber, &zc, &nuc, wp, cc)
     })
 }
 
@@ -3716,6 +3759,57 @@ mod aws_bounds {
             "u-path used {n} panels at ν=100, z=1000, wp={wp}; it must stall or converge far sooner"
         );
         let _ = r;
+        Ok(())
+    }
+    /// E_100(1000) and E_1001(1000) are the T3 large-ν rows. Laplace A_100
+    /// is short of the tightness cut, the u-path now correctly returns
+    /// not-tight, and the 11.10.8–11 fallback must still correctly round.
+    /// Golds are independent 800 dps mpmath values. A Ziv loop that starts
+    /// at work_p(p) and climbs through the |z|/ln 2 cancellation budget is
+    /// why E_100(1000) p=256 took 48 s (p=512 took 95 s). The Maclaurin
+    /// fallback now begins with that budget already in the working
+    /// precision.
+    #[test]
+    fn aws_weber_e_100_z1000_from_error_bound() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let gold_100 = ExactNum::parse(
+            "0.021795638685161459190442341177142589589740591094993681858243173114265078131955292814594276188834106302020943113765950958418039481928743906927976992372345907086771261052807045645413914523268861884294366686325056494908808765422377401545314222942783945802769882546728312533734289686866462246441985860294727381478805537031495566053873186189741316158735307962178822535834557249306241679402452805904350405799165329476334453386041652572839576950240584696362097978334437764160160825386487959371030592103546512317500003298101160412047286810571974996603564048175136114660015491460556610637665264233690868755682303494341863254477105044451659064016848581312366944470154005236975360496464152929480599315964898669676804417505071808244789737662686154415375202552327612654611535690057229131131256436106053381884142043",
+            crate::Radix::Dec,
+            4096,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        let gold_1001 = ExactNum::parse(
+            "0.028075152382271994222587770957883178105735768004298196800424903404330229751475608712374225362718298059042718616475695147095506401202768400102543852948400096856563512552409349347601697434633284079729897563490704477515381963098325011006061155814182380225812411443133387447510374342875848015455050115077413023931943233297995957299904753411912380454963745150009329171919558382263202855468679642644356764937116416643339165292158278733284584649039545015211810997612353704854236834363298431970022057948001856988969748289973818560318068017971361081421717110797536255675377329166946516928701759476540222330464349592344453856260457621441089958934282885494982637637051857358473679868485031867499879586923904564615764191850446532930242686637907215186082576513452226418933181524867466370113427900658208548641613047",
+            crate::Radix::Dec,
+            4096,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        let t_all = std::time::Instant::now();
+        for &(p, n) in &[(256usize, 100u32), (1024, 100), (2048, 100), (1024, 1001), (2048, 1001)] {
+            let z = ExactNum::from_u32(1000, p);
+            let nu = ExactNum::from_u32(n, p);
+            let gold = if n == 100 { gold_100.clone() } else { gold_1001.clone() };
+            let t0 = std::time::Instant::now();
+            let got = weber_e_word(&z, &nu, p, RoundingMode::ToEven, &mut cc);
+            let dt = t0.elapsed();
+            let want = finish(gold, p, RoundingMode::ToEven);
+            assert_eq!(
+                got.compare(&want),
+                Some(0),
+                "E_{n}(1000) p={p} got {got} want {want}"
+            );
+            assert!(
+                dt.as_secs() < 60,
+                "E_{n}(1000) p={p} took {dt:?}; must stay under the 120 s case wall"
+            );
+        }
+        assert!(
+            t_all.elapsed().as_secs() < 120,
+            "E_100/E_1001(1000) high-p checks took {:?}",
+            t_all.elapsed()
+        );
         Ok(())
     }
 }
