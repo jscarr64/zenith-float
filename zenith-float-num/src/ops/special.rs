@@ -1434,16 +1434,12 @@ impl ExactNumNumber {
         // ZF-37: the old shortcut here returned Γ(s) whenever 2·exponent(x) > p + 8, which is
         // wrong for s > x (γ(2^300, 2^200) ≪ Γ(2^300)); x > s is now taken by the
         // complement in `gammainc`, so the series is always summed.
-        // The work limit is decided before any term: about max(0, x − s) + 4√((x+s)p) terms
-        // are needed, so refuse at once when either part alone passes 2^28.
-        let lim = GAMMAINC_SERIES_TERMS_MAX.trailing_zeros() as Exponent;
-        let d = x.sub(self, WORD_BIT_SIZE, RoundingMode::None)?;
-        let sum_e = x.add(self, WORD_BIT_SIZE, RoundingMode::None)?.exponent();
-        let p_bits = (usize::BITS - p.leading_zeros()) as Exponent;
-        if (d.is_positive() && !d.is_zero() && d.exponent() > lim)
-            || sum_e.saturating_add(p_bits) > 2 * (lim - 2)
-        {
-            return Err(Error::PrecisionRetryExhausted);
+        // γ(1, x) = 1 − e^{−x} (DLMF 8.4.7); do not send this through the power series.
+        let one = Self::from_word(1, p)?;
+        if self.cmp(&one) == 0 {
+            let mut nx = x.clone()?;
+            nx.set_sign(Sign::Neg);
+            return one.sub(&nx.exp(p, RoundingMode::None, cc)?, p, RoundingMode::None);
         }
         // γ(s,x) = x^s e^{-x} Σ_{k=0} x^k / (s)_{k+1}
         let xs = x.pow(self, p, RoundingMode::None, cc)?;
@@ -1454,19 +1450,14 @@ impl ExactNumNumber {
         let mut poch = self.clone()?;
         let mut term = Self::from_word(1, p)?.div(&poch, p, RoundingMode::None)?;
         let mut sum = term.clone()?;
-        let one = Self::from_word(1, p)?;
-        // ZF-37: no p-based term cap. All terms are positive and the ratio x/(s+k) falls
-        // below 1 once k > x − s, so the relative stop is met after about
-        // max(0, x − s) + O(√((x+s)p)) terms; while the terms still grow it cannot fire
-        // (sum ≤ k·term). Only a sum past 2^28 terms (x ≈ s ≳ 2^40, where the uniform
-        // Temme expansion DLMF 8.12 is needed) gives up, with PrecisionRetryExhausted: a
-        // resource refusal, never a truncated value.
+        // All terms are positive and the ratio x/(s+k) falls below 1 once k > x − s,
+        // so the relative stop is met after about max(0, x − s) + O(√((x+s)p)) terms;
+        // while the terms still grow it cannot fire (sum ≤ k·term). Past the peak, a
+        // growing term is a stall, not a truncated value (P9: no 2^28 term cap).
         let mut k: usize = 0;
+        let mut prev_e = Exponent::MIN;
         loop {
-            k += 1;
-            if k > GAMMAINC_SERIES_TERMS_MAX {
-                return Err(Error::PrecisionRetryExhausted);
-            }
+            k = k.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
             poch = poch.add(&one, p, RoundingMode::None)?;
             term = term.mul(x, p, RoundingMode::None)?;
             term = term.div(&poch, p, RoundingMode::None)?;
@@ -1474,6 +1465,16 @@ impl ExactNumNumber {
             if series_negligible(&term, &sum, p) {
                 break;
             }
+            let te = term.exponent();
+            if k > 1 && te > prev_e {
+                // Past the Pochhammer peak the terms must shrink. A rise means the
+                // series is the wrong kernel for this (s, x); do not spin.
+                let past_peak = from_usize_p(k, p)?.cmp(&x.sub(self, p, RoundingMode::None)?) > 0;
+                if past_peak {
+                    return Err(Error::PrecisionRetryExhausted);
+                }
+            }
+            prev_e = te;
         }
         pre.mul(&sum, p, RoundingMode::None)
     }
@@ -4908,10 +4909,6 @@ fn betainc_cf(
     }
 }
 
-/// Work limit of the γ(s, x) power series (see `gammainc_at`): a resource refusal for
-/// x ≈ s ≳ 2^40, not an accuracy cap; every sum that stops earlier is complete to 2^-p.
-const GAMMAINC_SERIES_TERMS_MAX: usize = 1 << 28;
-
 /// `None` when `x² ≥ 0.7·p` (the asymptotic `erfc` reaches `2^-p` before diverging);
 /// otherwise the extra bits (`≈ x²·log₂e` plus a word) the series paths need.
 fn erf_x2_bits(x: &ExactNumNumber, p: usize) -> Result<Option<usize>, Error> {
@@ -8117,7 +8114,17 @@ mod tests {
         assert!(exhausted(big.bessel_y1(p, &mut cc)));
         assert!(exhausted(big.k0_series(p, &mut cc)));
         let s1 = ExactNumNumber::from_word(1, 4096)?;
-        assert!(exhausted(s1.gammainc_at(&pow2(30, 4096)?, 4096, &mut cc)));
+        // γ(1, 2^30) = 1 − e^{−2^30} used to hit the 2^28 series-term cap.
+        let x30 = pow2(30, 4096)?;
+        let got = s1.gammainc_at(&x30, 4096, &mut cc)?;
+        let mut nx = x30.clone()?;
+        nx.set_sign(Sign::Neg);
+        let want = ExactNumNumber::from_word(1, 4096)?.sub(
+            &nx.exp(4096, RoundingMode::None, &mut cc)?,
+            4096,
+            RoundingMode::None,
+        )?;
+        bits_agree(&got, &want, 4096, 4000, "γ(1, 2^30)")?;
         Ok(())
     }
 
