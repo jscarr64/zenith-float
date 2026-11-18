@@ -40,10 +40,6 @@ pub(crate) fn finish(mut y: ExactNum, p: usize, rm: RoundingMode) -> ExactNum {
     y
 }
 
-pub(crate) fn series_cap(p: usize) -> usize {
-    p.saturating_add(32).max(64)
-}
-
 /// Absolute residual below `2^{-(word width + 4)}`.
 fn under_word(err: &ExactNum, p: usize) -> bool {
     let guard = (word_p(p) as i64).saturating_add(4);
@@ -2495,6 +2491,47 @@ impl ExactNum {
         })
     }
 
+    /// Defining series Li_n(z) = ∑_{k≥1} z^k / k^n, no fixed term cap (P9).
+    /// Tail after term t_K is at most |t_K| |z| / (1-|z|) when |z|<1.
+    fn polylog_series(z: &ExactNum, n: usize, p: usize) -> ExactNum {
+        let wrk = work_p(p);
+        let nr = RoundingMode::None;
+        let mut xk = z.clone();
+        let mut sum = ExactNum::new(wrk);
+        let mut last_e = None;
+        let mut k: u64 = 1;
+        loop {
+            let den = ExactNum::from_u64(k, wrk).powsi(n as i64, wrk, nr);
+            let term = ExactNum::div_ref(&xk, &den, wrk, nr);
+            sum = sum.add(&term, wrk, nr);
+            if under_word(&term, p) {
+                break;
+            }
+            let e = term.exponent();
+            if last_e.is_some_and(|le| e.is_some_and(|ee| ee >= le)) && k > 4 {
+                // Term magnitude stalled (should not happen for |z|<1); stop rather than loop forever.
+                break;
+            }
+            last_e = e;
+            xk = xk.mul(z, wrk, nr);
+            k = k.saturating_add(1);
+        }
+        sum
+    }
+
+    /// DLMF 25.12.2 at working precision. `omz` is 1-z, already |1-z| ≤ |z|.
+    fn polylog_dilog_identity(z: &ExactNum, omz: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
+        let wrk = work_p(p).saturating_add(WORD_BIT_SIZE);
+        let nr = RoundingMode::None;
+        let li2 = Self::polylog_series(omz, 2, wrk);
+        let ln_z = z.ln(wrk, nr, cc);
+        let ln_omz = omz.ln(wrk, nr, cc);
+        let zeta2 = ExactNum::from_u8(2, wrk).riemann_zeta(wrk, nr, cc);
+        zeta2
+            .sub(&li2, wrk, nr)
+            .sub(&ln_z.mul(&ln_omz, wrk, nr), wrk, nr)
+    }
+
     /// Word-precision implementation of [`Self::polylog`].
     fn polylog_word(&self, n: usize, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if !finite(self) || !(2..=64).contains(&n) {
@@ -2518,19 +2555,17 @@ impl ExactNum {
             );
             return finish(f.mul(&z, wrk, RoundingMode::None), p, rm);
         }
-        let mut xk = self.clone();
-        let mut sum = ExactNum::new(wrk);
-        for k in 1..=series_cap(wrk).saturating_mul(4) {
-            let den = ExactNum::from_u32(k as u32, wrk).powsi(n as i64, wrk, RoundingMode::None);
-            let term = ExactNum::div_ref(&xk, &den, wrk, RoundingMode::None);
-            sum = sum.add(&term, wrk, RoundingMode::None);
-            if under_word(&term, p) {
-                break;
+        // DLMF 25.12.2: Li_2(z) + Li_2(1-z) = ζ(2) − ln(z) ln(1-z).
+        // Use it when 0 < z < 1 and |1-z| ≤ |z|, so the companion series is the
+        // faster one and we do not recurse. The defining series at z = 1-2^{-100}
+        // needs ~2^{100} terms; the identity evaluates Li_2(2^{-100}) in a few.
+        if n == 2 && self.is_positive() {
+            let omz = ExactNum::sub_ref(&one, self, wrk, RoundingMode::None);
+            if finite(&omz) && !omz.is_zero() && matches!(omz.abs_cmp(self), Some(c) if c <= 0) {
+                return finish(Self::polylog_dilog_identity(self, &omz, p, cc), p, rm);
             }
-            xk = xk.mul(self, wrk, RoundingMode::None);
         }
-        let _ = cc;
-        finish(sum, p, rm)
+        finish(Self::polylog_series(self, n, p), p, rm)
     }
 }
 
@@ -2945,6 +2980,37 @@ mod tests {
                 g.exponent()
             );
         }
+        Ok(())
+    }
+
+    /// Li_2(1 − 2^{-100}) is within a few ulps of ζ(2) (DLMF 25.12.2). The defining
+    /// series at 82bd851/291594b only recovered 7 bits (t-zf-156-polylog).
+    #[test]
+    fn zf_polylog_dilog_near_one() -> Result<(), crate::Error> {
+        let p = 256;
+        let mut cc = Consts::new()?;
+        let rm = RoundingMode::ToEven;
+        let one = ExactNum::from_u8(1, p);
+        let eps = ExactNum::from_u8(1, p).ldexp(-100, p, RoundingMode::None);
+        let z = one.sub(&eps, p, RoundingMode::None);
+        let got = z.polylog(2, p, rm, &mut cc);
+        // Gold from the same identity, with Li_2(2^{-100}) from the series (tiny z).
+        let wrk = work_p(p).saturating_add(WORD_BIT_SIZE);
+        let nr = RoundingMode::None;
+        let li2_eps = eps.polylog(2, wrk, nr, &mut cc);
+        let ln_z = z.ln(wrk, nr, &mut cc);
+        let ln_eps = eps.ln(wrk, nr, &mut cc);
+        let zeta2 = ExactNum::from_u8(2, wrk).riemann_zeta(wrk, nr, &mut cc);
+        let want = zeta2
+            .sub(&li2_eps, wrk, nr)
+            .sub(&ln_z.mul(&ln_eps, wrk, nr), wrk, nr);
+        let want = finish(want, p, rm);
+        assert!(
+            finite(&got) && got.compare(&want) == Some(0),
+            "Li_2(1-2^{{-100}}) ToEven should match DLMF 25.12.2, got inf={} nan={}",
+            got.is_inf(),
+            got.is_nan()
+        );
         Ok(())
     }
 
