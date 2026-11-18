@@ -811,7 +811,12 @@ impl ExactNumNumber {
     }
 
     fn gamma_positive(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        self.gamma_positive_capped(p, cc, STIRLING_SHIFT_MAX)
+        // Term count and shift target come from the remainder bound
+        // (`gamma_stirling_plan` / `asymp_min_exponent`). The step count is
+        // 2^{e_min-1}+2, the walk needed to reach 2^{e_min-1}, not a
+        // separate 2^20 cap (P9).
+        let e_min = gamma_stirling_plan(p).1;
+        self.gamma_positive_capped(p, cc, stirling_shift_count(e_min))
     }
 
     /// [`Self::gamma_positive`] with the Stirling shift cap as a parameter (tests force it).
@@ -861,24 +866,12 @@ impl ExactNumNumber {
         let mut z = self.clone()?;
         let mut acc = Self::from_word(1, pw)?;
 
-        // Raise the argument until the last Stirling term is below 2^-(p+8). With the fixed
-        // 64 terms (B₁₂₈/(128·127·z¹²⁷) ≈ 2^363.8 / z¹²⁷) the shift count grows like
-        // 2^(p/127) and hits STIRLING_SHIFT_MAX from p ≈ 2048, so at high p use more terms,
-        // scaled with p as digamma does; the extra 64 bits in the bound cover the factor
-        // z/(2K-1) between a Stirling term and the digamma term asymp_min_exponent measures.
-        // Bound at `pw`, the precision ln_gamma_stirling checks its stop rule against.
-        let e64 = stirling_min_exponent(pw, 372, 127, 6);
-        let mut terms = 64;
-        let mut e_min = e64;
-        let k = digamma_terms(p);
-        if k > 64 {
-            let ek = asymp_min_exponent(pw + WORD_BIT_SIZE, k);
-            if ek < e64 {
-                terms = k;
-                e_min = ek;
-            }
-        }
-        // Shift cap hit: z is outside the tail's proven bound (shift_up returns PrecisionRetryExhausted).
+        // Raise the argument until the last Stirling term is below 2^-(p+8).
+        // Term count and e_min come from [`gamma_stirling_plan`].
+        let (terms, e_min) = gamma_stirling_plan(p);
+        // A caller-forced cap below the walk that e_min needs returns
+        // PrecisionRetryExhausted at once (tests). The production path
+        // passes stirling_shift_count(e_min), not a fixed 2^20 cap.
         shift_up(&mut z, e_min, shift_max, pw, |z| {
             acc = acc.mul(z, pw, RoundingMode::None)?;
             *z = z.add(&one, pw, RoundingMode::None)?;
@@ -4951,6 +4944,27 @@ pub(crate) fn digamma_terms(p: usize) -> usize {
     (p / 8).max(64)
 }
 
+/// Stirling term count and minimum exponent for Γ / ln Γ at dest `p`.
+/// A fixed 64-term tail (`B_128/(128·127·z^127) ≈ 2^363.8/z^127`) needs
+/// about `2^(p/127)` shifts and would hit a 2^20 walk cap from p ≈ 2048.
+/// When `digamma_terms(p)` lowers the target, use that count; the extra
+/// 64 bits in the bound cover the factor `z/(2K-1)` between a Stirling
+/// term and the digamma term [`asymp_min_exponent`] measures. Bound at
+/// `p + WORD_BIT_SIZE`, the precision `ln_gamma_stirling` checks its
+/// stop rule against.
+pub(crate) fn gamma_stirling_plan(p: usize) -> (usize, Exponent) {
+    let pw = p + WORD_BIT_SIZE;
+    let e64 = stirling_min_exponent(pw, 372, 127, 6);
+    let k = digamma_terms(p);
+    if k > 64 {
+        let ek = asymp_min_exponent(pw + WORD_BIT_SIZE, k);
+        if ek < e64 {
+            return (k, ek);
+        }
+    }
+    (64, e64)
+}
+
 /// Smallest binary exponent `e` (`z ≥ 2^(e-1)`) for which the `k`-th term of a
 /// `terms`-term Stirling-type tail, `≈ (k/(πe·z))^{2k}`, is below `2^-(p+8)`:
 /// `e = ⌈(p+8)/(2k)⌉ + ⌈log2 k⌉ − 2`, never below 8.
@@ -4993,9 +5007,10 @@ const BETA_INT_MAX: usize = 1 << 12;
 
 pub(crate) const HALF_INTEGER_MAX: usize = 1 << 12;
 
-/// Upper bound on argument shifts before the Stirling / asymptotic series.
-/// Used by the gamma path and by tests that force a cap; digamma uses
-/// [`stirling_shift_count`] from the remainder bound (P9).
+/// Fixed walk cap used only by tests that force a cap below the
+/// remainder-bound step count. Production Γ and ψ use
+/// [`stirling_shift_count`] (P9).
+#[cfg(test)]
 const STIRLING_SHIFT_MAX: usize = 1 << 20;
 
 /// Number of `z → z+1` steps needed to reach `2^{e_min-1}` from a positive
@@ -7982,6 +7997,34 @@ mod tests {
             diff.exponent()
         );
         assert!(exhausted(x.gamma_positive_capped(p, &mut cc, 1)));
+        Ok(())
+    }
+
+    /// Γ(3/4) at p=2^14 through the public `gamma` path (not the test-only
+    /// capped API). A 64-term tail wants ~2^132 shifts and a 2^20 cap would
+    /// refuse; the remainder-bound plan (more terms, `stirling_shift_count`)
+    /// must finish and match the same FLINT floor as
+    /// `test_capped_loops_fail_fast_at_high_precision`.
+    #[test]
+    fn gamma_three_quarters_at_high_p_from_error_bound() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 1 << 14;
+        let x = quarters(3, p)?;
+        let t0 = std::time::Instant::now();
+        let g = x.gamma(p, RoundingMode::ToEven, &mut cc)?;
+        assert!(
+            t0.elapsed().as_secs() < 60,
+            "gamma(3/4) at p=2^14 took {:?}",
+            t0.elapsed()
+        );
+        let reference = gamma_3_4_flint()?;
+        let diff = g.sub(&reference, 2 * p, RoundingMode::None)?;
+        let bound = 1 - Exponent::try_from(p).map_err(|_| crate::Error::InvalidArgument)? + 4;
+        assert!(
+            diff.is_zero() || diff.exponent() <= bound,
+            "Γ(3/4) at p=2^14 off by 2^{} (bound 2^{bound})",
+            diff.exponent()
+        );
         Ok(())
     }
 
