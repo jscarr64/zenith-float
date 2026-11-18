@@ -193,22 +193,24 @@ impl ExactNumNumber {
         let mut sum = xpow.clone()?;
 
         // Terms grow until n ≈ x², so only stop once past that point.
-        for n in 1..=ERF_SERIES_MAX {
-            nfact = nfact.mul(&Self::from_word(n as Word, p)?, p, RoundingMode::None)?;
+        // The term count is that peak plus the tail bound, not a fixed cap (P9).
+        let mut n: usize = 1;
+        loop {
+            nfact = nfact.mul(&from_usize_p(n, p)?, p, RoundingMode::None)?;
             xpow = xpow.mul(&x2, p, RoundingMode::None)?;
-            let two_n_1 = Self::from_word((2 * n + 1) as Word, p)?;
+            let two_n_1 = from_usize_p(2 * n + 1, p)?;
             let den = nfact.mul(&two_n_1, p, RoundingMode::None)?;
             let mut t = xpow.div(&den, p, RoundingMode::None)?;
             if n % 2 == 1 {
                 t.set_sign(Sign::Neg);
             }
             sum = sum.add(&t, p, RoundingMode::None)?;
-            let past_peak = Self::from_word(n as Word, p)?.cmp(&x2) > 0;
+            let past_peak = from_usize_p(n, p)?.cmp(&x2) > 0;
             if t.is_zero() || (past_peak && t.exponent() + (p as i64) < sum.exponent()) {
                 return scale.mul(&sum, p, RoundingMode::None);
             }
+            n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
-        Err(Error::InvalidArgument)
     }
 
     /// Asymptotic `erfc`, only used once `x² ≥ p·ln 2` (see [`erf_x2_bits`]), where the
@@ -4277,10 +4279,11 @@ impl ExactNumNumber {
     /// - \(z=1\): Gauss's sum when \(c-a-b>0\); `InvalidArgument` otherwise (divergent).
     /// - \(z<-1/2\): Pfaff, \((1-z)^{-a}\,{}_2F_1(a,c-b;c;z/(z-1))\) with \(z/(z-1)\in(1/3,1)\).
     ///
-    /// `InvalidArgument` for non-terminating \(z>1\) (not real in general), for an uncancelled
-    /// pole at a non-positive integer \(c\), and when a series would need more than
-    /// `HYPERGEOM_TERM_MAX` terms (very large parameters). Cancellation between the connection
-    /// terms is measured and the evaluation repeated with that many extra bits.
+    /// `InvalidArgument` for non-terminating \(z>1\) (not real in general) and for an uncancelled
+    /// pole at a non-positive integer \(c\). The series runs until the term bound, or until
+    /// terms start growing after \(n > \max(\lvert a\rvert,\lvert b\rvert,\lvert c\rvert)\)
+    /// (the series is then not in its disk). Cancellation between the connection terms is
+    /// measured and the evaluation repeated with that many extra bits.
     pub fn hypergeom_2f1(
         &self,
         b: &Self,
@@ -4845,9 +4848,10 @@ fn betainc_cf(
     )?;
     d = one.div(&d, p, RoundingMode::None)?;
     let mut h = d.clone()?;
-    for m in 1..=BETAINC_CF_MAX {
-        let mw = ExactNumNumber::from_word(m as Word, p)?;
-        let m2 = ExactNumNumber::from_word(2 * m as Word, p)?;
+    let mut m: usize = 1;
+    loop {
+        let mw = from_usize_p(m, p)?;
+        let m2 = from_usize_p(2 * m, p)?;
         let a_m2 = a.add(&m2, p, RoundingMode::None)?;
         let even = mw
             .mul(&b.sub(&mw, p, RoundingMode::None)?, p, RoundingMode::None)?
@@ -4894,16 +4898,13 @@ fn betainc_cf(
         if step.is_zero() || step.exponent() + ((p - WORD_BIT_SIZE) as i64) < 0 {
             return Ok(h);
         }
+        m = m.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
     }
-    Err(Error::InvalidArgument)
 }
 
-const BETAINC_CF_MAX: u32 = 100_000;
 /// Work limit of the γ(s, x) power series (see `gammainc_at`): a resource refusal for
 /// x ≈ s ≳ 2^40, not an accuracy cap; every sum that stops earlier is complete to 2^-p.
 const GAMMAINC_SERIES_TERMS_MAX: usize = 1 << 28;
-/// Term cap for the `erf` Maclaurin series (it only runs for `x² < 0.7·p`).
-const ERF_SERIES_MAX: usize = 1 << 20;
 
 /// `None` when `x² ≥ 0.7·p` (the asymptotic `erfc` reaches `2^-p` before diverging);
 /// otherwise the extra bits (`≈ x²·log₂e` plus a word) the series paths need.
@@ -5068,14 +5069,6 @@ pub(crate) fn stirling_min_exponent(p: usize, c: usize, slope: usize, floor: Exp
     Exponent::try_from(need).map_or(Exponent::MAX, |e| e.max(floor))
 }
 
-const CARLSON_DUPE_MAX: u32 = 128;
-
-/// Duplication-step cap: each step shrinks the spread 4×, and the series needs a spread of
-/// about 2^-(p/3+16), so high precisions need more than [`CARLSON_DUPE_MAX`] steps.
-fn carlson_dupe_cap(p: usize) -> u32 {
-    CARLSON_DUPE_MAX.max(u32::try_from(p / 4 + 64).unwrap_or(u32::MAX))
-}
-const HYPERGEOM_TERM_MAX: u32 = 10_000;
 /// Cap on the extra bits a 2F1 re-evaluation may add for measured cancellation.
 const HYPERGEOM_LOSS_MAX: usize = 4096;
 
@@ -5193,8 +5186,9 @@ fn hypergeom_series(
         ExactNumNumber::from_word(1, p)?.ldexp(-((p as Exponent) - 8), p, RoundingMode::None)?;
     let max_par = max_abs(&[a, b, c])?;
     let mut mag = one.exponent();
-    for n in 0..HYPERGEOM_TERM_MAX {
-        let nn = ExactNumNumber::from_word(n as Word, p)?;
+    let mut n: usize = 0;
+    loop {
+        let nn = from_usize_p(n, p)?;
         let den = c.add(&nn, p, RoundingMode::None)?.mul(
             &one.add(&nn, p, RoundingMode::None)?,
             p,
@@ -5211,7 +5205,7 @@ fn hypergeom_series(
         term = term.mul(&factor, p, RoundingMode::None)?;
         sum = sum.add(&term, p, RoundingMode::None)?;
         mag = mag.max(max_exp(&[&term]));
-        if terminating_after(a, n as usize + 1, p)? || terminating_after(b, n as usize + 1, p)? {
+        if terminating_after(a, n + 1, p)? || terminating_after(b, n + 1, p)? {
             sum.set_inexact(false);
             let lost = lost_bits(mag, &sum);
             return Ok((sum, lost));
@@ -5220,8 +5214,14 @@ fn hypergeom_series(
             let lost = lost_bits(mag, &sum);
             return Ok((sum, lost));
         }
+        // As n → ∞ the factor tends to z, so |z| < 1 still converges even if terms
+        // grow for a while after n > max(|a|, |b|, |c|). |z| ≥ 1 and a factor of
+        // magnitude ≥ 1 past that peak is not in the disk.
+        if nn.cmp(&max_par) > 0 && factor.abs()?.cmp(&one) >= 0 && z.abs()?.cmp(&one) >= 0 {
+            return Err(Error::InvalidArgument);
+        }
+        n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
     }
-    Err(Error::InvalidArgument)
 }
 
 /// Real \({}_2F_1\) dispatch; see [`ExactNumNumber::hypergeom_2f1`].
@@ -5356,9 +5356,6 @@ fn hyp2f1_log_case(
     p: usize,
     cc: &mut Consts,
 ) -> Result<Lossy, Error> {
-    if m > HYPERGEOM_TERM_MAX {
-        return Err(Error::InvalidArgument);
-    }
     let one = ExactNumNumber::from_word(1, p)?;
     let mw = ExactNumNumber::from_word(m as Word, p)?;
     let am = a.add(&mw, p, RoundingMode::None)?;
@@ -5416,7 +5413,8 @@ fn hyp2f1_log_case(
     let mut s2 = ExactNumNumber::new2(p, Sign::Pos, false)?;
     let max_par = max_abs(&[&am, &bm, &mw])?;
     let mut mag = Exponent::MIN;
-    for n in 0..HYPERGEOM_TERM_MAX {
+    let mut n: usize = 0;
+    loop {
         let br = ln_z
             .sub(&psi_n1, p, RoundingMode::None)?
             .sub(&psi_nm1, p, RoundingMode::None)?
@@ -5426,9 +5424,9 @@ fn hyp2f1_log_case(
         let part =
             max_exp(&[&t]).saturating_add(max_exp(&[&ln_z, &psi_n1, &psi_nm1, &psi_a, &psi_b]));
         mag = mag.max(part);
-        let nw = ExactNumNumber::from_word(n as Word, p)?;
-        let n1 = ExactNumNumber::from_word((n + 1) as Word, p)?;
-        let nm1 = ExactNumNumber::from_word((n + m + 1) as Word, p)?;
+        let nw = from_usize_p(n, p)?;
+        let n1 = from_usize_p(n + 1, p)?;
+        let nm1 = from_usize_p(n + (m as usize) + 1, p)?;
         let an = am.add(&nw, p, RoundingMode::None)?;
         let bn = bm.add(&nw, p, RoundingMode::None)?;
         let factor = an
@@ -5442,6 +5440,9 @@ fn hyp2f1_log_case(
             let lost = l1.max(l2).max(lost_bits(max_exp(&[&s1, &t2]), &v));
             return Ok((v, lost));
         }
+        if nw.cmp(&max_par) > 0 && factor.abs()?.cmp(&one) >= 0 && zeta.abs()?.cmp(&one) >= 0 {
+            return Err(Error::InvalidArgument);
+        }
         t = t.mul(&factor, p, RoundingMode::None)?;
         psi_n1 = psi_n1.add(&one.div(&n1, p, RoundingMode::None)?, p, RoundingMode::None)?;
         psi_nm1 = psi_nm1.add(
@@ -5451,8 +5452,8 @@ fn hyp2f1_log_case(
         )?;
         psi_a = psi_a.add(&one.div(&an, p, RoundingMode::None)?, p, RoundingMode::None)?;
         psi_b = psi_b.add(&one.div(&bn, p, RoundingMode::None)?, p, RoundingMode::None)?;
+        n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
     }
-    Err(Error::InvalidArgument)
 }
 
 fn terminating_after(v: &ExactNumNumber, next_n: usize, p: usize) -> Result<bool, Error> {
@@ -5588,7 +5589,7 @@ fn carlson_rf(
     let mut x = x0.clone()?;
     let mut y = y0.clone()?;
     let mut z = z0.clone()?;
-    for _n in 0..carlson_dupe_cap(p) {
+    loop {
         let an = x
             .add(&y, p, RoundingMode::None)?
             .add(&z, p, RoundingMode::None)?
@@ -5613,7 +5614,6 @@ fn carlson_rf(
             .add(&lam, p, RoundingMode::None)?
             .div(&four, p, RoundingMode::None)?;
     }
-    Err(Error::InvalidArgument)
 }
 
 fn rf_series(
@@ -5709,7 +5709,7 @@ fn carlson_rd(
     let mut z = z0.clone()?;
     let mut sum = ExactNumNumber::from_word(0, p)?;
     let mut fac = ExactNumNumber::from_word(1, p)?;
-    for _n in 0..carlson_dupe_cap(p) {
+    loop {
         let an = x
             .add(&y, p, RoundingMode::None)?
             .add(
@@ -5753,7 +5753,6 @@ fn carlson_rd(
             .add(&lam, p, RoundingMode::None)?
             .div(&four, p, RoundingMode::None)?;
     }
-    Err(Error::InvalidArgument)
 }
 
 fn rd_series(
@@ -5860,7 +5859,7 @@ fn carlson_rj(
     let mut pv = p0.clone()?;
     let mut sum = ExactNumNumber::from_word(0, p)?;
     let mut fac = ExactNumNumber::from_word(1, p)?;
-    for _n in 0..carlson_dupe_cap(p) {
+    loop {
         let an = x
             .add(&y, p, RoundingMode::None)?
             .add(&z, p, RoundingMode::None)?
@@ -5920,7 +5919,6 @@ fn carlson_rj(
             .add(&lam, p, RoundingMode::None)?
             .div(&four, p, RoundingMode::None)?;
     }
-    Err(Error::InvalidArgument)
 }
 
 fn rj_series(
@@ -8912,6 +8910,28 @@ mod tests {
                 "{why}"
             );
         }
+        Ok(())
+    }
+
+    /// `_2F_1(10000, 1; 10001; 1/2)` needs more than the old 10_000-term cap before
+    /// `series_done` (n > max(|a|,|b|,|c|)) can fire. Gold: mpmath `hyp2f1`.
+    #[test]
+    fn test_hypergeom_2f1_param_10000_beyond_old_term_cap() -> Result<(), crate::Error> {
+        let p = 64;
+        let mut cc = Consts::new()?;
+        let rm = RoundingMode::ToEven;
+        let dec =
+            |s: &str, cc: &mut Consts| ExactNumNumber::parse(s, crate::defs::Radix::Dec, p, rm, cc);
+        let a = ExactNumNumber::from_word(10_000, p)?;
+        let b = ExactNumNumber::from_word(1, p)?;
+        let c = ExactNumNumber::from_word(10_001, p)?;
+        let z = one_half(p)?;
+        let got = a.hypergeom_2f1(&b, &c, &z, p, rm, &mut cc)?;
+        let want = dec(
+            "1.999800059974014989189356552302545895116026515887677357177912089351346",
+            &mut cc,
+        )?;
+        bits_agree(&got, &want, p, 56, "2F1(10000, 1; 10001; 1/2)")?;
         Ok(())
     }
 

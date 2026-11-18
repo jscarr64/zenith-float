@@ -18,18 +18,9 @@ use crate::Sign;
 use crate::INF_POS;
 use alloc::vec::Vec;
 
-/// Same cap as the real Carlson kernels.
-const CARLSON_DUPE_MAX: u32 = 128;
-
-// R_J shift-integral jets and panels stop when the path is covered
-// or the remaining distance stops shrinking; there is no pre-set term
-// or panel refusal.
-
-/// Duplication-step cap: each step shrinks the spread 4×, and the series needs a spread of
-/// about 2^-(p/3+16), so high precisions need more than [`CARLSON_DUPE_MAX`] steps.
-fn carlson_dupe_cap(p: usize) -> u32 {
-    CARLSON_DUPE_MAX.max(u32::try_from(p / 4 + 64).unwrap_or(u32::MAX))
-}
+// Carlson duplication stops when the spread is below the series remainder bound
+// (about 2^-(p/3+16)); there is no step cap (P9). R_J shift-integral jets and
+// panels stop when the path is covered or the remaining distance stops shrinking.
 
 fn rm() -> RoundingMode {
     RoundingMode::None
@@ -139,7 +130,7 @@ fn carlson_rf(
     let mut x = leave_cut(x0, p);
     let mut y = leave_cut(y0, p);
     let mut z = leave_cut(z0, p);
-    for _ in 0..carlson_dupe_cap(p) {
+    loop {
         let an = ExactComplex::add_ref(&x, &y, p, rm())
             .add(&z, p, rm())
             .div(&three, p, rm());
@@ -157,7 +148,6 @@ fn carlson_rf(
         y = y.add(&lam, p, rm()).div(&four, p, rm());
         z = z.add(&lam, p, rm()).div(&four, p, rm());
     }
-    nan_pair(Error::InvalidArgument)
 }
 
 fn rf_series(
@@ -230,7 +220,7 @@ fn carlson_rd(
     let mut z = leave_cut(z0, p);
     let mut sum = ExactComplex::zero(p);
     let mut fac = c_u32(1, p);
-    for _ in 0..carlson_dupe_cap(p) {
+    loop {
         let an = ExactComplex::add_ref(&x, &y, p, rm())
             .add(&three.mul(&z, p, rm()), p, rm())
             .div(&five, p, rm());
@@ -254,7 +244,6 @@ fn carlson_rd(
         y = y.add(&lam, p, rm()).div(&four, p, rm());
         z = zl.div(&four, p, rm());
     }
-    nan_pair(Error::InvalidArgument)
 }
 
 fn rd_series(
@@ -679,7 +668,7 @@ fn carlson_rj_dupe(
     let mut sum = ExactComplex::zero(p);
     let mut fac = c_u32(1, p);
     let mut pow4_cubed = c_u32(1, p); // 4^{-3m}
-    for _ in 0..carlson_dupe_cap(p) {
+    loop {
         let dmax = max_abs(
             &max_dev3(&am, &x, &y, &z, p),
             &c_abs(&ExactComplex::sub_ref(&am, &pv, p, rm()), p),
@@ -775,7 +764,6 @@ fn carlson_rj_dupe(
         z = zp;
         pv = pp;
     }
-    nan_pair(Error::InvalidArgument)
 }
 
 /// \(R_J(x,y,z,p)\). Characteristic \(p\neq 0\); at most one of \(x,y,z\) may be \(0\).
@@ -829,7 +817,7 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_F` in ℂ; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
+    /// - Algorithm: Carlson `R_F` in ℂ; duplication until the series remainder bound.
     /// - Bound: identities evaluated outside Ziv (nested Ziv would exhaust `MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -878,7 +866,7 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_F` / `R_D`; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
+    /// - Algorithm: Carlson `R_F` / `R_D`; duplication until the series remainder bound.
     /// - Bound: same as [`Self::elliptic_k`].
     /// - MPFR oracle: no.
     ///
@@ -931,7 +919,7 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_F`; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
+    /// - Algorithm: Carlson `R_F`; duplication until the series remainder bound.
     /// - MPFR oracle: no.
     ///
     /// Carlson \(R_F(1-x^2,1-mx^2,1)\). Cuts when \(1-x^2\) or \(1-mx^2\) lies on
@@ -996,7 +984,7 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_F` / `R_D`; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
+    /// - Algorithm: Carlson `R_F` / `R_D`; duplication until the series remainder bound.
     /// - MPFR oracle: no.
     ///
     /// Cuts as for \(F\). \(E(x,0)=\arcsin x\); \(E(x,1)=x\).
@@ -1067,7 +1055,7 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_J`; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
+    /// - Algorithm: Carlson `R_J`; duplication until the series remainder bound.
     /// - MPFR oracle: no.
     ///
     /// Accuracy: correctly-rounded
@@ -1117,7 +1105,7 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_J`; `max(CARLSON_DUPE_MAX = 128, p/4 + 64)` duplication steps.
+    /// - Algorithm: Carlson `R_J`; duplication until the series remainder bound.
     /// - MPFR oracle: no.
     ///
     /// Cuts when \(1-x^2\), \(1-mx^2\), or \(1-nx^2\) meets the Carlson cut

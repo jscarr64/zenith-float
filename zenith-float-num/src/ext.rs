@@ -3979,7 +3979,7 @@ Accuracy: correctly-rounded",
 
 # Precision
 
-- Algorithm: Carlson `R_F` duplication; cap `max(128, p/4 + 64)` steps.
+- Algorithm: Carlson `R_F` duplication; duplication until the series remainder bound.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
 - MPFR oracle: no (identity golds; GNU MPFR has no Carlson `K`).
 Accuracy: correctly-rounded",
@@ -3995,7 +3995,7 @@ Accuracy: correctly-rounded",
 
 # Precision
 
-- Algorithm: Carlson `R_F` / `R_D`; cap `max(128, p/4 + 64)` steps.
+- Algorithm: Carlson `R_F` / `R_D`; duplication until the series remainder bound.
 - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
 - MPFR oracle: no.
 Accuracy: correctly-rounded",
@@ -4021,7 +4021,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_F`; cap `max(128, p/4 + 64)` steps.
+    /// - Algorithm: Carlson `R_F`; duplication until the series remainder bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4063,7 +4063,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_F` / `R_D`; cap `max(128, p/4 + 64)` steps.
+    /// - Algorithm: Carlson `R_F` / `R_D`; duplication until the series remainder bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4093,7 +4093,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_J`; cap `max(128, p/4 + 64)` steps.
+    /// - Algorithm: Carlson `R_J`; duplication until the series remainder bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4142,7 +4142,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: Carlson `R_J`; cap `max(128, p/4 + 64)` steps.
+    /// - Algorithm: Carlson `R_J`; duplication until the series remainder bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4803,7 +4803,7 @@ Accuracy: correctly-rounded",
     /// - Algorithm: terminating series (any `z`); series for `|z| ≤ 1/2`; Pfaff `z/(z−1)` for `z < −1/2`;
     ///   `1 − z` connection (DLMF 15.8.4, logarithmic form A&S 15.3.10–11 when `c − a − b` is an
     ///   integer) for `1/2 < z < 1`; Gauss at `z = 1`. Cancellation is measured and the evaluation
-    ///   repeated with more guard bits. Series cap `HYPERGEOM_TERM_MAX`.
+    ///   repeated with more guard bits. The series runs until the term bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
