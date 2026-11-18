@@ -72,6 +72,21 @@ fn half(p: usize) -> ExactNum {
     one(p).ldexp(-1, p, N)
 }
 
+/// Working width `work_p(p)+WORD`, or `InvalidArgument` when a mantissa of
+/// that width cannot be constructed. A legal public `p` (for example `2^59`,
+/// which is below `MAX_PRECISION = 2^60-1`) can still ask for more memory
+/// than the machine has. The probe is a single `from_u8` and returns
+/// immediately; it keeps a later `Consts::pi` from walking the Chudnovsky
+/// cache toward an unallocatable width (`kext ≈ wrk/47` terms).
+fn work_or_refuse(p: usize) -> Result<usize, ExactNum> {
+    let wrk = work_p(p).saturating_add(WORD_BIT_SIZE);
+    if finite(&one(wrk)) {
+        Ok(wrk)
+    } else {
+        Err(cat_nan())
+    }
+}
+
 /// C99 7.12.1 overflow: MAX when the mode rounds toward zero, else signed Inf.
 fn overflow_signed(neg: bool, p: usize, rm: RoundingMode) -> ExactNum {
     let toward_zero = matches!(
@@ -1357,6 +1372,9 @@ pub(super) fn struve_h_word(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> ExactNum {
+    if let Err(n) = work_or_refuse(p) {
+        return n;
+    }
     // DLMF 11.6.1 + 10.7.8: H_ν(+∞) is 0, 2/π, or +∞ according as
     // ν<1, ν=1, or ν>1. Non-finite ν still refuses.
     if z.is_inf() && z.is_positive() && finite(nu) {
@@ -1411,7 +1429,10 @@ fn anger_weber_at_zero(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> ExactNum {
-    let wrk = work_p(p).saturating_add(WORD_BIT_SIZE);
+    let wrk = match work_or_refuse(p) {
+        Ok(w) => w,
+        Err(n) => return n,
+    };
     if nu.is_zero() {
         return finish(if weber { signed_zero(false, p) } else { one(p) }, p, rm);
     }
@@ -3121,6 +3142,9 @@ fn anger_weber_word(
     rm: RoundingMode,
     cc: &mut Consts,
 ) -> ExactNum {
+    if let Err(n) = work_or_refuse(p) {
+        return n;
+    }
     // DLMF 11.11 / 10.7.8: J_ν(±∞) = E_ν(±∞) = 0. The ±∞ case of
     // 11.10.12 is the same limit. Non-finite ν still refuses.
     if z.is_inf() && finite(nu) {
@@ -3809,6 +3833,37 @@ mod aws_bounds {
             t_all.elapsed().as_secs() < 120,
             "E_100/E_1001(1000) high-p checks took {:?}",
             t_all.elapsed()
+        );
+        Ok(())
+    }
+
+    /// p=2^59 is a valid public precision (below MAX=2^60-1), but a
+    /// work_p(p)+WORD mantissa cannot be allocated. The z=0 closed forms
+    /// must refuse immediately, the same way struve_h already does, and
+    /// must not call Consts::pi at that width (the Chudnovsky cache would
+    /// walk kext ≈ wrk/47 terms and miss ZFS_WALL). The MAX_PRECISION
+    /// rows already return InvalidArgument because pi's public entry
+    /// rejects a working width above the ceiling; this locks the 2^59
+    /// contract too.
+    #[test]
+    fn aws_anger_weber_p_2_59_hits_precision_limit() -> Result<(), Error> {
+        use std::time::Instant;
+        let mut cc = Consts::new()?;
+        let z = ExactNum::new(64);
+        let nu = half(64).neg();
+        let t0 = Instant::now();
+        for p in [1usize << 59, crate::defs::MAX_PRECISION] {
+            let h = z.struve_h(&nu, p, RoundingMode::ToEven, &mut cc);
+            let j = z.anger_j(&nu, p, RoundingMode::ToEven, &mut cc);
+            let e = z.weber_e(&nu, p, RoundingMode::ToEven, &mut cc);
+            assert_eq!(h.err(), Some(Error::InvalidArgument), "struve_h p={p}");
+            assert_eq!(j.err(), Some(Error::InvalidArgument), "anger_j p={p}");
+            assert_eq!(e.err(), Some(Error::InvalidArgument), "weber_e p={p}");
+        }
+        let dt = t0.elapsed();
+        assert!(
+            dt.as_secs() < 2,
+            "p=2^59 / MAX closed forms took {dt:?}; must refuse before Consts::pi"
         );
         Ok(())
     }
