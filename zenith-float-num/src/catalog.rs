@@ -105,6 +105,32 @@ fn abs_up(x: &ExactNum) -> ExactNum {
     y
 }
 
+/// DLMF 16.2.5: `{}_1F_0(a;;z) = (1-z)^{-a}` on the principal branch.
+///
+/// The real API refuses when `1-z < 0` and `a` is not an integer (the value is not real).
+fn pfq_1f0(z: &ExactNum, a: &ExactNum, p: usize, cc: &mut Consts) -> ExactNum {
+    let wrk = work_p(p).saturating_add(WORD_BIT_SIZE);
+    let n = RoundingMode::None;
+    let one = ExactNum::from_u8(1, wrk);
+    let w = wrk
+        .max(z.precision().unwrap_or(0))
+        .max(a.precision().unwrap_or(0))
+        .saturating_add(WORD_BIT_SIZE);
+    let omz = ExactNum::sub_ref(&one, z, w, n);
+    if !finite(&omz) || omz.is_zero() {
+        return cat_nan();
+    }
+    if omz.is_negative() && !a.is_int() {
+        return cat_nan();
+    }
+    let v = omz.pow(&a.clone().neg_via_mul(), wrk, n, cc);
+    if finite(&v) {
+        v
+    } else {
+        cat_nan()
+    }
+}
+
 /// DLMF 16.18.1: F(a;b;z) = ΠΓ(b)/ΠΓ(a) · G(-z | 1-a; ; 0; 1-b).
 /// For p = q+1, |z| > 1, the type-2 G residue series is in 1/z, inside the disk.
 /// Negative G arguments (the cut z > 1) are refused unless every power is integer.
@@ -2392,6 +2418,11 @@ impl ExactNum {
         if !finite(self) || a.iter().any(|x| !finite(x)) || b.iter().any(|x| !finite(x)) {
             return cat_nan();
         }
+        // DLMF 16.2.5: 1F0(a;;z) = (1-z)^{-a}. On the cut z>1 this is real precisely
+        // when a is an integer; otherwise the real API refuses, matching ZF-38.
+        if a.len() == 1 && b.is_empty() {
+            return finish(pfq_1f0(self, &a[0], p, cc), p, rm);
+        }
         let terminating = a.iter().any(nonpositive_int);
         if !terminating && !self.is_zero() {
             if a.len() > b.len() + 1 {
@@ -2890,6 +2921,30 @@ mod tests {
             "G(+MAX) Up should be +Inf, got nan={}",
             gmax_up.is_nan()
         );
+        Ok(())
+    }
+
+    /// 1F0(1;;2) = (1-2)^{-1} = -1 exactly (DLMF 16.2.5). The Meijer continuation
+    /// at f7cdde7/82bd851 missed the last ulp in Up (d0008803 and the four
+    /// higher-precision Up twins).
+    #[test]
+    fn zf_hypergeom_1f0_at_two_is_exact_minus_one() -> Result<(), crate::Error> {
+        let p = 64;
+        let mut cc = Consts::new()?;
+        let z = ExactNum::from_u8(2, p);
+        let a = ExactNum::from_u8(1, p);
+        let want = ExactNum::from_i8(-1, p);
+        for rm in [RoundingMode::Down, RoundingMode::ToZero, RoundingMode::Up, RoundingMode::ToEven]
+        {
+            let g = z.hypergeom_pfq(core::slice::from_ref(&a), &[], p, rm, &mut cc);
+            assert!(
+                finite(&g) && g.compare(&want) == Some(0),
+                "1F0(1;;2) in {rm:?} should be exactly -1, got inf={} nan={} exp={:?}",
+                g.is_inf(),
+                g.is_nan(),
+                g.exponent()
+            );
+        }
         Ok(())
     }
 
