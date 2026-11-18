@@ -8488,10 +8488,23 @@ mod tests {
         Ok(())
     }
 
-    /// Γ(4097 + 1/2) used the old `HALF_INTEGER_MAX = 2^12` cutoff and went through
-    /// Stirling. The closed form `√π · (2n−1)!! / 2^n` is used when n ≤ 4p + 4096.
+    /// The old `HALF_INTEGER_MAX = 2^12` cutoff rejected n = 4097. The index
+    /// helper now accepts it whenever n ≤ 4p + 4096. The public Γ closed form
+    /// at this n builds a ~n log n-bit product, so the value check runs in
+    /// release only (debug was 110 s).
     #[test]
     fn test_gamma_half_integer_beyond_old_4096_cap() -> Result<(), crate::Error> {
+        let p = 64;
+        let half = one_half(p)?;
+        let x = from_usize_p(4097, p)?.add(&half, p, RoundingMode::None)?;
+        assert_eq!(x.half_integer_index(p)?, Some(4097));
+        Ok(())
+    }
+
+    /// Γ(4097.5) matches the closed form `√π · (2n−1)!! / 2^n` (56 bits).
+    #[cfg(not(debug_assertions))]
+    #[test]
+    fn test_gamma_half_integer_4097_closed_form_release() -> Result<(), crate::Error> {
         let p = 64;
         let mut cc = Consts::new()?;
         let rm = RoundingMode::ToEven;
