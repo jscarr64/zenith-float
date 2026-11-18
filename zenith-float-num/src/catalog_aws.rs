@@ -428,11 +428,7 @@ fn struve_series(
                 let t = ln.exp(wp, N, cc);
                 // ln_gamma is ln|Γ|; restore sign(Γ(3/2)Γ(ν+3/2)).
                 if finite(&t) {
-                    if let Some(t) = apply_gamma_pair_sign(t, &three_half, &nu_p, wp, cc) {
-                        t
-                    } else {
-                        return None;
-                    }
+                    apply_gamma_pair_sign(t, &three_half, &nu_p, wp, cc)?
                 } else {
                     // Fall back to the factored form when the log path
                     // overflows; the factored form may still be representable
@@ -1239,16 +1235,11 @@ fn struve_k_integral(
                 rem_acc = rem_acc.add(&rem, wp, UP);
             }
             other => {
-                let rem_ref = match &other {
-                    Some((_, rem)) => Some(rem),
-                    None => None,
-                };
+                let rem_ref = other.as_ref().map(|(_, rem)| rem);
                 if rem_stalled(parent_re, rem_ref) {
                     return None;
                 }
-                let Some(mid) = panel_mid_or_stall(&a, &b, rem_ref, &target, wp) else {
-                    return None;
-                };
+                let mid = panel_mid_or_stall(&a, &b, rem_ref, &target, wp)?;
                 let child_re = rem_ref.map(exp_of);
                 stack.push((mid.clone(), b, child_re));
                 stack.push((a, mid, child_re));
@@ -1912,16 +1903,11 @@ fn anger_a_integral(
                 rem_acc = rem_acc.add(&rem, wp, UP);
             }
             other => {
-                let rem_ref = match &other {
-                    Some((_, rem)) => Some(rem),
-                    None => None,
-                };
+                let rem_ref = other.as_ref().map(|(_, rem)| rem);
                 if rem_stalled(parent_re, rem_ref) {
                     return None;
                 }
-                let Some(mid) = panel_mid_or_stall(&a, &b, rem_ref, &target, wp) else {
-                    return None;
-                };
+                let mid = panel_mid_or_stall(&a, &b, rem_ref, &target, wp)?;
                 let child_re = rem_ref.map(exp_of);
                 stack.push((mid.clone(), b, child_re));
                 stack.push((a, mid, child_re));
@@ -2893,16 +2879,11 @@ fn anger_a_u_path(
                     rem_acc = rem_acc.add(&rem, wp, UP);
                 }
                 other => {
-                    let rem_ref = match &other {
-                        Some((_, rem)) => Some(rem),
-                        None => None,
-                    };
+                    let rem_ref = other.as_ref().map(|(_, rem)| rem);
                     if rem_stalled(parent_re, rem_ref) {
                         return None;
                     }
-                    let Some(mid) = panel_mid_or_stall(&a, &b, rem_ref, &target, wp) else {
-                        return None;
-                    };
+                    let mid = panel_mid_or_stall(&a, &b, rem_ref, &target, wp)?;
                     let child_re = rem_ref.map(exp_of);
                     stack.push((mid.clone(), b, child_re));
                     stack.push((a, mid, child_re));
