@@ -1002,23 +1002,24 @@ impl ExactComplex {
     fn ln_gamma_positive(&self, p: usize, cc: &mut Consts) -> Self {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
-        let mut ln_acc = ExactComplex::zero(p);
+        // Rising factorial z(z+1)⋯(z+n−1), the same product `gamma_positive`
+        // already forms. Summing n principal logs was thousands of `ln` calls
+        // at dest p=8192 (Harper T4 S3 timed out at 120 s on modest |z|).
+        // One `ln` of the product stays well inside EXPONENT_MAX; any 2πi k
+        // between `ln(product)` and the sum of logs is removed by the
+        // principal-branch reduction in `ln_gamma_word`.
+        let mut acc = ExactComplex::one(p);
         let (terms, k) = gamma_stirling_plan(p);
         let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
-            ln_acc = ExactComplex::add_ref(
-                &ln_acc,
-                &z.ln(p, RoundingMode::None, cc),
-                p,
-                RoundingMode::None,
-            );
+            acc = acc.mul(z, p, RoundingMode::None);
             *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
             Ok(())
         });
         if let Err(e) = shifted {
             return nan_pair(e);
         }
-        z.ln_gamma_stirling_with(p, terms, cc)
-            .sub(&ln_acc, p, RoundingMode::None)
+        let lg = z.ln_gamma_stirling_with(p, terms, cc);
+        lg.sub(&acc.ln(p, RoundingMode::None, cc), p, RoundingMode::None)
     }
 
     fn ln_gamma_stirling_with(&self, p: usize, terms: usize, cc: &mut Consts) -> Self {
@@ -1774,6 +1775,37 @@ mod tests {
         let mut want = g.neg().sub(&two_ln2, wrk, RoundingMode::None);
         assert!(want.try_set_precision(p, RoundingMode::ToEven, wrk));
         assert_eq!(psi.re().compare(&want), Some(0));
+        Ok(())
+    }
+
+    /// `ln Γ(z)` at dest 8192 on a modest argument must not walk thousands of
+    /// individual `ln(z+k)` steps (Harper T4 S3 timed out at 120 s). The value
+    /// is the principal log of `Γ(z)`.
+    #[test]
+    fn zf_ln_gamma_modest_z_at_p8192_finishes() -> Result<(), crate::Error> {
+        let p = 8192;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let zs = [
+            ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(1, p)),
+            ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p)),
+            ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(10, p)),
+        ];
+        for z in &zs {
+            let t0 = std::time::Instant::now();
+            let lg = z.ln_gamma(p, rm, &mut cc);
+            assert!(
+                t0.elapsed().as_secs() < 30,
+                "ln_gamma({z:?}) at p=8192 took {:?}",
+                t0.elapsed()
+            );
+            assert!(!lg.is_nan(), "ln_gamma NaN: {lg:?}");
+            let want = z.gamma(p, rm, &mut cc).ln(p, rm, &mut cc);
+            assert!(
+                cnear_bits(&lg, &want, p, 4),
+                "ln_gamma {lg:?} vs ln(gamma) {want:?}"
+            );
+        }
         Ok(())
     }
 }

@@ -39,6 +39,8 @@ Shape-A site list (internal, no code change): Jeff signed off `tools/ziv_shape_a
 
 ### Changed
 
+Complex \(\ln\Gamma(z)\) forms the rising-factorial product \(z(z+1)\cdots(z+n-1)\) and takes one logarithm, the same product the complex \(\Gamma\) path already used, instead of summing a principal log at every integer shift. At dest 8192 the old sum was thousands of \(\ln\) calls and timed out the 120 s harness on modest \(|z|\).
+
 Complex Bessel \(J_\nu,Y_\nu,I_\nu,K_\nu\) at a negative-real argument with a signed-zero imaginary part now follows Arb's principal value (the from-above sheet, Arg = +π), ignoring the sign of that zero (Jeff 2026-11-18 10:37 CT). The previous contract took the C99 lower sheet for Im = −0. Scoped to the four complex Bessel entry points; `ExactComplex::pow` / `ln` are unchanged.
 
 Line endings (vera, 2026-11-03, vera/zf-td41): a new `.gitattributes` pins text files to LF on checkout (`* text=auto eol=lf`) and pins golden data byte-exact (`*.jsonl -text`, `*.tsv -text`, `SHA256SUMS -text`, `zenith-float-num/tests/oracle/goldens/** -text`, `golds/hex/** -text`), so a Windows checkout with `core.autocrlf=true` cannot change golden bytes (which would fail `sha256sum --strict -c SHA256SUMS`) or leave a `\r` in a parsed field. No result changes: the CSV parsers already stripped one trailing `\r` per line (`data_lines` in `zenith-float-num/src/csvfmt.rs`, since the original CSV commit), so no parser code changed; the new tests are guards (`zenith-float-num/tests/crlf_inputs.rs`, `tools/gitattributes_selftest.sh`, and a CRLF case in `tools/golden_sums_selftest.sh`).
