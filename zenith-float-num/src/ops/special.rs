@@ -337,11 +337,11 @@ impl ExactNumNumber {
                 continue;
             }
             let Ok(n) = y.int_as_usize() else { continue };
-            let per = x.mantissa_max_bit_len().saturating_add(2 * WORD_BIT_SIZE);
-            let Some(w) = n.checked_mul(per) else {
-                continue;
-            };
-            if Self::p_assertion(round_p(w)).is_err() {
+            // Exact product is a method switch, not a refusal: take it only when
+            // the proven bit length of (n−1)! and (x)_n fits in p+2 words.
+            // n·per is allocatable under MAX_PRECISION=2^{60}−1 even at n=2^{20},
+            // and then the loop of exact muls does not finish.
+            if !exact_beta_product_fits(p, n, Some(x)) {
                 continue;
             }
             let mut ex = x.clone()?;
@@ -358,12 +358,16 @@ impl ExactNumNumber {
         }
 
         // Positive integers: B(m, n) = (n−1)! / (m (m+1) ⋯ (m+n−1)), both sides exact.
+        // Same method switch as the one-integer path: if the proven factorial
+        // width does not fit in p+2 words, the Γ/Ziv path below is used.
         if let (Some(m), Some(n)) = (self.beta_int_index()?, b.beta_int_index()?) {
-            let num = exact_product(1, n - 1)?;
-            let den = exact_product(m, m + n - 1)?;
-            let mut r = num.div(&den, p, rm)?;
-            r.set_inexact(r.inexact() | inexact);
-            return Ok(r);
+            if exact_beta_product_fits(p, n, None) && exact_beta_ints_fit(p, m, n) {
+                let num = exact_product(1, n - 1)?;
+                let den = exact_product(m, m + n - 1)?;
+                let mut r = num.div(&den, p, rm)?;
+                r.set_inexact(r.inexact() | inexact);
+                return Ok(r);
+            }
         }
 
         let large = self.is_positive()
@@ -5014,6 +5018,83 @@ pub fn beta(a: &ExactNum, b: &ExactNum, p: usize, rm: RoundingMode, cc: &mut Con
 }
 
 /// The exact integer `lo · (lo+1) ⋯ hi` (1 when `lo > hi`).
+/// Proven upper bound on `sum_{k=1}^n floor(log2(k))`. If `2^b ≤ n < 2^{b+1}`,
+/// that sum is `sum_{i=1}^{b-1} i 2^i + b (n - 2^b + 1)`, and
+/// `sum_{i=1}^{k} i 2^i = (k-1) 2^{k+1} + 2`.
+fn sum_floor_log2(n: usize) -> Option<usize> {
+    if n <= 1 {
+        return Some(0);
+    }
+    let b = (usize::BITS - n.leading_zeros() - 1) as u128;
+    let two_b = 1u128 << b;
+    let sum_full = if b >= 2 {
+        b.checked_sub(2)?.checked_mul(two_b)?.checked_add(2)
+    } else {
+        Some(0)
+    }?;
+    let tail = b.checked_mul((n as u128).checked_sub(two_b)?.checked_add(1)?)?;
+    usize::try_from(sum_full.checked_add(tail)?).ok()
+}
+
+/// Proven upper bound on the bit length of `m!`. From
+/// `log2(m!) = sum_{k=2}^m log2(k) ≤ (m-1) + sum_{k=2}^m floor(log2(k))`,
+/// the bit length is at most `m + sum_{k=1}^m floor(log2(k))`.
+fn factorial_bit_len_upper(m: usize) -> Option<usize> {
+    if m <= 1 {
+        return Some(1);
+    }
+    m.checked_add(sum_floor_log2(m)?)
+}
+
+/// `| (a)_n | ≤ (|a| + n − 1)^n`, so the bit length is at most
+/// `1 + n (max(0, exp(a), floor(log2(n))) + 1)` with `exp(a)` the exponent
+/// convention `|a| < 2^{exp(a)}` (0.mantissa · 2^{exp}).
+fn pochhammer_bit_len_upper(a: &ExactNumNumber, n: usize) -> Option<usize> {
+    if n == 0 {
+        return Some(1);
+    }
+    let ea = if a.is_zero() { 0i64 } else { a.exponent().max(0) };
+    let en = if n <= 1 { 0i64 } else { i64::from(usize::BITS - n.leading_zeros() - 1) };
+    let logb = ea.max(en).checked_add(1)?;
+    let logb = usize::try_from(logb).ok()?;
+    n.checked_mul(logb)?.checked_add(1)
+}
+
+/// The exact integer-beta product is the right kernel when the proven bit
+/// length of `(n−1)!` and, if `a` is given, of `(a)_n` fits in `p + 2` words.
+/// Otherwise the caller uses the Ziv-rounded Γ / ln Γ path (a method switch).
+fn exact_beta_product_fits(p: usize, n: usize, a: Option<&ExactNumNumber>) -> bool {
+    let budget = p.saturating_add(2 * WORD_BIT_SIZE);
+    let Some(fb) = factorial_bit_len_upper(n.saturating_sub(1)) else {
+        return false;
+    };
+    if fb > budget {
+        return false;
+    }
+    if let Some(a) = a {
+        let Some(pb) = pochhammer_bit_len_upper(a, n) else {
+            return false;
+        };
+        if pb > budget {
+            return false;
+        }
+    }
+    ExactNumNumber::p_assertion(round_p(budget)).is_ok()
+}
+
+/// Two-integer B(m, n): the denominator `m (m+1) ⋯ (m+n−1)` has bit length
+/// at most that of `(m+n−1)!`.
+fn exact_beta_ints_fit(p: usize, m: usize, n: usize) -> bool {
+    let budget = p.saturating_add(2 * WORD_BIT_SIZE);
+    let Some(end) = m.checked_add(n).and_then(|s| s.checked_sub(1)) else {
+        return false;
+    };
+    let Some(db) = factorial_bit_len_upper(end) else {
+        return false;
+    };
+    db <= budget
+}
+
 fn exact_product(lo: usize, hi: usize) -> Result<ExactNumNumber, Error> {
     let mut prod = ExactNumNumber::from_word(1, WORD_BIT_SIZE)?;
     for k in lo..=hi {
@@ -8565,6 +8646,40 @@ mod tests {
             &mut cc,
         )?;
         bits_agree(&got, &gold, p, 56, "I_1(10000)")?;
+        Ok(())
+    }
+
+    /// B(a, 2^{20}) at p=2048 used to take the exact integer-n product
+    /// (n·per ≈ 2^{27} bits is still allocatable under MAX_PRECISION=2^{60}−1),
+    /// then hang on ~2^{20} growing exact muls. It must finish and agree with
+    /// the closed form / gold; B(−½, 2)=−4 stays exact.
+    #[test]
+    fn test_beta_large_integer_n_uses_ziv_not_huge_product() -> Result<(), crate::Error> {
+        let p = 2048;
+        let mut cc = Consts::new()?;
+        let rm = RoundingMode::ToEven;
+        let n20 = ExactNumNumber::from_word(1u64 << 20, p)?;
+        let two = ExactNumNumber::from_word(2, p)?;
+        // B(2, 2^{20}) = 1 / (2^{20} (2^{20}+1)), exact rational.
+        let got = two.beta(&n20, p, rm, &mut cc)?;
+        let np1 = ExactNumNumber::from_word((1u64 << 20) + 1, p)?;
+        let den = n20.mul(&np1, p, RoundingMode::None)?;
+        let want = ExactNumNumber::from_word(1, p)?.div(&den, p, rm)?;
+        bits_agree(&got, &want, p, 2000, "B(2, 2^20)")?;
+        let half = one_half(p)?;
+        let got_h = half.beta(&n20, p, rm, &mut cc)?;
+        let gold_h = ExactNumNumber::parse(
+            "0.00173091217011571577082584230373951918876295553419736",
+            crate::defs::Radix::Dec,
+            p,
+            rm,
+            &mut cc,
+        )?;
+        bits_agree(&got_h, &gold_h, p, 160, "B(1/2, 2^20)")?;
+        let mone_half = half.neg()?;
+        let bm = mone_half.beta(&two, p, rm, &mut cc)?;
+        let mfour = ExactNumNumber::from_word(4, p)?.neg()?;
+        assert_eq!(bm.cmp(&mfour), 0, "B(-1/2, 2) = -4");
         Ok(())
     }
 
