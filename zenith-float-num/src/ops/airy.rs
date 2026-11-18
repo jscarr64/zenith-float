@@ -13,8 +13,8 @@ use crate::Sign;
 use crate::Word;
 use crate::WORD_BIT_SIZE;
 
-/// Term cap for the Taylor pair \((f,g)\) (only used while \(\xi<0.35\,p\)).
-const AIRY_SERIES_MAX: usize = 1 << 16;
+// The Taylor pair (f,g) runs until both terms are below 2^{-p}; it is only
+// selected while xi < 0.35 p.
 
 impl ExactNumNumber {
     /// Airy \(\mathrm{Ai}(\mathrm{self})\) at precision `p`.
@@ -213,7 +213,8 @@ impl ExactNumNumber {
         let mut tg = self.clone()?;
         let mut g = self.clone()?;
         let mut gp = one;
-        for k in 1..=AIRY_SERIES_MAX {
+        let mut k: usize = 1;
+        loop {
             let k3 = Self::from_word((3 * k) as Word, p)?;
             let k3m1 = Self::from_word((3 * k - 1) as Word, p)?;
             let k3p1 = Self::from_word((3 * k + 1) as Word, p)?;
@@ -240,10 +241,10 @@ impl ExactNumNumber {
             let tf_done = tf.is_zero() || tf.exponent() + (p as i64) < 0;
             let tg_done = tg.is_zero() || tg.exponent() + (p as i64) < 0;
             if tf_done && tg_done {
-                break;
+                return Ok((f, g, fp, gp));
             }
+            k = k.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
         }
-        Ok((f, g, fp, gp))
     }
 
     fn airy_asymp_pos(&self, p: usize, cc: &mut Consts) -> Result<(Self, Self, Self, Self), Error> {

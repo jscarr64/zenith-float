@@ -2520,12 +2520,11 @@ impl ExactNumNumber {
         }
         // The asymptotic series' smallest term is ≈ e^{-2x} (2.885x bits), so it is used only
         // when that covers `p`. Below that the I-based formulas cancel: I ≈ e^{x}, K ≈ e^{-x},
-        // so 2.885x guard bits are added. `bessel_cancel_bits` returns InvalidArgument when that
-        // guard would exceed `BESSEL_GUARD_MAX` (or `|x|` has exponent > 30): `|x|` is then far
-        // past the asymptotic threshold, so use the asymptotic series instead of failing.
+        // so 2.885x guard bits are added. If that width is unallocatable, `|x|` is
+        // far past the asymptotic threshold: use the asymptotic series instead.
         let two_x_bits = match bessel_cancel_bits(self, 3, 1) {
             Ok(bits) => bits,
-            Err(Error::InvalidArgument) => return self.k_asymptotic(&nu, p, cc),
+            Err(Error::MemoryAllocation) => return self.k_asymptotic(&nu, p, cc),
             Err(e) => return Err(e),
         };
         if two_x_bits >= p + 16 && self.exponent() >= 3 {
@@ -2622,7 +2621,7 @@ impl ExactNumNumber {
         let hh = half.mul(&half, p, RoundingMode::None)?;
         // `series_n_max` is O(p) once the exponent is ≥ 16, which stops I_ν before the
         // peak at k ≈ |x|/2 (I_1(20000) never reached k ≈ 10000). J/Y keep the old cap:
-        // past `BESSEL_GUARD_MAX` they take Hankel instead of this series.
+        // past the Hankel validity region they take Hankel instead of this series.
         let mut nmax = series_n_max(p, self.exponent());
         if !alternating && self.exponent() > 0 {
             let e = (self.exponent() as u32).min(20);
@@ -6039,10 +6038,8 @@ fn series_negligible(t: &ExactNumNumber, sum: &ExactNumNumber, p: usize) -> bool
     t.exponent() + (p as i64) < se
 }
 
-/// Largest cancellation guard (bits) the Bessel power series will use. For `J`/`Y` with
-/// `|x| ≳ 10⁴` the Hankel expansion is used instead when `|ν|² < 2|x|`. The series path still
-/// returns `InvalidArgument` if the guard would exceed this and Hankel is not valid.
-pub const BESSEL_GUARD_MAX: usize = 1 << 14;
+// Cancellation guard for a Bessel series whose terms grow like e^{c|x|}:
+// ceil(num/den * |x|) + 16, or MemoryAllocation if that width cannot be formed.
 
 /// `|x| ≥ max(16, 0.35(dest_p+112))` — same switch as the complex Hankel path.
 fn hankel_mag_ok(x: &ExactNumNumber, dest_p: usize) -> bool {
@@ -6088,7 +6085,7 @@ fn use_bessel_hankel_real(x: &ExactNumNumber, nu: &ExactNumNumber, dest_p: usize
     if x.is_zero() || !hankel_order_ok(x, nu) {
         return false;
     }
-    hankel_mag_ok(x, dest_p) || bessel_cancel_bits(x, 3, 2).is_err()
+    hankel_mag_ok(x, dest_p)
 }
 
 fn from_usize_p(n: usize, p: usize) -> Result<ExactNumNumber, Error> {
@@ -6109,15 +6106,15 @@ fn bessel_cancel_bits(x: &ExactNumNumber, num: usize, den: usize) -> Result<usiz
     if x.is_zero() || x.exponent() <= 0 {
         return Ok(16);
     }
-    if x.exponent() > 30 {
-        return Err(Error::InvalidArgument);
-    }
-    let c = x.abs()?.ceil()?.int_as_usize()?;
-    let g = c.saturating_mul(num) / den + 16;
-    if g > BESSEL_GUARD_MAX {
-        return Err(Error::InvalidArgument);
-    }
-    Ok(g)
+    let c = match x.abs()?.ceil()?.int_as_usize() {
+        Ok(c) => c,
+        Err(Error::InvalidArgument) => return Err(Error::MemoryAllocation),
+        Err(e) => return Err(e),
+    };
+    c.saturating_mul(num)
+        .checked_div(den)
+        .and_then(|v| v.checked_add(16))
+        .ok_or(Error::MemoryAllocation)
 }
 
 /// `f(−|x|) = (−1)^ν f(|x|)` for an integer order `ν` (J and I, DLMF 10.4.1, 10.27.1): a flipped
@@ -8498,6 +8495,16 @@ mod tests {
         let half = one_half(p)?;
         let x = from_usize_p(4097, p)?.add(&half, p, RoundingMode::None)?;
         assert_eq!(x.half_integer_index(p)?, Some(4097));
+        Ok(())
+    }
+
+    /// `bessel_cancel_bits` used to return `InvalidArgument` once the guard
+    /// exceeded `BESSEL_GUARD_MAX = 2^14` (about |x| ≳ 10913 for the 3/2 rule).
+    #[test]
+    fn test_bessel_cancel_bits_no_fixed_guard_cap() -> Result<(), crate::Error> {
+        let x = from_usize_p(20_000, 64)?;
+        let g = bessel_cancel_bits(&x, 3, 2)?;
+        assert!(g > (1 << 14), "guard for |x|=20000 was {g}, still capped?");
         Ok(())
     }
 

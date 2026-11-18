@@ -3106,10 +3106,8 @@ fn anger_weber_positive(
         rem_bits_neg_exp(&zc).min(1 << 20)
     };
     let start_wp = work_p(p).saturating_add(usize::try_from(cancel.max(0)).unwrap_or(0));
-    let k_safe = maclaurin_k_est(&zc).is_some_and(|k| k <= 16_384);
-    if !k_safe {
-        return v;
-    }
+    // The 11.10.8-11 series is entire: always try it after a failed
+    // connection, including when k_est is large or |z| does not fit in u32.
     ziv_round_from(p, rm, start_wp, |wp| {
         anger_weber_maclaurin(weber, &zc, &nuc, wp, cc)
     })

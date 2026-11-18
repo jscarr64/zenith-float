@@ -10,7 +10,6 @@ use crate::complex_special::term_negligible;
 use crate::complex_special::two_c;
 use crate::complex_special::ziv_complex;
 use crate::defs::Exponent;
-use crate::ops::special::BESSEL_GUARD_MAX;
 use crate::Consts;
 use crate::Error;
 use crate::ExactComplex;
@@ -33,11 +32,6 @@ fn term_small_rel(t: &ExactComplex, s: &ExactComplex, p: usize) -> bool {
 /// Use the power series when \(\lvert z\rvert\) is below this (and \(\lvert z\rvert^2\)
 /// is large enough for the Hankel expansion only beyond destination precision).
 const BESSEL_SERIES_THRESHOLD: u32 = 16;
-
-/// Integers \(\lvert n\rvert\) recognized exactly for \(Y_n\) recurrence and \(z=0\).
-/// Largest Hankel-expansion term exponent accepted: a larger peak cancels in \(P,Q\) by more
-/// than the four bits the Ziv margin absorbs here, so the expansion is declined instead.
-const HANKEL_PEAK_EXP_MAX: Exponent = 4;
 
 fn abs_below(z: &ExactComplex, bound: u32, p: usize) -> bool {
     let a = z.abs(p, RoundingMode::None);
@@ -204,11 +198,11 @@ fn re_pair_cancel_bits(z: &ExactComplex) -> usize {
     if e <= 0 {
         return 32;
     }
-    if e > 20 {
-        return BESSEL_GUARD_MAX;
+    if e >= 128 {
+        return usize::MAX;
     }
     let bound = ((1u128 << e) * 73488) / 25469 + 2;
-    usize::try_from(bound).unwrap_or(BESSEL_GUARD_MAX)
+    usize::try_from(bound).unwrap_or(usize::MAX)
 }
 
 /// Extra bits when \(\sin(\nu\pi)\) is small (near an integer order).
@@ -239,7 +233,7 @@ fn i_diff_loss(ip: &ExactComplex, im: &ExactComplex, diff: &ExactComplex) -> usi
         return 0;
     };
     let Some(ed) = c_mag_exp(diff) else {
-        return BESSEL_GUARD_MAX;
+        return usize::MAX;
     };
     (ei - ed + 8).max(0) as usize
 }
@@ -957,11 +951,8 @@ impl ExactComplex {
     fn bessel_k_integer_series(&self, n: i32, work_p: usize, cc: &mut Consts) -> Option<Self> {
         let n = n.unsigned_abs();
         let guard = re_pair_cancel_bits(self).saturating_add(48);
-        if guard > BESSEL_GUARD_MAX {
-            return None;
-        }
         let acc = work_p.saturating_add(guard);
-        if acc > work_p.saturating_add(BESSEL_GUARD_MAX) {
+        if acc > crate::defs::MAX_PRECISION {
             return None;
         }
         let k0 = self.k0_series_c(acc, cc)?;
@@ -1072,24 +1063,21 @@ impl ExactComplex {
         let mut guard = re_pair_cancel_bits(self)
             .saturating_add(sbits)
             .saturating_add(48);
-        if guard > BESSEL_GUARD_MAX {
-            return None;
-        }
-        for _ in 0..3 {
+        loop {
             let acc = work_p.saturating_add(guard);
-            if acc > work_p.saturating_add(BESSEL_GUARD_MAX) {
+            if acc > crate::defs::MAX_PRECISION {
                 return None;
             }
             let (k, loss) = self.k_i_diff(nu, acc, cc)?;
             if loss.saturating_add(32) <= guard {
                 return Some(k);
             }
-            guard = loss.saturating_add(64).max(guard.saturating_add(32));
-            if guard > BESSEL_GUARD_MAX {
+            let next = loss.saturating_add(64).max(guard.saturating_add(32));
+            if next <= guard {
                 return None;
             }
+            guard = next;
         }
-        None
     }
 
     fn k_i_diff(&self, nu: &Self, acc: usize, cc: &mut Consts) -> Option<(Self, usize)> {
@@ -1351,7 +1339,8 @@ impl ExactComplex {
         let mut psum = ExactComplex::one(p);
         let mut qsum = ExactComplex::zero(p);
         let mut prev_e = Exponent::MAX;
-        for k in 1..=series_term_cap(p) {
+        let mut k: usize = 1;
+        loop {
             let odd = ExactComplex::from_real(ExactNum::from_u32((2 * k - 1) as u32, p), p);
             let odd2 = odd.mul(&odd, p, RoundingMode::None);
             prod = prod.mul(
@@ -1367,7 +1356,7 @@ impl ExactComplex {
                 RoundingMode::None,
             );
             // `sum + (-term)` is `sum - term`: the sign is applied by choosing sub or add.
-            if k % 2 == 0 {
+            if k.is_multiple_of(2) {
                 psum = if (k / 2) % 2 == 1 {
                     psum.sub(&term, p, RoundingMode::None)
                 } else {
@@ -1391,12 +1380,14 @@ impl ExactComplex {
                 .abs(64, RoundingMode::None)
                 .exponent()
                 .unwrap_or(Exponent::MIN);
-            if e > HANKEL_PEAK_EXP_MAX || (k > 2 && e > prev_e) {
+            // Past the first peak, a rising term means Hankel is not in its
+            // asymptotic regime; the caller tries another kernel.
+            if k > 2 && e > prev_e {
                 return None;
             }
             prev_e = e;
+            k = k.checked_add(1)?;
         }
-        None
     }
 
     fn bessel_hankel_j(&self, nu: &Self, p: usize, cc: &mut Consts) -> Option<Self> {

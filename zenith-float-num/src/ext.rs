@@ -3820,8 +3820,7 @@ Accuracy: correctly-rounded",
     ///
     /// - Algorithm: power series (every `n`; guard bits cover its `e^{|x|}` cancellation);
     ///   Hankel expansion (DLMF 10.17, stopped at its smallest term) when
-    ///   `|x| ≥ max(16, 0.35(p+112))` and `|n|² < 2|x|`, and whenever the series
-    ///   guard would exceed `BESSEL_GUARD_MAX` under that order condition.
+    ///   `|x| ≥ max(16, 0.35(p+112))` and `|n|² < 2|x|`.
     ///   `J_n(-x)=(-1)^n J_n(x)`.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`). 1 ULP vs MPFR `jn` for `n = 0,1,2`.
     /// - MPFR oracle: yes, `n = 0,1,2` under `mpfr-tests`.
