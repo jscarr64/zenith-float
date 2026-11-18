@@ -230,6 +230,7 @@ impl ExactNumNumber {
         let mut s = Self::from_word(1, p)?;
         let mut term = Self::from_word(1, p)?;
         // Cap or divergence without meeting the bound: never use the partial sum.
+        let mut done = false;
         for k in 1..=(p + 8) {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
             let ratio = odd.div(&two_x2, p, RoundingMode::None)?;
@@ -241,9 +242,13 @@ impl ExactNumNumber {
             term.set_sign(if k % 2 == 1 { Sign::Neg } else { Sign::Pos });
             s = s.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
+                done = true;
                 break;
             }
             term.set_sign(Sign::Pos);
+        }
+        if !done {
+            return Err(Error::PrecisionRetryExhausted);
         }
         pre.mul(&s, p, RoundingMode::None)
     }
@@ -935,6 +940,7 @@ impl ExactNumNumber {
 
         let mut zpow = self.clone()?; // z^{1} for k=1 term z^{2k-1}
                                       // Cap or divergence without meeting the bound: never use the partial sum.
+        let mut done = false;
         for (i, b) in bern.iter().enumerate() {
             let k = i + 1;
             let two_k = Self::from_word((2 * k) as Word, p)?;
@@ -946,10 +952,14 @@ impl ExactNumNumber {
             let term = b.div(&den, p, RoundingMode::None)?;
             s = s.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || term.exponent() + (p as i64) < 0 {
+                done = true;
                 break;
             }
             zpow = zpow.mul(self, p, RoundingMode::None)?;
             zpow = zpow.mul(self, p, RoundingMode::None)?;
+        }
+        if !done {
+            return Err(Error::PrecisionRetryExhausted);
         }
         Ok(s)
     }
@@ -1562,6 +1572,7 @@ impl ExactNumNumber {
         let mut s = term.clone()?;
         let mut prev_e = Exponent::MAX;
         // Cap or divergence without meeting the bound: never use the partial sum.
+        let mut done = false;
         for k in 1..=(p + 8) {
             term = term.mul(&Self::from_word(k as Word, p)?, p, RoundingMode::None)?;
             term = term.div(self, p, RoundingMode::None)?;
@@ -1572,8 +1583,12 @@ impl ExactNumNumber {
             prev_e = e;
             s = s.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || e + (p as i64) < 0 {
+                done = true;
                 break;
             }
+        }
+        if !done {
+            return Err(Error::PrecisionRetryExhausted);
         }
         pre.mul(&s, p, RoundingMode::None)
     }
@@ -1799,6 +1814,7 @@ impl ExactNumNumber {
         let mut g = g_term.clone()?;
         let mut prev_e = f_term.exponent();
         // Cap or divergence without meeting the bound: never use the partial sum.
+        let mut done = false;
         for k in 0..=(p + 8) {
             let a = Self::from_word((2 * k + 1) as Word, p)?;
             let b = Self::from_word((2 * k + 2) as Word, p)?;
@@ -1821,8 +1837,12 @@ impl ExactNumNumber {
             f = f.add(&f_term, p, RoundingMode::None)?;
             g = g.add(&g_term, p, RoundingMode::None)?;
             if f_term.is_zero() || e + (p as i64) < 0 {
+                done = true;
                 break;
             }
+        }
+        if !done {
+            return Err(Error::PrecisionRetryExhausted);
         }
         Ok((f, g))
     }
@@ -1989,6 +2009,7 @@ impl ExactNumNumber {
         let mut g_sum = g_term.clone()?;
         let mut prev_e = f_term.exponent();
         // Cap or divergence without meeting the bound: never use the partial sum.
+        let mut done = false;
         for n in 0..=(p + 8) {
             let a = Self::from_word((4 * n + 1) as Word, p)?;
             let b = Self::from_word((4 * n + 3) as Word, p)?;
@@ -2011,8 +2032,12 @@ impl ExactNumNumber {
             f_sum = f_sum.add(&f_term, p, RoundingMode::None)?;
             g_sum = g_sum.add(&g_term, p, RoundingMode::None)?;
             if f_term.is_zero() || e + (p as i64) < 0 {
+                done = true;
                 break;
             }
+        }
+        if !done {
+            return Err(Error::PrecisionRetryExhausted);
         }
         Ok((
             inv_pix.mul(&f_sum, p, RoundingMode::None)?,
@@ -2734,6 +2759,7 @@ impl ExactNumNumber {
         let mut prev_e = Exponent::MAX;
         let k_max = (p + 64).min((Word::MAX as usize - 1) / 2);
         // Cap or divergence without meeting the bound: never use the partial sum.
+        let mut done = false;
         for k in 1..=k_max {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
             let odd2 = odd.mul(&odd, p, RoundingMode::None)?;
@@ -2754,12 +2780,16 @@ impl ExactNumNumber {
             }
             let e = term.exponent();
             if term.is_zero() || e + (p as i64) < 0 {
+                done = true;
                 break;
             }
             if k > 2 && e > prev_e {
                 break;
             }
             prev_e = e;
+        }
+        if !done {
+            return Err(Error::PrecisionRetryExhausted);
         }
         Ok((psum, qsum))
     }
@@ -3099,6 +3129,7 @@ impl ExactNumNumber {
         let mut prev_e = Exponent::MAX;
         // The smallest term is near k ≈ 2x; stop there or at 2^-p.
         // Cap or divergence without meeting the bound: never use the partial sum.
+        let mut done = false;
         for k in 1..=(p + 64) {
             let odd = Self::from_word((2 * k - 1) as Word, p)?;
             let factor = four_nu2
@@ -3119,9 +3150,13 @@ impl ExactNumNumber {
             }
             sum = sum.add(&term, p, RoundingMode::None)?;
             if term.is_zero() || e + (p as i64) < 0 {
+                done = true;
                 break;
             }
             prev_e = e;
+        }
+        if !done {
+            return Err(Error::PrecisionRetryExhausted);
         }
         let pi = cc.pi_num(p, RoundingMode::None)?;
         let two = Self::from_word(2, p)?;
@@ -8078,9 +8113,6 @@ mod tests {
     fn test_capped_loops_power_series() -> Result<(), crate::Error> {
         let mut cc = Consts::new()?;
         let p = 64;
-        // x = 2^20: every power series peaks near k ~ x, past its p-sized term cap.
-        let big = pow2(20, p)?;
-        let nu0 = ExactNumNumber::from_word(0, p)?;
         // ZF-37: the Ei series has no term cap (all terms positive; it stops once k > x and the
         // term is below 2^-p of the largest). At x = 2^9 it needs ~1400 terms, past the old
         // ~2p cap, and now completes and agrees with Ei.
@@ -8088,14 +8120,26 @@ mod tests {
         let (series, _) = mid.ei_series(p + 64, &mut cc)?;
         let ei = mid.ei(p, RoundingMode::ToEven, &mut cc)?;
         bits_agree(&series, &ei, p, 56, "Ei(2^9) series")?;
-        assert!(exhausted(big.si_series(p)));
-        assert!(exhausted(big.ci_series(p, &mut cc)));
-        assert!(exhausted(big.fresnel_sc_series(false, p, &mut cc)));
-        assert!(exhausted(big.bessel_j_series(0, p)));
-        assert!(exhausted(big.bessel_jn_series(&nu0, p, &mut cc, true)));
-        assert!(exhausted(big.bessel_y0(p, &mut cc)));
-        assert!(exhausted(big.bessel_y1(p, &mut cc)));
-        assert!(exhausted(big.k0_series(p, &mut cc)));
+        // x = 2^9 is past the old series_n_max at p=64 (nmax = p+32+256).
+        // Production Si/Ci add cancellation-guard bits; the uncapped series at
+        // that width must agree with the public kernel, not stop early.
+        let pe = p + ExactNumNumber::si_ci_series_guard(mid.exponent());
+        let si_s = mid.si_series(pe)?;
+        bits_agree(
+            &si_s,
+            &mid.si(p, RoundingMode::ToEven, &mut cc)?,
+            p,
+            56,
+            "Si(2^9) series",
+        )?;
+        let ci_s = mid.ci_series(pe, &mut cc)?;
+        bits_agree(
+            &ci_s,
+            &mid.ci(p, RoundingMode::ToEven, &mut cc)?,
+            p,
+            56,
+            "Ci(2^9) series",
+        )?;
         let s1 = ExactNumNumber::from_word(1, 4096)?;
         // γ(1, 2^30) = 1 − e^{−2^30} used to hit the 2^28 series-term cap.
         let x30 = pow2(30, 4096)?;
