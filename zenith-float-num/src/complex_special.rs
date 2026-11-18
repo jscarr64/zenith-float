@@ -24,13 +24,11 @@ use core::ops::Neg;
 /// the Faddeeva power series is used (Poppe–Wijers inner region).
 const FADDEEVA_SERIES_L1: u32 = 8;
 
-/// Bernoulli terms kept in the Stirling series for \(\ln\Gamma\) and \(\psi\).
-const GAMMA_STIRLING_TERMS: usize = 64;
-
 /// Minimum shift target: raise \(z\) by integers until \(\mathrm{exponent}(\lvert z\rvert)\)
 /// is at least this (\(\lvert z\rvert\ge 2^{k-1}\)) so Stirling terms decay. The actual target
 /// grows with the precision (see [`gamma_shift_exp`]): with a fixed target of 6 the 64-term series
 /// capped \(\Gamma\) / \(\ln\Gamma\) at about 275 correct bits whatever `p` was.
+#[allow(dead_code)]
 const GAMMA_STIRLING_MIN_ABS_EXP: Exponent = 6;
 
 /// Same minimum shift target for digamma (real kernel uses exponent \(< 8\)).
@@ -38,6 +36,7 @@ const DIGAMMA_STIRLING_MIN_ABS_EXP: Exponent = 8;
 
 /// Shift target so the last kept Stirling term, \(\approx 2^{364}/\lvert z\rvert^{127}\), is below
 /// \(2^{-(p+8)}\) (same bound as the real kernel).
+#[allow(dead_code)] // kept for the shift-target unit tests
 fn gamma_shift_exp(p: usize) -> Exponent {
     crate::ops::special::stirling_min_exponent(p, 372, 127, GAMMA_STIRLING_MIN_ABS_EXP)
 }
@@ -57,15 +56,9 @@ fn digamma_shift_exp(p: usize) -> Exponent {
 /// raises the term count with `p` (`digamma_terms`) so the target stays near
 /// [`crate::ops::special::asymp_min_exponent`]. This is the same plan.
 fn gamma_stirling_plan(p: usize) -> (usize, Exponent) {
-    let e64 = gamma_shift_exp(p);
-    let k = crate::ops::special::digamma_terms(p);
-    if k > GAMMA_STIRLING_TERMS {
-        let ek = crate::ops::special::asymp_min_exponent(p + WORD_BIT_SIZE, k);
-        if ek < e64 {
-            return (k, ek);
-        }
-    }
-    (GAMMA_STIRLING_TERMS, e64)
+    let terms = crate::ops::special::digamma_terms(p);
+    let e_min = crate::ops::special::asymp_min_exponent(p + WORD_BIT_SIZE, terms);
+    (terms, e_min)
 }
 
 /// Digamma plan: always `digamma_terms` / `asymp_min_exponent`, as in the real kernel.
@@ -75,9 +68,9 @@ fn digamma_stirling_plan(p: usize) -> (usize, Exponent) {
     (terms, e_min)
 }
 
-/// Positive integers \(n\) for which \(\Gamma(n)=(n-1)!\) is evaluated by multiplying
-/// \(1\ldots n-1\) instead of Stirling.
-const GAMMA_FACTORIAL_MAX: u32 = 64;
+// Positive integers n for which Γ(n)=(n-1)! is evaluated by multiplying 1…n-1
+// instead of Stirling, when the bit-length bound of the real kernel holds
+// ((n-1)·log2(n-1) ≤ 4p + 4096). Larger integers use Stirling under Ziv.
 
 pub(crate) fn nan_pair(e: Error) -> ExactComplex {
     ExactComplex::new(ExactNum::nan(Some(e)), ExactNum::nan(Some(e)))
@@ -260,6 +253,15 @@ fn factorial_um1(n: u32, p: usize) -> ExactComplex {
     ExactComplex::from_real(acc, p)
 }
 
+/// `(n-1)!` at a width that holds the bit-length bound used by `small_pos_int`.
+fn factorial_um1_work(n: u32, p: usize) -> ExactComplex {
+    let m = (n as usize).saturating_sub(1);
+    let bitlen = (usize::BITS - m.leading_zeros()) as usize;
+    let bits = m.saturating_mul(bitlen);
+    let w = round_p(bits.max(p) + WORD_BIT_SIZE);
+    factorial_um1(n, w)
+}
+
 impl ExactComplex {
     /// Error function \(\mathrm{erf}(z)=1-\mathrm{erfc}(z)\). Entire; NaN in → NaN out.
     ///
@@ -412,7 +414,7 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Stirling (`GAMMA_STIRLING_TERMS = 64`) plus reflection; factorial for small integers (`GAMMA_FACTORIAL_MAX = 64`).
+    /// - Algorithm: Stirling (term count from `digamma_terms`, shift from `asymp_min_exponent`) plus reflection; factorial when `(n-1)!` fits the bit-length bound.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: real axis vs `mpfr_gamma`. GNU MPC has no `mpc_gamma`. Integers: `Γ(n)=(n-1)!`.
     ///
@@ -440,7 +442,7 @@ impl ExactComplex {
     ///
     /// # Precision
     ///
-    /// - Algorithm: Stirling (`GAMMA_STIRLING_TERMS = 64`) plus reflection.
+    /// - Algorithm: Stirling (term count from `digamma_terms`, shift from `asymp_min_exponent`) plus reflection.
     /// - Bound: Ziv on each part (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -911,7 +913,7 @@ impl ExactComplex {
 
     pub(crate) fn gamma_at(&self, p: usize, cc: &mut Consts) -> Self {
         if let Some(n) = self.small_pos_int(p) {
-            return factorial_um1(n, p);
+            return factorial_um1_work(n, p);
         }
         if !re_positive(self) && !self.re().is_zero() {
             let pi = pi_c(p, cc);
@@ -928,13 +930,15 @@ impl ExactComplex {
         if !self.im().is_zero() || !self.re().is_int() || !self.re().is_positive() {
             return None;
         }
-        for n in 1u32..=GAMMA_FACTORIAL_MAX {
-            let w = ExactNum::from_u32(n, p);
-            if self.re().compare(&w) == Some(0) {
-                return Some(n);
-            }
+        let n = self.re().to_u32(RoundingMode::ToZero).ok()?;
+        let m = (n as usize).saturating_sub(1);
+        let bitlen = (usize::BITS - m.leading_zeros()) as usize;
+        let bits = m.saturating_mul(bitlen);
+        if bits <= p.saturating_mul(4).saturating_add(4096) {
+            Some(n)
+        } else {
+            None
         }
-        None
     }
 
     fn gamma_positive(&self, p: usize, cc: &mut Consts) -> Self {
@@ -957,7 +961,7 @@ impl ExactComplex {
 
     fn ln_gamma_at(&self, p: usize, cc: &mut Consts) -> Self {
         if let Some(n) = self.small_pos_int(p) {
-            return factorial_um1(n, p).ln(p, RoundingMode::None, cc);
+            return factorial_um1_work(n, p).ln(p, RoundingMode::None, cc);
         }
         if !re_positive(self) && !self.re().is_zero() {
             let piz = pi_c(p, cc).mul(self, p, RoundingMode::None);
@@ -1455,22 +1459,44 @@ mod tests {
     fn gamma_stirling_plan_keeps_high_p_shifts_small() {
         let (terms, k) = gamma_stirling_plan(2048);
         assert!(
-            terms > GAMMA_STIRLING_TERMS && shift_cap(k) < (1 << 16),
+            terms > 64 && shift_cap(k) < (1 << 16),
             "p=2048 terms={terms} k={k} cap={}",
             shift_cap(k)
         );
         let (terms, k) = gamma_stirling_plan(2048 + 192);
         assert!(
-            terms > GAMMA_STIRLING_TERMS && shift_cap(k) < (1 << 16),
+            terms > 64 && shift_cap(k) < (1 << 16),
             "p=2240 terms={terms} k={k} cap={}",
             shift_cap(k)
         );
         let (terms, k) = digamma_stirling_plan(2048);
         assert!(
-            terms > GAMMA_STIRLING_TERMS && shift_cap(k) < (1 << 16),
+            terms > 64 && shift_cap(k) < (1 << 16),
             "digamma p=2048 terms={terms} k={k} cap={}",
             shift_cap(k)
         );
+    }
+
+    /// Γ(171) = 170! has 852 significant bits and is exact at p = 1024. The old
+    /// `GAMMA_FACTORIAL_MAX = 64` sent this through Stirling, which cannot certify
+    /// an exact integer (same bug the real kernel fixed under ZF-37).
+    #[test]
+    fn test_complex_gamma_171_uses_factorial_not_stirling() -> Result<(), crate::Error> {
+        let p = 1024;
+        let z = ExactComplex::from_real(ExactNum::from_u32(171, p), p);
+        let mut cc = Consts::new()?;
+        let got = z.gamma(p, RoundingMode::ToEven, &mut cc);
+        assert!(!got.is_nan(), "Γ(171) was NaN: {got:?}");
+        assert!(got.im().is_zero(), "Γ(171) should be real");
+        assert!(!got.re().inexact(), "Γ(171) should be an exact integer");
+        let w = 1024 + 128;
+        let mut acc = ExactNum::from_u8(1, w);
+        for k in 2u32..171 {
+            acc = acc.mul(&ExactNum::from_u32(k, w), w, RoundingMode::None);
+        }
+        acc.set_inexact(false);
+        assert_eq!(got.re().compare(&acc), Some(0), "Γ(171) != 170!");
+        Ok(())
     }
 
     /// Exact shift counts at the shift bound for k = 11 (target |z| >= 2^10 = 1024), from the first
