@@ -14,11 +14,13 @@ use crate::ExactNum;
 use alloc::vec::Vec;
 use core::ops::Neg;
 
-/// QR sweeps allowed per singular value before [`ExactNumArray::svd_decomp`]
+/// Historical sweep multiplier; SVD now stalls when the off-diagonals stop shrinking.
 /// returns `None`.
+#[allow(dead_code)]
 const SVD_ITER_MAX: u32 = 64;
-/// QR sweeps allowed per eigenvalue before [`ExactNumArray::eigen_decomp`]
+/// Historical sweep multiplier; eigen now stalls when the off-diagonals stop shrinking.
 /// returns `None`.
+#[allow(dead_code)]
 const EIGEN_ITER_MAX: u32 = 64;
 /// Default maximum length of [`ExactNumArray::fft`] / [`ExactNumArray::ifft`] (65,536; was 4,096
 /// before 2.0). [`ExactNumArray::fft_with_max_points`] / [`ExactNumArray::ifft_with_max_points`]
@@ -1470,7 +1472,7 @@ impl ExactNumArray {
     /// diagonal (non-negative, descending), `V^T` `k×n` (orthonormal rows),
     /// `k = min(m, n)`, so that `U · Σ · V^T = A` at working precision.
     /// Empty input, a NaN/Inf entry, a failed heap reserve, or failure to
-    /// converge within `SVD_ITER_MAX` sweeps per singular value returns `None`.
+    /// stalls when the off-diagonal size stops shrinking returns `None`.
     pub fn svd_decomp(&self, p: usize, rm: RoundingMode) -> Option<(Self, Self, Self)> {
         let m = self.rows;
         let n = self.cols;
@@ -1495,7 +1497,7 @@ impl ExactNumArray {
     /// and `V` is `n×n` with orthonormal columns, so `A V = V diag(Λ)` and
     /// `V diag(Λ) V^T = A` at working precision.
     /// Non-square, non-symmetric, empty, non-finite, or failure to converge
-    /// within `EIGEN_ITER_MAX` sweeps per value returns `None`.
+    /// stalls when the off-diagonal size stops shrinking returns `None`.
     pub fn eigen_decomp(&self, p: usize, rm: RoundingMode) -> Option<(Self, Self)> {
         let n = self.rows;
         if n == 0 || n != self.cols {
@@ -1994,8 +1996,8 @@ fn svd_decomp_tall(
         Vec::new()
     };
 
-    let max_sweeps = SVD_ITER_MAX.saturating_mul(n.max(1) as u32);
-    let mut sweeps = 0u32;
+    let mut stagnant = 0u32;
+    let mut prev_exp = Exponent::MAX;
     loop {
         if n == 1 {
             break;
@@ -2008,9 +2010,20 @@ fn svd_decomp_tall(
         if e.iter().all(|x| x.is_zero()) {
             break;
         }
-        if sweeps >= max_sweeps {
-            return None;
+        let off = e
+            .iter()
+            .filter_map(|x| x.clone().abs().exponent())
+            .max()
+            .unwrap_or(Exponent::MIN);
+        if off >= prev_exp {
+            stagnant = stagnant.saturating_add(1);
+            if stagnant > n.max(1) as u32 + 8 {
+                return None;
+            }
+        } else {
+            stagnant = 0;
         }
+        prev_exp = prev_exp.min(off);
         let mut q = n;
         while q > 1 && e[q - 2].is_zero() {
             q -= 1;
@@ -2039,7 +2052,6 @@ fn svd_decomp_tall(
             }
         }
         if did_split {
-            sweeps += 1;
             continue;
         }
         for di in d.iter().chain(e.iter()) {
@@ -2048,7 +2060,6 @@ fn svd_decomp_tall(
             }
         }
         svd_qr_sweep(&mut d, &mut e, &mut u, &mut v, m, n, p_blk, q, p, rm);
-        sweeps += 1;
     }
 
     for (i, di) in d.iter_mut().enumerate().take(n) {
@@ -2192,8 +2203,8 @@ fn eigen_decomp_sym(
         Vec::new()
     };
 
-    let max_sweeps = EIGEN_ITER_MAX.saturating_mul(n.max(1) as u32);
-    let mut sweeps = 0u32;
+    let mut stagnant = 0u32;
+    let mut prev_exp = Exponent::MAX;
     loop {
         if n == 1 {
             break;
@@ -2206,9 +2217,20 @@ fn eigen_decomp_sym(
         if e.iter().all(|x| x.is_zero()) {
             break;
         }
-        if sweeps >= max_sweeps {
-            return None;
+        let off = e
+            .iter()
+            .filter_map(|x| x.clone().abs().exponent())
+            .max()
+            .unwrap_or(Exponent::MIN);
+        if off >= prev_exp {
+            stagnant = stagnant.saturating_add(1);
+            if stagnant > n.max(1) as u32 + 8 {
+                return None;
+            }
+        } else {
+            stagnant = 0;
         }
+        prev_exp = prev_exp.min(off);
         let mut q_blk = n;
         while q_blk > 1 && e[q_blk - 2].is_zero() {
             q_blk -= 1;
@@ -2226,7 +2248,6 @@ fn eigen_decomp_sym(
             }
         }
         eigen_qr_sweep(&mut d, &mut e, &mut q, n, p_blk, q_blk, p, rm);
-        sweeps += 1;
     }
 
     for i in 0..n {

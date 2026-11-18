@@ -46,12 +46,15 @@ pub const GK_GAUSS_ORDER: usize = 7;
 pub const GK_KRONROD_ORDER: usize = 2 * GK_GAUSS_ORDER + 1;
 
 /// Largest `max_subintervals` accepted by [`integrate_adaptive_gk`].
+/// Historical public constant; the caller's `max_subintervals` is no longer refused at this value.
+#[allow(dead_code)]
 pub const GK_SUBINTERVAL_MAX: usize = 32;
 
 /// Destination precision below this cannot host a guarded (7, 15) rule.
 const GK_MIN_PREC: usize = 32;
 
 /// Newton corrections after the sign-change bracket is bisected.
+#[allow(dead_code)]
 const GK_NEWTON_MAX: usize = 32;
 
 /// Bisection steps used to separate a characteristic-polynomial root.
@@ -388,7 +391,8 @@ fn polish_root(
     }
     let mut x = lo.add(&hi, p, rm).div(&two, p, rm);
     let guard = tiny(p, 8);
-    for _ in 0..GK_NEWTON_MAX {
+    let mut prev: Option<ExactNum> = None;
+    loop {
         let (y, d) = char_poly(&x, beta, p)?;
         if d.is_zero() {
             break;
@@ -397,14 +401,22 @@ fn polish_root(
         if !finite(&step) {
             break;
         }
+        let sa = step.clone().abs();
         let next = ExactNum::sub_ref(&x, &step, p, rm);
         if !finite(&next) {
             break;
         }
         x = next;
-        if leq(&step.abs(), &guard) {
+        if leq(&sa, &guard) {
             break;
         }
+        if let Some(ref pr) = prev {
+            // Stall when the step does not shrink.
+            if leq(pr, &sa) {
+                break;
+            }
+        }
+        prev = Some(sa);
     }
     if finite(&x) {
         Some(x)
@@ -830,7 +842,7 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 ///   `max(tol_rel * max(1, |estimate|), 2^(1−p))`, where `2^(1−p)` is the
 ///   unit in the last place of a `p`-bit significand. `tol_rel = 0` asks
 ///   for that floor only.
-/// * `max_subintervals` — panel cap, from 1 through [`GK_SUBINTERVAL_MAX`].
+/// * `max_subintervals` — caller panel budget (at least 1).
 ///   Each panel evaluates `f` at [`GK_KRONROD_ORDER`] (15) nodes. A call
 ///   performs at most `15 * (2 * max_subintervals − 1)` evaluations, because
 ///   each bisection discards one panel and samples two new ones.
@@ -843,7 +855,7 @@ fn panel_totals(panels: &[Panel], p: usize) -> (ExactNum, ExactNum, ExactNum) {
 ///
 /// [`QuadratureError::InvalidArgument`] if endpoints are non-finite or not
 /// `a < b`, `tol_rel` is non-finite or negative, `p < 32`,
-/// `max_subintervals` is outside `1..=GK_SUBINTERVAL_MAX`, or any integrand
+/// `max_subintervals` is 0, or any integrand
 /// sample is non-finite.
 /// [`QuadratureError::NotConverged`] if a panel can no longer be bisected at
 /// the working precision, or a non-finite estimate.
@@ -870,7 +882,6 @@ where
 {
     if !gk_prec_ok(p)
         || max_subintervals == 0
-        || max_subintervals > GK_SUBINTERVAL_MAX
         || !interval_ok(a, b)
         || !finite(tol_rel)
         || tol_rel.is_negative()
@@ -1459,6 +1470,35 @@ mod tests {
         }
         assert!(nodes[n / 2].is_zero());
         assert_eq!(w_gauss.len(), n);
+        Ok(())
+    }
+
+    #[test]
+    fn gk_subintervals_beyond_old_32_cap() -> Result<(), Box<dyn std::error::Error>> {
+        let (p, rm) = gold_p();
+        let mut cc = Consts::new()?;
+        let a = ExactNum::from_i8(-1, p);
+        let b = ExactNum::from_u8(1, p);
+        let tol = ExactNum::from_u8(1, p).ldexp(-(p as crate::Exponent / 4), p, rm);
+        let (got, met) = integrate_adaptive_gk_estimate(
+            |x, p, rm, _cc| x.sqr(p, rm),
+            &a,
+            &b,
+            &tol,
+            GK_SUBINTERVAL_MAX + 1,
+            p,
+            rm,
+            &mut cc,
+        )?;
+        assert!(met);
+        let want = ExactNum::from_u8(2, p).div(&ExactNum::from_u8(3, p), p, rm);
+        assert!(
+            got.estimate_kronrod.compare(&want) == Some(0) || {
+                let d = ExactNum::sub_ref(&got.estimate_kronrod, &want, 2 * p, RoundingMode::None)
+                    .abs();
+                d.compare(&got.abs_err_est) != Some(1)
+            }
+        );
         Ok(())
     }
 }

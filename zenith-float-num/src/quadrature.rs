@@ -29,24 +29,34 @@ use alloc::vec::Vec;
 use core::ops::Neg;
 
 /// Maximum number of Gauss nodes. Larger `n` is `None`.
+/// Historical public constant; node counts are no longer refused at this value.
+#[allow(dead_code)]
 pub const QUADRATURE_MAX_NODES: usize = 64;
 
 /// Maximum tanh–sinh step halvings after the precision-based `h`.
+/// Historical public constant; tanh-sinh now halves until the error bound or a stall.
+#[allow(dead_code)]
 pub const TANH_SINH_LEVELS_MAX: usize = 8;
 
 /// Newton sweeps per Gauss root.
+#[allow(dead_code)]
 const QUADRATURE_NEWTON_MAX: usize = 64;
 
 /// Grid points per expected root when isolating Laguerre / Hermite zeros.
 const QUADRATURE_BRACKET_MUL: usize = 8;
 
 /// Bisection steps inside a sign-change bracket before Newton.
+#[allow(dead_code)]
 const QUADRATURE_BISECT_STEPS: usize = 16;
 
 /// Destination width, rounded up to a word, plus two guard words.
 ///
 /// The same guard as the (7, 15) rule. One extra word rounds Gauss nodes in
 /// the same place the weighted sum is formed.
+fn nodes_fit(n: usize) -> bool {
+    n > 0 && n <= u32::MAX as usize && n.checked_mul(4).and_then(|v| v.checked_add(4)).is_some()
+}
+
 fn work_p(p: usize) -> usize {
     let stored = p.div_ceil(WORD_BIT_SIZE) * WORD_BIT_SIZE;
     stored.saturating_add(WORD_BIT_SIZE.saturating_mul(2))
@@ -101,7 +111,8 @@ where
 {
     let guard = tiny(p, 8);
     let mut x = x0;
-    for _ in 0..QUADRATURE_NEWTON_MAX {
+    let mut prev: Option<ExactNum> = None;
+    loop {
         let y = f(&x, p, rm, cc);
         let d = df(&x, p, rm, cc);
         if !finite(&y) || !finite(&d) || d.is_zero() {
@@ -112,11 +123,17 @@ where
         if !finite(&x) {
             return None;
         }
-        if below(&step.abs(), &guard) {
+        let sa = step.abs();
+        if below(&sa, &guard) {
             return Some(x);
         }
+        if let Some(ref pr) = prev {
+            if !below(&sa, pr) {
+                return None;
+            }
+        }
+        prev = Some(sa);
     }
-    None
 }
 
 fn bisect_zero<F>(
@@ -145,8 +162,11 @@ where
         return None;
     }
     let two = ExactNum::from_u8(2, p);
-    for _ in 0..QUADRATURE_BISECT_STEPS {
+    loop {
         let m = ExactNum::add_ref(&a, &b, p, rm).div(&two, p, rm);
+        if m.compare(&a) == Some(0) || m.compare(&b) == Some(0) {
+            return Some(m);
+        }
         let fm = f(&m, p, rm, cc);
         if !finite(&fm) {
             return None;
@@ -160,7 +180,6 @@ where
             b = m;
         }
     }
-    Some(a.add(&b, p, rm).div(&two, p, rm))
 }
 
 fn isolate_positive<F>(
@@ -241,7 +260,7 @@ fn gauss_legendre_nodes(
     _rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<Vec<(ExactNum, ExactNum)>> {
-    if n == 0 || n > QUADRATURE_MAX_NODES {
+    if !nodes_fit(n) {
         return None;
     }
     let wrk = work_p(p);
@@ -310,7 +329,7 @@ fn gauss_legendre_nodes(
 ///
 /// Nodes are roots of `P_n`; weights `w_i = 2 / ((1-x_i²) [P_n'(x_i)]²)`.
 /// Exact for polynomials of degree `≤ 2n−1`. `None` if `n` is 0 or greater
-/// than [`QUADRATURE_MAX_NODES`], the interval is not a finite `a < b`, or
+/// than what fits in `u32`, the interval is not a finite `a < b`, or
 /// a root fails to converge.
 pub fn gauss_legendre<F>(
     mut f: F,
@@ -432,7 +451,7 @@ where
 /// Tanh–sinh (double-exponential) quadrature of `f` on `[a, b]`.
 ///
 /// `x = tanh((π/2) sinh t)`, step `h = 2π / (p ln 2)` then up to
-/// [`TANH_SINH_LEVELS_MAX`] successive halvings (each adds only the new odd
+/// successive halvings until the error bound or a stall (each adds only the new odd
 /// abscissae) until successive estimates agree to working precision. `None` if
 /// the interval is not a finite `a < b`, or if the estimates have not agreed after
 /// the last halving. An unconverged sum is never returned as a value.
@@ -477,7 +496,8 @@ where
             .mul(acc, wde, RoundingMode::None)
     };
     let mut prev = estimate(&acc, &h);
-    for _ in 0..TANH_SINH_LEVELS_MAX {
+    let mut prev_err: Option<ExactNum> = None;
+    loop {
         h = h.div(&two_wrk, wrk, RoundingMode::None);
         let odd = tanh_sinh_sum(&mut f, a, b, &h, true, p, cc)?;
         acc = acc.add(&odd, wde, RoundingMode::None);
@@ -495,9 +515,14 @@ where
             let _ = out.set_precision(p, rm);
             return Some(out);
         }
+        if let Some(ref pe) = prev_err {
+            if !below(&err, pe) {
+                return None;
+            }
+        }
+        prev_err = Some(err);
         prev = s;
     }
-    None
 }
 
 fn gauss_laguerre_nodes(
@@ -506,7 +531,7 @@ fn gauss_laguerre_nodes(
     _rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<Vec<(ExactNum, ExactNum)>> {
-    if n == 0 || n > QUADRATURE_MAX_NODES {
+    if !nodes_fit(n) {
         return None;
     }
     let wrk = work_p(p);
@@ -601,7 +626,7 @@ fn gauss_hermite_nodes(
     _rm: RoundingMode,
     cc: &mut Consts,
 ) -> Option<Vec<(ExactNum, ExactNum)>> {
-    if n == 0 || n > QUADRATURE_MAX_NODES {
+    if !nodes_fit(n) {
         return None;
     }
     let wrk = work_p(p);
@@ -805,6 +830,20 @@ mod tests {
             &mut cc
         )
         .is_none());
+        // Past the old QUADRATURE_MAX_NODES = 64 refusal; ∫_{-1}^{1} 1 dx = 2
+        // is exact for any n ≥ 1.
+        let gl65 = gauss_legendre(
+            |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
+            &a,
+            &b,
+            QUADRATURE_MAX_NODES + 1,
+            64,
+            rm,
+            &mut cc,
+        )
+        .ok_or(crate::Error::InvalidArgument)?;
+        let two64 = ExactNum::from_u8(2, 64);
+        assert_eq!(gl65.compare(&two64), Some(0));
         Ok(())
     }
 }
