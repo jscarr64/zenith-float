@@ -2216,11 +2216,13 @@ impl ExactNum {
             let gz = self.gamma(wrk, RoundingMode::None, cc);
             return finish(g1.div(&gz, wrk, RoundingMode::None), p, rm);
         }
-        finish(
-            barnes_ln_g(self, wrk, cc).exp(wrk, RoundingMode::None, cc),
-            p,
-            rm,
-        )
+        let g = barnes_ln_g(self, wrk, cc).exp(wrk, RoundingMode::None, cc);
+        // The lb≥30 bound is sufficient but not tight: z ∈ [2^{29}, 2^{30}) can
+        // still overflow. If exp(ln G) overflows, map by C99 7.12.1.
+        if g.is_inf() {
+            return catalog_aws::overflow_signed(g.is_negative(), p, rm);
+        }
+        finish(g, p, rm)
     }
 
     /// Inverse Jacobi \(\mathrm{arcsn}(\mathrm{self}|m)=F(\mathrm{self}|m)\).
@@ -2830,6 +2832,22 @@ mod tests {
         let tozero = two_30.barnes_g(p, RoundingMode::ToZero, &mut cc);
         let up = two_30.barnes_g(p, RoundingMode::Up, &mut cc);
         let max = ExactNum::max_value(p);
+        // 3·2^{28} ∈ [2^{29}, 2^{30}): the lb≥30 bound does not fire, but
+        // (z²/2) log₂ z still exceeds EMAX.
+        let mid = ExactNum::from_u32(3u32 << 28, p);
+        let mid_down = mid.barnes_g(p, RoundingMode::Down, &mut cc);
+        let mid_up = mid.barnes_g(p, RoundingMode::Up, &mut cc);
+        assert!(
+            finite(&mid_down) && !mid_down.is_negative() && mid_down.compare(&max) == Some(0),
+            "G(3·2^28) Down should be +MAX, got inf={} nan={}",
+            mid_down.is_inf(),
+            mid_down.is_nan()
+        );
+        assert!(
+            mid_up.is_inf_pos(),
+            "G(3·2^28) Up should be +Inf, got nan={}",
+            mid_up.is_nan()
+        );
         assert!(
             finite(&down) && !down.is_negative() && down.compare(&max) == Some(0),
             "G(2^30) Down should be +MAX, got inf={} nan={}",
