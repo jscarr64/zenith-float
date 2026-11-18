@@ -25,11 +25,29 @@ fn rm() -> RoundingMode {
     RoundingMode::None
 }
 
-/// `1 − z` computed as `−(z − 1)`, so a signed zero imaginary part of `z` keeps its side of the
-/// cut: `z = 2 + 0i` (the limit from above) gives `−1 − 0i`, as the limit `1 − (2 + iε)` does.
-/// `ExactComplex::one(p).sub(z, ..)` gives `0 − 0 = +0` for both signs and loses the side.
+/// On the branch cut `Re(z) > 1` with `Im(z) = 0`, both signs of zero take the
+/// lower side, like Arb: `z = 2 + 0i` is treated as `2 − 0i`. Off the cut, and
+/// at the branch point `z = 1`, a signed zero still selects the side.
+fn z_on_lower_cut(z: &ExactComplex, p: usize) -> ExactComplex {
+    if z.im().is_zero()
+        && !z.im().is_negative()
+        && matches!(z.re().compare(&ExactNum::from_u8(1, p)), Some(cmp) if cmp > 0)
+    {
+        let mut im = z.im().clone();
+        im.set_sign(crate::Sign::Neg);
+        ExactComplex::new(z.re().clone(), im)
+    } else {
+        z.clone()
+    }
+}
+
+/// `1 − z` computed as `−(z − 1)`, so a signed-zero imaginary part is not
+/// collapsed by IEEE `1 − z` (`0 − 0 = +0` for both signs). On the cut this
+/// sees `z` after [`z_on_lower_cut`], so `z = 2 + 0i` gives `1 − z = −1 + 0i`
+/// and `Arg(1−z) = +π`.
 fn one_minus(z: &ExactComplex, p: usize) -> ExactComplex {
-    neg_c(ExactComplex::sub_ref(z, &ExactComplex::one(p), p, rm()))
+    let z = z_on_lower_cut(z, p);
+    neg_c(ExactComplex::sub_ref(&z, &ExactComplex::one(p), p, rm()))
 }
 
 fn is_c_zero(z: &ExactComplex) -> bool {
@@ -818,6 +836,10 @@ fn hypergeom_at(
     if any_nan(&[a, b, c, z]) {
         return nan_pair(Error::InvalidArgument);
     }
+    // Every later path (1−z, 1/z, ln(−z), Pfaff, …) sees the lower side of
+    // the cut at a real z > 1, including z = 2+0i, like Arb.
+    let z_lower = z_on_lower_cut(z, p);
+    let z = &z_lower;
     if is_c_zero(z) || is_c_zero(a) || is_c_zero(b) {
         return ExactComplex::one(p);
     }
@@ -935,8 +957,8 @@ impl ExactComplex {
     /// Otherwise: among the series (\(\lvert z\rvert<1\)), Pfaff, Euler / \(1-z\), and \(1/z\)
     /// maps, the argument of smallest modulus is used (NaN if a series does not converge
     /// within the \(p\)-scaled term bound). Kummer at \(z=1\)
-    /// when \(\mathrm{Re}(c-a-b)>0\). Cut on \([1,+\infty)\) in \(z\) (principal
-    /// value from above). Non-positive integer \(c\) (uncanceled) → NaN.
+    /// when \(\mathrm{Re}(c-a-b)>0\). Cut on \([1,+\infty)\) in \(z\): both signs of
+    /// a zero imaginary part take the lower side, like Arb. Non-positive integer \(c\) (uncanceled) → NaN.
     ///
     /// Integer \(m=c-a-b\) with \(z\) near 1 (\(\lvert 1-z\rvert\le 1/2\), or
     /// \(\lvert 1-z\rvert<1\) with \(\lvert z\rvert\ge 1\)): logarithmic \(1-z\) connection
@@ -999,6 +1021,7 @@ impl ExactComplex {
 mod tests {
     use super::*;
     use core::ops::Neg;
+    use std::str::FromStr;
 
     #[test]
     fn test_as_i32_real_int_beyond_10000() {
@@ -1271,6 +1294,37 @@ mod tests {
         assert!(
             near(&fa.into_parts().1.abs(), &fb.into_parts().1.abs(), p, 20),
             "cut |Im|"
+        );
+        Ok(())
+    }
+
+    /// Complex 2F1 at z=2+0i uses the lower side of the cut (Im(z)→0−),
+    /// like Arb, the same value as z=2−0i. 2F1(1/2, 1/2; 1; 2) ≈ 0.8346 − 0.8346i.
+    #[test]
+    fn zf_2f1_z_two_plus_zero_uses_lower_side() -> Result<(), crate::Error> {
+        let p = 64;
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let half =
+            ExactComplex::from_real(ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None), p);
+        let one = ExactComplex::one(p);
+        let z = ExactComplex::new(ExactNum::from_u8(2, p), ExactNum::new(p));
+        assert!(z.im().is_zero() && !z.im().is_negative(), "z is 2+0i");
+        let got = half.hypergeom_2f1(&half, &one, &z, p, r, &mut cc);
+        let want_re = ExactNum::from_str("0.83462684167407318628142973279904680899")?;
+        let want_im = ExactNum::from_str("-0.83462684167407318628142973279904680899")?;
+        assert!(!got.is_nan(), "2F1(1/2,1/2;1;2+0i) is NaN");
+        assert!(
+            near(got.re(), &want_re, p, 16),
+            "lower-side re got {:?} want {:?}",
+            got.re(),
+            want_re
+        );
+        assert!(
+            near(got.im(), &want_im, p, 16),
+            "lower-side im got {:?} want {:?}",
+            got.im(),
+            want_im
         );
         Ok(())
     }
