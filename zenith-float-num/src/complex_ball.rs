@@ -660,6 +660,9 @@ where
         return crate::complex_special::nan_pair(Error::InvalidArgument);
     }
     let p = round_p(p);
+    if let Err(e) = crate::common::util::reserve_probe(p) {
+        return crate::complex_special::nan_pair(e);
+    }
     let mut p_inc = WORD_BIT_SIZE;
     let Some(mut p_wrk) = p.checked_add(p_inc) else {
         return crate::complex_special::nan_pair(Error::InvalidArgument);

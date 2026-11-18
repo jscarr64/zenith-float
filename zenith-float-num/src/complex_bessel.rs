@@ -403,6 +403,9 @@ impl ExactComplex {
                 return v;
             }
         }
+        if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
+            return n;
+        }
         let dest = round_p(p);
         // DLMF 10.4.1: J_{−n}(z) = (−1)^n J_n(z). The generic series starts with 1/Γ(1−n),
         // a removable zero times a pole; reflect the integer order before evaluating it.
@@ -449,6 +452,9 @@ impl ExactComplex {
         if let Some(z) = principal_neg_real_cut(self) {
             return z.bessel_y_word(nu, p, rm, cc);
         }
+        if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
+            return n;
+        }
         let dest = round_p(p);
         if real_negative_axis(self, nu) {
             return ziv_complex(dest, rm, |pw| self.bessel_neg_real_y(nu, pw, cc));
@@ -494,6 +500,9 @@ impl ExactComplex {
         // Compact +∞: do not allocate a dest-sized imaginary zero.
         if self.re().is_inf_pos() && self.im().is_zero() && !nu.re().is_inf() && !nu.im().is_inf() {
             return crate::complex::compact_inf(false, self.im().is_negative());
+        }
+        if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
+            return n;
         }
         let dest = round_p(p);
         // DLMF 10.27.1: I_{−n}(z) = I_n(z) for any integer n.
@@ -547,6 +556,9 @@ impl ExactComplex {
         }
         if let Some(z) = principal_neg_real_cut(self) {
             return z.bessel_k_word(nu, p, rm, cc);
+        }
+        if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
+            return n;
         }
         let dest = round_p(p);
         // DLMF 10.27.3: K_{−ν}(z) = K_ν(z), for arbitrary complex ν; canonicalize to Re ν ≥ 0.
@@ -1978,5 +1990,49 @@ mod tests {
             ii.re().is_inf_pos() && ii.im().is_zero() && !ii.im().is_negative(),
             "I_0(+∞) got {ii:?}, want +Inf+0i"
         );
+    }
+
+    fn assert_dest_oom_fast(name: &str, z: ExactComplex, start: std::time::Instant) {
+        assert!(
+            start.elapsed().as_secs() < 2,
+            "{name} at dest 2^59 took {:?}",
+            start.elapsed()
+        );
+        assert!(z.is_nan(), "{name} not NaN: {z:?}");
+        assert_eq!(
+            z.re().err(),
+            Some(Error::MemoryAllocation),
+            "{name} re err {:?}",
+            z.re().err()
+        );
+        assert_eq!(
+            z.im().err(),
+            Some(Error::MemoryAllocation),
+            "{name} im err {:?}",
+            z.im().err()
+        );
+    }
+
+    #[test]
+    fn zf_bessel_dest_bit_at_dest_2_59_fail_fast_memory_allocation() {
+        let p = 1usize << 59;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().expect("Consts");
+        let z = ExactComplex::new(ExactNum::from_u8(2, 64).neg(), compact_signed_zero(false));
+        let nu0 = compact_real(0);
+        let t0 = std::time::Instant::now();
+        assert_dest_oom_fast("J_0(-2)", z.bessel_j_nu(&nu0, p, rm, &mut cc), t0);
+        let t1 = std::time::Instant::now();
+        assert_dest_oom_fast("Y_0(-2)", z.bessel_y(&nu0, p, rm, &mut cc), t1);
+        let t2 = std::time::Instant::now();
+        assert_dest_oom_fast("I_0(-2)", z.bessel_i(&nu0, p, rm, &mut cc), t2);
+        let t3 = std::time::Instant::now();
+        assert_dest_oom_fast("K_0(-2)", z.bessel_k(&nu0, p, rm, &mut cc), t3);
+
+        // Negative-integer J reflection (ldexp at dest+64) must also fail fast.
+        let z1 = ExactComplex::from_real(ExactNum::from_u8(1, 64), 64);
+        let nm2 = compact_real(-2);
+        let t4 = std::time::Instant::now();
+        assert_dest_oom_fast("J_(-2)(1)", z1.bessel_j_nu(&nm2, p, rm, &mut cc), t4);
     }
 }

@@ -446,6 +446,9 @@ impl ExactComplex {
         {
             return self.ln_mod_arg(p, rm, cc);
         }
+        if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
+            return n;
+        }
         let prec = round_p(p);
         let work = prec.saturating_mul(2).saturating_add(256);
         // The argument only borrows `self`; compute it before the parts are moved.
@@ -876,6 +879,9 @@ impl ExactComplex {
         if let Some(z) = self.log_base_parts(false, p, rm, cc) {
             return z;
         }
+        if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
+            return n;
+        }
         Self::certified(
             Self::finite_pair(self) && !Self::is_zero_pair(self),
             p,
@@ -907,6 +913,9 @@ impl ExactComplex {
     fn log10_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
         if let Some(z) = self.log_base_parts(true, p, rm, cc) {
             return z;
+        }
+        if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
+            return n;
         }
         Self::certified(
             Self::finite_pair(self) && !Self::is_zero_pair(self),
@@ -948,6 +957,9 @@ impl ExactComplex {
                 return v;
             }
         }
+        if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
+            return n;
+        }
         Self::certified(
             finite,
             p,
@@ -981,11 +993,9 @@ impl ExactComplex {
             if is_one(self) {
                 return None;
             }
-            let mut re = ExactNum::from_u8(1, round_p(p));
-            if let Err(e) = re.set_precision(p, rm) {
-                return Some(Self::new(ExactNum::nan(Some(e)), ExactNum::nan(Some(e))));
-            }
-            return Some(Self::new(re, ExactNum::new(round_p(p))));
+            // Exact 1 + 0i at any dest; do not allocate a dest-width 1.
+            let _ = (p, rm);
+            return Some(crate::complex::compact_one());
         }
         let pos_real = |z: &Self| z.im.is_zero() && z.re.is_positive() && !z.re.is_zero();
         if pos_real(self) && pos_real(base) {
@@ -1019,6 +1029,9 @@ impl ExactComplex {
 
     /// Implementation of [`Self::log1p`] on operands without inexact history.
     fn log1p_word(&self, p: usize, rm: RoundingMode, cc: &mut Consts) -> Self {
+        if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(p) {
+            return n;
+        }
         let minus_one = self.im.is_zero()
             && self.re.compare(&ExactNum::from_u8(1, WORD_BIT_SIZE).neg()) == Some(0);
         if !Self::finite_pair(self) || minus_one {
@@ -2704,6 +2717,7 @@ fn trig_exact_x2(num: i64, den: i64) -> Option<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Error;
     use crate::NAN;
 
     #[test]
@@ -2955,5 +2969,49 @@ mod tests {
         .mul(&ExactNum::from_u8(1, hi), p, rm);
         assert_eq!(v.re().compare(&want), Some(0), "i^{{2+i}} real");
         Ok(())
+    }
+
+    fn assert_dest_oom_fast(name: &str, z: ExactComplex, start: std::time::Instant) {
+        assert!(
+            start.elapsed().as_secs() < 2,
+            "{name} at dest 2^59 took {:?}",
+            start.elapsed()
+        );
+        assert!(z.is_nan(), "{name} not NaN: {z:?}");
+        assert_eq!(
+            z.re().err(),
+            Some(Error::MemoryAllocation),
+            "{name} re err {:?}",
+            z.re().err()
+        );
+        assert_eq!(
+            z.im().err(),
+            Some(Error::MemoryAllocation),
+            "{name} im err {:?}",
+            z.im().err()
+        );
+    }
+
+    #[test]
+    fn zf_acos_and_log_dest_2_59_fail_fast_memory_allocation() {
+        let p = 1usize << 59;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().expect("Consts");
+        let z0m = ExactComplex::new(
+            crate::complex::compact_signed_zero(false),
+            crate::complex::compact_signed_zero(true),
+        );
+        let t0 = std::time::Instant::now();
+        let a = z0m.acos(p, rm, &mut cc);
+        assert_dest_oom_fast("acos(0-0i)", a, t0);
+
+        let base = ExactComplex::new(ExactNum::from_u8(1, 64), ExactNum::from_u8(1, 64));
+        let z = ExactComplex::new(
+            ExactNum::from_u8(2, 64).neg(),
+            crate::complex::compact_signed_zero(true),
+        );
+        let t1 = std::time::Instant::now();
+        let lg = z.log(&base, p, rm, &mut cc);
+        assert_dest_oom_fast("log_{1+i}(-2-0i)", lg, t1);
     }
 }

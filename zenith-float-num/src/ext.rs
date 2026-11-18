@@ -1621,6 +1621,9 @@ impl ExactNum {
         if let Err(e) = ExactNumNumber::prec_assertion(p) {
             return Self::nan(Some(e));
         }
+        if let Err(e) = crate::common::util::reserve_probe(round_p(p)) {
+            return Self::nan(Some(e));
+        }
         let direct = rm == RoundingMode::None;
         let mut r = if direct {
             f(p, rm)

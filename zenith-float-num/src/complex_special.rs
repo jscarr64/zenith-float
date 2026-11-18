@@ -205,11 +205,27 @@ pub(crate) fn series_term_cap(p: usize) -> usize {
     p.saturating_add(WORD_BIT_SIZE)
 }
 
+/// `None` if a dest-width mantissa can be reserved on this machine; otherwise a
+/// NaN pair with the existing allocation (or precision) error, before any work.
+///
+/// `#[inline(never)]`: in release, inlining this into `log_word` made dest 2^59
+/// `log` report `PrecisionRetryExhausted` instead of the probed `MemoryAllocation`.
+#[inline(never)]
+pub(crate) fn nan_if_dest_unallocatable(p: usize) -> Option<ExactComplex> {
+    match crate::common::util::reserve_probe(round_p(p)) {
+        Ok(()) => None,
+        Err(e) => Some(nan_pair(e)),
+    }
+}
+
 pub(crate) fn ziv_complex<F>(p: usize, rm: RoundingMode, mut compute: F) -> ExactComplex
 where
     F: FnMut(usize) -> ExactComplex,
 {
     let p = round_p(p);
+    if let Err(e) = crate::common::util::reserve_probe(p) {
+        return nan_pair(e);
+    }
     let mut p_inc = WORD_BIT_SIZE;
     let Some(mut p_wrk) = p.checked_add(p_inc) else {
         return nan_pair(Error::InvalidArgument);

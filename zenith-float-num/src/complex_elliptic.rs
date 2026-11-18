@@ -15,7 +15,7 @@ use crate::ExactComplex;
 use crate::ExactNum;
 use crate::RoundingMode;
 use crate::Sign;
-use crate::INF_POS;
+use crate::WORD_BIT_SIZE;
 use alloc::vec::Vec;
 
 // Carlson duplication stops when the spread is below the series remainder bound
@@ -38,8 +38,10 @@ fn is_c_zero(z: &ExactComplex) -> bool {
     z.re().is_zero() && z.im().is_zero()
 }
 
-fn is_c_one(z: &ExactComplex, p: usize) -> bool {
-    z.im().is_zero() && z.re().compare(&ExactNum::from_u8(1, p)) == Some(0)
+fn is_c_one(z: &ExactComplex, _p: usize) -> bool {
+    // Compare against a compact 1: a dest-width `from_u8(1, dest)` would allocate
+    // before the exact specials K(1)=∞ and E(1)=1 can return.
+    z.im().is_zero() && z.re().compare(&ExactNum::from_u8(1, WORD_BIT_SIZE)) == Some(0)
 }
 
 fn c_abs(z: &ExactComplex, p: usize) -> ExactNum {
@@ -1236,7 +1238,10 @@ impl ExactComplex {
         }
         let dest = round_p(p);
         if is_c_one(self, dest) {
-            return ExactComplex::from_real(INF_POS.clone(), dest);
+            return crate::complex::compact_inf(false, false);
+        }
+        if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(dest) {
+            return n;
         }
         if is_c_zero(self) {
             // π/2 + 0i: π rounded once at (dest, rm), halved exactly. Rounding π at dest and
@@ -1284,14 +1289,17 @@ impl ExactComplex {
             return ExactComplex::new(self.re().clone(), self.im().clone());
         }
         let dest = round_p(p);
+        if is_c_one(self, dest) {
+            return crate::complex::compact_one();
+        }
+        if let Some(n) = crate::complex_special::nan_if_dest_unallocatable(dest) {
+            return n;
+        }
         if is_c_zero(self) {
             // π/2 + 0i: π rounded once at (dest, rm), halved exactly. Rounding π at dest and
             // then dividing at rm rounded twice (K(0) Up was 1 ulp low, ZF-18).
             let hp = cc.pi(dest, rm).ldexp(-1, dest, rm);
             return ExactComplex::from_real(hp, dest);
-        }
-        if is_c_one(self, dest) {
-            return ExactComplex::one(dest);
         }
         ziv_complex(dest, rm, |pw| self.elliptic_e_complete_at(pw, dest, cc))
     }
@@ -1595,6 +1603,7 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::INF_POS;
     use crate::Sign;
     use core::ops::Neg;
     use core::str::FromStr;
@@ -1961,5 +1970,55 @@ mod tests {
             q
         );
         Ok(())
+    }
+
+    fn assert_dest_oom_fast(name: &str, z: ExactComplex, start: std::time::Instant) {
+        assert!(
+            start.elapsed().as_secs() < 2,
+            "{name} at dest 2^59 took {:?}",
+            start.elapsed()
+        );
+        assert!(z.is_nan(), "{name} not NaN: {z:?}");
+        assert_eq!(
+            z.re().err(),
+            Some(Error::MemoryAllocation),
+            "{name} re err {:?}",
+            z.re().err()
+        );
+        assert_eq!(
+            z.im().err(),
+            Some(Error::MemoryAllocation),
+            "{name} im err {:?}",
+            z.im().err()
+        );
+    }
+
+    #[test]
+    fn zf_elliptic_k_e_dest_2_59_fail_fast_memory_allocation() {
+        let p = 1usize << 59;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new().expect("Consts");
+        let z0 = ExactComplex::new(
+            crate::complex::compact_signed_zero(false),
+            crate::complex::compact_signed_zero(true),
+        );
+        let t0 = std::time::Instant::now();
+        let k = z0.elliptic_k(p, rm, &mut cc);
+        assert_dest_oom_fast("K(0-0i)", k, t0);
+        let t1 = std::time::Instant::now();
+        let e = z0.elliptic_e_complete(p, rm, &mut cc);
+        assert_dest_oom_fast("E(0-0i)", e, t1);
+
+        // Exact specials still return first (no dest allocation).
+        let one = crate::complex::compact_one();
+        let t2 = std::time::Instant::now();
+        let k1 = one.elliptic_k(p, rm, &mut cc);
+        assert!(t2.elapsed().as_secs() < 1, "K(1) took {:?}", t2.elapsed());
+        assert!(k1.re().is_inf_pos() && k1.im().is_zero(), "K(1) got {k1:?}");
+        let t3 = std::time::Instant::now();
+        let e1 = one.elliptic_e_complete(p, rm, &mut cc);
+        assert!(t3.elapsed().as_secs() < 1, "E(1) took {:?}", t3.elapsed());
+        assert_eq!(e1.re().compare(&ExactNum::from_u8(1, 64)), Some(0));
+        assert!(e1.im().is_zero(), "E(1) im {:?}", e1.im());
     }
 }

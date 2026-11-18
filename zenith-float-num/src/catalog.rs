@@ -842,6 +842,9 @@ fn ziv_round<F>(p: usize, rm: RoundingMode, mut f: F) -> ExactNum
 where
     F: FnMut(usize) -> Option<(ExactNum, i64)>,
 {
+    if let Err(e) = crate::common::util::reserve_probe(crate::common::util::round_p(p)) {
+        return ExactNum::nan(Some(e));
+    }
     let w = WORD_BIT_SIZE as i64;
     let limit = p.saturating_mul(8).saturating_add(16_384);
     let mut wp = work_p(p);

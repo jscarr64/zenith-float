@@ -419,6 +419,9 @@ pub fn ziv_round<F>(p: usize, rm: RoundingMode, mut compute: F) -> ExactNum
 where
     F: FnMut(usize) -> ExactNum,
 {
+    if let Err(e) = crate::common::util::reserve_probe(crate::common::util::round_p(p)) {
+        return ExactNum::nan(Some(e));
+    }
     let mut p_inc = WORD_BIT_SIZE;
     let mut p_wrk = match round_p(p).checked_add(p_inc) {
         Some(v) => v,
@@ -442,6 +445,9 @@ pub fn ziv_round_vec<F>(p: usize, rm: RoundingMode, inputs: &[ExactNum], mut com
 where
     F: FnMut(usize, &[ExactNum]) -> ExactNum,
 {
+    if let Err(e) = crate::common::util::reserve_probe(crate::common::util::round_p(p)) {
+        return ExactNum::nan(Some(e));
+    }
     let mut p_inc = WORD_BIT_SIZE;
     let mut p_wrk = match round_p(p).checked_add(p_inc) {
         Some(v) => v,
