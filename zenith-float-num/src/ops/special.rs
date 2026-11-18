@@ -4531,11 +4531,18 @@ impl ExactNumNumber {
                 .max(ec.mantissa_max_bit_len())
                 .max(ez.mantissa_max_bit_len())
                 + 2 * WORD_BIT_SIZE);
-        let Some(w) = n.checked_mul(per) else {
-            return Ok(None);
-        };
-        if Self::p_assertion(round_p(w)).is_err() {
-            return Ok(None);
+        // n=0 is Euler F(a,b;a;z)=(1-z)^{-b}: no Pochhammer product, bit length 1.
+        // After WORK_BITS_MAX, p_assertion(round_p(0*per)) fails (precision 0) and
+        // skipped the exact path; Ziv then cannot certify the exact dyadic and
+        // returns PrecisionRetryExhausted (NaN at the ExactNum wrapper). That is
+        // the zf_37 regression on F(1,-1/2;1;1-2^{-20})=2^{-10}.
+        if n > 0 {
+            let Some(w) = n.checked_mul(per) else {
+                return Ok(None);
+            };
+            if Self::p_assertion(round_p(w)).is_err() {
+                return Ok(None);
+            }
         }
         let (num, q) = if n == 0 {
             (one.clone()?, one.clone()?)
@@ -8680,6 +8687,29 @@ mod tests {
         let bm = mone_half.beta(&two, p, rm, &mut cc)?;
         let mfour = ExactNumNumber::from_word(4, p)?.neg()?;
         assert_eq!(bm.cmp(&mfour), 0, "B(-1/2, 2) = -4");
+        Ok(())
+    }
+
+    /// ZF-37: `_2F_1(1, -1/2; 1; 1-2^{-20}) = (1-z)^{1/2} = 2^{-10}` exactly
+    /// (DLMF 15.4.6, `F(a,b;a;z)=(1-z)^{-b}`). Must not be NaN.
+    #[test]
+    fn test_hyp2f1_one_minus_pow2_is_exact_sqrt() -> Result<(), crate::Error> {
+        let p = 128;
+        let mut cc = Consts::new()?;
+        let rm = RoundingMode::Up;
+        let one = ExactNumNumber::from_word(1, p)?;
+        let half = one_half(p)?;
+        let mhalf = half.neg()?;
+        let two20 = ExactNumNumber::from_word(1u64 << 20, p)?;
+        let omz = one.div(&two20, p, RoundingMode::None)?;
+        let z = one.sub(&omz, p, RoundingMode::None)?;
+        let got = one.hypergeom_2f1(&mhalf, &one, &z, p, rm, &mut cc)?;
+        let want = one.div(&ExactNumNumber::from_word(1u64 << 10, p)?, p, rm)?;
+        assert_eq!(
+            got.cmp(&want),
+            0,
+            "2F1(1, -1/2; 1; 1-2^-20) p=128 Up must be 2^-10"
+        );
         Ok(())
     }
 
