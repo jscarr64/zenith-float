@@ -958,8 +958,11 @@ impl ExactComplex {
     }
 
     /// Continuous \(\log(\sin(\pi z))\) as in Arb `acb_log_sin_pi`.
-    /// For \(\operatorname{Im} z<0\): \(i\pi(z-1/2)-\ln 2+\log(1-e^{-2i\pi z})\);
-    /// otherwise (including the real cut): the conjugate form with the signs flipped.
+    /// For \(\operatorname{Im} z<0\) (a numeric comparison, so \(\operatorname{Im}=-0\) is not
+    /// less than zero): \(i\pi(z-1/2)-\ln 2+\log(1-e^{-2i\pi z})\);
+    /// otherwise (including the real cut and a signed-zero imaginary part): the conjugate
+    /// form with the signs flipped. `acb_lgamma` at \(-1/2\pm 0i\) both return
+    /// imaginary part \(-\pi\).
     fn log_sin_pi(z: &Self, p: usize, cc: &mut Consts) -> Self {
         let pi = pi_c(p, cc);
         let two_pi = two_c(p).mul(&pi, p, RoundingMode::None);
@@ -967,7 +970,8 @@ impl ExactComplex {
         let i = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(1, p));
         let zmh = ExactComplex::sub_ref(z, &half_c(p), p, RoundingMode::None);
         let i_pi = i.mul(&pi, p, RoundingMode::None);
-        if z.im().is_negative() {
+        // Arb: Im(z) < 0 is a numeric comparison, so Im = −0 takes the real-cut form.
+        if z.im().is_negative() && !z.im().is_zero() {
             let phase = i_pi.mul(&zmh, p, RoundingMode::None);
             let w = i
                 .mul(&two_pi, p, RoundingMode::None)
@@ -1238,6 +1242,7 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Sign;
     use core::ops::Neg;
     use core::str::FromStr;
 
@@ -1848,13 +1853,39 @@ mod tests {
             );
             let lg = z.ln_gamma(p, r, &mut cc);
             let want_re = ExactNum::from_str("-0.05624371649767405067259453009765")?;
-            let three_pi =
-                cc.pi(p, RoundingMode::None)
-                    .mul(&ExactNum::from_u8(3, p), p, RoundingMode::None);
+            let three_pi_neg = cc
+                .pi(p, RoundingMode::None)
+                .mul(&ExactNum::from_u8(3, p), p, RoundingMode::None)
+                .neg();
             assert!(near(lg.re(), &want_re, 64), "p={p} -2.5 re {:?}", lg.re());
             assert!(
-                near(lg.im(), &three_pi.neg(), 64),
+                near(lg.im(), &three_pi_neg, 64),
                 "p={p} -2.5 im {:?} want -3π",
+                lg.im()
+            );
+
+            // Im = −0 on the negative-real cut follows Arb (same value as +0 / the
+            // exact real axis), not the lower half-plane (Jeff 2026-11-18 12:14 CT).
+            let half_neg =
+                ExactNum::from_i8(-1, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None);
+            let mut im_m0 = ExactNum::new(p);
+            im_m0.set_sign(Sign::Neg);
+            let lg = ExactComplex::new(half_neg, im_m0).ln_gamma(p, r, &mut cc);
+            assert!(
+                near(lg.im(), &cc.pi(p, RoundingMode::None).neg(), 64),
+                "p={p} -0.5-0i im {:?} want -π",
+                lg.im()
+            );
+            let mut im_m0 = ExactNum::new(p);
+            im_m0.set_sign(Sign::Neg);
+            let lg = ExactComplex::new(
+                ExactNum::from_i8(-5, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None),
+                im_m0,
+            )
+            .ln_gamma(p, r, &mut cc);
+            assert!(
+                near(lg.im(), &three_pi_neg, 64),
+                "p={p} -2.5-0i im {:?} want -3π",
                 lg.im()
             );
         }
