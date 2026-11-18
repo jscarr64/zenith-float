@@ -122,6 +122,40 @@ fn gamma_or_pole(z: &ExactNum, p: usize, cc: &mut Consts) -> Option<ExactNum> {
     }
 }
 
+/// Sign of real Γ(x) for x not a non-positive integer. `ln_gamma` is ln|Γ|,
+/// so a log-space reconstruction must apply this sign separately.
+///
+/// For x ≥ 0, Γ(x) > 0. For x < 1 not a non-positive integer, the
+/// reflection formula (DLMF 5.5.3) `Γ(x)Γ(1-x)=π/sin(πx)` and `1-x>0`
+/// (so Γ(1-x)>0) give `sign(Γ(x))=sign(sin(πx))`.
+fn gamma_real_sign(x: &ExactNum, wp: usize, cc: &mut Consts) -> Option<Sign> {
+    if nonpos_int(x) {
+        return None;
+    }
+    if !x.is_negative() {
+        return Some(Sign::Pos);
+    }
+    let s = x.clone().mul(&cc.pi(wp, N), wp, N).sin(wp, N, cc);
+    if !finite(&s) || s.is_zero() {
+        return None;
+    }
+    Some(if s.is_negative() { Sign::Neg } else { Sign::Pos })
+}
+
+/// Multiply `term` by `sign(Γ(a)Γ(b))`. `None` if either gamma is a pole
+/// or the sign cannot be certified.
+fn apply_gamma_pair_sign(
+    term: ExactNum,
+    a: &ExactNum,
+    b: &ExactNum,
+    wp: usize,
+    cc: &mut Consts,
+) -> Option<ExactNum> {
+    let sa = gamma_real_sign(a, wp, cc)?;
+    let sb = gamma_real_sign(b, wp, cc)?;
+    Some(if sa != sb { term.neg() } else { term })
+}
+
 fn bits_good(wp: usize, peak: i64, result_exp: i64, lost: i64, tail_exp: i64) -> i64 {
     let cancel = (peak - result_exp).max(0);
     let arith = (wp as i64).saturating_sub(lost).saturating_sub(cancel);
@@ -310,8 +344,13 @@ fn struve_series(
                     .sub(&ln_g1, wp, N)
                     .sub(&ln_g2, wp, N);
                 let t = ln.exp(wp, N, cc);
+                // ln_gamma is ln|Γ|; restore sign(Γ(3/2)Γ(ν+3/2)).
                 if finite(&t) {
-                    t
+                    if let Some(t) = apply_gamma_pair_sign(t, &three_half, &nu_p, wp, cc) {
+                        t
+                    } else {
+                        return None;
+                    }
                 } else {
                     // Fall back to the factored form when the log path
                     // overflows; the factored form may still be representable
@@ -394,6 +433,12 @@ fn struve_series(
                         .sub(&ln_ga, wp, N)
                         .sub(&ln_gb, wp, N);
                     let t = ln.exp(wp, N, cc);
+                    let t = if finite(&t) {
+                        apply_gamma_pair_sign(t, &a, &b, wp, cc)
+                            .unwrap_or_else(|| ExactNum::new(wp))
+                    } else {
+                        ExactNum::new(wp)
+                    };
                     if !k.is_multiple_of(2) {
                         t.neg()
                     } else {
@@ -3309,6 +3354,65 @@ mod aws_bounds {
             "J_{{1/2}}/E_0(1000) p=1024 (all modes) and p=2048 ToEven took {:?} (budget 120s)",
             t0.elapsed()
         );
+        assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+        Ok(())
+    }
+
+    /// The 11.2.1 first term is formed in log space with `ln_gamma`, which is
+    /// ln|Γ|. For ν<0, Γ(ν+3/2) can be negative, and dropping that sign
+    /// flips H_ν(z) for z>0 (the 28 T4 p=2048 WRONG rows). Golds are
+    /// independent 800 dps mpmath values.
+    #[test]
+    fn aws_struve_h_neg_nu_sign_from_error_bound() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ];
+        let gold_m74 = ExactNum::parse(
+            "-0.61221960895643783734737479958451410827102468873041409523961069492104028583271282853978561103327778061581325954012405495072658889852911429416133138532180399697541285106625831700195687002664631211055727799663652967408329860146833820407888621921888151040615189984352167961360632411562766236481251890667767121428005324870590861978463129331511409779324252137859073736849853589223009993217935585930756194792382809942578470749045042493492427404732478573812118060675196873573015216186115704186002590254089006070911886167325219247187815583314591863821133482369250343660401790564090812845580320973383672752709540406826185783302506075400339653075700897973604694415432816634619639390963277676706377165769077703114580214390959225106682685457951827141193333880982528833680469084577074417395576158243078797892379894",
+            crate::Radix::Dec,
+            4096,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        let gold_m2 = ExactNum::parse(
+            "-0.80836172701198049619128167451636317834840150781566219309637598630919980142502575019957616403864169643789541286620205521250900151267857092775327179243174583068212972932562886659150766413166765320299750533594627250732413716682742144444939906817300153574364460709274138695922876120298229684782735252481617043488526637794421961118424293439157815679240126184018198433008129081238688736811913114643770461110196125572561930961214157617876509767762504805887737105602919045088905310869322478402600764255049630258855495600109352286322128192693803539237104527360354855019585309474495473669372351674253933525012348466991948449815959918848363844724129605303998615618100130587258889218979572986473119852808258884679465160487719831769063955348837099792216624133907075197882466092295325655361397346764881210555990237",
+            crate::Radix::Dec,
+            4096,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        let mut bad = Vec::new();
+        // All seven modes at p=64; p=2048 ToEven is the T4 dest precision.
+        for &p in &[64usize, 2048] {
+            let z = one(p);
+            let nu = ExactNum::from_i32(-7, p).div(&ExactNum::from_u32(4, p), p, N);
+            let rms: &[RoundingMode] = if p == 64 { &modes } else { &[RoundingMode::ToEven] };
+            for &rm in rms {
+                let want = finish(gold_m74.clone(), p, rm);
+                let got = z.struve_h(&nu, p, rm, &mut cc);
+                if got.compare(&want) != Some(0) {
+                    bad.push(format!("H_{{-7/4}}(1) p={p} {rm:?} got {got} want {want}"));
+                }
+            }
+        }
+        {
+            let p = 64usize;
+            let z = one(p);
+            let nu = ExactNum::from_i32(-2, p);
+            let rm = RoundingMode::ToEven;
+            let want = finish(gold_m2.clone(), p, rm);
+            let got = z.struve_h(&nu, p, rm, &mut cc);
+            if got.compare(&want) != Some(0) {
+                bad.push(format!("H_{{-2}}(1) p={p} {rm:?} got {got} want {want}"));
+            }
+        }
         assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
         Ok(())
     }
