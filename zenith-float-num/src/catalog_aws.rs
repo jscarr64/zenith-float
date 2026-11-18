@@ -2253,6 +2253,86 @@ fn anger_a_laplace(
 /// ∫_0^τ e^{-z u} u^k du for k=0..=kmax, from the all-positive series
 /// J_k = e^{-zτ} τ^{k+1} Σ_{n=0}^∞ (zτ)^n / [(k+1)⋯(k+1+n)].
 /// Returns midpoints and a per-index half-width enclosure.
+/// Enclosure of J_k = ∫_0^τ e^{-z u} u^k du by the series
+/// S = Σ u_n, u_0 = 1/(k+1), u_{n+1} = u_n · zτ / (k+n+2),
+/// then J_k = e^{-zτ} τ^{k+1} S (termwise directed rounding).
+fn exp_uk_0_tau_series_k(
+    k: usize,
+    ztau_dn: &ExactNum,
+    ztau_up: &ExactNum,
+    exp_dn: &ExactNum,
+    exp_up: &ExactNum,
+    tau_pow_dn: &ExactNum,
+    tau_pow_up: &ExactNum,
+    target: &ExactNum,
+    wp: usize,
+) -> Option<(ExactNum, ExactNum)> {
+    let k1 = ExactNum::from_u64((k as u64).saturating_add(1), wp);
+    let mut u_lo = one(wp).div(&k1, wp, DN);
+    let mut u_hi = one(wp).div(&k1, wp, UP);
+    let mut s_lo = u_lo.clone();
+    let mut s_hi = u_hi.clone();
+    let mut n = 0usize;
+    loop {
+        let den = ExactNum::from_u64((k as u64).saturating_add(n as u64).saturating_add(2), wp);
+        let ratio = ExactNum::div_ref(ztau_up, &den, wp, UP);
+        if ratio.compare(&one(wp)) == Some(-1) {
+            let gap = ExactNum::sub_ref(&one(wp), &ratio, wp, DN);
+            if gap.is_positive() {
+                let tb = u_hi.clone().mul(&ratio, wp, UP).div(&gap, wp, UP);
+                if tb.abs_cmp(target) != Some(1)
+                    && tb.abs_cmp(&s_hi.clone().mul(target, wp, UP)) != Some(1)
+                {
+                    s_hi = s_hi.add(&tb, wp, UP);
+                    break;
+                }
+            }
+        }
+        n = n.checked_add(1)?;
+        u_lo = u_lo.mul(ztau_dn, wp, DN).div(&den, wp, DN);
+        u_hi = u_hi.mul(ztau_up, wp, UP).div(&den, wp, UP);
+        if !finite(&u_lo) || !finite(&u_hi) {
+            return None;
+        }
+        s_lo = s_lo.add(&u_lo, wp, DN);
+        s_hi = s_hi.add(&u_hi, wp, UP);
+        if n > wp.saturating_mul(4).saturating_add(k).saturating_add(64) {
+            return None;
+        }
+    }
+    let j_lo = exp_dn.clone().mul(tau_pow_dn, wp, DN).mul(&s_lo, wp, DN);
+    let j_hi = exp_up.clone().mul(tau_pow_up, wp, UP).mul(&s_hi, wp, UP);
+    if !finite(&j_lo) || !finite(&j_hi) || j_lo.abs_cmp(&j_hi) == Some(1) {
+        return None;
+    }
+    Some((j_lo, j_hi))
+}
+
+/// True when the [j_lo, j_hi] enclosure of J_k is tight enough to keep
+/// the u-path remainder at working precision (otherwise Ziv would climb).
+fn exp_uk_jk_tight(j_lo: &ExactNum, j_hi: &ExactNum, wp: usize) -> bool {
+    if !finite(j_lo) || !finite(j_hi) || j_lo.abs_cmp(j_hi) == Some(1) {
+        return false;
+    }
+    let wid = j_hi.clone().sub(j_lo, wp, UP);
+    if !finite(&wid) || wid.is_negative() {
+        return false;
+    }
+    let mag = if j_hi.clone().abs().abs_cmp(&j_lo.clone().abs()) == Some(1) {
+        j_hi.clone().abs()
+    } else {
+        j_lo.clone().abs()
+    };
+    let scale = if mag.is_zero() || mag.exponent().is_some_and(|e| e < -(wp as i64)) {
+        one(wp).ldexp(-(wp as i64), wp, N)
+    } else {
+        mag
+    };
+    // A few dozen ulps of J_k; looser than this inflates the head remainder.
+    let cap = scale.ldexp(-((wp as i64).saturating_sub(24)), wp, UP);
+    wid.abs_cmp(&cap) != Some(1)
+}
+
 fn exp_uk_0_tau(
     z: &ExactNum,
     tau: &ExactNum,
@@ -2290,51 +2370,66 @@ fn exp_uk_0_tau(
     let target = one(wp).ldexp(-((wp as i64) + 32), wp, N);
     let mut mid = Vec::with_capacity(kmax + 1);
     let mut wid = Vec::with_capacity(kmax + 1);
+    // τ^k enclosures; start at k=0 with τ^0 = 1.
+    let mut tau_pow_k_up = one(wp);
+    let mut tau_pow_k_dn = one(wp);
+    // The stored tau_pow used by the series helper is τ^{k+1}.
     let mut tau_pow_up = tau_up.clone();
     let mut tau_pow_dn = tau_dn.clone();
+    let mut j_lo = ExactNum::new(wp);
+    let mut j_hi = ExactNum::new(wp);
+    let mut have = false;
     for k in 0..=kmax {
-        // S = Σ u_n, u_0 = 1/(k+1), u_{n+1} = u_n * zτ / (k+n+2)
-        let k1 = ExactNum::from_u64((k as u64).saturating_add(1), wp);
-        let mut u_lo = one(wp).div(&k1, wp, DN);
-        let mut u_hi = one(wp).div(&k1, wp, UP);
-        let mut s_lo = u_lo.clone();
-        let mut s_hi = u_hi.clone();
-        let mut n = 0usize;
-        loop {
-            let den = ExactNum::from_u64((k as u64).saturating_add(n as u64).saturating_add(2), wp);
-            let ratio = ExactNum::div_ref(&ztau_up, &den, wp, UP);
-            if ratio.compare(&one(wp)) == Some(-1) {
-                let gap = ExactNum::sub_ref(&one(wp), &ratio, wp, DN);
-                if gap.is_positive() {
-                    let tb = u_hi.clone().mul(&ratio, wp, UP).div(&gap, wp, UP);
-                    if tb.abs_cmp(&target) != Some(1)
-                        && tb.abs_cmp(&s_hi.clone().mul(&target, wp, UP)) != Some(1)
-                    {
-                        s_hi = s_hi.add(&tb, wp, UP);
-                        break;
-                    }
+        let mut got = None;
+        if k == 0 {
+            // J_0 = (1 - e^{-zτ})/z.
+            let one_m_e_lo = ExactNum::sub_ref(&one(wp), &exp_up, wp, DN);
+            let one_m_e_hi = ExactNum::sub_ref(&one(wp), &exp_dn, wp, UP);
+            if one_m_e_lo.is_positive() && one_m_e_hi.is_positive() {
+                let lo = one_m_e_lo.div(&z_up, wp, DN);
+                let hi = one_m_e_hi.div(&z_dn, wp, UP);
+                if exp_uk_jk_tight(&lo, &hi, wp) {
+                    got = Some((lo, hi));
                 }
             }
-            n = n.checked_add(1)?;
-            u_lo = u_lo.mul(&ztau_dn, wp, DN).div(&den, wp, DN);
-            u_hi = u_hi.mul(&ztau_up, wp, UP).div(&den, wp, UP);
-            if !finite(&u_lo) || !finite(&u_hi) {
-                return None;
-            }
-            s_lo = s_lo.add(&u_lo, wp, DN);
-            s_hi = s_hi.add(&u_hi, wp, UP);
-            if n > wp.saturating_mul(4).saturating_add(k).saturating_add(64) {
-                return None;
+        } else if have {
+            // DLMF 8.8.5 / integration by parts:
+            // J_k = (k/z) J_{k-1} - e^{-zτ} τ^k / z.
+            let kk = ExactNum::from_u64(k as u64, wp);
+            let k_z_lo = kk.clone().div(&z_up, wp, DN);
+            let k_z_hi = kk.div(&z_dn, wp, UP);
+            let term_lo = exp_dn.clone().mul(&tau_pow_k_dn, wp, DN).div(&z_up, wp, DN);
+            let term_hi = exp_up.clone().mul(&tau_pow_k_up, wp, UP).div(&z_dn, wp, UP);
+            if finite(&term_lo) && finite(&term_hi) {
+                let lo = k_z_lo.mul(&j_lo, wp, DN).sub(&term_hi, wp, DN);
+                let hi = k_z_hi.mul(&j_hi, wp, UP).sub(&term_lo, wp, UP);
+                if exp_uk_jk_tight(&lo, &hi, wp) {
+                    got = Some((lo, hi));
+                }
             }
         }
-        let j_lo = exp_dn.clone().mul(&tau_pow_dn, wp, DN).mul(&s_lo, wp, DN);
-        let j_hi = exp_up.clone().mul(&tau_pow_up, wp, UP).mul(&s_hi, wp, UP);
-        if !finite(&j_lo) || !finite(&j_hi) || j_lo.abs_cmp(&j_hi) == Some(1) {
-            return None;
+        if got.is_none() {
+            got = exp_uk_0_tau_series_k(
+                k,
+                &ztau_dn,
+                &ztau_up,
+                &exp_dn,
+                &exp_up,
+                &tau_pow_dn,
+                &tau_pow_up,
+                &target,
+                wp,
+            );
         }
-        let s = j_lo.clone().add(&j_hi, wp, N);
+        let (lo, hi) = got?;
+        let s = lo.clone().add(&hi, wp, N);
         mid.push(s.ldexp(-1, wp, N));
-        wid.push(j_hi.sub(&j_lo, wp, UP));
+        wid.push(hi.clone().sub(&lo, wp, UP));
+        j_lo = lo;
+        j_hi = hi;
+        have = true;
+        tau_pow_k_up = tau_pow_up.clone();
+        tau_pow_k_dn = tau_pow_dn.clone();
         tau_pow_up = tau_pow_up.mul(&tau_up, wp, UP);
         tau_pow_dn = tau_pow_dn.mul(&tau_dn, wp, DN);
     }
@@ -2984,8 +3079,12 @@ fn anger_weber_connection(
             return None;
         }
         let (ap, gp) = anger_a(nu, z, wp, cc)?;
-        let nneg = nu.clone().neg();
-        let (am, gm) = anger_a(&nneg, z, wp, cc)?;
+        // A_{-ν} = A_ν at ν=0, so do not run the large-|z| u-path twice.
+        let (am, gm) = if nu.is_zero() {
+            (ap.clone(), gp)
+        } else {
+            anger_a(&nu.clone().neg(), z, wp, cc)?
+        };
         // E = -Y - cos(πν) A_ν - A_{-ν}
         let v = y
             .clone()
