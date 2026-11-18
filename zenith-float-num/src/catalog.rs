@@ -3092,4 +3092,49 @@ mod tests {
         assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
         Ok(())
     }
+
+    /// arcdn(0|1) = K(1) = +∞, because dn(u|1) = sech(u) → 0 as u → +∞.
+    /// Both signs of zero; every rounding mode returns +Inf (a pole, not a
+    /// finite overflow that C99 7.12.1 would map to +MAX).
+    #[test]
+    fn zf_jacobi_arcdn_zero_at_m_one_is_pos_inf() {
+        let mut cc = Consts::new().expect("Consts");
+        let p = 64;
+        let modes = [
+            RoundingMode::ToEven,
+            RoundingMode::ToOdd,
+            RoundingMode::Up,
+            RoundingMode::Down,
+            RoundingMode::ToZero,
+            RoundingMode::FromZero,
+            RoundingMode::None,
+        ];
+        let one = ExactNum::from_u8(1, p);
+        let pos0 = ExactNum::new(p);
+        let mut neg0 = ExactNum::new(p);
+        neg0.set_sign(crate::Sign::Neg);
+        for (tag, x) in [("+0", &pos0), ("-0", &neg0)] {
+            for &rm in &modes {
+                let g = x.jacobi_arcdn(&one, p, rm, &mut cc);
+                assert!(
+                    g.is_inf_pos(),
+                    "arcdn({tag}|1) p={p} {rm:?} should be +Inf, got inf={} nan={} err={:?}",
+                    g.is_inf(),
+                    g.is_nan(),
+                    g.err()
+                );
+            }
+        }
+        let p2 = 2048;
+        let one2 = ExactNum::from_u8(1, p2);
+        let z2 = ExactNum::new(p2);
+        let g2 = z2.jacobi_arcdn(&one2, p2, RoundingMode::ToEven, &mut cc);
+        assert!(
+            g2.is_inf_pos(),
+            "arcdn(+0|1) p=2048 ToEven should be +Inf, got inf={} nan={} err={:?}",
+            g2.is_inf(),
+            g2.is_nan(),
+            g2.err()
+        );
+    }
 }

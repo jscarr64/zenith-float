@@ -4103,6 +4103,12 @@ impl ExactNumNumber {
         if xa.cmp(&one) == 0 {
             return Self::new2(p, Sign::Pos, self.inexact() | m.inexact());
         }
+        // arcdn(0|1) = K(1) = +∞ (dn(u|1) = sech(u) → 0 as u → +∞). A pole,
+        // not a finite overflow: ExponentOverflow maps to +Inf in every mode
+        // through result_to_ext. Both signs of zero.
+        if xa.is_zero() && m.cmp(&one) == 0 {
+            return Err(Error::ExponentOverflow(Sign::Pos));
+        }
         let x2 = Self::mul_exact(&xa, &xa)?;
         let s2n = Self::sum_exact_or(&one, &x2.neg()?, p)?;
         let m1 = Self::sum_exact_or(m, &one.neg()?, p)?;
