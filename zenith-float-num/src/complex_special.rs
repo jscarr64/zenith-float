@@ -170,11 +170,7 @@ fn abs_needs_shift(z: &ExactComplex, p: usize, min_exp: Exponent) -> bool {
 /// \(\mathrm{Re}\,z\ge 0\) and each shift adds 1 to \(\mathrm{Re}\,z\), so \(2^{k-1}\) shifts are
 /// enough; 2 more cover rounding of \(\lvert z\rvert\). `usize::MAX` once \(2^{k-1}\) does not fit.
 fn shift_cap(min_exp: Exponent) -> usize {
-    let k = min_exp.max(1) - 1;
-    if k >= Exponent::from(usize::BITS) {
-        return usize::MAX;
-    }
-    (1usize << k).saturating_add(2)
+    crate::ops::special::stirling_shift_count(min_exp)
 }
 
 /// Applies `step` (in the callers: \(z\to z+1\) plus their accumulator update) while
@@ -1049,25 +1045,57 @@ impl ExactComplex {
     }
 
     pub(crate) fn digamma_at(&self, p: usize, cc: &mut Consts) -> Self {
-        // ψ(n) = −γ + H_{n−1} for positive integers. The Stirling shift would
-        // otherwise walk from 1 to 2^{e_min−1} (≈ 2^{40} steps at p=65536).
-        if self.im().is_zero() && self.re().is_int() && self.re().is_positive() {
-            if let Ok(n) = self.re().to_u32(RoundingMode::ToZero) {
-                let g = cc.euler_gamma(p, RoundingMode::None);
-                let mut v = -g;
-                if n >= 2 {
-                    let mut h = ExactNum::new(p);
-                    for k in 1..n {
-                        let t = ExactNum::from_u8(1, p).div(
-                            &ExactNum::from_u32(k, p),
-                            p,
-                            RoundingMode::None,
-                        );
-                        h = h.add(&t, p, RoundingMode::None);
+        // Real-axis closed forms, same as the real kernel. The Stirling shift
+        // would otherwise walk from 1 to 2^{e_min−1} (≈ 2^{14} steps at p=65536
+        // with the bound-based term count, or 2^{40} with a 1024-term clamp).
+        if self.im().is_zero() && self.re().is_positive() {
+            // ψ(n) = −γ + H_{n−1} for positive integers.
+            if self.re().is_int() {
+                if let Ok(n) = self.re().to_u32(RoundingMode::ToZero) {
+                    let g = cc.euler_gamma(p, RoundingMode::None);
+                    let mut v = -g;
+                    if n >= 2 {
+                        let mut h = ExactNum::new(p);
+                        for k in 1..n {
+                            let t = ExactNum::from_u8(1, p).div(
+                                &ExactNum::from_u32(k, p),
+                                p,
+                                RoundingMode::None,
+                            );
+                            h = h.add(&t, p, RoundingMode::None);
+                        }
+                        v = v.add(&h, p, RoundingMode::None);
                     }
-                    v = v.add(&h, p, RoundingMode::None);
+                    return ExactComplex::from_real(v, p);
                 }
-                return ExactComplex::from_real(v, p);
+            } else {
+                // ψ(n+½) = −γ − 2 ln 2 + Σ_{k=1}^{n} 2/(2k−1) (DLMF 5.4.13–14).
+                let twice = self.re().clone().ldexp(1, p, RoundingMode::None);
+                if twice.is_int() {
+                    if let Ok(m) = twice.to_u32(RoundingMode::ToZero) {
+                        if m % 2 == 1 {
+                            let n = ((m - 1) / 2) as usize;
+                            // Same finite-sum cutoff as the real kernel:
+                            // larger half-integers use Stirling.
+                            if n <= crate::ops::special::HALF_INTEGER_MAX {
+                                let g = cc.euler_gamma(p, RoundingMode::None);
+                                let ln2 = cc.ln_2(p, RoundingMode::None);
+                                let two_ln2 = ln2.ldexp(1, p, RoundingMode::None);
+                                let mut v = g.neg().sub(&two_ln2, p, RoundingMode::None);
+                                let two = ExactNum::from_u8(2, p);
+                                for k in 1..=n {
+                                    let t = two.clone().div(
+                                        &ExactNum::from_u32((2 * k - 1) as u32, p),
+                                        p,
+                                        RoundingMode::None,
+                                    );
+                                    v = v.add(&t, p, RoundingMode::None);
+                                }
+                                return ExactComplex::from_real(v, p);
+                            }
+                        }
+                    }
+                }
             }
         }
         if !re_positive(self) && !self.re().is_zero() {
@@ -1094,11 +1122,11 @@ impl ExactComplex {
         let mut z = self.clone();
         let mut acc = ExactComplex::zero(p);
         let (terms, k) = digamma_stirling_plan(p);
-        // Bound the walk the same way the real kernel does (STIRLING_SHIFT_MAX = 2^20).
-        // shift_cap(k) is the mathematical step count to reach 2^{k-1}, which at
-        // high p is far larger than any feasible loop (2^40 steps at p=65536).
-        const STIRLING_SHIFT_MAX: usize = 1 << 20;
-        let shifted = shift_while_small(&mut z, p, k, shift_cap(k).min(STIRLING_SHIFT_MAX), |z| {
+        // Term count and shift target come from the remainder bound
+        // (`digamma_terms` / `asymp_min_exponent`). shift_cap(k) is the
+        // step count needed to reach 2^{k-1} from Re z ≥ 0, not a
+        // separate walk cap.
+        let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
             let rec = one.div(z, p, RoundingMode::None);
             acc = ExactComplex::sub_ref(&acc, &rec, p, RoundingMode::None);
             *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
@@ -1673,6 +1701,38 @@ mod tests {
         assert!(psi.im().is_zero());
         let g = cc.euler_gamma(p, RoundingMode::None);
         assert_eq!(psi.re().compare(&g.neg()), Some(0));
+        Ok(())
+    }
+
+    /// ψ(1/2) = −γ − 2 ln 2 (DLMF 5.4.13 / 5.4.14). At p=65536 the 1024-term
+    /// Stirling plan still wants |z|≥2^{39}, and the 2^{20} walk cap refused
+    /// at once (PrecisionRetryExhausted). That cap does not come from the
+    /// remainder bound (P9). This value now uses the half-integer closed
+    /// form (same as the real kernel); term and shift counts on the Stirling
+    /// path follow the bound, with no walk cap, so the p=65536 Kelvin path
+    /// stays short.
+    #[test]
+    fn digamma_half_at_high_p_from_error_bound() -> Result<(), crate::Error> {
+        let mut cc = Consts::new()?;
+        let p = 65536;
+        let half = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
+        let z = ExactComplex::from_real(half, p);
+        let t0 = std::time::Instant::now();
+        let psi = z.digamma(p, RoundingMode::ToEven, &mut cc);
+        assert!(
+            t0.elapsed().as_secs() < 60,
+            "digamma(1/2) at p=65536 took {:?}",
+            t0.elapsed()
+        );
+        assert!(!psi.is_nan(), "digamma(1/2) NaN: {:?}", psi);
+        assert!(psi.im().is_zero(), "digamma(1/2) im {}", psi.im());
+        let wrk = p + 2 * crate::WORD_BIT_SIZE;
+        let g = cc.euler_gamma(wrk, RoundingMode::None);
+        let ln2 = cc.ln_2(wrk, RoundingMode::None);
+        let two_ln2 = ln2.ldexp(1, wrk, RoundingMode::None);
+        let mut want = g.neg().sub(&two_ln2, wrk, RoundingMode::None);
+        assert!(want.try_set_precision(p, RoundingMode::ToEven, wrk));
+        assert_eq!(psi.re().compare(&want), Some(0));
         Ok(())
     }
 }

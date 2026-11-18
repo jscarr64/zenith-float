@@ -1048,7 +1048,13 @@ impl ExactNumNumber {
     }
 
     fn digamma_positive(&self, p: usize, cc: &mut Consts) -> Result<Self, Error> {
-        self.digamma_positive_capped(p, cc, STIRLING_SHIFT_MAX)
+        // Term count and shift target come from the remainder bound
+        // (`digamma_terms` / `asymp_min_exponent`). The step count is
+        // 2^{e_min-1}+2, the walk needed to reach 2^{e_min-1}, not a
+        // separate 2^20 cap (P9).
+        let pw = p + WORD_BIT_SIZE;
+        let e_min = asymp_min_exponent(pw, digamma_terms(p));
+        self.digamma_positive_capped(p, cc, stirling_shift_count(e_min))
     }
 
     /// [`Self::digamma_positive`] with the shift cap as a parameter (tests force it).
@@ -4938,11 +4944,11 @@ fn erf_tail_below(x: &ExactNumNumber, p: usize) -> bool {
 /// Binary exponent from which `erfc` underflows below every subnormal (`x ≥ 2^31`).
 const ERFC_UNDERFLOW_EXPONENT: Exponent = 32;
 
-/// Bernoulli terms for the digamma asymptotic series at precision `p`: `p/8`, 64 to 1024.
-/// With the exact cache (B_2..B_2048 builds once in ~0.9 s release) a 1024 cap keeps the
-/// shift loop short: at p=8448 a 256 cap needs z ≥ 2^22 and hit STIRLING_SHIFT_MAX.
+/// Bernoulli terms for the digamma asymptotic series at precision `p`: `p/8`, at least 64.
+/// Combined with [`asymp_min_exponent`], this is the remainder bound that sets
+/// both the term count and the Stirling shift target (no fixed term or walk cap).
 pub(crate) fn digamma_terms(p: usize) -> usize {
-    (p / 8).clamp(64, 1024)
+    (p / 8).max(64)
 }
 
 /// Smallest binary exponent `e` (`z ≥ 2^(e-1)`) for which the `k`-th term of a
@@ -4985,10 +4991,24 @@ const BETA_RATIO_EXP: Exponent = 10;
 /// Largest integer argument of the exact integer beta path.
 const BETA_INT_MAX: usize = 1 << 12;
 
-const HALF_INTEGER_MAX: usize = 1 << 12;
+pub(crate) const HALF_INTEGER_MAX: usize = 1 << 12;
 
 /// Upper bound on argument shifts before the Stirling / asymptotic series.
+/// Used by the gamma path and by tests that force a cap; digamma uses
+/// [`stirling_shift_count`] from the remainder bound (P9).
 const STIRLING_SHIFT_MAX: usize = 1 << 20;
+
+/// Number of `z → z+1` steps needed to reach `2^{e_min-1}` from a positive
+/// argument less than 1. This is the mathematical length of the walk, not
+/// a fixed algorithm cap.
+pub(crate) fn stirling_shift_count(e_min: Exponent) -> usize {
+    let k = e_min.max(1) - 1;
+    if k >= Exponent::from(usize::BITS) {
+        usize::MAX
+    } else {
+        (1usize << k).saturating_add(2)
+    }
+}
 
 /// Applies `step` (in the callers: `z → z+1` plus their accumulator update) while
 /// `z.exponent() < e_min`, i.e. until `z ≥ 2^(e_min−1)`; `z > 0`.
@@ -7018,6 +7038,296 @@ pub(crate) fn even_bernoulli(n: usize, p: usize) -> Result<Vec<ExactNumNumber>, 
     Ok(out)
 }
 
+/// Largest `k` (`B_{2k}`) filled from the exact boustrophedon. Larger indices
+/// use the zeta series, as in Arb's `arb_bernoulli_ui_zeta`.
+const BERNOULLI_EXACT_K: usize = 1024;
+
+fn bitlen_usize(n: usize) -> usize {
+    (usize::BITS - n.leading_zeros()) as usize
+}
+
+/// Proven upper bound on `log2(|B_n|)` for even `n ≥ 2`: `|B_n| < 4 n!/(2π)^n`
+/// because `ζ(n) < 2`. `log2(n!)` is bounded by `Σ_{i=2}^n ⌈log2 i⌉`, and
+/// `log2(2π) > 53/20`.
+fn bernoulli_abs_log2_ub(n: usize) -> usize {
+    let mut log2_fact = 0usize;
+    for i in 2..=n {
+        log2_fact = log2_fact.saturating_add(bitlen_usize(i));
+    }
+    let sub = n.saturating_mul(53) / 20;
+    2usize.saturating_add(log2_fact).saturating_sub(sub).max(8)
+}
+
+fn pow_ui(base: &ExactNumNumber, exp: usize, p: usize) -> Result<ExactNumNumber, Error> {
+    let mut acc = ExactNumNumber::from_word(1, p)?;
+    if exp == 0 {
+        return Ok(acc);
+    }
+    let mut b = base.clone()?;
+    let mut e = exp;
+    loop {
+        if e & 1 == 1 {
+            acc = acc.mul(&b, p, RoundingMode::None)?;
+        }
+        e >>= 1;
+        if e == 0 {
+            return Ok(acc);
+        }
+        b = b.mul(&b, p, RoundingMode::None)?;
+    }
+}
+
+fn primes_upto(max: usize) -> Vec<u32> {
+    if max < 2 {
+        return Vec::new();
+    }
+    let mut is_p = Vec::new();
+    is_p.resize(max + 1, true);
+    is_p[0] = false;
+    is_p[1] = false;
+    let mut p = 2usize;
+    while p.saturating_mul(p) <= max {
+        if is_p[p] {
+            let mut m = p.saturating_mul(p);
+            while m <= max {
+                is_p[m] = false;
+                m = m.saturating_add(p);
+            }
+        }
+        p += 1;
+    }
+    (2..=max).filter(|&i| is_p[i]).map(|i| i as u32).collect()
+}
+
+/// Primes `P` so the Euler-product tail `P^{1-s}/(s-1) < 2^{-(wp+8)}`.
+fn euler_product_limit(s: usize, wp: usize) -> Result<usize, Error> {
+    let num = wp.saturating_add(8).saturating_add(bitlen_usize(s));
+    let den = s.saturating_sub(1).max(1);
+    let e = num.div_ceil(den);
+    if e >= 24 {
+        return Err(Error::PrecisionRetryExhausted);
+    }
+    Ok((1usize << e).saturating_add(2))
+}
+
+fn zeta_inv_euler_product(s: usize, wp: usize) -> Result<ExactNumNumber, Error> {
+    let pmax = euler_product_limit(s, wp)?;
+    let primes = primes_upto(pmax);
+    let one = ExactNumNumber::from_word(1, wp)?;
+    let mut inv = one.clone()?;
+    for q in primes {
+        let qn = pow_ui(&from_usize_p(q as usize, wp)?, s, wp)?;
+        let term = one.sub(
+            &one.div(&qn, wp, RoundingMode::None)?,
+            wp,
+            RoundingMode::None,
+        )?;
+        inv = inv.mul(&term, wp, RoundingMode::None)?;
+    }
+    Ok(inv)
+}
+
+fn zeta_ui_asymp(s: usize, wp: usize) -> Result<ExactNumNumber, Error> {
+    let one = ExactNumNumber::from_word(1, wp)?;
+    let mut z = one.clone()?;
+    let lim = Exponent::try_from(wp.saturating_add(8)).unwrap_or(Exponent::MAX);
+    let mut j = 2usize;
+    loop {
+        let jn = pow_ui(&from_usize_p(j, wp)?, s, wp)?;
+        let term = one.div(&jn, wp, RoundingMode::None)?;
+        if term.is_zero() || term.exponent() < -lim {
+            break;
+        }
+        z = z.add(&term, wp, RoundingMode::None)?;
+        j += 1;
+        if j > (1 << 20) {
+            return Err(Error::PrecisionRetryExhausted);
+        }
+    }
+    Ok(z)
+}
+
+/// Working precision for `B_{2k}` at dest `p`. `bernoulli_abs_log2_ub` is a
+/// bound on the magnitude, not a significant-bit count. When |B_{2k}| has more
+/// than `p` bits, work at p+64. When it is a short exact rational, work at
+/// enough bits to recover it (von Staudt–Clausen: `log2(d_n) < n`).
+fn even_bernoulli_zeta_wp(k: usize, p: usize) -> Result<usize, Error> {
+    let n = k.checked_mul(2).ok_or(Error::InvalidArgument)?;
+    let bits = bernoulli_abs_log2_ub(n);
+    let ident = bits.saturating_add(n).saturating_add(256);
+    Ok(round_p(if ident > p {
+        p.saturating_add(64)
+    } else {
+        ident
+    }))
+}
+
+/// `F = 2 (2k)! ζ(2k) / (2π)^{2k}` at `wp`, then the sign of `B_{2k}`.
+fn even_bernoulli_from_f(
+    f: ExactNumNumber,
+    k: usize,
+    wp: usize,
+    p: usize,
+) -> Result<ExactNumNumber, Error> {
+    let n = k.checked_mul(2).ok_or(Error::InvalidArgument)?;
+    let mut b = if (n as u128).saturating_mul(10) > (wp as u128).saturating_mul(7) {
+        let z = zeta_ui_asymp(n, wp)?;
+        f.mul(&z, wp, RoundingMode::None)?
+    } else {
+        let inv = zeta_inv_euler_product(n, wp)?;
+        f.div(&inv, wp, RoundingMode::None)?
+    };
+    if n.is_multiple_of(4) {
+        b = b.neg()?;
+    }
+    if wp != p {
+        b.set_precision(p, RoundingMode::ToEven)?;
+    }
+    Ok(b)
+}
+
+/// `B_{2k}` at `p` bits ToEven, from
+/// `B_{2k} = (-1)^{k+1} 2 (2k)! ζ(2k) / (2π)^{2k}`
+/// (Arb `arb_bernoulli_ui_zeta`: Euler product, or the short tail when `2k > 0.7 wp`).
+fn even_bernoulli_via_zeta(k: usize, p: usize) -> Result<ExactNumNumber, Error> {
+    if k == 0 {
+        return Err(Error::InvalidArgument);
+    }
+    let n = k.checked_mul(2).ok_or(Error::InvalidArgument)?;
+    let wp = even_bernoulli_zeta_wp(k, p)?;
+    let piwp = round_p(wp.saturating_add(2 * bitlen_usize(n)));
+    let mut cc = Consts::new()?;
+    let fac = factorial(n, piwp)?;
+    let pi = cc.pi_num(piwp, RoundingMode::None)?;
+    let two_pi = ExactNumNumber::from_word(2, piwp)?.mul(&pi, piwp, RoundingMode::None)?;
+    let pow = pow_ui(&two_pi, n, piwp)?;
+    let two = ExactNumNumber::from_word(2, wp)?;
+    let f = two
+        .mul(&fac, wp, RoundingMode::None)?
+        .div(&pow, wp, RoundingMode::None)?;
+    even_bernoulli_from_f(f, k, wp, p)
+}
+
+/// Performance banding only: split when the zeta-tail / Euler-product length
+/// would exceed this, so each band does one factorial and one term table.
+/// Not a correctness cap (P9): every `B_{2k}` is still computed at
+/// [`even_bernoulli_zeta_wp`]. 8192 covers the mid-`k` gap at p=65536
+/// (`e=12`, `J=4098`) in one extra band instead of hundreds of singleton
+/// factorials, which is what kept `digamma_half_at_high_p_from_error_bound`
+/// from finishing.
+const BERNOULLI_ZETA_BAND_J_MAX: usize = 8192;
+
+/// Fill `B_{2k}` for `k0..=k1` by walking `F(n)=2 n!/(2π)^n` down from
+/// `n=2 k1` (`F(n-2) = F(n) (2π)^2 / (n(n-1))`), one factorial at the top
+/// of each band. When `n ≤ 0.7 wp` the Euler product is walked (primes
+/// only, as in Arb `arb_bernoulli_ui_zeta`); otherwise the short zeta
+/// tail over every `j`. A `PrecisionRetryExhausted` from
+/// [`euler_product_limit`] ends the band rather than failing the fill.
+fn even_bernoulli_zeta_range(k0: usize, k1: usize, p: usize) -> Result<Vec<ExactNumNumber>, Error> {
+    if k0 == 0 || k0 > k1 {
+        return Err(Error::InvalidArgument);
+    }
+    let mut out: Vec<Option<ExactNumNumber>> = (0..=(k1 - k0)).map(|_| None).collect();
+    let mut cc = Consts::new()?;
+    let mut k_hi = k1;
+    while k_hi >= k0 {
+        // `wp(k)` is non-decreasing in `k`, so the band works at `wp(k_hi)`.
+        let wp = even_bernoulli_zeta_wp(k_hi, p)?;
+        let mut k_lo = k_hi;
+        while k_lo > k0 {
+            let nxt = k_lo - 1;
+            match euler_product_limit(2 * nxt, wp) {
+                Ok(j) if j <= BERNOULLI_ZETA_BAND_J_MAX => k_lo = nxt,
+                _ => break,
+            }
+        }
+        let n_hi = k_hi.checked_mul(2).ok_or(Error::InvalidArgument)?;
+        let n_lo = k_lo.checked_mul(2).ok_or(Error::InvalidArgument)?;
+        let piwp = round_p(wp.saturating_add(2 * bitlen_usize(n_hi)));
+        let fac = factorial(n_hi, piwp)?;
+        let pi = cc.pi_num(piwp, RoundingMode::None)?;
+        let two_pi = ExactNumNumber::from_word(2, piwp)?.mul(&pi, piwp, RoundingMode::None)?;
+        let two_pi_sq = two_pi.mul(&two_pi, piwp, RoundingMode::None)?;
+        let pow = pow_ui(&two_pi, n_hi, piwp)?;
+        let two = ExactNumNumber::from_word(2, wp)?;
+        let one = ExactNumNumber::from_word(1, wp)?;
+        let mut f = two
+            .mul(&fac, wp, RoundingMode::None)?
+            .div(&pow, wp, RoundingMode::None)?;
+        // Bloemen reverse iterator (FLINT/Arb): each stored power walks
+        // down by a multiply by `q^2`, so ζ(n) / 1/ζ(n) is not rebuilt.
+        let j_max = euler_product_limit(n_lo, wp)?;
+        // Same threshold as `even_bernoulli_from_f` / Arb: Euler product
+        // when `n ≤ 0.7 wp`, otherwise the short tail over every `j`.
+        let use_euler = (n_lo as u128).saturating_mul(10) <= (wp as u128).saturating_mul(7);
+        let primes = if use_euler { primes_upto(j_max) } else { Vec::new() };
+        let mut terms: Vec<ExactNumNumber> = Vec::new();
+        if use_euler {
+            for &q in &primes {
+                let qn = pow_ui(&from_usize_p(q as usize, wp)?, n_hi, wp)?;
+                terms.push(one.div(&qn, wp, RoundingMode::None)?);
+            }
+        } else {
+            for j in 2..=j_max {
+                let jn = pow_ui(&from_usize_p(j, wp)?, n_hi, wp)?;
+                terms.push(one.div(&jn, wp, RoundingMode::None)?);
+            }
+        }
+        let mut k = k_hi;
+        loop {
+            let mut b = if use_euler {
+                let mut inv = one.clone()?;
+                for t in &terms {
+                    let factor = one.sub(t, wp, RoundingMode::None)?;
+                    inv = inv.mul(&factor, wp, RoundingMode::None)?;
+                }
+                f.div(&inv, wp, RoundingMode::None)?
+            } else {
+                let mut z = one.clone()?;
+                for t in &terms {
+                    z = z.add(t, wp, RoundingMode::None)?;
+                }
+                f.mul(&z, wp, RoundingMode::None)?
+            };
+            if (2 * k).is_multiple_of(4) {
+                b = b.neg()?;
+            }
+            if wp != p {
+                b.set_precision(p, RoundingMode::ToEven)?;
+            }
+            out[k - k0] = Some(b);
+            if k == k_lo {
+                break;
+            }
+            let n = 2 * k;
+            let den =
+                from_usize_p(n, wp)?.mul(&from_usize_p(n - 1, wp)?, wp, RoundingMode::None)?;
+            f = f
+                .mul(&two_pi_sq, wp, RoundingMode::None)?
+                .div(&den, wp, RoundingMode::None)?;
+            if use_euler {
+                for (t, &q) in terms.iter_mut().zip(primes.iter()) {
+                    let q2 = from_usize_p((q as usize).saturating_mul(q as usize), wp)?;
+                    *t = t.mul(&q2, wp, RoundingMode::None)?;
+                }
+            } else {
+                for (i, t) in terms.iter_mut().enumerate() {
+                    let j2 = from_usize_p((i + 2) * (i + 2), wp)?;
+                    *t = t.mul(&j2, wp, RoundingMode::None)?;
+                }
+            }
+            k -= 1;
+        }
+        if k_lo == k0 {
+            break;
+        }
+        k_hi = k_lo - 1;
+    }
+    out.into_iter()
+        .map(|b| b.ok_or(Error::InvalidArgument))
+        .collect()
+}
+
 /// Exact even Bernoulli numbers, grown on demand, with p-bit roundings keyed by precision.
 ///
 /// Tangent numbers `T_k` are the odd zigzag numbers `A_{2k-1}` of the Seidel–Entringer
@@ -7102,8 +7412,13 @@ impl BernoulliCache {
     }
 
     /// Grows the p-bit roundings to at least `n` entries.
+    ///
+    /// Indices `k ≤ BERNOULLI_EXACT_K` come from the exact boustrophedon.
+    /// Larger `k` use the zeta series (`even_bernoulli_zeta_range`), so a high-p
+    /// Stirling plan is not capped by the O(K²) exact triangle.
     fn grow_rounded(&mut self, n: usize, p: usize) -> Result<(), Error> {
-        self.grow_exact(n)?;
+        let exact_n = n.min(BERNOULLI_EXACT_K);
+        self.grow_exact(exact_n)?;
         if !self.rounded.iter().any(|(q, _)| *q == p) {
             if self.rounded.len() >= BERNOULLI_P_SLOTS {
                 self.rounded.remove(0);
@@ -7116,9 +7431,14 @@ impl BernoulliCache {
             .iter_mut()
             .find(|(q, _)| *q == p)
             .ok_or(Error::InvalidArgument)?;
-        while slot.1.len() < n {
+        while slot.1.len() < exact_n {
             let (num, den) = exact.get(slot.1.len()).ok_or(Error::InvalidArgument)?;
             slot.1.push(num.div(den, p, RoundingMode::ToEven)?);
+        }
+        if slot.1.len() < n {
+            let k0 = slot.1.len() + 1;
+            let rest = even_bernoulli_zeta_range(k0, n, p)?;
+            slot.1.extend(rest);
         }
         Ok(())
     }
@@ -7785,6 +8105,39 @@ mod tests {
             }
             Ok(())
         })
+    }
+
+    /// The zeta path (Arb `arb_bernoulli_ui_zeta`) agrees with the exact cache
+    /// at p=256, including indices that later use only the zeta route.
+    #[test]
+    fn test_bernoulli_zeta_matches_exact_cache() -> Result<(), crate::Error> {
+        let p = 256;
+        with_even_bernoulli(80, p, |exact| {
+            for k in 20..=80 {
+                let z = even_bernoulli_via_zeta(k, p)?;
+                let e = &exact[k - 1];
+                assert!(z.cmp(e) == 0, "k={k}: zeta path differs from exact cache");
+            }
+            Ok(())
+        })
+    }
+
+    /// The Bloemen range walker agrees with the single-`k` zeta path, on
+    /// both the Euler-product side (`n ≤ 0.7 wp`) and the short-tail side.
+    #[test]
+    fn test_bernoulli_zeta_range_matches_single() -> Result<(), crate::Error> {
+        let p = 256;
+        for &(k0, k1) in &[(40, 80), (120, 140)] {
+            let range = even_bernoulli_zeta_range(k0, k1, p)?;
+            for k in k0..=k1 {
+                let z = even_bernoulli_via_zeta(k, p)?;
+                assert!(
+                    range[k - k0].cmp(&z) == 0,
+                    "k={k}: range walker differs from single-k zeta"
+                );
+            }
+        }
+        Ok(())
     }
 
     #[test]
