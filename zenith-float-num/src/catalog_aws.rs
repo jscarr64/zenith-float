@@ -110,7 +110,44 @@ fn is_odd_int(n: &ExactNum, p: usize) -> bool {
 }
 
 /// \(1/\Gamma(z)\) is zero at a non-positive integer; otherwise \(\Gamma(z)\).
+
+#[cfg(test)]
+mod aws_test_hooks {
+    use core::cell::Cell;
+    thread_local! {
+        pub static GAMMA_OR_POLE_CALLS: Cell<u64> = const { Cell::new(0) };
+        pub static MACLAURIN_K: Cell<usize> = const { Cell::new(0) };
+        pub static COUNTING: Cell<bool> = const { Cell::new(false) };
+    }
+    pub fn reset() {
+        GAMMA_OR_POLE_CALLS.with(|c| c.set(0));
+        MACLAURIN_K.with(|c| c.set(0));
+        COUNTING.with(|c| c.set(true));
+    }
+    pub fn stop() {
+        COUNTING.with(|c| c.set(false));
+    }
+    pub fn note_gamma() {
+        if COUNTING.with(|c| c.get()) {
+            GAMMA_OR_POLE_CALLS.with(|c| c.set(c.get().saturating_add(1)));
+        }
+    }
+    pub fn note_k(k: usize) {
+        if COUNTING.with(|c| c.get()) {
+            MACLAURIN_K.with(|c| c.set(k));
+        }
+    }
+    pub fn gamma_calls() -> u64 {
+        GAMMA_OR_POLE_CALLS.with(|c| c.get())
+    }
+    pub fn maclaurin_k() -> usize {
+        MACLAURIN_K.with(|c| c.get())
+    }
+}
+
 fn gamma_or_pole(z: &ExactNum, p: usize, cc: &mut Consts) -> Option<ExactNum> {
+    #[cfg(test)]
+    aws_test_hooks::note_gamma();
     if nonpos_int(z) {
         return None;
     }
@@ -1356,6 +1393,43 @@ fn maclaurin_s(
         }
         Some(zk.div(&ga.mul(&gb, wp, N), wp, N))
     };
+    // Later terms follow the 11.10.10–11 ratio
+    // t_{k+1}/t_k = −(z/2)^2 / ((k+1+ν/2)(k+1−ν/2)) (S1; S2 with 3/2).
+    // Forming each term from a fresh Γ pair is why modest z at p=8192
+    // missed the 120 s wall (the 168 T4 rows).
+    let step_s1 = |t: &ExactNum, k: usize| -> Option<ExactNum> {
+        if !finite(t) || t.is_zero() {
+            return None;
+        }
+        let kp1 = ExactNum::from_u64((k as u64).saturating_add(1), wp);
+        let d = ExactNum::add_ref(&kp1, &half_nu, wp, N).mul(
+            &ExactNum::sub_ref(&kp1, &half_nu, wp, N),
+            wp,
+            N,
+        );
+        if !finite(&d) || d.is_zero() {
+            return None;
+        }
+        let nxt = t.clone().mul(&z2, wp, N).neg().div(&d, wp, N);
+        finite(&nxt).then_some(nxt)
+    };
+    let three_half_s2 = ExactNum::from_u8(3, wp).div(&two(wp), wp, N);
+    let step_s2 = |t: &ExactNum, k: usize| -> Option<ExactNum> {
+        if !finite(t) || t.is_zero() {
+            return None;
+        }
+        let base = ExactNum::from_u64(k as u64, wp).add(&three_half_s2, wp, N);
+        let d = ExactNum::add_ref(&base, &half_nu, wp, N).mul(
+            &ExactNum::sub_ref(&base, &half_nu, wp, N),
+            wp,
+            N,
+        );
+        if !finite(&d) || d.is_zero() {
+            return None;
+        }
+        let nxt = t.clone().mul(&z2, wp, N).neg().div(&d, wp, N);
+        finite(&nxt).then_some(nxt)
+    };
     let mut t1 = form_s1(0, cc).unwrap_or_else(|| ExactNum::new(wp));
     let mut t2 = form_s2(0, cc).unwrap_or_else(|| ExactNum::new(wp));
     let mut k = 0usize;
@@ -1389,17 +1463,27 @@ fn maclaurin_s(
             let cancel = (peak - res_e).max(0);
             let budget = (wp as i64).saturating_sub(lost).saturating_sub(cancel);
             if good >= budget.saturating_sub(4) && good > 64 {
+                #[cfg(test)]
+                aws_test_hooks::note_k(k);
                 return Some(((s1, s2), good));
             }
             // Tight first wp: return a low good-bit count so Ziv can raise
             // it. None is a hard NaN (E_100(100), E_{500.5}(100)).
             if budget <= 64 {
+                #[cfg(test)]
+                aws_test_hooks::note_k(k);
                 return Some(((s1, s2), good.max(1)));
             }
         }
         k = k.checked_add(1)?;
-        t1 = form_s1(k, cc).unwrap_or_else(|| ExactNum::new(wp));
-        t2 = form_s2(k, cc).unwrap_or_else(|| ExactNum::new(wp));
+        #[cfg(test)]
+        aws_test_hooks::note_k(k);
+        t1 = step_s1(&t1, k - 1)
+            .or_else(|| form_s1(k, cc))
+            .unwrap_or_else(|| ExactNum::new(wp));
+        t2 = step_s2(&t2, k - 1)
+            .or_else(|| form_s2(k, cc))
+            .unwrap_or_else(|| ExactNum::new(wp));
     }
 }
 
@@ -3414,6 +3498,69 @@ mod aws_bounds {
             }
         }
         assert!(bad.is_empty(), "{} wrong:\n{}", bad.len(), bad.join("\n"));
+        Ok(())
+    }
+
+    /// 11.10.10–11 terms obey the ratio
+    /// t_{k+1}/t_k = −(z/2)^2 / ((k+1+ν/2)(k+1−ν/2)) (S1; S2 with 3/2).
+    /// Forming each term from two fresh Γ evaluations is why modest z at
+    /// p=8192 hits the 120 s wall (the 168 T4 rows). Only the k=0 pair
+    /// needs Γ; later terms are a multiply. A few Ziv evaluations times
+    /// four Γ is a few dozen calls at most, not four per term.
+    #[test]
+    fn aws_anger_weber_maclaurin_uses_term_ratio_not_fresh_gamma() -> Result<(), Error> {
+        let mut cc = Consts::new()?;
+        let p = 256usize;
+        let z = one(p);
+        let nu = half(p);
+        super::aws_test_hooks::reset();
+        let j = anger_j_word(&z, &nu, p, RoundingMode::ToEven, &mut cc);
+        let k = super::aws_test_hooks::maclaurin_k();
+        let g = super::aws_test_hooks::gamma_calls();
+        super::aws_test_hooks::stop();
+        assert!(finite(&j), "J_{{1/2}}(1) not finite");
+        assert!(k >= 1, "Maclaurin did not run (k={k})");
+        assert!(
+            g <= 32,
+            "fresh Γ per term: {g} gamma_or_pole calls for k={k} at p={p}"
+        );
+        super::aws_test_hooks::reset();
+        let e = weber_e_word(&z, &nu, p, RoundingMode::ToEven, &mut cc);
+        let k2 = super::aws_test_hooks::maclaurin_k();
+        let g2 = super::aws_test_hooks::gamma_calls();
+        super::aws_test_hooks::stop();
+        assert!(finite(&e), "E_{{1/2}}(1) not finite");
+        assert!(
+            g2 <= 32,
+            "Weber fresh Γ per term: {g2} gamma_or_pole calls for k={k2} at p={p}"
+        );
+        // Independent 80 dps mpmath golds, to lock the 11.10.10–11 ratio sign.
+        let gold_j = ExactNum::parse(
+            "0.8551653096792622201978427213237064028482194919742453755669841826772051592572938",
+            crate::Radix::Dec,
+            512,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        let gold_e = ExactNum::parse(
+            "0.099507542640043165373298116228777870379754773459578213242304799573698264486001132",
+            crate::Radix::Dec,
+            512,
+            RoundingMode::ToEven,
+            &mut cc,
+        );
+        let want_j = finish(gold_j, p, RoundingMode::ToEven);
+        let want_e = finish(gold_e, p, RoundingMode::ToEven);
+        assert_eq!(
+            j.compare(&want_j),
+            Some(0),
+            "J_{{1/2}}(1) p={p} got {j} want {want_j}"
+        );
+        assert_eq!(
+            e.compare(&want_e),
+            Some(0),
+            "E_{{1/2}}(1) p={p} got {e} want {want_e}"
+        );
         Ok(())
     }
 }
