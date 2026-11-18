@@ -207,10 +207,6 @@ pub(crate) fn series_term_cap(p: usize) -> usize {
 
 /// `None` if a dest-width mantissa can be reserved on this machine; otherwise a
 /// NaN pair with the existing allocation (or precision) error, before any work.
-///
-/// `#[inline(never)]`: in release, inlining this into `log_word` made dest 2^59
-/// `log` report `PrecisionRetryExhausted` instead of the probed `MemoryAllocation`.
-#[inline(never)]
 pub(crate) fn nan_if_dest_unallocatable(p: usize) -> Option<ExactComplex> {
     match crate::common::util::reserve_probe(round_p(p)) {
         Ok(()) => None,

@@ -3410,9 +3410,13 @@ fn fox_h_gauss(
     // A dest-64 exact dyadic like 1085102592571150095/2^{63} fits in u64
     // but must not attempt a ~2^{63}-parameter lift: fall back to the
     // residue series when the allocation cannot be reserved.
-    if Vec::<ExactNum>::new().try_reserve(lift_len).is_err() {
+    // Throwaway reserve: without observing the buffer, LLVM may legally elide
+    // try_reserve and attempt the lift. black_box keeps the failure observable.
+    let mut lift_probe: Vec<ExactNum> = Vec::new();
+    if lift_probe.try_reserve(lift_len).is_err() {
         return None;
     }
+    core::hint::black_box(&lift_probe);
     let mut a_tilde = Vec::new();
     for (ai, &ai_int) in a.iter().zip(a_int.iter()) {
         let ai_us = usize::try_from(ai_int).ok()?;
