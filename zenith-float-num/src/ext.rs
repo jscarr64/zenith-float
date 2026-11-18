@@ -4358,7 +4358,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM / descending Landen; cap `JACOBI_AGM_MAX = 128`. \(m=0\) is trig; \(m=1\) is hyperbolic.
+    /// - Algorithm: AGM / descending Landen until `|c|` is below the working-precision bound. \(m=0\) is trig; \(m=1\) is hyperbolic.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no (identity golds; GNU MPFR has no Jacobi `sn`).
     ///
@@ -4389,7 +4389,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4419,7 +4419,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4449,7 +4449,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4479,7 +4479,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4509,7 +4509,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4539,7 +4539,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4569,7 +4569,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4599,7 +4599,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4629,7 +4629,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4659,7 +4659,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4689,7 +4689,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4719,7 +4719,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: AGM amplitude; cap `JACOBI_AGM_MAX = 128`.
+    /// - Algorithm: AGM amplitude until `|c|` is below the working-precision bound.
     /// - Bound: Ziv correct-rounding (`MAX_PREC_RETRY`).
     /// - MPFR oracle: no.
     ///
@@ -4749,7 +4749,7 @@ Accuracy: correctly-rounded",
     ///
     /// # Precision
     ///
-    /// - Algorithm: three-term recurrence at `p + O(n)` bits. Cap `ORTHOPOLY_N_MAX`.
+    /// - Algorithm: three-term recurrence at `p + O(n)` bits. Three-term recurrence; degree is not capped.
     /// - Bound: working-precision recurrence (not a Ziv leaf).
     /// - MPFR oracle: no.
     ///

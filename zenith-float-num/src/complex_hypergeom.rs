@@ -90,19 +90,11 @@ fn any_nan(args: &[&ExactComplex]) -> bool {
 }
 
 fn as_i32_real_int(z: &ExactComplex, p: usize) -> Option<i32> {
+    let _ = p;
     if !z.im().is_zero() || !z.re().is_int() {
         return None;
     }
-    if z.re().is_zero() {
-        return Some(0);
-    }
-    for n in 1i32..=10_000 {
-        let w = ExactNum::from_u32(n as u32, p);
-        if z.re().abs_cmp(&w) == Some(0) {
-            return Some(if z.re().is_negative() { -n } else { n });
-        }
-    }
-    None
+    z.re().to_i32(RoundingMode::ToZero).ok()
 }
 
 fn terminating_neg_int(v: &ExactComplex, p: usize) -> bool {
@@ -1006,6 +998,15 @@ impl ExactComplex {
 mod tests {
     use super::*;
     use core::ops::Neg;
+
+    #[test]
+    fn test_as_i32_real_int_beyond_10000() {
+        let p = 64;
+        let z = ExactComplex::new(ExactNum::from_u32(10_001, p), ExactNum::new(p));
+        assert_eq!(as_i32_real_int(&z, p), Some(10_001));
+        let zn = ExactComplex::new(ExactNum::from_i64(-10_001, p), ExactNum::new(p));
+        assert_eq!(as_i32_real_int(&zn, p), Some(-10_001));
+    }
 
     fn near(a: &ExactNum, b: &ExactNum, p: usize, slack: Exponent) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();

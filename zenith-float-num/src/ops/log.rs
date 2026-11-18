@@ -464,7 +464,9 @@ impl ExactNumNumber {
     }
 }
 
-/// Largest numerator / denominator tried by the exact-result check of [`ExactNumNumber::log`].
+/// Historical bound; the exact-dyadic log check is now limited only by
+/// allocatable working precision, not this constant.
+#[allow(dead_code)]
 const LOG_EXACT_MAX: usize = 4096;
 
 /// Returns true when `base^r == x` exactly, for a candidate `r = a / 2^j` with small `a`, `j`.
@@ -485,11 +487,11 @@ fn log_is_exact_dyadic(
         }
         t.set_exponent(t.exponent() + 1);
     }
-    if t.exponent() > 13 {
-        return Ok(false);
-    }
-    let a = t.int_as_usize()?;
-    if a == 0 || a > LOG_EXACT_MAX {
+    let a = match t.int_as_usize() {
+        Ok(a) => a,
+        Err(_) => return Ok(false),
+    };
+    if a == 0 {
         return Ok(false);
     }
     let lhs_bits = base
@@ -500,8 +502,15 @@ fn log_is_exact_dyadic(
         .mantissa_max_bit_len()
         .saturating_mul(den)
         .saturating_add(WORD_BIT_SIZE);
-    let lhs = base.powi(a, lhs_bits, RoundingMode::None)?;
-    let rhs = x.powi(den, rhs_bits, RoundingMode::None)?;
+    if lhs_bits > crate::defs::MAX_PRECISION || rhs_bits > crate::defs::MAX_PRECISION {
+        return Ok(false);
+    }
+    let Ok(lhs) = base.powi(a, lhs_bits, RoundingMode::None) else {
+        return Ok(false);
+    };
+    let Ok(rhs) = x.powi(den, rhs_bits, RoundingMode::None) else {
+        return Ok(false);
+    };
     if r.is_negative() {
         let prod = lhs.mul(&rhs, lhs_bits + rhs_bits, RoundingMode::None)?;
         Ok(prod.cmp(&ExactNumNumber::from_word(1, WORD_BIT_SIZE)?) == 0)
@@ -525,6 +534,18 @@ mod tests {
 
     #[cfg(not(feature = "std"))]
     use alloc::vec::Vec;
+
+    #[test]
+    fn test_log_exact_dyadic_beyond_old_4096_cap() -> Result<(), crate::Error> {
+        // 2^4097 is an exact power; the old LOG_EXACT_MAX = 4096 refused this
+        // numerator and skipped the exact-result flag.
+        let p = 64;
+        let two = ExactNumNumber::from_word(2, p)?;
+        let x = two.clone()?.ldexp(4096, p, RoundingMode::None)?; // 2 * 2^4096 = 2^4097
+        let r = ExactNumNumber::from_word(4097, p)?;
+        assert!(log_is_exact_dyadic(&x, &two, &r)?);
+        Ok(())
+    }
 
     #[test]
     fn test_logarithm() -> Result<(), crate::Error> {

@@ -31,7 +31,9 @@ fn jacobi_ratio_m_one(m: &ExactNumNumber, p: usize) -> Result<Option<ExactNumNum
     }
 }
 
-/// AGM / descending Landen steps for `am`, `sn`, `cn`, `dn`.
+/// Historical public constant; AGM now runs until `|c|` is below the
+/// working-precision bound, or stalls.
+#[allow(dead_code)]
 pub const JACOBI_AGM_MAX: u32 = 128;
 
 impl ExactNumNumber {
@@ -556,7 +558,7 @@ fn jacobi_agm(
     aa.push(one.clone()?);
     cc_seq.push(m.sqrt(p, RoundingMode::None)?);
     let mut n = 0u32;
-    while n < JACOBI_AGM_MAX {
+    loop {
         if agm_small(&cc_seq[n as usize], &aa[n as usize], p)? {
             break;
         }
@@ -570,13 +572,14 @@ fn jacobi_agm(
         let a_next = ai
             .add(&b, p, RoundingMode::None)?
             .div(&two, p, RoundingMode::None)?;
+        // Quadratic AGM: a stall is a |c| that does not shrink.
+        if !cc_seq[n as usize].is_zero() && c_next.abs()?.cmp(&cc_seq[n as usize].abs()?) >= 0 {
+            return Err(Error::PrecisionRetryExhausted);
+        }
         b = t;
         aa.push(a_next);
         cc_seq.push(c_next);
-        n += 1;
-    }
-    if n == JACOBI_AGM_MAX && !agm_small(&cc_seq[n as usize], &aa[n as usize], p)? {
-        return Err(Error::InvalidArgument);
+        n = n.checked_add(1).ok_or(Error::PrecisionRetryExhausted)?;
     }
     let last = aa.len() - 1;
     let shift = Exponent::try_from(last).map_err(|_| Error::InvalidArgument)?;

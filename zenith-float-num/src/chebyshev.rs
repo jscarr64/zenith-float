@@ -7,7 +7,8 @@ use crate::RoundingMode;
 use crate::NAN;
 use alloc::vec::Vec;
 
-/// Maximum number of Chebyshev coefficients [`chebyshev_coeffs`] will compute.
+/// Historical public constant; [`chebyshev_coeffs`] is no longer refused at this degree.
+#[allow(dead_code)]
 pub const CHEBYSHEV_MAX_DEGREE: usize = 256;
 
 fn work_p(p: usize) -> usize {
@@ -95,7 +96,7 @@ fn node_cos_j(
 /// `c_0 = (1/n) Σ f(x_k)`, `c_j = (2/n) Σ f(x_k) T_j(t_k)` for `j ≥ 1`,
 /// so `f(x) ≈ Σ_{j=0}^{n-1} c_j T_j(t(x))` with `t` the affine map to `[-1, 1]`.
 ///
-/// `None` if `n` is 0 or greater than [`CHEBYSHEV_MAX_DEGREE`], or if the
+/// `None` if `n` is 0 or does not fit in `u32`, or if the
 /// interval is not a finite `a < b`.
 pub fn chebyshev_coeffs<F>(
     mut f: F,
@@ -109,7 +110,7 @@ pub fn chebyshev_coeffs<F>(
 where
     F: FnMut(&ExactNum, usize, RoundingMode, &mut Consts) -> ExactNum,
 {
-    if n == 0 || n > CHEBYSHEV_MAX_DEGREE {
+    if n == 0 || n > u32::MAX as usize {
         return None;
     }
     if !finite(&a) || !finite(b) || a.compare(b) != Some(-1) {
@@ -366,6 +367,20 @@ mod tests {
 
         assert!(
             chebyshev_coeffs(|x, p, rm, cc| x.exp(p, rm, cc), 0, a, &b, p, rm, &mut cc).is_none()
+        );
+        // Past the old CHEBYSHEV_MAX_DEGREE = 256 refusal.
+        let big = chebyshev_coeffs(
+            |_x, p, _rm, _cc| ExactNum::from_u8(1, p),
+            CHEBYSHEV_MAX_DEGREE + 1,
+            ExactNum::from_i64(-1, p),
+            &b,
+            p,
+            rm,
+            &mut cc,
+        );
+        assert_eq!(
+            big.as_ref().map(|c| c.len()),
+            Some(CHEBYSHEV_MAX_DEGREE + 1)
         );
         assert!(chebyshev_error_bound(&c, p).compare(&ExactNum::from_u8(5, p)) == Some(0));
         Ok(())
