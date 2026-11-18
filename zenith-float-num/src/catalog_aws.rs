@@ -2015,7 +2015,6 @@ fn anger_a_laplace(
     Some((val, good))
 }
 
-
 /// ∫_0^τ e^{-z u} u^k du for k=0..=kmax, from the all-positive series
 /// J_k = e^{-zτ} τ^{k+1} Σ_{n=0}^∞ (zτ)^n / [(k+1)⋯(k+1+n)].
 /// Returns midpoints and a per-index half-width enclosure.
@@ -2141,11 +2140,7 @@ fn anger_a_u_head(
             let even = ExactNum::from_u64((p as u64).saturating_mul(2), wp);
             g = g.mul(&ExactNum::sub_ref(&nu2, &even.sqr(wp, N), wp, N), wp, N);
         }
-        let ak_num = if n.is_multiple_of(2) {
-            f.clone()
-        } else {
-            nu.clone().neg().mul(&g, wp, N)
-        };
+        let ak_num = if n.is_multiple_of(2) { f.clone() } else { nu.clone().neg().mul(&g, wp, N) };
         if !finite(&ak_num) || fac.is_zero() {
             return None;
         }
@@ -2293,10 +2288,7 @@ fn derivs_w_alpha(
             .mul(&two(wp), wp, N)
             .mul(mid, wp, N)
             .mul(&d[n], wp, N);
-        let coeff2 = two(wp)
-            .mul(alpha, wp, N)
-            .sub(&n1, wp, N)
-            .mul(&nn, wp, N);
+        let coeff2 = two(wp).mul(alpha, wp, N).sub(&n1, wp, N).mul(&nn, wp, N);
         let t2 = coeff2.mul(&d[n - 1], wp, N);
         let nxt = t1.add(&t2, wp, N).div(&w, wp, N);
         if !finite(&nxt) {
@@ -2317,13 +2309,13 @@ fn h_value(nu: &ExactNum, mid: &ExactNum, wp: usize, cc: &mut Consts) -> Option<
     if !p.is_positive() {
         return None;
     }
-    let pow = if nu.is_zero() {
-        one(wp)
-    } else {
-        p.pow(nu, wp, N, cc)
-    };
+    let pow = if nu.is_zero() { one(wp) } else { p.pow(nu, wp, N, cc) };
     let h = pow.div(&s, wp, N);
-    if finite(&h) { Some(h) } else { None }
+    if finite(&h) {
+        Some(h)
+    } else {
+        None
+    }
 }
 
 /// Taylor coefficients c_k = h^{(k)}(mid)/k! of the Watson amplitude.
@@ -2353,10 +2345,10 @@ fn h_taylor_coeffs(
     for n in 2..=nmax {
         let term_s = nu.clone().neg().mul(&w_half[n - 1], wp, N);
         let n1 = ExactNum::from_u64(n as u64 - 1, wp);
-        let term_u = mid
-            .clone()
-            .mul(&w_inv[n - 1], wp, N)
-            .add(&n1.mul(&w_inv[n - 2], wp, N), wp, N);
+        let term_u =
+            mid.clone()
+                .mul(&w_inv[n - 1], wp, N)
+                .add(&n1.mul(&w_inv[n - 2], wp, N), wp, N);
         let ln = term_s.sub(&term_u, wp, N);
         if !finite(&ln) {
             return None;
@@ -2395,11 +2387,7 @@ fn h_taylor_coeffs(
         if k >= 2 {
             fac = fac.mul(&ExactNum::from_u64(k as u64, wp), wp, N);
         }
-        let ck = if k <= 1 {
-            hk.clone()
-        } else {
-            hk.clone().div(&fac, wp, N)
-        };
+        let ck = if k <= 1 { hk.clone() } else { hk.clone().div(&fac, wp, N) };
         if !finite(&ck) {
             return None;
         }
@@ -2460,7 +2448,9 @@ fn exp_uk_panel(
         let kk = ExactNum::from_u64(k as u64, wp);
         // L_k = (α^k - e^{-z(b-a)} β^k)/z + (k/z) L_{k-1}
         let num = a_pow.clone().sub(&e_w.clone().mul(&b_pow, wp, N), wp, N);
-        l = num.div(z, wp, N).add(&kk.div(z, wp, N).mul(&l, wp, N), wp, N);
+        l = num
+            .div(z, wp, N)
+            .add(&kk.div(z, wp, N).mul(&l, wp, N), wp, N);
         if !finite(&l) {
             return None;
         }
@@ -2482,12 +2472,7 @@ fn exp_uk_panel(
     Some((out, rem))
 }
 
-fn pick_u_end(
-    nu: &ExactNum,
-    z: &ExactNum,
-    wp: usize,
-    cc: &mut Consts,
-) -> Option<ExactNum> {
+fn pick_u_end(nu: &ExactNum, z: &ExactNum, wp: usize, cc: &mut Consts) -> Option<ExactNum> {
     let target = one(wp).ldexp(-((wp as i64) + 8), wp, N);
     let ln2 = two(wp).ln(wp, N, cc);
     let mut u = ExactNum::from_u64((wp as u64).saturating_add(16), wp)
@@ -2576,7 +2561,9 @@ fn anger_a_u_panel(
     let _ = z_dn.set_precision(wp, DN);
     let mut a_dn = a.clone();
     let _ = a_dn.set_precision(wp, DN);
-    let e_a = ExactNum::mul_ref(&z_dn, &a_dn, wp, DN).neg().exp(wp, UP, cc);
+    let e_a = ExactNum::mul_ref(&z_dn, &a_dn, wp, DN)
+        .neg()
+        .exp(wp, UP, cc);
     let hlen = ExactNum::sub_ref(b, a, wp, UP);
     let crem = hrem.mul(&e_a, wp, UP).mul(&hlen, wp, UP);
     let rem = crem.add(&mrem, wp, UP);
@@ -2617,11 +2604,7 @@ fn anger_a_u_path(
         let mut stack: Vec<(ExactNum, ExactNum)> = Vec::new();
         // Initial grid: width min(1/5, left) so mid > radius is possible.
         let fifth = one(wp).div(&ExactNum::from_u8(5, wp), wp, N);
-        let mut h = if left.abs_cmp(&fifth) == Some(-1) {
-            left.clone()
-        } else {
-            fifth.clone()
-        };
+        let mut h = if left.abs_cmp(&fifth) == Some(-1) { left.clone() } else { fifth.clone() };
         if !h.is_positive() {
             h = fifth;
         }
@@ -2659,11 +2642,7 @@ fn anger_a_u_path(
             }
         }
     }
-    let u_tail = if u_end.abs_cmp(&tau) == Some(-1) {
-        tau.clone()
-    } else {
-        u_end
-    };
+    let u_tail = if u_end.abs_cmp(&tau) == Some(-1) { tau.clone() } else { u_end };
     let tb = h_real_tail(nu, z, &u_tail, wp, cc)?;
     rem_acc = rem_acc.add(&tb, wp, UP);
     if !finite(&acc) || !finite(&rem_acc) {
@@ -2682,7 +2661,6 @@ fn anger_a_u_path(
     }
     Some((val, good))
 }
-
 
 fn anger_a(nu: &ExactNum, z: &ExactNum, wp: usize, cc: &mut Consts) -> Option<(ExactNum, i64)> {
     if let Some((v, g)) = anger_a_laplace(nu, z, wp, cc) {
@@ -3253,10 +3231,7 @@ mod aws_bounds {
                 .expect("A_{1/2}(1000) must come from a large-|z| A_ν path");
             let tight = g >= (wp as i64).saturating_sub(64);
             assert!(finite(&a), "A_{{1/2}}(1000) not finite at wp={wp}");
-            assert!(
-                tight,
-                "A_{{1/2}}(1000) rem not tight at wp={wp}, good={g}"
-            );
+            assert!(tight, "A_{{1/2}}(1000) rem not tight at wp={wp}, good={g}");
         }
         Ok(())
     }
@@ -3309,9 +3284,7 @@ mod aws_bounds {
             let want_e = finish(gold_e.clone(), p, rm);
             let got_e = z.weber_e(&ExactNum::new(p), p, rm, &mut cc);
             if got_e.compare(&want_e) != Some(0) {
-                bad.push(format!(
-                    "E_0(1000) p={p} {rm:?} got {got_e} want {want_e}"
-                ));
+                bad.push(format!("E_0(1000) p={p} {rm:?} got {got_e} want {want_e}"));
             }
         }
         {
@@ -3328,9 +3301,7 @@ mod aws_bounds {
             let want_e = finish(gold_e.clone(), p, rm);
             let got_e = z.weber_e(&ExactNum::new(p), p, rm, &mut cc);
             if got_e.compare(&want_e) != Some(0) {
-                bad.push(format!(
-                    "E_0(1000) p={p} {rm:?} got {got_e} want {want_e}"
-                ));
+                bad.push(format!("E_0(1000) p={p} {rm:?} got {got_e} want {want_e}"));
             }
         }
         assert!(
