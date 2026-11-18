@@ -437,9 +437,11 @@ impl ExactComplex {
         ziv_complex(round_p(p), rm, |pw| self.gamma_at(pw, cc))
     }
 
-    /// Principal \(\ln(\Gamma(z))\): the principal logarithm of \(\Gamma(z)\), imaginary part in
-    /// \((-\pi,\pi]\). (This differs from the analytic `loggamma` of mpmath by \(2\pi i k\).)
-    /// Poles → NaN.
+    /// Continuous log-gamma (Arb / FLINT `acb_lgamma`; Jeff 2026-11-18 12:14 CT):
+    /// Stirling plus a branch-corrected log of the rising factorial, and the
+    /// reflection formula with `log_sin_pi` when \(\operatorname{Re} z<0\).
+    /// The imaginary part may leave \((-\pi,\pi]\) (it differs from the principal
+    /// logarithm of \(\Gamma(z)\) by \(2\pi i k\)). Poles → NaN.
     ///
     /// # Precision
     ///
@@ -462,33 +464,7 @@ impl ExactComplex {
         if is_nonpos_integer(self) {
             return nan_pair(Error::InvalidArgument);
         }
-        ziv_complex(round_p(p), rm, |pw| {
-            // The shifted Stirling sum yields the analytic continuation (mpmath `loggamma`), whose
-            // imaginary part can leave (−π, π]; reduce it to the documented principal
-            // ln(Γ(z)): subtract 2π·floor((Im + π)/(2π)).
-            let v = self.ln_gamma_at(pw, cc);
-            let im = v.im();
-            if im.is_nan() {
-                return v;
-            }
-            let pi = cc.pi(pw, RoundingMode::None);
-            let two_pi = cc
-                .pi(pw, RoundingMode::None)
-                .ldexp(1, pw, RoundingMode::None);
-            let k = pi
-                .add(im, pw, RoundingMode::None)
-                .div(&two_pi, pw, RoundingMode::None)
-                .floor();
-            if k.is_zero() {
-                return v;
-            }
-            let (re, v_im) = v.into_parts();
-            let im =
-                k.mul(&two_pi, pw, RoundingMode::None)
-                    .neg()
-                    .add(&v_im, pw, RoundingMode::None);
-            ExactComplex::new(re, im)
-        })
+        ziv_complex(round_p(p), rm, |pw| self.ln_gamma_at(pw, cc))
     }
 
     /// Digamma \(\psi(z)=\Gamma'/\Gamma\). Poles at non-positive integers → NaN.
@@ -981,19 +957,73 @@ impl ExactComplex {
         g.div(&acc, p, RoundingMode::None)
     }
 
+    /// Continuous \(\log(\sin(\pi z))\) as in Arb `acb_log_sin_pi`.
+    /// For \(\operatorname{Im} z<0\): \(i\pi(z-1/2)-\ln 2+\log(1-e^{-2i\pi z})\);
+    /// otherwise (including the real cut): the conjugate form with the signs flipped.
+    fn log_sin_pi(z: &Self, p: usize, cc: &mut Consts) -> Self {
+        let pi = pi_c(p, cc);
+        let two_pi = two_c(p).mul(&pi, p, RoundingMode::None);
+        let ln2 = ExactComplex::from_real(cc.ln_2(p, RoundingMode::None), p);
+        let i = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(1, p));
+        let zmh = ExactComplex::sub_ref(z, &half_c(p), p, RoundingMode::None);
+        let i_pi = i.mul(&pi, p, RoundingMode::None);
+        if z.im().is_negative() {
+            let phase = i_pi.mul(&zmh, p, RoundingMode::None);
+            let w = i
+                .mul(&two_pi, p, RoundingMode::None)
+                .neg()
+                .mul(z, p, RoundingMode::None)
+                .exp(p, RoundingMode::None, cc);
+            phase.sub(&ln2, p, RoundingMode::None).add(
+                &w.neg().log1p(p, RoundingMode::None, cc),
+                p,
+                RoundingMode::None,
+            )
+        } else {
+            let phase = i_pi.neg().mul(&zmh, p, RoundingMode::None);
+            let w = i
+                .mul(&two_pi, p, RoundingMode::None)
+                .mul(z, p, RoundingMode::None)
+                .exp(p, RoundingMode::None, cc);
+            phase.sub(&ln2, p, RoundingMode::None).add(
+                &w.neg().log1p(p, RoundingMode::None, cc),
+                p,
+                RoundingMode::None,
+            )
+        }
+    }
+
+    /// Principal \(\ln\) of `acc`, plus \(2\pi i k\) so the argument matches
+    /// the sum of principal args of the rising-factorial factors (Arb).
+    fn ln_rising_from_product(acc: &Self, arg_sum: &ExactNum, p: usize, cc: &mut Consts) -> Self {
+        let prin = acc.ln(p, RoundingMode::None, cc);
+        let two_pi = cc.pi(p, RoundingMode::None).ldexp(1, p, RoundingMode::None);
+        let delta = ExactNum::sub_ref(arg_sum, prin.im(), p, RoundingMode::None).div(
+            &two_pi,
+            p,
+            RoundingMode::None,
+        );
+        let half = ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None);
+        let k = delta.add(&half, p, RoundingMode::None).floor();
+        if k.is_zero() {
+            return prin;
+        }
+        let (re, im) = prin.into_parts();
+        let im = k
+            .mul(&two_pi, p, RoundingMode::None)
+            .add(&im, p, RoundingMode::None);
+        ExactComplex::new(re, im)
+    }
+
     fn ln_gamma_at(&self, p: usize, cc: &mut Consts) -> Self {
         if let Some(n) = self.small_pos_int(p) {
             return factorial_um1_work(n, p).ln(p, RoundingMode::None, cc);
         }
         if !re_positive(self) && !self.re().is_zero() {
-            let piz = pi_c(p, cc).mul(self, p, RoundingMode::None);
-            let ln_sin = piz
-                .sin(p, RoundingMode::None, cc)
-                .ln(p, RoundingMode::None, cc);
             let omz = ExactComplex::one(p).sub(self, p, RoundingMode::None);
             return pi_c(p, cc)
                 .ln(p, RoundingMode::None, cc)
-                .sub(&ln_sin, p, RoundingMode::None)
+                .sub(&Self::log_sin_pi(self, p, cc), p, RoundingMode::None)
                 .sub(&omz.ln_gamma_positive(p, cc), p, RoundingMode::None);
         }
         self.ln_gamma_positive(p, cc)
@@ -1003,14 +1033,20 @@ impl ExactComplex {
         let one = ExactComplex::one(p);
         let mut z = self.clone();
         // Rising factorial z(z+1)⋯(z+n−1), the same product `gamma_positive`
-        // already forms. Summing n principal logs was thousands of `ln` calls
-        // at dest p=8192 (Harper T4 S3 timed out at 120 s on modest |z|).
-        // One `ln` of the product stays well inside EXPONENT_MAX; any 2πi k
-        // between `ln(product)` and the sum of logs is removed by the
-        // principal-branch reduction in `ln_gamma_word`.
+        // already forms. One principal `ln` of the product plus a \(2\pi i k\)
+        // correction from the sum of factor arguments (cheap atan2) is the
+        // branch-corrected log; summing full-precision `ln(z+k)` timed out
+        // the 120 s harness at dest p=8192 (Harper T4 S3).
         let mut acc = ExactComplex::one(p);
+        let mut arg_sum = ExactNum::new(p);
         let (terms, k) = gamma_stirling_plan(p);
         let shifted = shift_while_small(&mut z, p, k, shift_cap(k), |z| {
+            arg_sum = ExactNum::add_ref(
+                &arg_sum,
+                &z.im().atan2(z.re(), p, RoundingMode::None, cc),
+                p,
+                RoundingMode::None,
+            );
             acc = acc.mul(z, p, RoundingMode::None);
             *z = ExactComplex::add_ref(z, &one, p, RoundingMode::None);
             Ok(())
@@ -1019,7 +1055,11 @@ impl ExactComplex {
             return nan_pair(e);
         }
         let lg = z.ln_gamma_stirling_with(p, terms, cc);
-        lg.sub(&acc.ln(p, RoundingMode::None, cc), p, RoundingMode::None)
+        lg.sub(
+            &Self::ln_rising_from_product(&acc, &arg_sum, p, cc),
+            p,
+            RoundingMode::None,
+        )
     }
 
     fn ln_gamma_stirling_with(&self, p: usize, terms: usize, cc: &mut Consts) -> Self {
@@ -1199,6 +1239,7 @@ impl ExactComplex {
 mod tests {
     use super::*;
     use core::ops::Neg;
+    use core::str::FromStr;
 
     fn near_bits(a: &ExactNum, b: &ExactNum, p: usize, slack: Exponent) -> bool {
         let d = ExactNum::sub_ref(a, b, p, RoundingMode::None).abs();
@@ -1778,9 +1819,51 @@ mod tests {
         Ok(())
     }
 
+    /// Continuous log-gamma follows Arb `acb_lgamma` (Jeff 2026-11-18 12:14 CT),
+    /// not the principal logarithm of Γ(z). ln_gamma(10i) Im is 12.232…, not
+    /// −0.334…; ln_gamma(−2.5) Im is −3π, not +π.
+    #[test]
+    fn zf_ln_gamma_follows_arb_continuous() -> Result<(), crate::Error> {
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        for p in [64usize, 256] {
+            let z = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(10, p));
+            let lg = z.ln_gamma(p, r, &mut cc);
+            let want_re = ExactNum::from_str("-15.94031728124131629254188290707618")?;
+            let want_im = ExactNum::from_str("12.23211664743500407478325312857787")?;
+            assert!(!lg.is_nan(), "ln_gamma(10i) p={p} NaN");
+            assert!(near(lg.re(), &want_re, 64), "p={p} 10i re {:?}", lg.re());
+            assert!(near(lg.im(), &want_im, 64), "p={p} 10i im {:?}", lg.im());
+
+            let z = ExactComplex::new(ExactNum::from_i8(-2, p), ExactNum::from_u8(1, p));
+            let lg = z.ln_gamma(p, r, &mut cc);
+            let want_re = ExactNum::from_str("-1.80221574579887918089421255884613")?;
+            let want_im = ExactNum::from_str("-6.90657618204376186821422303871456")?;
+            assert!(near(lg.re(), &want_re, 64), "p={p} -2+i re {:?}", lg.re());
+            assert!(near(lg.im(), &want_im, 64), "p={p} -2+i im {:?}", lg.im());
+
+            let z = ExactComplex::from_real(
+                ExactNum::from_i8(-5, p).div(&ExactNum::from_u8(2, p), p, RoundingMode::None),
+                p,
+            );
+            let lg = z.ln_gamma(p, r, &mut cc);
+            let want_re = ExactNum::from_str("-0.05624371649767405067259453009765")?;
+            let three_pi =
+                cc.pi(p, RoundingMode::None)
+                    .mul(&ExactNum::from_u8(3, p), p, RoundingMode::None);
+            assert!(near(lg.re(), &want_re, 64), "p={p} -2.5 re {:?}", lg.re());
+            assert!(
+                near(lg.im(), &three_pi.neg(), 64),
+                "p={p} -2.5 im {:?} want -3π",
+                lg.im()
+            );
+        }
+        Ok(())
+    }
+
     /// `ln Γ(z)` at dest 8192 on a modest argument must not walk thousands of
     /// individual `ln(z+k)` steps (Harper T4 S3 timed out at 120 s). The value
-    /// is the principal log of `Γ(z)`.
+    /// is Arb's continuous log-gamma (Jeff 2026-11-18 12:14 CT).
     #[test]
     fn zf_ln_gamma_modest_z_at_p8192_finishes() -> Result<(), crate::Error> {
         let p = 8192;
@@ -1800,11 +1883,19 @@ mod tests {
                 t0.elapsed()
             );
             assert!(!lg.is_nan(), "ln_gamma NaN: {lg:?}");
-            let want = z.gamma(p, rm, &mut cc).ln(p, rm, &mut cc);
-            assert!(
-                cnear_bits(&lg, &want, p, 4),
-                "ln_gamma {lg:?} vs ln(gamma) {want:?}"
-            );
+            // i and 1+i agree with principal ln(Γ); 10i does not (Im ≈ 12.232).
+            if z.im().compare(&ExactNum::from_u8(10, p)) == Some(0) && z.re().is_zero() {
+                let want_im = ExactNum::from_str("12.23211664743500407478325312857787").unwrap();
+                let want_re = ExactNum::from_str("-15.94031728124131629254188290707618").unwrap();
+                assert!(near(lg.re(), &want_re, 64), "10i re {:?}", lg.re());
+                assert!(near(lg.im(), &want_im, 64), "10i im {:?}", lg.im());
+            } else {
+                let want = z.gamma(p, rm, &mut cc).ln(p, rm, &mut cc);
+                assert!(
+                    cnear_bits(&lg, &want, p, 4),
+                    "ln_gamma {lg:?} vs ln(gamma) {want:?}"
+                );
+            }
         }
         Ok(())
     }
