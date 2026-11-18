@@ -1496,6 +1496,17 @@ impl ExactComplex {
     }
 
     fn elliptic_pi_complete_at(&self, m: &Self, p: usize, dest: usize, cc: &mut Consts) -> Self {
+        // DLMF 19.6.3 / 19.2.8: Π(n, 0) = π / (2 √(1−n)).
+        if is_c_zero(m) {
+            let on = one_minus(self, p);
+            let s = on.sqrt(p, rm(), cc);
+            if s.is_nan() || is_c_zero(&s) {
+                return nan_pair(Error::InvalidArgument);
+            }
+            let half_pi = ExactComplex::from_real(cc.pi(p, rm()), p)
+                .div(&c_u32(2, p), p, rm());
+            return half_pi.div(&s, p, rm());
+        }
         let om_tmp = one_minus(m, p);
         let on_tmp = one_minus(self, p);
         let on_cut = (is_real_c(&om_tmp) && om_tmp.re().is_negative())
@@ -1739,6 +1750,35 @@ mod tests {
             got.im(),
             want.im()
         );
+        Ok(())
+    }
+
+    /// Official S5 dest 65536 rows Π(−2, 0) and Π(1+i, 0) must use the
+    /// closed form and finish immediately, agreeing with dest 64.
+    #[test]
+    fn zf_pi_complete_m0_at_p65536_is_instant() -> Result<(), crate::Error> {
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let p64 = 64usize;
+        let p = 65536usize;
+        let t0 = std::time::Instant::now();
+        let n1 = ExactComplex::from_real(ExactNum::from_u8(2, p).neg(), p);
+        let m0 = ExactComplex::zero(p);
+        let g1 = n1.elliptic_pi_complete(&m0, p, r, &mut cc);
+        let n2 = ExactComplex::new(ExactNum::from_u8(1, p), ExactNum::from_u8(1, p));
+        let g2 = n2.elliptic_pi_complete(&m0, p, r, &mut cc);
+        let elapsed = t0.elapsed();
+        assert!(!g1.is_nan() && !g2.is_nan(), "Π(*,0) p=65536 NaN");
+        assert!(
+            elapsed < std::time::Duration::from_secs(2),
+            "Π(n,0) p=65536 took {elapsed:?}"
+        );
+        let l1 = ExactComplex::from_real(ExactNum::from_u8(2, p64).neg(), p64)
+            .elliptic_pi_complete(&ExactComplex::zero(p64), p64, r, &mut cc);
+        let l2 = ExactComplex::new(ExactNum::from_u8(1, p64), ExactNum::from_u8(1, p64))
+            .elliptic_pi_complete(&ExactComplex::zero(p64), p64, r, &mut cc);
+        assert!(near(g1.re(), l1.re(), p64, 8) && near(g1.im(), l1.im(), p64, 8));
+        assert!(near(g2.re(), l2.re(), p64, 8) && near(g2.im(), l2.im(), p64, 8));
         Ok(())
     }
 
