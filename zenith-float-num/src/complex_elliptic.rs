@@ -1477,6 +1477,13 @@ impl ExactComplex {
         if is_c_zero(self) {
             return m.elliptic_k(dest, rm, cc);
         }
+        // Π(n,m) ~ −1/n ∫ dθ /(sin²θ √(1−m sin²θ)) → 0 as |n|→∞ (mpmath
+        // ellippi(±∞, m)=0). Without this, R_J(0,1−m,1,1−∞) hangs past
+        // ZFS_WALL at dest p=8192, and the Re(m)≥1 path returns NaN
+        // (Harper T4 S2, n=+∞).
+        if self.re().is_inf() || self.im().is_inf() {
+            return ExactComplex::zero(dest);
+        }
         ziv_complex(dest, rm, |pw| self.elliptic_pi_complete_at(m, pw, dest, cc))
     }
 
@@ -1898,6 +1905,30 @@ mod tests {
                 "p={p} lower-side im should be ~0, got {:?}",
                 got.im()
             );
+        }
+        Ok(())
+    }
+
+    /// Harper T4 S2: complete Π(+∞, 1/2+i/2) at dest p=8192 timed out under
+    /// ZFS_WALL=120 in R_J(0,1−m,1,−∞). The same n at m=2 returned NaN.
+    /// The defining integral vanishes as |n|→∞ (mpmath ellippi(±∞,m)=0).
+    #[test]
+    fn zf_elliptic_pi_complete_n_inf_is_zero() -> Result<(), crate::Error> {
+        let r = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        for p in [64usize, 8192] {
+            let n = ExactComplex::from_real(INF_POS.clone(), p);
+            let m_half = ExactComplex::new(
+                ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None),
+                ExactNum::from_u8(1, p).ldexp(-1, p, RoundingMode::None),
+            );
+            let m2 = ExactComplex::from_real(ExactNum::from_u8(2, p), p);
+            for (m, label) in [(&m_half, "1/2+i/2"), (&m2, "2+0i")] {
+                let got = n.elliptic_pi_complete(m, p, r, &mut cc);
+                assert!(!got.is_nan(), "Π(+∞, {label}) p={p} is NaN {:?}", got);
+                assert!(got.re().is_zero(), "Π(+∞, {label}) p={p} re {:?}", got.re());
+                assert!(got.im().is_zero(), "Π(+∞, {label}) p={p} im {:?}", got.im());
+            }
         }
         Ok(())
     }
