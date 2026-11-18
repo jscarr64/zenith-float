@@ -406,7 +406,8 @@ impl ExactComplex {
     }
 
     /// \(I_\nu(z)=i^{-\nu}J_\nu(iz)\). Same cut rules as \(J_\nu\) (C99: the sign of a
-    /// zero imaginary part selects the side).
+    /// zero imaginary part selects the side). For finite \(\nu\), \(z=+\infty\pm 0i\)
+    /// is \(+\infty\) (DLMF 10.30.4: \(|\arg z|<\pi/2\), leading term \(e^z/\sqrt{2\pi z}\)).
     ///
     /// # Precision
     ///
@@ -428,6 +429,12 @@ impl ExactComplex {
             return nan_pair(Error::InvalidArgument);
         }
         let dest = round_p(p);
+        // DLMF 10.30.4: I_ν(z) ∼ e^z/√(2πz) as |z|→∞ in |arg z|<π/2. z = +∞±0i
+        // has arg 0, so the value is +∞ (imaginary part → 0). The series path
+        // through (z/2)^ν / Γ(ν+1) refuses an infinite base as InvalidArgument.
+        if self.re().is_inf_pos() && self.im().is_zero() && !nu.re().is_inf() && !nu.im().is_inf() {
+            return ExactComplex::from_real(crate::INF_POS, dest);
+        }
         // DLMF 10.27.1: I_{−n}(z) = I_n(z) for any integer n.
         if nu.im().is_zero() && nu.re().is_int() && nu.re().is_negative() && !nu.re().is_zero() {
             return self.bessel_i_word(&neg_c(nu.clone()), dest, rm, cc);
@@ -1453,6 +1460,7 @@ impl ExactComplex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Sign;
     use crate::complex_special::neg_c;
     use crate::complex_special::pi_c;
     use crate::complex_special::two_c;
@@ -1641,5 +1649,135 @@ mod tests {
         assert!(cancel > 0, "1+20i should cancel");
         assert_eq!(i_series_guard_bits(&zc, &nu), cancel + I_SERIES_PAD);
         assert!(cancel + I_SERIES_PAD < series_guard_bits(&z));
+    }
+
+    fn signed_zero(neg: bool, p: usize) -> ExactNum {
+        let mut z = ExactNum::new(p);
+        if neg {
+            z.set_sign(Sign::Neg);
+        }
+        z
+    }
+
+    /// On the cut, `z = −x−0i` must take the lower sheet (DLMF 10.11.1 / 10.27).
+    /// `J_ν(−x−0i) = e^{−iνπ} J_ν(x)`, and likewise I; the +0 twin is `e^{+iνπ}` times
+    /// the positive-real value. Harper T4: z=−2−0i, ν=2+i, all of J/Y/I/K were WRONG
+    /// (the series path evaluated `(z/2)^ν` on the upper sheet; ratio ≈ e^{2π}).
+    #[test]
+    fn zf_bessel_neg_real_cut_signed_zero_uses_lower_sheet() -> Result<(), crate::Error> {
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        // Dest 64 already matches DLMF here. Harper WRONGs were dest 2048+
+        // with 64-bit argument tokens (same construction the harness uses).
+        for p in [64usize, 2048] {
+            let tok = 64;
+            let x = ExactComplex::from_real(ExactNum::from_u8(2, tok), tok);
+            let nu = ExactComplex::new(ExactNum::from_u8(2, tok), ExactNum::from_u8(1, tok));
+            let z_plus = ExactComplex::new(ExactNum::from_i8(-2, tok), signed_zero(false, tok));
+            let z_minus = ExactComplex::new(ExactNum::from_i8(-2, tok), signed_zero(true, tok));
+            assert!(z_minus.im().is_zero() && z_minus.im().is_negative());
+
+            let i_pi = ExactComplex::new(ExactNum::new(p), cc.pi(p, RoundingMode::None));
+            let phase_minus = neg_c(nu.mul(&i_pi, p, rm)).exp(p, rm, &mut cc);
+            let phase_plus = nu.mul(&i_pi, p, rm).exp(p, rm, &mut cc);
+
+            let jx = x.bessel_j_nu(&nu, p, rm, &mut cc);
+            let want_j_minus = phase_minus.mul(&jx, p, rm);
+            let got_j = z_minus.bessel_j_nu(&nu, p, rm, &mut cc);
+            assert!(!got_j.is_nan(), "J_ν(−2−0i) is NaN");
+            assert!(
+                cnear_bits(&got_j, &want_j_minus, p, 8),
+                "J_ν(−2−0i) got {:?} want {:?}",
+                got_j,
+                want_j_minus
+            );
+            let got_j_plus = z_plus.bessel_j_nu(&nu, p, rm, &mut cc);
+            let want_j_plus = phase_plus.mul(&jx, p, rm);
+            assert!(
+                cnear_bits(&got_j_plus, &want_j_plus, p, 8),
+                "J_ν(−2+0i) got {:?} want {:?}",
+                got_j_plus,
+                want_j_plus
+            );
+
+            let ix = x.bessel_i(&nu, p, rm, &mut cc);
+            let got_i = z_minus.bessel_i(&nu, p, rm, &mut cc);
+            let want_i = phase_minus.mul(&ix, p, rm);
+            assert!(!got_i.is_nan(), "I_ν(−2−0i) is NaN");
+            assert!(
+                cnear_bits(&got_i, &want_i, p, 8),
+                "I_ν(−2−0i) got {:?} want {:?}",
+                got_i,
+                want_i
+            );
+
+            // Y and K: DLMF 10.11.2 / 10.27.8–10, lower sign for Im z = −0.
+            let yx = x.bessel_y(&nu, p, rm, &mut cc);
+            let nupi = nu.mul(&pi_c(p, &mut cc), p, rm);
+            let two_i_cos = ExactComplex::new(ExactNum::new(p), ExactNum::from_u8(2, p)).mul(
+                &nupi.cos(p, rm, &mut cc),
+                p,
+                rm,
+            );
+            // Y(−x−0i) = e^{iνπ} Y(x) − 2i cos(νπ) J(x)
+            let want_y = phase_plus
+                .mul(&yx, p, rm)
+                .sub(&two_i_cos.mul(&jx, p, rm), p, rm);
+            let got_y = z_minus.bessel_y(&nu, p, rm, &mut cc);
+            assert!(!got_y.is_nan(), "Y_ν(−2−0i) is NaN");
+            assert!(
+                cnear_bits(&got_y, &want_y, p, 8),
+                "Y_ν(−2−0i) got {:?} want {:?}",
+                got_y,
+                want_y
+            );
+
+            let kx = x.bessel_k(&nu, p, rm, &mut cc);
+            // K(−x−0i) = e^{iνπ} K(x) + iπ I(x)
+            let i_pi_i = ExactComplex::new(ExactNum::new(p), cc.pi(p, RoundingMode::None));
+            let want_k = phase_plus
+                .mul(&kx, p, rm)
+                .add(&i_pi_i.mul(&ix, p, rm), p, rm);
+            let got_k = z_minus.bessel_k(&nu, p, rm, &mut cc);
+            assert!(!got_k.is_nan(), "K_ν(−2−0i) is NaN");
+            assert!(
+                cnear_bits(&got_k, &want_k, p, 8),
+                "K_ν(−2−0i) p={p} got {:?} want {:?}",
+                got_k,
+                want_k
+            );
+        } // dest p
+        Ok(())
+    }
+
+    /// DLMF 10.30.4: `I_ν(z) ∼ e^z / √(2πz)` as `|z|→∞` in `|arg z|<π/2`.
+    /// `z = +∞+0i` has arg 0, so `I_ν(+∞) = +∞` (imaginary part → 0), for any
+    /// finite ν. Harper T4 returned `InvalidArgument` for ν ∈ {2+i, ±1/2}.
+    #[test]
+    fn zf_bessel_i_at_pos_inf_is_pos_inf() -> Result<(), crate::Error> {
+        let p = 64;
+        let rm = RoundingMode::ToEven;
+        let mut cc = Consts::new()?;
+        let z = ExactComplex::new(crate::INF_POS, signed_zero(false, p));
+        let nus = [
+            ExactComplex::new(ExactNum::from_u8(2, p), ExactNum::from_u8(1, p)),
+            ExactComplex::from_real(
+                ExactNum::from_u8(1, p).div(&ExactNum::from_u8(2, p), p, rm),
+                p,
+            ),
+            ExactComplex::from_real(
+                ExactNum::from_i8(-1, p).div(&ExactNum::from_u8(2, p), p, rm),
+                p,
+            ),
+        ];
+        for nu in &nus {
+            let w = z.bessel_i(nu, p, rm, &mut cc);
+            assert!(
+                w.re().is_inf_pos() && w.im().is_zero(),
+                "I_ν(+∞+0i) got {:?}, want +∞",
+                w
+            );
+        }
+        Ok(())
     }
 }
