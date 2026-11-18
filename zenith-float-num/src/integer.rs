@@ -460,7 +460,36 @@ impl ExactInt {
         let limbs = truncated_limbs(x, &two_w, p)?;
         Some(Self::from_limbs(sign, limbs))
     }
+
+    /// Little-endian limbs, no leading zeros.
+    pub(crate) fn as_limbs(&self) -> &[Word] {
+        &self.limbs
+    }
+
+    /// `self >> bits`, truncated toward zero.
+    pub fn shr_towards_zero(&self, bits: usize) -> Self {
+        if bits == 0 || self.is_zero() {
+            return self.clone();
+        }
+        let w = bits / WORD_BIT_SIZE;
+        let b = bits % WORD_BIT_SIZE;
+        if w >= self.limbs.len() {
+            return Self::zero();
+        }
+        let mut out = self.limbs[w..].to_vec();
+        if b > 0 && !out.is_empty() {
+            let mut carry: Word = 0;
+            for limb in out.iter_mut().rev() {
+                let mask = (1 as Word).wrapping_shl(b as u32).wrapping_sub(1);
+                let new_carry = *limb & mask;
+                *limb = (*limb >> b) | (carry << (WORD_BIT_SIZE - b));
+                carry = new_carry;
+            }
+        }
+        Self::from_limbs(self.sign, out)
+    }
 }
+
 
 /// The base-`two_w` limbs (lowest first) of `trunc(|x|)` for a finite `x` with `|x| >= 1`; `two_w` is
 /// `2^w`. `|x| < 2^e` fits in `ceil(e / w)` limbs, so the loop has that fixed trip count: arithmetic
@@ -533,6 +562,18 @@ impl PartialEq for ExactInt {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shl_shr_roundtrip() {
+        let a = ExactInt::from_u64(0x1234_5678_9abc_def0);
+        let s = a.shl(70).mul(&ExactInt::from_u64(3));
+        let back = s.shr_towards_zero(70);
+        assert_eq!(back, a.mul(&ExactInt::from_u64(3)));
+        assert!(ExactInt::from_u64(7).shr_towards_zero(3).is_zero());
+        assert_eq!(ExactInt::from_i64(-32).shr_towards_zero(2), ExactInt::from_i64(-8));
+        assert_eq!(a.shl(0), a);
+        assert!(a.shr_towards_zero(10_000).is_zero());
+    }
 
     #[test]
     fn div_rem_with_zero_operands_no_panic() {

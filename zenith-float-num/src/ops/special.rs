@@ -7160,7 +7160,12 @@ pub(crate) fn even_bernoulli(n: usize, p: usize) -> Result<Vec<ExactNumNumber>, 
 
 /// Largest `k` (`B_{2k}`) filled from the exact boustrophedon. Larger indices
 /// use the zeta series, as in Arb's `arb_bernoulli_ui_zeta`.
-const BERNOULLI_EXACT_K: usize = 1024;
+///
+/// 4096 covers the improved Stirling head at dest p=65536 (`M ≈ 3316`).
+/// The zeta mid-`k` gap at that precision hits `euler_product_limit` `e ≥ 24`
+/// and falls back to singleton factorials (~146 s for `k=1025..=3316`),
+/// while the exact table of 3316 numbers is ~29 s.
+const BERNOULLI_EXACT_K: usize = 4096;
 
 fn bitlen_usize(n: usize) -> usize {
     (usize::BITS - n.leading_zeros()) as usize
@@ -7459,6 +7464,9 @@ fn even_bernoulli_zeta_range(k0: usize, k1: usize, p: usize) -> Result<Vec<Exact
 /// costs `n` exact additions, so `B_2 .. B_2K` cost `O(K²)` additions in total (the former
 /// tangent recurrence in `even_bernoulli` restarts its `O(K²)` triangle with multiplications
 /// for every call). Then `B_2k = (-1)^(k-1) 2k T_k / (2^2k (2^2k - 1))`.
+#[path = "bernoulli_rev.rs"]
+mod bernoulli_rev;
+
 struct BernoulliCache {
     /// Boustrophedon row `row_n` (empty before the first growth); exact integers.
     row: Vec<ExactNumNumber>,
@@ -7509,6 +7517,18 @@ impl BernoulliCache {
 
     /// Grows the exact table to at least `n` entries.
     fn grow_exact(&mut self, n: usize) -> Result<(), Error> {
+        if self.exact.len() >= n {
+            return Ok(());
+        }
+        if n > 15 {
+            self.exact = bernoulli_rev::exact_even_bernoulli_rev(n)?;
+            return Ok(());
+        }
+        self.grow_exact_boustrophedon(n)
+    }
+
+    /// Seidel–Entringer triangle for small `n` (and tests).
+    fn grow_exact_boustrophedon(&mut self, n: usize) -> Result<(), Error> {
         while self.exact.len() < n {
             self.next_row()?;
             if self.row_n.is_multiple_of(2) {
@@ -7578,6 +7598,16 @@ impl BernoulliCache {
 #[cfg(feature = "std")]
 static BERNOULLI: std::sync::RwLock<BernoulliCache> = std::sync::RwLock::new(BernoulliCache::new());
 
+/// Exact even Bernoulli numbers `B_2 .. B_{2n}` by the Seidel–Entringer
+/// boustrophedon (used for the tiny table `n ≤ 15` and as a test oracle).
+pub(super) fn exact_even_bernoulli_boustrophedon(
+    n: usize,
+) -> Result<Vec<(ExactNumNumber, ExactNumNumber)>, Error> {
+    let mut c = BernoulliCache::new();
+    c.grow_exact_boustrophedon(n)?;
+    Ok(c.exact)
+}
+
 /// Exact even Bernoulli numbers `B_2 .. B_2n` as `(num, den)` pairs, borrowed for `f`.
 #[cfg(test)]
 pub(crate) fn with_exact_bernoulli<R>(
@@ -7608,11 +7638,21 @@ pub(crate) fn with_exact_bernoulli<R>(
 }
 
 /// `B_2 .. B_2n` rounded to `p` bits (ToEven), borrowed from the shared cache for `f`.
+/// Round Bernoulli work precision up to a 256-bit band so Ziv retries
+/// at `p`, `p+64`, `p+128`, … share one rounded table.
+fn bernoulli_prec_bucket(p: usize) -> usize {
+    let p = crate::common::util::round_p(p.max(64));
+    const STEP: usize = 256;
+    let up = p.saturating_add(STEP - 1) / STEP * STEP;
+    crate::common::util::round_p(up.max(STEP))
+}
+
 pub(crate) fn with_even_bernoulli<R>(
     n: usize,
     p: usize,
     f: impl FnOnce(&[ExactNumNumber]) -> Result<R, Error>,
 ) -> Result<R, Error> {
+    let p = bernoulli_prec_bucket(p);
     #[cfg(feature = "std")]
     {
         {
@@ -8252,6 +8292,36 @@ mod tests {
     /// The cached exact B_2k equal sympy `bernoulli(2k)` (sympy 1.14.0), checked by an exact
     /// cross-multiplication; no timing involved.
     #[test]
+    fn test_bernoulli_rev_vs_boustrophedon_modest() -> Result<(), crate::Error> {
+        for n in [16, 30, 40] {
+            match bernoulli_rev::exact_even_bernoulli_rev(n) {
+                Ok(rev) => {
+                    let bou = exact_even_bernoulli_boustrophedon(n)?;
+                    assert_eq!(rev.len(), bou.len());
+                    for k in 1..=n {
+                        let (rn, rd) = &rev[k - 1];
+                        let (bn, bd) = &bou[k - 1];
+                        let pl = crate::common::util::round_p(
+                            rn.mantissa_max_bit_len() + bd.mantissa_max_bit_len(),
+                        );
+                        let pr = crate::common::util::round_p(
+                            rd.mantissa_max_bit_len() + bn.mantissa_max_bit_len(),
+                        );
+                        let lhs = rn.mul(bd, pl, RoundingMode::None)?;
+                        let rhs = rd.mul(bn, pr, RoundingMode::None)?;
+                        assert!(
+                            lhs.cmp(&rhs) == 0,
+                            "k={k} n={n}: rev differs from boustrophedon"
+                        );
+                    }
+                }
+                Err(e) => panic!("exact_even_bernoulli_rev({n}) failed: {e:?}"),
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
     fn test_bernoulli_cache_exact_vs_sympy() -> Result<(), crate::Error> {
         let rows: [(usize, &str, &str); 8] = [
         (1, "1", "6"),
@@ -8308,6 +8378,26 @@ mod tests {
                 );
             }
         }
+        Ok(())
+    }
+
+    /// First-fill of the exact even-Bernoulli table at the improved-Stirling
+    /// head size for dest 65536 (M ≈ 3316). Ignored: used to time the
+    /// `bernoulli_rev` port in official rustc release.
+    #[test]
+    #[ignore]
+    fn time_exact_bernoulli_rev_3316() -> Result<(), crate::Error> {
+        let t0 = std::time::Instant::now();
+        with_exact_bernoulli(3316, |rats| {
+            assert_eq!(rats.len(), 3316);
+            let (n, d) = &rats[3315];
+            assert!(!n.inexact() && !d.inexact(), "B_6632 inexact");
+            Ok(())
+        })?;
+        eprintln!("exact_even_bernoulli_rev(3316) first fill {:?}", t0.elapsed());
+        let t1 = std::time::Instant::now();
+        with_exact_bernoulli(3316, |_| Ok(()))?;
+        eprintln!("exact_even_bernoulli_rev(3316) cache hit {:?}", t1.elapsed());
         Ok(())
     }
 
